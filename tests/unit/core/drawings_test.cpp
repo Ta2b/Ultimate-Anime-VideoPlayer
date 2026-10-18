@@ -1,8 +1,11 @@
 #include "core/drawings.h"
 
+#include <array>
 #include <cmath>
+#include <cstddef>
 #include <cstdint>
 #include <limits>
+#include <random>
 #include <string>
 #include <string_view>
 
@@ -121,6 +124,10 @@ TEST_CASE("drawings : mesures et ordre refusés", "[drawings]") {
   drawings.start(id(10));
   CHECK(drawings.push(id(11), measure('h')));
   CHECK_FALSE(drawings.ready(id(0), Pacing::Source));  // start() oublie la séquence passée
+  // Une identité déjà classée rendrait la première paire introuvable.
+  CHECK(code_of(drawings.push(id(10), measure('N'))) == RefusalCode::SequenceOrder);
+  CHECK(code_of(drawings.push(id(11), measure('N'))) == RefusalCode::SequenceOrder);
+  CHECK(drawings.push(id(12), measure('N')));
 }
 
 TEST_CASE("drawings : plans en uns, en deux, en trois", "[drawings]") {
@@ -221,6 +228,30 @@ TEST_CASE("drawings : Smooth suit les dessins pour chaque tenue et chaque facteu
   }
 }
 
+TEST_CASE("drawings : Smooth suit des tenues inégales, dessin par dessin", "[drawings]") {
+  // Dessins : 0-1 (tenue 2), 2-4 (3), 5 (1), 6-9 (4), puis 10.
+  const DrawingsTimeline drawings = timeline("NhNhhNNhhhN");
+  constexpr Ratio kHalf{1, 2};
+  CHECK(decide(drawings, Policy::Fast, Pacing::Smooth, 0, kHalf) == interpolate(0, 2, {1, 4}));
+  CHECK(decide(drawings, Policy::Fast, Pacing::Smooth, 1, kHalf) == interpolate(0, 2, {3, 4}));
+  CHECK(decide(drawings, Policy::Fast, Pacing::Smooth, 1, {1, 1}) == source(2));
+  CHECK(decide(drawings, Policy::Fast, Pacing::Smooth, 2, kHalf) == interpolate(2, 5, {1, 6}));
+  CHECK(decide(drawings, Policy::Fast, Pacing::Smooth, 3, kHalf) == interpolate(2, 5, {1, 2}));
+  CHECK(decide(drawings, Policy::Fast, Pacing::Smooth, 3, {1, 1}) == interpolate(2, 5, {2, 3}));
+  CHECK(decide(drawings, Policy::Fast, Pacing::Smooth, 4, kHalf) == interpolate(2, 5, {5, 6}));
+  CHECK(decide(drawings, Policy::Fast, Pacing::Smooth, 4, {1, 1}) == source(5));
+  CHECK(decide(drawings, Policy::Fast, Pacing::Smooth, 5, kHalf) == interpolate(5, 6, {1, 2}));
+  CHECK(decide(drawings, Policy::Fast, Pacing::Smooth, 6, kHalf) == interpolate(6, 10, {1, 8}));
+  CHECK(decide(drawings, Policy::Fast, Pacing::Smooth, 8, {1, 3}) == interpolate(6, 10, {7, 12}));
+  CHECK(decide(drawings, Policy::Fast, Pacing::Smooth, 9, kHalf) == interpolate(6, 10, {7, 8}));
+  CHECK(decide(drawings, Policy::Fast, Pacing::Smooth, 9, {1, 1}) == source(10));
+
+  // Le même plan au rythme Source : le mouvement tient dans la paire qui change de dessin.
+  CHECK(decide(drawings, Policy::Fast, Pacing::Source, 3, kHalf) == repeated(3));
+  CHECK(decide(drawings, Policy::Fast, Pacing::Source, 4, kHalf) == interpolate(4, 5, kHalf));
+  CHECK(decide(drawings, Policy::Quality, Pacing::Source, 3, kHalf) == interpolate(3, 4, kHalf));
+}
+
 TEST_CASE("drawings : Smooth montre un plan fixe tel quel, au-delà de 4 sources", "[drawings]") {
   const DrawingsTimeline still = timeline("NhhhhhhN");
   CHECK(decide(still, Policy::Fast, Pacing::Smooth, 0, {1, 2}) == repeated(0));
@@ -268,9 +299,13 @@ TEST_CASE("drawings : décisions refusées", "[drawings]") {
         RefusalCode::PacingForbidden);
   CHECK(code_of(drawings.decide(Policy::Quality, Pacing::KeepPoses, id(0), {1, 2})) ==
         RefusalCode::PacingForbidden);
-  for (const Ratio bad : {Ratio{0, 1}, Ratio{3, 2}, Ratio{1, 0}, Ratio{-1, 2}}) {
+  constexpr std::int64_t kHuge = std::numeric_limits<std::int64_t>::max();
+  for (const Ratio bad :
+       {Ratio{0, 1}, Ratio{3, 2}, Ratio{1, 0}, Ratio{-1, 2}, Ratio{1, kHuge}, Ratio{1, 100001}}) {
     CHECK(code_of(drawings.decide(Policy::Fast, Pacing::Source, id(0), bad)) == RefusalCode::FieldOutOfRange);
+    CHECK(code_of(drawings.decide(Policy::Fast, Pacing::Smooth, id(0), bad)) == RefusalCode::FieldOutOfRange);
   }
+  CHECK(drawings.decide(Policy::Fast, Pacing::Smooth, id(0), {1, 100000}));
   CHECK(code_of(drawings.decide(Policy::Fast, Pacing::Source, id(9), {1, 2})) == RefusalCode::SourceUnknown);
   // La dernière source n'ouvre aucune paire.
   CHECK(code_of(drawings.decide(Policy::Fast, Pacing::Source, id(2), {1, 2})) == RefusalCode::SourceUnknown);
@@ -279,4 +314,53 @@ TEST_CASE("drawings : décisions refusées", "[drawings]") {
   const DrawingsTimeline long_run = timeline(std::string(drawings::kWindow + 4, 'N'));
   CHECK(code_of(long_run.decide(Policy::Fast, Pacing::Source, id(0), {1, 2})) == RefusalCode::SourceUnknown);
   CHECK(long_run.decide(Policy::Fast, Pacing::Source, id(drawings::kWindow), {1, 2}));
+}
+
+TEST_CASE("drawings : en Smooth, l'image montrée avance avec le temps, jamais à travers une coupe",
+          "[drawings]") {
+  // Motifs pseudo-aléatoires fixés ; la position montrée, en sources, est a pour
+  // Source et Repeated, a + u·(b - a) pour Interpolate.
+  std::mt19937 random(1707);  // mt19937 est défini par la norme : la suite est la même partout
+  constexpr std::array kLetters{'N', 'N', 'N', 'N', 'h', 'h', 'h', 'h', 'i', 'C'};
+  constexpr std::array kFactors{Ratio{2, 1}, Ratio{4, 1}, Ratio{5, 2}, Ratio{3, 2}, Ratio{11011, 3200}};
+  for (int run = 0; run < 500; ++run) {
+    const std::size_t length = 12 + random() % 20;  // la fenêtre de 32 sources garde tout le motif
+    std::string pattern = "N";
+    while (pattern.size() < length) pattern += kLetters[random() % kLetters.size()];
+    const Ratio factor = kFactors[random() % kFactors.size()];
+    CAPTURE(pattern, factor.num, factor.den);
+    const DrawingsTimeline drawings = timeline(pattern);
+    auto cadence = CadenceAccumulator::create(factor);
+    REQUIRE(cadence);
+
+    bool forward = true;  // jamais en arrière, jamais en avance sur l'instant
+    bool exact = true;    // une tenue répartie montre l'instant lui-même
+    bool no_cut = true;
+    double shown = 0.0;
+    for (std::uint32_t k = 0; k < pattern.size(); ++k) {
+      const CadenceStep step = cadence->push({.id = id(k), .pts_us = std::int64_t{k} * 41708});
+      if (step.event != GridEvent::Pair) continue;
+      const std::uint32_t left = step.left.value - kFirst;
+      for (const OutputInstant& instant : step.instants()) {
+        const InstantDecision d = decide(drawings, Policy::Fast, Pacing::Smooth, left, instant.t);
+        const double at = left + instant.t.value();
+        const double a = d.a.value - kFirst;
+        double position = a;
+        if (d.show == Show::Interpolate) {
+          const double b = d.b.value - kFirst;
+          position = a + d.u.value() * (b - a);
+          exact = exact && (b - a > drawings::kMaxSpreadHold || std::abs(position - at) < 1e-9);
+          for (auto c = static_cast<std::size_t>(a) + 1; c <= static_cast<std::size_t>(b); ++c) {
+            no_cut = no_cut && pattern[c] != 'C';
+          }
+        }
+        if (d.show == Show::Source) exact = exact && position == at;
+        forward = forward && position >= shown - 1e-9 && position <= at + 1e-9;
+        shown = position;
+      }
+    }
+    CHECK(forward);
+    CHECK(exact);
+    CHECK(no_cut);
+  }
 }

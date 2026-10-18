@@ -1,7 +1,12 @@
 #include "core/cadence.h"
 
+#include <cmath>
+#include <cstddef>
 #include <cstdint>
 #include <limits>
+#include <optional>
+#include <random>
+#include <utility>
 #include <vector>
 
 #include <catch2/catch_test_macros.hpp>
@@ -196,7 +201,7 @@ TEST_CASE("cadence : Flush et époques", "[cadence]") {
   SECTION("une époque plus ancienne est refusée, la même est permise") {
     auto older = accumulator.flush(0);
     REQUIRE_FALSE(older);
-    CHECK(older.error().code == RefusalCode::FieldOutOfRange);
+    CHECK(older.error().code == RefusalCode::SequenceOrder);
     CHECK(accumulator.flush(1));
   }
 }
@@ -242,4 +247,88 @@ TEST_CASE("cadence : horodatages extrêmes sans débordement", "[cadence]") {
   REQUIRE(step.instants().size() == 2);
   CHECK(step.instants()[0].pts_us == 0);
   CHECK(step.instants()[1].pts_us == kMax);
+}
+
+TEST_CASE("cadence : une source à cadence variable garde la grille des paires", "[cadence]") {
+  // Comme rife_acc : les instants ne dépendent que du rang de la paire, les
+  // horodatages se placent dans chaque paire, quel que soit son écart.
+  CadenceAccumulator accumulator = make({2, 1});
+  accumulator.push(stamp(0, 0));
+  const std::vector<std::pair<std::int64_t, std::vector<std::int64_t>>> pairs{
+      {40000, {20000, 40000}}, {50000, {45000, 50000}}, {130000, {90000, 130000}}};
+  std::uint32_t k = 1;
+  for (const auto& [pts, expected] : pairs) {
+    const CadenceStep step = accumulator.push(stamp(k++, pts));
+    REQUIRE(step.event == GridEvent::Pair);
+    REQUIRE(step.instants().size() == expected.size());
+    for (std::size_t i = 0; i < expected.size(); ++i) CHECK(step.instants()[i].pts_us == expected[i]);
+  }
+}
+
+TEST_CASE("cadence : resync() sans paire en cours ne change rien", "[cadence]") {
+  CadenceAccumulator accumulator = make({5, 2});
+  accumulator.resync();
+  CHECK(accumulator.push(stamp(0, 0)).event == GridEvent::Start);
+  accumulator.resync();  // l'origine vient d'être posée : la grille part déjà d'elle
+  CHECK(instants_t(accumulator.push(stamp(1, 40000))) == std::vector<Ratio>{{2, 5}, {4, 5}});
+}
+
+namespace {
+
+// La boucle de vf_animejanai.c:1795-1855 telle quelle, en doubles, sans échec
+// d'interpolation : les instants (acc, pts) d'une source reçue.
+struct ForkLoop {
+  using Instant = std::pair<std::int64_t, std::optional<double>>;
+  std::int64_t num;
+  std::int64_t den;
+  std::int64_t acc = den;
+  std::optional<std::optional<double>> prev;  // absent : début ; vide : pts invalide
+
+  std::vector<Instant> push(std::optional<double> pts) {
+    std::vector<Instant> out;
+    if (prev && *prev && pts && *pts > **prev) {
+      for (; acc <= num; acc += den) {
+        const double t = static_cast<double>(acc) / static_cast<double>(num);
+        out.emplace_back(acc, acc == num ? *pts : **prev + (*pts - **prev) * t);
+      }
+      acc -= num;
+    } else {
+      acc = den;
+      out.emplace_back(num, pts);
+    }
+    prev = pts;
+    return out;
+  }
+};
+
+}  // namespace
+
+TEST_CASE("cadence : même suite que la boucle du fork, pts invalides et reculs compris", "[cadence]") {
+  std::mt19937_64 random(20261018);  // suite fixée : mt19937_64 est défini par la norme
+  for (const Ratio factor : {Ratio{2, 1}, Ratio{4, 1}, Ratio{5, 2}, Ratio{5, 3}, Ratio{3, 2}, Ratio{8, 1},
+                             Ratio{11011, 3200}, Ratio{11011, 4800}}) {
+    CAPTURE(factor.num, factor.den);
+    CadenceAccumulator accumulator = make(factor);
+    ForkLoop fork{.num = factor.num, .den = factor.den};
+    std::int64_t clock = 0;
+    bool same = true;
+    for (std::uint32_t k = 0; k < 5000; ++k) {
+      const std::uint64_t draw = random() % 100;
+      std::optional<std::int64_t> pts;  // 2 % sans horodatage
+      if (draw >= 2) {
+        clock += 30000 + static_cast<std::int64_t>(random() % 20000);  // cadence variable
+        pts = draw < 4 ? clock - 70000 : clock;                        // 2 % de reculs
+      }
+      const CadenceStep step = accumulator.push(stamp(k, pts));
+      const auto expected = fork.push(pts ? std::optional<double>(static_cast<double>(*pts)) : std::nullopt);
+      same = same && step.instants().size() == expected.size();
+      for (std::size_t i = 0; same && i < expected.size(); ++i) {
+        const OutputInstant& instant = step.instants()[i];
+        const auto& [acc, fork_pts] = expected[i];
+        same = instant.t == Ratio{acc, factor.num} && instant.pts_us.has_value() == fork_pts.has_value() &&
+               (!fork_pts || std::abs(static_cast<double>(*instant.pts_us) - *fork_pts) <= 0.5);
+      }
+    }
+    CHECK(same);
+  }
 }

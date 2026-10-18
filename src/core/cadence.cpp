@@ -88,7 +88,7 @@ void CadenceAccumulator::resync() {
 
 std::expected<void, Refusal> CadenceAccumulator::flush(std::uint32_t epoch) {
   if (epoch < epoch_) {
-    return refuse(RefusalCode::FieldOutOfRange, std::format("époque {} antérieure à {}", epoch, epoch_));
+    return refuse(RefusalCode::SequenceOrder, std::format("époque {} antérieure à {}", epoch, epoch_));
   }
   epoch_ = epoch;
   left_.reset();

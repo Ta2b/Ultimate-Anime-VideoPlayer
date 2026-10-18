@@ -83,7 +83,7 @@ enum class Rhythm : std::uint8_t {
 enum class Show : std::uint8_t {
   Source,       // la source a elle-même
   Interpolate,  // entre a et b, à la position u dans ]0, 1[
-  Repeated,     // l'image de a, déjà calculée : rien à calculer (REPEATED)
+  Repeated,     // l'image de a telle quelle : aucune interpolation (REPEATED)
 };
 
 struct InstantDecision {
@@ -98,7 +98,7 @@ class DrawingsTimeline {
  public:
   // Première source d'une séquence : démarrage, Flush, ou grille recommencée.
   void start(SourceId first);
-  // Source suivante, mesurée contre la précédente.
+  // Source suivante, mesurée contre la précédente. Refuse une identité déjà dans la fenêtre.
   std::expected<SourceDrawing, Refusal> push(SourceId id, const PairMeasure& measure);
   // Fin du flux : l'anticipation qui manque vaut « aucun dessin suivant ».
   void finish() { finished_ = true; }
@@ -107,7 +107,7 @@ class DrawingsTimeline {
   Rhythm rhythm() const;
   // Les sources dont a besoin la paire (left, suivante) sont-elles classées ?
   bool ready(SourceId left, Pacing pacing) const;
-  // Quoi montrer à l'instant t (0 < t <= 1) de la paire (left, suivante).
+  // Quoi montrer à l'instant t (0 < t <= 1, termes dans kRatioTerm) de la paire (left, suivante).
   std::expected<InstantDecision, Refusal> decide(Policy policy, Pacing pacing, SourceId left, Ratio t) const;
 
  private:

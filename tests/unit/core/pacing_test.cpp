@@ -1,9 +1,12 @@
 #include "core/pacing.h"
 
 #include <cmath>
+#include <cstdint>
 
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
+
+#include "core/cadence.h"
 
 using ajp::RefusalCode;
 using Catch::Approx;
@@ -147,6 +150,26 @@ TEST_CASE("pacing : une source déjà calée n'a rien à interpoler qui se cale"
   CHECK(none.grid == Grid::Timestamps);
   // 23,976 im/s sur 120 Hz : k = 5 cale la source seule, aucun facteur 1001/1000 proposé.
   CHECK(choose(fixed(120.0), {5, 4}).factor == Ratio{5, 4});
+}
+
+TEST_CASE("pacing : chaque facteur proposé se cale et passe dans l'accumulateur", "[pacing]") {
+  // Écrans et sources courants : sur la grille des vsyncs, k vsyncs par image de
+  // sortie, à la vitesse proposée, font exactement le rafraîchissement.
+  for (const double hz : {60.0, 60000.0 / 1001.0, 75.0, 120.0, 144.0, 165.0, 240.0}) {
+    for (const double fps : {kNtsc, 24.0, 25.0, 30000.0 / 1001.0, 30.0, 50.0}) {
+      for (const Ratio requested :
+           {Ratio{3, 2}, Ratio{2, 1}, Ratio{5, 2}, Ratio{3, 1}, Ratio{4, 1}, Ratio{8, 1}}) {
+        CAPTURE(hz, fps, requested.num, requested.den);
+        const CadenceChoice choice = choose(fixed(hz), requested, 8.0, fps);
+        CHECK(CadenceAccumulator::create(choice.factor));
+        CHECK(choice.output_fps == Approx(fps * choice.factor.value()).epsilon(1e-12));
+        if (choice.grid != Grid::Vsync) continue;
+        CHECK(choice.factor == reduced(choice.factor));
+        CHECK(std::abs(choice.speed - 1.0) <= pacing::kMaxSpeedChange);
+        CHECK(choice.output_fps * choice.speed * choice.vsyncs_per_frame == Approx(hz).epsilon(1e-9));
+      }
+    }
+  }
 }
 
 TEST_CASE("pacing : valeurs hors plage refusées", "[pacing]") {

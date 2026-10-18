@@ -71,6 +71,8 @@ std::expected<SourceDrawing, Refusal> DrawingsTimeline::push(SourceId id, const 
     return refuse(RefusalCode::SequenceOrder,
                   finished_ ? "source après la fin du flux" : "source avant start()");
   }
+  // Une identité reprise rendrait la paire de la première introuvable par find().
+  if (find(id)) return refuse(RefusalCode::SequenceOrder, std::format("source {} déjà classée", id.value));
   if (auto ok = check(measure); !ok) return std::unexpected(ok.error());
 
   const Entry& previous = at(count_ - 1);
@@ -114,8 +116,10 @@ bool DrawingsTimeline::ready(SourceId left, Pacing pacing) const {
 
 std::expected<InstantDecision, Refusal> DrawingsTimeline::decide(Policy policy, Pacing pacing, SourceId left,
                                                                  Ratio t) const {
-  if (t.den < 1 || t.num < 1 || t.num > t.den) {
-    return refuse(RefusalCode::FieldOutOfRange, std::format("instant {}/{} hors de ]0, 1]", t.num, t.den));
+  // Termes bornés comme ceux de l'accumulateur : within_hold() les multiplie sans déborder.
+  if (!limits::kRatioTerm.contains(t.num) || !limits::kRatioTerm.contains(t.den) || t.num > t.den) {
+    return refuse(RefusalCode::FieldOutOfRange,
+                  std::format("instant {}/{} hors de ]0, 1] ou termes hors de [1, 100000]", t.num, t.den));
   }
   if (policy == Policy::Quality && pacing != Pacing::Source) {
     return refuse(RefusalCode::PacingForbidden, "Quality impose le rythme source");

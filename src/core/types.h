@@ -30,7 +30,7 @@ enum class RefusalCode : std::uint8_t {
   HdrUnavailable,    // route HDR impossible sur ce système ou cet écran
   SourceUnknown,     // source jamais reçue, ou sortie de la fenêtre gardée
   LookaheadMissing,  // les sources suivantes nécessaires ne sont pas encore classées
-  SequenceOrder,     // source hors séquence : avant le début ou après la fin du flux
+  SequenceOrder,     // hors séquence : source avant le début, après la fin ou reprise, époque qui recule
 };
 
 struct Refusal {
