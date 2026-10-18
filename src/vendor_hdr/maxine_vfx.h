@@ -1,5 +1,5 @@
 // Chargeur du SDK NVIDIA Maxine VFX 1.3 (Linux) : bibliothèques ouvertes par chemin, sans
-// LD_LIBRARY_PATH, et effet TrueHDR à descripteurs NvCVImage persistants.
+// LD_LIBRARY_PATH (maxine_runtime.h), et effet TrueHDR à descripteurs NvCVImage persistants.
 //
 // Repris de animejanai-inference-rtx@118c272 src/pipeline_hdr.c:1-86 (adaptateur qualifié) et
 // aji-rtx-linux/aji_rtx_vfx.cpp : même ordre d'appels, mêmes formats (RGBA 8 bits en entrée,

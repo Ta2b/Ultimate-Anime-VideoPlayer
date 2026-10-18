@@ -1,6 +1,5 @@
 #include "vendor_hdr/maxine_vfx.h"
 
-#include <algorithm>
 #include <array>
 #include <climits>
 #include <format>
@@ -11,65 +10,13 @@
 #include "vendor_hdr/dynamic_library.h"
 #include "vendor_hdr/log.h"
 #include "vendor_hdr/maxine_abi.h"
-#include "vendor_hdr/sdk_layout.h"
+#include "vendor_hdr/maxine_runtime.h"
 
 namespace ajp::vendor_hdr {
 namespace {
 
 namespace fs = std::filesystem;
 using namespace maxine;
-
-struct LoadedLibrary {
-  fs::path relative;
-  DynamicLibrary library;
-};
-
-// Dépendances d'abord (CUDA, TensorRT), puis le cœur, puis la fonction TrueHDR.
-int load_rank(const fs::path& relative) {
-  const std::string first = relative.begin()->string();
-  return first == "external" ? 0 : first == "lib" ? 1 : 2;
-}
-
-// Remplace LD_LIBRARY_PATH : chaque bibliothèque exigée s'ouvre par son chemin, une dépendance
-// déjà ouverte satisfaisant son nom. L'ordre exact entre elles n'étant pas connu, on refait des
-// passes tant qu'une passe en ouvre au moins une. Les fonctions s'ouvrent en RTLD_GLOBAL, comme
-// dans pipeline_hdr.c:48-55, pour que libVideoFX les trouve par leur nom.
-std::expected<std::vector<LoadedLibrary>, Refusal> load_runtime(const fs::path& root) {
-  std::vector<fs::path> pending;
-  for (const RequiredFile& required : layout(SdkKind::MaxineVfx).required) {
-    if (required.format != BinaryFormat::ElfX86_64) continue;
-    const std::optional<fs::path> relative = locate(root, required);
-    if (!relative)
-      return refuse(RefusalCode::LibraryUnavailable, std::format("{} absent du SDK", required.path));
-    pending.push_back(*relative);
-  }
-  std::ranges::stable_sort(pending, {}, load_rank);
-
-  std::vector<LoadedLibrary> loaded;
-  Refusal last{RefusalCode::LibraryUnavailable, "aucune bibliothèque à ouvrir"};
-  for (bool progress = true; progress && !pending.empty();) {
-    progress = false;
-    std::vector<fs::path> retry;
-    for (const fs::path& relative : pending) {
-      const SymbolScope scope = load_rank(relative) == 2 ? SymbolScope::Global : SymbolScope::Local;
-      auto library = DynamicLibrary::open(root / relative, scope);
-      if (!library) {
-        last = library.error();
-        retry.push_back(relative);
-        continue;
-      }
-      loaded.push_back(LoadedLibrary{.relative = relative, .library = std::move(*library)});
-      progress = true;
-    }
-    pending = std::move(retry);
-  }
-  if (!pending.empty()) return std::unexpected(last);
-  return loaded;
-}
-
-const DynamicLibrary& find(const std::vector<LoadedLibrary>& loaded, std::string_view relative) {
-  return std::ranges::find(loaded, fs::path(relative), &LoadedLibrary::relative)->library;
-}
 
 struct MaxineApi {
   CreateEffectFn* create = nullptr;
@@ -93,16 +40,19 @@ Done bind(const DynamicLibrary& library, const char* name, Fn*& slot) {
 }
 
 std::expected<MaxineApi, Refusal> resolve_api(const std::vector<LoadedLibrary>& loaded) {
-  const DynamicLibrary& effects = find(loaded, "lib/libVideoFX.so");
-  const DynamicLibrary& images = find(loaded, "lib/libNVCVImage.so");
+  const DynamicLibrary* effects = find_library(loaded, "lib/libVideoFX.so");
+  const DynamicLibrary* images = find_library(loaded, "lib/libNVCVImage.so");
+  if (effects == nullptr || images == nullptr) {
+    return refuse(RefusalCode::LibraryUnavailable, "libVideoFX.so ou libNVCVImage.so n'est pas ouverte");
+  }
   MaxineApi api;
   for (const Done& bound :
-       {bind(effects, "NvVFX_CreateEffect", api.create), bind(effects, "NvVFX_DestroyEffect", api.destroy),
-        bind(effects, "NvVFX_SetU32", api.set_u32), bind(effects, "NvVFX_SetString", api.set_string),
-        bind(effects, "NvVFX_SetImage", api.set_image), bind(effects, "NvVFX_SetCudaStream", api.set_stream),
-        bind(effects, "NvVFX_Load", api.load), bind(effects, "NvVFX_Run", api.run),
-        bind(images, "NvCVImage_Init", api.image_init),
-        bind(images, "NvCV_GetErrorStringFromCode", api.error_string)}) {
+       {bind(*effects, "NvVFX_CreateEffect", api.create), bind(*effects, "NvVFX_DestroyEffect", api.destroy),
+        bind(*effects, "NvVFX_SetU32", api.set_u32), bind(*effects, "NvVFX_SetString", api.set_string),
+        bind(*effects, "NvVFX_SetImage", api.set_image),
+        bind(*effects, "NvVFX_SetCudaStream", api.set_stream), bind(*effects, "NvVFX_Load", api.load),
+        bind(*effects, "NvVFX_Run", api.run), bind(*images, "NvCVImage_Init", api.image_init),
+        bind(*images, "NvCV_GetErrorStringFromCode", api.error_string)}) {
     if (!bound) return std::unexpected(bound.error());
   }
   return api;
@@ -207,7 +157,7 @@ namespace detail {
 std::expected<std::unique_ptr<TrueHdr>, Refusal> open_maxine_at(const fs::path& root,
                                                                 const TrueHdrConfig& config) {
   if (Done valid = check(config); !valid) return std::unexpected(valid.error());
-  auto libraries = load_runtime(root);
+  auto libraries = load_maxine_runtime(root);
   if (!libraries) return std::unexpected(libraries.error());
   auto api = resolve_api(*libraries);
   if (!api) return std::unexpected(api.error());

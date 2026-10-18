@@ -10,6 +10,7 @@
 #include <type_traits>
 #include <utility>
 
+#include "vendor_hdr/path_text.h"
 #include "vendor_hdr/refusal.h"
 
 namespace ajp::vendor_hdr {
@@ -21,7 +22,7 @@ enum class SymbolScope : std::uint8_t {
 
 class DynamicLibrary {
  public:
-  // Refuse (LibraryUnavailable) avec le message du chargeur du système.
+  // Refuse (LibraryUnavailable) un chemin relatif, ou avec le message du chargeur du système.
   static std::expected<DynamicLibrary, Refusal> open(const std::filesystem::path& path,
                                                      SymbolScope scope = SymbolScope::Local);
 
@@ -39,7 +40,7 @@ class DynamicLibrary {
     void* address = raw_symbol(name);
     if (address == nullptr) {
       return refuse(RefusalCode::LibraryUnavailable,
-                    std::format("symbole {} absent de {}", name, path_.filename().string()));
+                    std::format("symbole {} absent de {}", name, utf8(path_.filename())));
     }
     // void* vers pointeur de fonction : admis sous condition par C++, garanti par POSIX
     // (dlsym) et par Windows (GetProcAddress).

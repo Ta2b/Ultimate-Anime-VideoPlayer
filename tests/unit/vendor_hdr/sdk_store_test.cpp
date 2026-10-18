@@ -77,6 +77,20 @@ TEST_CASE("magasin : la bonne version s'importe et se vérifie", "[store]") {
   CHECK(again.installed->root() == sdk.root());
 }
 
+TEST_CASE("magasin : un dossier de données relatif donne des chemins absolus", "[store]") {
+  // Les chargeurs refusent un chemin relatif ; le magasin l'absolutise, comme Path.GetFullPath
+  // du Manager (TrueHdrSdkStore.cs:30).
+  Fixture fixture;
+  make_maxine_sdk(fixture.source);
+  const fs::path relative = fs::relative(fixture.data, fs::current_path());
+  REQUIRE(relative.is_relative());
+  SdkStore store(relative, SdkKind::MaxineVfx);
+  auto imported = store.import(fixture.source);
+  REQUIRE(imported);
+  CHECK(imported->installed->root().is_absolute());
+  CHECK(fs::equivalent(imported->installed->root().parent_path(), fixture.store_root / "versions"));
+}
+
 TEST_CASE("magasin : fichiers vides refusés", "[store]") {
   Fixture fixture;
   make_maxine_sdk(fixture.source, {.libraries = LibraryContent::Empty});
@@ -139,6 +153,23 @@ TEST_CASE("magasin : archive d'une autre architecture refusée", "[store]") {
   make_maxine_sdk(fixture.source);
   write_file(fixture.source / "lib/libVideoFXLocal.so", elf_header(183));
   CHECK(import_refusal(fixture).starts_with("lib/libVideoFXLocal.so n'est pas une bibliothèque Linux x64"));
+}
+
+TEST_CASE("magasin : chaque bibliothèque chargeable est vérifiée, pas seulement les exigées", "[store]") {
+  // Le chargeur ouvre toutes les bibliothèques des dossiers du SDK (maxine_runtime.h).
+  Fixture fixture;
+  make_maxine_sdk(fixture.source);
+  SECTION("une dépendance facultative ARM est refusée") {
+    write_file(fixture.source / "external/cuda/lib/libcublas.so.12", elf_header(183));
+    CHECK(import_refusal(fixture).starts_with(
+        "external/cuda/lib/libcublas.so.12 n'est pas une bibliothèque Linux x64"));
+  }
+  SECTION("ni un lien pendant ni un autre fichier ne comptent") {
+    fs::create_symlink("libcublasLt.so.12.4", fixture.source / "external/cuda/lib/libcublasLt.so.12");
+    write_file(fixture.source / "lib/notes.txt", "");
+    write_file(fixture.source / "lib/libVideoFX.so.debug", "");
+    CHECK(fixture.store.import(fixture.source));
+  }
 }
 
 TEST_CASE("magasin : en-têtes d'une autre ABI refusés", "[store]") {
@@ -303,6 +334,11 @@ TEST_CASE("magasin : RTX Video SDK", "[store]") {
     make_rtx_sdk(source, SdkVersion{.parts = {1, 1, 0, 0}});
     write_file(source / "nvngx_truehdr.dll", pe_dll(std::nullopt, 0xAA64));
     CHECK(store.import(source).error().detail == "nvngx_truehdr.dll n'est pas une DLL Windows x64");
+  }
+  SECTION("DLL copiée d'une autre architecture refusée") {
+    make_rtx_sdk(source, SdkVersion{.parts = {1, 1, 0, 0}});
+    write_file(source / "cudart64_12.dll", elf_header());
+    CHECK(store.import(source).error().detail == "cudart64_12.dll n'est pas une DLL Windows x64");
   }
   SECTION("bibliothèques Linux refusées") {
     write_file(source / "rtx_video_api.dll", elf_header());

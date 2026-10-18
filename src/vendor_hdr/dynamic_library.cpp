@@ -10,7 +10,14 @@ namespace ajp::vendor_hdr {
 
 std::expected<DynamicLibrary, Refusal> DynamicLibrary::open(const std::filesystem::path& path,
                                                             SymbolScope scope) {
-  const std::string shown = path.filename().string();
+  const std::string shown = utf8(path.filename());
+  // Un nom seul ferait chercher le système (LD_LIBRARY_PATH, dossiers de Windows) : jamais.
+  // LOAD_LIBRARY_SEARCH_DLL_LOAD_DIR exige d'ailleurs un chemin absolu.
+  if (!path.is_absolute()) {
+    return refuse(RefusalCode::LibraryUnavailable,
+                  std::format("{} : chemin relatif refusé, une bibliothèque s'ouvre par son chemin absolu",
+                              utf8(path)));
+  }
 #ifdef _WIN32
   (void)scope;  // Windows n'a qu'un espace de symboles par module
   // Les dépendances se cherchent à côté de la DLL, puis dans les dossiers du système.

@@ -4,6 +4,8 @@
 #include <string>
 #include <system_error>
 
+#include "vendor_hdr/path_text.h"
+
 namespace ajp::vendor_hdr {
 namespace {
 
@@ -11,7 +13,7 @@ namespace fs = std::filesystem;
 
 Done io_failure(const fs::path& relative, const std::error_code& error) {
   return refuse(RefusalCode::IoFailed,
-                std::format("copie de {} impossible : {}", relative.generic_string(), error.message()));
+                std::format("copie de {} impossible : {}", utf8(relative), error.message()));
 }
 
 // Recrée le lien source (relative sous from) en lien relatif, s'il vise l'intérieur du SDK.
@@ -25,8 +27,8 @@ Done copy_link(const fs::path& real_from, const fs::path& source, const fs::path
   if (error) return io_failure(relative, error);
   const fs::path inside = aimed.lexically_relative(real_from);
   if (inside.empty() || *inside.begin() == "..") {
-    return refuse(RefusalCode::SdkRejected, std::format("{} est un lien qui sort du SDK ({})",
-                                                        relative.generic_string(), link.string()));
+    return refuse(RefusalCode::SdkRejected,
+                  std::format("{} est un lien qui sort du SDK ({})", utf8(relative), utf8(link)));
   }
   fs::create_directories(target.parent_path(), error);
   if (!error) fs::create_symlink(inside.lexically_relative(relative.parent_path()), target, error);
@@ -48,7 +50,7 @@ Done copy_one(const fs::path& real_from, const fs::path& to, const fs::path& rel
     if (!error) fs::copy_file(source, target, fs::copy_options::overwrite_existing, error);
   } else {
     return refuse(RefusalCode::SdkRejected,
-                  std::format("{} est un fichier spécial, refusé dans un SDK", relative.generic_string()));
+                  std::format("{} est un fichier spécial, refusé dans un SDK", utf8(relative)));
   }
   if (error) return io_failure(relative, error);
   return {};

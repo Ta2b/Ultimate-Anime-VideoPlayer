@@ -10,6 +10,7 @@
 #include <vector>
 
 #include "vendor_hdr/binary_probe.h"
+#include "vendor_hdr/path_text.h"
 #include "vendor_hdr/refusal.h"
 #include "vendor_hdr/sdk_layout.h"
 
@@ -81,11 +82,11 @@ std::expected<SdkVersion, Refusal> maxine_version(const std::filesystem::path& r
   std::error_code error;
   const std::filesystem::path real = std::filesystem::canonical(root / "lib" / kLibrary, error);
   if (!error) {
-    if (auto version = parse_versioned_name(real.filename().string(), kLibrary)) return *version;
+    if (auto version = parse_versioned_name(utf8(real.filename()), kLibrary)) return *version;
   }
   for (std::filesystem::directory_iterator it(root / "lib", error), end; !error && it != end;
        it.increment(error)) {
-    if (auto version = parse_versioned_name(it->path().filename().string(), kLibrary)) return *version;
+    if (auto version = parse_versioned_name(utf8(it->path().filename()), kLibrary)) return *version;
   }
   return refuse(RefusalCode::SdkRejected,
                 "version du SDK introuvable : ni version.h ni lib/libVideoFX.so.<version> dans le dossier");

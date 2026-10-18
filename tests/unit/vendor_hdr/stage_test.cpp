@@ -25,13 +25,17 @@ class ScriptedHdr final : public TrueHdr {
     return {};
   }
   Done process(const TrueHdrInput&, const TrueHdrImage&, GpuStream&) override {
+    time_.host += 5ms;
+    ++time_.calls;
     if (fail_) return refuse(RefusalCode::VendorCallFailed, "TrueHDR Maxine, exécution : erreur (-1)");
     return {};
   }
+  VendorTime vendor_time() const override { return time_; }
 
  private:
   bool& fail_;
   TrueHdrConfig config_{.width = 4, .height = 4};
+  VendorTime time_;
 };
 
 struct Frame {
@@ -93,6 +97,21 @@ TEST_CASE("étage : une erreur en lecture bascule une fois, pour de bon", "[stag
   fail = false;
   CHECK(frame.run(stage) == HdrPath::Native);
   CHECK_FALSE(stage.take_fallback());
+}
+
+TEST_CASE("étage : le temps du SDK reste compté après la bascule", "[stage]") {
+  bool fail = false;
+  TrueHdrStage stage(std::make_unique<ScriptedHdr>(fail));
+  Frame frame;
+  CHECK(frame.run(stage) == HdrPath::TrueHdr);
+  fail = true;
+  CHECK(frame.run(stage) == HdrPath::Native);
+  CHECK(frame.run(stage) == HdrPath::Native);  // route native : plus aucun appel du SDK
+  CHECK(stage.vendor_time().calls == 2);
+  CHECK(stage.vendor_time().host == 10ms);
+
+  const TrueHdrStage never(std::unexpected(ajp::Refusal{RefusalCode::LibraryUnavailable, "absent"}));
+  CHECK(never.vendor_time().calls == 0);
 }
 
 TEST_CASE("étage : set_params refuse hors plage sans basculer", "[stage]") {

@@ -45,11 +45,15 @@ class TrueHdrStage {
   // La bascule survenue depuis le dernier appel, une seule fois ; rien sinon.
   std::optional<TrueHdrFallback> take_fallback();
 
+  // Temps hôte des appels du SDK depuis l'ouverture, gardé après une bascule.
+  VendorTime vendor_time() const { return sdk_ ? sdk_->vendor_time() : closed_time_; }
+
  private:
   void fall_back(Refusal cause);
 
   std::unique_ptr<TrueHdr> sdk_;
   std::optional<TrueHdrFallback> pending_;
+  VendorTime closed_time_;
 };
 
 }  // namespace ajp::vendor_hdr

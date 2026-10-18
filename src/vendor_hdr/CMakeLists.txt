@@ -8,6 +8,7 @@ ajp_add_module(vendor_hdr
     dynamic_library.cpp
     log.cpp
     maxine_abi_check.cpp
+    maxine_runtime.cpp
     maxine_vfx.cpp
     open_true_hdr.cpp
     rtx_video.cpp

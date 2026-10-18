@@ -9,14 +9,17 @@
 //   2. appel du SDK sur le flux 0 ;
 //   3. GpuStream::take_from_legacy() le flux de gpu attend la sortie écrite par le flux 0.
 // L'étape 3 a lieu même si le SDK échoue : aucun tampon n'est rendu tant que le flux 0 peut
-// encore y écrire. Les attentes internes du SDK sont comptées à part des host_waits.
+// encore y écrire. L'appel du SDK bloque l'hôte (NvVFX_Run synchrone) : son temps est mesuré
+// (vendor_time()) pour être compté à part des host_waits de gpu, jusqu'à l'ADR de AH-19.
 //
-// Contrat d'entrée (AH-371, AH-392). gpu convertit la source en RGB avec la vraie matrice de
-// la source, jamais une BT.709 supposée ; une entrée 8 bits (Maxine) est tramée avant d'être
-// quantifiée, sinon les quasi-noirs se crantent avant même le pied du grade. L'entrée déclare
-// les deux (InputPreparation) et process() refuse ce qui ne les respecte pas.
+// Contrat d'entrée (AH-371, AH-392). gpu convertit la source en RGB avec la vraie matrice et la
+// vraie plage de la source, jamais une BT.709 limitée supposée ; une entrée 8 bits (Maxine) est
+// tramée avant d'être quantifiée, sinon les quasi-noirs se crantent avant même le pied du
+// grade. L'entrée déclare les trois (InputPreparation) et process() refuse ce qui ne les
+// respecte pas.
 #pragma once
 
+#include <chrono>
 #include <cstddef>
 #include <cstdint>
 #include <expected>
@@ -45,6 +48,8 @@ inline constexpr ParamRange kMiddleGray{10, 100, 50};
 inline constexpr ParamRange kPeakNits{400, 2000, 1000};
 // Côté d'image accepté ; TrueHDR ne change pas la taille.
 inline constexpr ParamRange kSide{2, 16384, 0};
+// Pas de ligne le plus grand : NvCVImage le porte dans un int.
+inline constexpr std::size_t kMaxPitch = 0x7FFFFFFF;
 }  // namespace limits
 
 // Réglages TrueHDR, communs au SDK et à son émulation sur la route native.
@@ -74,7 +79,7 @@ std::string_view name(TrueHdrPixel pixel);
 // Tampon linéaire en mémoire CUDA, sans propriété.
 struct TrueHdrImage {
   std::uintptr_t device = 0;  // CUdeviceptr
-  std::size_t pitch = 0;      // octets par ligne, au moins 4 × largeur
+  std::size_t pitch = 0;      // octets par ligne : multiple de 4, au moins 4 × largeur
   int width = 0;
   int height = 0;
   TrueHdrPixel pixel = TrueHdrPixel::Rgba8;
@@ -83,6 +88,7 @@ struct TrueHdrImage {
 // Comment gpu a produit l'entrée RGB : déclaré par lui, vérifié par process().
 struct InputPreparation {
   ColorMatrix matrix = ColorMatrix::Bt709;  // matrice utilisée pour YUV vers RGB (AH-371)
+  ColorRange range = ColorRange::Limited;   // plage lue à la conversion (AH-371)
   bool dithered = false;                    // tramage avant la quantification en 8 bits (AH-392)
 };
 
@@ -97,7 +103,15 @@ struct TrueHdrConfig {
   int height = 0;
   ColorInfo source;  // couleur de la source décodée : SDR seulement
   TrueHdrParams params;
-  std::uintptr_t cuda_context = 0;  // CUcontext du thread gpu, courant pendant les appels
+  // CUcontext du thread gpu, courant pendant les appels. Exigé par RTX Video, qui le reçoit à
+  // la création ; Maxine prend le contexte courant.
+  std::uintptr_t cuda_context = 0;
+};
+
+// Temps hôte passé dans les appels du SDK depuis la création, à compter à part des host_waits.
+struct VendorTime {
+  std::uint64_t calls = 0;
+  std::chrono::nanoseconds host{0};
 };
 
 // Refuse une taille hors plage, une source déjà HDR ou des réglages hors plage.
@@ -123,6 +137,8 @@ class TrueHdr {
   // Refuse un réglage hors plage sans rien changer ; une erreur du SDK est rendue telle quelle.
   virtual Done set_params(const TrueHdrParams& params) = 0;
   virtual Done process(const TrueHdrInput& in, const TrueHdrImage& out, GpuStream& stream) = 0;
+  // Appels du SDK faits par process(), réussis ou non, et leur temps hôte cumulé.
+  virtual VendorTime vendor_time() const = 0;
 };
 
 // Ce que chaque SDK fournit : un effet déjà créé pour la taille du TrueHdrConfig, qui ne

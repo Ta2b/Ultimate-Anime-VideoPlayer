@@ -17,7 +17,9 @@
 namespace ajp::vendor_hdr {
 
 // Refuse (LibraryUnavailable, VendorCallFailed) quand la DLL, un symbole ou la création
-// manquent. Une seule instance à la fois : l'API du SDK n'a pas de poignée.
+// manquent, et (InputMismatch) sans config.cuda_context. Une seule instance à la fois : l'API
+// du SDK n'a pas de poignée, et la destruction d'une instance arrête le SDK pour tout le
+// processus. gpu détruit donc l'ancienne avant d'ouvrir la suivante (changement de taille).
 std::expected<std::unique_ptr<TrueHdr>, Refusal> open_rtx_video(const InstalledSdk& sdk,
                                                                 const TrueHdrConfig& config);
 

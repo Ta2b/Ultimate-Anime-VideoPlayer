@@ -9,6 +9,8 @@
 #include <system_error>
 #include <vector>
 
+#include "vendor_hdr/path_text.h"
+
 namespace ajp::vendor_hdr {
 namespace {
 
@@ -98,7 +100,7 @@ Done check_head(const Bytes& head, BinaryFormat format, const std::string& shown
 
 Done check_binary(const std::filesystem::path& root, const std::filesystem::path& relative,
                   BinaryFormat format) {
-  const std::string shown = relative.generic_string();
+  const std::string shown = utf8(relative);
   std::error_code error;
   const std::uintmax_t size = std::filesystem::file_size(root / relative, error);
   if (error) return refuse(RefusalCode::SdkRejected, std::format("{} est absent", shown));

@@ -16,6 +16,7 @@ ajp_add_unit_tests(vendor_hdr
     loader_test.cpp
     manifest_test.cpp
     params_test.cpp
+    runtime_test.cpp
     sdk_store_test.cpp
     stage_test.cpp
     support.cpp

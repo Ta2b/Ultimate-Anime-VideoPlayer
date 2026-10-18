@@ -4,6 +4,9 @@
 //   SdkStatus sdk = store.status();          // revérifie la copie juste avant de charger
 //   TrueHdrStage stage(sdk.installed ? open_true_hdr(*sdk.installed, config)
 //                                    : std::unexpected(Refusal{RefusalCode::HdrUnavailable, sdk.reason}));
+//
+// Pour une autre taille, l'étage précédent est détruit avant d'ouvrir le suivant : RTX Video
+// n'admet qu'une instance par processus (rtx_video.h).
 #pragma once
 
 #include <expected>

@@ -31,6 +31,13 @@ TrueHdrConfig small_config() {
   return TrueHdrConfig{.width = kWidth, .height = kHeight};
 }
 
+// RTX Video reçoit le contexte CUDA de gpu à la création.
+TrueHdrConfig rtx_config() {
+  TrueHdrConfig config = small_config();
+  config.cuda_context = 0x1234;
+  return config;
+}
+
 std::uint32_t rgba(std::uint32_t r, std::uint32_t g, std::uint32_t b) {
   return r | (g << 8U) | (b << 16U) | (255U << 24U);
 }
@@ -70,6 +77,16 @@ TEST_CASE("chargeur : bibliothèque absente", "[loader]") {
 
   write_file(dir.path() / "stub.so", elf_header());
   CHECK(DynamicLibrary::open(dir.path() / "stub.so").error().code == RefusalCode::LibraryUnavailable);
+}
+
+TEST_CASE("chargeur : un chemin relatif n'est jamais cherché par le système", "[loader]") {
+  // « libdl.so.2 » se chargerait par LD_LIBRARY_PATH et le cache du système : refusé avant.
+  for (const char* relative : {"libdl.so.2", "lib/libVideoFX.so"}) {
+    auto refused = DynamicLibrary::open(relative);
+    REQUIRE_FALSE(refused);
+    CHECK(refused.error().code == RefusalCode::LibraryUnavailable);
+    CHECK(refused.error().detail.contains("chemin relatif refusé"));
+  }
 }
 
 TEST_CASE("chargeur : symbole absent", "[loader]") {
@@ -141,6 +158,34 @@ TEST_CASE("Maxine : importé par le magasin, ouvert et exécuté (faux SDK)", "[
   CHECK(stream.events.size() == 4);
 }
 
+TEST_CASE("Maxine : lignes à marge, le pas est transmis au SDK", "[loader]") {
+  TempDir dir;
+  make_maxine_sdk(dir.path() / "VideoFX", {.libraries = LibraryContent::Fakes});
+  SdkStore store(dir.path() / "data", SdkKind::MaxineVfx);
+  REQUIRE(store.import(dir.path() / "VideoFX"));
+  auto opened = open_true_hdr(*store.status().installed, small_config());
+  REQUIRE(opened);
+
+  constexpr std::size_t kRowWords = kWidth + 4;  // 16 octets de marge par ligne
+  std::vector<std::uint32_t> in(kRowWords * kHeight, rgba(1, 1, 1));
+  std::vector<std::uint32_t> out(kRowWords * kHeight, 0);
+  in[kRowWords + 2] = rgba(100, 50, 25);  // ligne 1, colonne 2
+  const auto view = [](std::vector<std::uint32_t>& pixels, TrueHdrPixel pixel) {
+    return TrueHdrImage{.device = reinterpret_cast<std::uintptr_t>(pixels.data()),
+                        .pitch = kRowWords * 4,
+                        .width = kWidth,
+                        .height = kHeight,
+                        .pixel = pixel};
+  };
+  RecordingStream stream;
+  REQUIRE(
+      (*opened)->process(TrueHdrInput{.image = view(in, TrueHdrPixel::Rgba8), .prepared = {.dithered = true}},
+                         view(out, TrueHdrPixel::Rgb10A2), stream));
+  CHECK(out[kRowWords + 2] == packed(400, 200, 100));
+  CHECK(out[kWidth] == 0);  // la marge n'est jamais écrite
+  CHECK((*opened)->vendor_time().calls == 1);
+}
+
 TEST_CASE("Maxine : un autre SDK est refusé", "[loader]") {
   TempDir dir;
   make_rtx_sdk(dir.path() / "rtx", SdkVersion{.parts = {1, 1, 0, 0}});
@@ -157,21 +202,31 @@ TEST_CASE("RTX Video : la DLL ne se charge pas hors Windows, refus propre", "[lo
   SdkStore store(dir.path() / "data", SdkKind::RtxVideo);
   auto imported = store.import(dir.path() / "rtx");
   REQUIRE(imported);
-  CHECK(refusal_of(open_true_hdr(*imported->installed, small_config()), RefusalCode::LibraryUnavailable)
+  CHECK(refusal_of(open_true_hdr(*imported->installed, rtx_config()), RefusalCode::LibraryUnavailable)
             .starts_with("rtx_video_api.dll ne se charge pas"));
-  CHECK(refusal_of(detail::open_rtx_video_at(dir.path() / "absent.dll", small_config()),
+  CHECK(refusal_of(detail::open_rtx_video_at(dir.path() / "absent.dll", rtx_config()),
                    RefusalCode::LibraryUnavailable)
             .starts_with("absent.dll ne se charge pas"));
-  CHECK(refusal_of(detail::open_rtx_video_at(AJP_FAKE_DEP_PATH, small_config()),
-                   RefusalCode::LibraryUnavailable)
-            .starts_with("symbole rtx_video_api_cuda_create absent de "));
+  CHECK(
+      refusal_of(detail::open_rtx_video_at(AJP_FAKE_DEP_PATH, rtx_config()), RefusalCode::LibraryUnavailable)
+          .starts_with("symbole rtx_video_api_cuda_create absent de "));
+}
+
+TEST_CASE("RTX Video : sans contexte CUDA, refusé avant tout chargement", "[loader]") {
+  // Avec *pContext nul, le SDK créerait son propre contexte, que les événements de gpu
+  // n'ordonnent pas.
+  const RtxProbe probe;
+  const int before = probe.evaluations();
+  CHECK(refusal_of(detail::open_rtx_video_at(AJP_FAKE_RTX_PATH, small_config()),
+                   RefusalCode::InputMismatch) == "TrueHDR RTX Video : contexte CUDA du thread gpu absent");
+  CHECK_FALSE(probe.created());
+  CHECK(probe.evaluations() == before);
 }
 
 TEST_CASE("RTX Video : créé sur le flux 0, exécuté, arrêté (faux SDK)", "[loader]") {
   const RtxProbe probe;
   REQUIRE_FALSE(probe.created());
-  TrueHdrConfig config = small_config();
-  config.cuda_context = 0x1234;
+  const TrueHdrConfig config = rtx_config();
   {
     auto opened = detail::open_rtx_video_at(AJP_FAKE_RTX_PATH, config);
     REQUIRE(opened);
@@ -211,7 +266,7 @@ TEST_CASE("RTX Video : créé sur le flux 0, exécuté, arrêté (faux SDK)", "[
 TEST_CASE("RTX Video : création refusée par le SDK", "[loader]") {
   const RtxProbe probe;
   probe.refuse_create(true);
-  auto opened = detail::open_rtx_video_at(AJP_FAKE_RTX_PATH, small_config());
+  auto opened = detail::open_rtx_video_at(AJP_FAKE_RTX_PATH, rtx_config());
   probe.refuse_create(false);
   CHECK(refusal_of(opened, RefusalCode::VendorCallFailed) ==
         "TrueHDR RTX Video : création refusée (GPU, pilote ou SDK incompatible)");

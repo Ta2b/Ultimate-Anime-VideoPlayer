@@ -6,6 +6,8 @@
 #include <system_error>
 #include <vector>
 
+#include "vendor_hdr/path_text.h"
+
 namespace ajp::vendor_hdr {
 namespace {
 
@@ -63,6 +65,7 @@ constexpr SdkLayout kRtxLayout{.kind = SdkKind::RtxVideo,
                                .main_library = kRtxDll,
                                .required = kRtxRequired,
                                .copied = kRtxCopied,
+                               .libraries = BinaryFormat::PeX64,
                                .major = 1,
                                .minor = 1};
 
@@ -72,8 +75,23 @@ constexpr SdkLayout kMaxineLayout{.kind = SdkKind::MaxineVfx,
                                   .main_library = "lib/libVideoFX.so",
                                   .required = kMaxineRequired,
                                   .copied = kMaxineCopied,
+                                  .libraries = BinaryFormat::ElfX86_64,
                                   .major = 1,
                                   .minor = 3};
+
+// Dans l'ordre d'ouverture : dépendances, cœur, fonction (launch-linux.sh:30 du lecteur actuel).
+constexpr std::array<std::string_view, 4> kMaxineLibraryDirectories{
+    "external/cuda/lib", "external/tensorrt/lib", "lib", kMaxineFeatureLibraries};
+
+bool is_name_char(char c) {
+  return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '_' || c == '-';
+}
+
+// Un fichier, lien suivi : un lien pendant ou un dossier n'est pas une bibliothèque.
+bool is_file(const std::filesystem::path& path) {
+  std::error_code error;
+  return std::filesystem::is_regular_file(path, error);
+}
 
 }  // namespace
 
@@ -92,15 +110,52 @@ std::optional<std::filesystem::path> locate(const std::filesystem::path& root, c
     if (std::filesystem::exists(root / relative, error)) return relative;
     return std::nullopt;
   }
-  const std::string stem = relative.filename().string();
+  const std::string stem = utf8(relative.filename());
   std::vector<std::string> names;
   for (std::filesystem::directory_iterator it(root / relative.parent_path(), error), end; !error && it != end;
        it.increment(error)) {
-    std::string name = it->path().filename().string();
+    std::string name = utf8(it->path().filename());
     if (name.starts_with(stem)) names.push_back(std::move(name));
   }
   if (names.empty()) return std::nullopt;
   return relative.parent_path() / *std::ranges::min_element(names);
+}
+
+bool is_library_name(std::string_view name) {
+  const std::size_t suffix = name.find(".so");
+  if (!name.starts_with("lib") || suffix == std::string_view::npos || suffix == 3) return false;
+  if (!std::ranges::all_of(name.substr(3, suffix - 3), is_name_char)) return false;
+  for (std::string_view rest = name.substr(suffix + 3); !rest.empty();) {
+    if (rest.front() != '.') return false;
+    rest.remove_prefix(1);
+    const std::size_t digits = std::min(rest.find_first_not_of("0123456789"), rest.size());
+    if (digits == 0) return false;
+    rest.remove_prefix(digits);
+  }
+  return true;
+}
+
+std::vector<std::filesystem::path> loadable_libraries(SdkKind kind, const std::filesystem::path& root) {
+  std::vector<std::filesystem::path> libraries;
+  if (kind == SdkKind::RtxVideo) {
+    for (const std::string_view copied : kRtxCopied) {
+      if (is_file(root / copied)) libraries.emplace_back(copied);
+    }
+    return libraries;
+  }
+  for (const std::string_view directory : kMaxineLibraryDirectories) {
+    std::vector<std::filesystem::path> names;
+    std::error_code error;
+    for (std::filesystem::directory_iterator it(root / directory, error), end; !error && it != end;
+         it.increment(error)) {
+      if (is_library_name(utf8(it->path().filename())) && is_file(it->path())) {
+        names.push_back(std::filesystem::path(directory) / it->path().filename());
+      }
+    }
+    std::ranges::sort(names);
+    libraries.insert(libraries.end(), names.begin(), names.end());
+  }
+  return libraries;
 }
 
 }  // namespace ajp::vendor_hdr

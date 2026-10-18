@@ -39,6 +39,7 @@ std::optional<TrueHdrFallback> TrueHdrStage::take_fallback() {
 
 void TrueHdrStage::fall_back(Refusal cause) {
   log().warn("TrueHDR abandonné, route native : {} ({})", cause.detail, name(cause.code));
+  if (sdk_) closed_time_ = sdk_->vendor_time();
   sdk_.reset();
   pending_ = TrueHdrFallback{.cause = std::move(cause), .notice = kFallbackNotice};
 }

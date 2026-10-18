@@ -1,7 +1,9 @@
 #include "vendor_hdr/true_hdr.h"
 
 #include <algorithm>
+#include <chrono>
 #include <cmath>
+#include <cstdint>
 #include <format>
 #include <utility>
 
@@ -37,6 +39,21 @@ bool sdr_primaries(Primaries primaries) {
          primaries == Primaries::Bt601_525;
 }
 
+std::string_view range_name(ColorRange range) {
+  return range == ColorRange::Full ? "pleine" : "limitée";
+}
+
+// Octets qu'une image occupe, de sa première ligne à la fin des pixels de la dernière. Les
+// bornes de check_image (côté ≤ 16384, pas < 2^31) le gardent sous 2^46.
+std::uintptr_t extent(const TrueHdrImage& image) {
+  const auto rows = static_cast<std::uintptr_t>(image.height - 1);
+  return (rows * image.pitch) + (static_cast<std::uintptr_t>(image.width) * 4);
+}
+
+bool overlap(const TrueHdrImage& a, const TrueHdrImage& b) {
+  return a.device < b.device + extent(b) && b.device < a.device + extent(a);
+}
+
 Done check_image(std::string_view role, const TrueHdrImage& image, const TrueHdrConfig& config,
                  TrueHdrPixel expected) {
   if (image.device == 0) return refuse(RefusalCode::InputMismatch, std::format("{} : tampon nul", role));
@@ -49,9 +66,13 @@ Done check_image(std::string_view role, const TrueHdrImage& image, const TrueHdr
                   std::format("{} : {} au lieu de {}", role, name(image.pixel), name(expected)));
   }
   const auto row = static_cast<std::size_t>(image.width) * 4;
-  if (image.pitch < row) {
+  if (image.pitch < row || image.pitch > limits::kMaxPitch || image.pitch % 4 != 0) {
     return refuse(RefusalCode::InputMismatch,
-                  std::format("{} : pas de {} octets, moins que les {} d'une ligne", role, image.pitch, row));
+                  std::format("{} : pas de {} octets, attendu un multiple de 4 entre {} et {}", role,
+                              image.pitch, row, limits::kMaxPitch));
+  }
+  if (image.device > UINTPTR_MAX - extent(image)) {
+    return refuse(RefusalCode::InputMismatch, std::format("{} : tampon hors de l'espace d'adresses", role));
   }
   return {};
 }
@@ -75,15 +96,21 @@ class BracketedTrueHdr final : public TrueHdr {
   Done process(const TrueHdrInput& in, const TrueHdrImage& out, GpuStream& stream) override {
     if (Done valid = check_input(in); !valid) return valid;
     if (Done valid = check_image("sortie", out, config_, TrueHdrPixel::Rgb10A2); !valid) return valid;
-    if (in.image.device == out.device) {
-      return refuse(RefusalCode::InputMismatch, "entrée et sortie partagent le même tampon");
+    if (overlap(in.image, out)) {
+      return refuse(RefusalCode::InputMismatch, "entrée et sortie se recouvrent dans le même tampon");
     }
     if (Done handed = stream.hand_to_legacy(); !handed) return handed;
+    const auto start = std::chrono::steady_clock::now();
     const Done ran = effect_->run_on_legacy(in.image, out);
+    time_.host +=
+        std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now() - start);
+    ++time_.calls;
     // Toujours rendre la main au flux de gpu : le flux 0 peut encore écrire dans la sortie.
     const Done taken = stream.take_from_legacy();
     return ran ? taken : ran;
   }
+
+  VendorTime vendor_time() const override { return time_; }
 
  private:
   Done check_input(const TrueHdrInput& in) const {
@@ -93,6 +120,11 @@ class BracketedTrueHdr final : public TrueHdr {
                     std::format("entrée convertie avec la matrice {}, la source est en {} (AH-371)",
                                 matrix_name(in.prepared.matrix), matrix_name(config_.source.matrix)));
     }
+    if (in.prepared.range != config_.source.range) {
+      return refuse(RefusalCode::InputMismatch,
+                    std::format("entrée convertie en plage {}, la source est en plage {} (AH-371)",
+                                range_name(in.prepared.range), range_name(config_.source.range)));
+    }
     if (in.image.pixel == TrueHdrPixel::Rgba8 && !in.prepared.dithered) {
       return refuse(RefusalCode::InputMismatch, "entrée 8 bits quantifiée sans tramage (AH-392)");
     }
@@ -101,6 +133,7 @@ class BracketedTrueHdr final : public TrueHdr {
 
   TrueHdrConfig config_;
   std::unique_ptr<VendorEffect> effect_;
+  VendorTime time_;
 };
 
 }  // namespace

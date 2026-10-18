@@ -69,6 +69,11 @@ namespace detail {
 std::expected<std::unique_ptr<TrueHdr>, Refusal> open_rtx_video_at(const fs::path& library,
                                                                    const TrueHdrConfig& config) {
   if (Done valid = check(config); !valid) return std::unexpected(valid.error());
+  // Sans contexte, le SDK créerait le sien : son flux 0 ne serait pas celui que les événements
+  // de GpuStream ordonnent, et les tampons de gpu lui seraient étrangers.
+  if (config.cuda_context == 0) {
+    return refuse(RefusalCode::InputMismatch, "TrueHDR RTX Video : contexte CUDA du thread gpu absent");
+  }
   auto opened = DynamicLibrary::open(library);
   if (!opened) return std::unexpected(opened.error());
   auto create = opened->symbol<rtx_video::CudaCreateFn>(rtx_video::kCreate);

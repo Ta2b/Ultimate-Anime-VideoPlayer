@@ -10,6 +10,7 @@
 #include "vendor_hdr/binary_probe.h"
 #include "vendor_hdr/log.h"
 #include "vendor_hdr/maxine_abi_check.h"
+#include "vendor_hdr/path_text.h"
 #include "vendor_hdr/refusal.h"
 #include "vendor_hdr/sdk_copy.h"
 #include "vendor_hdr/sdk_layout.h"
@@ -41,18 +42,18 @@ std::optional<std::string> read_manifest_text(const fs::path& file) {
 }
 
 Done write_atomically(const fs::path& file, const std::string& text, const std::string& nonce) {
-  const fs::path temporary = file.parent_path() / std::format(".{}-{}", file.filename().string(), nonce);
+  const fs::path temporary = file.parent_path() / std::format(".{}-{}", utf8(file.filename()), nonce);
   {
     std::ofstream out(temporary, std::ios::binary | std::ios::trunc);
     out << text;
     if (!out.flush())
-      return refuse(RefusalCode::IoFailed, std::format("écriture de {} impossible", file.string()));
+      return refuse(RefusalCode::IoFailed, std::format("écriture de {} impossible", utf8(file)));
   }
   std::error_code error;
   fs::rename(temporary, file, error);
   if (error) {
     fs::remove(temporary, error);
-    return refuse(RefusalCode::IoFailed, std::format("{} n'a pas pu être remplacé", file.string()));
+    return refuse(RefusalCode::IoFailed, std::format("{} n'a pas pu être remplacé", utf8(file)));
   }
   return {};
 }
@@ -69,23 +70,36 @@ std::string unique_nonce(const fs::path& root) {
 void remove_stale_imports(const fs::path& root) {
   std::error_code error;
   for (fs::directory_iterator it(root, error), end; !error && it != end; it.increment(error)) {
-    if (it->path().filename().string().starts_with(".import-")) {
+    if (utf8(it->path().filename()).starts_with(".import-")) {
       std::error_code ignored;
       fs::remove_all(it->path(), ignored);
     }
   }
 }
 
-std::vector<ManifestFile> required_sizes(SdkKind kind, const fs::path& copy) {
+// Taille de chaque fichier exigé de la copie, que status() comparera. Une taille illisible est
+// refusée : notée 0, elle ferait passer la copie pour abîmée à jamais.
+std::expected<std::vector<ManifestFile>, Refusal> required_sizes(SdkKind kind, const fs::path& copy) {
   std::vector<ManifestFile> files;
   for (const RequiredFile& required : layout(kind).required) {
     const std::optional<fs::path> relative = locate(copy, required);
-    if (!relative) continue;
+    if (!relative) return refuse(RefusalCode::IoFailed, std::format("{} absent de la copie", required.path));
     std::error_code error;
     const std::uintmax_t bytes = fs::file_size(copy / *relative, error);
-    files.push_back(ManifestFile{.path = relative->generic_string(), .bytes = error ? 0 : bytes});
+    if (error) {
+      return refuse(RefusalCode::IoFailed,
+                    std::format("taille de {} illisible : {}", utf8(*relative), error.message()));
+    }
+    files.push_back(ManifestFile{.path = utf8(*relative), .bytes = bytes});
   }
   return files;
+}
+
+// Comme Path.GetFullPath du Manager : les chargeurs n'ouvrent que des chemins absolus.
+fs::path absolute_path(const fs::path& path) {
+  std::error_code error;
+  fs::path full = fs::absolute(path, error);
+  return error ? path : full;
 }
 
 }  // namespace
@@ -94,7 +108,7 @@ std::expected<SdkVersion, Refusal> inspect_sdk(SdkKind kind, const fs::path& fol
   const SdkLayout& sdk = layout(kind);
   std::error_code error;
   if (!fs::is_directory(folder, error)) {
-    return refuse(RefusalCode::SdkRejected, std::format("{} n'est pas un dossier", folder.string()));
+    return refuse(RefusalCode::SdkRejected, std::format("{} n'est pas un dossier", utf8(folder)));
   }
   for (const RequiredFile& required : sdk.required) {
     const std::optional<fs::path> relative = locate(folder, required);
@@ -102,6 +116,12 @@ std::expected<SdkVersion, Refusal> inspect_sdk(SdkKind kind, const fs::path& fol
       return refuse(RefusalCode::SdkRejected, std::format("{} manque : {}", required.path, required.missing));
     }
     if (Done valid = check_binary(folder, *relative, required.format); !valid)
+      return std::unexpected(valid.error());
+  }
+  // Repris de TrueHdrSdkStore.cs:134-135 : l'architecture de chaque bibliothèque que le
+  // chargeur peut ouvrir, pas seulement des exigées, avant de rien copier.
+  for (const fs::path& library : loadable_libraries(kind, folder)) {
+    if (Done valid = check_binary(folder, library, sdk.libraries); !valid)
       return std::unexpected(valid.error());
   }
   auto version = read_sdk_version(kind, folder);
@@ -118,12 +138,17 @@ std::expected<SdkVersion, Refusal> inspect_sdk(SdkKind kind, const fs::path& fol
 }
 
 SdkStore::SdkStore(const fs::path& data_directory, SdkKind kind)
-    : root_(data_directory / "optional-sdks" / layout(kind).directory), kind_(kind) {}
+    : root_(absolute_path(data_directory) / "optional-sdks" / layout(kind).directory), kind_(kind) {}
 
 SdkStatus SdkStore::status() const {
   const fs::path manifest_file = root_ / kManifestName;
   std::error_code error;
-  if (!fs::exists(manifest_file, error)) {
+  const bool present = fs::exists(manifest_file, error);
+  if (error) {
+    return with_state(kind_, SdkState::Damaged,
+                      reimport(kind_, std::format("dossier du magasin illisible ({})", error.message())));
+  }
+  if (!present) {
     return with_state(
         kind_, SdkState::NotInstalled,
         std::format("{} non importé : choisir son dossier dans Paramètres > Moteurs.", display_name(kind_)));
@@ -167,7 +192,7 @@ std::expected<SdkStatus, Refusal> SdkStore::import(const fs::path& folder, std::
 
   std::error_code error;
   fs::create_directories(root_ / "versions", error);
-  if (error) return refuse(RefusalCode::IoFailed, std::format("{} : {}", root_.string(), error.message()));
+  if (error) return refuse(RefusalCode::IoFailed, std::format("{} : {}", utf8(root_), error.message()));
   remove_stale_imports(root_);
 
   const std::string nonce = unique_nonce(root_);
@@ -184,7 +209,9 @@ std::expected<SdkStatus, Refusal> SdkStore::import(const fs::path& folder, std::
       return refuse(RefusalCode::IoFailed, "la copie n'a pas la version du dossier");
     if (stop.stop_requested()) return refuse(RefusalCode::Cancelled, "import annulé");
     Manifest chosen = manifest;
-    chosen.files = required_sizes(kind_, staging);
+    auto sizes = required_sizes(kind_, staging);
+    if (!sizes) return std::unexpected(sizes.error());
+    chosen.files = std::move(*sizes);
     std::error_code rename_error;
     fs::rename(staging, root_ / chosen.copy, rename_error);
     if (rename_error)
@@ -196,7 +223,7 @@ std::expected<SdkStatus, Refusal> SdkStore::import(const fs::path& folder, std::
     log().warn("import du {} refusé : {}", display_name(kind_), published.error().detail);
     return std::unexpected(published.error());
   }
-  log().info("{} importé depuis {} (version {})", display_name(kind_), folder.string(), version->text());
+  log().info("{} importé depuis {} (version {})", display_name(kind_), utf8(folder), version->text());
   return status();
 }
 
