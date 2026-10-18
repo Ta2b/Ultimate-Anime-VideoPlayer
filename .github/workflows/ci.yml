@@ -85,3 +85,9 @@ jobs:
         run: xvfb-run -a ctest --preset linux-prefix
       - name: clang-tidy sur src/
         run: git ls-files -z -- 'src/*.cpp' | xargs -0 -r -n1 -P4 clang-tidy-20 -p build/linux-prefix --quiet
+      # Les jobs ASan du cœur ne construisent pas src/gpu : on y passe les tests gpu_ir.
+      - name: Tests gpu_ir sous ASan et UBSan
+        run: |
+          cmake --preset linux-prefix-asan
+          cmake --build --preset linux-prefix-asan --target ajp_gpu_ir_tests
+          build/linux-prefix-asan/tests/unit/gpu_ir/ajp_gpu_ir_tests

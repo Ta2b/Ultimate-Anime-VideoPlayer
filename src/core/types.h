@@ -70,6 +70,13 @@ enum class RefusalCode : std::uint8_t {
   VendorCallFailed,    // un appel d'un SDK constructeur a renvoyé une erreur
   InputMismatch,       // image ou tampon hors du contrat d'entrée (taille, format, tramage)
   IoFailed,            // lecture, copie ou écriture de fichier impossible
+
+  OnnxMalformed,     // octets qui ne forment pas un ModelProto lisible
+  OnnxExternalData,  // poids hors du fichier ONNX, refusés
+  OnnxUnsupported,   // type, opset ou construction ONNX hors du sous-ensemble lu
+  OperatorUnknown,   // opérateur hors du jeu de l'IR ; le détail porte son nom
+  GraphInvalid,      // tenseur absent, cycle, attribut ou entrée incohérents
+  ShapeInvalid,      // formes incompatibles, ou dimension impossible à déduire
 };
 
 struct Refusal {
@@ -183,6 +190,18 @@ constexpr std::string_view name(RefusalCode code) {
       return "InputMismatch";
     case RefusalCode::IoFailed:
       return "IoFailed";
+    case RefusalCode::OnnxMalformed:
+      return "OnnxMalformed";
+    case RefusalCode::OnnxExternalData:
+      return "OnnxExternalData";
+    case RefusalCode::OnnxUnsupported:
+      return "OnnxUnsupported";
+    case RefusalCode::OperatorUnknown:
+      return "OperatorUnknown";
+    case RefusalCode::GraphInvalid:
+      return "GraphInvalid";
+    case RefusalCode::ShapeInvalid:
+      return "ShapeInvalid";
   }
   return "Unknown";
 }
