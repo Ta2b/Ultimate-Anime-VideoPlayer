@@ -28,6 +28,12 @@ enum class RefusalCode : std::uint8_t {
   PacingForbidden,   // Quality impose le rythme Source
   ModelUnavailable,  // modèle absent des capacités
   HdrUnavailable,    // route HDR impossible sur ce système ou cet écran
+
+  SubtitleUnreadable,  // fichier de sous-titres absent, illisible ou trop gros
+  SubtitleFormat,      // script ASS ou SRT mal formé, extension inconnue
+  SubtitleAtlasFull,   // les images d'un instant dépassent l'atlas borné
+  SubtitleBacklog,     // trop de demandes de rendu en attente d'un atlas
+  LibassFailed,        // libass n'a pas créé sa bibliothèque, son moteur ou une piste
 };
 
 struct Refusal {
@@ -59,6 +65,16 @@ constexpr std::string_view name(RefusalCode code) {
       return "ModelUnavailable";
     case RefusalCode::HdrUnavailable:
       return "HdrUnavailable";
+    case RefusalCode::SubtitleUnreadable:
+      return "SubtitleUnreadable";
+    case RefusalCode::SubtitleFormat:
+      return "SubtitleFormat";
+    case RefusalCode::SubtitleAtlasFull:
+      return "SubtitleAtlasFull";
+    case RefusalCode::SubtitleBacklog:
+      return "SubtitleBacklog";
+    case RefusalCode::LibassFailed:
+      return "LibassFailed";
   }
   return "Unknown";
 }
