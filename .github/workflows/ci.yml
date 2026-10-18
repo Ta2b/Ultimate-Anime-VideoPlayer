@@ -72,3 +72,32 @@ jobs:
       - run: cmake --preset linux-prefix-core
       - name: clang-tidy sur src/
         run: git ls-files -z -- 'src/*.cpp' | xargs -0 -r -n1 -P4 clang-tidy-20 -p build/linux-prefix-core --quiet
+
+  player:
+    name: Lecteur Linux (lavapipe)
+    runs-on: ubuntu-24.04
+    env:
+      CC: gcc-13
+      CXX: g++-13
+    steps:
+      - uses: actions/checkout@v4
+      - name: Paquets système
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq $APT_BASE \
+            mesa-vulkan-drivers vulkan-tools libvulkan-dev glslc glslang-tools spirv-tools xvfb \
+            libfreetype-dev libharfbuzz-dev libfribidi-dev libfontconfig-dev libshaderc-dev glslang-dev \
+            liblcms2-dev libdav1d-dev libasound2-dev libpulse-dev libcurl4-openssl-dev \
+            libx11-dev libxext-dev libxrandr-dev libxcursor-dev libxi-dev libxss-dev libxtst-dev \
+            libxfixes-dev libxinerama-dev libxkbcommon-dev libxkbcommon-x11-dev libwayland-dev \
+            wayland-protocols libdecor-0-dev libdrm-dev libgbm-dev libegl-dev libudev-dev libdbus-1-dev
+          pip install --user meson
+      - uses: actions/cache@v4
+        with:
+          path: ${{ env.AJP_DEPS_PREFIX }}
+          key: deps-player-gcc-13-${{ hashFiles('tools/deps/linux-from-source.sh') }}
+      - run: tools/deps/linux-from-source.sh "$AJP_DEPS_PREFIX" "$RUNNER_TEMP/deps-src"
+      - run: cmake --preset linux-prefix
+      - run: cmake --build --preset linux-prefix
+      - name: Tests (Vulkan logiciel sous Xvfb)
+        run: xvfb-run -a ctest --preset linux-prefix

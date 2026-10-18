@@ -24,9 +24,9 @@ endif()
 
 find_package(PkgConfig REQUIRED)
 
-# FFmpeg 9.0.2, LGPL partagée.
+# FFmpeg 9.0.2 (libavformat 63.1), LGPL partagée.
 pkg_check_modules(AJP_FFMPEG REQUIRED IMPORTED_TARGET
-  libavformat libavcodec libavutil libswresample libswscale)
+  libavformat>=63.1 libavcodec>=63.1 libavutil>=61.1 libswresample>=7.1 libswscale>=10.1)
 ajp_alias_dep(ffmpeg PkgConfig::AJP_FFMPEG)
 
 # libplacebo v7.360.1 (overlay ports/libplacebo).
@@ -38,6 +38,11 @@ pkg_check_modules(AJP_ASS REQUIRED IMPORTED_TARGET libass)
 ajp_alias_dep(ass PkgConfig::AJP_ASS)
 
 find_package(SDL3 CONFIG REQUIRED)
+
+# Téléchargement des moteurs et des modèles depuis l'index haché.
+find_package(CURL REQUIRED)
+ajp_alias_dep(curl CURL::libcurl)
+
 ajp_alias_dep(sdl3 SDL3::SDL3)
 
 find_package(VulkanHeaders CONFIG QUIET)
