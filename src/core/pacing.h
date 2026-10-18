@@ -22,18 +22,7 @@
 
 namespace ajp::core {
 
-enum class Grid : std::uint8_t {
-  Timestamps,  // chaque image à son horodatage : VRR, ou écran fixe sans calage possible
-  Vsync,       // écran fixe : chaque image tient vsyncs_per_frame vsyncs
-};
-
-struct CadenceChoice {
-  Ratio factor{1, 1};  // facteur d'interpolation total ; une fraction calée est réduite
-  Grid grid = Grid::Timestamps;
-  int vsyncs_per_frame = 0;  // Vsync seulement
-  double speed = 1.0;        // vitesse de lecture qui cale la sortie sur les vsyncs
-  double output_fps = 0.0;   // fps source × facteur, à la vitesse 1
-};
+// Grid et CadenceChoice vivent dans core/plan.h : le Plan porte sa cadence.
 
 namespace pacing {
 // L'audio suit la vitesse par rééchantillonnage, borné à 0,125 %.
