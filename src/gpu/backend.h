@@ -10,6 +10,7 @@
 #include <functional>
 #include <memory>
 #include <span>
+#include <stop_token>
 #include <string>
 #include <vector>
 
@@ -29,21 +30,21 @@ enum class TensorType : std::uint8_t { F32, F16, U8, I8 };
 
 // Ce que sait faire le backend sur l'appareil choisi.
 struct BackendCaps {
-  std::string name;                       // "tensorrt", "vulkan", "metal"…
+  std::string name;  // "tensorrt", "vulkan", "metal"…
   std::string device_name;
   std::string driver_version;
-  bool needs_host_sync = false;           // wait() attend côté hôte ; compté dans host_waits
+  bool needs_host_sync = false;  // wait() attend côté hôte ; compté dans host_waits
   bool fp16 = false;
   bool int8 = false;
-  bool matrix_units = false;              // unités matricielles utilisées
+  bool matrix_units = false;                // unités matricielles utilisées
   std::vector<PixelFormat> import_formats;  // formats acceptés par import()
 };
 
 // Un modèle ONNX tel que livré, identifié par son hachage.
 struct ModelSpec {
-  std::string id;                    // "2x_AnimeJaNai_HD_V3_Compact", "rife-4.26"…
+  std::string id;  // "2x_AnimeJaNai_HD_V3_Compact", "rife-4.26"…
   std::filesystem::path onnx_path;
-  std::string sha256;                // du fichier ONNX
+  std::string sha256;  // du fichier ONNX
   TensorType precision = TensorType::F16;
 };
 
@@ -58,8 +59,10 @@ struct ShapeSet {
 };
 
 // Rapport de progression d'une construction, appelé depuis le thread preparer.
+// stop demande l'abandon : build() rend alors Refusal Cancelled au plus tôt.
 struct Progress {
   std::function<void(float fraction, const std::string& stage)> report;
+  std::stop_token stop;
 };
 
 // Résultat sérialisé d'une construction (moteur TensorRT, SPIR-V réglé…), mis en cache.
