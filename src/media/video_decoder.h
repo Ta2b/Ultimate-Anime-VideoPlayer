@@ -33,8 +33,10 @@ class VideoDecoder {
   // API qui décode vraiment : Software après un repli dans get_format.
   HwApi api() const;
   std::span<const Attempt> rejected() const;
-  // Paquets de données invalides sautés depuis l'ouverture (journalisés).
-  int skipped_packets() const;
+  // Erreurs de données (AVERROR_INVALIDDATA) passées depuis l'ouverture, journalisées.
+  // Un flux abîmé perd des images mais continue, avec ou sans threads d'images :
+  // ces erreurs sortent à l'envoi d'un paquet ou à la réception d'une image.
+  int data_errors() const;
 
   // Envoie un paquet de la piste ; à appeler quand receive() a rendu std::nullopt.
   std::expected<void, Refusal> send(const Packet& packet);

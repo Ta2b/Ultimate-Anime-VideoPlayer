@@ -5,14 +5,17 @@
 
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
+#include <catch2/generators/catch_generators.hpp>
 
 #include "media/video_decoder.h"
 
 extern "C" {
+#include <libavcodec/packet.h>
 #include <libavutil/mathematics.h>
 }
 
 #include "clips.h"
+#include "media/av_util.h"
 #include "media/demuxer.h"
 
 using namespace ajp::media;
@@ -57,6 +60,18 @@ std::vector<DecodedFrame> decode_all(const test::ClipSpec& spec, const DecoderOp
     }
   }
   return frames;
+}
+
+// Même taille et mêmes horodatages que `model`, octets sans sens.
+Packet garbage(const Packet& model) {
+  AVPacket* raw = av_packet_alloc();
+  REQUIRE(raw != nullptr);
+  REQUIRE(av_new_packet(raw, model.av->size) == 0);
+  for (int i = 0; i < raw->size; ++i) raw->data[i] = static_cast<std::uint8_t>((i * 37 + 11) & 0xFF);
+  REQUIRE(av_packet_copy_props(raw, model.av.get()) == 0);
+  Packet damaged = model;
+  damaged.av = std::shared_ptr<AVPacket>(raw, PacketFree{});
+  return damaged;
 }
 
 int sample(const DecodedFrame& frame, int plane, int x, int y, int bits) {
@@ -144,6 +159,43 @@ TEST_CASE("VideoDecoder : images B remises dans l'ordre, pts exacts à 24000/100
     CHECK(test::frame_of_flat_luma(sample(frames[n], 0, 30, 20, 8)) == static_cast<int>(n));
   }
   CHECK(frames[1].duration_us == Catch::Approx(41708).margin(1));
+}
+
+TEST_CASE("VideoDecoder : des données abîmées perdent des images, le décodage continue", "[media][decoder]") {
+  // Avec des threads d'images, l'erreur sort à la réception, en fin de flux
+  // surtout ; sans thread, à l'envoi. Les deux doivent finir le flux.
+  const int threads = GENERATE(1, 0);
+  const bool at_end = GENERATE(false, true);
+  INFO("threads " << threads << (at_end ? ", fin abîmée" : ", milieu abîmé"));
+  auto demuxer = Demuxer::open(test::require_clip(test::seek_clip()));
+  REQUIRE(demuxer.has_value());
+  auto decoder =
+      VideoDecoder::open(demuxer->tracks()[0], {.attempts = {HwApi::Software}, .threads = threads});
+  REQUIRE(decoder.has_value());
+  int video = 0;
+  int frames = 0;
+  while (!decoder->drained()) {
+    auto frame = decoder->receive();
+    REQUIRE(frame.has_value());
+    if (*frame) {
+      ++frames;
+      continue;
+    }
+    if (decoder->drained()) break;
+    auto packet = demuxer->read();
+    REQUIRE(packet.has_value());
+    if (!*packet) {
+      REQUIRE(decoder->send_end());
+      continue;
+    }
+    if ((*packet)->track != 0) continue;
+    ++video;
+    const bool damaged = at_end ? video >= 29 : (video == 5 || video == 6);
+    REQUIRE(decoder->send(damaged ? garbage(**packet) : **packet));
+  }
+  CHECK(decoder->data_errors() >= 1);
+  CHECK(frames >= 24);
+  CHECK(frames < 30);
 }
 
 TEST_CASE("VideoDecoder : options hors plage refusées", "[media][decoder]") {

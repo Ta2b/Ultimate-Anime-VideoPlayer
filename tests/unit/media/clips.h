@@ -20,6 +20,9 @@ ClipSpec seek_clip();
 ClipSpec hdr_clip();
 // MP4, MPEG-4 avec images B, 24000/1001 im/s.
 ClipSpec bframes_clip();
+// MPEG-4, un point clé toutes les 10 images, la première vidéo à l'image 5 ;
+// un audio qui part de 0.
+ClipSpec late_video_clip();
 
 // Écrit le clip et échoue le test s'il n'a pas pu l'être.
 std::filesystem::path require_clip(const ClipSpec& spec);

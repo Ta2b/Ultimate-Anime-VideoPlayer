@@ -1,8 +1,10 @@
 #include "media/demuxer.h"
 
 #include <algorithm>
+#include <deque>
 #include <format>
 #include <string>
+#include <string_view>
 #include <utility>
 
 extern "C" {
@@ -20,11 +22,30 @@ struct Demuxer::State {
   std::vector<Chapter> chapters;
   std::int64_t start_us = 0;
   std::int64_t duration_us = 0;
-  PacketPtr scratch;  // reçoit av_read_frame avant d'être partagé
+  PacketPtr scratch;            // reçoit av_read_frame avant d'être partagé
+  std::deque<Packet> pushback;  // lus par le seek pour vérifier son point clé, rendus par read()
   std::shared_ptr<spdlog::logger> log = make_logger();
+
+  std::expected<std::optional<Packet>, Refusal> read_file() const;
+  std::expected<std::optional<Packet>, Refusal> peek_keyframe(int reference);
+  std::expected<void, Refusal> seek_stream(int reference, std::int64_t ts, int flags, std::string_view what);
+  std::expected<std::int64_t, Refusal> seek_before(std::int64_t target_us, int reference);
+  std::expected<std::optional<std::int64_t>, Refusal> seek_after(std::int64_t target_us, int reference);
 };
 
 namespace {
+
+// Paquets lus au plus pour trouver le premier point clé après un seek.
+constexpr int kMaxPeekPackets = 1024;
+// Reculs au plus pour trouver un point clé qui s'affiche à ou avant la cible.
+constexpr int kMaxRewinds = 8;
+
+// FFmpeg attend un chemin UTF-8, Windows compris : path::string() y rendrait la
+// page de code ANSI, ou lèverait une exception devant un nom en japonais.
+std::string utf8_path(const std::filesystem::path& path) {
+  const std::u8string text = path.u8string();
+  return {reinterpret_cast<const char*>(text.data()), text.size()};
+}
 
 std::string tag(const AVDictionary* metadata, const char* key) {
   const AVDictionaryEntry* entry = av_dict_get(metadata, key, nullptr, 0);
@@ -94,7 +115,7 @@ Demuxer::~Demuxer() = default;
 
 std::expected<Demuxer, Refusal> Demuxer::open(const std::filesystem::path& path) {
   auto state = std::make_unique<State>();
-  const std::string where = path.string();
+  const std::string where = utf8_path(path);
   AVFormatContext* raw = nullptr;
   if (const int err = avformat_open_input(&raw, where.c_str(), nullptr, nullptr); err < 0) {
     return refuse_av(RefusalCode::MediaUnreadable, where, err);
@@ -146,17 +167,27 @@ std::expected<void, Refusal> Demuxer::keep_only(std::span<const int> tracks) {
   for (const int index : tracks) {
     if (track(index) == nullptr) return refuse(RefusalCode::TrackUnavailable, std::format("piste {}", index));
   }
+  const auto kept = [tracks](int index) { return std::ranges::find(tracks, index) != tracks.end(); };
   const AVFormatContext& ctx = *state_->format;
   for (unsigned i = 0; i < ctx.nb_streams; ++i) {
-    const bool kept = std::ranges::find(tracks, static_cast<int>(i)) != tracks.end();
-    ctx.streams[i]->discard = kept ? AVDISCARD_DEFAULT : AVDISCARD_ALL;
+    ctx.streams[i]->discard = kept(static_cast<int>(i)) ? AVDISCARD_DEFAULT : AVDISCARD_ALL;
   }
+  std::erase_if(state_->pushback, [&](const Packet& packet) { return !kept(packet.track); });
   return {};
 }
 
 std::expected<std::optional<Packet>, Refusal> Demuxer::read() {
-  AVFormatContext& ctx = *state_->format;
-  AVPacket* raw = state_->scratch.get();
+  if (!state_->pushback.empty()) {
+    Packet packet = std::move(state_->pushback.front());
+    state_->pushback.pop_front();
+    return packet;
+  }
+  return state_->read_file();
+}
+
+std::expected<std::optional<Packet>, Refusal> Demuxer::State::read_file() const {
+  AVFormatContext& ctx = *format;
+  AVPacket* raw = scratch.get();
   while (true) {
     if (const int err = av_read_frame(&ctx, raw); err < 0) {
       if (err == AVERROR_EOF) return std::nullopt;
@@ -168,8 +199,8 @@ std::expected<std::optional<Packet>, Refusal> Demuxer::read() {
   }
   const AVRational time_base = ctx.streams[raw->stream_index]->time_base;
   // Une seule échelle pour tout le lecteur : microsecondes depuis le début.
-  raw->pts = raw->pts == AV_NOPTS_VALUE ? AV_NOPTS_VALUE : to_us(raw->pts, time_base, state_->start_us);
-  raw->dts = raw->dts == AV_NOPTS_VALUE ? AV_NOPTS_VALUE : to_us(raw->dts, time_base, state_->start_us);
+  raw->pts = raw->pts == AV_NOPTS_VALUE ? AV_NOPTS_VALUE : to_us(raw->pts, time_base, start_us);
+  raw->dts = raw->dts == AV_NOPTS_VALUE ? AV_NOPTS_VALUE : to_us(raw->dts, time_base, start_us);
   raw->duration = duration_to_us(raw->duration, time_base);
   raw->time_base = kMicroseconds;
 
@@ -187,6 +218,81 @@ std::expected<std::optional<Packet>, Refusal> Demuxer::read() {
   return packet;
 }
 
+// Lit jusqu'au premier point clé de `reference` ; tout ce qui est lu reste dans
+// pushback, dans l'ordre du fichier. std::nullopt : fin du fichier ou borne atteinte.
+std::expected<std::optional<Packet>, Refusal> Demuxer::State::peek_keyframe(int reference) {
+  for (int count = 0; count < kMaxPeekPackets; ++count) {
+    auto packet = read_file();
+    if (!packet) return std::unexpected(packet.error());
+    if (!*packet) return std::nullopt;
+    pushback.push_back(**packet);
+    if ((*packet)->track == reference && (*packet)->keyframe) return packet;
+  }
+  return std::nullopt;
+}
+
+std::expected<void, Refusal> Demuxer::State::seek_stream(int reference, std::int64_t ts, int flags,
+                                                         std::string_view what) {
+  pushback.clear();
+  if (const int err = av_seek_frame(format.get(), reference, ts, flags); err < 0) {
+    return refuse_av(RefusalCode::SeekFailed, what, err);
+  }
+  return {};
+}
+
+// av_seek_frame peut rendre un point clé qui s'affiche après la cible : index en
+// dts (MP4 avec images B), GOP ouvert. Les images entre la cible et lui ne se
+// décoderaient jamais. On recule alors avant son dts, au plus kMaxRewinds fois,
+// ou jusqu'à retrouver le même point clé : la cible précède la première image.
+// Rend le pts du point clé où la lecture reprend, kNoTimestamp s'il est inconnu.
+std::expected<std::int64_t, Refusal> Demuxer::State::seek_before(std::int64_t target_us, int reference) {
+  const AVRational time_base = format->streams[reference]->time_base;
+  const auto land = [&](std::int64_t aim_us) -> std::expected<std::optional<Packet>, Refusal> {
+    auto moved = seek_stream(reference, from_us(aim_us, time_base, start_us), AVSEEK_FLAG_BACKWARD,
+                             std::format("seek à {} µs", aim_us));
+    if (!moved) return std::unexpected(moved.error());
+    return peek_keyframe(reference);
+  };
+  std::int64_t aim_us = target_us;
+  std::int64_t landed_us = target_us;  // visée du dernier seek abouti
+  std::int64_t last_key_us = kNoTimestamp;
+  for (int rewind = 0; rewind <= kMaxRewinds; ++rewind) {
+    auto key = land(aim_us);
+    if (!key && rewind > 0) {
+      // Un conteneur peut refuser une visée avant son premier point clé (avidec,
+      // recherche générique) : celui déjà trouvé est le premier, on repart de lui.
+      log->debug("seek à {} µs : recul refusé ({}), retour à {} µs", target_us, key.error().detail,
+                 landed_us);
+      key = land(landed_us);
+    }
+    if (!key) return std::unexpected(key.error());
+    if (!*key) return kNoTimestamp;
+    const std::int64_t key_pts = (*key)->pts_us;
+    if (key_pts == kNoTimestamp || key_pts <= target_us || key_pts == last_key_us) return key_pts;
+    last_key_us = key_pts;
+    landed_us = aim_us;
+    const std::int64_t key_us = (*key)->dts_us != kNoTimestamp ? (*key)->dts_us : key_pts;
+    aim_us = std::min(aim_us, key_us) - 1;
+    log->debug("seek à {} µs : point clé affiché à {} µs, recul à {} µs", target_us, key_pts, aim_us);
+  }
+  return last_key_us;
+}
+
+// Premier point clé à ou après la cible, d'après le pts lu ; std::nullopt s'il
+// n'y en a pas (cible après le dernier point clé).
+std::expected<std::optional<std::int64_t>, Refusal> Demuxer::State::seek_after(std::int64_t target_us,
+                                                                               int reference) {
+  const AVRational time_base = format->streams[reference]->time_base;
+  pushback.clear();
+  if (av_seek_frame(format.get(), reference, from_us(target_us, time_base, start_us), 0) < 0) {
+    return std::nullopt;
+  }
+  auto key = peek_keyframe(reference);
+  if (!key) return std::unexpected(key.error());
+  if (!*key || (*key)->pts_us == kNoTimestamp) return std::nullopt;
+  return (*key)->pts_us;
+}
+
 std::expected<void, Refusal> Demuxer::seek(std::int64_t target_us, int reference, SeekTarget where) {
   if (target_us < 0 || (state_->duration_us > 0 && target_us > state_->duration_us)) {
     return refuse(RefusalCode::SeekFailed,
@@ -195,25 +301,20 @@ std::expected<void, Refusal> Demuxer::seek(std::int64_t target_us, int reference
   if (track(reference) == nullptr)
     return refuse(RefusalCode::TrackUnavailable, std::format("piste {}", reference));
 
-  AVFormatContext& ctx = *state_->format;
-  AVStream* stream = ctx.streams[reference];
-  const std::int64_t ts = from_us(target_us, stream->time_base, state_->start_us);
-  if (const int err = av_seek_frame(&ctx, reference, ts, AVSEEK_FLAG_BACKWARD); err < 0) {
-    return refuse_av(RefusalCode::SeekFailed, std::format("seek à {} µs", target_us), err);
+  if (where == SeekTarget::PreviousKeyframe) {
+    auto before = state_->seek_before(target_us, reference);
+    if (!before) return std::unexpected(before.error());
+    return {};
   }
-  if (where == SeekTarget::PreviousKeyframe) return {};
-
-  // Le premier seek a chargé l'index (les Cues d'un MKV) : on regarde si le
-  // point clé suivant est plus proche que le précédent.
-  const int before = av_index_search_timestamp(stream, ts, AVSEEK_FLAG_BACKWARD);
-  const int after = av_index_search_timestamp(stream, ts, 0);
-  if (before < 0 || after < 0) return {};
-  const std::int64_t ts_before = avformat_index_get_entry(stream, before)->timestamp;
-  const std::int64_t ts_after = avformat_index_get_entry(stream, after)->timestamp;
-  if (ts_after - ts >= ts - ts_before) return {};
-  if (const int err = av_seek_frame(&ctx, reference, ts_after, AVSEEK_FLAG_BACKWARD); err < 0) {
-    return refuse_av(RefusalCode::SeekFailed, std::format("seek au point clé suivant {} µs", target_us), err);
-  }
+  // Seek rapide : les deux points clés qui encadrent la cible, comparés sur
+  // leurs pts lus (un index en dts tromperait), et le plus proche gagne.
+  auto after = state_->seek_after(target_us, reference);
+  if (!after) return std::unexpected(after.error());
+  auto before = state_->seek_before(target_us, reference);
+  if (!before) return std::unexpected(before.error());
+  if (!*after || *before == kNoTimestamp || **after - target_us >= target_us - *before) return {};
+  auto again = state_->seek_after(target_us, reference);
+  if (!again) return std::unexpected(again.error());
   return {};
 }
 

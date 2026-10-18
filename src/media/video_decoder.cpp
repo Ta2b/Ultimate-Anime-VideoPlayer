@@ -28,8 +28,14 @@ struct VideoDecoder::State {
   bool drained = false;
   std::int64_t next_pts_us = kNoTimestamp;
   std::int64_t nominal_duration_us = 0;
-  int skipped = 0;
+  int data_errors = 0;
   std::shared_ptr<spdlog::logger> log = make_logger();
+
+  // Données abîmées : l'image en cause est perdue, le décodage continue.
+  void data_error(std::string_view where) {
+    ++data_errors;
+    log->warn("données invalides ({}) : image perdue, le décodage continue", where);
+  }
 
   void fall_back(std::string_view why) {
     if (api == HwApi::Software) return;
@@ -156,13 +162,15 @@ HwApi VideoDecoder::api() const {
 std::span<const Attempt> VideoDecoder::rejected() const {
   return state_->rejected;
 }
-int VideoDecoder::skipped_packets() const {
-  return state_->skipped;
+int VideoDecoder::data_errors() const {
+  return state_->data_errors;
 }
 bool VideoDecoder::drained() const {
   return state_->drained;
 }
 
+// avcodec_send_packet prend le paquet même quand il rend AVERROR_INVALIDDATA :
+// l'erreur peut venir d'une image précédente, décodée pendant l'envoi.
 std::expected<void, Refusal> VideoDecoder::send(const Packet& packet) {
   State& s = *state_;
   if (s.pending) return refuse(RefusalCode::DecodeFailed, "paquet précédent encore en attente");
@@ -171,8 +179,7 @@ std::expected<void, Refusal> VideoDecoder::send(const Packet& packet) {
   if (err == AVERROR(EAGAIN)) {
     s.pending = packet;
   } else if (err == AVERROR_INVALIDDATA) {
-    ++s.skipped;
-    s.log->warn("paquet invalide à {} µs sauté", packet.pts_us);
+    s.data_error(std::format("envoi du paquet à {} µs", packet.pts_us));
   } else if (err < 0) {
     return refuse_av(RefusalCode::DecodeFailed, std::format("envoi du paquet à {} µs", packet.pts_us), err);
   }
@@ -189,6 +196,7 @@ std::expected<std::optional<DecodedFrame>, Refusal> VideoDecoder::receive() {
   State& s = *state_;
   if (s.pending) {
     const int err = avcodec_send_packet(s.codec.get(), s.pending->av.get());
+    if (err == AVERROR_INVALIDDATA) s.data_error("envoi d'un paquet en attente");
     if (err >= 0 || err == AVERROR_INVALIDDATA) s.pending.reset();
     if (err < 0 && err != AVERROR(EAGAIN) && err != AVERROR_INVALIDDATA) {
       return refuse_av(RefusalCode::DecodeFailed, "envoi d'un paquet en attente", err);
@@ -196,7 +204,13 @@ std::expected<std::optional<DecodedFrame>, Refusal> VideoDecoder::receive() {
   }
   FramePtr frame(av_frame_alloc());
   if (!frame) return refuse(RefusalCode::DecodeFailed, "image : mémoire insuffisante");
-  const int err = avcodec_receive_frame(s.codec.get(), frame.get());
+  // Avec des threads d'images, l'erreur d'une image abîmée sort ici, une fois par
+  // image : chaque nouvel appel avance d'une image, au plus une par thread en vol.
+  int err = avcodec_receive_frame(s.codec.get(), frame.get());
+  for (int errors = 0; err == AVERROR_INVALIDDATA && errors < kMaxDecoderThreads; ++errors) {
+    s.data_error("réception d'une image");
+    err = avcodec_receive_frame(s.codec.get(), frame.get());
+  }
   if (err == AVERROR(EAGAIN)) return std::nullopt;
   if (err == AVERROR_EOF) {
     s.drained = true;

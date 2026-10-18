@@ -20,8 +20,11 @@
 namespace ajp::media {
 
 enum class SeekTarget : std::uint8_t {
-  PreviousKeyframe,  // point clé à ou avant la cible : base du seek exact
-  NearestKeyframe,   // point clé le plus proche, avant ou après : seek rapide
+  // Point clé qui s'affiche à ou avant la cible, base du seek exact : toutes les
+  // images de la cible jusqu'à la fin se décodent depuis lui, même si l'index du
+  // conteneur est en dts (MP4 avec images B) ou le GOP ouvert.
+  PreviousKeyframe,
+  NearestKeyframe,  // point clé le plus proche, avant ou après : seek rapide
 };
 
 class Demuxer {
@@ -45,7 +48,8 @@ class Demuxer {
   std::expected<std::optional<Packet>, Refusal> read();
 
   // Place la lecture sur un point clé de la piste `reference` proche de target_us.
-  // Une cible négative ou au-delà de la durée connue est refusée.
+  // Une cible négative ou au-delà de la durée connue est refusée. Les paquets lus
+  // pour vérifier le point clé sont rendus ensuite par read(), dans l'ordre.
   std::expected<void, Refusal> seek(std::int64_t target_us, int reference, SeekTarget where);
 
  private:

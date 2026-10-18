@@ -15,6 +15,7 @@ struct Overloaded : F... {
 
 // L'image visible à la cible est la dernière dont pts ≤ cible : on jette celles
 // qui finissent avant. Sans durée connue, on jette celles qui commencent avant.
+// Si la fin du flux arrive avant la cible, la dernière image jetée est livrée.
 bool ends_before(const DecodedFrame& frame, std::int64_t target_us) {
   const std::int64_t end = frame.pts_us + std::max<std::int64_t>(frame.duration_us, 1);
   return end <= target_us;
@@ -71,22 +72,27 @@ void SourceLoop::on_flush(const Flush& flush) {
   epoch_ = flush.epoch;
   held_frame_.reset();
   held_packet_.reset();
+  last_dropped_.reset();
+  awaiting_seek_ = true;
 }
 
 void SourceLoop::on_seek(const cmd::Seek& seek) {
+  awaiting_seek_ = false;
   const SeekTarget where = seek.exact ? SeekTarget::PreviousKeyframe : SeekTarget::NearestKeyframe;
   if (auto moved = media_.demuxer.seek(seek.target_us, media_.video_track, where); !moved) {
-    links_.listener->failed(moved.error());  // la position n'a pas changé
+    links_.listener->failed(moved.error());  // refusé : la lecture reprend où elle était
     return;
   }
   media_.decoder.flush();
   held_frame_.reset();
   held_packet_.reset();
+  last_dropped_.reset();
   drop_before_ = seek.exact ? std::optional(seek.target_us) : std::nullopt;
   idle_ = false;
 }
 
 SourceLoop::Progress SourceLoop::advance() {
+  if (awaiting_seek_) return Progress::Idle;
   if (held_frame_) {
     DecodedFrame copy = *held_frame_;  // une copie : un refus ne consomme rien
     copy.epoch = epoch_;
@@ -112,13 +118,18 @@ SourceLoop::Progress SourceLoop::decode() {
     return Progress::Idle;
   }
   if (*frame) {
-    if (drop_before_ && ends_before(**frame, *drop_before_)) return Progress::Moved;
-    drop_before_.reset();
-    held_frame_ = std::move(**frame);
-    held_frame_->id = SourceId{next_id_++};
+    if (drop_before_ && ends_before(**frame, *drop_before_)) {
+      last_dropped_ = std::move(**frame);
+      return Progress::Moved;
+    }
+    keep(std::move(**frame));
     return Progress::Moved;
   }
   if (media_.decoder.drained()) {
+    if (drop_before_ && last_dropped_) {  // cible dans la dernière image : c'est elle qui s'affiche
+      keep(std::move(*last_dropped_));
+      return Progress::Moved;
+    }
     idle_ = true;
     links_.listener->end_of_stream(epoch_);
     return Progress::Idle;
@@ -146,6 +157,13 @@ SourceLoop::Progress SourceLoop::route(Packet packet) {
   const auto it = std::ranges::find(links_.packets, packet.track, &PacketRoute::track);
   if (it != links_.packets.end()) held_packet_ = HeldPacket{it->sink, std::move(packet)};
   return Progress::Moved;
+}
+
+void SourceLoop::keep(DecodedFrame frame) {
+  drop_before_.reset();
+  last_dropped_.reset();
+  held_frame_ = std::move(frame);
+  held_frame_->id = SourceId{next_id_++};
 }
 
 void SourceLoop::fail(const Refusal& refusal) {

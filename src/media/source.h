@@ -4,9 +4,14 @@
 // Protocole avec app :
 // - Flush{e} : l'image et le paquet tenus sont jetés ; ceux livrés ensuite
 //   portent l'époque e, qui doit croître. app l'envoie aussi à gpu, audio et subs.
-// - cmd::Seek : repositionne. Exact : point clé précédent, puis décodage et
-//   rejet jusqu'à l'image visible à la cible. Rapide : point clé le plus proche.
-//   app envoie Flush puis Seek ; l'Inbox garde cet ordre.
+//   Rien ne part plus jusqu'au cmd::Seek qui suit : sans cette attente, une
+//   image de l'ancienne position partirait sous la nouvelle époque entre les
+//   deux messages. app envoie donc toujours Flush puis Seek, même vers la
+//   position affichée (changement de Plan) ; l'Inbox garde cet ordre.
+// - cmd::Seek : repositionne. Exact : point clé qui s'affiche à ou avant la
+//   cible, puis décodage et rejet jusqu'à l'image visible à la cible. Rapide :
+//   point clé le plus proche. Un Seek refusé est signalé et la lecture reprend
+//   où elle était.
 // - cmd::Quit, ou l'arrêt du std::jthread : la boucle se termine.
 // - Credit : un consommateur a libéré une place ; le thread retente sa livraison.
 // Les autres commandes (pause, pas image, seek relatif) se traduisent dans app,

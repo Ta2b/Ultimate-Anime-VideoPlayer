@@ -192,9 +192,14 @@ std::expected<ReadyEvent, Refusal> CudaDriver::record(std::uintptr_t context, st
     api_->cuEventDestroy(event);
     return refuse_cuda("cuEventRecord", result);
   }
-  // L'événement vit tant qu'une copie de l'image le tient ; le pilote aussi.
+  // L'événement vit tant qu'une copie de l'image le tient ; le pilote aussi. Il
+  // est détruit par le thread qui relâche la dernière copie (gpu), dans son
+  // contexte, comme FFmpeg le fait pour les siens.
   std::shared_ptr<const CudaDriver> driver = shared_from_this();
-  std::shared_ptr<const void> owner(event, [driver](CUeventOpaque* e) { driver->api_->cuEventDestroy(e); });
+  std::shared_ptr<const void> owner(event, [driver, context](CUeventOpaque* e) {
+    const ContextScope destroy_scope(*driver->api_, context);
+    driver->api_->cuEventDestroy(e);
+  });
   return ReadyEvent{.handle = std::bit_cast<std::uintptr_t>(event), .owner = std::move(owner)};
 }
 

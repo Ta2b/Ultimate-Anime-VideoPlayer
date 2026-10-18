@@ -1,5 +1,5 @@
 // Fixe les règles de couleur reprises de the-database-mpv video/mp_image.c:998-1019
-// et video/csputils.c:192-214, et les refus de ce que core/frame.h ne sait pas dire.
+// et 1060-1069, video/csputils.c:192-214, et les refus de ce que core/frame.h ne sait pas dire.
 #include "media/color.h"
 
 #include <cstring>
@@ -72,6 +72,39 @@ TEST_CASE("color : une source non étiquetée est devinée par sa taille, comme 
   CHECK(guess(720, 480).transfer == Transfer::Bt1886);
   CHECK(guess(720, 480).range == ColorRange::Limited);
   CHECK(guess(720, 480).siting == ChromaSiting::Left);
+}
+
+TEST_CASE("color : siting deviné d'après la plage, centré sans sous-échantillonnage", "[media][color]") {
+  // mp_image.c:1060-1069 : gauche en plage limitée (MPEG), centré en plage pleine (JPEG).
+  CHECK(color_info(*frame(64, 48), AV_PIX_FMT_YUV420P)->siting == ChromaSiting::Left);
+  CHECK(color_info(*frame(64, 48, AV_PIX_FMT_YUVJ420P), AV_PIX_FMT_YUVJ420P)->siting == ChromaSiting::Center);
+  FramePtr full = frame(64, 48);
+  full->color_range = AVCOL_RANGE_JPEG;
+  CHECK(color_info(*full, AV_PIX_FMT_YUV420P)->siting == ChromaSiting::Center);
+  full->chroma_location = AVCHROMA_LOC_LEFT;  // une étiquette explicite l'emporte
+  CHECK(color_info(*full, AV_PIX_FMT_YUV420P)->siting == ChromaSiting::Left);
+  CHECK(color_info(*frame(64, 48, AV_PIX_FMT_YUV444P16LE), AV_PIX_FMT_YUV444P16LE)->siting ==
+        ChromaSiting::Center);
+  CHECK(color_info(*frame(64, 48, AV_PIX_FMT_RGBA), AV_PIX_FMT_RGBA)->siting == ChromaSiting::Center);
+}
+
+TEST_CASE("color : HDR10 lu en PQ et HLG, ignoré en SDR même invalide", "[media][color]") {
+  FramePtr f = frame(3840, 2160);
+  AVMasteringDisplayMetadata* mastering = add_mastering(*f);
+  mastering->has_luminance = 1;
+  mastering->max_luminance = av_make_q(1000, 1);
+  mastering->min_luminance = av_make_q(1, 10000);
+  f->color_trc = AVCOL_TRC_BT709;  // reste d'un master HDR sur une source SDR
+  CHECK_FALSE(color_info(*f, AV_PIX_FMT_YUV420P10LE)->hdr.has_value());
+  f->color_trc = AVCOL_TRC_SMPTE2084;
+  CHECK(color_info(*f, AV_PIX_FMT_YUV420P10LE)->hdr->max_luminance == 1000.0F);
+  f->color_trc = AVCOL_TRC_ARIB_STD_B67;
+  CHECK(color_info(*f, AV_PIX_FMT_YUV420P10LE)->hdr.has_value());
+
+  mastering->max_luminance = av_make_q(-5, 1);  // invalide : refusé seulement s'il sert
+  CHECK(refusal_of(*f) == RefusalCode::FormatUnsupported);
+  f->color_trc = AVCOL_TRC_BT709;
+  CHECK(refusal_of(*f) == std::nullopt);
 }
 
 TEST_CASE("color : primaires devinées d'après la matrice", "[media][color]") {

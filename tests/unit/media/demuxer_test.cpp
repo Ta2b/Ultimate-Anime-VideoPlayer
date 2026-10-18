@@ -2,11 +2,20 @@
 
 #include <algorithm>
 #include <map>
+#include <optional>
 #include <string>
 #include <string_view>
 #include <vector>
 
 #include <catch2/catch_test_macros.hpp>
+#include <catch2/generators/catch_generators.hpp>
+
+extern "C" {
+#include <libavcodec/codec_par.h>
+#include <libavcodec/defs.h>
+#include <libavutil/mathematics.h>
+#include <libavutil/mem.h>
+}
 
 #include "clips.h"
 #include "media/selection.h"
@@ -172,6 +181,91 @@ TEST_CASE("Demuxer : seek sur le point clé précédent ou le plus proche", "[me
   CHECK(first_video_pts() == 20 * test::kFrameUs);
   REQUIRE(demuxer.seek(12 * test::kFrameUs, 0, SeekTarget::NearestKeyframe));
   CHECK(first_video_pts() == 10 * test::kFrameUs);
+}
+
+TEST_CASE("Demuxer : le seek exact recule sous un point clé affiché après la cible (MP4, images B)",
+          "[media][demuxer]") {
+  // Index en dts : la cible 10 (pts 417 ms) tombe après le dts du point clé 12
+  // (375 ms) mais avant son pts (500 ms) ; les images B 10 et 11 dépendent de
+  // l'image 9. Le seek doit repartir du point clé 0.
+  Demuxer demuxer = open_clip(test::bframes_clip());
+  const std::int64_t target = av_rescale(10 * 1001, 1'000'000, 24000);
+  REQUIRE(demuxer.seek(target, 0, SeekTarget::PreviousKeyframe));
+  auto first = demuxer.read();
+  REQUIRE(first.has_value());
+  REQUIRE(first->has_value());
+  CHECK((*first)->keyframe);
+  CHECK((*first)->pts_us == 0);
+
+  // Les paquets lus pour vérifier le point clé reviennent tous, dans l'ordre du fichier.
+  std::vector<std::int64_t> after_seek{(*first)->dts_us};
+  for (const Packet& p : read_all(demuxer)) after_seek.push_back(p.dts_us);
+  Demuxer fresh = open_clip(test::bframes_clip());
+  std::vector<std::int64_t> whole;
+  for (const Packet& p : read_all(fresh)) whole.push_back(p.dts_us);
+  CHECK(after_seek == whole);
+
+  // Le seek rapide, lui, garde le point clé le plus proche.
+  REQUIRE(demuxer.seek(target, 0, SeekTarget::NearestKeyframe));
+  auto nearest = demuxer.read();
+  REQUIRE(nearest.has_value());
+  REQUIRE(nearest->has_value());
+  CHECK((*nearest)->pts_us == av_rescale(12 * 1001, 1'000'000, 24000));
+}
+
+TEST_CASE("Demuxer : avant la première image vidéo, le seek rend le premier point clé", "[media][demuxer]") {
+  // L'audio part de 0, la vidéo de l'image 5 : le premier point clé s'affiche
+  // après la cible, et reculer encore ne trouve rien de plus tôt.
+  test::ClipSpec spec = test::late_video_clip();
+  spec.container = GENERATE(as<std::string>{}, "matroska", "mp4");
+  spec.name = spec.container == "mp4" ? "late_video.mp4" : "late_video.mkv";
+  Demuxer demuxer = open_clip(spec);
+  for (const SeekTarget where : {SeekTarget::PreviousKeyframe, SeekTarget::NearestKeyframe}) {
+    for (const std::int64_t target : {std::int64_t{0}, 2 * test::kFrameUs}) {
+      INFO(spec.container << ", cible " << target << " µs");
+      REQUIRE(demuxer.seek(target, 0, where));
+      std::optional<Packet> video;
+      while (!video) {
+        auto packet = demuxer.read();
+        REQUIRE(packet.has_value());
+        REQUIRE(packet->has_value());
+        if ((*packet)->track == 0) video = std::move(**packet);
+      }
+      CHECK(video->keyframe);
+      CHECK(video->pts_us == 5 * test::kFrameUs);
+    }
+  }
+}
+
+TEST_CASE("Demuxer : un chemin non ASCII s'ouvre (UTF-8)", "[media][demuxer]") {
+  test::ClipSpec spec = test::bframes_clip();
+  spec.name = "アニメ 第1話.mp4";
+  Demuxer demuxer = open_clip(spec);
+  CHECK(demuxer.tracks().size() == 1);
+}
+
+TEST_CASE("is_font : type MIME de police, ou extension, avec nom et données", "[media][demuxer]") {
+  AVCodecParameters* raw = avcodec_parameters_alloc();
+  REQUIRE(raw != nullptr);
+  raw->extradata = static_cast<std::uint8_t*>(av_mallocz(4 + AV_INPUT_BUFFER_PADDING_SIZE));
+  raw->extradata_size = 4;
+  auto with_data = CodecParameters::copy_of(*raw);
+  avcodec_parameters_free(&raw);
+  REQUIRE(with_data.has_value());
+  const auto font = [&](std::string filename, std::string mime) {
+    return is_font(TrackInfo{.kind = TrackKind::Attachment,
+                             .filename = std::move(filename),
+                             .mime_type = std::move(mime),
+                             .parameters = *with_data});
+  };
+  CHECK(font("a.bin", "application/x-font"));  // liste de mpv, même « probablement faux »
+  CHECK(font("a.bin", "font/collection"));
+  CHECK(font("Police.OTC", "application/octet-stream"));  // MKV mal étiqueté
+  CHECK_FALSE(font("notes.txt", "text/plain"));
+  CHECK_FALSE(font("", "font/ttf"));  // libass exige un nom
+  CHECK_FALSE(
+      is_font(TrackInfo{.kind = TrackKind::Attachment, .filename = "a.ttf", .mime_type = "font/ttf"}));
+  CHECK_FALSE(is_font(TrackInfo{.kind = TrackKind::Subtitle, .filename = "a.ttf", .parameters = *with_data}));
 }
 
 TEST_CASE("Demuxer : un fichier absent ou illisible est refusé", "[media][demuxer]") {

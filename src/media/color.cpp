@@ -1,7 +1,8 @@
 // Les règles de devinette des champs non renseignés sont reprises de
-// the-database-mpv video/mp_image.c:998-1019 et video/csputils.c:192-214
-// (mp_csp_guess_colorspace, mp_csp_guess_primaries). Comportement fixé par
-// tests/unit/media/color_test.cpp.
+// the-database-mpv video/mp_image.c:998-1019 (matrice, plage, primaires,
+// transfert), 1054-1058 (HDR10 ignoré en SDR), 1060-1069 (siting de chroma) et
+// video/csputils.c:192-214 (mp_csp_guess_colorspace, mp_csp_guess_primaries).
+// Comportement fixé par tests/unit/media/color_test.cpp.
 #include "media/color.h"
 
 #include <cmath>
@@ -105,9 +106,10 @@ std::expected<Transfer, Refusal> map_transfer(AVColorTransferCharacteristic trc,
   }
 }
 
-std::expected<ChromaSiting, Refusal> map_siting(AVChromaLocation location) {
+std::expected<ChromaSiting, Refusal> map_siting(AVChromaLocation location, ColorRange range) {
   switch (location) {
-    case AVCHROMA_LOC_UNSPECIFIED:  // défaut MPEG-2/4 et H.264 pour le 4:2:0
+    case AVCHROMA_LOC_UNSPECIFIED:  // MPEG-2/4 et H.264 en plage limitée, JPEG en plage pleine
+      return range == ColorRange::Full ? ChromaSiting::Center : ChromaSiting::Left;
     case AVCHROMA_LOC_LEFT:
       return ChromaSiting::Left;
     case AVCHROMA_LOC_CENTER:
@@ -177,10 +179,15 @@ std::expected<ColorInfo, Refusal> color_info(const AVFrame& frame, AVPixelFormat
   if (!transfer) return std::unexpected(transfer.error());
   color.transfer = *transfer;
   if (is_subsampled(sw_format)) {
-    auto siting = map_siting(frame.chroma_location);
+    auto siting = map_siting(frame.chroma_location, color.range);
     if (!siting) return std::unexpected(siting.error());
     color.siting = *siting;
+  } else {
+    color.siting = ChromaSiting::Center;  // sans sous-échantillonnage, chroma et luma coïncident
   }
+  // Une source SDR garde parfois les métadonnées HDR10 de son master : elles ne
+  // décrivent pas ses pixels et sont ignorées, comme mpv (mp_image.c:1054-1058).
+  if (color.transfer != Transfer::Pq && color.transfer != Transfer::Hlg) return color;
   auto hdr = hdr_metadata(frame);
   if (!hdr) return std::unexpected(hdr.error());
   color.hdr = *hdr;

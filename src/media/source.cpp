@@ -64,6 +64,8 @@ std::expected<std::unique_ptr<SourceThread>, Refusal> SourceThread::start(Source
       loop.run(stop);
     } catch (const std::exception& error) {
       listener->failed(Refusal{RefusalCode::DecodeFailed, std::format("thread source : {}", error.what())});
+    } catch (...) {
+      listener->failed(Refusal{RefusalCode::DecodeFailed, "thread source : exception inconnue"});
     }
   });
   return source;

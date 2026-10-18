@@ -70,6 +70,7 @@ struct ClipSpec {
   AVRational frame_rate{25, 1};
   int gop = 10;
   int b_frames = 0;
+  int video_delay = 0;  // pts de la première image vidéo, en images ; l'audio part de 0
   ColorSpec color;
   std::vector<AudioSpec> audio;  // PCM 16 bits stéréo 48 kHz, paquets de 20 ms
   std::vector<SubtitleSpec> subtitles;

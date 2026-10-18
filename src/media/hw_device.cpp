@@ -97,15 +97,19 @@ std::expected<HwDevice, Refusal> open_vulkan(HwDevice hw, const DecoderOptions& 
     hw.device = std::move(*device);
     return hw;
   }
-  for (int index = 0; index < kMaxVulkanDevices; ++index) {
-    auto device = create_device(HwApi::Vulkan, std::to_string(index), 0);
-    if (!device) break;
+  int tried = 0;
+  for (; tried < kMaxVulkanDevices; ++tried) {
+    auto device = create_device(HwApi::Vulkan, std::to_string(tried), 0);
+    if (!device) {
+      if (tried == 0) return std::unexpected(device.error());  // aucun appareil Vulkan : la vraie cause
+      break;
+    }
     if (vulkan_device_uuid(**device) == options.render_device) {
       hw.device = std::move(*device);
       return hw;
     }
   }
-  return refuse_hw(HwApi::Vulkan, "aucun appareil n'a l'UUID du rendu");
+  return refuse_hw(HwApi::Vulkan, std::format("aucun des {} appareils n'a l'UUID du rendu", tried));
 }
 
 }  // namespace

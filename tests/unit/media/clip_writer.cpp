@@ -253,7 +253,7 @@ class Writer {
     for (int n = 0; n < spec_.frames; ++n) {
       av_frame_make_writable(out_.frame);
       fill_frame(*out_.frame, spec_, n);
-      out_.frame->pts = n;
+      out_.frame->pts = n + spec_.video_delay;
       out_.frame->quality = out_.encoder->global_quality;
       if (const int err = avcodec_send_frame(out_.encoder, out_.frame); err < 0) return fail("encodage", err);
       if (auto ok = drain_encoder(); !ok) return ok;

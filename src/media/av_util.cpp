@@ -30,7 +30,8 @@ std::int64_t to_us(std::int64_t ts, AVRational time_base, std::int64_t start_us)
 }
 
 std::int64_t from_us(std::int64_t us, AVRational time_base, std::int64_t start_us) {
-  return av_rescale_q(us + start_us, kMicroseconds, time_base);
+  const auto down = static_cast<AVRounding>(AV_ROUND_DOWN | AV_ROUND_PASS_MINMAX);
+  return av_rescale_q_rnd(us + start_us, kMicroseconds, time_base, down);
 }
 
 std::int64_t duration_to_us(std::int64_t duration, AVRational time_base) {

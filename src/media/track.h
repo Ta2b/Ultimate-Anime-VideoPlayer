@@ -76,7 +76,8 @@ struct Chapter {
   std::string title;
 };
 
-// Pièce jointe que libass peut charger comme police (type MIME ou extension).
+// Pièce jointe que libass peut charger comme police : nom et données non vides,
+// type MIME de police, ou à défaut extension de police (MKV mal étiquetés).
 bool is_font(const TrackInfo& track);
 
 }  // namespace ajp::media

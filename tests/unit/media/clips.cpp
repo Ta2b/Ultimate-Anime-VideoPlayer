@@ -67,6 +67,16 @@ ClipSpec bframes_clip() {
   };
 }
 
+ClipSpec late_video_clip() {
+  return ClipSpec{
+      .name = "late_video.mkv",
+      .codec = VideoCodec::Mpeg4,
+      .gop = 10,
+      .video_delay = 5,
+      .audio = {{.language = "jpn", .is_default = true}},
+  };
+}
+
 std::filesystem::path require_clip(const ClipSpec& spec) {
   auto path = write_clip(spec);
   INFO(spec.name << " : " << (path ? std::string("écrit") : path.error()));
