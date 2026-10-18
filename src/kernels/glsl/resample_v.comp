@@ -1,0 +1,40 @@
+#version 450
+// Passe verticale séparable : chaque plan float width × src_rows vers un plan width × dst_rows
+// écrit en élément de tenseur. Un plan par gl_WorkGroupID.z. Même table et même somme que la
+// passe horizontale ; l'intermédiaire reste en float entre les passes.
+// Référence : kernels/ref/resample.cpp (resample_columns).
+// Repris de animejanai-inference-rtx@118c272 src/kernels.cu:124-138 (k_v_f32) et 431-445 (k_rs_v).
+#extension GL_GOOGLE_include_directive : require
+#include "tensor.glsl"
+#include "ajp_kernels_spec.glsl"
+#include "common.glsl"
+
+layout(local_size_x = 16, local_size_y = 16) in;
+
+layout(std430, binding = 0) readonly buffer Source { float v[]; } src;
+layout(std430, binding = 1) readonly buffer Starts { int start[]; } starts;
+layout(std430, binding = 2) readonly buffer Weights { float w[]; } weights;
+layout(std430, binding = 3) writeonly buffer Destination { AJP_TENSOR v[]; } dst;
+
+layout(push_constant) uniform Push {
+  uint width;
+  uint src_rows;
+  uint dst_rows;
+  uint taps;
+} pc;
+
+void main() {
+  uint x = gl_GlobalInvocationID.x;
+  uint y = gl_GlobalInvocationID.y;
+  uint plane = gl_GlobalInvocationID.z;
+  if (x >= pc.width || y >= pc.dst_rows) return;
+  uint src_plane = plane * pc.src_rows * pc.width;
+  int first = starts.start[y];
+  uint row = y * pc.taps;
+  precise float a = 0.0;
+  for (uint j = 0u; j < pc.taps; ++j) {
+    uint sy = uint(mirror_index(first + int(j), int(pc.src_rows)));
+    a += weights.w[row + j] * src.v[src_plane + sy * pc.width + x];
+  }
+  dst.v[(plane * pc.dst_rows + y) * pc.width + x] = AJP_TENSOR(a);
+}

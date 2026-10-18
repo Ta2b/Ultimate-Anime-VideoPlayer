@@ -1,0 +1,63 @@
+#version 450
+// Sortie, passe de matrice : le tenseur RGB vers Y quantifié aussitôt ; en 4:2:0, Cb et Cr
+// normalisés vers deux plans float w × h (rééchantillonnés ensuite par resample_h puis
+// output_chroma_v) ; en 4:4:4, Cb et Cr quantifiés directement. Une invocation écrit un mot de
+// 32 bits de chaque plan : 4 échantillons de 8 bits ou 2 de 16 ; ceux au-delà de la largeur
+// valent 0 (bourrage du pas de ligne).
+// Contrat : kernels/spec/color.h ; référence : kernels/ref/color.cpp (rgb_to_yuv).
+// Repris de animejanai-inference-rtx@118c272 src/kernels.cu:221-242 (k_post_matrix) et
+// 286-313 (k_post444).
+#extension GL_GOOGLE_include_directive : require
+#include "tensor.glsl"
+#include "ajp_kernels_spec.glsl"
+#include "common.glsl"
+#include "yuv.glsl"
+
+layout(local_size_x = 16, local_size_y = 16) in;
+
+layout(std430, binding = 0) readonly buffer Rgb { AJP_TENSOR v[]; } rgb;
+layout(std430, binding = 1) writeonly buffer Frame { uint words[]; } frame;
+// 4:2:0 : Cb puis Cr normalisés, plans float w × h. 4:4:4 : lié mais jamais écrit.
+layout(std430, binding = 2) writeonly buffer Chroma { float v[]; } chroma;
+
+layout(push_constant) uniform Push {
+  uint y_offset;
+  uint y_pitch;
+  uint cb_offset;
+  uint cb_pitch;
+  uint cr_offset;
+  uint cr_pitch;
+  uint width;
+  uint height;
+} pc;
+
+void main() {
+  uint word = gl_GlobalInvocationID.x;
+  uint y = gl_GlobalInvocationID.y;
+  uint words_per_row = (pc.width * AJP_SAMPLE_BYTES + 3u) / 4u;
+  if (word >= words_per_row || y >= pc.height) return;
+  uint plane = pc.width * pc.height;
+  uint luma_word = 0u;
+  uint cb_word = 0u;
+  uint cr_word = 0u;
+  for (uint s = 0u; s < AJP_SAMPLES_PER_WORD; ++s) {
+    uint x = word * AJP_SAMPLES_PER_WORD + s;
+    if (x >= pc.width) break;
+    uint i = y * pc.width + x;
+    vec3 p = vec3(float(rgb.v[i]), float(rgb.v[plane + i]), float(rgb.v[2u * plane + i]));
+    vec3 yuv = rgb_to_yuv(p);
+    luma_word |= sample_to_word(encode_luma(yuv.x), s);
+    if (AJP_SUBSAMPLED) {
+      chroma.v[i] = yuv.y;
+      chroma.v[plane + i] = yuv.z;
+    } else {
+      cb_word |= sample_to_word(encode_chroma(yuv.y), s);
+      cr_word |= sample_to_word(encode_chroma(yuv.z), s);
+    }
+  }
+  frame.words[(pc.y_offset + y * pc.y_pitch) / 4u + word] = luma_word;
+  if (!AJP_SUBSAMPLED) {
+    frame.words[(pc.cb_offset + y * pc.cb_pitch) / 4u + word] = cb_word;
+    frame.words[(pc.cr_offset + y * pc.cr_pitch) / 4u + word] = cr_word;
+  }
+}

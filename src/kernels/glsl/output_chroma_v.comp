@@ -1,0 +1,70 @@
+#version 450
+// Sortie 4:2:0, passe verticale de la chroma puis quantification : Cb et Cr normalisés,
+// déjà réduits en largeur (plans float cw × h), passent de h à ch lignes, se quantifient et
+// s'écrivent entrelacés (NV12, P010, P016) ou dans leurs deux plans (YUV420P, YUV420P10).
+// Une invocation écrit un mot de 32 bits par plan ; le bourrage au-delà de la largeur vaut 0.
+// Contrat : kernels/spec/color.h et resample.h ; référence : kernels/ref/color.cpp (rgb_to_yuv).
+// Repris de animejanai-inference-rtx@118c272 src/kernels.cu:260-283 (k_uv_v_store).
+#extension GL_GOOGLE_include_directive : require
+#include "ajp_kernels_spec.glsl"
+#include "common.glsl"
+#include "yuv.glsl"
+
+layout(local_size_x = 16, local_size_y = 16) in;
+
+layout(std430, binding = 0) readonly buffer Chroma { float v[]; } chroma;  // Cb puis Cr, cw × h
+layout(std430, binding = 1) readonly buffer Starts { int start[]; } starts;
+layout(std430, binding = 2) readonly buffer Weights { float w[]; } weights;
+layout(std430, binding = 3) writeonly buffer Frame { uint words[]; } frame;
+
+layout(push_constant) uniform Push {
+  uint cb_offset;  // plan de Cb, ou de CbCr entrelacés
+  uint cb_pitch;
+  uint cr_offset;  // plan de Cr ; ignoré quand la chroma est entrelacée
+  uint cr_pitch;
+  uint width;     // colonnes de chroma (cw)
+  uint src_rows;  // lignes avant la passe (h)
+  uint dst_rows;  // lignes de chroma (ch)
+  uint taps;
+} pc;
+
+// Cb et Cr quantifiés de la colonne x de la ligne de chroma y.
+uvec2 chroma_codes(uint x, uint y) {
+  uint plane = pc.width * pc.src_rows;
+  int first = starts.start[y];
+  uint row = y * pc.taps;
+  precise float u = 0.0;
+  precise float v = 0.0;
+  for (uint j = 0u; j < pc.taps; ++j) {
+    uint at = uint(mirror_index(first + int(j), int(pc.src_rows))) * pc.width + x;
+    float wj = weights.w[row + j];
+    u += wj * chroma.v[at];
+    v += wj * chroma.v[plane + at];
+  }
+  return uvec2(encode_chroma(u), encode_chroma(v));
+}
+
+void main() {
+  uint word = gl_GlobalInvocationID.x;
+  uint y = gl_GlobalInvocationID.y;
+  // Entrelacé : un pixel de chroma occupe deux échantillons (Cb puis Cr).
+  uint pixels_per_word = AJP_INTERLEAVED ? AJP_SAMPLES_PER_WORD / 2u : AJP_SAMPLES_PER_WORD;
+  uint samples_per_row = AJP_INTERLEAVED ? 2u * pc.width : pc.width;
+  uint words_per_row = (samples_per_row * AJP_SAMPLE_BYTES + 3u) / 4u;
+  if (word >= words_per_row || y >= pc.dst_rows) return;
+  uint cb_word = 0u;
+  uint cr_word = 0u;
+  for (uint p = 0u; p < pixels_per_word; ++p) {
+    uint x = word * pixels_per_word + p;
+    if (x >= pc.width) break;
+    uvec2 codes = chroma_codes(x, y);
+    if (AJP_INTERLEAVED) {
+      cb_word |= sample_to_word(codes.x, 2u * p) | sample_to_word(codes.y, 2u * p + 1u);
+    } else {
+      cb_word |= sample_to_word(codes.x, p);
+      cr_word |= sample_to_word(codes.y, p);
+    }
+  }
+  frame.words[(pc.cb_offset + y * pc.cb_pitch) / 4u + word] = cb_word;
+  if (!AJP_INTERLEAVED) frame.words[(pc.cr_offset + y * pc.cr_pitch) / 4u + word] = cr_word;
+}

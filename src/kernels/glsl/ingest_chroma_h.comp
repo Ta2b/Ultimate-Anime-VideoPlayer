@@ -1,0 +1,55 @@
+#version 450
+// Ingestion 4:2:0, passe horizontale de la chroma : les codes bruts de Cb et de Cr,
+// rééchantillonnés de cw à w colonnes par la table de poids, vers deux plans float w × ch
+// (Cb puis Cr). La passe verticale suit (resample_v), puis ingest_combine.
+// Contrat : kernels/spec/resample.h ; référence : kernels/ref/color.cpp (yuv_to_rgb).
+// Repris de animejanai-inference-rtx@118c272 src/kernels.cu:101-122 (k_uv_h).
+#extension GL_GOOGLE_include_directive : require
+#include "ajp_kernels_spec.glsl"
+#include "common.glsl"
+#include "yuv.glsl"
+
+layout(local_size_x = 16, local_size_y = 16) in;
+
+layout(std430, binding = 0) readonly buffer Frame { uint words[]; } frame;
+layout(std430, binding = 1) readonly buffer Starts { int start[]; } starts;
+layout(std430, binding = 2) readonly buffer Weights { float w[]; } weights;
+layout(std430, binding = 3) writeonly buffer Chroma { float v[]; } chroma;
+
+layout(push_constant) uniform Push {
+  uint cb_offset;  // plan de Cb, ou de CbCr entrelacés, en octets depuis le début de la vue
+  uint cb_pitch;
+  uint cr_offset;  // plan de Cr ; ignoré quand la chroma est entrelacée
+  uint cr_pitch;
+  uint src_width;  // colonnes de chroma
+  uint rows;       // lignes de chroma
+  uint dst_width;  // colonnes de sortie
+  uint taps;
+} pc;
+
+uint chroma_code(uint x, uint y, bool cr) {
+  bool second_plane = cr && !AJP_INTERLEAVED;
+  uint offset = second_plane ? pc.cr_offset : pc.cb_offset;
+  uint pitch = second_plane ? pc.cr_pitch : pc.cb_pitch;
+  uint byte = sample_byte(offset, pitch, chroma_sample_index(x, cr), y);
+  return sample_in_word(frame.words[byte >> 2], byte);
+}
+
+void main() {
+  uint x = gl_GlobalInvocationID.x;
+  uint y = gl_GlobalInvocationID.y;
+  if (x >= pc.dst_width || y >= pc.rows) return;
+  int first = starts.start[x];
+  uint row = x * pc.taps;
+  precise float u = 0.0;
+  precise float v = 0.0;
+  for (uint j = 0u; j < pc.taps; ++j) {
+    uint sx = uint(mirror_index(first + int(j), int(pc.src_width)));
+    float wj = weights.w[row + j];
+    u += wj * float(chroma_code(sx, y, false));
+    v += wj * float(chroma_code(sx, y, true));
+  }
+  uint i = y * pc.dst_width + x;
+  chroma.v[i] = u;
+  chroma.v[pc.dst_width * pc.rows + i] = v;
+}
