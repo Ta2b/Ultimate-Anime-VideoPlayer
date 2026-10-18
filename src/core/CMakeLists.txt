@@ -1,5 +1,12 @@
-# core_types : vocabulaire partagé (types.h, inbox.h), sans dépendance.
+# core_types : vocabulaire partagé et contrats entre modules (types.h, inbox.h, frame.h,
+# thread.h, gpu_device.h, ring.h…), sans dépendance hors bibliothèque standard.
 ajp_add_module(core_types)
+
+# core_log : le canal de journal de chaque module et l'installation des puits par app.
+# Seule dépendance : spdlog. Les modules la lient en privé.
+ajp_add_module(core_log
+  SOURCES log.cpp
+  DEPS ajp::dep::spdlog)
 
 # core : profil TOML v5, resolve(), Plan, choix des moteurs.
 # Seul propriétaire de la politique ; les autres modules exécutent le Plan.

@@ -52,7 +52,8 @@ std::uintptr_t handle_value(Handle handle) {
 }
 
 // Plans d'une image matérielle, selon l'API :
-// Cuda : un CUdeviceptr par plan ; Vulkan : un VkImage par plan d'AVVkFrame ;
+// Cuda : un CUdeviceptr par plan, pas en octets par native_pitch ;
+// Vulkan : plan 0 = la VkImage multiplan de l'AVVkFrame (une seule, sinon refusée) ;
 // D3D11 : plan 0 = ID3D11Texture2D*, plan 1 = index de tranche ;
 // VA-API : plan 0 = VASurfaceID ; VideoToolbox : plan 0 = CVPixelBufferRef.
 class AvFrameData final : public FrameData {
@@ -67,14 +68,9 @@ class AvFrameData final : public FrameData {
       case FrameMemory::Host:
       case FrameMemory::Cuda:
         return av_pix_fmt_count_planes(sw_format_);
-      case FrameMemory::Vulkan: {
-        const auto* vk = reinterpret_cast<const AVVkFrame*>(frame_->data[0]);
-        int count = 0;
-        while (count < AV_NUM_DATA_POINTERS && vk->img[count] != VK_NULL_HANDLE) ++count;
-        return count;
-      }
       case FrameMemory::D3d11:
         return 2;
+      case FrameMemory::Vulkan:
       case FrameMemory::VaApi:
       case FrameMemory::VideoToolbox:
         return 1;
@@ -117,7 +113,13 @@ class AvFrameData final : public FrameData {
     return 0;
   }
 
+  std::size_t native_pitch(int plane) const override {
+    if (memory_ != FrameMemory::Cuda || plane < 0 || plane >= plane_count()) return 0;
+    return static_cast<std::size_t>(frame_->linesize[static_cast<std::size_t>(plane)]);
+  }
+
   std::uintptr_t ready_event() const override { return ready_.handle; }
+  std::uint64_t ready_value() const override { return ready_.value; }
 
  private:
   int plane_rows(int plane) const {
@@ -132,6 +134,23 @@ class AvFrameData final : public FrameData {
   AVPixelFormat sw_format_;
   ReadyEvent ready_;
 };
+
+// Sémaphore timeline de l'image et sa valeur de fin de décodage, lus sous le verrou de
+// l'AVVkFrame comme hwcontext_vulkan.h le demande. Une seule VkImage : une seule attente.
+std::expected<ReadyEvent, Refusal> vulkan_ready(const AVFrame& frame) {
+  auto* frames = reinterpret_cast<AVHWFramesContext*>(frame.hw_frames_ctx->data);
+  auto* context = static_cast<AVVulkanFramesContext*>(frames->hwctx);
+  auto* image = reinterpret_cast<AVVkFrame*>(frame.data[0]);
+  if (image == nullptr) return refuse(RefusalCode::FormatUnsupported, "image Vulkan sans AVVkFrame");
+  if (image->img[1] != VK_NULL_HANDLE) {
+    return refuse(RefusalCode::FormatUnsupported,
+                  "image Vulkan à plusieurs VkImage : une attente par image, hors du contrat de FrameData");
+  }
+  if (context->lock_frame != nullptr) context->lock_frame(frames, image);
+  ReadyEvent ready{.handle = handle_value(image->sem[0]), .value = image->sem_value[0], .owner = nullptr};
+  if (context->unlock_frame != nullptr) context->unlock_frame(frames, image);
+  return ready;
+}
 
 }  // namespace
 
@@ -151,6 +170,11 @@ std::expected<DecodedFrame, Refusal> to_decoded_frame(FramePtr frame, std::int64
   }
   auto color = color_info(*frame, sw_format);
   if (!color) return std::unexpected(color.error());
+  if (*memory == FrameMemory::Vulkan) {
+    auto own = vulkan_ready(*frame);
+    if (!own) return std::unexpected(own.error());
+    ready = std::move(*own);
+  }
 
   DecodedFrame decoded{
       .width = frame->width,

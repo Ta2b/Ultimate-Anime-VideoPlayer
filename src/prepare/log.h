@@ -1,14 +1,16 @@
-// Canal de journal du module prepare. Interne au module.
+// Canal de journal du module prepare : la convention est celle de core/log.h.
+// En-tête interne, inclus par les .cpp du module seulement.
 #pragma once
 
 #include <memory>
 
-#include <spdlog/logger.h>
+#include "core/log.h"
 
 namespace ajp::prepare {
 
-// Clone du journal par défaut, nommé « prepare » : mêmes sorties, sans toucher
-// au registre global de spdlog. Chaque objet du module garde le sien.
-std::shared_ptr<spdlog::logger> make_logger();
+// Un canal neuf, qui partage les puits installés par app ; chaque objet garde le sien.
+inline std::shared_ptr<spdlog::logger> make_logger() {
+  return log_channel("prepare");
+}
 
 }  // namespace ajp::prepare

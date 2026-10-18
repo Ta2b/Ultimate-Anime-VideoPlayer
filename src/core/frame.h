@@ -5,6 +5,7 @@
 #include <array>
 #include <cstddef>
 #include <cstdint>
+#include <limits>
 #include <memory>
 #include <optional>
 #include <span>
@@ -12,6 +13,21 @@
 #include "core/types.h"
 
 namespace ajp {
+
+// Horodatage inconnu, partout où un pts tient dans un std::int64_t (DecodedFrame, ring,
+// paquets). media traduit AV_NOPTS_VALUE de FFmpeg en kNoPts ; un module qui préfère
+// std::optional (core/cadence) passe par known_pts et pts_or_unknown, les deux seules
+// conversions. Un calcul sur un pts doit d'abord écarter kNoPts.
+inline constexpr std::int64_t kNoPts = std::numeric_limits<std::int64_t>::min();
+
+constexpr std::optional<std::int64_t> known_pts(std::int64_t pts_us) {
+  if (pts_us == kNoPts) return std::nullopt;
+  return pts_us;
+}
+
+constexpr std::int64_t pts_or_unknown(std::optional<std::int64_t> pts_us) {
+  return pts_us.value_or(kNoPts);
+}
 
 enum class PixelFormat : std::uint8_t {
   Nv12,         // 8 bits, chroma entrelacée
@@ -64,8 +80,18 @@ class FrameData {
   virtual std::size_t host_stride(int plane) const = 0;
   // Mémoire GPU : pointeur natif du plan i (CUdeviceptr, VkImage, ID3D11Texture2D…).
   virtual std::uintptr_t native_plane(int plane) const = 0;
-  // Événement à attendre côté GPU avant de lire (CUevent, VkSemaphore), 0 si aucun.
+  // Mémoire GPU linéaire (Cuda) : pas de ligne du plan i, en octets. 0 pour une mémoire
+  // opaque, dont le pilote seul connaît la disposition (VkImage, texture D3D11, surface
+  // VA-API non exportée, CVPixelBuffer), et pour l'hôte, qui a host_stride.
+  virtual std::size_t native_pitch(int plane) const = 0;
+  // Ce qu'il faut attendre côté GPU avant de lire, 0 si rien : CUevent du flux de décodage
+  // (Cuda), ou VkSemaphore timeline de l'AVVkFrame (Vulkan).
   virtual std::uintptr_t ready_event() const = 0;
+  // Vulkan : la valeur du sémaphore timeline de ready_event qui marque la fin du décodage,
+  // lue à la livraison. 0 pour un CUevent ou sans attente. Le lecteur garde l'image tant que
+  // sa propre lecture n'est pas achevée côté GPU : FFmpeg peut la réécrire dès qu'elle revient
+  // au pool.
+  virtual std::uint64_t ready_value() const = 0;
 };
 
 struct DecodedFrame {
@@ -74,7 +100,7 @@ struct DecodedFrame {
   int height = 0;
   PixelFormat format = PixelFormat::Nv12;
   ColorInfo color;
-  std::int64_t pts_us = 0;       // horodatage de présentation, microsecondes
+  std::int64_t pts_us = kNoPts;  // horodatage de présentation, microsecondes ; kNoPts si inconnu
   std::int64_t duration_us = 0;  // durée nominale, microsecondes
   std::uint32_t epoch = 0;       // incrémenté à chaque Flush ; une image d'une époque passée est jetée
   std::shared_ptr<const FrameData> data;
