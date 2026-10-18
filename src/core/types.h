@@ -28,6 +28,14 @@ enum class RefusalCode : std::uint8_t {
   PacingForbidden,   // Quality impose le rythme Source
   ModelUnavailable,  // modèle absent des capacités
   HdrUnavailable,    // route HDR impossible sur ce système ou cet écran
+
+  // vendor_hdr : SDK TrueHDR, chargement dynamique, contrat d'entrée
+  SdkRejected,         // SDK importé refusé : fichier absent ou vide, architecture, version, ABI
+  LibraryUnavailable,  // bibliothèque ou symbole introuvable au chargement
+  VendorCallFailed,    // un appel d'un SDK constructeur a renvoyé une erreur
+  InputMismatch,       // image ou tampon hors du contrat d'entrée (taille, format, tramage)
+  IoFailed,            // lecture, copie ou écriture de fichier impossible
+  Cancelled,           // opération longue annulée à la demande
 };
 
 struct Refusal {
@@ -59,6 +67,18 @@ constexpr std::string_view name(RefusalCode code) {
       return "ModelUnavailable";
     case RefusalCode::HdrUnavailable:
       return "HdrUnavailable";
+    case RefusalCode::SdkRejected:
+      return "SdkRejected";
+    case RefusalCode::LibraryUnavailable:
+      return "LibraryUnavailable";
+    case RefusalCode::VendorCallFailed:
+      return "VendorCallFailed";
+    case RefusalCode::InputMismatch:
+      return "InputMismatch";
+    case RefusalCode::IoFailed:
+      return "IoFailed";
+    case RefusalCode::Cancelled:
+      return "Cancelled";
   }
   return "Unknown";
 }
