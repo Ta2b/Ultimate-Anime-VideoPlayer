@@ -56,6 +56,15 @@ enum class RefusalCode : std::uint8_t {
   SubtitleBacklog,         // trop de demandes de rendu en attente d'un atlas
   LibassFailed,            // libass n'a pas créé sa bibliothèque, son moteur ou une piste
   ThreadUnavailable,       // le système refuse de lancer un thread de plus
+  CacheIo,                 // lecture, écriture ou renommage impossible dans le cache des moteurs
+  CacheBusy,               // verrou de clé tenu par un autre constructeur
+  Cancelled,               // construction annulée par sa demande ou par l'arrêt du thread
+  BuilderFailed,           // constructeur introuvable, sorti en erreur, ou moteur vide
+  BuilderCrashed,          // constructeur tué par un signal ou un plantage
+  BuilderTimeout,          // construction plus longue que son délai
+  ModelUnreadable,         // ONNX absent, tronqué ou malformé
+  ModelMismatch,           // hachage, précision ou forme différents de ModelSpec
+  ReceiptInvalid,          // reçu de qualification illisible, incomplet ou au hachage faux
 };
 
 struct Refusal {
@@ -141,6 +150,24 @@ constexpr std::string_view name(RefusalCode code) {
       return "LibassFailed";
     case RefusalCode::ThreadUnavailable:
       return "ThreadUnavailable";
+    case RefusalCode::CacheIo:
+      return "CacheIo";
+    case RefusalCode::CacheBusy:
+      return "CacheBusy";
+    case RefusalCode::Cancelled:
+      return "Cancelled";
+    case RefusalCode::BuilderFailed:
+      return "BuilderFailed";
+    case RefusalCode::BuilderCrashed:
+      return "BuilderCrashed";
+    case RefusalCode::BuilderTimeout:
+      return "BuilderTimeout";
+    case RefusalCode::ModelUnreadable:
+      return "ModelUnreadable";
+    case RefusalCode::ModelMismatch:
+      return "ModelMismatch";
+    case RefusalCode::ReceiptInvalid:
+      return "ReceiptInvalid";
   }
   return "Unknown";
 }
