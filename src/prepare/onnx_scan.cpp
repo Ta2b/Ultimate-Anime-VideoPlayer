@@ -12,6 +12,8 @@
 #include <string_view>
 #include <utility>
 
+#include "prepare/utf8.h"
+
 namespace ajp::prepare {
 namespace {
 
@@ -288,7 +290,7 @@ std::expected<OnnxSummary, Refusal> scan_onnx(Bytes model) {
 }
 
 bool is_safe_location(const std::string& location) {
-  const std::filesystem::path relative(location);
+  const std::filesystem::path relative = path_from_utf8(location);
   if (location.empty() || relative.is_absolute() || relative.has_root_name() ||
       location.find('\\') != std::string::npos || location.find(':') != std::string::npos) {
     return false;

@@ -2,8 +2,8 @@
 //
 // Copié sous le nom « trtexec-<mode> », il joue un faux trtexec : il imprime
 // une progression semblable à celle de trtexec 11, puis réussit, échoue,
-// plante ou se bloque. Lancé directement, son premier argument choisit un
-// comportement pour les tests du lanceur et du cache.
+// plante, se bloque ou modifie le modèle qu'il lit. Lancé directement, son
+// premier argument choisit un comportement pour les tests du lanceur et du cache.
 #include <chrono>
 #include <cstdio>
 #include <cstdlib>
@@ -46,7 +46,7 @@ int fake_trtexec(std::string_view mode, const std::vector<std::string>& args) {
   for (const std::string& arg : args) say("[I] arg " + arg);
   const fs::path engine = value_of(args, "--saveEngine=");
   const fs::path timing_cache = value_of(args, "--timingCacheFile=");
-  append_line(timing_cache.string() + ".calls", "appel");
+  append_line(value_of(args, "--onnx=") + ".calls", "appel");
   say("[10/18/2026-15:29:26] [I] Start parsing network model.");
   if (mode == "fail") {
     say("[10/18/2026-15:29:26] [E] Error[4]: fausse erreur de construction");
@@ -54,16 +54,20 @@ int fake_trtexec(std::string_view mode, const std::vector<std::string>& args) {
     return 1;
   }
   say("[10/18/2026-15:29:26] [I] Finished parsing network model. Parse time: 0.01");
-  if (mode == "crash") std::abort();
+  if (mode == "crash") {
+    append_line(timing_cache, "à moitié");  // comme trtexec tué pendant qu'il écrit son cache
+    std::abort();
+  }
   if (mode == "hang") std::this_thread::sleep_for(std::chrono::seconds(60));
   if (mode == "slow") std::this_thread::sleep_for(milliseconds(300));
+  if (mode == "mutate") append_line(value_of(args, "--onnx="), "octets ajoutés pendant la construction");
   say("[I] [TRT] Total Activation Memory: 1024 bytes");
   say("[I] [TRT] Engine generation completed in 0.01 seconds.");
   {
     std::ofstream out(engine, std::ios::binary);
     if (mode != "empty") out << "moteur factice pour " << value_of(args, "--onnx=");
   }
-  std::ofstream(timing_cache) << "temps";
+  append_line(timing_cache, "passe");  // le cache reçu, plus les temps de cette construction
   say("[I] Engine built in 0.02 sec.");
   say("&&&& PASSED TensorRT.trtexec [TensorRT v110300] [b99]");
   return 0;

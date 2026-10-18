@@ -11,7 +11,15 @@
 #include <tuple>
 #include <vector>
 
-#ifndef _WIN32
+#include "prepare/utf8.h"
+
+#ifdef _WIN32
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <windows.h>
+#else
+#include <fcntl.h>
 #include <unistd.h>
 #endif
 
@@ -37,8 +45,19 @@ std::expected<void, Refusal> mark_stage(const fs::path& folder, std::string_view
   return {};
 }
 
+// Le renommage lui-même survit à une coupure (POSIX ; NTFS le journalise seul).
+// Au mieux : le contenu, déjà écrit, reste valide si cette écriture échoue.
+void sync_directory([[maybe_unused]] const fs::path& folder) {
+#ifndef _WIN32
+  const int fd = ::open(folder.c_str(), O_RDONLY | O_CLOEXEC | O_DIRECTORY);
+  if (fd < 0) return;
+  ::fsync(fd);
+  ::close(fd);
+#endif
+}
+
 bool starts_with(const fs::path& entry, std::string_view prefix) {
-  return entry.filename().string().starts_with(prefix);
+  return utf8_path(entry.filename()).starts_with(prefix);
 }
 
 // Parcourt parent sans exception ; visit rend false pour arrêter le parcours.
@@ -67,16 +86,51 @@ std::string io_message(std::string_view operation, const fs::path& path, std::er
   full = full || error == std::error_code(EDQUOT, std::generic_category());
 #endif
   if (full) hint = " Libérez de la place ou du quota pour le cache, puis rouvrez la vidéo.";
-  return std::format("{} : {} : {}.{}", operation, path.string(), error.message(), hint);
+  return std::format("{} : {} : {}.{}", operation, utf8_path(path), error.message(), hint);
 }
 
 Refusal io_refusal(std::string_view operation, const fs::path& path, std::error_code error) {
   return {RefusalCode::CacheIo, io_message(operation, path, error)};
 }
 
+std::expected<void, Refusal> sync_file(const fs::path& file) {
+#ifdef _WIN32
+  // FlushFileBuffers demande une poignée ouverte en écriture.
+  HANDLE handle = CreateFileW(file.c_str(), GENERIC_WRITE, FILE_SHARE_READ | FILE_SHARE_WRITE, nullptr,
+                              OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
+  if (handle == INVALID_HANDLE_VALUE) {
+    return std::unexpected(io_refusal("ouverture avant écriture sur disque", file,
+                                      {static_cast<int>(GetLastError()), std::system_category()}));
+  }
+  const bool flushed = FlushFileBuffers(handle) != 0;
+  const std::error_code error{flushed ? 0 : static_cast<int>(GetLastError()), std::system_category()};
+  CloseHandle(handle);
+#else
+  const int fd = ::open(file.c_str(), O_RDONLY | O_CLOEXEC);
+  if (fd < 0) {
+    return std::unexpected(
+        io_refusal("ouverture avant écriture sur disque", file, {errno, std::generic_category()}));
+  }
+  const bool flushed = ::fsync(fd) == 0;
+  const std::error_code error{flushed ? 0 : errno, std::generic_category()};
+  ::close(fd);
+#endif
+  if (!flushed) return std::unexpected(io_refusal("écriture sur disque", file, error));
+  return {};
+}
+
+std::expected<void, Refusal> publish_file(const fs::path& staged, const fs::path& destination) {
+  if (auto synced = sync_file(staged); !synced) return synced;
+  std::error_code error;
+  fs::rename(staged, destination, error);
+  if (error) return std::unexpected(io_refusal("publication", destination, error));
+  sync_directory(destination.parent_path());
+  return {};
+}
+
 std::expected<void, Refusal> write_atomic(const fs::path& destination, std::string_view bytes) {
-  const fs::path temporary =
-      destination.parent_path() / (destination.filename().string() + ".tmp-" + random_suffix());
+  fs::path temporary = destination;
+  temporary += ".tmp-" + random_suffix();
   {
     std::ofstream file(temporary, std::ios::binary | std::ios::trunc);
     file.write(bytes.data(), static_cast<std::streamsize>(bytes.size()));
@@ -87,14 +141,12 @@ std::expected<void, Refusal> write_atomic(const fs::path& destination, std::stri
       return std::unexpected(io_refusal("écriture du temporaire", temporary, {}));
     }
   }
-  std::error_code error;
-  fs::rename(temporary, destination, error);
-  if (error) {
+  auto published = publish_file(temporary, destination);
+  if (!published) {
     std::error_code ignored;
     fs::remove(temporary, ignored);
-    return std::unexpected(io_refusal("publication", destination, error));
   }
-  return {};
+  return published;
 }
 
 std::expected<fs::path, Refusal> reserve_stage(const fs::path& parent, std::string_view prefix,

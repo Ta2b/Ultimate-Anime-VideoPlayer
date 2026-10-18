@@ -64,8 +64,10 @@ class Bench {
   BuildPlan plan(const ShapeSet& shapes) const {
     return plan_build(config, model, read_model(model, "input").value(), shapes).value();
   }
-  std::size_t builder_calls(const ShapeSet& shapes) const {
-    return test::read_lines(timing_cache_for(plan(shapes).engine).string() + ".calls").size();
+  // Lancements de trtexec, comptés par le faux trtexec à côté du modèle.
+  std::size_t builder_calls() const { return test::read_lines(model.onnx_path.string() + ".calls").size(); }
+  std::vector<std::string> timing_cache(const ShapeSet& shapes) const {
+    return test::read_lines(timing_cache_for(plan(shapes).engine));
   }
   std::vector<std::string> logged_args(const ShapeSet& shapes) const {
     std::vector<std::string> args;
@@ -113,7 +115,10 @@ TEST_CASE("TrtexecBuilder : construit, publie, puis réutilise le moteur", "[pre
   CHECK(std::vector(args.begin() + 2, args.end() - 1) ==
         std::vector<std::string>{"--builderOptimizationLevel=5", "--optShapes=input:1x3x1080x1920",
                                  "--skipInference"});
-  CHECK(args.back() == "--timingCacheFile=" + timing_cache_for(artifact->path).string());
+  // trtexec écrit dans une copie du timing cache, publiée après la construction.
+  CHECK(args.back().starts_with("--timingCacheFile=" + (bench.cache() / ".aji-build-").string()));
+  CHECK(args.back().ends_with("timing.cache"));
+  CHECK(bench.timing_cache(kHd) == std::vector<std::string>{"passe"});
 
   REQUIRE_FALSE(steps.seen.empty());
   CHECK(std::ranges::is_sorted(steps.seen, {}, &std::pair<float, std::string>::first));
@@ -122,7 +127,7 @@ TEST_CASE("TrtexecBuilder : construit, publie, puis réutilise le moteur", "[pre
   Steps again;
   auto second = again.progress();
   CHECK(builder.build(bench.model, kHd, second).value().path == artifact->path);
-  CHECK(bench.builder_calls(kHd) == 1);
+  CHECK(bench.builder_calls() == 1);
   CHECK(again.seen.back().second == "Moteur en cache");
 }
 
@@ -150,12 +155,15 @@ TEST_CASE("TrtexecBuilder : chaque échec de trtexec devient un refus, rien n'es
       }));
   Bench bench(mode);
   bench.config.timeout = timeout;
+  test::write_file(timing_cache_for(bench.plan(kHd).engine), "ancien\n");
   Steps steps;
   auto progress = steps.progress();
   const auto result = TrtexecBuilder(bench.config).build(bench.model, kHd, progress);
   CHECK(test::refusal(result) == code);
   CHECK_FALSE(test::fs::exists(bench.plan(kHd).engine));
   CHECK(test::stage_count(bench.cache()) == 0);
+  // Un trtexec qui plante en écrivant son timing cache ne touche pas au cache persistant.
+  CHECK(bench.timing_cache(kHd) == std::vector<std::string>{"ancien"});
   if (mode == "fail") {
     CHECK(result.error().detail.find("fausse erreur de construction") != std::string::npos);
     CHECK(test::read_lines(bench.plan(kHd).log_file).back().starts_with("[ajp] "));
@@ -241,6 +249,68 @@ TEST_CASE("TrtexecBuilder : la vérification du moteur peut refuser sa publicati
   CHECK_FALSE(test::fs::exists(bench.plan(kHd).engine));
 }
 
+TEST_CASE("TrtexecBuilder : un modèle modifié pendant la construction n'est pas publié",
+          "[prepare][builder]") {
+  Bench bench("mutate");
+  Steps steps;
+  auto progress = steps.progress();
+  CHECK(test::refusal(TrtexecBuilder(bench.config).build(bench.model, kHd, progress)) ==
+        RefusalCode::ModelMismatch);
+  CHECK(test::stage_count(bench.cache()) == 0);
+  CHECK(std::ranges::none_of(test::fs::directory_iterator(bench.cache()),
+                             [](const auto& entry) { return entry.path().extension() == ".engine"; }));
+}
+
+TEST_CASE("TrtexecBuilder : un ONNX qui n'est pas un fichier est refusé sans exception",
+          "[prepare][builder]") {
+  Bench bench("ok");
+  test::fs::remove(bench.model.onnx_path);
+  test::fs::create_directories(bench.model.onnx_path);  // un dossier à la place du modèle
+  Steps steps;
+  auto progress = steps.progress();
+  CHECK(test::refusal(TrtexecBuilder(bench.config).build(bench.model, kHd, progress)) ==
+        RefusalCode::ModelUnreadable);
+  test::fs::remove(bench.model.onnx_path);
+  CHECK(test::refusal(TrtexecBuilder(bench.config).build(bench.model, kHd, progress)) ==
+        RefusalCode::ModelUnreadable);
+}
+
+TEST_CASE("TrtexecBuilder : rebuild remplace le moteur refusé par load(), pas un autre",
+          "[prepare][builder]") {
+  Bench bench("ok");
+  const TrtexecBuilder builder(bench.config);
+  Steps steps;
+  auto progress = steps.progress();
+  const auto first = builder.build(bench.model, kHd, progress);
+  REQUIRE(first);
+  test::write_file(first->path, "moteur tronqué par une coupure");
+  const std::string rejected = sha256_file(first->path).value();
+
+  // Un autre lecteur a refusé d'autres octets : ceux en place se reprennent.
+  REQUIRE(builder.rebuild(bench.model, kHd, progress, sha256_hex("autres octets")));
+  CHECK(bench.builder_calls() == 1);
+  CHECK(test::read_file(first->path) == "moteur tronqué par une coupure");
+
+  const auto second = builder.rebuild(bench.model, kHd, progress, rejected);
+  REQUIRE(second);
+  CHECK(second->path == first->path);
+  CHECK(bench.builder_calls() == 2);
+  CHECK(test::read_file(second->path) == "moteur factice pour " + bench.model.onnx_path.string());
+  CHECK(test::stage_count(bench.cache()) == 0);
+  CHECK(bench.timing_cache(kHd) == std::vector<std::string>{"passe", "passe"});  // reçu, puis enrichi
+
+  // Un échec de la reconstruction garde le moteur en place.
+  test::write_file(first->path, "encore tronqué");
+  const TrtexecBuilder refusing(bench.config, [](const test::fs::path&) -> std::expected<void, ajp::Refusal> {
+    return std::unexpected(ajp::Refusal{RefusalCode::BuilderFailed, "désérialisation impossible"});
+  });
+  CHECK(test::refusal(refusing.rebuild(bench.model, kHd, progress, sha256_file(first->path).value())) ==
+        RefusalCode::BuilderFailed);
+  CHECK(test::read_file(first->path) == "encore tronqué");
+  CHECK(test::refusal(builder.rebuild(bench.model, kHd, progress, "pas un sha")) ==
+        RefusalCode::FieldOutOfRange);
+}
+
 TEST_CASE("TrtexecBuilder : deux demandes simultanées, un seul trtexec", "[prepare][builder]") {
   Bench bench("slow");
   const TrtexecBuilder builder(bench.config);
@@ -257,5 +327,5 @@ TEST_CASE("TrtexecBuilder : deux demandes simultanées, un seul trtexec", "[prep
   }
   CHECK_FALSE(paths[0].empty());
   CHECK(paths[0] == paths[1]);
-  CHECK(bench.builder_calls(kHd) == 1);
+  CHECK(bench.builder_calls() == 1);
 }

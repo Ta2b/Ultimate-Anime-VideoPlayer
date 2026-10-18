@@ -5,6 +5,8 @@
 //   812-860   sanitize_settings_trt11 : drapeaux du typage faible retirés
 //   862-890   make_build_spec : --onnx, --saveEngine, timing cache par moteur
 //   1313-1320 réglages de RIFE : construction fortement typée
+// et de AnimeJaNaiManager-HDR (manager-v2) AnimeJaNaiConfEditor/ViewModels/
+// MainWindowViewModel.cs:1581-1610 : ordre des profils du préréglage « Dynamic ».
 // Les réglages hachés dans la clé sont ceux du fork, au caractère près ; seule
 // la ligne de commande passe par le nettoyage de TensorRT 11.
 #pragma once
@@ -58,10 +60,11 @@ SanitizedSettings sanitize_trt11(std::string_view settings);
 struct TrtexecPaths {
   std::filesystem::path onnx;
   std::filesystem::path engine;        // sortie, dans le dossier de travail
-  std::filesystem::path timing_cache;  // persistant, à côté du moteur publié
+  std::filesystem::path timing_cache;  // copie de travail du cache persistant (builder.cpp)
 };
 
-// « <moteur>.timing.cache » : les temps des tactiques servent aux constructions suivantes.
+// « <moteur>.timing.cache », persistant à côté du moteur publié : les temps des
+// tactiques servent aux constructions suivantes.
 std::filesystem::path timing_cache_for(const std::filesystem::path& engine);
 
 // Arguments de trtexec, sans argv[0] ni guillemets : aucun shell ne les relit.

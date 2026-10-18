@@ -11,9 +11,11 @@
 #include <spdlog/logger.h>
 
 #include "prepare/cache.h"
+#include "prepare/cache_io.h"
 #include "prepare/log.h"
 #include "prepare/process.h"
 #include "prepare/trtexec_progress.h"
+#include "prepare/utf8.h"
 
 namespace ajp::prepare {
 namespace {
@@ -34,7 +36,7 @@ std::string free_space(const fs::path& folder) {
 std::expected<void, Refusal> judge(const ProcessExit& exit, const TrtexecProgress& parsed,
                                    const BuildPlan& plan, std::chrono::milliseconds timeout) {
   const std::string error = parsed.last_error().empty() ? "" : " ; dernière erreur : " + parsed.last_error();
-  const std::string where = " ; journal : " + plan.log_file.string();
+  const std::string where = " ; journal : " + utf8_path(plan.log_file);
   switch (exit.kind) {
     case ExitKind::Cancelled:
       return std::unexpected(Refusal{RefusalCode::Cancelled, "construction annulée de " + plan.engine_file});
@@ -58,6 +60,28 @@ std::expected<void, Refusal> judge(const ProcessExit& exit, const TrtexecProgres
             describe(exit), error, where, free_space(plan.engine.parent_path()))});
   }
   return {};
+}
+
+// trtexec réécrit son timing cache sur place, sans temporaire : tué pendant
+// cette écriture, il laisserait un cache corrompu que chaque construction
+// suivante refuserait. Il travaille donc sur une copie du dossier de travail,
+// publiée par renommage après une construction réussie. Le fork lui passait le
+// cache persistant (aji_trt.cpp:876-889) ; la clé du moteur n'en dépend pas.
+void stage_timing_cache(const fs::path& persistent, const fs::path& staged, spdlog::logger& log) {
+  std::error_code error;
+  if (!fs::exists(persistent, error)) return;
+  fs::copy_file(persistent, staged, error);
+  if (!error) return;
+  log.warn("timing cache {} illisible ({}), construction sans lui", utf8_path(persistent), error.message());
+  fs::remove(staged, error);
+}
+
+void keep_timing_cache(const fs::path& staged, const fs::path& persistent, spdlog::logger& log) {
+  std::error_code error;
+  if (!fs::exists(staged, error)) return;
+  if (auto kept = publish_file(staged, persistent); !kept) {
+    log.warn("timing cache non gardé : {}", kept.error().detail);  // la construction suivante sera plus lente
+  }
 }
 
 }  // namespace
@@ -89,6 +113,13 @@ TrtexecBuilder::TrtexecBuilder(TrtexecConfig config, EngineCheck check)
 std::expected<gpu::Artifact, Refusal> TrtexecBuilder::build(const gpu::ModelSpec& model,
                                                             const gpu::ShapeSet& shapes,
                                                             gpu::Progress& progress) const {
+  return rebuild(model, shapes, progress, {});
+}
+
+std::expected<gpu::Artifact, Refusal> TrtexecBuilder::rebuild(const gpu::ModelSpec& model,
+                                                              const gpu::ShapeSet& shapes,
+                                                              gpu::Progress& progress,
+                                                              const std::string& rejected_sha256) const {
   if (config_.runtime.major < 11) {
     return std::unexpected(Refusal{RefusalCode::FieldOutOfRange,
                                    "TensorRT " + config_.runtime.token() + " : trtexec 11 ou plus attendu"});
@@ -102,7 +133,7 @@ std::expected<gpu::Artifact, Refusal> TrtexecBuilder::build(const gpu::ModelSpec
   }
 
   report(progress, 0.0F, "Préparation");
-  const CacheEntry entry{.destination = plan->engine};
+  const CacheEntry entry{.destination = plan->engine, .rejected_sha256 = rejected_sha256};
   auto produced = produce_once(
       entry, [&](const fs::path& output) { return run(*plan, model, *source, output, progress); },
       progress.stop);
@@ -121,11 +152,13 @@ std::expected<gpu::Artifact, Refusal> TrtexecBuilder::build(const gpu::ModelSpec
 std::expected<void, Refusal> TrtexecBuilder::run(const BuildPlan& plan, const gpu::ModelSpec& model,
                                                  const ModelSource& source, const fs::path& output,
                                                  gpu::Progress& progress) const {
+  const fs::path timing_cache = timing_cache_for(plan.engine);
+  const fs::path staged_cache = output.parent_path() / "timing.cache";
+  stage_timing_cache(timing_cache, staged_cache, *log_);
   const ProcessSpec spec{
       .program = config_.trtexec,
-      .args = trtexec_arguments(
-          {.onnx = model.onnx_path, .engine = output, .timing_cache = timing_cache_for(plan.engine)},
-          plan.command.kept),
+      .args = trtexec_arguments({.onnx = model.onnx_path, .engine = output, .timing_cache = staged_cache},
+                                plan.command.kept),
       .timeout = config_.timeout,
   };
   log_->info("{} {} : construction de {}", model.id, plan.label, plan.engine_file);
@@ -147,13 +180,22 @@ std::expected<void, Refusal> TrtexecBuilder::run(const BuildPlan& plan, const gp
     log_file << "[ajp] " << verdict.error().detail << '\n';
     return verdict;
   }
+  if (!is_published(output)) {
+    return std::unexpected(
+        Refusal{RefusalCode::BuilderFailed,
+                "trtexec a réussi sans écrire de moteur ; journal : " + utf8_path(plan.log_file)});
+  }
   // Le moteur doit correspondre au modèle haché avant la construction.
   auto after = read_model(model, config_.input_name);
-  if (!after || after->content_key != source.content_key) {
-    return std::unexpected(
-        Refusal{RefusalCode::ModelMismatch, model.onnx_path.string() + " a changé pendant la construction"});
+  if (!after) return std::unexpected(after.error());
+  if (after->content_key != source.content_key) {
+    return std::unexpected(Refusal{RefusalCode::ModelMismatch,
+                                   utf8_path(model.onnx_path) + " a changé pendant la construction"});
   }
-  if (check_) return check_(output);
+  if (check_) {
+    if (auto usable = check_(output); !usable) return usable;
+  }
+  keep_timing_cache(staged_cache, timing_cache, *log_);
   return {};
 }
 

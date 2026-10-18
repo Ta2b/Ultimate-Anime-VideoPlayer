@@ -58,7 +58,7 @@ struct BenchRecord {
 
 struct Receipt {
   std::uint64_t plan_hash = 0;  // core::Plan::hash
-  std::string created_utc;      // « 2026-10-18T15:29:26Z »
+  std::string created_utc;      // « 2026-10-18T15:29:26Z », UTC à la seconde
   DriverRecord driver;
   std::vector<EngineRecord> engines;
   std::vector<GoldenRecord> goldens;
@@ -69,7 +69,8 @@ struct Receipt {
 // Texte TOML de tout le reçu sauf son sceau.
 std::string canonical_text(const Receipt& receipt);
 
-// Calcule le sceau ; refuse une valeur hors plage (temps négatif ou non fini…).
+// Calcule le sceau ; refuse une valeur hors plage (temps négatif ou non fini,
+// horodatage mal formé, texte qui n'est pas de l'UTF-8…) : tout reçu scellé se relit.
 std::expected<Receipt, Refusal> seal_receipt(Receipt receipt);
 
 // Texte complet : canonique, puis la table [seal].

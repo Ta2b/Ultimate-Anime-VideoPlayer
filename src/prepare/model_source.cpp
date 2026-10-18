@@ -1,12 +1,18 @@
+// Lecture du modèle avant sa construction, propre à ajp : le fork lisait l'ONNX
+// sans le comparer à une spécification.
 #include "prepare/model_source.h"
 
 #include <algorithm>
+#include <cstdint>
+#include <filesystem>
 #include <format>
 #include <fstream>
+#include <system_error>
 #include <utility>
 
 #include "prepare/identity.h"
 #include "prepare/sha256.h"
+#include "prepare/utf8.h"
 
 namespace ajp::prepare {
 namespace {
@@ -15,15 +21,27 @@ std::unexpected<Refusal> refuse(RefusalCode code, std::string detail) {
   return std::unexpected(Refusal{code, std::move(detail)});
 }
 
+// La taille vient du système de fichiers, jamais de tellg() : sur un dossier,
+// tellg() rend une position sans rapport avec un contenu (LLONG_MAX sous ext4).
 std::expected<std::vector<std::byte>, Refusal> read_bytes(const std::filesystem::path& file) {
-  std::ifstream stream(file, std::ios::binary | std::ios::ate);
-  if (!stream) return refuse(RefusalCode::ModelUnreadable, "ONNX absent ou illisible : " + file.string());
-  const auto size = static_cast<std::size_t>(stream.tellg());
-  std::vector<std::byte> bytes(size);
-  stream.seekg(0);
+  std::error_code error;
+  const bool regular = std::filesystem::is_regular_file(file, error);
+  const std::uintmax_t size = regular ? std::filesystem::file_size(file, error) : 0;
+  if (!regular || error) {
+    return refuse(RefusalCode::ModelUnreadable,
+                  "ONNX absent ou qui n'est pas un fichier : " + utf8_path(file));
+  }
+  if (size == 0 || size > kMaxOnnxBytes) {
+    return refuse(RefusalCode::ModelUnreadable, std::format("ONNX de {} octets, hors de 1 à {} : {}", size,
+                                                            kMaxOnnxBytes, utf8_path(file)));
+  }
+  std::vector<std::byte> bytes(static_cast<std::size_t>(size));
+  std::ifstream stream(file, std::ios::binary);
   stream.read(reinterpret_cast<char*>(bytes.data()), static_cast<std::streamsize>(size));
-  if (!stream || bytes.empty())
-    return refuse(RefusalCode::ModelUnreadable, "ONNX vide ou tronqué : " + file.string());
+  if (!stream || stream.gcount() != static_cast<std::streamsize>(size)) {
+    return refuse(RefusalCode::ModelUnreadable,
+                  "ONNX illisible ou tronqué pendant sa lecture : " + utf8_path(file));
+  }
   return bytes;
 }
 
@@ -53,7 +71,7 @@ std::expected<ModelSource, Refusal> read_model(const gpu::ModelSpec& model, std:
   file_hash.update(*graph);
   if (file_hash.hex() != model.sha256) {
     return refuse(RefusalCode::ModelMismatch,
-                  std::format("{} : SHA-256 {} au lieu de {}", model.onnx_path.string(), file_hash.hex(),
+                  std::format("{} : SHA-256 {} au lieu de {}", utf8_path(model.onnx_path), file_hash.hex(),
                               model.sha256));
   }
   auto summary = scan_onnx(*graph);

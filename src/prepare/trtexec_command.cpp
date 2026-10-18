@@ -13,12 +13,14 @@
 namespace ajp::prepare {
 namespace {
 
+bool is_fixed(const gpu::ShapeSet& shapes) {
+  return shapes.min.dims == shapes.opt.dims && shapes.opt.dims == shapes.max.dims;
+}
+
 // Formes de trtexec : --optShapes seul pour un moteur statique (le défaut du
 // fork), les trois profils pour un moteur dynamique.
 std::string profile_flags(std::string_view input, const gpu::ShapeSet& shapes) {
-  if (shapes.min.dims == shapes.opt.dims && shapes.opt.dims == shapes.max.dims) {
-    return std::format(" --optShapes={}:{}", input, shape_text(shapes.opt));
-  }
+  if (is_fixed(shapes)) return std::format(" --optShapes={}:{}", input, shape_text(shapes.opt));
   return std::format(" --minShapes={0}:{1} --optShapes={0}:{2} --maxShapes={0}:{3}", input,
                      shape_text(shapes.min), shape_text(shapes.opt), shape_text(shapes.max));
 }
@@ -66,6 +68,10 @@ std::string engine_settings(Recipe recipe, std::string_view input_name,
   const std::string profile = shapes ? profile_flags(input_name, *shapes) : "";
   switch (recipe) {
     case Recipe::Upscaler:
+      // Le préréglage « Dynamic » du Manager ajoute ses trois profils après
+      // --skipInference (MainWindowViewModel.cs:1606-1610, InsertBeforeTactics) :
+      // même ordre ici, pour que la clé d'un moteur dynamique du fork reste la sienne.
+      if (shapes && !is_fixed(*shapes)) return "--builderOptimizationLevel=5 --skipInference" + profile;
       return "--builderOptimizationLevel=5" + profile + " --skipInference";
     case Recipe::Fp32Islands:
       return "--stronglyTyped" + profile +

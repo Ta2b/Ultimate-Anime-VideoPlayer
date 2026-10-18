@@ -35,8 +35,16 @@ TEST_CASE("engine_settings : profil dynamique et ONNX statique", "[prepare][trte
   const ajp::gpu::ShapeSet dynamic{
       .min = {{1, 3, 360, 640}}, .opt = {{1, 3, 720, 1280}}, .max = {{1, 3, 1080, 1920}}};
   CHECK(engine_settings(Recipe::Upscaler, "input", dynamic) ==
-        "--builderOptimizationLevel=5 --minShapes=input:1x3x360x640 --optShapes=input:1x3x720x1280 "
-        "--maxShapes=input:1x3x1080x1920 --skipInference");
+        "--builderOptimizationLevel=5 --skipInference --minShapes=input:1x3x360x640 "
+        "--optShapes=input:1x3x720x1280 --maxShapes=input:1x3x1080x1920");
+  // Préréglage « Dynamic » du Manager (MainWindowViewModel.cs:1606-1610) appliqué
+  // au réglage par défaut, octet pour octet : la clé du moteur du fork est reprise.
+  const ajp::gpu::ShapeSet manager_dynamic{
+      .min = {{1, 3, 8, 8}}, .opt = {{1, 3, 1080, 1920}}, .max = {{1, 3, 1080, 1920}}};
+  CHECK(engine_settings(Recipe::Upscaler, "input", manager_dynamic) ==
+        "--builderOptimizationLevel=5 --skipInference --minShapes=input:1x3x8x8 "
+        "--optShapes=input:1x3x1080x1920 --maxShapes=input:1x3x1080x1920");
+  // Préréglage « Static ONNX » du Manager : aucun profil (RemoveShapeArgs).
   CHECK(engine_settings(Recipe::Upscaler, "input", std::nullopt) ==
         "--builderOptimizationLevel=5 --skipInference");
   CHECK(shapes_label(dynamic) == "640x360-1920x1080");
@@ -59,6 +67,11 @@ TEST_CASE("sanitize_trt11 : parité avec le fork", "[prepare][trtexec]") {
             .kept == "--optShapes=input:1x3x720x1280 --memPoolSize=workspace:2048M ");
   CHECK(sanitize_trt11("--bf16  --int8   --skipInference --outputIOFormats=fp16:chw").kept ==
         "--skipInference ");
+  // Bords du fork, gardés tels quels : seul le bord droit d'un drapeau est vérifié,
+  // et seul le premier --workspace est réécrit.
+  CHECK(sanitize_trt11("x--fp16 --int8").kept == "x");
+  CHECK(sanitize_trt11("--workspace=1 --workspace=2").kept == "--memPoolSize=workspace:1M --workspace=2");
+  CHECK(sanitize_trt11("--tacticSources=-CUDNN").kept.empty());
 }
 
 TEST_CASE("sanitize_trt11 : chaque drapeau retiré est nommé", "[prepare][trtexec]") {

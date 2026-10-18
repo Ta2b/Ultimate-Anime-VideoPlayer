@@ -87,9 +87,13 @@ class Worker {
   std::deque<BuildDone> undelivered_;
 };
 
+// Inbox::wait rend encore les messages en attente après la demande d'arrêt : la
+// boucle teste l'arrêt elle-même, pour abandonner la file au lieu de la construire.
 void run(const std::stop_token& stop, PreparerInbox& inbox, PreparerSink& sink) {
   Worker worker(inbox, sink);
-  while (auto message = inbox.wait(stop)) {
+  while (!stop.stop_requested()) {
+    auto message = inbox.wait(stop);
+    if (!message) break;
     try {
       std::visit([&](auto& m) { worker.handle(m, stop); }, *message);
     } catch (...) {

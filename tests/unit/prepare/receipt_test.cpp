@@ -111,6 +111,24 @@ TEST_CASE("Receipt : une valeur hors plage est refusée au scellement", "[prepar
   CHECK(test::refusal(seal_receipt(engine)) == RefusalCode::FieldOutOfRange);
 }
 
+TEST_CASE("Receipt : rien ne se scelle qui ne se relirait pas", "[prepare][receipt]") {
+  // toml++ refuse un texte mal formé : un tel reçu serait écrit puis jamais relu.
+  auto bytes = sample();
+  bytes.driver.device = "RTX \xff\xfe";
+  CHECK(test::refusal(seal_receipt(bytes)) == RefusalCode::FieldOutOfRange);
+  auto golden = sample();
+  golden.goldens[0].name = "moitié \xc3";
+  CHECK(test::refusal(seal_receipt(golden)) == RefusalCode::FieldOutOfRange);
+  for (const char* when : {"", "2026-10-18 15:29:26", "2026-10-18T15:29:26+02:00", "2026-1O-18T15:29:26Z"}) {
+    auto date = sample();
+    date.created_utc = when;
+    CHECK(test::refusal(seal_receipt(date)) == RefusalCode::FieldOutOfRange);
+  }
+  const std::string text = receipt_text(seal_receipt(sample()).value());
+  CHECK(test::refusal(parse_receipt(replaced(text, "2026-10-18T15:29:26Z", "hier"))) ==
+        RefusalCode::ReceiptInvalid);
+}
+
 TEST_CASE("Receipt : réels et chaînes se relisent au bit près", "[prepare][receipt]") {
   auto r = sample();
   r.driver.device = "Carte \"spéciale\" \\ tab\t日本";

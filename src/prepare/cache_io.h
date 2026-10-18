@@ -21,7 +21,17 @@ namespace ajp::prepare {
 std::string io_message(std::string_view operation, const std::filesystem::path& path, std::error_code error);
 Refusal io_refusal(std::string_view operation, const std::filesystem::path& path, std::error_code error);
 
-// Écrit bytes dans un temporaire du même dossier puis le renomme : un lecteur
+// Pousse le contenu de file sur le disque (fsync, FlushFileBuffers).
+std::expected<void, Refusal> sync_file(const std::filesystem::path& file);
+
+// Publie staged sous destination, en remplaçant l'ancienne entrée : contenu
+// écrit sur disque, renommage atomique, puis dossier écrit sur disque (POSIX).
+// Sans ces écritures, une coupure de courant juste après le renommage pourrait
+// laisser sous le nom final un fichier vide ou partiel.
+std::expected<void, Refusal> publish_file(const std::filesystem::path& staged,
+                                          const std::filesystem::path& destination);
+
+// Écrit bytes dans un temporaire du même dossier puis le publie : un lecteur
 // voit l'ancien contenu ou le nouveau, jamais un fichier à moitié écrit.
 std::expected<void, Refusal> write_atomic(const std::filesystem::path& destination, std::string_view bytes);
 

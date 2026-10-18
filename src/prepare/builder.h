@@ -4,7 +4,8 @@
 // (engine_path_for), 691-760 (run_build_process), 762-806 (run_build_spec) et
 // 862-890 (make_build_spec). Un moteur à la fois : l'appelant est le thread
 // preparer. Un plantage de trtexec devient un refus et épargne le lecteur ;
-// un moteur n'est publié dans le cache que complet et vérifié.
+// un moteur n'est publié dans le cache que complet et vérifié, et son timing
+// cache seulement après une construction réussie.
 #pragma once
 
 #include <chrono>
@@ -58,6 +59,13 @@ class TrtexecBuilder {
   // Contrat de Backend::build : un backend TensorRT y délègue sa construction.
   std::expected<gpu::Artifact, Refusal> build(const gpu::ModelSpec& model, const gpu::ShapeSet& shapes,
                                               gpu::Progress& progress) const;
+
+  // Reconstruit un moteur publié que load() n'a pas pu désérialiser, dont le
+  // fichier a ce SHA-256 (rejected_digest du fork). Il reste en place jusqu'à
+  // son remplacement réussi ; s'il a déjà été remplacé, le remplaçant se reprend.
+  std::expected<gpu::Artifact, Refusal> rebuild(const gpu::ModelSpec& model, const gpu::ShapeSet& shapes,
+                                                gpu::Progress& progress,
+                                                const std::string& rejected_sha256) const;
 
  private:
   std::expected<void, Refusal> run(const BuildPlan& plan, const gpu::ModelSpec& model,

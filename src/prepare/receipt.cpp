@@ -1,3 +1,4 @@
+// Reçu de qualification, propre à ajp : le fork n'en produisait pas.
 #include "prepare/receipt.h"
 
 #include <algorithm>
@@ -7,11 +8,14 @@
 #include <fstream>
 #include <limits>
 #include <sstream>
+#include <string_view>
 #include <utility>
+#include <vector>
 
 #include "prepare/cache_io.h"
 #include "prepare/receipt_fields.h"
 #include "prepare/sha256.h"
+#include "prepare/utf8.h"
 
 namespace ajp::prepare {
 namespace {
@@ -24,9 +28,30 @@ std::unexpected<Refusal> out_of_range(std::string detail) {
   return std::unexpected(Refusal{RefusalCode::FieldOutOfRange, "reçu : " + std::move(detail)});
 }
 
+// « AAAA-MM-JJTHH:MM:SSZ » : un instant UTC à la seconde.
+bool is_utc_timestamp(std::string_view text) {
+  constexpr std::string_view kShape = "dddd-dd-ddTdd:dd:ddZ";
+  if (text.size() != kShape.size()) return false;
+  for (std::size_t i = 0; i < text.size(); ++i) {
+    const bool digit = text[i] >= '0' && text[i] <= '9';
+    if (kShape[i] == 'd' ? !digit : text[i] != kShape[i]) return false;
+  }
+  return true;
+}
+
+// TOML ne lit que de l'UTF-8 : un texte mal formé rendrait le reçu illisible.
+bool texts_are_utf8(const Receipt& r) {
+  std::vector<std::string_view> texts{r.driver.backend, r.driver.device, r.driver.version};
+  for (const EngineRecord& e : r.engines) texts.insert(texts.end(), {e.model, e.cache_key});
+  for (const GoldenRecord& g : r.goldens) texts.emplace_back(g.name);
+  return std::ranges::all_of(texts, [](std::string_view text) { return is_utf8(text); });
+}
+
 // Chaque valeur écrite se relit à l'identique : sinon le sceau ne se vérifierait pas.
 std::expected<void, Refusal> check(const Receipt& r) {
   constexpr auto kMaxCount = static_cast<std::uint64_t>(std::numeric_limits<std::int64_t>::max());
+  if (!is_utc_timestamp(r.created_utc)) return out_of_range("created_utc : AAAA-MM-JJTHH:MM:SSZ attendu");
+  if (!texts_are_utf8(r)) return out_of_range("texte qui n'est pas de l'UTF-8");
   if (r.driver.backend.empty() || r.driver.device.empty() || r.driver.version.empty()) {
     return out_of_range("driver incomplet");
   }
@@ -191,7 +216,7 @@ std::expected<void, Refusal> write_receipt(const std::filesystem::path& file, co
 
 std::expected<Receipt, Refusal> read_receipt(const std::filesystem::path& file) {
   std::ifstream stream(file, std::ios::binary);
-  if (!stream) return invalid("reçu absent ou illisible : " + file.string());
+  if (!stream) return invalid("reçu absent ou illisible : " + utf8_path(file));
   std::ostringstream text;
   text << stream.rdbuf();
   return parse_receipt(text.str());

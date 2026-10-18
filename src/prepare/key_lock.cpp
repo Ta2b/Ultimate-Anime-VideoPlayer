@@ -7,6 +7,7 @@
 #include <utility>
 
 #include "prepare/cache_io.h"
+#include "prepare/utf8.h"
 
 #ifdef _WIN32
 #ifndef NOMINMAX
@@ -83,7 +84,7 @@ std::expected<KeyLock, Refusal> KeyLock::acquire(const std::filesystem::path& lo
   for (;;) {
     if (stop.stop_requested()) {
       return std::unexpected(
-          Refusal{RefusalCode::Cancelled, "annulé en attendant le verrou " + lock_file.string()});
+          Refusal{RefusalCode::Cancelled, "annulé en attendant le verrou " + utf8_path(lock_file)});
     }
     switch (try_lock(lock.handle_, error)) {
       case Attempt::Locked:
@@ -94,7 +95,7 @@ std::expected<KeyLock, Refusal> KeyLock::acquire(const std::filesystem::path& lo
         break;
     }
     if (wait == LockWait::TryOnly) {
-      return std::unexpected(Refusal{RefusalCode::CacheBusy, "verrou tenu : " + lock_file.string()});
+      return std::unexpected(Refusal{RefusalCode::CacheBusy, "verrou tenu : " + utf8_path(lock_file)});
     }
     std::this_thread::sleep_for(kPollInterval);
   }

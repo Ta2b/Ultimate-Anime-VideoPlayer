@@ -10,6 +10,7 @@
 #include <utility>
 
 #include "prepare/sha256.h"
+#include "prepare/utf8.h"
 
 namespace ajp::prepare {
 namespace {
@@ -115,13 +116,16 @@ std::expected<std::string, Refusal> files_digest(std::string_view domain, std::v
     }
     std::error_code error;
     if (!fs::is_regular_file(file.path, error)) {
-      return refuse(RefusalCode::ModelUnreadable, "ressource absente : " + file.path.string());
+      return refuse(RefusalCode::ModelUnreadable, "ressource absente : " + utf8_path(file.path));
     }
-    const auto size = fs::file_size(file.path, error);
-    const auto modified = fs::last_write_time(file.path, error);
+    // Un code d'erreur par appel : last_write_time effacerait l'erreur de file_size.
+    std::error_code size_error;
+    std::error_code time_error;
+    const auto size = fs::file_size(file.path, size_error);
+    const auto modified = fs::last_write_time(file.path, time_error);
     std::ifstream stream(file.path, std::ios::binary);
-    if (error || !stream)
-      return refuse(RefusalCode::ModelUnreadable, "ressource illisible : " + file.path.string());
+    if (size_error || time_error || !stream)
+      return refuse(RefusalCode::ModelUnreadable, "ressource illisible : " + utf8_path(file.path));
     hash.text(file.name);
     hash.integer(size);
     std::uintmax_t read = 0;
@@ -131,11 +135,12 @@ std::expected<std::string, Refusal> files_digest(std::string_view domain, std::v
       hash.update(std::string_view(buffer.data(), count));
       read += count;
     }
-    const bool unchanged = stream.eof() && read == size && fs::file_size(file.path, error) == size &&
-                           fs::last_write_time(file.path, error) == modified && !error;
+    const bool unchanged = stream.eof() && read == size && fs::file_size(file.path, size_error) == size &&
+                           !size_error && fs::last_write_time(file.path, time_error) == modified &&
+                           !time_error;
     if (!unchanged)
       return refuse(RefusalCode::ModelMismatch,
-                    "ressource modifiée pendant sa lecture : " + file.path.string());
+                    "ressource modifiée pendant sa lecture : " + utf8_path(file.path));
   }
   return hash.hex();
 }
@@ -145,7 +150,7 @@ std::expected<std::string, Refusal> onnx_source_key(std::span<const std::byte> g
   std::vector<NamedFile> weights;
   weights.reserve(locations.size());
   for (const std::string& location : locations) {
-    weights.push_back({.name = "external/" + location, .path = folder / fs::path(location)});
+    weights.push_back({.name = "external/" + location, .path = folder / path_from_utf8(location)});
   }
   auto weights_digest = files_digest("onnx-external-weights-v1", std::move(weights));
   if (!weights_digest) return weights_digest;

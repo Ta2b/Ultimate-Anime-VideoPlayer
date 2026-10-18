@@ -60,11 +60,6 @@ std::string windows_command_line(const std::vector<std::string>& argv) {
   return line;
 }
 
-std::string utf8_path(const std::filesystem::path& path) {
-  const std::u8string text = path.u8string();
-  return {text.begin(), text.end()};
-}
-
 std::string describe(const ProcessExit& exit) {
   const auto seconds = std::chrono::duration<double>(exit.elapsed).count();
   switch (exit.kind) {

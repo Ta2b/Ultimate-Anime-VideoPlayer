@@ -8,6 +8,8 @@
 #include <fstream>
 #include <vector>
 
+#include "prepare/utf8.h"
+
 namespace ajp::prepare {
 namespace {
 
@@ -97,7 +99,8 @@ std::string sha256_hex(std::string_view bytes) {
 
 std::expected<std::string, Refusal> sha256_file(const std::filesystem::path& file) {
   std::ifstream stream(file, std::ios::binary);
-  if (!stream) return std::unexpected(Refusal{RefusalCode::CacheIo, "lecture impossible : " + file.string()});
+  if (!stream)
+    return std::unexpected(Refusal{RefusalCode::CacheIo, "lecture impossible : " + utf8_path(file)});
   Sha256 hash;
   std::vector<char> buffer(1 << 16);
   while (stream) {
@@ -105,7 +108,7 @@ std::expected<std::string, Refusal> sha256_file(const std::filesystem::path& fil
     hash.update(std::string_view(buffer.data(), static_cast<std::size_t>(stream.gcount())));
   }
   if (stream.bad())
-    return std::unexpected(Refusal{RefusalCode::CacheIo, "lecture interrompue : " + file.string()});
+    return std::unexpected(Refusal{RefusalCode::CacheIo, "lecture interrompue : " + utf8_path(file)});
   return hash.hex();
 }
 

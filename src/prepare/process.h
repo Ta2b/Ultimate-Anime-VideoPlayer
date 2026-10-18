@@ -19,6 +19,7 @@
 #include <vector>
 
 #include "core/types.h"
+#include "prepare/utf8.h"
 
 namespace ajp::prepare {
 
@@ -67,9 +68,6 @@ class LineSplitter {
   std::size_t max_line_;
   std::string pending_;
 };
-
-// Chemin en UTF-8, quel que soit le système.
-std::string utf8_path(const std::filesystem::path& path);
 
 // Ligne de commande Windows qui redonne exactement argv par CommandLineToArgvW.
 std::string windows_command_line(const std::vector<std::string>& argv);

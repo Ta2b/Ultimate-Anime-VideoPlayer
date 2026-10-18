@@ -5,6 +5,7 @@
 #pragma once
 
 #include <cstddef>
+#include <cstdint>
 #include <expected>
 #include <optional>
 #include <string>
@@ -17,6 +18,10 @@
 #include "prepare/trtexec_command.h"
 
 namespace ajp::prepare {
+
+// Plus grand ONNX lu : 2 Gio, la limite d'un message protobuf. Au-delà, les
+// poids sont forcément externes.
+inline constexpr std::uintmax_t kMaxOnnxBytes = std::uintmax_t{2} << 30U;
 
 struct ModelSource {
   std::vector<std::byte> graph;

@@ -1,10 +1,10 @@
 // Production d'une entrée du cache une seule fois, entre threads et processus.
 //
 // Repris de animejanai-inference-rtx@118c272 src/aji_trt.cpp:757-806
-// (run_build_spec) et src/model_identity.cpp:157-197 (begin_engine,
-// recover_engine, finish_engine) : verrou de la clé, nettoyage des dossiers
-// laissés par un constructeur mort, production dans un dossier de travail
-// marqué, puis publication par renommage atomique.
+// (run_build_spec, rejected_digest compris) et src/model_identity.cpp:157-197
+// (begin_engine, recover_engine, finish_engine) : verrou de la clé, nettoyage
+// des dossiers laissés par un constructeur mort, production dans un dossier de
+// travail marqué, puis publication par renommage atomique.
 #pragma once
 
 #include <cstdint>
@@ -27,6 +27,11 @@ enum class Production : std::uint8_t {
 struct CacheEntry {
   std::filesystem::path destination;  // fichier final, publié par renommage
   std::string kind = "engine";        // propriétaire des dossiers : « <kind>:<nom du fichier> »
+  // SHA-256 d'une entrée publiée que son consommateur n'a pas pu charger (moteur
+  // tronqué par une coupure, désérialisation refusée) : elle est reproduite et
+  // remplacée. Si un autre processus l'a déjà remplacée, la nouvelle se reprend.
+  // Vide : toute entrée publiée se reprend.
+  std::string rejected_sha256;
 
   std::filesystem::path lock_file() const;  // « <destination>.key-lock », jamais supprimé
   std::string owner() const;
@@ -39,7 +44,8 @@ inline constexpr std::string_view kStagePrefix = ".aji-build-";
 using Producer = std::function<std::expected<void, Refusal>(const std::filesystem::path& output)>;
 
 // Une entrée publiée est toujours complète : elle se réutilise sans verrou. Sinon
-// produce tourne sous le verrou de la clé ; un échec ne laisse aucun reste.
+// produce tourne sous le verrou de la clé ; un échec ne laisse aucun reste, et
+// une entrée refusée reste en place jusqu'à son remplacement réussi.
 std::expected<Production, Refusal> produce_once(const CacheEntry& entry, const Producer& produce,
                                                 const std::stop_token& stop = {});
 

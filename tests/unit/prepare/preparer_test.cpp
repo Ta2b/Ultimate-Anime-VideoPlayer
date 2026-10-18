@@ -196,6 +196,23 @@ TEST_CASE("Preparer : l'arrêt du thread annule la construction en cours", "[pre
   CHECK(backend.calls() == 1);
 }
 
+TEST_CASE("Preparer : l'arrêt abandonne la file au lieu de la construire", "[prepare][preparer]") {
+  Sink sink;
+  FakeBackend backend;
+  {
+    Preparer preparer(sink);
+    REQUIRE(preparer.submit(request(1, "long", &backend)));
+    REQUIRE(preparer.submit(request(2, "lent", &backend)));
+    REQUIRE(preparer.submit(request(3, "lent", &backend)));
+    std::this_thread::sleep_for(50ms);  // la première construction a commencé
+  }
+  CHECK(backend.calls() == 1);
+  const auto done = sink.wait_done(0);
+  REQUIRE(done.size() == 1);  // le refus de la construction annulée part encore
+  CHECK(done[0].id == 1);
+  CHECK(test::refusal(done[0].result) == RefusalCode::Cancelled);
+}
+
 TEST_CASE("Preparer : un résultat refusé par le puits attend le prochain crédit", "[prepare][preparer]") {
   Sink sink;
   FakeBackend backend;

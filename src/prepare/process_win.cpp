@@ -3,7 +3,9 @@
 // Seuls le tube de sortie et le périphérique nul sont hérités
 // (PROC_THREAD_ATTRIBUTE_HANDLE_LIST). La ligne de commande passe en UTF-16 :
 // CreateProcessA relirait les chemins UTF-8 dans la page de code ANSI, comme le
-// corrige aji_trt.cpp:709-714 du fork. Non compilé hors de Windows.
+// corrige aji_trt.cpp:709-714 du fork. Non compilé hors de Windows : la garde
+// _WIN32 en fait une unité vide pour clang-tidy, qui parcourt tout src/.
+#ifdef _WIN32
 #ifndef NOMINMAX
 #define NOMINMAX
 #endif
@@ -169,3 +171,5 @@ std::expected<ProcessExit, Refusal> run_process(const ProcessSpec& spec, const L
 }
 
 }  // namespace ajp::prepare
+
+#endif  // _WIN32

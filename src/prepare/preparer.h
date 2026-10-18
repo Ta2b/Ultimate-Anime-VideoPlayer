@@ -3,7 +3,8 @@
 //
 // Il n'attend que sa boîte (demandes et crédits) et, pendant une construction,
 // le constructeur lui-même. Une demande s'annule par son propre stop_token ;
-// l'arrêt du thread annule la construction en cours et abandonne la file.
+// l'arrêt du thread annule la construction en cours, dont le refus Cancelled
+// part encore au puits, puis abandonne la file sans rien construire.
 #pragma once
 
 #include <cstddef>
