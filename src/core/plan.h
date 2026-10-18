@@ -7,6 +7,7 @@
 #include <vector>
 
 #include "core/profile.h"
+#include "core/ring.h"
 
 namespace ajp::core {
 
@@ -44,7 +45,7 @@ struct HdrRoute {
   HdrMode kind = HdrMode::Off;  // paramètres du grade et de TrueHDR à M5
 };
 
-enum class RingFormat : std::uint8_t { Rgba16Unorm, Yuv444p16 };
+using RingFormat = ajp::RingFormat;  // défini avec le ring, dans core_types
 
 // Grille de présentation et facteur calé sur l'écran : core/pacing.h les calcule.
 enum class Grid : std::uint8_t {

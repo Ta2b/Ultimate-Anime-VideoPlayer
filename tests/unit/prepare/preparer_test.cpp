@@ -116,6 +116,11 @@ class FakeBackend : public gpu::Backend {
   std::expected<gpu::Tensor, ajp::Refusal> import(const gpu::ExternalImage&) override {
     return std::unexpected(ajp::Refusal{RefusalCode::FieldOutOfRange, "factice"});
   }
+  std::expected<std::unique_ptr<gpu::TensorBuffer>, ajp::Refusal> alloc_tensor(gpu::TensorType,
+                                                                               const gpu::Shape&) override {
+    return std::unexpected(ajp::Refusal{RefusalCode::FormatUnsupported, "factice"});
+  }
+  gpu::KernelOps* kernels() override { return nullptr; }  // prepare ne lance aucun noyau
   void enqueue(gpu::Engine&, std::span<const gpu::Tensor>, std::span<gpu::Tensor>) override {}
   gpu::Fence signal() override { return {}; }
   void wait(const gpu::Fence&) override {}

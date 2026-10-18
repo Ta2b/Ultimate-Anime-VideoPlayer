@@ -8,7 +8,8 @@
 //     puits installé plus tard (fichier, OSD) reçoit aussi leurs messages ;
 //   - le niveau d'un canal est celui du journal par défaut au moment de sa création ;
 //   - un backend chargé à l'exécution a sa propre copie de spdlog : il journalise par le
-//     canal que lui passe BackendInit::log (gpu/backend.h), pas par log_channel().
+//     rappel BackendInit::log (gpu/backend.h), que app relie à un canal, pas par
+//     log_channel().
 // Cible ajp::core_log : dépend de spdlog seulement, en dépendance privée des modules.
 #pragma once
 
