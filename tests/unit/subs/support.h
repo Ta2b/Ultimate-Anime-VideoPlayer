@@ -62,6 +62,13 @@ void check_atlas(const SubtitleFrame& frame);
 // Police TrueType du système (DejaVu Sans), lue en entier ; vide si absente.
 std::vector<std::byte> system_font_bytes();
 
+// Section [Fonts] d'un script ASS : la police encodée comme le fait Aegisub
+// (6 bits par caractère, décalés de 33, lignes de 80 caractères).
+std::string ass_font_section(std::string_view file_name, const std::vector<std::byte>& font);
+
+// Le script avec une ligne d'en-tête de plus dans [Script Info].
+std::string with_info_line(std::string_view script, std::string_view line);
+
 class RecordingSink final : public SubtitleSink {
  public:
   bool try_push(SubtitleFrame&& frame) override;

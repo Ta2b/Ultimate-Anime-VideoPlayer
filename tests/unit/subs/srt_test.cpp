@@ -38,6 +38,38 @@ TEST_CASE("parse_srt : numéros facultatifs, lignes vides en trop, fichier vide"
   CHECK(empty->empty());
 }
 
+TEST_CASE("parse_srt : les horodatages délimitent les cues, même sans ligne vide", "[srt]") {
+  // Numéro collé au texte précédent, ligne vide dans un texte, texte numérique :
+  // le démultiplexeur SRT de FFmpeg (lecteur actuel) lit ces fichiers ainsi.
+  const auto cues = parse_srt(
+      "1\n00:00:01,000 --> 00:00:02,000\nA\n"
+      "2\n00:00:03,000 --> 00:00:04,000\nB1\n\nB2\n\n"
+      "3\n00:00:05,000 --> 00:00:06,000\n42\n2009\n");
+  REQUIRE(cues);
+  REQUIRE(cues->size() == 3);
+  CHECK((*cues)[0].text == "A");
+  CHECK((*cues)[1].start_us == 3'000'000);
+  CHECK((*cues)[1].text == "B1\nB2");
+  CHECK((*cues)[2].text == "42\n2009");  // un nombre sans horodatage après lui reste du texte
+
+  const auto bare = parse_srt("00:00:01,000 --> 00:00:02,000\nA\n00:00:03,000 --> 00:00:04,000\nB\n");
+  REQUIRE(bare);
+  REQUIRE(bare->size() == 2);
+  CHECK((*bare)[0].text == "A");
+  CHECK((*bare)[1].text == "B");
+}
+
+TEST_CASE("parse_srt : un horodatage mal formé au milieu du fichier est refusé à sa ligne", "[srt]") {
+  const auto broken = parse_srt("1\n00:00:01,000 --> 00:00:02,000\nA\n\n2\n00:00:03,000 --> 00:00:04\nB\n");
+  REQUIRE_FALSE(broken);
+  CHECK(broken.error().code == RefusalCode::SubtitleFormat);
+  CHECK(broken.error().detail.find("ligne 6") != std::string::npos);
+  // Une flèche dans un dialogue n'est pas un horodatage.
+  const auto arrow = parse_srt("00:00:01,000 --> 00:00:02,000\nA --> B\n");
+  REQUIRE(arrow);
+  CHECK(arrow->front().text == "A --> B");
+}
+
 TEST_CASE("parse_srt : refuse un horodatage hors plage ou mal formé, avec la ligne", "[srt]") {
   const auto minutes = parse_srt("1\n00:61:00,000 --> 00:62:00,000\nA\n");
   REQUIRE_FALSE(minutes);

@@ -2,6 +2,7 @@
 
 #include <format>
 #include <optional>
+#include <span>
 
 namespace ajp::subs {
 namespace {
@@ -102,6 +103,19 @@ std::optional<Timing> parse_timing(std::string_view line) {
   return Timing{*start, *end};
 }
 
+// Une ligne qui se donne pour un horodatage : un chiffre en tête et une flèche.
+// Bien ou mal formée, elle ouvre une cue ; mal formée, elle est refusée.
+bool looks_like_timing(std::string_view line) {
+  line = trim(line);
+  return !line.empty() && is_digit(line.front()) && line.find("-->") != std::string_view::npos;
+}
+
+// Une cue commence en i : son horodatage, ou son numéro juste avant.
+bool starts_cue(std::span<const std::string_view> lines, std::size_t i) {
+  return looks_like_timing(lines[i]) ||
+         (is_index(lines[i]) && i + 1 < lines.size() && looks_like_timing(lines[i + 1]));
+}
+
 }  // namespace
 
 std::string_view text_track_header() {
@@ -127,6 +141,9 @@ std::expected<std::vector<SrtCue>, Refusal> parse_srt(std::string_view file) {
   if (file.starts_with("\xEF\xBB\xBF")) file.remove_prefix(3);
   const std::vector<std::string_view> lines = split_lines(file);
 
+  // Comme le démultiplexeur SRT de FFmpeg, que le lecteur actuel utilise : les
+  // horodatages délimitent les cues. Le texte court jusqu'à la cue suivante,
+  // même sans ligne vide avant son numéro ; ses lignes vides sont écartées.
   std::vector<SrtCue> cues;
   std::size_t i = 0;
   while (i < lines.size()) {
@@ -134,14 +151,15 @@ std::expected<std::vector<SrtCue>, Refusal> parse_srt(std::string_view file) {
       ++i;
       continue;
     }
-    if (is_index(lines[i]) && i + 1 < lines.size()) ++i;  // numéro de cue, facultatif
+    if (is_index(lines[i]) && starts_cue(lines, i)) ++i;  // numéro de cue, facultatif
     const auto timing = parse_timing(lines[i]);
     if (!timing) return refuse_line(i + 1, "horodatage attendu", lines[i]);
     if (timing->end_us < timing->start_us) return refuse_line(i + 1, "fin avant début", lines[i]);
     ++i;
 
     std::string text;
-    for (; i < lines.size() && !is_blank(lines[i]); ++i) {
+    for (; i < lines.size() && !starts_cue(lines, i); ++i) {
+      if (is_blank(lines[i])) continue;
       if (!text.empty()) text += '\n';
       text += lines[i];
     }

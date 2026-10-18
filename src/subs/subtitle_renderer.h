@@ -17,6 +17,7 @@
 #include "subs/atlas_pool.h"
 #include "subs/subtitle_frame.h"
 #include "subs/subtitle_track.h"
+#include "subs/vsfilter_color.h"
 
 struct ass_renderer;
 struct ass_image;
@@ -39,13 +40,15 @@ struct RendererOptions {
   int render_threads = 1;              // threads de libass : 1 aucun, 0 automatique, au plus 64
 };
 
-// Résolution de sortie, et taille de stockage de la vidéo source pour l'aspect
-// et l'échelle du flou (ass_set_storage_size).
+// Résolution de sortie, taille de stockage de la vidéo source pour l'aspect et
+// l'échelle du flou (ass_set_storage_size), et matrice de la vidéo pour les
+// couleurs VSFilter (vsfilter_color.h).
 struct RenderTarget {
   int width = 0;
   int height = 0;
   int video_width = 0;  // 0 : inconnue, la sortie sert de stockage
   int video_height = 0;
+  std::optional<VideoMatrix> video_matrix;  // nullopt : inconnue, couleurs du script telles quelles
   friend bool operator==(const RenderTarget&, const RenderTarget&) = default;
 };
 
@@ -65,7 +68,9 @@ class SubtitleRenderer {
                                                          const RendererOptions& options);
 
   // Refus : cible ou horodatage hors plage (FieldOutOfRange), contenu au-delà
-  // de l'atlas borné ou de kMaxRectsPerFrame (SubtitleAtlasFull).
+  // de l'atlas borné ou de kMaxRectsPerFrame (SubtitleAtlasFull). Un contenu
+  // refusé l'est une fois : tant que libass le rend inchangé ou seulement
+  // déplacé, les images suivantes sont vides, sans nouveau refus.
   std::expected<RenderOutcome, Refusal> render(const SubtitleTrack& track, const RenderRequest& request,
                                                AtlasPool& pool);
 
@@ -87,6 +92,7 @@ class SubtitleRenderer {
   std::expected<void, Refusal> refresh_fonts();
   void configure(const RenderTarget& target);
   std::expected<RenderOutcome, Refusal> build(SubtitleFrame frame, AtlasPool& pool);
+  std::unexpected<Refusal> refuse_content(Refusal refusal);
 
   Handle renderer_;
   ass_library* library_;  // la bibliothèque survit au moteur
@@ -96,10 +102,12 @@ class SubtitleRenderer {
   std::optional<RenderTarget> target_;
   std::vector<const ass_image*> pieces_;  // images visibles du dernier ass_render_frame
   // Dernier contenu bâti. in_sync_ : il correspond au dernier ass_render_frame,
-  // dont libass compare l'image suivante.
+  // dont libass compare l'image suivante. refused_ : ce contenu a été refusé.
   std::shared_ptr<const SubtitleAtlas> current_;
   std::vector<SubtitleRect> rects_;
   bool in_sync_ = false;
+  bool refused_ = false;
+  bool vsfilter_ = false;  // couleurs converties comme VSFilter, pour la piste et la cible courantes
   std::uint64_t generation_ = 0;
 };
 

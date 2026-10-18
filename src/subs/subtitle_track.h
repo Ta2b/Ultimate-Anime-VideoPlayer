@@ -15,6 +15,7 @@
 #include "core/types.h"
 #include "subs/ass_library.h"
 #include "subs/timebase.h"
+#include "subs/vsfilter_color.h"
 
 struct ass_track;
 
@@ -58,18 +59,24 @@ class SubtitleTrack {
 
   TrackKind kind() const { return kind_; }
   int event_count() const;
+  // En-tête « YCbCr Matrix » du script ; None pour une piste texte.
+  ScriptMatrix script_matrix() const;
+  // Le script porte une section [Fonts] : libass a joint ses polices à la
+  // bibliothèque en le lisant, un moteur qui a déjà rendu doit les revoir.
+  bool embeds_fonts() const { return embeds_fonts_; }
   ass_track* get() const { return track_.get(); }
 
  private:
   struct Free {
     void operator()(ass_track* track) const;
   };
-  SubtitleTrack(std::unique_ptr<ass_track, Free> track, TrackKind kind);
+  SubtitleTrack(std::unique_ptr<ass_track, Free> track, TrackKind kind, bool embeds_fonts);
   static std::expected<SubtitleTrack, Refusal> create(const AssLibrary& library, TrackKind kind,
                                                       std::string_view header);
 
   std::unique_ptr<ass_track, Free> track_;
   TrackKind kind_;
+  bool embeds_fonts_ = false;
   // Paquets texte déjà vus (début, durée, texte) : libass ne déduplique que par
   // ReadOrder, que le texte n'a pas.
   std::set<std::tuple<std::int64_t, std::int64_t, std::string>> seen_text_;

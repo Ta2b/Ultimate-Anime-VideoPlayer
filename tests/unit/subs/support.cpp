@@ -1,6 +1,7 @@
 #include "support.h"
 
 #include <algorithm>
+#include <cstdint>
 #include <format>
 #include <fstream>
 #include <iterator>
@@ -145,6 +146,31 @@ std::vector<std::byte> system_font_bytes() {
     return font;
   }
   return {};
+}
+
+std::string ass_font_section(std::string_view file_name, const std::vector<std::byte>& font) {
+  constexpr std::size_t kGroupsPerLine = 20;  // 20 × 4 = 80 caractères, le maximum de libass
+  std::string section = std::format("[Fonts]\nfontname: {}\n", file_name);
+  for (std::size_t i = 0, groups = 0; i < font.size(); i += 3) {
+    // 3 octets donnent 4 caractères ; un groupe final de n octets en donne n + 1.
+    const std::size_t bytes = std::min<std::size_t>(3, font.size() - i);
+    std::uint32_t value = 0;
+    for (std::size_t k = 0; k < bytes; ++k)
+      value |= std::to_integer<std::uint32_t>(font[i + k]) << (16 - 8 * k);
+    for (std::size_t k = 0; k <= bytes; ++k)
+      section += static_cast<char>(33 + ((value >> (18 - 6 * k)) & 63U));
+    if (++groups % kGroupsPerLine == 0 || i + 3 >= font.size()) section += '\n';
+  }
+  return section;
+}
+
+std::string with_info_line(std::string_view script, std::string_view line) {
+  std::string out(script);
+  constexpr std::string_view kInfo = "[Script Info]\n";
+  const std::size_t at = out.find(kInfo);
+  REQUIRE(at != std::string::npos);
+  out.insert(at + kInfo.size(), std::string(line) + "\n");
+  return out;
 }
 
 bool RecordingSink::try_push(SubtitleFrame&& frame) {

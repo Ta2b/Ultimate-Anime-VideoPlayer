@@ -65,6 +65,7 @@ class SubsWorker {
   std::optional<SubtitleTrack> track_;
   std::uint32_t track_id_ = 0;
   std::deque<RenderRequest> pending_;  // au plus kMaxPendingRequests
+  bool starved_ = false;               // la tête de pending_ attend un atlas libre
   std::uint32_t epoch_ = 0;
 };
 

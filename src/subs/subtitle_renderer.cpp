@@ -130,6 +130,13 @@ void SubtitleRenderer::forget() {
   current_.reset();
   rects_.clear();
   in_sync_ = false;
+  refused_ = false;
+}
+
+std::unexpected<Refusal> SubtitleRenderer::refuse_content(Refusal refusal) {
+  in_sync_ = true;  // libass comparera l'image suivante à ce contenu refusé
+  refused_ = true;
+  return std::unexpected(std::move(refusal));
 }
 
 std::expected<RenderOutcome, Refusal> SubtitleRenderer::render(const SubtitleTrack& track,
@@ -140,6 +147,11 @@ std::expected<RenderOutcome, Refusal> SubtitleRenderer::render(const SubtitleTra
     if (auto refreshed = refresh_fonts(); !refreshed) return std::unexpected(std::move(refreshed.error()));
   }
   if (target_ != request.target) configure(request.target);
+  if (const bool vsfilter = vsfilter_converts(track.script_matrix(), request.target.video_matrix);
+      vsfilter != vsfilter_) {
+    vsfilter_ = vsfilter;
+    in_sync_ = false;  // mêmes couvertures, autres couleurs
+  }
   rendered_ = true;
 
   int change = 2;
@@ -160,7 +172,9 @@ std::expected<RenderOutcome, Refusal> SubtitleRenderer::render(const SubtitleTra
     return frame;
   }
   // change 0 : mêmes images ; 1 : mêmes couvertures, déplacées ; 2 : contenu neuf.
-  if (!in_sync_ || current_ == nullptr || change >= 2 || pieces_.size() != rects_.size()) {
+  const bool unchanged = in_sync_ && change < 2;
+  if (unchanged && refused_) return frame;  // refusé une fois, à son apparition
+  if (!unchanged || current_ == nullptr || pieces_.size() != rects_.size()) {
     return build(std::move(frame), pool);
   }
   if (change == 1) {
@@ -177,14 +191,17 @@ std::expected<RenderOutcome, Refusal> SubtitleRenderer::render(const SubtitleTra
 std::expected<RenderOutcome, Refusal> SubtitleRenderer::build(SubtitleFrame frame, AtlasPool& pool) {
   forget();  // relâcher l'atlas courant d'abord : il est peut-être le dernier libre
   if (pieces_.size() > kMaxRectsPerFrame) {
-    return refuse(RefusalCode::SubtitleAtlasFull,
-                  std::format("sous-titres à {} µs : {} images", frame.pts_us, pieces_.size()));
+    return refuse_content({RefusalCode::SubtitleAtlasFull,
+                           std::format("sous-titres à {} µs : {} images", frame.pts_us, pieces_.size())});
   }
   std::vector<PackSize> sizes;
   sizes.reserve(pieces_.size());
   for (const ass_image* image : pieces_) sizes.push_back({.width = image->w, .height = image->h});
   auto packing = pack(sizes, kMaxAtlasSide);
-  if (!packing) return std::unexpected(std::move(packing.error()));
+  if (!packing) {
+    return refuse_content({packing.error().code,
+                           std::format("sous-titres à {} µs : {}", frame.pts_us, packing.error().detail)});
+  }
 
   std::unique_ptr<SubtitleAtlas> atlas = pool.take();
   if (atlas == nullptr) return WaitForAtlas{};
@@ -194,13 +211,14 @@ std::expected<RenderOutcome, Refusal> SubtitleRenderer::build(SubtitleFrame fram
   rects_.clear();
   for (std::size_t i = 0; i < pieces_.size(); ++i) {
     const ass_image& image = *pieces_[i];
+    const Rgba8 color = color_of(image.color);
     rects_.push_back({.src = {.x = packing->positions[i].x,
                               .y = packing->positions[i].y,
                               .width = image.w,
                               .height = image.h},
                       .dst_x = image.dst_x,
                       .dst_y = image.dst_y,
-                      .color = color_of(image.color)});
+                      .color = vsfilter_ ? vsfilter_bt601_on_bt709(color) : color});
   }
   current_ = pool.share(std::move(atlas));
   in_sync_ = true;

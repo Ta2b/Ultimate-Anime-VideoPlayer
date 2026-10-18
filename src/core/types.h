@@ -34,6 +34,7 @@ enum class RefusalCode : std::uint8_t {
   SubtitleAtlasFull,   // les images d'un instant dépassent l'atlas borné
   SubtitleBacklog,     // trop de demandes de rendu en attente d'un atlas
   LibassFailed,        // libass n'a pas créé sa bibliothèque, son moteur ou une piste
+  ThreadUnavailable,   // le système refuse de lancer un thread de plus
 };
 
 struct Refusal {
@@ -75,6 +76,8 @@ constexpr std::string_view name(RefusalCode code) {
       return "SubtitleBacklog";
     case RefusalCode::LibassFailed:
       return "LibassFailed";
+    case RefusalCode::ThreadUnavailable:
+      return "ThreadUnavailable";
   }
   return "Unknown";
 }

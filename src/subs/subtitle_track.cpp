@@ -1,9 +1,10 @@
 #include "subs/subtitle_track.h"
 
+#include <algorithm>
 #include <format>
 #include <fstream>
-#include <iterator>
 #include <limits>
+#include <string_view>
 #include <system_error>
 
 #include <ass/ass.h>
@@ -18,14 +19,24 @@ std::unexpected<Refusal> refuse(RefusalCode code, std::string detail) {
   return std::unexpected(Refusal{code, std::move(detail)});
 }
 
+char lower(char c) {
+  return (c >= 'A' && c <= 'Z') ? static_cast<char>(c - 'A' + 'a') : c;
+}
+
 std::string lowercase_extension(const std::filesystem::path& path) {
   std::string extension = path.extension().string();
-  for (char& c : extension) {
-    if (c >= 'A' && c <= 'Z') c = static_cast<char>(c - 'A' + 'a');
-  }
+  for (char& c : extension) c = lower(c);
   return extension;
 }
 
+// libass lit les polices d'une section [Fonts], quelle que soit sa casse.
+bool has_fonts_section(std::string_view script) {
+  constexpr std::string_view kSection = "[fonts]";
+  return !std::ranges::search(script, kSection, [](char a, char b) { return lower(a) == b; }).empty();
+}
+
+// Lit au plus la taille mesurée : un fichier qui grandit pendant la lecture
+// n'agrandit pas l'allocation.
 std::expected<std::string, Refusal> read_script(const std::filesystem::path& path) {
   std::error_code error;
   const std::uintmax_t size = std::filesystem::file_size(path, error);
@@ -37,10 +48,12 @@ std::expected<std::string, Refusal> read_script(const std::filesystem::path& pat
                   std::format("{} : {} octets, au-delà de {}", path.string(), size, kMaxScriptBytes));
   }
   std::ifstream file(path, std::ios::binary);
-  std::string text{std::istreambuf_iterator<char>(file), std::istreambuf_iterator<char>()};
+  std::string text(static_cast<std::size_t>(size), '\0');
+  file.read(text.data(), static_cast<std::streamsize>(text.size()));
   if (!file.is_open() || file.bad()) {
     return refuse(RefusalCode::SubtitleUnreadable, std::format("{} : lecture", path.string()));
   }
+  text.resize(static_cast<std::size_t>(file.gcount()));
   return text;
 }
 
@@ -50,8 +63,8 @@ void SubtitleTrack::Free::operator()(ass_track* track) const {
   ass_free_track(track);
 }
 
-SubtitleTrack::SubtitleTrack(std::unique_ptr<ass_track, Free> track, TrackKind kind)
-    : track_(std::move(track)), kind_(kind) {}
+SubtitleTrack::SubtitleTrack(std::unique_ptr<ass_track, Free> track, TrackKind kind, bool embeds_fonts)
+    : track_(std::move(track)), kind_(kind), embeds_fonts_(embeds_fonts) {}
 
 std::expected<SubtitleTrack, Refusal> SubtitleTrack::create(const AssLibrary& library, TrackKind kind,
                                                             std::string_view header) {
@@ -62,9 +75,9 @@ std::expected<SubtitleTrack, Refusal> SubtitleTrack::create(const AssLibrary& li
   if (track == nullptr) return refuse(RefusalCode::LibassFailed, "ass_new_track");
   ass_process_codec_private(track.get(), header.data(), static_cast<int>(header.size()));
   if (track->track_type == ass_track::TRACK_TYPE_UNKNOWN) {
-    return refuse(RefusalCode::SubtitleFormat, "en-tête sans section [Script Info] reconnue");
+    return refuse(RefusalCode::SubtitleFormat, "en-tête sans ScriptType ni section de styles reconnus");
   }
-  return SubtitleTrack(std::move(track), kind);
+  return SubtitleTrack(std::move(track), kind, has_fonts_section(header));
 }
 
 std::expected<SubtitleTrack, Refusal> SubtitleTrack::from_header(const AssLibrary& library,
@@ -84,7 +97,7 @@ std::expected<SubtitleTrack, Refusal> SubtitleTrack::from_ass(const AssLibrary& 
   std::string copy(script);  // ass_read_memory prend un char* modifiable
   std::unique_ptr<ass_track, Free> track(ass_read_memory(library.get(), copy.data(), copy.size(), nullptr));
   if (track == nullptr) return refuse(RefusalCode::SubtitleFormat, "script ASS sans section [Script Info]");
-  return SubtitleTrack(std::move(track), TrackKind::Ass);
+  return SubtitleTrack(std::move(track), TrackKind::Ass, has_fonts_section(script));
 }
 
 std::expected<SubtitleTrack, Refusal> SubtitleTrack::from_srt(const AssLibrary& library,
@@ -143,6 +156,19 @@ std::expected<void, Refusal> SubtitleTrack::add_packet(const SubtitlePacket& pac
 
 int SubtitleTrack::event_count() const {
   return track_->n_events;
+}
+
+ScriptMatrix SubtitleTrack::script_matrix() const {
+  switch (track_->YCbCrMatrix) {
+    case YCBCR_DEFAULT:
+      return ScriptMatrix::Absent;
+    case YCBCR_NONE:
+      return ScriptMatrix::None;
+    case YCBCR_BT601_TV:
+      return ScriptMatrix::Bt601Tv;
+    default:
+      return ScriptMatrix::Other;
+  }
 }
 
 }  // namespace ajp::subs

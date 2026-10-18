@@ -61,7 +61,7 @@ bool SubsWorker::on(RenderRequest&& request) {
     return true;
   }
   pending_.push_back(request);
-  serve();
+  if (!starved_) serve();  // sinon la tête attend un atlas : rien ne change avant son retour
   return true;
 }
 
@@ -72,6 +72,7 @@ bool SubsWorker::on(SelectTrack&& select) {
   OpenedTrack track = open_track(library_, select.source);
   if (track) {
     track_ = std::move(*track);
+    if (track_ && track_->embeds_fonts()) renderer_.fonts_changed();
   } else {
     report(track.error());
   }
@@ -119,6 +120,7 @@ bool SubsWorker::on(AtlasReturned&& returned) {
 }
 
 void SubsWorker::serve() {
+  starved_ = false;
   while (!pending_.empty()) {
     const RenderRequest request = pending_.front();
     if (!track_) {
@@ -129,7 +131,8 @@ void SubsWorker::serve() {
         report(outcome.error());
         deliver_empty(request);
       } else if (std::holds_alternative<WaitForAtlas>(*outcome)) {
-        return;  // la demande reste en tête jusqu'au prochain AtlasReturned
+        starved_ = true;  // la demande reste en tête jusqu'au prochain AtlasReturned
+        return;
       } else {
         deliver(std::get<SubtitleFrame>(std::move(*outcome)));
       }

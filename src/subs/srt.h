@@ -25,9 +25,11 @@ inline constexpr int kSrtMaxHours = 99;
 // par défaut de FFmpeg pour les sous-titres convertis.
 std::string_view text_track_header();
 
-// Découpe un fichier SRT en UTF-8 (BOM et fins de ligne CRLF acceptés).
-// Refus SubtitleFormat : ligne inattendue, horodatage mal formé ou hors plage,
-// fin avant début ; le détail donne le numéro de ligne.
+// Découpe un fichier SRT en UTF-8 (BOM et fins de ligne CRLF acceptés). Les
+// horodatages délimitent les cues, comme dans FFmpeg : un numéro collé au texte
+// précédent ouvre quand même la cue suivante, une ligne vide dans un texte est
+// écartée. Refus SubtitleFormat : texte avant le premier horodatage, horodatage
+// mal formé ou hors plage, fin avant début ; le détail donne le numéro de ligne.
 std::expected<std::vector<SrtCue>, Refusal> parse_srt(std::string_view file);
 
 // Texte SRT en texte d'événement ASS : <i> <b> <u> <s> et <font color face size>

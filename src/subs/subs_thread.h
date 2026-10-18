@@ -18,7 +18,8 @@ class SubsThread {
   // Crée la bibliothèque et le moteur libass (fontconfig y lit ses caches),
   // puis lance le thread. Le puits doit survivre au thread. La boîte est
   // partagée : les atlas encore en vol y rentrent tant qu'elle existe, puis
-  // sont simplement détruits.
+  // sont simplement détruits. Refus : boîte absente, libass (LibassFailed),
+  // ou thread refusé par le système (ThreadUnavailable).
   static std::expected<std::unique_ptr<SubsThread>, Refusal> start(const RendererOptions& options,
                                                                    SubtitleSink& sink,
                                                                    std::shared_ptr<SubsInbox> inbox);

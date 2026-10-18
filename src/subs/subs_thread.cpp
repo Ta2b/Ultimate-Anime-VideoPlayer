@@ -1,6 +1,7 @@
 #include "subs/subs_thread.h"
 
 #include <exception>
+#include <format>
 #include <optional>
 #include <utility>
 
@@ -14,12 +15,30 @@ namespace {
 
 void run(const std::stop_token& stop, SubsWorker& worker, SubsInbox& inbox, spdlog::logger& log) {
   while (std::optional<SubsInbox::Message> message = inbox.wait(stop)) {
+    // Aucune exception ne sort de la boucle : le message fautif est perdu, le thread continue.
     try {
       if (!worker.handle(std::move(*message))) return;
-    } catch (const std::exception& error) {  // aucune exception ne sort de la boucle
+    } catch (const std::exception& error) {
       log.error("message perdu : {}", error.what());
+    } catch (...) {
+      log.error("message perdu : exception inconnue");
     }
   }
+}
+
+// Un atlas relâché rentre par la boîte. Elle ne déborde pas : il n'existe
+// jamais plus de kMaxAtlasesInFlight atlas, et autant de places. Appelée depuis
+// le destructeur du dernier lecteur, sur n'importe quel thread : elle ne lève rien.
+AtlasReturn return_route(const std::shared_ptr<SubsInbox>& inbox) {
+  return [weak = std::weak_ptr<SubsInbox>(inbox), log = make_logger()](std::unique_ptr<SubtitleAtlas> atlas) {
+    const std::shared_ptr<SubsInbox> box = weak.lock();
+    if (box == nullptr) return;  // le thread n'est plus : l'atlas est simplement détruit
+    try {
+      if (!box->try_push(AtlasReturned{std::move(atlas)})) log->error("atlas rendu détruit : boîte pleine");
+    } catch (const std::exception& error) {
+      log->error("atlas rendu détruit : {}", error.what());
+    }
+  };
 }
 
 }  // namespace
@@ -28,17 +47,18 @@ std::expected<std::unique_ptr<SubsThread>, Refusal> SubsThread::start(const Rend
                                                                       SubtitleSink& sink,
                                                                       std::shared_ptr<SubsInbox> inbox) {
   if (inbox == nullptr) return std::unexpected(Refusal{RefusalCode::FieldMissing, "subs : boîte absente"});
-  // Un atlas relâché rentre par la boîte. Elle ne déborde pas : il n'existe
-  // jamais plus de kMaxAtlasesInFlight atlas, et autant de places.
-  AtlasReturn route = [weak = std::weak_ptr<SubsInbox>(inbox)](std::unique_ptr<SubtitleAtlas> atlas) {
-    if (const std::shared_ptr<SubsInbox> box = weak.lock()) box->try_push(AtlasReturned{std::move(atlas)});
-  };
-  auto worker = SubsWorker::create(options, sink, std::move(route));
+  auto worker = SubsWorker::create(options, sink, return_route(inbox));
   if (!worker) return std::unexpected(std::move(worker.error()));
 
   std::unique_ptr<SubsThread> thread(new SubsThread());
-  thread->thread_ = std::jthread([worker = std::move(*worker), inbox = std::move(inbox), log = make_logger()](
-                                     const std::stop_token& stop) { run(stop, *worker, *inbox, *log); });
+  try {
+    thread->thread_ =
+        std::jthread([worker = std::move(*worker), inbox = std::move(inbox), log = make_logger()](
+                         const std::stop_token& stop) { run(stop, *worker, *inbox, *log); });
+  } catch (const std::exception& error) {  // std::system_error : le système refuse le thread
+    return std::unexpected(
+        Refusal{RefusalCode::ThreadUnavailable, std::format("thread subs : {}", error.what())});
+  }
   return thread;
 }
 

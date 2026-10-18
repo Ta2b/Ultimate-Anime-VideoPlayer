@@ -6,7 +6,9 @@
 //   pour chaque pixel p de rect.src, couverture c = atlas[p] / 255,
 //   opacité o = c × rect.color.a / 255,
 //   sortie = sortie × (1 − o) + rect.color.rgb × o, en (dst_x, dst_y) + (p − src.origine).
-// Les couleurs sont des valeurs sRGB 8 bits, alpha droit (non prémultiplié).
+// Les couleurs sont des valeurs sRGB 8 bits, alpha droit (non prémultiplié),
+// déjà converties comme VSFilter quand la demande donne la matrice de la vidéo
+// (RenderTarget::video_matrix, vsfilter_color.h).
 //
 // Téléversement : render garde l'atlas de sa dernière image (son shared_ptr) et
 // ne re-téléverse que si le pointeur ou la génération change. Un contenu

@@ -44,6 +44,9 @@ std::expected<AssLibrary, Refusal> AssLibrary::create() {
   std::unique_ptr<ass_library, Free> library(ass_library_init());
   if (library == nullptr) return std::unexpected(Refusal{RefusalCode::LibassFailed, "ass_library_init"});
   ass_set_message_cb(library.get(), forward_message, log.get());
+  // Polices des sections [Fonts] des scripts : jointes à la lecture, comme mpv
+  // (embeddedfonts=yes par défaut). Sans cela libass les décode puis les jette.
+  ass_set_extract_fonts(library.get(), 1);
   return AssLibrary(std::move(log), std::move(library));
 }
 
