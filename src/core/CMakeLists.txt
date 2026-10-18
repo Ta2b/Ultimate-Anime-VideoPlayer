@@ -4,6 +4,8 @@ ajp_add_module(core_types)
 # core : profil TOML v5, resolve(), Plan, choix des moteurs.
 # Seul propriétaire de la politique ; les autres modules exécutent le Plan.
 ajp_add_module(core
-  SOURCES cadence.cpp drawings.cpp engines.cpp pacing.cpp plan.cpp profile.cpp resolve.cpp
+  SOURCES cadence.cpp capabilities.cpp debug_flags.cpp drawings.cpp engines.cpp ini_import.cpp
+          ini_import_steps.cpp keys.cpp model_index.cpp pacing.cpp plan.cpp profile.cpp resolve.cpp
+          settings.cpp user_overlay.cpp
   DEPS ajp::core_types
   PRIVATE_DEPS ajp::dep::toml)

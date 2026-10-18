@@ -38,6 +38,7 @@ struct Step {
   Pacing pacing = Pacing::Source;                  // Interpolate
   DownscaleFilter filter = DownscaleFilter::Area;  // Downscale
   int height = 0;                                  // Downscale : hauteur cible
+  friend bool operator==(const Step&, const Step&) = default;
 };
 
 // Bornes incluses. La première règle qui correspond gagne.
@@ -47,12 +48,14 @@ struct Rule {
   double min_fps = 0.0;
   double max_fps = 0.0;
   std::vector<Step> steps;
+  friend bool operator==(const Rule&, const Rule&) = default;
 };
 
 struct Profile {
   std::string name;
   HdrMode hdr = HdrMode::Off;
   std::vector<Rule> rules;
+  friend bool operator==(const Profile&, const Profile&) = default;
 };
 
 inline constexpr int kProfileVersion = 5;
@@ -61,6 +64,7 @@ inline constexpr std::size_t kProfileSlots = 9;
 struct ProfileFile {
   int start_profile = 1;                                       // 1 à 9
   std::array<std::optional<Profile>, kProfileSlots> profiles;  // index = numéro - 1
+  friend bool operator==(const ProfileFile&, const ProfileFile&) = default;
 };
 
 // Plages de chaque champ. Une valeur hors plage est refusée, jamais corrigée.
@@ -85,5 +89,9 @@ inline constexpr double kMaxFactorProduct = 16.0;
 
 std::expected<ProfileFile, Refusal> parse_profile(std::string_view toml_text);
 std::expected<ProfileFile, Refusal> load_profile(const std::filesystem::path& path);
+
+// Texte TOML v5 de file, que parse_profile relit à l'identique. Chaque profil
+// écrit son nom et son mode HDR ; les bornes et le rythme par défaut sont omis.
+std::string format_profile(const ProfileFile& file);
 
 }  // namespace ajp::core
