@@ -26,6 +26,10 @@ std::unexpected<Refusal> graph_error(const Node& node, std::string_view detail) 
   return std::unexpected(Refusal{RefusalCode::GraphInvalid, std::format("{} : {}", where(node), detail)});
 }
 
+std::unexpected<Refusal> unsupported_error(const Node& node, std::string_view detail) {
+  return std::unexpected(Refusal{RefusalCode::OnnxUnsupported, std::format("{} : {}", where(node), detail)});
+}
+
 std::expected<std::vector<std::int64_t>, Refusal> const_ints(const Node& node, std::span<const Operand> in,
                                                              std::size_t index, std::string_view what) {
   const Value* value = constant_input(in, index);
@@ -69,6 +73,13 @@ std::expected<Dims, Refusal> broadcast_dims(const Node& node, const Dims& a, con
 std::expected<void, Refusal> expect_float(const Node& node, const Operand& operand, std::string_view what) {
   if (operand.type == DataType::I64) return graph_error(node, std::format("{} doit être flottant", what));
   return {};
+}
+
+std::expected<void, Refusal> expect_type_if_present(const Node& node, std::span<const Operand> in,
+                                                    std::size_t index, DataType type, std::string_view what) {
+  if (!present(in, index) || in[index].type == type) return {};
+  return graph_error(node,
+                     std::format("{} de type {} au lieu de {}", what, name(in[index].type), name(type)));
 }
 
 std::expected<void, Refusal> expect_rank(const Node& node, const Dims& dims, std::size_t rank,

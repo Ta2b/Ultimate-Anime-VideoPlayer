@@ -5,6 +5,7 @@
 
 #include <algorithm>
 #include <format>
+#include <optional>
 #include <string>
 #include <utility>
 
@@ -209,6 +210,8 @@ std::expected<Attrs, Refusal> resize_attrs(const AttrReader& r) {
 }
 
 std::expected<Attrs, Refusal> grid_sample_attrs(const AttrReader& r, std::int64_t opset) {
+  // GridSample n'existe dans le domaine ONNX qu'à partir de l'opset 16.
+  if (opset < 16) return r.unsupported(std::format("absent de l'opset {}", opset));
   // Opset 20 renomme bilinear en linear ; les deux noms sont lus.
   auto mode = choose<GridMode>(
       r, "mode", opset >= 20 ? "linear" : "bilinear",
@@ -382,6 +385,20 @@ std::expected<Value, Refusal> constant_value(const onnx::Node& node) {
         Refusal{RefusalCode::GraphInvalid, std::format("Constant {} : un seul attribut", node.name)});
   }
   const onnx::Attribute& attr = node.attributes[0];
+  // Le type déclaré doit être celui du nom : sinon le champ lu serait vide, donc 0 en silence.
+  const auto expected = [&]() -> std::optional<AttributeType> {
+    if (attr.name == "value") return AttributeType::Tensor;
+    if (attr.name == "value_float") return AttributeType::Float;
+    if (attr.name == "value_floats") return AttributeType::Floats;
+    if (attr.name == "value_int") return AttributeType::Int;
+    if (attr.name == "value_ints") return AttributeType::Ints;
+    return std::nullopt;
+  }();
+  if (expected && attr.type != *expected && attr.type != AttributeType::Undefined) {
+    return std::unexpected(
+        Refusal{RefusalCode::GraphInvalid,
+                std::format("Constant {} : attribut {} du mauvais type", node.name, attr.name)});
+  }
   if (attr.name == "value" && attr.tensors.size() == 1) return tensor_value(attr.tensors[0]);
   if (attr.name == "value_float") return Value{.type = DataType::F32, .dims = {}, .f = {attr.f}};
   if (attr.name == "value_floats") {

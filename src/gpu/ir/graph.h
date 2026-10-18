@@ -27,6 +27,8 @@ std::size_t element_size(DataType type);
 
 // Produit des dimensions ; les dimensions sont supposées connues et bornées.
 std::size_t element_count(const Dims& dims);
+// Rang, dimensions et nombre d'éléments dans les bornes ci-dessus.
+bool bounded_dims(const Dims& dims);
 std::string format_dims(const Dims& dims);
 
 // Valeur de la forme donnée, remplie de zéros.
@@ -53,7 +55,8 @@ void replace_uses(Graph& graph, TensorId from, TensorId to);
 // Retire les tenseurs qu'aucun nœud ni aucune interface ne référence, et renumérote.
 void compact(Graph& graph);
 
-// Vérifie les identifiants, l'unicité des producteurs et l'ordre topologique.
+// Vérifie les identifiants, l'unicité des producteurs, l'ordre topologique, la
+// cohérence des constantes et que toute entrée figure dans l'interface.
 std::expected<void, Refusal> validate(const Graph& graph);
 
 }  // namespace ajp::gpu::ir

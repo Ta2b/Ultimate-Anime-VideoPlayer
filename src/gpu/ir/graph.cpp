@@ -150,6 +150,30 @@ void compact(Graph& graph) {
   graph.tensors = std::move(kept);
 }
 
+bool bounded_dims(const Dims& dims) {
+  if (dims.size() > kMaxRank) return false;
+  std::uint64_t count = 1;
+  for (const std::int64_t dim : dims) {
+    if (dim < 0 || dim > kMaxDim) return false;
+    count *= static_cast<std::uint64_t>(dim);  // au plus 2^32 · 2^24 : pas de débordement
+    if (count > kMaxElements) return false;
+  }
+  return true;
+}
+
+namespace {
+
+// Une constante porte une valeur complète, du type et de la forme déclarés.
+bool coherent_constant(const Tensor& tensor) {
+  const Value& value = tensor.value;
+  if (!tensor.known || value.type != tensor.type || value.dims != tensor.dims || !bounded_dims(tensor.dims))
+    return false;
+  const bool integer = value.type == DataType::I64;
+  return value_size(value) == element_count(value.dims) && (integer ? value.f.empty() : value.i.empty());
+}
+
+}  // namespace
+
 std::expected<void, Refusal> validate(const Graph& graph) {
   auto invalid = [](std::string detail) {
     return std::unexpected(Refusal{RefusalCode::GraphInvalid, std::move(detail)});
@@ -161,6 +185,13 @@ std::expected<void, Refusal> validate(const Graph& graph) {
   for (const TensorId id : graph.inputs) {
     if (id >= count || graph.tensors[id].kind != TensorKind::Input)
       return invalid("entrée de graphe invalide");
+  }
+  for (std::size_t i = 0; i < count; ++i) {
+    const Tensor& tensor = graph.tensors[i];
+    if (tensor.kind == TensorKind::Constant && !coherent_constant(tensor))
+      return invalid(std::format("constante {} incohérente avec sa valeur", tensor.name));
+    if (tensor.kind == TensorKind::Input && !is_graph_input(graph, static_cast<TensorId>(i)))
+      return invalid(std::format("{} : entrée hors de l'interface du graphe", tensor.name));
   }
   for (const Node& node : graph.nodes) {
     for (const TensorId id : node.inputs) {

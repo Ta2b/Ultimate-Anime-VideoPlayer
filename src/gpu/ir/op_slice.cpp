@@ -25,20 +25,26 @@ std::expected<std::vector<std::int64_t>, Refusal> split_sizes(const Node& node, 
                                                               std::int64_t extent, std::size_t count) {
   auto attrs = attrs_of<SplitAttrs>(node);
   if (!attrs) return std::unexpected(attrs.error());
+  const std::int64_t num_outputs = (*attrs)->num_outputs;
+  const auto parts = static_cast<std::int64_t>(count);
   std::vector<std::int64_t> sizes;
   if (present(in, 1)) {
+    if (num_outputs != 0) return graph_error(node, "split et num_outputs à la fois");
     auto given = const_ints(node, in, 1, "les tailles");
     if (!given) return std::unexpected(given.error());
     sizes = std::move(*given);
-  } else {
-    if ((*attrs)->num_outputs != 0 && (*attrs)->num_outputs != static_cast<std::int64_t>(count)) {
-      return graph_error(node, "num_outputs contredit le nombre de sorties");
-    }
-    // Parts égales arrondies au-dessus, la dernière plus petite (opset 18).
-    const auto parts = static_cast<std::int64_t>(count);
+  } else if (num_outputs != 0) {
+    if (num_outputs != parts) return graph_error(node, "num_outputs contredit le nombre de sorties");
+    // Opset 18 : parts égales arrondies au-dessus, la dernière plus petite.
     const std::int64_t chunk = (extent + parts - 1) / parts;
     for (std::int64_t k = 0; k < parts; ++k)
       sizes.push_back(std::clamp<std::int64_t>(extent - (k * chunk), 0, chunk));
+  } else {
+    // Avant l'opset 18 : parts strictement égales.
+    if (extent % parts != 0) {
+      return shape_error(node, std::format("{} ne se partage pas en {} parts égales", extent, parts));
+    }
+    sizes.assign(count, extent / parts);
   }
   if (sizes.size() != count) return graph_error(node, "autant de tailles que de sorties");
   std::int64_t total = 0;
@@ -97,6 +103,12 @@ std::expected<std::vector<SliceAxis>, Refusal> slice_plan(const Node& node, std:
     }
     std::int64_t start = (*starts)[k];
     std::int64_t end = (*ends)[k];
+    // ONNX Runtime lit ends = INT_MAX comme « jusqu'au bout », même à rebours ; la
+    // spécification le borne à dim - 1, soit une découpe vide. Sens incertain : refusé.
+    if (step < 0 && (end == std::numeric_limits<std::int32_t>::max() ||
+                     end == std::numeric_limits<std::int64_t>::max())) {
+      return unsupported_error(node, "pas négatif jusqu'à INT_MAX (INT_MIN attendu)");
+    }
     if (start < 0) start += dim;
     if (end < 0) end += dim;
     if (step > 0) {
@@ -131,9 +143,12 @@ std::expected<std::vector<PadAxis>, Refusal> pad_plan(const Node& node, std::spa
   }
   if (pads->size() != 2 * axes.size()) return graph_error(node, "pads porte un début et une fin par axe");
   std::vector<PadAxis> plan(dims.size());
+  std::vector<bool> seen(dims.size(), false);
   for (std::size_t k = 0; k < axes.size(); ++k) {
     auto axis = normalize_axis(node, axes[k], dims.size());
     if (!axis) return std::unexpected(axis.error());
+    if (seen[*axis]) return graph_error(node, "axe répété");
+    seen[*axis] = true;
     const std::int64_t begin = (*pads)[k];
     const std::int64_t end = (*pads)[k + axes.size()];
     if (begin < -kMaxDim || begin > kMaxDim || end < -kMaxDim || end > kMaxDim) {

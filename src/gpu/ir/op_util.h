@@ -17,6 +17,8 @@ namespace ajp::gpu::ir::detail {
 
 std::unexpected<Refusal> shape_error(const Node& node, std::string_view detail);
 std::unexpected<Refusal> graph_error(const Node& node, std::string_view detail);
+// Construction valide en ONNX, mais hors du sous-ensemble dont le sens est sûr.
+std::unexpected<Refusal> unsupported_error(const Node& node, std::string_view detail);
 
 template <class A>
 std::expected<const A*, Refusal> attrs_of(const Node& node) {
@@ -42,6 +44,9 @@ std::expected<std::size_t, Refusal> normalize_axis(const Node& node, std::int64_
 std::expected<Dims, Refusal> broadcast_dims(const Node& node, const Dims& a, const Dims& b);
 
 std::expected<void, Refusal> expect_float(const Node& node, const Operand& operand, std::string_view what);
+// Entrée facultative absente, ou présente avec ce type.
+std::expected<void, Refusal> expect_type_if_present(const Node& node, std::span<const Operand> in,
+                                                    std::size_t index, DataType type, std::string_view what);
 std::expected<void, Refusal> expect_rank(const Node& node, const Dims& dims, std::size_t rank,
                                          std::string_view what);
 

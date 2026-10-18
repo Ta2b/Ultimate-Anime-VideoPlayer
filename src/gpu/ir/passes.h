@@ -16,9 +16,9 @@ std::expected<int, Refusal> fold_constants(Graph& graph);
 // Retire les nœuds dont aucune sortie n'atteint une sortie du graphe, puis les tenseurs orphelins.
 int eliminate_dead_code(Graph& graph);
 
-// Retire Identity et les nœuds sans effet : Cast vers le même type, Reshape,
-// Unsqueeze ou Squeeze qui gardent la forme, Transpose identité, Slice entier,
-// Pad nul, Resize d'échelle 1, Concat d'une entrée, Split d'une sortie.
+// Retire Identity et les nœuds sans effet : Cast vers le même type (hors F16,
+// où il arrondit), Reshape, Unsqueeze ou Squeeze qui gardent la forme, Transpose
+// identité, Slice entier, Pad nul, Resize d'échelle 1, Concat d'une entrée, Split d'une sortie.
 int eliminate_identities(Graph& graph);
 
 // Reconnaît Reshape, Transpose, Reshape de rang 6 : pixel_shuffle et pixel_unshuffle

@@ -125,8 +125,13 @@ int run_graph(const Graph& graph, const Options& options) {
                              f.empty() ? 0.0 : sum / static_cast<double>(f.size()));
   }
   if (!options.dump.empty() && !outputs->empty()) {
+    const Value& first = outputs->front().value;
+    if (first.type == DataType::I64) {
+      std::cerr << std::format("--dump : sortie entière {} non prise en charge\n", outputs->front().name);
+      return 1;
+    }
     std::ofstream file(options.dump, std::ios::binary);
-    const std::vector<float>& f = outputs->front().value.f;
+    const std::vector<float>& f = first.f;
     file.write(reinterpret_cast<const char*>(f.data()),
                static_cast<std::streamsize>(f.size() * sizeof(float)));
     if (!file) {
@@ -146,6 +151,7 @@ int report(const Options& options) {
   std::cout << std::format("Avant les passes : {} nœuds\n  {}\n", graph->nodes.size(), describe_ops(*graph));
   // Les formes viennent après l'interface : une entrée dynamique s'y lit avant le refus.
   if (auto shapes = infer_shapes(*graph, options.shapes); !shapes) return refused(shapes.error());
+  std::cout << "Après l'inférence des formes\n" << describe_interface(*graph);
 
   if (options.passes) {
     auto stats = optimize(*graph);
@@ -155,7 +161,9 @@ int report(const Options& options) {
                              describe_ops(*graph));
   }
   if (options.nodes) std::cout << "Nœuds\n" << describe_nodes(*graph);
-  std::cout << "Mémoire\n" << describe_memory(plan_memory(*graph));
+  auto plan = plan_memory(*graph);
+  if (!plan) return refused(plan.error());
+  std::cout << "Mémoire\n" << describe_memory(*plan);
   return options.run ? run_graph(*graph, options) : 0;
 }
 

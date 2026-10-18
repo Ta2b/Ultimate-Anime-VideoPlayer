@@ -71,6 +71,7 @@ std::expected<void, Refusal> fix_inputs(Graph& graph, std::span<const InputShape
 }  // namespace
 
 std::expected<void, Refusal> infer_shapes(Graph& graph, std::span<const InputShape> inputs) {
+  if (auto ok = validate(graph); !ok) return ok;
   if (auto ok = fix_inputs(graph, inputs); !ok) return ok;
 
   // Valeurs des entiers de forme calculées en chemin ; elles ne quittent pas l'inférence.

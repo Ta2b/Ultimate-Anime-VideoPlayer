@@ -49,17 +49,19 @@ void check_disjoint(const MemoryPlan& plan, std::uint64_t alignment = kBufferAli
 TEST_CASE("mémoire : une chaîne de Conv alterne entre deux tampons", "[gpu_ir][memory]") {
   Graph graph = build(conv_chain(4));
   REQUIRE(optimize(graph));
-  const MemoryPlan plan = plan_memory(graph);
+  auto planned = plan_memory(graph);
+  REQUIRE(planned);
+  const MemoryPlan& plan = *planned;
   REQUIRE(plan.allocations.size() == 3);
-  constexpr std::uint64_t kBuffer = 8 * 8 * 16 * 4;  // 8 canaux rangés sur 16, en F32
+  constexpr std::uint64_t kBuffer = std::uint64_t{8} * 8 * 16 * 4;  // 8 canaux rangés sur 16, en F32
   for (const Allocation& a : plan.allocations) {
     CHECK(a.bytes == kBuffer);
     CHECK(a.last == a.first + 1);
   }
   CHECK(plan.unshared_bytes == 3 * kBuffer);
   CHECK(plan.arena_bytes == 2 * kBuffer);
-  CHECK(plan.io_bytes == 2 * 8 * 8 * 8 * 4);
-  CHECK(plan.constant_bytes == 64 * 4);
+  CHECK(plan.io_bytes == std::uint64_t{2} * 8 * 8 * 8 * 4);
+  CHECK(plan.constant_bytes == std::uint64_t{64} * 4);
   check_disjoint(plan);
 }
 
@@ -74,9 +76,11 @@ TEST_CASE("mémoire : un tampon lu plus loin reste réservé", "[gpu_ir][memory]
       .node("Add", {"a", "d"}, {"y"})
       .output("y");
   Graph graph = build(m);
-  const MemoryPlan plan = plan_memory(graph);  // sans passes : disposition Nchw
+  auto planned = plan_memory(graph);  // sans passes : disposition Nchw
+  REQUIRE(planned);
+  const MemoryPlan& plan = *planned;
   REQUIRE(plan.allocations.size() == 4);
-  constexpr std::uint64_t kBuffer = 4 * 4 * 4 * 4;
+  constexpr std::uint64_t kBuffer = std::uint64_t{4} * 4 * 4 * 4;
   CHECK(plan.allocations[0].first == 0);
   CHECK(plan.allocations[0].last == 4);
   CHECK(plan.arena_bytes == 3 * std::max<std::uint64_t>(kBuffer, kBufferAlignment));
@@ -100,15 +104,22 @@ TEST_CASE("mémoire : tailles diverses, alignement choisi", "[gpu_ir][memory]") 
   Graph graph = build(m);
   REQUIRE(optimize(graph));
   for (const std::uint64_t alignment : {std::uint64_t{1}, std::uint64_t{64}, kBufferAlignment}) {
-    const MemoryPlan plan = plan_memory(graph, alignment);
-    for (const Allocation& a : plan.allocations) CHECK(a.bytes % alignment == 0);
-    check_disjoint(plan, alignment);
+    auto plan = plan_memory(graph, alignment);
+    REQUIRE(plan);
+    for (const Allocation& a : plan->allocations) CHECK(a.bytes % alignment == 0);
+    check_disjoint(*plan, alignment);
+  }
+  // Alignement nul (division par zéro) ou démesuré : refusé, pas corrigé.
+  for (const std::uint64_t alignment : {std::uint64_t{0}, kMaxBufferAlignment + 1}) {
+    auto plan = plan_memory(graph, alignment);
+    REQUIRE_FALSE(plan);
+    CHECK(plan.error().code == ajp::RefusalCode::FieldOutOfRange);
   }
   // b compte 17 canaux : 32 en NHWC16.
-  const auto b = find_tensor(graph, "b");
-  REQUIRE(b);
-  CHECK(graph.tensors[*b].layout == Layout::Nhwc16);
-  CHECK(storage_bytes(graph.tensors[*b]) == 9 * 7 * 32 * 4);
+  const TensorId b = find_tensor(graph, "b").value_or(kNoTensor);
+  REQUIRE(b != kNoTensor);
+  CHECK(graph.tensors[b].layout == Layout::Nhwc16);
+  CHECK(storage_bytes(graph.tensors[b]) == std::uint64_t{9} * 7 * 32 * 4);
 }
 
 TEST_CASE("disposition : les nœuds qui réinterprètent les axes gardent Nchw", "[gpu_ir][memory]") {

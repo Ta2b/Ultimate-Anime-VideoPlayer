@@ -12,7 +12,6 @@
 #include "gpu/ir/half.h"
 #include "test_util.h"
 
-using ajp::Refusal;
 using ajp::RefusalCode;
 using namespace ajp::gpu::ir;
 using namespace ajp::gpu::ir::test;
@@ -64,14 +63,14 @@ ModelBuilder span_like() {
       .node("Transpose", {"t6"}, {"tt"}, {attr_ints("perm", {0, 1, 3, 5, 2, 4})})
       .node("Concat", {"c112", "hh1", "wh1"}, {"s4"}, {attr_int("axis", 0)})
       .node("Reshape", {"tt", "s4"}, {"u"});
-  m.weight("w1", {16, 12, 3, 3}, sequence(16 * 12 * 9, -0.2F, 0.2F, 1))
+  m.weight("w1", {16, 12, 3, 3}, sequence(std::size_t{16} * 12 * 9, -0.2F, 0.2F, 1))
       .weight("b1", {16}, sequence(16, -0.1F, 0.1F, 2))
       .weight("s1", {1, 16, 1, 1}, sequence(16, 0.5F, 1.5F, 3))
       .weight("a1", {16, 1, 1}, sequence(16, -0.1F, 0.1F, 4))
       .weight("slope", {16, 1, 1}, sequence(16, 0.05F, 0.3F, 5))
-      .weight("w2", {16, 16, 3, 3}, sequence(16 * 16 * 9, -0.1F, 0.1F, 6))
+      .weight("w2", {16, 16, 3, 3}, sequence(std::size_t{16} * 16 * 9, -0.1F, 0.1F, 6))
       .weight("b2", {16}, sequence(16, -0.1F, 0.1F, 7))
-      .weight("w3", {12, 16, 3, 3}, sequence(12 * 16 * 9, -0.1F, 0.1F, 8))
+      .weight("w3", {12, 16, 3, 3}, sequence(std::size_t{12} * 16 * 9, -0.1F, 0.1F, 8))
       .weight("b3", {12}, sequence(12, -0.1F, 0.1F, 9));
   const ProtoWriter pad1 = attr_ints("pads", {1, 1, 1, 1});
   m.node("Conv", {"u", "w1", "b1"}, {"c1"}, {pad1})
@@ -118,11 +117,11 @@ ModelBuilder rife_like() {
       .weight("base", {1, 8, 8, 2}, base)
       .weight("down", {4}, {1, 1, 0.5F, 0.5F})
       .weight("up", {4}, {1, 1, 2, 2})
-      .weight("wf", {8, 6, 3, 3}, sequence(8 * 6 * 9, -0.3F, 0.3F, 11))
+      .weight("wf", {8, 6, 3, 3}, sequence(std::size_t{8} * 6 * 9, -0.3F, 0.3F, 11))
       .weight("bf", {8}, sequence(8, -0.1F, 0.1F, 12))
-      .weight("wo", {4, 8, 3, 3}, sequence(4 * 8 * 9, -0.5F, 0.5F, 13))
+      .weight("wo", {4, 8, 3, 3}, sequence(std::size_t{4} * 8 * 9, -0.5F, 0.5F, 13))
       .weight("bo", {4}, sequence(4, -0.2F, 0.2F, 14))
-      .weight("wm", {8, 1, 4, 4}, sequence(8 * 16, -0.5F, 0.5F, 15))
+      .weight("wm", {8, 1, 4, 4}, sequence(std::size_t{8} * 16, -0.5F, 0.5F, 15))
       .weight("k", {}, {2.0F / 7.0F})
       .weight("one", {}, {1})
       .ints("split", {2, 2});
@@ -207,7 +206,7 @@ TEST_CASE("passes : SPAN miniature aux dimensions paires, réduit à cinq nœuds
   CHECK(stats.nhwc == 4);
   const Tensor& unshuffled = after.tensors[after.nodes[0].outputs[0]];
   CHECK(unshuffled.layout == Layout::Nhwc16);
-  CHECK(storage_bytes(unshuffled) == 3 * 5 * 16 * 4);  // 12 canaux rangés sur 16
+  CHECK(storage_bytes(unshuffled) == std::uint64_t{3} * 5 * 16 * 4);  // 12 canaux rangés sur 16
 }
 
 TEST_CASE("passes : SPAN miniature aux dimensions impaires, marges et rognage gardés", "[gpu_ir][passes]") {
@@ -339,4 +338,32 @@ TEST_CASE("passes : optimize exige des formes inférées", "[gpu_ir][passes]") {
   auto graph = load_onnx(m.bytes());
   REQUIRE(graph);
   CHECK(optimize(*graph).error().code == RefusalCode::ShapeInvalid);
+}
+
+TEST_CASE("passes : un Cast de F16 vers F16 arrondit, il reste", "[gpu_ir][passes]") {
+  // La somme de deux F16 est calculée en FP32 : seul le Cast la ramène sur la grille F16.
+  const ProtoWriter to_half = attr_int("to", onnx::kFloat16);
+  ModelBuilder m;
+  m.input("x", {1, 4})
+      .input("z", {1, 4})
+      .node("Cast", {"x"}, {"xh"}, {to_half})
+      .node("Cast", {"z"}, {"zh"}, {to_half})
+      .node("Add", {"xh", "zh"}, {"s"})
+      .node("Cast", {"s"}, {"sh"}, {to_half})
+      .node("Cast", {"sh"}, {"y"}, {attr_int("to", onnx::kFloat)})
+      .output("y");
+  const std::vector<float> xs{1.0F, 1.0F, 2.0F, 0.5F};
+  const std::vector<float> zs{0.0003F, 0.0006F, 0.001F, 0.0001F};
+  const std::vector<NamedValue> inputs{{.name = "x", .value = floats({1, 4}, xs)},
+                                       {.name = "z", .value = floats({1, 4}, zs)}};
+  const Graph before = build(m);
+  Graph after;
+  check_preserved(before, after, inputs);
+  CHECK(count_ops(after, OpKind::Cast) == 4);
+  const Value y = execute1(after, inputs);
+  for (std::size_t k = 0; k < xs.size(); ++k) {
+    const float sum = round_to_half(xs[k]) + round_to_half(zs[k]);
+    CHECK(y.f[k] == round_to_half(sum));
+  }
+  CHECK(y.f[0] != round_to_half(xs[0]) + round_to_half(zs[0]));  // l'arrondi a bien eu lieu
 }

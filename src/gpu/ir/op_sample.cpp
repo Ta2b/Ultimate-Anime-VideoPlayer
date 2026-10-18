@@ -32,6 +32,7 @@ std::expected<ResizePlan, Refusal> resize_plan(const Node& node, std::span<const
   for (const std::int64_t axis : (*attrs)->axes) {
     auto a = normalize_axis(node, axis, rank);
     if (!a) return std::unexpected(a.error());
+    if (std::ranges::find(axes, *a) != axes.end()) return graph_error(node, "axe répété");
     axes.push_back(*a);
   }
   if (axes.empty()) {

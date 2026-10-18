@@ -8,7 +8,6 @@
 
 #include "test_util.h"
 
-using ajp::Refusal;
 using ajp::RefusalCode;
 using namespace ajp::gpu::ir;
 using namespace ajp::gpu::ir::test;
@@ -109,7 +108,7 @@ std::vector<ProtoWriter> geometry_attrs(const Geometry& g) {
 
 // Conv (ou ConvTranspose) seule, exécutée par l'interpréteur.
 Value run_window_op(std::string_view op, const Value& x, const Value& w, const std::vector<float>& bias,
-                    std::vector<ProtoWriter> attrs) {
+                    const std::vector<ProtoWriter>& attrs) {
   ModelBuilder m;
   m.input("x", x.dims).weight("w", w.dims, w.f);
   if (!bias.empty()) m.weight("b", {static_cast<std::int64_t>(bias.size())}, bias);
@@ -179,7 +178,7 @@ TEST_CASE("Conv : auto_pad SAME_UPPER et SAME_LOWER", "[gpu_ir][ops][conv]") {
 }
 
 TEST_CASE("Conv : formes incohérentes refusées", "[gpu_ir][ops][conv]") {
-  auto conv_model = [](const Dims& w_dims, std::vector<ProtoWriter> attrs) {
+  auto conv_model = [](const Dims& w_dims, const std::vector<ProtoWriter>& attrs) {
     ModelBuilder m;
     m.input("x", {1, 4, 5, 5}).weight("w", w_dims, std::vector<float>(count_of(w_dims), 0.5F));
     ProtoWriter node;

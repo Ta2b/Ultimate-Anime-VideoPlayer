@@ -18,11 +18,13 @@ std::expected<void, Refusal> check_input(const Tensor& tensor, const Value& valu
   if (value.type != tensor.type) {
     return invalid(std::format("{} : {} donné pour {}", tensor.name, name(value.type), name(tensor.type)));
   }
-  for (const std::int64_t dim : value.dims) {
-    if (dim < 0 || dim > kMaxDim) return invalid(std::format("{} : dimension {}", tensor.name, dim));
-  }
-  const bool rank_ok = tensor.dims.empty() || tensor.dims.size() == value.dims.size();
-  if ((tensor.known && value.dims != tensor.dims) || !rank_ok) {
+  if (!bounded_dims(value.dims))
+    return invalid(std::format("{} : forme {} hors des bornes", tensor.name, format_dims(value.dims)));
+  // Rang inconnu (aucune dimension déclarée), ou même rang et mêmes dimensions déclarées.
+  bool shape_ok = tensor.dims.empty() || tensor.dims.size() == value.dims.size();
+  for (std::size_t k = 0; shape_ok && !tensor.dims.empty() && k < value.dims.size(); ++k)
+    shape_ok = tensor.dims[k] < 0 || tensor.dims[k] == value.dims[k];
+  if ((tensor.known && value.dims != tensor.dims) || !shape_ok) {
     return std::unexpected(
         Refusal{RefusalCode::ShapeInvalid, std::format("{} : {} donné pour {}", tensor.name,
                                                        format_dims(value.dims), format_dims(tensor.dims))});
@@ -37,6 +39,8 @@ std::expected<void, Refusal> check_input(const Tensor& tensor, const Value& valu
 }  // namespace
 
 std::expected<std::vector<NamedValue>, Refusal> run(const Graph& graph, std::span<const NamedValue> inputs) {
+  // Un graphe construit à la main n'est pas passé par l'import : on ne lui fait pas confiance.
+  if (auto ok = validate(graph); !ok) return std::unexpected(ok.error());
   const std::size_t count = graph.tensors.size();
   std::vector<const Value*> values(count, nullptr);
   for (std::size_t i = 0; i < count; ++i) {

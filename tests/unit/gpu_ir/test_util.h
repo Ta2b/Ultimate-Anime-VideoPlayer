@@ -6,6 +6,7 @@
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
+#include <limits>
 #include <string>
 #include <utility>
 #include <vector>
@@ -80,8 +81,13 @@ inline Value execute1(const Graph& graph, const std::vector<NamedValue>& inputs)
 
 inline float max_abs_diff(const std::vector<float>& a, const std::vector<float>& b) {
   REQUIRE(a.size() == b.size());
+  // Un NaN d'un seul côté est un écart infini ; std::max l'ignorerait sinon.
   float worst = 0.0F;
-  for (std::size_t k = 0; k < a.size(); ++k) worst = std::max(worst, std::abs(a[k] - b[k]));
+  for (std::size_t k = 0; k < a.size(); ++k) {
+    if (std::isnan(a[k]) && std::isnan(b[k])) continue;
+    const float diff = std::abs(a[k] - b[k]);
+    worst = std::isnan(diff) ? std::numeric_limits<float>::infinity() : std::max(worst, diff);
+  }
   return worst;
 }
 

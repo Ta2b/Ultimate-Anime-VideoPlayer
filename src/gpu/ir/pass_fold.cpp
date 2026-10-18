@@ -54,8 +54,10 @@ bool is_noop(const Graph& graph, const Node& node) {
   const bool same_dims = in.dims == out.dims;
   switch (node.op) {
     case OpKind::Identity:
-    case OpKind::Cast:  // types égaux vérifiés plus haut
       return true;
+    case OpKind::Cast:  // types égaux vérifiés plus haut
+      // L'interpréteur calcule en FP32 : un Cast vers F16 arrondit, il n'est pas neutre.
+      return in.type != DataType::F16;
     case OpKind::Reshape:
     case OpKind::Unsqueeze:
     case OpKind::Squeeze:
@@ -83,7 +85,8 @@ std::expected<int, Refusal> fold_constants(Graph& graph) {
   int folded = 0;
   std::vector<Node> kept;
   for (Node& node : graph.nodes) {
-    const bool shape_of_known = node.op == OpKind::Shape && graph.tensors[node.inputs[0]].known;
+    const bool shape_of_known = node.op == OpKind::Shape && !node.inputs.empty() &&
+                                node.inputs[0] != kNoTensor && graph.tensors[node.inputs[0]].known;
     const bool inputs_constant =
         std::ranges::all_of(node.inputs, [&](TensorId id) { return constant(graph, id); });
     const bool small = std::ranges::all_of(node.outputs, [&](TensorId id) {

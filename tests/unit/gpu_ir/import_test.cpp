@@ -22,9 +22,9 @@ Refusal load_refusal(const ModelBuilder& m) {
 }
 
 const Tensor& tensor_named(const Graph& graph, std::string_view name) {
-  const auto id = find_tensor(graph, name);
-  REQUIRE(id);
-  return graph.tensors[*id];
+  const TensorId id = find_tensor(graph, name).value_or(kNoTensor);
+  REQUIRE(id != kNoTensor);
+  return graph.tensors[id];
 }
 
 }  // namespace

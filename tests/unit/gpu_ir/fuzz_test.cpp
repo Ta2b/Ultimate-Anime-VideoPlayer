@@ -1,6 +1,7 @@
 // Fuzz léger du décodeur et de toute la chaîne : octets aléatoires à graine
 // fixe, troncatures et mutations d'un modèle valide. Le critère est l'absence
-// de plantage (sous ASan en CI) : chaque entrée finit acceptée ou refusée.
+// de plantage (à lancer sous ASan/UBSan avec le preset linux-prefix-asan ; la CI
+// ne construit pas encore src/gpu sous ASan) : chaque entrée finit acceptée ou refusée.
 #include <array>
 #include <cstddef>
 #include <cstdint>
@@ -83,13 +84,20 @@ int exercise(const std::vector<std::byte>& bytes) {
     inputs.push_back(
         {.name = t.name, .value = floats(t.dims, sequence(element_count(t.dims), -1, 1), t.type)});
   }
-  if (runnable) (void)run(*graph, inputs);
+  const bool ran = runnable && run(*graph, inputs).has_value();
 
+  // Un graphe que l'interpréteur exécute se laisse optimiser, et s'exécute encore après.
   auto stats = optimize(*graph);
+  if (ran) CHECK(stats.has_value());
   if (!stats) return 2;
   (void)describe_nodes(*graph);
-  (void)describe_memory(plan_memory(*graph));
-  if (runnable) (void)run(*graph, inputs);
+  // Après les passes, le graphe est valide et ses formes connues : le plan doit aboutir.
+  auto plan = plan_memory(*graph);
+  CHECK(plan.has_value());
+  if (plan) (void)describe_memory(*plan);
+  // L'inverse ne tient pas : le code mort retiré peut être ce qui échouait.
+  const bool ran_after = runnable && run(*graph, inputs).has_value();
+  if (ran) CHECK(ran_after);
   return 3;
 }
 

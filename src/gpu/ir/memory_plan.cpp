@@ -1,6 +1,7 @@
 #include "gpu/ir/memory_plan.h"
 
 #include <algorithm>
+#include <format>
 
 #include "gpu/ir/graph.h"
 
@@ -17,7 +18,20 @@ bool lives_overlap(const Allocation& a, const Allocation& b) {
 
 }  // namespace
 
-MemoryPlan plan_memory(const Graph& graph, std::uint64_t alignment) {
+std::expected<MemoryPlan, Refusal> plan_memory(const Graph& graph, std::uint64_t alignment) {
+  if (alignment == 0 || alignment > kMaxBufferAlignment) {
+    return std::unexpected(
+        Refusal{RefusalCode::FieldOutOfRange,
+                std::format("alignement {} hors de [1, {}]", alignment, kMaxBufferAlignment)});
+  }
+  if (auto ok = validate(graph); !ok) return std::unexpected(ok.error());
+  for (const Tensor& tensor : graph.tensors) {
+    if (!tensor.known) {
+      return std::unexpected(
+          Refusal{RefusalCode::ShapeInvalid,
+                  std::format("{} : forme {} inconnue", tensor.name, format_dims(tensor.dims))});
+    }
+  }
   MemoryPlan plan;
   const std::size_t count = graph.tensors.size();
   std::vector<bool> io(count, false);

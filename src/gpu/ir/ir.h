@@ -22,8 +22,9 @@ enum class DataType : std::uint8_t { F32, F16, I64 };
 using Dims = std::vector<std::int64_t>;
 
 // Valeurs d'un tenseur en ordre ligne, sur la forme logique ONNX (NCHW).
-// F32 et F16 vivent dans f (un F16 est un float déjà représentable en F16),
-// I64 dans i. L'interpréteur calcule toujours en FP32.
+// F32 et F16 vivent dans f, I64 dans i. Les constantes F16 importées sont
+// représentables en F16 ; les valeurs calculées ne le sont pas forcément :
+// l'interpréteur calcule toujours en FP32 et seul un Cast vers F16 arrondit.
 struct Value {
   DataType type = DataType::F32;
   Dims dims;

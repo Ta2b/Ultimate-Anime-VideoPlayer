@@ -70,8 +70,10 @@ jobs:
           key: deps-core-clang-20-${{ hashFiles('tools/deps/linux-from-source.sh') }}
       - run: tools/deps/linux-from-source.sh --core "$AJP_DEPS_PREFIX" "$RUNNER_TEMP/deps-src"
       - run: cmake --preset linux-prefix-core
-      - name: clang-tidy sur src/
-        run: git ls-files -z -- 'src/*.cpp' | xargs -0 -r -n1 -P4 clang-tidy-20 -p build/linux-prefix-core --quiet
+      # src/gpu n'est pas construit par le preset cœur : ses options (SPDLOG_USE_STD_FORMAT…)
+      # manquent à cette base de compilation. Le job player le vérifie.
+      - name: clang-tidy sur src/ (hors src/gpu)
+        run: git ls-files -z -- 'src/*.cpp' ':!:src/gpu/*' | xargs -0 -r -n1 -P4 clang-tidy-20 -p build/linux-prefix-core --quiet
 
   player:
     name: Lecteur Linux (lavapipe)
@@ -101,3 +103,11 @@ jobs:
       - run: cmake --build --preset linux-prefix
       - name: Tests (Vulkan logiciel sous Xvfb)
         run: xvfb-run -a ctest --preset linux-prefix
+      - name: clang-tidy sur src/gpu/
+        run: git ls-files -z -- 'src/gpu/*.cpp' | xargs -0 -r -n1 -P4 clang-tidy-20 -p build/linux-prefix --quiet
+      # Les jobs ASan du cœur ne construisent pas src/gpu : on y passe les tests gpu_ir.
+      - name: Tests gpu_ir sous ASan et UBSan
+        run: |
+          cmake --preset linux-prefix-asan
+          cmake --build --preset linux-prefix-asan --target ajp_gpu_ir_tests
+          build/linux-prefix-asan/tests/unit/gpu_ir/ajp_gpu_ir_tests

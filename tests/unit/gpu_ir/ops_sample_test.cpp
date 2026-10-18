@@ -9,7 +9,6 @@
 
 #include "test_util.h"
 
-using ajp::Refusal;
 using ajp::RefusalCode;
 using namespace ajp::gpu::ir;
 using namespace ajp::gpu::ir::test;
@@ -170,7 +169,7 @@ TEST_CASE("Resize : axes de l'opset 18 et facteurs refusés", "[gpu_ir][ops][res
   const Value got = execute1(build(axes), {{.name = "x", .value = kSquare}});
   CHECK(got.dims == Dims{1, 1, 4, 4});
 
-  auto model = [](std::vector<float> scales, std::initializer_list<ProtoWriter> attrs) {
+  auto model = [](const std::vector<float>& scales, std::initializer_list<ProtoWriter> attrs) {
     ModelBuilder m;
     m.input("x", {1, 2, 4, 4})
         .weight("scales", {static_cast<std::int64_t>(scales.size())}, scales)
@@ -194,6 +193,33 @@ TEST_CASE("Resize : axes de l'opset 18 et facteurs refusés", "[gpu_ir][ops][res
       .node("Resize", {"x", "", "scales", "sizes"}, {"y"})
       .output("y");
   CHECK(refusal(both).code == RefusalCode::GraphInvalid);
+
+  // Un axe répété écraserait sa première taille sans le dire.
+  ModelBuilder repeated(18);
+  repeated.input("x", {1, 1, 2, 2})
+      .weight("scales", {2}, {2, 3})
+      .node("Resize", {"x", "", "scales"}, {"y"}, {attr_ints("axes", {3, -1})})
+      .output("y");
+  CHECK(refusal(repeated).code == RefusalCode::GraphInvalid);
+}
+
+TEST_CASE("Resize linéaire pytorch_half_pixel : une sortie lit l'origine", "[gpu_ir][ops][resize]") {
+  // Largeur 4 -> 1 : half_pixel lit x = (0 + 0.5) * 4 - 0.5 = 1.5, pytorch_half_pixel lit 0.
+  const Value row = floats({1, 1, 1, 4}, {0, 1, 2, 3});
+  const std::initializer_list<ProtoWriter> linear{attr_string("mode", "linear")};
+  CHECK(resize(row, linear, {}, {1, 1, 1, 1}).f == std::vector<float>{1.5F});
+  const Value torch = resize(
+      row,
+      {attr_string("mode", "linear"), attr_string("coordinate_transformation_mode", "pytorch_half_pixel")},
+      {}, {1, 1, 1, 1});
+  CHECK(torch.f == std::vector<float>{0.0F});
+  // Au-delà d'une sortie, pytorch_half_pixel et half_pixel coïncident.
+  const Value two = resize(
+      row,
+      {attr_string("mode", "linear"), attr_string("coordinate_transformation_mode", "pytorch_half_pixel")},
+      {}, {1, 1, 1, 2});
+  CHECK(two.f == resize(row, linear, {}, {1, 1, 1, 2}).f);
+  CHECK(two.f == std::vector<float>{0.5F, 2.5F});
 }
 
 TEST_CASE("GridSample bilinéaire align_corners, calculé à la main", "[gpu_ir][ops][grid]") {

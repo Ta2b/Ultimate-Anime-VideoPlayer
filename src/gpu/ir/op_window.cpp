@@ -2,6 +2,7 @@
 // ConvTranspose et AveragePool. Formes NCHW, poids OIHW comme dans ONNX.
 #include <algorithm>
 #include <cmath>
+#include <cstdint>
 #include <format>
 #include <utility>
 
@@ -44,8 +45,13 @@ std::pair<std::int64_t, std::int64_t> same_pads(std::int64_t total, AutoPad auto
   return {begin, total - begin};
 }
 
+// Marge SAME négative, quand le pas dépasse le noyau. Conv la ramène à 0, comme
+// TensorFlow et ONNX Runtime ; pour AveragePool, ONNX Runtime décale alors la
+// fenêtre (et arrondit autrement que la référence ONNX) : refusé plutôt que deviné.
+enum class NegativeSame : std::uint8_t { Zero, Refuse };
+
 std::expected<Window, Refusal> window(const Node& node, const Dims& x, Pair kernel, Pair strides,
-                                      Pair dilations, Quad pads, AutoPad auto_pad) {
+                                      Pair dilations, Quad pads, AutoPad auto_pad, NegativeSame negative) {
   if (!in_bounds(kernel, strides, dilations, pads)) {
     return shape_error(node, "noyau, pas, dilatation ou marges hors de leurs bornes");
   }
@@ -55,8 +61,11 @@ std::expected<Window, Refusal> window(const Node& node, const Dims& x, Pair kern
     const std::int64_t span = ((kernel[a] - 1) * dilations[a]) + 1;
     if (auto_pad == AutoPad::SameUpper || auto_pad == AutoPad::SameLower) {
       const std::int64_t out = (in + strides[a] - 1) / strides[a];
-      const std::int64_t total = std::max<std::int64_t>(0, ((out - 1) * strides[a]) + span - in);
-      std::tie(w.pads[a], w.pads[a + 2]) = same_pads(total, auto_pad);
+      const std::int64_t needed = ((out - 1) * strides[a]) + span - in;
+      if (needed < 0 && negative == NegativeSame::Refuse) {
+        return unsupported_error(node, "auto_pad SAME avec un pas plus grand que le noyau");
+      }
+      std::tie(w.pads[a], w.pads[a + 2]) = same_pads(std::max<std::int64_t>(0, needed), auto_pad);
     } else if (auto_pad == AutoPad::Valid) {
       w.pads[a] = 0;
       w.pads[a + 2] = 0;
@@ -82,12 +91,17 @@ std::expected<void, Refusal> check_optional(const Node& node, std::span<const Op
   return {};
 }
 
+// Entrée et poids de rang 4, flottants ; biais, résiduel et pente éventuels du même type.
 std::expected<void, Refusal> check_weights(const Node& node, std::span<const Operand> in) {
   for (std::size_t k = 0; k < 2; ++k) {
     if (auto ok = expect_rank(node, *in[k].dims, 4, k == 0 ? "l'entrée" : "les poids"); !ok) return ok;
   }
   if (in[0].type == DataType::I64 || in[1].type != in[0].type) {
     return graph_error(node, "entrée et poids flottants du même type");
+  }
+  for (std::size_t k = 2; k < in.size(); ++k) {
+    if (auto ok = expect_type_if_present(node, in, k, in[0].type, std::format("l'entrée {}", k)); !ok)
+      return ok;
   }
   return {};
 }
@@ -98,7 +112,8 @@ std::expected<Window, Refusal> conv_window(const Node& node, const ConvAttrs& at
   if ((attrs.kernel[0] != 0 || attrs.kernel[1] != 0) && attrs.kernel != kernel) {
     return shape_error(node, "kernel_shape contredit la forme des poids");
   }
-  return window(node, x, kernel, attrs.strides, attrs.dilations, attrs.pads, attrs.auto_pad);
+  return window(node, x, kernel, attrs.strides, attrs.dilations, attrs.pads, attrs.auto_pad,
+                NegativeSame::Zero);
 }
 
 // Géométrie d'une ConvTranspose : pads résolus et taille de sortie.
@@ -309,7 +324,7 @@ Inferred infer_average_pool(const Node& node, std::span<const Operand> in) {
   if (auto ok = expect_rank(node, x, 4, "l'entrée"); !ok) return std::unexpected(ok.error());
   if (auto ok = expect_float(node, in[0], "l'entrée"); !ok) return std::unexpected(ok.error());
   const PoolAttrs& a = **attrs;
-  auto win = window(node, x, a.kernel, a.strides, Pair{1, 1}, a.pads, a.auto_pad);
+  auto win = window(node, x, a.kernel, a.strides, Pair{1, 1}, a.pads, a.auto_pad, NegativeSame::Refuse);
   if (!win) return std::unexpected(win.error());
   return std::vector<OutputInfo>{{.type = in[0].type, .dims = Dims{x[0], x[1], win->out[0], win->out[1]}}};
 }
@@ -320,7 +335,7 @@ Evaluated eval_average_pool(const Node& node, std::span<const Value* const> in,
   if (!attrs) return std::unexpected(attrs.error());
   const PoolAttrs& a = **attrs;
   const Value& x = *in[0];
-  auto win = window(node, x.dims, a.kernel, a.strides, Pair{1, 1}, a.pads, a.auto_pad);
+  auto win = window(node, x.dims, a.kernel, a.strides, Pair{1, 1}, a.pads, a.auto_pad, NegativeSame::Refuse);
   if (!win) return std::unexpected(win.error());
 
   Value out = make_output(outs[0]);
