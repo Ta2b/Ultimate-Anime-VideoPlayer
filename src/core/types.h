@@ -50,6 +50,12 @@ enum class RefusalCode : std::uint8_t {
   AudioCodecUnavailable,   // aucun décodeur FFmpeg pour ce flux audio
   AudioDecodeFailed,       // paquet ou conversion audio refusés par FFmpeg
   AudioDeviceUnavailable,  // périphérique ou file SDL3 impossibles à ouvrir
+  SubtitleUnreadable,      // fichier de sous-titres absent, illisible ou trop gros
+  SubtitleFormat,          // script ASS ou SRT mal formé, extension inconnue
+  SubtitleAtlasFull,       // les images d'un instant dépassent l'atlas borné
+  SubtitleBacklog,         // trop de demandes de rendu en attente d'un atlas
+  LibassFailed,            // libass n'a pas créé sa bibliothèque, son moteur ou une piste
+  ThreadUnavailable,       // le système refuse de lancer un thread de plus
 };
 
 struct Refusal {
@@ -123,6 +129,18 @@ constexpr std::string_view name(RefusalCode code) {
       return "AudioDecodeFailed";
     case RefusalCode::AudioDeviceUnavailable:
       return "AudioDeviceUnavailable";
+    case RefusalCode::SubtitleUnreadable:
+      return "SubtitleUnreadable";
+    case RefusalCode::SubtitleFormat:
+      return "SubtitleFormat";
+    case RefusalCode::SubtitleAtlasFull:
+      return "SubtitleAtlasFull";
+    case RefusalCode::SubtitleBacklog:
+      return "SubtitleBacklog";
+    case RefusalCode::LibassFailed:
+      return "LibassFailed";
+    case RefusalCode::ThreadUnavailable:
+      return "ThreadUnavailable";
   }
   return "Unknown";
 }
