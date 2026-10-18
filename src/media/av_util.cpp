@@ -1,0 +1,46 @@
+#include "media/av_util.h"
+
+#include <array>
+#include <format>
+
+extern "C" {
+#include <libavutil/error.h>
+#include <libavutil/mathematics.h>
+}
+
+namespace ajp::media {
+
+std::string av_error_text(int error) {
+  std::array<char, AV_ERROR_MAX_STRING_SIZE> text{};
+  if (av_strerror(error, text.data(), text.size()) < 0) return std::format("erreur FFmpeg {}", error);
+  return text.data();
+}
+
+std::unexpected<Refusal> refuse(RefusalCode code, std::string detail) {
+  return std::unexpected(Refusal{code, std::move(detail)});
+}
+
+std::unexpected<Refusal> refuse_av(RefusalCode code, std::string_view where, int error) {
+  return refuse(code, std::format("{} : {}", where, av_error_text(error)));
+}
+
+std::int64_t to_us(std::int64_t ts, AVRational time_base, std::int64_t start_us) {
+  if (ts == AV_NOPTS_VALUE) return kNoTimestamp;
+  return av_rescale_q(ts, time_base, kMicroseconds) - start_us;
+}
+
+std::int64_t from_us(std::int64_t us, AVRational time_base, std::int64_t start_us) {
+  return av_rescale_q(us + start_us, kMicroseconds, time_base);
+}
+
+std::int64_t duration_to_us(std::int64_t duration, AVRational time_base) {
+  if (duration == AV_NOPTS_VALUE || duration <= 0) return 0;
+  return av_rescale_q(duration, time_base, kMicroseconds);
+}
+
+BufferPtr ref_buffer(const AVBufferRef* ref) {
+  if (ref == nullptr) return nullptr;
+  return BufferPtr(av_buffer_ref(ref));
+}
+
+}  // namespace ajp::media

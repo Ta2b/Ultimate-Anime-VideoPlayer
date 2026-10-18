@@ -28,6 +28,14 @@ enum class RefusalCode : std::uint8_t {
   PacingForbidden,   // Quality impose le rythme Source
   ModelUnavailable,  // modèle absent des capacités
   HdrUnavailable,    // route HDR impossible sur ce système ou cet écran
+
+  MediaUnreadable,      // fichier absent ou conteneur illisible
+  TrackUnavailable,     // piste absente, ou d'un autre type que demandé
+  HwDecodeUnavailable,  // une API de décodage matériel ne convient pas (codec, appareil, pilote)
+  DecoderUnavailable,   // aucun essai de décodage n'a abouti
+  DecodeFailed,         // erreur de lecture ou de décodage en cours de flux
+  FormatUnsupported,    // format de pixel ou couleur hors du vocabulaire de core/frame.h
+  SeekFailed,           // cible hors du fichier ou seek refusé par le conteneur
 };
 
 struct Refusal {
@@ -59,6 +67,20 @@ constexpr std::string_view name(RefusalCode code) {
       return "ModelUnavailable";
     case RefusalCode::HdrUnavailable:
       return "HdrUnavailable";
+    case RefusalCode::MediaUnreadable:
+      return "MediaUnreadable";
+    case RefusalCode::TrackUnavailable:
+      return "TrackUnavailable";
+    case RefusalCode::HwDecodeUnavailable:
+      return "HwDecodeUnavailable";
+    case RefusalCode::DecoderUnavailable:
+      return "DecoderUnavailable";
+    case RefusalCode::DecodeFailed:
+      return "DecodeFailed";
+    case RefusalCode::FormatUnsupported:
+      return "FormatUnsupported";
+    case RefusalCode::SeekFailed:
+      return "SeekFailed";
   }
   return "Unknown";
 }

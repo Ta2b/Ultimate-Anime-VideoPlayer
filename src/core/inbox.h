@@ -47,7 +47,7 @@ class Inbox {
   // Renvoie std::nullopt quand l'arrêt du thread est demandé.
   std::optional<Message> wait(std::stop_token stop) {
     std::unique_lock lock(mutex_);
-    if (!ready_.wait(lock, stop, [this] { return !queue_.empty(); })) return std::nullopt;
+    if (!ready_.wait(lock, std::move(stop), [this] { return !queue_.empty(); })) return std::nullopt;
     Message message = std::move(queue_.front());
     queue_.pop_front();
     --counts_[message.index()];
