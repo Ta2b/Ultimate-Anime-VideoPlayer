@@ -40,13 +40,16 @@ enum class RefusalCode : std::uint8_t {
   OptionUnknown,      // option de ligne de commande inconnue
   HashMismatch,       // taille ou SHA-256 différents de l'index
 
-  MediaUnreadable,      // fichier absent ou conteneur illisible
-  TrackUnavailable,     // piste absente, ou d'un autre type que demandé
-  HwDecodeUnavailable,  // une API de décodage matériel ne convient pas (codec, appareil, pilote)
-  DecoderUnavailable,   // aucun essai de décodage n'a abouti
-  DecodeFailed,         // erreur de lecture ou de décodage en cours de flux
-  FormatUnsupported,    // format de pixel ou couleur hors du vocabulaire de core/frame.h
-  SeekFailed,           // cible hors du fichier ou seek refusé par le conteneur
+  MediaUnreadable,         // fichier absent ou conteneur illisible
+  TrackUnavailable,        // piste absente, ou d'un autre type que demandé
+  HwDecodeUnavailable,     // une API de décodage matériel ne convient pas (codec, appareil, pilote)
+  DecoderUnavailable,      // aucun essai de décodage n'a abouti
+  DecodeFailed,            // erreur de lecture ou de décodage en cours de flux
+  FormatUnsupported,       // format de pixel ou couleur hors du vocabulaire de core/frame.h
+  SeekFailed,              // cible hors du fichier ou seek refusé par le conteneur
+  AudioCodecUnavailable,   // aucun décodeur FFmpeg pour ce flux audio
+  AudioDecodeFailed,       // paquet ou conversion audio refusés par FFmpeg
+  AudioDeviceUnavailable,  // périphérique ou file SDL3 impossibles à ouvrir
 };
 
 struct Refusal {
@@ -114,6 +117,12 @@ constexpr std::string_view name(RefusalCode code) {
       return "FormatUnsupported";
     case RefusalCode::SeekFailed:
       return "SeekFailed";
+    case RefusalCode::AudioCodecUnavailable:
+      return "AudioCodecUnavailable";
+    case RefusalCode::AudioDecodeFailed:
+      return "AudioDecodeFailed";
+    case RefusalCode::AudioDeviceUnavailable:
+      return "AudioDeviceUnavailable";
   }
   return "Unknown";
 }
