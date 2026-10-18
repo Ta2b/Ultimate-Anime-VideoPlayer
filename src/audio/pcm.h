@@ -48,6 +48,8 @@ struct PcmBlock {
   std::int64_t frames() const { return channels > 0 ? std::ssize(samples) / channels : 0; }
   // Retire les n premières trames (toutes si n dépasse) ; le temps média avance d'autant.
   void drop_front(std::int64_t n, int sample_rate);
+  // Retire les trames antérieures à media_us, quel que soit l'écart (seek exact, recalage).
+  void drop_before(std::int64_t media_us, int sample_rate);
 };
 
 }  // namespace ajp::audio

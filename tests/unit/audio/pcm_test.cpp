@@ -1,5 +1,9 @@
 #include "audio/pcm.h"
 
+#include <cstdint>
+#include <limits>
+#include <vector>
+
 #include <catch2/catch_test_macros.hpp>
 
 #include "audio/timeline.h"
@@ -37,6 +41,20 @@ TEST_CASE("pcm : drop_front retire des trames entières et avance le temps", "[a
   CHECK(block.pts_us == 1'000'021);
   block.drop_front(10, 48'000);  // plus que le bloc : tout part
   CHECK(block.frames() == 0);
+}
+
+TEST_CASE("pcm : drop_before retire jusqu'à un instant, même aberrant", "[audio][pcm]") {
+  PcmBlock block{.pts_us = 1'000'000, .channels = 1, .samples = std::vector<float>(480, 1.0F)};  // 10 ms
+  block.drop_before(900'000, 48'000);  // avant le bloc : rien ne part
+  CHECK(block.frames() == 480);
+  CHECK(block.pts_us == 1'000'000);
+  block.drop_before(1'005'000, 48'000);
+  CHECK(block.frames() == 240);
+  CHECK(block.pts_us == 1'005'000);
+  // Un instant très lointain (horodatage corrompu) vide le bloc sans déborder en trames.
+  block.drop_before(std::numeric_limits<std::int64_t>::max() / 2, 48'000);
+  CHECK(block.frames() == 0);
+  CHECK(block.pts_us == 1'010'000);
 }
 
 TEST_CASE("Timeline : chaque trame retrouve son temps média", "[audio][timeline]") {

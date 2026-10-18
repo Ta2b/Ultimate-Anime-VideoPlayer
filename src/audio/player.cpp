@@ -11,6 +11,7 @@
 
 #include <spdlog/spdlog.h>
 
+#include "audio/log.h"
 #include "audio/refuse.h"
 
 namespace ajp::audio {
@@ -49,7 +50,7 @@ AudioPlayer::AudioPlayer(std::unique_ptr<AudioOutput> output, const PlayerConfig
     : output_(std::move(output)),
       config_(config),
       events_(std::move(events)),
-      log_(spdlog::default_logger()->clone("audio")),
+      log_(make_logger()),
       clock_(std::make_shared<AudioClock>()),
       regulator_(config.drift) {}
 
@@ -81,7 +82,8 @@ void AudioPlayer::handle(const AudioTrack& track) {
 }
 
 void AudioPlayer::handle(const EndOfStream& end) {
-  if (end.epoch != epoch_) return;
+  if (end.epoch < epoch_) return;                  // fin d'avant un seek
+  if (end.epoch > epoch_) start_epoch(end.epoch);  // seek après le dernier paquet : a devancé son Flush
   end_pending_ = true;
   pump();
 }
@@ -189,10 +191,8 @@ void AudioPlayer::finish_stream() {
 
 // false : le bloc attend, rien n'est poussé.
 bool AudioPlayer::push(PcmBlock& block) {
-  const int rate = output_->format().sample_rate;
-  if (trim_before_us_ && block.pts_us < *trim_before_us_) {
-    block.drop_front(us_to_frames(*trim_before_us_ - block.pts_us, rate), rate);
-  }
+  if (trim_before_us_) block.drop_before(*trim_before_us_, output_->format().sample_rate);
+  if (block.frames() == 0) return true;  // entièrement avant la cible du seek : rien à caler
   if (aligning_ && !align(block)) return false;
   if (block.frames() == 0) return true;
   if (auto pushed = output_->push(block.pts_us, block.samples); !pushed) {
@@ -202,7 +202,7 @@ bool AudioPlayer::push(PcmBlock& block) {
   // Premières trames de l'époque : la position est connue avant d'être entendue.
   if (!clock_->snapshot().valid) {
     clock_->publish({.media_us = block.pts_us + output_->delay_us(),
-                     .host_us = host_now_us(),
+                     .host_us = output_->reading().host_us,
                      .epoch = epoch_,
                      .valid = true});
   }
@@ -211,18 +211,25 @@ bool AudioPlayer::push(PcmBlock& block) {
 
 // Coupe le début du bloc ou le fait précéder d'un silence, pour qu'il soit
 // entendu quand l'horloge maître atteint son temps média (délai compris).
+// Le silence part par morceaux d'au plus la cible de la file : une avance de
+// plusieurs minutes n'occupe pas la mémoire, et chaque morceau se recalcule sur
+// l'horloge maître du moment. false : le bloc attend le morceau suivant.
 bool AudioPlayer::align(PcmBlock& block) {
   const ClockSnapshot master = master_->snapshot();
   if (!master.valid || master.epoch != epoch_) return false;  // l'écran n'a pas encore d'image de l'époque
   const int rate = output_->format().sample_rate;
-  const std::int64_t heard_at = host_now_us() + output_->queued_us() + output_->latency_us();
-  const std::int64_t lead_us = block.pts_us - (master.media_at(heard_at) - output_->delay_us());
+  // Ce qui sera poussé maintenant s'entendra après la file et le tampon du périphérique.
+  const std::int64_t heard_at = output_->reading().host_us + output_->queued_us() + output_->latency_us();
+  const std::int64_t target_us = master.media_at(heard_at) - output_->delay_us();
+  const std::int64_t lead_us = block.pts_us - target_us;
   if (lead_us > 0) {
-    if (auto silence = output_->push_silence(us_to_frames(lead_us, rate)); !silence) {
+    const std::int64_t silence_us = std::min(lead_us, config_.queue_target_us);
+    if (auto silence = output_->push_silence(us_to_frames(silence_us, rate)); !silence) {
       report(silence.error());
     }
+    if (silence_us < lead_us) return false;
   } else {
-    block.drop_front(us_to_frames(-lead_us, rate), rate);
+    block.drop_before(target_us, rate);
   }
   aligning_ = block.frames() == 0;  // bloc entièrement en retard : le suivant se cale à son tour
   return true;
@@ -230,7 +237,20 @@ bool AudioPlayer::align(PcmBlock& block) {
 
 void AudioPlayer::publish(std::int64_t heard_us, const DeviceReading& reading) {
   const bool starving = reading.consumed_frames >= output_->pushed_frames();
-  if (starving && ended_) return;  // fin de piste : l'horloge continue sur l'hôte
+  if (starving && ended_) {
+    // Fin de piste : plus rien ne viendra, l'horloge continue sur l'hôte. Si
+    // elle s'était arrêtée (manque de trames avant la fin, pause), elle repart
+    // d'où elle était ; sinon elle continue déjà.
+    const ClockSnapshot now = clock_->snapshot();
+    if (now.valid && now.rate == 0.0) {
+      clock_->publish({.media_us = now.media_us,
+                       .host_us = reading.host_us,
+                       .rate = 1.0,
+                       .epoch = epoch_,
+                       .valid = true});
+    }
+    return;
+  }
   // En manque de trames, l'audio maître s'arrête : l'image l'attend.
   clock_->publish({.media_us = heard_us,
                    .host_us = reading.host_us,
@@ -268,19 +288,16 @@ void AudioPlayer::pause() {
   paused_ = true;
   output_->pause();
   const ClockSnapshot now = clock_->snapshot();
-  const std::int64_t host = host_now_us();
+  const std::int64_t host = output_->reading().host_us;
   clock_->publish({.media_us = now.media_at(host), .host_us = host, .epoch = now.epoch, .valid = now.valid});
 }
 
+// L'horloge reste arrêtée jusqu'à la première mesure : le périphérique n'a
+// encore rien joué, et une horloge repartie tout de suite reculerait à cette
+// mesure du temps de démarrage du périphérique.
 void AudioPlayer::resume() {
   if (!paused_) return;
   paused_ = false;
-  const ClockSnapshot now = clock_->snapshot();
-  clock_->publish({.media_us = now.media_us,
-                   .host_us = host_now_us(),
-                   .rate = output_->ratio(),
-                   .epoch = now.epoch,
-                   .valid = now.valid});
   output_->resume();
   pump();
 }

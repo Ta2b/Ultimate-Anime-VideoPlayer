@@ -70,6 +70,38 @@ TEST_CASE("AudioThread : un sinus joue, l'horloge avance au rythme du périphér
   CHECK(clock->snapshot().media_at(host_now_us()) == paused_at);
 }
 
+TEST_CASE("AudioThread : Flush et fin de flux passent par la boîte, l'horloge suit l'époque",
+          "[audio][thread][sdl]") {
+  auto thread = AudioThread::start(open_dummy(), {.max_packets = 64});
+  REQUIRE(thread);
+  const auto clip = encode_sine({.seconds = 1.0});
+  REQUIRE((*thread)->post(AudioTrack{clip.codec}));
+  for (AudioPacket packet : clip.packets) REQUIRE((*thread)->push_packet(std::move(packet)));
+  const auto clock = (*thread)->clock();
+  REQUIRE(eventually([&] { return clock->snapshot().valid; }));
+  REQUIRE((*thread)->post(Command{cmd::Play{}}));
+
+  // Seek : l'époque 0 est jetée, ses places reviennent, l'époque 1 reprend à 30 s.
+  REQUIRE((*thread)->post(ajp::Flush{.epoch = 1}));
+  const auto later = encode_sine({.seconds = 0.3, .start_us = 30'000'000, .epoch = 1});
+  for (AudioPacket packet : later.packets) {
+    REQUIRE(eventually([&] { return (*thread)->push_packet(AudioPacket{packet}); }));
+  }
+  REQUIRE((*thread)->post(EndOfStream{.epoch = 1}));
+  REQUIRE(eventually([&] {
+    const ClockSnapshot now = clock->snapshot();
+    return now.valid && now.epoch == 1 && now.rate == 1.0;
+  }));
+  const ClockSnapshot playing = clock->snapshot();
+  CHECK(playing.media_us >= 30'000'000);
+  CHECK(playing.media_us < 30'300'000);
+  // Après les 300 ms de la piste, l'horloge continue sur l'hôte au lieu de s'arrêter.
+  std::this_thread::sleep_for(500ms);
+  const ClockSnapshot ended = clock->snapshot();
+  CHECK(ended.rate == 1.0);
+  CHECK(ended.media_at(host_now_us()) > 30'350'000);
+}
+
 TEST_CASE("AudioThread : borne des paquets atteinte, un crédit revient quand une place se libère",
           "[audio][thread][sdl]") {
   std::atomic<int> credits{0};

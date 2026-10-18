@@ -42,4 +42,12 @@ void PcmBlock::drop_front(std::int64_t n, int sample_rate) {
   pts_us += frames_to_us(dropped, sample_rate);
 }
 
+void PcmBlock::drop_before(std::int64_t media_us, int sample_rate) {
+  if (media_us <= pts_us) return;
+  // Un écart plus long que le bloc le retire en entier, sans convertir l'écart
+  // en trames : un horodatage aberrant ne déborde pas.
+  const std::int64_t end_us = pts_us + frames_to_us(frames(), sample_rate);
+  drop_front(media_us >= end_us ? frames() : us_to_frames(media_us - pts_us, sample_rate), sample_rate);
+}
+
 }  // namespace ajp::audio

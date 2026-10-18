@@ -6,6 +6,7 @@
 
 #include <spdlog/spdlog.h>
 
+#include "audio/log.h"
 #include "audio/refuse.h"
 
 namespace ajp::audio {
@@ -57,14 +58,15 @@ bool AudioThread::push_packet(AudioPacket&& packet) {
 }
 
 void AudioThread::run(const std::stop_token& stop) {
+  const std::shared_ptr<spdlog::logger> log = make_logger();
   while (auto message = inbox_.wait(stop)) {
     // Aucune exception ne quitte la boucle : le message fautif est perdu, le thread continue.
     try {
       std::visit([this](auto&& m) { player_->handle(std::forward<decltype(m)>(m)); }, std::move(*message));
     } catch (const std::exception& error) {
-      spdlog::default_logger()->error("audio : message perdu ({})", error.what());
+      log->error("message perdu ({})", error.what());
     } catch (...) {
-      spdlog::default_logger()->error("audio : message perdu (exception inconnue)");
+      log->error("message perdu (exception inconnue)");
     }
   }
 }

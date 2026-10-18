@@ -8,6 +8,9 @@
 // - Écran fixe : present publie l'horloge maître, reçue par SyncTo. L'audio
 //   se cale dessus (silence ajouté ou trames coupées), puis suit sa dérive en
 //   changeant sa vitesse de lecture d'au plus 0,125 %.
+//
+// L'instant présent est celui de la sortie (AudioOutput::reading) : l'horloge
+// hôte avec SDL, le temps simulé du faux périphérique dans les tests.
 #pragma once
 
 #include <cstddef>
