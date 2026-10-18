@@ -61,6 +61,27 @@ TEST_CASE("warp : échantillon bilinéaire borné au plan", "[warp]") {
   CHECK(ref::sample(p, Window{.x = 1, .y = 0, .width = 2, .height = 2}, 5.0F, 1.0F) == 12.0F);
 }
 
+TEST_CASE("warp : un échantillon hors contrat est refusé, jamais lu hors du plan", "[warp]") {
+  const PlaneF p(4, 2, 1.0F);
+  CHECK(ref::sample(PlaneF(), 0.0F, 0.0F).error().code == ErrorCode::DimensionOutOfRange);
+  CHECK(ref::sample(p, Window{.x = 3, .y = 0, .width = 2, .height = 2}, 0.0F, 0.0F).error().code ==
+        ErrorCode::ParameterOutOfRange);
+  CHECK(ref::sample(p, Window{.x = 0, .y = 0, .width = 0, .height = 2}, 0.0F, 0.0F).error().code ==
+        ErrorCode::ParameterOutOfRange);
+  // Une largeur géante ne déborde pas l'addition du test de la fenêtre.
+  CHECK(ref::sample(p, Window{.x = 2, .y = 0, .width = std::numeric_limits<int>::max(), .height = 1}, 0.0F,
+                    0.0F)
+            .error()
+            .code == ErrorCode::ParameterOutOfRange);
+  // Un plan dont les données ne couvrent pas les dimensions annoncées.
+  PlaneF hollow = p;
+  hollow.data.pop_back();
+  CHECK(ref::sample(hollow, 0.0F, 0.0F).error().code == ErrorCode::SizeMismatch);
+  ref::Motion motion = uniform_motion(8, 4, {0, 0, 8, 4}, 0.0F, 0.0F, 0.5F);
+  motion.flow[1].data.clear();
+  CHECK(ref::warp_blend(RgbImage(8, 4), RgbImage(8, 4), motion).error().code == ErrorCode::SizeMismatch);
+}
+
 TEST_CASE("warp : le masque choisit entre a et b", "[warp]") {
   const RgbImage a(8, 4, 0.2F);
   const RgbImage b(8, 4, 0.6F);

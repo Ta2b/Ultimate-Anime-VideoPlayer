@@ -1,60 +1,21 @@
-// Images planaires de la référence CPU, et ses refus. Aucune dépendance hors bibliothèque
-// standard : kernels est une feuille du graphe, gpu traduit Error en Refusal.
+// Images planaires de la référence CPU. Aucune dépendance hors bibliothèque standard :
+// kernels est une feuille du graphe.
 #pragma once
 
 #include <array>
 #include <cstddef>
 #include <cstdint>
-#include <expected>
-#include <string>
-#include <string_view>
-#include <utility>
 #include <vector>
 
+#include "kernels/error.h"  // IWYU pragma: export
 #include "kernels/spec/color.h"
+#include "kernels/spec/resample.h"
 
 namespace ajp::kernels {
 
-enum class ErrorCode : std::uint8_t {
-  DimensionOutOfRange,  // largeur ou hauteur hors de sa plage
-  OddDimension,         // image 4:2:0 ou de la chaîne de dimensions impaires
-  SizeMismatch,         // plans ou images qui devraient avoir la même taille
-  SampleOutOfRange,     // échantillon hors de son conteneur (P010 : bits bas non nuls)
-  FilterDirection,      // Area ne sert qu'à réduire
-  ParameterOutOfRange,  // décalage, instant t ou luminance hors de sa plage
-};
-
-constexpr std::string_view name(ErrorCode code) {
-  switch (code) {
-    case ErrorCode::DimensionOutOfRange:
-      return "DimensionOutOfRange";
-    case ErrorCode::OddDimension:
-      return "OddDimension";
-    case ErrorCode::SizeMismatch:
-      return "SizeMismatch";
-    case ErrorCode::SampleOutOfRange:
-      return "SampleOutOfRange";
-    case ErrorCode::FilterDirection:
-      return "FilterDirection";
-    case ErrorCode::ParameterOutOfRange:
-      return "ParameterOutOfRange";
-  }
-  return "Unknown";
-}
-
-struct Error {
-  ErrorCode code = ErrorCode::DimensionOutOfRange;
-  std::string detail;  // quoi et pourquoi, par exemple « largeur 0 hors de [2, 16384] »
-};
-
-template <class T>
-using Result = std::expected<T, Error>;
-
-inline std::unexpected<Error> fail(ErrorCode code, std::string detail) {
-  return std::unexpected(Error{.code = code, .detail = std::move(detail)});
-}
-
 // Un plan : largeur × hauteur échantillons, ligne par ligne, sans pas de ligne.
+// Des dimensions hors de [0, kMaxDimension] n'allouent rien : le plan garde ses dimensions,
+// et chaque fonction de la référence le refuse (check_plane), au lieu d'une allocation géante.
 template <class T>
 struct Plane {
   int width = 0;
@@ -62,8 +23,10 @@ struct Plane {
   std::vector<T> data;
 
   Plane() = default;
-  Plane(int w, int h, T fill = T{})
-      : width(w), height(h), data(static_cast<std::size_t>(w) * static_cast<std::size_t>(h), fill) {}
+  Plane(int w, int h, T fill = T{}) : width(w), height(h), data(allocatable() ? area() : 0, fill) {}
+
+  // Échantillons attendus, width × height, pour des dimensions positives.
+  std::size_t area() const { return static_cast<std::size_t>(width) * static_cast<std::size_t>(height); }
 
   std::size_t index(int x, int y) const {
     return static_cast<std::size_t>(y) * static_cast<std::size_t>(width) + static_cast<std::size_t>(x);
@@ -72,6 +35,11 @@ struct Plane {
   T& at(int x, int y) { return data[index(x, y)]; }
 
   friend bool operator==(const Plane&, const Plane&) = default;
+
+ private:
+  bool allocatable() const {
+    return width >= 0 && width <= kMaxDimension && height >= 0 && height <= kMaxDimension;
+  }
 };
 
 using PlaneF = Plane<float>;

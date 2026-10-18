@@ -4,6 +4,7 @@
 #include <cstdint>
 #include <limits>
 #include <random>
+#include <vector>
 
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/generators/catch_generators.hpp>
@@ -161,6 +162,26 @@ TEST_CASE("couleur : ingestion NV12 calculée à la main, Spline36 en siting gau
   CHECK(rgb->planes[2].at(3, 0) > 1.0F);  // hors gamut, passé tel quel au réseau
 }
 
+TEST_CASE("couleur : sortie NV12 calculée à la main, Spline36 en siting gauche", "[color][parity]") {
+  // 4 × 2, B = (1, 0, 0, 0) sur chaque ligne, R = G = 0 : Y = kb B, Cb = B / 2, Cr = −kb B / 1,5748.
+  // Réduction horizontale (k_h_f32) : pos = 2i + 0,5, 12 prises de pas 1/2, poids de Spline36
+  // aux demi-entiers normalisés par 2, miroir sur 4 colonnes :
+  //   i = 0 : (121,5 ; 45,5 ; −7,5 ; −7,5) / 152 sur (c0, c1, c2, c3) ;
+  //   i = 1 : (−7,5 ; 45,5 ; 68,5 ; 45,5) / 152.
+  // Les deux lignes sont égales : la passe verticale les recopie.
+  RgbImage image(4, 2, 0.0F);
+  image.planes[2].at(0, 0) = 1.0F;
+  image.planes[2].at(0, 1) = 1.0F;
+  const auto yuv = ref::rgb_to_yuv(image, Format::Nv12, {.siting = Siting::Left});
+  REQUIRE(yuv);
+  // Y : 16 + 219 × 0,0722 = 31,81 → 32.
+  CHECK(yuv->y.data == std::vector<std::uint16_t>{32, 16, 16, 16, 32, 16, 16, 16});
+  // Cb : 128 + 224 × 0,5 × 121,5/152 = 217,53 → 218 ; 128 − 224 × 0,5 × 7,5/152 = 122,47 → 122.
+  CHECK(yuv->u.data == std::vector<std::uint16_t>{218, 122});
+  // Cr : 128 − 224 × 0,045847 × 121,5/152 = 119,79 → 120 ; 128 + 224 × 0,045847 × 7,5/152 = 128,51 → 129.
+  CHECK(yuv->v.data == std::vector<std::uint16_t>{120, 129});
+}
+
 TEST_CASE("couleur : le siting déplace la chroma comme dans zimg", "[color]") {
   // Centre : décalage nul, la luma 0 tombe entre deux échantillons et ne recopie plus c0.
   YuvImage frame(Format::Nv12, 8, 8, 126, 128, 128);
@@ -258,4 +279,26 @@ TEST_CASE("couleur : une image hors contrat est refusée", "[color]") {
   CHECK(ref::check_yuv(wrong).error().code == ErrorCode::SizeMismatch);
   CHECK(ref::check_yuv(YuvImage(Format::Yuv444p16, 3, 5, 0, 0, 0)).has_value());  // 4:4:4 impair admis
   CHECK(ref::rgb_to_yuv(RgbImage(6, 3), Format::Nv12, {}).error().code == ErrorCode::OddDimension);
+}
+
+TEST_CASE("couleur : un plan qui ment sur sa taille est refusé, jamais lu", "[color]") {
+  // Les champs sont publics : des dimensions sans les données qui vont avec.
+  YuvImage frame(Format::Nv12, 8, 4, 16, 128, 128);
+  frame.y.data.resize(10);
+  CHECK(ref::check_yuv(frame).error().code == ErrorCode::SizeMismatch);
+  YuvImage chroma(Format::Yuv444p16, 8, 4, 0, 32768, 32768);
+  chroma.v.data.clear();
+  CHECK(ref::yuv_to_rgb(chroma, {}).error().code == ErrorCode::SizeMismatch);
+  RgbImage rgb(4, 4);
+  rgb.planes[2].data.pop_back();
+  CHECK(ref::to_rgba16(rgb).error().code == ErrorCode::SizeMismatch);
+  CHECK(ref::rgb_to_yuv(rgb, Format::Yuv444p16, {}).error().code == ErrorCode::SizeMismatch);
+  // Des dimensions hors contrat n'allouent rien, puis sont refusées.
+  const PlaneF negative(-4, 4);
+  CHECK(negative.data.empty());
+  const PlaneF huge(kMaxDimension + 2, kMaxDimension + 2);
+  CHECK(huge.data.empty());
+  CHECK(ref::to_rgba16(RgbImage(-4, 4)).error().code == ErrorCode::DimensionOutOfRange);
+  CHECK(ref::check_yuv(YuvImage(Format::Yuv444p16, kMaxDimension + 1, 1, 0, 0, 0)).error().code ==
+        ErrorCode::DimensionOutOfRange);
 }

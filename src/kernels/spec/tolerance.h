@@ -1,6 +1,8 @@
 // Tolérances : de combien un port (CUDA, GLSL, Metal) ou la référence peut s'écarter d'un
-// résultat exact. Un golden compare chaque port à la référence CPU avec ces bornes.
-// Chaque borne est vérifiée par un test de tests/unit/kernels/.
+// résultat exact. Un golden compare chaque port à la référence CPU avec ces bornes, le port et
+// la référence recevant les mêmes entrées. Chaque borne est vérifiée par un test de
+// tests/unit/kernels/ ; celles des ports par tolerance_test.cpp, contre un port simulé qui
+// contracte chaque a × b + c en FMA et range ses tenseurs en fp16.
 #pragma once
 
 namespace ajp::kernels::tolerance {
@@ -9,12 +11,12 @@ namespace ajp::kernels::tolerance {
 // un pas de fp16 à 1,0 (arrondi fp16 et contraction FMA du port).
 inline constexpr float kRgbF16 = 1.0F / 1024.0F;
 
-// Sortie quantifiée d'un port contre la référence : un code au plus. Les égalités à 0,5
-// peuvent basculer quand le port contracte a × b + c en FMA.
+// Sortie quantifiée d'un port contre la référence, à entrée float identique : un code au plus
+// (en pas de 10 bits pour P010). Les égalités à 0,5 basculent quand le port contracte en FMA.
 inline constexpr int kCode = 1;
 
-// Aller-retour 4:4:4 YUV → RGB → YUV dans la référence : exact, en 8, 10 et 16 bits, plage
-// limitée ou pleine. La luma 4:2:0 aussi ; la chroma 4:2:0 seulement si elle est uniforme.
+// Aller-retour YUV → RGB → YUV dans la référence : exact en 4:4:4 16 bits, plage limitée ou
+// pleine ; en 4:2:0 (8, 10 et 16 bits), exact en luma, et en chroma si elle est uniforme.
 inline constexpr int kRoundTrip = 0;
 
 // Somme des poids d'une table de rééchantillonnage rangée en float.
@@ -36,7 +38,9 @@ inline constexpr double kMatrixFloat = 1e-7;
 // Score de coupe de scène : l'ordre de la réduction est libre sur GPU.
 inline constexpr double kSceneScoreRelative = 1e-4;
 
-// Warp et mélange d'un port contre la référence (lectures fp16, logf/expf approchées).
+// Warp et mélange d'un port contre la référence, à tenseurs fp16 identiques : contraction FMA
+// et sortie fp16, vérifiées à t = 1/2. Aux autres instants, la marge doit aussi absorber logf
+// et expf approchées : à confirmer par le golden de chaque port.
 inline constexpr float kWarp = 2.0F / 1024.0F;
 
 }  // namespace ajp::kernels::tolerance

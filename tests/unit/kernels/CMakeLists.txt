@@ -4,15 +4,15 @@ ajp_add_unit_tests(kernels
     detect_test.cpp
     glsl_test.cpp
     half_test.cpp
+    parity_test.cpp
     resample_test.cpp
     rife_test.cpp
+    tolerance_test.cpp
     transfer_test.cpp
     warp_test.cpp)
 
-# Les tests évaluent les formules constexpr de spec.h : mêmes arrondis que la référence.
-if(NOT MSVC)
-  target_compile_options(ajp_kernels_tests PRIVATE -ffp-contract=off)
-endif()
+# Les tests évaluent les formules constexpr de spec.h avec les arrondis de la référence :
+# ajp::kernels leur transmet -ffp-contract=off. Les ports FMA simulés appellent std::fma.
 
 # L'en-tête GLSL généré se compile avec glslc, trouvé quand le lecteur est construit.
 if(AJP_GLSLC)

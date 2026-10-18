@@ -123,3 +123,17 @@ TEST_CASE("dessins tenus : blocs tronqués au bord, division entière", "[detect
   CHECK(ref::block_diff_max(c, PlaneU16(32, 32, 300), Format::Nv12).error().code ==
         ErrorCode::SampleOutOfRange);
 }
+
+TEST_CASE("détection : une luma hors de son conteneur est refusée", "[detect]") {
+  // P010 : les 6 bits bas sont nuls ; 4097 n'est pas un code P010, comme pour la conversion.
+  const PlaneU16 a(32, 32, 4096);
+  const PlaneU16 b(32, 32, 4097);
+  CHECK(ref::block_diff_max(a, b, Format::P010).error().code == ErrorCode::SampleOutOfRange);
+  CHECK(ref::scene_diff_sum(b, a, Format::P010).error().code == ErrorCode::SampleOutOfRange);
+  CHECK(ref::scene_diff_sum(a, PlaneU16(32, 32, 1024), Format::Yuv420p10).error().code ==
+        ErrorCode::SampleOutOfRange);
+  // Un plan dont les données ne couvrent pas les dimensions annoncées.
+  PlaneU16 hollow = a;
+  hollow.data.resize(10);
+  CHECK(ref::block_diff_max(a, hollow, Format::P010).error().code == ErrorCode::SizeMismatch);
+}

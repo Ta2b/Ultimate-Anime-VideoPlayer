@@ -5,14 +5,18 @@
 #include <cmath>
 #include <cstddef>
 #include <format>
+#include <string_view>
 
 #include "kernels/ref/check.h"
 
 namespace ajp::kernels::ref {
 namespace {
 
-// Lecture bilinéaire relative au coin (x0w, y0w) d'une zone w × h du plan.
-float bilinear_at(const PlaneF& p, int x0w, int y0w, int w, int h, float x, float y) {
+// Lecture bilinéaire relative au coin d'une fenêtre du plan, sans vérification : les appelants
+// ont validé le plan et la fenêtre (check_window).
+float bilinear_at(const PlaneF& p, const Window& area, float x, float y) {
+  const int w = area.width;
+  const int h = area.height;
   x = std::fmin(std::fmax(x, 0.0F), static_cast<float>(w - 1));
   y = std::fmin(std::fmax(y, 0.0F), static_cast<float>(h - 1));
   const int x0 = static_cast<int>(x);
@@ -21,9 +25,26 @@ float bilinear_at(const PlaneF& p, int x0w, int y0w, int w, int h, float x, floa
   const int y1 = std::min(y0 + 1, h - 1);
   const float fx = x - static_cast<float>(x0);
   const float fy = y - static_cast<float>(y0);
-  const float top = p.at(x0w + x0, y0w + y0) * (1.0F - fx) + p.at(x0w + x1, y0w + y0) * fx;
-  const float bottom = p.at(x0w + x0, y0w + y1) * (1.0F - fx) + p.at(x0w + x1, y0w + y1) * fx;
+  const float top = p.at(area.x + x0, area.y + y0) * (1.0F - fx) + p.at(area.x + x1, area.y + y0) * fx;
+  const float bottom = p.at(area.x + x0, area.y + y1) * (1.0F - fx) + p.at(area.x + x1, area.y + y1) * fx;
   return top * (1.0F - fy) + bottom * fy;
+}
+
+float bilinear_at(const PlaneF& p, float x, float y) {
+  return bilinear_at(p, Window{.x = 0, .y = 0, .width = p.width, .height = p.height}, x, y);
+}
+
+// Un plan conforme, et une fenêtre non vide incluse dans ce plan.
+Result<void> check_window(const PlaneF& p, const Window& a, std::string_view what) {
+  if (auto ok = check_plane(p, what); !ok) return ok;
+  // Écrit sans a.x + a.width, qui pourrait déborder un int.
+  if (a.x < 0 || a.y < 0 || a.width < 1 || a.height < 1 || a.width > p.width - a.x ||
+      a.height > p.height - a.y) {
+    return fail(ErrorCode::ParameterOutOfRange,
+                std::format("{} : fenêtre {}x{} en ({}, {}) hors du plan {}x{}", what, a.width, a.height, a.x,
+                            a.y, p.width, p.height));
+  }
+  return {};
 }
 
 // Déplacements vers a et vers b, et poids de a, pour un point de la grille du mouvement.
@@ -39,24 +60,25 @@ using DisplacementAt = Displacement (*)(const Motion&, float, float, float);
 
 // L'instant que RIFE a estimé : mouvement et masque tels quels.
 Displacement estimated(const Motion& m, float u, float v, float /*t*/) {
-  return {.ax = sample(m.flow[0], m.area, u, v),
-          .ay = sample(m.flow[1], m.area, u, v),
-          .bx = sample(m.flow[2], m.area, u, v),
-          .by = sample(m.flow[3], m.area, u, v),
-          .weight = sample(m.mask, m.area, u, v)};
+  return {.ax = bilinear_at(m.flow[0], m.area, u, v),
+          .ay = bilinear_at(m.flow[1], m.area, u, v),
+          .bx = bilinear_at(m.flow[2], m.area, u, v),
+          .by = bilinear_at(m.flow[3], m.area, u, v),
+          .weight = bilinear_at(m.mask, m.area, u, v)};
 }
 
 // Un autre instant depuis le mouvement du milieu : ligne droite et loi de mélange ajustée.
 Displacement from_middle(const Motion& m, float u, float v, float t) {
-  const float a0x = sample(m.flow[0], m.area, u, v);
-  const float a0y = sample(m.flow[1], m.area, u, v);
-  const float a1x = sample(m.flow[2], m.area, u, v);
-  const float a1y = sample(m.flow[3], m.area, u, v);
+  const float a0x = bilinear_at(m.flow[0], m.area, u, v);
+  const float a0y = bilinear_at(m.flow[1], m.area, u, v);
+  const float a1x = bilinear_at(m.flow[2], m.area, u, v);
+  const float a1y = bilinear_at(m.flow[3], m.area, u, v);
   const float u2 = u - ((1.0F - t) * a0x + t * a1x);
   const float v2 = v - ((1.0F - t) * a0y + t * a1y);
-  const float tx = sample(m.flow[2], m.area, u2, v2) - sample(m.flow[0], m.area, u2, v2);
-  const float ty = sample(m.flow[3], m.area, u2, v2) - sample(m.flow[1], m.area, u2, v2);
-  const float mm = std::fmin(std::fmax(sample(m.mask, m.area, u2, v2), kMaskEpsilon), 1.0F - kMaskEpsilon);
+  const float tx = bilinear_at(m.flow[2], m.area, u2, v2) - bilinear_at(m.flow[0], m.area, u2, v2);
+  const float ty = bilinear_at(m.flow[3], m.area, u2, v2) - bilinear_at(m.flow[1], m.area, u2, v2);
+  const float mm =
+      std::fmin(std::fmax(bilinear_at(m.mask, m.area, u2, v2), kMaskEpsilon), 1.0F - kMaskEpsilon);
   const float z =
       kBlendLawA * std::log(mm / (1.0F - mm)) + kBlendLawB * std::log((1.0F - t) / t) + kBlendLawC;
   return {.ax = -t * tx,
@@ -82,8 +104,8 @@ Result<RgbImage> blend(const RgbImage& a, const RgbImage& b, const Motion& motio
       const float fy = static_cast<float>(y);
       const Displacement d = at(motion, (fx + 0.5F) / sx - 0.5F, (fy + 0.5F) / sy - 0.5F, t);
       for (std::size_t c = 0; c < out.planes.size(); ++c) {
-        const float va = sample(a.planes[c], fx + sx * d.ax, fy + sy * d.ay);
-        const float vb = sample(b.planes[c], fx + sx * d.bx, fy + sy * d.by);
+        const float va = bilinear_at(a.planes[c], fx + sx * d.ax, fy + sy * d.ay);
+        const float vb = bilinear_at(b.planes[c], fx + sx * d.bx, fy + sy * d.by);
         out.planes[c].at(x, y) = va * d.weight + vb * (1.0F - d.weight);
       }
     }
@@ -93,27 +115,22 @@ Result<RgbImage> blend(const RgbImage& a, const RgbImage& b, const Motion& motio
 
 }  // namespace
 
-float sample(const PlaneF& p, float x, float y) {
-  return bilinear_at(p, 0, 0, p.width, p.height, x, y);
+Result<float> sample(const PlaneF& p, float x, float y) {
+  if (auto ok = check_plane(p, "plan échantillonné"); !ok) return std::unexpected(ok.error());
+  return bilinear_at(p, x, y);
 }
 
-float sample(const PlaneF& p, const Window& area, float x, float y) {
-  return bilinear_at(p, area.x, area.y, area.width, area.height, x, y);
+Result<float> sample(const PlaneF& p, const Window& area, float x, float y) {
+  if (auto ok = check_window(p, area, "plan échantillonné"); !ok) return std::unexpected(ok.error());
+  return bilinear_at(p, area, x, y);
 }
 
 Result<void> check_motion(const Motion& motion) {
   for (const PlaneF& p : motion.flow) {
     if (auto ok = check_same_size(p, motion.mask, "plans du mouvement"); !ok) return ok;
+    if (auto ok = check_plane(p, "plans du mouvement"); !ok) return ok;
   }
-  if (auto ok = check_plane(motion.mask, "plans du mouvement"); !ok) return ok;
-  const Window& a = motion.area;
-  if (a.x < 0 || a.y < 0 || a.width < 1 || a.height < 1 || a.x + a.width > motion.mask.width ||
-      a.y + a.height > motion.mask.height) {
-    return fail(ErrorCode::ParameterOutOfRange,
-                std::format("fenêtre {}x{} en ({}, {}) hors des plans {}x{}", a.width, a.height, a.x, a.y,
-                            motion.mask.width, motion.mask.height));
-  }
-  return {};
+  return check_window(motion.mask, motion.area, "plans du mouvement");
 }
 
 Result<RgbImage> warp_blend(const RgbImage& a, const RgbImage& b, const Motion& motion) {

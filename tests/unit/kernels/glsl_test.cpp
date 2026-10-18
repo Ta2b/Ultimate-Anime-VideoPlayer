@@ -5,6 +5,7 @@
 #include <cstdint>
 #include <cstdlib>
 #include <format>
+#include <limits>
 #include <set>
 #include <string>
 #include <string_view>
@@ -28,7 +29,9 @@ const GlslConstant& find(const std::vector<GlslConstant>& constants, std::string
 
 // Relu comme le ferait un compilateur GLSL : directement en float, ou en double puis en float.
 void check_reads_back(float value) {
-  const std::string text = glsl_literal(value);
+  const auto literal = glsl_literal(value);
+  REQUIRE(literal);
+  const std::string& text = *literal;
   CHECK(text.find_first_of(".e") != std::string::npos);
   float direct = 0.0F;
   const auto [end, error] = std::from_chars(text.data(), text.data() + text.size(), direct);
@@ -97,13 +100,17 @@ TEST_CASE("GLSL : déclarations et en-tête", "[glsl]") {
   CHECK(glsl_declaration({.name = "AJP_W", .type = GlslType::Float, .values = {0.2126F}}) ==
         "const float AJP_W = 0.2126;");
 
-  const std::string header = glsl_spec_header();
+  const auto generated = glsl_spec_header();
+  REQUIRE(generated);
+  const std::string& header = *generated;
   CHECK(header.starts_with("// Généré depuis kernels/spec.h"));
   CHECK(header.find("#ifndef AJP_KERNELS_SPEC_GLSL\n#define AJP_KERNELS_SPEC_GLSL\n") != std::string::npos);
   CHECK(header.find(std::format("#define AJP_KERNELS_SPEC_VERSION {}\n", kSpecVersion)) != std::string::npos);
   CHECK(header.ends_with("#endif  // AJP_KERNELS_SPEC_GLSL\n"));
   for (const GlslConstant& c : glsl_constants()) {
-    const std::string line = glsl_declaration(c) + "\n";
+    const auto declaration = glsl_declaration(c);
+    REQUIRE(declaration);
+    const std::string line = *declaration + "\n";
     CAPTURE(line);
     const std::size_t at = header.find(line);
     REQUIRE(at != std::string::npos);
@@ -112,4 +119,34 @@ TEST_CASE("GLSL : déclarations et en-tête", "[glsl]") {
   CHECK(header.find("const float AJP_PQ_M2 = 78.84375;") != std::string::npos);
   CHECK(header.find("const vec4 AJP_YUV_SCALE_NV12_FULL = vec4(0.0, 255.0, 128.0, 255.0);") !=
         std::string::npos);
+}
+
+TEST_CASE("GLSL : une constante mal formée est refusée, jamais écrite", "[glsl]") {
+  const auto refused = [](const GlslConstant& c) {
+    const auto line = glsl_declaration(c);
+    REQUIRE_FALSE(line);
+    CHECK(line.error().code == ErrorCode::InvalidConstant);
+  };
+  refused({.name = "AJP_X", .type = GlslType::Float});                         // aucune valeur
+  refused({.name = "AJP_X", .type = GlslType::Vec4, .values = {1.0F, 2.0F}});  // deux sur quatre
+  refused({.name = "AJP_X", .type = GlslType::Int, .values = {1.0F}});         // entier porté par integer
+  refused({.name = "AJP_X", .type = GlslType::Mat3, .values = std::vector(8, 0.0F)});  // 8 sur 9
+  refused({.name = "AJP_X", .type = GlslType::Float, .values = {std::numeric_limits<float>::infinity()}});
+  refused(
+      {.name = "AJP_X", .type = GlslType::Vec2, .values = {0.0F, std::numeric_limits<float>::quiet_NaN()}});
+  refused({.name = "AJP_X", .type = GlslType::Uint, .integer = -1});
+  refused({.name = "AJP_X", .type = GlslType::Int, .integer = std::int64_t{1} << 40});
+  refused({.name = "kr", .type = GlslType::Float, .values = {0.5F}});
+  refused({.name = "AJP_", .type = GlslType::Float, .values = {0.5F}});
+  refused({.name = "AJP_A B", .type = GlslType::Float, .values = {0.5F}});
+  CHECK(glsl_literal(std::numeric_limits<float>::infinity()).error().code == ErrorCode::InvalidConstant);
+  CHECK(glsl_literal(-std::numeric_limits<float>::infinity()).error().code == ErrorCode::InvalidConstant);
+  CHECK(name(ErrorCode::InvalidConstant) == "InvalidConstant");
+  // Les bornes d'un uint et d'un int passent.
+  CHECK(glsl_declaration({.name = "AJP_U", .type = GlslType::Uint, .integer = 4294967295}) ==
+        "const uint AJP_U = 4294967295u;");
+  CHECK(glsl_declaration({.name = "AJP_I", .type = GlslType::Int, .integer = -2147483647}) ==
+        "const int AJP_I = -2147483647;");
+  // −2³¹ s'écrirait « -2147483648 » : le moins s'applique à 2147483648, trop grand pour un int.
+  refused({.name = "AJP_I", .type = GlslType::Int, .integer = -2147483648});
 }

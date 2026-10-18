@@ -1,8 +1,11 @@
 #include "kernels/glsl.h"
 
 #include <array>
+#include <cmath>
 #include <cstddef>
 #include <format>
+#include <limits>
+#include <string_view>
 #include <utility>
 
 #include "kernels/spec.h"
@@ -217,6 +220,31 @@ std::string_view type_name(GlslType type) {
   return "float";
 }
 
+// AJP_ suivi de majuscules, chiffres et soulignés : un identifiant GLSL sans collision.
+bool valid_name(std::string_view name) {
+  constexpr std::string_view kPrefix = "AJP_";
+  return name.size() > kPrefix.size() && name.starts_with(kPrefix) &&
+         name.find_first_not_of("ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_") == std::string_view::npos;
+}
+
+// Un int ou un uint GLSL tient sur 32 bits. −2³¹ est exclu : « -2147483648 » applique le moins
+// à 2147483648, un littéral trop grand pour un int.
+bool integer_fits(const GlslConstant& c) {
+  constexpr std::int64_t kIntMax = std::numeric_limits<std::int32_t>::max();
+  switch (c.type) {
+    case GlslType::Int:
+      return c.integer >= -kIntMax && c.integer <= kIntMax;
+    case GlslType::Uint:
+      return c.integer >= 0 && c.integer <= std::numeric_limits<std::uint32_t>::max();
+    case GlslType::Float:
+    case GlslType::Vec2:
+    case GlslType::Vec4:
+    case GlslType::Mat3:
+      return true;
+  }
+  return false;
+}
+
 }  // namespace
 
 std::vector<GlslConstant> glsl_constants() {
@@ -229,39 +257,41 @@ std::vector<GlslConstant> glsl_constants() {
   return t.take();
 }
 
-std::string glsl_literal(float value) {
+Result<std::string> glsl_literal(float value) {
+  if (!std::isfinite(value)) {
+    return fail(ErrorCode::InvalidConstant, std::format("littéral {} sans équivalent GLSL", value));
+  }
   std::string text = std::format("{}", value);
-  if (text.find_first_of(".en") == std::string::npos) text += ".0";
+  if (text.find_first_of(".e") == std::string::npos) text += ".0";
   return text;
 }
 
-std::string glsl_declaration(const GlslConstant& c) {
-  std::string value;
-  switch (c.type) {
-    case GlslType::Int:
-      value = std::format("{}", c.integer);
-      break;
-    case GlslType::Uint:
-      value = std::format("{}u", c.integer);
-      break;
-    case GlslType::Float:
-      value = glsl_literal(c.values.at(0));
-      break;
-    case GlslType::Vec2:
-    case GlslType::Vec4:
-    case GlslType::Mat3: {
-      value = std::format("{}(", type_name(c.type));
-      for (std::size_t i = 0; i < c.values.size(); ++i) {
-        value += (i == 0 ? "" : ", ") + glsl_literal(c.values[i]);
-      }
-      value += ")";
-      break;
-    }
+Result<std::string> glsl_declaration(const GlslConstant& c) {
+  if (!valid_name(c.name)) {
+    return fail(ErrorCode::InvalidConstant, std::format("nom « {} » hors de AJP_[A-Z0-9_]+", c.name));
   }
+  if (c.values.size() != glsl_float_count(c.type)) {
+    return fail(ErrorCode::InvalidConstant,
+                std::format("{} : {} valeurs pour un {}", c.name, c.values.size(), type_name(c.type)));
+  }
+  if (!integer_fits(c)) {
+    return fail(ErrorCode::InvalidConstant,
+                std::format("{} : {} hors d'un {}", c.name, c.integer, type_name(c.type)));
+  }
+  std::string value;
+  if (c.type == GlslType::Int) value = std::format("{}", c.integer);
+  if (c.type == GlslType::Uint) value = std::format("{}u", c.integer);
+  for (std::size_t i = 0; i < c.values.size(); ++i) {
+    const auto literal = glsl_literal(c.values[i]);
+    if (!literal)
+      return fail(ErrorCode::InvalidConstant, std::format("{} : {}", c.name, literal.error().detail));
+    value += (i == 0 ? "" : ", ") + *literal;
+  }
+  if (c.values.size() > 1) value = std::format("{}({})", type_name(c.type), value);
   return std::format("const {} {} = {};", type_name(c.type), c.name, value);
 }
 
-std::string glsl_spec_header() {
+Result<std::string> glsl_spec_header() {
   std::string text = std::format(
       "// Généré depuis kernels/spec.h (version {}) par ajp_kernels_glsl. Ne pas modifier :\n"
       "// les shaders reprennent ici les nombres exacts de la spécification.\n"
@@ -270,8 +300,10 @@ std::string glsl_spec_header() {
       "#define AJP_KERNELS_SPEC_VERSION {}\n",
       kSpecVersion, kSpecVersion);
   for (const GlslConstant& c : glsl_constants()) {
+    const auto line = glsl_declaration(c);
+    if (!line) return std::unexpected(line.error());
     if (!c.comment.empty()) text += std::format("\n// {}\n", c.comment);
-    text += glsl_declaration(c) + "\n";
+    text += *line + "\n";
   }
   text += "\n#endif  // AJP_KERNELS_SPEC_GLSL\n";
   return text;

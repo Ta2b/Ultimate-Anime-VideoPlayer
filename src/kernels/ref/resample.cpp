@@ -71,7 +71,14 @@ Weights area_weights(int src, int dst) {
   return w;
 }
 
+// Une table cohérente (ses champs sont publics) et faite pour ce plan : sans cela, une passe
+// lirait hors de la table.
 Result<void> check_weights(const Weights& w, int src, std::string_view what) {
+  if (!valid_plane_dimension(w.dst) || w.taps < 1 || w.start.size() != at(w.dst) ||
+      w.w.size() != at(w.dst) * at(w.taps)) {
+    return fail(ErrorCode::SizeMismatch,
+                std::format("{} : table de {} sorties × {} prises incohérente", what, w.dst, w.taps));
+  }
   if (w.src != src) {
     return fail(ErrorCode::SizeMismatch,
                 std::format("{} : table pour {} échantillons, plan de {}", what, w.src, src));
@@ -104,6 +111,7 @@ Result<Weights> compute_weights(int src, int dst, double shift, Filter filter) {
 }
 
 Result<PlaneF> resample_rows(const PlaneF& in, const Weights& wx) {
+  if (auto ok = check_plane(in, "passe horizontale"); !ok) return std::unexpected(ok.error());
   if (auto ok = check_weights(wx, in.width, "passe horizontale"); !ok) return std::unexpected(ok.error());
   PlaneF out(wx.dst, in.height);
   for (int y = 0; y < in.height; ++y) {
@@ -118,6 +126,7 @@ Result<PlaneF> resample_rows(const PlaneF& in, const Weights& wx) {
 }
 
 Result<PlaneF> resample_columns(const PlaneF& in, const Weights& wy) {
+  if (auto ok = check_plane(in, "passe verticale"); !ok) return std::unexpected(ok.error());
   if (auto ok = check_weights(wy, in.height, "passe verticale"); !ok) return std::unexpected(ok.error());
   PlaneF out(in.width, wy.dst);
   for (int y = 0; y < wy.dst; ++y) {

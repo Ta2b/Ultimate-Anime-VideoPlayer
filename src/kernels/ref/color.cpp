@@ -3,7 +3,6 @@
 
 #include <cstddef>
 #include <format>
-#include <string_view>
 #include <utility>
 
 #include "kernels/ref/check.h"
@@ -22,16 +21,6 @@ int chroma_size(Format f, int n) {
   return info(f).subsampled ? n / 2 : n;
 }
 
-Result<void> check_samples(const PlaneU16& p, Format f, std::string_view what) {
-  const std::uint32_t low_bits = (1U << info(f).shift) - 1U;
-  for (const std::uint16_t code : p.data) {
-    if (code > max_code(f) || (code & low_bits) != 0) {
-      return fail(ErrorCode::SampleOutOfRange, std::format("{} : code {} hors du conteneur", what, code));
-    }
-  }
-  return {};
-}
-
 // Un plan de chroma 4:2:0 passé à la taille de la luma, ou l'inverse : horizontal puis vertical.
 Result<PlaneF> resample_chroma(const PlaneF& c, int width, int height, ChromaShift shift, Filter filter) {
   const auto wx = compute_weights(c.width, width, shift.x, filter);
@@ -48,13 +37,17 @@ Result<void> check_yuv(const YuvImage& image) {
   const int h = image.height();
   if (info(image.format).subsampled) {
     if (auto ok = check_frame(w, h, "image 4:2:0"); !ok) return ok;
-  } else if (auto ok = check_plane(image.y, "image 4:4:4"); !ok) {
-    return ok;
   }
-  const PlaneU16 chroma_shape(chroma_size(image.format, w), chroma_size(image.format, h));
-  if (auto ok = check_same_size(image.u, chroma_shape, "plan Cb"); !ok) return ok;
-  if (auto ok = check_same_size(image.v, chroma_shape, "plan Cr"); !ok) return ok;
+  const int cw = chroma_size(image.format, w);
+  const int ch = chroma_size(image.format, h);
+  for (const PlaneU16* c : {&image.u, &image.v}) {
+    if (c->width != cw || c->height != ch) {
+      return fail(ErrorCode::SizeMismatch,
+                  std::format("plan de chroma {}x{}, {}x{} attendu", c->width, c->height, cw, ch));
+    }
+  }
   for (const PlaneU16* p : {&image.y, &image.u, &image.v}) {
+    if (auto ok = check_plane(*p, "plan YUV"); !ok) return ok;
     if (auto ok = check_samples(*p, image.format, "échantillon YUV"); !ok) return ok;
   }
   return {};

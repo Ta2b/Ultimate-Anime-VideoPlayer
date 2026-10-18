@@ -13,15 +13,12 @@
 namespace ajp::kernels::ref {
 namespace {
 
+// Deux lumas de même taille, aux codes valides du format (P010 compris : 6 bits bas nuls).
 Result<void> check_pair(const PlaneU16& a, const PlaneU16& b, Format format) {
   if (auto ok = check_same_size(a, b, "plans de luma comparés"); !ok) return ok;
-  if (auto ok = check_plane(a, "plans de luma comparés"); !ok) return ok;
   for (const PlaneU16* p : {&a, &b}) {
-    for (const std::uint16_t code : p->data) {
-      if (code > max_code(format)) {
-        return fail(ErrorCode::SampleOutOfRange, std::format("luma : code {} hors du conteneur", code));
-      }
-    }
+    if (auto ok = check_plane(*p, "plans de luma comparés"); !ok) return ok;
+    if (auto ok = check_samples(*p, format, "luma"); !ok) return ok;
   }
   return {};
 }

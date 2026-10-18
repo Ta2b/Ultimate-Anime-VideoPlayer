@@ -172,3 +172,22 @@ TEST_CASE("rééchantillonnage : les entrées hors contrat sont refusées", "[re
   CHECK(ref::resample_columns(PlaneF(2, 8), *w).error().code == ErrorCode::SizeMismatch);
   CHECK(name(ErrorCode::FilterDirection) == "FilterDirection");
 }
+
+TEST_CASE("rééchantillonnage : une table incohérente est refusée, jamais lue", "[resample]") {
+  const auto good = ref::compute_weights(8, 4, 0.0, Filter::Spline36);
+  REQUIRE(good);
+  ref::Weights short_start = *good;
+  short_start.start.pop_back();
+  CHECK(ref::resample_rows(PlaneF(8, 2), short_start).error().code == ErrorCode::SizeMismatch);
+  ref::Weights short_weights = *good;
+  short_weights.w.resize(3);
+  CHECK(ref::resample_columns(PlaneF(2, 8), short_weights).error().code == ErrorCode::SizeMismatch);
+  ref::Weights no_taps = *good;
+  no_taps.taps = 0;
+  CHECK(ref::resample_rows(PlaneF(8, 2), no_taps).error().code == ErrorCode::SizeMismatch);
+  // Le plan aussi : des dimensions sans les données qui vont avec.
+  PlaneF hollow(8, 2);
+  hollow.data.resize(4);
+  CHECK(ref::resample_rows(hollow, *good).error().code == ErrorCode::SizeMismatch);
+  CHECK(ref::resize(hollow, 4, 2, Filter::Spline36).error().code == ErrorCode::SizeMismatch);
+}

@@ -13,8 +13,12 @@ ajp_add_module(kernels
     ref/warp.cpp)
 
 # La référence ne contracte jamais a × b + c en FMA : ses arrondis sont ceux écrits dans spec.h.
+# PUBLIC : les formules constexpr de spec.h s'évaluent dans le fichier qui les appelle, et
+# clang contracte par défaut là où le processeur a un FMA (arm64). C++ seul : nvcc refuse
+# l'option, et les ports CUDA suivent leurs propres réglages. MSVC ne contracte pas en
+# /fp:precise.
 if(NOT MSVC)
-  target_compile_options(ajp_kernels PRIVATE -ffp-contract=off)
+  target_compile_options(ajp_kernels PUBLIC $<$<COMPILE_LANGUAGE:CXX>:-ffp-contract=off>)
 endif()
 
 # En-tête GLSL des constantes de spec.h, pour les shaders du moteur Vulkan :

@@ -19,8 +19,9 @@ struct Motion {
 };
 
 // Échantillon bilinéaire borné au plan (sample_plane), ou à une fenêtre (sample_window).
-float sample(const PlaneF& p, float x, float y);
-float sample(const PlaneF& p, const Window& area, float x, float y);
+// Refus : plan hors contrat, fenêtre vide ou qui dépasse du plan.
+Result<float> sample(const PlaneF& p, float x, float y);
+Result<float> sample(const PlaneF& p, const Window& area, float x, float y);
 
 // Un mouvement conforme : plans de même taille, fenêtre non vide incluse dans les plans.
 Result<void> check_motion(const Motion& motion);
