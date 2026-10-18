@@ -14,13 +14,13 @@
 namespace ajp {
 
 enum class PixelFormat : std::uint8_t {
-  Nv12,        // 8 bits, chroma entrelacée
-  P010,        // 10 bits dans 16, chroma entrelacée
-  P016,        // 16 bits, chroma entrelacée
-  Yuv420p,     // 8 bits planaire
-  Yuv420p10,   // 10 bits dans 16, planaire
-  Yuv444p16,   // repli prouvé du ring
-  Rgba16Unorm, // format par défaut du ring
+  Nv12,         // 8 bits, chroma entrelacée
+  P010,         // 10 bits dans 16, chroma entrelacée
+  P016,         // 16 bits, chroma entrelacée
+  Yuv420p,      // 8 bits planaire
+  Yuv420p10,    // 10 bits dans 16, planaire
+  Yuv444p16,    // repli prouvé du ring
+  Rgba16Unorm,  // format par défaut du ring
   Rgba8Unorm,
 };
 
@@ -69,7 +69,7 @@ class FrameData {
 };
 
 struct DecodedFrame {
-  SourceId id;                   // identité explicite : le pool recycle les adresses
+  SourceId id;  // identité explicite : le pool recycle les adresses
   int width = 0;
   int height = 0;
   PixelFormat format = PixelFormat::Nv12;

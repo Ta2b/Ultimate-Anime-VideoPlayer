@@ -1,10 +1,10 @@
 // Chaque en-tête de core_types se compile seul.
+#include <catch2/catch_test_macros.hpp>
+
 #include "core/frame.h"
 #include "core/inbox.h"
 #include "core/messages.h"
 #include "core/types.h"
-
-#include <catch2/catch_test_macros.hpp>
 
 TEST_CASE("core_types : une boîte gpu porte images, slots, commandes, Program et Flush", "[core_types]") {
   using GpuInbox = ajp::Inbox<ajp::DecodedFrame, ajp::SlotFree, ajp::Command, ajp::Install, ajp::Flush>;

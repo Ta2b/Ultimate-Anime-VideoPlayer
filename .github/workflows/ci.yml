@@ -55,24 +55,6 @@ jobs:
       - run: cmake --build --preset ${{ matrix.preset }}
       - run: ctest --preset ${{ matrix.preset }}
 
-  tidy:
-    name: clang-tidy
-    runs-on: ubuntu-24.04
-    env:
-      CC: clang-20
-      CXX: clang++-20
-    steps:
-      - uses: actions/checkout@v4
-      - run: sudo apt-get update -qq && sudo apt-get install -y -qq $APT_BASE
-      - uses: actions/cache@v4
-        with:
-          path: ${{ env.AJP_DEPS_PREFIX }}
-          key: deps-core-clang-20-${{ hashFiles('tools/deps/linux-from-source.sh') }}
-      - run: tools/deps/linux-from-source.sh --core "$AJP_DEPS_PREFIX" "$RUNNER_TEMP/deps-src"
-      - run: cmake --preset linux-prefix-core
-      - name: clang-tidy sur src/
-        run: git ls-files -z -- 'src/*.cpp' | xargs -0 -r -n1 -P4 clang-tidy-20 -p build/linux-prefix-core --quiet
-
   player:
     name: Lecteur Linux (lavapipe)
     runs-on: ubuntu-24.04
@@ -101,3 +83,5 @@ jobs:
       - run: cmake --build --preset linux-prefix
       - name: Tests (Vulkan logiciel sous Xvfb)
         run: xvfb-run -a ctest --preset linux-prefix
+      - name: clang-tidy sur src/
+        run: git ls-files -z -- 'src/*.cpp' | xargs -0 -r -n1 -P4 clang-tidy-20 -p build/linux-prefix --quiet
