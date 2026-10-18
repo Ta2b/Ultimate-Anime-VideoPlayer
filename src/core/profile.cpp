@@ -218,6 +218,74 @@ std::expected<Profile, Refusal> parse_one_profile(const toml::table& table, cons
   return profile;
 }
 
+// --- Écriture : l'inverse exact de la lecture ci-dessus. ---
+
+template <class E, std::size_t N>
+std::string_view enum_name(E value, const std::array<std::pair<std::string_view, E>, N>& names) {
+  for (const auto& [name, candidate] : names) {
+    if (candidate == value) return name;
+  }
+  return "";
+}
+
+// Chaîne TOML de base, entre guillemets doubles ; l'UTF-8 passe tel quel.
+std::string toml_string(std::string_view text) {
+  std::string out = "\"";
+  for (const char c : text) {
+    const auto byte = static_cast<unsigned char>(c);
+    if (c == '"' || c == '\\') {
+      out += '\\';
+      out += c;
+    } else if (byte < 0x20 || byte == 0x7F) {
+      out += std::format("\\u{:04X}", static_cast<unsigned>(byte));
+    } else {
+      out += c;
+    }
+  }
+  return out + '"';
+}
+
+// Réel TOML : toujours avec sa partie décimale, au plus court qui se relit à l'identique.
+std::string real(double value) {
+  std::string text = std::format("{}", value);
+  if (text.find_first_of(".e") == std::string::npos) text += ".0";
+  return text;
+}
+
+std::string ratio(const Ratio& value) {
+  if (value.den == 1) return std::format("{}", value.num);
+  return toml_string(std::format("{}/{}", value.num, value.den));
+}
+
+std::string format_step(const Step& step) {
+  const std::string kind = toml_string(enum_name(step.kind, kStepKinds));
+  if (step.kind == StepKind::Downscale) {
+    return std::format("{{ kind = {}, filter = {}, height = {} }}", kind,
+                       toml_string(enum_name(step.filter, kFilters)), step.height);
+  }
+  std::string text =
+      std::format("{{ kind = {}, model = {}, factor = {}", kind, toml_string(step.model), ratio(step.factor));
+  if (step.kind == StepKind::Interpolate) {
+    text += std::format(", policy = {}", toml_string(enum_name(step.policy, kPolicies)));
+    if (step.pacing != Pacing::Source) {
+      text += std::format(", pacing = {}", toml_string(enum_name(step.pacing, kPacings)));
+    }
+  }
+  return text + " }";
+}
+
+std::string format_rule(const Rule& rule) {
+  std::string text = "\n[[profile.rule]]\n";
+  if (rule.min_pixels != limits::kPixels.lo) text += std::format("min_pixels = {}\n", rule.min_pixels);
+  if (rule.max_pixels != limits::kPixels.hi) text += std::format("max_pixels = {}\n", rule.max_pixels);
+  if (rule.min_fps != limits::kFps.lo) text += std::format("min_fps = {}\n", real(rule.min_fps));
+  if (rule.max_fps != limits::kFps.hi) text += std::format("max_fps = {}\n", real(rule.max_fps));
+  if (rule.steps.empty()) return text + "steps = []\n";
+  text += "steps = [\n";
+  for (const Step& step : rule.steps) text += "  " + format_step(step) + ",\n";
+  return text + "]\n";
+}
+
 }  // namespace
 
 std::expected<ProfileFile, Refusal> parse_profile(std::string_view toml_text) {
@@ -278,6 +346,19 @@ std::expected<ProfileFile, Refusal> load_profile(const std::filesystem::path& pa
   std::ostringstream text;
   text << in.rdbuf();
   return parse_profile(text.str());
+}
+
+std::string format_profile(const ProfileFile& file) {
+  std::string text = std::format("version = {}\nstart_profile = {}\n", kProfileVersion, file.start_profile);
+  for (std::size_t i = 0; i < file.profiles.size(); ++i) {
+    const std::optional<Profile>& slot = file.profiles[i];
+    if (!slot) continue;
+    const Profile& profile = *slot;
+    text += std::format("\n[[profile]]\nslot = {}\nname = {}\nhdr = {}\n", i + 1, toml_string(profile.name),
+                        toml_string(enum_name(profile.hdr, kHdrModes)));
+    for (const Rule& rule : profile.rules) text += format_rule(rule);
+  }
+  return text;
 }
 
 }  // namespace ajp::core
