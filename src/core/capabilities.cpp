@@ -38,6 +38,12 @@ bool qualifies(const CapabilityFacts& facts) {
          facts.receipt->fingerprint == facts.current;
 }
 
+// Installée ou qualifiée : se charge, que le reçu existe ou non.
+bool usable(const CapabilityFacts& facts) {
+  const CapabilityState state = state_of(facts);
+  return state == CapabilityState::Installed || state == CapabilityState::Qualified;
+}
+
 const CapabilityFacts* find_facts(std::span<const CapabilityFacts> facts, const CapabilityId& id) {
   const auto found = std::ranges::find(facts, id, &CapabilityFacts::id);
   return found == facts.end() ? nullptr : &*found;
@@ -99,10 +105,11 @@ bool receipt_intact(const Receipt& receipt) {
 }
 
 CapabilityState state_of(const CapabilityFacts& facts) {
+  // Sans le code qui l'exécute, des fichiers installés ne servent à rien.
+  if (!facts.compiled) return CapabilityState::Unavailable;
   if (facts.installed) return qualifies(facts) ? CapabilityState::Qualified : CapabilityState::Installed;
   if (facts.delivered) return CapabilityState::Delivered;
-  if (facts.compiled) return CapabilityState::Compiled;
-  return CapabilityState::Unavailable;
+  return CapabilityState::Compiled;
 }
 
 std::vector<CapabilityRow> panel_rows(std::span<const CapabilityFacts> facts) {
@@ -114,7 +121,7 @@ std::vector<CapabilityRow> panel_rows(std::span<const CapabilityFacts> facts) {
       rows.push_back(CapabilityRow{
           .id = one.id,
           .state = state,
-          .usable = one.installed,
+          .usable = usable(one),
           .receipt_stale = one.receipt.has_value() && !qualifies(one),
           .receipt_hash = state == CapabilityState::Qualified && one.receipt ? one.receipt->hash : ""});
     }
@@ -125,7 +132,7 @@ std::vector<CapabilityRow> panel_rows(std::span<const CapabilityFacts> facts) {
 Capabilities to_resolve_capabilities(std::span<const CapabilityFacts> facts) {
   Capabilities caps;
   for (const CapabilityFacts& one : facts) {
-    if (!one.installed) continue;
+    if (!usable(one)) continue;
     if (one.id.kind == CapabilityKind::Model) caps.models.push_back(one.id.name);
     if (one.id.kind == CapabilityKind::Route && one.id.name == kRouteTrueHdr) caps.true_hdr = true;
   }
@@ -155,7 +162,7 @@ std::vector<CapabilityId> unqualified_in(const Plan& plan, std::span<const Capab
 std::expected<std::vector<Receipt>, Refusal> parse_receipts(std::string_view toml_text) {
   auto root = fields::parse(toml_text, RefusalCode::FileUnreadable, "receipts.toml");
   if (!root) return std::unexpected(root.error());
-  if (auto version = fields::check_version(*root, kIndexVersion, "receipts.toml"); !version) {
+  if (auto version = fields::check_version(*root, kReceiptsVersion, "receipts.toml"); !version) {
     return std::unexpected(version.error());
   }
   auto tables = fields::array(*root, "receipt", "receipts.toml");
@@ -173,7 +180,7 @@ std::expected<std::vector<Receipt>, Refusal> parse_receipts(std::string_view tom
 }
 
 std::string format_receipts(std::span<const Receipt> receipts) {
-  toml::table root{{"version", kIndexVersion}};
+  toml::table root{{"version", kReceiptsVersion}};
   toml::array list;
   for (const Receipt& receipt : receipts) {
     list.push_back(toml::table{

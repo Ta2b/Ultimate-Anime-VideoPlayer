@@ -7,7 +7,7 @@
 //   mpv-animejanai-hdr AnimeJaNaiPlatform/PlatformServices.cs:345-452 : étapes
 //     ordonnées chain_K_stage_J_* (pipeline_version = 1) et migration des clés
 //     historiques ; 562-795 : validation des étapes ;
-//   manager-v2 ViewModels/MainWindowViewModel.cs:939-960 : config_version,
+//   manager-v2 ViewModels/MainWindowViewModel.cs:923-960 : config_version,
 //     default_slot, rife_engine, rife_drawings.
 //
 // Ce qui change ou disparaît est rendu dans ImportResult::notes, avec sa ligne,

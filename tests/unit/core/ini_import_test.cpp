@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <filesystem>
+#include <format>
 #include <fstream>
 #include <string>
 
@@ -317,6 +318,78 @@ TEST_CASE("Import INI : étapes ordonnées refusées ou retirées", "[ini_import
   CHECK(native.profile.profiles[0]->rules[0].steps.empty());
 }
 
+TEST_CASE("Import INI : un agrandissement ordonné garde sa réduction attachée", "[ini_import]") {
+  // Normalize (PlatformServices.cs:421-443) sépare resize_*_before_upscale de son modèle.
+  const std::string head = "chain_1_pipeline_version=1\n";
+  const auto upscale = [](int j, const std::string& model) {
+    const std::string p = std::format("chain_1_stage_{}_", j);
+    return p + "kind=upscale\n" + p + "method=onnx\n" + p + "model=" + model + "\n";
+  };
+  const auto steps = steps_of(chain(head + "chain_1_stage_count=1\n" + upscale(1, "2x_m") +
+                                    "chain_1_stage_1_resize_height_before_upscale=720\n"));
+  REQUIRE(steps.size() == 2);
+  CHECK(steps[0] == Step{.kind = StepKind::Downscale, .filter = DownscaleFilter::Spline36, .height = 720});
+  CHECK(steps[1] == Step{.kind = StepKind::Upscale, .model = "2x_m", .factor = {2, 1}});
+
+  const ImportResult bilinear = imported(chain(head + "chain_1_stage_count=1\n" + upscale(1, "2x_m") +
+                                               "chain_1_stage_1_runtime=vulkan\n"
+                                               "chain_1_stage_1_resize_height_before_upscale=720\n"));
+  CHECK(has_note(bilinear, "bilinéaire du moteur vulkan"));
+  CHECK_FALSE(has_note(bilinear, "sans équivalent"));
+
+  // Une réduction qui n'est pas en tête n'a pas d'équivalent en v5.
+  CHECK(refusal_of(chain(head + "chain_1_stage_count=2\n" + upscale(1, "2x_a") + upscale(2, "2x_b") +
+                         "chain_1_stage_2_resize_height_before_upscale=720\n"))
+            .code == RefusalCode::ImportUnsupported);
+  CHECK(refusal_of(chain(head + "chain_1_stage_count=1\n" + upscale(1, "2x_m") +
+                         "chain_1_stage_1_resize_factor_before_upscale=50\n"))
+            .code == RefusalCode::ImportUnsupported);
+}
+
+TEST_CASE("Import INI : l'étape HDR est la dernière active, et la seule du profil", "[ini_import]") {
+  const std::string hdr_then_upscale =
+      "chain_1_pipeline_version=1\nchain_1_stage_count=2\nchain_1_stage_1_kind=hdr\nchain_1_stage_1_method="
+      "mpv\n"
+      "chain_1_stage_2_kind=upscale\nchain_1_stage_2_method=onnx\nchain_1_stage_2_model=2x_m\n";
+  const ajp::Refusal after = refusal_of(chain(hdr_then_upscale));
+  CHECK(after.code == RefusalCode::StepOrder);
+  CHECK(after.detail.starts_with("ligne 9 : chain_1_stage_2_kind"));
+
+  // Une étape désactivée après HDR ne compte pas, comme dans Validate.
+  const ImportResult disabled = imported(chain(hdr_then_upscale + "chain_1_stage_2_enabled=no\n"));
+  CHECK(disabled.profile.profiles[0]->hdr == HdrMode::Native);
+  CHECK(disabled.profile.profiles[0]->rules[0].steps.empty());
+
+  const ajp::Refusal second =
+      refusal_of(chain("chain_1_pipeline_version=1\nchain_1_stage_count=1\nchain_1_stage_1_kind=hdr\nchain_1_"
+                       "stage_1_method=mpv\n"
+                       "chain_2_pipeline_version=1\nchain_2_stage_count=1\nchain_2_stage_1_kind=hdr\n"
+                       "chain_2_stage_1_method=nvidia-truehdr\n"));
+  CHECK(second.code == RefusalCode::FieldOutOfRange);
+  CHECK(second.detail.starts_with("ligne 11 : chain_2_stage_1_kind"));
+}
+
+TEST_CASE("Import INI : fenêtre temporelle, facteur du nom et hauteur extrême", "[ini_import]") {
+  // frames : entier de 0 à 64 (ValidateStageOptions) ; une fenêtre écrite est annoncée.
+  CHECK(refusal_of(chain("chain_1_model_1_name=2x_m\nchain_1_model_1_frames=abc\n")).code ==
+        RefusalCode::FieldType);
+  CHECK(refusal_of(chain("chain_1_model_1_name=2x_m\nchain_1_model_1_frames=65\n")).code ==
+        RefusalCode::FieldOutOfRange);
+  const ImportResult window = imported(chain("chain_1_model_1_name=2x_m\nchain_1_model_1_frames=5\n"));
+  CHECK(has_note(window, "chain_1_model_1_frames = 5"));
+  CHECK_FALSE(has_note(imported(chain("chain_1_model_1_name=2x_m\nchain_1_model_1_frames=1\n")), "frames"));
+
+  // ModelScale : « 0x_ » n'est pas un facteur, il vaut 2 comme sans préfixe.
+  CHECK(steps_of(chain("chain_1_model_1_name=0x_m\n"))[0].factor == Ratio{2, 1});
+  CHECK(steps_of(chain("chain_1_model_1_name=3X-m\n"))[0].factor == Ratio{3, 1});
+
+  // Une hauteur hors de l'int64 est refusée avant toute conversion.
+  CHECK(refusal_of(chain("chain_1_model_1_name=2x_m\nchain_1_model_1_resize_height_before_upscale=1e300\n"))
+            .code == RefusalCode::FieldOutOfRange);
+  CHECK(refusal_of(chain("chain_1_model_1_name=2x_m\nchain_1_model_1_resize_height_before_upscale=720.5\n"))
+            .code == RefusalCode::FieldOutOfRange);
+}
+
 TEST_CASE("Import INI : versions, slots et profil de démarrage", "[ini_import]") {
   const ajp::Refusal newer = refusal_of("[global]\nconfig_version=5\n");
   CHECK(newer.code == RefusalCode::FormatVersion);
@@ -336,6 +409,9 @@ TEST_CASE("Import INI : versions, slots et profil de démarrage", "[ini_import]"
   CHECK(has_note(off, "default_slot = 0"));
   CHECK(has_note(off, "slot_1001"));
   CHECK(has_note(off, "[extra]"));
+
+  // Sans profile_name, le nom que le fork et le gestionnaire affichent.
+  CHECK(imported("[slot_3]\nchain_1_model_1_name=2x_m\n").profile.profiles[2]->name == "New Profile");
 
   const ImportResult empty = imported("");
   CHECK(empty.profile == ProfileFile{});

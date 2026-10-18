@@ -2,7 +2,7 @@
 // Repris, pour la sémantique seulement (le code est réécrit) :
 //   animejanai-inference-rtx@118c272 src/aji_conf.cpp:85-205 : lecture INI, bornes des chaînes ;
 //   mpv-animejanai-hdr AnimeJaNaiPlatform/PlatformServices.cs:345-452 (Read, Migrate, Normalize) ;
-//   manager-v2 ViewModels/MainWindowViewModel.cs:939-960 (config_version, default_slot, rife_*).
+//   manager-v2 ViewModels/MainWindowViewModel.cs:923-960 (default_slot, rife_*, config_version).
 // Comportement fixé par tests/unit/core/ini_import_test.cpp.
 #include "core/ini_import.h"
 
@@ -240,7 +240,8 @@ std::expected<Rule, Refusal> import_chain(const Keys& chain, Importer& im, std::
 
 std::expected<Profile, Refusal> import_slot(IniSection& section, Importer& im) {
   const Keys top{&section, ""};
-  Profile profile{.name = top.text("profile_name")};
+  // Sans profile_name, le fork et le gestionnaire affichent « New Profile » (aji_conf.h:41).
+  Profile profile{.name = top.text("profile_name", "New Profile")};
   section.erase("hdr_stage_controlled");  // marqueur retiré par le gestionnaire v4
 
   std::set<std::int64_t> chains;
@@ -251,14 +252,12 @@ std::expected<Profile, Refusal> import_slot(IniSection& section, Importer& im) {
       chains.insert(*number);
     }
   }
-  std::vector<HdrMode> hdr;
+  std::vector<HdrMode> hdr;  // au plus un : la deuxième étape HDR est refusée avec sa ligne
   for (const std::int64_t number : chains) {
     auto rule = import_chain(top.sub(std::format("chain_{}_", number)), im, hdr);
     if (!rule) return std::unexpected(rule.error());
     profile.rules.push_back(std::move(*rule));
   }
-  if (hdr.size() > 1)
-    return refuse(RefusalCode::FieldOutOfRange, "un seul mode HDR par profil, toutes règles comprises");
   if (!hdr.empty()) profile.hdr = hdr.front();
   return profile;
 }

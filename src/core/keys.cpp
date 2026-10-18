@@ -195,9 +195,19 @@ Command command_for(Action action) {
       return cmd::ToggleInterpolation{};
     case Action::ToggleOsd:
       return cmd::ToggleOsd{};
-    default:  // Profile1 à Profile9, contigus
+    // Chaque cas est nommé : une action ajoutée sans commande fait échouer -Wswitch.
+    case Action::Profile1:
+    case Action::Profile2:
+    case Action::Profile3:
+    case Action::Profile4:
+    case Action::Profile5:
+    case Action::Profile6:
+    case Action::Profile7:
+    case Action::Profile8:
+    case Action::Profile9:
       return cmd::SelectProfile{.slot = static_cast<int>(index(action) - index(Action::Profile1)) + 1};
   }
+  return cmd::TogglePause{};  // inatteignable : le switch couvre chaque action
 }
 
 KeyMap KeyMap::defaults() {

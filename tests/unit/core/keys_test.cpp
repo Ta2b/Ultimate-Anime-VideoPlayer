@@ -90,6 +90,28 @@ TEST_CASE("Raccourcis : le texte d'une touche se lit sans égard à la casse et 
   CHECK(*chord == Chord{.key = Key::G, .ctrl = true});
 }
 
+TEST_CASE("Raccourcis : chaque touche, avec chaque modificateur, s'écrit puis se relit", "[keys]") {
+  // format_chord nomme chaque touche : une touche ajoutée sans nom ferait échouer ce test.
+  for (int k = 0; k <= static_cast<int>(Key::F12); ++k) {
+    for (const Chord modifiers : {Chord{}, Chord{.ctrl = true, .alt = true, .shift = true, .meta = true}}) {
+      Chord chord = modifiers;
+      chord.key = static_cast<Key>(k);
+      const std::string text = format_chord(chord);
+      INFO(text);
+      CHECK(parse_chord(text) == chord);
+    }
+  }
+}
+
+TEST_CASE("Raccourcis : Ctrl+1 à Ctrl+9 choisissent chacun leur profil", "[keys]") {
+  const KeyMap map = KeyMap::defaults();
+  for (int slot = 1; slot <= 9; ++slot) {
+    const auto action = static_cast<Action>(static_cast<int>(Action::Profile1) + slot - 1);
+    CHECK(std::get<cmd::SelectProfile>(command_for(action)).slot == slot);
+    CHECK(map.action_for(ctrl(static_cast<Key>(static_cast<int>(Key::Digit0) + slot))) == action);
+  }
+}
+
 TEST_CASE("Raccourcis : une touche inconnue est un refus nommé", "[keys]") {
   for (const char* text :
        {"", "Ctrl+", "+G", "Ctrl+Ctrl+G", "Hyper+G", "F0", "F13", "F01", "Foo", "Ctrl", "G+Ctrl"}) {

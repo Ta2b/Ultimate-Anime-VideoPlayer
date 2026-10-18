@@ -117,8 +117,11 @@ constexpr std::array<FlagSpec, 10> kFlags{{
      }},
     {"engine", "NOM", "impose ce moteur : vulkan, tensorrt, migraphx, openvino, directml, metal",
      [](DebugFlags& f, std::string_view v) -> Result {
+       // Les SDK RTX Video et Maxine font TrueHDR, pas l'inférence : ils ne s'imposent pas ici.
        const auto engine = parse_engine(v);
-       if (!engine) return bad_value("engine", v);
+       if (!engine || *engine == EngineId::RtxVideoSdk || *engine == EngineId::MaxineVfx) {
+         return bad_value("engine", v);
+       }
        f.force_engine = engine;
        return {};
      }},

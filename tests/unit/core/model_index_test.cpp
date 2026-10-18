@@ -1,6 +1,7 @@
 #include "core/model_index.h"
 
 #include <filesystem>
+#include <format>
 #include <fstream>
 #include <string>
 
@@ -173,14 +174,33 @@ TEST_CASE("Index des moteurs : un paquet par moteur et par plateforme", "[model_
 
   CHECK(index_refusal("version = 1\n[[engine]]\nid = \"cuda\"\nplatform = \"linux\"\n" + package) ==
         RefusalCode::FieldOutOfRange);
-  CHECK(index_refusal("version = 1\n[[engine]]\nid = \"vulkan\"\nplatform = \"beos\"\n" + package) ==
+  CHECK(index_refusal("version = 1\n[[engine]]\nid = \"migraphx\"\nplatform = \"beos\"\n" + package) ==
         RefusalCode::FieldOutOfRange);
-  CHECK(index_refusal("version = 1\n[[engine]]\nid = \"vulkan\"\nplatform = \"linux\"\n" + package +
-                      "[[engine]]\nid = \"vulkan\"\nplatform = \"linux\"\n" + package) ==
+  CHECK(index_refusal("version = 1\n[[engine]]\nid = \"migraphx\"\nplatform = \"linux\"\n" + package +
+                      "[[engine]]\nid = \"migraphx\"\nplatform = \"linux\"\n" + package) ==
         RefusalCode::FieldOutOfRange);
-  CHECK(index_refusal("version = 1\n[[engine]]\nid = \"vulkan\"\nplatform = \"linux\"\n" +
+  CHECK(index_refusal("version = 1\n[[engine]]\nid = \"migraphx\"\nplatform = \"linux\"\n" +
                       std::string(package).replace(package.find("11.3.0"), 6, "../11")) ==
         RefusalCode::FieldType);
+  // Windows retire le point final d'un nom de dossier : « 11.3. » y deviendrait « 11.3 ».
+  CHECK(index_refusal("version = 1\n[[engine]]\nid = \"migraphx\"\nplatform = \"linux\"\n" +
+                      std::string(package).replace(package.find("11.3.0"), 6, "11.3.")) ==
+        RefusalCode::FieldType);
+}
+
+TEST_CASE("Index des moteurs : seuls les moteurs téléchargés y figurent", "[model_index]") {
+  // Vulkan et Metal sont livrés ; les SDK RTX Video et Maxine restent fournis par l'utilisateur.
+  const std::string package = "platform = \"windows\"\nurl = \"https://engines.example/x.zip\"\nsha256 = \"" +
+                              kSha + "\"\nsize = 1\nversion = \"1\"\n";
+  for (const char* id : {"vulkan", "metal", "rtx_video_sdk", "maxine_vfx"}) {
+    INFO(id);
+    CHECK(index_refusal(std::format("version = 1\n[[engine]]\nid = \"{}\"\n{}", id, package)) ==
+          RefusalCode::FieldOutOfRange);
+  }
+  for (const char* id : {"tensorrt", "migraphx", "openvino", "directml"}) {
+    INFO(id);
+    CHECK(parse_engine_index(std::format("version = 1\n[[engine]]\nid = \"{}\"\n{}", id, package)));
+  }
 }
 
 TEST_CASE("Noms des moteurs et des OS : stables et réciproques", "[model_index]") {

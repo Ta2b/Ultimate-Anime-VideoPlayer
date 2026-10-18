@@ -1,7 +1,9 @@
 #include "core/user_overlay.h"
 
 #include <filesystem>
+#include <format>
 #include <fstream>
+#include <optional>
 #include <sstream>
 #include <string>
 #include <vector>
@@ -145,6 +147,20 @@ TEST_CASE("Superposition : mêmes plages et refus que profile.cpp", "[user_overl
   CHECK(refusal_of("[[profile]]\nname = \"sans slot\"") == RefusalCode::FieldMissing);
   CHECK(refusal_of("[keys]\ntoggle_osd = \"Space\"") == RefusalCode::KeyConflict);
   CHECK(refusal_of("start_profile = ") == RefusalCode::ProfileUnreadable);
+  CHECK(refusal_of("[[profile]]\nslot = \"2\"") == RefusalCode::FieldType);
+}
+
+TEST_CASE("Superposition : un slot répété dans user.toml est refusé, pas fusionné", "[user_overlay]") {
+  // Comme dans la base : profile.cpp refuse un slot « déjà défini ».
+  for (const char* slot : {"2", "5"}) {
+    INFO(slot);
+    const std::string user =
+        std::format("[[profile]]\nslot = {0}\nname = \"X\"\n[[profile]]\nslot = {0}\nname = \"Y\"\n", slot);
+    auto result = parse_layered(kBase, user);
+    REQUIRE_FALSE(result);
+    CHECK(result.error().code == RefusalCode::FieldOutOfRange);
+    CHECK(result.error().detail == "user.toml profile[1].slot (déjà défini)");
+  }
 }
 
 TEST_CASE("Modifications : seules les clés qui diffèrent de la base s'écrivent", "[user_overlay]") {
@@ -238,6 +254,35 @@ TEST_CASE("user.toml : écriture atomique, base jamais réécrite", "[user_overl
   CHECK(without_base.error().code == RefusalCode::ProfileUnreadable);
 }
 
+TEST_CASE("user.toml : la base n'est jamais la cible d'une écriture", "[user_overlay]") {
+  const fs::path dir = scratch("overlay-same-file");
+  const fs::path base = dir / "profile.toml";
+  write(base, kBase);
+  const std::vector<UserEdit> edits{edit::ProfileName{.slot = 1, .name = "Mien"}};
+
+  auto same = save_edits(base, base, edits);
+  REQUIRE_FALSE(same);
+  CHECK(same.error().code == RefusalCode::FileUnwritable);
+  auto dotted = save_edits(base, dir / "." / "profile.toml", edits);
+  REQUIRE_FALSE(dotted);
+  CHECK(dotted.error().code == RefusalCode::FileUnwritable);
+  CHECK(read(base) == kBase);
+}
+
+TEST_CASE("user.toml : un dossier à sa place est refusé, pas lu vide", "[user_overlay]") {
+  const fs::path dir = scratch("overlay-directory");
+  const fs::path base = dir / "profile.toml";
+  write(base, kBase);
+  fs::create_directories(dir / "user.toml");
+
+  auto loaded = load_layered(base, dir / "user.toml");
+  REQUIRE_FALSE(loaded);
+  CHECK(loaded.error().code == RefusalCode::ProfileUnreadable);
+  auto saved = save_edits(base, dir / "user.toml", std::vector<UserEdit>{edit::StartProfile{.slot = 2}});
+  REQUIRE_FALSE(saved);
+  CHECK(fs::is_directory(dir / "user.toml"));
+}
+
 TEST_CASE("Fichiers texte : lecture entière et remplacement atomique", "[user_overlay]") {
   const fs::path dir = scratch("text-files");
   const fs::path path = dir / "neuf" / "fichier.toml";
@@ -251,6 +296,21 @@ TEST_CASE("Fichiers texte : lecture entière et remplacement atomique", "[user_o
   auto missing = read_text_file(dir / "absent");
   REQUIRE_FALSE(missing);
   CHECK(missing.error().code == RefusalCode::FileUnreadable);
+  auto folder = read_text_file(dir);
+  REQUIRE_FALSE(folder);
+  CHECK(folder.error().code == RefusalCode::FileUnreadable);
+
+  // Facultatif : absent n'est pas une erreur, présent se lit, un dossier reste refusé.
+  auto absent = read_text_file_if_present(dir / "absent");
+  REQUIRE(absent);
+  CHECK_FALSE(*absent);
+  auto present = read_text_file_if_present(path);
+  REQUIRE(present);
+  CHECK(*present == std::optional<std::string>{"deux\n"});
+  CHECK_FALSE(read_text_file_if_present(dir));
+  auto under_file = read_text_file_if_present(path / "sous-fichier");
+  REQUIRE(under_file);
+  CHECK_FALSE(*under_file);
   // Un dossier à la place du fichier : le renommage échoue, rien n'est laissé derrière.
   fs::create_directories(dir / "dossier");
   auto blocked = write_text_atomically(dir / "dossier", "x");

@@ -39,13 +39,15 @@ constexpr std::array<std::pair<std::string_view, EngineId>, 8> kEngineNames{{
 constexpr std::array<std::pair<std::string_view, Os>, 3> kOsNames{
     {{"windows", Os::Windows}, {"linux", Os::Linux}, {"macos", Os::MacOs}}};
 
-// Un identifiant devient un nom de fichier ou de dossier : ni séparateur ni « .. ».
+// Un identifiant devient un nom de fichier ou de dossier : ni séparateur ni « .. », ni point
+// final, que Windows retire en silence (« 11.3. » y deviendrait le dossier « 11.3 »).
 bool safe_name(std::string_view text) {
   const auto allowed = [](char c) {
     return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '.' ||
            c == '_' || c == '-';
   };
-  return !text.empty() && text.size() <= 128 && text.front() != '.' && std::ranges::all_of(text, allowed);
+  return !text.empty() && text.size() <= 128 && text.front() != '.' && text.back() != '.' &&
+         std::ranges::all_of(text, allowed);
 }
 
 bool hex_digest(std::string_view text) {
@@ -130,12 +132,35 @@ std::expected<ModelEntry, Refusal> parse_model(const toml::table& table, const s
   return model;
 }
 
+// Seuls les moteurs téléchargés ont un paquet (Delivery::Download de engines.cpp) : Vulkan et
+// Metal sont livrés avec le lecteur, les SDK RTX Video et Maxine importés par l'utilisateur.
+bool downloadable(EngineId engine) {
+  switch (engine) {
+    case EngineId::TensorRt:
+    case EngineId::MiGraphX:
+    case EngineId::OpenVino:
+    case EngineId::DirectMl:
+      return true;
+    case EngineId::Vulkan:
+    case EngineId::Metal:
+    case EngineId::RtxVideoSdk:
+    case EngineId::MaxineVfx:
+      return false;
+  }
+  return false;
+}
+
 std::expected<EnginePackage, Refusal> parse_package(const toml::table& table, const std::string& where,
                                                     const std::vector<EnginePackage>& previous) {
   auto id = fields::required<std::string>(table, "id", where);
   if (!id) return std::unexpected(id.error());
   const std::optional<EngineId> engine = parse_engine(*id);
   if (!engine) return refuse(RefusalCode::FieldOutOfRange, std::format("{}.id = « {} »", where, *id));
+  if (!downloadable(*engine)) {
+    return refuse(
+        RefusalCode::FieldOutOfRange,
+        std::format("{}.id = « {} » : livré avec le lecteur ou importé, jamais téléchargé", where, *id));
+  }
   auto platform_name = fields::required<std::string>(table, "platform", where);
   if (!platform_name) return std::unexpected(platform_name.error());
   const std::optional<Os> platform = parse_os(*platform_name);

@@ -70,19 +70,21 @@ bool receipt_intact(const Receipt& receipt);
 struct CapabilityFacts {
   CapabilityId id;
   bool compiled = false;
-  bool delivered = false;
+  bool delivered = false;  // faux pour un SDK importé : installé sans être livré
   bool installed = false;
   Fingerprint current;  // empreinte actuelle, comparée au reçu
   std::optional<Receipt> receipt;
 };
 
+// L'état le plus avancé atteint. Compilée est un préalable : sans le code qui
+// l'exécute, une capacité reste indisponible, même livrée ou installée.
 CapabilityState state_of(const CapabilityFacts& facts);
 
 // Une ligne du panneau des capacités.
 struct CapabilityRow {
   CapabilityId id;
   CapabilityState state = CapabilityState::Unavailable;
-  bool usable = false;         // installée : se charge, qualifiée ou non
+  bool usable = false;         // installée (ou qualifiée) : se charge, qualifiée ou non
   bool receipt_stale = false;  // un reçu existe mais ne correspond plus
   std::string receipt_hash;    // vide sauf si qualifiée
 };
@@ -95,6 +97,8 @@ Capabilities to_resolve_capabilities(std::span<const CapabilityFacts> facts);
 
 // Capacités d'un Plan qui ne sont pas qualifiées : l'OSD les signale.
 std::vector<CapabilityId> unqualified_in(const Plan& plan, std::span<const CapabilityFacts> facts);
+
+inline constexpr int kReceiptsVersion = 1;
 
 // receipts.toml : [[receipt]] kind, name, driver, artifact_sha256, plan_hash, pair_us, host_waits, hash.
 // Un reçu dont le hachage ne correspond pas à son contenu est refusé (HashMismatch).

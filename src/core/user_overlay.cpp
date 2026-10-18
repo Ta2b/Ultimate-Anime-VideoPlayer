@@ -1,11 +1,14 @@
 #include "core/user_overlay.h"
 
+#include <algorithm>
+#include <chrono>
 #include <cstdint>
 #include <format>
 #include <fstream>
-#include <random>
+#include <functional>
 #include <sstream>
 #include <system_error>
+#include <thread>
 
 #include "core/toml_fields.h"
 
@@ -27,6 +30,29 @@ toml::table* find_slot(toml::array& profiles, std::int64_t slot) {
   return nullptr;
 }
 
+// Textes de la base et de user.toml ; user.toml absent vaut un texte vide.
+struct LayerTexts {
+  std::string base;
+  std::string user;
+};
+
+std::expected<LayerTexts, Refusal> read_layers(const std::filesystem::path& base,
+                                               const std::filesystem::path& user) {
+  auto base_text = read_text_file(base);
+  if (!base_text) return refuse(RefusalCode::ProfileUnreadable, base.string());
+  auto user_text = read_text_file_if_present(user);
+  if (!user_text) return refuse(RefusalCode::ProfileUnreadable, user.string());
+  return LayerTexts{.base = std::move(*base_text), .user = std::move(*user_text).value_or("")};
+}
+
+// Suffixe du fichier temporaire, propre à cet appel et sans exception possible
+// (std::random_device peut en lever) : horloge et identité du fil d'exécution.
+std::string temp_suffix() {
+  const auto ticks = std::chrono::steady_clock::now().time_since_epoch().count();
+  const std::size_t thread = std::hash<std::thread::id>{}(std::this_thread::get_id());
+  return std::format("{:x}-{:x}", ticks, thread);
+}
+
 void merge_tables(toml::table& base, const toml::table& user) {
   for (const auto& [key, node] : user) {
     toml::table* base_table = base[key].as_table();
@@ -40,13 +66,18 @@ void merge_tables(toml::table& base, const toml::table& user) {
 }
 
 // Chaque [[profile]] de user.toml complète celui de la base au même slot, ou s'ajoute.
+// Un slot répété dans user.toml est refusé, comme dans la base : aucune fusion en silence.
 std::expected<void, Refusal> merge_profiles(toml::array& base, const toml::array& user) {
+  std::vector<std::int64_t> seen;
   for (std::size_t i = 0; i < user.size(); ++i) {
     const std::string where = std::format("user.toml profile[{}]", i);
     const toml::table* entry = user.get(i)->as_table();
     if (entry == nullptr) return refuse(RefusalCode::FieldType, where);
-    const std::optional<std::int64_t> slot = slot_of(*entry);
-    if (!slot) return refuse(RefusalCode::FieldMissing, where + ".slot");
+    auto slot = fields::required<std::int64_t>(*entry, "slot", where);
+    if (!slot) return std::unexpected(slot.error());
+    if (std::ranges::contains(seen, *slot))
+      return refuse(RefusalCode::FieldOutOfRange, where + ".slot (déjà défini)");
+    seen.push_back(*slot);
     if (toml::table* target = find_slot(base, *slot)) {
       merge_tables(*target, *entry);
     } else {
@@ -197,15 +228,9 @@ std::expected<LayeredProfile, Refusal> parse_layered(std::string_view base_toml,
 
 std::expected<LayeredProfile, Refusal> load_layered(const std::filesystem::path& base,
                                                     const std::filesystem::path& user) {
-  auto base_text = read_text_file(base);
-  if (!base_text) return refuse(RefusalCode::ProfileUnreadable, base.string());
-  std::string user_text;
-  if (std::error_code error; std::filesystem::exists(user, error)) {
-    auto text = read_text_file(user);
-    if (!text) return refuse(RefusalCode::ProfileUnreadable, user.string());
-    user_text = std::move(*text);
-  }
-  return parse_layered(*base_text, user_text);
+  auto texts = read_layers(base, user);
+  if (!texts) return std::unexpected(texts.error());
+  return parse_layered(texts->base, texts->user);
 }
 
 std::expected<std::string, Refusal> apply_edits(std::string_view base_toml, std::string_view user_toml,
@@ -228,21 +253,23 @@ std::expected<std::string, Refusal> apply_edits(std::string_view base_toml, std:
 std::expected<LayeredProfile, Refusal> save_edits(const std::filesystem::path& base,
                                                   const std::filesystem::path& user,
                                                   std::span<const UserEdit> edits) {
-  auto base_text = read_text_file(base);
-  if (!base_text) return refuse(RefusalCode::ProfileUnreadable, base.string());
-  std::string user_text;
-  if (std::error_code error; std::filesystem::exists(user, error)) {
-    auto text = read_text_file(user);
-    if (!text) return refuse(RefusalCode::ProfileUnreadable, user.string());
-    user_text = std::move(*text);
+  // Un user.toml qui serait la base elle-même (même chemin, lien) la réécrirait.
+  if (std::error_code error; std::filesystem::equivalent(base, user, error)) {
+    return refuse(RefusalCode::FileUnwritable, std::format("{} : c'est le profil de base", user.string()));
   }
-  auto updated = apply_edits(*base_text, user_text, edits);
+  auto texts = read_layers(base, user);
+  if (!texts) return std::unexpected(texts.error());
+  auto updated = apply_edits(texts->base, texts->user, edits);
   if (!updated) return std::unexpected(updated.error());
   if (auto written = write_text_atomically(user, *updated); !written) return std::unexpected(written.error());
-  return parse_layered(*base_text, *updated);
+  return parse_layered(texts->base, *updated);
 }
 
 std::expected<std::string, Refusal> read_text_file(const std::filesystem::path& path) {
+  // Un dossier s'ouvre sous Linux et se lit vide : seul un fichier ordinaire est lu.
+  if (std::error_code error; !std::filesystem::is_regular_file(path, error)) {
+    return refuse(RefusalCode::FileUnreadable, path.string());
+  }
   std::ifstream in(path, std::ios::binary);
   if (!in) return refuse(RefusalCode::FileUnreadable, path.string());
   std::ostringstream text;
@@ -251,16 +278,27 @@ std::expected<std::string, Refusal> read_text_file(const std::filesystem::path& 
   return text.str();
 }
 
+std::expected<std::optional<std::string>, Refusal> read_text_file_if_present(
+    const std::filesystem::path& path) {
+  std::error_code error;
+  const std::filesystem::file_status status = std::filesystem::status(path, error);
+  if (status.type() == std::filesystem::file_type::not_found) return std::optional<std::string>{};
+  if (error)
+    return refuse(RefusalCode::FileUnreadable, std::format("{} : {}", path.string(), error.message()));
+  auto text = read_text_file(path);
+  if (!text) return std::unexpected(text.error());
+  return std::optional<std::string>{std::move(*text)};
+}
+
 std::expected<void, Refusal> write_text_atomically(const std::filesystem::path& path, std::string_view text) {
   std::error_code error;
   if (path.has_parent_path()) std::filesystem::create_directories(path.parent_path(), error);
-  std::random_device entropy;
   const std::filesystem::path temp =
-      path.parent_path() / std::format(".{}.{:08x}.tmp", path.filename().string(), entropy());
+      path.parent_path() / std::format(".{}.{}.tmp", path.filename().string(), temp_suffix());
   {
     std::ofstream out(temp, std::ios::binary | std::ios::trunc);
     out.write(text.data(), static_cast<std::streamsize>(text.size()));
-    out.flush();
+    out.close();  // la fermeture vide le tampon : son échec compte aussi
     if (!out) {
       std::filesystem::remove(temp, error);
       return refuse(RefusalCode::FileUnwritable, temp.string());

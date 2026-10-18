@@ -1,6 +1,7 @@
 #include "core/settings.h"
 
 #include <filesystem>
+#include <format>
 #include <fstream>
 #include <sstream>
 #include <string>
@@ -112,6 +113,14 @@ TEST_CASE("Réglages : une valeur hors plage ou incohérente est refusée", "[se
   Settings settings = full();
   settings.installed_engines.push_back(EngineId::Vulkan);
   CHECK(invalid(settings) == RefusalCode::FieldOutOfRange);
+  // Vulkan est livré avec le lecteur : il ne manque ni aux moteurs choisis ni aux installés.
+  for (const char* engines : {"chosen = [\"tensorrt\"]", "installed = []\npreferred = {}"}) {
+    auto without_vulkan = parse_settings(std::format("version = 1\n[engines]\n{}\n", engines));
+    INFO(engines);
+    REQUIRE_FALSE(without_vulkan);
+    CHECK(without_vulkan.error().code == RefusalCode::FieldOutOfRange);
+    CHECK(without_vulkan.error().detail.find("vulkan") != std::string::npos);
+  }
   settings = full();
   settings.preferred[static_cast<std::size_t>(Usage::TrueHdr)] = EngineId::TensorRt;
   CHECK(invalid(settings) == RefusalCode::FieldOutOfRange);
@@ -175,6 +184,15 @@ TEST_CASE("Réglages : un refus laisse le fichier en place", "[settings]") {
   auto load = load_settings(path);
   REQUIRE_FALSE(load);
   CHECK(load.error().code == RefusalCode::FileUnreadable);
+
+  // Un dossier à la place du fichier : refusé, jamais lu comme un fichier vide ni remplacé par les défauts.
+  const fs::path folder = dir / "dossier.toml";
+  fs::create_directories(folder);
+  auto from_folder = load_settings(folder);
+  REQUIRE_FALSE(from_folder);
+  CHECK(from_folder.error().code == RefusalCode::FileUnreadable);
+  CHECK_FALSE(save_settings(folder, full()));
+  CHECK(fs::is_directory(folder));
 }
 
 TEST_CASE("Réglages : le dossier de données se crée à la première écriture", "[settings]") {

@@ -2,7 +2,7 @@
 
 #include <algorithm>
 #include <format>
-#include <system_error>
+#include <utility>
 
 #include "core/model_index.h"
 #include "core/toml_fields.h"
@@ -163,6 +163,14 @@ std::string_view usage_name(Usage usage) {
 std::expected<void, Refusal> validate_settings(const Settings& settings) {
   if (auto r = no_duplicate(settings.chosen_engines, "engines.chosen"); !r) return r;
   if (auto r = no_duplicate(settings.installed_engines, "engines.installed"); !r) return r;
+  // Vulkan est livré partout et ne se désinstalle pas (engines.h, Delivery::Bundled).
+  for (const auto& [where, list] : {std::pair{"engines.chosen", &settings.chosen_engines},
+                                    std::pair{"engines.installed", &settings.installed_engines}}) {
+    if (!std::ranges::contains(*list, EngineId::Vulkan)) {
+      return refuse(RefusalCode::FieldOutOfRange,
+                    std::format("{} : vulkan, livré avec le lecteur, y figure", where));
+    }
+  }
   for (std::size_t i = 0; i < kUsageCount; ++i) {
     const std::optional<EngineId>& id = settings.preferred[i];
     if (!id) continue;
@@ -196,11 +204,10 @@ std::expected<Settings, Refusal> parse_settings(std::string_view toml_text) {
 }
 
 std::expected<Settings, Refusal> load_settings(const std::filesystem::path& path) {
-  std::error_code error;
-  if (!std::filesystem::exists(path, error)) return Settings{};
-  auto text = read_text_file(path);
+  auto text = read_text_file_if_present(path);
   if (!text) return std::unexpected(text.error());
-  return parse_settings(*text);
+  if (!*text) return Settings{};
+  return parse_settings(**text);
 }
 
 std::expected<std::string, Refusal> format_settings(const Settings& settings,
@@ -232,13 +239,9 @@ std::expected<std::string, Refusal> format_settings(const Settings& settings,
 }
 
 std::expected<void, Refusal> save_settings(const std::filesystem::path& path, const Settings& settings) {
-  std::string existing;
-  if (std::error_code error; std::filesystem::exists(path, error)) {
-    auto text = read_text_file(path);
-    if (!text) return std::unexpected(text.error());
-    existing = std::move(*text);
-  }
-  auto text = format_settings(settings, existing);
+  auto existing = read_text_file_if_present(path);
+  if (!existing) return std::unexpected(existing.error());
+  auto text = format_settings(settings, existing->value_or(""));
   if (!text) return std::unexpected(text.error());
   return write_text_atomically(path, *text);
 }

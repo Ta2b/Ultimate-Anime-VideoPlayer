@@ -57,7 +57,8 @@ struct Settings {
 
 std::string_view usage_name(Usage usage);  // « upscale », « interpolate », « truehdr »
 
-// Plages et cohérence : sans doublon, moteur préféré installé et propre à son usage.
+// Plages et cohérence : sans doublon, Vulkan toujours choisi et installé, moteur
+// préféré installé et propre à son usage.
 std::expected<void, Refusal> validate_settings(const Settings& settings);
 
 std::expected<Settings, Refusal> parse_settings(std::string_view toml_text);

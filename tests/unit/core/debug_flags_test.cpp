@@ -81,6 +81,9 @@ TEST_CASE("DebugFlags : une option inconnue ou une valeur fausse est refusée", 
   CHECK(refusal_of({"--help=1"}) == RefusalCode::OptionUnknown);
   CHECK(refusal_of({"--log-level=loud"}) == RefusalCode::FieldOutOfRange);
   CHECK(refusal_of({"--engine=cuda"}) == RefusalCode::FieldOutOfRange);
+  // Les SDK TrueHDR ne sont pas des moteurs d'inférence.
+  CHECK(refusal_of({"--engine=rtx_video_sdk"}) == RefusalCode::FieldOutOfRange);
+  CHECK(refusal_of({"--engine=maxine_vfx"}) == RefusalCode::FieldOutOfRange);
   CHECK(refusal_of({"--ring-format=nv12"}) == RefusalCode::FieldOutOfRange);
   CHECK(refusal_of({"--display=1920x1080"}) == RefusalCode::FieldOutOfRange);
   CHECK(refusal_of({"--display=0x1080@60"}) == RefusalCode::FieldOutOfRange);

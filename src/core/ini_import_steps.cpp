@@ -1,11 +1,13 @@
 // Étapes des chaînes INI vers les étapes v5.
 // Repris, pour la sémantique seulement (le code est réécrit) :
 //   animejanai-inference-rtx@118c272 src/aji_conf.cpp:120-205 : model_M_*, rife_* ;
-//   mpv-animejanai-hdr AnimeJaNaiPlatform/PlatformServices.cs:345-452 (Migrate, Normalize),
+//   animejanai-inference-rtx@118c272 src/pipeline_config.cpp:107-139 : HDR en dernière étape active ;
+//   mpv-animejanai-hdr AnimeJaNaiPlatform/PlatformServices.cs:345-452 (Read, Migrate, Normalize),
 //     :479-540 (validation des étapes), :604-609 (RifeFile) ;
 //   manager-v2 ViewModels/InterpolationStages.cs:97-101 (ModelScale).
 // Comportement fixé par tests/unit/core/ini_import_test.cpp.
 #include <algorithm>
+#include <cmath>
 #include <format>
 #include <numeric>
 #include <set>
@@ -15,14 +17,15 @@
 namespace ajp::core::ini {
 namespace {
 
-// « 2x_AnimeJaNai… » agrandit par 2 ; sans préfixe, par 2 (ModelScale du gestionnaire).
+// « 2x_AnimeJaNai… » agrandit par 2 ; sans préfixe, ou « 0x_ », par 2 (ModelScale du gestionnaire).
 std::expected<Step, Refusal> upscale_step(const Keys& keys, std::string_view rest, const std::string& model) {
   std::int64_t factor = 2;
   const auto digits = static_cast<std::size_t>(
       std::ranges::find_if(model, [](char c) { return c < '0' || c > '9'; }) - model.begin());
   if (digits > 0 && digits + 1 < model.size() && (model[digits] == 'x' || model[digits] == 'X') &&
       (model[digits + 1] == '_' || model[digits + 1] == '-')) {
-    factor = std::max<std::int64_t>(parse_integer(std::string_view(model).substr(0, digits)).value_or(2), 1);
+    const std::int64_t written = parse_integer(std::string_view(model).substr(0, digits)).value_or(0);
+    if (written > 0) factor = written;
   }
   if (!limits::kUpscaleFactor.contains(factor)) {
     return keys.bad(RefusalCode::FieldOutOfRange, rest,
@@ -33,11 +36,12 @@ std::expected<Step, Refusal> upscale_step(const Keys& keys, std::string_view res
 
 std::expected<Step, Refusal> downscale_step(const Keys& keys, std::string_view rest, double height,
                                             DownscaleFilter filter) {
-  const auto rounded = static_cast<std::int64_t>(height);
-  if (static_cast<double>(rounded) != height || !limits::kDownscaleHeight.contains(rounded)) {
+  // La plage se vérifie avant la conversion : convertir un réel hors de l'int64 est indéfini.
+  const auto [lo, hi] = limits::kDownscaleHeight;
+  if (std::trunc(height) != height || height < static_cast<double>(lo) || height > static_cast<double>(hi)) {
     return keys.bad(RefusalCode::FieldOutOfRange, rest, "hauteur entière de 144 à 4320 attendue");
   }
-  return Step{.kind = StepKind::Downscale, .filter = filter, .height = static_cast<int>(rounded)};
+  return Step{.kind = StepKind::Downscale, .filter = filter, .height = static_cast<int>(height)};
 }
 
 // Code du gestionnaire vers ModelId : 414 → rife-4.14, 4141 → rife-4.14-lite, 46 → rife-4.6.
@@ -92,7 +96,51 @@ std::expected<void, Refusal> unit_factor(const Keys& stage) {
   return {};
 }
 
-using StageResult = std::expected<std::optional<Step>, Refusal>;
+// Fenêtre temporelle d'un modèle : entier de 0 à 64, comme ValidateStageOptions ; 0 ou 1 : une image.
+// v5 lit cette fenêtre dans le modèle ONNX : une valeur écrite à la main est annoncée, pas recopiée.
+std::expected<bool, Refusal> temporal_model(const Keys& model, Importer& im) {
+  auto frames = model.integer("frames", 0);
+  if (!frames) return std::unexpected(frames.error());
+  if (*frames > 64) return model.bad(RefusalCode::FieldOutOfRange, "frames", "de 0 à 64 images");
+  if (*frames > 1) {
+    im.note(model.line_of("frames"), std::format("{} = {} : v5 lit le nombre d'images dans le modèle ONNX",
+                                                 model.name("frames"), *frames));
+  }
+  return *frames > 1;
+}
+
+// Réduction attachée à un modèle (resize_*_before_upscale) ; std::nullopt sans réduction.
+// first : seul le premier modèle peut la porter, v5 voulant la réduction en tête.
+// runtime : moteur du modèle ; hors TensorRT et DirectML, la réduction historique était bilinéaire.
+std::expected<std::optional<Step>, Refusal> model_downscale(const Keys& model, Importer& im, bool first,
+                                                            std::string_view runtime) {
+  auto height = model.real("resize_height_before_upscale", 0.0);
+  if (!height) return std::unexpected(height.error());
+  auto percent = model.real("resize_factor_before_upscale", 100.0);
+  if (!percent) return std::unexpected(percent.error());
+  if (*height <= 0.0 && *percent == 100.0) return std::optional<Step>{};
+  // La hauteur l'emporte sur le pourcentage, comme dans Normalize.
+  const std::string_view key =
+      *height > 0.0 ? "resize_height_before_upscale" : "resize_factor_before_upscale";
+  if (!first) {
+    return model.bad(RefusalCode::ImportUnsupported, key,
+                     "seule la réduction du premier modèle a un équivalent en v5");
+  }
+  if (*height <= 0.0) {
+    return model.bad(RefusalCode::ImportUnsupported, key, "réduction en pourcentage sans équivalent en v5");
+  }
+  auto step = downscale_step(model, key, *height, DownscaleFilter::Spline36);
+  if (!step) return std::unexpected(step.error());
+  if (runtime != "tensorrt" && runtime != "directml") {
+    im.note(model.line_of(key),
+            std::format("réduction bilinéaire du moteur {} remplacée par Spline36", runtime));
+  }
+  return std::optional<Step>{*step};
+}
+
+// Étapes v5 d'une étape ordonnée : aucune (HDR, réduction à 100 %), une, ou deux pour un
+// agrandissement qui porte encore sa réduction historique (Normalize la sépare de même).
+using StageResult = std::expected<std::vector<Step>, Refusal>;
 
 StageResult resize_stage(const Keys& stage, Importer& im) {
   if (auto r = unit_factor(stage); !r) return std::unexpected(r.error());
@@ -115,13 +163,13 @@ StageResult resize_stage(const Keys& stage, Importer& im) {
                        "réduction en pourcentage sans équivalent en v5");
     }
     im.note(stage.line_of("target_percent"), "réduction à 100 % : sans effet, retirée");
-    return std::optional<Step>{};
+    return std::vector<Step>{};
   }
   auto height = stage.real("target_height", 0.0);
   if (!height) return std::unexpected(height.error());
   auto step = downscale_step(stage, "target_height", *height, filter);
   if (!step) return std::unexpected(step.error());
-  return std::optional<Step>{*step};
+  return std::vector<Step>{*step};
 }
 
 StageResult interpolate_stage(const Keys& stage, Importer& im, bool upscaled) {
@@ -141,69 +189,56 @@ StageResult interpolate_stage(const Keys& stage, Importer& im, bool upscaled) {
   if (!factor) return std::unexpected(factor.error());
   if (!*factor) {
     im.note(stage.line_of("kind"), "interpolation de facteur 1 : sans effet, retirée");
-    return std::optional<Step>{};
+    return std::vector<Step>{};
   }
   auto step = rife_step(stage, "model", "", *ensemble, **factor, policy, pacing_for(im, policy, !upscaled));
   if (!step) return std::unexpected(step.error());
-  return std::optional<Step>{*step};
+  return std::vector<Step>{*step};
 }
 
-// Une étape ordonnée ; std::nullopt quand elle ne produit pas d'étape v5 (HDR, réduction à 100 %).
+StageResult upscale_stage(const Keys& stage, Importer& im, std::string_view runtime) {
+  if (lower(stage.text("method")) != "onnx")
+    return stage.bad(RefusalCode::ImportUnsupported, "method", "agrandissement inconnu");
+  if (auto r = unit_factor(stage); !r) return std::unexpected(r.error());
+  const std::string model = stage.text("model");
+  if (model.empty()) return stage.bad(RefusalCode::FieldMissing, "model", "modèle d'agrandissement attendu");
+  if (auto temporal = temporal_model(stage, im); !temporal) return std::unexpected(temporal.error());
+  auto resize = model_downscale(stage, im, true, runtime);
+  if (!resize) return std::unexpected(resize.error());
+  auto step = upscale_step(stage, "model", model);
+  if (!step) return std::unexpected(step.error());
+  if (*resize) return std::vector<Step>{**resize, *step};
+  return std::vector<Step>{*step};
+}
+
+// Une étape HDR devient le mode HDR du profil : une seule, toutes règles comprises.
+StageResult hdr_stage(const Keys& stage, Importer& im, std::vector<HdrMode>& hdr) {
+  const std::string method = lower(stage.text("method"));
+  if (method != "mpv" && method != "nvidia-truehdr") {
+    return stage.bad(RefusalCode::ImportUnsupported, "method", "conversion HDR inconnue");
+  }
+  if (!hdr.empty()) {
+    return stage.bad(RefusalCode::FieldOutOfRange, "kind",
+                     "un seul mode HDR par profil, toutes règles comprises");
+  }
+  hdr.push_back(method == "mpv" ? HdrMode::Native : HdrMode::TrueHdr);
+  im.note(stage.line_of("kind"),
+          "l'étape HDR devient le mode HDR du profil ; son réglage d'aspect se refait dans le grade");
+  stage.consume("");
+  return std::vector<Step>{};
+}
+
 StageResult stage_step(const Keys& stage, Importer& im, bool upscaled, std::vector<HdrMode>& hdr) {
   const std::string kind = lower(stage.text("kind"));
   stage.find("id");
-  stage.find("runtime");  // le moteur se choisit dans les réglages, pas dans le profil
+  // Le moteur se choisit dans les réglages, pas dans le profil ; il ne sert qu'à annoncer une réduction
+  // bilinéaire.
+  const std::string runtime = lower(stage.text("runtime", im.backend));
   if (kind == "resize") return resize_stage(stage, im);
   if (kind == "interpolate") return interpolate_stage(stage, im, upscaled);
-  const std::string method = lower(stage.text("method"));
-  if (kind == "upscale") {
-    if (method != "onnx")
-      return stage.bad(RefusalCode::ImportUnsupported, "method", "agrandissement inconnu");
-    if (auto r = unit_factor(stage); !r) return std::unexpected(r.error());
-    const std::string model = stage.text("model");
-    if (model.empty())
-      return stage.bad(RefusalCode::FieldMissing, "model", "modèle d'agrandissement attendu");
-    auto step = upscale_step(stage, "model", model);
-    if (!step) return std::unexpected(step.error());
-    return std::optional<Step>{*step};
-  }
-  if (kind == "hdr") {
-    if (method != "mpv" && method != "nvidia-truehdr") {
-      return stage.bad(RefusalCode::ImportUnsupported, "method", "conversion HDR inconnue");
-    }
-    hdr.push_back(method == "mpv" ? HdrMode::Native : HdrMode::TrueHdr);
-    im.note(stage.line_of("kind"),
-            "l'étape HDR devient le mode HDR du profil ; son réglage d'aspect se refait dans le grade");
-    stage.consume("");
-    return std::optional<Step>{};
-  }
+  if (kind == "upscale") return upscale_stage(stage, im, runtime);
+  if (kind == "hdr") return hdr_stage(stage, im, hdr);
   return stage.bad(RefusalCode::ImportUnsupported, "kind", "étape inconnue");
-}
-
-// Réduction avant l'agrandissement d'un modèle historique ; std::nullopt sans réduction.
-std::expected<std::optional<Step>, Refusal> model_downscale(const Keys& model, Importer& im, bool first) {
-  auto height = model.real("resize_height_before_upscale", 0.0);
-  if (!height) return std::unexpected(height.error());
-  auto percent = model.real("resize_factor_before_upscale", 100.0);
-  if (!percent) return std::unexpected(percent.error());
-  if (*height <= 0.0 && *percent == 100.0) return std::optional<Step>{};
-  // La hauteur l'emporte sur le pourcentage, comme dans Normalize.
-  const std::string_view key =
-      *height > 0.0 ? "resize_height_before_upscale" : "resize_factor_before_upscale";
-  if (!first) {
-    return model.bad(RefusalCode::ImportUnsupported, key,
-                     "seule la réduction du premier modèle a un équivalent en v5");
-  }
-  if (*height <= 0.0) {
-    return model.bad(RefusalCode::ImportUnsupported, key, "réduction en pourcentage sans équivalent en v5");
-  }
-  auto step = downscale_step(model, key, *height, DownscaleFilter::Spline36);
-  if (!step) return std::unexpected(step.error());
-  if (im.backend != "tensorrt" && im.backend != "directml") {
-    im.note(model.line_of(key),
-            std::format("réduction bilinéaire du moteur {} remplacée par Spline36", im.backend));
-  }
-  return std::optional<Step>{*step};
 }
 
 }  // namespace
@@ -225,11 +260,12 @@ std::expected<std::vector<Step>, Refusal> legacy_steps(const Keys& chain, Import
     const Keys model = chain.sub(std::format("model_{}_", index));
     const std::string name = model.text("name");
     if (name.empty()) continue;  // étape sans effet, comme dans le fork
-    auto resize = model_downscale(model, im, upscales.empty());
+    auto resize = model_downscale(model, im, upscales.empty(), im.backend);
     if (!resize) return std::unexpected(resize.error());
     if (*resize) downscale = **resize;
-    const std::string frames = model.text("frames", "0");
-    temporal |= frames != "0" && frames != "1" && !frames.empty();
+    auto frames = temporal_model(model, im);
+    if (!frames) return std::unexpected(frames.error());
+    temporal |= *frames;
     auto step = upscale_step(model, "name", name);
     if (!step) return std::unexpected(step.error());
     upscales.push_back(std::move(*step));
@@ -290,6 +326,7 @@ std::expected<std::vector<Step>, Refusal> stage_steps(const Keys& chain, Importe
   }
   std::vector<Step> steps;
   bool upscaled = false;
+  bool after_hdr = false;
   for (std::int64_t j = 1; j <= *count; ++j) {
     const Keys stage = chain.sub(std::format("stage_{}_", j));
     auto enabled = stage.flag("enabled", true);
@@ -300,15 +337,21 @@ std::expected<std::vector<Step>, Refusal> stage_steps(const Keys& chain, Importe
       stage.consume("");
       continue;
     }
-    auto step = stage_step(stage, im, upscaled, hdr);
-    if (!step) return std::unexpected(step.error());
-    if (!*step) continue;
-    if ((*step)->kind == StepKind::Downscale && !steps.empty()) {
-      return stage.bad(RefusalCode::ImportUnsupported, "kind",
-                       "réduction après une autre étape : v5 la veut en tête");
+    // Le gestionnaire et le lecteur refusent une étape active après la conversion HDR.
+    if (after_hdr)
+      return stage.bad(RefusalCode::StepOrder, "kind", "l'étape HDR doit être la dernière active");
+    const std::size_t hdr_before = hdr.size();
+    auto produced = stage_step(stage, im, upscaled, hdr);
+    if (!produced) return std::unexpected(produced.error());
+    after_hdr = hdr.size() > hdr_before;
+    for (Step& step : *produced) {
+      if (step.kind == StepKind::Downscale && !steps.empty()) {
+        return stage.bad(RefusalCode::ImportUnsupported, "kind",
+                         "réduction après une autre étape : v5 la veut en tête");
+      }
+      upscaled |= step.kind == StepKind::Upscale;
+      steps.push_back(std::move(step));
     }
-    upscaled |= (*step)->kind == StepKind::Upscale;
-    steps.push_back(std::move(**step));
   }
   // Les clés historiques recopiées par le gestionnaire v4 ne sont qu'un miroir des étapes.
   chain.consume("rife");

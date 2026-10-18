@@ -59,7 +59,27 @@ TEST_CASE("Capacités : compilée, livrée, installée, qualifiée", "[capabilit
   CHECK(state_of(facts) == CapabilityState::Qualified);
 
   // Un SDK importé est installé sans avoir été livré par l'index.
-  CHECK(state_of(CapabilityFacts{.id = kTrueHdr, .installed = true}) == CapabilityState::Installed);
+  CHECK(state_of(CapabilityFacts{.id = kTrueHdr, .compiled = true, .installed = true}) ==
+        CapabilityState::Installed);
+}
+
+TEST_CASE("Capacités : sans le code qui l'exécute, des fichiers installés ne se chargent pas",
+          "[capabilities]") {
+  // Un paquet TensorRT installé sur un binaire construit sans TensorRT, par exemple.
+  CapabilityFacts orphan = qualified(kHd);
+  orphan.compiled = false;
+  CHECK(state_of(orphan) == CapabilityState::Unavailable);
+  const std::vector<CapabilityFacts> facts{orphan, installed(kRife)};
+  const std::vector<CapabilityRow> rows = panel_rows(facts);
+  REQUIRE(rows.size() == 2);
+  CHECK_FALSE(rows[0].usable);
+  CHECK(rows[0].receipt_hash.empty());
+  CHECK(rows[1].usable);
+  CHECK(to_resolve_capabilities(facts).models == std::vector<ModelId>{kRife.name});
+
+  CapabilityFacts route = installed(kTrueHdr);
+  route.compiled = false;
+  CHECK_FALSE(to_resolve_capabilities(std::vector{route}).true_hdr);
 }
 
 TEST_CASE("Capacités : un reçu périmé ou étranger ne qualifie pas", "[capabilities]") {
@@ -83,8 +103,9 @@ TEST_CASE("Capacités : un reçu périmé ou étranger ne qualifie pas", "[capab
 TEST_CASE("Panneau : modèles puis routes, reçu affiché seulement si qualifié", "[capabilities]") {
   CapabilityFacts stale = qualified(kRife);
   stale.current.artifact_sha256 = std::string(64, 'd');
-  const std::vector<CapabilityFacts> facts{qualified(kTrueHdr), qualified(kHd), stale,
-                                           CapabilityFacts{.id = {.name = "4x_absent"}, .delivered = true}};
+  const std::vector<CapabilityFacts> facts{
+      qualified(kTrueHdr), qualified(kHd), stale,
+      CapabilityFacts{.id = {.name = "4x_absent"}, .compiled = true, .delivered = true}};
   const std::vector<CapabilityRow> rows = panel_rows(facts);
   REQUIRE(rows.size() == 4);
   CHECK(rows[0].id == kHd);
@@ -101,8 +122,9 @@ TEST_CASE("Panneau : modèles puis routes, reçu affiché seulement si qualifié
 }
 
 TEST_CASE("Capacités : resolve() charge une capacité installée, qualifiée ou non", "[capabilities]") {
-  const std::vector<CapabilityFacts> facts{installed(kHd), qualified(kRife), installed(kTrueHdr),
-                                           CapabilityFacts{.id = {.name = "4x_absent"}, .delivered = true}};
+  const std::vector<CapabilityFacts> facts{
+      installed(kHd), qualified(kRife), installed(kTrueHdr),
+      CapabilityFacts{.id = {.name = "4x_absent"}, .compiled = true, .delivered = true}};
   const Capabilities caps = to_resolve_capabilities(facts);
   CHECK(caps.models == std::vector<ModelId>{kHd.name, kRife.name});
   CHECK(caps.true_hdr);
