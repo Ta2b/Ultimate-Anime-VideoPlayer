@@ -65,6 +65,12 @@ enum class RefusalCode : std::uint8_t {
   ModelUnreadable,         // ONNX absent, tronqué ou malformé
   ModelMismatch,           // hachage, précision ou forme différents de ModelSpec
   ReceiptInvalid,          // reçu de qualification illisible, incomplet ou au hachage faux
+  // vendor_hdr : SDK TrueHDR, chargement dynamique, contrat d'entrée
+  SdkRejected,         // SDK importé refusé : fichier absent ou vide, architecture, version, ABI
+  LibraryUnavailable,  // bibliothèque ou symbole introuvable au chargement
+  VendorCallFailed,    // un appel d'un SDK constructeur a renvoyé une erreur
+  InputMismatch,       // image ou tampon hors du contrat d'entrée (taille, format, tramage)
+  IoFailed,            // lecture, copie ou écriture de fichier impossible
 };
 
 struct Refusal {
@@ -168,6 +174,16 @@ constexpr std::string_view name(RefusalCode code) {
       return "ModelMismatch";
     case RefusalCode::ReceiptInvalid:
       return "ReceiptInvalid";
+    case RefusalCode::SdkRejected:
+      return "SdkRejected";
+    case RefusalCode::LibraryUnavailable:
+      return "LibraryUnavailable";
+    case RefusalCode::VendorCallFailed:
+      return "VendorCallFailed";
+    case RefusalCode::InputMismatch:
+      return "InputMismatch";
+    case RefusalCode::IoFailed:
+      return "IoFailed";
   }
   return "Unknown";
 }
