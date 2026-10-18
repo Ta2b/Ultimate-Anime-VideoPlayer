@@ -28,6 +28,9 @@ enum class RefusalCode : std::uint8_t {
   PacingForbidden,   // Quality impose le rythme Source
   ModelUnavailable,  // modèle absent des capacités
   HdrUnavailable,    // route HDR impossible sur ce système ou cet écran
+  SourceUnknown,     // source jamais reçue, ou sortie de la fenêtre gardée
+  LookaheadMissing,  // les sources suivantes nécessaires ne sont pas encore classées
+  SequenceOrder,     // hors séquence : source avant le début, après la fin ou reprise, époque qui recule
 };
 
 struct Refusal {
@@ -59,6 +62,12 @@ constexpr std::string_view name(RefusalCode code) {
       return "ModelUnavailable";
     case RefusalCode::HdrUnavailable:
       return "HdrUnavailable";
+    case RefusalCode::SourceUnknown:
+      return "SourceUnknown";
+    case RefusalCode::LookaheadMissing:
+      return "LookaheadMissing";
+    case RefusalCode::SequenceOrder:
+      return "SequenceOrder";
   }
   return "Unknown";
 }
