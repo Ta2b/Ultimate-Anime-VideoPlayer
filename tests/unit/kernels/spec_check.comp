@@ -1,0 +1,32 @@
+#version 450
+// Vérifie que l'en-tête généré depuis kernels/spec.h se compile avec glslc, et qu'un shader
+// peut s'en servir pour la conversion d'ingestion et la quantification de sortie.
+#extension GL_GOOGLE_include_directive : require
+#include "ajp_kernels_spec.glsl"
+
+#if AJP_KERNELS_SPEC_VERSION < 1
+#error "version de spécification inattendue"
+#endif
+
+layout(local_size_x = 1) in;
+layout(std430, binding = 0) buffer Out { vec4 values[]; };
+
+vec3 to_rgb(vec3 raw, vec4 scale, float kr, float kb) {
+  float y = (raw.x - scale.x) / scale.y;
+  float u = (raw.y - scale.z) / scale.w;
+  float v = (raw.z - scale.z) / scale.w;
+  float kg = 1.0 - kr - kb;
+  return vec3(y + 2.0 * (1.0 - kr) * v,
+              y - (2.0 * kb * (1.0 - kb) * u + 2.0 * kr * (1.0 - kr) * v) / kg,
+              y + 2.0 * (1.0 - kb) * u);
+}
+
+float quantize(float raw, vec2 q) { return clamp(roundEven(raw / q.x), 0.0, q.y) * q.x; }
+
+void main() {
+  vec3 rgb = to_rgb(vec3(4096.0, 32768.0, 32768.0), AJP_YUV_SCALE_P010_LIMITED, AJP_KR_BT709, AJP_KB_BT709);
+  vec3 bt2020 = AJP_BT709_TO_BT2020 * rgb;
+  values[0] = vec4(bt2020, quantize(32160.0, AJP_QUANT_P010));
+  values[1] = vec4(AJP_PQ_M1, AJP_PQ_M2, AJP_HLG_A, AJP_SRGB_GAMMA);
+  values[2] = vec4(float(AJP_RIFE_ALIGN), float(AJP_HELD_THRESHOLD), AJP_BLEND_LAW_A, AJP_SCENE_CUT_THRESHOLD);
+}
