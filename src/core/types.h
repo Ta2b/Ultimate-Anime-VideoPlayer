@@ -28,6 +28,13 @@ enum class RefusalCode : std::uint8_t {
   PacingForbidden,   // Quality impose le rythme Source
   ModelUnavailable,  // modèle absent des capacités
   HdrUnavailable,    // route HDR impossible sur ce système ou cet écran
+
+  OnnxMalformed,     // octets qui ne forment pas un ModelProto lisible
+  OnnxExternalData,  // poids hors du fichier ONNX, refusés
+  OnnxUnsupported,   // type, opset ou construction ONNX hors du sous-ensemble lu
+  OperatorUnknown,   // opérateur hors du jeu de l'IR ; le détail porte son nom
+  GraphInvalid,      // tenseur absent, cycle, attribut ou entrée incohérents
+  ShapeInvalid,      // formes incompatibles, ou dimension impossible à déduire
 };
 
 struct Refusal {
@@ -59,6 +66,18 @@ constexpr std::string_view name(RefusalCode code) {
       return "ModelUnavailable";
     case RefusalCode::HdrUnavailable:
       return "HdrUnavailable";
+    case RefusalCode::OnnxMalformed:
+      return "OnnxMalformed";
+    case RefusalCode::OnnxExternalData:
+      return "OnnxExternalData";
+    case RefusalCode::OnnxUnsupported:
+      return "OnnxUnsupported";
+    case RefusalCode::OperatorUnknown:
+      return "OperatorUnknown";
+    case RefusalCode::GraphInvalid:
+      return "GraphInvalid";
+    case RefusalCode::ShapeInvalid:
+      return "ShapeInvalid";
   }
   return "Unknown";
 }
