@@ -1,0 +1,254 @@
+{
+  "version": 6,
+  "cmakeMinimumRequired": {
+    "major": 3,
+    "minor": 28,
+    "patch": 0
+  },
+  "configurePresets": [
+    {
+      "name": "base",
+      "hidden": true,
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build/${presetName}",
+      "toolchainFile": "$env{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake",
+      "cacheVariables": {
+        "VCPKG_OVERLAY_PORTS": "${sourceDir}/ports",
+        "VCPKG_MANIFEST_FEATURES": "tests;player"
+      }
+    },
+    {
+      "name": "prefix",
+      "hidden": true,
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build/${presetName}",
+      "cacheVariables": {
+        "CMAKE_PREFIX_PATH": "$env{AJP_DEPS_PREFIX}",
+        "CMAKE_INSTALL_RPATH": "$env{AJP_DEPS_PREFIX}/lib",
+        "CMAKE_BUILD_RPATH": "$env{AJP_DEPS_PREFIX}/lib"
+      },
+      "environment": {
+        "PKG_CONFIG_PATH": "$env{AJP_DEPS_PREFIX}/lib/pkgconfig:$env{AJP_DEPS_PREFIX}/share/pkgconfig:$penv{PKG_CONFIG_PATH}"
+      }
+    },
+    {
+      "name": "debug",
+      "displayName": "Debug, tests CPU",
+      "inherits": "base",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug"
+      }
+    },
+    {
+      "name": "core",
+      "displayName": "Cœur seul via vcpkg (sans lecteur)",
+      "inherits": "base",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "AJP_BUILD_PLAYER": "OFF",
+        "VCPKG_MANIFEST_FEATURES": "tests"
+      }
+    },
+    {
+      "name": "release",
+      "displayName": "Release",
+      "inherits": "base",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "AJP_BUILD_TESTS": "OFF"
+      }
+    },
+    {
+      "name": "asan",
+      "displayName": "Debug sous ASan et UBSan",
+      "inherits": "debug",
+      "cacheVariables": {
+        "CMAKE_CXX_FLAGS": "-fsanitize=address,undefined -fno-omit-frame-pointer -fno-sanitize-recover=all"
+      }
+    },
+    {
+      "name": "tsan",
+      "displayName": "Debug sous TSan (Inbox)",
+      "inherits": "debug",
+      "cacheVariables": {
+        "CMAKE_CXX_FLAGS": "-fsanitize=thread"
+      }
+    },
+    {
+      "name": "windows-rtx",
+      "displayName": "Windows, backend TensorRT (PC de référence)",
+      "inherits": "base",
+      "condition": {
+        "type": "equals",
+        "lhs": "${hostSystemName}",
+        "rhs": "Windows"
+      },
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "AJP_WITH_CUDA": "ON"
+      }
+    },
+    {
+      "name": "linux-prefix",
+      "displayName": "Linux, dépendances du préfixe AJP_DEPS_PREFIX",
+      "inherits": "prefix",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug"
+      }
+    },
+    {
+      "name": "linux-prefix-core",
+      "displayName": "Linux, cœur seul (sans lecteur)",
+      "inherits": "prefix",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "AJP_BUILD_PLAYER": "OFF"
+      }
+    },
+    {
+      "name": "linux-prefix-asan",
+      "displayName": "Linux préfixe, ASan et UBSan",
+      "inherits": "linux-prefix",
+      "cacheVariables": {
+        "CMAKE_CXX_FLAGS": "-fsanitize=address,undefined -fno-omit-frame-pointer -fno-sanitize-recover=all"
+      }
+    },
+    {
+      "name": "linux-prefix-tsan",
+      "displayName": "Linux préfixe, TSan",
+      "inherits": "linux-prefix-core",
+      "cacheVariables": {
+        "CMAKE_CXX_FLAGS": "-fsanitize=thread"
+      }
+    },
+    {
+      "name": "linux-prefix-asan-core",
+      "displayName": "Linux préfixe, cœur sous ASan et UBSan",
+      "inherits": "linux-prefix-core",
+      "cacheVariables": {
+        "CMAKE_CXX_FLAGS": "-fsanitize=address,undefined -fno-omit-frame-pointer -fno-sanitize-recover=all"
+      }
+    }
+  ],
+  "buildPresets": [
+    {
+      "name": "debug",
+      "configurePreset": "debug"
+    },
+    {
+      "name": "release",
+      "configurePreset": "release"
+    },
+    {
+      "name": "asan",
+      "configurePreset": "asan"
+    },
+    {
+      "name": "tsan",
+      "configurePreset": "tsan"
+    },
+    {
+      "name": "windows-rtx",
+      "configurePreset": "windows-rtx"
+    },
+    {
+      "name": "linux-prefix",
+      "configurePreset": "linux-prefix"
+    },
+    {
+      "name": "linux-prefix-core",
+      "configurePreset": "linux-prefix-core"
+    },
+    {
+      "name": "linux-prefix-asan",
+      "configurePreset": "linux-prefix-asan"
+    },
+    {
+      "name": "linux-prefix-tsan",
+      "configurePreset": "linux-prefix-tsan"
+    },
+    {
+      "name": "core",
+      "configurePreset": "core"
+    },
+    {
+      "name": "linux-prefix-asan-core",
+      "configurePreset": "linux-prefix-asan-core"
+    }
+  ],
+  "testPresets": [
+    {
+      "name": "debug",
+      "configurePreset": "debug",
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "asan",
+      "configurePreset": "asan",
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "tsan",
+      "configurePreset": "tsan",
+      "output": {
+        "outputOnFailure": true
+      },
+      "filter": {
+        "include": {
+          "name": "Inbox"
+        }
+      }
+    },
+    {
+      "name": "linux-prefix",
+      "configurePreset": "linux-prefix",
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "linux-prefix-core",
+      "configurePreset": "linux-prefix-core",
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "linux-prefix-asan",
+      "configurePreset": "linux-prefix-asan",
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "linux-prefix-tsan",
+      "configurePreset": "linux-prefix-tsan",
+      "output": {
+        "outputOnFailure": true
+      },
+      "filter": {
+        "include": {
+          "name": "Inbox"
+        }
+      }
+    },
+    {
+      "name": "core",
+      "configurePreset": "core",
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "linux-prefix-asan-core",
+      "configurePreset": "linux-prefix-asan-core",
+      "output": {
+        "outputOnFailure": true
+      }
+    }
+  ]
+}
