@@ -28,6 +28,10 @@ enum class RefusalCode : std::uint8_t {
   PacingForbidden,   // Quality impose le rythme Source
   ModelUnavailable,  // modèle absent des capacités
   HdrUnavailable,    // route HDR impossible sur ce système ou cet écran
+
+  AudioCodecUnavailable,   // aucun décodeur FFmpeg pour ce flux audio
+  AudioDecodeFailed,       // paquet ou conversion audio refusés par FFmpeg
+  AudioDeviceUnavailable,  // périphérique ou file SDL3 impossibles à ouvrir
 };
 
 struct Refusal {
@@ -59,6 +63,12 @@ constexpr std::string_view name(RefusalCode code) {
       return "ModelUnavailable";
     case RefusalCode::HdrUnavailable:
       return "HdrUnavailable";
+    case RefusalCode::AudioCodecUnavailable:
+      return "AudioCodecUnavailable";
+    case RefusalCode::AudioDecodeFailed:
+      return "AudioDecodeFailed";
+    case RefusalCode::AudioDeviceUnavailable:
+      return "AudioDeviceUnavailable";
   }
   return "Unknown";
 }
