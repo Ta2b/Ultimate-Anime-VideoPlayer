@@ -51,9 +51,31 @@ std::uintptr_t handle_value(Handle handle) {
   }
 }
 
+// Ce qu'une image Vulkan apporte : son contexte d'images, qui porte le verrou, et l'AVVkFrame.
+struct VulkanParts {
+  AVHWFramesContext* frames = nullptr;
+  AVVulkanFramesContext* context = nullptr;
+  AVVkFrame* image = nullptr;
+
+  void lock() const {
+    if (context->lock_frame != nullptr) context->lock_frame(frames, image);
+  }
+  void unlock() const {
+    if (context->unlock_frame != nullptr) context->unlock_frame(frames, image);
+  }
+};
+
+VulkanParts vulkan_parts(const AVFrame& frame) {
+  auto* frames = reinterpret_cast<AVHWFramesContext*>(frame.hw_frames_ctx->data);
+  return {.frames = frames,
+          .context = static_cast<AVVulkanFramesContext*>(frames->hwctx),
+          .image = reinterpret_cast<AVVkFrame*>(frame.data[0])};
+}
+
 // Plans d'une image matérielle, selon l'API :
 // Cuda : un CUdeviceptr par plan, pas en octets par native_pitch ;
-// Vulkan : plan 0 = la VkImage multiplan de l'AVVkFrame (une seule, sinon refusée) ;
+// Vulkan : plan 0 = la VkImage multiplan de l'AVVkFrame (une seule, sinon refusée), lue
+// entre begin_vulkan_access et end_vulkan_access ;
 // D3D11 : plan 0 = ID3D11Texture2D*, plan 1 = index de tranche ;
 // VA-API : plan 0 = VASurfaceID ; VideoToolbox : plan 0 = CVPixelBufferRef.
 class AvFrameData final : public FrameData {
@@ -121,6 +143,35 @@ class AvFrameData final : public FrameData {
   std::uintptr_t ready_event() const override { return ready_.handle; }
   std::uint64_t ready_value() const override { return ready_.value; }
 
+  // Le verrou reste pris jusqu'à end_vulkan_access, comme hwcontext_vulkan.h le demande
+  // autour d'une soumission.
+  std::expected<VulkanImageAccess, Refusal> begin_vulkan_access() const override {
+    if (memory_ != FrameMemory::Vulkan) return FrameData::begin_vulkan_access();
+    const VulkanParts vk = vulkan_parts(*frame_);
+    vk.lock();
+    const AVVkFrame& image = *vk.image;
+    return VulkanImageAccess{
+        .semaphore = handle_value(image.sem[0]),
+        .wait_value = image.sem_value[0],
+        .signal_value = image.sem_value[0] + 1,
+        .state = {.layout = static_cast<std::uint32_t>(image.layout[0]),
+                  .queue_family = image.queue_family[0]},
+    };
+  }
+
+  void end_vulkan_access(const VulkanImageState& after, bool submitted) const override {
+    if (memory_ != FrameMemory::Vulkan) return;
+    const VulkanParts vk = vulkan_parts(*frame_);
+    if (submitted) {
+      AVVkFrame& image = *vk.image;
+      image.sem_value[0] += 1;
+      image.layout[0] = static_cast<VkImageLayout>(after.layout);
+      image.queue_family[0] = after.queue_family;
+      image.access[0] = VK_ACCESS_2_NONE;  // la soumission signalée rend tout visible
+    }
+    vk.unlock();
+  }
+
  private:
   int plane_rows(int plane) const {
     const AVPixFmtDescriptor* desc = av_pix_fmt_desc_get(sw_format_);
@@ -138,17 +189,16 @@ class AvFrameData final : public FrameData {
 // Sémaphore timeline de l'image et sa valeur de fin de décodage, lus sous le verrou de
 // l'AVVkFrame comme hwcontext_vulkan.h le demande. Une seule VkImage : une seule attente.
 std::expected<ReadyEvent, Refusal> vulkan_ready(const AVFrame& frame) {
-  auto* frames = reinterpret_cast<AVHWFramesContext*>(frame.hw_frames_ctx->data);
-  auto* context = static_cast<AVVulkanFramesContext*>(frames->hwctx);
-  auto* image = reinterpret_cast<AVVkFrame*>(frame.data[0]);
-  if (image == nullptr) return refuse(RefusalCode::FormatUnsupported, "image Vulkan sans AVVkFrame");
-  if (image->img[1] != VK_NULL_HANDLE) {
+  const VulkanParts vk = vulkan_parts(frame);
+  if (vk.image == nullptr) return refuse(RefusalCode::FormatUnsupported, "image Vulkan sans AVVkFrame");
+  if (vk.image->img[1] != VK_NULL_HANDLE) {
     return refuse(RefusalCode::FormatUnsupported,
                   "image Vulkan à plusieurs VkImage : une attente par image, hors du contrat de FrameData");
   }
-  if (context->lock_frame != nullptr) context->lock_frame(frames, image);
-  ReadyEvent ready{.handle = handle_value(image->sem[0]), .value = image->sem_value[0], .owner = nullptr};
-  if (context->unlock_frame != nullptr) context->unlock_frame(frames, image);
+  vk.lock();
+  ReadyEvent ready{
+      .handle = handle_value(vk.image->sem[0]), .value = vk.image->sem_value[0], .owner = nullptr};
+  vk.unlock();
   return ready;
 }
 

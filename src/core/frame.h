@@ -5,6 +5,7 @@
 #include <array>
 #include <cstddef>
 #include <cstdint>
+#include <expected>
 #include <limits>
 #include <memory>
 #include <optional>
@@ -68,6 +69,21 @@ struct ColorInfo {
 // Où vivent les pixels d'une image.
 enum class FrameMemory : std::uint8_t { Host, Cuda, Vulkan, D3d11, VaApi, VideoToolbox };
 
+// État d'une image Vulkan entre deux soumissions, comme l'AVVkFrame le note.
+struct VulkanImageState {
+  std::uint32_t layout = 0;                   // VkImageLayout ; 0 : VK_IMAGE_LAYOUT_UNDEFINED
+  std::uint32_t queue_family = 0xFFFF'FFFFU;  // VK_QUEUE_FAMILY_IGNORED : image partagée (CONCURRENT)
+};
+
+// Ce qu'une soumission qui lit une image Vulkan doit respecter (hwcontext_vulkan.h) : attendre
+// wait_value, partir de state par sa première barrière, signaler signal_value.
+struct VulkanImageAccess {
+  std::uintptr_t semaphore = 0;    // VkSemaphore timeline de l'image
+  std::uint64_t wait_value = 0;    // valeur courante de l'image
+  std::uint64_t signal_value = 0;  // wait_value + 1
+  VulkanImageState state;
+};
+
 // Propriétaire des pixels. media l'implémente autour d'une référence AVFrame ;
 // la dernière copie de DecodedFrame relâchée rend le tampon à son pool.
 class FrameData {
@@ -90,8 +106,22 @@ class FrameData {
   // Vulkan : la valeur du sémaphore timeline de ready_event qui marque la fin du décodage,
   // lue à la livraison. 0 pour un CUevent ou sans attente. Le lecteur garde l'image tant que
   // sa propre lecture n'est pas achevée côté GPU : FFmpeg peut la réécrire dès qu'elle revient
-  // au pool.
+  // au pool. Ce n'est qu'un instantané : une lecture Vulkan passe par begin_vulkan_access.
   virtual std::uint64_t ready_value() const = 0;
+
+  // Vulkan : ouvre l'accès à l'image le temps d'une soumission, sous le verrou de l'AVVkFrame.
+  // Le décodeur peut garder l'image comme référence et la relire pendant que le lecteur la
+  // tient : chaque soumission suit donc l'état noté dans l'image (valeur, disposition, file),
+  // jamais l'instantané de la livraison. Chaque appel est suivi, sur le même thread, d'un
+  // end_vulkan_access juste après vkQueueSubmit, sans attendre la fin du travail soumis.
+  // Refus : image qui n'est pas en mémoire Vulkan (FormatUnsupported).
+  virtual std::expected<VulkanImageAccess, Refusal> begin_vulkan_access() const {
+    return std::unexpected(Refusal{RefusalCode::FormatUnsupported, "image sans accès Vulkan"});
+  }
+  // Ferme l'accès et rend le verrou. submitted : la soumission signale signal_value, qui
+  // devient la valeur de l'image, et la laisse dans after. false : rien n'a été soumis, l'image
+  // garde sa valeur et son état, sans quoi le décodeur attendrait une valeur jamais signalée.
+  virtual void end_vulkan_access(const VulkanImageState& /*after*/, bool /*submitted*/) const {}
 };
 
 struct DecodedFrame {

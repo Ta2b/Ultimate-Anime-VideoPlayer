@@ -1,6 +1,8 @@
 // Contrats de la vague 2 entre modules : appareil de rendu, ring de sortie, écran.
 // Leurs valeurs par défaut doivent être sûres : rien d'inventé, rien d'activé en silence.
+#include <cstddef>
 #include <cstdint>
+#include <span>
 #include <stop_token>
 #include <type_traits>
 #include <variant>
@@ -72,6 +74,54 @@ TEST_CASE("Ring : un SlotFree porte la génération du ring et passe par la boî
   CHECK(slot->slot == 3);
   CHECK(slot->semaphore_value == 8);  // ready_value 7 du protocole, plus un
   CHECK(slot->generation == 2);
+}
+
+TEST_CASE("Ring : chaque image rend son slot, et les valeurs du sémaphore croissent", "[contracts]") {
+  // Trois tours d'un même slot : gpu attend la libération et signale la valeur suivante,
+  // impaire ; main rend la paire suivante, même pour une image jetée (époque passée).
+  std::uint64_t released = 0;  // rien à attendre au premier tour
+  for (std::uint32_t round = 0; round < 3; ++round) {
+    const RingFrame frame{.slot = 2, .generation = 5, .epoch = round, .ready_value = released + 1};
+    CHECK(frame.ready_value % 2 == 1);
+    const SlotFree freed = release_of(frame);
+    CHECK(freed.slot == 2);
+    CHECK(freed.generation == 5);
+    CHECK(freed.semaphore_value == frame.ready_value + 1);
+    CHECK(freed.semaphore_value > released);
+    released = freed.semaphore_value;
+  }
+  CHECK(released == 6);
+  CHECK(kRingLayout == 1U);  // VK_IMAGE_LAYOUT_GENERAL, dans les deux sens
+}
+
+namespace {
+
+// Une image d'une autre mémoire que Vulkan, comme un faux de test ou un module futur qui ne
+// redéfinit que l'essentiel : l'accès Vulkan doit refuser, jamais rendre un état inventé.
+class HostOnly final : public FrameData {
+ public:
+  FrameMemory memory() const override { return FrameMemory::Host; }
+  int plane_count() const override { return 0; }
+  std::span<const std::byte> host_plane(int /*plane*/) const override { return {}; }
+  std::size_t host_stride(int /*plane*/) const override { return 0; }
+  std::uintptr_t native_plane(int /*plane*/) const override { return 0; }
+  std::size_t native_pitch(int /*plane*/) const override { return 0; }
+  std::uintptr_t ready_event() const override { return 0; }
+  std::uint64_t ready_value() const override { return 0; }
+};
+
+}  // namespace
+
+TEST_CASE("FrameData : sans redéfinition, l'accès Vulkan est refusé", "[contracts]") {
+  const HostOnly frame;
+  auto access = frame.begin_vulkan_access();
+  REQUIRE_FALSE(access);
+  CHECK(access.error().code == RefusalCode::FormatUnsupported);
+  frame.end_vulkan_access({}, true);  // sans effet
+
+  const VulkanImageAccess none;
+  CHECK(none.state.layout == 0U);                  // VK_IMAGE_LAYOUT_UNDEFINED : rien de supposé
+  CHECK(none.state.queue_family == 0xFFFF'FFFFU);  // VK_QUEUE_FAMILY_IGNORED
 }
 
 TEST_CASE("DisplayInfo : valeurs par défaut sûres et marquées comme telles", "[contracts]") {
