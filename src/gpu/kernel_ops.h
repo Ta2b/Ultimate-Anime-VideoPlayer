@@ -6,6 +6,12 @@
 // 1 × 3 × h × w, en F16 ou F32 ; un tenseur de sortie décrit la mémoire écrite. Un format ou une taille hors
 // contrat rend un refus nommé (FormatUnsupported, ShapeInvalid, FieldOutOfRange) avant toute soumission,
 // jamais une conversion silencieuse.
+//
+// Une opération qui lit une DecodedFrame (ingest, rife_pad, measure) en garde une copie de
+// frame.data jusqu'à ce que sa lecture soit achevée côté GPU, constaté sans attente hôte à un
+// appel suivant, et toutes à la destruction du backend : l'appelant peut relâcher la sienne
+// au retour, l'image ne revient au pool du décodeur qu'après la lecture. Une image Vulkan se
+// lit entre begin_vulkan_access et end_vulkan_access (core/frame.h).
 #pragma once
 
 #include <cstdint>
@@ -80,6 +86,8 @@ class KernelOps {
 
   // RGB → RGBA16 UNORM du slot (ref::to_rgba16), rgb ayant la taille du slot. Le slot est
   // importé au premier appel de sa génération ; une autre taille ou un autre format est refusé.
+  // Le premier appel d'une génération plus récente relâche les imports des précédentes, une
+  // fois leurs écritures achevées côté GPU : un import gardé retiendrait la mémoire du ring.
   virtual std::expected<void, Refusal> write_ring(const Tensor& rgb, const RingSlotDesc& slot,
                                                   const RingWrite& sync) = 0;
 

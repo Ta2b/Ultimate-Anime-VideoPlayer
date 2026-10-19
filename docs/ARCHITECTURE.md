@@ -73,6 +73,15 @@ sous Vulkan, dont `ready_value` donne la valeur (0 pour un `CUevent` ou sans
 attente). Une image Vulkan à plusieurs `VkImage` est refusée : une seule attente
 par image.
 
+Une image Vulkan se lit entre `begin_vulkan_access()` et `end_vulkan_access()`,
+sous le verrou de l'`AVVkFrame` : le décodeur peut garder l'image comme référence
+et la relire pendant que le lecteur la tient. La soumission attend `wait_value`,
+part de la disposition et de la file notées dans l'image, et signale
+`signal_value` ; `end_vulkan_access()`, appelé juste après `vkQueueSubmit`, note
+la nouvelle valeur et la nouvelle disposition (rien si rien n'a été soumis).
+`ready_value` n'est qu'un instantané de la livraison. Une `FrameData` qui ne
+redéfinit pas l'accès Vulkan le refuse (`FormatUnsupported`).
+
 ### Horodatage inconnu
 
 Un pts inconnu vaut `kNoPts` (`std::numeric_limits<std::int64_t>::min()`, la
@@ -115,9 +124,19 @@ toute soumission.
 mémoire et sémaphore timeline exportés). `gpu` écrit un slot, signale une valeur
 impaire et envoie `RingFrame` au thread main (slot, pts, paire de sources, instant
 t, `REPEATED`, coupe, époque, valeur à attendre). Main signale la valeur suivante
-après son rendu et renvoie `SlotFree` (slot, valeur, génération du ring). Un seul
-écrivain à la fois par slot : la suite des valeurs croît sans attente hôte. Un
-ring recréé change de génération ; un message d'une autre génération est ignoré.
+après son rendu et renvoie `release_of(frame)`, un `SlotFree` (slot, valeur,
+génération du ring). Un seul écrivain à la fois par slot : la suite des valeurs
+croît sans attente hôte.
+
+Chaque `RingFrame` reçu rend son slot, même une image jetée (époque passée,
+retard) : main soumet l'attente et le signal sans rien dessiner. Un slot passe
+d'un côté à l'autre en `VK_IMAGE_LAYOUT_GENERAL` (`kRingLayout`) ; vers CUDA, main
+le cède à `VK_QUEUE_FAMILY_EXTERNAL`, et sur le même `VkDevice` l'image est en
+partage concurrent, échantillonnable et inscriptible. Un ring recréé change de
+génération : `gpu` cesse d'écrire l'ancienne et ignore ses `SlotFree` ; main ne
+présente plus ses images mais attend leur valeur, et ne détruit l'ancien ring
+qu'après le premier `RingFrame` de la nouvelle génération et la fin de ces
+attentes côté GPU.
 
 ### Écran et cadence (`core/resolve.h`)
 
