@@ -77,6 +77,13 @@ enum class RefusalCode : std::uint8_t {
   OperatorUnknown,   // opérateur hors du jeu de l'IR ; le détail porte son nom
   GraphInvalid,      // tenseur absent, cycle, attribut ou entrée incohérents
   ShapeInvalid,      // formes incompatibles, ou dimension impossible à déduire
+
+  // gpu/cuda/trt : runtime TensorRT et appels CUDA
+  CudaFailed,         // un appel CUDA a échoué ; le détail cite l'appel et l'erreur
+  TensorRtFailed,     // un appel TensorRT a échoué ou rendu nul ; le détail cite l'appel et le journal
+  EngineInvalid,      // moteur que TensorRT refuse de désérialiser : octets abîmés, autre version, autre GPU
+  ShapeOutOfProfile,  // forme d'entrée hors du profil min/max du moteur, ou de rang différent
+  TensorUnknown,      // nom d'entrée ou de sortie absent du moteur, ou tenseur laissé sans adresse
 };
 
 struct Refusal {
@@ -202,6 +209,16 @@ constexpr std::string_view name(RefusalCode code) {
       return "GraphInvalid";
     case RefusalCode::ShapeInvalid:
       return "ShapeInvalid";
+    case RefusalCode::CudaFailed:
+      return "CudaFailed";
+    case RefusalCode::TensorRtFailed:
+      return "TensorRtFailed";
+    case RefusalCode::EngineInvalid:
+      return "EngineInvalid";
+    case RefusalCode::ShapeOutOfProfile:
+      return "ShapeOutOfProfile";
+    case RefusalCode::TensorUnknown:
+      return "TensorUnknown";
   }
   return "Unknown";
 }

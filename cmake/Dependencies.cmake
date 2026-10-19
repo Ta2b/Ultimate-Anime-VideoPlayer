@@ -18,6 +18,13 @@ find_package(spdlog CONFIG REQUIRED)
 ajp_alias_dep(spdlog spdlog::spdlog)
 target_compile_definitions(ajp_dep_spdlog INTERFACE SPDLOG_USE_STD_FORMAT)
 
+# CUDA 13.4, seulement avec AJP_WITH_CUDA (backend TensorRT et ses noyaux). Le runtime statique
+# charge le pilote (libcuda) à l'exécution : sans pilote, un binaire démarre et refuse proprement.
+if(AJP_WITH_CUDA)
+  find_package(CUDAToolkit 13 REQUIRED)
+  ajp_alias_dep(cudart CUDA::cudart_static)
+endif()
+
 if(NOT AJP_BUILD_PLAYER)
   return()
 endif()
@@ -75,3 +82,23 @@ find_path(AJP_NANOBENCH_DIR nanobench.h REQUIRED)
 add_library(ajp_dep_nanobench INTERFACE)
 target_include_directories(ajp_dep_nanobench SYSTEM INTERFACE "${AJP_NANOBENCH_DIR}")
 add_library(ajp::dep::nanobench ALIAS ajp_dep_nanobench)
+
+# TensorRT 11.3, seulement avec AJP_WITH_CUDA : en-têtes publics et libnvinfer. Sous Linux,
+# AJP_TENSORRT_ROOT pointe un dossier include/ lib/ bin/ (sur le PC de référence ~/ajp-sdk/tensorrt :
+# bibliothèques du paquet PyPI tensorrt-cu13-libs, en-têtes de NVIDIA/TensorRT, trtexec).
+# libnvonnxparser et trtexec ne servent qu'aux tests, qui construisent leurs propres moteurs.
+if(AJP_WITH_CUDA)
+  set(AJP_TENSORRT_ROOT "" CACHE PATH "Racine de TensorRT 11 : include/, lib/ et bin/trtexec")
+  find_path(AJP_TENSORRT_INCLUDE_DIR NvInfer.h HINTS "${AJP_TENSORRT_ROOT}/include" REQUIRED)
+  find_library(AJP_NVINFER_LIBRARY nvinfer HINTS "${AJP_TENSORRT_ROOT}/lib" REQUIRED)
+  find_library(AJP_NVONNXPARSER_LIBRARY nvonnxparser HINTS "${AJP_TENSORRT_ROOT}/lib" REQUIRED)
+  find_program(AJP_TRTEXEC trtexec HINTS "${AJP_TENSORRT_ROOT}/bin")
+
+  add_library(ajp_dep_tensorrt INTERFACE)
+  target_include_directories(ajp_dep_tensorrt SYSTEM INTERFACE "${AJP_TENSORRT_INCLUDE_DIR}")
+  target_link_libraries(ajp_dep_tensorrt INTERFACE "${AJP_NVINFER_LIBRARY}" ajp::dep::cudart)
+  add_library(ajp::dep::tensorrt ALIAS ajp_dep_tensorrt)
+
+  ajp_alias_dep(tensorrt_onnx "${AJP_NVONNXPARSER_LIBRARY}")
+  target_link_libraries(ajp_dep_tensorrt_onnx INTERFACE ajp::dep::tensorrt)
+endif()

@@ -1,8 +1,8 @@
 // Progression d'une construction lue dans la sortie de trtexec, pour l'OSD.
 //
 // trtexec n'imprime pas de pourcentage : chaque ligne repère connue fixe une
-// fraction, qui ne recule jamais. Les repères viennent des journaux de trtexec
-// 10 et 11 (à vérifier sur trtexec 11.3) ; une ligne inconnue ne change rien.
+// fraction, qui ne recule jamais. Les repères et leurs fractions viennent des
+// journaux de trtexec 11.3.0.99 sur la 4070 Ti ; une ligne inconnue ne change rien.
 #pragma once
 
 #include <optional>

@@ -3,6 +3,10 @@
 // fork, commit 118c272) compilée telle quelle sur les mêmes entrées.
 #include "prepare/trtexec_command.h"
 
+#include <string>
+#include <string_view>
+#include <vector>
+
 #include <catch2/catch_test_macros.hpp>
 
 #include "prepare/trtexec_progress.h"
@@ -111,6 +115,67 @@ TEST_CASE("TrtexecProgress : repères dans l'ordre, jamais de recul", "[prepare]
   CHECK_FALSE(progress.passed());
   CHECK(progress.feed("&&&& PASSED TensorRT.trtexec")->fraction == 1.0F);
   CHECK(progress.passed());
+}
+
+namespace {
+
+// Étapes rendues par une suite de lignes, dans l'ordre.
+std::vector<std::string> stages_of(const std::vector<std::string_view>& lines) {
+  TrtexecProgress progress;
+  std::vector<std::string> stages;
+  float last = 0.0F;
+  for (const std::string_view line : lines) {
+    if (auto step = progress.feed(line)) {
+      CHECK(step->fraction > last);
+      last = step->fraction;
+      stages.push_back(step->stage);
+    }
+  }
+  return stages;
+}
+
+}  // namespace
+
+// Lignes repères de vrais journaux de trtexec 11.3.0.99 sur la 4070 Ti, horodatage retiré.
+TEST_CASE("TrtexecProgress : SPAN sous TensorRT 11, trois passes du constructeur", "[prepare][trtexec]") {
+  const std::vector<std::string> stages = stages_of({
+      "&&&& RUNNING TensorRT.trtexec [TensorRT v110300] [b99] # trtexec --onnx=model.onnx",
+      "[I] Start parsing network model.",
+      "[I] Finished parsing network model. Parse time: 0.00718071",
+      "[I] [TRT] Global timing cache in use. Profiling results in this builder pass will be stored.",
+      "[I] [TRT] Total Activation Memory: 199065600 bytes",
+      "[I] [TRT] Engine generation completed in 45.0805 seconds.",
+      "[I] [TRT] Global timing cache in use. Profiling results in this builder pass will be stored.",
+      "[I] [TRT] Total Activation Memory: 160358400 bytes",
+      "[I] [TRT] Engine generation completed in 12.1276 seconds.",
+      "[I] [TRT] Global timing cache in use. Profiling results in this builder pass will be stored.",
+      "[I] [TRT] Total Activation Memory: 199065600 bytes",
+      "[I] [TRT] Engine generation completed in 0.415964 seconds.",
+      "[I] Created engine with size: 0.939 MiB",
+      "[I] Engine built in 58.0322 sec.",
+      "&&&& PASSED TensorRT.trtexec [TensorRT v110300] [b99] # trtexec --onnx=model.onnx",
+  });
+  CHECK(stages == std::vector<std::string>{"Démarrage de trtexec", "Lecture du modèle", "Choix des tactiques",
+                                           "Plan mémoire", "Première passe du constructeur terminée",
+                                           "Seconde passe du constructeur", "Sérialisation du moteur",
+                                           "Moteur construit", "Terminé"});
+}
+
+TEST_CASE("TrtexecProgress : RIFE sous TensorRT 11, une seule passe", "[prepare][trtexec]") {
+  const std::vector<std::string> stages = stages_of({
+      "&&&& RUNNING TensorRT.trtexec [TensorRT v110300] [b99] # trtexec --stronglyTyped",
+      "[I] Start parsing network model.",
+      "[I] Finished parsing network model. Parse time: 0.0289007",
+      "[I] [TRT] Global timing cache in use. Profiling results in this builder pass will be stored.",
+      "[I] [TRT] Total Activation Memory: 304742400 bytes",
+      "[I] [TRT] Engine generation completed in 18.5347 seconds.",
+      "[I] Created engine with size: 57.5377 MiB",
+      "[I] Engine built in 18.858 sec.",
+      "&&&& PASSED TensorRT.trtexec [TensorRT v110300] [b99] # trtexec --stronglyTyped",
+  });
+  CHECK(stages == std::vector<std::string>{"Démarrage de trtexec", "Lecture du modèle", "Choix des tactiques",
+                                           "Plan mémoire", "Première passe du constructeur terminée",
+                                           "Moteur construit", "Terminé"});
 }
 
 TEST_CASE("TrtexecProgress : dernière erreur et échec", "[prepare][trtexec]") {
