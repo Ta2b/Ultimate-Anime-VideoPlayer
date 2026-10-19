@@ -30,8 +30,10 @@ struct DownscaleName {
   std::string_view key;
   std::string_view label;
 };
+// Dans l'ordre des valeurs de core::DownscaleFilter.
 constexpr std::array<DownscaleName, kDownscaleCount> kDownscales{{
     {Downscale::Area, "area", "Area"},
+    {Downscale::Spline36, "spline36", "Spline36"},
     {Downscale::Bilinear, "bilinear", "Bilinear"},
     {Downscale::Bicubic, "bicubic", "Bicubic"},
     {Downscale::Mitchell, "mitchell", "Mitchell"},

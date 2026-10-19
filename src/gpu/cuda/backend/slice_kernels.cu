@@ -81,6 +81,18 @@ __device__ float3 area_at(const IngestParams& p, int x, int y) {
 __device__ float reduce_weight(const IngestParams& p, float d) {
   d = fabsf(d);
   if (p.reduce_kind == kReduceTriangle) return fmaxf(0.0F, 1.0F - d);
+  if (p.reduce_kind == kReduceSpline36) {
+    if (d < 1.0F) return ((13.0F / 11.0F * d - 453.0F / 209.0F) * d - 3.0F / 209.0F) * d + 1.0F;
+    if (d < 2.0F) {
+      d -= 1.0F;
+      return ((-6.0F / 11.0F * d + 270.0F / 209.0F) * d - 156.0F / 209.0F) * d;
+    }
+    if (d < 3.0F) {
+      d -= 2.0F;
+      return ((1.0F / 11.0F * d - 45.0F / 209.0F) * d + 26.0F / 209.0F) * d;
+    }
+    return 0.0F;
+  }
   const float b = p.reduce_b;
   const float c = p.reduce_c;
   if (d < 1.0F) {
@@ -102,7 +114,9 @@ __device__ float reduce_weight(const IngestParams& p, float d) {
 __device__ float3 filtered_at(const IngestParams& p, int x, int y) {
   const float sx = static_cast<float>(p.width) / static_cast<float>(p.out_width);
   const float sy = static_cast<float>(p.height) / static_cast<float>(p.out_height);
-  const float radius = p.reduce_kind == kReduceTriangle ? 1.0F : 2.0F;
+  const float radius = p.reduce_kind == kReduceTriangle   ? 1.0F
+                       : p.reduce_kind == kReduceSpline36 ? 3.0F
+                                                          : 2.0F;
   const float cx = (static_cast<float>(x) + 0.5F) * sx - 0.5F;
   const float cy = (static_cast<float>(y) + 0.5F) * sy - 0.5F;
   const int i0 = static_cast<int>(ceilf(cx - radius * sx));

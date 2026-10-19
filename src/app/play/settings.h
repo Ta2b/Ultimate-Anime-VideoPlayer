@@ -18,13 +18,15 @@
 #include <string_view>
 
 #include "app/play/options.h"
+#include "core/profile.h"
 #include "core/types.h"
 
 namespace ajp::app::play {
 
-// Filtre de la réduction avant SPAN (fusionnée à l'ingestion, en codes de la source).
-enum class Downscale : std::uint8_t { Area, Bilinear, Bicubic, Mitchell, CatmullRom };
-inline constexpr int kDownscaleCount = 5;
+// Filtre de la réduction avant SPAN (fusionnée à l'ingestion, en codes de la source) : celui des
+// profils (core/profile.h), mêmes noms dans play.toml et user.toml.
+using Downscale = core::DownscaleFilter;
+inline constexpr int kDownscaleCount = 6;
 std::string_view name(Downscale filter);   // « area », la clé de play.toml
 std::string_view label(Downscale filter);  // « Area », pour le menu
 

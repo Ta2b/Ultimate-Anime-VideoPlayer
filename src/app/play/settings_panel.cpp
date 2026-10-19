@@ -96,7 +96,7 @@ void image_tab(PlaySettings& d, const SettingsChoices& choices) {
       ImGui::EndCombo();
     }
     note(
-        "Area : moyenne exacte, le profil du lecteur actuel. Catmull-Rom et Mitchell gardent plus de "
+        "Area : moyenne exacte. Spline36 : celui d'AnimeJaNai, net. Catmull-Rom et Mitchell gardent du "
         "détail ; Bilinear et Bicubic adoucissent. Changement en direct.");
   } else {
     note("Pas de réduction : la source entre telle quelle dans SPAN.");

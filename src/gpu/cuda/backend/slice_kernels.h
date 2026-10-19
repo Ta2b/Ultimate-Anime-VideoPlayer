@@ -19,8 +19,9 @@ namespace ajp::gpu::cuda {
 inline constexpr int kReduceArea = 0;
 inline constexpr int kReduceTriangle = 1;
 inline constexpr int kReduceCubic = 2;
-// Pixels de source par axe au plus pour un pixel de sortie (cubique : 4 × l'échelle + 1).
-inline constexpr int kMaxReduceTaps = 24;
+inline constexpr int kReduceSpline36 = 3;
+// Pixels de source par axe au plus pour un pixel de sortie (Spline36 : 6 × l'échelle + 1).
+inline constexpr int kMaxReduceTaps = 32;
 
 struct IngestParams {
   const void* luma = nullptr;    // plan Y

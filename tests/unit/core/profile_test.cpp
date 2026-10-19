@@ -1,5 +1,6 @@
 #include "core/profile.h"
 
+#include <array>
 #include <string>
 
 #include <catch2/catch_test_macros.hpp>
@@ -85,6 +86,28 @@ TEST_CASE("Profil : les erreurs de forme sont des refus nommés", "[profile]") {
         RefusalCode::FieldOutOfRange);
   CHECK(refusal_of(with_steps(R"({ kind = "interpolate", model = "r", factor = "2:1", policy = "fast" })")) ==
         RefusalCode::FieldType);
+}
+
+TEST_CASE("Profil : les filtres de réduction du lecteur se lisent par leur nom", "[profile]") {
+  for (const auto& [text, filter] : std::array<std::pair<const char*, DownscaleFilter>, 6>{{
+           {"area", DownscaleFilter::Area},
+           {"spline36", DownscaleFilter::Spline36},
+           {"bilinear", DownscaleFilter::Bilinear},
+           {"bicubic", DownscaleFilter::Bicubic},
+           {"mitchell", DownscaleFilter::Mitchell},
+           {"catmull-rom", DownscaleFilter::CatmullRom},
+       }}) {
+    auto file = parse_profile(
+        with_steps(std::string(R"({ kind = "downscale", filter = ")") + text + R"(", height = 720 })"));
+    REQUIRE(file);
+    CHECK(file->profiles[0]->rules[0].steps[0].filter == filter);
+    // Et s'écrit à l'identique.
+    const auto again = parse_profile(format_profile(*file));
+    REQUIRE(again);
+    CHECK(*again == *file);
+  }
+  CHECK(refusal_of(with_steps(R"({ kind = "downscale", filter = "lanczos", height = 720 })")) ==
+        RefusalCode::FieldOutOfRange);
 }
 
 TEST_CASE("Profil : une valeur hors plage est refusée, jamais corrigée", "[profile]") {

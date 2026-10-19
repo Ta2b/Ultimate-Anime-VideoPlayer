@@ -24,12 +24,15 @@ struct RifeCounts {
   std::uint64_t late = 0;  // non interpolées pour rattraper l'horloge
 };
 
-// Le filtre de réduction du noyau d'ingestion pour un choix du menu. Bicubic : B = 1, C = 0, comme
+// Le filtre de réduction du noyau d'ingestion pour un choix du menu. Spline36 : celui
+// d'AnimeJaNai (3 lobes) ; Bicubic : B = 1, C = 0, comme
 // le « bicubic » de libplacebo et de mpv ; Mitchell : B = C = 1/3 ; Catmull-Rom : B = 0, C = 1/2.
 inline gpu::Reduction reduction_of(Downscale filter) {
   switch (filter) {
     case Downscale::Area:
       return {};
+    case Downscale::Spline36:
+      return {.kind = gpu::ReduceKind::Spline36};
     case Downscale::Bilinear:
       return {.kind = gpu::ReduceKind::Triangle};
     case Downscale::Bicubic:

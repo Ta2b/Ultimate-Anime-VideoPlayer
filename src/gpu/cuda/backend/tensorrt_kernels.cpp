@@ -111,9 +111,10 @@ std::expected<void, Refusal> TensorRtBackend::ingest(const DecodedFrame& frame, 
       .height = frame.height,
       .out_width = out_width,
       .out_height = out_height,
-      .reduce_kind = spec.reduce.kind == ReduceKind::Triangle ? kReduceTriangle
-                     : spec.reduce.kind == ReduceKind::Cubic  ? kReduceCubic
-                                                              : kReduceArea,
+      .reduce_kind = spec.reduce.kind == ReduceKind::Triangle   ? kReduceTriangle
+                     : spec.reduce.kind == ReduceKind::Cubic    ? kReduceCubic
+                     : spec.reduce.kind == ReduceKind::Spline36 ? kReduceSpline36
+                                                                : kReduceArea,
       .reduce_b = spec.reduce.b,
       .reduce_c = spec.reduce.c,
       .sixteen_bits = *format != kernels::Format::Nv12,

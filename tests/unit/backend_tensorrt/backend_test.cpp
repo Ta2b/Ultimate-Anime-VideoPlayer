@@ -285,6 +285,12 @@ TEST_CASE("Backend TensorRT : réduction Area fusionnée à l'ingestion, rapport
 double reduce_weight(const gpu::Reduction& r, double d) {
   d = std::fabs(d);
   if (r.kind == gpu::ReduceKind::Triangle) return std::max(0.0, 1.0 - d);
+  if (r.kind == gpu::ReduceKind::Spline36) {
+    if (d < 1.0) return ((13.0 / 11.0 * d - 453.0 / 209.0) * d - 3.0 / 209.0) * d + 1.0;
+    if (d < 2.0) return ((-6.0 / 11.0 * (d - 1) + 270.0 / 209.0) * (d - 1) - 156.0 / 209.0) * (d - 1);
+    if (d < 3.0) return ((1.0 / 11.0 * (d - 2) - 45.0 / 209.0) * (d - 2) + 26.0 / 209.0) * (d - 2);
+    return 0.0;
+  }
   const double b = r.b;
   const double c = r.c;
   if (d < 1.0) return ((12 - 9 * b - 6 * c) * d * d * d + (-18 + 12 * b + 6 * c) * d * d + (6 - 2 * b)) / 6.0;
@@ -318,8 +324,9 @@ TEST_CASE("Backend TensorRT : réductions triangle et cubiques fusionnées, cont
   REQUIRE(small);
   REQUIRE(loaded.backend->kernels()->ingest(frame, {}, (*full)->tensor()));
   const auto base = download((*full)->tensor());
-  const std::array<gpu::Reduction, 3> filters{{
+  const std::array<gpu::Reduction, 4> filters{{
       {.kind = gpu::ReduceKind::Triangle},
+      {.kind = gpu::ReduceKind::Spline36},
       {.kind = gpu::ReduceKind::Cubic, .b = 0.0F, .c = 0.5F},                // Catmull-Rom
       {.kind = gpu::ReduceKind::Cubic, .b = 1.0F / 3.0F, .c = 1.0F / 3.0F},  // Mitchell
   }};
@@ -327,7 +334,9 @@ TEST_CASE("Backend TensorRT : réductions triangle et cubiques fusionnées, cont
     CAPTURE(static_cast<int>(filter.kind), filter.b, filter.c);
     REQUIRE(loaded.backend->kernels()->ingest(frame, gpu::IngestSpec{.reduce = filter}, (*small)->tensor()));
     const auto got = download((*small)->tensor());
-    const double radius = filter.kind == gpu::ReduceKind::Triangle ? 1.0 : 2.0;
+    const double radius = filter.kind == gpu::ReduceKind::Triangle   ? 1.0
+                          : filter.kind == gpu::ReduceKind::Spline36 ? 3.0
+                                                                     : 2.0;
     double worst = 0.0;
     for (int c = 0; c < 3; ++c) {
       for (int y = 0; y < oh; ++y) {
@@ -379,9 +388,10 @@ TEST_CASE("Backend TensorRT : coût des réductions 1080p vers 720p", "[.bench][
     const char* name;
     gpu::Reduction reduce;
   };
-  const std::array<Named, 5> filters{{
+  const std::array<Named, 6> filters{{
       {"Area", {}},
       {"Bilinear (triangle)", {.kind = gpu::ReduceKind::Triangle}},
+      {"Spline36", {.kind = gpu::ReduceKind::Spline36}},
       {"Bicubic (B=1, C=0)", {.kind = gpu::ReduceKind::Cubic, .b = 1.0F, .c = 0.0F}},
       {"Mitchell", {.kind = gpu::ReduceKind::Cubic, .b = 1.0F / 3.0F, .c = 1.0F / 3.0F}},
       {"Catmull-Rom", {.kind = gpu::ReduceKind::Cubic, .b = 0.0F, .c = 0.5F}},

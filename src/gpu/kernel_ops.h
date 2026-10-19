@@ -30,9 +30,9 @@ namespace ajp::gpu {
 
 // Ingestion d'une image décodée : quelle conversion, selon l'étage qui la lit.
 // Filtre de la réduction fusionnée à l'ingestion (extension de la tranche verticale) : boîte
-// (Area), triangle (bilinéaire étiré) ou cubique de Mitchell-Netravali (B, C), étirés à l'échelle de
-// la réduction, en codes de la source.
-enum class ReduceKind : std::uint8_t { Area, Triangle, Cubic };
+// (Area), triangle (bilinéaire étiré), cubique de Mitchell-Netravali (B, C) ou Spline36 (rayon 3),
+// étirés à l'échelle de la réduction, en codes de la source.
+enum class ReduceKind : std::uint8_t { Area, Triangle, Cubic, Spline36 };
 struct Reduction {
   ReduceKind kind = ReduceKind::Area;
   float b = 0.0F;
