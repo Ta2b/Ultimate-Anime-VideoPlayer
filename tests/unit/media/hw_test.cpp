@@ -89,6 +89,28 @@ TEST_CASE("hw : un appareil partagé est repris tel quel, d'un autre type il est
   CHECK(refused.error().detail.find("autre type") != std::string::npos);
 }
 
+TEST_CASE("hw : Vulkan ne décode par défaut que les codecs Vulkan Video", "[media][hw]") {
+  CHECK(is_vulkan_video_codec(AV_CODEC_ID_H264));
+  CHECK(is_vulkan_video_codec(AV_CODEC_ID_HEVC));
+  CHECK(is_vulkan_video_codec(AV_CODEC_ID_AV1));
+  CHECK(is_vulkan_video_codec(AV_CODEC_ID_VP9));
+  CHECK_FALSE(is_vulkan_video_codec(AV_CODEC_ID_FFV1));
+  CHECK_FALSE(is_vulkan_video_codec(AV_CODEC_ID_PRORES));
+  CHECK_FALSE(is_vulkan_video_codec(AV_CODEC_ID_MPEG4));
+  // Refus avant tout appareil, avec ou sans ffv1_vulkan dans cette construction.
+  for (const AVCodecID codec : {AV_CODEC_ID_FFV1, AV_CODEC_ID_PRORES, AV_CODEC_ID_DPX}) {
+    auto refused = open_hw_device(codec, HwApi::Vulkan, DecoderOptions{});
+    REQUIRE_FALSE(refused);
+    CHECK(refused.error().code == RefusalCode::HwDecodeUnavailable);
+    CHECK(refused.error().detail.starts_with("vulkan"));
+    CHECK(refused.error().detail.find("vulkan_compute") != std::string::npos);
+  }
+  // Sur option, la recherche continue : un codec sans hwaccel Vulkan reste refusé autrement.
+  auto mpeg4 = open_hw_device(AV_CODEC_ID_MPEG4, HwApi::Vulkan, {.vulkan_compute = true});
+  REQUIRE_FALSE(mpeg4);
+  CHECK(mpeg4.error().detail.find("aucun décodeur") != std::string::npos);
+}
+
 TEST_CASE("hw : noms des API", "[media][hw]") {
   CHECK(name(HwApi::Cuda) == "cuda");
   CHECK(name(HwApi::D3d11va) == "d3d11va");

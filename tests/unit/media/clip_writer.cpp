@@ -90,6 +90,57 @@ void add_hdr10(AVCodecParameters& par) {
   light->MaxFALL = 400;
 }
 
+// Avec perte : chaque image a sa luma uniforme, que le décodage retrouve à ±3.
+bool is_flat(const ClipSpec& spec) {
+  return spec.codec == VideoCodec::Mpeg4 || !spec.encoder.empty();
+}
+
+// Contexte d'encodeur ouvert pour le clip, ou la raison de l'échec.
+std::expected<AVCodecContext*, std::string> open_encoder(const ClipSpec& spec, bool global_header) {
+  const AVCodec* codec =
+      spec.encoder.empty()
+          ? avcodec_find_encoder(spec.codec == VideoCodec::Mpeg4 ? AV_CODEC_ID_MPEG4 : AV_CODEC_ID_FFV1)
+          : avcodec_find_encoder_by_name(spec.encoder.c_str());
+  if (codec == nullptr) return fail(std::format("encodeur {} absent de cette construction", spec.encoder));
+  AVCodecContext* enc = avcodec_alloc_context3(codec);
+  if (enc == nullptr) return fail("contexte d'encodeur");
+  enc->width = spec.width;
+  enc->height = spec.height;
+  enc->pix_fmt = spec.pixel_format;
+  enc->time_base = av_inv_q(spec.frame_rate);
+  enc->framerate = spec.frame_rate;
+  enc->gop_size = spec.gop;
+  enc->max_b_frames = spec.b_frames;
+  enc->color_primaries = spec.color.primaries;
+  enc->color_trc = spec.color.transfer;
+  enc->colorspace = spec.color.matrix;
+  enc->color_range = spec.color.range;
+  enc->chroma_sample_location = spec.color.siting;
+  if (spec.codec == VideoCodec::Mpeg4 && spec.encoder.empty()) {
+    enc->flags |= AV_CODEC_FLAG_QSCALE;
+    enc->global_quality = FF_QP2LAMBDA * 2;
+  } else if (spec.encoder.empty()) {
+    enc->level = 3;
+  }
+  if (global_header) enc->flags |= AV_CODEC_FLAG_GLOBAL_HEADER;
+  // Sans détection de changement de scène : les points clés tombent tous les `gop`.
+  AVDictionary* options = nullptr;
+  if (spec.codec == VideoCodec::Mpeg4 && spec.encoder.empty()) {
+    av_dict_set(&options, "sc_threshold", "1000000000", 0);
+  }
+  if (!spec.encoder.empty()) {  // NVENC : qp constant, assez fin pour la luma à ±3
+    av_dict_set(&options, "rc", "constqp", 0);
+    av_dict_set(&options, "qp", "18", 0);
+  }
+  const int opened = avcodec_open2(enc, codec, &options);
+  av_dict_free(&options);
+  if (opened < 0) {
+    avcodec_free_context(&enc);
+    return fail(std::format("encodeur {}", codec->name), opened);
+  }
+  return enc;
+}
+
 void fill_frame(AVFrame& frame, const ClipSpec& spec, int n) {
   const AVPixFmtDescriptor* desc = av_pix_fmt_desc_get(spec.pixel_format);
   const int bits = desc->comp[0].depth;
@@ -99,8 +150,7 @@ void fill_frame(AVFrame& frame, const ClipSpec& spec, int n) {
     for (int y = 0; y < h; ++y) {
       std::uint8_t* row = frame.data[plane] + static_cast<std::ptrdiff_t>(y) * frame.linesize[plane];
       for (int x = 0; x < w; ++x) {
-        const int value = spec.codec == VideoCodec::Mpeg4 ? (plane == 0 ? flat_luma(n) : 128)
-                                                          : pattern(plane, x, y, n, bits);
+        const int value = is_flat(spec) ? (plane == 0 ? flat_luma(n) : 128) : pattern(plane, x, y, n, bits);
         if (bits > 8) {
           row[2 * x] = static_cast<std::uint8_t>(value & 0xFF);
           row[2 * x + 1] = static_cast<std::uint8_t>(value >> 8);
@@ -140,39 +190,12 @@ class Writer {
 
  private:
   std::expected<void, std::string> add_video() {
-    const AVCodec* codec =
-        avcodec_find_encoder(spec_.codec == VideoCodec::Mpeg4 ? AV_CODEC_ID_MPEG4 : AV_CODEC_ID_FFV1);
-    out_.encoder = avcodec_alloc_context3(codec);
-    AVCodecContext& enc = *out_.encoder;
-    enc.width = spec_.width;
-    enc.height = spec_.height;
-    enc.pix_fmt = spec_.pixel_format;
-    enc.time_base = av_inv_q(spec_.frame_rate);
-    enc.framerate = spec_.frame_rate;
-    enc.gop_size = spec_.gop;
-    enc.max_b_frames = spec_.b_frames;
-    enc.color_primaries = spec_.color.primaries;
-    enc.color_trc = spec_.color.transfer;
-    enc.colorspace = spec_.color.matrix;
-    enc.color_range = spec_.color.range;
-    enc.chroma_sample_location = spec_.color.siting;
-    if (spec_.codec == VideoCodec::Mpeg4) {
-      enc.flags |= AV_CODEC_FLAG_QSCALE;
-      enc.global_quality = FF_QP2LAMBDA * 2;
-    } else {
-      enc.level = 3;
-    }
-    if ((out_.ctx->oformat->flags & AVFMT_GLOBALHEADER) != 0) enc.flags |= AV_CODEC_FLAG_GLOBAL_HEADER;
-    // Sans détection de changement de scène : les points clés tombent tous les `gop`.
-    AVDictionary* options = nullptr;
-    if (spec_.codec == VideoCodec::Mpeg4) av_dict_set(&options, "sc_threshold", "1000000000", 0);
-    const int opened = avcodec_open2(&enc, codec, &options);
-    av_dict_free(&options);
-    if (opened < 0) return fail("encodeur vidéo", opened);
-
+    auto enc = open_encoder(spec_, (out_.ctx->oformat->flags & AVFMT_GLOBALHEADER) != 0);
+    if (!enc) return std::unexpected(enc.error());
+    out_.encoder = *enc;
     video_ = avformat_new_stream(out_.ctx, nullptr);
-    avcodec_parameters_from_context(video_->codecpar, &enc);
-    video_->time_base = enc.time_base;
+    avcodec_parameters_from_context(video_->codecpar, out_.encoder);
+    video_->time_base = out_.encoder->time_base;
     video_->avg_frame_rate = spec_.frame_rate;
     video_->disposition = AV_DISPOSITION_DEFAULT;
     if (spec_.color.hdr10) add_hdr10(*video_->codecpar);
@@ -330,6 +353,13 @@ int flat_luma(int n) {
 int frame_of_flat_luma(int value) {
   const int n = static_cast<int>(std::lround((value - 32) / 6.0));
   return std::abs(flat_luma(n) - value) <= 3 ? n : -1;
+}
+
+std::optional<std::string> encoder_unavailable(const ClipSpec& spec) {
+  auto enc = open_encoder(spec, false);
+  if (!enc) return enc.error();
+  avcodec_free_context(&*enc);
+  return std::nullopt;
 }
 
 std::expected<std::filesystem::path, std::string> write_clip(const ClipSpec& spec) {

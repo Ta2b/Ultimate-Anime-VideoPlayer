@@ -36,11 +36,21 @@ struct DecoderOptions {
   std::optional<DeviceUuid> render_device;  // exigé par Cuda et, s'il est connu, vérifié par Vulkan
   const HwDeviceSource* devices = nullptr;
   int extra_hw_frames = 4;  // surfaces en plus pour l'anticipation de gpu, [0, 32]
-  int threads = 0;          // décodage logiciel, 0 : automatique, [0, 64]
+  // Décodage logiciel, [0, 64]. 0 : automatique, un thread par cœur et
+  // kAutoDecoderThreads au plus. Chaque thread d'images retarde la première
+  // image d'un paquet vidéo, donc de quelques paquets audio lus avant elle.
+  int threads = 0;
+  // Vulkan ne décode par défaut que les codecs Vulkan Video (H.264, HEVC, AV1,
+  // VP9), sur la file vidéo du GPU. Les décodeurs Vulkan par compute shaders de
+  // FFmpeg (ffv1, prores, prores_raw, dpx, apv) ne s'essaient que si ceci est vrai :
+  // ils prennent le calcul que gpu réserve à l'upscaling et à l'interpolation, et
+  // leur échec ne se voit qu'au premier point clé, après l'ouverture.
+  bool vulkan_compute = false;
 };
 
 inline constexpr int kMaxExtraHwFrames = 32;
 inline constexpr int kMaxDecoderThreads = 64;
+inline constexpr int kAutoDecoderThreads = 8;
 
 // Ordre d'essai par défaut de la plateforme, logiciel en dernier.
 std::vector<HwApi> default_attempts();

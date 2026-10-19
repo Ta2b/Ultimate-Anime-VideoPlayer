@@ -172,6 +172,8 @@ class AvFrameData final : public FrameData {
     vk.unlock();
   }
 
+  const AVFrame& av() const { return *frame_; }
+
  private:
   int plane_rows(int plane) const {
     const AVPixFmtDescriptor* desc = av_pix_fmt_desc_get(sw_format_);
@@ -203,6 +205,11 @@ std::expected<ReadyEvent, Refusal> vulkan_ready(const AVFrame& frame) {
 }
 
 }  // namespace
+
+const AVFrame* av_frame_of(const FrameData& data) {
+  const auto* own = dynamic_cast<const AvFrameData*>(&data);
+  return own == nullptr ? nullptr : &own->av();
+}
 
 std::expected<DecodedFrame, Refusal> to_decoded_frame(FramePtr frame, std::int64_t pts_us,
                                                       std::int64_t duration_us, ReadyEvent ready) {

@@ -5,6 +5,7 @@
 #include <optional>
 #include <stop_token>
 
+#include "media/packet_reserve.h"
 #include "media/source.h"
 
 namespace ajp::media {
@@ -23,15 +24,11 @@ class SourceLoop {
     Idle,     // fin de flux, échec ou Flush : on attend un Seek
   };
 
-  struct HeldPacket {
-    PacketSink* sink;
-    Packet packet;
-  };
-
   bool has_mail() const;
   void handle(SourceInbox::Message message);
   void on_flush(const Flush& flush);
   void on_seek(const cmd::Seek& seek);
+  void forget_position();
   Progress advance();
   Progress decode();
   Progress route(Packet packet);
@@ -41,13 +38,14 @@ class SourceLoop {
   SourceMedia media_;
   SourceLinks links_;
   SourceInbox& inbox_;
+  PacketReserve reserve_;  // paquets annexes refusés, voir media/source.h
 
   std::optional<DecodedFrame> held_frame_;    // décodée, pas encore acceptée
-  std::optional<HeldPacket> held_packet_;     // lue, pas encore acceptée
   std::optional<std::int64_t> drop_before_;   // seek exact en cours : cible en µs
   std::optional<DecodedFrame> last_dropped_;  // seek exact : livrée si la fin vient avant la cible
   std::uint32_t epoch_ = 0;
   std::uint32_t next_id_ = 1;   // 0 reste « aucune source »
+  bool primed_ = false;         // gpu a accepté une image de l'époque à cette position
   bool idle_ = false;           // fin de flux ou échec
   bool awaiting_seek_ = false;  // Flush reçu : rien ne part avant le Seek
   bool quit_ = false;

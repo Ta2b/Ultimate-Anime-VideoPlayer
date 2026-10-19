@@ -4,6 +4,7 @@
 #include <format>
 #include <utility>
 #include <variant>
+#include <vector>
 
 namespace ajp::media {
 namespace {
@@ -23,10 +24,20 @@ bool ends_before(const DecodedFrame& frame, std::int64_t target_us) {
   return end <= target_us;
 }
 
+std::vector<PacketSink*> sinks_of(const SourceLinks& links) {
+  std::vector<PacketSink*> sinks;
+  sinks.reserve(links.packets.size());
+  for (const PacketRoute& route : links.packets) sinks.push_back(route.sink);
+  return sinks;
+}
+
 }  // namespace
 
 SourceLoop::SourceLoop(SourceMedia media, SourceLinks links, SourceInbox& inbox)
-    : media_(std::move(media)), links_(std::move(links)), inbox_(inbox) {}
+    : media_(std::move(media)),
+      links_(std::move(links)),
+      inbox_(inbox),
+      reserve_(sinks_of(links_), links_.reserve_bytes) {}
 
 void SourceLoop::run(const std::stop_token& stop) {
   while (!stop.stop_requested() && !quit_) {
@@ -72,9 +83,7 @@ void SourceLoop::on_flush(const Flush& flush) {
   }
   // Ce qui est tenu appartient à l'époque passée : rien d'ancien ne part après.
   epoch_ = flush.epoch;
-  held_frame_.reset();
-  held_packet_.reset();
-  last_dropped_.reset();
+  forget_position();
   awaiting_seek_ = true;
 }
 
@@ -86,29 +95,34 @@ void SourceLoop::on_seek(const cmd::Seek& seek) {
     return;
   }
   media_.decoder.flush();
-  held_frame_.reset();
-  held_packet_.reset();
-  last_dropped_.reset();
+  forget_position();
   drop_before_ = seek.exact ? std::optional(seek.target_us) : std::nullopt;
   idle_ = false;
 }
 
+// L'image et les paquets tenus viennent de l'ancienne position ou de l'ancienne
+// époque : la réserve se vide avec eux, et l'amorçage recommence.
+void SourceLoop::forget_position() {
+  held_frame_.reset();
+  last_dropped_.reset();
+  reserve_.clear();
+  primed_ = false;
+}
+
 SourceLoop::Progress SourceLoop::advance() {
   if (awaiting_seek_) return Progress::Idle;
+  // Les paquets tenus partent d'abord, sans jamais attendre ici.
+  const bool side_clear = reserve_.offer(epoch_);
   if (held_frame_) {
     DecodedFrame copy = *held_frame_;  // une copie : un refus ne consomme rien
     copy.epoch = epoch_;
     if (!links_.frames->try_push(std::move(copy))) return Progress::Blocked;
     held_frame_.reset();
+    primed_ = true;
     return Progress::Moved;
   }
-  if (held_packet_) {
-    Packet copy = held_packet_->packet;
-    copy.epoch = epoch_;
-    if (!held_packet_->sink->try_push(std::move(copy))) return Progress::Blocked;
-    held_packet_.reset();
-    return Progress::Moved;
-  }
+  // Amorcée, l'époque reprend la contre-pression des files annexes.
+  if (!side_clear && primed_) return Progress::Blocked;
   if (idle_) return Progress::Idle;
   return decode();
 }
@@ -132,6 +146,8 @@ SourceLoop::Progress SourceLoop::decode() {
       keep(std::move(*last_dropped_));
       return Progress::Moved;
     }
+    // La fin du flux ne se signale qu'une fois tous les paquets livrés.
+    if (!reserve_.empty()) return Progress::Blocked;
     idle_ = true;
     links_.listener->end_of_stream(epoch_);
     return Progress::Idle;
@@ -157,7 +173,12 @@ SourceLoop::Progress SourceLoop::route(Packet packet) {
     return Progress::Moved;
   }
   const auto it = std::ranges::find(links_.packets, packet.track, &PacketRoute::track);
-  if (it != links_.packets.end()) held_packet_ = HeldPacket{it->sink, std::move(packet)};
+  if (it == links_.packets.end()) return Progress::Moved;  // keep_only l'exclut déjà
+  const auto index = static_cast<std::size_t>(it - links_.packets.begin());
+  if (auto kept = reserve_.route(index, std::move(packet), epoch_); !kept) {
+    fail(kept.error());
+    return Progress::Idle;
+  }
   return Progress::Moved;
 }
 

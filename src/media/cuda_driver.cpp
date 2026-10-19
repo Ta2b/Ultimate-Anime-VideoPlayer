@@ -3,6 +3,7 @@
 // la même façon. Aucun en-tête CUDA n'est nécessaire à la construction.
 #include "media/cuda_driver.h"
 
+#include <algorithm>
 #include <bit>
 #include <cstring>
 #include <format>
@@ -70,6 +71,8 @@ struct CudaDriver::Api {
   CUresult (*cuDeviceGetCount)(int*) = nullptr;
   CUresult (*cuDeviceGet)(CUdevice*, int) = nullptr;
   CUresult (*cuDeviceGetUuid)(CUuuid*, CUdevice) = nullptr;
+  CUresult (*cuDevicePrimaryCtxRetain)(CUcontext*, CUdevice) = nullptr;
+  CUresult (*cuDevicePrimaryCtxRelease)(CUdevice) = nullptr;
   CUresult (*cuCtxPushCurrent)(CUcontext) = nullptr;
   CUresult (*cuCtxPopCurrent)(CUcontext*) = nullptr;
   CUresult (*cuStreamCreate)(CUstream*, unsigned) = nullptr;
@@ -112,11 +115,10 @@ class ContextScope {
 
 }  // namespace
 
-CudaDriver::CudaDriver(void* library, std::unique_ptr<Api> api) : library_(library), api_(std::move(api)) {}
+CudaDriver::CudaDriver(std::unique_ptr<Api> api) : api_(std::move(api)) {}
 
-CudaDriver::~CudaDriver() {
-  close_library(library_);
-}
+// Pas de dlclose (ni FreeLibrary) : voir l'en-tête.
+CudaDriver::~CudaDriver() = default;
 
 std::expected<std::shared_ptr<CudaDriver>, Refusal> CudaDriver::load() {
   void* library = open_library();
@@ -129,6 +131,8 @@ std::expected<std::shared_ptr<CudaDriver>, Refusal> CudaDriver::load() {
                      bind(library, "cuDeviceGetCount", api->cuDeviceGetCount) &&
                      bind(library, "cuDeviceGet", api->cuDeviceGet) &&
                      bind(library, "cuDeviceGetUuid", api->cuDeviceGetUuid) &&
+                     bind(library, "cuDevicePrimaryCtxRetain", api->cuDevicePrimaryCtxRetain) &&
+                     bind(library, "cuDevicePrimaryCtxRelease_v2", api->cuDevicePrimaryCtxRelease) &&
                      bind(library, "cuCtxPushCurrent_v2", api->cuCtxPushCurrent) &&
                      bind(library, "cuCtxPopCurrent_v2", api->cuCtxPopCurrent) &&
                      bind(library, "cuStreamCreate", api->cuStreamCreate) &&
@@ -141,28 +145,53 @@ std::expected<std::shared_ptr<CudaDriver>, Refusal> CudaDriver::load() {
     return std::unexpected(
         Refusal{RefusalCode::HwDecodeUnavailable, std::format("{} : symbole absent", kLibrary)});
   }
-  if (const CUresult result = api->cuInit(0); result != kCudaSuccess) {
-    close_library(library);
-    return refuse_cuda("cuInit", result);
-  }
-  return std::shared_ptr<CudaDriver>(new CudaDriver(library, std::move(api)));
+  // Dès cet appel, la bibliothèque reste chargée, même si cuInit échoue : il a
+  // pu lancer ses threads avant de rendre l'erreur.
+  if (const CUresult result = api->cuInit(0); result != kCudaSuccess) return refuse_cuda("cuInit", result);
+  return std::shared_ptr<CudaDriver>(new CudaDriver(std::move(api)));
 }
 
-std::expected<int, Refusal> CudaDriver::ordinal_of(const CudaUuid& uuid) const {
+std::expected<std::vector<CudaUuid>, Refusal> CudaDriver::uuids() const {
   int count = 0;
   if (const CUresult result = api_->cuDeviceGetCount(&count); result != kCudaSuccess) {
     return refuse_cuda("cuDeviceGetCount", result);
   }
+  std::vector<CudaUuid> found(static_cast<std::size_t>(count));
   for (int ordinal = 0; ordinal < count; ++ordinal) {
     CUdevice device = 0;
-    CUuuid found{};
-    if (api_->cuDeviceGet(&device, ordinal) != kCudaSuccess) continue;
-    if (api_->cuDeviceGetUuid(&found, device) != kCudaSuccess) continue;
-    if (std::memcmp(found.bytes.data(), uuid.data(), uuid.size()) == 0) return ordinal;
+    if (const CUresult result = api_->cuDeviceGet(&device, ordinal); result != kCudaSuccess) {
+      return refuse_cuda("cuDeviceGet", result);
+    }
+    CUuuid uuid{};
+    if (const CUresult result = api_->cuDeviceGetUuid(&uuid, device); result != kCudaSuccess) {
+      return refuse_cuda("cuDeviceGetUuid", result);
+    }
+    std::memcpy(found[static_cast<std::size_t>(ordinal)].data(), uuid.bytes.data(), uuid.bytes.size());
   }
+  return found;
+}
+
+std::expected<int, Refusal> CudaDriver::ordinal_of(const CudaUuid& uuid) const {
+  auto all = uuids();
+  if (!all) return std::unexpected(all.error());
+  const auto it = std::ranges::find(*all, uuid);
+  if (it != all->end()) return static_cast<int>(it - all->begin());
   return std::unexpected(
       Refusal{RefusalCode::HwDecodeUnavailable,
-              std::format("aucun appareil CUDA n'a l'UUID du rendu ({} appareils)", count)});
+              std::format("aucun appareil CUDA n'a l'UUID du rendu ({} appareils)", all->size())});
+}
+
+std::expected<std::uintptr_t, Refusal> CudaDriver::primary_context(int ordinal) const {
+  CUdevice device = 0;
+  if (const CUresult result = api_->cuDeviceGet(&device, ordinal); result != kCudaSuccess) {
+    return refuse_cuda("cuDeviceGet", result);
+  }
+  CUcontext context = nullptr;
+  if (const CUresult result = api_->cuDevicePrimaryCtxRetain(&context, device); result != kCudaSuccess) {
+    return refuse_cuda("cuDevicePrimaryCtxRetain", result);
+  }
+  api_->cuDevicePrimaryCtxRelease(device);
+  return std::bit_cast<std::uintptr_t>(context);
 }
 
 std::expected<std::uintptr_t, Refusal> CudaDriver::create_stream(std::uintptr_t context) const {

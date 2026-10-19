@@ -16,8 +16,27 @@
 // - Credit : un consommateur a libéré une place ; le thread retente sa livraison.
 // Les autres commandes (pause, pas image, seek relatif) se traduisent dans app,
 // qui connaît la position affichée, en un cmd::Seek absolu.
+//
+// Pistes annexes (audio, sous-titres) : la vidéo se décode dans la même boucle
+// que la lecture du fichier, donc une file annexe pleine arrêterait aussi la
+// vidéo. Deux règles l'empêchent de bloquer la lecture :
+// - Amorçage : du démarrage, ou d'un Seek, jusqu'à ce que gpu accepte la
+//   première image de l'époque, la source n'attend jamais une file annexe.
+//   Un paquet refusé va dans une réserve FIFO par piste, offerte à nouveau à
+//   chaque tour, plafonnée en octets (SourceLinks::reserve_bytes) et vidée au
+//   Flush et au Seek. Le décodeur retient pourtant ses premières images (threads
+//   d'images, images B) et un seek exact décode et jette jusqu'à la cible : des
+//   centaines de paquets audio peuvent précéder la première image. Au-delà du
+//   plafond : refus PacketBacklog, et la source s'arrête jusqu'au Seek suivant.
+// - Ensuite, une file pleine fait attendre son Credit : c'est ce qui cale la
+//   lecture du fichier sur l'horloge audio.
+// En retour, chaque consommateur retire ses paquets à son propre rythme, jamais
+// selon la vidéo (contrat de PacketSink dans media/packet.h) : un module audio
+// qui attendrait la première image pour vider sa file bloquerait la source dès
+// la fin de l'amorçage.
 #pragma once
 
+#include <cstddef>
 #include <cstdint>
 #include <expected>
 #include <memory>
@@ -54,11 +73,18 @@ struct PacketRoute {
   PacketSink* sink = nullptr;
 };
 
+inline constexpr std::size_t kDefaultReserveBytes = std::size_t{64} << 20U;
+inline constexpr std::size_t kMinReserveBytes = std::size_t{64} << 10U;
+inline constexpr std::size_t kMaxReserveBytes = std::size_t{1} << 30U;
+
 // Consommateurs du thread : ils doivent vivre plus longtemps que lui.
 struct SourceLinks {
   FrameSink* frames = nullptr;
   SourceListener* listener = nullptr;
   std::vector<PacketRoute> packets;  // pistes audio et sous-titres à livrer
+  // Plafond de la réserve d'amorçage, toutes pistes annexes comprises (footprint
+  // des paquets) : 10 s de TrueHD tiennent dans 64 Mio. [64 Kio, 1 Gio].
+  std::size_t reserve_bytes = kDefaultReserveBytes;
 };
 
 // Ce que le thread possède : le fichier ouvert et le décodeur de sa piste vidéo.

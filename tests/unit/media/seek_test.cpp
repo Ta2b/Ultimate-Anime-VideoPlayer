@@ -24,10 +24,12 @@ namespace cmd = ajp::cmd;
 
 namespace {
 
-SourceMedia open_media(const ClipSpec& spec) {
+// threads 0 : automatique, jusqu'à kAutoDecoderThreads selon la machine.
+SourceMedia open_media(const ClipSpec& spec, int threads = 0) {
   auto demuxer = Demuxer::open(require_clip(spec));
   REQUIRE(demuxer.has_value());
-  auto media = open_source(std::move(*demuxer), 0, DecoderOptions{.attempts = {HwApi::Software}});
+  auto media =
+      open_source(std::move(*demuxer), 0, DecoderOptions{.attempts = {HwApi::Software}, .threads = threads});
   REQUIRE(media.has_value());
   return std::move(*media);
 }
@@ -38,9 +40,11 @@ struct Running {
   TestListener listener;
   std::unique_ptr<SourceThread> thread;
 
-  Running(const ClipSpec& spec, std::size_t capacity, std::vector<PacketRoute> routes = {}) : sink(capacity) {
-    auto started = SourceThread::start(
-        open_media(spec), {.frames = &sink, .listener = &listener, .packets = std::move(routes)}, inbox);
+  Running(const ClipSpec& spec, std::size_t capacity, std::vector<PacketRoute> routes = {}, int threads = 0)
+      : sink(capacity) {
+    auto started =
+        SourceThread::start(open_media(spec, threads),
+                            {.frames = &sink, .listener = &listener, .packets = std::move(routes)}, inbox);
     REQUIRE(started.has_value());
     thread = std::move(*started);
   }
@@ -148,15 +152,20 @@ TEST_CASE("seek exact : paquets audio et sous-titres de la nouvelle époque, dep
           "[media][seek]") {
   SourceInbox* inbox = nullptr;
   auto credit = [&inbox] { inbox->try_push(ajp::Credit{}); };
-  auto audio = PacketQueue::create(8, credit);
-  auto subs = PacketQueue::create(8, credit);
+  auto audio = PacketQueue::create({.max_duration_us = 160'000}, credit);  // 8 paquets de 20 ms
+  auto subs = PacketQueue::create({.max_duration_us = std::nullopt}, credit);
   REQUIRE(audio.has_value());
   REQUIRE(subs.has_value());
-  Running source(seek_clip(), 2, {{.track = 1, .sink = audio->get()}, {.track = 2, .sink = subs->get()}});
+  // 16 threads d'images : la première image attend le 16e paquet vidéo, précédé de 30
+  // paquets audio. La file audio en prend 8, la réserve d'amorçage le reste, et la
+  // source s'arrête dessus une fois l'image livrée.
+  Running source(seek_clip(), 2, {{.track = 1, .sink = audio->get()}, {.track = 2, .sink = subs->get()}}, 16);
   inbox = &source.inbox;
 
-  // Laisse la lecture remplir les files, puis seek vers l'image 25 (point clé 20).
+  // Laisse la lecture remplir les files, puis seek vers l'image 25 (point clé 20). Le
+  // Flush vide la réserve : rien de l'ancienne position ne repart sous l'époque 1.
   REQUIRE(source.sink.pop(source.inbox).has_value());
+  REQUIRE((*audio)->size() == 8);
   REQUIRE(source.inbox.try_push(Flush{.epoch = 1}));
   REQUIRE(source.inbox.try_push(Command{cmd::Seek{.target_us = 25 * kFrameUs}}));
   (*audio)->discard_before(1);  // ce que fait le module audio à son Flush

@@ -5,3 +5,16 @@
 # de la connexion reste à libdbus jusqu'à la fin du processus, même après SDL_Quit avec
 # SDL_HINT_SHUTDOWN_DBUS_ON_QUIT (essayé dans les tests audio : la fuite demeure).
 leak:libdbus-1.so
+#
+# Pilote NVIDIA : libcuda (cuInit, NVDEC, NVENC) et l'ICD Vulkan gardent des allocations
+# internes jusqu'à la fin du processus. media ne décharge jamais libcuda après cuInit
+# (media/cuda_driver.h) : elle reste nommée à la sortie et sa ligne s'applique ; celles de
+# l'ICD aussi tant qu'une VkInstance vit. Quand le chargeur Vulkan décharge l'ICD (dernière
+# VkInstance détruite) ou que FFmpeg décharge libnvidia-encode ou libnvcuvid, leurs fuites
+# deviennent « <unknown module> », qu'aucune ligne ne couvre : sur une RTX, les tests
+# NVIDIA tournent sous ASan avec detect_leaks=0 (tests/unit/media/gpu_decode_test.cpp), et
+# les fuites se vérifient sur lavapipe (la CI).
+leak:libcuda.so
+leak:libnvidia-glcore.so
+leak:libnvidia-glsi.so
+leak:libnvidia-gpucomp.so

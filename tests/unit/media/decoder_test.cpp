@@ -35,6 +35,28 @@ DecoderOptions software() {
   return DecoderOptions{.attempts = {HwApi::Software}};
 }
 
+// Décode la piste 0 jusqu'à la fin du flux.
+std::vector<DecodedFrame> drain(Demuxer& demuxer, VideoDecoder& decoder) {
+  std::vector<DecodedFrame> frames;
+  while (!decoder.drained()) {
+    auto frame = decoder.receive();
+    REQUIRE(frame.has_value());
+    if (*frame) {
+      frames.push_back(std::move(**frame));
+      continue;
+    }
+    if (decoder.drained()) break;
+    auto packet = demuxer.read();
+    REQUIRE(packet.has_value());
+    if (!*packet) {
+      REQUIRE(decoder.send_end());
+    } else if ((*packet)->track == 0) {
+      REQUIRE(decoder.send(**packet));
+    }
+  }
+  return frames;
+}
+
 // Décode toute la piste 0 du clip.
 std::vector<DecodedFrame> decode_all(const test::ClipSpec& spec, const DecoderOptions& options = software()) {
   auto demuxer = Demuxer::open(test::require_clip(spec));
@@ -42,24 +64,7 @@ std::vector<DecodedFrame> decode_all(const test::ClipSpec& spec, const DecoderOp
   auto decoder = VideoDecoder::open(demuxer->tracks()[0], options);
   INFO((decoder ? std::string() : decoder.error().detail));
   REQUIRE(decoder.has_value());
-  std::vector<DecodedFrame> frames;
-  while (!decoder->drained()) {
-    auto frame = decoder->receive();
-    REQUIRE(frame.has_value());
-    if (*frame) {
-      frames.push_back(std::move(**frame));
-      continue;
-    }
-    if (decoder->drained()) break;
-    auto packet = demuxer->read();
-    REQUIRE(packet.has_value());
-    if (!*packet) {
-      REQUIRE(decoder->send_end());
-    } else if ((*packet)->track == 0) {
-      REQUIRE(decoder->send(**packet));
-    }
-  }
-  return frames;
+  return drain(*demuxer, *decoder);
 }
 
 // Même taille et mêmes horodatages que `model`, octets sans sens.
@@ -225,8 +230,9 @@ TEST_CASE("VideoDecoder : chaque essai matériel écarté est nommé, le logicie
   auto demuxer = Demuxer::open(test::require_clip(test::full_clip()));
   REQUIRE(demuxer.has_value());
   const TrackInfo& video = demuxer->tracks()[0];
-  // Ni NVDEC ni VA-API ni Vulkan ne décodent FFV1 dans cette construction de
-  // FFmpeg ; CUDA exige en plus l'UUID du rendu.
+  // Ni NVDEC ni VA-API n'ont de décodeur FFV1 : deux refus avant tout appareil. FFV1
+  // n'est pas un codec Vulkan Video : sans vulkan_compute, Vulkan le refuse aussi avant
+  // tout appareil, que FFmpeg ait ou non ffv1_vulkan (il dépend du glslc de configure).
   const DecoderOptions options{.attempts = {HwApi::Cuda, HwApi::Vaapi, HwApi::Vulkan, HwApi::Software}};
   auto decoder = VideoDecoder::open(video, options);
   REQUIRE(decoder.has_value());
@@ -238,6 +244,31 @@ TEST_CASE("VideoDecoder : chaque essai matériel écarté est nommé, le logicie
   for (const Attempt& attempt : decoder->rejected()) {
     CHECK(attempt.why.code == RefusalCode::HwDecodeUnavailable);
     CHECK(attempt.why.detail.starts_with(name(attempt.api)));
+  }
+  CHECK(decoder->rejected()[2].why.detail.find("hors Vulkan Video") != std::string::npos);
+}
+
+TEST_CASE("VideoDecoder : FFV1 sous Vulkan sur option, décodé par le GPU ou repli logiciel nommé",
+          "[media][decoder][vulkan]") {
+  // ffv1_vulkan (compute shaders) s'initialise au premier point clé, dans get_format, pas à
+  // l'ouverture : le chemin réel ne se lit qu'une fois le flux décodé, sur le même décodeur.
+  auto demuxer = Demuxer::open(test::require_clip(test::full_clip()));
+  REQUIRE(demuxer.has_value());
+  auto decoder = VideoDecoder::open(demuxer->tracks()[0],
+                                    {.attempts = {HwApi::Vulkan, HwApi::Software}, .vulkan_compute = true});
+  REQUIRE(decoder.has_value());
+  const std::vector<DecodedFrame> frames = drain(*demuxer, *decoder);
+  REQUIRE(frames.size() == 30);
+  const bool gpu = decoder->api() == HwApi::Vulkan;
+  if (gpu) {
+    CHECK(decoder->rejected().empty());
+  } else {
+    REQUIRE(decoder->rejected().size() == 1);
+    CHECK(decoder->rejected()[0].api == HwApi::Vulkan);
+    CHECK(decoder->rejected()[0].why.detail.starts_with("vulkan"));
+  }
+  for (const DecodedFrame& frame : frames) {
+    CHECK(frame.data->memory() == (gpu ? FrameMemory::Vulkan : FrameMemory::Host));
   }
 }
 

@@ -2,6 +2,7 @@
 #pragma once
 
 #include <filesystem>
+#include <string>
 
 #include "clip_writer.h"
 
@@ -24,7 +25,15 @@ ClipSpec bframes_clip();
 // un audio qui part de 0.
 ClipSpec late_video_clip();
 
+// Encodé par un encodeur GPU nommé (h264_nvenc…) : 36 images 256x144 à 25 im/s,
+// un point clé toutes les 12, luma uniforme par image ; 144 lignes n'est pas un
+// multiple des macroblocs, l'image décodée est recadrée.
+ClipSpec gpu_clip(const std::string& encoder);
+
 // Écrit le clip et échoue le test s'il n'a pas pu l'être.
 std::filesystem::path require_clip(const ClipSpec& spec);
+// Comme require_clip, mais SKIP avec la raison si l'encodeur ne s'ouvre pas ici
+// (pas de GPU NVIDIA en CI).
+std::filesystem::path require_gpu_clip(const ClipSpec& spec);
 
 }  // namespace ajp::media::test

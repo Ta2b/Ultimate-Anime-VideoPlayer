@@ -46,8 +46,13 @@ struct HwDevice {
 };
 
 // Décodeur et appareil de cette API pour ce codec, ou refus nommé : codec sans
-// cette API, bibliothèque ou appareil absent, UUID différent du rendu.
+// cette API, codec hors Vulkan Video sans DecoderOptions::vulkan_compute,
+// bibliothèque ou appareil absent, UUID différent du rendu.
 std::expected<HwDevice, Refusal> open_hw_device(AVCodecID codec, HwApi api, const DecoderOptions& options);
+
+// Codec décodé par la file vidéo du GPU (VK_KHR_video_decode_*) ; les autres
+// hwaccels Vulkan de FFmpeg sont des compute shaders.
+bool is_vulkan_video_codec(AVCodecID codec);
 
 // UUID d'un appareil Vulkan (VkPhysicalDeviceIDProperties::deviceUUID).
 std::optional<DeviceUuid> vulkan_device_uuid(const AVBufferRef& device);
