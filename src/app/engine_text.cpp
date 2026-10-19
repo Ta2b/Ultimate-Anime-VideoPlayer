@@ -93,7 +93,8 @@ std::string size_text(std::uint64_t bytes) {
   constexpr std::array<std::string_view, 4> kUnits{"Kio", "Mio", "Gio", "Tio"};
   double value = static_cast<double>(bytes) / static_cast<double>(kKib);
   std::size_t unit = 0;
-  while (value >= 1024.0 && unit + 1 < kUnits.size()) {
+  // 1023,96 Kio s'arrondit à « 1,0 Mio », pas à « 1024,0 Kio ».
+  while (value >= 1023.95 && unit + 1 < kUnits.size()) {
     value /= 1024.0;
     ++unit;
   }

@@ -7,6 +7,7 @@
 #include <string>
 #include <vector>
 
+#include "app/engine_chooser.h"
 #include "app/library_loader.h"
 #include "app/runtime_probe.h"
 #include "app/vulkan_probe.h"
@@ -41,6 +42,10 @@ core::GpuInfo gpu_info(const VulkanDevice& device);
 
 // Le pilote NVIDIA permet-il TensorRT 11 (CUDA 13) ? std::nullopt sans pilote CUDA.
 std::optional<bool> cuda_fits_tensorrt(const RuntimeReport& runtimes);
+
+// Moteurs que les runtimes de ce système empêchent de tourner, pour l'écran « Moteurs » :
+// TensorRT sans pilote CUDA 13. Les paquets de moteurs ne livrent pas le pilote.
+std::vector<EngineBlocker> engine_blockers(const SystemReport& report);
 
 // Description en français, une ligne par GPU puis par runtime, pour « ajp engines » et le journal.
 std::vector<std::string> describe(const SystemReport& report);

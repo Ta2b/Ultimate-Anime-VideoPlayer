@@ -23,6 +23,11 @@ bool bundled(const EngineRow& row) {
   return row.offer.delivery == core::Delivery::Bundled;
 }
 
+std::string blocker_of(std::span<const EngineBlocker> blockers, core::EngineId engine) {
+  const auto found = std::ranges::find(blockers, engine, &EngineBlocker::engine);
+  return found == blockers.end() ? std::string{} : found->reason;
+}
+
 }  // namespace
 
 EngineChooser::EngineChooser(ChooserInput input) : input_(std::move(input)) {
@@ -30,7 +35,8 @@ EngineChooser::EngineChooser(ChooserInput input) : input_(std::move(input)) {
   for (const core::EngineOffer& offer : core::recommend_engines(input_.system)) {
     EngineRow row{.offer = offer,
                   .installed = std::ranges::contains(settings.installed_engines, offer.id),
-                  .package = package_for(input_, offer.id)};
+                  .package = package_for(input_, offer.id),
+                  .blocker = blocker_of(input_.blockers, offer.id)};
     const bool wanted = settings.first_run_done ? std::ranges::contains(settings.chosen_engines, offer.id)
                                                 : offer.preselected || row.installed;
     row.checked = bundled(row) || (wanted && (row.installed || can_check(row)));
@@ -49,7 +55,7 @@ EngineRow* EngineChooser::find(core::EngineId engine) {
 }
 
 bool EngineChooser::can_check(const EngineRow& row) const {
-  if (!row.offer.relevant && !advanced_) return false;
+  if ((!row.offer.relevant || !row.blocker.empty()) && !advanced_) return false;
   return row.offer.delivery != core::Delivery::Download || row.package.has_value();
 }
 
@@ -59,6 +65,7 @@ RowLock EngineChooser::lock_of(core::EngineId engine) const {
   if (bundled(*found)) return RowLock::Bundled;
   if (found->installed) return RowLock::Free;
   if (!found->offer.relevant && !advanced_) return RowLock::Advanced;
+  if (!found->blocker.empty() && !advanced_) return RowLock::Blocked;
   if (found->offer.delivery == core::Delivery::Download && !found->package) return RowLock::NoPackage;
   return RowLock::Free;
 }
@@ -67,7 +74,7 @@ void EngineChooser::set_advanced(bool on) {
   advanced_ = on;
   if (on) return;
   for (EngineRow& r : rows_) {
-    if (!r.offer.relevant && !r.installed) r.checked = false;
+    if ((!r.offer.relevant || !r.blocker.empty()) && !r.installed) r.checked = false;
   }
 }
 
@@ -92,6 +99,13 @@ std::expected<void, Refusal> EngineChooser::set_checked(core::EngineId engine, b
         return refuse(RefusalCode::FieldOutOfRange,
                       std::format("{} : {} ; cochez « Mode avancé » pour l'installer quand même", title,
                                   reason_text(found->offer.reason)));
+      }
+      break;
+    case RowLock::Blocked:
+      if (checked) {
+        return refuse(RefusalCode::FieldOutOfRange,
+                      std::format("{} : {} ; cochez « Mode avancé » pour l'installer quand même", title,
+                                  found->blocker));
       }
       break;
     case RowLock::NoPackage:
@@ -154,10 +168,11 @@ std::expected<ChooserPlan, Refusal> EngineChooser::confirm() const {
 }
 
 core::Settings record_installed(core::Settings settings, const core::SystemInfo& system,
-                                core::EngineId engine) {
+                                core::EngineId engine, std::span<const EngineBlocker> blockers) {
   if (!std::ranges::contains(settings.installed_engines, engine))
     settings.installed_engines.push_back(engine);
   if (!std::ranges::contains(settings.chosen_engines, engine)) settings.chosen_engines.push_back(engine);
+  if (!blocker_of(blockers, engine).empty()) return settings;  // installé en mode avancé, pas préféré
   const std::vector<core::EngineOffer> offers = core::recommend_engines(system);
   const auto offer = std::ranges::find(offers, engine, &core::EngineOffer::id);
   if (offer == offers.end()) return settings;

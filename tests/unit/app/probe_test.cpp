@@ -149,6 +149,31 @@ TEST_CASE("Sonde des runtimes : version du pilote CUDA, ROCm et OpenVINO par leu
   }
 }
 
+TEST_CASE("Blocages des runtimes : TensorRT sans pilote CUDA 13 n'est pas proposé tel quel", "[app][probe]") {
+  SystemReport report{.os = core::Os::Linux};
+  SECTION("CUDA 13.4 : rien ne bloque") {
+    report.runtimes.cuda = CudaDriver{.library = "libcuda.so.1", .version = 13040};
+    CHECK(engine_blockers(report).empty());
+  }
+  SECTION("CUDA 12.8 : le pilote est cité") {
+    report.runtimes.cuda = CudaDriver{.library = "libcuda.so.1", .version = 12080};
+    const std::vector<EngineBlocker> blockers = engine_blockers(report);
+    REQUIRE(blockers.size() == 1);
+    CHECK(blockers.front().engine == core::EngineId::TensorRt);
+    CHECK(blockers.front().reason ==
+          "pilote CUDA 12.8 trop ancien : TensorRT 11 exige CUDA 13 (pilote NVIDIA R580 ou plus récent)");
+  }
+  SECTION("aucun pilote CUDA") {
+    const std::vector<EngineBlocker> blockers = engine_blockers(report);
+    REQUIRE(blockers.size() == 1);
+    CHECK(blockers.front().reason.starts_with("pilote CUDA introuvable"));
+  }
+  SECTION("macOS : ni CUDA ni TensorRT, rien à bloquer") {
+    report.os = core::Os::MacOs;
+    CHECK(engine_blockers(report).empty());
+  }
+}
+
 TEST_CASE("GPU de rendu : un dédié avant un intégré, le rendu logiciel en dernier", "[app][probe]") {
   const SystemReport report = detect({llvmpipe(), uhd_770(), gtx_1660(), rtx_4070_ti()});
   REQUIRE(render_device(report.devices) == 3);  // dédiés à égalité de type : le plus de mémoire

@@ -101,6 +101,19 @@ std::optional<bool> cuda_fits_tensorrt(const RuntimeReport& runtimes) {
   return runtimes.cuda->version >= kTensorRtMinCuda;
 }
 
+std::vector<EngineBlocker> engine_blockers(const SystemReport& report) {
+  if (report.os == core::Os::MacOs) return {};  // ni CUDA ni TensorRT
+  const RuntimeReport& r = report.runtimes;
+  const std::optional<bool> fits = cuda_fits_tensorrt(r);
+  if (fits == true) return {};
+  const std::string driver =
+      fits ? std::format("pilote CUDA {}.{} trop ancien", r.cuda->major(), r.cuda->minor())
+           : std::string("pilote CUDA introuvable");
+  return {
+      EngineBlocker{.engine = core::EngineId::TensorRt,
+                    .reason = driver + " : TensorRT 11 exige CUDA 13 (pilote NVIDIA R580 ou plus récent)"}};
+}
+
 std::vector<std::string> describe(const SystemReport& report) {
   std::vector<std::string> lines;
   lines.push_back(std::format("Système : {}", core::os_name(report.os)));

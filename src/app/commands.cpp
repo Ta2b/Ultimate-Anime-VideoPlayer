@@ -72,13 +72,20 @@ std::expected<void, Refusal> import_sdk(const ImportSdkArgs& args, const AppCont
   auto status = store.import(args.folder, context.stop);
   if (!status) return std::unexpected(status.error());
   const std::string version = status->installed ? status->installed->version().text() : std::string("?");
-  *context.out << std::format("{} {} importé et choisi pour RTX HDR.\n", vendor_hdr::display_name(*kind),
-                              version);
 
   auto settings = core::load_settings(context.paths.settings());
   if (!settings) return std::unexpected(settings.error());
-  const core::SystemInfo system = to_system_info(detect_system(*context.loader, context.os));
-  return core::save_settings(context.paths.settings(), record_installed(*settings, system, engine_of(*kind)));
+  const core::EngineId engine = engine_of(*kind);
+  const SystemReport report = detect_system(*context.loader, context.os);
+  const core::Settings updated =
+      record_installed(*settings, to_system_info(report), engine, engine_blockers(report));
+  if (auto saved = core::save_settings(context.paths.settings(), updated); !saved) return saved;
+  // Préféré seulement sur une RTX (record_installed) : ne pas annoncer RTX HDR ailleurs.
+  const bool preferred = updated.preferred[static_cast<std::size_t>(core::Usage::TrueHdr)] == engine;
+  *context.out << std::format(
+      "{} {} importé{}.\n", vendor_hdr::display_name(*kind), version,
+      preferred ? " et choisi pour RTX HDR" : " ; aucune RTX détectée, RTX HDR reste inactif");
+  return {};
 }
 
 std::string version_text() {

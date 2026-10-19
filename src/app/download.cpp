@@ -150,8 +150,7 @@ std::expected<Outcome, Refusal> judge(CURLcode code, CURL* easy, const Transfer&
                          std::format("connexion close à {} octets sur {}", transfer.received, transfer.size)};
     case CURLE_ABORTED_BY_CALLBACK:
       return cancelled(request);
-    case CURLE_WRITE_ERROR:
-    case CURLE_FILESIZE_EXCEEDED:
+    case CURLE_WRITE_ERROR:  // on_data : .part impossible à écrire, ou plus d'octets que l'index
       if (transfer.write_failed) return refuse(RefusalCode::FileUnwritable, utf8(request.part_file));
       return refuse(
           RefusalCode::HashMismatch,
@@ -178,26 +177,45 @@ std::expected<Outcome, Refusal> judge(CURLcode code, CURL* easy, const Transfer&
 
 using Easy = std::unique_ptr<CURL, decltype(&curl_easy_cleanup)>;
 
-void configure(CURL* easy, const DownloadRequest& request, const DownloadOptions& options, Transfer& transfer,
-               std::uint64_t offset, char* error_text) {
-  curl_easy_setopt(easy, CURLOPT_URL, request.url.c_str());
-  curl_easy_setopt(easy, CURLOPT_PROTOCOLS_STR, options.protocols.c_str());
-  curl_easy_setopt(easy, CURLOPT_REDIR_PROTOCOLS_STR, options.protocols.c_str());
-  curl_easy_setopt(easy, CURLOPT_FOLLOWLOCATION, 1L);
-  curl_easy_setopt(easy, CURLOPT_MAXREDIRS, 5L);
-  curl_easy_setopt(easy, CURLOPT_FAILONERROR, 1L);
-  curl_easy_setopt(easy, CURLOPT_NOSIGNAL, 1L);  // aucun signal : les délais restent sûrs entre threads
-  curl_easy_setopt(easy, CURLOPT_ERRORBUFFER, error_text);
-  curl_easy_setopt(easy, CURLOPT_CONNECTTIMEOUT_MS, static_cast<long>(options.connect_timeout.count()));
-  curl_easy_setopt(easy, CURLOPT_LOW_SPEED_LIMIT, static_cast<long>(options.stall_rate));
-  curl_easy_setopt(easy, CURLOPT_LOW_SPEED_TIME, static_cast<long>(options.stall_time.count()));
-  curl_easy_setopt(easy, CURLOPT_RESUME_FROM_LARGE, static_cast<curl_off_t>(offset));
-  curl_easy_setopt(easy, CURLOPT_MAXFILESIZE_LARGE, static_cast<curl_off_t>(request.size - offset));
-  curl_easy_setopt(easy, CURLOPT_WRITEFUNCTION, &on_data);
-  curl_easy_setopt(easy, CURLOPT_WRITEDATA, &transfer);
-  curl_easy_setopt(easy, CURLOPT_NOPROGRESS, 0L);
-  curl_easy_setopt(easy, CURLOPT_XFERINFOFUNCTION, &on_tick);
-  curl_easy_setopt(easy, CURLOPT_XFERINFODATA, &transfer);
+// Chaque option doit être acceptée : une liste de protocoles refusée (libcurl sans TLS, par
+// exemple) laisserait sinon tous les protocoles permis, sans rien dire.
+//
+// Pas de CURLOPT_MAXFILESIZE : libcurl 8.5 (Ubuntu 24.04, celui de la CI) l'applique à un 200
+// complet (serveur sans reprise) avant de rendre CURLE_RANGE_ERROR, qui fait repartir de zéro.
+// on_data borne déjà le .part à la taille de l'index.
+std::expected<void, Refusal> configure(CURL* easy, const DownloadRequest& request,
+                                       const DownloadOptions& options, Transfer& transfer,
+                                       std::uint64_t offset, char* error_text) {
+  CURLcode code = CURLE_OK;
+  const char* failed = "";
+  const auto set = [&](CURLoption option, const char* name, auto value) {
+    if (code != CURLE_OK) return;
+    code = curl_easy_setopt(easy, option, value);
+    failed = name;
+  };
+  set(CURLOPT_URL, "CURLOPT_URL", request.url.c_str());
+  set(CURLOPT_PROTOCOLS_STR, "CURLOPT_PROTOCOLS_STR", options.protocols.c_str());
+  set(CURLOPT_REDIR_PROTOCOLS_STR, "CURLOPT_REDIR_PROTOCOLS_STR", options.protocols.c_str());
+  set(CURLOPT_FOLLOWLOCATION, "CURLOPT_FOLLOWLOCATION", 1L);
+  set(CURLOPT_MAXREDIRS, "CURLOPT_MAXREDIRS", 5L);
+  set(CURLOPT_FAILONERROR, "CURLOPT_FAILONERROR", 1L);
+  set(CURLOPT_NOSIGNAL, "CURLOPT_NOSIGNAL", 1L);  // aucun signal : les délais restent sûrs entre threads
+  set(CURLOPT_ERRORBUFFER, "CURLOPT_ERRORBUFFER", error_text);
+  set(CURLOPT_CONNECTTIMEOUT_MS, "CURLOPT_CONNECTTIMEOUT_MS",
+      static_cast<long>(options.connect_timeout.count()));
+  set(CURLOPT_LOW_SPEED_LIMIT, "CURLOPT_LOW_SPEED_LIMIT", static_cast<long>(options.stall_rate));
+  set(CURLOPT_LOW_SPEED_TIME, "CURLOPT_LOW_SPEED_TIME", static_cast<long>(options.stall_time.count()));
+  set(CURLOPT_RESUME_FROM_LARGE, "CURLOPT_RESUME_FROM_LARGE", static_cast<curl_off_t>(offset));
+  set(CURLOPT_WRITEFUNCTION, "CURLOPT_WRITEFUNCTION", &on_data);
+  set(CURLOPT_WRITEDATA, "CURLOPT_WRITEDATA", &transfer);
+  set(CURLOPT_NOPROGRESS, "CURLOPT_NOPROGRESS", 0L);
+  set(CURLOPT_XFERINFOFUNCTION, "CURLOPT_XFERINFOFUNCTION", &on_tick);
+  set(CURLOPT_XFERINFODATA, "CURLOPT_XFERINFODATA", &transfer);
+  if (code != CURLE_OK) {
+    return refuse(RefusalCode::DownloadFailed, std::format("{} : curl_easy_setopt({}) : {}", request.url,
+                                                           failed, curl_easy_strerror(code)));
+  }
+  return {};
 }
 
 // Un essai : reprend le .part à sa taille actuelle et le complète autant que possible.
@@ -215,7 +233,9 @@ std::expected<Outcome, Refusal> attempt(const DownloadRequest& request, const Do
                     .size = request.size,
                     .next_report = offset};
   std::array<char, CURL_ERROR_SIZE> error_text{};
-  configure(easy.get(), request, options, transfer, offset, error_text.data());
+  if (auto r = configure(easy.get(), request, options, transfer, offset, error_text.data()); !r) {
+    return std::unexpected(r.error());
+  }
   const CURLcode code = curl_easy_perform(easy.get());
   out.close();
   if (!out && !transfer.write_failed) return refuse(RefusalCode::FileUnwritable, utf8(request.part_file));

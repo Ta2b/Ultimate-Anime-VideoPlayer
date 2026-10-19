@@ -14,6 +14,7 @@
 #include <expected>
 #include <optional>
 #include <span>
+#include <string>
 #include <vector>
 
 #include "core/engines.h"
@@ -23,6 +24,14 @@
 
 namespace ajp::app {
 
+// Moteur que ce système ne fera pas tourner tel quel, faute d'un composant que le lecteur
+// n'installe pas (pilote trop ancien, runtime absent) : jamais présélectionné, sa ligne dit
+// pourquoi, et il reste installable en mode avancé. Voir engine_blockers() (system_report.h).
+struct EngineBlocker {
+  core::EngineId engine = core::EngineId::Vulkan;
+  std::string reason;  // « pilote CUDA 12.8 trop ancien : TensorRT 11 exige CUDA 13 (…) »
+};
+
 struct ChooserInput {
   core::Os os = core::Os::Linux;
   core::SystemInfo system;                       // le premier GPU est celui du rendu
@@ -30,6 +39,7 @@ struct ChooserInput {
   std::vector<core::EnginePackage> packages;     // engines.lock, toutes plateformes ; vide sans index
   std::vector<core::ModelEntry> missing_models;  // modèles des profils encore à télécharger
   std::uint64_t free_bytes = 0;                  // place libre dans le dossier de données
+  std::vector<EngineBlocker> blockers;           // ce que les runtimes du système empêchent
 };
 
 struct EngineRow {
@@ -37,6 +47,7 @@ struct EngineRow {
   bool installed = false;  // dans settings.installed_engines
   bool checked = false;
   std::optional<core::EnginePackage> package;  // paquet de ce système dans l'index
+  std::string blocker;                         // pourquoi ce système ne le fera pas tourner ; vide sinon
 };
 
 // Pourquoi une ligne ne peut pas être cochée, ou décochée pour Bundled.
@@ -44,6 +55,7 @@ enum class RowLock : std::uint8_t {
   Free,       // se coche et se décoche
   Bundled,    // livré avec le lecteur : toujours coché
   Advanced,   // grisé (aucun GPU compatible) : se coche seulement en mode avancé
+  Blocked,    // GPU compatible, mais pilote ou runtime manquant : se coche seulement en mode avancé
   NoPackage,  // aucun paquet pour ce système dans l'index : rien à télécharger
 };
 
@@ -94,8 +106,9 @@ class EngineChooser {
 };
 
 // Note un moteur installé (téléchargé ou importé) dans les réglages, et le préfère quand il
-// est le plus rapide pour ce GPU (ou le SDK RTX HDR) et que l'usage n'a encore que Vulkan.
+// est le plus rapide pour ce GPU (ou le SDK RTX HDR), que l'usage n'a encore que Vulkan et
+// qu'aucun blocage ne l'empêche de tourner.
 core::Settings record_installed(core::Settings settings, const core::SystemInfo& system,
-                                core::EngineId engine);
+                                core::EngineId engine, std::span<const EngineBlocker> blockers = {});
 
 }  // namespace ajp::app

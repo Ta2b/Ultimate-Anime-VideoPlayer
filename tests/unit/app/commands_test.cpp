@@ -26,8 +26,8 @@ struct Fixture {
   std::ostringstream err;
   AppContext context;
 
-  Fixture() {
-    add_fake_cuda(loader, FakeCuda::Cuda13_4);
+  explicit Fixture(FakeCuda cuda = FakeCuda::Cuda13_4) {
+    add_fake_cuda(loader, cuda);
     context = AppContext{.os = core::Os::Linux,
                          .paths = *data_paths_in(dir / "data", dir / "res"),
                          .loader = &loader,
@@ -108,6 +108,20 @@ TEST_CASE("ajp engines : le GPU détecté, puis chaque moteur avec badges, état
   CHECK_FALSE(fs::exists(f.context.paths.settings()));  // lister n'écrit rien
 }
 
+TEST_CASE("ajp engines : un pilote CUDA trop ancien décoche TensorRT et dit pourquoi", "[app][commands]") {
+  Fixture f{FakeCuda::Cuda12_8};
+  write_file(f.context.paths.engines_lock(),
+             "version = 1\n[[engine]]\nid = \"tensorrt\"\nplatform = \"linux\"\n"
+             "url = \"https://engines.example/trt.so\"\nsha256 = \"" +
+                 std::string(64, 'a') + "\"\nsize = 1288490189\nversion = \"11.3.0\"\n");
+  REQUIRE(f.run_args({"engines"}));
+  const std::string text = f.out.str();
+  INFO(text);
+  CHECK(text.find("[ ] TensorRT") != std::string::npos);
+  CHECK(text.find("pilote CUDA 12.8 trop ancien : TensorRT 11 exige CUDA 13") != std::string::npos);
+  CHECK(text.find("1,2 Gio, installable en mode avancé") != std::string::npos);
+}
+
 TEST_CASE("ajp engines install sans index : la sélection est enregistrée, rien ne se télécharge",
           "[app][commands]") {
   Fixture f;
@@ -145,7 +159,7 @@ TEST_CASE("Plan validé : téléchargé, installé, puis noté et préféré dan
 
   SECTION("tout réussit") {
     std::vector<InstallProgress> seen;
-    const auto settings = apply_plan(*plan, rtx_system(), f.context, downloader(),
+    const auto settings = apply_plan(*plan, rtx_system(), {}, f.context, downloader(),
                                      [&](const InstallProgress& p) { seen.push_back(p); });
     REQUIRE(settings);
     CHECK(settings->installed_engines == std::vector{core::EngineId::Vulkan, core::EngineId::TensorRt});
@@ -163,7 +177,7 @@ TEST_CASE("Plan validé : téléchargé, installé, puis noté et préféré dan
                                                  .sha256 = std::string(64, 'b'),
                                                  .size = 10,
                                                  .profiles = {1}});
-    const auto settings = apply_plan(with_model, rtx_system(), f.context, downloader(), {});
+    const auto settings = apply_plan(with_model, rtx_system(), {}, f.context, downloader(), {});
     REQUIRE_FALSE(settings);
     CHECK(settings.error().code == RefusalCode::DownloadFailed);
     CHECK(settings.error().detail.starts_with("modèle absent"));

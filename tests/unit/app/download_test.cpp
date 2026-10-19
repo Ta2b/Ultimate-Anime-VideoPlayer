@@ -171,6 +171,16 @@ TEST_CASE("Téléchargement : refus nommés du serveur, du protocole et du disqu
     CHECK(result.error().code == RefusalCode::DownloadFailed);
     CHECK(f.server.hits("/file") == 0);
   }
+  SECTION("liste de protocoles refusée par libcurl : refus, jamais tous les protocoles permis") {
+    Fixture f{Route{}};
+    DownloadOptions options = local_options();
+    options.protocols = "protocole-inconnu";
+    const auto result = downloader().fetch(f.request, options);
+    REQUIRE_FALSE(result);
+    CHECK(result.error().code == RefusalCode::DownloadFailed);
+    CHECK(result.error().detail.find("CURLOPT_PROTOCOLS_STR") != std::string::npos);
+    CHECK(f.server.hits("/file") == 0);
+  }
   SECTION("personne n'écoute : DownloadFailed après tous les essais") {
     TempDir dir;
     const DownloadRequest request{.url = std::format("http://127.0.0.1:{}/file", HttpServer::closed_port()),

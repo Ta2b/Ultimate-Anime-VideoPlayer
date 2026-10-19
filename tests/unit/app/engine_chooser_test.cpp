@@ -119,6 +119,38 @@ TEST_CASE("Moteurs : sans paquet dans l'index, rien ne se coche ni ne se téléc
   CHECK(chooser.download_bytes() == 100 * kMib);  // les modèles seulement
 }
 
+TEST_CASE("Moteurs : un pilote trop ancien bloque TensorRT, qui reste installable en mode avancé",
+          "[app][chooser]") {
+  ChooserInput input = input_for(rtx());
+  input.blockers = {EngineBlocker{.engine = EngineId::TensorRt, .reason = "pilote CUDA 12.8 trop ancien"}};
+  EngineChooser chooser(std::move(input));
+  CHECK(chooser.row(EngineId::TensorRt)->blocker == "pilote CUDA 12.8 trop ancien");
+  CHECK(chooser.lock_of(EngineId::TensorRt) == RowLock::Blocked);
+  CHECK(checked(chooser) == std::vector{EngineId::Vulkan, EngineId::MaxineVfx});  // pas présélectionné
+  CHECK(chooser.download_bytes() == 100 * kMib);
+
+  const auto refused = chooser.set_checked(EngineId::TensorRt, true);
+  REQUIRE_FALSE(refused);
+  CHECK(refused.error().code == RefusalCode::FieldOutOfRange);
+  CHECK(refused.error().detail ==
+        "TensorRT : pilote CUDA 12.8 trop ancien ; cochez « Mode avancé » pour l'installer quand même");
+
+  chooser.set_advanced(true);
+  CHECK(chooser.lock_of(EngineId::TensorRt) == RowLock::Free);
+  REQUIRE(chooser.set_checked(EngineId::TensorRt, true));
+  CHECK(chooser.confirm()->downloads.size() == 1);
+  chooser.set_advanced(false);
+  CHECK_FALSE(chooser.row(EngineId::TensorRt)->checked);
+  chooser.reset_to_recommended();
+  CHECK_FALSE(chooser.row(EngineId::TensorRt)->checked);
+
+  // Installé quand même en mode avancé : noté, mais Vulkan reste préféré.
+  const std::vector<EngineBlocker> blockers{{.engine = EngineId::TensorRt, .reason = "pilote"}};
+  const core::Settings settings = record_installed(core::Settings{}, rtx(), EngineId::TensorRt, blockers);
+  CHECK(settings.installed_engines == std::vector{EngineId::Vulkan, EngineId::TensorRt});
+  CHECK(settings.preferred[0] == EngineId::Vulkan);
+}
+
 TEST_CASE("Moteurs : la place libre se vérifie avant de valider", "[app][chooser]") {
   EngineChooser chooser(input_for(rtx(), 500 * kMib));
   CHECK_FALSE(chooser.fits());
@@ -198,6 +230,8 @@ TEST_CASE("Textes de l'écran Moteurs", "[app][chooser]") {
   CHECK(size_text(512) == "512 octets");
   CHECK(size_text(1536) == "1,5 Kio");
   CHECK(size_text(1288490189) == "1,2 Gio");
+  CHECK(size_text((1ULL << 20) - 1) == "1,0 Mio");  // pas « 1024,0 Kio »
+  CHECK(size_text(1023 * 1024) == "1023,0 Kio");
   CHECK(badge_label(core::Badge::AmdOnly) == "Seulement AMD");
   CHECK(badge_label(core::Badge::Recommended) == "Recommandé");
   CHECK(engine_title(EngineId::MaxineVfx) == "Maxine VFX (TrueHDR)");

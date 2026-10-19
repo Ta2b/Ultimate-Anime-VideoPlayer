@@ -56,10 +56,19 @@ std::string state_text(const EngineChooser& chooser, const EngineRow& row) {
   if (row.installed) return "installé";
   if (row.offer.delivery == core::Delivery::Import) return "à importer : ajp import-sdk <dossier du SDK>";
   if (!row.package) return "aucun paquet dans l'index pour ce système";
-  if (chooser.lock_of(row.offer.id) == RowLock::Advanced) {
-    return std::format("{}, installable en mode avancé", size_text(row.package->size));
+  const std::string size = size_text(row.package->size);
+  switch (chooser.lock_of(row.offer.id)) {
+    case RowLock::Advanced:
+      return std::format("{}, installable en mode avancé", size);
+    case RowLock::Blocked:
+      return std::format("{} ; {}, installable en mode avancé", row.blocker, size);
+    case RowLock::Free:
+    case RowLock::Bundled:
+    case RowLock::NoPackage:
+      break;
   }
-  return std::format("à télécharger, {}", size_text(row.package->size));
+  if (!row.blocker.empty()) return std::format("{} ; à télécharger quand même, {}", row.blocker, size);
+  return std::format("à télécharger, {}", size);
 }
 
 void print_rows(const EngineChooser& chooser, std::ostream& out) {
@@ -93,8 +102,7 @@ std::function<void(const InstallProgress&)> progress_printer(std::ostream& out) 
 
 }  // namespace
 
-std::expected<EngineChooser, Refusal> open_chooser(const AppContext& context,
-                                                   const core::SystemInfo& system) {
+std::expected<EngineChooser, Refusal> open_chooser(const AppContext& context, const SystemReport& report) {
   auto settings = core::load_settings(context.paths.settings());
   if (!settings) return std::unexpected(settings.error());
   auto packages = load_index(context.paths.engines_lock(), &core::parse_engine_index);
@@ -109,16 +117,18 @@ std::expected<EngineChooser, Refusal> open_chooser(const AppContext& context,
   }
   return EngineChooser(
       ChooserInput{.os = context.os,
-                   .system = system,
+                   .system = to_system_info(report),
                    .settings = std::move(*settings),
                    .packages = std::move(*packages),
                    .missing_models = missing_models(context.paths.layout(context.os), *models),
-                   .free_bytes = space.available});
+                   .free_bytes = space.available,
+                   .blockers = engine_blockers(report)});
 }
 
 std::expected<core::Settings, Refusal> apply_plan(
-    const ChooserPlan& plan, const core::SystemInfo& system, const AppContext& context,
-    const Downloader& downloader, const std::function<void(const InstallProgress&)>& on_progress) {
+    const ChooserPlan& plan, const core::SystemInfo& system, std::span<const EngineBlocker> blockers,
+    const AppContext& context, const Downloader& downloader,
+    const std::function<void(const InstallProgress&)>& on_progress) {
   const core::InstallLayout layout = context.paths.layout(context.os);
   for (const core::EngineId engine : plan.removals) {
     if (auto r = uninstall_engine(layout, engine); !r) return std::unexpected(r.error());
@@ -133,7 +143,7 @@ std::expected<core::Settings, Refusal> apply_plan(
   core::Settings settings = plan.settings;
   for (const InstallItem& item : items) {
     if (item.engine && is_installed(item))
-      settings = record_installed(std::move(settings), system, *item.engine);
+      settings = record_installed(std::move(settings), system, *item.engine, blockers);
   }
   if (auto saved = core::save_settings(context.paths.settings(), settings); !saved) {
     return std::unexpected(saved.error());
@@ -145,7 +155,7 @@ std::expected<core::Settings, Refusal> apply_plan(
 std::expected<void, Refusal> list_engines(const AppContext& context) {
   const SystemReport report = detect_system(*context.loader, context.os);
   for (const std::string& line : describe(report)) *context.out << line << '\n';
-  auto chooser = open_chooser(context, to_system_info(report));
+  auto chooser = open_chooser(context, report);
   if (!chooser) return std::unexpected(chooser.error());
   print_rows(*chooser, *context.out);
   *context.out << "Pour installer cette sélection : ajp engines install [moteur…]\n";
@@ -153,8 +163,8 @@ std::expected<void, Refusal> list_engines(const AppContext& context) {
 }
 
 std::expected<void, Refusal> install_engines(const EnginesArgs& args, const AppContext& context) {
-  const core::SystemInfo system = to_system_info(detect_system(*context.loader, context.os));
-  auto chooser = open_chooser(context, system);
+  const SystemReport report = detect_system(*context.loader, context.os);
+  auto chooser = open_chooser(context, report);
   if (!chooser) return std::unexpected(chooser.error());
   chooser->set_advanced(!args.engines.empty());  // un moteur nommé s'installe même grisé
   for (const core::EngineId engine : args.engines) {
@@ -168,7 +178,8 @@ std::expected<void, Refusal> install_engines(const EnginesArgs& args, const AppC
   }
   auto downloader = Downloader::create();
   if (!downloader) return std::unexpected(downloader.error());
-  auto settings = apply_plan(*plan, system, context, *downloader, progress_printer(*context.out));
+  auto settings = apply_plan(*plan, to_system_info(report), engine_blockers(report), context, *downloader,
+                             progress_printer(*context.out));
   if (!settings) return std::unexpected(settings.error());
   for (const core::EngineId engine : plan->imports) {
     *context.out << std::format("{} : téléchargez le SDK chez NVIDIA, puis « ajp import-sdk <dossier> ».\n",

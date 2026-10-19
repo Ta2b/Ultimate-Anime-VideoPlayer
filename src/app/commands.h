@@ -16,6 +16,7 @@
 #include "app/engine_chooser.h"
 #include "app/install.h"
 #include "app/library_loader.h"
+#include "app/system_report.h"
 #include "core/engines.h"
 #include "core/settings.h"
 #include "core/types.h"
@@ -47,15 +48,18 @@ std::string refusal_text(const Refusal& refusal);
 
 // --- engines (commands_engines.cpp) ---
 
-// L'écran « Moteurs » pour ce système : détection, réglages, index, modèles manquants, place libre.
-std::expected<EngineChooser, Refusal> open_chooser(const AppContext& context, const core::SystemInfo& system);
+// L'écran « Moteurs » pour ce système : détection, blocages des runtimes, réglages, index,
+// modèles manquants, place libre.
+std::expected<EngineChooser, Refusal> open_chooser(const AppContext& context, const SystemReport& report);
 
 // Exécute le plan validé : télécharge et installe paquets et modèles, retire les moteurs
 // décochés, puis écrit les réglages. Après un refus en cours de route, ce qui s'est
-// installé est quand même noté dans settings.toml.
+// installé est quand même noté dans settings.toml ; un moteur bloqué (installé en mode
+// avancé) est noté sans devenir préféré.
 std::expected<core::Settings, Refusal> apply_plan(
-    const ChooserPlan& plan, const core::SystemInfo& system, const AppContext& context,
-    const Downloader& downloader, const std::function<void(const InstallProgress&)>& on_progress);
+    const ChooserPlan& plan, const core::SystemInfo& system, std::span<const EngineBlocker> blockers,
+    const AppContext& context, const Downloader& downloader,
+    const std::function<void(const InstallProgress&)>& on_progress);
 
 std::expected<void, Refusal> list_engines(const AppContext& context);
 std::expected<void, Refusal> install_engines(const EnginesArgs& args, const AppContext& context);
