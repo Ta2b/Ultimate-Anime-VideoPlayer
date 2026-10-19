@@ -12,8 +12,8 @@ namespace {
 
 // Le défaut trouvé, la liste de son dossier (fichiers qui commencent par prefix), et le fichier
 // choisi au menu s'il existe à côté.
-ModelChoice choose_in(std::filesystem::path found, std::string_view prefix, const std::string& chosen_name,
-                      bool option_given) {
+ModelChoice choose_in(const std::filesystem::path& found, std::string_view prefix,
+                      const std::string& chosen_name, bool option_given) {
   ModelChoice choice{.path = found, .default_name = found.filename().string()};
   std::error_code error;
   for (const auto& entry : std::filesystem::directory_iterator(found.parent_path(), error)) {
@@ -41,7 +41,7 @@ std::expected<ModelChoice, Refusal> choose_model(const PlayOptions& options,
   if (!options.was_given("--model")) defaults.model.reset();
   auto found = find_model(defaults, default_model_candidates(home));
   if (!found) return std::unexpected(std::move(found.error()));
-  return choose_in(std::move(*found), "2x_", settings.model, options.was_given("--model"));
+  return choose_in(*found, "2x_", settings.model, options.was_given("--model"));
 }
 
 std::expected<ModelChoice, Refusal> choose_rife_model(const PlayOptions& options,
@@ -49,7 +49,7 @@ std::expected<ModelChoice, Refusal> choose_rife_model(const PlayOptions& options
                                                       const PlaySettings& settings) {
   auto found = find_rife_model(options, default_rife_candidates(home));
   if (!found) return std::unexpected(std::move(found.error()));
-  return choose_in(std::move(*found), "rife_v", settings.rife_model, options.was_given("--rife-model"));
+  return choose_in(*found, "rife_v", settings.rife_model, options.was_given("--rife-model"));
 }
 
 }  // namespace ajp::app::play
