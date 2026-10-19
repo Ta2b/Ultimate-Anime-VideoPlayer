@@ -11,6 +11,7 @@
 #include "vendor_hdr/log.h"
 #include "vendor_hdr/maxine_abi.h"
 #include "vendor_hdr/maxine_runtime.h"
+#include "vendor_hdr/sdk_layout.h"
 
 namespace ajp::vendor_hdr {
 namespace {
@@ -29,6 +30,7 @@ struct MaxineApi {
   RunFn* run = nullptr;
   ImageInitFn* image_init = nullptr;
   ErrorStringFn* error_string = nullptr;
+  GetVersionFn* version = nullptr;
 };
 
 template <class Fn>
@@ -51,7 +53,8 @@ std::expected<MaxineApi, Refusal> resolve_api(const std::vector<LoadedLibrary>& 
         bind(*effects, "NvVFX_SetU32", api.set_u32), bind(*effects, "NvVFX_SetString", api.set_string),
         bind(*effects, "NvVFX_SetImage", api.set_image),
         bind(*effects, "NvVFX_SetCudaStream", api.set_stream), bind(*effects, "NvVFX_Load", api.load),
-        bind(*effects, "NvVFX_Run", api.run), bind(*images, "NvCVImage_Init", api.image_init),
+        bind(*effects, "NvVFX_Run", api.run), bind(*effects, "NvVFX_GetVersion", api.version),
+        bind(*images, "NvCVImage_Init", api.image_init),
         bind(*images, "NvCV_GetErrorStringFromCode", api.error_string)}) {
     if (!bound) return std::unexpected(bound.error());
   }
@@ -71,8 +74,10 @@ class MaxineEffect final : public VendorEffect {
     while (!libraries_.empty()) libraries_.pop_back();  // ordre inverse de l'ouverture
   }
 
-  // Repris de pipeline_hdr.c:57-66 : dossier des modèles (TrueHDR 1.3 répond UNIMPLEMENTED,
-  // seul ce code est toléré), puis flux 0 hérité.
+  // Repris de pipeline_hdr.c:57-66 : dossier des modèles (TrueHDR 1.3.0.0 répond
+  // NVCV_ERR_UNIMPLEMENTED sur la RTX, seul ce code est toléré), puis flux 0 hérité. Changer
+  // de flux après Load exige un nouveau Load (NVCV_ERR_INITIALIZATION sinon, mesuré) : le flux
+  // est fixé une fois, avant.
   Done configure(const fs::path& root) {
     const std::string models = (root / "lib" / "models").string();
     const NvCV_Status directory = api_.set_string(effect_, kModelDirectory, models.c_str());
@@ -150,6 +155,25 @@ class MaxineEffect final : public VendorEffect {
   bool loaded_ = false;
 };
 
+// La bibliothèque chargée doit être de la version que le magasin a vérifiée dans les fichiers.
+Done check_loaded_version(const MaxineApi& api) {
+  unsigned version = 0;
+  const NvCV_Status status = api.version(&version);
+  if (status != kSuccess) {
+    const char* text = api.error_string(status);
+    return refuse(RefusalCode::VendorCallFailed,
+                  std::format("TrueHDR Maxine, NvVFX_GetVersion : {} ({})",
+                              text != nullptr ? text : "erreur du SDK", status));
+  }
+  const SdkLayout& sdk = layout(SdkKind::MaxineVfx);
+  if (version_major(version) != sdk.major || version_minor(version) != sdk.minor) {
+    return refuse(RefusalCode::SdkRejected,
+                  std::format("libVideoFX.so chargée est en {}.{}, ce lecteur prend en charge {}.{}",
+                              version_major(version), version_minor(version), sdk.major, sdk.minor));
+  }
+  return {};
+}
+
 }  // namespace
 
 namespace detail {
@@ -161,6 +185,7 @@ std::expected<std::unique_ptr<TrueHdr>, Refusal> open_maxine_at(const fs::path& 
   if (!libraries) return std::unexpected(libraries.error());
   auto api = resolve_api(*libraries);
   if (!api) return std::unexpected(api.error());
+  if (Done same = check_loaded_version(*api); !same) return std::unexpected(same.error());
 
   NvVFX_Handle handle = nullptr;
   const NvCV_Status created = api->create(kFxTrueHdr, &handle);

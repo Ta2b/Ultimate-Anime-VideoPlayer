@@ -15,8 +15,16 @@
 
 namespace ajp::vendor_hdr {
 
-// Dossier des bibliothèques de la fonction TrueHDR de Maxine : toutes doivent s'ouvrir.
+// Dossier des bibliothèques de la fonction TrueHDR de Maxine.
 inline constexpr std::string_view kMaxineFeatureLibraries = "features/nvvfxtruehdr/lib";
+
+// Marqueur de version du SDK Maxine (VFXSDK_linux_1.3.0.0) et préfixe de ses macros :
+// NVIDIA_VIDEOEFFECTS_SDK_VERSION_MAJOR, _MINOR, _RELEASE, _BUILD.
+inline constexpr std::string_view kMaxineVersionHeader = "share/videofx_version.h";
+inline constexpr std::string_view kMaxineVersionPrefix = "NVIDIA_VIDEOEFFECTS_SDK_VERSION";
+// En-tête de la fonction TrueHDR, qui porte sa propre version : #define NVVFXTRUEHDR_VERSION "1.3.0.0".
+inline constexpr std::string_view kMaxineFeatureHeader = "features/nvvfxtruehdr/include/nvVFXTrueHDR.h";
+inline constexpr std::string_view kMaxineFeatureVersion = "NVVFXTRUEHDR_VERSION";
 
 struct RequiredFile {
   std::string_view path;  // relatif à la racine du SDK, séparateurs « / »
@@ -43,10 +51,14 @@ const SdkLayout& layout(SdkKind kind);
 // premier nom du dossier, par ordre alphabétique, qui commence par lui.
 std::optional<std::filesystem::path> locate(const std::filesystem::path& root, const RequiredFile& file);
 
-// Toutes les bibliothèques que le chargeur peut ouvrir sous root, exigées ou non, chemins
-// relatifs triés par dossier puis par nom. Un lien pendant n'en est pas une.
-//   Maxine : celles d'external/cuda/lib, external/tensorrt/lib, lib/ et de la fonction, les
-//            dossiers que le lecteur actuel mettait dans LD_LIBRARY_PATH (maxine_runtime.h) ;
+// Bibliothèques Maxine que le chargeur ouvre, toutes exigées, dans l'ordre de leurs
+// dépendances : CUDA et NPP, puis le cœur, puis la fonction (maxine_runtime.h).
+std::span<const std::string_view> maxine_runtime();
+
+// Toutes les bibliothèques d'un SDK que le chargeur ou le SDK peuvent ouvrir sous root, en
+// chemins relatifs. Un lien pendant n'en est pas une.
+//   Maxine : celles d'external/ que maxine_runtime() nomme, dans son ordre, puis celles de lib/
+//            et de la fonction, triées par dossier puis par nom ;
 //   RTX Video : les DLL copiées présentes à la racine.
 // Le magasin vérifie leur architecture à l'import, comme TrueHdrSdkStore.cs:134-135.
 std::vector<std::filesystem::path> loadable_libraries(SdkKind kind, const std::filesystem::path& root);

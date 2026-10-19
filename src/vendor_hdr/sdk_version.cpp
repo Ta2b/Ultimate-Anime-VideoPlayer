@@ -10,6 +10,7 @@
 #include <vector>
 
 #include "vendor_hdr/binary_probe.h"
+#include "vendor_hdr/maxine_abi_check.h"
 #include "vendor_hdr/path_text.h"
 #include "vendor_hdr/refusal.h"
 #include "vendor_hdr/sdk_layout.h"
@@ -19,8 +20,7 @@ namespace {
 
 // Un version.h tient en quelques Kio ; au-delà, ce n'est pas celui d'un SDK.
 constexpr std::size_t kMaxHeaderBytes = std::size_t{1024} * 1024;
-constexpr std::array<std::string_view, 4> kVersionSuffixes{"_MAJOR_VERSION", "_MINOR_VERSION",
-                                                           "_PATCH_VERSION", "_BUILD_VERSION"};
+constexpr std::array<std::string_view, 4> kVersionSuffixes{"_MAJOR", "_MINOR", "_RELEASE", "_BUILD"};
 
 std::string_view trim(std::string_view text) {
   const std::size_t first = text.find_first_not_of(" \t\r");
@@ -37,28 +37,22 @@ std::pair<std::string_view, std::string_view> split_word(std::string_view text) 
   return {text.substr(0, end), trim(text.substr(end))};
 }
 
-struct PrefixVersion {
-  std::string prefix;
-  std::array<std::optional<std::uint32_t>, 4> parts;
-};
-
-// « #define NVVFX_MINOR_VERSION 3 » : range la valeur sous le préfixe NVVFX, dans l'ordre vu.
-void collect_define(std::string_view line, std::vector<PrefixVersion>& found) {
+// « #define <prefix>_MINOR 3 » : range la valeur à sa place dans parts.
+void collect_define(std::string_view line, std::string_view prefix,
+                    std::array<std::optional<std::uint32_t>, 4>& parts) {
   line = trim(line);
   if (!line.starts_with('#')) return;
   auto [directive, rest] = split_word(line.substr(1));
   if (directive != "define") return;
   auto [identifier, value] = split_word(rest);
+  if (!identifier.starts_with(prefix)) return;
+  identifier.remove_prefix(prefix.size());
   value = split_word(value).first;
   for (std::size_t part = 0; part < kVersionSuffixes.size(); ++part) {
-    if (!identifier.ends_with(kVersionSuffixes[part])) continue;
+    if (identifier != kVersionSuffixes[part]) continue;
     std::uint32_t number = 0;
     const auto [end, error] = std::from_chars(value.data(), value.data() + value.size(), number);
-    if (error != std::errc{} || end != value.data() + value.size()) return;
-    const std::string prefix(identifier.substr(0, identifier.size() - kVersionSuffixes[part].size()));
-    auto entry = std::ranges::find(found, prefix, &PrefixVersion::prefix);
-    if (entry == found.end()) entry = found.insert(found.end(), PrefixVersion{.prefix = prefix});
-    entry->parts[part] = number;
+    if (error == std::errc{} && end == value.data() + value.size()) parts[part] = number;
     return;
   }
 }
@@ -72,24 +66,55 @@ std::optional<std::string> read_small_text(const std::filesystem::path& file) {
   return std::string(std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>());
 }
 
-std::expected<SdkVersion, Refusal> maxine_version(const std::filesystem::path& root) {
-  for (const char* candidate : {"version.h", "include/version.h"}) {
-    if (auto text = read_small_text(root / candidate)) {
-      if (auto version = parse_version_header(*text)) return *version;
-    }
-  }
+// Version de la fonction TrueHDR : #define NVVFXTRUEHDR_VERSION "1.3.0.0" dans son en-tête.
+std::optional<SdkVersion> feature_version(const std::filesystem::path& root) {
+  const std::optional<std::string> text = read_small_text(root / kMaxineFeatureHeader);
+  if (!text) return std::nullopt;
+  const std::vector<std::string> headers{*text};
+  const std::optional<std::string> quoted = find_definition(headers, kMaxineFeatureVersion);
+  if (!quoted || quoted->size() < 2 || quoted->front() != '"' || quoted->back() != '"') return std::nullopt;
+  return parse_version(std::string_view(*quoted).substr(1, quoted->size() - 2));
+}
+
+std::optional<SdkVersion> library_version(const std::filesystem::path& root) {
   constexpr std::string_view kLibrary = "libVideoFX.so";
   std::error_code error;
   const std::filesystem::path real = std::filesystem::canonical(root / "lib" / kLibrary, error);
-  if (!error) {
-    if (auto version = parse_versioned_name(utf8(real.filename()), kLibrary)) return *version;
+  if (error) return std::nullopt;
+  return parse_versioned_name(utf8(real.filename()), kLibrary);
+}
+
+std::expected<SdkVersion, Refusal> maxine_version(const std::filesystem::path& root) {
+  std::optional<SdkVersion> version;
+  if (const auto text = read_small_text(root / kMaxineVersionHeader)) {
+    version = parse_version_header(*text, kMaxineVersionPrefix);
   }
-  for (std::filesystem::directory_iterator it(root / "lib", error), end; !error && it != end;
-       it.increment(error)) {
-    if (auto version = parse_versioned_name(utf8(it->path().filename()), kLibrary)) return *version;
+  const std::optional<SdkVersion> library = library_version(root);
+  if (version && library && *version != *library) {
+    return refuse(RefusalCode::SdkRejected,
+                  std::format("{} annonce {}, mais lib/libVideoFX.so est en {} : SDK mélangé",
+                              kMaxineVersionHeader, version->text(), library->text()));
   }
-  return refuse(RefusalCode::SdkRejected,
-                "version du SDK introuvable : ni version.h ni lib/libVideoFX.so.<version> dans le dossier");
+  if (!version) version = library;
+  if (!version) {
+    return refuse(
+        RefusalCode::SdkRejected,
+        std::format("version du SDK introuvable : ni {} ni lib/libVideoFX.so.<version> dans le dossier",
+                    kMaxineVersionHeader));
+  }
+  const std::optional<SdkVersion> feature = feature_version(root);
+  if (!feature) {
+    return refuse(RefusalCode::SdkRejected,
+                  std::format("version de la fonction TrueHDR introuvable : {} absent de {}",
+                              kMaxineFeatureVersion, kMaxineFeatureHeader));
+  }
+  if (feature->major() != version->major() || feature->minor() != version->minor()) {
+    return refuse(RefusalCode::SdkRejected,
+                  std::format("la fonction TrueHDR {} ne correspond pas au SDK {} : réinstaller nvvfxtruehdr "
+                              "avec install_feature.sh de ce SDK",
+                              feature->text(), version->text()));
+  }
+  return *version;
 }
 
 std::expected<SdkVersion, Refusal> rtx_version(const std::filesystem::path& root) {
@@ -121,20 +146,17 @@ std::optional<SdkVersion> parse_version(std::string_view text) {
   return version;
 }
 
-std::optional<SdkVersion> parse_version_header(std::string_view text) {
-  std::vector<PrefixVersion> found;
+std::optional<SdkVersion> parse_version_header(std::string_view text, std::string_view prefix) {
+  std::array<std::optional<std::uint32_t>, 4> parts;
   while (!text.empty()) {
     const std::size_t end = text.find('\n');
-    collect_define(text.substr(0, end), found);
+    collect_define(text.substr(0, end), prefix, parts);
     text = end == std::string_view::npos ? std::string_view{} : text.substr(end + 1);
   }
-  for (const PrefixVersion& entry : found) {
-    const std::optional<std::uint32_t> major = entry.parts[0];
-    const std::optional<std::uint32_t> minor = entry.parts[1];
-    if (!major || !minor) continue;
-    return SdkVersion{.parts = {*major, *minor, entry.parts[2].value_or(0), entry.parts[3].value_or(0)}};
-  }
-  return std::nullopt;
+  const std::optional<std::uint32_t> major = parts[0];
+  const std::optional<std::uint32_t> minor = parts[1];
+  if (!major || !minor) return std::nullopt;
+  return SdkVersion{.parts = {*major, *minor, parts[2].value_or(0), parts[3].value_or(0)}};
 }
 
 std::optional<SdkVersion> parse_versioned_name(std::string_view file_name, std::string_view library) {

@@ -11,8 +11,9 @@
 //   versions/<version>-<n>/   copie d'un import, jamais modifiée ensuite
 //   .import-<n>/              copie en cours, supprimée en cas d'échec ou d'annulation
 //
-// Un import copie plusieurs Gio (Maxine embarque CUDA et TensorRT) : l'appelant le lance hors
-// du thread main et ne lance qu'un import à la fois par SDK.
+// Un import Maxine copie environ 135 Mo (seules les bibliothèques que TrueHDR charge, voir
+// sdk_layout.cpp) : l'appelant le lance hors du thread main et ne lance qu'un import à la fois
+// par SDK.
 #pragma once
 
 #include <cstdint>

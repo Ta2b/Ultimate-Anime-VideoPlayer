@@ -82,10 +82,11 @@ TEST_CASE("ABI : une constante différente est nommée", "[abi]") {
   CHECK(refused.error().detail ==
         "NVCV_RGB10A2 vaut 14 dans les en-têtes du SDK, ce lecteur attend 13 (maxine_abi.h)");
 
-  const std::vector<std::string> selector{with_define("NVVFXTRUEHDR_LUMINANCE", "\"Luminance\"")};
+  // L'ancienne supposition de la vague 1, démentie par nvVFXTrueHDR.h:20.
+  const std::vector<std::string> selector{with_define("NVVFXTRUEHDR_LUMINANCE", "\"MaxLuminance\"")};
   CHECK(check_maxine_abi(selector).error().detail ==
-        "NVVFXTRUEHDR_LUMINANCE vaut \"Luminance\" dans les en-têtes du SDK, ce lecteur attend "
-        "\"MaxLuminance\" (maxine_abi.h)");
+        "NVVFXTRUEHDR_LUMINANCE vaut \"MaxLuminance\" dans les en-têtes du SDK, ce lecteur attend "
+        "\"Luminance\" (maxine_abi.h)");
 }
 
 TEST_CASE("ABI : une constante absente est refusée", "[abi]") {

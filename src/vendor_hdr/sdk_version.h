@@ -25,18 +25,20 @@ struct SdkVersion {
 // « 1.3 », « 1.3.0.21 » : deux à quatre nombres séparés par des points.
 std::optional<SdkVersion> parse_version(std::string_view text);
 
-// Macros d'un version.h à la manière des SDK Maxine (NVAUDIOEFFECTS_MAJOR_VERSION…) :
-// le premier préfixe qui définit <P>_MAJOR_VERSION et <P>_MINOR_VERSION.
-std::optional<SdkVersion> parse_version_header(std::string_view text);
+// Macros <prefix>_MAJOR, _MINOR, _RELEASE et _BUILD d'un en-tête de version, comme
+// share/videofx_version.h de Maxine VFX 1.3 (NVIDIA_VIDEOEFFECTS_SDK_VERSION_MAJOR…). Majeur et
+// mineur sont exigés, les deux autres valent 0 s'ils manquent.
+std::optional<SdkVersion> parse_version_header(std::string_view text, std::string_view prefix);
 
 // Nom réel versionné d'une bibliothèque ELF : « libVideoFX.so.1.3.0.0 » pour « libVideoFX.so ».
 std::optional<SdkVersion> parse_versioned_name(std::string_view file_name, std::string_view library);
 
 // Version du SDK installé sous root :
-//   RTX Video : FileVersion (VS_FIXEDFILEINFO) de la DLL du SDK ;
-//   Maxine : version.h à la racine ou dans include/, sinon le nom réel de lib/libVideoFX.so.
-// Ces marqueurs restent à confirmer sur les archives originales (AH-324) ; un dossier sans
-// marqueur est refusé, jamais chargé en version inconnue.
+//   RTX Video : FileVersion (VS_FIXEDFILEINFO) de la DLL du SDK (non vérifié sur l'archive) ;
+//   Maxine : share/videofx_version.h, sinon le nom réel de lib/libVideoFX.so (libVideoFX.so.1.3.0) ;
+//            quand les deux existent, ils doivent s'accorder, et la fonction TrueHDR
+//            (NVVFXTRUEHDR_VERSION de son en-tête) doit avoir le même majeur et mineur.
+// Un dossier sans marqueur est refusé, jamais chargé en version inconnue.
 std::expected<SdkVersion, Refusal> read_sdk_version(SdkKind kind, const std::filesystem::path& root);
 
 }  // namespace ajp::vendor_hdr

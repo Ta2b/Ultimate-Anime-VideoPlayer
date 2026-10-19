@@ -102,7 +102,7 @@ TEST_CASE("Maxine : SDK absent ou inutilisable, refus propre", "[loader]") {
   TempDir dir;
   SECTION("dossier vide") {
     CHECK(refusal_of(detail::open_maxine_at(dir.path(), small_config()), RefusalCode::LibraryUnavailable) ==
-          "lib/libNVCVImage.so absent du SDK");
+          "external/cuda/lib/libcudart.so.12 absent du SDK");
   }
   SECTION("bibliothèques qui ne se chargent pas") {
     make_maxine_sdk(dir.path());
@@ -115,6 +115,16 @@ TEST_CASE("Maxine : SDK absent ou inutilisable, refus propre", "[loader]") {
                   fs::copy_options::overwrite_existing);
     CHECK(refusal_of(detail::open_maxine_at(dir.path(), small_config()), RefusalCode::LibraryUnavailable) ==
           "symbole NvCVImage_Init absent de libNVCVImage.so");
+  }
+  SECTION("libVideoFX d'une autre version que le SDK importé") {
+    make_maxine_sdk(dir.path(), {.libraries = LibraryContent::Fakes});
+    // Même chemin, donc même bibliothèque chargée que celle qu'ouvrira le chargeur.
+    const DynamicLibrary fake = DynamicLibrary::open(dir.path() / "lib/libVideoFX.so").value();
+    const auto set_version = fake.symbol<void(unsigned)>("fake_maxine_set_version").value();
+    set_version(0x01040000);
+    CHECK(refusal_of(detail::open_maxine_at(dir.path(), small_config()), RefusalCode::SdkRejected) ==
+          "libVideoFX.so chargée est en 1.4, ce lecteur prend en charge 1.3");
+    set_version(0x01030000);
   }
   SECTION("configuration refusée avant tout chargement") {
     TrueHdrConfig config = small_config();

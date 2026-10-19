@@ -62,6 +62,13 @@ Done copy_entry(const fs::path& real_from, const fs::path& to, const fs::path& e
   const fs::file_status status = fs::symlink_status(real_from / entry, error);
   if (error || !fs::exists(status)) return {};  // entrée facultative absente
   if (Done copied = copy_one(real_from, to, entry); !copied) return copied;
+  if (fs::is_symlink(status)) {
+    // Une entrée nommée par son lien (external/cuda/lib/libcudart.so.12) apporte aussi le
+    // fichier qu'il vise, déjà vérifié dans le SDK par copy_link.
+    const fs::path aimed = fs::canonical(real_from / entry, error);
+    if (error) return io_failure(entry, error);
+    return copy_entry(real_from, to, aimed.lexically_relative(real_from), stop);
+  }
   if (!fs::is_directory(status)) return {};
   // Les liens vers des dossiers ne sont pas suivis : copy_one les recrée tels quels.
   for (fs::recursive_directory_iterator it(real_from / entry, error), end; !error && it != end;

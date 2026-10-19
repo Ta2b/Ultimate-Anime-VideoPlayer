@@ -4,7 +4,11 @@
 //   - flux 0 hérité (SetCudaStream avec nullptr) et exécution synchrone (async = 0) ;
 //   - modèle chargé une seule fois, avant la première exécution ;
 //   - descripteurs aux formats RGBA/U8 en entrée et RGB10A2/P32 en sortie, en mémoire GPU,
-//     lus au moment de Run à l'adresse donnée à SetImage (ils doivent donc encore vivre).
+//     lus au moment de Run à l'adresse donnée à SetImage (ils doivent donc encore vivre) ;
+//   - réglages hors des plages de nvVFXTrueHDR.h refusés (NVCV_ERR_PARAMETER), l'ancienne
+//     valeur gardée, comme le vrai SDK 1.3.0.0 sur la RTX ;
+//   - codes d'erreur de nvCVStatus.h et version 1.3 par NvVFX_GetVersion, que les tests peuvent
+//     changer par fake_maxine_set_version.
 // Sortie : R10 = R8 × 4 × contraste / 100, G10 = G8 × 4 × saturation / 100,
 // B10 = B8 × 4 × gris moyen / 50, chacune bornée à 1023, alpha 3.
 #include <algorithm>
@@ -19,11 +23,15 @@ using namespace ajp::vendor_hdr::maxine;
 
 namespace {
 
+// nvCVStatus.h:48-59.
 constexpr NvCV_Status kErrGeneral = -1;
-constexpr NvCV_Status kErrSelector = -3;
-constexpr NvCV_Status kErrPixelFormat = -4;
-constexpr NvCV_Status kErrInitialization = -5;
-constexpr NvCV_Status kErrParameter = -6;
+constexpr NvCV_Status kErrSelector = -5;
+constexpr NvCV_Status kErrParameter = -7;
+constexpr NvCV_Status kErrPixelFormat = -9;
+constexpr NvCV_Status kErrInitialization = -12;
+
+// État du faux, lu et changé par les tests : une seule instance de la bibliothèque par test.
+unsigned g_version = 0x01030000;  // NOLINT(cppcoreguidelines-avoid-non-const-global-variables)
 
 }  // namespace
 
@@ -34,7 +42,7 @@ struct ajp::vendor_hdr::maxine::NvVFX_Object {
   unsigned contrast = 100;
   unsigned saturation = 100;
   unsigned middle_gray = 50;
-  unsigned luminance = 1000;
+  unsigned luminance = 650;
   NvCVImage* source = nullptr;
   NvCVImage* target = nullptr;
   int loads = 0;
@@ -48,6 +56,13 @@ std::uint32_t scale(std::uint32_t value8, unsigned numerator, unsigned denominat
 
 bool same(const char* selector, const char* expected) {
   return std::string_view(selector) == expected;
+}
+
+// Plages de nvVFXTrueHDR.h:17-20.
+NvCV_Status set_in_range(unsigned& slot, unsigned value, unsigned lo, unsigned hi) {
+  if (value < lo || value > hi) return kErrParameter;
+  slot = value;
+  return kSuccess;
 }
 
 }  // namespace
@@ -66,18 +81,21 @@ void NvVFX_DestroyEffect(NvVFX_Handle effect) {
 }
 
 NvCV_Status NvVFX_SetU32(NvVFX_Handle effect, const char* parameter, unsigned int value) {
-  if (same(parameter, kContrast)) {
-    effect->contrast = value;
-  } else if (same(parameter, kSaturation)) {
-    effect->saturation = value;
-  } else if (same(parameter, kMiddleGray)) {
-    effect->middle_gray = value;
-  } else if (same(parameter, kLuminance)) {
-    effect->luminance = value;
-  } else {
-    return kErrSelector;
-  }
+  if (same(parameter, kContrast)) return set_in_range(effect->contrast, value, 0, 200);
+  if (same(parameter, kSaturation)) return set_in_range(effect->saturation, value, 0, 200);
+  if (same(parameter, kMiddleGray)) return set_in_range(effect->middle_gray, value, 10, 100);
+  if (same(parameter, kLuminance)) return set_in_range(effect->luminance, value, 400, 2000);
+  return kErrSelector;
+}
+
+NvCV_Status NvVFX_GetVersion(unsigned int* version) {
+  if (version == nullptr) return kErrParameter;
+  *version = g_version;
   return kSuccess;
+}
+
+void fake_maxine_set_version(unsigned version) {
+  g_version = version;
 }
 
 // TrueHDR 1.3 ne lit pas de dossier de modèles : comme le vrai, il répond UNIMPLEMENTED.

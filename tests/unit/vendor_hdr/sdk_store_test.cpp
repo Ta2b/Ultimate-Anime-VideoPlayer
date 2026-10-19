@@ -94,12 +94,12 @@ TEST_CASE("magasin : un dossier de données relatif donne des chemins absolus", 
 TEST_CASE("magasin : fichiers vides refusés", "[store]") {
   Fixture fixture;
   make_maxine_sdk(fixture.source, {.libraries = LibraryContent::Empty});
-  CHECK(import_refusal(fixture) == "lib/libNVCVImage.so est vide");
+  CHECK(import_refusal(fixture) == "external/cuda/lib/libcudart.so.12 est vide");
 }
 
 TEST_CASE("magasin : mauvaise version refusée", "[store]") {
   Fixture fixture;
-  make_maxine_sdk(fixture.source, {.version_header = "1.2.0.0"});
+  make_maxine_sdk(fixture.source, {.version_header = "1.2.0.0", .feature_version = "1.2.0.0"});
   CHECK(import_refusal(fixture) ==
         "version 1.2.0.0 : ce lecteur prend en charge le Maxine VFX 1.3 (TrueHDR) (1.3)");
 }
@@ -113,15 +113,37 @@ TEST_CASE("magasin : version introuvable refusée", "[store]") {
 TEST_CASE("magasin : version lue dans le nom réel de libVideoFX", "[store]") {
   Fixture fixture;
   make_maxine_sdk(fixture.source, {.version_header = std::nullopt});
-  fs::rename(fixture.source / "lib/libVideoFX.so", fixture.source / "lib/libVideoFX.so.1.3.0.0");
-  fs::create_symlink("libVideoFX.so.1.3.0.0", fixture.source / "lib/libVideoFX.so");
+  fs::rename(fixture.source / "lib/libVideoFX.so", fixture.source / "lib/libVideoFX.so.1.3.0");
+  fs::create_symlink("libVideoFX.so.1.3.0", fixture.source / "lib/libVideoFX.so");
   auto imported = fixture.store.import(fixture.source);
   REQUIRE(imported);
   CHECK(imported->state == SdkState::Ready);
+  CHECK(imported->installed->version().text() == "1.3.0.0");
   // Le lien interne est recréé tel quel dans la copie.
   const fs::path copied = imported->installed->root() / "lib/libVideoFX.so";
   CHECK(fs::is_symlink(copied));
-  CHECK(fs::read_symlink(copied) == "libVideoFX.so.1.3.0.0");
+  CHECK(fs::read_symlink(copied) == "libVideoFX.so.1.3.0");
+}
+
+TEST_CASE("magasin : marqueurs de version qui se contredisent", "[store]") {
+  Fixture fixture;
+  SECTION("en-tête et nom réel de libVideoFX") {
+    make_maxine_sdk(fixture.source);
+    fs::rename(fixture.source / "lib/libVideoFX.so", fixture.source / "lib/libVideoFX.so.1.4.0");
+    fs::create_symlink("libVideoFX.so.1.4.0", fixture.source / "lib/libVideoFX.so");
+    CHECK(import_refusal(fixture) ==
+          "share/videofx_version.h annonce 1.3.0.0, mais lib/libVideoFX.so est en 1.4.0.0 : SDK mélangé");
+  }
+  SECTION("fonction TrueHDR d'une autre version") {
+    make_maxine_sdk(fixture.source, {.feature_version = "1.2.0.0"});
+    CHECK(
+        import_refusal(fixture).starts_with("la fonction TrueHDR 1.2.0.0 ne correspond pas au SDK 1.3.0.0"));
+  }
+  SECTION("fonction TrueHDR sans version") {
+    make_maxine_sdk(fixture.source);
+    write_file(fixture.source / "features/nvvfxtruehdr/include/nvVFXTrueHDR.h", abi_header_text());
+    CHECK(import_refusal(fixture).starts_with("version de la fonction TrueHDR introuvable"));
+  }
 }
 
 TEST_CASE("magasin : SDK incomplet refusé avec la marche à suivre", "[store]") {
@@ -156,20 +178,47 @@ TEST_CASE("magasin : archive d'une autre architecture refusée", "[store]") {
 }
 
 TEST_CASE("magasin : chaque bibliothèque chargeable est vérifiée, pas seulement les exigées", "[store]") {
-  // Le chargeur ouvre toutes les bibliothèques des dossiers du SDK (maxine_runtime.h).
+  // Celles de lib/ et de la fonction, que le SDK peut ouvrir par leur nom (sdk_layout.h).
   Fixture fixture;
   make_maxine_sdk(fixture.source);
-  SECTION("une dépendance facultative ARM est refusée") {
-    write_file(fixture.source / "external/cuda/lib/libcublas.so.12", elf_header(183));
-    CHECK(import_refusal(fixture).starts_with(
-        "external/cuda/lib/libcublas.so.12 n'est pas une bibliothèque Linux x64"));
+  SECTION("une bibliothèque facultative ARM est refusée") {
+    write_file(fixture.source / "lib/libVideoFXTriton.so", elf_header(183));
+    CHECK(
+        import_refusal(fixture).starts_with("lib/libVideoFXTriton.so n'est pas une bibliothèque Linux x64"));
   }
   SECTION("ni un lien pendant ni un autre fichier ne comptent") {
-    fs::create_symlink("libcublasLt.so.12.4", fixture.source / "external/cuda/lib/libcublasLt.so.12");
+    fs::create_symlink("libVideoFXTriton.so.1.3.0", fixture.source / "lib/libVideoFXTriton.so.1");
     write_file(fixture.source / "lib/notes.txt", "");
     write_file(fixture.source / "lib/libVideoFX.so.debug", "");
     CHECK(fixture.store.import(fixture.source));
   }
+  SECTION("ce que TrueHDR ne charge pas n'est ni vérifié ni copié") {
+    write_file(fixture.source / "external/cuda/lib/libcublas.so.12", elf_header(183));
+    write_file(fixture.source / "external/tensorrt/lib/libnvinfer.so.10", elf_header());
+    auto imported = fixture.store.import(fixture.source);
+    REQUIRE(imported);
+    const fs::path copy = imported->installed->root();
+    CHECK(fs::exists(copy / "external/cuda/lib/libcudart.so.12"));
+    CHECK_FALSE(fs::exists(copy / "external/cuda/lib/libcublas.so.12"));
+    CHECK_FALSE(fs::exists(copy / "external/tensorrt"));
+  }
+}
+
+TEST_CASE("magasin : une bibliothèque externe nommée par son lien apporte sa cible", "[store]") {
+  // Disposition réelle : libcudart.so.12 -> libcudart.so.12.8.90 dans external/cuda/lib.
+  Fixture fixture;
+  make_maxine_sdk(fixture.source);
+  const fs::path cuda = fixture.source / "external/cuda/lib";
+  fs::rename(cuda / "libcudart.so.12", cuda / "libcudart.so.12.8.90");
+  fs::create_symlink("libcudart.so.12.8.90", cuda / "libcudart.so.12");
+  fs::create_symlink("libcudart.so.12", cuda / "libcudart.so");
+  auto imported = fixture.store.import(fixture.source);
+  REQUIRE(imported);
+  const fs::path copied = imported->installed->root() / "external/cuda/lib";
+  CHECK(fs::read_symlink(copied / "libcudart.so.12") == "libcudart.so.12.8.90");
+  CHECK(fs::is_regular_file(fs::symlink_status(copied / "libcudart.so.12.8.90")));
+  CHECK_FALSE(fs::exists(fs::symlink_status(copied / "libcudart.so")));
+  CHECK(fixture.store.status().state == SdkState::Ready);
 }
 
 TEST_CASE("magasin : en-têtes d'une autre ABI refusés", "[store]") {
@@ -213,7 +262,7 @@ TEST_CASE("magasin : un réimport refusé garde le SDK choisi", "[store]") {
   const fs::path chosen = first->installed->root();
 
   const fs::path other = fixture.dir.path() / "older";
-  make_maxine_sdk(other, {.version_header = "1.2.0.0"});
+  make_maxine_sdk(other, {.version_header = "1.2.0.0", .feature_version = "1.2.0.0"});
   REQUIRE_FALSE(fixture.store.import(other));
   SdkStatus status = fixture.store.status();
   CHECK(status.state == SdkState::Ready);
@@ -262,10 +311,8 @@ TEST_CASE("magasin : copie modifiée après l'import", "[store]") {
     CHECK(status.state == SdkState::Damaged);
     CHECK(status.reason.starts_with("NVCV_RGB10A2 vaut 14"));
   }
-  SECTION("version.h changé") {
-    write_file(copy / "version.h",
-               "#define NVVFX_MAJOR_VERSION 1\n#define NVVFX_MINOR_VERSION 3\n"
-               "#define NVVFX_PATCH_VERSION 9\n");
+  SECTION("en-tête de version changé") {
+    write_file(copy / "share/videofx_version.h", version_header_text(SdkVersion{.parts = {1, 3, 9, 0}}));
     CHECK(fixture.store.status().reason.starts_with("version changée depuis l'import"));
   }
 }

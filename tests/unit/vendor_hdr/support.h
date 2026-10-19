@@ -47,12 +47,17 @@ enum class LibraryContent : std::uint8_t {
 
 struct MaxineSdkOptions {
   LibraryContent libraries = LibraryContent::ElfStub;
-  std::optional<std::string> version_header = "1.3.0.0";  // version.h à la racine ; rien sinon
+  std::optional<std::string> version_header = "1.3.0.0";  // share/videofx_version.h ; rien sinon
+  std::string feature_version = "1.3.0.0";                // NVVFXTRUEHDR_VERSION de nvVFXTrueHDR.h
   bool feature = true;                                    // fonction TrueHDR installée
   bool headers = true;
 };
 
-// Arborescence d'un SDK Maxine installé (/usr/local/VideoFX) sous root.
+// share/videofx_version.h tel que VFXSDK_linux 1.3.0.0 l'écrit, pour cette version.
+std::string version_header_text(const SdkVersion& version);
+
+// Arborescence d'un SDK Maxine installé (/usr/local/VideoFX) sous root : les fichiers exigés
+// par sdk_layout, l'en-tête de version et un dossier de modèles vide.
 void make_maxine_sdk(const std::filesystem::path& root, const MaxineSdkOptions& options = {});
 
 // Dossier d'un RTX Video SDK : la DLL d'entrée (de cette version) et nvngx_truehdr.dll.

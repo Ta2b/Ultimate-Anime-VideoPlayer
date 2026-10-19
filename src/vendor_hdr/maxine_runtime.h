@@ -1,17 +1,13 @@
 // Bibliothèques du SDK Maxine VFX ouvertes par leur chemin absolu, à la place de LD_LIBRARY_PATH.
 //
-// libVideoFX et sa fonction TrueHDR ouvrent CUDA, NPP, TensorRT et la fonction par leur nom ;
-// le lecteur actuel mettait donc lib/, features/*/lib, external/cuda/lib et
-// external/tensorrt/lib dans LD_LIBRARY_PATH (ta2b/mpv-animejanai-hdr
+// libVideoFX et sa fonction TrueHDR ouvrent leurs dépendances par leur nom (NEEDED, puis dlopen
+// de libVideoFXLocal.so et de la fonction) ; le lecteur actuel mettait donc lib/, features/*/lib,
+// external/cuda/lib et external/tensorrt/lib dans LD_LIBRARY_PATH (ta2b/mpv-animejanai-hdr
 // portable_config/hdr-tools/launch-linux.sh:29-33). Une bibliothèque déjà chargée satisfait ce
-// nom : on les ouvre toutes d'avance, par leur chemin (loadable_libraries de sdk_layout.h).
-//   - les bibliothèques exigées par sdk_layout, et toutes celles de features/nvvfxtruehdr/lib
-//     comme dans animejanai-inference-rtx@118c272 src/pipeline_hdr.c:55-61, doivent s'ouvrir ;
-//   - les autres de lib/ et d'external/, que LD_LIBRARY_PATH n'aurait chargées qu'à la demande,
-//     s'ouvrent si elles le peuvent : un échec est noté au journal, sans refus.
-// Les dépendances d'abord (external/), puis le cœur (lib/) en RTLD_LOCAL, puis la fonction en
-// RTLD_GLOBAL (pipeline_hdr.c:58). L'ordre exact entre elles n'étant pas connu, on refait des
-// passes tant qu'une passe en ouvre au moins une.
+// nom : on ouvre donc d'avance, par leur chemin et dans l'ordre de leurs dépendances, exactement
+// celles que TrueHDR charge (maxine_runtime() de sdk_layout.h, relevé sur le vrai SDK). Toutes
+// sont exigées. CUDA, NPP et le cœur s'ouvrent en RTLD_LOCAL, la fonction en RTLD_GLOBAL
+// (animejanai-inference-rtx@118c272 src/pipeline_hdr.c:58).
 #pragma once
 
 #include <expected>

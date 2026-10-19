@@ -41,6 +41,9 @@ struct ParamRange {
   constexpr bool contains(int value) const { return lo <= value && value <= hi; }
 };
 
+// Plages du plan, identiques à celles du SDK Maxine 1.3.0.0 (nvVFXTrueHDR.h:17-20) : sur la RTX,
+// une valeur hors plage y est refusée (NVCV_ERR_PARAMETER) et l'ancienne gardée. Seul le pic
+// par défaut diffère : 650 nits dans le SDK, 1000 ici (plan) ; il est toujours passé.
 namespace limits {
 inline constexpr ParamRange kContrast{0, 200, 100};
 inline constexpr ParamRange kSaturation{0, 200, 100};
