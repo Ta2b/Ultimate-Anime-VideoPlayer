@@ -88,8 +88,8 @@ std::expected<PlayOptions, Refusal> parse_play_options(std::span<const std::stri
     } else {
       std::expected<void, Refusal> applied;
       bool known = false;
-      for (const std::string_view name :
-           {"--model", "--window", "--start", "--seconds", "--fullscreen-after", "--stats"}) {
+      for (const std::string_view name : {"--model", "--window", "--start", "--seconds", "--fullscreen-after",
+                                          "--stats", "--snapshot-at", "--snapshot"}) {
         auto value = valued(args, i, name);
         if (!value) return std::unexpected(std::move(value.error()));
         if (!*value) continue;
@@ -101,12 +101,15 @@ std::expected<PlayOptions, Refusal> parse_play_options(std::span<const std::stri
           applied = window(text, options);
         } else if (name == "--stats") {
           options.stats = std::filesystem::path(text);
+        } else if (name == "--snapshot") {
+          options.snapshot = std::filesystem::path(text);
         } else {
           auto us = seconds(name, text);
           if (!us) return std::unexpected(std::move(us.error()));
           if (name == "--start") options.start_us = *us;
           if (name == "--seconds") options.stop_after_us = *us;
           if (name == "--fullscreen-after") options.fullscreen_after_us = *us;
+          if (name == "--snapshot-at") options.snapshot_at_us = *us;
         }
         break;
       }
@@ -131,6 +134,7 @@ std::string play_usage() {
       "  --seconds=S            quitte après S secondes de lecture\n"
       "  --fullscreen-after=S   passe en plein écran après S secondes\n"
       "  --stats=FICHIER        temps de chaque image présentée\n"
+      "  --snapshot=FICHIER     la fenêtre en PPM, après --snapshot-at=S secondes (3)\n"
       "Touches : espace pause, flèches seek 5 s, f plein écran, q quitter.\n",
       kDefaultModelFile);
 }

@@ -3,6 +3,7 @@
 #include <NvInferRuntime.h>
 #include <NvInferVersion.h>
 #include <algorithm>
+#include <cuda.h>
 #include <format>
 #include <utility>
 
@@ -36,6 +37,35 @@ namespace {
 
 std::unexpected<Refusal> refuse(RefusalCode code, std::string detail) {
   return std::unexpected(Refusal{code, std::move(detail)});
+}
+
+// Le contexte primaire est partagé avec NVDEC (FFmpeg, AV_CUDA_USE_PRIMARY_CONTEXT), qui le
+// veut en attente bloquante (CU_CTX_SCHED_BLOCKING_SYNC) et refuse un contexte déjà actif avec
+// d'autres drapeaux. Le runtime l'active avec les siens (cudaInitDevice ignore ce drapeau) :
+// on les pose par l'API pilote avant toute activation.
+std::expected<void, Refusal> share_primary_context(int ordinal) {
+  if (const CUresult r = cuInit(0); r != CUDA_SUCCESS) {
+    return refuse(RefusalCode::LibraryUnavailable, std::format("cuInit : erreur {}", static_cast<int>(r)));
+  }
+  CUdevice device = 0;
+  unsigned flags = 0;
+  int active = 0;
+  if (cuDeviceGet(&device, ordinal) != CUDA_SUCCESS ||
+      cuDevicePrimaryCtxGetState(device, &flags, &active) != CUDA_SUCCESS) {
+    return refuse(RefusalCode::VendorCallFailed, "cuDevicePrimaryCtxGetState");
+  }
+  if (flags == CU_CTX_SCHED_BLOCKING_SYNC) return {};
+  if (active != 0) {
+    return refuse(
+        RefusalCode::DeviceMismatch,
+        std::format("contexte CUDA primaire déjà actif avec les drapeaux {:#x} : NVDEC le refuserait",
+                    flags));
+  }
+  if (const CUresult r = cuDevicePrimaryCtxSetFlags(device, CU_CTX_SCHED_BLOCKING_SYNC); r != CUDA_SUCCESS) {
+    return refuse(RefusalCode::VendorCallFailed,
+                  std::format("cuDevicePrimaryCtxSetFlags : erreur {}", static_cast<int>(r)));
+  }
+  return {};
 }
 
 DeviceUuid uuid_of(const cudaDeviceProp& properties) {
@@ -103,6 +133,7 @@ std::expected<std::unique_ptr<TensorRtBackend>, Refusal> TensorRtBackend::create
   }
   backend->device_ = *chosen;
   backend->uuid_ = uuid_of(backend->properties_);
+  if (auto ok = share_primary_context(backend->device_); !ok) return std::unexpected(ok.error());
   if (auto ok = backend->bind(); !ok) return std::unexpected(ok.error());
   cudaRuntimeGetVersion(&backend->runtime_version_);
   cudaDriverGetVersion(&backend->driver_version_);

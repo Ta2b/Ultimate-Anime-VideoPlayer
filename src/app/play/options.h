@@ -3,6 +3,7 @@
 //
 //   ajp play <fichier> [--model=FICHIER.onnx] [--no-upscale] [--window=LxH] [--fullscreen]
 //                      [--start=S] [--seconds=S] [--fullscreen-after=S] [--stats=FICHIER]
+//                      [--snapshot=FICHIER.ppm] [--snapshot-at=S]
 //
 // Le modèle par défaut est celui du lecteur actuel du propriétaire (AnimeJaNai, slot par
 // défaut de animejanai.conf) : SPAN V3.1 Sharp1 Performance, ×2. Il est lu en place, en
@@ -39,12 +40,14 @@ struct PlayOptions {
   bool upscale = true;                         // --no-upscale : image source telle quelle
   int window_width = 1280;                     // --window=LxH
   int window_height = 720;
-  bool fullscreen = false;                     // --fullscreen : plein écran dès l'ouverture
-  std::int64_t start_us = 0;                   // --start=S : position de départ
-  std::int64_t stop_after_us = 0;              // --seconds=S : quitte après S s de lecture ; 0 jamais
-  std::int64_t fullscreen_after_us = 0;        // --fullscreen-after=S : bascule après S s ; 0 jamais
-  std::optional<std::filesystem::path> stats;  // --stats : une ligne par image présentée
-  bool help = false;                           // --help
+  bool fullscreen = false;                        // --fullscreen : plein écran dès l'ouverture
+  std::int64_t start_us = 0;                      // --start=S : position de départ
+  std::int64_t stop_after_us = 0;                 // --seconds=S : quitte après S s de lecture ; 0 jamais
+  std::int64_t fullscreen_after_us = 0;           // --fullscreen-after=S : bascule après S s ; 0 jamais
+  std::optional<std::filesystem::path> stats;     // --stats : une ligne par image présentée
+  std::optional<std::filesystem::path> snapshot;  // --snapshot : la fenêtre en PPM, une fois
+  std::int64_t snapshot_at_us = 3'000'000;        // --snapshot-at=S : après S s de lecture
+  bool help = false;                              // --help
 };
 
 // Arguments qui suivent « play ». Une option inconnue (OptionUnknown), une valeur

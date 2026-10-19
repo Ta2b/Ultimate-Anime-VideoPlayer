@@ -1,0 +1,72 @@
+// L'écran provisoire de la tranche verticale : fenêtre SDL3, appareil Vulkan et swapchain
+// libplacebo, ring de sortie exporté vers CUDA, composition des slots avec sous-titres et OSD.
+//
+// Provisoire : render (appareil, ring, composition, grade, ImGui) et present (fenêtre,
+// swapchain, cadence, écran) le remplacent dès qu'ils sont fusionnés ; le contrat qu'il tient
+// est celui de Screen (links.h) et du ring (core/ring.h), le même qu'eux.
+#pragma once
+
+#include <cstdint>
+#include <expected>
+#include <filesystem>
+#include <memory>
+#include <string>
+#include <vector>
+
+#include "app/play/links.h"
+#include "core/frame.h"
+#include "core/gpu_device.h"
+#include "core/ring.h"
+#include "core/types.h"
+
+struct SDL_Window;
+
+namespace ajp::app::play {
+
+struct ScreenOptions {
+  std::string title = "ajp";
+  int width = 1280;
+  int height = 720;
+  bool fullscreen = false;
+  bool hdr = true;  // HDR10 (PQ, BT.2020) si l'écran l'offre, SDR sinon
+};
+
+class PlaceboScreen final : public Screen {
+ public:
+  // SDL doit être initialisé (vidéo). Refus : fenêtre, instance, appareil ou swapchain
+  // impossibles (DeviceMismatch, LibraryUnavailable).
+  static std::expected<std::unique_ptr<PlaceboScreen>, Refusal> open(const ScreenOptions& options);
+  ~PlaceboScreen() override;
+  PlaceboScreen(const PlaceboScreen&) = delete;
+  PlaceboScreen& operator=(const PlaceboScreen&) = delete;
+
+  // L'appareil de rendu : son UUID choisit le GPU de CUDA et de NVDEC.
+  const GpuDevice& device() const;
+  SDL_Window* window() const;
+  // Ce que l'écran présente : sa sortie (sRGB ou PQ) et son type, pour l'OSD.
+  std::string output_description() const;
+
+  // Crée le ring : count slots RGBA16 de width × height, exportés (mémoire et sémaphore
+  // timeline) et cédés à CUDA en disposition GENERAL, prêts pour la première écriture.
+  std::expected<std::vector<RingSlotDesc>, Refusal> create_ring(int width, int height, std::uint32_t count);
+  // Couleur des images du ring : celle de la source (l'agrandissement ne la change pas).
+  void set_source_color(const ColorInfo& color);
+  // Soumet le travail en attente (rendus, cessions de slots) sans l'attendre.
+  void flush();
+  // La prochaine présentation est aussi rendue en SDR hors écran et écrite en PPM (P6) : ce
+  // que montre la fenêtre, pour le vérifier sans capture d'écran.
+  void snapshot_next(std::filesystem::path path);
+
+  OutputSize size() const override;
+  std::expected<ScreenTiming, Refusal> show(const ShowRequest& request) override;
+  SlotFree retire(const RingFrame& frame) override;
+  void set_fullscreen(bool on) override;
+  bool fullscreen() const override;
+
+ private:
+  struct Impl;
+  explicit PlaceboScreen(std::unique_ptr<Impl> impl);
+  std::unique_ptr<Impl> impl_;
+};
+
+}  // namespace ajp::app::play

@@ -6,8 +6,22 @@
 # threads source, gpu, audio et subs, horloge audio maîtresse).
 ajp_add_module(app
   SOURCES
-    play/bridges.cpp play/frame_queue.cpp play/frame_stats.cpp play/options.cpp play/pipeline.cpp
+    play/backend_library.cpp play/bridges.cpp play/engine_build.cpp play/frame_queue.cpp
+    play/frame_stats.cpp play/input.cpp play/options.cpp play/osd_text.cpp play/pipeline.cpp
+    play/placebo_overlays.cpp play/placebo_ring.cpp play/placebo_screen.cpp play/placebo_snapshot.cpp
+    play/player.cpp
     play/ring_stage.cpp play/session.cpp play/upscale_stage.cpp play/wiring.cpp
   DEPS ajp::core ajp::core_log ajp::media ajp::gpu ajp::prepare ajp::audio ajp::subs
        ajp::render ajp::present ajp::export
-  PRIVATE_DEPS ajp::dep::ffmpeg ajp::dep::sdl3)
+  PRIVATE_DEPS ajp::dep::ffmpeg ajp::dep::placebo ajp::dep::sdl3 ajp::dep::spdlog ajp::dep::vulkan
+               ${CMAKE_DL_LIBS})
+
+# ajp : l'exécutable. Le backend TensorRT se cherche à côté de lui, puis dans l'arbre de
+# construction quand il y est construit (AJP_WITH_CUDA).
+add_executable(ajp main.cpp)
+target_link_libraries(ajp PRIVATE ajp::app ajp::dep::ffmpeg ajp::dep::sdl3 ajp::dep::spdlog)
+if(TARGET ajp_backend_tensorrt)
+  target_compile_definitions(ajp PRIVATE AJP_BACKEND_TENSORRT="$<TARGET_FILE:ajp_backend_tensorrt>")
+  add_dependencies(ajp ajp_backend_tensorrt)
+endif()
+ajp_set_warnings(ajp)
