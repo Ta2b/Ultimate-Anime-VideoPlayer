@@ -52,17 +52,29 @@ void require_refusal(const std::expected<T, Refusal>& result, RefusalCode code) 
   CHECK(result.error().code == code);
 }
 
+// Détruit runner, pipelines, allocateur puis contexte, dans cet ordre ; un test qui se termine
+// normalement échoue si le messager du contexte a reçu une erreur, destruction comprise (objets
+// oubliés à vkDestroyDevice, par exemple).
 struct Rig {
+  Rig() = default;
+  Rig(Rig&&) = default;
+  Rig& operator=(Rig&&) = delete;
+  Rig(const Rig&) = delete;
+  Rig& operator=(const Rig&) = delete;
+  ~Rig();
+
   std::unique_ptr<VkContext> context;
   std::unique_ptr<MemoryAllocator> memory;
   std::unique_ptr<PipelineCache> pipelines;
   std::optional<KernelRunner> runner;
+  std::shared_ptr<const DebugCounts> messages;  // ceux du contexte, nuls sans messager
 
   KernelRunner& kernels() { return *runner; }
 };
 
 // Saute le test sans Vulkan ; tout autre refus le fait échouer. La couche de validation est
-// activée quand elle est installée (VK_LAYER_KHRONOS_validation), sans quoi le test tourne nu.
+// activée quand elle est installée (VK_LAYER_KHRONOS_validation, with-validation en local), sans
+// quoi le test tourne nu et ses comptes d'erreurs restent à zéro.
 Rig make_rig(const CreateOptions& options = {});
 // Saute le test sans stockage 16 bits.
 void require_f16(const Rig& rig);

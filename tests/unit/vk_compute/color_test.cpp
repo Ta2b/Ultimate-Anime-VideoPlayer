@@ -193,6 +193,20 @@ TEST_CASE("couleur : tailles, formats et dispositions hors contrat refusés", "[
   YuvView truncated = frame.view;
   truncated.buffer.size -= 4;
   require_refusal(kr.ingest(r, truncated, {}, rgb.view), RefusalCode::InputMismatch);
+  // Des plans qui se chevauchent : la sortie écrirait l'un sur l'autre. CbCr qui commence dans la
+  // dernière ligne de luma, puis Cr sur Cb en planaire. Le Cr inutilisé de NV12 n'est pas regardé.
+  YuvView overlapping = frame.view;
+  overlapping.layout.cb.offset -= 4;
+  require_refusal(kr.ingest(r, overlapping, {}, rgb.view), RefusalCode::InputMismatch);
+  require_refusal(kr.output_yuv(r, rgb.view, {}, overlapping), RefusalCode::InputMismatch);
+  YuvView unused_cr = frame.view;
+  unused_cr.layout.cr = frame.view.layout.luma;
+  require_ok(check_yuv(unused_cr, "NV12, Cr inutilisé"));
+  YuvBuffer planar = upload_yuv(rig, synthetic_yuv(k::Format::Yuv420p, 22, 14, 2));
+  YuvView shared_chroma = planar.view;
+  shared_chroma.layout.cr = shared_chroma.layout.cb;
+  require_refusal(kr.ingest(r, shared_chroma, {}, rgb.view), RefusalCode::InputMismatch);
+  require_ok(check_yuv(planar.view, "4:2:0 planaire serré"));
 
   TensorBuffer small = tensor_target(rig, 20, 14, 3, Precision::F32);
   require_refusal(kr.ingest(r, frame.view, {}, small.view), RefusalCode::InputMismatch);

@@ -59,7 +59,8 @@ Done run(PipelineCache& pipelines, Recorder& recorder, std::string_view shader, 
          std::span<const VkImageView> images, std::span<const std::byte> push,
          std::array<std::uint32_t, 3> groups) {
   if (&recorder.context() != &pipelines.context()) {
-    return refuse(RefusalCode::InputMismatch, std::format("{} : Recorder d'un autre contexte Vulkan", shader));
+    return refuse(RefusalCode::InputMismatch,
+                  std::format("{} : Recorder d'un autre contexte Vulkan", shader));
   }
   std::string name(shader);
   if (variant == Precision::F16) name += "_f16";

@@ -72,15 +72,17 @@ class PipelineCache {
   ~PipelineCache();
 
   // Le pipeline de ce shader et de ces constantes, créé à la première demande. Valide tant que
-  // le cache vit : tout enregistrement qui le lie doit disparaître avant le cache. L'interface du
-  // SPIR-V (spirv_reflect.h) est comparée à desc avant toute création. Refus :
-  // FeatureUnavailable (shader absent, push constants au-delà de la limite, capacité SPIR-V non
-  // activée), InputMismatch (disposition différente de celle du shader ou d'une demande
-  // précédente, push non multiple de 4), VulkanCallFailed.
+  // le cache vit : tout enregistrement qui le lie doit disparaître avant le cache. Les capacités
+  // du SPIR-V (spirv_reflect.h) sont comparées à l'appareil avant vkCreateShaderModule, son
+  // interface à desc avant vkCreateComputePipelines. Refus : FeatureUnavailable (shader absent,
+  // push constants au-delà de la limite, capacité SPIR-V non activée), InputMismatch (disposition
+  // différente de celle du shader ou d'une demande précédente, push non multiple de 4),
+  // VulkanCallFailed.
   std::expected<const Pipeline*, Refusal> get(const PipelineDesc& desc);
 
-  // L'interface lue dans le SPIR-V embarqué du shader (refus de get pour un shader absent).
-  std::expected<const ShaderInterface*, Refusal> interface(std::string_view shader);
+  // L'interface lue dans le SPIR-V embarqué du shader, sans appareil ni module créé. Refus :
+  // FeatureUnavailable (shader absent), ceux de reflect.
+  static std::expected<ShaderInterface, Refusal> interface(std::string_view shader);
 
   const VkContext& context() const { return context_; }
   std::size_t size() const { return pipelines_.size(); }

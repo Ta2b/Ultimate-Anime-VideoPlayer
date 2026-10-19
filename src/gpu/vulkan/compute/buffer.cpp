@@ -15,7 +15,8 @@ constexpr VkBufferUsageFlags kUsage =
 Done check_range(const VkContext& context, const MemoryAllocator& memory, const Buffer& buffer,
                  VkDeviceSize offset, VkDeviceSize size, std::string_view what) {
   if (buffer.context() != &context || &memory.context() != &context) {
-    return refuse(RefusalCode::InputMismatch, std::format("{} : tampon ou allocateur d'un autre contexte", what));
+    return refuse(RefusalCode::InputMismatch,
+                  std::format("{} : tampon ou allocateur d'un autre contexte", what));
   }
   if (size == 0 || offset > buffer.size() || size > buffer.size() - offset) {
     return refuse(RefusalCode::InputMismatch, std::format("{} : {} o à l'offset {} d'un tampon de {} o", what,

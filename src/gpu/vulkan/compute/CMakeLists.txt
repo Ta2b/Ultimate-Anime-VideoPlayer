@@ -20,7 +20,6 @@ ajp_add_module(vk_compute
     kernels_color.cpp
     kernels_window.cpp
     library.cpp
-    log.cpp
     memory.cpp
     pipeline.cpp
     queue.cpp
@@ -30,7 +29,7 @@ ajp_add_module(vk_compute
     sync.cpp
     weights.cpp
   DEPS ajp::core_types ajp::kernels ajp::dep::vulkan
-  PRIVATE_DEPS ajp::dep::spdlog ${CMAKE_DL_LIBS})
+  PRIVATE_DEPS ajp::core_log ajp::dep::spdlog ${CMAKE_DL_LIBS})
 
 # Aucun prototype Vulkan, ici comme chez ceux qui incluent nos en-têtes.
 target_compile_definitions(ajp_vk_compute PUBLIC VK_NO_PROTOTYPES)

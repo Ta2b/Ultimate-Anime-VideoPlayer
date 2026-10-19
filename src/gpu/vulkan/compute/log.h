@@ -1,14 +1,16 @@
-// Canal de journal du module vk_compute. En-tête interne, inclus par les .cpp seulement.
+// Canal de journal du module vk_compute : la convention est celle de core/log.h.
+// En-tête interne, inclus par les .cpp du module seulement.
 #pragma once
 
 #include <memory>
 
-#include <spdlog/logger.h>
+#include "core/log.h"
 
 namespace ajp::gpu::vk {
 
-// Clone du journal par défaut, nommé « vk_compute » : mêmes sorties, sans toucher au registre
-// global de spdlog. Chaque objet du module qui journalise garde le sien.
-std::shared_ptr<spdlog::logger> make_logger();
+// Un canal neuf, qui partage les puits installés par app ; chaque contexte garde le sien.
+inline std::shared_ptr<spdlog::logger> make_logger() {
+  return log_channel("vk_compute");
+}
 
 }  // namespace ajp::gpu::vk

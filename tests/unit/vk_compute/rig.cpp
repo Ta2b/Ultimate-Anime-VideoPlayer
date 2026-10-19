@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstring>
+#include <exception>
 #include <limits>
 #include <string>
 
@@ -66,6 +67,15 @@ std::string describe(const Refusal& refusal) {
   return std::format("{} : {}", name(refusal.code), refusal.detail);
 }
 
+Rig::~Rig() {
+  runner.reset();
+  pipelines.reset();
+  memory.reset();
+  context.reset();
+  // Un test déjà en échec ou sauté (exception en vol) ne vérifie rien de plus.
+  if (messages && std::uncaught_exceptions() == 0) CHECK(messages->errors.load() == 0);
+}
+
 Rig make_rig(const CreateOptions& options) {
   // La couche de validation, quand elle est installée, surveille chaque test : run() vérifie
   // qu'elle n'a signalé aucune erreur. Sans elle, l'appareil est créé tel quel.
@@ -84,6 +94,7 @@ Rig make_rig(const CreateOptions& options) {
   }
   Rig rig;
   rig.context = std::move(*context);
+  rig.messages = rig.context->debug_counts();
   rig.memory = require_value(MemoryAllocator::create(*rig.context));
   rig.pipelines = require_value(PipelineCache::create(*rig.context));
   rig.runner.emplace(*rig.pipelines);

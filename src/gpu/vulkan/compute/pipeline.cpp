@@ -44,9 +44,11 @@ std::expected<const PipelineCache::Module*, Refusal> PipelineCache::module(std::
     return refuse(RefusalCode::FeatureUnavailable,
                   std::format("shader {} absent du SPIR-V embarqué", shader));
   }
-  // Lue avant toute création : un SPIR-V incohérent n'atteint pas le pilote.
+  // Lue avant toute création : un SPIR-V incohérent, ou qui demande une capacité non activée
+  // (VUID-VkShaderModuleCreateInfo-pCode-08740), n'atteint pas le pilote.
   auto interface = reflect(words, shader);
   if (!interface) return std::unexpected(interface.error());
+  if (auto ok = check_capabilities(*interface, context_.caps()); !ok) return std::unexpected(ok.error());
   const VkShaderModuleCreateInfo info{.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO,
                                       .codeSize = words.size_bytes(),
                                       .pCode = words.data()};
@@ -61,10 +63,13 @@ std::expected<const PipelineCache::Module*, Refusal> PipelineCache::module(std::
   return &at->second;
 }
 
-std::expected<const ShaderInterface*, Refusal> PipelineCache::interface(std::string_view shader) {
-  auto found = module(shader);
-  if (!found) return std::unexpected(found.error());
-  return &(*found)->interface;
+std::expected<ShaderInterface, Refusal> PipelineCache::interface(std::string_view shader) {
+  const std::span<const std::uint32_t> words = spirv::words(shader);
+  if (words.empty()) {
+    return refuse(RefusalCode::FeatureUnavailable,
+                  std::format("shader {} absent du SPIR-V embarqué", shader));
+  }
+  return reflect(words, shader);
 }
 
 std::expected<std::unique_ptr<Pipeline>, Refusal> PipelineCache::build(const PipelineDesc& desc,
@@ -156,7 +161,7 @@ std::expected<const Pipeline*, Refusal> PipelineCache::get(const PipelineDesc& d
   }
   auto shader = module(desc.shader);
   if (!shader) return std::unexpected(shader.error());
-  if (auto ok = check_interface((*shader)->interface, desc, context_.caps()); !ok) {
+  if (auto ok = check_interface((*shader)->interface, desc); !ok) {
     return std::unexpected(ok.error());
   }
   auto pipeline = build(desc, (*shader)->handle);

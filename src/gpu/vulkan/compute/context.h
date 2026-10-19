@@ -6,6 +6,7 @@
 
 #include <atomic>
 #include <chrono>
+#include <cstddef>
 #include <cstdint>
 #include <expected>
 #include <filesystem>
@@ -31,6 +32,14 @@ namespace ajp::gpu::vk {
 
 class Recording;
 
+// Messages VK_EXT_debug_utils reçus par le messager d'un contexte, comptés depuis n'importe quel
+// thread du pilote. Partagés : ils survivent au contexte, dont la destruction (objets oubliés à
+// vkDestroyDevice, par exemple) peut encore en produire.
+struct DebugCounts {
+  std::atomic<std::uint64_t> errors{0};
+  std::atomic<std::uint64_t> warnings{0};
+};
+
 // Un appareil à créer.
 struct CreateOptions {
   // Chargeur : ce vkGetInstanceProcAddr s'il est donné, sinon la bibliothèque library, sinon
@@ -54,6 +63,9 @@ struct AdoptedDevice {
   std::uint32_t api_version = 0;  // VkApplicationInfo.apiVersion de l'instance
   std::uint32_t queue_family = 0;
   std::uint32_t queue_index = 0;
+  // Files créées dans queue_family (VkDeviceQueueCreateInfo.queueCount, pl_vulkan_queue.count) :
+  // queue_index doit y être, pas seulement dans ce que la famille offre.
+  std::uint32_t queue_count = 1;
   const VkPhysicalDeviceFeatures2* features = nullptr;  // la chaîne passée à vkCreateDevice
   std::vector<std::string> extensions;                  // extensions activées sur le VkDevice
   // Accès exclusif à la file partagée (pl_vulkan.lock_queue et unlock_queue) ; vides quand la
@@ -74,8 +86,10 @@ class VkContext {
   // UUID introuvable, aucune file compute), FeatureUnavailable (Vulkan < 1.2, timeline
   // semaphores, extension, VK_EXT_debug_utils ou couche de validation absentes), VulkanCallFailed.
   static std::expected<std::unique_ptr<VkContext>, Refusal> create(const CreateOptions& options = {});
-  // Refus en plus : InputMismatch (lock_queue sans unlock_queue, ou l'inverse). Tout ce que le
-  // contexte crée (Recording, MemoryAllocator, PipelineCache…) doit disparaître avant lui.
+  // Refus en plus : InputMismatch (lock_queue sans unlock_queue, ou l'inverse), DeviceUnavailable
+  // (poignée nulle, famille sans calcul, queue_count hors de [1, files de la famille], queue_index
+  // au-delà de queue_count). Tout ce que le contexte crée (Recording, MemoryAllocator,
+  // PipelineCache…) doit disparaître avant lui.
   static std::expected<std::unique_ptr<VkContext>, Refusal> adopt(AdoptedDevice adopted);
 
   VkContext(const VkContext&) = delete;
@@ -101,14 +115,22 @@ class VkContext {
   // Messages VK_EXT_debug_utils (CreateOptions.validation ou debug_messages) : actifs, et nombre
   // d'erreurs et d'avertissements reçus depuis la création. Toujours 0 sans messager.
   bool debug_messages() const { return messenger_ != VK_NULL_HANDLE; }
-  std::uint64_t validation_errors() const { return debug_ ? debug_->errors.load() : 0; }
-  std::uint64_t validation_warnings() const { return debug_ ? debug_->warnings.load() : 0; }
+  std::uint64_t validation_errors() const { return debug_ ? debug_->counts.errors.load() : 0; }
+  std::uint64_t validation_warnings() const { return debug_ ? debug_->counts.warnings.load() : 0; }
+  // Les mêmes compteurs, qui survivent au contexte ; nul sans messager.
+  std::shared_ptr<const DebugCounts> debug_counts() const {
+    return debug_ ? std::shared_ptr<const DebugCounts>(debug_, &debug_->counts) : nullptr;
+  }
+
+  // Attentes, et signaux, qu'une soumission accepte en plus de l'enchaînement de l'enregistrement.
+  static constexpr std::size_t kMaxSubmitPoints = 8;
 
   // Soumet l'enregistrement sur la file compute : il attend waits côté GPU et signale
-  // signals. Ses exécutions successives s'enchaînent côté GPU, sans attente hôte. Refus :
-  // InputMismatch (enregistrement d'un autre contexte ou non terminé, sémaphore nul, sémaphore
-  // runs de l'enregistrement attendu ou signalé, sémaphore signalé deux fois), FieldOutOfRange
-  // (signal d'une valeur déjà atteinte), VulkanCallFailed.
+  // signals. Ses exécutions successives s'enchaînent côté GPU, sans attente hôte. Aucune
+  // allocation hôte : la soumission de chaque image en est exempte. Refus : InputMismatch
+  // (enregistrement d'un autre contexte ou non terminé, sémaphore nul, sémaphore runs de
+  // l'enregistrement attendu ou signalé, sémaphore signalé deux fois), FieldOutOfRange (plus de
+  // kMaxSubmitPoints attentes ou signaux, signal d'une valeur déjà atteinte), VulkanCallFailed.
   Done submit(Recording& recording, std::span<const TimelinePoint> waits = {},
               std::span<const TimelinePoint> signals = {});
 
@@ -122,10 +144,9 @@ class VkContext {
   Done run_once(const std::function<void(VkCommandBuffer)>& record);
 
  private:
-  // Compteurs du messager, appelé depuis n'importe quel thread du pilote : atomiques.
+  // Ce que reçoit le messager : ses compteurs et le journal où il écrit.
   struct DebugSink {
-    std::atomic<std::uint64_t> errors{0};
-    std::atomic<std::uint64_t> warnings{0};
+    DebugCounts counts;
     std::shared_ptr<spdlog::logger> log;
   };
   // Attente bornée des run_once encore en vol à la destruction d'un contexte adopté.
@@ -169,7 +190,7 @@ class VkContext {
   std::uint64_t once_count_ = 0;  // soumissions de run_once acceptées par la file
   std::uint64_t host_waits_ = 0;
   std::shared_ptr<spdlog::logger> log_;
-  std::unique_ptr<DebugSink> debug_;
+  std::shared_ptr<DebugSink> debug_;
   VkDebugUtilsMessengerEXT messenger_ = VK_NULL_HANDLE;
   PFN_vkDestroyDebugUtilsMessengerEXT destroy_messenger_ = nullptr;
 };

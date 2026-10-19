@@ -1,12 +1,18 @@
 // Exécution : enregistrement rejoué, sémaphores timeline, barrières, refus du Recorder et
 // cache de pipelines.
 #include <array>
+#include <cstddef>
+#include <cstdint>
 #include <cstring>
+#include <memory>
+#include <span>
 #include <vector>
 
 #include <catch2/catch_test_macros.hpp>
 
+#include "gpu/vulkan/compute/image.h"
 #include "gpu/vulkan/compute/sync.h"
+#include "host_allocations.h"
 #include "rig.h"
 
 using namespace ajp;
@@ -14,6 +20,9 @@ using namespace ajp::gpu::vk;
 using namespace ajp::gpu::vk::test;
 
 namespace {
+
+// Où les allocations de la sonde s'échappent.
+const void* volatile escaped = nullptr;
 
 // La constante de spécialisation 0 de transfer.comp : PQ EOTF.
 constexpr std::array kPqOp{static_cast<std::uint32_t>(TransferOp::PqEotf)};
@@ -138,6 +147,135 @@ TEST_CASE("exécution : refus du Recorder et des soumissions", "[vk_compute][exe
   require_refusal(rig.context->wait_on_host({}), RefusalCode::InputMismatch);
   // Le noyau ne touche qu'aux limites de ses arguments.
   require_refusal(Recorder::begin(*rig.context, *rig.memory, {.sets = 0}), RefusalCode::FieldOutOfRange);
+}
+
+TEST_CASE("exécution : signaux et attentes de sémaphores hors contrat refusés", "[vk_compute][execution]") {
+  Rig rig = make_rig();
+  TensorBuffer src = tensor_target(rig, 8, 8, 3, Precision::F32);
+  TensorBuffer middle = tensor_target(rig, 8, 8, 3, Precision::F32);
+  TensorBuffer dst = tensor_target(rig, 8, 8, 3, Precision::F32);
+  const std::unique_ptr<Recording> recording = round_trip(rig, src.view, middle.view, dst.view);
+  TimelineSemaphore done = require_value(TimelineSemaphore::create(*rig.context, 3));
+
+  // Un signal hôte ne recule ni ne répète une valeur.
+  require_refusal(done.signal(3), RefusalCode::FieldOutOfRange);
+  require_refusal(done.signal(2), RefusalCode::FieldOutOfRange);
+  require_ok(done.signal(4));
+  CHECK(require_value(done.value()) == 4);
+
+  // Le sémaphore runs appartient à l'enregistrement : ni attendu, ni signalé par l'appelant.
+  const std::array runs{recording->runs().at(1)};
+  require_refusal(rig.context->submit(*recording, runs), RefusalCode::InputMismatch);
+  require_refusal(rig.context->submit(*recording, {}, runs), RefusalCode::InputMismatch);
+  const std::array null_signal{TimelinePoint{}};
+  require_refusal(rig.context->submit(*recording, {}, null_signal), RefusalCode::InputMismatch);
+  const std::array twice{done.at(5), done.at(6)};
+  require_refusal(rig.context->submit(*recording, {}, twice), RefusalCode::InputMismatch);
+  const std::array reached{done.at(4)};
+  require_refusal(rig.context->submit(*recording, {}, reached), RefusalCode::FieldOutOfRange);
+  // Aucun refus n'a soumis quoi que ce soit ; une soumission conforme passe ensuite.
+  CHECK(recording->submitted() == 0);
+  const std::array next{done.at(5)};
+  require_ok(rig.context->submit(*recording, {}, next));
+  require_ok(rig.context->wait_on_host(done.at(5)));
+  CHECK(require_value(recording->runs().value()) == 1);
+}
+
+TEST_CASE("sonde d'allocations : operator new compté sur le thread de la sonde", "[vk_compute][execution]") {
+  std::uint64_t inside = 0;
+  std::uint64_t after = 0;
+  {
+    const HostAllocationProbe probe;
+    const std::vector<int> one(16);
+    const auto two = std::make_unique<std::array<int, 4>>();
+    // Des allocations qui s'échappent : l'optimiseur ne peut pas les supprimer.
+    escaped = one.data();
+    escaped = two.get();
+    inside = probe.count();
+  }
+  {
+    const HostAllocationProbe probe;
+    after = probe.count();
+  }
+  CHECK(inside == 2);
+  CHECK(after == 0);
+}
+
+TEST_CASE("exécution : une soumission n'alloue rien sur l'hôte, ses lots sont bornés",
+          "[vk_compute][execution]") {
+  Rig rig = make_rig();
+  TensorBuffer src = tensor_target(rig, 8, 8, 3, Precision::F32);
+  TensorBuffer middle = tensor_target(rig, 8, 8, 3, Precision::F32);
+  TensorBuffer dst = tensor_target(rig, 8, 8, 3, Precision::F32);
+  const std::unique_ptr<Recording> recording = round_trip(rig, src.view, middle.view, dst.view);
+  TimelineSemaphore gate = require_value(TimelineSemaphore::create(*rig.context, 1));
+  TimelineSemaphore done = require_value(TimelineSemaphore::create(*rig.context, 0));
+
+  std::array<TimelinePoint, VkContext::kMaxSubmitPoints + 1> many{};
+  many.fill(gate.at(1));
+  require_refusal(rig.context->submit(*recording, many), RefusalCode::FieldOutOfRange);
+  require_refusal(rig.context->submit(*recording, std::span(many).first(1), many),
+                  RefusalCode::FieldOutOfRange);
+  require_ok(rig.context->submit(*recording, std::span(many).first(VkContext::kMaxSubmitPoints)));
+
+  // Chaque image du flux soumet : ni vecteur ni chaîne, attentes et signaux sur la pile. Aucune
+  // macro de Catch2 dans la sonde, elles allouent.
+  const std::array waits{gate.at(1)};
+  std::array<bool, 3> submitted{};
+  std::uint64_t allocations = 0;
+  {
+    const HostAllocationProbe probe;
+    for (std::size_t i = 0; i < submitted.size(); ++i) {
+      const std::array signals{done.at(i + 1)};
+      submitted[i] = rig.context->submit(*recording, waits, signals).has_value();
+    }
+    allocations = probe.count();
+  }
+  CHECK(submitted == std::array{true, true, true});
+  require_ok(rig.context->wait_on_host(done.at(3)));
+  CHECK(recording->submitted() == 4);
+  if (rig.context->debug_messages()) {
+    // La couche de validation alloue elle-même dans vkQueueSubmit : rien à conclure sur le socle.
+    WARN("couche de validation active : " << allocations << " allocations, non vérifiées");
+  } else {
+    CHECK(allocations == 0);
+  }
+}
+
+TEST_CASE("exécution : objets d'un autre contexte et vues nulles refusés", "[vk_compute][execution]") {
+  Rig rig = make_rig();
+  Rig other = make_rig();
+  Buffer foreign = make_buffer(other, 256);
+  const std::array<std::byte, 16> bytes{};
+  std::array<std::byte, 16> out{};
+  require_refusal(Buffer::create(*rig.context, *other.memory, 256, MemoryUse::Device),
+                  RefusalCode::InputMismatch);
+  require_refusal(upload(*rig.context, *rig.memory, foreign, 0, bytes), RefusalCode::InputMismatch);
+  require_refusal(download(*rig.context, *rig.memory, foreign, 0, out), RefusalCode::InputMismatch);
+  require_refusal(Recorder::begin(*rig.context, *other.memory), RefusalCode::InputMismatch);
+
+  TensorBuffer a = tensor_target(rig, 8, 8, 3, Precision::F32);
+  TensorBuffer b = tensor_target(rig, 8, 8, 3, Precision::F32);
+  const Pipeline& foreign_pipeline = *require_value(other.pipelines->get(
+      {.shader = "transfer", .constants = kPqOp, .buffers = 2, .images = 0, .push_bytes = 32}));
+  const std::array<std::byte, 32> push{};
+  const std::array buffers{a.view.buffer, b.view.buffer};
+  Recorder r = require_value(Recorder::begin(*rig.context, *rig.memory));
+  require_refusal(r.dispatch(foreign_pipeline, buffers, {}, push, {1, 1, 1}), RefusalCode::InputMismatch);
+  require_refusal(other.kernels().transfer(r, TransferOp::PqEotf, a.view, b.view),
+                  RefusalCode::InputMismatch);
+
+  // Une image d'un autre contexte n'est ni lue ni écrite ; une vue d'image nulle est refusée.
+  StorageImage foreign_image = require_value(StorageImage::create(*other.context, *other.memory, 8, 8));
+  require_refusal(read_rgba16(*rig.context, *rig.memory, foreign_image), RefusalCode::InputMismatch);
+  require_refusal(rig.kernels().output_rgba16(r, a.view, foreign_image), RefusalCode::InputMismatch);
+  const Pipeline& store = *require_value(
+      rig.pipelines->get({.shader = "rgba16_store", .buffers = 1, .images = 1, .push_bytes = 8}));
+  const std::array one{a.view.buffer};
+  const std::array null_image{VkImageView{VK_NULL_HANDLE}};
+  const std::array<std::byte, 8> size_push{};
+  require_refusal(r.dispatch(store, one, null_image, size_push, {1, 1, 1}), RefusalCode::InputMismatch);
+  CHECK(require_value(r.finish())->dispatches() == 0);
 }
 
 TEST_CASE("exécution : une vue mal alignée est refusée", "[vk_compute][execution]") {

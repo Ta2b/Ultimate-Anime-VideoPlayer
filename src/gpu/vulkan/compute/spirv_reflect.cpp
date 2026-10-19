@@ -64,6 +64,7 @@ enum Capability : std::uint32_t {
   kCapShader = 1,
   kCapFloat16 = 9,
   kCapInt16 = 22,
+  kCapImageQuery = 50,
   kCapGroupNonUniform = 61,
   kCapGroupNonUniformQuad = 68,
   kCapStorageBuffer16BitAccess = 4433,
@@ -266,6 +267,7 @@ bool supported(std::uint32_t capability, const DeviceCaps& caps) {
   switch (capability) {
     case kCapMatrix:
     case kCapShader:
+    case kCapImageQuery:  // imageSize : Vulkan 1.0, sans fonction à activer
       return true;
     case kCapFloat16:
       return caps.enabled.shader_float16;
@@ -319,14 +321,17 @@ std::expected<ShaderInterface, Refusal> reflect(std::span<const std::uint32_t> w
   return shader;
 }
 
-Done check_interface(const ShaderInterface& shader, const PipelineDesc& desc, const DeviceCaps& caps) {
+Done check_capabilities(const ShaderInterface& shader, const DeviceCaps& caps) {
   for (const std::uint32_t capability : shader.capabilities) {
     if (!supported(capability, caps)) {
-      return refuse(RefusalCode::FeatureUnavailable,
-                    std::format("{} : capacité SPIR-V {} non activée sur {}", shader.name, capability,
-                                caps.device_name));
+      return refuse(RefusalCode::FeatureUnavailable, std::format("{} : capacité SPIR-V {} non activée sur {}",
+                                                                 shader.name, capability, caps.device_name));
     }
   }
+  return {};
+}
+
+Done check_interface(const ShaderInterface& shader, const PipelineDesc& desc) {
   if (!is_run(shader.storage_buffers, 0, desc.buffers) ||
       !is_run(shader.storage_images, desc.buffers, desc.images)) {
     return refuse(RefusalCode::InputMismatch,

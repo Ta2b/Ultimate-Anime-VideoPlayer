@@ -116,7 +116,8 @@ Done check_yuv(const YuvView& view, std::string_view what) {
   if (auto ok = check_plane(l.luma, view.width * bytes, view.height, view.buffer.size, what, "Y"); !ok)
     return ok;
   const std::uint32_t chroma_row = (info.interleaved ? 2U : 1U) * cw * bytes;
-  if (auto ok = check_plane(l.cb, chroma_row, ch, view.buffer.size, what, info.interleaved ? "CbCr" : "Cb"); !ok)
+  if (auto ok = check_plane(l.cb, chroma_row, ch, view.buffer.size, what, info.interleaved ? "CbCr" : "Cb");
+      !ok)
     return ok;
   if (!info.interleaved) {
     if (auto ok = check_plane(l.cr, chroma_row, ch, view.buffer.size, what, "Cr"); !ok) return ok;
@@ -127,10 +128,10 @@ Done check_yuv(const YuvView& view, std::string_view what) {
   const Extent cr = extent(l.cr, chroma_row, ch);
   const bool overlap = y.overlaps(cb) || (!info.interleaved && (y.overlaps(cr) || cb.overlaps(cr)));
   if (overlap) {
-    return refuse(RefusalCode::InputMismatch,
-                  std::format("{} : plans Y ({}, pas {}), Cb ({}, pas {}) et Cr ({}, pas {}) qui se chevauchent",
-                              what, l.luma.offset, l.luma.pitch, l.cb.offset, l.cb.pitch, l.cr.offset,
-                              l.cr.pitch));
+    return refuse(
+        RefusalCode::InputMismatch,
+        std::format("{} : plans Y ({}, pas {}), Cb ({}, pas {}) et Cr ({}, pas {}) qui se chevauchent", what,
+                    l.luma.offset, l.luma.pitch, l.cb.offset, l.cb.pitch, l.cr.offset, l.cr.pitch));
   }
   return {};
 }

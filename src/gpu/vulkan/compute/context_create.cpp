@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cstring>
 #include <format>
+#include <memory>
 #include <string_view>
 #include <vector>
 
@@ -143,7 +144,7 @@ Done VkContext::create_instance(const CreateOptions& options) {
                     std::format("extension d'instance {} absente", VK_EXT_DEBUG_UTILS_EXTENSION_NAME));
     }
     extensions.push_back(VK_EXT_DEBUG_UTILS_EXTENSION_NAME);
-    debug_ = std::make_unique<DebugSink>();
+    debug_ = std::make_shared<DebugSink>();
     debug_->log = log_;
   }
   const VkDebugUtilsMessengerCreateInfoEXT messenger = messenger_info();

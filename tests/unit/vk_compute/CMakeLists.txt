@@ -13,10 +13,12 @@ ajp_add_unit_tests(vk_compute
     context_test.cpp
     detect_test.cpp
     execution_test.cpp
+    host_allocations.cpp
     memory_test.cpp
     resample_test.cpp
     rife_test.cpp
     rig.cpp
+    spirv_reflect_test.cpp
     transfer_test.cpp
     warp_test.cpp
   DEPS ajp::kernels)

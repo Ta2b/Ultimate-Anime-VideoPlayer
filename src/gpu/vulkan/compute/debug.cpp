@@ -27,10 +27,10 @@ VKAPI_ATTR VkBool32 VKAPI_CALL VkContext::on_debug_message(VkDebugUtilsMessageSe
   const char* id = data != nullptr && data->pMessageIdName != nullptr ? data->pMessageIdName : "?";
   const char* text = data != nullptr && data->pMessage != nullptr ? data->pMessage : "";
   if ((severity & VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT) != 0) {
-    sink->errors.fetch_add(1);
+    sink->counts.errors.fetch_add(1);
     if (sink->log) sink->log->error("Vulkan [{}] {}", id, text);
   } else {
-    sink->warnings.fetch_add(1);
+    sink->counts.warnings.fetch_add(1);
     if (sink->log) sink->log->warn("Vulkan [{}] {}", id, text);
   }
   // VK_FALSE : l'appel qui a produit le message continue normalement.
@@ -55,7 +55,8 @@ Done VkContext::create_messenger() {
                   "vkCreateDebugUtilsMessengerEXT ou vkDestroyDebugUtilsMessengerEXT absente du chargeur");
   }
   const VkDebugUtilsMessengerCreateInfoEXT info = messenger_info();
-  if (auto ok = check(create(instance_, &info, nullptr, &messenger_), "vkCreateDebugUtilsMessengerEXT"); !ok) {
+  if (auto ok = check(create(instance_, &info, nullptr, &messenger_), "vkCreateDebugUtilsMessengerEXT");
+      !ok) {
     return ok;
   }
   destroy_messenger_ = destroy;

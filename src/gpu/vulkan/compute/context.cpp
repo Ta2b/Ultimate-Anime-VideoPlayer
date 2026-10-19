@@ -18,9 +18,11 @@ std::string version_text(std::uint32_t version) {
   return std::format("{}.{}", VK_API_VERSION_MAJOR(version), VK_API_VERSION_MINOR(version));
 }
 
-// La famille adoptée existe, fait du calcul et a cette file.
+// La famille adoptée existe et fait du calcul ; l'appareil y a créé count files, dont index.
+// La famille peut en offrir davantage (16 sur la famille 0 d'une RTX) : seules les files créées
+// existent, vkGetDeviceQueue au-delà est un usage invalide.
 Done check_queue(const InstanceFunctions& fn, VkPhysicalDevice device, std::uint32_t family,
-                 std::uint32_t index) {
+                 std::uint32_t index, std::uint32_t created) {
   std::uint32_t count = 0;
   fn.vkGetPhysicalDeviceQueueFamilyProperties(device, &count, nullptr);
   std::vector<VkQueueFamilyProperties> families(count);
@@ -34,9 +36,14 @@ Done check_queue(const InstanceFunctions& fn, VkPhysicalDevice device, std::uint
     return refuse(RefusalCode::DeviceUnavailable,
                   std::format("la famille de files {} ne calcule pas", family));
   }
-  if (index >= props.queueCount) {
+  if (created == 0 || created > props.queueCount) {
     return refuse(RefusalCode::DeviceUnavailable,
-                  std::format("file {} adoptée, la famille {} en a {}", index, family, props.queueCount));
+                  std::format("{} files créées dans la famille {}, de 1 à {} possibles", created, family,
+                              props.queueCount));
+  }
+  if (index >= created) {
+    return refuse(RefusalCode::DeviceUnavailable,
+                  std::format("file {} adoptée, {} créées dans la famille {}", index, created, family));
   }
   return {};
 }
@@ -90,7 +97,8 @@ std::expected<std::unique_ptr<VkContext>, Refusal> VkContext::adopt(AdoptedDevic
     return refuse(RefusalCode::FeatureUnavailable,
                   "timelineSemaphore n'est pas activé sur l'appareil adopté");
   }
-  if (auto ok = check_queue(ctx->instance_fn_, ctx->physical_device_, ctx->queue_family_, ctx->queue_index_);
+  if (auto ok = check_queue(ctx->instance_fn_, ctx->physical_device_, ctx->queue_family_, ctx->queue_index_,
+                            adopted.queue_count);
       !ok) {
     return std::unexpected(ok.error());
   }
@@ -102,6 +110,11 @@ std::expected<std::unique_ptr<VkContext>, Refusal> VkContext::adopt(AdoptedDevic
 Done VkContext::finish_setup() {
   if (!log_) log_ = make_logger();
   device_fn_.vkGetDeviceQueue(device_, queue_family_, queue_index_, &queue_);
+  if (queue_ == VK_NULL_HANDLE) {
+    return refuse(
+        RefusalCode::DeviceUnavailable,
+        std::format("vkGetDeviceQueue(famille {}, file {}) : aucune file", queue_family_, queue_index_));
+  }
   const VkCommandPoolCreateInfo pool{.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO,
                                      .flags = VK_COMMAND_POOL_CREATE_TRANSIENT_BIT,
                                      .queueFamilyIndex = queue_family_};
