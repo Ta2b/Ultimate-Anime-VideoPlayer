@@ -3,7 +3,10 @@
 //
 // Repris de animejanai-inference-rtx@118c272 src/pipeline_hdr.c:1-86 (adaptateur qualifié) et
 // aji-rtx-linux/aji_rtx_vfx.cpp : même ordre d'appels, mêmes formats (RGBA 8 bits en entrée,
-// RGB10A2 en sortie), flux 0 hérité, modèle chargé au premier appel. Le SDK garde le pointeur
+// RGB10A2 en sortie), flux 0 hérité, modèle chargé au premier appel. Vérifié sur la RTX avec le
+// SDK 1.3.0.0 (tests [nvidia] de real_true_hdr_test.cpp) : NvVFX_Run(effet, 0) sur le flux 0
+// rend la main une fois l'image écrite ; deux passages donnent les mêmes octets ; aucun état
+// d'une image à l'autre ; plusieurs instances peuvent vivre ensemble. Le SDK garde le pointeur
 // passé à NvVFX_SetImage : les descripteurs vivent donc dans l'effet, jamais sur la pile
 // (docs/LINUX-INFERENCE.md du lecteur, « descripteurs NvCVImage locaux »).
 //

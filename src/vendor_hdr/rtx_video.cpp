@@ -30,8 +30,13 @@ class RtxVideoEffect final : public VendorEffect {
 
   TrueHdrPixel input_pixel() const override { return TrueHdrPixel::Rgb10A2; }
 
-  // Les réglages accompagnent chaque évaluation ; rien à transmettre ici.
+  // Les réglages accompagnent chaque évaluation ; rien à transmettre ici. ThdrSetting n'a pas
+  // de débandage à couper : false est refusé plutôt qu'ignoré.
   Done apply(const TrueHdrParams& params) override {
+    if (!params.debanding) {
+      return refuse(RefusalCode::FieldOutOfRange,
+                    "truehdr.debanding = false : TrueHDR RTX Video ne sait pas couper son débandage");
+    }
     thdr_ = rtx_video::ThdrSetting{.contrast = params.contrast,
                                    .saturation = params.saturation,
                                    .middle_gray = params.middle_gray,

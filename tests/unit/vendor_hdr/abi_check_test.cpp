@@ -51,6 +51,16 @@ TEST_CASE("ABI : #define, alias et commentaires", "[abi]") {
   CHECK_FALSE(find_definition(headers, "NVCV_RGBA"));
 }
 
+TEST_CASE("ABI : une définition poursuivie par « \\ » sur la ligne suivante", "[abi]") {
+  // Forme de nvVFXTrueHDR.h:21-22 (Maxine 1.3.0.0), fins de ligne Unix et Windows.
+  const std::vector<std::string> headers{
+      "#define NVVFXTRUEHDR_DEBANDING_OFF \\\n  \"DebandingOff\"  //!< 0 ou 1\n",
+      "#define NVVFXTRUEHDR_LUMINANCE \\\r\n \"Luminance\"\r\n",
+  };
+  CHECK(find_definition(headers, "NVVFXTRUEHDR_DEBANDING_OFF") == "\"DebandingOff\"");
+  CHECK(find_definition(headers, "NVVFXTRUEHDR_LUMINANCE") == "\"Luminance\"");
+}
+
 TEST_CASE("ABI : énumérateurs explicites et implicites", "[abi]") {
   const std::vector<std::string> headers{
       "typedef enum {\n  NVCV_FORMAT_UNKNOWN = 0,\n  NVCV_Y = 1, NVCV_A, NVCV_YA,\n  NVCV_RGB, NVCV_BGR,\n"
@@ -82,10 +92,11 @@ TEST_CASE("ABI : une constante différente est nommée", "[abi]") {
   CHECK(refused.error().detail ==
         "NVCV_RGB10A2 vaut 14 dans les en-têtes du SDK, ce lecteur attend 13 (maxine_abi.h)");
 
-  const std::vector<std::string> selector{with_define("NVVFXTRUEHDR_LUMINANCE", "\"Luminance\"")};
+  // L'ancienne supposition de la vague 1, démentie par nvVFXTrueHDR.h:20.
+  const std::vector<std::string> selector{with_define("NVVFXTRUEHDR_LUMINANCE", "\"MaxLuminance\"")};
   CHECK(check_maxine_abi(selector).error().detail ==
-        "NVVFXTRUEHDR_LUMINANCE vaut \"Luminance\" dans les en-têtes du SDK, ce lecteur attend "
-        "\"MaxLuminance\" (maxine_abi.h)");
+        "NVVFXTRUEHDR_LUMINANCE vaut \"MaxLuminance\" dans les en-têtes du SDK, ce lecteur attend "
+        "\"Luminance\" (maxine_abi.h)");
 }
 
 TEST_CASE("ABI : une constante absente est refusée", "[abi]") {

@@ -114,6 +114,17 @@ std::string abi_header_text() {
   return text;
 }
 
+std::string version_header_text(const SdkVersion& version) {
+  const auto [major, minor, release, build] = version.parts;
+  return std::format(
+      "/* licence MIT */\n\n#define NVIDIA_VIDEOEFFECTS_SDK_VERSION_MAJOR {}\n"
+      "#define NVIDIA_VIDEOEFFECTS_SDK_VERSION_MINOR {}\n#define NVIDIA_VIDEOEFFECTS_SDK_VERSION_RELEASE {}\n"
+      "#define NVIDIA_VIDEOEFFECTS_SDK_VERSION_BUILD {}\n\n#define NVIDIA_VIDEOEFFECTS_SDK_VERSION "
+      "{},{},{},{}\n"
+      "#define NVIDIA_VIDEOEFFECTS_SDK_VERSION_MAJOR_MINOR {},{}\n",
+      major, minor, release, build, major, minor, release, build, major, minor);
+}
+
 void make_maxine_sdk(const fs::path& root, const MaxineSdkOptions& options) {
   for (const RequiredFile& required : layout(SdkKind::MaxineVfx).required) {
     std::string path(required.path);
@@ -122,17 +133,19 @@ void make_maxine_sdk(const fs::path& root, const MaxineSdkOptions& options) {
     if (feature && !options.feature) continue;
     if (required.format == BinaryFormat::Text) {
       if (!options.headers) continue;
-      write_file(root / path, path == "include/nvCVImage.h" ? abi_header_text() : "#pragma once\n");
+      std::string text = "#pragma once\n";
+      if (path == "include/nvCVImage.h") text = abi_header_text();
+      if (path == kMaxineFeatureHeader) {
+        text += std::format("#define NVVFXTRUEHDR_VERSION \"{}\"\n", options.feature_version);
+      }
+      write_file(root / path, text);
       continue;
     }
     write_file(root / path, library_bytes(options.libraries, path));
   }
   if (options.version_header) {
-    const SdkVersion version = parse_version(*options.version_header).value();
-    write_file(root / "version.h",
-               std::format("#pragma once\n#define NVVFX_MAJOR_VERSION {}\n#define NVVFX_MINOR_VERSION {}\n"
-                           "#define NVVFX_PATCH_VERSION {}\n#define NVVFX_BUILD_VERSION {}\n",
-                           version.parts[0], version.parts[1], version.parts[2], version.parts[3]));
+    write_file(root / kMaxineVersionHeader,
+               version_header_text(parse_version(*options.version_header).value()));
   }
   fs::create_directories(root / "lib" / "models");
   write_file(root / "share" / "license.txt", "Licence du SDK (factice)\n");

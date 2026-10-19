@@ -79,19 +79,26 @@ TEST_CASE("version : texte", "[version]") {
   }
 }
 
-TEST_CASE("version : version.h à la manière de Maxine", "[version]") {
-  const auto version = parse_version_header(
-      "#ifndef VERSION_H\n#define NVVFX_MAJOR_VERSION 1\n#  define NVVFX_MINOR_VERSION   3 // commentaire\n"
-      "#define NVVFX_PATCH_VERSION 0\n#define NVVFX_BUILD_VERSION 7\n");
+TEST_CASE("version : share/videofx_version.h de Maxine", "[version]") {
+  constexpr std::string_view kPrefix = "NVIDIA_VIDEOEFFECTS_SDK_VERSION";
+  // Le texte réel de VFXSDK_linux 1.3.0.0, licence omise.
+  const auto version = parse_version_header(version_header_text(SdkVersion{.parts = {1, 3, 0, 0}}), kPrefix);
   REQUIRE(version);
-  CHECK(version->text() == "1.3.0.7");
+  CHECK(version->text() == "1.3.0.0");
 
-  // Le premier préfixe complet l'emporte ; correctif et build sont facultatifs.
-  CHECK(parse_version_header("#define OTHER_MAJOR_VERSION 9\n#define NVVFX_MAJOR_VERSION 1\n"
-                             "#define NVVFX_MINOR_VERSION 3\n")
-            ->text() == "1.3.0.0");
-  CHECK_FALSE(parse_version_header("#define NVVFX_MAJOR_VERSION 1\n"));
-  CHECK_FALSE(parse_version_header("#define NVVFX_MAJOR_VERSION one\n#define NVVFX_MINOR_VERSION 3\n"));
+  CHECK(parse_version_header("#  define NVIDIA_VIDEOEFFECTS_SDK_VERSION_MINOR   3 // commentaire\n"
+                             "#define NVIDIA_VIDEOEFFECTS_SDK_VERSION_MAJOR 1\n"
+                             "#define NVIDIA_VIDEOEFFECTS_SDK_VERSION_BUILD 7\n",
+                             kPrefix)
+            ->text() == "1.3.0.7");
+  // _MAJOR_MINOR (« 1,3 ») n'est pas _MAJOR ; release et build sont facultatifs.
+  CHECK_FALSE(parse_version_header("#define NVIDIA_VIDEOEFFECTS_SDK_VERSION_MAJOR_MINOR 1,3\n", kPrefix));
+  CHECK_FALSE(parse_version_header("#define NVIDIA_VIDEOEFFECTS_SDK_VERSION_MAJOR 1\n", kPrefix));
+  CHECK_FALSE(
+      parse_version_header("#define NVIDIA_VIDEOEFFECTS_SDK_VERSION_MAJOR one\n"
+                           "#define NVIDIA_VIDEOEFFECTS_SDK_VERSION_MINOR 3\n",
+                           kPrefix));
+  CHECK_FALSE(parse_version_header("#define NVVFX_MAJOR 1\n#define NVVFX_MINOR 3\n", kPrefix));
 }
 
 TEST_CASE("version : nom réel versionné", "[version]") {
@@ -103,25 +110,45 @@ TEST_CASE("version : nom réel versionné", "[version]") {
 
 TEST_CASE("version : SDK Maxine", "[version]") {
   TempDir dir;
-  SECTION("version.h à la racine") {
-    write_file(dir.path() / "version.h", "#define NVVFX_MAJOR_VERSION 1\n#define NVVFX_MINOR_VERSION 3\n");
+  // La fonction TrueHDR porte sa version, qui doit suivre celle du SDK.
+  write_file(dir.path() / "features/nvvfxtruehdr/include/nvVFXTrueHDR.h",
+             "#define NVVFXTRUEHDR_VERSION \"1.3.0.0\"\n#define NVVFX_FX_TRUE_HDR \"TrueHDR\"\n");
+  SECTION("share/videofx_version.h") {
+    write_file(dir.path() / "share/videofx_version.h",
+               version_header_text(SdkVersion{.parts = {1, 3, 0, 0}}));
     CHECK(read_sdk_version(SdkKind::MaxineVfx, dir.path())->text() == "1.3.0.0");
-  }
-  SECTION("version.h dans include/") {
-    write_file(dir.path() / "include/version.h",
-               "#define NVVFX_MAJOR_VERSION 1\n#define NVVFX_MINOR_VERSION 2\n");
-    CHECK(read_sdk_version(SdkKind::MaxineVfx, dir.path())->text() == "1.2.0.0");
   }
   SECTION("nom réel derrière le lien lib/libVideoFX.so") {
-    write_file(dir.path() / "lib/libVideoFX.so.1.3.0.0", elf_header());
-    std::filesystem::create_symlink("libVideoFX.so.1.3.0.0", dir.path() / "lib/libVideoFX.so");
+    write_file(dir.path() / "lib/libVideoFX.so.1.3.0", elf_header());
+    std::filesystem::create_symlink("libVideoFX.so.1.3.0", dir.path() / "lib/libVideoFX.so");
     CHECK(read_sdk_version(SdkKind::MaxineVfx, dir.path())->text() == "1.3.0.0");
+  }
+  SECTION("les deux s'accordent") {
+    write_file(dir.path() / "share/videofx_version.h",
+               version_header_text(SdkVersion{.parts = {1, 3, 0, 0}}));
+    write_file(dir.path() / "lib/libVideoFX.so.1.3.0", elf_header());
+    std::filesystem::create_symlink("libVideoFX.so.1.3.0", dir.path() / "lib/libVideoFX.so");
+    CHECK(read_sdk_version(SdkKind::MaxineVfx, dir.path())->text() == "1.3.0.0");
+  }
+  SECTION("le nom réel ne porte pas le build de l'en-tête") {
+    // libVideoFX.so.1.3.0 pour un SDK 1.3.0.21 : seuls les nombres du nom se comparent.
+    write_file(dir.path() / "share/videofx_version.h",
+               version_header_text(SdkVersion{.parts = {1, 3, 0, 21}}));
+    write_file(dir.path() / "lib/libVideoFX.so.1.3.0", elf_header());
+    std::filesystem::create_symlink("libVideoFX.so.1.3.0", dir.path() / "lib/libVideoFX.so");
+    CHECK(read_sdk_version(SdkKind::MaxineVfx, dir.path())->text() == "1.3.0.21");
+    // Un correctif différent reste un SDK mélangé.
+    write_file(dir.path() / "share/videofx_version.h",
+               version_header_text(SdkVersion{.parts = {1, 3, 1, 0}}));
+    CHECK(read_sdk_version(SdkKind::MaxineVfx, dir.path()).error().detail ==
+          "share/videofx_version.h annonce 1.3.1.0, mais lib/libVideoFX.so est en 1.3.0.0 : SDK mélangé");
   }
   SECTION("sans marqueur, refusé") {
     write_file(dir.path() / "lib/libVideoFX.so", elf_header());
     auto refused = read_sdk_version(SdkKind::MaxineVfx, dir.path());
     REQUIRE_FALSE(refused);
     CHECK(refused.error().code == RefusalCode::SdkRejected);
+    CHECK(refused.error().detail.starts_with("version du SDK introuvable"));
   }
 }
 
