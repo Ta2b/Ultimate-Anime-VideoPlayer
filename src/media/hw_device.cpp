@@ -142,9 +142,21 @@ std::vector<HwApi> default_attempts() {
 #endif
 }
 
+bool is_vulkan_video_codec(AVCodecID codec) {
+  return codec == AV_CODEC_ID_H264 || codec == AV_CODEC_ID_HEVC || codec == AV_CODEC_ID_AV1 ||
+         codec == AV_CODEC_ID_VP9;
+}
+
 std::expected<HwDevice, Refusal> open_hw_device(AVCodecID codec, HwApi api, const DecoderOptions& options) {
   const AVHWDeviceType type = device_type(api);
   if (type == AV_HWDEVICE_TYPE_NONE) return refuse_hw(api, "pas une API matérielle");
+  // Avant toute recherche : le refus est le même que FFmpeg ait ou non ce
+  // décodeur (ffv1_vulkan n'existe que si configure a trouvé un glslc récent).
+  if (api == HwApi::Vulkan && !is_vulkan_video_codec(codec) && !options.vulkan_compute) {
+    return refuse_hw(api, std::format("{} hors Vulkan Video ; son décodeur par compute shaders "
+                                      "demande DecoderOptions::vulkan_compute",
+                                      avcodec_get_name(codec)));
+  }
   const auto decoder = find_hw_decoder(codec, type);
   if (!decoder) return refuse_hw(api, std::format("aucun décodeur {} ne l'accepte", avcodec_get_name(codec)));
 

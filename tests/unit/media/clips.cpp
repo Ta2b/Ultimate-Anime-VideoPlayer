@@ -77,6 +77,22 @@ ClipSpec late_video_clip() {
   };
 }
 
+ClipSpec gpu_clip(const std::string& encoder) {
+  return ClipSpec{
+      .name = encoder + ".mkv",
+      .width = 256,
+      .height = 144,
+      .frames = 36,
+      .gop = 12,
+      .encoder = encoder,
+  };
+}
+
+std::filesystem::path require_gpu_clip(const ClipSpec& spec) {
+  if (const auto why = encoder_unavailable(spec)) SKIP(*why);
+  return require_clip(spec);
+}
+
 std::filesystem::path require_clip(const ClipSpec& spec) {
   auto path = write_clip(spec);
   INFO(spec.name << " : " << (path ? std::string("écrit") : path.error()));

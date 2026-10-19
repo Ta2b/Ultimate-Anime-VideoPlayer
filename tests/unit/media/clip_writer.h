@@ -76,10 +76,18 @@ struct ClipSpec {
   std::vector<SubtitleSpec> subtitles;
   std::vector<AttachmentSpec> attachments;
   std::vector<ChapterSpec> chapters;
+  // Encodeur FFmpeg nommé (h264_nvenc, hevc_nvenc, av1_nvenc…) à la place de
+  // celui de `codec` : luma uniforme par image comme Mpeg4, qp constant. Vide :
+  // l'encodeur natif de `codec`.
+  std::string encoder;
 };
 
 // Écrit le clip (fichier temporaire puis renommage) et rend son chemin.
 std::expected<std::filesystem::path, std::string> write_clip(const ClipSpec& spec);
+
+// Pourquoi l'encodeur vidéo du clip ne s'ouvre pas sur cette machine (absent de
+// cette construction de FFmpeg, pas de GPU, pilote), std::nullopt s'il s'ouvre.
+std::optional<std::string> encoder_unavailable(const ClipSpec& spec);
 
 // Motif sans perte (FFV1) : valeur du plan (0 Y, 1 U, 2 V) au point (x, y) de
 // l'image n, sur 8 ou 10 bits.

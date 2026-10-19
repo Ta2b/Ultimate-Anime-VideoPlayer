@@ -7,6 +7,8 @@
 #include <vector>
 
 extern "C" {
+#include <libavutil/cpu.h>
+#include <libavutil/hwcontext.h>
 #include <libavutil/mathematics.h>
 }
 
@@ -16,6 +18,18 @@ extern "C" {
 #include "media/log.h"
 
 namespace ajp::media {
+
+namespace {
+
+// Threads du décodage logiciel : la valeur demandée, ou un par cœur
+// (affinité comprise) jusqu'à kAutoDecoderThreads. FFmpeg en prendrait
+// jusqu'à 16, soit 15 images de retard avant la première.
+int software_threads(int requested) {
+  if (requested > 0) return requested;
+  return std::clamp(av_cpu_count(), 1, kAutoDecoderThreads);
+}
+
+}  // namespace
 
 struct VideoDecoder::State {
   HwDevice hw;  // déclaré avant codec : détruit après lui
@@ -73,7 +87,7 @@ struct VideoDecoder::State {
     ctx->opaque = this;
     ctx->get_format = &State::get_format;
     // Les hwaccels ne gagnent rien aux threads d'images ; le logiciel, si.
-    ctx->thread_count = hw.device ? 1 : threads;
+    ctx->thread_count = hw.device ? 1 : software_threads(threads);
     if (hw.device) ctx->hw_device_ctx = av_buffer_ref(hw.device.get());
     if (const int err = avcodec_open2(ctx.get(), &decoder, nullptr); err < 0) {
       return refuse_av(RefusalCode::DecoderUnavailable, std::format("{} : avcodec_open2", name(api)), err);
@@ -164,6 +178,11 @@ std::span<const Attempt> VideoDecoder::rejected() const {
 }
 int VideoDecoder::data_errors() const {
   return state_->data_errors;
+}
+int VideoDecoder::hw_surfaces() const {
+  const AVBufferRef* frames = state_->codec->hw_frames_ctx;
+  if (frames == nullptr) return 0;
+  return reinterpret_cast<const AVHWFramesContext*>(frames->data)->initial_pool_size;
 }
 bool VideoDecoder::drained() const {
   return state_->drained;

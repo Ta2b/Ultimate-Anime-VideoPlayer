@@ -83,6 +83,9 @@ enum class RefusalCode : std::uint8_t {
   ThreadFailed,    // une exception a interrompu le corps d'un thread, qui s'est arrêté
   AbiMismatch,     // bibliothèque d'une autre version de l'interface (kBackendAbi)
   DeviceMismatch,  // le backend ne sait pas exploiter l'appareil de rendu (API, constructeur, UUID)
+
+  // media : pistes annexes de la source
+  PacketBacklog,  // paquets annexes non retirés : réserve de la source pleine avant la première image
 };
 
 struct Refusal {
@@ -214,6 +217,8 @@ constexpr std::string_view name(RefusalCode code) {
       return "AbiMismatch";
     case RefusalCode::DeviceMismatch:
       return "DeviceMismatch";
+    case RefusalCode::PacketBacklog:
+      return "PacketBacklog";
   }
   return "Unknown";
 }

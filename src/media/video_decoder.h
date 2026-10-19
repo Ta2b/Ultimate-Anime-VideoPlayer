@@ -37,6 +37,10 @@ class VideoDecoder {
   // Un flux abîmé perd des images mais continue, avec ou sans threads d'images :
   // ces erreurs sortent à l'envoi d'un paquet ou à la réception d'une image.
   int data_errors() const;
+  // Surfaces réservées par l'hwaccel (taille initiale du pool de son
+  // AVHWFramesContext), extra_hw_frames compris ; 0 en logiciel ou avant la
+  // première image. Sous NVDEC, c'est ulNumDecodeSurfaces avant sa limite de 32.
+  int hw_surfaces() const;
 
   // Envoie un paquet de la piste ; à appeler quand receive() a rendu std::nullopt.
   std::expected<void, Refusal> send(const Packet& packet);

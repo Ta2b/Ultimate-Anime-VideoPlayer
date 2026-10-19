@@ -20,10 +20,12 @@ namespace cmd = ajp::cmd;
 
 namespace {
 
-SourceMedia open_media(const ClipSpec& spec) {
+// threads 0 : automatique, jusqu'à kAutoDecoderThreads selon la machine.
+SourceMedia open_media(const ClipSpec& spec, int threads = 0) {
   auto demuxer = Demuxer::open(require_clip(spec));
   REQUIRE(demuxer.has_value());
-  auto media = open_source(std::move(*demuxer), 0, DecoderOptions{.attempts = {HwApi::Software}});
+  auto media =
+      open_source(std::move(*demuxer), 0, DecoderOptions{.attempts = {HwApi::Software}, .threads = threads});
   REQUIRE(media.has_value());
   return std::move(*media);
 }
@@ -36,10 +38,15 @@ struct Running {
   std::unique_ptr<SourceThread> thread;
 
   Running(const ClipSpec& spec, std::size_t capacity, int refuse_first = 0,
-          std::vector<PacketRoute> routes = {})
+          std::vector<PacketRoute> routes = {}, int threads = 0,
+          std::size_t reserve_bytes = kDefaultReserveBytes)
       : sink(capacity, refuse_first) {
-    auto started = SourceThread::start(
-        open_media(spec), {.frames = &sink, .listener = &listener, .packets = std::move(routes)}, inbox);
+    auto started = SourceThread::start(open_media(spec, threads),
+                                       {.frames = &sink,
+                                        .listener = &listener,
+                                        .packets = std::move(routes),
+                                        .reserve_bytes = reserve_bytes},
+                                       inbox);
     REQUIRE(started.has_value());
     thread = std::move(*started);
   }
@@ -140,8 +147,8 @@ TEST_CASE("SourceThread : seek rapide sur le point clé le plus proche, sans rej
 TEST_CASE("SourceThread : paquets audio et sous-titres livrés par piste", "[media][source]") {
   SourceInbox* inbox = nullptr;
   auto credit = [&inbox] { inbox->try_push(Credit{}); };
-  auto audio = PacketQueue::create(4, credit);
-  auto subs = PacketQueue::create(16, credit);
+  auto audio = PacketQueue::create({.max_duration_us = 80'000}, credit);  // 4 paquets de 20 ms
+  auto subs = PacketQueue::create({.max_duration_us = std::nullopt}, credit);
   REQUIRE(audio.has_value());
   REQUIRE(subs.has_value());
   Running source(seek_clip(), 4, 0, {{.track = 1, .sink = audio->get()}, {.track = 2, .sink = subs->get()}});
@@ -172,6 +179,62 @@ TEST_CASE("SourceThread : paquets audio et sous-titres livrés par piste", "[med
   CHECK(text(sub_packets[1]).ends_with(",Deux"));
   CHECK(sub_packets[2].pts_us == 900'000);
   CHECK(sub_packets[2].duration_us == 200'000);
+}
+
+// Régression du blocage de la vague 1 : 16 threads d'images retiennent la première image
+// jusqu'au 16e paquet vidéo, et 30 paquets audio le précèdent dans le fichier. Sans la
+// réserve d'amorçage, la source attendait sur la file audio pleine (8 paquets) un Credit
+// que le consommateur ne rend qu'après la première image : 10 s puis échec, sur toute
+// machine puisque le nombre de threads est explicite.
+TEST_CASE("SourceThread : la première image passe sans qu'on retire l'audio, même à 16 threads",
+          "[media][source]") {
+  SourceInbox* inbox = nullptr;
+  auto credit = [&inbox] { inbox->try_push(Credit{}); };
+  auto audio = PacketQueue::create({.max_duration_us = 160'000}, credit);  // 8 paquets
+  auto subs = PacketQueue::create({.max_duration_us = std::nullopt}, credit);
+  REQUIRE(audio.has_value());
+  REQUIRE(subs.has_value());
+  Running source(seek_clip(), 4, 0, {{.track = 1, .sink = audio->get()}, {.track = 2, .sink = subs->get()}},
+                 16);
+  inbox = &source.inbox;
+
+  CHECK(source.pop().pts_us == 0);  // l'audio n'est pas retiré
+  CHECK((*audio)->size() == 8);
+  // Amorcée, l'époque reprend la contre-pression : la file audio pleine retient la
+  // lecture, et donc la vidéo, jusqu'à ce que l'audio retire ses paquets.
+  CHECK_FALSE(source.sink.pop(source.inbox, 200ms).has_value());
+
+  std::vector<Packet> audio_packets;
+  int frames = 1;
+  const auto deadline = std::chrono::steady_clock::now() + kTimeout;
+  while ((frames < 30 || audio_packets.size() < 60) && std::chrono::steady_clock::now() < deadline) {
+    if (auto frame = source.sink.pop(source.inbox, 1ms)) ++frames;
+    while (auto packet = (*audio)->try_pop()) audio_packets.push_back(std::move(*packet));
+    while ((*subs)->try_pop()) {
+    }
+  }
+  CHECK(frames == 30);
+  REQUIRE(audio_packets.size() == 60);
+  for (std::size_t k = 0; k < audio_packets.size(); ++k) {
+    CHECK(audio_packets[k].pts_us == static_cast<std::int64_t>(k) * 20'000);  // la réserve garde l'ordre
+    CHECK(audio_packets[k].epoch == 0);
+  }
+  CHECK(source.listener.wait_end(0));
+  CHECK(source.listener.failure_count() == 0);
+}
+
+TEST_CASE("SourceThread : une réserve d'amorçage pleine est un refus PacketBacklog, pas une attente",
+          "[media][source]") {
+  // 64 Kio : 16 paquets PCM de 20 ms (3840 octets + kPacketOverhead). Avant la première
+  // image à 16 threads, 30 paquets audio arrivent : 8 dans la file, 22 pour la réserve.
+  auto audio = PacketQueue::create({.max_duration_us = 160'000}, [] {});
+  REQUIRE(audio.has_value());
+  Running source(seek_clip(), 4, 0, {{.track = 1, .sink = audio->get()}}, 16, kMinReserveBytes);
+  const auto failure = source.listener.wait_failure();
+  REQUIRE(failure.has_value());
+  CHECK(failure->code == RefusalCode::PacketBacklog);
+  CHECK(failure->detail.find("piste 1") != std::string::npos);
+  CHECK_FALSE(source.sink.pop(source.inbox, 50ms).has_value());
 }
 
 TEST_CASE("SourceThread : un Flush qui ne fait pas croître l'époque est refusé, la lecture continue",
@@ -212,7 +275,7 @@ TEST_CASE("SourceThread : des liens incomplets ou faux sont refusés", "[media][
   SourceInbox inbox(kSourceInboxBounds);
   TestSink sink(2);
   TestListener listener;
-  auto queue = PacketQueue::create(4, [] {});
+  auto queue = PacketQueue::create({}, [] {});
   REQUIRE(queue.has_value());
   const auto refusal = [&](SourceLinks links) {
     auto started = SourceThread::start(open_media(full_clip()), std::move(links), inbox);
@@ -231,6 +294,10 @@ TEST_CASE("SourceThread : des liens incomplets ou faux sont refusés", "[media][
                  .listener = &listener,
                  .packets = {{.track = 1, .sink = queue->get()}, {.track = 1, .sink = queue->get()}}}) ==
         RefusalCode::TrackUnavailable);
+  CHECK(refusal({.frames = &sink, .listener = &listener, .reserve_bytes = kMinReserveBytes - 1}) ==
+        RefusalCode::FieldOutOfRange);
+  CHECK(refusal({.frames = &sink, .listener = &listener, .reserve_bytes = kMaxReserveBytes + 1}) ==
+        RefusalCode::FieldOutOfRange);
   auto not_video = open_source(*Demuxer::open(require_clip(full_clip())), 1, {.attempts = {HwApi::Software}});
   REQUIRE_FALSE(not_video);
   CHECK(not_video.error().code == RefusalCode::TrackUnavailable);

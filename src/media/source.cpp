@@ -19,6 +19,11 @@ std::expected<void, Refusal> check_links(const SourceMedia& media, const SourceL
     return std::unexpected(
         Refusal{RefusalCode::FieldMissing, "SourceLinks : frames et listener sont exigés"});
   }
+  if (links.reserve_bytes < kMinReserveBytes || links.reserve_bytes > kMaxReserveBytes) {
+    return std::unexpected(Refusal{RefusalCode::FieldOutOfRange,
+                                   std::format("SourceLinks.reserve_bytes = {} hors de [{}, {}]",
+                                               links.reserve_bytes, kMinReserveBytes, kMaxReserveBytes)});
+  }
   for (const PacketRoute& route : links.packets) {
     const TrackInfo* track = media.demuxer.track(route.track);
     if (track == nullptr) return refuse_link(std::format("piste {} absente", route.track));

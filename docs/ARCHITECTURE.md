@@ -92,6 +92,21 @@ en `kNoPts` ; jamais un 0 inventé, même après un flush. Un module qui préfè
 les deux seules conversions ; `stamp_of()` en fait usage pour la cadence. Un
 calcul sur un pts écarte d'abord `kNoPts`.
 
+### Paquets audio et sous-titres (`media/source.h`, `media/packet.h`)
+
+Le thread source lit le fichier et décode la vidéo dans la même boucle : une file
+annexe pleine arrêterait aussi la vidéo. Jusqu'à ce que `gpu` accepte la première
+image d'une époque (démarrage, ou seek exact qui décode et jette jusqu'à la cible),
+la source n'attend jamais une file annexe : un paquet refusé attend dans une
+réserve FIFO par piste, plafonnée en octets (`SourceLinks::reserve_bytes`) et
+vidée au Flush et au Seek ; au-delà, refus `PacketBacklog`. Ensuite, une file
+pleine fait attendre son `Credit`, ce qui cale la lecture sur l'horloge audio. En
+retour, `audio` et `subs` retirent leurs paquets à leur propre rythme, jamais selon
+la vidéo ni la première image. Une `PacketQueue` se borne en durée et en octets,
+pas en nombre de paquets (TrueHD, rafales ASS). Vulkan ne décode par défaut que
+les codecs Vulkan Video (H.264, HEVC, AV1, VP9) ; les décodeurs FFmpeg par compute
+shaders (FFV1, ProRes…) demandent `DecoderOptions::vulkan_compute`.
+
 ### Appareil de rendu (`core/gpu_device.h`)
 
 `present` crée l'appareil de rendu et le décrit par `GpuDevice` : API, identifiants
