@@ -22,6 +22,11 @@ if(NOT AJP_BUILD_PLAYER)
   return()
 endif()
 
+# Sous Windows, FindPkgConfig essaie pkg-config.bat avant pkgconf, et le PATH du
+# runner y mène au pkg-config de Strawberry Perl : on désigne celui de vcpkg.
+if(WIN32 AND NOT PKG_CONFIG_EXECUTABLE)
+  find_program(PKG_CONFIG_EXECUTABLE NAMES pkgconf REQUIRED)
+endif()
 find_package(PkgConfig REQUIRED)
 
 # FFmpeg 9.0.2 (libavformat 63.1), LGPL partagée.

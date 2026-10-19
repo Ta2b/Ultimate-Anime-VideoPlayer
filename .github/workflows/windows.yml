@@ -1,0 +1,149 @@
+# Construction et tests Windows : MSVC 2022, Ninja, vcpkg en mode manifeste
+# (vcpkg.json et ports/ en overlay), preset windows-vulkan sans CUDA.
+#
+# Les dépendances se construisent une fois puis viennent du cache binaire de
+# vcpkg, gardé par actions/cache : un run suivant ne reconstruit pas FFmpeg.
+# Le Vulkan des tests est lavapipe (Mesa pour Windows), désigné au chargeur par
+# la configuration du job, jamais par le code.
+name: Windows
+
+on:
+  push:
+    branches: [main, 'ci/**']
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: windows-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # Même commit que builtin-baseline dans vcpkg.json : l'outil et le registre
+  # restent ceux qui fixent FFmpeg 9.0.2, SDL3 3.4.18 et le reste.
+  VCPKG_COMMIT: bf19794383e8fb95eba5aa553235bc8ec2271688
+  # Chemins courts : les arbres de construction de FFmpeg dépassent vite MAX_PATH.
+  VCPKG_ROOT: C:\ajp\vcpkg
+  AJP_VCPKG_CACHE: C:\ajp\vcpkg-cache
+  VCPKG_BINARY_SOURCES: clear;files,C:\ajp\vcpkg-cache,readwrite
+  VCPKG_DISABLE_METRICS: '1'
+  # Mesa pour Windows (pal1000/mesa-dist-win), paquet MSVC qui porte lavapipe.
+  MESA_DIST_WIN_TAG: latest
+
+jobs:
+  msvc:
+    name: Windows MSVC (lavapipe)
+    runs-on: windows-2022
+    timeout-minutes: 300
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Environnement MSVC x64
+        uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
+
+      - name: Outils
+        run: |
+          cmake --version
+          ninja --version
+          (Get-Command cl).Source
+          # libplacebo se compile avec clang-cl (ports/libplacebo/clang-cl-toolchain.cmake).
+          Get-ChildItem "$env:VCINSTALLDIR\Tools\Llvm\x64\bin\clang-cl.exe", "$env:ProgramFiles\LLVM\bin\clang-cl.exe" -ErrorAction SilentlyContinue |
+            ForEach-Object { $_.FullName }
+
+      - name: vcpkg au commit de la baseline
+        run: |
+          git clone --quiet https://github.com/microsoft/vcpkg "$env:VCPKG_ROOT"
+          git -C "$env:VCPKG_ROOT" checkout --quiet "$env:VCPKG_COMMIT"
+          & "$env:VCPKG_ROOT\bootstrap-vcpkg.bat" -disableMetrics
+          New-Item -ItemType Directory -Force "$env:AJP_VCPKG_CACHE" | Out-Null
+
+      # Le cache s'accumule par paquet (clé ABI de vcpkg) : on restaure le plus
+      # récent, et on n'en sauvegarde un nouveau que si vcpkg a construit quelque chose.
+      - name: Cache binaire vcpkg (restauration)
+        uses: actions/cache/restore@v4
+        with:
+          path: C:\ajp\vcpkg-cache
+          key: vcpkg-windows-x64-release-${{ env.VCPKG_COMMIT }}-${{ github.run_id }}
+          restore-keys: vcpkg-windows-x64-release-${{ env.VCPKG_COMMIT }}-
+
+      - name: Paquets déjà en cache
+        id: cache-before
+        run: |
+          $count = (Get-ChildItem -Recurse -File "$env:AJP_VCPKG_CACHE" | Measure-Object).Count
+          "count=$count" >> $env:GITHUB_OUTPUT
+          "$count archives dans le cache binaire"
+
+      # --keep-going : un port en échec n'empêche pas les autres d'entrer au cache.
+      - name: Configuration (vcpkg installe les dépendances)
+        run: cmake --preset windows-vulkan "-DVCPKG_INSTALL_OPTIONS=--keep-going"
+
+      - name: Paquets construits par ce run
+        id: cache-after
+        if: always()
+        run: |
+          $count = (Get-ChildItem -Recurse -File "$env:AJP_VCPKG_CACHE" | Measure-Object).Count
+          $changed = $count -ne [int]'${{ steps.cache-before.outputs.count }}'
+          "changed=$($changed.ToString().ToLower())" >> $env:GITHUB_OUTPUT
+          "$count archives dans le cache binaire (nouvelles : $changed)"
+
+      - name: Cache binaire vcpkg (sauvegarde)
+        if: always() && steps.cache-after.outputs.changed == 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: C:\ajp\vcpkg-cache
+          key: vcpkg-windows-x64-release-${{ env.VCPKG_COMMIT }}-${{ github.run_id }}
+
+      - name: Journaux vcpkg de l'échec
+        if: failure()
+        run: |
+          $logs = Get-ChildItem -Recurse -File "$env:VCPKG_ROOT\buildtrees" -Include *.log -ErrorAction SilentlyContinue |
+            Sort-Object LastWriteTime | Select-Object -Last 8
+          foreach ($log in $logs) {
+            "::group::$($log.FullName)"
+            Get-Content $log.FullName -Tail 150
+            "::endgroup::"
+          }
+
+      # Sans lavapipe, les tests Vulkan seraient sautés : l'échec se rend au dernier pas,
+      # pour que la construction et les autres tests tournent quand même.
+      - name: Vulkan logiciel (lavapipe de mesa-dist-win)
+        id: lavapipe
+        if: always()
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $tag = $env:MESA_DIST_WIN_TAG
+          if ($tag -eq 'latest') {
+            $tag = gh release view --repo pal1000/mesa-dist-win --json tagName --jq .tagName
+          }
+          "mesa-dist-win $tag"
+          gh release download $tag --repo pal1000/mesa-dist-win --pattern 'mesa3d-*-release-msvc.7z' --dir C:\ajp\mesa-dl
+          $archive = Get-ChildItem C:\ajp\mesa-dl\*.7z | Select-Object -First 1
+          7z x -y -bso0 -oC:\ajp\mesa $archive.FullName
+          $icd = Get-ChildItem -Recurse C:\ajp\mesa\x64 -Filter 'lvp_icd*.json' | Select-Object -First 1
+          if (-not $icd) { throw "lvp_icd*.json absent du paquet $($archive.Name)" }
+          Get-Content $icd.FullName
+          # Le chargeur ignore VK_DRIVER_FILES dans un processus élevé (le runner
+          # l'est) : le pilote s'inscrit aussi dans le registre, comme l'installe Mesa.
+          reg add 'HKLM\SOFTWARE\Khronos\Vulkan\Drivers' /v "$($icd.FullName)" /t REG_DWORD /d 0 /f
+          "VK_DRIVER_FILES=$($icd.FullName)" >> $env:GITHUB_ENV
+
+      # -k 0 : toutes les erreurs du compilateur en un seul run.
+      - name: Construction
+        run: cmake --build --preset windows-vulkan -- -k 0
+
+      - name: Tests
+        run: |
+          # vulkan-1.dll (chargeur de vcpkg) n'est lié par aucun exécutable : FFmpeg
+          # l'ouvre à l'exécution, depuis le PATH.
+          $env:PATH = "$PWD\build\windows-vulkan\vcpkg_installed\x64-windows-release\bin;$env:PATH"
+          ctest --preset windows-vulkan
+
+      - name: lavapipe requis
+        if: always() && steps.lavapipe.outcome != 'success'
+        run: throw "lavapipe n'a pas été installé : les tests Vulkan n'ont pas tourné"

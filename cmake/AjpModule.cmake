@@ -6,6 +6,10 @@
 include_guard(GLOBAL)
 
 function(ajp_set_warnings target)
+  if(WIN32)
+    # windows.h sans les macros min et max, ni les en-têtes rarement utiles (winsock).
+    target_compile_definitions(${target} PRIVATE NOMINMAX WIN32_LEAN_AND_MEAN)
+  endif()
   if(MSVC)
     target_compile_options(${target} PRIVATE /W4 /permissive- /utf-8)
     if(AJP_WARNINGS_AS_ERRORS)

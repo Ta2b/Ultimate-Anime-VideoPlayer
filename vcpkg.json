@@ -56,7 +56,12 @@
           ]
         },
         "vulkan-headers",
-        "nanobench"
+        "nanobench",
+        {
+          "name": "pkgconf",
+          "host": true,
+          "platform": "windows"
+        }
       ]
     }
   },

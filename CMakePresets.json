@@ -89,6 +89,22 @@
       }
     },
     {
+      "name": "windows-vulkan",
+      "displayName": "Windows, MSVC sans CUDA (moteur Vulkan, CI)",
+      "inherits": "base",
+      "condition": {
+        "type": "equals",
+        "lhs": "${hostSystemName}",
+        "rhs": "Windows"
+      },
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "RelWithDebInfo",
+        "AJP_WITH_CUDA": "OFF",
+        "VCPKG_TARGET_TRIPLET": "x64-windows-release",
+        "VCPKG_HOST_TRIPLET": "x64-windows-release"
+      }
+    },
+    {
       "name": "linux-prefix",
       "displayName": "Linux, dépendances du préfixe AJP_DEPS_PREFIX",
       "inherits": "prefix",
@@ -152,6 +168,10 @@
       "configurePreset": "windows-rtx"
     },
     {
+      "name": "windows-vulkan",
+      "configurePreset": "windows-vulkan"
+    },
+    {
       "name": "linux-prefix",
       "configurePreset": "linux-prefix"
     },
@@ -201,6 +221,13 @@
         "include": {
           "name": "Inbox"
         }
+      }
+    },
+    {
+      "name": "windows-vulkan",
+      "configurePreset": "windows-vulkan",
+      "output": {
+        "outputOnFailure": true
       }
     },
     {
