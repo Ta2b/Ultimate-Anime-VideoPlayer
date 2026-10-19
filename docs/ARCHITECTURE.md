@@ -45,7 +45,8 @@ subs ────── core_types · privé : libass, core_log
 audio ───── core_types · privé : FFmpeg, SDL3, core_log
 vendor_hdr ─ core_types · privé : toml++, core_log, dl
 gpu_ir ──── core_types · privé : kernels, core_log
-gpu ─────── core, kernels, vendor_hdr
+gpu ─────── core, kernels, vendor_hdr · privé : core_log
+backend_cpu ─ core_types, kernels · privé : gpu_ir (chargée à l'exécution, tests seulement)
 prepare ─── core, gpu · privé : toml++, core_log
 render ──── core, subs
 present ─── core_types
@@ -173,6 +174,32 @@ sa `CadenceChoice`, comprise dans son hachage.
 TrueHDR peut être tenté. `app` la tire de `vendor_hdr::first_blocker_reason()` et
 la passe à `to_resolve_capabilities()` ; la valeur par défaut refuse, tant que
 personne n'a vérifié. Un profil TrueHDR bloqué est refusé avec ce texte, tel quel.
+
+### Exécution du Plan (`gpu`)
+
+`gpu` possède son `Backend` : app le charge (`LoadedBackend`, `gpu/loader.h`) et le
+remet au thread gpu, qui y charge les moteurs de chaque `Install`. app envoie une
+`ProgramRequest` : le `Plan` et les artefacts que `prepare` a construits avec sa
+propre instance, jamais partagée entre threads. Le `Program` chargé décrit ses
+étapes par ordonnancement : ingestion, préparation de RIFE, niveaux S1, réduction,
+passes d'agrandissement, niveau S3 (mouvement à la source, warp à la sortie),
+écriture du ring. S2 et un niveau après un S3 sont refusés (`StepOrder`) tant que
+`KernelOps` n'a pas de remplissage RGB pour RIFE.
+
+Chaque niveau décide par son `LevelScheduler` (cadence et timeline des dessins de
+`core`) ; ses sorties deviennent les sources du suivant sous des `SourceId`
+dérivés (bit 31 posé). Une image ne se calcule que si une décision la montre : un
+dessin tenu est REPEATED (Fast) ou repris s'il est un doublon exact (Quality), une
+coupe n'est pas interpolée, et chaque source s'agrandit une fois. render envoie les
+slots de chaque génération du ring (`RingGeneration`, à verser dans
+`core/messages.h`) ; gpu n'écrit plus l'ancienne dès qu'il la reçoit, livre d'abord
+ce qu'il y a écrit, et n'installe un `Program` que sur un ring à sa taille.
+
+L'entrée à 11 plans de RIFE (instant et grilles) manque à `KernelOps` (ABI 3) :
+`gpu/rife_input.h` la définit, exportée par le point d'entrée facultatif
+`ajp_backend_rife_input`. Le backend CPU de référence (`ajp_backend_cpu`,
+`kernels/ref` et l'interpréteur de `gpu_ir`) exécute tout ce chemin sans GPU ; il
+sert aux tests et au débogage, jamais à l'utilisateur.
 
 ## Threads
 
