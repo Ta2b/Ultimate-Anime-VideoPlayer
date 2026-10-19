@@ -341,6 +341,11 @@ bool black_wanted(const PlaySettings& s, const std::optional<DisplayFacts>& disp
   return false;
 }
 
+// Une dalle OLED : détectée, ou affirmée par un vrai noir forcé.
+bool oled_panel(const PlaySettings& s, const std::optional<DisplayFacts>& display) {
+  return (display && display->oled) || s.oled_black == OledBlack::On;
+}
+
 std::optional<render::GradeParams> grade_of(const PlaySettings& s, bool true_hdr_open, int peak_nits,
                                             int auto_peak, const std::optional<DisplayFacts>& display = {},
                                             const std::optional<render::BlackThresholds>& black = {}) {
@@ -354,7 +359,7 @@ std::optional<render::GradeParams> grade_of(const PlaySettings& s, bool true_hdr
   g.middle_gray = s.true_hdr_gray;
   // Dalle OLED : détectée, ou affirmée par un vrai noir forcé. Son limiteur suit la moyenne
   // d'image que l'écran annonce, quand il l'annonce.
-  g.oled = (display && display->oled) || s.oled_black == OledBlack::On;
+  g.oled = oled_panel(s, display);
   if (display && display->frame_average_nits) {
     if (const auto abl = render::abl_range(*display->frame_average_nits)) {
       g.abl_lo = abl->lo;
@@ -458,6 +463,13 @@ struct Chain {
   bool black_dirty = true;
   std::int64_t black_at_us = 0;
 };
+
+// Soins OLED : la barre s'efface aussi en pause sur une dalle OLED ; la cadence fixe vaut pour
+// tout écran (un VRR à fréquence constante).
+void apply_oled_care(Chain& to, const PlaySettings& s) {
+  to.ui.controls().set_oled_care(s.oled_care && oled_panel(s, to.display));
+  to.session.set_steady_cadence(s.steady_cadence);
+}
 
 // Le grade de la chaîne avec ses seuils du vrai noir.
 void set_grade(Chain& to, const PlaySettings& s) {
@@ -600,6 +612,9 @@ void apply_live(Chain& to, const PlaySettings& wanted, std::int64_t now_us) {
   if (wanted.audio_delay_ms != r.audio_delay_ms)
     to.session.command(cmd::SetAudioDelay{.delay_us = std::int64_t{wanted.audio_delay_ms} * 1000});
   if (wanted.stats != r.stats) to.session.set_stats(wanted.stats);
+  if (wanted.oled_care != r.oled_care || wanted.steady_cadence != r.steady_cadence ||
+      wanted.oled_black != r.oled_black)
+    apply_oled_care(to, wanted);
   if (wanted.subtitle_scale != r.subtitle_scale) {
     to.session.set_subtitle_scale(wanted.subtitle_scale);
     controls.notify(std::format("Sous-titres : {} %", std::lround(wanted.subtitle_scale * 100.0F)), now_us);
@@ -1088,6 +1103,7 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
               .auto_peak = auto_peak,
               .peak_nits = peak_nits,
               .display = p.display};
+  apply_oled_care(chain, settings);
 
   std::ofstream stats;
   if (options.stats) {

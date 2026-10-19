@@ -81,6 +81,12 @@ struct PlaySettings {
   // coupé ; le pied finit `oled_black_steps` pas de code au-dessus du noir de la source.
   OledBlack oled_black = OledBlack::Auto;
   double oled_black_steps = 2.0;
+  // Soins OLED, sur un écran détecté OLED (ou un vrai noir forcé) : en pause, la barre s'efface
+  // après 20 s sans activité. Cadence fixe : l'image est représentée à chaque période de l'écran,
+  // pour un VRR à fréquence constante (sans scintillement des scènes sombres), au prix d'une
+  // composition par période.
+  bool oled_care = true;
+  bool steady_cadence = false;
   StatsSettings stats;
   friend bool operator==(const PlaySettings&, const PlaySettings&) = default;
 };

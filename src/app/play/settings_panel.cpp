@@ -219,6 +219,14 @@ void grade_tab(PlaySettings& d, const SettingsChoices& choices) {
   grade_slider("Seuil (pas de code)", d.oled_black_steps, render::grade_limits::kBlackSteps);
   ImGui::EndDisabled();
   note(("Écran : " + choices.display_text).c_str());
+  section("Soins OLED");
+  ImGui::Checkbox("Effacer la barre en pause (anti-marquage)", &d.oled_care);
+  ImGui::Checkbox("Cadence fixe (VRR sans scintillement)", &d.steady_cadence);
+  note(
+      "Anti-marquage : sur un écran OLED, la barre s'efface aussi en pause après 20 s sans activité. "
+      "Cadence fixe : l'image est représentée à chaque rafraîchissement de l'écran, pour que le VRR reste à "
+      "fréquence constante ; une fréquence qui varie fait scintiller les scènes sombres d'un OLED. Coûte une "
+      "composition par rafraîchissement.");
   if (!choices.black_status.empty()) note(choices.black_status.c_str());
   note(
       "Les quasi-noirs deviennent un vrai noir (0) ; le pied rejoint l'image au seuil, compté en pas de code "

@@ -62,8 +62,12 @@ struct SessionConfig {
   std::vector<std::string> tracks;                // pistes vidéo, audio et sous-titres
   std::string output;                             // sortie de l'écran (HDR10, pic de RTX HDR)
   std::int64_t display_period_us = 0;             // période de rafraîchissement de l'écran ; 0 : mesurée
-  StatsSettings stats;                            // mesures affichées (Tab bascule toutes)
-  const StatsSource* extra = nullptr;             // vit plus longtemps que la session
+  // Cadence fixe : l'image est représentée à chaque période de l'écran même sans changement, pour
+  // que le VRR reste à une fréquence constante (une fréquence qui varie fait scintiller les scènes
+  // sombres d'un OLED). Sans effet si la période est inconnue.
+  bool steady_cadence = false;
+  StatsSettings stats;                 // mesures affichées (Tab bascule toutes)
+  const StatsSource* extra = nullptr;  // vit plus longtemps que la session
 };
 
 // Une ligne par présentation, pour --stats.
@@ -95,6 +99,7 @@ class Session {
   void set_subtitle_scale(float scale);
   // Mesures affichées, relues au tour suivant.
   void set_stats(const StatsSettings& stats);
+  void set_steady_cadence(bool on) { config_.steady_cadence = on; }
   const StatsSettings& stats_settings() const { return show_stats_; }
   // Les pistes et la sortie ont changé (piste choisie, pic de RTX HDR) : relues au tour suivant.
   void set_tracks(std::vector<std::string> tracks);
@@ -158,6 +163,7 @@ class Session {
   static SubtitleLook look_of(const subs::SubtitleFrame* frame);
   SubtitleLook shown_subtitles_;
   OutputSize shown_size_;                         // taille de sortie de la dernière présentation
+  std::int64_t shown_at_us_ = 0;                  // instant hôte de la dernière présentation
   bool shown_ui_ = false;                         // la dernière présentation avait une interface
   StatsSettings show_stats_;                      // mesures affichées
   std::vector<std::string> osd_;                  // relu toutes les kOsdPeriodUs

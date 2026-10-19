@@ -4,7 +4,8 @@
 //
 // Comme dans mpv, VLC ou YouTube : la barre paraît au moindre mouvement de la souris, reste tant
 // que la lecture est en pause, qu'un menu est ouvert ou que la souris est dessus, et s'efface
-// après kHideAfterUs d'inactivité.
+// après kHideAfterUs d'inactivité. Sur OLED (set_oled_care), une pause sans activité efface aussi
+// la barre après kPausedHideUs : une image fixe et une barre immobile marqueraient la dalle.
 #pragma once
 
 #include <cstdint>
@@ -18,13 +19,14 @@
 
 namespace ajp::app::play {
 
-inline constexpr std::int64_t kHideAfterUs = 2'000'000;   // inactivité avant l'effacement
-inline constexpr std::int64_t kFadeUs = 200'000;          // durée du fondu
-inline constexpr std::int64_t kToastUs = 1'600'000;       // durée d'un message bref
-inline constexpr std::int64_t kDragSeekUs = 120'000;      // seeks au plus à ce rythme pendant le glissement
-inline constexpr std::int64_t kUiFrameUs = 16'000;        // interface recomposée au plus à ~60 Hz
-inline constexpr std::int64_t kPositionStepUs = 100'000;  // la position affichée avance par pas de 0,1 s
-inline constexpr float kMaxVolume = 1.5F;                 // 150 % ; cmd::SetVolume accepte jusqu'à 2
+inline constexpr std::int64_t kHideAfterUs = 2'000'000;    // inactivité avant l'effacement
+inline constexpr std::int64_t kPausedHideUs = 20'000'000;  // OLED : en pause, inactivité avant l'effacement
+inline constexpr std::int64_t kFadeUs = 200'000;           // durée du fondu
+inline constexpr std::int64_t kToastUs = 1'600'000;        // durée d'un message bref
+inline constexpr std::int64_t kDragSeekUs = 120'000;       // seeks au plus à ce rythme pendant le glissement
+inline constexpr std::int64_t kUiFrameUs = 16'000;         // interface recomposée au plus à ~60 Hz
+inline constexpr std::int64_t kPositionStepUs = 100'000;   // la position affichée avance par pas de 0,1 s
+inline constexpr float kMaxVolume = 1.5F;                  // 150 % ; cmd::SetVolume accepte jusqu'à 2
 inline constexpr float kVolumeStep = 0.05F;
 inline constexpr std::int64_t kDoubleClickUs = 300'000;  // simple clic sur l'image : attend ce délai
 
@@ -57,6 +59,8 @@ class Controls {
   void pointer_left(std::int64_t now_us);
   // Souris sur la barre, menu ouvert ou glissement : la barre reste.
   void set_held(bool held) { held_ = held; }
+  // Écran OLED : la pause ne retient plus la barre au-delà de kPausedHideUs sans activité.
+  void set_oled_care(bool on) { oled_care_ = on; }
 
   // Opacité de la barre : 1 visible, 0 effacée, entre les deux pendant un fondu.
   float opacity(std::int64_t now_us, bool paused) const;
@@ -112,6 +116,7 @@ class Controls {
   bool left_ = false;                      // souris hors de la fenêtre
   std::int64_t left_at_ = 0;
   bool held_ = false;
+  bool oled_care_ = false;
   float volume_ = 1.0F;
   bool muted_ = false;
   bool dragging_ = false;

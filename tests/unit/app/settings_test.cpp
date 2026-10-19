@@ -35,6 +35,9 @@ TEST_CASE("play.toml relit à l'identique ce qu'il a écrit", "[app][settings]")
   s.grade_values.gamut_p3 = true;
   s.oled_black = OledBlack::On;
   s.oled_black_steps = 3.5;
+  s.oled_care = false;
+  s.steady_cadence = true;
+  s.grade_values.expand = 0.3;
   const auto back = parse_settings(format_settings(s));
   REQUIRE(back);
   CHECK(*back == s);

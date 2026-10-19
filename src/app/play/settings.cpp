@@ -236,6 +236,10 @@ std::expected<PlaySettings, Refusal> parse_settings(std::string_view toml_text) 
   }
   if (const toml::table* subtitles = section(root, "subtitles"))
     reads.push_back(read(*subtitles, "subtitles", "scale", s.subtitle_scale));
+  if (const toml::table* oled = section(root, "oled")) {
+    reads.push_back(read(*oled, "oled", "care", s.oled_care));
+    reads.push_back(read(*oled, "oled", "steady_cadence", s.steady_cadence));
+  }
   if (const toml::table* grade = section(root, "grade")) {
     std::string preset(render::preset_key(s.grade_preset));
     render::GradeSettings& v = s.grade_values;
@@ -327,6 +331,7 @@ std::string format_settings(const PlaySettings& s) {
                                    {"gamut_p3", g.gamut_p3},
                                    {"oled_black", std::string(name(s.oled_black))},
                                    {"oled_black_steps", hundredth(s.oled_black_steps)}});
+  root.insert("oled", toml::table{{"care", s.oled_care}, {"steady_cadence", s.steady_cadence}});
   root.insert("stats", toml::table{{"all", s.stats.all},
                                    {"chain", s.stats.chain},
                                    {"frames", s.stats.frames},
@@ -436,6 +441,8 @@ PlaySettings live_part(const PlaySettings& running, const PlaySettings& wanted, 
   s.grade_values = wanted.grade_values;
   s.oled_black = wanted.oled_black;
   s.oled_black_steps = wanted.oled_black_steps;
+  s.oled_care = wanted.oled_care;
+  s.steady_cadence = wanted.steady_cadence;
   s.stats = wanted.stats;
   return s;
 }

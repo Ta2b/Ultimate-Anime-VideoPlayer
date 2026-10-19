@@ -203,6 +203,26 @@ TEST_CASE("Présentation à la demande : rien ne change, rien n'est recomposé",
   CHECK(rig.shown_pts() == 41'000);
 }
 
+TEST_CASE("Cadence fixe : l'image est représentée à chaque période de l'écran", "[app][session]") {
+  Rig rig(SessionConfig{.display_period_us = 6'000});
+  rig.session.handle(ring_frame(0, 0));
+  rig.tick();  // amorce : 0 à l'écran
+  const std::size_t presents = rig.screen.shown.size();
+  rig.screen.now_us += 6'000;
+  rig.tick();
+  CHECK(rig.screen.shown.size() == presents);  // à la demande : rien de neuf, rien de présenté
+  rig.session.set_steady_cadence(true);
+  rig.tick();
+  CHECK(rig.screen.shown.size() == presents + 1);  // la période est passée : même image, représentée
+  rig.screen.now_us += 2'000;
+  rig.tick();
+  CHECK(rig.screen.shown.size() == presents + 1);  // pas avant la période suivante
+  rig.screen.now_us += 3'600;
+  rig.tick();
+  CHECK(rig.screen.shown.size() == presents + 2);  // à une demi-milliseconde près
+  CHECK(rig.shown_pts() == 0);
+}
+
 TEST_CASE("L'interface demande une présentation quand elle change, et une pour s'effacer", "[app][session]") {
   Rig rig;
   rig.session.handle(ring_frame(0, 0));

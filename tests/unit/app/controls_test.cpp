@@ -63,6 +63,24 @@ TEST_CASE("Un mouvement pendant l'affichage prolonge la barre sans refaire le fo
   CHECK(controls.opacity(kS + kHideAfterUs + kFadeUs, false) == 0.0F);
 }
 
+TEST_CASE("OLED : en pause, la barre s'efface après 20 s sans activité, sauf sur un menu",
+          "[app][controls]") {
+  Controls controls;
+  controls.set_oled_care(true);
+  controls.activity(0);
+  CHECK(controls.opacity(kPausedHideUs - 1, true) == 1.0F);
+  CHECK_THAT(controls.opacity(kPausedHideUs + kFadeUs / 2, true), WithinAbs(0.5, 1e-3));
+  CHECK(controls.opacity(kPausedHideUs + kFadeUs, true) == 0.0F);
+  CHECK(controls.cursor_hidden(kPausedHideUs + kFadeUs, true));
+  controls.set_held(true);  // menu ouvert : la barre reste
+  CHECK(controls.opacity(kPausedHideUs + kFadeUs, true) == 1.0F);
+  controls.set_held(false);
+  controls.activity(30 * kS);  // la souris bouge : elle revient
+  CHECK(controls.opacity(30 * kS + kFadeUs, true) == 1.0F);
+  controls.set_oled_care(false);  // hors OLED, la pause la garde
+  CHECK(controls.opacity(30 * kS + kPausedHideUs + kFadeUs, true) == 1.0F);
+}
+
 TEST_CASE("La barre reste en pause, sur un menu ou pendant un glissement", "[app][controls]") {
   Controls controls;
   controls.activity(0);

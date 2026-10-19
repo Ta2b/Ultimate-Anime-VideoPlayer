@@ -16,6 +16,8 @@ constexpr std::int64_t kEndGraceUs = 1'000'000;
 constexpr std::size_t kMaxRefusals = 3;
 // L'OSD se recompose quatre fois par seconde, pas à chaque vsync.
 constexpr std::int64_t kOsdPeriodUs = 250'000;
+// Cadence fixe : marge sous la période de l'écran, pour présenter avant le vsync visé.
+constexpr std::int64_t kCadenceSlackUs = 500;
 // À l'amorce, la première image attend ses sous-titres au plus ce temps.
 constexpr std::int64_t kPrerollSubtitleWaitUs = 100'000;
 
@@ -276,8 +278,13 @@ std::expected<std::optional<PresentRecord>, Refusal> Session::tick(std::int64_t 
   if (osd_changed) why += 'o';
   if (ui_changed) why += 'u';
   if (size != shown_size_) why += 't';
+  // Cadence fixe : la période de l'écran écoulée (à une demi-milliseconde près, pour ne pas
+  // manquer le vsync), l'image est représentée telle quelle.
+  const bool cadence = config_.steady_cadence && config_.display_period_us > 0 && shown_once_ &&
+                       host_now - shown_at_us_ >= config_.display_period_us - kCadenceSlackUs;
+  if (cadence && why.empty()) why += 'c';
   if (shown_once_ && !fresh && !osd_changed && !ui_changed && look == shown_subtitles_ &&
-      size == shown_size_) {
+      size == shown_size_ && !cadence) {
     check_end(host_now);
     return std::optional<PresentRecord>{};
   }
@@ -291,6 +298,7 @@ std::expected<std::optional<PresentRecord>, Refusal> Session::tick(std::int64_t 
   if (!timing) return std::unexpected(std::move(timing.error()));
 
   shown_once_ = true;
+  shown_at_us_ = timing->presented ? timing->present_us : host_now;
   shown_ui_ = ui.draw != nullptr;
   shown_subtitles_ = std::move(look);
   shown_size_ = size;

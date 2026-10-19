@@ -57,7 +57,13 @@ void Controls::pointer_left(std::int64_t now_us) {
 }
 
 float Controls::opacity(std::int64_t now_us, bool paused) const {
-  if (paused || held_ || dragging_) {
+  // OLED : une pause longue sans activité laisse la barre s'effacer, comme en lecture.
+  const bool paused_hold = paused && !(oled_care_ && active_at_ && now_us - *active_at_ >= kPausedHideUs);
+  if (paused && !paused_hold && !held_ && !dragging_) {
+    if (left_) return 0.0F;
+    return 1.0F - ramp(now_us - (*active_at_ + kPausedHideUs));
+  }
+  if (paused_hold || held_ || dragging_) {
     // Fondu d'apparition seulement s'il vient d'une activité récente.
     return active_at_ && now_us - shown_since_ < kFadeUs && !left_ ? ramp(now_us - shown_since_) : 1.0F;
   }
