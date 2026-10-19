@@ -121,9 +121,12 @@ class FakeBackend : public gpu::Backend {
     return std::unexpected(ajp::Refusal{RefusalCode::FormatUnsupported, "factice"});
   }
   gpu::KernelOps* kernels() override { return nullptr; }  // prepare ne lance aucun noyau
-  void enqueue(gpu::Engine&, std::span<const gpu::Tensor>, std::span<gpu::Tensor>) override {}
-  gpu::Fence signal() override { return {}; }
-  void wait(const gpu::Fence&) override {}
+  std::expected<void, ajp::Refusal> enqueue(gpu::Engine&, std::span<const gpu::Tensor>,
+                                            std::span<gpu::Tensor>) override {
+    return {};
+  }
+  std::expected<gpu::Fence, ajp::Refusal> signal() override { return gpu::Fence{}; }
+  std::expected<void, ajp::Refusal> wait(const gpu::Fence&) override { return {}; }
 
   int calls() const { return calls_; }
   int max_running() const { return max_running_; }

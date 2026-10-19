@@ -103,20 +103,40 @@ activées, familles de files, files graphique, calcul et décodage vidéo, et le
 verrou `lock_queue` / `unlock_queue` qu'un module prend autour de chaque
 soumission. `DeviceUuid` n'a qu'une définition, partagée par `media` et `gpu`.
 
-### Backends (`gpu/backend.h`, ABI 2)
+### Backends (`gpu/backend.h`, ABI 3)
 
-Chaque backend est une bibliothèque chargée à l'exécution. Le chargeur lit
-`ajp_backend_abi()` et refuse une autre version (`AbiMismatch`) avant d'appeler
-`ajp_backend_create(kBackendAbi, &init)`. `BackendInit` porte l'appareil de
-rendu, le dossier de cache, le journal du backend et l'adresse où écrire le refus
-quand la création échoue. Un backend alloue ses tenseurs (`alloc_tensor`, un
-`TensorBuffer` qui libère à sa destruction) et expose par `kernels()` les noyaux
-de `kernels/spec.h` sur ses tenseurs (`gpu/kernel_ops.h`) : ingestion YUV vers
-RGB planaire, rééchantillonnage Spline36, bilinéaire ou Area, remplissage mod-64
-et recadrage de RIFE, warp et mélange à l'instant t, écriture d'un slot du ring en
-RGBA16 UNORM, mesures de coupe et de pire bloc 32 × 32 relues sans attente pour
-la paire suivante. Un format ou une taille hors contrat est un refus nommé, avant
-toute soumission.
+Chaque backend est une bibliothèque chargée à l'exécution. La frontière passe des
+types C++ (`std::string`, `std::function`, `std::expected`) : le backend se
+construit avec la même bibliothèque standard que le lecteur. Le chargeur lit
+`ajp_backend_abi()` et `ajp_backend_layout()`, puis `check_backend_abi()` refuse
+une autre version ou une autre empreinte binaire (`AbiMismatch`) avant d'appeler
+`ajp_backend_create(kBackendAbi, &init)`. L'empreinte `kBackendLayout` couvre la
+taille et l'alignement de chaque type qui traverse la frontière et la bibliothèque
+standard (libstdc++ et son ABI de `std::string`, libc++, STL de MSVC et son CRT) :
+elle trahit des en-têtes changés sans changement de `kBackendAbi`. Les quatre
+points d'entrée sont `noexcept` (sous MSVC, une exception sortie d'une fonction
+`extern "C"` est un comportement indéfini) ; `BackendAbiFn`, `BackendLayoutFn`,
+`BackendCreateFn` et `BackendDestroyFn` typent les adresses lues par `dlsym`.
+
+`BackendInit` porte l'appareil de rendu, le dossier de cache, le journal du
+backend et l'adresse où écrire le refus quand la création échoue, valable le temps
+de l'appel. `enqueue()`, `signal()` et `wait()` rendent l'erreur de l'API
+(`enqueueV3`, `vkQueueSubmit`, perte de l'appareil) en refus nommé. Un backend
+alloue ses tenseurs (`alloc_tensor`, un `TensorBuffer` qui libère à sa
+destruction) et expose par `kernels()` les noyaux de `kernels/spec.h` sur ses
+tenseurs (`gpu/kernel_ops.h`) : ingestion YUV vers RGB planaire,
+rééchantillonnage Spline36, bilinéaire ou Area, remplissage mod-64 et recadrage de
+RIFE, warp et mélange à l'instant t, écriture d'un slot du ring en RGBA16 UNORM,
+mesures de coupe et de pire bloc 32 × 32 relues sans attente pour la paire
+suivante. Un format ou une taille hors contrat est un refus nommé, avant toute
+soumission.
+
+Durées de vie : chaque `Engine` et `TensorBuffer` meurt avant le `Backend` qui l'a
+créé, donc avant `ajp_backend_destroy` et le déchargement de la bibliothèque, où
+vit leur code. Une opération qui lit une `DecodedFrame` en garde une copie de
+`frame.data` jusqu'à la fin de sa lecture côté GPU, constatée sans attente hôte :
+l'image ne revient au pool du décodeur qu'ensuite. `write_ring` relâche les imports
+des générations précédentes du ring au premier appel d'une plus récente.
 
 ### Ring de sortie (`core/ring.h`)
 

@@ -1,8 +1,11 @@
-// Interface des backends, version 2 : un backend complet doit pouvoir s'écrire contre
-// gpu/backend.h et gpu/kernel_ops.h, et leurs valeurs par défaut ne rien supposer.
+// Interface des backends, version 3 : un backend complet doit pouvoir s'écrire contre
+// gpu/backend.h et gpu/kernel_ops.h, leurs valeurs par défaut ne rien supposer, et le
+// chargeur refuser une bibliothèque d'une autre forme avant de lui passer quoi que ce soit.
 #include "gpu/backend.h"
 
+#include <cstdint>
 #include <memory>
+#include <string>
 #include <type_traits>
 
 #include <catch2/catch_test_macros.hpp>
@@ -13,7 +16,14 @@ using ajp::Refusal;
 using ajp::RefusalCode;
 using namespace ajp::gpu;
 
-static_assert(kBackendAbi == 2);
+static_assert(kBackendAbi == 3);
+// Aucune exception ne traverse les points d'entrée : sous MSVC, une exception sortie d'une
+// fonction extern "C" est un comportement indéfini chez l'appelant.
+static_assert(std::is_nothrow_invocable_r_v<int, BackendAbiFn>);
+static_assert(std::is_nothrow_invocable_r_v<std::uint64_t, BackendLayoutFn>);
+static_assert(std::is_nothrow_invocable_r_v<Backend*, BackendCreateFn, int, const BackendInit*>);
+static_assert(std::is_nothrow_invocable_v<BackendDestroyFn, Backend*>);
+static_assert(kBackendLayout != 0);
 static_assert(std::is_same_v<DeviceUuid, ajp::DeviceUuid>, "un seul type d'UUID d'appareil");
 static_assert(std::is_same_v<ajp::media::DeviceUuid, ajp::DeviceUuid>, "media partage le même UUID");
 static_assert(std::is_abstract_v<KernelOps> && std::has_virtual_destructor_v<KernelOps>);
@@ -96,9 +106,14 @@ class StubBackend final : public Backend {
     return std::make_unique<HostBuffer>(type, shape, alive_);
   }
   KernelOps* kernels() override { return &kernels_; }
-  void enqueue(Engine&, std::span<const Tensor>, std::span<Tensor>) override {}
-  Fence signal() override { return {}; }
-  void wait(const Fence&) override {}
+  std::expected<void, Refusal> enqueue(Engine&, std::span<const Tensor>, std::span<Tensor>) override {
+    return refuse(RefusalCode::VendorCallFailed);  // comme un enqueueV3 refusé
+  }
+  std::expected<Fence, Refusal> signal() override { return Fence{.handle = 1, .value = ++fence_}; }
+  std::expected<void, Refusal> wait(const Fence& fence) override {
+    if (fence.value > fence_) return refuse(RefusalCode::FieldOutOfRange);  // jamais signalée
+    return {};
+  }
 
   int alive() const { return alive_; }
 
@@ -106,11 +121,18 @@ class StubBackend final : public Backend {
   BackendInit init_;
   NoKernels kernels_;
   int alive_ = 0;
+  std::uint64_t fence_ = 0;
+};
+
+class NoEngine final : public Engine {
+ public:
+  std::span<const std::string> input_names() const override { return {}; }
+  std::span<const std::string> output_names() const override { return {}; }
 };
 
 }  // namespace
 
-TEST_CASE("Backend v2 : BackendInit et IngestSpec ne supposent rien", "[backend]") {
+TEST_CASE("Backend : BackendInit et IngestSpec ne supposent rien", "[backend]") {
   const BackendInit init;
   CHECK(init.render == nullptr);
   CHECK(init.cache_dir.empty());
@@ -124,7 +146,7 @@ TEST_CASE("Backend v2 : BackendInit et IngestSpec ne supposent rien", "[backend]
   CHECK_FALSE(PairScores{}.identical);
 }
 
-TEST_CASE("Backend v2 : un backend complet s'écrit contre l'interface", "[backend]") {
+TEST_CASE("Backend : un backend complet s'écrit contre l'interface", "[backend]") {
   ajp::GpuDevice render{.api = ajp::GpuApi::Vulkan, .pci_vendor = ajp::pci::kNvidia};
   render.uuid[0] = 0x42;
   StubBackend backend(BackendInit{.render = &render, .cache_dir = "cache"});
@@ -147,4 +169,54 @@ TEST_CASE("Backend v2 : un backend complet s'écrit contre l'interface", "[backe
   REQUIRE(ops != nullptr);
   CHECK(ops->resample({}, ajp::kernels::Filter::Area, {}).error().code == RefusalCode::ShapeInvalid);
   CHECK_FALSE(ops->previous_scores());
+}
+
+TEST_CASE("Backend : la file rend ses erreurs en refus nommés", "[backend]") {
+  StubBackend backend(BackendInit{});
+  NoEngine engine;
+  auto enqueued = backend.enqueue(engine, {}, {});
+  REQUIRE_FALSE(enqueued);
+  CHECK(enqueued.error().code == RefusalCode::VendorCallFailed);
+
+  auto fence = backend.signal();
+  REQUIRE(fence);
+  CHECK(backend.wait(*fence));
+  auto never = backend.wait(Fence{.handle = 1, .value = fence->value + 1});
+  REQUIRE_FALSE(never);
+  CHECK(never.error().code == RefusalCode::FieldOutOfRange);
+}
+
+TEST_CASE("Backend : le chargeur refuse une autre version ou une autre empreinte", "[backend]") {
+  CHECK(check_backend_abi(kBackendAbi, kBackendLayout));
+
+  auto older = check_backend_abi(2, kBackendLayout);
+  REQUIRE_FALSE(older);
+  CHECK(older.error().code == RefusalCode::AbiMismatch);
+  CHECK(older.error().detail.find("interface 2") != std::string::npos);
+
+  // Même version, autre forme : en-têtes modifiés sans changer kBackendAbi, ou autre
+  // bibliothèque standard (libc++ contre libstdc++, CRT de débogage).
+  auto reshaped = check_backend_abi(kBackendAbi, kBackendLayout ^ 1U);
+  REQUIRE_FALSE(reshaped);
+  CHECK(reshaped.error().code == RefusalCode::AbiMismatch);
+  CHECK(reshaped.error().detail.find("empreinte") != std::string::npos);
+}
+
+TEST_CASE("Backend : l'empreinte suit la taille, l'alignement et l'ordre des types", "[backend]") {
+  struct Small {
+    std::uint32_t a;
+  };
+  struct Grown {
+    std::uint32_t a;
+    std::uint32_t b;  // un champ ajouté sans changer kBackendAbi
+  };
+  struct Aligned {
+    alignas(8) std::uint32_t a;
+  };
+  CHECK(layout_fingerprint({1, 2}) == layout_fingerprint({1, 2}));
+  CHECK(layout_fingerprint({1, 2}) != layout_fingerprint({2, 1}));
+  CHECK(shape_fingerprint<Small, Grown>() != shape_fingerprint<Grown, Small>());
+  CHECK(shape_fingerprint<Small>() != shape_fingerprint<Grown>());
+  CHECK(shape_fingerprint<Small>() != shape_fingerprint<Aligned>());
+  CHECK(shape_fingerprint<Small>() == shape_fingerprint<std::uint32_t>());  // même forme, même empreinte
 }
