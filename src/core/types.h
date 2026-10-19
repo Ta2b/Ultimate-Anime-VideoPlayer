@@ -77,6 +77,12 @@ enum class RefusalCode : std::uint8_t {
   OperatorUnknown,   // opérateur hors du jeu de l'IR ; le détail porte son nom
   GraphInvalid,      // tenseur absent, cycle, attribut ou entrée incohérents
   ShapeInvalid,      // formes incompatibles, ou dimension impossible à déduire
+
+  // app : ligne de commande, détection du système, téléchargements
+  CommandUnavailable,  // commande pas encore disponible dans cette construction du lecteur
+  VulkanCallFailed,    // un appel Vulkan a renvoyé une erreur ; le détail cite l'appel et son VkResult
+  DownloadFailed,      // réseau, réponse HTTP ou délai dépassé pendant un téléchargement
+  DiskFull,            // place libre insuffisante dans le dossier de données
 };
 
 struct Refusal {
@@ -202,6 +208,14 @@ constexpr std::string_view name(RefusalCode code) {
       return "GraphInvalid";
     case RefusalCode::ShapeInvalid:
       return "ShapeInvalid";
+    case RefusalCode::CommandUnavailable:
+      return "CommandUnavailable";
+    case RefusalCode::VulkanCallFailed:
+      return "VulkanCallFailed";
+    case RefusalCode::DownloadFailed:
+      return "DownloadFailed";
+    case RefusalCode::DiskFull:
+      return "DiskFull";
   }
   return "Unknown";
 }
