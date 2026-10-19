@@ -18,6 +18,7 @@
 #include <string>
 #include <vector>
 
+#include "app/play/controls.h"
 #include "app/play/frame_queue.h"
 #include "app/play/frame_stats.h"
 #include "app/play/links.h"
@@ -48,6 +49,7 @@ struct SessionConfig {
   std::optional<subs::VideoMatrix> video_matrix;  // couleurs VSFilter
   std::vector<std::string> header;                // premières lignes de l'OSD (modèle, moteur)
   std::int64_t display_period_us = 0;             // période de rafraîchissement de l'écran ; 0 : mesurée
+  bool stats = false;                             // lignes de mesure affichées (Tab les bascule)
 };
 
 // Une ligne par présentation, pour --stats.
@@ -67,13 +69,13 @@ class Session {
   // À l'ouverture : seek vers start_us s'il y a lieu.
   void begin(std::int64_t host_now);
   void handle(MainInbox::Message&& message);
-  // Commande de l'utilisateur (touches) : pause, seek, quitter.
+  // Commande de l'utilisateur (touches, interface) : pause, seek, volume, statistiques, quitter.
   void command(const Command& command);
   void toggle_fullscreen();
   // Un tour : choisit l'image, puis compose et présente seulement si quelque chose a changé
-  // (image neuve, sous-titres, OSD, taille de sortie) ; rien sinon. Rend les slots. Un refus de
-  // l'écran est rendu tel quel : la boucle s'arrête.
-  std::expected<std::optional<PresentRecord>, Refusal> tick(std::int64_t host_now);
+  // (image neuve, sous-titres, OSD, interface, taille de sortie) ; rien sinon. Rend les slots. Un
+  // refus de l'écran est rendu tel quel : la boucle s'arrête.
+  std::expected<std::optional<PresentRecord>, Refusal> tick(std::int64_t host_now, const UiFrame& ui = {});
   // Rend tous les slots tenus et arrête les threads.
   void end();
 
@@ -83,6 +85,9 @@ class Session {
   const FrameStats& stats() const { return stats_; }
   const std::vector<std::string>& refusals() const { return refusals_; }
   std::vector<std::string> osd_lines() const;
+  // Ce que la barre de lecture montre : la position (la cible d'un seek en cours, sinon l'image à
+  // l'écran), la durée, la pause, le plein écran, les statistiques.
+  ControlsView view() const;
 
  private:
   void seek_to(std::int64_t target_us, bool exact);
@@ -117,9 +122,11 @@ class Session {
   bool shown_once_ = false;  // une présentation a eu lieu : la suivante seulement si ça change
   std::optional<std::int64_t> shown_subtitles_pts_;  // sous-titres de la dernière présentation
   OutputSize shown_size_;                            // taille de sortie de la dernière présentation
-  std::vector<std::string> osd_;                     // recomposé toutes les kOsdPeriodUs
-  std::int64_t osd_at_us_ = 0;
-  std::optional<std::int64_t> playing_since_us_;  // instant hôte de la première image
+  bool shown_ui_ = false;                            // la dernière présentation avait une interface
+  bool show_stats_ = false;                          // lignes de mesure affichées
+  std::vector<std::string> osd_;                     // relu toutes les kOsdPeriodUs
+  std::optional<std::int64_t> osd_at_us_;            // rien : à relire au prochain tour
+  std::optional<std::int64_t> playing_since_us_;     // instant hôte de la première image
   std::int64_t last_fresh_host_us_ = 0;
   bool fullscreen_done_ = false;
   FrameStats stats_;

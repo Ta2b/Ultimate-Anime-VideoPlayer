@@ -19,6 +19,7 @@
 
 #include "app/play/links.h"
 #include "app/play/osd_text.h"
+#include "app/play/placebo_imgui.h"
 #include "app/play/placebo_screen.h"
 #include "core/gpu_device.h"
 #include "core/ring.h"
@@ -59,9 +60,12 @@ class Overlays {
   Overlays(const Overlays&) = delete;
   Overlays& operator=(const Overlays&) = delete;
 
+  // ui_bottom, ui_top : pixels pris en bas et en haut par l'interface ; les sous-titres du bas
+  // montent au-dessus, l'OSD descend dessous.
   std::expected<std::span<const pl_overlay>, Refusal> build(const subs::SubtitleFrame* subtitles,
                                                             const std::span<const std::string>* osd,
-                                                            OsdText& text, OutputSize out);
+                                                            OsdText& text, OutputSize out, int ui_bottom,
+                                                            int ui_top);
 
  private:
   struct Layer {
@@ -70,7 +74,8 @@ class Overlays {
     std::uint64_t generation = 0;
     std::vector<pl_overlay_part> parts;
   };
-  std::expected<bool, Refusal> add(Layer& layer, const subs::SubtitleFrame& frame, OutputSize out);
+  std::expected<bool, Refusal> add(Layer& layer, const subs::SubtitleFrame& frame, OutputSize out,
+                                   int ui_bottom = 0);
 
   pl_gpu gpu_;
   Layer subtitles_;
@@ -82,8 +87,11 @@ class Overlays {
 struct PlaceboScreen::Impl {
   ~Impl();
   std::expected<void, Refusal> compose(const pl_frame* image, const pl_frame& target) const;
+  // L'interface par-dessus la composition ; un refus est écrit au journal une fois, la lecture
+  // continue sans elle.
+  void draw_ui(const ImDrawData* ui, const pl_frame& target);
   std::expected<void, Refusal> save_snapshot(const pl_frame* image, const pl_frame& target, OutputSize out,
-                                             const std::filesystem::path& path) const;
+                                             const ImDrawData* ui, const std::filesystem::path& path);
   std::shared_ptr<spdlog::logger> channel;
   SDL_Window* window = nullptr;
   pl_log log = nullptr;
@@ -96,6 +104,8 @@ struct PlaceboScreen::Impl {
   PlaceboRing ring;
   std::unique_ptr<Overlays> overlays;
   std::unique_ptr<OsdText> osd;
+  std::unique_ptr<ImGuiLayer> ui;
+  bool ui_failed = false;
   pl_color_space source{};
   OutputSize swapchain_size;
   bool fullscreen = false;

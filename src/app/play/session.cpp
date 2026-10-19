@@ -25,7 +25,11 @@ struct Overloaded : F... {
 }  // namespace
 
 Session::Session(SessionConfig config, Stages& stages, Screen& screen, const MasterClock& clock)
-    : config_(std::move(config)), stages_(stages), screen_(screen), clock_(clock) {
+    : config_(std::move(config)),
+      stages_(stages),
+      screen_(screen),
+      clock_(clock),
+      show_stats_(config_.stats) {
   late_.reserve(kMaxRingSlots);
 }
 
@@ -44,36 +48,54 @@ void Session::handle(MainInbox::Message&& message) {
 }
 
 void Session::command(const Command& command) {
-  std::visit(Overloaded{[this](const cmd::Play&) {
-                          if (!paused_) return;
-                          paused_ = false;
-                          if (!prerolling_ && current_) stages_.play(epoch_, current_->pts_us);
-                        },
-                        [this](const cmd::Pause&) {
-                          if (paused_) return;
-                          paused_ = true;
-                          stages_.pause();
-                        },
-                        [this](const cmd::TogglePause&) {
-                          if (paused_) {
-                            this->command(cmd::Play{});
-                          } else {
-                            this->command(cmd::Pause{});
-                          }
-                        },
-                        [this](const cmd::Seek& seek) { seek_to(seek.target_us, seek.exact); },
-                        [this](const cmd::SeekRelative& seek) {
-                          std::int64_t base = 0;
-                          if (pending_seek_us_) {
-                            base = *pending_seek_us_;
-                          } else if (current_ && current_->pts_us != kNoPts) {
-                            base = current_->pts_us;
-                          }
-                          seek_to(base + seek.delta_us, seek.exact);
-                        },
-                        [this](const cmd::Quit&) { finished_ = true; },
-                        [](const auto&) {}},  // le reste ne concerne pas la tranche verticale
-             command);
+  std::visit(
+      Overloaded{[this](const cmd::Play&) {
+                   if (!paused_) return;
+                   paused_ = false;
+                   if (!prerolling_ && current_) stages_.play(epoch_, current_->pts_us);
+                 },
+                 [this](const cmd::Pause&) {
+                   if (paused_) return;
+                   paused_ = true;
+                   stages_.pause();
+                 },
+                 [this](const cmd::TogglePause&) {
+                   if (paused_) {
+                     this->command(cmd::Play{});
+                   } else {
+                     this->command(cmd::Pause{});
+                   }
+                 },
+                 [this](const cmd::Seek& seek) { seek_to(seek.target_us, seek.exact); },
+                 [this](const cmd::SeekRelative& seek) {
+                   std::int64_t base = 0;
+                   if (pending_seek_us_) {
+                     base = *pending_seek_us_;
+                   } else if (current_ && current_->pts_us != kNoPts) {
+                     base = current_->pts_us;
+                   }
+                   seek_to(base + seek.delta_us, seek.exact);
+                 },
+                 [this](const cmd::Quit&) { finished_ = true; },
+                 [this](const cmd::SetVolume& volume) {
+                   if (!stages_.audio(volume)) {
+                     on_refusal({.stage = "main",
+                                 .refusal = {RefusalCode::PacketBacklog, "volume : boîte audio pleine"}});
+                   }
+                 },
+                 [this](const cmd::SetAudioDelay& delay) {
+                   if (!stages_.audio(delay)) {
+                     on_refusal(
+                         {.stage = "main",
+                          .refusal = {RefusalCode::PacketBacklog, "délai audio : boîte audio pleine"}});
+                   }
+                 },
+                 [this](const cmd::ToggleOsd&) {
+                   show_stats_ = !show_stats_;
+                   osd_at_us_.reset();  // relu au tour suivant
+                 },
+                 [](const auto&) {}},  // le reste ne concerne pas la tranche verticale
+      command);
 }
 
 void Session::toggle_fullscreen() {
@@ -121,6 +143,7 @@ void Session::on_refusal(const StageRefusal& refusal) {
   refusals_.push_back(
       std::format("{} : {} {}", refusal.stage, name(refusal.refusal.code), refusal.refusal.detail));
   if (refusals_.size() > kMaxRefusals) refusals_.erase(refusals_.begin());
+  osd_at_us_.reset();  // le refus paraît au tour suivant
   if (refusal.fatal) finished_ = true;
 }
 
@@ -182,15 +205,16 @@ const subs::SubtitleFrame* Session::subtitles_for(std::int64_t pts_us) {
   return frame;
 }
 
-std::expected<std::optional<PresentRecord>, Refusal> Session::tick(std::int64_t host_now) {
+std::expected<std::optional<PresentRecord>, Refusal> Session::tick(std::int64_t host_now, const UiFrame& ui) {
   fresh_ = false;
   choose(host_now);
   const bool fresh = fresh_;
   bool osd_changed = false;
-  if (osd_.empty() || host_now - osd_at_us_ >= kOsdPeriodUs) {
-    osd_ = osd_lines();
+  if (!osd_at_us_ || host_now - *osd_at_us_ >= kOsdPeriodUs) {
+    std::vector<std::string> lines = osd_lines();
+    osd_changed = lines != osd_;
+    osd_ = std::move(lines);
     osd_at_us_ = host_now;
-    osd_changed = true;
   }
   const subs::SubtitleFrame* subtitles = current_ ? subtitles_for(current_->pts_us) : nullptr;
   const std::optional<std::int64_t> subtitles_pts =
@@ -198,15 +222,23 @@ std::expected<std::optional<PresentRecord>, Refusal> Session::tick(std::int64_t 
   const OutputSize size = screen_.size();
   // Présentation à la demande : rien n'a changé, l'écran garde l'image (et en VRR, il suit le
   // rythme des images au lieu de recomposer à chaque vsync, ce qui laisse le GPU aux moteurs).
-  if (shown_once_ && !fresh && !osd_changed && subtitles_pts == shown_subtitles_pts_ && size == shown_size_) {
+  const bool ui_changed = ui.changed || (ui.draw != nullptr) != shown_ui_;
+  if (shown_once_ && !fresh && !osd_changed && !ui_changed && subtitles_pts == shown_subtitles_pts_ &&
+      size == shown_size_) {
     check_end(host_now);
     return std::optional<PresentRecord>{};
   }
-  const ShowRequest request{.frame = current_ ? &*current_ : nullptr, .subtitles = subtitles, .osd = osd_};
+  const ShowRequest request{.frame = current_ ? &*current_ : nullptr,
+                            .subtitles = subtitles,
+                            .osd = osd_,
+                            .ui = ui.draw,
+                            .ui_bottom = ui.draw != nullptr ? ui.bottom : 0,
+                            .ui_top = ui.draw != nullptr ? ui.top : 0};
   auto timing = screen_.show(request);
   if (!timing) return std::unexpected(std::move(timing.error()));
 
   shown_once_ = true;
+  shown_ui_ = ui.draw != nullptr;
   shown_subtitles_pts_ = subtitles_pts;
   shown_size_ = size;
   std::optional<PresentRecord> record;
@@ -247,6 +279,7 @@ void Session::end() {
 }
 
 std::vector<std::string> Session::osd_lines() const {
+  if (!show_stats_) return refusals_;  // les refus restent visibles, statistiques ou pas
   std::vector<std::string> lines = config_.header;
   lines.push_back(std::format("image {} (σ {}) · rendu {} · sautées {}",
                               format_ms(stats_.frame_interval.median()),
@@ -257,6 +290,20 @@ std::vector<std::string> Session::osd_lines() const {
                               paused_ ? " · pause" : ""));
   for (const std::string& refusal : refusals_) lines.push_back(refusal);
   return lines;
+}
+
+ControlsView Session::view() const {
+  std::int64_t position = kNoPts;
+  if (pending_seek_us_) {
+    position = *pending_seek_us_;
+  } else if (current_) {
+    position = current_->pts_us;
+  }
+  return ControlsView{.position_us = position,
+                      .duration_us = config_.duration_us,
+                      .paused = paused_,
+                      .fullscreen = screen_.fullscreen(),
+                      .stats = show_stats_};
 }
 
 }  // namespace ajp::app::play

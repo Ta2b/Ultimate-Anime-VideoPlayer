@@ -20,6 +20,7 @@
 #include "core/types.h"
 
 struct SDL_Window;
+struct ImGuiPlatformIO;
 
 namespace ajp::app::play {
 
@@ -56,6 +57,8 @@ class PlaceboScreen final : public Screen {
   // La prochaine présentation est aussi rendue en SDR hors écran et écrite en PPM (P6) : ce
   // que montre la fenêtre, pour le vérifier sans capture d'écran.
   void snapshot_next(std::filesystem::path path);
+  // Détruit les textures de l'interface (placebo_imgui.h) : avant l'écran, contexte ImGui vivant.
+  void release_ui(ImGuiPlatformIO& platform);
 
   OutputSize size() const override;
   std::expected<ScreenTiming, Refusal> show(const ShowRequest& request) override;

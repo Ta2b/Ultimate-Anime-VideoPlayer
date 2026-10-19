@@ -26,6 +26,8 @@
 #include "subs/subtitle_frame.h"
 #include "subs/subtitle_renderer.h"
 
+struct ImDrawData;
+
 namespace ajp::app::play {
 
 // La source a livré sa dernière image et son dernier paquet pour cette époque.
@@ -73,6 +75,8 @@ class Stages {
   virtual bool slot_free(const SlotFree& free) = 0;
   // Demande l'image de sous-titres d'un pts de sortie ; la réponse arrive dans MainInbox.
   virtual bool request_subtitles(const subs::RenderRequest& request) = 0;
+  // Réglage du son (cmd::SetVolume, cmd::SetAudioDelay) au thread audio ; true sans piste audio.
+  virtual bool audio(const Command& command) = 0;
   // cmd::Quit à tous les threads.
   virtual void quit() = 0;
 };
@@ -95,6 +99,18 @@ struct ShowRequest {
   const RingFrame* frame = nullptr;                // nullptr : rien encore, image noire
   const subs::SubtitleFrame* subtitles = nullptr;  // nullptr : aucun sous-titre
   std::span<const std::string> osd;                // lignes de l'OSD, en haut à gauche
+  const ImDrawData* ui = nullptr;                  // interface (barre de lecture, menus), par-dessus tout
+  int ui_bottom = 0;  // pixels pris en bas par l'interface : les sous-titres du bas passent au-dessus
+  int ui_top = 0;     // pixels pris en haut par l'interface : l'OSD passe dessous
+};
+
+// L'image de l'interface pour ce tour (ui.h) : changed demande une présentation même sans image
+// neuve. draw reste valable jusqu'à la recomposition suivante de l'interface.
+struct UiFrame {
+  const ImDrawData* draw = nullptr;  // nullptr : rien à dessiner
+  bool changed = false;
+  int bottom = 0;  // pixels pris en bas de l'écran (barre visible), 0 sinon
+  int top = 0;     // pixels pris en haut (titre visible), 0 sinon
 };
 
 class Screen {

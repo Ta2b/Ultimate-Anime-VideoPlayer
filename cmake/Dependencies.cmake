@@ -44,6 +44,12 @@ ajp_alias_dep(placebo PkgConfig::AJP_PLACEBO)
 pkg_check_modules(AJP_ASS REQUIRED IMPORTED_TARGET libass)
 ajp_alias_dep(ass PkgConfig::AJP_ASS)
 
+# fontconfig, facultatif : la police du bureau pour l'interface (app/play/ui.cpp).
+pkg_check_modules(AJP_FONTCONFIG QUIET IMPORTED_TARGET fontconfig)
+if(AJP_FONTCONFIG_FOUND)
+  ajp_alias_dep(fontconfig PkgConfig::AJP_FONTCONFIG)
+endif()
+
 find_package(SDL3 CONFIG REQUIRED)
 
 # Téléchargement des moteurs et des modèles depuis l'index haché.

@@ -83,6 +83,10 @@ bool ThreadStages::request_subtitles(const subs::RenderRequest& request) {
   return links_.subs && links_.subs->try_push(subs::RenderRequest{request});
 }
 
+bool ThreadStages::audio(const Command& command) {
+  return links_.audio == nullptr || links_.audio->post(Command{command});
+}
+
 void ThreadStages::quit() {
   links_.source->try_push(Command{cmd::Quit{}});
   links_.video->post(Command{cmd::Quit{}});

@@ -1,5 +1,7 @@
 #include "app/play/input.h"
 
+#include "app/play/controls.h"
+
 namespace ajp::app::play {
 namespace {
 
@@ -61,6 +63,10 @@ std::optional<Input> input_of(const SDL_Event& event, const core::KeyMap& keys) 
   const bool plain = (mod & (SDL_KMOD_CTRL | SDL_KMOD_ALT | SDL_KMOD_GUI)) == 0;
   if (plain && event.key.key == SDLK_Q) return Command{cmd::Quit{}};
   if (plain && event.key.key == SDLK_F) return ToggleFullscreen{};
+  if (plain && event.key.key == SDLK_ESCAPE) return LeaveFullscreen{};
+  if (plain && event.key.key == SDLK_M) return ToggleMute{};
+  if (plain && event.key.key == SDLK_UP) return VolumeStep{.delta = kVolumeStep};
+  if (plain && event.key.key == SDLK_DOWN) return VolumeStep{.delta = -kVolumeStep};
   const auto key = key_of(event.key.key);
   if (!key) return std::nullopt;
   const core::Chord chord{.key = *key,

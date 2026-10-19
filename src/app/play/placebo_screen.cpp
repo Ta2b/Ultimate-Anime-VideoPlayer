@@ -18,6 +18,9 @@
 namespace ajp::app::play {
 namespace {
 
+// Blanc de l'interface dans une sortie HDR : le blanc de référence (BT.2408), comme le SDR.
+constexpr float kUiWhiteNits = 203.0F;
+
 std::unexpected<Refusal> refuse(RefusalCode code, std::string detail) {
   return std::unexpected(Refusal{code, std::move(detail)});
 }
@@ -84,6 +87,7 @@ PlaceboScreen::~PlaceboScreen() = default;
 
 PlaceboScreen::Impl::~Impl() {
   if (vk != nullptr) pl_gpu_finish(vk->gpu);
+  ui.reset();
   osd.reset();
   overlays.reset();
   ring.clear(vk != nullptr ? vk->gpu : nullptr);
@@ -158,6 +162,7 @@ std::expected<std::unique_ptr<PlaceboScreen>, Refusal> PlaceboScreen::open(const
   if (!osd) return std::unexpected(std::move(osd.error()));
   impl->osd = std::move(*osd);
   impl->overlays = std::make_unique<Overlays>(gpu);
+  impl->ui = std::make_unique<ImGuiLayer>(gpu, impl->log);
   impl->source = pl_color_space_bt709;
   return std::unique_ptr<PlaceboScreen>(new PlaceboScreen(std::move(impl)));
 }
@@ -188,6 +193,18 @@ void PlaceboScreen::flush() {
 
 void PlaceboScreen::snapshot_next(std::filesystem::path path) {
   impl_->snapshot = std::move(path);
+}
+
+void PlaceboScreen::release_ui(ImGuiPlatformIO& platform) {
+  if (impl_->ui) impl_->ui->release_textures(platform);
+}
+
+void PlaceboScreen::Impl::draw_ui(const ImDrawData* data, const pl_frame& target) {
+  if (data == nullptr || ui_failed) return;
+  if (auto drawn = ui->draw(*data, target, kUiWhiteNits); !drawn) {
+    channel->warn("interface : {} {}", name(drawn.error().code), drawn.error().detail);
+    ui_failed = true;
+  }
 }
 
 std::expected<void, Refusal> PlaceboScreen::Impl::compose(const pl_frame* image,
@@ -253,8 +270,9 @@ std::expected<ScreenTiming, Refusal> PlaceboScreen::show(const ShowRequest& requ
     pl_rect2df_aspect_copy(&target.crop, &image.crop, 0.0F);
   }
 
-  auto overlays =
-      s.overlays->build(request.subtitles, request.osd.empty() ? nullptr : &request.osd, *s.osd, out);
+  auto overlays = s.overlays->build(request.subtitles, request.osd.empty() ? nullptr : &request.osd, *s.osd,
+                                    out, request.ui != nullptr ? request.ui_bottom : 0,
+                                    request.ui != nullptr ? request.ui_top : 0);
   if (!overlays) return std::unexpected(std::move(overlays.error()));
   target.overlays = overlays->data();
   target.num_overlays = static_cast<int>(overlays->size());
@@ -262,10 +280,12 @@ std::expected<ScreenTiming, Refusal> PlaceboScreen::show(const ShowRequest& requ
   if (auto drawn = s.compose(request.frame != nullptr ? &image : nullptr, target); !drawn) {
     return std::unexpected(std::move(drawn.error()));
   }
+  s.draw_ui(request.ui, target);
   if (s.snapshot) {
     const std::filesystem::path path = *s.snapshot;
     s.snapshot.reset();
-    if (auto saved = s.save_snapshot(request.frame != nullptr ? &image : nullptr, target, out, path);
+    if (auto saved =
+            s.save_snapshot(request.frame != nullptr ? &image : nullptr, target, out, request.ui, path);
         !saved) {
       s.channel->warn("instantané {} : {}", path.string(), saved.error().detail);
     }

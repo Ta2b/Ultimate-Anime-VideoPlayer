@@ -1,6 +1,7 @@
 // Touches SDL3 vers les commandes du lecteur : la carte de core/keys.h (espace, flèches…),
-// plus les deux touches de fenêtre de la tranche verticale, « f » (plein écran) et « q »
-// (quitter), que core::Action ne porte pas encore.
+// plus les touches de la tranche verticale que core::Action ne porte pas encore : « f » (plein
+// écran), Échap (quitter le plein écran), « q » (quitter), « m » (muet), haut et bas (volume).
+// L'interface (ui.h) rend les mêmes actions.
 #pragma once
 
 #include <optional>
@@ -14,7 +15,12 @@
 namespace ajp::app::play {
 
 struct ToggleFullscreen {};
-using Input = std::variant<Command, ToggleFullscreen>;
+struct LeaveFullscreen {};
+struct ToggleMute {};
+struct VolumeStep {
+  float delta = 0.0F;
+};
+using Input = std::variant<Command, ToggleFullscreen, LeaveFullscreen, ToggleMute, VolumeStep>;
 
 // L'action d'un événement SDL, ou rien. Fermer la fenêtre vaut cmd::Quit.
 std::optional<Input> input_of(const SDL_Event& event, const core::KeyMap& keys);

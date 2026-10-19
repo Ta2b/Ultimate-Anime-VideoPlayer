@@ -1,9 +1,11 @@
 #include "app/play/player.h"
 
+#include <charconv>
 #include <format>
 #include <fstream>
 #include <optional>
 #include <utility>
+#include <variant>
 
 #include <SDL3/SDL_events.h>
 #include <SDL3/SDL_keyboard.h>
@@ -17,6 +19,7 @@
 #include "app/play/pipeline.h"
 #include "app/play/placebo_screen.h"
 #include "app/play/session.h"
+#include "app/play/ui.h"
 #include "app/play/upscale_stage.h"
 #include "core/clock.h"
 #include "core/log.h"
@@ -92,8 +95,43 @@ std::expected<std::optional<gpu::Artifact>, Refusal> wait_engine(EngineBuild& bu
   }
 }
 
+template <class... F>
+struct Overloaded : F... {
+  using F::operator()...;
+};
+
+// « mouse=XxY » de --keys : la souris passe à ce point de la fenêtre (fractions de sa taille).
+std::optional<std::pair<float, float>> mouse_point(std::string_view text) {
+  if (!text.starts_with("mouse=")) return std::nullopt;
+  text.remove_prefix(6);
+  const std::size_t cross = text.find('x');
+  if (cross == std::string_view::npos) return std::nullopt;
+  float x = 0.0F;
+  float y = 0.0F;
+  const std::string_view xs = text.substr(0, cross);
+  const std::string_view ys = text.substr(cross + 1);
+  if (std::from_chars(xs.data(), xs.data() + xs.size(), x).ec != std::errc{} ||
+      std::from_chars(ys.data(), ys.data() + ys.size(), y).ec != std::errc{})
+    return std::nullopt;
+  return std::pair{x, y};
+}
+
 // Touche pressée d'office (--keys) : un événement SDL de plus dans la file, comme le clavier.
+// « mouse=XxY » déplace la souris (la barre de lecture paraît).
 void press(const std::string& name, SDL_Window* window) {
+  if (const auto point = mouse_point(name)) {
+    int w = 0;
+    int h = 0;
+    SDL_GetWindowSize(window, &w, &h);
+    SDL_Event motion{};
+    motion.type = SDL_EVENT_MOUSE_MOTION;
+    motion.motion.windowID = SDL_GetWindowID(window);
+    motion.motion.x = point->first * static_cast<float>(w);
+    motion.motion.y = point->second * static_cast<float>(h);
+    log_channel("app")->info("--keys : souris en {:.0f}, {:.0f}", motion.motion.x, motion.motion.y);
+    SDL_PushEvent(&motion);
+    return;
+  }
   SDL_Event event{};
   event.type = SDL_EVENT_KEY_DOWN;
   event.key.windowID = SDL_GetWindowID(window);
@@ -165,6 +203,38 @@ std::expected<void, Refusal> open_rtx_hdr(const PlayOptions& options, const Play
   log->info("RTX HDR : Maxine {} · pic {} nits · contraste {} · saturation {} · gris moyen {}",
             sdk.installed->version().text(), peak, params->contrast, params->saturation, params->middle_gray);
   return {};
+}
+
+std::string volume_text(const Controls& controls) {
+  if (controls.muted()) return "Son coupé";
+  return std::format("Volume {} %", std::lround(controls.volume() * 100.0F));
+}
+
+// Une action du clavier ou de l'interface. La barre paraît aussi après un seek au clavier.
+void apply(const Input& input, Session& session, PlaceboScreen& screen, PlayerUi& ui, std::int64_t now_us) {
+  Controls& controls = ui.controls();
+  std::visit(Overloaded{[&](const Command& command) {
+                          session.command(command);
+                          if (std::holds_alternative<cmd::SeekRelative>(command)) controls.activity(now_us);
+                          if (std::holds_alternative<cmd::ToggleOsd>(command)) {
+                            controls.notify(
+                                session.view().stats ? "Statistiques affichées" : "Statistiques masquées",
+                                now_us);
+                          }
+                        },
+                        [&](const ToggleFullscreen&) { session.toggle_fullscreen(); },
+                        [&](const LeaveFullscreen&) {
+                          if (screen.fullscreen()) session.toggle_fullscreen();
+                        },
+                        [&](const ToggleMute&) {
+                          session.command(Command{controls.toggle_mute()});
+                          controls.notify(volume_text(controls), now_us);
+                        },
+                        [&](const VolumeStep& step) {
+                          session.command(Command{controls.step_volume(step.delta)});
+                          controls.notify(volume_text(controls), now_us);
+                        }},
+             input);
 }
 
 void write_record(std::ofstream& stats, const PresentRecord& record) {
@@ -314,6 +384,8 @@ std::expected<void, Refusal> play(const PlayOptions& options, const PlayerPaths&
   session_config.header.push_back(out.output_description());
   for (const std::string& line : session_config.header) log->info("{}", line);
   Session session(std::move(session_config), (*pipeline)->stages(), out, (*pipeline)->clock());
+  auto ui = PlayerUi::create(out.window(), options.file.filename().string());
+  if (!ui) return std::unexpected(std::move(ui.error()));
 
   std::ofstream stats;
   if (options.stats) {
@@ -325,6 +397,7 @@ std::expected<void, Refusal> play(const PlayOptions& options, const PlayerPaths&
   const std::int64_t began_us = host_now_us();
   std::optional<std::filesystem::path> snapshot = options.snapshot;
   std::size_t next_key = 0;
+  std::vector<Input> actions;
   session.begin(began_us);
   while (!session.finished()) {
     for (; next_key < options.keys.size() && host_now_us() - began_us >= options.keys[next_key].first;
@@ -337,17 +410,15 @@ std::expected<void, Refusal> play(const PlayOptions& options, const PlayerPaths&
     }
     SDL_Event event;
     while (SDL_PollEvent(&event)) {
-      const auto input = input_of(event, keys);
-      if (!input) continue;
-      if (std::holds_alternative<ToggleFullscreen>(*input)) {
-        session.toggle_fullscreen();
-      } else {
-        session.command(std::get<Command>(*input));
-      }
+      if ((*ui)->handle(event, host_now_us(), actions)) continue;  // saisie dans l'interface
+      if (auto input = input_of(event, keys)) actions.push_back(*input);
     }
     (*pipeline)->pump();
     while (auto message = try_take((*pipeline)->inbox())) session.handle(std::move(*message));
-    auto record = session.tick(host_now_us());
+    const UiFrame ui_frame = (*ui)->frame(host_now_us(), session.view(), actions);
+    for (const Input& input : actions) apply(input, session, out, **ui, host_now_us());
+    actions.clear();
+    auto record = session.tick(host_now_us(), ui_frame);
     if (!record) {
       failure = std::move(record.error());
       break;
@@ -362,6 +433,7 @@ std::expected<void, Refusal> play(const PlayOptions& options, const PlayerPaths&
   // Ordre d'arrêt : les slots rendus, les threads arrêtés, le moteur avant son backend, le
   // backend (et ses imports du ring) avant l'écran qui possède le ring.
   session.end();
+  (*ui)->release(out);
   out.flush();
   pipeline->reset();
   rife.reset();

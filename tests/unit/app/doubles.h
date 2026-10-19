@@ -38,6 +38,7 @@ struct FakeStages final : Stages {
   bool pause() override;
   bool slot_free(const SlotFree& free) override;
   bool request_subtitles(const subs::RenderRequest& request) override;
+  bool audio(const Command& command) override;
   void quit() override { quit_called = true; }
 };
 
@@ -45,6 +46,7 @@ struct Shown {
   std::optional<RingFrame> frame;
   std::optional<std::int64_t> subtitles_pts;
   std::vector<std::string> osd;
+  bool ui = false;  // une interface était à dessiner
 };
 
 // Écran sans fenêtre : chaque présentation avance d'une période fixe.

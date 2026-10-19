@@ -76,6 +76,7 @@ class ThreadStages final : public Stages {
   bool pause() override;
   bool slot_free(const SlotFree& free) override { return links_.video->post(free); }
   bool request_subtitles(const subs::RenderRequest& request) override;
+  bool audio(const Command& command) override;
   void quit() override;
 
  private:

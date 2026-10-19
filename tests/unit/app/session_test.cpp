@@ -193,14 +193,70 @@ TEST_CASE("Présentation à la demande : rien ne change, rien n'est recomposé",
   rig.tick();
   rig.tick();
   CHECK(rig.screen.shown.size() == presents);  // même image, même OSD : l'écran la garde
-  rig.screen.now_us += 300'000;                // l'OSD se recompose quatre fois par seconde
+  rig.screen.now_us += 300'000;                // l'OSD est relu, son texte n'a pas changé
   rig.tick();
-  CHECK(rig.screen.shown.size() == presents + 1);
+  CHECK(rig.screen.shown.size() == presents);
   rig.session.handle(ring_frame(1, 41'000));
   rig.run_clock(41'000);
   rig.tick();  // image neuve : présentée
-  CHECK(rig.screen.shown.size() == presents + 2);
+  CHECK(rig.screen.shown.size() == presents + 1);
   CHECK(rig.shown_pts() == 41'000);
+}
+
+TEST_CASE("L'interface demande une présentation quand elle change, et une pour s'effacer", "[app][session]") {
+  Rig rig;
+  rig.session.handle(ring_frame(0, 0));
+  rig.tick();
+  const std::size_t presents = rig.screen.shown.size();
+  const auto* ui = reinterpret_cast<const ImDrawData*>(&rig);  // jamais lue par la doublure
+  REQUIRE(rig.session.tick(rig.screen.now_us, UiFrame{.draw = ui, .changed = true}));
+  CHECK(rig.screen.shown.size() == presents + 1);
+  CHECK(rig.screen.shown.back().ui);
+  REQUIRE(rig.session.tick(rig.screen.now_us, UiFrame{.draw = ui, .changed = false}));
+  CHECK(rig.screen.shown.size() == presents + 1);  // inchangée : rien
+  REQUIRE(rig.session.tick(rig.screen.now_us, UiFrame{}));
+  CHECK(rig.screen.shown.size() == presents + 2);  // effacée : une présentation sans elle
+  CHECK_FALSE(rig.screen.shown.back().ui);
+}
+
+TEST_CASE("Statistiques masquées par défaut ; les refus restent visibles", "[app][session]") {
+  Rig rig(SessionConfig{.header = {"SPAN ×2"}});
+  rig.session.handle(ring_frame(0, 0));
+  rig.tick();
+  CHECK(rig.screen.shown.back().osd.empty());
+  CHECK_FALSE(rig.session.view().stats);
+  rig.session.command(cmd::ToggleOsd{});
+  rig.tick();
+  REQUIRE_FALSE(rig.screen.shown.back().osd.empty());
+  CHECK(rig.screen.shown.back().osd[0] == "SPAN ×2");
+  rig.session.command(cmd::ToggleOsd{});
+  rig.session.handle(StageRefusal{.stage = "audio", .refusal = {RefusalCode::AudioDecodeFailed, "paquet"}});
+  rig.screen.now_us += 300'000;
+  rig.tick();
+  REQUIRE(rig.screen.shown.back().osd.size() == 1);
+  CHECK(rig.screen.shown.back().osd[0] == "audio : AudioDecodeFailed paquet");
+}
+
+TEST_CASE("Volume et délai audio vont au thread audio", "[app][session]") {
+  Rig rig;
+  rig.session.command(cmd::SetVolume{.gain = 0.5F});
+  rig.session.command(cmd::SetAudioDelay{.delay_us = -40'000});
+  REQUIRE(rig.stages.log.size() == 2);
+  CHECK(rig.stages.log[0] == "volume 0.50");
+  CHECK(rig.stages.log[1] == "délai audio -40000");
+}
+
+TEST_CASE("La barre montre la cible d'un seek en cours, puis l'image", "[app][session]") {
+  Rig rig(SessionConfig{.duration_us = 100'000'000});
+  rig.session.handle(ring_frame(0, 0));
+  rig.tick();
+  CHECK(rig.session.view().position_us == 0);
+  CHECK(rig.session.view().duration_us == 100'000'000);
+  rig.session.command(cmd::Seek{.target_us = 30'000'000});
+  CHECK(rig.session.view().position_us == 30'000'000);  // avant même la première image
+  rig.session.handle(ring_frame(1, 29'980'000, 1));
+  rig.tick();
+  CHECK(rig.session.view().position_us == 29'980'000);
 }
 
 TEST_CASE("Fin de flux : la lecture finit quand plus rien n'arrive", "[app][session]") {
@@ -241,7 +297,7 @@ TEST_CASE("Un refus fatal d'un thread arrête la lecture et s'affiche", "[app][s
 }
 
 TEST_CASE("L'OSD dit le temps par image et les images sautées", "[app][session]") {
-  Rig rig(SessionConfig{.header = {"SPAN ×2"}});
+  Rig rig(SessionConfig{.header = {"SPAN ×2"}, .stats = true});
   rig.session.handle(ring_frame(0, 0));
   rig.tick();
   const auto& osd = rig.screen.shown.back().osd;

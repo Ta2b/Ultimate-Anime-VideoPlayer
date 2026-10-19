@@ -11,8 +11,8 @@
 namespace ajp::app::play {
 
 std::expected<void, Refusal> PlaceboScreen::Impl::save_snapshot(const pl_frame* image, const pl_frame& target,
-                                                                OutputSize out,
-                                                                const std::filesystem::path& path) const {
+                                                                OutputSize out, const ImDrawData* ui_data,
+                                                                const std::filesystem::path& path) {
   const pl_gpu gpu = vk->gpu;
   pl_tex_params params{};
   params.w = out.width;
@@ -37,6 +37,7 @@ std::expected<void, Refusal> PlaceboScreen::Impl::save_snapshot(const pl_frame* 
   std::vector<std::uint8_t> pixels(static_cast<std::size_t>(out.width) *
                                    static_cast<std::size_t>(out.height) * 4);
   auto rendered = compose(image, sdr);
+  if (rendered) draw_ui(ui_data, sdr);
   pl_tex_transfer_params download{};
   download.tex = tex;
   download.ptr = pixels.data();

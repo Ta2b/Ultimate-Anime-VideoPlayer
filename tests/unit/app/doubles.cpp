@@ -31,6 +31,15 @@ bool FakeStages::slot_free(const SlotFree& free) {
   return true;
 }
 
+bool FakeStages::audio(const Command& command) {
+  if (const auto* volume = std::get_if<cmd::SetVolume>(&command)) {
+    log.push_back(std::format("volume {:.2f}", volume->gain));
+  } else if (const auto* delay = std::get_if<cmd::SetAudioDelay>(&command)) {
+    log.push_back(std::format("délai audio {}", delay->delay_us));
+  }
+  return true;
+}
+
 bool FakeStages::request_subtitles(const subs::RenderRequest& request) {
   requests.push_back(request);
   return true;
@@ -41,7 +50,8 @@ std::expected<ScreenTiming, Refusal> FakeScreen::show(const ShowRequest& request
   shown.push_back(
       Shown{.frame = request.frame ? std::optional(*request.frame) : std::nullopt,
             .subtitles_pts = request.subtitles ? std::optional(request.subtitles->pts_us) : std::nullopt,
-            .osd = {request.osd.begin(), request.osd.end()}});
+            .osd = {request.osd.begin(), request.osd.end()},
+            .ui = request.ui != nullptr});
   return ScreenTiming{.render_us = 1000, .present_us = now_us};
 }
 
