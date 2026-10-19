@@ -102,13 +102,34 @@ jobs:
           path: C:\ajp\vcpkg-cache
           key: vcpkg-windows-x64-release-${{ env.VCPKG_COMMIT }}-${{ github.run_id }}
 
+      # Les journaux des ports en échec, nommés par le journal d'installation du
+      # manifeste : avec --keep-going, les plus récents de buildtrees sont ceux
+      # des ports construits après l'échec. Sans ce journal, les 8 plus récents.
       - name: Journaux vcpkg de l'échec
         if: failure()
         run: |
-          $logs = Get-ChildItem -Recurse -File "$env:AJP_VCPKG_ROOT\buildtrees" -Include *.log -ErrorAction SilentlyContinue |
-            Sort-Object LastWriteTime | Select-Object -Last 8
+          $install = 'build\windows-vulkan\vcpkg-manifest-install.log'
+          $ports = @()
+          if (Test-Path $install) {
+            $ports = Select-String -Path $install -Pattern 'building ([^:\s]+):\S+ failed' |
+              ForEach-Object { $_.Matches[0].Groups[1].Value } | Sort-Object -Unique
+          }
+          if ($ports) {
+            "Ports en échec : $($ports -join ', ')"
+            $logs = foreach ($port in $ports) {
+              Get-ChildItem -File "$env:AJP_VCPKG_ROOT\buildtrees\$port\*.log" -ErrorAction SilentlyContinue |
+                Where-Object Name -NotLike '*CMakeCache.txt.log' | Sort-Object LastWriteTime
+            }
+          } else {
+            $logs = Get-ChildItem -Recurse -File "$env:AJP_VCPKG_ROOT\buildtrees" -Include *.log -ErrorAction SilentlyContinue |
+              Sort-Object LastWriteTime | Select-Object -Last 8
+          }
           foreach ($log in $logs) {
             "::group::$($log.FullName)"
+            # Les erreurs d'abord : la fin d'un journal ninja -v n'est souvent que des commandes.
+            Select-String -Path $log.FullName -Pattern 'error|FAILED|fatal' |
+              Select-Object -First 60 | ForEach-Object { "$($_.LineNumber): $($_.Line)" }
+            "----- fin du journal -----"
             Get-Content $log.FullName -Tail 150
             "::endgroup::"
           }
