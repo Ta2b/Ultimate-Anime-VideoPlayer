@@ -176,8 +176,9 @@ std::expected<ImportedSlot*, Refusal> TensorRtBackend::slot(const RingSlotDesc& 
   return imported.get();
 }
 
-std::expected<void, Refusal> TensorRtBackend::write_ring(const Tensor& rgb, const RingSlotDesc& desc,
-                                                         const RingWrite& sync) {
+std::expected<ImportedSlot*, Refusal> TensorRtBackend::begin_write(const Tensor& rgb,
+                                                                   const RingSlotDesc& desc,
+                                                                   const RingWrite& sync) {
   if (sync.signal_value <= sync.wait_value || sync.signal_value % 2 == 0) {
     return refuse(RefusalCode::SequenceOrder,
                   std::format("slot {} : valeur à signaler {} impaire et > {} attendue", desc.index,
@@ -187,12 +188,20 @@ std::expected<void, Refusal> TensorRtBackend::write_ring(const Tensor& rgb, cons
     return refuse(RefusalCode::ShapeInvalid, std::format("slot {} : tenseur FP16 1×3×{}×{} attendu",
                                                          desc.index, desc.height, desc.width));
   }
-  if (auto ok = bind(); !ok) return ok;
+  if (auto ok = bind(); !ok) return std::unexpected(std::move(ok.error()));
   auto imported = slot(desc);
   if (!imported) return std::unexpected(std::move(imported.error()));
   if (sync.wait_value != 0) {
-    if (auto ok = (*imported)->wait(sync.wait_value, stream_); !ok) return ok;
+    if (auto ok = (*imported)->wait(sync.wait_value, stream_); !ok)
+      return std::unexpected(std::move(ok.error()));
   }
+  return *imported;
+}
+
+std::expected<void, Refusal> TensorRtBackend::write_ring(const Tensor& rgb, const RingSlotDesc& desc,
+                                                         const RingWrite& sync) {
+  auto imported = begin_write(rgb, desc, sync);
+  if (!imported) return std::unexpected(std::move(imported.error()));
   const WriteParams params{
       .rgb = address(rgb), .width = desc.width, .height = desc.height, .surface = (*imported)->surface()};
   if (auto ok = cuda_check(launch_write_rgba16(params, stream_), "write_rgba16<<<>>>"); !ok) return ok;

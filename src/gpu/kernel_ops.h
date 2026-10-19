@@ -23,6 +23,8 @@
 #include "core/types.h"
 #include "gpu/tensor.h"
 #include "kernels/spec.h"
+#include "vendor_hdr/sdk_store.h"
+#include "vendor_hdr/true_hdr.h"
 
 namespace ajp::gpu {
 
@@ -113,6 +115,22 @@ class KernelOps {
   // au prix d'une attente hôte, pour décider de RIFE avant de le lancer. left et right sont nuls.
   virtual std::expected<PairScores, Refusal> scores_now(const Tensor& /*a*/, const Tensor& /*b*/) {
     return std::unexpected(Refusal{RefusalCode::FormatUnsupported, "scores_now : absent de ce backend"});
+  }
+  // RTX HDR (TrueHDR) : ouvre l'effet du SDK importé, sur le flux de ce backend, pour des images
+  // de config.width × config.height (la sortie de SPAN). Une seule instance ; rouvrir remplace.
+  virtual std::expected<void, Refusal> open_true_hdr(const vendor_hdr::InstalledSdk& /*sdk*/,
+                                                     const vendor_hdr::TrueHdrConfig& /*config*/) {
+    return std::unexpected(Refusal{RefusalCode::FormatUnsupported, "open_true_hdr : absent de ce backend"});
+  }
+  // write_ring avec RTX HDR : rgb SDR (FP16, taille du slot) → RGBA8 tramé → TrueHDR → RGB10A2
+  // PQ BT.2020 → slot RGBA16, même protocole de sémaphores que write_ring. prepared dit comment
+  // rgb a été converti (vraie matrice, vraie plage) ; le tramage est fait ici.
+  virtual std::expected<void, Refusal> write_ring_true_hdr(const Tensor& /*rgb*/,
+                                                           const vendor_hdr::InputPreparation& /*prepared*/,
+                                                           const RingSlotDesc& /*slot*/,
+                                                           const RingWrite& /*sync*/) {
+    return std::unexpected(
+        Refusal{RefusalCode::FormatUnsupported, "write_ring_true_hdr : absent de ce backend"});
   }
 };
 

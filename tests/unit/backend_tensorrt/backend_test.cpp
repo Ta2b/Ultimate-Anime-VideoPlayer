@@ -380,6 +380,20 @@ TEST_CASE("Backend TensorRT : mesures d'une paire, coupe de scène et pire bloc"
   CHECK(std::fabs(moved->scene_score - expected) < 1e-4);
 }
 
+TEST_CASE("Backend TensorRT : RTX HDR refusé par son nom tant qu'il n'est pas ouvert",
+          "[backend_tensorrt][cuda]") {
+  if (!has_cuda()) SKIP("pas de GPU NVIDIA");
+  Loaded loaded;
+  REQUIRE(loaded.backend != nullptr);
+  auto rgb = loaded.backend->alloc_tensor(gpu::TensorType::F16, {.dims = {1, 3, 64, 64}});
+  REQUIRE(rgb);
+  const RingSlotDesc slot{.index = 0, .generation = 1, .width = 64, .height = 64};
+  auto refused = loaded.backend->kernels()->write_ring_true_hdr((*rgb)->tensor(), {}, slot,
+                                                                {.wait_value = 0, .signal_value = 1});
+  REQUIRE_FALSE(refused);
+  CHECK(refused.error().code == RefusalCode::HdrUnavailable);
+}
+
 TEST_CASE("Backend TensorRT : le vrai SPAN d'AnimeJaNai, construit puis exécuté",
           "[backend_tensorrt][cuda][span]") {
   if (!has_cuda()) SKIP("pas de GPU NVIDIA");

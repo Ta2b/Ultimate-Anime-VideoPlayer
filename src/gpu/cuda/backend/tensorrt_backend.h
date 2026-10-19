@@ -71,6 +71,12 @@ class TensorRtBackend final : public Backend, public KernelOps {
   std::expected<void, Refusal> rife_input(const Tensor& a, const Tensor& b, float t,
                                           const Tensor& input) override;
   std::expected<PairScores, Refusal> scores_now(const Tensor& a, const Tensor& b) override;
+  // RTX HDR (tensorrt_true_hdr.cpp).
+  std::expected<void, Refusal> open_true_hdr(const vendor_hdr::InstalledSdk& sdk,
+                                             const vendor_hdr::TrueHdrConfig& config) override;
+  std::expected<void, Refusal> write_ring_true_hdr(const Tensor& rgb,
+                                                   const vendor_hdr::InputPreparation& prepared,
+                                                   const RingSlotDesc& slot, const RingWrite& sync) override;
 
  private:
   // Une image décodée tenue jusqu'à la fin de son ingestion côté GPU : FFmpeg la réécrit dès
@@ -87,6 +93,9 @@ class TensorRtBackend final : public Backend, public KernelOps {
   void log(BackendLogLevel level, std::string_view message) const;
   std::expected<void, Refusal> hold(const DecodedFrame& frame);
   std::expected<ImportedSlot*, Refusal> slot(const RingSlotDesc& desc);
+  // Écriture d'un slot : protocole vérifié, slot importé, attente de wait_value enfilée.
+  std::expected<ImportedSlot*, Refusal> begin_write(const Tensor& rgb, const RingSlotDesc& desc,
+                                                    const RingWrite& sync);
   void release_retired();
 
   int device_ = 0;
@@ -117,6 +126,9 @@ class TensorRtBackend final : public Backend, public KernelOps {
   };
   PairSums* pair_device_ = nullptr;
   PairSums* pair_host_ = nullptr;
+  // RTX HDR : l'effet, son pont de flux, et ses deux tampons linéaires (RGBA8 tramé, RGB10A2).
+  struct TrueHdrState;
+  std::unique_ptr<TrueHdrState> true_hdr_;
 };
 
 }  // namespace ajp::gpu::cuda

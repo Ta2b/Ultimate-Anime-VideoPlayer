@@ -8,6 +8,7 @@
 #include <utility>
 
 #include "gpu/cuda/backend/cuda_status.h"
+#include "gpu/cuda/backend/tensorrt_true_hdr.h"
 #include "gpu/cuda/backend/trt_engine.h"
 #include "prepare/builder.h"
 #include "prepare/identity.h"
@@ -183,6 +184,7 @@ TensorRtBackend::~TensorRtBackend() {
   span_timing_.reset();
   chain_timing_.reset();
   if (retired_done_ != nullptr) cudaEventDestroy(retired_done_);
+  true_hdr_.reset();  // avant le flux : l'effet et ses tampons appartiennent au contexte du backend
   if (pair_device_ != nullptr) cudaFree(pair_device_);
   if (pair_host_ != nullptr) cudaFreeHost(pair_host_);
   runtime_.reset();
