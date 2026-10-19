@@ -192,6 +192,7 @@ void grade_tab(PlaySettings& d, const SettingsChoices& choices) {
   moved |= grade_slider("Éclats", g.highlights_rtx, kHighlights);
   moved |= grade_slider("Aplats lumineux", g.area_rtx, kAreaRtx);
   moved |= grade_slider("Couleurs", g.vibrance_rtx, kVibrance);
+  moved |= grade_slider("Couleurs étendues (large gamut)", g.expand, kExpand);
   moved |= grade_slider("Noirs profonds", g.shadows, kShadows);
   moved |= grade_slider("Garde-fou couleurs saturées", g.guard, kGuard);
   if (moved) d.grade_preset = render::GradePreset::Custom;

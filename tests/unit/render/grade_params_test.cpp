@@ -143,13 +143,48 @@ TEST_CASE("OLED : limiteur des scènes claires et seuils du vrai noir") {
   auto decision = decide_grade(settings, pq_context(core::HdrMode::Native));
   REQUIRE(decision);
   CHECK(decision->params.abl == 0.0);
-  CHECK(decision->params.black_hi == 0.0);  // pas d'OLED : la dixième passe est sautée
+  CHECK(decision->params.black_hi == 0.0);  // pas de vrai noir : la dixième passe est sautée
   settings.oled = true;
   decision = decide_grade(settings, pq_context(core::HdrMode::Native));
   REQUIRE(decision);
   CHECK(decision->params.abl == Approx(0.6));
+  CHECK(decision->params.abl_lo == 80.0);
+  CHECK(decision->params.abl_hi == 250.0);
+  CHECK(decision->params.black_hi == 0.0);  // dalle OLED, vrai noir coupé : limiteur seul
+  settings.true_black = true;
+  decision = decide_grade(settings, pq_context(core::HdrMode::Native));
+  REQUIRE(decision);
   CHECK(decision->params.black_lo == 0.05);
   CHECK(decision->params.black_hi == 0.4);
+}
+
+TEST_CASE("OLED : la plage du limiteur suit la moyenne d'image de l'écran") {
+  // MSI MAG 272U E16 : 265 nits en plein écran, les 80 et 250 nits du lecteur actuel.
+  const auto qd_oled = abl_range(265.0);
+  REQUIRE(qd_oled);
+  CHECK(qd_oled->lo == Approx(79.5));
+  CHECK(qd_oled->hi == Approx(249.1));
+  CHECK(abl_range(600.0)->hi == Approx(564.0));
+  CHECK_FALSE(abl_range(10.0));
+  CHECK_FALSE(abl_range(std::numeric_limits<double>::quiet_NaN()));
+  GradeSettings settings;
+  settings.abl_lo = 250.0;
+  settings.abl_hi = 80.0;
+  const auto refused = check_grade_settings(settings);
+  REQUIRE_FALSE(refused);
+  CHECK(refused.error().detail.starts_with("grade.abl_hi"));
+}
+
+TEST_CASE("couleurs étendues : passées au hook, nulles par défaut, poussées par Éclatant") {
+  const auto natural = decide_grade(GradeSettings{}, pq_context(core::HdrMode::TrueHdr));
+  const auto vivid = decide_grade(grade_preset(GradePreset::Eclatant), pq_context(core::HdrMode::TrueHdr));
+  REQUIRE(natural);
+  REQUIRE(vivid);
+  CHECK(natural->params.expand == 0.0);
+  CHECK(vivid->params.expand == 0.5);
+  GradeSettings bad;
+  bad.expand = 1.2;
+  CHECK_FALSE(check_grade_settings(bad));
 }
 
 TEST_CASE("un réglage hors plage est refusé en nommant le champ") {

@@ -1,6 +1,6 @@
 // Le grade sur le GPU : les hooks embarqués rendus par libplacebo sur des rampes PQ BT.2020
-// synthétiques, cible identique à la source (aucune conversion, aucun tramage). Sans appareil
-// Vulkan, les tests se sautent.
+// synthétiques, cible identique à la source (aucune conversion, aucun tramage). Un Vulkan logiciel
+// (lavapipe) suffit, ce qui les fait tourner en CI ; sans aucun appareil Vulkan, ils se sautent.
 #include <algorithm>
 #include <array>
 #include <cmath>
@@ -38,7 +38,9 @@ struct Gpu {
   std::optional<Grade> grade;
   Gpu() {
     log = pl_log_create(PL_API_VER, nullptr);
-    vk = pl_vulkan_create(log, &pl_vulkan_default_params);
+    pl_vulkan_params params = pl_vulkan_default_params;
+    params.allow_software = true;
+    vk = pl_vulkan_create(log, &params);
     if (vk == nullptr) return;
     renderer = pl_renderer_create(log, vk->gpu);
     if (auto created = Grade::create(vk->gpu)) grade.emplace(std::move(*created));
@@ -83,8 +85,10 @@ std::vector<std::uint16_t> ramp(double top, double green, double blue) {
   return pixels;
 }
 
-// La rampe passée par le grade : les nits de R le long de la ligne du milieu.
-std::vector<double> graded(Gpu& gpu, const std::vector<std::uint16_t>& source, const GradeParams& params) {
+using Rgb = std::array<double, 3>;
+
+// La rampe passée par le grade : les nits de R, G et B le long de la ligne du milieu.
+std::vector<Rgb> graded_rgb(Gpu& gpu, const std::vector<std::uint16_t>& source, const GradeParams& params) {
   const pl_gpu g = gpu.vk->gpu;
   pl_tex_params tex_params{};
   tex_params.w = kSide;
@@ -118,9 +122,18 @@ std::vector<double> graded(Gpu& gpu, const std::vector<std::uint16_t>& source, c
   REQUIRE(pl_tex_download(g, &download));
   pl_tex_destroy(g, &in);
   pl_tex_destroy(g, &out);
-  std::vector<double> red(kSide);
+  std::vector<Rgb> line(kSide);
   const std::size_t row = static_cast<std::size_t>(kSide / 2) * kSide;
-  for (std::size_t x = 0; x < red.size(); ++x) red[x] = pq_to_nits(pixels[(row + x) * 4] / 65535.0);
+  for (std::size_t x = 0; x < line.size(); ++x)
+    for (std::size_t c = 0; c < 3; ++c) line[x][c] = pq_to_nits(pixels[(row + x) * 4 + c] / 65535.0);
+  return line;
+}
+
+// Les nits de R seuls.
+std::vector<double> graded(Gpu& gpu, const std::vector<std::uint16_t>& source, const GradeParams& params) {
+  const std::vector<Rgb> line = graded_rgb(gpu, source, params);
+  std::vector<double> red(line.size());
+  std::ranges::transform(line, red.begin(), [](const Rgb& px) { return px[0]; });
   return red;
 }
 
@@ -137,6 +150,19 @@ GradeParams strong(double guard) {
   p.vibrance = 0.0;
   p.gamut_p3 = 0.0;
   p.guard = guard;
+  return p;
+}
+
+// Un grade neutre (gains à 1, ni pied ni vibrance), sauf les couleurs étendues.
+GradeParams expanded(double expand) {
+  GradeParams p;
+  p.peak = kPeak;
+  p.shadows = 0.0;
+  p.area_gain = 1.0;
+  p.spec_gain = 1.0;
+  p.vibrance = 0.0;
+  p.gamut_p3 = 0.0;
+  p.expand = expand;
   return p;
 }
 
@@ -171,6 +197,28 @@ TEST_CASE("garde-fou : le gris et le blanc ne bougent pas", "[render][gpu]") {
   const std::vector<double> hard = graded(gpu, gray, strong(0.0));
   const std::vector<double> soft = graded(gpu, gray, strong(1.0));
   for (std::size_t x = 0; x < hard.size(); ++x) CHECK(std::abs(hard[x] - soft[x]) < 0.5);
+}
+
+// Le rouge pur BT.709 dans le conteneur BT.2020 : (0,6274 ; 0,0691 ; 0,0164) × R. Relu avec les
+// primaires P3, il devient (0,7538 ; 0,0457 ; -0,0012) : G/R passe de 0,110 à 0,061.
+TEST_CASE("couleurs étendues : un rouge BT.709 va vers le rouge P3, le gris ne bouge pas", "[render][gpu]") {
+  Gpu gpu;
+  if (gpu.vk == nullptr) SKIP("pas d'appareil Vulkan");
+  REQUIRE(gpu.grade);
+  const std::vector<std::uint16_t> red = ramp(400.0, 0.0691 / 0.6274, 0.0164 / 0.6274);
+  const std::vector<Rgb> plain = graded_rgb(gpu, red, expanded(0.0));
+  const std::vector<Rgb> wide = graded_rgb(gpu, red, expanded(1.0));
+  const std::size_t mid = kSide / 2;
+  const double before = plain[mid][1] / plain[mid][0];
+  const double after = wide[mid][1] / wide[mid][0];
+  CHECK(before > 0.10);
+  CHECK(after < 0.075);
+  CHECK(wide[mid][0] > plain[mid][0]);  // le canal rouge monte : la couleur est plus pure
+  const std::vector<std::uint16_t> gray = ramp(400.0, 1.0, 1.0);
+  const std::vector<Rgb> gray_plain = graded_rgb(gpu, gray, expanded(0.0));
+  const std::vector<Rgb> gray_wide = graded_rgb(gpu, gray, expanded(1.0));
+  for (std::size_t x = 0; x < gray_plain.size(); ++x)
+    for (std::size_t c = 0; c < 3; ++c) CHECK(std::abs(gray_wide[x][c] - gray_plain[x][c]) < 0.5);
 }
 
 }  // namespace ajp::render

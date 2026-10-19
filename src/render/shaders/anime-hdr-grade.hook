@@ -87,6 +87,27 @@
 //!MAXIMUM 1.0
 0.0
 
+//!PARAM abl_lo
+//!DESC Limiteur OLED : APL lisse (nits) ou la moderation commence
+//!TYPE float
+//!MINIMUM 20.0
+//!MAXIMUM 2000.0
+80.0
+
+//!PARAM abl_hi
+//!DESC Limiteur OLED : APL lisse (nits) ou la moderation est complete
+//!TYPE float
+//!MINIMUM 20.0
+//!MAXIMUM 2000.0
+250.0
+
+//!PARAM expand
+//!DESC Couleurs etendues : couleurs BT.709 saturees vers les primaires P3 (0 = aucune)
+//!TYPE float
+//!MINIMUM 0.0
+//!MAXIMUM 1.0
+0.0
+
 //!PARAM gamut_p3
 //!DESC 1 = limiter au gamut Display P3 de l'ecran, 0 = conteneur BT.2020
 //!TYPE float
@@ -345,6 +366,9 @@ const mat3 BT2020_TO_P3 = mat3( 1.3435783, -0.0652975,  0.0028218,
 const mat3 P3_TO_BT2020 = mat3( 0.7538330,  0.0457438, -0.0012103,
                                 0.1985974,  0.9417772,  0.0176017,
                                 0.0475696,  0.0124789,  0.9836086);
+const mat3 BT2020_TO_709 = mat3( 1.6604910, -0.1245505, -0.0181508,
+                                -0.5876411,  1.1328999, -0.1005789,
+                                -0.0728499, -0.0083494,  1.1187297);
 // ICtCp (ITU-R BT.2100), matrices en colonnes GLSL.
 const mat3 RGB_TO_LMS = mat3(1688.0, 683.0, 99.0,
                              2146.0, 2951.0, 309.0,
@@ -471,10 +495,34 @@ vec4 hook() {
     float y_pq = nits_to_pq(vec3(max(y_src, 0.0))).x;
     float local_pq = max(AJG_LOCAL_tex(AJG_LOCAL_pos).x, y_pq - 0.08);
     float isolation = smoothstep(0.05, 0.25, local_pq - AJG_AREAT_tex(AJG_AREAT_pos).x);
-    // Limiteur OLED : APL lisse de ~80 a ~250 nits (plein ecran d'un QD-OLED en Peak 1000).
-    float abl_scale = 1.0 - abl * smoothstep(80.0, 250.0, AJG_STATS_tex(vec2(0.5)).x);
+    // Limiteur OLED : APL lisse de abl_lo a abl_hi (80 a 250 nits : plein ecran d'un QD-OLED en
+    // Peak 1000 ; sinon tires de la moyenne d'image de l'EDID).
+    float abl_scale = 1.0 - abl * smoothstep(abl_lo, abl_hi, AJG_STATS_tex(vec2(0.5)).x);
     vec3 ictcp_in = to_ictcp(lin);
     float skin = skin_mask(ictcp_in);
+    // Couleurs etendues : une couleur BT.709 saturee est relue avec les primaires P3, que le
+    // QD-OLED affiche ; le blanc et les gris (meme point blanc D65) ne bougent pas, la peau et les
+    // ombres sont epargnees, et la limite douce garde la couleur dans [0, pic].
+    if (expand > 0.0) {
+        vec3 c709 = BT2020_TO_709 * lin;
+        float hi = max3(c709);
+        if (hi > 1e-4) {
+            float sat = 1.0 - clamp(min(c709.r, min(c709.g, c709.b)) / hi, 0.0, 1.0);
+            float w = expand * smoothstep(0.15, 0.60, sat) * (1.0 - skin)
+                    * smoothstep(0.12, 0.30, ictcp_in.x);
+            if (w > 0.0) {
+                vec3 wide = P3_TO_BT2020 * max(c709, 0.0);
+                vec3 base = p3 ? BT2020_TO_P3 * lin : lin;
+                vec3 target = p3 ? BT2020_TO_P3 * wide : wide;
+                c = base + (target - base) * (w * gamut_room(base, target));
+                if (emulate > 0.5) c = max(c, 0.0);
+                lin = p3 ? P3_TO_BT2020 * c : c;
+                ictcp_in = to_ictcp(lin);
+                m = max3(c);
+                y = dot(c, p3 ? vec3(0.2289746, 0.6917385, 0.0792869) : vec3(0.2627, 0.6780, 0.0593));
+            }
+        }
+    }
     float r = 1.0;
     if (m > 1e-4 && y > 1e-4) {
         r = shadow_ratio(m);

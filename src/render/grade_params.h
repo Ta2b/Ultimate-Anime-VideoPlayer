@@ -36,6 +36,9 @@ inline constexpr core::Range<double> kGuard{0.0, 1.0};
 // Vrai noir OLED : fin du pied, en pas de code de la source au-dessus du noir.
 inline constexpr core::Range<double> kBlackSteps{0.5, 8.0};
 inline constexpr core::Range<double> kAreaRtx{0.0, 1.0};
+inline constexpr core::Range<double> kExpand{0.0, 1.0};
+// Limiteur OLED : APL lissé (nits) où la modération des éclats commence, puis est complète.
+inline constexpr core::Range<double> kAblNits{20.0, 2000.0};
 // Pic du grade quand l'écran ne le dit pas (DisplayInfo par défaut).
 inline constexpr double kDefaultPeakNits = 1000.0;
 // Entrée de l'émulation TrueHDR : le blanc SDR placé à 203 nits.
@@ -56,25 +59,33 @@ struct GradeSettings {
   double saturation = 100.0;
   double middle_gray = 50.0;
   double subtitle_white = 200.0;  // nits, blanc des sous-titres en sortie HDR
-  bool oled = false;              // écran OLED : limiteur des scènes claires (abl)
+  bool oled = false;              // dalle OLED : limiteur des scènes claires (abl)
   bool gamut_p3 = false;          // limite au gamut Display P3 de l'écran
   double black_lo = 0.0;          // nits : vrai noir OLED sous ce seuil
   double black_hi = 0.0;          // nits : fin du pied ; <= black_lo, la passe est sautée
   // Ajouts de ce dépôt (préréglage « Éclatant ») ; à 0, le grade est celui du lecteur actuel.
   double guard = 0.0;     // garde-fou des couleurs saturées près du pic
   double area_rtx = 0.0;  // TrueHDR et son émulation : gain des grands aplats clairs (0 : aucun)
+  // Couleurs étendues : les couleurs BT.709 saturées vont vers les primaires P3 (peau et gris
+  // épargnés), pour les dalles à large gamut comme le QD-OLED ; 0 : aucune.
+  double expand = 0.0;
+  bool true_black = false;  // vrai noir : passe black_lo / black_hi (OLED, ou forcé)
+  // Limiteur OLED : APL de début et de fin de la modération ; 80 et 250 nits dans le lecteur actuel
+  // (plein écran d'un QD-OLED en Peak 1000), tirés de la moyenne d'image de l'EDID sinon.
+  double abl_lo = 80.0;
+  double abl_hi = 250.0;
   friend bool operator==(const GradeSettings&, const GradeSettings&) = default;
 };
 
 // Préréglages du grade. Naturel : celui du lecteur actuel (GradeSettings{}). Éclatant : éclats,
-// aplats lumineux, couleurs et noirs poussés, garde-fou des couleurs saturées.
+// aplats lumineux, couleurs, couleurs étendues et noirs poussés, garde-fou des couleurs saturées.
 enum class GradePreset : std::uint8_t { Eclatant, Naturel, Custom };
 inline constexpr int kGradePresetCount = 3;
 GradeSettings grade_preset(GradePreset preset, GradeSettings custom = {});
 std::string_view preset_key(GradePreset preset);    // « eclatant », la clé de play.toml
 std::string_view preset_label(GradePreset preset);  // « Éclatant », pour le menu
 
-// FieldOutOfRange en nommant le champ (« grade.paper_white »).
+// FieldOutOfRange en nommant le champ (« grade.paper_white ») ; abl_hi doit dépasser abl_lo.
 std::expected<void, Refusal> check_grade_settings(const GradeSettings& settings);
 
 // Ce qui est gradé, et comment.
@@ -105,6 +116,9 @@ struct GradeParams {
   double vibrance = 0.25;
   double abl = 0.0;
   double guard = 0.0;
+  double expand = 0.0;
+  double abl_lo = 80.0;
+  double abl_hi = 250.0;
   double gamut_p3 = 1.0;
   double emulate = 0.0;
   double sdr_white = 203.0;
@@ -145,5 +159,15 @@ struct BlackThresholds {
 // marche `steps` (interpolée) : le noir devient 0, la première marche reste visible, le pied
 // rejoint l'identité à `steps` pas. Rien si la rampe ne monte pas (sortie plate, mesure ratée).
 std::optional<BlackThresholds> black_thresholds(std::span<const double> step_nits, double steps);
+
+// Plage du limiteur OLED tirée de la moyenne d'image maximale de l'écran (EDID, CTA-861) : la
+// modération commence à 30 % de cette moyenne et devient complète à 94 % (80 et 250 nits pour
+// 265 nits, les valeurs du lecteur actuel). Rien si la moyenne sort de la plage utile.
+struct AblRange {
+  double lo = 80.0;
+  double hi = 250.0;
+  friend bool operator==(const AblRange&, const AblRange&) = default;
+};
+std::optional<AblRange> abl_range(double frame_average_nits);
 
 }  // namespace ajp::render

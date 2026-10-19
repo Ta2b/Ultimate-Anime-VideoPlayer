@@ -352,8 +352,17 @@ std::optional<render::GradeParams> grade_of(const PlaySettings& s, bool true_hdr
   g.contrast = s.true_hdr_contrast;
   g.saturation = s.true_hdr_saturation;
   g.middle_gray = s.true_hdr_gray;
-  g.oled = black_wanted(s, display);
-  if (g.oled && black) {
+  // Dalle OLED : détectée, ou affirmée par un vrai noir forcé. Son limiteur suit la moyenne
+  // d'image que l'écran annonce, quand il l'annonce.
+  g.oled = (display && display->oled) || s.oled_black == OledBlack::On;
+  if (display && display->frame_average_nits) {
+    if (const auto abl = render::abl_range(*display->frame_average_nits)) {
+      g.abl_lo = abl->lo;
+      g.abl_hi = abl->hi;
+    }
+  }
+  g.true_black = black_wanted(s, display) && black.has_value();
+  if (g.true_black) {
     g.black_lo = black->lo;
     g.black_hi = black->hi;
   }

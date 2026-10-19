@@ -45,6 +45,7 @@ GradeSettings grade_preset(GradePreset preset, GradeSettings custom) {
       s.vibrance_rtx = 0.45;
       s.area_rtx = 0.35;
       s.guard = 0.80;
+      s.expand = 0.50;
       return s;
     }
     case GradePreset::Custom:
@@ -87,8 +88,14 @@ std::expected<void, Refusal> check_grade_settings(const GradeSettings& s) {
         check("saturation", s.saturation, kSaturation), check("middle_gray", s.middle_gray, kMiddleGray),
         check("subtitle_white", s.subtitle_white, kSubtitleWhite), check("black_lo", s.black_lo, kBlackNits),
         check("black_hi", s.black_hi, kBlackNits), check("guard", s.guard, kGuard),
-        check("area_rtx", s.area_rtx, kAreaRtx)}) {
+        check("area_rtx", s.area_rtx, kAreaRtx), check("expand", s.expand, kExpand),
+        check("abl_lo", s.abl_lo, kAblNits), check("abl_hi", s.abl_hi, kAblNits)}) {
     if (!result) return result;
+  }
+  if (!(s.abl_hi > s.abl_lo)) {
+    return std::unexpected(
+        Refusal{RefusalCode::FieldOutOfRange,
+                std::format("grade.abl_hi = {} (au-dessus de abl_lo = {})", s.abl_hi, s.abl_lo)});
   }
   return {};
 }
@@ -130,7 +137,10 @@ std::expected<GradeDecision, Refusal> decide_grade(const GradeSettings& s, const
   p.gamut_p3 = s.gamut_p3 ? 1.0 : 0.0;
   // OLED : les éclats sont modérés sur les scènes claires, où le panneau limite sa puissance.
   p.abl = s.oled ? 0.6 : 0.0;
+  p.abl_lo = s.abl_lo;
+  p.abl_hi = s.abl_hi;
   p.guard = s.guard;
+  p.expand = s.expand;
   p.emulate = 0.0;
   p.sdr_white = grade_limits::kSdrWhiteNits;
   const bool look = decision.mode == GradeMode::Native && s.truehdr_look;
@@ -155,9 +165,9 @@ std::expected<GradeDecision, Refusal> decide_grade(const GradeSettings& s, const
   // Dans les plages //!PARAM du hook.
   p.area_gain = std::clamp(p.area_gain, 1.0, 4.0);
   p.spec_gain = std::clamp(p.spec_gain, p.area_gain, 20.0);
-  // Le vrai noir n'a de sens que sur OLED ; ailleurs la dixième passe est sautée.
-  p.black_lo = s.oled ? s.black_lo : 0.0;
-  p.black_hi = s.oled ? s.black_hi : 0.0;
+  // Sans vrai noir (écran non OLED, ou coupé), la dixième passe est sautée.
+  p.black_lo = s.true_black ? s.black_lo : 0.0;
+  p.black_hi = s.true_black ? s.black_hi : 0.0;
   return decision;
 }
 
@@ -172,6 +182,14 @@ std::optional<BlackThresholds> black_thresholds(std::span<const double> step_nit
   const double lo = 0.5 * (step_nits[0] + step_nits[1]);
   if (!(hi > lo) || lo < 0.0) return std::nullopt;
   return BlackThresholds{.lo = lo, .hi = std::min(hi, grade_limits::kBlackNits.hi)};
+}
+
+std::optional<AblRange> abl_range(double frame_average_nits) {
+  const AblRange range{.lo = 0.30 * frame_average_nits, .hi = 0.94 * frame_average_nits};
+  if (std::isnan(frame_average_nits) || !grade_limits::kAblNits.contains(range.lo) ||
+      !grade_limits::kAblNits.contains(range.hi))
+    return std::nullopt;
+  return range;
 }
 
 }  // namespace ajp::render

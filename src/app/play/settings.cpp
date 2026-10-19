@@ -248,6 +248,7 @@ std::expected<PlaySettings, Refusal> parse_settings(std::string_view toml_text) 
     reads.push_back(read(*grade, "grade", "vibrance_rtx", v.vibrance_rtx));
     reads.push_back(read(*grade, "grade", "area_rtx", v.area_rtx));
     reads.push_back(read(*grade, "grade", "guard", v.guard));
+    reads.push_back(read(*grade, "grade", "expand", v.expand));
     reads.push_back(read(*grade, "grade", "gamut_p3", v.gamut_p3));
     std::string oled(name(s.oled_black));
     reads.push_back(read(*grade, "grade", "oled_black", oled));
@@ -322,6 +323,7 @@ std::string format_settings(const PlaySettings& s) {
                                    {"vibrance_rtx", hundredth(g.vibrance_rtx)},
                                    {"area_rtx", hundredth(g.area_rtx)},
                                    {"guard", hundredth(g.guard)},
+                                   {"expand", hundredth(g.expand)},
                                    {"gamut_p3", g.gamut_p3},
                                    {"oled_black", std::string(name(s.oled_black))},
                                    {"oled_black_steps", hundredth(s.oled_black_steps)}});
