@@ -6,6 +6,7 @@ ajp_add_module(kernels
     glsl.cpp
     ref/color.cpp
     ref/detect.cpp
+    ref/optical_flow.cpp
     ref/half.cpp
     ref/resample.cpp
     ref/rife.cpp

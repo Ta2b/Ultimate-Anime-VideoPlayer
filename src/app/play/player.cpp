@@ -17,6 +17,7 @@
 #include "app/play/backend_library.h"
 #include "app/play/build_progress.h"
 #include "app/play/chain.h"
+#include "app/play/chain_stats.h"
 #include "app/play/display_edid.h"
 #include "app/play/engine_build.h"
 #include "app/play/first_run.h"
@@ -238,58 +239,6 @@ std::expected<ModelChoice, Refusal> choose_model(const Player& p, const PlaySett
   return choice;
 }
 
-// Les moteurs du cache, pour l'onglet Moteurs du menu.
-std::vector<EngineBadge> engine_badges(const std::filesystem::path& cache_dir,
-                                       const std::filesystem::path& span, WorkSize span_size,
-                                       const std::optional<std::filesystem::path>& rife,
-                                       const kernels::RifeGeometry& rife_size) {
-  std::vector<EngineBadge> badges;
-  for (const PastBuild& past : past_builds(cache_dir)) {
-    std::string file = past.onnx.filename().string();
-    std::string lower_file = file;
-    std::ranges::transform(lower_file, lower_file.begin(),
-                           [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
-    const bool is_rife = lower_file.find("rife") != std::string::npos;
-    const bool loaded = is_rife ? rife && past.onnx.filename() == rife->filename() &&
-                                      past.width == rife_size.padded_width &&
-                                      past.height == rife_size.padded_height
-                                : past.onnx.filename() == span.filename() && past.width == span_size.width &&
-                                      past.height == span_size.height;
-    badges.push_back(EngineBadge{
-        .name = is_rife ? std::format("RIFE · {}", past.onnx.stem().string())
-                        : std::format("SPAN · {}", model_label(file)),
-        .detail = std::format("entrée {}x{} · construit en {:.0f} s", past.width, past.height, past.seconds),
-        .loaded = loaded});
-  }
-  std::ranges::stable_partition(badges, &EngineBadge::loaded);
-  return badges;
-}
-
-// Mesures de la chaîne pour l'OSD : compteurs de RIFE, mémoire vidéo.
-class ChainStats final : public StatsSource {
- public:
-  ChainStats(const LiveSettings& live, gpu::KernelOps& kernels, bool rife)
-      : live_(live), kernels_(kernels), rife_(rife) {}
-  std::optional<std::string> rife() const override {
-    if (!rife_) return std::nullopt;
-    const RifeCounts c = live_.counts();
-    return std::format("RIFE ×{} : {} paires, {} interpolées, {} dessins tenus, {} coupes, {} en retard",
-                       live_.rife_factor(), c.pairs, c.interpolated, c.held, c.cuts, c.late);
-  }
-  std::optional<std::string> memory() const override {
-    const auto memory = kernels_.device_memory();
-    if (!memory) return std::nullopt;
-    constexpr double kMiB = 1024.0 * 1024.0;
-    return std::format("mémoire vidéo {:.0f} / {:.0f} Mio", static_cast<double>(memory->used) / kMiB,
-                       static_cast<double>(memory->total) / kMiB);
-  }
-
- private:
-  const LiveSettings& live_;
-  gpu::KernelOps& kernels_;
-  bool rife_;
-};
-
 // Construit (ou lit du cache) puis charge un moteur, la préparation à l'écran. Rien si
 // l'utilisateur ferme la fenêtre.
 std::expected<std::optional<std::unique_ptr<gpu::Engine>>, Refusal> prepare_engine(
@@ -339,18 +288,10 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
   // Le modèle RIFE est cherché même sans interpolation : le menu peut l'allumer.
   std::optional<std::filesystem::path> rife_model;
   if (auto found = find_rife_model(options, default_rife_candidates(p.paths.home))) rife_model = *found;
-  if (settings.rife_factor >= 2 && !rife_model)
+  // Fluidité → Moteur : le flux optique matériel remplace RIFE, sans modèle ; RIFE reprend s'il manque.
+  const bool want_flow = settings.rife_factor >= 2 && settings.motion_engine == MotionEngine::OpticalFlow;
+  if (settings.rife_factor >= 2 && !rife_model && !want_flow)
     return std::unexpected(find_rife_model(options, default_rife_candidates(p.paths.home)).error());
-  const bool use_rife = settings.rife_factor >= 2 && rife_model;
-  const std::string label_text = std::format(
-      "{}{}{}",
-      use_rife ? std::format("RIFE ×{} · {} · ", settings.rife_factor, rife_model->stem().string()) : "",
-      settings.true_hdr ? "RTX HDR · " : "",
-      model ? std::format("SPAN ×{} · {} · TensorRT · {} → {}x{}", factor, model->path.stem().string(),
-                          reduce, work.width * factor, work.height * factor)
-            : std::format("sans agrandissement · {}", reduce));
-  log->info("{} : {}", options.file.string(), label_text);
-
   show_loading(p.screen, p.ui, "Chargement");
   const gpu::BackendInit init{
       .render = &p.screen.device(), .cache_dir = p.paths.engines, .log = backend_log()};
@@ -376,6 +317,10 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
   const WorkSize rife_size = !p.options.rife_image && work.height > kRifeMotionHeight
                                  ? work_size(video.width, video.height, kRifeMotionHeight)
                                  : work;
+  const int flow_grid = want_flow ? open_optical_flow(*(*backend)->kernels(), rife_size.width,
+                                                      rife_size.height, p.ui.controls())
+                                  : 0;
+  const bool use_rife = settings.rife_factor >= 2 && rife_model && flow_grid == 0;
   const kernels::RifeGeometry g = kernels::rife_geometry(rife_size.width, rife_size.height);
   const kernels::RifeGeometry image_g = kernels::rife_geometry(work.width, work.height);
   std::unique_ptr<gpu::Engine> rife;
@@ -411,10 +356,21 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
     if (!*loaded) return std::nullopt;
     rife = std::move(**loaded);
   }
-  if (rife_motion) {
-    log->info("RIFE mouvement : estimé en {}x{}, warp en {}x{}", rife_size.width, rife_size.height,
-              work.width, work.height);
+  if (rife_motion || flow_grid > 0) {
+    log->info("{} : estimé en {}x{}, warp en {}x{}", rife_motion ? "RIFE mouvement" : "flux optique",
+              rife_size.width, rife_size.height, work.width, work.height);
   }
+  const std::string label_text = std::format(
+      "{}{}{}",
+      flow_grid > 0 ? std::format("flux optique ×{} · ", settings.rife_factor)
+      : use_rife    ? std::format("RIFE ×{} · {} · ", settings.rife_factor, rife_model->stem().string())
+                    : std::string(),
+      settings.true_hdr ? "RTX HDR · " : "",
+      model ? std::format("SPAN ×{} · {} · TensorRT · {} → {}x{}", factor, model->path.stem().string(),
+                          reduce, work.width * factor, work.height * factor)
+            : std::format("sans agrandissement · {}", reduce));
+  log->info("{} : {}", options.file.string(), label_text);
+
   settings.stats.all = p.details;  // Tab pendant la préparation
 
   const int auto_peak = vendor_hdr::peak_from_display(content_peak_nits(p.screen.window()));
@@ -438,7 +394,7 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
   }
 
   auto live = std::make_shared<LiveSettings>();
-  live->set_rife_factor(static_cast<std::uint32_t>(use_rife ? settings.rife_factor : 0));
+  live->set_rife_factor(static_cast<std::uint32_t>(use_rife || flow_grid > 0 ? settings.rife_factor : 0));
   live->set_reduction(reduction_of(settings.downscale));
   PipelineConfig config{
       .file = options.file,
@@ -460,6 +416,7 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
                          .engine = engine.get(),
                          .rife = rife.get(),
                          .rife_motion = rife_motion.get(),
+                         .optical_flow_grid = flow_grid,
                          .rife_factor = static_cast<std::uint32_t>(std::max(settings.rife_factor, 1)),
                          .true_hdr = settings.true_hdr,
                          .live = live,
@@ -468,14 +425,15 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
                          .source_height = height,
                          .work_width = sized.width,
                          .work_height = sized.height,
-                         .rife_width = rife_motion ? rife_size.width : 0,
-                         .rife_height = rife_motion ? rife_size.height : 0,
+                         .rife_width = rife_motion || flow_grid > 0 ? rife_size.width : 0,
+                         .rife_height = rife_motion || flow_grid > 0 ? rife_size.height : 0,
                          .slots = std::move(*slots)});
       });
   if (!pipeline) return std::unexpected(std::move(pipeline.error()));
 
-  const bool rife_loaded = rife != nullptr || rife_motion != nullptr;
-  const ChainStats chain_stats(*live, *(*backend)->kernels(), rife_loaded);
+  const bool rife_loaded = rife != nullptr || rife_motion != nullptr || flow_grid > 0;
+  const ChainStats chain_stats(*live, *(*backend)->kernels(), rife_loaded,
+                               flow_grid > 0 ? "flux optique" : "RIFE");
   SessionConfig session_config = (*pipeline)->session_config();
   session_config.start_us = start_us;
   session_config.stop_after_us = options.stop_after_us;
@@ -499,13 +457,14 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
           .models = model ? model->available : std::vector<std::string>{},
           .default_model = model ? model->default_name : std::string(),
           .source_height = video.height,
-          .rife_available = rife_model.has_value(),
+          .rife_available = rife_model.has_value() || flow_grid > 0,
           .rife_loaded = rife_loaded,
           .true_hdr_available = std::filesystem::exists(p.options.true_hdr_sdk) || settings.true_hdr,
           .hdr_output = p.screen.hdr_output(),
           .auto_peak = auto_peak,
-          .engines = engine_badges(p.paths.engines, model ? model->path : std::filesystem::path(), work,
-                                   rife_loaded ? rife_model : std::nullopt, rife_motion ? g : image_g),
+          .engines =
+              engine_badges(p.paths.engines, model ? model->path : std::filesystem::path(), work,
+                            rife || rife_motion ? rife_model : std::nullopt, rife_motion ? g : image_g),
           .chosen_engines = chosen_line(p.engines),
           .display_text = p.display ? describe(*p.display) : std::string("EDID illisible : OLED inconnu")});
   p.profiles.source =

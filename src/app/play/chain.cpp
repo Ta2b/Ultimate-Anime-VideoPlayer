@@ -78,6 +78,14 @@ std::expected<int, Refusal> open_rtx_hdr(const std::filesystem::path& sdk_source
   return params->peak_nits;
 }
 
+int open_optical_flow(gpu::KernelOps& kernels, int width, int height, Controls& controls) {
+  auto grid = kernels.open_optical_flow(width, height);
+  if (grid) return *grid;
+  log_channel("app")->warn("flux optique matériel indisponible ({}) : RIFE à la place", grid.error().detail);
+  controls.notify("Flux optique indisponible : RIFE", host_now_us());
+  return 0;
+}
+
 namespace {
 
 std::string volume_text(const Controls& controls) {

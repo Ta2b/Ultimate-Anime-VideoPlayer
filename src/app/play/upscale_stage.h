@@ -31,6 +31,10 @@ struct UpscaleSetup {
   // Variante mouvement de RIFE (motion_model.h) : flot et masque, warp à la sortie. Remplace rife ;
   // une passe au milieu de la paire la sert toute quand le mouvement est faible.
   gpu::Engine* rife_motion = nullptr;
+  // Flux optique matériel à la place de RIFE (KernelOps::open_optical_flow, déjà ouvert pour
+  // rife_width × rife_height) : la grille de ses vecteurs, en pixels ; 0 : RIFE ou rien. Un seul
+  // mouvement par paire, au milieu ; les autres instants s'en déduisent au warp.
+  int optical_flow_grid = 0;
   std::uint32_t rife_factor = 1;  // ×N quand RIFE tourne (2 à kMaxRifeFactor)
   bool true_hdr = false;          // RTX HDR à l'écriture du ring (backend déjà ouvert pour la sortie)
   // Réglages changés en cours de lecture (facteur RIFE, réduction, RTX HDR) et compteurs de RIFE ;
@@ -68,11 +72,17 @@ class UpscaleStage final : public RingStage {
   std::expected<std::uint32_t, Refusal> outputs(const DecodedFrame& frame) override;
   std::expected<Output, Refusal> produce(const DecodedFrame& frame, std::uint32_t output, std::uint32_t slot,
                                          std::uint64_t wait_value, std::uint64_t signal_value) override;
-  // Image intermédiaire output + 1 sur outputs_ par le mouvement (rife_motion) dans middle_.
+  // Image intermédiaire output + 1 sur outputs_ par le mouvement (rife_motion ou flux optique)
+  // dans middle_.
   std::expected<void, Refusal> interpolate_by_motion(std::uint32_t output);
   // La variante mouvement de RIFE à l'instant t, dans flow et mask.
   std::expected<void, Refusal> run_motion(float t, const gpu::Tensor& flow, const gpu::Tensor& mask);
-  bool interpolates() const { return setup_.rife != nullptr || setup_.rife_motion != nullptr; }
+  bool interpolates() const {
+    return setup_.rife != nullptr || setup_.rife_motion != nullptr || setup_.optical_flow_grid > 0;
+  }
+  // Le mouvement est estimé à la taille de RIFE puis déformé au warp (variante mouvement ou flux
+  // optique), plutôt que l'image de RIFE elle-même.
+  bool by_motion() const { return setup_.rife_motion != nullptr || setup_.optical_flow_grid > 0; }
   // L'image où RIFE et les mesures de la paire travaillent : la réduite s'il y en a une.
   const gpu::Tensor& rife_source(std::uint32_t index) const {
     return small_[index] ? small_[index]->tensor() : rgb_[index]->tensor();
@@ -102,6 +112,10 @@ class UpscaleStage final : public RingStage {
   std::unique_ptr<gpu::TensorBuffer> mid_mask_;  // 1 × 1 × ph × pw
   std::unique_ptr<gpu::TensorBuffer> flow_;
   std::unique_ptr<gpu::TensorBuffer> mask_;
+  // Mouvement du flux optique matériel, sur sa grille entière.
+  std::unique_ptr<gpu::TensorBuffer> grid_flow_;  // 1 × 4 × cells_y × cells_x
+  std::unique_ptr<gpu::TensorBuffer> grid_mask_;  // 1 × 1 × cells_y × cells_x
+  std::uint64_t optical_flow_pairs_ = 0;
   bool single_run_ = false;  // la paire en cours n'a qu'une passe RIFE, au milieu
   std::uint64_t single_pairs_ = 0;
   std::uint64_t multi_pairs_ = 0;

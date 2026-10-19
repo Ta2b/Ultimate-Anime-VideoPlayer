@@ -38,6 +38,7 @@ TEST_CASE("play.toml relit à l'identique ce qu'il a écrit", "[app][settings]")
   s.oled_care = false;
   s.steady_cadence = true;
   s.smooth_motion = true;
+  s.motion_engine = MotionEngine::OpticalFlow;
   s.grade_values.expand = 0.3;
   const auto back = parse_settings(format_settings(s));
   REQUIRE(back);
@@ -160,6 +161,15 @@ TEST_CASE("Ce qu'un changement demande : direct ou réouverture, dit avant d'app
   CHECK(change_between(off, on, true).cost == ChangeCost::Live);     // moteur RIFE chargé
   CHECK(change_between(off, on, false).cost == ChangeCost::Reopen);  // à charger
   CHECK(change_between(on, off, false).cost == ChangeCost::Live);
+  // Le moteur du mouvement se recharge s'il interpole ; sans interpolation, il attend.
+  PlaySettings flow = on;
+  flow.motion_engine = MotionEngine::OpticalFlow;
+  CHECK(change_between(on, flow, true).reason.find("mouvement") != std::string::npos);
+  PlaySettings flow_off = off;
+  flow_off.motion_engine = MotionEngine::OpticalFlow;
+  CHECK(change_between(off, flow_off, true).cost == ChangeCost::Live);
+  CHECK(live_part(off, flow_off, true).motion_engine == MotionEngine::OpticalFlow);
+  CHECK(live_part(on, flow, true).motion_engine == MotionEngine::Rife);
 }
 
 TEST_CASE("La part directe d'un changement laisse ce qui demande une réouverture", "[app][settings]") {

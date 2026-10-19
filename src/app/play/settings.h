@@ -35,6 +35,13 @@ std::string_view label(Downscale filter);  // « Area », pour le menu
 // Les valeurs du grade pour ce préréglage ; current pour « Personnalisé » et pour gamut_p3.
 render::GradeSettings with_preset(render::GradePreset preset, const render::GradeSettings& current);
 
+// Ce qui estime le mouvement de l'interpolation : RIFE (réseau, le plus fin), ou le flux optique
+// matériel des RTX (NVIDIA Optical Flow : bien moins cher, mouvement moins fin), warp identique.
+enum class MotionEngine : std::uint8_t { Rife, OpticalFlow };
+inline constexpr int kMotionEngineCount = 2;
+std::string_view name(MotionEngine engine);   // « rife », la clé de play.toml
+std::string_view label(MotionEngine engine);  // « RIFE 4.26 », pour le menu
+
 enum class OledBlack : std::uint8_t { Auto, On, Off };
 inline constexpr int kOledBlackCount = 3;
 std::string_view name(OledBlack mode);   // « auto », la clé de play.toml
@@ -60,6 +67,7 @@ struct PlaySettings {
   int work_height = 720;
   Downscale downscale = Downscale::Area;
   int rife_factor = kDefaultRifeFactor;  // 0 : aucune interpolation
+  MotionEngine motion_engine = MotionEngine::Rife;
   // Smooth Motion du pilote NVIDIA (RTX 40 et 50, pilote ≥ 580) : sa couche Vulkan double les
   // images présentées, au-dessus de RIFE (×3 puis ×2 : 72 → 144 images par seconde). Posé au
   // lancement, avant l'instance Vulkan : vaut au prochain lancement.

@@ -17,6 +17,7 @@
 
 #include <catch2/catch_test_macros.hpp>
 
+#include "backend_fixture.h"
 #include "kernels/ref/color.h"
 #include "kernels/ref/half.h"
 #include "kernels/ref/warp.h"
@@ -27,42 +28,7 @@
 namespace {
 
 using namespace ajp;
-
-struct Library {
-  void* handle = dlopen(AJP_BACKEND_TENSORRT, RTLD_NOW | RTLD_LOCAL);
-  ~Library() {
-    if (handle != nullptr) dlclose(handle);
-  }
-  template <class F>
-  F* symbol(const char* name) const {
-    return reinterpret_cast<F*>(dlsym(handle, name));
-  }
-};
-
-bool has_cuda() {
-  int count = 0;
-  return cudaGetDeviceCount(&count) == cudaSuccess && count > 0;
-}
-
-struct Loaded {
-  Library library;
-  gpu::Backend* backend = nullptr;
-  Refusal refusal{};
-  std::filesystem::path cache = std::filesystem::path(AJP_TEST_CACHE_DIR);
-
-  Loaded() {
-    REQUIRE(library.handle != nullptr);
-    std::filesystem::create_directories(cache);
-    const gpu::BackendInit init{.cache_dir = cache, .refusal = &refusal};
-    backend = library.symbol<std::remove_pointer_t<gpu::BackendCreateFn>>("ajp_backend_create")(
-        gpu::kBackendAbi, &init);
-  }
-  ~Loaded() {
-    if (backend != nullptr) {
-      library.symbol<std::remove_pointer_t<gpu::BackendDestroyFn>>("ajp_backend_destroy")(backend);
-    }
-  }
-};
+using namespace ajp::test;
 
 // Image NV12 dans la mémoire CUDA, comme NVDEC la livre (plans à pas de ligne).
 class CudaNv12 final : public FrameData {
@@ -104,27 +70,6 @@ class CudaNv12 final : public FrameData {
   std::size_t luma_pitch_ = 0;
   std::size_t chroma_pitch_ = 0;
 };
-
-// Plans RGB FP16 du tenseur, relus sur l'hôte.
-std::vector<float> download(const gpu::Tensor& tensor) {
-  std::size_t count = 1;
-  for (const auto d : tensor.shape.dims) count *= static_cast<std::size_t>(d);
-  std::vector<std::uint16_t> half(count);
-  REQUIRE(cudaDeviceSynchronize() == cudaSuccess);
-  REQUIRE(cudaMemcpy(half.data(), reinterpret_cast<const void*>(tensor.handle), count * 2,
-                     cudaMemcpyDeviceToHost) == cudaSuccess);
-  std::vector<float> out(count);
-  for (std::size_t i = 0; i < count; ++i) out[i] = kernels::ref::half_to_float(half[i]);
-  return out;
-}
-
-// Un tenseur FP16 rempli depuis l'hôte, plan après plan.
-void upload(const gpu::Tensor& tensor, const std::vector<float>& values) {
-  std::vector<std::uint16_t> half(values.size());
-  for (std::size_t i = 0; i < values.size(); ++i) half[i] = kernels::ref::float_to_half(values[i]);
-  REQUIRE(cudaMemcpy(reinterpret_cast<void*>(tensor.handle), half.data(), half.size() * 2,
-                     cudaMemcpyHostToDevice) == cudaSuccess);
-}
 
 // Image RGB w × h : plan c, pixel (x, y) à 0,1 × (c + 1) + 0,001 × (x + y).
 std::vector<float> ramp(int w, int h) {

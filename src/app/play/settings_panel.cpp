@@ -103,6 +103,19 @@ void fluidity_tab(PlaySettings& d, const SettingsChoices& choices) {
   }
   ImGui::EndDisabled();
   if (!choices.rife_available) note("Modèle RIFE introuvable (rife_v4.26.onnx).");
+  section("Moteur du mouvement");
+  for (int i = 0; i < kMotionEngineCount; ++i) {
+    const auto engine = static_cast<MotionEngine>(i);
+    if (ImGui::RadioButton(std::string(label(engine)).c_str(), d.motion_engine == engine))
+      d.motion_engine = engine;
+  }
+  if (d.motion_engine == MotionEngine::OpticalFlow) {
+    note(
+        "Expérimental. L'accélérateur de flux optique des RTX (celui de Smooth Motion et de DLSS Frame "
+        "Generation) estime le mouvement à la place de RIFE, bien moins cher que ses 7 ms par paire à 720p, "
+        "pour un mouvement moins fin. Utile en 4K ×3 ou ×4. Sans lui (autre carte, pilote trop ancien), "
+        "RIFE reprend.");
+  }
   if (four_k && d.rife_factor >= 3) {
     note(
         "En 4K sans réduction, ×2 tient sur cette carte ; ×3 et ×4 prennent du retard dans les scènes qui "

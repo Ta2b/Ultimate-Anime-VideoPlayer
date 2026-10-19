@@ -11,6 +11,7 @@
 #include "core/clock.h"
 #include "core/log.h"
 #include "kernels/spec/detect.h"
+#include "kernels/spec/optical_flow.h"
 #include "kernels/spec/rife.h"
 #include "kernels/spec/warp.h"
 
@@ -38,6 +39,8 @@ UpscaleStage::~UpscaleStage() {
     log_channel("gpu")->info("RIFE mouvement : {} passes ; {} paires à une passe, {} à plusieurs", rife_runs_,
                              single_pairs_, multi_pairs_);
   }
+  if (setup_.optical_flow_grid > 0)
+    log_channel("gpu")->info("flux optique matériel : {} paires", optical_flow_pairs_);
   if (late_pairs_ > 0) {
     log_channel("gpu")->info("RIFE : {} paires non interpolées pour rattraper l'horloge", late_pairs_);
   }
@@ -71,10 +74,17 @@ std::expected<std::unique_ptr<VideoStage>, Refusal> UpscaleStage::start(VideoSta
                   std::format("étage gpu : taille de travail {}x{} hors de la source {}x{}", setup.work_width,
                               setup.work_height, setup.source_width, setup.source_height));
   }
-  if (setup.rife != nullptr && setup.rife_motion != nullptr) {
-    return refuse(RefusalCode::FieldOutOfRange, "étage gpu : RIFE image ou mouvement, pas les deux");
+  const int estimators = (setup.rife != nullptr ? 1 : 0) + (setup.rife_motion != nullptr ? 1 : 0) +
+                         (setup.optical_flow_grid > 0 ? 1 : 0);
+  if (estimators > 1) {
+    return refuse(RefusalCode::FieldOutOfRange,
+                  "étage gpu : RIFE image, RIFE mouvement ou flux optique, un seul des trois");
   }
-  if ((setup.rife != nullptr || setup.rife_motion != nullptr) && setup.live == nullptr &&
+  if (setup.optical_flow_grid < 0 || setup.optical_flow_grid > 4) {
+    return refuse(RefusalCode::FieldOutOfRange,
+                  std::format("étage gpu : grille du flux optique {}", setup.optical_flow_grid));
+  }
+  if (estimators == 1 && setup.live == nullptr &&
       (setup.rife_factor < 2 || setup.rife_factor > kMaxRifeFactor)) {
     return refuse(RefusalCode::FieldOutOfRange,
                   std::format("étage gpu : RIFE ×{} hors de [2, {}]", setup.rife_factor, kMaxRifeFactor));
@@ -132,10 +142,17 @@ std::expected<void, Refusal> UpscaleStage::allocate() {
     }
   }
   if (interpolates()) {
+    if (auto ok = alloc(middle_, planes(3, w, h)); !ok) return ok;
+  }
+  if (setup_.optical_flow_grid > 0) {
+    const int cells_x = kernels::flow_cells(setup_.rife_width, setup_.optical_flow_grid);
+    const int cells_y = kernels::flow_cells(setup_.rife_height, setup_.optical_flow_grid);
+    if (auto ok = alloc(grid_flow_, planes(4, cells_x, cells_y)); !ok) return ok;
+    if (auto ok = alloc(grid_mask_, planes(1, cells_x, cells_y)); !ok) return ok;
+  } else if (interpolates()) {
     const kernels::RifeGeometry g = kernels::rife_geometry(setup_.rife_width, setup_.rife_height);
     if (auto ok = alloc(rife_in_, planes(kernels::kRifeInputChannels, g.padded_width, g.padded_height)); !ok)
       return ok;
-    if (auto ok = alloc(middle_, planes(3, w, h)); !ok) return ok;
     if (setup_.rife != nullptr) {
       if (auto ok = alloc(rife_out_, planes(3, g.padded_width, g.padded_height)); !ok) return ok;
     } else {
@@ -227,7 +244,7 @@ std::expected<RingStage::Output, Refusal> UpscaleStage::produce(const DecodedFra
   // donne plus d'une sortie que si la précédente existe).
   if (!previous_) return refuse(RefusalCode::SequenceOrder, "RIFE : pas d'image précédente");
   const Previous before = *previous_;
-  if (setup_.rife_motion != nullptr) {
+  if (by_motion()) {
     if (auto ok = interpolate_by_motion(output); !ok) return std::unexpected(std::move(ok.error()));
     if (auto ok = finish(middle_->tensor(), slot, sync); !ok) return std::unexpected(std::move(ok.error()));
     return Output{.pts_us = rife_output_pts(before.pts_us, frame.pts_us, output, outputs_),
@@ -264,14 +281,30 @@ std::expected<void, Refusal> UpscaleStage::run_motion(float t, const gpu::Tensor
 std::expected<void, Refusal> UpscaleStage::interpolate_by_motion(std::uint32_t output) {
   gpu::KernelOps& ops = *setup_.backend->kernels();
   const float t = static_cast<float>(output + 1) / static_cast<float>(outputs_);
+  const gpu::Tensor& a = rgb_[current_ ^ 1U]->tensor();
+  const gpu::Tensor& b = rgb_[current_]->tensor();
+  if (setup_.optical_flow_grid > 0) {
+    // Flux optique : un mouvement au milieu par paire, sur toute sa grille.
+    const gpu::Shape& cells = grid_flow_->tensor().shape;
+    const gpu::Motion motion{.flow = grid_flow_->tensor(),
+                             .mask = grid_mask_->tensor(),
+                             .area = kernels::Window{.x = 0,
+                                                     .y = 0,
+                                                     .width = static_cast<int>(cells.dims[3]),
+                                                     .height = static_cast<int>(cells.dims[2])}};
+    if (output == 0) {
+      if (auto ok = ops.optical_flow(rife_source(current_ ^ 1U), rife_source(current_), motion); !ok)
+        return ok;
+      ++optical_flow_pairs_;
+    }
+    return ops.warp_blend(a, b, motion, t, middle_->tensor());
+  }
   // Le mouvement est estimé à la taille de RIFE ; le warp le met à l'échelle des images de travail.
   const kernels::RifeGeometry g = kernels::rife_geometry(setup_.rife_width, setup_.rife_height);
   const kernels::Window area{
       .x = g.left, .y = g.top, .width = setup_.rife_width, .height = setup_.rife_height};
   const gpu::Motion middle{.flow = mid_flow_->tensor(), .mask = mid_mask_->tensor(), .area = area};
   const gpu::Motion other{.flow = flow_->tensor(), .mask = mask_->tensor(), .area = area};
-  const gpu::Tensor& a = rgb_[current_ ^ 1U]->tensor();
-  const gpu::Tensor& b = rgb_[current_]->tensor();
   if (output == 0) {
     // Début de la paire : RIFE au milieu ; s'il reste plus d'une image à faire, son mouvement
     // maximal dit si cette passe suffit (kernels/spec/warp.h, seuil mis à la hauteur de RIFE).

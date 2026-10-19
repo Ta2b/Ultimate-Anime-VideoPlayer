@@ -189,7 +189,8 @@ TensorRtBackend::~TensorRtBackend() {
   span_timing_.reset();
   chain_timing_.reset();
   if (retired_done_ != nullptr) cudaEventDestroy(retired_done_);
-  true_hdr_.reset();  // avant le flux : l'effet et ses tampons appartiennent au contexte du backend
+  true_hdr_.reset();      // avant le flux : l'effet et ses tampons appartiennent au contexte du backend
+  optical_flow_.reset();  // ses sessions écrivent sur le flux du backend
   if (pair_device_ != nullptr) cudaFree(pair_device_);
   if (pair_host_ != nullptr) cudaFreeHost(pair_host_);
   if (flow_device_ != nullptr) cudaFree(flow_device_);

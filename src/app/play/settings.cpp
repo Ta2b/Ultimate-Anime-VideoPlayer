@@ -125,6 +125,14 @@ std::string model_label(const std::string& file) {
   return out.empty() ? file : out;
 }
 
+std::string_view name(MotionEngine engine) {
+  return engine == MotionEngine::OpticalFlow ? "optical_flow" : "rife";
+}
+
+std::string_view label(MotionEngine engine) {
+  return engine == MotionEngine::OpticalFlow ? "Flux optique NVIDIA (matériel)" : "RIFE 4.26";
+}
+
 std::string_view name(OledBlack mode) {
   switch (mode) {
     case OledBlack::Auto:
@@ -222,6 +230,18 @@ std::expected<PlaySettings, Refusal> parse_settings(std::string_view toml_text) 
   if (const toml::table* interpolation = section(root, "interpolation")) {
     reads.push_back(read(*interpolation, "interpolation", "rife", s.rife_factor));
     reads.push_back(read(*interpolation, "interpolation", "smooth_motion", s.smooth_motion));
+    std::string engine(name(s.motion_engine));
+    reads.push_back(read(*interpolation, "interpolation", "engine", engine));
+    bool engine_known = false;
+    for (int i = 0; i < kMotionEngineCount; ++i) {
+      if (name(static_cast<MotionEngine>(i)) == engine) {
+        s.motion_engine = static_cast<MotionEngine>(i);
+        engine_known = true;
+      }
+    }
+    if (!engine_known)
+      reads.emplace_back(
+          refuse(RefusalCode::FieldOutOfRange, std::format("interpolation.engine : « {} »", engine)));
   }
   if (const toml::table* hdr = section(root, "rtx_hdr")) {
     reads.push_back(read(*hdr, "rtx_hdr", "enabled", s.true_hdr));
@@ -304,7 +324,9 @@ std::string format_settings(const PlaySettings& s) {
                                    {"model", s.model},
                                    {"work_height", s.work_height},
                                    {"downscale", std::string(name(s.downscale))}});
-  root.insert("interpolation", toml::table{{"rife", s.rife_factor}, {"smooth_motion", s.smooth_motion}});
+  root.insert("interpolation", toml::table{{"rife", s.rife_factor},
+                                           {"engine", std::string(name(s.motion_engine))},
+                                           {"smooth_motion", s.smooth_motion}});
   root.insert("rtx_hdr", toml::table{{"enabled", s.true_hdr},
                                      {"contrast", s.true_hdr_contrast},
                                      {"saturation", s.true_hdr_saturation},
@@ -429,6 +451,7 @@ PlaySettings live_part(const PlaySettings& running, const PlaySettings& wanted, 
   PlaySettings s = running;
   s.downscale = wanted.downscale;
   if (rife_loaded || wanted.rife_factor < 2) s.rife_factor = wanted.rife_factor;
+  if (wanted.rife_factor < 2) s.motion_engine = wanted.motion_engine;  // sans interpolation, rien à recharger
   s.true_hdr_contrast = wanted.true_hdr_contrast;
   s.true_hdr_saturation = wanted.true_hdr_saturation;
   s.true_hdr_gray = wanted.true_hdr_gray;
@@ -459,6 +482,8 @@ Change change_between(const PlaySettings& running, const PlaySettings& wanted, b
     reopen.emplace_back(wanted.true_hdr ? "RTX HDR s'allume" : "RTX HDR s'éteint");
   if (wanted.rife_factor >= 2 && running.rife_factor < 2 && !rife_loaded)
     reopen.emplace_back("le moteur RIFE est chargé (construit la première fois pour cette taille)");
+  if (wanted.rife_factor >= 2 && running.motion_engine != wanted.motion_engine)
+    reopen.emplace_back("le moteur du mouvement change");
   if (!reopen.empty()) {
     std::string reason;
     for (const std::string_view part : reopen)
