@@ -1,0 +1,49 @@
+// Noyaux CUDA provisoires du backend TensorRT de la tranche verticale : ingestion NV12 ou
+// P010 (mémoire linéaire de NVDEC) vers RGB planaire FP16, et écriture RGB FP16 vers un slot
+// RGBA16 UNORM du ring importé de Vulkan.
+//
+// Provisoire : le socle CUDA (chantier pc/cuda-compute, src/gpu/cuda/compute) porte les noyaux
+// exacts de kernels/spec (chroma Spline36 en codes bruts). Ici la chroma est bilinéaire, avec
+// la position de chroma de la source ; l'écart reste sous un niveau 8 bits sur les aplats.
+// Ces noyaux disparaissent quand le socle est fusionné.
+#pragma once
+
+#include <cstddef>
+#include <cstdint>
+#include <cuda_runtime_api.h>
+
+namespace ajp::gpu::cuda {
+
+struct IngestParams {
+  const void* luma = nullptr;    // plan Y
+  const void* chroma = nullptr;  // plan CbCr entrelacé
+  std::size_t luma_pitch = 0;    // octets
+  std::size_t chroma_pitch = 0;
+  int width = 0;
+  int height = 0;
+  bool sixteen_bits = false;  // P010 ou P016 : échantillons de 16 bits
+  // Normalisation et matrice (kernels/spec/color.h : yuv_scale, coefficients).
+  float yoff = 0.0F;
+  float yscale = 1.0F;
+  float coff = 0.0F;
+  float cscale = 1.0F;
+  float kr = 0.2126F;
+  float kb = 0.0722F;
+  // Position de la chroma en pixels de luma : 0 pour la gauche, 0,5 au centre.
+  float chroma_x = 0.0F;
+  float chroma_y = 0.5F;
+  void* rgb = nullptr;  // 1 × 3 × height × width, FP16
+};
+
+cudaError_t launch_ingest(const IngestParams& params, cudaStream_t stream);
+
+struct WriteParams {
+  const void* rgb = nullptr;  // 1 × 3 × height × width, FP16
+  int width = 0;
+  int height = 0;
+  cudaSurfaceObject_t surface = 0;  // RGBA16 UNORM
+};
+
+cudaError_t launch_write_rgba16(const WriteParams& params, cudaStream_t stream);
+
+}  // namespace ajp::gpu::cuda

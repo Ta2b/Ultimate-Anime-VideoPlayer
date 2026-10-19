@@ -15,6 +15,7 @@
 
 #include "app/play/links.h"
 #include "app/play/pipeline.h"
+#include "app/play/ring_stage.h"
 #include "app/play/video_stage.h"
 #include "core/clock.h"
 #include "core/frame.h"
@@ -72,35 +73,18 @@ RingFrame ring_frame(std::uint32_t slot, std::int64_t pts_us, std::uint32_t epoc
                      std::uint64_t ready_value = 1);
 
 // Thread gpu de substitution : chaque image décodée prend un slot libre et part telle
-// quelle au thread main, sans calcul. Même contrôle de flux que le vrai : au plus
-// kMaxFrames images en vol, un Credit par image sortie, slots rendus par SlotFree.
-class PassthroughStage final : public VideoStage, public FrameSink {
+// quelle au thread main, sans calcul ; le contrôle de flux et les slots sont ceux de RingStage.
+class PassthroughStage final : public RingStage {
  public:
-  static constexpr std::size_t kMaxFrames = 4;
   static std::expected<std::unique_ptr<VideoStage>, Refusal> start(VideoStageInit init, std::uint32_t slots);
-
-  PassthroughStage(VideoStageInit init, std::uint32_t slots);
-  ~PassthroughStage() override = default;  // le std::jthread s'arrête en premier
-  FrameSink& frames() override { return *this; }
-  bool try_push(DecodedFrame&& frame) override;
-  bool post(const SlotFree& free) override { return inbox_.try_push(SlotFree{free}); }
-  bool post(const Flush& flush) override { return inbox_.try_push(Flush{flush}); }
-  bool post(const Command& command) override { return inbox_.try_push(Command{command}); }
+  ~PassthroughStage() override { stop(); }
 
  private:
-  using StageInbox = Inbox<DecodedFrame, SlotFree, Command, Flush>;
-  void run(const std::stop_token& stop);
-  void emit();
-
-  VideoStageInit init_;
-  StageInbox inbox_;
-  std::atomic<std::size_t> in_flight_{0};
-  // Possédé par le thread gpu.
-  std::deque<DecodedFrame> pending_;
-  std::vector<std::uint64_t> released_;  // dernière valeur rendue par slot
-  std::vector<bool> free_;
-  std::uint32_t epoch_ = 0;
-  std::jthread thread_;  // dernier membre
+  PassthroughStage(VideoStageInit init, std::uint32_t slots) : RingStage(std::move(init), slots, 0) {}
+  std::expected<void, Refusal> produce(const DecodedFrame&, std::uint32_t, std::uint64_t,
+                                       std::uint64_t) override {
+    return {};
+  }
 };
 
 }  // namespace ajp::app::play::test

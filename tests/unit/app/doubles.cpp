@@ -63,76 +63,11 @@ RingFrame ring_frame(std::uint32_t slot, std::int64_t pts_us, std::uint32_t epoc
 
 std::expected<std::unique_ptr<VideoStage>, Refusal> PassthroughStage::start(VideoStageInit init,
                                                                             std::uint32_t slots) {
-  return std::make_unique<PassthroughStage>(std::move(init), slots);
-}
-
-PassthroughStage::PassthroughStage(VideoStageInit init, std::uint32_t slots)
-    : init_(std::move(init)),
-      inbox_(StageInbox::Bounds{kMaxFrames, slots, 16, 4}),
-      released_(slots, 0),
-      free_(slots, true) {
-  auto thread = start_thread("gpu-doublure", init_.report,
-                             [this](const std::stop_token& stop, const ThreadReport&) { run(stop); });
-  if (thread) thread_ = std::move(*thread);
-}
-
-bool PassthroughStage::try_push(DecodedFrame&& frame) {
-  if (in_flight_.fetch_add(1) >= kMaxFrames || !inbox_.try_push(std::move(frame))) {
-    --in_flight_;
-    return false;
+  std::unique_ptr<PassthroughStage> stage(new PassthroughStage(std::move(init), slots));
+  if (auto started = stage->RingStage::start("gpu-doublure"); !started) {
+    return std::unexpected(std::move(started.error()));
   }
-  return true;
-}
-
-void PassthroughStage::run(const std::stop_token& stop) {
-  while (auto message = inbox_.wait(stop)) {
-    bool quit = false;
-    std::visit(
-        [&](auto& m) {
-          using M = std::decay_t<decltype(m)>;
-          if constexpr (std::is_same_v<M, DecodedFrame>) {
-            pending_.push_back(std::move(m));
-          } else if constexpr (std::is_same_v<M, SlotFree>) {
-            if (m.generation == 0 && m.slot < free_.size()) {
-              free_[m.slot] = true;
-              released_[m.slot] = m.semaphore_value;
-            }
-          } else if constexpr (std::is_same_v<M, Flush>) {
-            epoch_ = m.epoch;
-          } else {
-            quit = std::holds_alternative<cmd::Quit>(m);
-          }
-        },
-        *message);
-    if (quit) return;
-    emit();
-  }
-}
-
-void PassthroughStage::emit() {
-  while (!pending_.empty()) {
-    if (pending_.front().epoch < epoch_) {  // d'avant le Flush : jetée
-      pending_.pop_front();
-      --in_flight_;
-      init_.credit();
-      continue;
-    }
-    std::uint32_t slot = 0;
-    while (slot < free_.size() && !free_[slot]) ++slot;
-    if (slot == free_.size()) return;  // attend un SlotFree
-    const DecodedFrame& frame = pending_.front();
-    const RingFrame ring{.slot = slot,
-                         .pts_us = frame.pts_us,
-                         .left = frame.id,
-                         .right = frame.id,
-                         .epoch = frame.epoch,
-                         .ready_value = released_[slot] + 1};
-    if (!init_.ring->try_push(ring)) return;  // boîte de main pleine : au prochain message
-    free_[slot] = false;
-    pending_.pop_front();
-    --in_flight_;
-    init_.credit();
-  }
+  return stage;
 }
 
 }  // namespace ajp::app::play::test

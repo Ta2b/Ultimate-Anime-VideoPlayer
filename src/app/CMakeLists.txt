@@ -7,7 +7,7 @@
 ajp_add_module(app
   SOURCES
     play/bridges.cpp play/frame_queue.cpp play/frame_stats.cpp play/options.cpp play/pipeline.cpp
-    play/session.cpp play/wiring.cpp
+    play/ring_stage.cpp play/session.cpp play/upscale_stage.cpp play/wiring.cpp
   DEPS ajp::core ajp::core_log ajp::media ajp::gpu ajp::prepare ajp::audio ajp::subs
        ajp::render ajp::present ajp::export
   PRIVATE_DEPS ajp::dep::ffmpeg ajp::dep::sdl3)
