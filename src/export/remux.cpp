@@ -160,7 +160,7 @@ std::expected<void, Refusal> open_source(MuxOutput& out, Reader& reader, const R
 }  // namespace
 
 std::expected<void, Refusal> remux(const RemuxRequest& request) {
-  auto out = MuxOutput::create(request.output, request.container);
+  auto out = MuxOutput::create(request.output, request.container, true);
   if (!out) return std::unexpected(out.error());
 
   Reader video;

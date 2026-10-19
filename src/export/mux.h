@@ -15,8 +15,10 @@ namespace ajp::exporter {
 
 class MuxOutput {
  public:
-  // Contexte de sortie pour path ; rien n'est écrit avant write_header(). Refus MuxFailed.
-  static std::expected<MuxOutput, Refusal> create(const std::filesystem::path& path, Container container);
+  // Contexte de sortie pour path ; rien n'est écrit avant write_header(). index_first : en MP4,
+  // l'index (moov) en tête du fichier, au prix d'une réécriture à la fin. Refus MuxFailed.
+  static std::expected<MuxOutput, Refusal> create(const std::filesystem::path& path, Container container,
+                                                  bool index_first = false);
 
   // Nouveau flux aux paramètres copiés de par, dans la base de temps time_base. Refus
   // FormatUnsupported quand le conteneur ne porte pas ce codec ; what nomme le flux. Une pièce
@@ -43,6 +45,7 @@ class MuxOutput {
 
   std::unique_ptr<AVFormatContext, Closer> ctx_;
   std::filesystem::path path_;
+  bool index_first_ = false;
 };
 
 // Supprime un fichier à la destruction, sauf après release() : fichiers de travail et sortie

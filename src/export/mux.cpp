@@ -27,7 +27,8 @@ void MuxOutput::Closer::operator()(AVFormatContext* ctx) const {
   avformat_free_context(ctx);
 }
 
-std::expected<MuxOutput, Refusal> MuxOutput::create(const std::filesystem::path& path, Container container) {
+std::expected<MuxOutput, Refusal> MuxOutput::create(const std::filesystem::path& path, Container container,
+                                                    bool index_first) {
   AVFormatContext* raw = nullptr;
   const std::string text = path.string();
   if (const int error = avformat_alloc_output_context2(&raw, nullptr, format_name(container), text.c_str());
@@ -38,6 +39,7 @@ std::expected<MuxOutput, Refusal> MuxOutput::create(const std::filesystem::path&
   MuxOutput output;
   output.ctx_.reset(raw);
   output.path_ = path;
+  output.index_first_ = index_first && container == Container::Mp4;
   return output;
 }
 
@@ -68,9 +70,7 @@ std::expected<void, Refusal> MuxOutput::write_header() {
     }
   }
   AVDictionary* options = nullptr;
-  // MP4 : l'index (moov) en tête du fichier, pour une lecture qui démarre sans tout lire.
-  if (std::string_view(ctx_->oformat->name).starts_with("mp4"))
-    av_dict_set(&options, "movflags", "+faststart", 0);
+  if (index_first_) av_dict_set(&options, "movflags", "+faststart", 0);
   const int error = avformat_write_header(ctx_.get(), &options);
   av_dict_free(&options);
   if (error < 0)

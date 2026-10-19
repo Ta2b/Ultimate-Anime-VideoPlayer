@@ -3,8 +3,11 @@
 // SKIP avec la raison ; jamais de réussite silencieuse.
 #include <algorithm>
 #include <cmath>
+#include <ctime>
 #include <format>
 #include <numeric>
+#include <string>
+#include <vector>
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -136,22 +139,39 @@ TEST_CASE("encodeur Vulkan HEVC 10 bits, s'il est présent", "[export][vulkan]")
   check_hdr10_stream(dir / "out.mkv", AV_CODEC_ID_HEVC, AV_PROFILE_HEVC_MAIN_10, summary, 24);
 }
 
-// Mesure du débit NVENC, hors suite par défaut : ajp-gpu ajp_export_tests "[.bench]".
-TEST_CASE("banc NVENC HEVC 1080p : échauffement, cinq passes, médiane", "[.bench][nvidia]") {
-  const auto dir = work_dir("nvenc_bench");
-  std::vector<double> fps;
-  for (int pass = 0; pass < 6; ++pass) {
-    CyclingSource source(1920, 1080, 240);
-    const auto summary = run_or_skip(hardware_job(dir / "out.mkv", 1920, 1080, nvenc("hevc_nvenc"), source));
-    if (pass > 0) fps.push_back(summary.frames_per_second);  // la passe 0 échauffe
-  }
-  std::ranges::sort(fps);
-  const double mean = std::accumulate(fps.begin(), fps.end(), 0.0) / static_cast<double>(fps.size());
+namespace {
+
+// Médiane et écart type d'une série de mesures.
+std::string spread(std::vector<double> values) {
+  std::ranges::sort(values);
+  const double mean = std::accumulate(values.begin(), values.end(), 0.0) / static_cast<double>(values.size());
   double variance = 0.0;
-  for (double f : fps) variance += (f - mean) * (f - mean);
-  WARN(std::format(
-      "hevc_nvenc 1080p P010, 240 images : médiane {:.1f} im/s, écart type {:.1f}, min {:.1f}, max {:.1f}",
-      fps[fps.size() / 2], std::sqrt(variance / static_cast<double>(fps.size())), fps.front(), fps.back()));
+  for (double v : values) variance += (v - mean) * (v - mean);
+  return std::format("médiane {:.1f}, écart type {:.1f}, min {:.1f}, max {:.1f}", values[values.size() / 2],
+                     std::sqrt(variance / static_cast<double>(values.size())), values.front(), values.back());
+}
+
+}  // namespace
+
+// Mesure du débit NVENC, cachée (hors de « [nvidia] » et de ctest), à lancer depuis une
+// construction Release : ajp-gpu <build>/tests/unit/export/ajp_export_tests "[nvidia_bench]".
+// Le temps processeur par image (tous threads) se lit à côté du débit, moins sensible à la charge.
+TEST_CASE("banc NVENC HEVC 1080p : échauffement, cinq passes, médiane", "[.][nvidia_bench]") {
+  const auto dir = work_dir("nvenc_bench");
+  constexpr int kFrames = 240;
+  std::vector<double> fps;
+  std::vector<double> cpu_ms;
+  for (int pass = 0; pass < 6; ++pass) {
+    CyclingSource source(1920, 1080, kFrames);
+    const std::clock_t cpu_start = std::clock();
+    const auto summary = run_or_skip(hardware_job(dir / "out.mkv", 1920, 1080, nvenc("hevc_nvenc"), source));
+    const double cpu = 1000.0 * static_cast<double>(std::clock() - cpu_start) / CLOCKS_PER_SEC;
+    if (pass == 0) continue;  // la passe 0 échauffe
+    fps.push_back(summary.frames_per_second);
+    cpu_ms.push_back(cpu / kFrames);
+  }
+  WARN(std::format("hevc_nvenc 1080p P010, {} images, 5 passes : im/s {} ; ms processeur par image {}",
+                   kFrames, spread(fps), spread(cpu_ms)));
 }
 
 }  // namespace ajp::exporter

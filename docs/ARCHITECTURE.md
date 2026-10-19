@@ -174,6 +174,17 @@ TrueHDR peut être tenté. `app` la tire de `vendor_hdr::first_blocker_reason()`
 la passe à `to_resolve_capabilities()` ; la valeur par défaut refuse, tant que
 personne n'a vérifié. Un profil TrueHDR bloqué est refusé avec ce texte, tel quel.
 
+### Export (`export/export.h`, `export/frame_source.h`)
+
+`run_export(ExportJob)` encode les images d'une `ExportFrameSource` (RGBA16 PQ BT.2020
+en mémoire hôte, avec pts ; la voie P010 sur le GPU est décrite et refusée tant que le
+backend ne l'a pas branchée), sans fenêtre ; le lecteur la lance sur son thread export
+(`ExportThread`, boîte bornée, un `Credit` par image rendue). L'adaptateur de la sortie hors
+écran de `render` vers `ExportFrameSource` vit dans `export`, qui dépend de `render`. Deux
+passes : un fichier vidéo seul pendant que MaxCLL et MaxFALL se mesurent, puis le mux final
+avec les métadonnées HDR10 et les pistes, chapitres et polices de la source, sous
+`<sortie>.part` renommé à la fin. `framemd5_of_file()` prouve le déterminisme.
+
 ## Threads
 
 Un thread se lance par `start_thread()` (`core/thread.h`), jamais par un

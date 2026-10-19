@@ -90,13 +90,21 @@ std::expected<FirstPass, Refusal> open_first_pass(const ExportJob& job,
                                 .frame_rate = AVRational{job.frame_rate.num, job.frame_rate.den}};
   auto encoder = VideoEncoder::open(job.encoder, geometry, job.mastering, true);
   if (!encoder) return std::unexpected(encoder.error());
-  auto video = MuxOutput::create(video_path, job.container);
-  if (!video) return std::unexpected(video.error());
   ParametersPtr par(avcodec_parameters_alloc());
   if (!par) return refuse(RefusalCode::MuxFailed, "avcodec_parameters_alloc : mémoire insuffisante");
   if (const int error = avcodec_parameters_from_context(par.get(), &encoder->context()); error < 0) {
     return refuse_av(RefusalCode::MuxFailed, "avcodec_parameters_from_context", error);
   }
+  // Le conteneur final doit porter ce codec : refusé ici, avant la première image.
+  auto final_output = MuxOutput::create(job.output, job.container);
+  if (!final_output) return std::unexpected(final_output.error());
+  if (auto stream = final_output->add_stream(*par, kMicroseconds, "vidéo exportée"); !stream) {
+    return std::unexpected(stream.error());
+  }
+  // Le fichier de travail est toujours en MP4 : il garde le dts de chaque paquet (images B)
+  // et la microseconde des pts, que Matroska arrondirait à la milliseconde.
+  auto video = MuxOutput::create(video_path, Container::Mp4);
+  if (!video) return std::unexpected(video.error());
   if (auto stream = video->add_stream(*par, kMicroseconds, "vidéo exportée"); !stream) {
     return std::unexpected(stream.error());
   }

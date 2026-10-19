@@ -165,7 +165,7 @@ void write_source_media(const std::filesystem::path& path) {
   std::memcpy(font->codecpar->extradata, font_data.data(), font_data.size());
   font->codecpar->extradata_size = static_cast<int>(font_data.size());
   av_dict_set(&font->metadata, "filename", SourceLayout::kFontName.data(), 0);
-  av_dict_set(&font->metadata, "mimetype", "font/ttf", 0);
+  av_dict_set(&font->metadata, "mimetype", "application/x-truetype-font", 0);
   add_chapter(*raw, 1, 0, SourceLayout::kChapterSplitUs, "Début");
   add_chapter(*raw, 2, SourceLayout::kChapterSplitUs, SourceLayout::kChapterEndUs, "Suite");
 

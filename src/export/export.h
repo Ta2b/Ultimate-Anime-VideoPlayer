@@ -4,8 +4,8 @@
 //
 // run_export() tourne sans fenêtre : la ligne de commande ajp export l'appelle telle quelle ;
 // le lecteur la lance sur son thread export (export_thread.h). Deux passes de mux :
-//   1. les images sont encodées dans un fichier vidéo seul, à côté de la sortie, pendant que
-//      MaxCLL et MaxFALL se mesurent ;
+//   1. les images sont encodées dans un fichier vidéo seul (MP4, qui garde dts et microsecondes),
+//      à côté de la sortie, pendant que MaxCLL et MaxFALL se mesurent ;
 //   2. le mux final recopie ce flux et les pistes du fichier source, horodatages recalés sur la
 //      première image exportée, et écrit les niveaux de lumière mesurés : Matroska et MP4 les
 //      portent dans l'en-tête du flux, écrit avant les images.

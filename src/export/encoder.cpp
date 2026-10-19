@@ -197,6 +197,9 @@ std::expected<void, Refusal> VideoEncoder::prepare_frames(const EncoderSpec& spe
   // Pas de mise à l'échelle : seul le sous-échantillonnage de la chrominance filtre. Les
   // drapeaux rendent la conversion identique d'une machine à l'autre (framemd5).
   sws_->flags = SWS_BICUBIC | SWS_ACCURATE_RND | SWS_FULL_CHR_H_INP | SWS_BITEXACT;
+  // Tranches sur tous les cœurs : chaque tranche lit la source entière, le résultat ne dépend
+  // pas de leur nombre (framemd5 identique, vérifié en 1080p contre un seul thread).
+  sws_->threads = 0;
   if (auto ok = renew_converted(); !ok) return ok;
   if (spec.family != EncoderFamily::Vulkan) return {};
 

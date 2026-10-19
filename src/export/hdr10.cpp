@@ -76,7 +76,7 @@ void LightMeter::add(const HostFrame& frame) {
     const auto row = frame.rgba.subspan(y * row_values, width * 4);
     double row_sum = 0.0;
     for (std::size_t x = 0; x < width; ++x) {
-      const std::uint16_t brightest = std::max({row[x * 4], row[x * 4 + 1], row[x * 4 + 2]});
+      const std::uint16_t brightest = std::max(std::max(row[x * 4], row[x * 4 + 1]), row[x * 4 + 2]);
       frame_max = std::max(frame_max, brightest);
       row_sum += nits_[brightest];
     }
