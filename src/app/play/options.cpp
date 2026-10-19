@@ -103,12 +103,15 @@ std::expected<PlayOptions, Refusal> parse_play_options(std::span<const std::stri
       options.upscale = false;
     } else if (arg == "--fullscreen") {
       options.fullscreen = true;
+    } else if (arg == "--truehdr") {
+      options.true_hdr = true;
     } else {
       std::expected<void, Refusal> applied;
       bool known = false;
       for (const std::string_view name :
            {"--model", "--window", "--start", "--seconds", "--fullscreen-after", "--stats", "--snapshot-at",
-            "--snapshot", "--keys", "--work-height", "--rife-model", "--rife"}) {
+            "--snapshot", "--keys", "--work-height", "--rife-model", "--rife", "--truehdr-sdk",
+            "--truehdr-peak", "--truehdr-contrast", "--truehdr-saturation", "--truehdr-gray"}) {
         auto value = valued(args, i, name);
         if (!value) return std::unexpected(std::move(value.error()));
         if (!*value) continue;
@@ -124,6 +127,22 @@ std::expected<PlayOptions, Refusal> parse_play_options(std::span<const std::stri
           applied = keys(text, options);
         } else if (name == "--snapshot") {
           options.snapshot = std::filesystem::path(text);
+        } else if (name == "--truehdr-sdk") {
+          options.true_hdr_sdk = std::filesystem::path(text);
+        } else if (name.starts_with("--truehdr-")) {
+          const auto setting = number<int>(text);
+          const bool peak = name == "--truehdr-peak";
+          const core::Range<int> range = peak                       ? core::Range<int>{0, 2000}
+                                         : name == "--truehdr-gray" ? core::Range<int>{10, 100}
+                                                                    : core::Range<int>{0, 200};
+          if (!setting || !range.contains(*setting) || (peak && *setting != 0 && *setting < 400)) {
+            return refuse(RefusalCode::FieldOutOfRange, std::format("{} : « {} » hors de {} à {}", name, text,
+                                                                    peak ? 400 : range.lo, range.hi));
+          }
+          if (peak) options.true_hdr_peak = *setting;
+          if (name == "--truehdr-contrast") options.true_hdr_contrast = *setting;
+          if (name == "--truehdr-saturation") options.true_hdr_saturation = *setting;
+          if (name == "--truehdr-gray") options.true_hdr_gray = *setting;
         } else if (name == "--rife-model") {
           options.rife_model = std::filesystem::path(text);
         } else if (name == "--rife") {
@@ -184,6 +203,9 @@ std::string play_usage() {
       "  --work-height=N        réduit la source à N lignes avant SPAN (défaut 720 ; 0 jamais)\n"
       "  --rife=N               interpolation RIFE ×N avant SPAN (défaut {} ; 0 aucune)\n"
       "  --rife-model=FICHIER   modèle RIFE (défaut : {})\n"
+      "  --truehdr              RTX HDR (Maxine TrueHDR), SDK importé une fois depuis --truehdr-sdk\n"
+      "  --truehdr-peak=NITS    pic de TrueHDR (défaut : celui de l'écran, sinon 1000)\n"
+      "  --truehdr-contrast=N, --truehdr-saturation=N (0 à 200, 100), --truehdr-gray=N (10 à 100, 50)\n"
       "Touches : espace pause, flèches seek 5 s, f plein écran, q quitter.\n",
       kDefaultModelFile, kDefaultRifeFactor, kDefaultRifeFile);
 }

@@ -67,6 +67,12 @@ pl_color_space color_space_of(const ColorInfo& color) {
       space.transfer = PL_COLOR_TRC_HLG;
       break;
   }
+  if (color.hdr) {  // crête et lumière de la source (TrueHDR : le pic qu'on lui a donné)
+    space.hdr.max_luma = color.hdr->max_luminance;
+    space.hdr.min_luma = color.hdr->min_luminance;
+    space.hdr.max_cll = color.hdr->max_cll;
+    space.hdr.max_fall = color.hdr->max_fall;
+  }
   return space;
 }
 
@@ -184,7 +190,8 @@ void PlaceboScreen::snapshot_next(std::filesystem::path path) {
   impl_->snapshot = std::move(path);
 }
 
-std::expected<void, Refusal> PlaceboScreen::Impl::compose(const pl_frame* image, const pl_frame& target) {
+std::expected<void, Refusal> PlaceboScreen::Impl::compose(const pl_frame* image,
+                                                          const pl_frame& target) const {
   const pl_render_params params = pl_render_default_params;
   if (image == nullptr) pl_frame_clear(vk->gpu, &target, std::array<float, 3>{0.0F, 0.0F, 0.0F}.data());
   if (!pl_render_image(renderer, image, &target, &params)) {
@@ -256,10 +263,12 @@ std::expected<ScreenTiming, Refusal> PlaceboScreen::show(const ShowRequest& requ
     return std::unexpected(std::move(drawn.error()));
   }
   if (s.snapshot) {
-    if (auto saved = s.save_snapshot(request.frame != nullptr ? &image : nullptr, target, out); !saved) {
-      s.channel->warn("instantané {} : {}", s.snapshot->string(), saved.error().detail);
-    }
+    const std::filesystem::path path = *s.snapshot;
     s.snapshot.reset();
+    if (auto saved = s.save_snapshot(request.frame != nullptr ? &image : nullptr, target, out, path);
+        !saved) {
+      s.channel->warn("instantané {} : {}", path.string(), saved.error().detail);
+    }
   }
   if (!pl_swapchain_submit_frame(s.swapchain))
     return refuse(RefusalCode::VendorCallFailed, "pl_swapchain_submit_frame");

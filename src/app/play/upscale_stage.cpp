@@ -104,6 +104,10 @@ std::expected<std::uint32_t, Refusal> UpscaleStage::outputs(const DecodedFrame& 
                   std::format("image {}x{} : la source est en {}x{}", frame.width, frame.height,
                               setup_.source_width, setup_.source_height));
   }
+  if (setup_.true_hdr && (frame.color.transfer == Transfer::Pq || frame.color.transfer == Transfer::Hlg)) {
+    return refuse(RefusalCode::HdrUnavailable, "RTX HDR : la source est déjà HDR");
+  }
+  prepared_ = vendor_hdr::InputPreparation{.matrix = frame.color.matrix, .range = frame.color.range};
   gpu::KernelOps& ops = *setup_.backend->kernels();
   current_ ^= 1U;
   const gpu::Tensor& rgb = rgb_[current_]->tensor();
@@ -160,11 +164,15 @@ std::expected<RingStage::Output, Refusal> UpscaleStage::produce(const DecodedFra
 std::expected<void, Refusal> UpscaleStage::finish(const gpu::Tensor& rgb, std::uint32_t slot,
                                                   const gpu::RingWrite& sync) {
   gpu::KernelOps& ops = *setup_.backend->kernels();
-  if (setup_.engine == nullptr) return ops.write_ring(rgb, setup_.slots[slot], sync);
+  const auto write = [&](const gpu::Tensor& image) {
+    return setup_.true_hdr ? ops.write_ring_true_hdr(image, prepared_, setup_.slots[slot], sync)
+                           : ops.write_ring(image, setup_.slots[slot], sync);
+  };
+  if (setup_.engine == nullptr) return write(rgb);
   const std::array inputs{rgb};
   std::array outputs{output_->tensor()};
   if (auto ok = setup_.backend->enqueue(*setup_.engine, inputs, outputs); !ok) return ok;
-  return ops.write_ring(output_->tensor(), setup_.slots[slot], sync);
+  return write(output_->tensor());
 }
 
 }  // namespace ajp::app::play

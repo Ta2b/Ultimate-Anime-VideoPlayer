@@ -11,7 +11,8 @@
 namespace ajp::app::play {
 
 std::expected<void, Refusal> PlaceboScreen::Impl::save_snapshot(const pl_frame* image, const pl_frame& target,
-                                                                OutputSize out) {
+                                                                OutputSize out,
+                                                                const std::filesystem::path& path) const {
   const pl_gpu gpu = vk->gpu;
   pl_tex_params params{};
   params.w = out.width;
@@ -43,11 +44,11 @@ std::expected<void, Refusal> PlaceboScreen::Impl::save_snapshot(const pl_frame* 
   pl_tex_destroy(gpu, &tex);
   if (!rendered) return rendered;
   if (!read) return std::unexpected(Refusal{RefusalCode::VendorCallFailed, "pl_tex_download (instantané)"});
-  std::ofstream file(*snapshot, std::ios::binary);
+  std::ofstream file(path, std::ios::binary);
   file << std::format("P6\n{} {}\n255\n", out.width, out.height);
   for (std::size_t i = 0; i < pixels.size(); i += 4) file.write(reinterpret_cast<const char*>(&pixels[i]), 3);
   if (!file) return std::unexpected(Refusal{RefusalCode::IoFailed, "écriture de l'instantané"});
-  channel->info("instantané écrit : {}", snapshot->string());
+  channel->info("instantané écrit : {}", path.string());
   return {};
 }
 

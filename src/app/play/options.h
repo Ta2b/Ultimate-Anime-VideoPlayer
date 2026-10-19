@@ -5,6 +5,8 @@
 //                      [--start=S] [--seconds=S] [--fullscreen-after=S] [--stats=FICHIER]
 //                      [--snapshot=FICHIER.ppm] [--snapshot-at=S] [--keys=S:touche,…]
 //                      [--work-height=N] [--rife=N] [--rife-model=FICHIER.onnx]
+//                      [--truehdr] [--truehdr-sdk=DOSSIER] [--truehdr-peak=NITS]
+//                      [--truehdr-contrast=N] [--truehdr-saturation=N] [--truehdr-gray=N]
 //
 // Le modèle par défaut est celui du lecteur actuel du propriétaire (AnimeJaNai, slot par
 // défaut de animejanai.conf) : SPAN V3.1 Sharp1 Performance, ×2. Il est lu en place, en
@@ -66,7 +68,14 @@ struct PlayOptions {
   // --rife=N : interpolation RIFE ×N (2 à 8) avant SPAN ; 0 ou 1 : aucune.
   int rife_factor = kDefaultRifeFactor;
   std::optional<std::filesystem::path> rife_model;  // --rife-model : absent, celui du lecteur actuel
-  bool help = false;                                // --help
+  // --truehdr : RTX HDR (Maxine TrueHDR) sur la sortie de SPAN ; l'écran reçoit du PQ BT.2020.
+  bool true_hdr = false;
+  std::filesystem::path true_hdr_sdk = "/usr/local/VideoFX";  // --truehdr-sdk : importé une fois
+  int true_hdr_contrast = 100;                                // --truehdr-contrast=0..200
+  int true_hdr_saturation = 100;                              // --truehdr-saturation=0..200
+  int true_hdr_gray = 50;                                     // --truehdr-gray=10..100 (gris moyen)
+  int true_hdr_peak = 0;  // --truehdr-peak=400..2000 nits ; 0 : la crête vue par le contenu sur l'écran
+  bool help = false;      // --help
 };
 
 // Taille de travail de la chaîne : la source, ou réduite à work_height lignes en gardant le

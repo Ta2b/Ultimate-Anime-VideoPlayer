@@ -81,8 +81,9 @@ class Overlays {
 
 struct PlaceboScreen::Impl {
   ~Impl();
-  std::expected<void, Refusal> compose(const pl_frame* image, const pl_frame& target);
-  std::expected<void, Refusal> save_snapshot(const pl_frame* image, const pl_frame& target, OutputSize out);
+  std::expected<void, Refusal> compose(const pl_frame* image, const pl_frame& target) const;
+  std::expected<void, Refusal> save_snapshot(const pl_frame* image, const pl_frame& target, OutputSize out,
+                                             const std::filesystem::path& path) const;
   std::shared_ptr<spdlog::logger> channel;
   SDL_Window* window = nullptr;
   pl_log log = nullptr;

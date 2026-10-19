@@ -7,6 +7,7 @@
 
 #include <SDL3/SDL_events.h>
 #include <SDL3/SDL_keyboard.h>
+#include <SDL3/SDL_properties.h>
 #include <SDL3/SDL_timer.h>
 #include <SDL3/SDL_video.h>
 
@@ -23,6 +24,8 @@
 #include "media/demuxer.h"
 #include "media/selection.h"
 #include "prepare/sha256.h"
+#include "vendor_hdr/sdk_store.h"
+#include "vendor_hdr/true_hdr.h"
 
 namespace ajp::app::play {
 namespace {
@@ -112,6 +115,58 @@ std::int64_t display_period_us(SDL_Window* window) {
   return static_cast<std::int64_t>(1e6 / static_cast<double>(mode->refresh_rate));
 }
 
+// Crête vue par le contenu sur l'écran de la fenêtre : la marge HDR de SDL3 (relative au blanc de
+// référence du compositeur) × 203 nits ; rien si l'écran n'est pas en HDR (display.md).
+std::optional<double> content_peak_nits(SDL_Window* window) {
+  const SDL_PropertiesID props = SDL_GetWindowProperties(window);
+  if (!SDL_GetBooleanProperty(props, SDL_PROP_WINDOW_HDR_ENABLED_BOOLEAN, false)) return std::nullopt;
+  const float headroom = SDL_GetFloatProperty(props, SDL_PROP_WINDOW_HDR_HEADROOM_FLOAT, 0.0F);
+  if (!(headroom > 1.0F)) return std::nullopt;
+  return static_cast<double>(headroom) * 203.0;
+}
+
+// RTX HDR : le SDK Maxine importé une fois dans le magasin du lecteur (environ 135 Mo), revérifié
+// à chaque lancement, puis l'effet ouvert pour la sortie de SPAN ; l'écran reçoit alors du PQ
+// BT.2020 au pic donné à TrueHDR.
+std::expected<void, Refusal> open_rtx_hdr(const PlayOptions& options, const PlayerPaths& paths,
+                                          PlaceboScreen& screen, gpu::KernelOps& kernels, int width,
+                                          int height) {
+  const auto log = log_channel("app");
+  vendor_hdr::SdkStore store(paths.engines.parent_path() / "sdk", vendor_hdr::SdkKind::MaxineVfx);
+  vendor_hdr::SdkStatus sdk = store.status();
+  if (!sdk.installed) {
+    log->info("RTX HDR : import du SDK Maxine depuis {} (environ 135 Mo, une seule fois)",
+              options.true_hdr_sdk.string());
+    auto imported = store.import(options.true_hdr_sdk);
+    if (!imported) return std::unexpected(std::move(imported.error()));
+    sdk = *imported;
+  }
+  if (!sdk.installed) return refuse(RefusalCode::HdrUnavailable, std::format("RTX HDR : {}", sdk.reason));
+  const int peak = options.true_hdr_peak > 0
+                       ? options.true_hdr_peak
+                       : vendor_hdr::peak_from_display(content_peak_nits(screen.window()));
+  auto params = vendor_hdr::validate(vendor_hdr::TrueHdrParams{.contrast = options.true_hdr_contrast,
+                                                               .saturation = options.true_hdr_saturation,
+                                                               .middle_gray = options.true_hdr_gray,
+                                                               .peak_nits = peak});
+  if (!params) return std::unexpected(std::move(params.error()));
+  if (auto ok = kernels.open_true_hdr(
+          *sdk.installed,
+          vendor_hdr::TrueHdrConfig{
+              .width = width, .height = height, .source = ColorInfo{}, .params = *params});
+      !ok) {
+    return ok;
+  }
+  screen.set_source_color(ColorInfo{.matrix = ColorMatrix::Rgb,
+                                    .range = ColorRange::Full,
+                                    .transfer = Transfer::Pq,
+                                    .primaries = Primaries::Bt2020,
+                                    .hdr = HdrMetadata{.max_luminance = static_cast<float>(peak)}});
+  log->info("RTX HDR : Maxine {} · pic {} nits · contraste {} · saturation {} · gris moyen {}",
+            sdk.installed->version().text(), peak, params->contrast, params->saturation, params->middle_gray);
+  return {};
+}
+
 void write_record(std::ofstream& stats, const PresentRecord& record) {
   stats << record.host_us << '\t' << record.pts_us << '\t' << (record.fresh ? 1 : 0) << '\t'
         << record.render_us << '\t' << record.interval_us << '\t' << record.dropped << '\n';
@@ -154,7 +209,8 @@ std::expected<void, Refusal> play(const PlayOptions& options, const PlayerPaths&
     rife_model = *found;
   }
   const std::string rife_label =
-      rife_model ? std::format("RIFE ×{} · {} · ", options.rife_factor, rife_model->stem().string()) : "";
+      (rife_model ? std::format("RIFE ×{} · {} · ", options.rife_factor, rife_model->stem().string()) : "") +
+      (options.true_hdr ? std::string("RTX HDR · ") : "");
   const std::string label =
       model ? std::format("{}SPAN ×{} · {} · TensorRT · {} → {}x{}", rife_label, factor,
                           model->stem().string(), reduce, work.width * factor, work.height * factor)
@@ -216,6 +272,12 @@ std::expected<void, Refusal> play(const PlayOptions& options, const PlayerPaths&
     rife = std::move(*loaded);
   }
 
+  if (options.true_hdr) {
+    auto opened = open_rtx_hdr(options, paths, **screen, *(*backend)->kernels(), work.width * factor,
+                               work.height * factor);
+    if (!opened) return std::unexpected(std::move(opened.error()));
+  }
+
   PipelineConfig config{
       .file = options.file,
       .decoder = {.attempts = {media::HwApi::Cuda}, .render_device = (*screen)->device().uuid}};
@@ -233,6 +295,7 @@ std::expected<void, Refusal> play(const PlayOptions& options, const PlayerPaths&
                          .engine = engine.get(),
                          .rife = rife.get(),
                          .rife_factor = static_cast<std::uint32_t>(std::max(options.rife_factor, 1)),
+                         .true_hdr = options.true_hdr,
                          .source_width = width,
                          .source_height = height,
                          .work_width = sized.width,

@@ -73,6 +73,27 @@ TEST_CASE("ajp play : RIFE ×3 par défaut, --rife et --rife-model", "[app][opti
         std::filesystem::path("/home/x/.local/share/AnimeJaNai-HDR-linux/animejanai/rife/rife_v4.26.onnx"));
 }
 
+TEST_CASE("ajp play : RTX HDR et ses réglages, refus nommés hors plage", "[app][options]") {
+  const auto off = parse({"a.mkv"});
+  CHECK_FALSE(off->true_hdr);
+  CHECK(off->true_hdr_peak == 0);  // la crête de l'écran
+  CHECK(off->true_hdr_sdk == std::filesystem::path("/usr/local/VideoFX"));
+  const auto on = parse({"a.mkv", "--truehdr", "--truehdr-peak=766", "--truehdr-contrast=150",
+                         "--truehdr-saturation=120", "--truehdr-gray=40", "--truehdr-sdk=/opt/vfx"});
+  REQUIRE(on);
+  CHECK(on->true_hdr);
+  CHECK(on->true_hdr_peak == 766);
+  CHECK(on->true_hdr_contrast == 150);
+  CHECK(on->true_hdr_saturation == 120);
+  CHECK(on->true_hdr_gray == 40);
+  CHECK(on->true_hdr_sdk == std::filesystem::path("/opt/vfx"));
+  CHECK(parse({"a.mkv", "--truehdr-peak=0"})->true_hdr_peak == 0);
+  CHECK(parse({"a.mkv", "--truehdr-peak=300"}).error().code == RefusalCode::FieldOutOfRange);
+  CHECK(parse({"a.mkv", "--truehdr-peak=2001"}).error().code == RefusalCode::FieldOutOfRange);
+  CHECK(parse({"a.mkv", "--truehdr-gray=5"}).error().code == RefusalCode::FieldOutOfRange);
+  CHECK(parse({"a.mkv", "--truehdr-contrast=201"}).error().code == RefusalCode::FieldOutOfRange);
+}
+
 TEST_CASE("Modèle : --model doit exister, sinon le premier candidat présent", "[app][options]") {
   const auto dir = std::filesystem::temp_directory_path() / "ajp-app-model-test";
   std::filesystem::create_directories(dir);

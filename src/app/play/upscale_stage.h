@@ -28,6 +28,7 @@ struct UpscaleSetup {
   gpu::Engine* engine = nullptr;    // SPAN aux formes de travail ; nullptr : sans agrandissement
   gpu::Engine* rife = nullptr;      // RIFE à rife_geometry(travail) ; nullptr : sans interpolation
   std::uint32_t rife_factor = 1;    // ×N quand RIFE tourne (2 à kMaxRifeFactor)
+  bool true_hdr = false;            // RTX HDR à l'écriture du ring (backend déjà ouvert pour la sortie)
   int source_width = 0;             // images décodées
   int source_height = 0;
   int work_width = 0;  // entrée des moteurs, au plus la source ; 0 : la source
@@ -63,6 +64,7 @@ class UpscaleStage final : public RingStage {
   };
   std::optional<Previous> previous_;
   std::uint32_t outputs_ = 1;                    // sorties de l'image en cours
+  vendor_hdr::InputPreparation prepared_;        // couleur de l'image en cours, pour RTX HDR
   std::unique_ptr<gpu::TensorBuffer> rife_in_;   // 1 × 11 × ph × pw
   std::unique_ptr<gpu::TensorBuffer> rife_out_;  // 1 × 3 × ph × pw
   std::unique_ptr<gpu::TensorBuffer> middle_;    // 1 × 3 × h × w : image intermédiaire recadrée
