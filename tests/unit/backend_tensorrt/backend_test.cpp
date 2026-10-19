@@ -5,6 +5,7 @@
 
 #include <algorithm>
 #include <array>
+#include <chrono>
 #include <cmath>
 #include <cstring>
 #include <cuda_runtime_api.h>
@@ -352,6 +353,50 @@ TEST_CASE("Backend TensorRT : réductions triangle et cubiques fusionnées, cont
       }
     }
     CHECK(worst < 3e-3);  // arrondis FP16 de l'image pleine relue et de la sortie
+  }
+}
+
+// Mesure, hors de la suite (« [.bench] ») : coût de chaque filtre de la réduction 1080p → 720p
+// fusionnée à l'ingestion, moyenne sur 300 images après 30 de chauffe, sous le verrou GPU.
+TEST_CASE("Backend TensorRT : coût des réductions 1080p vers 720p", "[.bench][backend_tensorrt][cuda]") {
+  if (!has_cuda()) SKIP("pas de GPU NVIDIA");
+  constexpr int w = 1920;
+  constexpr int h = 1080;
+  kernels::YuvImage image(kernels::Format::Nv12, w, h, 16, 128, 128);
+  for (int y = 0; y < h; ++y) {
+    for (int x = 0; x < w; ++x)
+      image.y.data[image.y.index(x, y)] = static_cast<std::uint16_t>(16 + (x * 7 + y * 13) % 220);
+  }
+  Loaded loaded;
+  REQUIRE(loaded.backend != nullptr);
+  DecodedFrame frame = frame_of(std::make_shared<CudaNv12>(image), w, h);
+  frame.color =
+      ColorInfo{.matrix = ColorMatrix::Bt709, .range = ColorRange::Limited, .siting = ChromaSiting::Left};
+  auto small = loaded.backend->alloc_tensor(gpu::TensorType::F16, {.dims = {1, 3, 720, 1280}});
+  REQUIRE(small);
+  struct Named {
+    const char* name;
+    gpu::Reduction reduce;
+  };
+  const std::array<Named, 5> filters{{
+      {"Area", {}},
+      {"Bilinear (triangle)", {.kind = gpu::ReduceKind::Triangle}},
+      {"Bicubic (B=1, C=0)", {.kind = gpu::ReduceKind::Cubic, .b = 1.0F, .c = 0.0F}},
+      {"Mitchell", {.kind = gpu::ReduceKind::Cubic, .b = 1.0F / 3.0F, .c = 1.0F / 3.0F}},
+      {"Catmull-Rom", {.kind = gpu::ReduceKind::Cubic, .b = 0.0F, .c = 0.5F}},
+  }};
+  for (const Named& filter : filters) {
+    const gpu::IngestSpec spec{.reduce = filter.reduce};
+    for (int i = 0; i < 30; ++i) REQUIRE(loaded.backend->kernels()->ingest(frame, spec, (*small)->tensor()));
+    REQUIRE(cudaDeviceSynchronize() == cudaSuccess);
+    constexpr int kRuns = 300;
+    const auto start = std::chrono::steady_clock::now();
+    for (int i = 0; i < kRuns; ++i)
+      REQUIRE(loaded.backend->kernels()->ingest(frame, spec, (*small)->tensor()));
+    REQUIRE(cudaDeviceSynchronize() == cudaSuccess);
+    const double us =
+        std::chrono::duration<double, std::micro>(std::chrono::steady_clock::now() - start).count() / kRuns;
+    WARN(filter.name << " : " << us << " µs par image");
   }
 }
 
