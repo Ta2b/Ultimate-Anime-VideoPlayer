@@ -158,8 +158,10 @@ void Session::choose(std::int64_t host_now) {
   }
   const ClockSnapshot now = clock_.snapshot();
   if (!now.valid || now.epoch != epoch_) return;  // horloge pas encore partie : l'image reste
-  // L'image paraît à la vsync qui suit : on vise le milieu de la période mesurée.
-  const std::int64_t lead_us = stats_.present_interval.median() / 2;
+  // L'image paraît au rafraîchissement qui suit sa présentation : on vise le milieu de la période
+  // de l'écran (connue, ou mesurée en FIFO).
+  const std::int64_t lead_us =
+      (config_.display_period_us > 0 ? config_.display_period_us : stats_.present_interval.median()) / 2;
   late_.clear();
   const std::optional<RingFrame> picked = queue_.pick(now.media_at(host_now), lead_us, late_);
   for (const RingFrame& frame : late_) {
@@ -184,16 +186,29 @@ std::expected<std::optional<PresentRecord>, Refusal> Session::tick(std::int64_t 
   fresh_ = false;
   choose(host_now);
   const bool fresh = fresh_;
+  bool osd_changed = false;
   if (osd_.empty() || host_now - osd_at_us_ >= kOsdPeriodUs) {
     osd_ = osd_lines();
     osd_at_us_ = host_now;
+    osd_changed = true;
   }
-  const ShowRequest request{.frame = current_ ? &*current_ : nullptr,
-                            .subtitles = current_ ? subtitles_for(current_->pts_us) : nullptr,
-                            .osd = osd_};
+  const subs::SubtitleFrame* subtitles = current_ ? subtitles_for(current_->pts_us) : nullptr;
+  const std::optional<std::int64_t> subtitles_pts =
+      subtitles != nullptr ? std::optional(subtitles->pts_us) : std::nullopt;
+  const OutputSize size = screen_.size();
+  // Présentation à la demande : rien n'a changé, l'écran garde l'image (et en VRR, il suit le
+  // rythme des images au lieu de recomposer à chaque vsync, ce qui laisse le GPU aux moteurs).
+  if (shown_once_ && !fresh && !osd_changed && subtitles_pts == shown_subtitles_pts_ && size == shown_size_) {
+    check_end(host_now);
+    return std::optional<PresentRecord>{};
+  }
+  const ShowRequest request{.frame = current_ ? &*current_ : nullptr, .subtitles = subtitles, .osd = osd_};
   auto timing = screen_.show(request);
   if (!timing) return std::unexpected(std::move(timing.error()));
 
+  shown_once_ = true;
+  shown_subtitles_pts_ = subtitles_pts;
+  shown_size_ = size;
   std::optional<PresentRecord> record;
   if (timing->presented) {
     const std::int64_t previous = stats_.last_new_present_us;

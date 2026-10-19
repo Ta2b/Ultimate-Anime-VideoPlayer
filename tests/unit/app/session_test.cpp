@@ -185,6 +185,24 @@ TEST_CASE("Sous-titres : chaque vsync de l'image montrée a ses sous-titres, rin
   CHECK(rig.session.stats().subtitle_gaps == 0);
 }
 
+TEST_CASE("Présentation à la demande : rien ne change, rien n'est recomposé", "[app][session]") {
+  Rig rig;
+  rig.session.handle(ring_frame(0, 0));
+  rig.tick();  // amorce : 0 à l'écran
+  const std::size_t presents = rig.screen.shown.size();
+  rig.tick();
+  rig.tick();
+  CHECK(rig.screen.shown.size() == presents);  // même image, même OSD : l'écran la garde
+  rig.screen.now_us += 300'000;                // l'OSD se recompose quatre fois par seconde
+  rig.tick();
+  CHECK(rig.screen.shown.size() == presents + 1);
+  rig.session.handle(ring_frame(1, 41'000));
+  rig.run_clock(41'000);
+  rig.tick();  // image neuve : présentée
+  CHECK(rig.screen.shown.size() == presents + 2);
+  CHECK(rig.shown_pts() == 41'000);
+}
+
 TEST_CASE("Fin de flux : la lecture finit quand plus rien n'arrive", "[app][session]") {
   Rig rig;
   rig.session.handle(ring_frame(0, 0));

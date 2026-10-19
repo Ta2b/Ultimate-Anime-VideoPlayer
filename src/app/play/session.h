@@ -47,6 +47,7 @@ struct SessionConfig {
   int video_height = 0;
   std::optional<subs::VideoMatrix> video_matrix;  // couleurs VSFilter
   std::vector<std::string> header;                // premières lignes de l'OSD (modèle, moteur)
+  std::int64_t display_period_us = 0;             // période de rafraîchissement de l'écran ; 0 : mesurée
 };
 
 // Une ligne par présentation, pour --stats.
@@ -69,8 +70,9 @@ class Session {
   // Commande de l'utilisateur (touches) : pause, seek, quitter.
   void command(const Command& command);
   void toggle_fullscreen();
-  // Un tour : choisit l'image, compose, présente, rend les slots. Un refus de l'écran est
-  // rendu tel quel : la boucle s'arrête.
+  // Un tour : choisit l'image, puis compose et présente seulement si quelque chose a changé
+  // (image neuve, sous-titres, OSD, taille de sortie) ; rien sinon. Rend les slots. Un refus de
+  // l'écran est rendu tel quel : la boucle s'arrête.
   std::expected<std::optional<PresentRecord>, Refusal> tick(std::int64_t host_now);
   // Rend tous les slots tenus et arrête les threads.
   void end();
@@ -111,8 +113,11 @@ class Session {
   SubtitleQueue subtitles_{kMaxKeptSubtitles};
   std::size_t subtitle_requests_ = 0;  // demandes de l'époque sans réponse
 
-  bool fresh_ = false;            // ce tour montre une image neuve
-  std::vector<std::string> osd_;  // recomposé toutes les kOsdPeriodUs
+  bool fresh_ = false;       // ce tour montre une image neuve
+  bool shown_once_ = false;  // une présentation a eu lieu : la suivante seulement si ça change
+  std::optional<std::int64_t> shown_subtitles_pts_;  // sous-titres de la dernière présentation
+  OutputSize shown_size_;                            // taille de sortie de la dernière présentation
+  std::vector<std::string> osd_;                     // recomposé toutes les kOsdPeriodUs
   std::int64_t osd_at_us_ = 0;
   std::optional<std::int64_t> playing_since_us_;  // instant hôte de la première image
   std::int64_t last_fresh_host_us_ = 0;

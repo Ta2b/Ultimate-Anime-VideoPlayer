@@ -103,6 +103,14 @@ void press(const std::string& name, SDL_Window* window) {
   SDL_PushEvent(&event);
 }
 
+// Période de rafraîchissement de l'écran de la fenêtre, d'après SDL ; 0 si inconnue (la session
+// la mesure alors sur les présentations).
+std::int64_t display_period_us(SDL_Window* window) {
+  const SDL_DisplayMode* mode = SDL_GetCurrentDisplayMode(SDL_GetDisplayForWindow(window));
+  if (mode == nullptr || mode->refresh_rate <= 0.0F) return 0;
+  return static_cast<std::int64_t>(1e6 / static_cast<double>(mode->refresh_rate));
+}
+
 void write_record(std::ofstream& stats, const PresentRecord& record) {
   stats << record.host_us << '\t' << record.pts_us << '\t' << (record.fresh ? 1 : 0) << '\t'
         << record.render_us << '\t' << record.interval_us << '\t' << record.dropped << '\n';
@@ -133,10 +141,15 @@ std::expected<void, Refusal> play(const PlayOptions& options, const PlayerPaths&
     model = *found;
   }
   const int factor = model ? kSpanFactor : 1;
+  const WorkSize work = work_size(video->width, video->height, options.work_height);
+  const std::string reduce =
+      work == WorkSize{video->width, video->height}
+          ? std::format("{}x{}", video->width, video->height)
+          : std::format("{}x{} → Area {}x{}", video->width, video->height, work.width, work.height);
   const std::string label =
-      model ? std::format("SPAN ×{} · {} · TensorRT · {}x{} → {}x{}", factor, model->stem().string(),
-                          video->width, video->height, video->width * factor, video->height * factor)
-            : std::format("sans agrandissement · {}x{}", video->width, video->height);
+      model ? std::format("SPAN ×{} · {} · TensorRT · {} → {}x{}", factor, model->stem().string(), reduce,
+                          work.width * factor, work.height * factor)
+            : std::format("sans agrandissement · {}", reduce);
   log->info("{} : {}", options.file.string(), label);
 
   auto screen =
@@ -158,7 +171,7 @@ std::expected<void, Refusal> play(const PlayOptions& options, const PlayerPaths&
   if (model) {
     auto sha256 = prepare::sha256_file(*model);
     if (!sha256) return std::unexpected(std::move(sha256.error()));
-    const gpu::Shape shape{.dims = {1, 3, video->height, video->width}};
+    const gpu::Shape shape{.dims = {1, 3, work.height, work.width}};
     auto build = EngineBuild::start(
         EngineRequest{.library = *library,
                       .init = init,
@@ -182,12 +195,15 @@ std::expected<void, Refusal> play(const PlayOptions& options, const PlayerPaths&
       config, [&](VideoStageInit stage) -> std::expected<std::unique_ptr<VideoStage>, Refusal> {
         const int width = stage.track->width;
         const int height = stage.track->height;
-        auto slots = out.create_ring(width * factor, height * factor, kRingSlots);
+        const WorkSize sized = work_size(width, height, options.work_height);
+        auto slots = out.create_ring(sized.width * factor, sized.height * factor, kRingSlots);
         if (!slots) return std::unexpected(std::move(slots.error()));
         return UpscaleStage::start(std::move(stage), UpscaleSetup{.backend = backend->get(),
                                                                   .engine = engine.get(),
                                                                   .source_width = width,
                                                                   .source_height = height,
+                                                                  .work_width = sized.width,
+                                                                  .work_height = sized.height,
                                                                   .slots = std::move(*slots)});
       });
   if (!pipeline) return std::unexpected(std::move(pipeline.error()));
@@ -197,6 +213,7 @@ std::expected<void, Refusal> play(const PlayOptions& options, const PlayerPaths&
   session_config.stop_after_us = options.stop_after_us;
   session_config.fullscreen_after_us = options.fullscreen_after_us;
   session_config.header = {label};
+  session_config.display_period_us = display_period_us((*screen)->window());
   for (std::string& line : (*pipeline)->describe()) session_config.header.push_back(std::move(line));
   session_config.header.push_back(out.output_description());
   for (const std::string& line : session_config.header) log->info("{}", line);
@@ -240,7 +257,9 @@ std::expected<void, Refusal> play(const PlayOptions& options, const PlayerPaths&
       break;
     }
     if (*record && stats.is_open()) write_record(stats, **record);
-    if (!*record) SDL_Delay(5);  // fenêtre cachée : rien n'impose le rythme
+    // Rien de présenté (rien n'a changé, ou fenêtre cachée) : la FIFO n'impose pas le rythme,
+    // la boucle reprend dans 1 ms pour ne manquer ni l'image suivante ni une touche.
+    if (!*record) SDL_Delay(1);
   }
   log_summary(session);
   for (const std::string& refusal : session.refusals()) log->warn("{}", refusal);
