@@ -15,6 +15,9 @@ using namespace ajp::gpu::vk::test;
 
 namespace {
 
+// La constante de spécialisation 0 de transfer.comp : PQ EOTF.
+constexpr std::array kPqOp{static_cast<std::uint32_t>(TransferOp::PqEotf)};
+
 // Deux dispatchs dépendants : PQ inverse vers un tenseur intermédiaire, puis PQ EOTF.
 std::unique_ptr<Recording> round_trip(Rig& rig, const TensorView& src, const TensorView& middle,
                                       const TensorView& dst) {
@@ -102,7 +105,7 @@ TEST_CASE("exécution : refus du Recorder et des soumissions", "[vk_compute][exe
   TensorBuffer a = tensor_target(rig, 16, 16, 3, Precision::F32);
   TensorBuffer b = tensor_target(rig, 16, 16, 3, Precision::F32);
   const Pipeline& pipeline = *require_value(rig.pipelines->get(
-      {.shader = "transfer", .constants = {}, .buffers = 2, .images = 0, .push_bytes = 32}));
+      {.shader = "transfer", .constants = kPqOp, .buffers = 2, .images = 0, .push_bytes = 32}));
   const std::array<std::byte, 32> push{};
   const std::array buffers{a.view.buffer, b.view.buffer};
 
@@ -144,7 +147,7 @@ TEST_CASE("exécution : une vue mal alignée est refusée", "[vk_compute][execut
     SKIP("minStorageBufferOffsetAlignment de " << alignment << " : tout offset de mot convient");
   Buffer buffer = make_buffer(rig, 4096);
   const Pipeline& pipeline = *require_value(rig.pipelines->get(
-      {.shader = "transfer", .constants = {}, .buffers = 2, .images = 0, .push_bytes = 32}));
+      {.shader = "transfer", .constants = kPqOp, .buffers = 2, .images = 0, .push_bytes = 32}));
   const std::array<std::byte, 32> push{};
   const std::array buffers{BufferView{.buffer = buffer.handle(), .offset = 4, .size = 1024}, buffer.view()};
   Recorder recorder = require_value(Recorder::begin(*rig.context, *rig.memory));

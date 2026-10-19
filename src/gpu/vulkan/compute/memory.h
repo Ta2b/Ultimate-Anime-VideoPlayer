@@ -78,6 +78,7 @@ class MemoryAllocator {
   std::expected<Allocation, Refusal> allocate(const VkMemoryRequirements& requirements, MemoryUse use,
                                               Tiling tiling);
 
+  const VkContext& context() const { return context_; }
   const MemoryLimits& limits() const { return limits_; }
   VkDeviceSize reserved() const { return reserved_; }  // octets des blocs alloués à l'appareil
   VkDeviceSize used() const { return used_; }          // octets des portions vivantes

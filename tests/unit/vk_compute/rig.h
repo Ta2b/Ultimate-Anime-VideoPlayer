@@ -61,12 +61,16 @@ struct Rig {
   KernelRunner& kernels() { return *runner; }
 };
 
-// Saute le test sans Vulkan ; tout autre refus le fait échouer.
+// Saute le test sans Vulkan ; tout autre refus le fait échouer. La couche de validation est
+// activée quand elle est installée (VK_LAYER_KHRONOS_validation), sans quoi le test tourne nu.
 Rig make_rig(const CreateOptions& options = {});
 // Saute le test sans stockage 16 bits.
 void require_f16(const Rig& rig);
+// Aucune erreur de validation (ni de VK_EXT_debug_utils) depuis la création du contexte.
+void require_no_validation_errors(const Rig& rig);
 
-// Enregistre, soumet une fois, attend sur l'hôte ; l'enregistrement reste rejouable.
+// Enregistre, soumet une fois, attend sur l'hôte ; l'enregistrement reste rejouable. run vérifie
+// aussi l'absence d'erreur de validation.
 std::unique_ptr<Recording> record(Rig& rig, const std::function<Done(Recorder&)>& body);
 void run(Rig& rig, Recording& recording);
 void record_and_run(Rig& rig, const std::function<Done(Recorder&)>& body);

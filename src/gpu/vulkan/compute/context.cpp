@@ -51,6 +51,11 @@ std::expected<std::unique_ptr<VkContext>, Refusal> VkContext::adopt(AdoptedDevic
         "appareil adopté incomplet : vkGetInstanceProcAddr, instance, appareil physique et VkDevice "
         "sont obligatoires");
   }
+  // Un verrou sans son déverrou (ou l'inverse) laisserait la file partagée verrouillée.
+  if (static_cast<bool>(adopted.lock_queue) != static_cast<bool>(adopted.unlock_queue)) {
+    return refuse(RefusalCode::InputMismatch,
+                  "appareil adopté : lock_queue et unlock_queue vont ensemble, ou aucun des deux");
+  }
   if (adopted.api_version < kMinApiVersion) {
     return refuse(RefusalCode::FeatureUnavailable,
                   std::format("instance adoptée en Vulkan {}, {} au moins", version_text(adopted.api_version),
@@ -95,7 +100,7 @@ std::expected<std::unique_ptr<VkContext>, Refusal> VkContext::adopt(AdoptedDevic
 }
 
 Done VkContext::finish_setup() {
-  log_ = make_logger();
+  if (!log_) log_ = make_logger();
   device_fn_.vkGetDeviceQueue(device_, queue_family_, queue_index_, &queue_);
   const VkCommandPoolCreateInfo pool{.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO,
                                      .flags = VK_COMMAND_POOL_CREATE_TRANSIENT_BIT,
@@ -116,18 +121,35 @@ Done VkContext::finish_setup() {
 VkContext::~VkContext() {
   const DeviceFunctions& f = device_fn_;
   if (device_ != VK_NULL_HANDLE) {
-    // run_once attend chacune de ses soumissions : pool et sémaphore sont au repos.
-    if (once_done_ != VK_NULL_HANDLE) f.vkDestroySemaphore(device_, once_done_, nullptr);
-    if (once_pool_ != VK_NULL_HANDLE) f.vkDestroyCommandPool(device_, once_pool_, nullptr);
-    if (owns_device_ && f.vkDestroyDevice != nullptr) {
-      // Fin de vie de l'appareil : tout travail encore soumis s'achève avant sa destruction.
-      if (f.vkDeviceWaitIdle != nullptr) f.vkDeviceWaitIdle(device_);
-      f.vkDestroyDevice(device_, nullptr);
-    }
+    // Fin de vie de l'appareil : tout travail encore soumis s'achève avant toute destruction.
+    if (owns_device_ && f.vkDeviceWaitIdle != nullptr) f.vkDeviceWaitIdle(device_);
+    // Un run_once dont l'attente a expiré peut être encore en vol. Sur un appareil adopté, que
+    // l'on n'arrête pas, on attend sa fin ; s'il ne finit pas, pool et sémaphore restent en place.
+    const bool idle = owns_device_ || wait_once_idle();
+    if (idle && once_done_ != VK_NULL_HANDLE) f.vkDestroySemaphore(device_, once_done_, nullptr);
+    if (idle && once_pool_ != VK_NULL_HANDLE) f.vkDestroyCommandPool(device_, once_pool_, nullptr);
+    if (owns_device_ && f.vkDestroyDevice != nullptr) f.vkDestroyDevice(device_, nullptr);
   }
+  destroy_messenger();
   if (owns_instance_ && instance_fn_.vkDestroyInstance != nullptr) {
     instance_fn_.vkDestroyInstance(instance_, nullptr);
   }
+}
+
+bool VkContext::wait_once_idle() const {
+  if (once_count_ == 0 || once_done_ == VK_NULL_HANDLE || device_fn_.vkWaitSemaphores == nullptr) return true;
+  const VkSemaphoreWaitInfo wait{.sType = VK_STRUCTURE_TYPE_SEMAPHORE_WAIT_INFO,
+                                 .semaphoreCount = 1,
+                                 .pSemaphores = &once_done_,
+                                 .pValues = &once_count_};
+  const auto timeout = static_cast<std::uint64_t>(std::chrono::nanoseconds(kTeardownTimeout).count());
+  const VkResult result = device_fn_.vkWaitSemaphores(device_, &wait, timeout);
+  if (result == VK_SUCCESS) return true;
+  if (log_) {
+    log_->error("fin du contexte : run_once {} inachevé ({}), son pool reste à l'appareil", once_count_,
+                result_name(result));
+  }
+  return false;
 }
 
 }  // namespace ajp::gpu::vk

@@ -87,14 +87,16 @@ DeviceCaps probe_device(const InstanceFunctions& fn, VkPhysicalDevice device, st
   fn.vkGetPhysicalDeviceProperties(device, &base);
   const std::uint32_t api = std::min(instance_api, base.apiVersion);
 
+  // Une structure n'entre dans la chaîne que si la version de l'appareil la connaît : un appareil
+  // 1.0 ou 1.1 énuméré à côté d'un autre reste décrit (et refusé ensuite) sans usage invalide.
   VkPhysicalDeviceDriverProperties driver{.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DRIVER_PROPERTIES};
   VkPhysicalDeviceSubgroupProperties subgroup{.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SUBGROUP_PROPERTIES,
-                                              .pNext = &driver};
+                                              .pNext = api >= VK_API_VERSION_1_2 ? &driver : nullptr};
   VkPhysicalDeviceIDProperties ids{.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ID_PROPERTIES,
                                    .pNext = &subgroup};
   VkPhysicalDeviceProperties2 properties{.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2,
                                          .pNext = &ids};
-  fn.vkGetPhysicalDeviceProperties2(device, &properties);
+  if (api >= VK_API_VERSION_1_1) fn.vkGetPhysicalDeviceProperties2(device, &properties);
 
   const VkPhysicalDeviceLimits& limits = base.limits;
   DeviceCaps caps{

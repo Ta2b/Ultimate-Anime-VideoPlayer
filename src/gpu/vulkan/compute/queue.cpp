@@ -1,4 +1,5 @@
 // Soumission sur la file compute, attentes hôte et command buffers jetables.
+#include <algorithm>
 #include <format>
 #include <vector>
 
@@ -39,6 +40,27 @@ Done VkContext::queue_submit(const VkSubmitInfo& info) {
   return check(result, "vkQueueSubmit");
 }
 
+// Un signal externe valide : sémaphore non nul, absent du lot (runs compris), valeur au-delà de
+// la valeur courante. Une valeur qu'une autre soumission en attente signale reste à l'appelant.
+Done VkContext::check_signal(const TimelinePoint& point, std::span<const VkSemaphore> batch) const {
+  if (point.semaphore == VK_NULL_HANDLE) return refuse(RefusalCode::InputMismatch, "signal d'un sémaphore nul");
+  if (std::ranges::find(batch, point.semaphore) != batch.end()) {
+    return refuse(RefusalCode::InputMismatch,
+                  "sémaphore signalé deux fois par la même soumission (ou sémaphore runs de l'enregistrement)");
+  }
+  std::uint64_t current = 0;
+  if (auto ok = check(device_fn_.vkGetSemaphoreCounterValue(device_, point.semaphore, &current),
+                      "vkGetSemaphoreCounterValue");
+      !ok) {
+    return ok;
+  }
+  if (point.value <= current) {
+    return refuse(RefusalCode::FieldOutOfRange,
+                  std::format("signal de la valeur {}, le sémaphore est déjà à {}", point.value, current));
+  }
+  return {};
+}
+
 Done VkContext::submit(Recording& recording, std::span<const TimelinePoint> waits,
                        std::span<const TimelinePoint> signals) {
   if (&recording.context_ != this) {
@@ -57,12 +79,15 @@ Done VkContext::submit(Recording& recording, std::span<const TimelinePoint> wait
   for (const TimelinePoint& point : waits) {
     if (point.semaphore == VK_NULL_HANDLE)
       return refuse(RefusalCode::InputMismatch, "attente sur un sémaphore nul");
+    // L'enchaînement des exécutions est déjà attendu ; une autre valeur bloquerait la file.
+    if (point.semaphore == recording.runs_.handle()) {
+      return refuse(RefusalCode::InputMismatch, "attente sur le sémaphore runs de l'enregistrement");
+    }
     wait_semaphores.push_back(point.semaphore);
     wait_values.push_back(point.value);
   }
   for (const TimelinePoint& point : signals) {
-    if (point.semaphore == VK_NULL_HANDLE)
-      return refuse(RefusalCode::InputMismatch, "signal d'un sémaphore nul");
+    if (auto ok = check_signal(point, signal_semaphores); !ok) return ok;
     signal_semaphores.push_back(point.semaphore);
     signal_values.push_back(point.value);
   }
@@ -119,7 +144,8 @@ Done VkContext::run_once(const std::function<void(VkCommandBuffer)>& record) {
   record(once.buffer);
   if (auto ok = check(device_fn_.vkEndCommandBuffer(once.buffer), "vkEndCommandBuffer"); !ok) return ok;
 
-  const std::uint64_t value = ++once_count_;
+  // once_count_ ne compte que les soumissions acceptées : la destruction attend la dernière.
+  const std::uint64_t value = once_count_ + 1;
   const VkTimelineSemaphoreSubmitInfo timeline{.sType = VK_STRUCTURE_TYPE_TIMELINE_SEMAPHORE_SUBMIT_INFO,
                                                .signalSemaphoreValueCount = 1,
                                                .pSignalSemaphoreValues = &value};
@@ -130,6 +156,7 @@ Done VkContext::run_once(const std::function<void(VkCommandBuffer)>& record) {
                           .signalSemaphoreCount = 1,
                           .pSignalSemaphores = &once_done_};
   if (auto ok = queue_submit(info); !ok) return ok;
+  once_count_ = value;
   once.pending = true;
   if (auto ok = wait_on_host({.semaphore = once_done_, .value = value}); !ok) return ok;
   once.pending = false;

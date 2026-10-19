@@ -9,6 +9,7 @@
 #include <spdlog/logger.h>
 
 #include "gpu/vulkan/compute/context.h"
+#include "gpu/vulkan/compute/log.h"
 
 namespace ajp::gpu::vk {
 namespace {
@@ -93,6 +94,7 @@ VkBool32 flag(bool on) {
 
 std::expected<std::unique_ptr<VkContext>, Refusal> VkContext::create(const CreateOptions& options) {
   std::unique_ptr<VkContext> ctx(new VkContext());
+  ctx->log_ = make_logger();  // avant l'instance : le messager journalise dès vkCreateInstance
   ctx->get_instance_proc_addr_ = options.get_instance_proc_addr;
   if (ctx->get_instance_proc_addr_ == nullptr) {
     auto library = options.library ? VulkanLibrary::open(*options.library) : VulkanLibrary::open_system();
@@ -132,12 +134,26 @@ Done VkContext::create_instance(const CreateOptions& options) {
     extensions.push_back(kPortabilityEnumeration);
     flags |= VK_INSTANCE_CREATE_ENUMERATE_PORTABILITY_BIT_KHR;
   }
+  // Messages comptés : l'extension est exigée, et la description chaînée couvre déjà la
+  // création et la destruction de l'instance.
+  const bool messages = options.validation || options.debug_messages;
+  if (messages) {
+    if (!has_instance_extension(*global, VK_EXT_DEBUG_UTILS_EXTENSION_NAME)) {
+      return refuse(RefusalCode::FeatureUnavailable,
+                    std::format("extension d'instance {} absente", VK_EXT_DEBUG_UTILS_EXTENSION_NAME));
+    }
+    extensions.push_back(VK_EXT_DEBUG_UTILS_EXTENSION_NAME);
+    debug_ = std::make_unique<DebugSink>();
+    debug_->log = log_;
+  }
+  const VkDebugUtilsMessengerCreateInfoEXT messenger = messenger_info();
   const std::uint32_t api = std::min(loader, kMaxApiVersion);
   const VkApplicationInfo app{.sType = VK_STRUCTURE_TYPE_APPLICATION_INFO,
                               .pApplicationName = "ajp",
                               .pEngineName = "ajp vk_compute",
                               .apiVersion = api};
   const VkInstanceCreateInfo info{.sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO,
+                                  .pNext = messages ? &messenger : nullptr,
                                   .flags = flags,
                                   .pApplicationInfo = &app,
                                   .enabledLayerCount = static_cast<std::uint32_t>(layers.size()),
@@ -153,6 +169,9 @@ Done VkContext::create_instance(const CreateOptions& options) {
   auto fns = load_instance(get_instance_proc_addr_, instance_);
   if (!fns) return std::unexpected(fns.error());
   instance_fn_ = *fns;
+  if (messages) {
+    if (auto ok = create_messenger(); !ok) return ok;
+  }
   auto device = choose_device(instance_fn_, instance_, options.device, api);
   if (!device) return std::unexpected(device.error());
   physical_device_ = *device;

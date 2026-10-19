@@ -56,6 +56,18 @@ Done check_plane(const PlaneLayout& plane, std::uint32_t row_bytes, std::uint32_
   return {};
 }
 
+// Octets [begin, end) qu'un plan occupe dans la vue, bourrage des lignes compris.
+struct Extent {
+  VkDeviceSize begin = 0;
+  VkDeviceSize end = 0;
+  bool overlaps(const Extent& other) const { return begin < other.end && other.begin < end; }
+};
+
+Extent extent(const PlaneLayout& plane, std::uint32_t row_bytes, std::uint32_t rows) {
+  return {.begin = plane.offset,
+          .end = VkDeviceSize{plane.offset} + VkDeviceSize{plane.pitch} * (rows - 1U) + align4(row_bytes)};
+}
+
 }  // namespace
 
 std::uint32_t chroma_width(kernels::Format format, std::uint32_t width) {
@@ -103,9 +115,24 @@ Done check_yuv(const YuvView& view, std::string_view what) {
   const YuvLayout& l = view.layout;
   if (auto ok = check_plane(l.luma, view.width * bytes, view.height, view.buffer.size, what, "Y"); !ok)
     return ok;
-  if (info.interleaved) return check_plane(l.cb, 2U * cw * bytes, ch, view.buffer.size, what, "CbCr");
-  if (auto ok = check_plane(l.cb, cw * bytes, ch, view.buffer.size, what, "Cb"); !ok) return ok;
-  return check_plane(l.cr, cw * bytes, ch, view.buffer.size, what, "Cr");
+  const std::uint32_t chroma_row = (info.interleaved ? 2U : 1U) * cw * bytes;
+  if (auto ok = check_plane(l.cb, chroma_row, ch, view.buffer.size, what, info.interleaved ? "CbCr" : "Cb"); !ok)
+    return ok;
+  if (!info.interleaved) {
+    if (auto ok = check_plane(l.cr, chroma_row, ch, view.buffer.size, what, "Cr"); !ok) return ok;
+  }
+  // Des plans qui se chevauchent : la sortie écrirait l'un sur l'autre, l'entrée serait ambiguë.
+  const Extent y = extent(l.luma, view.width * bytes, view.height);
+  const Extent cb = extent(l.cb, chroma_row, ch);
+  const Extent cr = extent(l.cr, chroma_row, ch);
+  const bool overlap = y.overlaps(cb) || (!info.interleaved && (y.overlaps(cr) || cb.overlaps(cr)));
+  if (overlap) {
+    return refuse(RefusalCode::InputMismatch,
+                  std::format("{} : plans Y ({}, pas {}), Cb ({}, pas {}) et Cr ({}, pas {}) qui se chevauchent",
+                              what, l.luma.offset, l.luma.pitch, l.cb.offset, l.cb.pitch, l.cr.offset,
+                              l.cr.pitch));
+  }
+  return {};
 }
 
 Done check_tensor(const TensorView& tensor, std::uint32_t planes, const Features& enabled,

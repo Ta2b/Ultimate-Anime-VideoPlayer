@@ -3,7 +3,10 @@
 // Chaque exécution signale la valeur suivante du sémaphore timeline de l'enregistrement, et
 // la suivante l'attend côté GPU : deux exécutions ne se chevauchent jamais, sans attente hôte.
 // L'enregistrement possède ses tampons de travail et de constantes ; les tampons et images
-// liés par l'appelant doivent vivre aussi longtemps que lui.
+// liés par l'appelant, les pipelines (donc leur PipelineCache) et le MemoryAllocator doivent
+// vivre aussi longtemps que lui, et le VkContext plus longtemps encore. Sa destruction attend
+// la fin de sa dernière exécution soumise, sans borne : une soumission qui attend un sémaphore
+// jamais signalé la bloquerait.
 #pragma once
 
 #include <array>
@@ -65,7 +68,8 @@ class Recording {
 
 class Recorder {
  public:
-  // Refus : ceux de DescriptorArena::create, VulkanCallFailed.
+  // Refus : InputMismatch (allocateur d'un autre contexte), ceux de DescriptorArena::create,
+  // VulkanCallFailed.
   static std::expected<Recorder, Refusal> begin(VkContext& context, MemoryAllocator& memory,
                                                 DescriptorLimits limits = {});
 
@@ -79,9 +83,10 @@ class Recorder {
   std::expected<BufferView, Refusal> constants(std::span<const std::byte> bytes);
 
   // Un dispatch, après une barrière sur tout ce qui le précède dans l'enregistrement. Refus :
-  // InputMismatch (nombre de tampons, d'images ou d'octets de push différent du pipeline ; vue
-  // vide, mal alignée ou trop grande), FeatureUnavailable (groupes au-delà des limites),
-  // GpuMemoryExhausted (pool de descripteurs plein).
+  // InputMismatch (pipeline d'un autre contexte ; nombre de tampons, d'images ou d'octets de
+  // push différent du pipeline ; vue de tampon vide, mal alignée ou trop grande ; vue d'image
+  // nulle), FeatureUnavailable (groupes au-delà des limites), GpuMemoryExhausted (pool de
+  // descripteurs plein).
   Done dispatch(const Pipeline& pipeline, std::span<const BufferView> buffers,
                 std::span<const VkImageView> images, std::span<const std::byte> push,
                 std::array<std::uint32_t, 3> groups);

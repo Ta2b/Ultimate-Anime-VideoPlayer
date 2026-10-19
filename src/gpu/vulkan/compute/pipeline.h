@@ -17,6 +17,7 @@
 
 #include "core/types.h"
 #include "gpu/vulkan/compute/context.h"
+#include "gpu/vulkan/compute/spirv_reflect.h"
 #include "gpu/vulkan/compute/vulkan.h"
 
 namespace ajp::gpu::vk {
@@ -37,6 +38,7 @@ class Pipeline {
   Pipeline& operator=(Pipeline&&) = delete;
   ~Pipeline();
 
+  const VkContext& context() const { return context_; }
   VkPipeline handle() const { return pipeline_; }
   VkPipelineLayout layout() const { return layout_; }
   VkDescriptorSetLayout set_layout() const { return set_layout_; }
@@ -70,23 +72,34 @@ class PipelineCache {
   ~PipelineCache();
 
   // Le pipeline de ce shader et de ces constantes, créé à la première demande. Valide tant que
-  // le cache vit. Refus : FeatureUnavailable (shader absent, push constants au-delà de la
-  // limite), InputMismatch (disposition différente de celle d'une demande précédente ou push
-  // non multiple de 4), VulkanCallFailed.
+  // le cache vit : tout enregistrement qui le lie doit disparaître avant le cache. L'interface du
+  // SPIR-V (spirv_reflect.h) est comparée à desc avant toute création. Refus :
+  // FeatureUnavailable (shader absent, push constants au-delà de la limite, capacité SPIR-V non
+  // activée), InputMismatch (disposition différente de celle du shader ou d'une demande
+  // précédente, push non multiple de 4), VulkanCallFailed.
   std::expected<const Pipeline*, Refusal> get(const PipelineDesc& desc);
 
+  // L'interface lue dans le SPIR-V embarqué du shader (refus de get pour un shader absent).
+  std::expected<const ShaderInterface*, Refusal> interface(std::string_view shader);
+
+  const VkContext& context() const { return context_; }
   std::size_t size() const { return pipelines_.size(); }
   std::size_t shader_modules() const { return modules_.size(); }
 
  private:
+  struct Module {
+    VkShaderModule handle = VK_NULL_HANDLE;
+    ShaderInterface interface;
+  };
+
   explicit PipelineCache(const VkContext& context) : context_(context) {}
-  std::expected<VkShaderModule, Refusal> module(std::string_view shader);
+  std::expected<const Module*, Refusal> module(std::string_view shader);
   std::expected<std::unique_ptr<Pipeline>, Refusal> build(const PipelineDesc& desc, VkShaderModule module);
 
   using Key = std::pair<std::string, std::vector<std::uint32_t>>;
   const VkContext& context_;
   VkPipelineCache cache_ = VK_NULL_HANDLE;
-  std::map<std::string, VkShaderModule, std::less<>> modules_;
+  std::map<std::string, Module, std::less<>> modules_;
   std::map<Key, std::unique_ptr<Pipeline>> pipelines_;
 };
 

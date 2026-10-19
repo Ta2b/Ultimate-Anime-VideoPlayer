@@ -52,6 +52,9 @@ std::expected<VkImageView, Refusal> make_view(const VkContext& context, VkImage 
 
 std::expected<StorageImage, Refusal> StorageImage::create(VkContext& context, MemoryAllocator& memory,
                                                           std::uint32_t width, std::uint32_t height) {
+  if (&memory.context() != &context) {
+    return refuse(RefusalCode::InputMismatch, "image RGBA16 : allocateur d'un autre contexte Vulkan");
+  }
   const std::uint32_t limit = context.caps().max_image_dimension_2d;
   if (width == 0 || height == 0 || width > limit || height > limit) {
     return refuse(RefusalCode::InputMismatch,
@@ -175,6 +178,9 @@ void StorageImage::destroy() {
 
 std::expected<std::vector<std::uint16_t>, Refusal> read_rgba16(VkContext& context, MemoryAllocator& memory,
                                                                const StorageImage& image) {
+  if (image.context() != &context || image.image() == VK_NULL_HANDLE) {
+    return refuse(RefusalCode::InputMismatch, "lecture RGBA16 : image vide ou d'un autre contexte Vulkan");
+  }
   const std::size_t samples = std::size_t{image.width()} * image.height() * 4;
   auto staging = Buffer::create(context, memory, samples * sizeof(std::uint16_t), MemoryUse::Readback);
   if (!staging) return std::unexpected(staging.error());

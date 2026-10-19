@@ -11,7 +11,12 @@ namespace {
 constexpr VkBufferUsageFlags kUsage =
     VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT;
 
-Done check_range(const Buffer& buffer, VkDeviceSize offset, VkDeviceSize size, std::string_view what) {
+// La plage est dans le tampon, et tampon comme allocateur appartiennent au contexte.
+Done check_range(const VkContext& context, const MemoryAllocator& memory, const Buffer& buffer,
+                 VkDeviceSize offset, VkDeviceSize size, std::string_view what) {
+  if (buffer.context() != &context || &memory.context() != &context) {
+    return refuse(RefusalCode::InputMismatch, std::format("{} : tampon ou allocateur d'un autre contexte", what));
+  }
   if (size == 0 || offset > buffer.size() || size > buffer.size() - offset) {
     return refuse(RefusalCode::InputMismatch, std::format("{} : {} o à l'offset {} d'un tampon de {} o", what,
                                                           size, offset, buffer.size()));
@@ -33,6 +38,9 @@ void barrier(const DeviceFunctions& fn, VkCommandBuffer cb, VkPipelineStageFlags
 std::expected<Buffer, Refusal> Buffer::create(const VkContext& context, MemoryAllocator& memory,
                                               VkDeviceSize size, MemoryUse use) {
   if (size == 0) return refuse(RefusalCode::FieldOutOfRange, "tampon de 0 o");
+  if (&memory.context() != &context) {
+    return refuse(RefusalCode::InputMismatch, "tampon : allocateur d'un autre contexte Vulkan");
+  }
   const VkBufferCreateInfo info{.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
                                 .size = size,
                                 .usage = kUsage,
@@ -89,13 +97,16 @@ void Buffer::destroy() {
 }
 
 std::expected<BufferView, Refusal> Buffer::view(VkDeviceSize offset, VkDeviceSize size) const {
-  if (auto ok = check_range(*this, offset, size, "vue de tampon"); !ok) return std::unexpected(ok.error());
+  if (size == 0 || offset > size_ || size > size_ - offset) {
+    return refuse(RefusalCode::InputMismatch,
+                  std::format("vue de tampon : {} o à l'offset {} d'un tampon de {} o", size, offset, size_));
+  }
   return BufferView{.buffer = buffer_, .offset = offset, .size = size};
 }
 
 Done upload(VkContext& context, MemoryAllocator& memory, const Buffer& buffer, VkDeviceSize offset,
             std::span<const std::byte> bytes) {
-  if (auto ok = check_range(buffer, offset, bytes.size(), "envoi hôte"); !ok) return ok;
+  if (auto ok = check_range(context, memory, buffer, offset, bytes.size(), "envoi hôte"); !ok) return ok;
   if (buffer.mapped() != nullptr) {
     std::memcpy(buffer.mapped() + offset, bytes.data(), bytes.size());
     return {};
@@ -117,7 +128,7 @@ Done upload(VkContext& context, MemoryAllocator& memory, const Buffer& buffer, V
 
 Done download(VkContext& context, MemoryAllocator& memory, const Buffer& buffer, VkDeviceSize offset,
               std::span<std::byte> out) {
-  if (auto ok = check_range(buffer, offset, out.size(), "lecture hôte"); !ok) return ok;
+  if (auto ok = check_range(context, memory, buffer, offset, out.size(), "lecture hôte"); !ok) return ok;
   if (buffer.mapped() != nullptr) {
     std::memcpy(out.data(), buffer.mapped() + offset, out.size());
     return {};

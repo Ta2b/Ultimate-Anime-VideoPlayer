@@ -26,7 +26,8 @@ struct BufferView {
 
 class Buffer {
  public:
-  // Refus : FieldOutOfRange (taille nulle), ceux de MemoryAllocator::allocate, VulkanCallFailed.
+  // Refus : FieldOutOfRange (taille nulle), InputMismatch (allocateur d'un autre contexte), ceux de
+  // MemoryAllocator::allocate, VulkanCallFailed.
   static std::expected<Buffer, Refusal> create(const VkContext& context, MemoryAllocator& memory,
                                                VkDeviceSize size, MemoryUse use);
 
@@ -36,6 +37,7 @@ class Buffer {
   Buffer& operator=(const Buffer&) = delete;
   ~Buffer();
 
+  const VkContext* context() const { return context_; }
   VkBuffer handle() const { return buffer_; }
   VkDeviceSize size() const { return size_; }
   MemoryUse use() const { return use_; }
@@ -59,7 +61,8 @@ class Buffer {
 };
 
 // Écrit bytes à offset dans le tampon. Le GPU ne doit pas lire ni écrire cette plage pendant
-// l'envoi. Usage Device : une soumission attendue sur l'hôte. Refus InputMismatch hors du tampon.
+// l'envoi. Usage Device : une soumission attendue sur l'hôte. Refus InputMismatch : hors du tampon,
+// tampon ou allocateur d'un autre contexte (de même pour download).
 Done upload(VkContext& context, MemoryAllocator& memory, const Buffer& buffer, VkDeviceSize offset,
             std::span<const std::byte> bytes);
 

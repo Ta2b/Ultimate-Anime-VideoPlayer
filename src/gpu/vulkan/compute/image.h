@@ -20,8 +20,9 @@ class StorageImage {
   static constexpr VkFormat kFormat = VK_FORMAT_R16G16B16A16_UNORM;
   static constexpr VkFormat kStorageFormat = VK_FORMAT_R16G16B16A16_UINT;
 
-  // Refus : InputMismatch (dimensions hors de [1, maxImageDimension2D]), FeatureUnavailable
-  // (format sans stockage ou sans échantillonnage), ceux de l'allocateur, VulkanCallFailed.
+  // Refus : InputMismatch (dimensions hors de [1, maxImageDimension2D], allocateur d'un autre
+  // contexte), FeatureUnavailable (format sans stockage ou sans échantillonnage), ceux de
+  // l'allocateur, VulkanCallFailed.
   static std::expected<StorageImage, Refusal> create(VkContext& context, MemoryAllocator& memory,
                                                      std::uint32_t width, std::uint32_t height);
 
@@ -31,6 +32,7 @@ class StorageImage {
   StorageImage& operator=(const StorageImage&) = delete;
   ~StorageImage();
 
+  const VkContext* context() const { return context_; }
   VkImage image() const { return image_; }
   VkImageView storage_view() const { return storage_view_; }  // R16G16B16A16_UINT, pour les noyaux
   VkImageView sampled_view() const { return sampled_view_; }  // R16G16B16A16_UNORM, pour la lecture
@@ -52,6 +54,7 @@ class StorageImage {
 
 // Les codes RGBA16 de l'image, quatre par pixel, ligne par ligne : lecture hôte par un tampon de
 // transit et une soumission attendue (tests, outils). Les écritures doivent être achevées.
+// Refus InputMismatch : image vide ou d'un autre contexte.
 std::expected<std::vector<std::uint16_t>, Refusal> read_rgba16(VkContext& context, MemoryAllocator& memory,
                                                                const StorageImage& image);
 

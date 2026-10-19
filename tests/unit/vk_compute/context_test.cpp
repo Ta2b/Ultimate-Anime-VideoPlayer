@@ -173,18 +173,45 @@ TEST_CASE("adoption : appareil du test utilisé puis laissé intact", "[vk_compu
     CHECK(rig.context->caps().enabled.timeline_semaphore);
     rig.memory = require_value(MemoryAllocator::create(*rig.context));
     rig.pipelines = require_value(PipelineCache::create(*rig.context));
-    rig.runner.emplace(*rig.context, *rig.pipelines);
+    rig.runner.emplace(*rig.pipelines);
 
-    // Un noyau complet sur l'appareil adopté : la conversion de primaires, exacte en float.
+    // Un noyau complet sur l'appareil adopté : la conversion de primaires, identique au bit près
+    // à la référence en float (produits et sommes precise, dans l'ordre de ref::convert_primaries,
+    // arrondis correctement par toute implémentation Vulkan).
     const kernels::RgbImage image = synthetic_rgb(8, 6, 3);
     TensorBuffer src = upload_rgb(rig, image, Precision::F32);
     TensorBuffer dst = tensor_target(rig, 8, 6, 3, Precision::F32);
     record_and_run(rig, [&](Recorder& r) {
       return rig.kernels().transfer(r, TransferOp::Bt709ToBt2020, src.view, dst.view);
     });
-    CHECK(max_abs_diff(download_rgb(rig, dst), image) > 0.0F);
+    const kernels::RgbImage got = download_rgb(rig, dst);
+    for (int y = 0; y < image.height(); ++y) {
+      for (int x = 0; x < image.width(); ++x) {
+        const kernels::Rgb in{.r = image.planes[0].at(x, y), .g = image.planes[1].at(x, y),
+                              .b = image.planes[2].at(x, y)};
+        const kernels::Rgb want = kernels::ref::convert_primaries(in, kernels::kBt709ToBt2020);
+        CHECK(std::bit_cast<std::uint32_t>(got.planes[0].at(x, y)) == std::bit_cast<std::uint32_t>(want.r));
+        CHECK(std::bit_cast<std::uint32_t>(got.planes[1].at(x, y)) == std::bit_cast<std::uint32_t>(want.g));
+        CHECK(std::bit_cast<std::uint32_t>(got.planes[2].at(x, y)) == std::bit_cast<std::uint32_t>(want.b));
+      }
+    }
+    CHECK(max_abs_diff(got, image) > 1e-3F);  // la conversion a bien eu lieu
     CHECK(locks > 0);
     CHECK(locks == unlocks);
+
+    // Le test n'a pas activé le stockage 16 bits : les variantes float16 sont refusées par leur
+    // nom, avant le pilote, au niveau du noyau comme du cache de pipelines.
+    REQUIRE_FALSE(rig.context->caps().enabled.storage_buffer_16bit);
+    TensorBuffer half_src = upload_rgb(rig, image, Precision::F16);
+    TensorBuffer half_dst = tensor_target(rig, 8, 6, 3, Precision::F16);
+    Recorder r = require_value(Recorder::begin(*rig.context, *rig.memory));
+    require_refusal(rig.kernels().transfer(r, TransferOp::Bt709ToBt2020, half_src.view, half_dst.view),
+                    RefusalCode::FeatureUnavailable);
+    const std::array op{static_cast<std::uint32_t>(TransferOp::Bt709ToBt2020)};
+    require_refusal(
+        rig.pipelines->get({.shader = "transfer_f16", .constants = op, .buffers = 2, .push_bytes = 32}),
+        RefusalCode::FeatureUnavailable);
+    CHECK(require_value(r.finish())->dispatches() == 0);
   }
   // Le contexte détruit, l'appareil appartient toujours au test.
   CHECK(own->device_fn.vkDeviceWaitIdle(own->device) == VK_SUCCESS);
@@ -214,4 +241,43 @@ TEST_CASE("adoption : appareil incomplet, version, timeline ou file refusés", "
   AdoptedDevice bad_queue = own->adopted();
   bad_queue.queue_index = 7;
   require_refusal(VkContext::adopt(bad_queue), RefusalCode::DeviceUnavailable);
+
+  // Un verrou de file sans son déverrou (ou l'inverse) laisserait la file de libplacebo bloquée.
+  AdoptedDevice lock_only = own->adopted();
+  lock_only.lock_queue = [] {};
+  require_refusal(VkContext::adopt(lock_only), RefusalCode::InputMismatch);
+  AdoptedDevice unlock_only = own->adopted();
+  unlock_only.unlock_queue = [] {};
+  require_refusal(VkContext::adopt(unlock_only), RefusalCode::InputMismatch);
+}
+
+TEST_CASE("contexte : messages VK_EXT_debug_utils comptés et journalisés", "[vk_compute][context]") {
+  Rig rig = make_rig();
+  auto context = VkContext::create({.debug_messages = true});
+  if (!context && context.error().code == RefusalCode::FeatureUnavailable) {
+    SKIP("VK_EXT_debug_utils absente du chargeur : " << describe(context.error()));
+  }
+  REQUIRE(context);
+  VkContext& ctx = **context;
+  REQUIRE(ctx.debug_messages());
+  CHECK(ctx.validation_errors() == 0);
+  // Le chargeur relaie un message soumis par l'application à chaque messager de l'instance.
+  const auto submit = reinterpret_cast<PFN_vkSubmitDebugUtilsMessageEXT>(
+      ctx.get_instance_proc_addr()(ctx.instance(), "vkSubmitDebugUtilsMessageEXT"));
+  REQUIRE(submit != nullptr);
+  const VkDebugUtilsMessengerCallbackDataEXT data{.sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_MESSENGER_CALLBACK_DATA_EXT,
+                                                  .pMessageIdName = "AJP-test",
+                                                  .pMessage = "message de test de vk_compute"};
+  submit(ctx.instance(), VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT, VK_DEBUG_UTILS_MESSAGE_TYPE_VALIDATION_BIT_EXT,
+         &data);
+  submit(ctx.instance(), VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT,
+         VK_DEBUG_UTILS_MESSAGE_TYPE_PERFORMANCE_BIT_EXT, &data);
+  // Un message d'information n'est pas demandé au chargeur : il n'est pas compté.
+  submit(ctx.instance(), VK_DEBUG_UTILS_MESSAGE_SEVERITY_INFO_BIT_EXT, VK_DEBUG_UTILS_MESSAGE_TYPE_GENERAL_BIT_EXT,
+         &data);
+  CHECK(ctx.validation_errors() == 1);
+  CHECK(ctx.validation_warnings() == 1);
+  // Sans demande, aucun messager.
+  CHECK_FALSE(rig.context->debug_messages() && !rig.context->caps().device_name.empty() &&
+              rig.context->validation_errors() != 0);
 }

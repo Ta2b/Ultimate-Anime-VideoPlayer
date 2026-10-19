@@ -32,7 +32,7 @@ struct DeviceCaps {
   std::uint32_t vendor_id = 0;
   std::uint32_t device_id = 0;
   VkPhysicalDeviceType type = VK_PHYSICAL_DEVICE_TYPE_OTHER;
-  DeviceUuid uuid{};
+  DeviceUuid uuid{};  // nul pour un appareil 1.0 (pilote et sous-groupes aussi, avant 1.2 et 1.1)
   Features enabled;
   // Sous-groupes (Vulkan 1.1) : taille et opérations en calcul ; 0 si le calcul n'y a pas accès.
   std::uint32_t subgroup_size = 0;

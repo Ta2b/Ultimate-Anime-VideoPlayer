@@ -35,7 +35,8 @@ class TimelineSemaphore {
   // Valeur atteinte à cet instant (vkGetSemaphoreCounterValue) : un constat, pas une attente.
   std::expected<std::uint64_t, Refusal> value() const;
 
-  // Signal depuis l'hôte (vkSignalSemaphore) : value doit dépasser la valeur courante.
+  // Signal depuis l'hôte (vkSignalSemaphore). Refus FieldOutOfRange : value ne dépasse pas la
+  // valeur courante. Une valeur qu'une soumission en attente signalera aussi reste à l'appelant.
   Done signal(std::uint64_t value);
 
  private:

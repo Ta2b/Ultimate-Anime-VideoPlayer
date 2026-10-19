@@ -10,6 +10,7 @@ ajp_add_module(vk_compute
     caps.cpp
     context.cpp
     context_create.cpp
+    debug.cpp
     descriptors.cpp
     functions.cpp
     image.cpp
@@ -25,6 +26,7 @@ ajp_add_module(vk_compute
     queue.cpp
     recording.cpp
     refuse.cpp
+    spirv_reflect.cpp
     sync.cpp
     weights.cpp
   DEPS ajp::core_types ajp::kernels ajp::dep::vulkan

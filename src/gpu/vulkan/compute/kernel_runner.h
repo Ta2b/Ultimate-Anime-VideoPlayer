@@ -23,8 +23,9 @@ namespace ajp::gpu::vk {
 
 class KernelRunner {
  public:
-  KernelRunner(const VkContext& context, PipelineCache& pipelines)
-      : context_(&context), pipelines_(&pipelines) {}
+  // Le contexte est celui du cache : les deux ne peuvent pas diverger. Chaque noyau refuse un
+  // Recorder d'un autre contexte (InputMismatch).
+  explicit KernelRunner(PipelineCache& pipelines) : context_(&pipelines.context()), pipelines_(&pipelines) {}
 
   // YUV → tenseur RGB 3 plans de mêmes dimensions (ref yuv_to_rgb) : chroma 4:2:0 rééchantillonnée
   // par chroma, depuis le siting de color.

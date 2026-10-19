@@ -35,6 +35,17 @@ include_guard(GLOBAL)
 find_program(AJP_SPIRV_VAL NAMES spirv-val HINTS "$ENV{VULKAN_SDK}/bin")
 set(AJP_SPIRV_SCRIPT "${CMAKE_CURRENT_LIST_FILE}")
 set(AJP_SPIRV_TARGET_ENV "vulkan1.2" CACHE STRING "Environnement cible de glslc et spirv-val")
+# spirv-val vient de SPIRV-Tools, souvent empaqueté à part de glslc. Facultatif en local ; la CI
+# le rend obligatoire (-DAJP_SPIRV_VAL_REQUIRED=ON) pour qu'aucun module ne soit embarqué sans
+# validation. Son absence n'est jamais silencieuse.
+option(AJP_SPIRV_VAL_REQUIRED "Échouer à la configuration quand spirv-val est introuvable" OFF)
+if(NOT AJP_SPIRV_VAL)
+  if(AJP_SPIRV_VAL_REQUIRED)
+    message(FATAL_ERROR "spirv-val introuvable (SPIRV-Tools) et AJP_SPIRV_VAL_REQUIRED est activé")
+  endif()
+  message(WARNING "spirv-val introuvable (SPIRV-Tools) : le SPIR-V embarqué ne sera pas validé à la "
+                  "construction, seulement lu par vk_compute (spirv_reflect) à la création des pipelines")
+endif()
 
 # Une commande par shader : glslc vers un .spv temporaire, spirv-val, puis la liste de mots.
 # Le .inc n'est écrit qu'après une validation réussie : un module refusé ne reste jamais à jour.

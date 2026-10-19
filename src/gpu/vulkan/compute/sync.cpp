@@ -58,6 +58,13 @@ std::expected<std::uint64_t, Refusal> TimelineSemaphore::value() const {
 }
 
 Done TimelineSemaphore::signal(std::uint64_t value) {
+  // Un signal qui ne dépasse pas la valeur courante est un usage invalide : refusé avant le pilote.
+  auto current = this->value();
+  if (!current) return std::unexpected(current.error());
+  if (value <= *current) {
+    return refuse(RefusalCode::FieldOutOfRange,
+                  std::format("signal hôte de la valeur {}, le sémaphore est déjà à {}", value, *current));
+  }
   const VkSemaphoreSignalInfo info{
       .sType = VK_STRUCTURE_TYPE_SEMAPHORE_SIGNAL_INFO, .semaphore = semaphore_, .value = value};
   return check(fn_->vkSignalSemaphore(device_, &info), std::format("vkSignalSemaphore({})", value));

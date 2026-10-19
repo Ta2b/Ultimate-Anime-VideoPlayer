@@ -39,6 +39,9 @@ Recording::~Recording() {
 
 std::expected<Recorder, Refusal> Recorder::begin(VkContext& context, MemoryAllocator& memory,
                                                  DescriptorLimits limits) {
+  if (&memory.context() != &context) {
+    return refuse(RefusalCode::InputMismatch, "Recorder : allocateur d'un autre contexte Vulkan");
+  }
   auto runs = TimelineSemaphore::create(context, 0);
   if (!runs) return std::unexpected(runs.error());
   auto arena = DescriptorArena::create(context, limits);
@@ -123,6 +126,10 @@ Done Recorder::dispatch(const Pipeline& pipeline, std::span<const BufferView> bu
                         std::span<const VkImageView> images, std::span<const std::byte> push,
                         std::array<std::uint32_t, 3> groups) {
   if (auto ok = open(); !ok) return ok;
+  if (&pipeline.context() != context_) {
+    return refuse(RefusalCode::InputMismatch,
+                  std::format("{} : pipeline d'un autre contexte Vulkan", pipeline.name()));
+  }
   if (buffers.size() != pipeline.buffers() || images.size() != pipeline.images() ||
       push.size() != pipeline.push_bytes()) {
     return refuse(RefusalCode::InputMismatch,
@@ -132,6 +139,12 @@ Done Recorder::dispatch(const Pipeline& pipeline, std::span<const BufferView> bu
   }
   for (std::size_t i = 0; i < buffers.size(); ++i) {
     if (auto ok = check_view(buffers[i], std::format("{} binding {}", pipeline.name(), i)); !ok) return ok;
+  }
+  for (std::size_t i = 0; i < images.size(); ++i) {
+    if (images[i] == VK_NULL_HANDLE) {
+      return refuse(RefusalCode::InputMismatch,
+                    std::format("{} binding {} : vue d'image nulle", pipeline.name(), buffers.size() + i));
+    }
   }
   const DeviceCaps& caps = context_->caps();
   for (std::size_t axis = 0; axis < groups.size(); ++axis) {

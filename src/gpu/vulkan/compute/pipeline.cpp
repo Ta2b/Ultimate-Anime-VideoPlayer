@@ -31,28 +31,40 @@ std::expected<std::unique_ptr<PipelineCache>, Refusal> PipelineCache::create(con
 PipelineCache::~PipelineCache() {
   pipelines_.clear();
   const DeviceFunctions& fn = context_.fn();
-  for (const auto& [name, module] : modules_) fn.vkDestroyShaderModule(context_.device(), module, nullptr);
+  for (const auto& [name, module] : modules_) {
+    fn.vkDestroyShaderModule(context_.device(), module.handle, nullptr);
+  }
   if (cache_ != VK_NULL_HANDLE) fn.vkDestroyPipelineCache(context_.device(), cache_, nullptr);
 }
 
-std::expected<VkShaderModule, Refusal> PipelineCache::module(std::string_view shader) {
-  if (const auto found = modules_.find(shader); found != modules_.end()) return found->second;
+std::expected<const PipelineCache::Module*, Refusal> PipelineCache::module(std::string_view shader) {
+  if (const auto found = modules_.find(shader); found != modules_.end()) return &found->second;
   const std::span<const std::uint32_t> words = spirv::words(shader);
   if (words.empty()) {
     return refuse(RefusalCode::FeatureUnavailable,
                   std::format("shader {} absent du SPIR-V embarqué", shader));
   }
+  // Lue avant toute création : un SPIR-V incohérent n'atteint pas le pilote.
+  auto interface = reflect(words, shader);
+  if (!interface) return std::unexpected(interface.error());
   const VkShaderModuleCreateInfo info{.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO,
                                       .codeSize = words.size_bytes(),
                                       .pCode = words.data()};
-  VkShaderModule module = VK_NULL_HANDLE;
-  if (auto ok = check(context_.fn().vkCreateShaderModule(context_.device(), &info, nullptr, &module),
+  VkShaderModule handle = VK_NULL_HANDLE;
+  if (auto ok = check(context_.fn().vkCreateShaderModule(context_.device(), &info, nullptr, &handle),
                       std::format("vkCreateShaderModule({})", shader));
       !ok) {
     return std::unexpected(ok.error());
   }
-  modules_.emplace(std::string(shader), module);
-  return module;
+  const auto [at, inserted] =
+      modules_.emplace(std::string(shader), Module{.handle = handle, .interface = std::move(*interface)});
+  return &at->second;
+}
+
+std::expected<const ShaderInterface*, Refusal> PipelineCache::interface(std::string_view shader) {
+  auto found = module(shader);
+  if (!found) return std::unexpected(found.error());
+  return &(*found)->interface;
 }
 
 std::expected<std::unique_ptr<Pipeline>, Refusal> PipelineCache::build(const PipelineDesc& desc,
@@ -144,7 +156,10 @@ std::expected<const Pipeline*, Refusal> PipelineCache::get(const PipelineDesc& d
   }
   auto shader = module(desc.shader);
   if (!shader) return std::unexpected(shader.error());
-  auto pipeline = build(desc, *shader);
+  if (auto ok = check_interface((*shader)->interface, desc, context_.caps()); !ok) {
+    return std::unexpected(ok.error());
+  }
+  auto pipeline = build(desc, (*shader)->handle);
   if (!pipeline) return std::unexpected(pipeline.error());
   const Pipeline* created = pipeline->get();
   pipelines_.emplace(std::move(key), std::move(*pipeline));

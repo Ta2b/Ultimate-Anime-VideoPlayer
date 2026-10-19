@@ -67,7 +67,14 @@ std::string describe(const Refusal& refusal) {
 }
 
 Rig make_rig(const CreateOptions& options) {
-  auto context = VkContext::create(options);
+  // La couche de validation, quand elle est installée, surveille chaque test : run() vérifie
+  // qu'elle n'a signalé aucune erreur. Sans elle, l'appareil est créé tel quel.
+  CreateOptions validated = options;
+  validated.validation = true;
+  auto context = VkContext::create(validated);
+  if (!context && context.error().code == RefusalCode::FeatureUnavailable && !options.validation) {
+    context = VkContext::create(options);
+  }
   if (!context) {
     const RefusalCode code = context.error().code;
     if (code == RefusalCode::LibraryUnavailable || code == RefusalCode::DeviceUnavailable) {
@@ -79,7 +86,7 @@ Rig make_rig(const CreateOptions& options) {
   rig.context = std::move(*context);
   rig.memory = require_value(MemoryAllocator::create(*rig.context));
   rig.pipelines = require_value(PipelineCache::create(*rig.context));
-  rig.runner.emplace(*rig.context, *rig.pipelines);
+  rig.runner.emplace(*rig.pipelines);
   return rig;
 }
 
@@ -99,6 +106,11 @@ std::unique_ptr<Recording> record(Rig& rig, const std::function<Done(Recorder&)>
 void run(Rig& rig, Recording& recording) {
   require_ok(rig.context->submit(recording));
   require_ok(rig.context->wait_on_host(recording.last_run()));
+  require_no_validation_errors(rig);
+}
+
+void require_no_validation_errors(const Rig& rig) {
+  CHECK(rig.context->validation_errors() == 0);
 }
 
 void record_and_run(Rig& rig, const std::function<Done(Recorder&)>& body) {

@@ -129,6 +129,9 @@ Done KernelRunner::output_yuv(Recorder& recorder, const TensorView& src, const C
 
 Done KernelRunner::output_rgba16(Recorder& recorder, const TensorView& src, const StorageImage& dst) {
   if (auto ok = check_tensor(src, 3, context_->caps().enabled, "sortie RGBA16 : tenseur RGB"); !ok) return ok;
+  if (dst.context() != context_) {
+    return refuse(RefusalCode::InputMismatch, "sortie RGBA16 : image vide ou d'un autre contexte Vulkan");
+  }
   if (auto ok = check_same_size(src.width, src.height, dst.width(), dst.height(), "sortie RGBA16"); !ok)
     return ok;
   const detail::SizePush size{src.width, src.height};

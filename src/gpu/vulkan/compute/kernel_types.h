@@ -108,7 +108,8 @@ std::uint32_t chroma_width(kernels::Format format, std::uint32_t width);
 std::uint32_t chroma_height(kernels::Format format, std::uint32_t height);
 
 // Une image YUV conforme : format connu, dimensions du format, chaque plan aligné sur 4 octets,
-// pas suffisant, tout dans la vue (moins de 4 Gio, les noyaux indexent en 32 bits).
+// pas suffisant, tout dans la vue (moins de 4 Gio, les noyaux indexent en 32 bits), plans
+// disjoints (de leur premier à leur dernier octet, bourrage entre les lignes compris).
 Done check_yuv(const YuvView& view, std::string_view what);
 
 // Un tenseur conforme : planes plans, dimensions dans [1, 16384], vue assez grande et de moins
