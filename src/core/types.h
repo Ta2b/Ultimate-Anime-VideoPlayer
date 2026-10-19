@@ -83,6 +83,11 @@ enum class RefusalCode : std::uint8_t {
   ThreadFailed,    // une exception a interrompu le corps d'un thread, qui s'est arrêté
   AbiMismatch,     // bibliothèque d'une autre version de l'interface (kBackendAbi)
   DeviceMismatch,  // le backend ne sait pas exploiter l'appareil de rendu (API, constructeur, UUID)
+
+  // export : encodage et mux
+  EncoderUnavailable,  // encodeur inconnu, absent de cette construction de FFmpeg, ou refusé à l'ouverture
+  EncodeFailed,        // libavcodec a refusé une image ou un paquet en cours d'encodage
+  MuxFailed,           // libavformat a refusé un flux, l'en-tête, un paquet ou la fin du conteneur
 };
 
 struct Refusal {
@@ -214,6 +219,12 @@ constexpr std::string_view name(RefusalCode code) {
       return "AbiMismatch";
     case RefusalCode::DeviceMismatch:
       return "DeviceMismatch";
+    case RefusalCode::EncoderUnavailable:
+      return "EncoderUnavailable";
+    case RefusalCode::EncodeFailed:
+      return "EncodeFailed";
+    case RefusalCode::MuxFailed:
+      return "MuxFailed";
   }
   return "Unknown";
 }
