@@ -146,4 +146,5 @@ jobs:
 
       - name: lavapipe requis
         if: always() && steps.lavapipe.outcome != 'success'
-        run: throw "lavapipe n'a pas été installé : les tests Vulkan n'ont pas tourné"
+        run: |
+          throw "lavapipe n'a pas été installé : les tests Vulkan n'ont pas tourné"
