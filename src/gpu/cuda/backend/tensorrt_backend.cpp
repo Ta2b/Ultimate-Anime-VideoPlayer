@@ -192,6 +192,8 @@ TensorRtBackend::~TensorRtBackend() {
   true_hdr_.reset();  // avant le flux : l'effet et ses tampons appartiennent au contexte du backend
   if (pair_device_ != nullptr) cudaFree(pair_device_);
   if (pair_host_ != nullptr) cudaFreeHost(pair_host_);
+  if (flow_device_ != nullptr) cudaFree(flow_device_);
+  if (flow_host_ != nullptr) cudaFreeHost(flow_host_);
   runtime_.reset();
   for (Held& held : held_) {
     held.data.reset();

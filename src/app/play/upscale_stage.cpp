@@ -11,6 +11,7 @@
 #include "core/log.h"
 #include "kernels/spec/detect.h"
 #include "kernels/spec/rife.h"
+#include "kernels/spec/warp.h"
 
 namespace ajp::app::play {
 namespace {
@@ -32,7 +33,11 @@ UpscaleStage::UpscaleStage(VideoStageInit init, UpscaleSetup setup)
 
 UpscaleStage::~UpscaleStage() {
   stop();
-  if (setup_.rife != nullptr) {
+  if (setup_.rife_motion != nullptr) {
+    log_channel("gpu")->info("RIFE mouvement : {} passes ; {} paires à une passe, {} à plusieurs", rife_runs_,
+                             single_pairs_, multi_pairs_);
+  }
+  if (interpolates()) {
     log_channel("gpu")->info("RIFE ×{} : {} paires, {} interpolées, {} coupes de scène, {} dessins tenus",
                              setup_.live ? setup_.live->rife_factor() : setup_.rife_factor, pairs_,
                              interpolated_, cuts_, held_);
@@ -62,7 +67,10 @@ std::expected<std::unique_ptr<VideoStage>, Refusal> UpscaleStage::start(VideoSta
                   std::format("étage gpu : taille de travail {}x{} hors de la source {}x{}", setup.work_width,
                               setup.work_height, setup.source_width, setup.source_height));
   }
-  if (setup.rife != nullptr && setup.live == nullptr &&
+  if (setup.rife != nullptr && setup.rife_motion != nullptr) {
+    return refuse(RefusalCode::FieldOutOfRange, "étage gpu : RIFE image ou mouvement, pas les deux");
+  }
+  if ((setup.rife != nullptr || setup.rife_motion != nullptr) && setup.live == nullptr &&
       (setup.rife_factor < 2 || setup.rife_factor > kMaxRifeFactor)) {
     return refuse(RefusalCode::FieldOutOfRange,
                   std::format("étage gpu : RIFE ×{} hors de [2, {}]", setup.rife_factor, kMaxRifeFactor));
@@ -100,12 +108,21 @@ std::expected<void, Refusal> UpscaleStage::allocate() {
   if (setup_.engine != nullptr) {
     if (auto ok = alloc(output_, planes(3, w * kSpanFactor, h * kSpanFactor)); !ok) return ok;
   }
-  if (setup_.rife != nullptr) {
+  if (interpolates()) {
     const kernels::RifeGeometry g = kernels::rife_geometry(w, h);
     if (auto ok = alloc(rife_in_, planes(kernels::kRifeInputChannels, g.padded_width, g.padded_height)); !ok)
       return ok;
-    if (auto ok = alloc(rife_out_, planes(3, g.padded_width, g.padded_height)); !ok) return ok;
     if (auto ok = alloc(middle_, planes(3, w, h)); !ok) return ok;
+    if (setup_.rife != nullptr) {
+      if (auto ok = alloc(rife_out_, planes(3, g.padded_width, g.padded_height)); !ok) return ok;
+    } else {
+      for (auto* buffer : {&mid_flow_, &flow_}) {
+        if (auto ok = alloc(*buffer, planes(4, g.padded_width, g.padded_height)); !ok) return ok;
+      }
+      for (auto* buffer : {&mid_mask_, &mask_}) {
+        if (auto ok = alloc(*buffer, planes(1, g.padded_width, g.padded_height)); !ok) return ok;
+      }
+    }
   }
   return {};
 }
@@ -126,9 +143,8 @@ std::expected<std::uint32_t, Refusal> UpscaleStage::outputs(const DecodedFrame& 
   gpu::IngestSpec spec;
   if (setup_.live) spec.reduce = setup_.live->reduction();
   if (auto ok = ops.ingest(frame, spec, rgb); !ok) return std::unexpected(std::move(ok.error()));
-  std::uint32_t factor = setup_.rife != nullptr ? setup_.rife_factor : 1;
-  if (setup_.rife != nullptr && setup_.live)
-    factor = std::clamp(setup_.live->rife_factor(), 1U, kMaxRifeFactor);
+  std::uint32_t factor = interpolates() ? setup_.rife_factor : 1;
+  if (interpolates() && setup_.live) factor = std::clamp(setup_.live->rife_factor(), 1U, kMaxRifeFactor);
   PairFacts facts{.factor = factor,
                   .same_epoch = previous_ && previous_->epoch == frame.epoch,
                   .gap_us = previous_ ? frame.pts_us - previous_->pts_us : 0};
@@ -173,6 +189,13 @@ std::expected<RingStage::Output, Refusal> UpscaleStage::produce(const DecodedFra
   // donne plus d'une sortie que si la précédente existe).
   if (!previous_) return refuse(RefusalCode::SequenceOrder, "RIFE : pas d'image précédente");
   const Previous before = *previous_;
+  if (setup_.rife_motion != nullptr) {
+    if (auto ok = interpolate_by_motion(output); !ok) return std::unexpected(std::move(ok.error()));
+    if (auto ok = finish(middle_->tensor(), slot, sync); !ok) return std::unexpected(std::move(ok.error()));
+    return Output{.pts_us = rife_output_pts(before.pts_us, frame.pts_us, output, outputs_),
+                  .left = before.id,
+                  .right = frame.id};
+  }
   gpu::KernelOps& ops = *setup_.backend->kernels();
   const float t = static_cast<float>(output + 1) / static_cast<float>(outputs_);
   if (auto ok = ops.rife_input(rgb_[current_ ^ 1U]->tensor(), now, t, rife_in_->tensor()); !ok)
@@ -187,6 +210,51 @@ std::expected<RingStage::Output, Refusal> UpscaleStage::produce(const DecodedFra
   return Output{.pts_us = rife_output_pts(before.pts_us, frame.pts_us, output, outputs_),
                 .left = before.id,
                 .right = frame.id};
+}
+
+std::expected<void, Refusal> UpscaleStage::run_motion(float t, const gpu::Tensor& flow,
+                                                      const gpu::Tensor& mask) {
+  gpu::KernelOps& ops = *setup_.backend->kernels();
+  if (auto ok =
+          ops.rife_input(rgb_[current_ ^ 1U]->tensor(), rgb_[current_]->tensor(), t, rife_in_->tensor());
+      !ok)
+    return ok;
+  const std::array inputs{rife_in_->tensor()};
+  std::array results{flow, mask};
+  ++rife_runs_;
+  return setup_.backend->enqueue(*setup_.rife_motion, inputs, results);
+}
+
+std::expected<void, Refusal> UpscaleStage::interpolate_by_motion(std::uint32_t output) {
+  gpu::KernelOps& ops = *setup_.backend->kernels();
+  const float t = static_cast<float>(output + 1) / static_cast<float>(outputs_);
+  const kernels::RifeGeometry g = kernels::rife_geometry(setup_.work_width, setup_.work_height);
+  const kernels::Window area{
+      .x = g.left, .y = g.top, .width = setup_.work_width, .height = setup_.work_height};
+  const gpu::Motion middle{.flow = mid_flow_->tensor(), .mask = mid_mask_->tensor(), .area = area};
+  const gpu::Motion other{.flow = flow_->tensor(), .mask = mask_->tensor(), .area = area};
+  const gpu::Tensor& a = rgb_[current_ ^ 1U]->tensor();
+  const gpu::Tensor& b = rgb_[current_]->tensor();
+  if (output == 0) {
+    // Début de la paire : RIFE au milieu ; s'il reste plus d'une image à faire, son mouvement
+    // maximal dit si cette passe suffit (kernels/spec/warp.h, seuil mis à la hauteur de RIFE).
+    if (auto ok = run_motion(0.5F, middle.flow, middle.mask); !ok) return ok;
+    single_run_ = false;
+    if (outputs_ > 2) {
+      auto biggest = ops.flow_max_now(middle);
+      if (!biggest) return std::unexpected(std::move(biggest.error()));
+      single_run_ = *biggest < kernels::single_run_motion(setup_.work_height);
+      if (single_run_) {
+        ++single_pairs_;
+      } else {
+        ++multi_pairs_;
+      }
+    }
+  }
+  if (single_run_ || t == 0.5F) return ops.warp_blend(a, b, middle, t, middle_->tensor());
+  // Mouvement fort : RIFE à cet instant, son mouvement tel quel (t = 1/2 au warp : « estimé »).
+  if (auto ok = run_motion(t, other.flow, other.mask); !ok) return ok;
+  return ops.warp_blend(a, b, other, 0.5F, middle_->tensor());
 }
 
 std::expected<void, Refusal> UpscaleStage::finish(const gpu::Tensor& rgb, std::uint32_t slot,

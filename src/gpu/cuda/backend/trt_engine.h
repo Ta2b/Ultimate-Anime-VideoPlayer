@@ -2,7 +2,8 @@
 //
 // Provisoire pour la tranche verticale : l'enveloppe complète (profils de formes, journal
 // relié à spdlog, refus détaillés) est le chantier pc/tensorrt (src/gpu/cuda/trt). Celle-ci
-// ne connaît que ce que SPAN demande : une entrée et une sortie FP16 de formes fixes.
+// ne connaît que ce que SPAN et RIFE demandent : une entrée et 1 à kMaxOutputs sorties FP16 de
+// formes fixes.
 #pragma once
 
 #include <cuda_runtime_api.h>
@@ -26,6 +27,7 @@ namespace ajp::gpu::cuda {
 
 class TrtEngine final : public Engine {
  public:
+  static constexpr std::size_t kMaxOutputs = 4;
   // Lit et désérialise le moteur. Refus : fichier illisible (IoFailed), moteur refusé par
   // ce TensorRT (VendorCallFailed), entrée ou sortie qui n'est pas un tenseur FP16 de rang 4.
   static std::expected<std::unique_ptr<TrtEngine>, Refusal> load(nvinfer1::IRuntime& runtime,

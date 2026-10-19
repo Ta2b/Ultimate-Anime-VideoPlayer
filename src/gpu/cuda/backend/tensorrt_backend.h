@@ -80,6 +80,7 @@ class TensorRtBackend final : public Backend, public KernelOps {
                                                    const RingSlotDesc& slot, const RingWrite& sync) override;
   std::expected<void, Refusal> set_true_hdr(const vendor_hdr::TrueHdrParams& params) override;
   std::optional<DeviceMemory> device_memory() override;
+  std::expected<float, Refusal> flow_max_now(const Motion& motion) override;
 
  private:
   // Une image décodée tenue jusqu'à la fin de son ingestion côté GPU : FFmpeg la réécrit dès
@@ -133,6 +134,8 @@ class TensorRtBackend final : public Backend, public KernelOps {
   };
   PairSums* pair_device_ = nullptr;
   PairSums* pair_host_ = nullptr;
+  unsigned int* flow_device_ = nullptr;  // flow_max_now : bits du maximum, sur l'appareil et l'hôte
+  unsigned int* flow_host_ = nullptr;
   // RTX HDR : l'effet, son pont de flux, et ses deux tampons linéaires (RGBA8 tramé, RGB10A2).
   struct TrueHdrState;
   std::unique_ptr<TrueHdrState> true_hdr_;

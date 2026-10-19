@@ -7,7 +7,7 @@
 ajp_add_module(app
   SOURCES
     play/backend_library.cpp play/bridges.cpp play/build_progress.cpp play/controls.cpp play/controls_draw.cpp play/engine_build.cpp
-    play/frame_queue.cpp play/frame_stats.cpp play/input.cpp play/options.cpp play/osd_text.cpp play/pipeline.cpp
+    play/frame_queue.cpp play/frame_stats.cpp play/input.cpp play/motion_model.cpp play/options.cpp play/osd_text.cpp play/pipeline.cpp
     play/placebo_imgui.cpp play/placebo_overlays.cpp play/placebo_ring.cpp play/placebo_screen.cpp
     play/placebo_snapshot.cpp play/player.cpp
     play/ring_stage.cpp play/rife_plan.cpp play/session.cpp play/settings.cpp play/settings_panel.cpp play/subtitle_queue.cpp play/tracks.cpp play/ui.cpp

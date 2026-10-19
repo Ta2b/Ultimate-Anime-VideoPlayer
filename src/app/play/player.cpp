@@ -18,6 +18,7 @@
 #include "app/play/build_progress.h"
 #include "app/play/engine_build.h"
 #include "app/play/input.h"
+#include "app/play/motion_model.h"
 #include "app/play/pipeline.h"
 #include "app/play/placebo_screen.h"
 #include "app/play/session.h"
@@ -675,7 +676,27 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
   }
   const kernels::RifeGeometry g = kernels::rife_geometry(work.width, work.height);
   std::unique_ptr<gpu::Engine> rife;
-  if (use_rife) {
+  std::unique_ptr<gpu::Engine> rife_motion;
+  // RIFE par son mouvement : une passe au milieu de la paire la sert toute quand le mouvement est
+  // faible ; sans variante dérivable, RIFE image comme avant.
+  if (use_rife && !p.options.rife_image) {
+    auto derived = motion_model(*rife_model, p.paths.engines.parent_path() / "modeles");
+    if (!derived) {
+      log->warn("RIFE mouvement indisponible ({}) : RIFE image", derived.error().detail);
+    } else {
+      auto loaded = prepare_engine(
+          p, init, **backend, *derived,
+          gpu::Shape{.dims = {1, kernels::kRifeInputChannels, g.padded_height, g.padded_width}},
+          EngineLabel{.name = "RIFE",
+                      .model = derived->stem().string(),
+                      .width = g.padded_width,
+                      .height = g.padded_height});
+      if (!loaded) return std::unexpected(std::move(loaded.error()));
+      if (!*loaded) return std::nullopt;
+      rife_motion = std::move(**loaded);
+    }
+  }
+  if (use_rife && !rife_motion) {
     auto loaded =
         prepare_engine(p, init, **backend, *rife_model,
                        gpu::Shape{.dims = {1, kernels::kRifeInputChannels, g.padded_height, g.padded_width}},
@@ -722,6 +743,7 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
             UpscaleSetup{.backend = backend->get(),
                          .engine = engine.get(),
                          .rife = rife.get(),
+                         .rife_motion = rife_motion.get(),
                          .rife_factor = static_cast<std::uint32_t>(std::max(settings.rife_factor, 1)),
                          .true_hdr = settings.true_hdr,
                          .live = live,
@@ -733,7 +755,8 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
       });
   if (!pipeline) return std::unexpected(std::move(pipeline.error()));
 
-  const ChainStats chain_stats(*live, *(*backend)->kernels(), rife != nullptr);
+  const bool rife_loaded = rife != nullptr || rife_motion != nullptr;
+  const ChainStats chain_stats(*live, *(*backend)->kernels(), rife_loaded);
   SessionConfig session_config = (*pipeline)->session_config();
   session_config.start_us = start_us;
   session_config.stop_after_us = options.stop_after_us;
@@ -756,18 +779,18 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
           .default_model = model ? model->default_name : std::string(),
           .source_height = video.height,
           .rife_available = rife_model.has_value(),
-          .rife_loaded = rife != nullptr,
+          .rife_loaded = rife_loaded,
           .true_hdr_available = std::filesystem::exists(p.options.true_hdr_sdk) || settings.true_hdr,
           .auto_peak = auto_peak,
           .engines = engine_badges(p.paths.engines, model ? model->path : std::filesystem::path(), work,
-                                   rife ? rife_model : std::nullopt, g)});
+                                   rife_loaded ? rife_model : std::nullopt, g)});
   Chain chain{.session = session,
               .screen = out,
               .ui = p.ui,
               .pipeline = **pipeline,
               .live = *live,
               .running = settings,
-              .rife_loaded = rife != nullptr,
+              .rife_loaded = rife_loaded,
               .true_hdr_open = settings.true_hdr,
               .auto_peak = auto_peak,
               .peak_nits = peak_nits};
@@ -840,6 +863,7 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
   session.end();
   out.flush();
   pipeline->reset();
+  rife_motion.reset();
   rife.reset();
   engine.reset();
   backend->reset();

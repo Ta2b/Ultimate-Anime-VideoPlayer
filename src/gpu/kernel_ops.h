@@ -134,6 +134,11 @@ class KernelOps {
                                                      const vendor_hdr::TrueHdrConfig& /*config*/) {
     return std::unexpected(Refusal{RefusalCode::FormatUnsupported, "open_true_hdr : absent de ce backend"});
   }
+  // Plus grand |déplacement| du mouvement dans sa fenêtre, en pixels de la fenêtre, rendu tout de
+  // suite au prix d'une attente hôte (ref::flow_max) : décide si une passe RIFE sert toute la paire.
+  virtual std::expected<float, Refusal> flow_max_now(const Motion& /*motion*/) {
+    return std::unexpected(Refusal{RefusalCode::FormatUnsupported, "flow_max_now : absent de ce backend"});
+  }
   // Mémoire de l'appareil, utilisée et totale, en octets, pour les statistiques ; appelable depuis
   // n'importe quel thread. Rien si le backend ne sait pas la lire.
   struct DeviceMemory {

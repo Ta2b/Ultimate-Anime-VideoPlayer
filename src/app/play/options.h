@@ -76,6 +76,8 @@ struct PlayOptions {
   int true_hdr_gray = 50;                                     // --truehdr-gray=10..100 (gris moyen)
   int true_hdr_peak = 0;  // --truehdr-peak=400..2000 nits ; 0 : la crête vue par le contenu sur l'écran
   bool help = false;      // --help
+  // --rife-image : RIFE sort l'image à chaque instant (sans la variante mouvement), pour comparer.
+  bool rife_image = false;
   // Options données sur la ligne de commande (« --rife », « --truehdr »…) : elles remplacent les
   // réglages de play.toml pour cette lecture.
   std::vector<std::string> given;

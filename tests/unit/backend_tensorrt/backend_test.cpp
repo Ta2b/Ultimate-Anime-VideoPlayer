@@ -19,6 +19,7 @@
 
 #include "kernels/ref/color.h"
 #include "kernels/ref/half.h"
+#include "kernels/ref/warp.h"
 #include "kernels/spec/detect.h"
 #include "kernels/spec/rife.h"
 #include "prepare/sha256.h"
@@ -398,6 +399,107 @@ TEST_CASE("Backend TensorRT : coût des réductions 1080p vers 720p", "[.bench][
         std::chrono::duration<double, std::micro>(std::chrono::steady_clock::now() - start).count() / kRuns;
     WARN(filter.name << " : " << us << " µs par image");
   }
+}
+
+TEST_CASE("Backend TensorRT : warp et mélange par le mouvement, contre la référence",
+          "[backend_tensorrt][cuda]") {
+  if (!has_cuda()) SKIP("pas de GPU NVIDIA");
+  // Mouvement dans des plans 40×32, image dans la fenêtre 40×24 à (0, 4) ; images 1,5 fois plus
+  // grandes (mouvement estimé à 720p, warp à 1080p).
+  constexpr int pw = 40;
+  constexpr int ph = 32;
+  constexpr int w = 60;
+  constexpr int h = 36;
+  const kernels::Window area{.x = 0, .y = 4, .width = 40, .height = 24};
+  const auto q = [](float v) { return kernels::ref::half_to_float(kernels::ref::float_to_half(v)); };
+  kernels::ref::Motion motion;
+  for (auto& plane : motion.flow) plane = kernels::PlaneF(pw, ph);
+  motion.mask = kernels::PlaneF(pw, ph);
+  motion.area = area;
+  std::vector<float> flow(static_cast<std::size_t>(4 * pw * ph));
+  std::vector<float> mask(static_cast<std::size_t>(pw * ph));
+  for (int y = 0; y < ph; ++y) {
+    for (int x = 0; x < pw; ++x) {
+      for (int c = 0; c < 4; ++c) {
+        const float v =
+            q(4.0F * std::sin(0.21F * static_cast<float>(x + 3 * c) + 0.37F * static_cast<float>(y)));
+        motion.flow[static_cast<std::size_t>(c)].at(x, y) = v;
+        flow[static_cast<std::size_t>((c * ph + y) * pw + x)] = v;
+      }
+      const float m =
+          q(0.5F + 0.3F * std::cos(0.17F * static_cast<float>(x) - 0.23F * static_cast<float>(y)));
+      motion.mask.at(x, y) = m;
+      mask[static_cast<std::size_t>(y * pw + x)] = m;
+    }
+  }
+  kernels::RgbImage a(w, h);
+  kernels::RgbImage b(w, h);
+  std::vector<float> va(static_cast<std::size_t>(3 * w * h));
+  std::vector<float> vb(va.size());
+  for (int c = 0; c < 3; ++c) {
+    for (int y = 0; y < h; ++y) {
+      for (int x = 0; x < w; ++x) {
+        const std::size_t i = static_cast<std::size_t>((c * h + y) * w + x);
+        va[i] = q(0.5F + 0.4F * std::sin(0.3F * static_cast<float>(x) + 0.5F * static_cast<float>(c) +
+                                         0.1F * static_cast<float>(y)));
+        vb[i] = q(0.5F + 0.4F * std::cos(0.2F * static_cast<float>(y) - 0.4F * static_cast<float>(c) +
+                                         0.15F * static_cast<float>(x)));
+        a.planes[static_cast<std::size_t>(c)].at(x, y) = va[i];
+        b.planes[static_cast<std::size_t>(c)].at(x, y) = vb[i];
+      }
+    }
+  }
+  Loaded loaded;
+  REQUIRE(loaded.backend != nullptr);
+  auto alloc = [&](std::int64_t c, std::int64_t hh, std::int64_t ww) {
+    auto t = loaded.backend->alloc_tensor(gpu::TensorType::F16, {.dims = {1, c, hh, ww}});
+    REQUIRE(t);
+    return std::move(*t);
+  };
+  auto ta = alloc(3, h, w);
+  auto tb = alloc(3, h, w);
+  auto out = alloc(3, h, w);
+  auto tflow = alloc(4, ph, pw);
+  auto tmask = alloc(1, ph, pw);
+  upload(ta->tensor(), va);
+  upload(tb->tensor(), vb);
+  upload(tflow->tensor(), flow);
+  upload(tmask->tensor(), mask);
+  const gpu::Motion gm{.flow = tflow->tensor(), .mask = tmask->tensor(), .area = area};
+  for (const float t : {0.5F, 0.25F, 0.75F}) {
+    CAPTURE(t);
+    REQUIRE(loaded.backend->kernels()->warp_blend(ta->tensor(), tb->tensor(), gm, t, out->tensor()));
+    const auto got = download(out->tensor());
+    const auto want = kernels::ref::warp_blend_at(a, b, motion, t);
+    REQUIRE(want);
+    double worst = 0.0;
+    for (int c = 0; c < 3; ++c) {
+      for (int y = 0; y < h; ++y) {
+        for (int x = 0; x < w; ++x) {
+          worst = std::max(
+              worst, static_cast<double>(std::fabs(want->planes[static_cast<std::size_t>(c)].at(x, y) -
+                                                   got[static_cast<std::size_t>((c * h + y) * w + x)])));
+        }
+      }
+    }
+    CHECK(worst < 2e-3);  // l'arrondi FP16 de la sortie
+  }
+  const auto max = loaded.backend->kernels()->flow_max_now(gm);
+  REQUIRE(max);
+  const auto want_max = kernels::ref::flow_max(motion);
+  REQUIRE(want_max);
+  CHECK(*max == *want_max);
+  // Un instant hors de ]0, 1[ et un mouvement mal formé sont refusés par leur nom.
+  CHECK(loaded.backend->kernels()
+            ->warp_blend(ta->tensor(), tb->tensor(), gm, 1.0F, out->tensor())
+            .error()
+            .code == RefusalCode::FieldOutOfRange);
+  const gpu::Motion outside{
+      .flow = tflow->tensor(), .mask = tmask->tensor(), .area = {.x = 0, .y = 10, .width = 40, .height = 24}};
+  CHECK(loaded.backend->kernels()
+            ->warp_blend(ta->tensor(), tb->tensor(), outside, 0.5F, out->tensor())
+            .error()
+            .code == RefusalCode::ShapeInvalid);
 }
 
 TEST_CASE("Backend TensorRT : entrée de RIFE, 11 plans remplis, puis recadrage de la fenêtre",

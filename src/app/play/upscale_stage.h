@@ -28,8 +28,11 @@ struct UpscaleSetup {
   gpu::Backend* backend = nullptr;  // vit plus longtemps que l'étage
   gpu::Engine* engine = nullptr;    // SPAN aux formes de travail ; nullptr : sans agrandissement
   gpu::Engine* rife = nullptr;      // RIFE à rife_geometry(travail) ; nullptr : sans interpolation
-  std::uint32_t rife_factor = 1;    // ×N quand RIFE tourne (2 à kMaxRifeFactor)
-  bool true_hdr = false;            // RTX HDR à l'écriture du ring (backend déjà ouvert pour la sortie)
+  // Variante mouvement de RIFE (motion_model.h) : flot et masque, warp à la sortie. Remplace rife ;
+  // une passe au milieu de la paire la sert toute quand le mouvement est faible.
+  gpu::Engine* rife_motion = nullptr;
+  std::uint32_t rife_factor = 1;  // ×N quand RIFE tourne (2 à kMaxRifeFactor)
+  bool true_hdr = false;          // RTX HDR à l'écriture du ring (backend déjà ouvert pour la sortie)
   // Réglages changés en cours de lecture (facteur RIFE, réduction, RTX HDR) et compteurs de RIFE ;
   // nullptr : rife_factor et Area pour toute la lecture.
   std::shared_ptr<LiveSettings> live;
@@ -53,6 +56,11 @@ class UpscaleStage final : public RingStage {
   std::expected<std::uint32_t, Refusal> outputs(const DecodedFrame& frame) override;
   std::expected<Output, Refusal> produce(const DecodedFrame& frame, std::uint32_t output, std::uint32_t slot,
                                          std::uint64_t wait_value, std::uint64_t signal_value) override;
+  // Image intermédiaire output + 1 sur outputs_ par le mouvement (rife_motion) dans middle_.
+  std::expected<void, Refusal> interpolate_by_motion(std::uint32_t output);
+  // La variante mouvement de RIFE à l'instant t, dans flow et mask.
+  std::expected<void, Refusal> run_motion(float t, const gpu::Tensor& flow, const gpu::Tensor& mask);
+  bool interpolates() const { return setup_.rife != nullptr || setup_.rife_motion != nullptr; }
   // SPAN (s'il est là) puis l'écriture dans le slot.
   std::expected<void, Refusal> finish(const gpu::Tensor& rgb, std::uint32_t slot, const gpu::RingWrite& sync);
 
@@ -72,7 +80,16 @@ class UpscaleStage final : public RingStage {
   std::unique_ptr<gpu::TensorBuffer> rife_in_;   // 1 × 11 × ph × pw
   std::unique_ptr<gpu::TensorBuffer> rife_out_;  // 1 × 3 × ph × pw
   std::unique_ptr<gpu::TensorBuffer> middle_;    // 1 × 3 × h × w : image intermédiaire recadrée
-  std::unique_ptr<gpu::TensorBuffer> output_;    // 1 × 3 × 2h × 2w ; absent sans SPAN
+  // Mouvement (variante mouvement) : celui du milieu de la paire, et celui d'un autre instant.
+  std::unique_ptr<gpu::TensorBuffer> mid_flow_;  // 1 × 4 × ph × pw
+  std::unique_ptr<gpu::TensorBuffer> mid_mask_;  // 1 × 1 × ph × pw
+  std::unique_ptr<gpu::TensorBuffer> flow_;
+  std::unique_ptr<gpu::TensorBuffer> mask_;
+  bool single_run_ = false;  // la paire en cours n'a qu'une passe RIFE, au milieu
+  std::uint64_t single_pairs_ = 0;
+  std::uint64_t multi_pairs_ = 0;
+  std::uint64_t rife_runs_ = 0;
+  std::unique_ptr<gpu::TensorBuffer> output_;  // 1 × 3 × 2h × 2w ; absent sans SPAN
   // Pour le journal de fin : paires vues, interpolées, coupes, dessins tenus.
   std::uint64_t pairs_ = 0;
   std::uint64_t interpolated_ = 0;
