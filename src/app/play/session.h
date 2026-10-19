@@ -74,6 +74,9 @@ struct PresentRecord {
   std::int64_t render_us = 0;
   std::int64_t interval_us = 0;  // depuis l'image neuve précédente ; 0 pour un redessin
   std::int64_t dropped = 0;      // total des images sautées
+  // Ce qui a demandé la présentation : « i » image neuve, « s » sous-titres, « o » OSD, « u »
+  // interface, « t » taille de sortie ; plusieurs lettres si plusieurs ont changé.
+  std::string why;
 };
 
 class Session {
@@ -130,8 +133,9 @@ class Session {
   const MasterClock& clock_;
 
   std::uint32_t epoch_ = 0;
-  bool prerolling_ = true;  // l'époque n'a pas encore d'image montrée
-  bool paused_ = false;     // pause demandée par l'utilisateur
+  bool prerolling_ = true;                        // l'époque n'a pas encore d'image montrée
+  std::optional<std::int64_t> preroll_since_us_;  // la première image de l'époque attend ses sous-titres
+  bool paused_ = false;                           // pause demandée par l'utilisateur
   bool stream_ended_ = false;
   bool finished_ = false;
   std::optional<std::int64_t> pending_seek_us_;  // cible du dernier seek, jusqu'à sa première image

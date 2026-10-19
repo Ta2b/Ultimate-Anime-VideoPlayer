@@ -16,6 +16,8 @@ constexpr std::int64_t kEndGraceUs = 1'000'000;
 constexpr std::size_t kMaxRefusals = 3;
 // L'OSD se recompose quatre fois par seconde, pas à chaque vsync.
 constexpr std::int64_t kOsdPeriodUs = 250'000;
+// À l'amorce, la première image attend ses sous-titres au plus ce temps.
+constexpr std::int64_t kPrerollSubtitleWaitUs = 100'000;
 
 template <class... F>
 struct Overloaded : F... {
@@ -147,6 +149,7 @@ void Session::seek_to(std::int64_t target_us, bool exact) {
   subtitles_.clear();
   subtitle_requests_ = 0;
   prerolling_ = true;
+  preroll_since_us_.reset();
   stream_ended_ = false;
   pending_seek_us_ = target_us;
 }
@@ -196,7 +199,17 @@ void Session::retire(const RingFrame& frame) {
 
 void Session::choose(std::int64_t host_now) {
   if (prerolling_) {
-    if (queue_.first_of(epoch_) == nullptr) return;  // l'image d'avant le seek reste à l'écran
+    const RingFrame* head = queue_.first_of(epoch_);
+    if (head == nullptr) return;  // l'image d'avant le seek reste à l'écran
+    // L'horloge ne court pas encore : la première image attend ses sous-titres (au plus
+    // kPrerollSubtitleWaitUs), pour ne pas être montrée sans eux puis recomposée.
+    if (!preroll_since_us_) preroll_since_us_ = host_now;
+    if (config_.subtitles && head->pts_us != kNoPts && subtitle_requests_ > 0 &&
+        subtitles_.for_pts(head->pts_us) == nullptr &&
+        host_now - *preroll_since_us_ < kPrerollSubtitleWaitUs) {
+      return;
+    }
+    preroll_since_us_.reset();
     const std::optional<RingFrame> first = queue_.pop_front();
     if (!first) return;
     if (current_) retire(*current_);
@@ -257,6 +270,12 @@ std::expected<std::optional<PresentRecord>, Refusal> Session::tick(std::int64_t 
   // Présentation à la demande : rien n'a changé, l'écran garde l'image (et en VRR, il suit le
   // rythme des images au lieu de recomposer à chaque vsync, ce qui laisse le GPU aux moteurs).
   const bool ui_changed = ui.changed || (ui.draw != nullptr) != shown_ui_;
+  std::string why;
+  if (fresh) why += 'i';
+  if (look != shown_subtitles_) why += 's';
+  if (osd_changed) why += 'o';
+  if (ui_changed) why += 'u';
+  if (size != shown_size_) why += 't';
   if (shown_once_ && !fresh && !osd_changed && !ui_changed && look == shown_subtitles_ &&
       size == shown_size_) {
     check_end(host_now);
@@ -284,7 +303,8 @@ std::expected<std::optional<PresentRecord>, Refusal> Session::tick(std::int64_t 
                            .fresh = fresh,
                            .render_us = timing->render_us,
                            .interval_us = fresh && previous != 0 ? timing->present_us - previous : 0,
-                           .dropped = stats_.dropped};
+                           .dropped = stats_.dropped,
+                           .why = std::move(why)};
   }
   check_end(host_now);
   return record;

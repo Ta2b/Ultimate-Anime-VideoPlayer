@@ -480,7 +480,8 @@ void apply(const Input& input, Chain& to, std::int64_t now_us) {
 
 void write_record(std::ofstream& stats, const PresentRecord& record) {
   stats << record.host_us << '\t' << record.pts_us << '\t' << (record.fresh ? 1 : 0) << '\t'
-        << record.render_us << '\t' << record.interval_us << '\t' << record.dropped << '\n';
+        << record.render_us << '\t' << record.interval_us << '\t' << record.dropped << '\t' << record.why
+        << '\n';
 }
 
 void log_summary(const Session& session) {
@@ -821,7 +822,7 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
   std::ofstream stats;
   if (options.stats) {
     stats.open(*options.stats);
-    stats << "host_us\tpts_us\tfresh\trender_us\tinterval_us\tdropped\n";
+    stats << "host_us\tpts_us\tfresh\trender_us\tinterval_us\tdropped\twhy\n";
   }
   const core::KeyMap keys = core::KeyMap::defaults();
   std::optional<Refusal> failure;

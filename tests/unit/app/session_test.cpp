@@ -265,6 +265,7 @@ TEST_CASE("La taille des sous-titres va dans les demandes, l'image à l'écran e
           "[app][session]") {
   Rig rig(SessionConfig{.subtitles = true, .video_width = 1920, .video_height = 1080});
   rig.session.handle(ring_frame(0, 0));
+  rig.session.handle(subs::SubtitleFrame{.pts_us = 0, .epoch = 0});  // réponse : rien à dessiner
   rig.tick();
   REQUIRE_FALSE(rig.stages.requests.empty());
   CHECK(rig.stages.requests.back().target.font_scale == 1.0F);
@@ -273,6 +274,26 @@ TEST_CASE("La taille des sous-titres va dans les demandes, l'image à l'écran e
   REQUIRE(rig.stages.requests.size() == before + 1);
   CHECK(rig.stages.requests.back().pts_us == 0);
   CHECK(rig.stages.requests.back().target.font_scale == 1.5F);
+}
+
+TEST_CASE("Amorce : la première image attend ses sous-titres, au plus 100 ms", "[app][session]") {
+  Rig rig(SessionConfig{.subtitles = true, .video_width = 1920, .video_height = 1080});
+  rig.session.handle(ring_frame(0, 0));
+  rig.tick();
+  CHECK_FALSE(rig.screen.shown.back().frame);  // pas encore : sa demande de sous-titres est en vol
+  rig.session.handle(subs::SubtitleFrame{.pts_us = 0, .epoch = 0});
+  rig.tick();
+  REQUIRE(rig.screen.shown.back().frame);
+  CHECK(rig.shown_pts() == 0);
+
+  // Sans réponse, elle part quand même après 100 ms.
+  Rig late(SessionConfig{.subtitles = true, .video_width = 1920, .video_height = 1080});
+  late.session.handle(ring_frame(0, 0));
+  late.tick();
+  CHECK_FALSE(late.screen.shown.back().frame);
+  late.screen.now_us += 150'000;
+  late.tick();
+  REQUIRE(late.screen.shown.back().frame);
 }
 
 TEST_CASE("Volume et délai audio vont au thread audio", "[app][session]") {

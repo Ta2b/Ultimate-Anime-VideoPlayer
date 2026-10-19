@@ -47,7 +47,8 @@ struct PipelineConfig {
   // elles existent. subtitle_track : rien = choix par langue ; nullopt dedans = aucune.
   std::optional<int> audio_track;
   std::optional<std::optional<int>> subtitle_track;
-  subs::RendererOptions subs;
+  // libass rend sur 4 threads : les sous-titres animés (karaoké) suivent ×4 sans retard.
+  subs::RendererOptions subs{.render_threads = 4};
 };
 
 // Ce que reçoit la fabrique du thread gpu.
