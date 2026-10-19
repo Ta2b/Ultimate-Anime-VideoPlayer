@@ -43,6 +43,15 @@ class PlaceboScreen final : public Screen {
 
   // L'appareil de rendu : son UUID choisit le GPU de CUDA et de NVDEC.
   const GpuDevice& device() const;
+  // Ce que Vulkan dit de l'appareil pour l'écran de bienvenue : sa mémoire locale (le plus grand
+  // tas DEVICE_LOCAL) et les matrices coopératives (les cœurs Tensor d'une RTX).
+  struct DeviceFacts {
+    std::string name;              // VkPhysicalDeviceProperties::deviceName
+    std::uint32_t pci_vendor = 0;  // vendorID
+    std::uint64_t vram_bytes = 0;
+    bool cooperative_matrix = false;
+  };
+  DeviceFacts device_facts() const;
   SDL_Window* window() const;
   // Ce que l'écran présente : sa sortie (sRGB ou PQ) et son type, pour l'OSD.
   std::string output_description() const;

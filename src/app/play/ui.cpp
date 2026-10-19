@@ -384,6 +384,25 @@ const ImDrawData* PlayerUi::preparation(std::int64_t now_us, const PrepareView& 
   return ImGui::GetDrawData();
 }
 
+const ImDrawData* PlayerUi::welcome(std::int64_t now_us, FirstRunView& view) {
+  ImGuiIO& io = ImGui::GetIO();
+  int width = 0;
+  int height = 0;
+  SDL_GetWindowSizeInPixels(window_, &width, &height);
+  io.DisplaySize = {static_cast<float>(std::max(width, 1)), static_cast<float>(std::max(height, 1))};
+  io.DisplayFramebufferScale = {1.0F, 1.0F};
+  io.DeltaTime = last_frame_us_ > 0 ? std::max(1e-4F, static_cast<float>(now_us - last_frame_us_) * 1e-6F)
+                                    : 1.0F / 60.0F;
+  last_frame_us_ = now_us;
+  ImGui::NewFrame();
+  clicks_.clear();
+  draw_first_run(view, look_.scale);
+  ImGui::Render();
+  draw_ = nullptr;
+  controls_.framed(now_us, ControlsView{}, false);
+  return ImGui::GetDrawData();
+}
+
 void PlayerUi::set_settings(const PlaySettings& running, SettingsChoices choices) {
   running_ = running;
   choices_ = std::move(choices);

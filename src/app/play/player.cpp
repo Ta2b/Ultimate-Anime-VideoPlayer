@@ -20,6 +20,7 @@
 #include "app/play/backend_library.h"
 #include "app/play/build_progress.h"
 #include "app/play/engine_build.h"
+#include "app/play/first_run.h"
 #include "app/play/input.h"
 #include "app/play/motion_model.h"
 #include "app/play/pipeline.h"
@@ -30,6 +31,7 @@
 #include "app/play/upscale_stage.h"
 #include "core/clock.h"
 #include "core/log.h"
+#include "core/settings.h"
 #include "kernels/spec/rife.h"
 #include "media/demuxer.h"
 #include "media/selection.h"
@@ -92,6 +94,8 @@ constexpr std::int64_t kQuietBuildUs = 250'000;
 // Pendant une construction, la superposition est redessinée 10 fois par seconde au plus : le GPU
 // sert à mesurer les tactiques.
 constexpr std::uint32_t kBuildFrameMs = 100;
+// L'écran de bienvenue suit la souris : ~60 images par seconde.
+constexpr std::uint32_t kWelcomeFrameMs = 16;
 
 // Instantané demandé (--snapshot) : pris pendant la première construction de moteur qui dure jusqu'à
 // at_us, sinon pendant la lecture.
@@ -611,6 +615,7 @@ struct Player {
   std::optional<int> audio_track;
   std::optional<std::optional<int>> subtitle_track;
   ProfileState profiles;
+  core::Settings engines;  // settings.toml : les moteurs choisis à l'écran de bienvenue
 };
 
 // Fin d'une ouverture de la chaîne : la lecture est finie (rien), ou le menu demande de la rouvrir
@@ -731,6 +736,9 @@ std::expected<std::optional<std::unique_ptr<gpu::Engine>>, Refusal> prepare_engi
 std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings settings,
                                                         std::int64_t start_us) {
   const auto log = log_channel("app");
+  std::vector<std::string> unavailable;
+  settings = within_engines(settings, p.engines, unavailable);
+  for (const std::string& line : unavailable) log->warn("{}", line);
   const PlayOptions options = options_for(p.options, settings);
   const media::TrackInfo& video = p.video;
   std::optional<ModelChoice> model;
@@ -904,7 +912,8 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
           .true_hdr_available = std::filesystem::exists(p.options.true_hdr_sdk) || settings.true_hdr,
           .auto_peak = auto_peak,
           .engines = engine_badges(p.paths.engines, model ? model->path : std::filesystem::path(), work,
-                                   rife_loaded ? rife_model : std::nullopt, rife_motion ? g : image_g)});
+                                   rife_loaded ? rife_model : std::nullopt, rife_motion ? g : image_g),
+          .chosen_engines = chosen_line(p.engines)});
   p.profiles.source =
       core::SourceInfo{.width = video.width, .height = video.height, .fps = fps_of(video.frame_rate)};
   if (model) p.profiles.default_model = model->default_name;
@@ -1001,6 +1010,70 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
   return reopen;
 }
 
+// Ce qui est sur ce poste pour l'écran de bienvenue : le backend TensorRT, le SDK Maxine importé
+// ou à importer.
+EnginesHere engines_here(const PlayOptions& options, const PlayerPaths& paths) {
+  EnginesHere here;
+  std::error_code error;
+  for (const std::filesystem::path& backend : paths.backends)
+    here.tensorrt |= std::filesystem::exists(backend, error);
+  vendor_hdr::SdkStore store(paths.engines.parent_path() / "sdk", vendor_hdr::SdkKind::MaxineVfx);
+  if (store.status().installed) {
+    here.maxine = true;
+    here.maxine_status = "importé";
+  } else if (std::filesystem::exists(options.true_hdr_sdk, error)) {
+    here.maxine = true;
+    here.maxine_status = std::format("à importer depuis {} (une fois)", options.true_hdr_sdk.string());
+  } else {
+    here.maxine_status = std::format("SDK absent ({})", options.true_hdr_sdk.string());
+  }
+  return here;
+}
+
+GpuFacts gpu_facts(const PlaceboScreen& screen) {
+  const PlaceboScreen::DeviceFacts facts = screen.device_facts();
+  const GpuVendor vendor = vendor_from_pci(facts.pci_vendor);
+  return GpuFacts{.name = facts.name,
+                  .vendor = vendor,
+                  .vram_bytes = facts.vram_bytes,
+                  .tensor_cores = vendor == GpuVendor::Nvidia && facts.cooperative_matrix};
+}
+
+// L'écran de bienvenue jusqu'à « Commencer » ; rien si l'utilisateur quitte. Les touches d'essai
+// (--keys) qui tombent pendant l'écran y sont pressées, comptées depuis son ouverture.
+std::expected<std::optional<FirstRunView>, Refusal> welcome(PlaceboScreen& screen, PlayerUi& ui,
+                                                            FirstRunView view, const PlayOptions& options,
+                                                            std::size_t& next_key, SnapshotPlan& snapshot) {
+  const core::KeyMap keys = core::KeyMap::defaults();
+  const std::int64_t started = host_now_us();
+  std::vector<Input> actions;
+  while (!view.done) {
+    for (; next_key < options.keys.size() && host_now_us() - started >= options.keys[next_key].first;
+         ++next_key)
+      press(options.keys[next_key].second, screen.window());
+    SDL_Event event;
+    while (SDL_PollEvent(&event)) {
+      if (ui.handle(event, host_now_us(), actions)) continue;
+      if (auto input = input_of(event, keys)) actions.push_back(*input);
+    }
+    for (const Input& input : actions) {
+      if (const auto* command = std::get_if<Command>(&input)) {
+        if (std::holds_alternative<cmd::Quit>(*command)) return std::nullopt;
+      } else if (std::holds_alternative<ToggleFullscreen>(input)) {
+        screen.set_fullscreen(!screen.fullscreen());
+      } else if (std::holds_alternative<LeaveFullscreen>(input)) {
+        screen.set_fullscreen(false);
+      }
+    }
+    actions.clear();
+    snapshot.maybe(screen, started);
+    if (auto shown = screen.show(ShowRequest{.ui = ui.welcome(host_now_us(), view)}); !shown)
+      return std::unexpected(std::move(shown.error()));
+    SDL_Delay(kWelcomeFrameMs);
+  }
+  return view;
+}
+
 }  // namespace
 
 std::expected<void, Refusal> play(const PlayOptions& options, const PlayerPaths& paths) {
@@ -1033,6 +1106,61 @@ std::expected<void, Refusal> play(const PlayOptions& options, const PlayerPaths&
     remember_chain(profiles, *saved);
     log->info("chaîne de play.toml reprise dans le profil {}", profiles.active);
   }
+  auto screen =
+      PlaceboScreen::open(ScreenOptions{.title = std::format("ajp — {}", options.file.filename().string()),
+                                        .width = options.window_width,
+                                        .height = options.window_height,
+                                        .fullscreen = options.fullscreen});
+  if (!screen) return std::unexpected(std::move(screen.error()));
+  auto ui = PlayerUi::create((*screen)->window(), options.file.filename().string());
+  if (!ui) return std::unexpected(std::move(ui.error()));
+  // L'interface rend ses textures à l'écran avant qu'ils ne partent, quelle que soit la sortie.
+  class Release {
+   public:
+    Release(PlayerUi& ui, PlaceboScreen& screen) : ui_(ui), screen_(screen) {}
+    Release(const Release&) = delete;
+    Release& operator=(const Release&) = delete;
+    Release(Release&&) = delete;
+    Release& operator=(Release&&) = delete;
+    ~Release() { ui_.release(screen_); }
+
+   private:
+    PlayerUi& ui_;
+    PlaceboScreen& screen_;
+  } const release(**ui, **screen);
+  SnapshotPlan snapshot{.path = options.snapshot, .at_us = options.snapshot_at_us};
+  std::size_t next_key = 0;
+
+  // Les moteurs : settings.toml, choisis à l'écran de bienvenue au premier lancement.
+  const std::filesystem::path engines_path = settings_path.parent_path() / "settings.toml";
+  auto engines = core::load_settings(engines_path);
+  if (!engines) {
+    log->warn("{} ; écran de bienvenue", engines.error().detail);
+    engines = core::Settings{};
+  }
+  if (!engines->first_run_done || options.first_run) {
+    const GpuFacts gpu = gpu_facts(**screen);
+    ProfilesView choice = view_of(profiles);
+    if (!engines->first_run_done) choice.start = start_profile_for(gpu);
+    log->info("bienvenue : {}", gpu_line(gpu));
+    auto chosen = welcome(**screen, **ui,
+                          first_run_view(gpu, engines_here(options, paths), std::move(choice), *engines),
+                          options, next_key, snapshot);
+    if (!chosen) return std::unexpected(std::move(chosen.error()));
+    if (!*chosen) return {};
+    engines = settings_after(**chosen, *engines);
+    if (auto written = core::save_settings(engines_path, *engines); !written)
+      log->warn("{}", written.error().detail);
+    const std::array<core::UserEdit, 1> start{core::edit::StartProfile{.slot = (*chosen)->profiles.start}};
+    if (auto edited = edit_profiles(profiles.user_path, profiles.data, start)) {
+      profiles.data = std::move(*edited);
+    } else {
+      log->warn("user.toml : {}", edited.error().detail);
+    }
+    profiles.active = profiles.data.file.start_profile;
+    log->info("moteurs choisis : {} ; profil de démarrage {}", chosen_line(*engines), profiles.active);
+  }
+
   PlaySettings from_profile = *saved;
   if (const auto& start = profiles.data.file.profiles[static_cast<std::size_t>(profiles.active - 1)]) {
     std::vector<std::string> notes;
@@ -1042,15 +1170,6 @@ std::expected<void, Refusal> play(const PlayOptions& options, const PlayerPaths&
   }
   PlaySettings settings = settings_for(from_profile, options);
   if (auto valid = validate(settings); !valid) return std::unexpected(std::move(valid.error()));
-
-  auto screen =
-      PlaceboScreen::open(ScreenOptions{.title = std::format("ajp — {}", options.file.filename().string()),
-                                        .width = options.window_width,
-                                        .height = options.window_height,
-                                        .fullscreen = options.fullscreen});
-  if (!screen) return std::unexpected(std::move(screen.error()));
-  auto ui = PlayerUi::create((*screen)->window(), options.file.filename().string());
-  if (!ui) return std::unexpected(std::move(ui.error()));
   static_cast<void>((*ui)->controls().set_volume(settings.volume));
   show_loading(**screen, **ui, "Chargement");
   auto library = BackendLibrary::open(paths.backends);
@@ -1065,9 +1184,11 @@ std::expected<void, Refusal> play(const PlayOptions& options, const PlayerPaths&
                 .settings_path = settings_path,
                 .from_file = *saved,
                 .started = settings,
-                .snapshot = {.path = options.snapshot, .at_us = options.snapshot_at_us},
+                .snapshot = std::move(snapshot),
                 .details = settings.stats.all,
-                .profiles = std::move(profiles)};
+                .next_key = next_key,
+                .profiles = std::move(profiles),
+                .engines = std::move(*engines)};
   std::int64_t start_us = options.start_us;
   std::expected<void, Refusal> result;
   while (true) {
@@ -1086,8 +1207,6 @@ std::expected<void, Refusal> play(const PlayOptions& options, const PlayerPaths&
       log->warn("{}", written.error().detail);
     log->info("réouverture à {}", format_position(start_us));
   }
-  (*ui)->release(**screen);
-  screen->reset();
   return result;
 }
 

@@ -42,6 +42,7 @@ struct SettingsChoices {
   bool true_hdr_available = false;  // SDK Maxine présent
   int auto_peak = 0;                // pic automatique de RTX HDR, en nits
   std::vector<EngineBadge> engines;
+  std::string chosen_engines;  // « Vulkan, TensorRT, NVIDIA Maxine (RTX HDR) » (settings.toml)
   ProfilesView profiles;
 };
 

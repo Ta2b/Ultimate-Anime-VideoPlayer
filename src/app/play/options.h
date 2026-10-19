@@ -7,6 +7,7 @@
 //                      [--work-height=N] [--rife=N] [--rife-model=FICHIER.onnx]
 //                      [--truehdr] [--truehdr-sdk=DOSSIER] [--truehdr-peak=NITS]
 //                      [--truehdr-contrast=N] [--truehdr-saturation=N] [--truehdr-gray=N]
+//                      [--first-run]
 //
 // Le modèle par défaut est celui du lecteur actuel du propriétaire (AnimeJaNai, slot par
 // défaut de animejanai.conf) : SPAN V3.1 Sharp1 Performance, ×2. Il est lu en place, en
@@ -78,6 +79,8 @@ struct PlayOptions {
   bool help = false;      // --help
   // --rife-image : RIFE sort l'image à chaque instant (sans la variante mouvement), pour comparer.
   bool rife_image = false;
+  // --first-run : l'écran de bienvenue (moteurs, profil de démarrage) même s'il a déjà été vu.
+  bool first_run = false;
   // Options données sur la ligne de commande (« --rife », « --truehdr »…) : elles remplacent les
   // réglages de play.toml pour cette lecture.
   std::vector<std::string> given;

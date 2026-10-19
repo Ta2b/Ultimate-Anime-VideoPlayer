@@ -113,6 +113,8 @@ std::expected<PlayOptions, Refusal> parse_play_options(std::span<const std::stri
     } else if (arg == "--truehdr") {
       options.true_hdr = true;
       options.given.emplace_back(arg);
+    } else if (arg == "--first-run") {
+      options.first_run = true;
     } else if (arg == "--rife-image") {
       options.rife_image = true;
     } else {
@@ -216,6 +218,7 @@ std::string play_usage() {
       "  --snapshot=FICHIER     la fenêtre en PPM, après --snapshot-at=S secondes (3) de lecture,\n"
       "                         ou de construction d'un moteur si elle dure jusque-là\n"
       "  --rife-image           RIFE image à chaque instant (sans la variante mouvement)\n"
+      "  --first-run            écran de bienvenue (moteurs, profil de démarrage), même déjà vu\n"
       "  --keys=S:touche,…      touches pressées d'office (essais), ex. 3:Right,5:Space\n"
       "  --work-height=N        réduit la source à N lignes avant SPAN (défaut 720 ; 0 jamais)\n"
       "  --rife=N               interpolation RIFE ×N avant SPAN (défaut {} ; 0 aucune)\n"

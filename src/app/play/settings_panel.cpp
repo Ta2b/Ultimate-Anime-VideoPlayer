@@ -221,6 +221,9 @@ void profiles_tab(const ProfilesView& view, std::array<char, 64>& rename, std::v
 }
 
 void engines_tab(const SettingsChoices& choices) {
+  section("Moteurs choisis");
+  ImGui::TextWrapped("%s", choices.chosen_engines.c_str());
+  note("Choisis à l'écran de bienvenue ; ajp-anime --first-run le remontre.");
   section("Moteurs TensorRT");
   if (choices.engines.empty()) note("Aucun moteur construit.");
   for (const EngineBadge& engine : choices.engines) {

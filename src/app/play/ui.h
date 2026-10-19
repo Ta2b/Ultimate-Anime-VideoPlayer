@@ -15,6 +15,7 @@
 
 #include "app/play/controls.h"
 #include "app/play/controls_draw.h"
+#include "app/play/first_run.h"
 #include "app/play/input.h"
 #include "app/play/links.h"
 #include "app/play/settings_panel.h"
@@ -45,6 +46,8 @@ class PlayerUi {
   UiFrame frame(std::int64_t now_us, const ControlsView& view, std::vector<Input>& actions);
   // L'image de la préparation des moteurs (avant la lecture), recomposée à chaque appel.
   const ImDrawData* preparation(std::int64_t now_us, const PrepareView& view);
+  // L'image de l'écran de bienvenue (first_run.h), recomposée à chaque appel.
+  const ImDrawData* welcome(std::int64_t now_us, FirstRunView& view);
 
   Controls& controls() { return controls_; }
   // Les pistes que les menus de la barre proposent, et celles choisies.

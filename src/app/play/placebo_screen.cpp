@@ -1,7 +1,10 @@
 #include "app/play/placebo_screen.h"
 
+#include <algorithm>
 #include <format>
+#include <string_view>
 #include <utility>
+#include <vector>
 
 #include <SDL3/SDL_video.h>
 #include <SDL3/SDL_vulkan.h>
@@ -170,6 +173,43 @@ std::expected<std::unique_ptr<PlaceboScreen>, Refusal> PlaceboScreen::open(const
 const GpuDevice& PlaceboScreen::device() const {
   return impl_->device;
 }
+PlaceboScreen::DeviceFacts PlaceboScreen::device_facts() const {
+  DeviceFacts facts;
+  const pl_vulkan vk = impl_->vk;
+  const auto properties_of = reinterpret_cast<PFN_vkGetPhysicalDeviceProperties>(
+      vk->get_proc_addr(vk->instance, "vkGetPhysicalDeviceProperties"));
+  if (properties_of != nullptr) {
+    VkPhysicalDeviceProperties properties{};
+    properties_of(vk->phys_device, &properties);
+    facts.name = properties.deviceName;
+    facts.pci_vendor = properties.vendorID;
+  }
+  const auto memory = reinterpret_cast<PFN_vkGetPhysicalDeviceMemoryProperties>(
+      vk->get_proc_addr(vk->instance, "vkGetPhysicalDeviceMemoryProperties"));
+  if (memory != nullptr) {
+    VkPhysicalDeviceMemoryProperties properties{};
+    memory(vk->phys_device, &properties);
+    for (std::uint32_t i = 0; i < properties.memoryHeapCount; ++i) {
+      const VkMemoryHeap& heap = properties.memoryHeaps[i];
+      if ((heap.flags & VK_MEMORY_HEAP_DEVICE_LOCAL_BIT) != 0U)
+        facts.vram_bytes = std::max<std::uint64_t>(facts.vram_bytes, heap.size);
+    }
+  }
+  const auto extensions = reinterpret_cast<PFN_vkEnumerateDeviceExtensionProperties>(
+      vk->get_proc_addr(vk->instance, "vkEnumerateDeviceExtensionProperties"));
+  std::uint32_t count = 0;
+  if (extensions != nullptr && extensions(vk->phys_device, nullptr, &count, nullptr) == VK_SUCCESS) {
+    std::vector<VkExtensionProperties> list(count);
+    if (extensions(vk->phys_device, nullptr, &count, list.data()) == VK_SUCCESS) {
+      for (const VkExtensionProperties& extension : list) {
+        const std::string_view name(extension.extensionName);
+        facts.cooperative_matrix |= name == "VK_KHR_cooperative_matrix" || name == "VK_NV_cooperative_matrix";
+      }
+    }
+  }
+  return facts;
+}
+
 SDL_Window* PlaceboScreen::window() const {
   return impl_->window;
 }
