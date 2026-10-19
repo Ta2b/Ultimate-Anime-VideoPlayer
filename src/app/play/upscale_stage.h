@@ -78,6 +78,7 @@ class UpscaleStage final : public RingStage {
   std::uint64_t interpolated_ = 0;
   std::uint64_t cuts_ = 0;
   std::uint64_t held_ = 0;
+  std::vector<std::int64_t> scores_wait_us_;  // attente hôte de scores_now, pour le profil
 };
 
 }  // namespace ajp::app::play

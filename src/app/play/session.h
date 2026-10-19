@@ -141,13 +141,21 @@ class Session {
 
   bool fresh_ = false;       // ce tour montre une image neuve
   bool shown_once_ = false;  // une présentation a eu lieu : la suivante seulement si ça change
-  std::optional<std::int64_t> shown_subtitles_pts_;  // sous-titres de la dernière présentation
-  OutputSize shown_size_;                            // taille de sortie de la dernière présentation
-  bool shown_ui_ = false;                            // la dernière présentation avait une interface
-  StatsSettings show_stats_;                         // mesures affichées
-  std::vector<std::string> osd_;                     // relu toutes les kOsdPeriodUs
-  std::optional<std::int64_t> osd_at_us_;            // rien : à relire au prochain tour
-  std::optional<std::int64_t> playing_since_us_;     // instant hôte de la première image
+  // Ce que montraient les sous-titres de la dernière présentation : une réponse plus récente au
+  // même contenu (même atlas, mêmes rectangles) ne recompose pas l'écran.
+  struct SubtitleLook {
+    std::uint64_t generation = 0;  // 0 : aucun sous-titre
+    std::vector<subs::SubtitleRect> rects;
+    friend bool operator==(const SubtitleLook&, const SubtitleLook&) = default;
+  };
+  static SubtitleLook look_of(const subs::SubtitleFrame* frame);
+  SubtitleLook shown_subtitles_;
+  OutputSize shown_size_;                         // taille de sortie de la dernière présentation
+  bool shown_ui_ = false;                         // la dernière présentation avait une interface
+  StatsSettings show_stats_;                      // mesures affichées
+  std::vector<std::string> osd_;                  // relu toutes les kOsdPeriodUs
+  std::optional<std::int64_t> osd_at_us_;         // rien : à relire au prochain tour
+  std::optional<std::int64_t> playing_since_us_;  // instant hôte de la première image
   std::int64_t last_fresh_host_us_ = 0;
   bool fullscreen_done_ = false;
   FrameStats stats_;

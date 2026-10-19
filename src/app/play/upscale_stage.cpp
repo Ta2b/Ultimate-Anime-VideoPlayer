@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <array>
+#include <chrono>
 #include <format>
 #include <utility>
 
@@ -33,7 +34,16 @@ UpscaleStage::~UpscaleStage() {
   stop();
   if (setup_.rife != nullptr) {
     log_channel("gpu")->info("RIFE ×{} : {} paires, {} interpolées, {} coupes de scène, {} dessins tenus",
-                             setup_.rife_factor, pairs_, interpolated_, cuts_, held_);
+                             setup_.live ? setup_.live->rife_factor() : setup_.rife_factor, pairs_,
+                             interpolated_, cuts_, held_);
+  }
+  if (!scores_wait_us_.empty()) {
+    std::ranges::sort(scores_wait_us_);
+    log_channel("gpu")->info(
+        "profil hôte · attente des mesures de la paire : médiane {:.2f} ms, p95 {:.2f} ms ({})",
+        static_cast<double>(scores_wait_us_[scores_wait_us_.size() / 2]) / 1000.0,
+        static_cast<double>(scores_wait_us_[scores_wait_us_.size() * 95 / 100]) / 1000.0,
+        scores_wait_us_.size());
   }
 }
 
@@ -123,7 +133,11 @@ std::expected<std::uint32_t, Refusal> UpscaleStage::outputs(const DecodedFrame& 
                   .same_epoch = previous_ && previous_->epoch == frame.epoch,
                   .gap_us = previous_ ? frame.pts_us - previous_->pts_us : 0};
   if (facts.factor > 1 && facts.same_epoch) {
+    const auto asked = std::chrono::steady_clock::now();
     auto scores = ops.scores_now(rgb_[current_ ^ 1U]->tensor(), rgb);
+    scores_wait_us_.push_back(
+        std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - asked)
+            .count());
     if (!scores) return std::unexpected(std::move(scores.error()));
     facts.scores = *scores;
     ++pairs_;

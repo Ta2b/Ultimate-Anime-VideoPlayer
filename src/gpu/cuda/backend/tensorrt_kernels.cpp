@@ -138,7 +138,10 @@ std::expected<void, Refusal> TensorRtBackend::ingest(const DecodedFrame& frame, 
     if (auto ok = cuda_check(cudaStreamWaitEvent(stream_, ready, 0), "cudaStreamWaitEvent"); !ok) return ok;
   }
   chain_timing_->begin(stream_);
+  GpuTiming& timing = stage("ingestion");
+  timing.begin(stream_);
   if (auto ok = cuda_check(launch_ingest(params, stream_), "ingest<<<>>>"); !ok) return ok;
+  timing.end(stream_);
   return hold(frame);
 }
 
@@ -217,7 +220,10 @@ std::expected<void, Refusal> TensorRtBackend::write_ring(const Tensor& rgb, cons
   if (!imported) return std::unexpected(std::move(imported.error()));
   const WriteParams params{
       .rgb = address(rgb), .width = desc.width, .height = desc.height, .surface = (*imported)->surface()};
+  GpuTiming& timing = stage("écriture du ring");
+  timing.begin(stream_);
   if (auto ok = cuda_check(launch_write_rgba16(params, stream_), "write_rgba16<<<>>>"); !ok) return ok;
+  timing.end(stream_);
   return (*imported)->signal(sync.signal_value, stream_);
 }
 

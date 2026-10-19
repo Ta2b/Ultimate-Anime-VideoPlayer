@@ -1,6 +1,7 @@
 // Temps GPU d'une étape, mesuré par paires d'événements CUDA sur le flux du backend et relu
-// sans attente hôte : une paire n'est lue qu'une fois son second événement passé. Toutes
-// les kReport mesures, la médiane et le 95e centile partent au journal du backend.
+// sans attente hôte : une paire n'est lue qu'une fois son second événement passé. Avec un
+// rapporteur, toutes les kReport mesures, la médiane et le 95e centile partent au journal du
+// backend ; summary() résume toutes les mesures depuis la création (profil de fin de lecture).
 #pragma once
 
 #include <array>
@@ -26,6 +27,9 @@ class GpuTiming {
 
   void begin(cudaStream_t stream);
   void end(cudaStream_t stream);
+  // « label : médiane 4,37 ms, p95 5,10 ms (1234 mesures) », ou rien sans mesure. Relit les
+  // paires finies sans attendre.
+  std::string summary();
 
  private:
   void collect();
@@ -38,6 +42,8 @@ class GpuTiming {
   std::size_t ended_ = 0;  // paires finies (second événement enregistré)
   std::size_t read_ = 0;   // paires relues
   std::vector<float> samples_;
+  std::vector<float> all_;  // toutes les mesures, pour summary() (kMaxAll au plus)
+  static constexpr std::size_t kMaxAll = 1 << 18;
 };
 
 }  // namespace ajp::gpu::cuda

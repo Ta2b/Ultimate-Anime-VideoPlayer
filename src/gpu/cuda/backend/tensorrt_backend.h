@@ -13,6 +13,7 @@
 #include <cuda_runtime_api.h>
 #include <expected>
 #include <filesystem>
+#include <map>
 #include <memory>
 #include <optional>
 #include <vector>
@@ -114,7 +115,11 @@ class TensorRtBackend final : public Backend, public KernelOps {
   std::array<Held, kHeldFrames> held_{};
   std::array<cudaEvent_t, kFences> fences_{};
   std::uint64_t fence_count_ = 0;
-  std::unique_ptr<GpuTiming> span_timing_;            // le moteur seul
+  std::unique_ptr<GpuTiming> span_timing_;  // le moteur seul
+  // Profil GPU par étape (ingestion, mesures, RIFE, chaque moteur, RTX HDR, écriture), résumé au
+  // journal à la destruction du backend.
+  std::map<std::string, std::unique_ptr<GpuTiming>, std::less<>> stages_;
+  GpuTiming& stage(std::string_view name);
   std::unique_ptr<GpuTiming> chain_timing_;           // de l'ingestion à la fin du moteur
   std::vector<std::unique_ptr<ImportedSlot>> slots_;  // génération courante, par indice
   std::uint32_t generation_ = 0;

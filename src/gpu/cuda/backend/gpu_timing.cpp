@@ -39,17 +39,28 @@ void GpuTiming::collect() {
   while (read_ < ended_ && cudaEventQuery(stop_[read_ % kPairs]) == cudaSuccess) {
     float ms = 0.0F;
     if (cudaEventElapsedTime(&ms, start_[read_ % kPairs], stop_[read_ % kPairs]) == cudaSuccess) {
-      samples_.push_back(ms);
+      if (report_) samples_.push_back(ms);
+      if (all_.size() < kMaxAll) all_.push_back(ms);
     }
     ++read_;
   }
-  if (samples_.size() < kReport || !report_) return;
+  if (!report_ || samples_.size() < kReport) return;
   std::ranges::sort(samples_);
   const float median = samples_[samples_.size() / 2];
   const float p95 = samples_[samples_.size() * 95 / 100];
   report_(std::format("{} : médiane {:.2f} ms, p95 {:.2f} ms, max {:.2f} ms sur {} images", label_, median,
                       p95, samples_.back(), samples_.size()));
   samples_.clear();
+}
+
+std::string GpuTiming::summary() {
+  collect();
+  if (all_.empty()) return {};
+  std::vector<float> sorted = all_;
+  std::ranges::sort(sorted);
+  return std::format("{} : médiane {:.2f} ms, p95 {:.2f} ms, min {:.2f} ms ({} mesures)", label_,
+                     sorted[sorted.size() / 2], sorted[sorted.size() * 95 / 100], sorted.front(),
+                     sorted.size());
 }
 
 }  // namespace ajp::gpu::cuda

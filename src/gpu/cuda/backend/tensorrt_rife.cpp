@@ -61,7 +61,11 @@ std::expected<void, Refusal> TensorRtBackend::rife_input(const Tensor& a, const 
                                .black = 0.0F,  // la chaîne ingère en plage limitée : le noir vaut 0
                                .time = t,
                                .input = address(input)};
-  return cuda_check(launch_rife_input(params, stream_), "rife_input<<<>>>");
+  GpuTiming& timing = stage("entrée de RIFE");
+  timing.begin(stream_);
+  auto launched = cuda_check(launch_rife_input(params, stream_), "rife_input<<<>>>");
+  timing.end(stream_);
+  return launched;
 }
 
 std::expected<void, Refusal> TensorRtBackend::rife_crop(const Tensor& padded, const Tensor& out) {
@@ -83,7 +87,11 @@ std::expected<void, Refusal> TensorRtBackend::rife_crop(const Tensor& padded, co
                               .width = g.width,
                               .height = g.height,
                               .out = address(out)};
-  return cuda_check(launch_rife_crop(params, stream_), "rife_crop<<<>>>");
+  GpuTiming& timing = stage("recadrage de RIFE");
+  timing.begin(stream_);
+  auto launched = cuda_check(launch_rife_crop(params, stream_), "rife_crop<<<>>>");
+  timing.end(stream_);
+  return launched;
 }
 
 std::expected<PairScores, Refusal> TensorRtBackend::scores_now(const Tensor& a, const Tensor& b) {
@@ -108,7 +116,10 @@ std::expected<PairScores, Refusal> TensorRtBackend::scores_now(const Tensor& a, 
                                 .levels = 219.0F,  // plage limitée, comme l'ingestion de la chaîne
                                 .total = &pair_device_->total,
                                 .worst = &pair_device_->worst};
+    GpuTiming& timing = stage("mesures de la paire");
+    timing.begin(stream_);
     ready = cuda_check(launch_pair_diff(params, stream_), "pair_diff<<<>>>");
+    timing.end(stream_);
   }
   if (ready) {
     ready = cuda_check(

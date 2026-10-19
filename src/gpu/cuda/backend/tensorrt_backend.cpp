@@ -179,6 +179,11 @@ TensorRtBackend::~TensorRtBackend() {
   if (stream_ == nullptr) return;
   cudaSetDevice(device_);
   cudaStreamSynchronize(stream_);
+  for (auto& [name, timing] : stages_) {
+    if (const std::string line = timing->summary(); !line.empty())
+      log(BackendLogLevel::Info, "profil GPU · " + line);
+  }
+  stages_.clear();
   slots_.clear();
   retired_.clear();
   span_timing_.reset();
@@ -283,13 +288,24 @@ std::expected<std::unique_ptr<TensorBuffer>, Refusal> TensorRtBackend::alloc_ten
   return std::make_unique<CudaTensorBuffer>(device_, memory, tensor);
 }
 
+GpuTiming& TensorRtBackend::stage(std::string_view name) {
+  auto found = stages_.find(name);
+  if (found == stages_.end())
+    found = stages_.emplace(std::string(name), std::make_unique<GpuTiming>(std::string(name), nullptr)).first;
+  return *found->second;
+}
+
 std::expected<void, Refusal> TensorRtBackend::enqueue(Engine& engine, std::span<const Tensor> inputs,
                                                       std::span<Tensor> outputs) {
   auto* trt = dynamic_cast<TrtEngine*>(&engine);
   if (trt == nullptr) return refuse(RefusalCode::DeviceMismatch, "enqueue : moteur d'un autre backend");
   if (auto ok = bind(); !ok) return ok;
+  const Shape shape = trt->input_shape(0);
+  GpuTiming& timing = stage(std::format("moteur {}×{}×{}", shape.dims[1], shape.dims[2], shape.dims[3]));
   span_timing_->begin(stream_);
+  timing.begin(stream_);
   auto queued = trt->enqueue(stream_, inputs, outputs);
+  timing.end(stream_);
   span_timing_->end(stream_);
   chain_timing_->end(stream_);
   return queued;

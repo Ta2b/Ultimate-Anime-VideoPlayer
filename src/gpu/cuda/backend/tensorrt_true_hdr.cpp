@@ -117,6 +117,8 @@ std::expected<void, Refusal> TensorRtBackend::write_ring_true_hdr(
                           .seed = hdr.frames++,
                           .out = hdr.rgba8,
                           .pitch = hdr.rgba8_pitch};
+  GpuTiming& timing = stage("RTX HDR (tramage, TrueHDR, écriture)");
+  timing.begin(stream_);
   if (auto ok = cuda_check(launch_to_rgba8(to8, stream_), "to_rgba8<<<>>>"); !ok) return ok;
   const vendor_hdr::TrueHdrInput in{
       .image = {.device = reinterpret_cast<std::uintptr_t>(hdr.rgba8),
@@ -139,6 +141,7 @@ std::expected<void, Refusal> TensorRtBackend::write_ring_true_hdr(
                                     .surface = (*imported)->surface()};
   if (auto ok = cuda_check(launch_rgb10a2_to_surface(back, stream_), "rgb10a2_to_surface<<<>>>"); !ok)
     return ok;
+  timing.end(stream_);
   return (*imported)->signal(sync.signal_value, stream_);
 }
 

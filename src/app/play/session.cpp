@@ -219,6 +219,11 @@ void Session::choose(std::int64_t host_now) {
   last_fresh_host_us_ = host_now;
 }
 
+Session::SubtitleLook Session::look_of(const subs::SubtitleFrame* frame) {
+  if (frame == nullptr || !frame->atlas || frame->rects.empty()) return {};
+  return SubtitleLook{.generation = frame->atlas->generation, .rects = frame->rects};
+}
+
 const subs::SubtitleFrame* Session::subtitles_for(std::int64_t pts_us) {
   const subs::SubtitleFrame* frame = subtitles_.for_pts(pts_us);
   // Une image montrée sans réponse alors que d'autres attendent : le défaut du clignotement.
@@ -238,13 +243,12 @@ std::expected<std::optional<PresentRecord>, Refusal> Session::tick(std::int64_t 
     osd_at_us_ = host_now;
   }
   const subs::SubtitleFrame* subtitles = current_ ? subtitles_for(current_->pts_us) : nullptr;
-  const std::optional<std::int64_t> subtitles_pts =
-      subtitles != nullptr ? std::optional(subtitles->pts_us) : std::nullopt;
+  SubtitleLook look = look_of(subtitles);
   const OutputSize size = screen_.size();
   // Présentation à la demande : rien n'a changé, l'écran garde l'image (et en VRR, il suit le
   // rythme des images au lieu de recomposer à chaque vsync, ce qui laisse le GPU aux moteurs).
   const bool ui_changed = ui.changed || (ui.draw != nullptr) != shown_ui_;
-  if (shown_once_ && !fresh && !osd_changed && !ui_changed && subtitles_pts == shown_subtitles_pts_ &&
+  if (shown_once_ && !fresh && !osd_changed && !ui_changed && look == shown_subtitles_ &&
       size == shown_size_) {
     check_end(host_now);
     return std::optional<PresentRecord>{};
@@ -260,7 +264,7 @@ std::expected<std::optional<PresentRecord>, Refusal> Session::tick(std::int64_t 
 
   shown_once_ = true;
   shown_ui_ = ui.draw != nullptr;
-  shown_subtitles_pts_ = subtitles_pts;
+  shown_subtitles_ = std::move(look);
   shown_size_ = size;
   std::optional<PresentRecord> record;
   if (timing->presented) {
