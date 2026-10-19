@@ -27,13 +27,14 @@ class Window {
 };
 
 struct FrameStats {
-  std::int64_t presents = 0;    // présentations, redessins compris
-  std::int64_t new_frames = 0;  // images neuves montrées
-  std::int64_t dropped = 0;     // images arrivées trop tard, jamais montrées
-  std::int64_t stale = 0;       // images d'une époque passée (seek), jetées
-  Window frame_interval;        // entre deux images neuves
-  Window present_interval;      // entre deux présentations : la période de l'écran en FIFO
-  Window render;                // composition et soumission
+  std::int64_t presents = 0;       // présentations, redessins compris
+  std::int64_t new_frames = 0;     // images neuves montrées
+  std::int64_t dropped = 0;        // images arrivées trop tard, jamais montrées
+  std::int64_t stale = 0;          // images d'une époque passée (seek), jetées
+  std::int64_t subtitle_gaps = 0;  // présentations sans sous-titres alors que des réponses attendaient
+  Window frame_interval;           // entre deux images neuves
+  Window present_interval;         // entre deux présentations : la période de l'écran en FIFO
+  Window render;                   // composition et soumission
   std::int64_t last_new_present_us = 0;
   std::int64_t last_present_us = 0;
 

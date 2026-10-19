@@ -13,7 +13,6 @@
 #pragma once
 
 #include <cstdint>
-#include <deque>
 #include <expected>
 #include <optional>
 #include <string>
@@ -22,6 +21,7 @@
 #include "app/play/frame_queue.h"
 #include "app/play/frame_stats.h"
 #include "app/play/links.h"
+#include "app/play/subtitle_queue.h"
 #include "core/clock.h"
 #include "core/messages.h"
 #include "core/ring.h"
@@ -29,6 +29,13 @@
 #include "subs/subtitle_renderer.h"
 
 namespace ajp::app::play {
+
+// Demandes de sous-titres en vol au plus, et réponses gardées : ensemble, render ne tient jamais
+// plus de kMaxAtlasesInFlight − 1 atlas (contrat de subs/subtitle_frame.h). Les réponses gardées
+// couvrent tout le ring, l'image à l'écran et celles en avance (voir SubtitleQueue) : le ring du
+// lecteur n'a pas plus de kMaxKeptSubtitles slots.
+inline constexpr std::size_t kMaxSubtitleRequests = 3;
+inline constexpr std::size_t kMaxKeptSubtitles = subs::kMaxAtlasesInFlight - kMaxSubtitleRequests - 1;
 
 struct SessionConfig {
   std::int64_t start_us = 0;             // > 0 : seek exact à l'ouverture
@@ -101,7 +108,7 @@ class Session {
   FrameQueue queue_;
   std::optional<RingFrame> current_;  // montrée, slot tenu par main
   std::vector<RingFrame> late_;       // réservé une fois, réutilisé à chaque tour
-  std::deque<subs::SubtitleFrame> subtitles_;
+  SubtitleQueue subtitles_{kMaxKeptSubtitles};
   std::size_t subtitle_requests_ = 0;  // demandes de l'époque sans réponse
 
   bool fresh_ = false;            // ce tour montre une image neuve

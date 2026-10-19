@@ -27,6 +27,7 @@ namespace ajp::app::play {
 namespace {
 
 constexpr std::uint32_t kRingSlots = 4;
+static_assert(kRingSlots <= kMaxKeptSubtitles, "les sous-titres gardés doivent couvrir tout le ring");
 
 std::unexpected<Refusal> refuse(RefusalCode code, std::string detail) {
   return std::unexpected(Refusal{code, std::move(detail)});
@@ -113,7 +114,8 @@ void log_summary(const Session& session) {
       "fin : {} images neuves, {} présentations, {} sautées, {} jetées au seek, {} sans sous-titres en "
       "attente ; "
       "temps par image médian {} (σ {}), p95 {} ; composition médiane {}",
-      stats.new_frames, stats.presents, stats.dropped, stats.stale, format_ms(stats.frame_interval.median()),
+      stats.new_frames, stats.presents, stats.dropped, stats.stale, stats.subtitle_gaps,
+      format_ms(stats.frame_interval.median()),
       format_ms(static_cast<std::int64_t>(stats.frame_interval.stddev())),
       format_ms(stats.frame_interval.percentile(95)), format_ms(stats.render.median()));
 }

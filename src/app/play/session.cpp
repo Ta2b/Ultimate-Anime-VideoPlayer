@@ -11,10 +11,6 @@
 namespace ajp::app::play {
 namespace {
 
-// Demandes de sous-titres en vol au plus : avec les images gardées, render ne tient
-// jamais plus de kMaxAtlasesInFlight − 1 atlas (contrat de subs/subtitle_frame.h).
-constexpr std::size_t kMaxSubtitleRequests = 4;
-constexpr std::size_t kMaxKeptSubtitles = subs::kMaxAtlasesInFlight - kMaxSubtitleRequests - 1;
 // Fin de flux : plus rien n'arrive depuis ce délai, la lecture est finie.
 constexpr std::int64_t kEndGraceUs = 1'000'000;
 constexpr std::size_t kMaxRefusals = 3;
@@ -118,8 +114,7 @@ void Session::on_frame(const RingFrame& frame) {
 void Session::on_subtitles(subs::SubtitleFrame&& frame) {
   if (frame.epoch != epoch_) return;  // demande d'avant un seek : l'atlas rentre chez subs
   if (subtitle_requests_ > 0) --subtitle_requests_;
-  subtitles_.push_back(std::move(frame));
-  while (subtitles_.size() > kMaxKeptSubtitles) subtitles_.pop_front();
+  subtitles_.push(std::move(frame), current_ ? current_->pts_us : kNoPts);
 }
 
 void Session::on_refusal(const StageRefusal& refusal) {
@@ -178,10 +173,10 @@ void Session::choose(std::int64_t host_now) {
 }
 
 const subs::SubtitleFrame* Session::subtitles_for(std::int64_t pts_us) {
-  if (pts_us == kNoPts) return nullptr;
-  while (subtitles_.size() > 1 && subtitles_[1].pts_us <= pts_us) subtitles_.pop_front();
-  if (subtitles_.empty() || subtitles_.front().pts_us > pts_us) return nullptr;
-  return &subtitles_.front();
+  const subs::SubtitleFrame* frame = subtitles_.for_pts(pts_us);
+  // Une image montrée sans réponse alors que d'autres attendent : le défaut du clignotement.
+  if (frame == nullptr && subtitles_.size() > 0) ++stats_.subtitle_gaps;
+  return frame;
 }
 
 std::expected<std::optional<PresentRecord>, Refusal> Session::tick(std::int64_t host_now) {

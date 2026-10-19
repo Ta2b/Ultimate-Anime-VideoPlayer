@@ -163,6 +163,28 @@ TEST_CASE("Sous-titres : une demande par image, l'image du même pts est dessin�
   CHECK(rig.screen.shown.back().subtitles_pts == 41'000);
 }
 
+TEST_CASE("Sous-titres : chaque vsync de l'image montrée a ses sous-titres, ring plein en avance",
+          "[app][session]") {
+  // Le clignotement du 19 octobre : l'image 0 à l'écran, trois images en avance dans le ring ;
+  // leurs réponses chassaient celle de 0, qui perdait ses sous-titres jusqu'à l'image suivante.
+  Rig rig(SessionConfig{.subtitles = true, .video_width = 1920, .video_height = 1080});
+  for (std::uint32_t slot = 0; slot < 4; ++slot) rig.session.handle(ring_frame(slot, slot * 41'000));
+  REQUIRE(rig.stages.requests.size() == kMaxSubtitleRequests);
+  rig.session.handle(subs::SubtitleFrame{.pts_us = 0});
+  rig.tick();  // amorce : 0 à l'écran
+  CHECK(rig.screen.shown.back().subtitles_pts == 0);
+  for (const auto& request : rig.stages.requests) {
+    if (request.pts_us == 0) continue;
+    rig.session.handle(subs::SubtitleFrame{.pts_us = request.pts_us});
+    for (int vsync = 0; vsync < 7; ++vsync) {  // 24 im/s sur un écran de 165 Hz
+      rig.tick();
+      CHECK(rig.shown_pts() == 0);
+      CHECK(rig.screen.shown.back().subtitles_pts == 0);
+    }
+  }
+  CHECK(rig.session.stats().subtitle_gaps == 0);
+}
+
 TEST_CASE("Fin de flux : la lecture finit quand plus rien n'arrive", "[app][session]") {
   Rig rig;
   rig.session.handle(ring_frame(0, 0));
