@@ -48,6 +48,23 @@ std::expected<void, Refusal> window(std::string_view text, PlayOptions& options)
   return {};
 }
 
+// « 3:Right,5.5:Space » : instants en secondes et noms de touches, dans l'ordre.
+std::expected<void, Refusal> keys(std::string_view text, PlayOptions& options) {
+  while (!text.empty()) {
+    const auto comma = text.find(',');
+    const std::string_view item = text.substr(0, comma);
+    text = comma == std::string_view::npos ? std::string_view{} : text.substr(comma + 1);
+    const auto colon = item.find(':');
+    if (colon == std::string_view::npos || colon + 1 == item.size()) {
+      return refuse(RefusalCode::FieldOutOfRange, std::format("--keys : « {} » n'est pas S:touche", item));
+    }
+    auto at = seconds("--keys", item.substr(0, colon));
+    if (!at) return std::unexpected(std::move(at.error()));
+    options.keys.emplace_back(*at, std::string(item.substr(colon + 1)));
+  }
+  return {};
+}
+
 // Une option à valeur : « --nom=valeur » ou « --nom valeur ». Rend la valeur, ou rien si
 // args[i] n'est pas cette option ; avance i quand la valeur est l'argument suivant.
 std::expected<std::optional<std::string_view>, Refusal> valued(std::span<const std::string_view> args,
@@ -89,7 +106,7 @@ std::expected<PlayOptions, Refusal> parse_play_options(std::span<const std::stri
       std::expected<void, Refusal> applied;
       bool known = false;
       for (const std::string_view name : {"--model", "--window", "--start", "--seconds", "--fullscreen-after",
-                                          "--stats", "--snapshot-at", "--snapshot"}) {
+                                          "--stats", "--snapshot-at", "--snapshot", "--keys"}) {
         auto value = valued(args, i, name);
         if (!value) return std::unexpected(std::move(value.error()));
         if (!*value) continue;
@@ -101,6 +118,8 @@ std::expected<PlayOptions, Refusal> parse_play_options(std::span<const std::stri
           applied = window(text, options);
         } else if (name == "--stats") {
           options.stats = std::filesystem::path(text);
+        } else if (name == "--keys") {
+          applied = keys(text, options);
         } else if (name == "--snapshot") {
           options.snapshot = std::filesystem::path(text);
         } else {
@@ -135,6 +154,7 @@ std::string play_usage() {
       "  --fullscreen-after=S   passe en plein écran après S secondes\n"
       "  --stats=FICHIER        temps de chaque image présentée\n"
       "  --snapshot=FICHIER     la fenêtre en PPM, après --snapshot-at=S secondes (3)\n"
+      "  --keys=S:touche,…      touches pressées d'office (essais), ex. 3:Right,5:Space\n"
       "Touches : espace pause, flèches seek 5 s, f plein écran, q quitter.\n",
       kDefaultModelFile);
 }

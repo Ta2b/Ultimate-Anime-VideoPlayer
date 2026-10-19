@@ -9,7 +9,7 @@ target_compile_options(ajp_backend_tensorrt_kernels PRIVATE
 set_target_properties(ajp_backend_tensorrt_kernels PROPERTIES POSITION_INDEPENDENT_CODE ON)
 
 add_library(ajp_backend_tensorrt MODULE
-  entry.cpp ring_slot.cpp tensorrt_backend.cpp tensorrt_kernels.cpp trt_engine.cpp)
+  entry.cpp gpu_timing.cpp ring_slot.cpp tensorrt_backend.cpp tensorrt_kernels.cpp trt_engine.cpp)
 target_include_directories(ajp_backend_tensorrt PRIVATE "${PROJECT_SOURCE_DIR}/src")
 target_link_libraries(ajp_backend_tensorrt PRIVATE
   ajp::gpu ajp::prepare ajp_backend_tensorrt_kernels ajp::dep::tensorrt CUDA::cuda_driver ${CMAKE_DL_LIBS})

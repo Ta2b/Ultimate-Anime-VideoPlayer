@@ -3,7 +3,7 @@
 //
 //   ajp play <fichier> [--model=FICHIER.onnx] [--no-upscale] [--window=LxH] [--fullscreen]
 //                      [--start=S] [--seconds=S] [--fullscreen-after=S] [--stats=FICHIER]
-//                      [--snapshot=FICHIER.ppm] [--snapshot-at=S]
+//                      [--snapshot=FICHIER.ppm] [--snapshot-at=S] [--keys=S:touche,…]
 //
 // Le modèle par défaut est celui du lecteur actuel du propriétaire (AnimeJaNai, slot par
 // défaut de animejanai.conf) : SPAN V3.1 Sharp1 Performance, ×2. Il est lu en place, en
@@ -17,6 +17,7 @@
 #include <span>
 #include <string>
 #include <string_view>
+#include <utility>
 #include <vector>
 
 #include "core/profile.h"
@@ -47,7 +48,10 @@ struct PlayOptions {
   std::optional<std::filesystem::path> stats;     // --stats : une ligne par image présentée
   std::optional<std::filesystem::path> snapshot;  // --snapshot : la fenêtre en PPM, une fois
   std::int64_t snapshot_at_us = 3'000'000;        // --snapshot-at=S : après S s de lecture
-  bool help = false;                              // --help
+  // --keys=S:touche,… : touches pressées d'office à ces instants (essais sans clavier), par
+  // exemple « 3:Right,5:Space,6:Space,8:F ». Noms de touches de SDL.
+  std::vector<std::pair<std::int64_t, std::string>> keys;
+  bool help = false;  // --help
 };
 
 // Arguments qui suivent « play ». Une option inconnue (OptionUnknown), une valeur

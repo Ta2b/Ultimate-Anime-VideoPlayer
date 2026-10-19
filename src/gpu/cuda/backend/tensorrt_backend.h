@@ -19,6 +19,7 @@
 
 #include "core/types.h"
 #include "gpu/backend.h"
+#include "gpu/cuda/backend/gpu_timing.h"
 #include "gpu/cuda/backend/ring_slot.h"
 #include "gpu/kernel_ops.h"
 
@@ -98,6 +99,8 @@ class TensorRtBackend final : public Backend, public KernelOps {
   std::array<Held, kHeldFrames> held_{};
   std::array<cudaEvent_t, kFences> fences_{};
   std::uint64_t fence_count_ = 0;
+  std::unique_ptr<GpuTiming> span_timing_;            // le moteur seul
+  std::unique_ptr<GpuTiming> chain_timing_;           // de l'ingestion à la fin du moteur
   std::vector<std::unique_ptr<ImportedSlot>> slots_;  // génération courante, par indice
   std::uint32_t generation_ = 0;
   // Imports d'une génération remplacée, relâchés quand retired_done_ est passé côté GPU.

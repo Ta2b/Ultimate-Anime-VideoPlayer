@@ -159,6 +159,11 @@ std::expected<std::unique_ptr<TensorRtBackend>, Refusal> TensorRtBackend::create
       return std::unexpected(ok.error());
     }
   }
+  const GpuTiming::Report report = [log = init.log](std::string_view text) {
+    if (log) log(BackendLogLevel::Info, text);
+  };
+  backend->span_timing_ = std::make_unique<GpuTiming>("temps GPU du moteur", report);
+  backend->chain_timing_ = std::make_unique<GpuTiming>("temps GPU ingestion + moteur", report);
   backend->trt_log_ = std::make_unique<TrtLog>(init.log);
   backend->runtime_.reset(nvinfer1::createInferRuntime(*backend->trt_log_));
   if (!backend->runtime_)
@@ -175,6 +180,8 @@ TensorRtBackend::~TensorRtBackend() {
   cudaStreamSynchronize(stream_);
   slots_.clear();
   retired_.clear();
+  span_timing_.reset();
+  chain_timing_.reset();
   if (retired_done_ != nullptr) cudaEventDestroy(retired_done_);
   runtime_.reset();
   for (Held& held : held_) {
@@ -276,7 +283,12 @@ std::expected<void, Refusal> TensorRtBackend::enqueue(Engine& engine, std::span<
                                                       std::span<Tensor> outputs) {
   auto* trt = dynamic_cast<TrtEngine*>(&engine);
   if (trt == nullptr) return refuse(RefusalCode::DeviceMismatch, "enqueue : moteur d'un autre backend");
-  return bind().and_then([&] { return trt->enqueue(stream_, inputs, outputs); });
+  if (auto ok = bind(); !ok) return ok;
+  span_timing_->begin(stream_);
+  auto queued = trt->enqueue(stream_, inputs, outputs);
+  span_timing_->end(stream_);
+  chain_timing_->end(stream_);
+  return queued;
 }
 
 std::expected<Fence, Refusal> TensorRtBackend::signal() {

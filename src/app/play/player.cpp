@@ -6,6 +6,7 @@
 #include <utility>
 
 #include <SDL3/SDL_events.h>
+#include <SDL3/SDL_keyboard.h>
 #include <SDL3/SDL_timer.h>
 #include <SDL3/SDL_video.h>
 
@@ -86,6 +87,21 @@ std::expected<std::optional<gpu::Artifact>, Refusal> wait_engine(EngineBuild& bu
   }
 }
 
+// Touche pressée d'office (--keys) : un événement SDL de plus dans la file, comme le clavier.
+void press(const std::string& name, SDL_Window* window) {
+  SDL_Event event{};
+  event.type = SDL_EVENT_KEY_DOWN;
+  event.key.windowID = SDL_GetWindowID(window);
+  event.key.key = SDL_GetKeyFromName(name.c_str());
+  event.key.down = true;
+  if (event.key.key == SDLK_UNKNOWN) {
+    log_channel("app")->warn("--keys : touche inconnue « {} »", name);
+    return;
+  }
+  log_channel("app")->info("--keys : {}", name);
+  SDL_PushEvent(&event);
+}
+
 void write_record(std::ofstream& stats, const PresentRecord& record) {
   stats << record.host_us << '\t' << record.pts_us << '\t' << (record.fresh ? 1 : 0) << '\t'
         << record.render_us << '\t' << record.interval_us << '\t' << record.dropped << '\n';
@@ -94,8 +110,9 @@ void write_record(std::ofstream& stats, const PresentRecord& record) {
 void log_summary(const Session& session) {
   const FrameStats& stats = session.stats();
   log_channel("app")->info(
-      "fin : {} images neuves, {} présentations, {} sautées, {} jetées au seek ; temps par image médian {} "
-      "(σ {}), p95 {} ; composition médiane {}",
+      "fin : {} images neuves, {} présentations, {} sautées, {} jetées au seek, {} sans sous-titres en "
+      "attente ; "
+      "temps par image médian {} (σ {}), p95 {} ; composition médiane {}",
       stats.new_frames, stats.presents, stats.dropped, stats.stale, format_ms(stats.frame_interval.median()),
       format_ms(static_cast<std::int64_t>(stats.frame_interval.stddev())),
       format_ms(stats.frame_interval.percentile(95)), format_ms(stats.render.median()));
@@ -192,8 +209,13 @@ std::expected<void, Refusal> play(const PlayOptions& options, const PlayerPaths&
   std::optional<Refusal> failure;
   const std::int64_t began_us = host_now_us();
   std::optional<std::filesystem::path> snapshot = options.snapshot;
+  std::size_t next_key = 0;
   session.begin(began_us);
   while (!session.finished()) {
+    for (; next_key < options.keys.size() && host_now_us() - began_us >= options.keys[next_key].first;
+         ++next_key) {
+      press(options.keys[next_key].second, (*screen)->window());
+    }
     if (snapshot && host_now_us() - began_us >= options.snapshot_at_us) {
       out.snapshot_next(*snapshot);
       snapshot.reset();
