@@ -1,6 +1,7 @@
 #include "app/play/placebo_screen.h"
 
 #include <algorithm>
+#include <cmath>
 #include <format>
 #include <string_view>
 #include <utility>
@@ -23,6 +24,12 @@ namespace {
 
 // Blanc de l'interface dans une sortie HDR : le blanc de référence (BT.2408), comme le SDR.
 constexpr float kUiWhiteNits = 203.0F;
+// Nits d'un code PQ (ST 2084).
+double pq_nits(double e) {
+  const double p = std::pow(std::clamp(e, 0.0, 1.0), 1.0 / 78.84375);
+  return 10000.0 * std::pow(std::max(p - 0.8359375, 0.0) / (18.8515625 - 18.6875 * p), 1.0 / 0.1593017578125);
+}
+
 // Images gardées pour le profil GPU du grade (une heure à 165 Hz tient en dessous).
 constexpr std::size_t kMaxGradeSamples = 1 << 20;
 
@@ -102,6 +109,8 @@ PlaceboScreen::Impl::~Impl() {
   }
   ui.reset();
   grade.reset();
+  ramp_grade.reset();
+  pl_renderer_destroy(&ramp_renderer);
   osd.reset();
   overlays.reset();
   ring.clear(vk != nullptr ? vk->gpu : nullptr);
@@ -249,6 +258,90 @@ void PlaceboScreen::set_grade(const std::optional<render::GradeParams>& params) 
   if (params) impl_->grade->set_params(*params);
 }
 
+std::expected<std::vector<double>, Refusal> PlaceboScreen::grade_ramp(std::span<const float> levels) {
+  Impl& s = *impl_;
+  if (!s.grade || !s.grade_on || !s.hdr_output)
+    return refuse(RefusalCode::HdrUnavailable, "rampe du vrai noir : pas de grade sur une sortie PQ");
+  const pl_gpu gpu = s.vk->gpu;
+  if (s.ramp_renderer == nullptr) s.ramp_renderer = pl_renderer_create(s.log, gpu);
+  if (!s.ramp_grade) {
+    auto grade = render::Grade::create(gpu);
+    if (!grade) return std::unexpected(std::move(grade.error()));
+    s.ramp_grade.emplace(std::move(*grade));
+  }
+  render::GradeParams params = s.grade->params();
+  params.black_lo = 0.0;  // le vrai noir se cale sur ce qui sort sans lui
+  params.black_hi = 0.0;
+  s.ramp_grade->set_params(params);
+  // Une bande de 16 px par marche, 128 lignes : assez pour les cartes 1/8 et 1/32 du grade.
+  constexpr int kBand = 16;
+  constexpr int kRows = 128;
+  const int width = kBand * static_cast<int>(levels.size());
+  std::vector<std::uint16_t> pixels(static_cast<std::size_t>(width) * kRows * 4);
+  for (int y = 0; y < kRows; ++y) {
+    for (int x = 0; x < width; ++x) {
+      const auto value = static_cast<std::uint16_t>(
+          std::lround(std::clamp(levels[static_cast<std::size_t>(x / kBand)], 0.0F, 1.0F) * 65535.0F));
+      const std::size_t at =
+          (static_cast<std::size_t>(y) * static_cast<std::size_t>(width) + static_cast<std::size_t>(x)) * 4;
+      pixels[at] = pixels[at + 1] = pixels[at + 2] = value;
+      pixels[at + 3] = 65535;
+    }
+  }
+  pl_tex_params tex{};
+  tex.w = width;
+  tex.h = kRows;
+  tex.format = pl_find_named_fmt(gpu, "rgba16");
+  tex.sampleable = true;
+  tex.host_writable = true;
+  tex.initial_data = pixels.data();
+  pl_tex in = pl_tex_create(gpu, &tex);
+  tex.initial_data = nullptr;
+  tex.sampleable = false;
+  tex.host_writable = false;
+  tex.renderable = true;
+  tex.host_readable = true;
+  pl_tex out = pl_tex_create(gpu, &tex);
+  const auto frame_of = [&](pl_tex texture, const pl_color_space& color) {
+    pl_frame frame{};
+    frame.num_planes = 1;
+    frame.planes[0].texture = texture;
+    frame.planes[0].components = 4;
+    for (int c = 0; c < 4; ++c) frame.planes[0].component_mapping[c] = c;
+    frame.repr = pl_color_repr_rgb;
+    frame.color = color;
+    frame.crop = {0, 0, static_cast<float>(width), static_cast<float>(kRows)};
+    return frame;
+  };
+  bool done = in != nullptr && out != nullptr;
+  if (done) {
+    const pl_frame image = frame_of(in, s.source);  // comme une image du ring
+    const pl_frame target = frame_of(out, s.target_color);
+    pl_render_params render = pl_render_default_params;
+    render.dither_params = nullptr;
+    const std::span<const pl_hook* const> hooks = s.ramp_grade->hooks();
+    render.hooks = hooks.data();
+    render.num_hooks = static_cast<int>(hooks.size());
+    done = pl_render_image(s.ramp_renderer, &image, &target, &render);
+    pl_tex_transfer_params download{};
+    download.tex = out;
+    download.ptr = pixels.data();
+    done = done && pl_tex_download(gpu, &download);
+  }
+  pl_tex_destroy(gpu, &in);
+  pl_tex_destroy(gpu, &out);
+  if (!done) return refuse(RefusalCode::VendorCallFailed, "rampe du vrai noir : rendu ou relecture");
+  std::vector<double> nits;
+  nits.reserve(levels.size());
+  const std::size_t middle = static_cast<std::size_t>(kRows / 2) * static_cast<std::size_t>(width);
+  for (std::size_t i = 0; i < levels.size(); ++i) {
+    const std::size_t at = (middle + i * kBand + kBand / 2) * 4;
+    const std::uint16_t peak = std::max({pixels[at], pixels[at + 1], pixels[at + 2]});
+    nits.push_back(pq_nits(peak / 65535.0));
+  }
+  return nits;
+}
+
 bool PlaceboScreen::hdr_output() const {
   return impl_->hdr_output;
 }
@@ -257,8 +350,10 @@ void PlaceboScreen::flush() {
   pl_gpu_flush(impl_->vk->gpu);
 }
 
-void PlaceboScreen::snapshot_next(std::filesystem::path path) {
+void PlaceboScreen::snapshot_next(std::filesystem::path path, int count) {
   impl_->snapshot = std::move(path);
+  impl_->snapshot_count = std::max(count, 1);
+  impl_->snapshot_index = 0;
 }
 
 void PlaceboScreen::release_ui(ImGuiPlatformIO& platform) {
@@ -333,6 +428,7 @@ std::expected<ScreenTiming, Refusal> PlaceboScreen::show(const ShowRequest& requ
   if (!pl_swapchain_start_frame(s.swapchain, &swframe))
     return ScreenTiming{.presented = false};  // fenêtre cachée
   s.hdr_output = swframe.color_space.transfer == PL_COLOR_TRC_PQ;
+  s.target_color = swframe.color_space;
   pl_frame target{};
   pl_frame_from_swapchain(&target, &swframe);
 
@@ -364,8 +460,15 @@ std::expected<ScreenTiming, Refusal> PlaceboScreen::show(const ShowRequest& requ
   }
   s.draw_ui(request.ui, target);
   if (s.snapshot) {
-    const std::filesystem::path path = *s.snapshot;
-    s.snapshot.reset();
+    std::filesystem::path path = *s.snapshot;
+    if (s.snapshot_count > 1) {
+      // « nom.pq.ppm » → « nom-001.pq.ppm », « nom.ppm » → « nom-001.ppm ».
+      const std::string file = path.filename().string();
+      const std::size_t dot = file.ends_with(".pq.ppm") ? file.size() - 7 : file.rfind('.');
+      path.replace_filename(std::format("{}-{:03}{}", file.substr(0, dot), s.snapshot_index + 1,
+                                        dot == std::string::npos ? std::string() : file.substr(dot)));
+    }
+    if (++s.snapshot_index >= s.snapshot_count) s.snapshot.reset();
     if (auto saved =
             s.save_snapshot(request.frame != nullptr ? &image : nullptr, target, out, request.ui, path);
         !saved) {

@@ -59,6 +59,10 @@ class UpscaleStage final : public RingStage {
   ~UpscaleStage() override;
 
  private:
+  // Vrai noir : rampe TrueHDR au plus toutes les 250 ms.
+  static constexpr std::int64_t kBlackRampGapUs = 250'000;
+  bool black_ramp_pending_ = true;  // la première image la fait, si le vrai noir est voulu
+  std::int64_t black_ramp_at_us_ = 0;
   UpscaleStage(VideoStageInit init, UpscaleSetup setup);
   std::expected<void, Refusal> allocate();
   std::expected<std::uint32_t, Refusal> outputs(const DecodedFrame& frame) override;

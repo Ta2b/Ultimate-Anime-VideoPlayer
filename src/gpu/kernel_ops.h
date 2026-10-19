@@ -17,6 +17,8 @@
 #include <cstdint>
 #include <expected>
 #include <optional>
+#include <span>
+#include <vector>
 
 #include "core/frame.h"
 #include "core/ring.h"
@@ -160,6 +162,12 @@ class KernelOps {
                                                            const RingWrite& /*sync*/) {
     return std::unexpected(
         Refusal{RefusalCode::FormatUnsupported, "write_ring_true_hdr : absent de ce backend"});
+  }
+  // RTX HDR ouvert : ces gris RGBA8 (une bande verticale chacun) passent par TrueHDR avec ses
+  // réglages en cours ; rend leur sortie PQ (0 à 1, canal R). Cale le vrai noir OLED sur la
+  // rampe de 32 marches quasi noires. Attente hôte ; même thread que write_ring_true_hdr.
+  virtual std::expected<std::vector<float>, Refusal> true_hdr_ramp(std::span<const std::uint8_t> /*levels*/) {
+    return std::unexpected(Refusal{RefusalCode::FormatUnsupported, "true_hdr_ramp : absent de ce backend"});
   }
 };
 

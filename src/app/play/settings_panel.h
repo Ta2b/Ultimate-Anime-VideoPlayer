@@ -44,6 +44,8 @@ struct SettingsChoices {
   int auto_peak = 0;                // pic automatique de RTX HDR, en nits
   std::vector<EngineBadge> engines;
   std::string chosen_engines;  // « Vulkan, TensorRT, NVIDIA Maxine (RTX HDR) » (settings.toml)
+  std::string display_text;    // l'écran selon son EDID (display_edid.h : describe)
+  std::string black_status;    // seuils du vrai noir en cours
   ProfilesView profiles;
 };
 

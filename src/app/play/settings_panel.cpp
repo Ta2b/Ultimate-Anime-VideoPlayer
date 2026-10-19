@@ -206,6 +206,24 @@ void grade_tab(PlaySettings& d, const SettingsChoices& choices) {
   } else {
     note("Sortie SDR : pas de grade (route à choisir dans l'onglet RTX HDR).");
   }
+  section("Noir absolu OLED");
+  if (ImGui::BeginCombo("Noir absolu", std::string(label(d.oled_black)).c_str())) {
+    for (int i = 0; i < kOledBlackCount; ++i) {
+      const auto mode = static_cast<OledBlack>(i);
+      if (ImGui::Selectable(std::string(label(mode)).c_str(), mode == d.oled_black)) d.oled_black = mode;
+    }
+    ImGui::EndCombo();
+  }
+  ImGui::BeginDisabled(d.oled_black == OledBlack::Off);
+  grade_slider("Seuil (pas de code)", d.oled_black_steps, render::grade_limits::kBlackSteps);
+  ImGui::EndDisabled();
+  note(("Écran : " + choices.display_text).c_str());
+  if (!choices.black_status.empty()) note(choices.black_status.c_str());
+  note(
+      "Les quasi-noirs deviennent un vrai noir (0) ; le pied rejoint l'image au seuil, compté en pas de code "
+      "au-dessus du noir de la source. Calé en direct sur une rampe de 32 marches passée par RTX HDR et le "
+      "grade ; même gain sur R, V et B, et le maximum local 8x8 évite le scintillement.");
+  ImGui::Spacing();
   note(
       "Éclatant : éclats et aplats lumineux, couleurs et noirs poussés, teinte gardée (même gain sur R, "
       "V et B) ; le garde-fou adoucit les couleurs saturées près du pic au lieu de les écrêter. "

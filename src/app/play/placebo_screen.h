@@ -11,6 +11,7 @@
 #include <filesystem>
 #include <memory>
 #include <optional>
+#include <span>
 #include <string>
 #include <vector>
 
@@ -66,11 +67,16 @@ class PlaceboScreen final : public Screen {
   // Grade HDR (render/grade.h) posé sur OUTPUT quand la sortie est en PQ ; rien : sans grade.
   void set_grade(const std::optional<render::GradeParams>& params);
   bool hdr_output() const;  // la dernière présentation était en PQ
+  // Vrai noir OLED : ces niveaux (0 à 1, dans la couleur des images du ring : SDR, ou PQ après
+  // TrueHDR) passent par libplacebo et le grade en cours sans le vrai noir ; rend leurs nits en
+  // sortie. Rendu à part (renderer et grade propres), relu tout de suite.
+  std::expected<std::vector<double>, Refusal> grade_ramp(std::span<const float> levels);
   // Soumet le travail en attente (rendus, cessions de slots) sans l'attendre.
   void flush();
   // La prochaine présentation est aussi rendue en SDR hors écran et écrite en PPM (P6) : ce
   // que montre la fenêtre, pour le vérifier sans capture d'écran.
-  void snapshot_next(std::filesystem::path path);
+  // count > 1 : autant de présentations de suite, « nom-001.pq.ppm », « nom-002.pq.ppm »…
+  void snapshot_next(std::filesystem::path path, int count = 1);
   // Détruit les textures de l'interface (placebo_imgui.h) : avant l'écran, contexte ImGui vivant.
   void release_ui(ImGuiPlatformIO& platform);
 

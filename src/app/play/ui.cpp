@@ -412,6 +412,12 @@ void PlayerUi::set_settings(const PlaySettings& running, SettingsChoices choices
   input_pending_ = true;
 }
 
+void PlayerUi::set_black_status(std::string status) {
+  if (choices_.black_status == status) return;
+  choices_.black_status = std::move(status);
+  input_pending_ = true;
+}
+
 void PlayerUi::set_profiles(ProfilesView profiles) {
   choices_.profiles = std::move(profiles);
   input_pending_ = true;

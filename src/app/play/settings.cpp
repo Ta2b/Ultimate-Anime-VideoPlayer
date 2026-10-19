@@ -125,6 +125,30 @@ std::string model_label(const std::string& file) {
   return out.empty() ? file : out;
 }
 
+std::string_view name(OledBlack mode) {
+  switch (mode) {
+    case OledBlack::Auto:
+      return "auto";
+    case OledBlack::On:
+      return "on";
+    case OledBlack::Off:
+      return "off";
+  }
+  return "auto";
+}
+
+std::string_view label(OledBlack mode) {
+  switch (mode) {
+    case OledBlack::Auto:
+      return "Auto (selon l'écran)";
+    case OledBlack::On:
+      return "Activé";
+    case OledBlack::Off:
+      return "Désactivé";
+  }
+  return "Auto (selon l'écran)";
+}
+
 render::GradeSettings with_preset(render::GradePreset preset, const render::GradeSettings& current) {
   render::GradeSettings out = render::grade_preset(preset, current);
   out.gamut_p3 = current.gamut_p3;
@@ -159,6 +183,9 @@ std::expected<PlaySettings, Refusal> validate(const PlaySettings& s) {
   }
   if (auto grade = render::check_grade_settings(s.grade_values); !grade)
     return std::unexpected(grade.error());
+  if (auto steps = check("grade.oled_black_steps", s.oled_black_steps, render::grade_limits::kBlackSteps);
+      !steps)
+    return std::unexpected(steps.error());
   if (s.model.find('/') != std::string::npos || s.model.find('\\') != std::string::npos)
     return refuse(RefusalCode::FieldOutOfRange,
                   std::format("image.model : « {} » n'est pas un nom de fichier", s.model));
@@ -222,6 +249,19 @@ std::expected<PlaySettings, Refusal> parse_settings(std::string_view toml_text) 
     reads.push_back(read(*grade, "grade", "area_rtx", v.area_rtx));
     reads.push_back(read(*grade, "grade", "guard", v.guard));
     reads.push_back(read(*grade, "grade", "gamut_p3", v.gamut_p3));
+    std::string oled(name(s.oled_black));
+    reads.push_back(read(*grade, "grade", "oled_black", oled));
+    reads.push_back(read(*grade, "grade", "oled_black_steps", s.oled_black_steps));
+    bool oled_known = false;
+    for (int i = 0; i < kOledBlackCount; ++i) {
+      if (name(static_cast<OledBlack>(i)) == oled) {
+        s.oled_black = static_cast<OledBlack>(i);
+        oled_known = true;
+      }
+    }
+    if (!oled_known)
+      reads.emplace_back(
+          refuse(RefusalCode::FieldOutOfRange, std::format("grade.oled_black : « {} »", oled)));
     bool known = false;
     for (int i = 0; i < render::kGradePresetCount; ++i) {
       const auto candidate = static_cast<render::GradePreset>(i);
@@ -282,7 +322,9 @@ std::string format_settings(const PlaySettings& s) {
                                    {"vibrance_rtx", hundredth(g.vibrance_rtx)},
                                    {"area_rtx", hundredth(g.area_rtx)},
                                    {"guard", hundredth(g.guard)},
-                                   {"gamut_p3", g.gamut_p3}});
+                                   {"gamut_p3", g.gamut_p3},
+                                   {"oled_black", std::string(name(s.oled_black))},
+                                   {"oled_black_steps", hundredth(s.oled_black_steps)}});
   root.insert("stats", toml::table{{"all", s.stats.all},
                                    {"chain", s.stats.chain},
                                    {"frames", s.stats.frames},
@@ -390,6 +432,8 @@ PlaySettings live_part(const PlaySettings& running, const PlaySettings& wanted, 
   s.grade = wanted.grade;
   s.grade_preset = wanted.grade_preset;
   s.grade_values = wanted.grade_values;
+  s.oled_black = wanted.oled_black;
+  s.oled_black_steps = wanted.oled_black_steps;
   s.stats = wanted.stats;
   return s;
 }

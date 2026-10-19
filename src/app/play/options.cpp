@@ -122,8 +122,9 @@ std::expected<PlayOptions, Refusal> parse_play_options(std::span<const std::stri
       bool known = false;
       for (const std::string_view name :
            {"--model", "--window", "--start", "--seconds", "--fullscreen-after", "--stats", "--snapshot-at",
-            "--snapshot", "--keys", "--work-height", "--rife-model", "--rife", "--truehdr-sdk",
-            "--truehdr-peak", "--truehdr-contrast", "--truehdr-saturation", "--truehdr-gray"}) {
+            "--snapshot-frames", "--snapshot", "--keys", "--work-height", "--rife-model", "--rife",
+            "--truehdr-sdk", "--truehdr-peak", "--truehdr-contrast", "--truehdr-saturation",
+            "--truehdr-gray"}) {
         auto value = valued(args, i, name);
         if (!value) return std::unexpected(std::move(value.error()));
         if (!*value) continue;
@@ -138,6 +139,12 @@ std::expected<PlayOptions, Refusal> parse_play_options(std::span<const std::stri
           options.stats = std::filesystem::path(text);
         } else if (name == "--keys") {
           applied = keys(text, options);
+        } else if (name == "--snapshot-frames") {
+          const auto frames = number<int>(text);
+          if (!frames || *frames < 1 || *frames > kMaxSnapshotFrames)
+            return refuse(RefusalCode::FieldOutOfRange,
+                          std::format("--snapshot-frames : « {} » hors de 1 à {}", text, kMaxSnapshotFrames));
+          options.snapshot_frames = *frames;
         } else if (name == "--snapshot") {
           options.snapshot = std::filesystem::path(text);
         } else if (name == "--truehdr-sdk") {
@@ -216,6 +223,7 @@ std::string play_usage() {
       "  --fullscreen-after=S   passe en plein écran après S secondes\n"
       "  --stats=FICHIER        temps de chaque image présentée\n"
       "  --snapshot=FICHIER     la fenêtre en PPM, après --snapshot-at=S secondes (3) de lecture,\n"
+      "  --snapshot-frames=N    N présentations de suite (FICHIER-001.ppm…), pour le scintillement\n"
       "                         ou de construction d'un moteur si elle dure jusque-là\n"
       "  --rife-image           RIFE image à chaque instant (sans la variante mouvement)\n"
       "  --first-run            écran de bienvenue (moteurs, profil de démarrage), même déjà vu\n"

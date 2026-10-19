@@ -112,10 +112,17 @@ struct PlaceboScreen::Impl {
   bool fullscreen = false;
   bool hdr_output = false;
   std::optional<std::filesystem::path> snapshot;
+  int snapshot_count = 1;  // présentations à écrire, numérotées s'il y en a plusieurs
+  int snapshot_index = 0;
   std::optional<render::Grade> grade;  // absent si les hooks ne se lisent pas (dit au journal)
   bool grade_on = false;
   // Temps GPU des passes du grade (minuteries de libplacebo), par image composée avec lui ; le
   // résumé va au journal à la fermeture de l'écran.
+  pl_color_space target_color{};  // celle de la dernière présentation
+  // Mesure de la rampe du vrai noir : un renderer et un grade à part, pour ne toucher ni la
+  // détection de pic ni l'état temporel du grade de la lecture.
+  pl_renderer ramp_renderer = nullptr;
+  std::optional<render::Grade> ramp_grade;
   mutable std::uint64_t grade_frame_ns = 0;
   mutable std::vector<std::uint32_t> grade_gpu_us;
 };

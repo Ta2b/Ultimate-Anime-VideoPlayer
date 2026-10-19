@@ -4,6 +4,7 @@
 
 #include <cmath>
 #include <limits>
+#include <vector>
 
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
@@ -206,6 +207,26 @@ TEST_CASE("Éclatant sur TrueHDR : aplats et éclats montent, le garde-fou passe
   GradeSettings bad;
   bad.guard = 1.5;
   CHECK_FALSE(decide_grade(bad, pq_context(core::HdrMode::TrueHdr)));
+}
+
+}  // namespace ajp::render
+
+namespace ajp::render {
+
+TEST_CASE("vrai noir : seuils tirés de la rampe mesurée") {
+  // Noir de la source relevé à 0,02 nit, puis une marche tous les 0,01 nit.
+  std::vector<double> ramp(kBlackRampSteps);
+  for (std::size_t k = 0; k < ramp.size(); ++k) ramp[k] = 0.02 + 0.01 * static_cast<double>(k);
+  const auto two = black_thresholds(ramp, 2.0);
+  REQUIRE(two);
+  CHECK(two->lo == Approx(0.025));  // entre le noir et la première marche
+  CHECK(two->hi == Approx(0.04));   // la deuxième marche
+  const auto half = black_thresholds(ramp, 2.5);
+  REQUIRE(half);
+  CHECK(half->hi == Approx(0.045));
+  // Plate ou ratée : rien.
+  CHECK_FALSE(black_thresholds(std::vector<double>(kBlackRampSteps, 0.0), 2.0));
+  CHECK_FALSE(black_thresholds(std::vector<double>{0.1}, 2.0));
 }
 
 }  // namespace ajp::render

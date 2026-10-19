@@ -35,6 +35,11 @@ std::string_view label(Downscale filter);  // « Area », pour le menu
 // Les valeurs du grade pour ce préréglage ; current pour « Personnalisé » et pour gamut_p3.
 render::GradeSettings with_preset(render::GradePreset preset, const render::GradeSettings& current);
 
+enum class OledBlack : std::uint8_t { Auto, On, Off };
+inline constexpr int kOledBlackCount = 3;
+std::string_view name(OledBlack mode);   // « auto », la clé de play.toml
+std::string_view label(OledBlack mode);  // « Auto », pour le menu
+
 // Statistiques à l'écran : toutes (Tab), ou mesure par mesure.
 struct StatsSettings {
   bool all = false;
@@ -72,6 +77,10 @@ struct PlaySettings {
   bool grade = true;
   render::GradePreset grade_preset = render::GradePreset::Eclatant;
   render::GradeSettings grade_values = render::grade_preset(render::GradePreset::Eclatant);
+  // Vrai noir OLED (dernière passe du grade) : selon l'écran détecté (display_edid.h), forcé ou
+  // coupé ; le pied finit `oled_black_steps` pas de code au-dessus du noir de la source.
+  OledBlack oled_black = OledBlack::Auto;
+  double oled_black_steps = 2.0;
   StatsSettings stats;
   friend bool operator==(const PlaySettings&, const PlaySettings&) = default;
 };

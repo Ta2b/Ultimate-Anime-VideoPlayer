@@ -33,6 +33,8 @@ TEST_CASE("play.toml relit à l'identique ce qu'il a écrit", "[app][settings]")
   s.grade_values.shadows = 0.55;
   s.grade_values.guard = 0.25;
   s.grade_values.gamut_p3 = true;
+  s.oled_black = OledBlack::On;
+  s.oled_black_steps = 3.5;
   const auto back = parse_settings(format_settings(s));
   REQUIRE(back);
   CHECK(*back == s);
@@ -48,6 +50,9 @@ TEST_CASE("Grade : un préréglage nommé donne ses valeurs, gamut P3 reste celu
   CHECK(natural->grade_values.shadows == render::GradeSettings{}.shadows);
   CHECK(natural->grade_values.gamut_p3);
   CHECK_FALSE(parse_settings("[grade]\npreset = \"criard\"\n"));
+  CHECK_FALSE(parse_settings("[grade]\noled_black = \"peut-etre\"\n"));
+  CHECK_FALSE(parse_settings("[grade]\noled_black_steps = 20.0\n"));
+  CHECK(defaults.oled_black == OledBlack::Auto);
   CHECK(parse_settings("[grade]\npreset = \"perso\"\nguard = 2.0\n").error().detail.find("guard") !=
         std::string::npos);
 }

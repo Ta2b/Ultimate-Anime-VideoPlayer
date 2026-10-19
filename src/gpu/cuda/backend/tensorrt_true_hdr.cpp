@@ -111,6 +111,7 @@ std::expected<void, Refusal> TensorRtBackend::write_ring_true_hdr(
   auto imported = begin_write(rgb, desc, sync);
   if (!imported) return std::unexpected(std::move(imported.error()));
   TrueHdrState& hdr = *true_hdr_;
+  hdr.prepared = prepared;
   const ToRgba8Params to8{.rgb = address(rgb),
                           .width = hdr.width,
                           .height = hdr.height,
@@ -143,6 +144,63 @@ std::expected<void, Refusal> TensorRtBackend::write_ring_true_hdr(
     return ok;
   timing.end(stream_);
   return (*imported)->signal(sync.signal_value, stream_);
+}
+
+std::expected<std::vector<float>, Refusal> TensorRtBackend::true_hdr_ramp(
+    std::span<const std::uint8_t> levels) {
+  if (!true_hdr_) return refuse(RefusalCode::HdrUnavailable, "RTX HDR : open_true_hdr n'a pas été appelé");
+  TrueHdrState& hdr = *true_hdr_;
+  const int bands = static_cast<int>(levels.size());
+  if (bands == 0 || hdr.width / bands < 8)
+    return refuse(RefusalCode::ShapeInvalid, std::format("rampe de {} marches sur {} px", bands, hdr.width));
+  if (auto ok = bind(); !ok) return std::unexpected(ok.error());
+  // Une bande verticale par niveau, assez large pour que son centre ne voie pas ses voisines.
+  const int band = hdr.width / bands;
+  auto* rgba8 = static_cast<std::uint8_t*>(hdr.rgba8);
+  for (int i = 0; i < bands; ++i) {
+    const int x0 = i * band;
+    const int x1 = i + 1 == bands ? hdr.width : x0 + band;
+    if (auto ok = cuda_check(
+            cudaMemset2DAsync(rgba8 + static_cast<std::ptrdiff_t>(x0) * 4, hdr.rgba8_pitch,
+                              levels[static_cast<std::size_t>(i)], static_cast<std::size_t>(x1 - x0) * 4,
+                              static_cast<std::size_t>(hdr.height), stream_),
+            "cudaMemset2DAsync");
+        !ok)
+      return std::unexpected(ok.error());
+  }
+  const vendor_hdr::TrueHdrInput in{
+      .image = {.device = reinterpret_cast<std::uintptr_t>(hdr.rgba8),
+                .pitch = hdr.rgba8_pitch,
+                .width = hdr.width,
+                .height = hdr.height,
+                .pixel = vendor_hdr::TrueHdrPixel::Rgba8},
+      .prepared = {.matrix = hdr.prepared.matrix, .range = hdr.prepared.range, .dithered = true}};
+  const vendor_hdr::TrueHdrImage out{.device = reinterpret_cast<std::uintptr_t>(hdr.rgb10),
+                                     .pitch = hdr.rgb10_pitch,
+                                     .width = hdr.width,
+                                     .height = hdr.height,
+                                     .pixel = vendor_hdr::TrueHdrPixel::Rgb10A2};
+  if (auto ok = hdr.effect->process(in, out, *hdr.bridge); !ok)
+    return refuse(ok.error().code, ok.error().detail);
+  std::vector<std::uint32_t> row(static_cast<std::size_t>(hdr.width));
+  const auto* middle =
+      static_cast<const std::uint8_t*>(hdr.rgb10) +
+      static_cast<std::ptrdiff_t>(hdr.height / 2) * static_cast<std::ptrdiff_t>(hdr.rgb10_pitch);
+  if (auto ok = cuda_check(cudaMemcpyAsync(row.data(), middle, row.size() * sizeof(std::uint32_t),
+                                           cudaMemcpyDeviceToHost, stream_),
+                           "cudaMemcpyAsync");
+      !ok)
+    return std::unexpected(ok.error());
+  if (auto ok = cuda_check(cudaStreamSynchronize(stream_), "cudaStreamSynchronize"); !ok)
+    return std::unexpected(ok.error());
+  std::vector<float> pq;
+  pq.reserve(levels.size());
+  for (int i = 0; i < bands; ++i) {
+    const std::uint32_t pixel = row[(static_cast<std::size_t>(i) * static_cast<std::size_t>(band)) +
+                                    static_cast<std::size_t>(band / 2)];
+    pq.push_back(static_cast<float>(pixel & 0x3FFU) / 1023.0F);  // R : les dix bits de poids faible
+  }
+  return pq;
 }
 
 }  // namespace ajp::gpu::cuda

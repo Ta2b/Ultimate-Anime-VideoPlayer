@@ -19,6 +19,7 @@
 
 #include "app/play/backend_library.h"
 #include "app/play/build_progress.h"
+#include "app/play/display_edid.h"
 #include "app/play/engine_build.h"
 #include "app/play/first_run.h"
 #include "app/play/input.h"
@@ -94,6 +95,8 @@ constexpr std::int64_t kQuietBuildUs = 250'000;
 // Pendant une construction, la superposition est redessinée 10 fois par seconde au plus : le GPU
 // sert à mesurer les tactiques.
 constexpr std::uint32_t kBuildFrameMs = 100;
+// Seuils du vrai noir recalés au plus 5 fois par seconde pendant qu'on règle.
+constexpr std::int64_t kBlackRefreshUs = 200'000;
 // L'écran de bienvenue suit la souris : ~60 images par seconde.
 constexpr std::uint32_t kWelcomeFrameMs = 16;
 
@@ -102,11 +105,12 @@ constexpr std::uint32_t kWelcomeFrameMs = 16;
 struct SnapshotPlan {
   std::optional<std::filesystem::path> path;
   std::int64_t at_us = 0;
+  int frames = 1;
   // Demande l'instantané à l'écran si since_us remonte à at_us ; true s'il vient d'être demandé
   // (une présentation doit suivre, même en pause).
   bool maybe(PlaceboScreen& screen, std::int64_t since_us) {
     if (!path || host_now_us() - since_us < at_us) return false;
-    screen.snapshot_next(*path);
+    screen.snapshot_next(*path, frames);
     path.reset();
     return true;
   }
@@ -324,8 +328,22 @@ std::string label_of(const std::vector<TrackEntry>& entries, int track) {
 // Le grade HDR de la chaîne : route TrueHDR si RTX HDR est ouvert, native si le HDR natif est choisi
 // (le SDR converti en PQ par libplacebo, aspect TrueHDR émulé avec les réglages de RTX HDR), aucun
 // en SDR. Pic : celui de RTX HDR, ou celui de l'écran (1000 nits s'il ne le dit pas).
+// Le vrai noir OLED est voulu : forcé, ou « auto » sur un écran détecté OLED.
+bool black_wanted(const PlaySettings& s, const std::optional<DisplayFacts>& display) {
+  switch (s.oled_black) {
+    case OledBlack::On:
+      return true;
+    case OledBlack::Off:
+      return false;
+    case OledBlack::Auto:
+      return display && display->oled;
+  }
+  return false;
+}
+
 std::optional<render::GradeParams> grade_of(const PlaySettings& s, bool true_hdr_open, int peak_nits,
-                                            int auto_peak) {
+                                            int auto_peak, const std::optional<DisplayFacts>& display = {},
+                                            const std::optional<render::BlackThresholds>& black = {}) {
   const int peak = true_hdr_open && peak_nits > 0 ? peak_nits
                    : s.true_hdr_peak > 0          ? s.true_hdr_peak
                    : auto_peak > 0                ? auto_peak
@@ -334,6 +352,11 @@ std::optional<render::GradeParams> grade_of(const PlaySettings& s, bool true_hdr
   g.contrast = s.true_hdr_contrast;
   g.saturation = s.true_hdr_saturation;
   g.middle_gray = s.true_hdr_gray;
+  g.oled = black_wanted(s, display);
+  if (g.oled && black) {
+    g.black_lo = black->lo;
+    g.black_hi = black->hi;
+  }
   const core::HdrMode route = true_hdr_open  ? core::HdrMode::TrueHdr
                               : s.hdr_native ? core::HdrMode::Native
                                              : core::HdrMode::Off;
@@ -418,7 +441,72 @@ struct Chain {
   int peak_nits = 0;                   // pic donné à RTX HDR, 0 sans lui
   bool dirty = false;                  // play.toml à réécrire
   std::optional<PlaySettings> reopen;  // demandé par le menu des paramètres
+  const std::optional<DisplayFacts>& display;
+  // Vrai noir OLED : la rampe passée par TrueHDR (codes PQ, de gpu), les seuils en cours, et le
+  // recalage demandé (au plus 5 fois par seconde).
+  std::vector<float> truehdr_ramp;
+  std::optional<render::BlackThresholds> black;
+  bool black_dirty = true;
+  std::int64_t black_at_us = 0;
 };
+
+// Le grade de la chaîne avec ses seuils du vrai noir.
+void set_grade(Chain& to, const PlaySettings& s) {
+  to.screen.set_grade(grade_of(s, to.true_hdr_open, to.peak_nits, to.auto_peak, to.display, to.black));
+}
+
+// Vrai noir OLED : recale les seuils sur la rampe de 32 marches mesurée à la sortie (route native :
+// les marches SDR ; RTX HDR : celles que gpu a passées par TrueHDR), grade compris, puis pose le
+// grade avec eux.
+void refresh_black(Chain& to) {
+  to.black_dirty = false;
+  to.black_at_us = host_now_us();
+  const PlaySettings& s = to.running;
+  const bool routed = to.true_hdr_open || s.hdr_native;
+  const bool wanted = black_wanted(s, to.display) && s.grade && routed && to.screen.hdr_output();
+  to.live.set_black_wanted(wanted && to.true_hdr_open);
+  to.black.reset();
+  if (!wanted) {
+    set_grade(to, s);
+    to.ui.set_black_status(black_wanted(s, to.display)
+                               ? "Vrai noir : sans effet ici (grade coupé ou sortie SDR)."
+                               : "Vrai noir : coupé.");
+    return;
+  }
+  std::vector<float> levels;
+  if (to.true_hdr_open) {
+    if (to.truehdr_ramp.empty()) {
+      set_grade(to, s);
+      to.ui.set_black_status("Vrai noir : rampe TrueHDR en cours de mesure…");
+      return;
+    }
+    levels = to.truehdr_ramp;
+  } else {
+    const auto sdr = black_ramp_levels();
+    levels.assign(sdr.begin(), sdr.end());
+  }
+  set_grade(to, s);  // sans seuils : la rampe se mesure sans le vrai noir
+  auto nits = to.screen.grade_ramp(levels);
+  if (!nits) {
+    log_channel("app")->warn("vrai noir : {}", nits.error().detail);
+    to.ui.set_black_status("Vrai noir : mesure impossible (voir le journal).");
+    return;
+  }
+  to.black = render::black_thresholds(*nits, s.oled_black_steps);
+  set_grade(to, s);
+  if (!to.black) {
+    to.ui.set_black_status("Vrai noir : la rampe ne monte pas, rien n'est changé.");
+    return;
+  }
+  log_channel("app")->info(
+      "vrai noir : noir de la source {:.4f} nit, marches 1 et 2 {:.4f} et {:.4f} nit ; 0 sous {:.4f}, pied "
+      "jusqu'à {:.4f} nit",
+      (*nits)[0], (*nits)[1], (*nits)[2], to.black->lo, to.black->hi);
+  to.ui.set_black_status(
+      std::format("Vrai noir : 0 sous {:.4f} nit, pied jusqu'à {:.4f} nit (noir de la source "
+                  "à {:.4f} nit avant).",
+                  to.black->lo, to.black->hi, (*nits)[0]));
+}
 
 // Piste audio : le pont change de piste à l'époque du seek qui suit, à la position courante.
 void switch_audio(Chain& to, int track, std::int64_t now_us) {
@@ -489,8 +577,10 @@ void apply_live(Chain& to, const PlaySettings& wanted, std::int64_t now_us) {
     }
   }
   if (wanted.grade != r.grade || wanted.grade_preset != r.grade_preset ||
-      wanted.grade_values != r.grade_values || wanted.hdr_native != r.hdr_native || after != before) {
-    to.screen.set_grade(grade_of(wanted, to.true_hdr_open, to.peak_nits, to.auto_peak));
+      wanted.grade_values != r.grade_values || wanted.hdr_native != r.hdr_native || after != before ||
+      wanted.oled_black != r.oled_black || wanted.oled_black_steps != r.oled_black_steps) {
+    set_grade(to, wanted);
+    to.black_dirty = true;
     to.session.set_output(output_text(to.screen, wanted, to.peak_nits));
     if (wanted.grade_preset != r.grade_preset || wanted.grade != r.grade) {
       controls.notify(wanted.grade ? std::format("Grade : {}", render::preset_label(wanted.grade_preset))
@@ -662,7 +752,8 @@ struct Player {
   std::optional<int> audio_track;
   std::optional<std::optional<int>> subtitle_track;
   ProfileState profiles;
-  core::Settings engines;  // settings.toml : les moteurs choisis à l'écran de bienvenue
+  core::Settings engines;               // settings.toml : les moteurs choisis à l'écran de bienvenue
+  std::optional<DisplayFacts> display;  // l'écran selon son EDID (OLED ou non)
 };
 
 // Fin d'une ouverture de la chaîne : la lecture est finie (rien), ou le menu demande de la rouvrir
@@ -970,7 +1061,8 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
           .auto_peak = auto_peak,
           .engines = engine_badges(p.paths.engines, model ? model->path : std::filesystem::path(), work,
                                    rife_loaded ? rife_model : std::nullopt, rife_motion ? g : image_g),
-          .chosen_engines = chosen_line(p.engines)});
+          .chosen_engines = chosen_line(p.engines),
+          .display_text = p.display ? describe(*p.display) : std::string("EDID illisible : OLED inconnu")});
   p.profiles.source =
       core::SourceInfo{.width = video.width, .height = video.height, .fps = fps_of(video.frame_rate)};
   if (model) p.profiles.default_model = model->default_name;
@@ -985,7 +1077,8 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
               .rife_loaded = rife_loaded,
               .true_hdr_open = settings.true_hdr,
               .auto_peak = auto_peak,
-              .peak_nits = peak_nits};
+              .peak_nits = peak_nits,
+              .display = p.display};
 
   std::ofstream stats;
   if (options.stats) {
@@ -1016,6 +1109,12 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
     }
     (*pipeline)->pump();
     while (auto message = try_take((*pipeline)->inbox())) session.handle(std::move(*message));
+    // Vrai noir : la rampe que gpu a passée par TrueHDR, puis les seuils recalés.
+    if (auto ramp = chain.live.take_black_ramp()) {
+      chain.truehdr_ramp = std::move(*ramp);
+      chain.black_dirty = true;
+    }
+    if (chain.black_dirty && host_now_us() - chain.black_at_us >= kBlackRefreshUs) refresh_black(chain);
     UiFrame ui_frame = p.ui.frame(host_now_us(), session.view(), actions);
     ui_frame.changed |= snapshot_now;
     for (const Input& input : actions) apply(input, chain, host_now_us());
@@ -1086,6 +1185,12 @@ EnginesHere engines_here(const PlayOptions& options, const PlayerPaths& paths) {
     here.maxine_status = std::format("SDK absent ({})", options.true_hdr_sdk.string());
   }
   return here;
+}
+
+// Le nom de l'écran de la fenêtre selon SDL, pour choisir son EDID.
+std::string display_name(SDL_Window* window) {
+  const char* name = SDL_GetDisplayName(SDL_GetDisplayForWindow(window));
+  return name != nullptr ? std::string(name) : std::string();
 }
 
 GpuFacts gpu_facts(const PlaceboScreen& screen) {
@@ -1186,7 +1291,8 @@ std::expected<void, Refusal> play(const PlayOptions& options, const PlayerPaths&
     PlayerUi& ui_;
     PlaceboScreen& screen_;
   } const release(**ui, **screen);
-  SnapshotPlan snapshot{.path = options.snapshot, .at_us = options.snapshot_at_us};
+  SnapshotPlan snapshot{
+      .path = options.snapshot, .at_us = options.snapshot_at_us, .frames = options.snapshot_frames};
   std::size_t next_key = 0;
 
   // Les moteurs : settings.toml, choisis à l'écran de bienvenue au premier lancement.
@@ -1246,7 +1352,13 @@ std::expected<void, Refusal> play(const PlayOptions& options, const PlayerPaths&
                 .details = settings.stats.all,
                 .next_key = next_key,
                 .profiles = std::move(profiles),
-                .engines = std::move(*engines)};
+                .engines = std::move(*engines),
+                .display = read_display(display_name((*screen)->window()))};
+  if (player.display) {
+    log->info("écran {} : {}", player.display->connector, describe(*player.display));
+  } else {
+    log->info("écran : EDID illisible, OLED inconnu");
+  }
   std::int64_t start_us = options.start_us;
   std::expected<void, Refusal> result;
   while (true) {

@@ -39,7 +39,8 @@ struct TensorRtBackend::TrueHdrState {
   std::size_t rgba8_pitch = 0;
   void* rgb10 = nullptr;  // sortie RGB10A2
   std::size_t rgb10_pitch = 0;
-  std::uint32_t frames = 0;  // graine du tramage
+  std::uint32_t frames = 0;               // graine du tramage
+  vendor_hdr::InputPreparation prepared;  // celle de la dernière image, reprise par la rampe
 
   TrueHdrState() = default;
   TrueHdrState(const TrueHdrState&) = delete;

@@ -299,8 +299,24 @@ std::expected<void, Refusal> UpscaleStage::finish(const gpu::Tensor& rgb, std::u
   gpu::KernelOps& ops = *setup_.backend->kernels();
   if (setup_.true_hdr && setup_.live) {
     if (const auto params = setup_.live->take_true_hdr()) {
-      if (auto set = ops.set_true_hdr(*params); !set)
+      if (auto set = ops.set_true_hdr(*params); !set) {
         log_channel("gpu")->warn("RTX HDR : réglages refusés ({})", set.error().detail);
+      } else {
+        black_ramp_pending_ = true;
+      }
+    }
+    // Vrai noir : la rampe repasse par TrueHDR après un changement, au plus 4 fois par seconde
+    // (un curseur qu'on fait glisser n'en lance pas une à chaque image).
+    const std::int64_t now = host_now_us();
+    if (black_ramp_pending_ && setup_.live->black_wanted() && now - black_ramp_at_us_ >= kBlackRampGapUs) {
+      black_ramp_pending_ = false;
+      black_ramp_at_us_ = now;
+      const auto codes = black_ramp_codes();
+      if (auto ramp = ops.true_hdr_ramp(codes)) {
+        setup_.live->set_black_ramp(std::move(*ramp));
+      } else {
+        log_channel("gpu")->warn("vrai noir : rampe TrueHDR ({})", ramp.error().detail);
+      }
     }
   }
   const auto write = [&](const gpu::Tensor& image) {

@@ -10,6 +10,8 @@
 
 #include <cstdint>
 #include <expected>
+#include <optional>
+#include <span>
 #include <string_view>
 
 #include "core/profile.h"
@@ -31,6 +33,8 @@ inline constexpr core::Range<double> kSubtitleWhite{80.0, 1000.0};
 inline constexpr core::Range<double> kBlackNits{0.0, 50.0};
 inline constexpr core::Range<double> kPeakNits{100.0, 10000.0};
 inline constexpr core::Range<double> kGuard{0.0, 1.0};
+// Vrai noir OLED : fin du pied, en pas de code de la source au-dessus du noir.
+inline constexpr core::Range<double> kBlackSteps{0.5, 8.0};
 inline constexpr core::Range<double> kAreaRtx{0.0, 1.0};
 // Pic du grade quand l'écran ne le dit pas (DisplayInfo par défaut).
 inline constexpr double kDefaultPeakNits = 1000.0;
@@ -128,5 +132,18 @@ std::expected<double, Refusal> grade_peak(const core::DisplayInfo& display);
 
 std::expected<GradeDecision, Refusal> decide_grade(const GradeSettings& settings,
                                                    const GradeContext& context);
+
+// Vrai noir OLED calé sur la rampe de 32 marches quasi noires de la source (8 bits limité : un pas
+// vaut 1/219 de la plage), mesurée en nits à la sortie, grade compris, vrai noir coupé.
+inline constexpr int kBlackRampSteps = 32;
+struct BlackThresholds {
+  double lo = 0.0;
+  double hi = 0.0;
+  friend bool operator==(const BlackThresholds&, const BlackThresholds&) = default;
+};
+// black_lo à mi-chemin du noir de la source (marche 0) et de la première marche, black_hi à la
+// marche `steps` (interpolée) : le noir devient 0, la première marche reste visible, le pied
+// rejoint l'identité à `steps` pas. Rien si la rampe ne monte pas (sortie plate, mesure ratée).
+std::optional<BlackThresholds> black_thresholds(std::span<const double> step_nits, double steps);
 
 }  // namespace ajp::render

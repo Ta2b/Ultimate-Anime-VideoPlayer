@@ -39,6 +39,7 @@ inline constexpr std::string_view kDefaultRifeFile = "rife_v4.26.onnx";
 // 3 SPAN, environ 31 ms sur 41,7 : 8 images sautées sur 25 s d'ouverture, contre 304 à ×4
 // (19 octobre, ~/ajp-reports/vertical-slice.md). ×4 attend les optimisations de la parité.
 inline constexpr int kDefaultRifeFactor = 3;
+inline constexpr int kMaxSnapshotFrames = 240;
 
 namespace limits {
 inline constexpr core::Range<int> kWindowSide{64, 16384};
@@ -59,7 +60,9 @@ struct PlayOptions {
   std::int64_t fullscreen_after_us = 0;           // --fullscreen-after=S : bascule après S s ; 0 jamais
   std::optional<std::filesystem::path> stats;     // --stats : une ligne par image présentée
   std::optional<std::filesystem::path> snapshot;  // --snapshot : la fenêtre en PPM, une fois
-  std::int64_t snapshot_at_us = 3'000'000;  // --snapshot-at=S : après S s de lecture (ou de construction)
+  std::int64_t snapshot_at_us = 3'000'000;
+  int snapshot_frames = 1;  // --snapshot-frames=N : N présentations de suite, numérotées  // --snapshot-at=S
+                            // : après S s de lecture (ou de construction)
   // --keys=S:touche,… : touches pressées d'office à ces instants (essais sans clavier), par
   // exemple « 3:Right,5:Space,6:Space,8:F ». Noms de touches de SDL.
   std::vector<std::pair<std::int64_t, std::string>> keys;

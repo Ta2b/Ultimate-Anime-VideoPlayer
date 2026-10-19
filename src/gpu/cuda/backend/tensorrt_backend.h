@@ -16,6 +16,7 @@
 #include <map>
 #include <memory>
 #include <optional>
+#include <span>
 #include <vector>
 
 #include "core/types.h"
@@ -79,6 +80,7 @@ class TensorRtBackend final : public Backend, public KernelOps {
                                                    const vendor_hdr::InputPreparation& prepared,
                                                    const RingSlotDesc& slot, const RingWrite& sync) override;
   std::expected<void, Refusal> set_true_hdr(const vendor_hdr::TrueHdrParams& params) override;
+  std::expected<std::vector<float>, Refusal> true_hdr_ramp(std::span<const std::uint8_t> levels) override;
   std::optional<DeviceMemory> device_memory() override;
   std::expected<float, Refusal> flow_max_now(const Motion& motion) override;
 

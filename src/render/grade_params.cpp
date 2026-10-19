@@ -161,4 +161,17 @@ std::expected<GradeDecision, Refusal> decide_grade(const GradeSettings& s, const
   return decision;
 }
 
+std::optional<BlackThresholds> black_thresholds(std::span<const double> step_nits, double steps) {
+  if (step_nits.size() < 2 || std::isnan(steps)) return std::nullopt;
+  steps = std::clamp(steps, grade_limits::kBlackSteps.lo, grade_limits::kBlackSteps.hi);
+  const double last = static_cast<double>(step_nits.size() - 1);
+  const double at = std::min(steps, last);
+  const auto below = static_cast<std::size_t>(std::floor(at));
+  const std::size_t above = std::min(below + 1, step_nits.size() - 1);
+  const double hi = std::lerp(step_nits[below], step_nits[above], at - static_cast<double>(below));
+  const double lo = 0.5 * (step_nits[0] + step_nits[1]);
+  if (!(hi > lo) || lo < 0.0) return std::nullopt;
+  return BlackThresholds{.lo = lo, .hi = std::min(hi, grade_limits::kBlackNits.hi)};
+}
+
 }  // namespace ajp::render
