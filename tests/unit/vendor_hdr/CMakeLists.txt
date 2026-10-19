@@ -26,8 +26,9 @@ ajp_add_unit_tests(vendor_hdr
     stage_test.cpp
     support.cpp
     true_hdr_test.cpp
-  # kernels : la vraie conversion YUV vers RGB (spec/color.h) des entrées des tests [nvidia].
-  DEPS ajp::kernels ${CMAKE_DL_LIBS})
+  # core : le câblage des bloqueurs vers resolve(), tel que app le fait ; kernels : la vraie
+  # conversion YUV vers RGB (spec/color.h) des entrées des tests [nvidia].
+  DEPS ajp::core ajp::kernels ${CMAKE_DL_LIBS})
 
 # Tests [nvidia] sur le vrai SDK : ils SKIP quand ce dossier n'a pas les en-têtes du SDK.
 set(AJP_TEST_MAXINE_SDK "/usr/local/VideoFX" CACHE PATH "SDK Maxine VFX installé, lu par les tests [nvidia] de vendor_hdr")

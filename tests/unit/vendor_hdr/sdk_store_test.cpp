@@ -242,6 +242,17 @@ TEST_CASE("magasin : un lien qui sort du SDK est refusé", "[store]") {
   CHECK(count_entries(fixture.store_root) == 1);  // versions/ seul : la copie a été retirée
 }
 
+TEST_CASE("magasin : un dossier lien qui sort du SDK est refusé", "[store]") {
+  // external/cuda/lib remplacé par un lien vers un dossier hors du SDK : ses bibliothèques sont
+  // des fichiers ordinaires, mais elles viendraient d'ailleurs.
+  Fixture fixture;
+  make_maxine_sdk(fixture.source);
+  fs::rename(fixture.source / "external/cuda/lib", fixture.dir.path() / "outside-lib");
+  fs::create_symlink("../../../outside-lib", fixture.source / "external/cuda/lib");
+  CHECK(import_refusal(fixture).starts_with(
+      "external/cuda/lib/libcudart.so.12 passe par un lien qui sort du SDK"));
+}
+
 TEST_CASE("magasin : import annulé", "[store]") {
   Fixture fixture;
   make_maxine_sdk(fixture.source);

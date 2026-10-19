@@ -15,12 +15,12 @@
 
 #include "gpu/ir/describe.h"
 #include "gpu/ir/graph.h"
-#include "gpu/ir/half.h"
 #include "gpu/ir/import.h"
 #include "gpu/ir/interpreter.h"
 #include "gpu/ir/memory_plan.h"
 #include "gpu/ir/passes.h"
 #include "gpu/ir/shape.h"
+#include "kernels/ref/half.h"
 
 namespace {
 
@@ -87,7 +87,7 @@ Value deterministic_input(const Tensor& tensor) {
   for (std::size_t k = 0; k < value.f.size(); ++k) {
     double whole = 0.0;
     const auto f = static_cast<float>(std::modf(static_cast<double>(k) * 0.6180339887498949, &whole));
-    value.f[k] = tensor.type == DataType::F16 ? round_to_half(f) : f;
+    value.f[k] = tensor.type == DataType::F16 ? ajp::kernels::ref::round_to_half(f) : f;
   }
   return value;
 }

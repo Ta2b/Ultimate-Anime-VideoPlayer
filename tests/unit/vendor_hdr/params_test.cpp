@@ -68,6 +68,17 @@ TEST_CASE("pic : luminance de l'écran bornée, 1000 si inconnue", "[params]") {
   CHECK(peak_from_display(10000.0) == 2000);
 }
 
+TEST_CASE("pic : crête vue du contenu sous KWin, défauts indépendants du SDK", "[params]") {
+  // Écran de référence (display.md) : marge HDR 1000 / 265 relative au blanc de KWin, rapportée
+  // au blanc 203 nits ; écran assombri par KDE, marge 1000 / 83, bornée au plus haut.
+  CHECK(peak_from_display(1000.0 / 265.0 * 203.0) == 766);
+  CHECK(peak_from_display(1000.0 / 83.0 * 203.0) == 2000);
+  // Défauts du plan : pic 1000 (650 dans le SDK Maxine), débandage actif (le SDK aussi).
+  CHECK(TrueHdrParams{}.peak_nits == 1000);
+  CHECK(TrueHdrParams{}.debanding);
+  CHECK(TrueHdrParams{.debanding = false} != TrueHdrParams{});
+}
+
 TEST_CASE("configuration : taille, source SDR et réglages", "[params]") {
   TrueHdrConfig config{.width = 1920, .height = 1080};
   CHECK(check(config));

@@ -56,8 +56,24 @@ Done copy_one(const fs::path& real_from, const fs::path& to, const fs::path& rel
   return {};
 }
 
+// Une entrée imbriquée (external/cuda/lib/libcudart.so.12) ne sort pas du SDK par un dossier
+// parent qui serait un lien : copy_link ne voit que le dernier élément du chemin.
+Done check_parents(const fs::path& real_from, const fs::path& entry) {
+  if (!entry.has_parent_path()) return {};
+  std::error_code error;
+  const fs::path parent = fs::canonical(real_from / entry.parent_path(), error);
+  if (error) return {};  // dossier absent : l'entrée facultative l'est aussi
+  const fs::path inside = parent.lexically_relative(real_from);
+  if (inside.empty() || *inside.begin() == "..") {
+    return refuse(RefusalCode::SdkRejected,
+                  std::format("{} passe par un lien qui sort du SDK ({})", utf8(entry), utf8(parent)));
+  }
+  return {};
+}
+
 Done copy_entry(const fs::path& real_from, const fs::path& to, const fs::path& entry,
                 const std::stop_token& stop) {
+  if (Done inside = check_parents(real_from, entry); !inside) return inside;
   std::error_code error;
   const fs::file_status status = fs::symlink_status(real_from / entry, error);
   if (error || !fs::exists(status)) return {};  // entrée facultative absente

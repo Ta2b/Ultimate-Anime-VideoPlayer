@@ -51,6 +51,16 @@ TEST_CASE("ABI : #define, alias et commentaires", "[abi]") {
   CHECK_FALSE(find_definition(headers, "NVCV_RGBA"));
 }
 
+TEST_CASE("ABI : une définition poursuivie par « \\ » sur la ligne suivante", "[abi]") {
+  // Forme de nvVFXTrueHDR.h:21-22 (Maxine 1.3.0.0), fins de ligne Unix et Windows.
+  const std::vector<std::string> headers{
+      "#define NVVFXTRUEHDR_DEBANDING_OFF \\\n  \"DebandingOff\"  //!< 0 ou 1\n",
+      "#define NVVFXTRUEHDR_LUMINANCE \\\r\n \"Luminance\"\r\n",
+  };
+  CHECK(find_definition(headers, "NVVFXTRUEHDR_DEBANDING_OFF") == "\"DebandingOff\"");
+  CHECK(find_definition(headers, "NVVFXTRUEHDR_LUMINANCE") == "\"Luminance\"");
+}
+
 TEST_CASE("ABI : énumérateurs explicites et implicites", "[abi]") {
   const std::vector<std::string> headers{
       "typedef enum {\n  NVCV_FORMAT_UNKNOWN = 0,\n  NVCV_Y = 1, NVCV_A, NVCV_YA,\n  NVCV_RGB, NVCV_BGR,\n"

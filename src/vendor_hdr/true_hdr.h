@@ -43,7 +43,9 @@ struct ParamRange {
 
 // Plages du plan, identiques à celles du SDK Maxine 1.3.0.0 (nvVFXTrueHDR.h:17-20) : sur la RTX,
 // une valeur hors plage y est refusée (NVCV_ERR_PARAMETER) et l'ancienne gardée. Seul le pic
-// par défaut diffère : 650 nits dans le SDK, 1000 ici (plan) ; il est toujours passé.
+// par défaut diffère : 650 nits dans le SDK, 1000 ici (plan). Le lecteur passe toujours chaque
+// réglage avant le chargement du modèle et ne dépend jamais d'un défaut du SDK (le faux SDK des
+// tests refuse NvVFX_Load sinon ; real_true_hdr_test.cpp vérifie le pic sur la RTX).
 namespace limits {
 inline constexpr ParamRange kContrast{0, 200, 100};
 inline constexpr ParamRange kSaturation{0, 200, 100};
@@ -61,6 +63,11 @@ struct TrueHdrParams {
   int saturation = limits::kSaturation.fallback;
   int middle_gray = limits::kMiddleGray.fallback;
   int peak_nits = limits::kPeakNits.fallback;
+  // Passe DL-Debander de TrueHDR (DebandingOff de Maxine 1.3, nvVFXTrueHDR.h:21) : active par
+  // défaut, qualité d'abord. La couper allège TrueHDR mais recharge le modèle au changement de
+  // ce réglage, jamais à chaque image. RTX Video ne sait pas la
+  // couper : il refuse false.
+  bool debanding = true;
   friend bool operator==(const TrueHdrParams&, const TrueHdrParams&) = default;
 };
 
@@ -68,7 +75,10 @@ struct TrueHdrParams {
 std::expected<TrueHdrParams, Refusal> validate(const TrueHdrParams& params);
 
 // Pic à donner à TrueHDR depuis la luminance détectée de l'écran : bornée à 400-2000 nits,
-// 1000 quand elle est inconnue (absente, nulle, négative ou non finie).
+// 1000 quand elle est inconnue (absente, nulle, négative ou non finie). app passe
+// core::DisplayInfo::peak_nits quand sa provenance n'est pas Default : la crête vue du contenu,
+// soit sous KWin la marge HDR de SDL3 (relative au blanc de référence de KWin) × 203 nits,
+// 1000 / 265 × 203 = 766 nits sur l'écran de référence (~/ajp-reports/display.md).
 int peak_from_display(std::optional<double> detected_nits);
 
 // Disposition d'un tampon TrueHDR : entrelacé, 4 octets par pixel.

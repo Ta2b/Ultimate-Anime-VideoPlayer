@@ -21,9 +21,9 @@ namespace ajp::media {
 
 // Paquet d'une piste, partagé sans copie avec le module qui le décode.
 struct Packet {
-  int track = -1;                      // index du flux
-  std::int64_t pts_us = kNoTimestamp;  // depuis le début du fichier
-  std::int64_t dts_us = kNoTimestamp;
+  int track = -1;                // index du flux
+  std::int64_t pts_us = kNoPts;  // depuis le début du fichier
+  std::int64_t dts_us = kNoPts;
   std::int64_t duration_us = 0;
   bool keyframe = false;
   std::uint32_t epoch = 0;             // posé à la livraison, comme DecodedFrame::epoch

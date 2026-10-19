@@ -15,8 +15,8 @@
 #include <utility>
 #include <vector>
 
-#include "gpu/ir/half.h"
 #include "gpu/ir/onnx_model.h"
+#include "kernels/ref/half.h"
 
 namespace ajp::gpu::ir::test {
 
@@ -120,7 +120,7 @@ inline ProtoWriter tensor_f32(std::string_view name, const std::vector<std::int6
 inline ProtoWriter tensor_f16(std::string_view name, const std::vector<std::int64_t>& dims,
                               std::span<const float> values) {
   std::string raw;
-  for (const float v : values) ProtoWriter::append_le(raw, float_to_half(v), 2);
+  for (const float v : values) ProtoWriter::append_le(raw, kernels::ref::float_to_half(v), 2);
   return tensor_header(name, onnx::kFloat16, dims).bytes(9, raw);
 }
 

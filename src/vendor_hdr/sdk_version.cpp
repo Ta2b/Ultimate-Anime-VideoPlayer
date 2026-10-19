@@ -6,6 +6,8 @@
 #include <format>
 #include <fstream>
 #include <iterator>
+#include <span>
+#include <string>
 #include <system_error>
 #include <vector>
 
@@ -76,12 +78,29 @@ std::optional<SdkVersion> feature_version(const std::filesystem::path& root) {
   return parse_version(std::string_view(*quoted).substr(1, quoted->size() - 2));
 }
 
-std::optional<SdkVersion> library_version(const std::filesystem::path& root) {
+// Version portée par le nom réel de lib/libVideoFX.so, et combien de nombres ce nom en donne :
+// libVideoFX.so.1.3.0 n'en porte que trois, sans le build de l'en-tête.
+struct NamedVersion {
+  SdkVersion version;
+  std::size_t parts = 0;
+};
+
+std::optional<NamedVersion> library_version(const std::filesystem::path& root) {
   constexpr std::string_view kLibrary = "libVideoFX.so";
   std::error_code error;
   const std::filesystem::path real = std::filesystem::canonical(root / "lib" / kLibrary, error);
   if (error) return std::nullopt;
-  return parse_versioned_name(utf8(real.filename()), kLibrary);
+  const std::string name = utf8(real.filename());
+  const std::optional<SdkVersion> version = parse_versioned_name(name, kLibrary);
+  if (!version) return std::nullopt;
+  const auto dots = std::ranges::count(std::string_view(name).substr(kLibrary.size() + 1), '.');
+  return NamedVersion{.version = *version, .parts = static_cast<std::size_t>(dots) + 1};
+}
+
+// L'en-tête et le nom réel s'accordent sur les nombres que le nom porte.
+bool agrees(const SdkVersion& header, const NamedVersion& library) {
+  return std::ranges::equal(std::span(header.parts).first(library.parts),
+                            std::span(library.version.parts).first(library.parts));
 }
 
 std::expected<SdkVersion, Refusal> maxine_version(const std::filesystem::path& root) {
@@ -89,13 +108,13 @@ std::expected<SdkVersion, Refusal> maxine_version(const std::filesystem::path& r
   if (const auto text = read_small_text(root / kMaxineVersionHeader)) {
     version = parse_version_header(*text, kMaxineVersionPrefix);
   }
-  const std::optional<SdkVersion> library = library_version(root);
-  if (version && library && *version != *library) {
+  const std::optional<NamedVersion> library = library_version(root);
+  if (version && library && !agrees(*version, *library)) {
     return refuse(RefusalCode::SdkRejected,
                   std::format("{} annonce {}, mais lib/libVideoFX.so est en {} : SDK mélangé",
-                              kMaxineVersionHeader, version->text(), library->text()));
+                              kMaxineVersionHeader, version->text(), library->version.text()));
   }
-  if (!version) version = library;
+  if (!version && library) version = library->version;
   if (!version) {
     return refuse(
         RefusalCode::SdkRejected,

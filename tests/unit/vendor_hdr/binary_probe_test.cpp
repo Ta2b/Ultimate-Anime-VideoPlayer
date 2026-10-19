@@ -130,6 +130,19 @@ TEST_CASE("version : SDK Maxine", "[version]") {
     std::filesystem::create_symlink("libVideoFX.so.1.3.0", dir.path() / "lib/libVideoFX.so");
     CHECK(read_sdk_version(SdkKind::MaxineVfx, dir.path())->text() == "1.3.0.0");
   }
+  SECTION("le nom réel ne porte pas le build de l'en-tête") {
+    // libVideoFX.so.1.3.0 pour un SDK 1.3.0.21 : seuls les nombres du nom se comparent.
+    write_file(dir.path() / "share/videofx_version.h",
+               version_header_text(SdkVersion{.parts = {1, 3, 0, 21}}));
+    write_file(dir.path() / "lib/libVideoFX.so.1.3.0", elf_header());
+    std::filesystem::create_symlink("libVideoFX.so.1.3.0", dir.path() / "lib/libVideoFX.so");
+    CHECK(read_sdk_version(SdkKind::MaxineVfx, dir.path())->text() == "1.3.0.21");
+    // Un correctif différent reste un SDK mélangé.
+    write_file(dir.path() / "share/videofx_version.h",
+               version_header_text(SdkVersion{.parts = {1, 3, 1, 0}}));
+    CHECK(read_sdk_version(SdkKind::MaxineVfx, dir.path()).error().detail ==
+          "share/videofx_version.h annonce 1.3.1.0, mais lib/libVideoFX.so est en 1.3.0.0 : SDK mélangé");
+  }
   SECTION("sans marqueur, refusé") {
     write_file(dir.path() / "lib/libVideoFX.so", elf_header());
     auto refused = read_sdk_version(SdkKind::MaxineVfx, dir.path());

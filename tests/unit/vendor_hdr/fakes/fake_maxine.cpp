@@ -2,7 +2,10 @@
 // les prototypes de maxine_abi.h. Les « pointeurs CUDA » sont de la mémoire hôte. Le faux
 // vérifie ce que le vrai SDK exige ou ce que le chargeur promet :
 //   - flux 0 hérité (SetCudaStream avec nullptr) et exécution synchrone (async = 0) ;
-//   - modèle chargé une seule fois, avant la première exécution ;
+//   - chaque réglage passé avant le premier chargement : le lecteur ne dépend jamais des
+//     défauts du SDK (650 nits pour le pic) ;
+//   - modèle chargé avant la première exécution, puis rechargé seulement quand DebandingOff a
+//     changé (le vrai SDK ne le lit qu'au chargement), jamais sans raison ;
 //   - descripteurs aux formats RGBA/U8 en entrée et RGB10A2/P32 en sortie, en mémoire GPU,
 //     lus au moment de Run à l'adresse donnée à SetImage (ils doivent donc encore vivre) ;
 //   - réglages hors des plages de nvVFXTrueHDR.h refusés (NVCV_ERR_PARAMETER), l'ancienne
@@ -32,6 +35,15 @@ constexpr NvCV_Status kErrInitialization = -12;
 
 // État du faux, lu et changé par les tests : une seule instance de la bibliothèque par test.
 unsigned g_version = 0x01030000;  // NOLINT(cppcoreguidelines-avoid-non-const-global-variables)
+int g_loads = 0;                  // NOLINT(cppcoreguidelines-avoid-non-const-global-variables)
+
+// Un bit par réglage passé par NvVFX_SetU32.
+constexpr unsigned kSetContrast = 1U;
+constexpr unsigned kSetSaturation = 2U;
+constexpr unsigned kSetMiddleGray = 4U;
+constexpr unsigned kSetLuminance = 8U;
+constexpr unsigned kSetDebanding = 16U;
+constexpr unsigned kSetAll = 31U;
 
 }  // namespace
 
@@ -43,6 +55,9 @@ struct ajp::vendor_hdr::maxine::NvVFX_Object {
   unsigned saturation = 100;
   unsigned middle_gray = 50;
   unsigned luminance = 650;
+  unsigned debanding_off = 0;
+  unsigned loaded_debanding_off = 0;  // valeur lue par le dernier NvVFX_Load
+  unsigned set = 0;                   // réglages passés (kSet*)
   NvCVImage* source = nullptr;
   NvCVImage* target = nullptr;
   int loads = 0;
@@ -81,10 +96,23 @@ void NvVFX_DestroyEffect(NvVFX_Handle effect) {
 }
 
 NvCV_Status NvVFX_SetU32(NvVFX_Handle effect, const char* parameter, unsigned int value) {
-  if (same(parameter, kContrast)) return set_in_range(effect->contrast, value, 0, 200);
-  if (same(parameter, kSaturation)) return set_in_range(effect->saturation, value, 0, 200);
-  if (same(parameter, kMiddleGray)) return set_in_range(effect->middle_gray, value, 10, 100);
-  if (same(parameter, kLuminance)) return set_in_range(effect->luminance, value, 400, 2000);
+  struct Slot {
+    const char* selector;
+    unsigned* value;
+    unsigned lo;
+    unsigned hi;
+    unsigned bit;
+  };
+  for (const Slot& slot : {Slot{kContrast, &effect->contrast, 0, 200, kSetContrast},
+                           Slot{kSaturation, &effect->saturation, 0, 200, kSetSaturation},
+                           Slot{kMiddleGray, &effect->middle_gray, 10, 100, kSetMiddleGray},
+                           Slot{kLuminance, &effect->luminance, 400, 2000, kSetLuminance},
+                           Slot{kDebandingOff, &effect->debanding_off, 0, 1, kSetDebanding}}) {
+    if (!same(parameter, slot.selector)) continue;
+    const NvCV_Status status = set_in_range(*slot.value, value, slot.lo, slot.hi);
+    if (status == kSuccess) effect->set |= slot.bit;
+    return status;
+  }
   return kErrSelector;
 }
 
@@ -96,6 +124,10 @@ NvCV_Status NvVFX_GetVersion(unsigned int* version) {
 
 void fake_maxine_set_version(unsigned version) {
   g_version = version;
+}
+
+int fake_maxine_loads() {
+  return g_loads;
 }
 
 // TrueHDR 1.3 ne lit pas de dossier de modèles : comme le vrai, il répond UNIMPLEMENTED.
@@ -124,12 +156,19 @@ NvCV_Status NvVFX_SetCudaStream(NvVFX_Handle effect, const char* parameter, CUst
 }
 
 NvCV_Status NvVFX_Load(NvVFX_Handle effect) {
-  if (++effect->loads > 1) return kErrInitialization;  // le chargeur promet un seul chargement
+  if (effect->set != kSetAll) return kErrInitialization;  // un réglage laissé au défaut du SDK
+  if (effect->loads > 0 && effect->debanding_off == effect->loaded_debanding_off) {
+    return kErrInitialization;  // rechargement sans raison
+  }
+  ++effect->loads;
+  ++g_loads;
+  effect->loaded_debanding_off = effect->debanding_off;
   return kSuccess;
 }
 
 NvCV_Status NvVFX_Run(NvVFX_Handle effect, int async) {
-  if (effect->loads != 1 || async != 0 || !effect->stream_set || !effect->legacy_stream)
+  if (effect->loads == 0 || effect->debanding_off != effect->loaded_debanding_off || async != 0 ||
+      !effect->stream_set || !effect->legacy_stream)
     return kErrInitialization;
   const NvCVImage* in = effect->source;
   const NvCVImage* out = effect->target;

@@ -5,9 +5,9 @@
 #include <limits>
 
 #include "gpu/ir/graph.h"
-#include "gpu/ir/half.h"
 #include "gpu/ir/op_impl.h"
 #include "gpu/ir/op_util.h"
+#include "kernels/ref/half.h"
 
 namespace ajp::gpu::ir::detail {
 namespace {
@@ -136,13 +136,13 @@ std::expected<Value, Refusal> cast(const Node& node, const Value& in, DataType t
     if (to == DataType::I64) return in;
     for (std::size_t k = 0; k < in.i.size(); ++k) {
       const auto value = static_cast<float>(in.i[k]);
-      out.f[k] = to == DataType::F16 ? round_to_half(value) : value;
+      out.f[k] = to == DataType::F16 ? kernels::ref::round_to_half(value) : value;
     }
     return out;
   }
   if (to != DataType::I64) {
     for (std::size_t k = 0; k < in.f.size(); ++k)
-      out.f[k] = to == DataType::F16 ? round_to_half(in.f[k]) : in.f[k];
+      out.f[k] = to == DataType::F16 ? kernels::ref::round_to_half(in.f[k]) : in.f[k];
     return out;
   }
   // Flottant vers entier : troncature vers zéro, sans valeur hors de int64.

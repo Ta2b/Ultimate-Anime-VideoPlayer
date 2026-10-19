@@ -10,6 +10,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <expected>
+#include <memory>
 #include <stop_token>
 #include <string>
 #include <thread>
@@ -52,6 +53,9 @@ class PreparerSink {
   // false : borne atteinte et done intact. Le preparer le garde et réessaie au
   // prochain Credit ou au résultat suivant, toujours dans l'ordre des demandes.
   virtual bool deliver(BuildDone&& done) = 0;
+  // Le thread s'est arrêté sur une exception (ThreadFailed) : plus aucune demande ne sera
+  // servie. Appelé depuis le thread preparer, une fois au plus.
+  virtual void failed(const Refusal& refusal) = 0;
 };
 
 using PreparerInbox = Inbox<BuildRequest, Credit>;
@@ -63,7 +67,9 @@ struct PreparerBounds {
 
 class Preparer {
  public:
-  explicit Preparer(PreparerSink& sink, PreparerBounds bounds = {});
+  // Lance le thread. Refus : thread refusé par le système (ThreadUnavailable).
+  static std::expected<std::unique_ptr<Preparer>, Refusal> start(PreparerSink& sink,
+                                                                 PreparerBounds bounds = {});
   Preparer(const Preparer&) = delete;
   Preparer& operator=(const Preparer&) = delete;
   ~Preparer() = default;  // jthread : arrêt demandé, puis attente de la fin du thread
@@ -74,6 +80,8 @@ class Preparer {
   bool credit(Credit credit = {});
 
  private:
+  explicit Preparer(PreparerBounds bounds) : inbox_({bounds.requests, bounds.credits}) {}
+
   PreparerInbox inbox_;
   std::jthread thread_;  // dernier membre : démarre après la boîte, s'arrête avant elle
 };

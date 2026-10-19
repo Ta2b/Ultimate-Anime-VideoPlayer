@@ -9,11 +9,12 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include "gpu/ir/describe.h"
-#include "gpu/ir/half.h"
+#include "kernels/ref/half.h"
 #include "test_util.h"
 
 using ajp::RefusalCode;
 using namespace ajp::gpu::ir;
+using ajp::kernels::ref::round_to_half;
 using namespace ajp::gpu::ir::test;
 
 namespace {

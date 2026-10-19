@@ -15,8 +15,10 @@ struct Overloaded : F... {
 
 // L'image visible à la cible est la dernière dont pts ≤ cible : on jette celles
 // qui finissent avant. Sans durée connue, on jette celles qui commencent avant.
+// Une image sans horodatage ne peut pas être visible à la cible : jetée aussi.
 // Si la fin du flux arrive avant la cible, la dernière image jetée est livrée.
 bool ends_before(const DecodedFrame& frame, std::int64_t target_us) {
+  if (frame.pts_us == kNoPts) return true;
   const std::int64_t end = frame.pts_us + std::max<std::int64_t>(frame.duration_us, 1);
   return end <= target_us;
 }

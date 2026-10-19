@@ -35,12 +35,16 @@ bool is_identifier(std::string_view text) {
   return true;
 }
 
-// Les chaînes de ces en-têtes ne contiennent ni « // » ni « /* ».
+// Les chaînes de ces en-têtes ne contiennent ni « // » ni « /* ». Une ligne finie par « \ » se
+// poursuit sur la suivante, comme pour le préprocesseur : nvVFXTrueHDR.h:21-22 définit
+// NVVFXTRUEHDR_DEBANDING_OFF ainsi.
 std::string strip_comments(std::string_view text) {
   std::string out;
   out.reserve(text.size());
   for (std::size_t i = 0; i < text.size();) {
-    if (text.substr(i, 2) == "//") {
+    if (text.substr(i, 2) == "\\\n" || text.substr(i, 3) == "\\\r\n") {
+      i += text[i + 1] == '\n' ? std::size_t{2} : std::size_t{3};
+    } else if (text.substr(i, 2) == "//") {
       i = text.find('\n', i);
       if (i == std::string_view::npos) break;
     } else if (text.substr(i, 2) == "/*") {

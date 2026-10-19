@@ -3,7 +3,9 @@
 #include <array>
 #include <climits>
 #include <format>
+#include <optional>
 #include <string>
+#include <string_view>
 #include <utility>
 #include <vector>
 
@@ -82,40 +84,58 @@ class MaxineEffect final : public VendorEffect {
     const std::string models = (root / "lib" / "models").string();
     const NvCV_Status directory = api_.set_string(effect_, kModelDirectory, models.c_str());
     if (directory != kErrUnimplemented) {
-      if (Done set = check(directory, "dossier des modèles"); !set) return set;
+      if (Done set = check(directory, "NvVFX_SetString(ModelDir)"); !set) return set;
     }
-    return check(api_.set_stream(effect_, kCudaStream, nullptr), "flux CUDA");
+    return check(api_.set_stream(effect_, kCudaStream, nullptr), "NvVFX_SetCudaStream(0)");
   }
 
   TrueHdrPixel input_pixel() const override { return TrueHdrPixel::Rgba8; }
 
+  // Chaque réglage est passé, le pic compris : le lecteur ne dépend jamais des défauts du SDK.
   Done apply(const TrueHdrParams& params) override {
-    const std::array<std::pair<const char*, int>, 4> values{{{kContrast, params.contrast},
-                                                             {kSaturation, params.saturation},
-                                                             {kMiddleGray, params.middle_gray},
-                                                             {kLuminance, params.peak_nits}}};
-    for (const auto& [selector, value] : values) {
-      if (Done set = check(api_.set_u32(effect_, selector, static_cast<unsigned>(value)), selector); !set)
-        return set;
+    struct Setting {
+      const char* selector;
+      std::string_view call;
+      int value;
+    };
+    const std::array<Setting, 4> values{{{kContrast, "NvVFX_SetU32(Contrast)", params.contrast},
+                                         {kSaturation, "NvVFX_SetU32(Saturation)", params.saturation},
+                                         {kMiddleGray, "NvVFX_SetU32(MiddleGray)", params.middle_gray},
+                                         {kLuminance, "NvVFX_SetU32(Luminance)", params.peak_nits}}};
+    for (const Setting& setting : values) {
+      const NvCV_Status status =
+          api_.set_u32(effect_, setting.selector, static_cast<unsigned>(setting.value));
+      if (Done set = check(status, setting.call); !set) return set;
     }
+    // DebandingOff ne vaut qu'au chargement du modèle (mesuré sur la RTX, truehdr.md) : un
+    // changement demande un nouveau NvVFX_Load, fait une fois à l'image suivante.
+    const unsigned off = params.debanding ? 0U : 1U;
+    if (debanding_off_ == off) return {};
+    if (Done set = check(api_.set_u32(effect_, kDebandingOff, off), "NvVFX_SetU32(DebandingOff)"); !set)
+      return set;
+    debanding_off_ = off;
+    loaded_ = false;
     return {};
   }
 
   // Repris de pipeline_hdr.c:68-86 : descripteurs réinitialisés et liés à chaque image, modèle
   // chargé une fois, puis exécution synchrone sur le flux 0.
   Done run_on_legacy(const TrueHdrImage& in, const TrueHdrImage& out) override {
-    if (Done bound = describe(source_, in, kRgba, kU8, "image source"); !bound) return bound;
-    if (Done bound = describe(target_, out, kRgb10A2, kP32, "image de sortie"); !bound) return bound;
-    if (Done bound = check(api_.set_image(effect_, kInputImage, &source_), "liaison de l'entrée"); !bound)
+    if (Done bound = describe(source_, in, kRgba, kU8, "NvCVImage_Init de l'entrée"); !bound) return bound;
+    if (Done bound = describe(target_, out, kRgb10A2, kP32, "NvCVImage_Init de la sortie"); !bound)
       return bound;
-    if (Done bound = check(api_.set_image(effect_, kOutputImage, &target_), "liaison de la sortie"); !bound) {
+    if (Done bound = check(api_.set_image(effect_, kInputImage, &source_), "NvVFX_SetImage(SrcImage0)");
+        !bound)
+      return bound;
+    if (Done bound = check(api_.set_image(effect_, kOutputImage, &target_), "NvVFX_SetImage(DstImage0)");
+        !bound) {
       return bound;
     }
     if (!loaded_) {
-      if (Done loaded = check(api_.load(effect_), "chargement du modèle"); !loaded) return loaded;
+      if (Done loaded = check(api_.load(effect_), "NvVFX_Load"); !loaded) return loaded;
       loaded_ = true;
     }
-    return check(api_.run(effect_, 0), "exécution");
+    return check(api_.run(effect_, 0), "NvVFX_Run");
   }
 
  private:
@@ -153,6 +173,7 @@ class MaxineEffect final : public VendorEffect {
   NvCVImage source_{};  // persistants : le SDK garde leur adresse entre SetImage et Run
   NvCVImage target_{};
   bool loaded_ = false;
+  std::optional<unsigned> debanding_off_;  // valeur passée au SDK, aucune avant le premier apply
 };
 
 // La bibliothèque chargée doit être de la version que le magasin a vérifiée dans les fichiers.
@@ -200,7 +221,7 @@ std::expected<std::unique_ptr<TrueHdr>, Refusal> open_maxine_at(const fs::path& 
   auto effect = std::make_unique<MaxineEffect>(std::move(*libraries), *api, handle);
   if (Done configured = effect->configure(root); !configured) return std::unexpected(configured.error());
   auto opened = make_true_hdr(config, std::move(effect));
-  if (opened) log().info("TrueHDR Maxine prêt en {}x{}", config.width, config.height);
+  if (opened) make_logger()->info("TrueHDR Maxine prêt en {}x{}", config.width, config.height);
   return opened;
 }
 

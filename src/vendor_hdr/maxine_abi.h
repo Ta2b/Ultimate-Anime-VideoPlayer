@@ -3,7 +3,7 @@
 // Vérifiés le 19 octobre 2026 contre VFXSDK_linux 1.3.0.0 et sa fonction nvvfxtruehdr 1.3.0.0
 // installés dans /usr/local/VideoFX :
 //   - valeurs : nvCVStatus.h:47,49 ; nvCVImage.h:49,61,68,78,92,140 ; nvVideoEffects.h:303-314 ;
-//     features/nvvfxtruehdr/include/nvVFXTrueHDR.h:15-20 ;
+//     features/nvvfxtruehdr/include/nvVFXTrueHDR.h:15-22 ;
 //   - signatures : nvVideoEffects.h:75-185 et nvCVImage.h:151-166,261 (enum passés en int, de
 //     même taille sur x86-64) ; nvCVStatus.h:130 pour NvCV_GetErrorStringFromCode ;
 //   - symboles : nm -D, NvVFX_* dans lib/libVideoFX.so, NvCVImage_Init et
@@ -57,15 +57,16 @@ inline constexpr unsigned kInterleaved = 0;           // NVCV_INTERLEAVED
 inline constexpr unsigned kGpu = 1;                   // NVCV_GPU, alias de NVCV_CUDA
 
 // Sélecteurs d'effet et de paramètres.
-inline constexpr const char* kFxTrueHdr = "TrueHDR";        // NVVFX_FX_TRUE_HDR
-inline constexpr const char* kInputImage = "SrcImage0";     // NVVFX_INPUT_IMAGE
-inline constexpr const char* kOutputImage = "DstImage0";    // NVVFX_OUTPUT_IMAGE
-inline constexpr const char* kModelDirectory = "ModelDir";  // NVVFX_MODEL_DIRECTORY
-inline constexpr const char* kCudaStream = "CudaStream";    // NVVFX_CUDA_STREAM
-inline constexpr const char* kContrast = "Contrast";        // NVVFXTRUEHDR_CONTRAST
-inline constexpr const char* kSaturation = "Saturation";    // NVVFXTRUEHDR_SATURATION
-inline constexpr const char* kMiddleGray = "MiddleGray";    // NVVFXTRUEHDR_MIDDLE_GRAY
-inline constexpr const char* kLuminance = "Luminance";      // NVVFXTRUEHDR_LUMINANCE
+inline constexpr const char* kFxTrueHdr = "TrueHDR";          // NVVFX_FX_TRUE_HDR
+inline constexpr const char* kInputImage = "SrcImage0";       // NVVFX_INPUT_IMAGE
+inline constexpr const char* kOutputImage = "DstImage0";      // NVVFX_OUTPUT_IMAGE
+inline constexpr const char* kModelDirectory = "ModelDir";    // NVVFX_MODEL_DIRECTORY
+inline constexpr const char* kCudaStream = "CudaStream";      // NVVFX_CUDA_STREAM
+inline constexpr const char* kContrast = "Contrast";          // NVVFXTRUEHDR_CONTRAST
+inline constexpr const char* kSaturation = "Saturation";      // NVVFXTRUEHDR_SATURATION
+inline constexpr const char* kMiddleGray = "MiddleGray";      // NVVFXTRUEHDR_MIDDLE_GRAY
+inline constexpr const char* kLuminance = "Luminance";        // NVVFXTRUEHDR_LUMINANCE
+inline constexpr const char* kDebandingOff = "DebandingOff";  // NVVFXTRUEHDR_DEBANDING_OFF
 
 // Une constante telle que ses en-têtes doivent la définir : nombre ou chaîne.
 struct AbiConstant {
@@ -73,7 +74,7 @@ struct AbiConstant {
   std::variant<long long, std::string_view> value;
 };
 
-inline constexpr std::array<AbiConstant, 17> kAbi{{
+inline constexpr std::array<AbiConstant, 18> kAbi{{
     {"NVCV_SUCCESS", kSuccess},
     {"NVCV_ERR_UNIMPLEMENTED", kErrUnimplemented},
     {"NVCV_RGBA", kRgba},
@@ -91,6 +92,7 @@ inline constexpr std::array<AbiConstant, 17> kAbi{{
     {"NVVFXTRUEHDR_SATURATION", kSaturation},
     {"NVVFXTRUEHDR_MIDDLE_GRAY", kMiddleGray},
     {"NVVFXTRUEHDR_LUMINANCE", kLuminance},
+    {"NVVFXTRUEHDR_DEBANDING_OFF", kDebandingOff},
 }};
 
 // Fonctions résolues par nom ; NvVFX_API vaut la convention C par défaut sous Linux.

@@ -2,7 +2,8 @@
 // l'un ni l'autre). Les noms commencent par « Maxine sur la RTX » pour que ctest -R les isole sous le
 // verrou GPU (ajp-gpu). Fige ce qui a été mesuré le 19 octobre 2026 (rapport
 // ~/ajp-reports/truehdr.md) : contrat de flux réel, déterminisme, absence d'état d'une image à
-// l'autre, recréation, plusieurs instances, rampe de 32 marches et entrée tramée.
+// l'autre, recréation, plusieurs instances, rampe de 32 marches, entrée tramée, pic toujours
+// passé et débandage coupé avec rechargement.
 #include <algorithm>
 #include <cstddef>
 #include <cstdint>
@@ -211,4 +212,51 @@ TEST_CASE("Maxine sur la RTX : lignes à marge, le pas est transmis au SDK", "[n
   REQUIRE(hdr->process({.image = in.view(), .prepared = {.dithered = true}}, out.view(), rig.stream));
   rig.cuda->synchronize();
   CHECK(out.download() == tight);
+}
+
+TEST_CASE("Maxine sur la RTX : le pic passé fait foi, jamais les 650 nits du SDK", "[nvidia][cuda]") {
+  Rig rig;
+  const TrueHdrConfig config = sdr_config(kWidth, kHeight, rig.cuda->context());
+  REQUIRE(config.params.peak_nits == 1000);  // plan
+  const std::vector<std::uint32_t> source = source_rgba8(kWidth, kHeight, true);
+  std::unique_ptr<TrueHdr> hdr = rig.open(config);
+  const std::vector<std::uint32_t> plan = rig.run(*hdr, source);
+  // 650 nits, le défaut du SDK, donne une autre image : 1000 est donc bien celui appliqué.
+  REQUIRE(hdr->set_params({.peak_nits = 650}));
+  const std::vector<std::uint32_t> sdk_default = rig.run(*hdr, source);
+  CHECK(sdk_default != plan);
+  CHECK(column_red(sdk_default, 0, kHeight / 4).back() < column_red(plan, 0, kHeight / 4).back());
+  REQUIRE(hdr->set_params(TrueHdrParams{}));
+  CHECK(rig.run(*hdr, source) == plan);
+}
+
+TEST_CASE("Maxine sur la RTX : débandage coupé, modèle rechargé, octets stables", "[nvidia][cuda]") {
+  Rig rig;
+  const TrueHdrConfig config = sdr_config(kWidth, kHeight, rig.cuda->context());
+  const std::vector<std::uint32_t> source = source_rgba8(kWidth, kHeight, true);
+  std::unique_ptr<TrueHdr> hdr = rig.open(config);
+  const std::vector<std::uint32_t> debanded = rig.run(*hdr, source);
+
+  // Coupé : rechargé à l'image suivante, dont la sortie est déjà celle d'une instance ouverte
+  // d'emblée sans débandage.
+  REQUIRE(hdr->set_params({.debanding = false}));
+  const std::vector<std::uint32_t> raw = rig.run(*hdr, source);
+  CHECK(raw != debanded);
+  CHECK(rig.run(*hdr, source) == raw);
+  TrueHdrConfig off = config;
+  off.params.debanding = false;
+  std::unique_ptr<TrueHdr> fresh = rig.open(off);
+  CHECK(rig.run(*fresh, source) == raw);
+
+  // Un réglage changé avec le débandage tient après le rechargement : même image qu'une
+  // instance neuve ouverte avec lui.
+  TrueHdrConfig graded = config;
+  graded.params = {.contrast = 150, .saturation = 120};
+  REQUIRE(hdr->set_params(graded.params));
+  std::unique_ptr<TrueHdr> reference = rig.open(graded);
+  CHECK(rig.run(*hdr, source) == rig.run(*reference, source));
+
+  // Rétabli : les octets du début reviennent.
+  REQUIRE(hdr->set_params(TrueHdrParams{}));
+  CHECK(rig.run(*hdr, source) == debanded);
 }

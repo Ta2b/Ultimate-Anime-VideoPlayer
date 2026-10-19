@@ -168,6 +168,41 @@ TEST_CASE("Maxine : importé par le magasin, ouvert et exécuté (faux SDK)", "[
   CHECK(stream.events.size() == 4);
 }
 
+TEST_CASE("Maxine : couper le débandage recharge le modèle une fois (faux SDK)", "[loader]") {
+  TempDir dir;
+  make_maxine_sdk(dir.path(), {.libraries = LibraryContent::Fakes});
+  // Même chemin, donc même bibliothèque chargée que celle qu'ouvre le chargeur.
+  const DynamicLibrary fake = DynamicLibrary::open(dir.path() / "lib/libVideoFX.so").value();
+  const auto loads = fake.symbol<int()>("fake_maxine_loads").value();
+  const int before = loads();
+
+  TrueHdrConfig config = small_config();
+  config.params.debanding = false;  // passé avant le premier chargement : pas de rechargement
+  auto opened = detail::open_maxine_at(dir.path(), config);
+  REQUIRE(opened);
+  TrueHdr& hdr = **opened;
+  HostImage in(kWidth, kHeight, TrueHdrPixel::Rgba8);
+  HostImage out(kWidth, kHeight, TrueHdrPixel::Rgb10A2);
+  const TrueHdrInput input{.image = in.view(), .prepared = {.dithered = true}};
+  RecordingStream stream;
+  const auto frames = [&](int count) {
+    for (int i = 0; i < count; ++i) REQUIRE(hdr.process(input, out.view(), stream));
+  };
+  frames(2);
+  CHECK(loads() == before + 1);
+  // Le faux refuse un NvVFX_Load inutile et un Run dont le modèle n'a pas suivi DebandingOff.
+  REQUIRE(hdr.set_params(TrueHdrParams{}));
+  frames(3);
+  CHECK(loads() == before + 2);
+  REQUIRE(hdr.set_params({.contrast = 150}));  // un autre réglage ne recharge rien
+  frames(2);
+  CHECK(loads() == before + 2);
+  REQUIRE(hdr.set_params({.contrast = 150, .debanding = false}));
+  frames(1);
+  CHECK(loads() == before + 3);
+  CHECK(hdr.config().params.debanding == false);
+}
+
 TEST_CASE("Maxine : lignes à marge, le pas est transmis au SDK", "[loader]") {
   TempDir dir;
   make_maxine_sdk(dir.path() / "VideoFX", {.libraries = LibraryContent::Fakes});
@@ -262,6 +297,14 @@ TEST_CASE("RTX Video : créé sur le flux 0, exécuté, arrêté (faux SDK)", "[
     CHECK(out.pixels[1] == packed(200, 400, 50));
     CHECK(probe.evaluations() == before + 2);
     CHECK(stream.events == std::vector<std::string>{"hand", "take", "hand", "take"});
+
+    // Le débandage ne se coupe pas chez RTX Video : refusé, les réglages précédents gardés.
+    const Done refused = hdr.set_params({.debanding = false});
+    REQUIRE_FALSE(refused);
+    CHECK(refused.error().code == RefusalCode::FieldOutOfRange);
+    CHECK(refused.error().detail ==
+          "truehdr.debanding = false : TrueHDR RTX Video ne sait pas couper son débandage");
+    CHECK(hdr.config().params.contrast == 50);
 
     // L'API ne prend pas de pas de ligne : un tampon à marge est refusé, le flux rendu quand même.
     TrueHdrImage padded = out.view();

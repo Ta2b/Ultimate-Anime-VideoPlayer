@@ -8,6 +8,7 @@
 
 #include <spdlog/logger.h>
 
+#include "core/thread.h"
 #include "prepare/log.h"
 
 namespace ajp::prepare {
@@ -104,9 +105,20 @@ void run(const std::stop_token& stop, PreparerInbox& inbox, PreparerSink& sink) 
 
 }  // namespace
 
-Preparer::Preparer(PreparerSink& sink, PreparerBounds bounds)
-    : inbox_({bounds.requests, bounds.credits}),
-      thread_([this, &sink](const std::stop_token& stop) { run(stop, inbox_, sink); }) {}
+std::expected<std::unique_ptr<Preparer>, Refusal> Preparer::start(PreparerSink& sink, PreparerBounds bounds) {
+  std::unique_ptr<Preparer> preparer(new Preparer(bounds));
+  PreparerInbox& inbox = preparer->inbox_;
+  const ThreadReport report([&sink, log = make_logger()](const Refusal& refusal) {
+    log->error("{} : {}", name(refusal.code), refusal.detail);
+    sink.failed(refusal);
+  });
+  auto thread = start_thread(
+      "preparer", report,
+      [&inbox, &sink](const std::stop_token& stop, const ThreadReport&) { run(stop, inbox, sink); });
+  if (!thread) return std::unexpected(std::move(thread.error()));
+  preparer->thread_ = std::move(*thread);
+  return preparer;
+}
 
 bool Preparer::submit(BuildRequest&& request) {
   return inbox_.try_push(std::move(request));

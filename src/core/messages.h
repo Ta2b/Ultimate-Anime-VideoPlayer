@@ -12,10 +12,11 @@ struct Credit {
   std::uint32_t count = 1;
 };
 
-// Un slot du ring revient au thread gpu après le sémaphore de fin du rendu.
+// Un slot du ring revient au thread gpu après le rendu qui l'a lu (protocole : core/ring.h).
 struct SlotFree {
   std::uint32_t slot = 0;
-  std::uint64_t semaphore_value = 0;  // valeur du sémaphore timeline à attendre côté GPU
+  std::uint64_t semaphore_value = 0;  // valeur du sémaphore du slot à attendre côté GPU
+  std::uint32_t generation = 0;       // génération du ring ; celui d'un ring remplacé est ignoré
 };
 
 // Vide les files au seek ou au changement de Plan ; les images d'époque < epoch sont jetées.

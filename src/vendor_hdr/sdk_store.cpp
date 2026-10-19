@@ -220,10 +220,11 @@ std::expected<SdkStatus, Refusal> SdkStore::import(const fs::path& folder, std::
   };
   if (Done published = publish(); !published) {
     fs::remove_all(staging, error);
-    log().warn("import du {} refusé : {}", display_name(kind_), published.error().detail);
+    make_logger()->warn("import du {} refusé : {}", display_name(kind_), published.error().detail);
     return std::unexpected(published.error());
   }
-  log().info("{} importé depuis {} (version {})", display_name(kind_), utf8(folder), version->text());
+  make_logger()->info("{} importé depuis {} (version {})", display_name(kind_), utf8(folder),
+                      version->text());
   return status();
 }
 

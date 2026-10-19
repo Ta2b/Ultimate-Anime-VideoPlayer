@@ -1,6 +1,7 @@
 #include "vendor_hdr/blockers.h"
 
 #include <format>
+#include <utility>
 
 namespace ajp::vendor_hdr {
 
@@ -40,6 +41,11 @@ std::optional<Blocked> first_blocker(const TrueHdrEnvironment& environment) {
 
 Refusal to_refusal(const Blocked& blocked) {
   return Refusal{RefusalCode::HdrUnavailable, blocked.reason};
+}
+
+std::string first_blocker_reason(const TrueHdrEnvironment& environment) {
+  std::optional<Blocked> blocked = first_blocker(environment);
+  return blocked ? std::move(blocked->reason) : std::string();
 }
 
 }  // namespace ajp::vendor_hdr
