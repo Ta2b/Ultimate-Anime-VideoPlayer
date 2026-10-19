@@ -1,0 +1,6 @@
+#version 450
+// Conv directe (net_conv.glsl) en fp16 empaqueté.
+#extension GL_GOOGLE_include_directive : require
+#define AJP_NET_F16
+#define AJP_CONV_PACKED
+#include "net_conv.glsl"

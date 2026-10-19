@@ -27,6 +27,9 @@ struct PipelineDesc {
   std::uint32_t buffers = 0;                 // tampons de stockage, bindings 0..buffers−1
   std::uint32_t images = 0;                  // images de stockage, bindings buffers..buffers+images−1
   std::uint32_t push_bytes = 0;              // taille du bloc push_constant, multiple de 4
+  // SPIR-V d'un autre module (shaders du moteur Vulkan), qui doit vivre autant que le cache ;
+  // vide : le shader embarqué du socle nommé shader.
+  std::span<const std::uint32_t> spirv;
 };
 
 class Pipeline {
@@ -80,7 +83,8 @@ class PipelineCache {
 
  private:
   explicit PipelineCache(const VkContext& context) : context_(context) {}
-  std::expected<VkShaderModule, Refusal> module(std::string_view shader);
+  std::expected<VkShaderModule, Refusal> module(std::string_view shader,
+                                                std::span<const std::uint32_t> spirv);
   std::expected<std::unique_ptr<Pipeline>, Refusal> build(const PipelineDesc& desc, VkShaderModule module);
 
   using Key = std::pair<std::string, std::vector<std::uint32_t>>;

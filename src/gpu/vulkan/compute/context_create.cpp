@@ -186,12 +186,27 @@ Done VkContext::create_device(const CreateOptions& options) {
     extensions.push_back(name.c_str());
   }
 
+  const bool matrix = options.cooperative_matrix && available.cooperative_matrix &&
+                      available.vulkan_memory_model &&
+                      has_extension(present, VK_KHR_COOPERATIVE_MATRIX_EXTENSION_NAME);
+  std::vector<std::string> enabled_extensions = options.extensions;
+  if (matrix && std::ranges::find(options.extensions, VK_KHR_COOPERATIVE_MATRIX_EXTENSION_NAME) ==
+                    options.extensions.end()) {
+    extensions.push_back(VK_KHR_COOPERATIVE_MATRIX_EXTENSION_NAME);
+    enabled_extensions.emplace_back(VK_KHR_COOPERATIVE_MATRIX_EXTENSION_NAME);
+  }
+  VkPhysicalDeviceCooperativeMatrixFeaturesKHR matrix_features{
+      .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_COOPERATIVE_MATRIX_FEATURES_KHR,
+      .cooperativeMatrix = VK_TRUE};
   VkPhysicalDeviceVulkan13Features v13{.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES,
+                                       .pNext = matrix ? &matrix_features : nullptr,
                                        .subgroupSizeControl = flag(available.subgroup_size_control),
                                        .computeFullSubgroups = flag(available.compute_full_subgroups)};
   VkPhysicalDeviceVulkan12Features v12{.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES,
+                                       .pNext = matrix ? &matrix_features : nullptr,
                                        .shaderFloat16 = flag(available.shader_float16),
-                                       .timelineSemaphore = VK_TRUE};
+                                       .timelineSemaphore = VK_TRUE,
+                                       .vulkanMemoryModel = flag(matrix)};
   if (caps_.api_version >= VK_API_VERSION_1_3) v12.pNext = &v13;
   VkPhysicalDeviceVulkan11Features v11{.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_1_FEATURES,
                                        .pNext = &v12,
@@ -222,7 +237,7 @@ Done VkContext::create_device(const CreateOptions& options) {
   if (!fns) return std::unexpected(fns.error());
   device_fn_ = *fns;
   caps_.enabled = features_from_chain(&features);
-  caps_.extensions = options.extensions;
+  caps_.extensions = std::move(enabled_extensions);
   return {};
 }
 

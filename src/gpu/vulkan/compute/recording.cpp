@@ -172,6 +172,14 @@ Done Recorder::fill(const BufferView& view, std::uint32_t value) {
   return {};
 }
 
+Done Recorder::commands(const std::function<void(VkCommandBuffer)>& record) {
+  if (auto ok = open(); !ok) return ok;
+  barrier();
+  record(recording_->command_buffer_);
+  pending_ = true;
+  return {};
+}
+
 std::expected<std::unique_ptr<Recording>, Refusal> Recorder::finish() {
   if (auto ok = open(); !ok) return std::unexpected(ok.error());
   // Tout ce que l'enregistrement écrit devient visible de l'hôte (après l'attente de son

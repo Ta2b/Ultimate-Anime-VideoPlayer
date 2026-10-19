@@ -35,9 +35,10 @@ PipelineCache::~PipelineCache() {
   if (cache_ != VK_NULL_HANDLE) fn.vkDestroyPipelineCache(context_.device(), cache_, nullptr);
 }
 
-std::expected<VkShaderModule, Refusal> PipelineCache::module(std::string_view shader) {
+std::expected<VkShaderModule, Refusal> PipelineCache::module(std::string_view shader,
+                                                             std::span<const std::uint32_t> spirv) {
   if (const auto found = modules_.find(shader); found != modules_.end()) return found->second;
-  const std::span<const std::uint32_t> words = spirv::words(shader);
+  const std::span<const std::uint32_t> words = spirv.empty() ? spirv::words(shader) : spirv;
   if (words.empty()) {
     return refuse(RefusalCode::FeatureUnavailable,
                   std::format("shader {} absent du SPIR-V embarqué", shader));
@@ -142,7 +143,7 @@ std::expected<const Pipeline*, Refusal> PipelineCache::get(const PipelineDesc& d
                   std::format("{} : push de {} o, l'appareil en permet {}", desc.shader, desc.push_bytes,
                               context_.caps().max_push_constants));
   }
-  auto shader = module(desc.shader);
+  auto shader = module(desc.shader, desc.spirv);
   if (!shader) return std::unexpected(shader.error());
   auto pipeline = build(desc, *shader);
   if (!pipeline) return std::unexpected(pipeline.error());

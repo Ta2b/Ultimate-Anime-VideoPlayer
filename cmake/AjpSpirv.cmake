@@ -33,7 +33,9 @@ endif()
 include_guard(GLOBAL)
 
 find_program(AJP_SPIRV_VAL NAMES spirv-val HINTS "$ENV{VULKAN_SDK}/bin")
-set(AJP_SPIRV_SCRIPT "${CMAKE_CURRENT_LIST_FILE}")
+# En cache : include_guard(GLOBAL) n'exécute ce fichier qu'une fois, et un autre dossier qui
+# appelle ajp_add_spirv ne verrait pas une variable ordinaire posée ici.
+set(AJP_SPIRV_SCRIPT "${CMAKE_CURRENT_LIST_FILE}" CACHE INTERNAL "Script de conversion SPIR-V vers C++")
 set(AJP_SPIRV_TARGET_ENV "vulkan1.2" CACHE STRING "Environnement cible de glslc et spirv-val")
 
 # Une commande par shader : glslc vers un .spv temporaire, spirv-val, puis la liste de mots.

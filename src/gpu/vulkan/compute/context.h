@@ -39,6 +39,9 @@ struct CreateOptions {
   std::optional<DeviceUuid> device;     // choisi par UUID ; par défaut le premier énuméré
   std::vector<std::string> extensions;  // extensions d'appareil exigées en plus
   bool validation = false;              // VK_LAYER_KHRONOS_validation (--vulkan-validation)
+  // VK_KHR_cooperative_matrix et le modèle mémoire Vulkan, activés si l'appareil les a tous
+  // deux ; caps().enabled.cooperative_matrix dit s'ils le sont.
+  bool cooperative_matrix = false;
 };
 
 // Un appareil existant. Les champs reprennent ceux de pl_vulkan.

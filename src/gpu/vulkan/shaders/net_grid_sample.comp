@@ -1,0 +1,63 @@
+#version 450
+// GridSample : x [N, C, H, W] échantillonnée aux positions de la grille [N, Ho, Wo, 2]
+// (x puis y, dans [−1, 1]), bilinéaire ou nearest, bords zeros ou border, align_corners.
+// Formules et ordre de l'interpréteur (gpu/ir/op_sample.cpp, eval_grid_sample) ; une position
+// non finie donne 0.
+#extension GL_GOOGLE_include_directive : require
+#include "net_tensor.glsl"
+
+layout(local_size_x = 256) in;
+
+layout(constant_id = 0) const uint TX = 0;
+layout(constant_id = 1) const uint TG = 0;
+layout(constant_id = 2) const uint TY = 0;
+layout(constant_id = 3) const uint NEAREST = 0;
+layout(constant_id = 4) const uint BORDER = 0;
+layout(constant_id = 5) const uint ALIGN = 0;
+
+AJP_NET_BUFFER(0, src, readonly)
+AJP_NET_BUFFER(1, grid, readonly)
+AJP_NET_BUFFER(2, dst, writeonly)
+
+layout(push_constant) uniform Push {
+  TDesc x;
+  TDesc g;  // [N, Ho, Wo, 2] vu en (n, c = Ho, h = Wo, w = 2)
+  TDesc y;
+} pc;
+
+float pixel(float g, uint size) {
+  precise float s = float(size);
+  precise float p = ALIGN == 1u ? (g + 1.0) / 2.0 * (s - 1.0) : ((g + 1.0) * s - 1.0) / 2.0;
+  if (BORDER == 1u) p = clamp(p, 0.0, s - 1.0);
+  return clamp(p, -2.0, s + 1.0);
+}
+
+float at(uvec4 o, int yy, int xx) {
+  if (yy < 0 || yy >= int(pc.x.h) || xx < 0 || xx >= int(pc.x.w)) return 0.0;
+  return AJP_LOAD(src, TX, t_index(pc.x, o.x, o.y, uint(yy), uint(xx)));
+}
+
+void main() {
+  uint i = linear_invocation();
+  if (i >= t_count(pc.y)) return;
+  uvec4 o = t_coords(pc.y, i);
+  float gx = AJP_LOAD(grid, TG, t_index(pc.g, o.x, o.z, o.w, 0u));
+  float gy = AJP_LOAD(grid, TG, t_index(pc.g, o.x, o.z, o.w, 1u));
+  float v = 0.0;
+  if (!isnan(gx) && !isinf(gx) && !isnan(gy) && !isinf(gy)) {
+    float px = pixel(gx, pc.x.w);
+    float py = pixel(gy, pc.x.h);
+    if (NEAREST == 1u) {
+      v = at(o, int(roundEven(py)), int(roundEven(px)));
+    } else {
+      int x0 = int(floor(px));
+      int y0 = int(floor(py));
+      precise float tx = px - float(x0);
+      precise float ty = py - float(y0);
+      precise float top = (1.0 - tx) * at(o, y0, x0) + tx * at(o, y0, x0 + 1);
+      precise float bottom = (1.0 - tx) * at(o, y0 + 1, x0) + tx * at(o, y0 + 1, x0 + 1);
+      v = (1.0 - ty) * top + ty * bottom;
+    }
+  }
+  AJP_STORE(dst, TY, t_index(pc.y, o.x, o.y, o.z, o.w), v)
+}

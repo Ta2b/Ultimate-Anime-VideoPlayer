@@ -1,0 +1,45 @@
+#version 450
+// Pad, marges éventuellement négatives (découpe), modes constant, reflect et edge, sur les
+// quatre axes. Référence : gpu/ir/op_slice.cpp (eval_pad, pad_source).
+#extension GL_GOOGLE_include_directive : require
+#include "net_tensor.glsl"
+
+layout(local_size_x = 256) in;
+
+layout(constant_id = 0) const uint TX = 0;
+layout(constant_id = 1) const uint TY = 0;
+layout(constant_id = 2) const uint MODE = 0;  // 0 constant, 1 reflect, 2 edge
+
+AJP_NET_BUFFER(0, src, readonly)
+AJP_NET_BUFFER(1, dst, writeonly)
+
+layout(push_constant) uniform Push {
+  TDesc x;
+  TDesc y;
+  int begin[4];
+  float value;
+} pc;
+
+// Indice source de c dans [0, dim), ou −1 pour la constante.
+int pad_source(int c, int dim) {
+  if (c >= 0 && c < dim) return c;
+  if (MODE == 0u) return -1;
+  if (MODE == 2u) return clamp(c, 0, dim - 1);
+  return c < 0 ? -c : 2 * (dim - 1) - c;
+}
+
+void main() {
+  uint i = linear_invocation();
+  if (i >= t_count(pc.y)) return;
+  uvec4 o = t_coords(pc.y, i);
+  uint dims[4] = uint[4](pc.x.n, pc.x.c, pc.x.h, pc.x.w);
+  int from[4];
+  bool fill = false;
+  for (uint k = 0u; k < 4u; ++k) {
+    from[k] = pad_source(int(o[k]) - pc.begin[k], int(dims[k]));
+    fill = fill || from[k] < 0;
+  }
+  float v = pc.value;
+  if (!fill) v = AJP_LOAD(src, TX, t_index(pc.x, uint(from[0]), uint(from[1]), uint(from[2]), uint(from[3])));
+  AJP_STORE(dst, TY, t_index(pc.y, o.x, o.y, o.z, o.w), v)
+}

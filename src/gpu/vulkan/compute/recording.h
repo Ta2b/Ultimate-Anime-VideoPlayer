@@ -10,6 +10,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <expected>
+#include <functional>
 #include <memory>
 #include <span>
 #include <string_view>
@@ -88,6 +89,11 @@ class Recorder {
 
   // Remplit la vue de value à chaque exécution (offset et taille multiples de 4).
   Done fill(const BufferView& view, std::uint32_t value);
+
+  // Commandes écrites par l'appelant avec ses propres fonctions (copies, horodatages), après
+  // une barrière sur tout ce qui précède ; ce qui suit les attend aussi. Refus InputMismatch :
+  // déjà terminé.
+  Done commands(const std::function<void(VkCommandBuffer)>& record);
 
   // Barrière finale vers l'hôte et les transferts, puis vkEndCommandBuffer. Le Recorder est
   // ensuite vide. Refus InputMismatch : déjà terminé.

@@ -35,6 +35,17 @@ void read_link(const VkBaseInStructure& link, Features& f) {
       const auto& v12 = reinterpret_cast<const VkPhysicalDeviceVulkan12Features&>(link);
       f.timeline_semaphore = f.timeline_semaphore || yes(v12.timelineSemaphore);
       f.shader_float16 = f.shader_float16 || yes(v12.shaderFloat16);
+      f.vulkan_memory_model = f.vulkan_memory_model || yes(v12.vulkanMemoryModel);
+      break;
+    }
+    case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_MEMORY_MODEL_FEATURES: {
+      const auto& model = reinterpret_cast<const VkPhysicalDeviceVulkanMemoryModelFeatures&>(link);
+      f.vulkan_memory_model = f.vulkan_memory_model || yes(model.vulkanMemoryModel);
+      break;
+    }
+    case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_COOPERATIVE_MATRIX_FEATURES_KHR: {
+      const auto& matrix = reinterpret_cast<const VkPhysicalDeviceCooperativeMatrixFeaturesKHR&>(link);
+      f.cooperative_matrix = f.cooperative_matrix || yes(matrix.cooperativeMatrix);
       break;
     }
     case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES: {
@@ -130,6 +141,12 @@ Features available_features(const InstanceFunctions& fn, VkPhysicalDevice device
   VkPhysicalDeviceVulkan11Features v11{.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_1_FEATURES,
                                        .pNext = &v12};
   if (api_version >= VK_API_VERSION_1_3) v12.pNext = &v13;
+  // La structure d'une extension n'entre dans la chaîne que si l'appareil a l'extension.
+  VkPhysicalDeviceCooperativeMatrixFeaturesKHR matrix{
+      .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_COOPERATIVE_MATRIX_FEATURES_KHR, .pNext = v12.pNext};
+  if (has_extension(device_extensions(fn, device), VK_KHR_COOPERATIVE_MATRIX_EXTENSION_NAME)) {
+    v12.pNext = &matrix;
+  }
   VkPhysicalDeviceFeatures2 all{.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2, .pNext = &v11};
   fn.vkGetPhysicalDeviceFeatures2(device, &all);
   return features_from_chain(&all);

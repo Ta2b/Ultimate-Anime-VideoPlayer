@@ -1,0 +1,36 @@
+// Poids des réseaux rangés pour les noyaux (blobs du programme), une fois, à l'abaissement.
+#pragma once
+
+#include <cstddef>
+#include <cstdint>
+#include <vector>
+
+#include "gpu/ir/ir.h"
+
+namespace ajp::gpu::vk::net {
+
+enum class BlobType : std::uint8_t { F32, F16 };
+
+// Poids d'une Conv directe : ONNX [cout][cin / groupes][kh][kw] vers
+// [groupes × blocs][kh][kw][cin / groupes][lanes], un bloc portant lanes canaux de sortie d'un
+// même groupe, complété de zéros (net_conv.comp).
+std::vector<std::byte> conv_weights(const ir::Tensor& w, std::uint32_t groups, std::uint32_t lanes,
+                                    BlobType type);
+
+// Même rangement depuis les poids ONNX d'une ConvTranspose [cin][cout / groupes][kh][kw].
+std::vector<std::byte> conv_transpose_weights(const ir::Tensor& w, std::uint32_t groups, std::uint32_t lanes);
+
+// Poids d'une Conv par matrices coopératives : la matrice B du produit implicite, K × Np en
+// float16, ligne k = (ky × kw + kx) × cinp + ci (cinp : cin arrondi à 16, rangs de bourrage
+// nuls), colonne = canal de sortie (Np : cout arrondi à 16, colonnes nulles). Groupe unique.
+std::vector<std::byte> matrix_weights(const ir::Tensor& w, std::uint32_t cin_padded,
+                                      std::uint32_t cout_padded);
+
+// Un vecteur par canal de sortie en float (biais, pente PRelu), complété de zéros jusqu'à
+// count ; absent (nullptr) : des zéros.
+std::vector<std::byte> channel_floats(const ir::Tensor* values, std::uint32_t count);
+
+// Une constante lue comme tenseur par un noyau : ses valeurs dans son type, en ordre ligne.
+std::vector<std::byte> constant_blob(const ir::Tensor& constant);
+
+}  // namespace ajp::gpu::vk::net

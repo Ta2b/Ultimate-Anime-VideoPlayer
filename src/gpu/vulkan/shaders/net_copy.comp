@@ -1,0 +1,40 @@
+#version 450
+// Copie à pas : Slice, Split, Concat et Transpose. On parcourt une boîte iter de coordonnées o ;
+// l'élément va en sortie à o + out_offset, et vient de l'entrée à la coordonnée k telle que
+// in[perm[k]] = start[k] + o[k] × step[k] (pas négatifs de Slice compris). perm range quatre
+// axes sur deux bits chacun. Références : gpu/ir/op_slice.cpp, op_shape.cpp (eval_transpose).
+#extension GL_GOOGLE_include_directive : require
+#include "net_tensor.glsl"
+
+layout(local_size_x = 256) in;
+
+layout(constant_id = 0) const uint TX = 0;
+layout(constant_id = 1) const uint TY = 0;
+
+AJP_NET_BUFFER(0, src, readonly)
+AJP_NET_BUFFER(1, dst, writeonly)
+
+layout(push_constant) uniform Push {
+  TDesc x;
+  TDesc y;
+  uint iter[4];
+  uint out_offset[4];
+  int start[4];
+  int step[4];
+  uint perm;
+} pc;
+
+void main() {
+  TDesc box = TDesc(pc.iter[0], pc.iter[1], pc.iter[2], pc.iter[3], pc.y.order, 0u);
+  uint i = linear_invocation();
+  if (i >= t_count(box)) return;
+  uvec4 o = t_coords(box, i);
+  uint from[4];
+  for (uint k = 0u; k < 4u; ++k) {
+    uint axis = (pc.perm >> (2u * k)) & 3u;
+    from[axis] = uint(pc.start[k] + int(o[k]) * pc.step[k]);
+  }
+  float v = AJP_LOAD(src, TX, t_index(pc.x, from[0], from[1], from[2], from[3]));
+  uvec4 to = o + uvec4(pc.out_offset[0], pc.out_offset[1], pc.out_offset[2], pc.out_offset[3]);
+  AJP_STORE(dst, TY, t_index(pc.y, to.x, to.y, to.z, to.w), v)
+}
