@@ -55,9 +55,19 @@ jobs:
       - run: cmake --build --preset ${{ matrix.preset }}
       - run: ctest --preset ${{ matrix.preset }}
 
+  # Tous les modules, lecteur compris, sous Xvfb avec Vulkan logiciel (lavapipe) : une fois
+  # tel quel, une fois sous ASan et UBSan, une fois sous TSan. Les préréglages de test
+  # portent LSAN_OPTIONS (tools/ci/lsan.supp) et TSAN_OPTIONS.
   player:
-    name: Lecteur Linux (lavapipe)
+    name: Lecteur Linux (${{ matrix.name }})
     runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { name: lavapipe, preset: linux-prefix, tidy: true }
+          - { name: asan-ubsan, preset: linux-prefix-asan, tidy: false }
+          - { name: tsan, preset: linux-prefix-tsan-player, tidy: false }
     env:
       CC: gcc-13
       CXX: g++-13
@@ -79,9 +89,10 @@ jobs:
           path: ${{ env.AJP_DEPS_PREFIX }}
           key: deps-player-gcc-13-${{ hashFiles('tools/deps/linux-from-source.sh') }}
       - run: tools/deps/linux-from-source.sh "$AJP_DEPS_PREFIX" "$RUNNER_TEMP/deps-src"
-      - run: cmake --preset linux-prefix
-      - run: cmake --build --preset linux-prefix
+      - run: cmake --preset ${{ matrix.preset }}
+      - run: cmake --build --preset ${{ matrix.preset }}
       - name: Tests (Vulkan logiciel sous Xvfb)
-        run: xvfb-run -a ctest --preset linux-prefix
+        run: xvfb-run -a ctest --preset ${{ matrix.preset }}
       - name: clang-tidy sur src/
+        if: matrix.tidy
         run: git ls-files -z -- 'src/*.cpp' | xargs -0 -r -n1 -P4 clang-tidy-20 -p build/linux-prefix --quiet

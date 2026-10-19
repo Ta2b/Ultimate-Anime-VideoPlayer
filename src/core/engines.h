@@ -9,10 +9,12 @@
 #include <string>
 #include <vector>
 
+#include "core/gpu_device.h"
+
 namespace ajp::core {
 
 enum class Os : std::uint8_t { Windows, Linux, MacOs };
-enum class GpuVendor : std::uint8_t { Nvidia, Amd, Intel, Apple, Other };
+using GpuVendor = ajp::GpuVendor;  // déduit de l'identifiant PCI (core/gpu_device.h)
 
 struct GpuInfo {
   GpuVendor vendor = GpuVendor::Other;

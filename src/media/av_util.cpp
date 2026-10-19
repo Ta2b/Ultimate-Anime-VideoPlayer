@@ -25,7 +25,7 @@ std::unexpected<Refusal> refuse_av(RefusalCode code, std::string_view where, int
 }
 
 std::int64_t to_us(std::int64_t ts, AVRational time_base, std::int64_t start_us) {
-  if (ts == AV_NOPTS_VALUE) return kNoTimestamp;
+  if (ts == AV_NOPTS_VALUE) return kNoPts;
   return av_rescale_q(ts, time_base, kMicroseconds) - start_us;
 }
 

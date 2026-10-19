@@ -6,19 +6,16 @@
 #include <cstddef>
 #include <cstdint>
 #include <expected>
-#include <limits>
 #include <memory>
 #include <span>
 #include <string>
 
+#include "core/frame.h"
 #include "core/types.h"
 
 struct AVCodecParameters;
 
 namespace ajp::media {
-
-// Horodatage absent (AV_NOPTS_VALUE de FFmpeg).
-inline constexpr std::int64_t kNoTimestamp = std::numeric_limits<std::int64_t>::min();
 
 enum class TrackKind : std::uint8_t { Video, Audio, Subtitle, Attachment };
 

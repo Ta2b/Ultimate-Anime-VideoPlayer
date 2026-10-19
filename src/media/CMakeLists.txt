@@ -4,7 +4,7 @@
 ajp_add_module(media
   SOURCES
     av_util.cpp color.cpp cuda_driver.cpp demuxer.cpp frame_data.cpp hw_device.cpp
-    language.cpp log.cpp packet.cpp selection.cpp source.cpp source_loop.cpp
+    language.cpp packet.cpp selection.cpp source.cpp source_loop.cpp
     track.cpp video_decoder.cpp
   DEPS ajp::core_types
-  PRIVATE_DEPS ajp::dep::ffmpeg ajp::dep::spdlog ajp::dep::vulkan ${CMAKE_DL_LIBS})
+  PRIVATE_DEPS ajp::dep::ffmpeg ajp::core_log ajp::dep::vulkan ${CMAKE_DL_LIBS})

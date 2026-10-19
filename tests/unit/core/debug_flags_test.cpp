@@ -53,12 +53,18 @@ TEST_CASE("DebugFlags : chaque option remplit son champ", "[debug_flags]") {
   CHECK(flags.display->height == 1440);
   CHECK(flags.display->refresh_hz == 59.94);
   CHECK(flags.display->hdr);
+  CHECK(flags.display->space == OutputSpace::Pq);
+  CHECK(flags.display->provenance.refresh == Provenance::CommandLine);
+  CHECK(flags.display->provenance.hdr == Provenance::CommandLine);
+  CHECK(flags.display->provenance.peak == Provenance::Default);  // l'option ne dit rien de la luminance
   CHECK(flags.max_frames == 240);
   CHECK(line->inputs == std::vector<std::string>{"episode.mkv"});
 
   auto sdr = parse({"--display=1920x1080@60"});
   REQUIRE(sdr);
   CHECK_FALSE(sdr->debug.display->hdr);
+  CHECK(sdr->debug.display->space == OutputSpace::Srgb);
+  CHECK(sdr->debug.display->provenance.size == Provenance::CommandLine);
 }
 
 TEST_CASE("DebugFlags : fichiers, « - » et « -- »", "[debug_flags]") {

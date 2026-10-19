@@ -26,7 +26,7 @@ struct VideoDecoder::State {
   std::vector<Attempt> rejected;
   std::optional<Packet> pending;  // refusé par EAGAIN, renvoyé au prochain receive()
   bool drained = false;
-  std::int64_t next_pts_us = kNoTimestamp;
+  std::int64_t next_pts_us = kNoPts;
   std::int64_t nominal_duration_us = 0;
   int data_errors = 0;
   std::shared_ptr<spdlog::logger> log = make_logger();
@@ -219,11 +219,12 @@ std::expected<std::optional<DecodedFrame>, Refusal> VideoDecoder::receive() {
   if (err < 0) return refuse_av(RefusalCode::DecodeFailed, "réception d'une image", err);
   if (frame->hw_frames_ctx == nullptr) s.fall_back("le décodeur a rendu une image logicielle");
 
-  // Un trou d'horodatage se comble par l'image précédente plus sa durée.
-  std::int64_t pts = frame->best_effort_timestamp;
-  if (pts == AV_NOPTS_VALUE) pts = s.next_pts_us == kNoTimestamp ? 0 : s.next_pts_us;
+  // Un trou d'horodatage se comble par l'image précédente plus sa durée. Sans image
+  // précédente (début, ou après un flush), il reste inconnu : kNoPts, jamais un 0 inventé.
+  const std::int64_t pts =
+      frame->best_effort_timestamp == AV_NOPTS_VALUE ? s.next_pts_us : frame->best_effort_timestamp;
   const std::int64_t duration = frame->duration > 0 ? frame->duration : s.nominal_duration_us;
-  s.next_pts_us = pts + duration;
+  s.next_pts_us = pts == kNoPts ? kNoPts : pts + duration;
 
   ReadyEvent ready;
   if (s.hw.stream && frame->hw_frames_ctx != nullptr) {
@@ -239,7 +240,7 @@ void VideoDecoder::flush() {
   avcodec_flush_buffers(s.codec.get());
   s.pending.reset();
   s.drained = false;
-  s.next_pts_us = kNoTimestamp;
+  s.next_pts_us = kNoPts;
 }
 
 }  // namespace ajp::media

@@ -51,8 +51,31 @@ std::uintptr_t handle_value(Handle handle) {
   }
 }
 
+// Ce qu'une image Vulkan apporte : son contexte d'images, qui porte le verrou, et l'AVVkFrame.
+struct VulkanParts {
+  AVHWFramesContext* frames = nullptr;
+  AVVulkanFramesContext* context = nullptr;
+  AVVkFrame* image = nullptr;
+
+  void lock() const {
+    if (context->lock_frame != nullptr) context->lock_frame(frames, image);
+  }
+  void unlock() const {
+    if (context->unlock_frame != nullptr) context->unlock_frame(frames, image);
+  }
+};
+
+VulkanParts vulkan_parts(const AVFrame& frame) {
+  auto* frames = reinterpret_cast<AVHWFramesContext*>(frame.hw_frames_ctx->data);
+  return {.frames = frames,
+          .context = static_cast<AVVulkanFramesContext*>(frames->hwctx),
+          .image = reinterpret_cast<AVVkFrame*>(frame.data[0])};
+}
+
 // Plans d'une image matérielle, selon l'API :
-// Cuda : un CUdeviceptr par plan ; Vulkan : un VkImage par plan d'AVVkFrame ;
+// Cuda : un CUdeviceptr par plan, pas en octets par native_pitch ;
+// Vulkan : plan 0 = la VkImage multiplan de l'AVVkFrame (une seule, sinon refusée), lue
+// entre begin_vulkan_access et end_vulkan_access ;
 // D3D11 : plan 0 = ID3D11Texture2D*, plan 1 = index de tranche ;
 // VA-API : plan 0 = VASurfaceID ; VideoToolbox : plan 0 = CVPixelBufferRef.
 class AvFrameData final : public FrameData {
@@ -67,14 +90,9 @@ class AvFrameData final : public FrameData {
       case FrameMemory::Host:
       case FrameMemory::Cuda:
         return av_pix_fmt_count_planes(sw_format_);
-      case FrameMemory::Vulkan: {
-        const auto* vk = reinterpret_cast<const AVVkFrame*>(frame_->data[0]);
-        int count = 0;
-        while (count < AV_NUM_DATA_POINTERS && vk->img[count] != VK_NULL_HANDLE) ++count;
-        return count;
-      }
       case FrameMemory::D3d11:
         return 2;
+      case FrameMemory::Vulkan:
       case FrameMemory::VaApi:
       case FrameMemory::VideoToolbox:
         return 1;
@@ -117,7 +135,42 @@ class AvFrameData final : public FrameData {
     return 0;
   }
 
+  std::size_t native_pitch(int plane) const override {
+    if (memory_ != FrameMemory::Cuda || plane < 0 || plane >= plane_count()) return 0;
+    return static_cast<std::size_t>(frame_->linesize[static_cast<std::size_t>(plane)]);
+  }
+
   std::uintptr_t ready_event() const override { return ready_.handle; }
+  std::uint64_t ready_value() const override { return ready_.value; }
+
+  // Le verrou reste pris jusqu'à end_vulkan_access, comme hwcontext_vulkan.h le demande
+  // autour d'une soumission.
+  std::expected<VulkanImageAccess, Refusal> begin_vulkan_access() const override {
+    if (memory_ != FrameMemory::Vulkan) return FrameData::begin_vulkan_access();
+    const VulkanParts vk = vulkan_parts(*frame_);
+    vk.lock();
+    const AVVkFrame& image = *vk.image;
+    return VulkanImageAccess{
+        .semaphore = handle_value(image.sem[0]),
+        .wait_value = image.sem_value[0],
+        .signal_value = image.sem_value[0] + 1,
+        .state = {.layout = static_cast<std::uint32_t>(image.layout[0]),
+                  .queue_family = image.queue_family[0]},
+    };
+  }
+
+  void end_vulkan_access(const VulkanImageState& after, bool submitted) const override {
+    if (memory_ != FrameMemory::Vulkan) return;
+    const VulkanParts vk = vulkan_parts(*frame_);
+    if (submitted) {
+      AVVkFrame& image = *vk.image;
+      image.sem_value[0] += 1;
+      image.layout[0] = static_cast<VkImageLayout>(after.layout);
+      image.queue_family[0] = after.queue_family;
+      image.access[0] = VK_ACCESS_2_NONE;  // la soumission signalée rend tout visible
+    }
+    vk.unlock();
+  }
 
  private:
   int plane_rows(int plane) const {
@@ -132,6 +185,22 @@ class AvFrameData final : public FrameData {
   AVPixelFormat sw_format_;
   ReadyEvent ready_;
 };
+
+// Sémaphore timeline de l'image et sa valeur de fin de décodage, lus sous le verrou de
+// l'AVVkFrame comme hwcontext_vulkan.h le demande. Une seule VkImage : une seule attente.
+std::expected<ReadyEvent, Refusal> vulkan_ready(const AVFrame& frame) {
+  const VulkanParts vk = vulkan_parts(frame);
+  if (vk.image == nullptr) return refuse(RefusalCode::FormatUnsupported, "image Vulkan sans AVVkFrame");
+  if (vk.image->img[1] != VK_NULL_HANDLE) {
+    return refuse(RefusalCode::FormatUnsupported,
+                  "image Vulkan à plusieurs VkImage : une attente par image, hors du contrat de FrameData");
+  }
+  vk.lock();
+  ReadyEvent ready{
+      .handle = handle_value(vk.image->sem[0]), .value = vk.image->sem_value[0], .owner = nullptr};
+  vk.unlock();
+  return ready;
+}
 
 }  // namespace
 
@@ -151,6 +220,11 @@ std::expected<DecodedFrame, Refusal> to_decoded_frame(FramePtr frame, std::int64
   }
   auto color = color_info(*frame, sw_format);
   if (!color) return std::unexpected(color.error());
+  if (*memory == FrameMemory::Vulkan) {
+    auto own = vulkan_ready(*frame);
+    if (!own) return std::unexpected(own.error());
+    ready = std::move(*own);
+  }
 
   DecodedFrame decoded{
       .width = frame->width,

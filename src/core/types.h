@@ -44,7 +44,8 @@ enum class RefusalCode : std::uint8_t {
   HwDecodeUnavailable,    // une API de décodage matériel ne convient pas (codec, appareil, pilote)
   DecoderUnavailable,     // aucun essai de décodage n'a abouti
   DecodeFailed,           // erreur de lecture ou de décodage en cours de flux
-  FormatUnsupported,      // format de pixel ou couleur hors du vocabulaire de core/frame.h
+  FormatUnsupported,      // format de pixel ou couleur hors du vocabulaire de core/frame.h, ou refusé par un
+                          // noyau
   SeekFailed,             // cible hors du fichier ou seek refusé par le conteneur
   AudioCodecUnavailable,  // aucun décodeur FFmpeg pour ce flux audio
   AudioDecodeFailed,      // paquet ou conversion audio refusés par FFmpeg
@@ -70,6 +71,19 @@ enum class RefusalCode : std::uint8_t {
   VendorCallFailed,    // un appel d'un SDK constructeur a renvoyé une erreur
   InputMismatch,       // image ou tampon hors du contrat d'entrée (taille, format, tramage)
   IoFailed,            // lecture, copie ou écriture de fichier impossible
+
+  OnnxMalformed,     // octets qui ne forment pas un ModelProto lisible
+  OnnxExternalData,  // poids hors du fichier ONNX, refusés
+  OnnxUnsupported,   // type, opset ou construction ONNX hors du sous-ensemble lu
+  OperatorUnknown,   // opérateur hors du jeu de l'IR ; le détail porte son nom
+  GraphInvalid,      // tenseur absent, cycle, attribut ou entrée incohérents
+  ShapeInvalid,      // formes incompatibles, dimension impossible à déduire, ou taille refusée par un noyau
+
+  // core : threads et backends chargés à l'exécution
+  ThreadFailed,    // une exception a interrompu le corps d'un thread, qui s'est arrêté
+  AbiMismatch,     // bibliothèque d'une autre version de l'interface (kBackendAbi)
+  DeviceMismatch,  // le backend ne sait pas exploiter l'appareil de rendu (API, constructeur, UUID)
+
   // gpu/vulkan/compute : socle de calcul Vulkan
   VulkanCallFailed,    // un appel Vulkan a renvoyé une erreur ; le détail cite l'appel et son VkResult
   DeviceUnavailable,   // aucun appareil, aucune file compute, ou UUID introuvable
@@ -188,6 +202,24 @@ constexpr std::string_view name(RefusalCode code) {
       return "InputMismatch";
     case RefusalCode::IoFailed:
       return "IoFailed";
+    case RefusalCode::OnnxMalformed:
+      return "OnnxMalformed";
+    case RefusalCode::OnnxExternalData:
+      return "OnnxExternalData";
+    case RefusalCode::OnnxUnsupported:
+      return "OnnxUnsupported";
+    case RefusalCode::OperatorUnknown:
+      return "OperatorUnknown";
+    case RefusalCode::GraphInvalid:
+      return "GraphInvalid";
+    case RefusalCode::ShapeInvalid:
+      return "ShapeInvalid";
+    case RefusalCode::ThreadFailed:
+      return "ThreadFailed";
+    case RefusalCode::AbiMismatch:
+      return "AbiMismatch";
+    case RefusalCode::DeviceMismatch:
+      return "DeviceMismatch";
     case RefusalCode::VulkanCallFailed:
       return "VulkanCallFailed";
     case RefusalCode::DeviceUnavailable:

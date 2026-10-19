@@ -70,6 +70,15 @@ std::uint64_t compute_hash(const Plan& plan) {
   h.integer(u(plan.output_width));
   h.integer(u(plan.output_height));
   h.real(plan.output_fps);
+  h.integer(plan.cadence.has_value());
+  if (plan.cadence) {
+    h.integer(u(plan.cadence->factor.num));
+    h.integer(u(plan.cadence->factor.den));
+    h.integer(u(plan.cadence->grid));
+    h.integer(u(plan.cadence->vsyncs_per_frame));
+    h.real(plan.cadence->speed);
+    h.real(plan.cadence->output_fps);
+  }
   return h.value();
 }
 

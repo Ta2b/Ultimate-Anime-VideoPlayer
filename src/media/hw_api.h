@@ -1,12 +1,12 @@
 // API de décodage matériel et options du décodeur vidéo.
 #pragma once
 
-#include <array>
 #include <cstdint>
 #include <optional>
 #include <string_view>
 #include <vector>
 
+#include "core/gpu_device.h"
 #include "core/types.h"
 
 struct AVBufferRef;
@@ -17,8 +17,8 @@ enum class HwApi : std::uint8_t { Cuda, Vulkan, D3d11va, Vaapi, VideoToolbox, So
 
 std::string_view name(HwApi api);
 
-// UUID de l'appareil de rendu (pl_gpu.uuid) : même type que gpu::DeviceUuid.
-using DeviceUuid = std::array<std::uint8_t, 16>;
+// UUID de l'appareil de rendu (pl_gpu.uuid) : le type unique de core/gpu_device.h.
+using DeviceUuid = ajp::DeviceUuid;
 
 // Contexte d'appareil déjà créé par un autre module, par exemple le VkDevice
 // de libplacebo enveloppé en AVHWDeviceContext : le décodeur le partage au lieu
