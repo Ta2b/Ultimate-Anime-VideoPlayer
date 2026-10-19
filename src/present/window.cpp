@@ -75,9 +75,11 @@ std::expected<std::vector<std::string>, Refusal> Window::vulkan_instance_extensi
   return extensions;
 }
 
-PixelSize Window::pixel_size() const {
+std::expected<PixelSize, Refusal> Window::pixel_size() const {
   PixelSize size;
-  if (!SDL_GetWindowSizeInPixels(window_, &size.width, &size.height)) return {};
+  if (!SDL_GetWindowSizeInPixels(window_, &size.width, &size.height)) {
+    return sdl_refusal("SDL_GetWindowSizeInPixels");
+  }
   return size;
 }
 

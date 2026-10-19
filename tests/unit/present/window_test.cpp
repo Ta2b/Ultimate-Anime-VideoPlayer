@@ -71,7 +71,9 @@ int present_frames(Swapchain& swapchain, pl_gpu gpu, int n, Presented& last) {
   const std::uint64_t deadline = SDL_GetTicks() + 2000 + 100 * static_cast<std::uint64_t>(n);
   while (presented < n && SDL_GetTicks() < deadline) {
     pump_events();
-    const auto frame = swapchain.start_frame();
+    const auto started = swapchain.start_frame();
+    REQUIRE(started);
+    const auto& frame = *started;
     if (!frame) {
       SDL_Delay(2);
       continue;
@@ -93,7 +95,7 @@ PixelSize wait_for_size(const Window& window, PixelSize previous) {
     if (window.pixel_size() != previous) break;
     SDL_Delay(5);
   }
-  return window.pixel_size();
+  return window.pixel_size().value_or(PixelSize{});
 }
 
 }  // namespace
@@ -151,10 +153,12 @@ TEST_CASE("fenêtre réelle : swapchain FIFO, images, redimensionnement, vsync e
   const auto& info = detected->info;
   REQUIRE(swapchain->request_output(info, info.hdr ? info.peak_nits : 203.0));
   REQUIRE(present_frames(*swapchain, gpu, 150, last) == 150);
-  CHECK(last.size == window->pixel_size());
+  const auto before_size = window->pixel_size();
+  REQUIRE(before_size);
+  const PixelSize before = *before_size;
+  CHECK(last.size == before);
 
   // Redimensionnement : la swapchain suit la fenêtre.
-  const PixelSize before = window->pixel_size();
   REQUIRE(window->set_size(400, 240));
   const PixelSize after = wait_for_size(*window, before);
   CHECK(after != before);

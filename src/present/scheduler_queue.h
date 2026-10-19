@@ -43,10 +43,11 @@ class FrameQueue {
 // suivante ; ceux ajoutés entre-temps (image périmée, Flush) partent avec elle.
 class ReleaseList {
  public:
-  // Toute la file, l'image montrée et une file entière jetée par un Flush.
+  // Toutes les images que l'ordonnanceur tient à la fois (file, image montrée, slots à rendre,
+  // remis ou non) : PresentScheduler::push() refuse au-delà, si bien qu'aucun ajout ne déborde.
   static constexpr std::size_t kCapacity = 2 * FrameQueue::kCapacity + 2;
 
-  bool full() const { return count_ == kCapacity; }
+  std::size_t size() const { return count_; }        // remis à la dernière décision compris
   void add(const RingFrame& frame, bool displayed);  // la liste n'est pas pleine
   void forget_delivered();                           // début d'une décision
   std::span<const FrameRelease> deliver();           // tout ce qui attend, remis à app

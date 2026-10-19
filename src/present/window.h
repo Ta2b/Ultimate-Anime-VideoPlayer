@@ -51,7 +51,8 @@ class Window {
   // Extensions d'instance Vulkan qu'exige la surface de cette fenêtre, à passer à render.
   std::expected<std::vector<std::string>, Refusal> vulkan_instance_extensions() const;
 
-  PixelSize pixel_size() const;
+  // Taille en pixels ; PresentFailed si SDL3 ne la donne pas.
+  std::expected<PixelSize, Refusal> pixel_size() const;
   // Ni cachée, ni réduite, ni masquée : le compositeur la présente. Masquée comprend l'écran en
   // veille sous Wayland (xdg_toplevel « suspended »). À jour une fois les événements SDL lus.
   bool presentable() const { return presentable(window_); }

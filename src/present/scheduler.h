@@ -84,7 +84,8 @@ class PresentScheduler {
   // Une image arrive de gpu. D'un autre ring ou d'une époque passée : rendue sans être montrée
   // (core/ring.h : chaque RingFrame reçu rend son slot). D'une époque future : vaut Flush.
   // Refuse, en la rendant, une image dont l'horodatage ne croît pas dans son époque ou qui ne
-  // tient plus dans la file.
+  // tient plus dans la file. Refuse sans la rendre, app la rendant elle-même, une image de plus
+  // quand l'ordonnanceur en tient déjà ReleaseList::kCapacity (app ne lit plus les décisions).
   std::expected<void, Refusal> push(const RingFrame& frame);
 
   // Seek ou nouveau Plan. L'image montrée reste jusqu'à la première de la nouvelle époque, qui
@@ -119,6 +120,9 @@ class PresentScheduler {
   void show(const RingFrame& frame);
   void anchor(const RingFrame& frame);
   std::optional<std::int64_t> next_due(const ClockSnapshot& master) const;
+  // Images tenues : en file, montrée, et slots à rendre. Un Flush, un ring recréé ou une
+  // décision ne font que les déplacer vers releases_ : ce total borne releases_.
+  std::size_t held() const { return releases_.size() + queue_.size() + (current_ ? 1U : 0U); }
 
   SchedulerConfig config_;
   FrameQueue queue_;

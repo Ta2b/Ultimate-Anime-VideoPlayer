@@ -3,6 +3,7 @@
 #include <format>
 #include <utility>
 
+#include <libplacebo/gpu.h>
 #include <libplacebo/renderer.h>
 #include <libplacebo/swapchain.h>
 #include <libplacebo/vulkan.h>
@@ -42,6 +43,7 @@ std::string_view space_name(core::OutputSpace space) {
 
 struct Swapchain::Impl {
   pl_swapchain swapchain = nullptr;
+  pl_gpu gpu = nullptr;          // celui du pl_vulkan de create(), pour reconnaître sa perte
   SDL_Window* window = nullptr;  // celle de create(), qui survit à la swapchain
   pl_frame target{};
   VsyncEstimator vsync;
@@ -109,8 +111,11 @@ std::expected<Swapchain, Refusal> Swapchain::create(const Window& window, const 
                   "pl_vulkan_create_swapchain : refusée (VK_KHR_swapchain absente ou surface inutilisable, "
                   "voir le journal de libplacebo)");
   }
+  impl->gpu = vk->gpu;
   Swapchain swapchain(std::move(impl));
-  if (auto sized = swapchain.resize(window.pixel_size()); !sized) return std::unexpected(sized.error());
+  const auto size = window.pixel_size();
+  if (!size) return std::unexpected(size.error());
+  if (auto sized = swapchain.resize(*size); !sized) return std::unexpected(sized.error());
   return swapchain;
 }
 
@@ -146,11 +151,18 @@ std::expected<PixelSize, Refusal> Swapchain::resize(PixelSize size) {
   return kept;
 }
 
-std::optional<SwapFrame> Swapchain::start_frame() {
+std::expected<std::optional<SwapFrame>, Refusal> Swapchain::start_frame() {
   Impl& p = *impl_;
   if (!Window::presentable(p.window)) return std::nullopt;
   pl_swapchain_frame frame{};
-  if (!pl_swapchain_start_frame(p.swapchain, &frame)) return std::nullopt;
+  if (!pl_swapchain_start_frame(p.swapchain, &frame)) {
+    // libplacebo ne dit pas pourquoi : un appareil perdu ne reviendra pas, le reste (swapchain
+    // recréée, surface sans taille) se réessaie.
+    if (pl_gpu_is_failed(p.gpu)) {
+      return refuse(RefusalCode::PresentFailed, "pl_swapchain_start_frame : appareil Vulkan perdu");
+    }
+    return std::nullopt;
+  }
   const std::int64_t acquired = host_now_us();
   p.vsync.add(acquired);
 

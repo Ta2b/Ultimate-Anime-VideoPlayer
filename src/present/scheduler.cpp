@@ -60,10 +60,12 @@ std::expected<PresentScheduler, Refusal> PresentScheduler::create(const Schedule
 }
 
 std::expected<void, Refusal> PresentScheduler::push(const RingFrame& frame) {
-  if (releases_.full()) {
-    // Seulement si app ne lit plus les décisions : app doit rendre ce slot elle-même.
-    return refuse(RefusalCode::FieldOutOfRange, std::format("slot {} refusé : {} slots à rendre attendent",
-                                                            frame.slot, ReleaseList::kCapacity));
+  if (held() >= ReleaseList::kCapacity) {
+    // Seulement si app ne lit plus les décisions : app doit rendre ce slot elle-même. Accepter
+    // l'image ferait déborder releases_ au prochain Flush (une file entière y part d'un coup).
+    return refuse(RefusalCode::FieldOutOfRange,
+                  std::format("slot {} refusé : l'ordonnanceur tient déjà {} images", frame.slot,
+                              ReleaseList::kCapacity));
   }
   // D'un autre ring ou d'une époque passée : jamais montrée, mais rendue (core/ring.h).
   if (frame.generation != config_.generation || frame.epoch < epoch_) {

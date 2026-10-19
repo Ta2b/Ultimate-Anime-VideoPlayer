@@ -69,9 +69,10 @@ class Swapchain {
 
   // L'image suivante, ou rien pour l'instant : fenêtre cachée, réduite ou masquée (écran en
   // veille), où FIFO attendrait sans fin un affichage qui ne vient pas, ou swapchain recréée.
-  // Réessayer plus tard. Bloque en FIFO tant qu'aucune image n'est libre, une vsync au plus.
+  // Réessayer plus tard. PresentFailed si l'appareil Vulkan est perdu : réessayer n'y fera rien.
+  // Bloque en FIFO tant qu'aucune image n'est libre, une vsync au plus.
   // La fenêtre de create() doit vivre plus longtemps que la swapchain.
-  std::optional<SwapFrame> start_frame();
+  std::expected<std::optional<SwapFrame>, Refusal> start_frame();
 
   // Soumet l'image commencée puis attend la place de la suivante (pl_swapchain_swap_buffers).
   // PresentFailed si l'appareil ou la surface sont perdus.

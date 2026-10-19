@@ -1,5 +1,6 @@
 // L'ordonnanceur face aux accidents : images en retard, seek, pause, pas image, ring recréé,
 // entrées hors contrat.
+#include <cstddef>
 #include <cstdint>
 
 #include <catch2/catch_test_macros.hpp>
@@ -216,6 +217,36 @@ TEST_CASE("file pleine : refusée, le slot rendu") {
   const auto refused = scheduler.push({.slot = 99, .pts_us = 1'000'000, .ready_value = 1});
   REQUIRE_FALSE(refused);
   CHECK(refused.error().code == RefusalCode::FieldOutOfRange);
+}
+
+TEST_CASE("images tenues bornées : un Flush ne déborde jamais les slots à rendre") {
+  using ajp::present::FrameQueue;
+  using ajp::present::ReleaseList;
+  auto scheduler = grid_scheduler();
+  REQUIRE(scheduler.flush(1));
+  for (std::uint32_t i = 0; i < FrameQueue::kCapacity; ++i) {
+    REQUIRE(scheduler.push(
+        {.slot = i, .pts_us = 10'000 * static_cast<std::int64_t>(i), .epoch = 1, .ready_value = 1}));
+  }
+  // Des images d'une époque passée, rendues aussitôt : elles restent tenues jusqu'à la décision.
+  const std::size_t room = ReleaseList::kCapacity - FrameQueue::kCapacity;
+  for (std::size_t i = 0; i < room; ++i) {
+    REQUIRE(scheduler.push({.slot = static_cast<std::uint32_t>(100 + i), .epoch = 0, .ready_value = 1}));
+  }
+  // Une époque future jetterait toute la file dans une liste pleine : refusée avant tout Flush.
+  const RingFrame next{.slot = 200, .pts_us = 0, .epoch = 2, .ready_value = 1};
+  const auto refused = scheduler.push(next);
+  REQUIRE_FALSE(refused);
+  CHECK(refused.error().code == RefusalCode::FieldOutOfRange);
+  CHECK(scheduler.epoch() == 1);
+
+  CHECK(scheduler.on_vsync({.index = 0}, {}).releases.size() == room);
+  // Les slots remis restent valables jusqu'à la décision suivante, qui libère leur place.
+  CHECK(scheduler.on_vsync({.index = 1}, {}).releases.size() == 1);
+  REQUIRE(scheduler.push(next));
+  CHECK(scheduler.epoch() == 2);
+  // Les 30 images restées en file, puis celle montrée à la vsync 1, remplacée par la nouvelle.
+  CHECK(scheduler.on_vsync({.index = 2}, {}).releases.size() == FrameQueue::kCapacity - 1);
 }
 
 TEST_CASE("configuration : bornes refusées, mode choisi par l'écran et le Plan") {
