@@ -124,7 +124,8 @@ std::expected<std::unique_ptr<Pipeline>, Refusal> Pipeline::open(const PipelineC
   auto video = make_video(VideoStageInit{.track = &p->video_track_,
                                          .ring = &p->mail_,
                                          .credit = [inbox = &p->source_inbox_] { inbox->try_push(Credit{}); },
-                                         .report = p->mail_.reporter("gpu")});
+                                         .report = p->mail_.reporter("gpu"),
+                                         .clock = p->clock_});
   if (!video) return std::unexpected(std::move(video.error()));
   p->video_ = std::move(*video);
   p->stages_ =

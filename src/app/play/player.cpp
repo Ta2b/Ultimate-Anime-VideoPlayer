@@ -583,8 +583,8 @@ class ChainStats final : public StatsSource {
   std::optional<std::string> rife() const override {
     if (!rife_) return std::nullopt;
     const RifeCounts c = live_.counts();
-    return std::format("RIFE ×{} : {} paires, {} interpolées, {} dessins tenus, {} coupes",
-                       live_.rife_factor(), c.pairs, c.interpolated, c.held, c.cuts);
+    return std::format("RIFE ×{} : {} paires, {} interpolées, {} dessins tenus, {} coupes, {} en retard",
+                       live_.rife_factor(), c.pairs, c.interpolated, c.held, c.cuts, c.late);
   }
   std::optional<std::string> memory() const override {
     const auto memory = kernels_.device_memory();
@@ -752,6 +752,7 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
         const WorkSize sized = work_size(width, height, settings.work_height);
         auto slots = out.create_ring(sized.width * factor, sized.height * factor, kRingSlots);
         if (!slots) return std::unexpected(std::move(slots.error()));
+        const MasterClock* clock = stage.clock;
         return UpscaleStage::start(
             std::move(stage),
             UpscaleSetup{.backend = backend->get(),
@@ -761,6 +762,7 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
                          .rife_factor = static_cast<std::uint32_t>(std::max(settings.rife_factor, 1)),
                          .true_hdr = settings.true_hdr,
                          .live = live,
+                         .clock = clock,
                          .source_width = width,
                          .source_height = height,
                          .work_width = sized.width,

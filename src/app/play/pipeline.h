@@ -56,6 +56,7 @@ struct VideoStageInit {
   RingSink* ring = nullptr;                 // boîte de main
   std::function<void()> credit;             // rend une place au thread source
   ThreadReport report;                      // refus et arrêt du thread
+  const MasterClock* clock = nullptr;       // horloge maître de la lecture ; vit plus longtemps que le thread
 };
 using VideoStageFactory = std::function<std::expected<std::unique_ptr<VideoStage>, Refusal>(VideoStageInit)>;
 

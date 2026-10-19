@@ -36,6 +36,9 @@ struct UpscaleSetup {
   // Réglages changés en cours de lecture (facteur RIFE, réduction, RTX HDR) et compteurs de RIFE ;
   // nullptr : rife_factor et Area pour toute la lecture.
   std::shared_ptr<LiveSettings> live;
+  // Horloge maître : une paire dont le premier instant intermédiaire est déjà passé n'est pas
+  // interpolée (la chaîne rattrape au lieu de prendre du retard sur le son). nullptr : jamais.
+  const MasterClock* clock = nullptr;
   int source_width = 0;  // images décodées
   int source_height = 0;
   int work_width = 0;  // entrée des moteurs, au plus la source ; 0 : la source
@@ -99,6 +102,7 @@ class UpscaleStage final : public RingStage {
   std::uint64_t single_pairs_ = 0;
   std::uint64_t multi_pairs_ = 0;
   std::uint64_t rife_runs_ = 0;
+  std::uint64_t late_pairs_ = 0;               // paires non interpolées pour rattraper l'horloge
   std::unique_ptr<gpu::TensorBuffer> output_;  // 1 × 3 × 2h × 2w ; absent sans SPAN
   // Pour le journal de fin : paires vues, interpolées, coupes, dessins tenus.
   std::uint64_t pairs_ = 0;

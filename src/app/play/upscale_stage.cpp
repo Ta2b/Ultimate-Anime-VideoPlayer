@@ -8,6 +8,7 @@
 
 #include "app/play/options.h"
 #include "app/play/rife_plan.h"
+#include "core/clock.h"
 #include "core/log.h"
 #include "kernels/spec/detect.h"
 #include "kernels/spec/rife.h"
@@ -36,6 +37,9 @@ UpscaleStage::~UpscaleStage() {
   if (setup_.rife_motion != nullptr) {
     log_channel("gpu")->info("RIFE mouvement : {} passes ; {} paires à une passe, {} à plusieurs", rife_runs_,
                              single_pairs_, multi_pairs_);
+  }
+  if (late_pairs_ > 0) {
+    log_channel("gpu")->info("RIFE : {} paires non interpolées pour rattraper l'horloge", late_pairs_);
   }
   if (interpolates()) {
     log_channel("gpu")->info("RIFE ×{} : {} paires, {} interpolées, {} coupes de scène, {} dessins tenus",
@@ -168,6 +172,17 @@ std::expected<std::uint32_t, Refusal> UpscaleStage::outputs(const DecodedFrame& 
   }
   std::uint32_t factor = interpolates() ? setup_.rife_factor : 1;
   if (interpolates() && setup_.live) factor = std::clamp(setup_.live->rife_factor(), 1U, kMaxRifeFactor);
+  // En retard sur l'horloge maître (GPU débordé : 4K ×3, scène lourde) : les instants
+  // intermédiaires de cette paire sont déjà passés, l'image seule suffit pour rattraper.
+  if (factor > 1 && setup_.clock != nullptr && previous_ && previous_->epoch == frame.epoch) {
+    const ClockSnapshot now = setup_.clock->snapshot();
+    if (now.valid && now.epoch == frame.epoch && now.rate > 0.0 &&
+        now.media_at(host_now_us()) > previous_->pts_us + (frame.pts_us - previous_->pts_us) / factor) {
+      factor = 1;
+      ++late_pairs_;
+      if (setup_.live) setup_.live->count_late();
+    }
+  }
   PairFacts facts{.factor = factor,
                   .same_epoch = previous_ && previous_->epoch == frame.epoch,
                   .gap_us = previous_ ? frame.pts_us - previous_->pts_us : 0};

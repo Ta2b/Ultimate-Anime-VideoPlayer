@@ -21,6 +21,7 @@ struct RifeCounts {
   std::uint64_t interpolated = 0;
   std::uint64_t cuts = 0;
   std::uint64_t held = 0;
+  std::uint64_t late = 0;  // non interpolées pour rattraper l'horloge
 };
 
 // Le filtre de réduction du noyau d'ingestion pour un choix du menu. Bicubic : B = 1, C = 0, comme
@@ -71,11 +72,13 @@ class LiveSettings {
   void count_interpolated() { interpolated_.fetch_add(1, std::memory_order_relaxed); }
   void count_cut() { cuts_.fetch_add(1, std::memory_order_relaxed); }
   void count_held() { held_.fetch_add(1, std::memory_order_relaxed); }
+  void count_late() { late_.fetch_add(1, std::memory_order_relaxed); }
   RifeCounts counts() const {
     return RifeCounts{.pairs = pairs_.load(std::memory_order_relaxed),
                       .interpolated = interpolated_.load(std::memory_order_relaxed),
                       .cuts = cuts_.load(std::memory_order_relaxed),
-                      .held = held_.load(std::memory_order_relaxed)};
+                      .held = held_.load(std::memory_order_relaxed),
+                      .late = late_.load(std::memory_order_relaxed)};
   }
 
  private:
@@ -87,6 +90,7 @@ class LiveSettings {
   std::atomic<std::uint64_t> interpolated_{0};
   std::atomic<std::uint64_t> cuts_{0};
   std::atomic<std::uint64_t> held_{0};
+  std::atomic<std::uint64_t> late_{0};
 };
 
 }  // namespace ajp::app::play
