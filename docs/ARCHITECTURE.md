@@ -73,6 +73,15 @@ sous Vulkan, dont `ready_value` donne la valeur (0 pour un `CUevent` ou sans
 attente). Une image Vulkan à plusieurs `VkImage` est refusée : une seule attente
 par image.
 
+Une image Vulkan se lit entre `begin_vulkan_access()` et `end_vulkan_access()`,
+sous le verrou de l'`AVVkFrame` : le décodeur peut garder l'image comme référence
+et la relire pendant que le lecteur la tient. La soumission attend `wait_value`,
+part de la disposition et de la file notées dans l'image, et signale
+`signal_value` ; `end_vulkan_access()`, appelé juste après `vkQueueSubmit`, note
+la nouvelle valeur et la nouvelle disposition (rien si rien n'a été soumis).
+`ready_value` n'est qu'un instantané de la livraison. Une `FrameData` qui ne
+redéfinit pas l'accès Vulkan le refuse (`FormatUnsupported`).
+
 ### Horodatage inconnu
 
 Un pts inconnu vaut `kNoPts` (`std::numeric_limits<std::int64_t>::min()`, la
@@ -94,20 +103,40 @@ activées, familles de files, files graphique, calcul et décodage vidéo, et le
 verrou `lock_queue` / `unlock_queue` qu'un module prend autour de chaque
 soumission. `DeviceUuid` n'a qu'une définition, partagée par `media` et `gpu`.
 
-### Backends (`gpu/backend.h`, ABI 2)
+### Backends (`gpu/backend.h`, ABI 3)
 
-Chaque backend est une bibliothèque chargée à l'exécution. Le chargeur lit
-`ajp_backend_abi()` et refuse une autre version (`AbiMismatch`) avant d'appeler
-`ajp_backend_create(kBackendAbi, &init)`. `BackendInit` porte l'appareil de
-rendu, le dossier de cache, le journal du backend et l'adresse où écrire le refus
-quand la création échoue. Un backend alloue ses tenseurs (`alloc_tensor`, un
-`TensorBuffer` qui libère à sa destruction) et expose par `kernels()` les noyaux
-de `kernels/spec.h` sur ses tenseurs (`gpu/kernel_ops.h`) : ingestion YUV vers
-RGB planaire, rééchantillonnage Spline36, bilinéaire ou Area, remplissage mod-64
-et recadrage de RIFE, warp et mélange à l'instant t, écriture d'un slot du ring en
-RGBA16 UNORM, mesures de coupe et de pire bloc 32 × 32 relues sans attente pour
-la paire suivante. Un format ou une taille hors contrat est un refus nommé, avant
-toute soumission.
+Chaque backend est une bibliothèque chargée à l'exécution. La frontière passe des
+types C++ (`std::string`, `std::function`, `std::expected`) : le backend se
+construit avec la même bibliothèque standard que le lecteur. Le chargeur lit
+`ajp_backend_abi()` et `ajp_backend_layout()`, puis `check_backend_abi()` refuse
+une autre version ou une autre empreinte binaire (`AbiMismatch`) avant d'appeler
+`ajp_backend_create(kBackendAbi, &init)`. L'empreinte `kBackendLayout` couvre la
+taille et l'alignement de chaque type qui traverse la frontière et la bibliothèque
+standard (libstdc++ et son ABI de `std::string`, libc++, STL de MSVC et son CRT) :
+elle trahit des en-têtes changés sans changement de `kBackendAbi`. Les quatre
+points d'entrée sont `noexcept` (sous MSVC, une exception sortie d'une fonction
+`extern "C"` est un comportement indéfini) ; `BackendAbiFn`, `BackendLayoutFn`,
+`BackendCreateFn` et `BackendDestroyFn` typent les adresses lues par `dlsym`.
+
+`BackendInit` porte l'appareil de rendu, le dossier de cache, le journal du
+backend et l'adresse où écrire le refus quand la création échoue, valable le temps
+de l'appel. `enqueue()`, `signal()` et `wait()` rendent l'erreur de l'API
+(`enqueueV3`, `vkQueueSubmit`, perte de l'appareil) en refus nommé. Un backend
+alloue ses tenseurs (`alloc_tensor`, un `TensorBuffer` qui libère à sa
+destruction) et expose par `kernels()` les noyaux de `kernels/spec.h` sur ses
+tenseurs (`gpu/kernel_ops.h`) : ingestion YUV vers RGB planaire,
+rééchantillonnage Spline36, bilinéaire ou Area, remplissage mod-64 et recadrage de
+RIFE, warp et mélange à l'instant t, écriture d'un slot du ring en RGBA16 UNORM,
+mesures de coupe et de pire bloc 32 × 32 relues sans attente pour la paire
+suivante. Un format ou une taille hors contrat est un refus nommé, avant toute
+soumission.
+
+Durées de vie : chaque `Engine` et `TensorBuffer` meurt avant le `Backend` qui l'a
+créé, donc avant `ajp_backend_destroy` et le déchargement de la bibliothèque, où
+vit leur code. Une opération qui lit une `DecodedFrame` en garde une copie de
+`frame.data` jusqu'à la fin de sa lecture côté GPU, constatée sans attente hôte :
+l'image ne revient au pool du décodeur qu'ensuite. `write_ring` relâche les imports
+des générations précédentes du ring au premier appel d'une plus récente.
 
 ### Ring de sortie (`core/ring.h`)
 
@@ -115,9 +144,19 @@ toute soumission.
 mémoire et sémaphore timeline exportés). `gpu` écrit un slot, signale une valeur
 impaire et envoie `RingFrame` au thread main (slot, pts, paire de sources, instant
 t, `REPEATED`, coupe, époque, valeur à attendre). Main signale la valeur suivante
-après son rendu et renvoie `SlotFree` (slot, valeur, génération du ring). Un seul
-écrivain à la fois par slot : la suite des valeurs croît sans attente hôte. Un
-ring recréé change de génération ; un message d'une autre génération est ignoré.
+après son rendu et renvoie `release_of(frame)`, un `SlotFree` (slot, valeur,
+génération du ring). Un seul écrivain à la fois par slot : la suite des valeurs
+croît sans attente hôte.
+
+Chaque `RingFrame` reçu rend son slot, même une image jetée (époque passée,
+retard) : main soumet l'attente et le signal sans rien dessiner. Un slot passe
+d'un côté à l'autre en `VK_IMAGE_LAYOUT_GENERAL` (`kRingLayout`) ; vers CUDA, main
+le cède à `VK_QUEUE_FAMILY_EXTERNAL`, et sur le même `VkDevice` l'image est en
+partage concurrent, échantillonnable et inscriptible. Un ring recréé change de
+génération : `gpu` cesse d'écrire l'ancienne et ignore ses `SlotFree` ; main ne
+présente plus ses images mais attend leur valeur, et ne détruit l'ancien ring
+qu'après le premier `RingFrame` de la nouvelle génération et la fin de ces
+attentes côté GPU.
 
 ### Écran et cadence (`core/resolve.h`)
 

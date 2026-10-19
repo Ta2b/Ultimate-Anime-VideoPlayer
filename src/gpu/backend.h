@@ -1,21 +1,32 @@
 // Interface d'un backend d'inférence. Chaque backend est une bibliothèque
 // chargée à l'exécution (ajp_backend_<nom>.so / .dll), installée seulement si
 // l'utilisateur l'a choisie : le lecteur démarre sans CUDA, ROCm ni TensorRT.
+//
+// La frontière passe des types C++ (std::string, std::function, std::expected…) : un
+// backend se construit avec la même bibliothèque standard que le lecteur, ce que
+// l'empreinte kBackendLayout vérifie au chargement. Aucune exception ne la traverse : chaque
+// erreur revient en Refusal, et les points d'entrée extern "C" sont noexcept.
 #pragma once
 
+#include <cstddef>
 #include <cstdint>
 #include <expected>
 #include <filesystem>
+#include <format>
 #include <functional>
+#include <initializer_list>
 #include <memory>
+#include <optional>
 #include <span>
 #include <stop_token>
 #include <string>
 #include <string_view>
 #include <vector>
+#include <version>
 
 #include "core/frame.h"
 #include "core/gpu_device.h"
+#include "core/ring.h"
 #include "core/types.h"
 #include "gpu/kernel_ops.h"
 #include "gpu/tensor.h"
@@ -24,19 +35,21 @@ namespace ajp::gpu {
 
 // Version de cette interface. Un backend d'une autre version est refusé au chargement.
 // 2 : BackendInit à la création, noyaux de la chaîne (kernels()), alloc_tensor().
-inline constexpr int kBackendAbi = 2;
+// 3 : enqueue(), signal() et wait() rendent leur refus ; ajp_backend_layout().
+inline constexpr int kBackendAbi = 3;
 
 using DeviceUuid = ajp::DeviceUuid;
 
 enum class DeviceMatch : std::uint8_t { Same, Different, Unknown };
 
 // Un backend a sa propre copie de spdlog : il journalise par BackendInit::log, que app relie
-// à log_channel("backend") (core/log.h).
+// à log_channel("backend") (core/log.h). Le rappel ne lève jamais.
 enum class BackendLogLevel : std::uint8_t { Debug, Info, Warn, Error };
 using BackendLog = std::function<void(BackendLogLevel level, std::string_view message)>;
 
-// Ce que le lecteur passe à ajp_backend_create, qui en garde une copie. render reste valide
-// jusqu'à ajp_backend_destroy ; refusal, le temps de l'appel.
+// Ce que le lecteur passe à ajp_backend_create. Le backend garde ce qu'il lui faut de render,
+// cache_dir et log ; render reste valide jusqu'à ajp_backend_destroy. refusal ne vaut que le
+// temps de l'appel : le backend n'en garde pas l'adresse.
 struct BackendInit {
   const GpuDevice* render = nullptr;  // appareil de rendu : le backend s'y lie ou refuse
   std::filesystem::path cache_dir;    // artefacts construits (moteurs, SPIR-V réglé)
@@ -86,7 +99,9 @@ struct Artifact {
   std::filesystem::path path;
 };
 
-// Moteur chargé et prêt à recevoir enqueue(). Possédé par un Program.
+// Moteur chargé et prêt à recevoir enqueue(). Possédé par un Program. Son code vit dans la
+// bibliothèque du backend : il est détruit avant le Backend qui l'a chargé, donc avant
+// ajp_backend_destroy et le déchargement de la bibliothèque.
 class Engine {
  public:
   virtual ~Engine() = default;
@@ -114,7 +129,7 @@ class Backend {
  public:
   virtual ~Backend() = default;
   virtual BackendCaps capabilities() const = 0;
-  virtual DeviceMatch match(const DeviceUuid& render_device) const = 0;  // UUID ou LUID du rendu
+  virtual DeviceMatch match(const DeviceUuid& render_device) const = 0;  // UUID du rendu
   virtual std::expected<Artifact, Refusal> build(const ModelSpec& model, const ShapeSet& shapes,
                                                  Progress& progress) = 0;
   virtual std::expected<std::unique_ptr<Engine>, Refusal> load(const Artifact& artifact) = 0;
@@ -127,18 +142,108 @@ class Backend {
   // Noyaux de la chaîne sur les tenseurs de ce backend, vivants autant que lui ; nullptr pour
   // un backend qui ne fait que construire et exécuter des moteurs (prepare).
   virtual KernelOps* kernels() = 0;
-  virtual void enqueue(Engine& engine, std::span<const Tensor> inputs, std::span<Tensor> outputs) = 0;
-  virtual Fence signal() = 0;
-  virtual void wait(const Fence& fence) = 0;  // côté GPU, sauf si needs_host_sync
+  // Les trois appels de la file rendent l'erreur de l'API (enqueueV3, cuEventRecord,
+  // vkQueueSubmit, perte de l'appareil…) en refus nommé qui cite l'appel, jamais en silence.
+  virtual std::expected<void, Refusal> enqueue(Engine& engine, std::span<const Tensor> inputs,
+                                               std::span<Tensor> outputs) = 0;
+  virtual std::expected<Fence, Refusal> signal() = 0;
+  virtual std::expected<void, Refusal> wait(const Fence& fence) = 0;  // côté GPU, sauf si needs_host_sync
 };
+
+// Empreinte binaire de la frontière : FNV-1a 64 bits sur une suite de nombres.
+constexpr std::uint64_t layout_fingerprint(std::initializer_list<std::uint64_t> values) {
+  std::uint64_t hash = 0xCBF2'9CE4'8422'2325ULL;
+  for (const std::uint64_t value : values) {
+    for (unsigned byte = 0; byte < 8; ++byte) {
+      hash ^= (value >> (8U * byte)) & 0xFFU;
+      hash *= 0x0000'0100'0000'01B3ULL;
+    }
+  }
+  return hash;
+}
+
+// Taille et alignement de chaque type, dans l'ordre : ce qui fixe leur disposition en mémoire.
+template <class... T>
+constexpr std::uint64_t shape_fingerprint() {
+  return layout_fingerprint({((std::uint64_t{sizeof(T)} << 16U) | std::uint64_t{alignof(T)})...});
+}
+
+// La bibliothèque standard et ce qui change sa disposition : libstdc++ et son ABI de
+// std::string, libc++ et son numéro d'ABI, la STL de MSVC, ses itérateurs de débogage et son
+// CRT (/MD ou /MT : deux tas différents).
+#if defined(_LIBCPP_VERSION)
+inline constexpr std::uint64_t kStdLibrary = 0x200'0000 + _LIBCPP_ABI_VERSION;
+#elif defined(__GLIBCXX__)
+inline constexpr std::uint64_t kStdLibrary = 0x100'0000 + _GLIBCXX_USE_CXX11_ABI;
+#elif defined(_MSVC_STL_VERSION)
+#if defined(_DLL)
+inline constexpr std::uint64_t kStdLibrary = 0x300'0100 + _ITERATOR_DEBUG_LEVEL;
+#else
+inline constexpr std::uint64_t kStdLibrary = 0x300'0000 + _ITERATOR_DEBUG_LEVEL;
+#endif
+#else
+inline constexpr std::uint64_t kStdLibrary = 0;
+#endif
+
+// Empreinte de tout ce qui traverse la frontière. kBackendAbi date le contrat ; l'empreinte
+// trahit ce que kBackendAbi laisse passer : une bibliothèque construite contre d'autres
+// en-têtes sans changement de version, ou avec une autre bibliothèque standard.
+inline constexpr std::uint64_t kBackendLayout = layout_fingerprint({
+    static_cast<std::uint64_t>(kBackendAbi),
+    kStdLibrary,
+    sizeof(void*),
+    shape_fingerprint<std::string, std::vector<std::string>, std::filesystem::path, std::function<void()>,
+                      std::shared_ptr<const FrameData>, std::unique_ptr<Engine>, std::stop_token>(),
+    shape_fingerprint<Refusal, std::expected<void, Refusal>, std::expected<Tensor, Refusal>,
+                      std::expected<Artifact, Refusal>, std::expected<std::unique_ptr<Engine>, Refusal>,
+                      std::expected<std::unique_ptr<TensorBuffer>, Refusal>, std::expected<Fence, Refusal>>(),
+    shape_fingerprint<GpuDevice, VulkanDevice, QueueFamily, BackendInit, BackendCaps, ModelSpec, ShapeSet,
+                      Progress, Artifact, ExternalImage, Fence, Tensor, Shape>(),
+    shape_fingerprint<DecodedFrame, ColorInfo, HdrMetadata, VulkanImageAccess,
+                      std::expected<VulkanImageAccess, Refusal>>(),
+    shape_fingerprint<IngestSpec, Motion, RingWrite, PairScores, std::optional<PairScores>, RingSlotDesc,
+                      ExportedHandle>(),
+});
+
+// Ce que le chargeur vérifie avant ajp_backend_create, avec ajp_backend_abi() et
+// ajp_backend_layout() lus dans la bibliothèque. Refus : AbiMismatch, qui cite les valeurs.
+inline std::expected<void, Refusal> check_backend_abi(int abi, std::uint64_t layout) {
+  if (abi != kBackendAbi) {
+    return std::unexpected(
+        Refusal{RefusalCode::AbiMismatch,
+                std::format("backend d'interface {}, le lecteur attend {}", abi, kBackendAbi)});
+  }
+  if (layout != kBackendLayout) {
+    return std::unexpected(
+        Refusal{RefusalCode::AbiMismatch,
+                std::format("empreinte binaire {:016x}, le lecteur attend {:016x} : en-têtes ou bibliothèque "
+                            "standard différents",
+                            layout, kBackendLayout)});
+  }
+  return {};
+}
 
 }  // namespace ajp::gpu
 
-// Points d'entrée exportés par chaque bibliothèque de backend. Le chargeur lit d'abord
-// ajp_backend_abi() : une autre version est refusée (AbiMismatch) avant de passer un
+// Points d'entrée exportés par chaque bibliothèque de backend, tous noexcept : sous MSVC, une
+// exception sortie d'une fonction extern "C" est un comportement indéfini chez l'appelant.
+// Le chargeur lit d'abord ajp_backend_abi() et ajp_backend_layout() (check_backend_abi) :
+// une autre version ou une autre empreinte est refusée (AbiMismatch) avant de passer un
 // BackendInit dont la forme pourrait différer. ajp_backend_create rend nullptr si abi
 // diffère de kBackendAbi, si init est nul ou si l'appareil ne convient pas, et dit pourquoi
-// dans init->refusal.
-extern "C" int ajp_backend_abi();
-extern "C" ajp::gpu::Backend* ajp_backend_create(int abi, const ajp::gpu::BackendInit* init);
-extern "C" void ajp_backend_destroy(ajp::gpu::Backend* backend);
+// dans init->refusal. ajp_backend_destroy vient après la destruction de chaque Engine et
+// TensorBuffer du backend.
+extern "C" int ajp_backend_abi() noexcept;               // kBackendAbi
+extern "C" std::uint64_t ajp_backend_layout() noexcept;  // kBackendLayout
+extern "C" ajp::gpu::Backend* ajp_backend_create(int abi, const ajp::gpu::BackendInit* init) noexcept;
+extern "C" void ajp_backend_destroy(ajp::gpu::Backend* backend) noexcept;
+
+namespace ajp::gpu {
+
+// Types des points d'entrée, pour les adresses lues par dlsym ou GetProcAddress.
+using BackendAbiFn = decltype(&ajp_backend_abi);
+using BackendLayoutFn = decltype(&ajp_backend_layout);
+using BackendCreateFn = decltype(&ajp_backend_create);
+using BackendDestroyFn = decltype(&ajp_backend_destroy);
+
+}  // namespace ajp::gpu
