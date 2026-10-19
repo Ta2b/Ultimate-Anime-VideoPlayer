@@ -1,6 +1,7 @@
 #include "app/play/display_edid.h"
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <filesystem>
 #include <format>
@@ -20,7 +21,8 @@ constexpr std::uint8_t kCtaHdrStatic = 0x06;       // métadonnées HDR statique
 constexpr std::uint8_t kDisplayParameters = 0x21;  // DisplayID 2.0
 constexpr std::size_t kTechnologyByte = 0x1E;      // dans le bloc 0x21, en-tête compris
 constexpr std::uint8_t kAmoled = 0b010;
-constexpr double kOledBlackNits = 0.0005;
+constexpr double kOledBlackNits = 0.001;
+constexpr int kOledBlackCode = 2;
 constexpr double kOledFullScreenRatio = 0.5;
 
 // Demi-flottant IEEE 754 (luminances de DisplayID 2.0, en nits).
@@ -83,6 +85,28 @@ void read_displayid(std::span<const std::uint8_t> block, DisplayFacts& out) {
   }
 }
 
+// Modèles dont l'EDID ne dit pas la technologie (pas de bloc 0x21).
+struct KnownPanel {
+  std::string_view manufacturer;
+  std::uint16_t product;
+  std::string_view name;
+  std::string_view panel;
+  bool oled;
+};
+constexpr std::array kKnownPanels{
+    // MSI MAG 272U E16 (EDID CND 0x8CD7) : QD-OLED « penta tandem », selon son propriétaire. Il
+    // annonce 1037 nits, 265 en plein écran et un noir code 2 (0,00064 nit).
+    KnownPanel{
+        .manufacturer = "CND", .product = 0x8CD7, .name = "MAG 272U E16", .panel = "QD-OLED", .oled = true},
+};
+
+std::string pnp_id(std::uint8_t high, std::uint8_t low) {
+  const unsigned code = (static_cast<unsigned>(high) << 8U) | low;
+  std::string id;
+  for (const unsigned shift : {10U, 5U, 0U}) id += static_cast<char>('@' + ((code >> shift) & 0x1FU));
+  return id;
+}
+
 std::vector<std::uint8_t> read_file(const std::filesystem::path& path) {
   std::ifstream file(path, std::ios::binary);
   return {std::istreambuf_iterator<char>(file), std::istreambuf_iterator<char>()};
@@ -101,6 +125,8 @@ DisplayFacts parse_edid(std::span<const std::uint8_t> edid) {
   DisplayFacts out;
   if (edid.size() < kBlock) return out;
   out.name = monitor_name(edid.first(kBlock));
+  out.manufacturer = pnp_id(edid[8], edid[9]);
+  out.product = static_cast<std::uint16_t>(edid[10] | (edid[11] << 8U));
   for (std::size_t at = kBlock; at + kBlock <= edid.size(); at += kBlock) {
     const std::span<const std::uint8_t> block = edid.subspan(at, kBlock);
     if (block[0] == kCtaTag) read_cta(block, out);
@@ -111,8 +137,16 @@ DisplayFacts parse_edid(std::span<const std::uint8_t> edid) {
     out.source = OledSource::DisplayId;
     return out;
   }
+  for (const KnownPanel& known : kKnownPanels) {
+    if ((known.manufacturer == out.manufacturer && known.product == out.product) || known.name == out.name) {
+      out.panel = known.panel;
+      out.oled = known.oled;
+      out.source = OledSource::KnownModel;
+      return out;
+    }
+  }
   const bool black =
-      (out.min_code && *out.min_code == 0) || (out.min_nits && *out.min_nits <= kOledBlackNits);
+      (out.min_code && *out.min_code <= kOledBlackCode) || (out.min_nits && *out.min_nits <= kOledBlackNits);
   const bool limiter = !out.peak_nits || !out.frame_average_nits ||
                        *out.frame_average_nits <= kOledFullScreenRatio * *out.peak_nits;
   if (out.min_code || out.min_nits) {
@@ -131,6 +165,9 @@ std::string describe(const DisplayFacts& d) {
   switch (d.source) {
     case OledSource::DisplayId:
       text += d.oled ? " · OLED (DisplayID)" : " · pas OLED (DisplayID)";
+      break;
+    case OledSource::KnownModel:
+      text += std::format(" · {} (modèle connu)", d.panel);
       break;
     case OledSource::Heuristic:
       text += d.oled ? " · OLED probable (EDID)" : " · pas OLED (EDID)";

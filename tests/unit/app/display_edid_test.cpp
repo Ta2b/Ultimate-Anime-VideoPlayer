@@ -12,9 +12,10 @@ using Catch::Approx;
 
 namespace {
 
-// EDID d'un IPS 4K à 160 Hz (MSI MAG 272U E16) : bloc de base, CTA-861 (HDR statique : PQ, contenu
-// max 1037 nits, moyenne 265, noir code 2), DisplayID 1.x (minutages seulement).
-constexpr std::array<std::uint8_t, 384> kIpsEdid{
+// EDID du QD-OLED 4K de Tatoub (MSI MAG 272U E16, CND 0x8CD7) : bloc de base, CTA-861 (HDR
+// statique : PQ, contenu max 1037 nits, moyenne 265, noir code 2), DisplayID 1.x (minutages
+// seulement, pas de bloc 0x21).
+constexpr std::array<std::uint8_t, 384> kQdOledEdid{
     0x00, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0x00, 0x0d, 0xc4, 0xd7, 0x8c, 0x01, 0x01, 0x01, 0x01, 0x0a,
     0x24, 0x01, 0x04, 0xb5, 0x3b, 0x21, 0x78, 0xfb, 0x00, 0xf5, 0xaf, 0x4e, 0x40, 0xb7, 0x25, 0x0f, 0x50,
     0x54, 0x25, 0x4f, 0x00, 0x3b, 0x80, 0x81, 0x80, 0x95, 0x00, 0xb3, 0x00, 0xd1, 0xc0, 0xd1, 0xfc, 0x01,
@@ -60,9 +61,11 @@ std::vector<std::uint8_t> oled_edid() {
 
 }  // namespace
 
-TEST_CASE("EDID d'un IPS : HDR10 lu, pas OLED malgré un noir annoncé quasi nul", "[app][display]") {
-  const DisplayFacts d = parse_edid(kIpsEdid);
+TEST_CASE("EDID du QD-OLED de Tatoub : modèle connu, OLED", "[app][display]") {
+  const DisplayFacts d = parse_edid(kQdOledEdid);
   CHECK(d.name == "MAG 272U E16");
+  CHECK(d.manufacturer == "CND");
+  CHECK(d.product == 0x8CD7);
   CHECK(d.pq);
   REQUIRE(d.peak_nits);
   CHECK(*d.peak_nits == Approx(1037.0).epsilon(0.01));
@@ -70,12 +73,28 @@ TEST_CASE("EDID d'un IPS : HDR10 lu, pas OLED malgré un noir annoncé quasi nul
   CHECK(*d.frame_average_nits == Approx(265.0).epsilon(0.01));
   REQUIRE(d.min_code);
   CHECK(*d.min_code == 2);
-  REQUIRE(d.min_nits);
-  CHECK(*d.min_nits > 0.0005);
   CHECK_FALSE(d.displayid_oled);
-  CHECK(d.source == OledSource::Heuristic);
-  CHECK_FALSE(d.oled);
-  CHECK(describe(d).find("pas OLED (EDID)") != std::string::npos);
+  CHECK(d.source == OledSource::KnownModel);
+  CHECK(d.panel == "QD-OLED");
+  CHECK(d.oled);
+  CHECK(describe(d).find("QD-OLED (modèle connu)") != std::string::npos);
+}
+
+TEST_CASE("Heuristique : noir code ≤ 2 et limiteur plein écran donnent OLED, sinon non", "[app][display]") {
+  std::array<std::uint8_t, 384> edid = kQdOledEdid;
+  // Un autre modèle (nom et product id changés) avec les mêmes mesures : l'heuristique seule.
+  edid[10] = 0x00;
+  for (std::size_t i = 54; i + 18 <= 126; i += 18) {
+    if (edid[i + 3] == 0xFC) edid[i + 5] = 'X';
+  }
+  const DisplayFacts same = parse_edid(edid);
+  CHECK(same.source == OledSource::Heuristic);
+  CHECK(same.oled);
+  // Noir code 10 : pas OLED.
+  for (std::size_t i = 128; i + 6 < 256; ++i) {
+    if (edid[i] == 0xE6 && edid[i + 1] == 0x06) edid[i + 6] = 10;
+  }
+  CHECK_FALSE(parse_edid(edid).oled);
 }
 
 TEST_CASE("DisplayID 2.0, bloc 0x21 : AMOLED est définitif", "[app][display]") {
@@ -88,14 +107,6 @@ TEST_CASE("DisplayID 2.0, bloc 0x21 : AMOLED est définitif", "[app][display]") 
   CHECK(*d.min_nits < 0.001);
 }
 
-TEST_CASE("Heuristique : noir code 0 et limiteur plein écran donnent OLED", "[app][display]") {
-  std::array<std::uint8_t, 384> edid = kIpsEdid;
-  // Bloc HDR statique du CTA (e6 06 05 01 8c 4d 02) : noir code 0.
-  for (std::size_t i = 128; i + 6 < 256; ++i) {
-    if (edid[i] == 0xE6 && edid[i + 1] == 0x06) edid[i + 6] = 0x00;
-  }
-  const DisplayFacts d = parse_edid(edid);
-  CHECK(d.oled);
-  CHECK(d.source == OledSource::Heuristic);
-  CHECK(parse_edid(std::span<const std::uint8_t>(edid).first(64)).source == OledSource::Unknown);
+TEST_CASE("EDID trop court : OLED inconnu", "[app][display]") {
+  CHECK(parse_edid(std::span<const std::uint8_t>(kQdOledEdid).first(64)).source == OledSource::Unknown);
 }

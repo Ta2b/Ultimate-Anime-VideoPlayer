@@ -1,9 +1,10 @@
 // L'écran tel que son EDID le décrit (Linux : /sys/class/drm/<sortie>/edid, lisible sans droits) :
 // nom, bloc HDR statique de CTA-861 (PQ, luminances), et s'il est OLED, dans l'ordre du plan :
 //   1. DisplayID 2.0, bloc 0x21 (paramètres de l'écran), octet 0x1E, bits 6:4 = 010b : définitif ;
-//   2. heuristique EDID : noir ≤ 0,0005 nit ou code 0, et plein écran ≤ 0,5 × pic (un IPS ou un
-//      mini-LED peuvent annoncer un noir quasi nul : le choix du profil tranche toujours) ;
-//   3. sinon, inconnu.
+//   2. table des modèles connus, par fabricant et product id EDID ou par nom ;
+//   3. heuristique EDID : noir ≤ 0,001 nit ou code ≤ 2, et plein écran ≤ 0,5 × pic (un mini-LED
+//      peut annoncer un noir quasi nul : le choix du profil tranche toujours) ;
+//   4. sinon, inconnu.
 // Sans dépendance (libdisplay-info n'est pas dans le préfixe de la tranche verticale).
 #pragma once
 
@@ -15,11 +16,14 @@
 
 namespace ajp::app::play {
 
-enum class OledSource : std::uint8_t { DisplayId, Heuristic, Unknown };
+enum class OledSource : std::uint8_t { DisplayId, KnownModel, Heuristic, Unknown };
 
 struct DisplayFacts {
   std::string connector;                     // « card1-DP-1 »
   std::string name;                          // descripteur 0xFC : « MAG 272U E16 »
+  std::string manufacturer;                  // identifiant PNP : « CND »
+  std::uint16_t product = 0;                 // product id EDID : 0x8CD7
+  std::string panel;                         // technologie connue : « QD-OLED », vide sinon
   bool pq = false;                           // EOTF ST 2084 annoncée
   std::optional<double> peak_nits;           // contenu max désiré (CTA) ou pic de DisplayID
   std::optional<double> frame_average_nits;  // moyenne d'image max (CTA)
