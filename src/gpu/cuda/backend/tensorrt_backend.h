@@ -67,6 +67,10 @@ class TensorRtBackend final : public Backend, public KernelOps {
                                           const RingWrite& sync) override;
   std::expected<void, Refusal> measure(const DecodedFrame& a, const DecodedFrame& b) override;
   std::optional<PairScores> previous_scores() override { return std::nullopt; }
+  // Extensions de la tranche verticale (tensorrt_rife.cpp) : entrée de RIFE et mesures immédiates.
+  std::expected<void, Refusal> rife_input(const Tensor& a, const Tensor& b, float t,
+                                          const Tensor& input) override;
+  std::expected<PairScores, Refusal> scores_now(const Tensor& a, const Tensor& b) override;
 
  private:
   // Une image décodée tenue jusqu'à la fin de son ingestion côté GPU : FFmpeg la réécrit dès
@@ -106,6 +110,13 @@ class TensorRtBackend final : public Backend, public KernelOps {
   // Imports d'une génération remplacée, relâchés quand retired_done_ est passé côté GPU.
   std::vector<std::unique_ptr<ImportedSlot>> retired_;
   cudaEvent_t retired_done_ = nullptr;
+  // Mesures d'une paire : sommes côté GPU, relues dans une mémoire hôte épinglée.
+  struct PairSums {
+    double total = 0.0;
+    unsigned int worst = 0;
+  };
+  PairSums* pair_device_ = nullptr;
+  PairSums* pair_host_ = nullptr;
 };
 
 }  // namespace ajp::gpu::cuda

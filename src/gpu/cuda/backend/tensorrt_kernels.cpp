@@ -205,9 +205,6 @@ std::expected<void, Refusal> TensorRtBackend::resample(const Tensor&, kernels::F
 std::expected<void, Refusal> TensorRtBackend::rife_pad(const DecodedFrame&, const Tensor&) {
   return not_here("rife_pad");
 }
-std::expected<void, Refusal> TensorRtBackend::rife_crop(const Tensor&, const Tensor&) {
-  return not_here("rife_crop");
-}
 std::expected<void, Refusal> TensorRtBackend::warp_blend(const Tensor&, const Tensor&, const Motion&, float,
                                                          const Tensor&) {
   return not_here("warp_blend");

@@ -99,6 +99,21 @@ class KernelOps {
   // La dernière mesure terminée, une seule fois ; rien si aucune n'a fini depuis l'appel
   // précédent. N'attend jamais côté hôte.
   virtual std::optional<PairScores> previous_scores() = 0;
+
+  // Extensions de la tranche verticale (pc/vertical-slice), à reprendre dans le contrat à
+  // l'intégration ; un backend qui ne les a pas les refuse par son nom.
+  //
+  // Entrée de RIFE depuis deux images RGB déjà ingérées, de même taille w × h : les 11 plans de
+  // kernels/spec/rife.h dans rife_geometry(w, h), noir de studio autour, instant t (0 < t < 1).
+  virtual std::expected<void, Refusal> rife_input(const Tensor& /*a*/, const Tensor& /*b*/, float /*t*/,
+                                                  const Tensor& /*input*/) {
+    return std::unexpected(Refusal{RefusalCode::FormatUnsupported, "rife_input : absent de ce backend"});
+  }
+  // Mesures de la paire a, b (RGB de même taille, luma BT.709 tirée du RGB), rendues tout de suite
+  // au prix d'une attente hôte, pour décider de RIFE avant de le lancer. left et right sont nuls.
+  virtual std::expected<PairScores, Refusal> scores_now(const Tensor& /*a*/, const Tensor& /*b*/) {
+    return std::unexpected(Refusal{RefusalCode::FormatUnsupported, "scores_now : absent de ce backend"});
+  }
 };
 
 }  // namespace ajp::gpu

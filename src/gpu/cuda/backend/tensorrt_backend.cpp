@@ -183,6 +183,8 @@ TensorRtBackend::~TensorRtBackend() {
   span_timing_.reset();
   chain_timing_.reset();
   if (retired_done_ != nullptr) cudaEventDestroy(retired_done_);
+  if (pair_device_ != nullptr) cudaFree(pair_device_);
+  if (pair_host_ != nullptr) cudaFreeHost(pair_host_);
   runtime_.reset();
   for (Held& held : held_) {
     held.data.reset();

@@ -18,6 +18,8 @@
 
 #include "kernels/ref/color.h"
 #include "kernels/ref/half.h"
+#include "kernels/spec/detect.h"
+#include "kernels/spec/rife.h"
 #include "prepare/sha256.h"
 
 namespace {
@@ -112,6 +114,28 @@ std::vector<float> download(const gpu::Tensor& tensor) {
   std::vector<float> out(count);
   for (std::size_t i = 0; i < count; ++i) out[i] = kernels::ref::half_to_float(half[i]);
   return out;
+}
+
+// Un tenseur FP16 rempli depuis l'hôte, plan après plan.
+void upload(const gpu::Tensor& tensor, const std::vector<float>& values) {
+  std::vector<std::uint16_t> half(values.size());
+  for (std::size_t i = 0; i < values.size(); ++i) half[i] = kernels::ref::float_to_half(values[i]);
+  REQUIRE(cudaMemcpy(reinterpret_cast<void*>(tensor.handle), half.data(), half.size() * 2,
+                     cudaMemcpyHostToDevice) == cudaSuccess);
+}
+
+// Image RGB w × h : plan c, pixel (x, y) à 0,1 × (c + 1) + 0,001 × (x + y).
+std::vector<float> ramp(int w, int h) {
+  std::vector<float> v(static_cast<std::size_t>(3 * w * h));
+  for (int c = 0; c < 3; ++c) {
+    for (int y = 0; y < h; ++y) {
+      for (int x = 0; x < w; ++x) {
+        v[static_cast<std::size_t>((c * h + y) * w + x)] =
+            0.1F * static_cast<float>(c + 1) + 0.001F * static_cast<float>(x + y);
+      }
+    }
+  }
+  return v;
 }
 
 DecodedFrame frame_of(std::shared_ptr<const FrameData> data, int w, int h) {
@@ -253,6 +277,107 @@ TEST_CASE("Backend TensorRT : réduction Area fusionnée à l'ingestion, rapport
   auto refused = loaded.backend->kernels()->ingest(frame, {}, (*bigger)->tensor());
   REQUIRE_FALSE(refused);
   CHECK(refused.error().code == RefusalCode::ShapeInvalid);
+}
+
+TEST_CASE("Backend TensorRT : entrée de RIFE, 11 plans remplis, puis recadrage de la fenêtre",
+          "[backend_tensorrt][cuda][rife]") {
+  if (!has_cuda()) SKIP("pas de GPU NVIDIA");
+  constexpr int w = 64;
+  constexpr int h = 36;  // rempli à 64 : 14 lignes au-dessus (nombre pair), 14 en dessous
+  const kernels::RifeGeometry g = kernels::rife_geometry(w, h);
+  REQUIRE(g.padded_height == 64);
+  REQUIRE(g.top == 14);
+  Loaded loaded;
+  REQUIRE(loaded.backend != nullptr);
+  auto a = loaded.backend->alloc_tensor(gpu::TensorType::F16, {.dims = {1, 3, h, w}});
+  auto b = loaded.backend->alloc_tensor(gpu::TensorType::F16, {.dims = {1, 3, h, w}});
+  auto input =
+      loaded.backend->alloc_tensor(gpu::TensorType::F16, {.dims = {1, 11, g.padded_height, g.padded_width}});
+  auto back = loaded.backend->alloc_tensor(gpu::TensorType::F16, {.dims = {1, 3, h, w}});
+  REQUIRE(a);
+  REQUIRE(b);
+  REQUIRE(input);
+  REQUIRE(back);
+  const std::vector<float> va = ramp(w, h);
+  std::vector<float> vb = ramp(w, h);
+  for (float& v : vb) v += 0.25F;
+  upload((*a)->tensor(), va);
+  upload((*b)->tensor(), vb);
+  REQUIRE(loaded.backend->kernels()->rife_input((*a)->tensor(), (*b)->tensor(), 0.25F, (*input)->tensor()));
+  const auto got = download((*input)->tensor());
+  const int pw = g.padded_width;
+  const int ph = g.padded_height;
+  const auto plane = [&](int c, int x, int y) {
+    return got[static_cast<std::size_t>((c * ph + y) * pw + x)];
+  };
+  const float tol = 1e-3F;
+  CHECK(std::fabs(plane(0, 5, g.top + 3) - va[static_cast<std::size_t>(3 * w + 5)]) < tol);
+  CHECK(std::fabs(plane(5, 7, g.top) - vb[static_cast<std::size_t>(2 * h * w + 7)]) < tol);
+  CHECK(plane(1, 5, 0) == 0.0F);       // noir de studio au-dessus
+  CHECK(plane(4, 5, ph - 1) == 0.0F);  // et en dessous
+  CHECK(std::fabs(plane(6, 9, 9) - 0.25F) < tol);
+  CHECK(std::fabs(plane(7, 0, 0) - kernels::rife_mesh(0, pw)) < tol);
+  CHECK(std::fabs(plane(8, 0, ph - 1) - kernels::rife_mesh(ph - 1, ph)) < tol);
+  CHECK(std::fabs(plane(9, 3, 3) - kernels::rife_mesh_step(pw)) < 1e-4F);
+  CHECK(std::fabs(plane(10, 3, 3) - kernels::rife_mesh_step(ph)) < 1e-4F);
+
+  // Recadrage : les plans 0 à 2 de l'entrée redonnent a, au bit près.
+  auto rgb = loaded.backend->alloc_tensor(gpu::TensorType::F16, {.dims = {1, 3, ph, pw}});
+  REQUIRE(rgb);
+  REQUIRE(cudaMemcpy(reinterpret_cast<void*>((*rgb)->tensor().handle),
+                     reinterpret_cast<const void*>((*input)->tensor().handle),
+                     static_cast<std::size_t>(3 * ph * pw) * 2, cudaMemcpyDeviceToDevice) == cudaSuccess);
+  REQUIRE(loaded.backend->kernels()->rife_crop((*rgb)->tensor(), (*back)->tensor()));
+  const auto cropped = download((*back)->tensor());
+  double worst = 0.0;
+  for (std::size_t i = 0; i < cropped.size(); ++i) {
+    worst = std::max(worst, static_cast<double>(std::fabs(cropped[i] - kernels::ref::round_to_half(va[i]))));
+  }
+  CHECK(worst == 0.0);
+
+  // Refus nommés : instant hors de ]0, 1[, tailles qui ne vont pas ensemble.
+  CHECK(loaded.backend->kernels()
+            ->rife_input((*a)->tensor(), (*b)->tensor(), 1.0F, (*input)->tensor())
+            .error()
+            .code == RefusalCode::FieldOutOfRange);
+  CHECK(loaded.backend->kernels()->rife_crop((*back)->tensor(), (*back)->tensor()).error().code ==
+        RefusalCode::ShapeInvalid);
+}
+
+TEST_CASE("Backend TensorRT : mesures d'une paire, coupe de scène et pire bloc",
+          "[backend_tensorrt][cuda][rife]") {
+  if (!has_cuda()) SKIP("pas de GPU NVIDIA");
+  constexpr int w = 64;
+  constexpr int h = 36;
+  Loaded loaded;
+  REQUIRE(loaded.backend != nullptr);
+  auto a = loaded.backend->alloc_tensor(gpu::TensorType::F16, {.dims = {1, 3, h, w}});
+  auto b = loaded.backend->alloc_tensor(gpu::TensorType::F16, {.dims = {1, 3, h, w}});
+  REQUIRE(a);
+  REQUIRE(b);
+  const std::vector<float> gray(static_cast<std::size_t>(3 * w * h), 0.5F);
+  upload((*a)->tensor(), gray);
+  upload((*b)->tensor(), gray);
+  auto same = loaded.backend->kernels()->scores_now((*a)->tensor(), (*b)->tensor());
+  REQUIRE(same);
+  CHECK(same->identical);
+  CHECK(same->worst_block == 0);
+  CHECK_FALSE(kernels::is_scene_cut(same->scene_score));
+
+  // Le bloc 32 × 32 en haut à gauche plus clair de 0,25 en R, G et B : luma +0,25.
+  std::vector<float> lit = gray;
+  for (int c = 0; c < 3; ++c) {
+    for (int y = 0; y < 32; ++y) {
+      for (int x = 0; x < 32; ++x) lit[static_cast<std::size_t>((c * h + y) * w + x)] = 0.75F;
+    }
+  }
+  upload((*b)->tensor(), lit);
+  auto moved = loaded.backend->kernels()->scores_now((*a)->tensor(), (*b)->tensor());
+  REQUIRE(moved);
+  CHECK_FALSE(moved->identical);
+  CHECK(moved->worst_block == static_cast<std::uint32_t>(0.25F * 219.0F * 256.0F));
+  const double expected = 32.0 * 32.0 * 0.25 * (219.0 / 255.0) / (64.0 * 64.0);
+  CHECK(std::fabs(moved->scene_score - expected) < 1e-4);
 }
 
 TEST_CASE("Backend TensorRT : le vrai SPAN d'AnimeJaNai, construit puis exécuté",
