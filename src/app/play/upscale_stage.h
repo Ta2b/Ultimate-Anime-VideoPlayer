@@ -40,6 +40,11 @@ struct UpscaleSetup {
   int source_height = 0;
   int work_width = 0;  // entrée des moteurs, au plus la source ; 0 : la source
   int work_height = 0;
+  // Taille où RIFE (variante mouvement seulement) estime le mouvement, au plus la taille de travail ;
+  // 0 : la taille de travail. Plus petite (720p pour une sortie 4K), une seconde ingestion la
+  // donne, et le warp déforme les images de travail avec ce mouvement mis à l'échelle.
+  int rife_width = 0;
+  int rife_height = 0;
   std::vector<RingSlotDesc> slots;  // ring de render, à la taille de sortie de SPAN
 };
 
@@ -61,6 +66,10 @@ class UpscaleStage final : public RingStage {
   // La variante mouvement de RIFE à l'instant t, dans flow et mask.
   std::expected<void, Refusal> run_motion(float t, const gpu::Tensor& flow, const gpu::Tensor& mask);
   bool interpolates() const { return setup_.rife != nullptr || setup_.rife_motion != nullptr; }
+  // L'image où RIFE et les mesures de la paire travaillent : la réduite s'il y en a une.
+  const gpu::Tensor& rife_source(std::uint32_t index) const {
+    return small_[index] ? small_[index]->tensor() : rgb_[index]->tensor();
+  }
   // SPAN (s'il est là) puis l'écriture dans le slot.
   std::expected<void, Refusal> finish(const gpu::Tensor& rgb, std::uint32_t slot, const gpu::RingWrite& sync);
 
@@ -68,6 +77,7 @@ class UpscaleStage final : public RingStage {
   // Deux images de travail RGB, à tour de rôle : current_ vient d'être ingérée, l'autre est la
   // précédente (valable si previous_ est rempli).
   std::array<std::unique_ptr<gpu::TensorBuffer>, 2> rgb_;
+  std::array<std::unique_ptr<gpu::TensorBuffer>, 2> small_;  // à la taille de RIFE, si plus petite
   std::uint32_t current_ = 0;
   struct Previous {
     std::int64_t pts_us = 0;

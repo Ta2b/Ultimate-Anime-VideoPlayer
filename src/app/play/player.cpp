@@ -37,6 +37,8 @@ namespace ajp::app::play {
 namespace {
 
 constexpr std::uint32_t kRingSlots = 4;
+// Hauteur où RIFE estime le mouvement quand la chaîne travaille plus haut (sortie 4K).
+constexpr int kRifeMotionHeight = 720;
 static_assert(kRingSlots <= kMaxKeptSubtitles, "les sous-titres gardés doivent couvrir tout le ring");
 
 std::unexpected<Refusal> refuse(RefusalCode code, std::string detail) {
@@ -674,7 +676,13 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
     if (!*loaded) return std::nullopt;
     engine = std::move(**loaded);
   }
-  const kernels::RifeGeometry g = kernels::rife_geometry(work.width, work.height);
+  // Au-delà de 720 lignes de travail (la 4K sans réduction), RIFE estime le mouvement sur une copie
+  // réduite à 720p et le warp déforme les images de travail : la variante mouvement seulement.
+  const WorkSize rife_size = !p.options.rife_image && work.height > kRifeMotionHeight
+                                 ? work_size(video.width, video.height, kRifeMotionHeight)
+                                 : work;
+  const kernels::RifeGeometry g = kernels::rife_geometry(rife_size.width, rife_size.height);
+  const kernels::RifeGeometry image_g = kernels::rife_geometry(work.width, work.height);
   std::unique_ptr<gpu::Engine> rife;
   std::unique_ptr<gpu::Engine> rife_motion;
   // RIFE par son mouvement : une passe au milieu de la paire la sert toute quand le mouvement est
@@ -697,16 +705,20 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
     }
   }
   if (use_rife && !rife_motion) {
-    auto loaded =
-        prepare_engine(p, init, **backend, *rife_model,
-                       gpu::Shape{.dims = {1, kernels::kRifeInputChannels, g.padded_height, g.padded_width}},
-                       EngineLabel{.name = "RIFE",
-                                   .model = rife_model->stem().string(),
-                                   .width = g.padded_width,
-                                   .height = g.padded_height});
+    auto loaded = prepare_engine(
+        p, init, **backend, *rife_model,
+        gpu::Shape{.dims = {1, kernels::kRifeInputChannels, image_g.padded_height, image_g.padded_width}},
+        EngineLabel{.name = "RIFE",
+                    .model = rife_model->stem().string(),
+                    .width = image_g.padded_width,
+                    .height = image_g.padded_height});
     if (!loaded) return std::unexpected(std::move(loaded.error()));
     if (!*loaded) return std::nullopt;
     rife = std::move(**loaded);
+  }
+  if (rife_motion) {
+    log->info("RIFE mouvement : estimé en {}x{}, warp en {}x{}", rife_size.width, rife_size.height,
+              work.width, work.height);
   }
   settings.stats.all = p.details;  // Tab pendant la préparation
 
@@ -751,6 +763,8 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
                          .source_height = height,
                          .work_width = sized.width,
                          .work_height = sized.height,
+                         .rife_width = rife_motion ? rife_size.width : 0,
+                         .rife_height = rife_motion ? rife_size.height : 0,
                          .slots = std::move(*slots)});
       });
   if (!pipeline) return std::unexpected(std::move(pipeline.error()));
@@ -783,7 +797,7 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
           .true_hdr_available = std::filesystem::exists(p.options.true_hdr_sdk) || settings.true_hdr,
           .auto_peak = auto_peak,
           .engines = engine_badges(p.paths.engines, model ? model->path : std::filesystem::path(), work,
-                                   rife_loaded ? rife_model : std::nullopt, g)});
+                                   rife_loaded ? rife_model : std::nullopt, rife_motion ? g : image_g)});
   Chain chain{.session = session,
               .screen = out,
               .ui = p.ui,

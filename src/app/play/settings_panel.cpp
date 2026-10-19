@@ -20,7 +20,7 @@ struct HeightChoice {
   const char* label;
 };
 constexpr std::array<HeightChoice, 5> kHeights{{
-    {0, "Source (sans réduction)"},
+    {0, "Source (sans réduction : 4K)"},
     {900, "900 lignes"},
     {720, "720 lignes (recommandé)"},
     {540, "540 lignes"},
@@ -103,6 +103,8 @@ void image_tab(PlaySettings& d, const SettingsChoices& choices) {
 }
 
 void fluidity_tab(PlaySettings& d, const SettingsChoices& choices) {
+  const bool four_k =
+      (d.work_height == 0 || d.work_height >= choices.source_height) && choices.source_height >= 1080;
   section("Interpolation RIFE 4.26");
   ImGui::BeginDisabled(!choices.rife_available);
   constexpr std::array<std::pair<int, const char*>, 4> kFactors{
@@ -113,8 +115,13 @@ void fluidity_tab(PlaySettings& d, const SettingsChoices& choices) {
   }
   ImGui::EndDisabled();
   if (!choices.rife_available) note("Modèle RIFE introuvable (rife_v4.26.onnx).");
-  if (d.rife_factor >= 4)
-    note("×4 saute encore des images dans les scènes rapides sur cette carte ; l'optimisation est en cours.");
+  if (four_k && d.rife_factor >= 3) {
+    note(
+        "En 4K sans réduction, ×2 tient sur cette carte ; ×3 et ×4 prennent du retard dans les scènes qui "
+        "bougent (SPAN 1080p → 2160p coûte 11 ms par image).");
+  } else if (four_k) {
+    note("En 4K, RIFE estime le mouvement en 720p et déforme les images 1080p : ×2 tient sur cette carte.");
+  }
   note("Les coupes de scène et les dessins tenus ne sont pas interpolés.");
 }
 
