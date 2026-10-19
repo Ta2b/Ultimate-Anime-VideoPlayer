@@ -1,9 +1,10 @@
-// Thread gpu de la tranche verticale : une image décodée → un slot du ring → un RingFrame au
-// thread main. Le contrôle de flux et le protocole des slots (core/ring.h) sont ici ; ce que
-// devient l'image (agrandissement, simple copie) est l'affaire d'une sous-classe.
+// Thread gpu de la tranche verticale : une image décodée → une ou plusieurs sorties (RIFE : les
+// images intermédiaires, puis elle) → un slot du ring et un RingFrame au thread main chacune.
+// Le contrôle de flux et le protocole des slots (core/ring.h) sont ici ; ce que deviennent les
+// images (interpolation, agrandissement, simple copie) est l'affaire d'une sous-classe.
 //
 // Il tient la place du thread du module gpu (Program, ordonnancements S0 à S3) le temps qu'il
-// arrive : la tranche n'agrandit qu'une image à la fois, sans interpolation.
+// arrive.
 //
 // Contrôle de flux : au plus kMaxFrames images en vol (dans la boîte ou en attente d'un slot) ;
 // try_push refuse au-delà, et chaque image sortie rend un Credit au thread source.
@@ -48,14 +49,28 @@ class RingStage : public VideoStage, public FrameSink {
   // Arrête le thread et l'attend : le destructeur de chaque sous-classe l'appelle d'abord,
   // car le thread appelle produce() tant qu'il tourne.
   void stop();
-  // Écrit frame dans le slot : attendre wait_value côté GPU, signaler signal_value (impaire).
-  virtual std::expected<void, Refusal> produce(const DecodedFrame& frame, std::uint32_t slot,
-                                               std::uint64_t wait_value, std::uint64_t signal_value) = 0;
+  // Ce qu'une sortie montre : son instant et les sources qui l'encadrent.
+  struct Output {
+    std::int64_t pts_us = 0;
+    SourceId left;
+    SourceId right;
+  };
+  // Nombre de sorties de frame (1 à kMaxOutputs), décidé une fois quand elle arrive en tête ;
+  // par défaut 1. Un refus arrête la vidéo comme un refus de produce.
+  virtual std::expected<std::uint32_t, Refusal> outputs(const DecodedFrame& /*frame*/) { return 1U; }
+  // Écrit la sortie output (0 ≤ output < outputs(frame)) dans le slot : attendre wait_value côté
+  // GPU, signaler signal_value (impaire).
+  virtual std::expected<Output, Refusal> produce(const DecodedFrame& frame, std::uint32_t output,
+                                                 std::uint32_t slot, std::uint64_t wait_value,
+                                                 std::uint64_t signal_value) = 0;
+
+  static constexpr std::uint32_t kMaxOutputs = 8;
 
  private:
   using StageInbox = Inbox<DecodedFrame, SlotFree, Command, Flush>;
   void run(const std::stop_token& stop, const ThreadReport& report);
   void emit(const ThreadReport& report);
+  void fail(const ThreadReport& report, const Refusal& refusal);
 
   VideoStageInit init_;
   std::uint32_t generation_;
@@ -63,6 +78,8 @@ class RingStage : public VideoStage, public FrameSink {
   std::atomic<std::size_t> in_flight_{0};
   // Possédé par le thread gpu.
   std::deque<DecodedFrame> pending_;
+  std::uint32_t front_outputs_ = 0;      // sorties de l'image en tête ; 0 : pas encore décidé
+  std::uint32_t front_done_ = 0;         // sorties déjà écrites
   std::vector<std::uint64_t> released_;  // dernière valeur rendue par slot (0 au premier tour)
   std::vector<bool> free_;
   std::uint32_t epoch_ = 0;

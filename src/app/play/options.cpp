@@ -108,7 +108,7 @@ std::expected<PlayOptions, Refusal> parse_play_options(std::span<const std::stri
       bool known = false;
       for (const std::string_view name :
            {"--model", "--window", "--start", "--seconds", "--fullscreen-after", "--stats", "--snapshot-at",
-            "--snapshot", "--keys", "--work-height"}) {
+            "--snapshot", "--keys", "--work-height", "--rife-model", "--rife"}) {
         auto value = valued(args, i, name);
         if (!value) return std::unexpected(std::move(value.error()));
         if (!*value) continue;
@@ -124,6 +124,16 @@ std::expected<PlayOptions, Refusal> parse_play_options(std::span<const std::stri
           applied = keys(text, options);
         } else if (name == "--snapshot") {
           options.snapshot = std::filesystem::path(text);
+        } else if (name == "--rife-model") {
+          options.rife_model = std::filesystem::path(text);
+        } else if (name == "--rife") {
+          const auto factor = number<int>(text);
+          if (!factor || !limits::kRifeFactor.contains(*factor)) {
+            return refuse(RefusalCode::FieldOutOfRange,
+                          std::format("--rife : « {} » n'est pas un facteur entre {} et {}", text,
+                                      limits::kRifeFactor.lo, limits::kRifeFactor.hi));
+          }
+          options.rife_factor = *factor;
         } else if (name == "--work-height") {
           const auto lines = number<int>(text);
           if (!lines || !limits::kWorkHeight.contains(*lines)) {
@@ -172,8 +182,10 @@ std::string play_usage() {
       "  --snapshot=FICHIER     la fenêtre en PPM, après --snapshot-at=S secondes (3)\n"
       "  --keys=S:touche,…      touches pressées d'office (essais), ex. 3:Right,5:Space\n"
       "  --work-height=N        réduit la source à N lignes avant SPAN (défaut 720 ; 0 jamais)\n"
+      "  --rife=N               interpolation RIFE ×N avant SPAN (défaut {} ; 0 aucune)\n"
+      "  --rife-model=FICHIER   modèle RIFE (défaut : {})\n"
       "Touches : espace pause, flèches seek 5 s, f plein écran, q quitter.\n",
-      kDefaultModelFile);
+      kDefaultModelFile, kDefaultRifeFactor, kDefaultRifeFile);
 }
 
 std::vector<std::filesystem::path> default_model_candidates(const std::filesystem::path& home) {
@@ -186,21 +198,40 @@ std::vector<std::filesystem::path> default_model_candidates(const std::filesyste
   };
 }
 
-std::expected<std::filesystem::path, Refusal> find_model(const PlayOptions& options,
-                                                         std::span<const std::filesystem::path> candidates) {
+std::vector<std::filesystem::path> default_rife_candidates(const std::filesystem::path& home) {
+  return {home / ".local/share/AnimeJaNai-HDR-linux/animejanai/rife" / kDefaultRifeFile,
+          home / ".local/share/AnimeJaNai/animejanai/rife" / kDefaultRifeFile};
+}
+
+namespace {
+
+// Le fichier donné par l'option (il doit exister), sinon le premier candidat présent.
+std::expected<std::filesystem::path, Refusal> find_file(const std::optional<std::filesystem::path>& given,
+                                                        std::string_view option, std::string_view what,
+                                                        std::span<const std::filesystem::path> candidates) {
   std::error_code error;
-  if (options.model) {
-    if (std::filesystem::is_regular_file(*options.model, error)) return *options.model;
-    return refuse(RefusalCode::ModelUnreadable,
-                  std::format("--model : {} introuvable", options.model->string()));
+  if (given) {
+    if (std::filesystem::is_regular_file(*given, error)) return *given;
+    return refuse(RefusalCode::ModelUnreadable, std::format("{} : {} introuvable", option, given->string()));
   }
   std::string tried;
   for (const auto& path : candidates) {
     if (std::filesystem::is_regular_file(path, error)) return path;
     tried += std::format("\n  {}", path.string());
   }
-  return refuse(RefusalCode::ModelUnreadable,
-                std::format("modèle AnimeJaNai par défaut introuvable :{}", tried));
+  return refuse(RefusalCode::ModelUnreadable, std::format("{} par défaut introuvable :{}", what, tried));
+}
+
+}  // namespace
+
+std::expected<std::filesystem::path, Refusal> find_model(const PlayOptions& options,
+                                                         std::span<const std::filesystem::path> candidates) {
+  return find_file(options.model, "--model", "modèle AnimeJaNai", candidates);
+}
+
+std::expected<std::filesystem::path, Refusal> find_rife_model(
+    const PlayOptions& options, std::span<const std::filesystem::path> candidates) {
+  return find_file(options.rife_model, "--rife-model", "modèle RIFE", candidates);
 }
 
 }  // namespace ajp::app::play

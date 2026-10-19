@@ -81,9 +81,9 @@ class PassthroughStage final : public RingStage {
 
  private:
   PassthroughStage(VideoStageInit init, std::uint32_t slots) : RingStage(std::move(init), slots, 0) {}
-  std::expected<void, Refusal> produce(const DecodedFrame&, std::uint32_t, std::uint64_t,
-                                       std::uint64_t) override {
-    return {};
+  std::expected<Output, Refusal> produce(const DecodedFrame& frame, std::uint32_t, std::uint32_t,
+                                         std::uint64_t, std::uint64_t) override {
+    return Output{.pts_us = frame.pts_us, .left = frame.id, .right = frame.id};
   }
 };
 

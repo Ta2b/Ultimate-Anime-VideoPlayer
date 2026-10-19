@@ -19,6 +19,7 @@
 #include "app/play/upscale_stage.h"
 #include "core/clock.h"
 #include "core/log.h"
+#include "kernels/spec/rife.h"
 #include "media/demuxer.h"
 #include "media/selection.h"
 #include "prepare/sha256.h"
@@ -146,10 +147,18 @@ std::expected<void, Refusal> play(const PlayOptions& options, const PlayerPaths&
       work == WorkSize{video->width, video->height}
           ? std::format("{}x{}", video->width, video->height)
           : std::format("{}x{} → Area {}x{}", video->width, video->height, work.width, work.height);
+  std::optional<std::filesystem::path> rife_model;
+  if (options.rife_factor >= 2) {
+    auto found = find_rife_model(options, default_rife_candidates(paths.home));
+    if (!found) return std::unexpected(std::move(found.error()));
+    rife_model = *found;
+  }
+  const std::string rife_label =
+      rife_model ? std::format("RIFE ×{} · {} · ", options.rife_factor, rife_model->stem().string()) : "";
   const std::string label =
-      model ? std::format("SPAN ×{} · {} · TensorRT · {} → {}x{}", factor, model->stem().string(), reduce,
-                          work.width * factor, work.height * factor)
-            : std::format("sans agrandissement · {}", reduce);
+      model ? std::format("{}SPAN ×{} · {} · TensorRT · {} → {}x{}", rife_label, factor,
+                          model->stem().string(), reduce, work.width * factor, work.height * factor)
+            : std::format("{}sans agrandissement · {}", rife_label, reduce);
   log->info("{} : {}", options.file.string(), label);
 
   auto screen =
@@ -186,6 +195,26 @@ std::expected<void, Refusal> play(const PlayOptions& options, const PlayerPaths&
     if (!loaded) return std::unexpected(std::move(loaded.error()));
     engine = std::move(*loaded);
   }
+  std::unique_ptr<gpu::Engine> rife;
+  if (rife_model) {
+    auto sha256 = prepare::sha256_file(*rife_model);
+    if (!sha256) return std::unexpected(std::move(sha256.error()));
+    const kernels::RifeGeometry g = kernels::rife_geometry(work.width, work.height);
+    const gpu::Shape shape{.dims = {1, kernels::kRifeInputChannels, g.padded_height, g.padded_width}};
+    auto build = EngineBuild::start(EngineRequest{
+        .library = *library,
+        .init = init,
+        .model = {.id = rife_model->stem().string(), .onnx_path = *rife_model, .sha256 = *sha256},
+        .shapes = {.min = shape, .opt = shape, .max = shape}});
+    if (!build) return std::unexpected(std::move(build.error()));
+    auto artifact = wait_engine(**build, **screen, label);
+    if (!artifact) return std::unexpected(std::move(artifact.error()));
+    if (!*artifact) return {};  // fenêtre fermée pendant la construction
+    log->info("moteur RIFE {}", (*artifact)->path.string());
+    auto loaded = (*backend)->load(**artifact);
+    if (!loaded) return std::unexpected(std::move(loaded.error()));
+    rife = std::move(*loaded);
+  }
 
   PipelineConfig config{
       .file = options.file,
@@ -198,13 +227,17 @@ std::expected<void, Refusal> play(const PlayOptions& options, const PlayerPaths&
         const WorkSize sized = work_size(width, height, options.work_height);
         auto slots = out.create_ring(sized.width * factor, sized.height * factor, kRingSlots);
         if (!slots) return std::unexpected(std::move(slots.error()));
-        return UpscaleStage::start(std::move(stage), UpscaleSetup{.backend = backend->get(),
-                                                                  .engine = engine.get(),
-                                                                  .source_width = width,
-                                                                  .source_height = height,
-                                                                  .work_width = sized.width,
-                                                                  .work_height = sized.height,
-                                                                  .slots = std::move(*slots)});
+        return UpscaleStage::start(
+            std::move(stage),
+            UpscaleSetup{.backend = backend->get(),
+                         .engine = engine.get(),
+                         .rife = rife.get(),
+                         .rife_factor = static_cast<std::uint32_t>(std::max(options.rife_factor, 1)),
+                         .source_width = width,
+                         .source_height = height,
+                         .work_width = sized.width,
+                         .work_height = sized.height,
+                         .slots = std::move(*slots)});
       });
   if (!pipeline) return std::unexpected(std::move(pipeline.error()));
 
@@ -268,6 +301,7 @@ std::expected<void, Refusal> play(const PlayOptions& options, const PlayerPaths&
   session.end();
   out.flush();
   pipeline->reset();
+  rife.reset();
   engine.reset();
   backend->reset();
   screen->reset();

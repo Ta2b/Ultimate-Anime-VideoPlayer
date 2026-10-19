@@ -1,5 +1,6 @@
 #include "app/play/ring_stage.h"
 
+#include <algorithm>
 #include <format>
 #include <type_traits>
 #include <utility>
@@ -68,40 +69,59 @@ void RingStage::run(const std::stop_token& stop, const ThreadReport& report) {
   }
 }
 
+void RingStage::fail(const ThreadReport& report, const Refusal& refusal) {
+  failed_ = true;  // une image refusée arrête la vidéo : l'OSD le dit, main arrête la lecture
+  report(Refusal{RefusalCode::ThreadFailed, std::format("{} {}", name(refusal.code), refusal.detail)});
+}
+
 void RingStage::emit(const ThreadReport& report) {
   while (!pending_.empty()) {
     if (pending_.front().epoch < epoch_ || failed_) {  // d'avant le Flush, ou étage en échec : jetée
       pending_.pop_front();
+      front_outputs_ = 0;
       --in_flight_;
       init_.credit();
       continue;
     }
-    std::uint32_t slot = 0;
-    while (slot < free_.size() && !free_[slot]) ++slot;
-    if (slot == free_.size()) return;  // attend un SlotFree
     const DecodedFrame& frame = pending_.front();
-    const std::uint64_t ready = released_[slot] + 1;
-    if (auto produced = produce(frame, slot, released_[slot], ready); !produced) {
-      failed_ = true;  // une image refusée arrête la vidéo : l'OSD le dit, main arrête la lecture
-      report(Refusal{RefusalCode::ThreadFailed,
-                     std::format("{} {}", name(produced.error().code), produced.error().detail)});
-      continue;
+    if (front_outputs_ == 0) {
+      auto count = outputs(frame);
+      if (!count) {
+        fail(report, count.error());
+        continue;
+      }
+      front_outputs_ = std::clamp(*count, 1U, kMaxOutputs);
+      front_done_ = 0;
     }
-    const RingFrame ring{.slot = slot,
-                         .generation = generation_,
-                         .pts_us = frame.pts_us,
-                         .left = frame.id,
-                         .right = frame.id,
-                         .epoch = frame.epoch,
-                         .ready_value = ready};
-    free_[slot] = false;
-    released_[slot] = ready;  // le slot est écrit : sa prochaine attente part de ready + 1
-    if (!init_.ring->try_push(ring)) {
-      // Boîte de main pleine : contraire au contrat (borne = slots). Le slot est perdu pour
-      // ce ring ; on le dit plutôt que d'attendre.
-      report(Refusal{RefusalCode::SequenceOrder, "boîte de main pleine : RingFrame perdu"});
+    while (front_done_ < front_outputs_) {
+      std::uint32_t slot = 0;
+      while (slot < free_.size() && !free_[slot]) ++slot;
+      if (slot == free_.size()) return;  // attend un SlotFree
+      const std::uint64_t ready = released_[slot] + 1;
+      auto produced = produce(frame, front_done_, slot, released_[slot], ready);
+      if (!produced) {
+        fail(report, produced.error());
+        break;
+      }
+      const RingFrame ring{.slot = slot,
+                           .generation = generation_,
+                           .pts_us = produced->pts_us,
+                           .left = produced->left,
+                           .right = produced->right,
+                           .epoch = frame.epoch,
+                           .ready_value = ready};
+      free_[slot] = false;
+      released_[slot] = ready;  // le slot est écrit : sa prochaine attente part de ready + 1
+      ++front_done_;
+      if (!init_.ring->try_push(ring)) {
+        // Boîte de main pleine : contraire au contrat (borne = slots). Le slot est perdu pour
+        // ce ring ; on le dit plutôt que d'attendre.
+        report(Refusal{RefusalCode::SequenceOrder, "boîte de main pleine : RingFrame perdu"});
+      }
     }
+    if (failed_) continue;
     pending_.pop_front();
+    front_outputs_ = 0;
     --in_flight_;
     init_.credit();
   }

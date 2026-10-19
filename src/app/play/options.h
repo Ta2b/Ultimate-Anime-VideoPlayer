@@ -4,7 +4,7 @@
 //   ajp play <fichier> [--model=FICHIER.onnx] [--no-upscale] [--window=LxH] [--fullscreen]
 //                      [--start=S] [--seconds=S] [--fullscreen-after=S] [--stats=FICHIER]
 //                      [--snapshot=FICHIER.ppm] [--snapshot-at=S] [--keys=S:touche,…]
-//                      [--work-height=N]
+//                      [--work-height=N] [--rife=N] [--rife-model=FICHIER.onnx]
 //
 // Le modèle par défaut est celui du lecteur actuel du propriétaire (AnimeJaNai, slot par
 // défaut de animejanai.conf) : SPAN V3.1 Sharp1 Performance, ×2. Il est lu en place, en
@@ -30,11 +30,18 @@ inline constexpr std::string_view kDefaultModelFile =
     "2x_AnimeJaNai_HD_V3.1Sharp1_Performance_SPANF3_b5f48_unshuffle_fp16.onnx";
 // Facteur des modèles SPAN d'AnimeJaNai HD : 2 (sortie 2H × 2W).
 inline constexpr int kSpanFactor = 2;
+// RIFE du lecteur actuel (profil Quality) : RIFE 4.26, lu en place comme SPAN.
+inline constexpr std::string_view kDefaultRifeFile = "rife_v4.26.onnx";
+// Interpolation par défaut : ×3. Sur la RTX 4070 Ti, une paire qui bouge coûte 2 RIFE à 720p et
+// 3 SPAN, environ 31 ms sur 41,7 : 8 images sautées sur 25 s d'ouverture, contre 304 à ×4
+// (19 octobre, ~/ajp-reports/vertical-slice.md). ×4 attend les optimisations de la parité.
+inline constexpr int kDefaultRifeFactor = 3;
 
 namespace limits {
 inline constexpr core::Range<int> kWindowSide{64, 16384};
 inline constexpr core::Range<std::int64_t> kSeconds{0, std::int64_t{24} * 3600};
 inline constexpr core::Range<int> kWorkHeight{0, 4320};
+inline constexpr core::Range<int> kRifeFactor{0, 8};
 }  // namespace limits
 
 struct PlayOptions {
@@ -56,7 +63,10 @@ struct PlayOptions {
   // --work-height=N : la source plus haute que N est réduite par Area à N lignes avant SPAN
   // (1080p vers 720p, puis ×2 vers 1440p, comme le profil du lecteur actuel) ; 0 : jamais.
   int work_height = 720;
-  bool help = false;  // --help
+  // --rife=N : interpolation RIFE ×N (2 à 8) avant SPAN ; 0 ou 1 : aucune.
+  int rife_factor = kDefaultRifeFactor;
+  std::optional<std::filesystem::path> rife_model;  // --rife-model : absent, celui du lecteur actuel
+  bool help = false;                                // --help
 };
 
 // Taille de travail de la chaîne : la source, ou réduite à work_height lignes en gardant le
@@ -78,10 +88,14 @@ std::string play_usage();
 // Où chercher le modèle par défaut, dans l'ordre : l'installation d'AnimeJaNai, puis le
 // profil par défaut du dépôt mpv-AnimeJaNai-HDR. home vient de SDL (SDL_GetUserFolder).
 std::vector<std::filesystem::path> default_model_candidates(const std::filesystem::path& home);
+std::vector<std::filesystem::path> default_rife_candidates(const std::filesystem::path& home);
 
 // Le modèle à charger : --model s'il est donné (il doit exister), sinon le premier
 // candidat présent. Refus ModelUnreadable avec les chemins essayés.
 std::expected<std::filesystem::path, Refusal> find_model(const PlayOptions& options,
                                                          std::span<const std::filesystem::path> candidates);
+// Le modèle RIFE : --rife-model s'il est donné (il doit exister), sinon le premier candidat.
+std::expected<std::filesystem::path, Refusal> find_rife_model(
+    const PlayOptions& options, std::span<const std::filesystem::path> candidates);
 
 }  // namespace ajp::app::play
