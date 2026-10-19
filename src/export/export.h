@@ -77,7 +77,8 @@ struct ExportSummary {
 };
 
 // Valide le travail, encode toutes les images de la source puis écrit la sortie.
-// Refus : FieldMissing (sortie, source), FieldOutOfRange (taille, cadence, option, mastering),
+// Refus : FieldMissing (sortie, source), FieldOutOfRange (taille, cadence, option, mastering,
+// sortie qui serait le fichier source),
 // FormatUnsupported (format, codec ou piste que le conteneur ne porte pas, voie appareil pas
 // encore branchée), InputMismatch (image d'une autre taille, pts inconnu ou qui ne croît pas),
 // EncoderUnavailable, EncodeFailed, MuxFailed, FileUnwritable, MediaUnreadable (source),

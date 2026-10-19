@@ -74,14 +74,26 @@ struct Reader {
   bool shift_and_keep(AVPacket& p) const {
     const auto index = static_cast<std::size_t>(p.stream_index);
     if (index >= out_index.size() || out_index[index] < 0) return false;
-    const AVRational tb = input->streams[p.stream_index]->time_base;
+    const AVStream& stream = *input->streams[p.stream_index];
+    const AVRational tb = stream.time_base;
     if (p.pts != AV_NOPTS_VALUE) p.pts -= offset[index];
     if (p.dts != AV_NOPTS_VALUE) p.dts -= offset[index];
     if (p.pts == AV_NOPTS_VALUE) return true;
     const std::int64_t start = av_rescale_q(p.pts, tb, kMicroseconds);
     const std::int64_t end = start + av_rescale_q(p.duration, tb, kMicroseconds);
-    if (start >= window_us) return false;  // après la dernière image exportée
-    return end > 0 || start >= 0;          // entièrement avant la première : écarté
+    if (start >= window_us) return false;     // après la dernière image exportée
+    if (start < 0 && end <= 0) return false;  // entièrement avant la première : écarté
+    // Un sous-titre à cheval sur un bord de la fenêtre est coupé à ce bord, comme un chapitre :
+    // gardé tel quel, son début négatif décalerait toute la sortie (Matroska n'écrit pas
+    // d'horodatage négatif, avoid_negative_ts y décale tous les flux) et sa fin passerait la
+    // dernière image. Un paquet audio, lui, ne se coupe pas : il garde son début.
+    if (stream.codecpar->codec_type == AVMEDIA_TYPE_SUBTITLE && p.duration > 0 &&
+        (start < 0 || end > window_us)) {
+      p.pts = av_rescale_q(std::max<std::int64_t>(start, 0), kMicroseconds, tb);
+      if (p.dts != AV_NOPTS_VALUE) p.dts = p.pts;
+      p.duration = av_rescale_q(std::min(end, window_us), kMicroseconds, tb) - p.pts;
+    }
+    return true;
   }
 
   // Clé d'entrelacement : dts (sinon pts) en microsecondes.
@@ -193,6 +205,8 @@ std::expected<void, Refusal> remux(const RemuxRequest& request) {
   const std::string video_path = request.video.string();
   const std::string source_path = request.source.string();
   while (true) {
+    if (request.stop.stop_requested())
+      return refuse(RefusalCode::Cancelled, "export annulé pendant le mux final");
     if (auto ok = video.advance(video_path); !ok) return ok;
     if (auto ok = source.advance(source_path); !ok) return ok;
     if (!video.pending && !source.pending) break;

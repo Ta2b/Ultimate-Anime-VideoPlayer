@@ -68,6 +68,19 @@ TEST_CASE("refus du travail avant toute ouverture", "[export][refus]") {
   CHECK(std::filesystem::is_empty(dir));
 }
 
+TEST_CASE("sortie sur le fichier source refusée, source intacte", "[export][refus]") {
+  const auto dir = work_dir("refusal_overwrite");
+  write_source_media(dir / "source.mkv");
+  const auto size = std::filesystem::file_size(dir / "source.mkv");
+  const auto frames = pattern_frames(32, 18, 2, kRate);
+  VectorSource source(frames);
+  ExportJob job = ffv1_job(dir / "source.mkv", 32, 18, source);
+  job.copy_from = dir / "." / "source.mkv";
+  CHECK(refusal_of(job) == RefusalCode::FieldOutOfRange);
+  CHECK(std::filesystem::file_size(dir / "source.mkv") == size);
+  CHECK_FALSE(std::filesystem::exists(dir / "source.mkv.part"));
+}
+
 TEST_CASE("encodeur absent de la construction de FFmpeg refusé à l'ouverture", "[export][refus]") {
   const auto dir = work_dir("refusal_build");
   if (avcodec_find_encoder_by_name("libsvtav1") != nullptr)

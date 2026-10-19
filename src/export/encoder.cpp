@@ -1,6 +1,8 @@
 #include "export/encoder.h"
 
 #include <algorithm>
+#include <cstddef>
+#include <cstdint>
 #include <format>
 #include <limits>
 #include <string>
@@ -17,6 +19,18 @@ extern "C" {
 
 namespace ajp::exporter {
 namespace {
+
+// Le chemin RGB vers YUV de libswscale prend 65280 (255 × 256), et non 65535, pour la pleine
+// échelle d'une entrée 16 bits : le blanc 65535 donnerait Y 943 au lieu de 940 en 10 bits, et
+// tout le signal PQ sortirait 0,39 % trop haut. L'image est donc ramenée à cette échelle avant la
+// conversion ; le test « matrice BT.2020 et plage limitée » fixe le résultat exact.
+constexpr std::uint32_t kSwsFullScale = 255 * 256;
+constexpr std::uint32_t kInputFullScale = 65535;
+
+constexpr std::uint16_t to_sws_scale(std::uint16_t value) {
+  return static_cast<std::uint16_t>((value * kSwsFullScale + kInputFullScale / 2) / kInputFullScale);
+}
+static_assert(to_sws_scale(65535) == 65280 && to_sws_scale(0) == 0 && to_sws_scale(32768) == 32640);
 
 // Dictionnaire d'options libéré à la sortie de portée.
 struct Options {
@@ -201,6 +215,10 @@ std::expected<void, Refusal> VideoEncoder::prepare_frames(const EncoderSpec& spe
   // pas de leur nombre (framemd5 identique, vérifié en 1080p contre un seul thread).
   sws_->threads = 0;
   if (auto ok = renew_converted(); !ok) return ok;
+  // Tampon de la remise à l'échelle des sorties YUV, alloué une fois pour tout l'export.
+  if (ctx.sw_pix_fmt != AV_PIX_FMT_GBRP16) {
+    yuv_input_.resize(static_cast<std::size_t>(ctx.width) * static_cast<std::size_t>(ctx.height) * 4);
+  }
   if (spec.family != EncoderFamily::Vulkan) return {};
 
   AVBufferRef* device = nullptr;
@@ -249,9 +267,14 @@ std::expected<AVFrame*, Refusal> VideoEncoder::convert(const HostFrame& frame) {
   source.color_trc = AVCOL_TRC_SMPTE2084;
   source.colorspace = AVCOL_SPC_RGB;
   source.color_range = AVCOL_RANGE_JPEG;
-  // libswscale ne fait que lire la source : la vue sur l'image hôte se passe de copie.
-  source.data[0] = reinterpret_cast<std::uint8_t*>(const_cast<std::uint16_t*>(frame.rgba.data()));
-  source.linesize[0] = static_cast<int>(frame.stride);
+  if (yuv_input_.empty()) {
+    // RGB 16 bits : libswscale ne fait que lire la source, la vue sur l'image hôte suffit.
+    source.data[0] = reinterpret_cast<std::uint8_t*>(const_cast<std::uint16_t*>(frame.rgba.data()));
+    source.linesize[0] = static_cast<int>(frame.stride);
+  } else {
+    source.data[0] = reinterpret_cast<std::uint8_t*>(rescale_for_yuv(frame));
+    source.linesize[0] = frame.width * 8;
+  }
 
   // L'encodeur peut garder une référence sur l'image précédente : une mémoire neuve alors,
   // sans recopier l'ancienne image.
@@ -272,6 +295,18 @@ std::expected<AVFrame*, Refusal> VideoEncoder::convert(const HostFrame& frame) {
   }
   copy_color(*device_, ctx);
   return device_.get();
+}
+
+// Recopie l'image dans yuv_input_, tassée, chaque composante ramenée à l'échelle 65280.
+std::uint16_t* VideoEncoder::rescale_for_yuv(const HostFrame& frame) {
+  const auto width = static_cast<std::size_t>(frame.width) * 4;
+  const std::size_t row_values = frame.stride / sizeof(std::uint16_t);
+  for (std::size_t y = 0; y < static_cast<std::size_t>(frame.height); ++y) {
+    const auto row = frame.rgba.subspan(y * row_values, width);
+    std::uint16_t* out = yuv_input_.data() + y * width;
+    for (std::size_t i = 0; i < width; ++i) out[i] = to_sws_scale(row[i]);
+  }
+  return yuv_input_.data();
 }
 
 std::expected<void, Refusal> VideoEncoder::send(const HostFrame& frame, std::int64_t pts_us) {

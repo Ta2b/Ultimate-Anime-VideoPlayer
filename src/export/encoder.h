@@ -4,6 +4,7 @@
 
 #include <cstdint>
 #include <expected>
+#include <vector>
 
 #include "core/types.h"
 #include "export/av_util.h"
@@ -48,12 +49,14 @@ class VideoEncoder {
   std::expected<void, Refusal> prepare_frames(const EncoderSpec& spec);
   std::expected<void, Refusal> renew_converted();
   std::expected<AVFrame*, Refusal> convert(const HostFrame& frame);
+  std::uint16_t* rescale_for_yuv(const HostFrame& frame);
 
   CodecContextPtr ctx_;
   SwsPtr sws_;
-  FramePtr source_;     // vue sur l'image hôte, sans copie
-  FramePtr converted_;  // format logiciel de l'encodeur
-  FramePtr device_;     // encodeurs Vulkan : l'image téléversée
+  FramePtr source_;                       // vue sur l'image hôte (RGB), ou sur yuv_input_ (YUV)
+  std::vector<std::uint16_t> yuv_input_;  // YUV : l'image ramenée à l'échelle 65280 de libswscale
+  FramePtr converted_;                    // format logiciel de l'encodeur
+  FramePtr device_;                       // encodeurs Vulkan : l'image téléversée
   BufferPtr device_ctx_;
   BufferPtr frames_ctx_;
   std::int64_t frame_duration_us_ = 0;

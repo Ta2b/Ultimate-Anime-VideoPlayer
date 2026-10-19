@@ -125,6 +125,13 @@ std::expected<void, Refusal> validate_job(const ExportJob& job) {
     return refuse(RefusalCode::FieldOutOfRange, std::format("export.frame_rate : {}/{} hors de ]0, {}[ im/s",
                                                             rate.num, rate.den, kMaxFrameRate));
   }
+  // La sortie remplace son chemin à la fin : elle ne doit pas écraser le fichier source.
+  std::error_code ignored;
+  if (!job.copy_from.empty() && (job.output.lexically_normal() == job.copy_from.lexically_normal() ||
+                                 std::filesystem::equivalent(job.output, job.copy_from, ignored))) {
+    return refuse(RefusalCode::FieldOutOfRange,
+                  std::format("export.output : {} est le fichier source", job.output.string()));
+  }
   if (job.frames_total && *job.frames_total < 0) {
     return refuse(RefusalCode::FieldOutOfRange,
                   std::format("export.frames_total : {} négatif", *job.frames_total));
@@ -147,7 +154,8 @@ std::expected<ExportSummary, Refusal> run_export(const ExportJob& job) {
                        .container = job.container,
                        .mastering = job.mastering,
                        .tags = job.tags,
-                       .output = part};
+                       .output = part,
+                       .stop = job.stop};
   // Une piste que le conteneur ne porte pas se refuse avant d'encoder la première image.
   if (!job.copy_from.empty()) {
     if (auto ok = check_copy(request); !ok) return std::unexpected(ok.error());

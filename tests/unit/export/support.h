@@ -75,11 +75,12 @@ void write_source_media(const std::filesystem::path& path);
 std::vector<std::uint8_t> audio_payload(int packet);
 std::vector<std::uint8_t> font_payload();
 
-// Paquets d'un flux d'un fichier : pts en microsecondes, données.
+// Paquets d'un flux d'un fichier : pts et durée en microsecondes, données.
 struct StreamDump {
   AVMediaType type = AVMEDIA_TYPE_UNKNOWN;
   AVCodecID codec = AV_CODEC_ID_NONE;
   std::vector<std::int64_t> pts_us;
+  std::vector<std::int64_t> duration_us;
   std::vector<std::vector<std::uint8_t>> data;
 };
 std::vector<StreamDump> dump_streams(const std::filesystem::path& path);

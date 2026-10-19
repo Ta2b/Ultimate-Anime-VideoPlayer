@@ -224,6 +224,7 @@ std::vector<StreamDump> dump_streams(const std::filesystem::path& path) {
     const AVRational tb = (*input)->streams[packet->stream_index]->time_base;
     dump.pts_us.push_back(packet->pts == AV_NOPTS_VALUE ? kNoPts
                                                         : av_rescale_q(packet->pts, tb, kMicroseconds));
+    dump.duration_us.push_back(av_rescale_q(packet->duration, tb, kMicroseconds));
     dump.data.emplace_back(packet->data, packet->data + packet->size);
     av_packet_unref(packet.get());
   }

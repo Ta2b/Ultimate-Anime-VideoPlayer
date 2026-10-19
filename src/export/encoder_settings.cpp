@@ -126,12 +126,13 @@ std::span<const EncoderSpec> encoder_table() {
 }
 
 std::expected<const EncoderSpec*, Refusal> find_encoder_spec(std::string_view name) {
-  const auto* found = std::ranges::find(kTable, name, &EncoderSpec::name);
+  // Un itérateur de std::array n'est pas un pointeur partout (MSVC) : l'adresse se prend.
+  const auto found = std::ranges::find(kTable, name, &EncoderSpec::name);
   if (found == kTable.end()) {
     return std::unexpected(
         Refusal{RefusalCode::EncoderUnavailable, std::format("export.encoder {} : encodeur inconnu", name)});
   }
-  return found;
+  return &*found;
 }
 
 std::expected<const EncoderSpec*, Refusal> validate_settings(const EncoderSettings& s, int width,

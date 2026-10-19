@@ -6,6 +6,7 @@
 #include <expected>
 #include <filesystem>
 #include <span>
+#include <stop_token>
 #include <string>
 #include <utility>
 
@@ -29,10 +30,11 @@ struct RemuxRequest {
   LightLevel light;
   std::span<const std::pair<std::string, std::string>> tags;
   std::filesystem::path output;
+  std::stop_token stop;  // annulation : refus Cancelled entre deux paquets
 };
 
 // Refus : MediaUnreadable (entrées), FormatUnsupported (piste que le conteneur ne porte pas),
-// MuxFailed, FileUnwritable.
+// MuxFailed, FileUnwritable, Cancelled.
 std::expected<void, Refusal> remux(const RemuxRequest& request);
 
 // Ouvre le fichier source et vérifie que le conteneur porte chaque piste à recopier, sans rien
