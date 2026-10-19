@@ -1,0 +1,30 @@
+// Ce que le poste et l'écran de la fenêtre disent d'eux-mêmes : rafraîchissement et marge HDR
+// selon SDL, nom de l'écran (pour son EDID), GPU selon Vulkan, moteurs présents pour l'écran de
+// bienvenue.
+#pragma once
+
+#include <cstdint>
+#include <optional>
+#include <string>
+
+#include <SDL3/SDL_video.h>
+
+#include "app/play/first_run.h"
+#include "app/play/options.h"
+#include "app/play/placebo_screen.h"
+#include "app/play/player.h"
+
+namespace ajp::app::play {
+
+// Période de rafraîchissement de l'écran de la fenêtre ; 0 si inconnue (la session la mesure
+// alors sur les présentations).
+std::int64_t display_period_us(SDL_Window* window);
+// Crête vue par le contenu : la marge HDR de SDL3 × 203 nits ; rien si l'écran n'est pas en HDR.
+std::optional<double> content_peak_nits(SDL_Window* window);
+// Le nom de l'écran de la fenêtre selon SDL, pour choisir son EDID.
+std::string display_name(SDL_Window* window);
+GpuFacts gpu_facts(const PlaceboScreen& screen);
+// Le backend TensorRT, le SDK Maxine importé ou à importer.
+EnginesHere engines_here(const PlayOptions& options, const PlayerPaths& paths);
+
+}  // namespace ajp::app::play
