@@ -2,8 +2,11 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include "core/frame.h"
+#include "core/gpu_device.h"
 #include "core/inbox.h"
 #include "core/messages.h"
+#include "core/ring.h"
+#include "core/thread.h"
 #include "core/types.h"
 
 TEST_CASE("core_types : une boîte gpu porte images, slots, commandes, Program et Flush", "[core_types]") {

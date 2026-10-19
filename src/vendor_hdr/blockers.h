@@ -50,4 +50,8 @@ std::optional<Blocked> first_blocker(const TrueHdrEnvironment& environment);
 // Le refus que resolve() renvoie pour un profil hdr = "truehdr" bloqué.
 Refusal to_refusal(const Blocked& blocked);
 
+// La raison du premier bloqueur, vide si rien ne bloque : ce que app passe à
+// core::to_resolve_capabilities(), core ne dépendant pas de vendor_hdr.
+std::string first_blocker_reason(const TrueHdrEnvironment& environment);
+
 }  // namespace ajp::vendor_hdr

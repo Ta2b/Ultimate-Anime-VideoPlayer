@@ -92,7 +92,7 @@ std::expected<std::unique_ptr<TrueHdr>, Refusal> open_rtx_video_at(const fs::pat
   }
   auto effect = std::make_unique<RtxVideoEffect>(std::move(*opened), *evaluate, *shutdown);
   auto made = make_true_hdr(config, std::move(effect));
-  if (made) log().info("TrueHDR RTX Video prêt en {}x{}", config.width, config.height);
+  if (made) make_logger()->info("TrueHDR RTX Video prêt en {}x{}", config.width, config.height);
   return made;
 }
 

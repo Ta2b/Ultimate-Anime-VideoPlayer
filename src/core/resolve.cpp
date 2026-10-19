@@ -3,6 +3,10 @@
 #include <algorithm>
 #include <cmath>
 #include <format>
+#include <optional>
+#include <utility>
+
+#include "core/pacing.h"
 
 namespace ajp::core {
 namespace {
@@ -24,13 +28,36 @@ std::expected<HdrRoute, Refusal> resolve_hdr(HdrMode mode, const Capabilities& c
                                              const DisplayInfo& display) {
   if (mode == HdrMode::Off) return HdrRoute{};
   if (!display.hdr) return refuse(RefusalCode::HdrUnavailable, "l'écran n'est pas en HDR");
-  if (mode == HdrMode::TrueHdr && !caps.true_hdr) {
-    return refuse(RefusalCode::HdrUnavailable, "TrueHDR n'est pas installé");
+  // Le texte du premier bloqueur, tel que vendor_hdr l'a donné à app.
+  if (mode == HdrMode::TrueHdr && !caps.true_hdr_available()) {
+    return refuse(RefusalCode::HdrUnavailable, caps.true_hdr_blocker);
   }
   return HdrRoute{.kind = mode};
 }
 
+// 0 sans VRR est le seul « inconnu » : une valeur négative ou NaN est refusée par pace_rule().
+bool display_known(const DisplayInfo& display) {
+  return display.vrr || display.refresh_hz != 0.0;
+}
+
 }  // namespace
+
+std::expected<void, Refusal> check_display(const DisplayInfo& display) {
+  if (!limits::kPeakNits.contains(display.peak_nits)) {
+    return refuse(RefusalCode::FieldOutOfRange,
+                  std::format("crête de l'écran {} nits hors de [1, 10000]", display.peak_nits));
+  }
+  // Écrit en positif pour qu'un NaN soit refusé lui aussi.
+  if (!(display.min_nits >= 0.0 && display.min_nits < display.peak_nits)) {
+    return refuse(RefusalCode::FieldOutOfRange, std::format("noir de l'écran {} nits hors de [0, {}[",
+                                                            display.min_nits, display.peak_nits));
+  }
+  if (!limits::kSdrWhiteNits.contains(display.sdr_white_nits)) {
+    return refuse(RefusalCode::FieldOutOfRange,
+                  std::format("blanc SDR {} nits hors de [1, 10000]", display.sdr_white_nits));
+  }
+  return {};
+}
 
 const Rule* match_rule(const Profile& profile, const SourceInfo& source) {
   const std::int64_t pixels = std::int64_t{source.width} * source.height;
@@ -45,17 +72,28 @@ const Rule* match_rule(const Profile& profile, const SourceInfo& source) {
 
 std::expected<Plan, Refusal> resolve(const Profile& profile, const Capabilities& caps,
                                      const SourceInfo& source, const DisplayInfo& display) {
+  if (auto valid = check_display(display); !valid) return std::unexpected(valid.error());
   Plan plan;
   plan.output_width = source.width;
   plan.output_height = source.height;
   plan.output_fps = source.fps;
 
   // Sans règle, la vidéo passe telle quelle.
-  const Rule* rule = match_rule(profile, source);
-  if (rule == nullptr) {
+  const Rule* matched = match_rule(profile, source);
+  if (matched == nullptr) {
     plan.hash = compute_hash(plan);
     return plan;
   }
+
+  // Écran connu : la cadence se cale sur lui, et une interpolation unique prend le facteur proposé.
+  std::optional<PacedRule> paced;
+  if (display_known(display)) {
+    auto fitted = pace_rule(*matched, display, source.fps);
+    if (!fitted) return std::unexpected(fitted.error());
+    paced = std::move(*fitted);
+    plan.cadence = paced->cadence;
+  }
+  const Rule* rule = paced ? &paced->rule : matched;
 
   // L'ordre des étapes doit se ramener à : réduction ? interpolations ? agrandissement ? interpolations ?
   bool upscale_closed = false;

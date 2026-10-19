@@ -1,6 +1,7 @@
 #include "core/capabilities.h"
 
 #include <string>
+#include <string_view>
 #include <vector>
 
 #include <catch2/catch_test_macros.hpp>
@@ -75,11 +76,11 @@ TEST_CASE("Capacités : sans le code qui l'exécute, des fichiers installés ne 
   CHECK_FALSE(rows[0].usable);
   CHECK(rows[0].receipt_hash.empty());
   CHECK(rows[1].usable);
-  CHECK(to_resolve_capabilities(facts).models == std::vector<ModelId>{kRife.name});
+  CHECK(to_resolve_capabilities(facts, "").models == std::vector<ModelId>{kRife.name});
 
   CapabilityFacts route = installed(kTrueHdr);
   route.compiled = false;
-  CHECK_FALSE(to_resolve_capabilities(std::vector{route}).true_hdr);
+  CHECK(to_resolve_capabilities(std::vector{route}, "").true_hdr_blocker == kTrueHdrNotInstalled);
 }
 
 TEST_CASE("Capacités : un reçu périmé ou étranger ne qualifie pas", "[capabilities]") {
@@ -125,10 +126,10 @@ TEST_CASE("Capacités : resolve() charge une capacité installée, qualifiée ou
   const std::vector<CapabilityFacts> facts{
       installed(kHd), qualified(kRife), installed(kTrueHdr),
       CapabilityFacts{.id = {.name = "4x_absent"}, .compiled = true, .delivered = true}};
-  const Capabilities caps = to_resolve_capabilities(facts);
+  const Capabilities caps = to_resolve_capabilities(facts, "");
   CHECK(caps.models == std::vector<ModelId>{kHd.name, kRife.name});
-  CHECK(caps.true_hdr);
-  CHECK_FALSE(to_resolve_capabilities(std::vector{qualified(kHd)}).true_hdr);
+  CHECK(caps.true_hdr_available());
+  CHECK_FALSE(to_resolve_capabilities(std::vector{qualified(kHd)}, "").true_hdr_available());
 
   Profile profile{.hdr = HdrMode::TrueHdr};
   profile.rules.push_back(Rule{.max_pixels = limits::kPixels.hi,
@@ -142,6 +143,16 @@ TEST_CASE("Capacités : resolve() charge une capacité installée, qualifiée ou
                       DisplayInfo{.width = 2560, .height = 1440, .refresh_hz = 144.0, .hdr = true});
   REQUIRE(plan);
   CHECK(unqualified_in(*plan, facts) == std::vector{kHd, kTrueHdr});
+}
+
+TEST_CASE("Capacités : la cause de vendor_hdr l'emporte sur la route non installée", "[capabilities]") {
+  const std::string_view not_nvidia = "le GPU de rendu n'est pas un GPU NVIDIA";
+  CHECK(to_resolve_capabilities(std::vector{installed(kTrueHdr)}, not_nvidia).true_hdr_blocker == not_nvidia);
+  CHECK(to_resolve_capabilities(std::vector{installed(kHd)}, not_nvidia).true_hdr_blocker == not_nvidia);
+  CHECK(to_resolve_capabilities(std::vector{installed(kHd)}, "").true_hdr_blocker == kTrueHdrNotInstalled);
+  CHECK(to_resolve_capabilities(std::vector{installed(kTrueHdr)}, "").true_hdr_blocker.empty());
+  // Sans avis de vendor_hdr, la valeur par défaut refuse TrueHDR.
+  CHECK_FALSE(Capabilities{}.true_hdr_available());
 }
 
 TEST_CASE("receipts.toml : écrire puis relire ; un reçu altéré est refusé", "[capabilities]") {

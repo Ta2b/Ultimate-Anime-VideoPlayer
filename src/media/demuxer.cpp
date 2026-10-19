@@ -206,8 +206,8 @@ std::expected<std::optional<Packet>, Refusal> Demuxer::State::read_file() const 
 
   Packet packet{
       .track = raw->stream_index,
-      .pts_us = raw->pts == AV_NOPTS_VALUE ? kNoTimestamp : raw->pts,
-      .dts_us = raw->dts == AV_NOPTS_VALUE ? kNoTimestamp : raw->dts,
+      .pts_us = raw->pts == AV_NOPTS_VALUE ? kNoPts : raw->pts,
+      .dts_us = raw->dts == AV_NOPTS_VALUE ? kNoPts : raw->dts,
       .duration_us = raw->duration,
       .keyframe = (raw->flags & AV_PKT_FLAG_KEY) != 0,
   };
@@ -244,7 +244,7 @@ std::expected<void, Refusal> Demuxer::State::seek_stream(int reference, std::int
 // dts (MP4 avec images B), GOP ouvert. Les images entre la cible et lui ne se
 // décoderaient jamais. On recule alors avant son dts, au plus kMaxRewinds fois,
 // ou jusqu'à retrouver le même point clé : la cible précède la première image.
-// Rend le pts du point clé où la lecture reprend, kNoTimestamp s'il est inconnu.
+// Rend le pts du point clé où la lecture reprend, kNoPts s'il est inconnu.
 std::expected<std::int64_t, Refusal> Demuxer::State::seek_before(std::int64_t target_us, int reference) {
   const AVRational time_base = format->streams[reference]->time_base;
   const auto land = [&](std::int64_t aim_us) -> std::expected<std::optional<Packet>, Refusal> {
@@ -255,7 +255,7 @@ std::expected<std::int64_t, Refusal> Demuxer::State::seek_before(std::int64_t ta
   };
   std::int64_t aim_us = target_us;
   std::int64_t landed_us = target_us;  // visée du dernier seek abouti
-  std::int64_t last_key_us = kNoTimestamp;
+  std::int64_t last_key_us = kNoPts;
   for (int rewind = 0; rewind <= kMaxRewinds; ++rewind) {
     auto key = land(aim_us);
     if (!key && rewind > 0) {
@@ -266,12 +266,12 @@ std::expected<std::int64_t, Refusal> Demuxer::State::seek_before(std::int64_t ta
       key = land(landed_us);
     }
     if (!key) return std::unexpected(key.error());
-    if (!*key) return kNoTimestamp;
+    if (!*key) return kNoPts;
     const std::int64_t key_pts = (*key)->pts_us;
-    if (key_pts == kNoTimestamp || key_pts <= target_us || key_pts == last_key_us) return key_pts;
+    if (key_pts == kNoPts || key_pts <= target_us || key_pts == last_key_us) return key_pts;
     last_key_us = key_pts;
     landed_us = aim_us;
-    const std::int64_t key_us = (*key)->dts_us != kNoTimestamp ? (*key)->dts_us : key_pts;
+    const std::int64_t key_us = (*key)->dts_us != kNoPts ? (*key)->dts_us : key_pts;
     aim_us = std::min(aim_us, key_us) - 1;
     log->debug("seek à {} µs : point clé affiché à {} µs, recul à {} µs", target_us, key_pts, aim_us);
   }
@@ -289,7 +289,7 @@ std::expected<std::optional<std::int64_t>, Refusal> Demuxer::State::seek_after(s
   }
   auto key = peek_keyframe(reference);
   if (!key) return std::unexpected(key.error());
-  if (!*key || (*key)->pts_us == kNoTimestamp) return std::nullopt;
+  if (!*key || (*key)->pts_us == kNoPts) return std::nullopt;
   return (*key)->pts_us;
 }
 
@@ -312,7 +312,7 @@ std::expected<void, Refusal> Demuxer::seek(std::int64_t target_us, int reference
   if (!after) return std::unexpected(after.error());
   auto before = state_->seek_before(target_us, reference);
   if (!before) return std::unexpected(before.error());
-  if (!*after || *before == kNoTimestamp || **after - target_us >= target_us - *before) return {};
+  if (!*after || *before == kNoPts || **after - target_us >= target_us - *before) return {};
   auto again = state_->seek_after(target_us, reference);
   if (!again) return std::unexpected(again.error());
   return {};

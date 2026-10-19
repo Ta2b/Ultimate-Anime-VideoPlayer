@@ -1,10 +1,10 @@
 #include "media/source.h"
 
 #include <algorithm>
-#include <exception>
 #include <format>
 #include <utility>
 
+#include "core/thread.h"
 #include "media/source_loop.h"
 
 namespace ajp::media {
@@ -55,19 +55,14 @@ std::expected<std::unique_ptr<SourceThread>, Refusal> SourceThread::start(Source
   for (const PacketRoute& route : links.packets) wanted.push_back(route.track);
   if (auto kept = media.demuxer.keep_only(wanted); !kept) return std::unexpected(kept.error());
 
-  std::unique_ptr<SourceThread> source(new SourceThread());
   SourceListener* listener = links.listener;
-  source->thread_ = std::jthread([loop = SourceLoop(std::move(media), std::move(links), inbox),
-                                  listener](const std::stop_token& stop) mutable {
-    // Aucune exception ne sort de la boucle : elle devient un refus signalé.
-    try {
-      loop.run(stop);
-    } catch (const std::exception& error) {
-      listener->failed(Refusal{RefusalCode::DecodeFailed, std::format("thread source : {}", error.what())});
-    } catch (...) {
-      listener->failed(Refusal{RefusalCode::DecodeFailed, "thread source : exception inconnue"});
-    }
-  });
+  auto thread = start_thread(
+      "source", ThreadReport([listener](const Refusal& refusal) { listener->failed(refusal); }),
+      [loop = SourceLoop(std::move(media), std::move(links), inbox)](
+          const std::stop_token& stop, const ThreadReport& /*report*/) mutable { loop.run(stop); });
+  if (!thread) return std::unexpected(std::move(thread.error()));
+  std::unique_ptr<SourceThread> source(new SourceThread());
+  source->thread_ = std::move(*thread);
   return source;
 }
 

@@ -175,7 +175,7 @@ std::expected<std::unique_ptr<TrueHdr>, Refusal> open_maxine_at(const fs::path& 
   auto effect = std::make_unique<MaxineEffect>(std::move(*libraries), *api, handle);
   if (Done configured = effect->configure(root); !configured) return std::unexpected(configured.error());
   auto opened = make_true_hdr(config, std::move(effect));
-  if (opened) log().info("TrueHDR Maxine prêt en {}x{}", config.width, config.height);
+  if (opened) make_logger()->info("TrueHDR Maxine prêt en {}x{}", config.width, config.height);
   return opened;
 }
 

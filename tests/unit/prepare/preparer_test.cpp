@@ -54,9 +54,17 @@ class Sink final : public PreparerSink {
     const std::scoped_lock lock(mutex_);
     return progress_;
   }
+  void failed(const ajp::Refusal& refusal) override {
+    const std::scoped_lock lock(mutex_);
+    failures_.push_back(refusal);
+  }
   void refuse_next(int n) {
     const std::scoped_lock lock(mutex_);
     refusals_ = n;
+  }
+  std::size_t failures() {
+    const std::scoped_lock lock(mutex_);
+    return failures_.size();
   }
 
  private:
@@ -64,8 +72,15 @@ class Sink final : public PreparerSink {
   std::condition_variable changed_;
   std::vector<BuildProgress> progress_;
   std::vector<BuildDone> done_;
+  std::vector<ajp::Refusal> failures_;
   int refusals_ = 0;
 };
+
+std::unique_ptr<Preparer> start_preparer(Sink& sink) {
+  auto preparer = Preparer::start(sink);
+  REQUIRE(preparer);
+  return std::move(*preparer);
+}
 
 // Backend sans GPU : build() rend un Artifact nommé d'après le modèle.
 class FakeBackend : public gpu::Backend {
@@ -101,6 +116,11 @@ class FakeBackend : public gpu::Backend {
   std::expected<gpu::Tensor, ajp::Refusal> import(const gpu::ExternalImage&) override {
     return std::unexpected(ajp::Refusal{RefusalCode::FieldOutOfRange, "factice"});
   }
+  std::expected<std::unique_ptr<gpu::TensorBuffer>, ajp::Refusal> alloc_tensor(gpu::TensorType,
+                                                                               const gpu::Shape&) override {
+    return std::unexpected(ajp::Refusal{RefusalCode::FormatUnsupported, "factice"});
+  }
+  gpu::KernelOps* kernels() override { return nullptr; }  // prepare ne lance aucun noyau
   void enqueue(gpu::Engine&, std::span<const gpu::Tensor>, std::span<gpu::Tensor>) override {}
   gpu::Fence signal() override { return {}; }
   void wait(const gpu::Fence&) override {}
@@ -128,10 +148,10 @@ BuildRequest request(std::uint64_t id, std::string model, gpu::Backend* backend,
 TEST_CASE("Preparer : un moteur à la fois, résultats dans l'ordre des demandes", "[prepare][preparer]") {
   Sink sink;
   FakeBackend backend;
-  Preparer preparer(sink);
-  REQUIRE(preparer.submit(request(1, "lent", &backend)));
-  REQUIRE(preparer.submit(request(2, "lent", &backend)));
-  REQUIRE(preparer.submit(request(3, "refus", &backend)));
+  const auto preparer = start_preparer(sink);
+  REQUIRE(preparer->submit(request(1, "lent", &backend)));
+  REQUIRE(preparer->submit(request(2, "lent", &backend)));
+  REQUIRE(preparer->submit(request(3, "refus", &backend)));
   const auto done = sink.wait_done(3);
   REQUIRE(done.size() == 3);
   CHECK(done[0].id == 1);
@@ -151,13 +171,13 @@ TEST_CASE("Preparer : exception, backend absent et demande annulée deviennent d
           "[prepare][preparer]") {
   Sink sink;
   FakeBackend backend;
-  Preparer preparer(sink);
+  const auto preparer = start_preparer(sink);
   std::stop_source cancelled;
   cancelled.request_stop();
-  REQUIRE(preparer.submit(request(1, "exception", &backend)));
-  REQUIRE(preparer.submit(request(2, "span", nullptr)));
-  REQUIRE(preparer.submit(request(3, "span", &backend, cancelled.get_token())));
-  REQUIRE(preparer.submit(request(4, "span", &backend)));
+  REQUIRE(preparer->submit(request(1, "exception", &backend)));
+  REQUIRE(preparer->submit(request(2, "span", nullptr)));
+  REQUIRE(preparer->submit(request(3, "span", &backend, cancelled.get_token())));
+  REQUIRE(preparer->submit(request(4, "span", &backend)));
   const auto done = sink.wait_done(4);
   REQUIRE(done.size() == 4);
   CHECK(test::refusal(done[0].result) == RefusalCode::BuilderCrashed);
@@ -165,16 +185,17 @@ TEST_CASE("Preparer : exception, backend absent et demande annulée deviennent d
   CHECK(test::refusal(done[1].result) == RefusalCode::FieldMissing);
   CHECK(test::refusal(done[2].result) == RefusalCode::Cancelled);
   CHECK(done[3].result.has_value());  // le thread a survécu à l'exception
-  CHECK(backend.calls() == 2);        // la demande annulée n'a rien construit
+  CHECK(sink.failures() == 0);
+  CHECK(backend.calls() == 2);  // la demande annulée n'a rien construit
 }
 
 TEST_CASE("Preparer : annulation de la construction en cours", "[prepare][preparer]") {
   Sink sink;
   FakeBackend backend;
-  Preparer preparer(sink);
+  const auto preparer = start_preparer(sink);
   std::stop_source cancel;
-  REQUIRE(preparer.submit(request(1, "long", &backend, cancel.get_token())));
-  REQUIRE(preparer.submit(request(2, "span", &backend)));
+  REQUIRE(preparer->submit(request(1, "long", &backend, cancel.get_token())));
+  REQUIRE(preparer->submit(request(2, "span", &backend)));
   std::this_thread::sleep_for(50ms);
   cancel.request_stop();
   const auto done = sink.wait_done(2);
@@ -188,8 +209,8 @@ TEST_CASE("Preparer : l'arrêt du thread annule la construction en cours", "[pre
   FakeBackend backend;
   const auto start = std::chrono::steady_clock::now();
   {
-    Preparer preparer(sink);
-    REQUIRE(preparer.submit(request(1, "long", &backend)));
+    const auto preparer = start_preparer(sink);
+    REQUIRE(preparer->submit(request(1, "long", &backend)));
     std::this_thread::sleep_for(50ms);
   }
   CHECK(std::chrono::steady_clock::now() - start < 5s);
@@ -200,10 +221,10 @@ TEST_CASE("Preparer : l'arrêt abandonne la file au lieu de la construire", "[pr
   Sink sink;
   FakeBackend backend;
   {
-    Preparer preparer(sink);
-    REQUIRE(preparer.submit(request(1, "long", &backend)));
-    REQUIRE(preparer.submit(request(2, "lent", &backend)));
-    REQUIRE(preparer.submit(request(3, "lent", &backend)));
+    const auto preparer = start_preparer(sink);
+    REQUIRE(preparer->submit(request(1, "long", &backend)));
+    REQUIRE(preparer->submit(request(2, "lent", &backend)));
+    REQUIRE(preparer->submit(request(3, "lent", &backend)));
     std::this_thread::sleep_for(50ms);  // la première construction a commencé
   }
   CHECK(backend.calls() == 1);
@@ -217,12 +238,12 @@ TEST_CASE("Preparer : un résultat refusé par le puits attend le prochain créd
   Sink sink;
   FakeBackend backend;
   sink.refuse_next(2);  // le premier résultat, puis sa nouvelle tentative avec le second
-  Preparer preparer(sink);
-  REQUIRE(preparer.submit(request(1, "span", &backend)));
-  REQUIRE(preparer.submit(request(2, "span", &backend)));
+  const auto preparer = start_preparer(sink);
+  REQUIRE(preparer->submit(request(1, "span", &backend)));
+  REQUIRE(preparer->submit(request(2, "span", &backend)));
   std::this_thread::sleep_for(100ms);
   CHECK(sink.wait_done(0).empty());  // le second attend derrière le premier, refusé
-  REQUIRE(preparer.credit());
+  REQUIRE(preparer->credit());
   const auto done = sink.wait_done(2);
   REQUIRE(done.size() == 2);
   CHECK(done[0].id == 1);
@@ -255,14 +276,14 @@ TEST_CASE("Preparer : de bout en bout avec TrtexecBuilder et un faux trtexec", "
                           .device = {.name = "RTX de test"},
                           .timeout = 10s});
   Sink sink;
-  Preparer preparer(sink);
+  const auto preparer = start_preparer(sink);
   const gpu::Shape hd{{1, 3, 1080, 1920}};
   REQUIRE(
-      preparer.submit({.id = 7,
-                       .model = {.id = "span", .onnx_path = dir / "span.onnx", .sha256 = sha256_hex(onnx)},
-                       .shapes = {.min = hd, .opt = hd, .max = hd},
-                       .backend = &backend,
-                       .cancel = {}}));
+      preparer->submit({.id = 7,
+                        .model = {.id = "span", .onnx_path = dir / "span.onnx", .sha256 = sha256_hex(onnx)},
+                        .shapes = {.min = hd, .opt = hd, .max = hd},
+                        .backend = &backend,
+                        .cancel = {}}));
   const auto done = sink.wait_done(1);
   REQUIRE(done.size() == 1);
   REQUIRE(done[0].result.has_value());

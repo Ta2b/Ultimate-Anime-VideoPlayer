@@ -10,9 +10,9 @@
 #include <optional>
 #include <utility>
 
-#include "gpu/ir/half.h"
 #include "gpu/ir/onnx_model.h"
 #include "gpu/ir/protobuf.h"
+#include "kernels/ref/half.h"
 
 namespace ajp::gpu::ir::onnx {
 namespace {
@@ -106,7 +106,7 @@ std::expected<void, Refusal> decode_raw(Tensor& tensor, Bytes raw, std::size_t c
       case kFloat16: {
         const auto lo = std::to_integer<std::uint16_t>(raw[2 * i]);
         const auto hi = std::to_integer<std::uint16_t>(raw[(2 * i) + 1]);
-        tensor.floats.push_back(half_to_float(static_cast<std::uint16_t>(lo | (hi << 8U))));
+        tensor.floats.push_back(kernels::ref::half_to_float(static_cast<std::uint16_t>(lo | (hi << 8U))));
         break;
       }
       case kInt32:
@@ -127,7 +127,7 @@ std::expected<void, Refusal> decode_half_words(Tensor& tensor, const std::vector
       return proto::malformed(
           std::format("tenseur {} : motif FLOAT16 {} hors de 16 bits", tensor.name, word));
     }
-    tensor.floats.push_back(half_to_float(static_cast<std::uint16_t>(word)));
+    tensor.floats.push_back(kernels::ref::half_to_float(static_cast<std::uint16_t>(word)));
   }
   return {};
 }

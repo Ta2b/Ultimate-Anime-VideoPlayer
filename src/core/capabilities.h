@@ -93,7 +93,11 @@ struct CapabilityRow {
 std::vector<CapabilityRow> panel_rows(std::span<const CapabilityFacts> facts);
 
 // Ce que resolve() peut utiliser maintenant : les capacités installées.
-Capabilities to_resolve_capabilities(std::span<const CapabilityFacts> facts);
+// true_hdr_environment : vendor_hdr::first_blocker_reason(), vide si rien ne bloque ;
+// app la passe, car core ne dépend pas de vendor_hdr. Une route TrueHDR non installée
+// bloque sous kTrueHdrNotInstalled.
+Capabilities to_resolve_capabilities(std::span<const CapabilityFacts> facts,
+                                     std::string_view true_hdr_environment);
 
 // Capacités d'un Plan qui ne sont pas qualifiées : l'OSD les signale.
 std::vector<CapabilityId> unqualified_in(const Plan& plan, std::span<const CapabilityFacts> facts);

@@ -66,6 +66,12 @@ std::optional<DisplayInfo> parse_display(std::string_view text) {
   display.width = static_cast<int>(*width);
   display.height = static_cast<int>(*height);
   display.refresh_hz = *hz;
+  // Ce que l'option dit remplace l'écran détecté ; la luminance garde ses valeurs par défaut.
+  if (display.hdr) display.space = OutputSpace::Pq;
+  display.provenance.size = Provenance::CommandLine;
+  display.provenance.refresh = Provenance::CommandLine;
+  display.provenance.hdr = Provenance::CommandLine;
+  display.provenance.space = Provenance::CommandLine;
   return display;
 }
 

@@ -98,6 +98,9 @@ TEST_CASE("VideoDecoder : pixels FFV1 exacts, pts et durées en microsecondes", 
     CHECK(frame.data->memory() == FrameMemory::Host);
     CHECK(frame.data->plane_count() == 3);
     CHECK(frame.data->ready_event() == 0);
+    CHECK(frame.data->ready_value() == 0);    // ni CUevent ni sémaphore timeline
+    CHECK(frame.data->native_pitch(0) == 0);  // mémoire hôte : le pas est host_stride
+    CHECK(frame.data->native_plane(0) == 0);
     CHECK(frame.data->host_stride(0) >= 64);
     CHECK(frame.data->host_plane(1).size() >= frame.data->host_stride(1) * 23 + 32);
     CHECK(frame.data->host_plane(3).empty());

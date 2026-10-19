@@ -30,13 +30,26 @@ std::expected<std::unique_ptr<AudioThread>, Refusal> AudioThread::start(std::uni
                                                             options.max_packets, kMaxPacketBound));
   }
   if (auto config = checked(options.player); !config) return std::unexpected(config.error());
-  return std::unique_ptr<AudioThread>(new AudioThread(std::move(output), std::move(options)));
+  // Le thread démarre une fois l'objet construit : un refus du système détruit l'objet
+  // sans qu'aucun thread ne l'ait vu.
+  std::unique_ptr<AudioThread> audio(new AudioThread(std::move(output), std::move(options)));
+  AudioThread* self = audio.get();
+  auto thread =
+      start_thread("audio", audio->report_,
+                   [self](const std::stop_token& stop, const ThreadReport& /*report*/) { self->run(stop); });
+  if (!thread) return std::unexpected(std::move(thread.error()));
+  audio->thread_ = std::move(*thread);
+  return audio;
 }
 
 AudioThread::AudioThread(std::unique_ptr<AudioOutput> output, AudioThreadOptions options)
     : max_packets_(options.max_packets),
       credit_(std::move(options.credit)),
-      inbox_(bounds(options.max_packets)) {
+      inbox_(bounds(options.max_packets)),
+      report_([log = make_logger(), refused = options.refused](const Refusal& refusal) {
+        log->error("{} : {}", name(refusal.code), refusal.detail);
+        if (refused) refused(refusal);
+      }) {
   // Thread du périphérique : poser la mesure, rien d'autre. Si une mesure
   // attend déjà, celle-ci est de trop et se perd sans dommage.
   output->on_demand([this](const DeviceReading& reading) { inbox_.try_push(DeviceReading{reading}); });
@@ -44,7 +57,6 @@ AudioThread::AudioThread(std::unique_ptr<AudioOutput> output, AudioThreadOptions
       std::move(output), options.player,
       PlayerEvents{.packet_released = [this] { release_packet(); }, .refused = std::move(options.refused)});
   clock_ = player_->clock();
-  thread_ = std::jthread([this](const std::stop_token& stop) { run(stop); });
 }
 
 AudioThread::~AudioThread() = default;

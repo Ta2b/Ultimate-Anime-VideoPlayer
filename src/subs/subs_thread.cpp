@@ -1,12 +1,12 @@
 #include "subs/subs_thread.h"
 
 #include <exception>
-#include <format>
 #include <optional>
 #include <utility>
 
 #include <spdlog/logger.h>
 
+#include "core/thread.h"
 #include "subs/log.h"
 #include "subs/subs_worker.h"
 
@@ -50,15 +50,13 @@ std::expected<std::unique_ptr<SubsThread>, Refusal> SubsThread::start(const Rend
   auto worker = SubsWorker::create(options, sink, return_route(inbox));
   if (!worker) return std::unexpected(std::move(worker.error()));
 
+  auto started = start_thread(
+      "subs", ThreadReport([&sink](const Refusal& refusal) { sink.refused(refusal); }),
+      [worker = std::move(*worker), inbox = std::move(inbox), log = make_logger()](
+          const std::stop_token& stop, const ThreadReport& /*report*/) { run(stop, *worker, *inbox, *log); });
+  if (!started) return std::unexpected(std::move(started.error()));
   std::unique_ptr<SubsThread> thread(new SubsThread());
-  try {
-    thread->thread_ =
-        std::jthread([worker = std::move(*worker), inbox = std::move(inbox), log = make_logger()](
-                         const std::stop_token& stop) { run(stop, *worker, *inbox, *log); });
-  } catch (const std::exception& error) {  // std::system_error : le système refuse le thread
-    return std::unexpected(
-        Refusal{RefusalCode::ThreadUnavailable, std::format("thread subs : {}", error.what())});
-  }
+  thread->thread_ = std::move(*started);
   return thread;
 }
 
