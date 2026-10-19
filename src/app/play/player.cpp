@@ -102,11 +102,13 @@ constexpr std::uint32_t kWelcomeFrameMs = 16;
 struct SnapshotPlan {
   std::optional<std::filesystem::path> path;
   std::int64_t at_us = 0;
-  // Demande l'instantané à l'écran si since_us remonte à at_us.
-  void maybe(PlaceboScreen& screen, std::int64_t since_us) {
-    if (!path || host_now_us() - since_us < at_us) return;
+  // Demande l'instantané à l'écran si since_us remonte à at_us ; true s'il vient d'être demandé
+  // (une présentation doit suivre, même en pause).
+  bool maybe(PlaceboScreen& screen, std::int64_t since_us) {
+    if (!path || host_now_us() - since_us < at_us) return false;
     screen.snapshot_next(*path);
     path.reset();
+    return true;
   }
 };
 
@@ -319,9 +321,45 @@ std::string label_of(const std::vector<TrackEntry>& entries, int track) {
   return found != entries.end() ? found->label : std::format("piste {}", track);
 }
 
-std::string output_text(const PlaceboScreen& screen, int peak_nits) {
-  return peak_nits > 0 ? std::format("{} · RTX HDR, pic {} nits", screen.output_description(), peak_nits)
-                       : screen.output_description();
+// Le grade HDR de la chaîne : route TrueHDR si RTX HDR est ouvert, native si le HDR natif est choisi
+// (le SDR converti en PQ par libplacebo, aspect TrueHDR émulé avec les réglages de RTX HDR), aucun
+// en SDR. Pic : celui de RTX HDR, ou celui de l'écran (1000 nits s'il ne le dit pas).
+std::optional<render::GradeParams> grade_of(const PlaySettings& s, bool true_hdr_open, int peak_nits,
+                                            int auto_peak) {
+  const int peak = true_hdr_open && peak_nits > 0 ? peak_nits
+                   : s.true_hdr_peak > 0          ? s.true_hdr_peak
+                   : auto_peak > 0                ? auto_peak
+                                                  : 1000;
+  render::GradeSettings g = s.grade_values;
+  g.contrast = s.true_hdr_contrast;
+  g.saturation = s.true_hdr_saturation;
+  g.middle_gray = s.true_hdr_gray;
+  const core::HdrMode route = true_hdr_open  ? core::HdrMode::TrueHdr
+                              : s.hdr_native ? core::HdrMode::Native
+                                             : core::HdrMode::Off;
+  auto decision = render::decide_grade(g, render::GradeContext{.route = route,
+                                                               .source_hdr = false,
+                                                               .output_pq = true,
+                                                               .enabled = s.grade,
+                                                               .peak_nits = static_cast<double>(peak)});
+  if (!decision) {
+    log_channel("app")->warn("grade : {}", decision.error().detail);
+    return std::nullopt;
+  }
+  if (decision->mode == render::GradeMode::Neutral) return std::nullopt;
+  return decision->params;
+}
+
+std::string output_text(const PlaceboScreen& screen, const PlaySettings& s, int peak_nits) {
+  std::string text = screen.output_description();
+  if (peak_nits > 0) {
+    text += std::format(" · RTX HDR, pic {} nits", peak_nits);
+  } else if (s.hdr_native && screen.hdr_output()) {
+    text += " · HDR natif";
+  }
+  if (s.grade && (peak_nits > 0 || s.hdr_native) && screen.hdr_output())
+    text += std::format(" · grade {}", render::preset_label(s.grade_preset));
+  return text;
 }
 
 double fps_of(const media::Rational& rate) {
@@ -448,7 +486,16 @@ void apply_live(Chain& to, const PlaySettings& wanted, std::int64_t now_us) {
     if (after.peak_nits != before.peak_nits) {
       to.screen.set_source_color(pq_color(after.peak_nits));
       to.peak_nits = after.peak_nits;
-      to.session.set_output(output_text(to.screen, to.peak_nits));
+    }
+  }
+  if (wanted.grade != r.grade || wanted.grade_preset != r.grade_preset ||
+      wanted.grade_values != r.grade_values || wanted.hdr_native != r.hdr_native || after != before) {
+    to.screen.set_grade(grade_of(wanted, to.true_hdr_open, to.peak_nits, to.auto_peak));
+    to.session.set_output(output_text(to.screen, wanted, to.peak_nits));
+    if (wanted.grade_preset != r.grade_preset || wanted.grade != r.grade) {
+      controls.notify(wanted.grade ? std::format("Grade : {}", render::preset_label(wanted.grade_preset))
+                                   : std::string("Grade désactivé"),
+                      now_us);
     }
   }
   if (wanted.audio_delay_ms != r.audio_delay_ms)
@@ -840,8 +887,16 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
     show_loading(p.screen, p.ui, "Préparation de RTX HDR");
     auto opened = open_rtx_hdr(p.options.true_hdr_sdk, p.paths, settings, auto_peak, p.screen,
                                *(*backend)->kernels(), work.width * factor, work.height * factor);
-    if (!opened) return std::unexpected(std::move(opened.error()));
-    peak_nits = *opened;
+    if (opened) {
+      peak_nits = *opened;
+    } else {
+      // Le plan : TrueHDR qui échoue laisse la place à la route native, et l'écran le dit.
+      log->warn("{} ; HDR natif à la place", opened.error().detail);
+      p.ui.controls().notify("RTX HDR indisponible : HDR natif", host_now_us());
+      settings.true_hdr = false;
+      settings.hdr_native = true;
+      p.screen.set_source_color(ColorInfo{});
+    }
   } else {
     p.screen.set_source_color(ColorInfo{});  // celle de la source, reprise à la première image
   }
@@ -891,7 +946,8 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
   session_config.fullscreen_after_us = options.fullscreen_after_us;
   session_config.header = {label_text};
   session_config.tracks = (*pipeline)->describe();
-  session_config.output = output_text(out, peak_nits);
+  p.screen.set_grade(grade_of(settings, settings.true_hdr, peak_nits, auto_peak));
+  session_config.output = output_text(out, settings, peak_nits);
   session_config.display_period_us = display_period_us(out.window());
   session_config.stats = settings.stats;
   session_config.subtitle_scale = settings.subtitle_scale;
@@ -910,6 +966,7 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
           .rife_available = rife_model.has_value(),
           .rife_loaded = rife_loaded,
           .true_hdr_available = std::filesystem::exists(p.options.true_hdr_sdk) || settings.true_hdr,
+          .hdr_output = p.screen.hdr_output(),
           .auto_peak = auto_peak,
           .engines = engine_badges(p.paths.engines, model ? model->path : std::filesystem::path(), work,
                                    rife_loaded ? rife_model : std::nullopt, rife_motion ? g : image_g),
@@ -951,7 +1008,7 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
          ++p.next_key) {
       press(p.options.keys[p.next_key].second, out.window());
     }
-    p.snapshot.maybe(out, p.began_us);
+    const bool snapshot_now = p.snapshot.maybe(out, p.began_us);
     SDL_Event event;
     while (SDL_PollEvent(&event)) {
       if (p.ui.handle(event, host_now_us(), actions)) continue;  // saisie dans l'interface
@@ -959,7 +1016,8 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
     }
     (*pipeline)->pump();
     while (auto message = try_take((*pipeline)->inbox())) session.handle(std::move(*message));
-    const UiFrame ui_frame = p.ui.frame(host_now_us(), session.view(), actions);
+    UiFrame ui_frame = p.ui.frame(host_now_us(), session.view(), actions);
+    ui_frame.changed |= snapshot_now;
     for (const Input& input : actions) apply(input, chain, host_now_us());
     actions.clear();
     // play.toml réécrit au plus une fois par seconde pendant qu'on règle.

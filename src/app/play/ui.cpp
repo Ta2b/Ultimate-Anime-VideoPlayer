@@ -314,8 +314,11 @@ UiFrame PlayerUi::frame(std::int64_t now_us, const ControlsView& view, std::vect
     }
     cursor_hidden_ = hide_cursor;
   }
-  if (!controls_.needs_frame(now_us, view, input_pending_))
+  // ImGui place certains éléments (onglets, fenêtre qui s'ouvre) une image après les avoir reçus :
+  // après une entrée, deux images de plus, même en pause sans autre événement.
+  if (!controls_.needs_frame(now_us, view, input_pending_ || settle_ > 0))
     return UiFrame{.draw = draw_, .changed = false, .bottom = bottom_, .top = top_};
+  settle_ = input_pending_ ? kSettleFrames : std::max(settle_ - 1, 0);
   input_pending_ = false;
 
   ImGuiIO& io = ImGui::GetIO();

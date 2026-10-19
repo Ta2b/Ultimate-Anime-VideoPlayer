@@ -20,6 +20,7 @@
 #include "app/play/options.h"
 #include "core/profile.h"
 #include "core/types.h"
+#include "render/grade_params.h"
 
 namespace ajp::app::play {
 
@@ -31,6 +32,8 @@ std::string_view name(Downscale filter);  // « area », la clé de play.toml
 // Libellé lisible d'un modèle AnimeJaNai : « HD V3.1 Sharp1 Performance ».
 std::string model_label(const std::string& file);
 std::string_view label(Downscale filter);  // « Area », pour le menu
+// Les valeurs du grade pour ce préréglage ; current pour « Personnalisé » et pour gamut_p3.
+render::GradeSettings with_preset(render::GradePreset preset, const render::GradeSettings& current);
 
 // Statistiques à l'écran : toutes (Tab), ou mesure par mesure.
 struct StatsSettings {
@@ -58,9 +61,17 @@ struct PlaySettings {
   int true_hdr_gray = 50;
   int true_hdr_peak = 0;  // 0 : la crête vue par le contenu sur l'écran
   bool true_hdr_debanding = true;
+  // RTX HDR éteint : le SDR passe en PQ par libplacebo et le grade émule l'aspect TrueHDR (route
+  // native, mêmes contraste, saturation, gris moyen et pic) ; faux : sortie SDR sans grade.
+  bool hdr_native = false;
   int audio_delay_ms = 0;
   float volume = 1.0F;
   float subtitle_scale = 1.0F;  // taille des sous-titres
+  // Grade HDR sur la sortie PQ (render/grade_params.h), sur les deux routes ; en direct. Hors
+  // « Personnalisé », grade_values suit le préréglage (gamut_p3 excepté, propre à l'écran).
+  bool grade = true;
+  render::GradePreset grade_preset = render::GradePreset::Eclatant;
+  render::GradeSettings grade_values = render::grade_preset(render::GradePreset::Eclatant);
   StatsSettings stats;
   friend bool operator==(const PlaySettings&, const PlaySettings&) = default;
 };

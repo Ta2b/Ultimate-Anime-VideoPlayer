@@ -66,8 +66,8 @@ FirstRunView first_run_view(const GpuFacts& gpu, const EnginesHere& here, Profil
 // first_run_done.
 core::Settings settings_after(const FirstRunView& view, core::Settings settings);
 
-// La chaîne que les moteurs choisis permettent : sans TensorRT, ni SPAN ni RIFE ; sans Maxine, pas
-// de RTX HDR. notes dit ce qui a été retiré.
+// La chaîne que les moteurs choisis permettent : sans TensorRT, ni SPAN ni RIFE ; sans Maxine, le
+// HDR natif au lieu de RTX HDR. notes dit ce qui a changé.
 PlaySettings within_engines(PlaySettings settings, const core::Settings& engines,
                             std::vector<std::string>& notes);
 // « Vulkan, TensorRT, NVIDIA Maxine », pour l'onglet Moteurs.

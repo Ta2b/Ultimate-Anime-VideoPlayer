@@ -28,9 +28,28 @@ TEST_CASE("play.toml relit à l'identique ce qu'il a écrit", "[app][settings]")
   s.subtitle_scale = 1.25F;
   s.stats.frames = true;
   s.stats.memory = true;
+  s.hdr_native = true;
+  s.grade_preset = render::GradePreset::Custom;
+  s.grade_values.shadows = 0.55;
+  s.grade_values.guard = 0.25;
+  s.grade_values.gamut_p3 = true;
   const auto back = parse_settings(format_settings(s));
   REQUIRE(back);
   CHECK(*back == s);
+}
+
+TEST_CASE("Grade : un préréglage nommé donne ses valeurs, gamut P3 reste celui du fichier",
+          "[app][settings]") {
+  const PlaySettings defaults;
+  CHECK(defaults.grade);
+  CHECK(defaults.grade_preset == render::GradePreset::Eclatant);
+  const auto natural = parse_settings("[grade]\npreset = \"naturel\"\nshadows = 0.7\ngamut_p3 = true\n");
+  REQUIRE(natural);
+  CHECK(natural->grade_values.shadows == render::GradeSettings{}.shadows);
+  CHECK(natural->grade_values.gamut_p3);
+  CHECK_FALSE(parse_settings("[grade]\npreset = \"criard\"\n"));
+  CHECK(parse_settings("[grade]\npreset = \"perso\"\nguard = 2.0\n").error().detail.find("guard") !=
+        std::string::npos);
 }
 
 TEST_CASE("Une clé absente garde son défaut, une clé inconnue est ignorée", "[app][settings]") {
@@ -112,7 +131,11 @@ TEST_CASE("Ce qu'un changement demande : direct ou réouverture, dit avant d'app
   live.downscale = Downscale::Mitchell;
   live.volume = 0.5F;
   live.stats.all = true;
+  live.hdr_native = true;
+  live.grade_preset = render::GradePreset::Naturel;
+  live.grade_values = render::grade_preset(render::GradePreset::Naturel);
   CHECK(change_between(running, live, true).cost == ChangeCost::Live);
+  CHECK(live_part(running, live, true) == live);
   PlaySettings height = running;
   height.work_height = 1080;
   const Change reopen = change_between(running, height, true);

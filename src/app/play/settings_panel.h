@@ -40,6 +40,7 @@ struct SettingsChoices {
   bool rife_available = false;      // modèle RIFE trouvé
   bool rife_loaded = false;         // moteur RIFE chargé : ×N en direct
   bool true_hdr_available = false;  // SDK Maxine présent
+  bool hdr_output = true;           // l'écran reçoit du PQ (sinon ni HDR natif ni grade)
   int auto_peak = 0;                // pic automatique de RTX HDR, en nits
   std::vector<EngineBadge> engines;
   std::string chosen_engines;  // « Vulkan, TensorRT, NVIDIA Maxine (RTX HDR) » (settings.toml)

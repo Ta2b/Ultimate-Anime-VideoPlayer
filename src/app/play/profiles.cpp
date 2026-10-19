@@ -135,7 +135,7 @@ PlaySettings apply_profile(const core::Profile& profile, const core::SourceInfo&
   settings.work_height = 0;
   settings.rife_factor = 0;
   settings.true_hdr = profile.hdr == core::HdrMode::TrueHdr;
-  if (profile.hdr == core::HdrMode::Native) notes.emplace_back("HDR natif : la source passe telle quelle");
+  settings.hdr_native = profile.hdr == core::HdrMode::Native;
   const core::Rule* rule = core::match_rule(profile, source);
   if (rule == nullptr) {
     notes.emplace_back("aucune règle pour cette source : image telle quelle");
@@ -203,7 +203,8 @@ std::vector<core::Rule> rules_of(const PlaySettings& s, std::string_view default
 }
 
 core::HdrMode hdr_of(const PlaySettings& s) {
-  return s.true_hdr ? core::HdrMode::TrueHdr : core::HdrMode::Off;
+  if (s.true_hdr) return core::HdrMode::TrueHdr;
+  return s.hdr_native ? core::HdrMode::Native : core::HdrMode::Off;
 }
 
 std::string profile_summary(const core::Profile& profile, const core::SourceInfo& source) {
@@ -222,6 +223,7 @@ std::string profile_summary(const core::Profile& profile, const core::SourceInfo
   }
   if (text.empty()) text = "source telle quelle";
   if (s.true_hdr) text += " · RTX HDR";
+  if (s.hdr_native) text += " · HDR natif";
   return text;
 }
 

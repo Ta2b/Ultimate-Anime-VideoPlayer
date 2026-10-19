@@ -95,6 +95,7 @@ TEST_CASE("Sans TensorRT ni Maxine, la chaîne garde l'image source et le dit", 
   CHECK_FALSE(plain.upscale);
   CHECK(plain.rife_factor == 0);
   CHECK_FALSE(plain.true_hdr);
+  CHECK(plain.hdr_native);
   CHECK(notes.size() == 2);
 
   notes.clear();

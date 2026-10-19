@@ -23,6 +23,7 @@
 #include "app/play/placebo_screen.h"
 #include "core/gpu_device.h"
 #include "core/ring.h"
+#include "render/grade.h"
 #include "subs/subtitle_frame.h"
 
 namespace ajp::app::play {
@@ -111,6 +112,12 @@ struct PlaceboScreen::Impl {
   bool fullscreen = false;
   bool hdr_output = false;
   std::optional<std::filesystem::path> snapshot;
+  std::optional<render::Grade> grade;  // absent si les hooks ne se lisent pas (dit au journal)
+  bool grade_on = false;
+  // Temps GPU des passes du grade (minuteries de libplacebo), par image composée avec lui ; le
+  // résumé va au journal à la fermeture de l'écran.
+  mutable std::uint64_t grade_frame_ns = 0;
+  mutable std::vector<std::uint32_t> grade_gpu_us;
 };
 
 }  // namespace ajp::app::play

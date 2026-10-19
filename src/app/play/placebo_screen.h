@@ -10,6 +10,7 @@
 #include <expected>
 #include <filesystem>
 #include <memory>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -18,6 +19,7 @@
 #include "core/gpu_device.h"
 #include "core/ring.h"
 #include "core/types.h"
+#include "render/grade_params.h"
 
 struct SDL_Window;
 struct ImGuiPlatformIO;
@@ -61,6 +63,9 @@ class PlaceboScreen final : public Screen {
   std::expected<std::vector<RingSlotDesc>, Refusal> create_ring(int width, int height, std::uint32_t count);
   // Couleur des images du ring : celle de la source (l'agrandissement ne la change pas).
   void set_source_color(const ColorInfo& color);
+  // Grade HDR (render/grade.h) posé sur OUTPUT quand la sortie est en PQ ; rien : sans grade.
+  void set_grade(const std::optional<render::GradeParams>& params);
+  bool hdr_output() const;  // la dernière présentation était en PQ
   // Soumet le travail en attente (rendus, cessions de slots) sans l'attendre.
   void flush();
   // La prochaine présentation est aussi rendue en SDR hors écran et écrite en PPM (P6) : ce

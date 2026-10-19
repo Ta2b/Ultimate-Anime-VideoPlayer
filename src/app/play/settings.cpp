@@ -69,6 +69,11 @@ std::expected<void, Refusal> read(const toml::table& table, std::string_view sec
       out = static_cast<float>(*v);
       return {};
     }
+  } else if constexpr (std::is_same_v<T, double>) {
+    if (auto v = node->value<double>()) {
+      out = *v;
+      return {};
+    }
   } else {
     if (auto v = node->value_exact<std::string>()) {
       out = *v;
@@ -120,6 +125,12 @@ std::string model_label(const std::string& file) {
   return out.empty() ? file : out;
 }
 
+render::GradeSettings with_preset(render::GradePreset preset, const render::GradeSettings& current) {
+  render::GradeSettings out = render::grade_preset(preset, current);
+  out.gamut_p3 = current.gamut_p3;
+  return out;
+}
+
 std::string_view name(Downscale filter) {
   return kDownscales[static_cast<std::size_t>(filter)].key;
 }
@@ -146,6 +157,8 @@ std::expected<PlaySettings, Refusal> validate(const PlaySettings& s) {
     if (auto peak = check("rtx_hdr.peak", s.true_hdr_peak, limits::kTrueHdrPeak); !peak)
       return std::unexpected(peak.error());
   }
+  if (auto grade = render::check_grade_settings(s.grade_values); !grade)
+    return std::unexpected(grade.error());
   if (s.model.find('/') != std::string::npos || s.model.find('\\') != std::string::npos)
     return refuse(RefusalCode::FieldOutOfRange,
                   std::format("image.model : « {} » n'est pas un nom de fichier", s.model));
@@ -188,6 +201,7 @@ std::expected<PlaySettings, Refusal> parse_settings(std::string_view toml_text) 
     reads.push_back(read(*hdr, "rtx_hdr", "middle_gray", s.true_hdr_gray));
     reads.push_back(read(*hdr, "rtx_hdr", "peak", s.true_hdr_peak));
     reads.push_back(read(*hdr, "rtx_hdr", "debanding", s.true_hdr_debanding));
+    reads.push_back(read(*hdr, "rtx_hdr", "native", s.hdr_native));
   }
   if (const toml::table* audio = section(root, "audio")) {
     reads.push_back(read(*audio, "audio", "delay_ms", s.audio_delay_ms));
@@ -195,6 +209,31 @@ std::expected<PlaySettings, Refusal> parse_settings(std::string_view toml_text) 
   }
   if (const toml::table* subtitles = section(root, "subtitles"))
     reads.push_back(read(*subtitles, "subtitles", "scale", s.subtitle_scale));
+  if (const toml::table* grade = section(root, "grade")) {
+    std::string preset(render::preset_key(s.grade_preset));
+    render::GradeSettings& v = s.grade_values;
+    reads.push_back(read(*grade, "grade", "enabled", s.grade));
+    reads.push_back(read(*grade, "grade", "preset", preset));
+    reads.push_back(read(*grade, "grade", "shadows", v.shadows));
+    reads.push_back(read(*grade, "grade", "highlights", v.highlights));
+    reads.push_back(read(*grade, "grade", "highlights_rtx", v.highlights_rtx));
+    reads.push_back(read(*grade, "grade", "vibrance", v.vibrance));
+    reads.push_back(read(*grade, "grade", "vibrance_rtx", v.vibrance_rtx));
+    reads.push_back(read(*grade, "grade", "area_rtx", v.area_rtx));
+    reads.push_back(read(*grade, "grade", "guard", v.guard));
+    reads.push_back(read(*grade, "grade", "gamut_p3", v.gamut_p3));
+    bool known = false;
+    for (int i = 0; i < render::kGradePresetCount; ++i) {
+      const auto candidate = static_cast<render::GradePreset>(i);
+      if (render::preset_key(candidate) == preset) {
+        s.grade_preset = candidate;
+        known = true;
+      }
+    }
+    if (!known)
+      reads.emplace_back(refuse(RefusalCode::FieldOutOfRange, std::format("grade.preset : « {} »", preset)));
+    s.grade_values = with_preset(s.grade_preset, v);
+  }
   if (const toml::table* stats = section(root, "stats")) {
     reads.push_back(read(*stats, "stats", "all", s.stats.all));
     reads.push_back(read(*stats, "stats", "chain", s.stats.chain));
@@ -224,12 +263,26 @@ std::string format_settings(const PlaySettings& s) {
                                      {"saturation", s.true_hdr_saturation},
                                      {"middle_gray", s.true_hdr_gray},
                                      {"peak", s.true_hdr_peak},
-                                     {"debanding", s.true_hdr_debanding}});
+                                     {"debanding", s.true_hdr_debanding},
+                                     {"native", s.hdr_native}});
   // Le volume au centième : 0.85 et non 0.8500000238418579.
   root.insert("audio", toml::table{{"delay_ms", s.audio_delay_ms},
                                    {"volume", std::round(static_cast<double>(s.volume) * 100.0) / 100.0}});
   root.insert("subtitles",
               toml::table{{"scale", std::round(static_cast<double>(s.subtitle_scale) * 100.0) / 100.0}});
+  // Les réglages du grade au centième, comme le menu les montre.
+  const auto hundredth = [](double v) { return std::round(v * 100.0) / 100.0; };
+  const render::GradeSettings& g = s.grade_values;
+  root.insert("grade", toml::table{{"enabled", s.grade},
+                                   {"preset", std::string(render::preset_key(s.grade_preset))},
+                                   {"shadows", hundredth(g.shadows)},
+                                   {"highlights", hundredth(g.highlights)},
+                                   {"highlights_rtx", hundredth(g.highlights_rtx)},
+                                   {"vibrance", hundredth(g.vibrance)},
+                                   {"vibrance_rtx", hundredth(g.vibrance_rtx)},
+                                   {"area_rtx", hundredth(g.area_rtx)},
+                                   {"guard", hundredth(g.guard)},
+                                   {"gamut_p3", g.gamut_p3}});
   root.insert("stats", toml::table{{"all", s.stats.all},
                                    {"chain", s.stats.chain},
                                    {"frames", s.stats.frames},
@@ -330,9 +383,13 @@ PlaySettings live_part(const PlaySettings& running, const PlaySettings& wanted, 
   s.true_hdr_gray = wanted.true_hdr_gray;
   s.true_hdr_peak = wanted.true_hdr_peak;
   s.true_hdr_debanding = wanted.true_hdr_debanding;
+  s.hdr_native = wanted.hdr_native;
   s.audio_delay_ms = wanted.audio_delay_ms;
   s.volume = wanted.volume;
   s.subtitle_scale = wanted.subtitle_scale;
+  s.grade = wanted.grade;
+  s.grade_preset = wanted.grade_preset;
+  s.grade_values = wanted.grade_values;
   s.stats = wanted.stats;
   return s;
 }

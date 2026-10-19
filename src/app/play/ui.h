@@ -75,6 +75,8 @@ class PlayerUi {
   PlaySettings running_;
   SettingsChoices choices_;
   bool input_pending_ = false;
+  static constexpr int kSettleFrames = 2;
+  int settle_ = 0;  // images encore à recomposer après la dernière entrée
   struct Click {
     int button = 0;
     int count = 1;

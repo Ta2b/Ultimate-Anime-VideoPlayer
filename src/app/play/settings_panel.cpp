@@ -113,13 +113,26 @@ void fluidity_tab(PlaySettings& d, const SettingsChoices& choices) {
   note("Les coupes de scène et les dessins tenus ne sont pas interpolés.");
 }
 
+// La route HDR : RTX HDR (TrueHDR), HDR natif (libplacebo, aspect TrueHDR émulé), ou SDR.
+constexpr std::array<const char*, 3> kRoutes{"RTX HDR (TrueHDR)", "HDR natif (libplacebo)", "SDR"};
+
 void hdr_tab(PlaySettings& d, const SettingsChoices& choices) {
-  section("RTX HDR (Maxine TrueHDR)");
-  ImGui::BeginDisabled(!choices.true_hdr_available);
-  ImGui::Checkbox("Activer RTX HDR", &d.true_hdr);
-  ImGui::EndDisabled();
+  section("Sortie");
+  const int route = d.true_hdr ? 0 : (d.hdr_native ? 1 : 2);
+  if (ImGui::BeginCombo("Route", kRoutes[static_cast<std::size_t>(route)])) {
+    for (int i = 0; i < static_cast<int>(kRoutes.size()); ++i) {
+      ImGui::BeginDisabled(i == 0 && !choices.true_hdr_available);
+      if (ImGui::Selectable(kRoutes[static_cast<std::size_t>(i)], i == route)) {
+        d.true_hdr = i == 0;
+        d.hdr_native = i == 1;
+      }
+      ImGui::EndDisabled();
+    }
+    ImGui::EndCombo();
+  }
   if (!choices.true_hdr_available) note("SDK Maxine VideoFX introuvable (/usr/local/VideoFX).");
-  ImGui::Spacing();
+  if (!choices.hdr_output) note("L'écran ne reçoit pas de HDR10 : la sortie reste SDR.");
+  section("RTX HDR (Maxine TrueHDR) et son émulation");
   bool automatic = d.true_hdr_peak == 0;
   if (ImGui::Checkbox(std::format("Pic automatique ({} nits)", choices.auto_peak).c_str(), &automatic))
     d.true_hdr_peak =
@@ -134,7 +147,9 @@ void hdr_tab(PlaySettings& d, const SettingsChoices& choices) {
   ImGui::SliderInt("Saturation", &d.true_hdr_saturation, limits::kTrueHdrSaturation.lo,
                    limits::kTrueHdrSaturation.hi);
   ImGui::SliderInt("Gris moyen", &d.true_hdr_gray, limits::kTrueHdrGray.lo, limits::kTrueHdrGray.hi);
+  ImGui::BeginDisabled(!d.true_hdr);
   ImGui::Checkbox("Débandage", &d.true_hdr_debanding);
+  ImGui::EndDisabled();
   if (ImGui::Button("Valeurs par défaut")) {
     const PlaySettings defaults;
     d.true_hdr_peak = defaults.true_hdr_peak;
@@ -144,8 +159,57 @@ void hdr_tab(PlaySettings& d, const SettingsChoices& choices) {
     d.true_hdr_debanding = defaults.true_hdr_debanding;
   }
   note(
-      "Réglages appliqués en direct. Gris moyen : luminosité des tons moyens ; le débandage lisse les "
-      "dégradés (le couper allège un peu RTX HDR).");
+      "Réglages appliqués en direct, sur RTX HDR comme sur son émulation (HDR natif). Gris moyen : "
+      "luminosité des tons moyens ; le débandage lisse les dégradés (le couper allège un peu RTX HDR).");
+}
+
+// Un curseur sur un réglage du grade (double) ; true s'il a bougé.
+bool grade_slider(const char* label, double& value, core::Range<double> range) {
+  auto shown = static_cast<float>(value);
+  if (!ImGui::SliderFloat(label, &shown, static_cast<float>(range.lo), static_cast<float>(range.hi), "%.2f"))
+    return false;
+  value = static_cast<double>(shown);
+  return true;
+}
+
+void grade_tab(PlaySettings& d, const SettingsChoices& choices) {
+  section("Grade HDR");
+  ImGui::Checkbox("Grader la sortie HDR", &d.grade);
+  ImGui::BeginDisabled(!d.grade);
+  if (ImGui::BeginCombo("Préréglage", std::string(render::preset_label(d.grade_preset)).c_str())) {
+    for (int i = 0; i < render::kGradePresetCount; ++i) {
+      const auto preset = static_cast<render::GradePreset>(i);
+      if (ImGui::Selectable(std::string(render::preset_label(preset)).c_str(), preset == d.grade_preset)) {
+        d.grade_preset = preset;
+        d.grade_values = with_preset(preset, d.grade_values);
+      }
+    }
+    ImGui::EndCombo();
+  }
+  render::GradeSettings& g = d.grade_values;
+  using namespace render::grade_limits;
+  bool moved = false;
+  moved |= grade_slider("Éclats", g.highlights_rtx, kHighlights);
+  moved |= grade_slider("Aplats lumineux", g.area_rtx, kAreaRtx);
+  moved |= grade_slider("Couleurs", g.vibrance_rtx, kVibrance);
+  moved |= grade_slider("Noirs profonds", g.shadows, kShadows);
+  moved |= grade_slider("Garde-fou couleurs saturées", g.guard, kGuard);
+  if (moved) d.grade_preset = render::GradePreset::Custom;
+  ImGui::Checkbox("Gamut Display P3 de l'écran", &g.gamut_p3);
+  ImGui::EndDisabled();
+  if (!choices.hdr_output) {
+    note("L'écran ne reçoit pas de HDR10 : pas de grade.");
+  } else if (d.true_hdr) {
+    note("Route RTX HDR : TrueHDR, puis le grade sur la sortie PQ.");
+  } else if (d.hdr_native) {
+    note("Route native : libplacebo en PQ, aspect TrueHDR émulé, puis le grade.");
+  } else {
+    note("Sortie SDR : pas de grade (route à choisir dans l'onglet RTX HDR).");
+  }
+  note(
+      "Éclatant : éclats et aplats lumineux, couleurs et noirs poussés, teinte gardée (même gain sur R, "
+      "V et B) ; le garde-fou adoucit les couleurs saturées près du pic au lieu de les écrêter. "
+      "Naturel : le grade du lecteur actuel. Tout s'applique en direct.");
 }
 
 void sound_tab(PlaySettings& d) {
@@ -253,7 +317,7 @@ SettingsPanel::Result SettingsPanel::draw(const PlaySettings& running, const Set
   }
   const ImGuiIO& io = ImGui::GetIO();
   const float pad = 18.0F * scale;
-  const float width = std::min(620.0F * scale, io.DisplaySize.x - 2.0F * pad);
+  const float width = std::min(760.0F * scale, io.DisplaySize.x - 2.0F * pad);
   const float bottom = 120.0F * scale;  // la barre de lecture reste visible dessous
   ImGui::SetNextWindowPos({io.DisplaySize.x - pad, pad + 40.0F * scale}, ImGuiCond_Always, {1.0F, 0.0F});
   ImGui::SetNextWindowSize({width, std::max(240.0F * scale, io.DisplaySize.y - pad - 40.0F * scale - bottom)},
@@ -282,6 +346,10 @@ SettingsPanel::Result SettingsPanel::draw(const PlaySettings& running, const Set
       }
       if (ImGui::BeginTabItem("RTX HDR")) {
         hdr_tab(draft_, choices);
+        ImGui::EndTabItem();
+      }
+      if (ImGui::BeginTabItem("Grade")) {
+        grade_tab(draft_, choices);
         ImGui::EndTabItem();
       }
       if (ImGui::BeginTabItem("Sous-titres")) {

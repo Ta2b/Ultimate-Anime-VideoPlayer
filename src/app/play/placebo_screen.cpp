@@ -23,6 +23,8 @@ namespace {
 
 // Blanc de l'interface dans une sortie HDR : le blanc de référence (BT.2408), comme le SDR.
 constexpr float kUiWhiteNits = 203.0F;
+// Images gardées pour le profil GPU du grade (une heure à 165 Hz tient en dessous).
+constexpr std::size_t kMaxGradeSamples = 1 << 20;
 
 std::unexpected<Refusal> refuse(RefusalCode code, std::string detail) {
   return std::unexpected(Refusal{code, std::move(detail)});
@@ -90,7 +92,16 @@ PlaceboScreen::~PlaceboScreen() = default;
 
 PlaceboScreen::Impl::~Impl() {
   if (vk != nullptr) pl_gpu_finish(vk->gpu);
+  if (!grade_gpu_us.empty()) {
+    std::ranges::sort(grade_gpu_us);
+    const auto at = [&](double q) {
+      return grade_gpu_us[static_cast<std::size_t>(q * static_cast<double>(grade_gpu_us.size() - 1))];
+    };
+    channel->info("profil GPU · grade HDR : médiane {:.2f} ms, p95 {:.2f} ms ({} images)", at(0.5) / 1000.0,
+                  at(0.95) / 1000.0, grade_gpu_us.size());
+  }
   ui.reset();
+  grade.reset();
   osd.reset();
   overlays.reset();
   ring.clear(vk != nullptr ? vk->gpu : nullptr);
@@ -166,6 +177,11 @@ std::expected<std::unique_ptr<PlaceboScreen>, Refusal> PlaceboScreen::open(const
   impl->osd = std::move(*osd);
   impl->overlays = std::make_unique<Overlays>(gpu);
   impl->ui = std::make_unique<ImGuiLayer>(gpu, impl->log);
+  if (auto grade = render::Grade::create(gpu)) {
+    impl->grade.emplace(std::move(*grade));
+  } else {
+    impl->channel->warn("grade HDR indisponible : {}", grade.error().detail);
+  }
   impl->source = pl_color_space_bt709;
   return std::unique_ptr<PlaceboScreen>(new PlaceboScreen(std::move(impl)));
 }
@@ -227,6 +243,16 @@ void PlaceboScreen::set_source_color(const ColorInfo& color) {
   impl_->source = color_space_of(color);
 }
 
+void PlaceboScreen::set_grade(const std::optional<render::GradeParams>& params) {
+  if (!impl_->grade) return;
+  impl_->grade_on = params.has_value();
+  if (params) impl_->grade->set_params(*params);
+}
+
+bool PlaceboScreen::hdr_output() const {
+  return impl_->hdr_output;
+}
+
 void PlaceboScreen::flush() {
   pl_gpu_flush(impl_->vk->gpu);
 }
@@ -249,11 +275,27 @@ void PlaceboScreen::Impl::draw_ui(const ImDrawData* data, const pl_frame& target
 
 std::expected<void, Refusal> PlaceboScreen::Impl::compose(const pl_frame* image,
                                                           const pl_frame& target) const {
-  const pl_render_params params = pl_render_default_params;
+  pl_render_params params = pl_render_default_params;
+  // Le grade travaille sur du PQ BT.2020 : sur une cible SDR (instantané), il est sauté.
+  const bool graded = grade && grade_on && target.color.transfer == PL_COLOR_TRC_PQ;
+  if (graded) {
+    const std::span<const pl_hook* const> hooks = grade->hooks();
+    params.hooks = hooks.data();
+    params.num_hooks = static_cast<int>(hooks.size());
+    params.info_callback = [](void* priv, const pl_render_info* info) {
+      const char* what = info->pass->shader->description;
+      if (what != nullptr && std::string_view(what).find("AnimeJaNai") != std::string_view::npos)
+        static_cast<const Impl*>(priv)->grade_frame_ns += info->pass->last;
+    };
+    params.info_priv = const_cast<Impl*>(this);
+    grade_frame_ns = 0;
+  }
   if (image == nullptr) pl_frame_clear(vk->gpu, &target, std::array<float, 3>{0.0F, 0.0F, 0.0F}.data());
   if (!pl_render_image(renderer, image, &target, &params)) {
     return std::unexpected(Refusal{RefusalCode::VendorCallFailed, "pl_render_image a échoué"});
   }
+  if (graded && image != nullptr && grade_frame_ns > 0 && grade_gpu_us.size() < kMaxGradeSamples)
+    grade_gpu_us.push_back(static_cast<std::uint32_t>(grade_frame_ns / 1000));
   return {};
 }
 

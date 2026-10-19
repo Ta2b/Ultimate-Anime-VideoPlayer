@@ -1,0 +1,519 @@
+// Origine : https://github.com/Ta2b/mpv-AnimeJaNai-HDR, commit 33ff79d (vu à c6fee61),
+// BuildMpvUpscale2xAnimeJaNai/mpv-upscale-2x_animejanai/portable_config/user-shaders/anime-hdr-grade.hook,
+// copié sous cet en-tête. Seul ajout de ce dépôt : le garde-fou des couleurs saturées (`guard`,
+// préréglage « Éclatant ») ; à guard = 0, le défaut, le shader calcule exactement comme l'original.
+//
+// AnimeJaNai HDR grade - un seul shader pour RTX TrueHDR et le HDR MPV (NVIDIA / AMD / Intel).
+//
+// Pose sur OUTPUT : l'image est deja encodee en PQ BT.2020 pour l'ecran.
+// Le controleur user-scripts/animejanai_hdr_auto.lua l'attache seulement
+// quand la sortie PQ est confirmee, et lui transmet les parametres ci-dessous.
+//
+// Traitement par pixel, en lumiere lineaire absolue (nits) :
+//   1. noirs : pied de courbe doux sous `shadow_knee`, le noir reste a 0 ;
+//   2. eclats : gain au-dessus du blanc papier, fort pour les zones plus
+//      lumineuses que leur voisinage (eclats, reflets, magie, neons), faible
+//      pour les grands aplats clairs (ciel, murs blancs) et jamais module
+//      sur la peau (pas de taches claires ni de scintillement sur les visages) ;
+//   3. epaule douce vers `peak`, sans ecretage dur ;
+//   4. vibrance perceptuelle ICtCp, tons chair exclus, couleurs deja saturees menagees ;
+//   5. limite douce au gamut de l'ecran (P3) et au pic.
+// Les canaux RGB sont multiplies ensemble aux etapes 1 a 3 : la teinte ne bouge pas.
+//
+// Stabilite : la carte de zone est lissee d'une image a l'autre (buffer persistant) et
+// remise a zero a chaque changement de plan. Limiteur OLED (ABL) : sur une scene tres
+// claire, l'ecran baisse de toute facon sa luminosite ; les gains y sont moderes.
+
+//!PARAM peak
+//!DESC Pic de sortie (nits)
+//!TYPE float
+//!MINIMUM 100.0
+//!MAXIMUM 10000.0
+1000.0
+
+//!PARAM paper
+//!DESC Blanc papier : debut des eclats (nits)
+//!TYPE float
+//!MINIMUM 50.0
+//!MAXIMUM 5000.0
+203.0
+
+//!PARAM in_max
+//!DESC Niveau maximal attendu en entree (nits) : papier pour le SDR converti par MPV, pic pour TrueHDR
+//!TYPE float
+//!MINIMUM 50.0
+//!MAXIMUM 10000.0
+203.0
+
+//!PARAM shadows
+//!DESC Profondeur des noirs (0 = neutre)
+//!TYPE float
+//!MINIMUM 0.0
+//!MAXIMUM 0.8
+0.30
+
+//!PARAM shadow_knee
+//!DESC Fin de la zone des ombres (nits)
+//!TYPE float
+//!MINIMUM 1.0
+//!MAXIMUM 200.0
+50.0
+
+//!PARAM area_gain
+//!DESC Gain des grands aplats lumineux au niveau du papier
+//!TYPE float
+//!MINIMUM 1.0
+//!MAXIMUM 4.0
+1.4
+
+//!PARAM spec_gain
+//!DESC Gain des eclats isoles au niveau du papier
+//!TYPE float
+//!MINIMUM 1.0
+//!MAXIMUM 20.0
+4.3
+
+//!PARAM vibrance
+//!DESC Vibrance perceptuelle (0 = neutre)
+//!TYPE float
+//!MINIMUM 0.0
+//!MAXIMUM 0.8
+0.25
+
+//!PARAM abl
+//!DESC Moderation des eclats sur les scenes claires (limiteur OLED), 0 = aucune
+//!TYPE float
+//!MINIMUM 0.0
+//!MAXIMUM 1.0
+0.0
+
+//!PARAM gamut_p3
+//!DESC 1 = limiter au gamut Display P3 de l'ecran, 0 = conteneur BT.2020
+//!TYPE float
+//!MINIMUM 0.0
+//!MAXIMUM 1.0
+1.0
+
+//!PARAM guard
+//!DESC Garde-fou des couleurs saturees : epaule douce du canal le plus fort vers le pic (0 = coupe nette)
+//!TYPE float
+//!MINIMUM 0.0
+//!MAXIMUM 1.0
+0.0
+
+//!PARAM emulate
+//!DESC 1 = aspect RTX TrueHDR applique au SDR converti par MPV
+//!TYPE float
+//!MINIMUM 0.0
+//!MAXIMUM 1.0
+0.0
+
+//!PARAM sdr_white
+//!DESC Aspect TrueHDR : niveau du blanc SDR a l'entree (nits)
+//!TYPE float
+//!MINIMUM 50.0
+//!MAXIMUM 1000.0
+203.0
+
+//!PARAM em_base
+//!DESC Aspect TrueHDR : echelle des tons moyens (4 x gris moyen)
+//!TYPE float
+//!MINIMUM 40.0
+//!MAXIMUM 400.0
+200.0
+
+//!PARAM em_pow
+//!DESC Aspect TrueHDR : exposant de la montee vers le pic (6 au gris moyen 50)
+//!TYPE float
+//!MINIMUM 2.0
+//!MAXIMUM 16.0
+6.0
+
+//!PARAM em_lo
+//!DESC Aspect TrueHDR : exposant du contraste sous le pivot
+//!TYPE float
+//!MINIMUM 0.5
+//!MAXIMUM 2.0
+1.0
+
+//!PARAM em_hi
+//!DESC Aspect TrueHDR : exposant du contraste au-dessus du pivot
+//!TYPE float
+//!MINIMUM 0.5
+//!MAXIMUM 2.0
+1.0
+
+//!PARAM em_sat
+//!DESC Aspect TrueHDR : facteur de saturation
+//!TYPE float
+//!MINIMUM 0.5
+//!MAXIMUM 1.5
+1.0
+
+//!HOOK OUTPUT
+//!BIND HOOKED
+//!SAVE AJG_LOCAL
+//!WIDTH HOOKED.w 8 /
+//!HEIGHT HOOKED.h 8 /
+//!COMPONENTS 1
+//!DESC AnimeJaNai HDR grade - luminance locale 1/8
+
+// Moyenne 8x8 de la luminance, stockee en PQ (domaine perceptuel uniforme).
+// 16 lectures bilineaires couvrent exactement le bloc 8x8.
+float ajg_pq_y(vec3 e) {
+    vec3 p = pow(clamp(e, 0.0, 1.0), vec3(1.0 / 78.84375));
+    vec3 n = pow(max(p - 0.8359375, 0.0) / max(18.8515625 - 18.6875 * p, 1e-6), vec3(6.27739463));
+    float y = dot(n, vec3(0.2627, 0.6780, 0.0593));
+    float q = pow(y, 0.1593017578125);
+    return pow((0.8359375 + 18.8515625 * q) / (1.0 + 18.6875 * q), 78.84375);
+}
+vec4 hook() {
+    float acc = 0.0;
+    for (int j = 0; j < 4; j++)
+    for (int i = 0; i < 4; i++) {
+        vec2 o = vec2(float(i) * 2.0 - 3.0, float(j) * 2.0 - 3.0) * HOOKED_pt;
+        acc += ajg_pq_y(HOOKED_tex(HOOKED_pos + o).rgb);
+    }
+    return vec4(acc / 16.0, 0.0, 0.0, 1.0);
+}
+
+//!HOOK OUTPUT
+//!BIND AJG_LOCAL
+//!SAVE AJG_AREA0
+//!WIDTH AJG_LOCAL.w 4 /
+//!HEIGHT AJG_LOCAL.h 4 /
+//!COMPONENTS 1
+//!DESC AnimeJaNai HDR grade - luminance de zone 1/32
+
+vec4 hook() {
+    float acc = 0.0;
+    for (int j = 0; j < 2; j++)
+    for (int i = 0; i < 2; i++)
+        acc += AJG_LOCAL_tex(AJG_LOCAL_pos + vec2(float(i) * 2.0 - 1.0, float(j) * 2.0 - 1.0) * AJG_LOCAL_pt).x;
+    return vec4(acc * 0.25, 0.0, 0.0, 1.0);
+}
+
+//!HOOK OUTPUT
+//!BIND AJG_AREA0
+//!SAVE AJG_AREAH
+//!COMPONENTS 1
+//!DESC AnimeJaNai HDR grade - flou de zone horizontal
+
+// Gaussienne sigma = 3 texels (environ 2,5 % de la largeur de l'image).
+vec4 hook() {
+    const float w[8] = float[8](0.1346, 0.1273, 0.1078, 0.0816, 0.0553, 0.0336, 0.0182, 0.0088);
+    float acc = AJG_AREA0_tex(AJG_AREA0_pos).x * w[0];
+    for (int i = 1; i < 8; i++) {
+        vec2 o = vec2(float(i) * AJG_AREA0_pt.x, 0.0);
+        acc += (AJG_AREA0_tex(AJG_AREA0_pos + o).x + AJG_AREA0_tex(AJG_AREA0_pos - o).x) * w[i];
+    }
+    return vec4(acc, 0.0, 0.0, 1.0);
+}
+
+//!HOOK OUTPUT
+//!BIND AJG_AREAH
+//!SAVE AJG_AREA
+//!COMPONENTS 1
+//!DESC AnimeJaNai HDR grade - flou de zone vertical
+
+vec4 hook() {
+    const float w[8] = float[8](0.1346, 0.1273, 0.1078, 0.0816, 0.0553, 0.0336, 0.0182, 0.0088);
+    float acc = AJG_AREAH_tex(AJG_AREAH_pos).x * w[0];
+    for (int i = 1; i < 8; i++) {
+        vec2 o = vec2(0.0, float(i) * AJG_AREAH_pt.y);
+        acc += (AJG_AREAH_tex(AJG_AREAH_pos + o).x + AJG_AREAH_tex(AJG_AREAH_pos - o).x) * w[i];
+    }
+    return vec4(acc, 0.0, 0.0, 1.0);
+}
+
+//!BUFFER AJG_STATE
+//!VAR float apl
+//!VAR float prev_pq
+//!VAR float cut
+//!VAR float ready
+//!VAR int width
+//!VAR int height
+//!VAR float history[32768]
+//!STORAGE
+
+//!HOOK OUTPUT
+//!BIND AJG_AREA
+//!SAVE AJG_MEAN8
+//!WIDTH 8
+//!HEIGHT 8
+//!COMPONENTS 2
+//!DESC AnimeJaNai HDR grade - moyenne de scene 8x8
+
+// Moyenne de la carte de zone par 1/64 d'image : PQ et lumiere lineaire (nits / 10000).
+// 16 x 16 lectures bilineaires reparties sur la zone couverte par chaque texel.
+float stats_linear(float e) {
+    float p = pow(clamp(e, 0.0, 1.0), 1.0 / 78.84375);
+    return pow(max(p - 0.8359375, 0.0) / max(18.8515625 - 18.6875 * p, 1e-6), 6.27739463);
+}
+vec4 hook() {
+    vec2 acc = vec2(0.0);
+    for (int j = 0; j < 16; j++)
+    for (int i = 0; i < 16; i++) {
+        vec2 o = ((vec2(float(i), float(j)) + 0.5) / 16.0 - 0.5) / 8.0;
+        float v = AJG_AREA_tex(AJG_AREA_pos + o).x;
+        acc += vec2(v, stats_linear(v));
+    }
+    return vec4(acc / 256.0, 0.0, 1.0);
+}
+
+//!HOOK OUTPUT
+//!BIND AJG_MEAN8
+//!SAVE AJG_MEAN
+//!WIDTH 1
+//!HEIGHT 1
+//!COMPONENTS 2
+//!DESC AnimeJaNai HDR grade - moyenne de scene
+
+vec4 hook() {
+    vec2 acc = vec2(0.0);
+    for (int j = 0; j < 8; j++)
+    for (int i = 0; i < 8; i++)
+        acc += AJG_MEAN8_tex((vec2(float(i), float(j)) + 0.5) / 8.0).xy;
+    return vec4(acc / 64.0, 0.0, 1.0);
+}
+
+//!HOOK OUTPUT
+//!BIND AJG_AREA
+//!BIND AJG_MEAN
+//!BIND AJG_STATE
+//!SAVE AJG_STATS
+//!WIDTH 1
+//!HEIGHT 1
+//!COMPUTE 1 1
+//!DESC AnimeJaNai HDR grade - statistiques de scene
+
+// Detection des changements de plan et APL lisse dans le temps. Les moyennes viennent
+// des deux passes precedentes : une reduction en boucle dans cette passe de calcul
+// coutait 3 ms par image en D3D11.
+void hook() {
+    ivec2 size = ivec2(AJG_AREA_size);
+    vec2 mean = AJG_MEAN_tex(vec2(0.5)).xy;
+    float mean_pq = mean.x;
+    float mean_nits = 10000.0 * mean.y;
+    // Changement de plan, premiere image ou nouvelle taille : pas d'historique.
+    bool reset = ready < 0.5 || width != size.x || height != size.y
+              || abs(mean_pq - prev_pq) > 0.06;
+    cut = reset ? 1.0 : 0.0;
+    apl = reset ? mean_nits : mix(apl, mean_nits, 0.1);
+    prev_pq = mean_pq;
+    width = size.x;
+    height = size.y;
+    ready = 1.0;
+    imageStore(out_image, ivec2(0, 0), vec4(apl, cut, mean_nits, 1.0));
+}
+
+//!HOOK OUTPUT
+//!BIND AJG_AREA
+//!BIND AJG_STATS
+//!BIND AJG_STATE
+//!SAVE AJG_AREAT
+//!WIDTH AJG_AREA.w
+//!HEIGHT AJG_AREA.h
+//!COMPUTE 16 16
+//!DESC AnimeJaNai HDR grade - lissage temporel de la zone
+
+void hook() {
+    ivec2 p = ivec2(gl_GlobalInvocationID.xy);
+    ivec2 size = ivec2(AJG_AREA_size);
+    if (p.x >= size.x || p.y >= size.y) return;
+    float value = texelFetch(AJG_AREA_raw, p, 0).x;
+    int idx = p.y * size.x + p.x;
+    if (idx < 32768) {
+        // ~0,1 s de constante de temps a 48 i/s ; aucune trainee apres une coupure.
+        if (texelFetch(AJG_STATS_raw, ivec2(0, 0), 0).y < 0.5)
+            value = mix(history[idx], value, 0.3);
+        history[idx] = value;
+    }
+    imageStore(out_image, p, vec4(value, 0.0, 0.0, 1.0));
+}
+
+//!HOOK OUTPUT
+//!BIND HOOKED
+//!BIND AJG_LOCAL
+//!BIND AJG_AREAT
+//!BIND AJG_STATS
+//!DESC AnimeJaNai HDR grade - noirs, eclats, vibrance
+
+const mat3 BT2020_TO_P3 = mat3( 1.3435783, -0.0652975,  0.0028218,
+                               -0.2821797,  1.0757879, -0.0195985,
+                               -0.0613986, -0.0104905,  1.0167767);
+const mat3 P3_TO_BT2020 = mat3( 0.7538330,  0.0457438, -0.0012103,
+                                0.1985974,  0.9417772,  0.0176017,
+                                0.0475696,  0.0124789,  0.9836086);
+// ICtCp (ITU-R BT.2100), matrices en colonnes GLSL.
+const mat3 RGB_TO_LMS = mat3(1688.0, 683.0, 99.0,
+                             2146.0, 2951.0, 309.0,
+                             262.0, 462.0, 3688.0) / 4096.0;
+const mat3 LMS_TO_RGB = mat3( 3.4366067, -0.7913296, -0.0259499,
+                             -2.5064521,  1.9836005, -0.0989137,
+                              0.0698454, -0.1922709,  1.1248636);
+const mat3 LMS_TO_ICTCP = mat3(2048.0, 6610.0, 17933.0,
+                               2048.0, -13613.0, -17390.0,
+                               0.0, 7003.0, -543.0) / 4096.0;
+const mat3 ICTCP_TO_LMS = mat3(1.0, 1.0, 1.0,
+                               0.0086090, -0.0086090, 0.5600313,
+                               0.1110296, -0.1110296, -0.3206272);
+
+vec3 pq_to_nits(vec3 e) {
+    vec3 p = pow(clamp(e, 0.0, 1.0), vec3(1.0 / 78.84375));
+    return 10000.0 * pow(max(p - 0.8359375, 0.0) / max(18.8515625 - 18.6875 * p, 1e-6),
+                         vec3(6.27739463));
+}
+vec3 nits_to_pq(vec3 n) {
+    vec3 q = pow(clamp(n / 10000.0, 0.0, 1.0), vec3(0.1593017578125));
+    return pow((0.8359375 + 18.8515625 * q) / (1.0 + 18.6875 * q), vec3(78.84375));
+}
+float max3(vec3 v) { return max(v.r, max(v.g, v.b)); }
+
+// Pied des noirs sur le maximum RGB : pente 1 au genou, pente (1 - shadows) au noir.
+// Seuls les pixels vraiment sombres sont touches, meme s'ils sont satures (bleu nuit).
+float shadow_ratio(float m) {
+    if (m >= shadow_knee) return 1.0;
+    float u = 1.0 - m / shadow_knee;
+    return 1.0 - shadows * u * u;
+}
+
+vec3 to_ictcp(vec3 bt2020_nits) {
+    return LMS_TO_ICTCP * nits_to_pq(RGB_TO_LMS * max(bt2020_nits, 0.0));
+}
+
+// Tons chair (anime clair a mate, ombres et rougeurs comprises) : teinte ICtCp
+// d'environ 105 a 135 degres avec un chroma faible. Les orange, rouges et jaunes
+// vifs ont un chroma bien plus eleve et ne sont pas concernes.
+float skin_mask(vec3 ictcp) {
+    float chroma = length(ictcp.yz);
+    float hue = degrees(atan(ictcp.z, ictcp.y));
+    return smoothstep(88.0, 102.0, hue) * (1.0 - smoothstep(140.0, 154.0, hue))
+         * smoothstep(0.008, 0.018, chroma) * (1.0 - smoothstep(0.095, 0.13, chroma));
+}
+
+// Courbe des eclats sur la luminance Y (nits), monotone pour un isolement donne.
+// Y plutot que max RGB : un vert ou un jaune sature n'est pas pris pour du blanc.
+float highlight_ratio(float y, float isolation, float skin, float abl_scale) {
+    float gain = mix(mix(area_gain, spec_gain, isolation), area_gain, skin);
+    gain = 1.0 + (gain - 1.0) * abl_scale;
+    float out_y = y * (1.0 + smoothstep(0.5 * paper, paper, y) * (gain - 1.0));
+    // Epaule : [genou, entree max x gain] -> [genou, pic], pente 1 au genou.
+    // Sans gain (aplat en mode RTX), la courbe reste l'identite jusqu'au pic.
+    float top = in_max * (1.0 + smoothstep(0.5 * paper, paper, in_max) * (gain - 1.0));
+    float knee = 0.65 * peak;
+    if (top > peak && out_y > knee) {
+        float z = (out_y - knee) / (peak - knee);
+        float zm = (top - knee) / (peak - knee);
+        out_y = knee + (peak - knee) * z * (1.0 + z / (zm * zm)) / (1.0 + z);
+    }
+    return out_y / y;
+}
+
+// Aspect RTX TrueHDR pour le SDR converti par MPV. Courbes mesurees sur le SDK RTX Video
+// (mires grises et colorees) sur toute la plage des curseurs : contraste et saturation 0 a 200,
+// gris moyen 10 a 100, pic 400 a 1000 nits. TrueHDR s'y comporte comme une courbe globale.
+//   base      : em_base * s^2 * exp(ln(peak / em_base) * s^em_pow), s = signal SDR (0..1),
+//               em_base = 4 x gris moyen ; le blanc SDR arrive au pic ;
+//   contraste : puissance autour du pivot (em_lo dessous, em_hi dessus, sans depasser le pic) ;
+//   saturation: ecart a la luminance multiplie par em_sat.
+// Ecart mesure avec TrueHDR au gris moyen 50 : +/- 6 % sur les gris, +/- 7 % sur les couleurs
+// courantes, jusqu'a +20 % sur les primaires pures.
+vec3 truehdr_look(vec3 nits) {
+    const vec3 luma = vec3(0.2627, 0.6780, 0.0593);
+    vec3 x = max(nits, 0.0) / sdr_white;
+    float Y = dot(x, luma);
+    float idx = clamp(Y + 0.15 * (max(x.r, max(x.g, x.b)) - Y), 0.0, 1.0);
+    if (idx < 1e-6) return vec3(0.0);
+    float s2 = pow(idx, 2.0 / 2.4);
+    vec3 c = x * (em_base * s2 / idx * exp(log(max(peak / em_base, 1.0)) * pow(s2, 0.5 * em_pow)));
+    float Yn = max(dot(c, luma), 1e-6);
+    float P = 0.2575 * em_base;
+    float Y2;
+    if (Yn < P) {
+        Y2 = P * pow(Yn / P, em_lo);
+    } else {
+        float span = log(peak / P);
+        float u = min(log(Yn / P) / span, 1.0);
+        Y2 = P * exp(u * (em_hi - (em_hi - 1.0) * u) * span);
+    }
+    c *= Y2 / Yn;
+    return max(vec3(Y2) + em_sat * (c - vec3(Y2)), 0.0);
+}
+
+// Plus grand t dans [0, 1] tel que a + (b - a) * t reste dans [0, peak].
+float gamut_room(vec3 a, vec3 b) {
+    vec3 d = b - a;
+    float t = 1.0;
+    for (int i = 0; i < 3; i++) {
+        if (d[i] < -1e-6) t = min(t, max(a[i], 0.0) / -d[i]);
+        else if (d[i] > 1e-6) t = min(t, max(peak - a[i], 0.0) / d[i]);
+    }
+    return t;
+}
+
+vec4 hook() {
+    vec4 px = HOOKED_tex(HOOKED_pos);
+    vec3 lin = pq_to_nits(px.rgb);
+    // L'isolement se mesure sur l'image d'origine, comme les cartes de zone.
+    float y_src = dot(lin, vec3(0.2627, 0.6780, 0.0593));
+    if (emulate > 0.5) lin = truehdr_look(lin);
+    bool p3 = gamut_p3 > 0.5;
+    vec3 c = p3 ? BT2020_TO_P3 * lin : lin;
+    if (emulate > 0.5) c = max(c, 0.0);
+
+    // Isolement : la zone de ~8 px est-elle nettement plus lumineuse que son
+    // voisinage (~2,5 % de l'image) ? Mesure en PQ = ecart perceptuel, sur des
+    // moyennes : stable d'une image a l'autre. Seul un pixel tres au-dessus de
+    // sa zone (etincelle de 1 a 4 px, > 0,08 PQ) compte individuellement.
+    float m = max3(c);
+    float y = dot(c, p3 ? vec3(0.2289746, 0.6917385, 0.0792869) : vec3(0.2627, 0.6780, 0.0593));
+    float y_pq = nits_to_pq(vec3(max(y_src, 0.0))).x;
+    float local_pq = max(AJG_LOCAL_tex(AJG_LOCAL_pos).x, y_pq - 0.08);
+    float isolation = smoothstep(0.05, 0.25, local_pq - AJG_AREAT_tex(AJG_AREAT_pos).x);
+    // Limiteur OLED : APL lisse de ~80 a ~250 nits (plein ecran d'un QD-OLED en Peak 1000).
+    float abl_scale = 1.0 - abl * smoothstep(80.0, 250.0, AJG_STATS_tex(vec2(0.5)).x);
+    vec3 ictcp_in = to_ictcp(lin);
+    float skin = skin_mask(ictcp_in);
+    float r = 1.0;
+    if (m > 1e-4 && y > 1e-4) {
+        r = shadow_ratio(m);
+        r *= highlight_ratio(y * r, isolation, skin, abl_scale);
+        // Garde-fou : une couleur saturee tres lumineuse atteint le pic par un seul canal bien
+        // avant sa luminance ; au lieu d'un plateau (degrade perdu, aplat ecrete), son canal le
+        // plus fort suit une epaule douce depuis 70 % du pic. Le blanc et les gris (canaux
+        // egaux) ne sont pas touches : leurs eclats suivent deja l'epaule de highlight_ratio.
+        if (guard > 0.0) {
+            float sat = 1.0 - min(c.r, min(c.g, c.b)) / m;
+            float w = guard * smoothstep(0.25, 0.75, sat);
+            float knee = 0.7 * peak;
+            float mo = m * r;
+            if (w > 0.0 && mo > knee) {
+                float z = (mo - knee) / (peak - knee);
+                r *= mix(1.0, (knee + (peak - knee) * z / (1.0 + z)) / mo, w);
+            }
+        }
+        // Aucun canal au-dessus du pic, meme pour une couleur saturee tres lumineuse.
+        r = min(r, peak / m);
+        c *= r;
+    }
+
+    if (vibrance > 0.0) {
+        // Tons moyens (r = 1, la majorite des pixels) : ICtCp deja calcule.
+        vec3 ictcp = abs(r - 1.0) < 1e-5 ? ictcp_in : to_ictcp(p3 ? P3_TO_BT2020 * c : c);
+        float chroma = length(ictcp.yz);
+        // Couleurs moyennes renforcees ; peau exclue, primaires (~0,3) menagees ;
+        // ombres protegees pour ne pas colorer le bruit et les traits.
+        float weight = smoothstep(0.0, 0.06, chroma) * (1.0 - smoothstep(0.10, 0.40, chroma))
+                     * smoothstep(0.12, 0.30, ictcp.x) * (1.0 - skin);
+        ictcp.yz *= 1.0 + vibrance * weight;
+        vec3 vivid = LMS_TO_RGB * pq_to_nits(ICTCP_TO_LMS * ictcp);
+        if (p3) vivid = BT2020_TO_P3 * vivid;
+        // Limite douce : le renforcement ralentit avant le bord du gamut ou le pic.
+        float room = gamut_room(c, vivid);
+        c = mix(c, vivid, room / pow(1.0 + pow(room, 4.0), 0.25));
+    }
+
+    px.rgb = nits_to_pq(p3 ? P3_TO_BT2020 * c : c);
+    return px;
+}
