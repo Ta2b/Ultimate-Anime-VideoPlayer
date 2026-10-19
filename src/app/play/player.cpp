@@ -23,6 +23,7 @@
 #include "app/play/first_run.h"
 #include "app/play/host_facts.h"
 #include "app/play/input.h"
+#include "app/play/model_choice.h"
 #include "app/play/motion_model.h"
 #include "app/play/pipeline.h"
 #include "app/play/placebo_screen.h"
@@ -209,36 +210,6 @@ struct Reopen {
   std::int64_t position_us = 0;
 };
 
-// Le modèle SPAN : --model, sinon celui choisi dans le menu (à côté du modèle par défaut), sinon
-// celui par défaut. Rend aussi le dossier des modèles et le nom par défaut, pour le menu.
-struct ModelChoice {
-  std::filesystem::path path;
-  std::vector<std::string> available;  // modèles ×2 du dossier
-  std::string default_name;
-};
-std::expected<ModelChoice, Refusal> choose_model(const Player& p, const PlaySettings& settings) {
-  PlayOptions defaults = p.options;
-  if (!p.options.was_given("--model")) defaults.model.reset();
-  auto found = find_model(defaults, default_model_candidates(p.paths.home));
-  if (!found) return std::unexpected(std::move(found.error()));
-  ModelChoice choice{.path = *found, .default_name = found->filename().string()};
-  std::error_code error;
-  for (const auto& entry : std::filesystem::directory_iterator(found->parent_path(), error)) {
-    const std::string name = entry.path().filename().string();
-    if (name.starts_with("2x_") && name.ends_with(".onnx")) choice.available.push_back(name);
-  }
-  std::ranges::sort(choice.available);
-  if (!p.options.was_given("--model") && !settings.model.empty()) {
-    const std::filesystem::path chosen = found->parent_path() / settings.model;
-    if (std::filesystem::exists(chosen, error)) {
-      choice.path = chosen;
-    } else {
-      log_channel("app")->warn("modèle {} introuvable : {}", settings.model, found->filename().string());
-    }
-  }
-  return choice;
-}
-
 // Construit (ou lit du cache) puis charge un moteur, la préparation à l'écran. Rien si
 // l'utilisateur ferme la fenêtre.
 std::expected<std::optional<std::unique_ptr<gpu::Engine>>, Refusal> prepare_engine(
@@ -275,7 +246,7 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
   const media::TrackInfo& video = p.video;
   std::optional<ModelChoice> model;
   if (settings.upscale) {
-    auto chosen = choose_model(p, settings);
+    auto chosen = choose_model(p.options, p.paths.home, settings);
     if (!chosen) return std::unexpected(std::move(chosen.error()));
     model = std::move(*chosen);
   }
@@ -286,12 +257,14 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
                                                    label(settings.downscale), work.width, work.height)
                                      : std::format("{}x{}", video.width, video.height);
   // Le modèle RIFE est cherché même sans interpolation : le menu peut l'allumer.
-  std::optional<std::filesystem::path> rife_model;
-  if (auto found = find_rife_model(options, default_rife_candidates(p.paths.home))) rife_model = *found;
+  std::optional<ModelChoice> rife_choice;
+  if (auto found = choose_rife_model(p.options, p.paths.home, settings)) rife_choice = std::move(*found);
+  const std::optional<std::filesystem::path> rife_model =
+      rife_choice ? std::optional(rife_choice->path) : std::nullopt;
   // Fluidité → Moteur : le flux optique matériel remplace RIFE, sans modèle ; RIFE reprend s'il manque.
   const bool want_flow = settings.rife_factor >= 2 && settings.motion_engine == MotionEngine::OpticalFlow;
   if (settings.rife_factor >= 2 && !rife_model && !want_flow)
-    return std::unexpected(find_rife_model(options, default_rife_candidates(p.paths.home)).error());
+    return std::unexpected(choose_rife_model(p.options, p.paths.home, settings).error());
   show_loading(p.screen, p.ui, "Chargement");
   const gpu::BackendInit init{
       .render = &p.screen.device(), .cache_dir = p.paths.engines, .log = backend_log()};
@@ -459,6 +432,8 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
           .source_height = video.height,
           .rife_available = rife_model.has_value() || flow_grid > 0,
           .rife_loaded = rife_loaded,
+          .rife_models = rife_choice ? rife_choice->available : std::vector<std::string>{},
+          .default_rife_model = rife_choice ? rife_choice->default_name : std::string(),
           .true_hdr_available = std::filesystem::exists(p.options.true_hdr_sdk) || settings.true_hdr,
           .hdr_output = p.screen.hdr_output(),
           .auto_peak = auto_peak,

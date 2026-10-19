@@ -125,6 +125,16 @@ std::string model_label(const std::string& file) {
   return out.empty() ? file : out;
 }
 
+std::string rife_label(const std::string& file) {
+  std::string_view name = file;
+  if (name.ends_with(".onnx")) name.remove_suffix(5);
+  if (!name.starts_with("rife_v")) return file;
+  name.remove_prefix(6);
+  std::string out = "RIFE ";
+  for (const char c : name) out += c == '_' ? ' ' : c;
+  return out;
+}
+
 std::string_view name(MotionEngine engine) {
   return engine == MotionEngine::OpticalFlow ? "optical_flow" : "rife";
 }
@@ -230,6 +240,7 @@ std::expected<PlaySettings, Refusal> parse_settings(std::string_view toml_text) 
   if (const toml::table* interpolation = section(root, "interpolation")) {
     reads.push_back(read(*interpolation, "interpolation", "rife", s.rife_factor));
     reads.push_back(read(*interpolation, "interpolation", "smooth_motion", s.smooth_motion));
+    reads.push_back(read(*interpolation, "interpolation", "model", s.rife_model));
     std::string engine(name(s.motion_engine));
     reads.push_back(read(*interpolation, "interpolation", "engine", engine));
     bool engine_known = false;
@@ -326,6 +337,7 @@ std::string format_settings(const PlaySettings& s) {
                                    {"downscale", std::string(name(s.downscale))}});
   root.insert("interpolation", toml::table{{"rife", s.rife_factor},
                                            {"engine", std::string(name(s.motion_engine))},
+                                           {"model", s.rife_model},
                                            {"smooth_motion", s.smooth_motion}});
   root.insert("rtx_hdr", toml::table{{"enabled", s.true_hdr},
                                      {"contrast", s.true_hdr_contrast},
@@ -451,7 +463,10 @@ PlaySettings live_part(const PlaySettings& running, const PlaySettings& wanted, 
   PlaySettings s = running;
   s.downscale = wanted.downscale;
   if (rife_loaded || wanted.rife_factor < 2) s.rife_factor = wanted.rife_factor;
-  if (wanted.rife_factor < 2) s.motion_engine = wanted.motion_engine;  // sans interpolation, rien à recharger
+  if (wanted.rife_factor < 2) {  // sans interpolation, rien à recharger
+    s.motion_engine = wanted.motion_engine;
+    s.rife_model = wanted.rife_model;
+  }
   s.true_hdr_contrast = wanted.true_hdr_contrast;
   s.true_hdr_saturation = wanted.true_hdr_saturation;
   s.true_hdr_gray = wanted.true_hdr_gray;
@@ -484,6 +499,8 @@ Change change_between(const PlaySettings& running, const PlaySettings& wanted, b
     reopen.emplace_back("le moteur RIFE est chargé (construit la première fois pour cette taille)");
   if (wanted.rife_factor >= 2 && running.motion_engine != wanted.motion_engine)
     reopen.emplace_back("le moteur du mouvement change");
+  if (wanted.rife_factor >= 2 && running.rife_model != wanted.rife_model)
+    reopen.emplace_back("le modèle RIFE est chargé (construit la première fois pour cette taille)");
   if (!reopen.empty()) {
     std::string reason;
     for (const std::string_view part : reopen)

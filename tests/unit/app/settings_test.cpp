@@ -39,6 +39,7 @@ TEST_CASE("play.toml relit à l'identique ce qu'il a écrit", "[app][settings]")
   s.steady_cadence = true;
   s.smooth_motion = true;
   s.motion_engine = MotionEngine::OpticalFlow;
+  s.rife_model = "rife_v4.26_heavy.onnx";
   s.grade_values.expand = 0.3;
   const auto back = parse_settings(format_settings(s));
   REQUIRE(back);
@@ -170,6 +171,15 @@ TEST_CASE("Ce qu'un changement demande : direct ou réouverture, dit avant d'app
   CHECK(change_between(off, flow_off, true).cost == ChangeCost::Live);
   CHECK(live_part(off, flow_off, true).motion_engine == MotionEngine::OpticalFlow);
   CHECK(live_part(on, flow, true).motion_engine == MotionEngine::Rife);
+  PlaySettings heavy = on;
+  heavy.rife_model = "rife_v4.26_heavy.onnx";
+  CHECK(change_between(on, heavy, true).reason.find("modèle RIFE") != std::string::npos);
+}
+
+TEST_CASE("Libellé d'un modèle RIFE", "[app][settings]") {
+  CHECK(rife_label("rife_v4.26_heavy.onnx") == "RIFE 4.26 heavy");
+  CHECK(rife_label("rife_v4.26.onnx") == "RIFE 4.26");
+  CHECK(rife_label("autre.onnx") == "autre.onnx");
 }
 
 TEST_CASE("La part directe d'un changement laisse ce qui demande une réouverture", "[app][settings]") {

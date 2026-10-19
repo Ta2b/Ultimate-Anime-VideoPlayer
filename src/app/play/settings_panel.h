@@ -34,14 +34,16 @@ struct ProfilesView {
 
 // Ce que le panneau propose, fixé par le lecteur.
 struct SettingsChoices {
-  std::vector<std::string> models;  // fichiers SPAN du dossier des modèles
-  std::string default_model;        // celui qu'un nom vide désigne
-  int source_height = 0;            // la réduction n'a de sens que sous cette hauteur
-  bool rife_available = false;      // modèle RIFE trouvé
-  bool rife_loaded = false;         // moteur RIFE chargé : ×N en direct
-  bool true_hdr_available = false;  // SDK Maxine présent
-  bool hdr_output = true;           // l'écran reçoit du PQ (sinon ni HDR natif ni grade)
-  int auto_peak = 0;                // pic automatique de RTX HDR, en nits
+  std::vector<std::string> models;       // fichiers SPAN du dossier des modèles
+  std::string default_model;             // celui qu'un nom vide désigne
+  int source_height = 0;                 // la réduction n'a de sens que sous cette hauteur
+  bool rife_available = false;           // modèle RIFE trouvé
+  bool rife_loaded = false;              // moteur RIFE chargé : ×N en direct
+  std::vector<std::string> rife_models;  // fichiers RIFE du dossier du modèle par défaut
+  std::string default_rife_model;        // celui qu'un nom vide désigne
+  bool true_hdr_available = false;       // SDK Maxine présent
+  bool hdr_output = true;                // l'écran reçoit du PQ (sinon ni HDR natif ni grade)
+  int auto_peak = 0;                     // pic automatique de RTX HDR, en nits
   std::vector<EngineBadge> engines;
   std::string chosen_engines;  // « Vulkan, TensorRT, NVIDIA Maxine (RTX HDR) » (settings.toml)
   std::string display_text;    // l'écran selon son EDID (display_edid.h : describe)

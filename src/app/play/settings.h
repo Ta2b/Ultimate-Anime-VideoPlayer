@@ -32,6 +32,8 @@ std::string_view name(Downscale filter);  // « area », la clé de play.toml
 // Libellé lisible d'un modèle AnimeJaNai : « HD V3.1 Sharp1 Performance ».
 std::string model_label(const std::string& file);
 std::string_view label(Downscale filter);  // « Area », pour le menu
+// Libellé lisible d'un modèle RIFE : « rife_v4.26_heavy.onnx » devient « RIFE 4.26 heavy ».
+std::string rife_label(const std::string& file);
 // Les valeurs du grade pour ce préréglage ; current pour « Personnalisé » et pour gamut_p3.
 render::GradeSettings with_preset(render::GradePreset preset, const render::GradeSettings& current);
 
@@ -68,6 +70,7 @@ struct PlaySettings {
   Downscale downscale = Downscale::Area;
   int rife_factor = kDefaultRifeFactor;  // 0 : aucune interpolation
   MotionEngine motion_engine = MotionEngine::Rife;
+  std::string rife_model;  // fichier ONNX de RIFE (nom seul) ; vide : rife_v4.26.onnx
   // Smooth Motion du pilote NVIDIA (RTX 40 et 50, pilote ≥ 580) : sa couche Vulkan double les
   // images présentées, au-dessus de RIFE (×3 puis ×2 : 72 → 144 images par seconde). Posé au
   // lancement, avant l'instance Vulkan : vaut au prochain lancement.

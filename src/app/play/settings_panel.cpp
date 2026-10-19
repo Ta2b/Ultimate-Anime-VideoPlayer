@@ -103,6 +103,26 @@ void fluidity_tab(PlaySettings& d, const SettingsChoices& choices) {
   }
   ImGui::EndDisabled();
   if (!choices.rife_available) note("Modèle RIFE introuvable (rife_v4.26.onnx).");
+  if (!choices.rife_models.empty()) {
+    ImGui::BeginDisabled(d.motion_engine != MotionEngine::Rife);
+    const std::string current = d.rife_model.empty() ? choices.default_rife_model : d.rife_model;
+    if (ImGui::BeginCombo("Modèle RIFE", rife_label(current).c_str())) {
+      for (const std::string& model : choices.rife_models) {
+        const bool chosen = model == current;
+        if (ImGui::Selectable(rife_label(model).c_str(), chosen))
+          d.rife_model = model == choices.default_rife_model ? std::string() : model;
+        if (chosen) ImGui::SetItemDefaultFocus();
+      }
+      ImGui::EndCombo();
+    }
+    ImGui::EndDisabled();
+    if (current.find("heavy") != std::string::npos) {
+      note(
+          "RIFE heavy : plus fin sur les mouvements difficiles, mais environ 4 fois plus lent que RIFE 4.26 "
+          "(34 ms par passe à 720p sur une 4070 Ti). Même en ×2, la lecture prend du retard dans les scènes "
+          "qui bougent à chaque image : la chaîne laisse alors ces paires sans interpolation.");
+    }
+  }
   section("Moteur du mouvement");
   for (int i = 0; i < kMotionEngineCount; ++i) {
     const auto engine = static_cast<MotionEngine>(i);
