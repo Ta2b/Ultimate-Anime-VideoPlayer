@@ -261,6 +261,20 @@ TEST_CASE("Les mesures s'affichent une par une, dans l'ordre de l'OSD", "[app][s
   CHECK(all[4] == "RIFE : 3 paires");
 }
 
+TEST_CASE("La taille des sous-titres va dans les demandes, l'image à l'écran est redemandée",
+          "[app][session]") {
+  Rig rig(SessionConfig{.subtitles = true, .video_width = 1920, .video_height = 1080});
+  rig.session.handle(ring_frame(0, 0));
+  rig.tick();
+  REQUIRE_FALSE(rig.stages.requests.empty());
+  CHECK(rig.stages.requests.back().target.font_scale == 1.0F);
+  const std::size_t before = rig.stages.requests.size();
+  rig.session.set_subtitle_scale(1.5F);
+  REQUIRE(rig.stages.requests.size() == before + 1);
+  CHECK(rig.stages.requests.back().pts_us == 0);
+  CHECK(rig.stages.requests.back().target.font_scale == 1.5F);
+}
+
 TEST_CASE("Volume et délai audio vont au thread audio", "[app][session]") {
   Rig rig;
   rig.session.command(cmd::SetVolume{.gain = 0.5F});

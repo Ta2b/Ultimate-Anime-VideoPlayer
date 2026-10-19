@@ -47,11 +47,12 @@ struct Bench {
     returned.clear();
   }
 
-  SubtitleFrame render(double seconds, int width = kScriptWidth, int height = kScriptHeight) {
+  SubtitleFrame render(double seconds, int width = kScriptWidth, int height = kScriptHeight,
+                       float scale = 1.0F) {
     recycle();
     const RenderRequest request{.pts_us = static_cast<std::int64_t>(seconds * 1e6),
                                 .epoch = 0,
-                                .target = {.width = width, .height = height}};
+                                .target = {.width = width, .height = height, .font_scale = scale}};
     auto outcome = renderer.render(track, request, pool);
     REQUIRE(outcome);
     REQUIRE(std::holds_alternative<SubtitleFrame>(*outcome));
@@ -191,6 +192,18 @@ TEST_CASE("Rendu : le 9e contenu neuf attend qu'un atlas revienne", "[render]") 
   CHECK(bench.pool.in_flight() == ajp::subs::kMaxAtlasesInFlight);
 }
 
+TEST_CASE("Rendu : l'échelle des polices agrandit le texte, en direct", "[render]") {
+  Bench bench(ajp::subs::test::reference_script());
+  const Box normal = draw(bench.render(0.5)).covered();
+  const Box bigger = draw(bench.render(0.5, kScriptWidth, kScriptHeight, 1.5F)).covered();
+  REQUIRE_FALSE(normal.empty());
+  REQUIRE_FALSE(bigger.empty());
+  CHECK(bigger.y1 - bigger.y0 > (normal.y1 - normal.y0) * 5 / 4);
+  CHECK(bigger.x1 - bigger.x0 > (normal.x1 - normal.x0) * 5 / 4);
+  const Box back = draw(bench.render(0.5)).covered();  // retour à 1 : la taille d'origine
+  CHECK(back.y1 - back.y0 == normal.y1 - normal.y0);
+}
+
 TEST_CASE("Rendu : refuse une cible hors plage", "[render]") {
   Bench bench(ajp::subs::test::reference_script());
   const auto refused = [&](ajp::subs::RenderTarget target) {
@@ -201,6 +214,8 @@ TEST_CASE("Rendu : refuse une cible hors plage", "[render]") {
   CHECK(refused({.width = 0, .height = 360}));
   CHECK(refused({.width = 640, .height = ajp::subs::kMaxTargetSide + 1}));
   CHECK(refused({.width = 640, .height = 360, .video_width = 1920, .video_height = 0}));
+  CHECK(refused({.width = 640, .height = 360, .font_scale = 0.1F}));
+  CHECK(refused({.width = 640, .height = 360, .font_scale = 5.0F}));
   CHECK(ajp::subs::SubtitleRenderer::create(bench.library, {.render_threads = -1}).error().code ==
         RefusalCode::FieldOutOfRange);
 }

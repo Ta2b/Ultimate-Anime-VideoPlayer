@@ -30,6 +30,10 @@ std::expected<void, Refusal> validate(const RenderRequest& request) {
                   std::format("sous-titres : sortie {}×{}, vidéo {}×{}", t.width, t.height, t.video_width,
                               t.video_height));
   }
+  if (!(t.font_scale >= kMinFontScale && t.font_scale <= kMaxFontScale)) {
+    return refuse(RefusalCode::FieldOutOfRange,
+                  std::format("sous-titres : échelle des polices {}", t.font_scale));
+  }
   if (!timestamp_in_range(request.pts_us)) {
     return refuse(RefusalCode::FieldOutOfRange, std::format("sous-titres : pts {} µs", request.pts_us));
   }
@@ -122,6 +126,7 @@ void SubtitleRenderer::configure(const RenderTarget& target) {
   const bool video_known = target.video_width != 0;
   ass_set_storage_size(renderer_.get(), video_known ? target.video_width : target.width,
                        video_known ? target.video_height : target.height);
+  ass_set_font_scale(renderer_.get(), static_cast<double>(target.font_scale));
   target_ = target;
   in_sync_ = false;
 }

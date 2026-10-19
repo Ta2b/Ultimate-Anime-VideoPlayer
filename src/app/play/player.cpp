@@ -399,6 +399,10 @@ void apply_live(Chain& to, const PlaySettings& wanted, std::int64_t now_us) {
   if (wanted.audio_delay_ms != r.audio_delay_ms)
     to.session.command(cmd::SetAudioDelay{.delay_us = std::int64_t{wanted.audio_delay_ms} * 1000});
   if (wanted.stats != r.stats) to.session.set_stats(wanted.stats);
+  if (wanted.subtitle_scale != r.subtitle_scale) {
+    to.session.set_subtitle_scale(wanted.subtitle_scale);
+    controls.notify(std::format("Sous-titres : {} %", std::lround(wanted.subtitle_scale * 100.0F)), now_us);
+  }
   r = wanted;
   r.volume = controls.volume();
   to.ui.set_running(r);
@@ -784,6 +788,7 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
   session_config.output = output_text(out, peak_nits);
   session_config.display_period_us = display_period_us(out.window());
   session_config.stats = settings.stats;
+  session_config.subtitle_scale = settings.subtitle_scale;
   session_config.extra = &chain_stats;
   log->info("{}", label_text);
   for (const std::string& line : session_config.tracks) log->info("{}", line);

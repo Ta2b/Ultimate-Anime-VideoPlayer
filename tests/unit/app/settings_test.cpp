@@ -25,6 +25,7 @@ TEST_CASE("play.toml relit à l'identique ce qu'il a écrit", "[app][settings]")
   s.true_hdr_debanding = false;
   s.audio_delay_ms = -120;
   s.volume = 0.85F;
+  s.subtitle_scale = 1.25F;
   s.stats.frames = true;
   s.stats.memory = true;
   const auto back = parse_settings(format_settings(s));
@@ -61,6 +62,8 @@ TEST_CASE("Hors plage, type faux ou TOML invalide : refus nommé", "[app][settin
   CHECK(filter.error().code == RefusalCode::FieldOutOfRange);
   const auto path = parse_settings("[image]\nmodel = \"../x.onnx\"\n");
   REQUIRE_FALSE(path);
+  CHECK(parse_settings("[subtitles]\nscale = 3.0\n").error().detail.find("subtitles.scale") !=
+        std::string::npos);
   const auto broken = parse_settings("[image\n");
   REQUIRE_FALSE(broken);
   CHECK(broken.error().code == RefusalCode::ProfileUnreadable);

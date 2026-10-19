@@ -57,6 +57,7 @@ struct SessionConfig {
   int video_width = 0;                   // taille de stockage de la vidéo, pour libass
   int video_height = 0;
   std::optional<subs::VideoMatrix> video_matrix;  // couleurs VSFilter
+  float subtitle_scale = 1.0F;                    // taille des sous-titres (subs::RenderTarget::font_scale)
   std::vector<std::string> header;                // la chaîne : modèles, tailles, moteur
   std::vector<std::string> tracks;                // pistes vidéo, audio et sous-titres
   std::string output;                             // sortie de l'écran (HDR10, pic de RTX HDR)
@@ -87,6 +88,8 @@ class Session {
   void toggle_fullscreen();
   // Sous-titres affichés ou non (piste choisie ou aucune) : demandes et réponses s'arrêtent.
   void set_subtitles(bool on);
+  // Taille des sous-titres : les demandes suivantes la portent, et l'image à l'écran est redemandée.
+  void set_subtitle_scale(float scale);
   // Mesures affichées, relues au tour suivant.
   void set_stats(const StatsSettings& stats);
   const StatsSettings& stats_settings() const { return show_stats_; }

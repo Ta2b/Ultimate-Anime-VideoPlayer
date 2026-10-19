@@ -91,7 +91,7 @@ std::string_view label(Downscale filter) {
 }
 
 std::expected<PlaySettings, Refusal> validate(const PlaySettings& s) {
-  const std::array<std::expected<void, Refusal>, 7> checks{
+  const std::array<std::expected<void, Refusal>, 8> checks{
       check("image.work_height", s.work_height, limits::kWorkHeight),
       check("interpolation.rife", s.rife_factor, limits::kRifeFactor),
       check("rtx_hdr.contrast", s.true_hdr_contrast, limits::kTrueHdrContrast),
@@ -99,6 +99,7 @@ std::expected<PlaySettings, Refusal> validate(const PlaySettings& s) {
       check("rtx_hdr.middle_gray", s.true_hdr_gray, limits::kTrueHdrGray),
       check("audio.delay_ms", s.audio_delay_ms, limits::kAudioDelayMs),
       check("audio.volume", s.volume, limits::kVolume),
+      check("subtitles.scale", s.subtitle_scale, limits::kSubtitleScale),
   };
   for (const auto& checked : checks) {
     if (!checked) return std::unexpected(checked.error());
@@ -154,6 +155,8 @@ std::expected<PlaySettings, Refusal> parse_settings(std::string_view toml_text) 
     reads.push_back(read(*audio, "audio", "delay_ms", s.audio_delay_ms));
     reads.push_back(read(*audio, "audio", "volume", s.volume));
   }
+  if (const toml::table* subtitles = section(root, "subtitles"))
+    reads.push_back(read(*subtitles, "subtitles", "scale", s.subtitle_scale));
   if (const toml::table* stats = section(root, "stats")) {
     reads.push_back(read(*stats, "stats", "all", s.stats.all));
     reads.push_back(read(*stats, "stats", "chain", s.stats.chain));
@@ -187,6 +190,8 @@ std::string format_settings(const PlaySettings& s) {
   // Le volume au centième : 0.85 et non 0.8500000238418579.
   root.insert("audio", toml::table{{"delay_ms", s.audio_delay_ms},
                                    {"volume", std::round(static_cast<double>(s.volume) * 100.0) / 100.0}});
+  root.insert("subtitles",
+              toml::table{{"scale", std::round(static_cast<double>(s.subtitle_scale) * 100.0) / 100.0}});
   root.insert("stats", toml::table{{"all", s.stats.all},
                                    {"chain", s.stats.chain},
                                    {"frames", s.stats.frames},
@@ -289,6 +294,7 @@ PlaySettings live_part(const PlaySettings& running, const PlaySettings& wanted, 
   s.true_hdr_debanding = wanted.true_hdr_debanding;
   s.audio_delay_ms = wanted.audio_delay_ms;
   s.volume = wanted.volume;
+  s.subtitle_scale = wanted.subtitle_scale;
   s.stats = wanted.stats;
   return s;
 }

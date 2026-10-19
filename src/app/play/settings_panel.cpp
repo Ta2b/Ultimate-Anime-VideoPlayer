@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <array>
 #include <cctype>
+#include <cmath>
 #include <format>
 #include <string_view>
 
@@ -168,6 +169,19 @@ void sound_tab(PlaySettings& d) {
   d.audio_delay_ms = std::clamp(d.audio_delay_ms, limits::kAudioDelayMs.lo, limits::kAudioDelayMs.hi);
 }
 
+void subtitles_tab(PlaySettings& d) {
+  section("Taille");
+  int percent = static_cast<int>(std::lround(d.subtitle_scale * 100.0F));
+  if (ImGui::SliderInt("Taille (%)", &percent, static_cast<int>(limits::kSubtitleScale.lo * 100.0F),
+                       static_cast<int>(limits::kSubtitleScale.hi * 100.0F))) {
+    d.subtitle_scale = static_cast<float>(percent) / 100.0F;
+  }
+  if (ImGui::Button("Taille d'origine")) d.subtitle_scale = 1.0F;
+  note(
+      "Agrandit ou réduit toutes les polices, panneaux compris (comme la taille de mpv). Changement en "
+      "direct ; la piste se choisit dans la barre (j).");
+}
+
 void stats_tab(PlaySettings& d) {
   section("Statistiques à l'écran");
   ImGui::Checkbox("Toutes les statistiques (Tab)", &d.stats.all);
@@ -256,6 +270,10 @@ SettingsPanel::Result SettingsPanel::draw(const PlaySettings& running, const Set
       }
       if (ImGui::BeginTabItem("RTX HDR")) {
         hdr_tab(draft_, choices);
+        ImGui::EndTabItem();
+      }
+      if (ImGui::BeginTabItem("Sous-titres")) {
+        subtitles_tab(draft_);
         ImGui::EndTabItem();
       }
       if (ImGui::BeginTabItem("Son")) {

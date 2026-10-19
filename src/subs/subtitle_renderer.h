@@ -49,8 +49,13 @@ struct RenderTarget {
   int video_width = 0;  // 0 : inconnue, la sortie sert de stockage
   int video_height = 0;
   std::optional<VideoMatrix> video_matrix;  // nullopt : inconnue, couleurs du script telles quelles
+  // Échelle des polices (ass_set_font_scale, comme sub-scale de mpv) : kMinFontScale à kMaxFontScale.
+  float font_scale = 1.0F;
   friend bool operator==(const RenderTarget&, const RenderTarget&) = default;
 };
+
+inline constexpr float kMinFontScale = 0.25F;
+inline constexpr float kMaxFontScale = 4.0F;
 
 struct RenderRequest {
   std::int64_t pts_us = 0;

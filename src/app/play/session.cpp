@@ -98,6 +98,14 @@ void Session::command(const Command& command) {
       command);
 }
 
+void Session::set_subtitle_scale(float scale) {
+  if (scale == config_.subtitle_scale) return;
+  config_.subtitle_scale = scale;
+  // Les réponses gardées sont à l'ancienne taille : l'image à l'écran redemande les siennes (en
+  // pause aussi), les suivantes arrivent à la nouvelle.
+  if (current_) request_subtitles(*current_);
+}
+
 void Session::set_stats(const StatsSettings& stats) {
   show_stats_ = stats;
   osd_at_us_.reset();
@@ -177,7 +185,8 @@ void Session::request_subtitles(const RingFrame& frame) {
                                                .height = size.height,
                                                .video_width = config_.video_width,
                                                .video_height = config_.video_height,
-                                               .video_matrix = config_.video_matrix}};
+                                               .video_matrix = config_.video_matrix,
+                                               .font_scale = config_.subtitle_scale}};
   if (stages_.request_subtitles(request)) ++subtitle_requests_;
 }
 

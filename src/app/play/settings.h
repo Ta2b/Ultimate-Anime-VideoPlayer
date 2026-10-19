@@ -56,6 +56,7 @@ struct PlaySettings {
   bool true_hdr_debanding = true;
   int audio_delay_ms = 0;
   float volume = 1.0F;
+  float subtitle_scale = 1.0F;  // taille des sous-titres
   StatsSettings stats;
   friend bool operator==(const PlaySettings&, const PlaySettings&) = default;
 };
@@ -63,6 +64,7 @@ struct PlaySettings {
 namespace limits {
 inline constexpr core::Range<int> kAudioDelayMs{-5000, 5000};
 inline constexpr core::Range<float> kVolume{0.0F, 1.5F};
+inline constexpr core::Range<float> kSubtitleScale{0.5F, 2.0F};
 inline constexpr core::Range<int> kTrueHdrContrast{0, 200};
 inline constexpr core::Range<int> kTrueHdrSaturation{0, 200};
 inline constexpr core::Range<int> kTrueHdrGray{10, 100};
