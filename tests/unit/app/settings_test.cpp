@@ -37,6 +37,7 @@ TEST_CASE("play.toml relit à l'identique ce qu'il a écrit", "[app][settings]")
   s.oled_black_steps = 3.5;
   s.oled_care = false;
   s.steady_cadence = true;
+  s.smooth_motion = true;
   s.grade_values.expand = 0.3;
   const auto back = parse_settings(format_settings(s));
   REQUIRE(back);

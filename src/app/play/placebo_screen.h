@@ -33,6 +33,9 @@ struct ScreenOptions {
   int height = 720;
   bool fullscreen = false;
   bool hdr = true;  // HDR10 (PQ, BT.2020) si l'écran l'offre, SDR sinon
+  // Smooth Motion du pilote NVIDIA : sa couche implicite VK_LAYER_NV_present s'active par
+  // NVPRESENT_ENABLE_SMOOTH_MOTION=1, posé avant la création de l'instance Vulkan.
+  bool smooth_motion = false;
 };
 
 class PlaceboScreen final : public Screen {

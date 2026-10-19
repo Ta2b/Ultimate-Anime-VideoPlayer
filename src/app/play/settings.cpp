@@ -219,8 +219,10 @@ std::expected<PlaySettings, Refusal> parse_settings(std::string_view toml_text) 
       reads.emplace_back(
           refuse(RefusalCode::FieldOutOfRange, std::format("image.downscale : « {} »", downscale)));
   }
-  if (const toml::table* interpolation = section(root, "interpolation"))
+  if (const toml::table* interpolation = section(root, "interpolation")) {
     reads.push_back(read(*interpolation, "interpolation", "rife", s.rife_factor));
+    reads.push_back(read(*interpolation, "interpolation", "smooth_motion", s.smooth_motion));
+  }
   if (const toml::table* hdr = section(root, "rtx_hdr")) {
     reads.push_back(read(*hdr, "rtx_hdr", "enabled", s.true_hdr));
     reads.push_back(read(*hdr, "rtx_hdr", "contrast", s.true_hdr_contrast));
@@ -302,7 +304,7 @@ std::string format_settings(const PlaySettings& s) {
                                    {"model", s.model},
                                    {"work_height", s.work_height},
                                    {"downscale", std::string(name(s.downscale))}});
-  root.insert("interpolation", toml::table{{"rife", s.rife_factor}});
+  root.insert("interpolation", toml::table{{"rife", s.rife_factor}, {"smooth_motion", s.smooth_motion}});
   root.insert("rtx_hdr", toml::table{{"enabled", s.true_hdr},
                                      {"contrast", s.true_hdr_contrast},
                                      {"saturation", s.true_hdr_saturation},
@@ -441,6 +443,7 @@ PlaySettings live_part(const PlaySettings& running, const PlaySettings& wanted, 
   s.grade_values = wanted.grade_values;
   s.oled_black = wanted.oled_black;
   s.oled_black_steps = wanted.oled_black_steps;
+  s.smooth_motion = wanted.smooth_motion;  // gardé pour le prochain lancement
   s.oled_care = wanted.oled_care;
   s.steady_cadence = wanted.steady_cadence;
   s.stats = wanted.stats;

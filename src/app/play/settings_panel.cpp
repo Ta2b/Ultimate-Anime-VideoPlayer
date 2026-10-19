@@ -111,6 +111,14 @@ void fluidity_tab(PlaySettings& d, const SettingsChoices& choices) {
     note("En 4K, RIFE estime le mouvement en 720p et déforme les images 1080p : ×2 tient sur cette carte.");
   }
   note("Les coupes de scène et les dessins tenus ne sont pas interpolés.");
+  section("Smooth Motion (pilote NVIDIA)");
+  ImGui::Checkbox("Doubler les images après RIFE", &d.smooth_motion);
+  note(
+      "Expérimental. La couche du pilote NVIDIA (RTX 40 et 50) génère une image entre deux images "
+      "présentées : RIFE ×3 puis Smooth Motion donnent environ 144 images par seconde. Vaut au prochain "
+      "lancement. Sans RIFE, la lecture peut caler : gardez RIFE à ×2 ou plus.");
+  if (d.smooth_motion && d.rife_factor < 2)
+    note("RIFE est désactivé : Smooth Motion risque de caler la lecture.");
 }
 
 // La route HDR : RTX HDR (TrueHDR), HDR natif (libplacebo, aspect TrueHDR émulé), ou SDR.

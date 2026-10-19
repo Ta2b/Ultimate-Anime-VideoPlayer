@@ -684,7 +684,8 @@ std::expected<void, Refusal> play(const PlayOptions& options, const PlayerPaths&
       PlaceboScreen::open(ScreenOptions{.title = std::format("ajp — {}", options.file.filename().string()),
                                         .width = options.window_width,
                                         .height = options.window_height,
-                                        .fullscreen = options.fullscreen});
+                                        .fullscreen = options.fullscreen,
+                                        .smooth_motion = saved->smooth_motion});
   if (!screen) return std::unexpected(std::move(screen.error()));
   auto ui = PlayerUi::create((*screen)->window(), options.file.filename().string());
   if (!ui) return std::unexpected(std::move(ui.error()));

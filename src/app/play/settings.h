@@ -60,6 +60,10 @@ struct PlaySettings {
   int work_height = 720;
   Downscale downscale = Downscale::Area;
   int rife_factor = kDefaultRifeFactor;  // 0 : aucune interpolation
+  // Smooth Motion du pilote NVIDIA (RTX 40 et 50, pilote ≥ 580) : sa couche Vulkan double les
+  // images présentées, au-dessus de RIFE (×3 puis ×2 : 72 → 144 images par seconde). Posé au
+  // lancement, avant l'instance Vulkan : vaut au prochain lancement.
+  bool smooth_motion = false;
   bool true_hdr = false;
   int true_hdr_contrast = 100;
   int true_hdr_saturation = 100;

@@ -146,6 +146,13 @@ std::expected<std::unique_ptr<PlaceboScreen>, Refusal> PlaceboScreen::open(const
     return refuse(RefusalCode::LibraryUnavailable,
                   std::format("SDL_Vulkan_GetInstanceExtensions : {}", SDL_GetError()));
   }
+  if (options.smooth_motion) {
+    // Le chargeur Vulkan lit la variable à la création de l'instance ; le thread main est encore
+    // seul à toucher l'environnement à ce moment.
+    SDL_setenv_unsafe("NVPRESENT_ENABLE_SMOOTH_MOTION", "1", 1);
+    impl->channel->info(
+        "Smooth Motion : couche du pilote NVIDIA demandée (NVPRESENT_ENABLE_SMOOTH_MOTION=1)");
+  }
   pl_vk_inst_params inst_params{};
   inst_params.extensions = sdl_extensions;
   inst_params.num_extensions = static_cast<int>(count);

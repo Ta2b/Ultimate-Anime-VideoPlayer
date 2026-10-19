@@ -352,6 +352,11 @@ void apply_live(Chain& to, const PlaySettings& wanted, std::int64_t now_us) {
   if (wanted.audio_delay_ms != r.audio_delay_ms)
     to.session.command(cmd::SetAudioDelay{.delay_us = std::int64_t{wanted.audio_delay_ms} * 1000});
   if (wanted.stats != r.stats) to.session.set_stats(wanted.stats);
+  if (wanted.smooth_motion != r.smooth_motion) {
+    controls.notify(wanted.smooth_motion ? std::string("Smooth Motion : au prochain lancement")
+                                         : std::string("Smooth Motion coupé au prochain lancement"),
+                    now_us);
+  }
   if (wanted.oled_care != r.oled_care || wanted.steady_cadence != r.steady_cadence ||
       wanted.oled_black != r.oled_black)
     apply_oled_care(to, wanted);
