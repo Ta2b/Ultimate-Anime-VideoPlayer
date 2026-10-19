@@ -1,6 +1,7 @@
 // L'étage gpu de la tranche verticale sur un backend chargé (gpu/backend.h) : chaque image
-// décodée est ingérée en RGB FP16, agrandie par le moteur SPAN (×2), puis écrite dans un slot
-// du ring que render présente. Sans moteur, l'image source passe telle quelle.
+// décodée est ingérée en RGB FP16 à la taille de travail (réduction Area fusionnée si elle est
+// plus petite que la source), agrandie par le moteur SPAN (×2), puis écrite dans un slot du ring
+// que render présente. Sans moteur, l'image de travail passe telle quelle.
 #pragma once
 
 #include <expected>
@@ -17,8 +18,10 @@ namespace ajp::app::play {
 struct UpscaleSetup {
   gpu::Backend* backend = nullptr;  // vit plus longtemps que l'étage
   gpu::Engine* engine = nullptr;    // SPAN aux formes de la source ; nullptr : sans agrandissement
-  int source_width = 0;
+  int source_width = 0;             // images décodées
   int source_height = 0;
+  int work_width = 0;  // entrée du moteur, au plus la source ; 0 : la source
+  int work_height = 0;
   std::vector<RingSlotDesc> slots;  // ring de render, à la taille de sortie du moteur
 };
 
@@ -35,7 +38,7 @@ class UpscaleStage final : public RingStage {
                                        std::uint64_t wait_value, std::uint64_t signal_value) override;
 
   UpscaleSetup setup_;
-  std::unique_ptr<gpu::TensorBuffer> input_;   // 1 × 3 × h × w
+  std::unique_ptr<gpu::TensorBuffer> input_;   // 1 × 3 × h × w, taille de travail
   std::unique_ptr<gpu::TensorBuffer> output_;  // 1 × 3 × 2h × 2w ; absent sans moteur
 };
 

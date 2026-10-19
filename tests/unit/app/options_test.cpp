@@ -47,6 +47,21 @@ TEST_CASE("ajp play : refus nommés", "[app][options]") {
   CHECK(parse({"--help"})->help);
 }
 
+TEST_CASE("ajp play : taille de travail, 720 lignes par défaut comme le profil actuel", "[app][options]") {
+  CHECK(parse({"a.mkv"})->work_height == 720);
+  CHECK(parse({"a.mkv", "--work-height=0"})->work_height == 0);
+  CHECK(parse({"a.mkv", "--work-height=540"})->work_height == 540);
+  CHECK(parse({"a.mkv", "--work-height=-1"}).error().code == RefusalCode::FieldOutOfRange);
+  CHECK(parse({"a.mkv", "--work-height=haut"}).error().code == RefusalCode::FieldOutOfRange);
+  CHECK(work_size(1920, 1080, 720) == WorkSize{1280, 720});
+  CHECK(work_size(1280, 720, 720) == WorkSize{1280, 720});  // déjà à la taille : rien
+  CHECK(work_size(854, 480, 720) == WorkSize{854, 480});    // plus petite : jamais agrandie
+  CHECK(work_size(1920, 1080, 0) == WorkSize{1920, 1080});  // 0 : jamais réduite
+  CHECK(work_size(1920, 800, 720) == WorkSize{1728, 720});  // 2,40:1
+  CHECK(work_size(1440, 1080, 720) == WorkSize{960, 720});  // 4:3
+  CHECK(work_size(1918, 1080, 720).width % 2 == 0);         // largeur paire
+}
+
 TEST_CASE("Modèle : --model doit exister, sinon le premier candidat présent", "[app][options]") {
   const auto dir = std::filesystem::temp_directory_path() / "ajp-app-model-test";
   std::filesystem::create_directories(dir);

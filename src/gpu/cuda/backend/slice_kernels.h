@@ -1,6 +1,7 @@
 // Noyaux CUDA provisoires du backend TensorRT de la tranche verticale : ingestion NV12 ou
-// P010 (mémoire linéaire de NVDEC) vers RGB planaire FP16, et écriture RGB FP16 vers un slot
-// RGBA16 UNORM du ring importé de Vulkan.
+// P010 (mémoire linéaire de NVDEC) vers RGB planaire FP16, réduction Area comprise quand le
+// tenseur est plus petit que l'image (1080p vers 720p, une seule passe), et écriture RGB FP16
+// vers un slot RGBA16 UNORM du ring importé de Vulkan.
 //
 // Provisoire : le socle CUDA (chantier pc/cuda-compute, src/gpu/cuda/compute) porte les noyaux
 // exacts de kernels/spec (chroma Spline36 en codes bruts). Ici la chroma est bilinéaire, avec
@@ -19,8 +20,13 @@ struct IngestParams {
   const void* chroma = nullptr;  // plan CbCr entrelacé
   std::size_t luma_pitch = 0;    // octets
   std::size_t chroma_pitch = 0;
-  int width = 0;
+  int width = 0;  // image décodée
   int height = 0;
+  // Tenseur de sortie : la taille de l'image, ou plus petit pour une réduction Area fusionnée
+  // (chaque pixel de sortie moyenne sa boîte de source, pixels convertis en RGB un à un, pondérés
+  // par leur recouvrement ; identique à convertir puis réduire, l'opération étant linéaire).
+  int out_width = 0;
+  int out_height = 0;
   bool sixteen_bits = false;  // P010 ou P016 : échantillons de 16 bits
   // Normalisation et matrice (kernels/spec/color.h : yuv_scale, coefficients).
   float yoff = 0.0F;

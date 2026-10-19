@@ -4,6 +4,7 @@
 //   ajp play <fichier> [--model=FICHIER.onnx] [--no-upscale] [--window=LxH] [--fullscreen]
 //                      [--start=S] [--seconds=S] [--fullscreen-after=S] [--stats=FICHIER]
 //                      [--snapshot=FICHIER.ppm] [--snapshot-at=S] [--keys=S:touche,…]
+//                      [--work-height=N]
 //
 // Le modèle par défaut est celui du lecteur actuel du propriétaire (AnimeJaNai, slot par
 // défaut de animejanai.conf) : SPAN V3.1 Sharp1 Performance, ×2. Il est lu en place, en
@@ -33,6 +34,7 @@ inline constexpr int kSpanFactor = 2;
 namespace limits {
 inline constexpr core::Range<int> kWindowSide{64, 16384};
 inline constexpr core::Range<std::int64_t> kSeconds{0, std::int64_t{24} * 3600};
+inline constexpr core::Range<int> kWorkHeight{0, 4320};
 }  // namespace limits
 
 struct PlayOptions {
@@ -51,8 +53,20 @@ struct PlayOptions {
   // --keys=S:touche,… : touches pressées d'office à ces instants (essais sans clavier), par
   // exemple « 3:Right,5:Space,6:Space,8:F ». Noms de touches de SDL.
   std::vector<std::pair<std::int64_t, std::string>> keys;
+  // --work-height=N : la source plus haute que N est réduite par Area à N lignes avant SPAN
+  // (1080p vers 720p, puis ×2 vers 1440p, comme le profil du lecteur actuel) ; 0 : jamais.
+  int work_height = 720;
   bool help = false;  // --help
 };
+
+// Taille de travail de la chaîne : la source, ou réduite à work_height lignes en gardant le
+// rapport d'aspect, largeur paire (1920x1080 avec 720 donne 1280x720).
+struct WorkSize {
+  int width = 0;
+  int height = 0;
+  friend bool operator==(const WorkSize&, const WorkSize&) = default;
+};
+WorkSize work_size(int width, int height, int work_height);
 
 // Arguments qui suivent « play ». Une option inconnue (OptionUnknown), une valeur
 // illisible ou hors plage (FieldOutOfRange), un fichier absent de la ligne (FieldMissing)

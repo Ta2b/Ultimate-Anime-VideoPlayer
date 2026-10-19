@@ -3,6 +3,7 @@
 // installé (lu en place, jamais copié). Sans GPU NVIDIA, chaque test se SKIP avec sa raison.
 #include "gpu/backend.h"
 
+#include <algorithm>
 #include <array>
 #include <cmath>
 #include <cstring>
@@ -190,6 +191,68 @@ TEST_CASE("Backend TensorRT : ingestion NV12 BT.709 contre la référence", "[ba
     }
   }
   CHECK(worst < 2e-3);  // FP16 sur [0, 1] : un demi-pas à 1 vaut 2^-11 ≈ 4,9e-4
+}
+
+TEST_CASE("Backend TensorRT : réduction Area fusionnée à l'ingestion, rapport 1,5 (1080p vers 720p)",
+          "[backend_tensorrt][cuda]") {
+  if (!has_cuda()) SKIP("pas de GPU NVIDIA");
+  constexpr int w = 96;
+  constexpr int h = 54;
+  constexpr int ow = 64;
+  constexpr int oh = 36;
+  kernels::YuvImage image(kernels::Format::Nv12, w, h, 16, 128, 128);
+  for (int y = 0; y < h; ++y) {
+    for (int x = 0; x < w; ++x)
+      image.y.data[image.y.index(x, y)] = static_cast<std::uint16_t>(16 + (x * 7 + y * 13) % 220);
+  }
+  for (int y = 0; y < h / 2; ++y) {
+    for (int x = 0; x < w / 2; ++x) {
+      image.u.data[image.u.index(x, y)] = static_cast<std::uint16_t>(64 + 2 * x);
+      image.v.data[image.v.index(x, y)] = static_cast<std::uint16_t>(200 - 3 * y);
+    }
+  }
+  Loaded loaded;
+  REQUIRE(loaded.backend != nullptr);
+  DecodedFrame frame = frame_of(std::make_shared<CudaNv12>(image), w, h);
+  frame.color =
+      ColorInfo{.matrix = ColorMatrix::Bt709, .range = ColorRange::Limited, .siting = ChromaSiting::Left};
+  auto full = loaded.backend->alloc_tensor(gpu::TensorType::F16, {.dims = {1, 3, h, w}});
+  auto small = loaded.backend->alloc_tensor(gpu::TensorType::F16, {.dims = {1, 3, oh, ow}});
+  REQUIRE(full);
+  REQUIRE(small);
+  REQUIRE(loaded.backend->kernels()->ingest(frame, {}, (*full)->tensor()));
+  REQUIRE(loaded.backend->kernels()->ingest(frame, {}, (*small)->tensor()));
+  const auto base = download((*full)->tensor());
+  const auto got = download((*small)->tensor());
+  // Référence : Area sur l'image pleine convertie, boîtes de 1,5 × 1,5 pixels.
+  double worst = 0.0;
+  for (int c = 0; c < 3; ++c) {
+    for (int y = 0; y < oh; ++y) {
+      for (int x = 0; x < ow; ++x) {
+        const double x0 = x * 1.5;
+        const double y0 = y * 1.5;
+        double sum = 0.0;
+        for (int j = static_cast<int>(y0); j < static_cast<int>(std::ceil(y0 + 1.5)); ++j) {
+          const double wy = std::min(y0 + 1.5, j + 1.0) - std::max(y0, static_cast<double>(j));
+          for (int i = static_cast<int>(x0); i < static_cast<int>(std::ceil(x0 + 1.5)); ++i) {
+            const double wx = std::min(x0 + 1.5, i + 1.0) - std::max(x0, static_cast<double>(i));
+            sum += wx * wy * base[static_cast<std::size_t>((c * h + j) * w + i)];
+          }
+        }
+        const double want = sum / 2.25;
+        const double have = got[static_cast<std::size_t>((c * oh + y) * ow + x)];
+        worst = std::max(worst, std::fabs(want - have));
+      }
+    }
+  }
+  CHECK(worst < 2e-3);  // deux arrondis FP16 (l'image pleine relue, puis la sortie)
+
+  // Agrandir n'est pas une réduction Area : refusé par son nom.
+  auto bigger = loaded.backend->alloc_tensor(gpu::TensorType::F16, {.dims = {1, 3, h * 2, w * 2}});
+  REQUIRE(bigger);
+  auto refused = loaded.backend->kernels()->ingest(frame, {}, (*bigger)->tensor());
+  REQUIRE_FALSE(refused);
+  CHECK(refused.error().code == RefusalCode::ShapeInvalid);
 }
 
 TEST_CASE("Backend TensorRT : le vrai SPAN d'AnimeJaNai, construit puis exécuté",

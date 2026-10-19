@@ -86,9 +86,16 @@ std::expected<void, Refusal> TensorRtBackend::ingest(const DecodedFrame& frame, 
     return refuse(RefusalCode::FormatUnsupported,
                   "ingestion : NV12, P010 ou P016 en YUV, chaîne d'agrandissement");
   }
-  if (!rgb_tensor(rgb, frame.width, frame.height)) {
-    return refuse(RefusalCode::ShapeInvalid,
-                  std::format("ingestion : tenseur FP16 1×3×{}×{} attendu", frame.height, frame.width));
+  // Tenseur à la taille de l'image, ou plus petit : réduction Area fusionnée (slice_kernels.h).
+  // Extension de ce backend au contrat de KernelOps::ingest, signalée pour l'intégration.
+  const int out_width = static_cast<int>(rgb.shape.dims[3]);
+  const int out_height = static_cast<int>(rgb.shape.dims[2]);
+  if (out_width < 1 || out_height < 1 || out_width > frame.width || out_height > frame.height ||
+      !rgb_tensor(rgb, out_width, out_height)) {
+    return refuse(
+        RefusalCode::ShapeInvalid,
+        std::format("ingestion : tenseur FP16 1×3×h×w attendu, au plus {}×{} (Area ne fait que réduire)",
+                    frame.height, frame.width));
   }
   const kernels::YuvScale scale = kernels::yuv_scale(
       *format, frame.color.range == ColorRange::Full ? kernels::Range::Full : kernels::Range::Limited);
@@ -102,6 +109,8 @@ std::expected<void, Refusal> TensorRtBackend::ingest(const DecodedFrame& frame, 
       .chroma_pitch = frame.data->native_pitch(1),
       .width = frame.width,
       .height = frame.height,
+      .out_width = out_width,
+      .out_height = out_height,
       .sixteen_bits = *format != kernels::Format::Nv12,
       .yoff = scale.yoff,
       .yscale = scale.yscale,

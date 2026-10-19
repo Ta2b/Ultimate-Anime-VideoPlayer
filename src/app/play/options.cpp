@@ -1,5 +1,6 @@
 #include "app/play/options.h"
 
+#include <algorithm>
 #include <charconv>
 #include <cmath>
 #include <format>
@@ -105,8 +106,9 @@ std::expected<PlayOptions, Refusal> parse_play_options(std::span<const std::stri
     } else {
       std::expected<void, Refusal> applied;
       bool known = false;
-      for (const std::string_view name : {"--model", "--window", "--start", "--seconds", "--fullscreen-after",
-                                          "--stats", "--snapshot-at", "--snapshot", "--keys"}) {
+      for (const std::string_view name :
+           {"--model", "--window", "--start", "--seconds", "--fullscreen-after", "--stats", "--snapshot-at",
+            "--snapshot", "--keys", "--work-height"}) {
         auto value = valued(args, i, name);
         if (!value) return std::unexpected(std::move(value.error()));
         if (!*value) continue;
@@ -122,6 +124,14 @@ std::expected<PlayOptions, Refusal> parse_play_options(std::span<const std::stri
           applied = keys(text, options);
         } else if (name == "--snapshot") {
           options.snapshot = std::filesystem::path(text);
+        } else if (name == "--work-height") {
+          const auto lines = number<int>(text);
+          if (!lines || !limits::kWorkHeight.contains(*lines)) {
+            return refuse(RefusalCode::FieldOutOfRange,
+                          std::format("--work-height : « {} » n'est pas un nombre de lignes entre {} et {}",
+                                      text, limits::kWorkHeight.lo, limits::kWorkHeight.hi));
+          }
+          options.work_height = *lines;
         } else {
           auto us = seconds(name, text);
           if (!us) return std::unexpected(std::move(us.error()));
@@ -142,6 +152,12 @@ std::expected<PlayOptions, Refusal> parse_play_options(std::span<const std::stri
   return options;
 }
 
+WorkSize work_size(int width, int height, int work_height) {
+  if (work_height <= 0 || height <= work_height || width <= 0 || height <= 0) return {width, height};
+  const auto scaled = static_cast<int>(std::lround(static_cast<double>(width) * work_height / height));
+  return {std::max(2, scaled + (scaled % 2)), work_height};
+}
+
 std::string play_usage() {
   return std::format(
       "ajp play <fichier> [options]\n"
@@ -155,6 +171,7 @@ std::string play_usage() {
       "  --stats=FICHIER        temps de chaque image présentée\n"
       "  --snapshot=FICHIER     la fenêtre en PPM, après --snapshot-at=S secondes (3)\n"
       "  --keys=S:touche,…      touches pressées d'office (essais), ex. 3:Right,5:Space\n"
+      "  --work-height=N        réduit la source à N lignes avant SPAN (défaut 720 ; 0 jamais)\n"
       "Touches : espace pause, flèches seek 5 s, f plein écran, q quitter.\n",
       kDefaultModelFile);
 }

@@ -29,27 +29,37 @@ std::expected<std::unique_ptr<VideoStage>, Refusal> UpscaleStage::start(VideoSta
   if (setup.backend == nullptr || setup.backend->kernels() == nullptr) {
     return refuse(RefusalCode::FieldMissing, "étage gpu : backend sans noyaux");
   }
+  if (setup.work_width == 0 && setup.work_height == 0) {
+    setup.work_width = setup.source_width;
+    setup.work_height = setup.source_height;
+  }
+  if (setup.work_width < 1 || setup.work_height < 1 || setup.work_width > setup.source_width ||
+      setup.work_height > setup.source_height) {
+    return refuse(RefusalCode::ShapeInvalid,
+                  std::format("étage gpu : taille de travail {}x{} hors de la source {}x{}", setup.work_width,
+                              setup.work_height, setup.source_width, setup.source_height));
+  }
   if (setup.slots.empty() || setup.slots.size() > kMaxRingSlots) {
     return refuse(RefusalCode::FieldOutOfRange, std::format("étage gpu : 1 à {} slots", kMaxRingSlots));
   }
   const int factor = setup.engine != nullptr ? kSpanFactor : 1;
   for (const RingSlotDesc& slot : setup.slots) {
-    if (slot.width != setup.source_width * factor || slot.height != setup.source_height * factor) {
+    if (slot.width != setup.work_width * factor || slot.height != setup.work_height * factor) {
       return refuse(RefusalCode::ShapeInvalid,
                     std::format("slot {} : {}x{} au lieu de la sortie {}x{}", slot.index, slot.width,
-                                slot.height, setup.source_width * factor, setup.source_height * factor));
+                                slot.height, setup.work_width * factor, setup.work_height * factor));
     }
   }
   std::unique_ptr<UpscaleStage> stage(new UpscaleStage(std::move(init), std::move(setup)));
   gpu::Backend& backend = *stage->setup_.backend;
   auto input = backend.alloc_tensor(gpu::TensorType::F16,
-                                    rgb_shape(stage->setup_.source_width, stage->setup_.source_height));
+                                    rgb_shape(stage->setup_.work_width, stage->setup_.work_height));
   if (!input) return std::unexpected(std::move(input.error()));
   stage->input_ = std::move(*input);
   if (stage->setup_.engine != nullptr) {
     auto output = backend.alloc_tensor(
         gpu::TensorType::F16,
-        rgb_shape(stage->setup_.source_width * kSpanFactor, stage->setup_.source_height * kSpanFactor));
+        rgb_shape(stage->setup_.work_width * kSpanFactor, stage->setup_.work_height * kSpanFactor));
     if (!output) return std::unexpected(std::move(output.error()));
     stage->output_ = std::move(*output);
   }
