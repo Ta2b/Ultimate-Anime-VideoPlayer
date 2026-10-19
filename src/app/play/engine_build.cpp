@@ -17,7 +17,7 @@ std::expected<std::unique_ptr<EngineBuild>, Refusal> EngineBuild::start(EngineRe
         if (!self->result_) self->result_ = std::unexpected(refusal);
       }),
       [self, request = std::move(request)](const std::stop_token& stop, const ThreadReport&) mutable {
-        self->run(stop, std::move(request));
+        self->run(stop, request);
       });
   if (!thread) return std::unexpected(std::move(thread.error()));
   build->thread_ = std::move(*thread);
@@ -29,7 +29,7 @@ EngineBuild::~EngineBuild() {
   if (thread_.joinable()) thread_.join();
 }
 
-void EngineBuild::run(const std::stop_token& stop, EngineRequest request) {
+void EngineBuild::run(const std::stop_token& stop, const EngineRequest& request) {
   auto finish = [this](std::expected<gpu::Artifact, Refusal> outcome) {
     const std::scoped_lock lock(mutex_);
     result_ = std::move(outcome);
@@ -52,6 +52,11 @@ void EngineBuild::run(const std::stop_token& stop, EngineRequest request) {
 std::optional<std::expected<gpu::Artifact, Refusal>> EngineBuild::result() {
   const std::scoped_lock lock(mutex_);
   return result_;
+}
+
+EngineBuild::Status EngineBuild::status() const {
+  const std::scoped_lock lock(mutex_);
+  return Status{.fraction = fraction_, .stage = stage_};
 }
 
 std::string EngineBuild::progress() const {

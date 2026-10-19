@@ -405,4 +405,50 @@ bool draw_controls(Controls& controls, const ControlsView& view, const UiLook& l
   return opacity > 0.0F || controls.toast_opacity(now_us) > 0.0F;
 }
 
+void draw_preparation(const PrepareView& view, const UiLook& look, std::int64_t now_us) {
+  const ImGuiIO& io = ImGui::GetIO();
+  const float width = io.DisplaySize.x;
+  const float height = io.DisplaySize.y;
+  const float s = look.scale;
+  ImDrawList* list = ImGui::GetBackgroundDrawList();
+  const float panel = controls_height(s);
+  list->AddRectFilledMultiColor({0.0F, height - panel * 2.0F}, {width, height}, black(0.0F), black(0.0F),
+                                black(0.6F), black(0.6F));
+  draw_title(Pen{list, s, 1.0F}, look.title, width);
+
+  // La barre à la place de la barre de progression.
+  const float pad = kPad * s;
+  const float x0 = pad;
+  const float x1 = width - pad;
+  const float bar_y = height - pad - kRow * s - kBarZone * s * 0.5F;
+  const float thick = 3.5F * s;
+  list->AddRectFilled({x0, bar_y - thick * 0.5F}, {x1, bar_y + thick * 0.5F}, white(0.22F), thick * 0.5F);
+  std::string text = view.label;
+  if (view.fraction) {
+    const float f = std::clamp(*view.fraction, 0.0F, 1.0F);
+    list->AddRectFilled({x0, bar_y - thick * 0.5F},
+                        {std::max(x0 + thick, x0 + f * (x1 - x0)), bar_y + thick * 0.5F}, accent(1.0F),
+                        thick * 0.5F);
+    text += std::format(" · {} %", static_cast<int>(std::floor(f * 100.0F)));
+  } else {
+    // Durée inconnue : un segment qui parcourt la barre.
+    const float span = (x1 - x0) * 0.18F;
+    const float t = static_cast<float>(now_us % 1'600'000) / 1'600'000.0F;
+    const float start = x0 + t * (x1 - x0 + span) - span;
+    list->AddRectFilled({std::max(start, x0), bar_y - thick * 0.5F},
+                        {std::min(start + span, x1), bar_y + thick * 0.5F}, accent(1.0F), thick * 0.5F);
+  }
+  const float cy = height - pad - kRow * s * 0.5F;
+  const ImVec2 size = ImGui::CalcTextSize(text.c_str());
+  list->AddText({x0, cy - size.y * 0.5F}, white(0.95F), text.c_str());
+  if (view.show_details && !view.details.empty()) {
+    const float line = ImGui::GetTextLineHeightWithSpacing();
+    float y = bar_y - 14.0F * s - line * static_cast<float>(view.details.size());
+    for (const std::string& detail : view.details) {
+      list->AddText({x0, y}, white(0.7F), detail.c_str());
+      y += line;
+    }
+  }
+}
+
 }  // namespace ajp::app::play

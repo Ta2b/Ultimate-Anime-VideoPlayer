@@ -42,6 +42,8 @@ class PlayerUi {
   // Les clics de l'interface, et le simple clic sur l'image une fois son délai passé, vont dans
   // actions.
   UiFrame frame(std::int64_t now_us, const ControlsView& view, std::vector<Input>& actions);
+  // L'image de la préparation des moteurs (avant la lecture), recomposée à chaque appel.
+  const ImDrawData* preparation(std::int64_t now_us, const PrepareView& view);
 
   Controls& controls() { return controls_; }
   // Les pistes que les menus de la barre proposent, et celles choisies.

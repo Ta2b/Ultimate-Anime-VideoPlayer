@@ -6,7 +6,7 @@
 # threads source, gpu, audio et subs, horloge audio maîtresse).
 ajp_add_module(app
   SOURCES
-    play/backend_library.cpp play/bridges.cpp play/controls.cpp play/controls_draw.cpp play/engine_build.cpp
+    play/backend_library.cpp play/bridges.cpp play/build_progress.cpp play/controls.cpp play/controls_draw.cpp play/engine_build.cpp
     play/frame_queue.cpp play/frame_stats.cpp play/input.cpp play/options.cpp play/osd_text.cpp play/pipeline.cpp
     play/placebo_imgui.cpp play/placebo_overlays.cpp play/placebo_ring.cpp play/placebo_screen.cpp
     play/placebo_snapshot.cpp play/player.cpp

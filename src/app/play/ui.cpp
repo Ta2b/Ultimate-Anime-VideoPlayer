@@ -351,6 +351,24 @@ UiFrame PlayerUi::frame(std::int64_t now_us, const ControlsView& view, std::vect
   return UiFrame{.draw = draw_, .changed = true, .bottom = bottom_, .top = top_};
 }
 
+const ImDrawData* PlayerUi::preparation(std::int64_t now_us, const PrepareView& view) {
+  ImGuiIO& io = ImGui::GetIO();
+  int width = 0;
+  int height = 0;
+  SDL_GetWindowSizeInPixels(window_, &width, &height);
+  io.DisplaySize = {static_cast<float>(std::max(width, 1)), static_cast<float>(std::max(height, 1))};
+  io.DisplayFramebufferScale = {1.0F, 1.0F};
+  io.DeltaTime = last_frame_us_ > 0 ? std::max(1e-4F, static_cast<float>(now_us - last_frame_us_) * 1e-6F)
+                                    : 1.0F / 60.0F;
+  last_frame_us_ = now_us;
+  ImGui::NewFrame();
+  draw_preparation(view, look_, now_us);
+  ImGui::Render();
+  draw_ = nullptr;  // la barre de lecture se recompose à son premier tour
+  controls_.framed(now_us, ControlsView{}, false);
+  return ImGui::GetDrawData();
+}
+
 void PlayerUi::set_tracks(TrackMenu tracks) {
   look_.tracks = std::move(tracks);
   input_pending_ = true;

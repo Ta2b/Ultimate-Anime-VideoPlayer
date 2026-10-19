@@ -15,6 +15,7 @@
 #include <SDL3/SDL_video.h>
 
 #include "app/play/backend_library.h"
+#include "app/play/build_progress.h"
 #include "app/play/engine_build.h"
 #include "app/play/input.h"
 #include "app/play/pipeline.h"
@@ -70,30 +71,94 @@ std::expected<media::TrackInfo, Refusal> probe_video(const std::filesystem::path
   return *demuxer->track(*choice.video);
 }
 
-// Tours d'attente de main pendant la construction du moteur : la fenêtre reste vivante et
-// dit où en est trtexec. Rien si l'utilisateur ferme la fenêtre.
+// Un moteur à construire, tel que la préparation le montre.
+struct EngineLabel {
+  std::string name;   // « SPAN », « RIFE »
+  std::string model;  // nom du modèle
+  int width = 0;      // entrée du moteur
+  int height = 0;
+  double expected_s = kDefaultBuildSeconds;
+};
+
+// Une construction plus courte ne montre rien : un moteur du cache revient tout de suite.
+constexpr std::int64_t kQuietBuildUs = 250'000;
+// Pendant une construction, la superposition est redessinée 10 fois par seconde au plus : le GPU
+// sert à mesurer les tactiques.
+constexpr std::uint32_t kBuildFrameMs = 100;
+
+// Instantané demandé (--snapshot) : pris pendant la première construction de moteur qui dure jusqu'à
+// at_us, sinon pendant la lecture.
+struct SnapshotPlan {
+  std::optional<std::filesystem::path> path;
+  std::int64_t at_us = 0;
+  // Demande l'instantané à l'écran si since_us remonte à at_us.
+  void maybe(PlaceboScreen& screen, std::int64_t since_us) {
+    if (!path || host_now_us() - since_us < at_us) return;
+    screen.snapshot_next(*path);
+    path.reset();
+  }
+};
+
+// Tours d'attente de main pendant la construction d'un moteur : la fenêtre reste vivante et la
+// superposition montre la préparation. Rien si l'utilisateur ferme la fenêtre ou quitte (q) ; Tab
+// montre les détails (details, repris ensuite par les statistiques de la lecture).
 std::expected<std::optional<gpu::Artifact>, Refusal> wait_engine(EngineBuild& build, PlaceboScreen& screen,
-                                                                 const std::string& label) {
+                                                                 PlayerUi& ui, const EngineLabel& engine,
+                                                                 bool& details, SnapshotPlan& snapshot) {
   const core::KeyMap keys = core::KeyMap::defaults();
+  const std::int64_t started = host_now_us();
+  BuildProgress progress(engine.expected_s, started);
+  std::vector<Input> actions;
   while (true) {
     SDL_Event event;
     while (SDL_PollEvent(&event)) {
-      const auto input = input_of(event, keys);
-      if (input && std::holds_alternative<Command>(*input) &&
-          std::holds_alternative<cmd::Quit>(std::get<Command>(*input))) {
-        return std::nullopt;
+      if (ui.handle(event, host_now_us(), actions)) continue;
+      if (auto input = input_of(event, keys)) actions.push_back(*input);
+    }
+    for (const Input& input : actions) {
+      if (const auto* command = std::get_if<Command>(&input)) {
+        if (std::holds_alternative<cmd::Quit>(*command)) return std::nullopt;
+        if (std::holds_alternative<cmd::ToggleOsd>(*command)) details = !details;
+      } else if (std::holds_alternative<ToggleFullscreen>(input)) {
+        screen.set_fullscreen(!screen.fullscreen());
+      } else if (std::holds_alternative<LeaveFullscreen>(input)) {
+        screen.set_fullscreen(false);
       }
     }
+    actions.clear();
     if (auto result = build.result()) {
       if (!*result) return std::unexpected(std::move(result->error()));
+      log_channel("app")->info("moteur {} prêt en {:.1f} s (construction prévue {:.0f} s)", engine.name,
+                               progress.elapsed_seconds(host_now_us()), engine.expected_s);
       return std::optional(std::move(**result));
     }
-    const std::vector<std::string> lines{
-        label, "Construction du moteur TensorRT (une fois par taille d'image)", build.progress()};
-    auto shown = screen.show(ShowRequest{.osd = lines});
-    if (!shown) return std::unexpected(std::move(shown.error()));
-    if (!shown->presented) SDL_Delay(10);
+    const EngineBuild::Status status = build.status();
+    progress.marker(status.fraction);
+    const std::int64_t now = host_now_us();
+    if (now - started >= kQuietBuildUs) {
+      snapshot.maybe(screen, started);
+      const auto seconds = [](double s) { return format_clock(static_cast<std::int64_t>(s * 1e6), 0); };
+      const PrepareView view{
+          .label = std::format("Préparation du moteur {}", engine.name),
+          .fraction = progress.fraction(now),
+          .details = {status.stage,
+                      std::format("écoulé {} · prévu ~{}", seconds(progress.elapsed_seconds(now)),
+                                  seconds(progress.expected_seconds())),
+                      std::format("{} · entrée {}x{} · TensorRT", engine.model, engine.width, engine.height)},
+          .show_details = details};
+      auto shown = screen.show(ShowRequest{.ui = ui.preparation(now, view)});
+      if (!shown) return std::unexpected(std::move(shown.error()));
+    }
+    SDL_Delay(kBuildFrameMs);
   }
+}
+
+// Une image de la superposition avant une étape bloquante (chargement d'un moteur, RTX HDR) : la
+// fenêtre dit ce qu'elle attend au lieu de rester noire.
+void show_loading(PlaceboScreen& screen, PlayerUi& ui, std::string label) {
+  const PrepareView view{.label = std::move(label)};
+  if (auto shown = screen.show(ShowRequest{.ui = ui.preparation(host_now_us(), view)}); !shown)
+    log_channel("app")->warn("préparation : {}", shown.error().detail);
 }
 
 template <class... F>
@@ -373,6 +438,11 @@ std::expected<void, Refusal> play(const PlayOptions& options, const PlayerPaths&
                                         .height = options.window_height,
                                         .fullscreen = options.fullscreen});
   if (!screen) return std::unexpected(std::move(screen.error()));
+  auto ui = PlayerUi::create((*screen)->window(), options.file.filename().string());
+  if (!ui) return std::unexpected(std::move(ui.error()));
+  bool details = false;  // Tab pendant la préparation : repris par les statistiques de la lecture
+  SnapshotPlan snapshot{.path = options.snapshot, .at_us = options.snapshot_at_us};
+  show_loading(**screen, **ui, "Chargement");
   auto library = BackendLibrary::open(paths.backends);
   if (!library) return std::unexpected(std::move(library.error()));
   const gpu::BackendInit init{
@@ -393,10 +463,17 @@ std::expected<void, Refusal> play(const PlayOptions& options, const PlayerPaths&
                       .model = {.id = model->stem().string(), .onnx_path = *model, .sha256 = *sha256},
                       .shapes = {.min = shape, .opt = shape, .max = shape}});
     if (!build) return std::unexpected(std::move(build.error()));
-    auto artifact = wait_engine(**build, **screen, label);
+    const EngineLabel engine_label{
+        .name = "SPAN",
+        .model = model->stem().string(),
+        .width = work.width,
+        .height = work.height,
+        .expected_s = expected_build_seconds(paths.engines, *model, std::int64_t{work.width} * work.height)};
+    auto artifact = wait_engine(**build, **screen, **ui, engine_label, details, snapshot);
     if (!artifact) return std::unexpected(std::move(artifact.error()));
     if (!*artifact) return {};  // fenêtre fermée pendant la construction
     log->info("moteur {}", (*artifact)->path.string());
+    show_loading(**screen, **ui, "Chargement des moteurs");
     auto loaded = (*backend)->load(**artifact);
     if (!loaded) return std::unexpected(std::move(loaded.error()));
     engine = std::move(*loaded);
@@ -413,16 +490,25 @@ std::expected<void, Refusal> play(const PlayOptions& options, const PlayerPaths&
         .model = {.id = rife_model->stem().string(), .onnx_path = *rife_model, .sha256 = *sha256},
         .shapes = {.min = shape, .opt = shape, .max = shape}});
     if (!build) return std::unexpected(std::move(build.error()));
-    auto artifact = wait_engine(**build, **screen, label);
+    const EngineLabel engine_label{
+        .name = "RIFE",
+        .model = rife_model->stem().string(),
+        .width = g.padded_width,
+        .height = g.padded_height,
+        .expected_s = expected_build_seconds(paths.engines, *rife_model,
+                                             std::int64_t{g.padded_width} * g.padded_height)};
+    auto artifact = wait_engine(**build, **screen, **ui, engine_label, details, snapshot);
     if (!artifact) return std::unexpected(std::move(artifact.error()));
     if (!*artifact) return {};  // fenêtre fermée pendant la construction
     log->info("moteur RIFE {}", (*artifact)->path.string());
+    show_loading(**screen, **ui, "Chargement des moteurs");
     auto loaded = (*backend)->load(**artifact);
     if (!loaded) return std::unexpected(std::move(loaded.error()));
     rife = std::move(*loaded);
   }
 
   if (options.true_hdr) {
+    show_loading(**screen, **ui, "Préparation de RTX HDR");
     auto opened = open_rtx_hdr(options, paths, **screen, *(*backend)->kernels(), work.width * factor,
                                work.height * factor);
     if (!opened) return std::unexpected(std::move(opened.error()));
@@ -463,9 +549,8 @@ std::expected<void, Refusal> play(const PlayOptions& options, const PlayerPaths&
   for (std::string& line : (*pipeline)->describe()) session_config.header.push_back(std::move(line));
   session_config.header.push_back(out.output_description());
   for (const std::string& line : session_config.header) log->info("{}", line);
+  session_config.stats = details;
   Session session(std::move(session_config), (*pipeline)->stages(), out, (*pipeline)->clock());
-  auto ui = PlayerUi::create(out.window(), options.file.filename().string());
-  if (!ui) return std::unexpected(std::move(ui.error()));
   (*ui)->set_tracks((*pipeline)->tracks());
   const ActionTargets targets{.session = session, .screen = out, .ui = **ui, .pipeline = **pipeline};
 
@@ -477,7 +562,6 @@ std::expected<void, Refusal> play(const PlayOptions& options, const PlayerPaths&
   const core::KeyMap keys = core::KeyMap::defaults();
   std::optional<Refusal> failure;
   const std::int64_t began_us = host_now_us();
-  std::optional<std::filesystem::path> snapshot = options.snapshot;
   std::size_t next_key = 0;
   std::vector<Input> actions;
   session.begin(began_us);
@@ -486,10 +570,7 @@ std::expected<void, Refusal> play(const PlayOptions& options, const PlayerPaths&
          ++next_key) {
       press(options.keys[next_key].second, (*screen)->window());
     }
-    if (snapshot && host_now_us() - began_us >= options.snapshot_at_us) {
-      out.snapshot_next(*snapshot);
-      snapshot.reset();
-    }
+    snapshot.maybe(out, began_us);
     SDL_Event event;
     while (SDL_PollEvent(&event)) {
       if ((*ui)->handle(event, host_now_us(), actions)) continue;  // saisie dans l'interface

@@ -36,10 +36,16 @@ class EngineBuild {
   std::optional<std::expected<gpu::Artifact, Refusal>> result();
   // « 37 % : Building engine », pour l'OSD.
   std::string progress() const;
+  // Le dernier repère de trtexec : fraction et étape.
+  struct Status {
+    float fraction = 0.0F;
+    std::string stage;
+  };
+  Status status() const;
 
  private:
   EngineBuild() = default;
-  void run(const std::stop_token& stop, EngineRequest request);
+  void run(const std::stop_token& stop, const EngineRequest& request);
 
   mutable std::mutex mutex_;
   std::optional<std::expected<gpu::Artifact, Refusal>> result_;

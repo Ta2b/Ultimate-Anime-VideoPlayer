@@ -58,7 +58,7 @@ struct PlayOptions {
   std::int64_t fullscreen_after_us = 0;           // --fullscreen-after=S : bascule après S s ; 0 jamais
   std::optional<std::filesystem::path> stats;     // --stats : une ligne par image présentée
   std::optional<std::filesystem::path> snapshot;  // --snapshot : la fenêtre en PPM, une fois
-  std::int64_t snapshot_at_us = 3'000'000;        // --snapshot-at=S : après S s de lecture
+  std::int64_t snapshot_at_us = 3'000'000;  // --snapshot-at=S : après S s de lecture (ou de construction)
   // --keys=S:touche,… : touches pressées d'office à ces instants (essais sans clavier), par
   // exemple « 3:Right,5:Space,6:Space,8:F ». Noms de touches de SDL.
   std::vector<std::pair<std::int64_t, std::string>> keys;
