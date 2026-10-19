@@ -27,9 +27,18 @@ std::expected<audio::AudioCodecInfo, Refusal> audio_codec_info(const media::Trac
 
 // Paquets de la piste audio choisie vers le thread audio, appelé depuis le thread source.
 // La copie des octets est permise ici : ce sont des paquets audio, pas des images.
+//
+// Toutes les pistes audio passent par lui ; il ne garde que la piste choisie. Un changement de
+// piste vaut à partir d'une époque : les paquets d'avant gardent l'ancienne piste (son décodeur les
+// lit encore), ceux d'après prennent la nouvelle (après le Flush, audio ouvre son décodeur).
 class AudioBridge final : public media::PacketSink {
  public:
-  explicit AudioBridge(audio::AudioThread& audio) : audio_(audio) {}
+  AudioBridge(audio::AudioThread& audio, int track) : audio_(audio), track_(track), previous_(track) {}
+
+  // Depuis main, avant le seek d'époque from_epoch qui fait entendre la piste track.
+  void select(int track, std::uint32_t from_epoch);
+  // La piste que garde un paquet de cette époque.
+  int track_for(std::uint32_t epoch) const;
 
   // Depuis main, avant le Flush d'un seek : sous l'époque epoch, les échantillons d'avant
   // target_us sont jetés après décodage (seek exact) ; rien pour un seek rapide.
@@ -39,9 +48,12 @@ class AudioBridge final : public media::PacketSink {
 
  private:
   audio::AudioThread& audio_;
-  std::mutex mutex_;
+  mutable std::mutex mutex_;
   std::uint32_t trim_epoch_ = 0;
   std::optional<std::int64_t> trim_us_;
+  int track_;
+  int previous_;
+  std::uint32_t switch_epoch_ = 0;
 };
 
 // La piste de sous-titres choisie, en SelectTrack : ASS avec son en-tête, ou texte (SRT).
@@ -51,19 +63,29 @@ std::expected<subs::SelectTrack, Refusal> subtitle_track(const media::TrackInfo&
 // Les polices jointes du fichier, à envoyer avant SelectTrack.
 std::vector<subs::AttachFont> attached_fonts(std::span<const media::TrackInfo> tracks);
 
-// Paquets de la piste de sous-titres vers le thread subs. Sa boîte ne rend pas de Credit :
-// sur un refus, take_refused() le dit une fois à main, qui rend lui-même un Credit à source.
+// Identifiant de piste de subs (SelectTrack, TrackPacket) d'un flux du conteneur : jamais 0.
+inline std::uint32_t subs_track_id(int stream_index) {
+  return static_cast<std::uint32_t>(stream_index) + 1U;
+}
+
+// Paquets de la piste de sous-titres choisie vers le thread subs. Toutes les pistes lisibles
+// passent par lui ; les autres sont écartées ici (subs écarterait aussi un paquet d'une autre
+// piste que la sienne). Sa boîte ne rend pas de Credit : sur un refus, take_refused() le dit une
+// fois à main, qui rend lui-même un Credit à source.
 class SubsBridge final : public media::PacketSink {
  public:
-  SubsBridge(std::shared_ptr<subs::SubsInbox> inbox, std::uint32_t track_id)
-      : inbox_(std::move(inbox)), track_id_(track_id) {}
+  SubsBridge(std::shared_ptr<subs::SubsInbox> inbox, std::optional<int> track)
+      : inbox_(std::move(inbox)), track_(track.value_or(kNone)) {}
 
+  // Depuis main : la piste dont les paquets passent ; rien : aucune.
+  void select(std::optional<int> track) { track_.store(track.value_or(kNone)); }
   bool try_push(media::Packet&& packet) override;
   bool take_refused() { return refused_.exchange(false); }
 
  private:
+  static constexpr int kNone = -1;
   std::shared_ptr<subs::SubsInbox> inbox_;
-  std::uint32_t track_id_;
+  std::atomic<int> track_;
   std::atomic<bool> refused_{false};
 };
 

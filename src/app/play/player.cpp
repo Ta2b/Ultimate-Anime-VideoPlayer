@@ -1,5 +1,6 @@
 #include "app/play/player.h"
 
+#include <algorithm>
 #include <charconv>
 #include <format>
 #include <fstream>
@@ -100,9 +101,10 @@ struct Overloaded : F... {
   using F::operator()...;
 };
 
-// « mouse=XxY » de --keys : la souris passe à ce point de la fenêtre (fractions de sa taille).
+// « mouse=XxY » ou « click=XxY » de --keys : la souris passe (et clique) à ce point de la
+// fenêtre (fractions de sa taille).
 std::optional<std::pair<float, float>> mouse_point(std::string_view text) {
-  if (!text.starts_with("mouse=")) return std::nullopt;
+  if (!text.starts_with("mouse=") && !text.starts_with("click=")) return std::nullopt;
   text.remove_prefix(6);
   const std::size_t cross = text.find('x');
   if (cross == std::string_view::npos) return std::nullopt;
@@ -117,7 +119,7 @@ std::optional<std::pair<float, float>> mouse_point(std::string_view text) {
 }
 
 // Touche pressée d'office (--keys) : un événement SDL de plus dans la file, comme le clavier.
-// « mouse=XxY » déplace la souris (la barre de lecture paraît).
+// « mouse=XxY » déplace la souris (la barre de lecture paraît), « click=XxY » y clique.
 void press(const std::string& name, SDL_Window* window) {
   if (const auto point = mouse_point(name)) {
     int w = 0;
@@ -130,6 +132,19 @@ void press(const std::string& name, SDL_Window* window) {
     motion.motion.y = point->second * static_cast<float>(h);
     log_channel("app")->info("--keys : souris en {:.0f}, {:.0f}", motion.motion.x, motion.motion.y);
     SDL_PushEvent(&motion);
+    if (name.starts_with("click=")) {
+      for (const bool down : {true, false}) {
+        SDL_Event button{};
+        button.type = down ? SDL_EVENT_MOUSE_BUTTON_DOWN : SDL_EVENT_MOUSE_BUTTON_UP;
+        button.button.windowID = motion.motion.windowID;
+        button.button.button = SDL_BUTTON_LEFT;
+        button.button.down = down;
+        button.button.clicks = 1;
+        button.button.x = motion.motion.x;
+        button.button.y = motion.motion.y;
+        SDL_PushEvent(&button);
+      }
+    }
     return;
   }
   SDL_Event event{};
@@ -210,31 +225,96 @@ std::string volume_text(const Controls& controls) {
   return std::format("Volume {} %", std::lround(controls.volume() * 100.0F));
 }
 
+std::string label_of(const std::vector<TrackEntry>& entries, int track) {
+  const auto found = std::ranges::find(entries, track, &TrackEntry::index);
+  return found != entries.end() ? found->label : std::format("piste {}", track);
+}
+
+// Ce que les actions touchent : la session, l'écran, l'interface et les pistes du pipeline.
+struct ActionTargets {
+  Session& session;
+  PlaceboScreen& screen;
+  PlayerUi& ui;
+  Pipeline& pipeline;
+};
+
+// Piste audio : le pont change de piste à l'époque du seek qui suit, à la position courante.
+void switch_audio(const ActionTargets& to, int track, std::int64_t now_us) {
+  if (to.pipeline.tracks().audio_selected == track) return;
+  const std::int64_t position = std::max<std::int64_t>(to.session.view().position_us, 0);
+  auto switched = to.pipeline.select_audio(track, to.session.epoch() + 1, [&] {
+    to.session.command(cmd::Seek{.target_us = position, .exact = true});
+  });
+  if (!switched) {
+    log_channel("app")->warn("piste audio {} : {}", track, switched.error().detail);
+    to.ui.controls().notify("Piste audio refusée", now_us);
+    return;
+  }
+  to.ui.set_tracks(to.pipeline.tracks());
+  to.ui.controls().notify(std::format("Audio : {}", label_of(to.pipeline.tracks().audio, track)), now_us);
+}
+
+// Sous-titres : subs prend la nouvelle piste, un seek à la position courante relit ses paquets.
+void switch_subtitles(const ActionTargets& to, std::optional<int> track, std::int64_t now_us) {
+  if (to.pipeline.tracks().subtitle_selected == track) return;
+  auto switched = to.pipeline.select_subtitles(track);
+  if (!switched) {
+    log_channel("app")->warn("sous-titres : {}", switched.error().detail);
+    to.ui.controls().notify("Piste de sous-titres refusée", now_us);
+    return;
+  }
+  to.session.set_subtitles(track.has_value());
+  if (track) {
+    const std::int64_t position = std::max<std::int64_t>(to.session.view().position_us, 0);
+    to.session.command(cmd::Seek{.target_us = position, .exact = true});
+  }
+  to.ui.set_tracks(to.pipeline.tracks());
+  to.ui.controls().notify(
+      track ? std::format("Sous-titres : {}", label_of(to.pipeline.tracks().subtitles, *track))
+            : std::string("Sous-titres désactivés"),
+      now_us);
+}
+
 // Une action du clavier ou de l'interface. La barre paraît aussi après un seek au clavier.
-void apply(const Input& input, Session& session, PlaceboScreen& screen, PlayerUi& ui, std::int64_t now_us) {
-  Controls& controls = ui.controls();
-  std::visit(Overloaded{[&](const Command& command) {
-                          session.command(command);
-                          if (std::holds_alternative<cmd::SeekRelative>(command)) controls.activity(now_us);
-                          if (std::holds_alternative<cmd::ToggleOsd>(command)) {
-                            controls.notify(
-                                session.view().stats ? "Statistiques affichées" : "Statistiques masquées",
-                                now_us);
-                          }
-                        },
-                        [&](const ToggleFullscreen&) { session.toggle_fullscreen(); },
-                        [&](const LeaveFullscreen&) {
-                          if (screen.fullscreen()) session.toggle_fullscreen();
-                        },
-                        [&](const ToggleMute&) {
-                          session.command(Command{controls.toggle_mute()});
-                          controls.notify(volume_text(controls), now_us);
-                        },
-                        [&](const VolumeStep& step) {
-                          session.command(Command{controls.step_volume(step.delta)});
-                          controls.notify(volume_text(controls), now_us);
-                        }},
-             input);
+void apply(const Input& input, const ActionTargets& to, std::int64_t now_us) {
+  Session& session = to.session;
+  PlaceboScreen& screen = to.screen;
+  Controls& controls = to.ui.controls();
+  std::visit(
+      Overloaded{
+          [&](const Command& command) {
+            if (std::holds_alternative<cmd::TogglePause>(command)) {
+              log_channel("app")->info("action : {}", session.paused() ? "lecture" : "pause");
+            } else if (const auto* seek = std::get_if<cmd::Seek>(&command)) {
+              log_channel("app")->info("action : seek {}{}", format_position(seek->target_us),
+                                       seek->exact ? "" : " (point clé)");
+            }
+            session.command(command);
+            if (std::holds_alternative<cmd::SeekRelative>(command)) controls.activity(now_us);
+            if (std::holds_alternative<cmd::ToggleOsd>(command)) {
+              controls.notify(session.view().stats ? "Statistiques affichées" : "Statistiques masquées",
+                              now_us);
+            }
+          },
+          [&](const ToggleFullscreen&) { session.toggle_fullscreen(); },
+          [&](const LeaveFullscreen&) {
+            if (screen.fullscreen()) session.toggle_fullscreen();
+          },
+          [&](const ToggleMute&) {
+            session.command(Command{controls.toggle_mute()});
+            controls.notify(volume_text(controls), now_us);
+          },
+          [&](const VolumeStep& step) {
+            session.command(Command{controls.step_volume(step.delta)});
+            controls.notify(volume_text(controls), now_us);
+          },
+          [&](const SelectAudio& select) { switch_audio(to, select.track, now_us); },
+          [&](const SelectSubtitles& select) { switch_subtitles(to, select.track, now_us); },
+          [&](const CycleAudio&) {
+            if (auto next = next_audio(to.pipeline.tracks())) switch_audio(to, *next, now_us);
+          },
+          [&](const CycleSubtitles&) { switch_subtitles(to, next_subtitle(to.pipeline.tracks()), now_us); }},
+      input);
 }
 
 void write_record(std::ofstream& stats, const PresentRecord& record) {
@@ -386,6 +466,8 @@ std::expected<void, Refusal> play(const PlayOptions& options, const PlayerPaths&
   Session session(std::move(session_config), (*pipeline)->stages(), out, (*pipeline)->clock());
   auto ui = PlayerUi::create(out.window(), options.file.filename().string());
   if (!ui) return std::unexpected(std::move(ui.error()));
+  (*ui)->set_tracks((*pipeline)->tracks());
+  const ActionTargets targets{.session = session, .screen = out, .ui = **ui, .pipeline = **pipeline};
 
   std::ofstream stats;
   if (options.stats) {
@@ -416,7 +498,7 @@ std::expected<void, Refusal> play(const PlayOptions& options, const PlayerPaths&
     (*pipeline)->pump();
     while (auto message = try_take((*pipeline)->inbox())) session.handle(std::move(*message));
     const UiFrame ui_frame = (*ui)->frame(host_now_us(), session.view(), actions);
-    for (const Input& input : actions) apply(input, session, out, **ui, host_now_us());
+    for (const Input& input : actions) apply(input, targets, host_now_us());
     actions.clear();
     auto record = session.tick(host_now_us(), ui_frame);
     if (!record) {

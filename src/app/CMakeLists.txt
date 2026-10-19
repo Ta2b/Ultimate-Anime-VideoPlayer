@@ -10,7 +10,7 @@ ajp_add_module(app
     play/frame_queue.cpp play/frame_stats.cpp play/input.cpp play/options.cpp play/osd_text.cpp play/pipeline.cpp
     play/placebo_imgui.cpp play/placebo_overlays.cpp play/placebo_ring.cpp play/placebo_screen.cpp
     play/placebo_snapshot.cpp play/player.cpp
-    play/ring_stage.cpp play/rife_plan.cpp play/session.cpp play/subtitle_queue.cpp play/ui.cpp
+    play/ring_stage.cpp play/rife_plan.cpp play/session.cpp play/subtitle_queue.cpp play/tracks.cpp play/ui.cpp
     play/upscale_stage.cpp play/wiring.cpp
   DEPS ajp::core ajp::core_log ajp::media ajp::gpu ajp::prepare ajp::audio ajp::subs
        ajp::render ajp::present ajp::export

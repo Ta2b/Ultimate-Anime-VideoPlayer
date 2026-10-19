@@ -72,6 +72,8 @@ class Session {
   // Commande de l'utilisateur (touches, interface) : pause, seek, volume, statistiques, quitter.
   void command(const Command& command);
   void toggle_fullscreen();
+  // Sous-titres affichés ou non (piste choisie ou aucune) : demandes et réponses s'arrêtent.
+  void set_subtitles(bool on);
   // Un tour : choisit l'image, puis compose et présente seulement si quelque chose a changé
   // (image neuve, sous-titres, OSD, interface, taille de sortie) ; rien sinon. Rend les slots. Un
   // refus de l'écran est rendu tel quel : la boucle s'arrête.

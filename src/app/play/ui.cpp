@@ -351,6 +351,11 @@ UiFrame PlayerUi::frame(std::int64_t now_us, const ControlsView& view, std::vect
   return UiFrame{.draw = draw_, .changed = true, .bottom = bottom_, .top = top_};
 }
 
+void PlayerUi::set_tracks(TrackMenu tracks) {
+  look_.tracks = std::move(tracks);
+  input_pending_ = true;
+}
+
 void PlayerUi::release(PlaceboScreen& screen) {
   screen.release_ui(ImGui::GetPlatformIO());
   draw_ = nullptr;

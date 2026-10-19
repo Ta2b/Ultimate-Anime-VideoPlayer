@@ -44,6 +44,8 @@ class PlayerUi {
   UiFrame frame(std::int64_t now_us, const ControlsView& view, std::vector<Input>& actions);
 
   Controls& controls() { return controls_; }
+  // Les pistes que les menus de la barre proposent, et celles choisies.
+  void set_tracks(TrackMenu tracks);
   // Rend les textures de l'interface à l'écran avant qu'il ne soit détruit.
   void release(PlaceboScreen& screen);
 

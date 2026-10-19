@@ -8,12 +8,14 @@
 
 #include "app/play/controls.h"
 #include "app/play/input.h"
+#include "app/play/tracks.h"
 
 namespace ajp::app::play {
 
 struct UiLook {
   float scale = 1.0F;  // échelle de l'écran (densité de pixels × échelle du bureau)
   std::string title;   // nom du fichier, en haut
+  TrackMenu tracks;    // menus des pistes audio et sous-titres
 };
 
 // Hauteur de la barre en bas de l'écran, en pixels : les sous-titres passent au-dessus quand elle

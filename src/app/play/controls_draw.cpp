@@ -5,6 +5,7 @@
 #include <cmath>
 #include <format>
 #include <numbers>
+#include <optional>
 #include <string_view>
 
 #include <imgui.h>
@@ -104,6 +105,59 @@ void icon_fullscreen(const Pen& pen, ImVec2 c, float size, bool leave) {
     pen.list->AddPolyline(points.data(), static_cast<int>(points.size()), white(pen.opacity),
                           ImDrawFlags_None, stroke);
   }
+}
+
+// Sous-titres : un cadre arrondi et deux lignes de texte.
+void icon_subtitles(const Pen& pen, ImVec2 c, float size, bool on) {
+  const float w = size * 0.48F;
+  const float h = size * 0.36F;
+  const float stroke = std::max(1.5F, size * 0.08F);
+  const ImU32 color = white(pen.opacity * (on ? 1.0F : 0.55F));
+  pen.list->AddRect(at(c, -w, -h), at(c, w, h), color, size * 0.12F, ImDrawFlags_None, stroke);
+  pen.list->AddLine(at(c, -w * 0.55F, h * 0.05F), at(c, w * 0.15F, h * 0.05F), color, stroke);
+  pen.list->AddLine(at(c, w * 0.32F, h * 0.05F), at(c, w * 0.55F, h * 0.05F), color, stroke);
+  pen.list->AddLine(at(c, -w * 0.55F, h * 0.5F), at(c, -w * 0.2F, h * 0.5F), color, stroke);
+  pen.list->AddLine(at(c, -w * 0.02F, h * 0.5F), at(c, w * 0.55F, h * 0.5F), color, stroke);
+  if (on) {  // trait sous l'icône quand une piste est choisie
+    pen.list->AddLine(at(c, -w * 0.6F, h + size * 0.2F), at(c, w * 0.6F, h + size * 0.2F),
+                      accent(pen.opacity), stroke);
+  }
+}
+
+// Piste audio : une note de musique.
+void icon_audio_track(const Pen& pen, ImVec2 c, float size) {
+  const float h = size * 0.5F;
+  const ImU32 color = white(pen.opacity);
+  const float stroke = std::max(1.5F, size * 0.09F);
+  pen.list->AddCircleFilled(at(c, -h * 0.32F, h * 0.5F), h * 0.3F, color);
+  pen.list->AddLine(at(c, -h * 0.05F, h * 0.5F), at(c, -h * 0.05F, -h * 0.75F), color, stroke);
+  pen.list->AddQuadFilled(at(c, -h * 0.05F - stroke * 0.5F, -h * 0.8F), at(c, h * 0.55F, -h * 0.45F),
+                          at(c, h * 0.55F, -h * 0.15F), at(c, -h * 0.05F - stroke * 0.5F, -h * 0.5F), color);
+}
+
+// Menu d'une liste de pistes, au-dessus de son bouton. none_label : l'entrée « aucune » (ou rien).
+void track_popup(const char* id, const char* heading, const std::vector<TrackEntry>& entries,
+                 std::optional<int> selected, const char* none_label, float right, float bottom, float scale,
+                 std::vector<Input>& actions, bool subtitles) {
+  ImGui::SetNextWindowPos({right, bottom}, ImGuiCond_Always, {1.0F, 1.0F});
+  ImGui::SetNextWindowSizeConstraints({260.0F * scale, 0.0F}, {720.0F * scale, 560.0F * scale});
+  if (!ImGui::BeginPopup(id)) return;
+  ImGui::TextDisabled("%s", heading);
+  ImGui::Separator();
+  if (none_label != nullptr && ImGui::Selectable(none_label, !selected))
+    actions.emplace_back(SelectSubtitles{});
+  for (const TrackEntry& entry : entries) {
+    ImGui::PushID(entry.index);
+    if (ImGui::Selectable(entry.label.c_str(), selected == entry.index)) {
+      if (subtitles) {
+        actions.emplace_back(SelectSubtitles{.track = entry.index});
+      } else {
+        actions.emplace_back(SelectAudio{.track = entry.index});
+      }
+    }
+    ImGui::PopID();
+  }
+  ImGui::EndPopup();
 }
 
 void icon_gear(const Pen& pen, ImVec2 c, float size) {
@@ -218,6 +272,7 @@ bool draw_controls(Controls& controls, const ControlsView& view, const UiLook& l
         ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoFocusOnAppearing | ImGuiWindowFlags_NoNav |
         ImGuiWindowFlags_NoBringToFrontOnFocus | ImGuiWindowFlags_NoScrollWithMouse;
     ImGui::Begin("##controls", nullptr, kPanel);
+    ImGui::PopStyleVar();  // marges : seulement la fenêtre de la barre, pas ses menus
     const Pen pen{ImGui::GetWindowDrawList(), s, opacity};
 
     // Barre de progression : fine, plus épaisse au survol, bulle du temps sous la souris.
@@ -322,11 +377,28 @@ bool draw_controls(Controls& controls, const ControlsView& view, const UiLook& l
       if (ImGui::MenuItem("Statistiques", "Tab", view.stats)) actions.emplace_back(Command{cmd::ToggleOsd{}});
       ImGui::EndPopup();
     }
+    const TrackMenu& tracks = look.tracks;
+    if (!tracks.audio.empty()) {
+      rx -= row;
+      if (round_button(pen, "##audio", {rx, cy}, row)) ImGui::OpenPopup("##audio_menu");
+      tooltip("Piste audio (a)");
+      icon_audio_track(pen, {rx, cy}, icon);
+      track_popup("##audio_menu", "Piste audio", tracks.audio, tracks.audio_selected, nullptr,
+                  rx + row * 0.5F, height - panel - 4.0F * s, s, actions, false);
+    }
+    if (!tracks.subtitles.empty()) {
+      rx -= row;
+      if (round_button(pen, "##subtitles", {rx, cy}, row)) ImGui::OpenPopup("##subtitles_menu");
+      tooltip("Sous-titres (j)");
+      icon_subtitles(pen, {rx, cy}, icon, tracks.subtitle_selected.has_value());
+      track_popup("##subtitles_menu", "Sous-titres", tracks.subtitles, tracks.subtitle_selected, "Désactivés",
+                  rx + row * 0.5F, height - panel - 4.0F * s, s, actions, true);
+    }
 
     held = ImGui::IsWindowHovered(ImGuiHoveredFlags_AllowWhenBlockedByActiveItem) || bar_active ||
            controls.dragging() || ImGui::IsPopupOpen("", ImGuiPopupFlags_AnyPopupId);
     ImGui::End();
-    ImGui::PopStyleVar(2);
+    ImGui::PopStyleVar();
   }
   controls.set_held(held);
   draw_toast(controls, width, s, now_us);

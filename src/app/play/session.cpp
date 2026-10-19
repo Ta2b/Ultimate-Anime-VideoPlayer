@@ -98,6 +98,11 @@ void Session::command(const Command& command) {
       command);
 }
 
+void Session::set_subtitles(bool on) {
+  config_.subtitles = on;
+  if (!on) subtitles_.clear();
+}
+
 void Session::toggle_fullscreen() {
   screen_.set_fullscreen(!screen_.fullscreen());
 }
@@ -136,6 +141,7 @@ void Session::on_frame(const RingFrame& frame) {
 void Session::on_subtitles(subs::SubtitleFrame&& frame) {
   if (frame.epoch != epoch_) return;  // demande d'avant un seek : l'atlas rentre chez subs
   if (subtitle_requests_ > 0) --subtitle_requests_;
+  if (!config_.subtitles) return;  // désactivés depuis la demande
   subtitles_.push(std::move(frame), current_ ? current_->pts_us : kNoPts);
 }
 

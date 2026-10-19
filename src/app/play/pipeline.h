@@ -22,6 +22,7 @@
 #include "app/play/bridges.h"
 #include "app/play/links.h"
 #include "app/play/session.h"
+#include "app/play/tracks.h"
 #include "app/play/video_stage.h"
 #include "app/play/wiring.h"
 #include "audio/audio_thread.h"
@@ -76,8 +77,22 @@ class Pipeline {
   SessionConfig session_config() const;
   std::vector<std::string> describe() const;  // pistes choisies, pour l'OSD et le journal
 
+  // Pistes qu'on peut choisir pendant la lecture.
+  const TrackMenu& tracks() const { return menu_; }
+  // Change la piste audio : ses paquets valent à partir de l'époque from_epoch, celle du seek que
+  // seek() lance (à la position courante) ; audio ouvre ensuite son décodeur. Refus :
+  // TrackUnavailable (piste inconnue, pas d'audio), PacketBacklog (boîte audio pleine).
+  std::expected<void, Refusal> select_audio(int track, std::uint32_t from_epoch,
+                                            const std::function<void()>& seek);
+  // Change la piste de sous-titres (rien : aucune). La session relit ensuite la position courante
+  // par un seek, pour que subs reçoive les paquets de la nouvelle piste. Refus : TrackUnavailable,
+  // SubtitleBacklog.
+  std::expected<void, Refusal> select_subtitles(std::optional<int> track);
+
  private:
   Pipeline() = default;
+  const audio::AudioCodecInfo* audio_codec(int track) const;
+  const media::TrackInfo* track_info(int track) const;
 
   // Ordre de déclaration = ordre inverse de destruction : la source s'arrête la première,
   // la boîte de main disparaît la dernière.
@@ -101,6 +116,9 @@ class Pipeline {
   std::optional<media::TrackInfo> subtitle_track_;
   std::int64_t duration_us_ = 0;
   std::string decoder_api_;
+  TrackMenu menu_;
+  std::vector<std::pair<int, audio::AudioCodecInfo>> audio_codecs_;  // pistes audio décodables
+  std::vector<media::TrackInfo> tracks_;                             // audio et sous-titres
 };
 
 }  // namespace ajp::app::play

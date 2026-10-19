@@ -65,6 +65,8 @@ std::optional<Input> input_of(const SDL_Event& event, const core::KeyMap& keys) 
   if (plain && event.key.key == SDLK_F) return ToggleFullscreen{};
   if (plain && event.key.key == SDLK_ESCAPE) return LeaveFullscreen{};
   if (plain && event.key.key == SDLK_M) return ToggleMute{};
+  if (plain && event.key.key == SDLK_J) return CycleSubtitles{};
+  if (plain && event.key.key == SDLK_A) return CycleAudio{};
   if (plain && event.key.key == SDLK_UP) return VolumeStep{.delta = kVolumeStep};
   if (plain && event.key.key == SDLK_DOWN) return VolumeStep{.delta = -kVolumeStep};
   const auto key = key_of(event.key.key);

@@ -45,7 +45,20 @@ void AudioBridge::expect_seek(std::uint32_t epoch, std::optional<std::int64_t> t
   trim_us_ = target_us;
 }
 
+void AudioBridge::select(int track, std::uint32_t from_epoch) {
+  const std::scoped_lock lock(mutex_);
+  previous_ = track_;
+  track_ = track;
+  switch_epoch_ = from_epoch;
+}
+
+int AudioBridge::track_for(std::uint32_t epoch) const {
+  const std::scoped_lock lock(mutex_);
+  return epoch >= switch_epoch_ ? track_ : previous_;
+}
+
 bool AudioBridge::try_push(media::Packet&& packet) {
+  if (packet.track != track_for(packet.epoch)) return true;  // une autre piste : écartée
   const auto bytes = packet.data();
   audio::AudioPacket out{.pts_us = known_pts(packet.pts_us), .epoch = packet.epoch};
   out.data.resize(bytes.size());
@@ -87,9 +100,10 @@ std::vector<subs::AttachFont> attached_fonts(std::span<const media::TrackInfo> t
 }
 
 bool SubsBridge::try_push(media::Packet&& packet) {
-  if (packet.pts_us == kNoPts) return true;  // sans instant, rien à afficher : écarté
+  if (packet.track != track_.load()) return true;  // piste non choisie : écartée
+  if (packet.pts_us == kNoPts) return true;        // sans instant, rien à afficher : écarté
   const auto bytes = packet.data();
-  subs::TrackPacket out{.track = track_id_,
+  subs::TrackPacket out{.track = subs_track_id(packet.track),
                         .packet = {.start_us = packet.pts_us, .duration_us = packet.duration_us, .data = {}}};
   out.packet.data.assign(reinterpret_cast<const char*>(bytes.data()), bytes.size());
   if (inbox_->try_push(std::move(out))) return true;
