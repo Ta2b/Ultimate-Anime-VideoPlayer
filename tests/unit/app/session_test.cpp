@@ -1,0 +1,215 @@
+// Session du thread main avec des doublures : amorce, horloge, images en retard, seek,
+// pause, sous-titres, fin de flux.
+#include "app/play/session.h"
+
+#include <string>
+#include <vector>
+
+#include <catch2/catch_test_macros.hpp>
+
+#include "doubles.h"
+
+namespace ajp::app::play {
+namespace {
+
+using test::FakeClock;
+using test::FakeScreen;
+using test::FakeStages;
+using test::ring_frame;
+
+struct Rig {
+  FakeStages stages;
+  FakeScreen screen;
+  FakeClock clock;
+  Session session;
+
+  explicit Rig(SessionConfig config = {}) : session(std::move(config), stages, screen, clock) {}
+
+  // L'horloge maître part de media_us à l'instant hôte courant de l'écran.
+  void run_clock(std::int64_t media_us, std::uint32_t epoch = 0) {
+    clock.value = {
+        .media_us = media_us, .host_us = screen.now_us, .rate = 1.0, .epoch = epoch, .valid = true};
+  }
+  void tick() {
+    auto shown = session.tick(screen.now_us);
+    REQUIRE(shown);
+  }
+  std::int64_t shown_pts() const {
+    REQUIRE(!screen.shown.empty());
+    REQUIRE(screen.shown.back().frame);
+    return screen.shown.back().frame->pts_us;
+  }
+};
+
+TEST_CASE("Amorce : la première image part tout de suite, puis l'horloge démarre de son pts",
+          "[app][session]") {
+  Rig rig;
+  rig.session.begin(0);
+  rig.tick();
+  CHECK_FALSE(rig.screen.shown.back().frame);  // rien encore : image noire et OSD
+  CHECK(rig.stages.log.empty());
+
+  rig.session.handle(ring_frame(0, 40'000));
+  rig.session.handle(ring_frame(1, 80'000));
+  rig.tick();
+  CHECK(rig.shown_pts() == 40'000);
+  CHECK(rig.stages.log == std::vector<std::string>{"play 0 40000"});
+
+  // Horloge pas encore valide : l'image reste.
+  rig.tick();
+  CHECK(rig.shown_pts() == 40'000);
+  rig.run_clock(80'000);
+  rig.tick();
+  CHECK(rig.shown_pts() == 80'000);
+  REQUIRE(rig.stages.freed.size() == 1);  // le slot 0 revient à gpu, valeur suivante
+  CHECK(rig.stages.freed[0].slot == 0);
+  CHECK(rig.stages.freed[0].semaphore_value == 2);
+}
+
+TEST_CASE("Les images doublées par l'horloge sont sautées et leurs slots rendus", "[app][session]") {
+  Rig rig;
+  rig.session.handle(ring_frame(0, 0));
+  rig.tick();
+  for (std::uint32_t i = 1; i <= 4; ++i) rig.session.handle(ring_frame(i, i * 41'708));
+  rig.run_clock(3 * 41'708 + 1000);  // l'horloge est déjà sur la quatrième image
+  rig.tick();
+  CHECK(rig.shown_pts() == 3 * 41'708);
+  CHECK(rig.session.stats().dropped == 2);
+  // Rendus : les deux sautées (1, 2), puis celle qu'on remplace (0).
+  REQUIRE(rig.stages.freed.size() == 3);
+  CHECK(rig.stages.freed[0].slot == 1);
+  CHECK(rig.stages.freed[1].slot == 2);
+  CHECK(rig.stages.freed[2].slot == 0);
+}
+
+TEST_CASE("Seek : pause, Flush puis Seek, et les images de l'époque passée sont rendues", "[app][session]") {
+  Rig rig(SessionConfig{.duration_us = 60'000'000});
+  rig.session.handle(ring_frame(0, 1'000'000));
+  rig.tick();
+  rig.session.handle(ring_frame(1, 1'041'000));
+  rig.stages.log.clear();
+
+  rig.session.command(cmd::SeekRelative{.delta_us = 5'000'000});
+  CHECK(rig.stages.log == std::vector<std::string>{"pause", "flush 1", "seek 6000000"});
+  CHECK(rig.session.epoch() == 1);
+  REQUIRE(rig.stages.freed.size() == 1);
+  CHECK(rig.stages.freed[0].slot == 1);  // en file, d'avant le seek
+  // Un second appui part de la cible du premier, pas de l'image affichée.
+  rig.session.command(cmd::SeekRelative{.delta_us = 5'000'000});
+  CHECK(rig.stages.log.back() == "seek 11000000");
+
+  // Une image en retard de l'époque 0 arrive : rendue sans être montrée.
+  rig.session.handle(ring_frame(2, 1'083'000, 0));
+  CHECK(rig.session.stats().stale == 2);
+  rig.tick();
+  CHECK(rig.shown_pts() == 1'000'000);  // l'ancienne image reste jusqu'à la nouvelle
+
+  rig.session.handle(ring_frame(3, 11'000'000, 2));
+  rig.tick();
+  CHECK(rig.shown_pts() == 11'000'000);
+  CHECK(rig.stages.log.back() == "play 2 11000000");
+}
+
+TEST_CASE("Un seek est borné au fichier", "[app][session]") {
+  Rig rig(SessionConfig{.duration_us = 10'000'000});
+  rig.session.handle(ring_frame(0, 1'000'000));
+  rig.tick();
+  rig.session.command(cmd::SeekRelative{.delta_us = -5'000'000});
+  CHECK(rig.stages.log.back() == "seek 0");
+  rig.session.command(cmd::Seek{.target_us = 99'000'000});
+  CHECK(rig.stages.log.back() == "seek 10000000");
+}
+
+TEST_CASE("Pause : l'horloge s'arrête, la reprise repart de l'image montrée", "[app][session]") {
+  Rig rig;
+  rig.session.handle(ring_frame(0, 0));
+  rig.tick();
+  rig.session.command(cmd::TogglePause{});
+  CHECK(rig.session.paused());
+  CHECK(rig.stages.log.back() == "pause");
+  rig.session.command(cmd::TogglePause{});
+  CHECK_FALSE(rig.session.paused());
+  CHECK(rig.stages.log.back() == "play 0 0");
+}
+
+TEST_CASE("Seek en pause : la nouvelle image s'affiche, l'horloge reste arrêtée", "[app][session]") {
+  Rig rig;
+  rig.session.handle(ring_frame(0, 0));
+  rig.tick();
+  rig.session.command(cmd::Pause{});
+  rig.session.command(cmd::Seek{.target_us = 2'000'000});
+  rig.session.handle(ring_frame(1, 2'000'000, 1));
+  rig.stages.log.clear();
+  rig.tick();
+  CHECK(rig.shown_pts() == 2'000'000);
+  CHECK(rig.stages.log.empty());  // pas de Play
+}
+
+TEST_CASE("Sous-titres : une demande par image, l'image du même pts est dessinée", "[app][session]") {
+  Rig rig(SessionConfig{.subtitles = true, .video_width = 1920, .video_height = 1080});
+  rig.session.handle(ring_frame(0, 0));
+  rig.session.handle(ring_frame(1, 41'000));
+  REQUIRE(rig.stages.requests.size() == 2);
+  CHECK(rig.stages.requests[1].pts_us == 41'000);
+  CHECK(rig.stages.requests[1].target.width == 1920);
+  CHECK(rig.stages.requests[1].target.video_height == 1080);
+
+  rig.session.handle(subs::SubtitleFrame{.pts_us = 0});
+  rig.session.handle(subs::SubtitleFrame{.pts_us = 41'000});
+  rig.tick();
+  CHECK(rig.screen.shown.back().subtitles_pts == 0);
+  rig.run_clock(41'000);
+  rig.tick();
+  CHECK(rig.screen.shown.back().subtitles_pts == 41'000);
+}
+
+TEST_CASE("Fin de flux : la lecture finit quand plus rien n'arrive", "[app][session]") {
+  Rig rig;
+  rig.session.handle(ring_frame(0, 0));
+  rig.tick();
+  rig.session.handle(StreamEnded{.epoch = 0});
+  rig.tick();
+  CHECK_FALSE(rig.session.finished());
+  rig.screen.now_us += 2'000'000;
+  rig.tick();
+  CHECK(rig.session.finished());
+  rig.session.end();
+  CHECK(rig.stages.quit_called);
+  CHECK(rig.stages.freed.size() == 1);
+}
+
+TEST_CASE("Durée de lecture et plein écran différé", "[app][session]") {
+  Rig rig(SessionConfig{.stop_after_us = 1'000'000, .fullscreen_after_us = 500'000});
+  rig.session.handle(ring_frame(0, 0));
+  rig.tick();
+  rig.screen.now_us += 600'000;
+  rig.tick();
+  CHECK(rig.screen.is_fullscreen);
+  CHECK_FALSE(rig.session.finished());
+  rig.screen.now_us += 600'000;
+  rig.tick();
+  CHECK(rig.session.finished());
+}
+
+TEST_CASE("Un refus fatal d'un thread arrête la lecture et s'affiche", "[app][session]") {
+  Rig rig;
+  rig.session.handle(
+      StageRefusal{.stage = "gpu", .refusal = {RefusalCode::ThreadFailed, "boum"}, .fatal = true});
+  CHECK(rig.session.finished());
+  REQUIRE(rig.session.refusals().size() == 1);
+  CHECK(rig.session.refusals()[0] == "gpu : ThreadFailed boum");
+}
+
+TEST_CASE("L'OSD dit le temps par image et les images sautées", "[app][session]") {
+  Rig rig(SessionConfig{.header = {"SPAN ×2"}});
+  rig.session.handle(ring_frame(0, 0));
+  rig.tick();
+  const auto& osd = rig.screen.shown.back().osd;
+  REQUIRE(osd.size() >= 3);
+  CHECK(osd[0] == "SPAN ×2");
+  CHECK(osd[1].find("sautées 0") != std::string::npos);
+  CHECK(osd[2].starts_with("00:00:00.000"));
+}
+
+}  // namespace
+}  // namespace ajp::app::play

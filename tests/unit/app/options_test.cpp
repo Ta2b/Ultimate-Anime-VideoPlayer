@@ -1,0 +1,106 @@
+#include "app/play/options.h"
+
+#include <array>
+#include <filesystem>
+#include <fstream>
+#include <string_view>
+#include <vector>
+
+#include <catch2/catch_test_macros.hpp>
+
+#include "app/play/frame_queue.h"
+#include "app/play/frame_stats.h"
+#include "doubles.h"
+
+namespace ajp::app::play {
+namespace {
+
+std::expected<PlayOptions, Refusal> parse(std::vector<std::string_view> args) {
+  return parse_play_options(args);
+}
+
+TEST_CASE("ajp play : fichier et options", "[app][options]") {
+  const auto options = parse({"--model", "/m/span.onnx", "épisode.mkv", "--window=960x540", "--seconds=4.5",
+                              "--fullscreen-after=2", "--start=90", "--stats=/tmp/s.tsv"});
+  REQUIRE(options);
+  CHECK(options->file == "épisode.mkv");
+  CHECK(options->model == std::filesystem::path("/m/span.onnx"));
+  CHECK(options->window_width == 960);
+  CHECK(options->window_height == 540);
+  CHECK(options->stop_after_us == 4'500'000);
+  CHECK(options->fullscreen_after_us == 2'000'000);
+  CHECK(options->start_us == 90'000'000);
+  CHECK(options->stats == std::filesystem::path("/tmp/s.tsv"));
+  CHECK(options->upscale);
+  CHECK_FALSE(options->fullscreen);
+}
+
+TEST_CASE("ajp play : refus nommés", "[app][options]") {
+  CHECK(parse({}).error().code == RefusalCode::FieldMissing);
+  CHECK(parse({"a.mkv", "--vitesse=2"}).error().code == RefusalCode::OptionUnknown);
+  CHECK(parse({"a.mkv", "b.mkv"}).error().code == RefusalCode::OptionUnknown);
+  CHECK(parse({"a.mkv", "--window=10x10"}).error().code == RefusalCode::FieldOutOfRange);
+  CHECK(parse({"a.mkv", "--window=1280"}).error().code == RefusalCode::FieldOutOfRange);
+  CHECK(parse({"a.mkv", "--seconds=-1"}).error().code == RefusalCode::FieldOutOfRange);
+  CHECK(parse({"a.mkv", "--model"}).error().code == RefusalCode::FieldMissing);
+  CHECK(parse({"--", "--fichier.mkv"})->file == "--fichier.mkv");
+  CHECK(parse({"--help"})->help);
+}
+
+TEST_CASE("Modèle : --model doit exister, sinon le premier candidat présent", "[app][options]") {
+  const auto dir = std::filesystem::temp_directory_path() / "ajp-app-model-test";
+  std::filesystem::create_directories(dir);
+  const auto present = dir / "present.onnx";
+  std::ofstream(present) << "x";
+  const std::array candidates{dir / "absent.onnx", present};
+
+  PlayOptions options;
+  CHECK(find_model(options, candidates) == present);
+  options.model = dir / "autre.onnx";
+  CHECK(find_model(options, candidates).error().code == RefusalCode::ModelUnreadable);
+  CHECK(find_model(PlayOptions{}, std::span(candidates).first(1)).error().code ==
+        RefusalCode::ModelUnreadable);
+  // Les candidats par défaut sont l'installation d'AnimeJaNai, puis le dépôt mpv.
+  const auto defaults = default_model_candidates("/home/x");
+  REQUIRE(defaults.size() == 2);
+  CHECK(defaults[0] == std::filesystem::path("/home/x/.local/share/AnimeJaNai-HDR-linux/animejanai/onnx") /
+                           kDefaultModelFile);
+  std::filesystem::remove_all(dir);
+}
+
+TEST_CASE("File d'images : choix par l'horloge, retards, époques", "[app][frames]") {
+  FrameQueue queue;
+  for (std::uint32_t i = 0; i < 4; ++i) queue.push(test::ring_frame(i, i * 40'000));
+  std::vector<RingFrame> late;
+  CHECK_FALSE(queue.pick(-10'000, 0, late));  // la tête n'est pas atteinte
+  const auto picked = queue.pick(85'000, 0, late);
+  REQUIRE(picked);
+  CHECK(picked->pts_us == 80'000);
+  CHECK(late.size() == 2);
+  CHECK(queue.size() == 1);
+
+  queue.push(test::ring_frame(5, kNoPts, 1));
+  queue.push(test::ring_frame(6, 0, 1));
+  CHECK(queue.first_of(1)->slot == 5);
+  const auto stale = queue.take_stale(1);
+  REQUIRE(stale.size() == 1);
+  CHECK(stale[0].slot == 3);
+  late.clear();
+  // Une image sans pts passe dès qu'elle est en tête, et seule.
+  CHECK(queue.pick(-1'000'000, 0, late)->slot == 5);
+  CHECK(queue.take_all().size() == 1);
+}
+
+TEST_CASE("Mesures : médiane, écart type, format", "[app][stats]") {
+  FrameStats stats;
+  for (int i = 0; i < 10; ++i) stats.presented(1000, (i + 1) * 41'700, true);
+  CHECK(stats.frame_interval.median() == 41'700);
+  CHECK(stats.frame_interval.stddev() == 0.0);
+  CHECK(stats.new_frames == 10);
+  CHECK(format_ms(41'708) == "41,7 ms");
+  CHECK(format_position(3'723'456'000) == "01:02:03.456");
+  CHECK(format_position(kNoPts) == "--:--:--.---");
+}
+
+}  // namespace
+}  // namespace ajp::app::play
