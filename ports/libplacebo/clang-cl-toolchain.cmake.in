@@ -13,6 +13,6 @@ endif()
 set(CMAKE_C_COMPILER "${AJP_CLANG_CL}")
 set(CMAKE_CXX_COMPILER "${AJP_CLANG_CL}")
 
-# CMAKE_TOOLCHAIN_FILE est scripts/buildsystems/vcpkg.cmake, qui charge ce fichier.
-get_filename_component(z_ajp_vcpkg_scripts "${CMAKE_TOOLCHAIN_FILE}" DIRECTORY)
-include("${z_ajp_vcpkg_scripts}/../toolchains/windows.cmake")
+# Chemin écrit par le portfile (configure_file) : les projets de try_compile chargent
+# cette chaîne sans CMAKE_TOOLCHAIN_FILE, qui ne peut donc pas servir à le retrouver.
+include("@SCRIPTS@/toolchains/windows.cmake")

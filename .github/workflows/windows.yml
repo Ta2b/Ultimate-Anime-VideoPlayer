@@ -53,7 +53,7 @@ jobs:
           cmake --version
           ninja --version
           (Get-Command cl).Source
-          # libplacebo se compile avec clang-cl (ports/libplacebo/clang-cl-toolchain.cmake).
+          # libplacebo se compile avec clang-cl (ports/libplacebo/clang-cl-toolchain.cmake.in).
           Get-ChildItem "$env:VCINSTALLDIR\Tools\Llvm\x64\bin\clang-cl.exe", "$env:ProgramFiles\LLVM\bin\clang-cl.exe" -ErrorAction SilentlyContinue |
             ForEach-Object { $_.FullName }
 
