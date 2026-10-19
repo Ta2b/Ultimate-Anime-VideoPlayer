@@ -13,6 +13,7 @@ option(AJP_WITH_CUDA "Construire le backend TensorRT et les noyaux CUDA" OFF)
 option(AJP_BUILD_TESTS "Construire les tests unitaires" ON)
 option(AJP_BUILD_PLAYER "Construire le lecteur ; OFF ne garde que core, kernels et leurs tests" ON)
 option(AJP_WARNINGS_AS_ERRORS "Avertissements en erreurs" ON)
+option(AJP_BUILD_BENCH "Construire le banc des noyaux Vulkan (tools/bench/vk_kernels) ; exige AJP_BUILD_PLAYER" OFF)
 
 if(AJP_WITH_CUDA)
   set(CMAKE_CUDA_ARCHITECTURES "75-real;86-real;89-real;120-real;120-virtual"
@@ -48,6 +49,14 @@ if(AJP_BUILD_PLAYER)
   add_subdirectory(src/present)
   add_subdirectory(src/export)
   add_subdirectory(src/app)
+endif()
+
+# Le banc lie vk_compute (src/gpu) : il vient avant tests/, qui y trouve ajp_vk_bench.
+if(AJP_BUILD_BENCH)
+  if(NOT AJP_BUILD_PLAYER)
+    message(FATAL_ERROR "AJP_BUILD_BENCH exige AJP_BUILD_PLAYER : le banc lie vk_compute (src/gpu)")
+  endif()
+  add_subdirectory(tools/bench/vk_kernels)
 endif()
 
 if(AJP_BUILD_TESTS)
