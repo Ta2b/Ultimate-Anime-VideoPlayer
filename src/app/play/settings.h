@@ -84,6 +84,11 @@ std::expected<void, Refusal> save_settings(const std::filesystem::path& path, co
 
 // Les réglages de cette lecture : ceux de play.toml, remplacés par les options données.
 PlaySettings settings_for(const PlaySettings& saved, const PlayOptions& options);
+// Ce que play.toml doit garder : les réglages en cours, sauf ceux qu'une option a donnés pour cette
+// lecture et que le menu n'a pas changés depuis (started : ceux du début de la lecture) ; ceux-là
+// gardent la valeur du fichier. Une option d'essai n'y entre jamais.
+PlaySettings settings_to_save(const PlaySettings& running, const PlaySettings& from_file,
+                              const PlaySettings& started, const PlayOptions& options);
 // Les options de lecture qui en découlent (modèle, hauteur, RIFE, RTX HDR).
 PlayOptions options_for(const PlayOptions& options, const PlaySettings& settings);
 

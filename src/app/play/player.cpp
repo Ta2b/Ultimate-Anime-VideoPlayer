@@ -501,6 +501,8 @@ struct Player {
   std::shared_ptr<BackendLibrary> library;
   media::TrackInfo video;
   std::filesystem::path settings_path;
+  PlaySettings from_file;  // play.toml au lancement
+  PlaySettings started;    // réglages du début de la lecture (options comprises)
   SnapshotPlan snapshot;
   bool details = false;  // Tab pendant une préparation
   std::size_t next_key = 0;
@@ -843,7 +845,9 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
     actions.clear();
     // play.toml réécrit au plus une fois par seconde pendant qu'on règle.
     if (chain.dirty && host_now_us() - saved_at >= 1'000'000) {
-      if (auto saved = save_settings(p.settings_path, chain.running); !saved)
+      if (auto saved = save_settings(p.settings_path,
+                                     settings_to_save(chain.running, p.from_file, p.started, p.options));
+          !saved)
         log->warn("{}", saved.error().detail);
       chain.dirty = false;
       saved_at = host_now_us();
@@ -859,7 +863,9 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
     if (!*record) SDL_Delay(1);
   }
   if (chain.dirty) {
-    if (auto saved = save_settings(p.settings_path, chain.running); !saved)
+    if (auto saved = save_settings(p.settings_path,
+                                   settings_to_save(chain.running, p.from_file, p.started, p.options));
+        !saved)
       log->warn("{}", saved.error().detail);
   }
   log_summary(session);
@@ -920,6 +926,8 @@ std::expected<void, Refusal> play(const PlayOptions& options, const PlayerPaths&
                 .library = *library,
                 .video = *video,
                 .settings_path = settings_path,
+                .from_file = *saved,
+                .started = settings,
                 .snapshot = {.path = options.snapshot, .at_us = options.snapshot_at_us},
                 .details = settings.stats.all};
   std::int64_t start_us = options.start_us;
@@ -934,7 +942,9 @@ std::expected<void, Refusal> play(const PlayOptions& options, const PlayerPaths&
     settings = (*outcome)->settings;
     start_us = (*outcome)->position_us;
     player.details = settings.stats.all;
-    if (auto written = save_settings(settings_path, settings); !written)
+    if (auto written = save_settings(settings_path,
+                                     settings_to_save(settings, player.from_file, player.started, options));
+        !written)
       log->warn("{}", written.error().detail);
     log->info("réouverture à {}", format_position(start_us));
   }

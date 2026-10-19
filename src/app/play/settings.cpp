@@ -244,6 +244,24 @@ PlaySettings settings_for(const PlaySettings& saved, const PlayOptions& options)
   return s;
 }
 
+PlaySettings settings_to_save(const PlaySettings& running, const PlaySettings& from_file,
+                              const PlaySettings& started, const PlayOptions& options) {
+  PlaySettings out = running;
+  const auto keep = [&](std::string_view option, auto member) {
+    if (options.was_given(option) && running.*member == started.*member) out.*member = from_file.*member;
+  };
+  keep("--no-upscale", &PlaySettings::upscale);
+  keep("--model", &PlaySettings::model);
+  keep("--work-height", &PlaySettings::work_height);
+  keep("--rife", &PlaySettings::rife_factor);
+  keep("--truehdr", &PlaySettings::true_hdr);
+  keep("--truehdr-contrast", &PlaySettings::true_hdr_contrast);
+  keep("--truehdr-saturation", &PlaySettings::true_hdr_saturation);
+  keep("--truehdr-gray", &PlaySettings::true_hdr_gray);
+  keep("--truehdr-peak", &PlaySettings::true_hdr_peak);
+  return out;
+}
+
 PlayOptions options_for(const PlayOptions& options, const PlaySettings& s) {
   PlayOptions out = options;
   out.upscale = s.upscale;

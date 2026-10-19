@@ -84,6 +84,23 @@ TEST_CASE("Les options données remplacent play.toml pour cette lecture", "[app]
   CHECK(applied.rife_factor == 4);
 }
 
+TEST_CASE("Une option d'essai n'entre pas dans play.toml, un changement du menu oui", "[app][settings]") {
+  PlaySettings file;
+  file.rife_factor = 3;
+  file.true_hdr_contrast = 100;
+  const std::array<std::string_view, 3> args{"film.mkv", "--rife=4", "--truehdr-contrast=120"};
+  const auto options = parse_play_options(args);
+  REQUIRE(options);
+  const PlaySettings started = settings_for(file, *options);
+  PlaySettings running = started;
+  running.true_hdr_saturation = 150;  // changé au menu
+  running.true_hdr_contrast = 140;    // donné en option puis changé au menu
+  const PlaySettings saved = settings_to_save(running, file, started, *options);
+  CHECK(saved.rife_factor == 3);  // --rife=4 n'était que pour cette lecture
+  CHECK(saved.true_hdr_contrast == 140);
+  CHECK(saved.true_hdr_saturation == 150);
+}
+
 TEST_CASE("Ce qu'un changement demande : direct ou réouverture, dit avant d'appliquer", "[app][settings]") {
   const PlaySettings running;
   CHECK(change_between(running, running, true).cost == ChangeCost::None);
