@@ -72,7 +72,7 @@ TEST_CASE("hw : appareil Vulkan choisi par l'UUID du rendu (lavapipe)", "[media]
   CHECK(mismatch.error().detail.find("UUID") != std::string::npos);
 }
 
-TEST_CASE("hw : un appareil partagé est repris tel quel, d'un autre type il est refusé",
+TEST_CASE("hw : un appareil Vulkan partagé est repris tel quel, d'un autre type il est refusé",
           "[media][hw][vulkan]") {
   auto created = open_hw_device(kVulkanCodec, HwApi::Vulkan, DecoderOptions{});
   if (!created) SKIP("aucun appareil Vulkan : " << created.error().detail);

@@ -11,9 +11,9 @@ leak:libdbus-1.so
 # (media/cuda_driver.h) : elle reste nommée à la sortie et sa ligne s'applique ; celles de
 # l'ICD aussi tant qu'une VkInstance vit. Quand le chargeur Vulkan décharge l'ICD (dernière
 # VkInstance détruite) ou que FFmpeg décharge libnvidia-encode ou libnvcuvid, leurs fuites
-# deviennent « <unknown module> », qu'aucune ligne ne couvre : sur une RTX, les tests
-# NVIDIA tournent sous ASan avec detect_leaks=0 (tests/unit/media/gpu_decode_test.cpp), et
-# les fuites se vérifient sur lavapipe (la CI).
+# deviennent « <unknown module> », qu'aucune ligne ne couvre : sur une RTX, seuls les tests
+# NVDEC et [vulkan] de media tournent sous ASan avec detect_leaks=0 (commandes en tête de
+# tests/unit/media/gpu_decode_test.cpp), et leurs fuites se vérifient sur lavapipe (la CI).
 leak:libcuda.so
 leak:libnvidia-glcore.so
 leak:libnvidia-glsi.so

@@ -11,10 +11,13 @@
 //   libnvcuvid par FFmpeg à la fermeture de l'encodeur ou du décodeur. Leurs fuites internes
 //   deviennent « <unknown module> », qu'aucune ligne de tools/ci/lsan.supp n'atteint (vu le
 //   19 octobre : 3231 octets en 69 allocations sous av_hwdevice_ctx_create Vulkan et sous
-//   avcodec_open2 de NVENC). Ces tests tournent donc avec detect_leaks=0 :
+//   avcodec_open2 de NVENC). Sur la RTX, ces tests et les tests [vulkan] (leur nom dit
+//   NVDEC ou Vulkan) tournent donc avec detect_leaks=0, le reste de media avec les fuites :
+//     ajp-gpu env ASAN_OPTIONS=protect_shadow_gap=0 ctest --preset linux-prefix-asan
+//       -R '^media: ' -E 'NVDEC|Vulkan'
 //     ajp-gpu env ASAN_OPTIONS=detect_leaks=0:protect_shadow_gap=0 ctest --preset
-//     linux-prefix-asan -R 'NVDEC|Vulkan Video'
-//   et les fuites se vérifient sur lavapipe, où ces tests SKIP mais pas le reste de media.
+//       linux-prefix-asan -R '^media: .*(NVDEC|Vulkan)'
+//   Les fuites des tests [vulkan] se vérifient sur lavapipe (with-lavapipe, la CI).
 #include <bit>
 #include <cstdint>
 #include <filesystem>

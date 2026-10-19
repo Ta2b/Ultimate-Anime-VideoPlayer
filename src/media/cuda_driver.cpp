@@ -190,7 +190,9 @@ std::expected<std::uintptr_t, Refusal> CudaDriver::primary_context(int ordinal) 
   if (const CUresult result = api_->cuDevicePrimaryCtxRetain(&context, device); result != kCudaSuccess) {
     return refuse_cuda("cuDevicePrimaryCtxRetain", result);
   }
-  api_->cuDevicePrimaryCtxRelease(device);
+  if (const CUresult result = api_->cuDevicePrimaryCtxRelease(device); result != kCudaSuccess) {
+    return refuse_cuda("cuDevicePrimaryCtxRelease", result);
+  }
   return std::bit_cast<std::uintptr_t>(context);
 }
 
