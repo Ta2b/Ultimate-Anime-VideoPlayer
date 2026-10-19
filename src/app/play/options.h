@@ -32,7 +32,7 @@ inline constexpr int kSpanFactor = 2;
 
 namespace limits {
 inline constexpr core::Range<int> kWindowSide{64, 16384};
-inline constexpr core::Range<std::int64_t> kSeconds{0, 24 * 3600};
+inline constexpr core::Range<std::int64_t> kSeconds{0, std::int64_t{24} * 3600};
 }  // namespace limits
 
 struct PlayOptions {

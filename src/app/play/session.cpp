@@ -145,6 +145,7 @@ void Session::choose(std::int64_t host_now) {
   if (prerolling_) {
     if (queue_.first_of(epoch_) == nullptr) return;  // l'image d'avant le seek reste à l'écran
     const std::optional<RingFrame> first = queue_.pop_front();
+    if (!first) return;
     if (current_) retire(*current_);
     current_ = first;
     fresh_ = true;
