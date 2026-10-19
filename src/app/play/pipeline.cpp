@@ -25,7 +25,17 @@ std::expected<std::unique_ptr<Pipeline>, Refusal> Pipeline::open(const PipelineC
   std::unique_ptr<Pipeline> p(new Pipeline());
   auto demuxer = media::Demuxer::open(config.file);
   if (!demuxer) return std::unexpected(std::move(demuxer.error()));
-  const media::TrackChoice choice = media::choose_tracks(demuxer->tracks(), config.languages);
+  media::TrackChoice choice = media::choose_tracks(demuxer->tracks(), config.languages);
+  const auto kind_of = [&](int index) {
+    const media::TrackInfo* track = demuxer->track(index);
+    return track != nullptr ? std::optional(track->kind) : std::nullopt;
+  };
+  if (config.audio_track && kind_of(*config.audio_track) == media::TrackKind::Audio)
+    choice.audio = config.audio_track;
+  if (config.subtitle_track) {
+    const std::optional<int> wanted = *config.subtitle_track;
+    if (!wanted || kind_of(*wanted) == media::TrackKind::Subtitle) choice.subtitle = wanted;
+  }
   if (!choice.video) {
     return std::unexpected(
         Refusal{RefusalCode::TrackUnavailable, std::format("{} : aucune piste vidéo", config.file.string())});

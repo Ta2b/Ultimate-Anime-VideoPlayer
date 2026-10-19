@@ -1,5 +1,6 @@
 #include "app/play/upscale_stage.h"
 
+#include <algorithm>
 #include <array>
 #include <format>
 #include <utility>
@@ -51,7 +52,8 @@ std::expected<std::unique_ptr<VideoStage>, Refusal> UpscaleStage::start(VideoSta
                   std::format("étage gpu : taille de travail {}x{} hors de la source {}x{}", setup.work_width,
                               setup.work_height, setup.source_width, setup.source_height));
   }
-  if (setup.rife != nullptr && (setup.rife_factor < 2 || setup.rife_factor > kMaxRifeFactor)) {
+  if (setup.rife != nullptr && setup.live == nullptr &&
+      (setup.rife_factor < 2 || setup.rife_factor > kMaxRifeFactor)) {
     return refuse(RefusalCode::FieldOutOfRange,
                   std::format("étage gpu : RIFE ×{} hors de [2, {}]", setup.rife_factor, kMaxRifeFactor));
   }
@@ -111,8 +113,13 @@ std::expected<std::uint32_t, Refusal> UpscaleStage::outputs(const DecodedFrame& 
   gpu::KernelOps& ops = *setup_.backend->kernels();
   current_ ^= 1U;
   const gpu::Tensor& rgb = rgb_[current_]->tensor();
-  if (auto ok = ops.ingest(frame, gpu::IngestSpec{}, rgb); !ok) return std::unexpected(std::move(ok.error()));
-  PairFacts facts{.factor = setup_.rife != nullptr ? setup_.rife_factor : 1,
+  gpu::IngestSpec spec;
+  if (setup_.live) spec.reduce = setup_.live->reduction();
+  if (auto ok = ops.ingest(frame, spec, rgb); !ok) return std::unexpected(std::move(ok.error()));
+  std::uint32_t factor = setup_.rife != nullptr ? setup_.rife_factor : 1;
+  if (setup_.rife != nullptr && setup_.live)
+    factor = std::clamp(setup_.live->rife_factor(), 1U, kMaxRifeFactor);
+  PairFacts facts{.factor = factor,
                   .same_epoch = previous_ && previous_->epoch == frame.epoch,
                   .gap_us = previous_ ? frame.pts_us - previous_->pts_us : 0};
   if (facts.factor > 1 && facts.same_epoch) {
@@ -120,13 +127,20 @@ std::expected<std::uint32_t, Refusal> UpscaleStage::outputs(const DecodedFrame& 
     if (!scores) return std::unexpected(std::move(scores.error()));
     facts.scores = *scores;
     ++pairs_;
-    if (kernels::is_scene_cut(scores->scene_score))
+    if (setup_.live) setup_.live->count_pair();
+    if (kernels::is_scene_cut(scores->scene_score)) {
       ++cuts_;
-    else if (kernels::is_held(scores->worst_block))
+      if (setup_.live) setup_.live->count_cut();
+    } else if (kernels::is_held(scores->worst_block)) {
       ++held_;
+      if (setup_.live) setup_.live->count_held();
+    }
   }
   outputs_ = rife_outputs(facts);
-  if (outputs_ > 1) ++interpolated_;
+  if (outputs_ > 1) {
+    ++interpolated_;
+    if (setup_.live) setup_.live->count_interpolated();
+  }
   return outputs_;
 }
 
@@ -164,6 +178,12 @@ std::expected<RingStage::Output, Refusal> UpscaleStage::produce(const DecodedFra
 std::expected<void, Refusal> UpscaleStage::finish(const gpu::Tensor& rgb, std::uint32_t slot,
                                                   const gpu::RingWrite& sync) {
   gpu::KernelOps& ops = *setup_.backend->kernels();
+  if (setup_.true_hdr && setup_.live) {
+    if (const auto params = setup_.live->take_true_hdr()) {
+      if (auto set = ops.set_true_hdr(*params); !set)
+        log_channel("gpu")->warn("RTX HDR : réglages refusés ({})", set.error().detail);
+    }
+  }
   const auto write = [&](const gpu::Tensor& image) {
     return setup_.true_hdr ? ops.write_ring_true_hdr(image, prepared_, setup_.slots[slot], sync)
                            : ops.write_ring(image, setup_.slots[slot], sync);

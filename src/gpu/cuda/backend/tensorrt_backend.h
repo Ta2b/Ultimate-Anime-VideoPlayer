@@ -77,6 +77,8 @@ class TensorRtBackend final : public Backend, public KernelOps {
   std::expected<void, Refusal> write_ring_true_hdr(const Tensor& rgb,
                                                    const vendor_hdr::InputPreparation& prepared,
                                                    const RingSlotDesc& slot, const RingWrite& sync) override;
+  std::expected<void, Refusal> set_true_hdr(const vendor_hdr::TrueHdrParams& params) override;
+  std::optional<DeviceMemory> device_memory() override;
 
  private:
   // Une image décodée tenue jusqu'à la fin de son ingestion côté GPU : FFmpeg la réécrit dès

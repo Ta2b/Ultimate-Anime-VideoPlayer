@@ -22,6 +22,7 @@
 #include "app/play/frame_queue.h"
 #include "app/play/frame_stats.h"
 #include "app/play/links.h"
+#include "app/play/settings.h"
 #include "app/play/subtitle_queue.h"
 #include "core/clock.h"
 #include "core/messages.h"
@@ -38,6 +39,15 @@ namespace ajp::app::play {
 inline constexpr std::size_t kMaxSubtitleRequests = 3;
 inline constexpr std::size_t kMaxKeptSubtitles = subs::kMaxAtlasesInFlight - kMaxSubtitleRequests - 1;
 
+// Mesures que la session ne tient pas elle-même (compteurs de RIFE, mémoire vidéo), lues à
+// chaque relecture de l'OSD ; rien quand la mesure n'existe pas.
+class StatsSource {
+ public:
+  virtual ~StatsSource() = default;
+  virtual std::optional<std::string> rife() const = 0;
+  virtual std::optional<std::string> memory() const = 0;
+};
+
 struct SessionConfig {
   std::int64_t start_us = 0;             // > 0 : seek exact à l'ouverture
   std::int64_t duration_us = 0;          // 0 : inconnue ; borne les seeks relatifs
@@ -47,9 +57,12 @@ struct SessionConfig {
   int video_width = 0;                   // taille de stockage de la vidéo, pour libass
   int video_height = 0;
   std::optional<subs::VideoMatrix> video_matrix;  // couleurs VSFilter
-  std::vector<std::string> header;                // premières lignes de l'OSD (modèle, moteur)
+  std::vector<std::string> header;                // la chaîne : modèles, tailles, moteur
+  std::vector<std::string> tracks;                // pistes vidéo, audio et sous-titres
+  std::string output;                             // sortie de l'écran (HDR10, pic de RTX HDR)
   std::int64_t display_period_us = 0;             // période de rafraîchissement de l'écran ; 0 : mesurée
-  bool stats = false;                             // lignes de mesure affichées (Tab les bascule)
+  StatsSettings stats;                            // mesures affichées (Tab bascule toutes)
+  const StatsSource* extra = nullptr;             // vit plus longtemps que la session
 };
 
 // Une ligne par présentation, pour --stats.
@@ -74,6 +87,12 @@ class Session {
   void toggle_fullscreen();
   // Sous-titres affichés ou non (piste choisie ou aucune) : demandes et réponses s'arrêtent.
   void set_subtitles(bool on);
+  // Mesures affichées, relues au tour suivant.
+  void set_stats(const StatsSettings& stats);
+  const StatsSettings& stats_settings() const { return show_stats_; }
+  // Les pistes et la sortie ont changé (piste choisie, pic de RTX HDR) : relues au tour suivant.
+  void set_tracks(std::vector<std::string> tracks);
+  void set_output(std::string output);
   // Un tour : choisit l'image, puis compose et présente seulement si quelque chose a changé
   // (image neuve, sous-titres, OSD, interface, taille de sortie) ; rien sinon. Rend les slots. Un
   // refus de l'écran est rendu tel quel : la boucle s'arrête.
@@ -125,7 +144,7 @@ class Session {
   std::optional<std::int64_t> shown_subtitles_pts_;  // sous-titres de la dernière présentation
   OutputSize shown_size_;                            // taille de sortie de la dernière présentation
   bool shown_ui_ = false;                            // la dernière présentation avait une interface
-  bool show_stats_ = false;                          // lignes de mesure affichées
+  StatsSettings show_stats_;                         // mesures affichées
   std::vector<std::string> osd_;                     // relu toutes les kOsdPeriodUs
   std::optional<std::int64_t> osd_at_us_;            // rien : à relire au prochain tour
   std::optional<std::int64_t> playing_since_us_;     // instant hôte de la première image

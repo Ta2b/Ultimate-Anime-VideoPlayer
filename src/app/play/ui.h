@@ -17,6 +17,7 @@
 #include "app/play/controls_draw.h"
 #include "app/play/input.h"
 #include "app/play/links.h"
+#include "app/play/settings_panel.h"
 #include "core/types.h"
 
 struct SDL_Window;
@@ -48,6 +49,12 @@ class PlayerUi {
   Controls& controls() { return controls_; }
   // Les pistes que les menus de la barre proposent, et celles choisies.
   void set_tracks(TrackMenu tracks);
+  // Les réglages en cours et ce que le menu des paramètres propose.
+  void set_settings(const PlaySettings& running, SettingsChoices choices);
+  void set_running(const PlaySettings& running);
+  void toggle_settings();
+  void close_settings();
+  bool settings_open() const { return panel_.is_open(); }
   // Rend les textures de l'interface à l'écran avant qu'il ne soit détruit.
   void release(PlaceboScreen& screen);
 
@@ -60,8 +67,17 @@ class PlayerUi {
   ImGuiContext* context_ = nullptr;
   Controls controls_;
   UiLook look_;
+  SettingsPanel panel_;
+  PlaySettings running_;
+  SettingsChoices choices_;
   bool input_pending_ = false;
-  float wheel_ = 0.0F;  // crans de molette pas encore rendus en pas de volume
+  struct Click {
+    int button = 0;
+    int count = 1;
+    std::int64_t at_us = 0;
+  };
+  std::vector<Click> clicks_;  // en attente de l'image ImGui qui dira s'ils touchent l'interface
+  float wheel_ = 0.0F;         // crans de molette pas encore rendus en pas de volume
   bool cursor_hidden_ = false;
   bool text_input_ = false;
   std::int64_t last_frame_us_ = 0;

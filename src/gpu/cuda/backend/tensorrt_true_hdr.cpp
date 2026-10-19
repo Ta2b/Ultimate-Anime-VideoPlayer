@@ -92,6 +92,13 @@ std::expected<void, Refusal> TensorRtBackend::open_true_hdr(const vendor_hdr::In
   return {};
 }
 
+std::expected<void, Refusal> TensorRtBackend::set_true_hdr(const vendor_hdr::TrueHdrParams& params) {
+  if (!true_hdr_) return refuse(RefusalCode::HdrUnavailable, "RTX HDR : open_true_hdr n'a pas été appelé");
+  auto valid = vendor_hdr::validate(params);
+  if (!valid) return std::unexpected(std::move(valid.error()));
+  return true_hdr_->effect->set_params(*valid);
+}
+
 std::expected<void, Refusal> TensorRtBackend::write_ring_true_hdr(
     const Tensor& rgb, const vendor_hdr::InputPreparation& prepared, const RingSlotDesc& desc,
     const RingWrite& sync) {

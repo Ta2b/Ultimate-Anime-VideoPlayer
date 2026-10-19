@@ -91,11 +91,26 @@ void Session::command(const Command& command) {
                    }
                  },
                  [this](const cmd::ToggleOsd&) {
-                   show_stats_ = !show_stats_;
+                   show_stats_.all = !show_stats_.all;
                    osd_at_us_.reset();  // relu au tour suivant
                  },
                  [](const auto&) {}},  // le reste ne concerne pas la tranche verticale
       command);
+}
+
+void Session::set_stats(const StatsSettings& stats) {
+  show_stats_ = stats;
+  osd_at_us_.reset();
+}
+
+void Session::set_tracks(std::vector<std::string> tracks) {
+  config_.tracks = std::move(tracks);
+  osd_at_us_.reset();
+}
+
+void Session::set_output(std::string output) {
+  config_.output = std::move(output);
+  osd_at_us_.reset();
 }
 
 void Session::set_subtitles(bool on) {
@@ -285,16 +300,30 @@ void Session::end() {
 }
 
 std::vector<std::string> Session::osd_lines() const {
-  if (!show_stats_) return refusals_;  // les refus restent visibles, statistiques ou pas
-  std::vector<std::string> lines = config_.header;
-  lines.push_back(std::format("image {} (σ {}) · rendu {} · sautées {}",
-                              format_ms(stats_.frame_interval.median()),
-                              format_ms(static_cast<std::int64_t>(stats_.frame_interval.stddev())),
-                              format_ms(stats_.render.median()), stats_.dropped));
-  const std::int64_t position = current_ ? current_->pts_us : kNoPts;
-  lines.push_back(std::format("{} / {}{}", format_position(position), format_position(config_.duration_us),
-                              paused_ ? " · pause" : ""));
-  for (const std::string& refusal : refusals_) lines.push_back(refusal);
+  const StatsSettings& show = show_stats_;
+  std::vector<std::string> lines;
+  if (show.all || show.chain) lines.insert(lines.end(), config_.header.begin(), config_.header.end());
+  if (show.all || show.tracks) lines.insert(lines.end(), config_.tracks.begin(), config_.tracks.end());
+  if ((show.all || show.output) && !config_.output.empty()) lines.push_back(config_.output);
+  if (show.all || show.frames) {
+    lines.push_back(std::format("image {} (σ {}) · rendu {} · sautées {}",
+                                format_ms(stats_.frame_interval.median()),
+                                format_ms(static_cast<std::int64_t>(stats_.frame_interval.stddev())),
+                                format_ms(stats_.render.median()), stats_.dropped));
+  }
+  if ((show.all || show.rife) && config_.extra != nullptr) {
+    if (auto rife = config_.extra->rife()) lines.push_back(std::move(*rife));
+  }
+  if ((show.all || show.memory) && config_.extra != nullptr) {
+    if (auto memory = config_.extra->memory()) lines.push_back(std::move(*memory));
+  }
+  if (show.all || show.position) {
+    const std::int64_t position = current_ ? current_->pts_us : kNoPts;
+    lines.push_back(std::format("{} / {}{}", format_position(position), format_position(config_.duration_us),
+                                paused_ ? " · pause" : ""));
+  }
+  // Les refus restent visibles, statistiques ou pas.
+  lines.insert(lines.end(), refusals_.begin(), refusals_.end());
   return lines;
 }
 
@@ -309,7 +338,7 @@ ControlsView Session::view() const {
                       .duration_us = config_.duration_us,
                       .paused = paused_,
                       .fullscreen = screen_.fullscreen(),
-                      .stats = show_stats_};
+                      .stats = show_stats_.all};
 }
 
 }  // namespace ajp::app::play

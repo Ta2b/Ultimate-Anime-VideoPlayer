@@ -107,7 +107,7 @@ void apply_theme(ImGuiStyle& style) {
   ImVec4* colors = style.Colors;
   colors[ImGuiCol_Text] = {0.95F, 0.95F, 0.97F, 1.0F};
   colors[ImGuiCol_TextDisabled] = {0.56F, 0.57F, 0.62F, 1.0F};
-  colors[ImGuiCol_WindowBg] = {0.07F, 0.07F, 0.09F, 0.94F};
+  colors[ImGuiCol_WindowBg] = {0.07F, 0.07F, 0.09F, 0.97F};
   colors[ImGuiCol_PopupBg] = {0.09F, 0.09F, 0.11F, 0.96F};
   colors[ImGuiCol_Border] = {1.0F, 1.0F, 1.0F, 0.08F};
   colors[ImGuiCol_FrameBg] = {1.0F, 1.0F, 1.0F, 0.07F};
@@ -241,24 +241,19 @@ bool PlayerUi::handle(const SDL_Event& event, std::int64_t now_us, std::vector<I
     case SDL_EVENT_MOUSE_BUTTON_UP: {
       const bool down = event.type == SDL_EVENT_MOUSE_BUTTON_DOWN;
       const int button = mouse_button(event.button.button);
-      const bool on_ui = over_ui();
       io.AddMousePosEvent(event.button.x * density, event.button.y * density);
       if (button >= 0) io.AddMouseButtonEvent(button, down);
       controls_.activity(now_us);
       input_pending_ = true;
-      if (down && !on_ui) {
-        if (button == ImGuiMouseButton_Left) {
-          if (controls_.click(now_us, event.button.clicks)) actions.emplace_back(ToggleFullscreen{});
-        } else if (button == ImGuiMouseButton_Right) {
-          actions.emplace_back(Command{cmd::TogglePause{}});
-        }
-      }
+      // Sur l'image ou sur l'interface ? Décidé à l'image ImGui qui voit ce clic (frame).
+      if (down && (button == ImGuiMouseButton_Left || button == ImGuiMouseButton_Right))
+        clicks_.push_back(Click{.button = button, .count = event.button.clicks, .at_us = now_us});
       return false;
     }
     case SDL_EVENT_MOUSE_WHEEL: {
       controls_.activity(now_us);
       input_pending_ = true;
-      if (over_ui() && ImGui::IsPopupOpen("", ImGuiPopupFlags_AnyPopupId)) {
+      if (over_ui() && (panel_.is_open() || ImGui::IsPopupOpen("", ImGuiPopupFlags_AnyPopupId))) {
         io.AddMouseWheelEvent(event.wheel.x, event.wheel.y);  // défilement d'un menu
         return false;
       }
@@ -333,7 +328,26 @@ UiFrame PlayerUi::frame(std::int64_t now_us, const ControlsView& view, std::vect
                                     : 1.0F / 60.0F;
   last_frame_us_ = now_us;
   ImGui::NewFrame();
-  const bool drawn = draw_controls(controls_, view, look_, now_us, actions);
+  // Les clics que l'interface ne prend pas vont à l'image : simple clic pause, double plein écran,
+  // clic droit pause.
+  const bool captured = io.WantCaptureMouse;
+  for (const Click& click : clicks_) {
+    if (captured) continue;
+    if (click.button == ImGuiMouseButton_Right) {
+      actions.emplace_back(Command{cmd::TogglePause{}});
+    } else if (controls_.click(click.at_us, click.count)) {
+      actions.emplace_back(ToggleFullscreen{});
+    }
+  }
+  clicks_.clear();
+  bool drawn = draw_controls(controls_, view, look_, now_us, actions);
+  if (panel_.is_open()) {
+    const SettingsPanel::Result result = panel_.draw(running_, choices_, look_.scale);
+    if (result.live) actions.emplace_back(ApplySettings{.settings = *result.live});
+    if (result.reopen) actions.emplace_back(ApplySettings{.settings = *result.reopen, .reopen = true});
+    look_.keep_visible = panel_.is_open();  // fermé par sa croix
+    drawn = true;
+  }
   ImGui::Render();
   controls_.framed(now_us, view, drawn);
   if (io.WantTextInput != text_input_) {
@@ -362,11 +376,39 @@ const ImDrawData* PlayerUi::preparation(std::int64_t now_us, const PrepareView& 
                                     : 1.0F / 60.0F;
   last_frame_us_ = now_us;
   ImGui::NewFrame();
+  clicks_.clear();
   draw_preparation(view, look_, now_us);
   ImGui::Render();
   draw_ = nullptr;  // la barre de lecture se recompose à son premier tour
   controls_.framed(now_us, ControlsView{}, false);
   return ImGui::GetDrawData();
+}
+
+void PlayerUi::set_settings(const PlaySettings& running, SettingsChoices choices) {
+  running_ = running;
+  choices_ = std::move(choices);
+  input_pending_ = true;
+}
+
+void PlayerUi::set_running(const PlaySettings& running) {
+  running_ = running;
+  input_pending_ = true;
+}
+
+void PlayerUi::toggle_settings() {
+  if (panel_.is_open()) {
+    panel_.close();
+  } else {
+    panel_.open(running_);
+  }
+  look_.keep_visible = panel_.is_open();
+  input_pending_ = true;
+}
+
+void PlayerUi::close_settings() {
+  panel_.close();
+  look_.keep_visible = false;
+  input_pending_ = true;
 }
 
 void PlayerUi::set_tracks(TrackMenu tracks) {

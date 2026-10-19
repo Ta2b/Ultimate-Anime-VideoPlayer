@@ -243,46 +243,54 @@ std::optional<double> content_peak_nits(SDL_Window* window) {
   return static_cast<double>(headroom) * 203.0;
 }
 
+// Couleur de la sortie de RTX HDR : PQ BT.2020 au pic donné à TrueHDR.
+ColorInfo pq_color(int peak_nits) {
+  return ColorInfo{.matrix = ColorMatrix::Rgb,
+                   .range = ColorRange::Full,
+                   .transfer = Transfer::Pq,
+                   .primaries = Primaries::Bt2020,
+                   .hdr = HdrMetadata{.max_luminance = static_cast<float>(peak_nits)}};
+}
+
+vendor_hdr::TrueHdrParams true_hdr_params(const PlaySettings& s, int auto_peak) {
+  return vendor_hdr::TrueHdrParams{.contrast = s.true_hdr_contrast,
+                                   .saturation = s.true_hdr_saturation,
+                                   .middle_gray = s.true_hdr_gray,
+                                   .peak_nits = s.true_hdr_peak > 0 ? s.true_hdr_peak : auto_peak,
+                                   .debanding = s.true_hdr_debanding};
+}
+
 // RTX HDR : le SDK Maxine importé une fois dans le magasin du lecteur (environ 135 Mo), revérifié
 // à chaque lancement, puis l'effet ouvert pour la sortie de SPAN ; l'écran reçoit alors du PQ
-// BT.2020 au pic donné à TrueHDR.
-std::expected<void, Refusal> open_rtx_hdr(const PlayOptions& options, const PlayerPaths& paths,
-                                          PlaceboScreen& screen, gpu::KernelOps& kernels, int width,
-                                          int height) {
+// BT.2020 au pic donné à TrueHDR, que rend la fonction.
+std::expected<int, Refusal> open_rtx_hdr(const std::filesystem::path& sdk_source, const PlayerPaths& paths,
+                                         const PlaySettings& settings, int auto_peak, PlaceboScreen& screen,
+                                         gpu::KernelOps& kernels, int width, int height) {
   const auto log = log_channel("app");
   vendor_hdr::SdkStore store(paths.engines.parent_path() / "sdk", vendor_hdr::SdkKind::MaxineVfx);
   vendor_hdr::SdkStatus sdk = store.status();
   if (!sdk.installed) {
     log->info("RTX HDR : import du SDK Maxine depuis {} (environ 135 Mo, une seule fois)",
-              options.true_hdr_sdk.string());
-    auto imported = store.import(options.true_hdr_sdk);
+              sdk_source.string());
+    auto imported = store.import(sdk_source);
     if (!imported) return std::unexpected(std::move(imported.error()));
     sdk = *imported;
   }
   if (!sdk.installed) return refuse(RefusalCode::HdrUnavailable, std::format("RTX HDR : {}", sdk.reason));
-  const int peak = options.true_hdr_peak > 0
-                       ? options.true_hdr_peak
-                       : vendor_hdr::peak_from_display(content_peak_nits(screen.window()));
-  auto params = vendor_hdr::validate(vendor_hdr::TrueHdrParams{.contrast = options.true_hdr_contrast,
-                                                               .saturation = options.true_hdr_saturation,
-                                                               .middle_gray = options.true_hdr_gray,
-                                                               .peak_nits = peak});
+  auto params = vendor_hdr::validate(true_hdr_params(settings, auto_peak));
   if (!params) return std::unexpected(std::move(params.error()));
   if (auto ok = kernels.open_true_hdr(
           *sdk.installed,
           vendor_hdr::TrueHdrConfig{
               .width = width, .height = height, .source = ColorInfo{}, .params = *params});
       !ok) {
-    return ok;
+    return std::unexpected(std::move(ok.error()));
   }
-  screen.set_source_color(ColorInfo{.matrix = ColorMatrix::Rgb,
-                                    .range = ColorRange::Full,
-                                    .transfer = Transfer::Pq,
-                                    .primaries = Primaries::Bt2020,
-                                    .hdr = HdrMetadata{.max_luminance = static_cast<float>(peak)}});
-  log->info("RTX HDR : Maxine {} · pic {} nits · contraste {} · saturation {} · gris moyen {}",
-            sdk.installed->version().text(), peak, params->contrast, params->saturation, params->middle_gray);
-  return {};
+  screen.set_source_color(pq_color(params->peak_nits));
+  log->info("RTX HDR : Maxine {} · pic {} nits · contraste {} · saturation {} · gris moyen {} · débandage {}",
+            sdk.installed->version().text(), params->peak_nits, params->contrast, params->saturation,
+            params->middle_gray, params->debanding ? "oui" : "non");
+  return params->peak_nits;
 }
 
 std::string volume_text(const Controls& controls) {
@@ -295,16 +303,29 @@ std::string label_of(const std::vector<TrackEntry>& entries, int track) {
   return found != entries.end() ? found->label : std::format("piste {}", track);
 }
 
-// Ce que les actions touchent : la session, l'écran, l'interface et les pistes du pipeline.
-struct ActionTargets {
+std::string output_text(const PlaceboScreen& screen, int peak_nits) {
+  return peak_nits > 0 ? std::format("{} · RTX HDR, pic {} nits", screen.output_description(), peak_nits)
+                       : screen.output_description();
+}
+
+// Ce qui vit le temps d'une ouverture de la chaîne, et ce que les actions y changent.
+struct Chain {
   Session& session;
   PlaceboScreen& screen;
   PlayerUi& ui;
   Pipeline& pipeline;
+  LiveSettings& live;
+  PlaySettings& running;  // réglages en cours, gardés dans play.toml
+  bool rife_loaded = false;
+  bool true_hdr_open = false;
+  int auto_peak = 0;                   // pic automatique de RTX HDR
+  int peak_nits = 0;                   // pic donné à RTX HDR, 0 sans lui
+  bool dirty = false;                  // play.toml à réécrire
+  std::optional<PlaySettings> reopen;  // demandé par le menu des paramètres
 };
 
 // Piste audio : le pont change de piste à l'époque du seek qui suit, à la position courante.
-void switch_audio(const ActionTargets& to, int track, std::int64_t now_us) {
+void switch_audio(Chain& to, int track, std::int64_t now_us) {
   if (to.pipeline.tracks().audio_selected == track) return;
   const std::int64_t position = std::max<std::int64_t>(to.session.view().position_us, 0);
   auto switched = to.pipeline.select_audio(track, to.session.epoch() + 1, [&] {
@@ -316,11 +337,12 @@ void switch_audio(const ActionTargets& to, int track, std::int64_t now_us) {
     return;
   }
   to.ui.set_tracks(to.pipeline.tracks());
+  to.session.set_tracks(to.pipeline.describe());
   to.ui.controls().notify(std::format("Audio : {}", label_of(to.pipeline.tracks().audio, track)), now_us);
 }
 
 // Sous-titres : subs prend la nouvelle piste, un seek à la position courante relit ses paquets.
-void switch_subtitles(const ActionTargets& to, std::optional<int> track, std::int64_t now_us) {
+void switch_subtitles(Chain& to, std::optional<int> track, std::int64_t now_us) {
   if (to.pipeline.tracks().subtitle_selected == track) return;
   auto switched = to.pipeline.select_subtitles(track);
   if (!switched) {
@@ -334,17 +356,63 @@ void switch_subtitles(const ActionTargets& to, std::optional<int> track, std::in
     to.session.command(cmd::Seek{.target_us = position, .exact = true});
   }
   to.ui.set_tracks(to.pipeline.tracks());
+  to.session.set_tracks(to.pipeline.describe());
   to.ui.controls().notify(
       track ? std::format("Sous-titres : {}", label_of(to.pipeline.tracks().subtitles, *track))
             : std::string("Sous-titres désactivés"),
       now_us);
 }
 
+// Réglages en direct du menu des paramètres : RIFE, réduction, RTX HDR, son, statistiques.
+void apply_live(Chain& to, const PlaySettings& wanted, std::int64_t now_us) {
+  PlaySettings& r = to.running;
+  Controls& controls = to.ui.controls();
+  if (wanted.rife_factor != r.rife_factor) {
+    log_channel("app")->info("RIFE en direct : ×{}", wanted.rife_factor);
+    to.live.set_rife_factor(static_cast<std::uint32_t>(std::max(wanted.rife_factor, 0)));
+    controls.notify(wanted.rife_factor >= 2 ? std::format("Interpolation ×{}", wanted.rife_factor)
+                                            : std::string("Interpolation désactivée"),
+                    now_us);
+  }
+  if (wanted.downscale != r.downscale) {
+    log_channel("app")->info("réduction en direct : {}", label(wanted.downscale));
+    to.live.set_reduction(reduction_of(wanted.downscale));
+    controls.notify(std::format("Réduction : {}", label(wanted.downscale)), now_us);
+  }
+  const vendor_hdr::TrueHdrParams before = true_hdr_params(r, to.auto_peak);
+  const vendor_hdr::TrueHdrParams after = true_hdr_params(wanted, to.auto_peak);
+  if (to.true_hdr_open && after != before) {
+    log_channel("app")->info(
+        "RTX HDR en direct : contraste {} · saturation {} · gris moyen {} · pic {} nits · débandage {}",
+        after.contrast, after.saturation, after.middle_gray, after.peak_nits,
+        after.debanding ? "oui" : "non");
+    to.live.set_true_hdr(after);
+    if (after.peak_nits != before.peak_nits) {
+      to.screen.set_source_color(pq_color(after.peak_nits));
+      to.peak_nits = after.peak_nits;
+      to.session.set_output(output_text(to.screen, to.peak_nits));
+    }
+  }
+  if (wanted.audio_delay_ms != r.audio_delay_ms)
+    to.session.command(cmd::SetAudioDelay{.delay_us = std::int64_t{wanted.audio_delay_ms} * 1000});
+  if (wanted.stats != r.stats) to.session.set_stats(wanted.stats);
+  r = wanted;
+  r.volume = controls.volume();
+  to.ui.set_running(r);
+  to.dirty = true;
+}
+
 // Une action du clavier ou de l'interface. La barre paraît aussi après un seek au clavier.
-void apply(const Input& input, const ActionTargets& to, std::int64_t now_us) {
+void apply(const Input& input, Chain& to, std::int64_t now_us) {
   Session& session = to.session;
   PlaceboScreen& screen = to.screen;
   Controls& controls = to.ui.controls();
+  const auto volume_changed = [&] {
+    to.running.volume = controls.volume();
+    to.ui.set_running(to.running);
+    to.dirty = true;
+    controls.notify(volume_text(controls), now_us);
+  };
   std::visit(
       Overloaded{
           [&](const Command& command) {
@@ -356,29 +424,50 @@ void apply(const Input& input, const ActionTargets& to, std::int64_t now_us) {
             }
             session.command(command);
             if (std::holds_alternative<cmd::SeekRelative>(command)) controls.activity(now_us);
+            if (std::holds_alternative<cmd::SetVolume>(command)) {  // curseur de la barre
+              to.running.volume = controls.volume();
+              to.ui.set_running(to.running);
+              to.dirty = true;
+            }
             if (std::holds_alternative<cmd::ToggleOsd>(command)) {
-              controls.notify(session.view().stats ? "Statistiques affichées" : "Statistiques masquées",
+              to.running.stats.all = session.stats_settings().all;
+              to.ui.set_running(to.running);
+              to.dirty = true;
+              controls.notify(to.running.stats.all ? "Statistiques affichées" : "Statistiques masquées",
                               now_us);
             }
           },
           [&](const ToggleFullscreen&) { session.toggle_fullscreen(); },
           [&](const LeaveFullscreen&) {
-            if (screen.fullscreen()) session.toggle_fullscreen();
+            if (to.ui.settings_open()) {
+              to.ui.close_settings();
+            } else if (screen.fullscreen()) {
+              session.toggle_fullscreen();
+            }
           },
           [&](const ToggleMute&) {
             session.command(Command{controls.toggle_mute()});
-            controls.notify(volume_text(controls), now_us);
+            volume_changed();
           },
           [&](const VolumeStep& step) {
             session.command(Command{controls.step_volume(step.delta)});
-            controls.notify(volume_text(controls), now_us);
+            volume_changed();
           },
           [&](const SelectAudio& select) { switch_audio(to, select.track, now_us); },
           [&](const SelectSubtitles& select) { switch_subtitles(to, select.track, now_us); },
           [&](const CycleAudio&) {
             if (auto next = next_audio(to.pipeline.tracks())) switch_audio(to, *next, now_us);
           },
-          [&](const CycleSubtitles&) { switch_subtitles(to, next_subtitle(to.pipeline.tracks()), now_us); }},
+          [&](const CycleSubtitles&) { switch_subtitles(to, next_subtitle(to.pipeline.tracks()), now_us); },
+          [&](const ToggleSettings&) { to.ui.toggle_settings(); },
+          [&](const ApplySettings& apply) {
+            if (apply.reopen) {
+              log_channel("app")->info("paramètres : réouverture de la chaîne");
+              to.reopen = apply.settings;
+            } else {
+              apply_live(to, apply.settings, now_us);
+            }
+          }},
       input);
 }
 
@@ -399,130 +488,233 @@ void log_summary(const Session& session) {
       format_ms(stats.frame_interval.percentile(95)), format_ms(stats.render.median()));
 }
 
-}  // namespace
+// Ce qui survit à une réouverture de la chaîne : la fenêtre, l'interface, la bibliothèque du
+// backend, les touches et l'instantané d'essai, les pistes choisies.
+struct Player {
+  const PlayOptions& options;
+  const PlayerPaths& paths;
+  PlaceboScreen& screen;
+  PlayerUi& ui;
+  std::shared_ptr<BackendLibrary> library;
+  media::TrackInfo video;
+  std::filesystem::path settings_path;
+  SnapshotPlan snapshot;
+  bool details = false;  // Tab pendant une préparation
+  std::size_t next_key = 0;
+  std::int64_t began_us = 0;
+  std::optional<int> audio_track;
+  std::optional<std::optional<int>> subtitle_track;
+};
 
-std::expected<void, Refusal> play(const PlayOptions& options, const PlayerPaths& paths) {
+// Fin d'une ouverture de la chaîne : la lecture est finie (rien), ou le menu demande de la rouvrir
+// avec ces réglages à cette position.
+struct Reopen {
+  PlaySettings settings;
+  std::int64_t position_us = 0;
+};
+
+// Le modèle SPAN : --model, sinon celui choisi dans le menu (à côté du modèle par défaut), sinon
+// celui par défaut. Rend aussi le dossier des modèles et le nom par défaut, pour le menu.
+struct ModelChoice {
+  std::filesystem::path path;
+  std::vector<std::string> available;  // modèles ×2 du dossier
+  std::string default_name;
+};
+std::expected<ModelChoice, Refusal> choose_model(const Player& p, const PlaySettings& settings) {
+  PlayOptions defaults = p.options;
+  if (!p.options.was_given("--model")) defaults.model.reset();
+  auto found = find_model(defaults, default_model_candidates(p.paths.home));
+  if (!found) return std::unexpected(std::move(found.error()));
+  ModelChoice choice{.path = *found, .default_name = found->filename().string()};
+  std::error_code error;
+  for (const auto& entry : std::filesystem::directory_iterator(found->parent_path(), error)) {
+    const std::string name = entry.path().filename().string();
+    if (name.starts_with("2x_") && name.ends_with(".onnx")) choice.available.push_back(name);
+  }
+  std::ranges::sort(choice.available);
+  if (!p.options.was_given("--model") && !settings.model.empty()) {
+    const std::filesystem::path chosen = found->parent_path() / settings.model;
+    if (std::filesystem::exists(chosen, error)) {
+      choice.path = chosen;
+    } else {
+      log_channel("app")->warn("modèle {} introuvable : {}", settings.model, found->filename().string());
+    }
+  }
+  return choice;
+}
+
+// Les moteurs du cache, pour l'onglet Moteurs du menu.
+std::vector<EngineBadge> engine_badges(const std::filesystem::path& cache_dir,
+                                       const std::filesystem::path& span, WorkSize span_size,
+                                       const std::optional<std::filesystem::path>& rife,
+                                       const kernels::RifeGeometry& rife_size) {
+  std::vector<EngineBadge> badges;
+  for (const PastBuild& past : past_builds(cache_dir)) {
+    std::string file = past.onnx.filename().string();
+    std::string lower_file = file;
+    std::ranges::transform(lower_file, lower_file.begin(),
+                           [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+    const bool is_rife = lower_file.find("rife") != std::string::npos;
+    const bool loaded = is_rife ? rife && past.onnx.filename() == rife->filename() &&
+                                      past.width == rife_size.padded_width &&
+                                      past.height == rife_size.padded_height
+                                : past.onnx.filename() == span.filename() && past.width == span_size.width &&
+                                      past.height == span_size.height;
+    badges.push_back(EngineBadge{
+        .name = is_rife ? std::format("RIFE · {}", past.onnx.stem().string())
+                        : std::format("SPAN · {}", model_label(file)),
+        .detail = std::format("entrée {}x{} · construit en {:.0f} s", past.width, past.height, past.seconds),
+        .loaded = loaded});
+  }
+  std::ranges::stable_partition(badges, &EngineBadge::loaded);
+  return badges;
+}
+
+// Mesures de la chaîne pour l'OSD : compteurs de RIFE, mémoire vidéo.
+class ChainStats final : public StatsSource {
+ public:
+  ChainStats(const LiveSettings& live, gpu::KernelOps& kernels, bool rife)
+      : live_(live), kernels_(kernels), rife_(rife) {}
+  std::optional<std::string> rife() const override {
+    if (!rife_) return std::nullopt;
+    const RifeCounts c = live_.counts();
+    return std::format("RIFE ×{} : {} paires, {} interpolées, {} dessins tenus, {} coupes",
+                       live_.rife_factor(), c.pairs, c.interpolated, c.held, c.cuts);
+  }
+  std::optional<std::string> memory() const override {
+    const auto memory = kernels_.device_memory();
+    if (!memory) return std::nullopt;
+    constexpr double kMiB = 1024.0 * 1024.0;
+    return std::format("mémoire vidéo {:.0f} / {:.0f} Mio", static_cast<double>(memory->used) / kMiB,
+                       static_cast<double>(memory->total) / kMiB);
+  }
+
+ private:
+  const LiveSettings& live_;
+  gpu::KernelOps& kernels_;
+  bool rife_;
+};
+
+// Construit (ou lit du cache) puis charge un moteur, la préparation à l'écran. Rien si
+// l'utilisateur ferme la fenêtre.
+std::expected<std::optional<std::unique_ptr<gpu::Engine>>, Refusal> prepare_engine(
+    Player& p, const gpu::BackendInit& init, gpu::Backend& backend, const std::filesystem::path& onnx,
+    const gpu::Shape& shape, EngineLabel label) {
+  auto sha256 = prepare::sha256_file(onnx);
+  if (!sha256) return std::unexpected(std::move(sha256.error()));
+  auto build = EngineBuild::start(
+      EngineRequest{.library = p.library,
+                    .init = init,
+                    .model = {.id = onnx.stem().string(), .onnx_path = onnx, .sha256 = *sha256},
+                    .shapes = {.min = shape, .opt = shape, .max = shape}});
+  if (!build) return std::unexpected(std::move(build.error()));
+  label.expected_s = expected_build_seconds(p.paths.engines, onnx, std::int64_t{label.width} * label.height);
+  auto artifact = wait_engine(**build, p.screen, p.ui, label, p.details, p.snapshot);
+  if (!artifact) return std::unexpected(std::move(artifact.error()));
+  if (!*artifact) return std::nullopt;  // fenêtre fermée pendant la construction
+  log_channel("app")->info("moteur {} {}", label.name, (*artifact)->path.string());
+  show_loading(p.screen, p.ui, "Chargement des moteurs");
+  auto loaded = backend.load(**artifact);
+  if (!loaded) return std::unexpected(std::move(loaded.error()));
+  return std::optional(std::move(*loaded));
+}
+
+// Une ouverture de la chaîne : moteurs, RTX HDR, threads, session et boucle de main, jusqu'à la
+// fin du fichier, q, ou un réglage qui demande de la rouvrir.
+std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings settings,
+                                                        std::int64_t start_us) {
   const auto log = log_channel("app");
-  auto video = probe_video(options.file);
-  if (!video) return std::unexpected(std::move(video.error()));
-  std::optional<std::filesystem::path> model;
-  if (options.upscale) {
-    auto found = find_model(options, default_model_candidates(paths.home));
-    if (!found) return std::unexpected(std::move(found.error()));
-    model = *found;
+  const PlayOptions options = options_for(p.options, settings);
+  const media::TrackInfo& video = p.video;
+  std::optional<ModelChoice> model;
+  if (settings.upscale) {
+    auto chosen = choose_model(p, settings);
+    if (!chosen) return std::unexpected(std::move(chosen.error()));
+    model = std::move(*chosen);
   }
   const int factor = model ? kSpanFactor : 1;
-  const WorkSize work = work_size(video->width, video->height, options.work_height);
-  const std::string reduce =
-      work == WorkSize{video->width, video->height}
-          ? std::format("{}x{}", video->width, video->height)
-          : std::format("{}x{} → Area {}x{}", video->width, video->height, work.width, work.height);
+  const WorkSize work = work_size(video.width, video.height, settings.work_height);
+  const bool reduced = work != WorkSize{video.width, video.height};
+  const std::string reduce = reduced ? std::format("{}x{} → {} {}x{}", video.width, video.height,
+                                                   label(settings.downscale), work.width, work.height)
+                                     : std::format("{}x{}", video.width, video.height);
+  // Le modèle RIFE est cherché même sans interpolation : le menu peut l'allumer.
   std::optional<std::filesystem::path> rife_model;
-  if (options.rife_factor >= 2) {
-    auto found = find_rife_model(options, default_rife_candidates(paths.home));
-    if (!found) return std::unexpected(std::move(found.error()));
-    rife_model = *found;
-  }
-  const std::string rife_label =
-      (rife_model ? std::format("RIFE ×{} · {} · ", options.rife_factor, rife_model->stem().string()) : "") +
-      (options.true_hdr ? std::string("RTX HDR · ") : "");
-  const std::string label =
-      model ? std::format("{}SPAN ×{} · {} · TensorRT · {} → {}x{}", rife_label, factor,
-                          model->stem().string(), reduce, work.width * factor, work.height * factor)
-            : std::format("{}sans agrandissement · {}", rife_label, reduce);
-  log->info("{} : {}", options.file.string(), label);
+  if (auto found = find_rife_model(options, default_rife_candidates(p.paths.home))) rife_model = *found;
+  if (settings.rife_factor >= 2 && !rife_model)
+    return std::unexpected(find_rife_model(options, default_rife_candidates(p.paths.home)).error());
+  const bool use_rife = settings.rife_factor >= 2 && rife_model;
+  const std::string label_text = std::format(
+      "{}{}{}",
+      use_rife ? std::format("RIFE ×{} · {} · ", settings.rife_factor, rife_model->stem().string()) : "",
+      settings.true_hdr ? "RTX HDR · " : "",
+      model ? std::format("SPAN ×{} · {} · TensorRT · {} → {}x{}", factor, model->path.stem().string(),
+                          reduce, work.width * factor, work.height * factor)
+            : std::format("sans agrandissement · {}", reduce));
+  log->info("{} : {}", options.file.string(), label_text);
 
-  auto screen =
-      PlaceboScreen::open(ScreenOptions{.title = std::format("ajp — {}", options.file.filename().string()),
-                                        .width = options.window_width,
-                                        .height = options.window_height,
-                                        .fullscreen = options.fullscreen});
-  if (!screen) return std::unexpected(std::move(screen.error()));
-  auto ui = PlayerUi::create((*screen)->window(), options.file.filename().string());
-  if (!ui) return std::unexpected(std::move(ui.error()));
-  bool details = false;  // Tab pendant la préparation : repris par les statistiques de la lecture
-  SnapshotPlan snapshot{.path = options.snapshot, .at_us = options.snapshot_at_us};
-  show_loading(**screen, **ui, "Chargement");
-  auto library = BackendLibrary::open(paths.backends);
-  if (!library) return std::unexpected(std::move(library.error()));
+  show_loading(p.screen, p.ui, "Chargement");
   const gpu::BackendInit init{
-      .render = &(*screen)->device(), .cache_dir = paths.engines, .log = backend_log()};
-  auto backend = BackendLibrary::create(*library, init);
+      .render = &p.screen.device(), .cache_dir = p.paths.engines, .log = backend_log()};
+  auto backend = BackendLibrary::create(p.library, init);
   if (!backend) return std::unexpected(std::move(backend.error()));
   log->info("backend {} ({}) depuis {}", (*backend)->capabilities().name,
-            (*backend)->capabilities().device_name, (*library)->path().string());
+            (*backend)->capabilities().device_name, p.library->path().string());
 
   std::unique_ptr<gpu::Engine> engine;
   if (model) {
-    auto sha256 = prepare::sha256_file(*model);
-    if (!sha256) return std::unexpected(std::move(sha256.error()));
-    const gpu::Shape shape{.dims = {1, 3, work.height, work.width}};
-    auto build = EngineBuild::start(
-        EngineRequest{.library = *library,
-                      .init = init,
-                      .model = {.id = model->stem().string(), .onnx_path = *model, .sha256 = *sha256},
-                      .shapes = {.min = shape, .opt = shape, .max = shape}});
-    if (!build) return std::unexpected(std::move(build.error()));
-    const EngineLabel engine_label{
-        .name = "SPAN",
-        .model = model->stem().string(),
-        .width = work.width,
-        .height = work.height,
-        .expected_s = expected_build_seconds(paths.engines, *model, std::int64_t{work.width} * work.height)};
-    auto artifact = wait_engine(**build, **screen, **ui, engine_label, details, snapshot);
-    if (!artifact) return std::unexpected(std::move(artifact.error()));
-    if (!*artifact) return {};  // fenêtre fermée pendant la construction
-    log->info("moteur {}", (*artifact)->path.string());
-    show_loading(**screen, **ui, "Chargement des moteurs");
-    auto loaded = (*backend)->load(**artifact);
+    auto loaded =
+        prepare_engine(p, init, **backend, model->path, gpu::Shape{.dims = {1, 3, work.height, work.width}},
+                       EngineLabel{.name = "SPAN",
+                                   .model = model->path.stem().string(),
+                                   .width = work.width,
+                                   .height = work.height});
     if (!loaded) return std::unexpected(std::move(loaded.error()));
-    engine = std::move(*loaded);
+    if (!*loaded) return std::nullopt;
+    engine = std::move(**loaded);
   }
+  const kernels::RifeGeometry g = kernels::rife_geometry(work.width, work.height);
   std::unique_ptr<gpu::Engine> rife;
-  if (rife_model) {
-    auto sha256 = prepare::sha256_file(*rife_model);
-    if (!sha256) return std::unexpected(std::move(sha256.error()));
-    const kernels::RifeGeometry g = kernels::rife_geometry(work.width, work.height);
-    const gpu::Shape shape{.dims = {1, kernels::kRifeInputChannels, g.padded_height, g.padded_width}};
-    auto build = EngineBuild::start(EngineRequest{
-        .library = *library,
-        .init = init,
-        .model = {.id = rife_model->stem().string(), .onnx_path = *rife_model, .sha256 = *sha256},
-        .shapes = {.min = shape, .opt = shape, .max = shape}});
-    if (!build) return std::unexpected(std::move(build.error()));
-    const EngineLabel engine_label{
-        .name = "RIFE",
-        .model = rife_model->stem().string(),
-        .width = g.padded_width,
-        .height = g.padded_height,
-        .expected_s = expected_build_seconds(paths.engines, *rife_model,
-                                             std::int64_t{g.padded_width} * g.padded_height)};
-    auto artifact = wait_engine(**build, **screen, **ui, engine_label, details, snapshot);
-    if (!artifact) return std::unexpected(std::move(artifact.error()));
-    if (!*artifact) return {};  // fenêtre fermée pendant la construction
-    log->info("moteur RIFE {}", (*artifact)->path.string());
-    show_loading(**screen, **ui, "Chargement des moteurs");
-    auto loaded = (*backend)->load(**artifact);
+  if (use_rife) {
+    auto loaded =
+        prepare_engine(p, init, **backend, *rife_model,
+                       gpu::Shape{.dims = {1, kernels::kRifeInputChannels, g.padded_height, g.padded_width}},
+                       EngineLabel{.name = "RIFE",
+                                   .model = rife_model->stem().string(),
+                                   .width = g.padded_width,
+                                   .height = g.padded_height});
     if (!loaded) return std::unexpected(std::move(loaded.error()));
-    rife = std::move(*loaded);
+    if (!*loaded) return std::nullopt;
+    rife = std::move(**loaded);
   }
+  settings.stats.all = p.details;  // Tab pendant la préparation
 
-  if (options.true_hdr) {
-    show_loading(**screen, **ui, "Préparation de RTX HDR");
-    auto opened = open_rtx_hdr(options, paths, **screen, *(*backend)->kernels(), work.width * factor,
-                               work.height * factor);
+  const int auto_peak = vendor_hdr::peak_from_display(content_peak_nits(p.screen.window()));
+  int peak_nits = 0;
+  if (settings.true_hdr) {
+    show_loading(p.screen, p.ui, "Préparation de RTX HDR");
+    auto opened = open_rtx_hdr(p.options.true_hdr_sdk, p.paths, settings, auto_peak, p.screen,
+                               *(*backend)->kernels(), work.width * factor, work.height * factor);
     if (!opened) return std::unexpected(std::move(opened.error()));
+    peak_nits = *opened;
+  } else {
+    p.screen.set_source_color(ColorInfo{});  // celle de la source, reprise à la première image
   }
 
+  auto live = std::make_shared<LiveSettings>();
+  live->set_rife_factor(static_cast<std::uint32_t>(use_rife ? settings.rife_factor : 0));
+  live->set_reduction(reduction_of(settings.downscale));
   PipelineConfig config{
       .file = options.file,
-      .decoder = {.attempts = {media::HwApi::Cuda}, .render_device = (*screen)->device().uuid}};
-  PlaceboScreen& out = **screen;
+      .decoder = {.attempts = {media::HwApi::Cuda}, .render_device = p.screen.device().uuid},
+      .audio_track = p.audio_track,
+      .subtitle_track = p.subtitle_track};
+  PlaceboScreen& out = p.screen;
   auto pipeline = Pipeline::open(
       config, [&](VideoStageInit stage) -> std::expected<std::unique_ptr<VideoStage>, Refusal> {
         const int width = stage.track->width;
         const int height = stage.track->height;
-        const WorkSize sized = work_size(width, height, options.work_height);
+        const WorkSize sized = work_size(width, height, settings.work_height);
         auto slots = out.create_ring(sized.width * factor, sized.height * factor, kRingSlots);
         if (!slots) return std::unexpected(std::move(slots.error()));
         return UpscaleStage::start(
@@ -530,8 +722,9 @@ std::expected<void, Refusal> play(const PlayOptions& options, const PlayerPaths&
             UpscaleSetup{.backend = backend->get(),
                          .engine = engine.get(),
                          .rife = rife.get(),
-                         .rife_factor = static_cast<std::uint32_t>(std::max(options.rife_factor, 1)),
-                         .true_hdr = options.true_hdr,
+                         .rife_factor = static_cast<std::uint32_t>(std::max(settings.rife_factor, 1)),
+                         .true_hdr = settings.true_hdr,
+                         .live = live,
                          .source_width = width,
                          .source_height = height,
                          .work_width = sized.width,
@@ -540,19 +733,44 @@ std::expected<void, Refusal> play(const PlayOptions& options, const PlayerPaths&
       });
   if (!pipeline) return std::unexpected(std::move(pipeline.error()));
 
+  const ChainStats chain_stats(*live, *(*backend)->kernels(), rife != nullptr);
   SessionConfig session_config = (*pipeline)->session_config();
-  session_config.start_us = options.start_us;
+  session_config.start_us = start_us;
   session_config.stop_after_us = options.stop_after_us;
   session_config.fullscreen_after_us = options.fullscreen_after_us;
-  session_config.header = {label};
-  session_config.display_period_us = display_period_us((*screen)->window());
-  for (std::string& line : (*pipeline)->describe()) session_config.header.push_back(std::move(line));
-  session_config.header.push_back(out.output_description());
-  for (const std::string& line : session_config.header) log->info("{}", line);
-  session_config.stats = details;
+  session_config.header = {label_text};
+  session_config.tracks = (*pipeline)->describe();
+  session_config.output = output_text(out, peak_nits);
+  session_config.display_period_us = display_period_us(out.window());
+  session_config.stats = settings.stats;
+  session_config.extra = &chain_stats;
+  log->info("{}", label_text);
+  for (const std::string& line : session_config.tracks) log->info("{}", line);
+  log->info("{}", session_config.output);
   Session session(std::move(session_config), (*pipeline)->stages(), out, (*pipeline)->clock());
-  (*ui)->set_tracks((*pipeline)->tracks());
-  const ActionTargets targets{.session = session, .screen = out, .ui = **ui, .pipeline = **pipeline};
+  p.ui.set_tracks((*pipeline)->tracks());
+  p.ui.set_settings(
+      settings,
+      SettingsChoices{
+          .models = model ? model->available : std::vector<std::string>{},
+          .default_model = model ? model->default_name : std::string(),
+          .source_height = video.height,
+          .rife_available = rife_model.has_value(),
+          .rife_loaded = rife != nullptr,
+          .true_hdr_available = std::filesystem::exists(p.options.true_hdr_sdk) || settings.true_hdr,
+          .auto_peak = auto_peak,
+          .engines = engine_badges(p.paths.engines, model ? model->path : std::filesystem::path(), work,
+                                   rife ? rife_model : std::nullopt, g)});
+  Chain chain{.session = session,
+              .screen = out,
+              .ui = p.ui,
+              .pipeline = **pipeline,
+              .live = *live,
+              .running = settings,
+              .rife_loaded = rife != nullptr,
+              .true_hdr_open = settings.true_hdr,
+              .auto_peak = auto_peak,
+              .peak_nits = peak_nits};
 
   std::ofstream stats;
   if (options.stats) {
@@ -561,26 +779,38 @@ std::expected<void, Refusal> play(const PlayOptions& options, const PlayerPaths&
   }
   const core::KeyMap keys = core::KeyMap::defaults();
   std::optional<Refusal> failure;
-  const std::int64_t began_us = host_now_us();
-  std::size_t next_key = 0;
+  if (p.began_us == 0) p.began_us = host_now_us();
   std::vector<Input> actions;
-  session.begin(began_us);
-  while (!session.finished()) {
-    for (; next_key < options.keys.size() && host_now_us() - began_us >= options.keys[next_key].first;
-         ++next_key) {
-      press(options.keys[next_key].second, (*screen)->window());
+  session.begin(host_now_us());
+  // Son : le volume de la barre et le délai des réglages valent dès la première image.
+  session.command(Command{p.ui.controls().volume_command()});
+  if (settings.audio_delay_ms != 0)
+    session.command(cmd::SetAudioDelay{.delay_us = std::int64_t{settings.audio_delay_ms} * 1000});
+  std::int64_t saved_at = host_now_us();
+  while (!session.finished() && !chain.reopen) {
+    for (;
+         p.next_key < p.options.keys.size() && host_now_us() - p.began_us >= p.options.keys[p.next_key].first;
+         ++p.next_key) {
+      press(p.options.keys[p.next_key].second, out.window());
     }
-    snapshot.maybe(out, began_us);
+    p.snapshot.maybe(out, p.began_us);
     SDL_Event event;
     while (SDL_PollEvent(&event)) {
-      if ((*ui)->handle(event, host_now_us(), actions)) continue;  // saisie dans l'interface
+      if (p.ui.handle(event, host_now_us(), actions)) continue;  // saisie dans l'interface
       if (auto input = input_of(event, keys)) actions.push_back(*input);
     }
     (*pipeline)->pump();
     while (auto message = try_take((*pipeline)->inbox())) session.handle(std::move(*message));
-    const UiFrame ui_frame = (*ui)->frame(host_now_us(), session.view(), actions);
-    for (const Input& input : actions) apply(input, targets, host_now_us());
+    const UiFrame ui_frame = p.ui.frame(host_now_us(), session.view(), actions);
+    for (const Input& input : actions) apply(input, chain, host_now_us());
     actions.clear();
+    // play.toml réécrit au plus une fois par seconde pendant qu'on règle.
+    if (chain.dirty && host_now_us() - saved_at >= 1'000'000) {
+      if (auto saved = save_settings(p.settings_path, chain.running); !saved)
+        log->warn("{}", saved.error().detail);
+      chain.dirty = false;
+      saved_at = host_now_us();
+    }
     auto record = session.tick(host_now_us(), ui_frame);
     if (!record) {
       failure = std::move(record.error());
@@ -591,20 +821,88 @@ std::expected<void, Refusal> play(const PlayOptions& options, const PlayerPaths&
     // la boucle reprend dans 1 ms pour ne manquer ni l'image suivante ni une touche.
     if (!*record) SDL_Delay(1);
   }
+  if (chain.dirty) {
+    if (auto saved = save_settings(p.settings_path, chain.running); !saved)
+      log->warn("{}", saved.error().detail);
+  }
   log_summary(session);
   for (const std::string& refusal : session.refusals()) log->warn("{}", refusal);
+  std::optional<Reopen> reopen;
+  if (chain.reopen && !failure) {
+    reopen = Reopen{.settings = *chain.reopen,
+                    .position_us = std::max<std::int64_t>(session.view().position_us, 0)};
+    reopen->settings.volume = p.ui.controls().volume();
+    p.audio_track = (*pipeline)->tracks().audio_selected;
+    p.subtitle_track = (*pipeline)->tracks().subtitle_selected;
+  }
   // Ordre d'arrêt : les slots rendus, les threads arrêtés, le moteur avant son backend, le
   // backend (et ses imports du ring) avant l'écran qui possède le ring.
   session.end();
-  (*ui)->release(out);
   out.flush();
   pipeline->reset();
   rife.reset();
   engine.reset();
   backend->reset();
-  screen->reset();
   if (failure) return std::unexpected(std::move(*failure));
-  return {};
+  return reopen;
+}
+
+}  // namespace
+
+std::expected<void, Refusal> play(const PlayOptions& options, const PlayerPaths& paths) {
+  const auto log = log_channel("app");
+  auto video = probe_video(options.file);
+  if (!video) return std::unexpected(std::move(video.error()));
+  const std::filesystem::path settings_path = paths.engines.parent_path() / "play.toml";
+  auto saved = load_settings(settings_path);
+  if (!saved) {
+    log->warn("{} ; réglages par défaut", saved.error().detail);
+    saved = PlaySettings{};
+  }
+  PlaySettings settings = settings_for(*saved, options);
+  if (auto valid = validate(settings); !valid) return std::unexpected(std::move(valid.error()));
+
+  auto screen =
+      PlaceboScreen::open(ScreenOptions{.title = std::format("ajp — {}", options.file.filename().string()),
+                                        .width = options.window_width,
+                                        .height = options.window_height,
+                                        .fullscreen = options.fullscreen});
+  if (!screen) return std::unexpected(std::move(screen.error()));
+  auto ui = PlayerUi::create((*screen)->window(), options.file.filename().string());
+  if (!ui) return std::unexpected(std::move(ui.error()));
+  static_cast<void>((*ui)->controls().set_volume(settings.volume));
+  show_loading(**screen, **ui, "Chargement");
+  auto library = BackendLibrary::open(paths.backends);
+  if (!library) return std::unexpected(std::move(library.error()));
+
+  Player player{.options = options,
+                .paths = paths,
+                .screen = **screen,
+                .ui = **ui,
+                .library = *library,
+                .video = *video,
+                .settings_path = settings_path,
+                .snapshot = {.path = options.snapshot, .at_us = options.snapshot_at_us},
+                .details = settings.stats.all};
+  std::int64_t start_us = options.start_us;
+  std::expected<void, Refusal> result;
+  while (true) {
+    auto outcome = run_chain(player, settings, start_us);
+    if (!outcome) {
+      result = std::unexpected(std::move(outcome.error()));
+      break;
+    }
+    if (!*outcome) break;
+    settings = (*outcome)->settings;
+    start_us = (*outcome)->position_us;
+    player.details = settings.stats.all;
+    if (auto written = save_settings(settings_path, settings); !written)
+      log->warn("{}", written.error().detail);
+    log->info("réouverture à {}", format_position(start_us));
+  }
+  (*ui)->release(**screen);
+  screen->reset();
+  return result;
 }
 
 }  // namespace ajp::app::play

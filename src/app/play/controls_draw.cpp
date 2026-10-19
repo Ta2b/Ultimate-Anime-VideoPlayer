@@ -245,8 +245,9 @@ bool draw_controls(Controls& controls, const ControlsView& view, const UiLook& l
   const float width = io.DisplaySize.x;
   const float height = io.DisplaySize.y;
   const float s = look.scale;
+  if (look.keep_visible) controls.set_held(true);  // visible dès ce tour
   const float opacity = controls.opacity(now_us, view.paused);
-  bool held = false;
+  bool held = look.keep_visible;
 
   if (opacity > 0.0F) {
     const float pad = kPad * s;
@@ -369,14 +370,9 @@ bool draw_controls(Controls& controls, const ControlsView& view, const UiLook& l
     tooltip(view.fullscreen ? "Quitter le plein écran (f, Échap)" : "Plein écran (f)");
     icon_fullscreen(pen, {rx, cy}, icon, view.fullscreen);
     rx -= row;
-    if (round_button(pen, "##settings", {rx, cy}, row)) ImGui::OpenPopup("##settings_menu");
-    tooltip("Réglages");
+    if (round_button(pen, "##settings", {rx, cy}, row)) actions.emplace_back(ToggleSettings{});
+    tooltip("Paramètres (p)");
     icon_gear(pen, {rx, cy}, icon);
-    ImGui::SetNextWindowPos({rx + row * 0.5F, height - panel - 4.0F * s}, ImGuiCond_Always, {1.0F, 1.0F});
-    if (ImGui::BeginPopup("##settings_menu")) {
-      if (ImGui::MenuItem("Statistiques", "Tab", view.stats)) actions.emplace_back(Command{cmd::ToggleOsd{}});
-      ImGui::EndPopup();
-    }
     const TrackMenu& tracks = look.tracks;
     if (!tracks.audio.empty()) {
       rx -= row;
@@ -395,8 +391,8 @@ bool draw_controls(Controls& controls, const ControlsView& view, const UiLook& l
                   rx + row * 0.5F, height - panel - 4.0F * s, s, actions, true);
     }
 
-    held = ImGui::IsWindowHovered(ImGuiHoveredFlags_AllowWhenBlockedByActiveItem) || bar_active ||
-           controls.dragging() || ImGui::IsPopupOpen("", ImGuiPopupFlags_AnyPopupId);
+    held = look.keep_visible || ImGui::IsWindowHovered(ImGuiHoveredFlags_AllowWhenBlockedByActiveItem) ||
+           bar_active || controls.dragging() || ImGui::IsPopupOpen("", ImGuiPopupFlags_AnyPopupId);
     ImGui::End();
     ImGui::PopStyleVar();
   }

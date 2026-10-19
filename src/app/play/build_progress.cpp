@@ -7,6 +7,7 @@
 #include <sstream>
 #include <string>
 #include <system_error>
+#include <utility>
 
 namespace ajp::app::play {
 namespace {
@@ -28,8 +29,8 @@ std::optional<std::string_view> option(std::string_view line, std::string_view n
   return value;
 }
 
-// « input:1x3x720x1280 » : hauteur × largeur, les deux dernières dimensions.
-std::optional<std::int64_t> shape_pixels(std::string_view shape) {
+// « input:1x3x720x1280 » : hauteur et largeur, les deux dernières dimensions.
+std::optional<std::pair<int, int>> shape_size(std::string_view shape) {
   const std::size_t colon = shape.rfind(':');
   if (colon != std::string_view::npos) shape = shape.substr(colon + 1);
   const std::size_t comma = shape.find(',');  // plusieurs entrées : la première
@@ -43,9 +44,10 @@ std::optional<std::int64_t> shape_pixels(std::string_view shape) {
   std::int64_t h = 0;
   std::int64_t w = 0;
   if (std::from_chars(hs.data(), hs.data() + hs.size(), h).ec != std::errc{} ||
-      std::from_chars(ws.data(), ws.data() + ws.size(), w).ec != std::errc{} || h <= 0 || w <= 0)
+      std::from_chars(ws.data(), ws.data() + ws.size(), w).ec != std::errc{} || h <= 0 || w <= 0 ||
+      h > 65536 || w > 65536)
     return std::nullopt;
-  return h * w;
+  return std::pair{static_cast<int>(h), static_cast<int>(w)};
 }
 
 // Plus de pixels allongent la construction ; moins ne la raccourcissent guère (le temps fixe du
@@ -88,20 +90,22 @@ std::optional<PastBuild> read_build_log(std::string_view text) {
   if (!shape) shape = option(first, "--shapes=");
   const std::size_t built = text.rfind(kBuiltIn);
   if (!onnx || !shape || built == std::string_view::npos) return std::nullopt;
-  const auto pixels = shape_pixels(*shape);
+  const auto size = shape_size(*shape);
   std::string_view number = text.substr(built + kBuiltIn.size());
   number = number.substr(0, number.find(' '));
   double seconds = 0.0;
-  if (!pixels || std::from_chars(number.data(), number.data() + number.size(), seconds).ec != std::errc{} ||
+  if (!size || std::from_chars(number.data(), number.data() + number.size(), seconds).ec != std::errc{} ||
       !(seconds > 0.0))
     return std::nullopt;
-  return PastBuild{.onnx = std::filesystem::path(std::string(*onnx)), .pixels = *pixels, .seconds = seconds};
+  return PastBuild{.onnx = std::filesystem::path(std::string(*onnx)),
+                   .width = size->second,
+                   .height = size->first,
+                   .pixels = std::int64_t{size->first} * size->second,
+                   .seconds = seconds};
 }
 
-double expected_build_seconds(const std::filesystem::path& cache_dir, const std::filesystem::path& onnx,
-                              std::int64_t pixels) {
-  std::optional<PastBuild> nearest;
-  double nearest_distance = 0.0;
+std::vector<PastBuild> past_builds(const std::filesystem::path& cache_dir) {
+  std::vector<PastBuild> builds;
   std::error_code error;
   std::size_t read = 0;
   for (const auto& entry : std::filesystem::directory_iterator(cache_dir, error)) {
@@ -113,10 +117,19 @@ double expected_build_seconds(const std::filesystem::path& cache_dir, const std:
     std::ifstream file(path, std::ios::binary);
     std::ostringstream text;
     text << file.rdbuf();
-    const auto past = read_build_log(text.str());
-    if (!past || (past->onnx != onnx && past->onnx.filename() != onnx.filename())) continue;
+    if (auto past = read_build_log(text.str())) builds.push_back(std::move(*past));
+  }
+  return builds;
+}
+
+double expected_build_seconds(const std::filesystem::path& cache_dir, const std::filesystem::path& onnx,
+                              std::int64_t pixels) {
+  std::optional<PastBuild> nearest;
+  double nearest_distance = 0.0;
+  for (const PastBuild& past : past_builds(cache_dir)) {
+    if (past.onnx != onnx && past.onnx.filename() != onnx.filename()) continue;
     const double distance = std::abs(
-        std::log(static_cast<double>(std::max<std::int64_t>(pixels, 1)) / static_cast<double>(past->pixels)));
+        std::log(static_cast<double>(std::max<std::int64_t>(pixels, 1)) / static_cast<double>(past.pixels)));
     if (!nearest || distance < nearest_distance) {
       nearest = past;
       nearest_distance = distance;

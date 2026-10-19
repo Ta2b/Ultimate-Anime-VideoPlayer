@@ -61,8 +61,14 @@ std::expected<void, Refusal> keys(std::string_view text, PlayOptions& options) {
     }
     auto at = seconds("--keys", item.substr(0, colon));
     if (!at) return std::unexpected(std::move(at.error()));
-    options.keys.emplace_back(*at, std::string(item.substr(colon + 1)));
+    const std::string name(item.substr(colon + 1));
+    // « click=XxY » : la souris arrive 0,1 s avant, comme une vraie main (ImGui n'active un
+    // élément que s'il était déjà sous la souris).
+    if (name.starts_with("click="))
+      options.keys.emplace_back(std::max<std::int64_t>(*at - 100'000, 0), "mouse=" + name.substr(6));
+    options.keys.emplace_back(*at, name);
   }
+  std::ranges::stable_sort(options.keys, {}, &std::pair<std::int64_t, std::string>::first);
   return {};
 }
 
@@ -101,10 +107,12 @@ std::expected<PlayOptions, Refusal> parse_play_options(std::span<const std::stri
       options.help = true;
     } else if (arg == "--no-upscale") {
       options.upscale = false;
+      options.given.emplace_back(arg);
     } else if (arg == "--fullscreen") {
       options.fullscreen = true;
     } else if (arg == "--truehdr") {
       options.true_hdr = true;
+      options.given.emplace_back(arg);
     } else {
       std::expected<void, Refusal> applied;
       bool known = false;
@@ -116,6 +124,7 @@ std::expected<PlayOptions, Refusal> parse_play_options(std::span<const std::stri
         if (!value) return std::unexpected(std::move(value.error()));
         if (!*value) continue;
         known = true;
+        options.given.emplace_back(name);
         const std::string_view text = **value;
         if (name == "--model") {
           options.model = std::filesystem::path(text);
@@ -179,6 +188,10 @@ std::expected<PlayOptions, Refusal> parse_play_options(std::span<const std::stri
     return refuse(RefusalCode::FieldMissing, "ajp play : fichier vidéo absent");
   }
   return options;
+}
+
+bool PlayOptions::was_given(std::string_view name) const {
+  return std::ranges::find(given, name) != given.end();
 }
 
 WorkSize work_size(int width, int height, int work_height) {

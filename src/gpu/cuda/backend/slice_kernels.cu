@@ -76,12 +76,81 @@ __device__ float3 area_at(const IngestParams& p, int x, int y) {
   return make_float3(sum.x * norm, sum.y * norm, sum.z * norm);
 }
 
+// Noyau de la réduction à la distance d (en pixels de sortie) : triangle (rayon 1) ou cubique de
+// Mitchell-Netravali B, C (rayon 2).
+__device__ float reduce_weight(const IngestParams& p, float d) {
+  d = fabsf(d);
+  if (p.reduce_kind == kReduceTriangle) return fmaxf(0.0F, 1.0F - d);
+  const float b = p.reduce_b;
+  const float c = p.reduce_c;
+  if (d < 1.0F) {
+    return ((12.0F - 9.0F * b - 6.0F * c) * d * d * d + (-18.0F + 12.0F * b + 6.0F * c) * d * d +
+            (6.0F - 2.0F * b)) *
+           (1.0F / 6.0F);
+  }
+  if (d < 2.0F) {
+    return ((-b - 6.0F * c) * d * d * d + (6.0F * b + 30.0F * c) * d * d + (-12.0F * b - 48.0F * c) * d +
+            (8.0F * b + 24.0F * c)) *
+           (1.0F / 6.0F);
+  }
+  return 0.0F;
+}
+
+// Pixel de sortie (x, y) par un filtre séparable étiré à l'échelle de la réduction (anticrénelé,
+// comme la réduction de mpv) : chaque pixel de source à moins du rayon × échelle du centre, poids
+// normalisés ; bords répétés.
+__device__ float3 filtered_at(const IngestParams& p, int x, int y) {
+  const float sx = static_cast<float>(p.width) / static_cast<float>(p.out_width);
+  const float sy = static_cast<float>(p.height) / static_cast<float>(p.out_height);
+  const float radius = p.reduce_kind == kReduceTriangle ? 1.0F : 2.0F;
+  const float cx = (static_cast<float>(x) + 0.5F) * sx - 0.5F;
+  const float cy = (static_cast<float>(y) + 0.5F) * sy - 0.5F;
+  const int i0 = static_cast<int>(ceilf(cx - radius * sx));
+  const int j0 = static_cast<int>(ceilf(cy - radius * sy));
+  const int nx = min(static_cast<int>(floorf(cx + radius * sx)) - i0 + 1, kMaxReduceTaps);
+  const int ny = min(static_cast<int>(floorf(cy + radius * sy)) - j0 + 1, kMaxReduceTaps);
+  float wx[kMaxReduceTaps];
+  float total_x = 0.0F;
+  for (int i = 0; i < nx; ++i) {
+    wx[i] = reduce_weight(p, (static_cast<float>(i0 + i) - cx) / sx);
+    total_x += wx[i];
+  }
+  float3 sum = make_float3(0.0F, 0.0F, 0.0F);
+  float total_y = 0.0F;
+  for (int j = 0; j < ny; ++j) {
+    const float wy = reduce_weight(p, (static_cast<float>(j0 + j) - cy) / sy);
+    if (wy == 0.0F) continue;
+    total_y += wy;
+    const int row = clamp_index(j0 + j, p.height);
+    float3 line = make_float3(0.0F, 0.0F, 0.0F);
+    for (int i = 0; i < nx; ++i) {
+      if (wx[i] == 0.0F) continue;
+      const float3 c = rgb_at(p, clamp_index(i0 + i, p.width), row);
+      line.x += c.x * wx[i];
+      line.y += c.y * wx[i];
+      line.z += c.z * wx[i];
+    }
+    sum.x += line.x * wy;
+    sum.y += line.y * wy;
+    sum.z += line.z * wy;
+  }
+  const float norm = 1.0F / (total_x * total_y);
+  return make_float3(sum.x * norm, sum.y * norm, sum.z * norm);
+}
+
 __global__ void ingest(IngestParams p) {
   const int x = static_cast<int>(blockIdx.x * blockDim.x + threadIdx.x);
   const int y = static_cast<int>(blockIdx.y * blockDim.y + threadIdx.y);
   if (x >= p.out_width || y >= p.out_height) return;
   const bool same = p.out_width == p.width && p.out_height == p.height;
-  const float3 c = same ? rgb_at(p, x, y) : area_at(p, x, y);
+  float3 c;
+  if (same) {
+    c = rgb_at(p, x, y);
+  } else if (p.reduce_kind == kReduceArea) {
+    c = area_at(p, x, y);
+  } else {
+    c = filtered_at(p, x, y);
+  }
   const std::size_t plane = static_cast<std::size_t>(p.out_width) * static_cast<std::size_t>(p.out_height);
   const std::size_t i =
       static_cast<std::size_t>(y) * static_cast<std::size_t>(p.out_width) + static_cast<std::size_t>(x);

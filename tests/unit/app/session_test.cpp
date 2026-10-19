@@ -237,6 +237,30 @@ TEST_CASE("Statistiques masquées par défaut ; les refus restent visibles", "[a
   CHECK(rig.screen.shown.back().osd[0] == "audio : AudioDecodeFailed paquet");
 }
 
+TEST_CASE("Les mesures s'affichent une par une, dans l'ordre de l'OSD", "[app][session]") {
+  struct Extra final : StatsSource {
+    std::optional<std::string> rife() const override { return "RIFE : 3 paires"; }
+    std::optional<std::string> memory() const override { return std::nullopt; }
+  } extra;
+  Rig rig(SessionConfig{
+      .header = {"SPAN ×2"}, .tracks = {"audio aac jpn"}, .output = "sortie HDR10", .extra = &extra});
+  rig.session.handle(ring_frame(0, 0));
+  rig.tick();
+  CHECK(rig.screen.shown.back().osd.empty());
+  rig.session.set_stats(StatsSettings{.rife = true, .output = true});
+  rig.tick();
+  REQUIRE(rig.screen.shown.back().osd.size() == 2);
+  CHECK(rig.screen.shown.back().osd[0] == "sortie HDR10");
+  CHECK(rig.screen.shown.back().osd[1] == "RIFE : 3 paires");
+  rig.session.set_stats(StatsSettings{.all = true});
+  rig.session.set_tracks({"audio flac eng"});
+  rig.tick();
+  const auto& all = rig.screen.shown.back().osd;
+  REQUIRE(all.size() == 6);  // chaîne, piste, sortie, images, RIFE, position (pas de mémoire)
+  CHECK(all[1] == "audio flac eng");
+  CHECK(all[4] == "RIFE : 3 paires");
+}
+
 TEST_CASE("Volume et délai audio vont au thread audio", "[app][session]") {
   Rig rig;
   rig.session.command(cmd::SetVolume{.gain = 0.5F});
@@ -297,7 +321,7 @@ TEST_CASE("Un refus fatal d'un thread arrête la lecture et s'affiche", "[app][s
 }
 
 TEST_CASE("L'OSD dit le temps par image et les images sautées", "[app][session]") {
-  Rig rig(SessionConfig{.header = {"SPAN ×2"}, .stats = true});
+  Rig rig(SessionConfig{.header = {"SPAN ×2"}, .stats = {.all = true}});
   rig.session.handle(ring_frame(0, 0));
   rig.tick();
   const auto& osd = rig.screen.shown.back().osd;

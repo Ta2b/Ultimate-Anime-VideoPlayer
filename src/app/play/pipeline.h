@@ -43,6 +43,10 @@ struct PipelineConfig {
   media::LanguagePriorities languages{.audio = {"jpn", "ja"}, .subtitles = {"fre", "fr", "eng", "en"}};
   bool audio = true;      // false : piste audio ignorée, horloge hôte
   bool subtitles = true;  // false : aucune piste de sous-titres
+  // Pistes choisies avant une réouverture de la chaîne : elles remplacent le choix par langue si
+  // elles existent. subtitle_track : rien = choix par langue ; nullopt dedans = aucune.
+  std::optional<int> audio_track;
+  std::optional<std::optional<int>> subtitle_track;
   subs::RendererOptions subs;
 };
 

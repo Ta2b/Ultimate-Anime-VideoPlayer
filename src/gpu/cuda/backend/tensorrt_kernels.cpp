@@ -111,6 +111,11 @@ std::expected<void, Refusal> TensorRtBackend::ingest(const DecodedFrame& frame, 
       .height = frame.height,
       .out_width = out_width,
       .out_height = out_height,
+      .reduce_kind = spec.reduce.kind == ReduceKind::Triangle ? kReduceTriangle
+                     : spec.reduce.kind == ReduceKind::Cubic  ? kReduceCubic
+                                                              : kReduceArea,
+      .reduce_b = spec.reduce.b,
+      .reduce_c = spec.reduce.c,
       .sixteen_bits = *format != kernels::Format::Nv12,
       .yoff = scale.yoff,
       .yscale = scale.yscale,
@@ -135,6 +140,14 @@ std::expected<void, Refusal> TensorRtBackend::ingest(const DecodedFrame& frame, 
   chain_timing_->begin(stream_);
   if (auto ok = cuda_check(launch_ingest(params, stream_), "ingest<<<>>>"); !ok) return ok;
   return hold(frame);
+}
+
+std::optional<KernelOps::DeviceMemory> TensorRtBackend::device_memory() {
+  if (!bind()) return std::nullopt;
+  std::size_t free = 0;
+  std::size_t total = 0;
+  if (cudaMemGetInfo(&free, &total) != cudaSuccess) return std::nullopt;
+  return DeviceMemory{.used = total - free, .total = total};
 }
 
 void TensorRtBackend::release_retired() {

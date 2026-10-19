@@ -16,6 +16,7 @@
 #include <optional>
 #include <vector>
 
+#include "app/play/live_settings.h"
 #include "app/play/pipeline.h"
 #include "app/play/ring_stage.h"
 #include "core/ring.h"
@@ -29,7 +30,10 @@ struct UpscaleSetup {
   gpu::Engine* rife = nullptr;      // RIFE à rife_geometry(travail) ; nullptr : sans interpolation
   std::uint32_t rife_factor = 1;    // ×N quand RIFE tourne (2 à kMaxRifeFactor)
   bool true_hdr = false;            // RTX HDR à l'écriture du ring (backend déjà ouvert pour la sortie)
-  int source_width = 0;             // images décodées
+  // Réglages changés en cours de lecture (facteur RIFE, réduction, RTX HDR) et compteurs de RIFE ;
+  // nullptr : rife_factor et Area pour toute la lecture.
+  std::shared_ptr<LiveSettings> live;
+  int source_width = 0;  // images décodées
   int source_height = 0;
   int work_width = 0;  // entrée des moteurs, au plus la source ; 0 : la source
   int work_height = 0;

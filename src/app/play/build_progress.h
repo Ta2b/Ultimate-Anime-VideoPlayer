@@ -12,6 +12,7 @@
 #include <filesystem>
 #include <optional>
 #include <string_view>
+#include <vector>
 
 namespace ajp::app::play {
 
@@ -41,10 +42,14 @@ class BuildProgress {
 // de commande de trtexec, puis « Engine built in 60.2 sec »).
 struct PastBuild {
   std::filesystem::path onnx;
-  std::int64_t pixels = 0;  // hauteur × largeur de la forme optimale
+  int width = 0;  // forme optimale de l'entrée
+  int height = 0;
+  std::int64_t pixels = 0;  // hauteur × largeur
   double seconds = 0.0;
 };
 std::optional<PastBuild> read_build_log(std::string_view text);
+// Les constructions lisibles du cache, dans l'ordre du dossier (128 au plus).
+std::vector<PastBuild> past_builds(const std::filesystem::path& cache_dir);
 
 // Durée attendue pour construire onnx à pixels (hauteur × largeur de l'entrée) : la construction
 // passée du même modèle la plus proche en pixels, allongée en pixels^0,8 pour une entrée plus grande

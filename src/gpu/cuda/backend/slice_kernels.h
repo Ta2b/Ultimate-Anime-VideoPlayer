@@ -15,6 +15,13 @@
 
 namespace ajp::gpu::cuda {
 
+// Filtre de la réduction fusionnée (IngestParams::reduce_kind).
+inline constexpr int kReduceArea = 0;
+inline constexpr int kReduceTriangle = 1;
+inline constexpr int kReduceCubic = 2;
+// Pixels de source par axe au plus pour un pixel de sortie (cubique : 4 × l'échelle + 1).
+inline constexpr int kMaxReduceTaps = 24;
+
 struct IngestParams {
   const void* luma = nullptr;    // plan Y
   const void* chroma = nullptr;  // plan CbCr entrelacé
@@ -27,6 +34,11 @@ struct IngestParams {
   // par leur recouvrement ; identique à convertir puis réduire, l'opération étant linéaire).
   int out_width = 0;
   int out_height = 0;
+  // Filtre de la réduction : Area (boîte), triangle (bilinéaire étiré) ou cubique B, C
+  // (Mitchell-Netravali), étirés à l'échelle de la réduction.
+  int reduce_kind = kReduceArea;
+  float reduce_b = 0.0F;
+  float reduce_c = 0.0F;
   bool sixteen_bits = false;  // P010 ou P016 : échantillons de 16 bits
   // Normalisation et matrice (kernels/spec/color.h : yuv_scale, coefficients).
   float yoff = 0.0F;

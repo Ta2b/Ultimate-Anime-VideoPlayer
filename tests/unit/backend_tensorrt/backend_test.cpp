@@ -279,6 +279,82 @@ TEST_CASE("Backend TensorRT : réduction Area fusionnée à l'ingestion, rapport
   CHECK(refused.error().code == RefusalCode::ShapeInvalid);
 }
 
+// Noyau de la réduction filtrée (slice_kernels.cu) : triangle, ou cubique de Mitchell-Netravali B, C.
+double reduce_weight(const gpu::Reduction& r, double d) {
+  d = std::fabs(d);
+  if (r.kind == gpu::ReduceKind::Triangle) return std::max(0.0, 1.0 - d);
+  const double b = r.b;
+  const double c = r.c;
+  if (d < 1.0) return ((12 - 9 * b - 6 * c) * d * d * d + (-18 + 12 * b + 6 * c) * d * d + (6 - 2 * b)) / 6.0;
+  if (d < 2.0)
+    return ((-b - 6 * c) * d * d * d + (6 * b + 30 * c) * d * d + (-12 * b - 48 * c) * d + (8 * b + 24 * c)) /
+           6.0;
+  return 0.0;
+}
+
+TEST_CASE("Backend TensorRT : réductions triangle et cubiques fusionnées, contre la référence",
+          "[backend_tensorrt][cuda]") {
+  if (!has_cuda()) SKIP("pas de GPU NVIDIA");
+  constexpr int w = 96;
+  constexpr int h = 54;
+  constexpr int ow = 64;
+  constexpr int oh = 36;
+  constexpr double scale = 1.5;
+  kernels::YuvImage image(kernels::Format::Nv12, w, h, 16, 128, 128);
+  for (int y = 0; y < h; ++y) {
+    for (int x = 0; x < w; ++x)
+      image.y.data[image.y.index(x, y)] = static_cast<std::uint16_t>(16 + (x * 7 + y * 13) % 220);
+  }
+  Loaded loaded;
+  REQUIRE(loaded.backend != nullptr);
+  DecodedFrame frame = frame_of(std::make_shared<CudaNv12>(image), w, h);
+  frame.color =
+      ColorInfo{.matrix = ColorMatrix::Bt709, .range = ColorRange::Limited, .siting = ChromaSiting::Left};
+  auto full = loaded.backend->alloc_tensor(gpu::TensorType::F16, {.dims = {1, 3, h, w}});
+  auto small = loaded.backend->alloc_tensor(gpu::TensorType::F16, {.dims = {1, 3, oh, ow}});
+  REQUIRE(full);
+  REQUIRE(small);
+  REQUIRE(loaded.backend->kernels()->ingest(frame, {}, (*full)->tensor()));
+  const auto base = download((*full)->tensor());
+  const std::array<gpu::Reduction, 3> filters{{
+      {.kind = gpu::ReduceKind::Triangle},
+      {.kind = gpu::ReduceKind::Cubic, .b = 0.0F, .c = 0.5F},                // Catmull-Rom
+      {.kind = gpu::ReduceKind::Cubic, .b = 1.0F / 3.0F, .c = 1.0F / 3.0F},  // Mitchell
+  }};
+  for (const gpu::Reduction& filter : filters) {
+    CAPTURE(static_cast<int>(filter.kind), filter.b, filter.c);
+    REQUIRE(loaded.backend->kernels()->ingest(frame, gpu::IngestSpec{.reduce = filter}, (*small)->tensor()));
+    const auto got = download((*small)->tensor());
+    const double radius = filter.kind == gpu::ReduceKind::Triangle ? 1.0 : 2.0;
+    double worst = 0.0;
+    for (int c = 0; c < 3; ++c) {
+      for (int y = 0; y < oh; ++y) {
+        for (int x = 0; x < ow; ++x) {
+          const double cx = (x + 0.5) * scale - 0.5;
+          const double cy = (y + 0.5) * scale - 0.5;
+          double sum = 0.0;
+          double total = 0.0;
+          for (int j = static_cast<int>(std::ceil(cy - radius * scale));
+               j <= static_cast<int>(std::floor(cy + radius * scale)); ++j) {
+            const double wy = reduce_weight(filter, (j - cy) / scale);
+            for (int i = static_cast<int>(std::ceil(cx - radius * scale));
+                 i <= static_cast<int>(std::floor(cx + radius * scale)); ++i) {
+              const double wx = reduce_weight(filter, (i - cx) / scale);
+              const int ci = std::clamp(i, 0, w - 1);
+              const int cj = std::clamp(j, 0, h - 1);
+              sum += wx * wy * base[static_cast<std::size_t>((c * h + cj) * w + ci)];
+              total += wx * wy;
+            }
+          }
+          const double have = got[static_cast<std::size_t>((c * oh + y) * ow + x)];
+          worst = std::max(worst, std::fabs(sum / total - have));
+        }
+      }
+    }
+    CHECK(worst < 3e-3);  // arrondis FP16 de l'image pleine relue et de la sortie
+  }
+}
+
 TEST_CASE("Backend TensorRT : entrée de RIFE, 11 plans remplis, puis recadrage de la fenêtre",
           "[backend_tensorrt][cuda][rife]") {
   if (!has_cuda()) SKIP("pas de GPU NVIDIA");

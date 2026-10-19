@@ -29,12 +29,24 @@
 namespace ajp::gpu {
 
 // Ingestion d'une image décodée : quelle conversion, selon l'étage qui la lit.
+// Filtre de la réduction fusionnée à l'ingestion (extension de la tranche verticale) : boîte
+// (Area), triangle (bilinéaire étiré) ou cubique de Mitchell-Netravali (B, C), étirés à l'échelle de
+// la réduction, en codes de la source.
+enum class ReduceKind : std::uint8_t { Area, Triangle, Cubic };
+struct Reduction {
+  ReduceKind kind = ReduceKind::Area;
+  float b = 0.0F;
+  float c = 0.0F;
+  friend bool operator==(const Reduction&, const Reduction&) = default;
+};
+
 struct IngestSpec {
   // Chaîne d'agrandissement : kChainChromaFilter, matrice, plage et siting de la source.
   // RIFE : kRifeChromaFilter et kRifeMatrix, siting gauche (rife_cuda.py), quelle que soit
   // l'étiquette de la source.
   kernels::Filter chroma = kernels::kChainChromaFilter;
   bool rife_conversion = false;
+  Reduction reduce;  // tenseur plus petit que l'image (extension de la tranche verticale)
 };
 
 // Mouvement estimé au milieu d'une paire, sorti du moteur RIFE (kernels/spec/warp.h).
@@ -121,6 +133,18 @@ class KernelOps {
   virtual std::expected<void, Refusal> open_true_hdr(const vendor_hdr::InstalledSdk& /*sdk*/,
                                                      const vendor_hdr::TrueHdrConfig& /*config*/) {
     return std::unexpected(Refusal{RefusalCode::FormatUnsupported, "open_true_hdr : absent de ce backend"});
+  }
+  // Mémoire de l'appareil, utilisée et totale, en octets, pour les statistiques ; appelable depuis
+  // n'importe quel thread. Rien si le backend ne sait pas la lire.
+  struct DeviceMemory {
+    std::uint64_t used = 0;
+    std::uint64_t total = 0;
+  };
+  virtual std::optional<DeviceMemory> device_memory() { return std::nullopt; }
+  // Nouveaux réglages de l'effet ouvert par open_true_hdr, appliqués à l'image suivante (le
+  // débandage recharge le modèle). Appelé depuis le thread qui écrit le ring.
+  virtual std::expected<void, Refusal> set_true_hdr(const vendor_hdr::TrueHdrParams& /*params*/) {
+    return std::unexpected(Refusal{RefusalCode::FormatUnsupported, "set_true_hdr : absent de ce backend"});
   }
   // write_ring avec RTX HDR : rgb SDR (FP16, taille du slot) → RGBA8 tramé → TrueHDR → RGB10A2
   // PQ BT.2020 → slot RGBA16, même protocole de sémaphores que write_ring. prepared dit comment
