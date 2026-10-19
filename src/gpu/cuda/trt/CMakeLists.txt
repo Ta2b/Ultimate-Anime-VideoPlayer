@@ -7,9 +7,10 @@ ajp_add_module(cuda_trt
   DEPS ajp::core_types ajp::dep::cudart
   PRIVATE_DEPS ajp::dep::tensorrt ajp::dep::spdlog)
 
-# Banc d'un moteur construit : temps GPU par exécution, médiane et écart type.
-add_executable(ajp_trt_bench bench_main.cpp)
-target_link_libraries(ajp_trt_bench PRIVATE ajp::cuda_trt ajp::dep::spdlog)
+# Banc d'un moteur construit : temps GPU par exécution, médiane et écart type. Outil de
+# développement : l'entrée de RIFE vient de la référence de kernels, jamais livrée.
+add_executable(ajp_trt_bench bench_main.cpp bench_input.cpp)
+target_link_libraries(ajp_trt_bench PRIVATE ajp::cuda_trt ajp::kernels ajp::dep::spdlog)
 ajp_set_warnings(ajp_trt_bench)
 
 # Construction d'un moteur réel par le constructeur trtexec de prepare, vérifié

@@ -2,9 +2,10 @@
 // non bloquant, temps GPU de chaque exécution entre deux événements CUDA.
 //
 //   ajp_trt_bench <moteur> [--shape <entrée>=1x3x720x1280]... [--warmup 50] [--iterations 200] [--runs 5]
+//                 [--input noise|rife]
 //
-// Les entrées reçoivent une fois des valeurs fixes de [0,5 ; 1[ ; aucune copie
-// ne tombe dans la mesure, comme trtexec --noDataTransfers. Le résultat donne
+// Les entrées sont écrites une fois (bench_input.h) ; aucune copie ne tombe
+// dans la mesure, comme trtexec --noDataTransfers. Le résultat donne
 // chaque passe, puis médiane, moyenne et écart type de toutes les exécutions.
 #include <algorithm>
 #include <cmath>
@@ -22,6 +23,7 @@
 #include <utility>
 #include <vector>
 
+#include "gpu/cuda/trt/bench_input.h"
 #include "gpu/cuda/trt/cuda_objects.h"
 #include "gpu/cuda/trt/log.h"
 #include "gpu/cuda/trt/runtime.h"
@@ -38,6 +40,7 @@ struct Options {
   int warmup = 50;
   int iterations = 200;
   int runs = 5;
+  bool rife_input = false;  // --input rife : entrée v1 de RIFE comme la lecture
 };
 
 void out(const std::string& text) {
@@ -77,6 +80,9 @@ std::expected<Options, std::string> parse(int argc, const char* const* argv) {
       (arg == "--warmup"       ? options.warmup
        : arg == "--iterations" ? options.iterations
                                : options.runs) = *count;
+    } else if (arg == "--input" && has_value &&
+               (std::string_view(argv[k + 1]) == "rife" || std::string_view(argv[k + 1]) == "noise")) {
+      options.rife_input = std::string_view(argv[++k]) == "rife";
     } else if (!arg.starts_with("--") && options.engine.empty()) {
       options.engine = fs::path(arg);
     } else {
@@ -85,23 +91,6 @@ std::expected<Options, std::string> parse(int argc, const char* const* argv) {
   }
   if (options.engine.empty()) return std::unexpected("chemin du moteur manquant");
   return options;
-}
-
-// Motif déterministe dans [0,5 ; 1[ : exposant fixe, mantisse variable.
-std::vector<std::byte> input_pattern(DataType type, std::size_t bytes) {
-  std::vector<std::byte> data(bytes);
-  const std::size_t width = element_bytes(type);
-  for (std::size_t k = 0; k + width <= bytes; k += width) {
-    const auto mix = static_cast<std::uint32_t>((k / width) * 2654435761U);
-    if (type == DataType::F16) {
-      const auto bits = static_cast<std::uint16_t>(0x3800U | (mix >> 22U));
-      std::memcpy(&data[k], &bits, sizeof bits);
-    } else if (type == DataType::F32) {
-      const std::uint32_t bits = 0x3F000000U | (mix >> 9U);
-      std::memcpy(&data[k], &bits, sizeof bits);
-    }
-  }
-  return data;
 }
 
 struct Stats {
@@ -125,7 +114,7 @@ Stats stats_of(std::vector<double> values) {
   return s;
 }
 
-std::expected<void, ajp::Refusal> bench(const Options& options) {
+std::expected<void, ajp::Refusal> run_bench(const Options& options) {
   auto runtime = TrtRuntime::create(make_logger());
   if (!runtime) return std::unexpected(runtime.error());
   auto engine = runtime->load_file(options.engine);
@@ -147,7 +136,12 @@ std::expected<void, ajp::Refusal> bench(const Options& options) {
     auto buffer = DeviceBuffer::allocate(*bytes);
     if (!buffer) return std::unexpected(buffer.error());
     if (desc.io == TensorIo::Input) {
-      const std::vector<std::byte> pattern = input_pattern(desc.type, *bytes);
+      auto filled =
+          options.rife_input
+              ? bench::rife_input(desc.type, *dims)
+              : std::expected<std::vector<std::byte>, std::string>(bench::noise_input(desc.type, *bytes));
+      if (!filled) return std::unexpected(ajp::Refusal{ajp::RefusalCode::FieldOutOfRange, filled.error()});
+      const std::vector<std::byte>& pattern = *filled;
       if (auto ok = cuda_check(cudaMemcpy(buffer->data(), pattern.data(), *bytes, cudaMemcpyHostToDevice),
                                "cudaMemcpy");
           !ok) {
@@ -207,7 +201,7 @@ int main(int argc, char** argv) {
     std::fputs(std::format("ajp_trt_bench : {}\n", options.error()).c_str(), stderr);
     return 2;
   }
-  if (auto ok = bench(*options); !ok) {
+  if (auto ok = run_bench(*options); !ok) {
     std::fputs(
         std::format("ajp_trt_bench : {} : {}\n", ajp::name(ok.error().code), ok.error().detail).c_str(),
         stderr);
