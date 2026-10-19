@@ -83,8 +83,10 @@ jobs:
       - run: cmake --build --preset linux-prefix
       - name: Tests (Vulkan logiciel sous Xvfb)
         run: xvfb-run -a ctest --preset linux-prefix
+      # src/gpu/cuda/ ne se compile qu'avec AJP_WITH_CUDA, sans CUDA ni TensorRT ici : clang-tidy
+      # le vérifie sur le PC de référence, dans la construction CUDA.
       - name: clang-tidy sur src/
-        run: git ls-files -z -- 'src/*.cpp' | xargs -0 -r -n1 -P4 clang-tidy-20 -p build/linux-prefix --quiet
+        run: git ls-files -z -- 'src/*.cpp' ':!src/gpu/cuda/' | xargs -0 -r -n1 -P4 clang-tidy-20 -p build/linux-prefix --quiet
       # Les jobs ASan du cœur ne construisent pas src/gpu : on y passe les tests gpu_ir.
       - name: Tests gpu_ir sous ASan et UBSan
         run: |

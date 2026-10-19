@@ -97,6 +97,15 @@
       }
     },
     {
+      "name": "linux-prefix-cuda",
+      "displayName": "Linux préfixe, noyaux CUDA pour la seule RTX locale (sm_89)",
+      "inherits": "linux-prefix",
+      "cacheVariables": {
+        "AJP_WITH_CUDA": "ON",
+        "AJP_CUDA_ARCHITECTURES": "89-real"
+      }
+    },
+    {
       "name": "linux-prefix-core",
       "displayName": "Linux, cœur seul (sans lecteur)",
       "inherits": "prefix",
@@ -156,6 +165,10 @@
       "configurePreset": "linux-prefix"
     },
     {
+      "name": "linux-prefix-cuda",
+      "configurePreset": "linux-prefix-cuda"
+    },
+    {
       "name": "linux-prefix-core",
       "configurePreset": "linux-prefix-core"
     },
@@ -206,6 +219,13 @@
     {
       "name": "linux-prefix",
       "configurePreset": "linux-prefix",
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "linux-prefix-cuda",
+      "configurePreset": "linux-prefix-cuda",
       "output": {
         "outputOnFailure": true
       }

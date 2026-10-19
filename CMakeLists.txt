@@ -15,8 +15,12 @@ option(AJP_BUILD_PLAYER "Construire le lecteur ; OFF ne garde que core, kernels 
 option(AJP_WARNINGS_AS_ERRORS "Avertissements en erreurs" ON)
 
 if(AJP_WITH_CUDA)
-  set(CMAKE_CUDA_ARCHITECTURES "75-real;86-real;89-real;120-real;120-virtual"
-      CACHE STRING "Liste des RTX, reprise du fork" FORCE)
+  # Livraison : la liste du plan, celle du fork réduite aux RTX (Turing à Blackwell, plus le
+  # PTX 120 pour les suivantes). Développement local sur la 4070 Ti : AJP_CUDA_ARCHITECTURES
+  # vaut 89-real (preset linux-prefix-cuda), une seule cible, bien plus rapide à compiler.
+  set(AJP_CUDA_ARCHITECTURES "75-real;86-real;89-real;120-real;120-virtual"
+      CACHE STRING "Architectures CUDA, passées en entier à CMAKE_CUDA_ARCHITECTURES")
+  set(CMAKE_CUDA_ARCHITECTURES "${AJP_CUDA_ARCHITECTURES}" CACHE STRING "Reprise de AJP_CUDA_ARCHITECTURES" FORCE)
   enable_language(CUDA)
   set(CMAKE_CUDA_STANDARD 20)
   set(CMAKE_CUDA_STANDARD_REQUIRED ON)

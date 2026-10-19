@@ -18,6 +18,13 @@ find_package(spdlog CONFIG REQUIRED)
 ajp_alias_dep(spdlog spdlog::spdlog)
 target_compile_definitions(ajp_dep_spdlog INTERFACE SPDLOG_USE_STD_FORMAT)
 
+# CUDA 13.4, seulement avec AJP_WITH_CUDA (backend TensorRT et ses noyaux). Le runtime statique
+# charge le pilote (libcuda) à l'exécution : sans pilote, un binaire démarre et refuse proprement.
+if(AJP_WITH_CUDA)
+  find_package(CUDAToolkit 13 REQUIRED)
+  ajp_alias_dep(cudart CUDA::cudart_static)
+endif()
+
 if(NOT AJP_BUILD_PLAYER)
   return()
 endif()

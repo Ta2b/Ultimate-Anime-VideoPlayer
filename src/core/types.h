@@ -77,6 +77,10 @@ enum class RefusalCode : std::uint8_t {
   OperatorUnknown,   // opérateur hors du jeu de l'IR ; le détail porte son nom
   GraphInvalid,      // tenseur absent, cycle, attribut ou entrée incohérents
   ShapeInvalid,      // formes incompatibles, ou dimension impossible à déduire
+
+  // gpu/cuda/compute : appels CUDA et mémoire de l'appareil
+  CudaFailed,          // un appel CUDA a échoué ; le détail cite l'appel et l'erreur
+  GpuMemoryExhausted,  // pool borné plein, ou allocation refusée par le pilote faute de mémoire
 };
 
 struct Refusal {
@@ -202,6 +206,10 @@ constexpr std::string_view name(RefusalCode code) {
       return "GraphInvalid";
     case RefusalCode::ShapeInvalid:
       return "ShapeInvalid";
+    case RefusalCode::CudaFailed:
+      return "CudaFailed";
+    case RefusalCode::GpuMemoryExhausted:
+      return "GpuMemoryExhausted";
   }
   return "Unknown";
 }
