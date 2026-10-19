@@ -23,7 +23,7 @@ inline constexpr std::string_view kTrueHdrNotInstalled = "TrueHDR n'est pas inst
 struct Capabilities {
   std::vector<ModelId> models;
   // Premier bloqueur TrueHDR, en phrase affichable telle quelle ; vide : TrueHDR peut être
-  // tenté. app le tire de vendor_hdr::first_blocker() : core ne dépend pas de vendor_hdr.
+  // tenté. app le tire de vendor_hdr::first_blocker_reason() : core ne dépend pas de vendor_hdr.
   std::string true_hdr_blocker = std::string(kTrueHdrUnchecked);
   bool true_hdr_available() const { return true_hdr_blocker.empty(); }
 };

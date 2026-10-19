@@ -123,6 +123,14 @@
       }
     },
     {
+      "name": "linux-prefix-tsan-player",
+      "displayName": "Linux préfixe, lecteur complet sous TSan",
+      "inherits": "linux-prefix",
+      "cacheVariables": {
+        "CMAKE_CXX_FLAGS": "-fsanitize=thread"
+      }
+    },
+    {
       "name": "linux-prefix-asan-core",
       "displayName": "Linux préfixe, cœur sous ASan et UBSan",
       "inherits": "linux-prefix-core",
@@ -169,6 +177,10 @@
       "configurePreset": "linux-prefix-tsan"
     },
     {
+      "name": "linux-prefix-tsan-player",
+      "configurePreset": "linux-prefix-tsan-player"
+    },
+    {
       "name": "core",
       "configurePreset": "core"
     },
@@ -190,6 +202,9 @@
       "configurePreset": "asan",
       "output": {
         "outputOnFailure": true
+      },
+      "environment": {
+        "LSAN_OPTIONS": "suppressions=${sourceDir}/tools/ci/lsan.supp"
       }
     },
     {
@@ -223,6 +238,9 @@
       "configurePreset": "linux-prefix-asan",
       "output": {
         "outputOnFailure": true
+      },
+      "environment": {
+        "LSAN_OPTIONS": "suppressions=${sourceDir}/tools/ci/lsan.supp"
       }
     },
     {
@@ -238,6 +256,16 @@
       }
     },
     {
+      "name": "linux-prefix-tsan-player",
+      "configurePreset": "linux-prefix-tsan-player",
+      "output": {
+        "outputOnFailure": true
+      },
+      "environment": {
+        "TSAN_OPTIONS": "halt_on_error=1 second_deadlock_stack=1 ignore_noninstrumented_modules=1"
+      }
+    },
+    {
       "name": "core",
       "configurePreset": "core",
       "output": {
@@ -249,6 +277,9 @@
       "configurePreset": "linux-prefix-asan-core",
       "output": {
         "outputOnFailure": true
+      },
+      "environment": {
+        "LSAN_OPTIONS": "suppressions=${sourceDir}/tools/ci/lsan.supp"
       }
     }
   ]

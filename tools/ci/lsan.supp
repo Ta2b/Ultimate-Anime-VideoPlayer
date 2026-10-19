@@ -1,0 +1,7 @@
+# Suppressions de LeakSanitizer : des fuites de bibliothèques tierces seulement, chacune
+# justifiée. Lu par les préréglages de test ASan (CMakePresets.json, LSAN_OPTIONS).
+#
+# libdbus : SDL3 ouvre D-Bus dès SDL_InitSubSystem (SDL_DBus_Init) ; le tampon de lecture
+# de la connexion reste à libdbus jusqu'à la fin du processus, même après SDL_Quit avec
+# SDL_HINT_SHUTDOWN_DBUS_ON_QUIT (essayé dans les tests audio : la fuite demeure).
+leak:libdbus-1.so

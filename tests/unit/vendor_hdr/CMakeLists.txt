@@ -20,7 +20,9 @@ ajp_add_unit_tests(vendor_hdr
     sdk_store_test.cpp
     stage_test.cpp
     support.cpp
-    true_hdr_test.cpp)
+    true_hdr_test.cpp
+  # core : le câblage des bloqueurs vers resolve(), tel que app le fait.
+  DEPS ajp::core)
 
 target_compile_definitions(ajp_vendor_hdr_tests PRIVATE
   AJP_FAKE_MAXINE_PATH="$<TARGET_FILE:ajp_vendor_hdr_fake_maxine>"
