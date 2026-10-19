@@ -52,6 +52,7 @@ class PlayerUi {
   // Les réglages en cours et ce que le menu des paramètres propose.
   void set_settings(const PlaySettings& running, SettingsChoices choices);
   void set_running(const PlaySettings& running);
+  void set_profiles(ProfilesView profiles);
   void toggle_settings();
   void close_settings();
   bool settings_open() const { return panel_.is_open(); }

@@ -28,19 +28,6 @@ constexpr std::array<HeightChoice, 5> kHeights{{
     {480, "480 lignes"},
 }};
 
-bool is_noise(std::string_view token) {
-  // b5f48, SPANF3, unshuffle, fp16, 1x3xHxW, dyn-HW, op21, dynamo : la fabrique du modèle.
-  if (token.starts_with("SPAN") || token == "unshuffle" || token == "fp16" || token == "dynamo" ||
-      token.starts_with("dyn-") || token.starts_with("1x3x"))
-    return true;
-  if (token.size() >= 3 && token.starts_with("op") && std::isdigit(static_cast<unsigned char>(token[2])))
-    return true;
-  if (token.size() >= 4 && token[0] == 'b' && std::isdigit(static_cast<unsigned char>(token[1])) &&
-      token.find('f') != std::string_view::npos)
-    return true;
-  return false;
-}
-
 void note(const char* text) {
   ImGui::PushStyleColor(ImGuiCol_Text, kNote);
   ImGui::TextWrapped("%s", text);
@@ -197,6 +184,42 @@ void stats_tab(PlaySettings& d) {
   ImGui::EndDisabled();
 }
 
+void profiles_tab(const ProfilesView& view, std::array<char, 64>& rename, std::vector<Input>& actions) {
+  section("Profils (Ctrl+1 à Ctrl+9)");
+  for (int slot = 1; slot <= 9; ++slot) {
+    const std::optional<ProfileRow>& row = view.rows[static_cast<std::size_t>(slot - 1)];
+    if (!row) continue;
+    ImGui::PushID(slot);
+    const bool active = slot == view.active;
+    if (ImGui::Selectable(std::format("{}  {}{}", slot, row->name, active ? "  ·  actif" : "").c_str(),
+                          active))
+      actions.emplace_back(Command{cmd::SelectProfile{.slot = slot}});
+    ImGui::PushStyleColor(ImGuiCol_Text, kNote);
+    ImGui::TextUnformatted(("     " + row->summary).c_str());
+    ImGui::PopStyleColor();
+    ImGui::PopID();
+  }
+  note("Changer d'avis dans les autres onglets modifie le profil actif ; il est gardé dans user.toml.");
+
+  section("Profil actif");
+  const std::optional<ProfileRow>& current = view.rows[static_cast<std::size_t>(view.active - 1)];
+  if (current && rename[0] == '\0') {
+    const std::size_t n = std::min(current->name.size(), rename.size() - 1);
+    std::copy_n(current->name.data(), n, rename.data());
+    rename[n] = '\0';
+  }
+  ImGui::InputText("Nom", rename.data(), rename.size());
+  ImGui::SameLine();
+  if (ImGui::Button("Renommer") && rename[0] != '\0')
+    actions.emplace_back(
+        EditProfile{.edit = core::edit::ProfileName{.slot = view.active, .name = rename.data()}});
+  bool start = view.start == view.active;
+  if (ImGui::Checkbox("Profil de démarrage", &start) && start)
+    actions.emplace_back(EditProfile{.edit = core::edit::StartProfile{.slot = view.active}});
+  if (ImGui::Button("Revenir au profil d'origine"))
+    actions.emplace_back(EditProfile{.edit = core::edit::ResetProfile{.slot = view.active}});
+}
+
 void engines_tab(const SettingsChoices& choices) {
   section("Moteurs TensorRT");
   if (choices.engines.empty()) note("Aucun moteur construit.");
@@ -216,30 +239,8 @@ void engines_tab(const SettingsChoices& choices) {
 
 }  // namespace
 
-std::string model_label(const std::string& file) {
-  std::string_view name = file;
-  if (name.ends_with(".onnx")) name.remove_suffix(5);
-  if (name.starts_with("2x_")) name.remove_prefix(3);
-  if (name.starts_with("AnimeJaNai_")) name.remove_prefix(11);
-  std::string out;
-  while (!name.empty()) {
-    const std::size_t cut = name.find('_');
-    const std::string_view token = name.substr(0, cut);
-    if (!is_noise(token)) {
-      std::string word(token);
-      // « V3.1Sharp1 » : « V3.1 Sharp1 ».
-      if (const std::size_t sharp = word.find("Sharp"); sharp != std::string::npos && sharp > 0)
-        word.insert(sharp, " ");
-      out += out.empty() ? word : " " + word;
-    }
-    if (cut == std::string_view::npos) break;
-    name.remove_prefix(cut + 1);
-  }
-  return out.empty() ? file : out;
-}
-
 SettingsPanel::Result SettingsPanel::draw(const PlaySettings& running, const SettingsChoices& choices,
-                                          float scale) {
+                                          float scale, std::vector<Input>& actions) {
   Result result;
   if (!open_) return result;
   // Réglages changés ailleurs (Tab, volume) : le panneau les reprend, sans perdre ce qui attend.
@@ -249,7 +250,7 @@ SettingsPanel::Result SettingsPanel::draw(const PlaySettings& running, const Set
   }
   const ImGuiIO& io = ImGui::GetIO();
   const float pad = 18.0F * scale;
-  const float width = std::min(520.0F * scale, io.DisplaySize.x - 2.0F * pad);
+  const float width = std::min(620.0F * scale, io.DisplaySize.x - 2.0F * pad);
   const float bottom = 120.0F * scale;  // la barre de lecture reste visible dessous
   ImGui::SetNextWindowPos({io.DisplaySize.x - pad, pad + 40.0F * scale}, ImGuiCond_Always, {1.0F, 0.0F});
   ImGui::SetNextWindowSize({width, std::max(240.0F * scale, io.DisplaySize.y - pad - 40.0F * scale - bottom)},
@@ -260,6 +261,14 @@ SettingsPanel::Result SettingsPanel::draw(const PlaySettings& running, const Set
   if (ImGui::Begin("Paramètres", &keep, kFlags)) {
     ImGui::PushItemWidth(-width * 0.42F);
     if (ImGui::BeginTabBar("##sections")) {
+      if (ImGui::BeginTabItem("Profils")) {
+        if (choices.profiles.active != shown_profile_) {  // nom à renommer : celui du profil actif
+          rename_[0] = '\0';
+          shown_profile_ = choices.profiles.active;
+        }
+        profiles_tab(choices.profiles, rename_, actions);
+        ImGui::EndTabItem();
+      }
       if (ImGui::BeginTabItem("Image")) {
         image_tab(draft_, choices);
         ImGui::EndTabItem();
@@ -280,7 +289,7 @@ SettingsPanel::Result SettingsPanel::draw(const PlaySettings& running, const Set
         sound_tab(draft_);
         ImGui::EndTabItem();
       }
-      if (ImGui::BeginTabItem("Statistiques")) {
+      if (ImGui::BeginTabItem("Stats")) {
         stats_tab(draft_);
         ImGui::EndTabItem();
       }

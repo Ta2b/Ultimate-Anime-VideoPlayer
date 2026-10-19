@@ -342,7 +342,7 @@ UiFrame PlayerUi::frame(std::int64_t now_us, const ControlsView& view, std::vect
   clicks_.clear();
   bool drawn = draw_controls(controls_, view, look_, now_us, actions);
   if (panel_.is_open()) {
-    const SettingsPanel::Result result = panel_.draw(running_, choices_, look_.scale);
+    const SettingsPanel::Result result = panel_.draw(running_, choices_, look_.scale, actions);
     if (result.live) actions.emplace_back(ApplySettings{.settings = *result.live});
     if (result.reopen) actions.emplace_back(ApplySettings{.settings = *result.reopen, .reopen = true});
     look_.keep_visible = panel_.is_open();  // fermé par sa croix
@@ -387,6 +387,11 @@ const ImDrawData* PlayerUi::preparation(std::int64_t now_us, const PrepareView& 
 void PlayerUi::set_settings(const PlaySettings& running, SettingsChoices choices) {
   running_ = running;
   choices_ = std::move(choices);
+  input_pending_ = true;
+}
+
+void PlayerUi::set_profiles(ProfilesView profiles) {
+  choices_.profiles = std::move(profiles);
   input_pending_ = true;
 }
 

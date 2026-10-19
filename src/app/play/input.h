@@ -13,6 +13,7 @@
 #include "app/play/settings.h"
 #include "core/keys.h"
 #include "core/messages.h"
+#include "core/user_overlay.h"
 
 namespace ajp::app::play {
 
@@ -31,13 +32,18 @@ struct SelectSubtitles {
 struct CycleAudio {};
 struct CycleSubtitles {};
 struct ToggleSettings {};
+// Modification d'un profil dans user.toml (nom, profil de démarrage, retour à la base).
+struct EditProfile {
+  core::UserEdit edit;
+};
 // Réglages du menu des paramètres : en direct, ou confirmés pour rouvrir la chaîne.
 struct ApplySettings {
   PlaySettings settings;
   bool reopen = false;
 };
-using Input = std::variant<Command, ToggleFullscreen, LeaveFullscreen, ToggleMute, VolumeStep, SelectAudio,
-                           SelectSubtitles, CycleAudio, CycleSubtitles, ToggleSettings, ApplySettings>;
+using Input =
+    std::variant<Command, ToggleFullscreen, LeaveFullscreen, ToggleMute, VolumeStep, SelectAudio,
+                 SelectSubtitles, CycleAudio, CycleSubtitles, ToggleSettings, ApplySettings, EditProfile>;
 
 // L'action d'un événement SDL, ou rien. Fermer la fenêtre vaut cmd::Quit.
 std::optional<Input> input_of(const SDL_Event& event, const core::KeyMap& keys);

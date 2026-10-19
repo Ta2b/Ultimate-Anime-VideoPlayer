@@ -1,10 +1,13 @@
 #include "app/play/player.h"
 
 #include <algorithm>
+#include <array>
 #include <charconv>
+#include <filesystem>
 #include <format>
 #include <fstream>
 #include <optional>
+#include <system_error>
 #include <utility>
 #include <variant>
 
@@ -21,6 +24,7 @@
 #include "app/play/motion_model.h"
 #include "app/play/pipeline.h"
 #include "app/play/placebo_screen.h"
+#include "app/play/profiles.h"
 #include "app/play/session.h"
 #include "app/play/ui.h"
 #include "app/play/upscale_stage.h"
@@ -218,7 +222,12 @@ void press(const std::string& name, SDL_Window* window) {
   SDL_Event event{};
   event.type = SDL_EVENT_KEY_DOWN;
   event.key.windowID = SDL_GetWindowID(window);
-  event.key.key = SDL_GetKeyFromName(name.c_str());
+  std::string_view key = name;
+  if (key.starts_with("ctrl+")) {  // « ctrl+2 » : Ctrl tenu
+    event.key.mod = SDL_KMOD_LCTRL;
+    key.remove_prefix(5);
+  }
+  event.key.key = SDL_GetKeyFromName(std::string(key).c_str());
   event.key.down = true;
   if (event.key.key == SDLK_UNKNOWN) {
     log_channel("app")->warn("--keys : touche inconnue « {} »", name);
@@ -311,6 +320,47 @@ std::string output_text(const PlaceboScreen& screen, int peak_nits) {
                        : screen.output_description();
 }
 
+double fps_of(const media::Rational& rate) {
+  return rate.den > 0 ? static_cast<double>(rate.num) / static_cast<double>(rate.den) : 0.0;
+}
+
+// Les profils de la lecture : user.toml, le profil actif, la source pour choisir leur règle.
+struct ProfileState {
+  std::filesystem::path user_path;
+  Profiles data;
+  int active = 1;
+  core::SourceInfo source;
+  std::string default_model;  // le modèle SPAN par défaut, pour un réglage « modèle par défaut »
+};
+
+ProfilesView view_of(const ProfileState& state) {
+  ProfilesView view{.active = state.active, .start = state.data.file.start_profile};
+  for (std::size_t i = 0; i < view.rows.size(); ++i) {
+    if (const auto& profile = state.data.file.profiles[i])
+      view.rows[i] = ProfileRow{.name = profile->name, .summary = profile_summary(*profile, state.source)};
+  }
+  return view;
+}
+
+// La chaîne en cours devient celle du profil actif, dans user.toml (rien n'y est écrit si elle
+// redevient celle de la base).
+void remember_chain(ProfileState& state, const PlaySettings& s) {
+  const std::array<core::UserEdit, 2> edits{
+      core::edit::ProfileRules{.slot = state.active, .rules = rules_of(s, state.default_model)},
+      core::edit::ProfileHdr{.slot = state.active, .mode = hdr_of(s)}};
+  auto edited = edit_profiles(state.user_path, state.data, edits);
+  if (!edited) {
+    log_channel("app")->warn("user.toml : {}", edited.error().detail);
+    return;
+  }
+  state.data = std::move(*edited);
+}
+
+bool chain_differs(const PlaySettings& a, const PlaySettings& b) {
+  return a.upscale != b.upscale || a.model != b.model || a.work_height != b.work_height ||
+         a.downscale != b.downscale || a.rife_factor != b.rife_factor || a.true_hdr != b.true_hdr;
+}
+
 // Ce qui vit le temps d'une ouverture de la chaîne, et ce que les actions y changent.
 struct Chain {
   Session& session;
@@ -319,6 +369,7 @@ struct Chain {
   Pipeline& pipeline;
   LiveSettings& live;
   PlaySettings& running;  // réglages en cours, gardés dans play.toml
+  ProfileState& profiles;
   bool rife_loaded = false;
   bool true_hdr_open = false;
   int auto_peak = 0;                   // pic automatique de RTX HDR
@@ -409,6 +460,28 @@ void apply_live(Chain& to, const PlaySettings& wanted, std::int64_t now_us) {
   to.dirty = true;
 }
 
+// Profil slot : sa chaîne pour cette source, en direct si elle le permet, sinon par réouverture.
+void switch_profile(Chain& to, int slot, std::int64_t now_us) {
+  const auto& profile = to.profiles.data.file.profiles[static_cast<std::size_t>(std::clamp(slot, 1, 9) - 1)];
+  if (!profile) {
+    to.ui.controls().notify(std::format("Profil {} : vide", slot), now_us);
+    return;
+  }
+  std::vector<std::string> notes;
+  const PlaySettings wanted = apply_profile(*profile, to.profiles.source, to.running, notes);
+  for (const std::string& line : notes) log_channel("app")->warn("profil {} : {}", slot, line);
+  log_channel("app")->info("profil {} « {} »", slot, profile->name);
+  to.profiles.active = slot;
+  to.ui.set_profiles(view_of(to.profiles));
+  to.ui.controls().notify(std::format("Profil {} · {}", slot, profile->name), now_us);
+  const Change change = change_between(to.running, wanted, to.rife_loaded);
+  if (change.cost == ChangeCost::Reopen) {
+    to.reopen = wanted;
+  } else if (change.cost == ChangeCost::Live) {
+    apply_live(to, wanted, now_us);
+  }
+}
+
 // Une action du clavier ou de l'interface. La barre paraît aussi après un seek au clavier.
 void apply(const Input& input, Chain& to, std::int64_t now_us) {
   Session& session = to.session;
@@ -423,6 +496,10 @@ void apply(const Input& input, Chain& to, std::int64_t now_us) {
   std::visit(
       Overloaded{
           [&](const Command& command) {
+            if (const auto* select = std::get_if<cmd::SelectProfile>(&command)) {  // Ctrl+1 à 9, menu
+              switch_profile(to, select->slot, now_us);
+              return;
+            }
             if (std::holds_alternative<cmd::TogglePause>(command)) {
               log_channel("app")->info("action : {}", session.paused() ? "lecture" : "pause");
             } else if (const auto* seek = std::get_if<cmd::Seek>(&command)) {
@@ -468,12 +545,31 @@ void apply(const Input& input, Chain& to, std::int64_t now_us) {
           [&](const CycleSubtitles&) { switch_subtitles(to, next_subtitle(to.pipeline.tracks()), now_us); },
           [&](const ToggleSettings&) { to.ui.toggle_settings(); },
           [&](const ApplySettings& apply) {
+            // Changer la chaîne au menu modifie le profil actif.
+            if (chain_differs(to.running, apply.settings)) {
+              remember_chain(to.profiles, apply.settings);
+              to.ui.set_profiles(view_of(to.profiles));
+            }
             if (apply.reopen) {
               log_channel("app")->info("paramètres : réouverture de la chaîne");
               to.reopen = apply.settings;
             } else {
               apply_live(to, apply.settings, now_us);
             }
+          },
+          [&](const EditProfile& edit) {
+            const std::array<core::UserEdit, 1> edits{edit.edit};
+            auto edited = edit_profiles(to.profiles.user_path, to.profiles.data, edits);
+            if (!edited) {
+              log_channel("app")->warn("user.toml : {}", edited.error().detail);
+              to.ui.controls().notify("Profil : modification refusée", now_us);
+              return;
+            }
+            to.profiles.data = std::move(*edited);
+            to.ui.set_profiles(view_of(to.profiles));
+            // Revenir à la base change la chaîne du profil actif : elle s'applique.
+            if (std::holds_alternative<core::edit::ResetProfile>(edit.edit))
+              switch_profile(to, to.profiles.active, now_us);
           }},
       input);
 }
@@ -514,6 +610,7 @@ struct Player {
   std::int64_t began_us = 0;
   std::optional<int> audio_track;
   std::optional<std::optional<int>> subtitle_track;
+  ProfileState profiles;
 };
 
 // Fin d'une ouverture de la chaîne : la lecture est finie (rien), ou le menu demande de la rouvrir
@@ -808,12 +905,17 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
           .auto_peak = auto_peak,
           .engines = engine_badges(p.paths.engines, model ? model->path : std::filesystem::path(), work,
                                    rife_loaded ? rife_model : std::nullopt, rife_motion ? g : image_g)});
+  p.profiles.source =
+      core::SourceInfo{.width = video.width, .height = video.height, .fps = fps_of(video.frame_rate)};
+  if (model) p.profiles.default_model = model->default_name;
+  p.ui.set_profiles(view_of(p.profiles));
   Chain chain{.session = session,
               .screen = out,
               .ui = p.ui,
               .pipeline = **pipeline,
               .live = *live,
               .running = settings,
+              .profiles = p.profiles,
               .rife_loaded = rife_loaded,
               .true_hdr_open = settings.true_hdr,
               .auto_peak = auto_peak,
@@ -911,7 +1013,34 @@ std::expected<void, Refusal> play(const PlayOptions& options, const PlayerPaths&
     log->warn("{} ; réglages par défaut", saved.error().detail);
     saved = PlaySettings{};
   }
-  PlaySettings settings = settings_for(*saved, options);
+  // Le profil de démarrage fixe la chaîne ; les options données la remplacent pour cette lecture.
+  ProfileState profiles{
+      .user_path = settings_path.parent_path() / "user.toml",
+      .source = {.width = video->width, .height = video->height, .fps = fps_of(video->frame_rate)}};
+  if (auto loaded = load_profiles(profiles.user_path)) {
+    profiles.data = std::move(*loaded);
+  } else {
+    log->warn("{} ; profils de base", loaded.error().detail);
+    profiles.data = Profiles{.file = *core::parse_profile(base_profiles_toml())};
+  }
+  profiles.active = profiles.data.file.start_profile;
+  // Premier lancement avec profils : la chaîne de play.toml (celle d'avant les profils) devient
+  // celle du profil de démarrage, au lieu d'être remplacée par la base.
+  std::error_code missing;
+  if (!std::filesystem::exists(profiles.user_path, missing) &&
+      std::filesystem::exists(settings_path, missing)) {
+    profiles.default_model = std::string(kSpanModelId);
+    remember_chain(profiles, *saved);
+    log->info("chaîne de play.toml reprise dans le profil {}", profiles.active);
+  }
+  PlaySettings from_profile = *saved;
+  if (const auto& start = profiles.data.file.profiles[static_cast<std::size_t>(profiles.active - 1)]) {
+    std::vector<std::string> notes;
+    from_profile = apply_profile(*start, profiles.source, *saved, notes);
+    for (const std::string& line : notes) log->warn("profil {} : {}", profiles.active, line);
+    log->info("profil {} « {} »", profiles.active, start->name);
+  }
+  PlaySettings settings = settings_for(from_profile, options);
   if (auto valid = validate(settings); !valid) return std::unexpected(std::move(valid.error()));
 
   auto screen =
@@ -937,7 +1066,8 @@ std::expected<void, Refusal> play(const PlayOptions& options, const PlayerPaths&
                 .from_file = *saved,
                 .started = settings,
                 .snapshot = {.path = options.snapshot, .at_us = options.snapshot_at_us},
-                .details = settings.stats.all};
+                .details = settings.stats.all,
+                .profiles = std::move(profiles)};
   std::int64_t start_us = options.start_us;
   std::expected<void, Refusal> result;
   while (true) {

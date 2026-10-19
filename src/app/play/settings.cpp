@@ -1,6 +1,7 @@
 #include "app/play/settings.h"
 
 #include <array>
+#include <cctype>
 #include <cmath>
 #include <format>
 #include <fstream>
@@ -82,7 +83,42 @@ const toml::table* section(const toml::table& root, std::string_view name) {
   return node != nullptr ? node->as_table() : nullptr;
 }
 
+bool is_noise(std::string_view token) {
+  // b5f48, SPANF3, unshuffle, fp16, 1x3xHxW, dyn-HW, op21, dynamo : la fabrique du modèle.
+  if (token.starts_with("SPAN") || token == "unshuffle" || token == "fp16" || token == "dynamo" ||
+      token.starts_with("dyn-") || token.starts_with("1x3x"))
+    return true;
+  if (token.size() >= 3 && token.starts_with("op") && std::isdigit(static_cast<unsigned char>(token[2])))
+    return true;
+  if (token.size() >= 4 && token[0] == 'b' && std::isdigit(static_cast<unsigned char>(token[1])) &&
+      token.find('f') != std::string_view::npos)
+    return true;
+  return false;
+}
+
 }  // namespace
+
+std::string model_label(const std::string& file) {
+  std::string_view name = file;
+  if (name.ends_with(".onnx")) name.remove_suffix(5);
+  if (name.starts_with("2x_")) name.remove_prefix(3);
+  if (name.starts_with("AnimeJaNai_")) name.remove_prefix(11);
+  std::string out;
+  while (!name.empty()) {
+    const std::size_t cut = name.find('_');
+    const std::string_view token = name.substr(0, cut);
+    if (!is_noise(token)) {
+      std::string word(token);
+      // « V3.1Sharp1 » : « V3.1 Sharp1 ».
+      if (const std::size_t sharp = word.find("Sharp"); sharp != std::string::npos && sharp > 0)
+        word.insert(sharp, " ");
+      out += out.empty() ? word : " " + word;
+    }
+    if (cut == std::string_view::npos) break;
+    name.remove_prefix(cut + 1);
+  }
+  return out.empty() ? file : out;
+}
 
 std::string_view name(Downscale filter) {
   return kDownscales[static_cast<std::size_t>(filter)].key;

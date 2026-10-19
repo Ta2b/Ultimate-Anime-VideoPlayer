@@ -27,7 +27,9 @@ namespace ajp::app::play {
 // profils (core/profile.h), mêmes noms dans play.toml et user.toml.
 using Downscale = core::DownscaleFilter;
 inline constexpr int kDownscaleCount = 6;
-std::string_view name(Downscale filter);   // « area », la clé de play.toml
+std::string_view name(Downscale filter);  // « area », la clé de play.toml
+// Libellé lisible d'un modèle AnimeJaNai : « HD V3.1 Sharp1 Performance ».
+std::string model_label(const std::string& file);
 std::string_view label(Downscale filter);  // « Area », pour le menu
 
 // Statistiques à l'écran : toutes (Tab), ou mesure par mesure.
