@@ -107,6 +107,14 @@
       }
     },
     {
+      "name": "linux-prefix-cuda-release",
+      "displayName": "Linux préfixe, CUDA sm_89, optimisé avec symboles (le lecteur de tous les jours)",
+      "inherits": "linux-prefix-cuda",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "RelWithDebInfo"
+      }
+    },
+    {
       "name": "linux-prefix-core",
       "displayName": "Linux, cœur seul (sans lecteur)",
       "inherits": "prefix",
@@ -176,6 +184,10 @@
     {
       "name": "linux-prefix-cuda",
       "configurePreset": "linux-prefix-cuda"
+    },
+    {
+      "name": "linux-prefix-cuda-release",
+      "configurePreset": "linux-prefix-cuda-release"
     },
     {
       "name": "linux-prefix-core",
