@@ -22,7 +22,10 @@ env:
   # restent ceux qui fixent FFmpeg 9.0.2, SDL3 3.4.18 et le reste.
   VCPKG_COMMIT: bf19794383e8fb95eba5aa553235bc8ec2271688
   # Chemins courts : les arbres de construction de FFmpeg dépassent vite MAX_PATH.
-  VCPKG_ROOT: C:\ajp\vcpkg
+  # msvc-dev-cmd exporte le VCPKG_ROOT de Visual Studio par GITHUB_ENV, qui passe
+  # avant l'env du workflow : notre clone a son propre nom, et le pas vcpkg
+  # réécrit VCPKG_ROOT après lui.
+  AJP_VCPKG_ROOT: C:\ajp\vcpkg
   AJP_VCPKG_CACHE: C:\ajp\vcpkg-cache
   VCPKG_BINARY_SOURCES: clear;files,C:\ajp\vcpkg-cache,readwrite
   VCPKG_DISABLE_METRICS: '1'
@@ -56,10 +59,12 @@ jobs:
 
       - name: vcpkg au commit de la baseline
         run: |
-          git clone --quiet https://github.com/microsoft/vcpkg "$env:VCPKG_ROOT"
-          git -C "$env:VCPKG_ROOT" checkout --quiet "$env:VCPKG_COMMIT"
-          & "$env:VCPKG_ROOT\bootstrap-vcpkg.bat" -disableMetrics
+          git clone --quiet https://github.com/microsoft/vcpkg "$env:AJP_VCPKG_ROOT"
+          git -C "$env:AJP_VCPKG_ROOT" checkout --quiet "$env:VCPKG_COMMIT"
+          & "$env:AJP_VCPKG_ROOT\bootstrap-vcpkg.bat" -disableMetrics
           New-Item -ItemType Directory -Force "$env:AJP_VCPKG_CACHE" | Out-Null
+          # Le préréglage windows-vulkan lit $env{VCPKG_ROOT} pour la chaîne d'outils.
+          "VCPKG_ROOT=$env:AJP_VCPKG_ROOT" >> $env:GITHUB_ENV
 
       # Le cache s'accumule par paquet (clé ABI de vcpkg) : on restaure le plus
       # récent, et on n'en sauvegarde un nouveau que si vcpkg a construit quelque chose.
@@ -73,7 +78,7 @@ jobs:
       - name: Paquets déjà en cache
         id: cache-before
         run: |
-          $count = (Get-ChildItem -Recurse -File "$env:AJP_VCPKG_CACHE" | Measure-Object).Count
+          $count = (Get-ChildItem -Recurse -File "$env:AJP_VCPKG_CACHE" -ErrorAction SilentlyContinue | Measure-Object).Count
           "count=$count" >> $env:GITHUB_OUTPUT
           "$count archives dans le cache binaire"
 
@@ -85,7 +90,7 @@ jobs:
         id: cache-after
         if: always()
         run: |
-          $count = (Get-ChildItem -Recurse -File "$env:AJP_VCPKG_CACHE" | Measure-Object).Count
+          $count = (Get-ChildItem -Recurse -File "$env:AJP_VCPKG_CACHE" -ErrorAction SilentlyContinue | Measure-Object).Count
           $changed = $count -ne [int]'${{ steps.cache-before.outputs.count }}'
           "changed=$($changed.ToString().ToLower())" >> $env:GITHUB_OUTPUT
           "$count archives dans le cache binaire (nouvelles : $changed)"
@@ -100,7 +105,7 @@ jobs:
       - name: Journaux vcpkg de l'échec
         if: failure()
         run: |
-          $logs = Get-ChildItem -Recurse -File "$env:VCPKG_ROOT\buildtrees" -Include *.log -ErrorAction SilentlyContinue |
+          $logs = Get-ChildItem -Recurse -File "$env:AJP_VCPKG_ROOT\buildtrees" -Include *.log -ErrorAction SilentlyContinue |
             Sort-Object LastWriteTime | Select-Object -Last 8
           foreach ($log in $logs) {
             "::group::$($log.FullName)"
