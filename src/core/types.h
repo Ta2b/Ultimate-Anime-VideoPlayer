@@ -83,6 +83,12 @@ enum class RefusalCode : std::uint8_t {
   ThreadFailed,    // une exception a interrompu le corps d'un thread, qui s'est arrêté
   AbiMismatch,     // bibliothèque d'une autre version de l'interface (kBackendAbi)
   DeviceMismatch,  // le backend ne sait pas exploiter l'appareil de rendu (API, constructeur, UUID)
+
+  // render : appareil de rendu libplacebo, ring de sortie, composition
+  VulkanCallFailed,    // un appel Vulkan a renvoyé une erreur ; le détail cite l'appel et son VkResult
+  DeviceUnavailable,   // aucun appareil, aucune file compute, ou UUID introuvable
+  FeatureUnavailable,  // version, extension, fonction, format ou limite absents de l'appareil
+  RenderFailed,        // libplacebo a refusé un appel (shader, texture, rendu) ; le détail cite l'appel
 };
 
 struct Refusal {
@@ -214,6 +220,14 @@ constexpr std::string_view name(RefusalCode code) {
       return "AbiMismatch";
     case RefusalCode::DeviceMismatch:
       return "DeviceMismatch";
+    case RefusalCode::VulkanCallFailed:
+      return "VulkanCallFailed";
+    case RefusalCode::DeviceUnavailable:
+      return "DeviceUnavailable";
+    case RefusalCode::FeatureUnavailable:
+      return "FeatureUnavailable";
+    case RefusalCode::RenderFailed:
+      return "RenderFailed";
   }
   return "Unknown";
 }

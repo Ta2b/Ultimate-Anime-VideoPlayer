@@ -1,0 +1,42 @@
+// Origine : https://github.com/Ta2b/mpv-AnimeJaNai-HDR, commit 33ff79d (vu à c6fee61),
+// BuildMpvUpscale2xAnimeJaNai/mpv-upscale-2x_animejanai/portable_config/user-shaders/anime-hdr-calibration.hook,
+// copié sans changement sous cet en-tête. tests/unit/render/grade_test.cpp en fixe le comportement.
+//
+// AnimeJaNai HDR - mire d'etalonnage (Ctrl+Alt+P). Remplace l'image par des patchs en
+// luminance absolue, encodes en PQ pour la sortie HDR. Les valeurs sont affichees par
+// user-scripts/animejanai_hdr_auto.lua.
+//   Ligne 1 : noirs 0,005 a 1 nit sur fond noir -> jusqu'ou les ombres restent visibles.
+//   Ligne 2 : rampe 0 -> 203 nits (blanc papier) et gris de reference.
+//   Ligne 3 : 400 a 4000 nits sur fond noir -> ou l'ecran cesse d'eclaircir (pic reel).
+
+//!HOOK OUTPUT
+//!BIND HOOKED
+//!DESC AnimeJaNai HDR - mire d'etalonnage
+
+float cal_pq(float nits) {
+    float q = pow(clamp(nits / 10000.0, 0.0, 1.0), 0.1593017578125);
+    return pow((0.8359375 + 18.8515625 * q) / (1.0 + 18.6875 * q), 78.84375);
+}
+float patch_value(int row, int i) {
+    if (row == 0) {
+        const float blacks[8] = float[8](0.005, 0.01, 0.02, 0.05, 0.1, 0.2, 0.5, 1.0);
+        return blacks[i];
+    }
+    const float peaks[8] = float[8](400.0, 600.0, 800.0, 1000.0, 1200.0, 1500.0, 2000.0, 4000.0);
+    return peaks[i];
+}
+vec4 hook() {
+    vec2 uv = HOOKED_pos;
+    float nits = 0.0;
+    int col = int(floor(uv.x * 8.0));
+    float cx = fract(uv.x * 8.0);
+    bool inside_x = cx > 0.12 && cx < 0.88;
+    if (uv.y > 0.10 && uv.y < 0.30 && inside_x) nits = patch_value(0, col);
+    if (uv.y > 0.42 && uv.y < 0.50) nits = 203.0 * uv.x;            // rampe vers le blanc papier
+    if (uv.y > 0.52 && uv.y < 0.58 && inside_x) {
+        const float greys[8] = float[8](5.0, 10.0, 20.0, 50.0, 100.0, 150.0, 203.0, 300.0);
+        nits = greys[col];
+    }
+    if (uv.y > 0.70 && uv.y < 0.90 && inside_x) nits = patch_value(2, col);
+    return vec4(vec3(cal_pq(nits)), 1.0);
+}

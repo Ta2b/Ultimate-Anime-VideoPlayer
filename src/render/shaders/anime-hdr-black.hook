@@ -1,0 +1,81 @@
+// AnimeJaNai HDR - vrai noir OLED : la dixième passe du grade, propre à ce dépôt (plan, « HDR :
+// un grade sur deux routes »). Posée sur OUTPUT juste après anime-hdr-grade.hook, sur une image
+// déjà encodée en PQ BT.2020, sur les deux routes (TrueHDR et native).
+//
+//   m = max(maxRGB du pixel, AJG_LOCALMAX), en nits ; AJG_LOCALMAX est le max 8x8 de maxRGB,
+//       échantillonné en bilinéaire : un pixel de bruit isolé ne clignote pas d'une image à
+//       l'autre, et les bords de blocs ne marquent pas ;
+//   gain = smoothstep(black_lo, black_hi, m) : 0 sous black_lo (le pixel vaut 0), puis un pied
+//       C1 qui rejoint l'identité à black_hi (sortie = m × gain : pente 0 au noir, 1 à black_hi) ;
+//   R, G et B reçoivent le même gain : la teinte ne bouge pas. Le tramage de libplacebo suit.
+//
+// Les deux passes sautent quand black_hi <= black_lo, donc aussi quand black_hi vaut 0 (le
+// défaut) : l'image reste alors identique, octet pour octet, et les goldens ne bougent pas.
+
+//!PARAM black_lo
+//!DESC Seuil du vrai noir (nits) : en dessous, le pixel vaut 0
+//!TYPE float
+//!MINIMUM 0.0
+//!MAXIMUM 50.0
+0.0
+
+//!PARAM black_hi
+//!DESC Fin du pied (nits) : au-dessus, l'image est inchangée
+//!TYPE float
+//!MINIMUM 0.0
+//!MAXIMUM 50.0
+0.0
+
+//!HOOK OUTPUT
+//!BIND HOOKED
+//!SAVE AJG_LOCALMAX
+//!WIDTH HOOKED.w 8 /
+//!HEIGHT HOOKED.h 8 /
+//!COMPONENTS 1
+//!WHEN black_hi black_lo >
+//!DESC AnimeJaNai HDR - vrai noir, max local 8x8
+
+// Max de maxRGB sur le bloc 8x8 du texel, en code PQ (croissant avec les nits).
+vec4 hook() {
+    ivec2 size = ivec2(HOOKED_size);
+    ivec2 base = ivec2(HOOKED_pos * HOOKED_size) - ivec2(4);
+    float m = 0.0;
+    for (int j = 0; j < 8; j++)
+    for (int i = 0; i < 8; i++) {
+        ivec2 p = clamp(base + ivec2(i, j), ivec2(0), size - ivec2(1));
+        vec3 c = texelFetch(HOOKED_raw, p, 0).rgb;
+        m = max(m, max(c.r, max(c.g, c.b)));
+    }
+    return vec4(m, 0.0, 0.0, 1.0);
+}
+
+//!HOOK OUTPUT
+//!BIND HOOKED
+//!BIND AJG_LOCALMAX
+//!WHEN black_hi black_lo >
+//!DESC AnimeJaNai HDR - vrai noir OLED
+
+float ajb_pq_to_nits(float e) {
+    float p = pow(clamp(e, 0.0, 1.0), 1.0 / 78.84375);
+    return 10000.0 * pow(max(p - 0.8359375, 0.0) / max(18.8515625 - 18.6875 * p, 1e-6), 6.27739463);
+}
+vec3 ajb_pq_to_nits3(vec3 e) {
+    vec3 p = pow(clamp(e, 0.0, 1.0), vec3(1.0 / 78.84375));
+    return 10000.0 * pow(max(p - 0.8359375, 0.0) / max(18.8515625 - 18.6875 * p, 1e-6),
+                         vec3(6.27739463));
+}
+vec3 ajb_nits_to_pq3(vec3 n) {
+    vec3 q = pow(clamp(n / 10000.0, 0.0, 1.0), vec3(0.1593017578125));
+    return pow((0.8359375 + 18.8515625 * q) / (1.0 + 18.6875 * q), vec3(78.84375));
+}
+
+vec4 hook() {
+    vec4 px = HOOKED_tex(HOOKED_pos);
+    float local_pq = AJG_LOCALMAX_tex(AJG_LOCALMAX_pos).x;
+    float m = ajb_pq_to_nits(max(max(px.r, max(px.g, px.b)), local_pq));
+    if (m >= black_hi)
+        return px;
+    float gain = smoothstep(black_lo, black_hi, m);
+    px.rgb = ajb_nits_to_pq3(ajb_pq_to_nits3(px.rgb) * gain);
+    return px;
+}
