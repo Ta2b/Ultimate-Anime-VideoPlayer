@@ -80,6 +80,7 @@ jobs:
         env:
           AJP_WITH_OPENVINO: "ON"
           AJP_WITH_MIGRAPHX: "ON"
+          AJP_RELEASE_REPO: ${{ vars.AJP_RELEASE_REPO || github.repository }}
         run: |
           [ "$GITHUB_REF_TYPE" = tag ] && export AJP_RELEASE_TAG="$GITHUB_REF_NAME"
           tools/release/package-linux.sh "$RUNNER_TEMP/package"
@@ -99,14 +100,17 @@ jobs:
       - name: Préversion
         if: github.ref_type == 'tag'
         env:
-          GH_TOKEN: ${{ github.token }}
+          # Un dépôt public à part peut porter les releases (le lecteur télécharge ses moteurs sans
+          # compte) : variable AJP_RELEASE_REPO et secret AJP_RELEASE_TOKEN qui peut y écrire.
+          GH_TOKEN: ${{ secrets.AJP_RELEASE_TOKEN || github.token }}
+          AJP_RELEASE_REPO: ${{ vars.AJP_RELEASE_REPO || github.repository }}
         run: |
           notes="tools/release/notes/$GITHUB_REF_NAME.md"
           [ -f "$notes" ] || notes=/dev/null
           assets=("$RUNNER_TEMP"/package/ajp-*.tar.gz "$RUNNER_TEMP/package/engines.lock" "$RUNNER_TEMP/package/SHA256SUMS")
-          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
-            gh release upload "$GITHUB_REF_NAME" --clobber "${assets[@]}"
+          if gh release view "$GITHUB_REF_NAME" -R "$AJP_RELEASE_REPO" >/dev/null 2>&1; then
+            gh release upload "$GITHUB_REF_NAME" -R "$AJP_RELEASE_REPO" --clobber "${assets[@]}"
           else
-            gh release create "$GITHUB_REF_NAME" --prerelease --title "$GITHUB_REF_NAME" \
+            gh release create "$GITHUB_REF_NAME" -R "$AJP_RELEASE_REPO" --prerelease --title "$GITHUB_REF_NAME" \
               --notes-file "$notes" "${assets[@]}"
           fi

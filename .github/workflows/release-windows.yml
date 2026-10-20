@@ -50,6 +50,7 @@ jobs:
         # msvc-dev-cmd pose le vcpkg de Visual Studio : le nôtre, à la référence du manifeste.
         run: |
           $env:VCPKG_ROOT = $env:AJP_VCPKG
+          $env:AJP_RELEASE_REPO = "${{ vars.AJP_RELEASE_REPO || github.repository }}"
           pwsh tools/release/package-windows.ps1 "$env:RUNNER_TEMP/package"
       - uses: actions/cache/save@v4
         if: always()
@@ -69,6 +70,12 @@ jobs:
         if: github.event_name == 'push' || inputs.tag != ''
         shell: pwsh
         env:
-          GH_TOKEN: ${{ github.token }}
+          # Un dépôt public à part peut porter les releases (le lecteur télécharge ses moteurs sans
+          # compte) : variable AJP_RELEASE_REPO et secret AJP_RELEASE_TOKEN qui peut y écrire.
+          GH_TOKEN: ${{ secrets.AJP_RELEASE_TOKEN || github.token }}
+          AJP_RELEASE_REPO: ${{ vars.AJP_RELEASE_REPO || github.repository }}
           TAG: ${{ github.event_name == 'push' && github.ref_name || inputs.tag }}
-        run: gh release upload $env:TAG "$env:RUNNER_TEMP/package/ajp-windows-x64.zip" "$env:RUNNER_TEMP/package/SHA256SUMS-windows.txt" --clobber
+        run: |
+          gh release view $env:TAG -R $env:AJP_RELEASE_REPO *> $null
+          if ($LASTEXITCODE -ne 0) { gh release create $env:TAG -R $env:AJP_RELEASE_REPO --prerelease --title $env:TAG --notes $env:TAG }
+          gh release upload $env:TAG -R $env:AJP_RELEASE_REPO "$env:RUNNER_TEMP/package/ajp-windows-x64.zip" "$env:RUNNER_TEMP/package/SHA256SUMS-windows.txt" --clobber

@@ -20,7 +20,9 @@ New-Item -ItemType Directory -Force -Path $Out | Out-Null
 $Out = (Resolve-Path $Out).Path
 $Version = (Select-String -Path "$Root/CMakeLists.txt" -Pattern '^  VERSION ([0-9.]+)$').Matches[0].Groups[1].Value
 $Tag = if ($env:AJP_RELEASE_TAG) { $env:AJP_RELEASE_TAG } else { "v$Version" }
-$BaseUrl = "https://github.com/Ta2b/Ultimate-Anime-VideoPlayer/releases/download/$Tag"
+# Le dépôt dont la release porte les paquets : il doit être public pour que le lecteur les télécharge.
+$Repo = if ($env:AJP_RELEASE_REPO) { $env:AJP_RELEASE_REPO } else { "Ta2b/Ultimate-Anime-VideoPlayer" }
+$BaseUrl = "https://github.com/$Repo/releases/download/$Tag"
 $Cuda = if ($env:AJP_WITH_CUDA) { $env:AJP_WITH_CUDA } else { "OFF" }
 
 $Extra = @()

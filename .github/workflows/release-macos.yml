@@ -58,8 +58,13 @@ jobs:
       - name: Joindre à la release
         if: github.ref_type == 'tag' || inputs.tag != ''
         env:
-          GH_TOKEN: ${{ github.token }}
+          # Un dépôt public à part peut porter les releases (le lecteur télécharge ses moteurs sans
+          # compte) : variable AJP_RELEASE_REPO et secret AJP_RELEASE_TOKEN qui peut y écrire.
+          GH_TOKEN: ${{ secrets.AJP_RELEASE_TOKEN || github.token }}
+          AJP_RELEASE_REPO: ${{ vars.AJP_RELEASE_REPO || github.repository }}
           TAG: ${{ github.ref_type == 'tag' && github.ref_name || inputs.tag }}
         run: |
-          gh release upload "$TAG" "$RUNNER_TEMP/package/ajp-macos-arm64.zip" \
+          gh release view "$TAG" -R "$AJP_RELEASE_REPO" >/dev/null 2>&1 \
+            || gh release create "$TAG" -R "$AJP_RELEASE_REPO" --prerelease --title "$TAG" --notes ""
+          gh release upload "$TAG" -R "$AJP_RELEASE_REPO" "$RUNNER_TEMP/package/ajp-macos-arm64.zip" \
             "$RUNNER_TEMP/package/ajp-macos-arm64.zip.sha256" --clobber
