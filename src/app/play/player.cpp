@@ -203,6 +203,12 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
   const kernels::RifeGeometry image_g = kernels::rife_geometry(work.width, work.height);
   std::unique_ptr<gpu::Engine> rife;
   std::unique_ptr<gpu::Engine> rife_motion;
+  int rife_planes = kernels::kRifeInputChannels;
+  if (use_rife) {
+    auto planes = rife_input_planes(*rife_model);
+    if (!planes) return std::unexpected(std::move(planes.error()));
+    rife_planes = *planes;
+  }
   // RIFE par son mouvement : une passe au milieu de la paire la sert toute quand le mouvement est
   // faible ; sans variante dérivable, RIFE image comme avant.
   if (use_rife && !p.options.rife_image) {
@@ -210,26 +216,25 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
     if (!derived) {
       log->warn("RIFE mouvement indisponible ({}) : RIFE image", derived.error().detail);
     } else {
-      auto loaded = prepare_engine(
-          p, init, **backend, *derived,
-          gpu::Shape{.dims = {1, kernels::kRifeInputChannels, g.padded_height, g.padded_width}},
-          EngineLabel{.name = "RIFE",
-                      .model = derived->stem().string(),
-                      .width = g.padded_width,
-                      .height = g.padded_height});
+      auto loaded = prepare_engine(p, init, **backend, *derived,
+                                   gpu::Shape{.dims = {1, rife_planes, g.padded_height, g.padded_width}},
+                                   EngineLabel{.name = "RIFE",
+                                               .model = derived->stem().string(),
+                                               .width = g.padded_width,
+                                               .height = g.padded_height});
       if (!loaded) return std::unexpected(std::move(loaded.error()));
       if (!*loaded) return std::nullopt;
       rife_motion = std::move(**loaded);
     }
   }
   if (use_rife && !rife_motion) {
-    auto loaded = prepare_engine(
-        p, init, **backend, *rife_model,
-        gpu::Shape{.dims = {1, kernels::kRifeInputChannels, image_g.padded_height, image_g.padded_width}},
-        EngineLabel{.name = "RIFE",
-                    .model = rife_model->stem().string(),
-                    .width = image_g.padded_width,
-                    .height = image_g.padded_height});
+    auto loaded =
+        prepare_engine(p, init, **backend, *rife_model,
+                       gpu::Shape{.dims = {1, rife_planes, image_g.padded_height, image_g.padded_width}},
+                       EngineLabel{.name = "RIFE",
+                                   .model = rife_model->stem().string(),
+                                   .width = image_g.padded_width,
+                                   .height = image_g.padded_height});
     if (!loaded) return std::unexpected(std::move(loaded.error()));
     if (!*loaded) return std::nullopt;
     rife = std::move(**loaded);
@@ -296,6 +301,7 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
                                            .engine = engine.get(),
                                            .rife = rife.get(),
                                            .rife_motion = rife_motion.get(),
+                                           .rife_planes = rife_planes,
                                            .optical_flow_grid = flow_grid,
                                            .gmfss_pair = gmfss.pair.get(),
                                            .gmfss_fusion = gmfss.fusion.get(),

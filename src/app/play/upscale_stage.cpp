@@ -87,6 +87,10 @@ std::expected<std::unique_ptr<VideoStage>, Refusal> UpscaleStage::start(VideoSta
     return refuse(RefusalCode::FieldOutOfRange,
                   std::format("étage gpu : grille du flux optique {}", setup.optical_flow_grid));
   }
+  if ((setup.rife != nullptr || setup.rife_motion != nullptr) &&
+      !kernels::is_rife_input_planes(setup.rife_planes))
+    return refuse(RefusalCode::InputMismatch,
+                  std::format("étage gpu : RIFE à {} plans d'entrée", setup.rife_planes));
   if (estimators == 1 && setup.live == nullptr &&
       (setup.rife_factor.num <= setup.rife_factor.den || !valid_factor(setup.rife_factor))) {
     return refuse(RefusalCode::FieldOutOfRange, std::format("étage gpu : RIFE {} hors de ]1, {}]",
@@ -158,7 +162,7 @@ std::expected<void, Refusal> UpscaleStage::allocate() {
     }
   } else if (interpolates()) {
     const kernels::RifeGeometry g = kernels::rife_geometry(setup_.rife_width, setup_.rife_height);
-    if (auto ok = alloc(rife_in_, planes(kernels::kRifeInputChannels, g.padded_width, g.padded_height)); !ok)
+    if (auto ok = alloc(rife_in_, planes(setup_.rife_planes, g.padded_width, g.padded_height)); !ok)
       return ok;
     if (setup_.rife != nullptr) {
       if (auto ok = alloc(rife_out_, planes(3, g.padded_width, g.padded_height)); !ok) return ok;

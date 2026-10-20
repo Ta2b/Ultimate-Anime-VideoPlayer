@@ -197,44 +197,49 @@ TEST_CASE("KernelOps : entrée de RIFE depuis deux images RGB, contre kernels/re
     write_tensor(*backend, ta->tensor(), rgb_bytes(a, type));
     write_tensor(*backend, tb->tensor(), rgb_bytes(b, type));
     const k::RifeGeometry g = k::rife_geometry(70, 38);
-    auto input = rgb_tensor(*backend, g.padded_width, g.padded_height, type, k::kRifeInputChannels);
-    for (const float t : {0.5F, 0.25F}) {
-      CAPTURE(t);
-      REQUIRE(ops.rife_input(ta->tensor(), tb->tensor(), t, input->tensor()));
-      // ref::rife_input prend les images déjà remplies : noir de studio de la chaîne (0) autour.
-      const auto pad = [&](const k::RgbImage& i) {
-        k::RgbImage p(g.padded_width, g.padded_height, 0.0F);
-        for (std::size_t c = 0; c < 3; ++c) {
-          for (int y = 0; y < 38; ++y) {
-            for (int x = 0; x < 70; ++x) p.planes[c].at(x + g.left, y + g.top) = i.planes[c].at(x, y);
-          }
+    // ref::rife_input prend les images déjà remplies : noir de studio de la chaîne (0) autour.
+    const auto pad = [&](const k::RgbImage& i) {
+      k::RgbImage p(g.padded_width, g.padded_height, 0.0F);
+      for (std::size_t c = 0; c < 3; ++c) {
+        for (int y = 0; y < 38; ++y) {
+          for (int x = 0; x < 70; ++x) p.planes[c].at(x + g.left, y + g.top) = i.planes[c].at(x, y);
         }
-        return p;
-      };
-      const auto want = k::ref::rife_input(pad(a), pad(b), t);
-      REQUIRE(want);
-      const std::size_t element = type == TensorType::F16 ? 2 : 4;
-      const std::size_t plane =
-          static_cast<std::size_t>(g.padded_width) * static_cast<std::size_t>(g.padded_height);
-      const auto bytes = read_tensor(*backend, input->tensor(), element * plane * k::kRifeInputChannels);
-      for (int c = 0; c < k::kRifeInputChannels; c += 3) {
-        // Trois plans à la fois, lus comme une image RGB (le dernier groupe déborde : 9 à 11).
-        const int count = std::min(3, k::kRifeInputChannels - c);
-        for (int p = 0; p < count; ++p) {
-          const std::span<const std::byte> one(
-              bytes.data() + (static_cast<std::size_t>(c + p) * plane * element), plane * element);
-          std::vector<std::byte> three(one.begin(), one.end());
-          three.resize(3 * plane * element);
-          const k::RgbImage got = rgb_from(three, g.padded_width, g.padded_height, type);
+      }
+      return p;
+    };
+    // v1 : les 11 plans ; v2 : les 7 premiers, la grille est dans le graphe.
+    for (const int planes : {k::kRifeInputChannels, k::kRifeV2InputChannels}) {
+      CAPTURE(planes);
+      auto input = rgb_tensor(*backend, g.padded_width, g.padded_height, type, planes);
+      for (const float t : {0.5F, 0.25F}) {
+        CAPTURE(t);
+        REQUIRE(ops.rife_input(ta->tensor(), tb->tensor(), t, input->tensor()));
+        const auto want = k::ref::rife_input(pad(a), pad(b), t);
+        REQUIRE(want);
+        const std::size_t element = type == TensorType::F16 ? 2 : 4;
+        const std::size_t plane =
+            static_cast<std::size_t>(g.padded_width) * static_cast<std::size_t>(g.padded_height);
+        const auto got = planes_from(
+            read_tensor(*backend, input->tensor(), element * plane * static_cast<std::size_t>(planes)),
+            g.padded_width, g.padded_height, planes, type);
+        for (int c = 0; c < planes; ++c) {
+          CAPTURE(c);
           k::RgbImage expect(g.padded_width, g.padded_height);
-          expect.planes[0] = (*want)[static_cast<std::size_t>(c + p)];
-          k::RgbImage only(g.padded_width, g.padded_height);
-          only.planes[0] = got.planes[0];
-          CAPTURE(c + p);
-          CHECK(max_abs_diff(only, stored(expect, type)) <= k::tolerance::kRgbF16);
+          expect.planes[0] = (*want)[static_cast<std::size_t>(c)];
+          float worst = 0.0F;
+          const k::PlaneF stored_plane = stored(expect, type).planes[0];
+          for (std::size_t i = 0; i < plane; ++i)
+            worst =
+                std::max(worst, std::fabs(got[static_cast<std::size_t>(c)].data[i] - stored_plane.data[i]));
+          CHECK(worst <= k::tolerance::kRgbF16);
         }
       }
     }
+    auto input = rgb_tensor(*backend, g.padded_width, g.padded_height, type, k::kRifeInputChannels);
+    auto eight = rgb_tensor(*backend, g.padded_width, g.padded_height, type, 8);
+    const auto odd = ops.rife_input(ta->tensor(), tb->tensor(), 0.5F, eight->tensor());
+    REQUIRE_FALSE(odd);
+    CHECK(odd.error().code == RefusalCode::ShapeInvalid);
     const auto refused = ops.rife_input(ta->tensor(), tb->tensor(), 1.0F, input->tensor());
     REQUIRE_FALSE(refused);
     CHECK(refused.error().code == RefusalCode::FieldOutOfRange);

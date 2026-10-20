@@ -44,9 +44,10 @@ __global__ void rife_input(RifeInputParams p) {
     out[static_cast<std::size_t>(3 + c) * plane + i] =
         inside ? b[static_cast<std::size_t>(c) * source_plane + j] : black;
   }
-  if (p.planes < 11) return;  // GMFSS : les deux images seules
-  // kernels::rife_mesh et rife_mesh_step.
+  if (p.planes <= 6) return;  // GMFSS : les deux images seules
   out[6 * plane + i] = __float2half_rn(p.time);
+  if (p.planes < 11) return;  // RIFE v2 : la grille est dans le graphe
+  // kernels::rife_mesh et rife_mesh_step.
   out[7 * plane + i] =
       __float2half_rn(2.0F * static_cast<float>(x) / static_cast<float>(p.padded_width - 1) - 1.0F);
   out[8 * plane + i] =

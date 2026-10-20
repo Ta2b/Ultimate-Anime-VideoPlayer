@@ -96,6 +96,7 @@ struct RifeConstantsPush {
   std::uint32_t width;
   std::uint32_t height;
   float t;
+  std::uint32_t planes;  // 11, ou 7 (v2) : l'instant seul
 };
 
 struct WarpPush {
@@ -173,7 +174,7 @@ struct PairPush {
 };
 
 static_assert(sizeof(ChromaPush) == 32 && sizeof(PlanesPush) == 32 && sizeof(ResamplePush) == 16);
-static_assert(sizeof(YuvWindowPush) == 44 && sizeof(RgbWindowPush) == 28 && sizeof(RifeConstantsPush) == 12);
+static_assert(sizeof(YuvWindowPush) == 44 && sizeof(RgbWindowPush) == 28 && sizeof(RifeConstantsPush) == 16);
 static_assert(sizeof(RifeFramesPush) == 28 && sizeof(RgbPairPush) == 12 && sizeof(FlowMaxPush) == 24);
 static_assert(sizeof(WarpPush) == 44 && sizeof(TransferPush) == 32 && sizeof(PairPush) == 24);
 static_assert(sizeof(SplatPush) == 20 && sizeof(SplatNormalizePush) == 12);

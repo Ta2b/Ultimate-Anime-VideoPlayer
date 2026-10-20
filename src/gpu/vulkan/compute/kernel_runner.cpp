@@ -26,10 +26,11 @@ bool is_bt1886(TransferOp op) {
 }  // namespace
 
 Done KernelRunner::rife_constants(Recorder& recorder, const TensorView& input, float t) {
-  if (auto ok = check_tensor(input, kernels::kRifeInputChannels, context_->caps().enabled, "entrée RIFE");
-      !ok) {
-    return ok;
+  if (!kernels::is_rife_input_planes(input.planes)) {
+    return refuse(RefusalCode::InputMismatch,
+                  std::format("entrée RIFE : {} plans, 11 ou 7 attendus", input.planes));
   }
+  if (auto ok = check_tensor(input, input.planes, context_->caps().enabled, "entrée RIFE"); !ok) return ok;
   if (input.width % kernels::kRifeAlign != 0 || input.height % kernels::kRifeAlign != 0) {
     return refuse(RefusalCode::InputMismatch, std::format("entrée RIFE {}x{} : multiples de {} attendus",
                                                           input.width, input.height, kernels::kRifeAlign));
@@ -37,7 +38,7 @@ Done KernelRunner::rife_constants(Recorder& recorder, const TensorView& input, f
   if (!(t >= 0.0F && t <= 1.0F)) {
     return refuse(RefusalCode::FieldOutOfRange, std::format("instant RIFE {} hors de [0, 1]", t));
   }
-  const detail::RifeConstantsPush push{input.width, input.height, t};
+  const detail::RifeConstantsPush push{input.width, input.height, t, input.planes};
   const std::array buffers{input.buffer};
   return detail::run(*pipelines_, recorder, "rife_constants", input.precision, {}, buffers, {},
                      bytes_of(push), {groups_for(input.width), groups_for(input.height), 1});

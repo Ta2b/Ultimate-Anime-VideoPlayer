@@ -8,6 +8,8 @@
 // Tests : tests/unit/kernels/rife_test.cpp.
 #pragma once
 
+#include <cstdint>
+
 #include "kernels/spec/resample.h"
 
 namespace ajp::kernels {
@@ -59,6 +61,12 @@ inline constexpr Siting kRifeSiting = Siting::Left;
 //   7 : grille X = 2x / (pw − 1) − 1, 8 : grille Y = 2y / (ph − 1) − 1,
 //   9 : 2 / (pw − 1), 10 : 2 / (ph − 1).
 inline constexpr int kRifeInputChannels = 11;
+// Entrée v2 (dossier rife_v2 de vs-mlrt) : les plans 0 à 6 seuls, la grille est calculée dans le
+// graphe.
+inline constexpr int kRifeV2InputChannels = 7;
+constexpr bool is_rife_input_planes(std::int64_t planes) {
+  return planes == kRifeInputChannels || planes == kRifeV2InputChannels;
+}
 inline constexpr int kRifeChannelA = 0;
 inline constexpr int kRifeChannelB = 3;
 inline constexpr int kRifeChannelTime = 6;

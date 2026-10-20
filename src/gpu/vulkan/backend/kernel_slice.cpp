@@ -50,24 +50,27 @@ std::expected<void, Refusal> VulkanKernelOps::rife_input(const Tensor& a, const 
   if (!va) return std::unexpected(va.error());
   auto vb = tensor_view(b, 3, "rife_input : image b");
   if (!vb) return std::unexpected(vb.error());
-  auto vi = tensor_view(input, kernels::kRifeInputChannels, "rife_input : entrée");
+  auto vi = tensor_view(input, 0, "rife_input : entrée");
   if (!vi) return std::unexpected(vi.error());
+  if (!kernels::is_rife_input_planes(vi->planes)) {
+    return refuse_slice(RefusalCode::ShapeInvalid,
+                        std::format("rife_input : {} plans, 11 (v1) ou 7 (v2) attendus", vi->planes));
+  }
   if (va->width != vb->width || va->height != vb->height) {
     return refuse_slice(RefusalCode::ShapeInvalid, "rife_input : deux images RGB de même taille attendues");
   }
   const kernels::RifeGeometry g =
       kernels::rife_geometry(static_cast<int>(va->width), static_cast<int>(va->height));
   if (std::cmp_not_equal(vi->width, g.padded_width) || std::cmp_not_equal(vi->height, g.padded_height)) {
-    return refuse_slice(RefusalCode::ShapeInvalid,
-                        std::format("rife_input : tenseur 1×{}×{}×{} attendu", kernels::kRifeInputChannels,
-                                    g.padded_height, g.padded_width));
+    return refuse_slice(RefusalCode::ShapeInvalid, std::format("rife_input : tenseur 1×{}×{}×{} attendu",
+                                                               vi->planes, g.padded_height, g.padded_width));
   }
   OpKey key;
   key.add(40);
   for (const TensorView* v : {&*va, &*vb, &*vi}) add_view(key, *v);
   key.add(std::bit_cast<std::uint32_t>(t));
   auto rec = recording(key, [&](Recorder& r) -> Done {
-    if (auto ok = runner_.rife_frames(r, *va, *vb, *vi, kStudioBlack); !ok) return ok;
+    if (auto ok = runner_.rife_frames(r, *va, *vb, *vi, kStudioBlack, vi->planes); !ok) return ok;
     return runner_.rife_constants(r, *vi, t);
   });
   if (!rec) return std::unexpected(rec.error());

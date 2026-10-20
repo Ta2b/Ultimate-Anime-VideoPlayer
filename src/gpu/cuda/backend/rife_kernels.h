@@ -26,7 +26,8 @@ struct RifeInputParams {
   float black = 0.0F;     // noir de studio en RGB : 0 en plage limitée, 16/255 en plage pleine
   float time = 0.5F;      // instant t, 0 < t < 1
   void* input = nullptr;  // 1 × planes × padded_height × padded_width, FP16
-  // 11 pour RIFE ; 6 pour GMFSS (kernels/spec/gmfss.h), les deux images seules, sans instant ni grilles.
+  // 11 pour RIFE ; 7 pour RIFE v2 (images et instant, sans grilles) ; 6 pour GMFSS
+  // (kernels/spec/gmfss.h), les deux images seules.
   int planes = 11;
 };
 

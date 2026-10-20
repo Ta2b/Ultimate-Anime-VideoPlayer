@@ -17,4 +17,8 @@ namespace ajp::app::play {
 std::expected<std::filesystem::path, Refusal> motion_model(const std::filesystem::path& rife_onnx,
                                                            const std::filesystem::path& dir);
 
+// Les plans d'entrée du modèle RIFE : 11 (exports v1 de vs-mlrt) ou 7 (v2, grille dans le graphe).
+// Refus : ModelUnreadable, InputMismatch pour un autre nombre de plans.
+std::expected<int, Refusal> rife_input_planes(const std::filesystem::path& rife_onnx);
+
 }  // namespace ajp::app::play

@@ -40,8 +40,9 @@ std::expected<void, Refusal> TensorRtBackend::rife_input(const Tensor& a, const 
     return refuse(RefusalCode::ShapeInvalid, "rife_input : deux images RGB FP16 de même taille attendues");
   }
   const kernels::RifeGeometry g = kernels::rife_geometry(width_of(a), height_of(a));
-  if (!fp16_planes(input, kernels::kRifeInputChannels) || width_of(input) != g.padded_width ||
-      height_of(input) != g.padded_height) {
+  const std::int64_t planes = input.shape.dims[1];
+  if (!kernels::is_rife_input_planes(planes) || !fp16_planes(input, planes) ||
+      width_of(input) != g.padded_width || height_of(input) != g.padded_height) {
     return refuse(RefusalCode::ShapeInvalid,
                   std::format("rife_input : tenseur FP16 1×{}×{}×{} attendu", kernels::kRifeInputChannels,
                               g.padded_height, g.padded_width));
@@ -60,7 +61,8 @@ std::expected<void, Refusal> TensorRtBackend::rife_input(const Tensor& a, const 
                                .top = g.top,
                                .black = 0.0F,  // la chaîne ingère en plage limitée : le noir vaut 0
                                .time = t,
-                               .input = address(input)};
+                               .input = address(input),
+                               .planes = static_cast<int>(planes)};
   GpuTiming& timing = stage("entrée de RIFE");
   timing.begin(stream_);
   auto launched = cuda_check(launch_rife_input(params, stream_), "rife_input<<<>>>");
