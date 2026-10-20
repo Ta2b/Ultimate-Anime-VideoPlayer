@@ -108,6 +108,19 @@ Done check_yuv(const YuvView& view, std::string_view what) {
   return check_plane(l.cr, cw * bytes, ch, view.buffer.size, what, "Cr");
 }
 
+Done check_planes(const YuvPlanes& planes, std::string_view what) {
+  if (auto ok = check_dimensions(planes.format, planes.width, planes.height, what); !ok) return ok;
+  if (!kernels::info(planes.format).interleaved) {
+    return refuse(RefusalCode::InputMismatch,
+                  std::format("{} : plans d'une image {}, NV12, P010 ou P016 attendue", what,
+                              static_cast<int>(planes.format)));
+  }
+  if (planes.views[0] == VK_NULL_HANDLE || planes.views[1] == VK_NULL_HANDLE) {
+    return refuse(RefusalCode::InputMismatch, std::format("{} : vue de plan absente", what));
+  }
+  return {};
+}
+
 Done check_tensor(const TensorView& tensor, std::uint32_t planes, const Features& enabled,
                   std::string_view what) {
   if (tensor.planes != planes) {

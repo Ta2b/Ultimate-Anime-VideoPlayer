@@ -77,6 +77,9 @@
   X(vkCmdFillBuffer)                      \
   X(vkCmdCopyBuffer)                      \
   X(vkCmdCopyImageToBuffer)               \
+  X(vkCmdCopyBufferToImage)               \
+  X(vkCreateSampler)                      \
+  X(vkDestroySampler)                     \
   X(vkCreateSemaphore)                    \
   X(vkDestroySemaphore)                   \
   X(vkWaitSemaphores)                     \

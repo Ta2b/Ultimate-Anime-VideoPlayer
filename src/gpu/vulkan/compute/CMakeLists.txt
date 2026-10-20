@@ -17,6 +17,7 @@ ajp_add_module(vk_compute
     kernel_runner.cpp
     kernel_types.cpp
     kernels_color.cpp
+    kernels_planes.cpp
     kernels_slice.cpp
     kernels_window.cpp
     library.cpp
@@ -42,6 +43,7 @@ set(tensor_shaders
   "${glsl}/gmfss_normalize.comp"
   "${glsl}/gmfss_splat.comp"
   "${glsl}/ingest_combine.comp"
+  "${glsl}/ingest_combine_planes.comp"
   "${glsl}/output_matrix.comp"
   "${glsl}/resample_h.comp"
   "${glsl}/resample_v.comp"
@@ -58,10 +60,14 @@ ajp_add_spirv(ajp_vk_compute
   SHADERS
     ${tensor_shaders}
     "${glsl}/block_diff.comp"
+    "${glsl}/block_diff_planes.comp"
     "${glsl}/ingest_chroma_h.comp"
+    "${glsl}/ingest_chroma_h_planes.comp"
     "${glsl}/output_chroma_v.comp"
     "${glsl}/scene_diff.comp"
+    "${glsl}/scene_diff_planes.comp"
     "${glsl}/yuv_window.comp"
+    "${glsl}/yuv_window_planes.comp"
   VARIANT f16
   DEFINES AJP_TENSOR_F16
   VARIANT_SHADERS ${tensor_shaders})

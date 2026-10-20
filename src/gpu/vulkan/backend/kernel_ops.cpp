@@ -107,6 +107,7 @@ VulkanKernelOps::~VulkanKernelOps() {
     upload_thread_.join();
   }
   context_.before_flush({});
+  release_plane_views();
   if (!context_.settle(queue_.last())) return;
   for (const RingView& v : ring_views_) context_.fn().vkDestroyImageView(context_.device(), v.view, nullptr);
 }

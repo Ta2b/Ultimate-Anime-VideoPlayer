@@ -2,6 +2,7 @@
 #pragma once
 
 #include <algorithm>
+#include <array>
 #include <cstdint>
 #include <expected>
 #include <string_view>
@@ -60,6 +61,15 @@ struct PlaneCopy {
 };
 // Deux plans (chroma entrelacée) ou trois.
 std::uint32_t plane_copies(const YuvView& v, std::array<PlaneCopy, 3>& out);
+
+// La VkImage multiplan de FFmpeg d'un format entrelacé, et le format de chacun de ses deux plans
+// vus séparément (planes.glsl) ; nul pour un format planaire.
+struct PlaneFormats {
+  VkFormat image = VK_FORMAT_UNDEFINED;
+  VkFormat luma = VK_FORMAT_UNDEFINED;
+  VkFormat chroma = VK_FORMAT_UNDEFINED;
+};
+const PlaneFormats* plane_formats(kernels::Format format);
 
 // Ferme les accès Vulkan ouverts par begin_vulkan_access : release_all après la soumission,
 // ou, à la destruction, sans soumission (une erreur entre l'ouverture et vkQueueSubmit).

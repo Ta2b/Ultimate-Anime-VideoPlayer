@@ -1,0 +1,74 @@
+#version 450
+// Fenêtre d'un plan lu directement dans une image décodée (planes.glsl) : le remplissage mod-64
+// centré de RIFE depuis le plan de luma (edge AJP_EDGE_LUMA) ou le plan de chroma entrelacée
+// (AJP_EDGE_CHROMA, deux échantillons par texel), comme yuv_window depuis un tampon.
+// Contrat : kernels/spec/rife.h ; référence : kernels/ref/rife.cpp (rife_pad).
+#extension GL_GOOGLE_include_directive : require
+#include "ajp_kernels_spec.glsl"
+#include "common.glsl"
+#include "yuv.glsl"
+#include "planes.glsl"
+
+layout(local_size_x = 16, local_size_y = 16) in;
+
+layout(std430, binding = 0) writeonly buffer Destination { uint words[]; } dst;
+layout(binding = 1) uniform sampler2D plane;
+
+const uint AJP_EDGE_LUMA = 0u;    // bord rife_pad_luma
+const uint AJP_EDGE_CHROMA = 1u;  // bord rife_pad_chroma
+
+layout(push_constant) uniform Push {
+  uint src_offset;  // disposition source de yuv_window, sans objet ici
+  uint src_pitch;
+  uint src_width;  // en échantillons
+  uint src_height;
+  uint dst_offset;
+  uint dst_pitch;
+  uint dst_width;  // en échantillons
+  uint dst_height;
+  int shift_x;  // en échantillons
+  int shift_y;
+  uint edge;  // AJP_EDGE_LUMA ou AJP_EDGE_CHROMA
+} pc;
+
+uint pad_luma() {
+  if (AJP_FORMAT == AJP_FORMAT_NV12) return AJP_RIFE_PAD_LUMA_NV12;
+  if (AJP_FORMAT == AJP_FORMAT_P010) return AJP_RIFE_PAD_LUMA_P010;
+  if (AJP_FORMAT == AJP_FORMAT_P016) return AJP_RIFE_PAD_LUMA_P016;
+  if (AJP_FORMAT == AJP_FORMAT_YUV420P) return AJP_RIFE_PAD_LUMA_YUV420P;
+  if (AJP_FORMAT == AJP_FORMAT_YUV420P10) return AJP_RIFE_PAD_LUMA_YUV420P10;
+  return AJP_RIFE_PAD_LUMA_YUV444P16;
+}
+
+uint pad_chroma() {
+  if (AJP_FORMAT == AJP_FORMAT_NV12) return AJP_RIFE_PAD_CHROMA_NV12;
+  if (AJP_FORMAT == AJP_FORMAT_P010) return AJP_RIFE_PAD_CHROMA_P010;
+  if (AJP_FORMAT == AJP_FORMAT_P016) return AJP_RIFE_PAD_CHROMA_P016;
+  if (AJP_FORMAT == AJP_FORMAT_YUV420P) return AJP_RIFE_PAD_CHROMA_YUV420P;
+  if (AJP_FORMAT == AJP_FORMAT_YUV420P10) return AJP_RIFE_PAD_CHROMA_YUV420P10;
+  return AJP_RIFE_PAD_CHROMA_YUV444P16;
+}
+
+uint source_code(uint x, uint y) {
+  int sx = int(x) - pc.shift_x;
+  int sy = int(y) - pc.shift_y;
+  if (sx < 0 || sy < 0 || sx >= int(pc.src_width) || sy >= int(pc.src_height)) {
+    return pc.edge == AJP_EDGE_LUMA ? pad_luma() : pad_chroma();
+  }
+  return pc.edge == AJP_EDGE_LUMA ? luma_code(plane, uint(sx), uint(sy))
+                                  : chroma_code_at(plane, uint(sx), uint(sy));
+}
+
+void main() {
+  uint word = gl_GlobalInvocationID.x;
+  uint y = gl_GlobalInvocationID.y;
+  uint words_per_row = (pc.dst_width * AJP_SAMPLE_BYTES + 3u) / 4u;
+  if (word >= words_per_row || y >= pc.dst_height) return;
+  uint packed = 0u;
+  for (uint s = 0u; s < AJP_SAMPLES_PER_WORD; ++s) {
+    uint x = word * AJP_SAMPLES_PER_WORD + s;
+    if (x >= pc.dst_width) break;
+    packed |= sample_to_word(source_code(x, y), s);
+  }
+  dst.words[(pc.dst_offset + y * pc.dst_pitch) / 4u + word] = packed;
+}

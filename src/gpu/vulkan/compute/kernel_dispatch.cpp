@@ -69,4 +69,20 @@ Done run(PipelineCache& pipelines, Recorder& recorder, std::string_view shader, 
   return recorder.dispatch(**pipeline, buffers, images, push, groups, order);
 }
 
+Done run_planes(PipelineCache& pipelines, Recorder& recorder, std::string_view shader, Precision variant,
+                std::span<const std::uint32_t> constants, std::span<const BufferView> buffers,
+                std::span<const VkImageView> sampled, std::span<const std::byte> push,
+                std::array<std::uint32_t, 3> groups) {
+  std::string name(shader);
+  if (variant == Precision::F16) name += "_f16";
+  auto pipeline = pipelines.get({.shader = name,
+                                 .constants = constants,
+                                 .buffers = static_cast<std::uint32_t>(buffers.size()),
+                                 .images = 0,
+                                 .sampled = static_cast<std::uint32_t>(sampled.size()),
+                                 .push_bytes = static_cast<std::uint32_t>(push.size())});
+  if (!pipeline) return std::unexpected(pipeline.error());
+  return recorder.dispatch(**pipeline, buffers, sampled, push, groups, DispatchOrder::AfterPrevious);
+}
+
 }  // namespace ajp::gpu::vk::detail

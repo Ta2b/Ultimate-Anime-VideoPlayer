@@ -82,6 +82,12 @@ struct VulkanImageAccess {
   std::uint64_t wait_value = 0;    // valeur courante de l'image
   std::uint64_t signal_value = 0;  // wait_value + 1
   VulkanImageState state;
+  // Comment l'image a été créée (AVVulkanFramesContext) : ses usages (VkImageUsageFlags), ses
+  // drapeaux (VkImageCreateFlags) et son format (VkFormat). Un lecteur en lit les plans en place
+  // quand elle est échantillonnable à format mutable ; 0 : inconnu, il la copie.
+  std::uint32_t usage = 0;
+  std::uint32_t flags = 0;
+  std::uint32_t format = 0;
 };
 
 // Propriétaire des pixels. media l'implémente autour d'une référence AVFrame ;

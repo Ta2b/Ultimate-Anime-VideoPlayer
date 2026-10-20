@@ -227,5 +227,11 @@ Done run(PipelineCache& pipelines, Recorder& recorder, std::string_view shader, 
          std::span<const std::uint32_t> constants, std::span<const BufferView> buffers,
          std::span<const VkImageView> images, std::span<const std::byte> push,
          std::array<std::uint32_t, 3> groups, DispatchOrder order = DispatchOrder::AfterPrevious);
+// Comme run, pour un shader qui lit des images échantillonnées (les plans d'une image décodée) :
+// aucune image de stockage, sampled aux bindings qui suivent les tampons.
+Done run_planes(PipelineCache& pipelines, Recorder& recorder, std::string_view shader, Precision variant,
+                std::span<const std::uint32_t> constants, std::span<const BufferView> buffers,
+                std::span<const VkImageView> sampled, std::span<const std::byte> push,
+                std::array<std::uint32_t, 3> groups);
 
 }  // namespace ajp::gpu::vk::detail

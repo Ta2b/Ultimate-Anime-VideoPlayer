@@ -80,7 +80,12 @@ part de la disposition et de la file notées dans l'image, et signale
 `signal_value` ; `end_vulkan_access()`, appelé juste après `vkQueueSubmit`, note
 la nouvelle valeur et la nouvelle disposition (rien si rien n'a été soumis).
 `ready_value` n'est qu'un instantané de la livraison. Une `FrameData` qui ne
-redéfinit pas l'accès Vulkan le refuse (`FormatUnsupported`).
+redéfinit pas l'accès Vulkan le refuse (`FormatUnsupported`). L'accès dit aussi
+comment l'image a été créée (`usage`, `flags`, `format`) : échantillonnable à
+format mutable, au format multiplan de NV12, P010 ou P016, un backend en lit les
+plans en place par des vues d'un plan ; sinon il la copie une fois dans un tampon
+qu'il relit pour les opérations suivantes sur la même image (mesure, remplissage
+RIFE, ingestion), tant que l'image vit.
 
 ### Horodatage inconnu
 
@@ -198,6 +203,13 @@ rapporteur : une exception qui s'en échappe devient `ThreadFailed` et lui est
 remise, et le thread s'arrête sans emporter le processus. Un module dont le
 thread démarre dans `start()` plutôt que dans son constructeur peut ainsi
 rendre le refus à son appelant.
+
+Threads du lecteur : main (SDL, interface, rendu), source (lecture et décodage),
+audio, sous-titres, prepare (la chaîne GPU). Threads des backends, lancés au
+premier besoin : `envoi` (backend Vulkan : copie des images hôte vers les tampons
+d'envoi, attendue seulement quand le lot part) et `openvino` (une requête
+d'inférence à la fois, exécutée hors du thread prepare pendant que la file Vulkan
+avance, `run_deferred`). Chacun n'attend que sa boîte `Inbox`.
 
 ## Journal
 

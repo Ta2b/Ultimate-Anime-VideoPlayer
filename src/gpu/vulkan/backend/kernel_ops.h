@@ -22,6 +22,7 @@
 #include <span>
 #include <stop_token>
 #include <thread>
+#include <utility>
 #include <vector>
 
 #include "core/frame.h"
@@ -113,7 +114,9 @@ class VulkanKernelOps final : public KernelOps {
 
   std::size_t recordings() const { return recordings_.size(); }
   std::size_t retained_frames() const { return retained_.size(); }
-  std::size_t uploads_pending() const;  // copies d'images hôte en file ou en cours sur le fil d'envoi
+  std::size_t uploads_pending() const;   // copies d'images hôte en file ou en cours sur le fil d'envoi
+  std::uint64_t uploads_queued() const;  // copies d'images hôte mises en file, depuis le début
+  std::size_t plane_views() const { return plane_views_.size(); }  // images décodées lues en place
 
  private:
   struct Cached {
@@ -132,6 +135,11 @@ class VulkanKernelOps final : public KernelOps {
     std::uint64_t used = 0;        // staging_uses_ à sa dernière remise
     std::uint64_t upload =
         0;  // dernier envoi hôte vers lui (uploads_queued_) ; occupé tant qu'il n'est pas fait
+    // L'image décodée qu'il contient (mémo de copie) : une opération suivante sur la même image
+    // (mesure, puis remplissage RIFE, puis ingestion) la relit sans la recopier. Valide tant que
+    // l'image vit (le lot recycle les adresses) et que le tampon n'a pas reçu une autre image.
+    const FrameData* held_ptr = nullptr;
+    std::weak_ptr<const FrameData> held;
   };
   // Une image hôte à recopier dans un tampon d'envoi, par le fil d'envoi : chaque plan, ligne
   // par ligne. L'image est tenue le temps de la copie.
@@ -168,13 +176,21 @@ class VulkanKernelOps final : public KernelOps {
     VkImageView view = VK_NULL_HANDLE;
     std::uint64_t last_write = 0;
   };
-  // Une image décodée prête à lire : sa vue YUV, et son accès Vulkan ouvert s'il y en a un.
+  // Une image décodée prête à lire : sa vue YUV dans un tampon de transfert (staging), ou ses
+  // plans lus en place (planes, staging SIZE_MAX), et son accès Vulkan ouvert s'il y en a un.
   struct Source {
     YuvView view;
     std::size_t staging = 0;
     VkImage image = VK_NULL_HANDLE;
     std::uint64_t pool = 0;  // pool_generation_ du lot de l'image ; 0 pour une image hôte
     std::optional<VulkanImageAccess> access;
+    std::optional<YuvPlanes> planes;
+  };
+  // Les vues des deux plans d'une image décodée lue en place, gardées tant que son lot vit.
+  struct PlaneViews {
+    std::uint64_t image = 0;
+    std::uint64_t pool = 0;
+    std::array<VkImageView, 2> views{};
   };
 
   // Garder les poses : previous nul, la paire précédente était tenue.
@@ -193,7 +209,23 @@ class VulkanKernelOps final : public KernelOps {
   std::expected<void, Refusal> submit(Recording& recording, std::span<const TimelinePoint> waits = {},
                                       std::span<const TimelinePoint> signals = {});
   void reclaim();
-  std::expected<Source, Refusal> source(const DecodedFrame& frame, std::size_t avoid = SIZE_MAX);
+  // L'image prête à lire : en place si direct et si son lot le permet (échantillonnable, format
+  // mutable, format multiplan connu), depuis le tampon qui la contient déjà (mémo), sinon
+  // recopiée (le fil d'envoi pour une image hôte, le GPU pour une image Vulkan) dans un tampon
+  // autre que avoid.
+  std::expected<Source, Refusal> source(const DecodedFrame& frame, std::size_t avoid = SIZE_MAX,
+                                        bool direct = true);
+  // Le tampon qui contient déjà l'image, de la forme demandée et autre que avoid.
+  std::optional<std::size_t> memo_for(const DecodedFrame& frame, kernels::Format format, std::uint32_t width,
+                                      std::uint32_t height, std::size_t avoid) const;
+  // Les plans de l'image lus en place : ses vues, créées à la première lecture.
+  std::expected<YuvPlanes, Refusal> plane_views_for(VkImage image, kernels::Format format,
+                                                    std::uint32_t width, std::uint32_t height);
+  // Attend la file et détruit les vues de plans (changement de lot, fin de vie).
+  void release_plane_views();
+  // Les plans de l'image se lisent en place : créée échantillonnable à format mutable, au format
+  // multiplan de format, dont les plans s'échantillonnent sur l'appareil.
+  bool reads_in_place(const VulkanImageAccess& access, kernels::Format format);
   std::expected<std::size_t, Refusal> staging_for(kernels::Format format, std::uint32_t width,
                                                   std::uint32_t height, MemoryUse use, std::size_t avoid);
   // Met l'image hôte en file pour le fil d'envoi (lancé au premier appel), vers le tampon slot.
@@ -204,7 +236,12 @@ class VulkanKernelOps final : public KernelOps {
   std::expected<void, Refusal> uploads_wait();
   std::uint64_t uploads_done() const;
   void serve_uploads(const std::stop_token& stop);
+  // Passage de l'image en GENERAL sur notre file (barrière depuis son état), puis sa copie plan
+  // par plan vers son tampon (copy_image) ou rien d'autre (enter_image : lecture en place).
+  void enter_image(VkCommandBuffer cb, const Source& src) const;
   void copy_image(VkCommandBuffer cb, const Source& src) const;
+  // enter_image ou copy_image selon la source, dans l'enregistrement.
+  Done prepare_image(Recorder& r, const Source& src) const;
   static void add_source(OpKey& key, const Source& src);
   std::expected<void, Refusal> submit_frames(Recording& recording, std::span<Source> sources,
                                              std::span<const DecodedFrame* const> frames);
@@ -229,6 +266,9 @@ class VulkanKernelOps final : public KernelOps {
   std::vector<Staging> staging_;
   std::uint64_t staging_uses_ = 0;
   std::vector<Retained> retained_;
+  std::vector<PlaneViews> plane_views_;
+  // Formats d'image dont l'échantillonnage des plans a été vérifié (reads_in_place), et verdict.
+  std::vector<std::pair<std::uint32_t, bool>> plane_formats_;
   // Le fil d'envoi : les copies d'images hôte, hors du fil du GPU, attendues seulement quand le
   // lot part (uploads_wait), d'ordinaire déjà faites. Sa boîte reçoit les envois ; le compte des
   // envois faits et le refus du fil, sous uploads_mutex_, réveillent le fil du GPU.

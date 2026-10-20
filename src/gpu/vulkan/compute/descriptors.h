@@ -18,7 +18,7 @@ namespace ajp::gpu::vk {
 struct DescriptorLimits {
   std::uint32_t sets = 64;      // dispatchs par enregistrement
   std::uint32_t buffers = 512;  // tampons de stockage, tous ensembles confondus
-  std::uint32_t images = 16;    // images de stockage
+  std::uint32_t images = 16;    // images, de stockage ou échantillonnées
 };
 
 class DescriptorArena {
@@ -33,7 +33,9 @@ class DescriptorArena {
   ~DescriptorArena();
 
   // Un ensemble pour ce pipeline, ses tampons aux bindings 0..n−1 puis ses images (vues en
-  // VK_IMAGE_LAYOUT_GENERAL). Refus : GpuMemoryExhausted (bornes atteintes).
+  // VK_IMAGE_LAYOUT_GENERAL) : celles de stockage (pipeline.images()), puis les échantillonnées
+  // (pipeline.sampled(), avec l'échantillonneur immuable du pipeline). Refus : GpuMemoryExhausted
+  // (bornes atteintes).
   std::expected<VkDescriptorSet, Refusal> bind(const Pipeline& pipeline, std::span<const BufferView> buffers,
                                                std::span<const VkImageView> images);
 

@@ -19,7 +19,9 @@ std::expected<DescriptorArena, Refusal> DescriptorArena::create(const VkContext&
   }
   const std::array sizes{
       VkDescriptorPoolSize{.type = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, .descriptorCount = limits.buffers},
-      VkDescriptorPoolSize{.type = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, .descriptorCount = limits.images}};
+      VkDescriptorPoolSize{.type = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, .descriptorCount = limits.images},
+      VkDescriptorPoolSize{.type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+                           .descriptorCount = limits.images}};
   const VkDescriptorPoolCreateInfo info{.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO,
                                         .maxSets = limits.sets,
                                         .poolSizeCount = static_cast<std::uint32_t>(sizes.size()),
@@ -119,7 +121,8 @@ std::expected<VkDescriptorSet, Refusal> DescriptorArena::bind(const Pipeline& pi
                       .dstSet = set,
                       .dstBinding = buffer_count + i,
                       .descriptorCount = 1,
-                      .descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE,
+                      .descriptorType = i < pipeline.images() ? VK_DESCRIPTOR_TYPE_STORAGE_IMAGE
+                                                              : VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
                       .pImageInfo = &image_infos[i]});
   }
   context_->fn().vkUpdateDescriptorSets(context_->device(), static_cast<std::uint32_t>(writes.size()),

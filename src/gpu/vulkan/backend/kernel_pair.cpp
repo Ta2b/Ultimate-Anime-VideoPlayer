@@ -41,6 +41,8 @@ std::expected<void, Refusal> VulkanKernelOps::rife_pad(const DecodedFrame& frame
   auto pad = staging_for(*format, static_cast<std::uint32_t>(g.padded_width),
                          static_cast<std::uint32_t>(g.padded_height), MemoryUse::Device, src->staging);
   if (!pad) return std::unexpected(pad.error());
+  staging_[*pad].held_ptr = nullptr;  // le tampon reçoit l'image remplie : son mémo tombe
+  staging_[*pad].held.reset();
   const Staging& p = staging_[*pad];
   const YuvView padded_yuv{
       .buffer = p.buffer.view(), .format = *format, .width = p.width, .height = p.height, .layout = p.layout};
@@ -52,10 +54,12 @@ std::expected<void, Refusal> VulkanKernelOps::rife_pad(const DecodedFrame& frame
   detail::add_view(key, *dst);
   key.add(static_cast<std::uint64_t>(rife.range));
   auto rec = recording(key, [&](Recorder& r) -> Done {
-    if (src->access) {
-      if (auto ok = r.commands([&](VkCommandBuffer cb) { copy_image(cb, *src); }); !ok) return ok;
+    if (auto ok = prepare_image(r, *src); !ok) return ok;
+    if (auto ok = src->planes ? runner_.rife_pad(r, *src->planes, padded_yuv)
+                              : runner_.rife_pad(r, src->view, padded_yuv);
+        !ok) {
+      return ok;
     }
-    if (auto ok = runner_.rife_pad(r, src->view, padded_yuv); !ok) return ok;
     return runner_.ingest(r, padded_yuv, rife, *dst, kernels::kRifeChromaFilter);
   });
   if (!rec) return std::unexpected(rec.error());
@@ -108,9 +112,20 @@ std::expected<void, Refusal> VulkanKernelOps::measure(const DecodedFrame& a, con
   if (!sa) return std::unexpected(sa.error());
   detail::AccessGuard pending;
   if (sa->access) pending.hold(a.data.get(), sa->access->state);
-  auto sb = source(b, sa->staging);
+  // Les deux images se lisent de la même façon : b suit a, et si b ne se lit pas en place (image
+  // hôte, mémo), a repart par la copie.
+  auto sb = source(b, sa->staging, sa->planes.has_value());
   if (!sb) return std::unexpected(sb.error());
   if (sb->access) pending.hold(b.data.get(), sb->access->state);
+  if (sa->planes.has_value() && !sb->planes.has_value()) {
+    pending.release_all({}, false);
+    sa = source(a, SIZE_MAX, false);
+    if (!sa) return std::unexpected(sa.error());
+    if (sa->access) pending.hold(a.data.get(), sa->access->state);
+    sb = source(b, sa->staging, false);
+    if (!sb) return std::unexpected(sb.error());
+    if (sb->access) pending.hold(b.data.get(), sb->access->state);
+  }
   const auto w = static_cast<std::uint32_t>(a.width);
   const auto h = static_cast<std::uint32_t>(a.height);
   auto slot = score_slot(w, h);
@@ -124,8 +139,11 @@ std::expected<void, Refusal> VulkanKernelOps::measure(const DecodedFrame& a, con
   key.add(detail::handle_bits(partials.buffer)).add(detail::handle_bits(blocks.buffer));
   auto rec = recording(key, [&](Recorder& r) -> Done {
     for (const Source* s : {&*sa, &*sb}) {
-      if (!s->access) continue;
-      if (auto ok = r.commands([&](VkCommandBuffer cb) { copy_image(cb, *s); }); !ok) return ok;
+      if (auto ok = prepare_image(r, *s); !ok) return ok;
+    }
+    if (sa->planes) {
+      if (auto ok = runner_.scene_diff(r, *sa->planes, *sb->planes, partials); !ok) return ok;
+      return runner_.block_diff(r, *sa->planes, *sb->planes, blocks);
     }
     if (auto ok = runner_.scene_diff(r, sa->view, sb->view, partials); !ok) return ok;
     return runner_.block_diff(r, sa->view, sb->view, blocks);

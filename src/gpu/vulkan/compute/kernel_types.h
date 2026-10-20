@@ -3,6 +3,7 @@
 // une disposition hors contrat est refusée (InputMismatch), jamais corrigée.
 #pragma once
 
+#include <array>
 #include <cstdint>
 #include <expected>
 #include <string_view>
@@ -59,6 +60,16 @@ struct YuvView {
   std::uint32_t width = 0;
   std::uint32_t height = 0;
   YuvLayout layout;
+};
+
+// Les plans d'une image décodée lus en place : la VkImage multiplan de FFmpeg (NV12, P010 ou
+// P016) vue plan par plan, luma en views[0], CbCr entrelacés en views[1], chacune liée en image
+// échantillonnée (planes.glsl). Les vues restent à l'appelant.
+struct YuvPlanes {
+  std::array<VkImageView, 2> views{};
+  kernels::Format format = kernels::Format::Nv12;
+  std::uint32_t width = 0;
+  std::uint32_t height = 0;
 };
 
 // Couleur résolue d'une image YUV (effective_matrix, effective_range, effective_siting).
@@ -122,6 +133,9 @@ Done check_yuv(const YuvView& view, std::string_view what);
 // de 4 Gio, float16 seulement si le stockage 16 bits est activé (FeatureUnavailable sinon).
 Done check_tensor(const TensorView& tensor, std::uint32_t planes, const Features& enabled,
                   std::string_view what);
+
+// Des plans conformes : format entrelacé (NV12, P010, P016), dimensions du format, deux vues.
+Done check_planes(const YuvPlanes& planes, std::string_view what);
 
 // Deux vues aux mêmes dimensions.
 Done check_same_size(std::uint32_t w0, std::uint32_t h0, std::uint32_t w1, std::uint32_t h1,

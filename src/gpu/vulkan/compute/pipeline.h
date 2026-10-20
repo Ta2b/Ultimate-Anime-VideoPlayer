@@ -27,7 +27,10 @@ struct PipelineDesc {
   std::span<const std::uint32_t> constants;  // constantes de spécialisation 0..n−1, 32 bits chacune
   std::uint32_t buffers = 0;                 // tampons de stockage, bindings 0..buffers−1
   std::uint32_t images = 0;                  // images de stockage, bindings buffers..buffers+images−1
-  std::uint32_t push_bytes = 0;              // taille du bloc push_constant, multiple de 4
+  // Images échantillonnées (sampler2D, lues par texelFetch avec l'échantillonneur au plus proche
+  // du cache), bindings buffers+images..buffers+images+sampled−1 : les plans d'une image décodée.
+  std::uint32_t sampled = 0;
+  std::uint32_t push_bytes = 0;  // taille du bloc push_constant, multiple de 4
   // SPIR-V d'un autre module (shaders du moteur Vulkan), qui doit vivre autant que le cache ;
   // vide : le shader embarqué du socle nommé shader.
   std::span<const std::uint32_t> spirv;
@@ -50,6 +53,7 @@ class Pipeline {
   const std::string& name() const { return name_; }
   std::uint32_t buffers() const { return buffers_; }
   std::uint32_t images() const { return images_; }
+  std::uint32_t sampled() const { return sampled_; }
   std::uint32_t push_bytes() const { return push_bytes_; }
 
  private:
@@ -60,6 +64,7 @@ class Pipeline {
   std::string name_;
   std::uint32_t buffers_ = 0;
   std::uint32_t images_ = 0;
+  std::uint32_t sampled_ = 0;
   std::uint32_t push_bytes_ = 0;
   VkDescriptorSetLayout set_layout_ = VK_NULL_HANDLE;
   VkPipelineLayout layout_ = VK_NULL_HANDLE;
@@ -87,6 +92,9 @@ class PipelineCache {
 
  private:
   explicit PipelineCache(const VkContext& context) : context_(context) {}
+  // L'échantillonneur immuable des images échantillonnées (au plus proche, bords répétés), créé
+  // à la première demande.
+  std::expected<VkSampler, Refusal> sampler();
   std::expected<VkShaderModule, Refusal> module(std::string_view shader,
                                                 std::span<const std::uint32_t> spirv);
   std::expected<std::unique_ptr<Pipeline>, Refusal> build(const PipelineDesc& desc, VkShaderModule module);
@@ -94,6 +102,7 @@ class PipelineCache {
   using Key = std::tuple<std::string, std::vector<std::uint32_t>, std::uint32_t>;
   const VkContext& context_;
   VkPipelineCache cache_ = VK_NULL_HANDLE;
+  VkSampler sampler_ = VK_NULL_HANDLE;
   std::map<std::string, VkShaderModule, std::less<>> modules_;
   std::map<Key, std::unique_ptr<Pipeline>> pipelines_;
 };

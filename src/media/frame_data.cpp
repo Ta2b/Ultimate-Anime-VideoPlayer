@@ -158,6 +158,9 @@ class AvFrameData final : public FrameData {
         .signal_value = image.sem_value[0] + 1,
         .state = {.layout = static_cast<std::uint32_t>(image.layout[0]),
                   .queue_family = image.queue_family[0]},
+        .usage = static_cast<std::uint32_t>(vk.context->usage),
+        .flags = static_cast<std::uint32_t>(vk.context->img_flags),
+        .format = static_cast<std::uint32_t>(vk.context->format[0]),
     };
   }
 

@@ -9,6 +9,7 @@ ajp_add_module(vk_backend
     device_profile.cpp
     family.cpp
     kernel_frames.cpp
+    kernel_image.cpp
     kernel_ops.cpp
     kernel_pair.cpp
     kernel_ring.cpp

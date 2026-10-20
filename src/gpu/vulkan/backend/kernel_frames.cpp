@@ -1,6 +1,8 @@
-// Images décodées vers un tampon YUV de disposition serrée : recopiées depuis la mémoire hôte
-// (décodage logiciel, tests) par le fil d'envoi, ou par le GPU depuis la VkImage multiplan de
-// FFmpeg, entre begin_vulkan_access et end_vulkan_access. Puis l'ingestion.
+// Images décodées prêtes à lire : les plans de la VkImage multiplan de FFmpeg lus en place
+// (échantillonnable à format mutable : rien à copier), sinon un tampon YUV de disposition serrée,
+// rempli depuis la mémoire hôte (décodage logiciel, tests) par le fil d'envoi, ou par le GPU
+// depuis l'image, entre begin_vulkan_access et end_vulkan_access ; une image déjà copiée se
+// relit depuis son tampon (mémo). Puis l'ingestion.
 #include <algorithm>
 #include <bit>
 #include <cstring>
@@ -118,7 +120,8 @@ std::expected<std::size_t, Refusal> VulkanKernelOps::staging_for(kernels::Format
   ++staging_uses_;
   std::size_t same = 0;
   std::size_t oldest = SIZE_MAX;
-  std::size_t spare = SIZE_MAX;  // libre, d'une autre forme et sans service depuis longtemps
+  std::size_t held_free = SIZE_MAX;  // libre, mais son image vit encore
+  std::size_t spare = SIZE_MAX;      // libre, d'une autre forme et sans service depuis longtemps
   // Libre : la file a fini de le lire, et le fil d'envoi d'y écrire.
   const auto free = [&](const Staging& s) { return s.busy_until <= *completed && s.upload <= uploaded; };
   for (std::size_t k = 0; k < staging_.size(); ++k) {
@@ -130,10 +133,20 @@ std::expected<std::size_t, Refusal> VulkanKernelOps::staging_for(kernels::Format
     }
     ++same;
     if (free(s)) {
-      s.used = staging_uses_;
-      return k;
+      // Un tampon libre dont l'image vit encore garde son mémo pour une relecture : un autre
+      // libre passe d'abord.
+      if (s.held_ptr == nullptr || s.held.expired()) {
+        s.used = staging_uses_;
+        return k;
+      }
+      if (held_free == SIZE_MAX) held_free = k;
+      continue;
     }
     if (oldest == SIZE_MAX || s.busy_until < staging_[oldest].busy_until) oldest = k;
+  }
+  if (held_free != SIZE_MAX) {
+    staging_[held_free].used = staging_uses_;
+    return held_free;
   }
   if (same >= kStagingSlots && oldest != SIZE_MAX) {
     // Tous occupés : le plus ancien se libère d'abord (attente hôte comptée, rare), et son envoi
@@ -166,8 +179,19 @@ std::expected<std::size_t, Refusal> VulkanKernelOps::staging_for(kernels::Format
   return staging_.size() - 1;
 }
 
+std::optional<std::size_t> VulkanKernelOps::memo_for(const DecodedFrame& frame, kernels::Format format,
+                                                     std::uint32_t width, std::uint32_t height,
+                                                     std::size_t avoid) const {
+  for (std::size_t k = 0; k < staging_.size(); ++k) {
+    const Staging& s = staging_[k];
+    if (k == avoid || s.held_ptr != frame.data.get() || s.held.expired()) continue;
+    if (s.format == format && s.width == width && s.height == height) return k;
+  }
+  return std::nullopt;
+}
+
 std::expected<VulkanKernelOps::Source, Refusal> VulkanKernelOps::source(const DecodedFrame& frame,
-                                                                        std::size_t avoid) {
+                                                                        std::size_t avoid, bool direct) {
   if (frame.data == nullptr) return refuse_frame(RefusalCode::ShapeInvalid, "image décodée sans données");
   auto format = detail::kernel_format(frame.format);
   if (!format) return std::unexpected(format.error());
@@ -182,55 +206,83 @@ std::expected<VulkanKernelOps::Source, Refusal> VulkanKernelOps::source(const De
   if (memory != FrameMemory::Host && memory != FrameMemory::Vulkan) {
     return refuse_frame(RefusalCode::FormatUnsupported, "image décodée hors de la mémoire hôte ou Vulkan");
   }
-  const MemoryUse use = memory == FrameMemory::Host ? MemoryUse::Upload : MemoryUse::Device;
-  auto slot = staging_for(*format, w, h, use, avoid);
-  if (!slot) return std::unexpected(slot.error());
-  const Staging& s = staging_[*slot];
-  Source src{
-      .view = {.buffer = s.buffer.view(), .format = *format, .width = w, .height = h, .layout = s.layout},
-      .staging = *slot};
-  std::array<PlaneCopy, 3> planes{};
-  const std::uint32_t count = plane_copies(src.view, planes);
-  if (memory == FrameMemory::Host) {
-    if (frame.data->plane_count() != static_cast<int>(count)) {
-      return refuse_frame(RefusalCode::ShapeInvalid, "image hôte : nombre de plans inattendu");
+  Source src;
+  if (memory == FrameMemory::Vulkan) {
+    src.image = detail::to_image(frame.data->native_plane(0));
+    if (src.image == VK_NULL_HANDLE)
+      return refuse_frame(RefusalCode::ShapeInvalid, "image Vulkan sans VkImage");
+    if (const std::uintptr_t pool = frame.data->native_pool_id(); pool != pool_id_) {
+      // Nouveau fichier, flux qui change de taille : l'ancien lot est rendu, ses images peuvent
+      // disparaître et leurs poignées revenir dans le nouveau ; ses vues partent avant lui.
+      release_plane_views();
+      pool_ = frame.data->native_pool();
+      pool_id_ = pool;
+      ++pool_generation_;
     }
-    std::array<UploadPlane, 3> copies{};
-    for (std::uint32_t p = 0; p < count; ++p) {
-      const PlaneCopy& pc = planes[p];
-      const std::span<const std::byte> in = frame.data->host_plane(static_cast<int>(p));
-      const std::size_t stride = frame.data->host_stride(static_cast<int>(p));
-      const std::size_t row = std::size_t{pc.width} * pc.texel;
-      if (stride < row || in.size() < (stride * (pc.height - 1)) + row) {
-        return refuse_frame(RefusalCode::ShapeInvalid, std::format("image hôte : plan {} trop court", p));
-      }
-      copies[p] = {.in = in.data(),
-                   .stride = stride,
-                   .out = s.buffer.mapped() + pc.dst.offset,
-                   .pitch = pc.dst.pitch,
-                   .row = static_cast<std::uint32_t>(row),
-                   .rows = pc.height};
-    }
-    // La copie se fait sur le fil d'envoi pendant que ce fil enregistre la suite ; le lot
-    // l'attend avant de partir (uploads_wait).
-    if (auto ok = upload(frame, *slot, std::span(copies).first(count)); !ok)
-      return std::unexpected(ok.error());
+    src.pool = pool_generation_;
+  }
+  if (const std::optional<std::size_t> memo = memo_for(frame, *format, w, h, avoid)) {
+    // L'image est déjà dans ce tampon, que la file lit dans l'ordre : ni copie ni accès.
+    const Staging& s = staging_[*memo];
+    staging_[*memo].used = ++staging_uses_;
+    src.view = {.buffer = s.buffer.view(), .format = *format, .width = w, .height = h, .layout = s.layout};
+    src.staging = *memo;
+    src.image = VK_NULL_HANDLE;
+    src.pool = 0;
     return src;
   }
-  src.image = detail::to_image(frame.data->native_plane(0));
-  if (src.image == VK_NULL_HANDLE)
-    return refuse_frame(RefusalCode::ShapeInvalid, "image Vulkan sans VkImage");
-  if (const std::uintptr_t pool = frame.data->native_pool_id(); pool != pool_id_) {
-    // Nouveau fichier, flux qui change de taille : l'ancien lot est rendu, ses images peuvent
-    // disparaître et leurs poignées revenir dans le nouveau.
-    pool_ = frame.data->native_pool();
-    pool_id_ = pool;
-    ++pool_generation_;
+  if (memory == FrameMemory::Vulkan) {
+    auto access = frame.data->begin_vulkan_access();
+    if (!access) return std::unexpected(access.error());
+    src.access = *access;
+    if (direct && reads_in_place(*access, *format)) {
+      auto planes = plane_views_for(src.image, *format, w, h);
+      if (planes) {
+        src.planes = *planes;
+        src.staging = SIZE_MAX;
+        return src;
+      }
+      // Les vues ne se créent pas (rare : appareil à court) : la copie prend le relais.
+      frame.data->end_vulkan_access(access->state, false);
+      return std::unexpected(planes.error());
+    }
   }
-  src.pool = pool_generation_;
-  auto access = frame.data->begin_vulkan_access();
-  if (!access) return std::unexpected(access.error());
-  src.access = *access;
+  const MemoryUse use = memory == FrameMemory::Host ? MemoryUse::Upload : MemoryUse::Device;
+  auto slot = staging_for(*format, w, h, use, avoid);
+  if (!slot) {
+    if (src.access) frame.data->end_vulkan_access(src.access->state, false);
+    return std::unexpected(slot.error());
+  }
+  Staging& s = staging_[*slot];
+  s.held_ptr = nullptr;  // le tampon change d'image : le mémo tombe jusqu'à la soumission
+  s.held.reset();
+  src.view = {.buffer = s.buffer.view(), .format = *format, .width = w, .height = h, .layout = s.layout};
+  src.staging = *slot;
+  if (memory == FrameMemory::Vulkan) return src;
+  std::array<PlaneCopy, 3> planes{};
+  const std::uint32_t count = plane_copies(src.view, planes);
+  if (frame.data->plane_count() != static_cast<int>(count)) {
+    return refuse_frame(RefusalCode::ShapeInvalid, "image hôte : nombre de plans inattendu");
+  }
+  std::array<UploadPlane, 3> copies{};
+  for (std::uint32_t p = 0; p < count; ++p) {
+    const PlaneCopy& pc = planes[p];
+    const std::span<const std::byte> in = frame.data->host_plane(static_cast<int>(p));
+    const std::size_t stride = frame.data->host_stride(static_cast<int>(p));
+    const std::size_t row = std::size_t{pc.width} * pc.texel;
+    if (stride < row || in.size() < (stride * (pc.height - 1)) + row) {
+      return refuse_frame(RefusalCode::ShapeInvalid, std::format("image hôte : plan {} trop court", p));
+    }
+    copies[p] = {.in = in.data(),
+                 .stride = stride,
+                 .out = s.buffer.mapped() + pc.dst.offset,
+                 .pitch = pc.dst.pitch,
+                 .row = static_cast<std::uint32_t>(row),
+                 .rows = pc.height};
+  }
+  // La copie se fait sur le fil d'envoi pendant que ce fil enregistre la suite ; le lot
+  // l'attend avant de partir (uploads_wait).
+  if (auto ok = upload(frame, *slot, std::span(copies).first(count)); !ok) return std::unexpected(ok.error());
   return src;
 }
 
@@ -297,42 +349,14 @@ std::uint64_t VulkanKernelOps::uploads_done() const {
   return uploads_done_;
 }
 
+std::uint64_t VulkanKernelOps::uploads_queued() const {
+  const std::scoped_lock lock(uploads_mutex_);
+  return uploads_queued_;
+}
+
 std::size_t VulkanKernelOps::uploads_pending() const {
   const std::scoped_lock lock(uploads_mutex_);
   return static_cast<std::size_t>(uploads_queued_ - uploads_done_);
-}
-
-void VulkanKernelOps::copy_image(VkCommandBuffer cb, const Source& src) const {
-  if (!src.access) return;  // image hôte : rien à copier
-  const VulkanImageState& state = src.access->state;
-  const bool owned =
-      state.queue_family != VK_QUEUE_FAMILY_IGNORED && state.queue_family != context_.queue_family();
-  const VkImageMemoryBarrier barrier{
-      .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
-      .srcAccessMask = VK_ACCESS_MEMORY_WRITE_BIT,
-      .dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT,
-      .oldLayout = static_cast<VkImageLayout>(state.layout),
-      .newLayout = VK_IMAGE_LAYOUT_GENERAL,
-      .srcQueueFamilyIndex = owned ? state.queue_family : VK_QUEUE_FAMILY_IGNORED,
-      .dstQueueFamilyIndex = owned ? context_.queue_family() : VK_QUEUE_FAMILY_IGNORED,
-      .image = src.image,
-      .subresourceRange = {.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT, .levelCount = 1, .layerCount = 1}};
-  context_.fn().vkCmdPipelineBarrier(cb, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT,
-                                     0, 0, nullptr, 0, nullptr, 1, &barrier);
-  std::array<PlaneCopy, 3> planes{};
-  const std::uint32_t count = plane_copies(src.view, planes);
-  constexpr std::array<VkImageAspectFlagBits, 3> kAspects{
-      VK_IMAGE_ASPECT_PLANE_0_BIT, VK_IMAGE_ASPECT_PLANE_1_BIT, VK_IMAGE_ASPECT_PLANE_2_BIT};
-  std::array<VkBufferImageCopy, 3> regions{};
-  for (std::uint32_t p = 0; p < count; ++p) {
-    regions[p] = {
-        .bufferOffset = src.view.buffer.offset + planes[p].dst.offset,
-        .bufferRowLength = planes[p].dst.pitch / planes[p].texel,
-        .imageSubresource = {.aspectMask = static_cast<VkImageAspectFlags>(kAspects[p]), .layerCount = 1},
-        .imageExtent = {.width = planes[p].width, .height = planes[p].height, .depth = 1}};
-  }
-  context_.fn().vkCmdCopyImageToBuffer(cb, src.image, VK_IMAGE_LAYOUT_GENERAL, src.view.buffer.buffer, count,
-                                       regions.data());
 }
 
 std::expected<void, Refusal> VulkanKernelOps::submit_frames(Recording& recording, std::span<Source> sources,
@@ -355,8 +379,12 @@ std::expected<void, Refusal> VulkanKernelOps::submit_frames(Recording& recording
   if (!ok) return ok;
   const std::uint64_t value = queue_.last().value;
   for (std::size_t k = 0; k < sources.size(); ++k) {
-    staging_[sources[k].staging].busy_until = value;
     retained_.push_back({.frame = frames[k]->data, .until = value});
+    if (sources[k].staging == SIZE_MAX) continue;  // lue en place
+    Staging& s = staging_[sources[k].staging];
+    s.busy_until = value;
+    s.held_ptr = frames[k]->data.get();  // la copie est en route : la prochaine lecture la relit
+    s.held = frames[k]->data;
   }
   reclaim();
   return {};
@@ -365,6 +393,7 @@ std::expected<void, Refusal> VulkanKernelOps::submit_frames(Recording& recording
 void VulkanKernelOps::add_source(OpKey& key, const Source& src) {
   key.add(handle_bits(src.view.buffer.buffer)).add(image_bits(src.image)).add(src.pool);
   key.add(src.access ? src.access->state.layout : 0).add(src.access ? src.access->state.queue_family : 0);
+  key.add(src.planes ? 1 : 0);  // les vues des plans suivent (image, lot)
 }
 
 std::expected<void, Refusal> VulkanKernelOps::ingest(const DecodedFrame& frame, const IngestSpec& spec,
@@ -412,17 +441,19 @@ std::expected<void, Refusal> VulkanKernelOps::ingest(const DecodedFrame& frame, 
     key.add(std::bit_cast<std::uint32_t>(spec.reduce.b)).add(std::bit_cast<std::uint32_t>(spec.reduce.c));
   }
   auto rec = recording(key, [&](Recorder& r) -> Done {
-    if (src->access) {
-      if (auto ok = r.commands([&](VkCommandBuffer cb) { copy_image(cb, *src); }); !ok) return ok;
-    }
-    if (!reduced) return runner_.ingest(r, src->view, *color, *dst, chroma);
+    if (auto ok = prepare_image(r, *src); !ok) return ok;
+    const auto ingest = [&](const TensorView& out) {
+      return src->planes ? runner_.ingest(r, *src->planes, *color, out, chroma)
+                         : runner_.ingest(r, src->view, *color, out, chroma);
+    };
+    if (!reduced) return ingest(*dst);
     const auto w = static_cast<std::uint32_t>(frame.width);
     const auto h = static_cast<std::uint32_t>(frame.height);
     auto full = r.scratch(tensor_bytes(w, h, 3, Precision::F32));
     if (!full) return std::unexpected(full.error());
     const TensorView image{
         .buffer = *full, .width = w, .height = h, .planes = 3, .precision = Precision::F32};
-    if (auto ok = runner_.ingest(r, src->view, *color, image, chroma); !ok) return ok;
+    if (auto ok = ingest(image); !ok) return ok;
     return runner_.resize(r, image, *dst, *wx, *wy);
   });
   if (!rec) return std::unexpected(rec.error());

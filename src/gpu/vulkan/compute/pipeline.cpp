@@ -33,7 +33,26 @@ PipelineCache::~PipelineCache() {
   pipelines_.clear();
   const DeviceFunctions& fn = context_.fn();
   for (const auto& [name, module] : modules_) fn.vkDestroyShaderModule(context_.device(), module, nullptr);
+  if (sampler_ != VK_NULL_HANDLE) fn.vkDestroySampler(context_.device(), sampler_, nullptr);
   if (cache_ != VK_NULL_HANDLE) fn.vkDestroyPipelineCache(context_.device(), cache_, nullptr);
+}
+
+std::expected<VkSampler, Refusal> PipelineCache::sampler() {
+  if (sampler_ != VK_NULL_HANDLE) return sampler_;
+  const VkSamplerCreateInfo info{.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO,
+                                 .magFilter = VK_FILTER_NEAREST,
+                                 .minFilter = VK_FILTER_NEAREST,
+                                 .mipmapMode = VK_SAMPLER_MIPMAP_MODE_NEAREST,
+                                 .addressModeU = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE,
+                                 .addressModeV = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE,
+                                 .addressModeW = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE,
+                                 .maxLod = 0.0F};
+  if (auto ok = check(context_.fn().vkCreateSampler(context_.device(), &info, nullptr, &sampler_),
+                      "vkCreateSampler");
+      !ok) {
+    return std::unexpected(ok.error());
+  }
+  return sampler_;
 }
 
 std::expected<VkShaderModule, Refusal> PipelineCache::module(std::string_view shader,
@@ -65,16 +84,26 @@ std::expected<std::unique_ptr<Pipeline>, Refusal> PipelineCache::build(const Pip
   pipeline->name_ = std::string(desc.shader);
   pipeline->buffers_ = desc.buffers;
   pipeline->images_ = desc.images;
+  pipeline->sampled_ = desc.sampled;
   pipeline->push_bytes_ = desc.push_bytes;
 
+  VkSampler immutable = VK_NULL_HANDLE;
+  if (desc.sampled > 0) {
+    auto made = sampler();
+    if (!made) return std::unexpected(made.error());
+    immutable = *made;
+  }
   std::vector<VkDescriptorSetLayoutBinding> bindings;
-  bindings.reserve(std::size_t{desc.buffers} + desc.images);
-  for (std::uint32_t i = 0; i < desc.buffers + desc.images; ++i) {
+  bindings.reserve(std::size_t{desc.buffers} + desc.images + desc.sampled);
+  for (std::uint32_t i = 0; i < desc.buffers + desc.images + desc.sampled; ++i) {
+    const bool sampled = i >= desc.buffers + desc.images;
     bindings.push_back({.binding = i,
                         .descriptorType = i < desc.buffers ? VK_DESCRIPTOR_TYPE_STORAGE_BUFFER
+                                          : sampled        ? VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER
                                                            : VK_DESCRIPTOR_TYPE_STORAGE_IMAGE,
                         .descriptorCount = 1,
-                        .stageFlags = VK_SHADER_STAGE_COMPUTE_BIT});
+                        .stageFlags = VK_SHADER_STAGE_COMPUTE_BIT,
+                        .pImmutableSamplers = sampled ? &immutable : nullptr});
   }
   const VkDescriptorSetLayoutCreateInfo set_info{.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
                                                  .bindingCount = static_cast<std::uint32_t>(bindings.size()),
@@ -131,12 +160,13 @@ std::expected<const Pipeline*, Refusal> PipelineCache::get(const PipelineDesc& d
           desc.subgroup_size};
   if (const auto found = pipelines_.find(key); found != pipelines_.end()) {
     const Pipeline& p = *found->second;
-    if (p.buffers() != desc.buffers || p.images() != desc.images || p.push_bytes() != desc.push_bytes) {
-      return refuse(
-          RefusalCode::InputMismatch,
-          std::format("{} : {} tampons, {} images et {} o de push demandés, {}, {} et {} déjà créés",
-                      desc.shader, desc.buffers, desc.images, desc.push_bytes, p.buffers(), p.images(),
-                      p.push_bytes()));
+    if (p.buffers() != desc.buffers || p.images() != desc.images || p.sampled() != desc.sampled ||
+        p.push_bytes() != desc.push_bytes) {
+      return refuse(RefusalCode::InputMismatch,
+                    std::format("{} : {} tampons, {} images, {} échantillonnées et {} o de push demandés, "
+                                "{}, {}, {} et {} déjà créés",
+                                desc.shader, desc.buffers, desc.images, desc.sampled, desc.push_bytes,
+                                p.buffers(), p.images(), p.sampled(), p.push_bytes()));
     }
     return &p;
   }

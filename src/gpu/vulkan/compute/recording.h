@@ -90,7 +90,8 @@ class Recorder {
   // Un dispatch, après une barrière sur tout ce qui le précède dans l'enregistrement si une
   // commande depuis la dernière barrière a touché l'un de ses tampons (une plage qui recouvre
   // l'une des siennes : chaque vue liée compte comme lue et écrite) ou une image (order
-  // AfterPrevious) ; sans barrière, à côté du précédent (BesidePrevious). Refus :
+  // AfterPrevious) ; sans barrière, à côté du précédent (BesidePrevious). images : les vues de
+  // stockage du pipeline, puis ses vues échantillonnées. Refus :
   // InputMismatch (nombre de tampons, d'images ou d'octets de push différent du pipeline ; vue
   // vide, mal alignée ou trop grande), FeatureUnavailable (groupes au-delà des limites),
   // GpuMemoryExhausted (pool de descripteurs plein).

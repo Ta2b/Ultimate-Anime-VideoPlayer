@@ -132,12 +132,12 @@ Done Recorder::dispatch(const Pipeline& pipeline, std::span<const BufferView> bu
                         std::span<const VkImageView> images, std::span<const std::byte> push,
                         std::array<std::uint32_t, 3> groups, DispatchOrder order) {
   if (auto ok = open(); !ok) return ok;
-  if (buffers.size() != pipeline.buffers() || images.size() != pipeline.images() ||
+  if (buffers.size() != pipeline.buffers() || images.size() != pipeline.images() + pipeline.sampled() ||
       push.size() != pipeline.push_bytes()) {
     return refuse(RefusalCode::InputMismatch,
                   std::format("{} : {} tampons, {} images et {} o de push, {}, {} et {} attendus",
                               pipeline.name(), buffers.size(), images.size(), push.size(), pipeline.buffers(),
-                              pipeline.images(), pipeline.push_bytes()));
+                              pipeline.images() + pipeline.sampled(), pipeline.push_bytes()));
   }
   for (std::size_t i = 0; i < buffers.size(); ++i) {
     if (auto ok = check_view(buffers[i], std::format("{} binding {}", pipeline.name(), i)); !ok) return ok;
