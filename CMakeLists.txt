@@ -50,6 +50,13 @@ if(AJP_TRANSITIVE_RPATH AND CMAKE_SYSTEM_NAME STREQUAL "Linux")
   add_link_options("LINKER:--disable-new-dtags")
 endif()
 
+# La libc++ de Xcode 16 (LLVM 19) range std::jthread et <stop_token> parmi ses fonctions
+# expérimentales : entièrement dans ses en-têtes, elles s'ouvrent par cette macro, sans
+# -fexperimental-library ni libc++experimental.a. Inoffensive sur une libc++ plus récente.
+if(APPLE)
+  add_compile_definitions(_LIBCPP_ENABLE_EXPERIMENTAL)
+endif()
+
 # Ordre des feuilles vers la racine : une cible ne dépend que de ce qui précède.
 add_subdirectory(src/core)
 add_subdirectory(src/kernels)

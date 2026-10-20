@@ -7,6 +7,8 @@
 #include <string>
 #include <system_error>
 
+#include "core/charconv.h"
+
 namespace ajp::app::play {
 
 std::optional<std::filesystem::path> system_tool(std::string_view name) {
@@ -32,7 +34,7 @@ std::optional<float> curl_percent(std::string_view line) {
          (std::isdigit(static_cast<unsigned char>(line[start - 1])) != 0 || line[start - 1] == '.'))
     --start;
   float value = 0;
-  const auto [end, error] = std::from_chars(line.data() + start, line.data() + percent, value);
+  const auto [end, error] = core::from_chars(line.data() + start, line.data() + percent, value);
   if (error != std::errc{} || end != line.data() + percent) return std::nullopt;
   return value / 100.0F;
 }

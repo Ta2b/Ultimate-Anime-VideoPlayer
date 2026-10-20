@@ -14,6 +14,7 @@
 #include <set>
 #include <utility>
 
+#include "core/charconv.h"
 #include "core/ini_import_internal.h"
 #include "core/user_overlay.h"
 
@@ -49,7 +50,7 @@ std::optional<std::int64_t> parse_integer(std::string_view text) {
 
 std::optional<double> parse_real(std::string_view text) {
   double value = 0.0;
-  const auto [end, error] = std::from_chars(text.data(), text.data() + text.size(), value);
+  const auto [end, error] = core::from_chars(text.data(), text.data() + text.size(), value);
   if (error != std::errc{} || end != text.data() + text.size() || !std::isfinite(value)) return std::nullopt;
   return value;
 }

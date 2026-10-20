@@ -6,6 +6,7 @@
 #include <format>
 #include <utility>
 
+#include "core/charconv.h"
 #include "core/model_index.h"
 
 namespace ajp::core {
@@ -20,7 +21,7 @@ std::unexpected<Refusal> refuse(RefusalCode code, std::string detail) {
 template <class T>
 std::optional<T> number(std::string_view text) {
   T value{};
-  const auto [end, error] = std::from_chars(text.data(), text.data() + text.size(), value);
+  const auto [end, error] = core::from_chars(text.data(), text.data() + text.size(), value);
   if (error != std::errc{} || end != text.data() + text.size()) return std::nullopt;
   return value;
 }

@@ -9,6 +9,8 @@
 #include <system_error>
 #include <utility>
 
+#include "core/charconv.h"
+
 namespace ajp::app::play {
 namespace {
 
@@ -94,7 +96,7 @@ std::optional<PastBuild> read_build_log(std::string_view text) {
   std::string_view number = text.substr(built + kBuiltIn.size());
   number = number.substr(0, number.find(' '));
   double seconds = 0.0;
-  if (!size || std::from_chars(number.data(), number.data() + number.size(), seconds).ec != std::errc{} ||
+  if (!size || core::from_chars(number.data(), number.data() + number.size(), seconds).ec != std::errc{} ||
       !(seconds > 0.0))
     return std::nullopt;
   return PastBuild{.onnx = std::filesystem::path(std::string(*onnx)),

@@ -6,6 +6,7 @@
 #include <SDL3/SDL_events.h>
 #include <SDL3/SDL_keyboard.h>
 
+#include "core/charconv.h"
 #include "core/log.h"
 
 namespace ajp::app::play {
@@ -21,8 +22,8 @@ std::optional<std::pair<float, float>> mouse_point(std::string_view text) {
   float y = 0.0F;
   const std::string_view xs = text.substr(0, cross);
   const std::string_view ys = text.substr(cross + 1);
-  if (std::from_chars(xs.data(), xs.data() + xs.size(), x).ec != std::errc{} ||
-      std::from_chars(ys.data(), ys.data() + ys.size(), y).ec != std::errc{})
+  if (core::from_chars(xs.data(), xs.data() + xs.size(), x).ec != std::errc{} ||
+      core::from_chars(ys.data(), ys.data() + ys.size(), y).ec != std::errc{})
     return std::nullopt;
   return std::pair{x, y};
 }

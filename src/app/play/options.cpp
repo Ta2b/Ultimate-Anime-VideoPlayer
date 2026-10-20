@@ -7,6 +7,8 @@
 #include <system_error>
 #include <utility>
 
+#include "core/charconv.h"
+
 namespace ajp::app::play {
 namespace {
 
@@ -17,7 +19,7 @@ std::unexpected<Refusal> refuse(RefusalCode code, std::string detail) {
 template <class T>
 std::optional<T> number(std::string_view text) {
   T value{};
-  const auto [end, error] = std::from_chars(text.data(), text.data() + text.size(), value);
+  const auto [end, error] = core::from_chars(text.data(), text.data() + text.size(), value);
   if (error != std::errc{} || end != text.data() + text.size()) return std::nullopt;
   return value;
 }
