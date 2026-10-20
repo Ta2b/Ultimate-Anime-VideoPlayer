@@ -8,8 +8,11 @@
 namespace ajp::render {
 namespace {
 
+// Un curseur float relu en double dépasse sa borne d'un cheveu (0,8f vaut 0,800000012) : la
+// marge de 1e-6 garde les play.toml écrits ainsi, sans ouvrir la plage.
 std::expected<void, Refusal> check(std::string_view field, double value, core::Range<double> range) {
-  if (std::isnan(value) || !range.contains(value)) {
+  const double slack = 1e-6 * std::max(1.0, std::abs(range.hi));
+  if (std::isnan(value) || value < range.lo - slack || value > range.hi + slack) {
     return std::unexpected(Refusal{RefusalCode::FieldOutOfRange,
                                    std::format("grade.{} = {} ({} à {})", field, value, range.lo, range.hi)});
   }

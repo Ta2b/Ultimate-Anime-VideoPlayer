@@ -274,10 +274,6 @@ void hdr_tab(PlaySettings& d, const SettingsChoices& choices) {
   if (ImGui::SliderInt("Pic (nits)", &peak, limits::kTrueHdrPeak.lo, limits::kTrueHdrPeak.hi) && !automatic)
     d.true_hdr_peak = peak;
   ImGui::EndDisabled();
-  ImGui::SliderInt("Contraste", &d.true_hdr_contrast, limits::kTrueHdrContrast.lo,
-                   limits::kTrueHdrContrast.hi);
-  ImGui::SliderInt("Saturation", &d.true_hdr_saturation, limits::kTrueHdrSaturation.lo,
-                   limits::kTrueHdrSaturation.hi);
   ImGui::SliderInt("Gris moyen", &d.true_hdr_gray, limits::kTrueHdrGray.lo, limits::kTrueHdrGray.hi);
   ImGui::BeginDisabled(!d.true_hdr);
   ImGui::Checkbox("Débandage (RTX HDR)", &d.true_hdr_debanding);
@@ -285,27 +281,50 @@ void hdr_tab(PlaySettings& d, const SettingsChoices& choices) {
   if (ImGui::Button("Valeurs par défaut")) {
     const PlaySettings defaults;
     d.true_hdr_peak = defaults.true_hdr_peak;
-    d.true_hdr_contrast = defaults.true_hdr_contrast;
-    d.true_hdr_saturation = defaults.true_hdr_saturation;
     d.true_hdr_gray = defaults.true_hdr_gray;
     d.true_hdr_debanding = defaults.true_hdr_debanding;
   }
   note(
-      "Réglages appliqués en direct, sur RTX HDR comme sur le HDR adaptatif. Gris moyen : luminosité des "
-      "tons moyens. Le HDR adaptatif suit la scène : moins d'expansion sur les scènes claires et les "
+      "Réglages appliqués en direct, sur RTX HDR comme sur le HDR adaptatif. Contraste et saturation sont "
+      "dans l'onglet Grade, communs au HDR et au SDR. Gris moyen : luminosité des tons moyens. Le HDR "
+      "adaptatif suit la scène : moins d'expansion sur les scènes claires et les "
       "grands aplats blancs, ombres plus douces la nuit, éclats isolés vers le pic.");
 }
 
-// Un curseur sur un réglage du grade (double) ; true s'il a bougé.
+// Un curseur sur un réglage du grade (double) ; true s'il a bougé. La valeur revient arrondie au
+// centième et bornée : le float du curseur à 0,8 vaut 0,800000012 en double, au-dessus de la borne
+// de check_grade_settings, et une valeur saisie au clavier (Ctrl + clic) peut sortir de la plage ;
+// l'une comme l'autre faisait refuser tout le grade.
 bool grade_slider(const char* label, double& value, core::Range<double> range) {
   auto shown = static_cast<float>(value);
-  if (!ImGui::SliderFloat(label, &shown, static_cast<float>(range.lo), static_cast<float>(range.hi), "%.2f"))
+  if (!ImGui::SliderFloat(label, &shown, static_cast<float>(range.lo), static_cast<float>(range.hi), "%.2f",
+                          ImGuiSliderFlags_AlwaysClamp))
     return false;
-  value = static_cast<double>(shown);
+  value = std::clamp(std::round(static_cast<double>(shown) * 100.0) / 100.0, range.lo, range.hi);
   return true;
 }
 
+// Contraste et saturation : ceux de TrueHDR, que le HDR adaptatif émule, et que la sortie SDR
+// gradée reprend autour du gris moyen (render::sdr_params) ; un seul réglage pour les trois.
+void look_section(PlaySettings& d) {
+  section("Contraste et saturation (HDR et SDR)");
+  ImGui::SliderInt("Contraste", &d.true_hdr_contrast, limits::kTrueHdrContrast.lo,
+                   limits::kTrueHdrContrast.hi);
+  ImGui::SliderInt("Saturation", &d.true_hdr_saturation, limits::kTrueHdrSaturation.lo,
+                   limits::kTrueHdrSaturation.hi);
+  if (ImGui::Button("Contraste et saturation par défaut")) {
+    const PlaySettings defaults;
+    d.true_hdr_contrast = defaults.true_hdr_contrast;
+    d.true_hdr_saturation = defaults.true_hdr_saturation;
+  }
+  note(
+      "En direct, sur RTX HDR, le HDR adaptatif et la sortie SDR : en SDR, la même courbe que TrueHDR "
+      "autour du gris moyen (onglet HDR), sans les éclats au-dessus du blanc.");
+  if (!d.grade && !d.true_hdr) note("Hors RTX HDR, ils demandent « Grader la sortie » ci-dessous.");
+}
+
 void grade_tab(PlaySettings& d, const SettingsChoices& choices) {
+  look_section(d);
   section("Grade");
   ImGui::Checkbox("Grader la sortie (HDR10 et SDR)", &d.grade);
   ImGui::BeginDisabled(!d.grade);
