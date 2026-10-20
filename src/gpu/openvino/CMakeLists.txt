@@ -4,7 +4,7 @@ find_package(OpenVINO REQUIRED COMPONENTS Runtime)
 
 # Le runtime à part de ses points d'entrée : les tests du backend Vulkan le lient pour comparer
 # ses sorties à l'interpréteur sur le vrai matériel (vendor_runtime_test.cpp).
-ajp_add_module(openvino_rt SOURCES openvino_runtime.cpp
+ajp_add_module(openvino_rt SOURCES openvino_net.cpp openvino_runtime.cpp
   DEPS ajp::vk_backend ajp::core_log PRIVATE_DEPS ajp::dep::spdlog openvino::runtime)
 set_target_properties(ajp_openvino_rt PROPERTIES
   POSITION_INDEPENDENT_CODE ON

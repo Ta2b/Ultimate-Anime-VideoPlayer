@@ -6,7 +6,8 @@
 
 namespace ajp::render::shaders {
 
-// anime-hdr-grade.hook du lecteur actuel : neuf passes sur OUTPUT, en PQ BT.2020.
+// anime-hdr-grade du lecteur actuel (trois fichiers mis bout à bout) : neuf passes sur OUTPUT, en
+// PQ BT.2020.
 extern const std::string_view anime_hdr_grade;
 // Dixième passe, propre à ce dépôt : le vrai noir OLED (pied smoothstep sous black_hi).
 extern const std::string_view anime_hdr_black;

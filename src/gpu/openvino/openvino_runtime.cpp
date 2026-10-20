@@ -8,9 +8,6 @@
 #include <exception>
 #include <format>
 #include <fstream>
-#include <functional>
-#include <map>
-#include <mutex>
 #include <openvino/core/preprocess/pre_post_process.hpp>
 #include <openvino/core/version.hpp>
 #include <openvino/openvino.hpp>
@@ -18,20 +15,15 @@
 #include <openvino/runtime/intel_gpu/remote_properties.hpp>
 #include <openvino/runtime/intel_npu/properties.hpp>
 #include <optional>
-#include <stop_token>
 #include <string>
-#include <thread>
 #include <utility>
-#include <variant>
 #include <vector>
 
-#include "core/inbox.h"
-#include "core/thread.h"
+#include "gpu/openvino/openvino_net.h"
 
 namespace ajp::gpu::openvino_rt {
 namespace {
 
-using vk::net::HostBinding;
 using vk::net::InputShape;
 
 constexpr std::uint32_t kVendorIntel = 0x8086;
@@ -45,14 +37,6 @@ constexpr double kNpuTolerance = 1.25;
 // Écart moyen permis entre les sorties du NPU et du GPU sur la même entrée (images entre 0 et 1) :
 // au-delà, le compilateur du NPU a perdu en précision et le GPU garde le réseau.
 constexpr double kNpuMaxMeanError = 0.01;
-
-std::unexpected<Refusal> refuse(RefusalCode code, std::string text) {
-  return std::unexpected(Refusal{.code = code, .detail = std::move(text)});
-}
-
-ov::element::Type element_of(TensorType type) {
-  return type == TensorType::F32 ? ov::element::f32 : ov::element::f16;
-}
 
 // Les réglages que l'appareil connaît (supported_properties), les autres écartés : un pilote ou
 // un NPU plus ancien refuserait la compilation entière pour une propriété inconnue.
@@ -109,7 +93,8 @@ ov::Tensor probe_input(const ov::Output<const ov::Node>& input) {
   return tensor;
 }
 
-std::vector<float> as_floats(const ov::Tensor& tensor) {
+// Le tenseur par valeur : la poignée se partage, et data() const est déprécié depuis OpenVINO 2025.3.
+std::vector<float> as_floats(ov::Tensor tensor) {
   std::vector<float> out(tensor.get_size());
   const TensorType type = tensor.get_element_type() == ov::element::f32 ? TensorType::F32 : TensorType::F16;
   static_cast<void>(vk::net::copy_converted(static_cast<const std::byte*>(tensor.data()), type,
@@ -146,215 +131,6 @@ double mean_error(const std::vector<float>& a, const std::vector<float>& b) {
     sum += std::abs(static_cast<double>(a[i]) - static_cast<double>(b[i]));
   return sum / static_cast<double>(a.size());
 }
-
-// Les mémoires USM hôte du contexte GPU (Runtime::allocate_host), que Vulkan importe sur un GPU
-// intégré : le greffon GPU les lit et les écrit sans copie. Les réseaux les reconnaissent à leur
-// adresse et les lui donnent pour ce qu'elles sont (USM_USER_BUFFER), pas comme mémoire hôte
-// ordinaire, qu'il recopierait.
-class UsmPool {
- public:
-  explicit UsmPool(ov::RemoteContext context) : context_(std::move(context)) {}
-
-  // Lève les exceptions d'OpenVINO (pilote sans USM).
-  std::pair<ov::RemoteTensor, std::byte*> allocate(std::uint64_t bytes) {
-    ov::RemoteTensor tensor = context_.create_tensor(
-        ov::element::u8, {static_cast<std::size_t>(bytes)},
-        {{ov::intel_gpu::shared_mem_type.name(), ov::intel_gpu::SharedMemType::USM_HOST_BUFFER}});
-    auto* data = static_cast<std::byte*>(
-        tensor.get_params().at(ov::intel_gpu::mem_handle.name()).as<ov::intel_gpu::gpu_handle_param>());
-    const std::scoped_lock lock(mutex_);
-    blocks_[data] = bytes;
-    return {std::move(tensor), data};
-  }
-  void forget(const std::byte* data) {
-    const std::scoped_lock lock(mutex_);
-    blocks_.erase(data);
-  }
-  // L'adresse est-elle dans un bloc USM vivant (les tenseurs de la chaîne y ont un décalage) ?
-  bool owns(const std::byte* data, std::uint64_t bytes) const {
-    const std::scoped_lock lock(mutex_);
-    auto it = blocks_.upper_bound(data);
-    if (it == blocks_.begin()) return false;
-    --it;
-    return data + bytes <= it->first + it->second;
-  }
-  ov::RemoteTensor wrap(ov::element::Type type, const ov::Shape& shape, std::byte* data) {
-    return context_.create_tensor(
-        type, shape,
-        {{ov::intel_gpu::shared_mem_type.name(), ov::intel_gpu::SharedMemType::USM_USER_BUFFER},
-         {ov::intel_gpu::mem_handle.name(), static_cast<ov::intel_gpu::gpu_handle_param>(data)}});
-  }
-
- private:
-  ov::RemoteContext context_;
-  mutable std::mutex mutex_;
-  std::map<const std::byte*, std::uint64_t> blocks_;  // début, taille
-};
-
-class UsmMemory final : public vk::net::HostMemory {
- public:
-  UsmMemory(std::shared_ptr<UsmPool> pool, ov::RemoteTensor tensor, std::byte* data)
-      : pool_(std::move(pool)), tensor_(std::move(tensor)), data_(data) {}
-  UsmMemory(const UsmMemory&) = delete;
-  UsmMemory& operator=(const UsmMemory&) = delete;
-  UsmMemory(UsmMemory&&) = delete;
-  UsmMemory& operator=(UsmMemory&&) = delete;
-  ~UsmMemory() override { pool_->forget(data_); }
-  std::byte* data() const override { return data_; }
-
- private:
-  std::shared_ptr<UsmPool> pool_;
-  ov::RemoteTensor tensor_;  // possède la mémoire
-  std::byte* data_;
-};
-
-class OpenvinoNet final : public vk::net::RuntimeNet {
- public:
-  // usm : les mémoires USM du GPU, pour un réseau compilé sur ce GPU ; nul sur le NPU, qui lit
-  // toute mémoire hôte de la même façon.
-  OpenvinoNet(ov::CompiledModel compiled, vk::net::IoNames names, std::shared_ptr<UsmPool> usm)
-      : compiled_(std::move(compiled)),
-        request_(compiled_.create_infer_request()),
-        names_(std::move(names)),
-        usm_(std::move(usm)),
-        bound_(names_.inputs.size() + names_.outputs.size()) {}
-  OpenvinoNet(const OpenvinoNet&) = delete;
-  OpenvinoNet& operator=(const OpenvinoNet&) = delete;
-  OpenvinoNet(OpenvinoNet&&) = delete;
-  OpenvinoNet& operator=(OpenvinoNet&&) = delete;
-  // Les étapes encore en file sont faites avant de rendre la requête : chacune signale la
-  // timeline que la chaîne attend.
-  ~OpenvinoNet() override {
-    if (!worker_.joinable()) return;
-    worker_.request_stop();
-    worker_.join();
-  }
-  std::span<const std::string> input_names() const override { return names_.inputs; }
-  std::span<const std::string> output_names() const override { return names_.outputs; }
-
-  std::expected<void, Refusal> run(std::span<const HostBinding> inputs,
-                                   std::span<const HostBinding> outputs) override {
-    if (inputs.size() != names_.inputs.size() || outputs.size() != names_.outputs.size())
-      return refuse(RefusalCode::InputMismatch, "OpenVINO : nombre d'entrées ou de sorties");
-    const std::scoped_lock lock(request_mutex_);
-    return infer(inputs, outputs);
-  }
-
-  // Sur un fil propre au réseau, dans l'ordre des appels : ready (l'attente des entrées sur la
-  // timeline Vulkan), l'inférence, done (le signal de l'étape). Le fil du lecteur n'attend
-  // plus le GPU Intel, et le NPU calcule pendant que le GPU fait la chaîne. Une seule requête :
-  // la timeline ordonne les étapes, et les entrées de la suivante ne sont écrites qu'après le
-  // signal de la précédente ; une seconde requête l'attendrait de la même façon.
-  std::expected<void, Refusal> run_deferred(std::span<const HostBinding> inputs,
-                                            std::span<const HostBinding> outputs,
-                                            std::function<std::expected<void, Refusal>()> ready,
-                                            std::function<void(std::expected<void, Refusal>)> done) override {
-    if (inputs.size() != names_.inputs.size() || outputs.size() != names_.outputs.size())
-      return refuse(RefusalCode::InputMismatch, "OpenVINO : nombre d'entrées ou de sorties");
-    if (!ready || !done) return refuse(RefusalCode::InputMismatch, "OpenVINO : étape sans rappels");
-    {
-      const std::scoped_lock lock(jobs_mutex_);
-      if (failed_) return std::unexpected(*failed_);
-      if (!worker_.joinable()) {
-        // Le fil des étapes, au premier appel ; un refus du fil lui-même (exception échappée) est
-        // gardé pour l'appel suivant.
-        auto worker = start_thread(
-            "openvino", ThreadReport([this](const Refusal& refusal) { note_failure(refusal); }),
-            [this](const std::stop_token& stop, const ThreadReport& /*report*/) { serve(stop); });
-        if (!worker) return std::unexpected(std::move(worker.error()));
-        worker_ = std::move(*worker);
-      }
-    }
-    if (!jobs_.try_push(Job{.inputs = {inputs.begin(), inputs.end()},
-                            .outputs = {outputs.begin(), outputs.end()},
-                            .ready = std::move(ready),
-                            .done = std::move(done)})) {
-      // Rien n'est lancé : l'appelant fait l'étape lui-même, et signale la timeline.
-      return refuse(RefusalCode::ThreadUnavailable,
-                    std::format("OpenVINO : {} étapes en file, le fil n'en reprend pas", kStepBound));
-    }
-    return {};
-  }
-
- private:
-  struct Bound {
-    std::byte* data = nullptr;
-    TensorType type = TensorType::F16;
-    Shape shape;
-  };
-  struct Job {
-    std::vector<HostBinding> inputs;
-    std::vector<HostBinding> outputs;
-    std::function<std::expected<void, Refusal>()> ready;
-    std::function<void(std::expected<void, Refusal>)> done;
-  };
-
-  std::expected<void, Refusal> infer(std::span<const HostBinding> inputs,
-                                     std::span<const HostBinding> outputs) {
-    try {
-      for (std::size_t i = 0; i < inputs.size(); ++i) bind(i, compiled_.input(names_.inputs[i]), inputs[i]);
-      for (std::size_t i = 0; i < outputs.size(); ++i)
-        bind(inputs.size() + i, compiled_.output(names_.outputs[i]), outputs[i]);
-      request_.infer();
-      return {};
-    } catch (const std::exception& e) {
-      return refuse(RefusalCode::DeviceUnavailable, std::format("OpenVINO, exécution : {}", e.what()));
-    }
-  }
-
-  void note_failure(const Refusal& refusal) {
-    const std::scoped_lock lock(jobs_mutex_);
-    if (!failed_) failed_ = refusal;
-  }
-
-  // Le fil des étapes : chaque étape en file est faite, même à l'arrêt (sa timeline l'attend), et
-  // chacune appelle done, quoi qu'il arrive : la file attendrait sans fin un signal perdu.
-  void serve(const std::stop_token& stop) {
-    while (std::optional<Inbox<Job>::Message> message = jobs_.wait(stop)) {
-      Job& job = std::get<Job>(*message);
-      std::expected<void, Refusal> result;
-      try {
-        result = job.ready();
-        if (result) {
-          const std::scoped_lock lock(request_mutex_);
-          result = infer(job.inputs, job.outputs);
-        }
-      } catch (...) {
-        result = std::unexpected(refusal_from_exception(RefusalCode::DeviceUnavailable, "OpenVINO, étape"));
-      }
-      job.done(std::move(result));
-    }
-  }
-
-  // Les tenseurs enveloppent la mémoire du lecteur, sans copie côté hôte, et restent liés tant
-  // que la chaîne donne les mêmes : le greffon ne revérifie pas la mémoire à chaque image.
-  void bind(std::size_t slot, const ov::Output<const ov::Node>& port, const HostBinding& b) {
-    Bound& last = bound_[slot];
-    if (last.data == b.data && last.type == b.type && last.shape == b.shape) return;
-    ov::Shape shape;
-    for (const std::int64_t d : b.shape.dims) shape.push_back(static_cast<std::size_t>(d));
-    if (usm_ && usm_->owns(b.data, b.bytes)) {
-      request_.set_tensor(port, usm_->wrap(element_of(b.type), shape, b.data));
-    } else {
-      request_.set_tensor(port, ov::Tensor(element_of(b.type), shape, b.data));
-    }
-    last = {.data = b.data, .type = b.type, .shape = b.shape};
-  }
-
-  ov::CompiledModel compiled_;
-  ov::InferRequest request_;
-  vk::net::IoNames names_;
-  std::shared_ptr<UsmPool> usm_;
-  std::vector<Bound> bound_;
-  // Étapes en file pour le fil ; au-delà, l'appelant fait l'étape lui-même.
-  static constexpr std::size_t kStepBound = 16;
-
-  std::mutex request_mutex_;  // request_ et bound_ : le fil des étapes ou celui de run
-  std::mutex jobs_mutex_;     // failed_ et le lancement du fil
-  Inbox<Job> jobs_{{kStepBound}};
-  std::optional<Refusal> failed_;  // le fil des étapes a cédé : plus aucune étape différée
-  std::jthread worker_;
-};
 
 // Le NPU de la puce, s'il y en a un et que son pilote répond.
 struct Npu {
@@ -459,7 +235,7 @@ class OpenvinoRuntime final : public vk::net::Runtime {
       if (!in) return refuse(RefusalCode::CacheIo, std::format("{} : lecture", path.string()));
       ov::CompiledModel compiled =
           core_->import_model(in, device, on_npu ? npu_config(*core_, device) : gpu_config(*core_, device));
-      return std::make_unique<OpenvinoNet>(std::move(compiled), std::move(*names), on_npu ? nullptr : usm_);
+      return make_net(std::move(compiled), std::move(*names), on_npu ? nullptr : usm_);
     } catch (const std::exception& e) {
       return refuse(RefusalCode::CacheIo, std::format("OpenVINO, {} : {}", path.string(), e.what()));
     }
