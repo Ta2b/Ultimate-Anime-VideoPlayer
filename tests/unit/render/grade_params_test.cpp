@@ -281,6 +281,18 @@ TEST_CASE("Éclatant sur TrueHDR : aplats et éclats montent, le garde-fou passe
   CHECK_FALSE(decide_grade(bad, pq_context(core::HdrMode::TrueHdr)));
 }
 
+TEST_CASE("un curseur float poussé à sa borne garde le grade") {
+  // 0,8f relu en double vaut 0,800000012 : au bout des curseurs Couleurs et Noirs profonds, le grade
+  // entier était refusé.
+  GradeSettings settings;
+  settings.vibrance_rtx = static_cast<double>(0.8F);
+  settings.shadows = static_cast<double>(0.8F);
+  CHECK(check_grade_settings(settings));
+  CHECK(decide_grade(settings, pq_context(core::HdrMode::TrueHdr)));
+  settings.shadows = 0.81;
+  CHECK_FALSE(check_grade_settings(settings));
+}
+
 }  // namespace ajp::render
 
 namespace ajp::render {
@@ -302,15 +314,3 @@ TEST_CASE("vrai noir : seuils tirés de la rampe mesurée") {
 }
 
 }  // namespace ajp::render
-
-TEST_CASE("un curseur float poussé à sa borne garde le grade") {
-  // 0,8f relu en double vaut 0,800000012 : au bout des curseurs Couleurs et Noirs profonds, le grade
-  // entier était refusé.
-  GradeSettings settings;
-  settings.vibrance_rtx = static_cast<double>(0.8F);
-  settings.shadows = static_cast<double>(0.8F);
-  CHECK(check_grade_settings(settings));
-  CHECK(decide_grade(settings, pq_context(core::HdrMode::TrueHdr)));
-  settings.shadows = 0.81;
-  CHECK_FALSE(check_grade_settings(settings));
-}
