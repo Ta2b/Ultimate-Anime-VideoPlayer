@@ -1,7 +1,10 @@
 // Le backend Vulkan dont les réseaux passent par un autre runtime (net_runtime.h) : construction
-// et chargement par le runtime, tenseurs en mémoire hôte visible (ou partagée, en interop),
-// enqueue synchrone après l'attente de la file.
+// et chargement par le runtime, tenseurs en mémoire hôte visible (celle du runtime, importée, sur
+// un GPU intégré ; ou partagée, en interop),
+// enqueue synchrone après l'attente de la file, ou mis en file sur la timeline importée par le
+// runtime (interop) : alors ni attente ni retour à l'hôte.
 #include <format>
+#include <optional>
 #include <span>
 #include <string>
 #include <system_error>
@@ -13,6 +16,10 @@
 #include "gpu/vulkan/backend/vulkan_backend.h"
 #include "gpu/vulkan/backend/vulkan_backend_detail.h"
 #include "gpu/vulkan/compute/buffer.h"
+
+#if !defined(_WIN32)
+#include <unistd.h>
+#endif
 
 namespace ajp::gpu::vk {
 namespace {
@@ -109,12 +116,41 @@ std::expected<std::unique_ptr<Engine>, Refusal> VulkanBackend::load_runtime(cons
   return std::make_unique<RuntimeEngine>(std::move(*net), std::move(*names));
 }
 
+void VulkanBackend::import_timeline() {
+  auto fd = semaphore_fd(*context_, queue_->semaphore());
+  if (!fd) {
+    log(BackendLogLevel::Warn,
+        std::format("timeline non exportée ({}) : attente par l'hôte", fd.error().detail));
+    return;
+  }
+  auto imported = runtime_->import_semaphore(*fd);
+  if (!imported) {
+#if !defined(_WIN32)
+    ::close(*fd);  // le runtime ne le prend qu'en cas de succès
+#endif
+    log(BackendLogLevel::Warn, std::format("{} n'importe pas la timeline ({}) : attente par l'hôte",
+                                           runtime_->name(), imported.error().detail));
+    return;
+  }
+  imported_timeline_ = std::move(*imported);
+}
+
 std::expected<std::unique_ptr<TensorBuffer>, Refusal> VulkanBackend::alloc_runtime_tensor(
     TensorType type, const Shape& shape) {
   auto dense = detail::tensor_bytes(type, shape);
   if (!dense) return std::unexpected(dense.error());
   if (shared_memory_)
     return shared_tensor(*context_, *runtime_, type, shape, (*dense + 3) / 4 * 4, host_views_);
+  // GPU intégré : la mémoire hôte du runtime (USM d'OpenVINO), importée par Vulkan, que le réseau
+  // lit et écrit sans copie. Au premier refus, la mémoire hôte du backend pour la suite.
+  if (host_alignment_ != 0) {
+    auto imported = host_imported_tensor(*context_, *runtime_, type, shape, (*dense + 3) / 4 * 4,
+                                         host_alignment_, host_views_);
+    if (imported) return imported;
+    host_alignment_ = 0;
+    log(BackendLogLevel::Info, std::format("tenseurs de {} par la mémoire du backend ({})", runtime_->name(),
+                                           imported.error().detail));
+  }
   // En cache côté hôte : le runtime y lit les entrées et y écrit les sorties ; les noyaux de la
   // chaîne y accèdent comme à tout tampon de stockage.
   auto buffer = Buffer::create(*context_, *memory_, (*dense + 3) / 4 * 4, MemoryUse::Readback);
@@ -164,13 +200,39 @@ std::expected<void, Refusal> VulkanBackend::enqueue_runtime(Engine& engine, std:
       if (auto ok = bind(t); !ok) return ok;
     }
   }
-  // Les noyaux qui ont écrit les entrées sont finis, leurs écritures visibles de l'hôte
-  // (barrière de fin de chaque enregistrement) ; les sorties écrites ici le sont des soumissions
-  // suivantes, qui commencent après le retour.
   if (!queue_) return refuse_backend(RefusalCode::DeviceUnavailable, "file du backend absente");
-  if (auto ok = context_->wait_on_host(queue_->last()); !ok) return std::unexpected(ok.error());
   const std::span<const net::HostBinding> all(bindings);
-  return runtime_engine->net().run(all.first(inputs.size()), all.subspan(inputs.size()));
+  const auto ins = all.first(inputs.size());
+  const auto outs = all.subspan(inputs.size());
+  // Ordonné côté GPU : le réseau attend la dernière soumission (partie avec le lot) et signale
+  // l'étape que la suivante attend. Le lot part d'abord : le runtime n'attend que du soumis.
+  std::optional<BackendQueue::Step> step;
+  if (imported_timeline_) {
+    if (auto ok = queue_->flush(); !ok) return std::unexpected(ok.error());
+    step = queue_->external_step();
+  }
+  if (step) {
+    auto ordered =
+        runtime_engine->net().run_ordered(ins, outs, *imported_timeline_, step->wait, step->signal);
+    if (ordered) return {};
+    if (ordered.error().code != RefusalCode::FeatureUnavailable) {
+      // Rien ne signalera l'étape : l'hôte le fait, une fois la précédente atteinte, sans quoi
+      // la file attendrait sans fin.
+      if (auto ok = context_->wait_on_host(queue_->at(step->wait)); !ok) return std::unexpected(ok.error());
+      if (auto ok = queue_->signal_on_host(step->signal); !ok) return std::unexpected(ok.error());
+      return ordered;
+    }
+  }
+  // Par l'hôte : les noyaux qui ont écrit les entrées sont finis, leurs écritures visibles de
+  // l'hôte (barrière de fin de chaque enregistrement) ; les sorties écrites ici le sont des
+  // soumissions suivantes, qui commencent après le retour (ou après le signal de l'étape).
+  if (auto ok = context_->wait_on_host(step ? queue_->at(step->wait) : queue_->last()); !ok)
+    return std::unexpected(ok.error());
+  auto ran = runtime_engine->net().run(ins, outs);
+  if (step) {
+    if (auto ok = queue_->signal_on_host(step->signal); !ok) return std::unexpected(ok.error());
+  }
+  return ran;
 }
 
 }  // namespace ajp::gpu::vk

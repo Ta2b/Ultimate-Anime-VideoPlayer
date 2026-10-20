@@ -6,8 +6,12 @@
 namespace ajp::gpu::vk {
 
 std::expected<VkSemaphore, Refusal> create_timeline(const DeviceFunctions& fn, VkDevice device,
-                                                    std::uint64_t initial) {
+                                                    std::uint64_t initial,
+                                                    VkExternalSemaphoreHandleTypeFlags exports) {
+  const VkExportSemaphoreCreateInfo exported{.sType = VK_STRUCTURE_TYPE_EXPORT_SEMAPHORE_CREATE_INFO,
+                                             .handleTypes = exports};
   const VkSemaphoreTypeCreateInfo type{.sType = VK_STRUCTURE_TYPE_SEMAPHORE_TYPE_CREATE_INFO,
+                                       .pNext = exports != 0 ? &exported : nullptr,
                                        .semaphoreType = VK_SEMAPHORE_TYPE_TIMELINE,
                                        .initialValue = initial};
   const VkSemaphoreCreateInfo info{.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO, .pNext = &type};
@@ -18,9 +22,9 @@ std::expected<VkSemaphore, Refusal> create_timeline(const DeviceFunctions& fn, V
   return semaphore;
 }
 
-std::expected<TimelineSemaphore, Refusal> TimelineSemaphore::create(const VkContext& context,
-                                                                    std::uint64_t initial) {
-  auto semaphore = create_timeline(context.fn(), context.device(), initial);
+std::expected<TimelineSemaphore, Refusal> TimelineSemaphore::create(
+    const VkContext& context, std::uint64_t initial, VkExternalSemaphoreHandleTypeFlags exports) {
+  auto semaphore = create_timeline(context.fn(), context.device(), initial, exports);
   if (!semaphore) return std::unexpected(semaphore.error());
   return TimelineSemaphore(&context.fn(), context.device(), *semaphore);
 }

@@ -127,4 +127,14 @@ std::expected<std::vector<DimOverride>, Refusal> symbolic_overrides(const std::f
   return out;
 }
 
+std::expected<bool, Refusal> onnx_uses_op(const std::filesystem::path& onnx, std::string_view op_type) {
+  auto bytes = read_file(onnx);
+  if (!bytes) return std::unexpected(bytes.error());
+  auto model = ir::onnx::read_onnx(*bytes);
+  if (!model) return std::unexpected(model.error());
+  return std::ranges::any_of(model->graph.nodes, [&](const ir::onnx::Node& node) {
+    return node.op_type == op_type && (node.domain.empty() || node.domain == "ai.onnx");
+  });
+}
+
 }  // namespace ajp::gpu::vk::net

@@ -101,6 +101,8 @@ class VulkanBackend final : public Backend {
                                                                              const Shape& shape);
   std::expected<void, Refusal> enqueue_runtime(Engine& engine, std::span<const Tensor> inputs,
                                                std::span<Tensor> outputs);
+  // Donne la timeline de la file au runtime ; sans succès, ses réseaux attendent sur l'hôte.
+  void import_timeline();
 
   BackendLog log_;
   std::filesystem::path cache_dir_;
@@ -114,6 +116,11 @@ class VulkanBackend final : public Backend {
   std::shared_ptr<net::Runtime> runtime_;
   std::shared_ptr<HostViews> host_views_;  // projections des tenseurs d'un runtime
   bool shared_memory_ = false;             // interop : tenseurs du runtime en mémoire exportée
+  // Alignement des mémoires hôte du runtime que Vulkan importe (GPU intégré) ; 0 : sans import.
+  std::uint64_t host_alignment_ = 0;
+  // La timeline de queue_ vue du runtime (interop) : ses réseaux s'ordonnent côté GPU. Rendue
+  // avant le runtime et la file.
+  std::unique_ptr<net::ImportedSemaphore> imported_timeline_;
 };
 
 // Le contexte d'un appareil de rendu Vulkan partagé : sa file compute, son verrou de file.

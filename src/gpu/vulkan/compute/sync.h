@@ -14,14 +14,16 @@
 
 namespace ajp::gpu::vk {
 
-// Un VkSemaphore de type timeline, de valeur initiale initial. Le propriétaire le détruit.
+// Un VkSemaphore de type timeline, de valeur initiale initial, exportable vers ces types de
+// descripteurs (aucun par défaut). Le propriétaire le détruit.
 std::expected<VkSemaphore, Refusal> create_timeline(const DeviceFunctions& fn, VkDevice device,
-                                                    std::uint64_t initial);
+                                                    std::uint64_t initial,
+                                                    VkExternalSemaphoreHandleTypeFlags exports = 0);
 
 class TimelineSemaphore {
  public:
-  static std::expected<TimelineSemaphore, Refusal> create(const VkContext& context,
-                                                          std::uint64_t initial = 0);
+  static std::expected<TimelineSemaphore, Refusal> create(const VkContext& context, std::uint64_t initial = 0,
+                                                          VkExternalSemaphoreHandleTypeFlags exports = 0);
 
   TimelineSemaphore(TimelineSemaphore&& other) noexcept;
   TimelineSemaphore& operator=(TimelineSemaphore&& other) noexcept;

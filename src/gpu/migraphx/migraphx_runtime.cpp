@@ -121,6 +121,11 @@ class MigraphxRuntime final : public vk::net::Runtime {
       int fd, std::uint64_t bytes) override {
     return detail::import_memory(device_, fd, bytes);
   }
+  std::expected<std::unique_ptr<vk::net::ImportedSemaphore>, Refusal> import_semaphore(int fd) override {
+    if (!device_memory_)
+      return refuse(RefusalCode::FeatureUnavailable, "MIGraphX : sémaphore sans mémoire partagée");
+    return detail::import_semaphore(device_, fd);
+  }
 
   std::expected<void, Refusal> build(const ModelSpec& model, std::span<const InputShape> inputs,
                                      const std::filesystem::path& path, Progress& progress) override {

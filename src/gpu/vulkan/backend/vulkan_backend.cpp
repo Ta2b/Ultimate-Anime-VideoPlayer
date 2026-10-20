@@ -156,11 +156,7 @@ std::expected<void, Refusal> VulkanBackend::open(const BackendInit& init) {
   auto pipelines = PipelineCache::create(*context_);
   if (!pipelines) return std::unexpected(pipelines.error());
   pipelines_ = std::move(*pipelines);
-  auto queue = BackendQueue::create(*context_);
-  if (!queue) return std::unexpected(queue.error());
-  queue_.emplace(std::move(*queue));
-  profile_ = profile_device(*context_);
-  kernels_ = std::make_unique<VulkanKernelOps>(*context_, *memory_, *pipelines_, *queue_);
+  // Le runtime avant la file : en interop, la timeline de la file s'exporte vers lui.
   if (options_.runtime) {
     auto runtime = options_.runtime(context_->caps());
     if (!runtime) return std::unexpected(runtime.error());
@@ -168,17 +164,38 @@ std::expected<void, Refusal> VulkanBackend::open(const BackendInit& init) {
     host_views_ = std::make_shared<HostViews>();
     shared_memory_ = runtime_->imports_memory() && exports_memory(*context_);
     runtime_->use_device_memory(shared_memory_);
+    // GPU intégré seulement : sur une carte, la mémoire hôte se lit par le bus, et le runtime
+    // copie mieux vers la mémoire de la carte que ses noyaux ne la liraient de loin.
+    if (!shared_memory_ && context_->caps().type == VK_PHYSICAL_DEVICE_TYPE_INTEGRATED_GPU)
+      host_alignment_ = host_import_alignment(*context_);
+  }
+  const bool export_timeline = shared_memory_ && exports_semaphores(*context_);
+  const VkExternalSemaphoreHandleTypeFlags exports =
+      export_timeline ? VkExternalSemaphoreHandleTypeFlags{VK_EXTERNAL_SEMAPHORE_HANDLE_TYPE_OPAQUE_FD_BIT}
+                      : 0U;
+  auto queue = BackendQueue::create(*context_, exports);
+  if (!queue) return std::unexpected(queue.error());
+  queue_.emplace(std::move(*queue));
+  if (export_timeline) import_timeline();
+  profile_ = profile_device(*context_);
+  kernels_ = std::make_unique<VulkanKernelOps>(*context_, *memory_, *pipelines_, *queue_);
+  if (runtime_) {
     log(BackendLogLevel::Info,
-        std::format("réseaux par {} {} sur {}{}", runtime_->name(), runtime_->version(),
+        std::format("réseaux par {} {} sur {}{}{}", runtime_->name(), runtime_->version(),
                     runtime_->device_name(),
-                    shared_memory_ ? ", mémoire partagée avec la chaîne Vulkan" : ", tenseurs par l'hôte"));
+                    shared_memory_         ? ", mémoire partagée avec la chaîne Vulkan"
+                    : host_alignment_ != 0 ? ", tenseurs en mémoire hôte du runtime, sans copie"
+                                           : ", tenseurs par l'hôte",
+                    imported_timeline_ ? ", ordonnés côté GPU" : ""));
   }
   log(BackendLogLevel::Info,
-      std::format("backend Vulkan : {}, famille {}, unités matricielles {}{}", context_->caps().device_name,
-                  name(profile_.family), profile_.target.matrix_units ? "utilisées" : "non utilisées",
-                  profile_.matrix_hardware && !profile_.matrix_allowed
-                      ? " (présentes, hors liste d'autorisation)"
-                      : ""));
+      std::format(
+          "backend Vulkan : {}, famille {}, unités matricielles {}{}{}", context_->caps().device_name,
+          name(profile_.family), profile_.target.matrix_units ? "utilisées" : "non utilisées",
+          profile_.matrix_hardware && !profile_.matrix_allowed ? " (présentes, hors liste d'autorisation)"
+                                                               : "",
+          profile_.matrix_shapes.empty() ? ""
+                                         : std::format(" ; tuiles du pilote : {}", profile_.matrix_shapes)));
   return {};
 }
 
@@ -193,7 +210,7 @@ BackendCaps VulkanBackend::capabilities() const {
     return {.name = std::string(runtime_->name()),
             .device_name = std::format("{} (chaîne Vulkan : {})", runtime_->device_name(), caps.device_name),
             .driver_version = runtime_->version(),
-            .needs_host_sync = true,
+            .needs_host_sync = !imported_timeline_,
             .fp16 = true,
             .int8 = false,
             .matrix_units = false,
@@ -334,6 +351,7 @@ std::expected<void, Refusal> VulkanBackend::enqueue(Engine& engine, std::span<co
 
 std::expected<Fence, Refusal> VulkanBackend::signal() {
   if (!queue_) return refuse_backend(RefusalCode::DeviceUnavailable, "file du backend absente");
+  if (auto ok = queue_->flush(); !ok) return std::unexpected(ok.error());  // attendu ailleurs
   const TimelinePoint last = queue_->last();
   return Fence{.handle = handle_value(last.semaphore), .value = last.value};
 }
