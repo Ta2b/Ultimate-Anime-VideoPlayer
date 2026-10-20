@@ -23,13 +23,19 @@ jobs:
       AJP_VCPKG: C:\v
       AJP_VCPKG_BUILDTREES: C:\vb
       VCPKG_BINARY_SOURCES: "clear;files,C:\\vc,readwrite"
+      AJP_VCPKG_TRIPLET: x64-windows-release
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/cache@v4
+      # Restauration et sauvegarde séparées : les ports déjà compilés restent en cache même quand
+      # la construction échoue plus loin.
+      - id: vcpkg-cache
+        uses: actions/cache/restore@v4
         with:
           path: C:\vc
-          key: vcpkg-windows-x64-${{ hashFiles('vcpkg.json', 'ports/**') }}
-          restore-keys: vcpkg-windows-x64-
+          key: vcpkg-windows-x64-release-${{ hashFiles('vcpkg.json', 'ports/**') }}-${{ github.run_id }}
+          restore-keys: |
+            vcpkg-windows-x64-release-${{ hashFiles('vcpkg.json', 'ports/**') }}-
+            vcpkg-windows-x64-release-
       - name: vcpkg à la référence du manifeste
         shell: pwsh
         run: |
@@ -45,6 +51,11 @@ jobs:
         run: |
           $env:VCPKG_ROOT = $env:AJP_VCPKG
           pwsh tools/release/package-windows.ps1 "$env:RUNNER_TEMP/package"
+      - uses: actions/cache/save@v4
+        if: always()
+        with:
+          path: C:\vc
+          key: ${{ steps.vcpkg-cache.outputs.cache-primary-key }}
       - uses: actions/upload-artifact@v4
         with:
           name: ajp-windows-x64

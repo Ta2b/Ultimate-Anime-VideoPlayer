@@ -1,7 +1,8 @@
 # Paquets Windows d'une version : un seul lecteur pour tous les GPU, et ses moteurs à la demande
 # (même forme que package-linux.sh).
 #
-#   ajp-windows-x64.zip                     le lecteur, le backend Vulkan, leurs DLL et engines.lock
+#   ajp-windows-x64.zip                     le lecteur, le backend Vulkan, leurs DLL, engines.lock
+#                                           et les modèles (models/, sauf AJP_WITHOUT_MODELS)
 #   ajp-engine-tensorrt-windows-x64.tar.gz  backend TensorRT, TensorRT et trtexec (NVIDIA), si
 #                                           construit (AJP_WITH_CUDA=ON, TensorRT installé)
 #
@@ -26,6 +27,10 @@ $Extra = @()
 # Arbre de construction de vcpkg ailleurs (un chemin court : les sources de certains ports
 # dépassent les 260 caractères de MSVC sous build/).
 if ($env:AJP_VCPKG_BUILDTREES) { $Extra += "-DVCPKG_INSTALL_OPTIONS=--x-buildtrees-root=$env:AJP_VCPKG_BUILDTREES" }
+# Triplet sans Debug (x64-windows-release) : la moitié des ports à compiler sur la CI.
+if ($env:AJP_VCPKG_TRIPLET) {
+  $Extra += "-DVCPKG_TARGET_TRIPLET=$env:AJP_VCPKG_TRIPLET", "-DVCPKG_HOST_TRIPLET=$env:AJP_VCPKG_TRIPLET"
+}
 cmake --preset windows-release -S $Root "-DAJP_WITH_CUDA=$Cuda" @Extra
 if ($LASTEXITCODE -ne 0) { throw "configuration" }
 cmake --build --preset windows-release
@@ -80,6 +85,16 @@ if (Test-Path $TrtModule) {
   $nvinfer = Get-ChildItem "$dir/nvinfer_*.dll" | Where-Object { $_.Name -match '^nvinfer_(\d+)\.dll$' } | Select-Object -First 1
   $trtVersion = if ($nvinfer) { $Matches[1] } else { $Version }
   Add-Engine "tensorrt" $trtVersion "https://docs.nvidia.com/deeplearning/tensorrt/latest/reference/sla.html" $dir
+}
+
+# --- Les modèles SPAN et RIFE livrés (comme sous Linux) : le bash de Git, pas celui de WSL. ---
+if (-not $env:AJP_WITHOUT_MODELS) {
+  $bash = Join-Path $env:ProgramFiles "Git/bin/bash.exe"
+  if (-not (Test-Path $bash)) { $bash = "bash" }
+  $script = "$Root/tools/release/fetch-models.sh".Replace('\', '/')
+  $models = (Join-Path $Stage "models").Replace('\', '/')
+  & $bash $script $models
+  if ($LASTEXITCODE -ne 0) { throw "modèles" }
 }
 
 Compress-Archive -Path $Stage -DestinationPath (Join-Path $Out "ajp-windows-x64.zip") -Force
