@@ -126,7 +126,8 @@ std::optional<std::string> enumerator_value(std::span<const std::string> headers
       std::optional<long long> number = next;
       if (equals != std::string_view::npos) {
         const std::optional<std::string> value = resolve(headers, trim(entry.substr(equals + 1)), depth);
-        number = value ? parse_integer(*value) : std::nullopt;
+        number.reset();  // pas d'optional temporaire : GCC -O3 y voit une lecture non initialisée
+        if (value) number = parse_integer(*value);
       }
       if (trim(entry.substr(0, equals)) == name) {
         if (!number) return std::nullopt;
