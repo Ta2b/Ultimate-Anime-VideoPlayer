@@ -78,6 +78,9 @@ class Pipeline {
   // À chaque tour de main : un Credit pour source si subs a refusé un paquet.
   void pump();
 
+  // Le thread gpu n'a plus d'image en cours (VideoStage::idle) : après StreamEnded, plus aucune
+  // RingFrame n'arrivera que celles déjà dans la boîte.
+  bool video_idle() const { return video_->idle(); }
   const media::TrackInfo& video_track() const { return video_track_; }
   // Ce que la session doit savoir du fichier : durée, taille, sous-titres.
   SessionConfig session_config() const;

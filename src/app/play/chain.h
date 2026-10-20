@@ -53,6 +53,7 @@ struct Chain {
   bool dirty = false;                   // play.toml à réécrire
   std::optional<PlaySettings> reopen;   // demandé par le menu des paramètres
   std::optional<EngineChange> engines;  // onglet Moteurs : à faire avant de rouvrir
+  std::optional<ExportJob> export_job;  // onglet Export : à faire avant de rouvrir
   const std::optional<DisplayFacts>& display;
   // Vrai noir OLED : la rampe passée par TrueHDR (codes PQ, de gpu), les seuils en cours, et le
   // recalage demandé (au plus 5 fois par seconde).

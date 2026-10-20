@@ -40,6 +40,11 @@ class RingStage : public VideoStage, public FrameSink {
   bool post(const SlotFree& free) override { return inbox_.try_push(SlotFree{free}); }
   bool post(const Flush& flush) override { return inbox_.try_push(Flush{flush}); }
   bool post(const Command& command) override { return inbox_.try_push(Command{command}); }
+  // Les RingFrame partent dans la boîte de main avant que l'image quitte in_flight_.
+  bool idle() const override {
+    const std::size_t frames = in_flight_.load();
+    return frames == 0 || (frames == 1 && wants_next());
+  }
 
  protected:
   // slots : nombre de slots du ring ; generation : celle du ring.

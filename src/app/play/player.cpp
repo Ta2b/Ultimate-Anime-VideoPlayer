@@ -6,7 +6,6 @@
 #include <format>
 #include <fstream>
 #include <optional>
-#include <span>
 #include <string_view>
 #include <system_error>
 #include <utility>
@@ -19,19 +18,19 @@
 #include "app/play/backend_library.h"
 #include "app/play/build_progress.h"
 #include "app/play/chain.h"
+#include "app/play/chain_setup.h"
 #include "app/play/chain_stats.h"
 #include "app/play/display_edid.h"
-#include "app/play/drba_model.h"
 #include "app/play/engine_build.h"
 #include "app/play/engine_install.h"
 #include "app/play/engine_screen.h"
 #include "app/play/engine_switch.h"
+#include "app/play/export_run.h"
 #include "app/play/first_run.h"
 #include "app/play/gmfss_model.h"
 #include "app/play/host_facts.h"
 #include "app/play/input.h"
 #include "app/play/model_choice.h"
-#include "app/play/motion_model.h"
 #include "app/play/pipeline.h"
 #include "app/play/placebo_screen.h"
 #include "app/play/player_engines.h"
@@ -44,7 +43,6 @@
 #include "core/clock.h"
 #include "core/log.h"
 #include "core/settings.h"
-#include "kernels/spec/rife.h"
 #include "media/demuxer.h"
 #include "media/selection.h"
 #include "prepare/sha256.h"
@@ -55,8 +53,6 @@ namespace ajp::app::play {
 namespace {
 
 constexpr std::uint32_t kRingSlots = 4;
-// Hauteur où RIFE estime le mouvement quand la chaîne travaille plus haut (sortie 4K).
-constexpr int kRifeMotionHeight = 720;
 static_assert(kRingSlots <= kMaxKeptSubtitles, "les sous-titres gardés doivent couvrir tout le ring");
 
 std::unexpected<Refusal> refuse(RefusalCode code, std::string detail) {
@@ -64,19 +60,6 @@ std::unexpected<Refusal> refuse(RefusalCode code, std::string detail) {
 }
 
 // La piste vidéo que la source choisira, lue d'avance : sa taille fixe le moteur et le ring.
-// Le décodeur suit le backend : NVDEC en mémoire CUDA pour TensorRT ; ailleurs, sous Linux, VA-API
-// (le bloc vidéo d'AMD ou d'Intel, même sur le GPU intégré d'un portable) copié en mémoire hôte,
-// puis le décodage logiciel. L'ingestion du backend Vulkan copie l'image hôte sur l'appareil (le
-// décodage Vulkan Video sur l'appareil du rendu reste à brancher).
-std::vector<media::HwApi> decoder_attempts(std::string_view backend) {
-  if (backend == "tensorrt") return {media::HwApi::Cuda};
-#if defined(__linux__)
-  return {media::HwApi::Vaapi, media::HwApi::Software};
-#else
-  return {media::HwApi::Software};
-#endif
-}
-
 std::expected<media::TrackInfo, Refusal> probe_video(const std::filesystem::path& file) {
   auto demuxer = media::Demuxer::open(file);
   if (!demuxer) return std::unexpected(std::move(demuxer.error()));
@@ -95,19 +78,8 @@ struct Reopen {
   PlaySettings settings;
   std::int64_t position_us = 0;
   std::optional<EngineChange> engines;  // onglet Moteurs : à faire avant de rouvrir
+  std::optional<ExportJob> export_job;  // onglet Export : à faire avant de rouvrir
 };
-
-// Où chercher les graphes de GMFSS : à côté du modèle RIFE choisi, puis dans les dossiers RIFE.
-std::vector<std::filesystem::path> gmfss_dirs(const PlayerPaths& paths,
-                                              const std::optional<ModelChoice>& rife) {
-  std::vector<std::filesystem::path> dirs;
-  if (rife) dirs.push_back(rife->path.parent_path());
-  for (const std::filesystem::path& candidate : default_rife_candidates(paths.home, paths.models)) {
-    if (std::ranges::find(dirs, candidate.parent_path()) == dirs.end())
-      dirs.push_back(candidate.parent_path());
-  }
-  return dirs;
-}
 
 // Une ouverture de la chaîne : moteurs, RTX HDR, threads, session et boucle de main, jusqu'à la
 // fin du fichier, q, ou un réglage qui demande de la rouvrir.
@@ -119,135 +91,13 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
   for (const std::string& line : unavailable) log->warn("{}", line);
   const PlayOptions options = options_for(p.options, settings);
   const media::TrackInfo& video = p.video;
-  std::optional<ModelChoice> model;
-  if (settings.upscale) {
-    auto chosen = choose_model(p.options, p.paths.home, settings, p.paths.models);
-    if (!chosen) return std::unexpected(std::move(chosen.error()));
-    model = std::move(*chosen);
-  }
-  const int factor = model ? kSpanFactor : 1;
-  const WorkSize work = work_size(video.width, video.height, settings.work_height);
-  const bool reduced = work != WorkSize{video.width, video.height};
-  const std::string reduce = reduced ? std::format("{}x{} → {} {}x{}", video.width, video.height,
-                                                   label(settings.downscale), work.width, work.height)
-                                     : std::format("{}x{}", video.width, video.height);
-  // Le modèle RIFE est cherché même sans interpolation : le menu peut l'allumer.
-  const std::span<const std::string_view> rife_order = rife_preference(gpu_facts(p.screen));
-  std::optional<ModelChoice> rife_choice;
-  if (auto found = choose_rife_model(p.options, p.paths.home, settings, rife_order, p.paths.models))
-    rife_choice = std::move(*found);
-  const std::optional<std::filesystem::path> rife_model =
-      rife_choice ? std::optional(rife_choice->path) : std::nullopt;
-  const std::vector<std::filesystem::path> gmfss_places = gmfss_dirs(p.paths, rife_choice);
-  const GmfssVariant gmfss_variant =
-      settings.motion_engine == MotionEngine::GmfssUnion ? GmfssVariant::Union : GmfssVariant::Base;
-  const bool gmfss_found = find_gmfss(gmfss_places, gmfss_variant).has_value();
-  const bool want_gmfss = settings.rife_factor >= 2 && is_gmfss(settings.motion_engine);
-  const bool drba_found = find_distil_drba(gmfss_places).has_value();
-  const bool want_drba = settings.rife_factor >= 2 && settings.motion_engine == MotionEngine::DistilDrba;
-  if (settings.rife_factor >= 2 && !rife_model && !(want_gmfss && gmfss_found) && !(want_drba && drba_found))
-    return std::unexpected(
-        choose_rife_model(p.options, p.paths.home, settings, rife_order, p.paths.models).error());
-  show_loading(p.screen, p.ui, "Chargement");
-  const gpu::BackendInit init{
-      .render = &p.screen.device(), .cache_dir = p.paths.engines, .log = backend_log()};
-  auto backend = BackendLibrary::create(p.library, init);
-  if (!backend) return std::unexpected(std::move(backend.error()));
-  const std::string backend_name = (*backend)->capabilities().name;
-  log->info("backend {} ({}) depuis {}", (*backend)->capabilities().name,
-            (*backend)->capabilities().device_name, p.library->path().string());
-
-  std::unique_ptr<gpu::Engine> engine;
-  if (model) {
-    auto loaded =
-        prepare_engine(p, init, **backend, model->path, gpu::Shape{.dims = {1, 3, work.height, work.width}},
-                       EngineLabel{.name = "SPAN",
-                                   .model = model->path.stem().string(),
-                                   .width = work.width,
-                                   .height = work.height});
-    if (!loaded) return std::unexpected(std::move(loaded.error()));
-    if (!*loaded) return std::nullopt;
-    engine = std::move(**loaded);
-  }
-  // Au-delà de 720 lignes de travail (la 4K sans réduction), RIFE estime le mouvement sur une copie
-  // réduite à 720p et le warp déforme les images de travail : la variante mouvement seulement.
-  const WorkSize rife_size = !p.options.rife_image && work.height > kRifeMotionHeight
-                                 ? work_size(video.width, video.height, kRifeMotionHeight)
-                                 : work;
-  // GMFSS Fortuna à la place de RIFE, à la taille de travail ; RIFE reprend si ses graphes manquent.
-  GmfssEngines gmfss;
-  if (want_gmfss) {
-    auto loaded = prepare_gmfss(p, init, **backend, gmfss_places, gmfss_variant, work.width, work.height);
-    if (!loaded) {
-      log->warn("{} ; RIFE à la place", loaded.error().detail);
-      p.ui.controls().notify("GMFSS indisponible : RIFE", host_now_us());
-    } else if (!*loaded) {
-      return std::nullopt;
-    } else {
-      gmfss = std::move(**loaded);
-    }
-  }
-  const bool use_gmfss = gmfss.pair != nullptr;
-  // DistilDRBA à la place de RIFE, à la taille de travail ; RIFE reprend si son graphe manque.
-  std::unique_ptr<gpu::Engine> drba;
-  if (want_drba) {
-    auto loaded = prepare_distil_drba(p, init, **backend, gmfss_places, work.width, work.height);
-    if (!loaded) {
-      log->warn("{} ; RIFE à la place", loaded.error().detail);
-      p.ui.controls().notify("DistilDRBA indisponible : RIFE", host_now_us());
-    } else if (!*loaded) {
-      return std::nullopt;
-    } else {
-      drba = std::move(**loaded);
-    }
-  }
-  const bool use_drba = drba != nullptr;
-  const bool use_rife = settings.rife_factor >= 2 && rife_model && !use_gmfss && !use_drba;
-  const int rife_align = use_rife ? rife_padding_multiple(*rife_model) : kernels::kRifeAlign;
-  const kernels::RifeGeometry g = kernels::rife_geometry(rife_size.width, rife_size.height, rife_align);
-  const kernels::RifeGeometry image_g = kernels::rife_geometry(work.width, work.height, rife_align);
-  std::unique_ptr<gpu::Engine> rife;
-  std::unique_ptr<gpu::Engine> rife_motion;
-  int rife_planes = kernels::kRifeInputChannels;
-  if (use_rife) {
-    auto planes = rife_input_planes(*rife_model);
-    if (!planes) return std::unexpected(std::move(planes.error()));
-    rife_planes = *planes;
-  }
-  // RIFE par son mouvement : une passe au milieu de la paire la sert toute quand le mouvement est
-  // faible ; sans variante dérivable, RIFE image comme avant.
-  if (use_rife && !p.options.rife_image) {
-    auto derived = motion_model(*rife_model, p.paths.engines.parent_path() / "modeles");
-    if (!derived) {
-      log->warn("RIFE mouvement indisponible ({}) : RIFE image", derived.error().detail);
-    } else {
-      auto loaded = prepare_engine(p, init, **backend, *derived,
-                                   gpu::Shape{.dims = {1, rife_planes, g.padded_height, g.padded_width}},
-                                   EngineLabel{.name = "RIFE",
-                                               .model = derived->stem().string(),
-                                               .width = g.padded_width,
-                                               .height = g.padded_height});
-      if (!loaded) return std::unexpected(std::move(loaded.error()));
-      if (!*loaded) return std::nullopt;
-      rife_motion = std::move(**loaded);
-    }
-  }
-  if (use_rife && !rife_motion) {
-    auto loaded =
-        prepare_engine(p, init, **backend, *rife_model,
-                       gpu::Shape{.dims = {1, rife_planes, image_g.padded_height, image_g.padded_width}},
-                       EngineLabel{.name = "RIFE",
-                                   .model = rife_model->stem().string(),
-                                   .width = image_g.padded_width,
-                                   .height = image_g.padded_height});
-    if (!loaded) return std::unexpected(std::move(loaded.error()));
-    if (!*loaded) return std::nullopt;
-    rife = std::move(**loaded);
-  }
-  if (rife_motion) {
-    log->info("RIFE mouvement : estimé en {}x{}, warp en {}x{}", rife_size.width, rife_size.height,
-              work.width, work.height);
-  }
+  auto prepared = prepare_chain(p, settings);
+  if (!prepared) return std::unexpected(std::move(prepared.error()));
+  if (!*prepared) return std::nullopt;
+  ChainEngines& c = **prepared;
+  const int factor = c.factor;
+  const WorkSize work = c.work;
+  const bool rife_loaded = c.interpolates();
 
   settings.stats.all = p.details;  // Tab pendant la préparation
 
@@ -263,7 +113,7 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
   if (settings.true_hdr) {
     show_loading(p.screen, p.ui, "Préparation de RTX HDR");
     auto opened = open_rtx_hdr(p.options.true_hdr_sdk, p.paths, settings, auto_peak, p.screen,
-                               *(*backend)->kernels(), work.width * factor, work.height * factor);
+                               *c.backend->kernels(), work.width * factor, work.height * factor);
     if (opened) {
       peak_nits = *opened;
     } else {
@@ -279,27 +129,19 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
   }
 
   const std::string label_text = std::format(
-      "{}{}{}",
-      use_gmfss  ? std::format("GMFSS Fortuna{} {} · ", gmfss_variant == GmfssVariant::Union ? " Union" : "",
-                               factor_text(factor_of(settings)))
-      : use_drba ? std::format("DistilDRBA {} · ", factor_text(factor_of(settings)))
-      : use_rife
-          ? std::format("RIFE {} · {} · ", factor_text(factor_of(settings)), rife_model->stem().string())
-          : std::string(),
+      "{}{}{}", c.motion_label(settings),
       // Le moteur HDR vraiment pris : TrueHDR ouvert, ou le HDR adaptatif sur une sortie HDR10.
       settings.true_hdr ? "RTX HDR · " : (settings.hdr_native && hdr_out ? "HDR adaptatif · " : ""),
-      model ? std::format("SPAN ×{} · {} · {} · {} → {}x{}", factor, model->path.stem().string(),
-                          backend_name, reduce, work.width * factor, work.height * factor)
-            : std::format("sans agrandissement · {}", reduce));
+      c.span_label());
   log->info("{} : {}", options.file.string(), label_text);
   auto live = std::make_shared<LiveSettings>();
-  live->set_rife_factor(use_rife || use_gmfss || use_drba ? factor_of(settings) : Factor{});
+  live->set_rife_factor(rife_loaded ? factor_of(settings) : Factor{});
   live->set_reduction(reduction_of(settings.downscale));
   live->set_keep_poses(settings.keep_poses);
   PipelineConfig config{.file = options.file,
-                        .decoder = {.attempts = decoder_attempts(backend_name),
+                        .decoder = {.attempts = decoder_attempts(c.backend_name),
                                     .render_device = p.screen.device().uuid,
-                                    .download = backend_name != "tensorrt"},
+                                    .download = c.backend_name != "tensorrt"},
                         .audio_track = p.audio_track,
                         .subtitle_track = p.subtitle_track};
   PlaceboScreen& out = p.screen;
@@ -312,36 +154,11 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
         if (!slots) return std::unexpected(std::move(slots.error()));
         const MasterClock* clock = stage.clock;
         return UpscaleStage::start(std::move(stage),
-                                   UpscaleSetup{.backend = backend->get(),
-                                                .engine = engine.get(),
-                                                .rife = rife.get(),
-                                                .rife_motion = rife_motion.get(),
-                                                .rife_planes = rife_planes,
-                                                .rife_align = rife_align,
-                                                .gmfss_pair = gmfss.pair.get(),
-                                                .gmfss_fusion = gmfss.fusion.get(),
-                                                .gmfss_align = gmfss.align,
-                                                .distil_drba = drba.get(),
-                                                .rife_factor = factor_of(settings),
-                                                .true_hdr = settings.true_hdr,
-                                                .live = live,
-                                                .clock = clock,
-                                                .source_width = width,
-                                                .source_height = height,
-                                                .work_width = sized.width,
-                                                .work_height = sized.height,
-                                                .rife_width = rife_motion ? rife_size.width : 0,
-                                                .rife_height = rife_motion ? rife_size.height : 0,
-                                                .warp_after_span = settings.warp_after_span,
-                                                .slots = std::move(*slots)});
+                                   c.upscale(settings, live, clock, width, height, std::move(*slots)));
       });
   if (!pipeline) return std::unexpected(std::move(pipeline.error()));
 
-  const bool rife_loaded = rife != nullptr || rife_motion != nullptr || use_gmfss || use_drba;
-  const ChainStats chain_stats(*live, *(*backend)->kernels(), rife_loaded,
-                               use_gmfss  ? "GMFSS"
-                               : use_drba ? "DistilDRBA"
-                                          : "RIFE");
+  const ChainStats chain_stats(*live, *c.backend->kernels(), rife_loaded, std::string(c.motion_name()));
   SessionConfig session_config = (*pipeline)->session_config();
   session_config.start_us = start_us;
   session_config.stop_after_us = options.stop_after_us;
@@ -362,35 +179,38 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
   p.ui.set_settings(
       settings,
       SettingsChoices{
-          .models = model ? model->available : std::vector<std::string>{},
-          .default_model = model ? model->default_name : std::string(),
+          .models = c.model ? c.model->available : std::vector<std::string>{},
+          .default_model = c.model ? c.model->default_name : std::string(),
+          .source_width = video.width,
           .source_height = video.height,
           .source_fps = fps_of(video.frame_rate),
+          .source_rate = video.frame_rate,
           .display_hz = display_period_us(out.window()) > 0
                             ? 1e6 / static_cast<double>(display_period_us(out.window()))
                             : 0.0,
-          .rife_available = rife_model.has_value() || gmfss_found || drba_found,
-          .gmfss_available = find_gmfss(gmfss_places).has_value(),
-          .gmfss_union_available = find_gmfss(gmfss_places, GmfssVariant::Union).has_value(),
-          .distil_drba_available = drba_found,
+          .rife_available = c.rife_model.has_value() || c.gmfss_found || c.drba_found,
+          .gmfss_available = find_gmfss(c.gmfss_places).has_value(),
+          .gmfss_union_available = find_gmfss(c.gmfss_places, GmfssVariant::Union).has_value(),
+          .distil_drba_available = c.drba_found,
           .rife_loaded = rife_loaded,
-          .rife_models = rife_choice ? rife_choice->available : std::vector<std::string>{},
-          .default_rife_model = rife_choice ? rife_choice->default_name : std::string(),
-          .rife_folder = gmfss_places.front().string(),
+          .rife_models = c.rife_choice ? c.rife_choice->available : std::vector<std::string>{},
+          .default_rife_model = c.rife_choice ? c.rife_choice->default_name : std::string(),
+          .rife_folder = c.gmfss_places.front().string(),
           .true_hdr_available = std::filesystem::exists(p.options.true_hdr_sdk) || settings.true_hdr,
           .hdr_output = p.screen.hdr_output(),
           .auto_peak = auto_peak,
-          .engines =
-              engine_badges(p.paths.engines, model ? model->path : std::filesystem::path(), work,
-                            rife || rife_motion ? rife_model : std::nullopt, rife_motion ? g : image_g),
+          .engines = engine_badges(p.paths.engines, c.model ? c.model->path : std::filesystem::path(), work,
+                                   c.rife || c.rife_motion ? c.rife_model : std::nullopt,
+                                   c.rife_motion ? c.geometry : c.image_geometry),
           .chosen_engines = chosen_line(p.engines),
           .switchable = installed_switchable(p.catalog, p.paths),
           .engine_in_use = engine_of_library(p.library->path()),
           .engine_note = fallback_note(p.engines, p.library->path()),
-          .display_text = p.display ? describe(*p.display) : std::string("EDID illisible : OLED inconnu")});
+          .display_text = p.display ? describe(*p.display) : std::string("EDID illisible : OLED inconnu"),
+          .source_file = p.options.file});
   p.profiles.source =
       core::SourceInfo{.width = video.width, .height = video.height, .fps = fps_of(video.frame_rate)};
-  if (model) p.profiles.default_model = model->default_name;
+  if (c.model) p.profiles.default_model = c.model->default_name;
   p.ui.set_profiles(view_of(p.profiles));
   Chain chain{.session = session,
               .screen = out,
@@ -502,7 +322,8 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
   if (chain.reopen && !failure) {
     reopen = Reopen{.settings = *chain.reopen,
                     .position_us = std::max<std::int64_t>(session.view().position_us, 0),
-                    .engines = chain.engines};
+                    .engines = chain.engines,
+                    .export_job = chain.export_job};
     reopen->settings.volume = p.ui.controls().volume();
     p.audio_track = (*pipeline)->tracks().audio_selected;
     p.subtitle_track = (*pipeline)->tracks().subtitle_selected;
@@ -512,10 +333,7 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
   session.end();
   out.flush();
   pipeline->reset();
-  rife_motion.reset();
-  rife.reset();
-  engine.reset();
-  backend->reset();
+  prepared->reset();
   if (failure) return std::unexpected(std::move(*failure));
   return reopen;
 }
@@ -667,6 +485,11 @@ std::expected<void, Refusal> play(const PlayOptions& options, const PlayerPaths&
         break;
       }
       if (!*handled) break;
+    }
+    if (const std::optional<ExportJob>& job = (*outcome)->export_job) {
+      const ExportOutcome exported = run_export(player, *job);
+      if (exported.end == ExportEnd::Quit) break;
+      player.notice = exported.notice;
     }
     settings = (*outcome)->settings;
     start_us = (*outcome)->position_us;

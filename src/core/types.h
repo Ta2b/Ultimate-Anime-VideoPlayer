@@ -91,6 +91,9 @@ enum class RefusalCode : std::uint8_t {
   DeviceUnavailable,   // aucun appareil, aucune file compute, ou UUID introuvable
   FeatureUnavailable,  // version, extension, fonction, format ou limite absents de l'appareil
   GpuMemoryExhausted,  // mémoire de l'appareil, sous-allocateur ou pool de descripteurs à leur borne
+  // export : encodage et mux
+  EncoderUnavailable,  // aucun encodeur du codec demandé ne s'ouvre (absent de FFmpeg, GPU, pilote)
+  EncodeFailed,        // l'encodeur ou le mux a refusé une image ou un paquet
 };
 
 struct Refusal {
@@ -232,6 +235,10 @@ constexpr std::string_view name(RefusalCode code) {
       return "FeatureUnavailable";
     case RefusalCode::GpuMemoryExhausted:
       return "GpuMemoryExhausted";
+    case RefusalCode::EncoderUnavailable:
+      return "EncoderUnavailable";
+    case RefusalCode::EncodeFailed:
+      return "EncodeFailed";
   }
   return "Unknown";
 }

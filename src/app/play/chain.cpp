@@ -500,6 +500,12 @@ void apply(const Input& input, Chain& to, std::int64_t now_us) {
           },
           [&](const UseEngine& use) { ask_engines(to, use); },
           [&](const OpenEngineScreen& open) { ask_engines(to, open); },
+          [&](const StartExport& start) {
+            log_channel("app")->info("export demandé : la lecture se ferme pendant l'export");
+            to.ui.close_settings();
+            to.export_job = start.job;
+            to.reopen = to.running;
+          },
           [&](const EditProfile& edit) {
             const std::array<core::UserEdit, 1> edits{edit.edit};
             auto edited = edit_profiles(to.profiles.user_path, to.profiles.data, edits);

@@ -1,0 +1,239 @@
+#include "app/play/settings_chain_tabs.h"
+
+#include <algorithm>
+#include <array>
+#include <format>
+#include <string>
+
+#include <imgui.h>
+
+#include "app/play/drba_model.h"
+#include "app/play/gmfss_model.h"
+#include "app/play/model_choice.h"
+#include "app/play/panel_style.h"
+
+namespace ajp::app::play {
+
+using panel::note;
+using panel::section;
+
+namespace {
+
+struct HeightChoice {
+  int lines;
+  const char* label;
+};
+constexpr std::array<HeightChoice, 5> kHeights{{
+    {0, "Source (sans réduction : 4K)"},
+    {900, "900 lignes"},
+    {720, "720 lignes (recommandé)"},
+    {540, "540 lignes"},
+    {480, "480 lignes"},
+}};
+
+}  // namespace
+
+void image_tab(PlaySettings& d, const SettingsChoices& choices) {
+  section("Agrandissement");
+  ImGui::Checkbox("SPAN ×2 (AnimeJaNai)", &d.upscale);
+  ImGui::BeginDisabled(!d.upscale);
+  const std::string current = d.model.empty() ? choices.default_model : d.model;
+  if (ImGui::BeginCombo("Modèle", model_label(current).c_str())) {
+    for (const std::string& model : choices.models) {
+      const bool chosen = model == current;
+      if (ImGui::Selectable(model_label(model).c_str(), chosen))
+        d.model = model == choices.default_model ? std::string() : model;
+      if (chosen) ImGui::SetItemDefaultFocus();
+    }
+    ImGui::EndCombo();
+  }
+  ImGui::EndDisabled();
+  note("Performance : le plus rapide. Balanced : plus fin, plus lent. Sharp1 : contours plus nets.");
+
+  section("Réduction avant l'agrandissement");
+  const auto height = std::ranges::find(kHeights, d.work_height, &HeightChoice::lines);
+  const std::string height_label =
+      height != kHeights.end() ? std::string(height->label) : std::format("{} lignes", d.work_height);
+  if (ImGui::BeginCombo("Hauteur de travail", height_label.c_str())) {
+    for (const HeightChoice& choice : kHeights) {
+      if (ImGui::Selectable(choice.label, choice.lines == d.work_height)) d.work_height = choice.lines;
+    }
+    ImGui::EndCombo();
+  }
+  const bool reduces = d.work_height > 0 && d.work_height < choices.source_height;
+  if (reduces) {
+    if (ImGui::BeginCombo("Algorithme", std::string(label(d.downscale)).c_str())) {
+      for (int i = 0; i < kDownscaleCount; ++i) {
+        const auto filter = static_cast<Downscale>(i);
+        if (ImGui::Selectable(std::string(label(filter)).c_str(), filter == d.downscale))
+          d.downscale = filter;
+      }
+      ImGui::BeginDisabled();
+      ImGui::Selectable("SSimDownscaler (à venir)", false);
+      ImGui::EndDisabled();
+      ImGui::EndCombo();
+    }
+    note(
+        "Area : moyenne exacte. Spline36 : celui d'AnimeJaNai, net. Catmull-Rom et Mitchell gardent du "
+        "détail ; Bilinear et Bicubic adoucissent. Changement en direct.");
+  } else {
+    note("Pas de réduction : la source entre telle quelle dans SPAN.");
+  }
+}
+
+void fluidity_tab(PlaySettings& d, const SettingsChoices& choices, bool exporting) {
+  const bool four_k =
+      (d.work_height == 0 || d.work_height >= choices.source_height) && choices.source_height >= 1080;
+  section("Interpolation");
+  ImGui::BeginDisabled(!choices.rife_available);
+  // Une liste déroulante plutôt qu'un bouton par facteur : ×1,5 puis ×2 à ×10 tiennent sur une ligne.
+  constexpr std::array<Factor, 11> kFactors{{{.num = 0, .den = 1},
+                                             {.num = 3, .den = 2},
+                                             {.num = 2, .den = 1},
+                                             {.num = 3, .den = 1},
+                                             {.num = 4, .den = 1},
+                                             {.num = 5, .den = 1},
+                                             {.num = 6, .den = 1},
+                                             {.num = 7, .den = 1},
+                                             {.num = 8, .den = 1},
+                                             {.num = 9, .den = 1},
+                                             {.num = 10, .den = 1}}};
+  const auto factor_label = [](Factor factor) {
+    if (factor.num <= factor.den) return std::string("Désactivée");
+    std::string text = factor_text(factor);
+    if (factor == Factor{.num = kDefaultRifeFactor, .den = 1}) text += " (recommandé)";
+    return text;
+  };
+  // Grisé : plus d'images par seconde que l'écran n'en affiche (le choix en cours reste visible).
+  const auto too_fast = [&](Factor factor) {
+    return choices.source_fps > 0.0 && choices.display_hz > 0.0 && factor.num > factor.den &&
+           choices.source_fps * static_cast<double>(factor.num) / static_cast<double>(factor.den) >
+               1.01 * choices.display_hz;
+  };
+  const Factor now = factor_of(d);
+  if (ImGui::BeginCombo("Multiplicateur", factor_label(now).c_str())) {
+    for (const Factor factor : kFactors) {
+      const bool chosen = now == factor || (factor.num == 0 && now.num <= now.den);
+      const ImGuiSelectableFlags flags = too_fast(factor) && !chosen ? ImGuiSelectableFlags_Disabled : 0;
+      if (ImGui::Selectable(factor_label(factor).c_str(), chosen, flags)) {
+        d.rife_factor = factor.num;
+        d.rife_factor_den = factor.den;
+      }
+    }
+    ImGui::EndCombo();
+  }
+  if (choices.source_fps > 0.0 && choices.display_hz > 0.0)
+    note(std::format("Grisés : au-delà de l'écran ({:.0f} Hz pour {:.3f} i/s).", choices.display_hz,
+                     choices.source_fps)
+             .c_str());
+  if (exporting && now.num > now.den) {
+    note(
+        "À l'export, aucune image n'est sautée : chaque image créée coûte une passe, le temps de l'export "
+        "suit.");
+  } else if (now.num > 4 * now.den) {
+    note(
+        "Au-delà de ×4, chaque paire demande une passe RIFE par image créée : il faut un écran assez "
+        "rapide (×10 en 24 i/s donne 240 Hz) et un GPU qui suit, sinon des images sont sautées.");
+  }
+  ImGui::EndDisabled();
+  if (!choices.rife_available)
+    note("Ni modèle RIFE (rife_v4.25.onnx, rife_v4.22_lite.onnx) ni graphes GMFSS trouvés.");
+  section("Moteur de l'interpolation");
+  for (int i = 0; i < kMotionEngineCount; ++i) {
+    const auto engine = static_cast<MotionEngine>(i);
+    if (ImGui::RadioButton(std::string(label(engine)).c_str(), d.motion_engine == engine))
+      d.motion_engine = engine;
+  }
+  if (!choices.rife_models.empty()) {
+    ImGui::BeginDisabled(d.motion_engine != MotionEngine::Rife);
+    const std::string current = d.rife_model.empty() ? choices.default_rife_model : d.rife_model;
+    std::string missing;
+    if (ImGui::BeginCombo("Modèle RIFE", rife_label(current).c_str())) {
+      for (const RifeEntry& entry : rife_menu(choices.rife_models)) {
+        const bool chosen = entry.file == current;
+        std::string text = rife_label(entry.file);
+        if (!entry.present) text += " · absent";
+        if (entry.file == choices.default_rife_model) text += " · conseillé pour cette carte";
+        if (ImGui::Selectable(text.c_str(), chosen, entry.present ? 0 : ImGuiSelectableFlags_Disabled))
+          d.rife_model = entry.file == choices.default_rife_model ? std::string() : entry.file;
+        if (chosen) ImGui::SetItemDefaultFocus();
+      }
+      ImGui::EndCombo();
+    }
+    ImGui::EndDisabled();
+    for (const RifeEntry& entry : rife_menu(choices.rife_models)) {
+      if (!entry.present) missing += std::format("{}{}", missing.empty() ? "" : ", ", entry.file);
+    }
+    if (!missing.empty() && d.motion_engine == MotionEngine::Rife) {
+      note(std::format("Absents de {} : {} (exports ONNX de vs-mlrt convertis en FP16, docs/handoff-pc.md).",
+                       choices.rife_folder, missing));
+    }
+  }
+  if (is_gmfss(d.motion_engine)) {
+    const bool union_model = d.motion_engine == MotionEngine::GmfssUnion;
+    note(
+        "Expérimental. GMFSS Fortuna (réseau fait pour l'animation) donne les images intermédiaires les plus "
+        "propres, pour plusieurs fois le coût de RIFE. Avec ses graphes au flot à demi-échelle (_s05, "
+        "préférés), 720 lignes de travail tiennent en ×2 sur une 4070 Ti. Ses deux moteurs se construisent "
+        "la première fois (plusieurs minutes).");
+    if (union_model) {
+      note(
+          "Union mêle à GMFSS l'image d'un RIFE intégré au réseau : moins de défauts sur les mouvements "
+          "rapides, pour un peu plus de calcul à chaque image intermédiaire.");
+    }
+    if (!(union_model ? choices.gmfss_union_available : choices.gmfss_available)) {
+      const GmfssFiles files = gmfss_files(union_model ? GmfssVariant::Union : GmfssVariant::Base, true);
+      note(
+          std::format("Graphes introuvables : {} et {}, à exporter dans {} (tools/gmfss/export_gmfss.py{} "
+                      "--scale 0.5 --width 256 --height 256) ; RIFE prend la place.",
+                      files.pair, files.fusion, choices.rife_folder, union_model ? " --model union" : ""));
+    }
+  }
+  if (d.motion_engine == MotionEngine::DistilDrba) {
+    note(
+        "DistilDRBA : un RIFE à trois images entraîné à imiter DRBA. Le réseau garde lui-même les poses d'un "
+        "personnage animé en deux pendant que le fond s'interpole, pour à peu près le coût de RIFE 4.22 "
+        "lite par image créée. Il lit l'image d'après la paire : une image de retard.");
+    if (!choices.distil_drba_available) {
+      note(
+          std::format("Graphe introuvable : {}, à exporter dans {} (tools/drba/export_distil_drba.py) ; RIFE "
+                      "prend la place.",
+                      kDistilDrbaFile, choices.rife_folder));
+    }
+  }
+  if (exporting) {
+    // Les limites de la lecture en direct ne valent pas à l'export.
+  } else if (four_k && now.num >= 3 * now.den) {
+    note(
+        "En 4K sans réduction, ×2 tient sur cette carte ; ×3 et ×4 prennent du retard dans les scènes qui "
+        "bougent (SPAN 1080p → 2160p coûte 11 ms par image).");
+  } else if (four_k) {
+    note("En 4K, RIFE estime le mouvement en 720p et déforme les images 1080p : ×2 tient sur cette carte.");
+  }
+  note("Les coupes de scène et les dessins tenus ne sont pas interpolés.");
+  ImGui::BeginDisabled(d.motion_engine != MotionEngine::Rife);
+  ImGui::Checkbox("Garder les poses (DRBA) avec RIFE", &d.keep_poses);
+  ImGui::EndDisabled();
+  note(
+      "Un personnage animé en deux sur un fond qui défile garde son rythme (il tient sa pose puis change "
+      "d'un coup) pendant que le fond s'interpole, au lieu de se déformer entre deux dessins. Avec RIFE 4.25 "
+      "ou 4.22 lite, une seule passe par paire. En direct. DistilDRBA le fait de lui-même.");
+  ImGui::BeginDisabled(d.motion_engine != MotionEngine::Rife);
+  ImGui::Checkbox("Warp après SPAN", &d.warp_after_span);
+  ImGui::EndDisabled();
+  note(
+      "SPAN agrandit chaque image source une seule fois, puis RIFE déforme les images agrandies : en "
+      "×3, une passe de SPAN au lieu de trois. Les images intermédiaires ne sont plus nettoyées par SPAN. "
+      "Recharge la lecture.");
+  if (exporting) return;  // Smooth Motion est une couche de l'écran, absente du fichier
+  section("Smooth Motion (pilote NVIDIA)");
+  ImGui::Checkbox("Doubler les images après RIFE", &d.smooth_motion);
+  note(
+      "Expérimental. La couche du pilote NVIDIA (RTX 40 et 50) génère une image entre deux images "
+      "présentées : RIFE ×3 puis Smooth Motion donnent environ 144 images par seconde. Vaut au prochain "
+      "lancement. Sans RIFE, la lecture peut caler : gardez RIFE à ×2 ou plus.");
+  if (d.smooth_motion && d.rife_factor < 2)
+    note("RIFE est désactivé : Smooth Motion risque de caler la lecture.");
+}
+
+}  // namespace ajp::app::play

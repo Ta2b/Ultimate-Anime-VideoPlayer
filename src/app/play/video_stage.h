@@ -29,6 +29,10 @@ class VideoStage {
   virtual bool post(const SlotFree& free) = 0;
   virtual bool post(const Flush& flush) = 0;
   virtual bool post(const Command& command) = 0;
+  // Toute image reçue est écrite dans le ring et sa RingFrame postée (ou ne le sera jamais : la
+  // dernière image d'un étage qui attend la suivante). Lu par main après StreamEnded : la fin d'un
+  // export. Une doublure sans file d'attente l'est toujours.
+  virtual bool idle() const { return true; }
 };
 
 }  // namespace ajp::app::play

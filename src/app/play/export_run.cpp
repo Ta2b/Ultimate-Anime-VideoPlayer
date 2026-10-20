@@ -1,0 +1,261 @@
+#include "app/play/export_run.h"
+
+#include <algorithm>
+#include <deque>
+#include <format>
+#include <functional>
+#include <memory>
+#include <optional>
+#include <system_error>
+#include <utility>
+#include <variant>
+#include <vector>
+
+#include <SDL3/SDL_events.h>
+#include <SDL3/SDL_keycode.h>
+#include <SDL3/SDL_timer.h>
+
+#include "app/play/chain_setup.h"
+#include "app/play/controls.h"
+#include "app/play/first_run.h"
+#include "app/play/live_settings.h"
+#include "app/play/pipeline.h"
+#include "app/play/placebo_export.h"
+#include "app/play/upscale_stage.h"
+#include "core/clock.h"
+#include "core/log.h"
+#include "export/export_writer.h"
+#include "prepare/utf8.h"
+
+namespace ajp::app::play {
+namespace {
+
+// Slots du ring de l'export, comme à la lecture : le thread gpu écrit pendant que main convertit.
+constexpr std::uint32_t kExportRingSlots = 4;
+// La progression est redessinée 4 fois par seconde : la présentation (FIFO) ne freine pas l'export.
+constexpr std::int64_t kProgressEveryUs = 250'000;
+
+template <class... F>
+struct Overloaded : F... {
+  using F::operator()...;
+};
+
+std::string rate_text(media::Rational rate) {
+  return std::format("{:.3f}", static_cast<double>(rate.num) / static_cast<double>(rate.den));
+}
+
+std::string seconds_text(double seconds) {
+  return format_clock(static_cast<std::int64_t>(seconds * 1e6), 0);
+}
+
+// Une touche ou la fenêtre pendant l'export : annuler, quitter, plein écran, détails (Tab).
+std::optional<ExportEnd> poll_export_events(PlaceboScreen& screen, bool& details) {
+  std::optional<ExportEnd> end;
+  SDL_Event event;
+  while (SDL_PollEvent(&event)) {
+    if (event.type == SDL_EVENT_QUIT || event.type == SDL_EVENT_WINDOW_CLOSE_REQUESTED) {
+      end = ExportEnd::Quit;
+    } else if (event.type == SDL_EVENT_KEY_DOWN && !event.key.repeat) {
+      if (event.key.key == SDLK_ESCAPE || event.key.key == SDLK_Q) {
+        if (!end) end = ExportEnd::Cancelled;
+      } else if (event.key.key == SDLK_TAB) {
+        details = !details;
+      } else if (event.key.key == SDLK_F) {
+        screen.set_fullscreen(!screen.fullscreen());
+      }
+    }
+  }
+  return end;
+}
+
+}  // namespace
+
+ExportOutcome run_export(Player& p, const ExportJob& job) {
+  const auto log = log_channel("app");
+  const auto stopped = [&](const Refusal& refusal) {
+    log->warn("export : {} {}", name(refusal.code), refusal.detail);
+    return ExportOutcome{.end = ExportEnd::Failed,
+                         .notice = std::format("Export arrêté : {}", refusal.detail)};
+  };
+  std::error_code unknown;
+  if (job.output.empty() || std::filesystem::equivalent(job.output, p.options.file, unknown))
+    return stopped(Refusal{RefusalCode::FileUnwritable, "le fichier exporté remplacerait la source"});
+
+  std::vector<std::string> unavailable;
+  const PlaySettings settings = within_engines(export_chain(job.chain), p.engines, unavailable);
+  for (const std::string& line : unavailable) log->warn("{}", line);
+  auto prepared = prepare_chain(p, settings);
+  if (!prepared) return stopped(prepared.error());
+  if (!*prepared) return {.end = ExportEnd::Quit};
+  ChainEngines& c = **prepared;
+  const media::TrackInfo& video = p.video;
+  const ExportSize size = export_size({.width = c.work.width * c.factor, .height = c.work.height * c.factor},
+                                      {.width = video.width, .height = video.height}, job.height);
+  const Factor factor = c.interpolates() ? factor_of(settings) : Factor{};
+  media::Rational rate = export_rate(video.frame_rate, factor);
+  if (rate.num <= 0) rate = export_rate({.num = 24'000, .den = 1'001}, factor);  // fréquence inconnue
+  p.screen.set_source_color(ColorInfo{});  // les images du ring sans RTX HDR, comme à la lecture
+  show_loading(p.screen, p.ui, "Ouverture de l'export");
+
+  // Ordre de déclaration = ordre inverse de destruction : l'écriture, qui rend ses images aux
+  // tampons de la conversion, part avant elle ; les moteurs (prepared) partent les derniers.
+  std::unique_ptr<FrameExport> frames;
+  auto writer = exporter::ExportWriter::open(
+      exporter::WriterConfig{.source = p.options.file,
+                             .output = job.output,
+                             .width = size.width,
+                             .height = size.height,
+                             .fps_num = rate.num,
+                             .fps_den = rate.den,
+                             .codec = job.codec,
+                             .quality = job.quality,
+                             .vendor = exporter::vendor_of(p.screen.device_facts().pci_vendor)});
+  if (!writer) return stopped(writer.error());
+  auto opened = FrameExport::open(p.screen, FrameExportSetup{.width = size.width,
+                                                             .height = size.height,
+                                                             .layout = (*writer)->layout(),
+                                                             .color = (*writer)->color()});
+  if (!opened) return stopped(opened.error());
+  frames = std::move(*opened);
+
+  auto live = std::make_shared<LiveSettings>();
+  live->set_rife_factor(factor);
+  live->set_reduction(reduction_of(settings.downscale));
+  live->set_keep_poses(settings.keep_poses);
+  const PipelineConfig config{.file = p.options.file,
+                              .decoder = {.attempts = decoder_attempts(c.backend_name),
+                                          .render_device = p.screen.device().uuid,
+                                          .download = c.backend_name != "tensorrt"},
+                              .audio = false,
+                              .subtitles = false};
+  auto pipeline = Pipeline::open(
+      config, [&](VideoStageInit stage) -> std::expected<std::unique_ptr<VideoStage>, Refusal> {
+        const int width = stage.track->width;
+        const int height = stage.track->height;
+        const WorkSize sized = work_size(width, height, settings.work_height);
+        auto slots = p.screen.create_ring(sized.width * c.factor, sized.height * c.factor, kExportRingSlots);
+        if (!slots) return std::unexpected(std::move(slots.error()));
+        // Sans horloge : aucune paire sautée pour retard, chaque image intermédiaire est faite.
+        return UpscaleStage::start(std::move(stage),
+                                   c.upscale(settings, live, nullptr, width, height, std::move(*slots)));
+      });
+  if (!pipeline) return stopped(pipeline.error());
+
+  const std::int64_t duration_us = (*pipeline)->session_config().duration_us;
+  const std::string chain_text = std::format("{}{}", c.motion_label(settings), c.span_label());
+  log->info("export : {} → {} ; {}x{} à {} i/s · {} ; {}", prepare::utf8_path(p.options.file),
+            prepare::utf8_path(job.output), size.width, size.height, rate_text(rate), (*writer)->encoder(),
+            chain_text);
+
+  std::deque<RingFrame> waiting;  // reçues du thread gpu, pas encore converties
+  bool ended = false;             // StreamEnded vu
+  std::optional<Refusal> failure;
+  std::optional<ExportEnd> interrupted;
+  std::int64_t converted = 0;
+  std::int64_t last_pts = 0;
+  bool details = true;
+  const std::int64_t started = host_now_us();
+  std::int64_t shown_at = 0;
+  const std::function<bool(exporter::Picture&&)> push = [&](exporter::Picture&& picture) {
+    return (*writer)->try_push(std::move(picture));
+  };
+  while (true) {
+    interrupted = poll_export_events(p.screen, details);
+    if (interrupted) break;
+    if (auto refused = (*writer)->failure()) {
+      failure = std::move(*refused);
+      break;
+    }
+    bool moved = false;
+    while (frames->deliver(push)) moved = true;
+    // Lu avant de vider la boîte : le thread gpu poste ses RingFrame avant de se dire au repos.
+    const bool drained = ended && (*pipeline)->video_idle();
+    (*pipeline)->pump();
+    while (auto message = try_take((*pipeline)->inbox())) {
+      std::visit(Overloaded{[&](RingFrame& frame) { waiting.push_back(frame); }, [](subs::SubtitleFrame&) {},
+                            [&](const StreamEnded&) { ended = true; },
+                            [&](const StageRefusal& refusal) {
+                              if (refusal.fatal || refusal.stage == "gpu") {
+                                if (!failure) failure = refusal.refusal;
+                              } else {
+                                log->warn("export : {} : {}", refusal.stage, refusal.refusal.detail);
+                              }
+                            }},
+                 *message);
+    }
+    if (failure) break;
+    while (!waiting.empty() && frames->has_room()) {
+      const RingFrame frame = waiting.front();
+      waiting.pop_front();
+      FrameExport::Converted done = frames->convert(frame);
+      static_cast<void>((*pipeline)->stages().slot_free(done.freed));
+      if (done.failure) {
+        failure = std::move(done.failure);
+        break;
+      }
+      last_pts = frame.pts_us;
+      ++converted;
+      moved = true;
+    }
+    if (failure) break;
+    if (drained && waiting.empty() && frames->idle()) break;
+
+    const std::int64_t now = host_now_us();
+    if (now - shown_at >= kProgressEveryUs) {
+      shown_at = now;
+      const double elapsed = static_cast<double>(now - started) / 1e6;
+      const float fraction =
+          duration_us > 0
+              ? std::clamp(static_cast<float>(last_pts) / static_cast<float>(duration_us), 0.0F, 1.0F)
+              : 0.0F;
+      const std::string left =
+          fraction > 0.01F ? seconds_text(elapsed * (1.0 - fraction) / fraction) : std::string("…");
+      const PrepareView view{
+          .label = "Export en cours · Échap pour annuler",
+          .fraction = duration_us > 0 ? std::optional(fraction) : std::nullopt,
+          .details = {std::format("{} images · {:.1f} i/s · écoulé {} · reste ~{}", converted,
+                                  elapsed > 0.0 ? static_cast<double>(converted) / elapsed : 0.0,
+                                  seconds_text(elapsed), left),
+                      std::format("{}x{} à {} i/s · {}", size.width, size.height, rate_text(rate),
+                                  (*writer)->encoder()),
+                      chain_text,
+                      std::format("{} · {:.0f} Mo", prepare::utf8_path(job.output),
+                                  static_cast<double>((*writer)->progress().bytes) / 1e6)},
+          .show_details = details};
+      if (auto shown = p.screen.show(ShowRequest{.ui = p.ui.preparation(now, view)}); !shown)
+        log->warn("export : {}", shown.error().detail);
+    }
+    if (!moved) SDL_Delay(1);
+  }
+
+  if (!interrupted && !failure) {
+    show_loading(p.screen, p.ui, "Finalisation de l'export");
+    if (auto finished = (*writer)->finish(); !finished) failure = std::move(finished.error());
+  }
+  const double elapsed = static_cast<double>(host_now_us() - started) / 1e6;
+  const exporter::WriterProgress written = (*writer)->progress();
+  // Ordre d'arrêt : les slots rendus, les threads arrêtés, l'écriture (abandonnée si elle n'est pas
+  // finie : le fichier partiel est supprimé), la conversion, puis les moteurs avant leur backend.
+  for (const RingFrame& frame : waiting)
+    static_cast<void>((*pipeline)->stages().slot_free(p.screen.retire(frame)));
+  waiting.clear();
+  (*pipeline)->stages().quit();
+  pipeline->reset();
+  writer->reset();
+  frames.reset();
+  prepared->reset();
+
+  if (interrupted == ExportEnd::Quit) return {.end = ExportEnd::Quit};
+  if (interrupted == ExportEnd::Cancelled) {
+    log->info("export annulé après {} images", converted);
+    return {.end = ExportEnd::Cancelled, .notice = "Export annulé"};
+  }
+  if (failure) return stopped(*failure);
+  log->info("export terminé : {} images, {} octets, {:.1f} s", written.frames, written.bytes, elapsed);
+  return {.end = ExportEnd::Done,
+          .notice = std::format("Export terminé : {} ({} images, {:.0f} Mo, {})",
+                                prepare::utf8_path(job.output.filename()), written.frames,
+                                static_cast<double>(written.bytes) / 1e6, seconds_text(elapsed))};
+}
+
+}  // namespace ajp::app::play

@@ -25,7 +25,7 @@ tout, rien ne dépend de `app`. `kernels` est une feuille ; `media`, `subs`,
 | `subs` | Rendu libass en atlas bornés | subs |
 | `render` | Composition libplacebo, grade, sous-titres, OSD | main |
 | `present` | Swapchain, cadence, détection de l'écran | main |
-| `export` | Encodage, mux, métadonnées HDR10 | export |
+| `export` | Encodage matériel, mux MKV avec les pistes de la source copiées (SDR seulement) | export |
 | `app` | Boucle SDL3, commandes, interface, threads | main |
 | `kernels` | Spécification des noyaux, référence CPU FP32, demi-flottants | aucun |
 
@@ -49,7 +49,7 @@ gpu ─────── core, kernels, vendor_hdr
 prepare ─── core, gpu · privé : toml++, core_log
 render ──── core, subs
 present ─── core_types
-export ──── core, render
+export ──── core_types · privé : FFmpeg, core_log
 app ─────── tout, dont core_log
 ```
 

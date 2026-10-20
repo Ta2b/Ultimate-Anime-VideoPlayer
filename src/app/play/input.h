@@ -11,6 +11,7 @@
 
 #include <SDL3/SDL_events.h>
 
+#include "app/play/export_job.h"
 #include "app/play/settings.h"
 #include "core/engines.h"
 #include "core/keys.h"
@@ -54,9 +55,13 @@ struct UseEngine {
 };
 struct OpenEngineScreen {};
 using EngineChange = std::variant<UseEngine, OpenEngineScreen>;
+// Onglet Export : la lecture se ferme, l'export se fait (export_run.h), puis la lecture reprend.
+struct StartExport {
+  ExportJob job;
+};
 using Input = std::variant<Command, ToggleFullscreen, LeaveFullscreen, ToggleMute, VolumeStep, SelectAudio,
                            SelectSubtitles, CycleAudio, CycleSubtitles, StepChapter, ToggleSettings,
-                           ApplySettings, EditProfile, UseEngine, OpenEngineScreen>;
+                           ApplySettings, EditProfile, UseEngine, OpenEngineScreen, StartExport>;
 
 // L'action d'un événement SDL, ou rien. Fermer la fenêtre vaut cmd::Quit.
 std::optional<Input> input_of(const SDL_Event& event, const core::KeyMap& keys);

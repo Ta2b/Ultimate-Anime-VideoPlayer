@@ -1,0 +1,82 @@
+// Les moteurs d'une ouverture de la chaîne, pour ces réglages : le backend, SPAN, et l'estimateur du
+// mouvement (RIFE ou sa variante mouvement, GMFSS Fortuna, DistilDRBA), construits ou lus du cache
+// puis chargés, la préparation à l'écran. La lecture (player.cpp) et l'export (export_run.h) les
+// ouvrent de la même façon, et l'étage gpu se décrit d'eux (upscale()).
+#pragma once
+
+#include <expected>
+#include <filesystem>
+#include <memory>
+#include <optional>
+#include <string>
+#include <string_view>
+#include <vector>
+
+#include "app/play/backend_library.h"
+#include "app/play/gmfss_model.h"
+#include "app/play/live_settings.h"
+#include "app/play/model_choice.h"
+#include "app/play/options.h"
+#include "app/play/player_engines.h"
+#include "app/play/settings.h"
+#include "app/play/upscale_stage.h"
+#include "core/clock.h"
+#include "core/ring.h"
+#include "core/types.h"
+#include "kernels/spec/rife.h"
+#include "media/hw_api.h"
+
+namespace ajp::app::play {
+
+// Les décodeurs à essayer pour un backend : NVDEC en mémoire CUDA pour TensorRT ; ailleurs, sous
+// Linux, VA-API (le bloc vidéo d'AMD ou d'Intel) copié en mémoire hôte, puis le décodage logiciel.
+std::vector<media::HwApi> decoder_attempts(std::string_view backend);
+
+// Ordre de déclaration = ordre inverse de destruction : les moteurs partent avant leur backend.
+struct ChainEngines {
+  BackendLibrary::Instance backend;
+  std::string backend_name;          // « tensorrt », « vulkan »
+  std::optional<ModelChoice> model;  // SPAN ; rien : sans agrandissement
+  int factor = 1;                    // kSpanFactor avec SPAN
+  WorkSize work;                     // entrée des moteurs pour la vidéo de la lecture
+  std::string reduce;                // « 1920x1080 → Area 1280x720 », ou « 1920x1080 »
+  // RIFE cherché même sans interpolation : le menu peut l'allumer.
+  std::optional<ModelChoice> rife_choice;
+  std::optional<std::filesystem::path> rife_model;
+  std::vector<std::filesystem::path> gmfss_places;  // dossiers des graphes de GMFSS et DistilDRBA
+  GmfssVariant gmfss_variant = GmfssVariant::Base;
+  bool gmfss_found = false;
+  bool drba_found = false;
+  WorkSize rife_size;                    // où RIFE mouvement estime (720p pour une sortie 4K), sinon work
+  kernels::RifeGeometry geometry;        // de rife_size
+  kernels::RifeGeometry image_geometry;  // de work
+  int rife_align = kernels::kRifeAlign;
+  int rife_planes = kernels::kRifeInputChannels;
+  std::unique_ptr<gpu::Engine> engine;  // SPAN
+  GmfssEngines gmfss;
+  std::unique_ptr<gpu::Engine> drba;
+  std::unique_ptr<gpu::Engine> rife;
+  std::unique_ptr<gpu::Engine> rife_motion;
+
+  bool use_gmfss() const { return gmfss.pair != nullptr; }
+  bool use_drba() const { return drba != nullptr; }
+  bool interpolates() const { return rife || rife_motion || use_gmfss() || use_drba(); }
+  // « GMFSS », « DistilDRBA » ou « RIFE », pour les compteurs.
+  std::string_view motion_name() const;
+  // « RIFE ×2 · rife_v4.25 · », ou rien sans interpolation.
+  std::string motion_label(const PlaySettings& settings) const;
+  // « SPAN ×2 · modèle · vulkan · 1920x1080 → 3840x2160 », ou « sans agrandissement · … ».
+  std::string span_label() const;
+
+  // L'étage gpu pour des images source width × height écrites dans slots. clock nullptr : aucune
+  // paire sautée pour retard (export).
+  UpscaleSetup upscale(const PlaySettings& settings, std::shared_ptr<LiveSettings> live,
+                       const MasterClock* clock, int width, int height,
+                       std::vector<RingSlotDesc> slots) const;
+};
+
+// Le backend de p.library, puis les moteurs que settings demandent pour p.video. Rien : la fenêtre
+// fermée pendant une préparation. Refus : modèle introuvable, backend ou moteur refusés.
+std::expected<std::optional<ChainEngines>, Refusal> prepare_chain(Player& p, const PlaySettings& settings);
+
+}  // namespace ajp::app::play

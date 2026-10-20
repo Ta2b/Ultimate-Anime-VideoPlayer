@@ -92,6 +92,7 @@ class PlaceboScreen final : public Screen {
   bool fullscreen() const override;
 
  private:
+  friend class FrameExport;  // l'export rend les slots du ring avec l'appareil de l'écran
   struct Impl;
   explicit PlaceboScreen(std::unique_ptr<Impl> impl);
   std::unique_ptr<Impl> impl_;

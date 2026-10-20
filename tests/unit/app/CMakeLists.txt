@@ -2,7 +2,7 @@
 # complète avec les vrais threads source, audio (pilote SDL « dummy ») et subs, sur un
 # clip généré à l'exécution par l'écrivain de clips des tests de media.
 ajp_add_unit_tests(app
-  SOURCES build_progress_test.cpp chapters_test.cpp controls_test.cpp display_edid_test.cpp engine_switch_test.cpp first_run_test.cpp model_choice_test.cpp motion_model_test.cpp profiles_test.cpp resume_test.cpp settings_test.cpp tracks_test.cpp doubles.cpp options_test.cpp pipeline_test.cpp rife_plan_test.cpp session_test.cpp subtitle_queue_test.cpp ../media/clip_writer.cpp
+  SOURCES build_progress_test.cpp chapters_test.cpp controls_test.cpp display_edid_test.cpp engine_switch_test.cpp export_job_test.cpp first_run_test.cpp model_choice_test.cpp motion_model_test.cpp profiles_test.cpp resume_test.cpp settings_test.cpp tracks_test.cpp doubles.cpp options_test.cpp pipeline_test.cpp rife_plan_test.cpp session_test.cpp subtitle_queue_test.cpp ../media/clip_writer.cpp
   DEPS ajp::dep::ffmpeg ajp::dep::sdl3)
 target_include_directories(ajp_app_tests PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/../media")
 target_compile_definitions(ajp_app_tests PRIVATE AJP_MEDIA_CLIP_DIR="${CMAKE_CURRENT_BINARY_DIR}/clips")
