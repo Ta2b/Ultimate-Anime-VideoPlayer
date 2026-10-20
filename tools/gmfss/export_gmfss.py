@@ -82,6 +82,28 @@ def half_size(image):
     return F.interpolate(image, scale_factor=0.5, mode="bilinear")
 
 
+def bidirectional_reuse(gmfss, img0, img1):
+    """GMFSS.reuse, les deux flots d'un seul passage de GMFlow (pred_bidir_flow) : son
+    transformeur traite déjà les deux ordres en lot, et le flot inverse de l'appariement global
+    vient de la corrélation transposée. L'original appelait GMFlow deux fois (0 → 1 puis 1 → 0),
+    refaisant l'encodeur des deux images et le transformeur du niveau grossier."""
+    feat0 = list(gmfss.feat_ext(img0))
+    feat1 = list(gmfss.feat_ext(img1))
+    img0 = F.interpolate(img0, scale_factor=0.5, mode="bilinear")
+    img1 = F.interpolate(img1, scale_factor=0.5, mode="bilinear")
+    if gmfss.scale != 1.0:
+        imgf0 = F.interpolate(img0, scale_factor=gmfss.scale, mode="bilinear")
+        imgf1 = F.interpolate(img1, scale_factor=gmfss.scale, mode="bilinear")
+    else:
+        imgf0, imgf1 = img0, img1
+    flow01, flow10 = gmfss.flownet(imgf0, imgf1, pred_bidir_flow=True).chunk(2, 0)
+    if gmfss.scale != 1.0:
+        flow01 = F.interpolate(flow01, scale_factor=1.0 / gmfss.scale, mode="bilinear") / gmfss.scale
+        flow10 = F.interpolate(flow10, scale_factor=1.0 / gmfss.scale, mode="bilinear") / gmfss.scale
+    metric0, metric1 = gmfss.metricnet(img0, img1, flow01, flow10)
+    return flow01, flow10, metric0, metric1, feat0, feat1
+
+
 class Pair(nn.Module):
     """Une fois par paire : ce que chaque côté splatte, son mouvement aux trois niveaux, et les
     deux images réduites de moitié. Le flot de chaque niveau est déjà réduit (× 0,5, × 0,25) :
@@ -93,7 +115,7 @@ class Pair(nn.Module):
 
     def forward(self, frames):
         img0, img1 = frames[:, 0:3], frames[:, 3:6]
-        flow01, flow10, metric0, metric1, feat0, feat1 = self.gmfss.reuse(img0, img1)
+        flow01, flow10, metric0, metric1, feat0, feat1 = bidirectional_reuse(self.gmfss, img0, img1)
         half0, half1 = half_size(img0), half_size(img1)
         outputs = []
         for half, flow, metric, feat in ((half0, flow01, metric0, feat0), (half1, flow10, metric1, feat1)):
@@ -273,24 +295,31 @@ def flow_warp(feature, flow, mask=False, padding_mode="zeros"):
 
 
 def local_correlation_softmax(feature0, feature1, local_radius, padding_mode="zeros"):
-    """local_correlation_softmax de gmflow/matching.py, coordonnées et échantillonnage en FP32."""
+    """local_correlation_softmax de gmflow/matching.py, la fenêtre lue par décalages entiers.
+
+    Les positions de la fenêtre sont des pixels entiers (pixel + décalage de -r à r) : le
+    grid_sample de l'original n'interpole rien, il lit un voisin ou zéro hors de l'image. Ici, la
+    carte est bordée de zéros puis lue par (2r+1)² tranches, et chaque corrélation est un produit
+    sommé sur les canaux : ni le tenseur [B, HW, C, (2r+1)²] de l'original (159 millions de valeurs
+    à 720p, 7,5 ms par appel sous TensorRT), ni grille. L'ordre de la fenêtre est celui de
+    generate_window_grid : k = (dy + r) × (2r + 1) + (dx + r)."""
     from vsgmfss_fortuna.gmflow.geometry import coords_grid, generate_window_grid
 
+    assert padding_mode == "zeros"
     b, c, h, w = feature0.size()
     coords_init = coords_grid(b, h, w).to(feature0.device)
     coords = coords_init.view(b, 2, -1).permute(0, 2, 1)
-    side = 2 * local_radius + 1
-    window_grid = generate_window_grid(-local_radius, local_radius, -local_radius, local_radius, side, side,
-                                       device=feature0.device)
+    r = local_radius
+    side = 2 * r + 1
+    window_grid = generate_window_grid(-r, r, -r, r, side, side, device=feature0.device)
     sample_coords = coords.unsqueeze(-2) + window_grid.reshape(-1, 2).repeat(b, 1, 1, 1)
     valid_x = (sample_coords[:, :, :, 0] >= 0) & (sample_coords[:, :, :, 0] < w)
     valid_y = (sample_coords[:, :, :, 1] >= 0) & (sample_coords[:, :, :, 1] < h)
     valid = valid_x & valid_y
-    window_feature = F.grid_sample(feature1.float(), normalize_coords(sample_coords, h, w),
-                                   padding_mode=padding_mode, align_corners=True).to(feature0.dtype)
-    window_feature = window_feature.permute(0, 2, 1, 3)
-    feature0_view = feature0.permute(0, 2, 3, 1).view(b, h * w, 1, c)
-    corr = torch.matmul(feature0_view, window_feature).view(b, h * w, -1) / (c**0.5)
+    padded = F.pad(feature1, (r, r, r, r))
+    corr = torch.cat([(feature0 * padded[:, :, dy:dy + h, dx:dx + w]).sum(1, keepdim=True)
+                      for dy in range(side) for dx in range(side)], 1)
+    corr = corr.view(b, side * side, h * w).permute(0, 2, 1) / (c**0.5)
     corr[~valid] = -1e9 if feature0.dtype == torch.float else -1e4
     prob = F.softmax(corr, -1)
     correspondence = torch.matmul(prob.unsqueeze(-2).float(), sample_coords).squeeze(-2)
