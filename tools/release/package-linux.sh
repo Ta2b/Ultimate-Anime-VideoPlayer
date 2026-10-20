@@ -59,6 +59,8 @@ system_lib() {
     libglib-2.0*|libgobject-2.0*|libgio-2.0*|libgmodule-2.0*|libpcre2*) return 0 ;;
     libfontconfig*|libfreetype*|libharfbuzz*|libgraphite2*|libpng16*|libbrotli*|libbz2*) return 0 ;;
   esac
+  # Celles du runtime HIP, que tout système ROCm installe avec lui.
+  case "$(basename "$1")" in libelf.so*|libnuma.so*) return 0 ;; esac
   case "$1" in /opt/rocm*) return 0 ;; esac
   return 1
 }
