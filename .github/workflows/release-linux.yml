@@ -3,10 +3,12 @@ name: Release Linux
 # Une étiquette linux-v* (poussée, ou créée avec une release depuis GitHub) : le lecteur Linux
 # (Vulkan) construit ici et joint à sa release, créée en préversion avec les notes de
 # tools/release/notes/<étiquette>.md si elle n'existe pas encore. Le motif ne croise pas celui des releases Windows et
-# macOS (v*), qui ne se lancent donc pas.
+# macOS (v*), qui ne se lancent donc pas. Une poussée sur la branche release/linux construit le
+# même paquet sans release : il reste en artefact de l'exécution.
 on:
   push:
     tags: ["linux-v*"]
+    branches: ["release/linux"]
 
 permissions:
   contents: write
@@ -40,8 +42,20 @@ jobs:
           key: deps-player-gcc-13-${{ hashFiles('tools/deps/linux-from-source.sh') }}
       - run: tools/deps/linux-from-source.sh "$AJP_DEPS_PREFIX" "$RUNNER_TEMP/deps-src"
       - name: Paquet
-        run: AJP_RELEASE_TAG="$GITHUB_REF_NAME" tools/release/package-linux.sh "$RUNNER_TEMP/package"
+        run: |
+          [ "$GITHUB_REF_TYPE" = tag ] && export AJP_RELEASE_TAG="$GITHUB_REF_NAME"
+          tools/release/package-linux.sh "$RUNNER_TEMP/package"
+      - name: Artefact
+        if: github.ref_type == 'branch'
+        uses: actions/upload-artifact@v4
+        with:
+          name: ajp-linux-x64
+          path: |
+            ${{ runner.temp }}/package/ajp-linux-x64.tar.gz
+            ${{ runner.temp }}/package/SHA256SUMS
+          compression-level: 0
       - name: Préversion
+        if: github.ref_type == 'tag'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
