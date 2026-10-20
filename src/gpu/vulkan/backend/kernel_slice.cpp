@@ -190,6 +190,9 @@ std::expected<std::uint64_t, Refusal> VulkanKernelOps::scores_start(const Tensor
       key, [&](Recorder& r) { return runner_.rgb_pair_diff(r, *va, *vb, sums, worst, kLumaLevels); });
   if (!rec) return std::unexpected(rec.error());
   if (auto ok = submit(**rec); !ok) return std::unexpected(ok.error());
+  // Le lot part aussitôt : la mesure tourne pendant que l'hôte prépare la suite, au lieu
+  // d'attendre l'attente de scores_take pour être soumise.
+  if (auto ok = queue_.flush(); !ok) return std::unexpected(ok.error());
   const kernels::RifeGeometry g =
       kernels::rife_geometry(static_cast<int>(va->width), static_cast<int>(va->height));
   pair_tickets_ = ticket;
@@ -242,6 +245,7 @@ std::expected<std::uint64_t, Refusal> VulkanKernelOps::flow_max_start(const Moti
   auto rec = recording(key, [&](Recorder& r) { return runner_.flow_max(r, mv, result); });
   if (!rec) return std::unexpected(rec.error());
   if (auto ok = submit(**rec); !ok) return std::unexpected(ok.error());
+  if (auto ok = queue_.flush(); !ok) return std::unexpected(ok.error());  // comme scores_start
   flow_tickets_ = ticket;
   slot.ticket = ticket;
   slot.value = queue_.last().value;
