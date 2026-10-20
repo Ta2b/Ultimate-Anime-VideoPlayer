@@ -1,4 +1,4 @@
-// Une bibliothèque de backend chargée par dlopen, ses points d'entrée vérifiés
+// Une bibliothèque de backend chargée à l'exécution (dlopen, LoadLibraryExW), ses points d'entrée vérifiés
 // (check_backend_abi), et les instances qu'elle crée.
 //
 // Provisoire : le chargeur du module gpu (pc/gpu, loader.h) prend sa place à la fusion.
@@ -7,10 +7,12 @@
 #include <expected>
 #include <filesystem>
 #include <memory>
+#include <optional>
 #include <span>
 
 #include "core/types.h"
 #include "gpu/backend.h"
+#include "vendor_hdr/dynamic_library.h"
 
 namespace ajp::app::play {
 
@@ -46,7 +48,7 @@ class BackendLibrary {
 
  private:
   BackendLibrary() = default;
-  void* handle_ = nullptr;
+  std::optional<vendor_hdr::DynamicLibrary> handle_;
   std::filesystem::path path_;
   gpu::BackendCreateFn create_ = nullptr;
   gpu::BackendDestroyFn destroy_ = nullptr;

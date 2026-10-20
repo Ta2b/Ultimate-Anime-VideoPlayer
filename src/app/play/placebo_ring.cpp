@@ -1,10 +1,15 @@
-// Le ring de PlaceboScreen : textures RGBA16 exportées vers CUDA, passage des slots en
-// disposition GENERAL par VK_QUEUE_FAMILY_EXTERNAL (core/ring.h : kRingLayout).
+// Le ring de PlaceboScreen : textures RGBA16 exportées vers CUDA (descripteurs, HANDLE sous Windows), passage
+// des slots en disposition GENERAL par VK_QUEUE_FAMILY_EXTERNAL (core/ring.h : kRingLayout).
 #include <format>
-#include <unistd.h>
 #include <utility>
 
 #include "app/play/placebo_impl.h"
+
+#ifdef _WIN32
+#include <windows.h>
+#else
+#include <unistd.h>
+#endif
 
 namespace ajp::app::play {
 namespace {
@@ -14,6 +19,28 @@ std::unexpected<Refusal> refuse(RefusalCode code, std::string detail) {
 }
 
 constexpr VkImageLayout kLayout = VK_IMAGE_LAYOUT_GENERAL;
+
+// Les poignées que le backend TensorRT importe dans CUDA : descripteurs sous Linux, HANDLE NT
+// sous Windows.
+#ifdef _WIN32
+constexpr pl_handle_type kExport = PL_HANDLE_WIN32;
+constexpr HandleKind kExportKind = HandleKind::OpaqueWin32;
+std::uintptr_t raw_handle(const pl_handle& handle) {
+  return reinterpret_cast<std::uintptr_t>(handle.handle);
+}
+void close_handle(std::uintptr_t handle) {
+  CloseHandle(reinterpret_cast<HANDLE>(handle));
+}
+#else
+constexpr pl_handle_type kExport = PL_HANDLE_FD;
+constexpr HandleKind kExportKind = HandleKind::OpaqueFd;
+std::uintptr_t raw_handle(const pl_handle& handle) {
+  return static_cast<std::uintptr_t>(handle.fd);
+}
+void close_handle(std::uintptr_t handle) {
+  close(static_cast<int>(handle));
+}
+#endif
 static_assert(static_cast<std::uint32_t>(kLayout) == kRingLayout);
 
 // Cède tex à CUDA : la transition et le transfert de file sont faits quand sem atteint value.
@@ -56,10 +83,9 @@ std::expected<std::vector<RingSlotDesc>, Refusal> PlaceboRing::create(pl_gpu gpu
   // Exporter la mémoire et les sémaphores ne sert qu'au backend TensorRT (import dans CUDA) ; le
   // backend Vulkan écrit sur l'appareil même du rendu. Un appareil qui n'exporte pas (lavapipe)
   // garde un ring sans poignées.
-  const bool exported =
-      (gpu->export_caps.tex & PL_HANDLE_FD) != 0 && (gpu->export_caps.sync & PL_HANDLE_FD) != 0;
-  const pl_handle_type handles = exported ? PL_HANDLE_FD : pl_handle_type{};
-  const HandleKind kind = exported ? HandleKind::OpaqueFd : HandleKind::None;
+  const bool exported = (gpu->export_caps.tex & kExport) != 0 && (gpu->export_caps.sync & kExport) != 0;
+  const pl_handle_type handles = exported ? kExport : pl_handle_type{};
+  const HandleKind kind = exported ? kExportKind : HandleKind::None;
   std::vector<RingSlotDesc> descs;
   for (std::uint32_t i = 0; i < count; ++i) {
     Slot slot;
@@ -77,7 +103,7 @@ std::expected<std::vector<RingSlotDesc>, Refusal> PlaceboRing::create(pl_gpu gpu
     sem_params.export_handle = handles;
     sem_params.out_handle = exported ? &handle : nullptr;
     slot.semaphore = pl_vulkan_sem_create(gpu, &sem_params);
-    slot.semaphore_fd = exported ? handle.fd : -1;
+    if (exported && slot.semaphore != VK_NULL_HANDLE) slot.semaphore_export = raw_handle(handle);
     const bool ok = slot.tex != nullptr && slot.semaphore != VK_NULL_HANDLE &&
                     hand_to_cuda(gpu, slot.tex, handover, std::uint64_t{i} + 1);
     slots_.push_back(slot);
@@ -97,13 +123,11 @@ std::expected<std::vector<RingSlotDesc>, Refusal> PlaceboRing::create(pl_gpu gpu
         .height = height,
         .format = RingFormat::Rgba16Unorm,
         .image = reinterpret_cast<std::uint64_t>(image),
-        .memory = {.kind = kind,
-                   .value = exported ? static_cast<std::uintptr_t>(slot.tex->shared_mem.handle.fd) : 0},
+        .memory = {.kind = kind, .value = exported ? raw_handle(slot.tex->shared_mem.handle) : 0},
         .memory_size = slot.tex->shared_mem.size,
         .memory_offset = slot.tex->shared_mem.offset,
         .semaphore = reinterpret_cast<std::uint64_t>(slot.semaphore),
-        .semaphore_handle = {.kind = kind,
-                             .value = exported ? static_cast<std::uintptr_t>(slot.semaphore_fd) : 0},
+        .semaphore_handle = {.kind = kind, .value = slot.semaphore_export.value_or(0)},
     });
   }
   pl_gpu_finish(gpu);
@@ -151,7 +175,7 @@ void PlaceboRing::clear(pl_gpu gpu) {
       pl_tex_destroy(gpu, &slot.tex);
       pl_vulkan_sem_destroy(gpu, &slot.semaphore);
     }
-    if (slot.semaphore_fd >= 0) close(slot.semaphore_fd);
+    if (slot.semaphore_export) close_handle(*slot.semaphore_export);
   }
   slots_.clear();
 }

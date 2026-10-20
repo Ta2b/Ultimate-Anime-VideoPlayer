@@ -90,6 +90,22 @@
       }
     },
     {
+      "name": "windows-release",
+      "displayName": "Windows, lecteur universel (Vulkan ; TensorRT si AJP_WITH_CUDA), vcpkg",
+      "inherits": "base",
+      "condition": {
+        "type": "equals",
+        "lhs": "${hostSystemName}",
+        "rhs": "Windows"
+      },
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "AJP_BUILD_TESTS": "OFF",
+        "AJP_WARNINGS_AS_ERRORS": "OFF",
+        "VCPKG_MANIFEST_FEATURES": "player"
+      }
+    },
+    {
       "name": "linux-prefix",
       "displayName": "Linux, dépendances du préfixe AJP_DEPS_PREFIX",
       "inherits": "prefix",
@@ -259,6 +275,10 @@
     {
       "name": "macos-release",
       "configurePreset": "macos-release"
+    },
+    {
+      "name": "windows-release",
+      "configurePreset": "windows-release"
     }
   ],
   "testPresets": [

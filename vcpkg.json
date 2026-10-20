@@ -56,7 +56,11 @@
           ]
         },
         "vulkan-headers",
-        "nanobench"
+        "nanobench",
+        {
+          "name": "shaderc",
+          "host": true
+        }
       ]
     }
   },

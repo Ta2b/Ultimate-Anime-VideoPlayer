@@ -67,7 +67,9 @@ else()
 endif()
 
 # Compilateur GLSL vers SPIR-V, pour les shaders compilés hors ligne.
-find_program(AJP_GLSLC NAMES glslc HINTS "$ENV{VULKAN_SDK}/bin" REQUIRED)
+# Sans SDK Vulkan (Windows, vcpkg) : le glslc du port shaderc, outil de l'hôte.
+find_program(AJP_GLSLC NAMES glslc
+  HINTS "$ENV{VULKAN_SDK}/bin" "${VCPKG_INSTALLED_DIR}/${VCPKG_HOST_TRIPLET}/tools/shaderc" REQUIRED)
 
 # Dear ImGui : port vcpkg, ou sources installées par le script du préfixe.
 find_package(imgui CONFIG QUIET)

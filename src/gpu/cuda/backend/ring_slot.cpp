@@ -1,9 +1,12 @@
 #include "gpu/cuda/backend/ring_slot.h"
 
 #include <format>
-#include <unistd.h>
 
 #include "gpu/cuda/backend/cuda_status.h"
+
+#ifndef _WIN32
+#include <unistd.h>
+#endif
 
 namespace ajp::gpu::cuda {
 namespace {
@@ -12,10 +15,16 @@ std::unexpected<Refusal> refuse(RefusalCode code, std::string detail) {
   return std::unexpected(Refusal{code, std::move(detail)});
 }
 
+#ifdef _WIN32
+// Sous Windows, CUDA ne prend pas le HANDLE NT : celui du ring sert tel quel, fermé par le ring.
+constexpr HandleKind kKind = HandleKind::OpaqueWin32;
+#else
+constexpr HandleKind kKind = HandleKind::OpaqueFd;
 // Copie d'un descripteur exporté, que CUDA prendra en charge ; -1 si dup échoue.
 int duplicate(const ExportedHandle& handle) {
   return dup(static_cast<int>(handle.value));
 }
+#endif
 
 }  // namespace
 
@@ -24,9 +33,9 @@ std::expected<std::unique_ptr<ImportedSlot>, Refusal> ImportedSlot::import(const
     return refuse(RefusalCode::FormatUnsupported,
                   std::format("slot {} : seul RGBA16 UNORM est importé", slot.index));
   }
-  if (slot.memory.kind != HandleKind::OpaqueFd || slot.semaphore_handle.kind != HandleKind::OpaqueFd) {
+  if (slot.memory.kind != kKind || slot.semaphore_handle.kind != kKind) {
     return refuse(RefusalCode::FormatUnsupported,
-                  std::format("slot {} : descripteurs Linux attendus", slot.index));
+                  std::format("slot {} : poignées exportées du système attendues", slot.index));
   }
   if (slot.width <= 0 || slot.height <= 0 || slot.memory_size == 0) {
     return refuse(RefusalCode::ShapeInvalid, std::format("slot {} : taille nulle", slot.index));
@@ -34,15 +43,22 @@ std::expected<std::unique_ptr<ImportedSlot>, Refusal> ImportedSlot::import(const
   std::unique_ptr<ImportedSlot> imported(new ImportedSlot(slot));
 
   cudaExternalMemoryHandleDesc memory{};
+  memory.size = slot.memory_size;
+#ifdef _WIN32
+  memory.type = cudaExternalMemoryHandleTypeOpaqueWin32;
+  memory.handle.win32.handle = reinterpret_cast<void*>(slot.memory.value);
+  if (const cudaError_t error = cudaImportExternalMemory(&imported->memory_, &memory); error != cudaSuccess)
+    return std::unexpected(cuda_refusal(error, "cudaImportExternalMemory"));
+#else
   memory.type = cudaExternalMemoryHandleTypeOpaqueFd;
   memory.handle.fd = duplicate(slot.memory);
-  memory.size = slot.memory_size;
   if (memory.handle.fd < 0)
     return refuse(RefusalCode::IoFailed, std::format("slot {} : dup de la mémoire", slot.index));
   if (const cudaError_t error = cudaImportExternalMemory(&imported->memory_, &memory); error != cudaSuccess) {
     close(memory.handle.fd);  // pris par CUDA seulement en cas de succès
     return std::unexpected(cuda_refusal(error, "cudaImportExternalMemory"));
   }
+#endif
 
   cudaExternalMemoryMipmappedArrayDesc array{};
   array.offset = slot.memory_offset;
@@ -74,6 +90,13 @@ std::expected<std::unique_ptr<ImportedSlot>, Refusal> ImportedSlot::import(const
   }
 
   cudaExternalSemaphoreHandleDesc semaphore{};
+#ifdef _WIN32
+  semaphore.type = cudaExternalSemaphoreHandleTypeTimelineSemaphoreWin32;
+  semaphore.handle.win32.handle = reinterpret_cast<void*>(slot.semaphore_handle.value);
+  if (const cudaError_t error = cudaImportExternalSemaphore(&imported->semaphore_, &semaphore);
+      error != cudaSuccess)
+    return std::unexpected(cuda_refusal(error, "cudaImportExternalSemaphore"));
+#else
   semaphore.type = cudaExternalSemaphoreHandleTypeTimelineSemaphoreFd;
   semaphore.handle.fd = duplicate(slot.semaphore_handle);
   if (semaphore.handle.fd < 0) {
@@ -84,6 +107,7 @@ std::expected<std::unique_ptr<ImportedSlot>, Refusal> ImportedSlot::import(const
     close(semaphore.handle.fd);
     return std::unexpected(cuda_refusal(error, "cudaImportExternalSemaphore"));
   }
+#endif
   return imported;
 }
 

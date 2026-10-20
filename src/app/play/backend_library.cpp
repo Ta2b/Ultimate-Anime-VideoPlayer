@@ -1,8 +1,8 @@
 #include "app/play/backend_library.h"
 
-#include <dlfcn.h>
 #include <format>
 #include <system_error>
+#include <type_traits>
 #include <utility>
 
 namespace ajp::app::play {
@@ -12,9 +12,11 @@ std::unexpected<Refusal> refuse(RefusalCode code, std::string detail) {
   return std::unexpected(Refusal{code, std::move(detail)});
 }
 
+// Le point d'entrée name, ou nullptr. F est un pointeur de fonction (gpu/backend.h).
 template <class F>
-F symbol(void* handle, const char* name) {
-  return reinterpret_cast<F>(dlsym(handle, name));
+F symbol(const vendor_hdr::DynamicLibrary& library, const char* name) {
+  auto found = library.symbol<std::remove_pointer_t<F>>(name);
+  return found ? *found : nullptr;
 }
 
 }  // namespace
@@ -29,16 +31,19 @@ std::expected<std::shared_ptr<BackendLibrary>, Refusal> BackendLibrary::open(
       continue;
     }
     std::shared_ptr<BackendLibrary> library(new BackendLibrary());
-    library->handle_ = dlopen(path.c_str(), RTLD_NOW | RTLD_LOCAL);
-    if (library->handle_ == nullptr) {
-      tried += std::format("\n  {} : {}", path.string(), dlerror());
+    // dlopen sous Linux et macOS, LoadLibraryExW sous Windows (dépendances cherchées à côté).
+    auto opened = vendor_hdr::DynamicLibrary::open(std::filesystem::absolute(path, error));
+    if (!opened) {
+      tried += std::format("\n  {}", opened.error().detail);
       continue;
     }
+    library->handle_.emplace(std::move(*opened));
     library->path_ = path;
-    const auto abi = symbol<gpu::BackendAbiFn>(library->handle_, "ajp_backend_abi");
-    const auto layout = symbol<gpu::BackendLayoutFn>(library->handle_, "ajp_backend_layout");
-    library->create_ = symbol<gpu::BackendCreateFn>(library->handle_, "ajp_backend_create");
-    library->destroy_ = symbol<gpu::BackendDestroyFn>(library->handle_, "ajp_backend_destroy");
+    const vendor_hdr::DynamicLibrary& handle = *library->handle_;
+    const auto abi = symbol<gpu::BackendAbiFn>(handle, "ajp_backend_abi");
+    const auto layout = symbol<gpu::BackendLayoutFn>(handle, "ajp_backend_layout");
+    library->create_ = symbol<gpu::BackendCreateFn>(handle, "ajp_backend_create");
+    library->destroy_ = symbol<gpu::BackendDestroyFn>(handle, "ajp_backend_destroy");
     if (abi == nullptr || layout == nullptr || library->create_ == nullptr || library->destroy_ == nullptr) {
       return refuse(RefusalCode::LibraryUnavailable,
                     std::format("{} : point d'entrée absent", path.string()));
@@ -51,9 +56,7 @@ std::expected<std::shared_ptr<BackendLibrary>, Refusal> BackendLibrary::open(
   return refuse(RefusalCode::LibraryUnavailable, std::format("aucune bibliothèque de backend :{}", tried));
 }
 
-BackendLibrary::~BackendLibrary() {
-  if (handle_ != nullptr) dlclose(handle_);
-}
+BackendLibrary::~BackendLibrary() = default;
 
 void BackendLibrary::Destroy::operator()(gpu::Backend* backend) const {
   if (backend != nullptr) destroy(backend);

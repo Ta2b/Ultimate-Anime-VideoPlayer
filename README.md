@@ -55,6 +55,11 @@ conviennent au GPU ; les cochés se téléchargent depuis la release, vérifiés
 s'installe de la même façon : le lecteur le télécharge depuis NVIDIA NGC avec la clé d'API de
 l'utilisateur, après l'acceptation de sa licence, et l'importe dans son magasin de SDK.
 
+Sous Windows, le même lecteur universel se construit par vcpkg (`windows-release`) ;
+`tools/release/package-windows.ps1` produit `ajp-windows-x64.zip` et, si TensorRT est installé
+(`AJP_WITH_CUDA=ON`), son paquet de moteur. Le workflow « Release Windows » le fait à la main sur
+GitHub, sans TensorRT.
+
 Sur les GPU AMD et Intel, les réseaux peuvent passer par le runtime du fabricant tandis que la
 chaîne reste sur Vulkan : `-DAJP_WITH_MIGRAPHX=ON` (ROCm installé) construit
 `ajp_backend_migraphx`, `-DAJP_WITH_OPENVINO=ON` construit `ajp_backend_openvino`. Chacun ne

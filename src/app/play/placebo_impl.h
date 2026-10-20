@@ -44,7 +44,8 @@ class PlaceboRing {
   struct Slot {
     pl_tex tex = nullptr;
     VkSemaphore semaphore = VK_NULL_HANDLE;
-    int semaphore_fd = -1;            // exporté ; fermé avec le ring
+    // Poignée exportée du sémaphore (descripteur, ou HANDLE sous Windows) ; fermée avec le ring.
+    std::optional<std::uintptr_t> semaphore_export;
     std::uint64_t placebo_value = 0;  // ready_value que libplacebo attend ; 0 : tenu par CUDA
   };
   std::expected<pl_tex, Refusal> slot_of(const RingFrame& frame);
