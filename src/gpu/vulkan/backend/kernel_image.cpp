@@ -16,9 +16,13 @@ const PlaneFormats* plane_formats(kernels::Format format) {
   static constexpr PlaneFormats kNv12{.image = VK_FORMAT_G8_B8R8_2PLANE_420_UNORM,
                                       .luma = VK_FORMAT_R8_UNORM,
                                       .chroma = VK_FORMAT_R8G8_UNORM};
+  // P010 : les plans vus en 16 bits pleins, pas en R10X6. Un pilote peut lire R10X6 comme un
+  // UNORM 16 bits (Mesa le fait : 1023 << 6 donne 65472/65535, un code de moins après
+  // l'arrondi) ; en R16, le mot du conteneur revient exact, et planes.glsl le remet aux noyaux
+  // tel que yuv.glsl le lit dans un tampon (6 bits bas à zéro, spec/color.h).
   static constexpr PlaneFormats kP010{.image = VK_FORMAT_G10X6_B10X6R10X6_2PLANE_420_UNORM_3PACK16,
-                                      .luma = VK_FORMAT_R10X6_UNORM_PACK16,
-                                      .chroma = VK_FORMAT_R10X6G10X6_UNORM_2PACK16};
+                                      .luma = VK_FORMAT_R16_UNORM,
+                                      .chroma = VK_FORMAT_R16G16_UNORM};
   static constexpr PlaneFormats kP016{.image = VK_FORMAT_G16_B16R16_2PLANE_420_UNORM,
                                       .luma = VK_FORMAT_R16_UNORM,
                                       .chroma = VK_FORMAT_R16G16_UNORM};

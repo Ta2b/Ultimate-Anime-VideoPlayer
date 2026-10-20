@@ -291,9 +291,12 @@ TEST_CASE("KernelOps : les plans d'une image décodée se lisent en place", "[vk
   auto& ops = dynamic_cast<vk::VulkanKernelOps&>(*backend->kernels());
   const ColorInfo color{
       .matrix = ColorMatrix::Bt709, .range = ColorRange::Limited, .siting = ChromaSiting::Left};
-  auto pool = std::make_shared<const FakePool>();
   std::size_t tested = 0;
   for (const k::Format f : {k::Format::Nv12, k::Format::P010, k::Format::P016}) {
+    // Un lot par format, comme un AVHWFramesContext par flux : les images d'un lot vivent tant
+    // que lui (AVBufferPool), et un lot neuf rend les vues de l'ancien. Un même lot dont les
+    // images disparaissent recyclerait leurs poignées sous des vues gardées.
+    auto pool = std::make_shared<const FakePool>();
     const k::YuvImage a = synthetic_yuv(f, 70, 38, 41);
     const k::YuvImage b = synthetic_yuv(f, 70, 38, 42);
     auto image_a = PlanarImage::create(*backend, a, kSampled);
@@ -304,11 +307,11 @@ TEST_CASE("KernelOps : les plans d'une image décodée se lisent en place", "[vk
     auto data_b = vulkan_data(*backend, *image_b, pool);
     const DecodedFrame frame_a = vulkan_frame(a, data_a, color, 1);
     const DecodedFrame frame_b = vulkan_frame(b, data_b, color, 2);
-    const std::size_t views_before = ops.plane_views();
     same_as_host(*backend, ops, a, frame_a, frame_b, host_frame(a, color, 3), host_frame(b, color, 4));
-    // Deux images lues en place, chacune par ses deux vues, créées une fois ; chaque lecture a
-    // attendu et signalé le sémaphore de l'image, sans la copier dans un tampon.
-    CHECK(ops.plane_views() == views_before + 2);
+    // Deux images lues en place, chacune par ses deux vues, créées une fois (celles du lot
+    // précédent rendues) ; chaque lecture a attendu et signalé le sémaphore de l'image, sans la
+    // copier dans un tampon.
+    CHECK(ops.plane_views() == 2);
     CHECK(data_a->value() == 3);  // ingestion, remplissage RIFE, mesure
     CHECK(data_b->value() == 1);
     CHECK(data_a->opened() == data_a->closed());
