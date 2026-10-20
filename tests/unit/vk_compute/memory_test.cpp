@@ -45,9 +45,53 @@ TEST_CASE("mémoire : portions d'un même bloc, recousues à la libération", "[
   buffers.emplace_back(require_value(Buffer::create(*rig.context, *memory, 128 * kKiB, MemoryUse::Device)));
   CHECK(memory->block_count() == 1);
   buffers.clear();
+  // Le bloc vide reste en réserve ; la demande suivante le reprend.
+  CHECK(memory->block_count() == 1);
+  CHECK(memory->spare_count() == 1);
+  CHECK(memory->reserved() == kMiB);
+  CHECK(memory->used() == 0);
+  buffers.emplace_back(require_value(Buffer::create(*rig.context, *memory, 64 * kKiB, MemoryUse::Device)));
+  CHECK(memory->block_count() == 1);
+  CHECK(memory->spare_count() == 0);
+}
+
+TEST_CASE("mémoire : un seul bloc en réserve par type, repris par le budget", "[vk_compute][memory]") {
+  Rig rig = make_rig();
+  auto memory =
+      require_value(MemoryAllocator::create(*rig.context, {.block_size = kMiB, .budget = 2 * kMiB}));
+  {
+    Buffer a = require_value(Buffer::create(*rig.context, *memory, 768 * kKiB, MemoryUse::Device));
+    Buffer b = require_value(Buffer::create(*rig.context, *memory, 768 * kKiB, MemoryUse::Device));
+    CHECK(memory->block_count() == 2);
+  }
+  // Deux blocs vides du même type : un seul reste.
+  CHECK(memory->block_count() == 1);
+  CHECK(memory->spare_count() == 1);
+  CHECK(memory->reserved() == kMiB);
+  // Un bloc à part (plus grand qu'un bloc) ne tient pas avec la réserve : elle est rendue d'abord.
+  Buffer big = require_value(Buffer::create(*rig.context, *memory, 3 * kMiB / 2, MemoryUse::Device));
+  CHECK(memory->block_count() == 1);
+  CHECK(memory->spare_count() == 0);
+  CHECK(memory->reserved() == 3 * kMiB / 2);
+}
+
+TEST_CASE("mémoire : un bloc à sa taille propre n'entre pas en réserve", "[vk_compute][memory]") {
+  Rig rig = make_rig();
+  auto memory =
+      require_value(MemoryAllocator::create(*rig.context, {.block_size = kMiB, .budget = 4 * kMiB}));
+  {
+    Buffer big = require_value(Buffer::create(*rig.context, *memory, 2 * kMiB, MemoryUse::Device));
+  }
   CHECK(memory->block_count() == 0);
   CHECK(memory->reserved() == 0);
-  CHECK(memory->used() == 0);
+}
+
+TEST_CASE("mémoire : limites de l'appareil dans les bornes", "[vk_compute][memory]") {
+  Rig rig = make_rig();
+  const MemoryLimits limits = device_limits(*rig.context);
+  CHECK(limits.block_size == MemoryLimits{}.block_size);
+  CHECK(limits.budget >= (VkDeviceSize{1} << 30U));
+  CHECK(limits.budget >= limits.block_size);
 }
 
 TEST_CASE("mémoire : budget atteint refusé par son nom", "[vk_compute][memory]") {

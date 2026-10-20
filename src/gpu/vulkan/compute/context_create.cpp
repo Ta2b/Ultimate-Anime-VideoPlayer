@@ -262,6 +262,13 @@ Done VkContext::create_device(const CreateOptions& options) {
     extensions.push_back(VK_EXT_SHADER_ATOMIC_FLOAT_EXTENSION_NAME);
     enabled_extensions.emplace_back(VK_EXT_SHADER_ATOMIC_FLOAT_EXTENSION_NAME);
   }
+  // Le budget mémoire du pilote (device_limits) : l'extension n'a ni feature ni structure.
+  if (has_extension(present, VK_EXT_MEMORY_BUDGET_EXTENSION_NAME) &&
+      std::ranges::find(options.extensions, VK_EXT_MEMORY_BUDGET_EXTENSION_NAME) ==
+          options.extensions.end()) {
+    extensions.push_back(VK_EXT_MEMORY_BUDGET_EXTENSION_NAME);
+    enabled_extensions.emplace_back(VK_EXT_MEMORY_BUDGET_EXTENSION_NAME);
+  }
   VkPhysicalDeviceShaderAtomicFloatFeaturesEXT atomic_features{
       .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_ATOMIC_FLOAT_FEATURES_EXT,
       .shaderBufferFloat32AtomicAdd = VK_TRUE};

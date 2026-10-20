@@ -181,8 +181,9 @@ struct ComputeFeatures {
   ~ComputeFeatures() = default;
 };
 
-constexpr std::array<const char*, 2> kComputeExtensions{VK_KHR_COOPERATIVE_MATRIX_EXTENSION_NAME,
-                                                        VK_EXT_SHADER_ATOMIC_FLOAT_EXTENSION_NAME};
+constexpr std::array<const char*, 3> kComputeExtensions{VK_KHR_COOPERATIVE_MATRIX_EXTENSION_NAME,
+                                                        VK_EXT_SHADER_ATOMIC_FLOAT_EXTENSION_NAME,
+                                                        VK_EXT_MEMORY_BUDGET_EXTENSION_NAME};
 
 }  // namespace
 

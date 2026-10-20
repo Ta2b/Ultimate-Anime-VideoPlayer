@@ -33,7 +33,10 @@ struct MemoryLimits {
 
 // Limites à la taille de l'appareil : un budget des trois quarts du plus grand tas DEVICE_LOCAL,
 // moins 512 Mio laissés à l'affichage et aux autres programmes, jamais sous le défaut de 2 Gio
-// (16 Gio d'une RX 9070 XT : 11,5 Gio ; 6 Gio d'une RTX 4050 mobile : 4 Gio).
+// (16 Gio d'une RX 9070 XT : 11,5 Gio ; 6 Gio d'une RTX 4050 mobile : 4 Gio). Avec
+// VK_EXT_memory_budget activée sur l'appareil, le budget est ce que le pilote dit disponible au
+// processus sur ce tas à cet instant (son budget moins son usage : le ring et l'affichage y sont
+// déjà), moins la même réserve, sans dépasser la règle des trois quarts ni descendre sous 1 Gio.
 MemoryLimits device_limits(const VkContext& context);
 
 class MemoryAllocator;
@@ -87,6 +90,9 @@ class MemoryAllocator {
   VkDeviceSize reserved() const { return reserved_; }  // octets des blocs alloués à l'appareil
   VkDeviceSize used() const { return used_; }          // octets des portions vivantes
   std::size_t block_count() const { return blocks_.size(); }
+  // Blocs vides gardés en réserve (un par type et tiling, de la taille d'un bloc) : la prochaine
+  // demande les reprend sans vkAllocateMemory ; le budget les reprend d'abord quand il manque.
+  std::size_t spare_count() const;
 
  private:
   struct Range {
@@ -107,6 +113,9 @@ class MemoryAllocator {
   MemoryAllocator(const VkContext& context, MemoryLimits limits);
   std::expected<std::uint32_t, Refusal> choose_type(std::uint32_t allowed, MemoryUse use) const;
   std::expected<Block*, Refusal> new_block(std::uint32_t type, Tiling tiling, VkDeviceSize size);
+  void free_block(std::vector<std::unique_ptr<Block>>::iterator at);
+  // Rend les blocs vides en réserve jusqu'à ce que needed octets tiennent dans le budget.
+  void evict_spares(VkDeviceSize needed);
   static bool carve(Block& block, VkDeviceSize size, VkDeviceSize alignment, VkDeviceSize& offset);
   void release(std::uint64_t block, VkDeviceSize offset, VkDeviceSize size);
 

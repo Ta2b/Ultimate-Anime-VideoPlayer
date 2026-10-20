@@ -44,17 +44,31 @@ VkDeviceSize align_up(VkDeviceSize value, VkDeviceSize alignment) {
 }  // namespace
 
 MemoryLimits device_limits(const VkContext& context) {
-  VkPhysicalDeviceMemoryProperties properties{};
-  context.instance_functions().vkGetPhysicalDeviceMemoryProperties(context.physical_device(), &properties);
+  const bool budget_known =
+      std::ranges::find(context.caps().extensions, VK_EXT_MEMORY_BUDGET_EXTENSION_NAME) !=
+      context.caps().extensions.end();
+  VkPhysicalDeviceMemoryBudgetPropertiesEXT budget{
+      .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MEMORY_BUDGET_PROPERTIES_EXT};
+  VkPhysicalDeviceMemoryProperties2 properties{.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MEMORY_PROPERTIES_2,
+                                               .pNext = budget_known ? &budget : nullptr};
+  context.instance_functions().vkGetPhysicalDeviceMemoryProperties2(context.physical_device(), &properties);
   VkDeviceSize largest = 0;
-  for (std::uint32_t i = 0; i < properties.memoryHeapCount; ++i) {
-    if ((properties.memoryHeaps[i].flags & VK_MEMORY_HEAP_DEVICE_LOCAL_BIT) != 0)
-      largest = std::max(largest, properties.memoryHeaps[i].size);
+  VkDeviceSize available = 0;  // sur le plus grand tas, ce que le pilote dit libre pour le processus
+  for (std::uint32_t i = 0; i < properties.memoryProperties.memoryHeapCount; ++i) {
+    const VkMemoryHeap& heap = properties.memoryProperties.memoryHeaps[i];
+    if ((heap.flags & VK_MEMORY_HEAP_DEVICE_LOCAL_BIT) == 0 || heap.size <= largest) continue;
+    largest = heap.size;
+    available = budget.heapBudget[i] > budget.heapUsage[i] ? budget.heapBudget[i] - budget.heapUsage[i] : 0;
   }
   MemoryLimits limits;
   const VkDeviceSize reserve = VkDeviceSize{512} << 20U;
   const VkDeviceSize sized = largest / 4 * 3;
   if (sized > reserve) limits.budget = std::max(limits.budget, sized - reserve);
+  if (budget_known && largest > 0) {
+    const VkDeviceSize floor = VkDeviceSize{1} << 30U;
+    const VkDeviceSize real = available > reserve ? available - reserve : 0;
+    limits.budget = std::max(floor, std::min(limits.budget, real));
+  }
   return limits;
 }
 
@@ -110,6 +124,28 @@ MemoryAllocator::~MemoryAllocator() {
   for (const auto& block : blocks_) context_.fn().vkFreeMemory(context_.device(), block->memory, nullptr);
 }
 
+std::size_t MemoryAllocator::spare_count() const {
+  return static_cast<std::size_t>(
+      std::ranges::count_if(blocks_, [](const auto& block) { return block->live == 0; }));
+}
+
+void MemoryAllocator::free_block(std::vector<std::unique_ptr<Block>>::iterator at) {
+  context_.fn().vkFreeMemory(context_.device(), (*at)->memory, nullptr);
+  reserved_ -= (*at)->size;
+  blocks_.erase(at);
+}
+
+void MemoryAllocator::evict_spares(VkDeviceSize needed) {
+  for (auto it = blocks_.begin(); it != blocks_.end() && needed > limits_.budget - reserved_;) {
+    if ((*it)->live == 0) {
+      free_block(it);
+      it = blocks_.begin();
+    } else {
+      ++it;
+    }
+  }
+}
+
 std::expected<std::uint32_t, Refusal> MemoryAllocator::choose_type(std::uint32_t allowed,
                                                                    MemoryUse use) const {
   const VkMemoryPropertyFlags required = required_flags(use);
@@ -137,6 +173,8 @@ std::expected<std::uint32_t, Refusal> MemoryAllocator::choose_type(std::uint32_t
 
 std::expected<MemoryAllocator::Block*, Refusal> MemoryAllocator::new_block(std::uint32_t type, Tiling tiling,
                                                                            VkDeviceSize size) {
+  // La réserve d'abord : un bloc vide d'un autre type ou tiling ne sert pas cette demande.
+  if (size > limits_.budget - reserved_ && !context_.stalled()) evict_spares(size);
   if (size > limits_.budget - reserved_) {
     return refuse(RefusalCode::GpuMemoryExhausted,
                   std::format("budget mémoire de {} o atteint : {} o réservés, bloc de {} o demandé",
@@ -230,10 +268,19 @@ void MemoryAllocator::release(std::uint64_t id, VkDeviceSize offset, VkDeviceSiz
   Block& block = **found;
   used_ -= size;
   if (--block.live == 0 && !context_.stalled()) {
-    // Un bloc vide retourne aussitôt à l'appareil : la mémoire réservée suit l'usage.
-    context_.fn().vkFreeMemory(context_.device(), block.memory, nullptr);
-    reserved_ -= block.size;
-    blocks_.erase(found);
+    // Un bloc vide de la taille courante reste en réserve, un par type et tiling : une chaîne
+    // qui change (nouveau moteur, seek) relâche et redemande les mêmes tailles, et chaque
+    // vkAllocateMemory coûte des millisecondes. Les autres blocs vides (taille à part, second
+    // du même type) retournent à l'appareil : la mémoire réservée suit l'usage.
+    const bool spare_present = std::ranges::any_of(blocks_, [&](const auto& other) {
+      return other.get() != &block && other->live == 0 && other->type == block.type &&
+             other->tiling == block.tiling;
+    });
+    if (block.size != limits_.block_size || spare_present) {
+      free_block(found);
+      return;
+    }
+    block.free = {Range{.offset = 0, .size = block.size}};
     return;
   }
   const auto at = std::ranges::lower_bound(block.free, offset, {}, &Range::offset);
