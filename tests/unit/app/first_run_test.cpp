@@ -1,6 +1,8 @@
 #include "app/play/first_run.h"
 
 #include <algorithm>
+#include <array>
+#include <filesystem>
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -83,20 +85,32 @@ TEST_CASE("Commencer écrit des moteurs valides pour settings.toml", "[app][firs
   CHECK_FALSE(tensorrt->chosen);
 }
 
-TEST_CASE("Sans TensorRT ni Maxine, la chaîne garde l'image source et le dit", "[app][first_run]") {
+TEST_CASE("Sans moteur d'inférence ni Maxine, la chaîne garde l'image source et le dit", "[app][first_run]") {
   PlaySettings s;
   s.upscale = true;
   s.rife_factor = 3;
   s.true_hdr = true;
   core::Settings vulkan;
   vulkan.first_run_done = true;
+  core::Settings none = vulkan;
+  none.chosen_engines.clear();
   std::vector<std::string> notes;
-  const PlaySettings plain = within_engines(s, vulkan, notes);
+  const PlaySettings plain = within_engines(s, none, notes);
   CHECK_FALSE(plain.upscale);
   CHECK(plain.rife_factor == 0);
   CHECK_FALSE(plain.true_hdr);
   CHECK(plain.hdr_native);
   CHECK(notes.size() == 2);
+
+  // Vulkan seul (AMD, Intel) : SPAN et RIFE passent par le backend Vulkan.
+  notes.clear();
+  core::Settings vulkan_only = vulkan;
+  vulkan_only.chosen_engines = {core::EngineId::Vulkan};
+  const PlaySettings on_vulkan = within_engines(s, vulkan_only, notes);
+  CHECK(on_vulkan.upscale);
+  CHECK(on_vulkan.rife_factor == 3);
+  CHECK_FALSE(on_vulkan.true_hdr);
+  CHECK(notes.size() == 1);
 
   notes.clear();
   const core::Settings all = settings_after(first_run_view(kRtx, kHere, ProfilesView{}), core::Settings{});
@@ -105,4 +119,18 @@ TEST_CASE("Sans TensorRT ni Maxine, la chaîne garde l'image source et le dit", 
   CHECK(kept.rife_factor == 3);
   CHECK(kept.true_hdr);
   CHECK(notes.empty());
+}
+
+TEST_CASE("TensorRT n'est essayé que s'il a été choisi", "[app][first_run]") {
+  const std::array<std::filesystem::path, 2> candidates{"base/ajp_backend_tensorrt.so",
+                                                        "base/ajp_backend_vulkan.so"};
+  core::Settings vulkan_only;
+  vulkan_only.chosen_engines = {core::EngineId::Vulkan};
+  const auto without = backends_within(candidates, vulkan_only);
+  REQUIRE(without.size() == 1);
+  CHECK(without.front().filename() == "ajp_backend_vulkan.so");
+
+  core::Settings both = vulkan_only;
+  both.chosen_engines.push_back(core::EngineId::TensorRt);
+  CHECK(backends_within(candidates, both).size() == 2);
 }

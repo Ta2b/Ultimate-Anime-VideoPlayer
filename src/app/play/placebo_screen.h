@@ -36,6 +36,7 @@ struct ScreenOptions {
   // Smooth Motion du pilote NVIDIA : sa couche implicite VK_LAYER_NV_present s'active par
   // NVPRESENT_ENABLE_SMOOTH_MOTION=1, posé avant la création de l'instance Vulkan.
   bool smooth_motion = false;
+  bool allow_software = false;  // appareil Vulkan logiciel (lavapipe) accepté : essais sans GPU
 };
 
 class PlaceboScreen final : public Screen {

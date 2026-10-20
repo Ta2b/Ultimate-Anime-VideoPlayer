@@ -117,6 +117,8 @@ std::expected<PlayOptions, Refusal> parse_play_options(std::span<const std::stri
       options.first_run = true;
     } else if (arg == "--rife-image") {
       options.rife_image = true;
+    } else if (arg == "--software-gpu") {
+      options.software_gpu = true;
     } else {
       std::expected<void, Refusal> applied;
       bool known = false;
@@ -226,6 +228,7 @@ std::string play_usage() {
       "  --snapshot-frames=N    N présentations de suite (FICHIER-001.ppm…), pour le scintillement\n"
       "                         ou de construction d'un moteur si elle dure jusque-là\n"
       "  --rife-image           RIFE image à chaque instant (sans la variante mouvement)\n"
+      "  --software-gpu         accepte un Vulkan logiciel (lavapipe), pour les essais sans GPU\n"
       "  --first-run            écran de bienvenue (moteurs, profil de démarrage), même déjà vu\n"
       "  --keys=S:touche,…      touches pressées d'office (essais), ex. 3:Right,5:Space\n"
       "  --work-height=N        réduit la source à N lignes avant SPAN (défaut 720 ; 0 jamais)\n"

@@ -59,6 +59,24 @@ void BackendLibrary::Destroy::operator()(gpu::Backend* backend) const {
   if (backend != nullptr) destroy(backend);
 }
 
+std::expected<std::shared_ptr<BackendLibrary>, Refusal> BackendLibrary::choose(
+    std::span<const std::filesystem::path> candidates, const gpu::BackendInit& init) {
+  std::string tried;
+  for (const auto& path : candidates) {
+    auto library = open(std::span(&path, 1));
+    if (!library) {
+      tried += std::format("\n  {}", library.error().detail);
+      continue;
+    }
+    if (auto probe = create(*library, init); !probe) {
+      tried += std::format("\n  {} : {} ({})", path.string(), probe.error().detail, name(probe.error().code));
+      continue;
+    }
+    return library;
+  }
+  return refuse(RefusalCode::LibraryUnavailable, std::format("aucun backend pour cet appareil :{}", tried));
+}
+
 std::expected<BackendLibrary::Instance, Refusal> BackendLibrary::create(
     const std::shared_ptr<BackendLibrary>& library, const gpu::BackendInit& init) {
   Refusal refusal{RefusalCode::LibraryUnavailable, "ajp_backend_create sans refus"};

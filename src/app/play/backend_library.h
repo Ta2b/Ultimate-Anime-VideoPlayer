@@ -33,6 +33,13 @@ class BackendLibrary {
   };
   using Instance = std::unique_ptr<gpu::Backend, Destroy>;
 
+  // Le premier backend de candidates qui accepte l'appareil de rendu de init : TensorRT sur une
+  // carte NVIDIA, Vulkan ailleurs (AMD, Intel). Chaque candidat est ouvert puis essayé par une
+  // instance aussitôt détruite ; un candidat absent, d'une autre ABI ou qui refuse l'appareil
+  // laisse sa place au suivant. Refus : LibraryUnavailable, avec la raison de chaque candidat.
+  static std::expected<std::shared_ptr<BackendLibrary>, Refusal> choose(
+      std::span<const std::filesystem::path> candidates, const gpu::BackendInit& init);
+
   // Une instance de plus, pour un seul thread. Refus : celui du backend.
   static std::expected<Instance, Refusal> create(const std::shared_ptr<BackendLibrary>& library,
                                                  const gpu::BackendInit& init);

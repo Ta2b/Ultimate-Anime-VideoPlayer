@@ -3,11 +3,14 @@
 // présélection) et le profil de démarrage. « Commencer » écrit settings.toml (moteurs choisis,
 // first_run_done) et user.toml (start_profile) ; --first-run remontre l'écran.
 //
-// Dans la tranche verticale, SPAN et RIFE passent par TensorRT et RTX HDR par Maxine : sans eux,
-// la lecture garde l'image source (pas encore d'inférence Vulkan ici) et le dit au journal.
+// SPAN et RIFE passent par TensorRT sur une carte NVIDIA qui l'a choisi, sinon par le backend
+// Vulkan ; RTX HDR passe par Maxine, remplacé sans elle par le HDR natif. Ce qui change se dit au
+// journal.
 #pragma once
 
 #include <cstdint>
+#include <filesystem>
+#include <span>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -66,8 +69,16 @@ FirstRunView first_run_view(const GpuFacts& gpu, const EnginesHere& here, Profil
 // first_run_done.
 core::Settings settings_after(const FirstRunView& view, core::Settings settings);
 
-// La chaîne que les moteurs choisis permettent : sans TensorRT, ni SPAN ni RIFE ; sans Maxine, le
-// HDR natif au lieu de RTX HDR. notes dit ce qui a changé.
+// id fait partie des moteurs choisis à l'écran de bienvenue.
+bool chosen(const core::Settings& settings, core::EngineId id);
+
+// Les bibliothèques de backend à essayer, dans l'ordre : celle de TensorRT seulement s'il a été
+// choisi, Vulkan restant le recours.
+std::vector<std::filesystem::path> backends_within(std::span<const std::filesystem::path> candidates,
+                                                   const core::Settings& engines);
+
+// La chaîne que les moteurs choisis permettent : sans TensorRT ni Vulkan, ni SPAN ni RIFE ; sans
+// Maxine, le HDR natif au lieu de RTX HDR. notes dit ce qui a changé.
 PlaySettings within_engines(PlaySettings settings, const core::Settings& engines,
                             std::vector<std::string>& notes);
 // « Vulkan, TensorRT, NVIDIA Maxine », pour l'onglet Moteurs.

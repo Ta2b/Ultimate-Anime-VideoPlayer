@@ -56,10 +56,16 @@ int main(int argc, char** argv) {
   ajp::app::play::PlayerPaths paths{
       .home = sdl_path(SDL_GetUserFolder(SDL_FOLDER_HOME)),
       .engines = data / "engines",
-      .backends = {base / "ajp_backend_tensorrt.so"},
   };
+  // TensorRT d'abord (cartes NVIDIA), puis Vulkan (AMD, Intel, et NVIDIA sans TensorRT) ; chacun à
+  // côté de l'exécutable, puis dans l'arbre de construction.
+  paths.backends.push_back(base / "ajp_backend_tensorrt.so");
 #ifdef AJP_BACKEND_TENSORRT
-  paths.backends.emplace_back(AJP_BACKEND_TENSORRT);  // arbre de construction
+  paths.backends.emplace_back(AJP_BACKEND_TENSORRT);
+#endif
+  paths.backends.push_back(base / "ajp_backend_vulkan.so");
+#ifdef AJP_BACKEND_VULKAN
+  paths.backends.emplace_back(AJP_BACKEND_VULKAN);
 #endif
   std::error_code error;
   std::filesystem::create_directories(paths.engines, error);

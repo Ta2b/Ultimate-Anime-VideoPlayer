@@ -1,6 +1,7 @@
 #include "app/play/placebo_screen.h"
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <format>
 #include <string_view>
@@ -91,6 +92,64 @@ pl_color_space color_space_of(const ColorInfo& color) {
   return space;
 }
 
+// Les files de libplacebo se verrouillent par ses fonctions : le backend Vulkan, qui adopte
+// l'appareil, soumet sur la même file de calcul.
+void lock_placebo_queue(void* context, std::uint32_t family, std::uint32_t index) {
+  const auto vk = static_cast<pl_vulkan>(context);
+  vk->lock_queue(vk, family, index);
+}
+void unlock_placebo_queue(void* context, std::uint32_t family, std::uint32_t index) {
+  const auto vk = static_cast<pl_vulkan>(context);
+  vk->unlock_queue(vk, family, index);
+}
+
+// L'appareil de libplacebo tel que gpu/backend.h le décrit : un backend Vulkan l'adopte au lieu
+// d'en créer un autre, et lit ainsi les images du ring sans les exporter.
+VulkanDevice vulkan_description(pl_vulkan vk) {
+  VulkanDevice d{.instance = vk->instance,
+                 .physical_device = vk->phys_device,
+                 .device = vk->device,
+                 .get_instance_proc_addr = reinterpret_cast<VoidFunction>(vk->get_proc_addr),
+                 .api_version = vk->api_version,
+                 .enabled_features = vk->features,
+                 .graphics = {.family = static_cast<std::uint32_t>(vk->queue_graphics.index), .index = 0},
+                 .compute = {.family = static_cast<std::uint32_t>(vk->queue_compute.index), .index = 0},
+                 .lock_queue = lock_placebo_queue,
+                 .unlock_queue = unlock_placebo_queue,
+                 .queue_context = const_cast<pl_vulkan_t*>(vk)};
+  for (int i = 0; i < vk->num_extensions; ++i) d.device_extensions.emplace_back(vk->extensions[i]);
+  return d;
+}
+
+// Ce que le backend Vulkan demande à l'appareil qu'il adopte (tenseurs float16, matrices
+// coopératives), activé par libplacebo seulement là où le pilote le propose.
+struct ComputeFeatures {
+  VkPhysicalDeviceCooperativeMatrixFeaturesKHR matrix{
+      .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_COOPERATIVE_MATRIX_FEATURES_KHR,
+      .cooperativeMatrix = VK_TRUE};
+  VkPhysicalDeviceVulkan13Features v13{.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES,
+                                       .pNext = &matrix,
+                                       .subgroupSizeControl = VK_TRUE,
+                                       .computeFullSubgroups = VK_TRUE};
+  VkPhysicalDeviceVulkan12Features v12{.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES,
+                                       .pNext = &v13,
+                                       .shaderFloat16 = VK_TRUE,
+                                       .vulkanMemoryModel = VK_TRUE};
+  VkPhysicalDeviceVulkan11Features v11{.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_1_FEATURES,
+                                       .pNext = &v12,
+                                       .storageBuffer16BitAccess = VK_TRUE};
+  VkPhysicalDeviceFeatures2 features{.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2, .pNext = &v11};
+
+  ComputeFeatures() { features.features.shaderInt16 = VK_TRUE; }
+  ComputeFeatures(const ComputeFeatures&) = delete;
+  ComputeFeatures& operator=(const ComputeFeatures&) = delete;
+  ComputeFeatures(ComputeFeatures&&) = delete;
+  ComputeFeatures& operator=(ComputeFeatures&&) = delete;
+  ~ComputeFeatures() = default;
+};
+
+constexpr std::array<const char*, 1> kComputeExtensions{VK_KHR_COOPERATIVE_MATRIX_EXTENSION_NAME};
+
 }  // namespace
 
 PlaceboScreen::PlaceboScreen(std::unique_ptr<Impl> impl) : impl_(std::move(impl)) {}
@@ -167,13 +226,18 @@ std::expected<std::unique_ptr<PlaceboScreen>, Refusal> PlaceboScreen::open(const
   vk_params.instance = impl->inst->instance;
   vk_params.get_proc_addr = impl->inst->get_proc_addr;
   vk_params.surface = impl->surface;
-  vk_params.allow_software = false;
+  vk_params.allow_software = options.allow_software;
+  const ComputeFeatures compute;
+  vk_params.features = &compute.features;
+  vk_params.opt_extensions = kComputeExtensions.data();
+  vk_params.num_opt_extensions = static_cast<int>(kComputeExtensions.size());
   impl->vk = pl_vulkan_create(impl->log, &vk_params);
   if (impl->vk == nullptr)
     return refuse(RefusalCode::DeviceMismatch, "pl_vulkan_create : aucun appareil ne convient");
   const pl_gpu gpu = impl->vk->gpu;
   if ((gpu->export_caps.tex & PL_HANDLE_FD) == 0 || (gpu->export_caps.sync & PL_HANDLE_FD) == 0) {
-    return refuse(RefusalCode::DeviceMismatch, "l'appareil n'exporte pas ses images ni ses sémaphores (fd)");
+    // Sans export, le backend TensorRT ne peut pas importer le ring ; le backend Vulkan s'en passe.
+    impl->channel->info("l'appareil n'exporte pas ses images ni ses sémaphores (fd) : ring sans poignées");
   }
 
   pl_vulkan_swapchain_params sw_params{};
@@ -188,6 +252,7 @@ std::expected<std::unique_ptr<PlaceboScreen>, Refusal> PlaceboScreen::open(const
 
   impl->device = GpuDevice{.api = GpuApi::Vulkan, .name = "Vulkan (libplacebo)"};
   for (std::size_t i = 0; i < impl->device.uuid.size(); ++i) impl->device.uuid[i] = gpu->uuid[i];
+  impl->device.vulkan = vulkan_description(impl->vk);
   auto osd = OsdText::create();
   if (!osd) return std::unexpected(std::move(osd.error()));
   impl->osd = std::move(*osd);

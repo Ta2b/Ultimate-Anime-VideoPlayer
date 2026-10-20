@@ -53,6 +53,13 @@ std::expected<std::vector<RingSlotDesc>, Refusal> PlaceboRing::create(pl_gpu gpu
   VkSemaphore handover = pl_vulkan_sem_create(gpu, &temp_params);
   if (handover == VK_NULL_HANDLE) return refuse(RefusalCode::VendorCallFailed, "pl_vulkan_sem_create");
 
+  // Exporter la mémoire et les sémaphores ne sert qu'au backend TensorRT (import dans CUDA) ; le
+  // backend Vulkan écrit sur l'appareil même du rendu. Un appareil qui n'exporte pas (lavapipe)
+  // garde un ring sans poignées.
+  const bool exported =
+      (gpu->export_caps.tex & PL_HANDLE_FD) != 0 && (gpu->export_caps.sync & PL_HANDLE_FD) != 0;
+  const pl_handle_type handles = exported ? PL_HANDLE_FD : pl_handle_type{};
+  const HandleKind kind = exported ? HandleKind::OpaqueFd : HandleKind::None;
   std::vector<RingSlotDesc> descs;
   for (std::uint32_t i = 0; i < count; ++i) {
     Slot slot;
@@ -62,15 +69,15 @@ std::expected<std::vector<RingSlotDesc>, Refusal> PlaceboRing::create(pl_gpu gpu
     params.format = format;
     params.sampleable = true;
     params.storable = true;
-    params.export_handle = PL_HANDLE_FD;
+    params.export_handle = handles;
     slot.tex = pl_tex_create(gpu, &params);
     union pl_handle handle{};
     pl_vulkan_sem_params sem_params{};
     sem_params.type = VK_SEMAPHORE_TYPE_TIMELINE;
-    sem_params.export_handle = PL_HANDLE_FD;
-    sem_params.out_handle = &handle;
+    sem_params.export_handle = handles;
+    sem_params.out_handle = exported ? &handle : nullptr;
     slot.semaphore = pl_vulkan_sem_create(gpu, &sem_params);
-    slot.semaphore_fd = handle.fd;
+    slot.semaphore_fd = exported ? handle.fd : -1;
     const bool ok = slot.tex != nullptr && slot.semaphore != VK_NULL_HANDLE &&
                     hand_to_cuda(gpu, slot.tex, handover, std::uint64_t{i} + 1);
     slots_.push_back(slot);
@@ -90,13 +97,13 @@ std::expected<std::vector<RingSlotDesc>, Refusal> PlaceboRing::create(pl_gpu gpu
         .height = height,
         .format = RingFormat::Rgba16Unorm,
         .image = reinterpret_cast<std::uint64_t>(image),
-        .memory = {.kind = HandleKind::OpaqueFd,
-                   .value = static_cast<std::uintptr_t>(slot.tex->shared_mem.handle.fd)},
+        .memory = {.kind = kind,
+                   .value = exported ? static_cast<std::uintptr_t>(slot.tex->shared_mem.handle.fd) : 0},
         .memory_size = slot.tex->shared_mem.size,
         .memory_offset = slot.tex->shared_mem.offset,
         .semaphore = reinterpret_cast<std::uint64_t>(slot.semaphore),
-        .semaphore_handle = {.kind = HandleKind::OpaqueFd,
-                             .value = static_cast<std::uintptr_t>(slot.semaphore_fd)},
+        .semaphore_handle = {.kind = kind,
+                             .value = exported ? static_cast<std::uintptr_t>(slot.semaphore_fd) : 0},
     });
   }
   pl_gpu_finish(gpu);

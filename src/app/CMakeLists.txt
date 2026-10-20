@@ -22,12 +22,16 @@ if(TARGET ajp::dep::fontconfig)
   target_compile_definitions(ajp_app PRIVATE AJP_WITH_FONTCONFIG=1)
 endif()
 
-# ajp : l'exécutable. Le backend TensorRT se cherche à côté de lui, puis dans l'arbre de
-# construction quand il y est construit (AJP_WITH_CUDA).
+# ajp : l'exécutable. Les backends TensorRT et Vulkan se cherchent à côté de lui, puis dans
+# l'arbre de construction quand ils y sont construits (TensorRT : AJP_WITH_CUDA).
 add_executable(ajp main.cpp)
 target_link_libraries(ajp PRIVATE ajp::app ajp::dep::ffmpeg ajp::dep::sdl3 ajp::dep::spdlog)
 if(TARGET ajp_backend_tensorrt)
   target_compile_definitions(ajp PRIVATE AJP_BACKEND_TENSORRT="$<TARGET_FILE:ajp_backend_tensorrt>")
   add_dependencies(ajp ajp_backend_tensorrt)
+endif()
+if(TARGET ajp_backend_vulkan)
+  target_compile_definitions(ajp PRIVATE AJP_BACKEND_VULKAN="$<TARGET_FILE:ajp_backend_vulkan>")
+  add_dependencies(ajp ajp_backend_vulkan)
 endif()
 ajp_set_warnings(ajp)

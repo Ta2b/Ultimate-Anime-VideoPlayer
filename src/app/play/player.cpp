@@ -74,6 +74,14 @@ gpu::BackendLog backend_log() {
 }
 
 // La piste vidéo que la source choisira, lue d'avance : sa taille fixe le moteur et le ring.
+// Le décodeur suit le backend : NVDEC en mémoire CUDA pour TensorRT ; ailleurs le décodage
+// logiciel en mémoire hôte, que l'ingestion du backend Vulkan copie sur l'appareil (le décodage
+// Vulkan Video sur l'appareil du rendu reste à brancher).
+std::vector<media::HwApi> decoder_attempts(std::string_view backend) {
+  if (backend == "tensorrt") return {media::HwApi::Cuda};
+  return {media::HwApi::Software};
+}
+
 std::expected<media::TrackInfo, Refusal> probe_video(const std::filesystem::path& file) {
   auto demuxer = media::Demuxer::open(file);
   if (!demuxer) return std::unexpected(std::move(demuxer.error()));
@@ -85,9 +93,10 @@ std::expected<media::TrackInfo, Refusal> probe_video(const std::filesystem::path
 
 // Un moteur à construire, tel que la préparation le montre.
 struct EngineLabel {
-  std::string name;   // « SPAN », « RIFE »
-  std::string model;  // nom du modèle
-  int width = 0;      // entrée du moteur
+  std::string name;     // « SPAN », « RIFE »
+  std::string model;    // nom du modèle
+  std::string backend;  // « tensorrt », « vulkan »
+  int width = 0;        // entrée du moteur
   int height = 0;
   double expected_s = kDefaultBuildSeconds;
 };
@@ -163,7 +172,8 @@ std::expected<std::optional<gpu::Artifact>, Refusal> wait_engine(EngineBuild& bu
           .details = {status.stage,
                       std::format("écoulé {} · prévu ~{}", seconds(progress.elapsed_seconds(now)),
                                   seconds(progress.expected_seconds())),
-                      std::format("{} · entrée {}x{} · TensorRT", engine.model, engine.width, engine.height)},
+                      std::format("{} · entrée {}x{} · {}", engine.model, engine.width, engine.height,
+                                  engine.backend)},
           .show_details = details};
       auto shown = screen.show(ShowRequest{.ui = ui.preparation(now, view)});
       if (!shown) return std::unexpected(std::move(shown.error()));
@@ -223,6 +233,7 @@ std::expected<std::optional<std::unique_ptr<gpu::Engine>>, Refusal> prepare_engi
                     .model = {.id = onnx.stem().string(), .onnx_path = onnx, .sha256 = *sha256},
                     .shapes = {.min = shape, .opt = shape, .max = shape}});
   if (!build) return std::unexpected(std::move(build.error()));
+  label.backend = backend.capabilities().name;
   label.expected_s = expected_build_seconds(p.paths.engines, onnx, std::int64_t{label.width} * label.height);
   auto artifact = wait_engine(**build, p.screen, p.ui, label, p.details, p.snapshot);
   if (!artifact) return std::unexpected(std::move(artifact.error()));
@@ -270,6 +281,7 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
       .render = &p.screen.device(), .cache_dir = p.paths.engines, .log = backend_log()};
   auto backend = BackendLibrary::create(p.library, init);
   if (!backend) return std::unexpected(std::move(backend.error()));
+  const std::string backend_name = (*backend)->capabilities().name;
   log->info("backend {} ({}) depuis {}", (*backend)->capabilities().name,
             (*backend)->capabilities().device_name, p.library->path().string());
 
@@ -339,8 +351,8 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
       : use_rife    ? std::format("RIFE ×{} · {} · ", settings.rife_factor, rife_model->stem().string())
                     : std::string(),
       settings.true_hdr ? "RTX HDR · " : "",
-      model ? std::format("SPAN ×{} · {} · TensorRT · {} → {}x{}", factor, model->path.stem().string(),
-                          reduce, work.width * factor, work.height * factor)
+      model ? std::format("SPAN ×{} · {} · {} · {} → {}x{}", factor, model->path.stem().string(),
+                          backend_name, reduce, work.width * factor, work.height * factor)
             : std::format("sans agrandissement · {}", reduce));
   log->info("{} : {}", options.file.string(), label_text);
 
@@ -372,7 +384,7 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
   live->set_keep_poses(settings.keep_poses);
   PipelineConfig config{
       .file = options.file,
-      .decoder = {.attempts = {media::HwApi::Cuda}, .render_device = p.screen.device().uuid},
+      .decoder = {.attempts = decoder_attempts(backend_name), .render_device = p.screen.device().uuid},
       .audio_track = p.audio_track,
       .subtitle_track = p.subtitle_track};
   PlaceboScreen& out = p.screen;
@@ -620,7 +632,8 @@ std::expected<void, Refusal> play(const PlayOptions& options, const PlayerPaths&
                                         .width = options.window_width,
                                         .height = options.window_height,
                                         .fullscreen = options.fullscreen,
-                                        .smooth_motion = saved->smooth_motion});
+                                        .smooth_motion = saved->smooth_motion,
+                                        .allow_software = options.software_gpu});
   if (!screen) return std::unexpected(std::move(screen.error()));
   auto ui = PlayerUi::create((*screen)->window(), options.file.filename().string());
   if (!ui) return std::unexpected(std::move(ui.error()));
@@ -683,7 +696,9 @@ std::expected<void, Refusal> play(const PlayOptions& options, const PlayerPaths&
   if (auto valid = validate(settings); !valid) return std::unexpected(std::move(valid.error()));
   static_cast<void>((*ui)->controls().set_volume(settings.volume));
   show_loading(**screen, **ui, "Chargement");
-  auto library = BackendLibrary::open(paths.backends);
+  const gpu::BackendInit probe{
+      .render = &(*screen)->device(), .cache_dir = paths.engines, .log = backend_log()};
+  auto library = BackendLibrary::choose(backends_within(paths.backends, *engines), probe);
   if (!library) return std::unexpected(std::move(library.error()));
 
   Player player{.options = options,

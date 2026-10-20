@@ -100,11 +100,21 @@ void profile_choice(ProfilesView& view) {
   }
 }
 
+}  // namespace
+
 bool chosen(const core::Settings& settings, core::EngineId id) {
   return std::ranges::contains(settings.chosen_engines, id);
 }
 
-}  // namespace
+std::vector<std::filesystem::path> backends_within(std::span<const std::filesystem::path> candidates,
+                                                   const core::Settings& engines) {
+  std::vector<std::filesystem::path> out;
+  for (const std::filesystem::path& path : candidates) {
+    const bool tensorrt = path.filename().string().contains("tensorrt");
+    if (!tensorrt || chosen(engines, core::EngineId::TensorRt)) out.push_back(path);
+  }
+  return out;
+}
 
 core::SystemInfo system_of(const GpuFacts& gpu) {
   return core::SystemInfo{.os = core::Os::Linux,
@@ -180,10 +190,11 @@ core::Settings settings_after(const FirstRunView& view, core::Settings settings)
 
 PlaySettings within_engines(PlaySettings settings, const core::Settings& engines,
                             std::vector<std::string>& notes) {
-  if (!chosen(engines, core::EngineId::TensorRt) && (settings.upscale || settings.rife_factor >= 2)) {
+  const bool inference = chosen(engines, core::EngineId::TensorRt) || chosen(engines, core::EngineId::Vulkan);
+  if (!inference && (settings.upscale || settings.rife_factor >= 2)) {
     settings.upscale = false;
     settings.rife_factor = 0;
-    notes.emplace_back("TensorRT non choisi : ni SPAN ni RIFE (pas encore d'inférence Vulkan ici)");
+    notes.emplace_back("ni TensorRT ni Vulkan choisis : ni SPAN ni RIFE");
   }
   if (!chosen(engines, core::EngineId::MaxineVfx) && settings.true_hdr) {
     settings.true_hdr = false;
