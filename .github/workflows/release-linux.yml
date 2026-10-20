@@ -5,6 +5,8 @@ name: Release Linux
 # tools/release/notes/<étiquette>.md si elle n'existe pas encore. Le motif ne croise pas celui des releases Windows et
 # macOS (v*), qui ne se lancent donc pas. Une poussée sur la branche release/linux construit le
 # même paquet sans release : il reste en artefact de l'exécution.
+# Avant toute poussée : tools/release/preflight/run.sh fait la même construction dans un conteneur
+# Ubuntu 24.04 local, avec toutes les erreurs d'un coup.
 on:
   push:
     tags: ["linux-v*"]
