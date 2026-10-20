@@ -1,7 +1,8 @@
 // Touches SDL3 vers les commandes du lecteur : la carte de core/keys.h (espace, flèches…),
 // plus les touches de la tranche verticale que core::Action ne porte pas encore : « f » (plein
 // écran), Échap (quitter le plein écran), « q » (quitter), « m » (muet), haut et bas (volume),
-// « j » (sous-titres suivants), « a » (piste audio suivante), « p » (paramètres).
+// « j » (sous-titres suivants), « a » (piste audio suivante), « p » (paramètres),
+// Page précédente et Page suivante (chapitre suivant et précédent, comme dans mpv).
 // L'interface (ui.h) rend les mêmes actions.
 #pragma once
 
@@ -30,6 +31,10 @@ struct SelectSubtitles {
   std::optional<int> track;  // rien : sous-titres désactivés
 };
 struct CycleAudio {};
+// Chapitre suivant (+1) ou précédent (−1) : Page précédente et Page suivante, comme dans mpv.
+struct StepChapter {
+  int direction = 1;
+};
 struct CycleSubtitles {};
 struct ToggleSettings {};
 // Modification d'un profil dans user.toml (nom, profil de démarrage, retour à la base).
@@ -41,9 +46,9 @@ struct ApplySettings {
   PlaySettings settings;
   bool reopen = false;
 };
-using Input =
-    std::variant<Command, ToggleFullscreen, LeaveFullscreen, ToggleMute, VolumeStep, SelectAudio,
-                 SelectSubtitles, CycleAudio, CycleSubtitles, ToggleSettings, ApplySettings, EditProfile>;
+using Input = std::variant<Command, ToggleFullscreen, LeaveFullscreen, ToggleMute, VolumeStep, SelectAudio,
+                           SelectSubtitles, CycleAudio, CycleSubtitles, StepChapter, ToggleSettings,
+                           ApplySettings, EditProfile>;
 
 // L'action d'un événement SDL, ou rien. Fermer la fenêtre vaut cmd::Quit.
 std::optional<Input> input_of(const SDL_Event& event, const core::KeyMap& keys);

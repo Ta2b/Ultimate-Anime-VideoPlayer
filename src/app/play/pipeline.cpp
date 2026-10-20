@@ -42,6 +42,9 @@ std::expected<std::unique_ptr<Pipeline>, Refusal> Pipeline::open(const PipelineC
   }
   p->video_track_ = *demuxer->track(*choice.video);
   p->duration_us_ = demuxer->duration_us();
+  for (const media::Chapter& chapter : demuxer->chapters())
+    p->chapters_.push_back({.start_us = chapter.start_us, .title = chapter.title});
+  std::ranges::sort(p->chapters_, {}, &ChapterMark::start_us);
   const std::vector<subs::AttachFont> fonts = attached_fonts(demuxer->tracks());
   std::vector<media::PacketRoute> routes;
 
@@ -207,6 +210,7 @@ SessionConfig Pipeline::session_config() const {
   const bool hd = video_track_.width >= 1280 || video_track_.height > 576;
   return SessionConfig{
       .duration_us = duration_us_,
+      .chapters = chapters_,
       .subtitles = subtitle_track_.has_value(),
       .video_width = video_track_.width,
       .video_height = video_track_.height,

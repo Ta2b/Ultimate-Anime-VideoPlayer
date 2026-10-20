@@ -379,7 +379,8 @@ ControlsView Session::view() const {
                       .duration_us = config_.duration_us,
                       .paused = paused_,
                       .fullscreen = screen_.fullscreen(),
-                      .stats = show_stats_.all};
+                      .stats = show_stats_.all,
+                      .chapters = config_.chapters};
 }
 
 }  // namespace ajp::app::play

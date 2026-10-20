@@ -68,6 +68,8 @@ std::optional<Input> input_of(const SDL_Event& event, const core::KeyMap& keys) 
   if (plain && event.key.key == SDLK_J) return CycleSubtitles{};
   if (plain && event.key.key == SDLK_A) return CycleAudio{};
   if (plain && event.key.key == SDLK_P) return ToggleSettings{};
+  if (plain && event.key.key == SDLK_PAGEUP) return StepChapter{.direction = 1};
+  if (plain && event.key.key == SDLK_PAGEDOWN) return StepChapter{.direction = -1};
   if (plain && event.key.key == SDLK_UP) return VolumeStep{.delta = kVolumeStep};
   if (plain && event.key.key == SDLK_DOWN) return VolumeStep{.delta = -kVolumeStep};
   const auto key = key_of(event.key.key);

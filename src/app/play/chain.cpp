@@ -473,6 +473,14 @@ void apply(const Input& input, Chain& to, std::int64_t now_us) {
             if (auto next = next_audio(to.pipeline.tracks())) switch_audio(to, *next, now_us);
           },
           [&](const CycleSubtitles&) { switch_subtitles(to, next_subtitle(to.pipeline.tracks()), now_us); },
+          [&](const StepChapter& step) {
+            const ControlsView view = session.view();
+            const auto chapter = chapter_step(view.chapters, view.position_us, step.direction);
+            if (!chapter) return;
+            session.command(Command{cmd::Seek{.target_us = view.chapters[*chapter].start_us}});
+            controls.activity(now_us);
+            controls.notify(chapter_label(view.chapters, *chapter), now_us);
+          },
           [&](const ToggleSettings&) { to.ui.toggle_settings(); },
           [&](const ApplySettings& apply) {
             // Changer la chaîne au menu modifie le profil actif.

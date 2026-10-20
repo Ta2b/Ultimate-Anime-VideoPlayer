@@ -121,6 +121,8 @@ std::expected<PlayOptions, Refusal> parse_play_options(std::span<const std::stri
       options.software_gpu = true;
     } else if (arg == "--sdr") {
       options.sdr = true;
+    } else if (arg == "--no-resume") {
+      options.resume = false;
     } else {
       std::expected<void, Refusal> applied;
       bool known = false;
@@ -224,7 +226,8 @@ std::string play_usage() {
       "  --no-upscale           image source telle quelle\n"
       "  --window=LxH           taille de la fenêtre (défaut 1280x720)\n"
       "  --fullscreen           plein écran dès l'ouverture\n"
-      "  --start=S              position de départ, en secondes\n"
+      "  --start=S              position de départ, en secondes (sinon, là où on s'était arrêté)\n"
+      "  --no-resume            ni reprise ni mémoire de la position pour cette lecture\n"
       "  --seconds=S            quitte après S secondes de lecture\n"
       "  --fullscreen-after=S   passe en plein écran après S secondes\n"
       "  --stats=FICHIER        temps de chaque image présentée\n"

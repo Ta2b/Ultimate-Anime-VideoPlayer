@@ -121,6 +121,7 @@ class Pipeline {
   std::optional<media::TrackInfo> audio_track_;
   std::optional<media::TrackInfo> subtitle_track_;
   std::int64_t duration_us_ = 0;
+  std::vector<ChapterMark> chapters_;
   std::string decoder_api_;
   TrackMenu menu_;
   std::vector<std::pair<int, audio::AudioCodecInfo>> audio_codecs_;  // pistes audio décodables

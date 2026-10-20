@@ -10,9 +10,11 @@
 
 #include <cstdint>
 #include <optional>
+#include <span>
 #include <string>
 #include <string_view>
 
+#include "app/play/chapters.h"
 #include "core/frame.h"
 #include "core/messages.h"
 #include "core/types.h"
@@ -36,7 +38,8 @@ struct ControlsView {
   std::int64_t duration_us = 0;  // 0 : inconnue, la barre ne permet pas de seek
   bool paused = false;
   bool fullscreen = false;
-  bool stats = false;  // lignes de mesure (OSD, Tab) affichées
+  bool stats = false;                     // lignes de mesure (OSD, Tab) affichées
+  std::span<const ChapterMark> chapters;  // dans l'ordre ; vide : boutons de chapitre absents
 };
 
 // Temps affiché : « 4:05 », « 12:34 », ou « 1:02:03 » quand la durée dépasse l'heure (même

@@ -1,17 +1,30 @@
 #include "app/play/controls_draw.h"
 
 #include <algorithm>
-#include <array>
 #include <cmath>
 #include <format>
-#include <numbers>
 #include <optional>
 #include <string_view>
 
 #include <imgui.h>
 
+#include "app/play/controls_icons.h"
+
 namespace ajp::app::play {
 namespace {
+
+using icons::accent;
+using icons::black;
+using icons::icon_audio_track;
+using icons::icon_chapter;
+using icons::icon_fullscreen;
+using icons::icon_gear;
+using icons::icon_pause;
+using icons::icon_play;
+using icons::icon_subtitles;
+using icons::icon_volume;
+using icons::Pen;
+using icons::white;
 
 // Géométrie de la barre, en pixels à l'échelle 1.
 constexpr float kPad = 18.0F;
@@ -19,121 +32,6 @@ constexpr float kRow = 46.0F;
 constexpr float kBarZone = 22.0F;
 constexpr float kPanelExtra = 8.0F;
 constexpr float kTitleSize = 17.0F * 1.1F;  // taille du titre (police de l'interface × 1,1)
-
-// Couleurs sRGB : blanc pour le texte et les icônes, un bleu clair pour la progression.
-constexpr ImVec4 kAccent{0.42F, 0.66F, 1.0F, 1.0F};
-
-ImU32 rgba(float r, float g, float b, float a) {
-  return ImGui::ColorConvertFloat4ToU32(ImVec4(r, g, b, std::clamp(a, 0.0F, 1.0F)));
-}
-ImU32 white(float a) {
-  return rgba(1.0F, 1.0F, 1.0F, a);
-}
-ImU32 black(float a) {
-  return rgba(0.0F, 0.0F, 0.0F, a);
-}
-ImU32 accent(float a) {
-  return rgba(kAccent.x, kAccent.y, kAccent.z, a);
-}
-
-// Ce que les dessins partagent : la liste, l'échelle, l'opacité de la barre.
-struct Pen {
-  ImDrawList* list = nullptr;
-  float scale = 1.0F;
-  float opacity = 1.0F;
-};
-
-ImVec2 at(ImVec2 c, float x, float y) {
-  return {c.x + x, c.y + y};
-}
-
-void icon_play(const Pen& pen, ImVec2 c, float size) {
-  const float h = size * 0.5F;
-  pen.list->AddTriangleFilled(at(c, -h * 0.62F, -h * 0.78F), at(c, -h * 0.62F, h * 0.78F),
-                              at(c, h * 0.84F, 0.0F), white(pen.opacity));
-}
-
-void icon_pause(const Pen& pen, ImVec2 c, float size) {
-  const float h = size * 0.5F;
-  const float w = h * 0.38F;
-  const float rounding = w * 0.25F;
-  pen.list->AddRectFilled(at(c, -h * 0.62F, -h * 0.76F), at(c, -h * 0.62F + w, h * 0.76F), white(pen.opacity),
-                          rounding);
-  pen.list->AddRectFilled(at(c, h * 0.62F - w, -h * 0.76F), at(c, h * 0.62F, h * 0.76F), white(pen.opacity),
-                          rounding);
-}
-
-void icon_volume(const Pen& pen, ImVec2 c, float size, float volume, bool muted) {
-  const float h = size * 0.5F;
-  const ImU32 color = white(pen.opacity);
-  pen.list->AddRectFilled(at(c, -h * 0.92F, -h * 0.3F), at(c, -h * 0.42F, h * 0.3F), color);
-  pen.list->AddQuadFilled(at(c, -h * 0.46F, -h * 0.3F), at(c, h * 0.04F, -h * 0.78F),
-                          at(c, h * 0.04F, h * 0.78F), at(c, -h * 0.46F, h * 0.3F), color);
-  const float stroke = std::max(1.5F, size * 0.08F);
-  if (muted || volume <= 0.0F) {
-    pen.list->AddLine(at(c, h * 0.32F, -h * 0.34F), at(c, h * 0.92F, h * 0.34F), color, stroke);
-    pen.list->AddLine(at(c, h * 0.32F, h * 0.34F), at(c, h * 0.92F, -h * 0.34F), color, stroke);
-    return;
-  }
-  const ImVec2 origin = at(c, h * 0.02F, 0.0F);
-  constexpr float kArc = 0.85F;  // demi-angle des ondes, en radians
-  pen.list->PathArcTo(origin, h * 0.42F, -kArc, kArc);
-  pen.list->PathStroke(color, ImDrawFlags_None, stroke);
-  if (volume > 0.5F) {
-    pen.list->PathArcTo(origin, h * 0.82F, -kArc, kArc);
-    pen.list->PathStroke(color, ImDrawFlags_None, stroke);
-  }
-}
-
-// Quatre équerres : tournées vers l'extérieur pour entrer en plein écran, vers le centre pour en
-// sortir.
-void icon_fullscreen(const Pen& pen, ImVec2 c, float size, bool leave) {
-  const float h = size * 0.42F;
-  const float arm = h * 0.6F;
-  const float stroke = std::max(1.5F, size * 0.09F);
-  constexpr std::array<std::array<float, 2>, 4> kCorners{
-      {{-1.0F, -1.0F}, {1.0F, -1.0F}, {1.0F, 1.0F}, {-1.0F, 1.0F}}};
-  for (const auto& [sx, sy] : kCorners) {
-    std::array<ImVec2, 3> points{};
-    if (leave) {
-      const ImVec2 elbow = at(c, sx * (h - arm), sy * (h - arm));
-      points = {at(elbow, sx * arm, 0.0F), elbow, at(elbow, 0.0F, sy * arm)};
-    } else {
-      const ImVec2 elbow = at(c, sx * h, sy * h);
-      points = {at(elbow, 0.0F, -sy * arm), elbow, at(elbow, -sx * arm, 0.0F)};
-    }
-    pen.list->AddPolyline(points.data(), static_cast<int>(points.size()), white(pen.opacity),
-                          ImDrawFlags_None, stroke);
-  }
-}
-
-// Sous-titres : un cadre arrondi et deux lignes de texte.
-void icon_subtitles(const Pen& pen, ImVec2 c, float size, bool on) {
-  const float w = size * 0.48F;
-  const float h = size * 0.36F;
-  const float stroke = std::max(1.5F, size * 0.08F);
-  const ImU32 color = white(pen.opacity * (on ? 1.0F : 0.55F));
-  pen.list->AddRect(at(c, -w, -h), at(c, w, h), color, size * 0.12F, ImDrawFlags_None, stroke);
-  pen.list->AddLine(at(c, -w * 0.55F, h * 0.05F), at(c, w * 0.15F, h * 0.05F), color, stroke);
-  pen.list->AddLine(at(c, w * 0.32F, h * 0.05F), at(c, w * 0.55F, h * 0.05F), color, stroke);
-  pen.list->AddLine(at(c, -w * 0.55F, h * 0.5F), at(c, -w * 0.2F, h * 0.5F), color, stroke);
-  pen.list->AddLine(at(c, -w * 0.02F, h * 0.5F), at(c, w * 0.55F, h * 0.5F), color, stroke);
-  if (on) {  // trait sous l'icône quand une piste est choisie
-    pen.list->AddLine(at(c, -w * 0.6F, h + size * 0.2F), at(c, w * 0.6F, h + size * 0.2F),
-                      accent(pen.opacity), stroke);
-  }
-}
-
-// Piste audio : une note de musique.
-void icon_audio_track(const Pen& pen, ImVec2 c, float size) {
-  const float h = size * 0.5F;
-  const ImU32 color = white(pen.opacity);
-  const float stroke = std::max(1.5F, size * 0.09F);
-  pen.list->AddCircleFilled(at(c, -h * 0.32F, h * 0.5F), h * 0.3F, color);
-  pen.list->AddLine(at(c, -h * 0.05F, h * 0.5F), at(c, -h * 0.05F, -h * 0.75F), color, stroke);
-  pen.list->AddQuadFilled(at(c, -h * 0.05F - stroke * 0.5F, -h * 0.8F), at(c, h * 0.55F, -h * 0.45F),
-                          at(c, h * 0.55F, -h * 0.15F), at(c, -h * 0.05F - stroke * 0.5F, -h * 0.5F), color);
-}
 
 // Menu d'une liste de pistes, au-dessus de son bouton. none_label : l'entrée « aucune » (ou rien).
 void track_popup(const char* id, const char* heading, const std::vector<TrackEntry>& entries,
@@ -158,25 +56,6 @@ void track_popup(const char* id, const char* heading, const std::vector<TrackEnt
     ImGui::PopID();
   }
   ImGui::EndPopup();
-}
-
-void icon_gear(const Pen& pen, ImVec2 c, float size) {
-  const float r = size * 0.34F;
-  const ImU32 color = white(pen.opacity);
-  pen.list->AddCircle(c, r * 0.68F, color, 0, r * 0.46F);
-  constexpr int kTeeth = 8;
-  for (int i = 0; i < kTeeth; ++i) {
-    const float angle = static_cast<float>(i) * 2.0F * std::numbers::pi_v<float> / kTeeth;
-    const ImVec2 d{std::cos(angle), std::sin(angle)};
-    const ImVec2 n{-d.y, d.x};
-    const float half = r * 0.22F;
-    const float r0 = r * 0.8F;
-    const float r1 = r * 1.3F;
-    pen.list->AddQuadFilled(at(c, d.x * r0 + n.x * half, d.y * r0 + n.y * half),
-                            at(c, d.x * r1 + n.x * half * 0.8F, d.y * r1 + n.y * half * 0.8F),
-                            at(c, d.x * r1 - n.x * half * 0.8F, d.y * r1 - n.y * half * 0.8F),
-                            at(c, d.x * r0 - n.x * half, d.y * r0 - n.y * half), color);
-  }
 }
 
 // Bouton rond invisible : un disque clair au survol ; true au clic.
@@ -310,17 +189,37 @@ bool draw_controls(Controls& controls, const ControlsView& view, const UiLook& l
     }
     pen.list->AddRectFilled({x0, bar_y - thick * 0.5F}, {std::max(xp, x0 + thick), bar_y + thick * 0.5F},
                             accent(opacity), thick * 0.5F);
+    // Le début de chaque chapitre : une encoche dans la barre.
+    for (const ChapterMark& chapter : view.chapters) {
+      if (!seekable || chapter.start_us <= 0 || chapter.start_us >= view.duration_us) continue;
+      const float xc = x0 + static_cast<float>(fraction_of(chapter.start_us, view.duration_us)) * (x1 - x0);
+      pen.list->AddRectFilled({xc - 1.5F * s, bar_y - thick * 0.5F - 1.0F * s},
+                              {xc + 1.5F * s, bar_y + thick * 0.5F + 1.0F * s}, black(0.75F * opacity));
+    }
     if (lit) {
       pen.list->AddCircleFilled({xp, bar_y}, 7.5F * s, accent(opacity));
       const double shown = controls.dragging() ? played : pointer;
-      bubble(pen, x0 + static_cast<float>(shown) * (x1 - x0), bar_y - 12.0F * s,
-             format_clock(time_at(shown, view.duration_us), view.duration_us), x0, x1);
+      const std::int64_t shown_us = time_at(shown, view.duration_us);
+      std::string text = format_clock(shown_us, view.duration_us);
+      if (const auto chapter = chapter_at(view.chapters, shown_us);
+          chapter && !view.chapters[*chapter].title.empty())
+        text += " · " + view.chapters[*chapter].title;
+      bubble(pen, x0 + static_cast<float>(shown) * (x1 - x0), bar_y - 12.0F * s, text, x0, x1);
     }
 
     // Rangée de boutons : lecture, volume, temps à gauche ; réglages et plein écran à droite.
     const float cy = height - pad - row * 0.5F;
     const float icon = 22.0F * s;
     float x = pad + row * 0.5F;
+    // Avec des chapitres, la lecture est entourée de « précédent » et « suivant ».
+    const bool chaptered = !view.chapters.empty();
+    if (chaptered) {
+      if (round_button(pen, "##chapter_back", {x, cy}, row))
+        actions.emplace_back(StepChapter{.direction = -1});
+      tooltip("Chapitre précédent (Page bas)");
+      icon_chapter(pen, {x, cy}, icon * 0.9F, -1);
+      x += row;
+    }
     if (round_button(pen, "##play", {x, cy}, row)) actions.emplace_back(Command{cmd::TogglePause{}});
     tooltip(view.paused ? "Lecture (espace)" : "Pause (espace)");
     if (view.paused) {
@@ -329,6 +228,13 @@ bool draw_controls(Controls& controls, const ControlsView& view, const UiLook& l
       icon_pause(pen, {x, cy}, icon);
     }
     x += row;
+    if (chaptered) {
+      if (round_button(pen, "##chapter_next", {x, cy}, row))
+        actions.emplace_back(StepChapter{.direction = 1});
+      tooltip("Chapitre suivant (Page haut)");
+      icon_chapter(pen, {x, cy}, icon * 0.9F, 1);
+      x += row;
+    }
     if (round_button(pen, "##mute", {x, cy}, row)) actions.emplace_back(ToggleMute{});
     tooltip(controls.muted() ? "Rétablir le son (m)" : "Couper le son (m)");
     icon_volume(pen, {x, cy}, icon, controls.volume(), controls.muted());
@@ -359,8 +265,11 @@ bool draw_controls(Controls& controls, const ControlsView& view, const UiLook& l
       bubble(pen, vx0 + vw * level, cy - 12.0F * s, percent, x0, x1);
     }
 
-    const std::string clock = std::format("{} / {}", format_clock(view.position_us, view.duration_us),
-                                          format_clock(view.duration_us, view.duration_us));
+    std::string clock = std::format("{} / {}", format_clock(view.position_us, view.duration_us),
+                                    format_clock(view.duration_us, view.duration_us));
+    if (const auto chapter = chapter_at(view.chapters, view.position_us);
+        chapter && !view.chapters[*chapter].title.empty())
+      clock += " · " + view.chapters[*chapter].title;
     const ImVec2 clock_size = ImGui::CalcTextSize(clock.c_str());
     pen.list->AddText({vx0 + vw + 18.0F * s, cy - clock_size.y * 0.5F}, white(0.95F * opacity),
                       clock.c_str());

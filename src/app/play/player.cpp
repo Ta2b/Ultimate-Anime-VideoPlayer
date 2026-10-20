@@ -32,6 +32,7 @@
 #include "app/play/placebo_screen.h"
 #include "app/play/player_engines.h"
 #include "app/play/profiles.h"
+#include "app/play/resume.h"
 #include "app/play/scripted_input.h"
 #include "app/play/session.h"
 #include "app/play/ui.h"
@@ -407,6 +408,23 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
   if (p.began_us == 0) p.began_us = host_now_us();
   std::vector<Input> actions;
   session.begin(host_now_us());
+  if (p.resumed) {
+    p.ui.controls().notify(std::format("Reprise à {}", format_clock(start_us, session.view().duration_us)),
+                           host_now_us());
+    p.resumed = false;
+  }
+  // La position retenue toutes les kResumeEveryUs, et à la fin : un arrêt brutal en perd peu.
+  std::int64_t kept_us = kNoPts;
+  const auto remember = [&] {
+    if (p.resume_path.empty()) return;
+    const ControlsView view = session.view();
+    if (view.position_us == kNoPts || view.position_us == kept_us) return;
+    kept_us = view.position_us;
+    if (auto kept = remember_position(p.resume_path, p.options.file, view.position_us, view.duration_us);
+        !kept)
+      log->warn("{}", kept.error().detail);
+  };
+  std::int64_t remembered_at = host_now_us();
   // Son : le volume de la barre et le délai des réglages valent dès la première image.
   session.command(Command{p.ui.controls().volume_command()});
   if (settings.audio_delay_ms != 0)
@@ -445,6 +463,10 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
       chain.dirty = false;
       saved_at = host_now_us();
     }
+    if (host_now_us() - remembered_at >= kResumeEveryUs) {
+      remember();
+      remembered_at = host_now_us();
+    }
     auto record = session.tick(host_now_us(), ui_frame);
     if (!record) {
       failure = std::move(record.error());
@@ -461,6 +483,7 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
         !saved)
       log->warn("{}", saved.error().detail);
   }
+  remember();
   log_summary(session);
   for (const std::string& refusal : session.refusals()) log->warn("{}", refusal);
   std::optional<Reopen> reopen;
@@ -647,6 +670,17 @@ std::expected<void, Refusal> play(const PlayOptions& options, const PlayerPaths&
     log->info("écran : EDID illisible, OLED inconnu");
   }
   std::int64_t start_us = options.start_us;
+  // settings.toml ([playback] resume_position) l'autorise, et --no-resume l'écarte pour une lecture.
+  if (options.resume && player.engines.resume_position) {
+    player.resume_path = settings_path.parent_path() / "resume.tsv";
+    if (start_us == 0) {
+      if (const auto at = resume_position(player.resume_path, options.file)) {
+        start_us = *at;
+        player.resumed = true;
+        log->info("reprise à {}", format_position(start_us));
+      }
+    }
+  }
   std::expected<void, Refusal> result;
   while (true) {
     auto outcome = run_chain(player, settings, start_us);

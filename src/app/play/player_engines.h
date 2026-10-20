@@ -75,6 +75,8 @@ struct Player {
   ProfileState profiles;
   core::Settings engines;               // settings.toml : les moteurs choisis à l'écran de bienvenue
   std::optional<DisplayFacts> display;  // l'écran selon son EDID (OLED ou non)
+  std::filesystem::path resume_path;    // mémoire de lecture (resume.h) ; vide : aucune
+  bool resumed = false;                 // la lecture reprend là où elle s'était arrêtée : à annoncer
 };
 
 // Une image de la superposition avant une étape bloquante (chargement d'un moteur, RTX HDR) : la

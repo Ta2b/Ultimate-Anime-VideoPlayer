@@ -51,6 +51,7 @@ class StatsSource {
 struct SessionConfig {
   std::int64_t start_us = 0;             // > 0 : seek exact à l'ouverture
   std::int64_t duration_us = 0;          // 0 : inconnue ; borne les seeks relatifs
+  std::vector<ChapterMark> chapters;     // du fichier, dans l'ordre
   std::int64_t stop_after_us = 0;        // quitte après ce temps de lecture ; 0 jamais
   std::int64_t fullscreen_after_us = 0;  // bascule en plein écran après ce temps ; 0 jamais
   bool subtitles = false;                // une piste est choisie : demander leurs images
