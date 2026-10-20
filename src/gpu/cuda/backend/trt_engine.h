@@ -6,6 +6,7 @@
 // sorties FP16 de formes fixes (GMFSS : le graphe « paire » a 14 sorties, « fusion » 8 entrées).
 #pragma once
 
+#include <cstdint>
 #include <cuda_runtime_api.h>
 #include <expected>
 #include <filesystem>
@@ -45,6 +46,8 @@ class TrtEngine final : public Engine {
   Shape output_shape(std::size_t i) const { return output_shapes_[i]; }
 
   // Pose les adresses et lance le moteur sur stream. Les formes doivent être celles du moteur.
+  // Les mêmes adresses une troisième fois : le lancement passe par un graphe CUDA capturé à la
+  // deuxième (la première prépare le contexte), qui rejoue les noyaux sans les relancer un à un.
   std::expected<void, Refusal> enqueue(cudaStream_t stream, std::span<const Tensor> inputs,
                                        std::span<const Tensor> outputs);
 
@@ -57,6 +60,17 @@ class TrtEngine final : public Engine {
   std::vector<std::string> outputs_;
   std::vector<Shape> input_shapes_;
   std::vector<Shape> output_shapes_;
+  // Graphes capturés, par jeu d'adresses (les tampons de l'étage tournent sur quelques-uns) ;
+  // graphs_off_ après un refus de capture : les lancements restent directs.
+  static constexpr std::size_t kMaxGraphs = 8;
+  struct Graph {
+    std::vector<std::uintptr_t> addresses;
+    cudaGraphExec_t exec = nullptr;
+    bool warmed = false;
+  };
+  std::vector<Graph> graphs_;
+  bool graphs_off_ = false;
+  std::expected<void, Refusal> launch(cudaStream_t stream, Graph* graph);
 };
 
 }  // namespace ajp::gpu::cuda
