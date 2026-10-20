@@ -29,15 +29,15 @@ void tell(const ajp::gpu::BackendInit* init, ajp::Refusal refusal) {
 
 }  // namespace
 
-extern "C" __attribute__((visibility("default"))) int ajp_backend_abi() noexcept {
+extern "C" AJP_BACKEND_EXPORT int ajp_backend_abi() noexcept {
   return ajp::gpu::kBackendAbi;
 }
 
-extern "C" __attribute__((visibility("default"))) std::uint64_t ajp_backend_layout() noexcept {
+extern "C" AJP_BACKEND_EXPORT std::uint64_t ajp_backend_layout() noexcept {
   return ajp::gpu::kBackendLayout;
 }
 
-extern "C" __attribute__((visibility("default"))) ajp::gpu::Backend* ajp_backend_create(
+extern "C" AJP_BACKEND_EXPORT ajp::gpu::Backend* ajp_backend_create(
     int abi, const ajp::gpu::BackendInit* init) noexcept {
   if (init == nullptr) return nullptr;
   if (abi != ajp::gpu::kBackendAbi) {
@@ -58,7 +58,6 @@ extern "C" __attribute__((visibility("default"))) ajp::gpu::Backend* ajp_backend
   }
 }
 
-extern "C" __attribute__((visibility("default"))) void ajp_backend_destroy(
-    ajp::gpu::Backend* backend) noexcept {
+extern "C" AJP_BACKEND_EXPORT void ajp_backend_destroy(ajp::gpu::Backend* backend) noexcept {
   delete backend;
 }

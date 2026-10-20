@@ -20,12 +20,6 @@
 #include "gpu/backend.h"
 #include "gpu/vulkan/backend/vulkan_backend.h"
 
-#if defined(_WIN32)
-#define AJP_BACKEND_EXPORT __declspec(dllexport)
-#else
-#define AJP_BACKEND_EXPORT __attribute__((visibility("default")))
-#endif
-
 namespace ajp::gpu::vk::entry {
 
 inline BackendLogLevel level_of(spdlog::level::level_enum level) {

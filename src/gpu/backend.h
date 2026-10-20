@@ -234,10 +234,20 @@ inline std::expected<void, Refusal> check_backend_abi(int abi, std::uint64_t lay
 // diffère de kBackendAbi, si init est nul ou si l'appareil ne convient pas, et dit pourquoi
 // dans init->refusal. ajp_backend_destroy vient après la destruction de chaque Engine et
 // TensorBuffer du backend.
-extern "C" int ajp_backend_abi() noexcept;               // kBackendAbi
-extern "C" std::uint64_t ajp_backend_layout() noexcept;  // kBackendLayout
-extern "C" ajp::gpu::Backend* ajp_backend_create(int abi, const ajp::gpu::BackendInit* init) noexcept;
-extern "C" void ajp_backend_destroy(ajp::gpu::Backend* backend) noexcept;
+//
+// Les déclarations portent l'export de leurs définitions : MSVC refuse une définition
+// __declspec(dllexport) d'une fonction déclarée sans (C2375). Dans le lecteur, qui ne les définit
+// ni ne les appelle (dlsym), elles ne produisent rien.
+#if defined(_WIN32)
+#define AJP_BACKEND_EXPORT __declspec(dllexport)
+#else
+#define AJP_BACKEND_EXPORT __attribute__((visibility("default")))
+#endif
+extern "C" AJP_BACKEND_EXPORT int ajp_backend_abi() noexcept;               // kBackendAbi
+extern "C" AJP_BACKEND_EXPORT std::uint64_t ajp_backend_layout() noexcept;  // kBackendLayout
+extern "C" AJP_BACKEND_EXPORT ajp::gpu::Backend* ajp_backend_create(
+    int abi, const ajp::gpu::BackendInit* init) noexcept;
+extern "C" AJP_BACKEND_EXPORT void ajp_backend_destroy(ajp::gpu::Backend* backend) noexcept;
 
 namespace ajp::gpu {
 
