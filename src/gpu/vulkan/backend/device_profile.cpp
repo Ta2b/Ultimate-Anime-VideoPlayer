@@ -41,6 +41,8 @@ DeviceProfile profile_device(const VkContext& context) {
                                .f16_math = f.storage_buffer_16bit && f.shader_float16,
                                .matrix_units = profile.matrix_hardware && profile.matrix_allowed,
                                .subgroup_size = caps.subgroup_size,
+                               .subgroup_min = f.subgroup_size_control ? caps.min_subgroup_size : 0,
+                               .subgroup_max = f.subgroup_size_control ? caps.max_subgroup_size : 0,
                                .max_push_constants = caps.max_push_constants,
                                .max_shared_memory = caps.max_shared_memory,
                                .max_workgroup_invocations = caps.max_workgroup_invocations,

@@ -103,7 +103,10 @@ DeviceCaps probe_device(const InstanceFunctions& fn, VkPhysicalDevice device, st
   fn.vkGetPhysicalDeviceProperties(device, &base);
   const std::uint32_t api = std::min(instance_api, base.apiVersion);
 
-  VkPhysicalDeviceDriverProperties driver{.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DRIVER_PROPERTIES};
+  VkPhysicalDeviceSubgroupSizeControlProperties sizes{
+      .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SUBGROUP_SIZE_CONTROL_PROPERTIES};
+  VkPhysicalDeviceDriverProperties driver{.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DRIVER_PROPERTIES,
+                                          .pNext = api >= VK_API_VERSION_1_3 ? &sizes : nullptr};
   VkPhysicalDeviceSubgroupProperties subgroup{.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SUBGROUP_PROPERTIES,
                                               .pNext = &driver};
   VkPhysicalDeviceIDProperties ids{.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ID_PROPERTIES,
@@ -135,6 +138,10 @@ DeviceCaps probe_device(const InstanceFunctions& fn, VkPhysicalDevice device, st
   if ((subgroup.supportedStages & VK_SHADER_STAGE_COMPUTE_BIT) != 0) {
     caps.subgroup_size = subgroup.subgroupSize;
     caps.subgroup_operations = subgroup.supportedOperations;
+  }
+  if ((sizes.requiredSubgroupSizeStages & VK_SHADER_STAGE_COMPUTE_BIT) != 0) {
+    caps.min_subgroup_size = sizes.minSubgroupSize;
+    caps.max_subgroup_size = sizes.maxSubgroupSize;
   }
   caps.cooperative_matrix = has_extension(device_extensions(fn, device), "VK_KHR_cooperative_matrix");
   return caps;

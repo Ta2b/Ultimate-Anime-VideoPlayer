@@ -82,12 +82,17 @@ gpu::BackendLog backend_log() {
 }
 
 // La piste vidéo que la source choisira, lue d'avance : sa taille fixe le moteur et le ring.
-// Le décodeur suit le backend : NVDEC en mémoire CUDA pour TensorRT ; ailleurs le décodage
-// logiciel en mémoire hôte, que l'ingestion du backend Vulkan copie sur l'appareil (le décodage
-// Vulkan Video sur l'appareil du rendu reste à brancher).
+// Le décodeur suit le backend : NVDEC en mémoire CUDA pour TensorRT ; ailleurs, sous Linux, VA-API
+// (le bloc vidéo d'AMD ou d'Intel, même sur le GPU intégré d'un portable) copié en mémoire hôte,
+// puis le décodage logiciel. L'ingestion du backend Vulkan copie l'image hôte sur l'appareil (le
+// décodage Vulkan Video sur l'appareil du rendu reste à brancher).
 std::vector<media::HwApi> decoder_attempts(std::string_view backend) {
   if (backend == "tensorrt") return {media::HwApi::Cuda};
+#if defined(__linux__)
+  return {media::HwApi::Vaapi, media::HwApi::Software};
+#else
   return {media::HwApi::Software};
+#endif
 }
 
 std::expected<media::TrackInfo, Refusal> probe_video(const std::filesystem::path& file) {
@@ -309,11 +314,12 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
   live->set_rife_factor(use_rife || use_gmfss || use_drba ? factor_of(settings) : Factor{});
   live->set_reduction(reduction_of(settings.downscale));
   live->set_keep_poses(settings.keep_poses);
-  PipelineConfig config{
-      .file = options.file,
-      .decoder = {.attempts = decoder_attempts(backend_name), .render_device = p.screen.device().uuid},
-      .audio_track = p.audio_track,
-      .subtitle_track = p.subtitle_track};
+  PipelineConfig config{.file = options.file,
+                        .decoder = {.attempts = decoder_attempts(backend_name),
+                                    .render_device = p.screen.device().uuid,
+                                    .download = backend_name != "tensorrt"},
+                        .audio_track = p.audio_track,
+                        .subtitle_track = p.subtitle_track};
   PlaceboScreen& out = p.screen;
   auto pipeline = Pipeline::open(
       config, [&](VideoStageInit stage) -> std::expected<std::unique_ptr<VideoStage>, Refusal> {

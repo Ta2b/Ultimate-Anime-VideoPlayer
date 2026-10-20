@@ -140,6 +140,18 @@ std::expected<std::vector<KernelChoice>, Refusal> candidates(const ir::Graph& gr
       out.push_back({.variant = std::string(packed ? kPacked : kDirect), .tuning = {quads, wg, pix}});
     }
   }
+  // Conv : une autre taille de sous-groupe que celle du pilote, quand l'appareil laisse choisir
+  // (AMD RDNA : 32 ou 64 ; Intel : 8 à 32).
+  for (std::uint32_t sg = target.subgroup_min; conv && sg != 0 && sg <= target.subgroup_max; sg *= 2) {
+    if (sg == target.subgroup_size || sg < 8) continue;
+    for (const std::uint32_t pix : {1U, 2U}) {
+      if (width < pix * 2) continue;
+      for (const std::uint32_t wg : {64U, 128U}) {
+        if (wg > target.max_workgroup_invocations || wg % sg != 0) continue;
+        out.push_back({.variant = std::string(packed ? kPacked : kDirect), .tuning = {quads, wg, pix, sg}});
+      }
+    }
+  }
   return out;
 }
 
@@ -196,14 +208,18 @@ std::vector<std::uint32_t> conv_constants(const Desc4& x, std::uint32_t tx, cons
 std::expected<void, Refusal> Lowerer::conv(std::size_t index, const KernelChoice& choice) {
   const ir::Node& n = graph_.nodes[index];
   const bool packed = choice.variant == kPacked;
-  if ((!packed && choice.variant != kDirect) || choice.tuning.size() < 2 || choice.tuning.size() > 3) {
+  if ((!packed && choice.variant != kDirect) || choice.tuning.size() < 2 || choice.tuning.size() > 4) {
     return refuse_node(RefusalCode::InputMismatch, n, std::format("variante {} inconnue", choice.variant));
   }
   const std::uint32_t quads = choice.tuning[0];
   const std::uint32_t wg = choice.tuning[1];
-  const std::uint32_t pix = choice.tuning.size() == 3 ? choice.tuning[2] : 1;  // pixels par invocation
+  const std::uint32_t pix = choice.tuning.size() >= 3 ? choice.tuning[2] : 1;  // pixels par invocation
+  const std::uint32_t sg = choice.tuning.size() == 4 ? choice.tuning[3] : 0;   // sous-groupe exigé
   if (quads < 1 || quads > 8 || wg < 1 || wg > target_.max_workgroup_invocations || pix < 1 || pix > 4) {
     return refuse_node(RefusalCode::InputMismatch, n, "réglage hors de ses bornes");
+  }
+  if (sg != 0 && (sg < target_.subgroup_min || sg > target_.subgroup_max || wg % sg != 0)) {
+    return refuse_node(RefusalCode::FeatureUnavailable, n, "taille de sous-groupe hors de l'appareil");
   }
   if (packed && !(target_.f16_math && target_.f16_storage)) {
     return refuse_node(RefusalCode::FeatureUnavailable, n, "fp16 de calcul absent");
@@ -266,6 +282,7 @@ std::expected<void, Refusal> Lowerer::conv(std::size_t index, const KernelChoice
                   .index = add_blob(channel_floats(constant_input(graph_, n, ir::kConvB), y->desc.c))};
   emit(index, *name, std::move(constants), {x->binding, w, b, slope, residual, y->binding}, {},
        {div_up(div_up(y->desc.w, pix), wg), y->desc.h, z});
+  program_.dispatches.back().subgroup = sg;
   return {};
 }
 

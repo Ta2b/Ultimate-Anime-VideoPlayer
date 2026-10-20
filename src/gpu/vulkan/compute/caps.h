@@ -40,6 +40,10 @@ struct DeviceCaps {
   // Sous-groupes (Vulkan 1.1) : taille et opérations en calcul ; 0 si le calcul n'y a pas accès.
   std::uint32_t subgroup_size = 0;
   VkSubgroupFeatureFlags subgroup_operations = 0;
+  // Tailles qu'un pipeline de calcul peut exiger (Vulkan 1.3, contrôle des sous-groupes : AMD 32 ou
+  // 64, Intel 8 à 32) ; 0 si le calcul ne peut pas en exiger.
+  std::uint32_t min_subgroup_size = 0;
+  std::uint32_t max_subgroup_size = 0;
   // Limites utiles aux noyaux.
   std::uint32_t max_push_constants = 0;
   std::uint32_t max_workgroup_invocations = 0;

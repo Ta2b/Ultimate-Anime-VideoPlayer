@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <array>
+#include <cctype>
 #include <cmath>
 #include <format>
 #include <optional>
@@ -178,6 +179,30 @@ std::vector<std::filesystem::path> backends_within(std::span<const std::filesyst
   return out;
 }
 
+bool rocm_listed(std::string_view gpu_name) {
+  std::string name(gpu_name);
+  std::ranges::transform(name, name.begin(),
+                         [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+  // RADV nomme la puce (« AMD Radeon RX 6500M (RADV NAVI24) ») : elle seule décide.
+  constexpr std::array kListedChips{"navi21", "navi31", "navi32", "navi33", "navi44", "navi48"};
+  if (name.contains("(radv ")) {
+    return std::ranges::any_of(kListedChips, [&](std::string_view chip) { return name.contains(chip); });
+  }
+  if (name.contains("instinct") || name.contains("pro w6800") || name.contains("pro w7")) return true;
+  // AMDVLK et Windows ne donnent que le produit : RX 6800 à 6950 de bureau (les « M » et « S »
+  // portables sont des Navi 22), toutes les RX 7000 et 9000 de bureau.
+  for (std::size_t at = name.find("rx "); at != std::string::npos; at = name.find("rx ", at + 1)) {
+    const std::string_view model = std::string_view(name).substr(at + 3);
+    if (model.size() < 4 || !std::isdigit(static_cast<unsigned char>(model[0]))) continue;
+    const bool mobile = model.size() > 4 && (model[4] == 'm' || model[4] == 's');
+    if (mobile) return false;
+    if (model.starts_with("68") || model.starts_with("69") || model.starts_with('7') ||
+        model.starts_with('9'))
+      return true;
+  }
+  return false;
+}
+
 core::SystemInfo system_of(const GpuFacts& gpu) {
 #if defined(_WIN32)
   constexpr core::Os kOs = core::Os::Windows;
@@ -186,15 +211,16 @@ core::SystemInfo system_of(const GpuFacts& gpu) {
 #else
   constexpr core::Os kOs = core::Os::Linux;
 #endif
-  // MIGraphX et OpenVINO refusent eux-mêmes un GPU qu'ils ne servent pas (repli sur Vulkan) : le
-  // fabricant suffit à les proposer.
-  return core::SystemInfo{.os = kOs,
-                          .gpus = {core::GpuInfo{.vendor = gpu.vendor,
-                                                 .name = gpu.name,
-                                                 .vram_bytes = gpu.vram_bytes,
-                                                 .tensor_cores = gpu.tensor_cores,
-                                                 .rocm_supported = gpu.vendor == GpuVendor::Amd,
-                                                 .openvino_gpu = gpu.vendor == GpuVendor::Intel}}};
+  // OpenVINO refuse lui-même un GPU qu'il ne sert pas (repli sur Vulkan) : le fabricant suffit.
+  // MIGraphX aussi, mais après un téléchargement de ROCm : la liste officielle le filtre avant.
+  return core::SystemInfo{
+      .os = kOs,
+      .gpus = {core::GpuInfo{.vendor = gpu.vendor,
+                             .name = gpu.name,
+                             .vram_bytes = gpu.vram_bytes,
+                             .tensor_cores = gpu.tensor_cores,
+                             .rocm_supported = gpu.vendor == GpuVendor::Amd && rocm_listed(gpu.name),
+                             .openvino_gpu = gpu.vendor == GpuVendor::Intel}}};
 }
 
 std::string gpu_line(const GpuFacts& gpu) {

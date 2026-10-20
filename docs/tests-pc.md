@@ -112,3 +112,29 @@ Le flux optique matériel NVIDIA a été retiré (fichiers `nvof_session`, `tens
     charge le GPU (risque : l'affichage passe derrière) ;
   - ring en RGB10A2 au lieu de RGBA16 : moitié moins d'octets par image à 4K et haute fréquence,
     à vérifier sur les dégradés du grade HDR.
+
+## Linux sur RX 6500M (RDNA2 Navi 24, 4 Go)
+
+Backend Vulkan seul (pas de matrices coopératives, ROCm ne sert pas Navi 24 : MIGraphX n'est plus
+proposé à l'écran de bienvenue). Estimation, non mesurée : SPAN Performance coûte environ
+173 GFLOP par image à 720p, soit une vingtaine d'images par seconde sur la 6500M ; 540p tient le
+temps réel.
+
+- **Réglages de départ** : profil 7 « Léger 1080p » (540p, RIFE ×2, SPAN Performance), puis
+  720p si `--stats` laisse de la marge. Garder « Warp après SPAN » et la réutilisation de SPAN.
+  RIFE ×3 et plus seulement en RIFE mouvement.
+- **Décodage VA-API** : le journal d'ouverture doit dire `vaapi`, plus `logiciel`. Sur un
+  portable hybride, VA-API ouvre `renderD128`, souvent le GPU intégré : il décode, l'image passe
+  en mémoire hôte puis sur la 6500M (quelques Mo par image, sans souci même en PCIe x4). La 6500M
+  n'a pas de décodeur AV1 ; un iGPU Ryzen 6000 et plus en a un. `vainfo` liste ce que chaque
+  appareil décode.
+- **GPU choisi** : libplacebo prend le GPU dédié avant l'intégré. Le journal donne « backend
+  Vulkan : AMD Radeon RX 6500M (RADV NAVI24) ». Sinon, `MESA_VK_DEVICE_SELECT=1002:743f`
+  (`MESA_VK_DEVICE_SELECT=list` affiche les identifiants).
+- **Sous-groupes 32/64** : l'autotuner essaie aussi l'autre taille de vague de RDNA (nouvelle
+  version des candidats, donc tout est remesuré une fois). Avant, `ctest --test-dir
+  build/linux-prefix -R "Réseau : Conv"`, puis comparer le temps de SPAN avant et après.
+- **VRAM** : surveiller l'utilisation (`radeontop` ou `amdgpu_top`) avec un navigateur ouvert ;
+  au-delà de 4 Go le pilote déborde en mémoire système et le débit chute sans erreur.
+- **Pilote** : Mesa 24 ou plus récent (RADV), `vulkaninfo --summary` doit montrer
+  `VK_EXT_subgroup_size_control` et `shaderFloat16`.

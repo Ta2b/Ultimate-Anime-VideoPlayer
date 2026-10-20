@@ -98,7 +98,8 @@ std::expected<void, Refusal> NetEngine::prepare(PipelineCache& pipelines) {
                                    .constants = d.constants,
                                    .buffers = static_cast<std::uint32_t>(d.bindings.size()),
                                    .push_bytes = static_cast<std::uint32_t>(d.push.size() * 4),
-                                   .spirv = words});
+                                   .spirv = words,
+                                   .subgroup_size = d.subgroup});
     if (!pipeline) return std::unexpected(pipeline.error());
     pipelines_.push_back(*pipeline);
   }

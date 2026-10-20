@@ -1,5 +1,6 @@
 #include "gpu/vulkan/compute/pipeline.h"
 
+#include <bit>
 #include <format>
 
 #include <spdlog/logger.h>
@@ -105,9 +106,13 @@ std::expected<std::unique_ptr<Pipeline>, Refusal> PipelineCache::build(const Pip
                                             .pMapEntries = entries.data(),
                                             .dataSize = desc.constants.size_bytes(),
                                             .pData = desc.constants.data()};
+  const VkPipelineShaderStageRequiredSubgroupSizeCreateInfo required{
+      .sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_REQUIRED_SUBGROUP_SIZE_CREATE_INFO,
+      .requiredSubgroupSize = desc.subgroup_size};
   const VkComputePipelineCreateInfo info{
       .sType = VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO,
       .stage = {.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
+                .pNext = desc.subgroup_size != 0 ? &required : nullptr,
                 .stage = VK_SHADER_STAGE_COMPUTE_BIT,
                 .module = module,
                 .pName = "main",
@@ -122,7 +127,8 @@ std::expected<std::unique_ptr<Pipeline>, Refusal> PipelineCache::build(const Pip
 }
 
 std::expected<const Pipeline*, Refusal> PipelineCache::get(const PipelineDesc& desc) {
-  Key key{std::string(desc.shader), std::vector<std::uint32_t>(desc.constants.begin(), desc.constants.end())};
+  Key key{std::string(desc.shader), std::vector<std::uint32_t>(desc.constants.begin(), desc.constants.end()),
+          desc.subgroup_size};
   if (const auto found = pipelines_.find(key); found != pipelines_.end()) {
     const Pipeline& p = *found->second;
     if (p.buffers() != desc.buffers || p.images() != desc.images || p.push_bytes() != desc.push_bytes) {
@@ -142,6 +148,14 @@ std::expected<const Pipeline*, Refusal> PipelineCache::get(const PipelineDesc& d
     return refuse(RefusalCode::FeatureUnavailable,
                   std::format("{} : push de {} o, l'appareil en permet {}", desc.shader, desc.push_bytes,
                               context_.caps().max_push_constants));
+  }
+  if (const DeviceCaps& caps = context_.caps();
+      desc.subgroup_size != 0 &&
+      (!caps.enabled.subgroup_size_control || desc.subgroup_size < caps.min_subgroup_size ||
+       desc.subgroup_size > caps.max_subgroup_size || !std::has_single_bit(desc.subgroup_size))) {
+    return refuse(RefusalCode::FeatureUnavailable,
+                  std::format("{} : sous-groupes de {} exigés, l'appareil en permet {} à {}", desc.shader,
+                              desc.subgroup_size, caps.min_subgroup_size, caps.max_subgroup_size));
   }
   auto shader = module(desc.shader, desc.spirv);
   if (!shader) return std::unexpected(shader.error());

@@ -36,6 +36,7 @@ struct VideoDecoder::State {
   CodecContextPtr codec;
   HwApi api = HwApi::Software;
   bool software_allowed = false;
+  bool download = false;
   int extra_hw_frames = 0;
   std::vector<Attempt> rejected;
   std::optional<Packet> pending;  // refusé par EAGAIN, renvoyé au prochain receive()
@@ -152,6 +153,7 @@ std::expected<VideoDecoder, Refusal> VideoDecoder::open(const TrackInfo& track,
   auto state = std::make_unique<State>();
   state->software_allowed = std::ranges::contains(options.attempts, HwApi::Software);
   state->extra_hw_frames = options.extra_hw_frames;
+  state->download = options.download;
   if (track.frame_rate.num > 0 && track.frame_rate.den > 0) {
     state->nominal_duration_us = av_rescale(1'000'000, track.frame_rate.den, track.frame_rate.num);
   }
@@ -245,6 +247,15 @@ std::expected<std::optional<DecodedFrame>, Refusal> VideoDecoder::receive() {
   const std::int64_t duration = frame->duration > 0 ? frame->duration : s.nominal_duration_us;
   s.next_pts_us = pts == kNoPts ? kNoPts : pts + duration;
 
+  if (s.download && frame->hw_frames_ctx != nullptr) {
+    FramePtr host(av_frame_alloc());
+    if (!host) return refuse(RefusalCode::DecodeFailed, "image : mémoire insuffisante");
+    if (const int copied = av_hwframe_transfer_data(host.get(), frame.get(), 0); copied < 0)
+      return refuse_av(RefusalCode::DecodeFailed, "copie de l'image matérielle en mémoire hôte", copied);
+    if (const int props = av_frame_copy_props(host.get(), frame.get()); props < 0)
+      return refuse_av(RefusalCode::DecodeFailed, "propriétés de l'image copiée", props);
+    frame = std::move(host);
+  }
   ReadyEvent ready;
   if (s.hw.stream && frame->hw_frames_ctx != nullptr) {
     auto recorded = s.hw.stream->record();

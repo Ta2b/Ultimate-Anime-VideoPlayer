@@ -32,6 +32,9 @@ struct GpuFacts {
   bool tensor_cores = false;  // NVIDIA avec matrices coopératives Vulkan : une RTX
 };
 
+// ROCm (donc MIGraphX) ne sert officiellement que Navi 21, RDNA3, RDNA4 et les Instinct : une
+// RX 6500M (Navi 24) ou un iGPU Radeon ne doit pas se voir proposer son téléchargement.
+bool rocm_listed(std::string_view gpu_name);
 core::SystemInfo system_of(const GpuFacts& gpu);
 // « NVIDIA GeForce RTX 4070 Ti · 12 Go · cœurs Tensor »
 std::string gpu_line(const GpuFacts& gpu);

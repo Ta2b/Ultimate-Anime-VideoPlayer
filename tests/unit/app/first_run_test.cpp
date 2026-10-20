@@ -59,6 +59,22 @@ TEST_CASE("Profil conseillé selon le GPU", "[app][first_run]") {
   CHECK(start_profile_for(amd) == 9);
 }
 
+TEST_CASE("MIGraphX proposé aux seuls GPU que ROCm sert", "[app][first_run]") {
+  CHECK(rocm_listed("AMD Radeon RX 7900 XTX (RADV NAVI31)"));
+  CHECK(rocm_listed("AMD Radeon RX 6800 XT"));
+  CHECK(rocm_listed("AMD Radeon RX 9070"));
+  CHECK_FALSE(rocm_listed("AMD Radeon RX 6500M (RADV NAVI24)"));
+  CHECK_FALSE(rocm_listed("AMD Radeon RX 6500M"));
+  CHECK_FALSE(rocm_listed("AMD Radeon RX 6800M"));
+  CHECK_FALSE(rocm_listed("AMD Radeon 680M (RADV REMBRANDT)"));
+  const GpuFacts rx6500m{
+      .name = "AMD Radeon RX 6500M (RADV NAVI24)", .vendor = GpuVendor::Amd, .vram_bytes = 4 * kGiB};
+  const EngineRow* migraphx =
+      row_of(first_run_view(rx6500m, kHere, ProfilesView{}), core::EngineId::MiGraphX);
+  REQUIRE(migraphx != nullptr);
+  CHECK_FALSE(migraphx->chosen);
+}
+
 TEST_CASE("Commencer écrit des moteurs valides pour settings.toml", "[app][first_run]") {
   FirstRunView view = first_run_view(kRtx, kHere, ProfilesView{});
   const core::Settings all = settings_after(view, core::Settings{});

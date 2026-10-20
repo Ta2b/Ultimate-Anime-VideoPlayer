@@ -46,6 +46,10 @@ struct DecoderOptions {
   // ils prennent le calcul que gpu réserve à l'upscaling et à l'interpolation, et
   // leur échec ne se voit qu'au premier point clé, après l'ouverture.
   bool vulkan_compute = false;
+  // Chaque image matérielle copiée en mémoire hôte (av_hwframe_transfer_data) : le décodeur
+  // matériel décharge le CPU même pour un backend qui n'importe pas ses surfaces (Vulkan avec
+  // VA-API). Quelques Mo par image sur le bus, contre le décodage logiciel d'une HEVC 10 bits.
+  bool download = false;
 };
 
 inline constexpr int kMaxExtraHwFrames = 32;

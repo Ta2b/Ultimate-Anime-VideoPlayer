@@ -20,7 +20,8 @@
 namespace ajp::gpu::vk::net {
 namespace {
 
-constexpr std::string_view kCandidateSet = "c2";  // 2 : Conv directe à plusieurs pixels (PIX)
+// 2 : Conv directe à plusieurs pixels (PIX) ; 3 : taille de sous-groupe exigée.
+constexpr std::string_view kCandidateSet = "c3";
 
 // Hachage incrémental d'entiers, FNV-1a sur leurs huit octets.
 class Signature {
@@ -299,7 +300,8 @@ std::expected<Measured, Refusal> Autotuner::measure(const ir::Graph& graph, std:
                                     .constants = d.constants,
                                     .buffers = static_cast<std::uint32_t>(d.bindings.size()),
                                     .push_bytes = static_cast<std::uint32_t>(d.push.size() * 4),
-                                    .spirv = spirv::words(d.shader)});
+                                    .spirv = spirv::words(d.shader),
+                                    .subgroup_size = d.subgroup});
     if (!pipeline) return std::unexpected(pipeline.error());
     pipelines.push_back(*pipeline);
     buffers += static_cast<std::uint32_t>(d.bindings.size());

@@ -12,6 +12,7 @@
 #include <span>
 #include <string>
 #include <string_view>
+#include <tuple>
 #include <utility>
 #include <vector>
 
@@ -30,6 +31,9 @@ struct PipelineDesc {
   // SPIR-V d'un autre module (shaders du moteur Vulkan), qui doit vivre autant que le cache ;
   // vide : le shader embarqué du socle nommé shader.
   std::span<const std::uint32_t> spirv;
+  // Taille de sous-groupe exigée (VkPipelineShaderStageRequiredSubgroupSizeCreateInfo), dans
+  // [min_subgroup_size, max_subgroup_size] de l'appareil ; 0 : celle du pilote.
+  std::uint32_t subgroup_size = 0;
 };
 
 class Pipeline {
@@ -87,7 +91,7 @@ class PipelineCache {
                                                 std::span<const std::uint32_t> spirv);
   std::expected<std::unique_ptr<Pipeline>, Refusal> build(const PipelineDesc& desc, VkShaderModule module);
 
-  using Key = std::pair<std::string, std::vector<std::uint32_t>>;
+  using Key = std::tuple<std::string, std::vector<std::uint32_t>, std::uint32_t>;
   const VkContext& context_;
   VkPipelineCache cache_ = VK_NULL_HANDLE;
   std::map<std::string, VkShaderModule, std::less<>> modules_;

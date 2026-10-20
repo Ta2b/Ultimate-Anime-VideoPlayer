@@ -36,6 +36,7 @@ struct Dispatch {
   std::vector<Binding> bindings;
   std::vector<std::uint32_t> push;  // mots du bloc push_constant
   std::array<std::uint32_t, 3> groups{1, 1, 1};
+  std::uint32_t subgroup = 0;  // taille de sous-groupe exigée ; 0 : celle du pilote
   friend bool operator==(const Dispatch&, const Dispatch&) = default;
 };
 
@@ -59,6 +60,9 @@ struct Target {
   bool f16_math = false;      // calcul en fp16 (« _f16p »)
   bool matrix_units = false;  // matrices coopératives autorisées (famille et pilote, voir family.h)
   std::uint32_t subgroup_size = 0;
+  // Tailles de sous-groupe qu'un dispatch peut exiger ; 0 : aucune (le pilote choisit).
+  std::uint32_t subgroup_min = 0;
+  std::uint32_t subgroup_max = 0;
   std::uint32_t max_push_constants = 128;
   std::uint32_t max_shared_memory = 16384;
   std::uint32_t max_workgroup_invocations = 128;

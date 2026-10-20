@@ -277,6 +277,7 @@ void fields(Ar& ar, S& d)
   ar(d.bindings);
   ar(d.push);
   ar(d.groups);
+  ar(d.subgroup);
 }
 
 template <class Ar, class S>
