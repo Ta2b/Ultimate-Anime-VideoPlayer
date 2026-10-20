@@ -158,6 +158,10 @@ std::string rife_label(const std::string& file) {
   return out;
 }
 
+std::string_view hdr_engine_key(const PlaySettings& s) {
+  return s.true_hdr ? "rtx" : (s.hdr_native ? "adaptive" : "sdr");
+}
+
 std::string_view name(MotionEngine engine) {
   switch (engine) {
     case MotionEngine::Rife:
@@ -232,9 +236,9 @@ std::expected<PlaySettings, Refusal> validate(const PlaySettings& s) {
   }
   const std::array<std::expected<void, Refusal>, 7> checks{
       check("image.work_height", s.work_height, limits::kWorkHeight),
-      check("rtx_hdr.contrast", s.true_hdr_contrast, limits::kTrueHdrContrast),
-      check("rtx_hdr.saturation", s.true_hdr_saturation, limits::kTrueHdrSaturation),
-      check("rtx_hdr.middle_gray", s.true_hdr_gray, limits::kTrueHdrGray),
+      check("hdr.contrast", s.true_hdr_contrast, limits::kTrueHdrContrast),
+      check("hdr.saturation", s.true_hdr_saturation, limits::kTrueHdrSaturation),
+      check("hdr.middle_gray", s.true_hdr_gray, limits::kTrueHdrGray),
       check("audio.delay_ms", s.audio_delay_ms, limits::kAudioDelayMs),
       check("audio.volume", s.volume, limits::kVolume),
       check("subtitles.scale", s.subtitle_scale, limits::kSubtitleScale),
@@ -243,7 +247,7 @@ std::expected<PlaySettings, Refusal> validate(const PlaySettings& s) {
     if (!checked) return std::unexpected(checked.error());
   }
   if (s.true_hdr_peak != 0) {
-    if (auto peak = check("rtx_hdr.peak", s.true_hdr_peak, limits::kTrueHdrPeak); !peak)
+    if (auto peak = check("hdr.peak", s.true_hdr_peak, limits::kTrueHdrPeak); !peak)
       return std::unexpected(peak.error());
   }
   if (auto grade = render::check_grade_settings(s.grade_values); !grade)
@@ -302,14 +306,30 @@ std::expected<PlaySettings, Refusal> parse_settings(std::string_view toml_text) 
       reads.emplace_back(
           refuse(RefusalCode::FieldOutOfRange, std::format("interpolation.engine : « {} »", engine)));
   }
-  if (const toml::table* hdr = section(root, "rtx_hdr")) {
-    reads.push_back(read(*hdr, "rtx_hdr", "enabled", s.true_hdr));
-    reads.push_back(read(*hdr, "rtx_hdr", "contrast", s.true_hdr_contrast));
-    reads.push_back(read(*hdr, "rtx_hdr", "saturation", s.true_hdr_saturation));
-    reads.push_back(read(*hdr, "rtx_hdr", "middle_gray", s.true_hdr_gray));
-    reads.push_back(read(*hdr, "rtx_hdr", "peak", s.true_hdr_peak));
-    reads.push_back(read(*hdr, "rtx_hdr", "debanding", s.true_hdr_debanding));
-    reads.push_back(read(*hdr, "rtx_hdr", "native", s.hdr_native));
+  // Le mode HDR de l'application : son moteur (RTX HDR sur NVIDIA, HDR adaptatif partout, ou SDR)
+  // et les réglages qu'ils partagent. Les fichiers d'avant (section rtx_hdr) se lisent encore.
+  if (const toml::table* hdr = section(root, "hdr")) {
+    std::string engine(hdr_engine_key(s));
+    reads.push_back(read(*hdr, "hdr", "engine", engine));
+    if (engine == "rtx" || engine == "adaptive" || engine == "sdr") {
+      s.true_hdr = engine == "rtx";
+      s.hdr_native = engine == "adaptive";
+    } else {
+      reads.emplace_back(refuse(RefusalCode::FieldOutOfRange, std::format("hdr.engine : « {} »", engine)));
+    }
+    reads.push_back(read(*hdr, "hdr", "contrast", s.true_hdr_contrast));
+    reads.push_back(read(*hdr, "hdr", "saturation", s.true_hdr_saturation));
+    reads.push_back(read(*hdr, "hdr", "middle_gray", s.true_hdr_gray));
+    reads.push_back(read(*hdr, "hdr", "peak", s.true_hdr_peak));
+    reads.push_back(read(*hdr, "hdr", "debanding", s.true_hdr_debanding));
+  } else if (const toml::table* rtx = section(root, "rtx_hdr")) {
+    reads.push_back(read(*rtx, "rtx_hdr", "enabled", s.true_hdr));
+    reads.push_back(read(*rtx, "rtx_hdr", "contrast", s.true_hdr_contrast));
+    reads.push_back(read(*rtx, "rtx_hdr", "saturation", s.true_hdr_saturation));
+    reads.push_back(read(*rtx, "rtx_hdr", "middle_gray", s.true_hdr_gray));
+    reads.push_back(read(*rtx, "rtx_hdr", "peak", s.true_hdr_peak));
+    reads.push_back(read(*rtx, "rtx_hdr", "debanding", s.true_hdr_debanding));
+    reads.push_back(read(*rtx, "rtx_hdr", "native", s.hdr_native));
   }
   if (const toml::table* audio = section(root, "audio")) {
     reads.push_back(read(*audio, "audio", "delay_ms", s.audio_delay_ms));
@@ -393,13 +413,12 @@ std::string format_settings(const PlaySettings& s) {
     interpolation.insert("rife", s.rife_factor);
   }
   root.insert("interpolation", std::move(interpolation));
-  root.insert("rtx_hdr", toml::table{{"enabled", s.true_hdr},
-                                     {"contrast", s.true_hdr_contrast},
-                                     {"saturation", s.true_hdr_saturation},
-                                     {"middle_gray", s.true_hdr_gray},
-                                     {"peak", s.true_hdr_peak},
-                                     {"debanding", s.true_hdr_debanding},
-                                     {"native", s.hdr_native}});
+  root.insert("hdr", toml::table{{"engine", std::string(hdr_engine_key(s))},
+                                 {"contrast", s.true_hdr_contrast},
+                                 {"saturation", s.true_hdr_saturation},
+                                 {"middle_gray", s.true_hdr_gray},
+                                 {"peak", s.true_hdr_peak},
+                                 {"debanding", s.true_hdr_debanding}});
   // Le volume au centième : 0.85 et non 0.8500000238418579.
   root.insert("audio", toml::table{{"delay_ms", s.audio_delay_ms},
                                    {"volume", std::round(static_cast<double>(s.volume) * 100.0) / 100.0}});

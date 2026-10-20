@@ -4,6 +4,7 @@
 
 #include <array>
 #include <filesystem>
+#include <format>
 #include <string_view>
 
 #include <catch2/catch_test_macros.hpp>
@@ -28,7 +29,6 @@ TEST_CASE("play.toml relit à l'identique ce qu'il a écrit", "[app][settings]")
   s.subtitle_scale = 1.25F;
   s.stats.frames = true;
   s.stats.memory = true;
-  s.hdr_native = true;
   s.grade_preset = render::GradePreset::Custom;
   s.grade_values.shadows = 0.55;
   s.grade_values.guard = 0.25;
@@ -51,6 +51,31 @@ TEST_CASE("play.toml relit à l'identique ce qu'il a écrit", "[app][settings]")
   CHECK(parse_settings(format_settings(s))->motion_engine == MotionEngine::GmfssUnion);
   CHECK(is_gmfss(MotionEngine::GmfssUnion));
   CHECK_FALSE(is_gmfss(MotionEngine::Rife));
+}
+
+TEST_CASE("Mode HDR : moteur RTX HDR, HDR adaptatif ou SDR, et les fichiers d'avant", "[app][settings]") {
+  for (const std::string_view engine : {"rtx", "adaptive", "sdr"}) {
+    const auto s = parse_settings(std::format("[hdr]\nengine = \"{}\"\ncontrast = 150\n", engine));
+    REQUIRE(s);
+    CHECK(hdr_engine_key(*s) == engine);
+    CHECK(s->true_hdr_contrast == 150);
+    CHECK(*parse_settings(format_settings(*s)) == *s);
+  }
+  CHECK(format_settings(PlaySettings{}).find("[rtx_hdr]") == std::string::npos);
+  CHECK_FALSE(parse_settings("[hdr]\nengine = \"maxine\"\n"));
+  // Un play.toml d'avant : section rtx_hdr, enabled et native.
+  const auto rtx = parse_settings("[rtx_hdr]\nenabled = true\ncontrast = 200\nmiddle_gray = 51\n");
+  REQUIRE(rtx);
+  CHECK(hdr_engine_key(*rtx) == "rtx");
+  CHECK(rtx->true_hdr_contrast == 200);
+  CHECK(rtx->true_hdr_gray == 51);
+  const auto native = parse_settings("[rtx_hdr]\nenabled = false\nnative = true\n");
+  REQUIRE(native);
+  CHECK(hdr_engine_key(*native) == "adaptive");
+  // La nouvelle section l'emporte sur l'ancienne.
+  const auto both = parse_settings("[rtx_hdr]\nenabled = true\n[hdr]\nengine = \"adaptive\"\n");
+  REQUIRE(both);
+  CHECK(hdr_engine_key(*both) == "adaptive");
 }
 
 TEST_CASE("Grade : un préréglage nommé donne ses valeurs, gamut P3 reste celui du fichier",
@@ -86,10 +111,10 @@ TEST_CASE("Hors plage, type faux ou TOML invalide : refus nommé", "[app][settin
   const auto out = parse_settings("[rtx_hdr]\ncontrast = 250\n");
   REQUIRE_FALSE(out);
   CHECK(out.error().code == RefusalCode::FieldOutOfRange);
-  CHECK(out.error().detail.find("rtx_hdr.contrast") != std::string::npos);
+  CHECK(out.error().detail.find("hdr.contrast") != std::string::npos);
   const auto peak = parse_settings("[rtx_hdr]\npeak = 300\n");
   REQUIRE_FALSE(peak);
-  CHECK(peak.error().detail.find("rtx_hdr.peak") != std::string::npos);
+  CHECK(peak.error().detail.find("hdr.peak") != std::string::npos);
   const auto type = parse_settings("[interpolation]\nrife = \"trois\"\n");
   REQUIRE_FALSE(type);
   CHECK(type.error().code == RefusalCode::FieldType);

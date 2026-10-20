@@ -278,8 +278,8 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
       peak_nits = *opened;
     } else {
       // Le plan : TrueHDR qui échoue laisse la place à la route native, et l'écran le dit.
-      log->warn("{} ; HDR natif à la place", opened.error().detail);
-      p.ui.controls().notify("RTX HDR indisponible : HDR natif", host_now_us());
+      log->warn("{} ; HDR adaptatif à la place", opened.error().detail);
+      p.ui.controls().notify("RTX HDR indisponible : HDR adaptatif", host_now_us());
       settings.true_hdr = false;
       settings.hdr_native = true;
       p.screen.set_source_color(ColorInfo{});

@@ -200,8 +200,7 @@ PlaySettings within_engines(PlaySettings settings, const core::Settings& engines
   if (!chosen(engines, core::EngineId::MaxineVfx) && settings.true_hdr) {
     settings.true_hdr = false;
     settings.hdr_native = true;
-    notes.emplace_back(
-        "NVIDIA Maxine non choisi : HDR natif (libplacebo, aspect TrueHDR émulé) au lieu de RTX HDR");
+    notes.emplace_back("NVIDIA Maxine non choisi : HDR adaptatif (tous GPU) au lieu de RTX HDR");
   }
   return settings;
 }

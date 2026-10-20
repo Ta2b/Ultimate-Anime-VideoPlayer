@@ -85,14 +85,16 @@ struct PlaySettings {
   // images présentées, au-dessus de RIFE (×3 puis ×2 : 72 → 144 images par seconde). Posé au
   // lancement, avant l'instance Vulkan : vaut au prochain lancement.
   bool smooth_motion = false;
+  // Le mode HDR : son moteur (true_hdr : RTX HDR, NVIDIA ; hdr_native : HDR adaptatif, tous GPU ;
+  // aucun : SDR) et ses réglages, communs aux deux moteurs (section hdr de play.toml).
   bool true_hdr = false;
   int true_hdr_contrast = 100;
   int true_hdr_saturation = 100;
   int true_hdr_gray = 50;
   int true_hdr_peak = 0;  // 0 : la crête vue par le contenu sur l'écran
   bool true_hdr_debanding = true;
-  // RTX HDR éteint : le SDR passe en PQ par libplacebo et le grade émule l'aspect TrueHDR (route
-  // native, mêmes contraste, saturation, gris moyen et pic) ; faux : sortie SDR sans grade.
+  // HDR adaptatif : le SDR passe en PQ par libplacebo et le grade émule l'aspect TrueHDR en
+  // suivant la scène (route native, mêmes contraste, saturation, gris moyen et pic).
   bool hdr_native = false;
   int audio_delay_ms = 0;
   float volume = 1.0F;
@@ -115,6 +117,10 @@ struct PlaySettings {
   StatsSettings stats;
   friend bool operator==(const PlaySettings&, const PlaySettings&) = default;
 };
+
+// Le moteur du mode HDR, clé hdr.engine de play.toml : « rtx » (RTX HDR, NVIDIA), « adaptive »
+// (HDR adaptatif, tous GPU) ou « sdr ».
+std::string_view hdr_engine_key(const PlaySettings& s);
 
 namespace limits {
 inline constexpr core::Range<int> kAudioDelayMs{-5000, 5000};

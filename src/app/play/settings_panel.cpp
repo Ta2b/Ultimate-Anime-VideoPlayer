@@ -235,13 +235,14 @@ void fluidity_tab(PlaySettings& d, const SettingsChoices& choices) {
     note("RIFE est désactivé : Smooth Motion risque de caler la lecture.");
 }
 
-// La route HDR : RTX HDR (TrueHDR), HDR natif (libplacebo, aspect TrueHDR émulé), ou SDR.
-constexpr std::array<const char*, 3> kRoutes{"RTX HDR (TrueHDR)", "HDR natif (libplacebo)", "SDR"};
+// Le moteur du mode HDR : RTX HDR (TrueHDR, NVIDIA), HDR adaptatif (tous GPU : libplacebo, puis
+// l'aspect TrueHDR émulé qui suit la scène), ou SDR.
+constexpr std::array<const char*, 3> kRoutes{"RTX HDR (NVIDIA)", "HDR adaptatif (tous GPU)", "SDR"};
 
 void hdr_tab(PlaySettings& d, const SettingsChoices& choices) {
   section("Sortie");
   const int route = d.true_hdr ? 0 : (d.hdr_native ? 1 : 2);
-  if (ImGui::BeginCombo("Route", kRoutes[static_cast<std::size_t>(route)])) {
+  if (ImGui::BeginCombo("Moteur HDR", kRoutes[static_cast<std::size_t>(route)])) {
     for (int i = 0; i < static_cast<int>(kRoutes.size()); ++i) {
       ImGui::BeginDisabled(i == 0 && !choices.true_hdr_available);
       if (ImGui::Selectable(kRoutes[static_cast<std::size_t>(i)], i == route)) {
@@ -254,7 +255,7 @@ void hdr_tab(PlaySettings& d, const SettingsChoices& choices) {
   }
   if (!choices.true_hdr_available) note("SDK Maxine VideoFX introuvable (/usr/local/VideoFX).");
   if (!choices.hdr_output) note("L'écran ne reçoit pas de HDR10 : la sortie reste SDR.");
-  section("RTX HDR (Maxine TrueHDR) et son émulation");
+  section("Réglages du mode HDR (RTX HDR et HDR adaptatif)");
   bool automatic = d.true_hdr_peak == 0;
   if (ImGui::Checkbox(std::format("Pic automatique ({} nits)", choices.auto_peak).c_str(), &automatic))
     d.true_hdr_peak =
@@ -270,7 +271,7 @@ void hdr_tab(PlaySettings& d, const SettingsChoices& choices) {
                    limits::kTrueHdrSaturation.hi);
   ImGui::SliderInt("Gris moyen", &d.true_hdr_gray, limits::kTrueHdrGray.lo, limits::kTrueHdrGray.hi);
   ImGui::BeginDisabled(!d.true_hdr);
-  ImGui::Checkbox("Débandage", &d.true_hdr_debanding);
+  ImGui::Checkbox("Débandage (RTX HDR)", &d.true_hdr_debanding);
   ImGui::EndDisabled();
   if (ImGui::Button("Valeurs par défaut")) {
     const PlaySettings defaults;
@@ -281,8 +282,9 @@ void hdr_tab(PlaySettings& d, const SettingsChoices& choices) {
     d.true_hdr_debanding = defaults.true_hdr_debanding;
   }
   note(
-      "Réglages appliqués en direct, sur RTX HDR comme sur son émulation (HDR natif). Gris moyen : "
-      "luminosité des tons moyens ; le débandage lisse les dégradés (le couper allège un peu RTX HDR).");
+      "Réglages appliqués en direct, sur RTX HDR comme sur le HDR adaptatif. Gris moyen : luminosité des "
+      "tons moyens. Le HDR adaptatif suit la scène : moins d'expansion sur les scènes claires et les "
+      "grands aplats blancs, ombres plus douces la nuit, éclats isolés vers le pic.");
 }
 
 // Un curseur sur un réglage du grade (double) ; true s'il a bougé.
@@ -322,14 +324,14 @@ void grade_tab(PlaySettings& d, const SettingsChoices& choices) {
   ImGui::EndDisabled();
   if (!choices.hdr_output) {
     note(
-        "Sortie SDR : couleurs, noirs, garde-fou, contraste et saturation de RTX HDR s'appliquent ; "
+        "Sortie SDR : couleurs, noirs, garde-fou, contraste et saturation du mode HDR s'appliquent ; "
         "éclats, aplats lumineux et couleurs étendues demandent une sortie HDR10.");
   } else if (d.true_hdr) {
     note("Route RTX HDR : TrueHDR, puis le grade sur la sortie PQ.");
   } else if (d.hdr_native) {
-    note("Route native : libplacebo en PQ, aspect TrueHDR émulé, puis le grade.");
+    note("HDR adaptatif : libplacebo en PQ, aspect TrueHDR émulé selon la scène, puis le grade.");
   } else {
-    note("Sortie HDR10 sans route : pas de grade (route à choisir dans l'onglet RTX HDR).");
+    note("Sortie HDR10 sans moteur HDR : pas de grade (moteur à choisir dans l'onglet HDR).");
   }
   section("Noir absolu OLED");
   if (ImGui::BeginCombo("Noir absolu", std::string(label(d.oled_black)).c_str())) {
@@ -495,7 +497,7 @@ SettingsPanel::Result SettingsPanel::draw(const PlaySettings& running, const Set
         fluidity_tab(draft_, choices);
         ImGui::EndTabItem();
       }
-      if (ImGui::BeginTabItem("RTX HDR")) {
+      if (ImGui::BeginTabItem("HDR")) {
         hdr_tab(draft_, choices);
         ImGui::EndTabItem();
       }

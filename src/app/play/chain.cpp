@@ -98,7 +98,7 @@ std::string label_of(const std::vector<TrackEntry>& entries, int track) {
   return found != entries.end() ? found->label : std::format("piste {}", track);
 }
 
-// Le grade HDR de la chaîne : route TrueHDR si RTX HDR est ouvert, native si le HDR natif est choisi
+// Le grade HDR de la chaîne : route TrueHDR si RTX HDR est ouvert, native si le HDR adaptatif est choisi
 // (le SDR converti en PQ par libplacebo, aspect TrueHDR émulé avec les réglages de RTX HDR), aucun
 // en SDR. Pic : celui de RTX HDR, ou celui de l'écran (1000 nits s'il ne le dit pas).
 // Le vrai noir OLED est voulu : forcé, ou « auto » sur un écran détecté OLED.
@@ -170,7 +170,7 @@ std::string output_text(const PlaceboScreen& screen, const PlaySettings& s, int 
   if (peak_nits > 0) {
     text += std::format(" · RTX HDR, pic {} nits", peak_nits);
   } else if (s.hdr_native && screen.hdr_output()) {
-    text += " · HDR natif";
+    text += " · HDR adaptatif";
   }
   if (s.grade && (!screen.hdr_output() || peak_nits > 0 || s.hdr_native))
     text += std::format(" · grade {}", render::preset_label(s.grade_preset));
@@ -345,7 +345,7 @@ void apply_live(Chain& to, const PlaySettings& wanted, std::int64_t now_us) {
   const vendor_hdr::TrueHdrParams after = true_hdr_params(wanted, to.auto_peak);
   if (to.true_hdr_open && after != before) {
     log_channel("app")->info(
-        "RTX HDR en direct : contraste {} · saturation {} · gris moyen {} · pic {} nits · débandage {}",
+        "HDR en direct : contraste {} · saturation {} · gris moyen {} · pic {} nits · débandage {}",
         after.contrast, after.saturation, after.middle_gray, after.peak_nits,
         after.debanding ? "oui" : "non");
     to.live.set_true_hdr(after);
