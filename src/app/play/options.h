@@ -45,11 +45,11 @@ namespace limits {
 inline constexpr core::Range<int> kWindowSide{64, 16384};
 inline constexpr core::Range<std::int64_t> kSeconds{0, std::int64_t{24} * 3600};
 inline constexpr core::Range<int> kWorkHeight{0, 4320};
-inline constexpr core::Range<int> kRifeFactor{0, 8};
+inline constexpr core::Range<int> kRifeFactor{0, 10};
 }  // namespace limits
 
 // Un facteur d'interpolation écrit « 3 », « 1.5 » ou « 1,5 » : num / den, den valant 1 ou 2 (une
-// moitié : num impair de 3 à 15). Rien hors de 0 à 8 ou pour une autre fraction.
+// moitié : num impair de 3 à 19). Rien hors de 0 à 10 ou pour une autre fraction.
 struct Factor {
   int num = 0;
   int den = 1;
@@ -82,7 +82,7 @@ struct PlayOptions {
   // --work-height=N : la source plus haute que N est réduite par Area à N lignes avant SPAN
   // (1080p vers 720p, puis ×2 vers 1440p, comme le profil du lecteur actuel) ; 0 : jamais.
   int work_height = 720;
-  // --rife=N : interpolation ×N (2 à 8, ou une moitié : 1.5, 2.5…) avant SPAN ; 0 ou 1 : aucune.
+  // --rife=N : interpolation ×N (2 à 10, ou une moitié : 1.5, 2.5…) avant SPAN ; 0 ou 1 : aucune.
   int rife_factor = kDefaultRifeFactor;
   int rife_factor_den = 1;                          // 2 pour un facteur en moitié : ×rife_factor / 2
   std::optional<std::filesystem::path> rife_model;  // --rife-model : absent, celui du lecteur actuel

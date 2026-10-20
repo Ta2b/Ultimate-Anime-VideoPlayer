@@ -21,8 +21,8 @@
 
 namespace ajp::core {
 
-// num <= 8·den : au plus 8 instants par paire.
-inline constexpr std::size_t kMaxInstantsPerPair = 8;
+// num <= 10·den : au plus 10 instants par paire (×10 au plus).
+inline constexpr std::size_t kMaxInstantsPerPair = 10;
 
 // La fraction sous sa forme irréductible, dénominateur positif.
 Ratio reduced(Ratio ratio);
@@ -69,7 +69,7 @@ class CadenceStep {
 
  private:
   friend class CadenceAccumulator;
-  // num <= 8·den borne la boucle de push() à kMaxInstantsPerPair appels.
+  // num <= 10·den borne la boucle de push() à kMaxInstantsPerPair appels.
   void add(const OutputInstant& instant) { slots_[count_++] = instant; }
 
   std::array<OutputInstant, kMaxInstantsPerPair> slots_{};

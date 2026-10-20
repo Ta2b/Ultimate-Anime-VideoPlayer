@@ -101,18 +101,39 @@ void fluidity_tab(PlaySettings& d, const SettingsChoices& choices) {
       (d.work_height == 0 || d.work_height >= choices.source_height) && choices.source_height >= 1080;
   section("Interpolation");
   ImGui::BeginDisabled(!choices.rife_available);
-  constexpr std::array<std::pair<Factor, const char*>, 5> kFactors{{{{.num = 0, .den = 1}, "Désactivée"},
-                                                                    {{.num = 3, .den = 2}, "×1,5"},
-                                                                    {{.num = 2, .den = 1}, "×2"},
-                                                                    {{.num = 3, .den = 1}, "×3 (recommandé)"},
-                                                                    {{.num = 4, .den = 1}, "×4"}}};
+  // Une liste déroulante plutôt qu'un bouton par facteur : ×1,5 puis ×2 à ×10 tiennent sur une ligne.
+  constexpr std::array<Factor, 11> kFactors{{{.num = 0, .den = 1},
+                                             {.num = 3, .den = 2},
+                                             {.num = 2, .den = 1},
+                                             {.num = 3, .den = 1},
+                                             {.num = 4, .den = 1},
+                                             {.num = 5, .den = 1},
+                                             {.num = 6, .den = 1},
+                                             {.num = 7, .den = 1},
+                                             {.num = 8, .den = 1},
+                                             {.num = 9, .den = 1},
+                                             {.num = 10, .den = 1}}};
+  const auto factor_label = [](Factor factor) {
+    if (factor.num <= factor.den) return std::string("Désactivée");
+    std::string text = factor_text(factor);
+    if (factor == Factor{.num = kDefaultRifeFactor, .den = 1}) text += " (recommandé)";
+    return text;
+  };
   const Factor now = factor_of(d);
-  for (const auto& [factor, text] : kFactors) {
-    if (ImGui::RadioButton(text, now == factor || (factor.num == 0 && now.num <= now.den))) {
-      d.rife_factor = factor.num;
-      d.rife_factor_den = factor.den;
+  if (ImGui::BeginCombo("Multiplicateur", factor_label(now).c_str())) {
+    for (const Factor factor : kFactors) {
+      const bool chosen = now == factor || (factor.num == 0 && now.num <= now.den);
+      if (ImGui::Selectable(factor_label(factor).c_str(), chosen)) {
+        d.rife_factor = factor.num;
+        d.rife_factor_den = factor.den;
+      }
     }
+    ImGui::EndCombo();
   }
+  if (now.num > 4 * now.den)
+    note(
+        "Au-delà de ×4, chaque paire demande une passe RIFE par image créée : il faut un écran assez "
+        "rapide (×10 en 24 i/s donne 240 Hz) et un GPU qui suit, sinon des images sont sautées.");
   ImGui::EndDisabled();
   if (!choices.rife_available) note("Ni modèle RIFE (rife_v4.26.onnx) ni graphes GMFSS trouvés.");
   section("Moteur de l'interpolation");

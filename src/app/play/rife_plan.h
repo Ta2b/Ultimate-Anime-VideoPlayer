@@ -19,7 +19,7 @@
 
 namespace ajp::app::play {
 
-inline constexpr std::uint32_t kMaxRifeFactor = 8;
+inline constexpr std::uint32_t kMaxRifeFactor = 10;
 inline constexpr std::int64_t kMaxPairGapUs = 250'000;
 
 struct PairFacts {

@@ -41,7 +41,7 @@ std::int64_t ntsc_pts(std::int64_t k) {
 }  // namespace
 
 TEST_CASE("cadence : facteurs refusés et réduits", "[cadence]") {
-  for (Ratio bad : {Ratio{1, 1}, Ratio{0, 1}, Ratio{3, 0}, Ratio{-2, 1}, Ratio{17, 2}, Ratio{9, 1},
+  for (Ratio bad : {Ratio{1, 1}, Ratio{0, 1}, Ratio{3, 0}, Ratio{-2, 1}, Ratio{21, 2}, Ratio{11, 1},
                     Ratio{100001, 100000}, Ratio{2, 3}}) {
     auto accumulator = CadenceAccumulator::create(bad);
     REQUIRE_FALSE(accumulator);

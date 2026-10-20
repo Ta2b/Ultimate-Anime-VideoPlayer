@@ -41,8 +41,8 @@ std::expected<CadenceAccumulator, Refusal> CadenceAccumulator::create(Ratio fact
   if (!limits::kRatioTerm.contains(factor.num) || !limits::kRatioTerm.contains(factor.den)) {
     return refuse(RefusalCode::FieldOutOfRange, where + " : terme hors de [1, 100000]");
   }
-  if (factor.num <= factor.den || factor.num > 8 * factor.den) {
-    return refuse(RefusalCode::FieldOutOfRange, where + " : hors de 1 < num/den <= 8");
+  if (factor.num <= factor.den || factor.num > std::int64_t{kMaxInstantsPerPair} * factor.den) {
+    return refuse(RefusalCode::FieldOutOfRange, where + " : hors de 1 < num/den <= 10");
   }
   const Ratio r = reduced(factor);
   return CadenceAccumulator(r.num, r.den);

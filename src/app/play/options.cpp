@@ -234,7 +234,7 @@ std::string play_usage() {
       "  --first-run            écran de bienvenue (moteurs, profil de démarrage), même déjà vu\n"
       "  --keys=S:touche,…      touches pressées d'office (essais), ex. 3:Right,5:Space\n"
       "  --work-height=N        réduit la source à N lignes avant SPAN (défaut 720 ; 0 jamais)\n"
-      "  --rife=N               interpolation ×N avant SPAN (1.5, 2 à 8 ; défaut {} ; 0 aucune)\n"
+      "  --rife=N               interpolation ×N avant SPAN (1.5, 2 à 10 ; défaut {} ; 0 aucune)\n"
       "  --rife-model=FICHIER   modèle RIFE (défaut : {})\n"
       "  --truehdr              RTX HDR (Maxine TrueHDR), SDK importé une fois depuis --truehdr-sdk\n"
       "  --truehdr-peak=NITS    pic de TrueHDR (défaut : celui de l'écran, sinon 1000)\n"

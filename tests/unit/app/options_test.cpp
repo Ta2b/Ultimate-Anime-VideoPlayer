@@ -67,7 +67,7 @@ TEST_CASE("ajp play : RIFE ×3 par défaut, --rife et --rife-model", "[app][opti
   CHECK(parse({"a.mkv", "--rife=4"})->rife_factor == 4);
   CHECK(parse({"a.mkv", "--rife=0"})->rife_factor == 0);
   CHECK(parse({"a.mkv", "--rife-model=/m/rife.onnx"})->rife_model == std::filesystem::path("/m/rife.onnx"));
-  CHECK(parse({"a.mkv", "--rife=9"}).error().code == RefusalCode::FieldOutOfRange);
+  CHECK(parse({"a.mkv", "--rife=11"}).error().code == RefusalCode::FieldOutOfRange);
   CHECK(parse({"a.mkv", "--rife=deux"}).error().code == RefusalCode::FieldOutOfRange);
   for (const char* half : {"--rife=1.5", "--rife=1,5"}) {
     const auto opts = parse({"a.mkv", half});
