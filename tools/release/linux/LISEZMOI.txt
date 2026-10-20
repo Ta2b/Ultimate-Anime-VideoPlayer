@@ -8,7 +8,8 @@ Contenu
   engines.lock              l'index des moteurs facultatifs téléchargeables
 
 Paquets du système (non livrés)
-  Ubuntu, Debian : libvulkan1 mesa-vulkan-drivers libva2 libva-drm2 intel-media-va-driver
+  Ubuntu, Debian : libvulkan1 mesa-vulkan-drivers libva2 libva-drm2 libva-x11-2
+                   intel-media-va-driver
                    (intel-media-va-driver-non-free pour l'encodage, inutile ici)
   Fedora         : vulkan-loader mesa-vulkan-drivers libva intel-media-driver
   Arch           : vulkan-icd-loader vulkan-radeon libva intel-media-driver
