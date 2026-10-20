@@ -1,6 +1,7 @@
 #include "app/play/player_engines.h"
 
 #include <format>
+#include <string_view>
 #include <utility>
 #include <variant>
 #include <vector>
@@ -83,6 +84,25 @@ std::expected<std::optional<gpu::Artifact>, Refusal> wait_engine(EngineBuild& bu
 }
 
 }  // namespace
+
+gpu::BackendLog backend_log() {
+  return [channel = log_channel("backend")](gpu::BackendLogLevel level, std::string_view message) {
+    switch (level) {
+      case gpu::BackendLogLevel::Debug:
+        channel->debug("{}", message);
+        break;
+      case gpu::BackendLogLevel::Info:
+        channel->info("{}", message);
+        break;
+      case gpu::BackendLogLevel::Warn:
+        channel->warn("{}", message);
+        break;
+      case gpu::BackendLogLevel::Error:
+        channel->error("{}", message);
+        break;
+    }
+  };
+}
 
 void show_loading(PlaceboScreen& screen, PlayerUi& ui, std::string label) {
   const PrepareView view{.label = std::move(label)};

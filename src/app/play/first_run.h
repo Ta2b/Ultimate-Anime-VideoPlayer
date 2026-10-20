@@ -1,7 +1,8 @@
 // L'écran de bienvenue du premier lancement : le GPU vu par Vulkan, les moteurs que
 // core::recommend_engines propose pour lui (Vulkan toujours, les autres au choix, avec badges et
 // présélection) et le profil de démarrage. « Commencer » écrit settings.toml (moteurs choisis,
-// first_run_done) et user.toml (start_profile) ; --first-run remontre l'écran.
+// first_run_done) et user.toml (start_profile) ; --first-run remontre l'écran, comme le bouton de
+// l'onglet Moteurs pendant la lecture.
 //
 // SPAN et RIFE passent par TensorRT sur une carte NVIDIA qui l'a choisi, sinon par le backend
 // Vulkan ; RTX HDR passe par Maxine, remplacé sans elle par le HDR natif. Ce qui change se dit au
@@ -85,8 +86,10 @@ struct EngineRow {
 struct FirstRunView {
   std::string gpu;
   std::vector<EngineRow> engines;
-  ProfilesView profiles;  // .start : le profil choisi
-  bool done = false;      // « Commencer »
+  ProfilesView profiles;   // .start : le profil choisi
+  bool done = false;       // « Commencer »
+  bool revisit = false;    // rouvert depuis l'onglet Moteurs : la lecture reprend ensuite
+  bool cancelled = false;  // « Annuler » (revisit seulement) : rien ne change
 };
 
 // Les lignes de recommend_engines pour ce GPU, cochées selon la présélection au premier lancement,
@@ -120,7 +123,8 @@ std::string_view engine_label(core::EngineId id);
 std::string_view badge_label(core::Badge badge);
 std::string_view reason_label(core::Reason reason);
 
-// Dessine l'écran dans le cadre ImGui en cours ; view.done passe à vrai sur « Commencer ».
+// Dessine l'écran dans le cadre ImGui en cours ; view.done passe à vrai sur « Commencer » (« Continuer
+// la lecture » quand il est rouvert), view.cancelled sur « Annuler ».
 void draw_first_run(FirstRunView& view, float scale);
 
 }  // namespace ajp::app::play

@@ -17,6 +17,7 @@
 #include "app/play/chain.h"
 #include "app/play/display_edid.h"
 #include "app/play/drba_model.h"
+#include "app/play/engine_install.h"
 #include "app/play/gmfss_model.h"
 #include "app/play/placebo_screen.h"
 #include "app/play/player.h"
@@ -56,10 +57,12 @@ struct SnapshotPlan {
 };
 
 // Ce qui survit à une réouverture de la chaîne : la fenêtre, l'interface, la bibliothèque du
-// backend, les touches et l'instantané d'essai, les pistes choisies.
+// backend (que l'onglet Moteurs peut changer), les touches et l'instantané d'essai, les pistes
+// choisies.
 struct Player {
   const PlayOptions& options;
   const PlayerPaths& paths;
+  const EngineCatalog& catalog;  // les moteurs téléchargeables (engines.lock)
   PlaceboScreen& screen;
   PlayerUi& ui;
   std::shared_ptr<BackendLibrary> library;
@@ -78,7 +81,11 @@ struct Player {
   std::optional<DisplayFacts> display;  // l'écran selon son EDID (OLED ou non)
   std::filesystem::path resume_path;    // mémoire de lecture (resume.h) ; vide : aucune
   bool resumed = false;                 // la lecture reprend là où elle s'était arrêtée : à annoncer
+  std::string notice;                   // à annoncer à la prochaine ouverture (moteur changé)
 };
+
+// Les messages des backends, sur le canal « backend » du journal.
+gpu::BackendLog backend_log();
 
 // Une image de la superposition avant une étape bloquante (chargement d'un moteur, RTX HDR) : la
 // fenêtre dit ce qu'elle attend au lieu de rester noire.

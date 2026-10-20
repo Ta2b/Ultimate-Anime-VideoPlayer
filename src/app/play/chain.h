@@ -48,10 +48,11 @@ struct Chain {
   ProfileState& profiles;
   bool rife_loaded = false;
   bool true_hdr_open = false;
-  int auto_peak = 0;                   // pic automatique de RTX HDR
-  int peak_nits = 0;                   // pic donné à RTX HDR, 0 sans lui
-  bool dirty = false;                  // play.toml à réécrire
-  std::optional<PlaySettings> reopen;  // demandé par le menu des paramètres
+  int auto_peak = 0;                    // pic automatique de RTX HDR
+  int peak_nits = 0;                    // pic donné à RTX HDR, 0 sans lui
+  bool dirty = false;                   // play.toml à réécrire
+  std::optional<PlaySettings> reopen;   // demandé par le menu des paramètres
+  std::optional<EngineChange> engines;  // onglet Moteurs : à faire avant de rouvrir
   const std::optional<DisplayFacts>& display;
   // Vrai noir OLED : la rampe passée par TrueHDR (codes PQ, de gpu), les seuils en cours, et le
   // recalage demandé (au plus 5 fois par seconde).

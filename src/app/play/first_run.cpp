@@ -11,6 +11,8 @@
 
 #include <imgui.h>
 
+#include "app/play/engine_switch.h"
+
 namespace ajp::app::play {
 namespace {
 
@@ -164,19 +166,10 @@ bool chosen(const core::Settings& settings, core::EngineId id) {
 std::vector<std::filesystem::path> backends_within(std::span<const std::filesystem::path> candidates,
                                                    const core::Settings& engines) {
   // Chaque bibliothèque d'un moteur facultatif ne s'essaie que choisie ; Vulkan, toujours.
-  constexpr std::array<std::pair<std::string_view, core::EngineId>, 4> kOptional{{
-      {"tensorrt", core::EngineId::TensorRt},
-      {"migraphx", core::EngineId::MiGraphX},
-      {"openvino", core::EngineId::OpenVino},
-      {"coreml", core::EngineId::Metal},  // le moteur natif du Mac : Core ML derrière MoltenVK
-  }};
   std::vector<std::filesystem::path> out;
   for (const std::filesystem::path& path : candidates) {
-    const std::string file = path.filename().string();
-    const bool allowed = std::ranges::all_of(kOptional, [&](const auto& engine) {
-      return !file.contains(engine.first) || chosen(engines, engine.second);
-    });
-    if (allowed) out.push_back(path);
+    const std::optional<core::EngineId> id = engine_of_library(path);
+    if (!id || *id == core::EngineId::Vulkan || chosen(engines, *id)) out.push_back(path);
   }
   return out;
 }
@@ -455,7 +448,9 @@ void draw_first_run(FirstRunView& view, float scale) {
                                       ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoSavedSettings;
   if (ImGui::Begin("Bienvenue", nullptr, kFlags)) {
     ImGui::TextUnformatted(view.gpu.c_str());
-    note("Le lecteur a choisi pour ce GPU ; tout se change ensuite dans les paramètres (p).");
+    note(view.revisit
+             ? "Les moteurs cochés à télécharger s'installent, puis la lecture reprend au même endroit."
+             : "Le lecteur a choisi pour ce GPU ; tout se change ensuite dans les paramètres (p).");
     const ImGuiStyle& style = ImGui::GetStyle();
     const ImVec2 room = ImGui::GetContentRegionAvail();
     const float footer = ImGui::CalcTextSize(kFooter, nullptr, false, room.x).y +
@@ -474,10 +469,15 @@ void draw_first_run(FirstRunView& view, float scale) {
     note(kFooter);
     ImGui::PushStyleColor(ImGuiCol_Button, kAccent);
     ImGui::PushStyleColor(ImGuiCol_Text, ImVec4{0.05F, 0.07F, 0.12F, 1.0F});
-    const ImVec2 button{ImGui::CalcTextSize("Commencer").x + style.FramePadding.x * 6.0F,
-                        ImGui::GetFrameHeight() * 1.4F};
-    if (ImGui::Button("Commencer", button)) view.done = true;
+    const char* start = view.revisit ? "Continuer la lecture" : "Commencer";
+    const float tall = ImGui::GetFrameHeight() * 1.4F;
+    if (ImGui::Button(start, {ImGui::CalcTextSize(start).x + style.FramePadding.x * 6.0F, tall}))
+      view.done = true;
     ImGui::PopStyleColor(2);
+    if (view.revisit) {
+      ImGui::SameLine();
+      if (ImGui::Button("Annuler", {0.0F, tall})) view.cancelled = true;
+    }
   }
   ImGui::End();
 }

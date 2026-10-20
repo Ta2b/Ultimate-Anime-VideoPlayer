@@ -402,6 +402,17 @@ void switch_profile(Chain& to, int slot, std::int64_t now_us) {
   }
 }
 
+// Onglet Moteurs : la chaîne se ferme pour changer de moteur ou rouvrir l'écran des moteurs, puis
+// se rouvre avec les mêmes réglages au même endroit.
+void ask_engines(Chain& to, EngineChange request) {
+  log_channel("app")->info("moteurs : {}", std::holds_alternative<UseEngine>(request)
+                                               ? "changement du moteur des réseaux"
+                                               : "écran des moteurs rouvert");
+  if (std::holds_alternative<OpenEngineScreen>(request)) to.ui.close_settings();
+  to.engines = request;
+  to.reopen = to.running;
+}
+
 }  // namespace
 
 // Une action du clavier ou de l'interface. La barre paraît aussi après un seek au clavier.
@@ -487,6 +498,8 @@ void apply(const Input& input, Chain& to, std::int64_t now_us) {
               apply_live(to, apply.settings, now_us);
             }
           },
+          [&](const UseEngine& use) { ask_engines(to, use); },
+          [&](const OpenEngineScreen& open) { ask_engines(to, open); },
           [&](const EditProfile& edit) {
             const std::array<core::UserEdit, 1> edits{edit.edit};
             auto edited = edit_profiles(to.profiles.user_path, to.profiles.data, edits);

@@ -1,6 +1,6 @@
 // Le menu des paramètres : un panneau à droite de l'écran, par onglets (Image, Fluidité, RTX HDR,
-// Son, Statistiques, Moteurs). Les réglages en direct s'appliquent pendant qu'on les change ;
-// ceux qui demandent de rouvrir la chaîne attendent « Appliquer », sous un encadré qui dit ce qui
+// Son, Statistiques, Moteurs : settings_engines.h). Les réglages en direct s'appliquent pendant qu'on les
+// change ; ceux qui demandent de rouvrir la chaîne attendent « Appliquer », sous un encadré qui dit ce qui
 // sera reconstruit ou rechargé (settings.h : change_between).
 #pragma once
 
@@ -11,6 +11,7 @@
 
 #include "app/play/input.h"
 #include "app/play/settings.h"
+#include "core/engines.h"
 
 namespace ajp::app::play {
 
@@ -51,9 +52,12 @@ struct SettingsChoices {
   bool hdr_output = true;                // l'écran reçoit du PQ (sinon ni HDR natif ni grade)
   int auto_peak = 0;                     // pic automatique de RTX HDR, en nits
   std::vector<EngineBadge> engines;
-  std::string chosen_engines;  // « Vulkan, TensorRT, NVIDIA Maxine (RTX HDR) » (settings.toml)
-  std::string display_text;    // l'écran selon son EDID (display_edid.h : describe)
-  std::string black_status;    // seuils du vrai noir en cours
+  std::string chosen_engines;              // « Vulkan, TensorRT, NVIDIA Maxine (RTX HDR) » (settings.toml)
+  std::vector<core::EngineId> switchable;  // moteurs de SPAN et RIFE installés (engine_switch.h)
+  std::optional<core::EngineId> engine_in_use;  // celui de la bibliothèque chargée
+  std::string engine_note;                      // le moteur préféré a refusé ce GPU : pourquoi
+  std::string display_text;                     // l'écran selon son EDID (display_edid.h : describe)
+  std::string black_status;                     // seuils du vrai noir en cours
   ProfilesView profiles;
 };
 
@@ -63,6 +67,7 @@ class SettingsPanel {
     open_ = true;
     draft_ = running;
     seen_ = running;
+    engine_draft_.reset();
   }
   void close() { open_ = false; }
   bool is_open() const { return open_; }
@@ -79,8 +84,9 @@ class SettingsPanel {
   bool open_ = false;
   PlaySettings draft_;  // ce que montre le panneau ; diffère de running pour ce qui attend « Appliquer »
   PlaySettings seen_;   // running au tour précédent
-  std::array<char, 64> rename_{};  // nouveau nom du profil actif, en cours de saisie
-  int shown_profile_ = 0;          // profil dont rename_ porte le nom
+  std::array<char, 64> rename_{};               // nouveau nom du profil actif, en cours de saisie
+  int shown_profile_ = 0;                       // profil dont rename_ porte le nom
+  std::optional<core::EngineId> engine_draft_;  // moteur coché dans l'onglet Moteurs, pas appliqué
 };
 
 }  // namespace ajp::app::play

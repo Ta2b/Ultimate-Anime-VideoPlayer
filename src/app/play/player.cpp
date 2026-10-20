@@ -23,8 +23,9 @@
 #include "app/play/display_edid.h"
 #include "app/play/drba_model.h"
 #include "app/play/engine_build.h"
-#include "app/play/engine_downloads.h"
 #include "app/play/engine_install.h"
+#include "app/play/engine_screen.h"
+#include "app/play/engine_switch.h"
 #include "app/play/first_run.h"
 #include "app/play/gmfss_model.h"
 #include "app/play/host_facts.h"
@@ -62,25 +63,6 @@ std::unexpected<Refusal> refuse(RefusalCode code, std::string detail) {
   return std::unexpected(Refusal{code, std::move(detail)});
 }
 
-gpu::BackendLog backend_log() {
-  return [channel = log_channel("backend")](gpu::BackendLogLevel level, std::string_view message) {
-    switch (level) {
-      case gpu::BackendLogLevel::Debug:
-        channel->debug("{}", message);
-        break;
-      case gpu::BackendLogLevel::Info:
-        channel->info("{}", message);
-        break;
-      case gpu::BackendLogLevel::Warn:
-        channel->warn("{}", message);
-        break;
-      case gpu::BackendLogLevel::Error:
-        channel->error("{}", message);
-        break;
-    }
-  };
-}
-
 // La piste vidéo que la source choisira, lue d'avance : sa taille fixe le moteur et le ring.
 // Le décodeur suit le backend : NVDEC en mémoire CUDA pour TensorRT ; ailleurs, sous Linux, VA-API
 // (le bloc vidéo d'AMD ou d'Intel, même sur le GPU intégré d'un portable) copié en mémoire hôte,
@@ -106,14 +88,13 @@ std::expected<media::TrackInfo, Refusal> probe_video(const std::filesystem::path
 
 // Seuils du vrai noir recalés au plus 5 fois par seconde pendant qu'on règle.
 constexpr std::int64_t kBlackRefreshUs = 200'000;
-// L'écran de bienvenue suit la souris : ~60 images par seconde.
-constexpr std::uint32_t kWelcomeFrameMs = 16;
 
 // Fin d'une ouverture de la chaîne : la lecture est finie (rien), ou le menu demande de la rouvrir
 // avec ces réglages à cette position.
 struct Reopen {
   PlaySettings settings;
   std::int64_t position_us = 0;
+  std::optional<EngineChange> engines;  // onglet Moteurs : à faire avant de rouvrir
 };
 
 // Où chercher les graphes de GMFSS : à côté du modèle RIFE choisi, puis dans les dossiers RIFE.
@@ -403,6 +384,9 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
               engine_badges(p.paths.engines, model ? model->path : std::filesystem::path(), work,
                             rife || rife_motion ? rife_model : std::nullopt, rife_motion ? g : image_g),
           .chosen_engines = chosen_line(p.engines),
+          .switchable = installed_switchable(p.catalog, p.paths),
+          .engine_in_use = engine_of_library(p.library->path()),
+          .engine_note = fallback_note(p.engines, p.library->path()),
           .display_text = p.display ? describe(*p.display) : std::string("EDID illisible : OLED inconnu")});
   p.profiles.source =
       core::SourceInfo{.width = video.width, .height = video.height, .fps = fps_of(video.frame_rate)};
@@ -436,6 +420,10 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
     p.ui.controls().notify(std::format("Reprise à {}", format_clock(start_us, session.view().duration_us)),
                            host_now_us());
     p.resumed = false;
+  }
+  if (!p.notice.empty()) {
+    p.ui.controls().notify(p.notice, host_now_us());
+    p.notice.clear();
   }
   // La position retenue toutes les kResumeEveryUs, et à la fin : un arrêt brutal en perd peu.
   std::int64_t kept_us = kNoPts;
@@ -513,7 +501,8 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
   std::optional<Reopen> reopen;
   if (chain.reopen && !failure) {
     reopen = Reopen{.settings = *chain.reopen,
-                    .position_us = std::max<std::int64_t>(session.view().position_us, 0)};
+                    .position_us = std::max<std::int64_t>(session.view().position_us, 0),
+                    .engines = chain.engines};
     reopen->settings.volume = p.ui.controls().volume();
     p.audio_track = (*pipeline)->tracks().audio_selected;
     p.subtitle_track = (*pipeline)->tracks().subtitle_selected;
@@ -529,41 +518,6 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
   backend->reset();
   if (failure) return std::unexpected(std::move(*failure));
   return reopen;
-}
-
-// L'écran de bienvenue jusqu'à « Commencer » ; rien si l'utilisateur quitte. Les touches d'essai
-// (--keys) qui tombent pendant l'écran y sont pressées, comptées depuis son ouverture.
-std::expected<std::optional<FirstRunView>, Refusal> welcome(PlaceboScreen& screen, PlayerUi& ui,
-                                                            FirstRunView view, const PlayOptions& options,
-                                                            std::size_t& next_key, SnapshotPlan& snapshot) {
-  const core::KeyMap keys = core::KeyMap::defaults();
-  const std::int64_t started = host_now_us();
-  std::vector<Input> actions;
-  while (!view.done) {
-    for (; next_key < options.keys.size() && host_now_us() - started >= options.keys[next_key].first;
-         ++next_key)
-      press(options.keys[next_key].second, screen.window());
-    SDL_Event event;
-    while (SDL_PollEvent(&event)) {
-      if (ui.handle(event, host_now_us(), actions)) continue;
-      if (auto input = input_of(event, keys)) actions.push_back(*input);
-    }
-    for (const Input& input : actions) {
-      if (const auto* command = std::get_if<Command>(&input)) {
-        if (std::holds_alternative<cmd::Quit>(*command)) return std::nullopt;
-      } else if (std::holds_alternative<ToggleFullscreen>(input)) {
-        screen.set_fullscreen(!screen.fullscreen());
-      } else if (std::holds_alternative<LeaveFullscreen>(input)) {
-        screen.set_fullscreen(false);
-      }
-    }
-    actions.clear();
-    snapshot.maybe(screen, started);
-    if (auto shown = screen.show(ShowRequest{.ui = ui.welcome(host_now_us(), view)}); !shown)
-      return std::unexpected(std::move(shown.error()));
-    SDL_Delay(kWelcomeFrameMs);
-  }
-  return view;
 }
 
 }  // namespace
@@ -637,32 +591,16 @@ std::expected<void, Refusal> play(const PlayOptions& options, const PlayerPaths&
   // Les moteurs téléchargeables de cette version (engines.lock livré avec le lecteur).
   const EngineCatalog catalog = load_catalog(paths.engine_index, paths.engines.parent_path());
   if (!catalog.problem.empty()) log->info("{}", catalog.problem);
+  const EngineScreen engine_screen{.screen = **screen,
+                                   .ui = **ui,
+                                   .options = options,
+                                   .paths = paths,
+                                   .catalog = catalog,
+                                   .engines_path = engines_path};
   if (!engines->first_run_done || options.first_run) {
-    const GpuFacts gpu = gpu_facts(**screen);
-    ProfilesView choice = view_of(profiles);
-    if (!engines->first_run_done) choice.start = start_profile_for(gpu);
-    log->info("bienvenue : {}", gpu_line(gpu));
-    auto chosen =
-        welcome(**screen, **ui,
-                first_run_view(gpu, engines_here(options, paths, catalog), std::move(choice), *engines),
-                options, next_key, snapshot);
-    if (!chosen) return std::unexpected(std::move(chosen.error()));
-    if (!*chosen) return {};
-    engines = settings_after(**chosen, *engines);
-    auto downloaded =
-        install_chosen(**screen, **ui, catalog, **chosen, *engines, paths.engines.parent_path() / "sdk");
-    if (!downloaded) return std::unexpected(std::move(downloaded.error()));
-    if (!*downloaded) return {};
-    if (auto written = core::save_settings(engines_path, *engines); !written)
-      log->warn("{}", written.error().detail);
-    const std::array<core::UserEdit, 1> start{core::edit::StartProfile{.slot = (*chosen)->profiles.start}};
-    if (auto edited = edit_profiles(profiles.user_path, profiles.data, start)) {
-      profiles.data = std::move(*edited);
-    } else {
-      log->warn("user.toml : {}", edited.error().detail);
-    }
-    profiles.active = profiles.data.file.start_profile;
-    log->info("moteurs choisis : {} ; profil de démarrage {}", chosen_line(*engines), profiles.active);
+    auto shown = run_engine_screen(engine_screen, *engines, profiles, false, next_key, snapshot);
+    if (!shown) return std::unexpected(std::move(shown.error()));
+    if (!*shown) return {};
   }
 
   PlaySettings from_profile = *saved;
@@ -678,14 +616,12 @@ std::expected<void, Refusal> play(const PlayOptions& options, const PlayerPaths&
   show_loading(**screen, **ui, "Chargement");
   const gpu::BackendInit probe{
       .render = &(*screen)->device(), .cache_dir = paths.engines, .log = backend_log()};
-  // Les backends téléchargés d'abord, puis ceux livrés ou de l'arbre de construction.
-  std::vector<std::filesystem::path> candidates = installed_backends(catalog);
-  candidates.insert(candidates.end(), paths.backends.begin(), paths.backends.end());
-  auto library = BackendLibrary::choose(backends_within(candidates, *engines), probe);
+  auto library = open_backend(catalog, paths, *engines, probe);
   if (!library) return std::unexpected(std::move(library.error()));
 
   Player player{.options = options,
                 .paths = paths,
+                .catalog = catalog,
                 .screen = **screen,
                 .ui = **ui,
                 .library = *library,
@@ -724,6 +660,14 @@ std::expected<void, Refusal> play(const PlayOptions& options, const PlayerPaths&
       break;
     }
     if (!*outcome) break;
+    if (const std::optional<EngineChange>& request = (*outcome)->engines) {
+      auto handled = handle_engine_change(player, *request);
+      if (!handled) {
+        result = std::unexpected(std::move(handled.error()));
+        break;
+      }
+      if (!*handled) break;
+    }
     settings = (*outcome)->settings;
     start_us = (*outcome)->position_us;
     player.details = settings.stats.all;

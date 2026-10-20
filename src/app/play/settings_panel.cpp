@@ -12,13 +12,16 @@
 #include "app/play/drba_model.h"
 #include "app/play/gmfss_model.h"
 #include "app/play/model_choice.h"
+#include "app/play/panel_style.h"
+#include "app/play/settings_engines.h"
 
 namespace ajp::app::play {
 namespace {
 
-constexpr ImVec4 kAccent{0.42F, 0.66F, 1.0F, 1.0F};
-constexpr ImVec4 kNote{0.66F, 0.68F, 0.74F, 1.0F};
-constexpr ImVec4 kWarn{1.0F, 0.78F, 0.42F, 1.0F};
+using panel::kNote;
+using panel::kWarn;
+using panel::note;
+using panel::section;
 
 struct HeightChoice {
   int lines;
@@ -31,23 +34,6 @@ constexpr std::array<HeightChoice, 5> kHeights{{
     {540, "540 lignes"},
     {480, "480 lignes"},
 }};
-
-void note(const char* text) {
-  ImGui::PushStyleColor(ImGuiCol_Text, kNote);
-  ImGui::TextWrapped("%s", text);
-  ImGui::PopStyleColor();
-}
-void note(const std::string& text) {
-  note(text.c_str());
-}
-
-void section(const char* title) {
-  ImGui::Spacing();
-  ImGui::PushStyleColor(ImGuiCol_Text, kAccent);
-  ImGui::TextUnformatted(title);
-  ImGui::PopStyleColor();
-  ImGui::Separator();
-}
 
 void image_tab(PlaySettings& d, const SettingsChoices& choices) {
   section("Agrandissement");
@@ -465,26 +451,6 @@ void profiles_tab(const ProfilesView& view, std::array<char, 64>& rename, std::v
     actions.emplace_back(EditProfile{.edit = core::edit::ResetProfile{.slot = view.active}});
 }
 
-void engines_tab(const SettingsChoices& choices) {
-  section("Moteurs choisis");
-  ImGui::TextWrapped("%s", choices.chosen_engines.c_str());
-  note("Choisis à l'écran de bienvenue ; ajp-anime --first-run le remontre.");
-  section("Moteurs TensorRT");
-  if (choices.engines.empty()) note("Aucun moteur construit.");
-  for (const EngineBadge& engine : choices.engines) {
-    ImGui::TextUnformatted(engine.name.c_str());
-    ImGui::SameLine();
-    ImGui::PushStyleColor(ImGuiCol_Text, engine.loaded ? kAccent : kNote);
-    ImGui::TextUnformatted(engine.loaded ? "· chargé" : "· en cache");
-    ImGui::PopStyleColor();
-    ImGui::PushStyleColor(ImGuiCol_Text, kNote);
-    ImGui::TextUnformatted(engine.detail.c_str());
-    ImGui::PopStyleColor();
-    ImGui::Spacing();
-  }
-  note("Un moteur est construit une fois par modèle et par taille, puis relu du cache.");
-}
-
 }  // namespace
 
 SettingsPanel::Result SettingsPanel::draw(const PlaySettings& running, const SettingsChoices& choices,
@@ -546,7 +512,7 @@ SettingsPanel::Result SettingsPanel::draw(const PlaySettings& running, const Set
         ImGui::EndTabItem();
       }
       if (ImGui::BeginTabItem("Moteurs")) {
-        engines_tab(choices);
+        engines_tab(choices, engine_draft_, actions);
         ImGui::EndTabItem();
       }
       ImGui::EndTabBar();

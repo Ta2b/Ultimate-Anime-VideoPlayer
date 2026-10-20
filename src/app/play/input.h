@@ -12,6 +12,7 @@
 #include <SDL3/SDL_events.h>
 
 #include "app/play/settings.h"
+#include "core/engines.h"
 #include "core/keys.h"
 #include "core/messages.h"
 #include "core/user_overlay.h"
@@ -46,9 +47,16 @@ struct ApplySettings {
   PlaySettings settings;
   bool reopen = false;
 };
+// Onglet Moteurs : SPAN et RIFE sur un autre moteur installé (engine_switch.h), ou l'écran des
+// moteurs rouvert ; la chaîne se rouvre ensuite au même endroit.
+struct UseEngine {
+  core::EngineId id = core::EngineId::Vulkan;
+};
+struct OpenEngineScreen {};
+using EngineChange = std::variant<UseEngine, OpenEngineScreen>;
 using Input = std::variant<Command, ToggleFullscreen, LeaveFullscreen, ToggleMute, VolumeStep, SelectAudio,
                            SelectSubtitles, CycleAudio, CycleSubtitles, StepChapter, ToggleSettings,
-                           ApplySettings, EditProfile>;
+                           ApplySettings, EditProfile, UseEngine, OpenEngineScreen>;
 
 // L'action d'un événement SDL, ou rien. Fermer la fenêtre vaut cmd::Quit.
 std::optional<Input> input_of(const SDL_Event& event, const core::KeyMap& keys);
