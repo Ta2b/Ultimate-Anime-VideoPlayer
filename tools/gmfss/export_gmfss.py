@@ -402,7 +402,7 @@ def frames_for(width, height, seed):
 @torch.inference_mode()
 def check(reference, gmfss, pair_path, fusion_path, width, height, t):
     """Écart à GMFSS.forward (FP32, fonctions d'origine) de la coupe en PyTorch puis des graphes
-    ONNX, splats faits ici ; rend le plus grand des deux."""
+    ONNX, splats faits ici ; rend les écarts maximaux de la coupe et de l'ONNX, et l'écart moyen de l'ONNX."""
     dtype = next(gmfss.parameters()).dtype
     img0, img1 = frames_for(width, height, seed=width * 7 + height)
     expected = reference(img0, img1, torch.tensor([t]))
@@ -424,7 +424,7 @@ def check(reference, gmfss, pair_path, fusion_path, width, height, t):
     mean_gap = (onnx_out - expected).abs().mean().item()
     print(f"  {width}x{height} t={t} : coupe {torch_gap:.2e}, graphe paire {pair_gap:.2e}, "
           f"ONNX de bout en bout {onnx_gap:.2e} (moyenne {mean_gap:.2e})")
-    return max(torch_gap, onnx_gap)
+    return torch_gap, onnx_gap, mean_gap
 
 
 def export_pair(gmfss, model_type, out, stem, width, height):
@@ -466,15 +466,20 @@ def main():
     # FP32 d'abord, vérifié strictement à deux tailles : la coupe et les tailles variables tiennent.
     with tempfile.TemporaryDirectory() as scratch:
         pair_path, fusion_path = export_pair(reference, args.model, Path(scratch), stem, args.width, args.height)
-        worst = max(check(reference, reference, pair_path, fusion_path, *size) for size in sizes)
-    if not np.isfinite(worst) or worst > 1e-3:
-        sys.exit(f"FP32 : écart {worst:.2e} au-delà de 1e-3 : la coupe ou l'export ne tient pas")
+        gaps = [check(reference, reference, pair_path, fusion_path, *size) for size in sizes]
+    # La coupe doit être exacte. ONNX Runtime (CPU) calcule la métrique de MetricNet (|m| ≈ 15) à
+    # 1e-3 près, et e^m l'amplifie dans le splat : quelques pixels à ~7e-3, la moyenne reste à
+    # 1e-5. Une coupe fausse ou une taille figée à l'export lèverait la moyenne.
+    cut, worst, mean = (max(gap[i] for gap in gaps) for i in range(3))
+    if not all(np.isfinite((cut, worst, mean))) or cut > 1e-3 or worst > 1e-2 or mean > 1e-4:
+        sys.exit(f"FP32 : coupe {cut:.2e} (≤ 1e-3), ONNX {worst:.2e} (≤ 1e-2), moyenne {mean:.2e} (≤ 1e-4) : "
+                 "la coupe ou l'export ne tient pas")
 
     # Puis le FP16 que TensorRT construit (grilles d'échantillonnage en FP32), le même code tracé.
     half = GMFSS(models, args.model, 1.0, False).eval().half()
     pair_path, fusion_path = export_pair(half, args.model, args.out, stem, args.width, args.height)
     print(f"{pair_path}\n{fusion_path}")
-    worst = max(check(reference, half, pair_path, fusion_path, *size) for size in sizes)
+    worst = max(max(check(reference, half, pair_path, fusion_path, *size)[:2]) for size in sizes)
     if not np.isfinite(worst) or worst > 0.1:
         sys.exit(f"FP16 : écart {worst:.2e} au-delà de 0,1")
 
