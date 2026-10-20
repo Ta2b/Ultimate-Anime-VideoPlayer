@@ -20,26 +20,32 @@ jobs:
     name: Lecteur Windows (x64)
     runs-on: windows-2025
     env:
-      VCPKG_ROOT: ${{ github.workspace }}/../vcpkg
-      VCPKG_BINARY_SOURCES: "clear;x-gha,readwrite"
+      # Chemins courts : les sources de spirv-tools dépassent sinon les 260 caractères de MSVC.
+      AJP_VCPKG: C:\v
+      AJP_VCPKG_BUILDTREES: C:\vb
+      VCPKG_BINARY_SOURCES: "clear;files,C:\\vc,readwrite"
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/github-script@v7
+      - uses: actions/cache@v4
         with:
-          script: |
-            core.exportVariable('ACTIONS_CACHE_URL', process.env.ACTIONS_CACHE_URL || '');
-            core.exportVariable('ACTIONS_RUNTIME_TOKEN', process.env.ACTIONS_RUNTIME_TOKEN || '');
+          path: C:\vc
+          key: vcpkg-windows-x64-${{ hashFiles('vcpkg.json', 'ports/**') }}
+          restore-keys: vcpkg-windows-x64-
       - name: vcpkg à la référence du manifeste
         shell: pwsh
         run: |
+          New-Item -ItemType Directory -Force -Path C:\vc | Out-Null
           $baseline = (Get-Content vcpkg.json | ConvertFrom-Json).'builtin-baseline'
-          git clone -q https://github.com/microsoft/vcpkg $env:VCPKG_ROOT
-          git -C $env:VCPKG_ROOT checkout -q $baseline
-          & "$env:VCPKG_ROOT/bootstrap-vcpkg.bat" -disableMetrics
+          git clone -q https://github.com/microsoft/vcpkg $env:AJP_VCPKG
+          git -C $env:AJP_VCPKG checkout -q $baseline
+          & "$env:AJP_VCPKG/bootstrap-vcpkg.bat" -disableMetrics
       - uses: ilammy/msvc-dev-cmd@v1
       - name: Paquet
         shell: pwsh
-        run: pwsh tools/release/package-windows.ps1 "$env:RUNNER_TEMP/package"
+        # msvc-dev-cmd pose le vcpkg de Visual Studio : le nôtre, à la référence du manifeste.
+        run: |
+          $env:VCPKG_ROOT = $env:AJP_VCPKG
+          pwsh tools/release/package-windows.ps1 "$env:RUNNER_TEMP/package"
       - uses: actions/upload-artifact@v4
         with:
           name: ajp-windows-x64

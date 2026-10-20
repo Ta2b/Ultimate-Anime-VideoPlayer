@@ -22,7 +22,11 @@ $Tag = if ($env:AJP_RELEASE_TAG) { $env:AJP_RELEASE_TAG } else { "v$Version" }
 $BaseUrl = "https://github.com/Ta2b/Ultimate-Anime-VideoPlayer/releases/download/$Tag"
 $Cuda = if ($env:AJP_WITH_CUDA) { $env:AJP_WITH_CUDA } else { "OFF" }
 
-cmake --preset windows-release -S $Root "-DAJP_WITH_CUDA=$Cuda"
+$Extra = @()
+# Arbre de construction de vcpkg ailleurs (un chemin court : les sources de certains ports
+# dépassent les 260 caractères de MSVC sous build/).
+if ($env:AJP_VCPKG_BUILDTREES) { $Extra += "-DVCPKG_INSTALL_OPTIONS=--x-buildtrees-root=$env:AJP_VCPKG_BUILDTREES" }
+cmake --preset windows-release -S $Root "-DAJP_WITH_CUDA=$Cuda" @Extra
 if ($LASTEXITCODE -ne 0) { throw "configuration" }
 cmake --build --preset windows-release
 if ($LASTEXITCODE -ne 0) { throw "construction" }
