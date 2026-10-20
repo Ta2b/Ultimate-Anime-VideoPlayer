@@ -181,12 +181,42 @@ std::vector<std::filesystem::path> backends_within(std::span<const std::filesyst
   return out;
 }
 
-bool rocm_listed(std::string_view gpu_name) {
-  std::string name(gpu_name);
-  std::ranges::transform(name, name.begin(),
+namespace {
+
+std::string lower(std::string_view text) {
+  std::string out(text);
+  std::ranges::transform(out, out.begin(),
                          [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
-  // RADV nomme la puce (« AMD Radeon RX 6500M (RADV NAVI24) ») : elle seule décide.
-  constexpr std::array kListedChips{"navi21", "navi31", "navi32", "navi33", "navi44", "navi48"};
+  return out;
+}
+
+}  // namespace
+
+bool amd_matrix_cores(std::string_view gpu_name) {
+  const std::string name = lower(gpu_name);
+  // RADV nomme la puce : NAVI3x pour RDNA3, GFX1200 et GFX1201 pour RDNA4 (Mesa ne leur donne
+  // pas de nom de code).
+  constexpr std::array kWmmaChips{"navi31", "navi32", "navi33", "gfx11", "gfx12"};
+  if (name.contains("(radv ")) {
+    return std::ranges::any_of(kWmmaChips, [&](std::string_view chip) { return name.contains(chip); });
+  }
+  if (name.contains("pro w7") || name.contains("r9700")) return true;
+  // Le pilote AMD ne donne que le produit : toutes les RX 7000 (portables comprises) et 9000.
+  for (std::size_t at = name.find("rx "); at != std::string::npos; at = name.find("rx ", at + 1)) {
+    const std::string_view model = std::string_view(name).substr(at + 3);
+    if (model.size() >= 4 && (model[0] == '7' || model[0] == '9') &&
+        std::isdigit(static_cast<unsigned char>(model[1])))
+      return true;
+  }
+  return false;
+}
+
+bool rocm_listed(std::string_view gpu_name) {
+  const std::string name = lower(gpu_name);
+  // RADV nomme la puce (« AMD Radeon RX 6500M (RADV NAVI24) ») : elle seule décide. RDNA4 y
+  // porte son nom GFX (« AMD Radeon RX 9070 XT (RADV GFX1201) »).
+  constexpr std::array kListedChips{"navi21",  "navi31",  "navi32",  "navi33",  "navi44", "navi48",
+                                    "gfx1100", "gfx1101", "gfx1102", "gfx1200", "gfx1201"};
   if (name.contains("(radv ")) {
     return std::ranges::any_of(kListedChips, [&](std::string_view chip) { return name.contains(chip); });
   }
@@ -232,11 +262,15 @@ std::string gpu_line(const GpuFacts& gpu) {
                                                                  static_cast<double>(kGiB))));
   }
   if (gpu.tensor_cores) line += " · cœurs Tensor";
+  if (gpu.wmma) line += " · unités matricielles (WMMA)";
   return line;
 }
 
 int start_profile_for(const GpuFacts& gpu) {
   if (gpu.vendor == GpuVendor::Nvidia && gpu.tensor_cores) return gpu.vram_bytes >= kQualityVram ? 1 : 7;
+  // Une RDNA3 ou RDNA4 de 12 Go et plus (RX 7900, RX 9070 XT) : matrices coopératives du moteur
+  // Vulkan ou MIGraphX, au niveau d'une RTX 4070 Ti.
+  if (gpu.vendor == GpuVendor::Amd && gpu.wmma && gpu.vram_bytes >= kQualityVram) return 1;
   // Sans cœurs Tensor, le moteur Vulkan tient 540p ×2 sur une carte dédiée de 4 Go (RX 6500) ;
   // un GPU Intel (intégré le plus souvent) ou plus petit reste sur la source.
   return gpu.vendor != GpuVendor::Intel && gpu.vram_bytes >= kLightVram ? 7 : 9;

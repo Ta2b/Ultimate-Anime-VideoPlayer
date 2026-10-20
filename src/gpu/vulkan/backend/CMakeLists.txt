@@ -25,6 +25,7 @@ ajp_add_module(vk_backend
     net_weights.cpp
     queue.cpp
     reduce_weights.cpp
+    shared_tensor.cpp
     vulkan_backend.cpp
     vulkan_backend_runtime.cpp
   DEPS ajp::vk_compute ajp::gpu_ir ajp::core_types

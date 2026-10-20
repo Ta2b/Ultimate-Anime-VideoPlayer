@@ -71,10 +71,12 @@ std::string display_name(SDL_Window* window) {
 GpuFacts gpu_facts(const PlaceboScreen& screen) {
   const PlaceboScreen::DeviceFacts facts = screen.device_facts();
   const GpuVendor vendor = vendor_from_pci(facts.pci_vendor);
-  return GpuFacts{.name = facts.name,
-                  .vendor = vendor,
-                  .vram_bytes = facts.vram_bytes,
-                  .tensor_cores = vendor == GpuVendor::Nvidia && facts.cooperative_matrix};
+  return GpuFacts{
+      .name = facts.name,
+      .vendor = vendor,
+      .vram_bytes = facts.vram_bytes,
+      .tensor_cores = vendor == GpuVendor::Nvidia && facts.cooperative_matrix,
+      .wmma = vendor == GpuVendor::Amd && facts.cooperative_matrix && amd_matrix_cores(facts.name)};
 }
 
 }  // namespace ajp::app::play

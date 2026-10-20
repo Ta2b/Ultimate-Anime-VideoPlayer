@@ -70,6 +70,14 @@ std::uint32_t matrix_step_channels(std::uint32_t cinp, std::uint32_t subgroups, 
   return 16;
 }
 
+// Taille de sous-groupe des matrices coopératives : 32 exigé quand l'appareil le permet (les WMMA
+// des RDNA en wave32, comme llama.cpp ; le pilote AMD annonce 64 par défaut), sinon celle du
+// pilote. Les noyaux en déduisent leurs sous-groupes par groupe de travail (SGS).
+std::uint32_t matrix_subgroup(const Target& target) {
+  if (target.subgroup_min != 0 && target.subgroup_min <= 32 && target.subgroup_max >= 32) return 32;
+  return target.subgroup_size;
+}
+
 // La variante coopmat convient-elle à ce nœud ? Entrée float16 en Nhwc16, groupe unique.
 bool matrix_eligible(const ir::Graph& graph, const ir::Node& node, const Target& target) {
   if (!target.matrix_units || target.subgroup_size == 0 || groups_of(node) != 1) return false;
@@ -106,9 +114,10 @@ std::expected<std::vector<KernelChoice>, Refusal> candidates(const ir::Graph& gr
   const bool conv = node.op == ir::OpKind::Conv;
   if (conv && matrix_eligible(graph, node, target)) {
     const std::uint32_t tiles = matrix_tiles(static_cast<std::uint32_t>(y.dims[1]));
-    for (const std::uint32_t subgroups : {4U, 2U}) {
+    // 8 sous-groupes (256 invocations en wave32) : les grandes images des RDNA4 et des Ada.
+    for (const std::uint32_t subgroups : {4U, 2U, 8U}) {
       for (const std::uint32_t tm : {2U, 1U, 4U}) {
-        if (tm * tiles > 16 || subgroups * target.subgroup_size > target.max_workgroup_invocations ||
+        if (tm * tiles > 16 || subgroups * matrix_subgroup(target) > target.max_workgroup_invocations ||
             matrix_shared_bytes(subgroups, tm, 16) > target.max_shared_memory) {
           continue;
         }
@@ -296,7 +305,8 @@ std::expected<void, Refusal> Lowerer::conv_matrix(std::size_t index, const Kerne
   }
   const std::uint32_t tm = choice.tuning[0];
   const std::uint32_t subgroups = choice.tuning[1];
-  const std::uint32_t wg = subgroups * target_.subgroup_size;
+  const std::uint32_t sgs = matrix_subgroup(target_);
+  const std::uint32_t wg = subgroups * sgs;
   const auto* attrs = std::get_if<ir::ConvAttrs>(&n.attrs);
   auto x = bind(n.inputs[ir::kConvX]);
   if (!x) return std::unexpected(x.error());
@@ -341,7 +351,7 @@ std::expected<void, Refusal> Lowerer::conv_matrix(std::size_t index, const Kerne
   std::vector<std::uint32_t> constants = conv_constants(x->desc, x->type, y->desc, y->type, *win, 1, e);
   constants.push_back(tm);
   constants.push_back(wg);
-  constants.push_back(target_.subgroup_size);
+  constants.push_back(sgs);
   constants.push_back(matrix_step_channels(x->desc.cp, subgroups, tm, target_.max_shared_memory));
   const ir::Tensor* weights = constant_input(graph_, n, ir::kConvW);
   const Binding w{.kind = BindingKind::Blob,
@@ -351,6 +361,7 @@ std::expected<void, Refusal> Lowerer::conv_matrix(std::size_t index, const Kerne
   if (x->desc.n > kMaxGroups) return refuse_node(RefusalCode::ShapeInvalid, n, "trop d'images");
   emit(index, "net_conv_coopmat_f16", std::move(constants), {x->binding, w, b, slope, residual, y->binding},
        {}, {div_up(pixels, bm), 1, x->desc.n});
+  if (sgs != target_.subgroup_size) program_.dispatches.back().subgroup = sgs;
   return {};
 }
 

@@ -2,11 +2,11 @@
 // Vulkan : la chaîne (ingestion, rife_input, warp, ring…) garde les noyaux Vulkan sur l'appareil
 // de rendu, seul le réseau passe par le runtime du fabricant.
 //
-// Les tenseurs des réseaux vivent alors en mémoire hôte visible du GPU (MemoryUse::Readback,
-// en cache côté hôte) : le runtime les lit et les écrit par leur projection, après l'attente sur
-// l'hôte de la file Vulkan (BackendCaps::needs_host_sync), et rend la main une fois ses sorties
-// écrites. Une copie de plus qu'une interop de mémoire, mais rien n'est partagé entre les deux
-// pilotes.
+// Les tenseurs des réseaux vivent en mémoire hôte visible du GPU (MemoryUse::Readback, en cache
+// côté hôte) : le runtime les lit et les écrit par leur projection, après l'attente sur l'hôte
+// de la file Vulkan (BackendCaps::needs_host_sync), et rend la main une fois ses sorties écrites.
+// Avec l'interop (MIGraphX sous Linux), ils vivent en mémoire d'appareil Vulkan exportée et
+// importée par le runtime : même attente, sans aller-retour par le bus PCIe.
 #pragma once
 
 #include <cstddef>
@@ -27,12 +27,21 @@
 
 namespace ajp::gpu::vk::net {
 
-// Un tenseur d'entrée ou de sortie, vu par l'hôte : NCHW dense, dans le type du réseau.
+// Un tenseur d'entrée ou de sortie : NCHW dense, dans le type du réseau. Vu par l'hôte (data),
+// ou, en interop, par le runtime sur l'appareil (device : la mémoire Vulkan importée).
 struct HostBinding {
   std::byte* data = nullptr;
   std::uint64_t bytes = 0;
   TensorType type = TensorType::F16;
   Shape shape;
+  void* device = nullptr;
+};
+
+// Mémoire d'appareil Vulkan importée par le runtime ; rendue à sa destruction.
+class ImportedMemory {
+ public:
+  virtual ~ImportedMemory() = default;
+  virtual void* device() const = 0;  // adresse dans l'espace du runtime (pointeur HIP)
 };
 
 // La forme fixée d'une entrée, par son nom.
@@ -64,6 +73,19 @@ class Runtime {
   virtual std::expected<void, Refusal> build(const ModelSpec& model, std::span<const InputShape> inputs,
                                              const std::filesystem::path& path, Progress& progress) = 0;
   virtual std::expected<std::unique_ptr<RuntimeNet>, Refusal> load(const std::filesystem::path& path) = 0;
+
+  // Interop (Linux) : le runtime sait-il importer une mémoire Vulkan exportée en descripteur
+  // opaque ? Le backend appelle alors use_device_memory(true) avant toute construction si
+  // l'appareil Vulkan exporte aussi (VK_KHR_external_memory_fd) : les réseaux lisent et écrivent
+  // la mémoire de la chaîne, sans copie par l'hôte.
+  virtual bool imports_memory() const { return false; }
+  virtual void use_device_memory(bool /*on*/) {}
+  // Importe bytes octets ; le runtime prend le descripteur en cas de succès. Refus
+  // FeatureUnavailable par défaut.
+  virtual std::expected<std::unique_ptr<ImportedMemory>, Refusal> import_memory(int /*fd*/,
+                                                                                std::uint64_t /*bytes*/) {
+    return std::unexpected(Refusal{RefusalCode::FeatureUnavailable, "import de mémoire non pris en charge"});
+  }
 };
 
 // Crée le runtime sur l'appareil de cette description Vulkan (même UUID, sinon le premier du

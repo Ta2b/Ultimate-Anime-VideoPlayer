@@ -26,14 +26,43 @@ class IExecutionContext;
 
 namespace ajp::gpu::cuda {
 
+// Mémoire d'activation partagée par les moteurs d'un backend : ils s'exécutent l'un après
+// l'autre sur sa file, une zone de la taille du plus gros suffit. Sans elle, RIFE, SPAN et les
+// graphes de GMFSS gardent chacun la leur : plusieurs centaines de Mo de plus sur les 6 Go d'une
+// RTX 4050 mobile.
+class SharedActivations {
+ public:
+  SharedActivations() = default;
+  SharedActivations(const SharedActivations&) = delete;
+  SharedActivations& operator=(const SharedActivations&) = delete;
+  SharedActivations(SharedActivations&&) = delete;
+  SharedActivations& operator=(SharedActivations&&) = delete;
+  ~SharedActivations();
+
+  // Au moins bytes octets ; une zone plus grande remplace l'ancienne après la fin du travail en
+  // cours sur l'appareil (generation() change). Refus GpuMemoryExhausted.
+  std::expected<void, Refusal> reserve(std::int64_t bytes);
+  void* data() const { return data_; }
+  std::int64_t bytes() const { return bytes_; }
+  std::uint64_t generation() const { return generation_; }
+
+ private:
+  void* data_ = nullptr;
+  std::int64_t bytes_ = 0;
+  std::uint64_t generation_ = 0;
+};
+
 class TrtEngine final : public Engine {
  public:
   static constexpr std::size_t kMaxInputs = 16;
   static constexpr std::size_t kMaxOutputs = 16;
   // Lit et désérialise le moteur. Refus : fichier illisible (IoFailed), moteur refusé par
   // ce TensorRT (VendorCallFailed), entrée ou sortie qui n'est pas un tenseur FP16 de rang 4.
-  static std::expected<std::unique_ptr<TrtEngine>, Refusal> load(nvinfer1::IRuntime& runtime,
-                                                                 const std::filesystem::path& path);
+  // shared : les activations dans cette zone commune (kUSER_MANAGED), sinon dans celle du
+  // contexte.
+  static std::expected<std::unique_ptr<TrtEngine>, Refusal> load(
+      nvinfer1::IRuntime& runtime, const std::filesystem::path& path,
+      std::shared_ptr<SharedActivations> shared = nullptr);
   ~TrtEngine() override;
   TrtEngine(const TrtEngine&) = delete;
   TrtEngine& operator=(const TrtEngine&) = delete;
@@ -70,6 +99,9 @@ class TrtEngine final : public Engine {
   };
   std::vector<Graph> graphs_;
   bool graphs_off_ = false;
+  std::shared_ptr<SharedActivations> shared_;
+  std::uint64_t shared_generation_ = 0;  // zone posée sur le contexte ; 0 : aucune
+  void drop_graphs();
   std::expected<void, Refusal> launch(cudaStream_t stream, Graph* graph);
 };
 

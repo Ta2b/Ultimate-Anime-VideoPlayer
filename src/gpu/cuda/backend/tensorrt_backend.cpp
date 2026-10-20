@@ -267,7 +267,8 @@ std::expected<Artifact, Refusal> TensorRtBackend::build(const ModelSpec& model, 
 
 std::expected<std::unique_ptr<Engine>, Refusal> TensorRtBackend::load(const Artifact& artifact) {
   if (auto ok = bind(); !ok) return std::unexpected(ok.error());
-  auto engine = TrtEngine::load(*runtime_, artifact.path);
+  if (!activations_) activations_ = std::make_shared<SharedActivations>();
+  auto engine = TrtEngine::load(*runtime_, artifact.path, activations_);
   if (!engine) return std::unexpected(std::move(engine.error()));
   return std::unique_ptr<Engine>(std::move(*engine));
 }

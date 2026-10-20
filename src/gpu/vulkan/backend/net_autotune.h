@@ -1,7 +1,8 @@
 // Autotuner du moteur Vulkan : pour chaque nœud qui a plusieurs variantes (convolutions), garde
-// la plus rapide sur cet appareil. Ordre de recherche : table pré-réglée de la famille, cache
-// (par GPU et pilote, modèle et résolution, signature de la couche), puis mesure : chaque
-// candidat est chronométré seul, par requêtes d'horodatage autour de plusieurs dispatchs
+// la plus rapide sur cet appareil parmi celles dont la sortie concorde avec celle du noyau direct
+// (un pilote dont les matrices coopératives se trompent ne casse pas l'image). Ordre de recherche : table
+// pré-réglée de la famille, cache (par GPU et pilote, modèle et résolution, signature de la couche), puis
+// mesure : chaque candidat est chronométré seul, par requêtes d'horodatage autour de plusieurs dispatchs
 // enchaînés, après échauffement, et la médiane de plusieurs passes compte.
 #pragma once
 
@@ -56,6 +57,9 @@ struct Measured {
   KernelChoice choice;
   double median_us = 0.0;
   double spread_us = 0.0;  // écart type des passes
+  // La sortie du nœud, entrées remplies d'un motif fixe (1 et 0,5 en float16, 0,5 en float) :
+  // choose() la compare à celle du noyau direct.
+  std::vector<float> output;
 };
 
 class Autotuner {
@@ -78,6 +82,7 @@ class Autotuner {
 
   std::size_t measured() const { return measured_; }  // choix tranchés par mesure
   std::size_t cached() const { return cached_; }      // choix lus dans le cache ou une table
+  std::size_t rejected() const { return rejected_; }  // candidats écartés : sortie discordante
   bool timestamps() const { return period_ns_ > 0.0; }
 
  private:
@@ -93,6 +98,7 @@ class Autotuner {
   std::map<std::string, KernelChoice> cache_;
   std::size_t measured_ = 0;
   std::size_t cached_ = 0;
+  std::size_t rejected_ = 0;
 };
 
 }  // namespace ajp::gpu::vk::net

@@ -14,13 +14,14 @@
 
 namespace ajp::gpu::vk {
 
-// Projections hôte des tenseurs alloués pour un runtime (MemoryUse::Readback), par handle de
-// tampon : enqueue les retrouve à partir des Tensor. Partagées entre le backend et ses tampons,
-// qui s'effacent en mourant.
+// Projections hôte des tenseurs alloués pour un runtime (MemoryUse::Readback), ou leurs adresses
+// dans le runtime (interop), par handle de tampon : enqueue les retrouve à partir des Tensor. Partagées entre
+// le backend et ses tampons, qui s'effacent en mourant.
 struct HostViews {
   struct View {
     std::byte* data = nullptr;
     std::uint64_t bytes = 0;
+    void* device = nullptr;  // interop : la mémoire vue par le runtime (data reste nul)
   };
   std::mutex mutex;
   std::unordered_map<std::uintptr_t, View> views;

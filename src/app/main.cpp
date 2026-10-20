@@ -20,6 +20,16 @@ extern "C" {
 #include "app/play/player.h"
 #include "core/log.h"
 
+#ifdef _WIN32
+// Portables à deux GPU (Optimus, PowerXpress) : les pilotes NVIDIA et AMD donnent le GPU dédié,
+// à pleine puissance, à l'exécutable qui exporte ces symboles (RTX 4050 mobile, RX 6500M) plutôt
+// que l'iGPU qui pilote l'écran.
+extern "C" {
+__declspec(dllexport) unsigned long NvOptimusEnablement = 1;         // NOLINT
+__declspec(dllexport) int AmdPowerXpressRequestHighPerformance = 1;  // NOLINT
+}
+#endif
+
 namespace {
 
 std::filesystem::path sdl_path(const char* path) {

@@ -43,6 +43,21 @@ VkDeviceSize align_up(VkDeviceSize value, VkDeviceSize alignment) {
 
 }  // namespace
 
+MemoryLimits device_limits(const VkContext& context) {
+  VkPhysicalDeviceMemoryProperties properties{};
+  context.instance_functions().vkGetPhysicalDeviceMemoryProperties(context.physical_device(), &properties);
+  VkDeviceSize largest = 0;
+  for (std::uint32_t i = 0; i < properties.memoryHeapCount; ++i) {
+    if ((properties.memoryHeaps[i].flags & VK_MEMORY_HEAP_DEVICE_LOCAL_BIT) != 0)
+      largest = std::max(largest, properties.memoryHeaps[i].size);
+  }
+  MemoryLimits limits;
+  const VkDeviceSize reserve = VkDeviceSize{512} << 20U;
+  const VkDeviceSize sized = largest / 4 * 3;
+  if (sized > reserve) limits.budget = std::max(limits.budget, sized - reserve);
+  return limits;
+}
+
 Allocation::Allocation(Allocation&& other) noexcept
     : owner_(std::exchange(other.owner_, nullptr)),
       block_(other.block_),

@@ -58,7 +58,8 @@ std::expected<ModelChoice, Refusal> choose_rife_model(const PlayOptions& options
 }
 
 std::span<const std::string_view> rife_preference(const GpuFacts& gpu) {
-  if (gpu.vendor == GpuVendor::Nvidia && gpu.tensor_cores) return kRifeForRtx;
+  if ((gpu.vendor == GpuVendor::Nvidia && gpu.tensor_cores) || (gpu.vendor == GpuVendor::Amd && gpu.wmma))
+    return kRifeForRtx;
   return kRifeForOthers;
 }
 

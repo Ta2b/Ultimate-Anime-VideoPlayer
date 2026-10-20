@@ -113,6 +113,7 @@ class VulkanBackend final : public Backend {
   std::unique_ptr<VulkanKernelOps> kernels_;
   std::shared_ptr<net::Runtime> runtime_;
   std::shared_ptr<HostViews> host_views_;  // projections des tenseurs d'un runtime
+  bool shared_memory_ = false;             // interop : tenseurs du runtime en mémoire exportée
 };
 
 // Le contexte d'un appareil de rendu Vulkan partagé : sa file compute, son verrou de file.

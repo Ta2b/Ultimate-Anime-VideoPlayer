@@ -8,6 +8,7 @@
 #include "gpu/ir/graph.h"
 #include "gpu/vulkan/backend/kernel_ops_detail.h"
 #include "gpu/vulkan/backend/net_build.h"
+#include "gpu/vulkan/backend/shared_tensor.h"
 #include "gpu/vulkan/backend/vulkan_backend_detail.h"
 #include "gpu/vulkan/compute/buffer.h"
 
@@ -149,7 +150,7 @@ std::expected<void, Refusal> VulkanBackend::open(const BackendInit& init) {
     if (!context) return std::unexpected(context.error());
     context_ = std::move(*context);
   }
-  auto memory = MemoryAllocator::create(*context_);
+  auto memory = MemoryAllocator::create(*context_, device_limits(*context_));
   if (!memory) return std::unexpected(memory.error());
   memory_ = std::move(*memory);
   auto pipelines = PipelineCache::create(*context_);
@@ -165,8 +166,12 @@ std::expected<void, Refusal> VulkanBackend::open(const BackendInit& init) {
     if (!runtime) return std::unexpected(runtime.error());
     runtime_ = std::move(*runtime);
     host_views_ = std::make_shared<HostViews>();
-    log(BackendLogLevel::Info, std::format("réseaux par {} {} sur {}", runtime_->name(), runtime_->version(),
-                                           runtime_->device_name()));
+    shared_memory_ = runtime_->imports_memory() && exports_memory(*context_);
+    runtime_->use_device_memory(shared_memory_);
+    log(BackendLogLevel::Info,
+        std::format("réseaux par {} {} sur {}{}", runtime_->name(), runtime_->version(),
+                    runtime_->device_name(),
+                    shared_memory_ ? ", mémoire partagée avec la chaîne Vulkan" : ", tenseurs par l'hôte"));
   }
   log(BackendLogLevel::Info,
       std::format("backend Vulkan : {}, famille {}, unités matricielles {}{}", context_->caps().device_name,
@@ -241,7 +246,9 @@ std::expected<Artifact, Refusal> VulkanBackend::build(const ModelSpec& model, co
   log(BackendLogLevel::Info,
       std::format("{} construit : {} nœuds, {} dispatchs{}", model.id, data->graph.nodes.size(),
                   data->dispatches.size(),
-                  tuner ? std::format(", {} couches mesurées", tuner->measured()) : ""));
+                  tuner ? std::format(", {} couches mesurées, {} variantes écartées (sortie discordante)",
+                                      tuner->measured(), tuner->rejected())
+                        : ""));
   return artifact;
 }
 

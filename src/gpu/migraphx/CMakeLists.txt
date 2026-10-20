@@ -3,7 +3,7 @@
 find_package(migraphx REQUIRED)
 find_package(hip REQUIRED)
 
-add_library(ajp_backend_migraphx MODULE entry.cpp migraphx_runtime.cpp)
+add_library(ajp_backend_migraphx MODULE entry.cpp migraphx_device.cpp migraphx_runtime.cpp)
 target_link_libraries(ajp_backend_migraphx PRIVATE
   ajp::vk_backend ajp::core_log ajp::dep::spdlog migraphx::c hip::host)
 set_target_properties(ajp_backend_migraphx PROPERTIES

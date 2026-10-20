@@ -31,6 +31,11 @@ struct MemoryLimits {
   VkDeviceSize budget = VkDeviceSize{2} << 30U;       // total des blocs réservés à l'appareil
 };
 
+// Limites à la taille de l'appareil : un budget des trois quarts du plus grand tas DEVICE_LOCAL,
+// moins 512 Mio laissés à l'affichage et aux autres programmes, jamais sous le défaut de 2 Gio
+// (16 Gio d'une RX 9070 XT : 11,5 Gio ; 6 Gio d'une RTX 4050 mobile : 4 Gio).
+MemoryLimits device_limits(const VkContext& context);
+
 class MemoryAllocator;
 
 // Une portion d'un bloc, rendue à l'allocateur à sa destruction. L'allocateur doit lui survivre.

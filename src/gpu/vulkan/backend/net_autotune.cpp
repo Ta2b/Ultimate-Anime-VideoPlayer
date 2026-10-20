@@ -4,6 +4,7 @@
 #include <charconv>
 #include <chrono>
 #include <cmath>
+#include <cstring>
 #include <format>
 #include <fstream>
 #include <optional>
@@ -16,12 +17,14 @@
 #include "gpu/vulkan/backend/net_lower.h"
 #include "gpu/vulkan/compute/buffer.h"
 #include "gpu/vulkan/compute/recording.h"
+#include "kernels/ref/half.h"
 
 namespace ajp::gpu::vk::net {
 namespace {
 
-// 2 : Conv directe à plusieurs pixels (PIX) ; 3 : taille de sous-groupe exigée.
-constexpr std::string_view kCandidateSet = "c3";
+// 2 : Conv directe à plusieurs pixels (PIX) ; 3 : taille de sous-groupe exigée ; 4 : coopmat à
+// 8 sous-groupes, en wave32 sur AMD, sorties vérifiées contre le noyau direct.
+constexpr std::string_view kCandidateSet = "c4";
 
 // Hachage incrémental d'entiers, FNV-1a sur leurs huit octets.
 class Signature {
@@ -127,6 +130,44 @@ double deviation(const std::vector<double>& values) {
   double sum = 0.0;
   for (const double v : values) sum += (v - mean) * (v - mean);
   return std::sqrt(sum / static_cast<double>(values.size()));
+}
+
+// Motif des entrées d'une mesure, par mot de 32 bits : 1 et 0,5 en float16, 0,5 en float.
+std::uint32_t input_pattern(ir::DataType type) {
+  if (type == ir::DataType::F16) return 0x38003C00U;
+  return type == ir::DataType::F32 ? 0x3F000000U : 0U;
+}
+
+std::vector<float> as_floats(std::span<const std::byte> bytes, ir::DataType type) {
+  std::vector<float> out;
+  if (type == ir::DataType::F16) {
+    out.resize(bytes.size() / 2);
+    for (std::size_t i = 0; i < out.size(); ++i) {
+      std::uint16_t bits = 0;
+      std::memcpy(&bits, bytes.data() + (2 * i), 2);
+      out[i] = kernels::ref::half_to_float(bits);
+    }
+  } else if (type == ir::DataType::F32) {
+    out.resize(bytes.size() / 4);
+    std::memcpy(out.data(), bytes.data(), out.size() * 4);
+  }
+  return out;
+}
+
+// La sortie d'un candidat concorde-t-elle avec celle de la référence ? Écart permis : 3 % de la
+// plus grande valeur de la référence plus 2 % de la valeur (sommes en float16 de direct_f16p).
+bool agrees(const std::vector<float>& out, const std::vector<float>& ref) {
+  if (out.size() != ref.size()) return false;
+  float peak = 0.0F;
+  for (const float v : ref) {
+    if (std::isfinite(v)) peak = std::max(peak, std::abs(v));
+  }
+  for (std::size_t i = 0; i < out.size(); ++i) {
+    if (std::isnan(out[i]) != std::isnan(ref[i])) return false;
+    if (std::isnan(ref[i])) continue;
+    if (!(std::abs(out[i] - ref[i]) <= (0.03F * peak) + (0.02F * std::abs(ref[i])) + 1e-3F)) return false;
+  }
+  return true;
 }
 
 std::string tuning_text(const KernelChoice& c) {
@@ -249,13 +290,26 @@ std::expected<KernelChoice, Refusal> Autotuner::choose(const ir::Graph& graph, s
     ++cached_;
     return found->second;
   }
+  // Le noyau direct d'abord : sa sortie sert de référence aux autres variantes.
+  std::vector<KernelChoice> order(candidates.begin(), candidates.end());
+  std::ranges::stable_partition(order, [](const KernelChoice& c) { return c.variant == "direct"; });
   std::optional<Measured> best;
   std::optional<Refusal> last_error;
-  for (const KernelChoice& c : candidates) {
+  std::optional<std::vector<float>> reference;
+  for (const KernelChoice& c : order) {
     if (stop.stop_requested()) return std::unexpected(Refusal{RefusalCode::Cancelled, "autotuner arrêté"});
     auto m = measure(graph, node, c);
     if (!m) {
       last_error = m.error();
+      continue;
+    }
+    if (!reference) {
+      reference = m->output;
+    } else if (!agrees(m->output, *reference)) {
+      ++rejected_;
+      last_error =
+          Refusal{RefusalCode::InputMismatch,
+                  std::format("{} {} : sortie discordante du noyau direct", c.variant, tuning_text(c))};
       continue;
     }
     if (!best || m->median_us < best->median_us) best = std::move(*m);
@@ -312,12 +366,16 @@ std::expected<Measured, Refusal> Autotuner::measure(const ir::Graph& graph, std:
     return dummy->view();
   };
 
-  // Les tenseurs remplis de zéros une fois : une entrée non initialisée pourrait porter des NaN.
+  // Les entrées remplies d'un motif fixe, le reste de zéros : une entrée non initialisée pourrait
+  // porter des NaN, et la sortie doit pouvoir se comparer d'un candidat à l'autre.
+  const ir::Node& n = graph.nodes[node];
   {
     auto fill = Recorder::begin(context_, memory_);
     if (!fill) return std::unexpected(fill.error());
     for (const auto& [id, buffer] : tensors) {
-      if (auto ok = fill->fill(buffer.view(), 0); !ok) return std::unexpected(ok.error());
+      const bool input = std::ranges::contains(n.inputs, static_cast<ir::TensorId>(id));
+      const std::uint32_t word = input ? input_pattern(graph.tensors[id].type) : 0U;
+      if (auto ok = fill->fill(buffer.view(), word); !ok) return std::unexpected(ok.error());
     }
     auto recording = fill->finish();
     if (!recording) return std::unexpected(recording.error());
@@ -380,7 +438,13 @@ std::expected<Measured, Refusal> Autotuner::measure(const ir::Graph& graph, std:
     }
     if (pass >= options_.warmup) samples.push_back(us / repeats);
   }
-  return Measured{.choice = choice, .median_us = median(samples), .spread_us = deviation(samples)};
+  Measured result{.choice = choice, .median_us = median(samples), .spread_us = deviation(samples)};
+  if (const auto out = tensors.find(n.outputs[0]); out != tensors.end()) {
+    std::vector<std::byte> bytes(ir::storage_bytes(graph.tensors[n.outputs[0]]));
+    if (auto ok = download(context_, memory_, out->second, 0, bytes); !ok) return std::unexpected(ok.error());
+    result.output = as_floats(bytes, graph.tensors[n.outputs[0]].type);
+  }
+  return result;
 }
 
 }  // namespace ajp::gpu::vk::net

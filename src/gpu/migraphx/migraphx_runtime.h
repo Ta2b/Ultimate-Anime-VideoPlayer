@@ -1,5 +1,7 @@
 // MIGraphX (AMD ROCm) comme runtime des réseaux du backend Vulkan (net_runtime.h) : programme
-// compilé pour la cible « gpu » avec copies hôte intégrées (offload_copy), mis en cache en .mxr.
+// compilé pour la cible « gpu », mis en cache en .mxr. Sous Linux, ses tenseurs sont ceux de la
+// chaîne Vulkan, importés par HIP (migraphx_device.cpp) ; sinon il copie depuis et vers l'hôte
+// (offload_copy).
 #pragma once
 
 #include "gpu/vulkan/backend/net_runtime.h"

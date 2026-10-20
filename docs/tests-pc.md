@@ -155,3 +155,35 @@ pas de limite de portable), 720p devient le point de départ probable.
   la RX 6500 (le lien PCIe x4 n'est alors traversé qu'une fois par image).
 - **Paquets à installer** : `libva2` et `mesa-vulkan-drivers` (RADV) ; ils viennent du système,
   la release ne les livre pas.
+
+## Ryzen 7 9800X3D et RX 9070 XT (RDNA4, 16 Go)
+
+Profil 1 (1440p, RIFE ×3) au premier lancement. Sous Windows, moteur Vulkan seul ; sous Linux,
+Vulkan ou MIGraphX (ROCm 6.4.1 et plus).
+
+- **Unités matricielles (WMMA)** : le journal doit dire « famille AMD RDNA4, unités matricielles
+  utilisées ». La variante coopmat tourne en wave32 (32 exigé par pipeline, comme llama.cpp) ;
+  chaque sortie est comparée à celle du noyau direct pendant l'autotune, et « N variantes
+  écartées (sortie discordante) » dans le journal de construction dit si le pilote se trompe.
+  Plus de zéro écarté : noter le pilote (Adrenalin ou Mesa) et sa version.
+- **Autotune** : nouvelle version des candidats (c4), une seule fois par modèle et résolution.
+- **Mémoire** : le budget du moteur Vulkan suit la carte (11,5 Gio sur 16 Go, contre 2 Gio
+  avant) ; un profil 4K ou GMFSS ne doit plus refuser « budget mémoire atteint ».
+- **MIGraphX (Linux)** : le journal doit dire « mémoire partagée avec la chaîne Vulkan ». Les
+  tenseurs passent de Vulkan à HIP sans copie par l'hôte ; « tenseurs par l'hôte » signale une
+  extension VK_KHR_external_memory_fd absente. Les programmes se recompilent une fois (clé
+  « interop »). Comparer le temps par image avec le moteur Vulkan seul : le plus rapide reste.
+- **RADV** nomme la carte « AMD Radeon RX 9070 XT (RADV GFX1201) » : MIGraphX doit être proposé
+  au premier lancement (la détection ne connaissait que les noms NAVI).
+
+## RTX 4050 mobile (Ada, 6 Go)
+
+Profil 7 (1080p, RIFE ×2) au premier lancement, TensorRT.
+
+- **GPU dédié** : `ajp.exe` exporte `NvOptimusEnablement` et `AmdPowerXpressRequestHighPerformance`.
+  Le journal doit nommer la RTX 4050, pas l'iGPU, même sans réglage dans le panneau NVIDIA.
+- **Activations partagées** : tous les moteurs TensorRT (RIFE, SPAN, GMFSS) utilisent une seule
+  zone de la taille du plus gros. Vérifier la VRAM avec `nvidia-smi` avant et après ; la lecture
+  doit rester identique (les graphes CUDA sont recapturés quand la zone grandit).
+- **Secteur et batterie** : mesurer sur secteur ; sur batterie le GPU est bridé et le profil 9
+  (source) peut être nécessaire.

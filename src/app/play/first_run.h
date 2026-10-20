@@ -30,7 +30,12 @@ struct GpuFacts {
   GpuVendor vendor = GpuVendor::Other;
   std::uint64_t vram_bytes = 0;
   bool tensor_cores = false;  // NVIDIA avec matrices coopératives Vulkan : une RTX
+  bool wmma = false;          // AMD RDNA3 ou RDNA4 avec matrices coopératives Vulkan
 };
+
+// La carte AMD a-t-elle des unités matricielles (WMMA : RDNA3, RDNA4) ? Par le nom du pilote :
+// la puce chez RADV (« (RADV GFX1201) »), le produit ailleurs (« RX 9070 XT »).
+bool amd_matrix_cores(std::string_view gpu_name);
 
 // ROCm (donc MIGraphX) ne sert officiellement que Navi 21, RDNA3, RDNA4 et les Instinct : une
 // RX 6500M (Navi 24) ou un iGPU Radeon ne doit pas se voir proposer son téléchargement.
@@ -39,7 +44,8 @@ core::SystemInfo system_of(const GpuFacts& gpu);
 // « NVIDIA GeForce RTX 4070 Ti · 12 Go · cœurs Tensor »
 std::string gpu_line(const GpuFacts& gpu);
 
-// Profil de démarrage conseillé : 1 (1440p, RIFE ×3) pour une RTX de 11 Go et plus, 7 (1080p, ×2)
+// Profil de démarrage conseillé : 1 (1440p, RIFE ×3) pour une RTX ou une RDNA3/RDNA4 de 11 Go et
+// plus, 7 (1080p, ×2)
 // pour une RTX plus petite et pour les autres cartes de 4 Go et plus hors Intel, 9 (source) sinon.
 int start_profile_for(const GpuFacts& gpu);
 

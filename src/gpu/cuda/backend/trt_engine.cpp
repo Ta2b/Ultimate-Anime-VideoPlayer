@@ -26,14 +26,44 @@ std::optional<Shape> fixed_shape(const nvinfer1::Dims& dims) {
 
 }  // namespace
 
+SharedActivations::~SharedActivations() {
+  if (data_ != nullptr) cudaFree(data_);
+}
+
+std::expected<void, Refusal> SharedActivations::reserve(std::int64_t bytes) {
+  if (bytes <= bytes_) return {};
+  // Les moteurs déjà posés sur l'ancienne zone peuvent encore y travailler.
+  if (data_ != nullptr) {
+    cudaDeviceSynchronize();
+    cudaFree(data_);
+    data_ = nullptr;
+    bytes_ = 0;
+  }
+  if (cudaMalloc(&data_, static_cast<std::size_t>(bytes)) != cudaSuccess) {
+    data_ = nullptr;
+    static_cast<void>(cudaGetLastError());
+    return refuse(RefusalCode::GpuMemoryExhausted,
+                  std::format("activations partagées : {} Mo refusés par cudaMalloc", bytes >> 20));
+  }
+  bytes_ = bytes;
+  ++generation_;
+  return {};
+}
+
 TrtEngine::~TrtEngine() {
+  drop_graphs();
+}
+
+void TrtEngine::drop_graphs() {
   for (const Graph& graph : graphs_) {
     if (graph.exec != nullptr) cudaGraphExecDestroy(graph.exec);
   }
+  graphs_.clear();
 }
 
-std::expected<std::unique_ptr<TrtEngine>, Refusal> TrtEngine::load(nvinfer1::IRuntime& runtime,
-                                                                   const std::filesystem::path& path) {
+std::expected<std::unique_ptr<TrtEngine>, Refusal> TrtEngine::load(
+    nvinfer1::IRuntime& runtime, const std::filesystem::path& path,
+    std::shared_ptr<SharedActivations> shared) {
   std::ifstream file(path, std::ios::binary);
   if (!file) return refuse(RefusalCode::IoFailed, std::format("moteur {} illisible", path.string()));
   const std::vector<char> blob{std::istreambuf_iterator<char>(file), std::istreambuf_iterator<char>()};
@@ -45,9 +75,16 @@ std::expected<std::unique_ptr<TrtEngine>, Refusal> TrtEngine::load(nvinfer1::IRu
     return refuse(RefusalCode::VendorCallFailed,
                   std::format("IRuntime::deserializeCudaEngine({}) a échoué", path.filename().string()));
   }
-  engine->context_.reset(engine->engine_->createExecutionContext());
+  engine->context_.reset(shared ? engine->engine_->createExecutionContext(
+                                      nvinfer1::ExecutionContextAllocationStrategy::kUSER_MANAGED)
+                                : engine->engine_->createExecutionContext());
   if (!engine->context_) {
     return refuse(RefusalCode::VendorCallFailed, "ICudaEngine::createExecutionContext a échoué");
+  }
+  if (shared) {
+    if (auto ok = shared->reserve(engine->engine_->getDeviceMemorySizeV2()); !ok)
+      return std::unexpected(ok.error());
+    engine->shared_ = std::move(shared);
   }
   // Entrées d'abord : une forme libre prend celle du profil (OPT), que le contexte fixe ; les
   // sorties se lisent ensuite sur le contexte, formes résolues.
@@ -88,6 +125,13 @@ std::expected<void, Refusal> TrtEngine::enqueue(cudaStream_t stream, std::span<c
                                                 std::span<const Tensor> outputs) {
   if (inputs.size() != inputs_.size() || outputs.size() != outputs_.size()) {
     return refuse(RefusalCode::ShapeInvalid, "nombre d'entrées ou de sorties différent du moteur");
+  }
+  // La zone commune a grandi depuis le dernier lancement : posée à nouveau, les graphes capturés
+  // sur l'ancienne adresse jetés.
+  if (shared_ && shared_generation_ != shared_->generation()) {
+    context_->setDeviceMemoryV2(shared_->data(), shared_->bytes());
+    drop_graphs();
+    shared_generation_ = shared_->generation();
   }
   const auto bind = [this](const std::string& name, const Tensor& tensor, const Shape& expected) -> bool {
     if (tensor.type != TensorType::F16 || !(tensor.shape == expected)) return false;

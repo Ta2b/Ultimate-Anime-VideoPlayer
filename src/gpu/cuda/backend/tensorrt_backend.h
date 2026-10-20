@@ -32,6 +32,7 @@ class IRuntime;
 namespace ajp::gpu::cuda {
 
 class TrtLog;
+class SharedActivations;
 
 class TensorRtBackend final : public Backend, public KernelOps {
  public:
@@ -134,6 +135,7 @@ class TensorRtBackend final : public Backend, public KernelOps {
   cudaStream_t stream_ = nullptr;
   std::unique_ptr<TrtLog> trt_log_;
   std::unique_ptr<nvinfer1::IRuntime> runtime_;
+  std::shared_ptr<SharedActivations> activations_;  // celle de tous les moteurs (trt_engine.h)
   std::array<Held, kHeldFrames> held_{};
   std::array<cudaEvent_t, kFences> fences_{};
   std::uint64_t fence_count_ = 0;

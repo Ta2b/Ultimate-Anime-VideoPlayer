@@ -1,6 +1,6 @@
 // Le backend Vulkan dont les réseaux passent par un autre runtime (net_runtime.h) : construction
-// et chargement par le runtime, tenseurs en mémoire hôte visible, enqueue synchrone après
-// l'attente de la file.
+// et chargement par le runtime, tenseurs en mémoire hôte visible (ou partagée, en interop),
+// enqueue synchrone après l'attente de la file.
 #include <format>
 #include <span>
 #include <string>
@@ -9,6 +9,7 @@
 
 #include "gpu/vulkan/backend/kernel_ops_detail.h"
 #include "gpu/vulkan/backend/net_artifact.h"
+#include "gpu/vulkan/backend/shared_tensor.h"
 #include "gpu/vulkan/backend/vulkan_backend.h"
 #include "gpu/vulkan/backend/vulkan_backend_detail.h"
 #include "gpu/vulkan/compute/buffer.h"
@@ -74,6 +75,7 @@ std::expected<Artifact, Refusal> VulkanBackend::build_runtime(const ModelSpec& m
   std::string key_text = std::format("{}|{}|{}|{}|{}|{}", model.id, model.sha256,
                                      model.precision == TensorType::F16 ? "f16" : "f32", runtime_->version(),
                                      runtime_->device_name(), runtime_->name());
+  if (shared_memory_) key_text += "|interop";  // programme compilé pour la mémoire de l'appareil
   for (const auto& input : inputs) {
     key_text += '|' + input.name;
     for (const std::int64_t d : input.dims) key_text += std::format(",{}", d);
@@ -111,6 +113,8 @@ std::expected<std::unique_ptr<TensorBuffer>, Refusal> VulkanBackend::alloc_runti
     TensorType type, const Shape& shape) {
   auto dense = detail::tensor_bytes(type, shape);
   if (!dense) return std::unexpected(dense.error());
+  if (shared_memory_)
+    return shared_tensor(*context_, *runtime_, type, shape, (*dense + 3) / 4 * 4, host_views_);
   // En cache côté hôte : le runtime y lit les entrées et y écrit les sorties ; les noyaux de la
   // chaîne y accèdent comme à tout tampon de stockage.
   auto buffer = Buffer::create(*context_, *memory_, (*dense + 3) / 4 * 4, MemoryUse::Readback);
@@ -138,13 +142,19 @@ std::expected<void, Refusal> VulkanBackend::enqueue_runtime(Engine& engine, std:
       const auto found = host_views_->views.find(t.handle);
       auto bytes = detail::tensor_bytes(t.type, t.shape);
       if (!bytes) return std::unexpected(bytes.error());
-      if (found == host_views_->views.end() || found->second.data == nullptr ||
+      if (found == host_views_->views.end() ||
+          (found->second.data == nullptr && found->second.device == nullptr) ||
           t.offset + *bytes > found->second.bytes) {
         return refuse_backend(RefusalCode::InputMismatch,
                               std::format("tenseur hors des tampons alloués pour {}", runtime_->name()));
       }
+      const HostViews::View& v = found->second;
       bindings.push_back(
-          {.data = found->second.data + t.offset, .bytes = *bytes, .type = t.type, .shape = t.shape});
+          {.data = v.data != nullptr ? v.data + t.offset : nullptr,
+           .bytes = *bytes,
+           .type = t.type,
+           .shape = t.shape,
+           .device = v.device != nullptr ? static_cast<std::byte*>(v.device) + t.offset : nullptr});
       return {};
     };
     for (const Tensor& t : inputs) {

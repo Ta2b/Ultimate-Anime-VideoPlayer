@@ -49,7 +49,10 @@ TEST_CASE("Familles : liste d'autorisation des unités matricielles", "[vk_backe
   CHECK(matrix_units_allowed(GpuFamily::NvidiaAda, DriverKind::NvidiaProprietary));
   CHECK(matrix_units_allowed(GpuFamily::NvidiaTuring, DriverKind::NvidiaProprietary));
   CHECK_FALSE(matrix_units_allowed(GpuFamily::NvidiaAda, DriverKind::Other));  // nouveau/NVK : à qualifier
-  CHECK_FALSE(matrix_units_allowed(GpuFamily::AmdRdna3, DriverKind::Radv));
+  CHECK(matrix_units_allowed(GpuFamily::AmdRdna3, DriverKind::Radv));
+  CHECK(matrix_units_allowed(GpuFamily::AmdRdna4, DriverKind::AmdProprietary));
+  CHECK_FALSE(matrix_units_allowed(GpuFamily::AmdBeforeRdna3, DriverKind::AmdProprietary));
+  CHECK_FALSE(matrix_units_allowed(GpuFamily::AmdRdna4, DriverKind::Other));
   CHECK_FALSE(matrix_units_allowed(GpuFamily::Software, DriverKind::Other));
   CHECK(net::preset_tables().empty());
 }

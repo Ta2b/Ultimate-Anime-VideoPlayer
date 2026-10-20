@@ -39,9 +39,9 @@ enum class DriverKind : std::uint8_t {
 };
 DriverKind driver_kind(std::string_view driver_name);
 
-// Unités matricielles autorisées : NVIDIA Turing à Blackwell sous le pilote propriétaire, le
-// seul couple qualifié sur ce projet (RTX 4070 Ti). AMD RDNA3 et RDNA4, Intel Xe2 : à qualifier
-// avant d'entrer ici.
+// Unités matricielles autorisées : NVIDIA Turing à Blackwell sous le pilote propriétaire
+// (qualifié sur une RTX 4070 Ti), AMD RDNA3 et RDNA4 sous RADV ou le pilote AMD, en wave32 et
+// vérifiées couche par couche par l'autotuner. Intel Xe2 : à qualifier avant d'entrer ici.
 bool matrix_units_allowed(GpuFamily family, DriverKind driver);
 
 }  // namespace ajp::gpu::vk

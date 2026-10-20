@@ -61,11 +61,29 @@ TEST_CASE("Profil conseillé selon le GPU", "[app][first_run]") {
   CHECK(start_profile_for(amd) == 7);
   const GpuFacts rx6500{.name = "AMD Radeon RX 6500 XT", .vendor = GpuVendor::Amd, .vram_bytes = 4 * kGiB};
   CHECK(start_profile_for(rx6500) == 7);
+  const GpuFacts rx9070xt{
+      .name = "AMD Radeon RX 9070 XT", .vendor = GpuVendor::Amd, .vram_bytes = 16 * kGiB, .wmma = true};
+  CHECK(start_profile_for(rx9070xt) == 1);
+  const GpuFacts rtx4050m{.name = "NVIDIA GeForce RTX 4050 Laptop GPU",
+                          .vendor = GpuVendor::Nvidia,
+                          .vram_bytes = 6 * kGiB,
+                          .tensor_cores = true};
+  CHECK(start_profile_for(rtx4050m) == 7);
   const GpuFacts uhd{.name = "Intel(R) UHD Graphics 770", .vendor = GpuVendor::Intel, .vram_bytes = 8 * kGiB};
   CHECK(start_profile_for(uhd) == 9);
 }
 
+TEST_CASE("Unités matricielles AMD : RDNA3 et RDNA4 seulement", "[app][first_run]") {
+  CHECK(amd_matrix_cores("AMD Radeon RX 9070 XT"));
+  CHECK(amd_matrix_cores("AMD Radeon RX 9070 XT (RADV GFX1201)"));
+  CHECK(amd_matrix_cores("AMD Radeon RX 7900 XTX (RADV NAVI31)"));
+  CHECK(amd_matrix_cores("AMD Radeon RX 7600S"));
+  CHECK_FALSE(amd_matrix_cores("AMD Radeon RX 6800 XT"));
+  CHECK_FALSE(amd_matrix_cores("AMD Radeon RX 6500M (RADV NAVI24)"));
+}
+
 TEST_CASE("MIGraphX proposé aux seuls GPU que ROCm sert", "[app][first_run]") {
+  CHECK(rocm_listed("AMD Radeon RX 9070 XT (RADV GFX1201)"));
   CHECK(rocm_listed("AMD Radeon RX 7900 XTX (RADV NAVI31)"));
   CHECK(rocm_listed("AMD Radeon RX 6800 XT"));
   CHECK(rocm_listed("AMD Radeon RX 9070"));

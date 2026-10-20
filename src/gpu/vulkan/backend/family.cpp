@@ -106,6 +106,12 @@ bool matrix_units_allowed(GpuFamily family, DriverKind driver) {
     case GpuFamily::NvidiaAda:
     case GpuFamily::NvidiaBlackwell:
       return driver == DriverKind::NvidiaProprietary;
+    // WMMA des RDNA3 et RDNA4, sous RADV comme sous le pilote AMD (llama.cpp fait de même ; le
+    // pilote AMD annonce aussi l'extension sur RDNA2, sans unité matricielle). L'autotuner
+    // compare chaque sortie à celle du noyau direct avant de la garder.
+    case GpuFamily::AmdRdna3:
+    case GpuFamily::AmdRdna4:
+      return driver == DriverKind::Radv || driver == DriverKind::AmdProprietary;
     default:
       return false;
   }

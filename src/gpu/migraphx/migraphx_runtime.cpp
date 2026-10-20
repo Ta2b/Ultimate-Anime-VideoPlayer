@@ -11,6 +11,8 @@
 #include <string>
 #include <vector>
 
+#include "gpu/migraphx/migraphx_detail.h"
+
 namespace ajp::gpu::migraphx_rt {
 namespace {
 
@@ -19,18 +21,11 @@ using vk::net::InputShape;
 
 constexpr std::uint32_t kVendorAmd = 0x1002;
 
-std::unexpected<Refusal> refuse(RefusalCode code, std::string text) {
-  return std::unexpected(Refusal{.code = code, .detail = std::move(text)});
-}
+using detail::refuse;
+using detail::type_of;
 
 std::unexpected<Refusal> refuse_exception(std::string_view what, const std::exception& e) {
   return refuse(RefusalCode::BuilderFailed, std::format("MIGraphX, {} : {}", what, e.what()));
-}
-
-std::optional<TensorType> type_of(migraphx_shape_datatype_t type) {
-  if (type == migraphx_shape_float_type) return TensorType::F32;
-  if (type == migraphx_shape_half_type) return TensorType::F16;
-  return std::nullopt;
 }
 
 // Un programme chargé ; ses entrées dans l'ordre de l'ONNX (fichier .io de l'artefact).
@@ -116,6 +111,17 @@ class MigraphxRuntime final : public vk::net::Runtime {
   }
   std::string_view extension() const override { return ".mxr"; }
 
+#if defined(_WIN32)
+  bool imports_memory() const override { return false; }
+#else
+  bool imports_memory() const override { return true; }
+#endif
+  void use_device_memory(bool on) override { device_memory_ = on; }
+  std::expected<std::unique_ptr<vk::net::ImportedMemory>, Refusal> import_memory(
+      int fd, std::uint64_t bytes) override {
+    return detail::import_memory(device_, fd, bytes);
+  }
+
   std::expected<void, Refusal> build(const ModelSpec& model, std::span<const InputShape> inputs,
                                      const std::filesystem::path& path, Progress& progress) override {
     try {
@@ -136,7 +142,9 @@ class MigraphxRuntime final : public vk::net::Runtime {
       if (model.precision == TensorType::F16 && float_graph) migraphx::quantize_fp16(program);
       if (progress.report) progress.report(0.15F, "compilation MIGraphX");
       migraphx::compile_options compile;
-      compile.set_offload_copy(true);
+      // En interop, le programme lit et écrit la mémoire de l'appareil que lui passe la chaîne ;
+      // sinon il copie lui-même depuis et vers l'hôte.
+      compile.set_offload_copy(!device_memory_);
       compile.set_fast_math(true);
       // Réglage exhaustif des noyaux (ROCm 6) : quelques minutes à la première construction, puis
       // gardé dans le .mxr.
@@ -165,6 +173,7 @@ class MigraphxRuntime final : public vk::net::Runtime {
           return refuse(RefusalCode::CacheIo,
                         std::format("{} : entrée {} absente du programme", path.string(), name));
       }
+      if (device_memory_) return detail::device_net(device_, std::move(program), std::move(*names));
       return std::make_unique<MigraphxNet>(device_, std::move(program), std::move(*names));
     } catch (const std::exception& e) {
       return refuse(RefusalCode::CacheIo, std::format("MIGraphX, {} : {}", path.string(), e.what()));
@@ -174,9 +183,24 @@ class MigraphxRuntime final : public vk::net::Runtime {
  private:
   int device_;
   std::string device_name_;
+  bool device_memory_ = false;
 };
 
 }  // namespace
+
+namespace detail {
+
+std::unexpected<Refusal> refuse(RefusalCode code, std::string text) {
+  return std::unexpected(Refusal{.code = code, .detail = std::move(text)});
+}
+
+std::optional<TensorType> type_of(migraphx_shape_datatype_t type) {
+  if (type == migraphx_shape_float_type) return TensorType::F32;
+  if (type == migraphx_shape_half_type) return TensorType::F16;
+  return std::nullopt;
+}
+
+}  // namespace detail
 
 std::expected<std::shared_ptr<vk::net::Runtime>, Refusal> make_runtime(const vk::DeviceCaps& caps) {
   if (caps.vendor_id != kVendorAmd) {
