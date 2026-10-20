@@ -67,13 +67,33 @@ Done Recorder::open() const {
   return {};
 }
 
+bool Recorder::depends(std::span<const BufferView> buffers, bool images) const {
+  if (touched_all_ || (images && touched_images_)) return true;
+  for (const BufferView& view : buffers) {
+    for (const Touched& t : touched_) {
+      if (t.buffer == view.buffer && t.offset < view.offset + view.size && view.offset < t.offset + t.size)
+        return true;
+    }
+  }
+  return false;
+}
+
+void Recorder::touch(std::span<const BufferView> buffers, bool images) {
+  for (const BufferView& view : buffers)
+    touched_.push_back({.buffer = view.buffer, .offset = view.offset, .size = view.size});
+  touched_images_ = touched_images_ || images;
+}
+
 void Recorder::barrier() {
-  if (!pending_) return;
+  if (touched_.empty() && !touched_images_ && !touched_all_) return;
   const VkMemoryBarrier memory{
       .sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER, .srcAccessMask = kWrites, .dstAccessMask = kReadsAndWrites};
   context_->fn().vkCmdPipelineBarrier(recording_->command_buffer_, kWorkStages, kWorkStages, 0, 1, &memory, 0,
                                       nullptr, 0, nullptr);
-  pending_ = false;
+  ++recording_->barriers_;
+  touched_.clear();
+  touched_images_ = false;
+  touched_all_ = false;
 }
 
 Done Recorder::check_view(const BufferView& view, std::string_view what) const {
@@ -133,7 +153,7 @@ Done Recorder::dispatch(const Pipeline& pipeline, std::span<const BufferView> bu
   auto set = recording_->arena_.bind(pipeline, buffers, images);
   if (!set) return std::unexpected(set.error());
 
-  if (order == DispatchOrder::AfterPrevious) barrier();
+  if (order == DispatchOrder::AfterPrevious && depends(buffers, !images.empty())) barrier();
   const DeviceFunctions& fn = context_->fn();
   const VkCommandBuffer cb = recording_->command_buffer_;
   fn.vkCmdBindPipeline(cb, VK_PIPELINE_BIND_POINT_COMPUTE, pipeline.handle());
@@ -144,7 +164,7 @@ Done Recorder::dispatch(const Pipeline& pipeline, std::span<const BufferView> bu
   }
   fn.vkCmdDispatch(cb, groups[0], groups[1], groups[2]);
   ++recording_->dispatches_;
-  pending_ = true;
+  touch(buffers, !images.empty());
   return {};
 }
 
@@ -155,9 +175,10 @@ Done Recorder::fill(const BufferView& view, std::uint32_t value) {
         RefusalCode::InputMismatch,
         std::format("remplissage de {} o à l'offset {} : multiples de 4 attendus", view.size, view.offset));
   }
-  barrier();
+  const std::span<const BufferView> views(&view, 1);
+  if (depends(views, false)) barrier();
   context_->fn().vkCmdFillBuffer(recording_->command_buffer_, view.buffer, view.offset, view.size, value);
-  pending_ = true;
+  touch(views, false);
   return {};
 }
 
@@ -165,7 +186,7 @@ Done Recorder::commands(const std::function<void(VkCommandBuffer)>& record) {
   if (auto ok = open(); !ok) return ok;
   barrier();
   record(recording_->command_buffer_);
-  pending_ = true;
+  touched_all_ = true;
   return {};
 }
 

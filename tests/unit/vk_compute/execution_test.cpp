@@ -53,6 +53,75 @@ TEST_CASE("exécution : un enregistrement rejoué donne le même résultat", "[v
   CHECK(max_abs_diff(second, first) > 1.0F);
 }
 
+TEST_CASE("exécution : une barrière entre commandes dépendantes seulement", "[vk_compute][execution]") {
+  Rig rig = make_rig();
+  const kernels::RgbImage image = synthetic_rgb(24, 20, 3, 0.0F, 1000.0F);
+  const kernels::RgbImage other = synthetic_rgb(24, 20, 4, 0.0F, 1000.0F);
+  TensorBuffer src = upload_rgb(rig, image, Precision::F32);
+  TensorBuffer src2 = upload_rgb(rig, other, Precision::F32);
+  TensorBuffer middle = tensor_target(rig, 24, 20, 3, Precision::F32);
+  TensorBuffer aside = tensor_target(rig, 24, 20, 3, Precision::F32);
+  TensorBuffer dst = tensor_target(rig, 24, 20, 3, Precision::F32);
+  // Trois dispatchs : le second ne touche rien du premier (aucune barrière), le troisième lit ce
+  // que le premier a écrit (une barrière).
+  const std::unique_ptr<Recording> recording = record(rig, [&](Recorder& r) -> Done {
+    if (auto ok = rig.kernels().transfer(r, TransferOp::PqInverseEotf, src.view, middle.view); !ok) return ok;
+    if (auto ok = rig.kernels().transfer(r, TransferOp::PqInverseEotf, src2.view, aside.view); !ok) return ok;
+    return rig.kernels().transfer(r, TransferOp::PqEotf, middle.view, dst.view);
+  });
+  CHECK(recording->dispatches() == 3);
+  CHECK(recording->barriers() == 1);
+  run(rig, *recording);
+  CHECK(max_abs_diff(download_rgb(rig, dst), image) <= 1000.0F * 1e-3F);
+  // Un remplissage d'une plage touchée pose sa barrière ; d'une autre plage, aucune.
+  const std::unique_ptr<Recording> fills = record(rig, [&](Recorder& r) -> Done {
+    if (auto ok = rig.kernels().transfer(r, TransferOp::PqInverseEotf, src.view, middle.view); !ok) return ok;
+    if (auto ok = r.fill(aside.view.buffer, 0); !ok) return ok;
+    return r.fill(middle.view.buffer, 0);
+  });
+  CHECK(fills->barriers() == 1);
+}
+
+TEST_CASE("exécution : les enregistrements d'un lot partagent un VkSubmitInfo", "[vk_compute][execution]") {
+  Rig rig = make_rig();
+  const kernels::RgbImage image = synthetic_rgb(16, 16, 7, 0.0F, 1.0F);
+  TensorBuffer src = upload_rgb(rig, image, Precision::F32);
+  TensorBuffer middle = tensor_target(rig, 16, 16, 3, Precision::F32);
+  TensorBuffer dst = tensor_target(rig, 16, 16, 3, Precision::F32);
+  TensorBuffer middle2 = tensor_target(rig, 16, 16, 3, Precision::F32);
+  TensorBuffer dst2 = tensor_target(rig, 16, 16, 3, Precision::F32);
+  const std::unique_ptr<Recording> a = round_trip(rig, src.view, middle.view, dst.view);
+  const std::unique_ptr<Recording> b = round_trip(rig, src.view, middle2.view, dst2.view);
+  // a, b, puis a rejoué : son attente sur sa première exécution est signalée par le groupe, qui
+  // l'ordonne déjà ; un seul VkSubmitInfo.
+  const std::uint64_t submits = rig.context->queue_submits();
+  const std::uint64_t infos = rig.context->submit_infos();
+  require_ok(rig.context->enqueue(*a));
+  require_ok(rig.context->enqueue(*b));
+  require_ok(rig.context->enqueue(*a));
+  require_ok(rig.context->flush());
+  CHECK(rig.context->queue_submits() == submits + 1);
+  CHECK(rig.context->submit_infos() == infos + 1);
+  require_ok(rig.context->wait_on_host(a->last_run()));
+  CHECK(require_value(a->runs().value()) == 2);
+  CHECK(require_value(b->runs().value()) == 1);
+  CHECK(max_abs_diff(download_rgb(rig, dst), image) <= 1e-3F);
+  CHECK(max_abs_diff(download_rgb(rig, dst2), image) <= 1e-3F);
+  // Une attente d'ailleurs ouvre un groupe : a part sans attendre la porte de b.
+  TimelineSemaphore gate = require_value(TimelineSemaphore::create(*rig.context, 0));
+  const std::array waits{gate.at(1)};
+  require_ok(rig.context->enqueue(*a));
+  require_ok(rig.context->enqueue(*b, waits));
+  require_ok(rig.context->flush());
+  CHECK(rig.context->submit_infos() == infos + 3);
+  require_ok(rig.context->wait_on_host(a->last_run()));
+  CHECK(require_value(a->runs().value()) == 3);
+  CHECK(require_value(b->runs().value()) == 1);
+  require_ok(gate.signal(1));
+  require_ok(rig.context->wait_on_host(b->last_run()));
+  CHECK(require_value(b->runs().value()) == 2);
+}
+
 TEST_CASE("exécution : soumissions enchaînées côté GPU, une seule attente hôte", "[vk_compute][execution]") {
   Rig rig = make_rig();
   const kernels::RgbImage image = synthetic_rgb(64, 64, 9, 0.0F, 1.0F);

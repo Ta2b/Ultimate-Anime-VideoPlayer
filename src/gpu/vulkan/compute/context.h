@@ -121,10 +121,17 @@ class VkContext {
   // wait_on_host et la destruction d'un enregistrement vident le lot d'abord : l'ordre des
   // soumissions reste celui des appels, et aucune attente ne porte sur un travail jamais soumis.
   // Un sémaphore lu hors du contexte (autre file, autre API) n'est fiable qu'après flush().
+  //
+  // Dans le lot, les enregistrements qui se suivent partagent un VkSubmitInfo : l'ordre de
+  // soumission et la barrière finale de chacun ordonnent déjà le suivant après lui, alors une
+  // attente sur un point que le groupe signale est omise, et les signaux du groupe partent à sa
+  // fin (la plus grande valeur par sémaphore). Une attente d'ailleurs (slot du ring, image
+  // décodée, signal de l'hôte) ouvre un groupe : les enregistrements d'avant ne l'attendent pas.
   Done enqueue(Recording& recording, std::span<const TimelinePoint> waits = {},
                std::span<const TimelinePoint> signals = {});
   Done flush();
   std::uint64_t queue_submits() const { return queue_submits_; }  // appels à vkQueueSubmit
+  std::uint64_t submit_infos() const { return submit_infos_; }    // VkSubmitInfo soumis, tous appels
 
   // Attente hôte d'une valeur (tests, outils, envoi et lecture hôte) ; chaque appel compte dans
   // host_waits. Refus VulkanCallFailed au délai dépassé ou à la perte de l'appareil.
@@ -156,10 +163,22 @@ class VkContext {
     Recording* recording = nullptr;
     std::vector<VkSemaphore> wait_semaphores;
     std::vector<std::uint64_t> wait_values;
+    std::size_t own_waits = 0;  // les premières attentes : l'exécution précédente du même enregistrement
+    std::vector<VkSemaphore> signal_semaphores;
+    std::vector<std::uint64_t> signal_values;
+  };
+  // Un VkSubmitInfo du lot : des soumissions qui se suivent, leurs attentes et signaux fondus.
+  struct Group {
+    std::size_t first = 0;  // dans batch_buffers_
+    std::size_t count = 0;
+    std::vector<VkSemaphore> wait_semaphores;
+    std::vector<std::uint64_t> wait_values;
     std::vector<VkPipelineStageFlags> stages;
     std::vector<VkSemaphore> signal_semaphores;
     std::vector<std::uint64_t> signal_values;
   };
+  static bool joins(const Group& group, const Batched& entry);
+  static void merge(Group& group, const Batched& entry);
 
   std::optional<VulkanLibrary> library_;
   PFN_vkGetInstanceProcAddr get_instance_proc_addr_ = nullptr;
@@ -186,8 +205,10 @@ class VkContext {
   std::uint64_t once_count_ = 0;
   std::uint64_t host_waits_ = 0;
   std::uint64_t queue_submits_ = 0;
+  std::uint64_t submit_infos_ = 0;
   std::vector<Batched> batch_;
   std::size_t batched_ = 0;  // entrées de batch_ en attente
+  std::vector<Group> batch_groups_;
   std::vector<VkTimelineSemaphoreSubmitInfo> batch_timelines_;
   std::vector<VkSubmitInfo> batch_infos_;
   std::vector<VkCommandBuffer> batch_buffers_;

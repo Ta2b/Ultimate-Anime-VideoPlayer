@@ -42,6 +42,7 @@ class Recording {
   const VkContext& context() const { return context_; }
   bool finished() const { return finished_; }
   std::uint32_t dispatches() const { return dispatches_; }
+  std::uint32_t barriers() const { return barriers_; }    // entre commandes dépendantes (hors la finale)
   std::uint64_t submitted() const { return submitted_; }  // exécutions soumises
   // Atteint quand la dernière exécution soumise s'achève ; valeur 0 avant la première.
   TimelinePoint last_run() const { return runs_.at(submitted_); }
@@ -60,13 +61,15 @@ class Recording {
   VkCommandBuffer command_buffer_ = VK_NULL_HANDLE;
   std::vector<Buffer> owned_;
   std::uint32_t dispatches_ = 0;
+  std::uint32_t barriers_ = 0;
   std::uint64_t submitted_ = 0;
   bool finished_ = false;
 };
 
-// Ce qu'un dispatch attend : tout ce qui le précède (une barrière avant lui), ou seulement ce que
-// le précédent attendait déjà (aucune barrière : il n'écrit rien que le précédent lit ni ne lit ce
-// qu'il écrit, comme les additions atomiques de splats sur des sommes distinctes).
+// Ce qu'un dispatch attend : ce qui le précède et touche l'un de ses tampons ou une image (une
+// barrière avant lui, seulement alors), ou rien (aucune barrière, même sur un tampon commun : il
+// n'écrit rien que le précédent lit ni ne lit ce qu'il écrit, comme les additions atomiques de
+// splats sur des sommes distinctes).
 enum class DispatchOrder : std::uint8_t { AfterPrevious, BesidePrevious };
 
 class Recorder {
@@ -84,8 +87,10 @@ class Recorder {
   // maintenant, lu à chaque exécution.
   std::expected<BufferView, Refusal> constants(std::span<const std::byte> bytes);
 
-  // Un dispatch, après une barrière sur tout ce qui le précède dans l'enregistrement (order
-  // AfterPrevious), ou sans barrière, à côté du précédent (BesidePrevious). Refus :
+  // Un dispatch, après une barrière sur tout ce qui le précède dans l'enregistrement si une
+  // commande depuis la dernière barrière a touché l'un de ses tampons (une plage qui recouvre
+  // l'une des siennes : chaque vue liée compte comme lue et écrite) ou une image (order
+  // AfterPrevious) ; sans barrière, à côté du précédent (BesidePrevious). Refus :
   // InputMismatch (nombre de tampons, d'images ou d'octets de push différent du pipeline ; vue
   // vide, mal alignée ou trop grande), FeatureUnavailable (groupes au-delà des limites),
   // GpuMemoryExhausted (pool de descripteurs plein).
@@ -93,12 +98,13 @@ class Recorder {
                 std::span<const VkImageView> images, std::span<const std::byte> push,
                 std::array<std::uint32_t, 3> groups, DispatchOrder order = DispatchOrder::AfterPrevious);
 
-  // Remplit la vue de value à chaque exécution (offset et taille multiples de 4).
+  // Remplit la vue de value à chaque exécution (offset et taille multiples de 4), après une
+  // barrière si une commande depuis la dernière a touché la plage.
   Done fill(const BufferView& view, std::uint32_t value);
 
   // Commandes écrites par l'appelant avec ses propres fonctions (copies, horodatages), après
-  // une barrière sur tout ce qui précède ; ce qui suit les attend aussi. Refus InputMismatch :
-  // déjà terminé.
+  // une barrière sur tout ce qui précède ; ce qui suit les attend aussi (leurs accès sont
+  // inconnus : la commande suivante a sa barrière). Refus InputMismatch : déjà terminé.
   Done commands(const std::function<void(VkCommandBuffer)>& record);
 
   // Barrière finale vers l'hôte et les transferts, puis vkEndCommandBuffer. Le Recorder est
@@ -108,14 +114,27 @@ class Recorder {
  private:
   Recorder(VkContext& context, MemoryAllocator& memory, std::unique_ptr<Recording> recording)
       : context_(&context), memory_(&memory), recording_(std::move(recording)) {}
+  struct Touched {
+    VkBuffer buffer = VK_NULL_HANDLE;
+    VkDeviceSize offset = 0;
+    VkDeviceSize size = 0;
+  };
   Done open() const;
+  // Une commande depuis la dernière barrière a touché l'une de ces vues, ou une image si images.
+  bool depends(std::span<const BufferView> buffers, bool images) const;
+  void touch(std::span<const BufferView> buffers, bool images);
+  // Barrière mémoire sur tout ce qui précède, s'il reste quelque chose de touché.
   void barrier();
   Done check_view(const BufferView& view, std::string_view what) const;
 
   VkContext* context_;
   MemoryAllocator* memory_;
   std::unique_ptr<Recording> recording_;
-  bool pending_ = false;  // une commande précédente a écrit : barrière avant la suivante
+  // Ce que les commandes ont touché depuis la dernière barrière : la suivante n'en pose une que
+  // si elle en dépend.
+  std::vector<Touched> touched_;
+  bool touched_images_ = false;
+  bool touched_all_ = false;  // commands() : accès inconnus
 };
 
 }  // namespace ajp::gpu::vk

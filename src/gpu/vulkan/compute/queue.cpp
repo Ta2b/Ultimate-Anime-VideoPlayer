@@ -1,4 +1,5 @@
 // Soumission sur la file compute (par lots), attentes hôte et command buffers jetables.
+#include <algorithm>
 #include <chrono>
 #include <cstddef>
 #include <format>
@@ -47,6 +48,7 @@ Done VkContext::queue_submit(std::span<const VkSubmitInfo> infos) {
                                                    infos.data(), VK_NULL_HANDLE);
   if (unlock_queue_) unlock_queue_();
   ++queue_submits_;
+  submit_infos_ += infos.size();
   if (result == VK_SUCCESS && !infos.empty() && infos.back().signalSemaphoreCount > 0) {
     const VkSubmitInfo& info = infos.back();
     const auto* timeline = static_cast<const VkTimelineSemaphoreSubmitInfo*>(info.pNext);
@@ -107,15 +109,16 @@ Done VkContext::enqueue(Recording& recording, std::span<const TimelinePoint> wai
   entry.wait_values.clear();
   // L'exécution précédente du même enregistrement, attendue côté GPU (dans le même lot au
   // besoin : un sémaphore timeline peut attendre une valeur signalée plus tôt dans l'appel).
+  entry.own_waits = 0;
   if (recording.submitted_ > 0) {
     entry.wait_semaphores.push_back(recording.runs_.handle());
     entry.wait_values.push_back(recording.submitted_);
+    entry.own_waits = 1;
   }
   for (const TimelinePoint& point : waits) {
     entry.wait_semaphores.push_back(point.semaphore);
     entry.wait_values.push_back(point.value);
   }
-  entry.stages.assign(entry.wait_semaphores.size(), VK_PIPELINE_STAGE_ALL_COMMANDS_BIT);
   entry.signal_semaphores.assign(1, recording.runs_.handle());
   entry.signal_values.assign(1, recording.submitted_ + 1);
   for (const TimelinePoint& point : signals) {
@@ -127,33 +130,101 @@ Done VkContext::enqueue(Recording& recording, std::span<const TimelinePoint> wai
   return {};
 }
 
+namespace {
+
+// La valeur signalée pour ce sémaphore par le groupe, s'il le signale.
+std::optional<std::uint64_t> signalled(std::span<const VkSemaphore> semaphores,
+                                       std::span<const std::uint64_t> values, VkSemaphore semaphore) {
+  for (std::size_t i = 0; i < semaphores.size(); ++i) {
+    if (semaphores[i] == semaphore) return values[i];
+  }
+  return std::nullopt;
+}
+
+// Ajoute (sémaphore, valeur) à une liste, ou relève la valeur déjà présente : une attente comme un
+// signal sur un timeline valent pour leur plus grande valeur.
+void add_point(std::vector<VkSemaphore>& semaphores, std::vector<std::uint64_t>& values,
+               VkSemaphore semaphore, std::uint64_t value) {
+  for (std::size_t i = 0; i < semaphores.size(); ++i) {
+    if (semaphores[i] == semaphore) {
+      values[i] = std::max(values[i], value);
+      return;
+    }
+  }
+  semaphores.push_back(semaphore);
+  values.push_back(value);
+}
+
+}  // namespace
+
+bool VkContext::joins(const Group& group, const Batched& entry) {
+  // Une attente que le groupe ne satisfait pas lui-même (sémaphore d'ailleurs, ou valeur au-delà
+  // de ce qu'il signale) ouvrirait un groupe où les enregistrements d'avant l'attendraient aussi.
+  // L'exécution précédente du même enregistrement, signalée par une soumission passée, se fond.
+  for (std::size_t i = entry.own_waits; i < entry.wait_semaphores.size(); ++i) {
+    const auto value = signalled(group.signal_semaphores, group.signal_values, entry.wait_semaphores[i]);
+    if (!value || *value < entry.wait_values[i]) return false;
+  }
+  return true;
+}
+
+void VkContext::merge(Group& group, const Batched& entry) {
+  for (std::size_t i = 0; i < entry.wait_semaphores.size(); ++i) {
+    // Signalée par le groupe : l'ordre de soumission et la barrière finale de chaque
+    // enregistrement ordonnent déjà celui-ci après ; attendre bloquerait, le signal venant à la fin.
+    const auto value = signalled(group.signal_semaphores, group.signal_values, entry.wait_semaphores[i]);
+    if (value && *value >= entry.wait_values[i]) continue;
+    add_point(group.wait_semaphores, group.wait_values, entry.wait_semaphores[i], entry.wait_values[i]);
+  }
+  for (std::size_t i = 0; i < entry.signal_semaphores.size(); ++i)
+    add_point(group.signal_semaphores, group.signal_values, entry.signal_semaphores[i],
+              entry.signal_values[i]);
+  ++group.count;
+}
+
 Done VkContext::flush() {
   if (batched_ == 0) return {};
-  batch_timelines_.resize(batched_);
-  batch_infos_.resize(batched_);
   batch_buffers_.resize(batched_);
+  std::size_t groups = 0;
   for (std::size_t k = 0; k < batched_; ++k) {
     const Batched& entry = batch_[k];
     batch_buffers_[k] = entry.recording->command_buffer_;
-    batch_timelines_[k] = {
+    if (groups == 0 || !joins(batch_groups_[groups - 1], entry)) {
+      if (groups == batch_groups_.size()) batch_groups_.emplace_back();
+      Group& group = batch_groups_[groups++];
+      group.first = k;
+      group.count = 0;
+      group.wait_semaphores.clear();
+      group.wait_values.clear();
+      group.signal_semaphores.clear();
+      group.signal_values.clear();
+    }
+    merge(batch_groups_[groups - 1], entry);
+  }
+  batch_timelines_.resize(groups);
+  batch_infos_.resize(groups);
+  for (std::size_t g = 0; g < groups; ++g) {
+    Group& group = batch_groups_[g];
+    group.stages.assign(group.wait_semaphores.size(), VK_PIPELINE_STAGE_ALL_COMMANDS_BIT);
+    batch_timelines_[g] = {
         .sType = VK_STRUCTURE_TYPE_TIMELINE_SEMAPHORE_SUBMIT_INFO,
-        .waitSemaphoreValueCount = static_cast<std::uint32_t>(entry.wait_values.size()),
-        .pWaitSemaphoreValues = entry.wait_values.data(),
-        .signalSemaphoreValueCount = static_cast<std::uint32_t>(entry.signal_values.size()),
-        .pSignalSemaphoreValues = entry.signal_values.data()};
-    batch_infos_[k] = {.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO,
-                       .pNext = &batch_timelines_[k],
-                       .waitSemaphoreCount = static_cast<std::uint32_t>(entry.wait_semaphores.size()),
-                       .pWaitSemaphores = entry.wait_semaphores.data(),
-                       .pWaitDstStageMask = entry.stages.data(),
-                       .commandBufferCount = 1,
-                       .pCommandBuffers = &batch_buffers_[k],
-                       .signalSemaphoreCount = static_cast<std::uint32_t>(entry.signal_semaphores.size()),
-                       .pSignalSemaphores = entry.signal_semaphores.data()};
+        .waitSemaphoreValueCount = static_cast<std::uint32_t>(group.wait_values.size()),
+        .pWaitSemaphoreValues = group.wait_values.data(),
+        .signalSemaphoreValueCount = static_cast<std::uint32_t>(group.signal_values.size()),
+        .pSignalSemaphoreValues = group.signal_values.data()};
+    batch_infos_[g] = {.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO,
+                       .pNext = &batch_timelines_[g],
+                       .waitSemaphoreCount = static_cast<std::uint32_t>(group.wait_semaphores.size()),
+                       .pWaitSemaphores = group.wait_semaphores.data(),
+                       .pWaitDstStageMask = group.stages.data(),
+                       .commandBufferCount = static_cast<std::uint32_t>(group.count),
+                       .pCommandBuffers = &batch_buffers_[group.first],
+                       .signalSemaphoreCount = static_cast<std::uint32_t>(group.signal_semaphores.size()),
+                       .pSignalSemaphores = group.signal_semaphores.data()};
   }
   const std::size_t count = batched_;
   batched_ = 0;
-  auto ok = queue_submit(std::span(batch_infos_).first(count));
+  auto ok = queue_submit(std::span(batch_infos_).first(groups));
   if (!ok) {
     // Rien n'est parti : les enregistrements n'attendront pas des exécutions jamais soumises.
     for (std::size_t k = 0; k < count; ++k) --batch_[k].recording->submitted_;
