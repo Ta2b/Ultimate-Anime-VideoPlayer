@@ -19,6 +19,8 @@ constexpr ImVec4 kNote{0.66F, 0.68F, 0.74F, 1.0F};
 constexpr std::uint64_t kGiB = std::uint64_t{1} << 30U;
 // 11 Go et plus : la chaîne 1440p ×3 et ses moteurs tiennent avec la marge du bureau.
 constexpr std::uint64_t kQualityVram = 11 * kGiB;
+// 4 Go annoncés (un peu moins une fois le pilote servi) : le profil 7, 540p ×2 et RIFE ×2.
+constexpr std::uint64_t kLightVram = 3 * kGiB + kGiB / 2;
 
 void note(const std::string& text) {
   ImGui::PushStyleColor(ImGuiCol_Text, kNote);
@@ -234,8 +236,10 @@ std::string gpu_line(const GpuFacts& gpu) {
 }
 
 int start_profile_for(const GpuFacts& gpu) {
-  if (gpu.vendor != GpuVendor::Nvidia || !gpu.tensor_cores) return 9;
-  return gpu.vram_bytes >= kQualityVram ? 1 : 7;
+  if (gpu.vendor == GpuVendor::Nvidia && gpu.tensor_cores) return gpu.vram_bytes >= kQualityVram ? 1 : 7;
+  // Sans cœurs Tensor, le moteur Vulkan tient 540p ×2 sur une carte dédiée de 4 Go (RX 6500) ;
+  // un GPU Intel (intégré le plus souvent) ou plus petit reste sur la source.
+  return gpu.vendor != GpuVendor::Intel && gpu.vram_bytes >= kLightVram ? 7 : 9;
 }
 
 FirstRunView first_run_view(const GpuFacts& gpu, const EnginesHere& here, ProfilesView profiles,

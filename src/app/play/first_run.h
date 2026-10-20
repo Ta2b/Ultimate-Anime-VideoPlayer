@@ -40,7 +40,7 @@ core::SystemInfo system_of(const GpuFacts& gpu);
 std::string gpu_line(const GpuFacts& gpu);
 
 // Profil de démarrage conseillé : 1 (1440p, RIFE ×3) pour une RTX de 11 Go et plus, 7 (1080p, ×2)
-// pour une RTX plus petite, 9 (source) sans cœurs Tensor.
+// pour une RTX plus petite et pour les autres cartes de 4 Go et plus hors Intel, 9 (source) sinon.
 int start_profile_for(const GpuFacts& gpu);
 
 // Un moteur que ce lecteur sait télécharger (engines.lock pour cet OS).

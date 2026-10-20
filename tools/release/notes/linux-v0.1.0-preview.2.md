@@ -2,6 +2,9 @@ Préversion de test pour Linux x86-64, centrée sur les GPU AMD et Intel par le 
 
 ## Nouveautés
 
+### Modèles inclus
+- L'archive contient les modèles SPAN AnimeJaNai HD V3.1 (Sharp1 et normal, Performance et Balanced) et RIFE 4.25 et 4.22 lite : la lecture avec agrandissement et interpolation marche dès l'extraction.
+
 ### Décodage matériel sous Linux
 - Avec le moteur Vulkan, la vidéo était décodée par le processeur. Elle passe maintenant par VA-API, puis repli sur le processeur.
 - Avec un iGPU Intel activé (UHD 770 par exemple), c'est lui qui décode (AV1, HEVC 10 bits, VP9), et la carte graphique reste libre pour SPAN et RIFE. S'il ne gère pas le codec, la carte graphique ou le processeur prend le relais.
@@ -24,7 +27,7 @@ cd ajp-linux-x64
 ./ajp play "épisode.mkv" --fullscreen
 ```
 
-Il faut une distribution récente (glibc 2.39 ou plus : Ubuntu 24.04, Fedora 40, Arch). Paquets du système nécessaires (Ubuntu/Debian) : `libvulkan1 mesa-vulkan-drivers libva2 libva-drm2 libva-x11-2 intel-media-va-driver`. Le fichier `LISEZMOI.txt` de l'archive donne les équivalents Fedora et Arch, l'emplacement des modèles AnimeJaNai et les réglages conseillés pour les GPU de 4 Go.
+Il faut une distribution récente (glibc 2.39 ou plus : Ubuntu 24.04, Fedora 40, Arch). Paquets du système nécessaires (Ubuntu/Debian) : `libvulkan1 mesa-vulkan-drivers libva2 libva-drm2 libva-x11-2 intel-media-va-driver`. Le fichier `LISEZMOI.txt` de l'archive donne les équivalents Fedora et Arch, les licences des modèles et les réglages conseillés pour les GPU de 4 Go.
 
 Sur un GPU de 4 Go (RX 6500, RX 6500M) : commencez par le profil 7 « Léger 1080p » et passez en 720p si `--stats` laisse de la marge. Branchez l'écran sur la carte graphique.
 

@@ -126,13 +126,18 @@ std::expected<PlayOptions, Refusal> parse_play_options(std::span<const std::stri
 
 std::string play_usage();
 
-// Où chercher le modèle par défaut, dans l'ordre : l'installation d'AnimeJaNai, puis le
-// profil par défaut du dépôt mpv-AnimeJaNai-HDR. home vient de SDL (SDL_GetUserFolder).
-std::vector<std::filesystem::path> default_model_candidates(const std::filesystem::path& home);
-// RIFE : kDefaultRifeFile dans chaque dossier ; avec files, chacun d'eux, dossier par dossier.
-std::vector<std::filesystem::path> default_rife_candidates(const std::filesystem::path& home);
+// Où chercher le modèle par défaut, dans l'ordre : l'installation d'AnimeJaNai, le profil par
+// défaut du dépôt mpv-AnimeJaNai-HDR, puis les modèles livrés avec le lecteur (bundled/onnx, si
+// bundled n'est pas vide). home vient de SDL (SDL_GetUserFolder).
+std::vector<std::filesystem::path> default_model_candidates(const std::filesystem::path& home,
+                                                            const std::filesystem::path& bundled = {});
+// RIFE : kDefaultRifeFile dans chaque dossier, bundled/rife en dernier ; avec files, chacun d'eux,
+// dossier par dossier.
 std::vector<std::filesystem::path> default_rife_candidates(const std::filesystem::path& home,
-                                                           std::span<const std::string_view> files);
+                                                           const std::filesystem::path& bundled = {});
+std::vector<std::filesystem::path> default_rife_candidates(const std::filesystem::path& home,
+                                                           std::span<const std::string_view> files,
+                                                           const std::filesystem::path& bundled = {});
 
 // Le modèle à charger : --model s'il est donné (il doit exister), sinon le premier
 // candidat présent. Refus ModelUnreadable avec les chemins essayés.

@@ -25,9 +25,11 @@ struct ModelChoice {
 };
 
 // SPAN : --model, sinon settings.model, sinon le modèle par défaut ; le menu propose les 2x_*.onnx.
+// bundled : les modèles livrés avec le lecteur (default_model_candidates), cherchés en dernier.
 std::expected<ModelChoice, Refusal> choose_model(const PlayOptions& options,
                                                  const std::filesystem::path& home,
-                                                 const PlaySettings& settings);
+                                                 const PlaySettings& settings,
+                                                 const std::filesystem::path& bundled = {});
 // Les seules versions de RIFE du lecteur : 4.25, la plus conseillée pour l'animation (7,1 ms par
 // passe à 720p sur une 4070 Ti), et 4.22 lite, la plus légère. Les exports ONNX de vs-mlrt à 11
 // plans d'entrée, convertis en FP16 à îlots FP32 (tools/rife/convert_rife_fp16.py), sous ces noms.
@@ -44,7 +46,7 @@ std::span<const std::string_view> rife_preference(const GpuFacts& gpu);
 // preference présent. Un choix absent du dossier est signalé au journal et le défaut le remplace.
 std::expected<ModelChoice, Refusal> choose_rife_model(
     const PlayOptions& options, const std::filesystem::path& home, const PlaySettings& settings,
-    std::span<const std::string_view> preference = kRifeForRtx);
+    std::span<const std::string_view> preference = kRifeForRtx, const std::filesystem::path& bundled = {});
 struct RifeEntry {
   std::string file;
   bool present = false;  // dans le dossier du modèle par défaut

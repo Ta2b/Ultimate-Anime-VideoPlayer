@@ -23,6 +23,7 @@ struct PlayerPaths {
   std::vector<std::filesystem::path>
       backends;                        // ajp_backend_tensorrt.so, ajp_backend_vulkan.so…, par préférence
   std::filesystem::path engine_index;  // engines.lock livré avec le lecteur (engine_install.h)
+  std::filesystem::path models;  // modèles livrés : models/onnx (SPAN), models/rife ; cherchés en dernier
 };
 
 // Lit le fichier jusqu'à la fin, à « q » ou à la fermeture de la fenêtre. SDL doit être

@@ -117,11 +117,11 @@ struct Reopen {
 };
 
 // Où chercher les graphes de GMFSS : à côté du modèle RIFE choisi, puis dans les dossiers RIFE.
-std::vector<std::filesystem::path> gmfss_dirs(const std::filesystem::path& home,
+std::vector<std::filesystem::path> gmfss_dirs(const PlayerPaths& paths,
                                               const std::optional<ModelChoice>& rife) {
   std::vector<std::filesystem::path> dirs;
   if (rife) dirs.push_back(rife->path.parent_path());
-  for (const std::filesystem::path& candidate : default_rife_candidates(home)) {
+  for (const std::filesystem::path& candidate : default_rife_candidates(paths.home, paths.models)) {
     if (std::ranges::find(dirs, candidate.parent_path()) == dirs.end())
       dirs.push_back(candidate.parent_path());
   }
@@ -140,7 +140,7 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
   const media::TrackInfo& video = p.video;
   std::optional<ModelChoice> model;
   if (settings.upscale) {
-    auto chosen = choose_model(p.options, p.paths.home, settings);
+    auto chosen = choose_model(p.options, p.paths.home, settings, p.paths.models);
     if (!chosen) return std::unexpected(std::move(chosen.error()));
     model = std::move(*chosen);
   }
@@ -153,11 +153,11 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
   // Le modèle RIFE est cherché même sans interpolation : le menu peut l'allumer.
   const std::span<const std::string_view> rife_order = rife_preference(gpu_facts(p.screen));
   std::optional<ModelChoice> rife_choice;
-  if (auto found = choose_rife_model(p.options, p.paths.home, settings, rife_order))
+  if (auto found = choose_rife_model(p.options, p.paths.home, settings, rife_order, p.paths.models))
     rife_choice = std::move(*found);
   const std::optional<std::filesystem::path> rife_model =
       rife_choice ? std::optional(rife_choice->path) : std::nullopt;
-  const std::vector<std::filesystem::path> gmfss_places = gmfss_dirs(p.paths.home, rife_choice);
+  const std::vector<std::filesystem::path> gmfss_places = gmfss_dirs(p.paths, rife_choice);
   const GmfssVariant gmfss_variant =
       settings.motion_engine == MotionEngine::GmfssUnion ? GmfssVariant::Union : GmfssVariant::Base;
   const bool gmfss_found = find_gmfss(gmfss_places, gmfss_variant).has_value();
@@ -165,7 +165,8 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
   const bool drba_found = find_distil_drba(gmfss_places).has_value();
   const bool want_drba = settings.rife_factor >= 2 && settings.motion_engine == MotionEngine::DistilDrba;
   if (settings.rife_factor >= 2 && !rife_model && !(want_gmfss && gmfss_found) && !(want_drba && drba_found))
-    return std::unexpected(choose_rife_model(p.options, p.paths.home, settings, rife_order).error());
+    return std::unexpected(
+        choose_rife_model(p.options, p.paths.home, settings, rife_order, p.paths.models).error());
   show_loading(p.screen, p.ui, "Chargement");
   const gpu::BackendInit init{
       .render = &p.screen.device(), .cache_dir = p.paths.engines, .log = backend_log()};

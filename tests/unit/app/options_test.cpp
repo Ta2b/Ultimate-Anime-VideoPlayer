@@ -125,6 +125,12 @@ TEST_CASE("Modèle : --model doit exister, sinon le premier candidat présent", 
   REQUIRE(defaults.size() == 2);
   CHECK(defaults[0] == std::filesystem::path("/home/x/.local/share/AnimeJaNai-HDR-linux/animejanai/onnx") /
                            kDefaultModelFile);
+  // Les modèles livrés avec le lecteur viennent en dernier, SPAN comme RIFE.
+  const auto bundled = default_model_candidates("/home/x", "/opt/ajp/models");
+  REQUIRE(bundled.size() == 3);
+  CHECK(bundled.back() == std::filesystem::path("/opt/ajp/models/onnx") / kDefaultModelFile);
+  CHECK(default_rife_candidates("/home/x", "/opt/ajp/models").back() ==
+        std::filesystem::path("/opt/ajp/models/rife/rife_v4.25.onnx"));
   std::filesystem::remove_all(dir);
 }
 

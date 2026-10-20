@@ -249,14 +249,17 @@ std::string play_usage() {
       kDefaultModelFile, kDefaultRifeFactor, kDefaultRifeFile);
 }
 
-std::vector<std::filesystem::path> default_model_candidates(const std::filesystem::path& home) {
-  return {
+std::vector<std::filesystem::path> default_model_candidates(const std::filesystem::path& home,
+                                                            const std::filesystem::path& bundled) {
+  std::vector<std::filesystem::path> candidates{
       home / ".local/share/AnimeJaNai-HDR-linux/animejanai/onnx" / kDefaultModelFile,
       home /
           "Documents/mpv-AnimeJaNai-HDR/BuildMpvUpscale2xAnimeJaNai/mpv-upscale-2x_animejanai/animejanai/"
           "onnx" /
           kDefaultModelFile,
   };
+  if (!bundled.empty()) candidates.push_back(bundled / "onnx" / kDefaultModelFile);
+  return candidates;
 }
 
 bool valid_factor(Factor factor) {
@@ -286,16 +289,20 @@ std::string factor_text(Factor factor) {
   return std::format("×{}", factor.num);
 }
 
-std::vector<std::filesystem::path> default_rife_candidates(const std::filesystem::path& home) {
+std::vector<std::filesystem::path> default_rife_candidates(const std::filesystem::path& home,
+                                                           const std::filesystem::path& bundled) {
   const std::array files{kDefaultRifeFile};
-  return default_rife_candidates(home, files);
+  return default_rife_candidates(home, files, bundled);
 }
 
 std::vector<std::filesystem::path> default_rife_candidates(const std::filesystem::path& home,
-                                                           std::span<const std::string_view> files) {
+                                                           std::span<const std::string_view> files,
+                                                           const std::filesystem::path& bundled) {
+  std::vector<std::filesystem::path> dirs{home / ".local/share/AnimeJaNai-HDR-linux/animejanai/rife",
+                                          home / ".local/share/AnimeJaNai/animejanai/rife"};
+  if (!bundled.empty()) dirs.push_back(bundled / "rife");
   std::vector<std::filesystem::path> candidates;
-  for (const std::filesystem::path& dir : {home / ".local/share/AnimeJaNai-HDR-linux/animejanai/rife",
-                                           home / ".local/share/AnimeJaNai/animejanai/rife"}) {
+  for (const std::filesystem::path& dir : dirs) {
     for (const std::string_view file : files) candidates.push_back(dir / file);
   }
   return candidates;

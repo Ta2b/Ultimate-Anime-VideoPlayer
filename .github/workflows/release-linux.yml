@@ -26,7 +26,7 @@ jobs:
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y -qq ninja-build nasm autoconf automake libtool pkg-config \
-            python3-jinja2 patchelf libvulkan-dev glslc glslang-tools spirv-tools \
+            python3-jinja2 patchelf p7zip-full libvulkan-dev glslc glslang-tools spirv-tools \
             libfreetype-dev libharfbuzz-dev libfribidi-dev libfontconfig-dev libshaderc-dev glslang-dev \
             liblcms2-dev libdav1d-dev libasound2-dev libpulse-dev libcurl4-openssl-dev \
             libx11-dev libxext-dev libxrandr-dev libxcursor-dev libxi-dev libxss-dev libxtst-dev \

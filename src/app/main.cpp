@@ -75,6 +75,7 @@ int main(int argc, char** argv) {
       .home = sdl_path(SDL_GetUserFolder(SDL_FOLDER_HOME)),
       .engines = data / "engines",
       .engine_index = base / "engines.lock",
+      .models = base / "models",
   };
   // TensorRT d'abord (cartes NVIDIA), MIGraphX (AMD), OpenVINO (Intel) et Core ML (Apple), qui
   // refusent les autres fabricants, puis Vulkan (le recours partout) ; chacun à côté de l'exécutable, puis

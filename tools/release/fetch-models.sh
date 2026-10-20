@@ -1,0 +1,65 @@
+#!/usr/bin/env bash
+# Les modèles livrés avec le lecteur, téléchargés et vérifiés par leur SHA-256 :
+#
+#   <dest>/onnx/   SPAN AnimeJaNai HD V3.1 (Sharp1 et normal, Performance et Balanced), depuis le
+#                  dépôt mpv-AnimeJaNai-HDR à un commit fixé ; licence CC BY-NC-SA 4.0
+#   <dest>/rife/   RIFE 4.25 et 4.22 lite en fp16 (conversions de vs-mlrt), depuis la release
+#                  models-rife-fp16-1 d'animejanai-inference ; RIFE est sous licence MIT
+#
+#   tools/release/fetch-models.sh <dest> [dossier-de-cache]
+#
+# L'archive RIFE (322 Mo, 7z) reste dans le cache : un second appel ne la retélécharge pas.
+set -euo pipefail
+
+DEST="${1:?dossier de destination}"
+CACHE="${2:-${XDG_CACHE_HOME:-$HOME/.cache}/ajp-release-models}"
+command -v 7z >/dev/null || { echo "7z manquant (apt install p7zip-full)" >&2; exit 1; }
+mkdir -p "$DEST/onnx" "$DEST/rife" "$CACHE"
+
+SPAN_COMMIT=55a8ae53bb0e2dc531449b68a9a0717c61ae982b
+SPAN_URL="https://raw.githubusercontent.com/Ta2b/mpv-AnimeJaNai-HDR/$SPAN_COMMIT/BuildMpvUpscale2xAnimeJaNai/mpv-upscale-2x_animejanai/animejanai/onnx"
+SPAN=(
+  "72246eded3aab52f8d1a71613c0a1d900734b358d1820b62eb36f1ed376e1cf4 2x_AnimeJaNai_HD_V3.1Sharp1_Performance_SPANF3_b5f48_unshuffle_fp16.onnx"
+  "dde763c8202cfebac5ec030ea6644f3ee339ea35bbda8a76e257405399552f0f 2x_AnimeJaNai_HD_V3.1Sharp1_Balanced_SPANF3_b8f64_unshuffle_fp16.onnx"
+  "7b804d87320f37b7269d6e27796046fbd975e95e2aa1f65d5557f52a36282716 2x_AnimeJaNai_HD_V3.1_Performance_SPANF3_b5f48_unshuffle_fp16.onnx"
+  "b308e93c3dda3c4f9f968295b2b7b8d1c0583a711bca53a08d51134d9d1cbd5c 2x_AnimeJaNai_HD_V3.1_Balanced_SPANF3_b8f64_unshuffle_fp16.onnx"
+)
+RIFE_URL="https://github.com/the-database/animejanai-inference/releases/download/models-rife-fp16-1/rife-fp16-1.7z"
+RIFE_ARCHIVE_SHA=3fcf3429f3bb661d15c59aa58ed7ba28c0ca7f79e2388f8e0165dd8bbe0648f9
+RIFE=(
+  "de0fb71ae50fe082eb3903fd5cf752063dea5e9fd61e8bbf3c4577e11b877c9c rife_v4.25.onnx"
+  "8b30b93ef8ab0b3cd1bb8905ad8b911eb887ff4b2900558eb1914d99568e2ca5 rife_v4.22_lite.onnx"
+)
+
+check() {  # sha256 fichier
+  echo "$1  $2" | sha256sum -c --quiet - || { echo "SHA-256 inattendu : $2" >&2; exit 1; }
+}
+
+for entry in "${SPAN[@]}"; do
+  read -r sha name <<<"$entry"
+  curl -fsSL -o "$DEST/onnx/$name" "$SPAN_URL/$name"
+  check "$sha" "$DEST/onnx/$name"
+done
+
+archive="$CACHE/rife-fp16-1.7z"
+if ! echo "$RIFE_ARCHIVE_SHA  $archive" | sha256sum -c --quiet - 2>/dev/null; then
+  curl -fsSL -o "$archive" "$RIFE_URL"
+  check "$RIFE_ARCHIVE_SHA" "$archive"
+fi
+for entry in "${RIFE[@]}"; do
+  read -r sha name <<<"$entry"
+  7z e -y -bso0 -o"$DEST/rife" "$archive" "$name"
+  check "$sha" "$DEST/rife/$name"
+done
+
+cat > "$DEST/LICENCES.txt" <<'TXT'
+Modèles livrés avec le lecteur
+
+onnx/  AnimeJaNai HD V3.1 (SPAN), par the-database : Creative Commons BY-NC-SA 4.0
+       (attribution, pas d'usage commercial, partage dans les mêmes conditions).
+       https://github.com/the-database/mpv-upscale-2x_animejanai
+rife/  RIFE 4.25 et 4.22 lite (Practical-RIFE, hzwer), conversions ONNX de vs-mlrt passées en
+       fp16 par animejanai-inference : licence MIT.
+       https://github.com/hzwer/Practical-RIFE
+TXT
+echo "modèles : $DEST"

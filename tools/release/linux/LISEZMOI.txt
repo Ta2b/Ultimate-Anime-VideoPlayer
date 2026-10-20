@@ -6,6 +6,9 @@ Contenu
   ajp_backend_vulkan.so     le moteur Vulkan, pour tout GPU (AMD, Intel, NVIDIA)
   lib/                      FFmpeg, libplacebo, SDL3, libass et leurs dépendances
   engines.lock              l'index des moteurs facultatifs téléchargeables
+  models/onnx/              SPAN AnimeJaNai HD V3.1 (Sharp1 et normal, Performance et Balanced)
+  models/rife/              RIFE 4.25 et 4.22 lite (fp16)
+  models/LICENCES.txt       licences des modèles (AnimeJaNai : CC BY-NC-SA 4.0 ; RIFE : MIT)
 
 Paquets du système (non livrés)
   Ubuntu, Debian : libvulkan1 mesa-vulkan-drivers libva2 libva-drm2 libva-x11-2
@@ -15,10 +18,10 @@ Paquets du système (non livrés)
   Arch           : vulkan-icd-loader vulkan-radeon libva intel-media-driver
   Pilote AMD ouvert (RADV, Mesa 24 ou plus) conseillé ; pilote NVIDIA propriétaire pour NVIDIA.
 
-Modèles AnimeJaNai
-  Le lecteur cherche SPAN dans ~/.local/share/AnimeJaNai-HDR-linux/animejanai/onnx/
-  et RIFE (rife_v4.25.onnx) dans ~/.local/share/AnimeJaNai-HDR-linux/animejanai/rife/.
-  Ailleurs : --model=FICHIER.onnx et --rife-model=FICHIER.onnx.
+Modèles
+  Livrés dans models/ : rien à installer. Une installation d'AnimeJaNai
+  (~/.local/share/AnimeJaNai-HDR-linux/animejanai/onnx/ et rife/) passe devant s'il y en a une.
+  Un autre fichier : --model=FICHIER.onnx et --rife-model=FICHIER.onnx.
 
 Lancer
   ./ajp play "épisode.mkv" --fullscreen

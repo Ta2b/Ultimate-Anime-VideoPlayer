@@ -36,10 +36,11 @@ ModelChoice choose_in(const std::filesystem::path& found, std::string_view prefi
 
 std::expected<ModelChoice, Refusal> choose_model(const PlayOptions& options,
                                                  const std::filesystem::path& home,
-                                                 const PlaySettings& settings) {
+                                                 const PlaySettings& settings,
+                                                 const std::filesystem::path& bundled) {
   PlayOptions defaults = options;
   if (!options.was_given("--model")) defaults.model.reset();
-  auto found = find_model(defaults, default_model_candidates(home));
+  auto found = find_model(defaults, default_model_candidates(home, bundled));
   if (!found) return std::unexpected(std::move(found.error()));
   return choose_in(*found, "2x_", settings.model, options.was_given("--model"));
 }
@@ -47,8 +48,9 @@ std::expected<ModelChoice, Refusal> choose_model(const PlayOptions& options,
 std::expected<ModelChoice, Refusal> choose_rife_model(const PlayOptions& options,
                                                       const std::filesystem::path& home,
                                                       const PlaySettings& settings,
-                                                      std::span<const std::string_view> preference) {
-  auto found = find_rife_model(options, default_rife_candidates(home, preference));
+                                                      std::span<const std::string_view> preference,
+                                                      const std::filesystem::path& bundled) {
+  auto found = find_rife_model(options, default_rife_candidates(home, preference, bundled));
   if (!found) return std::unexpected(std::move(found.error()));
   const std::string chosen =
       std::ranges::contains(kRifeCatalogue, settings.rife_model) ? settings.rife_model : "";

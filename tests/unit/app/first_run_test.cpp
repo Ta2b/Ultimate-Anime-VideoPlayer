@@ -54,9 +54,15 @@ TEST_CASE("Profil conseillé selon le GPU", "[app][first_run]") {
   CHECK(start_profile_for(small) == 7);
   GpuFacts gtx = kRtx;
   gtx.tensor_cores = false;
+  CHECK(start_profile_for(gtx) == 7);
+  gtx.vram_bytes = 2 * kGiB;
   CHECK(start_profile_for(gtx) == 9);
   const GpuFacts amd{.name = "AMD Radeon", .vendor = GpuVendor::Amd, .vram_bytes = 16 * kGiB};
-  CHECK(start_profile_for(amd) == 9);
+  CHECK(start_profile_for(amd) == 7);
+  const GpuFacts rx6500{.name = "AMD Radeon RX 6500 XT", .vendor = GpuVendor::Amd, .vram_bytes = 4 * kGiB};
+  CHECK(start_profile_for(rx6500) == 7);
+  const GpuFacts uhd{.name = "Intel(R) UHD Graphics 770", .vendor = GpuVendor::Intel, .vram_bytes = 8 * kGiB};
+  CHECK(start_profile_for(uhd) == 9);
 }
 
 TEST_CASE("MIGraphX proposé aux seuls GPU que ROCm sert", "[app][first_run]") {
