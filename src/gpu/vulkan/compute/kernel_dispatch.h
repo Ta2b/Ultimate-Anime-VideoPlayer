@@ -205,6 +205,6 @@ std::expected<WeightViews, Refusal> record_weights(Recorder& recorder, const Wei
 Done run(PipelineCache& pipelines, Recorder& recorder, std::string_view shader, Precision variant,
          std::span<const std::uint32_t> constants, std::span<const BufferView> buffers,
          std::span<const VkImageView> images, std::span<const std::byte> push,
-         std::array<std::uint32_t, 3> groups);
+         std::array<std::uint32_t, 3> groups, DispatchOrder order = DispatchOrder::AfterPrevious);
 
 }  // namespace ajp::gpu::vk::detail

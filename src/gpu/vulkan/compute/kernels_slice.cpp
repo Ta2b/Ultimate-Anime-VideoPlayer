@@ -5,7 +5,9 @@
 #include <array>
 #include <cstdint>
 #include <format>
+#include <span>
 #include <utility>
+#include <vector>
 
 #include "gpu/vulkan/compute/kernel_dispatch.h"
 #include "gpu/vulkan/compute/kernel_runner.h"
@@ -59,53 +61,93 @@ Done KernelRunner::rife_frames(Recorder& recorder, const TensorView& a, const Te
                      {groups_for(input.width), groups_for(input.height), 1});
 }
 
+VkDeviceSize KernelRunner::splat_sums_bytes(const TensorView& source) {
+  const VkDeviceSize bytes = VkDeviceSize{source.planes + 1U} * source.width * source.height * sizeof(float);
+  return (bytes + kSplatSumsAlign - 1) / kSplatSumsAlign * kSplatSumsAlign;
+}
+
 Done KernelRunner::soft_splat(Recorder& recorder, const TensorView& source, const TensorView& motion, float s,
                               const BufferView& sums, const TensorView& out) {
+  const SplatViews job{.source = source, .motion = motion, .s = s, .out = out};
+  return soft_splat_all(recorder, std::span(&job, 1), sums);
+}
+
+Done KernelRunner::soft_splat_all(Recorder& recorder, std::span<const SplatViews> jobs,
+                                  const BufferView& sums) {
   const Features& enabled = context_->caps().enabled;
   if (!enabled.float_atomic_add) {
     return refuse(RefusalCode::FeatureUnavailable,
                   std::format("splat : {} sans additions atomiques de float", context_->caps().device_name));
   }
-  if (!(s >= 0.0F && s <= 1.0F)) {
-    return refuse(RefusalCode::FieldOutOfRange, std::format("splat : instant {} hors de [0, 1]", s));
+  if (jobs.empty()) return refuse(RefusalCode::InputMismatch, "splat : aucun travail");
+  VkDeviceSize total = 0;
+  for (const SplatViews& job : jobs) {
+    if (!(job.s >= 0.0F && job.s <= 1.0F)) {
+      return refuse(RefusalCode::FieldOutOfRange, std::format("splat : instant {} hors de [0, 1]", job.s));
+    }
+    if (job.source.planes == 0) return refuse(RefusalCode::InputMismatch, "splat : source sans plan");
+    if (auto ok = check_tensor(job.source, job.source.planes, enabled, "splat : source"); !ok) return ok;
+    if (auto ok = check_tensor(job.motion, kernels::kGmfssMotionChannels, enabled, "splat : mouvement"); !ok)
+      return ok;
+    if (auto ok = check_tensor(job.out, job.source.planes, enabled, "splat : sortie"); !ok) return ok;
+    if (auto ok = check_same_size(job.source.width, job.source.height, job.motion.width, job.motion.height,
+                                  "splat : source et mouvement");
+        !ok) {
+      return ok;
+    }
+    if (auto ok = check_same_size(job.source.width, job.source.height, job.out.width, job.out.height,
+                                  "splat : source et sortie");
+        !ok) {
+      return ok;
+    }
+    if (job.source.precision != job.motion.precision || job.source.precision != job.out.precision) {
+      return refuse(RefusalCode::InputMismatch, "splat : tenseurs de précisions différentes");
+    }
+    total += splat_sums_bytes(job.source);
   }
-  if (source.planes == 0) return refuse(RefusalCode::InputMismatch, "splat : source sans plan");
-  if (auto ok = check_tensor(source, source.planes, enabled, "splat : source"); !ok) return ok;
-  if (auto ok = check_tensor(motion, kernels::kGmfssMotionChannels, enabled, "splat : mouvement"); !ok)
-    return ok;
-  if (auto ok = check_tensor(out, source.planes, enabled, "splat : sortie"); !ok) return ok;
-  if (auto ok = check_same_size(source.width, source.height, motion.width, motion.height,
-                                "splat : source et mouvement");
-      !ok) {
-    return ok;
-  }
-  if (auto ok =
-          check_same_size(source.width, source.height, out.width, out.height, "splat : source et sortie");
-      !ok) {
-    return ok;
-  }
-  if (source.precision != motion.precision || source.precision != out.precision) {
-    return refuse(RefusalCode::InputMismatch, "splat : tenseurs de précisions différentes");
-  }
-  const VkDeviceSize bytes = VkDeviceSize{source.planes + 1U} * source.width * source.height * sizeof(float);
-  if (sums.size < bytes) {
+  if (sums.size < total) {
     return refuse(RefusalCode::InputMismatch,
-                  std::format("splat : {} o de sommes, {} attendus", sums.size, bytes));
+                  std::format("splat : {} o de sommes, {} attendus", sums.size, total));
   }
-  const BufferView all{.buffer = sums.buffer, .offset = sums.offset, .size = bytes};
+  // Une remise à zéro pour tous, puis les additions côte à côte (sommes distinctes), puis les
+  // normalisations de même : deux barrières pour le lot au lieu de deux par splat.
+  const BufferView all{.buffer = sums.buffer, .offset = sums.offset, .size = total};
   if (auto ok = recorder.fill(all, 0); !ok) return ok;
-  const detail::SplatPush push{source.width, source.height, source.planes, kSplatGroup, s};
-  const std::array scatter{source.buffer, motion.buffer, all};
-  if (auto ok = detail::run(
-          *pipelines_, recorder, "gmfss_splat", source.precision, {}, scatter, {}, bytes_of(push),
-          {groups_for(source.width), groups_for(source.height), groups_for(source.planes, kSplatGroup)});
-      !ok) {
-    return ok;
+  std::vector<BufferView> views;
+  views.reserve(jobs.size());
+  VkDeviceSize offset = sums.offset;
+  for (const SplatViews& job : jobs) {
+    const VkDeviceSize bytes =
+        VkDeviceSize{job.source.planes + 1U} * job.source.width * job.source.height * sizeof(float);
+    views.push_back({.buffer = sums.buffer, .offset = offset, .size = bytes});
+    offset += splat_sums_bytes(job.source);
   }
-  const detail::SplatNormalizePush normalize{source.width, source.height, source.planes};
-  const std::array buffers{all, out.buffer};
-  return detail::run(*pipelines_, recorder, "gmfss_normalize", source.precision, {}, buffers, {},
-                     bytes_of(normalize), {groups_for(source.width), groups_for(source.height), 1});
+  for (std::size_t j = 0; j < jobs.size(); ++j) {
+    const SplatViews& job = jobs[j];
+    const detail::SplatPush push{job.source.width, job.source.height, job.source.planes, kSplatGroup, job.s};
+    const std::array scatter{job.source.buffer, job.motion.buffer, views[j]};
+    if (auto ok = detail::run(*pipelines_, recorder, "gmfss_splat", job.source.precision, {}, scatter, {},
+                              bytes_of(push),
+                              {groups_for(job.source.width), groups_for(job.source.height),
+                               groups_for(job.source.planes, kSplatGroup)},
+                              j == 0 ? DispatchOrder::AfterPrevious : DispatchOrder::BesidePrevious);
+        !ok) {
+      return ok;
+    }
+  }
+  for (std::size_t j = 0; j < jobs.size(); ++j) {
+    const SplatViews& job = jobs[j];
+    const detail::SplatNormalizePush normalize{job.source.width, job.source.height, job.source.planes};
+    const std::array buffers{views[j], job.out.buffer};
+    if (auto ok =
+            detail::run(*pipelines_, recorder, "gmfss_normalize", job.source.precision, {}, buffers, {},
+                        bytes_of(normalize), {groups_for(job.source.width), groups_for(job.source.height), 1},
+                        j == 0 ? DispatchOrder::AfterPrevious : DispatchOrder::BesidePrevious);
+        !ok) {
+      return ok;
+    }
+  }
+  return {};
 }
 
 Done KernelRunner::fill(Recorder& recorder, const TensorView& tensor, float value) {

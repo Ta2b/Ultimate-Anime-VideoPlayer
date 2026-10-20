@@ -57,7 +57,7 @@ std::expected<WeightViews, Refusal> record_weights(Recorder& recorder, const Wei
 Done run(PipelineCache& pipelines, Recorder& recorder, std::string_view shader, Precision variant,
          std::span<const std::uint32_t> constants, std::span<const BufferView> buffers,
          std::span<const VkImageView> images, std::span<const std::byte> push,
-         std::array<std::uint32_t, 3> groups) {
+         std::array<std::uint32_t, 3> groups, DispatchOrder order) {
   std::string name(shader);
   if (variant == Precision::F16) name += "_f16";
   auto pipeline = pipelines.get({.shader = name,
@@ -66,7 +66,7 @@ Done run(PipelineCache& pipelines, Recorder& recorder, std::string_view shader, 
                                  .images = static_cast<std::uint32_t>(images.size()),
                                  .push_bytes = static_cast<std::uint32_t>(push.size())});
   if (!pipeline) return std::unexpected(pipeline.error());
-  return recorder.dispatch(**pipeline, buffers, images, push, groups);
+  return recorder.dispatch(**pipeline, buffers, images, push, groups, order);
 }
 
 }  // namespace ajp::gpu::vk::detail

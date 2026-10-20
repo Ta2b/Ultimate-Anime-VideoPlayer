@@ -190,6 +190,23 @@ class KernelOps {
                                                   float /*s*/, const Tensor& /*out*/) {
     return std::unexpected(Refusal{RefusalCode::FormatUnsupported, "soft_splat : absent de ce backend"});
   }
+  // Les splats d'un même instant (les six de GMFSS : trois niveaux, deux côtés) en un seul
+  // passage : une remise à zéro des sommes pour tous, une addition pour tous, une normalisation
+  // pour tous, au lieu de trois lancements par splat qui s'attendent l'un l'autre. Chaque travail
+  // suit le contrat de soft_splat ; au premier refus, les sorties sont indéfinies. Par défaut, un
+  // soft_splat par travail, dans l'ordre.
+  struct SplatJob {
+    Tensor source;
+    Tensor motion;
+    float s = 0.5F;
+    Tensor out;
+  };
+  virtual std::expected<void, Refusal> soft_splat_all(std::span<const SplatJob> jobs) {
+    for (const SplatJob& job : jobs) {
+      if (auto ok = soft_splat(job.source, job.motion, job.s, job.out); !ok) return ok;
+    }
+    return {};
+  }
   // Chaque élément du tenseur prend value : l'instant t du graphe « fusion » de GMFSS Union.
   virtual std::expected<void, Refusal> fill(const Tensor& /*tensor*/, float /*value*/) {
     return std::unexpected(Refusal{RefusalCode::FormatUnsupported, "fill : absent de ce backend"});

@@ -30,6 +30,7 @@
 #include "core/cadence.h"
 #include "core/ring.h"
 #include "gpu/backend.h"
+#include "gpu/kernel_ops.h"
 
 namespace ajp::app::play {
 
@@ -228,7 +229,8 @@ class UpscaleStage final : public RingStage {
     std::vector<gpu::Tensor> pair_outputs;   // dans l'ordre de output_names() du moteur paire
     std::vector<gpu::Tensor> fusion_inputs;  // dans l'ordre de input_names() du moteur fusion
     std::vector<GmfssSplat> splats;
-    std::optional<gpu::Tensor> time;  // union : l'instant de l'image intermédiaire, pour sa fusion
+    std::vector<gpu::KernelOps::SplatJob> jobs;  // les six splats de l'instant, un seul passage
+    std::optional<gpu::Tensor> time;             // union : l'instant de l'image intermédiaire, pour sa fusion
   };
   GmfssBuffers gmfss_;
   std::uint64_t gmfss_pairs_ = 0;

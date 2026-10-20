@@ -37,7 +37,8 @@ namespace ajp::gpu {
 // 2 : BackendInit à la création, noyaux de la chaîne (kernels()), alloc_tensor().
 // 3 : enqueue(), signal() et wait() rendent leur refus ; ajp_backend_layout().
 // 4 : KernelOps sans le flux optique matériel (open_optical_flow, optical_flow).
-inline constexpr int kBackendAbi = 4;
+// 5 : KernelOps::soft_splat_all (les splats d'un instant en un passage).
+inline constexpr int kBackendAbi = 5;
 
 using DeviceUuid = ajp::DeviceUuid;
 

@@ -10,12 +10,14 @@
 // DecodedFrame lue est gardée jusqu'à la fin de sa lecture GPU, constatée sans attente hôte.
 #pragma once
 
+#include <algorithm>
 #include <array>
 #include <cstddef>
 #include <cstdint>
 #include <expected>
 #include <memory>
 #include <optional>
+#include <span>
 #include <vector>
 
 #include "core/frame.h"
@@ -36,7 +38,9 @@ namespace ajp::gpu::vk {
 
 // Clé d'un enregistrement : quelques mots qui fixent tous ses paramètres, sans allocation.
 struct OpKey {
-  std::array<std::uint64_t, 48> words{};
+  // Assez pour les six splats d'un instant de GMFSS : trois vues de six mots chacun, l'instant,
+  // le tampon des sommes et le code de l'opération.
+  std::array<std::uint64_t, 128> words{};
   std::size_t size = 0;
 
   OpKey& add(std::uint64_t v) {
@@ -45,7 +49,10 @@ struct OpKey {
     return *this;
   }
   bool valid() const { return size <= words.size(); }
-  friend bool operator==(const OpKey&, const OpKey&) = default;
+  std::span<const std::uint64_t> used() const { return {words.data(), std::min(size, words.size())}; }
+  friend bool operator==(const OpKey& a, const OpKey& b) {
+    return a.size == b.size && std::ranges::equal(a.used(), b.used());
+  }
 };
 
 class VulkanKernelOps final : public KernelOps {
@@ -87,6 +94,7 @@ class VulkanKernelOps final : public KernelOps {
   std::expected<void, Refusal> fill(const Tensor& tensor, float value) override;
   std::expected<void, Refusal> soft_splat(const Tensor& source, const Tensor& motion, float s,
                                           const Tensor& out) override;
+  std::expected<void, Refusal> soft_splat_all(std::span<const SplatJob> jobs) override;
   std::expected<void, Refusal> write_ring(const Tensor& rgb, const RingSlotDesc& slot,
                                           const RingWrite& sync) override;
   std::expected<void, Refusal> measure(const DecodedFrame& a, const DecodedFrame& b) override;

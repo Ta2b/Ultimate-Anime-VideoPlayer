@@ -6,6 +6,7 @@
 #include <cstdint>
 #include <cstring>
 #include <format>
+#include <span>
 #include <string>
 #include <utility>
 #include <vector>
@@ -121,13 +122,25 @@ std::expected<void, Refusal> VulkanKernelOps::gmfss_frames(const Tensor& a, cons
 
 std::expected<void, Refusal> VulkanKernelOps::soft_splat(const Tensor& source, const Tensor& motion, float s,
                                                          const Tensor& out) {
-  auto vs = tensor_view(source, 0, "soft_splat : source");
-  if (!vs) return std::unexpected(vs.error());
-  auto vm = tensor_view(motion, kernels::kGmfssMotionChannels, "soft_splat : mouvement");
-  if (!vm) return std::unexpected(vm.error());
-  auto vo = tensor_view(out, vs->planes, "soft_splat : sortie");
-  if (!vo) return std::unexpected(vo.error());
-  const VkDeviceSize bytes = VkDeviceSize{vs->planes + 1U} * vs->width * vs->height * sizeof(float);
+  const SplatJob job{.source = source, .motion = motion, .s = s, .out = out};
+  return soft_splat_all(std::span(&job, 1));
+}
+
+std::expected<void, Refusal> VulkanKernelOps::soft_splat_all(std::span<const SplatJob> jobs) {
+  if (jobs.empty()) return {};
+  std::vector<KernelRunner::SplatViews> views;
+  views.reserve(jobs.size());
+  VkDeviceSize bytes = 0;
+  for (const SplatJob& job : jobs) {
+    auto vs = tensor_view(job.source, 0, "soft_splat : source");
+    if (!vs) return std::unexpected(vs.error());
+    auto vm = tensor_view(job.motion, kernels::kGmfssMotionChannels, "soft_splat : mouvement");
+    if (!vm) return std::unexpected(vm.error());
+    auto vo = tensor_view(job.out, vs->planes, "soft_splat : sortie");
+    if (!vo) return std::unexpected(vo.error());
+    bytes += KernelRunner::splat_sums_bytes(*vs);
+    views.push_back({.source = *vs, .motion = *vm, .s = job.s, .out = *vo});
+  }
   if (!splat_sums_ || splat_sums_->size() < bytes) {
     // Les enregistrements faits sur l'ancien tampon ne servent plus (sa poignée est dans leur clé),
     // mais une exécution en cours peut encore l'écrire.
@@ -142,9 +155,12 @@ std::expected<void, Refusal> VulkanKernelOps::soft_splat(const Tensor& source, c
   const BufferView sums = splat_sums_->view();
   OpKey key;
   key.add(44);
-  for (const TensorView* v : {&*vs, &*vm, &*vo}) add_view(key, *v);
-  key.add(std::bit_cast<std::uint32_t>(s)).add(detail::handle_bits(sums.buffer));
-  auto rec = recording(key, [&](Recorder& r) { return runner_.soft_splat(r, *vs, *vm, s, sums, *vo); });
+  for (const KernelRunner::SplatViews& v : views) {
+    for (const TensorView* t : {&v.source, &v.motion, &v.out}) add_view(key, *t);
+    key.add(std::bit_cast<std::uint32_t>(v.s));
+  }
+  key.add(detail::handle_bits(sums.buffer));
+  auto rec = recording(key, [&](Recorder& r) { return runner_.soft_splat_all(r, views, sums); });
   if (!rec) return std::unexpected(rec.error());
   return submit(**rec);
 }

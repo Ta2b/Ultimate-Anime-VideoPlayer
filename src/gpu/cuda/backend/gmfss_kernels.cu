@@ -1,5 +1,7 @@
 // Noyaux du softmax splatting de GMFSS (voir gmfss_kernels.h). Même calcul que
 // kernels/glsl/gmfss_splat.comp et gmfss_normalize.comp ; référence kernels/ref/gmfss.cpp.
+// Un lot : la grille est linéaire, chaque bloc retrouve son travail par les préfixes de la table,
+// puis sa tuile 16 × 16 et son groupe de plans ; aucun bloc n'est lancé pour rien.
 #include <cuda_fp16.h>
 
 #include "gpu/cuda/backend/gmfss_kernels.h"
@@ -9,16 +11,38 @@ namespace ajp::gpu::cuda {
 namespace {
 
 constexpr int kBlock = 16;
-// Plans d'un groupe de l'axe z : la géométrie d'un pixel se refait par groupe.
+// Plans d'un groupe de l'addition : la géométrie d'un pixel se refait par groupe.
 constexpr int kGroup = 16;
+
+__host__ __device__ int tiles_across(int size) {
+  return (size + kBlock - 1) / kBlock;
+}
+
+__host__ __device__ int groups_of(int channels) {
+  return (channels + kGroup - 1) / kGroup;
+}
 
 __device__ std::size_t at(int x, int y, int width) {
   return static_cast<std::size_t>(y) * static_cast<std::size_t>(width) + static_cast<std::size_t>(x);
 }
 
-__global__ void splat(SoftSplatParams p) {
-  const int x = static_cast<int>(blockIdx.x * blockDim.x + threadIdx.x);
-  const int y = static_cast<int>(blockIdx.y * blockDim.y + threadIdx.y);
+// Le travail du bloc et le rang du bloc dans ce travail.
+__device__ int job_of(const unsigned* first, int count, unsigned block, unsigned& local) {
+  int j = 0;
+  while (j + 1 < count && block >= first[j + 1]) ++j;
+  local = block - first[j];
+  return j;
+}
+
+__global__ void splat_all(SoftSplatBatch b) {
+  unsigned local = 0;
+  const SoftSplatParams& p = b.jobs[job_of(b.splat_blocks, b.count, blockIdx.x, local)];
+  const int across = tiles_across(p.width);
+  const int tiles = across * tiles_across(p.height);
+  const int group = static_cast<int>(local) / tiles;
+  const int tile = static_cast<int>(local) % tiles;
+  const int x = (tile % across) * kBlock + static_cast<int>(threadIdx.x);
+  const int y = (tile / across) * kBlock + static_cast<int>(threadIdx.y);
   if (x >= p.width || y >= p.height) return;
   const std::size_t plane = static_cast<std::size_t>(p.width) * static_cast<std::size_t>(p.height);
   const std::size_t i = at(x, y, p.width);
@@ -38,7 +62,7 @@ __global__ void splat(SoftSplatParams p) {
   const int cx[4] = {x0, x0 + 1, x0, x0 + 1};
   const int cy[4] = {y0, y0, y0 + 1, y0 + 1};
   const float share[4] = {west * north, east * north, west * south, east * south};
-  const int first = static_cast<int>(blockIdx.z) * kGroup;
+  const int first = group * kGroup;
   const int last = min(p.channels, first + kGroup);
   const auto* source = static_cast<const __half*>(p.source);
   for (int k = 0; k < 4; ++k) {
@@ -49,13 +73,17 @@ __global__ void splat(SoftSplatParams p) {
       atomicAdd(&p.sums[static_cast<std::size_t>(c) * plane + j],
                 __half2float(source[static_cast<std::size_t>(c) * plane + i]) * weight);
     }
-    if (blockIdx.z == 0) atomicAdd(&p.sums[static_cast<std::size_t>(p.channels) * plane + j], weight);
+    if (group == 0) atomicAdd(&p.sums[static_cast<std::size_t>(p.channels) * plane + j], weight);
   }
 }
 
-__global__ void normalize(SoftSplatParams p) {
-  const int x = static_cast<int>(blockIdx.x * blockDim.x + threadIdx.x);
-  const int y = static_cast<int>(blockIdx.y * blockDim.y + threadIdx.y);
+__global__ void normalize_all(SoftSplatBatch b) {
+  unsigned local = 0;
+  const SoftSplatParams& p = b.jobs[job_of(b.normalize_blocks, b.count, blockIdx.x, local)];
+  const int across = tiles_across(p.width);
+  const int tile = static_cast<int>(local);
+  const int x = (tile % across) * kBlock + static_cast<int>(threadIdx.x);
+  const int y = (tile / across) * kBlock + static_cast<int>(threadIdx.y);
   if (x >= p.width || y >= p.height) return;
   const std::size_t plane = static_cast<std::size_t>(p.width) * static_cast<std::size_t>(p.height);
   const std::size_t i = at(x, y, p.width);
@@ -68,16 +96,16 @@ __global__ void normalize(SoftSplatParams p) {
   }
 }
 
+__global__ void fill_half(__half* data, std::size_t count, __half value) {
+  const std::size_t i = static_cast<std::size_t>(blockIdx.x) * blockDim.x + threadIdx.x;
+  if (i < count) data[i] = value;
+}
+
 }  // namespace
 
 std::size_t soft_splat_sums_bytes(int width, int height, int channels) {
   return static_cast<std::size_t>(channels + 1) * static_cast<std::size_t>(width) *
          static_cast<std::size_t>(height) * sizeof(float);
-}
-
-__global__ void fill_half(__half* data, std::size_t count, __half value) {
-  const std::size_t i = static_cast<std::size_t>(blockIdx.x) * blockDim.x + threadIdx.x;
-  if (i < count) data[i] = value;
 }
 
 cudaError_t launch_fill(void* data, std::size_t count, float value, cudaStream_t stream) {
@@ -87,17 +115,27 @@ cudaError_t launch_fill(void* data, std::size_t count, float value, cudaStream_t
   return cudaGetLastError();
 }
 
-cudaError_t launch_soft_splat(const SoftSplatParams& params, cudaStream_t stream) {
-  const cudaError_t cleared = cudaMemsetAsync(
-      params.sums, 0, soft_splat_sums_bytes(params.width, params.height, params.channels), stream);
+cudaError_t launch_soft_splat_all(SoftSplatBatch& batch, void* sums, std::size_t sums_bytes,
+                                  cudaStream_t stream) {
+  if (batch.count < 1 || batch.count > kMaxSplatJobs) return cudaErrorInvalidValue;
+  unsigned splat = 0;
+  unsigned normalize = 0;
+  for (int j = 0; j < batch.count; ++j) {
+    const SoftSplatParams& p = batch.jobs[j];
+    const auto tiles = static_cast<unsigned>(tiles_across(p.width) * tiles_across(p.height));
+    batch.splat_blocks[j] = splat;
+    batch.normalize_blocks[j] = normalize;
+    splat += tiles * static_cast<unsigned>(groups_of(p.channels));
+    normalize += tiles;
+  }
+  batch.splat_blocks[batch.count] = splat;
+  batch.normalize_blocks[batch.count] = normalize;
+  const cudaError_t cleared = cudaMemsetAsync(sums, 0, sums_bytes, stream);
   if (cleared != cudaSuccess) return cleared;
   const dim3 block(kBlock, kBlock);
-  const auto gx = static_cast<unsigned>((params.width + kBlock - 1) / kBlock);
-  const auto gy = static_cast<unsigned>((params.height + kBlock - 1) / kBlock);
-  splat<<<dim3(gx, gy, static_cast<unsigned>((params.channels + kGroup - 1) / kGroup)), block, 0, stream>>>(
-      params);
+  splat_all<<<splat, block, 0, stream>>>(batch);
   if (const cudaError_t e = cudaGetLastError(); e != cudaSuccess) return e;
-  normalize<<<dim3(gx, gy), block, 0, stream>>>(params);
+  normalize_all<<<normalize, block, 0, stream>>>(batch);
   return cudaGetLastError();
 }
 

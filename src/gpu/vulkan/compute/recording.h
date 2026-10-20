@@ -64,6 +64,11 @@ class Recording {
   bool finished_ = false;
 };
 
+// Ce qu'un dispatch attend : tout ce qui le précède (une barrière avant lui), ou seulement ce que
+// le précédent attendait déjà (aucune barrière : il n'écrit rien que le précédent lit ni ne lit ce
+// qu'il écrit, comme les additions atomiques de splats sur des sommes distinctes).
+enum class DispatchOrder : std::uint8_t { AfterPrevious, BesidePrevious };
+
 class Recorder {
  public:
   // Refus : ceux de DescriptorArena::create, VulkanCallFailed.
@@ -79,13 +84,14 @@ class Recorder {
   // maintenant, lu à chaque exécution.
   std::expected<BufferView, Refusal> constants(std::span<const std::byte> bytes);
 
-  // Un dispatch, après une barrière sur tout ce qui le précède dans l'enregistrement. Refus :
+  // Un dispatch, après une barrière sur tout ce qui le précède dans l'enregistrement (order
+  // AfterPrevious), ou sans barrière, à côté du précédent (BesidePrevious). Refus :
   // InputMismatch (nombre de tampons, d'images ou d'octets de push différent du pipeline ; vue
   // vide, mal alignée ou trop grande), FeatureUnavailable (groupes au-delà des limites),
   // GpuMemoryExhausted (pool de descripteurs plein).
   Done dispatch(const Pipeline& pipeline, std::span<const BufferView> buffers,
                 std::span<const VkImageView> images, std::span<const std::byte> push,
-                std::array<std::uint32_t, 3> groups);
+                std::array<std::uint32_t, 3> groups, DispatchOrder order = DispatchOrder::AfterPrevious);
 
   // Remplit la vue de value à chaque exécution (offset et taille multiples de 4).
   Done fill(const BufferView& view, std::uint32_t value);

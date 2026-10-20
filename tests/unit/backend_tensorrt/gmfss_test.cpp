@@ -3,8 +3,10 @@
 #include "kernels/ref/gmfss.h"
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <cstddef>
+#include <memory>
 #include <vector>
 
 #include <catch2/catch_test_macros.hpp>
@@ -85,4 +87,64 @@ TEST_CASE("Backend TensorRT : softmax splatting contre la référence", "[backen
   const auto late = ops.soft_splat(ts->tensor(), tm->tensor(), 1.5F, out->tensor());
   REQUIRE_FALSE(late);
   CHECK(late.error().code == RefusalCode::FieldOutOfRange);
+}
+
+TEST_CASE("Backend TensorRT : les six splats d'un instant en un passage", "[backend_tensorrt][cuda][gmfss]") {
+  if (!has_cuda()) SKIP("pas de GPU NVIDIA");
+  Loaded loaded;
+  REQUIRE(loaded.backend != nullptr);
+  gpu::KernelOps& ops = *loaded.backend->kernels();
+  auto alloc = [&](int channels) {
+    auto t = loaded.backend->alloc_tensor(gpu::TensorType::F16, {.dims = {1, channels, kH, kW}});
+    REQUIRE(t);
+    return std::move(*t);
+  };
+  // Deux côtés, trois niveaux de plans différents (19 : deux groupes, le second incomplet).
+  constexpr float t = 0.3F;
+  constexpr std::array channels{19, 7, 3};
+  std::vector<std::vector<k::PlaneF>> sources;
+  std::vector<k::ref::SplatMotion> motions;
+  std::vector<std::unique_ptr<gpu::TensorBuffer>> tensors;
+  std::vector<gpu::KernelOps::SplatJob> jobs;
+  int seed = 10;
+  for (int side = 0; side < 2; ++side) {
+    for (const int c : channels) {
+      sources.push_back(planes(c, seed++, 0.0F, 1.0F));
+      const std::vector<k::PlaneF> flow = planes(2, seed++, -4.0F, 4.0F);
+      const std::vector<k::PlaneF> metric = planes(1, seed++, -k::kGmfssMetricLimit, k::kGmfssMetricLimit);
+      motions.push_back({{flow[0], flow[1], metric[0]}});
+      tensors.push_back(alloc(c));
+      tensors.push_back(alloc(k::kGmfssMotionChannels));
+      tensors.push_back(alloc(c));
+      const std::size_t n = tensors.size();
+      upload(tensors[n - 3]->tensor(), flat(sources.back()));
+      upload(tensors[n - 2]->tensor(),
+             flat(std::vector<k::PlaneF>(motions.back().planes.begin(), motions.back().planes.end())));
+      jobs.push_back({.source = tensors[n - 3]->tensor(),
+                      .motion = tensors[n - 2]->tensor(),
+                      .s = k::gmfss_side_time(side, t),
+                      .out = tensors[n - 1]->tensor()});
+    }
+  }
+  REQUIRE(ops.soft_splat_all(jobs));
+  for (std::size_t j = 0; j < jobs.size(); ++j) {
+    CAPTURE(j);
+    const auto want = k::ref::soft_splat(sources[j], motions[j], jobs[j].s);
+    REQUIRE(want);
+    const std::vector<float> got = download(jobs[j].out);
+    const std::vector<float> expected = flat(*want);
+    REQUIRE(got.size() == expected.size());
+    float worst = 0.0F;
+    for (std::size_t i = 0; i < got.size(); ++i) worst = std::max(worst, std::fabs(got[i] - expected[i]));
+    CHECK(worst <= k::tolerance::kRgbF16);
+  }
+  // Au plus huit splats par passage ; un travail faux refuse le lot entier.
+  std::vector<gpu::KernelOps::SplatJob> many(9, jobs[0]);
+  const auto too_many = ops.soft_splat_all(many);
+  REQUIRE_FALSE(too_many);
+  CHECK(too_many.error().code == RefusalCode::FieldOutOfRange);
+  jobs[2].out = jobs[2].motion;
+  const auto shape = ops.soft_splat_all(jobs);
+  REQUIRE_FALSE(shape);
+  CHECK(shape.error().code == RefusalCode::ShapeInvalid);
 }

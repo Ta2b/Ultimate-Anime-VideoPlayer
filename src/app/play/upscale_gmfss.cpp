@@ -107,13 +107,14 @@ std::expected<void, Refusal> UpscaleStage::interpolate_gmfss(std::uint32_t outpu
     ++gmfss_pairs_;
   }
   const float t = instants_[output].t;
+  gmfss_.jobs.clear();
   for (const GmfssSplat& splat : gmfss_.splats) {
-    if (auto ok =
-            ops.soft_splat(splat.source, splat.motion, kernels::gmfss_side_time(splat.side, t), splat.warped);
-        !ok) {
-      return ok;
-    }
+    gmfss_.jobs.push_back({.source = splat.source,
+                           .motion = splat.motion,
+                           .s = kernels::gmfss_side_time(splat.side, t),
+                           .out = splat.warped});
   }
+  if (auto ok = ops.soft_splat_all(gmfss_.jobs); !ok) return ok;
   if (gmfss_.time) {
     if (auto ok = ops.fill(*gmfss_.time, t); !ok) return ok;
   }

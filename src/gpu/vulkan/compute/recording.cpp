@@ -110,7 +110,7 @@ std::expected<BufferView, Refusal> Recorder::constants(std::span<const std::byte
 
 Done Recorder::dispatch(const Pipeline& pipeline, std::span<const BufferView> buffers,
                         std::span<const VkImageView> images, std::span<const std::byte> push,
-                        std::array<std::uint32_t, 3> groups) {
+                        std::array<std::uint32_t, 3> groups, DispatchOrder order) {
   if (auto ok = open(); !ok) return ok;
   if (buffers.size() != pipeline.buffers() || images.size() != pipeline.images() ||
       push.size() != pipeline.push_bytes()) {
@@ -133,7 +133,7 @@ Done Recorder::dispatch(const Pipeline& pipeline, std::span<const BufferView> bu
   auto set = recording_->arena_.bind(pipeline, buffers, images);
   if (!set) return std::unexpected(set.error());
 
-  barrier();
+  if (order == DispatchOrder::AfterPrevious) barrier();
   const DeviceFunctions& fn = context_->fn();
   const VkCommandBuffer cb = recording_->command_buffer_;
   fn.vkCmdBindPipeline(cb, VK_PIPELINE_BIND_POINT_COMPUTE, pipeline.handle());

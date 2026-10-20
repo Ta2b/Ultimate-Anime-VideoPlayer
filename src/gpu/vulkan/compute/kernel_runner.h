@@ -74,6 +74,18 @@ class KernelRunner {
   // fx, fy, z de même taille) à l'instant s de [0, 1], additionnée dans sums (C + 1 plans float,
   // remis à zéro à chaque exécution, le dernier pour les poids), puis normalisée dans out (C plans,
   // précision de source). Refus FeatureUnavailable : appareil sans additions atomiques de float.
+  // Les splats d'un même instant en un passage : les sommes de tous (contiguës dans sums, chacune
+  // à son offset, arrondi à kSplatSumsAlign) remises à zéro ensemble, les additions de tous à côté
+  // les unes des autres sans barrière entre elles, puis les normalisations de même.
+  struct SplatViews {
+    TensorView source;
+    TensorView motion;
+    float s = 0.5F;
+    TensorView out;
+  };
+  static constexpr VkDeviceSize kSplatSumsAlign = 256;
+  static VkDeviceSize splat_sums_bytes(const TensorView& source);  // d'un travail, arrondis
+  Done soft_splat_all(Recorder& recorder, std::span<const SplatViews> jobs, const BufferView& sums);
   Done soft_splat(Recorder& recorder, const TensorView& source, const TensorView& motion, float s,
                   const BufferView& sums, const TensorView& out);
   // Chaque élément de tensor vaut value.
