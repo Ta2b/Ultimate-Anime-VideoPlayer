@@ -3,11 +3,7 @@
 # comme la chaîne Windows par défaut de vcpkg.
 set(CMAKE_C_COMPILER clang-cl)
 set(CMAKE_CXX_COMPILER clang-cl)
-# La racine de vcpkg : passée par vcpkg_cmake_get_vars, sinon à côté de sa chaîne vcpkg.cmake
-# (les try_compile ne reçoivent que celle-ci).
-if(_VCPKG_ROOT_DIR)
-  set(ajp_vcpkg_root "${_VCPKG_ROOT_DIR}")
-else()
-  get_filename_component(ajp_vcpkg_root "${CMAKE_TOOLCHAIN_FILE}/../../.." ABSOLUTE)
-endif()
+# La racine de vcpkg : celle de scripts/buildsystems/vcpkg.cmake, qui inclut ce fichier (les
+# try_compile ne reçoivent ni _VCPKG_ROOT_DIR ni CMAKE_TOOLCHAIN_FILE).
+get_filename_component(ajp_vcpkg_root "${CMAKE_PARENT_LIST_FILE}/../../.." ABSOLUTE)
 include("${ajp_vcpkg_root}/scripts/toolchains/windows.cmake")
