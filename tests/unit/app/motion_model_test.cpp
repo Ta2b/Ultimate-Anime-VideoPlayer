@@ -118,4 +118,14 @@ TEST_CASE("RIFE mouvement : le flot final reconnu à son warp, pas à son nom", 
   std::filesystem::remove_all(dir);
 }
 
+TEST_CASE("RIFE : multiple de remplissage selon le modèle, 128 pour 4.25 lite v1 et v2",
+          "[app][motion_model]") {
+  CHECK(rife_padding_multiple("/m/rife_v4.25_lite.onnx") == 128);
+  CHECK(rife_padding_multiple("/m/rife_v4.25_lite_v2.onnx") == 128);
+  CHECK(rife_padding_multiple("/m/rife_v4.25.onnx") == 64);
+  CHECK(rife_padding_multiple("/m/rife_v4.25_v2.onnx") == 64);
+  CHECK(rife_padding_multiple("/m/rife_v4.22_lite.onnx") == 64);
+  CHECK(rife_padding_multiple("/m/rife_v4.26_heavy.onnx") == 64);
+}
+
 }  // namespace ajp::app::play

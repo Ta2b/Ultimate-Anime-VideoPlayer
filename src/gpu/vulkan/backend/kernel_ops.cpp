@@ -124,13 +124,12 @@ std::expected<void, Refusal> VulkanKernelOps::rife_crop(const Tensor& padded, co
   if (!src) return std::unexpected(src.error());
   auto dst = tensor_view(out, 3, "recadrage RIFE : sortie");
   if (!dst) return std::unexpected(dst.error());
-  const kernels::RifeGeometry g =
-      kernels::rife_geometry(static_cast<int>(dst->width), static_cast<int>(dst->height));
-  if (std::cmp_not_equal(src->width, g.padded_width) || std::cmp_not_equal(src->height, g.padded_height)) {
+  if (!kernels::rife_fits(static_cast<int>(dst->width), static_cast<int>(dst->height),
+                          static_cast<int>(src->width), static_cast<int>(src->height))) {
     return std::unexpected(
         Refusal{RefusalCode::ShapeInvalid,
-                std::format("recadrage RIFE : {}x{} rempli, {}x{} attendu pour {}x{}", src->width,
-                            src->height, g.padded_width, g.padded_height, dst->width, dst->height)});
+                std::format("recadrage RIFE : {}x{} rempli, multiples de {} d'au moins {}x{} attendus",
+                            src->width, src->height, kernels::kRifeAlign, dst->width, dst->height)});
   }
   OpKey key;
   key.add(2);

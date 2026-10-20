@@ -97,4 +97,9 @@ std::expected<int, Refusal> rife_input_planes(const std::filesystem::path& rife_
   return static_cast<int>(planes);
 }
 
+int rife_padding_multiple(const std::filesystem::path& rife_onnx) {
+  return rife_onnx.stem().string().starts_with("rife_v4.25_lite") ? kernels::kRifeAlignLite
+                                                                  : kernels::kRifeAlign;
+}
+
 }  // namespace ajp::app::play

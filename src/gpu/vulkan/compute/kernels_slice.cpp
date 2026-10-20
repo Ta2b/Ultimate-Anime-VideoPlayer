@@ -37,13 +37,16 @@ Done KernelRunner::rife_frames(Recorder& recorder, const TensorView& a, const Te
   if (a.precision != b.precision || a.precision != input.precision) {
     return refuse(RefusalCode::InputMismatch, "entrée RIFE : tenseurs de précisions différentes");
   }
-  const kernels::RifeGeometry g =
-      kernels::rife_geometry(static_cast<int>(a.width), static_cast<int>(a.height));
-  if (std::cmp_not_equal(input.width, g.padded_width) || std::cmp_not_equal(input.height, g.padded_height)) {
+  if (!kernels::rife_fits(static_cast<int>(a.width), static_cast<int>(a.height),
+                          static_cast<int>(input.width), static_cast<int>(input.height))) {
     return refuse(RefusalCode::InputMismatch,
-                  std::format("entrée RIFE {}x{} : {}x{} attendu pour {}x{}", input.width, input.height,
-                              g.padded_width, g.padded_height, a.width, a.height));
+                  std::format("entrée RIFE {}x{} : multiples de {} d'au moins {}x{} attendus", input.width,
+                              input.height, kernels::kRifeAlign, a.width, a.height));
   }
+  // La fenêtre se lit sur le tenseur : le multiple de remplissage dépend du modèle (spec/rife.h).
+  const kernels::RifeGeometry g =
+      kernels::rife_window(static_cast<int>(a.width), static_cast<int>(a.height),
+                           static_cast<int>(input.width), static_cast<int>(input.height));
   const detail::RifeFramesPush push{a.width,
                                     a.height,
                                     input.width,

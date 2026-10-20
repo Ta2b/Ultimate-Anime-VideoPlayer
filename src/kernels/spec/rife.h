@@ -14,30 +14,44 @@
 
 namespace ajp::kernels {
 
-// RIFE travaille sur des dimensions multiples de 64.
+// RIFE travaille sur des dimensions multiples de 64. 4.25 lite en demande 128 (vsmlrt.py,
+// tilesize_requirement) : son premier bloc travaille au 1/32 de l'image, puis deux convolutions de
+// pas 2 ; à 1088 lignes, TensorRT refuse son graphe. Toute taille remplie est un multiple de 64.
 inline constexpr int kRifeAlign = 64;
+inline constexpr int kRifeAlignLite = 128;
 
 // La fenêtre de l'image dans les tenseurs remplis.
 struct RifeGeometry {
   int width = 0;  // image source
   int height = 0;
-  int padded_width = 0;  // arrondi au multiple de 64 supérieur
+  int padded_width = 0;  // arrondi au multiple supérieur (64, ou 128 pour 4.25 lite)
   int padded_height = 0;
   int left = 0;  // bord gauche : moitié du remplissage, arrondie au pair inférieur
   int top = 0;
 };
 
-// pw = ceil(w / 64) × 64 ; left = ((pw − w) / 2) & ~1 : centré comme AddBorders, mais pair
-// pour garder la chroma 4:2:0 alignée. Le reste du remplissage va à droite et en bas.
-constexpr RifeGeometry rife_geometry(int width, int height) {
-  const int pw = (width + kRifeAlign - 1) / kRifeAlign * kRifeAlign;
-  const int ph = (height + kRifeAlign - 1) / kRifeAlign * kRifeAlign;
+// La fenêtre d'une image w × h dans un tenseur rempli pw × ph : left = ((pw − w) / 2) & ~1,
+// centré comme AddBorders, mais pair pour garder la chroma 4:2:0 alignée. Le reste du remplissage
+// va à droite et en bas. Les backends la lisent sur les tenseurs qu'on leur donne.
+constexpr RifeGeometry rife_window(int width, int height, int padded_width, int padded_height) {
   return {.width = width,
           .height = height,
-          .padded_width = pw,
-          .padded_height = ph,
-          .left = ((pw - width) / 2) & ~1,
-          .top = ((ph - height) / 2) & ~1};
+          .padded_width = padded_width,
+          .padded_height = padded_height,
+          .left = ((padded_width - width) / 2) & ~1,
+          .top = ((padded_height - height) / 2) & ~1};
+}
+
+// pw = ceil(w / align) × align, align = kRifeAlign ou kRifeAlignLite selon le modèle.
+constexpr RifeGeometry rife_geometry(int width, int height, int align = kRifeAlign) {
+  return rife_window(width, height, (width + align - 1) / align * align,
+                     (height + align - 1) / align * align);
+}
+
+// Un tenseur pw × ph peut recevoir l'image w × h : multiples de 64, au moins aussi grands.
+constexpr bool rife_fits(int width, int height, int padded_width, int padded_height) {
+  return width > 0 && height > 0 && padded_width >= width && padded_height >= height &&
+         padded_width % kRifeAlign == 0 && padded_height % kRifeAlign == 0;
 }
 
 // Les bords sont noir studio en YUV, quelle que soit la plage : Y = 16 et Cb = Cr = 128

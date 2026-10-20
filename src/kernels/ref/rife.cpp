@@ -30,13 +30,13 @@ Plane<T> window(const Plane<T>& src, int left, int top, int width, int height) {
   return out;
 }
 
-// La sortie remplie doit avoir la taille remplie de la géométrie, et la géométrie être celle
-// de rife_geometry : un recadrage ne sort jamais du plan.
+// La sortie remplie doit avoir la taille remplie de la géométrie, et la géométrie être une fenêtre
+// de rife_window (multiple de 64 ou 128 selon le modèle) : un recadrage ne sort jamais du plan.
 Result<void> check_geometry(int width, int height, const RifeGeometry& g) {
-  const RifeGeometry canonical = rife_geometry(g.width, g.height);
+  const RifeGeometry canonical = rife_window(g.width, g.height, g.padded_width, g.padded_height);
   if (!valid_plane_dimension(g.width) || !valid_plane_dimension(g.height) ||
-      g.padded_width != canonical.padded_width || g.padded_height != canonical.padded_height ||
-      g.left != canonical.left || g.top != canonical.top) {
+      !rife_fits(g.width, g.height, g.padded_width, g.padded_height) || g.left != canonical.left ||
+      g.top != canonical.top) {
     return fail(ErrorCode::ParameterOutOfRange,
                 std::format("géométrie RIFE {}x{} incohérente", g.width, g.height));
   }

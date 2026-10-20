@@ -46,6 +46,34 @@ TEST_CASE("RIFE : remplissage mod-64 centré, bords pairs", "[rife]") {
   check(64, 64, 64, 64, 0, 0);
 }
 
+TEST_CASE("RIFE : multiple de 128 pour 4.25 lite, fenêtre lue sur le tenseur rempli", "[rife]") {
+  // 1080p : 1088 lignes au multiple de 64, que 4.25 lite refuse ; 1152 au multiple de 128.
+  static_assert(rife_geometry(1920, 1080).padded_height == 1088);
+  constexpr RifeGeometry lite = rife_geometry(1920, 1080, kRifeAlignLite);
+  static_assert(lite.padded_width == 1920 && lite.padded_height == 1152 && lite.left == 0 && lite.top == 36);
+  // 720p tombe juste aux deux multiples.
+  static_assert(rife_geometry(1280, 720, kRifeAlignLite).padded_height == 768);
+  static_assert(rife_geometry(1280, 720, kRifeAlignLite).top == rife_geometry(1280, 720).top);
+  // Un backend relit la même fenêtre sur la taille du tenseur, sans connaître le modèle.
+  constexpr RifeGeometry read = rife_window(1920, 1080, 1920, 1152);
+  static_assert(read.left == lite.left && read.top == lite.top && read.padded_height == lite.padded_height);
+  const int w = GENERATE(1, 63, 640, 960, 1280, 1366, 1920, 3840);
+  const int h = GENERATE(1, 64, 360, 540, 720, 1080, 2160);
+  for (const int align : {kRifeAlign, kRifeAlignLite}) {
+    const RifeGeometry g = rife_geometry(w, h, align);
+    CHECK(g.padded_width % align == 0);
+    CHECK(g.padded_height % align == 0);
+    CHECK(rife_fits(w, h, g.padded_width, g.padded_height));
+    const RifeGeometry again = rife_window(w, h, g.padded_width, g.padded_height);
+    CHECK(again.left == g.left);
+    CHECK(again.top == g.top);
+  }
+  // Trop petit, ou hors des multiples de 64 : refusé.
+  CHECK_FALSE(rife_fits(1920, 1080, 1920, 1024));
+  CHECK_FALSE(rife_fits(1920, 1080, 1920, 1100));
+  CHECK_FALSE(rife_fits(0, 1080, 64, 1088));
+}
+
 TEST_CASE("RIFE : bords noir studio, quelle que soit la plage", "[rife]") {
   CHECK(rife_pad_luma(Format::Nv12) == 16);
   CHECK(rife_pad_chroma(Format::Nv12) == 128);

@@ -21,4 +21,8 @@ std::expected<std::filesystem::path, Refusal> motion_model(const std::filesystem
 // Refus : ModelUnreadable, InputMismatch pour un autre nombre de plans.
 std::expected<int, Refusal> rife_input_planes(const std::filesystem::path& rife_onnx);
 
+// Le multiple de remplissage du modèle (kernels/spec/rife.h) : 128 pour 4.25 lite, v1 ou v2, que
+// vsmlrt.py reconnaît comme ici à sa version ; 64 sinon.
+int rife_padding_multiple(const std::filesystem::path& rife_onnx);
+
 }  // namespace ajp::app::play

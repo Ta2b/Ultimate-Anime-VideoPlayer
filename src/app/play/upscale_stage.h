@@ -39,6 +39,7 @@ struct UpscaleSetup {
   // une passe au milieu de la paire la sert toute quand le mouvement est faible.
   gpu::Engine* rife_motion = nullptr;
   int rife_planes = 11;  // plans d'entrée de rife et rife_motion : 11 (v1) ou 7 (v2)
+  int rife_align = 64;   // multiple de remplissage du modèle RIFE : 64, ou 128 pour 4.25 lite
   // Flux optique matériel à la place de RIFE (KernelOps::open_optical_flow, déjà ouvert pour
   // rife_width × rife_height) : la grille de ses vecteurs, en pixels ; 0 : RIFE ou rien. Un seul
   // mouvement par paire, au milieu ; les autres instants s'en déduisent au warp.

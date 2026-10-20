@@ -161,7 +161,8 @@ std::expected<void, Refusal> UpscaleStage::allocate() {
       if (auto ok = alloc(mid.mask, planes(1, cells_x, cells_y)); !ok) return ok;
     }
   } else if (interpolates()) {
-    const kernels::RifeGeometry g = kernels::rife_geometry(setup_.rife_width, setup_.rife_height);
+    const kernels::RifeGeometry g =
+        kernels::rife_geometry(setup_.rife_width, setup_.rife_height, setup_.rife_align);
     if (auto ok = alloc(rife_in_, planes(setup_.rife_planes, g.padded_width, g.padded_height)); !ok)
       return ok;
     if (setup_.rife != nullptr) {
@@ -344,7 +345,8 @@ gpu::Motion UpscaleStage::mid_motion(std::uint32_t index) const {
                                     .height = static_cast<int>(cells.dims[2])}};
   }
   // RIFE estime à sa taille, dans ses plans remplis ; le warp met le mouvement à l'échelle.
-  const kernels::RifeGeometry g = kernels::rife_geometry(setup_.rife_width, setup_.rife_height);
+  const kernels::RifeGeometry g =
+      kernels::rife_geometry(setup_.rife_width, setup_.rife_height, setup_.rife_align);
   return {.flow = mid.flow->tensor(),
           .mask = mid.mask->tensor(),
           .area = kernels::Window{

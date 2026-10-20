@@ -39,14 +39,17 @@ std::expected<void, Refusal> TensorRtBackend::rife_input(const Tensor& a, const 
   if (!fp16_planes(a, 3) || !fp16_planes(b, 3) || a.shape.dims != b.shape.dims) {
     return refuse(RefusalCode::ShapeInvalid, "rife_input : deux images RGB FP16 de même taille attendues");
   }
-  const kernels::RifeGeometry g = kernels::rife_geometry(width_of(a), height_of(a));
   const std::int64_t planes = input.shape.dims[1];
   if (!kernels::is_rife_input_planes(planes) || !fp16_planes(input, planes) ||
-      width_of(input) != g.padded_width || height_of(input) != g.padded_height) {
+      !kernels::rife_fits(width_of(a), height_of(a), width_of(input), height_of(input))) {
     return refuse(RefusalCode::ShapeInvalid,
-                  std::format("rife_input : tenseur FP16 1×{}×{}×{} attendu", kernels::kRifeInputChannels,
-                              g.padded_height, g.padded_width));
+                  std::format("rife_input : tenseur FP16 1×(11 ou 7)×H×W attendu, H et W multiples de {} "
+                              "et au moins {}×{}",
+                              kernels::kRifeAlign, height_of(a), width_of(a)));
   }
+  // La fenêtre se lit sur le tenseur : le multiple de remplissage dépend du modèle (spec/rife.h).
+  const kernels::RifeGeometry g =
+      kernels::rife_window(width_of(a), height_of(a), width_of(input), height_of(input));
   if (!(t > 0.0F && t < 1.0F)) {
     return refuse(RefusalCode::FieldOutOfRange, std::format("rife_input : instant {} hors de ]0, 1[", t));
   }
@@ -74,12 +77,14 @@ std::expected<void, Refusal> TensorRtBackend::rife_crop(const Tensor& padded, co
   if (!fp16_planes(padded, 3) || !fp16_planes(out, 3)) {
     return refuse(RefusalCode::ShapeInvalid, "rife_crop : tenseurs RGB FP16 attendus");
   }
-  const kernels::RifeGeometry g = kernels::rife_geometry(width_of(out), height_of(out));
-  if (width_of(padded) != g.padded_width || height_of(padded) != g.padded_height) {
-    return refuse(RefusalCode::ShapeInvalid,
-                  std::format("rife_crop : sortie de RIFE {}×{} attendue pour {}×{}", g.padded_height,
-                              g.padded_width, g.height, g.width));
+  if (!kernels::rife_fits(width_of(out), height_of(out), width_of(padded), height_of(padded))) {
+    return refuse(
+        RefusalCode::ShapeInvalid,
+        std::format("rife_crop : sortie de RIFE {}×{} trop petite ou hors des multiples de {} pour {}×{}",
+                    height_of(padded), width_of(padded), kernels::kRifeAlign, height_of(out), width_of(out)));
   }
+  const kernels::RifeGeometry g =
+      kernels::rife_window(width_of(out), height_of(out), width_of(padded), height_of(padded));
   if (auto ok = bind(); !ok) return ok;
   const RifeCropParams params{.padded = address(padded),
                               .padded_width = g.padded_width,

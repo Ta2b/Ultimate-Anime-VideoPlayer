@@ -24,12 +24,15 @@ std::expected<void, Refusal> VulkanKernelOps::rife_pad(const DecodedFrame& frame
   if (!format) return std::unexpected(format.error());
   auto color = detail::color_spec(frame.color);
   if (!color) return std::unexpected(color.error());
-  const kernels::RifeGeometry g = kernels::rife_geometry(frame.width, frame.height);
-  if (std::cmp_not_equal(dst->width, g.padded_width) || std::cmp_not_equal(dst->height, g.padded_height)) {
+  if (!kernels::rife_fits(frame.width, frame.height, static_cast<int>(dst->width),
+                          static_cast<int>(dst->height))) {
     return refuse_pair(RefusalCode::ShapeInvalid,
-                       std::format("entrée RIFE : tenseur {}x{}, {}x{} attendu pour {}x{}", dst->width,
-                                   dst->height, g.padded_width, g.padded_height, frame.width, frame.height));
+                       std::format("entrée RIFE : tenseur {}x{}, multiples de {} d'au moins {}x{} attendus",
+                                   dst->width, dst->height, kernels::kRifeAlign, frame.width, frame.height));
   }
+  // La fenêtre se lit sur le tenseur : le multiple de remplissage dépend du modèle (spec/rife.h).
+  const kernels::RifeGeometry g = kernels::rife_window(
+      frame.width, frame.height, static_cast<int>(dst->width), static_cast<int>(dst->height));
   auto src = source(frame);
   if (!src) return std::unexpected(src.error());
   detail::AccessGuard pending;

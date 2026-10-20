@@ -169,7 +169,7 @@ TEST_CASE("RIFE : tailles, formats et instants hors contrat refusés", "[vk_comp
   Rig rig = make_rig();
   KernelRunner& kr = rig.kernels();
   YuvBuffer frame = upload_yuv(rig, synthetic_yuv(k::Format::Nv12, 100, 50, 1));
-  YuvBuffer wrong_size = yuv_target(rig, k::Format::Nv12, 128, 128);
+  YuvBuffer wrong_size = yuv_target(rig, k::Format::Nv12, 64, 64);  // plus étroite que l'image
   YuvBuffer wrong_format = yuv_target(rig, k::Format::P010, 128, 64);
   YuvBuffer padded = yuv_target(rig, k::Format::Nv12, 128, 64);
   TensorBuffer input = tensor_target(rig, 128, 64, k::kRifeInputChannels, Precision::F32);

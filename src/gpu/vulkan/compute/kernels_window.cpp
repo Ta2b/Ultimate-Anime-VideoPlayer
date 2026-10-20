@@ -36,10 +36,20 @@ Done check_padded(const YuvView& padded, const YuvView& frame, std::string_view 
                   std::format("{} : formats {} et {} différents", what, static_cast<int>(padded.format),
                               static_cast<int>(frame.format)));
   }
-  const kernels::RifeGeometry g =
-      kernels::rife_geometry(static_cast<int>(frame.width), static_cast<int>(frame.height));
-  return check_same_size(padded.width, padded.height, static_cast<std::uint32_t>(g.padded_width),
-                         static_cast<std::uint32_t>(g.padded_height), what);
+  if (!kernels::rife_fits(static_cast<int>(frame.width), static_cast<int>(frame.height),
+                          static_cast<int>(padded.width), static_cast<int>(padded.height))) {
+    return refuse(RefusalCode::InputMismatch,
+                  std::format("{} : {}x{} rempli, multiples de {} d'au moins {}x{} attendus", what,
+                              padded.width, padded.height, kernels::kRifeAlign, frame.width, frame.height));
+  }
+  return {};
+}
+
+// La fenêtre de l'image dans l'image remplie, lue sur leurs tailles (spec/rife.h).
+kernels::RifeGeometry window_of(std::uint32_t width, std::uint32_t height, std::uint32_t padded_width,
+                                std::uint32_t padded_height) {
+  return kernels::rife_window(static_cast<int>(width), static_cast<int>(height),
+                              static_cast<int>(padded_width), static_cast<int>(padded_height));
 }
 
 // Chaque plan de l'image : sign = 1 place la source au centre, −1 en retire la fenêtre.
@@ -113,8 +123,7 @@ Done KernelRunner::rife_pad(Recorder& recorder, const YuvView& src, const YuvVie
   if (auto ok = check_yuv(src, "remplissage RIFE : image"); !ok) return ok;
   if (auto ok = check_yuv(padded, "remplissage RIFE : image remplie"); !ok) return ok;
   if (auto ok = check_padded(padded, src, "remplissage RIFE"); !ok) return ok;
-  const kernels::RifeGeometry g =
-      kernels::rife_geometry(static_cast<int>(src.width), static_cast<int>(src.height));
+  const kernels::RifeGeometry g = window_of(src.width, src.height, padded.width, padded.height);
   return windows(*pipelines_, recorder, src, padded, g, 1);
 }
 
@@ -122,8 +131,7 @@ Done KernelRunner::rife_crop(Recorder& recorder, const YuvView& padded, const Yu
   if (auto ok = check_yuv(padded, "recadrage RIFE : image remplie"); !ok) return ok;
   if (auto ok = check_yuv(dst, "recadrage RIFE : fenêtre"); !ok) return ok;
   if (auto ok = check_padded(padded, dst, "recadrage RIFE"); !ok) return ok;
-  const kernels::RifeGeometry g =
-      kernels::rife_geometry(static_cast<int>(dst.width), static_cast<int>(dst.height));
+  const kernels::RifeGeometry g = window_of(dst.width, dst.height, padded.width, padded.height);
   return windows(*pipelines_, recorder, padded, dst, g, -1);
 }
 
@@ -137,13 +145,13 @@ Done KernelRunner::rife_crop(Recorder& recorder, const TensorView& padded, const
   if (padded.precision != dst.precision) {
     return refuse(RefusalCode::InputMismatch, "recadrage RIFE : précisions différentes");
   }
-  const kernels::RifeGeometry g =
-      kernels::rife_geometry(static_cast<int>(dst.width), static_cast<int>(dst.height));
-  if (auto ok = check_same_size(padded.width, padded.height, static_cast<std::uint32_t>(g.padded_width),
-                                static_cast<std::uint32_t>(g.padded_height), "recadrage RIFE");
-      !ok) {
-    return ok;
+  if (!kernels::rife_fits(static_cast<int>(dst.width), static_cast<int>(dst.height),
+                          static_cast<int>(padded.width), static_cast<int>(padded.height))) {
+    return refuse(RefusalCode::InputMismatch,
+                  std::format("recadrage RIFE : {}x{} rempli, multiples de {} d'au moins {}x{} attendus",
+                              padded.width, padded.height, kernels::kRifeAlign, dst.width, dst.height));
   }
+  const kernels::RifeGeometry g = window_of(dst.width, dst.height, padded.width, padded.height);
   const detail::RgbWindowPush push{padded.width, padded.height, dst.width, dst.height, -g.left, -g.top, 0.0F};
   const std::array buffers{padded.buffer, dst.buffer};
   return detail::run(*pipelines_, recorder, "rgb_window", dst.precision, {}, buffers, {}, bytes_of(push),

@@ -43,9 +43,9 @@ Result<double> scene_score(const PlaneU16& a, const PlaneU16& b, Format format,
     return fail(ErrorCode::SizeMismatch, std::format("luma {}x{} pour une géométrie RIFE {}x{}", a.width,
                                                      a.height, geometry.width, geometry.height));
   }
-  const RifeGeometry canonical = rife_geometry(geometry.width, geometry.height);
-  if (geometry.padded_width != canonical.padded_width || geometry.padded_height != canonical.padded_height) {
-    return fail(ErrorCode::ParameterOutOfRange, "aire remplie différente de rife_geometry");
+  if (!rife_fits(geometry.width, geometry.height, geometry.padded_width, geometry.padded_height)) {
+    return fail(ErrorCode::ParameterOutOfRange,
+                "aire remplie hors des multiples de 64 ou plus petite que l'image");
   }
   const double area =
       static_cast<double>(geometry.padded_width) * static_cast<double>(geometry.padded_height);

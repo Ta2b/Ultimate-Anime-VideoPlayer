@@ -59,11 +59,11 @@ std::expected<void, Refusal> VulkanKernelOps::rife_input(const Tensor& a, const 
   if (va->width != vb->width || va->height != vb->height) {
     return refuse_slice(RefusalCode::ShapeInvalid, "rife_input : deux images RGB de même taille attendues");
   }
-  const kernels::RifeGeometry g =
-      kernels::rife_geometry(static_cast<int>(va->width), static_cast<int>(va->height));
-  if (std::cmp_not_equal(vi->width, g.padded_width) || std::cmp_not_equal(vi->height, g.padded_height)) {
-    return refuse_slice(RefusalCode::ShapeInvalid, std::format("rife_input : tenseur 1×{}×{}×{} attendu",
-                                                               vi->planes, g.padded_height, g.padded_width));
+  if (!kernels::rife_fits(static_cast<int>(va->width), static_cast<int>(va->height),
+                          static_cast<int>(vi->width), static_cast<int>(vi->height))) {
+    return refuse_slice(RefusalCode::ShapeInvalid,
+                        std::format("rife_input : tenseur 1×{}×H×W attendu, multiples de {} d'au moins {}x{}",
+                                    vi->planes, kernels::kRifeAlign, va->width, va->height));
   }
   OpKey key;
   key.add(40);

@@ -201,8 +201,9 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
   }
   const bool use_gmfss = gmfss.pair != nullptr;
   const bool use_rife = settings.rife_factor >= 2 && rife_model && flow_grid == 0 && !use_gmfss;
-  const kernels::RifeGeometry g = kernels::rife_geometry(rife_size.width, rife_size.height);
-  const kernels::RifeGeometry image_g = kernels::rife_geometry(work.width, work.height);
+  const int rife_align = use_rife ? rife_padding_multiple(*rife_model) : kernels::kRifeAlign;
+  const kernels::RifeGeometry g = kernels::rife_geometry(rife_size.width, rife_size.height, rife_align);
+  const kernels::RifeGeometry image_g = kernels::rife_geometry(work.width, work.height, rife_align);
   std::unique_ptr<gpu::Engine> rife;
   std::unique_ptr<gpu::Engine> rife_motion;
   int rife_planes = kernels::kRifeInputChannels;
@@ -305,6 +306,7 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
                                            .rife = rife.get(),
                                            .rife_motion = rife_motion.get(),
                                            .rife_planes = rife_planes,
+                                           .rife_align = rife_align,
                                            .optical_flow_grid = flow_grid,
                                            .gmfss_pair = gmfss.pair.get(),
                                            .gmfss_fusion = gmfss.fusion.get(),
