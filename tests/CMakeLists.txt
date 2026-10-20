@@ -1,6 +1,9 @@
 find_package(Catch2 3 CONFIG REQUIRED)
 include(Catch)
 
+# Support commun aux tests qui créent un appareil Vulkan (couche de validation, main).
+add_subdirectory(support)
+
 # Chaque module construit ajoute ses tests ; un dossier par module.
 file(GLOB module_dirs LIST_DIRECTORIES true "${CMAKE_CURRENT_SOURCE_DIR}/unit/*")
 foreach(dir IN LISTS module_dirs)

@@ -41,15 +41,20 @@ function(ajp_add_module name)
   add_library(ajp::${name} ALIAS ${target})
 endfunction()
 
-# ajp_add_unit_tests(<module> SOURCES ... [DEPS ...])
+# ajp_add_unit_tests(<module> SOURCES ... [DEPS ...] [MAIN <cible>])
 #
 # Un exécutable Catch2 par module, ajp_<module>_tests, découvert par CTest.
 # Les tests vivent dans tests/unit/<module>/, à côté de rien d'autre.
+# MAIN : une cible qui apporte son propre main à la place de celui de Catch2 (tests/support).
 function(ajp_add_unit_tests module)
-  cmake_parse_arguments(ARG "" "" "SOURCES;DEPS" ${ARGN})
+  cmake_parse_arguments(ARG "" "MAIN" "SOURCES;DEPS" ${ARGN})
   set(target ajp_${module}_tests)
   add_executable(${target} ${ARG_SOURCES})
-  target_link_libraries(${target} PRIVATE ajp::${module} ${ARG_DEPS} Catch2::Catch2WithMain)
+  if(ARG_MAIN)
+    target_link_libraries(${target} PRIVATE ajp::${module} ${ARG_DEPS} ${ARG_MAIN} Catch2::Catch2)
+  else()
+    target_link_libraries(${target} PRIVATE ajp::${module} ${ARG_DEPS} Catch2::Catch2WithMain)
+  endif()
   ajp_set_warnings(${target})
   catch_discover_tests(${target} TEST_PREFIX "${module}: " DISCOVERY_MODE PRE_TEST)
 endfunction()

@@ -1,38 +1,34 @@
 name: CI
 
+# Chaque poussée sur main, cloud/** et release/** passe les règles (rules.yml). Les matrices de
+# construction et de tests tournent sur main, sur chaque pull request, chaque nuit et à la
+# demande (workflow_dispatch sur n'importe quelle branche) : une branche de travail ne les lance
+# pas à chaque poussée. Versions et paquets : tools/release/versions.env.
 on:
   push:
-    branches: [main]
+    branches: [main, "cloud/**", "release/**"]
   pull_request:
+  schedule:
+    - cron: "17 3 * * *"
+  workflow_dispatch:
 
 concurrency:
-  group: ci-${{ github.ref }}
+  group: ci-${{ github.ref }}-${{ github.event_name }}
   cancel-in-progress: true
 
 env:
   # À côté de l'espace de travail, en chemin absolu : actions/cache refuse les chemins qui
   # contiennent « .. », et le cache des dépendances n'était jamais enregistré.
   AJP_DEPS_PREFIX: ${{ github.workspace }}-deps
-  APT_BASE: >-
-    ninja-build nasm autoconf automake libtool pkg-config python3-jinja2
-    clang-20 clang-tidy-20 clang-format-20
+  APT_COMPILERS: clang-20 clang-tidy-20 clang-format-20
 
 jobs:
   rules:
-    name: Format et règles
-    runs-on: ubuntu-24.04
-    steps:
-      - uses: actions/checkout@v4
-      - run: sudo apt-get update -qq && sudo apt-get install -y -qq clang-format-20
-      - name: clang-format
-        run: git ls-files -z -- '*.cpp' '*.h' '*.cu' '*.cuh' | xargs -0 -r clang-format-20 --dry-run --Werror
-      - name: Taille des fichiers
-        run: tools/ci/check-file-size.sh
-      - name: Aucun getenv
-        run: tools/ci/check-no-getenv.sh
+    uses: ./.github/workflows/rules.yml
 
   core:
     name: Cœur (${{ matrix.name }})
+    if: github.event_name != 'push' || github.ref == 'refs/heads/main'
     runs-on: ubuntu-24.04
     strategy:
       fail-fast: false
@@ -47,7 +43,11 @@ jobs:
       CXX: ${{ matrix.cxx }}
     steps:
       - uses: actions/checkout@v4
-      - run: sudo apt-get update -qq && sudo apt-get install -y -qq $APT_BASE
+      - name: Paquets système
+        run: |
+          source tools/release/versions.env
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq $APT_BUILD $APT_COMPILERS
       - uses: actions/cache@v4
         with:
           path: ${{ env.AJP_DEPS_PREFIX }}
@@ -57,11 +57,14 @@ jobs:
       - run: cmake --build --preset ${{ matrix.preset }}
       - run: ctest --preset ${{ matrix.preset }}
 
-  # Tous les modules, lecteur compris, sous Xvfb avec Vulkan logiciel (lavapipe) : une fois
-  # tel quel, une fois sous ASan et UBSan, une fois sous TSan. Les préréglages de test
-  # portent LSAN_OPTIONS (tools/ci/lsan.supp) et TSAN_OPTIONS.
+  # Tous les modules, lecteur compris, sous Xvfb avec Vulkan logiciel (lavapipe) et la couche de
+  # validation exigée (AJP_TEST_VULKAN_VALIDATION, tests/support/vulkan_validation.h : chaque
+  # erreur de la couche fait échouer l'exécutable) : une fois tel quel, une fois sous ASan et
+  # UBSan, une fois sous TSan. Les préréglages de test portent LSAN_OPTIONS (tools/ci/lsan.supp)
+  # et TSAN_OPTIONS.
   player:
     name: Lecteur Linux (${{ matrix.name }})
+    if: github.event_name != 'push' || github.ref == 'refs/heads/main'
     runs-on: ubuntu-24.04
     strategy:
       fail-fast: false
@@ -73,19 +76,14 @@ jobs:
     env:
       CC: gcc-13
       CXX: g++-13
+      AJP_TEST_VULKAN_VALIDATION: require
     steps:
       - uses: actions/checkout@v4
       - name: Paquets système
         run: |
+          source tools/release/versions.env
           sudo apt-get update -qq
-          sudo apt-get install -y -qq $APT_BASE \
-            mesa-vulkan-drivers vulkan-tools libvulkan-dev glslc glslang-tools spirv-tools xvfb \
-            libfreetype-dev libharfbuzz-dev libfribidi-dev libfontconfig-dev libshaderc-dev glslang-dev \
-            liblcms2-dev libdav1d-dev libasound2-dev libpulse-dev libcurl4-openssl-dev \
-            libx11-dev libxext-dev libxrandr-dev libxcursor-dev libxi-dev libxss-dev libxtst-dev \
-            libxfixes-dev libxinerama-dev libxkbcommon-dev libxkbcommon-x11-dev libwayland-dev \
-            wayland-protocols libdecor-0-dev libdrm-dev libgbm-dev libegl-dev libudev-dev libdbus-1-dev \
-            libva-dev
+          sudo apt-get install -y -qq $APT_BUILD $APT_COMPILERS $APT_PLAYER $APT_TESTS
           pip install --user meson
       - uses: actions/cache@v4
         with:

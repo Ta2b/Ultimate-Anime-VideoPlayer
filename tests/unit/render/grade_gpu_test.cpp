@@ -1,20 +1,25 @@
 // Le grade sur le GPU : les hooks embarqués rendus par libplacebo sur des rampes PQ BT.2020 (ou
 // SDR BT.709 gamma 2,2) synthétiques, cible identique à la source (aucune conversion, aucun tramage). Un
 // Vulkan logiciel (lavapipe) suffit, ce qui les fait tourner en CI ; sans aucun appareil Vulkan, ils se
-// sautent.
+// sautent. L'instance porte la couche de validation selon tests/support/vulkan_validation.h : ses
+// erreurs, que libplacebo journalise en « vk … », sont notées et font échouer l'exécutable.
 #include <algorithm>
 #include <array>
 #include <cmath>
 #include <cstdint>
+#include <cstring>
 #include <optional>
+#include <string_view>
 #include <utility>
 #include <vector>
 
 #include <catch2/catch_test_macros.hpp>
+#include <libplacebo/log.h>
 #include <libplacebo/renderer.h>
 #include <libplacebo/vulkan.h>
 
 #include "render/grade.h"
+#include "vulkan_validation.h"
 
 namespace ajp::render {
 namespace {
@@ -32,15 +37,48 @@ double pq_to_nits(double e) {
   return 10000.0 * std::pow(std::max(p - 0.8359375, 0.0) / (18.8515625 - 18.6875 * p), 1.0 / 0.1593017578125);
 }
 
+// Les erreurs de la couche de validation, que libplacebo journalise en « vk … » (vk_dbg_utils_cb).
+void on_placebo_log(void* /*priv*/, pl_log_level level, const char* message) {
+  if (message == nullptr) return;
+  const std::string_view text(message);
+  if ((level == PL_LOG_ERR || level == PL_LOG_FATAL) && text.starts_with("vk ")) {
+    ajp::test::note_validation_error(text);
+  }
+}
+
+bool has_validation_layer(const pl_vk_inst_t& inst) {
+  for (int i = 0; i < inst.num_layers; ++i) {
+    if (std::strcmp(inst.layers[i], "VK_LAYER_KHRONOS_validation") == 0) return true;
+  }
+  return false;
+}
+
 // Un GPU Vulkan sans fenêtre, son renderer et le grade.
 struct Gpu {
   pl_log log = nullptr;
+  pl_vk_inst inst = nullptr;
   pl_vulkan vk = nullptr;
   pl_renderer renderer = nullptr;
   std::optional<Grade> grade;
+  bool layer_missing = false;  // demandée (mode on ou require) et absente
   Gpu() {
-    log = pl_log_create(PL_API_VER, nullptr);
+    pl_log_params log_params{};
+    log_params.log_cb = on_placebo_log;
+    log_params.log_level = PL_LOG_WARN;
+    log = pl_log_create(PL_API_VER, &log_params);
+    const ajp::test::ValidationMode mode = ajp::test::validation_mode();
+    pl_vk_inst_params inst_params{};
+    inst_params.debug = mode != ajp::test::ValidationMode::Off;
+    inst = pl_vk_inst_create(log, &inst_params);
+    if (inst == nullptr) return;
+    if (inst_params.debug && !has_validation_layer(*inst)) {
+      layer_missing = true;
+      if (mode != ajp::test::ValidationMode::Require)
+        ajp::test::warn_without_layer("libplacebo ne la trouve pas");
+    }
     pl_vulkan_params params = pl_vulkan_default_params;
+    params.instance = inst->instance;
+    params.get_proc_addr = inst->get_proc_addr;
     params.allow_software = true;
     vk = pl_vulkan_create(log, &params);
     if (vk == nullptr) return;
@@ -55,9 +93,18 @@ struct Gpu {
     grade.reset();
     pl_renderer_destroy(&renderer);
     pl_vulkan_destroy(&vk);
+    pl_vk_inst_destroy(&inst);
     pl_log_destroy(&log);
   }
 };
+
+// Saute sans appareil ; échoue quand la couche de validation est exigée et absente.
+void require_device(const Gpu& gpu) {
+  require_device(gpu);
+  if (gpu.layer_missing && ajp::test::validation_mode() == ajp::test::ValidationMode::Require) {
+    FAIL("couche de validation Vulkan exigée (AJP_TEST_VULKAN_VALIDATION=require) et absente");
+  }
+}
 
 // La sortie SDR des tests : BT.709, gamma 2,2 (celle d'un écran SDR sous libplacebo).
 pl_color_space sdr_space() {
@@ -230,7 +277,7 @@ double saturation(const Rgb& px) {
 // sa luminance.
 TEST_CASE("garde-fou : un orange saturé garde son dégradé au lieu d'un plateau au pic", "[render][gpu]") {
   Gpu gpu;
-  if (gpu.vk == nullptr) SKIP("pas d'appareil Vulkan");
+  require_device(gpu);
   REQUIRE(gpu.grade);
   const std::vector<std::uint16_t> orange = ramp(900.0, 0.6, 0.03);
   const std::vector<double> hard = graded(gpu, orange, strong(0.0));
@@ -249,7 +296,7 @@ TEST_CASE("garde-fou : un orange saturé garde son dégradé au lieu d'un platea
 
 TEST_CASE("garde-fou : le gris et le blanc ne bougent pas", "[render][gpu]") {
   Gpu gpu;
-  if (gpu.vk == nullptr) SKIP("pas d'appareil Vulkan");
+  require_device(gpu);
   REQUIRE(gpu.grade);
   const std::vector<std::uint16_t> gray = ramp(900.0, 1.0, 1.0);
   const std::vector<double> hard = graded(gpu, gray, strong(0.0));
@@ -261,7 +308,7 @@ TEST_CASE("garde-fou : le gris et le blanc ne bougent pas", "[render][gpu]") {
 // primaires P3, il devient (0,7538 ; 0,0457 ; -0,0012) : G/R passe de 0,110 à 0,061.
 TEST_CASE("couleurs étendues : un rouge BT.709 va vers le rouge P3, le gris ne bouge pas", "[render][gpu]") {
   Gpu gpu;
-  if (gpu.vk == nullptr) SKIP("pas d'appareil Vulkan");
+  require_device(gpu);
   REQUIRE(gpu.grade);
   const std::vector<std::uint16_t> red = ramp(400.0, 0.0691 / 0.6274, 0.0164 / 0.6274);
   const std::vector<Rgb> plain = graded_rgb(gpu, red, expanded(0.0));
@@ -321,7 +368,7 @@ GradeParams native_look(double adapt) {
 
 TEST_CASE("HDR adaptatif : la nuit garde ses ombres, une scène claire s'étend moins", "[render][gpu]") {
   Gpu gpu;
-  if (gpu.vk == nullptr) SKIP("pas d'appareil Vulkan");
+  require_device(gpu);
   REQUIRE(gpu.grade);
   const auto center = [&](double nits, double adapt) {
     return graded(gpu, uniform(nits), native_look(adapt))[kSide / 2];
@@ -342,7 +389,7 @@ TEST_CASE("HDR adaptatif : la nuit garde ses ombres, une scène claire s'étend 
 
 TEST_CASE("sortie SDR : le grade neutre rend l'image telle quelle", "[render][gpu]") {
   Gpu gpu;
-  if (gpu.vk == nullptr) SKIP("pas d'appareil Vulkan");
+  require_device(gpu);
   REQUIRE(gpu.grade);
   for (const auto& [green, blue] : {std::pair{1.0, 1.0}, std::pair{0.6, 0.1}, std::pair{0.2, 0.9}}) {
     const std::vector<std::uint16_t> source = sdr_ramp(1.0, green, blue);
@@ -356,7 +403,7 @@ TEST_CASE("sortie SDR : le grade neutre rend l'image telle quelle", "[render][gp
 
 TEST_CASE("sortie SDR : couleurs et contraste poussés, sans dépasser le blanc", "[render][gpu]") {
   Gpu gpu;
-  if (gpu.vk == nullptr) SKIP("pas d'appareil Vulkan");
+  require_device(gpu);
   REQUIRE(gpu.grade);
   GradeParams vivid = sdr_neutral();
   vivid.vibrance = 0.45;
@@ -382,7 +429,7 @@ TEST_CASE("sortie SDR : couleurs et contraste poussés, sans dépasser le blanc"
 
 TEST_CASE("sortie SDR : le contraste maximal de RTX HDR n'écrase pas les sombres", "[render][gpu]") {
   Gpu gpu;
-  if (gpu.vk == nullptr) SKIP("pas d'appareil Vulkan");
+  require_device(gpu);
   REQUIRE(gpu.grade);
   // Contraste 200, gris moyen 51 (les réglages de RTX HDR de Tatoub), le reste neutre.
   GradeParams look = sdr_neutral();
@@ -408,7 +455,7 @@ TEST_CASE("sortie SDR : le contraste maximal de RTX HDR n'écrase pas les sombre
 
 TEST_CASE("sortie SDR : le vrai noir OLED met les quasi-noirs à 0", "[render][gpu]") {
   Gpu gpu;
-  if (gpu.vk == nullptr) SKIP("pas d'appareil Vulkan");
+  require_device(gpu);
   REQUIRE(gpu.grade);
   GradeParams black = sdr_neutral();
   // Codes 0,02 et 0,06 en gamma 2,2 à 203 nits : 0,04 et 0,4 nit environ.

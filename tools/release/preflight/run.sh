@@ -1,11 +1,12 @@
 #!/usr/bin/env bash
-# Construit le paquet Linux comme .github/workflows/release-linux.yml, dans un conteneur
-# ubuntu:24.04 (Dockerfile à côté), avant toute poussée sur release/linux.
+# Construit le paquet Linux et passe ses tests comme .github/workflows/release-linux.yml, dans un
+# conteneur ubuntu:24.04 (Dockerfile à côté), avant toute poussée sur release/linux.
 #
 #   tools/release/preflight/run.sh [sortie]             défaut : <dépôt>/build/preflight
 #   AJP_WITH_MIGRAPHX=OFF tools/release/preflight/run.sh  sans ROCm (image plus légère)
-#   AJP_PREFLIGHT_TESTS=1 tools/release/preflight/run.sh  puis les tests unitaires
-#       (build/linux-release-tests, Vulkan logiciel sous Xvfb ; filtre AJP_PREFLIGHT_TESTS_REGEX)
+#   AJP_PREFLIGHT_TESTS=0 tools/release/preflight/run.sh  le paquet seul, sans les tests unitaires
+#       (par défaut ils suivent le paquet : build/linux-release-tests, Vulkan logiciel et couche de
+#       validation sous Xvfb, comme la tâche tests du workflow ; filtre AJP_PREFLIGHT_TESTS_REGEX)
 #   tools/release/preflight/run.sh rocm-size            taille du téléchargement et de l'installation ROCm
 #
 # Le dépôt est monté en lecture seule et copié dans un volume (ajp-preflight-work) : la
@@ -17,6 +18,7 @@ set -euo pipefail
 HERE="$(cd "$(dirname "$0")" && pwd)"
 ROOT="$(cd "$HERE/../../.." && pwd)"
 WITH_MIGRAPHX="${AJP_WITH_MIGRAPHX:-ON}"
+TESTS="${AJP_PREFLIGHT_TESTS:-1}"
 MIN_FREE_GB="${AJP_PREFLIGHT_MIN_FREE_GB:-12}"
 IMAGE=ajp-preflight
 
@@ -32,13 +34,15 @@ check_disk() {
   (( free >= MIN_FREE_GB )) || { echo "moins de ${MIN_FREE_GB} Go libres : arrêt" >&2; exit 1; }
 }
 
-# Contexte minimal : le Dockerfile et le script des dépendances, seul fichier du dépôt que l'image
-# embarque (l'étage deps se reconstruit quand il change).
+# Contexte minimal : le Dockerfile, les versions et paquets communs, le dépôt ROCm et le script
+# des dépendances, seuls fichiers du dépôt que l'image embarque (un étage se reconstruit quand
+# ce qu'il lit change).
 CTX="$(mktemp -d)"
 trap 'rm -rf "$CTX"' EXIT
-mkdir -p "$CTX/tools/deps"
+mkdir -p "$CTX/tools/deps" "$CTX/tools/release"
 cp "$HERE/Dockerfile" "$CTX/"
 cp "$ROOT/tools/deps/linux-from-source.sh" "$CTX/tools/deps/"
+cp "$ROOT/tools/release/versions.env" "$ROOT/tools/release/rocm-apt.sh" "$CTX/tools/release/"
 build_image() {  # étage [base de l'étage tests]
   check_disk
   docker build -q -t "$IMAGE:$1" --target "$1" ${2:+--build-arg TEST_BASE="$2"} "$CTX" >/dev/null
@@ -47,22 +51,14 @@ build_image() {  # étage [base de l'étage tests]
 
 if [ "${1:-}" = rocm-size ]; then
   build_image base
-  docker run --rm "$IMAGE:base" bash -c '
-    set -e
-    sudo mkdir -p /etc/apt/keyrings
-    curl -fsSL https://repo.radeon.com/rocm/rocm.gpg.key | gpg --dearmor | sudo tee /etc/apt/keyrings/rocm.gpg >/dev/null
-    echo "deb [arch=amd64 signed-by=/etc/apt/keyrings/rocm.gpg] https://repo.radeon.com/rocm/apt/7.2 noble main" \
-      | sudo tee /etc/apt/sources.list.d/rocm.list >/dev/null
-    printf "Package: *\nPin: release o=repo.radeon.com\nPin-Priority: 600\n" | sudo tee /etc/apt/preferences.d/rocm-pin-600 >/dev/null
-    sudo apt-get update -qq
-    sudo apt-get install --assume-no --no-install-recommends migraphx-dev hip-dev | grep -E "^(Need to get|After this operation)" || true'
+  docker run --rm "$IMAGE:base" bash /ajp/rocm-apt.sh size
   exit 0
 fi
 
 OUT="$(mkdir -p "${1:-$ROOT/build/preflight}" && cd "${1:-$ROOT/build/preflight}" && pwd)"
 STAGE=openvino
 [ "$WITH_MIGRAPHX" = ON ] && STAGE=rocm
-if [ -n "${AJP_PREFLIGHT_TESTS:-}" ]; then
+if [ "$TESTS" != 0 ]; then
   build_image "$STAGE"
   build_image tests "$STAGE"
   STAGE=tests
@@ -80,7 +76,8 @@ docker run --rm \
   -v "$ROOT:/src:ro" -v "$OUT:/out" \
   -v ajp-preflight-work:/home/runner/work -v ajp-preflight-cache:/home/runner/.cache \
   -e AJP_WITH_MIGRAPHX="$WITH_MIGRAPHX" -e AJP_WITH_OPENVINO=ON \
-  -e AJP_PREFLIGHT_TESTS="${AJP_PREFLIGHT_TESTS:-}" -e AJP_PREFLIGHT_TESTS_REGEX="${AJP_PREFLIGHT_TESTS_REGEX:-}" \
+  -e AJP_PREFLIGHT_TESTS="$TESTS" -e AJP_PREFLIGHT_TESTS_REGEX="${AJP_PREFLIGHT_TESTS_REGEX:-}" \
+  -e AJP_TEST_VULKAN_VALIDATION=require \
   "$IMAGE:$STAGE" bash -c '
     set -uo pipefail
     export OpenVINO_DIR="$(python3 -c "from openvino.utils import get_cmake_path; print(get_cmake_path())")"
@@ -100,7 +97,7 @@ docker run --rm \
     [ "${PIPESTATUS[0]}" = 0 ] || { echo "PREFLIGHT: paquet en échec"; exit 4; }
     echo "PREFLIGHT: paquet construit"
     tar -tzf /out/package/ajp-linux-x64.tar.gz | sort
-    [ -n "$AJP_PREFLIGHT_TESTS" ] || exit 0
+    [ "$AJP_PREFLIGHT_TESTS" != 0 ] || exit 0
     tests=build/linux-release-tests
     cmake --preset linux-release -B "$tests" -DAJP_BUILD_TESTS=ON -DAJP_WITH_CUDA=OFF \
       -DAJP_WITH_MIGRAPHX="$AJP_WITH_MIGRAPHX" -DAJP_WITH_OPENVINO="$AJP_WITH_OPENVINO" > /out/tests-configure.log 2>&1 \

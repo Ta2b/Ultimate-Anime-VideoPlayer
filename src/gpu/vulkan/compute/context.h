@@ -14,6 +14,7 @@
 #include <optional>
 #include <span>
 #include <string>
+#include <string_view>
 #include <vector>
 
 #include "core/types.h"
@@ -40,7 +41,12 @@ struct CreateOptions {
   std::optional<std::filesystem::path> library;
   std::optional<DeviceUuid> device;     // choisi par UUID ; par défaut le premier énuméré
   std::vector<std::string> extensions;  // extensions d'appareil exigées en plus
-  bool validation = false;              // VK_LAYER_KHRONOS_validation (--vulkan-validation)
+  // Couche VK_LAYER_KHRONOS_validation ; refus FeatureUnavailable si elle manque. Ses messages
+  // (avertissements et erreurs, par VK_EXT_debug_utils du chargeur) vont au journal et à
+  // validation_sink s'il est donné, avec error pour une erreur, depuis n'importe quel thread ;
+  // sans VK_EXT_debug_utils, la couche écrit sur sa sortie standard.
+  bool validation = false;
+  std::function<void(bool error, std::string_view message)> validation_sink;
   // VK_KHR_cooperative_matrix et le modèle mémoire Vulkan, activés si l'appareil les a tous
   // deux ; caps().enabled.cooperative_matrix dit s'ils le sont.
   bool cooperative_matrix = false;
@@ -61,6 +67,12 @@ struct AdoptedDevice {
   // file n'est qu'à nous.
   std::function<void()> lock_queue;
   std::function<void()> unlock_queue;
+};
+
+// Ce que le rappel de VK_EXT_debug_utils reçoit : le journal et le relais de CreateOptions.
+struct ValidationRelay {
+  std::shared_ptr<spdlog::logger> log;
+  std::function<void(bool error, std::string_view message)> sink;
 };
 
 // Une valeur d'un sémaphore timeline : ce qu'une soumission attend ou signale.
@@ -161,6 +173,10 @@ class VkContext {
   std::uint32_t queue_index_ = 0;
   bool owns_instance_ = false;
   bool owns_device_ = false;
+  // Couche de validation demandée : son rappel, détruit avant l'instance.
+  std::unique_ptr<ValidationRelay> validation_;
+  VkDebugUtilsMessengerEXT messenger_ = VK_NULL_HANDLE;
+  PFN_vkDestroyDebugUtilsMessengerEXT destroy_messenger_ = nullptr;
   std::function<void()> lock_queue_;
   std::function<void()> unlock_queue_;
   DeviceCaps caps_;

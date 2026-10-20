@@ -2,11 +2,15 @@ name: Release Linux
 
 # Une étiquette linux-v* (poussée, ou créée avec une release depuis GitHub) : le lecteur Linux
 # (Vulkan) construit ici et joint à sa release, créée en préversion avec les notes de
-# tools/release/notes/<étiquette>.md si elle n'existe pas encore. Le motif ne croise pas celui des releases Windows et
-# macOS (v*), qui ne se lancent donc pas. Une poussée sur la branche release/linux construit le
-# même paquet sans release : il reste en artefact de l'exécution.
-# Avant toute poussée : tools/release/preflight/run.sh fait la même construction dans un conteneur
-# Ubuntu 24.04 local, avec toutes les erreurs d'un coup.
+# tools/release/notes/<étiquette>.md si elle n'existe pas encore. Le motif ne croise pas celui des
+# releases Windows et macOS (v*), qui ne se lancent donc pas. Une poussée sur la branche
+# release/linux construit le même paquet sans release : il reste en artefact de l'exécution.
+# Rien ne s'empaquette sans les règles (rules.yml) ni les tests unitaires sous Vulkan logiciel,
+# construits avec les options livrées (tâche tests) : un commit étiqueté qui ne les passe pas n'a
+# pas de release.
+# Avant toute poussée : tools/release/preflight/run.sh fait la même construction et les mêmes
+# tests dans un conteneur Ubuntu 24.04 local, avec toutes les erreurs d'un coup.
+# Versions et paquets : tools/release/versions.env.
 on:
   push:
     tags: ["linux-v*"]
@@ -28,22 +32,52 @@ env:
   CXX: g++-13
 
 jobs:
+  rules:
+    uses: ./.github/workflows/rules.yml
+
+  # Les tests avec les options de la version livrée (préréglage linux-release, tests activés),
+  # comme l'étage tests du préflight : sans ROCm, dont les tests n'ont pas de GPU ici.
+  tests:
+    name: Tests (version livrée, Vulkan logiciel)
+    runs-on: ubuntu-24.04
+    env:
+      AJP_TEST_VULKAN_VALIDATION: require
+    steps:
+      - uses: actions/checkout@v4
+      - name: Paquets système
+        run: |
+          source tools/release/versions.env
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq $APT_BUILD $APT_PLAYER $APT_TESTS
+          pip install --user meson
+      - uses: actions/cache@v4
+        with:
+          path: ${{ env.AJP_DEPS_PREFIX }}
+          key: deps-player-gcc-13-${{ hashFiles('tools/deps/linux-from-source.sh') }}
+      - run: tools/deps/linux-from-source.sh "$AJP_DEPS_PREFIX" "$RUNNER_TEMP/deps-src"
+      - name: OpenVINO
+        run: |
+          source tools/release/versions.env
+          pip install --user "openvino==$OPENVINO_VERSION"
+          echo "OpenVINO_DIR=$(python3 -c 'from openvino.utils import get_cmake_path; print(get_cmake_path())')" >> "$GITHUB_ENV"
+      - run: >-
+          cmake --preset linux-release -B build/linux-release-tests -DAJP_BUILD_TESTS=ON
+          -DAJP_WITH_CUDA=OFF -DAJP_WITH_OPENVINO=ON -DAJP_WITH_MIGRAPHX=OFF
+      - run: cmake --build build/linux-release-tests
+      - name: Tests (Vulkan logiciel sous Xvfb)
+        run: xvfb-run -a ctest --test-dir build/linux-release-tests --output-on-failure -j "$(nproc)"
+
   package:
     name: Lecteur Linux (x64)
+    needs: [rules, tests]
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
       - name: Paquets système
         run: |
+          source tools/release/versions.env
           sudo apt-get update -qq
-          sudo apt-get install -y -qq ninja-build nasm autoconf automake libtool pkg-config \
-            python3-jinja2 patchelf p7zip-full libvulkan-dev glslc glslang-tools spirv-tools \
-            libfreetype-dev libharfbuzz-dev libfribidi-dev libfontconfig-dev libshaderc-dev glslang-dev \
-            liblcms2-dev libdav1d-dev libasound2-dev libpulse-dev libcurl4-openssl-dev \
-            libx11-dev libxext-dev libxrandr-dev libxcursor-dev libxi-dev libxss-dev libxtst-dev \
-            libxfixes-dev libxinerama-dev libxkbcommon-dev libxkbcommon-x11-dev libwayland-dev \
-            wayland-protocols libdecor-0-dev libdrm-dev libgbm-dev libegl-dev libudev-dev libdbus-1-dev \
-            libva-dev
+          sudo apt-get install -y -qq $APT_BUILD $APT_PLAYER $APT_PACKAGE
           pip install --user meson
       # Restauration et sauvegarde séparées : les dépendances construites restent en cache même
       # quand une étape suivante échoue (quota d'artefacts atteint, paquet refusé…).
@@ -62,25 +96,20 @@ jobs:
           key: ${{ steps.deps-cache.outputs.cache-primary-key }}
       # Moteurs facultatifs, empaquetés à côté du lecteur et listés dans engines.lock : OpenVINO
       # (GPU Intel) par sa roue PyPI, qui porte ses en-têtes et sa configuration CMake ; MIGraphX
-      # (GPU AMD) par le dépôt ROCm 7.2 d'AMD. ROCm reste un prérequis du système chez l'utilisateur :
-      # seul le module du backend est livré, lié au runtime HIP de ROCm 7 (libamdhip64.so.7), qui
-      # ne se charge pas sur un ROCm 6. TensorRT se construit ailleurs (licence NVIDIA).
+      # (GPU AMD) par le dépôt ROCm d'AMD (tools/release/rocm-apt.sh). ROCm reste un prérequis du
+      # système chez l'utilisateur : seul le module du backend est livré, lié au runtime HIP de
+      # ROCm 7 (libamdhip64.so.7), qui ne se charge pas sur un ROCm 6. TensorRT se construit
+      # ailleurs (licence NVIDIA).
       - name: Place sur le disque
         run: sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
       - name: OpenVINO
         run: |
-          # 2026 : roue manylinux_2_28 en ABI C++11, comme le reste du lecteur (la 2025.3, manylinux2014,
-          # impose _GLIBCXX_USE_CXX11_ABI=0 et ne se lie pas à nos bibliothèques).
-          pip install --user openvino==2026.4.1
+          source tools/release/versions.env
+          pip install --user "openvino==$OPENVINO_VERSION"
           echo "OpenVINO_DIR=$(python3 -c 'from openvino.utils import get_cmake_path; print(get_cmake_path())')" >> "$GITHUB_ENV"
       - name: ROCm et MIGraphX
         run: |
-          sudo mkdir -p /etc/apt/keyrings
-          curl -fsSL https://repo.radeon.com/rocm/rocm.gpg.key | gpg --dearmor | sudo tee /etc/apt/keyrings/rocm.gpg >/dev/null
-          echo "deb [arch=amd64 signed-by=/etc/apt/keyrings/rocm.gpg] https://repo.radeon.com/rocm/apt/7.2 noble main" \
-            | sudo tee /etc/apt/sources.list.d/rocm.list
-          printf 'Package: *\nPin: release o=repo.radeon.com\nPin-Priority: 600\n' | sudo tee /etc/apt/preferences.d/rocm-pin-600
-          sudo apt-get update -qq
+          tools/release/rocm-apt.sh
           # Les en-têtes et bibliothèques de l'API C de MIGraphX et du runtime HIP suffisent
           # (src/gpu/migraphx/CMakeLists.txt les cherche sans les fichiers de config de ROCm).
           sudo apt-get install -y -qq --no-install-recommends migraphx-dev hip-dev

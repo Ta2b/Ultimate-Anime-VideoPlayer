@@ -1,25 +1,21 @@
 # Réplique locale de .github/workflows/release-linux.yml (runner ubuntu-24.04), pour construire
-# le paquet Linux avant de pousser sur release/linux. Voir run.sh à côté.
+# le paquet Linux et passer ses tests avant de pousser sur release/linux. Voir run.sh à côté.
 #
-# Étages : base (paquets du workflow, g++-13, CMake 3.31 comme le runner), deps
+# Étages : base (paquets de tools/release/versions.env, g++-13, CMake 3.31 comme le runner), deps
 # (tools/deps/linux-from-source.sh, en cache tant que le script ne change pas), openvino (roue
-# PyPI), rocm (migraphx-dev et hip-dev du dépôt ROCm 7.2, comme le workflow), tests (Vulkan
-# logiciel et Xvfb comme le job player de ci.yml, sur l'étage TEST_BASE : rocm ou openvino).
+# PyPI), rocm (migraphx-dev et hip-dev du dépôt ROCm, par tools/release/rocm-apt.sh), tests
+# (Vulkan logiciel, couche de validation et Xvfb comme les tâches de tests de la CI, sur l'étage
+# TEST_BASE : rocm ou openvino). Les versions et les listes de paquets viennent de versions.env,
+# copié dans l'image : un changement y reconstruit les étages qui le lisent.
 ARG TEST_BASE=rocm
 FROM ubuntu:24.04 AS base
 ARG DEBIAN_FRONTEND=noninteractive
-# Ce que l'image du runner fournit déjà (gcc-13, git, curl, file, pip) puis la liste du workflow.
-RUN apt-get update -qq && apt-get install -y -qq --no-install-recommends \
+COPY tools/release/versions.env tools/release/rocm-apt.sh /ajp/
+# Ce que l'image du runner fournit déjà (gcc-13, git, curl, file, pip) puis les listes du workflow.
+RUN . /ajp/versions.env && apt-get update -qq && apt-get install -y -qq --no-install-recommends \
       ca-certificates curl gpg git file xz-utils unzip sudo make \
       gcc g++ gcc-13 g++-13 python3 python3-pip python3-venv \
-      ninja-build nasm autoconf automake libtool pkg-config \
-      python3-jinja2 patchelf p7zip-full libvulkan-dev glslc glslang-tools spirv-tools \
-      libfreetype-dev libharfbuzz-dev libfribidi-dev libfontconfig-dev libshaderc-dev glslang-dev \
-      liblcms2-dev libdav1d-dev libasound2-dev libpulse-dev libcurl4-openssl-dev \
-      libx11-dev libxext-dev libxrandr-dev libxcursor-dev libxi-dev libxss-dev libxtst-dev \
-      libxfixes-dev libxinerama-dev libxkbcommon-dev libxkbcommon-x11-dev libwayland-dev \
-      wayland-protocols libdecor-0-dev libdrm-dev libgbm-dev libegl-dev libudev-dev libdbus-1-dev \
-      libva-dev \
+      $APT_BUILD $APT_PLAYER $APT_PACKAGE \
  && rm -rf /var/lib/apt/lists/*
 # Le runner : utilisateur runner, pip --user autorisé, CMake 3.31.
 RUN usermod -l runner -d /home/runner -m ubuntu && groupmod -n runner ubuntu \
@@ -36,23 +32,15 @@ RUN bash /home/runner/linux-from-source.sh "$AJP_DEPS_PREFIX" /home/runner/deps-
  && rm -rf /home/runner/deps-src
 
 FROM deps AS openvino
-ARG OPENVINO_VERSION=2026.4.1
-RUN pip install --user -q openvino==${OPENVINO_VERSION}
+RUN . /ajp/versions.env && pip install --user -q "openvino==${OPENVINO_VERSION}"
 
 FROM openvino AS rocm
-ARG ROCM_VERSION=7.2
-RUN sudo mkdir -p /etc/apt/keyrings \
- && curl -fsSL https://repo.radeon.com/rocm/rocm.gpg.key | gpg --dearmor | sudo tee /etc/apt/keyrings/rocm.gpg >/dev/null \
- && echo "deb [arch=amd64 signed-by=/etc/apt/keyrings/rocm.gpg] https://repo.radeon.com/rocm/apt/${ROCM_VERSION} noble main" \
-      | sudo tee /etc/apt/sources.list.d/rocm.list \
- && printf 'Package: *\nPin: release o=repo.radeon.com\nPin-Priority: 600\n' | sudo tee /etc/apt/preferences.d/rocm-pin-600 \
- && sudo apt-get update -qq \
+RUN bash /ajp/rocm-apt.sh \
  && sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-install-recommends migraphx-dev hip-dev \
  && sudo rm -rf /var/lib/apt/lists/*
 ENV CMAKE_PREFIX_PATH=/opt/rocm
 
 FROM ${TEST_BASE} AS tests
-RUN sudo apt-get update -qq \
- && sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-install-recommends \
-      mesa-vulkan-drivers vulkan-tools xvfb xauth \
+RUN . /ajp/versions.env && sudo apt-get update -qq \
+ && sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-install-recommends $APT_TESTS \
  && sudo rm -rf /var/lib/apt/lists/*

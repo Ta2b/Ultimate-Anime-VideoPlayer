@@ -7,6 +7,7 @@
 #include <string>
 
 #include "kernels/ref/half.h"
+#include "vulkan_validation.h"
 
 namespace ajp::gpu::vk::test {
 namespace {
@@ -67,7 +68,12 @@ std::string describe(const Refusal& refusal) {
 }
 
 Rig make_rig(const CreateOptions& options) {
-  auto context = VkContext::create(options);
+  auto context = ajp::test::with_validation([&](bool validation, ajp::test::ValidationSink sink) {
+    CreateOptions wanted = options;
+    wanted.validation = validation;
+    wanted.validation_sink = std::move(sink);
+    return VkContext::create(wanted);
+  });
   if (!context) {
     const RefusalCode code = context.error().code;
     if (code == RefusalCode::LibraryUnavailable || code == RefusalCode::DeviceUnavailable) {

@@ -9,6 +9,7 @@
 #include <spdlog/logger.h>
 
 #include "gpu/vulkan/compute/context.h"
+#include "gpu/vulkan/compute/log.h"
 
 namespace ajp::gpu::vk {
 namespace {
@@ -89,6 +90,27 @@ VkBool32 flag(bool on) {
   return on ? VK_TRUE : VK_FALSE;
 }
 
+// Rappel de la couche de validation (VK_EXT_debug_utils) : chaque message va au journal et au
+// relais ; la couche appelle depuis le thread de l'appel Vulkan, quel qu'il soit.
+VKAPI_ATTR VkBool32 VKAPI_CALL on_validation(VkDebugUtilsMessageSeverityFlagBitsEXT severity,
+                                             VkDebugUtilsMessageTypeFlagsEXT /*types*/,
+                                             const VkDebugUtilsMessengerCallbackDataEXT* data, void* user) {
+  auto* relay = static_cast<ValidationRelay*>(user);
+  if (relay == nullptr || data == nullptr || data->pMessage == nullptr) return VK_FALSE;
+  const bool error = (severity & VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT) != 0;
+  const std::string message = std::format(
+      "validation {} : {}", data->pMessageIdName != nullptr ? data->pMessageIdName : "", data->pMessage);
+  if (relay->log) {
+    if (error) {
+      relay->log->error("{}", message);
+    } else {
+      relay->log->warn("{}", message);
+    }
+  }
+  if (relay->sink) relay->sink(error, message);
+  return VK_FALSE;
+}
+
 }  // namespace
 
 std::expected<std::unique_ptr<VkContext>, Refusal> VkContext::create(const CreateOptions& options) {
@@ -119,14 +141,36 @@ Done VkContext::create_instance(const CreateOptions& options) {
         std::format("chargeur Vulkan {}, {} au moins", version_text(loader), version_text(kMinApiVersion)));
   }
   std::vector<const char*> layers;
+  std::vector<const char*> extensions;
+  bool debug_utils = false;
   if (options.validation) {
     if (!has_layer(*global, kValidationLayer)) {
       return refuse(RefusalCode::FeatureUnavailable, std::format("couche {} absente", kValidationLayer));
     }
     layers.push_back(kValidationLayer);
+    validation_ = std::make_unique<ValidationRelay>(
+        ValidationRelay{.log = make_logger(), .sink = options.validation_sink});
+    // Le chargeur porte VK_EXT_debug_utils depuis Vulkan 1.1 ; sans lui, les messages de la
+    // couche vont sur sa sortie standard, hors journal et hors relais.
+    debug_utils = has_instance_extension(*global, VK_EXT_DEBUG_UTILS_EXTENSION_NAME);
+    if (debug_utils) {
+      extensions.push_back(VK_EXT_DEBUG_UTILS_EXTENSION_NAME);
+    } else {
+      validation_->log->warn("VK_EXT_debug_utils absent : la couche de validation écrit sur sa sortie");
+    }
   }
+  // Pour l'instance, puis pour tout ce qui suit : les messages de vkCreateInstance passent par le
+  // pNext, ceux des autres appels par le messager créé après.
+  const VkDebugUtilsMessengerCreateInfoEXT messenger{
+      .sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_MESSENGER_CREATE_INFO_EXT,
+      .messageSeverity =
+          VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT | VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT,
+      .messageType = VK_DEBUG_UTILS_MESSAGE_TYPE_GENERAL_BIT_EXT |
+                     VK_DEBUG_UTILS_MESSAGE_TYPE_VALIDATION_BIT_EXT |
+                     VK_DEBUG_UTILS_MESSAGE_TYPE_PERFORMANCE_BIT_EXT,
+      .pfnUserCallback = on_validation,
+      .pUserData = validation_.get()};
   // MoltenVK n'est énuméré qu'avec l'extension de portabilité ; ailleurs elle est sans effet.
-  std::vector<const char*> extensions;
   VkInstanceCreateFlags flags = 0;
   if (has_instance_extension(*global, kPortabilityEnumeration)) {
     extensions.push_back(kPortabilityEnumeration);
@@ -138,6 +182,7 @@ Done VkContext::create_instance(const CreateOptions& options) {
                               .pEngineName = "ajp vk_compute",
                               .apiVersion = api};
   const VkInstanceCreateInfo info{.sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO,
+                                  .pNext = debug_utils ? &messenger : nullptr,
                                   .flags = flags,
                                   .pApplicationInfo = &app,
                                   .enabledLayerCount = static_cast<std::uint32_t>(layers.size()),
@@ -153,6 +198,20 @@ Done VkContext::create_instance(const CreateOptions& options) {
   auto fns = load_instance(get_instance_proc_addr_, instance_);
   if (!fns) return std::unexpected(fns.error());
   instance_fn_ = *fns;
+  if (debug_utils) {
+    auto create_messenger = reinterpret_cast<PFN_vkCreateDebugUtilsMessengerEXT>(
+        get_instance_proc_addr_(instance_, "vkCreateDebugUtilsMessengerEXT"));
+    destroy_messenger_ = reinterpret_cast<PFN_vkDestroyDebugUtilsMessengerEXT>(
+        get_instance_proc_addr_(instance_, "vkDestroyDebugUtilsMessengerEXT"));
+    if (create_messenger == nullptr || destroy_messenger_ == nullptr) {
+      return refuse(RefusalCode::LibraryUnavailable, "vkCreateDebugUtilsMessengerEXT absent du chargeur");
+    }
+    if (auto ok = check(create_messenger(instance_, &messenger, nullptr, &messenger_),
+                        "vkCreateDebugUtilsMessengerEXT");
+        !ok) {
+      return ok;
+    }
+  }
   auto device = choose_device(instance_fn_, instance_, options.device, api);
   if (!device) return std::unexpected(device.error());
   physical_device_ = *device;

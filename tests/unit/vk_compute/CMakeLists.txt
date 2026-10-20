@@ -19,7 +19,8 @@ ajp_add_unit_tests(vk_compute
     rig.cpp
     transfer_test.cpp
     warp_test.cpp
-  DEPS ajp::kernels)
+  DEPS ajp::kernels
+  MAIN ajp_test_vulkan)
 
 target_compile_definitions(ajp_vk_compute_tests PRIVATE
   AJP_TEST_FAKE_VULKAN="$<TARGET_FILE:ajp_vk_compute_fake_loader>")

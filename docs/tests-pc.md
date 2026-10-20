@@ -10,6 +10,17 @@ Le flux optique matériel NVIDIA a été retiré (fichiers `nvof_session`, `tens
 `optical_flow_kernels` supprimés) et `kBackendAbi` passe à 4 : reconfigurer `linux-prefix-cuda` et
 `linux-prefix-cuda-release`, puis `ajp-gpu ctest --test-dir build/linux-prefix-cuda -j8`.
 
+## Couche de validation Vulkan dans les tests
+
+Les bancs de `vk_compute`, `vk_backend` et `render` demandent `VK_LAYER_KHRONOS_validation`
+(`tests/support/vulkan_validation.h`) : chaque erreur de la couche est notée sous le nom du test et
+fait échouer l'exécutable, même quand le test passait. `AJP_TEST_VULKAN_VALIDATION=off` la coupe,
+`require` (la CI et le préflight) échoue si elle manque ; par défaut, sans la couche installée
+(`vulkan-validation-layers` sur Arch), les tests tournent sans elle avec un avertissement.
+Première passe attendue sur la RTX : `AJP_TEST_VULKAN_VALIDATION=require ajp-gpu ctest --test-dir
+build/linux-prefix-cuda -R "vk_|render"` ; toute erreur relevée est un vrai défaut à corriger, pas
+un réglage à faire taire.
+
 ## Garder les poses (DRBA)
 
 - `ajp_backend_tensorrt_tests "warp et mélange"` : le warp à poses gardées doit suivre la

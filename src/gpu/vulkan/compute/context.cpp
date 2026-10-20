@@ -126,6 +126,9 @@ VkContext::~VkContext() {
       f.vkDestroyDevice(device_, nullptr);
     }
   }
+  if (messenger_ != VK_NULL_HANDLE && destroy_messenger_ != nullptr) {
+    destroy_messenger_(instance_, messenger_, nullptr);
+  }
   if (owns_instance_ && instance_fn_.vkDestroyInstance != nullptr) {
     instance_fn_.vkDestroyInstance(instance_, nullptr);
   }

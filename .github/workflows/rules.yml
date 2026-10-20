@@ -1,0 +1,25 @@
+name: Règles
+
+# Les règles du dépôt, sans construction : format, taille des fichiers, aucun getenv, et chaque
+# shader GLSL compilé en SPIR-V. Appelées par ci.yml (chaque poussée) et par release-linux.yml
+# (avant tout paquet), pour que rien ne se livre sans les avoir passées.
+on:
+  workflow_call:
+
+jobs:
+  rules:
+    name: Format et règles
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - run: sudo apt-get update -qq && sudo apt-get install -y -qq clang-format-20 glslc spirv-tools
+      - name: clang-format
+        run: git ls-files -z -- '*.cpp' '*.h' '*.cu' '*.cuh' | xargs -0 -r clang-format-20 --dry-run --Werror
+      - name: Taille des fichiers
+        run: tools/ci/check-file-size.sh
+      - name: Aucun getenv
+        run: tools/ci/check-no-getenv.sh
+      - name: Shaders
+        env:
+          CXX: g++-13
+        run: tools/ci/check-shaders.sh

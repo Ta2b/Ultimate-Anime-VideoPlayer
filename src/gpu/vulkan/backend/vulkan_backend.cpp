@@ -155,7 +155,9 @@ std::expected<void, Refusal> VulkanBackend::open(const BackendInit& init) {
     if (!context) return std::unexpected(context.error());
     context_ = std::move(*context);
   } else {
-    auto context = VkContext::create({.cooperative_matrix = true});
+    auto context = VkContext::create({.validation = options_.validation,
+                                      .validation_sink = options_.validation_sink,
+                                      .cooperative_matrix = true});
     if (!context) return std::unexpected(context.error());
     context_ = std::move(*context);
   }

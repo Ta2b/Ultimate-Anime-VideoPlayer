@@ -1,8 +1,13 @@
 // Contexte : chargeur introuvable, création et rapport des capacités, choix par UUID, et
 // adoption d'un appareil créé par le test, qui reste à lui.
+#include <algorithm>
 #include <array>
 #include <filesystem>
+#include <mutex>
 #include <optional>
+#include <string>
+#include <string_view>
+#include <utility>
 #include <vector>
 
 #include <catch2/catch_test_macros.hpp>
@@ -152,6 +157,36 @@ TEST_CASE("contexte : couche de validation demandée", "[vk_compute][context]") 
   } else {
     CHECK((*validated)->caps().enabled.timeline_semaphore);
   }
+}
+
+// Un VkBufferCreateInfo sans usage viole VUID-VkBufferCreateInfo-usage-requiredbitmask : la couche
+// le dit au rappel, avec error, et l'appel continue (le rappel rend VK_FALSE).
+TEST_CASE("contexte : la couche de validation nomme une erreur au rappel", "[vk_compute][context]") {
+  Rig rig = make_rig();
+  std::mutex mutex;
+  std::vector<std::pair<bool, std::string>> received;
+  auto validated =
+      VkContext::create({.validation = true, .validation_sink = [&](bool error, std::string_view message) {
+                           const std::lock_guard lock(mutex);
+                           received.emplace_back(error, std::string(message));
+                         }});
+  if (!validated) {
+    require_refusal(validated, RefusalCode::FeatureUnavailable);
+    SKIP("couche de validation absente : " << describe(validated.error()));
+  }
+  VkContext& ctx = **validated;
+  const VkBufferCreateInfo info{.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
+                                .size = 64,
+                                .usage = 0,
+                                .sharingMode = VK_SHARING_MODE_EXCLUSIVE};
+  VkBuffer buffer = VK_NULL_HANDLE;
+  const VkResult result = ctx.fn().vkCreateBuffer(ctx.device(), &info, nullptr, &buffer);
+  if (result == VK_SUCCESS && buffer != VK_NULL_HANDLE)
+    ctx.fn().vkDestroyBuffer(ctx.device(), buffer, nullptr);
+  const std::lock_guard lock(mutex);
+  const auto error = std::ranges::find_if(received, [](const auto& m) { return m.first; });
+  REQUIRE(error != received.end());
+  CHECK(error->second.find("usage") != std::string::npos);
 }
 
 TEST_CASE("contexte : extension d'appareil absente refusée", "[vk_compute][context]") {

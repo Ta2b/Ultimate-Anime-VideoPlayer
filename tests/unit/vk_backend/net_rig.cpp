@@ -10,6 +10,7 @@
 #include "gpu/vulkan/backend/net_lower.h"
 #include "gpu/vulkan/compute/buffer.h"
 #include "kernels/ref/half.h"
+#include "vulkan_validation.h"
 
 namespace ajp::gpu::vk::test {
 namespace {
@@ -50,7 +51,10 @@ std::string describe(const Refusal& refusal) {
 }
 
 NetRig make_net_rig() {
-  auto context = VkContext::create({.cooperative_matrix = true});
+  auto context = ajp::test::with_validation([](bool validation, ajp::test::ValidationSink sink) {
+    return VkContext::create(
+        {.validation = validation, .validation_sink = std::move(sink), .cooperative_matrix = true});
+  });
   if (!context) {
     const RefusalCode code = context.error().code;
     if (code == RefusalCode::LibraryUnavailable || code == RefusalCode::DeviceUnavailable) {

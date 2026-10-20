@@ -11,6 +11,7 @@
 #include "gpu/vulkan/compute/buffer.h"
 #include "kernels/ref/half.h"
 #include "net_rig.h"
+#include "vulkan_validation.h"
 
 namespace ajp::gpu::vk::test {
 namespace {
@@ -72,7 +73,12 @@ TempDir::~TempDir() {
 }
 
 std::unique_ptr<VulkanBackend> make_backend(const std::filesystem::path& cache_dir, BackendOptions options) {
-  auto backend = VulkanBackend::create(BackendInit{.cache_dir = cache_dir}, options);
+  auto backend = ajp::test::with_validation([&](bool validation, ajp::test::ValidationSink sink) {
+    BackendOptions wanted = options;
+    wanted.validation = validation;
+    wanted.validation_sink = std::move(sink);
+    return VulkanBackend::create(BackendInit{.cache_dir = cache_dir}, std::move(wanted));
+  });
   if (!backend) {
     const RefusalCode code = backend.error().code;
     if (code == RefusalCode::LibraryUnavailable || code == RefusalCode::DeviceUnavailable) {

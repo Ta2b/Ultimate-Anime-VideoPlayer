@@ -23,7 +23,8 @@ ajp_add_unit_tests(vk_backend
     net_rig.cpp
     net_runtime_test.cpp
     slice_ops_test.cpp
-  DEPS ajp::gpu_ir ajp::kernels ${CMAKE_DL_LIBS})
+  DEPS ajp::gpu_ir ajp::kernels ${CMAKE_DL_LIBS}
+  MAIN ajp_test_vulkan)
 
 target_compile_definitions(ajp_vk_backend_tests PRIVATE
   AJP_TEST_BACKEND="$<TARGET_FILE:ajp_backend_vulkan>"

@@ -10,10 +10,12 @@
 #include <cstdint>
 #include <expected>
 #include <filesystem>
+#include <functional>
 #include <memory>
 #include <optional>
 #include <span>
 #include <string>
+#include <string_view>
 #include <vector>
 
 #include "core/types.h"
@@ -39,6 +41,10 @@ struct BackendOptions {
   // Les réseaux par un autre runtime (net_runtime.h), créé à l'ouverture de l'appareil :
   // ajp_backend_migraphx, ajp_backend_openvino.
   net::RuntimeFactory runtime;
+  // Couche de validation Vulkan sur l'appareil que le backend crée lui-même (sans appareil de
+  // rendu) : ses messages vont au journal et à validation_sink (tests : chaque erreur en échec).
+  bool validation = false;
+  std::function<void(bool error, std::string_view message)> validation_sink;
 };
 
 // Un réseau chargé : son moteur et les noms de ses entrées et sorties.
