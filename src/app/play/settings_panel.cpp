@@ -9,6 +9,9 @@
 
 #include <imgui.h>
 
+#include "app/play/gmfss_model.h"
+#include "app/play/model_choice.h"
+
 namespace ajp::app::play {
 namespace {
 
@@ -32,6 +35,9 @@ void note(const char* text) {
   ImGui::PushStyleColor(ImGuiCol_Text, kNote);
   ImGui::TextWrapped("%s", text);
   ImGui::PopStyleColor();
+}
+void note(const std::string& text) {
+  note(text.c_str());
 }
 
 void section(const char* title) {
@@ -93,29 +99,51 @@ void image_tab(PlaySettings& d, const SettingsChoices& choices) {
 void fluidity_tab(PlaySettings& d, const SettingsChoices& choices) {
   const bool four_k =
       (d.work_height == 0 || d.work_height >= choices.source_height) && choices.source_height >= 1080;
-  section("Interpolation RIFE 4.26");
+  section("Interpolation");
   ImGui::BeginDisabled(!choices.rife_available);
-  constexpr std::array<std::pair<int, const char*>, 4> kFactors{
-      {{0, "Désactivée"}, {2, "×2"}, {3, "×3 (recommandé)"}, {4, "×4"}}};
+  constexpr std::array<std::pair<Factor, const char*>, 5> kFactors{{{{.num = 0, .den = 1}, "Désactivée"},
+                                                                    {{.num = 3, .den = 2}, "×1,5"},
+                                                                    {{.num = 2, .den = 1}, "×2"},
+                                                                    {{.num = 3, .den = 1}, "×3 (recommandé)"},
+                                                                    {{.num = 4, .den = 1}, "×4"}}};
+  const Factor now = factor_of(d);
   for (const auto& [factor, text] : kFactors) {
-    if (ImGui::RadioButton(text, d.rife_factor == factor || (factor == 0 && d.rife_factor == 1)))
-      d.rife_factor = factor;
+    if (ImGui::RadioButton(text, now == factor || (factor.num == 0 && now.num <= now.den))) {
+      d.rife_factor = factor.num;
+      d.rife_factor_den = factor.den;
+    }
   }
   ImGui::EndDisabled();
-  if (!choices.rife_available) note("Modèle RIFE introuvable (rife_v4.26.onnx).");
+  if (!choices.rife_available) note("Ni modèle RIFE (rife_v4.26.onnx) ni graphes GMFSS trouvés.");
+  section("Moteur de l'interpolation");
+  for (int i = 0; i < kMotionEngineCount; ++i) {
+    const auto engine = static_cast<MotionEngine>(i);
+    if (ImGui::RadioButton(std::string(label(engine)).c_str(), d.motion_engine == engine))
+      d.motion_engine = engine;
+  }
   if (!choices.rife_models.empty()) {
     ImGui::BeginDisabled(d.motion_engine != MotionEngine::Rife);
     const std::string current = d.rife_model.empty() ? choices.default_rife_model : d.rife_model;
+    std::string missing;
     if (ImGui::BeginCombo("Modèle RIFE", rife_label(current).c_str())) {
-      for (const std::string& model : choices.rife_models) {
-        const bool chosen = model == current;
-        if (ImGui::Selectable(rife_label(model).c_str(), chosen))
-          d.rife_model = model == choices.default_rife_model ? std::string() : model;
+      for (const RifeEntry& entry : rife_menu(choices.rife_models)) {
+        const bool chosen = entry.file == current;
+        const std::string text =
+            entry.present ? rife_label(entry.file) : rife_label(entry.file) + " · absent";
+        if (ImGui::Selectable(text.c_str(), chosen, entry.present ? 0 : ImGuiSelectableFlags_Disabled))
+          d.rife_model = entry.file == choices.default_rife_model ? std::string() : entry.file;
         if (chosen) ImGui::SetItemDefaultFocus();
       }
       ImGui::EndCombo();
     }
     ImGui::EndDisabled();
+    for (const RifeEntry& entry : rife_menu(choices.rife_models)) {
+      if (!entry.present) missing += std::format("{}{}", missing.empty() ? "" : ", ", entry.file);
+    }
+    if (!missing.empty() && d.motion_engine == MotionEngine::Rife) {
+      note(std::format("Absents de {} : {} (exports v1 de vs-mlrt convertis en FP16, docs/handoff-pc.md).",
+                       choices.rife_folder, missing));
+    }
     if (current.find("heavy") != std::string::npos) {
       note(
           "RIFE heavy : plus fin sur les mouvements difficiles, mais environ 4 fois plus lent que RIFE 4.26 "
@@ -123,11 +151,18 @@ void fluidity_tab(PlaySettings& d, const SettingsChoices& choices) {
           "qui bougent à chaque image : la chaîne laisse alors ces paires sans interpolation.");
     }
   }
-  section("Moteur du mouvement");
-  for (int i = 0; i < kMotionEngineCount; ++i) {
-    const auto engine = static_cast<MotionEngine>(i);
-    if (ImGui::RadioButton(std::string(label(engine)).c_str(), d.motion_engine == engine))
-      d.motion_engine = engine;
+  if (d.motion_engine == MotionEngine::Gmfss) {
+    note(
+        "Expérimental. GMFSS Fortuna (réseau fait pour l'animation) donne les images intermédiaires les plus "
+        "propres, pour plusieurs fois le coût de RIFE : visez 720 lignes de travail en ×1,5 ou ×2, sur une "
+        "carte puissante. TensorRT seulement pour l'instant ; ses deux moteurs se construisent la première "
+        "fois (plusieurs minutes).");
+    if (!choices.gmfss_available) {
+      note(
+          std::format("Graphes introuvables : {} et {}, à exporter dans {} (tools/gmfss/export_gmfss.py) ; "
+                      "RIFE prend la place.",
+                      kGmfssPairFile, kGmfssFusionFile, choices.rife_folder));
+    }
   }
   if (d.motion_engine == MotionEngine::OpticalFlow) {
     note(
@@ -136,7 +171,7 @@ void fluidity_tab(PlaySettings& d, const SettingsChoices& choices) {
         "pour un mouvement moins fin. Utile en 4K ×3 ou ×4. Sans lui (autre carte, pilote trop ancien), "
         "RIFE reprend.");
   }
-  if (four_k && d.rife_factor >= 3) {
+  if (four_k && now.num >= 3 * now.den) {
     note(
         "En 4K sans réduction, ×2 tient sur cette carte ; ×3 et ×4 prennent du retard dans les scènes qui "
         "bougent (SPAN 1080p → 2160p coûte 11 ms par image).");

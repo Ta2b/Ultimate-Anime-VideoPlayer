@@ -35,6 +35,28 @@ Le backend CUDA a de nouveaux fichiers (`nvof_session.cpp`, `tensorrt_optical_fl
 - À vérifier aussi : pas de saut à la reprise après une coupe (la première paire après une coupe
   utilise le warp simple).
 
+## GMFSS Fortuna (Fluidité → Moteur de l'interpolation)
+
+- Exporter les deux graphes (en tête de `tools/gmfss/export_gmfss.py`) dans le dossier de RIFE ;
+  le script vérifie que le réseau coupé rend ce que rend GMFSS. Le menu doit cesser de dire
+  « Graphes introuvables ».
+- `ajp_backend_tensorrt_tests "[gmfss]"` : l'entrée de la paire et le softmax splatting CUDA
+  contre la référence CPU (la même que sur lavapipe).
+- La première lecture construit les deux moteurs (plusieurs minutes, journal « gpu »). Puis
+  720p ×1,5, ×2 et ×3 avec `--stats` : relever le coût de la paire et de chaque image
+  intermédiaire, les paires en retard, et ce que la chaîne laisse sans interpolation.
+- À l'œil, contre RIFE 4.26 sur 16:00 → 18:00 : traits fins, fond découvert, objets rapides.
+- Si un moteur est refusé (forme, nom de tenseur), le lecteur repasse sur RIFE avec la note
+  « GMFSS indisponible : RIFE » : le journal dit pourquoi.
+
+## Versions de RIFE et ×1,5
+
+- Fluidité → Modèle RIFE : 4.26, 4.25, 4.13 et 4.6, changés en pleine lecture (chacun construit
+  son moteur la première fois). Comparer coût et rendu sur le même extrait.
+- ×1,5 (`--rife=1.5`, ou le menu) : 23,976 → 35,964 im/s, une paire sur deux donne une image à
+  t = 2/3, l'autre une à t = 1/3 puis la source. Lecture régulière attendue, sans saccade à
+  période de deux images, et pts croissants dans `--stats`.
+
 ## Smooth Motion
 
 - RIFE ×3 + Smooth Motion (case de Fluidité, puis relancer) : lecture normale attendue, comme le

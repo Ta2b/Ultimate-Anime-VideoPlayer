@@ -69,11 +69,12 @@ std::expected<std::unique_ptr<TrtEngine>, Refusal> TrtEngine::load(nvinfer1::IRu
       (is_input ? engine->input_shapes_ : engine->output_shapes_).push_back(*shape);
     }
   }
-  // Une entrée ; une sortie (l'image), ou plusieurs (la variante mouvement de RIFE : flot, masque),
-  // dans l'ordre du graphe.
-  if (engine->inputs_.size() != 1 || engine->outputs_.empty() || engine->outputs_.size() > kMaxOutputs) {
+  // Une entrée et une sortie (l'image), ou plusieurs (la variante mouvement de RIFE : flot, masque ;
+  // les deux graphes de GMFSS), dans l'ordre du graphe.
+  if (engine->inputs_.empty() || engine->inputs_.size() > kMaxInputs || engine->outputs_.empty() ||
+      engine->outputs_.size() > kMaxOutputs) {
     return refuse(RefusalCode::GraphInvalid,
-                  std::format("moteur à une entrée et 1 à {} sorties attendu", kMaxOutputs));
+                  std::format("moteur à 1 à {} entrées et 1 à {} sorties attendu", kMaxInputs, kMaxOutputs));
   }
   return engine;
 }

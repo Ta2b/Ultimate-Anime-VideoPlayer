@@ -44,6 +44,7 @@ __global__ void rife_input(RifeInputParams p) {
     out[static_cast<std::size_t>(3 + c) * plane + i] =
         inside ? b[static_cast<std::size_t>(c) * source_plane + j] : black;
   }
+  if (p.planes < 11) return;  // GMFSS : les deux images seules
   // kernels::rife_mesh et rife_mesh_step.
   out[6 * plane + i] = __float2half_rn(p.time);
   out[7 * plane + i] =

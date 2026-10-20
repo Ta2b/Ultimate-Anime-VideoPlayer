@@ -205,7 +205,7 @@ namespace {
 
 bool chain_differs(const PlaySettings& a, const PlaySettings& b) {
   return a.upscale != b.upscale || a.model != b.model || a.work_height != b.work_height ||
-         a.downscale != b.downscale || a.rife_factor != b.rife_factor || a.true_hdr != b.true_hdr;
+         a.downscale != b.downscale || factor_of(a) != factor_of(b) || a.true_hdr != b.true_hdr;
 }
 
 }  // namespace
@@ -320,10 +320,10 @@ void switch_subtitles(Chain& to, std::optional<int> track, std::int64_t now_us) 
 void apply_live(Chain& to, const PlaySettings& wanted, std::int64_t now_us) {
   PlaySettings& r = to.running;
   Controls& controls = to.ui.controls();
-  if (wanted.rife_factor != r.rife_factor) {
-    log_channel("app")->info("RIFE en direct : ×{}", wanted.rife_factor);
-    to.live.set_rife_factor(static_cast<std::uint32_t>(std::max(wanted.rife_factor, 0)));
-    controls.notify(wanted.rife_factor >= 2 ? std::format("Interpolation ×{}", wanted.rife_factor)
+  if (factor_of(wanted) != factor_of(r)) {
+    log_channel("app")->info("interpolation en direct : {}", factor_text(factor_of(wanted)));
+    to.live.set_rife_factor(factor_of(wanted));
+    controls.notify(wanted.rife_factor >= 2 ? std::format("Interpolation {}", factor_text(factor_of(wanted)))
                                             : std::string("Interpolation désactivée"),
                     now_us);
   }

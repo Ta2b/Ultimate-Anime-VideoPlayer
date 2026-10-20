@@ -1,6 +1,7 @@
 // Extensions de la tranche verticale (gpu/kernel_ops.h) sur des tenseurs RGB déjà ingérés :
 // entrée de RIFE depuis deux images, puis les deux mesures rendues tout de suite au prix d'une
-// attente hôte (mesures de la paire, plus grand déplacement), comme le backend TensorRT.
+// attente hôte (mesures de la paire, plus grand déplacement), comme le backend TensorRT ; entrée
+// et softmax splatting de GMFSS.
 #include <bit>
 #include <cstdint>
 #include <cstring>
@@ -11,6 +12,7 @@
 
 #include "gpu/vulkan/backend/kernel_ops.h"
 #include "gpu/vulkan/backend/kernel_ops_detail.h"
+#include "kernels/spec/gmfss.h"
 #include "kernels/spec/rife.h"
 
 namespace ajp::gpu::vk {
@@ -68,6 +70,54 @@ std::expected<void, Refusal> VulkanKernelOps::rife_input(const Tensor& a, const 
     if (auto ok = runner_.rife_frames(r, *va, *vb, *vi, kStudioBlack); !ok) return ok;
     return runner_.rife_constants(r, *vi, t);
   });
+  if (!rec) return std::unexpected(rec.error());
+  return submit(**rec);
+}
+
+std::expected<void, Refusal> VulkanKernelOps::gmfss_frames(const Tensor& a, const Tensor& b,
+                                                           const Tensor& frames) {
+  constexpr auto planes = static_cast<std::uint32_t>(kernels::kGmfssFramePlanes);
+  auto va = tensor_view(a, 3, "gmfss_frames : image a");
+  if (!va) return std::unexpected(va.error());
+  auto vb = tensor_view(b, 3, "gmfss_frames : image b");
+  if (!vb) return std::unexpected(vb.error());
+  auto vf = tensor_view(frames, planes, "gmfss_frames : entrée");
+  if (!vf) return std::unexpected(vf.error());
+  OpKey key;
+  key.add(43);
+  for (const TensorView* v : {&*va, &*vb, &*vf}) add_view(key, *v);
+  auto rec = recording(
+      key, [&](Recorder& r) { return runner_.rife_frames(r, *va, *vb, *vf, kStudioBlack, planes); });
+  if (!rec) return std::unexpected(rec.error());
+  return submit(**rec);
+}
+
+std::expected<void, Refusal> VulkanKernelOps::soft_splat(const Tensor& source, const Tensor& motion, float s,
+                                                         const Tensor& out) {
+  auto vs = tensor_view(source, 0, "soft_splat : source");
+  if (!vs) return std::unexpected(vs.error());
+  auto vm = tensor_view(motion, kernels::kGmfssMotionChannels, "soft_splat : mouvement");
+  if (!vm) return std::unexpected(vm.error());
+  auto vo = tensor_view(out, vs->planes, "soft_splat : sortie");
+  if (!vo) return std::unexpected(vo.error());
+  const VkDeviceSize bytes = VkDeviceSize{vs->planes + 1U} * vs->width * vs->height * sizeof(float);
+  if (!splat_sums_ || splat_sums_->size() < bytes) {
+    // Les enregistrements faits sur l'ancien tampon ne servent plus (sa poignée est dans leur clé),
+    // mais une exécution en cours peut encore l'écrire.
+    if (splat_sums_) {
+      if (auto ok = context_.wait_on_host(queue_.last()); !ok) return std::unexpected(ok.error());
+      splat_sums_.reset();
+    }
+    auto made = Buffer::create(context_, memory_, bytes, MemoryUse::Device);
+    if (!made) return std::unexpected(made.error());
+    splat_sums_.emplace(std::move(*made));
+  }
+  const BufferView sums = splat_sums_->view();
+  OpKey key;
+  key.add(44);
+  for (const TensorView* v : {&*vs, &*vm, &*vo}) add_view(key, *v);
+  key.add(std::bit_cast<std::uint32_t>(s)).add(detail::handle_bits(sums.buffer));
+  auto rec = recording(key, [&](Recorder& r) { return runner_.soft_splat(r, *vs, *vm, s, sums, *vo); });
   if (!rec) return std::unexpected(rec.error());
   return submit(**rec);
 }

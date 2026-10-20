@@ -74,6 +74,10 @@ class TensorRtBackend final : public Backend, public KernelOps {
   std::expected<void, Refusal> rife_input(const Tensor& a, const Tensor& b, float t,
                                           const Tensor& input) override;
   std::expected<PairScores, Refusal> scores_now(const Tensor& a, const Tensor& b) override;
+  // GMFSS Fortuna (tensorrt_gmfss.cpp) : entrée du graphe « paire » et softmax splatting.
+  std::expected<void, Refusal> gmfss_frames(const Tensor& a, const Tensor& b, const Tensor& frames) override;
+  std::expected<void, Refusal> soft_splat(const Tensor& source, const Tensor& motion, float s,
+                                          const Tensor& out) override;
   // RTX HDR (tensorrt_true_hdr.cpp).
   std::expected<void, Refusal> open_true_hdr(const vendor_hdr::InstalledSdk& sdk,
                                              const vendor_hdr::TrueHdrConfig& config) override;
@@ -151,6 +155,9 @@ class TensorRtBackend final : public Backend, public KernelOps {
   PairSums* pair_host_ = nullptr;
   unsigned int* flow_device_ = nullptr;  // flow_max_now : bits du maximum, sur l'appareil et l'hôte
   unsigned int* flow_host_ = nullptr;
+  // Sommes FP32 du softmax splatting, partagées par tous les splats (le flux les ordonne).
+  float* splat_sums_ = nullptr;
+  std::size_t splat_bytes_ = 0;
   // RTX HDR : l'effet, son pont de flux, et ses deux tampons linéaires (RGBA8 tramé, RGB10A2).
   struct TrueHdrState;
   std::unique_ptr<TrueHdrState> true_hdr_;

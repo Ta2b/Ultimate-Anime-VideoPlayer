@@ -4,6 +4,7 @@
 // plus que la copie d'un réglage.
 #pragma once
 
+#include <algorithm>
 #include <array>
 #include <atomic>
 #include <cstdint>
@@ -63,9 +64,16 @@ inline std::array<float, render::kBlackRampSteps> black_ramp_levels() {
 
 class LiveSettings {
  public:
-  // 0 ou 1 : aucune interpolation (le moteur RIFE reste chargé).
-  void set_rife_factor(std::uint32_t factor) { rife_factor_.store(factor); }
-  std::uint32_t rife_factor() const { return rife_factor_.load(); }
+  // ×num/den ; num ≤ den : aucune interpolation (le moteur reste chargé). Les deux termes dans un
+  // seul atomique : jamais l'un sans l'autre.
+  void set_rife_factor(Factor factor) {
+    rife_factor_.store((static_cast<std::uint32_t>(std::max(factor.num, 0)) << 8U) |
+                       static_cast<std::uint32_t>(std::clamp(factor.den, 1, 255)));
+  }
+  Factor rife_factor() const {
+    const std::uint32_t packed = rife_factor_.load();
+    return {.num = static_cast<int>(packed >> 8U), .den = static_cast<int>(packed & 0xffU)};
+  }
 
   // Garder les poses (kernels/spec/poses.h), lu par gpu au début de chaque paire.
   void set_keep_poses(bool keep) { keep_poses_.store(keep); }
@@ -118,7 +126,7 @@ class LiveSettings {
   }
 
  private:
-  std::atomic<std::uint32_t> rife_factor_{0};
+  std::atomic<std::uint32_t> rife_factor_{1};  // ×0/1
   std::atomic<bool> keep_poses_{false};
   mutable std::mutex mutex_;
   gpu::Reduction reduction_;

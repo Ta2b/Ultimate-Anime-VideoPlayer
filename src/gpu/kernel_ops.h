@@ -164,6 +164,20 @@ class KernelOps {
                                                     const Motion& /*motion*/) {
     return std::unexpected(Refusal{RefusalCode::FormatUnsupported, "optical_flow : absent de ce backend"});
   }
+  // GMFSS Fortuna (kernels/spec/gmfss.h). Entrée du graphe « paire » depuis deux images RGB déjà
+  // ingérées, de même taille w × h : a puis b (kGmfssFramePlanes plans) dans rife_geometry(w, h),
+  // noir de studio autour, comme les plans 0 à 5 de rife_input.
+  virtual std::expected<void, Refusal> gmfss_frames(const Tensor& /*a*/, const Tensor& /*b*/,
+                                                    const Tensor& /*frames*/) {
+    return std::unexpected(Refusal{RefusalCode::FormatUnsupported, "gmfss_frames : absent de ce backend"});
+  }
+  // Softmax splatting (ref::soft_splat) : source, C plans h × w, poussée à l'instant s de [0, 1]
+  // par motion (kGmfssMotionChannels plans fx, fy, z de même taille, donnés pour t = 1), additionnée
+  // en FP32 puis normalisée ; out a la forme et le type de source.
+  virtual std::expected<void, Refusal> soft_splat(const Tensor& /*source*/, const Tensor& /*motion*/,
+                                                  float /*s*/, const Tensor& /*out*/) {
+    return std::unexpected(Refusal{RefusalCode::FormatUnsupported, "soft_splat : absent de ce backend"});
+  }
   // Mémoire de l'appareil, utilisée et totale, en octets, pour les statistiques ; appelable depuis
   // n'importe quel thread. Rien si le backend ne sait pas la lire.
   struct DeviceMemory {

@@ -48,6 +48,19 @@ inline constexpr core::Range<int> kWorkHeight{0, 4320};
 inline constexpr core::Range<int> kRifeFactor{0, 8};
 }  // namespace limits
 
+// Un facteur d'interpolation écrit « 3 », « 1.5 » ou « 1,5 » : num / den, den valant 1 ou 2 (une
+// moitié : num impair de 3 à 15). Rien hors de 0 à 8 ou pour une autre fraction.
+struct Factor {
+  int num = 0;
+  int den = 1;
+  friend bool operator==(const Factor&, const Factor&) = default;
+};
+std::optional<Factor> parse_factor(std::string_view text);
+// Le facteur est-il permis (0 ou 1 : aucune interpolation) ?
+bool valid_factor(Factor factor);
+// « ×3 », « ×1,5 ».
+std::string factor_text(Factor factor);
+
 struct PlayOptions {
   std::filesystem::path file;
   std::optional<std::filesystem::path> model;  // --model : absent, celui du lecteur actuel
@@ -69,8 +82,9 @@ struct PlayOptions {
   // --work-height=N : la source plus haute que N est réduite par Area à N lignes avant SPAN
   // (1080p vers 720p, puis ×2 vers 1440p, comme le profil du lecteur actuel) ; 0 : jamais.
   int work_height = 720;
-  // --rife=N : interpolation RIFE ×N (2 à 8) avant SPAN ; 0 ou 1 : aucune.
+  // --rife=N : interpolation ×N (2 à 8, ou une moitié : 1.5, 2.5…) avant SPAN ; 0 ou 1 : aucune.
   int rife_factor = kDefaultRifeFactor;
+  int rife_factor_den = 1;                          // 2 pour un facteur en moitié : ×rife_factor / 2
   std::optional<std::filesystem::path> rife_model;  // --rife-model : absent, celui du lecteur actuel
   // --truehdr : RTX HDR (Maxine TrueHDR) sur la sortie de SPAN ; l'écran reçoit du PQ BT.2020.
   bool true_hdr = false;

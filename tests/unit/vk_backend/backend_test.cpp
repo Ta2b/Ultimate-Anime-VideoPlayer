@@ -30,10 +30,12 @@ std::vector<std::byte> span_model(bool half) {
   ModelBuilder m;
   const std::int32_t type = half ? ir::onnx::kFloat16 : ir::onnx::kFloat;
   m.input("input", {1, 3, -1, -1}, type);
-  const auto weight = [&](const std::string& name, std::vector<std::int64_t> dims, std::size_t seed, float scale) {
+  const auto weight = [&](const std::string& name, std::vector<std::int64_t> dims, std::size_t seed,
+                          float scale) {
     std::size_t count = 1;
     for (const std::int64_t d : dims) count *= static_cast<std::size_t>(d);
-    const std::vector<float> v = test_values(ir::DataType::F32, {static_cast<std::int64_t>(count)}, seed, -scale, scale).f;
+    const std::vector<float> v =
+        test_values(ir::DataType::F32, {static_cast<std::int64_t>(count)}, seed, -scale, scale).f;
     if (half) {
       m.initializer(ir::test::tensor_f16(name, dims, v));
     } else {
@@ -67,9 +69,11 @@ Artifact build(vk::VulkanBackend& backend, const ModelSpec& model, const ShapeSe
 
 }  // namespace
 
-TEST_CASE("Backend : construction, chargement et enqueue d'un SPAN contre l'interpréteur", "[vk_backend][backend]") {
+TEST_CASE("Backend : construction, chargement et enqueue d'un SPAN contre l'interpréteur",
+          "[vk_backend][backend]") {
   TempDir dir("span");
-  auto backend = make_backend(dir.path() / "cache", {.autotune = true, .tuner = {.warmup = 1, .passes = 2, .repeats = 1}});
+  auto backend = make_backend(dir.path() / "cache",
+                              {.autotune = true, .tuner = {.warmup = 1, .passes = 2, .repeats = 1}});
   const bool half = backend->profile().target.f16_storage;
   const TensorType type = half ? TensorType::F16 : TensorType::F32;
   const ModelSpec model = write_model(dir.path(), "span_test", span_model(half), type);
@@ -103,9 +107,11 @@ TEST_CASE("Backend : construction, chargement et enqueue d'un SPAN contre l'inte
   CHECK(fence.value == 2);
   require_ok(backend->wait(fence));
 
-  const kernels::RgbImage got = rgb_from(read_tensor(*backend, out->tensor(), (half ? 2U : 4U) * 3 * 40 * 56), 56, 40, type);
+  const kernels::RgbImage got =
+      rgb_from(read_tensor(*backend, out->tensor(), (half ? 2U : 4U) * 3 * 40 * 56), 56, 40, type);
   // La référence : l'interpréteur sur le même graphe optimisé.
-  const vk::net::BuildRequest request{.onnx = model.onnx_path, .model_id = model.id, .input_shape = {1, 3, 20, 28}, .fp16 = half};
+  const vk::net::BuildRequest request{
+      .onnx = model.onnx_path, .model_id = model.id, .input_shape = {1, 3, 20, 28}, .fp16 = half};
   const ir::Graph graph = require_value(vk::net::prepare_graph(request, backend->profile().target));
   const std::vector<ir::NamedValue> named{{"input", x}};
   const std::vector<ir::Value> want = run_reference(graph, named);
@@ -163,7 +169,8 @@ TEST_CASE("Backend : artefact, aller-retour et refus", "[vk_backend][backend]") 
   (void)require_value(backend->load(artifact));
 }
 
-TEST_CASE("Backend : opérateur inconnu, annulation et précision refusés à la construction", "[vk_backend][backend]") {
+TEST_CASE("Backend : opérateur inconnu, annulation et précision refusés à la construction",
+          "[vk_backend][backend]") {
   TempDir dir("refus");
   auto backend = make_backend(dir.path() / "cache", {.autotune = false});
   ModelBuilder m;
@@ -206,23 +213,31 @@ TEST_CASE("Backend : adoption de l'appareil de rendu", "[vk_backend][backend]") 
   auto owner = make_backend(dir.path());
   vk::VkContext& c = owner->context();
   // L'appareil d'un autre (ici celui du premier backend), décrit comme present le ferait.
-  GpuDevice render{.api = GpuApi::Vulkan, .pci_vendor = c.caps().vendor_id, .pci_device = c.caps().device_id,
-                   .name = c.caps().device_name, .uuid = c.uuid()};
+  GpuDevice render{.api = GpuApi::Vulkan,
+                   .pci_vendor = c.caps().vendor_id,
+                   .pci_device = c.caps().device_id,
+                   .name = c.caps().device_name,
+                   .uuid = c.uuid()};
   VkPhysicalDeviceVulkan12Features v12{.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES,
                                        .shaderFloat16 = c.caps().enabled.shader_float16 ? VK_TRUE : VK_FALSE,
                                        .timelineSemaphore = VK_TRUE};
-  VkPhysicalDeviceVulkan11Features v11{.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_1_FEATURES, .pNext = &v12,
-                                       .storageBuffer16BitAccess = c.caps().enabled.storage_buffer_16bit ? VK_TRUE : VK_FALSE};
-  const VkPhysicalDeviceFeatures2 features{.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2, .pNext = &v11};
-  render.vulkan = VulkanDevice{.instance = c.instance(),
-                               .physical_device = c.physical_device(),
-                               .device = c.device(),
-                               .get_instance_proc_addr = reinterpret_cast<VoidFunction>(c.get_instance_proc_addr()),
-                               .api_version = VK_API_VERSION_1_2,
-                               .device_extensions = c.caps().extensions,
-                               .enabled_features = &features,
-                               .compute = {.family = c.queue_family(), .index = c.queue_index()}};
-  auto adopted = require_value(vk::VulkanBackend::create(BackendInit{.render = &render, .cache_dir = dir.path()}));
+  VkPhysicalDeviceVulkan11Features v11{
+      .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_1_FEATURES,
+      .pNext = &v12,
+      .storageBuffer16BitAccess = c.caps().enabled.storage_buffer_16bit ? VK_TRUE : VK_FALSE};
+  const VkPhysicalDeviceFeatures2 features{.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2,
+                                           .pNext = &v11};
+  render.vulkan =
+      VulkanDevice{.instance = c.instance(),
+                   .physical_device = c.physical_device(),
+                   .device = c.device(),
+                   .get_instance_proc_addr = reinterpret_cast<VoidFunction>(c.get_instance_proc_addr()),
+                   .api_version = VK_API_VERSION_1_2,
+                   .device_extensions = c.caps().extensions,
+                   .enabled_features = &features,
+                   .compute = {.family = c.queue_family(), .index = c.queue_index()}};
+  auto adopted =
+      require_value(vk::VulkanBackend::create(BackendInit{.render = &render, .cache_dir = dir.path()}));
   CHECK(adopted->match(render.uuid) == DeviceMatch::Same);
   CHECK(adopted->context().device() == c.device());
   CHECK_FALSE(adopted->context().owns_device());

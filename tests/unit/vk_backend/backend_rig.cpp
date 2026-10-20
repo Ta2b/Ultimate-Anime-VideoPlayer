@@ -29,7 +29,9 @@ class HostFrame final : public FrameData {
       : planes_(std::move(planes)), strides_(std::move(strides)) {}
   FrameMemory memory() const override { return FrameMemory::Host; }
   int plane_count() const override { return static_cast<int>(planes_.size()); }
-  std::span<const std::byte> host_plane(int plane) const override { return planes_[static_cast<std::size_t>(plane)]; }
+  std::span<const std::byte> host_plane(int plane) const override {
+    return planes_[static_cast<std::size_t>(plane)];
+  }
   std::size_t host_stride(int plane) const override { return strides_[static_cast<std::size_t>(plane)]; }
   std::uintptr_t native_plane(int /*plane*/) const override { return 0; }
   std::size_t native_pitch(int /*plane*/) const override { return 0; }
@@ -82,13 +84,15 @@ std::unique_ptr<VulkanBackend> make_backend(const std::filesystem::path& cache_d
 }
 
 void write_tensor(VulkanBackend& backend, const Tensor& tensor, std::span<const std::byte> bytes) {
-  Buffer stage = require_value(Buffer::create(backend.context(), backend.memory(), bytes.size(), MemoryUse::Upload));
+  Buffer stage =
+      require_value(Buffer::create(backend.context(), backend.memory(), bytes.size(), MemoryUse::Upload));
   std::memcpy(stage.mapped(), bytes.data(), bytes.size());
   copy_buffers(backend, stage.handle(), 0, detail::to_buffer(tensor.handle), tensor.offset, bytes.size());
 }
 
 std::vector<std::byte> read_tensor(VulkanBackend& backend, const Tensor& tensor, std::size_t bytes) {
-  Buffer stage = require_value(Buffer::create(backend.context(), backend.memory(), bytes, MemoryUse::Readback));
+  Buffer stage =
+      require_value(Buffer::create(backend.context(), backend.memory(), bytes, MemoryUse::Readback));
   copy_buffers(backend, detail::to_buffer(tensor.handle), tensor.offset, stage.handle(), 0, bytes);
   std::vector<std::byte> out(bytes);
   std::memcpy(out.data(), stage.mapped(), bytes);
@@ -119,9 +123,17 @@ std::vector<std::byte> rgb_bytes(const kernels::RgbImage& image, TensorType type
 
 kernels::RgbImage rgb_from(std::span<const std::byte> bytes, int width, int height, TensorType type) {
   kernels::RgbImage out(width, height);
+  std::vector<kernels::PlaneF> planes = planes_from(bytes, width, height, 3, type);
+  std::ranges::move(planes, out.planes.begin());
+  return out;
+}
+
+std::vector<kernels::PlaneF> planes_from(std::span<const std::byte> bytes, int width, int height, int count,
+                                         TensorType type) {
+  std::vector<kernels::PlaneF> out(static_cast<std::size_t>(count), kernels::PlaneF(width, height));
   const std::size_t element = type == TensorType::F16 ? 2 : 4;
   std::size_t at = 0;
-  for (kernels::PlaneF& p : out.planes) {
+  for (kernels::PlaneF& p : out) {
     for (float& v : p.data) {
       if (type == TensorType::F16) {
         std::uint16_t h = 0;
@@ -136,7 +148,8 @@ kernels::RgbImage rgb_from(std::span<const std::byte> bytes, int width, int heig
   return out;
 }
 
-std::unique_ptr<TensorBuffer> rgb_tensor(VulkanBackend& backend, int width, int height, TensorType type, int planes) {
+std::unique_ptr<TensorBuffer> rgb_tensor(VulkanBackend& backend, int width, int height, TensorType type,
+                                         int planes) {
   return require_value(backend.alloc_tensor(type, Shape{{1, planes, height, width}}));
 }
 
@@ -174,7 +187,8 @@ kernels::RgbImage synthetic_rgb(int width, int height, std::uint32_t seed, float
       for (int x = 0; x < width; ++x) {
         const std::uint64_t r = mix((std::uint64_t{seed} << 40U) ^ (std::uint64_t{c} << 32U) ^
                                     (static_cast<std::uint64_t>(y) << 16U) ^ static_cast<std::uint64_t>(x));
-        image.planes[c].at(x, y) = lo + ((hi - lo) * static_cast<float>(r >> 40U) / static_cast<float>(1U << 24U));
+        image.planes[c].at(x, y) =
+            lo + ((hi - lo) * static_cast<float>(r >> 40U) / static_cast<float>(1U << 24U));
       }
     }
   }
@@ -247,13 +261,14 @@ float max_abs_diff(const kernels::RgbImage& a, const kernels::RgbImage& b) {
   return worst;
 }
 
-ModelSpec write_model(const std::filesystem::path& dir, std::string_view name, std::span<const std::byte> bytes,
-                      TensorType precision) {
+ModelSpec write_model(const std::filesystem::path& dir, std::string_view name,
+                      std::span<const std::byte> bytes, TensorType precision) {
   const std::filesystem::path path = dir / std::format("{}.onnx", name);
   std::ofstream out(path, std::ios::binary);
   out.write(reinterpret_cast<const char*>(bytes.data()), static_cast<std::streamsize>(bytes.size()));
   REQUIRE(out.good());
-  return ModelSpec{.id = std::string(name), .onnx_path = path, .sha256 = std::string(64, '0'), .precision = precision};
+  return ModelSpec{
+      .id = std::string(name), .onnx_path = path, .sha256 = std::string(64, '0'), .precision = precision};
 }
 
 }  // namespace ajp::gpu::vk::test

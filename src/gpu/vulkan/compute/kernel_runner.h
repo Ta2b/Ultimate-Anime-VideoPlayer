@@ -17,6 +17,7 @@
 #include "gpu/vulkan/compute/recording.h"
 #include "gpu/vulkan/compute/refuse.h"
 #include "gpu/vulkan/compute/weights.h"
+#include "kernels/spec/gmfss.h"
 #include "kernels/spec/resample.h"
 #include "kernels/spec/rife.h"
 
@@ -65,9 +66,16 @@ class KernelRunner {
   // Extensions de la tranche verticale (gpu/kernel_ops.h), sur des tenseurs RGB déjà ingérés.
   //
   // Plans 0 à 5 de l'entrée de RIFE : a et b (w × h) dans la fenêtre de rife_geometry(w, h) de
-  // input (11 plans), black autour ; les plans 6 à 10 restent à rife_constants.
+  // input (planes plans : 11 pour RIFE, dont les plans 6 à 10 restent à rife_constants ; 6 pour
+  // GMFSS), black autour.
   Done rife_frames(Recorder& recorder, const TensorView& a, const TensorView& b, const TensorView& input,
-                   float black);
+                   float black, std::uint32_t planes = kernels::kRifeInputChannels);
+  // Softmax splatting de GMFSS (ref soft_splat) : source (C plans w × h) poussée par motion (3 plans
+  // fx, fy, z de même taille) à l'instant s de [0, 1], additionnée dans sums (C + 1 plans float,
+  // remis à zéro à chaque exécution, le dernier pour les poids), puis normalisée dans out (C plans,
+  // précision de source). Refus FeatureUnavailable : appareil sans additions atomiques de float.
+  Done soft_splat(Recorder& recorder, const TensorView& source, const TensorView& motion, float s,
+                  const BufferView& sums, const TensorView& out);
   // Écarts de luma BT.709 tirée du RGB par bloc 32 × 32 : sums reçoit la somme de chaque bloc
   // (block_count float), worst[0] le pire bloc en 1/256 de niveau (levels pas entre noir et
   // blanc), remis à zéro à chaque exécution.

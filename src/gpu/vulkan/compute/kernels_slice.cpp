@@ -1,6 +1,7 @@
 // Noyaux des extensions de la tranche verticale (gpu/kernel_ops.h) : entrée de RIFE depuis le
-// RGB, mesures d'une paire RGB, plus grand déplacement d'un mouvement. Mêmes calculs que les
-// noyaux CUDA du backend TensorRT (rife_kernels.cu, warp_kernels.cu).
+// RGB, mesures d'une paire RGB, plus grand déplacement d'un mouvement, softmax splatting de
+// GMFSS. Mêmes calculs que les noyaux CUDA du backend TensorRT (rife_kernels.cu,
+// warp_kernels.cu, gmfss_kernels.cu).
 #include <array>
 #include <cstdint>
 #include <format>
@@ -17,15 +18,19 @@ using detail::bytes_of;
 using detail::groups_for;
 
 constexpr auto kHeldBlock = static_cast<std::uint32_t>(kernels::kHeldBlock);
+// Plans d'un groupe du splatting (axe z) : la géométrie d'un pixel se refait par groupe, les
+// atomiques d'un plan restent dans le même groupe.
+constexpr std::uint32_t kSplatGroup = 16;
 
 }  // namespace
 
 Done KernelRunner::rife_frames(Recorder& recorder, const TensorView& a, const TensorView& b,
-                               const TensorView& input, float black) {
+                               const TensorView& input, float black, std::uint32_t planes) {
   const Features& enabled = context_->caps().enabled;
   if (auto ok = check_tensor(a, 3, enabled, "entrée RIFE : image a"); !ok) return ok;
   if (auto ok = check_tensor(b, 3, enabled, "entrée RIFE : image b"); !ok) return ok;
-  if (auto ok = check_tensor(input, kernels::kRifeInputChannels, enabled, "entrée RIFE"); !ok) return ok;
+  if (planes < 6) return refuse(RefusalCode::InputMismatch, std::format("entrée RIFE : {} plans", planes));
+  if (auto ok = check_tensor(input, planes, enabled, "entrée RIFE"); !ok) return ok;
   if (auto ok = check_same_size(a.width, a.height, b.width, b.height, "entrée RIFE : images a et b"); !ok)
     return ok;
   if (a.precision != b.precision || a.precision != input.precision) {
@@ -48,6 +53,55 @@ Done KernelRunner::rife_frames(Recorder& recorder, const TensorView& a, const Te
   const std::array buffers{a.buffer, b.buffer, input.buffer};
   return detail::run(*pipelines_, recorder, "rife_frames", input.precision, {}, buffers, {}, bytes_of(push),
                      {groups_for(input.width), groups_for(input.height), 1});
+}
+
+Done KernelRunner::soft_splat(Recorder& recorder, const TensorView& source, const TensorView& motion, float s,
+                              const BufferView& sums, const TensorView& out) {
+  const Features& enabled = context_->caps().enabled;
+  if (!enabled.float_atomic_add) {
+    return refuse(RefusalCode::FeatureUnavailable,
+                  std::format("splat : {} sans additions atomiques de float", context_->caps().device_name));
+  }
+  if (!(s >= 0.0F && s <= 1.0F)) {
+    return refuse(RefusalCode::FieldOutOfRange, std::format("splat : instant {} hors de [0, 1]", s));
+  }
+  if (source.planes == 0) return refuse(RefusalCode::InputMismatch, "splat : source sans plan");
+  if (auto ok = check_tensor(source, source.planes, enabled, "splat : source"); !ok) return ok;
+  if (auto ok = check_tensor(motion, kernels::kGmfssMotionChannels, enabled, "splat : mouvement"); !ok)
+    return ok;
+  if (auto ok = check_tensor(out, source.planes, enabled, "splat : sortie"); !ok) return ok;
+  if (auto ok = check_same_size(source.width, source.height, motion.width, motion.height,
+                                "splat : source et mouvement");
+      !ok) {
+    return ok;
+  }
+  if (auto ok =
+          check_same_size(source.width, source.height, out.width, out.height, "splat : source et sortie");
+      !ok) {
+    return ok;
+  }
+  if (source.precision != motion.precision || source.precision != out.precision) {
+    return refuse(RefusalCode::InputMismatch, "splat : tenseurs de précisions différentes");
+  }
+  const VkDeviceSize bytes = VkDeviceSize{source.planes + 1U} * source.width * source.height * sizeof(float);
+  if (sums.size < bytes) {
+    return refuse(RefusalCode::InputMismatch,
+                  std::format("splat : {} o de sommes, {} attendus", sums.size, bytes));
+  }
+  const BufferView all{.buffer = sums.buffer, .offset = sums.offset, .size = bytes};
+  if (auto ok = recorder.fill(all, 0); !ok) return ok;
+  const detail::SplatPush push{source.width, source.height, source.planes, kSplatGroup, s};
+  const std::array scatter{source.buffer, motion.buffer, all};
+  if (auto ok = detail::run(
+          *pipelines_, recorder, "gmfss_splat", source.precision, {}, scatter, {}, bytes_of(push),
+          {groups_for(source.width), groups_for(source.height), groups_for(source.planes, kSplatGroup)});
+      !ok) {
+    return ok;
+  }
+  const detail::SplatNormalizePush normalize{source.width, source.height, source.planes};
+  const std::array buffers{all, out.buffer};
+  return detail::run(*pipelines_, recorder, "gmfss_normalize", source.precision, {}, buffers, {},
+                     bytes_of(normalize), {groups_for(source.width), groups_for(source.height), 1});
 }
 
 Done KernelRunner::rgb_pair_diff(Recorder& recorder, const TensorView& a, const TensorView& b,

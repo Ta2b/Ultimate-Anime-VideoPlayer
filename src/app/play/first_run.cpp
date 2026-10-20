@@ -194,6 +194,7 @@ PlaySettings within_engines(PlaySettings settings, const core::Settings& engines
   if (!inference && (settings.upscale || settings.rife_factor >= 2)) {
     settings.upscale = false;
     settings.rife_factor = 0;
+    settings.rife_factor_den = 1;
     notes.emplace_back("ni TensorRT ni Vulkan choisis : ni SPAN ni RIFE");
   }
   if (!chosen(engines, core::EngineId::MaxineVfx) && settings.true_hdr) {

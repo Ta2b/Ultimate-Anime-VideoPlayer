@@ -168,13 +168,15 @@ std::expected<PlayOptions, Refusal> parse_play_options(std::span<const std::stri
         } else if (name == "--rife-model") {
           options.rife_model = std::filesystem::path(text);
         } else if (name == "--rife") {
-          const auto factor = number<int>(text);
-          if (!factor || !limits::kRifeFactor.contains(*factor)) {
-            return refuse(RefusalCode::FieldOutOfRange,
-                          std::format("--rife : « {} » n'est pas un facteur entre {} et {}", text,
-                                      limits::kRifeFactor.lo, limits::kRifeFactor.hi));
+          const auto factor = parse_factor(text);
+          if (!factor) {
+            return refuse(
+                RefusalCode::FieldOutOfRange,
+                std::format("--rife : « {} » n'est pas un facteur entre {} et {} (entier ou moitié)", text,
+                            limits::kRifeFactor.lo, limits::kRifeFactor.hi));
           }
-          options.rife_factor = *factor;
+          options.rife_factor = factor->num;
+          options.rife_factor_den = factor->den;
         } else if (name == "--work-height") {
           const auto lines = number<int>(text);
           if (!lines || !limits::kWorkHeight.contains(*lines)) {
@@ -232,7 +234,7 @@ std::string play_usage() {
       "  --first-run            écran de bienvenue (moteurs, profil de démarrage), même déjà vu\n"
       "  --keys=S:touche,…      touches pressées d'office (essais), ex. 3:Right,5:Space\n"
       "  --work-height=N        réduit la source à N lignes avant SPAN (défaut 720 ; 0 jamais)\n"
-      "  --rife=N               interpolation RIFE ×N avant SPAN (défaut {} ; 0 aucune)\n"
+      "  --rife=N               interpolation ×N avant SPAN (1.5, 2 à 8 ; défaut {} ; 0 aucune)\n"
       "  --rife-model=FICHIER   modèle RIFE (défaut : {})\n"
       "  --truehdr              RTX HDR (Maxine TrueHDR), SDK importé une fois depuis --truehdr-sdk\n"
       "  --truehdr-peak=NITS    pic de TrueHDR (défaut : celui de l'écran, sinon 1000)\n"
@@ -249,6 +251,33 @@ std::vector<std::filesystem::path> default_model_candidates(const std::filesyste
           "onnx" /
           kDefaultModelFile,
   };
+}
+
+bool valid_factor(Factor factor) {
+  if (factor.den == 1) return limits::kRifeFactor.contains(factor.num);
+  return factor.den == 2 && factor.num % 2 == 1 && factor.num >= 3 && factor.num < 2 * limits::kRifeFactor.hi;
+}
+
+std::optional<Factor> parse_factor(std::string_view text) {
+  Factor factor;
+  const std::size_t point = text.find_first_of(".,");
+  if (point == std::string_view::npos) {
+    const auto whole = number<int>(text);
+    if (!whole) return std::nullopt;
+    factor.num = *whole;
+  } else {
+    const auto whole = number<int>(text.substr(0, point));
+    const std::string_view fraction = text.substr(point + 1);
+    if (!whole || (fraction != "5" && fraction != "0")) return std::nullopt;
+    factor = fraction == "5" ? Factor{.num = 2 * *whole + 1, .den = 2} : Factor{.num = *whole, .den = 1};
+  }
+  if (!valid_factor(factor)) return std::nullopt;
+  return factor;
+}
+
+std::string factor_text(Factor factor) {
+  if (factor.den == 2) return std::format("×{},5", factor.num / 2);
+  return std::format("×{}", factor.num);
 }
 
 std::vector<std::filesystem::path> default_rife_candidates(const std::filesystem::path& home) {

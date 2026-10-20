@@ -3,6 +3,7 @@ ajp_add_unit_tests(kernels
     color_test.cpp
     detect_test.cpp
     glsl_test.cpp
+    gmfss_test.cpp
     half_test.cpp
     optical_flow_test.cpp
     parity_test.cpp

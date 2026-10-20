@@ -52,4 +52,15 @@ std::expected<ModelChoice, Refusal> choose_rife_model(const PlayOptions& options
   return choose_in(*found, "rife_v", settings.rife_model, options.was_given("--rife-model"));
 }
 
+std::vector<RifeEntry> rife_menu(const std::vector<std::string>& available) {
+  std::vector<RifeEntry> menu;
+  menu.reserve(kRifeCatalogue.size() + available.size());
+  for (const std::string_view file : kRifeCatalogue)
+    menu.push_back({.file = std::string(file), .present = std::ranges::contains(available, file)});
+  for (const std::string& file : available) {
+    if (!std::ranges::contains(kRifeCatalogue, file)) menu.push_back({.file = file, .present = true});
+  }
+  return menu;
+}
+
 }  // namespace ajp::app::play

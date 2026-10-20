@@ -1,9 +1,13 @@
 // L'étage gpu de la tranche verticale sur un backend chargé (gpu/backend.h). Chaque image
 // décodée est ingérée en RGB FP16 à la taille de travail (réduction Area fusionnée si elle est
-// plus petite que la source). Avec RIFE, la paire (image précédente, image) donne d'abord les
-// images intermédiaires à t = k/N (rife_plan.h décide si RIFE tourne), puis l'image elle-même.
+// plus petite que la source). Avec RIFE, la paire (image précédente, image) donne les instants de
+// sa grille de sortie (core/cadence.h : t = k/N pour ×N ; ×1,5 alterne t = 2/3, puis t = 1/3 et
+// l'image), l'image elle-même quand elle est sur la grille (rife_plan.h décide si RIFE tourne).
 // Chaque sortie est agrandie par SPAN (×2) et écrite dans un slot du ring que render présente.
 // Sans moteur SPAN, la sortie passe à la taille de travail.
+//
+// GMFSS Fortuna (kernels/spec/gmfss.h) remplace RIFE, à la taille de travail : son graphe « paire »
+// une fois par paire, puis par image intermédiaire six softmax splats et son graphe « fusion ».
 //
 // Ordre de la chaîne : RIFE à la taille de travail (720p), avant SPAN. RIFE y traite quatre fois
 // moins de pixels qu'à 1440p, et SPAN nettoie ensuite ses petits défauts.
@@ -14,11 +18,14 @@
 #include <expected>
 #include <memory>
 #include <optional>
+#include <string>
+#include <utility>
 #include <vector>
 
 #include "app/play/live_settings.h"
 #include "app/play/pipeline.h"
 #include "app/play/ring_stage.h"
+#include "core/cadence.h"
 #include "core/ring.h"
 #include "gpu/backend.h"
 
@@ -35,8 +42,12 @@ struct UpscaleSetup {
   // rife_width × rife_height) : la grille de ses vecteurs, en pixels ; 0 : RIFE ou rien. Un seul
   // mouvement par paire, au milieu ; les autres instants s'en déduisent au warp.
   int optical_flow_grid = 0;
-  std::uint32_t rife_factor = 1;  // ×N quand RIFE tourne (2 à kMaxRifeFactor)
-  bool true_hdr = false;          // RTX HDR à l'écriture du ring (backend déjà ouvert pour la sortie)
+  // GMFSS à la place de RIFE : ses deux moteurs, aux plans remplis de rife_geometry(travail) ; les
+  // deux ou aucun.
+  gpu::Engine* gmfss_pair = nullptr;
+  gpu::Engine* gmfss_fusion = nullptr;
+  Factor rife_factor{.num = 1, .den = 1};  // ×num/den quand l'interpolation tourne (au plus ×8)
+  bool true_hdr = false;  // RTX HDR à l'écriture du ring (backend déjà ouvert pour la sortie)
   // Réglages changés en cours de lecture (facteur RIFE, réduction, RTX HDR) et compteurs de RIFE ;
   // nullptr : rife_factor et Area pour toute la lecture.
   std::shared_ptr<LiveSettings> live;
@@ -75,11 +86,18 @@ class UpscaleStage final : public RingStage {
   // Image intermédiaire output + 1 sur outputs_ par le mouvement (rife_motion ou flux optique)
   // dans middle_.
   std::expected<void, Refusal> interpolate_by_motion(std::uint32_t output);
+  // RIFE image à l'instant t, recadrée dans middle_.
+  std::expected<void, Refusal> interpolate_image(float t);
   // La variante mouvement de RIFE à l'instant t, dans flow et mask.
   std::expected<void, Refusal> run_motion(float t, const gpu::Tensor& flow, const gpu::Tensor& mask);
   bool interpolates() const {
-    return setup_.rife != nullptr || setup_.rife_motion != nullptr || setup_.optical_flow_grid > 0;
+    return setup_.rife != nullptr || setup_.rife_motion != nullptr || setup_.optical_flow_grid > 0 || gmfss();
   }
+  bool gmfss() const { return setup_.gmfss_pair != nullptr; }
+  // GMFSS (upscale_gmfss.cpp) : ses tenseurs, rangés dans l'ordre de ses moteurs ; puis l'image
+  // intermédiaire output + 1 sur outputs_ dans middle_.
+  std::expected<void, Refusal> allocate_gmfss();
+  std::expected<void, Refusal> interpolate_gmfss(std::uint32_t output);
   // Le mouvement est estimé à la taille de RIFE puis déformé au warp (variante mouvement ou flux
   // optique), plutôt que l'image de RIFE elle-même.
   bool by_motion() const { return setup_.rife_motion != nullptr || setup_.optical_flow_grid > 0; }
@@ -102,7 +120,16 @@ class UpscaleStage final : public RingStage {
     std::uint32_t epoch = 0;
   };
   std::optional<Previous> previous_;
-  std::uint32_t outputs_ = 1;                    // sorties de l'image en cours
+  // Les sorties de l'image en cours, dans l'ordre : instants de la grille, t = 1 pour l'image.
+  struct Instant {
+    float t = 1.0F;
+    std::int64_t pts_us = 0;
+  };
+  std::array<Instant, core::kMaxInstantsPerPair> instants_{};
+  std::uint32_t outputs_ = 1;
+  std::uint32_t intermediates_ = 0;  // celles qui sont interpolées
+  std::optional<core::CadenceAccumulator> cadence_;
+  Factor cadence_factor_;
   vendor_hdr::InputPreparation prepared_;        // couleur de l'image en cours, pour RTX HDR
   std::unique_ptr<gpu::TensorBuffer> rife_in_;   // 1 × 11 × ph × pw
   std::unique_ptr<gpu::TensorBuffer> rife_out_;  // 1 × 3 × ph × pw
@@ -120,6 +147,23 @@ class UpscaleStage final : public RingStage {
   std::unique_ptr<gpu::TensorBuffer> flow_;
   std::unique_ptr<gpu::TensorBuffer> mask_;
   std::uint64_t optical_flow_pairs_ = 0;
+  // GMFSS : l'entrée de la paire, chaque tenseur nommé de ses graphes (sorties de la paire,
+  // sources splattées), et les six splats d'une image intermédiaire.
+  struct GmfssSplat {
+    int side = 0;
+    gpu::Tensor source;
+    gpu::Tensor motion;
+    gpu::Tensor warped;
+  };
+  struct GmfssBuffers {
+    std::unique_ptr<gpu::TensorBuffer> frames;  // 1 × 6 × ph × pw
+    std::vector<std::pair<std::string, std::unique_ptr<gpu::TensorBuffer>>> named;
+    std::vector<gpu::Tensor> pair_outputs;   // dans l'ordre de output_names() du moteur paire
+    std::vector<gpu::Tensor> fusion_inputs;  // dans l'ordre de input_names() du moteur fusion
+    std::vector<GmfssSplat> splats;
+  };
+  GmfssBuffers gmfss_;
+  std::uint64_t gmfss_pairs_ = 0;
   // Garder les poses (kernels/spec/poses.h) : ce qu'a bougé la paire précédente, et la paire en
   // cours. Inconnu après une coupe, un saut, une paire non interpolée : le warp est alors le simple.
   enum class PairMotion : std::uint8_t { Unknown, Still, Moving };

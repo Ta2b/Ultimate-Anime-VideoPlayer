@@ -1,0 +1,55 @@
+#version 450
+// Softmax splatting de GMFSS, première passe : chaque pixel source ajoute sa valeur × e^(s z) ×
+// poids bilinéaire aux quatre pixels autour de sa destination, et le poids seul au dernier plan,
+// par additions atomiques en float. L'axe z découpe les plans en groupes de pc.group ; le
+// groupe 0 ajoute aussi le poids. Les sommes sont remises à zéro avant (kernels_slice.cpp).
+// Référence : kernels/ref/gmfss.cpp (soft_splat) ; même calcul que gmfss_kernels.cu.
+#extension GL_GOOGLE_include_directive : require
+#include "tensor.glsl"
+#extension GL_EXT_shader_atomic_float : require
+
+layout(local_size_x = 16, local_size_y = 16) in;
+
+layout(std430, binding = 0) readonly buffer Source { AJP_TENSOR v[]; } source;
+layout(std430, binding = 1) readonly buffer Motion { AJP_TENSOR v[]; } motion;  // fx, fy, z
+layout(std430, binding = 2) buffer Sums { float v[]; } sums;  // channels + 1 plans
+
+layout(push_constant) uniform Push {
+  uint width;
+  uint height;
+  uint channels;
+  uint group;
+  float s;
+} pc;
+
+void main() {
+  uint x = gl_GlobalInvocationID.x;
+  uint y = gl_GlobalInvocationID.y;
+  if (x >= pc.width || y >= pc.height) return;
+  uint plane = pc.width * pc.height;
+  uint i = y * pc.width + x;
+  precise float tx = float(x) + pc.s * float(motion.v[i]);
+  precise float ty = float(y) + pc.s * float(motion.v[plane + i]);
+  // Une destination hors de ]−1, taille[ n'a aucun coin dans le plan ; NaN et infinis échouent
+  // aussi la comparaison.
+  if (!(tx > -1.0 && tx < float(pc.width) && ty > -1.0 && ty < float(pc.height))) return;
+  float scale = exp(pc.s * float(motion.v[2u * plane + i]));
+  int x0 = int(floor(tx));
+  int y0 = int(floor(ty));
+  precise float east = tx - float(x0);
+  precise float west = float(x0 + 1) - tx;
+  precise float south = ty - float(y0);
+  precise float north = float(y0 + 1) - ty;
+  ivec2 corners[4] = ivec2[4](ivec2(x0, y0), ivec2(x0 + 1, y0), ivec2(x0, y0 + 1), ivec2(x0 + 1, y0 + 1));
+  float share[4] = float[4](west * north, east * north, west * south, east * south);
+  uint first = gl_WorkGroupID.z * pc.group;
+  uint last = min(pc.channels, first + pc.group);
+  for (int k = 0; k < 4; ++k) {
+    ivec2 c = corners[k];
+    if (c.x < 0 || c.x >= int(pc.width) || c.y < 0 || c.y >= int(pc.height)) continue;
+    uint j = uint(c.y) * pc.width + uint(c.x);
+    float weight = scale * share[k];
+    for (uint p = first; p < last; ++p) atomicAdd(sums.v[p * plane + j], float(source.v[p * plane + i]) * weight);
+    if (gl_WorkGroupID.z == 0u) atomicAdd(sums.v[pc.channels * plane + j], weight);
+  }
+}

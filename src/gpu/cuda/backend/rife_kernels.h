@@ -25,7 +25,9 @@ struct RifeInputParams {
   int top = 0;
   float black = 0.0F;     // noir de studio en RGB : 0 en plage limitée, 16/255 en plage pleine
   float time = 0.5F;      // instant t, 0 < t < 1
-  void* input = nullptr;  // 1 × 11 × padded_height × padded_width, FP16
+  void* input = nullptr;  // 1 × planes × padded_height × padded_width, FP16
+  // 11 pour RIFE ; 6 pour GMFSS (kernels/spec/gmfss.h), les deux images seules, sans instant ni grilles.
+  int planes = 11;
 };
 
 cudaError_t launch_rife_input(const RifeInputParams& params, cudaStream_t stream);

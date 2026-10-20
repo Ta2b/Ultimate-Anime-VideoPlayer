@@ -37,12 +37,14 @@ std::string rife_label(const std::string& file);
 // Les valeurs du grade pour ce préréglage ; current pour « Personnalisé » et pour gamut_p3.
 render::GradeSettings with_preset(render::GradePreset preset, const render::GradeSettings& current);
 
-// Ce qui estime le mouvement de l'interpolation : RIFE (réseau, le plus fin), ou le flux optique
-// matériel des RTX (NVIDIA Optical Flow : bien moins cher, mouvement moins fin), warp identique.
-enum class MotionEngine : std::uint8_t { Rife, OpticalFlow };
-inline constexpr int kMotionEngineCount = 2;
+// Ce qui fait les images intermédiaires : RIFE (réseau, le modèle choisi au menu), le flux optique
+// matériel des RTX (NVIDIA Optical Flow : bien moins cher, mouvement moins fin, warp de RIFE), ou
+// GMFSS Fortuna (kernels/spec/gmfss.h : le plus fin sur l'animation, plusieurs fois plus lourd que
+// RIFE ; 720p en ×2 vise les cartes les plus puissantes).
+enum class MotionEngine : std::uint8_t { Rife, OpticalFlow, Gmfss };
+inline constexpr int kMotionEngineCount = 3;
 std::string_view name(MotionEngine engine);   // « rife », la clé de play.toml
-std::string_view label(MotionEngine engine);  // « RIFE 4.26 », pour le menu
+std::string_view label(MotionEngine engine);  // « RIFE », pour le menu
 
 enum class OledBlack : std::uint8_t { Auto, On, Off };
 inline constexpr int kOledBlackCount = 3;
@@ -69,6 +71,7 @@ struct PlaySettings {
   int work_height = 720;
   Downscale downscale = Downscale::Area;
   int rife_factor = kDefaultRifeFactor;  // 0 : aucune interpolation
+  int rife_factor_den = 1;               // 2 : ×rife_factor / 2 (×1,5 : 3 et 2)
   MotionEngine motion_engine = MotionEngine::Rife;
   std::string rife_model;  // fichier ONNX de RIFE (nom seul) ; vide : rife_v4.26.onnx
   // Garder les poses (DRBA, kernels/spec/poses.h) : un personnage animé en deux garde son rythme
@@ -118,6 +121,11 @@ inline constexpr core::Range<int> kTrueHdrSaturation{0, 200};
 inline constexpr core::Range<int> kTrueHdrGray{10, 100};
 inline constexpr core::Range<int> kTrueHdrPeak{400, 2000};  // ou 0 : automatique
 }  // namespace limits
+
+// Le facteur d'interpolation des réglages.
+inline Factor factor_of(const PlaySettings& s) {
+  return {.num = s.rife_factor, .den = s.rife_factor_den};
+}
 
 // Refuse (FieldOutOfRange) le premier réglage hors plage, en le nommant.
 std::expected<PlaySettings, Refusal> validate(const PlaySettings& settings);

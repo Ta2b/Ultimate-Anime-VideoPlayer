@@ -31,6 +31,9 @@ std::unexpected<Refusal> contract_refusal(Refusal refusal) {
   return std::unexpected(std::move(refusal));
 }
 
+// Les caractéristiques splattées de GMFSS en ont jusqu'à 192 (kernels/spec/gmfss.h).
+constexpr std::int64_t kMaxTensorPlanes = 256;
+
 std::expected<TensorView, Refusal> tensor_view(const Tensor& t, std::uint32_t planes, std::string_view what) {
   if (t.type != TensorType::F16 && t.type != TensorType::F32) {
     return std::unexpected(
@@ -38,7 +41,8 @@ std::expected<TensorView, Refusal> tensor_view(const Tensor& t, std::uint32_t pl
   }
   const auto& d = t.shape.dims;
   const auto fits = [](std::int64_t v) { return v >= 1 && v <= kernels::kMaxDimension; };
-  if (d[0] != 1 || (planes != 0 && d[1] != planes) || d[1] < 1 || d[1] > 64 || !fits(d[2]) || !fits(d[3])) {
+  if (d[0] != 1 || (planes != 0 && d[1] != planes) || d[1] < 1 || d[1] > kMaxTensorPlanes || !fits(d[2]) ||
+      !fits(d[3])) {
     return std::unexpected(Refusal{
         RefusalCode::ShapeInvalid,
         std::format("{} : forme {}x{}x{}x{}, 1 x {} x h x w attendu", what, d[0], d[1], d[2], d[3], planes)});

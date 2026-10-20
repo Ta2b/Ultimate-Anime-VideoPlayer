@@ -48,6 +48,11 @@ void read_link(const VkBaseInStructure& link, Features& f) {
       f.cooperative_matrix = f.cooperative_matrix || yes(matrix.cooperativeMatrix);
       break;
     }
+    case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_ATOMIC_FLOAT_FEATURES_EXT: {
+      const auto& atomic = reinterpret_cast<const VkPhysicalDeviceShaderAtomicFloatFeaturesEXT&>(link);
+      f.float_atomic_add = f.float_atomic_add || yes(atomic.shaderBufferFloat32AtomicAdd);
+      break;
+    }
     case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES: {
       const auto& v13 = reinterpret_cast<const VkPhysicalDeviceVulkan13Features&>(link);
       f.subgroup_size_control = f.subgroup_size_control || yes(v13.subgroupSizeControl);
@@ -144,9 +149,11 @@ Features available_features(const InstanceFunctions& fn, VkPhysicalDevice device
   // La structure d'une extension n'entre dans la chaîne que si l'appareil a l'extension.
   VkPhysicalDeviceCooperativeMatrixFeaturesKHR matrix{
       .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_COOPERATIVE_MATRIX_FEATURES_KHR, .pNext = v12.pNext};
-  if (has_extension(device_extensions(fn, device), VK_KHR_COOPERATIVE_MATRIX_EXTENSION_NAME)) {
-    v12.pNext = &matrix;
-  }
+  const std::vector<VkExtensionProperties> extensions = device_extensions(fn, device);
+  if (has_extension(extensions, VK_KHR_COOPERATIVE_MATRIX_EXTENSION_NAME)) v12.pNext = &matrix;
+  VkPhysicalDeviceShaderAtomicFloatFeaturesEXT atomic{
+      .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_ATOMIC_FLOAT_FEATURES_EXT, .pNext = v12.pNext};
+  if (has_extension(extensions, VK_EXT_SHADER_ATOMIC_FLOAT_EXTENSION_NAME)) v12.pNext = &atomic;
   VkPhysicalDeviceFeatures2 all{.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2, .pNext = &v11};
   fn.vkGetPhysicalDeviceFeatures2(device, &all);
   return features_from_chain(&all);
@@ -173,15 +180,15 @@ std::string describe(const DeviceCaps& caps) {
   const Features& f = caps.enabled;
   const auto flag = [](bool on, const char* name) { return on ? std::format(", {}", name) : std::string{}; };
   return std::format(
-      "{} ({} {}), Vulkan {}, UUID {}{}{}{}{}{}{}, sous-groupes de {}, push {} o, groupe {} invocations, "
+      "{} ({} {}), Vulkan {}, UUID {}{}{}{}{}{}{}{}, sous-groupes de {}, push {} o, groupe {} invocations, "
       "partagée {} o, tampon {} o{}",
       caps.device_name, caps.driver_name, caps.driver_info, version_text(caps.api_version),
       uuid_text(caps.uuid), flag(f.timeline_semaphore, "timeline"),
       flag(f.storage_buffer_16bit, "stockage 16 bits"), flag(f.shader_float16, "fp16"),
       flag(f.shader_int16, "int16"), flag(f.subgroup_size_control, "contrôle des sous-groupes"),
-      flag(f.compute_full_subgroups, "sous-groupes pleins"), caps.subgroup_size, caps.max_push_constants,
-      caps.max_workgroup_invocations, caps.max_shared_memory, caps.max_storage_buffer_range,
-      flag(caps.cooperative_matrix, "VK_KHR_cooperative_matrix présent"));
+      flag(f.compute_full_subgroups, "sous-groupes pleins"), flag(f.float_atomic_add, "atomiques float"),
+      caps.subgroup_size, caps.max_push_constants, caps.max_workgroup_invocations, caps.max_shared_memory,
+      caps.max_storage_buffer_range, flag(caps.cooperative_matrix, "VK_KHR_cooperative_matrix présent"));
 }
 
 }  // namespace ajp::gpu::vk

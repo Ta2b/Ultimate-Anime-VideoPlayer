@@ -1,9 +1,10 @@
 #include "app/play/profiles.h"
 
-#include <cmath>
+#include <cstdint>
 #include <format>
 #include <utility>
 
+#include "core/cadence.h"
 #include "core/user_overlay.h"
 
 namespace ajp::app::play {
@@ -134,6 +135,7 @@ PlaySettings apply_profile(const core::Profile& profile, const core::SourceInfo&
   settings.upscale = false;
   settings.work_height = 0;
   settings.rife_factor = 0;
+  settings.rife_factor_den = 1;
   settings.true_hdr = profile.hdr == core::HdrMode::TrueHdr;
   settings.hdr_native = profile.hdr == core::HdrMode::Native;
   const core::Rule* rule = core::match_rule(profile, source);
@@ -149,18 +151,21 @@ PlaySettings apply_profile(const core::Profile& profile, const core::SourceInfo&
         settings.downscale = step.filter;
         break;
       case core::StepKind::Interpolate: {
-        const double factor = step.factor.value();
-        const auto whole = static_cast<int>(std::lround(factor));
-        if (std::abs(factor - whole) > 1e-6 || whole < 2 || whole > limits::kRifeFactor.hi) {
-          notes.push_back(std::format("interpolation ×{}/{} : seuls les facteurs entiers 2 à {} sont faits",
-                                      step.factor.num, step.factor.den, limits::kRifeFactor.hi));
+        const core::Ratio ratio = core::reduced(step.factor);
+        const Factor factor{.num = static_cast<int>(ratio.num), .den = static_cast<int>(ratio.den)};
+        if (ratio.num > std::int64_t{2} * limits::kRifeFactor.hi || ratio.num <= ratio.den ||
+            !valid_factor(factor)) {
+          notes.push_back(
+              std::format("interpolation ×{}/{} : seuls ×1,5 et les facteurs entiers 2 à {} sont faits",
+                          step.factor.num, step.factor.den, limits::kRifeFactor.hi));
           break;
         }
         if (upscaled) notes.emplace_back("interpolation après l'agrandissement : faite avant");
         if (settings.rife_factor >= 2) {
           notes.emplace_back("plusieurs interpolations : la dernière vaut");
         }
-        settings.rife_factor = whole;
+        settings.rife_factor = factor.num;
+        settings.rife_factor_den = factor.den;
         break;
       }
       case core::StepKind::Upscale:
@@ -189,7 +194,7 @@ std::vector<core::Rule> rules_of(const PlaySettings& s, std::string_view default
   if (s.rife_factor >= 2) {
     rule.steps.push_back(core::Step{.kind = core::StepKind::Interpolate,
                                     .model = std::string(kRifeModelId),
-                                    .factor = {.num = s.rife_factor, .den = 1},
+                                    .factor = {.num = s.rife_factor, .den = s.rife_factor_den},
                                     .policy = core::Policy::Quality});
   }
   if (s.upscale) {
@@ -214,7 +219,7 @@ std::string profile_summary(const core::Profile& profile, const core::SourceInfo
   const auto add = [&](const std::string& part) { text += text.empty() ? part : " → " + part; };
   if (s.work_height > 0 && s.work_height < source.height)
     add(std::format("{}p {}", s.work_height, filter_label(s.downscale)));
-  if (s.rife_factor >= 2) add(std::format("RIFE ×{}", s.rife_factor));
+  if (s.rife_factor >= 2) add(std::format("RIFE {}", factor_text(factor_of(s))));
   if (s.upscale) {
     const int height =
         (s.work_height > 0 && s.work_height < source.height ? s.work_height : source.height) * kSpanFactor;

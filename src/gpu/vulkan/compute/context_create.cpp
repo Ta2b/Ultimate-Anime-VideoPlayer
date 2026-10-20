@@ -195,15 +195,30 @@ Done VkContext::create_device(const CreateOptions& options) {
     extensions.push_back(VK_KHR_COOPERATIVE_MATRIX_EXTENSION_NAME);
     enabled_extensions.emplace_back(VK_KHR_COOPERATIVE_MATRIX_EXTENSION_NAME);
   }
+  // Les additions atomiques de float, quand l'appareil les a : softmax splatting de GMFSS.
+  const bool atomic =
+      available.float_atomic_add && has_extension(present, VK_EXT_SHADER_ATOMIC_FLOAT_EXTENSION_NAME);
+  if (atomic && std::ranges::find(options.extensions, VK_EXT_SHADER_ATOMIC_FLOAT_EXTENSION_NAME) ==
+                    options.extensions.end()) {
+    extensions.push_back(VK_EXT_SHADER_ATOMIC_FLOAT_EXTENSION_NAME);
+    enabled_extensions.emplace_back(VK_EXT_SHADER_ATOMIC_FLOAT_EXTENSION_NAME);
+  }
+  VkPhysicalDeviceShaderAtomicFloatFeaturesEXT atomic_features{
+      .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_ATOMIC_FLOAT_FEATURES_EXT,
+      .shaderBufferFloat32AtomicAdd = VK_TRUE};
   VkPhysicalDeviceCooperativeMatrixFeaturesKHR matrix_features{
       .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_COOPERATIVE_MATRIX_FEATURES_KHR,
+      .pNext = atomic ? &atomic_features : nullptr,
       .cooperativeMatrix = VK_TRUE};
+  void* const extension_chain = matrix   ? static_cast<void*>(&matrix_features)
+                                : atomic ? static_cast<void*>(&atomic_features)
+                                         : nullptr;
   VkPhysicalDeviceVulkan13Features v13{.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES,
-                                       .pNext = matrix ? &matrix_features : nullptr,
+                                       .pNext = extension_chain,
                                        .subgroupSizeControl = flag(available.subgroup_size_control),
                                        .computeFullSubgroups = flag(available.compute_full_subgroups)};
   VkPhysicalDeviceVulkan12Features v12{.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES,
-                                       .pNext = matrix ? &matrix_features : nullptr,
+                                       .pNext = extension_chain,
                                        .shaderFloat16 = flag(available.shader_float16),
                                        .timelineSemaphore = VK_TRUE,
                                        .vulkanMemoryModel = flag(matrix)};

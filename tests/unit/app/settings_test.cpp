@@ -45,6 +45,8 @@ TEST_CASE("play.toml relit à l'identique ce qu'il a écrit", "[app][settings]")
   const auto back = parse_settings(format_settings(s));
   REQUIRE(back);
   CHECK(*back == s);
+  s.motion_engine = MotionEngine::Gmfss;
+  CHECK(parse_settings(format_settings(s))->motion_engine == MotionEngine::Gmfss);
 }
 
 TEST_CASE("Grade : un préréglage nommé donne ses valeurs, gamut P3 reste celui du fichier",
@@ -88,6 +90,13 @@ TEST_CASE("Hors plage, type faux ou TOML invalide : refus nommé", "[app][settin
   REQUIRE_FALSE(type);
   CHECK(type.error().code == RefusalCode::FieldType);
   CHECK(type.error().detail == "interpolation.rife");
+  const auto quarter = parse_settings("[interpolation]\nrife = 1.25\n");
+  REQUIRE_FALSE(quarter);
+  CHECK(quarter.error().code == RefusalCode::FieldOutOfRange);
+  const auto half = parse_settings("[interpolation]\nrife = 1.5\n");
+  REQUIRE(half);
+  CHECK(factor_of(*half) == Factor{.num = 3, .den = 2});
+  CHECK(parse_settings(format_settings(*half)).value().rife_factor_den == 2);
   const auto filter = parse_settings("[image]\ndownscale = \"lanczos\"\n");
   REQUIRE_FALSE(filter);
   CHECK(filter.error().code == RefusalCode::FieldOutOfRange);
@@ -175,6 +184,13 @@ TEST_CASE("Ce qu'un changement demande : direct ou réouverture, dit avant d'app
   PlaySettings heavy = on;
   heavy.rife_model = "rife_v4.26_heavy.onnx";
   CHECK(change_between(on, heavy, true).reason.find("modèle RIFE") != std::string::npos);
+  // Avec GMFSS, le modèle RIFE ne sert pas : le changer ne recharge rien.
+  PlaySettings gmfss = on;
+  gmfss.motion_engine = MotionEngine::Gmfss;
+  PlaySettings gmfss_heavy = gmfss;
+  gmfss_heavy.rife_model = "rife_v4.26_heavy.onnx";
+  CHECK(change_between(gmfss, gmfss_heavy, true).cost == ChangeCost::Live);
+  CHECK(live_part(gmfss, gmfss_heavy, true).rife_model == "rife_v4.26_heavy.onnx");
 }
 
 TEST_CASE("Libellé d'un modèle RIFE", "[app][settings]") {

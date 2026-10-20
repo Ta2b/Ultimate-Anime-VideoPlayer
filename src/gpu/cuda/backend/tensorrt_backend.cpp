@@ -194,6 +194,7 @@ TensorRtBackend::~TensorRtBackend() {
   if (pair_device_ != nullptr) cudaFree(pair_device_);
   if (pair_host_ != nullptr) cudaFreeHost(pair_host_);
   if (flow_device_ != nullptr) cudaFree(flow_device_);
+  if (splat_sums_ != nullptr) cudaFree(splat_sums_);
   if (flow_host_ != nullptr) cudaFreeHost(flow_host_);
   runtime_.reset();
   for (Held& held : held_) {

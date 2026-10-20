@@ -122,10 +122,15 @@ VulkanDevice vulkan_description(pl_vulkan vk) {
 }
 
 // Ce que le backend Vulkan demande à l'appareil qu'il adopte (tenseurs float16, matrices
-// coopératives), activé par libplacebo seulement là où le pilote le propose.
+// coopératives, additions atomiques de float), activé par libplacebo seulement là où le pilote le
+// propose.
 struct ComputeFeatures {
+  VkPhysicalDeviceShaderAtomicFloatFeaturesEXT atomic{
+      .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_ATOMIC_FLOAT_FEATURES_EXT,
+      .shaderBufferFloat32AtomicAdd = VK_TRUE};
   VkPhysicalDeviceCooperativeMatrixFeaturesKHR matrix{
       .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_COOPERATIVE_MATRIX_FEATURES_KHR,
+      .pNext = &atomic,
       .cooperativeMatrix = VK_TRUE};
   VkPhysicalDeviceVulkan13Features v13{.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES,
                                        .pNext = &matrix,
@@ -148,7 +153,8 @@ struct ComputeFeatures {
   ~ComputeFeatures() = default;
 };
 
-constexpr std::array<const char*, 1> kComputeExtensions{VK_KHR_COOPERATIVE_MATRIX_EXTENSION_NAME};
+constexpr std::array<const char*, 2> kComputeExtensions{VK_KHR_COOPERATIVE_MATRIX_EXTENSION_NAME,
+                                                        VK_EXT_SHADER_ATOMIC_FLOAT_EXTENSION_NAME};
 
 }  // namespace
 

@@ -238,6 +238,32 @@ TEST_CASE("TrtexecBuilder : ONNX statique, aucun profil de formes", "[prepare][b
         std::vector<std::string>{"--builderOptimizationLevel=5", "--skipInference"});
 }
 
+TEST_CASE("TrtexecBuilder : graphe statique à plusieurs entrées nommées autrement", "[prepare][builder]") {
+  // Le graphe « fusion » de GMFSS, ses tailles fixées : half0, half1, warped…, aucun « input ».
+  Steps steps;
+  auto progress = steps.progress();
+  const ShapeSet shapes = fixed(3, 96, 128);
+  SECTION("statique : sa première entrée sert aux formes, aucun profil") {
+    Bench bench("ok", {.inputs = {{.name = "half0", .dims = {1, 3, 96, 128}},
+                                  {.name = "half1", .dims = {1, 3, 96, 128}}}});
+    REQUIRE(TrtexecBuilder(bench.config).build(bench.model, shapes, progress));
+    const auto args = bench.logged_args(shapes);
+    CHECK(std::vector(args.begin() + 2, args.end() - 1) ==
+          std::vector<std::string>{"--builderOptimizationLevel=5", "--skipInference"});
+  }
+  SECTION("une entrée d'une autre précision est refusée") {
+    Bench bench("ok", {.inputs = {{.name = "half0", .dims = {1, 3, 96, 128}},
+                                  {.name = "half1", .elem_type = 1, .dims = {1, 3, 96, 128}}}});
+    CHECK(test::refusal(TrtexecBuilder(bench.config).build(bench.model, shapes, progress)) ==
+          RefusalCode::ModelMismatch);
+  }
+  SECTION("dynamique : l'entrée doit porter le nom attendu") {
+    Bench bench("ok", {.inputs = {{.name = "frames", .dims = {1, 6, -1, -1}}}});
+    CHECK(test::refusal(TrtexecBuilder(bench.config).build(bench.model, fixed(6, 64, 64), progress)) ==
+          RefusalCode::ModelMismatch);
+  }
+}
+
 TEST_CASE("TrtexecBuilder : la vérification du moteur peut refuser sa publication", "[prepare][builder]") {
   Bench bench("ok");
   const TrtexecBuilder builder(bench.config, [](const test::fs::path&) -> std::expected<void, ajp::Refusal> {

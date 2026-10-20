@@ -83,12 +83,19 @@ std::expected<ModelSource, Refusal> read_model(const gpu::ModelSpec& model, std:
   }
   auto content = onnx_source_key(*graph, model.onnx_path.parent_path(), summary->external_locations);
   if (!content) return std::unexpected(content.error());
-  const auto input = std::ranges::find(summary->inputs, input_name, &OnnxInput::name);
+  auto input = std::ranges::find(summary->inputs, input_name, &OnnxInput::name);
+  // Un graphe aux entrées toutes statiques (GMFSS, ses tailles fixées par onnx_dims) n'a pas de
+  // profil : son entrée se lit sous un autre nom, la première.
+  const bool all_static =
+      !summary->inputs.empty() && std::ranges::all_of(summary->inputs, &OnnxInput::is_static);
+  if (input == summary->inputs.end() && all_static) input = summary->inputs.begin();
   if (input == summary->inputs.end()) {
     return refuse(RefusalCode::ModelMismatch,
                   std::format("{} : entrée « {} » absente du graphe", model.id, input_name));
   }
-  if (auto ok = check_precision(model, *input); !ok) return std::unexpected(ok.error());
+  for (const OnnxInput& each : summary->inputs) {
+    if (auto ok = check_precision(model, each); !ok) return std::unexpected(ok.error());
+  }
   OnnxInput named = *input;
   return ModelSource{.graph = std::move(*graph),
                      .summary = std::move(*summary),

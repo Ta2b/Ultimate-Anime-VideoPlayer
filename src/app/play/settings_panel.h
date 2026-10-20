@@ -37,10 +37,12 @@ struct SettingsChoices {
   std::vector<std::string> models;       // fichiers SPAN du dossier des modèles
   std::string default_model;             // celui qu'un nom vide désigne
   int source_height = 0;                 // la réduction n'a de sens que sous cette hauteur
-  bool rife_available = false;           // modèle RIFE trouvé
+  bool rife_available = false;           // une interpolation possible : modèle RIFE, flux optique ou GMFSS
+  bool gmfss_available = false;          // graphes de GMFSS trouvés (gmfss_model.h)
   bool rife_loaded = false;              // moteur RIFE chargé : ×N en direct
   std::vector<std::string> rife_models;  // fichiers RIFE du dossier du modèle par défaut
   std::string default_rife_model;        // celui qu'un nom vide désigne
+  std::string rife_folder;               // le dossier des modèles RIFE (et des graphes de GMFSS)
   bool true_hdr_available = false;       // SDK Maxine présent
   bool hdr_output = true;                // l'écran reçoit du PQ (sinon ni HDR natif ni grade)
   int auto_peak = 0;                     // pic automatique de RTX HDR, en nits

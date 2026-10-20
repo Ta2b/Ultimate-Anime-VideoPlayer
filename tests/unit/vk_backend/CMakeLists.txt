@@ -15,6 +15,7 @@ ajp_add_unit_tests(vk_backend
     backend_test.cpp
     entry_test.cpp
     family_test.cpp
+    gmfss_ops_test.cpp
     kernel_ops_test.cpp
     net_conv_test.cpp
     net_ops_test.cpp

@@ -9,6 +9,7 @@ ajp_add_module(kernels
     ref/optical_flow.cpp
     ref/half.cpp
     ref/resample.cpp
+    ref/gmfss.cpp
     ref/rife.cpp
     ref/transfer.cpp
     ref/warp.cpp)

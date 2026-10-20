@@ -83,6 +83,29 @@ std::expected<void, Refusal> read(const toml::table& table, std::string_view sec
   return refuse(RefusalCode::FieldType, std::format("{}.{}", section, key));
 }
 
+// interpolation.rife : un entier (×3), ou un réel en moitié (×1.5).
+std::expected<void, Refusal> read_factor(const toml::table& table, PlaySettings& s) {
+  const toml::node* node = table.get("rife");
+  if (node == nullptr) return {};
+  if (auto whole = node->value_exact<std::int64_t>(); whole && *whole >= INT32_MIN && *whole <= INT32_MAX) {
+    s.rife_factor = static_cast<int>(*whole);
+    s.rife_factor_den = 1;
+    return {};
+  }
+  if (auto real = node->value_exact<double>()) {
+    const double halves = *real * 2.0;
+    if (halves != std::floor(halves) || halves < 0.0 || halves > 1000.0) {
+      return refuse(RefusalCode::FieldOutOfRange,
+                    std::format("interpolation.rife : {} n'est pas une moitié", *real));
+    }
+    const int count = static_cast<int>(halves);
+    s.rife_factor = count % 2 == 0 ? count / 2 : count;
+    s.rife_factor_den = count % 2 == 0 ? 1 : 2;
+    return {};
+  }
+  return refuse(RefusalCode::FieldType, "interpolation.rife");
+}
+
 const toml::table* section(const toml::table& root, std::string_view name) {
   const toml::node* node = root.get(name);
   return node != nullptr ? node->as_table() : nullptr;
@@ -136,11 +159,27 @@ std::string rife_label(const std::string& file) {
 }
 
 std::string_view name(MotionEngine engine) {
-  return engine == MotionEngine::OpticalFlow ? "optical_flow" : "rife";
+  switch (engine) {
+    case MotionEngine::Rife:
+      return "rife";
+    case MotionEngine::OpticalFlow:
+      return "optical_flow";
+    case MotionEngine::Gmfss:
+      return "gmfss";
+  }
+  return "rife";
 }
 
 std::string_view label(MotionEngine engine) {
-  return engine == MotionEngine::OpticalFlow ? "Flux optique NVIDIA (matériel)" : "RIFE 4.26";
+  switch (engine) {
+    case MotionEngine::Rife:
+      return "RIFE";
+    case MotionEngine::OpticalFlow:
+      return "Flux optique NVIDIA (matériel)";
+    case MotionEngine::Gmfss:
+      return "GMFSS Fortuna (le plus fin, le plus lourd)";
+  }
+  return "RIFE";
 }
 
 std::string_view name(OledBlack mode) {
@@ -182,9 +221,13 @@ std::string_view label(Downscale filter) {
 }
 
 std::expected<PlaySettings, Refusal> validate(const PlaySettings& s) {
-  const std::array<std::expected<void, Refusal>, 8> checks{
+  if (!valid_factor(factor_of(s))) {
+    return refuse(RefusalCode::FieldOutOfRange,
+                  std::format("interpolation.rife : {}/{} hors de 0 à {} (entier ou moitié)", s.rife_factor,
+                              s.rife_factor_den, limits::kRifeFactor.hi));
+  }
+  const std::array<std::expected<void, Refusal>, 7> checks{
       check("image.work_height", s.work_height, limits::kWorkHeight),
-      check("interpolation.rife", s.rife_factor, limits::kRifeFactor),
       check("rtx_hdr.contrast", s.true_hdr_contrast, limits::kTrueHdrContrast),
       check("rtx_hdr.saturation", s.true_hdr_saturation, limits::kTrueHdrSaturation),
       check("rtx_hdr.middle_gray", s.true_hdr_gray, limits::kTrueHdrGray),
@@ -238,7 +281,7 @@ std::expected<PlaySettings, Refusal> parse_settings(std::string_view toml_text) 
           refuse(RefusalCode::FieldOutOfRange, std::format("image.downscale : « {} »", downscale)));
   }
   if (const toml::table* interpolation = section(root, "interpolation")) {
-    reads.push_back(read(*interpolation, "interpolation", "rife", s.rife_factor));
+    reads.push_back(read_factor(*interpolation, s));
     reads.push_back(read(*interpolation, "interpolation", "smooth_motion", s.smooth_motion));
     reads.push_back(read(*interpolation, "interpolation", "model", s.rife_model));
     reads.push_back(read(*interpolation, "interpolation", "keep_poses", s.keep_poses));
@@ -336,11 +379,16 @@ std::string format_settings(const PlaySettings& s) {
                                    {"model", s.model},
                                    {"work_height", s.work_height},
                                    {"downscale", std::string(name(s.downscale))}});
-  root.insert("interpolation", toml::table{{"rife", s.rife_factor},
-                                           {"engine", std::string(name(s.motion_engine))},
-                                           {"model", s.rife_model},
-                                           {"keep_poses", s.keep_poses},
-                                           {"smooth_motion", s.smooth_motion}});
+  toml::table interpolation{{"engine", std::string(name(s.motion_engine))},
+                            {"model", s.rife_model},
+                            {"keep_poses", s.keep_poses},
+                            {"smooth_motion", s.smooth_motion}};
+  if (s.rife_factor_den == 2) {
+    interpolation.insert("rife", static_cast<double>(s.rife_factor) / 2.0);
+  } else {
+    interpolation.insert("rife", s.rife_factor);
+  }
+  root.insert("interpolation", std::move(interpolation));
   root.insert("rtx_hdr", toml::table{{"enabled", s.true_hdr},
                                      {"contrast", s.true_hdr_contrast},
                                      {"saturation", s.true_hdr_saturation},
@@ -418,7 +466,10 @@ PlaySettings settings_for(const PlaySettings& saved, const PlayOptions& options)
   if (options.was_given("--no-upscale")) s.upscale = false;
   if (options.was_given("--model") && options.model) s.model = options.model->filename().string();
   if (options.was_given("--work-height")) s.work_height = options.work_height;
-  if (options.was_given("--rife")) s.rife_factor = options.rife_factor;
+  if (options.was_given("--rife")) {
+    s.rife_factor = options.rife_factor;
+    s.rife_factor_den = options.rife_factor_den;
+  }
   if (options.was_given("--truehdr")) s.true_hdr = true;
   if (options.was_given("--truehdr-contrast")) s.true_hdr_contrast = options.true_hdr_contrast;
   if (options.was_given("--truehdr-saturation")) s.true_hdr_saturation = options.true_hdr_saturation;
@@ -437,6 +488,7 @@ PlaySettings settings_to_save(const PlaySettings& running, const PlaySettings& f
   keep("--model", &PlaySettings::model);
   keep("--work-height", &PlaySettings::work_height);
   keep("--rife", &PlaySettings::rife_factor);
+  keep("--rife", &PlaySettings::rife_factor_den);
   keep("--truehdr", &PlaySettings::true_hdr);
   keep("--truehdr-contrast", &PlaySettings::true_hdr_contrast);
   keep("--truehdr-saturation", &PlaySettings::true_hdr_saturation);
@@ -453,6 +505,7 @@ PlayOptions options_for(const PlayOptions& options, const PlaySettings& s) {
   if (!options.was_given("--model")) out.model.reset();
   out.work_height = s.work_height;
   out.rife_factor = s.rife_factor;
+  out.rife_factor_den = s.rife_factor_den;
   out.true_hdr = s.true_hdr;
   out.true_hdr_contrast = s.true_hdr_contrast;
   out.true_hdr_saturation = s.true_hdr_saturation;
@@ -464,11 +517,17 @@ PlayOptions options_for(const PlayOptions& options, const PlaySettings& s) {
 PlaySettings live_part(const PlaySettings& running, const PlaySettings& wanted, bool rife_loaded) {
   PlaySettings s = running;
   s.downscale = wanted.downscale;
-  if (rife_loaded || wanted.rife_factor < 2) s.rife_factor = wanted.rife_factor;
+  if (rife_loaded || wanted.rife_factor < 2) {
+    s.rife_factor = wanted.rife_factor;
+    s.rife_factor_den = wanted.rife_factor_den;
+  }
   if (wanted.rife_factor < 2) {  // sans interpolation, rien à recharger
     s.motion_engine = wanted.motion_engine;
     s.rife_model = wanted.rife_model;
   }
+  // Le modèle RIFE ne sert pas à un autre moteur du mouvement : le changer ne recharge rien.
+  if (running.motion_engine == wanted.motion_engine && wanted.motion_engine != MotionEngine::Rife)
+    s.rife_model = wanted.rife_model;
   s.true_hdr_contrast = wanted.true_hdr_contrast;
   s.true_hdr_saturation = wanted.true_hdr_saturation;
   s.true_hdr_gray = wanted.true_hdr_gray;
@@ -499,10 +558,12 @@ Change change_between(const PlaySettings& running, const PlaySettings& wanted, b
   if (running.true_hdr != wanted.true_hdr)
     reopen.emplace_back(wanted.true_hdr ? "RTX HDR s'allume" : "RTX HDR s'éteint");
   if (wanted.rife_factor >= 2 && running.rife_factor < 2 && !rife_loaded)
-    reopen.emplace_back("le moteur RIFE est chargé (construit la première fois pour cette taille)");
+    reopen.emplace_back(
+        "le moteur d'interpolation est chargé (construit la première fois pour cette taille)");
   if (wanted.rife_factor >= 2 && running.motion_engine != wanted.motion_engine)
     reopen.emplace_back("le moteur du mouvement change");
-  if (wanted.rife_factor >= 2 && running.rife_model != wanted.rife_model)
+  if (wanted.rife_factor >= 2 && wanted.motion_engine == MotionEngine::Rife &&
+      running.rife_model != wanted.rife_model)
     reopen.emplace_back("le modèle RIFE est chargé (construit la première fois pour cette taille)");
   if (!reopen.empty()) {
     std::string reason;

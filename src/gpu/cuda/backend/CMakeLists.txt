@@ -1,8 +1,8 @@
 # ajp_backend_tensorrt.so : le backend TensorRT (gpu/backend.h, ABI 2), chargé à l'exécution.
 # Il emporte prepare (constructeur trtexec) et sa propre copie de spdlog ; ses symboles
 # restent cachés, sauf les trois points d'entrée.
-add_library(ajp_backend_tensorrt_kernels STATIC hdr_kernels.cu optical_flow_kernels.cu rife_kernels.cu slice_kernels.cu
-  warp_kernels.cu)
+add_library(ajp_backend_tensorrt_kernels STATIC gmfss_kernels.cu hdr_kernels.cu optical_flow_kernels.cu rife_kernels.cu
+  slice_kernels.cu warp_kernels.cu)
 target_include_directories(ajp_backend_tensorrt_kernels PRIVATE "${PROJECT_SOURCE_DIR}/src")
 target_link_libraries(ajp_backend_tensorrt_kernels PRIVATE ajp::dep::cudart)
 target_compile_options(ajp_backend_tensorrt_kernels PRIVATE
@@ -10,8 +10,8 @@ target_compile_options(ajp_backend_tensorrt_kernels PRIVATE
 set_target_properties(ajp_backend_tensorrt_kernels PROPERTIES POSITION_INDEPENDENT_CODE ON)
 
 add_library(ajp_backend_tensorrt MODULE
-  entry.cpp gpu_timing.cpp nvof_session.cpp ring_slot.cpp tensorrt_backend.cpp tensorrt_kernels.cpp
-  tensorrt_optical_flow.cpp tensorrt_rife.cpp tensorrt_warp.cpp tensorrt_true_hdr.cpp trt_engine.cpp)
+  entry.cpp gpu_timing.cpp nvof_session.cpp ring_slot.cpp tensorrt_backend.cpp tensorrt_gmfss.cpp
+  tensorrt_kernels.cpp tensorrt_optical_flow.cpp tensorrt_rife.cpp tensorrt_warp.cpp tensorrt_true_hdr.cpp trt_engine.cpp)
 target_include_directories(ajp_backend_tensorrt PRIVATE "${PROJECT_SOURCE_DIR}/src")
 # En-têtes de NVIDIA Optical Flow : types et signatures seulement, la bibliothèque vient du pilote.
 target_include_directories(ajp_backend_tensorrt SYSTEM PRIVATE "${PROJECT_SOURCE_DIR}/third_party/nvidia-optical-flow")

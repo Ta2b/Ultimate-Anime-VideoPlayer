@@ -39,8 +39,8 @@ std::vector<EngineBadge> engine_badges(const std::filesystem::path& cache_dir,
 std::optional<std::string> ChainStats::rife() const {
   if (!interpolates_) return std::nullopt;
   const RifeCounts c = live_.counts();
-  return std::format("{} ×{} : {} paires, {} interpolées, {} dessins tenus, {} coupes, {} en retard", engine_,
-                     live_.rife_factor(), c.pairs, c.interpolated, c.held, c.cuts, c.late);
+  return std::format("{} {} : {} paires, {} interpolées, {} dessins tenus, {} coupes, {} en retard", engine_,
+                     factor_text(live_.rife_factor()), c.pairs, c.interpolated, c.held, c.cuts, c.late);
 }
 
 std::optional<std::string> ChainStats::memory() const {

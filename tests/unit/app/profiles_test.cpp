@@ -74,6 +74,13 @@ TEST_CASE("Les réglages en cours se relisent comme un profil", "[app][profiles]
   s.model = "2x_AnimeJaNai_HD_V3.1Sharp1_Balanced_SPANF3_b8f64_unshuffle_fp16.onnx";
   const core::Profile other{.name = "Net", .hdr = hdr_of(s), .rules = rules_of(s, usual)};
   CHECK(profile_summary(other, k1080p).find("SPAN 1080p (") != std::string::npos);
+  // ×1,5 fait l'aller-retour.
+  s.rife_factor = 3;
+  s.rife_factor_den = 2;
+  const core::Profile half{.name = "Demi", .hdr = hdr_of(s), .rules = rules_of(s, usual)};
+  const PlaySettings slow = apply_profile(half, k1080p, PlaySettings{}, notes);
+  CHECK(factor_of(slow) == Factor{.num = 3, .den = 2});
+  CHECK(profile_summary(half, k1080p).find("RIFE ×1,5") != std::string::npos);
 }
 
 TEST_CASE("Ce que la chaîne ne sait pas faire est dit, pas inventé", "[app][profiles]") {
@@ -83,14 +90,14 @@ TEST_CASE("Ce que la chaîne ne sait pas faire est dit, pas inventé", "[app][pr
       core::Step{.kind = core::StepKind::Upscale, .model = "m", .factor = {.num = 2, .den = 1}});
   rule.steps.push_back(core::Step{.kind = core::StepKind::Interpolate,
                                   .model = "rife_v4.26",
-                                  .factor = {.num = 5, .den = 2},
+                                  .factor = {.num = 5, .den = 4},
                                   .policy = core::Policy::Fast});
   odd.rules.push_back(rule);
   std::vector<std::string> notes;
   const PlaySettings s = apply_profile(odd, k1080p, PlaySettings{}, notes);
   CHECK(s.rife_factor == 0);
   REQUIRE(notes.size() == 1);
-  CHECK(notes[0].find("5/2") != std::string::npos);
+  CHECK(notes[0].find("5/4") != std::string::npos);
 }
 
 TEST_CASE("user.toml : absent, la base ; une modification n'écrit que ce qui diffère", "[app][profiles]") {

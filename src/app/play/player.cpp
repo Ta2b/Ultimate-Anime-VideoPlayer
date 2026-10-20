@@ -21,12 +21,14 @@
 #include "app/play/display_edid.h"
 #include "app/play/engine_build.h"
 #include "app/play/first_run.h"
+#include "app/play/gmfss_model.h"
 #include "app/play/host_facts.h"
 #include "app/play/input.h"
 #include "app/play/model_choice.h"
 #include "app/play/motion_model.h"
 #include "app/play/pipeline.h"
 #include "app/play/placebo_screen.h"
+#include "app/play/player_engines.h"
 #include "app/play/profiles.h"
 #include "app/play/scripted_input.h"
 #include "app/play/session.h"
@@ -91,127 +93,10 @@ std::expected<media::TrackInfo, Refusal> probe_video(const std::filesystem::path
   return *demuxer->track(*choice.video);
 }
 
-// Un moteur à construire, tel que la préparation le montre.
-struct EngineLabel {
-  std::string name;     // « SPAN », « RIFE »
-  std::string model;    // nom du modèle
-  std::string backend;  // « tensorrt », « vulkan »
-  int width = 0;        // entrée du moteur
-  int height = 0;
-  double expected_s = kDefaultBuildSeconds;
-};
-
-// Une construction plus courte ne montre rien : un moteur du cache revient tout de suite.
-constexpr std::int64_t kQuietBuildUs = 250'000;
-// Pendant une construction, la superposition est redessinée 10 fois par seconde au plus : le GPU
-// sert à mesurer les tactiques.
-constexpr std::uint32_t kBuildFrameMs = 100;
 // Seuils du vrai noir recalés au plus 5 fois par seconde pendant qu'on règle.
 constexpr std::int64_t kBlackRefreshUs = 200'000;
 // L'écran de bienvenue suit la souris : ~60 images par seconde.
 constexpr std::uint32_t kWelcomeFrameMs = 16;
-
-// Instantané demandé (--snapshot) : pris pendant la première construction de moteur qui dure jusqu'à
-// at_us, sinon pendant la lecture.
-struct SnapshotPlan {
-  std::optional<std::filesystem::path> path;
-  std::int64_t at_us = 0;
-  int frames = 1;
-  // Demande l'instantané à l'écran si since_us remonte à at_us ; true s'il vient d'être demandé
-  // (une présentation doit suivre, même en pause).
-  bool maybe(PlaceboScreen& screen, std::int64_t since_us) {
-    if (!path || host_now_us() - since_us < at_us) return false;
-    screen.snapshot_next(*path, frames);
-    path.reset();
-    return true;
-  }
-};
-
-// Tours d'attente de main pendant la construction d'un moteur : la fenêtre reste vivante et la
-// superposition montre la préparation. Rien si l'utilisateur ferme la fenêtre ou quitte (q) ; Tab
-// montre les détails (details, repris ensuite par les statistiques de la lecture).
-std::expected<std::optional<gpu::Artifact>, Refusal> wait_engine(EngineBuild& build, PlaceboScreen& screen,
-                                                                 PlayerUi& ui, const EngineLabel& engine,
-                                                                 bool& details, SnapshotPlan& snapshot) {
-  const core::KeyMap keys = core::KeyMap::defaults();
-  const std::int64_t started = host_now_us();
-  BuildProgress progress(engine.expected_s, started);
-  std::vector<Input> actions;
-  while (true) {
-    SDL_Event event;
-    while (SDL_PollEvent(&event)) {
-      if (ui.handle(event, host_now_us(), actions)) continue;
-      if (auto input = input_of(event, keys)) actions.push_back(*input);
-    }
-    for (const Input& input : actions) {
-      if (const auto* command = std::get_if<Command>(&input)) {
-        if (std::holds_alternative<cmd::Quit>(*command)) return std::nullopt;
-        if (std::holds_alternative<cmd::ToggleOsd>(*command)) details = !details;
-      } else if (std::holds_alternative<ToggleFullscreen>(input)) {
-        screen.set_fullscreen(!screen.fullscreen());
-      } else if (std::holds_alternative<LeaveFullscreen>(input)) {
-        screen.set_fullscreen(false);
-      }
-    }
-    actions.clear();
-    if (auto result = build.result()) {
-      if (!*result) return std::unexpected(std::move(result->error()));
-      log_channel("app")->info("moteur {} prêt en {:.1f} s (construction prévue {:.0f} s)", engine.name,
-                               progress.elapsed_seconds(host_now_us()), engine.expected_s);
-      return std::optional(std::move(**result));
-    }
-    const EngineBuild::Status status = build.status();
-    progress.marker(status.fraction);
-    const std::int64_t now = host_now_us();
-    if (now - started >= kQuietBuildUs) {
-      snapshot.maybe(screen, started);
-      const auto seconds = [](double s) { return format_clock(static_cast<std::int64_t>(s * 1e6), 0); };
-      const PrepareView view{
-          .label = std::format("Préparation du moteur {}", engine.name),
-          .fraction = progress.fraction(now),
-          .details = {status.stage,
-                      std::format("écoulé {} · prévu ~{}", seconds(progress.elapsed_seconds(now)),
-                                  seconds(progress.expected_seconds())),
-                      std::format("{} · entrée {}x{} · {}", engine.model, engine.width, engine.height,
-                                  engine.backend)},
-          .show_details = details};
-      auto shown = screen.show(ShowRequest{.ui = ui.preparation(now, view)});
-      if (!shown) return std::unexpected(std::move(shown.error()));
-    }
-    SDL_Delay(kBuildFrameMs);
-  }
-}
-
-// Une image de la superposition avant une étape bloquante (chargement d'un moteur, RTX HDR) : la
-// fenêtre dit ce qu'elle attend au lieu de rester noire.
-void show_loading(PlaceboScreen& screen, PlayerUi& ui, std::string label) {
-  const PrepareView view{.label = std::move(label)};
-  if (auto shown = screen.show(ShowRequest{.ui = ui.preparation(host_now_us(), view)}); !shown)
-    log_channel("app")->warn("préparation : {}", shown.error().detail);
-}
-
-// Ce qui survit à une réouverture de la chaîne : la fenêtre, l'interface, la bibliothèque du
-// backend, les touches et l'instantané d'essai, les pistes choisies.
-struct Player {
-  const PlayOptions& options;
-  const PlayerPaths& paths;
-  PlaceboScreen& screen;
-  PlayerUi& ui;
-  std::shared_ptr<BackendLibrary> library;
-  media::TrackInfo video;
-  std::filesystem::path settings_path;
-  PlaySettings from_file;  // play.toml au lancement
-  PlaySettings started;    // réglages du début de la lecture (options comprises)
-  SnapshotPlan snapshot;
-  bool details = false;  // Tab pendant une préparation
-  std::size_t next_key = 0;
-  std::int64_t began_us = 0;
-  std::optional<int> audio_track;
-  std::optional<std::optional<int>> subtitle_track;
-  ProfileState profiles;
-  core::Settings engines;               // settings.toml : les moteurs choisis à l'écran de bienvenue
-  std::optional<DisplayFacts> display;  // l'écran selon son EDID (OLED ou non)
-};
 
 // Fin d'une ouverture de la chaîne : la lecture est finie (rien), ou le menu demande de la rouvrir
 // avec ces réglages à cette position.
@@ -220,29 +105,16 @@ struct Reopen {
   std::int64_t position_us = 0;
 };
 
-// Construit (ou lit du cache) puis charge un moteur, la préparation à l'écran. Rien si
-// l'utilisateur ferme la fenêtre.
-std::expected<std::optional<std::unique_ptr<gpu::Engine>>, Refusal> prepare_engine(
-    Player& p, const gpu::BackendInit& init, gpu::Backend& backend, const std::filesystem::path& onnx,
-    const gpu::Shape& shape, EngineLabel label) {
-  auto sha256 = prepare::sha256_file(onnx);
-  if (!sha256) return std::unexpected(std::move(sha256.error()));
-  auto build = EngineBuild::start(
-      EngineRequest{.library = p.library,
-                    .init = init,
-                    .model = {.id = onnx.stem().string(), .onnx_path = onnx, .sha256 = *sha256},
-                    .shapes = {.min = shape, .opt = shape, .max = shape}});
-  if (!build) return std::unexpected(std::move(build.error()));
-  label.backend = backend.capabilities().name;
-  label.expected_s = expected_build_seconds(p.paths.engines, onnx, std::int64_t{label.width} * label.height);
-  auto artifact = wait_engine(**build, p.screen, p.ui, label, p.details, p.snapshot);
-  if (!artifact) return std::unexpected(std::move(artifact.error()));
-  if (!*artifact) return std::nullopt;  // fenêtre fermée pendant la construction
-  log_channel("app")->info("moteur {} {}", label.name, (*artifact)->path.string());
-  show_loading(p.screen, p.ui, "Chargement des moteurs");
-  auto loaded = backend.load(**artifact);
-  if (!loaded) return std::unexpected(std::move(loaded.error()));
-  return std::optional(std::move(*loaded));
+// Où chercher les graphes de GMFSS : à côté du modèle RIFE choisi, puis dans les dossiers RIFE.
+std::vector<std::filesystem::path> gmfss_dirs(const std::filesystem::path& home,
+                                              const std::optional<ModelChoice>& rife) {
+  std::vector<std::filesystem::path> dirs;
+  if (rife) dirs.push_back(rife->path.parent_path());
+  for (const std::filesystem::path& candidate : default_rife_candidates(home)) {
+    if (std::ranges::find(dirs, candidate.parent_path()) == dirs.end())
+      dirs.push_back(candidate.parent_path());
+  }
+  return dirs;
 }
 
 // Une ouverture de la chaîne : moteurs, RTX HDR, threads, session et boucle de main, jusqu'à la
@@ -274,7 +146,10 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
       rife_choice ? std::optional(rife_choice->path) : std::nullopt;
   // Fluidité → Moteur : le flux optique matériel remplace RIFE, sans modèle ; RIFE reprend s'il manque.
   const bool want_flow = settings.rife_factor >= 2 && settings.motion_engine == MotionEngine::OpticalFlow;
-  if (settings.rife_factor >= 2 && !rife_model && !want_flow)
+  const std::vector<std::filesystem::path> gmfss_places = gmfss_dirs(p.paths.home, rife_choice);
+  const bool gmfss_found = find_gmfss(gmfss_places).has_value();
+  const bool want_gmfss = settings.rife_factor >= 2 && settings.motion_engine == MotionEngine::Gmfss;
+  if (settings.rife_factor >= 2 && !rife_model && !want_flow && !(want_gmfss && gmfss_found))
     return std::unexpected(choose_rife_model(p.options, p.paths.home, settings).error());
   show_loading(p.screen, p.ui, "Chargement");
   const gpu::BackendInit init{
@@ -305,7 +180,21 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
   const int flow_grid = want_flow ? open_optical_flow(*(*backend)->kernels(), rife_size.width,
                                                       rife_size.height, p.ui.controls())
                                   : 0;
-  const bool use_rife = settings.rife_factor >= 2 && rife_model && flow_grid == 0;
+  // GMFSS Fortuna à la place de RIFE, à la taille de travail ; RIFE reprend si ses graphes manquent.
+  GmfssEngines gmfss;
+  if (want_gmfss) {
+    auto loaded = prepare_gmfss(p, init, **backend, gmfss_places, work.width, work.height);
+    if (!loaded) {
+      log->warn("{} ; RIFE à la place", loaded.error().detail);
+      p.ui.controls().notify("GMFSS indisponible : RIFE", host_now_us());
+    } else if (!*loaded) {
+      return std::nullopt;
+    } else {
+      gmfss = std::move(**loaded);
+    }
+  }
+  const bool use_gmfss = gmfss.pair != nullptr;
+  const bool use_rife = settings.rife_factor >= 2 && rife_model && flow_grid == 0 && !use_gmfss;
   const kernels::RifeGeometry g = kernels::rife_geometry(rife_size.width, rife_size.height);
   const kernels::RifeGeometry image_g = kernels::rife_geometry(work.width, work.height);
   std::unique_ptr<gpu::Engine> rife;
@@ -347,9 +236,11 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
   }
   const std::string label_text = std::format(
       "{}{}{}",
-      flow_grid > 0 ? std::format("flux optique ×{} · ", settings.rife_factor)
-      : use_rife    ? std::format("RIFE ×{} · {} · ", settings.rife_factor, rife_model->stem().string())
-                    : std::string(),
+      flow_grid > 0 ? std::format("flux optique {} · ", factor_text(factor_of(settings)))
+      : use_gmfss   ? std::format("GMFSS Fortuna {} · ", factor_text(factor_of(settings)))
+      : use_rife
+          ? std::format("RIFE {} · {} · ", factor_text(factor_of(settings)), rife_model->stem().string())
+          : std::string(),
       settings.true_hdr ? "RTX HDR · " : "",
       model ? std::format("SPAN ×{} · {} · {} · {} → {}x{}", factor, model->path.stem().string(),
                           backend_name, reduce, work.width * factor, work.height * factor)
@@ -379,7 +270,7 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
   }
 
   auto live = std::make_shared<LiveSettings>();
-  live->set_rife_factor(static_cast<std::uint32_t>(use_rife || flow_grid > 0 ? settings.rife_factor : 0));
+  live->set_rife_factor(use_rife || flow_grid > 0 || use_gmfss ? factor_of(settings) : Factor{});
   live->set_reduction(reduction_of(settings.downscale));
   live->set_keep_poses(settings.keep_poses);
   PipelineConfig config{
@@ -397,29 +288,32 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
         if (!slots) return std::unexpected(std::move(slots.error()));
         const MasterClock* clock = stage.clock;
         return UpscaleStage::start(
-            std::move(stage),
-            UpscaleSetup{.backend = backend->get(),
-                         .engine = engine.get(),
-                         .rife = rife.get(),
-                         .rife_motion = rife_motion.get(),
-                         .optical_flow_grid = flow_grid,
-                         .rife_factor = static_cast<std::uint32_t>(std::max(settings.rife_factor, 1)),
-                         .true_hdr = settings.true_hdr,
-                         .live = live,
-                         .clock = clock,
-                         .source_width = width,
-                         .source_height = height,
-                         .work_width = sized.width,
-                         .work_height = sized.height,
-                         .rife_width = rife_motion || flow_grid > 0 ? rife_size.width : 0,
-                         .rife_height = rife_motion || flow_grid > 0 ? rife_size.height : 0,
-                         .slots = std::move(*slots)});
+            std::move(stage), UpscaleSetup{.backend = backend->get(),
+                                           .engine = engine.get(),
+                                           .rife = rife.get(),
+                                           .rife_motion = rife_motion.get(),
+                                           .optical_flow_grid = flow_grid,
+                                           .gmfss_pair = gmfss.pair.get(),
+                                           .gmfss_fusion = gmfss.fusion.get(),
+                                           .rife_factor = factor_of(settings),
+                                           .true_hdr = settings.true_hdr,
+                                           .live = live,
+                                           .clock = clock,
+                                           .source_width = width,
+                                           .source_height = height,
+                                           .work_width = sized.width,
+                                           .work_height = sized.height,
+                                           .rife_width = rife_motion || flow_grid > 0 ? rife_size.width : 0,
+                                           .rife_height = rife_motion || flow_grid > 0 ? rife_size.height : 0,
+                                           .slots = std::move(*slots)});
       });
   if (!pipeline) return std::unexpected(std::move(pipeline.error()));
 
-  const bool rife_loaded = rife != nullptr || rife_motion != nullptr || flow_grid > 0;
+  const bool rife_loaded = rife != nullptr || rife_motion != nullptr || flow_grid > 0 || use_gmfss;
   const ChainStats chain_stats(*live, *(*backend)->kernels(), rife_loaded,
-                               flow_grid > 0 ? "flux optique" : "RIFE");
+                               flow_grid > 0 ? "flux optique"
+                               : use_gmfss   ? "GMFSS"
+                                             : "RIFE");
   SessionConfig session_config = (*pipeline)->session_config();
   session_config.start_us = start_us;
   session_config.stop_after_us = options.stop_after_us;
@@ -443,10 +337,12 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
           .models = model ? model->available : std::vector<std::string>{},
           .default_model = model ? model->default_name : std::string(),
           .source_height = video.height,
-          .rife_available = rife_model.has_value() || flow_grid > 0,
+          .rife_available = rife_model.has_value() || flow_grid > 0 || gmfss_found,
+          .gmfss_available = gmfss_found,
           .rife_loaded = rife_loaded,
           .rife_models = rife_choice ? rife_choice->available : std::vector<std::string>{},
           .default_rife_model = rife_choice ? rife_choice->default_name : std::string(),
+          .rife_folder = gmfss_places.front().string(),
           .true_hdr_available = std::filesystem::exists(p.options.true_hdr_sdk) || settings.true_hdr,
           .hdr_output = p.screen.hdr_output(),
           .auto_peak = auto_peak,

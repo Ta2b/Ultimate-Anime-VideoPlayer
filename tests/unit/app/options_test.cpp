@@ -69,6 +69,15 @@ TEST_CASE("ajp play : RIFE ×3 par défaut, --rife et --rife-model", "[app][opti
   CHECK(parse({"a.mkv", "--rife-model=/m/rife.onnx"})->rife_model == std::filesystem::path("/m/rife.onnx"));
   CHECK(parse({"a.mkv", "--rife=9"}).error().code == RefusalCode::FieldOutOfRange);
   CHECK(parse({"a.mkv", "--rife=deux"}).error().code == RefusalCode::FieldOutOfRange);
+  for (const char* half : {"--rife=1.5", "--rife=1,5"}) {
+    const auto opts = parse({"a.mkv", half});
+    REQUIRE(opts);
+    CHECK(opts->rife_factor == 3);
+    CHECK(opts->rife_factor_den == 2);
+  }
+  CHECK(parse({"a.mkv", "--rife=1.25"}).error().code == RefusalCode::FieldOutOfRange);
+  CHECK(factor_text({.num = 3, .den = 2}) == "×1,5");
+  CHECK(factor_text({.num = 3, .den = 1}) == "×3");
   CHECK(default_rife_candidates("/home/x").front() ==
         std::filesystem::path("/home/x/.local/share/AnimeJaNai-HDR-linux/animejanai/rife/rife_v4.26.onnx"));
 }

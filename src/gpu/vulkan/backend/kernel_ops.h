@@ -75,6 +75,9 @@ class VulkanKernelOps final : public KernelOps {
                                           const Tensor& input) override;
   std::expected<PairScores, Refusal> scores_now(const Tensor& a, const Tensor& b) override;
   std::expected<float, Refusal> flow_max_now(const Motion& motion) override;
+  std::expected<void, Refusal> gmfss_frames(const Tensor& a, const Tensor& b, const Tensor& frames) override;
+  std::expected<void, Refusal> soft_splat(const Tensor& source, const Tensor& motion, float s,
+                                          const Tensor& out) override;
   std::expected<void, Refusal> write_ring(const Tensor& rgb, const RingSlotDesc& slot,
                                           const RingWrite& sync) override;
   std::expected<void, Refusal> measure(const DecodedFrame& a, const DecodedFrame& b) override;
@@ -168,6 +171,9 @@ class VulkanKernelOps final : public KernelOps {
   std::optional<Buffer> pair_worst_;
   std::optional<Buffer> flow_result_;
   std::expected<Buffer*, Refusal> readback(std::optional<Buffer>& buffer, VkDeviceSize bytes);
+  // Sommes FP32 du softmax splatting, partagées par tous les splats (la file les ordonne) ;
+  // agrandies seulement après la fin de tout ce que la file a reçu.
+  std::optional<Buffer> splat_sums_;
   std::vector<TimelinePoint> waits_;  // réutilisés d'un appel à l'autre
   std::vector<TimelinePoint> signals_;
 };

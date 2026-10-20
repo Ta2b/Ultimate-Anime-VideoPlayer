@@ -1,6 +1,8 @@
 // Familles de GPU par identifiants PCI, liste d'autorisation des unités matricielles, et leur
 // sélection par l'abaissement : la variante coopmat n'est proposée que là où elle est permise
 // (jamais sur lavapipe, la CI), et vient en tête là où elle l'est (RTX).
+#include "gpu/vulkan/backend/family.h"
+
 #include <algorithm>
 #include <chrono>
 #include <filesystem>
@@ -14,7 +16,6 @@
 #include "gpu/ir/passes.h"
 #include "gpu/ir/shape.h"
 #include "gpu/vulkan/backend/device_profile.h"
-#include "gpu/vulkan/backend/family.h"
 #include "gpu/vulkan/backend/net_autotune.h"
 #include "gpu/vulkan/backend/net_lower.h"
 #include "net_rig.h"
@@ -25,18 +26,18 @@ using namespace ajp::gpu::vk;
 using namespace ajp::gpu::vk::test;
 
 TEST_CASE("Familles : identifiants PCI connus", "[vk_backend][family]") {
-  CHECK(detect_family(pci::kNvidia, 0x2782, false) == GpuFamily::NvidiaAda);  // RTX 4070 Ti
-  CHECK(detect_family(pci::kNvidia, 0x2684, false) == GpuFamily::NvidiaAda);  // RTX 4090
-  CHECK(detect_family(pci::kNvidia, 0x2206, false) == GpuFamily::NvidiaAmpere);  // RTX 3080
-  CHECK(detect_family(pci::kNvidia, 0x1E87, false) == GpuFamily::NvidiaTuring);  // RTX 2080
-  CHECK(detect_family(pci::kNvidia, 0x2184, false) == GpuFamily::NvidiaTuring);  // GTX 1660
+  CHECK(detect_family(pci::kNvidia, 0x2782, false) == GpuFamily::NvidiaAda);        // RTX 4070 Ti
+  CHECK(detect_family(pci::kNvidia, 0x2684, false) == GpuFamily::NvidiaAda);        // RTX 4090
+  CHECK(detect_family(pci::kNvidia, 0x2206, false) == GpuFamily::NvidiaAmpere);     // RTX 3080
+  CHECK(detect_family(pci::kNvidia, 0x1E87, false) == GpuFamily::NvidiaTuring);     // RTX 2080
+  CHECK(detect_family(pci::kNvidia, 0x2184, false) == GpuFamily::NvidiaTuring);     // GTX 1660
   CHECK(detect_family(pci::kNvidia, 0x2B85, false) == GpuFamily::NvidiaBlackwell);  // RTX 5090
-  CHECK(detect_family(pci::kNvidia, 0x1B80, false) == GpuFamily::Unknown);  // Pascal : sans unités
-  CHECK(detect_family(pci::kAmd, 0x744C, false) == GpuFamily::AmdRdna3);  // RX 7900 XTX
-  CHECK(detect_family(pci::kAmd, 0x7550, false) == GpuFamily::AmdRdna4);  // RX 9070
-  CHECK(detect_family(pci::kAmd, 0x73BF, false) == GpuFamily::AmdBeforeRdna3);  // RX 6800
-  CHECK(detect_family(pci::kIntel, 0x56A0, false) == GpuFamily::IntelAlchemist);  // Arc A770
-  CHECK(detect_family(pci::kIntel, 0xE20B, false) == GpuFamily::IntelXe2);  // Arc B580
+  CHECK(detect_family(pci::kNvidia, 0x1B80, false) == GpuFamily::Unknown);          // Pascal : sans unités
+  CHECK(detect_family(pci::kAmd, 0x744C, false) == GpuFamily::AmdRdna3);            // RX 7900 XTX
+  CHECK(detect_family(pci::kAmd, 0x7550, false) == GpuFamily::AmdRdna4);            // RX 9070
+  CHECK(detect_family(pci::kAmd, 0x73BF, false) == GpuFamily::AmdBeforeRdna3);      // RX 6800
+  CHECK(detect_family(pci::kIntel, 0x56A0, false) == GpuFamily::IntelAlchemist);    // Arc A770
+  CHECK(detect_family(pci::kIntel, 0xE20B, false) == GpuFamily::IntelXe2);          // Arc B580
   CHECK(detect_family(pci::kNvidia, 0x2782, true) == GpuFamily::Software);
   CHECK(detect_family(0x10005, 0, false) == GpuFamily::Unknown);
 }
@@ -69,7 +70,8 @@ TEST_CASE("Familles : variante matricielle choisie ou écartée selon l'appareil
   (void)require_value(ir::optimize(graph));
   const auto conv = std::ranges::find(graph.nodes, ir::OpKind::Conv, &ir::Node::op) - graph.nodes.begin();
   const auto options = require_value(net::candidates(graph, static_cast<std::size_t>(conv), profile.target));
-  const bool any_matrix = std::ranges::any_of(options, [](const net::KernelChoice& c) { return c.variant == "coopmat"; });
+  const bool any_matrix =
+      std::ranges::any_of(options, [](const net::KernelChoice& c) { return c.variant == "coopmat"; });
   if (profile.family == GpuFamily::Software) CHECK_FALSE(profile.target.matrix_units);
   CHECK(any_matrix == profile.target.matrix_units);
   if (profile.target.matrix_units) CHECK(options.front().variant == "coopmat");
@@ -92,7 +94,8 @@ TEST_CASE("Autotuner : mesure, cache par appareil et relecture", "[vk_backend][a
   const auto options = require_value(net::candidates(graph, 0, profile.target));
   REQUIRE(options.size() > 1);
   const std::filesystem::path file =
-      std::filesystem::temp_directory_path() / std::format("ajp-autotune-{}.tsv", std::chrono::steady_clock::now().time_since_epoch().count());
+      std::filesystem::temp_directory_path() /
+      std::format("ajp-autotune-{}.tsv", std::chrono::steady_clock::now().time_since_epoch().count());
   const net::TunerOptions quick{.warmup = 1, .passes = 3, .repeats = 2};
   net::KernelChoice best;
   {
