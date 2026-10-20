@@ -61,7 +61,7 @@ std::expected<Receipt, Refusal> parse_receipt(const toml::table& table, const st
   Receipt receipt;
   auto kind = fields::required<std::string>(table, "kind", where);
   if (!kind) return std::unexpected(kind.error());
-  const auto* found = std::ranges::find(kKinds, *kind, &std::pair<std::string_view, CapabilityKind>::first);
+  const auto found = std::ranges::find(kKinds, *kind, &std::pair<std::string_view, CapabilityKind>::first);
   if (found == kKinds.end())
     return refuse(RefusalCode::FieldOutOfRange, std::format("{}.kind = « {} »", where, *kind));
   receipt.capability.kind = found->second;

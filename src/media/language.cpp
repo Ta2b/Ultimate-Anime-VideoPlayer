@@ -79,7 +79,7 @@ std::vector<std::string_view> split_subtags(std::string_view tag) {
 }  // namespace
 
 std::string_view canonical_language(std::string_view primary) {
-  const auto* it = std::ranges::lower_bound(kLanguages, primary, iless, &LangPair::first);
+  const auto it = std::ranges::lower_bound(kLanguages, primary, iless, &LangPair::first);
   if (it != kLanguages.end() && iequal(it->first, primary)) return it->second;
   return primary;
 }
