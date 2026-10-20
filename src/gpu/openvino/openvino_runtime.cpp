@@ -9,6 +9,7 @@
 #include <openvino/core/preprocess/pre_post_process.hpp>
 #include <openvino/core/version.hpp>
 #include <openvino/openvino.hpp>
+#include <openvino/runtime/intel_gpu/properties.hpp>
 #include <string>
 #include <vector>
 
@@ -28,9 +29,13 @@ ov::element::Type element_of(TensorType type) {
   return type == TensorType::F32 ? ov::element::f32 : ov::element::f16;
 }
 
+// Latence d'une requête à la fois, en f16 ; la file du GPU en priorité haute et sans ralenti,
+// pour ne pas passer derrière le rendu du lecteur sur le même GPU.
 ov::AnyMap compile_config() {
   return {ov::hint::performance_mode(ov::hint::PerformanceMode::LATENCY),
-          ov::hint::inference_precision(ov::element::f16), ov::hint::num_requests(1)};
+          ov::hint::inference_precision(ov::element::f16), ov::hint::num_requests(1),
+          ov::intel_gpu::hint::queue_priority(ov::hint::Priority::HIGH),
+          ov::intel_gpu::hint::queue_throttle(ov::intel_gpu::hint::ThrottleLevel::HIGH)};
 }
 
 class OpenvinoNet final : public vk::net::RuntimeNet {

@@ -138,6 +138,9 @@ class MigraphxRuntime final : public vk::net::Runtime {
       migraphx::compile_options compile;
       compile.set_offload_copy(true);
       compile.set_fast_math(true);
+      // Réglage exhaustif des noyaux (ROCm 6) : quelques minutes à la première construction, puis
+      // gardé dans le .mxr.
+      compile.set_exhaustive_tune_flag(true);
       program.compile(migraphx::target("gpu"), compile);
       if (progress.stop.stop_requested()) return refuse(RefusalCode::Cancelled, "construction annulée");
       migraphx::save(program, path.string().c_str());
