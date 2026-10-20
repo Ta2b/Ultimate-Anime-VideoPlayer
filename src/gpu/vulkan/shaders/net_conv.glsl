@@ -5,7 +5,8 @@
 // (net_weights.cpp), lus en vec4 identiques pour tout le groupe de travail.
 // Variante « _f16 » : tenseurs float16 permis, calcul en float. Variante « _f16p » (AJP_CONV_PACKED,
 // fp16 de calcul) : poids float16, produits en f16vec4 sommés par paquets de 16 canaux, puis
-// ajoutés en float. Référence : gpu/ir/op_window.cpp (eval_conv).
+// ajoutés en float. Une entrée float16 en Nhwc16 sans groupes (VEC) se lit par uvec4, huit
+// canaux d'un pixel par lecture. Référence : gpu/ir/op_window.cpp (eval_conv).
 #include "net_tensor.glsl"
 #include "net_activation.glsl"
 #ifdef AJP_CONV_PACKED
@@ -51,6 +52,10 @@ const uint COUTG = COUT / GROUPS;
 const uint BLOCKS = (COUTG + 4u * QUADS - 1u) / (4u * QUADS);
 
 AJP_NET_BUFFER(0, src, readonly)
+#ifdef AJP_NET_F16
+layout(std430, binding = 0) readonly buffer SourceV { uvec4 v[]; } src_v;
+const bool VEC = TX == 1u && LX == 1u && GROUPS == 1u;
+#endif
 #ifdef AJP_CONV_PACKED
 layout(std430, binding = 1) readonly buffer Weights { f16vec4 w[]; } weights;
 #else
@@ -82,6 +87,44 @@ void main() {
       int ix = int(ox * SW + kx * DW) - int(PL);
       if (ix < 0 || ix >= int(WIN)) continue;
       uint row = ((gb * KH + ky) * KW + kx) * CING * QUADS;
+#ifdef AJP_NET_F16
+      if (VEC) {
+        // Huit canaux par uvec4 ; les canaux de bourrage (au-delà de cin) ne sont pas lus.
+        uint base = (((n * HIN + uint(iy)) * WIN + uint(ix)) * CXP) / 8u;
+        uint full = CING / 8u;
+        for (uint c8 = 0u; c8 < full; ++c8) {
+          uvec4 packed = src_v.v[base + c8];
+#ifdef AJP_CONV_PACKED
+          f16vec4 part[QUADS];
+          for (uint q = 0u; q < QUADS; ++q) part[q] = f16vec4(0.0);
+#endif
+          for (uint h = 0u; h < 4u; ++h) {
+            uint ci = c8 * 8u + 2u * h;
+#ifdef AJP_CONV_PACKED
+            f16vec2 xv = unpackFloat2x16(packed[h]);
+            for (uint q = 0u; q < QUADS; ++q) {
+              part[q] += xv.x * weights.w[row + ci * QUADS + q];
+              part[q] += xv.y * weights.w[row + (ci + 1u) * QUADS + q];
+            }
+#else
+            vec2 xv = unpackHalf2x16(packed[h]);
+            for (uint q = 0u; q < QUADS; ++q) {
+              acc[q] += xv.x * weights.w[row + ci * QUADS + q];
+              acc[q] += xv.y * weights.w[row + (ci + 1u) * QUADS + q];
+            }
+#endif
+          }
+#ifdef AJP_CONV_PACKED
+          for (uint q = 0u; q < QUADS; ++q) acc[q] += vec4(part[q]);
+#endif
+        }
+        for (uint ci = full * 8u; ci < CING; ++ci) {
+          float xv = AJP_LOAD(src, TX, t_index(xd, n, ci, uint(iy), uint(ix)));
+          for (uint q = 0u; q < QUADS; ++q) acc[q] += xv * vec4(weights.w[row + ci * QUADS + q]);
+        }
+        continue;
+      }
+#endif
 #ifdef AJP_CONV_PACKED
       for (uint c0 = 0u; c0 < CING; c0 += 16u) {
         f16vec4 part[QUADS];
