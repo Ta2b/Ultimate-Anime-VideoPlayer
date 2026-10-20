@@ -79,11 +79,9 @@ TEST_CASE("Menu RIFE : le catalogue toujours, du plus conseillé au plus léger,
   const auto menu = rife_menu({"rife_v4.22_lite.onnx", "rife_v4.26.onnx", "rife_v4.26_heavy.onnx"});
   CHECK(menu == std::vector<RifeEntry>{{"rife_v4.25.onnx", false},
                                        {"rife_v4.25_lite.onnx", false},
+                                       {"rife_v4.22.onnx", false},
                                        {"rife_v4.22_lite.onnx", true},
                                        {"rife_v4.26.onnx", true},
-                                       {"rife_v4.18.onnx", false},
-                                       {"rife_v4.13.onnx", false},
-                                       {"rife_v4.6.onnx", false},
                                        {"rife_v4.26_heavy.onnx", true}});
 }
 
