@@ -39,6 +39,8 @@ UpscaleStage::~UpscaleStage() {
                              single_pairs_, multi_pairs_);
   }
   if (gmfss()) log_channel("gpu")->info("GMFSS : {} paires", gmfss_pairs_);
+  if (spans_reused_ > 0)
+    log_channel("gpu")->info("SPAN : {} passes évitées sur des dessins tenus", spans_reused_);
   if (drba()) {
     log_channel("gpu")->info("DistilDRBA : {} passes, dont {} sans l'image d'un côté (début, coupe)",
                              drba_.runs, drba_.edges);
@@ -278,6 +280,13 @@ std::expected<std::uint32_t, Refusal> UpscaleStage::outputs(const DecodedFrame& 
   const bool held = facts.scores && !kernels::is_scene_cut(facts.scores->scene_score) &&
                     kernels::is_held(facts.scores->worst_block);
   now_ = held ? PairMotion::Still : PairMotion::Unknown;
+  // Dessin tenu : l'image agrandie de la précédente sert à celle-ci, sans passe de SPAN. Pas plus
+  // de kMaxSpanReuse de suite, comptées depuis la dernière vraie passe : un fondu lent, tenu paire
+  // par paire, ne fige pas l'image.
+  reuse_span_ = setup_.engine != nullptr && held && spans_reused_in_row_ < kMaxSpanReuse &&
+                (warps_spanned() || output_has_source_);
+  spans_reused_in_row_ = reuse_span_ ? spans_reused_in_row_ + 1 : 0;
+  if (reuse_span_) ++spans_reused_;
   if (intermediates_ > 0) mid_ ^= 1U;
   if (drba()) {
     // Mesurée et sans coupe, la paire laisse a comme image d'avant à la paire suivante.
@@ -298,11 +307,16 @@ std::expected<RingStage::Output, Refusal> UpscaleStage::produce(const DecodedFra
   const Instant& instant = instants_[std::min<std::size_t>(output, instants_.size() - 1)];
   const bool last = output + 1 >= outputs_;
   if (instant.t >= 1.0F) {  // l'image elle-même, toujours la dernière de la paire
-    auto ok =
-        warps_spanned()
-            ? span_current().and_then([&] { return write_slot(spanned_[current_]->tensor(), slot, sync); })
-            : finish(now, slot, sync);
+    std::expected<void, Refusal> ok;
+    if (warps_spanned()) {
+      ok = span_current().and_then([&] { return write_slot(spanned(current_), slot, sync); });
+    } else if (reuse_span_ && output_has_source_) {
+      ok = write_slot(output_->tensor(), slot, sync);  // SPAN de la précédente, identique
+    } else {
+      ok = finish(now, slot, sync);
+    }
     if (!ok) return std::unexpected(std::move(ok.error()));
+    output_has_source_ = setup_.engine != nullptr;
     previous_ = Previous{.pts_us = frame.pts_us, .id = frame.id, .epoch = frame.epoch};
     return Output{.pts_us = frame.pts_us, .left = frame.id, .right = frame.id};
   }
@@ -311,9 +325,7 @@ std::expected<RingStage::Output, Refusal> UpscaleStage::produce(const DecodedFra
   const Output made{.pts_us = instant.pts_us, .left = previous_->id, .right = frame.id};
   if (warps_spanned()) {
     const gpu::Tensor& out = middle_out_->tensor();
-    if (auto ok = interpolate_by_motion(output, spanned_[current_ ^ 1U]->tensor(),
-                                        spanned_[current_]->tensor(), out);
-        !ok)
+    if (auto ok = interpolate_by_motion(output, spanned(current_ ^ 1U), spanned(current_), out); !ok)
       return std::unexpected(std::move(ok.error()));
     if (auto ok = write_slot(out, slot, sync); !ok) return std::unexpected(std::move(ok.error()));
     if (last) previous_ = Previous{.pts_us = frame.pts_us, .id = frame.id, .epoch = frame.epoch};
@@ -328,6 +340,7 @@ std::expected<RingStage::Output, Refusal> UpscaleStage::produce(const DecodedFra
     return std::unexpected(std::move(ok.error()));
   }
   if (auto ok = finish(middle_->tensor(), slot, sync); !ok) return std::unexpected(std::move(ok.error()));
+  output_has_source_ = false;
   // ×1,5 : l'image n'est pas sur la grille de cette paire, elle sert seulement de suivante.
   if (last) previous_ = Previous{.pts_us = frame.pts_us, .id = frame.id, .epoch = frame.epoch};
   return made;
@@ -413,11 +426,16 @@ std::expected<void, Refusal> UpscaleStage::interpolate_by_motion(std::uint32_t o
 
 std::expected<void, Refusal> UpscaleStage::span_current() {
   if (spanned_now_) return {};
-  const std::array inputs{rgb_[current_]->tensor()};
-  std::array results{spanned_[current_]->tensor()};
-  if (auto ok = setup_.backend->enqueue(*setup_.engine, inputs, results); !ok) return ok;
   spanned_now_ = true;
-  return {};
+  if (reuse_span_) {  // dessin tenu : le tampon de la précédente
+    span_of_[current_] = span_of_[current_ ^ 1U];
+    return {};
+  }
+  // L'autre tampon que celui de la précédente, qui reste le bord a des warps de la paire.
+  span_of_[current_] = span_of_[current_ ^ 1U] ^ 1U;
+  const std::array inputs{rgb_[current_]->tensor()};
+  std::array results{spanned(current_)};
+  return setup_.backend->enqueue(*setup_.engine, inputs, results);
 }
 
 std::expected<void, Refusal> UpscaleStage::finish(const gpu::Tensor& rgb, std::uint32_t slot,

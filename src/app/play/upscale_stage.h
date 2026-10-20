@@ -128,9 +128,19 @@ class UpscaleStage final : public RingStage {
   }
   // Warp après SPAN : les images sources sont agrandies à l'ingestion, dans spanned_.
   bool warps_spanned() const { return setup_.warp_after_span && by_motion() && setup_.engine != nullptr; }
-  // SPAN de l'image en cours dans spanned_[current_], une fois.
+  // SPAN de l'image en cours dans son tampon de spanned_, une fois (aucune passe sur un dessin tenu :
+  // celui de la précédente).
   std::expected<void, Refusal> span_current();
+  const gpu::Tensor& spanned(std::uint32_t index) const { return spanned_[span_of_[index]]->tensor(); }
   bool spanned_now_ = false;
+  std::array<std::uint32_t, 2> span_of_{0, 1};  // tampon de spanned_ de chaque image de rgb_
+  // Dessin tenu : la sortie de SPAN de la précédente sert (output_ si output_has_source_, ou son
+  // tampon de spanned_).
+  static constexpr int kMaxSpanReuse = 2;
+  bool reuse_span_ = false;
+  bool output_has_source_ = false;  // output_ tient SPAN de l'image précédente
+  int spans_reused_in_row_ = 0;
+  std::uint64_t spans_reused_ = 0;
   // SPAN (s'il est là) puis l'écriture dans le slot.
   std::expected<void, Refusal> finish(const gpu::Tensor& rgb, std::uint32_t slot, const gpu::RingWrite& sync);
   // L'écriture d'une image à la taille du ring (RTX HDR s'il est demandé, sa rampe de vrai noir).
@@ -223,7 +233,7 @@ class UpscaleStage final : public RingStage {
   std::uint64_t rife_runs_ = 0;
   std::uint64_t late_pairs_ = 0;               // paires non interpolées pour rattraper l'horloge
   std::unique_ptr<gpu::TensorBuffer> output_;  // 1 × 3 × 2h × 2w ; absent sans SPAN
-  // Warp après SPAN : les deux images sources agrandies (comme rgb_), et l'image intermédiaire.
+  // Warp après SPAN : deux images sources agrandies (span_of_), et l'image intermédiaire.
   std::array<std::unique_ptr<gpu::TensorBuffer>, 2> spanned_;
   std::unique_ptr<gpu::TensorBuffer> middle_out_;
   // Pour le journal de fin : paires vues, interpolées, coupes, dessins tenus.
