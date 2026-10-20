@@ -198,6 +198,8 @@ std::uint64_t layer_signature(const ir::Graph& graph, std::size_t node) {
     s.add(static_cast<std::int64_t>(a->auto_pad)).add(a->group);
     s.add(static_cast<std::int64_t>(a->epilogue.residual)).add(static_cast<std::int64_t>(a->epilogue.act));
     s.add(a->epilogue.alpha).add(a->epilogue.lo).add(a->epilogue.hi);
+    s.add(static_cast<std::int64_t>(a->epilogue.gate)).add(a->epilogue.space);
+    s.add(static_cast<std::int64_t>(a->epilogue.space_mode));
   } else if (const auto* t = std::get_if<ir::ConvTransposeAttrs>(&n.attrs)) {
     s.add(t->kernel).add(t->strides).add(t->dilations).add(t->pads).add(t->output_padding);
     s.add(t->output_shape).add(static_cast<std::int64_t>(t->auto_pad)).add(t->group);

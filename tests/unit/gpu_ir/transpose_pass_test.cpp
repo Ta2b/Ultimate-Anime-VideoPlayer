@@ -46,26 +46,31 @@ PassStats check(const ModelBuilder& model, std::int64_t max_channels, Graph& aft
 
 }  // namespace
 
-TEST_CASE("ConvTranspose 4 × 4 de pas 2 : Conv 3 × 3 aux phases, puis DepthToSpace", "[gpu_ir][passes]") {
+TEST_CASE("ConvTranspose 4 × 4 de pas 2 : Conv 3 × 3 aux phases, DepthToSpace fondu", "[gpu_ir][passes]") {
   Graph after;
   const PassStats stats = check(transpose_model(3, 4, 2, 1, ""), 256, after);
   CHECK(stats.transposes == 1);
+  CHECK(stats.spaces == 1);
   CHECK(count_ops(after, OpKind::ConvTranspose) == 0);
   CHECK(count_ops(after, OpKind::Conv) == 1);
-  CHECK(count_ops(after, OpKind::DepthToSpace) == 1);
+  CHECK(count_ops(after, OpKind::DepthToSpace) == 0);
   const auto& conv = std::get<ConvAttrs>(after.nodes[0].attrs);
   CHECK(conv.kernel == Pair{3, 3});
-  CHECK(after.tensors[after.nodes[0].outputs[0]].dims == Dims{1, 12, 5, 6});
+  CHECK(conv.epilogue.space == 2);
+  const Dims& out = after.tensors[after.nodes[0].outputs[0]].dims;
+  CHECK(out == Dims{1, 3, 10, 12});
+  CHECK(conv_result_dims(out, conv.epilogue) == Dims{1, 12, 5, 6});
 }
 
-TEST_CASE("ConvTranspose suivie d'un pixel_shuffle : un seul DepthToSpace de bloc 4", "[gpu_ir][passes]") {
+TEST_CASE("ConvTranspose suivie d'un pixel_shuffle : un seul réarrangement de bloc 4, fondu", "[gpu_ir][passes]") {
   for (const std::string mode : {"CRD", "DCR"}) {
     Graph after;
     const PassStats stats = check(transpose_model(8, 4, 2, 1, mode), 256, after);
     CHECK(stats.transposes == 1);
-    REQUIRE(count_ops(after, OpKind::DepthToSpace) == 1);
+    CHECK(count_ops(after, OpKind::DepthToSpace) == 0);
+    REQUIRE(count_ops(after, OpKind::Conv) == 1);
     for (const Node& node : after.nodes) {
-      if (node.op == OpKind::DepthToSpace) CHECK(std::get<BlockAttrs>(node.attrs).blocksize == 4);
+      if (node.op == OpKind::Conv) CHECK(std::get<ConvAttrs>(node.attrs).epilogue.space == 4);
     }
   }
 }

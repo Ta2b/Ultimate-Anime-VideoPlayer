@@ -1,6 +1,7 @@
 // Abaissement des convolutions et choix des candidats de chaque nœud : Conv directe (float ou
 // fp16 empaqueté), Conv par matrices coopératives, ConvTranspose directe.
 #include <algorithm>
+#include <array>
 #include <bit>
 #include <format>
 #include <optional>
@@ -19,6 +20,7 @@ namespace {
 constexpr std::string_view kDirect = "direct";
 constexpr std::string_view kPacked = "direct_f16p";
 constexpr std::string_view kMatrix = "coopmat";
+constexpr std::string_view kMatrixAcc16 = "coopmat_acc16";  // sommes en float16
 constexpr std::uint32_t kMaxGroups = 65535;
 
 std::unexpected<Refusal> refuse_node(RefusalCode code, const ir::Node& node, std::string_view detail) {
@@ -53,19 +55,20 @@ std::uint32_t matrix_tiles(std::uint32_t cout) {
   return div_up(cout, 16);
 }
 
-// Deux tampons de A (lignes de kc / 8 uvec4, plus un dès kc = 32) et la tuile de l'épilogue
-// (net_conv_coopmat.glsl).
-std::uint32_t matrix_shared_bytes(std::uint32_t subgroups, std::uint32_t tm, std::uint32_t kc) {
+// Deux tampons de A (lignes de kc / 8 uvec4, plus un dès kc = 32), la tuile de l'épilogue et,
+// quand B passe par la mémoire partagée (np canaux de sortie arrondis à 16), deux tampons de B
+// de kc lignes (net_conv_coopmat.glsl).
+std::uint32_t matrix_shared_bytes(std::uint32_t subgroups, std::uint32_t tm, std::uint32_t kc, std::uint32_t np) {
   const std::uint32_t row = (kc / 8) + ((kc / 32) + 1) / 2;
-  return (2 * subgroups * tm * 16 * row * 16) + (subgroups * 256 * 4);
+  return (2 * subgroups * tm * 16 * row * 16) + (subgroups * 256 * 4) + (2 * kc * np * 2);
 }
 
 // Canaux d'entrée par étape : le plus grand de 64, 32, 16 qui divise cinp et tient en mémoire
 // partagée. Moins d'étapes, moins de barrières.
-std::uint32_t matrix_step_channels(std::uint32_t cinp, std::uint32_t subgroups, std::uint32_t tm,
+std::uint32_t matrix_step_channels(std::uint32_t cinp, std::uint32_t subgroups, std::uint32_t tm, std::uint32_t np,
                                    std::uint32_t max_shared) {
   for (const std::uint32_t kc : {64U, 32U}) {
-    if (cinp % kc == 0 && matrix_shared_bytes(subgroups, tm, kc) <= max_shared) return kc;
+    if (cinp % kc == 0 && matrix_shared_bytes(subgroups, tm, kc, np) <= max_shared) return kc;
   }
   return 16;
 }
@@ -78,14 +81,37 @@ std::uint32_t matrix_subgroup(const Target& target) {
   return target.subgroup_size;
 }
 
+// Forme calculée par une Conv avant son DepthToSpace fondu (dims sinon).
+ir::Dims result_dims(const ir::Node& node, const ir::Dims& dims) {
+  const auto* attrs = std::get_if<ir::ConvAttrs>(&node.attrs);
+  return attrs != nullptr ? ir::conv_result_dims(dims, attrs->epilogue) : dims;
+}
+
+// Même chose en Desc4 : le rangement (disposition, canaux rangés) reste celui de la sortie.
+Desc4 result_desc(const Desc4& y, const ir::Epilogue& e) {
+  if (e.space < 2) return y;
+  const auto b = static_cast<std::uint32_t>(e.space);
+  Desc4 r = y;
+  r.c = y.c * b * b;
+  r.h = y.h / b;
+  r.w = y.w / b;
+  return r;
+}
+
+// Constantes du DepthToSpace fondu : taille des blocs (0 sans), ordre CRD.
+std::array<std::uint32_t, 2> space_constants(const ir::Epilogue& e) {
+  return {static_cast<std::uint32_t>(e.space), e.space_mode == ir::BlockMode::Crd ? 1U : 0U};
+}
+
 // La variante coopmat convient-elle à ce nœud ? Entrée float16 en Nhwc16, groupe unique.
 bool matrix_eligible(const ir::Graph& graph, const ir::Node& node, const Target& target) {
   if (!target.matrix_units || target.subgroup_size == 0 || groups_of(node) != 1) return false;
   const ir::Tensor& x = graph.tensors[node.inputs[ir::kConvX]];
   const ir::Tensor& y = graph.tensors[node.outputs[0]];
-  return x.type == ir::DataType::F16 && x.layout == ir::Layout::Nhwc16 && x.known && y.known &&
-         y.dims.size() == 4 && matrix_tiles(static_cast<std::uint32_t>(y.dims[1])) <= 16 &&
-         constant_input(graph, node, ir::kConvW) != nullptr;
+  if (!x.known || !y.known || y.dims.size() != 4) return false;
+  const ir::Dims result = result_dims(node, y.dims);
+  return x.type == ir::DataType::F16 && x.layout == ir::Layout::Nhwc16 &&
+         matrix_tiles(static_cast<std::uint32_t>(result[1])) <= 16 && constant_input(graph, node, ir::kConvW) != nullptr;
 }
 
 }  // namespace
@@ -107,21 +133,27 @@ std::expected<std::vector<KernelChoice>, Refusal> candidates(const ir::Graph& gr
   const ir::Tensor& y = graph.tensors[node.outputs[0]];
   if (!y.known || y.dims.size() != 4)
     return refuse_node(RefusalCode::ShapeInvalid, node, "sortie de rang 4 attendue");
+  const ir::Dims result = result_dims(node, y.dims);
   const std::uint32_t groups = std::max<std::uint32_t>(1, groups_of(node));
-  const std::uint32_t cout_g = static_cast<std::uint32_t>(y.dims[1]) / groups;
+  const std::uint32_t cout_g = static_cast<std::uint32_t>(result[1]) / groups;
   const std::uint32_t quads = default_quads(cout_g);
   std::vector<KernelChoice> out;
   const bool conv = node.op == ir::OpKind::Conv;
   if (conv && matrix_eligible(graph, node, target)) {
-    const std::uint32_t tiles = matrix_tiles(static_cast<std::uint32_t>(y.dims[1]));
+    const std::uint32_t tiles = matrix_tiles(static_cast<std::uint32_t>(result[1]));
     // 8 sous-groupes (256 invocations en wave32) : les grandes images des RDNA4 et des Ada.
+    // Troisième réglage à 1 : B de chaque étape copiée en mémoire partagée une fois pour tout le
+    // groupe, plutôt que lue par chaque sous-groupe dans le tampon des poids.
     for (const std::uint32_t subgroups : {4U, 2U, 8U}) {
       for (const std::uint32_t tm : {2U, 1U, 4U}) {
         if (tm * tiles > 16 || subgroups * matrix_subgroup(target) > target.max_workgroup_invocations ||
-            matrix_shared_bytes(subgroups, tm, 16) > target.max_shared_memory) {
+            matrix_shared_bytes(subgroups, tm, 16, 0) > target.max_shared_memory) {
           continue;
         }
         out.push_back({.variant = std::string(kMatrix), .tuning = {tm, subgroups}});
+        if (tm == 2 && matrix_shared_bytes(subgroups, tm, 16, tiles * 16) <= target.max_shared_memory)
+          out.push_back({.variant = std::string(kMatrix), .tuning = {tm, subgroups, 1}});
+        if (target.matrix_f16_acc) out.push_back({.variant = std::string(kMatrixAcc16), .tuning = {tm, subgroups}});
       }
     }
   }
@@ -141,7 +173,7 @@ std::expected<std::vector<KernelChoice>, Refusal> candidates(const ir::Graph& gr
   }
   // Conv : plusieurs pixels par invocation (net_conv.glsl, PIX), aux quads par défaut, dans la
   // variante la plus rapide d'ordinaire (fp16 empaqueté si l'appareil l'a).
-  const auto width = static_cast<std::uint32_t>(y.dims[3]);
+  const auto width = static_cast<std::uint32_t>(result[3]);
   for (const std::uint32_t pix : {2U, 4U}) {
     if (!conv || width < pix * 2) continue;
     for (const std::uint32_t wg : {64U, 128U}) {
@@ -175,7 +207,7 @@ struct ConvConstants {
   float alpha = 0.0F;
   float lo = 0.0F;
   float hi = 0.0F;
-  std::uint32_t residual = 0;
+  std::uint32_t residual = 0;  // 1 : ajouté avant l'activation ; 2 : porte (Epilogue::gate)
 };
 
 std::vector<std::uint32_t> conv_constants(const Desc4& x, std::uint32_t tx, const Desc4& y, std::uint32_t ty,
@@ -241,10 +273,11 @@ std::expected<void, Refusal> Lowerer::conv(std::size_t index, const KernelChoice
   if (!x) return std::unexpected(x.error());
   auto y = bind(n.outputs[0]);
   if (!y) return std::unexpected(y.error());
+  const Desc4 yc = result_desc(y->desc, attrs->epilogue);  // forme calculée, avant le DepthToSpace fondu
   auto win = conv_window(graph_, n);
   if (!win) return std::unexpected(win.error());
   const auto groups = static_cast<std::uint32_t>(attrs->group);
-  const std::uint32_t cout_g = y->desc.c / groups;
+  const std::uint32_t cout_g = yc.c / groups;
   const std::uint32_t blocks = div_up(cout_g, 4 * quads);
 
   ConvConstants e{.act = static_cast<std::uint32_t>(attrs->epilogue.act),
@@ -253,7 +286,7 @@ std::expected<void, Refusal> Lowerer::conv(std::size_t index, const KernelChoice
                   .hi = attrs->epilogue.hi};
   std::vector<Bound> tensors{*x, *y};
   Binding residual{};
-  if (attrs->epilogue.residual) {
+  if (attrs->epilogue.residual || attrs->epilogue.gate) {
     auto r = bind(n.inputs[ir::kConvResidual]);
     if (!r) return std::unexpected(r.error());
     e = {.tr = r->type,
@@ -263,7 +296,7 @@ std::expected<void, Refusal> Lowerer::conv(std::size_t index, const KernelChoice
          .alpha = e.alpha,
          .lo = e.lo,
          .hi = e.hi,
-         .residual = 1};
+         .residual = attrs->epilogue.gate ? 2U : 1U};
     residual = r->binding;
     tensors.push_back(*r);
   }
@@ -271,40 +304,46 @@ std::expected<void, Refusal> Lowerer::conv(std::size_t index, const KernelChoice
   if (attrs->epilogue.act == ir::Activation::PRelu) {
     const ir::Tensor* s = constant_input(graph_, n, ir::kConvSlope);
     if (s == nullptr) return refuse_node(RefusalCode::ShapeInvalid, n, "pente PRelu non constante");
-    slope = {.kind = BindingKind::Blob, .index = add_blob(channel_floats(s, y->desc.c))};
+    slope = {.kind = BindingKind::Blob, .index = add_blob(channel_floats(s, yc.c))};
   }
   auto name = shader("net_conv", tensors);
   if (!name) return std::unexpected(name.error());
   if (packed) *name = "net_conv_f16p";
   const std::uint32_t z = x->desc.n * groups * blocks;
-  if (y->desc.h > kMaxGroups || z > kMaxGroups)
+  if (yc.h > kMaxGroups || z > kMaxGroups)
     return refuse_node(RefusalCode::ShapeInvalid, n, "trop de groupes");
 
-  std::vector<std::uint32_t> constants = conv_constants(x->desc, x->type, y->desc, y->type, *win, groups, e);
+  std::vector<std::uint32_t> constants = conv_constants(x->desc, x->type, yc, y->type, *win, groups, e);
   constants.push_back(quads);
   constants.push_back(wg);
   constants.push_back(pix);
+  for (const std::uint32_t c : space_constants(attrs->epilogue)) constants.push_back(c);
   const Binding w{
       .kind = BindingKind::Blob,
       .index = add_blob(conv_weights(*weights, groups, 4 * quads, packed ? BlobType::F16 : BlobType::F32))};
   const Binding b{.kind = BindingKind::Blob,
-                  .index = add_blob(channel_floats(constant_input(graph_, n, ir::kConvB), y->desc.c))};
+                  .index = add_blob(channel_floats(constant_input(graph_, n, ir::kConvB), yc.c))};
   emit(index, *name, std::move(constants), {x->binding, w, b, slope, residual, y->binding}, {},
-       {div_up(div_up(y->desc.w, pix), wg), y->desc.h, z});
+       {div_up(div_up(yc.w, pix), wg), yc.h, z});
   program_.dispatches.back().subgroup = sg;
   return {};
 }
 
 std::expected<void, Refusal> Lowerer::conv_matrix(std::size_t index, const KernelChoice& choice) {
   const ir::Node& n = graph_.nodes[index];
-  if (choice.tuning.size() != 2)
+  const bool acc16 = choice.variant == kMatrixAcc16;
+  if ((!acc16 && choice.variant != kMatrix) || (choice.tuning.size() != 2 && choice.tuning.size() != 3))
     return refuse_node(RefusalCode::InputMismatch, n, "réglage coopmat incomplet");
+  if (acc16 && !target_.matrix_f16_acc) {
+    return refuse_node(RefusalCode::FeatureUnavailable, n, "tuiles à sommes float16 absentes du pilote");
+  }
   if (!matrix_eligible(graph_, n, target_)) {
     return refuse_node(RefusalCode::FeatureUnavailable, n,
                        "matrices coopératives indisponibles pour ce nœud");
   }
   const std::uint32_t tm = choice.tuning[0];
   const std::uint32_t subgroups = choice.tuning[1];
+  const std::uint32_t shared_b = choice.tuning.size() == 3 ? choice.tuning[2] : 0;  // B en mémoire partagée
   const std::uint32_t sgs = matrix_subgroup(target_);
   const std::uint32_t wg = subgroups * sgs;
   const auto* attrs = std::get_if<ir::ConvAttrs>(&n.attrs);
@@ -312,9 +351,11 @@ std::expected<void, Refusal> Lowerer::conv_matrix(std::size_t index, const Kerne
   if (!x) return std::unexpected(x.error());
   auto y = bind(n.outputs[0]);
   if (!y) return std::unexpected(y.error());
-  const std::uint32_t tiles = matrix_tiles(y->desc.c);
-  if (tm < 1 || subgroups < 1 || tm * tiles > 16 || wg > target_.max_workgroup_invocations ||
-      matrix_shared_bytes(subgroups, tm, 16) > target_.max_shared_memory) {
+  const Desc4 yc = result_desc(y->desc, attrs->epilogue);  // forme calculée, avant le DepthToSpace fondu
+  const std::uint32_t tiles = matrix_tiles(yc.c);
+  const std::uint32_t np_shared = shared_b == 1 ? tiles * 16 : 0;
+  if (tm < 1 || subgroups < 1 || tm * tiles > 16 || wg > target_.max_workgroup_invocations || shared_b > 1 ||
+      matrix_shared_bytes(subgroups, tm, 16, np_shared) > target_.max_shared_memory) {
     return refuse_node(RefusalCode::InputMismatch, n, "réglage coopmat hors de ses bornes");
   }
   auto win = conv_window(graph_, n);
@@ -326,7 +367,7 @@ std::expected<void, Refusal> Lowerer::conv_matrix(std::size_t index, const Kerne
                   .hi = attrs->epilogue.hi};
   std::vector<Bound> tensors{*x, *y};
   Binding residual{};
-  if (attrs->epilogue.residual) {
+  if (attrs->epilogue.residual || attrs->epilogue.gate) {
     auto r = bind(n.inputs[ir::kConvResidual]);
     if (!r) return std::unexpected(r.error());
     e = {.tr = r->type,
@@ -336,7 +377,7 @@ std::expected<void, Refusal> Lowerer::conv_matrix(std::size_t index, const Kerne
          .alpha = e.alpha,
          .lo = e.lo,
          .hi = e.hi,
-         .residual = 1};
+         .residual = attrs->epilogue.gate ? 2U : 1U};
     residual = r->binding;
     tensors.push_back(*r);
   }
@@ -344,22 +385,24 @@ std::expected<void, Refusal> Lowerer::conv_matrix(std::size_t index, const Kerne
   if (attrs->epilogue.act == ir::Activation::PRelu) {
     const ir::Tensor* s = constant_input(graph_, n, ir::kConvSlope);
     if (s == nullptr) return refuse_node(RefusalCode::ShapeInvalid, n, "pente PRelu non constante");
-    slope = {.kind = BindingKind::Blob, .index = add_blob(channel_floats(s, y->desc.c))};
+    slope = {.kind = BindingKind::Blob, .index = add_blob(channel_floats(s, yc.c))};
   }
-  const std::uint32_t pixels = y->desc.h * y->desc.w;
+  const std::uint32_t pixels = yc.h * yc.w;
   const std::uint32_t bm = subgroups * tm * 16;
-  std::vector<std::uint32_t> constants = conv_constants(x->desc, x->type, y->desc, y->type, *win, 1, e);
+  std::vector<std::uint32_t> constants = conv_constants(x->desc, x->type, yc, y->type, *win, 1, e);
   constants.push_back(tm);
   constants.push_back(wg);
   constants.push_back(sgs);
-  constants.push_back(matrix_step_channels(x->desc.cp, subgroups, tm, target_.max_shared_memory));
+  constants.push_back(matrix_step_channels(x->desc.cp, subgroups, tm, np_shared, target_.max_shared_memory));
+  for (const std::uint32_t c : space_constants(attrs->epilogue)) constants.push_back(c);
+  constants.push_back(shared_b);
   const ir::Tensor* weights = constant_input(graph_, n, ir::kConvW);
   const Binding w{.kind = BindingKind::Blob,
                   .index = add_blob(matrix_weights(*weights, x->desc.cp, tiles * 16))};
   const Binding b{.kind = BindingKind::Blob,
-                  .index = add_blob(channel_floats(constant_input(graph_, n, ir::kConvB), y->desc.c))};
+                  .index = add_blob(channel_floats(constant_input(graph_, n, ir::kConvB), yc.c))};
   if (x->desc.n > kMaxGroups) return refuse_node(RefusalCode::ShapeInvalid, n, "trop d'images");
-  emit(index, "net_conv_coopmat_f16", std::move(constants), {x->binding, w, b, slope, residual, y->binding},
+  emit(index, acc16 ? "net_conv_coopmat_acc16" : "net_conv_coopmat_f16", std::move(constants), {x->binding, w, b, slope, residual, y->binding},
        {}, {div_up(pixels, bm), 1, x->desc.n});
   if (sgs != target_.subgroup_size) program_.dispatches.back().subgroup = sgs;
   return {};

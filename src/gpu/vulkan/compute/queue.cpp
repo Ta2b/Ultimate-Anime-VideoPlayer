@@ -1,5 +1,7 @@
-// Soumission sur la file compute, attentes hôte et command buffers jetables.
+// Soumission sur la file compute (par lots), attentes hôte et command buffers jetables.
+#include <cstddef>
 #include <format>
+#include <span>
 #include <vector>
 
 #include "gpu/vulkan/compute/context.h"
@@ -7,6 +9,9 @@
 
 namespace ajp::gpu::vk {
 namespace {
+
+// Au-delà, le lot part sans attendre le prochain flush : borne la latence et la mémoire.
+constexpr std::size_t kMaxBatch = 64;
 
 // Rend le command buffer jetable à son pool quand la soumission est finie ou n'a pas eu lieu.
 class OnceBuffer {
@@ -32,65 +37,102 @@ class OnceBuffer {
 
 }  // namespace
 
-Done VkContext::queue_submit(const VkSubmitInfo& info) {
+Done VkContext::queue_submit(std::span<const VkSubmitInfo> infos) {
   if (lock_queue_) lock_queue_();
-  const VkResult result = device_fn_.vkQueueSubmit(queue_, 1, &info, VK_NULL_HANDLE);
+  const VkResult result =
+      device_fn_.vkQueueSubmit(queue_, static_cast<std::uint32_t>(infos.size()), infos.data(), VK_NULL_HANDLE);
   if (unlock_queue_) unlock_queue_();
+  ++queue_submits_;
   return check(result, "vkQueueSubmit");
 }
 
 Done VkContext::submit(Recording& recording, std::span<const TimelinePoint> waits,
                        std::span<const TimelinePoint> signals) {
+  if (auto ok = enqueue(recording, waits, signals); !ok) return ok;
+  return flush();
+}
+
+Done VkContext::enqueue(Recording& recording, std::span<const TimelinePoint> waits,
+                        std::span<const TimelinePoint> signals) {
   if (&recording.context_ != this) {
     return refuse(RefusalCode::InputMismatch, "enregistrement d'un autre contexte Vulkan");
   }
   if (!recording.finished_) return refuse(RefusalCode::InputMismatch, "enregistrement non terminé");
-  std::vector<VkSemaphore> wait_semaphores;
-  std::vector<std::uint64_t> wait_values;
-  // L'exécution précédente du même enregistrement, attendue côté GPU.
-  if (recording.submitted_ > 0) {
-    wait_semaphores.push_back(recording.runs_.handle());
-    wait_values.push_back(recording.submitted_);
-  }
-  std::vector<VkSemaphore> signal_semaphores{recording.runs_.handle()};
-  std::vector<std::uint64_t> signal_values{recording.submitted_ + 1};
   for (const TimelinePoint& point : waits) {
     if (point.semaphore == VK_NULL_HANDLE)
       return refuse(RefusalCode::InputMismatch, "attente sur un sémaphore nul");
-    wait_semaphores.push_back(point.semaphore);
-    wait_values.push_back(point.value);
   }
   for (const TimelinePoint& point : signals) {
     if (point.semaphore == VK_NULL_HANDLE)
       return refuse(RefusalCode::InputMismatch, "signal d'un sémaphore nul");
-    signal_semaphores.push_back(point.semaphore);
-    signal_values.push_back(point.value);
   }
-  const std::vector<VkPipelineStageFlags> stages(wait_semaphores.size(), VK_PIPELINE_STAGE_ALL_COMMANDS_BIT);
-  const VkTimelineSemaphoreSubmitInfo timeline{
-      .sType = VK_STRUCTURE_TYPE_TIMELINE_SEMAPHORE_SUBMIT_INFO,
-      .waitSemaphoreValueCount = static_cast<std::uint32_t>(wait_values.size()),
-      .pWaitSemaphoreValues = wait_values.data(),
-      .signalSemaphoreValueCount = static_cast<std::uint32_t>(signal_values.size()),
-      .pSignalSemaphoreValues = signal_values.data()};
-  const VkCommandBuffer cb = recording.command_buffer_;
-  const VkSubmitInfo info{.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO,
-                          .pNext = &timeline,
-                          .waitSemaphoreCount = static_cast<std::uint32_t>(wait_semaphores.size()),
-                          .pWaitSemaphores = wait_semaphores.data(),
-                          .pWaitDstStageMask = stages.data(),
-                          .commandBufferCount = 1,
-                          .pCommandBuffers = &cb,
-                          .signalSemaphoreCount = static_cast<std::uint32_t>(signal_semaphores.size()),
-                          .pSignalSemaphores = signal_semaphores.data()};
-  if (auto ok = queue_submit(info); !ok) return ok;
+  if (batched_ == kMaxBatch) {
+    if (auto ok = flush(); !ok) return ok;
+  }
+  if (batched_ == batch_.size()) batch_.emplace_back();
+  Batched& entry = batch_[batched_];
+  entry.recording = &recording;
+  entry.wait_semaphores.clear();
+  entry.wait_values.clear();
+  // L'exécution précédente du même enregistrement, attendue côté GPU (dans le même lot au
+  // besoin : un sémaphore timeline peut attendre une valeur signalée plus tôt dans l'appel).
+  if (recording.submitted_ > 0) {
+    entry.wait_semaphores.push_back(recording.runs_.handle());
+    entry.wait_values.push_back(recording.submitted_);
+  }
+  for (const TimelinePoint& point : waits) {
+    entry.wait_semaphores.push_back(point.semaphore);
+    entry.wait_values.push_back(point.value);
+  }
+  entry.stages.assign(entry.wait_semaphores.size(), VK_PIPELINE_STAGE_ALL_COMMANDS_BIT);
+  entry.signal_semaphores.assign(1, recording.runs_.handle());
+  entry.signal_values.assign(1, recording.submitted_ + 1);
+  for (const TimelinePoint& point : signals) {
+    entry.signal_semaphores.push_back(point.semaphore);
+    entry.signal_values.push_back(point.value);
+  }
+  ++batched_;
   ++recording.submitted_;
   return {};
+}
+
+Done VkContext::flush() {
+  if (batched_ == 0) return {};
+  batch_timelines_.resize(batched_);
+  batch_infos_.resize(batched_);
+  batch_buffers_.resize(batched_);
+  for (std::size_t k = 0; k < batched_; ++k) {
+    const Batched& entry = batch_[k];
+    batch_buffers_[k] = entry.recording->command_buffer_;
+    batch_timelines_[k] = {.sType = VK_STRUCTURE_TYPE_TIMELINE_SEMAPHORE_SUBMIT_INFO,
+                           .waitSemaphoreValueCount = static_cast<std::uint32_t>(entry.wait_values.size()),
+                           .pWaitSemaphoreValues = entry.wait_values.data(),
+                           .signalSemaphoreValueCount = static_cast<std::uint32_t>(entry.signal_values.size()),
+                           .pSignalSemaphoreValues = entry.signal_values.data()};
+    batch_infos_[k] = {.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO,
+                       .pNext = &batch_timelines_[k],
+                       .waitSemaphoreCount = static_cast<std::uint32_t>(entry.wait_semaphores.size()),
+                       .pWaitSemaphores = entry.wait_semaphores.data(),
+                       .pWaitDstStageMask = entry.stages.data(),
+                       .commandBufferCount = 1,
+                       .pCommandBuffers = &batch_buffers_[k],
+                       .signalSemaphoreCount = static_cast<std::uint32_t>(entry.signal_semaphores.size()),
+                       .pSignalSemaphores = entry.signal_semaphores.data()};
+  }
+  const std::size_t count = batched_;
+  batched_ = 0;
+  auto ok = queue_submit(std::span(batch_infos_).first(count));
+  if (!ok) {
+    // Rien n'est parti : les enregistrements n'attendront pas des exécutions jamais soumises.
+    for (std::size_t k = 0; k < count; ++k) --batch_[k].recording->submitted_;
+  }
+  return ok;
 }
 
 Done VkContext::wait_on_host(const TimelinePoint& point, std::chrono::nanoseconds timeout) {
   if (point.semaphore == VK_NULL_HANDLE)
     return refuse(RefusalCode::InputMismatch, "attente d'un sémaphore nul");
+  if (auto ok = flush(); !ok) return ok;
   ++host_waits_;
   const VkSemaphoreWaitInfo wait{.sType = VK_STRUCTURE_TYPE_SEMAPHORE_WAIT_INFO,
                                  .semaphoreCount = 1,
@@ -102,6 +144,7 @@ Done VkContext::wait_on_host(const TimelinePoint& point, std::chrono::nanosecond
 }
 
 Done VkContext::run_once(const std::function<void(VkCommandBuffer)>& record) {
+  if (auto ok = flush(); !ok) return ok;  // les copies voient tout ce qui a été soumis avant
   OnceBuffer once(device_fn_, device_, once_pool_);
   const VkCommandBufferAllocateInfo allocate{.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO,
                                              .commandPool = once_pool_,
@@ -129,7 +172,7 @@ Done VkContext::run_once(const std::function<void(VkCommandBuffer)>& record) {
                           .pCommandBuffers = &once.buffer,
                           .signalSemaphoreCount = 1,
                           .pSignalSemaphores = &once_done_};
-  if (auto ok = queue_submit(info); !ok) return ok;
+  if (auto ok = queue_submit(std::span(&info, 1)); !ok) return ok;
   once.pending = true;
   if (auto ok = wait_on_host({.semaphore = once_done_, .value = value}); !ok) return ok;
   once.pending = false;

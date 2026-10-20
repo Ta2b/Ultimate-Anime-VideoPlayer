@@ -4,8 +4,9 @@
 
 namespace ajp::gpu::vk {
 
-std::expected<BackendQueue, Refusal> BackendQueue::create(VkContext& context) {
-  auto timeline = TimelineSemaphore::create(context, 0);
+std::expected<BackendQueue, Refusal> BackendQueue::create(VkContext& context,
+                                                          VkExternalSemaphoreHandleTypeFlags exports) {
+  auto timeline = TimelineSemaphore::create(context, 0, exports);
   if (!timeline) return std::unexpected(timeline.error());
   return BackendQueue(context, std::move(*timeline));
 }
@@ -17,10 +18,18 @@ Done BackendQueue::submit(Recording& recording, std::span<const TimelinePoint> e
   waits_.insert(waits_.end(), extra_waits.begin(), extra_waits.end());
   signals_.assign(1, timeline_.at(value_ + 1));
   signals_.insert(signals_.end(), extra_signals.begin(), extra_signals.end());
-  if (auto ok = context_->submit(recording, waits_, signals_); !ok) return ok;
+  if (auto ok = context_->enqueue(recording, waits_, signals_); !ok) return ok;
   ++value_;
   pending_.clear();
-  return {};
+  // Un sémaphore d'ailleurs (slot du ring, image décodée) est attendu hors du lot : il part.
+  return extra_signals.empty() ? Done{} : context_->flush();
+}
+
+std::optional<BackendQueue::Step> BackendQueue::external_step() {
+  if (!pending_.empty()) return std::nullopt;
+  const Step step{.wait = value_, .signal = value_ + 1};
+  ++value_;
+  return step;
 }
 
 }  // namespace ajp::gpu::vk

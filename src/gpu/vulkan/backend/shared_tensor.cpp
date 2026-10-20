@@ -20,6 +20,14 @@ bool exports_memory(const VkContext& /*context*/) {
   return false;
 }
 
+bool exports_semaphores(const VkContext& /*context*/) {
+  return false;
+}
+
+std::expected<int, Refusal> semaphore_fd(const VkContext& /*context*/, VkSemaphore /*semaphore*/) {
+  return detail::refuse_backend(RefusalCode::FeatureUnavailable, "interop de sémaphore : Linux seulement");
+}
+
 std::expected<std::unique_ptr<TensorBuffer>, Refusal> shared_tensor(
     const VkContext& /*context*/, net::Runtime& /*runtime*/, TensorType /*type*/, const Shape& /*shape*/,
     std::uint64_t /*bytes*/, std::shared_ptr<HostViews> /*views*/) {
@@ -31,10 +39,17 @@ std::expected<std::unique_ptr<TensorBuffer>, Refusal> shared_tensor(
 namespace {
 
 constexpr VkExternalMemoryHandleTypeFlagBits kHandle = VK_EXTERNAL_MEMORY_HANDLE_TYPE_OPAQUE_FD_BIT;
+constexpr VkExternalSemaphoreHandleTypeFlagBits kSemaphoreHandle =
+    VK_EXTERNAL_SEMAPHORE_HANDLE_TYPE_OPAQUE_FD_BIT;
 
 PFN_vkGetMemoryFdKHR memory_fd_function(const VkContext& context) {
   return reinterpret_cast<PFN_vkGetMemoryFdKHR>(
       context.instance_functions().vkGetDeviceProcAddr(context.device(), "vkGetMemoryFdKHR"));
+}
+
+PFN_vkGetSemaphoreFdKHR semaphore_fd_function(const VkContext& context) {
+  return reinterpret_cast<PFN_vkGetSemaphoreFdKHR>(
+      context.instance_functions().vkGetDeviceProcAddr(context.device(), "vkGetSemaphoreFdKHR"));
 }
 
 // Un type DEVICE_LOCAL permis, invisible de l'hôte de préférence.
@@ -96,6 +111,34 @@ bool exports_memory(const VkContext& context) {
   return std::ranges::contains(context.caps().extensions,
                                std::string_view(VK_KHR_EXTERNAL_MEMORY_FD_EXTENSION_NAME)) &&
          memory_fd_function(context) != nullptr;
+}
+
+bool exports_semaphores(const VkContext& context) {
+  if (!std::ranges::contains(context.caps().extensions,
+                             std::string_view(VK_KHR_EXTERNAL_SEMAPHORE_FD_EXTENSION_NAME)) ||
+      semaphore_fd_function(context) == nullptr)
+    return false;
+  const VkSemaphoreTypeCreateInfo timeline{.sType = VK_STRUCTURE_TYPE_SEMAPHORE_TYPE_CREATE_INFO,
+                                           .semaphoreType = VK_SEMAPHORE_TYPE_TIMELINE};
+  const VkPhysicalDeviceExternalSemaphoreInfo info{
+      .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_EXTERNAL_SEMAPHORE_INFO,
+      .pNext = &timeline,
+      .handleType = kSemaphoreHandle};
+  VkExternalSemaphoreProperties properties{.sType = VK_STRUCTURE_TYPE_EXTERNAL_SEMAPHORE_PROPERTIES};
+  context.instance_functions().vkGetPhysicalDeviceExternalSemaphoreProperties(context.physical_device(),
+                                                                              &info, &properties);
+  return (properties.externalSemaphoreFeatures & VK_EXTERNAL_SEMAPHORE_FEATURE_EXPORTABLE_BIT) != 0;
+}
+
+std::expected<int, Refusal> semaphore_fd(const VkContext& context, VkSemaphore semaphore) {
+  const VkSemaphoreGetFdInfoKHR get{.sType = VK_STRUCTURE_TYPE_SEMAPHORE_GET_FD_INFO_KHR,
+                                    .semaphore = semaphore,
+                                    .handleType = kSemaphoreHandle};
+  int fd = -1;
+  if (auto ok = check(semaphore_fd_function(context)(context.device(), &get, &fd), "vkGetSemaphoreFdKHR");
+      !ok)
+    return std::unexpected(ok.error());
+  return fd;
 }
 
 std::expected<std::unique_ptr<TensorBuffer>, Refusal> shared_tensor(const VkContext& context,

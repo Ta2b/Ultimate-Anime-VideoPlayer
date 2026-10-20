@@ -81,4 +81,8 @@ inline constexpr std::size_t kFill = static_cast<std::size_t>(-1);
 Value gather_elements(const Value& in, const OutputInfo& out, std::span<const std::size_t> source,
                       float fill = 0.0F);
 
+// Pour chaque élément de out = DepthToSpace(x) (blocs de b × b pixels, ordre mode), son indice
+// dans x.
+std::vector<std::size_t> depth_to_space_source(const Dims& x, const Dims& out, std::int64_t b, BlockMode mode);
+
 }  // namespace ajp::gpu::ir::detail

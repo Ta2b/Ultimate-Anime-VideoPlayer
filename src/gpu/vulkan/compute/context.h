@@ -5,6 +5,7 @@
 #pragma once
 
 #include <chrono>
+#include <cstddef>
 #include <cstdint>
 #include <expected>
 #include <filesystem>
@@ -100,6 +101,16 @@ class VkContext {
   Done submit(Recording& recording, std::span<const TimelinePoint> waits = {},
               std::span<const TimelinePoint> signals = {});
 
+  // Comme submit, mais l'enregistrement rejoint un lot que flush() soumet d'un seul
+  // vkQueueSubmit (une soumission par image plutôt qu'une par noyau). submit, run_once,
+  // wait_on_host et la destruction d'un enregistrement vident le lot d'abord : l'ordre des
+  // soumissions reste celui des appels, et aucune attente ne porte sur un travail jamais soumis.
+  // Un sémaphore lu hors du contexte (autre file, autre API) n'est fiable qu'après flush().
+  Done enqueue(Recording& recording, std::span<const TimelinePoint> waits = {},
+               std::span<const TimelinePoint> signals = {});
+  Done flush();
+  std::uint64_t queue_submits() const { return queue_submits_; }  // appels à vkQueueSubmit
+
   // Attente hôte d'une valeur (tests, outils, envoi et lecture hôte) ; chaque appel compte dans
   // host_waits. Refus VulkanCallFailed au délai dépassé ou à la perte de l'appareil.
   Done wait_on_host(const TimelinePoint& point, std::chrono::nanoseconds timeout = std::chrono::seconds(10));
@@ -114,7 +125,17 @@ class VkContext {
   Done create_instance(const CreateOptions& options);
   Done create_device(const CreateOptions& options);
   Done finish_setup();  // file, outils internes, journal
-  Done queue_submit(const VkSubmitInfo& info);
+  Done queue_submit(std::span<const VkSubmitInfo> infos);
+
+  // Une soumission du lot, ses tableaux réutilisés d'un lot à l'autre.
+  struct Batched {
+    Recording* recording = nullptr;
+    std::vector<VkSemaphore> wait_semaphores;
+    std::vector<std::uint64_t> wait_values;
+    std::vector<VkPipelineStageFlags> stages;
+    std::vector<VkSemaphore> signal_semaphores;
+    std::vector<std::uint64_t> signal_values;
+  };
 
   std::optional<VulkanLibrary> library_;
   PFN_vkGetInstanceProcAddr get_instance_proc_addr_ = nullptr;
@@ -136,6 +157,12 @@ class VkContext {
   VkSemaphore once_done_ = VK_NULL_HANDLE;
   std::uint64_t once_count_ = 0;
   std::uint64_t host_waits_ = 0;
+  std::uint64_t queue_submits_ = 0;
+  std::vector<Batched> batch_;
+  std::size_t batched_ = 0;  // entrées de batch_ en attente
+  std::vector<VkTimelineSemaphoreSubmitInfo> batch_timelines_;
+  std::vector<VkSubmitInfo> batch_infos_;
+  std::vector<VkCommandBuffer> batch_buffers_;
   std::shared_ptr<spdlog::logger> log_;
 };
 

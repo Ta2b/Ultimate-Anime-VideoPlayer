@@ -6,7 +6,9 @@
 // côté hôte) : le runtime les lit et les écrit par leur projection, après l'attente sur l'hôte
 // de la file Vulkan (BackendCaps::needs_host_sync), et rend la main une fois ses sorties écrites.
 // Avec l'interop (MIGraphX sous Linux), ils vivent en mémoire d'appareil Vulkan exportée et
-// importée par le runtime : même attente, sans aller-retour par le bus PCIe.
+// importée par le runtime : même attente, sans aller-retour par le bus PCIe. Si le runtime importe
+// aussi le sémaphore timeline de la file Vulkan, plus d'attente hôte du tout : le réseau attend
+// la chaîne et la chaîne attend le réseau côté GPU (RuntimeNet::run_ordered).
 #pragma once
 
 #include <cstddef>
@@ -44,6 +46,12 @@ class ImportedMemory {
   virtual void* device() const = 0;  // adresse dans l'espace du runtime (pointeur HIP)
 };
 
+// Sémaphore timeline Vulkan importé par le runtime ; rendu à sa destruction.
+class ImportedSemaphore {
+ public:
+  virtual ~ImportedSemaphore() = default;
+};
+
 // La forme fixée d'une entrée, par son nom.
 struct InputShape {
   std::string name;
@@ -59,6 +67,16 @@ class RuntimeNet {
   // Calcule les sorties, écrites avant le retour. Refus : celui du runtime, nommé.
   virtual std::expected<void, Refusal> run(std::span<const HostBinding> inputs,
                                            std::span<const HostBinding> outputs) = 0;
+  // Comme run, ordonné côté GPU et sans attente hôte : le calcul attend que semaphore atteigne
+  // wait et le signale à signal une fois ses sorties écrites ; le retour ne dit que la mise en
+  // file. Refus FeatureUnavailable (par défaut, ou liaisons qui passeraient par l'hôte) avant de
+  // rien mettre en file : l'appelant fait alors l'étape par run.
+  virtual std::expected<void, Refusal> run_ordered(std::span<const HostBinding> /*inputs*/,
+                                                   std::span<const HostBinding> /*outputs*/,
+                                                   ImportedSemaphore& /*semaphore*/, std::uint64_t /*wait*/,
+                                                   std::uint64_t /*signal*/) {
+    return std::unexpected(Refusal{RefusalCode::FeatureUnavailable, "exécution ordonnée non prise en charge"});
+  }
 };
 
 class Runtime {
@@ -85,6 +103,12 @@ class Runtime {
   virtual std::expected<std::unique_ptr<ImportedMemory>, Refusal> import_memory(int /*fd*/,
                                                                                 std::uint64_t /*bytes*/) {
     return std::unexpected(Refusal{RefusalCode::FeatureUnavailable, "import de mémoire non pris en charge"});
+  }
+  // Importe le sémaphore timeline de la file Vulkan (descripteur opaque) ; le runtime prend le
+  // descripteur en cas de succès. Seulement avec use_device_memory(true). Refus
+  // FeatureUnavailable par défaut.
+  virtual std::expected<std::unique_ptr<ImportedSemaphore>, Refusal> import_semaphore(int /*fd*/) {
+    return std::unexpected(Refusal{RefusalCode::FeatureUnavailable, "import de sémaphore non pris en charge"});
   }
 };
 
@@ -117,5 +141,8 @@ std::expected<IoNames, Refusal> onnx_io_names(const std::filesystem::path& onnx)
 using DimOverride = std::pair<std::string, std::int64_t>;
 std::expected<std::vector<DimOverride>, Refusal> symbolic_overrides(const std::filesystem::path& onnx,
                                                                     std::span<const InputShape> inputs);
+
+// Le fichier ONNX contient-il un nœud de ce type (domaine par défaut) ? Refus : lecture, décodage.
+std::expected<bool, Refusal> onnx_uses_op(const std::filesystem::path& onnx, std::string_view op_type);
 
 }  // namespace ajp::gpu::vk::net

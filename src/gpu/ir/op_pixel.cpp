@@ -55,6 +55,18 @@ std::expected<std::optional<std::vector<bool>>, Refusal> reduced_axes(const Node
 
 }  // namespace
 
+std::vector<std::size_t> depth_to_space_source(const Dims& x, const Dims& out, std::int64_t b, BlockMode mode) {
+  const std::int64_t channels = out[1];
+  std::vector<std::size_t> source(element_count(out));
+  for_each_index(out, [&](std::span<const std::int64_t> o, std::size_t pos) {
+    const std::int64_t i = o[2] % b;
+    const std::int64_t j = o[3] % b;
+    const std::int64_t c = mode == BlockMode::Dcr ? (((i * b) + j) * channels) + o[1] : (o[1] * b * b) + (i * b) + j;
+    source[pos] = at4(x, o[0], c, o[2] / b, o[3] / b);
+  });
+  return source;
+}
+
 Inferred infer_depth_to_space(const Node& node, std::span<const Operand> in) {
   const Dims& x = *in[0].dims;
   auto block = block_of(node, x);
@@ -70,17 +82,8 @@ Evaluated eval_depth_to_space(const Node& node, std::span<const Value* const> in
   const Value& x = *in[0];
   auto block = block_of(node, x.dims);
   if (!block) return std::unexpected(block.error());
-  const std::int64_t b = block->size;
-  const std::int64_t channels = outs[0].dims[1];
-  std::vector<std::size_t> source(element_count(outs[0].dims));
-  for_each_index(outs[0].dims, [&](std::span<const std::int64_t> o, std::size_t pos) {
-    const std::int64_t i = o[2] % b;
-    const std::int64_t j = o[3] % b;
-    const std::int64_t c =
-        block->mode == BlockMode::Dcr ? (((i * b) + j) * channels) + o[1] : (o[1] * b * b) + (i * b) + j;
-    source[pos] = at4(x.dims, o[0], c, o[2] / b, o[3] / b);
-  });
-  return std::vector<Value>{gather_elements(x, outs[0], source)};
+  return std::vector<Value>{
+      gather_elements(x, outs[0], depth_to_space_source(x.dims, outs[0].dims, block->size, block->mode))};
 }
 
 Inferred infer_space_to_depth(const Node& node, std::span<const Operand> in) {

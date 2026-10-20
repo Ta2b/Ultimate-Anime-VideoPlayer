@@ -39,6 +39,16 @@ int fuse_residuals(Graph& graph);
 // Conv suivie de Relu, LeakyRelu, PRelu, Sigmoid, Tanh ou Clip : l'activation entre dans l'épilogue.
 int fuse_activations(Graph& graph);
 
+// Porte des blocs de SPAN, Mul(Add(x, r), Conv(x)) où la Conv garde la forme de x : le Mul et
+// l'Add entrent dans l'épilogue de la Conv (Epilogue::gate). Après fuse_activations : l'activation
+// de la Conv (Tanh dans SPAN) y est déjà. Deux dispatchs et deux tenseurs en moins par bloc.
+int fuse_gates(Graph& graph);
+
+// DepthToSpace lecteur unique d'une Conv (la fin de SPAN, une ConvTranspose réécrite) : la Conv
+// écrit chaque valeur à sa place dans la sortie réarrangée (Epilogue::space). Un dispatch et une
+// lecture et écriture de la plus grande image en moins.
+int fuse_spaces(Graph& graph);
+
 // Range en Nhwc16 les activations internes de rang 4 que tous leurs nœuds savent
 // lire et écrire ainsi ; un nœud garde une seule disposition pour ses activations
 // internes. Entrées et sorties du graphe restent en Nchw. Renvoie le nombre de tenseurs Nhwc16.
@@ -67,6 +77,8 @@ struct PassStats {
   int bias = 0;
   int residuals = 0;
   int activations = 0;
+  int gates = 0;
+  int spaces = 0;
   int grid_transposes = 0;
   int transposes = 0;
   int nhwc = 0;

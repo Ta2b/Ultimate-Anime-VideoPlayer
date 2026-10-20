@@ -167,6 +167,9 @@ void fields(Ar& ar, S& e)
   ar(e.alpha);
   ar(e.lo);
   ar(e.hi);
+  ar(e.gate);
+  ar(e.space);
+  ar(e.space_mode);
 }
 
 // Attributs : chaque alternative de ir::Attrs.

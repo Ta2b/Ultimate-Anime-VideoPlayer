@@ -51,6 +51,11 @@ std::string node_params(const Graph& graph, const Node& node) {
     if (conv->epilogue.residual) out += " +résiduel";
     if (conv->epilogue.act != Activation::None)
       out += std::format(" +{}", activation_name(conv->epilogue.act));
+    if (conv->epilogue.gate) out += " +porte";
+    if (conv->epilogue.space != 0) {
+      out += std::format(" +DepthToSpace {} b{}", conv->epilogue.space_mode == BlockMode::Crd ? "CRD" : "DCR",
+                         conv->epilogue.space);
+    }
     return out;
   }
   if (const auto* block = std::get_if<BlockAttrs>(&node.attrs)) {
@@ -110,9 +115,9 @@ std::string describe_nodes(const Graph& graph) {
 std::string describe_stats(const PassStats& stats) {
   return std::format(
       "  pliés {}, morts {}, sans effet {}, réarrangements {}, biais {}, résiduels {}, activations {}, "
-      "tenseurs NHWC16 {}\n",
+      "portes {}, DepthToSpace fondus {}, tenseurs NHWC16 {}\n",
       stats.folded, stats.dead, stats.identities, stats.pixel_shuffles, stats.bias, stats.residuals,
-      stats.activations, stats.nhwc);
+      stats.activations, stats.gates, stats.spaces, stats.nhwc);
 }
 
 std::string describe_memory(const MemoryPlan& plan) {

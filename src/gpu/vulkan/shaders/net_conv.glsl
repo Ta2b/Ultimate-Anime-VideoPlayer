@@ -1,5 +1,7 @@
 // Conv 2D directe, générique : groupes, dilatation, pas, marges, biais, résiduel et activation
-// fondus (gpu::ir::Epilogue : biais, puis résiduel, puis activation). Chaque invocation calcule
+// fondus (gpu::ir::Epilogue : biais, puis résiduel, puis activation ; RESIDUAL 2, la porte de
+// SPAN, multiplie la sortie activée par x + r au lieu d'ajouter r avant ; SPACE > 1 écrit chaque
+// valeur à sa place après un DepthToSpace). Chaque invocation calcule
 // PIX pixels voisins d'une ligne de sortie pour QUADS × 4 canaux d'un même groupe ; un groupe de
 // travail couvre WG × PIX pixels d'une ligne. PIX > 1 lit chaque poids une fois pour PIX pixels
 // (et les colonnes d'entrée communes à deux pixels voisins une fois du cache), au prix de
@@ -49,6 +51,8 @@ layout(constant_id = 28) const float HI = 0.0;
 layout(constant_id = 29) const uint RESIDUAL = 0;
 layout(constant_id = 30) const uint QUADS = 1;
 layout(constant_id = 32) const uint PIX = 1;  // 31 : la taille du groupe de travail
+layout(constant_id = 33) const uint SPACE = 0;      // DepthToSpace fondu : blocs de SPACE × SPACE
+layout(constant_id = 34) const uint SPACE_CRD = 0;  // 1 : ordre CRD, 0 : DCR
 
 const uint CING = CIN / GROUPS;
 const uint COUTG = COUT / GROUPS;
@@ -71,7 +75,9 @@ AJP_NET_BUFFER(5, dst, writeonly)
 
 void main() {
   const TDesc xd = TDesc(N, CIN, HIN, WIN, LX, CXP);
-  const TDesc yd = TDesc(N, COUT, HOUT, WOUT, LY, CYP);
+  // La sortie stockée : celle du DepthToSpace fondu quand SPACE > 1.
+  const uint sb = SPACE > 1u ? SPACE : 1u;
+  const TDesc yd = TDesc(N, COUT / (sb * sb), HOUT * sb, WOUT * sb, LY, CYP);
   const TDesc rd = TDesc(N, COUT, HOUT, WOUT, LR, CRP);
   uint ox0 = gl_GlobalInvocationID.x * PIX;
   uint oy = gl_WorkGroupID.y;
@@ -194,7 +200,9 @@ void main() {
         float v = acc[p * QUADS + q][k] + bias.v[co];
         if (RESIDUAL == 1u) v += AJP_LOAD(res, TR, t_index(rd, n, co, oy, ox));
         v = net_activate(ACT, v, ALPHA, LO, HI, slope.v[co]);
-        AJP_STORE(dst, TY, t_index(yd, n, co, oy, ox), v)
+        // Porte de SPAN : sortie de la forme de x, lue au même élément.
+        if (RESIDUAL == 2u) v *= AJP_LOAD(src, TX, t_index(xd, n, co, oy, ox)) + AJP_LOAD(res, TR, t_index(rd, n, co, oy, ox));
+        AJP_STORE(dst, TY, t_index_space(yd, sb, SPACE_CRD == 1u, n, co, oy, ox), v)
       }
     }
   }

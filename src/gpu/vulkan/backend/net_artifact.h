@@ -20,8 +20,8 @@
 
 namespace ajp::gpu::vk::net {
 
-// 2 : GridSampleAttrs::grid_nchw ; 3 : Dispatch::subgroup
-inline constexpr std::uint32_t kArtifactVersion = 3;
+// 2 : GridSampleAttrs::grid_nchw ; 3 : Dispatch::subgroup ; 4 : Epilogue::gate et space
+inline constexpr std::uint32_t kArtifactVersion = 4;
 
 struct ShaderHash {
   std::string shader;

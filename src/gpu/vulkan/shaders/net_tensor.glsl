@@ -27,6 +27,15 @@ uint t_index(TDesc d, uint n, uint c, uint y, uint x) {
   return ((n * d.h + y) * d.w + x) * d.cp + c;
 }
 
+// Indice, dans d (sortie d'un DepthToSpace de blocs b × b, ordre CRD si crd, DCR sinon), de
+// l'élément (n, c, y, x) de son entrée de d.c × b² canaux ; b ≤ 1 : t_index(d, n, c, y, x).
+uint t_index_space(TDesc d, uint b, bool crd, uint n, uint c, uint y, uint x) {
+  if (b <= 1u) return t_index(d, n, c, y, x);
+  uint cell = crd ? c % (b * b) : c / d.c;
+  uint ch = crd ? c / (b * b) : c % d.c;
+  return t_index(d, n, ch, y * b + cell / b, x * b + cell % b);
+}
+
 uint t_count(TDesc d) {
   return d.n * d.c * d.h * d.w;
 }

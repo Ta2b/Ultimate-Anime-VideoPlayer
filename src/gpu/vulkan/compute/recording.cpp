@@ -22,6 +22,9 @@ constexpr VkAccessFlags kReadsAndWrites = VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_
 
 Recording::~Recording() {
   const DeviceFunctions& fn = context_.fn();
+  // Une exécution encore dans le lot de VkContext::enqueue part avant d'être attendue.
+  if (auto flushed = context_.flush(); !flushed)
+    context_.log().error("fin d'enregistrement : {}", flushed.error().detail);
   if (submitted_ > 0) {
     // Fin de vie : ce n'est pas une attente du flux (host_waits ne la compte pas).
     const VkSemaphore semaphore = runs_.handle();

@@ -37,16 +37,20 @@ std::filesystem::path cache_of(const std::filesystem::path& artifact) {
   return p;
 }
 
-// FP16 du programme ML ; Core ML répartit les couches entre le Neural Engine, le GPU et le CPU.
-// Le modèle compilé est gardé dans le cache de l'artefact : le chargement ne recompile pas.
-Ort::SessionOptions session_options(const Manifest& manifest, const std::filesystem::path& artifact) {
+// FP16 du programme ML. Un modèle qui déforme par GridSample (RIFE, GMFSS, DRBA) reste sur le GPU
+// et le CPU : sur RIFE, le Neural Engine est environ 30 fois plus lent que le GPU, et laisser Core
+// ML répartir les couches entre les trois, 8 fois plus lent (mesures publiées sur M2 Max). Les
+// autres (SPAN) gardent les trois unités. Le modèle compilé est gardé dans le cache de l'artefact :
+// le chargement ne recompile pas.
+Ort::SessionOptions session_options(const Manifest& manifest, const std::filesystem::path& artifact,
+                                    bool warps) {
   Ort::SessionOptions options;
   options.SetGraphOptimizationLevel(GraphOptimizationLevel::ORT_ENABLE_ALL);
   for (const auto& [symbol, value] : manifest.dims)
     Ort::ThrowOnError(Ort::GetApi().AddFreeDimensionOverrideByName(options, symbol.c_str(), value));
   const std::unordered_map<std::string, std::string> coreml{
       {"ModelFormat", "MLProgram"},
-      {"MLComputeUnits", "MLComputeUnitsAll"},
+      {"MLComputeUnits", warps ? "MLComputeUnitsCPUAndGPU" : "MLComputeUnitsAll"},
       {"RequireStaticInputShapes", "0"},
       {"SpecializationStrategy", "FastPrediction"},
       {"AllowLowPrecisionAccumulationOnGPU", "1"},
@@ -242,7 +246,9 @@ class CoremlRuntime final : public vk::net::Runtime {
     try {
       std::error_code error;
       std::filesystem::create_directories(cache_of(artifact), error);
-      return Ort::Session(*env_, manifest.onnx.c_str(), session_options(manifest, artifact));
+      auto warps = vk::net::onnx_uses_op(manifest.onnx, "GridSample");
+      if (!warps) return std::unexpected(warps.error());
+      return Ort::Session(*env_, manifest.onnx.c_str(), session_options(manifest, artifact, *warps));
     } catch (const std::exception& e) {
       return refuse(RefusalCode::BuilderFailed,
                     std::format("Core ML, {} : {}", manifest.onnx.string(), e.what()));

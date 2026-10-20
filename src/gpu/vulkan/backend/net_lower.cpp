@@ -155,7 +155,7 @@ std::expected<void, Refusal> Lowerer::node(std::size_t index, const KernelChoice
   const bool plain = choice.variant == "default";
   switch (n.op) {
     case ir::OpKind::Conv:
-      return choice.variant == "coopmat" ? conv_matrix(index, choice) : conv(index, choice);
+      return choice.variant.starts_with("coopmat") ? conv_matrix(index, choice) : conv(index, choice);
     case ir::OpKind::ConvTranspose:
       return conv_transpose(index, choice);
     default:
