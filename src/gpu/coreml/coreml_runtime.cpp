@@ -43,7 +43,7 @@ Ort::SessionOptions session_options(const Manifest& manifest, const std::filesys
   Ort::SessionOptions options;
   options.SetGraphOptimizationLevel(GraphOptimizationLevel::ORT_ENABLE_ALL);
   for (const auto& [symbol, value] : manifest.dims)
-    options.AddFreeDimensionOverrideByName(symbol.c_str(), value);
+    Ort::ThrowOnError(Ort::GetApi().AddFreeDimensionOverrideByName(options, symbol.c_str(), value));
   const std::unordered_map<std::string, std::string> coreml{
       {"ModelFormat", "MLProgram"},
       {"MLComputeUnits", "MLComputeUnitsAll"},
