@@ -47,14 +47,47 @@ void FrameStats::presented(std::int64_t render_us, std::int64_t present_us, bool
   render.add(render_us);
   if (last_present_us != 0) present_interval.add(present_us - last_present_us);
   last_present_us = present_us;
+  // Les images neuves après le début de la fenêtre, jusqu'à celle-ci comprise.
+  if (fps_since_us == 0) {
+    fps_since_us = present_us;
+  } else {
+    if (fresh) ++fps_frames;
+    if (const std::int64_t span = present_us - fps_since_us; span >= 1'000'000) {
+      shown_fps = static_cast<double>(fps_frames) * 1e6 / static_cast<double>(span);
+      fps_frames = 0;
+      fps_since_us = present_us;
+    }
+  }
   if (!fresh) return;
   ++new_frames;
   if (last_new_present_us != 0) frame_interval.add(present_us - last_new_present_us);
   last_new_present_us = present_us;
 }
 
+void FrameStats::paced(std::int64_t pts_us, std::int64_t lag_us, std::int64_t period_us) {
+  if (pts_us == kNoPts) return;
+  if (last_new_pts_us != kNoPts && period_us > 0 && pts_us > last_new_pts_us) {
+    // n périodes entre les deux images : n − 1 manquées. Le quart de période de marge couvre
+    // l'arrondi des pts et un écran à peine plus lent que la sortie.
+    const std::int64_t periods = (pts_us - last_new_pts_us + period_us / 4) / period_us;
+    if (periods > 1) missing += periods - 1;
+  }
+  last_new_pts_us = pts_us;
+  lag.add(std::max<std::int64_t>(lag_us, 0));
+}
+
+void FrameStats::restart_pacing() {
+  last_new_pts_us = kNoPts;
+}
+
 std::string format_ms(std::int64_t us) {
   std::string text = std::format("{:.1f} ms", static_cast<double>(us) / 1000.0);
+  std::ranges::replace(text, '.', ',');
+  return text;
+}
+
+std::string format_fps(double fps) {
+  std::string text = std::format("{:.1f}", fps);
   std::ranges::replace(text, '.', ',');
   return text;
 }

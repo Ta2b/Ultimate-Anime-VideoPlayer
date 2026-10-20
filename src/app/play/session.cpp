@@ -148,6 +148,7 @@ void Session::seek_to(std::int64_t target_us, bool exact) {
     retire(frame);
     ++stats_.stale;
   }
+  stats_.restart_pacing();
   subtitles_.clear();
   subtitle_requests_ = 0;
   prerolling_ = true;
@@ -306,16 +307,34 @@ std::expected<std::optional<PresentRecord>, Refusal> Session::tick(std::int64_t 
   if (timing->presented) {
     const std::int64_t previous = stats_.last_new_present_us;
     stats_.presented(timing->render_us, timing->present_us, fresh);
+    if (fresh && current_) pace(*current_, timing->present_us);
     record = PresentRecord{.host_us = timing->present_us,
                            .pts_us = current_ ? current_->pts_us : kNoPts,
                            .fresh = fresh,
                            .render_us = timing->render_us,
                            .interval_us = fresh && previous != 0 ? timing->present_us - previous : 0,
                            .dropped = stats_.dropped,
-                           .why = std::move(why)};
+                           .why = std::move(why),
+                           .missing = stats_.missing,
+                           .lag_us = fresh && stats_.lag.count() > 0 ? stats_.lag.latest() : 0};
   }
   check_end(host_now);
   return record;
+}
+
+std::int64_t Session::pacing_period_us() const {
+  // Un écran plus lent que la sortie saute des images par construction : sa période compte.
+  const std::int64_t nominal = config_.extra != nullptr ? config_.extra->output_period_us() : 0;
+  const std::int64_t display =
+      config_.display_period_us > 0 ? config_.display_period_us : stats_.present_interval.median();
+  return nominal > 0 ? std::max(nominal, display) : 0;
+}
+
+void Session::pace(const RingFrame& frame, std::int64_t present_us) {
+  // Le retard ne se lit que pendant la lecture : en pause ou avant le départ, l'horloge est figée.
+  const ClockSnapshot now = clock_.snapshot();
+  const bool running = !paused_ && now.valid && now.epoch == epoch_ && frame.pts_us != kNoPts;
+  stats_.paced(frame.pts_us, running ? now.media_at(present_us) - frame.pts_us : 0, pacing_period_us());
 }
 
 void Session::check_end(std::int64_t host_now) {
@@ -351,6 +370,11 @@ std::vector<std::string> Session::osd_lines() const {
                                 format_ms(stats_.frame_interval.median()),
                                 format_ms(static_cast<std::int64_t>(stats_.frame_interval.stddev())),
                                 format_ms(stats_.render.median()), stats_.dropped));
+    const std::int64_t period = pacing_period_us();
+    lines.push_back(std::format(
+        "fluidité {}{} im/s · manquées {} · retard p95 {}", format_fps(stats_.shown_fps),
+        period > 0 ? std::format(" / {}", format_fps(1e6 / static_cast<double>(period))) : std::string(),
+        stats_.missing, format_ms(stats_.lag.percentile(95))));
   }
   if ((show.all || show.rife) && config_.extra != nullptr) {
     if (auto rife = config_.extra->rife()) lines.push_back(std::move(*rife));

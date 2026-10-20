@@ -24,19 +24,27 @@ std::vector<EngineBadge> engine_badges(const std::filesystem::path& cache_dir,
                                        const kernels::RifeGeometry& rife_size);
 
 // Mesures de la chaîne pour l'OSD. interpolation : rien sans interpolation ; sinon son moteur,
-// « RIFE » ou « flux optique », en tête de la ligne des compteurs.
+// « RIFE » ou « flux optique », en tête de la ligne des compteurs. source_fps : images par
+// seconde de la source (0 : inconnues).
 class ChainStats final : public StatsSource {
  public:
-  ChainStats(const LiveSettings& live, gpu::KernelOps& kernels, bool interpolates, std::string engine)
-      : live_(live), kernels_(kernels), interpolates_(interpolates), engine_(std::move(engine)) {}
+  ChainStats(const LiveSettings& live, gpu::KernelOps& kernels, bool interpolates, std::string engine,
+             double source_fps)
+      : live_(live),
+        kernels_(kernels),
+        interpolates_(interpolates),
+        engine_(std::move(engine)),
+        source_fps_(source_fps) {}
   std::optional<std::string> rife() const override;
   std::optional<std::string> memory() const override;
+  std::int64_t output_period_us() const override;
 
  private:
   const LiveSettings& live_;
   gpu::KernelOps& kernels_;
   bool interpolates_;
   std::string engine_;
+  double source_fps_;
 };
 
 }  // namespace ajp::app::play

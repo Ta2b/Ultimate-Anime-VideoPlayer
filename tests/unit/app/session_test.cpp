@@ -276,9 +276,10 @@ TEST_CASE("Les mesures s'affichent une par une, dans l'ordre de l'OSD", "[app][s
   rig.session.set_tracks({"audio flac eng"});
   rig.tick();
   const auto& all = rig.screen.shown.back().osd;
-  REQUIRE(all.size() == 6);  // chaîne, piste, sortie, images, RIFE, position (pas de mémoire)
+  REQUIRE(all.size() == 7);  // chaîne, piste, sortie, images, fluidité, RIFE, position (pas de mémoire)
   CHECK(all[1] == "audio flac eng");
-  CHECK(all[4] == "RIFE : 3 paires");
+  CHECK(all[4].starts_with("fluidité"));
+  CHECK(all[5] == "RIFE : 3 paires");
 }
 
 TEST_CASE("La taille des sous-titres va dans les demandes, l'image à l'écran est redemandée",
@@ -380,10 +381,39 @@ TEST_CASE("L'OSD dit le temps par image et les images sautées", "[app][session]
   rig.session.handle(ring_frame(0, 0));
   rig.tick();
   const auto& osd = rig.screen.shown.back().osd;
-  REQUIRE(osd.size() >= 3);
+  REQUIRE(osd.size() >= 4);
   CHECK(osd[0] == "SPAN ×2");
   CHECK(osd[1].find("sautées 0") != std::string::npos);
-  CHECK(osd[2].starts_with("00:00:00.000"));
+  // Sans période de sortie connue, ni cible ni manque.
+  CHECK(osd[2] == "fluidité 0,0 im/s · manquées 0 · retard p95 0,0 ms");
+  CHECK(osd[3].starts_with("00:00:00.000"));
+}
+
+TEST_CASE("Fluidité : les images manquées se lisent dans l'écart des pts", "[app][session]") {
+  FrameStats stats;
+  stats.paced(0, 0, 40'000);
+  stats.paced(40'000, 1'000, 40'000);
+  stats.paced(120'000, 0, 40'000);  // 80 000 n'a jamais paru
+  CHECK(stats.missing == 1);
+  stats.paced(150'000, 0, 40'000);  // plus tôt que prévu : rien ne manque
+  CHECK(stats.missing == 1);
+  stats.restart_pacing();
+  stats.paced(1'000'000, 0, 40'000);  // après un seek : l'écart n'est pas un manque
+  CHECK(stats.missing == 1);
+  stats.paced(1'070'000, 0, 40'000);  // 1,75 période : une manquée
+  CHECK(stats.missing == 2);
+  stats.paced(1'100'000, -3'000, 0);  // période inconnue : rien de compté ; une avance n'est pas un retard
+  CHECK(stats.missing == 2);
+  CHECK(stats.lag.percentile(100) == 1'000);
+  CHECK(stats.lag.latest() == 0);
+}
+
+TEST_CASE("Fluidité : les images neuves par seconde, relues chaque seconde", "[app][session]") {
+  FrameStats stats;
+  for (int k = 0; k <= 60; ++k) stats.presented(100, 1'000'000 + std::int64_t{k} * 16'667, true);
+  CHECK(format_fps(stats.shown_fps) == "60,0");
+  for (int k = 61; k <= 120; ++k) stats.presented(100, 1'000'000 + std::int64_t{k} * 16'667, k % 2 == 0);
+  CHECK(format_fps(stats.shown_fps) == "30,0");  // une présentation sur deux est un redessin
 }
 
 }  // namespace

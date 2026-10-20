@@ -158,7 +158,8 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
       });
   if (!pipeline) return std::unexpected(std::move(pipeline.error()));
 
-  const ChainStats chain_stats(*live, *c.backend->kernels(), rife_loaded, std::string(c.motion_name()));
+  const ChainStats chain_stats(*live, *c.backend->kernels(), rife_loaded, std::string(c.motion_name()),
+                               fps_of(video.frame_rate));
   SessionConfig session_config = (*pipeline)->session_config();
   session_config.start_us = start_us;
   session_config.stop_after_us = options.stop_after_us;
@@ -229,7 +230,7 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
   std::ofstream stats;
   if (options.stats) {
     stats.open(*options.stats);
-    stats << "host_us\tpts_us\tfresh\trender_us\tinterval_us\tdropped\twhy\n";
+    stats << "host_us\tpts_us\tfresh\trender_us\tinterval_us\tdropped\twhy\tmissing\tlag_us\n";
   }
   const core::KeyMap keys = core::KeyMap::defaults();
   std::optional<Refusal> failure;
