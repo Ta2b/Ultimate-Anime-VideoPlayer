@@ -35,8 +35,10 @@ class RuntimeEngine final : public Engine {
 // Tampon hôte visible, inscrit dans les projections du backend tant qu'il vit.
 class HostTensorBuffer final : public TensorBuffer {
  public:
-  HostTensorBuffer(Buffer buffer, TensorType type, const Shape& shape, std::shared_ptr<HostViews> views)
-      : buffer_(std::move(buffer)),
+  HostTensorBuffer(VkContext& context, Buffer buffer, TensorType type, const Shape& shape,
+                   std::shared_ptr<HostViews> views)
+      : context_(context),
+        buffer_(std::move(buffer)),
         tensor_{.type = type, .shape = shape, .handle = detail::handle_bits(buffer_.handle()), .offset = 0},
         views_(std::move(views)) {
     const std::scoped_lock lock(views_->mutex);
@@ -46,13 +48,18 @@ class HostTensorBuffer final : public TensorBuffer {
   HostTensorBuffer& operator=(const HostTensorBuffer&) = delete;
   HostTensorBuffer(HostTensorBuffer&&) = delete;
   HostTensorBuffer& operator=(HostTensorBuffer&&) = delete;
+  // Ce que la file a reçu finit avant la libération (VulkanTensorBuffer).
   ~HostTensorBuffer() override {
-    const std::scoped_lock lock(views_->mutex);
-    views_->views.erase(tensor_.handle);
+    {
+      const std::scoped_lock lock(views_->mutex);
+      views_->views.erase(tensor_.handle);
+    }
+    context_.settle();
   }
   const Tensor& tensor() const override { return tensor_; }
 
  private:
+  VkContext& context_;
   Buffer buffer_;
   Tensor tensor_;
   std::shared_ptr<HostViews> views_;
@@ -119,7 +126,7 @@ std::expected<std::unique_ptr<TensorBuffer>, Refusal> VulkanBackend::alloc_runti
   // chaîne y accèdent comme à tout tampon de stockage.
   auto buffer = Buffer::create(*context_, *memory_, (*dense + 3) / 4 * 4, MemoryUse::Readback);
   if (!buffer) return std::unexpected(buffer.error());
-  return std::make_unique<HostTensorBuffer>(std::move(*buffer), type, shape, host_views_);
+  return std::make_unique<HostTensorBuffer>(*context_, std::move(*buffer), type, shape, host_views_);
 }
 
 std::expected<void, Refusal> VulkanBackend::enqueue_runtime(Engine& engine, std::span<const Tensor> inputs,

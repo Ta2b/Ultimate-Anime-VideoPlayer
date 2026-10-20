@@ -21,9 +21,9 @@ bool exports_memory(const VkContext& context);
 
 // Un tenseur de bytes octets, inscrit dans views (adresse du runtime) tant qu'il vit. Refus :
 // ceux de Vulkan, de l'import, FeatureUnavailable hors de Linux.
-std::expected<std::unique_ptr<TensorBuffer>, Refusal> shared_tensor(const VkContext& context,
-                                                                    net::Runtime& runtime, TensorType type,
-                                                                    const Shape& shape, std::uint64_t bytes,
+std::expected<std::unique_ptr<TensorBuffer>, Refusal> shared_tensor(VkContext& context, net::Runtime& runtime,
+                                                                    TensorType type, const Shape& shape,
+                                                                    std::uint64_t bytes,
                                                                     std::shared_ptr<HostViews> views);
 
 }  // namespace ajp::gpu::vk

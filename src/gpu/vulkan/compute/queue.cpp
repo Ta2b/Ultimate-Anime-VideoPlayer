@@ -1,6 +1,10 @@
 // Soumission sur la file compute, attentes hôte et command buffers jetables.
+#include <chrono>
 #include <format>
+#include <optional>
 #include <vector>
+
+#include <spdlog/logger.h>
 
 #include "gpu/vulkan/compute/context.h"
 #include "gpu/vulkan/compute/recording.h"
@@ -36,7 +40,30 @@ Done VkContext::queue_submit(const VkSubmitInfo& info) {
   if (lock_queue_) lock_queue_();
   const VkResult result = device_fn_.vkQueueSubmit(queue_, 1, &info, VK_NULL_HANDLE);
   if (unlock_queue_) unlock_queue_();
+  if (result == VK_SUCCESS && info.signalSemaphoreCount > 0) {
+    const auto* timeline = static_cast<const VkTimelineSemaphoreSubmitInfo*>(info.pNext);
+    last_submitted_ = {.semaphore = info.pSignalSemaphores[0], .value = timeline->pSignalSemaphoreValues[0]};
+  }
   return check(result, "vkQueueSubmit");
+}
+
+bool VkContext::settle(std::optional<TimelinePoint> point) {
+  if (stalled_) return false;
+  const TimelinePoint target = point.value_or(last_submitted_);
+  if (target.semaphore == VK_NULL_HANDLE || target.value == 0) return true;
+  const VkSemaphoreWaitInfo wait{.sType = VK_STRUCTURE_TYPE_SEMAPHORE_WAIT_INFO,
+                                 .semaphoreCount = 1,
+                                 .pSemaphores = &target.semaphore,
+                                 .pValues = &target.value};
+  const auto timeout = std::chrono::duration_cast<std::chrono::nanoseconds>(kSettleTimeout);
+  const VkResult result =
+      device_fn_.vkWaitSemaphores(device_, &wait, static_cast<std::uint64_t>(timeout.count()));
+  if (result == VK_SUCCESS) return true;
+  stalled_ = true;
+  log().error(
+      "fin de vie : le GPU n'a pas atteint la valeur {} en {} s ({}) ; ses ressources restent en place",
+      target.value, kSettleTimeout.count(), result == VK_TIMEOUT ? "délai dépassé" : "appareil perdu");
+  return false;
 }
 
 Done VkContext::submit(Recording& recording, std::span<const TimelinePoint> waits,

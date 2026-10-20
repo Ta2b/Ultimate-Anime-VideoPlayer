@@ -53,7 +53,7 @@ std::optional<std::uint32_t> device_type(const VkContext& context, std::uint32_t
 
 class SharedTensorBuffer final : public TensorBuffer {
  public:
-  SharedTensorBuffer(const VkContext& context, VkBuffer buffer, VkDeviceMemory memory, TensorType type,
+  SharedTensorBuffer(VkContext& context, VkBuffer buffer, VkDeviceMemory memory, TensorType type,
                      const Shape& shape, std::shared_ptr<HostViews> views)
       : context_(context),
         buffer_(buffer),
@@ -70,6 +70,8 @@ class SharedTensorBuffer final : public TensorBuffer {
       views_->views.erase(tensor_.handle);
     }
     imported_.reset();  // le runtime rend sa vue avant que la mémoire ne disparaisse
+    // Ce que la file a reçu finit avant ; un GPU bloqué garde tampon et mémoire.
+    if (!context_.settle()) return;
     context_.fn().vkDestroyBuffer(context_.device(), buffer_, nullptr);
     context_.fn().vkFreeMemory(context_.device(), memory_, nullptr);
   }
@@ -82,7 +84,7 @@ class SharedTensorBuffer final : public TensorBuffer {
   }
 
  private:
-  const VkContext& context_;
+  VkContext& context_;
   VkBuffer buffer_;
   VkDeviceMemory memory_;
   Tensor tensor_;
@@ -98,9 +100,9 @@ bool exports_memory(const VkContext& context) {
          memory_fd_function(context) != nullptr;
 }
 
-std::expected<std::unique_ptr<TensorBuffer>, Refusal> shared_tensor(const VkContext& context,
-                                                                    net::Runtime& runtime, TensorType type,
-                                                                    const Shape& shape, std::uint64_t bytes,
+std::expected<std::unique_ptr<TensorBuffer>, Refusal> shared_tensor(VkContext& context, net::Runtime& runtime,
+                                                                    TensorType type, const Shape& shape,
+                                                                    std::uint64_t bytes,
                                                                     std::shared_ptr<HostViews> views) {
   const DeviceFunctions& fn = context.fn();
   const VkExternalMemoryBufferCreateInfo external{

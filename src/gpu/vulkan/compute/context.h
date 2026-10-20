@@ -109,6 +109,15 @@ class VkContext {
   // transitions d'images à la création. Compte une attente hôte.
   Done run_once(const std::function<void(VkCommandBuffer)>& record);
 
+  // Fin de vie d'une ressource que le GPU lit peut-être encore (tenseur, enregistrement) :
+  // attend au plus kSettleTimeout que point soit atteint ; sans point, la dernière soumission de
+  // la file, dont le signal couvre tout ce qui l'a précédée. Faux si l'attente échoue ou dépasse
+  // le délai : le GPU est tenu pour bloqué, les fins de vie suivantes n'attendent plus, et
+  // l'appelant laisse fuir sa ressource plutôt que de la rendre à un GPU qui la lit encore.
+  static constexpr std::chrono::seconds kSettleTimeout{3};
+  bool settle(std::optional<TimelinePoint> point = std::nullopt);
+  bool stalled() const { return stalled_; }
+
  private:
   VkContext() = default;
   Done create_instance(const CreateOptions& options);
@@ -136,6 +145,8 @@ class VkContext {
   VkSemaphore once_done_ = VK_NULL_HANDLE;
   std::uint64_t once_count_ = 0;
   std::uint64_t host_waits_ = 0;
+  TimelinePoint last_submitted_;  // le premier signal de la dernière soumission
+  bool stalled_ = false;          // une fin de vie a attendu en vain : plus aucune n'attend
   std::shared_ptr<spdlog::logger> log_;
 };
 

@@ -68,15 +68,26 @@ std::uintptr_t handle_value(VkSemaphore semaphore) {
   return static_cast<std::uintptr_t>(detail::to_bits(semaphore));
 }
 
-// Tenseur alloué par alloc_tensor : son tampon, libéré à la destruction.
+// Tenseur alloué par alloc_tensor : son tampon, libéré à la destruction, une fois fini ce que la
+// file a reçu. Un étage qui s'arrête rend ses tenseurs alors que ses dernières soumissions
+// tournent encore ; un bloc vide retourne aussitôt à l'appareil (MemoryAllocator::release), et le
+// GPU lirait une mémoire rendue.
 class VulkanTensorBuffer final : public TensorBuffer {
  public:
-  VulkanTensorBuffer(Buffer buffer, TensorType type, const Shape& shape)
-      : buffer_(std::move(buffer)),
+  VulkanTensorBuffer(VkContext& context, Buffer buffer, TensorType type, const Shape& shape)
+      : context_(context),
+        buffer_(std::move(buffer)),
         tensor_{.type = type, .shape = shape, .handle = detail::handle_bits(buffer_.handle()), .offset = 0} {}
+  VulkanTensorBuffer(const VulkanTensorBuffer&) = delete;
+  VulkanTensorBuffer& operator=(const VulkanTensorBuffer&) = delete;
+  VulkanTensorBuffer(VulkanTensorBuffer&&) = delete;
+  VulkanTensorBuffer& operator=(VulkanTensorBuffer&&) = delete;
+  // GPU bloqué : le tampon et sa mémoire restent en place (Buffer et MemoryAllocator le voient).
+  ~VulkanTensorBuffer() override { context_.settle(); }
   const Tensor& tensor() const override { return tensor_; }
 
  private:
+  VkContext& context_;
   Buffer buffer_;
   Tensor tensor_;
 };
@@ -126,9 +137,7 @@ VulkanBackend::VulkanBackend(const BackendInit& init, BackendOptions options)
 
 VulkanBackend::~VulkanBackend() {
   kernels_.reset();  // attend la file, rend images et vues
-  if (queue_ && context_) {
-    [[maybe_unused]] const Done waited = context_->wait_on_host(queue_->last());
-  }
+  if (queue_ && context_) context_->settle(queue_->last());
 }
 
 std::expected<std::unique_ptr<VulkanBackend>, Refusal> VulkanBackend::create(const BackendInit& init,
@@ -283,7 +292,7 @@ std::expected<std::unique_ptr<TensorBuffer>, Refusal> VulkanBackend::alloc_tenso
   const std::uint64_t bytes = (*dense + 3) / 4 * 4;
   auto buffer = Buffer::create(*context_, *memory_, bytes, MemoryUse::Device);
   if (!buffer) return std::unexpected(buffer.error());
-  return std::make_unique<VulkanTensorBuffer>(std::move(*buffer), type, shape);
+  return std::make_unique<VulkanTensorBuffer>(*context_, std::move(*buffer), type, shape);
 }
 
 std::expected<void, Refusal> VulkanBackend::enqueue(Engine& engine, std::span<const Tensor> inputs,

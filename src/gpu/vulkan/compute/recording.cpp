@@ -2,7 +2,6 @@
 
 #include <cstring>
 #include <format>
-#include <limits>
 #include <string_view>
 #include <utility>
 
@@ -21,20 +20,10 @@ constexpr VkAccessFlags kReadsAndWrites = VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_
 }  // namespace
 
 Recording::~Recording() {
-  const DeviceFunctions& fn = context_.fn();
-  if (submitted_ > 0) {
-    // Fin de vie : ce n'est pas une attente du flux (host_waits ne la compte pas).
-    const VkSemaphore semaphore = runs_.handle();
-    const VkSemaphoreWaitInfo wait{.sType = VK_STRUCTURE_TYPE_SEMAPHORE_WAIT_INFO,
-                                   .semaphoreCount = 1,
-                                   .pSemaphores = &semaphore,
-                                   .pValues = &submitted_};
-    if (fn.vkWaitSemaphores(context_.device(), &wait, std::numeric_limits<std::uint64_t>::max()) !=
-        VK_SUCCESS) {
-      context_.log().error("fin d'enregistrement : l'attente de l'exécution {} a échoué", submitted_);
-    }
-  }
-  if (pool_ != VK_NULL_HANDLE) fn.vkDestroyCommandPool(context_.device(), pool_, nullptr);
+  // Fin de vie : ce n'est pas une attente du flux (host_waits ne la compte pas). Un GPU bloqué
+  // garde le pool, dont le command buffer est peut-être encore en exécution.
+  if (!context_.settle(last_run())) return;
+  if (pool_ != VK_NULL_HANDLE) context_.fn().vkDestroyCommandPool(context_.device(), pool_, nullptr);
 }
 
 std::expected<Recorder, Refusal> Recorder::begin(VkContext& context, MemoryAllocator& memory,

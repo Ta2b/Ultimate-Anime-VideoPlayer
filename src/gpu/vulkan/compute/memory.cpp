@@ -104,7 +104,9 @@ std::expected<std::unique_ptr<MemoryAllocator>, Refusal> MemoryAllocator::create
 }
 
 MemoryAllocator::~MemoryAllocator() {
-  // Les portions encore vivantes ne doivent plus être utilisées : leurs blocs disparaissent ici.
+  // Les portions encore vivantes ne doivent plus être utilisées : leurs blocs disparaissent ici,
+  // sauf sous un GPU bloqué (VkContext::settle), qui les lit peut-être encore.
+  if (context_.stalled()) return;
   for (const auto& block : blocks_) context_.fn().vkFreeMemory(context_.device(), block->memory, nullptr);
 }
 
@@ -227,7 +229,7 @@ void MemoryAllocator::release(std::uint64_t id, VkDeviceSize offset, VkDeviceSiz
   if (found == blocks_.end()) return;
   Block& block = **found;
   used_ -= size;
-  if (--block.live == 0) {
+  if (--block.live == 0 && !context_.stalled()) {
     // Un bloc vide retourne aussitôt à l'appareil : la mémoire réservée suit l'usage.
     context_.fn().vkFreeMemory(context_.device(), block.memory, nullptr);
     reserved_ -= block.size;
