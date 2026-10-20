@@ -4,6 +4,7 @@
 // internes en Nhwc16 quand l'opération le permet.
 #include <algorithm>
 #include <functional>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -14,7 +15,9 @@
 #include "gpu/ir/import.h"
 #include "gpu/ir/passes.h"
 #include "gpu/ir/shape.h"
+#include "gpu/vulkan/backend/net_engine.h"
 #include "gpu/vulkan/backend/net_lower.h"
+#include "gpu/vulkan/compute/buffer.h"
 #include "net_rig.h"
 
 using namespace ajp::gpu;
@@ -255,4 +258,45 @@ TEST_CASE("Réseau : opérateur sans noyau refusé à l'abaissement", "[vk_backe
   const ir::Graph graph = build(m, false);
   const auto refused = vk::net::candidates(graph, 0, {});
   require_refusal(refused, ajp::RefusalCode::OperatorUnknown);
+}
+
+TEST_CASE("Réseau : un tampon détruit fait oublier son jeu", "[vk_backend][net]") {
+  // Une valeur de poignée se réutilise après destruction : un jeu qui liait l'ancien tampon ne se
+  // rejoue plus, ses descripteurs portant l'adresse d'une mémoire rendue ; le nouveau se
+  // réenregistre sur le tampon de même forme.
+  NetRig rig = make_net_rig();
+  ModelBuilder m;
+  m.input("x", {1, 3, 8, 8});
+  m.node("LeakyRelu", {"x"}, {"y"}, {attr_float("alpha", 0.5F)});
+  m.output("y");
+  const ir::Graph graph = build(m);
+  const std::vector<vk::net::KernelChoice> choices =
+      require_value(vk::net::default_choices(graph, rig.target));
+  vk::net::Program program = require_value(vk::net::lower(graph, choices, rig.target));
+  auto engine = require_value(
+      vk::net::NetEngine::create(*rig.context, *rig.memory, *rig.pipelines, graph, std::move(program)));
+  const auto buffer = [&](std::uint64_t bytes) {
+    return require_value(vk::Buffer::create(*rig.context, *rig.memory, bytes, vk::MemoryUse::Device));
+  };
+  const vk::Buffer in = buffer(engine->input_bytes(0));
+  const vk::Buffer kept = buffer(engine->output_bytes(0));
+  std::optional<vk::Buffer> dropped = buffer(engine->output_bytes(0));
+  const auto run = [&](const vk::Buffer& out) {
+    vk::Recording* recording = require_value(engine->recording({{in.view()}}, {{out.view()}}));
+    require_ok(rig.context->submit(*recording));
+    require_ok(rig.context->wait_on_host(recording->last_run()));
+  };
+  run(kept);
+  run(*dropped);
+  CHECK(engine->recordings() == 2);
+  dropped.reset();
+  const vk::Buffer again = buffer(engine->output_bytes(0));
+  run(kept);
+  CHECK(engine->recordings() == 1);
+  run(again);
+  CHECK(engine->recordings() == 2);
+  // Le jeu refait sur le nouveau tampon calcule juste.
+  const ir::Value x = test_values(ir::DataType::F32, {1, 3, 8, 8}, 7);
+  const std::vector<ir::NamedValue> inputs{{"x", x}};
+  check_graph(rig, graph, inputs, kFp32);
 }

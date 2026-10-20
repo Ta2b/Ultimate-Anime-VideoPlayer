@@ -58,6 +58,7 @@ class NetEngine {
   // la première demande. Refus InputMismatch : nombre de vues ou vue trop petite.
   std::expected<Recording*, Refusal> recording(std::span<const BufferView> inputs,
                                                std::span<const BufferView> outputs);
+  std::size_t recordings() const { return recordings_.size(); }  // jeux de tenseurs enregistrés
 
  private:
   struct Cached {
