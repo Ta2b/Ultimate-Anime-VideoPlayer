@@ -45,19 +45,24 @@ EngineCatalog load_catalog(const std::filesystem::path& index, const std::filesy
     return catalog;
   }
   const std::string text{std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>()};
-  auto parsed = core::parse_engine_index(text);
+  auto parsed = core::read_engine_index(text);
   if (!parsed) {
     catalog.problem = std::format("{} : {}", index.string(), parsed.error().detail);
     return catalog;
   }
-  for (core::EnginePackage& package : *parsed) {
+  for (core::EnginePackage& package : parsed->packages) {
     if (package.platform == catalog.layout.os) catalog.packages.push_back(std::move(package));
   }
+  // Une entrée écartée (un moteur d'une release plus récente) n'empêche pas les autres.
+  const auto add_problem = [&](const std::string& what) {
+    catalog.problem += std::format("{}{} : {}", catalog.problem.empty() ? "" : " ; ", index.string(), what);
+  };
+  for (const Refusal& skipped : parsed->skipped) add_problem(std::format("écarté, {}", skipped.detail));
   if (catalog.layout.os == core::Os::Linux) {
     if (auto maxine = core::parse_maxine_source(text)) {
       catalog.maxine = std::move(*maxine);
     } else {
-      catalog.problem = std::format("{} : {}", index.string(), maxine.error().detail);
+      add_problem(maxine.error().detail);
     }
   }
   return catalog;

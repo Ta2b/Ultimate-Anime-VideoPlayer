@@ -91,6 +91,15 @@ std::expected<std::vector<ModelEntry>, Refusal> parse_models_lock(std::string_vi
 // au plus une fois.
 std::expected<std::vector<EnginePackage>, Refusal> parse_engine_index(std::string_view toml_text);
 
+// L'index tel que le lecteur le lit : une entrée refusée (un moteur qu'il ne connaît pas encore,
+// publié par une release plus récente) est écartée seule, et les autres restent téléchargeables.
+// Refus : TOML illisible, version d'index inconnue, [[engine]] qui n'est pas un tableau.
+struct EngineIndex {
+  std::vector<EnginePackage> packages;
+  std::vector<Refusal> skipped;  // une par entrée écartée
+};
+std::expected<EngineIndex, Refusal> read_engine_index(std::string_view toml_text);
+
 // [maxine_vfx] : le SDK Video Effects de NVIDIA (TrueHDR sous Linux), qui ne se redistribue pas
 // et se télécharge depuis NGC avec la clé de l'utilisateur, sa licence acceptée à l'écran.
 //   org, team, resource, version, file : la ressource du cœur du SDK (une archive .tgz) ;
