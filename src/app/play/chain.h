@@ -63,6 +63,10 @@ struct Chain {
   std::int64_t black_at_us = 0;
 };
 
+// Couleur de la sortie de RTX HDR : PQ BT.2020 au pic donné à TrueHDR.
+ColorInfo pq_color(int peak_nits);
+// Les paramètres de TrueHDR tirés des réglages ; le pic de l'écran si aucun n'est fixé.
+vendor_hdr::TrueHdrParams true_hdr_params(const PlaySettings& s, int auto_peak);
 // RTX HDR : le SDK Maxine importé une fois dans le magasin du lecteur (environ 135 Mo), revérifié
 // à chaque lancement, puis l'effet ouvert pour la sortie de SPAN ; l'écran reçoit alors du PQ
 // BT.2020 au pic donné à TrueHDR, que rend la fonction.

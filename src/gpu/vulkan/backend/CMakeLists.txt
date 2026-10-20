@@ -21,6 +21,7 @@ ajp_add_module(vk_backend
     net_engine.cpp
     net_lower.cpp
     net_lower_conv.cpp
+    net_lower_copy.cpp
     net_params.cpp
     net_runtime.cpp
     net_weights.cpp
