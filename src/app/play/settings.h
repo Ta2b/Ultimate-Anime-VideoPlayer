@@ -71,6 +71,9 @@ struct PlaySettings {
   int rife_factor = kDefaultRifeFactor;  // 0 : aucune interpolation
   MotionEngine motion_engine = MotionEngine::Rife;
   std::string rife_model;  // fichier ONNX de RIFE (nom seul) ; vide : rife_v4.26.onnx
+  // Garder les poses (DRBA, kernels/spec/poses.h) : un personnage animé en deux garde son rythme
+  // pendant que le fond s'interpole ; en direct.
+  bool keep_poses = false;
   // Smooth Motion du pilote NVIDIA (RTX 40 et 50, pilote ≥ 580) : sa couche Vulkan double les
   // images présentées, au-dessus de RIFE (×3 puis ×2 : 72 → 144 images par seconde). Posé au
   // lancement, avant l'instance Vulkan : vaut au prochain lancement.

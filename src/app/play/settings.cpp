@@ -241,6 +241,7 @@ std::expected<PlaySettings, Refusal> parse_settings(std::string_view toml_text) 
     reads.push_back(read(*interpolation, "interpolation", "rife", s.rife_factor));
     reads.push_back(read(*interpolation, "interpolation", "smooth_motion", s.smooth_motion));
     reads.push_back(read(*interpolation, "interpolation", "model", s.rife_model));
+    reads.push_back(read(*interpolation, "interpolation", "keep_poses", s.keep_poses));
     std::string engine(name(s.motion_engine));
     reads.push_back(read(*interpolation, "interpolation", "engine", engine));
     bool engine_known = false;
@@ -338,6 +339,7 @@ std::string format_settings(const PlaySettings& s) {
   root.insert("interpolation", toml::table{{"rife", s.rife_factor},
                                            {"engine", std::string(name(s.motion_engine))},
                                            {"model", s.rife_model},
+                                           {"keep_poses", s.keep_poses},
                                            {"smooth_motion", s.smooth_motion}});
   root.insert("rtx_hdr", toml::table{{"enabled", s.true_hdr},
                                      {"contrast", s.true_hdr_contrast},
@@ -481,6 +483,7 @@ PlaySettings live_part(const PlaySettings& running, const PlaySettings& wanted, 
   s.grade_values = wanted.grade_values;
   s.oled_black = wanted.oled_black;
   s.oled_black_steps = wanted.oled_black_steps;
+  s.keep_poses = wanted.keep_poses;
   s.smooth_motion = wanted.smooth_motion;  // gardé pour le prochain lancement
   s.oled_care = wanted.oled_care;
   s.steady_cadence = wanted.steady_cadence;

@@ -173,3 +173,67 @@ TEST_CASE("warp : les entrées hors contrat sont refusées", "[warp]") {
   uneven.flow[3] = PlaneF(8, 5);
   CHECK(ref::flow_max(uneven).error().code == ErrorCode::SizeMismatch);
 }
+
+// Garder les poses (spec/poses.h) : b est a décalée de 6 pixels vers la droite, mouvement de la
+// paire uniforme (f0 = −3, f1 = +3).
+TEST_CASE("poses : un mouvement régulier garde l'instant de warp_blend_at", "[warp][poses]") {
+  const RgbImage a = ramp(32, 4, 0.0F);
+  const RgbImage b = ramp(32, 4, -6.0F);
+  const ref::Motion motion = uniform_motion(32, 4, {0, 0, 32, 4}, -3.0F, 3.0F, 0.5F);
+  for (const float t : {0.25F, 0.75F}) {
+    const auto plain = ref::warp_blend_at(a, b, motion, t);
+    const auto poses = ref::warp_blend_poses(a, b, motion, &motion, t);
+    REQUIRE(plain);
+    REQUIRE(poses);
+    for (int x = 0; x < 32; ++x)
+      CHECK_THAT(poses->planes[0].at(x, 2), WithinAbs(plain->planes[0].at(x, 2), 1e-5));
+  }
+}
+
+TEST_CASE("poses : après une paire tenue, la pose tient jusqu'au milieu puis passe à b", "[warp][poses]") {
+  const RgbImage a = ramp(32, 4, 0.0F);
+  const RgbImage b = ramp(32, 4, -6.0F);
+  const ref::Motion motion = uniform_motion(32, 4, {0, 0, 32, 4}, -3.0F, 3.0F, 0.5F);
+  const auto early = ref::warp_blend_poses(a, b, motion, nullptr, 0.25F);
+  const auto late = ref::warp_blend_poses(a, b, motion, nullptr, 0.75F);
+  REQUIRE(early);
+  REQUIRE(late);
+  for (int x = 8; x < 24; ++x) {
+    CHECK_THAT(early->planes[0].at(x, 2), WithinAbs(a.planes[0].at(x, 2), 0.05));
+    CHECK_THAT(late->planes[0].at(x, 2), WithinAbs(b.planes[0].at(x, 2), 0.05));
+  }
+}
+
+TEST_CASE("poses : un personnage en deux sur un fond en uns", "[warp][poses]") {
+  // Paire précédente : la moitié gauche (le fond) bougeait déjà de 6, la droite (le personnage) non.
+  const RgbImage a = ramp(64, 4, 0.0F);
+  const RgbImage b = ramp(64, 4, -6.0F);
+  const ref::Motion motion = uniform_motion(64, 4, {0, 0, 64, 4}, -3.0F, 3.0F, 0.5F);
+  ref::Motion previous = uniform_motion(64, 4, {0, 0, 64, 4}, -3.0F, 3.0F, 0.5F);
+  for (int y = 0; y < 4; ++y) {
+    for (int x = 32; x < 64; ++x) {
+      previous.flow[0].at(x, y) = 0.0F;
+      previous.flow[2].at(x, y) = 0.0F;
+    }
+  }
+  const auto plain = ref::warp_blend_at(a, b, motion, 0.25F);
+  const auto poses = ref::warp_blend_poses(a, b, motion, &previous, 0.25F);
+  REQUIRE(plain);
+  REQUIRE(poses);
+  for (int x = 8; x < 24; ++x)
+    CHECK_THAT(poses->planes[0].at(x, 2), WithinAbs(plain->planes[0].at(x, 2), 1e-4));
+  for (int x = 42; x < 58; ++x) CHECK_THAT(poses->planes[0].at(x, 2), WithinAbs(a.planes[0].at(x, 2), 0.05));
+}
+
+TEST_CASE("poses : instant et mouvements hors contrat refusés", "[warp][poses]") {
+  const RgbImage a = ramp(8, 4, 0.0F);
+  const ref::Motion motion = uniform_motion(8, 4, {0, 0, 8, 4}, 0.0F, 0.0F, 0.5F);
+  CHECK(ref::warp_blend_poses(a, a, motion, nullptr, 1.0F).error().code == ErrorCode::ParameterOutOfRange);
+  const ref::Motion other = uniform_motion(8, 4, {0, 0, 4, 4}, 0.0F, 0.0F, 0.5F);
+  CHECK(ref::warp_blend_poses(a, a, motion, &other, 0.5F).error().code == ErrorCode::SizeMismatch);
+  const ref::Motion smaller = uniform_motion(4, 4, {0, 0, 4, 4}, 0.0F, 0.0F, 0.5F);
+  CHECK(ref::warp_blend_poses(a, a, motion, &smaller, 0.5F).error().code == ErrorCode::SizeMismatch);
+  CHECK(pose_time(0.25F, 0.5F) == 0.25F);
+  CHECK(pose_time(0.75F, 0.5F) == 0.75F);
+  CHECK(pose_time(0.5F, 0.0F) == 1.0F);
+}

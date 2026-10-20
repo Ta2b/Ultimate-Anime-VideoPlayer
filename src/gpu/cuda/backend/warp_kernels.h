@@ -24,7 +24,12 @@ struct WarpBlendParams {
   int window_height = 0;
   float time = 0.5F;         // instant de la sortie
   bool from_middle = false;  // mouvement estimé au milieu, sortie à time (loi de mélange ajustée)
-  void* out = nullptr;       // 1 × 3 × height × width, FP16
+  // Garder les poses (kernels/spec/poses.h, avec from_middle) : l'instant de chaque pixel réglé
+  // d'après le mouvement de la paire précédente, mêmes plans et même fenêtre que flow ;
+  // previous_flow nul : la paire précédente était tenue.
+  bool keep_poses = false;
+  const void* previous_flow = nullptr;
+  void* out = nullptr;  // 1 × 3 × height × width, FP16
 };
 
 cudaError_t launch_warp_blend(const WarpBlendParams& params, cudaStream_t stream);

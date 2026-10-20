@@ -2,6 +2,7 @@
 #include <cuda_fp16.h>
 
 #include "gpu/cuda/backend/warp_kernels.h"
+#include "kernels/spec/poses.h"
 #include "kernels/spec/warp.h"
 
 namespace ajp::gpu::cuda {
@@ -37,6 +38,50 @@ __device__ float bilinear(const __half* t, int plane_w, int plane_h, int c, int 
   return top * (1.0F - fy) + bottom * fy;
 }
 
+// L'instant réglé du pixel (u, v) pour garder les poses (keeping_poses de ref/warp.cpp).
+__device__ float pose_time_at(const WarpBlendParams& p, float u, float v) {
+  const auto* flow = static_cast<const __half*>(p.flow);
+  const auto* previous = static_cast<const __half*>(p.previous_flow);
+  const int pw = p.plane_width;
+  const int ph = p.plane_height;
+  const int wx = p.window_x;
+  const int wy = p.window_y;
+  const int fw = p.window_width;
+  const int fh = p.window_height;
+  const auto at = [&](const __half* f, int c, float x, float y) {
+    return bilinear(f, pw, ph, c, wx, wy, fw, fh, x, y);
+  };
+  const float t = p.time;
+  float tp = t;
+  for (int k = 0; k < kernels::kPoseIterations; ++k) {
+    const float u2 = u - ((1.0F - tp) * at(flow, 0, u, v) + tp * at(flow, 2, u, v));
+    const float v2 = v - ((1.0F - tp) * at(flow, 1, u, v) + tp * at(flow, 3, u, v));
+    const float dx = at(flow, 2, u2, v2) - at(flow, 0, u2, v2);
+    const float dy = at(flow, 3, u2, v2) - at(flow, 1, u2, v2);
+    float before = 0.0F;
+    if (previous != nullptr) {
+      const float ax = u - tp * dx;
+      const float ay = v - tp * dy;
+      float qx = ax;
+      float qy = ay;
+      for (int step = 0; step < 2; ++step) {
+        const float nx = ax - at(previous, 2, qx, qy);
+        const float ny = ay - at(previous, 3, qx, qy);
+        qx = nx;
+        qy = ny;
+      }
+      before = hypotf(at(previous, 2, qx, qy) - at(previous, 0, qx, qy),
+                      at(previous, 3, qx, qy) - at(previous, 1, qx, qy));
+    }
+    const float now = hypotf(dx, dy);
+    const float r = (before + kernels::kPoseEpsilon) / (before + now + 2.0F * kernels::kPoseEpsilon);
+    // kernels::pose_time, réécrit ici : nvcc n'appelle pas une fonction constexpr de l'hôte.
+    const float timed = t < 0.5F ? 2.0F * t * r : 1.0F - 2.0F * (1.0F - t) * r;
+    tp = fminf(fmaxf(timed, kernels::kPoseTimeLimit), 1.0F - kernels::kPoseTimeLimit);
+  }
+  return tp;
+}
+
 __global__ void warp_blend(WarpBlendParams p) {
   const int x = static_cast<int>(blockIdx.x * blockDim.x + threadIdx.x);
   const int y = static_cast<int>(blockIdx.y * blockDim.y + threadIdx.y);
@@ -65,7 +110,7 @@ __global__ void warp_blend(WarpBlendParams p) {
     by = bilinear(flow, pw, ph, 3, wx, wy, fw, fh, u, v);
     weight = bilinear(mask, pw, ph, 0, wx, wy, fw, fh, u, v);
   } else {
-    const float t = p.time;
+    const float t = p.keep_poses ? pose_time_at(p, u, v) : p.time;
     const float a0x = bilinear(flow, pw, ph, 0, wx, wy, fw, fh, u, v);
     const float a0y = bilinear(flow, pw, ph, 1, wx, wy, fw, fh, u, v);
     const float a1x = bilinear(flow, pw, ph, 2, wx, wy, fw, fh, u, v);

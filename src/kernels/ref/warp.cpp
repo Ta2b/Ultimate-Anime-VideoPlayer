@@ -56,10 +56,11 @@ struct Displacement {
   float weight = 0.0F;
 };
 
-using DisplacementAt = Displacement (*)(const Motion&, float, float, float);
+// previous : mouvement de la paire précédente, pour garder les poses seulement.
+using DisplacementAt = Displacement (*)(const Motion&, const Motion*, float, float, float);
 
 // L'instant que RIFE a estimé : mouvement et masque tels quels.
-Displacement estimated(const Motion& m, float u, float v, float /*t*/) {
+Displacement estimated(const Motion& m, const Motion* /*previous*/, float u, float v, float /*t*/) {
   return {.ax = bilinear_at(m.flow[0], m.area, u, v),
           .ay = bilinear_at(m.flow[1], m.area, u, v),
           .bx = bilinear_at(m.flow[2], m.area, u, v),
@@ -68,7 +69,7 @@ Displacement estimated(const Motion& m, float u, float v, float /*t*/) {
 }
 
 // Un autre instant depuis le mouvement du milieu : ligne droite et loi de mélange ajustée.
-Displacement from_middle(const Motion& m, float u, float v, float t) {
+Displacement from_middle(const Motion& m, const Motion* /*previous*/, float u, float v, float t) {
   const float a0x = bilinear_at(m.flow[0], m.area, u, v);
   const float a0y = bilinear_at(m.flow[1], m.area, u, v);
   const float a1x = bilinear_at(m.flow[2], m.area, u, v);
@@ -88,8 +89,43 @@ Displacement from_middle(const Motion& m, float u, float v, float t) {
           .weight = 1.0F / (1.0F + std::exp(-z))};
 }
 
-Result<RgbImage> blend(const RgbImage& a, const RgbImage& b, const Motion& motion, float t,
-                       DisplacementAt at) {
+// L'instant réglé du pixel (u, v) puis from_middle à cet instant (spec/poses.h).
+Displacement keeping_poses(const Motion& m, const Motion* previous, float u, float v, float t) {
+  const Window& w = m.area;
+  float tp = t;
+  for (int k = 0; k < kPoseIterations; ++k) {
+    const float u2 =
+        u - ((1.0F - tp) * bilinear_at(m.flow[0], w, u, v) + tp * bilinear_at(m.flow[2], w, u, v));
+    const float v2 =
+        v - ((1.0F - tp) * bilinear_at(m.flow[1], w, u, v) + tp * bilinear_at(m.flow[3], w, u, v));
+    const float dx = bilinear_at(m.flow[2], w, u2, v2) - bilinear_at(m.flow[0], w, u2, v2);
+    const float dy = bilinear_at(m.flow[3], w, u2, v2) - bilinear_at(m.flow[1], w, u2, v2);
+    float before = 0.0F;
+    if (previous != nullptr) {
+      const Motion& p = *previous;
+      const float ax = u - tp * dx;
+      const float ay = v - tp * dy;
+      // Le point de la paire précédente qui arrive en pa : q = pa − f1'(q), deux pas depuis pa.
+      float qx = ax;
+      float qy = ay;
+      for (int step = 0; step < 2; ++step) {
+        const float nx = ax - bilinear_at(p.flow[2], p.area, qx, qy);
+        const float ny = ay - bilinear_at(p.flow[3], p.area, qx, qy);
+        qx = nx;
+        qy = ny;
+      }
+      before = std::hypot(bilinear_at(p.flow[2], p.area, qx, qy) - bilinear_at(p.flow[0], p.area, qx, qy),
+                          bilinear_at(p.flow[3], p.area, qx, qy) - bilinear_at(p.flow[1], p.area, qx, qy));
+    }
+    const float now = std::hypot(dx, dy);
+    const float r = (before + kPoseEpsilon) / (before + now + 2.0F * kPoseEpsilon);
+    tp = std::fmin(std::fmax(pose_time(t, r), kPoseTimeLimit), 1.0F - kPoseTimeLimit);
+  }
+  return from_middle(m, previous, u, v, tp);
+}
+
+Result<RgbImage> blend(const RgbImage& a, const RgbImage& b, const Motion& motion, const Motion* previous,
+                       float t, DisplacementAt at) {
   if (auto ok = check_same_size(a, b, "images à mélanger"); !ok) return std::unexpected(ok.error());
   if (auto ok = check_motion(motion); !ok) return std::unexpected(ok.error());
   const int w = a.width();
@@ -102,7 +138,7 @@ Result<RgbImage> blend(const RgbImage& a, const RgbImage& b, const Motion& motio
     for (int x = 0; x < w; ++x) {
       const float fx = static_cast<float>(x);
       const float fy = static_cast<float>(y);
-      const Displacement d = at(motion, (fx + 0.5F) / sx - 0.5F, (fy + 0.5F) / sy - 0.5F, t);
+      const Displacement d = at(motion, previous, (fx + 0.5F) / sx - 0.5F, (fy + 0.5F) / sy - 0.5F, t);
       for (std::size_t c = 0; c < out.planes.size(); ++c) {
         const float va = bilinear_at(a.planes[c], fx + sx * d.ax, fy + sy * d.ay);
         const float vb = bilinear_at(b.planes[c], fx + sx * d.bx, fy + sy * d.by);
@@ -134,14 +170,31 @@ Result<void> check_motion(const Motion& motion) {
 }
 
 Result<RgbImage> warp_blend(const RgbImage& a, const RgbImage& b, const Motion& motion) {
-  return blend(a, b, motion, 0.5F, estimated);
+  return blend(a, b, motion, nullptr, 0.5F, estimated);
 }
 
 Result<RgbImage> warp_blend_at(const RgbImage& a, const RgbImage& b, const Motion& motion, float t) {
   if (!(t > 0.0F && t < 1.0F)) {
     return fail(ErrorCode::ParameterOutOfRange, std::format("instant {} hors de ]0, 1[", t));
   }
-  return blend(a, b, motion, t, t == 0.5F ? estimated : from_middle);
+  return blend(a, b, motion, nullptr, t, t == 0.5F ? estimated : from_middle);
+}
+
+Result<RgbImage> warp_blend_poses(const RgbImage& a, const RgbImage& b, const Motion& motion,
+                                  const Motion* previous, float t) {
+  if (!(t > 0.0F && t < 1.0F)) {
+    return fail(ErrorCode::ParameterOutOfRange, std::format("instant {} hors de ]0, 1[", t));
+  }
+  if (previous != nullptr) {
+    if (auto ok = check_motion(*previous); !ok) return std::unexpected(ok.error());
+    if (auto ok = check_same_size(previous->mask, motion.mask, "mouvements de deux paires"); !ok)
+      return std::unexpected(ok.error());
+    const Window& p = previous->area;
+    const Window& m = motion.area;
+    if (p.x != m.x || p.y != m.y || p.width != m.width || p.height != m.height)
+      return fail(ErrorCode::SizeMismatch, "mouvements de deux paires : fenêtres différentes");
+  }
+  return blend(a, b, motion, previous, t, keeping_poses);
 }
 
 Result<float> flow_max(const Motion& motion) {

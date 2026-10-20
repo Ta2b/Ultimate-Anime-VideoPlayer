@@ -327,6 +327,11 @@ void apply_live(Chain& to, const PlaySettings& wanted, std::int64_t now_us) {
                                             : std::string("Interpolation désactivée"),
                     now_us);
   }
+  if (wanted.keep_poses != r.keep_poses) {
+    to.live.set_keep_poses(wanted.keep_poses);
+    controls.notify(
+        wanted.keep_poses ? std::string("Poses gardées (DRBA)") : std::string("Poses : warp simple"), now_us);
+  }
   if (wanted.downscale != r.downscale) {
     log_channel("app")->info("réduction en direct : {}", label(wanted.downscale));
     to.live.set_reduction(reduction_of(wanted.downscale));

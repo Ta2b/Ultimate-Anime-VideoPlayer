@@ -107,15 +107,25 @@ class UpscaleStage final : public RingStage {
   std::unique_ptr<gpu::TensorBuffer> rife_in_;   // 1 × 11 × ph × pw
   std::unique_ptr<gpu::TensorBuffer> rife_out_;  // 1 × 3 × ph × pw
   std::unique_ptr<gpu::TensorBuffer> middle_;    // 1 × 3 × h × w : image intermédiaire recadrée
-  // Mouvement (variante mouvement) : celui du milieu de la paire, et celui d'un autre instant.
-  std::unique_ptr<gpu::TensorBuffer> mid_flow_;  // 1 × 4 × ph × pw
-  std::unique_ptr<gpu::TensorBuffer> mid_mask_;  // 1 × 1 × ph × pw
+  // Mouvement au milieu de la paire (variante mouvement de RIFE, ou flux optique sur sa grille) :
+  // deux, à tour de rôle, celui de la paire précédente servant à garder les poses.
+  struct MotionBuffers {
+    std::unique_ptr<gpu::TensorBuffer> flow;  // 1 × 4 × ph × pw (RIFE) ou cells_y × cells_x
+    std::unique_ptr<gpu::TensorBuffer> mask;  // 1 × 1, même taille
+  };
+  std::array<MotionBuffers, 2> mids_;
+  std::uint32_t mid_ = 0;  // celui de la paire en cours
+  gpu::Motion mid_motion(std::uint32_t index) const;
+  // Variante mouvement, mouvement fort : celui d'un autre instant que le milieu.
   std::unique_ptr<gpu::TensorBuffer> flow_;
   std::unique_ptr<gpu::TensorBuffer> mask_;
-  // Mouvement du flux optique matériel, sur sa grille entière.
-  std::unique_ptr<gpu::TensorBuffer> grid_flow_;  // 1 × 4 × cells_y × cells_x
-  std::unique_ptr<gpu::TensorBuffer> grid_mask_;  // 1 × 1 × cells_y × cells_x
   std::uint64_t optical_flow_pairs_ = 0;
+  // Garder les poses (kernels/spec/poses.h) : ce qu'a bougé la paire précédente, et la paire en
+  // cours. Inconnu après une coupe, un saut, une paire non interpolée : le warp est alors le simple.
+  enum class PairMotion : std::uint8_t { Unknown, Still, Moving };
+  PairMotion before_ = PairMotion::Unknown;
+  PairMotion now_ = PairMotion::Unknown;
+  bool poses_ = false;       // garder les poses pour la paire en cours (réglage lu à son début)
   bool single_run_ = false;  // la paire en cours n'a qu'une passe RIFE, au milieu
   std::uint64_t single_pairs_ = 0;
   std::uint64_t multi_pairs_ = 0;

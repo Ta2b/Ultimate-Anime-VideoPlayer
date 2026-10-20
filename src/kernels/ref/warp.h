@@ -6,6 +6,7 @@
 #include <array>
 
 #include "kernels/image.h"
+#include "kernels/spec/poses.h"
 #include "kernels/spec/warp.h"
 
 namespace ajp::kernels::ref {
@@ -32,6 +33,12 @@ Result<RgbImage> warp_blend(const RgbImage& a, const RgbImage& b, const Motion& 
 // Instant t de ]0, 1[ depuis le mouvement estimé au milieu de la paire ; t = 1/2 égale
 // warp_blend. Refus : t hors de ]0, 1[.
 Result<RgbImage> warp_blend_at(const RgbImage& a, const RgbImage& b, const Motion& motion, float t);
+
+// Garder les poses (spec/poses.h) : warp_blend_at à l'instant réglé de chaque pixel, d'après le
+// mouvement de la paire précédente ; previous nul : la paire précédente était tenue (images
+// égales). Refus : t hors de ]0, 1[, mouvements hors contrat ou de tailles différentes.
+Result<RgbImage> warp_blend_poses(const RgbImage& a, const RgbImage& b, const Motion& motion,
+                                  const Motion* previous, float t);
 
 // Plus grand déplacement absolu dans la fenêtre, en pixels de la fenêtre (k_flow_max).
 Result<float> flow_max(const Motion& motion);

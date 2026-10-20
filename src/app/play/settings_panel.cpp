@@ -144,6 +144,11 @@ void fluidity_tab(PlaySettings& d, const SettingsChoices& choices) {
     note("En 4K, RIFE estime le mouvement en 720p et déforme les images 1080p : ×2 tient sur cette carte.");
   }
   note("Les coupes de scène et les dessins tenus ne sont pas interpolés.");
+  ImGui::Checkbox("Garder les poses (DRBA)", &d.keep_poses);
+  note(
+      "Expérimental. Un personnage animé en deux sur un fond qui défile garde son rythme (il tient sa pose "
+      "puis change d'un coup) pendant que le fond s'interpole, au lieu de se déformer entre deux dessins. "
+      "Avec RIFE, une seule passe par paire. En direct.");
   section("Smooth Motion (pilote NVIDIA)");
   ImGui::Checkbox("Doubler les images après RIFE", &d.smooth_motion);
   note(

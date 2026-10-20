@@ -84,6 +84,8 @@ class TensorRtBackend final : public Backend, public KernelOps {
   std::expected<std::vector<float>, Refusal> true_hdr_ramp(std::span<const std::uint8_t> levels) override;
   std::optional<DeviceMemory> device_memory() override;
   std::expected<float, Refusal> flow_max_now(const Motion& motion) override;
+  std::expected<void, Refusal> warp_blend_poses(const Tensor& a, const Tensor& b, const Motion& motion,
+                                                const Motion* previous, float t, const Tensor& out) override;
   // Flux optique matériel (tensorrt_optical_flow.cpp).
   std::expected<int, Refusal> open_optical_flow(int width, int height) override;
   std::expected<void, Refusal> optical_flow(const Tensor& a, const Tensor& b, const Motion& motion) override;
@@ -107,6 +109,13 @@ class TensorRtBackend final : public Backend, public KernelOps {
   std::expected<ImportedSlot*, Refusal> begin_write(const Tensor& rgb, const RingSlotDesc& desc,
                                                     const RingWrite& sync);
   void release_retired();
+  // warp_blend et warp_blend_poses : le même noyau, l'instant réglé ou non.
+  struct Poses {
+    bool keep = false;
+    const Motion* previous = nullptr;
+  };
+  std::expected<void, Refusal> warp(const Tensor& a, const Tensor& b, const Motion& motion,
+                                    const Poses& poses, float t, const Tensor& out);
 
   int device_ = 0;
   cudaDeviceProp properties_{};

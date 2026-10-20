@@ -369,6 +369,7 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
   auto live = std::make_shared<LiveSettings>();
   live->set_rife_factor(static_cast<std::uint32_t>(use_rife || flow_grid > 0 ? settings.rife_factor : 0));
   live->set_reduction(reduction_of(settings.downscale));
+  live->set_keep_poses(settings.keep_poses);
   PipelineConfig config{
       .file = options.file,
       .decoder = {.attempts = {media::HwApi::Cuda}, .render_device = p.screen.device().uuid},

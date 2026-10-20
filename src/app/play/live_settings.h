@@ -67,6 +67,10 @@ class LiveSettings {
   void set_rife_factor(std::uint32_t factor) { rife_factor_.store(factor); }
   std::uint32_t rife_factor() const { return rife_factor_.load(); }
 
+  // Garder les poses (kernels/spec/poses.h), lu par gpu au début de chaque paire.
+  void set_keep_poses(bool keep) { keep_poses_.store(keep); }
+  bool keep_poses() const { return keep_poses_.load(); }
+
   void set_reduction(const gpu::Reduction& reduction) {
     const std::scoped_lock lock(mutex_);
     reduction_ = reduction;
@@ -115,6 +119,7 @@ class LiveSettings {
 
  private:
   std::atomic<std::uint32_t> rife_factor_{0};
+  std::atomic<bool> keep_poses_{false};
   mutable std::mutex mutex_;
   gpu::Reduction reduction_;
   std::optional<vendor_hdr::TrueHdrParams> true_hdr_;

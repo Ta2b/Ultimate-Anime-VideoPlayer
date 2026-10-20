@@ -1,5 +1,6 @@
 // Warp et mélange par le mouvement de RIFE (warp_kernels.h) dans le backend TensorRT : warp_blend
-// du contrat de KernelOps, et flow_max_now, extension de la tranche verticale.
+// du contrat de KernelOps, warp_blend_poses (garder les poses) et flow_max_now, extensions de la
+// tranche verticale.
 #include <cstring>
 #include <format>
 #include <string>
@@ -54,6 +55,25 @@ std::expected<void, Refusal> check_motion(const Motion& motion) {
 
 std::expected<void, Refusal> TensorRtBackend::warp_blend(const Tensor& a, const Tensor& b,
                                                          const Motion& motion, float t, const Tensor& out) {
+  return warp(a, b, motion, Poses{}, t, out);
+}
+
+std::expected<void, Refusal> TensorRtBackend::warp_blend_poses(const Tensor& a, const Tensor& b,
+                                                               const Motion& motion, const Motion* previous,
+                                                               float t, const Tensor& out) {
+  if (previous != nullptr) {
+    if (auto ok = check_motion(*previous); !ok) return ok;
+    if (previous->flow.shape.dims != motion.flow.shape.dims || previous->area.x != motion.area.x ||
+        previous->area.y != motion.area.y || previous->area.width != motion.area.width ||
+        previous->area.height != motion.area.height) {
+      return refuse(RefusalCode::ShapeInvalid, "warp_blend_poses : mouvements de deux paires différents");
+    }
+  }
+  return warp(a, b, motion, Poses{.keep = true, .previous = previous}, t, out);
+}
+
+std::expected<void, Refusal> TensorRtBackend::warp(const Tensor& a, const Tensor& b, const Motion& motion,
+                                                   const Poses& poses, float t, const Tensor& out) {
   if (!fp16_planes(a, 3) || a.shape.dims != b.shape.dims || a.shape.dims != out.shape.dims ||
       b.type != TensorType::F16 || out.type != TensorType::F16 || b.handle == 0 || out.handle == 0) {
     return refuse(RefusalCode::ShapeInvalid, "warp_blend : trois images RGB FP16 de même taille attendues");
@@ -62,21 +82,24 @@ std::expected<void, Refusal> TensorRtBackend::warp_blend(const Tensor& a, const 
     return refuse(RefusalCode::FieldOutOfRange, std::format("warp_blend : instant {}", t));
   if (auto ok = check_motion(motion); !ok) return ok;
   if (auto ok = bind(); !ok) return ok;
-  const WarpBlendParams params{.a = address(a),
-                               .b = address(b),
-                               .width = width_of(a),
-                               .height = height_of(a),
-                               .flow = address(motion.flow),
-                               .mask = address(motion.mask),
-                               .plane_width = width_of(motion.flow),
-                               .plane_height = height_of(motion.flow),
-                               .window_x = motion.area.x,
-                               .window_y = motion.area.y,
-                               .window_width = motion.area.width,
-                               .window_height = motion.area.height,
-                               .time = t,
-                               .from_middle = t != 0.5F,
-                               .out = const_cast<void*>(address(out))};  // NOLINT : écrit
+  const WarpBlendParams params{
+      .a = address(a),
+      .b = address(b),
+      .width = width_of(a),
+      .height = height_of(a),
+      .flow = address(motion.flow),
+      .mask = address(motion.mask),
+      .plane_width = width_of(motion.flow),
+      .plane_height = height_of(motion.flow),
+      .window_x = motion.area.x,
+      .window_y = motion.area.y,
+      .window_width = motion.area.width,
+      .window_height = motion.area.height,
+      .time = t,
+      .from_middle = poses.keep || t != 0.5F,
+      .keep_poses = poses.keep,
+      .previous_flow = poses.previous != nullptr ? address(poses.previous->flow) : nullptr,
+      .out = const_cast<void*>(address(out))};  // NOLINT : écrit
   GpuTiming& timing = stage("warp et mélange");
   timing.begin(stream_);
   auto launched = cuda_check(launch_warp_blend(params, stream_), "warp_blend<<<>>>");

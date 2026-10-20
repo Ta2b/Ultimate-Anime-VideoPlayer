@@ -141,6 +141,15 @@ class KernelOps {
   virtual std::expected<float, Refusal> flow_max_now(const Motion& /*motion*/) {
     return std::unexpected(Refusal{RefusalCode::FormatUnsupported, "flow_max_now : absent de ce backend"});
   }
+  // Garder les poses (kernels/spec/poses.h) : warp_blend à l'instant réglé de chaque pixel, d'après
+  // le mouvement au milieu de la paire précédente (mêmes plans, même fenêtre) ; previous nul : la
+  // paire précédente était tenue. motion est celui du milieu de la paire (ref::warp_blend_poses).
+  virtual std::expected<void, Refusal> warp_blend_poses(const Tensor& /*a*/, const Tensor& /*b*/,
+                                                        const Motion& /*motion*/, const Motion* /*previous*/,
+                                                        float /*t*/, const Tensor& /*out*/) {
+    return std::unexpected(
+        Refusal{RefusalCode::FormatUnsupported, "warp_blend_poses : absent de ce backend"});
+  }
   // Flux optique matériel (NVIDIA Optical Flow, kernels/spec/optical_flow.h) à la place de RIFE :
   // ouvre ses sessions pour des images de width × height (la taille où RIFE travaillerait) et rend
   // la grille de ses vecteurs, en pixels ; rouvrir remplace. Le mouvement d'optical_flow a alors
