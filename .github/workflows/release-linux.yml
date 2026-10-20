@@ -74,7 +74,9 @@ jobs:
             | sudo tee /etc/apt/sources.list.d/rocm.list
           printf 'Package: *\nPin: release o=repo.radeon.com\nPin-Priority: 600\n' | sudo tee /etc/apt/preferences.d/rocm-pin-600
           sudo apt-get update -qq
-          sudo apt-get install -y -qq --no-install-recommends migraphx-dev hip-dev
+          # migraphx-config.cmake retrouve aussi MIOpen, rocBLAS et hipBLASLt (leurs paquets -dev).
+          sudo apt-get install -y -qq --no-install-recommends migraphx-dev hip-dev miopen-hip-dev rocblas-dev \
+            hipblaslt-dev libtbb-dev
           echo "CMAKE_PREFIX_PATH=/opt/rocm" >> "$GITHUB_ENV"
       - name: Paquet
         env:
