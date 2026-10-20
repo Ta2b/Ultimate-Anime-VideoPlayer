@@ -159,7 +159,7 @@ pas de limite de portable), 720p devient le point de départ probable.
 ## Ryzen 7 9800X3D et RX 9070 XT (RDNA4, 16 Go)
 
 Profil 1 (1440p, RIFE ×3) au premier lancement. Sous Windows, moteur Vulkan seul ; sous Linux,
-Vulkan ou MIGraphX (ROCm 6.4.1 et plus).
+Vulkan ou MIGraphX (ROCm 7.2 et plus).
 
 - **Unités matricielles (WMMA)** : le journal doit dire « famille AMD RDNA4, unités matricielles
   utilisées ». La variante coopmat tourne en wave32 (32 exigé par pipeline, comme llama.cpp) ;

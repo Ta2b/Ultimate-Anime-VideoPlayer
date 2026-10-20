@@ -87,9 +87,14 @@ std::optional<std::string> missing_prerequisite(core::EngineId engine) {
   if (host_os() != core::Os::Linux) return std::nullopt;  // les pilotes Windows les fournissent
   switch (engine) {
     case core::EngineId::MiGraphX:
-      if (any_exists({"/opt/rocm/lib/libmigraphx_c.so.3", "/opt/rocm/lib/libmigraphx_c.so"}))
-        return std::nullopt;
-      return "ROCm absent : installer « migraphx » depuis le dépôt ROCm d'AMD (sudo apt install migraphx)";
+      // Le module est lié au runtime HIP de ROCm 7 (libamdhip64.so.7) : un ROCm 6 ne le charge pas.
+      if (!any_exists({"/opt/rocm/lib/libmigraphx_c.so.3", "/opt/rocm/lib/libmigraphx_c.so"}))
+        return "ROCm absent : installer « migraphx » depuis le dépôt ROCm 7 d'AMD (sudo apt install "
+               "migraphx)";
+      if (!any_exists({"/opt/rocm/lib/libamdhip64.so.7"}))
+        return "ROCm 7 requis (ROCm 6 installé) : passer au dépôt ROCm 7 d'AMD, puis sudo apt install "
+               "migraphx";
+      return std::nullopt;
     case core::EngineId::OpenVino:
       if (any_exists({"/usr/lib/x86_64-linux-gnu/libze_intel_gpu.so.1",
                       "/usr/lib/x86_64-linux-gnu/intel-opencl/libigdrcl.so",

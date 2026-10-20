@@ -62,8 +62,9 @@ jobs:
           key: ${{ steps.deps-cache.outputs.cache-primary-key }}
       # Moteurs facultatifs, empaquetés à côté du lecteur et listés dans engines.lock : OpenVINO
       # (GPU Intel) par sa roue PyPI, qui porte ses en-têtes et sa configuration CMake ; MIGraphX
-      # (GPU AMD) par le dépôt ROCm d'AMD. ROCm reste un prérequis du système chez l'utilisateur :
-      # seul le module du backend est livré. TensorRT se construit ailleurs (licence NVIDIA).
+      # (GPU AMD) par le dépôt ROCm 7.2 d'AMD. ROCm reste un prérequis du système chez l'utilisateur :
+      # seul le module du backend est livré, lié au runtime HIP de ROCm 7 (libamdhip64.so.7), qui
+      # ne se charge pas sur un ROCm 6. TensorRT se construit ailleurs (licence NVIDIA).
       - name: Place sur le disque
         run: sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
       - name: OpenVINO
@@ -76,7 +77,7 @@ jobs:
         run: |
           sudo mkdir -p /etc/apt/keyrings
           curl -fsSL https://repo.radeon.com/rocm/rocm.gpg.key | gpg --dearmor | sudo tee /etc/apt/keyrings/rocm.gpg >/dev/null
-          echo "deb [arch=amd64 signed-by=/etc/apt/keyrings/rocm.gpg] https://repo.radeon.com/rocm/apt/6.4.1 noble main" \
+          echo "deb [arch=amd64 signed-by=/etc/apt/keyrings/rocm.gpg] https://repo.radeon.com/rocm/apt/7.2 noble main" \
             | sudo tee /etc/apt/sources.list.d/rocm.list
           printf 'Package: *\nPin: release o=repo.radeon.com\nPin-Priority: 600\n' | sudo tee /etc/apt/preferences.d/rocm-pin-600
           sudo apt-get update -qq

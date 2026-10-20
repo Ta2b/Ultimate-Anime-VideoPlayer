@@ -51,7 +51,7 @@ if [ "${1:-}" = rocm-size ]; then
     set -e
     sudo mkdir -p /etc/apt/keyrings
     curl -fsSL https://repo.radeon.com/rocm/rocm.gpg.key | gpg --dearmor | sudo tee /etc/apt/keyrings/rocm.gpg >/dev/null
-    echo "deb [arch=amd64 signed-by=/etc/apt/keyrings/rocm.gpg] https://repo.radeon.com/rocm/apt/6.4.1 noble main" \
+    echo "deb [arch=amd64 signed-by=/etc/apt/keyrings/rocm.gpg] https://repo.radeon.com/rocm/apt/7.2 noble main" \
       | sudo tee /etc/apt/sources.list.d/rocm.list >/dev/null
     printf "Package: *\nPin: release o=repo.radeon.com\nPin-Priority: 600\n" | sudo tee /etc/apt/preferences.d/rocm-pin-600 >/dev/null
     sudo apt-get update -qq

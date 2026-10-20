@@ -3,7 +3,7 @@
 #
 # Étages : base (paquets du workflow, g++-13, CMake 3.31 comme le runner), deps
 # (tools/deps/linux-from-source.sh, en cache tant que le script ne change pas), openvino (roue
-# PyPI), rocm (migraphx-dev et hip-dev du dépôt ROCm 6.4.1, comme le workflow), tests (Vulkan
+# PyPI), rocm (migraphx-dev et hip-dev du dépôt ROCm 7.2, comme le workflow), tests (Vulkan
 # logiciel et Xvfb comme le job player de ci.yml, sur l'étage TEST_BASE : rocm ou openvino).
 ARG TEST_BASE=rocm
 FROM ubuntu:24.04 AS base
@@ -40,7 +40,7 @@ ARG OPENVINO_VERSION=2026.4.1
 RUN pip install --user -q openvino==${OPENVINO_VERSION}
 
 FROM openvino AS rocm
-ARG ROCM_VERSION=6.4.1
+ARG ROCM_VERSION=7.2
 RUN sudo mkdir -p /etc/apt/keyrings \
  && curl -fsSL https://repo.radeon.com/rocm/rocm.gpg.key | gpg --dearmor | sudo tee /etc/apt/keyrings/rocm.gpg >/dev/null \
  && echo "deb [arch=amd64 signed-by=/etc/apt/keyrings/rocm.gpg] https://repo.radeon.com/rocm/apt/${ROCM_VERSION} noble main" \

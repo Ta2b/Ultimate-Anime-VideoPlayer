@@ -155,7 +155,10 @@ if [ -f "$MX_MODULE" ]; then
   cp "$MX_MODULE" "$dir/"
   copy_deps "$dir" "$MX_MODULE"
   for f in "$dir"/*; do [ -e "$STAGE/lib/$(basename "$f")" ] && [ "$f" != "$dir/ajp_backend_migraphx.so" ] && rm "$f"; done
-  engine_package migraphx "$VERSION" "" "$dir"
+  # ROCm reste celui du système, dans /opt/rocm/lib, que ld.so.conf ne liste pas toujours.
+  origin "$dir"
+  patchelf --set-rpath '$ORIGIN:/opt/rocm/lib' "$dir/ajp_backend_migraphx.so"
+  engine_package migraphx "$VERSION" "" "$dir" intact
 fi
 
 OV_MODULE="$BUILD/src/gpu/openvino/ajp_backend_openvino.so"
