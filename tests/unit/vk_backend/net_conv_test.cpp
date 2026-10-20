@@ -15,6 +15,7 @@
 #include "gpu/ir/passes.h"
 #include "gpu/ir/shape.h"
 #include "gpu/vulkan/backend/net_lower.h"
+#include "gpu/vulkan/backend/net_lower_detail.h"
 #include "net_rig.h"
 
 using namespace ajp::gpu;
@@ -294,4 +295,28 @@ TEST_CASE("Réseau : graphe façon RIFE de bout en bout", "[vk_backend][net][gra
   const ir::Graph graph = build(rife_like());
   const std::vector<ir::NamedValue> inputs{{"x", test_values(ir::DataType::F32, {1, 6, 16, 24}, 91)}};
   check_all_variants(rig, graph, inputs, kFp32);
+}
+
+// La mémoire partagée comptée par l'hôte égale celle que déclare net_conv_coopmat.glsl, B partagé ou
+// non : 8 sous-groupes, TM = 2 et KC = 32 font 48 Kio tout juste sans B, et le uvec4 de tile_b que
+// le noyau déclare quand même les faisait dépasser de 32 octets (perte de l'appareil, Xid 13).
+TEST_CASE("Réseau : mémoire partagée de la variante coopmat comme le noyau la déclare",
+          "[vk_backend][net][conv]") {
+  for (const std::uint32_t subgroups : {1U, 2U, 4U, 8U}) {
+    for (const std::uint32_t tm : {1U, 2U, 4U}) {
+      for (const std::uint32_t kc : {16U, 32U, 64U}) {
+        for (const std::uint32_t tiles : {1U, 3U, 16U}) {
+          for (const bool shared_b : {false, true}) {
+            const std::uint32_t qa = kc / 8;
+            const std::uint32_t abuf = subgroups * tm * 16 * (qa + (qa / 4 + 1) / 2);
+            const std::uint32_t bbuf = shared_b ? kc * tiles * 16 / 8 : 1;
+            const std::uint32_t declared = (2 * abuf * 16) + (2 * bbuf * 16) + (subgroups * 256 * 4);
+            CHECK(vk::net::detail::matrix_shared_bytes(subgroups, tm, kc, shared_b ? tiles * 16 : 0) ==
+                  declared);
+          }
+        }
+      }
+    }
+  }
+  CHECK(vk::net::detail::matrix_shared_bytes(8, 2, 32, 0) > 48U * 1024U);
 }

@@ -15,6 +15,14 @@
 #include "gpu/vulkan/backend/net_weights.h"
 
 namespace ajp::gpu::vk::net {
+
+std::uint32_t detail::matrix_shared_bytes(std::uint32_t subgroups, std::uint32_t tm, std::uint32_t kc,
+                                          std::uint32_t np) {
+  const std::uint32_t row = (kc / 8) + ((kc / 32) + 1) / 2;
+  const std::uint32_t b_quads = np == 0 ? 1 : kc * np / 8;  // BBUF : un uvec4 sans B partagé
+  return (2 * subgroups * tm * 16 * row * 16) + (subgroups * 256 * 4) + (2 * b_quads * 16);
+}
+
 namespace {
 
 constexpr std::string_view kDirect = "direct";
@@ -52,18 +60,9 @@ std::uint32_t groups_of(const ir::Node& node) {
   return 1;
 }
 
-// Tuiles de 16 canaux de sortie, et la mémoire partagée de la variante coopmat.
+// Tuiles de 16 canaux de sortie de la variante coopmat.
 std::uint32_t matrix_tiles(std::uint32_t cout) {
   return div_up(cout, 16);
-}
-
-// Deux tampons de A (lignes de kc / 8 uvec4, plus un dès kc = 32), la tuile de l'épilogue et,
-// quand B passe par la mémoire partagée (np canaux de sortie arrondis à 16), deux tampons de B
-// de kc lignes (net_conv_coopmat.glsl).
-std::uint32_t matrix_shared_bytes(std::uint32_t subgroups, std::uint32_t tm, std::uint32_t kc,
-                                  std::uint32_t np) {
-  const std::uint32_t row = (kc / 8) + ((kc / 32) + 1) / 2;
-  return (2 * subgroups * tm * 16 * row * 16) + (subgroups * 256 * 4) + (2 * kc * np * 2);
 }
 
 // Canaux d'entrée par étape : le plus grand de 64, 32, 16 qui divise cinp et tient en mémoire
@@ -71,7 +70,7 @@ std::uint32_t matrix_shared_bytes(std::uint32_t subgroups, std::uint32_t tm, std
 std::uint32_t matrix_step_channels(std::uint32_t cinp, std::uint32_t subgroups, std::uint32_t tm,
                                    std::uint32_t np, std::uint32_t max_shared) {
   for (const std::uint32_t kc : {64U, 32U}) {
-    if (cinp % kc == 0 && matrix_shared_bytes(subgroups, tm, kc, np) <= max_shared) return kc;
+    if (cinp % kc == 0 && detail::matrix_shared_bytes(subgroups, tm, kc, np) <= max_shared) return kc;
   }
   return 16;
 }
@@ -164,11 +163,11 @@ std::expected<std::vector<KernelChoice>, Refusal> candidates(const ir::Graph& gr
     for (const std::uint32_t subgroups : {4U, 2U, 8U}) {
       for (const std::uint32_t tm : {2U, 1U, 4U}) {
         if (tm * tiles > 16 || subgroups * matrix_subgroup(target) > target.max_workgroup_invocations ||
-            matrix_shared_bytes(subgroups, tm, 16, 0) > target.max_shared_memory) {
+            detail::matrix_shared_bytes(subgroups, tm, 16, 0) > target.max_shared_memory) {
           continue;
         }
         out.push_back({.variant = std::string(kMatrix), .tuning = {tm, subgroups}});
-        if (tm == 2 && matrix_shared_bytes(subgroups, tm, 16, tiles * 16) <= target.max_shared_memory)
+        if (tm == 2 && detail::matrix_shared_bytes(subgroups, tm, 16, tiles * 16) <= target.max_shared_memory)
           out.push_back({.variant = std::string(kMatrix), .tuning = {tm, subgroups, 1}});
         if (target.matrix_f16_acc)
           out.push_back({.variant = std::string(kMatrixAcc16), .tuning = {tm, subgroups}});
@@ -404,7 +403,7 @@ std::expected<void, Refusal> Lowerer::conv_matrix(std::size_t index, const Kerne
   const std::uint32_t tiles = matrix_tiles(yc.c);
   const std::uint32_t np_shared = shared_b == 1 ? tiles * 16 : 0;
   if (tm < 1 || subgroups < 1 || tm * tiles > 16 || wg > target_.max_workgroup_invocations || shared_b > 1 ||
-      matrix_shared_bytes(subgroups, tm, 16, np_shared) > target_.max_shared_memory) {
+      detail::matrix_shared_bytes(subgroups, tm, 16, np_shared) > target_.max_shared_memory) {
     return refuse_node(RefusalCode::InputMismatch, n, "réglage coopmat hors de ses bornes");
   }
   auto win = conv_window(graph_, n);
