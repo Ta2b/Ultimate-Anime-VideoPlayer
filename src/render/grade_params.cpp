@@ -30,6 +30,36 @@ void apply_truehdr_look(const GradeSettings& s, double peak, GradeParams& p) {
   p.em_sat = 1.0 + 0.19 * saturation;
 }
 
+// Sortie SDR : le blanc de la source est celui de l'écran, aucune marge pour des éclats. Restent les
+// noirs, les couleurs (le curseur de RTX HDR), le garde-fou, le vrai noir, et de l'aspect TrueHDR
+// son contraste et sa saturation autour du gris moyen.
+GradeParams sdr_params(const GradeSettings& s) {
+  GradeParams p;
+  p.sdr_out = 1.0;
+  p.peak = grade_limits::kSdrWhiteNits;
+  p.paper = p.peak;
+  p.in_max = p.peak;
+  p.shadows = s.shadows;
+  p.shadow_knee = 0.25 * p.peak;
+  p.area_gain = 1.0;
+  p.spec_gain = 1.0;
+  p.vibrance = s.vibrance_rtx;
+  p.abl = 0.0;
+  p.guard = s.guard;
+  p.expand = 0.0;
+  p.gamut_p3 = 0.0;
+  p.sdr_white = p.peak;
+  p.emulate = 0.0;
+  if (s.truehdr_look) {
+    apply_truehdr_look(s, p.peak, p);
+    p.emulate = 2.0;
+    p.em_base = std::clamp(4.0 * s.middle_gray, 40.0, 400.0);  // le pivot : 0,2575 × em_base
+  }
+  p.black_lo = s.true_black ? s.black_lo : 0.0;
+  p.black_hi = s.true_black ? s.black_hi : 0.0;
+  return p;
+}
+
 }  // namespace
 
 GradeSettings grade_preset(GradePreset preset, GradeSettings custom) {
@@ -119,7 +149,14 @@ std::expected<GradeDecision, Refusal> decide_grade(const GradeSettings& s, const
   GradeDecision decision;
   decision.source_white_nits = native_sdr && s.truehdr_look ? grade_limits::kSdrWhiteNits : paper;
 
-  if (!s.grade || !context.enabled || !context.output_pq) return decision;
+  if (!s.grade || !context.enabled) return decision;
+  if (!context.output_pq) {
+    if (context.source_hdr) return decision;
+    decision.mode = GradeMode::Sdr;
+    decision.params = sdr_params(s);
+    decision.source_white_nits = grade_limits::kSdrWhiteNits;
+    return decision;
+  }
   if (context.source_hdr) {
     decision.mode = s.grade_native_hdr ? GradeMode::NativeHdr : GradeMode::Neutral;
   } else if (native_sdr) {

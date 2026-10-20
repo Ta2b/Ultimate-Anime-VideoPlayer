@@ -121,9 +121,9 @@ bool oled_panel(const PlaySettings& s, const std::optional<DisplayFacts>& displa
 
 }  // namespace
 
-std::optional<render::GradeParams> grade_of(const PlaySettings& s, bool true_hdr_open, int peak_nits,
-                                            int auto_peak, const std::optional<DisplayFacts>& display,
-                                            const std::optional<render::BlackThresholds>& black) {
+render::GradeChoice grade_of(const PlaySettings& s, bool true_hdr_open, int peak_nits, int auto_peak,
+                             const std::optional<DisplayFacts>& display,
+                             const std::optional<render::BlackThresholds>& black) {
   const int peak = true_hdr_open && peak_nits > 0 ? peak_nits
                    : s.true_hdr_peak > 0          ? s.true_hdr_peak
                    : auto_peak > 0                ? auto_peak
@@ -149,17 +149,20 @@ std::optional<render::GradeParams> grade_of(const PlaySettings& s, bool true_hdr
   const core::HdrMode route = true_hdr_open  ? core::HdrMode::TrueHdr
                               : s.hdr_native ? core::HdrMode::Native
                                              : core::HdrMode::Off;
-  auto decision = render::decide_grade(g, render::GradeContext{.route = route,
-                                                               .source_hdr = false,
-                                                               .output_pq = true,
-                                                               .enabled = s.grade,
-                                                               .peak_nits = static_cast<double>(peak)});
-  if (!decision) {
-    log_channel("app")->warn("grade : {}", decision.error().detail);
-    return std::nullopt;
+  render::GradeChoice choice;
+  for (const bool pq : {true, false}) {
+    auto decision = render::decide_grade(g, render::GradeContext{.route = route,
+                                                                 .source_hdr = false,
+                                                                 .output_pq = pq,
+                                                                 .enabled = s.grade,
+                                                                 .peak_nits = static_cast<double>(peak)});
+    if (!decision) {
+      log_channel("app")->warn("grade : {}", decision.error().detail);
+      return {};
+    }
+    if (decision->mode != render::GradeMode::Neutral) (pq ? choice.pq : choice.sdr) = decision->params;
   }
-  if (decision->mode == render::GradeMode::Neutral) return std::nullopt;
-  return decision->params;
+  return choice;
 }
 
 std::string output_text(const PlaceboScreen& screen, const PlaySettings& s, int peak_nits) {
@@ -169,7 +172,7 @@ std::string output_text(const PlaceboScreen& screen, const PlaySettings& s, int 
   } else if (s.hdr_native && screen.hdr_output()) {
     text += " · HDR natif";
   }
-  if (s.grade && (peak_nits > 0 || s.hdr_native) && screen.hdr_output())
+  if (s.grade && (!screen.hdr_output() || peak_nits > 0 || s.hdr_native))
     text += std::format(" · grade {}", render::preset_label(s.grade_preset));
   return text;
 }
@@ -229,14 +232,15 @@ void refresh_black(Chain& to) {
   to.black_dirty = false;
   to.black_at_us = host_now_us();
   const PlaySettings& s = to.running;
-  const bool routed = to.true_hdr_open || s.hdr_native;
-  const bool wanted = black_wanted(s, to.display) && s.grade && routed && to.screen.hdr_output();
+  // En SDR, le grade s'applique sur toutes les routes ; en PQ, sur RTX HDR et la route native.
+  const bool routed = to.true_hdr_open || s.hdr_native || !to.screen.hdr_output();
+  const bool wanted = black_wanted(s, to.display) && s.grade && routed;
   to.live.set_black_wanted(wanted && to.true_hdr_open);
   to.black.reset();
   if (!wanted) {
     set_grade(to, s);
     to.ui.set_black_status(black_wanted(s, to.display)
-                               ? "Vrai noir : sans effet ici (grade coupé ou sortie SDR)."
+                               ? "Vrai noir : sans effet ici (grade coupé, ou sortie HDR sans route)."
                                : "Vrai noir : coupé.");
     return;
   }

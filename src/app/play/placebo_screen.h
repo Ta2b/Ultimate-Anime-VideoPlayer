@@ -68,12 +68,13 @@ class PlaceboScreen final : public Screen {
   std::expected<std::vector<RingSlotDesc>, Refusal> create_ring(int width, int height, std::uint32_t count);
   // Couleur des images du ring : celle de la source (l'agrandissement ne la change pas).
   void set_source_color(const ColorInfo& color);
-  // Grade HDR (render/grade.h) posé sur OUTPUT quand la sortie est en PQ ; rien : sans grade.
-  void set_grade(const std::optional<render::GradeParams>& params);
+  // Grade (render/grade.h) posé sur OUTPUT : celui du PQ sur une sortie HDR10, celui du SDR sur une
+  // sortie SDR BT.709 (sRGB, gamma 2,2 ou 2,4) ; rien : sans grade.
+  void set_grade(const render::GradeChoice& choice);
   bool hdr_output() const;  // la dernière présentation était en PQ
   // Vrai noir OLED : ces niveaux (0 à 1, dans la couleur des images du ring : SDR, ou PQ après
   // TrueHDR) passent par libplacebo et le grade en cours sans le vrai noir ; rend leurs nits en
-  // sortie. Rendu à part (renderer et grade propres), relu tout de suite.
+  // sortie (PQ, ou SDR à son blanc). Rendu à part (renderer et grade propres), relu tout de suite.
   std::expected<std::vector<double>, Refusal> grade_ramp(std::span<const float> levels);
   // Soumet le travail en attente (rendus, cessions de slots) sans l'attendre.
   void flush();

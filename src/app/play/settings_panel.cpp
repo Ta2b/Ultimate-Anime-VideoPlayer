@@ -284,8 +284,8 @@ bool grade_slider(const char* label, double& value, core::Range<double> range) {
 }
 
 void grade_tab(PlaySettings& d, const SettingsChoices& choices) {
-  section("Grade HDR");
-  ImGui::Checkbox("Grader la sortie HDR", &d.grade);
+  section("Grade");
+  ImGui::Checkbox("Grader la sortie (HDR10 et SDR)", &d.grade);
   ImGui::BeginDisabled(!d.grade);
   if (ImGui::BeginCombo("Préréglage", std::string(render::preset_label(d.grade_preset)).c_str())) {
     for (int i = 0; i < render::kGradePresetCount; ++i) {
@@ -310,13 +310,15 @@ void grade_tab(PlaySettings& d, const SettingsChoices& choices) {
   ImGui::Checkbox("Gamut Display P3 de l'écran", &g.gamut_p3);
   ImGui::EndDisabled();
   if (!choices.hdr_output) {
-    note("L'écran ne reçoit pas de HDR10 : pas de grade.");
+    note(
+        "Sortie SDR : couleurs, noirs, garde-fou, contraste et saturation de RTX HDR s'appliquent ; "
+        "éclats, aplats lumineux et couleurs étendues demandent une sortie HDR10.");
   } else if (d.true_hdr) {
     note("Route RTX HDR : TrueHDR, puis le grade sur la sortie PQ.");
   } else if (d.hdr_native) {
     note("Route native : libplacebo en PQ, aspect TrueHDR émulé, puis le grade.");
   } else {
-    note("Sortie SDR : pas de grade (route à choisir dans l'onglet RTX HDR).");
+    note("Sortie HDR10 sans route : pas de grade (route à choisir dans l'onglet RTX HDR).");
   }
   section("Noir absolu OLED");
   if (ImGui::BeginCombo("Noir absolu", std::string(label(d.oled_black)).c_str())) {

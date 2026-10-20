@@ -1,11 +1,13 @@
-// Le grade sur le GPU : les hooks embarqués rendus par libplacebo sur des rampes PQ BT.2020
-// synthétiques, cible identique à la source (aucune conversion, aucun tramage). Un Vulkan logiciel
-// (lavapipe) suffit, ce qui les fait tourner en CI ; sans aucun appareil Vulkan, ils se sautent.
+// Le grade sur le GPU : les hooks embarqués rendus par libplacebo sur des rampes PQ BT.2020 (ou
+// SDR BT.709 gamma 2,2) synthétiques, cible identique à la source (aucune conversion, aucun tramage). Un
+// Vulkan logiciel (lavapipe) suffit, ce qui les fait tourner en CI ; sans aucun appareil Vulkan, ils se
+// sautent.
 #include <algorithm>
 #include <array>
 #include <cmath>
 #include <cstdint>
 #include <optional>
+#include <utility>
 #include <vector>
 
 #include <catch2/catch_test_macros.hpp>
@@ -57,7 +59,15 @@ struct Gpu {
   }
 };
 
-pl_frame frame_of(pl_tex tex) {
+// La sortie SDR des tests : BT.709, gamma 2,2 (celle d'un écran SDR sous libplacebo).
+pl_color_space sdr_space() {
+  pl_color_space space{};
+  space.primaries = PL_COLOR_PRIM_BT_709;
+  space.transfer = PL_COLOR_TRC_GAMMA22;
+  return space;
+}
+
+pl_frame frame_of(pl_tex tex, bool sdr) {
   pl_frame frame{};
   frame.num_planes = 1;
   frame.planes[0].texture = tex;
@@ -66,6 +76,7 @@ pl_frame frame_of(pl_tex tex) {
   frame.repr = pl_color_repr_rgb;
   frame.color = pl_color_space_hdr10;
   frame.color.hdr.max_luma = static_cast<float>(kPeak);
+  if (sdr) frame.color = sdr_space();
   frame.crop = {0, 0, kSide, kSide};
   return frame;
 }
@@ -85,10 +96,26 @@ std::vector<std::uint16_t> ramp(double top, double green, double blue) {
   return pixels;
 }
 
+// La même en codes SDR : R de 0 à top, G à green × R et B à blue × R (codes, pas lumière).
+std::vector<std::uint16_t> sdr_ramp(double top, double green, double blue) {
+  std::vector<std::uint16_t> pixels(static_cast<std::size_t>(kSide) * kSide * 4);
+  for (int y = 0; y < kSide; ++y) {
+    for (int x = 0; x < kSide; ++x) {
+      const double r = top * (x + 1) / kSide;
+      const std::array<double, 4> rgba{r, r * green, r * blue, 1.0};
+      for (std::size_t c = 0; c < 4; ++c)
+        pixels[(static_cast<std::size_t>(y) * kSide + static_cast<std::size_t>(x)) * 4 + c] =
+            static_cast<std::uint16_t>(std::lround(rgba[c] * 65535.0));
+    }
+  }
+  return pixels;
+}
+
 using Rgb = std::array<double, 3>;
 
-// La rampe passée par le grade : les nits de R, G et B le long de la ligne du milieu.
-std::vector<Rgb> graded_rgb(Gpu& gpu, const std::vector<std::uint16_t>& source, const GradeParams& params) {
+// La rampe passée par le grade : les codes de R, G et B le long de la ligne du milieu.
+std::vector<Rgb> graded_codes(Gpu& gpu, const std::vector<std::uint16_t>& source, const GradeParams& params) {
+  const bool sdr = params.sdr_out > 0.5;
   const pl_gpu g = gpu.vk->gpu;
   pl_tex_params tex_params{};
   tex_params.w = kSide;
@@ -112,8 +139,8 @@ std::vector<Rgb> graded_rgb(Gpu& gpu, const std::vector<std::uint16_t>& source, 
   const std::span<const pl_hook* const> hooks = gpu.grade->hooks();
   render.hooks = hooks.data();
   render.num_hooks = static_cast<int>(hooks.size());
-  const pl_frame image = frame_of(in);
-  const pl_frame target = frame_of(out);
+  const pl_frame image = frame_of(in, sdr);
+  const pl_frame target = frame_of(out, sdr);
   REQUIRE(pl_render_image(gpu.renderer, &image, &target, &render));
   std::vector<std::uint16_t> pixels(source.size());
   pl_tex_transfer_params download{};
@@ -125,7 +152,15 @@ std::vector<Rgb> graded_rgb(Gpu& gpu, const std::vector<std::uint16_t>& source, 
   std::vector<Rgb> line(kSide);
   const std::size_t row = static_cast<std::size_t>(kSide / 2) * kSide;
   for (std::size_t x = 0; x < line.size(); ++x)
-    for (std::size_t c = 0; c < 3; ++c) line[x][c] = pq_to_nits(pixels[(row + x) * 4 + c] / 65535.0);
+    for (std::size_t c = 0; c < 3; ++c) line[x][c] = pixels[(row + x) * 4 + c] / 65535.0;
+  return line;
+}
+
+// La rampe PQ passée par le grade : les nits de R, G et B le long de la ligne du milieu.
+std::vector<Rgb> graded_rgb(Gpu& gpu, const std::vector<std::uint16_t>& source, const GradeParams& params) {
+  std::vector<Rgb> line = graded_codes(gpu, source, params);
+  for (Rgb& px : line)
+    for (double& c : px) c = pq_to_nits(c);
   return line;
 }
 
@@ -164,6 +199,29 @@ GradeParams expanded(double expand) {
   p.gamut_p3 = 0.0;
   p.expand = expand;
   return p;
+}
+
+// Une sortie SDR neutre : gains à 1, ni pied, ni vibrance, ni aspect TrueHDR.
+GradeParams sdr_neutral() {
+  GradeParams p;
+  p.sdr_out = 1.0;
+  p.sdr_gamma = 2.2;
+  p.peak = 203.0;
+  p.paper = 203.0;
+  p.in_max = 203.0;
+  p.shadows = 0.0;
+  p.shadow_knee = 0.25 * 203.0;
+  p.area_gain = 1.0;
+  p.spec_gain = 1.0;
+  p.vibrance = 0.0;
+  p.gamut_p3 = 0.0;
+  return p;
+}
+
+// Écart de saturation d'un pixel : (max − min) / max de ses codes.
+double saturation(const Rgb& px) {
+  const double hi = std::max({px[0], px[1], px[2]});
+  return hi > 0.0 ? (hi - std::min({px[0], px[1], px[2]})) / hi : 0.0;
 }
 
 }  // namespace
@@ -219,6 +277,68 @@ TEST_CASE("couleurs étendues : un rouge BT.709 va vers le rouge P3, le gris ne 
   const std::vector<Rgb> gray_wide = graded_rgb(gpu, gray, expanded(1.0));
   for (std::size_t x = 0; x < gray_plain.size(); ++x)
     for (std::size_t c = 0; c < 3; ++c) CHECK(std::abs(gray_wide[x][c] - gray_plain[x][c]) < 0.5);
+}
+
+}  // namespace ajp::render
+
+namespace ajp::render {
+
+TEST_CASE("sortie SDR : le grade neutre rend l'image telle quelle", "[render][gpu]") {
+  Gpu gpu;
+  if (gpu.vk == nullptr) SKIP("pas d'appareil Vulkan");
+  REQUIRE(gpu.grade);
+  for (const auto& [green, blue] : {std::pair{1.0, 1.0}, std::pair{0.6, 0.1}, std::pair{0.2, 0.9}}) {
+    const std::vector<std::uint16_t> source = sdr_ramp(1.0, green, blue);
+    const std::vector<Rgb> out = graded_codes(gpu, source, sdr_neutral());
+    const std::size_t row = static_cast<std::size_t>(kSide / 2) * kSide;
+    for (std::size_t x = 0; x < out.size(); ++x)
+      for (std::size_t c = 0; c < 3; ++c)
+        CHECK(std::abs(out[x][c] - source[(row + x) * 4 + c] / 65535.0) < 4e-3);
+  }
+}
+
+TEST_CASE("sortie SDR : couleurs et contraste poussés, sans dépasser le blanc", "[render][gpu]") {
+  Gpu gpu;
+  if (gpu.vk == nullptr) SKIP("pas d'appareil Vulkan");
+  REQUIRE(gpu.grade);
+  GradeParams vivid = sdr_neutral();
+  vivid.vibrance = 0.45;
+  vivid.emulate = 2.0;
+  vivid.sdr_white = 203.0;
+  vivid.em_base = 200.0;
+  vivid.em_lo = 1.19;
+  vivid.em_hi = 1.14;
+  vivid.em_sat = 1.1;
+  // Un bleu ciel moyen : plus saturé, toujours dans le gamut BT.709.
+  const std::vector<std::uint16_t> sky = sdr_ramp(0.8, 1.6, 2.0);  // codes écrêtés à 1 : B sature
+  const std::vector<Rgb> plain = graded_codes(gpu, sdr_ramp(0.5, 1.4, 1.8), sdr_neutral());
+  const std::vector<Rgb> pushed = graded_codes(gpu, sdr_ramp(0.5, 1.4, 1.8), vivid);
+  const std::size_t mid = 3 * kSide / 4;
+  CHECK(saturation(pushed[mid]) > saturation(plain[mid]) + 0.01);
+  for (const Rgb& px : graded_codes(gpu, sky, vivid))
+    for (const double c : px) CHECK((c >= 0.0 && c <= 1.0));
+  // Le gris : le blanc reste blanc, les ombres descendent (contraste sous le pivot).
+  const std::vector<Rgb> gray = graded_codes(gpu, sdr_ramp(1.0, 1.0, 1.0), vivid);
+  CHECK(gray.back()[0] > 0.985);
+  CHECK(gray[kSide / 8][0] < (kSide / 8 + 1.0) / kSide);
+  CHECK(std::abs(gray[kSide / 8][0] - gray[kSide / 8][2]) < 4e-3);
+}
+
+TEST_CASE("sortie SDR : le vrai noir OLED met les quasi-noirs à 0", "[render][gpu]") {
+  Gpu gpu;
+  if (gpu.vk == nullptr) SKIP("pas d'appareil Vulkan");
+  REQUIRE(gpu.grade);
+  GradeParams black = sdr_neutral();
+  // Codes 0,02 et 0,06 en gamma 2,2 à 203 nits : 0,04 et 0,4 nit environ.
+  black.black_lo = 203.0 * std::pow(0.02, 2.2);
+  black.black_hi = 203.0 * std::pow(0.06, 2.2);
+  const std::vector<Rgb> out = graded_codes(gpu, sdr_ramp(0.25, 1.0, 1.0), black);
+  // Les codes de la rampe : 0,25 × (x + 1) / 256.
+  const auto code = [](std::size_t x) { return 0.25 * static_cast<double>(x + 1) / kSide; };
+  for (std::size_t x = 0; x < out.size(); ++x) {
+    if (code(x) < 0.015) CHECK(out[x][0] < 1e-3);
+    if (code(x) > 0.09) CHECK(std::abs(out[x][0] - code(x)) < 4e-3);
+  }
 }
 
 }  // namespace ajp::render

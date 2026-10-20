@@ -9,6 +9,9 @@
 //       C1 qui rejoint l'identité à black_hi (sortie = m × gain : pente 0 au noir, 1 à black_hi) ;
 //   R, G et B reçoivent le même gain : la teinte ne bouge pas. Le tramage de libplacebo suit.
 //
+// Sortie SDR (sdr_out = 1, comme le grade) : l'image est en BT.709 gamma sdr_gamma, son blanc à
+// `peak` nits ; le même pied s'applique sur les nits ainsi décodés.
+//
 // Les deux passes sautent quand black_hi <= black_lo, donc aussi quand black_hi vaut 0 (le
 // défaut) : l'image reste alors identique, octet pour octet, et les goldens ne bougent pas.
 
@@ -25,6 +28,27 @@
 //!MINIMUM 0.0
 //!MAXIMUM 50.0
 0.0
+
+//!PARAM sdr_out
+//!DESC 1 = sortie SDR BT.709 (gamma sdr_gamma, blanc à peak nits), 0 = PQ BT.2020
+//!TYPE float
+//!MINIMUM 0.0
+//!MAXIMUM 1.0
+0.0
+
+//!PARAM sdr_gamma
+//!DESC Sortie SDR : exposant du transfert de l'écran
+//!TYPE float
+//!MINIMUM 1.8
+//!MAXIMUM 2.8
+2.2
+
+//!PARAM peak
+//!DESC Sortie SDR : blanc de l'image (nits)
+//!TYPE float
+//!MINIMUM 100.0
+//!MAXIMUM 10000.0
+1000.0
 
 //!HOOK OUTPUT
 //!BIND HOOKED
@@ -56,15 +80,18 @@ vec4 hook() {
 //!DESC AnimeJaNai HDR - vrai noir OLED
 
 float ajb_pq_to_nits(float e) {
+    if (sdr_out > 0.5) return pow(clamp(e, 0.0, 1.0), sdr_gamma) * peak;
     float p = pow(clamp(e, 0.0, 1.0), 1.0 / 78.84375);
     return 10000.0 * pow(max(p - 0.8359375, 0.0) / max(18.8515625 - 18.6875 * p, 1e-6), 6.27739463);
 }
 vec3 ajb_pq_to_nits3(vec3 e) {
+    if (sdr_out > 0.5) return pow(clamp(e, 0.0, 1.0), vec3(sdr_gamma)) * peak;
     vec3 p = pow(clamp(e, 0.0, 1.0), vec3(1.0 / 78.84375));
     return 10000.0 * pow(max(p - 0.8359375, 0.0) / max(18.8515625 - 18.6875 * p, 1e-6),
                          vec3(6.27739463));
 }
 vec3 ajb_nits_to_pq3(vec3 n) {
+    if (sdr_out > 0.5) return pow(clamp(n / peak, 0.0, 1.0), vec3(1.0 / sdr_gamma));
     vec3 q = pow(clamp(n / 10000.0, 0.0, 1.0), vec3(0.1593017578125));
     return pow((0.8359375 + 18.8515625 * q) / (1.0 + 18.6875 * q), vec3(78.84375));
 }

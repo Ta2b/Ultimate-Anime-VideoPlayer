@@ -110,12 +110,46 @@ TEST_CASE("route TrueHDR : les éclats montent à partir de la moitié du pic") 
   CHECK(decision->params.spec_gain == Approx(2.2));
 }
 
+TEST_CASE("sortie SDR : couleurs, noirs et contraste au blanc de l'écran, sans marge d'éclats") {
+  GradeSettings settings = grade_preset(GradePreset::Eclatant);
+  settings.contrast = 150.0;
+  settings.true_black = true;
+  settings.black_lo = 0.1;
+  settings.black_hi = 0.5;
+  for (const core::HdrMode route : {core::HdrMode::Off, core::HdrMode::Native, core::HdrMode::TrueHdr}) {
+    auto context = pq_context(route);
+    context.output_pq = false;
+    const auto decision = decide_grade(settings, context);
+    REQUIRE(decision);
+    CHECK(decision->mode == GradeMode::Sdr);
+    const GradeParams& p = decision->params;
+    CHECK(p.sdr_out == 1.0);
+    CHECK(p.peak == 203.0);
+    CHECK(p.in_max == p.peak);
+    CHECK(p.area_gain == 1.0);
+    CHECK(p.spec_gain == 1.0);
+    CHECK(p.expand == 0.0);
+    CHECK(p.gamut_p3 == 0.0);
+    CHECK(p.abl == 0.0);
+    CHECK(p.vibrance == settings.vibrance_rtx);
+    CHECK(p.shadows == settings.shadows);
+    CHECK(p.guard == settings.guard);
+    CHECK(p.emulate == 2.0);
+    CHECK(p.em_lo > 1.0);
+    CHECK(p.em_base == 200.0);
+    CHECK(p.black_hi == 0.5);
+  }
+  auto context = pq_context(core::HdrMode::Off);
+  context.output_pq = false;
+  settings.truehdr_look = false;
+  CHECK(decide_grade(settings, context)->params.emulate == 0.0);
+  context.source_hdr = true;
+  CHECK(decide_grade(settings, context)->mode == GradeMode::Neutral);
+}
+
 TEST_CASE("le grade reste neutre hors de ses conditions") {
   GradeSettings settings;
   auto context = pq_context(core::HdrMode::Native);
-  context.output_pq = false;
-  CHECK(decide_grade(settings, context)->mode == GradeMode::Neutral);
-  context = pq_context(core::HdrMode::Native);
   context.enabled = false;
   CHECK(decide_grade(settings, context)->mode == GradeMode::Neutral);
   CHECK(decide_grade(settings, pq_context(core::HdrMode::Off))->mode == GradeMode::Neutral);

@@ -115,7 +115,12 @@ struct PlaceboScreen::Impl {
   int snapshot_count = 1;  // présentations à écrire, numérotées s'il y en a plusieurs
   int snapshot_index = 0;
   std::optional<render::Grade> grade;  // absent si les hooks ne se lisent pas (dit au journal)
-  bool grade_on = false;
+  render::GradeChoice grade_choice;    // posé par set_grade
+  // Ce que le grade porte : rien, le grade PQ (vrai) ou le grade SDR (faux) de grade_choice.
+  std::optional<bool> grade_loaded_pq;
+  // Charge dans le grade le choix qui va à cette cible ; graded() dit s'il s'applique à une cible.
+  void select_grade(const pl_color_space& target);
+  bool graded(const pl_color_space& target) const;
   // Temps GPU des passes du grade (minuteries de libplacebo), par image composée avec lui ; le
   // résumé va au journal à la fermeture de l'écran.
   pl_color_space target_color{};  // celle de la dernière présentation

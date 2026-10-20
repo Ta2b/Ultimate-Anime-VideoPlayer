@@ -94,12 +94,13 @@ enum class GradeMode : std::uint8_t {
   Native,     // SDR converti par libplacebo en PQ (route native), avec ou sans émulation TrueHDR
   TrueHdr,    // SDR passé par TrueHDR : l'image arrive déjà en PQ au pic de l'écran
   NativeHdr,  // source déjà HDR, gradée parce que grade_native_hdr le demande
+  Sdr,        // sortie SDR : couleurs, noirs, contraste et saturation, sans marge au-dessus du blanc
 };
 
 struct GradeContext {
   core::HdrMode route = core::HdrMode::Off;  // celle du Plan
   bool source_hdr = false;                   // source PQ ou HLG
-  bool output_pq = false;                    // la cible est encodée en PQ
+  bool output_pq = false;                    // la cible est encodée en PQ ; sinon SDR BT.709
   bool enabled = true;                       // bascule A/B de l'utilisateur
   double peak_nits = grade_limits::kDefaultPeakNits;
 };
@@ -129,7 +130,17 @@ struct GradeParams {
   double em_sat = 1.0;
   double black_lo = 0.0;
   double black_hi = 0.0;
+  // Sortie SDR : 1, l'image de la cible est en BT.709 au gamma sdr_gamma, son blanc à `peak` nits.
+  double sdr_out = 0.0;
+  double sdr_gamma = 2.2;
   friend bool operator==(const GradeParams&, const GradeParams&) = default;
+};
+
+// Le grade de la chaîne pour chaque sortie ; l'écran prend celui de sa cible (PQ ou SDR).
+struct GradeChoice {
+  std::optional<GradeParams> pq;
+  std::optional<GradeParams> sdr;
+  friend bool operator==(const GradeChoice&, const GradeChoice&) = default;
 };
 
 struct GradeDecision {

@@ -73,11 +73,11 @@ std::expected<int, Refusal> open_rtx_hdr(const std::filesystem::path& sdk_source
 // l'écran le disent et RIFE reprend.
 int open_optical_flow(gpu::KernelOps& kernels, int width, int height, Controls& controls);
 
-// Le grade HDR de la chaîne : route TrueHDR si RTX HDR est ouvert, native si le HDR natif est choisi,
-// aucun en SDR ; rien si le grade est neutre.
-std::optional<render::GradeParams> grade_of(const PlaySettings& s, bool true_hdr_open, int peak_nits,
-                                            int auto_peak, const std::optional<DisplayFacts>& display = {},
-                                            const std::optional<render::BlackThresholds>& black = {});
+// Le grade de la chaîne pour chaque sortie : en PQ, route TrueHDR si RTX HDR est ouvert, native si le
+// HDR natif est choisi, aucun sinon ; en SDR, sur toutes les routes. Rien là où il est neutre.
+render::GradeChoice grade_of(const PlaySettings& s, bool true_hdr_open, int peak_nits, int auto_peak,
+                             const std::optional<DisplayFacts>& display = {},
+                             const std::optional<render::BlackThresholds>& black = {});
 // La sortie de l'écran, pour l'OSD et le journal.
 std::string output_text(const PlaceboScreen& screen, const PlaySettings& s, int peak_nits);
 double fps_of(const media::Rational& rate);

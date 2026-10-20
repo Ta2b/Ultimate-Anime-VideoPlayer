@@ -39,11 +39,14 @@ constexpr std::array kGradeParams = {
     ParamBinding{"em_lo", &GradeParams::em_lo},
     ParamBinding{"em_hi", &GradeParams::em_hi},
     ParamBinding{"em_sat", &GradeParams::em_sat},
+    ParamBinding{"sdr_out", &GradeParams::sdr_out},
+    ParamBinding{"sdr_gamma", &GradeParams::sdr_gamma},
 };
 
 constexpr std::array kBlackParams = {
-    ParamBinding{"black_lo", &GradeParams::black_lo},
-    ParamBinding{"black_hi", &GradeParams::black_hi},
+    ParamBinding{"black_lo", &GradeParams::black_lo}, ParamBinding{"black_hi", &GradeParams::black_hi},
+    ParamBinding{"sdr_out", &GradeParams::sdr_out},   ParamBinding{"sdr_gamma", &GradeParams::sdr_gamma},
+    ParamBinding{"peak", &GradeParams::peak},
 };
 
 pl_var_data* find_param(const pl_hook& hook, std::string_view name) {

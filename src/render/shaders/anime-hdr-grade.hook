@@ -8,6 +8,9 @@
 // Pose sur OUTPUT : l'image est deja encodee en PQ BT.2020 pour l'ecran.
 // Le controleur user-scripts/animejanai_hdr_auto.lua l'attache seulement
 // quand la sortie PQ est confirmee, et lui transmet les parametres ci-dessous.
+// Ajout de ce depot : sur une sortie SDR (sdr_out = 1), l'image est en BT.709 gamma sdr_gamma,
+// son blanc place a `peak` nits ; le meme traitement s'y applique dans le gamut BT.709, sans
+// marge au-dessus du blanc. A sdr_out = 0, le defaut, rien ne change.
 //
 // Traitement par pixel, en lumiere lineaire absolue (nits) :
 //   1. noirs : pied de courbe doux sous `shadow_knee`, le noir reste a 0 ;
@@ -123,10 +126,10 @@
 0.0
 
 //!PARAM emulate
-//!DESC 1 = aspect RTX TrueHDR applique au SDR converti par MPV
+//!DESC 1 = aspect RTX TrueHDR applique au SDR converti par MPV, 2 = son contraste et sa saturation seuls (sortie SDR)
 //!TYPE float
 //!MINIMUM 0.0
-//!MAXIMUM 1.0
+//!MAXIMUM 2.0
 0.0
 
 //!PARAM sdr_white
@@ -171,6 +174,20 @@
 //!MAXIMUM 1.5
 1.0
 
+//!PARAM sdr_out
+//!DESC 1 = sortie SDR BT.709 (gamma sdr_gamma, blanc a peak nits), 0 = PQ BT.2020
+//!TYPE float
+//!MINIMUM 0.0
+//!MAXIMUM 1.0
+0.0
+
+//!PARAM sdr_gamma
+//!DESC Sortie SDR : exposant du transfert de l'ecran (2,2 sRGB, 2,4 BT.1886)
+//!TYPE float
+//!MINIMUM 1.8
+//!MAXIMUM 2.8
+2.2
+
 //!HOOK OUTPUT
 //!BIND HOOKED
 //!SAVE AJG_LOCAL
@@ -182,9 +199,15 @@
 // Moyenne 8x8 de la luminance, stockee en PQ (domaine perceptuel uniforme).
 // 16 lectures bilineaires couvrent exactement le bloc 8x8.
 float ajg_pq_y(vec3 e) {
-    vec3 p = pow(clamp(e, 0.0, 1.0), vec3(1.0 / 78.84375));
-    vec3 n = pow(max(p - 0.8359375, 0.0) / max(18.8515625 - 18.6875 * p, 1e-6), vec3(6.27739463));
-    float y = dot(n, vec3(0.2627, 0.6780, 0.0593));
+    float y;
+    if (sdr_out > 0.5) {
+        // Luminance BT.709 du SDR, en nits / 10000 comme le PQ.
+        y = dot(pow(clamp(e, 0.0, 1.0), vec3(sdr_gamma)), vec3(0.2126, 0.7152, 0.0722)) * peak / 10000.0;
+    } else {
+        vec3 p = pow(clamp(e, 0.0, 1.0), vec3(1.0 / 78.84375));
+        vec3 n = pow(max(p - 0.8359375, 0.0) / max(18.8515625 - 18.6875 * p, 1e-6), vec3(6.27739463));
+        y = dot(n, vec3(0.2627, 0.6780, 0.0593));
+    }
     float q = pow(y, 0.1593017578125);
     return pow((0.8359375 + 18.8515625 * q) / (1.0 + 18.6875 * q), 78.84375);
 }
@@ -369,6 +392,9 @@ const mat3 P3_TO_BT2020 = mat3( 0.7538330,  0.0457438, -0.0012103,
 const mat3 BT2020_TO_709 = mat3( 1.6604910, -0.1245505, -0.0181508,
                                 -0.5876411,  1.1328999, -0.1005789,
                                 -0.0728499, -0.0083494,  1.1187297);
+const mat3 BT709_TO_2020 = mat3( 0.6274040,  0.0690970,  0.0163916,
+                                 0.3292820,  0.9195400,  0.0880132,
+                                 0.0433136,  0.0113612,  0.8955950);
 // ICtCp (ITU-R BT.2100), matrices en colonnes GLSL.
 const mat3 RGB_TO_LMS = mat3(1688.0, 683.0, 99.0,
                              2146.0, 2951.0, 309.0,
@@ -393,6 +419,29 @@ vec3 nits_to_pq(vec3 n) {
     return pow((0.8359375 + 18.8515625 * q) / (1.0 + 18.6875 * q), vec3(78.84375));
 }
 float max3(vec3 v) { return max(v.r, max(v.g, v.b)); }
+
+// L'image de la cible en lumiere lineaire BT.2020 (nits), et retour : PQ, ou SDR BT.709.
+vec3 ajg_decode(vec3 e) {
+    if (sdr_out > 0.5) return BT709_TO_2020 * (pow(clamp(e, 0.0, 1.0), vec3(sdr_gamma)) * peak);
+    return pq_to_nits(e);
+}
+vec3 ajg_encode(vec3 n) {
+    if (sdr_out > 0.5) return pow(clamp(BT2020_TO_709 * n / peak, 0.0, 1.0), vec3(1.0 / sdr_gamma));
+    return nits_to_pq(n);
+}
+// Le gamut ou le traitement se borne : BT.709 en SDR, P3 (gamut_p3), sinon le conteneur BT.2020.
+vec3 to_target(vec3 bt2020) {
+    if (sdr_out > 0.5) return BT2020_TO_709 * bt2020;
+    return gamut_p3 > 0.5 ? BT2020_TO_P3 * bt2020 : bt2020;
+}
+vec3 from_target(vec3 c) {
+    if (sdr_out > 0.5) return BT709_TO_2020 * c;
+    return gamut_p3 > 0.5 ? P3_TO_BT2020 * c : c;
+}
+vec3 target_luma() {
+    if (sdr_out > 0.5) return vec3(0.2126, 0.7152, 0.0722);
+    return gamut_p3 > 0.5 ? vec3(0.2289746, 0.6917385, 0.0792869) : vec3(0.2627, 0.6780, 0.0593);
+}
 
 // Pied des noirs sur le maximum RGB : pente 1 au genou, pente (1 - shadows) au noir.
 // Seuls les pixels vraiment sombres sont touches, meme s'ils sont satures (bleu nuit).
@@ -445,12 +494,19 @@ float highlight_ratio(float y, float isolation, float skin, float abl_scale) {
 // courantes, jusqu'a +20 % sur les primaires pures.
 vec3 truehdr_look(vec3 nits) {
     const vec3 luma = vec3(0.2627, 0.6780, 0.0593);
-    vec3 x = max(nits, 0.0) / sdr_white;
-    float Y = dot(x, luma);
-    float idx = clamp(Y + 0.15 * (max(x.r, max(x.g, x.b)) - Y), 0.0, 1.0);
-    if (idx < 1e-6) return vec3(0.0);
-    float s2 = pow(idx, 2.0 / 2.4);
-    vec3 c = x * (em_base * s2 / idx * exp(log(max(peak / em_base, 1.0)) * pow(s2, 0.5 * em_pow)));
+    vec3 c;
+    if (emulate > 1.5) {
+        // Sortie SDR : pas de montee vers un pic, le contraste et la saturation seuls.
+        c = max(nits, 0.0);
+        if (dot(c, luma) < 1e-6 * sdr_white) return vec3(0.0);
+    } else {
+        vec3 x = max(nits, 0.0) / sdr_white;
+        float Y = dot(x, luma);
+        float idx = clamp(Y + 0.15 * (max(x.r, max(x.g, x.b)) - Y), 0.0, 1.0);
+        if (idx < 1e-6) return vec3(0.0);
+        float s2 = pow(idx, 2.0 / 2.4);
+        c = x * (em_base * s2 / idx * exp(log(max(peak / em_base, 1.0)) * pow(s2, 0.5 * em_pow)));
+    }
     float Yn = max(dot(c, luma), 1e-6);
     float P = 0.2575 * em_base;
     float Y2;
@@ -478,12 +534,12 @@ float gamut_room(vec3 a, vec3 b) {
 
 vec4 hook() {
     vec4 px = HOOKED_tex(HOOKED_pos);
-    vec3 lin = pq_to_nits(px.rgb);
+    vec3 lin = ajg_decode(px.rgb);
     // L'isolement se mesure sur l'image d'origine, comme les cartes de zone.
     float y_src = dot(lin, vec3(0.2627, 0.6780, 0.0593));
     if (emulate > 0.5) lin = truehdr_look(lin);
     bool p3 = gamut_p3 > 0.5;
-    vec3 c = p3 ? BT2020_TO_P3 * lin : lin;
+    vec3 c = to_target(lin);
     if (emulate > 0.5) c = max(c, 0.0);
 
     // Isolement : la zone de ~8 px est-elle nettement plus lumineuse que son
@@ -491,7 +547,7 @@ vec4 hook() {
     // moyennes : stable d'une image a l'autre. Seul un pixel tres au-dessus de
     // sa zone (etincelle de 1 a 4 px, > 0,08 PQ) compte individuellement.
     float m = max3(c);
-    float y = dot(c, p3 ? vec3(0.2289746, 0.6917385, 0.0792869) : vec3(0.2627, 0.6780, 0.0593));
+    float y = dot(c, target_luma());
     float y_pq = nits_to_pq(vec3(max(y_src, 0.0))).x;
     float local_pq = max(AJG_LOCAL_tex(AJG_LOCAL_pos).x, y_pq - 0.08);
     float isolation = smoothstep(0.05, 0.25, local_pq - AJG_AREAT_tex(AJG_AREAT_pos).x);
@@ -548,20 +604,19 @@ vec4 hook() {
 
     if (vibrance > 0.0) {
         // Tons moyens (r = 1, la majorite des pixels) : ICtCp deja calcule.
-        vec3 ictcp = abs(r - 1.0) < 1e-5 ? ictcp_in : to_ictcp(p3 ? P3_TO_BT2020 * c : c);
+        vec3 ictcp = abs(r - 1.0) < 1e-5 ? ictcp_in : to_ictcp(from_target(c));
         float chroma = length(ictcp.yz);
         // Couleurs moyennes renforcees ; peau exclue, primaires (~0,3) menagees ;
         // ombres protegees pour ne pas colorer le bruit et les traits.
         float weight = smoothstep(0.0, 0.06, chroma) * (1.0 - smoothstep(0.10, 0.40, chroma))
                      * smoothstep(0.12, 0.30, ictcp.x) * (1.0 - skin);
         ictcp.yz *= 1.0 + vibrance * weight;
-        vec3 vivid = LMS_TO_RGB * pq_to_nits(ICTCP_TO_LMS * ictcp);
-        if (p3) vivid = BT2020_TO_P3 * vivid;
+        vec3 vivid = to_target(LMS_TO_RGB * pq_to_nits(ICTCP_TO_LMS * ictcp));
         // Limite douce : le renforcement ralentit avant le bord du gamut ou le pic.
         float room = gamut_room(c, vivid);
         c = mix(c, vivid, room / pow(1.0 + pow(room, 4.0), 0.25));
     }
 
-    px.rgb = nits_to_pq(p3 ? P3_TO_BT2020 * c : c);
+    px.rgb = ajg_encode(from_target(c));
     return px;
 }

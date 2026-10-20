@@ -4,6 +4,7 @@
 #include <array>
 #include <cmath>
 #include <format>
+#include <optional>
 #include <string_view>
 #include <utility>
 #include <vector>
@@ -29,6 +30,31 @@ constexpr float kUiWhiteNits = 203.0F;
 double pq_nits(double e) {
   const double p = std::pow(std::clamp(e, 0.0, 1.0), 1.0 / 78.84375);
   return 10000.0 * std::pow(std::max(p - 0.8359375, 0.0) / (18.8515625 - 18.6875 * p), 1.0 / 0.1593017578125);
+}
+
+// L'exposant du transfert d'une cible SDR BT.709 ; rien si le grade ne sait pas y travailler.
+std::optional<double> sdr_gamma(const pl_color_space& color) {
+  if (color.primaries != PL_COLOR_PRIM_BT_709) return std::nullopt;
+  switch (color.transfer) {
+    case PL_COLOR_TRC_SRGB:
+    case PL_COLOR_TRC_GAMMA22:
+      return 2.2;
+    case PL_COLOR_TRC_BT_1886:
+    case PL_COLOR_TRC_GAMMA24:
+      return 2.4;
+    default:
+      return std::nullopt;
+  }
+}
+
+// Le grade d'une cible : celui du PQ, ou celui du SDR à l'exposant de la cible.
+std::optional<render::GradeParams> grade_for(const render::GradeChoice& choice, const pl_color_space& color) {
+  if (color.transfer == PL_COLOR_TRC_PQ) return choice.pq;
+  const std::optional<double> gamma = sdr_gamma(color);
+  if (!gamma || !choice.sdr) return std::nullopt;
+  render::GradeParams params = *choice.sdr;
+  params.sdr_gamma = *gamma;
+  return params;
 }
 
 // Images gardées pour le profil GPU du grade (une heure à 165 Hz tient en dessous).
@@ -330,16 +356,28 @@ void PlaceboScreen::set_source_color(const ColorInfo& color) {
   impl_->source = color_space_of(color);
 }
 
-void PlaceboScreen::set_grade(const std::optional<render::GradeParams>& params) {
-  if (!impl_->grade) return;
-  impl_->grade_on = params.has_value();
-  if (params) impl_->grade->set_params(*params);
+void PlaceboScreen::set_grade(const render::GradeChoice& choice) {
+  impl_->grade_choice = choice;
+  impl_->select_grade(impl_->target_color);
+}
+
+void PlaceboScreen::Impl::select_grade(const pl_color_space& target) {
+  const std::optional<render::GradeParams> params = grade_for(grade_choice, target);
+  grade_loaded_pq.reset();
+  if (!grade || !params) return;
+  if (*params != grade->params()) grade->set_params(*params);
+  grade_loaded_pq = target.transfer == PL_COLOR_TRC_PQ;
+}
+
+bool PlaceboScreen::Impl::graded(const pl_color_space& target) const {
+  const bool pq = target.transfer == PL_COLOR_TRC_PQ;
+  return grade && grade_loaded_pq == pq && (pq || sdr_gamma(target).has_value());
 }
 
 std::expected<std::vector<double>, Refusal> PlaceboScreen::grade_ramp(std::span<const float> levels) {
   Impl& s = *impl_;
-  if (!s.grade || !s.grade_on || !s.hdr_output)
-    return refuse(RefusalCode::HdrUnavailable, "rampe du vrai noir : pas de grade sur une sortie PQ");
+  if (!s.grade || !s.graded(s.target_color))
+    return refuse(RefusalCode::HdrUnavailable, "rampe du vrai noir : pas de grade sur cette sortie");
   const pl_gpu gpu = s.vk->gpu;
   if (s.ramp_renderer == nullptr) s.ramp_renderer = pl_renderer_create(s.log, gpu);
   if (!s.ramp_grade) {
@@ -415,7 +453,8 @@ std::expected<std::vector<double>, Refusal> PlaceboScreen::grade_ramp(std::span<
   for (std::size_t i = 0; i < levels.size(); ++i) {
     const std::size_t at = (middle + i * kBand + kBand / 2) * 4;
     const std::uint16_t peak = std::max({pixels[at], pixels[at + 1], pixels[at + 2]});
-    nits.push_back(pq_nits(peak / 65535.0));
+    const double code = peak / 65535.0;
+    nits.push_back(s.hdr_output ? pq_nits(code) : std::pow(code, params.sdr_gamma) * params.peak);
   }
   return nits;
 }
@@ -449,9 +488,10 @@ void PlaceboScreen::Impl::draw_ui(const ImDrawData* data, const pl_frame& target
 std::expected<void, Refusal> PlaceboScreen::Impl::compose(const pl_frame* image,
                                                           const pl_frame& target) const {
   pl_render_params params = pl_render_default_params;
-  // Le grade travaille sur du PQ BT.2020 : sur une cible SDR (instantané), il est sauté.
-  const bool graded = grade && grade_on && target.color.transfer == PL_COLOR_TRC_PQ;
-  if (graded) {
+  // Le grade chargé est celui du PQ ou du SDR : sur une autre cible (instantané SDR d'une sortie
+  // HDR10), il est sauté.
+  const bool graded_now = grade.has_value() && graded(target.color);
+  if (graded_now) {
     const std::span<const pl_hook* const> hooks = grade->hooks();
     params.hooks = hooks.data();
     params.num_hooks = static_cast<int>(hooks.size());
@@ -467,7 +507,7 @@ std::expected<void, Refusal> PlaceboScreen::Impl::compose(const pl_frame* image,
   if (!pl_render_image(renderer, image, &target, &params)) {
     return std::unexpected(Refusal{RefusalCode::VendorCallFailed, "pl_render_image a échoué"});
   }
-  if (graded && image != nullptr && grade_frame_ns > 0 && grade_gpu_us.size() < kMaxGradeSamples)
+  if (graded_now && image != nullptr && grade_frame_ns > 0 && grade_gpu_us.size() < kMaxGradeSamples)
     grade_gpu_us.push_back(static_cast<std::uint32_t>(grade_frame_ns / 1000));
   return {};
 }
@@ -507,6 +547,7 @@ std::expected<ScreenTiming, Refusal> PlaceboScreen::show(const ShowRequest& requ
     return ScreenTiming{.presented = false};  // fenêtre cachée
   s.hdr_output = swframe.color_space.transfer == PL_COLOR_TRC_PQ;
   s.target_color = swframe.color_space;
+  s.select_grade(s.target_color);
   pl_frame target{};
   pl_frame_from_swapchain(&target, &swframe);
 
