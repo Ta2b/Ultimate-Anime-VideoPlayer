@@ -1,5 +1,5 @@
 // Convolutions du moteur de réseaux contre l'interpréteur CPU FP32 : chaque variante candidate
-// (directe float, fp16 empaquetée, matrices coopératives là où l'appareil les autorise), avec
+// (directe float, fp16 empaquetée, Winograd, matrices coopératives là où l'appareil les autorise), avec
 // groupes, pas, dilatation, marges, épilogues fondus, puis petits graphes façon SPAN et RIFE de
 // bout en bout. FP32 : 1e-4 relatif. FP16 : chaque tenseur intermédiaire est arrondi à 2^-11
 // près par le GPU et pas par l'interpréteur, d'où kFp16 (net_rig.h).
@@ -163,10 +163,12 @@ TEST_CASE("Réseau : chaîne de Conv en Nhwc16 avec épilogues fondus", "[vk_bac
   check_all_variants(rig, graph, inputs, kFp32);
 }
 
-TEST_CASE("Réseau : Conv en float16, variantes fp16 et matrices coopératives", "[vk_backend][net][conv]") {
+// mid impair (13) : le dernier canal de Winograd, lu seul.
+TEST_CASE("Réseau : Conv en float16, variantes fp16, Winograd et matrices coopératives",
+          "[vk_backend][net][conv]") {
   NetRig rig = make_net_rig();
   require_f16(rig);
-  for (const auto& [cin, mid] : {std::pair<std::int64_t, std::int64_t>{5, 16}, {12, 48}, {16, 20}}) {
+  for (const auto& [cin, mid] : {std::pair<std::int64_t, std::int64_t>{5, 16}, {12, 48}, {16, 20}, {7, 13}}) {
     INFO("cin " << cin << ", mid " << mid);
     const ir::Graph graph = build(chain_model(true, cin, mid));
     const std::vector<ir::NamedValue> inputs{{"x", test_values(ir::DataType::F16, {1, cin, 13, 17}, 32)}};

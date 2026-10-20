@@ -31,7 +31,14 @@ constexpr Range kAmd[] = {
     {0x7590, 0x759F, GpuFamily::AmdRdna4},  // Navi 44
 };
 constexpr Range kIntel[] = {
+    {0x4680, 0x46DF, GpuFamily::IntelXeLp},       // Alder Lake S, P et N
+    {0x4905, 0x4909, GpuFamily::IntelXeLp},       // DG1
+    {0x4C80, 0x4C9F, GpuFamily::IntelXeLp},       // Rocket Lake
     {0x5690, 0x56CF, GpuFamily::IntelAlchemist},  // DG2, Arc A et Flex
+    {0x7D40, 0x7D7F, GpuFamily::IntelXeLpg},      // Meteor Lake, Arrow Lake H et U
+    {0x7DC0, 0x7DDF, GpuFamily::IntelXeLpg},      // Meteor Lake, Arrow Lake H
+    {0x9A40, 0x9AFF, GpuFamily::IntelXeLp},       // Tiger Lake
+    {0xA720, 0xA7AF, GpuFamily::IntelXeLp},       // Raptor Lake S et P (UHD 770)
     {0x6400, 0x64FF, GpuFamily::IntelXe2},        // Lunar Lake
     {0xE200, 0xE2FF, GpuFamily::IntelXe2},        // Battlemage
 };
@@ -66,6 +73,10 @@ std::string_view name(GpuFamily family) {
       return "AMD RDNA3";
     case GpuFamily::AmdRdna4:
       return "AMD RDNA4";
+    case GpuFamily::IntelXeLp:
+      return "Intel Xe-LP";
+    case GpuFamily::IntelXeLpg:
+      return "Intel Xe-LPG";
     case GpuFamily::IntelAlchemist:
       return "Intel Alchemist";
     case GpuFamily::IntelXe2:

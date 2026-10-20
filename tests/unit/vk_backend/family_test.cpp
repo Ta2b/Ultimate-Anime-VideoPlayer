@@ -37,7 +37,9 @@ TEST_CASE("Familles : identifiants PCI connus", "[vk_backend][family]") {
   CHECK(detect_family(pci::kAmd, 0x7550, false) == GpuFamily::AmdRdna4);            // RX 9070
   CHECK(detect_family(pci::kAmd, 0x73BF, false) == GpuFamily::AmdBeforeRdna3);      // RX 6800
   CHECK(detect_family(pci::kIntel, 0x56A0, false) == GpuFamily::IntelAlchemist);    // Arc A770
-  CHECK(detect_family(pci::kIntel, 0xE20B, false) == GpuFamily::IntelXe2);          // Arc B580
+  CHECK(detect_family(pci::kIntel, 0x7D55, false) == GpuFamily::IntelXeLpg);  // Arc du Core Ultra 7 155H
+  CHECK(detect_family(pci::kIntel, 0xA780, false) == GpuFamily::IntelXeLp);   // UHD 770
+  CHECK(detect_family(pci::kIntel, 0xE20B, false) == GpuFamily::IntelXe2);    // Arc B580
   CHECK(detect_family(pci::kNvidia, 0x2782, true) == GpuFamily::Software);
   CHECK(detect_family(0x10005, 0, false) == GpuFamily::Unknown);
 }

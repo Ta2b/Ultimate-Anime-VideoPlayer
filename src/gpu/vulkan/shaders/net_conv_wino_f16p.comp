@@ -1,0 +1,6 @@
+#version 450
+// Conv 3 × 3 par Winograd F(2×2, 3×3) (net_conv_wino.glsl) en fp16 empaqueté.
+#extension GL_GOOGLE_include_directive : require
+#define AJP_NET_F16
+#define AJP_CONV_PACKED
+#include "net_conv_wino.glsl"

@@ -19,6 +19,8 @@ enum class GpuFamily : std::uint8_t {
   AmdBeforeRdna3,
   AmdRdna3,
   AmdRdna4,
+  IntelXeLp,   // Tiger Lake à Raptor Lake (UHD 770, Iris Xe), DG1
+  IntelXeLpg,  // Meteor Lake et Arrow Lake (Arc intégré des Core Ultra 100 et 200)
   IntelAlchemist,
   IntelXe2,
 };

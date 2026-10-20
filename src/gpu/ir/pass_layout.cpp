@@ -132,15 +132,19 @@ std::expected<PassStats, Refusal> optimize(Graph& graph, const OptimizeOptions& 
   stats.bias = fuse_conv_bias(graph);
   stats.residuals = fuse_residuals(graph);
   stats.activations = fuse_activations(graph);
+  stats.gates = fuse_gates(graph);
+  stats.spaces = fuse_spaces(graph);
   stats.dead += eliminate_dead_code(graph);
   stats.nhwc = assign_layout(graph);
   if (auto ok = validate(graph); !ok) return std::unexpected(ok.error());
   make_logger()->debug(
       "passes : {} pliés, {} morts, {} sans effet, {} réarrangements, {} biais, {} résiduels, "
-      "{} activations, {} grilles repliées, {} ConvTranspose en Conv, {} tenseurs NHWC16 ; "
+      "{} activations, {} portes, {} DepthToSpace fondus, {} grilles repliées, {} ConvTranspose en Conv, {} "
+      "tenseurs NHWC16 ; "
       "{} nœuds restants",
       stats.folded, stats.dead, stats.identities, stats.pixel_shuffles, stats.bias, stats.residuals,
-      stats.activations, stats.grid_transposes, stats.transposes, stats.nhwc, graph.nodes.size());
+      stats.activations, stats.gates, stats.spaces, stats.grid_transposes, stats.transposes, stats.nhwc,
+      graph.nodes.size());
   return stats;
 }
 

@@ -59,6 +59,9 @@ struct Target {
   bool f16_storage = false;   // tenseurs float16 (variantes « _f16 »)
   bool f16_math = false;      // calcul en fp16 (« _f16p »)
   bool matrix_units = false;  // matrices coopératives autorisées (famille et pilote, voir family.h)
+  // Tuiles 16 × 16 × 16 à sommes float16 aussi annoncées (variante coopmat_acc16, deux fois plus
+  // rapide sur GeForce, retenue seulement si sa sortie concorde).
+  bool matrix_f16_acc = false;
   std::uint32_t subgroup_size = 0;
   // Tailles de sous-groupe qu'un dispatch peut exiger ; 0 : aucune (le pilote choisit).
   std::uint32_t subgroup_min = 0;

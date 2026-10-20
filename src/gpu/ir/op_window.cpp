@@ -207,12 +207,23 @@ Inferred infer_conv(const Node& node, std::span<const Operand> in) {
   if (present(in, kConvB) && *in[kConvB].dims != Dims{m}) {
     return shape_error(node, "biais d'une autre taille que les canaux de sortie");
   }
-  if (auto ok = check_optional(node, in, kConvResidual, e.residual, out, "résiduel"); !ok) {
+  if (auto ok = check_optional(node, in, kConvResidual, e.residual || e.gate, out, "résiduel"); !ok) {
     return std::unexpected(ok.error());
+  }
+  if (e.residual && e.gate) return graph_error(node, "porte et résiduel à la fois");
+  if (e.gate && x != out) {
+    return shape_error(node, std::format("porte : entrée {} et sortie {} de formes différentes",
+                                         format_dims(x), format_dims(out)));
   }
   if (auto ok = check_optional(node, in, kConvSlope, e.act == Activation::PRelu, Dims{m}, "pente PRelu");
       !ok) {
     return std::unexpected(ok.error());
+  }
+  if (e.space != 0) {
+    const std::int64_t b = e.space;
+    if (b < 2 || b > 64 || m % (b * b) != 0)
+      return shape_error(node, std::format("DepthToSpace fondu : blocs de {} sur {} canaux", b, m));
+    out = {out[0], m / (b * b), out[2] * b, out[3] * b};
   }
   return std::vector<OutputInfo>{{.type = in[kConvX].type, .dims = std::move(out)}};
 }
@@ -225,7 +236,8 @@ Evaluated eval_conv(const Node& node, std::span<const Value* const> in, std::spa
   auto win = conv_window(node, **attrs, x.dims, w.dims);
   if (!win) return std::unexpected(win.error());
 
-  Value out = make_output(outs[0]);
+  const Epilogue& e = (*attrs)->epilogue;
+  Value out = make_output({.type = outs[0].type, .dims = conv_result_dims(outs[0].dims, e)});
   const Dims& od = out.dims;
   const std::int64_t c_group = x.dims[1] / (*attrs)->group;
   const std::int64_t m_group = od[1] / (*attrs)->group;
@@ -252,8 +264,8 @@ Evaluated eval_conv(const Node& node, std::span<const Value* const> in, std::spa
   }
   if (in.size() > kConvB && in[kConvB] != nullptr) add_per_channel(out, *in[kConvB]);
 
-  // Épilogue : résiduel, puis activation, élément par élément.
-  const Epilogue& e = (*attrs)->epilogue;
+  // Épilogue : résiduel, puis activation, puis porte, élément par élément (la porte garde la
+  // forme de x : même indice), puis le DepthToSpace fondu.
   const auto plane_size = static_cast<std::size_t>(od[2] * od[3]);
   for (std::size_t k = 0; k < out.f.size(); ++k) {
     float value = out.f[k];
@@ -261,6 +273,11 @@ Evaluated eval_conv(const Node& node, std::span<const Value* const> in, std::spa
     const std::size_t channel = (k / plane_size) % static_cast<std::size_t>(od[1]);
     const float slope = e.act == Activation::PRelu ? in[kConvSlope]->f[channel] : 0.0F;
     out.f[k] = epilogue(e, value, slope);
+    if (e.gate) out.f[k] *= x.f[k] + in[kConvResidual]->f[k];
+  }
+  if (e.space != 0) {
+    return std::vector<Value>{
+        gather_elements(out, outs[0], depth_to_space_source(od, outs[0].dims, e.space, e.space_mode))};
   }
   return std::vector<Value>{std::move(out)};
 }

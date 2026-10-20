@@ -1,6 +1,6 @@
 // Fusions : réarrangements de pixels reconnus, Conv + biais, Conv + résiduel,
-// Conv + activation. Une fusion n'a lieu que si la sortie intermédiaire n'a
-// qu'un lecteur et n'est pas une sortie du graphe.
+// Conv + activation, porte de SPAN, Conv + DepthToSpace. Une fusion n'a lieu que si la sortie intermédiaire
+// n'a qu'un lecteur et n'est pas une sortie du graphe.
 #include <algorithm>
 #include <limits>
 #include <optional>
@@ -59,7 +59,7 @@ ConvAttrs* open_conv(Node& node, bool plain) {
   auto* attrs = std::get_if<ConvAttrs>(&node.attrs);
   if (node.op != OpKind::Conv || attrs == nullptr) return nullptr;
   const Epilogue& e = attrs->epilogue;
-  return (plain && e.residual) || e.act != Activation::None ? nullptr : attrs;
+  return (plain && e.residual) || e.act != Activation::None || e.gate ? nullptr : attrs;
 }
 
 ConvAttrs* plain_conv(Node& node) {
@@ -221,6 +221,66 @@ bool try_activation(Graph& graph, std::size_t n) {
   return true;
 }
 
+// Porte : m = Mul(s, a), s = Add(x, r), a = Conv(x) de la forme de x, a et s lus par m seul.
+bool try_gate(Graph& graph, std::size_t m) {
+  const Node& mul = graph.nodes[m];
+  if (mul.op != OpKind::Mul || mul.inputs.size() != 2 || mul.inputs[0] == mul.inputs[1]) return false;
+  const auto producer = producers(graph);
+  for (std::size_t side = 0; side < 2; ++side) {
+    const TensorId a = mul.inputs[side];
+    const TensorId s = mul.inputs[1 - side];
+    const std::size_t conv_at = producer[a];
+    const std::size_t add_at = producer[s];
+    if (conv_at == kNoNode || add_at == kNoNode) continue;
+    Node& conv = graph.nodes[conv_at];
+    const Node& add = graph.nodes[add_at];
+    auto* attrs = std::get_if<ConvAttrs>(&conv.attrs);
+    if (conv.op != OpKind::Conv || attrs == nullptr || attrs->epilogue.residual || attrs->epilogue.gate ||
+        add.op != OpKind::Add || add.inputs.size() != 2)
+      continue;
+    if (sole_reader(graph, a) != m || sole_reader(graph, s) != m) continue;
+    const TensorId x = conv.inputs[kConvX];
+    if (add.inputs[0] != x && add.inputs[1] != x) continue;
+    const TensorId r = add.inputs[0] == x ? add.inputs[1] : add.inputs[0];
+    const Tensor& xt = graph.tensors[x];
+    const Tensor& out = graph.tensors[mul.outputs[0]];
+    if (!xt.known || graph.tensors[a].dims != xt.dims || graph.tensors[r].dims != xt.dims ||
+        out.dims != xt.dims || graph.tensors[r].type != xt.type || out.type != graph.tensors[a].type)
+      continue;
+    attrs->epilogue.gate = true;
+    conv.inputs.resize(std::max(conv.inputs.size(), kConvResidual + 1), kNoTensor);
+    conv.inputs[kConvResidual] = r;
+    conv.outputs[0] = mul.outputs[0];
+    // La Conv prend la place du Mul, après l'Add et elle-même : r y est calculé.
+    graph.nodes[m] = std::move(conv);
+    for (const std::size_t gone : {std::max(conv_at, add_at), std::min(conv_at, add_at)})
+      graph.nodes.erase(graph.nodes.begin() + static_cast<std::ptrdiff_t>(gone));
+    return true;
+  }
+  return false;
+}
+
+// DepthToSpace d dont l'entrée vient d'une Conv qu'il lit seul : la Conv écrit sa sortie.
+bool try_space(Graph& graph, std::size_t d) {
+  const Node& space = graph.nodes[d];
+  const auto* block = std::get_if<BlockAttrs>(&space.attrs);
+  if (space.op != OpKind::DepthToSpace || block == nullptr || block->blocksize < 2 || space.inputs.empty())
+    return false;
+  const TensorId t = space.inputs[0];
+  const std::size_t conv_at = producers(graph)[t];
+  if (conv_at == kNoNode || sole_reader(graph, t) != d) return false;
+  Node& conv = graph.nodes[conv_at];
+  auto* attrs = std::get_if<ConvAttrs>(&conv.attrs);
+  if (conv.op != OpKind::Conv || attrs == nullptr || attrs->epilogue.space != 0) return false;
+  const Tensor& out = graph.tensors[space.outputs[0]];
+  if (!graph.tensors[t].known || !out.known || out.type != graph.tensors[t].type) return false;
+  attrs->epilogue.space = block->blocksize;
+  attrs->epilogue.space_mode = block->mode;
+  conv.outputs[0] = space.outputs[0];
+  graph.nodes.erase(graph.nodes.begin() + static_cast<std::ptrdiff_t>(d));
+  return true;
+}
+
 // Après une fusion, le nœud d'indice n a changé : on le réexamine.
 template <class Fn>
 int fuse_each(Graph& graph, Fn&& fuse) {
@@ -248,6 +308,25 @@ int fuse_residuals(Graph& graph) {
 
 int fuse_activations(Graph& graph) {
   return fuse_each(graph, try_activation);
+}
+
+int fuse_spaces(Graph& graph) {
+  return fuse_each(graph, try_space);
+}
+
+// Deux nœuds avant le Mul disparaissent à chaque fusion : on repart du début plutôt que d'en
+// sauter un (fuse_each réexamine l'indice du nœud changé).
+int fuse_gates(Graph& graph) {
+  int fused = 0;
+  for (std::size_t m = 0; m < graph.nodes.size();) {
+    if (try_gate(graph, m)) {
+      ++fused;
+      m = 0;
+    } else {
+      ++m;
+    }
+  }
+  return fused;
 }
 
 }  // namespace ajp::gpu::ir

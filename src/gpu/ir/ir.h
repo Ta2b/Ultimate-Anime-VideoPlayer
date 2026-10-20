@@ -92,13 +92,37 @@ enum class AutoPad : std::uint8_t { NotSet, SameUpper, SameLower, Valid };
 // Activation appliquée en fin de convolution, après le biais et le résiduel.
 enum class Activation : std::uint8_t { None, Relu, LeakyRelu, PRelu, Sigmoid, Tanh, Clip };
 
+// DCR : profondeur, colonne, ligne (ONNX par défaut). CRD : ordre de
+// pixel_shuffle et pixel_unshuffle de PyTorch.
+enum class BlockMode : std::uint8_t { Dcr, Crd };
+
 struct Epilogue {
   bool residual = false;  // ajoute l'entrée kConvResidual
   Activation act = Activation::None;
   float alpha = 0.0F;  // LeakyRelu
   float lo = 0.0F;     // Clip
   float hi = 0.0F;     // Clip
+  // Porte de SPAN : la sortie activée multiplie (x + r), x l'entrée de la Conv au même élément
+  // (sortie de la forme de x) et r l'entrée kConvResidual, qui n'est alors pas ajoutée avant
+  // l'activation (residual reste faux).
+  bool gate = false;
+  // DepthToSpace fondu : la Conv écrit directement la sortie du DepthToSpace qui la lisait, en
+  // blocs de space × space pixels rangés selon space_mode ; 0 : pas de réarrangement. Le résiduel
+  // et la porte gardent la forme calculée par la Conv (conv_result_dims).
+  std::int64_t space = 0;
+  BlockMode space_mode = BlockMode::Dcr;
 };
+
+// Forme calculée par une Conv avant son DepthToSpace fondu : celle de son tenseur de sortie
+// sans réarrangement.
+inline Dims conv_result_dims(Dims out, const Epilogue& e) {
+  if (e.space > 1 && out.size() == 4) {
+    out[1] *= e.space * e.space;
+    out[2] /= e.space;
+    out[3] /= e.space;
+  }
+  return out;
+}
 
 // Entrées d'une Conv : les trois d'ONNX, puis celles qu'ajoutent les fusions.
 inline constexpr std::size_t kConvX = 0;
@@ -166,10 +190,6 @@ struct CastAttrs {
 struct ModAttrs {
   bool fmod = false;
 };
-
-// DCR : profondeur, colonne, ligne (ONNX par défaut). CRD : ordre de
-// pixel_shuffle et pixel_unshuffle de PyTorch.
-enum class BlockMode : std::uint8_t { Dcr, Crd };
 
 struct BlockAttrs {  // DepthToSpace, SpaceToDepth
   std::int64_t blocksize = 0;

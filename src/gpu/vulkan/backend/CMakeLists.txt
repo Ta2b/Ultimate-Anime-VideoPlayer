@@ -52,6 +52,9 @@ ajp_add_spirv(ajp_vk_backend
     ${net_shaders}
     "${shaders}/net_conv_f16p.comp"
     "${shaders}/net_conv_coopmat_f16.comp"
+    "${shaders}/net_conv_coopmat_acc16.comp"
+    "${shaders}/net_conv_wino_f16.comp"
+    "${shaders}/net_conv_wino_f16p.comp"
   VARIANT f16
   DEFINES AJP_NET_F16
   VARIANT_SHADERS ${net_shaders})

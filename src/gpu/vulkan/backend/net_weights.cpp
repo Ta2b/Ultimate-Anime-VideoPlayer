@@ -1,5 +1,6 @@
 #include "gpu/vulkan/backend/net_weights.h"
 
+#include <array>
 #include <bit>
 #include <cstring>
 
@@ -99,6 +100,37 @@ std::vector<std::byte> matrix_weights(const ir::Tensor& w, std::uint32_t cin_pad
         for (std::int64_t co = 0; co < d[0]; ++co) {
           out.put((row * cout_padded) + static_cast<std::size_t>(co), w.value.f[at(d, co, ci, ky, kx)]);
         }
+      }
+    }
+  }
+  return out.take();
+}
+
+std::vector<std::byte> winograd_weights(const ir::Tensor& w, std::uint32_t lanes, BlobType type) {
+  const ir::Dims& d = w.dims;  // [cout][cin][3][3]
+  const std::int64_t blocks = (d[0] + lanes - 1) / lanes;
+  Packer out(static_cast<std::size_t>(blocks * d[1] * 16 * lanes), type);
+  for (std::int64_t co = 0; co < d[0]; ++co) {
+    for (std::int64_t ci = 0; ci < d[1]; ++ci) {
+      // G g, puis (G g) Gᵀ ; G = [1 0 0 ; ½ ½ ½ ; ½ -½ ½ ; 0 0 1].
+      std::array<std::array<float, 3>, 4> gg{};
+      for (std::size_t kx = 0; kx < 3; ++kx) {
+        const auto x = static_cast<std::int64_t>(kx);
+        const float g0 = w.value.f[at(d, co, ci, 0, x)];
+        const float g1 = w.value.f[at(d, co, ci, 1, x)];
+        const float g2 = w.value.f[at(d, co, ci, 2, x)];
+        gg[0][kx] = g0;
+        gg[1][kx] = 0.5F * (g0 + g1 + g2);
+        gg[2][kx] = 0.5F * (g0 - g1 + g2);
+        gg[3][kx] = g2;
+      }
+      // Position i × 4 + j de la tuile 4 × 4, lane co % lanes du bloc co / lanes.
+      const auto first = static_cast<std::size_t>((((co / lanes) * d[1]) + ci) * 16 * lanes) +
+                         static_cast<std::size_t>(co % lanes);
+      for (std::size_t i = 0; i < 4; ++i) {
+        const std::array<float, 4> u{gg[i][0], 0.5F * (gg[i][0] + gg[i][1] + gg[i][2]),
+                                     0.5F * (gg[i][0] - gg[i][1] + gg[i][2]), gg[i][2]};
+        for (std::size_t j = 0; j < 4; ++j) out.put(first + (((i * 4) + j) * lanes), u[j]);
       }
     }
   }

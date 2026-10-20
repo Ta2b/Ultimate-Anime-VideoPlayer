@@ -26,6 +26,11 @@ std::vector<std::byte> conv_transpose_weights(const ir::Tensor& w, std::uint32_t
 std::vector<std::byte> matrix_weights(const ir::Tensor& w, std::uint32_t cin_padded,
                                       std::uint32_t cout_padded);
 
+// Poids d'une Conv 3 × 3 par Winograd F(2×2, 3×3) : U = G g Gᵀ de chaque paire (cout, cin),
+// 4 × 4 valeurs, rangées [bloc][cin][position][lanes] (en float ou en float16), un bloc portant
+// lanes canaux de sortie complété de zéros (net_conv_wino.glsl). Groupe unique.
+std::vector<std::byte> winograd_weights(const ir::Tensor& w, std::uint32_t lanes, BlobType type);
+
 // Un vecteur par canal de sortie en float (biais, pente PRelu), complété de zéros jusqu'à
 // count ; absent (nullptr) : des zéros.
 std::vector<std::byte> channel_floats(const ir::Tensor* values, std::uint32_t count);

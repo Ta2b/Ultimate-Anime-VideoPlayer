@@ -176,7 +176,7 @@ PassStats check_preserved(const Graph& before, Graph& after, const std::vector<N
 
 }  // namespace
 
-TEST_CASE("passes : SPAN miniature aux dimensions paires, réduit à cinq nœuds", "[gpu_ir][passes]") {
+TEST_CASE("passes : SPAN miniature aux dimensions paires, réduit à quatre nœuds", "[gpu_ir][passes]") {
   const Graph before = build(span_like(), {{.name = "x", .dims = {1, 3, 6, 10}}});
   Graph after;
   const PassStats stats =
@@ -187,11 +187,11 @@ TEST_CASE("passes : SPAN miniature aux dimensions paires, réduit à cinq nœuds
   CHECK(stats.residuals == 1);
   CHECK(stats.activations == 2);
   CHECK(stats.identities >= 3);  // Pad nul, Slice entier, Identity
-  REQUIRE(after.nodes.size() == 5);
+  CHECK(stats.spaces == 1);
+  REQUIRE(after.nodes.size() == 4);
   CHECK(after.nodes[0].op == OpKind::SpaceToDepth);
   CHECK(std::get<BlockAttrs>(after.nodes[0].attrs).mode == BlockMode::Crd);
-  CHECK(after.nodes[4].op == OpKind::DepthToSpace);
-  CHECK(std::get<BlockAttrs>(after.nodes[4].attrs).mode == BlockMode::Crd);
+  CHECK(count_ops(after, OpKind::DepthToSpace) == 0);
   CHECK(count_ops(after, OpKind::Conv) == 3);
 
   const ConvAttrs& first = conv_attrs(after.nodes[1]);
@@ -200,13 +200,16 @@ TEST_CASE("passes : SPAN miniature aux dimensions paires, réduit à cinq nœuds
   const ConvAttrs& second = conv_attrs(after.nodes[2]);
   CHECK(second.epilogue.residual);
   CHECK(second.epilogue.act == Activation::Relu);
-  CHECK(conv_attrs(after.nodes[3]).epilogue.act == Activation::None);
+  const ConvAttrs& last = conv_attrs(after.nodes[3]);
+  CHECK(last.epilogue.act == Activation::None);
+  CHECK(last.epilogue.space == 2);  // le DepthToSpace final écrit par la dernière Conv
+  CHECK(last.epilogue.space_mode == BlockMode::Crd);
 
   // La sortie garde son nom, l'entrée et la sortie restent en Nchw.
   CHECK(after.tensors[after.outputs[0]].name == "y");
   CHECK(after.tensors[after.inputs[0]].layout == Layout::Nchw);
   CHECK(after.tensors[after.outputs[0]].layout == Layout::Nchw);
-  CHECK(stats.nhwc == 4);
+  CHECK(stats.nhwc == 3);
   const Tensor& unshuffled = after.tensors[after.nodes[0].outputs[0]];
   CHECK(unshuffled.layout == Layout::Nhwc16);
   CHECK(storage_bytes(unshuffled) == std::uint64_t{3} * 5 * 16 * 4);  // 12 canaux rangés sur 16
@@ -218,9 +221,9 @@ TEST_CASE("passes : SPAN miniature aux dimensions impaires, marges et rognage ga
   const PassStats stats =
       check_preserved(before, after, {{.name = "x", .value = random_floats({1, 3, 5, 7}, 22)}});
   CHECK(stats.pixel_shuffles == 2);
-  REQUIRE(after.nodes.size() == 7);
+  REQUIRE(after.nodes.size() == 6);
   CHECK(after.nodes[0].op == OpKind::Pad);
-  CHECK(after.nodes[6].op == OpKind::Slice);
+  CHECK(after.nodes[5].op == OpKind::Slice);
   CHECK(after.tensors[after.outputs[0]].dims == Dims{1, 3, 5, 7});
   CHECK(count_ops(after, OpKind::Shape) == 0);
   CHECK(count_ops(after, OpKind::Reshape) == 0);
