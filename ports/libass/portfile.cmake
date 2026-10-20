@@ -11,6 +11,7 @@ if(VCPKG_TARGET_IS_WINDOWS)
   # garde derrière /experimental:c11atomics.
   set(std_options -Dc_std=c11)
   string(APPEND VCPKG_C_FLAGS " /experimental:c11atomics")
+  string(APPEND VCPKG_CXX_FLAGS " ")  # vcpkg_cmake_configure veut les deux drapeaux, ou aucun
 elseif(VCPKG_TARGET_IS_OSX)
   set(font_options -Dfontconfig=disabled -Ddirectwrite=disabled -Dcoretext=enabled)
 else()
