@@ -544,6 +544,7 @@ std::expected<void, Refusal> play(const PlayOptions& options, const PlayerPaths&
                                         .width = options.window_width,
                                         .height = options.window_height,
                                         .fullscreen = options.fullscreen,
+                                        .hdr = !options.sdr,
                                         .smooth_motion = saved->smooth_motion,
                                         .allow_software = options.software_gpu});
   if (!screen) return std::unexpected(std::move(screen.error()));

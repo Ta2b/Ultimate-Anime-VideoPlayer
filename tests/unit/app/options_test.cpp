@@ -33,6 +33,10 @@ TEST_CASE("ajp play : fichier et options", "[app][options]") {
   CHECK(options->stats == std::filesystem::path("/tmp/s.tsv"));
   CHECK(options->upscale);
   CHECK_FALSE(options->fullscreen);
+  CHECK_FALSE(options->sdr);
+  const auto sdr = parse({"épisode.mkv", "--sdr"});
+  REQUIRE(sdr);
+  CHECK(sdr->sdr);
 }
 
 TEST_CASE("ajp play : refus nommés", "[app][options]") {

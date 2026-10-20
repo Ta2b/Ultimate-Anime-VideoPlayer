@@ -98,6 +98,8 @@ struct PlayOptions {
   bool rife_image = false;
   // --software-gpu : accepte un appareil Vulkan logiciel (lavapipe), pour les essais sans GPU.
   bool software_gpu = false;
+  // --sdr : sortie SDR même sur un écran HDR (la swapchain ne demande pas HDR10), pour les essais.
+  bool sdr = false;
   // --first-run : l'écran de bienvenue (moteurs, profil de démarrage) même s'il a déjà été vu.
   bool first_run = false;
   // Options données sur la ligne de commande (« --rife », « --truehdr »…) : elles remplacent les
