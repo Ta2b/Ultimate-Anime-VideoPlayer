@@ -7,6 +7,7 @@
 #include <variant>
 
 #include "core/frame.h"
+#include "core/pacing.h"
 
 namespace ajp::app::play {
 namespace {
@@ -20,6 +21,10 @@ constexpr std::int64_t kOsdPeriodUs = 250'000;
 constexpr std::int64_t kCadenceSlackUs = 500;
 // À l'amorce, la première image attend ses sous-titres au plus ce temps.
 constexpr std::int64_t kPrerollSubtitleWaitUs = 100'000;
+// Une présentation qui attend plus d'un quart de période a trouvé la file de l'écran pleine ; la
+// part de ces attentes se lisse sur une dizaine de présentations, et au-delà de la moitié la file
+// est tenue pour pleine.
+constexpr double kQueueFillSmoothing = 0.1;
 
 template <class... F>
 struct Overloaded : F... {
@@ -227,10 +232,10 @@ void Session::choose(std::int64_t host_now) {
   }
   const ClockSnapshot now = clock_.snapshot();
   if (!now.valid || now.epoch != epoch_) return;  // horloge pas encore partie : l'image reste
-  // L'image paraît au rafraîchissement qui suit sa présentation : on vise le milieu de la période
-  // de l'écran (connue, ou mesurée en FIFO).
-  const std::int64_t lead_us =
-      (config_.display_period_us > 0 ? config_.display_period_us : stats_.present_interval.median()) / 2;
+  // L'image choisie maintenant paraît après display_delay_us ; elle doit être celle dont le pts
+  // est le plus proche de cet instant, à une demi-période près.
+  const std::int64_t period = display_period();
+  const std::int64_t lead_us = display_delay_us(period) + period / 2;
   late_.clear();
   const std::optional<RingFrame> picked = queue_.pick(now.media_at(host_now), lead_us, late_);
   for (const RingFrame& frame : late_) {
@@ -258,6 +263,7 @@ const subs::SubtitleFrame* Session::subtitles_for(std::int64_t pts_us) {
 
 std::expected<std::optional<PresentRecord>, Refusal> Session::tick(std::int64_t host_now, const UiFrame& ui) {
   fresh_ = false;
+  follow_display();
   choose(host_now);
   const bool fresh = fresh_;
   bool osd_changed = false;
@@ -305,9 +311,14 @@ std::expected<std::optional<PresentRecord>, Refusal> Session::tick(std::int64_t 
   shown_size_ = size;
   std::optional<PresentRecord> record;
   if (timing->presented) {
+    const std::int64_t period = display_period();
+    if (period > 0) {
+      const double waited = timing->queue_wait_us > period / 4 ? 1.0 : 0.0;
+      queue_fill_ += kQueueFillSmoothing * (waited - queue_fill_);
+    }
     const std::int64_t previous = stats_.last_new_present_us;
     stats_.presented(timing->render_us, timing->present_us, fresh);
-    if (fresh && current_) pace(*current_, timing->present_us);
+    if (fresh && current_) pace(*current_, host_now + display_delay_us(period));
     record = PresentRecord{.host_us = timing->present_us,
                            .pts_us = current_ ? current_->pts_us : kNoPts,
                            .fresh = fresh,
@@ -325,16 +336,42 @@ std::expected<std::optional<PresentRecord>, Refusal> Session::tick(std::int64_t 
 std::int64_t Session::pacing_period_us() const {
   // Un écran plus lent que la sortie saute des images par construction : sa période compte.
   const std::int64_t nominal = config_.extra != nullptr ? config_.extra->output_period_us() : 0;
-  const std::int64_t display =
-      config_.display_period_us > 0 ? config_.display_period_us : stats_.present_interval.median();
-  return nominal > 0 ? std::max(nominal, display) : 0;
+  return nominal > 0 ? std::max(nominal, display_period()) : 0;
 }
 
-void Session::pace(const RingFrame& frame, std::int64_t present_us) {
+std::int64_t Session::display_period() const {
+  return config_.display_period_us > 0 ? config_.display_period_us : stats_.present_interval.median();
+}
+
+// Imposé par le réglage, ou estimé : la file de l'écran a de la place, l'image part après son
+// rendu et paraît au vsync suivant (une demi-période plus tard en moyenne) ; file pleine, les
+// depth − 1 images déjà en file passent d'abord.
+std::int64_t Session::display_delay_us(std::int64_t period) const {
+  if (config_.video_latency_us > 0) return config_.video_latency_us;
+  if (queue_fill_ > 0.5) return std::int64_t{std::max(config_.swapchain_depth - 1, 0)} * period + period / 2;
+  return stats_.render.median() + period / 2;
+}
+
+void Session::follow_display() {
+  double speed = 1.0;
+  if (config_.display_sync && config_.extra != nullptr) {
+    const double hz = config_.display_hz > 0.0        ? config_.display_hz
+                      : config_.display_period_us > 0 ? 1e6 / static_cast<double>(config_.display_period_us)
+                                                      : 0.0;
+    speed = core::vsync_speed(hz, config_.extra->output_fps());
+  }
+  if (speed == speed_) return;
+  if (stages_.set_speed(speed)) {  // boîte audio pleine : redemandé au tour suivant
+    speed_ = speed;
+    osd_at_us_.reset();
+  }
+}
+
+void Session::pace(const RingFrame& frame, std::int64_t visible_us) {
   // Le retard ne se lit que pendant la lecture : en pause ou avant le départ, l'horloge est figée.
   const ClockSnapshot now = clock_.snapshot();
   const bool running = !paused_ && now.valid && now.epoch == epoch_ && frame.pts_us != kNoPts;
-  stats_.paced(frame.pts_us, running ? now.media_at(present_us) - frame.pts_us : 0, pacing_period_us());
+  stats_.paced(frame.pts_us, running ? now.media_at(visible_us) - frame.pts_us : 0, pacing_period_us());
 }
 
 void Session::check_end(std::int64_t host_now) {
@@ -371,10 +408,15 @@ std::vector<std::string> Session::osd_lines() const {
                                 format_ms(static_cast<std::int64_t>(stats_.frame_interval.stddev())),
                                 format_ms(stats_.render.median()), stats_.dropped));
     const std::int64_t period = pacing_period_us();
+    std::string synced;
+    if (speed_ != 1.0) {
+      synced = std::format(" · calée sur l'écran {:+.3f} %", (speed_ - 1.0) * 100.0);
+      std::ranges::replace(synced, '.', ',');
+    }
     lines.push_back(std::format(
-        "fluidité {}{} im/s · manquées {} · retard p95 {}", format_fps(stats_.shown_fps),
+        "fluidité {}{} im/s · manquées {} · retard p95 {}{}", format_fps(stats_.shown_fps),
         period > 0 ? std::format(" / {}", format_fps(1e6 / static_cast<double>(period))) : std::string(),
-        stats_.missing, format_ms(stats_.lag.percentile(95))));
+        stats_.missing, format_ms(stats_.lag.percentile(95)), synced));
   }
   if ((show.all || show.rife) && config_.extra != nullptr) {
     if (auto rife = config_.extra->rife()) lines.push_back(std::move(*rife));

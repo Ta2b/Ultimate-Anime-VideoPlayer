@@ -241,6 +241,18 @@ void sound_tab(PlaySettings& d) {
   if (ImGui::Button("Remettre à 0")) d.audio_delay_ms = 0;
   note("Positif : le son est retardé. Ctrl + clic sur le curseur pour saisir une valeur (±5000 ms).");
   d.audio_delay_ms = std::clamp(d.audio_delay_ms, limits::kAudioDelayMs.lo, limits::kAudioDelayMs.hi);
+  ImGui::Checkbox("Caler la lecture sur l'écran", &d.display_sync);
+  note(
+      "Sur un écran à fréquence fixe, la lecture accélère ou ralentit d'au plus 0,125 % pour que chaque "
+      "image tienne un nombre entier de rafraîchissements : plus aucune image doublée par dérive (une toutes "
+      "les 17 s à 60 Hz sinon). Le son suit, sans changement audible. Sans calage possible (VRR, cadence "
+      "trop loin), le son reste maître.");
+  ImGui::SliderInt("Latence de l'écran (ms)", &d.video_latency_ms, limits::kVideoLatencyMs.lo,
+                   limits::kVideoLatencyMs.hi, d.video_latency_ms == 0 ? "estimée" : "%d ms");
+  note(
+      "Le temps entre le choix d'une image et son apparition : estimé d'après le rendu et la file de "
+      "l'écran, ou imposé ici si l'image paraît en avance ou en retard sur le son.");
+  d.video_latency_ms = std::clamp(d.video_latency_ms, limits::kVideoLatencyMs.lo, limits::kVideoLatencyMs.hi);
 }
 
 void subtitles_tab(PlaySettings& d) {

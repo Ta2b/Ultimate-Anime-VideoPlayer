@@ -27,6 +27,8 @@ TEST_CASE("play.toml relit à l'identique ce qu'il a écrit", "[app][settings]")
   s.true_hdr_peak = 800;
   s.true_hdr_debanding = false;
   s.audio_delay_ms = -120;
+  s.display_sync = false;
+  s.video_latency_ms = 40;
   s.volume = 0.85F;
   s.subtitle_scale = 1.25F;
   s.stats.frames = true;

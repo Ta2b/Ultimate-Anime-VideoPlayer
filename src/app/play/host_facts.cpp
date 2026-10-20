@@ -18,6 +18,15 @@ std::int64_t display_period_us(SDL_Window* window) {
   return static_cast<std::int64_t>(1e6 / static_cast<double>(mode->refresh_rate));
 }
 
+double display_refresh_hz(SDL_Window* window) {
+  const SDL_DisplayMode* mode = SDL_GetCurrentDisplayMode(SDL_GetDisplayForWindow(window));
+  if (mode == nullptr) return 0.0;
+  if (mode->refresh_rate_numerator > 0 && mode->refresh_rate_denominator > 0)
+    return static_cast<double>(mode->refresh_rate_numerator) /
+           static_cast<double>(mode->refresh_rate_denominator);
+  return mode->refresh_rate > 0.0F ? static_cast<double>(mode->refresh_rate) : 0.0;
+}
+
 // Crête vue par le contenu sur l'écran de la fenêtre : la marge HDR de SDL3 (relative au blanc de
 // référence du compositeur) × 203 nits ; rien si l'écran n'est pas en HDR (display.md).
 std::optional<double> content_peak_nits(SDL_Window* window) {

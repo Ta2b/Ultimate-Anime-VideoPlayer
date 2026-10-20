@@ -34,6 +34,11 @@ inline constexpr double kExactTolerance = 1e-5;
 inline constexpr int kMaxVsyncsPerFrame = 16;
 }  // namespace pacing
 
+// La vitesse de lecture qui fait tenir à chaque image de output_fps un nombre entier de vsyncs
+// d'un écran fixe à refresh_hz, à kMaxSpeedChange près ; 1 sans calage possible (sortie plus
+// rapide que l'écran, rapport trop loin d'un entier, valeur inconnue).
+double vsync_speed(double refresh_hz, double output_fps);
+
 // Cale un facteur imposé sur l'écran, sans le changer. Facteur 1 : aucune interpolation.
 std::expected<CadenceChoice, Refusal> fit_cadence(const DisplayInfo& display, double source_fps,
                                                   Ratio factor);

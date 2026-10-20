@@ -1,13 +1,16 @@
 // Câblage des threads de la lecture vus du thread main : les boîtes à qui la session
-// parle (ThreadStages), ce que les threads lui renvoient (MainMail), et l'horloge hôte
-// qui remplace l'audio quand le fichier n'a pas de piste audio.
+// parle (ThreadStages), ce que les threads lui renvoient (MainMail), l'horloge hôte qui
+// remplace l'audio quand le fichier n'a pas de piste audio ou quand l'écran mène, et l'horloge
+// que lisent la session et le thread gpu (LeadClock).
 #pragma once
 
+#include <atomic>
 #include <cstdint>
 #include <memory>
 #include <mutex>
 #include <optional>
 #include <string>
+#include <utility>
 
 #include "app/play/bridges.h"
 #include "app/play/links.h"
@@ -21,17 +24,43 @@
 
 namespace ajp::app::play {
 
-// Horloge maître sans piste audio : le temps hôte, mis en marche et arrêté par la session.
+// Horloge maître sans piste audio, ou quand l'écran mène : le temps hôte, mis en marche et arrêté
+// par la session, à la vitesse qui cale la sortie sur les vsyncs (1 sinon).
 class HostClock final : public MasterClock {
  public:
   ClockSnapshot snapshot() const override;
-  void start(std::uint32_t epoch, std::int64_t media_us, std::int64_t host_us);
+  // Part de media_us ; keep_position : d'où elle s'est arrêtée si c'est la même époque (la reprise
+  // quand l'écran mène et que l'audio la suit, comme l'audio maître reprend d'où il s'est arrêté).
+  void start(std::uint32_t epoch, std::int64_t media_us, std::int64_t host_us, bool keep_position = false);
   void pause(std::int64_t host_us);
   void flush(std::uint32_t epoch);
+  // Vitesse : tout de suite si l'horloge court (depuis sa position à host_us), sinon au départ.
+  void set_rate(double rate, std::int64_t host_us);
+  // Reprend la position d'une autre horloge à host_us, en marche ou non : le passage de l'audio
+  // maître à l'écran maître ne fait ni saut ni retour.
+  void adopt(const ClockSnapshot& from, bool running, std::int64_t host_us);
 
  private:
   mutable std::mutex mutex_;
   ClockSnapshot snapshot_;
+  double rate_ = 1.0;
+};
+
+// L'horloge que lisent la session et le thread gpu quand le fichier a du son : celle de l'audio,
+// ou l'horloge hôte quand l'écran mène (synchro sur l'écran, ThreadStages::set_speed). Le choix
+// change en pleine lecture ; les deux horloges vivent aussi longtemps qu'elle.
+class LeadClock final : public MasterClock {
+ public:
+  LeadClock(std::shared_ptr<const MasterClock> audio, std::shared_ptr<const MasterClock> host)
+      : audio_(std::move(audio)), host_(std::move(host)) {}
+  ClockSnapshot snapshot() const override { return (host_leads() ? host_ : audio_)->snapshot(); }
+  bool host_leads() const { return host_leads_.load(std::memory_order_acquire); }
+  void lead_with_host(bool on) { host_leads_.store(on, std::memory_order_release); }
+
+ private:
+  std::shared_ptr<const MasterClock> audio_;
+  std::shared_ptr<const MasterClock> host_;
+  std::atomic<bool> host_leads_{false};
 };
 
 // Ce que les autres threads envoient à main, depuis leur thread, dans sa boîte.
@@ -63,7 +92,9 @@ struct StageLinks {
   audio::AudioThread* audio = nullptr;  // nullptr : pas de piste audio, l'horloge hôte mène
   AudioBridge* audio_bridge = nullptr;
   std::shared_ptr<subs::SubsInbox> subs;  // nullptr : pas de sous-titres
-  HostClock* host_clock = nullptr;        // exigée sans audio
+  // Toujours : maître sans audio ; avec audio, prête à mener quand l'écran se cale (lead).
+  std::shared_ptr<HostClock> host_clock;
+  LeadClock* lead = nullptr;  // avec audio : qui mène, l'audio ou l'horloge hôte
 };
 
 class ThreadStages final : public Stages {
@@ -77,11 +108,13 @@ class ThreadStages final : public Stages {
   bool slot_free(const SlotFree& free) override { return links_.video->post(free); }
   bool request_subtitles(const subs::RenderRequest& request) override;
   bool audio(const Command& command) override;
+  bool set_speed(double speed) override;
   void quit() override;
 
  private:
   StageLinks links_;
   std::uint32_t flushed_epoch_ = 0;
+  bool playing_ = false;  // play depuis la dernière pause : l'horloge hôte reprise court
 };
 
 }  // namespace ajp::app::play

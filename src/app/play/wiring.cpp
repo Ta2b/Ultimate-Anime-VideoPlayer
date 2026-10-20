@@ -9,9 +9,34 @@ ClockSnapshot HostClock::snapshot() const {
   return snapshot_;
 }
 
-void HostClock::start(std::uint32_t epoch, std::int64_t media_us, std::int64_t host_us) {
+void HostClock::start(std::uint32_t epoch, std::int64_t media_us, std::int64_t host_us, bool keep_position) {
   const std::scoped_lock lock(mutex_);
-  snapshot_ = {.media_us = media_us, .host_us = host_us, .rate = 1.0, .epoch = epoch, .valid = true};
+  if (keep_position && snapshot_.valid && snapshot_.epoch == epoch) media_us = snapshot_.media_at(host_us);
+  snapshot_ = {.media_us = media_us, .host_us = host_us, .rate = rate_, .epoch = epoch, .valid = true};
+}
+
+void HostClock::set_rate(double rate, std::int64_t host_us) {
+  const std::scoped_lock lock(mutex_);
+  rate_ = rate;
+  if (!snapshot_.valid || snapshot_.rate == 0.0) return;  // arrêtée : la vitesse vaut au départ
+  snapshot_ = {.media_us = snapshot_.media_at(host_us),
+               .host_us = host_us,
+               .rate = rate,
+               .epoch = snapshot_.epoch,
+               .valid = true};
+}
+
+void HostClock::adopt(const ClockSnapshot& from, bool running, std::int64_t host_us) {
+  const std::scoped_lock lock(mutex_);
+  if (!from.valid) {
+    snapshot_ = {.epoch = from.epoch, .valid = false};
+    return;
+  }
+  snapshot_ = {.media_us = from.media_at(host_us),
+               .host_us = host_us,
+               .rate = running ? rate_ : 0.0,
+               .epoch = from.epoch,
+               .valid = true};
 }
 
 void HostClock::pause(std::int64_t host_us) {
@@ -54,7 +79,7 @@ bool ThreadStages::flush(std::uint32_t epoch) {
   bool sent = links_.source->try_push(Flush{.epoch = epoch});
   sent = links_.video->post(Flush{.epoch = epoch}) && sent;
   if (links_.audio != nullptr) sent = links_.audio->post(Flush{.epoch = epoch}) && sent;
-  if (links_.host_clock != nullptr) links_.host_clock->flush(epoch);
+  links_.host_clock->flush(epoch);
   if (links_.subs) sent = links_.subs->try_push(Flush{.epoch = epoch}) && sent;
   return sent;
 }
@@ -67,15 +92,40 @@ bool ThreadStages::seek(const cmd::Seek& seek) {
   return links_.source->try_push(Command{seek});
 }
 
+// L'horloge hôte suit play et pause même quand l'audio mène : elle est prête à mener à son tour.
+// Elle part avant l'audio, qui s'y cale dès sa reprise quand l'écran mène.
 bool ThreadStages::play(std::uint32_t epoch, std::int64_t media_us) {
-  if (links_.audio != nullptr) return links_.audio->post(Command{cmd::Play{}});
-  links_.host_clock->start(epoch, media_us, host_now_us());
-  return true;
+  playing_ = true;
+  const bool host_leads_audio = links_.lead != nullptr && links_.lead->host_leads();
+  links_.host_clock->start(epoch, media_us, host_now_us(), host_leads_audio);
+  return links_.audio == nullptr || links_.audio->post(Command{cmd::Play{}});
 }
 
 bool ThreadStages::pause() {
-  if (links_.audio != nullptr) return links_.audio->post(Command{cmd::Pause{}});
+  playing_ = false;
   links_.host_clock->pause(host_now_us());
+  return links_.audio == nullptr || links_.audio->post(Command{cmd::Pause{}});
+}
+
+// Vitesse 1 : aucun calage sur l'écran, l'audio mène (s'il y en a). Autre vitesse : l'horloge hôte
+// reprend la position de l'audio, à cette vitesse, puis l'audio la suit (audio::SyncTo).
+bool ThreadStages::set_speed(double speed) {
+  const std::int64_t now = host_now_us();
+  const bool host_leads = speed != 1.0;
+  if (links_.audio == nullptr || links_.lead == nullptr || links_.lead->host_leads() == host_leads) {
+    links_.host_clock->set_rate(speed, now);
+    return true;
+  }
+  if (host_leads) {
+    const ClockSnapshot audio = links_.lead->snapshot();  // l'audio, qui mène encore
+    links_.host_clock->set_rate(speed, now);
+    links_.host_clock->adopt(audio, playing_, now);
+    if (!links_.audio->post(audio::SyncTo{.master = links_.host_clock})) return false;
+  } else {
+    if (!links_.audio->post(audio::SyncTo{})) return false;
+    links_.host_clock->set_rate(1.0, now);
+  }
+  links_.lead->lead_with_host(host_leads);
   return true;
 }
 

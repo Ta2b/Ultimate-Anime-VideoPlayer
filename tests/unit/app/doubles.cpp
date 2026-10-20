@@ -52,7 +52,7 @@ std::expected<ScreenTiming, Refusal> FakeScreen::show(const ShowRequest& request
             .subtitles_pts = request.subtitles ? std::optional(request.subtitles->pts_us) : std::nullopt,
             .osd = {request.osd.begin(), request.osd.end()},
             .ui = request.ui != nullptr});
-  return ScreenTiming{.render_us = 1000, .present_us = now_us};
+  return ScreenTiming{.render_us = 1000, .present_us = now_us, .queue_wait_us = queue_wait_us};
 }
 
 SlotFree FakeScreen::retire(const RingFrame& frame) {

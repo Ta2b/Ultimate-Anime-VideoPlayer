@@ -287,7 +287,7 @@ std::expected<std::unique_ptr<PlaceboScreen>, Refusal> PlaceboScreen::open(const
   pl_vulkan_swapchain_params sw_params{};
   sw_params.surface = impl->surface;
   sw_params.present_mode = VK_PRESENT_MODE_FIFO_KHR;
-  sw_params.swapchain_depth = 3;
+  sw_params.swapchain_depth = kSwapchainDepth;
   impl->swapchain = pl_vulkan_create_swapchain(impl->vk, &sw_params);
   if (impl->swapchain == nullptr)
     return refuse(RefusalCode::LibraryUnavailable, "pl_vulkan_create_swapchain a échoué");
@@ -609,8 +609,12 @@ std::expected<ScreenTiming, Refusal> PlaceboScreen::show(const ShowRequest& requ
   if (!pl_swapchain_submit_frame(s.swapchain))
     return refuse(RefusalCode::VendorCallFailed, "pl_swapchain_submit_frame");
   const std::int64_t submitted = host_now_us();
-  pl_swapchain_swap_buffers(s.swapchain);  // FIFO : rythme de l'écran
-  return ScreenTiming{.render_us = submitted - start, .present_us = host_now_us(), .presented = true};
+  pl_swapchain_swap_buffers(s.swapchain);  // FIFO : attend une place en file quand elle est pleine
+  const std::int64_t presented = host_now_us();
+  return ScreenTiming{.render_us = submitted - start,
+                      .present_us = presented,
+                      .queue_wait_us = presented - submitted,
+                      .presented = true};
 }
 
 }  // namespace ajp::app::play

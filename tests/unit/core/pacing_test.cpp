@@ -117,6 +117,18 @@ TEST_CASE("pacing : 60 Hz fixe donne 5/2 à la vitesse 1,001", "[pacing]") {
   }
 }
 
+TEST_CASE("pacing : vitesse de calage sur l'écran, 1 sans calage", "[pacing]") {
+  CHECK(vsync_speed(60.0, kNtsc * 2.5) == Approx(1.001).epsilon(1e-12));   // ×5/2 : 1 vsync
+  CHECK(vsync_speed(144.0, kNtsc * 2.0) == Approx(1.001).epsilon(1e-12));  // ×2 : 3 vsyncs
+  CHECK(vsync_speed(59.94, kNtsc * 2.5) == Approx(1.0).epsilon(1e-5));
+  CHECK(vsync_speed(60.0, 24.0) == 1.0);          // 2,5 vsyncs : aucun entier
+  CHECK(vsync_speed(60.0, kNtsc * 3.0) == 1.0);   // plus rapide que l'écran
+  CHECK(vsync_speed(160.0, kNtsc * 2.0) == 1.0);  // 3,34 vsyncs : trop loin
+  CHECK(vsync_speed(0.0, kNtsc) == 1.0);          // écran inconnu
+  CHECK(vsync_speed(60.0, 0.0) == 1.0);           // sortie inconnue
+  CHECK(vsync_speed(1000.0, 23.976) == 1.0);      // au-delà de 16 vsyncs par image
+}
+
 TEST_CASE("pacing : une source entière se cale sans changer de vitesse", "[pacing]") {
   const CadenceChoice choice = choose(fixed(120.0), {4, 1}, 8.0, 24.0);
   CHECK(choice.factor == Ratio{5, 1});

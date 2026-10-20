@@ -2,9 +2,11 @@
 // pause, sous-titres, fin de flux.
 #include "app/play/session.h"
 
+#include <optional>
 #include <string>
 #include <vector>
 
+#include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 
 #include "doubles.h"
@@ -414,6 +416,84 @@ TEST_CASE("Fluidité : les images neuves par seconde, relues chaque seconde", "[
   CHECK(format_fps(stats.shown_fps) == "60,0");
   for (int k = 61; k <= 120; ++k) stats.presented(100, 1'000'000 + std::int64_t{k} * 16'667, k % 2 == 0);
   CHECK(format_fps(stats.shown_fps) == "30,0");  // une présentation sur deux est un redessin
+}
+
+// Une chaîne dont la cadence de sortie se règle pendant le test.
+struct OutputRate final : StatsSource {
+  double fps = 24000.0 / 1001.0 * 2.5;  // 23,976 im/s ×5/2 : 59,94 im/s
+  std::optional<std::string> rife() const override { return std::nullopt; }
+  std::optional<std::string> memory() const override { return std::nullopt; }
+  double output_fps() const override { return fps; }
+};
+
+TEST_CASE("Synchro sur l'écran : la vitesse suit la cadence de sortie, 1 sans calage", "[app][session]") {
+  OutputRate rate;
+  Rig rig(SessionConfig{.display_hz = 60.0, .display_sync = true, .extra = &rate});
+  rig.tick();
+  REQUIRE(rig.stages.speeds.size() == 1);
+  CHECK(rig.stages.speeds[0] == Catch::Approx(1.001).epsilon(1e-9));
+  CHECK(rig.session.speed() == rig.stages.speeds[0]);
+  rig.tick();
+  CHECK(rig.stages.speeds.size() == 1);  // inchangée : rien de redemandé
+  rate.fps = 24000.0 / 1001.0 * 3.0;     // plus rapide que l'écran : aucun calage, l'audio mène
+  rig.tick();
+  REQUIRE(rig.stages.speeds.size() == 2);
+  CHECK(rig.stages.speeds[1] == 1.0);
+  rate.fps = 24000.0 / 1001.0 * 2.5;
+  rig.session.set_display_sync(false);
+  rig.tick();
+  CHECK(rig.stages.speeds.size() == 2);  // coupée : la vitesse reste 1
+  // Boîte audio pleine : rien ne change, la vitesse est redemandée au tour suivant.
+  rig.session.set_display_sync(true);
+  rig.stages.refuse_speed = true;
+  rig.tick();
+  CHECK(rig.session.speed() == 1.0);
+  rig.stages.refuse_speed = false;
+  rig.tick();
+  CHECK(rig.session.speed() == Catch::Approx(1.001).epsilon(1e-9));
+}
+
+TEST_CASE("Latence de l'écran : l'image choisie est celle qui tombe à son apparition", "[app][session]") {
+  // 60 Hz, rendu de 1 ms, file libre : l'image paraît 1 + 8,3 ms après son choix en moyenne ; on
+  // choisit donc jusqu'à 1 + 8,3 + 8,3 = 17,7 ms d'avance sur l'horloge.
+  Rig rig(SessionConfig{.display_period_us = 16'667});
+  rig.session.handle(ring_frame(0, 0));
+  rig.tick();  // amorce : 0 à l'écran
+  rig.session.handle(ring_frame(1, 20'000));
+  rig.run_clock(2'000);
+  rig.tick();
+  CHECK(rig.shown_pts() == 0);
+  rig.run_clock(3'000);
+  rig.tick();
+  CHECK(rig.shown_pts() == 20'000);
+
+  // Latence imposée : 30 ms, plus la demi-période.
+  rig.session.set_video_latency(30'000);
+  rig.session.handle(ring_frame(2, 55'000));
+  rig.run_clock(16'000);
+  rig.tick();
+  CHECK(rig.shown_pts() == 20'000);
+  rig.run_clock(17'000);
+  rig.tick();
+  CHECK(rig.shown_pts() == 55'000);
+}
+
+TEST_CASE("Latence de l'écran : file pleine, l'image passe après celle déjà en file", "[app][session]") {
+  Rig rig(SessionConfig{.display_period_us = 16'667, .swapchain_depth = 2});
+  rig.screen.queue_wait_us = 10'000;  // chaque présentation attend une place
+  rig.session.handle(ring_frame(0, 0));
+  rig.tick();  // amorce
+  rig.session.set_steady_cadence(true);
+  for (int vsync = 0; vsync < 8; ++vsync) {  // représentée à chaque période, attente comprise
+    rig.screen.now_us += 16'667;
+    rig.tick();
+  }
+  REQUIRE(rig.screen.shown.size() == 9);
+  // Une période en file, une demi-période jusqu'au vsync, une demi-période de visée : 33,3 ms.
+  rig.session.handle(ring_frame(1, 33'000));
+  rig.run_clock(0);
+  rig.tick();
+  CHECK(rig.shown_pts() == 33'000);
 }
 
 }  // namespace

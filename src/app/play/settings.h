@@ -103,6 +103,10 @@ struct PlaySettings {
   // suivant la scène (route native, mêmes contraste, saturation, gris moyen et pic).
   bool hdr_native = false;
   int audio_delay_ms = 0;
+  // Synchro sur l'écran (SessionConfig::display_sync), en direct ; délai d'affichage de la vidéo
+  // en ms, 0 : estimé (SessionConfig::video_latency_us).
+  bool display_sync = true;
+  int video_latency_ms = 0;
   float volume = 1.0F;
   float subtitle_scale = 1.0F;  // taille des sous-titres
   // Langues voulues à l'ouverture d'un fichier, de la plus voulue à la moins voulue (balises
@@ -135,6 +139,7 @@ std::string_view hdr_engine_key(const PlaySettings& s);
 
 namespace limits {
 inline constexpr core::Range<int> kAudioDelayMs{-5000, 5000};
+inline constexpr core::Range<int> kVideoLatencyMs{0, 250};
 inline constexpr core::Range<float> kVolume{0.0F, 1.5F};
 inline constexpr core::Range<float> kSubtitleScale{0.5F, 2.0F};
 inline constexpr std::size_t kMaxLanguages = 4;  // par liste

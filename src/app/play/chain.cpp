@@ -361,6 +361,9 @@ void apply_live(Chain& to, const PlaySettings& wanted, std::int64_t now_us) {
   }
   if (wanted.audio_delay_ms != r.audio_delay_ms)
     to.session.command(cmd::SetAudioDelay{.delay_us = std::int64_t{wanted.audio_delay_ms} * 1000});
+  if (wanted.display_sync != r.display_sync) to.session.set_display_sync(wanted.display_sync);
+  if (wanted.video_latency_ms != r.video_latency_ms)
+    to.session.set_video_latency(std::int64_t{wanted.video_latency_ms} * 1000);
   if (wanted.stats != r.stats) to.session.set_stats(wanted.stats);
   if (wanted.smooth_motion != r.smooth_motion) {
     controls.notify(wanted.smooth_motion ? std::string("Smooth Motion : au prochain lancement")

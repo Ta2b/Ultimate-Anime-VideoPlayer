@@ -2,7 +2,7 @@
 // reliés entre eux et au thread main (MainInbox), puis arrêtés dans l'ordre inverse.
 //
 //   source ──images──▶ gpu ──RingFrame──▶ main ──SlotFree──▶ gpu
-//      │──paquets audio──▶ audio (horloge maître)
+//      │──paquets audio──▶ audio (horloge maître, sauf quand l'écran mène)
 //      └──paquets texte──▶ subs ──SubtitleFrame──▶ main
 //
 // Le thread gpu vient d'une fabrique : le vrai (Program, backend d'inférence) dans
@@ -107,7 +107,9 @@ class Pipeline {
   // la boîte de main disparaît la dernière.
   MainInbox inbox_{kMainInboxBounds};
   MainMail mail_{inbox_, nullptr};
-  HostClock host_clock_;
+  // Les horloges vivent plus longtemps que les threads qui les lisent.
+  std::shared_ptr<HostClock> host_clock_ = std::make_shared<HostClock>();
+  std::shared_ptr<LeadClock> lead_;  // avec audio : l'audio ou l'horloge hôte, selon l'écran
   std::unique_ptr<audio::AudioThread> audio_;
   std::unique_ptr<AudioBridge> audio_bridge_;
   std::shared_ptr<subs::SubsInbox> subs_inbox_;
@@ -116,8 +118,7 @@ class Pipeline {
   media::SourceInbox source_inbox_{media::kSourceInboxBounds};
   std::unique_ptr<VideoStage> video_;
   std::unique_ptr<ThreadStages> stages_;
-  std::shared_ptr<const MasterClock> audio_clock_;
-  const MasterClock* clock_ = &host_clock_;
+  const MasterClock* clock_ = host_clock_.get();
   std::unique_ptr<media::SourceThread> source_;
 
   media::TrackInfo video_track_;

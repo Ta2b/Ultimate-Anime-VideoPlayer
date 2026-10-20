@@ -27,6 +27,10 @@ struct ImGuiPlatformIO;
 
 namespace ajp::app::play {
 
+// Images que la file de l'écran (FIFO) garde au plus : deux suffisent à ne pas manquer de vsync
+// quand le rendu tient dans la période, et chacune de plus retarde l'image d'une période.
+inline constexpr int kSwapchainDepth = 2;
+
 struct ScreenOptions {
   std::string title = "ajp";
   int width = 1280;

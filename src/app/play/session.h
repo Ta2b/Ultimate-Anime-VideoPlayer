@@ -49,6 +49,8 @@ class StatsSource {
   // Période nominale des images de sortie (la source, divisée par le facteur de RIFE) ; 0 :
   // inconnue. Sans elle, la session ne compte pas les images manquées.
   virtual std::int64_t output_period_us() const { return 0; }
+  // La même cadence, exacte (images par seconde) : la synchro sur l'écran s'y cale ; 0 : inconnue.
+  virtual double output_fps() const { return 0.0; }
 };
 
 struct SessionConfig {
@@ -66,6 +68,15 @@ struct SessionConfig {
   std::vector<std::string> tracks;                // pistes vidéo, audio et sous-titres
   std::string output;                             // sortie de l'écran (HDR10, pic de RTX HDR)
   std::int64_t display_period_us = 0;             // période de rafraîchissement de l'écran ; 0 : mesurée
+  double display_hz = 0.0;                        // le même rafraîchissement, exact ; 0 : inconnu
+  // Synchro sur l'écran : sur un écran fixe, la lecture accélère ou ralentit d'au plus 0,125 %
+  // pour que chaque image tienne un nombre entier de vsyncs (aucune image doublée ni sautée par
+  // dérive) ; l'audio suit en se rééchantillonnant. Sans calage possible, l'audio reste maître.
+  bool display_sync = false;
+  int swapchain_depth = 2;  // images que la file de l'écran garde au plus
+  // Délai entre le choix d'une image et son apparition à l'écran ; 0 : estimé (rendu, attente du
+  // vsync, file de l'écran). La session choisit l'image dont le pts tombe à son apparition.
+  std::int64_t video_latency_us = 0;
   // Cadence fixe : l'image est représentée à chaque période de l'écran même sans changement, pour
   // que le VRR reste à une fréquence constante (une fréquence qui varie fait scintiller les scènes
   // sombres d'un OLED). Sans effet si la période est inconnue.
@@ -106,6 +117,9 @@ class Session {
   // Mesures affichées, relues au tour suivant.
   void set_stats(const StatsSettings& stats);
   void set_steady_cadence(bool on) { config_.steady_cadence = on; }
+  void set_display_sync(bool on) { config_.display_sync = on; }  // au tour suivant
+  void set_video_latency(std::int64_t latency_us) { config_.video_latency_us = latency_us; }
+  double speed() const { return speed_; }  // vitesse de lecture appliquée (1 : aucun calage)
   const StatsSettings& stats_settings() const { return show_stats_; }
   // Les pistes et la sortie ont changé (piste choisie, pic de RTX HDR) : relues au tour suivant.
   void set_tracks(std::vector<std::string> tracks);
@@ -180,9 +194,17 @@ class Session {
   FrameStats stats_;
   std::vector<std::string> refusals_;  // derniers refus, pour l'OSD
 
-  // La période attendue entre deux images neuves, 0 si inconnue ; et la mesure d'une image neuve.
+  // La période attendue entre deux images neuves, 0 si inconnue ; et la mesure d'une image neuve,
+  // à l'instant où elle paraît.
   std::int64_t pacing_period_us() const;
-  void pace(const RingFrame& frame, std::int64_t present_us);
+  void pace(const RingFrame& frame, std::int64_t visible_us);
+  // Synchro sur l'écran : la vitesse qui cale la sortie, demandée quand elle change.
+  void follow_display();
+  std::int64_t display_period() const;  // la période de l'écran, connue ou mesurée ; 0 sinon
+  std::int64_t display_delay_us(std::int64_t period) const;
+
+  double speed_ = 1.0;
+  double queue_fill_ = 0.0;  // part récente des présentations qui ont attendu une place en file
 };
 
 }  // namespace ajp::app::play

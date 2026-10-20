@@ -38,6 +38,7 @@ class ChainStats final : public StatsSource {
   std::optional<std::string> rife() const override;
   std::optional<std::string> memory() const override;
   std::int64_t output_period_us() const override;
+  double output_fps() const override;
 
  private:
   const LiveSettings& live_;

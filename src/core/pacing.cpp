@@ -104,6 +104,14 @@ bool closer(const CadenceChoice& a, const CadenceChoice& b, double requested) {
 
 }  // namespace
 
+double vsync_speed(double refresh_hz, double output_fps) {
+  if (!(refresh_hz > 0.0 && output_fps > 0.0)) return 1.0;
+  const long long vsyncs = std::llround(refresh_hz / output_fps);
+  if (vsyncs < 1 || vsyncs > pacing::kMaxVsyncsPerFrame) return 1.0;
+  const double speed = refresh_hz / (static_cast<double>(vsyncs) * output_fps);
+  return std::abs(speed - 1.0) <= pacing::kMaxSpeedChange ? speed : 1.0;
+}
+
 std::expected<CadenceChoice, Refusal> fit_cadence(const DisplayInfo& display, double source_fps,
                                                   Ratio factor) {
   if (auto ok = check_rates(display, source_fps); !ok) return std::unexpected(ok.error());

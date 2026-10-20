@@ -73,8 +73,8 @@ std::expected<std::unique_ptr<Pipeline>, Refusal> Pipeline::open(const PipelineC
     p->audio_ = std::move(*thread);
     p->audio_->post(audio::AudioTrack{.codec = *p->audio_codec(track.index)});
     p->audio_bridge_ = std::make_unique<AudioBridge>(*p->audio_, track.index);
-    p->audio_clock_ = p->audio_->clock();
-    p->clock_ = p->audio_clock_.get();
+    p->lead_ = std::make_shared<LeadClock>(p->audio_->clock(), p->host_clock_);
+    p->clock_ = p->lead_.get();
     p->mail_.attach_audio(p->audio_.get());
     for (const auto& [index, codec] : p->audio_codecs_)
       routes.push_back({.track = index, .sink = p->audio_bridge_.get()});
@@ -131,13 +131,13 @@ std::expected<std::unique_ptr<Pipeline>, Refusal> Pipeline::open(const PipelineC
                                          .clock = p->clock_});
   if (!video) return std::unexpected(std::move(video.error()));
   p->video_ = std::move(*video);
-  p->stages_ =
-      std::make_unique<ThreadStages>(StageLinks{.source = &p->source_inbox_,
-                                                .video = p->video_.get(),
-                                                .audio = p->audio_.get(),
-                                                .audio_bridge = p->audio_bridge_.get(),
-                                                .subs = p->subs_inbox_,
-                                                .host_clock = p->audio_ ? nullptr : &p->host_clock_});
+  p->stages_ = std::make_unique<ThreadStages>(StageLinks{.source = &p->source_inbox_,
+                                                         .video = p->video_.get(),
+                                                         .audio = p->audio_.get(),
+                                                         .audio_bridge = p->audio_bridge_.get(),
+                                                         .subs = p->subs_inbox_,
+                                                         .host_clock = p->host_clock_,
+                                                         .lead = p->lead_.get()});
 
   auto source = media::SourceThread::start(
       std::move(*media),

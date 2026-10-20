@@ -77,6 +77,10 @@ class Stages {
   virtual bool request_subtitles(const subs::RenderRequest& request) = 0;
   // Réglage du son (cmd::SetVolume, cmd::SetAudioDelay) au thread audio ; true sans piste audio.
   virtual bool audio(const Command& command) = 0;
+  // Synchro sur l'écran : la vitesse de lecture qui cale la sortie sur les vsyncs. Autre que 1,
+  // l'horloge hôte mène à cette vitesse et l'audio la suit ; 1, l'audio mène de nouveau. false :
+  // la boîte audio est pleine, rien n'a changé.
+  virtual bool set_speed(double /*speed*/) { return true; }
   // cmd::Quit à tous les threads.
   virtual void quit() = 0;
 };
@@ -92,7 +96,10 @@ struct OutputSize {
 struct ScreenTiming {
   std::int64_t render_us = 0;   // composition (grade, sous-titres, OSD) soumise
   std::int64_t present_us = 0;  // instant hôte où l'image est partie à l'écran
-  bool presented = true;        // false : fenêtre cachée ou réduite, rien de présenté
+  // Temps passé à attendre une place dans la file de l'écran : au-delà d'une fraction de
+  // période, la file est pleine et l'image paraîtra après celles qui y sont déjà.
+  std::int64_t queue_wait_us = 0;
+  bool presented = true;  // false : fenêtre cachée ou réduite, rien de présenté
 };
 
 struct ShowRequest {

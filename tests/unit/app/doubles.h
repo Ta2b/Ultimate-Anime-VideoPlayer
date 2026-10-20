@@ -30,6 +30,8 @@ struct FakeStages final : Stages {
   std::vector<std::string> log;  // « flush 1 », « seek 5000000 », « play 1 0 », « pause »…
   std::vector<SlotFree> freed;
   std::vector<subs::RenderRequest> requests;
+  std::vector<double> speeds;  // vitesses acceptées, dans l'ordre
+  bool refuse_speed = false;   // boîte audio pleine : set_speed refuse
   bool quit_called = false;
 
   bool flush(std::uint32_t epoch) override;
@@ -39,6 +41,11 @@ struct FakeStages final : Stages {
   bool slot_free(const SlotFree& free) override;
   bool request_subtitles(const subs::RenderRequest& request) override;
   bool audio(const Command& command) override;
+  bool set_speed(double speed) override {
+    if (refuse_speed) return false;
+    speeds.push_back(speed);
+    return true;
+  }
   void quit() override { quit_called = true; }
 };
 
@@ -54,6 +61,7 @@ struct FakeScreen final : Screen {
   OutputSize output{1920, 1080};
   std::int64_t period_us = 16'667;
   std::int64_t now_us = 0;
+  std::int64_t queue_wait_us = 0;  // attente d'une place en file, rendue à chaque présentation
   bool is_fullscreen = false;
   std::vector<Shown> shown;
   std::vector<RingFrame> retired;

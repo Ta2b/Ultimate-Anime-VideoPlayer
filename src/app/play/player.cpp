@@ -171,6 +171,10 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
   p.screen.set_grade(grade_of(settings, settings.true_hdr, peak_nits, auto_peak));
   session_config.output = output_text(out, settings, peak_nits);
   session_config.display_period_us = display_period_us(out.window());
+  session_config.display_hz = display_refresh_hz(out.window());
+  session_config.display_sync = settings.display_sync;
+  session_config.swapchain_depth = kSwapchainDepth;
+  session_config.video_latency_us = std::int64_t{settings.video_latency_ms} * 1000;
   session_config.stats = settings.stats;
   session_config.subtitle_scale = settings.subtitle_scale;
   session_config.extra = &chain_stats;

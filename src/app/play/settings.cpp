@@ -269,12 +269,13 @@ std::expected<PlaySettings, Refusal> validate(const PlaySettings& s) {
                   std::format("interpolation.rife : {}/{} hors de 0 à {} (entier ou moitié)", s.rife_factor,
                               s.rife_factor_den, limits::kRifeFactor.hi));
   }
-  const std::array<std::expected<void, Refusal>, 7> checks{
+  const std::array<std::expected<void, Refusal>, 8> checks{
       check("image.work_height", s.work_height, limits::kWorkHeight),
       check("hdr.contrast", s.true_hdr_contrast, limits::kTrueHdrContrast),
       check("hdr.saturation", s.true_hdr_saturation, limits::kTrueHdrSaturation),
       check("hdr.middle_gray", s.true_hdr_gray, limits::kTrueHdrGray),
       check("audio.delay_ms", s.audio_delay_ms, limits::kAudioDelayMs),
+      check("sync.video_latency_ms", s.video_latency_ms, limits::kVideoLatencyMs),
       check("audio.volume", s.volume, limits::kVolume),
       check("subtitles.scale", s.subtitle_scale, limits::kSubtitleScale),
   };
@@ -378,6 +379,10 @@ std::expected<PlaySettings, Refusal> parse_settings(std::string_view toml_text) 
     reads.push_back(read(*audio, "audio", "volume", s.volume));
     reads.push_back(read_languages(*audio, "audio", s.audio_languages));
   }
+  if (const toml::table* sync = section(root, "sync")) {
+    reads.push_back(read(*sync, "sync", "display", s.display_sync));
+    reads.push_back(read(*sync, "sync", "video_latency_ms", s.video_latency_ms));
+  }
   if (const toml::table* subtitles = section(root, "subtitles")) {
     reads.push_back(read(*subtitles, "subtitles", "scale", s.subtitle_scale));
     reads.push_back(read_languages(*subtitles, "subtitles", s.subtitle_languages));
@@ -474,6 +479,7 @@ std::string format_settings(const PlaySettings& s) {
   root.insert("audio", toml::table{{"delay_ms", s.audio_delay_ms},
                                    {"volume", std::round(static_cast<double>(s.volume) * 100.0) / 100.0},
                                    {"languages", languages(s.audio_languages)}});
+  root.insert("sync", toml::table{{"display", s.display_sync}, {"video_latency_ms", s.video_latency_ms}});
   root.insert("subtitles",
               toml::table{{"scale", std::round(static_cast<double>(s.subtitle_scale) * 100.0) / 100.0},
                           {"languages", languages(s.subtitle_languages)}});
@@ -612,6 +618,8 @@ PlaySettings live_part(const PlaySettings& running, const PlaySettings& wanted, 
   s.true_hdr_debanding = wanted.true_hdr_debanding;
   s.hdr_native = wanted.hdr_native;
   s.audio_delay_ms = wanted.audio_delay_ms;
+  s.display_sync = wanted.display_sync;
+  s.video_latency_ms = wanted.video_latency_ms;
   s.volume = wanted.volume;
   s.subtitle_scale = wanted.subtitle_scale;
   s.audio_languages = wanted.audio_languages;  // au prochain fichier
