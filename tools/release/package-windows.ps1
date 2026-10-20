@@ -5,6 +5,9 @@
 #                                           et les modèles (models/, sauf AJP_WITHOUT_MODELS)
 #   ajp-engine-tensorrt-windows-x64.tar.gz  backend TensorRT, TensorRT et trtexec (NVIDIA), si
 #                                           construit (AJP_WITH_CUDA=ON, TensorRT installé)
+#   ajp-engine-openvino-windows-x64.tar.gz  backend OpenVINO et OpenVINO (GPU Intel, NPU des Core
+#                                           Ultra), si construit (AJP_WITH_OPENVINO=ON, OpenVINO_DIR
+#                                           de la roue PyPI)
 #
 #   $env:VCPKG_ROOT = "C:\vcpkg"; [$env:AJP_WITH_CUDA = "ON"]; [$env:AJP_RELEASE_TAG = "v0.2.0"]
 #   pwsh tools/release/package-windows.ps1 [dossier-de-sortie]
@@ -24,6 +27,7 @@ $Tag = if ($env:AJP_RELEASE_TAG) { $env:AJP_RELEASE_TAG } else { "v$Version" }
 $Repo = if ($env:AJP_RELEASE_REPO) { $env:AJP_RELEASE_REPO } else { "Ta2b/Ultimate-Anime-VideoPlayer" }
 $BaseUrl = "https://github.com/$Repo/releases/download/$Tag"
 $Cuda = if ($env:AJP_WITH_CUDA) { $env:AJP_WITH_CUDA } else { "OFF" }
+$OpenVino = if ($env:AJP_WITH_OPENVINO) { $env:AJP_WITH_OPENVINO } else { "OFF" }
 
 $Extra = @()
 # Arbre de construction de vcpkg ailleurs (un chemin court : les sources de certains ports
@@ -33,7 +37,7 @@ if ($env:AJP_VCPKG_BUILDTREES) { $Extra += "-DVCPKG_INSTALL_OPTIONS=--x-buildtre
 if ($env:AJP_VCPKG_TRIPLET) {
   $Extra += "-DVCPKG_TARGET_TRIPLET=$env:AJP_VCPKG_TRIPLET", "-DVCPKG_HOST_TRIPLET=$env:AJP_VCPKG_TRIPLET"
 }
-cmake --preset windows-release -S $Root "-DAJP_WITH_CUDA=$Cuda" @Extra
+cmake --preset windows-release -S $Root "-DAJP_WITH_CUDA=$Cuda" "-DAJP_WITH_OPENVINO=$OpenVino" @Extra
 if ($LASTEXITCODE -ne 0) { throw "configuration" }
 cmake --build --preset windows-release
 if ($LASTEXITCODE -ne 0) { throw "construction" }
@@ -87,6 +91,23 @@ if (Test-Path $TrtModule) {
   $nvinfer = Get-ChildItem "$dir/nvinfer_*.dll" | Where-Object { $_.Name -match '^nvinfer_(\d+)\.dll$' } | Select-Object -First 1
   $trtVersion = if ($nvinfer) { $Matches[1] } else { $Version }
   Add-Engine "tensorrt" $trtVersion "https://docs.nvidia.com/deeplearning/tensorrt/latest/reference/sla.html" $dir
+}
+
+$OvModule = "$Build/src/gpu/openvino/ajp_backend_openvino.dll"
+if (Test-Path $OvModule) {
+  $dir = Join-Path $Out "engine-openvino"
+  Remove-Item -Recurse -Force $dir -ErrorAction SilentlyContinue
+  New-Item -ItemType Directory -Force -Path $dir | Out-Null
+  Copy-Item $OvModule $dir
+  # OpenVINO depuis les bibliothèques de sa roue (OpenVINO_DIR = <roue>/openvino/cmake) : le
+  # runtime et TBB, les greffons GPU et NPU (avec le compilateur du NPU), le lecteur ONNX et
+  # cache.json (noyaux réglés du greffon GPU), ouverts depuis le dossier de openvino.dll.
+  $ovLibs = Join-Path (Split-Path $env:OpenVINO_DIR -Parent) "libs"
+  foreach ($pattern in "openvino.dll", "openvino_intel_gpu_plugin.dll", "openvino_intel_npu_*.dll",
+    "openvino_onnx_frontend.dll", "tbb12.dll", "tbbbind_2_5.dll", "tbbmalloc.dll", "cache.json") {
+    Copy-Item "$ovLibs/$pattern" $dir
+  }
+  Add-Engine "openvino" $Version "" $dir
 }
 
 # --- Les modèles SPAN et RIFE livrés (comme sous Linux) : le bash de Git, pas celui de WSL. ---

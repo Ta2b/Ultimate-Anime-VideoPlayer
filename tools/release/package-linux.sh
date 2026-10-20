@@ -159,8 +159,10 @@ if [ -f "$OV_MODULE" ]; then
   dir="$OUT/engine-openvino"; rm -rf "$dir"; mkdir -p "$dir"
   cp "$OV_MODULE" "$dir/"
   copy_deps "$dir" "$OV_MODULE"
-  # Le greffon GPU et le lecteur ONNX, ouverts par libopenvino depuis son propre dossier.
-  copy_beside "$dir" "$OV_MODULE" libopenvino 'libopenvino_intel_gpu_plugin.so' 'libopenvino_onnx_frontend.so*'
+  # Les greffons GPU et NPU (Core Ultra) et le lecteur ONNX, ouverts par libopenvino depuis son
+  # propre dossier, avec cache.json, les noyaux réglés que le greffon GPU choisit par appareil.
+  copy_beside "$dir" "$OV_MODULE" libopenvino 'libopenvino_intel_gpu_plugin.so' 'libopenvino_intel_npu_plugin.so' \
+    'libopenvino_onnx_frontend.so*' 'cache.json'
   copy_deps "$dir" "$dir"/libopenvino_*
   for f in "$dir"/*; do [ -e "$STAGE/lib/$(basename "$f")" ] && [ "$f" != "$dir/ajp_backend_openvino.so" ] && rm "$f"; done
   engine_package openvino "$VERSION" "" "$dir"
