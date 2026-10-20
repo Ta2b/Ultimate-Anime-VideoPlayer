@@ -88,6 +88,24 @@ TEST_CASE("Profil : les erreurs de forme sont des refus nommés", "[profile]") {
         RefusalCode::FieldType);
 }
 
+TEST_CASE("Profil : le HDR adaptatif se lit « adaptive » ou « native », s'écrit « native »", "[profile]") {
+  std::string text(kValid);
+  const std::string native_line = "hdr = \"native\"";
+  const std::string adaptive_line = "hdr = \"adaptive\"";
+  text.replace(text.find(native_line), native_line.size(), adaptive_line);
+  const auto adaptive = parse_profile(text);
+  REQUIRE(adaptive);
+  CHECK(adaptive->profiles[1]->hdr == HdrMode::Native);
+  const std::string written = format_profile(*adaptive);
+  CHECK(written.find("\"native\"") != std::string::npos);
+  CHECK(written.find("adaptive") == std::string::npos);
+  const auto native = parse_profile(kValid);
+  REQUIRE(native);
+  CHECK(*native == *adaptive);
+  text.replace(text.find(adaptive_line), adaptive_line.size(), "hdr = \"adaptif\"");
+  CHECK(refusal_of(text) == RefusalCode::FieldOutOfRange);
+}
+
 TEST_CASE("Profil : les filtres de réduction du lecteur se lisent par leur nom", "[profile]") {
   for (const auto& [text, filter] : std::array<std::pair<const char*, DownscaleFilter>, 6>{{
            {"area", DownscaleFilter::Area},

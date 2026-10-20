@@ -204,7 +204,9 @@ std::expected<Profile, Refusal> parse_one_profile(const toml::table& table, cons
   auto hdr = optional_field<std::string>(table, "hdr", where);
   if (!hdr) return std::unexpected(hdr.error());
   if (*hdr) {
-    auto mode = parse_enum(**hdr, kHdrModes, where + ".hdr");
+    // « adaptive » : le nom du menu pour le HDR adaptatif, que les profils écrivent « native ».
+    auto mode = **hdr == "adaptive" ? std::expected<HdrMode, Refusal>(HdrMode::Native)
+                                    : parse_enum(**hdr, kHdrModes, where + ".hdr");
     if (!mode) return std::unexpected(mode.error());
     profile.hdr = *mode;
   }

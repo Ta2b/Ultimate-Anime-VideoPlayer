@@ -208,7 +208,8 @@ namespace {
 
 bool chain_differs(const PlaySettings& a, const PlaySettings& b) {
   return a.upscale != b.upscale || a.model != b.model || a.work_height != b.work_height ||
-         a.downscale != b.downscale || factor_of(a) != factor_of(b) || a.true_hdr != b.true_hdr;
+         a.downscale != b.downscale || factor_of(a) != factor_of(b) || a.true_hdr != b.true_hdr ||
+         a.hdr_native != b.hdr_native;
 }
 
 }  // namespace

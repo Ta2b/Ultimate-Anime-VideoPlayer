@@ -246,27 +246,15 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
     log->info("{} : estimé en {}x{}, warp en {}x{}", rife_motion ? "RIFE mouvement" : "flux optique",
               rife_size.width, rife_size.height, work.width, work.height);
   }
-  const std::string label_text = std::format(
-      "{}{}{}",
-      flow_grid > 0 ? std::format("flux optique {} · ", factor_text(factor_of(settings)))
-      : use_gmfss ? std::format("GMFSS Fortuna{} {} · ", gmfss_variant == GmfssVariant::Union ? " Union" : "",
-                                factor_text(factor_of(settings)))
-      : use_rife
-          ? std::format("RIFE {} · {} · ", factor_text(factor_of(settings)), rife_model->stem().string())
-          : std::string(),
-      settings.true_hdr ? "RTX HDR · " : "",
-      model ? std::format("SPAN ×{} · {} · {} · {} → {}x{}", factor, model->path.stem().string(),
-                          backend_name, reduce, work.width * factor, work.height * factor)
-            : std::format("sans agrandissement · {}", reduce));
-  log->info("{} : {}", options.file.string(), label_text);
 
   settings.stats.all = p.details;  // Tab pendant la préparation
 
   const int auto_peak = vendor_hdr::peak_from_display(content_peak_nits(p.screen.window()));
   int peak_nits = 0;
-  // Sortie SDR (--sdr, ou écran sans HDR) : TrueHDR ferait du HDR que libplacebo ramènerait aussitôt
-  // en SDR ; le grade SDR prend sa place.
-  if (settings.true_hdr && (p.options.sdr || !content_peak_nits(p.screen.window()))) {
+  // La sortie est HDR10 : l'écran en reçoit, et --sdr ne l'a pas coupée. Sinon (sortie SDR),
+  // TrueHDR ferait du HDR que libplacebo ramènerait aussitôt en SDR ; le grade SDR prend sa place.
+  const bool hdr_out = !p.options.sdr && content_peak_nits(p.screen.window()).has_value();
+  if (settings.true_hdr && !hdr_out) {
     log->info("RTX HDR : sortie SDR, TrueHDR n'est pas ouvert ; grade SDR à la place");
     settings.true_hdr = false;
   }
@@ -288,6 +276,20 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
     p.screen.set_source_color(ColorInfo{});  // celle de la source, reprise à la première image
   }
 
+  const std::string label_text = std::format(
+      "{}{}{}",
+      flow_grid > 0 ? std::format("flux optique {} · ", factor_text(factor_of(settings)))
+      : use_gmfss ? std::format("GMFSS Fortuna{} {} · ", gmfss_variant == GmfssVariant::Union ? " Union" : "",
+                                factor_text(factor_of(settings)))
+      : use_rife
+          ? std::format("RIFE {} · {} · ", factor_text(factor_of(settings)), rife_model->stem().string())
+          : std::string(),
+      // Le moteur HDR vraiment pris : TrueHDR ouvert, ou le HDR adaptatif sur une sortie HDR10.
+      settings.true_hdr ? "RTX HDR · " : (settings.hdr_native && hdr_out ? "HDR adaptatif · " : ""),
+      model ? std::format("SPAN ×{} · {} · {} · {} → {}x{}", factor, model->path.stem().string(),
+                          backend_name, reduce, work.width * factor, work.height * factor)
+            : std::format("sans agrandissement · {}", reduce));
+  log->info("{} : {}", options.file.string(), label_text);
   auto live = std::make_shared<LiveSettings>();
   live->set_rife_factor(use_rife || flow_grid > 0 || use_gmfss ? factor_of(settings) : Factor{});
   live->set_reduction(reduction_of(settings.downscale));
