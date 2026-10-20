@@ -21,6 +21,18 @@ Le flux optique matériel NVIDIA a été retiré (fichiers `nvof_session`, `tens
 - À vérifier aussi : pas de saut à la reprise après une coupe (la première paire après une coupe
   utilise le warp simple).
 
+## DistilDRBA (Fluidité → Moteur de l'interpolation)
+
+- Exporter le graphe dans le dossier de RIFE (une minute sur le CPU) :
+  `git clone https://github.com/routineLife1/DistilDRBA` puis
+  `python -I tools/drba/export_distil_drba.py DistilDRBA --weights DistilDRBA/weights/v2_lite.pkl
+  --out <dossier rife>/distil_drba_v2_lite.onnx`. Le script compare son graphe au forward d'origine.
+- Lecture ×2 puis ×3 avec le moteur DistilDRBA, TensorRT puis Vulkan, sur 16:00 → 18:00 : relever
+  « DistilDRBA » dans le profil GPU (une passe par image créée), les images sautées, et le journal
+  de fin (passes sans l'image d'un côté : début, coupes).
+- À l'œil, contre RIFE 4.25 avec « Garder les poses » : personnages animés en deux sur un fond
+  qui défile ; la dernière image du fichier n'est pas montrée (une image de retard).
+
 ## GMFSS Fortuna (Fluidité → Moteur de l'interpolation)
 
 - Exporter les deux graphes (en tête de `tools/gmfss/export_gmfss.py`) dans le dossier de RIFE ;

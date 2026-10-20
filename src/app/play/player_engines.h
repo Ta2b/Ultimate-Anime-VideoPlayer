@@ -16,6 +16,7 @@
 #include "app/play/build_progress.h"
 #include "app/play/chain.h"
 #include "app/play/display_edid.h"
+#include "app/play/drba_model.h"
 #include "app/play/gmfss_model.h"
 #include "app/play/placebo_screen.h"
 #include "app/play/player.h"
@@ -97,6 +98,14 @@ struct GmfssEngines {
   std::unique_ptr<gpu::Engine> pair;
   std::unique_ptr<gpu::Engine> fusion;
 };
+// DistilDRBA pour des images de travail work_width × work_height : son graphe, trouvé dans le
+// premier de dirs qui l'a, fixé à la taille remplie de RIFE, construit puis chargé. Rien si
+// l'utilisateur ferme la fenêtre. Refus : FieldMissing (graphe absent), et ceux de la dérivation
+// et du backend.
+std::expected<std::optional<std::unique_ptr<gpu::Engine>>, Refusal> prepare_distil_drba(
+    Player& p, const gpu::BackendInit& init, gpu::Backend& backend,
+    std::span<const std::filesystem::path> dirs, int work_width, int work_height);
+
 std::expected<std::optional<GmfssEngines>, Refusal> prepare_gmfss(Player& p, const gpu::BackendInit& init,
                                                                   gpu::Backend& backend,
                                                                   std::span<const std::filesystem::path> dirs,

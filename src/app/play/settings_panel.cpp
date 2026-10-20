@@ -9,6 +9,7 @@
 
 #include <imgui.h>
 
+#include "app/play/drba_model.h"
 #include "app/play/gmfss_model.h"
 #include "app/play/model_choice.h"
 
@@ -199,6 +200,18 @@ void fluidity_tab(PlaySettings& d, const SettingsChoices& choices) {
                       files.pair, files.fusion, choices.rife_folder, union_model ? " --model union" : ""));
     }
   }
+  if (d.motion_engine == MotionEngine::DistilDrba) {
+    note(
+        "DistilDRBA : un RIFE à trois images entraîné à imiter DRBA. Le réseau garde lui-même les poses d'un "
+        "personnage animé en deux pendant que le fond s'interpole, pour à peu près le coût de RIFE 4.22 "
+        "lite par image créée. Il lit l'image d'après la paire : une image de retard.");
+    if (!choices.distil_drba_available) {
+      note(
+          std::format("Graphe introuvable : {}, à exporter dans {} (tools/drba/export_distil_drba.py) ; RIFE "
+                      "prend la place.",
+                      kDistilDrbaFile, choices.rife_folder));
+    }
+  }
   if (four_k && now.num >= 3 * now.den) {
     note(
         "En 4K sans réduction, ×2 tient sur cette carte ; ×3 et ×4 prennent du retard dans les scènes qui "
@@ -207,11 +220,13 @@ void fluidity_tab(PlaySettings& d, const SettingsChoices& choices) {
     note("En 4K, RIFE estime le mouvement en 720p et déforme les images 1080p : ×2 tient sur cette carte.");
   }
   note("Les coupes de scène et les dessins tenus ne sont pas interpolés.");
-  ImGui::Checkbox("Garder les poses (DRBA)", &d.keep_poses);
+  ImGui::BeginDisabled(d.motion_engine != MotionEngine::Rife);
+  ImGui::Checkbox("Garder les poses (DRBA) avec RIFE", &d.keep_poses);
+  ImGui::EndDisabled();
   note(
-      "Expérimental. Un personnage animé en deux sur un fond qui défile garde son rythme (il tient sa pose "
-      "puis change d'un coup) pendant que le fond s'interpole, au lieu de se déformer entre deux dessins. "
-      "Avec RIFE, une seule passe par paire. En direct.");
+      "Un personnage animé en deux sur un fond qui défile garde son rythme (il tient sa pose puis change "
+      "d'un coup) pendant que le fond s'interpole, au lieu de se déformer entre deux dessins. Avec RIFE 4.25 "
+      "ou 4.22 lite, une seule passe par paire. En direct. DistilDRBA le fait de lui-même.");
   section("Smooth Motion (pilote NVIDIA)");
   ImGui::Checkbox("Doubler les images après RIFE", &d.smooth_motion);
   note(

@@ -42,6 +42,7 @@ struct SettingsChoices {
   bool rife_available = false;           // une interpolation possible : modèle RIFE, flux optique ou GMFSS
   bool gmfss_available = false;          // graphes de GMFSS trouvés (gmfss_model.h)
   bool gmfss_union_available = false;    // ceux de GMFSS Union
+  bool distil_drba_available = false;    // le graphe de DistilDRBA
   bool rife_loaded = false;              // moteur RIFE chargé : ×N en direct
   std::vector<std::string> rife_models;  // fichiers RIFE du dossier du modèle par défaut
   std::string default_rife_model;        // celui qu'un nom vide désigne

@@ -6,15 +6,16 @@
 // Toute modification d'une formule ou d'une constante incrémente kSpecVersion.
 #pragma once
 
-#include "kernels/spec/color.h"      // IWYU pragma: export
-#include "kernels/spec/detect.h"     // IWYU pragma: export
-#include "kernels/spec/gmfss.h"      // IWYU pragma: export
-#include "kernels/spec/poses.h"      // IWYU pragma: export
-#include "kernels/spec/resample.h"   // IWYU pragma: export
-#include "kernels/spec/rife.h"       // IWYU pragma: export
-#include "kernels/spec/tolerance.h"  // IWYU pragma: export
-#include "kernels/spec/transfer.h"   // IWYU pragma: export
-#include "kernels/spec/warp.h"       // IWYU pragma: export
+#include "kernels/spec/color.h"        // IWYU pragma: export
+#include "kernels/spec/detect.h"       // IWYU pragma: export
+#include "kernels/spec/distil_drba.h"  // IWYU pragma: export
+#include "kernels/spec/gmfss.h"        // IWYU pragma: export
+#include "kernels/spec/poses.h"        // IWYU pragma: export
+#include "kernels/spec/resample.h"     // IWYU pragma: export
+#include "kernels/spec/rife.h"         // IWYU pragma: export
+#include "kernels/spec/tolerance.h"    // IWYU pragma: export
+#include "kernels/spec/transfer.h"     // IWYU pragma: export
+#include "kernels/spec/warp.h"         // IWYU pragma: export
 
 namespace ajp::kernels {
 

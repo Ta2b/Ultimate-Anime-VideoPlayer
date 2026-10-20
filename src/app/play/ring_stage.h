@@ -58,6 +58,14 @@ class RingStage : public VideoStage, public FrameSink {
   // Nombre de sorties de frame (1 à kMaxOutputs), décidé une fois quand elle arrive en tête ;
   // par défaut 1. Un refus arrête la vidéo comme un refus de produce.
   virtual std::expected<std::uint32_t, Refusal> outputs(const DecodedFrame& /*frame*/) { return 1U; }
+  // Vrai : l'image en tête attend la suivante avant outputs (DistilDRBA lit l'image d'après la
+  // paire), une image de retard. next() la donne pendant outputs et produce : la suivante de la
+  // même époque, ou nullptr (première image d'une époque qui finit, fin du flux pas encore vue).
+  // Sans suivante, la dernière image du flux reste en attente : elle n'est pas montrée.
+  virtual bool wants_next() const { return false; }
+  const DecodedFrame* next() const {
+    return pending_.size() > 1 && pending_[1].epoch == pending_[0].epoch ? &pending_[1] : nullptr;
+  }
   // Écrit la sortie output (0 ≤ output < outputs(frame)) dans le slot : attendre wait_value côté
   // GPU, signaler signal_value (impaire).
   virtual std::expected<Output, Refusal> produce(const DecodedFrame& frame, std::uint32_t output,

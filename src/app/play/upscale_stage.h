@@ -8,6 +8,8 @@
 //
 // GMFSS Fortuna (kernels/spec/gmfss.h) remplace RIFE, à la taille de travail : son graphe « paire »
 // une fois par paire, puis par image intermédiaire six softmax splats et son graphe « fusion ».
+// DistilDRBA (kernels/spec/distil_drba.h) aussi, à la taille de travail : une passe de son graphe
+// par image intermédiaire, sur trois images ; il lit l'image d'après la paire, une image de retard.
 //
 // Ordre de la chaîne : RIFE à la taille de travail (720p), avant SPAN. RIFE y traite quatre fois
 // moins de pixels qu'à 1440p, et SPAN nettoie ensuite ses petits défauts.
@@ -44,6 +46,8 @@ struct UpscaleSetup {
   // deux ou aucun.
   gpu::Engine* gmfss_pair = nullptr;
   gpu::Engine* gmfss_fusion = nullptr;
+  // DistilDRBA à la place de RIFE, aux plans remplis de rife_geometry(travail).
+  gpu::Engine* distil_drba = nullptr;
   Factor rife_factor{.num = 1, .den = 1};  // ×num/den quand l'interpolation tourne (au plus ×8)
   bool true_hdr = false;  // RTX HDR à l'écriture du ring (backend déjà ouvert pour la sortie)
   // Réglages changés en cours de lecture (facteur RIFE, réduction, RTX HDR) et compteurs de RIFE ;
@@ -87,8 +91,23 @@ class UpscaleStage final : public RingStage {
   std::expected<void, Refusal> interpolate_image(float t);
   // La variante mouvement de RIFE à l'instant t, dans flow et mask.
   std::expected<void, Refusal> run_motion(float t, const gpu::Tensor& flow, const gpu::Tensor& mask);
-  bool interpolates() const { return setup_.rife != nullptr || setup_.rife_motion != nullptr || gmfss(); }
+  bool interpolates() const {
+    return setup_.rife != nullptr || setup_.rife_motion != nullptr || gmfss() || drba();
+  }
   bool gmfss() const { return setup_.gmfss_pair != nullptr; }
+  bool drba() const { return setup_.distil_drba != nullptr; }
+  bool wants_next() const override { return drba(); }
+  // DistilDRBA (upscale_drba.cpp) : ses tenseurs ; l'arrivée de l'image b à la place de son
+  // ingestion (rgb_[current_] reçoit b, l'image d'avant la paire passe dans drba_.before) ; les
+  // mesures de la paire (reprises de l'arrivée précédente si elle les a prises pour sa suivante) ;
+  // la suivante ingérée dans drba_.after et mesurée contre b ; puis l'image intermédiaire
+  // output + 1 sur outputs_ dans middle_.
+  std::expected<void, Refusal> allocate_drba();
+  std::expected<void, Refusal> drba_arrive(const DecodedFrame& frame, const gpu::IngestSpec& spec);
+  std::expected<gpu::PairScores, Refusal> drba_scores(const DecodedFrame& frame);
+  std::expected<void, Refusal> drba_next(const DecodedFrame& frame, const gpu::IngestSpec& spec,
+                                         bool measure);
+  std::expected<void, Refusal> interpolate_drba(std::uint32_t output);
   // GMFSS (upscale_gmfss.cpp) : ses tenseurs, rangés dans l'ordre de ses moteurs ; puis l'image
   // intermédiaire output + 1 sur outputs_ dans middle_.
   std::expected<void, Refusal> allocate_gmfss();
@@ -159,6 +178,24 @@ class UpscaleStage final : public RingStage {
   };
   GmfssBuffers gmfss_;
   std::uint64_t gmfss_pairs_ = 0;
+  // DistilDRBA : l'image d'avant la paire et celle d'après, à la taille de travail, chacune
+  // valable si rien ne la sépare de la paire (même époque, pas de coupe) ; les deux entrées du
+  // graphe ; les mesures de (b, suivante), gardées pour la paire suivante.
+  struct DrbaBuffers {
+    std::unique_ptr<gpu::TensorBuffer> before;
+    std::unique_ptr<gpu::TensorBuffer> after;
+    std::unique_ptr<gpu::TensorBuffer> pair01;  // 1 × 7 × ph × pw
+    std::unique_ptr<gpu::TensorBuffer> pair12;
+    bool before_ok = false;
+    bool after_ok = false;
+    bool continuous = false;  // la paire en cours suit la précédente sans coupe, mesures prises
+    std::optional<SourceId> after_id;
+    std::uint32_t after_epoch = 0;
+    std::optional<gpu::PairScores> after_scores;  // mesures de (b, after), si prises
+    std::uint64_t runs = 0;
+    std::uint64_t edges = 0;  // passes sans l'image d'un côté (début, coupe, fin)
+  };
+  DrbaBuffers drba_;
   // Garder les poses (kernels/spec/poses.h) : ce qu'a bougé la paire précédente, et la paire en
   // cours. Inconnu après une coupe, un saut, une paire non interpolée : le warp est alors le simple.
   enum class PairMotion : std::uint8_t { Unknown, Still, Moving };
