@@ -56,8 +56,11 @@ jobs:
         with:
           path: C:\vc
           key: ${{ steps.vcpkg-cache.outputs.cache-primary-key }}
+      # Le quota de stockage des artefacts du compte peut être plein : le paquet est construit quand même.
       - uses: actions/upload-artifact@v4
+        continue-on-error: true
         with:
+          retention-days: 3
           name: ajp-windows-x64
           path: |
             ${{ runner.temp }}/package/ajp-windows-x64.zip

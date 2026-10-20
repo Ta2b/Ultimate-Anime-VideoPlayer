@@ -41,8 +41,11 @@ jobs:
           path: ${{ env.AJP_DEPS_PREFIX }}
           key: ${{ steps.deps-cache.outputs.cache-primary-key }}
       - run: tools/release/package-macos.sh "$RUNNER_TEMP/package"
+      # Le quota de stockage des artefacts du compte peut être plein : le paquet est construit quand même.
       - uses: actions/upload-artifact@v4
+        continue-on-error: true
         with:
+          retention-days: 3
           name: ajp-macos-arm64
           path: |
             ${{ runner.temp }}/package/ajp-macos-arm64.zip

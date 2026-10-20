@@ -36,19 +36,32 @@ jobs:
             wayland-protocols libdecor-0-dev libdrm-dev libgbm-dev libegl-dev libudev-dev libdbus-1-dev \
             libva-dev
           pip install --user meson
-      - uses: actions/cache@v4
+      # Restauration et sauvegarde séparées : les dépendances construites restent en cache même
+      # quand une étape suivante échoue (quota d'artefacts atteint, paquet refusé…).
+      - id: deps-cache
+        uses: actions/cache/restore@v4
         with:
           path: ${{ env.AJP_DEPS_PREFIX }}
-          key: deps-player-gcc-13-${{ hashFiles('tools/deps/linux-from-source.sh') }}
+          key: deps-player-gcc-13-${{ hashFiles('tools/deps/linux-from-source.sh') }}-${{ github.run_id }}
+          restore-keys: |
+            deps-player-gcc-13-${{ hashFiles('tools/deps/linux-from-source.sh') }}
       - run: tools/deps/linux-from-source.sh "$AJP_DEPS_PREFIX" "$RUNNER_TEMP/deps-src"
+      - uses: actions/cache/save@v4
+        if: always()
+        with:
+          path: ${{ env.AJP_DEPS_PREFIX }}
+          key: ${{ steps.deps-cache.outputs.cache-primary-key }}
       - name: Paquet
         run: |
           [ "$GITHUB_REF_TYPE" = tag ] && export AJP_RELEASE_TAG="$GITHUB_REF_NAME"
           tools/release/package-linux.sh "$RUNNER_TEMP/package"
+      # Le quota de stockage des artefacts du compte peut être plein : le paquet est construit quand même.
       - name: Artefact
         if: github.ref_type == 'branch'
+        continue-on-error: true
         uses: actions/upload-artifact@v4
         with:
+          retention-days: 3
           name: ajp-linux-x64
           path: |
             ${{ runner.temp }}/package/ajp-linux-x64.tar.gz
