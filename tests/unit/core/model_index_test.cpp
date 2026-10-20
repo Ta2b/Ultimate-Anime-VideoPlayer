@@ -189,18 +189,80 @@ TEST_CASE("Index des moteurs : un paquet par moteur et par plateforme", "[model_
 }
 
 TEST_CASE("Index des moteurs : seuls les moteurs téléchargés y figurent", "[model_index]") {
-  // Vulkan et Metal sont livrés ; les SDK RTX Video et Maxine restent fournis par l'utilisateur.
+  // Vulkan et Metal sont livrés ; les SDK de RTX HDR ont un paquet quand la release en publie un.
   const std::string package = "platform = \"windows\"\nurl = \"https://engines.example/x.zip\"\nsha256 = \"" +
                               kSha + "\"\nsize = 1\nversion = \"1\"\n";
-  for (const char* id : {"vulkan", "metal", "rtx_video_sdk", "maxine_vfx"}) {
+  for (const char* id : {"vulkan", "metal"}) {
     INFO(id);
     CHECK(index_refusal(std::format("version = 1\n[[engine]]\nid = \"{}\"\n{}", id, package)) ==
           RefusalCode::FieldOutOfRange);
   }
-  for (const char* id : {"tensorrt", "migraphx", "openvino", "directml"}) {
+  for (const char* id : {"tensorrt", "migraphx", "openvino", "directml", "rtx_video_sdk", "maxine_vfx"}) {
     INFO(id);
     CHECK(parse_engine_index(std::format("version = 1\n[[engine]]\nid = \"{}\"\n{}", id, package)));
   }
+}
+
+TEST_CASE("Index des moteurs : celui de la release Linux, tel que package-linux.sh l'écrit",
+          "[model_index]") {
+  // engines.lock de linux-v0.1.0-preview.2 (adresses raccourcies) : son entrée RTX HDR faisait
+  // refuser tout l'index, TensorRT compris.
+  const std::string lock =
+      "version = 1\n\n"
+      "[[engine]]\nid = \"migraphx\"\nplatform = \"linux\"\n"
+      "url = "
+      "\"https://github.com/Ta2b/ajp-releases/releases/download/v/ajp-engine-migraphx-linux-x64.tar.gz\"\n"
+      "sha256 = \"7ba95f524f9741dc95e00a0a73027e6499f0408846a96312c620410d9be44c41\"\nsize = 1014591\n"
+      "version = \"0.1.0\"\n\n"
+      "[[engine]]\nid = \"openvino\"\nplatform = \"linux\"\n"
+      "url = "
+      "\"https://github.com/Ta2b/ajp-releases/releases/download/v/ajp-engine-openvino-linux-x64.tar.gz\"\n"
+      "sha256 = \"2c8409a51cf6fef5bcb3c52c93f1d7c2788c748b7703967728e2f4b5e189fbda\"\nsize = 31818790\n"
+      "version = \"0.1.0\"\n\n"
+      "[[engine]]\nid = \"tensorrt\"\nplatform = \"linux\"\n"
+      "url = "
+      "\"https://github.com/Ta2b/ajp-releases/releases/download/v/ajp-engine-tensorrt-linux-x64.tar.gz\"\n"
+      "sha256 = \"10310415f2767b2c42592c8c4aa4a0b69024bfa8da0225a0e4dc66632bcd7cb6\"\nsize = 1215541550\n"
+      "version = \"11\"\n"
+      "license = \"https://docs.nvidia.com/deeplearning/tensorrt/latest/reference/sla.html\"\n\n"
+      "[[engine]]\nid = \"maxine_vfx\"\nplatform = \"linux\"\n"
+      "url = "
+      "\"https://github.com/Ta2b/ajp-releases/releases/download/v/ajp-engine-maxine_vfx-linux-x64.tar.gz\"\n"
+      "sha256 = \"da929152f1df745f932f7602f2edb08c627d1c22f24e0798a85f6621d7cd157a\"\nsize = 75965628\n"
+      "version = \"1.3.0.0\"\n"
+      "license = \"https://www.nvidia.com/en-us/agreements/enterprise-software/"
+      "nvidia-software-license-agreement/\"\n";
+  auto strict = parse_engine_index(lock);
+  REQUIRE(strict);
+  CHECK(strict->size() == 4);
+  auto index = read_engine_index(lock);
+  REQUIRE(index);
+  CHECK(index->skipped.empty());
+  const EnginePackage* trt = find_package(index->packages, EngineId::TensorRt, Os::Linux);
+  REQUIRE(trt != nullptr);
+  CHECK(trt->size == 1215541550U);
+  CHECK(trt->license.starts_with("https://docs.nvidia.com/"));
+  CHECK(find_package(index->packages, EngineId::MaxineVfx, Os::Linux) != nullptr);
+}
+
+TEST_CASE("Index des moteurs : une entrée inconnue est écartée seule à la lecture", "[model_index]") {
+  const std::string package =
+      "platform = \"linux\"\nurl = \"https://engines.example/x.tar.gz\"\nsha256 = \"" + kSha +
+      "\"\nsize = 1\nversion = \"1\"\n";
+  const std::string lock = "version = 1\n[[engine]]\nid = \"tensorrt\"\n" + package +
+                           "[[engine]]\nid = \"moteur_futur\"\n" + package +
+                           "[[engine]]\nid = \"openvino\"\n" + package;
+  CHECK(index_refusal(lock) == RefusalCode::FieldOutOfRange);  // l'outil de release reste strict
+  auto index = read_engine_index(lock);
+  REQUIRE(index);
+  REQUIRE(index->packages.size() == 2);
+  CHECK(index->packages[0].engine == EngineId::TensorRt);
+  CHECK(index->packages[1].engine == EngineId::OpenVino);
+  REQUIRE(index->skipped.size() == 1);
+  CHECK(index->skipped[0].detail.contains("moteur_futur"));
+  // Le fichier lui-même reste refusé : TOML illisible, version inconnue.
+  CHECK_FALSE(read_engine_index("version = 1\n[[engine]\n"));
+  CHECK_FALSE(read_engine_index("version = 9\n"));
 }
 
 TEST_CASE("Noms des moteurs et des OS : stables et réciproques", "[model_index]") {

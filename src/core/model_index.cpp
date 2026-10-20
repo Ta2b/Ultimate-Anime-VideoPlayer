@@ -79,10 +79,12 @@ std::expected<Download, Refusal> parse_download(const toml::table& table, const 
   return Download{.url = *url, .sha256 = *sha, .size = static_cast<std::uint64_t>(*size)};
 }
 
-// Parcourt chaque table d'un tableau [[name]], avec son chemin pour les refus.
+// Parcourt chaque table d'un tableau [[name]], avec son chemin pour les refus. skipped nul : la
+// première entrée refusée refuse tout le fichier ; sinon elle y est rangée et les autres restent.
 template <class Entry, class ParseOne>
 std::expected<std::vector<Entry>, Refusal> parse_entries(std::string_view text, std::string_view file,
-                                                         std::string_view name, ParseOne parse_one) {
+                                                         std::string_view name, ParseOne parse_one,
+                                                         std::vector<Refusal>* skipped = nullptr) {
   auto root = fields::parse(text, RefusalCode::FileUnreadable, file);
   if (!root) return std::unexpected(root.error());
   if (auto version = fields::check_version(*root, kIndexVersion, file); !version) {
@@ -94,10 +96,15 @@ std::expected<std::vector<Entry>, Refusal> parse_entries(std::string_view text, 
   for (std::size_t i = 0; i < (*tables)->size(); ++i) {
     const std::string where = std::format("{}[{}]", name, i);
     const toml::table* table = (*tables)->get(i)->as_table();
-    if (table == nullptr) return refuse(RefusalCode::FieldType, where);
-    auto entry = parse_one(*table, where, entries);
-    if (!entry) return std::unexpected(entry.error());
-    entries.push_back(std::move(*entry));
+    std::expected<Entry, Refusal> entry = std::unexpected(Refusal{RefusalCode::FieldType, where});
+    if (table != nullptr) entry = parse_one(*table, where, entries);
+    if (entry) {
+      entries.push_back(std::move(*entry));
+    } else if (skipped != nullptr) {
+      skipped->push_back(std::move(entry.error()));
+    } else {
+      return std::unexpected(std::move(entry.error()));
+    }
   }
   return entries;
 }
@@ -134,19 +141,20 @@ std::expected<ModelEntry, Refusal> parse_model(const toml::table& table, const s
   return model;
 }
 
-// Seuls les moteurs téléchargés ont un paquet (Delivery::Download de engines.cpp) : Vulkan et
-// Metal sont livrés avec le lecteur, les SDK RTX Video et Maxine importés par l'utilisateur.
+// Vulkan et Metal sont livrés avec le lecteur, jamais téléchargés. Les SDK de RTX HDR ont un
+// paquet quand la release en publie un (sous Linux, les bibliothèques TrueHDR de Maxine), et
+// s'importent sinon depuis le SDK de l'utilisateur.
 bool downloadable(EngineId engine) {
   switch (engine) {
     case EngineId::TensorRt:
     case EngineId::MiGraphX:
     case EngineId::OpenVino:
     case EngineId::DirectMl:
+    case EngineId::RtxVideoSdk:
+    case EngineId::MaxineVfx:
       return true;
     case EngineId::Vulkan:
     case EngineId::Metal:
-    case EngineId::RtxVideoSdk:
-    case EngineId::MaxineVfx:
       return false;
   }
   return false;
@@ -328,6 +336,15 @@ std::expected<std::vector<ModelEntry>, Refusal> parse_models_lock(std::string_vi
 
 std::expected<std::vector<EnginePackage>, Refusal> parse_engine_index(std::string_view toml_text) {
   return parse_entries<EnginePackage>(toml_text, "engines.lock", "engine", parse_package);
+}
+
+std::expected<EngineIndex, Refusal> read_engine_index(std::string_view toml_text) {
+  EngineIndex index;
+  auto packages =
+      parse_entries<EnginePackage>(toml_text, "engines.lock", "engine", parse_package, &index.skipped);
+  if (!packages) return std::unexpected(std::move(packages.error()));
+  index.packages = std::move(*packages);
+  return index;
 }
 
 std::expected<std::optional<NgcSdkSource>, Refusal> parse_maxine_source(std::string_view toml_text) {
