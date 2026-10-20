@@ -46,6 +46,9 @@ class StatsSource {
   virtual ~StatsSource() = default;
   virtual std::optional<std::string> rife() const = 0;
   virtual std::optional<std::string> memory() const = 0;
+  // Période nominale des images de sortie (la source, divisée par le facteur de RIFE) ; 0 :
+  // inconnue. Sans elle, la session ne compte pas les images manquées.
+  virtual std::int64_t output_period_us() const { return 0; }
 };
 
 struct SessionConfig {
@@ -82,6 +85,8 @@ struct PresentRecord {
   // Ce qui a demandé la présentation : « i » image neuve, « s » sous-titres, « o » OSD, « u »
   // interface, « t » taille de sortie ; plusieurs lettres si plusieurs ont changé.
   std::string why;
+  std::int64_t missing = 0;  // total des images manquées (FrameStats::missing)
+  std::int64_t lag_us = 0;   // retard de l'image neuve sur l'horloge ; 0 pour un redessin
 };
 
 class Session {
@@ -174,6 +179,10 @@ class Session {
   bool fullscreen_done_ = false;
   FrameStats stats_;
   std::vector<std::string> refusals_;  // derniers refus, pour l'OSD
+
+  // La période attendue entre deux images neuves, 0 si inconnue ; et la mesure d'une image neuve.
+  std::int64_t pacing_period_us() const;
+  void pace(const RingFrame& frame, std::int64_t present_us);
 };
 
 }  // namespace ajp::app::play

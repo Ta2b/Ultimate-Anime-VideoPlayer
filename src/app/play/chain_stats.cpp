@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cctype>
+#include <cmath>
 #include <format>
 #include <utility>
 
@@ -41,6 +42,15 @@ std::optional<std::string> ChainStats::rife() const {
   const RifeCounts c = live_.counts();
   return std::format("{} {} : {} paires, {} interpolées, {} dessins tenus, {} coupes, {} en retard", engine_,
                      factor_text(live_.rife_factor()), c.pairs, c.interpolated, c.held, c.cuts, c.late);
+}
+
+std::int64_t ChainStats::output_period_us() const {
+  if (source_fps_ <= 0.0) return 0;
+  const Factor factor = live_.rife_factor();  // rien, 0 ou 1 : pas d'interpolation
+  const double rate = interpolates_ && factor.den > 0 && factor.num > factor.den
+                          ? source_fps_ * factor.num / factor.den
+                          : source_fps_;
+  return static_cast<std::int64_t>(std::llround(1e6 / rate));
 }
 
 std::optional<std::string> ChainStats::memory() const {
