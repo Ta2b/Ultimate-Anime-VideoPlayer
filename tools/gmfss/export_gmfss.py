@@ -483,16 +483,20 @@ def main():
     parser.add_argument("--model", choices=("base", "union"), default="base")
     parser.add_argument("--width", type=int, default=256, help="largeur de l'export, multiple de 64")
     parser.add_argument("--height", type=int, default=192, help="hauteur de l'export, multiple de 64")
+    parser.add_argument("--scale", type=float, choices=(1.0, 0.5), default=1.0,
+                        help="échelle de GMFlow (scale de GMFSS) : 0,5 calcule le flot à un quart de la "
+                             "taille de travail, dimensions multiples de 128 ; graphes suffixés _s05")
     args = parser.parse_args()
-    if args.width % 64 or args.height % 64:
-        parser.error("largeur et hauteur multiples de 64")
+    align = 64 if args.scale == 1.0 else 128
+    if args.width % align or args.height % align:
+        parser.error(f"largeur et hauteur multiples de {align}")
 
     GMFSS = load_gmfss(args.package.resolve())
     models = str(args.package / "models")
-    reference = GMFSS(models, args.model, 1.0, False).eval()
+    reference = GMFSS(models, args.model, args.scale, False).eval()
     args.out.mkdir(parents=True, exist_ok=True)
-    stem = f"gmfss_fortuna_{args.model}"
-    sizes = ((args.width, args.height, 0.5), (args.width + 64, args.height + 128, 0.25))
+    stem = f"gmfss_fortuna_{args.model}" + ("" if args.scale == 1.0 else "_s05")
+    sizes = ((args.width, args.height, 0.5), (args.width + align, args.height + 2 * align, 0.25))
 
     # FP32 d'abord, vérifié strictement à deux tailles : la coupe et les tailles variables tiennent.
     with tempfile.TemporaryDirectory() as scratch:
@@ -507,7 +511,7 @@ def main():
                  "la coupe ou l'export ne tient pas")
 
     # Puis le FP16 que TensorRT construit (grilles d'échantillonnage en FP32), le même code tracé.
-    half = GMFSS(models, args.model, 1.0, False).eval().half()
+    half = GMFSS(models, args.model, args.scale, False).eval().half()
     pair_path, fusion_path = export_pair(half, args.model, args.out, stem, args.width, args.height)
     print(f"{pair_path}\n{fusion_path}")
     worst = max(max(check(reference, half, pair_path, fusion_path, *size)[:2]) for size in sizes)
