@@ -46,6 +46,7 @@ EnginesHere engines_here(const PlayOptions& options, const PlayerPaths& paths, c
     here.tensorrt |= file.contains("tensorrt");
     here.migraphx |= file.contains("migraphx");
     here.openvino |= file.contains("openvino");
+    here.coreml |= file.contains("coreml");
   }
   vendor_hdr::SdkStore store(paths.engines.parent_path() / "sdk", vendor_hdr::SdkKind::MaxineVfx);
   if (store.status().installed) {

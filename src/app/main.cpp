@@ -76,9 +76,9 @@ int main(int argc, char** argv) {
       .engines = data / "engines",
       .engine_index = base / "engines.lock",
   };
-  // TensorRT d'abord (cartes NVIDIA), MIGraphX (AMD) et OpenVINO (Intel), qui refusent les autres
-  // fabricants, puis Vulkan (le recours partout) ; chacun à côté de l'exécutable, puis dans l'arbre
-  // de construction.
+  // TensorRT d'abord (cartes NVIDIA), MIGraphX (AMD), OpenVINO (Intel) et Core ML (Apple), qui
+  // refusent les autres fabricants, puis Vulkan (le recours partout) ; chacun à côté de l'exécutable, puis
+  // dans l'arbre de construction.
   const auto beside = [&](std::string_view backend) {
     for (const std::filesystem::path& dir : module_dirs(base))
       paths.backends.push_back(
@@ -95,6 +95,10 @@ int main(int argc, char** argv) {
   beside("openvino");
 #ifdef AJP_BACKEND_OPENVINO
   paths.backends.emplace_back(AJP_BACKEND_OPENVINO);
+#endif
+  beside("coreml");  // Mac : Core ML, qui refuse les autres appareils
+#ifdef AJP_BACKEND_COREML
+  paths.backends.emplace_back(AJP_BACKEND_COREML);
 #endif
   beside("vulkan");
 #ifdef AJP_BACKEND_VULKAN

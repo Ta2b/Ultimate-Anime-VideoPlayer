@@ -1,5 +1,6 @@
 #include "gpu/vulkan/backend/net_runtime.h"
 
+#include <algorithm>
 #include <cstring>
 #include <format>
 #include <fstream>
@@ -97,6 +98,33 @@ std::expected<IoNames, Refusal> onnx_io_names(const std::filesystem::path& onnx)
   }
   for (const auto& v : model->graph.outputs) names.outputs.push_back(v.name);
   return names;
+}
+
+std::expected<std::vector<DimOverride>, Refusal> symbolic_overrides(const std::filesystem::path& onnx,
+                                                                    std::span<const InputShape> inputs) {
+  auto bytes = read_file(onnx);
+  if (!bytes) return std::unexpected(bytes.error());
+  auto model = ir::onnx::read_onnx(*bytes);
+  if (!model) return std::unexpected(model.error());
+  std::vector<DimOverride> out;
+  for (const InputShape& input : inputs) {
+    for (const auto& v : model->graph.inputs) {
+      if (v.name != input.name) continue;
+      for (std::size_t i = 0; i < v.symbols.size() && i < input.dims.size(); ++i) {
+        const std::string& symbol = v.symbols[i];
+        if (symbol.empty() || symbol == "?") continue;  // fixe, ou dynamique sans nom
+        const auto known = std::ranges::find(out, symbol, &DimOverride::first);
+        if (known == out.end()) {
+          out.emplace_back(symbol, input.dims[i]);
+        } else if (known->second != input.dims[i]) {
+          return std::unexpected(Refusal{.code = RefusalCode::InputMismatch,
+                                         .detail = std::format("{} : dimension « {} » à {} et {}", input.name,
+                                                               symbol, known->second, input.dims[i])});
+        }
+      }
+    }
+  }
+  return out;
 }
 
 }  // namespace ajp::gpu::vk::net

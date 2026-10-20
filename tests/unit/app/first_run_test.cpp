@@ -144,6 +144,12 @@ TEST_CASE("MIGraphX et OpenVINO ne sont essayés que choisis", "[app][first_run]
   REQUIRE(kept.size() == 2);
   CHECK(kept.front().filename() == "ajp_backend_openvino.so");
   CHECK(kept.back().filename() == "ajp_backend_vulkan.so");
+
+  // Core ML est le moteur Metal de l'écran (Mac).
+  const std::array<std::filesystem::path, 2> mac{"base/ajp_backend_coreml.so", "base/ajp_backend_vulkan.so"};
+  CHECK(backends_within(mac, settings).size() == 1);
+  settings.chosen_engines.push_back(core::EngineId::Metal);
+  CHECK(backends_within(mac, settings).size() == 2);
 }
 
 TEST_CASE("Moteur à télécharger : licence acceptée avant tout choix", "[app][first_run]") {

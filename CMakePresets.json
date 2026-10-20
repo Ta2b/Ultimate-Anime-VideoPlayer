@@ -186,6 +186,8 @@
         "AJP_WARNINGS_AS_ERRORS": "OFF",
         "CMAKE_OSX_DEPLOYMENT_TARGET": "14.0",
         "CMAKE_OSX_ARCHITECTURES": "arm64",
+        "AJP_WITH_COREML": "ON",
+        "AJP_ORT_ROOT": "$env{AJP_DEPS_PREFIX}/onnxruntime",
         "CMAKE_PREFIX_PATH": "$env{AJP_DEPS_PREFIX};/opt/homebrew"
       },
       "environment": {

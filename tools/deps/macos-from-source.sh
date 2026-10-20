@@ -113,4 +113,19 @@ if ! done_marker libass; then
   mark libass
 fi
 
+# ONNX Runtime (fournisseur CoreML) pour ajp_backend_coreml : la version publiée, vérifiée.
+ORT_VERSION=1.22.0
+ORT_SHA256=cab6dcbd77e7ec775390e7b73a8939d45fec3379b017c7cb74f5b204c1a1cc07
+if ! done_marker onnxruntime; then
+  ort="onnxruntime-osx-arm64-$ORT_VERSION"
+  curl -fsSL -o "$WORK/$ort.tgz" \
+    "https://github.com/microsoft/onnxruntime/releases/download/v$ORT_VERSION/$ort.tgz"
+  echo "$ORT_SHA256  $WORK/$ort.tgz" | shasum -a 256 -c -
+  rm -rf "$PREFIX/onnxruntime" "$WORK/$ort"
+  tar -xzf "$WORK/$ort.tgz" -C "$WORK"
+  mkdir -p "$PREFIX/onnxruntime"
+  cp -R "$WORK/$ort/include" "$WORK/$ort/lib" "$WORK/$ort/LICENSE" "$PREFIX/onnxruntime/"
+  mark onnxruntime
+fi
+
 echo "Dépendances prêtes dans $PREFIX"

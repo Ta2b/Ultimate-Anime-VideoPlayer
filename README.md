@@ -38,8 +38,9 @@ cmake --preset linux-prefix && cmake --build --preset linux-prefix
 ctest --preset linux-prefix
 ```
 
-Sous macOS (Apple Silicon, macOS 14+), Vulkan passe par MoltenVK ; le paquet `AJP.app` se fait
-ainsi, ou par le workflow « Release macOS » lancé à la main :
+Sous macOS (Apple Silicon, macOS 14+), Vulkan passe par MoltenVK, et les réseaux par Core ML
+(Neural Engine et GPU, au travers d'ONNX Runtime) avec `ajp_backend_coreml` ; le paquet `AJP.app`
+se fait ainsi, ou par le workflow « Release macOS » lancé à la main :
 
 ```sh
 tools/deps/macos-from-source.sh ~/ajp-deps

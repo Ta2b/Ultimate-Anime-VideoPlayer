@@ -18,6 +18,7 @@
 #include <span>
 #include <string>
 #include <string_view>
+#include <utility>
 #include <vector>
 
 #include "core/types.h"
@@ -88,5 +89,11 @@ std::expected<void, Refusal> copy_converted(const std::byte* from, TensorType fr
 
 // Les noms de l'interface d'un fichier ONNX, lus par gpu_ir.
 std::expected<IoNames, Refusal> onnx_io_names(const std::filesystem::path& onnx);
+
+// Les dimensions symboliques des entrées d'un fichier ONNX fixées par ces formes : (symbole,
+// valeur), une fois chacun. Refus InputMismatch : un symbole qui recevrait deux valeurs.
+using DimOverride = std::pair<std::string, std::int64_t>;
+std::expected<std::vector<DimOverride>, Refusal> symbolic_overrides(const std::filesystem::path& onnx,
+                                                                    std::span<const InputShape> inputs);
 
 }  // namespace ajp::gpu::vk::net

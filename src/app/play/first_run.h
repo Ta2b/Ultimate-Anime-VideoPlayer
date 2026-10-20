@@ -54,6 +54,7 @@ struct EnginesHere {
   bool tensorrt = false;       // backend ajp_backend_tensorrt trouvé
   bool migraphx = false;       // ajp_backend_migraphx
   bool openvino = false;       // ajp_backend_openvino
+  bool coreml = false;         // ajp_backend_coreml (Mac : le moteur Metal de l'écran)
   bool maxine = false;         // SDK Maxine importé, ou importable depuis --truehdr-sdk
   std::string maxine_status;   // « importé », « à importer depuis /usr/local/VideoFX »…
   std::string maxine_license;  // non vide : installable depuis NGC (maxine_install.h), sa licence

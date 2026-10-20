@@ -22,7 +22,7 @@ if(TARGET ajp::dep::fontconfig)
   target_compile_definitions(ajp_app PRIVATE AJP_WITH_FONTCONFIG=1)
 endif()
 
-# ajp : l'exécutable. Les backends TensorRT, MIGraphX, OpenVINO et Vulkan se cherchent à côté de lui, puis dans
+# ajp : l'exécutable. Les backends TensorRT, MIGraphX, OpenVINO, Core ML et Vulkan se cherchent à côté de lui, puis dans
 # l'arbre de construction quand ils y sont construits (TensorRT : AJP_WITH_CUDA).
 add_executable(ajp main.cpp)
 target_link_libraries(ajp PRIVATE ajp::app ajp::dep::ffmpeg ajp::dep::sdl3 ajp::dep::spdlog)
@@ -30,7 +30,7 @@ if(TARGET ajp_backend_tensorrt)
   target_compile_definitions(ajp PRIVATE AJP_BACKEND_TENSORRT="$<TARGET_FILE:ajp_backend_tensorrt>")
   add_dependencies(ajp ajp_backend_tensorrt)
 endif()
-foreach(runtime migraphx openvino)
+foreach(runtime migraphx openvino coreml)
   if(TARGET ajp_backend_${runtime})
     string(TOUPPER "${runtime}" upper)
     target_compile_definitions(ajp PRIVATE AJP_BACKEND_${upper}="$<TARGET_FILE:ajp_backend_${runtime}>")

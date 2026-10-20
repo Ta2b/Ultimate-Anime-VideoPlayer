@@ -141,8 +141,8 @@ void downloadable_row(EngineRow& row, const EnginesHere& here) {
 // Les préférés qui découlent des moteurs choisis : le plus rapide pour les réseaux.
 void prefer_chosen(core::Settings& settings) {
   core::EngineId networks = core::EngineId::Vulkan;
-  for (const core::EngineId id :
-       {core::EngineId::OpenVino, core::EngineId::MiGraphX, core::EngineId::TensorRt}) {
+  for (const core::EngineId id : {core::EngineId::Metal, core::EngineId::OpenVino, core::EngineId::MiGraphX,
+                                  core::EngineId::TensorRt}) {
     if (chosen(settings, id)) networks = id;
   }
   const auto usage = [](core::Usage u) { return static_cast<std::size_t>(u); };
@@ -161,10 +161,11 @@ bool chosen(const core::Settings& settings, core::EngineId id) {
 std::vector<std::filesystem::path> backends_within(std::span<const std::filesystem::path> candidates,
                                                    const core::Settings& engines) {
   // Chaque bibliothèque d'un moteur facultatif ne s'essaie que choisie ; Vulkan, toujours.
-  constexpr std::array<std::pair<std::string_view, core::EngineId>, 3> kOptional{{
+  constexpr std::array<std::pair<std::string_view, core::EngineId>, 4> kOptional{{
       {"tensorrt", core::EngineId::TensorRt},
       {"migraphx", core::EngineId::MiGraphX},
       {"openvino", core::EngineId::OpenVino},
+      {"coreml", core::EngineId::Metal},  // le moteur natif du Mac : Core ML derrière MoltenVK
   }};
   std::vector<std::filesystem::path> out;
   for (const std::filesystem::path& path : candidates) {
@@ -226,6 +227,10 @@ FirstRunView first_run_view(const GpuFacts& gpu, const EnginesHere& here, Profil
       case core::EngineId::OpenVino:
         downloadable_row(row, here);
         break;
+      case core::EngineId::Metal:  // Core ML, dans AJP.app
+        row.usable = here.coreml;
+        row.status = here.coreml ? "livré avec le lecteur" : "absent de ce paquet";
+        break;
       case core::EngineId::MaxineVfx:
         row.usable = here.maxine || !here.maxine_license.empty();
         row.status = here.maxine_status;
@@ -276,9 +281,10 @@ core::Settings without_engine(core::Settings settings, core::EngineId id) {
 
 PlaySettings within_engines(PlaySettings settings, const core::Settings& engines,
                             std::vector<std::string>& notes) {
-  const bool inference = std::ranges::any_of(std::array{core::EngineId::TensorRt, core::EngineId::Vulkan,
-                                                        core::EngineId::MiGraphX, core::EngineId::OpenVino},
-                                             [&](core::EngineId id) { return chosen(engines, id); });
+  const bool inference = std::ranges::any_of(
+      std::array{core::EngineId::TensorRt, core::EngineId::Vulkan, core::EngineId::MiGraphX,
+                 core::EngineId::OpenVino, core::EngineId::Metal},
+      [&](core::EngineId id) { return chosen(engines, id); });
   if (!inference && (settings.upscale || settings.rife_factor >= 2)) {
     settings.upscale = false;
     settings.rife_factor = 0;
@@ -317,7 +323,7 @@ std::string_view engine_label(core::EngineId id) {
     case core::EngineId::DirectMl:
       return "DirectML";
     case core::EngineId::Metal:
-      return "Metal";
+      return "Core ML (Apple)";
   }
   return "?";
 }

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Paquet macOS du lecteur : AJP.app (le lecteur, le backend Vulkan, leurs bibliothèques et
-# MoltenVK), signé ad hoc, dans ajp-macos-arm64.zip et sa somme SHA-256.
+# Paquet macOS du lecteur : AJP.app (le lecteur, les backends Vulkan et Core ML, leurs
+# bibliothèques, ONNX Runtime et MoltenVK), signé ad hoc, dans ajp-macos-arm64.zip et sa somme SHA-256.
 #
 #   AJP_DEPS_PREFIX=<prefixe> tools/release/package-macos.sh [dossier-de-sortie]
 #
@@ -24,6 +24,10 @@ mkdir -p "$APP/Contents/MacOS" "$APP/Contents/PlugIns" "$APP/Contents/Frameworks
   "$APP/Contents/Resources/vulkan/icd.d"
 cp "$BUILD/src/app/ajp" "$APP/Contents/MacOS/ajp"
 cp "$BUILD/src/gpu/vulkan/backend/ajp_backend_vulkan.so" "$APP/Contents/PlugIns/"
+# Core ML (le moteur Metal de l'écran de bienvenue) : la chaîne Vulkan, les réseaux par ONNX Runtime.
+cp "$BUILD/src/gpu/coreml/ajp_backend_coreml.so" "$APP/Contents/PlugIns/"
+mkdir -p "$APP/Contents/Resources/licenses"
+cp "$AJP_DEPS_PREFIX/onnxruntime/LICENSE" "$APP/Contents/Resources/licenses/onnxruntime.txt"
 
 # Le chargeur Vulkan et MoltenVK, ouverts à l'exécution : copiés à la main. Le chargeur lit les
 # pilotes de Contents/Resources/vulkan/icd.d du paquet.
@@ -41,8 +45,9 @@ cat > "$APP/Contents/Resources/vulkan/icd.d/MoltenVK_icd.json" <<'JSON'
 JSON
 
 dylibbundler -of -b -cd -d "$APP/Contents/Frameworks" -p @executable_path/../Frameworks/ \
-  -s "$AJP_DEPS_PREFIX/lib" -s "$BREW/lib" \
+  -s "$AJP_DEPS_PREFIX/lib" -s "$AJP_DEPS_PREFIX/onnxruntime/lib" -s "$BREW/lib" \
   -x "$APP/Contents/MacOS/ajp" -x "$APP/Contents/PlugIns/ajp_backend_vulkan.so" \
+  -x "$APP/Contents/PlugIns/ajp_backend_coreml.so" \
   -x "$APP/Contents/Frameworks/libvulkan.1.dylib" -x "$APP/Contents/Frameworks/libMoltenVK.dylib"
 # Le module du backend vit dans PlugIns : ses dépendances se résolvent depuis l'exécutable.
 install_name_tool -add_rpath @executable_path/../Frameworks "$APP/Contents/MacOS/ajp" 2>/dev/null || true
