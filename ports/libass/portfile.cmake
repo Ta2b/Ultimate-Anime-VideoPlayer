@@ -8,9 +8,10 @@ vcpkg_from_git(
 if(VCPKG_TARGET_IS_WINDOWS)
   set(font_options -Dfontconfig=disabled -Ddirectwrite=enabled -Dcoretext=disabled)
   # Le fork utilise <stdatomic.h> : MSVC le refuse sous gnu99 (le défaut du meson.build) et le
-  # garde derrière /experimental:c11atomics.
+  # garde derrière /experimental:c11atomics. Il déclare aussi une variable par fil en __thread
+  # (GCC), que MSVC écrit __declspec(thread).
   set(std_options -Dc_std=c11)
-  string(APPEND VCPKG_C_FLAGS " /experimental:c11atomics")
+  string(APPEND VCPKG_C_FLAGS " /experimental:c11atomics /D__thread=__declspec(thread)")
   string(APPEND VCPKG_CXX_FLAGS " ")  # vcpkg_cmake_configure veut les deux drapeaux, ou aucun
 elseif(VCPKG_TARGET_IS_OSX)
   set(font_options -Dfontconfig=disabled -Ddirectwrite=disabled -Dcoretext=enabled)
