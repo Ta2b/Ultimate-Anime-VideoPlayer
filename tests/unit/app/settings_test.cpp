@@ -5,7 +5,9 @@
 #include <array>
 #include <filesystem>
 #include <format>
+#include <string>
 #include <string_view>
+#include <vector>
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -43,6 +45,8 @@ TEST_CASE("play.toml relit à l'identique ce qu'il a écrit", "[app][settings]")
   s.keep_poses = true;
   s.warp_after_span = true;
   s.grade_values.expand = 0.3;
+  s.audio_languages = {"fre", "jpn"};
+  s.subtitle_languages = {};
   const auto back = parse_settings(format_settings(s));
   REQUIRE(back);
   CHECK(*back == s);
@@ -134,6 +138,12 @@ TEST_CASE("Hors plage, type faux ou TOML invalide : refus nommé", "[app][settin
   REQUIRE_FALSE(path);
   CHECK(parse_settings("[subtitles]\nscale = 3.0\n").error().detail.find("subtitles.scale") !=
         std::string::npos);
+  const auto languages = parse_settings("[audio]\nlanguages = [\"eng\", \"en-US\"]\n");
+  REQUIRE(languages);
+  CHECK(languages->audio_languages == std::vector<std::string>{"eng", "en-US"});
+  CHECK(languages->subtitle_languages == PlaySettings{}.subtitle_languages);
+  CHECK(parse_settings("[subtitles]\nlanguages = \"fre\"\n").error().code == RefusalCode::FieldType);
+  CHECK(parse_settings("[audio]\nlanguages = [\"fr/../x\"]\n").error().code == RefusalCode::FieldOutOfRange);
   const auto broken = parse_settings("[image\n");
   REQUIRE_FALSE(broken);
   CHECK(broken.error().code == RefusalCode::ProfileUnreadable);

@@ -1,5 +1,6 @@
 #include "app/play/settings.h"
 
+#include <algorithm>
 #include <array>
 #include <cctype>
 #include <cmath>
@@ -81,6 +82,40 @@ std::expected<void, Refusal> read(const toml::table& table, std::string_view sec
     }
   }
   return refuse(RefusalCode::FieldType, std::format("{}.{}", section, key));
+}
+
+// Une liste de langues : un tableau de balises (« ["fre", "eng"] ») ; FieldType sinon.
+std::expected<void, Refusal> read_languages(const toml::table& table, std::string_view section,
+                                            std::vector<std::string>& out) {
+  const toml::node* node = table.get("languages");
+  if (node == nullptr) return {};
+  const toml::array* list = node->as_array();
+  if (list == nullptr) return refuse(RefusalCode::FieldType, std::format("{}.languages", section));
+  std::vector<std::string> languages;
+  for (const toml::node& item : *list) {
+    const std::optional<std::string> tag = item.value_exact<std::string>();
+    if (!tag) return refuse(RefusalCode::FieldType, std::format("{}.languages", section));
+    languages.push_back(*tag);
+  }
+  out = std::move(languages);
+  return {};
+}
+
+// Des balises de langue : lettres et tirets (« fre », « en-US »), kMaxLanguages au plus.
+std::expected<void, Refusal> check_languages(std::string_view key,
+                                             const std::vector<std::string>& languages) {
+  if (languages.size() > limits::kMaxLanguages)
+    return refuse(RefusalCode::FieldOutOfRange,
+                  std::format("{} : {} langues, {} au plus", key, languages.size(), limits::kMaxLanguages));
+  for (const std::string& tag : languages) {
+    const bool letters = !tag.empty() && tag.size() <= 16 && std::ranges::all_of(tag, [](char c) {
+      return std::isalpha(static_cast<unsigned char>(c)) != 0 || c == '-';
+    });
+    if (!letters)
+      return refuse(RefusalCode::FieldOutOfRange,
+                    std::format("{} : « {} » n'est pas une balise de langue", key, tag));
+  }
+  return {};
 }
 
 // interpolation.rife : un entier (×3), ou un réel en moitié (×1.5).
@@ -246,6 +281,10 @@ std::expected<PlaySettings, Refusal> validate(const PlaySettings& s) {
   for (const auto& checked : checks) {
     if (!checked) return std::unexpected(checked.error());
   }
+  if (auto ok = check_languages("audio.languages", s.audio_languages); !ok)
+    return std::unexpected(ok.error());
+  if (auto ok = check_languages("subtitles.languages", s.subtitle_languages); !ok)
+    return std::unexpected(ok.error());
   if (s.true_hdr_peak != 0) {
     if (auto peak = check("hdr.peak", s.true_hdr_peak, limits::kTrueHdrPeak); !peak)
       return std::unexpected(peak.error());
@@ -337,9 +376,12 @@ std::expected<PlaySettings, Refusal> parse_settings(std::string_view toml_text) 
   if (const toml::table* audio = section(root, "audio")) {
     reads.push_back(read(*audio, "audio", "delay_ms", s.audio_delay_ms));
     reads.push_back(read(*audio, "audio", "volume", s.volume));
+    reads.push_back(read_languages(*audio, "audio", s.audio_languages));
   }
-  if (const toml::table* subtitles = section(root, "subtitles"))
+  if (const toml::table* subtitles = section(root, "subtitles")) {
     reads.push_back(read(*subtitles, "subtitles", "scale", s.subtitle_scale));
+    reads.push_back(read_languages(*subtitles, "subtitles", s.subtitle_languages));
+  }
   if (const toml::table* oled = section(root, "oled")) {
     reads.push_back(read(*oled, "oled", "care", s.oled_care));
     reads.push_back(read(*oled, "oled", "steady_cadence", s.steady_cadence));
@@ -424,10 +466,17 @@ std::string format_settings(const PlaySettings& s) {
                                  {"peak", s.true_hdr_peak},
                                  {"debanding", s.true_hdr_debanding}});
   // Le volume au centième : 0.85 et non 0.8500000238418579.
+  const auto languages = [](const std::vector<std::string>& tags) {
+    toml::array list;
+    for (const std::string& tag : tags) list.push_back(tag);
+    return list;
+  };
   root.insert("audio", toml::table{{"delay_ms", s.audio_delay_ms},
-                                   {"volume", std::round(static_cast<double>(s.volume) * 100.0) / 100.0}});
+                                   {"volume", std::round(static_cast<double>(s.volume) * 100.0) / 100.0},
+                                   {"languages", languages(s.audio_languages)}});
   root.insert("subtitles",
-              toml::table{{"scale", std::round(static_cast<double>(s.subtitle_scale) * 100.0) / 100.0}});
+              toml::table{{"scale", std::round(static_cast<double>(s.subtitle_scale) * 100.0) / 100.0},
+                          {"languages", languages(s.subtitle_languages)}});
   // Les réglages du grade au centième, comme le menu les montre.
   const auto hundredth = [](double v) { return std::round(v * 100.0) / 100.0; };
   const render::GradeSettings& g = s.grade_values;
@@ -565,6 +614,8 @@ PlaySettings live_part(const PlaySettings& running, const PlaySettings& wanted, 
   s.audio_delay_ms = wanted.audio_delay_ms;
   s.volume = wanted.volume;
   s.subtitle_scale = wanted.subtitle_scale;
+  s.audio_languages = wanted.audio_languages;  // au prochain fichier
+  s.subtitle_languages = wanted.subtitle_languages;
   s.grade = wanted.grade;
   s.grade_preset = wanted.grade_preset;
   s.grade_values = wanted.grade_values;

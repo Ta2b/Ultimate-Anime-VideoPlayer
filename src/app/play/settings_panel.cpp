@@ -5,7 +5,9 @@
 #include <cmath>
 #include <format>
 #include <memory>
+#include <string>
 #include <string_view>
+#include <vector>
 
 #include <imgui.h>
 
@@ -13,6 +15,7 @@
 #include "app/play/settings_chain_tabs.h"
 #include "app/play/settings_engines.h"
 #include "app/play/settings_export.h"
+#include "media/language.h"
 
 namespace ajp::app::play {
 namespace {
@@ -171,7 +174,68 @@ void grade_tab(PlaySettings& d, const SettingsChoices& choices) {
       "Naturel : le grade du lecteur actuel. Tout s'applique en direct.");
 }
 
+struct TrackLanguage {
+  std::string_view tag;
+  const char* label;
+};
+constexpr std::array<TrackLanguage, 11> kTrackLanguages{{
+    {"jpn", "Japonais"},
+    {"fre", "Français"},
+    {"eng", "Anglais"},
+    {"ger", "Allemand"},
+    {"spa", "Espagnol"},
+    {"ita", "Italien"},
+    {"por", "Portugais"},
+    {"rus", "Russe"},
+    {"chi", "Chinois"},
+    {"kor", "Coréen"},
+    {"ara", "Arabe"},
+}};
+
+bool same_language(std::string_view a, std::string_view b) {
+  return media::canonical_language(a.substr(0, a.find('-'))) == media::canonical_language(b);
+}
+
+std::string language_label(std::string_view tag) {
+  for (const TrackLanguage& language : kTrackLanguages) {
+    if (same_language(tag, language.tag)) return language.label;
+  }
+  return std::string(tag);  // une balise écrite à la main dans play.toml
+}
+
+// Les deux premiers rangs d'une liste de langues : la voulue, puis celle d'après si elle manque ;
+// « Selon le fichier » coupe la liste à ce rang.
+void language_rows(const char* first, std::vector<std::string>& list) {
+  for (std::size_t rank = 0; rank < 2; ++rank) {
+    ImGui::PushID(static_cast<int>(rank));
+    const std::string current = rank < list.size() ? language_label(list[rank]) : "Selon le fichier";
+    ImGui::BeginDisabled(rank > list.size());
+    if (ImGui::BeginCombo(rank == 0 ? first : "Sinon", current.c_str())) {
+      if (ImGui::Selectable("Selon le fichier", rank >= list.size()))
+        list.resize(std::min(rank, list.size()));
+      for (const TrackLanguage& language : kTrackLanguages) {
+        const bool selected = rank < list.size() && same_language(list[rank], language.tag);
+        if (!ImGui::Selectable(language.label, selected)) continue;
+        if (rank < list.size()) {
+          list[rank] = std::string(language.tag);
+        } else {
+          list.emplace_back(language.tag);
+        }
+      }
+      ImGui::EndCombo();
+    }
+    ImGui::EndDisabled();
+    ImGui::PopID();
+  }
+}
+
 void sound_tab(PlaySettings& d) {
+  section("Langue");
+  language_rows("Langue de l'audio", d.audio_languages);
+  note(
+      "À l'ouverture d'un fichier : la piste dans cette langue, sinon dans la suivante, sinon celle que le "
+      "fichier marque par défaut. Une piste sans langue est reconnue par son titre (VF, Japanese…). "
+      "Vaut au prochain fichier ; la piste en cours se change dans la barre.");
   section("Synchronisation");
   ImGui::SliderInt("Délai audio (ms)", &d.audio_delay_ms, -1000, 1000);
   if (ImGui::Button("Remettre à 0")) d.audio_delay_ms = 0;
@@ -180,6 +244,13 @@ void sound_tab(PlaySettings& d) {
 }
 
 void subtitles_tab(PlaySettings& d) {
+  section("Langue");
+  language_rows("Langue des sous-titres", d.subtitle_languages);
+  note(
+      "À l'ouverture d'un fichier : les sous-titres complets dans cette langue, sinon dans la suivante, "
+      "sinon "
+      "les panneaux forcés dans la langue de l'audio, sinon la piste par défaut du fichier. Une piste sans "
+      "langue est reconnue par son titre (VOSTFR, English…). Vaut au prochain fichier.");
   section("Taille");
   int percent = static_cast<int>(std::lround(d.subtitle_scale * 100.0F));
   if (ImGui::SliderInt("Taille (%)", &percent, static_cast<int>(limits::kSubtitleScale.lo * 100.0F),

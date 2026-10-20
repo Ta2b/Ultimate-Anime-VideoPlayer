@@ -138,12 +138,14 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
   live->set_rife_factor(rife_loaded ? factor_of(settings) : Factor{});
   live->set_reduction(reduction_of(settings.downscale));
   live->set_keep_poses(settings.keep_poses);
-  PipelineConfig config{.file = options.file,
-                        .decoder = {.attempts = decoder_attempts(c.backend_name),
-                                    .render_device = p.screen.device().uuid,
-                                    .download = c.backend_name != "tensorrt"},
-                        .audio_track = p.audio_track,
-                        .subtitle_track = p.subtitle_track};
+  PipelineConfig config{
+      .file = options.file,
+      .decoder = {.attempts = decoder_attempts(c.backend_name),
+                  .render_device = p.screen.device().uuid,
+                  .download = c.backend_name != "tensorrt"},
+      .languages = {.audio = settings.audio_languages, .subtitles = settings.subtitle_languages},
+      .audio_track = p.audio_track,
+      .subtitle_track = p.subtitle_track};
   PlaceboScreen& out = p.screen;
   auto pipeline = Pipeline::open(
       config, [&](VideoStageInit stage) -> std::expected<std::unique_ptr<VideoStage>, Refusal> {

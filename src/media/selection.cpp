@@ -7,6 +7,7 @@
 #include <tuple>
 
 #include "media/language.h"
+#include "media/track_language.h"
 
 namespace ajp::media {
 namespace {
@@ -48,11 +49,11 @@ TrackChoice choose_tracks(std::span<const TrackInfo> tracks, const LanguagePrior
   });
 
   choice.audio = best_track(tracks, TrackKind::Audio, [&](const TrackInfo& t) -> std::optional<Rank> {
-    return Rank{language_score(priorities.audio, t.language), t.is_default, false, -t.index};
+    return Rank{language_score(priorities.audio, track_language(t)), t.is_default, false, -t.index};
   });
 
   choice.subtitle = best_track(tracks, TrackKind::Subtitle, [&](const TrackInfo& t) -> std::optional<Rank> {
-    const int score = language_score(priorities.subtitles, t.language);
+    const int score = language_score(priorities.subtitles, track_language(t));
     if (score > 0) return Rank{score, !t.forced, t.is_default, -t.index};
     return std::nullopt;
   });
@@ -60,11 +61,11 @@ TrackChoice choose_tracks(std::span<const TrackInfo> tracks, const LanguagePrior
 
   // Aucune langue voulue : les panneaux forcés dans la langue de l'audio, sinon le défaut.
   const TrackInfo* audio = find_track(tracks, choice.audio);
-  const std::string audio_language = audio != nullptr ? audio->language : std::string{};
+  const std::string audio_language = audio != nullptr ? track_language(*audio) : std::string{};
   const std::vector<std::string> audio_only{audio_language};
   choice.subtitle = best_track(tracks, TrackKind::Subtitle, [&](const TrackInfo& t) -> std::optional<Rank> {
     const bool forced_match =
-        t.forced && !audio_language.empty() && language_score(audio_only, t.language) > 0;
+        t.forced && !audio_language.empty() && language_score(audio_only, track_language(t)) > 0;
     if (!forced_match && !t.is_default) return std::nullopt;
     return Rank{0, forced_match, t.is_default, -t.index};
   });

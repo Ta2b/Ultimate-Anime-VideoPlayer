@@ -16,6 +16,7 @@
 #include <filesystem>
 #include <string>
 #include <string_view>
+#include <vector>
 
 #include "app/play/options.h"
 #include "core/profile.h"
@@ -104,6 +105,11 @@ struct PlaySettings {
   int audio_delay_ms = 0;
   float volume = 1.0F;
   float subtitle_scale = 1.0F;  // taille des sous-titres
+  // Langues voulues à l'ouverture d'un fichier, de la plus voulue à la moins voulue (balises
+  // ISO 639 : « jpn », « fre ») ; vide : les drapeaux du fichier. Une piste sans balise suit son
+  // titre (« VOSTFR », « Japanese »). Valent au prochain fichier ; la barre change la piste en cours.
+  std::vector<std::string> audio_languages{"jpn"};
+  std::vector<std::string> subtitle_languages{"fre", "eng"};
   // Grade HDR sur la sortie PQ (render/grade_params.h), sur les deux routes ; en direct. Hors
   // « Personnalisé », grade_values suit le préréglage (gamut_p3 excepté, propre à l'écran).
   bool grade = true;
@@ -131,6 +137,7 @@ namespace limits {
 inline constexpr core::Range<int> kAudioDelayMs{-5000, 5000};
 inline constexpr core::Range<float> kVolume{0.0F, 1.5F};
 inline constexpr core::Range<float> kSubtitleScale{0.5F, 2.0F};
+inline constexpr std::size_t kMaxLanguages = 4;  // par liste
 inline constexpr core::Range<int> kTrueHdrContrast{0, 200};
 inline constexpr core::Range<int> kTrueHdrSaturation{0, 200};
 inline constexpr core::Range<int> kTrueHdrGray{10, 100};
