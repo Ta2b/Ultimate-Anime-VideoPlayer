@@ -23,6 +23,14 @@ struct OnnxOutput {
 // Les noms des tenseurs produits par les nœuds du graphe principal.
 std::expected<std::vector<std::string>, Refusal> onnx_node_outputs(std::span<const std::byte> model);
 
+// Un nœud du graphe principal : son opérateur et les noms de ses tenseurs.
+struct OnnxNode {
+  std::string op_type;
+  std::vector<std::string> inputs;
+  std::vector<std::string> outputs;
+};
+std::expected<std::vector<OnnxNode>, Refusal> onnx_nodes(std::span<const std::byte> model);
+
 // Le modèle dont le graphe principal sort exactement outputs, dans cet ordre. Refus :
 // ModelUnreadable (protobuf malformé, pas de graphe), FieldMissing (un tenseur demandé n'est
 // produit par aucun nœud).

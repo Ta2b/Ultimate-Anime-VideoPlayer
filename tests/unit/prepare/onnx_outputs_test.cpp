@@ -90,6 +90,17 @@ TEST_CASE("Les sorties du graphe sont remplacées, le reste du modèle recopié"
   CHECK(*again == *derived);
 }
 
+TEST_CASE("Les nœuds du graphe : opérateur, entrées et sorties", "[prepare][onnx]") {
+  const auto nodes = onnx_nodes(model());
+  REQUIRE(nodes);
+  REQUIRE(nodes->size() == 2);
+  CHECK((*nodes)[0].op_type == "Relu");
+  CHECK((*nodes)[0].inputs == std::vector<std::string>{"x"});
+  CHECK((*nodes)[1].op_type == "Sigmoid");
+  CHECK((*nodes)[1].inputs == std::vector<std::string>{"a"});
+  CHECK((*nodes)[1].outputs == std::vector<std::string>{"y"});
+}
+
 TEST_CASE("Un tenseur que personne ne produit est refusé par son nom", "[prepare][onnx]") {
   const std::vector<OnnxOutput> wanted{{.name = "/Add_7_output_0"}};
   const auto derived = with_outputs(model(), wanted);

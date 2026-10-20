@@ -1,6 +1,8 @@
 #include "app/play/motion_model.h"
 
+#include <algorithm>
 #include <array>
+#include <cstdint>
 #include <format>
 #include <fstream>
 #include <iterator>
@@ -16,28 +18,52 @@
 namespace ajp::app::play {
 namespace {
 
-// Tenseurs du flot et du masque, par export connu : RIFE 4.2x (vs-rife, ceux d'AnimeJaNai, que la
-// variante du lecteur actuel .aji-motion-v3 sort aussi), puis RIFE 4.13, dont le flot final est
-// produit plus tôt dans le graphe.
+// Tenseurs du flot et du masque des exports de vs-mlrt (v1 et v2) et de vs-rife : le flot final
+// est l'un de ces candidats selon la version (4.13, 4.18 et 4.22 lite : /Add_5).
 constexpr std::array<std::string_view, 2> kFlowTensors{"/Add_7_output_0", "/Add_5_output_0"};
 constexpr std::string_view kMaskTensor = "/Sigmoid_output_0";
+
+std::vector<const prepare::OnnxNode*> consumers(const std::vector<prepare::OnnxNode>& nodes,
+                                                std::string_view tensor) {
+  std::vector<const prepare::OnnxNode*> found;
+  for (const prepare::OnnxNode& node : nodes) {
+    if (std::ranges::contains(node.inputs, tensor)) found.push_back(&node);
+  }
+  return found;
+}
+
+// Le flot final n'a qu'un consommateur, le Reshape du warp final vers son GridSample. Un flot
+// intermédiaire part aussi vers le bloc suivant ; le même nom, dans d'autres versions, désigne une
+// image (vers un Pad) ou un demi-flot (vers un Transpose). Les ensembles n'ont pas de flot final.
+bool is_final_flow(const std::vector<prepare::OnnxNode>& nodes, std::string_view tensor) {
+  const std::vector<const prepare::OnnxNode*> used = consumers(nodes, tensor);
+  if (used.size() != 1 || used[0]->op_type != "Reshape" || used[0]->outputs.empty()) return false;
+  return std::ranges::any_of(consumers(nodes, used[0]->outputs[0]),
+                             [](const prepare::OnnxNode* node) { return node->op_type == "GridSample"; });
+}
+
+std::expected<std::vector<std::byte>, Refusal> with_motion_outputs(std::span<const std::byte> model) {
+  auto nodes = prepare::onnx_nodes(model);
+  if (!nodes) return std::unexpected(std::move(nodes.error()));
+  auto summary = prepare::scan_onnx(model);
+  if (!summary) return std::unexpected(std::move(summary.error()));
+  // Les sorties ont le type des calculs du graphe, celui de son entrée : FP16 pour les exports
+  // convertis, FP32 sinon.
+  const std::int32_t type = summary->inputs.empty() ? 10 : summary->inputs[0].elem_type;
+  for (const std::string_view flow : kFlowTensors) {
+    if (!is_final_flow(*nodes, flow)) continue;
+    const std::vector<prepare::OnnxOutput> outputs{{.name = std::string(flow), .elem_type = type},
+                                                   {.name = std::string(kMaskTensor), .elem_type = type}};
+    return prepare::with_outputs(model, outputs);
+  }
+  return std::unexpected(Refusal{RefusalCode::FieldMissing, "pas de flot final reconnu (ensemble ?)"});
+}
 
 }  // namespace
 
 std::expected<std::filesystem::path, Refusal> motion_model(const std::filesystem::path& rife_onnx,
                                                            const std::filesystem::path& dir) {
-  return derived_model(
-      rife_onnx, "mouvement", dir,
-      [](std::span<const std::byte> model) -> std::expected<std::vector<std::byte>, Refusal> {
-        std::expected<std::vector<std::byte>, Refusal> made;
-        for (const std::string_view flow : kFlowTensors) {
-          const std::vector<prepare::OnnxOutput> outputs{{.name = std::string(flow), .elem_type = 10},
-                                                         {.name = std::string(kMaskTensor), .elem_type = 10}};
-          made = prepare::with_outputs(model, outputs);
-          if (made || made.error().code != RefusalCode::FieldMissing) return made;
-        }
-        return made;
-      });
+  return derived_model(rife_onnx, "mouvement", dir, with_motion_outputs);
 }
 
 std::expected<int, Refusal> rife_input_planes(const std::filesystem::path& rife_onnx) {

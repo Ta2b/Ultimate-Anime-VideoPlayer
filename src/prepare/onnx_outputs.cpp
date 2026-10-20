@@ -1,6 +1,6 @@
 // Numéros de champ d'onnx.proto (ONNX 1.19.1) : ModelProto.graph = 7 ; GraphProto.node = 1,
-// GraphProto.output = 12 ; NodeProto.output = 2 ; ValueInfoProto.name = 1, .type = 2 ;
-// TypeProto.tensor_type = 1 ; TypeProto.Tensor.elem_type = 1.
+// GraphProto.output = 12 ; NodeProto.input = 1, .output = 2, .op_type = 4 ; ValueInfoProto.name = 1, .type =
+// 2 ; TypeProto.tensor_type = 1 ; TypeProto.Tensor.elem_type = 1.
 #include "prepare/onnx_outputs.h"
 
 #include <algorithm>
@@ -23,7 +23,9 @@ using protobuf::RawField;
 constexpr std::uint32_t kModelGraph = 7;
 constexpr std::uint32_t kGraphNode = 1;
 constexpr std::uint32_t kGraphOutput = 12;
+constexpr std::uint32_t kNodeInput = 1;
 constexpr std::uint32_t kNodeOutput = 2;
+constexpr std::uint32_t kNodeOpType = 4;
 
 std::unexpected<Refusal> malformed(std::string detail) {
   return std::unexpected(Refusal{RefusalCode::ModelUnreadable, std::move(detail)});
@@ -78,6 +80,30 @@ std::expected<std::vector<std::string>, Refusal> onnx_node_outputs(std::span<con
   }
   if (!fields.ok()) return malformed("ONNX : protobuf du graphe malformé");
   return names;
+}
+
+std::expected<std::vector<OnnxNode>, Refusal> onnx_nodes(std::span<const std::byte> model) {
+  auto graph = graph_of(model);
+  if (!graph) return std::unexpected(std::move(graph.error()));
+  std::vector<OnnxNode> nodes;
+  Fields fields(*graph);
+  RawField field;
+  while (fields.next(field)) {
+    if (field.number != kGraphNode || !field.delimited) continue;
+    OnnxNode& node = nodes.emplace_back();
+    Fields parts(field.payload);
+    RawField part;
+    while (parts.next(part)) {
+      if (!part.delimited) continue;
+      std::string text(reinterpret_cast<const char*>(part.payload.data()), part.payload.size());
+      if (part.number == kNodeInput) node.inputs.push_back(std::move(text));
+      if (part.number == kNodeOutput) node.outputs.push_back(std::move(text));
+      if (part.number == kNodeOpType) node.op_type = std::move(text);
+    }
+    if (!parts.ok()) return malformed("ONNX : nœud malformé");
+  }
+  if (!fields.ok()) return malformed("ONNX : protobuf du graphe malformé");
+  return nodes;
 }
 
 std::expected<std::vector<std::byte>, Refusal> with_outputs(std::span<const std::byte> model,
