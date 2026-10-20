@@ -66,6 +66,10 @@ struct UpscaleSetup {
   // donne, et le warp déforme les images de travail avec ce mouvement mis à l'échelle.
   int rife_width = 0;
   int rife_height = 0;
+  // Variante mouvement de RIFE avec SPAN : SPAN une fois par image source, le warp à la taille de
+  // sortie sur les images agrandies (kernels/spec/warp.h : a, b et la sortie à une taille, le
+  // mouvement mis à l'échelle). Sans effet pour les autres estimateurs ou sans SPAN.
+  bool warp_after_span = false;
   std::vector<RingSlotDesc> slots;  // ring de render, à la taille de sortie de SPAN
 };
 
@@ -86,8 +90,10 @@ class UpscaleStage final : public RingStage {
   std::expected<std::uint32_t, Refusal> outputs(const DecodedFrame& frame) override;
   std::expected<Output, Refusal> produce(const DecodedFrame& frame, std::uint32_t output, std::uint32_t slot,
                                          std::uint64_t wait_value, std::uint64_t signal_value) override;
-  // Image intermédiaire output + 1 sur outputs_ par le mouvement de rife_motion dans middle_.
-  std::expected<void, Refusal> interpolate_by_motion(std::uint32_t output);
+  // Image intermédiaire output + 1 sur outputs_ par le mouvement de rife_motion, de a et b dans out
+  // (les trois à une taille : celle de travail, ou de sortie après SPAN).
+  std::expected<void, Refusal> interpolate_by_motion(std::uint32_t output, const gpu::Tensor& a,
+                                                     const gpu::Tensor& b, const gpu::Tensor& out);
   // RIFE image à l'instant t, recadrée dans middle_.
   std::expected<void, Refusal> interpolate_image(float t);
   // La variante mouvement de RIFE à l'instant t, dans flow et mask.
@@ -120,8 +126,16 @@ class UpscaleStage final : public RingStage {
   const gpu::Tensor& rife_source(std::uint32_t index) const {
     return small_[index] ? small_[index]->tensor() : rgb_[index]->tensor();
   }
+  // Warp après SPAN : les images sources sont agrandies à l'ingestion, dans spanned_.
+  bool warps_spanned() const { return setup_.warp_after_span && by_motion() && setup_.engine != nullptr; }
+  // SPAN de l'image en cours dans spanned_[current_], une fois.
+  std::expected<void, Refusal> span_current();
+  bool spanned_now_ = false;
   // SPAN (s'il est là) puis l'écriture dans le slot.
   std::expected<void, Refusal> finish(const gpu::Tensor& rgb, std::uint32_t slot, const gpu::RingWrite& sync);
+  // L'écriture d'une image à la taille du ring (RTX HDR s'il est demandé, sa rampe de vrai noir).
+  std::expected<void, Refusal> write_slot(const gpu::Tensor& image, std::uint32_t slot,
+                                          const gpu::RingWrite& sync);
 
   UpscaleSetup setup_;
   // Deux images de travail RGB, à tour de rôle : current_ vient d'être ingérée, l'autre est la
@@ -209,6 +223,9 @@ class UpscaleStage final : public RingStage {
   std::uint64_t rife_runs_ = 0;
   std::uint64_t late_pairs_ = 0;               // paires non interpolées pour rattraper l'horloge
   std::unique_ptr<gpu::TensorBuffer> output_;  // 1 × 3 × 2h × 2w ; absent sans SPAN
+  // Warp après SPAN : les deux images sources agrandies (comme rgb_), et l'image intermédiaire.
+  std::array<std::unique_ptr<gpu::TensorBuffer>, 2> spanned_;
+  std::unique_ptr<gpu::TensorBuffer> middle_out_;
   // Pour le journal de fin : paires vues, interpolées, coupes, dessins tenus.
   std::uint64_t pairs_ = 0;
   std::uint64_t interpolated_ = 0;

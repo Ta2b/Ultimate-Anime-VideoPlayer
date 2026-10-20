@@ -138,15 +138,21 @@ std::expected<void, Refusal> UpscaleStage::allocate() {
   for (auto& rgb : rgb_) {
     if (auto ok = alloc(rgb, planes(3, w, h)); !ok) return ok;
   }
-  if (setup_.engine != nullptr) {
-    if (auto ok = alloc(output_, planes(3, w * kSpanFactor, h * kSpanFactor)); !ok) return ok;
+  const gpu::Shape out_shape = planes(3, w * kSpanFactor, h * kSpanFactor);
+  if (warps_spanned()) {
+    for (auto& spanned : spanned_) {
+      if (auto ok = alloc(spanned, out_shape); !ok) return ok;
+    }
+    if (auto ok = alloc(middle_out_, out_shape); !ok) return ok;
+  } else if (setup_.engine != nullptr) {
+    if (auto ok = alloc(output_, out_shape); !ok) return ok;
   }
   if (interpolates() && (setup_.rife_width != w || setup_.rife_height != h)) {
     for (auto& small : small_) {
       if (auto ok = alloc(small, planes(3, setup_.rife_width, setup_.rife_height)); !ok) return ok;
     }
   }
-  if (interpolates()) {
+  if (interpolates() && !warps_spanned()) {
     if (auto ok = alloc(middle_, planes(3, w, h)); !ok) return ok;
   }
   if (gmfss()) return allocate_gmfss();
@@ -279,6 +285,7 @@ std::expected<std::uint32_t, Refusal> UpscaleStage::outputs(const DecodedFrame& 
     if (auto ok = drba_next(frame, spec, facts.factor > 1); !ok)
       return std::unexpected(std::move(ok.error()));
   }
+  spanned_now_ = false;  // SPAN de cette image : à sa première utilisation (span_current)
   return outputs_;
 }
 
@@ -291,17 +298,31 @@ std::expected<RingStage::Output, Refusal> UpscaleStage::produce(const DecodedFra
   const Instant& instant = instants_[std::min<std::size_t>(output, instants_.size() - 1)];
   const bool last = output + 1 >= outputs_;
   if (instant.t >= 1.0F) {  // l'image elle-même, toujours la dernière de la paire
-    if (auto ok = finish(now, slot, sync); !ok) return std::unexpected(std::move(ok.error()));
+    auto ok =
+        warps_spanned()
+            ? span_current().and_then([&] { return write_slot(spanned_[current_]->tensor(), slot, sync); })
+            : finish(now, slot, sync);
+    if (!ok) return std::unexpected(std::move(ok.error()));
     previous_ = Previous{.pts_us = frame.pts_us, .id = frame.id, .epoch = frame.epoch};
     return Output{.pts_us = frame.pts_us, .left = frame.id, .right = frame.id};
   }
   // Image intermédiaire, entre la précédente et celle-ci (rife_runs demande la précédente).
   if (!previous_) return refuse(RefusalCode::SequenceOrder, "RIFE : pas d'image précédente");
   const Output made{.pts_us = instant.pts_us, .left = previous_->id, .right = frame.id};
+  if (warps_spanned()) {
+    const gpu::Tensor& out = middle_out_->tensor();
+    if (auto ok = interpolate_by_motion(output, spanned_[current_ ^ 1U]->tensor(),
+                                        spanned_[current_]->tensor(), out);
+        !ok)
+      return std::unexpected(std::move(ok.error()));
+    if (auto ok = write_slot(out, slot, sync); !ok) return std::unexpected(std::move(ok.error()));
+    if (last) previous_ = Previous{.pts_us = frame.pts_us, .id = frame.id, .epoch = frame.epoch};
+    return made;
+  }
   if (by_motion() || gmfss() || drba()) {
     auto ok = gmfss()  ? interpolate_gmfss(output)
               : drba() ? interpolate_drba(output)
-                       : interpolate_by_motion(output);
+                       : interpolate_by_motion(output, rgb_[current_ ^ 1U]->tensor(), now, middle_->tensor());
     if (!ok) return std::unexpected(std::move(ok.error()));
   } else if (auto ok = interpolate_image(instant.t); !ok) {
     return std::unexpected(std::move(ok.error()));
@@ -347,11 +368,11 @@ gpu::Motion UpscaleStage::mid_motion(std::uint32_t index) const {
               .x = g.left, .y = g.top, .width = setup_.rife_width, .height = setup_.rife_height}};
 }
 
-std::expected<void, Refusal> UpscaleStage::interpolate_by_motion(std::uint32_t output) {
+std::expected<void, Refusal> UpscaleStage::interpolate_by_motion(std::uint32_t output, const gpu::Tensor& a,
+                                                                 const gpu::Tensor& b,
+                                                                 const gpu::Tensor& out) {
   gpu::KernelOps& ops = *setup_.backend->kernels();
   const float t = instants_[output].t;
-  const gpu::Tensor& a = rgb_[current_ ^ 1U]->tensor();
-  const gpu::Tensor& b = rgb_[current_]->tensor();
   const gpu::Motion middle = mid_motion(mid_);
   if (output == 0) {
     poses_ = setup_.live && setup_.live->keep_poses();
@@ -374,20 +395,42 @@ std::expected<void, Refusal> UpscaleStage::interpolate_by_motion(std::uint32_t o
     }
     now_ = PairMotion::Moving;
   }
+  // Warp après SPAN : b agrandie ici, après la passe de RIFE et la lecture de son mouvement maximal
+  // que l'hôte attend (elles ne passent pas derrière SPAN dans la file).
+  if (warps_spanned()) {
+    if (auto ok = span_current(); !ok) return ok;
+  }
   if (poses_ && before_ != PairMotion::Unknown) {
     const gpu::Motion previous = mid_motion(mid_ ^ 1U);
-    return ops.warp_blend_poses(a, b, middle, before_ == PairMotion::Moving ? &previous : nullptr, t,
-                                middle_->tensor());
+    return ops.warp_blend_poses(a, b, middle, before_ == PairMotion::Moving ? &previous : nullptr, t, out);
   }
-  if (single_run_ || t == 0.5F) return ops.warp_blend(a, b, middle, t, middle_->tensor());
+  if (single_run_ || t == 0.5F) return ops.warp_blend(a, b, middle, t, out);
   // Mouvement fort : RIFE à cet instant, son mouvement tel quel (t = 1/2 au warp : « estimé »).
   const gpu::Motion other{.flow = flow_->tensor(), .mask = mask_->tensor(), .area = middle.area};
   if (auto ok = run_motion(t, other.flow, other.mask); !ok) return ok;
-  return ops.warp_blend(a, b, other, 0.5F, middle_->tensor());
+  return ops.warp_blend(a, b, other, 0.5F, out);
+}
+
+std::expected<void, Refusal> UpscaleStage::span_current() {
+  if (spanned_now_) return {};
+  const std::array inputs{rgb_[current_]->tensor()};
+  std::array results{spanned_[current_]->tensor()};
+  if (auto ok = setup_.backend->enqueue(*setup_.engine, inputs, results); !ok) return ok;
+  spanned_now_ = true;
+  return {};
 }
 
 std::expected<void, Refusal> UpscaleStage::finish(const gpu::Tensor& rgb, std::uint32_t slot,
                                                   const gpu::RingWrite& sync) {
+  if (setup_.engine == nullptr) return write_slot(rgb, slot, sync);
+  const std::array inputs{rgb};
+  std::array outputs{output_->tensor()};
+  if (auto ok = setup_.backend->enqueue(*setup_.engine, inputs, outputs); !ok) return ok;
+  return write_slot(output_->tensor(), slot, sync);
+}
+
+std::expected<void, Refusal> UpscaleStage::write_slot(const gpu::Tensor& image, std::uint32_t slot,
+                                                      const gpu::RingWrite& sync) {
   gpu::KernelOps& ops = *setup_.backend->kernels();
   if (setup_.true_hdr && setup_.live) {
     if (const auto params = setup_.live->take_true_hdr()) {
@@ -411,15 +454,8 @@ std::expected<void, Refusal> UpscaleStage::finish(const gpu::Tensor& rgb, std::u
       }
     }
   }
-  const auto write = [&](const gpu::Tensor& image) {
-    return setup_.true_hdr ? ops.write_ring_true_hdr(image, prepared_, setup_.slots[slot], sync)
-                           : ops.write_ring(image, setup_.slots[slot], sync);
-  };
-  if (setup_.engine == nullptr) return write(rgb);
-  const std::array inputs{rgb};
-  std::array outputs{output_->tensor()};
-  if (auto ok = setup_.backend->enqueue(*setup_.engine, inputs, outputs); !ok) return ok;
-  return write(output_->tensor());
+  return setup_.true_hdr ? ops.write_ring_true_hdr(image, prepared_, setup_.slots[slot], sync)
+                         : ops.write_ring(image, setup_.slots[slot], sync);
 }
 
 }  // namespace ajp::app::play

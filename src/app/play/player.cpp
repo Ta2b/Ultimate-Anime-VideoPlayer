@@ -344,6 +344,7 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
                                                 .work_height = sized.height,
                                                 .rife_width = rife_motion ? rife_size.width : 0,
                                                 .rife_height = rife_motion ? rife_size.height : 0,
+                                                .warp_after_span = settings.warp_after_span,
                                                 .slots = std::move(*slots)});
       });
   if (!pipeline) return std::unexpected(std::move(pipeline.error()));

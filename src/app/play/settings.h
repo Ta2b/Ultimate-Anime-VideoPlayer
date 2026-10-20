@@ -81,6 +81,11 @@ struct PlaySettings {
   // Garder les poses (DRBA, kernels/spec/poses.h) : un personnage animé en deux garde son rythme
   // pendant que le fond s'interpole ; en direct.
   bool keep_poses = false;
+  // Warp après SPAN (variante mouvement de RIFE, avec SPAN) : SPAN agrandit chaque image source une
+  // fois, et le warp déforme ces images agrandies à la taille de sortie ; SPAN ne repasse plus sur
+  // les images intermédiaires (×3 : une passe au lieu de trois). Les défauts du warp ne sont plus
+  // nettoyés par SPAN. Recharge la chaîne.
+  bool warp_after_span = false;
   // Smooth Motion du pilote NVIDIA (RTX 40 et 50, pilote ≥ 580) : sa couche Vulkan double les
   // images présentées, au-dessus de RIFE (×3 puis ×2 : 72 → 144 images par seconde). Posé au
   // lancement, avant l'instance Vulkan : vaut au prochain lancement.

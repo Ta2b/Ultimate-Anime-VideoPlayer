@@ -41,6 +41,7 @@ TEST_CASE("play.toml relit à l'identique ce qu'il a écrit", "[app][settings]")
   s.motion_engine = MotionEngine::DistilDrba;
   s.rife_model = "rife_v4.22_lite.onnx";
   s.keep_poses = true;
+  s.warp_after_span = true;
   s.grade_values.expand = 0.3;
   const auto back = parse_settings(format_settings(s));
   REQUIRE(back);

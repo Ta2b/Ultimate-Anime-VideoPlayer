@@ -293,6 +293,7 @@ std::expected<PlaySettings, Refusal> parse_settings(std::string_view toml_text) 
     reads.push_back(read(*interpolation, "interpolation", "smooth_motion", s.smooth_motion));
     reads.push_back(read(*interpolation, "interpolation", "model", s.rife_model));
     reads.push_back(read(*interpolation, "interpolation", "keep_poses", s.keep_poses));
+    reads.push_back(read(*interpolation, "interpolation", "warp_after_span", s.warp_after_span));
     std::string engine(name(s.motion_engine));
     reads.push_back(read(*interpolation, "interpolation", "engine", engine));
     // Le flux optique matériel des RTX a été retiré : RIFE le remplace, sans plainte.
@@ -408,6 +409,7 @@ std::string format_settings(const PlaySettings& s) {
   toml::table interpolation{{"engine", std::string(name(s.motion_engine))},
                             {"model", s.rife_model},
                             {"keep_poses", s.keep_poses},
+                            {"warp_after_span", s.warp_after_span},
                             {"smooth_motion", s.smooth_motion}};
   if (s.rife_factor_den == 2) {
     interpolation.insert("rife", static_cast<double>(s.rife_factor) / 2.0);
@@ -549,6 +551,7 @@ PlaySettings live_part(const PlaySettings& running, const PlaySettings& wanted, 
   if (wanted.rife_factor < 2) {  // sans interpolation, rien à recharger
     s.motion_engine = wanted.motion_engine;
     s.rife_model = wanted.rife_model;
+    s.warp_after_span = wanted.warp_after_span;
   }
   // Le modèle RIFE ne sert pas à un autre moteur du mouvement : le changer ne recharge rien.
   if (running.motion_engine == wanted.motion_engine && wanted.motion_engine != MotionEngine::Rife)
@@ -590,6 +593,8 @@ Change change_between(const PlaySettings& running, const PlaySettings& wanted, b
   if (wanted.rife_factor >= 2 && wanted.motion_engine == MotionEngine::Rife &&
       running.rife_model != wanted.rife_model)
     reopen.emplace_back("le modèle RIFE est chargé (construit la première fois pour cette taille)");
+  if (wanted.rife_factor >= 2 && running.warp_after_span != wanted.warp_after_span)
+    reopen.emplace_back(wanted.warp_after_span ? "le warp passe après SPAN" : "le warp repasse avant SPAN");
   if (!reopen.empty()) {
     std::string reason;
     for (const std::string_view part : reopen)
