@@ -8,6 +8,7 @@
 #include <iterator>
 #include <string>
 #include <string_view>
+#include <utility>
 #include <vector>
 
 #include "app/play/derived_model.h"
@@ -32,14 +33,28 @@ std::vector<const prepare::OnnxNode*> consumers(const std::vector<prepare::OnnxN
   return found;
 }
 
-// Le flot final n'a qu'un consommateur, le Reshape du warp final vers son GridSample. Un flot
+// Niveaux parcourus sous le Reshape pour trouver le GridSample : la grille s'écrit
+// Transpose(Add(maillage, Mul(flot, pas))), avec un Cast vers fp32 dans les exports FP16.
+constexpr int kWarpDepth = 8;
+
+// Le flot final n'a qu'un consommateur, le Reshape du warp final, qui mène à son GridSample. Un flot
 // intermédiaire part aussi vers le bloc suivant ; le même nom, dans d'autres versions, désigne une
 // image (vers un Pad) ou un demi-flot (vers un Transpose). Les ensembles n'ont pas de flot final.
 bool is_final_flow(const std::vector<prepare::OnnxNode>& nodes, std::string_view tensor) {
   const std::vector<const prepare::OnnxNode*> used = consumers(nodes, tensor);
-  if (used.size() != 1 || used[0]->op_type != "Reshape" || used[0]->outputs.empty()) return false;
-  return std::ranges::any_of(consumers(nodes, used[0]->outputs[0]),
-                             [](const prepare::OnnxNode* node) { return node->op_type == "GridSample"; });
+  if (used.size() != 1 || used[0]->op_type != "Reshape") return false;
+  std::vector<std::string_view> front(used[0]->outputs.begin(), used[0]->outputs.end());
+  for (int depth = 0; depth < kWarpDepth && !front.empty(); ++depth) {
+    std::vector<std::string_view> next;
+    for (const std::string_view t : front) {
+      for (const prepare::OnnxNode* node : consumers(nodes, t)) {
+        if (node->op_type == "GridSample") return true;
+        next.insert(next.end(), node->outputs.begin(), node->outputs.end());
+      }
+    }
+    front = std::move(next);
+  }
+  return false;
 }
 
 std::expected<std::vector<std::byte>, Refusal> with_motion_outputs(std::span<const std::byte> model) {

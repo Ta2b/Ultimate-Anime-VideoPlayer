@@ -65,12 +65,17 @@ Bytes input_info() {
 }
 
 // Comme les v2 de 4.18 et 4.22 lite : /Add_5 est le flot final, /Add_7 une image qui part vers un
-// Pad. ensemble : /Add_5 part aussi vers un autre bloc.
+// Pad. Le warp final suit les exports FP16 : Reshape, Cast vers fp32, Mul par le pas, Add du
+// maillage, Transpose, GridSample. ensemble : /Add_5 part aussi vers un autre bloc.
 std::filesystem::path write_rife(const std::filesystem::path& dir, bool ensemble) {
   Bytes graph;
   delimited(graph, 1, node({"input", "input"}, "/Add_5_output_0", "Add"));
   delimited(graph, 1, node({"/Add_5_output_0", "shape"}, "/Reshape_9_output_0", "Reshape"));
-  delimited(graph, 1, node({"input", "/Reshape_9_output_0"}, "/GridSample_3_output_0", "GridSample"));
+  delimited(graph, 1, node({"/Reshape_9_output_0"}, "/Reshape_9_output_0/cast32", "Cast"));
+  delimited(graph, 1, node({"/Reshape_9_output_0/cast32", "step"}, "/Mul_6_output_0", "Mul"));
+  delimited(graph, 1, node({"mesh", "/Mul_6_output_0"}, "/Add_8_output_0", "Add"));
+  delimited(graph, 1, node({"/Add_8_output_0"}, "/Transpose_3_output_0", "Transpose"));
+  delimited(graph, 1, node({"input", "/Transpose_3_output_0"}, "/GridSample_3_output_0", "GridSample"));
   if (ensemble) delimited(graph, 1, node({"/Add_5_output_0", "input"}, "/Concat_2_output_0", "Concat"));
   delimited(graph, 1, node({"input", "input"}, "/Add_7_output_0", "Add"));
   delimited(graph, 1, node({"/Add_7_output_0"}, "/Pad_1_output_0", "Pad"));
