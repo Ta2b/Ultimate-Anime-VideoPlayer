@@ -6,10 +6,18 @@ find_path(AJP_ORT_INCLUDE onnxruntime_cxx_api.h
   HINTS "${AJP_ORT_ROOT}/include" "${AJP_ORT_ROOT}/include/onnxruntime" REQUIRED)
 find_library(AJP_ORT_LIBRARY onnxruntime HINTS "${AJP_ORT_ROOT}/lib" REQUIRED)
 
-add_library(ajp_backend_coreml MODULE entry.cpp coreml_measure.cpp coreml_runtime.cpp)
-target_include_directories(ajp_backend_coreml SYSTEM PRIVATE "${AJP_ORT_INCLUDE}")
-target_link_libraries(ajp_backend_coreml PRIVATE
-  ajp::vk_backend ajp::core_log ajp::dep::spdlog "${AJP_ORT_LIBRARY}")
+# Le runtime à part de ses points d'entrée : les tests du backend Vulkan le lient pour comparer
+# ses sorties à l'interpréteur sur le vrai matériel (vendor_runtime_test.cpp).
+ajp_add_module(coreml_rt SOURCES coreml_measure.cpp coreml_runtime.cpp
+  DEPS ajp::vk_backend ajp::core_log PRIVATE_DEPS ajp::dep::spdlog "${AJP_ORT_LIBRARY}")
+target_include_directories(ajp_coreml_rt SYSTEM PRIVATE "${AJP_ORT_INCLUDE}")
+set_target_properties(ajp_coreml_rt PROPERTIES
+  POSITION_INDEPENDENT_CODE ON
+  CXX_VISIBILITY_PRESET hidden
+  VISIBILITY_INLINES_HIDDEN ON)
+
+add_library(ajp_backend_coreml MODULE entry.cpp)
+target_link_libraries(ajp_backend_coreml PRIVATE ajp::coreml_rt ajp::core_log ajp::dep::spdlog)
 set_target_properties(ajp_backend_coreml PROPERTIES
   PREFIX ""
   CXX_VISIBILITY_PRESET hidden
