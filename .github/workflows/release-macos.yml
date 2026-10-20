@@ -1,6 +1,8 @@
 name: Release macOS
 
 # Lancé à la main (ou par une étiquette v*) : les minutes macOS coûtent dix fois celles de Linux.
+# Une poussée sur la branche release/macos construit le même paquet sans release : il reste en
+# artefact de l'exécution, et les dépendances construites remplissent le cache.
 on:
   workflow_dispatch:
     inputs:
@@ -9,6 +11,7 @@ on:
         required: false
   push:
     tags: ["v*"]
+    branches: ["release/macos"]
 
 permissions:
   contents: write
@@ -22,11 +25,21 @@ jobs:
     runs-on: macos-15
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/cache@v4
+      # Restauration et sauvegarde séparées : les dépendances déjà construites (marquées .built-*)
+      # restent en cache même quand la construction échoue plus loin.
+      - id: deps-cache
+        uses: actions/cache/restore@v4
         with:
           path: ${{ env.AJP_DEPS_PREFIX }}
-          key: deps-macos-arm64-${{ hashFiles('tools/deps/macos-from-source.sh') }}
+          key: deps-macos-arm64-${{ hashFiles('tools/deps/macos-from-source.sh') }}-${{ github.run_id }}
+          restore-keys: |
+            deps-macos-arm64-${{ hashFiles('tools/deps/macos-from-source.sh') }}-
       - run: tools/deps/macos-from-source.sh "$AJP_DEPS_PREFIX" "$RUNNER_TEMP/deps-src"
+      - uses: actions/cache/save@v4
+        if: always()
+        with:
+          path: ${{ env.AJP_DEPS_PREFIX }}
+          key: ${{ steps.deps-cache.outputs.cache-primary-key }}
       - run: tools/release/package-macos.sh "$RUNNER_TEMP/package"
       - uses: actions/upload-artifact@v4
         with:
@@ -35,10 +48,10 @@ jobs:
             ${{ runner.temp }}/package/ajp-macos-arm64.zip
             ${{ runner.temp }}/package/ajp-macos-arm64.zip.sha256
       - name: Joindre à la release
-        if: github.event_name == 'push' || inputs.tag != ''
+        if: github.ref_type == 'tag' || inputs.tag != ''
         env:
           GH_TOKEN: ${{ github.token }}
-          TAG: ${{ github.event_name == 'push' && github.ref_name || inputs.tag }}
+          TAG: ${{ github.ref_type == 'tag' && github.ref_name || inputs.tag }}
         run: |
           gh release upload "$TAG" "$RUNNER_TEMP/package/ajp-macos-arm64.zip" \
             "$RUNNER_TEMP/package/ajp-macos-arm64.zip.sha256" --clobber
