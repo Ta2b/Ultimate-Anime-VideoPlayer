@@ -29,6 +29,7 @@ struct RifeInputParams {
   // 11 pour RIFE ; 7 pour RIFE v2 (images et instant, sans grilles) ; 6 pour GMFSS
   // (kernels/spec/gmfss.h), les deux images seules.
   int planes = 11;
+  bool frames = true;  // faux : les plans constants seuls (rife_time), a et b non lus
 };
 
 cudaError_t launch_rife_input(const RifeInputParams& params, cudaStream_t stream);

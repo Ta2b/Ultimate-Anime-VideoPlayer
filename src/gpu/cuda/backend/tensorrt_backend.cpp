@@ -190,11 +190,17 @@ TensorRtBackend::~TensorRtBackend() {
   chain_timing_.reset();
   if (retired_done_ != nullptr) cudaEventDestroy(retired_done_);
   true_hdr_.reset();  // avant le flux : l'effet et ses tampons appartiennent au contexte du backend
-  if (pair_device_ != nullptr) cudaFree(pair_device_);
-  if (pair_host_ != nullptr) cudaFreeHost(pair_host_);
-  if (flow_device_ != nullptr) cudaFree(flow_device_);
+  for (PairRead& read : pair_reads_) {
+    if (read.device != nullptr) cudaFree(read.device);
+    if (read.host != nullptr) cudaFreeHost(read.host);
+    if (read.done != nullptr) cudaEventDestroy(read.done);
+  }
+  for (FlowRead& read : flow_reads_) {
+    if (read.device != nullptr) cudaFree(read.device);
+    if (read.host != nullptr) cudaFreeHost(read.host);
+    if (read.done != nullptr) cudaEventDestroy(read.done);
+  }
   if (splat_sums_ != nullptr) cudaFree(splat_sums_);
-  if (flow_host_ != nullptr) cudaFreeHost(flow_host_);
   runtime_.reset();
   for (Held& held : held_) {
     held.data.reset();

@@ -130,6 +130,16 @@ std::expected<std::vector<KernelChoice>, Refusal> candidates(const ir::Graph& gr
       }
     }
   }
+  // Conv : plusieurs pixels par invocation (net_conv.glsl, PIX), aux quads par défaut, dans la
+  // variante la plus rapide d'ordinaire (fp16 empaqueté si l'appareil l'a).
+  const auto width = static_cast<std::uint32_t>(y.dims[3]);
+  for (const std::uint32_t pix : {2U, 4U}) {
+    if (!conv || width < pix * 2) continue;
+    for (const std::uint32_t wg : {64U, 128U}) {
+      if (wg > target.max_workgroup_invocations) continue;
+      out.push_back({.variant = std::string(packed ? kPacked : kDirect), .tuning = {quads, wg, pix}});
+    }
+  }
   return out;
 }
 
@@ -186,12 +196,13 @@ std::vector<std::uint32_t> conv_constants(const Desc4& x, std::uint32_t tx, cons
 std::expected<void, Refusal> Lowerer::conv(std::size_t index, const KernelChoice& choice) {
   const ir::Node& n = graph_.nodes[index];
   const bool packed = choice.variant == kPacked;
-  if ((!packed && choice.variant != kDirect) || choice.tuning.size() != 2) {
+  if ((!packed && choice.variant != kDirect) || choice.tuning.size() < 2 || choice.tuning.size() > 3) {
     return refuse_node(RefusalCode::InputMismatch, n, std::format("variante {} inconnue", choice.variant));
   }
   const std::uint32_t quads = choice.tuning[0];
   const std::uint32_t wg = choice.tuning[1];
-  if (quads < 1 || quads > 8 || wg < 1 || wg > target_.max_workgroup_invocations) {
+  const std::uint32_t pix = choice.tuning.size() == 3 ? choice.tuning[2] : 1;  // pixels par invocation
+  if (quads < 1 || quads > 8 || wg < 1 || wg > target_.max_workgroup_invocations || pix < 1 || pix > 4) {
     return refuse_node(RefusalCode::InputMismatch, n, "réglage hors de ses bornes");
   }
   if (packed && !(target_.f16_math && target_.f16_storage)) {
@@ -247,13 +258,14 @@ std::expected<void, Refusal> Lowerer::conv(std::size_t index, const KernelChoice
   std::vector<std::uint32_t> constants = conv_constants(x->desc, x->type, y->desc, y->type, *win, groups, e);
   constants.push_back(quads);
   constants.push_back(wg);
+  constants.push_back(pix);
   const Binding w{
       .kind = BindingKind::Blob,
       .index = add_blob(conv_weights(*weights, groups, 4 * quads, packed ? BlobType::F16 : BlobType::F32))};
   const Binding b{.kind = BindingKind::Blob,
                   .index = add_blob(channel_floats(constant_input(graph_, n, ir::kConvB), y->desc.c))};
   emit(index, *name, std::move(constants), {x->binding, w, b, slope, residual, y->binding}, {},
-       {div_up(y->desc.w, wg), y->desc.h, z});
+       {div_up(div_up(y->desc.w, pix), wg), y->desc.h, z});
   return {};
 }
 

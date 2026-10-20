@@ -72,7 +72,10 @@ class TensorRtBackend final : public Backend, public KernelOps {
   // Extensions de la tranche verticale (tensorrt_rife.cpp) : entrée de RIFE et mesures immédiates.
   std::expected<void, Refusal> rife_input(const Tensor& a, const Tensor& b, float t,
                                           const Tensor& input) override;
+  std::expected<void, Refusal> rife_time(const Tensor& input, float t) override;
   std::expected<PairScores, Refusal> scores_now(const Tensor& a, const Tensor& b) override;
+  std::expected<std::uint64_t, Refusal> scores_start(const Tensor& a, const Tensor& b) override;
+  std::expected<PairScores, Refusal> scores_take(std::uint64_t ticket) override;
   // GMFSS Fortuna (tensorrt_gmfss.cpp) : entrée du graphe « paire » et softmax splatting.
   std::expected<void, Refusal> gmfss_frames(const Tensor& a, const Tensor& b, const Tensor& frames) override;
   std::expected<void, Refusal> fill(const Tensor& tensor, float value) override;
@@ -88,6 +91,8 @@ class TensorRtBackend final : public Backend, public KernelOps {
   std::expected<std::vector<float>, Refusal> true_hdr_ramp(std::span<const std::uint8_t> levels) override;
   std::optional<DeviceMemory> device_memory() override;
   std::expected<float, Refusal> flow_max_now(const Motion& motion) override;
+  std::expected<std::uint64_t, Refusal> flow_max_start(const Motion& motion) override;
+  std::expected<float, Refusal> flow_max_take(std::uint64_t ticket) override;
   std::expected<void, Refusal> warp_blend_poses(const Tensor& a, const Tensor& b, const Motion& motion,
                                                 const Motion* previous, float t, const Tensor& out) override;
 
@@ -143,15 +148,30 @@ class TensorRtBackend final : public Backend, public KernelOps {
   // Imports d'une génération remplacée, relâchés quand retired_done_ est passé côté GPU.
   std::vector<std::unique_ptr<ImportedSlot>> retired_;
   cudaEvent_t retired_done_ = nullptr;
-  // Mesures d'une paire : sommes côté GPU, relues dans une mémoire hôte épinglée.
+  // Mesures relues par l'hôte (scores_start, flow_max_start) : côté GPU, puis copiées dans une
+  // mémoire hôte épinglée ; kPendingReadbacks emplacements à tour de rôle, chacun avec l'événement
+  // qui suit sa copie, seul attendu par la relecture.
   struct PairSums {
     double total = 0.0;
     unsigned int worst = 0;
   };
-  PairSums* pair_device_ = nullptr;
-  PairSums* pair_host_ = nullptr;
-  unsigned int* flow_device_ = nullptr;  // flow_max_now : bits du maximum, sur l'appareil et l'hôte
-  unsigned int* flow_host_ = nullptr;
+  struct PairRead {
+    PairSums* device = nullptr;
+    PairSums* host = nullptr;
+    cudaEvent_t done = nullptr;
+    std::uint64_t ticket = 0;
+    double area = 0.0;  // aire remplie de RIFE
+  };
+  struct FlowRead {
+    unsigned int* device = nullptr;  // bits du maximum
+    unsigned int* host = nullptr;
+    cudaEvent_t done = nullptr;
+    std::uint64_t ticket = 0;
+  };
+  std::array<PairRead, kPendingReadbacks> pair_reads_{};
+  std::array<FlowRead, kPendingReadbacks> flow_reads_{};
+  std::uint64_t pair_tickets_ = 0;  // derniers tickets lancés, par sorte
+  std::uint64_t flow_tickets_ = 0;
   // Sommes FP32 du softmax splatting, partagées par tous les splats (le flux les ordonne).
   float* splat_sums_ = nullptr;
   std::size_t splat_bytes_ = 0;

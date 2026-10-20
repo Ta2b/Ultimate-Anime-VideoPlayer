@@ -297,6 +297,25 @@ TEST_CASE("KernelOps : mesures d'une paire RGB rendues tout de suite", "[vk_back
   CHECK(std::fabs(got->scene_score - scene) <= 1e-5 * scene);
   CHECK(std::abs(static_cast<int>(got->worst_block) - static_cast<int>(worst)) <= 1);
   CHECK(got->worst_block > 0);
+
+  // En deux temps : deux mesures en vol, relues dans n'importe quel ordre, chacune une fois.
+  const auto first = ops.scores_start(ta->tensor(), tb->tensor());
+  const auto second = ops.scores_start(ta->tensor(), ta->tensor());
+  REQUIRE(first);
+  REQUIRE(second);
+  const auto later = ops.scores_take(*second);
+  REQUIRE(later);
+  CHECK(later->identical);
+  const auto earlier = ops.scores_take(*first);
+  REQUIRE(earlier);
+  CHECK(earlier->scene_score == got->scene_score);
+  CHECK(earlier->worst_block == got->worst_block);
+  CHECK_FALSE(ops.scores_take(*first));
+  // Un ticket dépassé par kPendingReadbacks lancements est périmé.
+  const auto old = ops.scores_start(ta->tensor(), tb->tensor());
+  REQUIRE(old);
+  for (std::size_t k = 0; k < kPendingReadbacks; ++k) REQUIRE(ops.scores_start(ta->tensor(), tb->tensor()));
+  CHECK_FALSE(ops.scores_take(*old));
 }
 
 TEST_CASE("KernelOps : plus grand déplacement rendu tout de suite, contre kernels/ref",

@@ -73,8 +73,13 @@ class VulkanKernelOps final : public KernelOps {
                                                 const Motion* previous, float t, const Tensor& out) override;
   std::expected<void, Refusal> rife_input(const Tensor& a, const Tensor& b, float t,
                                           const Tensor& input) override;
+  std::expected<void, Refusal> rife_time(const Tensor& input, float t) override;
   std::expected<PairScores, Refusal> scores_now(const Tensor& a, const Tensor& b) override;
+  std::expected<std::uint64_t, Refusal> scores_start(const Tensor& a, const Tensor& b) override;
+  std::expected<PairScores, Refusal> scores_take(std::uint64_t ticket) override;
   std::expected<float, Refusal> flow_max_now(const Motion& motion) override;
+  std::expected<std::uint64_t, Refusal> flow_max_start(const Motion& motion) override;
+  std::expected<float, Refusal> flow_max_take(std::uint64_t ticket) override;
   std::expected<void, Refusal> gmfss_frames(const Tensor& a, const Tensor& b, const Tensor& frames) override;
   std::expected<void, Refusal> fill(const Tensor& tensor, float value) override;
   std::expected<void, Refusal> soft_splat(const Tensor& source, const Tensor& motion, float s,
@@ -167,11 +172,28 @@ class VulkanKernelOps final : public KernelOps {
   std::uint64_t returned_order_ = 0;
   std::vector<RingView> ring_views_;
   std::uint32_t ring_generation_ = 0;
-  // Mesures rendues tout de suite (scores_now, flow_max_now) : relues par l'hôte sans copie.
-  std::optional<Buffer> pair_sums_;
-  std::optional<Buffer> pair_worst_;
-  std::optional<Buffer> flow_result_;
-  std::expected<Buffer*, Refusal> readback(std::optional<Buffer>& buffer, VkDeviceSize bytes);
+  // Mesures relues par l'hôte sans copie (scores_start, flow_max_start), kPendingReadbacks
+  // emplacements à tour de rôle ; value : leur point sur la file, seul attendu par la relecture.
+  struct PairRead {
+    std::optional<Buffer> sums;
+    std::optional<Buffer> worst;
+    std::uint64_t ticket = 0;
+    std::uint64_t value = 0;
+    std::uint32_t blocks = 0;
+    double area = 0.0;  // aire remplie de RIFE
+  };
+  struct FlowRead {
+    std::optional<Buffer> result;
+    std::uint64_t ticket = 0;
+    std::uint64_t value = 0;
+  };
+  std::array<PairRead, kPendingReadbacks> pair_reads_;
+  std::array<FlowRead, kPendingReadbacks> flow_reads_;
+  std::uint64_t pair_tickets_ = 0;  // derniers tickets lancés, par sorte
+  std::uint64_t flow_tickets_ = 0;
+  // Le tampon d'un emplacement, agrandi au besoin une fois finie l'exécution qui l'écrit encore.
+  std::expected<Buffer*, Refusal> readback(std::optional<Buffer>& buffer, VkDeviceSize bytes,
+                                           std::uint64_t busy_until);
   // Sommes FP32 du softmax splatting, partagées par tous les splats (la file les ordonne) ;
   // agrandies seulement après la fin de tout ce que la file a reçu.
   std::optional<Buffer> splat_sums_;

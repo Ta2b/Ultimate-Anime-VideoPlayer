@@ -157,6 +157,9 @@ std::expected<void, Refusal> UpscaleStage::allocate() {
   if (interpolates() && !warps_spanned()) {
     if (auto ok = alloc(middle_, planes(3, w, h)); !ok) return ok;
   }
+  if (looks_ahead()) {
+    if (auto ok = allocate_ahead(); !ok) return ok;
+  }
   if (gmfss()) return allocate_gmfss();
   if (drba()) return allocate_drba();
   if (interpolates()) {
@@ -190,14 +193,17 @@ std::expected<std::uint32_t, Refusal> UpscaleStage::outputs(const DecodedFrame& 
   prepared_ = vendor_hdr::InputPreparation{.matrix = frame.color.matrix, .range = frame.color.range};
   gpu::KernelOps& ops = *setup_.backend->kernels();
   current_ ^= 1U;
+  rife_in_pair_ = false;  // les images de rife_in_ sont celles de la paire d'avant
   gpu::IngestSpec spec;
   if (setup_.live) spec.reduce = setup_.live->reduction();
+  const bool ingested = looks_ahead() && take_ahead(frame, spec);  // déjà, derrière la précédente
   if (drba()) {
     if (auto ok = drba_arrive(frame, spec); !ok) return std::unexpected(std::move(ok.error()));
-  } else if (auto ok = ops.ingest(frame, spec, rgb_[current_]->tensor()); !ok) {
-    return std::unexpected(std::move(ok.error()));
+  } else if (!ingested) {
+    if (auto ok = ops.ingest(frame, spec, rgb_[current_]->tensor()); !ok)
+      return std::unexpected(std::move(ok.error()));
   }
-  if (small_[current_]) {  // l'image de RIFE, réduite par Area
+  if (small_[current_] && !ingested) {  // l'image de RIFE, réduite par Area
     if (auto ok = ops.ingest(frame, gpu::IngestSpec{}, small_[current_]->tensor()); !ok)
       return std::unexpected(std::move(ok.error()));
   }
@@ -238,8 +244,7 @@ std::expected<std::uint32_t, Refusal> UpscaleStage::outputs(const DecodedFrame& 
                   .gap_us = previous_ ? frame.pts_us - previous_->pts_us : 0};
   if (facts.factor > 1 && facts.same_epoch) {
     const auto asked = std::chrono::steady_clock::now();
-    auto scores =
-        drba() ? drba_scores(frame) : ops.scores_now(rife_source(current_ ^ 1U), rife_source(current_));
+    auto scores = drba() ? drba_scores(frame) : pair_scores();
     scores_wait_us_.push_back(
         std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - asked)
             .count());
@@ -295,6 +300,11 @@ std::expected<std::uint32_t, Refusal> UpscaleStage::outputs(const DecodedFrame& 
       return std::unexpected(std::move(ok.error()));
   }
   spanned_now_ = false;  // SPAN de cette image : à sa première utilisation (span_current)
+  // Avant RIFE et SPAN de cette image : la suivante, si elle attend, ingérée et mesurée.
+  ahead_.ticket = 0;
+  if (looks_ahead()) {
+    if (auto ok = look_ahead(frame, spec); !ok) return std::unexpected(std::move(ok.error()));
+  }
   return outputs_;
 }
 
@@ -347,23 +357,16 @@ std::expected<RingStage::Output, Refusal> UpscaleStage::produce(const DecodedFra
 }
 
 std::expected<void, Refusal> UpscaleStage::interpolate_image(float t) {
-  gpu::KernelOps& ops = *setup_.backend->kernels();
-  if (auto ok =
-          ops.rife_input(rgb_[current_ ^ 1U]->tensor(), rgb_[current_]->tensor(), t, rife_in_->tensor());
-      !ok) {
-    return ok;
-  }
+  if (auto ok = fill_rife_input(t); !ok) return ok;
   const std::array inputs{rife_in_->tensor()};
   std::array results{rife_out_->tensor()};
   if (auto ok = setup_.backend->enqueue(*setup_.rife, inputs, results); !ok) return ok;
-  return ops.rife_crop(rife_out_->tensor(), middle_->tensor());
+  return setup_.backend->kernels()->rife_crop(rife_out_->tensor(), middle_->tensor());
 }
 
 std::expected<void, Refusal> UpscaleStage::run_motion(float t, const gpu::Tensor& flow,
                                                       const gpu::Tensor& mask) {
-  gpu::KernelOps& ops = *setup_.backend->kernels();
-  if (auto ok = ops.rife_input(rife_source(current_ ^ 1U), rife_source(current_), t, rife_in_->tensor()); !ok)
-    return ok;
+  if (auto ok = fill_rife_input(t); !ok) return ok;
   const std::array inputs{rife_in_->tensor()};
   std::array results{flow, mask};
   ++rife_runs_;
@@ -397,7 +400,17 @@ std::expected<void, Refusal> UpscaleStage::interpolate_by_motion(std::uint32_t o
     if (poses_) {
       single_run_ = true;
     } else if (intermediates_ > 1) {
-      auto biggest = ops.flow_max_now(middle);
+      // Warp après SPAN : SPAN de b enfilé entre la mesure et sa relecture, qui ne l'attend pas.
+      auto ticket = ops.flow_max_start(middle);
+      std::expected<float, Refusal> biggest;
+      if (ticket) {
+        if (warps_spanned()) {
+          if (auto ok = span_current(); !ok) return ok;
+        }
+        biggest = ops.flow_max_take(*ticket);
+      } else {
+        biggest = ops.flow_max_now(middle);
+      }
       if (!biggest) return std::unexpected(std::move(biggest.error()));
       single_run_ = *biggest < kernels::single_run_motion(setup_.rife_height);
       if (single_run_) {
@@ -408,8 +421,8 @@ std::expected<void, Refusal> UpscaleStage::interpolate_by_motion(std::uint32_t o
     }
     now_ = PairMotion::Moving;
   }
-  // Warp après SPAN : b agrandie ici, après la passe de RIFE et la lecture de son mouvement maximal
-  // que l'hôte attend (elles ne passent pas derrière SPAN dans la file).
+  // Warp après SPAN : b agrandie ici (si la relecture du mouvement maximal ne l'a pas déjà enfilée),
+  // après la passe de RIFE et la mesure que l'hôte attend : elles ne passent pas derrière SPAN.
   if (warps_spanned()) {
     if (auto ok = span_current(); !ok) return ok;
   }

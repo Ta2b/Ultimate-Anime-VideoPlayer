@@ -89,3 +89,26 @@ Le flux optique matériel NVIDIA a été retiré (fichiers `nvof_session`, `tens
   (`$env:AJP_WITH_CUDA = "ON"` pour le paquet TensorRT), puis l'écran de bienvenue
   (`--first-run`) et une lecture avec TensorRT : le ring passe par des HANDLE NT.
 - **FlowJaNai** : suivre `tools/nvof_interp/README.md` (outil NVOF, flux d'ATD-12K, entraînement).
+
+## Chaîne et moteurs (seconde passe du 20 octobre)
+
+- **Mesures en avance** : la suivante est ingérée et mesurée avant RIFE et SPAN de l'image en
+  cours. Le journal de fin donne « profil hôte · attente des mesures de la paire » : la médiane
+  doit tomber près de zéro (elle valait le temps GPU d'une image). Vérifier qu'aucune coupe de
+  scène ni dessin tenu n'est manqué après un seek (la suivante d'avant le seek n'est pas reprise).
+- **Mouvement maximal** (RIFE mouvement, ×3 et plus, « Warp après SPAN ») : SPAN de b est enfilé
+  entre la mesure et sa relecture ; même image qu'avant, moins de temps mort GPU.
+- **Entrée de RIFE** : à ×3 et plus, les images de la paire sont écrites une fois, puis l'instant
+  seul. Image identique à avant (comparer une capture à ×4 avec le commit d'avant).
+- **Conv directe à plusieurs pixels** (Vulkan sans matrices coopératives : AMD RX 5000/6000,
+  Intel, lavapipe) : l'autotuner remesure chaque couche une fois (nouvelle version des candidats).
+  `ajp-gpu ctest --test-dir build/linux-prefix-cuda -R "Réseau : Conv"` d'abord (toutes les
+  variantes contre l'interpréteur), puis comparer le temps de SPAN avant et après ; le journal
+  dit combien de couches ont été mesurées.
+- **À essayer, pas fait** :
+  - TensorRT : `--tilingOptimizationLevel=3` dans les réglages du moteur, à comparer
+    (construction plus longue) ;
+  - Vulkan : file de calcul en priorité globale haute, à comparer quand un jeu ou le navigateur
+    charge le GPU (risque : l'affichage passe derrière) ;
+  - ring en RGB10A2 au lieu de RGBA16 : moitié moins d'octets par image à 4K et haute fréquence,
+    à vérifier sur les dégradés du grade HDR.

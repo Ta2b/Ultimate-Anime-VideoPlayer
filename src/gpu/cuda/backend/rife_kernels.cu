@@ -38,7 +38,7 @@ __global__ void rife_input(RifeInputParams p) {
   const auto* a = static_cast<const __half*>(p.a);
   const auto* b = static_cast<const __half*>(p.b);
   const __half black = __float2half_rn(p.black);
-  for (int c = 0; c < 3; ++c) {
+  for (int c = 0; c < 3 && p.frames; ++c) {
     out[static_cast<std::size_t>(c) * plane + i] =
         inside ? a[static_cast<std::size_t>(c) * source_plane + j] : black;
     out[static_cast<std::size_t>(3 + c) * plane + i] =

@@ -1,5 +1,6 @@
-// RIFE dans le backend TensorRT de la tranche verticale : entrée remplie (rife_input), recadrage
-// de la sortie (rife_crop, du contrat) et mesures immédiates d'une paire (scores_now).
+// RIFE dans le backend TensorRT de la tranche verticale : entrée remplie (rife_input, puis son
+// instant seul par rife_time), recadrage de la sortie (rife_crop, du contrat) et mesures d'une
+// paire (scores_start, scores_take).
 #include <cstring>
 #include <format>
 #include <string>
@@ -73,6 +74,28 @@ std::expected<void, Refusal> TensorRtBackend::rife_input(const Tensor& a, const 
   return launched;
 }
 
+std::expected<void, Refusal> TensorRtBackend::rife_time(const Tensor& input, float t) {
+  const std::int64_t planes = input.shape.dims[1];
+  if (!kernels::is_rife_input_planes(planes) || !fp16_planes(input, planes)) {
+    return refuse(RefusalCode::ShapeInvalid, "rife_time : tenseur FP16 1×(11 ou 7)×H×W attendu");
+  }
+  if (!(t > 0.0F && t < 1.0F)) {
+    return refuse(RefusalCode::FieldOutOfRange, std::format("rife_time : instant {} hors de ]0, 1[", t));
+  }
+  if (auto ok = bind(); !ok) return ok;
+  const RifeInputParams params{.padded_width = width_of(input),
+                               .padded_height = height_of(input),
+                               .time = t,
+                               .input = address(input),
+                               .planes = static_cast<int>(planes),
+                               .frames = false};
+  GpuTiming& timing = stage("entrée de RIFE");
+  timing.begin(stream_);
+  auto launched = cuda_check(launch_rife_input(params, stream_), "rife_input<<<>>>");
+  timing.end(stream_);
+  return launched;
+}
+
 std::expected<void, Refusal> TensorRtBackend::rife_crop(const Tensor& padded, const Tensor& out) {
   if (!fp16_planes(padded, 3) || !fp16_planes(out, 3)) {
     return refuse(RefusalCode::ShapeInvalid, "rife_crop : tenseurs RGB FP16 attendus");
@@ -102,46 +125,68 @@ std::expected<void, Refusal> TensorRtBackend::rife_crop(const Tensor& padded, co
 }
 
 std::expected<PairScores, Refusal> TensorRtBackend::scores_now(const Tensor& a, const Tensor& b) {
+  return scores_start(a, b).and_then([&](std::uint64_t ticket) { return scores_take(ticket); });
+}
+
+std::expected<std::uint64_t, Refusal> TensorRtBackend::scores_start(const Tensor& a, const Tensor& b) {
   if (!fp16_planes(a, 3) || !fp16_planes(b, 3) || a.shape.dims != b.shape.dims) {
-    return refuse(RefusalCode::ShapeInvalid, "scores_now : deux images RGB FP16 de même taille attendues");
+    return refuse(RefusalCode::ShapeInvalid, "scores_start : deux images RGB FP16 de même taille attendues");
   }
+  const std::uint64_t ticket = pair_tickets_ + 1;
+  PairRead& slot = pair_reads_[ticket % pair_reads_.size()];
   std::expected<void, Refusal> ready = bind();
-  if (ready && pair_device_ == nullptr) {
-    ready = cuda_check(cudaMalloc(reinterpret_cast<void**>(&pair_device_), sizeof(PairSums)), "cudaMalloc");
+  if (ready && slot.device == nullptr) {
+    ready = cuda_check(cudaMalloc(reinterpret_cast<void**>(&slot.device), sizeof(PairSums)), "cudaMalloc");
     if (ready) {
-      ready = cuda_check(cudaMallocHost(reinterpret_cast<void**>(&pair_host_), sizeof(PairSums)),
+      ready = cuda_check(cudaMallocHost(reinterpret_cast<void**>(&slot.host), sizeof(PairSums)),
                          "cudaMallocHost");
     }
+    if (ready)
+      ready = cuda_check(cudaEventCreateWithFlags(&slot.done, cudaEventDisableTiming), "cudaEventCreate");
   }
+  // Le flux ordonne les emplacements : un ticket périmé n'est plus relu, rien n'est à attendre.
   if (ready)
-    ready = cuda_check(cudaMemsetAsync(pair_device_, 0, sizeof(PairSums), stream_), "cudaMemsetAsync");
+    ready = cuda_check(cudaMemsetAsync(slot.device, 0, sizeof(PairSums), stream_), "cudaMemsetAsync");
   if (ready) {
     const PairDiffParams params{.a = address(a),
                                 .b = address(b),
                                 .width = width_of(a),
                                 .height = height_of(a),
                                 .levels = 219.0F,  // plage limitée, comme l'ingestion de la chaîne
-                                .total = &pair_device_->total,
-                                .worst = &pair_device_->worst};
+                                .total = &slot.device->total,
+                                .worst = &slot.device->worst};
     GpuTiming& timing = stage("mesures de la paire");
     timing.begin(stream_);
     ready = cuda_check(launch_pair_diff(params, stream_), "pair_diff<<<>>>");
     timing.end(stream_);
   }
   if (ready) {
-    ready = cuda_check(
-        cudaMemcpyAsync(pair_host_, pair_device_, sizeof(PairSums), cudaMemcpyDeviceToHost, stream_),
-        "cudaMemcpyAsync");
+    ready =
+        cuda_check(cudaMemcpyAsync(slot.host, slot.device, sizeof(PairSums), cudaMemcpyDeviceToHost, stream_),
+                   "cudaMemcpyAsync");
   }
-  // Attente hôte voulue : la décision de lancer RIFE dépend de cette paire (kernels/spec/detect.h).
-  if (ready) ready = cuda_check(cudaStreamSynchronize(stream_), "cudaStreamSynchronize");
+  if (ready) ready = cuda_check(cudaEventRecord(slot.done, stream_), "cudaEventRecord");
   if (!ready) return std::unexpected(std::move(ready.error()));
   const kernels::RifeGeometry g = kernels::rife_geometry(width_of(a), height_of(a));
+  pair_tickets_ = ticket;
+  slot.ticket = ticket;
+  slot.area = static_cast<double>(g.padded_width) * static_cast<double>(g.padded_height);
+  return ticket;
+}
+
+std::expected<PairScores, Refusal> TensorRtBackend::scores_take(std::uint64_t ticket) {
+  PairRead& slot = pair_reads_[ticket % pair_reads_.size()];
+  if (ticket == 0 || slot.ticket != ticket)
+    return refuse(RefusalCode::SequenceOrder, std::format("scores_take : ticket {} périmé", ticket));
+  // Attente hôte voulue : la décision de lancer RIFE dépend de cette paire (kernels/spec/detect.h).
+  // Elle ne couvre que la mesure, pas ce que le flux a reçu depuis.
+  if (auto ok = cuda_check(cudaEventSynchronize(slot.done), "cudaEventSynchronize"); !ok)
+    return std::unexpected(std::move(ok.error()));
+  slot.ticket = 0;
   // Σ |ΔY| × (pas 8 bits / 255) : l'écart en codes rapporté à la crête, sur l'aire remplie de RIFE.
-  const double scene = pair_host_->total * (219.0 / 255.0) /
-                       (static_cast<double>(g.padded_width) * static_cast<double>(g.padded_height));
+  const double scene = slot.host->total * (219.0 / 255.0) / slot.area;
   return PairScores{
-      .scene_score = scene, .worst_block = pair_host_->worst, .identical = pair_host_->total == 0.0};
+      .scene_score = scene, .worst_block = slot.host->worst, .identical = slot.host->total == 0.0};
 }
 
 }  // namespace ajp::gpu::cuda

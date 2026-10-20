@@ -108,17 +108,25 @@ std::expected<void, Refusal> TensorRtBackend::warp(const Tensor& a, const Tensor
 }
 
 std::expected<float, Refusal> TensorRtBackend::flow_max_now(const Motion& motion) {
+  return flow_max_start(motion).and_then([&](std::uint64_t ticket) { return flow_max_take(ticket); });
+}
+
+std::expected<std::uint64_t, Refusal> TensorRtBackend::flow_max_start(const Motion& motion) {
   if (auto ok = check_motion(motion); !ok) return std::unexpected(std::move(ok.error()));
+  const std::uint64_t ticket = flow_tickets_ + 1;
+  FlowRead& slot = flow_reads_[ticket % flow_reads_.size()];
   std::expected<void, Refusal> ready = bind();
-  if (ready && flow_device_ == nullptr) {
+  if (ready && slot.device == nullptr) {
     ready =
-        cuda_check(cudaMalloc(reinterpret_cast<void**>(&flow_device_), sizeof(unsigned int)), "cudaMalloc");
+        cuda_check(cudaMalloc(reinterpret_cast<void**>(&slot.device), sizeof(unsigned int)), "cudaMalloc");
     if (ready)
-      ready = cuda_check(cudaMallocHost(reinterpret_cast<void**>(&flow_host_), sizeof(unsigned int)),
+      ready = cuda_check(cudaMallocHost(reinterpret_cast<void**>(&slot.host), sizeof(unsigned int)),
                          "cudaMallocHost");
+    if (ready)
+      ready = cuda_check(cudaEventCreateWithFlags(&slot.done, cudaEventDisableTiming), "cudaEventCreate");
   }
   if (ready)
-    ready = cuda_check(cudaMemsetAsync(flow_device_, 0, sizeof(unsigned int), stream_), "cudaMemsetAsync");
+    ready = cuda_check(cudaMemsetAsync(slot.device, 0, sizeof(unsigned int), stream_), "cudaMemsetAsync");
   if (ready) {
     const FlowMaxParams params{.flow = address(motion.flow),
                                .plane_width = width_of(motion.flow),
@@ -127,20 +135,32 @@ std::expected<float, Refusal> TensorRtBackend::flow_max_now(const Motion& motion
                                .window_y = motion.area.y,
                                .window_width = motion.area.width,
                                .window_height = motion.area.height,
-                               .result = flow_device_};
+                               .result = slot.device};
     ready = cuda_check(launch_flow_max(params, stream_), "flow_max<<<>>>");
   }
   if (ready) {
     ready = cuda_check(
-        cudaMemcpyAsync(flow_host_, flow_device_, sizeof(unsigned int), cudaMemcpyDeviceToHost, stream_),
+        cudaMemcpyAsync(slot.host, slot.device, sizeof(unsigned int), cudaMemcpyDeviceToHost, stream_),
         "cudaMemcpyAsync");
   }
-  // Attente hôte voulue : relancer RIFE aux autres instants dépend de ce maximum.
-  if (ready) ready = cuda_check(cudaStreamSynchronize(stream_), "cudaStreamSynchronize");
+  if (ready) ready = cuda_check(cudaEventRecord(slot.done, stream_), "cudaEventRecord");
   if (!ready) return std::unexpected(std::move(ready.error()));
+  flow_tickets_ = ticket;
+  slot.ticket = ticket;
+  return ticket;
+}
+
+std::expected<float, Refusal> TensorRtBackend::flow_max_take(std::uint64_t ticket) {
+  FlowRead& slot = flow_reads_[ticket % flow_reads_.size()];
+  if (ticket == 0 || slot.ticket != ticket)
+    return refuse(RefusalCode::SequenceOrder, std::format("flow_max_take : ticket {} périmé", ticket));
+  // Attente hôte voulue : relancer RIFE aux autres instants dépend de ce maximum.
+  if (auto ok = cuda_check(cudaEventSynchronize(slot.done), "cudaEventSynchronize"); !ok)
+    return std::unexpected(std::move(ok.error()));
+  slot.ticket = 0;
   float value = 0.0F;
-  static_assert(sizeof(value) == sizeof(*flow_host_));
-  std::memcpy(&value, flow_host_, sizeof(value));
+  static_assert(sizeof(value) == sizeof(*slot.host));
+  std::memcpy(&value, slot.host, sizeof(value));
   return value;
 }
 

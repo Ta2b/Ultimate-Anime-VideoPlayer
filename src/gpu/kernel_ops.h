@@ -14,6 +14,7 @@
 // lit entre begin_vulkan_access et end_vulkan_access (core/frame.h).
 #pragma once
 
+#include <cstddef>
 #include <cstdint>
 #include <expected>
 #include <optional>
@@ -73,6 +74,9 @@ struct PairScores {
   bool identical = false;         // luma égale au bit : somme des écarts nulle
 };
 
+// Mesures lancées sans attente (scores_start, flow_max_start) et pas encore relues, par sorte.
+inline constexpr std::size_t kPendingReadbacks = 2;
+
 class KernelOps {
  public:
   virtual ~KernelOps() = default;
@@ -126,10 +130,24 @@ class KernelOps {
                                                   const Tensor& /*input*/) {
     return std::unexpected(Refusal{RefusalCode::FormatUnsupported, "rife_input : absent de ce backend"});
   }
+  // L'instant seul de l'entrée de RIFE déjà remplie par rife_input pour la même paire (images et
+  // grilles inchangées) : les autres instants d'une paire sans réécrire ses images.
+  virtual std::expected<void, Refusal> rife_time(const Tensor& /*input*/, float /*t*/) {
+    return std::unexpected(Refusal{RefusalCode::FormatUnsupported, "rife_time : absent de ce backend"});
+  }
   // Mesures de la paire a, b (RGB de même taille, luma BT.709 tirée du RGB), rendues tout de suite
   // au prix d'une attente hôte, pour décider de RIFE avant de le lancer. left et right sont nuls.
   virtual std::expected<PairScores, Refusal> scores_now(const Tensor& /*a*/, const Tensor& /*b*/) {
     return std::unexpected(Refusal{RefusalCode::FormatUnsupported, "scores_now : absent de ce backend"});
+  }
+  // scores_now en deux temps : scores_start enfile la mesure sans attendre et rend un ticket ;
+  // scores_take attend la fin de cette mesure seulement, pas le travail enfilé derrière elle. Un
+  // ticket vaut jusqu'à kPendingReadbacks lancements plus loin ; périmé, il est refusé.
+  virtual std::expected<std::uint64_t, Refusal> scores_start(const Tensor& /*a*/, const Tensor& /*b*/) {
+    return std::unexpected(Refusal{RefusalCode::FormatUnsupported, "scores_start : absent de ce backend"});
+  }
+  virtual std::expected<PairScores, Refusal> scores_take(std::uint64_t /*ticket*/) {
+    return std::unexpected(Refusal{RefusalCode::FormatUnsupported, "scores_take : absent de ce backend"});
   }
   // RTX HDR (TrueHDR) : ouvre l'effet du SDK importé, sur le flux de ce backend, pour des images
   // de config.width × config.height (la sortie de SPAN). Une seule instance ; rouvrir remplace.
@@ -141,6 +159,13 @@ class KernelOps {
   // suite au prix d'une attente hôte (ref::flow_max) : décide si une passe RIFE sert toute la paire.
   virtual std::expected<float, Refusal> flow_max_now(const Motion& /*motion*/) {
     return std::unexpected(Refusal{RefusalCode::FormatUnsupported, "flow_max_now : absent de ce backend"});
+  }
+  // flow_max_now en deux temps, comme scores_start et scores_take.
+  virtual std::expected<std::uint64_t, Refusal> flow_max_start(const Motion& /*motion*/) {
+    return std::unexpected(Refusal{RefusalCode::FormatUnsupported, "flow_max_start : absent de ce backend"});
+  }
+  virtual std::expected<float, Refusal> flow_max_take(std::uint64_t /*ticket*/) {
+    return std::unexpected(Refusal{RefusalCode::FormatUnsupported, "flow_max_take : absent de ce backend"});
   }
   // Garder les poses (kernels/spec/poses.h) : warp_blend à l'instant réglé de chaque pixel, d'après
   // le mouvement au milieu de la paire précédente (mêmes plans, même fenêtre) ; previous nul : la

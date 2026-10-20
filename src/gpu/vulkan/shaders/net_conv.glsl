@@ -1,7 +1,9 @@
 // Conv 2D directe, générique : groupes, dilatation, pas, marges, biais, résiduel et activation
 // fondus (gpu::ir::Epilogue : biais, puis résiduel, puis activation). Chaque invocation calcule
-// un pixel de sortie pour QUADS × 4 canaux d'un même groupe ; un groupe de travail couvre WG
-// pixels d'une ligne. Les poids sont rangés par l'hôte en [groupe × bloc][kh][kw][cin][4 × QUADS]
+// PIX pixels voisins d'une ligne de sortie pour QUADS × 4 canaux d'un même groupe ; un groupe de
+// travail couvre WG × PIX pixels d'une ligne. PIX > 1 lit chaque poids une fois pour PIX pixels
+// (et les colonnes d'entrée communes à deux pixels voisins une fois du cache), au prix de
+// registres : l'autotuner tranche. Les poids sont rangés par l'hôte en [groupe × bloc][kh][kw][cin][4 × QUADS]
 // (net_weights.cpp), lus en vec4 identiques pour tout le groupe de travail.
 // Variante « _f16 » : tenseurs float16 permis, calcul en float. Variante « _f16p » (AJP_CONV_PACKED,
 // fp16 de calcul) : poids float16, produits en f16vec4 sommés par paquets de 16 canaux, puis
@@ -46,6 +48,7 @@ layout(constant_id = 27) const float LO = 0.0;
 layout(constant_id = 28) const float HI = 0.0;
 layout(constant_id = 29) const uint RESIDUAL = 0;
 layout(constant_id = 30) const uint QUADS = 1;
+layout(constant_id = 32) const uint PIX = 1;  // 31 : la taille du groupe de travail
 
 const uint CING = CIN / GROUPS;
 const uint COUTG = COUT / GROUPS;
@@ -70,90 +73,129 @@ void main() {
   const TDesc xd = TDesc(N, CIN, HIN, WIN, LX, CXP);
   const TDesc yd = TDesc(N, COUT, HOUT, WOUT, LY, CYP);
   const TDesc rd = TDesc(N, COUT, HOUT, WOUT, LR, CRP);
-  uint ox = gl_GlobalInvocationID.x;
+  uint ox0 = gl_GlobalInvocationID.x * PIX;
   uint oy = gl_WorkGroupID.y;
   uint n = gl_WorkGroupID.z / (GROUPS * BLOCKS);
   uint gb = gl_WorkGroupID.z % (GROUPS * BLOCKS);
-  if (ox >= WOUT) return;
+  if (ox0 >= WOUT) return;
   uint g = gb / BLOCKS;
   uint first_out = (gb % BLOCKS) * 4u * QUADS;
 
-  vec4 acc[QUADS];
-  for (uint q = 0u; q < QUADS; ++q) acc[q] = vec4(0.0);
+  // acc[p * QUADS + q] : pixel ox0 + p, canaux first_out + 4q à 4q + 3.
+  vec4 acc[PIX * QUADS];
+  for (uint a = 0u; a < PIX * QUADS; ++a) acc[a] = vec4(0.0);
   for (uint ky = 0u; ky < KH; ++ky) {
     int iy = int(oy * SH + ky * DH) - int(PT);
     if (iy < 0 || iy >= int(HIN)) continue;
     for (uint kx = 0u; kx < KW; ++kx) {
-      int ix = int(ox * SW + kx * DW) - int(PL);
-      if (ix < 0 || ix >= int(WIN)) continue;
+      // Colonne d'entrée de chaque pixel ; hors de l'image (ou pixel au-delà de la ligne), rien.
+      int ix[PIX];
+      bool inside[PIX];
+      bool any = false;
+      for (uint p = 0u; p < PIX; ++p) {
+        ix[p] = int((ox0 + p) * SW + kx * DW) - int(PL);
+        inside[p] = ix[p] >= 0 && ix[p] < int(WIN) && ox0 + p < WOUT;
+        any = any || inside[p];
+      }
+      if (!any) continue;
       uint row = ((gb * KH + ky) * KW + kx) * CING * QUADS;
 #ifdef AJP_NET_F16
       if (VEC) {
         // Huit canaux par uvec4 ; les canaux de bourrage (au-delà de cin) ne sont pas lus.
-        uint base = (((n * HIN + uint(iy)) * WIN + uint(ix)) * CXP) / 8u;
+        uint base[PIX];
+        for (uint p = 0u; p < PIX; ++p)
+          base[p] = inside[p] ? (((n * HIN + uint(iy)) * WIN + uint(ix[p])) * CXP) / 8u : 0u;
         uint full = CING / 8u;
         for (uint c8 = 0u; c8 < full; ++c8) {
-          uvec4 packed = src_v.v[base + c8];
+          uvec4 packed[PIX];
+          for (uint p = 0u; p < PIX; ++p) packed[p] = inside[p] ? src_v.v[base[p] + c8] : uvec4(0u);
 #ifdef AJP_CONV_PACKED
-          f16vec4 part[QUADS];
-          for (uint q = 0u; q < QUADS; ++q) part[q] = f16vec4(0.0);
+          f16vec4 part[PIX * QUADS];
+          for (uint a = 0u; a < PIX * QUADS; ++a) part[a] = f16vec4(0.0);
 #endif
           for (uint h = 0u; h < 4u; ++h) {
             uint ci = c8 * 8u + 2u * h;
+            for (uint q = 0u; q < QUADS; ++q) {
 #ifdef AJP_CONV_PACKED
-            f16vec2 xv = unpackFloat2x16(packed[h]);
-            for (uint q = 0u; q < QUADS; ++q) {
-              part[q] += xv.x * weights.w[row + ci * QUADS + q];
-              part[q] += xv.y * weights.w[row + (ci + 1u) * QUADS + q];
-            }
+              f16vec4 w0 = weights.w[row + ci * QUADS + q];
+              f16vec4 w1 = weights.w[row + (ci + 1u) * QUADS + q];
+              for (uint p = 0u; p < PIX; ++p) {
+                f16vec2 xv = unpackFloat2x16(packed[p][h]);
+                part[p * QUADS + q] += xv.x * w0;
+                part[p * QUADS + q] += xv.y * w1;
+              }
 #else
-            vec2 xv = unpackHalf2x16(packed[h]);
-            for (uint q = 0u; q < QUADS; ++q) {
-              acc[q] += xv.x * weights.w[row + ci * QUADS + q];
-              acc[q] += xv.y * weights.w[row + (ci + 1u) * QUADS + q];
-            }
+              vec4 w0 = weights.w[row + ci * QUADS + q];
+              vec4 w1 = weights.w[row + (ci + 1u) * QUADS + q];
+              for (uint p = 0u; p < PIX; ++p) {
+                vec2 xv = unpackHalf2x16(packed[p][h]);
+                acc[p * QUADS + q] += xv.x * w0;
+                acc[p * QUADS + q] += xv.y * w1;
+              }
 #endif
+            }
           }
 #ifdef AJP_CONV_PACKED
-          for (uint q = 0u; q < QUADS; ++q) acc[q] += vec4(part[q]);
+          for (uint a = 0u; a < PIX * QUADS; ++a) acc[a] += vec4(part[a]);
 #endif
         }
         for (uint ci = full * 8u; ci < CING; ++ci) {
-          float xv = AJP_LOAD(src, TX, t_index(xd, n, ci, uint(iy), uint(ix)));
-          for (uint q = 0u; q < QUADS; ++q) acc[q] += xv * vec4(weights.w[row + ci * QUADS + q]);
+          float xv[PIX];
+          for (uint p = 0u; p < PIX; ++p)
+            xv[p] = inside[p] ? AJP_LOAD(src, TX, t_index(xd, n, ci, uint(iy), uint(ix[p]))) : 0.0;
+          for (uint q = 0u; q < QUADS; ++q) {
+            vec4 wv = vec4(weights.w[row + ci * QUADS + q]);
+            for (uint p = 0u; p < PIX; ++p) acc[p * QUADS + q] += xv[p] * wv;
+          }
         }
         continue;
       }
 #endif
 #ifdef AJP_CONV_PACKED
       for (uint c0 = 0u; c0 < CING; c0 += 16u) {
-        f16vec4 part[QUADS];
-        for (uint q = 0u; q < QUADS; ++q) part[q] = f16vec4(0.0);
+        f16vec4 part[PIX * QUADS];
+        for (uint a = 0u; a < PIX * QUADS; ++a) part[a] = f16vec4(0.0);
         uint c1 = min(c0 + 16u, CING);
         for (uint ci = c0; ci < c1; ++ci) {
-          float16_t xv = float16_t(AJP_LOAD(src, TX, t_index(xd, n, g * CING + ci, uint(iy), uint(ix))));
-          for (uint q = 0u; q < QUADS; ++q) part[q] += xv * weights.w[row + ci * QUADS + q];
+          float16_t xv[PIX];
+          for (uint p = 0u; p < PIX; ++p) {
+            xv[p] = inside[p] ? float16_t(AJP_LOAD(src, TX, t_index(xd, n, g * CING + ci, uint(iy), uint(ix[p]))))
+                              : float16_t(0.0);
+          }
+          for (uint q = 0u; q < QUADS; ++q) {
+            f16vec4 wv = weights.w[row + ci * QUADS + q];
+            for (uint p = 0u; p < PIX; ++p) part[p * QUADS + q] += xv[p] * wv;
+          }
         }
-        for (uint q = 0u; q < QUADS; ++q) acc[q] += vec4(part[q]);
+        for (uint a = 0u; a < PIX * QUADS; ++a) acc[a] += vec4(part[a]);
       }
 #else
       for (uint ci = 0u; ci < CING; ++ci) {
-        float xv = AJP_LOAD(src, TX, t_index(xd, n, g * CING + ci, uint(iy), uint(ix)));
-        for (uint q = 0u; q < QUADS; ++q) acc[q] += xv * weights.w[row + ci * QUADS + q];
+        float xv[PIX];
+        for (uint p = 0u; p < PIX; ++p)
+          xv[p] = inside[p] ? AJP_LOAD(src, TX, t_index(xd, n, g * CING + ci, uint(iy), uint(ix[p]))) : 0.0;
+        for (uint q = 0u; q < QUADS; ++q) {
+          vec4 wv = weights.w[row + ci * QUADS + q];
+          for (uint p = 0u; p < PIX; ++p) acc[p * QUADS + q] += xv[p] * wv;
+        }
       }
 #endif
     }
   }
 
-  for (uint q = 0u; q < QUADS; ++q) {
-    for (uint k = 0u; k < 4u; ++k) {
-      uint o = first_out + 4u * q + k;
-      if (o >= COUTG) return;
-      uint co = g * COUTG + o;
-      float v = acc[q][k] + bias.v[co];
-      if (RESIDUAL == 1u) v += AJP_LOAD(res, TR, t_index(rd, n, co, oy, ox));
-      v = net_activate(ACT, v, ALPHA, LO, HI, slope.v[co]);
-      AJP_STORE(dst, TY, t_index(yd, n, co, oy, ox), v)
+  for (uint p = 0u; p < PIX; ++p) {
+    uint ox = ox0 + p;
+    if (ox >= WOUT) break;
+    for (uint q = 0u; q < QUADS; ++q) {
+      for (uint k = 0u; k < 4u; ++k) {
+        uint o = first_out + 4u * q + k;
+        if (o >= COUTG) continue;
+        uint co = g * COUTG + o;
+        float v = acc[p * QUADS + q][k] + bias.v[co];
+        if (RESIDUAL == 1u) v += AJP_LOAD(res, TR, t_index(rd, n, co, oy, ox));
+        v = net_activate(ACT, v, ALPHA, LO, HI, slope.v[co]);
+        AJP_STORE(dst, TY, t_index(yd, n, co, oy, ox), v)
+      }
     }
   }
 }

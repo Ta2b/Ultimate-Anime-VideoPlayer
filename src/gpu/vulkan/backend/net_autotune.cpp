@@ -20,6 +20,8 @@
 namespace ajp::gpu::vk::net {
 namespace {
 
+constexpr std::string_view kCandidateSet = "c2";  // 2 : Conv directe à plusieurs pixels (PIX)
+
 // Hachage incrémental d'entiers, FNV-1a sur leurs huit octets.
 class Signature {
  public:
@@ -240,7 +242,8 @@ std::expected<KernelChoice, Refusal> Autotuner::choose(const ir::Graph& graph, s
       }
     }
   }
-  const std::string key = std::format("{}|{}|{:016x}", profile_.key, scope, signature);
+  // La version des candidats : une entrée tranchée avant l'ajout d'une variante est remesurée.
+  const std::string key = std::format("{}|{}|{:016x}|{}", profile_.key, scope, signature, kCandidateSet);
   if (const auto found = cache_.find(key); found != cache_.end() && known(found->second)) {
     ++cached_;
     return found->second;

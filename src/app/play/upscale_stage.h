@@ -115,6 +115,35 @@ class UpscaleStage final : public RingStage {
   std::expected<void, Refusal> drba_next(const DecodedFrame& frame, const gpu::IngestSpec& spec,
                                          bool measure);
   std::expected<void, Refusal> interpolate_drba(std::uint32_t output);
+  // Mesures en avance (upscale_ahead.cpp) : quand l'image suivante attend déjà derrière celle-ci,
+  // elle est ingérée et mesurée contre elle avant le travail de la paire en cours. À son arrivée,
+  // l'image n'attend alors que cette mesure, finie depuis longtemps, et non toute la file du GPU :
+  // l'hôte enfile la paire suivante pendant que le GPU finit celle-ci. Pas avec DistilDRBA, qui lit
+  // déjà la suivante (drba_next).
+  struct Ahead {
+    std::unique_ptr<gpu::TensorBuffer> rgb;    // à la taille de travail
+    std::unique_ptr<gpu::TensorBuffer> small;  // à la taille de RIFE, si small_
+    std::optional<SourceId> id;                // l'image ingérée, si elle l'est
+    std::uint32_t epoch = 0;
+    gpu::Reduction reduce;
+    std::uint64_t ticket = 0;  // mesures (left, id) lancées ; 0 : aucune
+    SourceId left;
+  };
+  Ahead ahead_;
+  bool ahead_scores_ = true;  // faux si le backend n'a pas scores_start
+  bool looks_ahead() const { return interpolates() && !drba(); }
+  std::expected<void, Refusal> allocate_ahead();
+  // L'image déjà ingérée en avance passe dans rgb_[current_] (et small_) ; faux sinon.
+  bool take_ahead(const DecodedFrame& frame, const gpu::IngestSpec& spec);
+  // Les mesures de la paire (image précédente, image en cours) : lancées en avance si elles l'ont été.
+  std::expected<gpu::PairScores, Refusal> pair_scores();
+  // La suivante de frame, si elle attend, ingérée et mesurée contre frame.
+  std::expected<void, Refusal> look_ahead(const DecodedFrame& frame, const gpu::IngestSpec& spec);
+  // rife_in_ à l'instant t pour la paire en cours : ses images y sont écrites une fois par paire,
+  // l'instant seul ensuite (rife_time), quand le backend le sait.
+  std::expected<void, Refusal> fill_rife_input(float t);
+  bool rife_in_pair_ = false;  // rife_in_ tient les images de la paire en cours
+  bool rife_time_ = true;      // faux si le backend n'a pas rife_time
   // GMFSS (upscale_gmfss.cpp) : ses tenseurs, rangés dans l'ordre de ses moteurs ; puis l'image
   // intermédiaire output + 1 sur outputs_ dans middle_.
   std::expected<void, Refusal> allocate_gmfss();
