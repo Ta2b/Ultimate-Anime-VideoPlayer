@@ -38,6 +38,14 @@ cmake --preset linux-prefix && cmake --build --preset linux-prefix
 ctest --preset linux-prefix
 ```
 
+Sous macOS (Apple Silicon, macOS 14+), Vulkan passe par MoltenVK ; le paquet `AJP.app` se fait
+ainsi, ou par le workflow « Release macOS » lancé à la main :
+
+```sh
+tools/deps/macos-from-source.sh ~/ajp-deps
+AJP_DEPS_PREFIX=~/ajp-deps tools/release/package-macos.sh   # build/package/ajp-macos-arm64.zip
+```
+
 ## Licence
 
 À décider (MPL-2.0 ou permissive, jamais GPL, car le lecteur charge TensorRT).

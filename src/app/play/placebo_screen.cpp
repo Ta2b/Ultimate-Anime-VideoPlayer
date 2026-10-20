@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <filesystem>
 #include <format>
 #include <optional>
 #include <string_view>
@@ -217,6 +218,16 @@ PlaceboScreen::Impl::~Impl() {
 std::expected<std::unique_ptr<PlaceboScreen>, Refusal> PlaceboScreen::open(const ScreenOptions& options) {
   auto impl = std::make_unique<Impl>();
   impl->channel = log_channel("app");
+#ifdef __APPLE__
+  // Paquet .app : le chargeur Vulkan est dans Contents/Frameworks, où dlopen ne cherche pas un
+  // nom seul ; SDL le reçoit par son chemin (SDL_GetBasePath rend Contents/Resources).
+  if (const char* base = SDL_GetBasePath(); base != nullptr) {
+    const std::filesystem::path loader =
+        std::filesystem::path(base) / ".." / "Frameworks" / "libvulkan.1.dylib";
+    std::error_code missing;
+    if (std::filesystem::exists(loader, missing)) (void)SDL_Vulkan_LoadLibrary(loader.string().c_str());
+  }
+#endif
   SDL_WindowFlags flags = SDL_WINDOW_VULKAN | SDL_WINDOW_RESIZABLE | SDL_WINDOW_HIGH_PIXEL_DENSITY;
   if (options.fullscreen) flags |= SDL_WINDOW_FULLSCREEN;
   impl->window = SDL_CreateWindow(options.title.c_str(), options.width, options.height, flags);

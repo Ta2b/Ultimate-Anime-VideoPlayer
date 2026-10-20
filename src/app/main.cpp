@@ -12,6 +12,7 @@ extern "C" {
 
 #include <cstdio>
 #include <filesystem>
+#include <string>
 #include <string_view>
 #include <vector>
 
@@ -23,6 +24,23 @@ namespace {
 
 std::filesystem::path sdl_path(const char* path) {
   return path != nullptr ? std::filesystem::path(path) : std::filesystem::path();
+}
+
+// Les modules des backends (bibliothèques MODULE de CMake : .so hors de Windows, macOS compris).
+#ifdef _WIN32
+constexpr std::string_view kModuleSuffix = ".dll";
+#else
+constexpr std::string_view kModuleSuffix = ".so";
+#endif
+
+// Les dossiers où chercher un module : celui de l'exécutable, puis, dans un paquet .app (où
+// SDL_GetBasePath rend Contents/Resources), Contents/PlugIns.
+std::vector<std::filesystem::path> module_dirs(const std::filesystem::path& base) {
+  std::vector<std::filesystem::path> dirs{base};
+#ifdef __APPLE__
+  dirs.push_back(base / ".." / "PlugIns");
+#endif
+  return dirs;
 }
 
 int fail(const ajp::Refusal& refusal) {
@@ -59,11 +77,16 @@ int main(int argc, char** argv) {
   };
   // TensorRT d'abord (cartes NVIDIA), puis Vulkan (AMD, Intel, et NVIDIA sans TensorRT) ; chacun à
   // côté de l'exécutable, puis dans l'arbre de construction.
-  paths.backends.push_back(base / "ajp_backend_tensorrt.so");
+  const auto beside = [&](std::string_view backend) {
+    for (const std::filesystem::path& dir : module_dirs(base))
+      paths.backends.push_back(
+          dir / (std::string("ajp_backend_") + std::string(backend) + std::string(kModuleSuffix)));
+  };
+  beside("tensorrt");
 #ifdef AJP_BACKEND_TENSORRT
   paths.backends.emplace_back(AJP_BACKEND_TENSORRT);
 #endif
-  paths.backends.push_back(base / "ajp_backend_vulkan.so");
+  beside("vulkan");
 #ifdef AJP_BACKEND_VULKAN
   paths.backends.emplace_back(AJP_BACKEND_VULKAN);
 #endif

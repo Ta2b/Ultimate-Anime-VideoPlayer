@@ -1,0 +1,44 @@
+name: Release macOS
+
+# Lancé à la main (ou par une étiquette v*) : les minutes macOS coûtent dix fois celles de Linux.
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Étiquette de la release où joindre le paquet (vide : artefact seulement)"
+        required: false
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+env:
+  AJP_DEPS_PREFIX: ${{ github.workspace }}/../ajp-deps
+
+jobs:
+  package:
+    name: AJP.app (Apple Silicon)
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/cache@v4
+        with:
+          path: ${{ env.AJP_DEPS_PREFIX }}
+          key: deps-macos-arm64-${{ hashFiles('tools/deps/macos-from-source.sh') }}
+      - run: tools/deps/macos-from-source.sh "$AJP_DEPS_PREFIX" "$RUNNER_TEMP/deps-src"
+      - run: tools/release/package-macos.sh "$RUNNER_TEMP/package"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ajp-macos-arm64
+          path: |
+            ${{ runner.temp }}/package/ajp-macos-arm64.zip
+            ${{ runner.temp }}/package/ajp-macos-arm64.zip.sha256
+      - name: Joindre à la release
+        if: github.event_name == 'push' || inputs.tag != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.event_name == 'push' && github.ref_name || inputs.tag }}
+        run: |
+          gh release upload "$TAG" "$RUNNER_TEMP/package/ajp-macos-arm64.zip" \
+            "$RUNNER_TEMP/package/ajp-macos-arm64.zip.sha256" --clobber

@@ -154,6 +154,27 @@
       "cacheVariables": {
         "CMAKE_CXX_FLAGS": "-fsanitize=address,undefined -fno-omit-frame-pointer -fno-sanitize-recover=all"
       }
+    },
+    {
+      "name": "macos-release",
+      "displayName": "macOS (Apple Silicon), Vulkan par MoltenVK, préfixe AJP_DEPS_PREFIX et Homebrew",
+      "inherits": "prefix",
+      "condition": {
+        "type": "equals",
+        "lhs": "${hostSystemName}",
+        "rhs": "Darwin"
+      },
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "AJP_BUILD_TESTS": "OFF",
+        "AJP_WARNINGS_AS_ERRORS": "OFF",
+        "CMAKE_OSX_DEPLOYMENT_TARGET": "14.0",
+        "CMAKE_OSX_ARCHITECTURES": "arm64",
+        "CMAKE_PREFIX_PATH": "$env{AJP_DEPS_PREFIX};/opt/homebrew"
+      },
+      "environment": {
+        "PKG_CONFIG_PATH": "$env{AJP_DEPS_PREFIX}/lib/pkgconfig:$env{AJP_DEPS_PREFIX}/share/pkgconfig:/opt/homebrew/lib/pkgconfig:$penv{PKG_CONFIG_PATH}"
+      }
     }
   ],
   "buildPresets": [
@@ -212,6 +233,10 @@
     {
       "name": "linux-prefix-asan-core",
       "configurePreset": "linux-prefix-asan-core"
+    },
+    {
+      "name": "macos-release",
+      "configurePreset": "macos-release"
     }
   ],
   "testPresets": [
