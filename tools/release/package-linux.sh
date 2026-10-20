@@ -137,8 +137,10 @@ if [ -f "$TRT_MODULE" ]; then
   TRTEXEC="$(sed -n 's/^AJP_TRTEXEC:[A-Z]*=//p' "$BUILD/CMakeCache.txt")"
   [ -n "$TRTEXEC" ] && [ -x "$TRTEXEC" ] && cp "$TRTEXEC" "$dir/trtexec"
   copy_deps "$dir" "$dir"/*
-  # Les ressources du constructeur, ouvertes par libnvinfer selon l'architecture du GPU.
-  copy_beside "$dir" "$dir/ajp_backend_tensorrt.so" libnvinfer 'libnvinfer_builder_resource*'
+  # Les ressources du constructeur, ouvertes par libnvinfer selon l'architecture du GPU, et les
+  # bibliothèques que trtexec ouvre lui-même (dlopen, invisibles pour ldd) : greffons et lecteur ONNX.
+  copy_beside "$dir" "$dir/ajp_backend_tensorrt.so" libnvinfer 'libnvinfer_builder_resource*' \
+    'libnvinfer_plugin.so.[0-9]*' 'libnvonnxparser.so.[0-9]*'
   for f in "$dir"/*; do [ -e "$STAGE/lib/$(basename "$f")" ] && [ "$f" != "$dir/ajp_backend_tensorrt.so" ] && rm "$f"; done
   TRT_VERSION="$(basename "$(ls "$dir"/libnvinfer.so.* | sort | tail -1)" | sed 's/^libnvinfer\.so\.//')"
   engine_package tensorrt "${TRT_VERSION:-$VERSION}" \
