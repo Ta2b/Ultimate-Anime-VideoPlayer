@@ -249,6 +249,7 @@ std::expected<void, Refusal> read_graph(Bytes data, OnnxSummary& summary) {
         if (field.number == 5) initializers.insert(as_text(item.bytes));
       }
       if (!inner.ok()) return malformed("nœud ou initialiseur ONNX malformé");
+      if (field.number == 1) ++summary.nodes;
     } else if (field.number == 11) {
       OnnxInput input;
       if (!read_input(field.bytes, input)) return malformed("entrée ONNX malformée");

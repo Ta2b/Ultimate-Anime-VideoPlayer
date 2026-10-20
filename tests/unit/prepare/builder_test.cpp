@@ -139,8 +139,10 @@ TEST_CASE("TrtexecBuilder : RIFE garde ses îlots FP32, drapeaux TRT 11 retirés
   auto progress = steps.progress();
   REQUIRE(TrtexecBuilder(bench.config).build(bench.model, shapes, progress));
   const auto args = bench.logged_args(shapes);
+  // Petit graphe : niveau 5 (kTunedMaxNodes) ; les drapeaux d'E/S et de tactiques retirés.
   CHECK(std::vector(args.begin() + 2, args.end() - 1) ==
-        std::vector<std::string>{"--stronglyTyped", "--optShapes=input:1x11x1088x1920", "--skipInference"});
+        std::vector<std::string>{"--builderOptimizationLevel=5", "--stronglyTyped",
+                                 "--optShapes=input:1x11x1088x1920", "--skipInference"});
   CHECK(bench.plan(shapes).command.removed.size() == 3);
 }
 

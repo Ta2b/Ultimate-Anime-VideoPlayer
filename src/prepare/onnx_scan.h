@@ -37,6 +37,7 @@ struct OnnxSummary {
   std::vector<OnnxInput> inputs;                // entrées du graphe, initialiseurs exclus
   std::vector<std::string> external_locations;  // triés, sans doublon
   std::size_t grid_samples = 0;                 // nœuds GridSample du graphe principal
+  std::size_t nodes = 0;                        // nœuds du graphe principal
 };
 
 // Emplacements de tous les poids externes (graphes imbriqués, tenseurs creux et

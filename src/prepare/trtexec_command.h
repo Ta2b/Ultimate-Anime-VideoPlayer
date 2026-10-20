@@ -31,6 +31,8 @@ enum class Recipe : std::uint8_t {
   // en îlots FP32 (tools/convert_rife_fp16.py du fork). --stronglyTyped fait
   // suivre ces types au constructeur au lieu de tout passer en FP16.
   Fp32Islands,
+  // Le même, petit graphe : niveau d'optimisation 5 en plus (model_source.h, kTunedMaxNodes).
+  Fp32IslandsTuned,
 };
 
 // « 1x3x1080x1920 », l'ordre NCHW de trtexec.

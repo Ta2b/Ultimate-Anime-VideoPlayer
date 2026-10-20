@@ -119,7 +119,7 @@ std::expected<Recipe, Refusal> recipe_for(const gpu::ModelSpec& model, const Onn
         RefusalCode::ModelMismatch,
         model.id + " : un graphe à GridSample se livre en FP16 avec ses îlots FP32 (convert_rife_fp16.py)");
   }
-  return Recipe::Fp32Islands;
+  return summary.nodes <= kTunedMaxNodes ? Recipe::Fp32IslandsTuned : Recipe::Fp32Islands;
 }
 
 std::expected<std::optional<gpu::ShapeSet>, Refusal> profile_shapes(const OnnxInput& input,

@@ -74,7 +74,9 @@ std::string engine_settings(Recipe recipe, std::string_view input_name,
       if (shapes && !is_fixed(*shapes)) return "--builderOptimizationLevel=5 --skipInference" + profile;
       return "--builderOptimizationLevel=5" + profile + " --skipInference";
     case Recipe::Fp32Islands:
-      return "--stronglyTyped" + profile +
+    case Recipe::Fp32IslandsTuned:
+      return std::string(recipe == Recipe::Fp32IslandsTuned ? "--builderOptimizationLevel=5 " : "") +
+             "--stronglyTyped" + profile +
              " --inputIOFormats=fp16:chw --outputIOFormats=fp16:chw"
              " --tacticSources=-CUDNN,-CUBLAS,-CUBLAS_LT --skipInference";
   }

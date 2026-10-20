@@ -29,6 +29,11 @@ TEST_CASE("engine_settings : chaînes du fork pour SPAN et RIFE", "[prepare][trt
       engine_settings(Recipe::Fp32Islands, "input", fixed(11, 1088, 1920)) ==
       "--stronglyTyped --optShapes=input:1x11x1088x1920 --inputIOFormats=fp16:chw --outputIOFormats=fp16:chw "
       "--tacticSources=-CUDNN,-CUBLAS,-CUBLAS_LT --skipInference");
+  // Petit RIFE : le niveau 5 devant, le reste inchangé.
+  CHECK(engine_settings(Recipe::Fp32IslandsTuned, "input", fixed(11, 1088, 1920)) ==
+        "--builderOptimizationLevel=5 --stronglyTyped --optShapes=input:1x11x1088x1920 "
+        "--inputIOFormats=fp16:chw --outputIOFormats=fp16:chw "
+        "--tacticSources=-CUDNN,-CUBLAS,-CUBLAS_LT --skipInference");
 }
 
 TEST_CASE("engine_settings : profil dynamique et ONNX statique", "[prepare][trtexec]") {

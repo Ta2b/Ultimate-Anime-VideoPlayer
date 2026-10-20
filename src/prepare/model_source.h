@@ -39,7 +39,12 @@ std::expected<ModelSource, Refusal> read_model(const gpu::ModelSpec& model, std:
 // être celui que ModelSpec annonce.
 std::expected<void, Refusal> check_precision(const gpu::ModelSpec& model, const OnnxInput& input);
 
-// Un graphe à GridSample est un RIFE : livré en FP16 avec ses îlots FP32.
+// Un graphe à GridSample est un RIFE : livré en FP16 avec ses îlots FP32. Petit (au plus
+// kTunedMaxNodes nœuds : RIFE, DistilDRBA à 1 000-1 600 nœuds), il se construit au niveau
+// d'optimisation 5 : −12 % sur RIFE 4.25 pour 115 s de construction au lieu de 23, mesuré sur une
+// RTX 4070 Ti. La paire GMFSS (22 500 nœuds, l'attention par fenêtres de GMFlow) y perd 6 minutes
+// de construction sans rien gagner.
+inline constexpr std::size_t kTunedMaxNodes = 2000;
 std::expected<Recipe, Refusal> recipe_for(const gpu::ModelSpec& model, const OnnxSummary& summary);
 
 // Formes du profil de construction. Une entrée entièrement statique n'a pas de

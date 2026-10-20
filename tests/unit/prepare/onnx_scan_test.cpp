@@ -21,6 +21,7 @@ TEST_CASE("scan_onnx : entrées, types, dimensions et GridSample", "[prepare][on
   CHECK(summary->inputs[0].dims == std::vector<std::int64_t>{1, 11, -1, -1});
   CHECK_FALSE(summary->inputs[0].is_static());
   CHECK(summary->grid_samples == 2);
+  CHECK(summary->nodes == 4);
   CHECK(summary->external_locations.empty());
 }
 
