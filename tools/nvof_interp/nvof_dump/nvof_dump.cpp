@@ -6,11 +6,10 @@
 //
 // Les réglages sont ceux que le lecteur prendra : grille 4, qualité la plus haute (SLOW), sans
 // indices temporels (les paires d'entraînement ne se suivent pas). Une session par taille.
-#include <cuda.h>
-#include <dlfcn.h>
-
 #include <cstdint>
 #include <cstdio>
+#include <cuda.h>
+#include <dlfcn.h>
 #include <fstream>
 #include <iostream>
 #include <memory>
@@ -72,13 +71,18 @@ struct Session {
     init.mode = NV_OF_MODE_OPTICALFLOW;
     init.perfLevel = NV_OF_PERF_LEVEL_SLOW;
     ok(api, handle, api.calls.nvOFInit(handle, &init), "nvOFInit");
-    const NV_OF_BUFFER_DESCRIPTOR luma{.width = w, .height = h, .bufferUsage = NV_OF_BUFFER_USAGE_INPUT,
+    const NV_OF_BUFFER_DESCRIPTOR luma{.width = w,
+                                       .height = h,
+                                       .bufferUsage = NV_OF_BUFFER_USAGE_INPUT,
                                        .bufferFormat = NV_OF_BUFFER_FORMAT_GRAYSCALE8};
-    const NV_OF_BUFFER_DESCRIPTOR vectors{.width = cells(w), .height = cells(h),
+    const NV_OF_BUFFER_DESCRIPTOR vectors{.width = cells(w),
+                                          .height = cells(h),
                                           .bufferUsage = NV_OF_BUFFER_USAGE_OUTPUT,
                                           .bufferFormat = NV_OF_BUFFER_FORMAT_SHORT2};
-    for (auto [desc, into] : {std::pair{&luma, &input}, std::pair{&luma, &reference}, std::pair{&vectors, &flow}})
-      ok(api, handle, api.calls.nvOFCreateGPUBufferCuda(handle, desc, NV_OF_CUDA_BUFFER_TYPE_CUDEVICEPTR, into),
+    for (auto [desc, into] :
+         {std::pair{&luma, &input}, std::pair{&luma, &reference}, std::pair{&vectors, &flow}})
+      ok(api, handle,
+         api.calls.nvOFCreateGPUBufferCuda(handle, desc, NV_OF_CUDA_BUFFER_TYPE_CUDEVICEPTR, into),
          "nvOFCreateGPUBufferCuda");
   }
   ~Session() {
