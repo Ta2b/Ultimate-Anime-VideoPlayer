@@ -1,6 +1,7 @@
 // Opérations sur les formes : Shape, Gather, Reshape, Unsqueeze, Squeeze, Transpose.
 // Reshape, Unsqueeze et Squeeze ne déplacent aucune donnée : seule la forme change.
 #include <algorithm>
+#include <cmath>
 #include <format>
 #include <numeric>
 
@@ -225,6 +226,54 @@ Evaluated eval_transpose(const Node& node, std::span<const Value* const> in,
     source[pos] = at;
   });
   return std::vector<Value>{gather_elements(data, outs[0], source)};
+}
+
+// Range : start + k × delta pour k < max(ceil((limit − start) / delta), 0). La longueur dépend des
+// valeurs : les trois bornes doivent être connues dès l'inférence (pliées depuis les formes).
+namespace {
+
+std::expected<std::int64_t, Refusal> range_length(const Node& node, std::span<const Operand> in) {
+  for (std::size_t k = 0; k < 3; ++k) {
+    if (in[k].type != in[0].type) return graph_error(node, "bornes de types différents");
+    if (element_count(*in[k].dims) != 1) return graph_error(node, "bornes scalaires attendues");
+    if (in[k].value == nullptr) return unsupported_error(node, "bornes calculées pendant l'exécution");
+  }
+  double count = 0;
+  if (in[0].type == DataType::I64) {
+    const std::int64_t delta = in[2].value->i[0];
+    if (delta == 0) return graph_error(node, "pas nul");
+    count =
+        std::ceil(static_cast<double>(in[1].value->i[0] - in[0].value->i[0]) / static_cast<double>(delta));
+  } else {
+    const float delta = in[2].value->f[0];
+    if (delta == 0.0F || !std::isfinite(delta)) return graph_error(node, "pas nul ou non fini");
+    count = std::ceil((static_cast<double>(in[1].value->f[0]) - in[0].value->f[0]) / delta);
+  }
+  if (!std::isfinite(count) || count > static_cast<double>(kMaxDim))
+    return shape_error(node, "trop d'éléments");
+  return std::max<std::int64_t>(0, static_cast<std::int64_t>(count));
+}
+
+}  // namespace
+
+Inferred infer_range(const Node& node, std::span<const Operand> in) {
+  auto length = range_length(node, in);
+  if (!length) return std::unexpected(length.error());
+  return std::vector<OutputInfo>{{.type = in[0].type, .dims = Dims{*length}}};
+}
+
+Evaluated eval_range(const Node& /*node*/, std::span<const Value* const> in,
+                     std::span<const OutputInfo> outs) {
+  Value out = make_output(outs[0]);
+  if (in[0]->type == DataType::I64) {
+    for (std::size_t k = 0; k < out.i.size(); ++k)
+      out.i[k] = in[0]->i[0] + (static_cast<std::int64_t>(k) * in[2]->i[0]);
+  } else {
+    // Comme ONNX Runtime : start + k × delta, en float.
+    for (std::size_t k = 0; k < out.f.size(); ++k)
+      out.f[k] = in[0]->f[0] + (static_cast<float>(k) * in[2]->f[0]);
+  }
+  return std::vector<Value>{std::move(out)};
 }
 
 }  // namespace ajp::gpu::ir::detail

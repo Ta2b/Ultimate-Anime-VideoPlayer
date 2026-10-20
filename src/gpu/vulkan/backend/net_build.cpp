@@ -40,12 +40,25 @@ std::expected<void, Refusal> check_interface(const ir::Graph& graph) {
 std::expected<ir::Graph, Refusal> prepare_graph(const BuildRequest& request, const Target& target) {
   auto graph = ir::load_onnx_file(request.onnx);
   if (!graph) return std::unexpected(graph.error());
-  if (graph->inputs.size() != 1) {
-    return refuse(RefusalCode::InputMismatch, std::format("{} : {} entrées, le moteur Vulkan en prend une",
-                                                          request.model_id, graph->inputs.size()));
+  if (graph->inputs.empty())
+    return refuse(RefusalCode::InputMismatch, std::format("{} : aucune entrée", request.model_id));
+  // Une entrée prend la forme demandée ; plusieurs (GMFSS, DistilDRBA) gardent celles du modèle,
+  // que le lecteur fige avant la construction (derived_model.h).
+  std::vector<ir::InputShape> shapes;
+  for (const ir::TensorId id : graph->inputs) {
+    const ir::Tensor& input = graph->tensors[id];
+    if (graph->inputs.size() == 1) {
+      shapes.push_back({.name = input.name, .dims = request.input_shape});
+      break;
+    }
+    if (std::ranges::any_of(input.dims, [](std::int64_t d) { return d < 0; })) {
+      return refuse(RefusalCode::InputMismatch,
+                    std::format("{} : entrée {} aux dimensions libres ({}), un réseau à plusieurs entrées "
+                                "doit être figé",
+                                request.model_id, input.name, ir::format_dims(input.dims)));
+    }
+    shapes.push_back({.name = input.name, .dims = input.dims});
   }
-  const std::vector<ir::InputShape> shapes{
-      {.name = graph->tensors[graph->inputs[0]].name, .dims = request.input_shape}};
   if (auto ok = ir::infer_shapes(*graph, shapes); !ok) return std::unexpected(ok.error());
   // Les ConvTranspose deviennent des Conv là où celles-ci passent par les matrices coopératives
   // (au plus 16 tuiles de 16 canaux, net_lower_conv.cpp).

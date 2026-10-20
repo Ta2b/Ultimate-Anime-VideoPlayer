@@ -89,19 +89,38 @@ bool try_rearrangement(Graph& graph, std::size_t first) {
 
 int fold_grid_transposes(Graph& graph) {
   const std::vector<std::size_t> producer = producers(graph);
+  const auto readers = consumers(graph);
   int folded = 0;
   for (Node& node : graph.nodes) {
     auto* attrs = std::get_if<GridSampleAttrs>(&node.attrs);
     if (node.op != OpKind::GridSample || attrs == nullptr || attrs->grid_nchw || node.inputs.size() < 2)
       continue;
-    const std::size_t from = producer[node.inputs[1]];
+    // Des Cast peuvent séparer la grille de son Transpose (float16 vers float, convert_rife_fp16) :
+    // élément par élément, ils passent avant lui, chacun lu par le suivant seul.
+    std::vector<std::size_t> casts;
+    TensorId grid = node.inputs[1];
+    std::size_t from = producer[grid];
+    while (from != kNoNode && graph.nodes[from].op == OpKind::Cast && readers[grid].size() == 1 &&
+           !is_graph_output(graph, grid)) {
+      casts.push_back(from);
+      grid = graph.nodes[from].inputs[0];
+      from = producer[grid];
+    }
     if (from == kNoNode || graph.nodes[from].op != OpKind::Transpose) continue;
+    if (!casts.empty() && (readers[grid].size() != 1 || is_graph_output(graph, grid))) continue;
     const Node& transpose = graph.nodes[from];
     const auto* perm = std::get_if<TransposeAttrs>(&transpose.attrs);
     const Tensor& source = graph.tensors[transpose.inputs[0]];
     if (perm == nullptr || perm->perm != Dims{0, 2, 3, 1} || source.dims.size() != 4 || source.dims[1] != 2)
       continue;
-    node.inputs[1] = transpose.inputs[0];
+    const TensorId src = transpose.inputs[0];
+    const Dims dims = source.dims;
+    if (casts.empty()) {
+      node.inputs[1] = src;
+    } else {
+      graph.nodes[casts.back()].inputs[0] = src;
+      for (const std::size_t c : casts) graph.tensors[graph.nodes[c].outputs[0]].dims = dims;
+    }
     attrs->grid_nchw = true;
     ++folded;
   }

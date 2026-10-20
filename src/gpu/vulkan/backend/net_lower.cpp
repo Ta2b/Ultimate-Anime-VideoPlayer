@@ -75,6 +75,8 @@ std::uint32_t activation_code(ir::OpKind op) {
       return 5;
     case ir::OpKind::Clip:
       return 6;
+    case ir::OpKind::Reciprocal:
+      return 7;
     default:
       return 0;
   }
@@ -167,6 +169,7 @@ std::expected<void, Refusal> Lowerer::node(std::size_t index, const KernelChoice
     case ir::OpKind::Sigmoid:
     case ir::OpKind::Tanh:
     case ir::OpKind::Clip:
+    case ir::OpKind::Reciprocal:
     case ir::OpKind::Cast:
     case ir::OpKind::Identity:
     case ir::OpKind::Reshape:

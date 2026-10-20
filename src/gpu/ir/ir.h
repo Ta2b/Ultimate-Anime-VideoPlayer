@@ -83,6 +83,8 @@ enum class OpKind : std::uint8_t {
   GridSample,
   ReduceMean,
   AveragePool,
+  Reciprocal,
+  Range,  // plié : ses bornes viennent des formes, connues avant la construction
 };
 
 enum class AutoPad : std::uint8_t { NotSet, SameUpper, SameLower, Valid };

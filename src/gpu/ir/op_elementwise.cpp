@@ -115,6 +115,8 @@ float activate(const Node& node, float x, float lo, float hi) {
       return 1.0F / (1.0F + std::exp(-x));
     case OpKind::Tanh:
       return std::tanh(x);
+    case OpKind::Reciprocal:
+      return 1.0F / x;
     case OpKind::Clip:
       return std::fmin(std::fmax(x, lo), hi);
     default:  // Identity

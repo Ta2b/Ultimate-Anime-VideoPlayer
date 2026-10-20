@@ -1,6 +1,6 @@
 #version 450
 // Opération élément par élément d'une entrée : copie (Identity, Cast, Reshape), Relu,
-// LeakyRelu, Sigmoid, Tanh, Clip. Mêmes dimensions logiques en entrée et en sortie, sauf en
+// LeakyRelu, Sigmoid, Tanh, Clip, Reciprocal. Mêmes dimensions logiques en entrée et en sortie, sauf en
 // mode plat (deux tenseurs Nchw de même nombre d'éléments : Reshape), où l'indice linéaire est
 // celui des deux. Référence : gpu/ir/op_elementwise.cpp (eval_unary).
 #extension GL_GOOGLE_include_directive : require

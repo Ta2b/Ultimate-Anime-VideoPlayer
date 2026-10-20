@@ -14,7 +14,7 @@ namespace ajp::gpu::ir::detail {
 
 // op_elementwise.cpp
 AJP_IR_OP(binary);  // Add, Sub, Mul, Div, Mod, PRelu
-AJP_IR_OP(unary);   // Relu, LeakyRelu, Sigmoid, Tanh, Clip, Identity, Cast
+AJP_IR_OP(unary);   // Relu, LeakyRelu, Sigmoid, Tanh, Clip, Reciprocal, Identity, Cast
 
 // op_window.cpp
 AJP_IR_OP(conv);
@@ -26,6 +26,7 @@ AJP_IR_OP(shape);
 AJP_IR_OP(gather);
 AJP_IR_OP(reshape);  // Reshape, Unsqueeze, Squeeze
 AJP_IR_OP(transpose);
+AJP_IR_OP(range);
 
 // op_slice.cpp
 AJP_IR_OP(concat);

@@ -14,8 +14,10 @@ avec u = tau / 2, dans ]0, 1[ comme l'instant que rife_input accepte. Sortie : o
 H et W sont libres, multiples de 64 (128 avec --scale 0.5).
 
 forward de DistilDRBA choisit le côté (img0 ou img2) par un if Python sur tau : il est réécrit
-ici en sélection sur tenseurs, les blocs et l'encodeur du dépôt restant tels quels. Le graphe est
-comparé au forward d'origine pour tau des deux côtés, puis converti en FP16 avec les règles de
+ici en sélection sur tenseurs, les blocs et l'encodeur du dépôt restant tels quels. Le graphe se
+limite aux opérateurs du moteur Vulkan (gpu/ir) : ni comparaison (le côté est un Clip), ni
+ConstantOfShape (le plan de tau est pris dans l'entrée), Range sur des entiers. Il est comparé au
+forward d'origine pour tau des deux côtés, puis converti en FP16 avec les règles de
 convert_rife_fp16.py (grille, GridSample et Resize en FP32).
 
     git clone https://github.com/routineLife1/DistilDRBA
@@ -63,8 +65,8 @@ def load_ifnet(repo: Path, weights: Path):
 def warp(image, flow):
     """warplayer.warp du dépôt, la grille calculée depuis la forme (dimensions libres)."""
     _, _, h, w = flow.shape
-    gx = torch.arange(w, dtype=flow.dtype).view(1, 1, 1, w) * (2.0 / (w - 1)) - 1.0
-    gy = torch.arange(h, dtype=flow.dtype).view(1, 1, h, 1) * (2.0 / (h - 1)) - 1.0
+    gx = torch.arange(w).to(flow.dtype).view(1, 1, 1, w) * (2.0 / (w - 1)) - 1.0
+    gy = torch.arange(h).to(flow.dtype).view(1, 1, h, 1) * (2.0 / (h - 1)) - 1.0
     x = gx + flow[:, 0:1] * (2.0 / (image.shape[3] - 1))
     y = gy + flow[:, 1:2] * (2.0 / (image.shape[2] - 1))
     grid = torch.cat([x, y], 1).permute(0, 2, 3, 1)
@@ -90,18 +92,21 @@ class Exported(nn.Module):
         scales = self.scales
         encode_scale = min(1 / scales[-1], 1)
         f0, f1, f2 = (self.net.encode(resize(x, encode_scale)) for x in (img0, img1, img2))
-        # 0,5 ≤ tau < 1 : vers img0 ; 1 < tau ≤ 1,5 : vers img2 (le if de forward).
-        before = (tau < 1.0).to(img0.dtype)
+        # 0,5 ≤ tau < 1 : vers img0 ; 1 < tau ≤ 1,5 : vers img2 (le if de forward). Le lecteur
+        # n'envoie jamais tau = 1, et en float16 |1 − tau| ≥ 2^-11 : le Clip vaut 0 ou 1.
+        before = torch.clamp((1.0 - tau) * 4096.0, 0.0, 1.0)
         inp0, inp1 = img1, before * img0 + (1 - before) * img2
         h0, h1 = f1, before * f0 + (1 - before) * f2
         blocks = [getattr(self.net, f"block{k}") for k in range(len(scales))]
         flow = mask = feat = tmap = None
         for k, s in enumerate(scales):
             current = 1 / s
+            # Le plan de tau à cette échelle, un pixel sur s du plan 6 de l'entrée (u = tau / 2).
+            step = max(int(s), 1)
+            plane = pair01[:, 6:7, ::step, ::step] * 2.0
             if flow is None:
                 f0s, f1s, f2s = (resize(x, current / encode_scale) for x in (f0, f1, f2))
                 i0s, i1s, i2s = (resize(x, current) for x in (img0, img1, img2))
-                plane = torch.zeros_like(i0s[:, :1]) + tau
                 out = blocks[k](torch.cat((i0s, i1s, i2s, f0s, f1s, f2s, plane), 1))
             else:
                 h0s, h1s = (resize(x, current / encode_scale) for x in (h0, h1))
@@ -113,7 +118,6 @@ class Exported(nn.Module):
                 else:
                     i0s, i1s, i2s = (resize(x, current) for x in (img0, img1, img2))
                     f0s, f1s, f2s = (resize(x, current / encode_scale) for x in (f0, f1, f2))
-                    plane = torch.zeros_like(i0s[:, :1]) + tau
                     out = blocks[k](torch.cat((i0s, i1s, i2s, f0s, f1s, f2s, wi0, wi1, wf0, wf1, plane, mask, feat), 1),
                                     flow)
             if self.arch == "v1":
