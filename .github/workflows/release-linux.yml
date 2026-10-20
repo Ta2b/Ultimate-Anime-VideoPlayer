@@ -93,6 +93,7 @@ jobs:
           name: ajp-linux-x64
           path: |
             ${{ runner.temp }}/package/ajp-linux-x64.tar.gz
+            ${{ runner.temp }}/package/engines.lock
             ${{ runner.temp }}/package/SHA256SUMS
           compression-level: 0
       - name: Préversion
@@ -102,7 +103,7 @@ jobs:
         run: |
           notes="tools/release/notes/$GITHUB_REF_NAME.md"
           [ -f "$notes" ] || notes=/dev/null
-          assets=("$RUNNER_TEMP"/package/ajp-*.tar.gz "$RUNNER_TEMP/package/SHA256SUMS")
+          assets=("$RUNNER_TEMP"/package/ajp-*.tar.gz "$RUNNER_TEMP/package/engines.lock" "$RUNNER_TEMP/package/SHA256SUMS")
           if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
             gh release upload "$GITHUB_REF_NAME" --clobber "${assets[@]}"
           else

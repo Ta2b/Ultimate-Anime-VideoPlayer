@@ -7,7 +7,11 @@
 #   ajp-engine-migraphx-linux-x64.tar.gz  backend MIGraphX (AMD ; ROCm du système)
 #   ajp-engine-openvino-linux-x64.tar.gz  backend OpenVINO, son runtime et son greffon GPU (Intel)
 #
-# RTX HDR n'a pas de paquet : engines.lock dit où le lecteur télécharge le SDK Maxine depuis NGC.
+#   ajp-engine-maxine_vfx-linux-x64.tar.gz  RTX HDR : les bibliothèques TrueHDR du SDK NVIDIA, intactes
+#
+# Une release peut réunir deux constructions : la CI (OpenVINO, MIGraphX) et un poste NVIDIA
+# (TensorRT, RTX HDR). AJP_ENGINES_LOCK=<fichier ou lien de l'engines.lock de l'autre> reprend ses
+# moteurs non construits ici, dont les paquets restent ceux qu'elle a joints à la release.
 #
 # L'écran de bienvenue propose les moteurs qui conviennent au GPU ; les cochés se téléchargent
 # depuis la release (engine_install.h). Chaque moteur n'est empaqueté que s'il a été construit :
@@ -202,7 +206,26 @@ if [ -n "${AJP_MAXINE_RESOURCE:-}" ]; then
   } >> "$LOCK"
 fi
 
+if [ -n "${AJP_ENGINES_LOCK:-}" ]; then
+  other="$AJP_ENGINES_LOCK"
+  case "$other" in
+    http://*|https://*) other="$OUT/engines-autre.lock"; curl -fsSL "$AJP_ENGINES_LOCK" -o "$other" ;;
+  esac
+  have="$(sed -n 's/^id = "\(.*\)"$/\1/p' "$LOCK" | tr '\n' ' ')"
+  # Les blocs [[engine]] de l'autre dont l'id manque ici ; ses autres tables ne se reprennent pas.
+  awk -v have="$have" '
+    BEGIN { n = split(have, ids, " "); for (i = 1; i <= n; i++) skip[ids[i]] = 1 }
+    function flush() { if (block != "" && !(id in skip)) printf "\n%s", block; block = ""; id = "" }
+    /^\[\[engine\]\]$/ { flush(); block = $0 "\n"; inside = 1; next }
+    /^\[/ { flush(); inside = 0; next }
+    inside && /^id = / { id = $3; gsub(/"/, "", id) }
+    inside && NF { block = block $0 "\n" }
+    END { flush() }' "$other" >> "$LOCK"
+  echo "moteurs d'engines.lock : $(sed -n 's/^id = "\(.*\)"$/\1/p' "$LOCK" | tr '\n' ' ')"
+fi
+cp "$LOCK" "$OUT/engines.lock"
+
 tar -C "$OUT" -czf "$OUT/ajp-linux-x64.tar.gz" ajp-linux-x64
-( cd "$OUT" && sha256sum ajp-*.tar.gz > SHA256SUMS )
+( cd "$OUT" && sha256sum ajp-*.tar.gz engines.lock > SHA256SUMS )
 echo "lecteur : $OUT/ajp-linux-x64.tar.gz"
-echo "à joindre à la release $TAG : $OUT/ajp-*.tar.gz et SHA256SUMS"
+echo "à joindre à la release $TAG : $OUT/ajp-*.tar.gz, engines.lock et SHA256SUMS"
