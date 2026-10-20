@@ -74,6 +74,7 @@ int main(int argc, char** argv) {
   ajp::app::play::PlayerPaths paths{
       .home = sdl_path(SDL_GetUserFolder(SDL_FOLDER_HOME)),
       .engines = data / "engines",
+      .engine_index = base / "engines.lock",
   };
   // TensorRT d'abord (cartes NVIDIA), MIGraphX (AMD) et OpenVINO (Intel), qui refusent les autres
   // fabricants, puis Vulkan (le recours partout) ; chacun à côté de l'exécutable, puis dans l'arbre

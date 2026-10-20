@@ -30,8 +30,15 @@ std::optional<double> content_peak_nits(SDL_Window* window) {
 
 // Ce qui est sur ce poste pour l'écran de bienvenue : les backends TensorRT, MIGraphX et OpenVINO,
 // le SDK Maxine importé ou à importer.
-EnginesHere engines_here(const PlayOptions& options, const PlayerPaths& paths) {
+EnginesHere engines_here(const PlayOptions& options, const PlayerPaths& paths, const EngineCatalog& catalog) {
   EnginesHere here;
+  for (const core::EnginePackage& package : catalog.packages) {
+    here.downloads.push_back(EngineDownload{.id = package.engine,
+                                            .installed = installed(catalog, package),
+                                            .bytes = package.size,
+                                            .license = package.license,
+                                            .missing = missing_prerequisite(package.engine).value_or("")});
+  }
   std::error_code error;
   for (const std::filesystem::path& backend : paths.backends) {
     if (!std::filesystem::exists(backend, error)) continue;

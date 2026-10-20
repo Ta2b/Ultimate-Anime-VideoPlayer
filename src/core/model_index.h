@@ -74,6 +74,8 @@ struct EnginePackage {
   std::string sha256;
   std::uint64_t size = 0;
   std::string version;  // « 11.3.0 » : lettres, chiffres, « . », « _ », « - »
+  // Licence à accepter avant le téléchargement (https), vide si aucune : TensorRT (NVIDIA).
+  std::string license;
   friend bool operator==(const EnginePackage&, const EnginePackage&) = default;
 };
 
@@ -85,7 +87,8 @@ inline constexpr Range<std::int64_t> kDownloadSize{1, 64LL << 30};  // 64 Gio au
 
 // [[model]] id, url, sha256, size, license, profiles ; un id au plus une fois.
 std::expected<std::vector<ModelEntry>, Refusal> parse_models_lock(std::string_view toml_text);
-// [[engine]] id, platform, url, sha256, size, version ; un couple (id, platform) au plus une fois.
+// [[engine]] id, platform, url, sha256, size, version, license (facultative) ; un couple (id, platform)
+// au plus une fois.
 std::expected<std::vector<EnginePackage>, Refusal> parse_engine_index(std::string_view toml_text);
 
 const ModelEntry* find_model(std::span<const ModelEntry> lock, std::string_view id);
@@ -102,14 +105,14 @@ std::expected<void, Refusal> verify_file(const std::filesystem::path& path, std:
 struct InstallLayout {
   Os os = Os::Windows;
   std::filesystem::path models;     // <données>/models/<id>.onnx
-  std::filesystem::path engines;    // <données>/engines/<moteur>/<version>/
+  std::filesystem::path engines;    // <données>/backends/<moteur>/<version>/ (engines/ : le cache)
   std::filesystem::path downloads;  // <données>/downloads/<sha256>.part, jamais lu comme installé
 };
 
 InstallLayout install_layout(Os os, const std::filesystem::path& user_data_dir);
 std::filesystem::path model_path(const InstallLayout& layout, const ModelEntry& model);
 std::filesystem::path engine_dir(const InstallLayout& layout, const EnginePackage& package);
-// Bibliothèque du backend dans engine_dir : ajp_backend_<nom>.dll, .so ou .dylib selon l'OS.
+// Bibliothèque du backend dans engine_dir : ajp_backend_<nom>.dll sous Windows, .so ailleurs.
 std::filesystem::path backend_library(const InstallLayout& layout, const EnginePackage& package);
 std::filesystem::path download_path(const InstallLayout& layout, std::string_view sha256);
 

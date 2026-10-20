@@ -21,7 +21,8 @@ struct PlayerPaths {
   std::filesystem::path home;     // dossier de l'utilisateur (SDL_GetUserFolder)
   std::filesystem::path engines;  // moteurs construits (SDL_GetPrefPath)
   std::vector<std::filesystem::path>
-      backends;  // ajp_backend_tensorrt.so, ajp_backend_vulkan.so…, par préférence
+      backends;                        // ajp_backend_tensorrt.so, ajp_backend_vulkan.so…, par préférence
+  std::filesystem::path engine_index;  // engines.lock livré avec le lecteur (engine_install.h)
 };
 
 // Lit le fichier jusqu'à la fin, à « q » ou à la fermeture de la fenêtre. SDL doit être

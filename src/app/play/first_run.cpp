@@ -82,6 +82,13 @@ void engine_row(EngineRow& row) {
   }
   ImGui::Indent(ImGui::GetFrameHeightWithSpacing());
   note(std::format("{} · {}", reason_label(row.offer.reason), row.status));
+  // La licence d'un moteur coché à télécharger : lue et acceptée par l'utilisateur, sinon le
+  // moteur reste hors du choix.
+  if (row.download && row.chosen && !row.license.empty()) {
+    ImGui::Checkbox("J'accepte sa licence", &row.license_accepted);
+    ImGui::SameLine();
+    ImGui::TextLinkOpenURL("Lire la licence", row.license.c_str());
+  }
   ImGui::Unindent(ImGui::GetFrameHeightWithSpacing());
   ImGui::Spacing();
   ImGui::PopID();
@@ -100,6 +107,43 @@ void profile_choice(ProfilesView& view) {
     ImGui::Unindent(ImGui::GetFrameHeightWithSpacing());
     ImGui::PopID();
   }
+}
+
+// Une ligne d'un moteur téléchargeable : installé ici (arbre de construction, ou extrait), à
+// télécharger, ou absent de l'index de cette version.
+void downloadable_row(EngineRow& row, const EnginesHere& here) {
+  const bool built = (row.offer.id == core::EngineId::TensorRt && here.tensorrt) ||
+                     (row.offer.id == core::EngineId::MiGraphX && here.migraphx) ||
+                     (row.offer.id == core::EngineId::OpenVino && here.openvino);
+  const auto found = std::ranges::find(here.downloads, row.offer.id, &EngineDownload::id);
+  const EngineDownload* download = found == here.downloads.end() ? nullptr : &*found;
+  const std::string missing =
+      download != nullptr && !download->missing.empty() ? std::format(" · {}", download->missing) : "";
+  if (built || (download != nullptr && download->installed)) {
+    row.usable = true;
+    row.status = "installé" + missing;
+  } else if (download != nullptr) {
+    row.usable = true;
+    row.download = true;
+    row.license = download->license;
+    row.status = std::format("à télécharger ({} Mo){}", (download->bytes + (1U << 20) - 1) >> 20, missing);
+  } else {
+    row.status = "absent de ce poste";
+  }
+}
+
+// Les préférés qui découlent des moteurs choisis : le plus rapide pour les réseaux.
+void prefer_chosen(core::Settings& settings) {
+  core::EngineId networks = core::EngineId::Vulkan;
+  for (const core::EngineId id :
+       {core::EngineId::OpenVino, core::EngineId::MiGraphX, core::EngineId::TensorRt}) {
+    if (chosen(settings, id)) networks = id;
+  }
+  const auto usage = [](core::Usage u) { return static_cast<std::size_t>(u); };
+  settings.preferred[usage(core::Usage::Upscale)] = networks;
+  settings.preferred[usage(core::Usage::Interpolate)] = networks;
+  settings.preferred[usage(core::Usage::TrueHdr)] =
+      chosen(settings, core::EngineId::MaxineVfx) ? std::optional(core::EngineId::MaxineVfx) : std::nullopt;
 }
 
 }  // namespace
@@ -172,16 +216,9 @@ FirstRunView first_run_view(const GpuFacts& gpu, const EnginesHere& here, Profil
         row.status = "livré avec le lecteur";
         break;
       case core::EngineId::TensorRt:
-        row.usable = here.tensorrt;
-        row.status = here.tensorrt ? "installé" : "absent de ce poste";
-        break;
       case core::EngineId::MiGraphX:
-        row.usable = here.migraphx;
-        row.status = here.migraphx ? "installé (ROCm requis)" : "absent de ce poste";
-        break;
       case core::EngineId::OpenVino:
-        row.usable = here.openvino;
-        row.status = here.openvino ? "installé" : "absent de ce poste";
+        downloadable_row(row, here);
         break;
       case core::EngineId::MaxineVfx:
         row.usable = here.maxine;
@@ -192,7 +229,8 @@ FirstRunView first_run_view(const GpuFacts& gpu, const EnginesHere& here, Profil
         break;
     }
     const bool wanted = current.first_run_done ? chosen(current, offer.id) : offer.preselected;
-    row.chosen = offer.id == core::EngineId::Vulkan || (wanted && row.usable);
+    // Une licence ne se coche jamais d'office : le moteur qui en demande une attend l'accord.
+    row.chosen = offer.id == core::EngineId::Vulkan || (wanted && row.usable && row.license.empty());
     view.engines.push_back(std::move(row));
   }
   return view;
@@ -203,21 +241,21 @@ core::Settings settings_after(const FirstRunView& view, core::Settings settings)
   settings.chosen_engines.clear();
   settings.installed_engines.clear();
   for (const EngineRow& row : view.engines) {
-    if (row.usable) settings.installed_engines.push_back(row.offer.id);
-    if (row.usable && (row.chosen || row.offer.id == core::EngineId::Vulkan))
-      settings.chosen_engines.push_back(row.offer.id);
+    // Un moteur à télécharger compte comme installé une fois coché (install_chosen le télécharge,
+    // without_engine le retire s'il échoue) ; avec sa licence acceptée seulement.
+    const bool taken = row.usable && (row.chosen || row.offer.id == core::EngineId::Vulkan) &&
+                       (!row.download || row.license.empty() || row.license_accepted);
+    if (row.usable && (!row.download || taken)) settings.installed_engines.push_back(row.offer.id);
+    if (taken) settings.chosen_engines.push_back(row.offer.id);
   }
-  // Le moteur des réseaux : le plus rapide choisi pour ce GPU, Vulkan sinon.
-  core::EngineId networks = core::EngineId::Vulkan;
-  for (const core::EngineId id :
-       {core::EngineId::OpenVino, core::EngineId::MiGraphX, core::EngineId::TensorRt}) {
-    if (chosen(settings, id)) networks = id;
-  }
-  const auto usage = [](core::Usage u) { return static_cast<std::size_t>(u); };
-  settings.preferred[usage(core::Usage::Upscale)] = networks;
-  settings.preferred[usage(core::Usage::Interpolate)] = networks;
-  settings.preferred[usage(core::Usage::TrueHdr)] =
-      chosen(settings, core::EngineId::MaxineVfx) ? std::optional(core::EngineId::MaxineVfx) : std::nullopt;
+  prefer_chosen(settings);
+  return settings;
+}
+
+core::Settings without_engine(core::Settings settings, core::EngineId id) {
+  std::erase(settings.chosen_engines, id);
+  std::erase(settings.installed_engines, id);
+  prefer_chosen(settings);
   return settings;
 }
 
@@ -309,9 +347,8 @@ std::string_view reason_label(core::Reason reason) {
 
 void draw_first_run(FirstRunView& view, float scale) {
   static constexpr const char* kFooter =
-      "Dans cette version, SPAN et RIFE passent par TensorRT et RTX HDR par NVIDIA Maxine ; sans eux, "
-      "l'image "
-      "reste celle de la source.";
+      "Vulkan sert tous les GPU ; les moteurs cochés à télécharger s'installent après « Commencer », "
+      "vérifiés par leur empreinte, et Vulkan prend le relais de celui qui échoue.";
   const ImGuiIO& io = ImGui::GetIO();
   const float pad = 24.0F * scale;
   const ImVec2 size{std::min(1080.0F * scale, io.DisplaySize.x - 2.0F * pad),

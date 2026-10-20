@@ -145,3 +145,33 @@ TEST_CASE("MIGraphX et OpenVINO ne sont essayés que choisis", "[app][first_run]
   CHECK(kept.front().filename() == "ajp_backend_openvino.so");
   CHECK(kept.back().filename() == "ajp_backend_vulkan.so");
 }
+
+TEST_CASE("Moteur à télécharger : licence acceptée avant tout choix", "[app][first_run]") {
+  EnginesHere here;
+  here.downloads.push_back(EngineDownload{
+      .id = core::EngineId::TensorRt, .bytes = 900ULL << 20, .license = "https://example.org/sla"});
+  FirstRunView view = first_run_view(kRtx, here, ProfilesView{});
+  EngineRow* tensorrt = nullptr;
+  for (EngineRow& row : view.engines) {
+    if (row.offer.id == core::EngineId::TensorRt) tensorrt = &row;
+  }
+  REQUIRE(tensorrt != nullptr);
+  CHECK(tensorrt->usable);
+  CHECK(tensorrt->download);
+  CHECK_FALSE(tensorrt->chosen);  // jamais coché d'office avec une licence
+  CHECK(tensorrt->status == "à télécharger (900 Mo)");
+
+  tensorrt->chosen = true;
+  const core::Settings refused = settings_after(view, {});
+  CHECK_FALSE(chosen(refused, core::EngineId::TensorRt));
+  CHECK_FALSE(std::ranges::contains(refused.installed_engines, core::EngineId::TensorRt));
+
+  tensorrt->license_accepted = true;
+  const core::Settings accepted = settings_after(view, {});
+  CHECK(chosen(accepted, core::EngineId::TensorRt));
+  CHECK(accepted.preferred[static_cast<std::size_t>(core::Usage::Upscale)] == core::EngineId::TensorRt);
+
+  const core::Settings failed = without_engine(accepted, core::EngineId::TensorRt);
+  CHECK_FALSE(chosen(failed, core::EngineId::TensorRt));
+  CHECK(failed.preferred[static_cast<std::size_t>(core::Usage::Upscale)] == core::EngineId::Vulkan);
+}

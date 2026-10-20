@@ -39,6 +39,15 @@ std::string gpu_line(const GpuFacts& gpu);
 // pour une RTX plus petite, 9 (source) sans cœurs Tensor.
 int start_profile_for(const GpuFacts& gpu);
 
+// Un moteur que ce lecteur sait télécharger (engines.lock pour cet OS).
+struct EngineDownload {
+  core::EngineId id = core::EngineId::TensorRt;
+  bool installed = false;  // déjà extrait sous <données>/backends
+  std::uint64_t bytes = 0;
+  std::string license;  // à accepter avant le téléchargement, vide si aucune
+  std::string missing;  // prérequis du système absent (missing_prerequisite), vide sinon
+};
+
 // Ce qui est déjà sur ce poste.
 struct EnginesHere {
   bool tensorrt = false;      // backend ajp_backend_tensorrt trouvé
@@ -46,13 +55,17 @@ struct EnginesHere {
   bool openvino = false;      // ajp_backend_openvino
   bool maxine = false;        // SDK Maxine importé, ou importable depuis --truehdr-sdk
   std::string maxine_status;  // « importé », « à importer depuis /usr/local/VideoFX »…
+  std::vector<EngineDownload> downloads;
 };
 
 struct EngineRow {
   core::EngineOffer offer;
   bool usable = false;  // installé, ou installable par ce lecteur
   bool chosen = false;
-  std::string status;  // « livré », « installé », « pas encore installable dans cette version »
+  std::string status;     // « livré », « installé », « pas encore installable dans cette version »
+  bool download = false;  // à télécharger si coché
+  std::string license;    // licence à accepter (download seulement)
+  bool license_accepted = false;
 };
 
 struct FirstRunView {
@@ -70,6 +83,9 @@ FirstRunView first_run_view(const GpuFacts& gpu, const EnginesHere& here, Profil
 // settings avec les moteurs choisis, ceux présents, les préférés qui en découlent, et
 // first_run_done.
 core::Settings settings_after(const FirstRunView& view, core::Settings settings);
+
+// settings sans id (moteur qui n'a pas pu s'installer), ses préférés recalculés.
+core::Settings without_engine(core::Settings settings, core::EngineId id);
 
 // id fait partie des moteurs choisis à l'écran de bienvenue.
 bool chosen(const core::Settings& settings, core::EngineId id);

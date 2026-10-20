@@ -23,6 +23,8 @@
 #include "app/play/display_edid.h"
 #include "app/play/drba_model.h"
 #include "app/play/engine_build.h"
+#include "app/play/engine_downloads.h"
+#include "app/play/engine_install.h"
 #include "app/play/first_run.h"
 #include "app/play/gmfss_model.h"
 #include "app/play/host_facts.h"
@@ -624,17 +626,24 @@ std::expected<void, Refusal> play(const PlayOptions& options, const PlayerPaths&
     log->warn("{} ; écran de bienvenue", engines.error().detail);
     engines = core::Settings{};
   }
+  // Les moteurs téléchargeables de cette version (engines.lock livré avec le lecteur).
+  const EngineCatalog catalog = load_catalog(paths.engine_index, paths.engines.parent_path());
+  if (!catalog.problem.empty()) log->info("{}", catalog.problem);
   if (!engines->first_run_done || options.first_run) {
     const GpuFacts gpu = gpu_facts(**screen);
     ProfilesView choice = view_of(profiles);
     if (!engines->first_run_done) choice.start = start_profile_for(gpu);
     log->info("bienvenue : {}", gpu_line(gpu));
-    auto chosen = welcome(**screen, **ui,
-                          first_run_view(gpu, engines_here(options, paths), std::move(choice), *engines),
-                          options, next_key, snapshot);
+    auto chosen =
+        welcome(**screen, **ui,
+                first_run_view(gpu, engines_here(options, paths, catalog), std::move(choice), *engines),
+                options, next_key, snapshot);
     if (!chosen) return std::unexpected(std::move(chosen.error()));
     if (!*chosen) return {};
     engines = settings_after(**chosen, *engines);
+    auto downloaded = install_chosen(**screen, **ui, catalog, **chosen, *engines);
+    if (!downloaded) return std::unexpected(std::move(downloaded.error()));
+    if (!*downloaded) return {};
     if (auto written = core::save_settings(engines_path, *engines); !written)
       log->warn("{}", written.error().detail);
     const std::array<core::UserEdit, 1> start{core::edit::StartProfile{.slot = (*chosen)->profiles.start}};
@@ -660,7 +669,10 @@ std::expected<void, Refusal> play(const PlayOptions& options, const PlayerPaths&
   show_loading(**screen, **ui, "Chargement");
   const gpu::BackendInit probe{
       .render = &(*screen)->device(), .cache_dir = paths.engines, .log = backend_log()};
-  auto library = BackendLibrary::choose(backends_within(paths.backends, *engines), probe);
+  // Les backends téléchargés d'abord, puis ceux livrés ou de l'arbre de construction.
+  std::vector<std::filesystem::path> candidates = installed_backends(catalog);
+  candidates.insert(candidates.end(), paths.backends.begin(), paths.backends.end());
+  auto library = BackendLibrary::choose(backends_within(candidates, *engines), probe);
   if (!library) return std::unexpected(std::move(library.error()));
 
   Player player{.options = options,

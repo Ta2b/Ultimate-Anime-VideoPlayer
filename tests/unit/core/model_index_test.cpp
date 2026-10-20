@@ -220,9 +220,9 @@ TEST_CASE("Installation : chemins sous le dossier de données passé par app", "
 
   const InstallLayout windows = install_layout(Os::Windows, data);
   CHECK(model_path(windows, hd) == data / "models" / "2x_HD.onnx");
-  CHECK(engine_dir(windows, trt) == data / "engines" / "tensorrt" / "11.3.0");
+  CHECK(engine_dir(windows, trt) == data / "backends" / "tensorrt" / "11.3.0");
   CHECK(backend_library(windows, trt).filename() == "ajp_backend_tensorrt.dll");
   CHECK(backend_library(install_layout(Os::Linux, data), trt).filename() == "ajp_backend_tensorrt.so");
-  CHECK(backend_library(install_layout(Os::MacOs, data), trt).filename() == "ajp_backend_tensorrt.dylib");
+  CHECK(backend_library(install_layout(Os::MacOs, data), trt).filename() == "ajp_backend_tensorrt.so");
   CHECK(download_path(windows, kSha) == data / "downloads" / (kSha + ".part"));
 }

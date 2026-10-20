@@ -9,6 +9,7 @@
 
 #include <SDL3/SDL_video.h>
 
+#include "app/play/engine_install.h"
 #include "app/play/first_run.h"
 #include "app/play/options.h"
 #include "app/play/placebo_screen.h"
@@ -24,7 +25,7 @@ std::optional<double> content_peak_nits(SDL_Window* window);
 // Le nom de l'écran de la fenêtre selon SDL, pour choisir son EDID.
 std::string display_name(SDL_Window* window);
 GpuFacts gpu_facts(const PlaceboScreen& screen);
-// Le backend TensorRT, le SDK Maxine importé ou à importer.
-EnginesHere engines_here(const PlayOptions& options, const PlayerPaths& paths);
+// Les backends présents ou téléchargeables (catalog), le SDK Maxine importé ou à importer.
+EnginesHere engines_here(const PlayOptions& options, const PlayerPaths& paths, const EngineCatalog& catalog);
 
 }  // namespace ajp::app::play

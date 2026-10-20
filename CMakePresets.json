@@ -156,6 +156,22 @@
       }
     },
     {
+      "name": "linux-release",
+      "displayName": "Linux, version livrée (préfixe)",
+      "inherits": "prefix",
+      "binaryDir": "${sourceDir}/build/linux-release",
+      "condition": {
+        "type": "equals",
+        "lhs": "${hostSystemName}",
+        "rhs": "Linux"
+      },
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "AJP_BUILD_TESTS": "OFF",
+        "AJP_WARNINGS_AS_ERRORS": "OFF"
+      }
+    },
+    {
       "name": "macos-release",
       "displayName": "macOS (Apple Silicon), Vulkan par MoltenVK, préfixe AJP_DEPS_PREFIX et Homebrew",
       "inherits": "prefix",
@@ -233,6 +249,10 @@
     {
       "name": "linux-prefix-asan-core",
       "configurePreset": "linux-prefix-asan-core"
+    },
+    {
+      "name": "linux-release",
+      "configurePreset": "linux-release"
     },
     {
       "name": "macos-release",

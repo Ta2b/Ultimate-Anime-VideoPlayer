@@ -1,0 +1,153 @@
+#!/usr/bin/env bash
+# Paquets Linux d'une version : un seul lecteur pour tous les GPU, et ses moteurs à la demande.
+#
+#   ajp-linux-x64.tar.gz                  le lecteur, le backend Vulkan, leurs bibliothèques et
+#                                         engines.lock (l'index haché des paquets ci-dessous)
+#   ajp-engine-tensorrt-linux-x64.tar.gz  backend TensorRT, TensorRT et trtexec (NVIDIA)
+#   ajp-engine-migraphx-linux-x64.tar.gz  backend MIGraphX (AMD ; ROCm du système)
+#   ajp-engine-openvino-linux-x64.tar.gz  backend OpenVINO, son runtime et son greffon GPU (Intel)
+#
+# L'écran de bienvenue propose les moteurs qui conviennent au GPU ; les cochés se téléchargent
+# depuis la release (engine_install.h). Chaque moteur n'est empaqueté que s'il a été construit :
+#
+#   AJP_DEPS_PREFIX=<prefixe> [AJP_WITH_CUDA=ON] [AJP_WITH_MIGRAPHX=ON] [AJP_WITH_OPENVINO=ON] \
+#     [AJP_RELEASE_TAG=v0.2.0] tools/release/package-linux.sh [dossier-de-sortie]
+#
+# patchelf range chaque binaire sur $ORIGIN : rien ne dépend du préfixe de construction.
+set -euo pipefail
+
+ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
+OUT="$(mkdir -p "${1:-$ROOT/build/package}" && cd "${1:-$ROOT/build/package}" && pwd)"
+: "${AJP_DEPS_PREFIX:?AJP_DEPS_PREFIX : le préfixe des dépendances}"
+command -v patchelf >/dev/null || { echo "patchelf manquant (apt install patchelf)" >&2; exit 1; }
+VERSION="$(sed -n 's/^  VERSION \([0-9.]*\)$/\1/p' "$ROOT/CMakeLists.txt")"
+TAG="${AJP_RELEASE_TAG:-v$VERSION}"
+BASE_URL="https://github.com/Ta2b/Ultimate-Anime-VideoPlayer/releases/download/$TAG"
+
+cmake --preset linux-release -S "$ROOT" \
+  -DAJP_WITH_CUDA="${AJP_WITH_CUDA:-OFF}" \
+  -DAJP_WITH_MIGRAPHX="${AJP_WITH_MIGRAPHX:-OFF}" \
+  -DAJP_WITH_OPENVINO="${AJP_WITH_OPENVINO:-OFF}"
+cmake --build --preset linux-release
+BUILD="$ROOT/build/linux-release"
+
+# Bibliothèques du système, jamais livrées : glibc, pilotes et serveurs d'affichage, chargeur
+# Vulkan, son, ROCm.
+system_lib() {
+  case "$(basename "$1")" in
+    ld-linux*|libc.so*|libm.so*|libdl.so*|libpthread.so*|librt.so*|libresolv.so*|libutil.so*) return 0 ;;
+    libvulkan.so*|libGL*|libEGL*|libGLX*|libOpenGL*|libnvidia*|libcuda.so*|libdrm*|libgbm*) return 0 ;;
+    libX*|libxcb*|libxkbcommon*|libwayland*|libdecor*|libasound*|libpulse*|libpipewire*) return 0 ;;
+    libdbus*|libsystemd*|libudev*|libcap*|libgcrypt*|libgpg-error*|liblzma*|libz.so*|libzstd*) return 0 ;;
+    libffi*|libexpat*|libbsd*|libmd.so*) return 0 ;;
+  esac
+  case "$1" in /opt/rocm*) return 0 ;; esac
+  return 1
+}
+
+# Les dépendances hors système de chaque binaire donné, copiées dans $1 (sans écraser).
+copy_deps() {
+  local dest="$1"; shift
+  local bin lib
+  for bin in "$@"; do
+    ldd "$bin" | awk '/=> \// {print $3}' | while read -r lib; do
+      system_lib "$lib" && continue
+      [ -e "$dest/$(basename "$lib")" ] || cp -L "$lib" "$dest/"
+    done
+  done
+}
+
+# ldd ne voit pas ce qu'une bibliothèque ouvre à l'exécution : copiés par motif depuis le
+# dossier d'une dépendance connue.
+copy_beside() {  # dossier binaire nom-de-la-dépendance motifs…
+  local dest="$1" known="$2" name="$3"; shift 3
+  local dir pattern f
+  dir="$(dirname "$(ldd "$known" | awk -v n="$name" 'index($1, n) == 1 {print $3; exit}')")"
+  for pattern in "$@"; do
+    for f in "$dir"/$pattern; do [ -e "$f" ] && cp -L "$f" "$dest/"; done
+  done
+  return 0
+}
+
+origin() {  # rpath $ORIGIN (et $ORIGIN/$2) sur chaque fichier ELF du dossier $1
+  local f
+  for f in "$1"/*; do
+    file -b "$f" | grep -q ELF || continue
+    patchelf --set-rpath "\$ORIGIN${2:+:\$ORIGIN/$2}" "$f"
+  done
+}
+
+# --- Le lecteur. ---
+STAGE="$OUT/ajp-linux-x64"
+rm -rf "$STAGE"
+mkdir -p "$STAGE/lib"
+cp "$BUILD/src/app/ajp" "$STAGE/"
+cp "$BUILD/src/gpu/vulkan/backend/ajp_backend_vulkan.so" "$STAGE/"
+copy_deps "$STAGE/lib" "$STAGE/ajp" "$STAGE/ajp_backend_vulkan.so"
+patchelf --set-rpath '$ORIGIN/lib' "$STAGE/ajp" "$STAGE/ajp_backend_vulkan.so"
+origin "$STAGE/lib"
+cp "$ROOT/LICENSE" "$STAGE/" 2>/dev/null || true
+
+# --- Les moteurs. ---
+LOCK="$STAGE/engines.lock"
+echo "version = 1" > "$LOCK"
+
+engine_package() {  # id version licence dossier
+  local id="$1" version="$2" license="$3" dir="$4"
+  local archive="ajp-engine-$id-linux-x64.tar.gz"
+  origin "$dir"
+  tar -C "$dir" -czf "$OUT/$archive" .
+  {
+    echo
+    echo "[[engine]]"
+    echo "id = \"$id\""
+    echo "platform = \"linux\""
+    echo "url = \"$BASE_URL/$archive\""
+    echo "sha256 = \"$(sha256sum "$OUT/$archive" | cut -d' ' -f1)\""
+    echo "size = $(stat -c %s "$OUT/$archive")"
+    echo "version = \"$version\""
+    [ -n "$license" ] && echo "license = \"$license\""
+  } >> "$LOCK"
+  echo "moteur $id : $OUT/$archive"
+}
+
+TRT_MODULE="$BUILD/src/gpu/cuda/backend/ajp_backend_tensorrt.so"
+if [ -f "$TRT_MODULE" ]; then
+  dir="$OUT/engine-tensorrt"; rm -rf "$dir"; mkdir -p "$dir"
+  cp "$TRT_MODULE" "$dir/"
+  TRTEXEC="$(sed -n 's/^AJP_TRTEXEC:[A-Z]*=//p' "$BUILD/CMakeCache.txt")"
+  [ -n "$TRTEXEC" ] && [ -x "$TRTEXEC" ] && cp "$TRTEXEC" "$dir/trtexec"
+  copy_deps "$dir" "$dir"/*
+  # Les ressources du constructeur, ouvertes par libnvinfer selon l'architecture du GPU.
+  copy_beside "$dir" "$dir/ajp_backend_tensorrt.so" libnvinfer 'libnvinfer_builder_resource*'
+  for f in "$dir"/*; do [ -e "$STAGE/lib/$(basename "$f")" ] && [ "$f" != "$dir/ajp_backend_tensorrt.so" ] && rm "$f"; done
+  TRT_VERSION="$(basename "$(ls "$dir"/libnvinfer.so.* | sort | tail -1)" | sed 's/^libnvinfer\.so\.//')"
+  engine_package tensorrt "${TRT_VERSION:-$VERSION}" \
+    "https://docs.nvidia.com/deeplearning/tensorrt/latest/reference/sla.html" "$dir"
+fi
+
+MX_MODULE="$BUILD/src/gpu/migraphx/ajp_backend_migraphx.so"
+if [ -f "$MX_MODULE" ]; then
+  dir="$OUT/engine-migraphx"; rm -rf "$dir"; mkdir -p "$dir"
+  cp "$MX_MODULE" "$dir/"
+  copy_deps "$dir" "$MX_MODULE"
+  for f in "$dir"/*; do [ -e "$STAGE/lib/$(basename "$f")" ] && [ "$f" != "$dir/ajp_backend_migraphx.so" ] && rm "$f"; done
+  engine_package migraphx "$VERSION" "" "$dir"
+fi
+
+OV_MODULE="$BUILD/src/gpu/openvino/ajp_backend_openvino.so"
+if [ -f "$OV_MODULE" ]; then
+  dir="$OUT/engine-openvino"; rm -rf "$dir"; mkdir -p "$dir"
+  cp "$OV_MODULE" "$dir/"
+  copy_deps "$dir" "$OV_MODULE"
+  # Le greffon GPU et le lecteur ONNX, ouverts par libopenvino depuis son propre dossier.
+  copy_beside "$dir" "$OV_MODULE" libopenvino 'libopenvino_intel_gpu_plugin.so' 'libopenvino_onnx_frontend.so*'
+  copy_deps "$dir" "$dir"/libopenvino_*
+  for f in "$dir"/*; do [ -e "$STAGE/lib/$(basename "$f")" ] && [ "$f" != "$dir/ajp_backend_openvino.so" ] && rm "$f"; done
+  engine_package openvino "$VERSION" "" "$dir"
+fi
+
+tar -C "$OUT" -czf "$OUT/ajp-linux-x64.tar.gz" ajp-linux-x64
+( cd "$OUT" && sha256sum ajp-*.tar.gz > SHA256SUMS )
+echo "lecteur : $OUT/ajp-linux-x64.tar.gz"
+echo "à joindre à la release $TAG : $OUT/ajp-*.tar.gz et SHA256SUMS"

@@ -46,6 +46,12 @@ tools/deps/macos-from-source.sh ~/ajp-deps
 AJP_DEPS_PREFIX=~/ajp-deps tools/release/package-macos.sh   # build/package/ajp-macos-arm64.zip
 ```
 
+Une version Linux tient en un seul lecteur pour tous les GPU : `tools/release/package-linux.sh`
+produit `ajp-linux-x64.tar.gz` (lecteur, Vulkan, `engines.lock`) et un paquet par moteur construit
+(TensorRT, MIGraphX, OpenVINO). Au premier lancement, l'écran de bienvenue propose ceux qui
+conviennent au GPU ; les cochés se téléchargent depuis la release, vérifiés par leur SHA-256
+(la licence de TensorRT s'accepte à l'écran).
+
 Sur les GPU AMD et Intel, les réseaux peuvent passer par le runtime du fabricant tandis que la
 chaîne reste sur Vulkan : `-DAJP_WITH_MIGRAPHX=ON` (ROCm installé) construit
 `ajp_backend_migraphx`, `-DAJP_WITH_OPENVINO=ON` construit `ajp_backend_openvino`. Chacun ne

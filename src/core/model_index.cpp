@@ -175,12 +175,17 @@ std::expected<EnginePackage, Refusal> parse_package(const toml::table& table, co
   if (!version) return std::unexpected(version.error());
   if (!safe_name(*version))
     return refuse(RefusalCode::FieldType, std::format("{}.version = « {} »", where, *version));
+  auto license = fields::optional<std::string>(table, "license", where);
+  if (!license) return std::unexpected(license.error());
+  if (*license && !(*license)->starts_with("https://"))
+    return refuse(RefusalCode::FieldOutOfRange, std::format("{}.license : https seulement", where));
   return EnginePackage{.engine = *engine,
                        .platform = *platform,
                        .url = download->url,
                        .sha256 = download->sha256,
                        .size = download->size,
-                       .version = *version};
+                       .version = *version,
+                       .license = license->value_or("")};
 }
 
 template <class E, std::size_t N>
@@ -365,7 +370,7 @@ std::expected<void, Refusal> verify_file(const std::filesystem::path& path, std:
 InstallLayout install_layout(Os os, const std::filesystem::path& user_data_dir) {
   return InstallLayout{.os = os,
                        .models = user_data_dir / "models",
-                       .engines = user_data_dir / "engines",
+                       .engines = user_data_dir / "backends",
                        .downloads = user_data_dir / "downloads"};
 }
 
@@ -378,9 +383,8 @@ std::filesystem::path engine_dir(const InstallLayout& layout, const EnginePackag
 }
 
 std::filesystem::path backend_library(const InstallLayout& layout, const EnginePackage& package) {
-  const std::string_view suffix = layout.os == Os::Windows ? ".dll"
-                                  : layout.os == Os::MacOs ? ".dylib"
-                                                           : ".so";
+  // Modules CMake : .so sous macOS aussi.
+  const std::string_view suffix = layout.os == Os::Windows ? ".dll" : ".so";
   return engine_dir(layout, package) / std::format("ajp_backend_{}{}", engine_name(package.engine), suffix);
 }
 
