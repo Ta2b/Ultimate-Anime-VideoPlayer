@@ -138,3 +138,20 @@ temps réel.
   au-delà de 4 Go le pilote déborde en mémoire système et le débit chute sans erreur.
 - **Pilote** : Mesa 24 ou plus récent (RADV), `vulkaninfo --summary` doit montrer
   `VK_EXT_subgroup_size_control` et `shaderFloat16`.
+
+## Linux sur i7-12700, UHD 770 et RX 6500 (bureau)
+
+Mêmes réglages que la 6500M ci-dessus ; la RX 6500 de bureau tourne plus vite (horloge plus haute,
+pas de limite de portable), 720p devient le point de départ probable.
+
+- **Écran sur la RX 6500**, pas sur la carte mère : le rendu et la présentation restent sur le
+  même GPU. L'UHD 770 sert alors au décodage seul.
+- **iGPU activé dans le BIOS** (souvent « iGPU Multi-Monitor ») et pilote `intel-media-driver`
+  (iHD) installé : le lecteur décode par VA-API sur l'UHD 770 en priorité (AV1, HEVC 10 bits,
+  VP9), puis sur la RX 6500 si le pilote Intel ne gère pas le codec, puis par le CPU. Le journal
+  d'ouverture doit dire `vaapi` ; `intel_gpu_top` montre l'UHD 770 au travail. `vainfo --display drm --device
+  /dev/dri/renderD128` (puis 129) liste ce que chaque GPU décode.
+- **Resizable BAR** activé dans le BIOS : l'image décodée est copiée directement dans la VRAM de
+  la RX 6500 (le lien PCIe x4 n'est alors traversé qu'une fois par image).
+- **Paquets à installer** : `libva2` et `mesa-vulkan-drivers` (RADV) ; ils viennent du système,
+  la release ne les livre pas.

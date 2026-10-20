@@ -8,3 +8,9 @@ ajp_add_module(media
     track.cpp video_decoder.cpp
   DEPS ajp::core_types
   PRIVATE_DEPS ajp::dep::ffmpeg ajp::core_log ajp::dep::vulkan ${CMAKE_DL_LIBS})
+
+if(TARGET ajp::dep::va)
+  target_sources(ajp_media PRIVATE vaapi_device.cpp)
+  target_link_libraries(ajp_media PRIVATE ajp::dep::va)
+  target_compile_definitions(ajp_media PRIVATE AJP_HAVE_VA=1)
+endif()

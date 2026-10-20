@@ -50,6 +50,15 @@ if(AJP_FONTCONFIG_FOUND)
   ajp_alias_dep(fontconfig PkgConfig::AJP_FONTCONFIG)
 endif()
 
+# libva, facultative (Linux) : choisir le nœud de rendu VA-API qui décode le codec
+# (media/vaapi_device.cpp). Sans elle, VA-API prend l'appareil par défaut.
+if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+  pkg_check_modules(AJP_VA QUIET IMPORTED_TARGET libva)
+  if(AJP_VA_FOUND)
+    ajp_alias_dep(va PkgConfig::AJP_VA)
+  endif()
+endif()
+
 find_package(SDL3 CONFIG REQUIRED)
 
 # Téléchargement des moteurs et des modèles depuis l'index haché.

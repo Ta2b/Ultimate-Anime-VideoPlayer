@@ -1,0 +1,32 @@
+Ultimate Anime VideoPlayer pour Linux x86-64 (préversion)
+=========================================================
+
+Contenu
+  ajp                       le lecteur
+  ajp_backend_vulkan.so     le moteur Vulkan, pour tout GPU (AMD, Intel, NVIDIA)
+  lib/                      FFmpeg, libplacebo, SDL3, libass et leurs dépendances
+  engines.lock              l'index des moteurs facultatifs téléchargeables
+
+Paquets du système (non livrés)
+  Ubuntu, Debian : libvulkan1 mesa-vulkan-drivers libva2 libva-drm2 intel-media-va-driver
+                   (intel-media-va-driver-non-free pour l'encodage, inutile ici)
+  Fedora         : vulkan-loader mesa-vulkan-drivers libva intel-media-driver
+  Arch           : vulkan-icd-loader vulkan-radeon libva intel-media-driver
+  Pilote AMD ouvert (RADV, Mesa 24 ou plus) conseillé ; pilote NVIDIA propriétaire pour NVIDIA.
+
+Modèles AnimeJaNai
+  Le lecteur cherche SPAN dans ~/.local/share/AnimeJaNai-HDR-linux/animejanai/onnx/
+  et RIFE (rife_v4.25.onnx) dans ~/.local/share/AnimeJaNai-HDR-linux/animejanai/rife/.
+  Ailleurs : --model=FICHIER.onnx et --rife-model=FICHIER.onnx.
+
+Lancer
+  ./ajp play "épisode.mkv" --fullscreen
+  ./ajp play "épisode.mkv" --stats        coût par image, pour choisir un profil
+  Le premier lancement montre l'écran de bienvenue (moteurs et profil de départ). Le moteur
+  Vulkan mesure chaque couche une fois au premier passage d'un modèle : les premières
+  secondes sont plus lentes, ensuite c'est en cache.
+
+GPU de 4 Go (RX 6500, RX 6500M, RX 6400)
+  Commencer par le profil 7 « Léger 1080p », puis essayer 720p si --stats laisse de la marge.
+  Brancher l'écran sur la carte graphique. Avec un iGPU Intel activé, la vidéo est décodée
+  par lui (VA-API), ce qui laisse la carte graphique à SPAN et RIFE.

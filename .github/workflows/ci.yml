@@ -82,7 +82,8 @@ jobs:
             liblcms2-dev libdav1d-dev libasound2-dev libpulse-dev libcurl4-openssl-dev \
             libx11-dev libxext-dev libxrandr-dev libxcursor-dev libxi-dev libxss-dev libxtst-dev \
             libxfixes-dev libxinerama-dev libxkbcommon-dev libxkbcommon-x11-dev libwayland-dev \
-            wayland-protocols libdecor-0-dev libdrm-dev libgbm-dev libegl-dev libudev-dev libdbus-1-dev
+            wayland-protocols libdecor-0-dev libdrm-dev libgbm-dev libegl-dev libudev-dev libdbus-1-dev \
+            libva-dev
           pip install --user meson
       - uses: actions/cache@v4
         with:

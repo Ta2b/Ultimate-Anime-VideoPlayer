@@ -95,12 +95,13 @@ if ! done_marker nv-codec-headers; then
   mark nv-codec-headers
 fi
 
-# FFmpeg en LGPL partagée, comme le triplet dynamique de vcpkg.
+# FFmpeg en LGPL partagée, comme le triplet dynamique de vcpkg. VA-API demande les en-têtes de
+# libva (libva-dev, libva-devel) ; la libva du système sert à l'exécution.
 if ! done_marker ffmpeg; then
   (cd "$WORK/ffmpeg" && ./configure --prefix="$PREFIX" --enable-shared --disable-static \
       --disable-programs --disable-doc --disable-debug \
       --enable-ffnvcodec --enable-nvdec --enable-cuvid \
-      --enable-vulkan --enable-libdav1d \
+      --enable-vulkan --enable-vaapi --enable-libdav1d \
       --extra-cflags="-I$PREFIX/include" --extra-ldflags="-L$PREFIX/lib" \
     && make -j "$JOBS" && make install)
   mark ffmpeg

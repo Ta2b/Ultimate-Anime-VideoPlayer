@@ -42,6 +42,7 @@ system_lib() {
     libX*|libxcb*|libxkbcommon*|libwayland*|libdecor*|libasound*|libpulse*|libpipewire*) return 0 ;;
     libdbus*|libsystemd*|libudev*|libcap*|libgcrypt*|libgpg-error*|liblzma*|libz.so*|libzstd*) return 0 ;;
     libffi*|libexpat*|libbsd*|libmd.so*) return 0 ;;
+    libva.so*|libva-*) return 0 ;;  # VA-API : la libva du système trouve ses pilotes (iHD, radeonsi)
   esac
   case "$1" in /opt/rocm*) return 0 ;; esac
   return 1
@@ -89,6 +90,7 @@ copy_deps "$STAGE/lib" "$STAGE/ajp" "$STAGE/ajp_backend_vulkan.so"
 patchelf --set-rpath '$ORIGIN/lib' "$STAGE/ajp" "$STAGE/ajp_backend_vulkan.so"
 origin "$STAGE/lib"
 cp "$ROOT/LICENSE" "$STAGE/" 2>/dev/null || true
+cp "$ROOT/tools/release/linux/LISEZMOI.txt" "$STAGE/"
 
 # --- Les moteurs. ---
 LOCK="$STAGE/engines.lock"

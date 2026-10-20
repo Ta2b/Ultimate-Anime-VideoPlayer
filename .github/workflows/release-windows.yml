@@ -10,7 +10,6 @@ on:
         required: false
   push:
     tags: ["v*"]
-    branches: ["cloud/vulkan"]  # essai unique du portage ; retiré ensuite
 
 permissions:
   contents: write

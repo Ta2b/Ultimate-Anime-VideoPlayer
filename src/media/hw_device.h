@@ -50,6 +50,12 @@ struct HwDevice {
 // bibliothèque ou appareil absent, UUID différent du rendu.
 std::expected<HwDevice, Refusal> open_hw_device(AVCodecID codec, HwApi api, const DecoderOptions& options);
 
+#if defined(AJP_HAVE_VA)
+// VA-API sur le premier nœud de rendu (/dev/dri/renderD*) dont le pilote décode ce codec ;
+// prefer_igpu met l'iGPU Intel devant (il décode AV1 et laisse le GPU dédié au rendu).
+std::expected<BufferPtr, Refusal> open_vaapi_device(AVCodecID codec, bool prefer_igpu);
+#endif
+
 // Codec décodé par la file vidéo du GPU (VK_KHR_video_decode_*) ; les autres
 // hwaccels Vulkan de FFmpeg sont des compute shaders.
 bool is_vulkan_video_codec(AVCodecID codec);

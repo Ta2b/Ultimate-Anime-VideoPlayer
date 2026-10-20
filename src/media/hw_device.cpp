@@ -175,6 +175,15 @@ std::expected<HwDevice, Refusal> open_hw_device(AVCodecID codec, HwApi api, cons
       return open_cuda(std::move(hw), options);
     case HwApi::Vulkan:
       return open_vulkan(std::move(hw), options);
+#if defined(AJP_HAVE_VA)
+    case HwApi::Vaapi: {
+      // Copiée en mémoire hôte, l'image peut venir d'un autre GPU que celui du rendu.
+      auto device = open_vaapi_device(codec, options.download);
+      if (!device) return std::unexpected(device.error());
+      hw.device = std::move(*device);
+      return hw;
+    }
+#endif
     default: {
       // D3D11VA, VA-API, VideoToolbox : adaptateur par défaut (voir open_questions).
       auto device = create_device(api, {}, 0);
