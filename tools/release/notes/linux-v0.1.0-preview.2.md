@@ -44,7 +44,3 @@ cd ajp-linux-x64
 Il faut une distribution récente (glibc 2.38 ou plus : Ubuntu 24.04, Debian 13, Fedora 39, Arch). Paquets du système nécessaires (Ubuntu/Debian) : `libvulkan1 mesa-vulkan-drivers libva2 libva-drm2 libva-x11-2 intel-media-va-driver`, plus le pilote NVIDIA propriétaire (550 ou plus) sur une carte NVIDIA. Le fichier `LISEZMOI.txt` de l'archive donne les équivalents Fedora et Arch, les licences des modèles et les réglages conseillés pour les GPU de 4 Go.
 
 Sur un GPU de 4 Go (RX 6500, RX 6500M) : commencez par le profil 7 « Léger 1080p » et passez en 720p si `--stats` laisse de la marge. Branchez l'écran sur la carte graphique.
-
-🤖 Generated with [Claude Code](https://claude.com/claude-code)
-
-https://claude.ai/code/session_01HskzHcmMh1oNuwF54Lto5e
