@@ -10,6 +10,7 @@
 #include <utility>
 #include <vector>
 
+#include <SDL3/SDL_filesystem.h>
 #include <SDL3/SDL_video.h>
 #include <SDL3/SDL_vulkan.h>
 #include <libplacebo/log.h>
