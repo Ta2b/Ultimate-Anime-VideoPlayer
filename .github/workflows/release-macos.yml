@@ -16,6 +16,11 @@ on:
 permissions:
   contents: write
 
+# Une seule construction par branche ou étiquette : la plus récente remplace la précédente.
+concurrency:
+  group: release-macos-${{ github.ref }}
+  cancel-in-progress: true
+
 env:
   AJP_DEPS_PREFIX: ${{ github.workspace }}/../ajp-deps
 

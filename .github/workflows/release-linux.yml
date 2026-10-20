@@ -13,6 +13,11 @@ on:
 permissions:
   contents: write
 
+# Une seule construction par branche ou étiquette : la plus récente remplace la précédente.
+concurrency:
+  group: release-linux-${{ github.ref }}
+  cancel-in-progress: true
+
 env:
   AJP_DEPS_PREFIX: ${{ github.workspace }}/../ajp-deps
   CC: gcc-13
@@ -51,7 +56,30 @@ jobs:
         with:
           path: ${{ env.AJP_DEPS_PREFIX }}
           key: ${{ steps.deps-cache.outputs.cache-primary-key }}
+      # Moteurs facultatifs, empaquetés à côté du lecteur et listés dans engines.lock : OpenVINO
+      # (GPU Intel) par sa roue PyPI, qui porte ses en-têtes et sa configuration CMake ; MIGraphX
+      # (GPU AMD) par le dépôt ROCm d'AMD. ROCm reste un prérequis du système chez l'utilisateur :
+      # seul le module du backend est livré. TensorRT se construit ailleurs (licence NVIDIA).
+      - name: Place sur le disque
+        run: sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
+      - name: OpenVINO
+        run: |
+          pip install --user openvino==2025.3.0
+          echo "OpenVINO_DIR=$(python3 -c 'from openvino.utils import get_cmake_path; print(get_cmake_path())')" >> "$GITHUB_ENV"
+      - name: ROCm et MIGraphX
+        run: |
+          sudo mkdir -p /etc/apt/keyrings
+          curl -fsSL https://repo.radeon.com/rocm/rocm.gpg.key | gpg --dearmor | sudo tee /etc/apt/keyrings/rocm.gpg >/dev/null
+          echo "deb [arch=amd64 signed-by=/etc/apt/keyrings/rocm.gpg] https://repo.radeon.com/rocm/apt/6.4.1 noble main" \
+            | sudo tee /etc/apt/sources.list.d/rocm.list
+          printf 'Package: *\nPin: release o=repo.radeon.com\nPin-Priority: 600\n' | sudo tee /etc/apt/preferences.d/rocm-pin-600
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq --no-install-recommends migraphx-dev hip-dev
+          echo "CMAKE_PREFIX_PATH=/opt/rocm" >> "$GITHUB_ENV"
       - name: Paquet
+        env:
+          AJP_WITH_OPENVINO: "ON"
+          AJP_WITH_MIGRAPHX: "ON"
         run: |
           [ "$GITHUB_REF_TYPE" = tag ] && export AJP_RELEASE_TAG="$GITHUB_REF_NAME"
           tools/release/package-linux.sh "$RUNNER_TEMP/package"
