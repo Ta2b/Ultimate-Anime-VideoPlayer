@@ -12,15 +12,20 @@
 
 #include <algorithm>
 #include <array>
+#include <condition_variable>
 #include <cstddef>
 #include <cstdint>
 #include <expected>
 #include <memory>
+#include <mutex>
 #include <optional>
 #include <span>
+#include <stop_token>
+#include <thread>
 #include <vector>
 
 #include "core/frame.h"
+#include "core/inbox.h"
 #include "core/ring.h"
 #include "core/types.h"
 #include "gpu/kernel_ops.h"
@@ -63,6 +68,8 @@ class VulkanKernelOps final : public KernelOps {
   // cède sa place : assez pour que deux formes en alternance gardent chacune les leurs.
   static constexpr std::uint64_t kStagingIdleUses = 256;
   static constexpr std::size_t kScoreSlots = 3;
+  // Envois d'images hôte en file pour le fil d'envoi ; au-delà, le fil du GPU attend les siens.
+  static constexpr std::size_t kUploadBound = 8;
 
   VulkanKernelOps(VkContext& context, MemoryAllocator& memory, PipelineCache& pipelines, BackendQueue& queue);
   VulkanKernelOps(const VulkanKernelOps&) = delete;
@@ -106,6 +113,7 @@ class VulkanKernelOps final : public KernelOps {
 
   std::size_t recordings() const { return recordings_.size(); }
   std::size_t retained_frames() const { return retained_.size(); }
+  std::size_t uploads_pending() const;  // copies d'images hôte en file ou en cours sur le fil d'envoi
 
  private:
   struct Cached {
@@ -122,6 +130,23 @@ class VulkanKernelOps final : public KernelOps {
     YuvLayout layout;
     std::uint64_t busy_until = 0;  // valeur de la file après laquelle il est libre
     std::uint64_t used = 0;        // staging_uses_ à sa dernière remise
+    std::uint64_t upload =
+        0;  // dernier envoi hôte vers lui (uploads_queued_) ; occupé tant qu'il n'est pas fait
+  };
+  // Une image hôte à recopier dans un tampon d'envoi, par le fil d'envoi : chaque plan, ligne
+  // par ligne. L'image est tenue le temps de la copie.
+  struct UploadPlane {
+    const std::byte* in = nullptr;
+    std::size_t stride = 0;
+    std::byte* out = nullptr;
+    std::uint32_t pitch = 0;
+    std::uint32_t row = 0;  // octets utiles par ligne
+    std::uint32_t rows = 0;
+  };
+  struct Upload {
+    std::shared_ptr<const FrameData> frame;
+    std::array<UploadPlane, 3> planes;
+    std::uint32_t count = 0;
   };
   struct Retained {
     std::shared_ptr<const FrameData> frame;
@@ -171,6 +196,14 @@ class VulkanKernelOps final : public KernelOps {
   std::expected<Source, Refusal> source(const DecodedFrame& frame, std::size_t avoid = SIZE_MAX);
   std::expected<std::size_t, Refusal> staging_for(kernels::Format format, std::uint32_t width,
                                                   std::uint32_t height, MemoryUse use, std::size_t avoid);
+  // Met l'image hôte en file pour le fil d'envoi (lancé au premier appel), vers le tampon slot.
+  std::expected<void, Refusal> upload(const DecodedFrame& frame, std::size_t slot,
+                                      std::span<const UploadPlane> planes);
+  // Attend que tout envoi en file soit fait : avant la soumission du lot (VkContext::before_flush)
+  // et avant de rendre un tampon d'envoi. Refus : le fil d'envoi a cédé.
+  std::expected<void, Refusal> uploads_wait();
+  std::uint64_t uploads_done() const;
+  void serve_uploads(const std::stop_token& stop);
   void copy_image(VkCommandBuffer cb, const Source& src) const;
   static void add_source(OpKey& key, const Source& src);
   std::expected<void, Refusal> submit_frames(Recording& recording, std::span<Source> sources,
@@ -196,6 +229,17 @@ class VulkanKernelOps final : public KernelOps {
   std::vector<Staging> staging_;
   std::uint64_t staging_uses_ = 0;
   std::vector<Retained> retained_;
+  // Le fil d'envoi : les copies d'images hôte, hors du fil du GPU, attendues seulement quand le
+  // lot part (uploads_wait), d'ordinaire déjà faites. Sa boîte reçoit les envois ; le compte des
+  // envois faits et le refus du fil, sous uploads_mutex_, réveillent le fil du GPU.
+  // uploads_queued_ n'est écrit que par le fil du GPU, uploads_done_ que par le fil d'envoi.
+  Inbox<Upload> uploads_{{kUploadBound}};
+  mutable std::mutex uploads_mutex_;
+  std::condition_variable uploads_finished_;
+  std::uint64_t uploads_queued_ = 0;
+  std::uint64_t uploads_done_ = 0;
+  std::optional<Refusal> upload_failure_;
+  std::jthread upload_thread_;
   std::vector<ScoreSlot> scores_;
   std::uint64_t score_order_ = 0;
   std::uint64_t returned_order_ = 0;

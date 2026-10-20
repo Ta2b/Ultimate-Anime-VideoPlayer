@@ -130,6 +130,12 @@ class VkContext {
   Done enqueue(Recording& recording, std::span<const TimelinePoint> waits = {},
                std::span<const TimelinePoint> signals = {});
   Done flush();
+  // Appelé au début de flush() quand le lot n'est pas vide, sur le fil du contexte : attendre ce
+  // que l'hôte écrit encore pour ce lot sur un autre fil (envois d'images), avant que
+  // vkQueueSubmit rende ces écritures visibles de l'appareil (garantie d'ordre des écritures
+  // hôte : celles d'avant la soumission). Un refus annule la soumission. Un seul rappel ; vide
+  // pour le retirer.
+  void before_flush(std::function<Done()> hook) { before_flush_ = std::move(hook); }
   std::uint64_t queue_submits() const { return queue_submits_; }  // appels à vkQueueSubmit
   std::uint64_t submit_infos() const { return submit_infos_; }    // VkSubmitInfo soumis, tous appels
 
@@ -208,6 +214,7 @@ class VkContext {
   std::uint64_t submit_infos_ = 0;
   std::vector<Batched> batch_;
   std::size_t batched_ = 0;  // entrées de batch_ en attente
+  std::function<Done()> before_flush_;
   std::vector<Group> batch_groups_;
   std::vector<VkTimelineSemaphoreSubmitInfo> batch_timelines_;
   std::vector<VkSubmitInfo> batch_infos_;

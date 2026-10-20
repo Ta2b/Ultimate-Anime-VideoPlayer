@@ -4,9 +4,7 @@
 #include <array>
 #include <chrono>
 #include <cmath>
-#include <condition_variable>
 #include <cstring>
-#include <deque>
 #include <exception>
 #include <format>
 #include <fstream>
@@ -24,7 +22,11 @@
 #include <string>
 #include <thread>
 #include <utility>
+#include <variant>
 #include <vector>
+
+#include "core/inbox.h"
+#include "core/thread.h"
 
 namespace ajp::gpu::openvino_rt {
 namespace {
@@ -225,7 +227,6 @@ class OpenvinoNet final : public vk::net::RuntimeNet {
   ~OpenvinoNet() override {
     if (!worker_.joinable()) return;
     worker_.request_stop();
-    wake_.notify_all();
     worker_.join();
   }
   std::span<const std::string> input_names() const override { return names_.inputs; }
@@ -253,13 +254,25 @@ class OpenvinoNet final : public vk::net::RuntimeNet {
     if (!ready || !done) return refuse(RefusalCode::InputMismatch, "OpenVINO : étape sans rappels");
     {
       const std::scoped_lock lock(jobs_mutex_);
-      jobs_.push_back(Job{.inputs = {inputs.begin(), inputs.end()},
-                          .outputs = {outputs.begin(), outputs.end()},
-                          .ready = std::move(ready),
-                          .done = std::move(done)});
-      if (!worker_.joinable()) worker_ = std::jthread([this](const std::stop_token& stop) { serve(stop); });
+      if (failed_) return std::unexpected(*failed_);
+      if (!worker_.joinable()) {
+        // Le fil des étapes, au premier appel ; un refus du fil lui-même (exception échappée) est
+        // gardé pour l'appel suivant.
+        auto worker = start_thread(
+            "openvino", ThreadReport([this](const Refusal& refusal) { note_failure(refusal); }),
+            [this](const std::stop_token& stop, const ThreadReport& /*report*/) { serve(stop); });
+        if (!worker) return std::unexpected(std::move(worker.error()));
+        worker_ = std::move(*worker);
+      }
     }
-    wake_.notify_one();
+    if (!jobs_.try_push(Job{.inputs = {inputs.begin(), inputs.end()},
+                            .outputs = {outputs.begin(), outputs.end()},
+                            .ready = std::move(ready),
+                            .done = std::move(done)})) {
+      // Rien n'est lancé : l'appelant fait l'étape lui-même, et signale la timeline.
+      return refuse(RefusalCode::ThreadUnavailable,
+                    std::format("OpenVINO : {} étapes en file, le fil n'en reprend pas", kStepBound));
+    }
     return {};
   }
 
@@ -289,23 +302,27 @@ class OpenvinoNet final : public vk::net::RuntimeNet {
     }
   }
 
-  // Le fil des étapes : chaque étape en file est faite, même à l'arrêt (sa timeline l'attend).
+  void note_failure(const Refusal& refusal) {
+    const std::scoped_lock lock(jobs_mutex_);
+    if (!failed_) failed_ = refusal;
+  }
+
+  // Le fil des étapes : chaque étape en file est faite, même à l'arrêt (sa timeline l'attend), et
+  // chacune appelle done, quoi qu'il arrive : la file attendrait sans fin un signal perdu.
   void serve(const std::stop_token& stop) {
-    while (true) {
-      std::optional<Job> job;
-      {
-        std::unique_lock lock(jobs_mutex_);
-        wake_.wait(lock, [&] { return !jobs_.empty() || stop.stop_requested(); });
-        if (jobs_.empty()) return;
-        job = std::move(jobs_.front());
-        jobs_.pop_front();
+    while (std::optional<Inbox<Job>::Message> message = jobs_.wait(stop)) {
+      Job& job = std::get<Job>(*message);
+      std::expected<void, Refusal> result;
+      try {
+        result = job.ready();
+        if (result) {
+          const std::scoped_lock lock(request_mutex_);
+          result = infer(job.inputs, job.outputs);
+        }
+      } catch (...) {
+        result = std::unexpected(refusal_from_exception(RefusalCode::DeviceUnavailable, "OpenVINO, étape"));
       }
-      std::expected<void, Refusal> result = job->ready();
-      if (result) {
-        const std::scoped_lock lock(request_mutex_);
-        result = infer(job->inputs, job->outputs);
-      }
-      job->done(std::move(result));
+      job.done(std::move(result));
     }
   }
 
@@ -329,10 +346,13 @@ class OpenvinoNet final : public vk::net::RuntimeNet {
   vk::net::IoNames names_;
   std::shared_ptr<UsmPool> usm_;
   std::vector<Bound> bound_;
+  // Étapes en file pour le fil ; au-delà, l'appelant fait l'étape lui-même.
+  static constexpr std::size_t kStepBound = 16;
+
   std::mutex request_mutex_;  // request_ et bound_ : le fil des étapes ou celui de run
-  std::mutex jobs_mutex_;
-  std::condition_variable wake_;
-  std::deque<Job> jobs_;
+  std::mutex jobs_mutex_;     // failed_ et le lancement du fil
+  Inbox<Job> jobs_{{kStepBound}};
+  std::optional<Refusal> failed_;  // le fil des étapes a cédé : plus aucune étape différée
   std::jthread worker_;
 };
 

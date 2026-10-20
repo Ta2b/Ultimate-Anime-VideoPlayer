@@ -4,6 +4,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstring>
+#include <memory>
 #include <tuple>
 
 #include <catch2/catch_test_macros.hpp>
@@ -99,6 +100,32 @@ TEST_CASE("KernelOps : ingestion d'images hôte contre kernels/ref", "[vk_backen
   const std::size_t before = dynamic_cast<vk::VulkanKernelOps&>(ops).recordings();
   require_ok(ops.ingest(frame, {}, rgb->tensor()));
   CHECK(dynamic_cast<vk::VulkanKernelOps&>(ops).recordings() == before);
+}
+
+TEST_CASE("KernelOps : les copies d'images hôte passent par le fil d'envoi", "[vk_backend][kernels]") {
+  TempDir dir("envoi");
+  auto backend = make_backend(dir.path());
+  auto& ops = dynamic_cast<vk::VulkanKernelOps&>(*backend->kernels());
+  const ColorInfo color = color_of(ColorMatrix::Bt709, ColorRange::Limited, ChromaSiting::Left);
+  auto rgb = rgb_tensor(*backend, 48, 32, TensorType::F32);
+  // Chaque ingestion met sa copie en file sans l'attendre ; le lot ne part qu'une fois toutes
+  // faites (la lecture le fait partir), et l'image est rendue après sa copie.
+  std::weak_ptr<const FrameData> held;
+  for (std::uint32_t n = 1; n <= 4; ++n) {
+    const k::YuvImage image = synthetic_yuv(k::Format::Nv12, 48, 32, n);
+    const DecodedFrame frame = host_frame(image, color, n);
+    held = frame.data;
+    require_ok(ops.ingest(frame, {}, rgb->tensor()));
+    const auto want = k::ref::yuv_to_rgb(image, ref_color(color), IngestSpec{}.chroma);
+    REQUIRE(want);
+    CHECK(max_abs_diff(download(*backend, *rgb, 48, 32), stored(*want, TensorType::F32)) <=
+          k::tolerance::kRgbF16);
+    CHECK(ops.uploads_pending() == 0);
+  }
+  require_ok(backend->context().wait_on_host(backend->queue().last()));
+  require_ok(backend->kernels()->fill(rgb->tensor(), 0.0F));  // reclaim : l'image retenue est rendue
+  (void)download(*backend, *rgb, 48, 32);
+  CHECK(held.expired());
 }
 
 TEST_CASE("KernelOps : refus nommés du contrat", "[vk_backend][kernels]") {

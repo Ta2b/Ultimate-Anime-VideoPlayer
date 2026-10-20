@@ -184,6 +184,9 @@ void VkContext::merge(Group& group, const Batched& entry) {
 
 Done VkContext::flush() {
   if (batched_ == 0) return {};
+  if (before_flush_) {
+    if (auto ok = before_flush_(); !ok) return ok;
+  }
   batch_buffers_.resize(batched_);
   std::size_t groups = 0;
   for (std::size_t k = 0; k < batched_; ++k) {

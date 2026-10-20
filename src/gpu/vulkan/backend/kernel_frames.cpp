@@ -1,13 +1,16 @@
-// Images décodées vers un tampon YUV de disposition serrée : recopiées par l'hôte depuis la
-// mémoire hôte (décodage logiciel, tests), ou par le GPU depuis la VkImage multiplan de FFmpeg,
-// entre begin_vulkan_access et end_vulkan_access. Puis l'ingestion.
+// Images décodées vers un tampon YUV de disposition serrée : recopiées depuis la mémoire hôte
+// (décodage logiciel, tests) par le fil d'envoi, ou par le GPU depuis la VkImage multiplan de
+// FFmpeg, entre begin_vulkan_access et end_vulkan_access. Puis l'ingestion.
+#include <algorithm>
 #include <bit>
 #include <cstring>
 #include <format>
 #include <optional>
 #include <type_traits>
 #include <utility>
+#include <variant>
 
+#include "core/thread.h"
 #include "gpu/vulkan/backend/kernel_ops.h"
 #include "gpu/vulkan/backend/kernel_ops_detail.h"
 #include "gpu/vulkan/backend/reduce_weights.h"
@@ -111,30 +114,34 @@ std::expected<std::size_t, Refusal> VulkanKernelOps::staging_for(kernels::Format
                                                                  std::size_t avoid) {
   const auto completed = queue_.completed();
   if (!completed) return std::unexpected(completed.error());
+  const std::uint64_t uploaded = uploads_done();
   ++staging_uses_;
   std::size_t same = 0;
   std::size_t oldest = SIZE_MAX;
   std::size_t spare = SIZE_MAX;  // libre, d'une autre forme et sans service depuis longtemps
+  // Libre : la file a fini de le lire, et le fil d'envoi d'y écrire.
+  const auto free = [&](const Staging& s) { return s.busy_until <= *completed && s.upload <= uploaded; };
   for (std::size_t k = 0; k < staging_.size(); ++k) {
     Staging& s = staging_[k];
     if (k == avoid) continue;
     if (s.format != format || s.width != width || s.height != height || s.buffer.use() != use) {
-      if (spare == SIZE_MAX && s.busy_until <= *completed && staging_uses_ - s.used > kStagingIdleUses)
-        spare = k;
+      if (spare == SIZE_MAX && free(s) && staging_uses_ - s.used > kStagingIdleUses) spare = k;
       continue;
     }
     ++same;
-    if (s.busy_until <= *completed) {
+    if (free(s)) {
       s.used = staging_uses_;
       return k;
     }
     if (oldest == SIZE_MAX || s.busy_until < staging_[oldest].busy_until) oldest = k;
   }
   if (same >= kStagingSlots && oldest != SIZE_MAX) {
-    // Tous occupés : le plus ancien se libère d'abord (attente hôte comptée, rare).
+    // Tous occupés : le plus ancien se libère d'abord (attente hôte comptée, rare), et son envoi
+    // s'il en reste un.
     if (auto ok = context_.wait_on_host(queue_.at(staging_[oldest].busy_until)); !ok) {
       return std::unexpected(ok.error());
     }
+    if (auto ok = uploads_wait(); !ok) return std::unexpected(ok.error());
     staging_[oldest].used = staging_uses_;
     return oldest;
   }
@@ -188,6 +195,7 @@ std::expected<VulkanKernelOps::Source, Refusal> VulkanKernelOps::source(const De
     if (frame.data->plane_count() != static_cast<int>(count)) {
       return refuse_frame(RefusalCode::ShapeInvalid, "image hôte : nombre de plans inattendu");
     }
+    std::array<UploadPlane, 3> copies{};
     for (std::uint32_t p = 0; p < count; ++p) {
       const PlaneCopy& pc = planes[p];
       const std::span<const std::byte> in = frame.data->host_plane(static_cast<int>(p));
@@ -196,11 +204,17 @@ std::expected<VulkanKernelOps::Source, Refusal> VulkanKernelOps::source(const De
       if (stride < row || in.size() < (stride * (pc.height - 1)) + row) {
         return refuse_frame(RefusalCode::ShapeInvalid, std::format("image hôte : plan {} trop court", p));
       }
-      for (std::uint32_t y = 0; y < pc.height; ++y) {
-        std::memcpy(s.buffer.mapped() + pc.dst.offset + (std::size_t{y} * pc.dst.pitch),
-                    in.data() + (y * stride), row);
-      }
+      copies[p] = {.in = in.data(),
+                   .stride = stride,
+                   .out = s.buffer.mapped() + pc.dst.offset,
+                   .pitch = pc.dst.pitch,
+                   .row = static_cast<std::uint32_t>(row),
+                   .rows = pc.height};
     }
+    // La copie se fait sur le fil d'envoi pendant que ce fil enregistre la suite ; le lot
+    // l'attend avant de partir (uploads_wait).
+    if (auto ok = upload(frame, *slot, std::span(copies).first(count)); !ok)
+      return std::unexpected(ok.error());
     return src;
   }
   src.image = detail::to_image(frame.data->native_plane(0));
@@ -218,6 +232,74 @@ std::expected<VulkanKernelOps::Source, Refusal> VulkanKernelOps::source(const De
   if (!access) return std::unexpected(access.error());
   src.access = *access;
   return src;
+}
+
+std::expected<void, Refusal> VulkanKernelOps::upload(const DecodedFrame& frame, std::size_t slot,
+                                                     std::span<const UploadPlane> planes) {
+  if (!upload_thread_.joinable()) {
+    auto thread = start_thread(
+        "envoi", ThreadReport([this](const Refusal& refusal) {
+          const std::scoped_lock lock(uploads_mutex_);
+          if (!upload_failure_) upload_failure_ = refusal;
+          uploads_finished_.notify_all();
+        }),
+        [this](const std::stop_token& stop, const ThreadReport& /*report*/) { serve_uploads(stop); });
+    if (!thread) return std::unexpected(std::move(thread.error()));
+    upload_thread_ = std::move(*thread);
+  }
+  const auto job = [&] {
+    Upload made{.frame = frame.data, .planes = {}, .count = static_cast<std::uint32_t>(planes.size())};
+    std::ranges::copy(planes, made.planes.begin());
+    return made;
+  };
+  if (!uploads_.try_push(job())) {
+    // Boîte pleine : les envois en file sont attendus (le fil du GPU est en avance), puis le
+    // nôtre entre.
+    if (auto ok = uploads_wait(); !ok) return ok;
+    if (!uploads_.try_push(job()))
+      return refuse_frame(RefusalCode::ThreadUnavailable, "fil d'envoi : boîte pleine après l'attente");
+  }
+  const std::scoped_lock lock(uploads_mutex_);
+  if (upload_failure_) return std::unexpected(*upload_failure_);
+  staging_[slot].upload = ++uploads_queued_;
+  return {};
+}
+
+void VulkanKernelOps::serve_uploads(const std::stop_token& stop) {
+  // Chaque envoi en file est fait, même à l'arrêt : le lot l'attend peut-être.
+  while (std::optional<Inbox<Upload>::Message> message = uploads_.wait(stop)) {
+    std::optional<Upload> job(std::get<Upload>(std::move(*message)));
+    for (std::uint32_t p = 0; p < job->count; ++p) {
+      const UploadPlane& plane = job->planes[p];
+      for (std::uint32_t y = 0; y < plane.rows; ++y) {
+        std::memcpy(plane.out + (std::size_t{y} * plane.pitch), plane.in + (std::size_t{y} * plane.stride),
+                    plane.row);
+      }
+    }
+    job.reset();  // l'image est rendue avant d'annoncer l'envoi fait
+    {
+      const std::scoped_lock lock(uploads_mutex_);
+      ++uploads_done_;
+    }
+    uploads_finished_.notify_all();
+  }
+}
+
+std::expected<void, Refusal> VulkanKernelOps::uploads_wait() {
+  std::unique_lock lock(uploads_mutex_);
+  uploads_finished_.wait(lock, [&] { return uploads_done_ >= uploads_queued_ || upload_failure_; });
+  if (upload_failure_) return std::unexpected(*upload_failure_);
+  return {};
+}
+
+std::uint64_t VulkanKernelOps::uploads_done() const {
+  const std::scoped_lock lock(uploads_mutex_);
+  return uploads_done_;
+}
+
+std::size_t VulkanKernelOps::uploads_pending() const {
+  const std::scoped_lock lock(uploads_mutex_);
+  return static_cast<std::size_t>(uploads_queued_ - uploads_done_);
 }
 
 void VulkanKernelOps::copy_image(VkCommandBuffer cb, const Source& src) const {

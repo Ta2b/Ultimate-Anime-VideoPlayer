@@ -79,7 +79,9 @@ VulkanKernelOps::VulkanKernelOps(VkContext& context, MemoryAllocator& memory, Pi
       pipelines_(pipelines),
       queue_(queue),
       runner_(context, pipelines),
-      destroyed_mark_(context.destroyed().mark()) {}
+      destroyed_mark_(context.destroyed().mark()) {
+  context_.before_flush([this] { return uploads_wait(); });
+}
 
 void VulkanKernelOps::forget_destroyed() {
   const DestroyedLog& log = context_.destroyed();
@@ -97,8 +99,14 @@ void VulkanKernelOps::forget_destroyed() {
 }
 
 VulkanKernelOps::~VulkanKernelOps() {
-  // Tout ce que la file a reçu s'achève avant de rendre images, vues et tampons ; un GPU bloqué
-  // les garde.
+  // Le fil d'envoi finit ses copies (le lot en attend peut-être une) et s'arrête ; puis tout ce
+  // que la file a reçu s'achève avant de rendre images, vues et tampons ; un GPU bloqué les
+  // garde.
+  if (upload_thread_.joinable()) {
+    upload_thread_.request_stop();
+    upload_thread_.join();
+  }
+  context_.before_flush({});
   if (!context_.settle(queue_.last())) return;
   for (const RingView& v : ring_views_) context_.fn().vkDestroyImageView(context_.device(), v.view, nullptr);
 }
