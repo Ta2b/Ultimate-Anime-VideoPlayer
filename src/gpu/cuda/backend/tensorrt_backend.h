@@ -22,7 +22,6 @@
 #include "core/types.h"
 #include "gpu/backend.h"
 #include "gpu/cuda/backend/gpu_timing.h"
-#include "gpu/cuda/backend/nvof_session.h"
 #include "gpu/cuda/backend/ring_slot.h"
 #include "gpu/kernel_ops.h"
 
@@ -91,9 +90,6 @@ class TensorRtBackend final : public Backend, public KernelOps {
   std::expected<float, Refusal> flow_max_now(const Motion& motion) override;
   std::expected<void, Refusal> warp_blend_poses(const Tensor& a, const Tensor& b, const Motion& motion,
                                                 const Motion* previous, float t, const Tensor& out) override;
-  // Flux optique matériel (tensorrt_optical_flow.cpp).
-  std::expected<int, Refusal> open_optical_flow(int width, int height) override;
-  std::expected<void, Refusal> optical_flow(const Tensor& a, const Tensor& b, const Motion& motion) override;
 
  private:
   // Une image décodée tenue jusqu'à la fin de son ingestion côté GPU : FFmpeg la réécrit dès
@@ -162,7 +158,6 @@ class TensorRtBackend final : public Backend, public KernelOps {
   // RTX HDR : l'effet, son pont de flux, et ses deux tampons linéaires (RGBA8 tramé, RGB10A2).
   struct TrueHdrState;
   std::unique_ptr<TrueHdrState> true_hdr_;
-  std::unique_ptr<NvofSession> optical_flow_;  // ouvert par open_optical_flow
 };
 
 }  // namespace ajp::gpu::cuda

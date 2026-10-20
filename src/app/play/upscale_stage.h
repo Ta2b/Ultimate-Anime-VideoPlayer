@@ -40,10 +40,6 @@ struct UpscaleSetup {
   gpu::Engine* rife_motion = nullptr;
   int rife_planes = 11;  // plans d'entrée de rife et rife_motion : 11 (v1) ou 7 (v2)
   int rife_align = 64;   // multiple de remplissage du modèle RIFE : 64, ou 128 pour 4.25 lite
-  // Flux optique matériel à la place de RIFE (KernelOps::open_optical_flow, déjà ouvert pour
-  // rife_width × rife_height) : la grille de ses vecteurs, en pixels ; 0 : RIFE ou rien. Un seul
-  // mouvement par paire, au milieu ; les autres instants s'en déduisent au warp.
-  int optical_flow_grid = 0;
   // GMFSS à la place de RIFE : ses deux moteurs, aux plans remplis de rife_geometry(travail) ; les
   // deux ou aucun.
   gpu::Engine* gmfss_pair = nullptr;
@@ -85,24 +81,21 @@ class UpscaleStage final : public RingStage {
   std::expected<std::uint32_t, Refusal> outputs(const DecodedFrame& frame) override;
   std::expected<Output, Refusal> produce(const DecodedFrame& frame, std::uint32_t output, std::uint32_t slot,
                                          std::uint64_t wait_value, std::uint64_t signal_value) override;
-  // Image intermédiaire output + 1 sur outputs_ par le mouvement (rife_motion ou flux optique)
-  // dans middle_.
+  // Image intermédiaire output + 1 sur outputs_ par le mouvement de rife_motion dans middle_.
   std::expected<void, Refusal> interpolate_by_motion(std::uint32_t output);
   // RIFE image à l'instant t, recadrée dans middle_.
   std::expected<void, Refusal> interpolate_image(float t);
   // La variante mouvement de RIFE à l'instant t, dans flow et mask.
   std::expected<void, Refusal> run_motion(float t, const gpu::Tensor& flow, const gpu::Tensor& mask);
-  bool interpolates() const {
-    return setup_.rife != nullptr || setup_.rife_motion != nullptr || setup_.optical_flow_grid > 0 || gmfss();
-  }
+  bool interpolates() const { return setup_.rife != nullptr || setup_.rife_motion != nullptr || gmfss(); }
   bool gmfss() const { return setup_.gmfss_pair != nullptr; }
   // GMFSS (upscale_gmfss.cpp) : ses tenseurs, rangés dans l'ordre de ses moteurs ; puis l'image
   // intermédiaire output + 1 sur outputs_ dans middle_.
   std::expected<void, Refusal> allocate_gmfss();
   std::expected<void, Refusal> interpolate_gmfss(std::uint32_t output);
-  // Le mouvement est estimé à la taille de RIFE puis déformé au warp (variante mouvement ou flux
-  // optique), plutôt que l'image de RIFE elle-même.
-  bool by_motion() const { return setup_.rife_motion != nullptr || setup_.optical_flow_grid > 0; }
+  // Le mouvement est estimé à la taille de RIFE puis déformé au warp (variante mouvement), plutôt
+  // que l'image de RIFE elle-même.
+  bool by_motion() const { return setup_.rife_motion != nullptr; }
   // L'image où RIFE et les mesures de la paire travaillent : la réduite s'il y en a une.
   const gpu::Tensor& rife_source(std::uint32_t index) const {
     return small_[index] ? small_[index]->tensor() : rgb_[index]->tensor();
@@ -136,10 +129,10 @@ class UpscaleStage final : public RingStage {
   std::unique_ptr<gpu::TensorBuffer> rife_in_;   // 1 × rife_planes × ph × pw
   std::unique_ptr<gpu::TensorBuffer> rife_out_;  // 1 × 3 × ph × pw
   std::unique_ptr<gpu::TensorBuffer> middle_;    // 1 × 3 × h × w : image intermédiaire recadrée
-  // Mouvement au milieu de la paire (variante mouvement de RIFE, ou flux optique sur sa grille) :
-  // deux, à tour de rôle, celui de la paire précédente servant à garder les poses.
+  // Mouvement au milieu de la paire (variante mouvement de RIFE) : deux, à tour de rôle, celui de
+  // la paire précédente servant à garder les poses.
   struct MotionBuffers {
-    std::unique_ptr<gpu::TensorBuffer> flow;  // 1 × 4 × ph × pw (RIFE) ou cells_y × cells_x
+    std::unique_ptr<gpu::TensorBuffer> flow;  // 1 × 4 × ph × pw
     std::unique_ptr<gpu::TensorBuffer> mask;  // 1 × 1, même taille
   };
   std::array<MotionBuffers, 2> mids_;
@@ -148,7 +141,6 @@ class UpscaleStage final : public RingStage {
   // Variante mouvement, mouvement fort : celui d'un autre instant que le milieu.
   std::unique_ptr<gpu::TensorBuffer> flow_;
   std::unique_ptr<gpu::TensorBuffer> mask_;
-  std::uint64_t optical_flow_pairs_ = 0;
   // GMFSS : l'entrée de la paire, chaque tenseur nommé de ses graphes (sorties de la paire,
   // sources splattées), et les six splats d'une image intermédiaire.
   struct GmfssSplat {

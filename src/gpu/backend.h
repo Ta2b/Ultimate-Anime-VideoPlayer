@@ -36,7 +36,8 @@ namespace ajp::gpu {
 // Version de cette interface. Un backend d'une autre version est refusé au chargement.
 // 2 : BackendInit à la création, noyaux de la chaîne (kernels()), alloc_tensor().
 // 3 : enqueue(), signal() et wait() rendent leur refus ; ajp_backend_layout().
-inline constexpr int kBackendAbi = 3;
+// 4 : KernelOps sans le flux optique matériel (open_optical_flow, optical_flow).
+inline constexpr int kBackendAbi = 4;
 
 using DeviceUuid = ajp::DeviceUuid;
 

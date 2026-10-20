@@ -27,7 +27,7 @@ namespace ajp::app::play {
 std::string_view base_profiles_toml();
 
 // Les noms de modèles qu'un profil donne : le nom du fichier sans « .onnx ».
-inline constexpr std::string_view kRifeModelId = "rife_v4.26";
+inline constexpr std::string_view kRifeModelId = "rife_v4.25";
 inline constexpr std::string_view kSpanModelId =
     "2x_AnimeJaNai_HD_V3.1Sharp1_Performance_SPANF3_b5f48_unshuffle_fp16";
 

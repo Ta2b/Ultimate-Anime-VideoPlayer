@@ -149,14 +149,12 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
     rife_choice = std::move(*found);
   const std::optional<std::filesystem::path> rife_model =
       rife_choice ? std::optional(rife_choice->path) : std::nullopt;
-  // Fluidité → Moteur : le flux optique matériel remplace RIFE, sans modèle ; RIFE reprend s'il manque.
-  const bool want_flow = settings.rife_factor >= 2 && settings.motion_engine == MotionEngine::OpticalFlow;
   const std::vector<std::filesystem::path> gmfss_places = gmfss_dirs(p.paths.home, rife_choice);
   const GmfssVariant gmfss_variant =
       settings.motion_engine == MotionEngine::GmfssUnion ? GmfssVariant::Union : GmfssVariant::Base;
   const bool gmfss_found = find_gmfss(gmfss_places, gmfss_variant).has_value();
   const bool want_gmfss = settings.rife_factor >= 2 && is_gmfss(settings.motion_engine);
-  if (settings.rife_factor >= 2 && !rife_model && !want_flow && !(want_gmfss && gmfss_found))
+  if (settings.rife_factor >= 2 && !rife_model && !(want_gmfss && gmfss_found))
     return std::unexpected(choose_rife_model(p.options, p.paths.home, settings, rife_order).error());
   show_loading(p.screen, p.ui, "Chargement");
   const gpu::BackendInit init{
@@ -184,9 +182,6 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
   const WorkSize rife_size = !p.options.rife_image && work.height > kRifeMotionHeight
                                  ? work_size(video.width, video.height, kRifeMotionHeight)
                                  : work;
-  const int flow_grid = want_flow ? open_optical_flow(*(*backend)->kernels(), rife_size.width,
-                                                      rife_size.height, p.ui.controls())
-                                  : 0;
   // GMFSS Fortuna à la place de RIFE, à la taille de travail ; RIFE reprend si ses graphes manquent.
   GmfssEngines gmfss;
   if (want_gmfss) {
@@ -201,7 +196,7 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
     }
   }
   const bool use_gmfss = gmfss.pair != nullptr;
-  const bool use_rife = settings.rife_factor >= 2 && rife_model && flow_grid == 0 && !use_gmfss;
+  const bool use_rife = settings.rife_factor >= 2 && rife_model && !use_gmfss;
   const int rife_align = use_rife ? rife_padding_multiple(*rife_model) : kernels::kRifeAlign;
   const kernels::RifeGeometry g = kernels::rife_geometry(rife_size.width, rife_size.height, rife_align);
   const kernels::RifeGeometry image_g = kernels::rife_geometry(work.width, work.height, rife_align);
@@ -243,9 +238,9 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
     if (!*loaded) return std::nullopt;
     rife = std::move(**loaded);
   }
-  if (rife_motion || flow_grid > 0) {
-    log->info("{} : estimé en {}x{}, warp en {}x{}", rife_motion ? "RIFE mouvement" : "flux optique",
-              rife_size.width, rife_size.height, work.width, work.height);
+  if (rife_motion) {
+    log->info("RIFE mouvement : estimé en {}x{}, warp en {}x{}", rife_size.width, rife_size.height,
+              work.width, work.height);
   }
 
   settings.stats.all = p.details;  // Tab pendant la préparation
@@ -279,9 +274,8 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
 
   const std::string label_text = std::format(
       "{}{}{}",
-      flow_grid > 0 ? std::format("flux optique {} · ", factor_text(factor_of(settings)))
-      : use_gmfss ? std::format("GMFSS Fortuna{} {} · ", gmfss_variant == GmfssVariant::Union ? " Union" : "",
-                                factor_text(factor_of(settings)))
+      use_gmfss ? std::format("GMFSS Fortuna{} {} · ", gmfss_variant == GmfssVariant::Union ? " Union" : "",
+                              factor_text(factor_of(settings)))
       : use_rife
           ? std::format("RIFE {} · {} · ", factor_text(factor_of(settings)), rife_model->stem().string())
           : std::string(),
@@ -292,7 +286,7 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
             : std::format("sans agrandissement · {}", reduce));
   log->info("{} : {}", options.file.string(), label_text);
   auto live = std::make_shared<LiveSettings>();
-  live->set_rife_factor(use_rife || flow_grid > 0 || use_gmfss ? factor_of(settings) : Factor{});
+  live->set_rife_factor(use_rife || use_gmfss ? factor_of(settings) : Factor{});
   live->set_reduction(reduction_of(settings.downscale));
   live->set_keep_poses(settings.keep_poses);
   PipelineConfig config{
@@ -309,35 +303,31 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
         auto slots = out.create_ring(sized.width * factor, sized.height * factor, kRingSlots);
         if (!slots) return std::unexpected(std::move(slots.error()));
         const MasterClock* clock = stage.clock;
-        return UpscaleStage::start(
-            std::move(stage), UpscaleSetup{.backend = backend->get(),
-                                           .engine = engine.get(),
-                                           .rife = rife.get(),
-                                           .rife_motion = rife_motion.get(),
-                                           .rife_planes = rife_planes,
-                                           .rife_align = rife_align,
-                                           .optical_flow_grid = flow_grid,
-                                           .gmfss_pair = gmfss.pair.get(),
-                                           .gmfss_fusion = gmfss.fusion.get(),
-                                           .rife_factor = factor_of(settings),
-                                           .true_hdr = settings.true_hdr,
-                                           .live = live,
-                                           .clock = clock,
-                                           .source_width = width,
-                                           .source_height = height,
-                                           .work_width = sized.width,
-                                           .work_height = sized.height,
-                                           .rife_width = rife_motion || flow_grid > 0 ? rife_size.width : 0,
-                                           .rife_height = rife_motion || flow_grid > 0 ? rife_size.height : 0,
-                                           .slots = std::move(*slots)});
+        return UpscaleStage::start(std::move(stage),
+                                   UpscaleSetup{.backend = backend->get(),
+                                                .engine = engine.get(),
+                                                .rife = rife.get(),
+                                                .rife_motion = rife_motion.get(),
+                                                .rife_planes = rife_planes,
+                                                .rife_align = rife_align,
+                                                .gmfss_pair = gmfss.pair.get(),
+                                                .gmfss_fusion = gmfss.fusion.get(),
+                                                .rife_factor = factor_of(settings),
+                                                .true_hdr = settings.true_hdr,
+                                                .live = live,
+                                                .clock = clock,
+                                                .source_width = width,
+                                                .source_height = height,
+                                                .work_width = sized.width,
+                                                .work_height = sized.height,
+                                                .rife_width = rife_motion ? rife_size.width : 0,
+                                                .rife_height = rife_motion ? rife_size.height : 0,
+                                                .slots = std::move(*slots)});
       });
   if (!pipeline) return std::unexpected(std::move(pipeline.error()));
 
-  const bool rife_loaded = rife != nullptr || rife_motion != nullptr || flow_grid > 0 || use_gmfss;
-  const ChainStats chain_stats(*live, *(*backend)->kernels(), rife_loaded,
-                               flow_grid > 0 ? "flux optique"
-                               : use_gmfss   ? "GMFSS"
-                                             : "RIFE");
+  const bool rife_loaded = rife != nullptr || rife_motion != nullptr || use_gmfss;
+  const ChainStats chain_stats(*live, *(*backend)->kernels(), rife_loaded, use_gmfss ? "GMFSS" : "RIFE");
   SessionConfig session_config = (*pipeline)->session_config();
   session_config.start_us = start_us;
   session_config.stop_after_us = options.stop_after_us;
@@ -365,7 +355,7 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
           .display_hz = display_period_us(out.window()) > 0
                             ? 1e6 / static_cast<double>(display_period_us(out.window()))
                             : 0.0,
-          .rife_available = rife_model.has_value() || flow_grid > 0 || gmfss_found,
+          .rife_available = rife_model.has_value() || gmfss_found,
           .gmfss_available = find_gmfss(gmfss_places).has_value(),
           .gmfss_union_available = find_gmfss(gmfss_places, GmfssVariant::Union).has_value(),
           .rife_loaded = rife_loaded,

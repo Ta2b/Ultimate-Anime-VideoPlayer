@@ -33,7 +33,7 @@ inline constexpr std::string_view kDefaultModelFile =
     "2x_AnimeJaNai_HD_V3.1Sharp1_Performance_SPANF3_b5f48_unshuffle_fp16.onnx";
 // Facteur des modèles SPAN d'AnimeJaNai HD : 2 (sortie 2H × 2W).
 inline constexpr int kSpanFactor = 2;
-// RIFE du lecteur actuel (profil Quality) : RIFE 4.26, lu en place comme SPAN.
+// RIFE par défaut : RIFE 4.25, lu en place comme SPAN.
 inline constexpr std::string_view kDefaultRifeFile = "rife_v4.25.onnx";
 // Interpolation par défaut : ×3. Sur la RTX 4070 Ti, une paire qui bouge coûte 2 RIFE à 720p et
 // 3 SPAN, environ 31 ms sur 41,7 : 8 images sautées sur 25 s d'ouverture, contre 304 à ×4

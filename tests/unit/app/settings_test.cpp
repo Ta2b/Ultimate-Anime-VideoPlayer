@@ -38,8 +38,8 @@ TEST_CASE("play.toml relit à l'identique ce qu'il a écrit", "[app][settings]")
   s.oled_care = false;
   s.steady_cadence = true;
   s.smooth_motion = true;
-  s.motion_engine = MotionEngine::OpticalFlow;
-  s.rife_model = "rife_v4.26_heavy.onnx";
+  s.motion_engine = MotionEngine::DistilDrba;
+  s.rife_model = "rife_v4.22_lite.onnx";
   s.keep_poses = true;
   s.grade_values.expand = 0.3;
   const auto back = parse_settings(format_settings(s));
@@ -203,12 +203,12 @@ TEST_CASE("Ce qu'un changement demande : direct ou réouverture, dit avant d'app
   CHECK(change_between(on, off, false).cost == ChangeCost::Live);
   // Le moteur du mouvement se recharge s'il interpole ; sans interpolation, il attend.
   PlaySettings flow = on;
-  flow.motion_engine = MotionEngine::OpticalFlow;
+  flow.motion_engine = MotionEngine::DistilDrba;
   CHECK(change_between(on, flow, true).reason.find("mouvement") != std::string::npos);
   PlaySettings flow_off = off;
-  flow_off.motion_engine = MotionEngine::OpticalFlow;
+  flow_off.motion_engine = MotionEngine::DistilDrba;
   CHECK(change_between(off, flow_off, true).cost == ChangeCost::Live);
-  CHECK(live_part(off, flow_off, true).motion_engine == MotionEngine::OpticalFlow);
+  CHECK(live_part(off, flow_off, true).motion_engine == MotionEngine::DistilDrba);
   CHECK(live_part(on, flow, true).motion_engine == MotionEngine::Rife);
   PlaySettings heavy = on;
   heavy.rife_model = "rife_v4.26_heavy.onnx";

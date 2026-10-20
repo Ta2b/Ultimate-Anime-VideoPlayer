@@ -166,12 +166,12 @@ std::string_view name(MotionEngine engine) {
   switch (engine) {
     case MotionEngine::Rife:
       return "rife";
-    case MotionEngine::OpticalFlow:
-      return "optical_flow";
     case MotionEngine::Gmfss:
       return "gmfss";
     case MotionEngine::GmfssUnion:
       return "gmfss_union";
+    case MotionEngine::DistilDrba:
+      return "distil_drba";
   }
   return "rife";
 }
@@ -180,12 +180,12 @@ std::string_view label(MotionEngine engine) {
   switch (engine) {
     case MotionEngine::Rife:
       return "RIFE";
-    case MotionEngine::OpticalFlow:
-      return "Flux optique NVIDIA (matériel)";
     case MotionEngine::Gmfss:
       return "GMFSS Fortuna (le plus fin, le plus lourd)";
     case MotionEngine::GmfssUnion:
       return "GMFSS Fortuna Union (GMFSS mêlé à RIFE)";
+    case MotionEngine::DistilDrba:
+      return "DistilDRBA (poses gardées par le réseau)";
   }
   return "RIFE";
 }
@@ -295,7 +295,9 @@ std::expected<PlaySettings, Refusal> parse_settings(std::string_view toml_text) 
     reads.push_back(read(*interpolation, "interpolation", "keep_poses", s.keep_poses));
     std::string engine(name(s.motion_engine));
     reads.push_back(read(*interpolation, "interpolation", "engine", engine));
-    bool engine_known = false;
+    // Le flux optique matériel des RTX a été retiré : RIFE le remplace, sans plainte.
+    bool engine_known = engine == "optical_flow";
+    if (engine_known) s.motion_engine = MotionEngine::Rife;
     for (int i = 0; i < kMotionEngineCount; ++i) {
       if (name(static_cast<MotionEngine>(i)) == engine) {
         s.motion_engine = static_cast<MotionEngine>(i);

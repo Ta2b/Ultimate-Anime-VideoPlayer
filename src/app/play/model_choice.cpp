@@ -50,7 +50,9 @@ std::expected<ModelChoice, Refusal> choose_rife_model(const PlayOptions& options
                                                       std::span<const std::string_view> preference) {
   auto found = find_rife_model(options, default_rife_candidates(home, preference));
   if (!found) return std::unexpected(std::move(found.error()));
-  return choose_in(*found, "rife_v", settings.rife_model, options.was_given("--rife-model"));
+  const std::string chosen =
+      std::ranges::contains(kRifeCatalogue, settings.rife_model) ? settings.rife_model : "";
+  return choose_in(*found, "rife_v", chosen, options.was_given("--rife-model"));
 }
 
 std::span<const std::string_view> rife_preference(const GpuFacts& gpu) {
@@ -60,12 +62,9 @@ std::span<const std::string_view> rife_preference(const GpuFacts& gpu) {
 
 std::vector<RifeEntry> rife_menu(const std::vector<std::string>& available) {
   std::vector<RifeEntry> menu;
-  menu.reserve(kRifeCatalogue.size() + available.size());
+  menu.reserve(kRifeCatalogue.size());
   for (const std::string_view file : kRifeCatalogue)
     menu.push_back({.file = std::string(file), .present = std::ranges::contains(available, file)});
-  for (const std::string& file : available) {
-    if (!std::ranges::contains(kRifeCatalogue, file)) menu.push_back({.file = file, .present = true});
-  }
   return menu;
 }
 

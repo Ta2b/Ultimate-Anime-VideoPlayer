@@ -68,11 +68,6 @@ std::expected<int, Refusal> open_rtx_hdr(const std::filesystem::path& sdk_source
                                          const PlaySettings& settings, int auto_peak, PlaceboScreen& screen,
                                          gpu::KernelOps& kernels, int width, int height);
 
-// Flux optique matériel (Fluidité → Moteur) : ses sessions ouvertes pour des images de width ×
-// height, et la grille de ses vecteurs ; 0 si le backend ou la carte ne l'ont pas, le journal et
-// l'écran le disent et RIFE reprend.
-int open_optical_flow(gpu::KernelOps& kernels, int width, int height, Controls& controls);
-
 // Le grade de la chaîne pour chaque sortie : en PQ, route TrueHDR si RTX HDR est ouvert, native si le
 // HDR natif est choisi, aucun sinon ; en SDR, sur toutes les routes. Rien là où il est neutre.
 render::GradeChoice grade_of(const PlaySettings& s, bool true_hdr_open, int peak_nits, int auto_peak,

@@ -146,7 +146,8 @@ void fluidity_tab(PlaySettings& d, const SettingsChoices& choices) {
         "Au-delà de ×4, chaque paire demande une passe RIFE par image créée : il faut un écran assez "
         "rapide (×10 en 24 i/s donne 240 Hz) et un GPU qui suit, sinon des images sont sautées.");
   ImGui::EndDisabled();
-  if (!choices.rife_available) note("Ni modèle RIFE (rife_v4.26.onnx) ni graphes GMFSS trouvés.");
+  if (!choices.rife_available)
+    note("Ni modèle RIFE (rife_v4.25.onnx, rife_v4.22_lite.onnx) ni graphes GMFSS trouvés.");
   section("Moteur de l'interpolation");
   for (int i = 0; i < kMotionEngineCount; ++i) {
     const auto engine = static_cast<MotionEngine>(i);
@@ -163,7 +164,6 @@ void fluidity_tab(PlaySettings& d, const SettingsChoices& choices) {
         std::string text = rife_label(entry.file);
         if (!entry.present) text += " · absent";
         if (entry.file == choices.default_rife_model) text += " · conseillé pour cette carte";
-        if (entry.file.find("heavy") != std::string::npos) text += " · déconseillé";
         if (ImGui::Selectable(text.c_str(), chosen, entry.present ? 0 : ImGuiSelectableFlags_Disabled))
           d.rife_model = entry.file == choices.default_rife_model ? std::string() : entry.file;
         if (chosen) ImGui::SetItemDefaultFocus();
@@ -177,12 +177,6 @@ void fluidity_tab(PlaySettings& d, const SettingsChoices& choices) {
     if (!missing.empty() && d.motion_engine == MotionEngine::Rife) {
       note(std::format("Absents de {} : {} (exports ONNX de vs-mlrt convertis en FP16, docs/handoff-pc.md).",
                        choices.rife_folder, missing));
-    }
-    if (current.find("heavy") != std::string::npos) {
-      note(
-          "RIFE heavy : déconseillé. Environ 4 fois plus lent que RIFE 4.25 (34 ms par passe à 720p sur une "
-          "4070 Ti), pour plus d'artefacts selon les essais de la communauté. Même en ×2, la lecture prend "
-          "du retard dans les scènes qui bougent : la chaîne laisse alors ces paires sans interpolation.");
     }
   }
   if (is_gmfss(d.motion_engine)) {
@@ -204,13 +198,6 @@ void fluidity_tab(PlaySettings& d, const SettingsChoices& choices) {
                       "RIFE prend la place.",
                       files.pair, files.fusion, choices.rife_folder, union_model ? " --model union" : ""));
     }
-  }
-  if (d.motion_engine == MotionEngine::OpticalFlow) {
-    note(
-        "Expérimental. L'accélérateur de flux optique des RTX (celui de Smooth Motion et de DLSS Frame "
-        "Generation) estime le mouvement à la place de RIFE, bien moins cher que ses 7 ms par paire à 720p, "
-        "pour un mouvement moins fin. Utile en 4K ×3 ou ×4. Sans lui (autre carte, pilote trop ancien), "
-        "RIFE reprend.");
   }
   if (four_k && now.num >= 3 * now.den) {
     note(

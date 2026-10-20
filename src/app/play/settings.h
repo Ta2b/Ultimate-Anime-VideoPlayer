@@ -32,17 +32,17 @@ std::string_view name(Downscale filter);  // « area », la clé de play.toml
 // Libellé lisible d'un modèle AnimeJaNai : « HD V3.1 Sharp1 Performance ».
 std::string model_label(const std::string& file);
 std::string_view label(Downscale filter);  // « Area », pour le menu
-// Libellé lisible d'un modèle RIFE : « rife_v4.26_heavy.onnx » devient « RIFE 4.26 heavy ».
+// Libellé lisible d'un modèle RIFE : « rife_v4.22_lite.onnx » devient « RIFE 4.22 lite ».
 std::string rife_label(const std::string& file);
 // Les valeurs du grade pour ce préréglage ; current pour « Personnalisé » et pour gamut_p3.
 render::GradeSettings with_preset(render::GradePreset preset, const render::GradeSettings& current);
 
-// Ce qui fait les images intermédiaires : RIFE (réseau, le modèle choisi au menu), le flux optique
-// matériel des RTX (NVIDIA Optical Flow : bien moins cher, mouvement moins fin, warp de RIFE), ou
-// GMFSS Fortuna (kernels/spec/gmfss.h : le plus fin sur l'animation, plusieurs fois plus lourd que
-// RIFE ; 540 lignes de travail en ×2 tiennent sur une 4070 Ti), en base ou en union (GMFSS mêlé à
-// l'image de RIFE).
-enum class MotionEngine : std::uint8_t { Rife, OpticalFlow, Gmfss, GmfssUnion };
+// Ce qui fait les images intermédiaires : RIFE (réseau, 4.25 ou 4.22 lite, avec ou sans garder les
+// poses), GMFSS Fortuna (kernels/spec/gmfss.h : le plus fin sur l'animation, plusieurs fois plus
+// lourd que RIFE ; 540 lignes de travail en ×2 tiennent sur une 4070 Ti), en base ou en union
+// (GMFSS mêlé à l'image de RIFE), ou DistilDRBA (kernels/spec/distil_drba.h : un RIFE à trois images
+// entraîné à imiter DRBA, les poses gardées par le réseau lui-même, une image de retard).
+enum class MotionEngine : std::uint8_t { Rife, Gmfss, GmfssUnion, DistilDrba };
 inline constexpr int kMotionEngineCount = 4;
 constexpr bool is_gmfss(MotionEngine engine) {
   return engine == MotionEngine::Gmfss || engine == MotionEngine::GmfssUnion;
@@ -77,7 +77,7 @@ struct PlaySettings {
   int rife_factor = kDefaultRifeFactor;  // 0 : aucune interpolation
   int rife_factor_den = 1;               // 2 : ×rife_factor / 2 (×1,5 : 3 et 2)
   MotionEngine motion_engine = MotionEngine::Rife;
-  std::string rife_model;  // fichier ONNX de RIFE (nom seul) ; vide : rife_v4.26.onnx
+  std::string rife_model;  // fichier ONNX de RIFE (nom seul) ; vide : le défaut de la carte
   // Garder les poses (DRBA, kernels/spec/poses.h) : un personnage animé en deux garde son rythme
   // pendant que le fond s'interpole ; en direct.
   bool keep_poses = false;

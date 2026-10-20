@@ -71,26 +71,31 @@ def to_fp16(t: TensorProto) -> TensorProto:
     return numpy_helper.from_array(arr.astype(np.float16), t.name)
 
 
-def tensor_types(model: onnx.ModelProto, planes: int) -> dict[str, int]:
-    """Les types des tenseurs, inférés sur une entrée de taille fixe : avec des dimensions libres,
+def tensor_types(model: onnx.ModelProto, shapes: dict[str, tuple[int, ...]]) -> dict[str, int]:
+    """Les types des tenseurs, inférés sur des entrées de taille fixe : avec des dimensions libres,
     l'inférence s'arrête avant les blocs du v1."""
     fixed = onnx.ModelProto()
     fixed.CopyFrom(model)
-    for dim, value in zip(fixed.graph.input[0].type.tensor_type.shape.dim, (1, planes, 768, 1280)):
-        dim.Clear()
-        dim.dim_value = value
+    for graph_input in fixed.graph.input:
+        for dim, value in zip(graph_input.type.tensor_type.shape.dim, shapes[graph_input.name]):
+            dim.Clear()
+            dim.dim_value = value
     inferred = shape_inference.infer_shapes(fixed, data_prop=True).graph.value_info
     return {v.name: v.type.tensor_type.elem_type for v in inferred}
 
 
-def convert_model(model: onnx.ModelProto) -> onnx.ModelProto:
+def convert_model(model: onnx.ModelProto, shapes: dict[str, tuple[int, ...]] | None = None) -> onnx.ModelProto:
+    """shapes : la taille fixe de chaque entrée pour l'inférence des types ; par défaut l'entrée
+    unique d'un RIFE, [1, 11 ou 7, 768, 1280]. Les entrées et sorties passent en fp16."""
     g = model.graph
     if not any(n.op_type == "GridSample" for n in g.node):
         raise RuntimeError("aucun GridSample : pas un graphe RIFE")
-    planes = g.input[0].type.tensor_type.shape.dim[1].dim_value if len(g.input) == 1 else 0
-    if planes not in (7, 11):
-        raise RuntimeError("entrée attendue : [N, 11, H, W] (RIFE v1) ou [N, 7, H, W] (RIFE v2)")
-    types = tensor_types(model, planes)
+    if shapes is None:
+        planes = g.input[0].type.tensor_type.shape.dim[1].dim_value if len(g.input) == 1 else 0
+        if planes not in (7, 11):
+            raise RuntimeError("entrée attendue : [N, 11, H, W] (RIFE v1) ou [N, 7, H, W] (RIFE v2)")
+        shapes = {g.input[0].name: (1, planes, 768, 1280)}
+    types = tensor_types(model, shapes)
     del g.value_info[:]
     tainted = data_dependent(g)
     keep = fp32_nodes(g, tainted)
@@ -109,7 +114,7 @@ def convert_model(model: onnx.ModelProto) -> onnx.ModelProto:
 
     # Le monde de chaque tenseur flottant : fp32 s'il sort d'un nœud gardé, ou s'il s'agit d'une
     # constante qu'un nœud gardé lit ; fp16 sinon. Les Cast vers float du monde fp16 visent fp16.
-    world: dict[str, int] = {g.input[0].name: F16}
+    world: dict[str, int] = {i.name: F16 for i in g.input}
     for t in g.initializer:
         if t.data_type == F32:
             world[t.name] = F32 if any(wants_fp32(n, k) for n, k in consumers[t.name]) else F16
@@ -149,15 +154,17 @@ def convert_model(model: onnx.ModelProto) -> onnx.ModelProto:
             if world[t] != want:
                 n.input[k] = cast(t, want)
 
-    out = g.output[0]
-    if world.get(out.name) == F32:
-        for n in g.node:
-            for k, v in enumerate(n.output):
-                if v == out.name:
-                    n.output[k] = out.name + "_f32"
-        new_nodes.append(helper.make_node("Cast", [out.name + "_f32"], [out.name], name="ajp/cast_output", to=F16))
-    g.input[0].type.tensor_type.elem_type = F16
-    out.type.tensor_type.elem_type = F16
+    for out in g.output:
+        if world.get(out.name) == F32:
+            for n in g.node:
+                for k, v in enumerate(n.output):
+                    if v == out.name:
+                        n.output[k] = out.name + "_f32"
+            new_nodes.append(
+                helper.make_node("Cast", [out.name + "_f32"], [out.name], name=f"ajp/cast_{out.name}", to=F16))
+        out.type.tensor_type.elem_type = F16
+    for graph_input in g.input:
+        graph_input.type.tensor_type.elem_type = F16
     g.node.extend(new_nodes)
     order = topo_sort(g)
     del g.node[:]

@@ -151,20 +151,6 @@ class KernelOps {
     return std::unexpected(
         Refusal{RefusalCode::FormatUnsupported, "warp_blend_poses : absent de ce backend"});
   }
-  // Flux optique matériel (NVIDIA Optical Flow, kernels/spec/optical_flow.h) à la place de RIFE :
-  // ouvre ses sessions pour des images de width × height (la taille où RIFE travaillerait) et rend
-  // la grille de ses vecteurs, en pixels ; rouvrir remplace. Le mouvement d'optical_flow a alors
-  // flow_cells(width, grille) × flow_cells(height, grille) points.
-  virtual std::expected<int, Refusal> open_optical_flow(int /*width*/, int /*height*/) {
-    return std::unexpected(
-        Refusal{RefusalCode::FormatUnsupported, "open_optical_flow : absent de ce backend"});
-  }
-  // Mouvement au milieu de la paire a, b (RGB de la taille ouverte) dans motion, dont la fenêtre
-  // couvre les plans entiers ; le warp s'en sert comme du mouvement de RIFE au milieu.
-  virtual std::expected<void, Refusal> optical_flow(const Tensor& /*a*/, const Tensor& /*b*/,
-                                                    const Motion& /*motion*/) {
-    return std::unexpected(Refusal{RefusalCode::FormatUnsupported, "optical_flow : absent de ce backend"});
-  }
   // GMFSS Fortuna (kernels/spec/gmfss.h). Entrée du graphe « paire » depuis deux images RGB déjà
   // ingérées, de même taille w × h : a puis b (kGmfssFramePlanes plans) dans rife_geometry(w, h),
   // noir de studio autour, comme les plans 0 à 5 de rife_input.

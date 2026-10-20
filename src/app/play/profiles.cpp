@@ -25,7 +25,7 @@ hdr = "truehdr"
 [[profile.rule]]
 steps = [
   { kind = "downscale", filter = "area", height = 720 },
-  { kind = "interpolate", model = "rife_v4.26", factor = 3, policy = "quality" },
+  { kind = "interpolate", model = "rife_v4.25", factor = 3, policy = "quality" },
   { kind = "upscale", model = "@PERF@", factor = 2 },
 ]
 
@@ -36,7 +36,7 @@ hdr = "truehdr"
 [[profile.rule]]
 steps = [
   { kind = "downscale", filter = "area", height = 720 },
-  { kind = "interpolate", model = "rife_v4.26", factor = 4, policy = "quality" },
+  { kind = "interpolate", model = "rife_v4.25", factor = 4, policy = "quality" },
   { kind = "upscale", model = "@PERF@", factor = 2 },
 ]
 
@@ -46,7 +46,7 @@ name = "4K"
 hdr = "truehdr"
 [[profile.rule]]
 steps = [
-  { kind = "interpolate", model = "rife_v4.26", factor = 2, policy = "quality" },
+  { kind = "interpolate", model = "rife_v4.25", factor = 2, policy = "quality" },
   { kind = "upscale", model = "@PERF@", factor = 2 },
 ]
 
@@ -66,7 +66,7 @@ hdr = "off"
 [[profile.rule]]
 steps = [
   { kind = "downscale", filter = "area", height = 720 },
-  { kind = "interpolate", model = "rife_v4.26", factor = 3, policy = "quality" },
+  { kind = "interpolate", model = "rife_v4.25", factor = 3, policy = "quality" },
   { kind = "upscale", model = "@PERF@", factor = 2 },
 ]
 
@@ -77,7 +77,7 @@ hdr = "truehdr"
 [[profile.rule]]
 steps = [
   { kind = "downscale", filter = "area", height = 720 },
-  { kind = "interpolate", model = "rife_v4.26", factor = 3, policy = "quality" },
+  { kind = "interpolate", model = "rife_v4.25", factor = 3, policy = "quality" },
   { kind = "upscale", model = "@BAL@", factor = 2 },
 ]
 
@@ -88,7 +88,7 @@ hdr = "truehdr"
 [[profile.rule]]
 steps = [
   { kind = "downscale", filter = "area", height = 540 },
-  { kind = "interpolate", model = "rife_v4.26", factor = 2, policy = "quality" },
+  { kind = "interpolate", model = "rife_v4.25", factor = 2, policy = "quality" },
   { kind = "upscale", model = "@PERF@", factor = 2 },
 ]
 
@@ -98,7 +98,7 @@ name = "RIFE seul"
 hdr = "truehdr"
 [[profile.rule]]
 steps = [
-  { kind = "interpolate", model = "rife_v4.26", factor = 3, policy = "quality" },
+  { kind = "interpolate", model = "rife_v4.25", factor = 3, policy = "quality" },
 ]
 
 [[profile]]
