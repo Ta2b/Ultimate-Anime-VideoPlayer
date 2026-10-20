@@ -641,7 +641,8 @@ std::expected<void, Refusal> play(const PlayOptions& options, const PlayerPaths&
     if (!chosen) return std::unexpected(std::move(chosen.error()));
     if (!*chosen) return {};
     engines = settings_after(**chosen, *engines);
-    auto downloaded = install_chosen(**screen, **ui, catalog, **chosen, *engines);
+    auto downloaded =
+        install_chosen(**screen, **ui, catalog, **chosen, *engines, paths.engines.parent_path() / "sdk");
     if (!downloaded) return std::unexpected(std::move(downloaded.error()));
     if (!*downloaded) return {};
     if (auto written = core::save_settings(engines_path, *engines); !written)

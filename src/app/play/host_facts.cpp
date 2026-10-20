@@ -57,6 +57,7 @@ EnginesHere engines_here(const PlayOptions& options, const PlayerPaths& paths, c
   } else {
     here.maxine_status = std::format("SDK absent ({})", options.true_hdr_sdk.string());
   }
+  if (!here.maxine && catalog.maxine) here.maxine_license = catalog.maxine->license;
   return here;
 }
 

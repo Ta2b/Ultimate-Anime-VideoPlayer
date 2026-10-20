@@ -27,6 +27,7 @@ core::Os host_os();
 struct EngineCatalog {
   core::InstallLayout layout;
   std::vector<core::EnginePackage> packages;  // ceux de cet OS
+  std::optional<core::NgcSdkSource> maxine;   // SDK de RTX HDR sous Linux (maxine_install.h)
   std::string problem;                        // index absent ou illisible, pour le journal
 };
 

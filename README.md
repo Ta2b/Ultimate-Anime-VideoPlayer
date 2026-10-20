@@ -50,7 +50,9 @@ Une version Linux tient en un seul lecteur pour tous les GPU : `tools/release/pa
 produit `ajp-linux-x64.tar.gz` (lecteur, Vulkan, `engines.lock`) et un paquet par moteur construit
 (TensorRT, MIGraphX, OpenVINO). Au premier lancement, l'écran de bienvenue propose ceux qui
 conviennent au GPU ; les cochés se téléchargent depuis la release, vérifiés par leur SHA-256
-(la licence de TensorRT s'accepte à l'écran).
+(la licence de TensorRT s'accepte à l'écran). RTX HDR, dont le SDK Maxine ne se redistribue pas,
+s'installe de la même façon : le lecteur le télécharge depuis NVIDIA NGC avec la clé d'API de
+l'utilisateur, après l'acceptation de sa licence, et l'importe dans son magasin de SDK.
 
 Sur les GPU AMD et Intel, les réseaux peuvent passer par le runtime du fabricant tandis que la
 chaîne reste sur Vulkan : `-DAJP_WITH_MIGRAPHX=ON` (ROCm installé) construit

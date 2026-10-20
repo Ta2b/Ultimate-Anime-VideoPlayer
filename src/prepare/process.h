@@ -27,6 +27,10 @@ struct ProcessSpec {
   std::filesystem::path program;        // chemin complet de l'exécutable
   std::vector<std::string> args;        // en UTF-8, sans argv[0]
   std::chrono::milliseconds timeout{};  // strictement positif
+  std::filesystem::path working_dir;    // vide : celui du lecteur
+  // « NOM=valeur » ajoutés à l'environnement hérité (une clé passée à un script sans paraître
+  // dans sa ligne de commande) ; un nom déjà présent est remplacé.
+  std::vector<std::string> extra_env;
 };
 
 enum class ExitKind : std::uint8_t {

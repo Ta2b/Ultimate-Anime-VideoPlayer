@@ -7,6 +7,8 @@
 #   ajp-engine-migraphx-linux-x64.tar.gz  backend MIGraphX (AMD ; ROCm du système)
 #   ajp-engine-openvino-linux-x64.tar.gz  backend OpenVINO, son runtime et son greffon GPU (Intel)
 #
+# RTX HDR n'a pas de paquet : engines.lock dit où le lecteur télécharge le SDK Maxine depuis NGC.
+#
 # L'écran de bienvenue propose les moteurs qui conviennent au GPU ; les cochés se téléchargent
 # depuis la release (engine_install.h). Chaque moteur n'est empaqueté que s'il a été construit :
 #
@@ -145,6 +147,25 @@ if [ -f "$OV_MODULE" ]; then
   copy_deps "$dir" "$dir"/libopenvino_*
   for f in "$dir"/*; do [ -e "$STAGE/lib/$(basename "$f")" ] && [ "$f" != "$dir/ajp_backend_openvino.so" ] && rm "$f"; done
   engine_package openvino "$VERSION" "" "$dir"
+fi
+
+# RTX HDR : le SDK Video Effects de NVIDIA ne se redistribue pas. engines.lock nomme sa ressource
+# NGC, que le lecteur télécharge avec la clé d'API de l'utilisateur (maxine_install.h). Les noms
+# se lisent sur la page de la ressource « Video Effects SDK Core » du catalogue NGC, connecté :
+#   AJP_MAXINE_RESOURCE=<nom> AJP_MAXINE_VERSION=<version> AJP_MAXINE_FILE=<archive .tgz>
+#   AJP_MAXINE_LICENSE=<lien https de sa licence>
+if [ -n "${AJP_MAXINE_RESOURCE:-}" ]; then
+  {
+    echo
+    echo "[maxine_vfx]"
+    echo "org = \"${AJP_MAXINE_ORG:-nvidia}\""
+    echo "team = \"${AJP_MAXINE_TEAM:-maxine}\""
+    echo "resource = \"$AJP_MAXINE_RESOURCE\""
+    echo "version = \"${AJP_MAXINE_VERSION:?AJP_MAXINE_VERSION}\""
+    echo "file = \"${AJP_MAXINE_FILE:?AJP_MAXINE_FILE}\""
+    echo "feature = \"${AJP_MAXINE_FEATURE:-nvvfxtruehdr}\""
+    echo "license = \"${AJP_MAXINE_LICENSE:?AJP_MAXINE_LICENSE : lien https de la licence du SDK}\""
+  } >> "$LOCK"
 fi
 
 tar -C "$OUT" -czf "$OUT/ajp-linux-x64.tar.gz" ajp-linux-x64

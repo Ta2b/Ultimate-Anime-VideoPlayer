@@ -1,8 +1,5 @@
 #include "app/play/engine_install.h"
 
-#include <array>
-#include <cctype>
-#include <charconv>
 #include <chrono>
 #include <format>
 #include <fstream>
@@ -11,7 +8,7 @@
 #include <string_view>
 #include <system_error>
 
-#include "prepare/process.h"
+#include "app/play/engine_tools.h"
 
 namespace ajp::app::play {
 namespace {
@@ -20,62 +17,12 @@ std::unexpected<Refusal> refuse(RefusalCode code, std::string detail) {
   return std::unexpected(Refusal{code, std::move(detail)});
 }
 
-// Un exécutable du système à un emplacement connu : le lanceur ne cherche pas dans PATH.
-std::optional<std::filesystem::path> system_tool(std::string_view name) {
-#if defined(_WIN32)
-  const std::array<std::filesystem::path, 1> dirs{"C:/Windows/System32"};
-  const std::string file = std::string(name) + ".exe";
-#else
-  const std::array<std::filesystem::path, 4> dirs{"/usr/bin", "/bin", "/usr/local/bin", "/opt/homebrew/bin"};
-  const std::string file(name);
-#endif
-  for (const std::filesystem::path& dir : dirs) {
-    std::error_code error;
-    if (std::filesystem::is_regular_file(dir / file, error)) return dir / file;
-  }
-  return std::nullopt;
-}
-
 bool any_exists(std::initializer_list<std::string_view> paths) {
   std::error_code error;
   for (const std::string_view p : paths) {
     if (std::filesystem::exists(std::filesystem::path(p), error)) return true;
   }
   return false;
-}
-
-// La dernière fraction « 43.2% » d'une ligne de la barre de progression de curl.
-std::optional<float> curl_percent(std::string_view line) {
-  const std::size_t percent = line.rfind('%');
-  if (percent == std::string_view::npos) return std::nullopt;
-  std::size_t start = percent;
-  while (start > 0 &&
-         (std::isdigit(static_cast<unsigned char>(line[start - 1])) != 0 || line[start - 1] == '.'))
-    --start;
-  float value = 0;
-  const auto [end, error] = std::from_chars(line.data() + start, line.data() + percent, value);
-  if (error != std::errc{} || end != line.data() + percent) return std::nullopt;
-  return value / 100.0F;
-}
-
-std::expected<void, Refusal> run_tool(const std::filesystem::path& program, std::vector<std::string> args,
-                                      std::chrono::milliseconds timeout, const prepare::LineSink& on_line,
-                                      const std::stop_token& stop, std::string_view what) {
-  std::string last;
-  const auto sink = [&](std::string_view line) {
-    last = line;
-    if (on_line) on_line(line);
-  };
-  auto exit =
-      prepare::run_process({.program = program, .args = std::move(args), .timeout = timeout}, sink, stop);
-  if (!exit) return std::unexpected(exit.error());
-  if (exit->kind == prepare::ExitKind::Cancelled)
-    return refuse(RefusalCode::Cancelled, std::format("{} annulé", what));
-  if (exit->kind != prepare::ExitKind::Exited || exit->code != 0) {
-    return refuse(RefusalCode::DecodeFailed,
-                  std::format("{} : {} ({})", what, prepare::describe(*exit), last));
-  }
-  return {};
 }
 
 }  // namespace
@@ -105,6 +52,13 @@ EngineCatalog load_catalog(const std::filesystem::path& index, const std::filesy
   }
   for (core::EnginePackage& package : *parsed) {
     if (package.platform == catalog.layout.os) catalog.packages.push_back(std::move(package));
+  }
+  if (catalog.layout.os == core::Os::Linux) {
+    if (auto maxine = core::parse_maxine_source(text)) {
+      catalog.maxine = std::move(*maxine);
+    } else {
+      catalog.problem = std::format("{} : {}", index.string(), maxine.error().detail);
+    }
   }
   return catalog;
 }
@@ -173,10 +127,10 @@ std::expected<std::filesystem::path, Refusal> install_package(const EngineCatalo
       std::filesystem::remove(part, error);
     report(0.0F, std::format("téléchargement de {} ({} Mo)", name, package.size >> 20));
     auto fetched = run_tool(
-        *curl,
-        {"--fail", "--location", "--retry", "3", "--continue-at", "-", "--progress-bar", "--output",
-         part.string(), package.url},
-        std::chrono::hours(4),
+        {.program = *curl,
+         .args = {"--fail", "--location", "--retry", "3", "--continue-at", "-", "--progress-bar", "--output",
+                  part.string(), package.url},
+         .timeout = std::chrono::hours(4)},
         [&](std::string_view line) {
           if (const auto f = curl_percent(line)) report(*f * 0.9F, std::format("téléchargement de {}", name));
         },
@@ -198,8 +152,10 @@ std::expected<std::filesystem::path, Refusal> install_package(const EngineCatalo
   if (error)
     return refuse(RefusalCode::FileUnwritable, std::format("{} : {}", staging.string(), error.message()));
   report(0.93F, std::format("installation de {}", name));
-  if (auto ok = run_tool(*tar, {"-xzf", part.string(), "-C", staging.string()}, std::chrono::minutes(30), {},
-                         progress.stop, std::format("extraction de {}", name));
+  if (auto ok = run_tool({.program = *tar,
+                          .args = {"-xzf", part.string(), "-C", staging.string()},
+                          .timeout = std::chrono::minutes(30)},
+                         {}, progress.stop, std::format("extraction de {}", name));
       !ok) {
     std::filesystem::remove_all(staging, error);
     return std::unexpected(ok.error());

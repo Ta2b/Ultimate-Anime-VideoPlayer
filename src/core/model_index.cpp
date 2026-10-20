@@ -1,8 +1,10 @@
 #include "core/model_index.h"
 
 #include <algorithm>
+#include <array>
 #include <bit>
 #include <fstream>
+#include <utility>
 
 #include "core/toml_fields.h"
 
@@ -326,6 +328,33 @@ std::expected<std::vector<ModelEntry>, Refusal> parse_models_lock(std::string_vi
 
 std::expected<std::vector<EnginePackage>, Refusal> parse_engine_index(std::string_view toml_text) {
   return parse_entries<EnginePackage>(toml_text, "engines.lock", "engine", parse_package);
+}
+
+std::expected<std::optional<NgcSdkSource>, Refusal> parse_maxine_source(std::string_view toml_text) {
+  auto root = fields::parse(toml_text, RefusalCode::FileUnreadable, "engines.lock");
+  if (!root) return std::unexpected(root.error());
+  const toml::table* table = (*root)["maxine_vfx"].as_table();
+  if (table == nullptr) return std::optional<NgcSdkSource>{};
+  NgcSdkSource source;
+  const std::array<std::pair<std::string_view, std::string*>, 6> names{{{"org", &source.org},
+                                                                        {"team", &source.team},
+                                                                        {"resource", &source.resource},
+                                                                        {"version", &source.version},
+                                                                        {"file", &source.file},
+                                                                        {"feature", &source.feature}}};
+  for (const auto& [key, out] : names) {
+    auto value = fields::required<std::string>(*table, key, "maxine_vfx");
+    if (!value) return std::unexpected(value.error());
+    if (!safe_name(*value))
+      return refuse(RefusalCode::FieldType, std::format("maxine_vfx.{} = « {} »", key, *value));
+    *out = std::move(*value);
+  }
+  auto license = fields::required<std::string>(*table, "license", "maxine_vfx");
+  if (!license) return std::unexpected(license.error());
+  if (!license->starts_with("https://"))
+    return refuse(RefusalCode::FieldOutOfRange, "maxine_vfx.license : https seulement");
+  source.license = std::move(*license);
+  return source;
 }
 
 const ModelEntry* find_model(std::span<const ModelEntry> lock, std::string_view id) {

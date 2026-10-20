@@ -226,3 +226,26 @@ TEST_CASE("Installation : chemins sous le dossier de données passé par app", "
   CHECK(backend_library(install_layout(Os::MacOs, data), trt).filename() == "ajp_backend_tensorrt.so");
   CHECK(download_path(windows, kSha) == data / "downloads" / (kSha + ".part"));
 }
+
+TEST_CASE("[maxine_vfx] : la ressource NGC du SDK de RTX HDR", "[model_index]") {
+  const std::string table =
+      "version = 1\n[maxine_vfx]\norg = \"nvidia\"\nteam = \"maxine\"\nresource = \"vfx_sdk_core\"\n"
+      "version = \"1.3.0.0_linux\"\nfile = \"VFXSDK_linux_1.3.0.0.tgz\"\nfeature = \"nvvfxtruehdr\"\n"
+      "license = \"https://example.org/eula\"\n";
+  auto source = parse_maxine_source(table);
+  REQUIRE(source);
+  REQUIRE(source->has_value());
+  CHECK((*source)->file == "VFXSDK_linux_1.3.0.0.tgz");
+  CHECK((*source)->feature == "nvvfxtruehdr");
+
+  auto none = parse_maxine_source("version = 1\n");
+  REQUIRE(none);
+  CHECK_FALSE(none->has_value());
+
+  std::string bad = table;
+  bad.replace(bad.find("vfx_sdk_core"), 12, "../etc");
+  CHECK_FALSE(parse_maxine_source(bad));
+  std::string http = table;
+  http.replace(http.find("https://"), 8, "http://");
+  CHECK_FALSE(parse_maxine_source(http));
+}

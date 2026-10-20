@@ -89,6 +89,12 @@ void engine_row(EngineRow& row) {
     ImGui::SameLine();
     ImGui::TextLinkOpenURL("Lire la licence", row.license.c_str());
   }
+  if (row.download && row.chosen && row.needs_key) {
+    ImGui::SetNextItemWidth(ImGui::GetFontSize() * 22.0F);
+    ImGui::InputText("Clé d'API NGC", row.key.data(), row.key.size(), ImGuiInputTextFlags_Password);
+    ImGui::SameLine();
+    ImGui::TextLinkOpenURL("Obtenir une clé", "https://org.ngc.nvidia.com/setup/api-keys");
+  }
   ImGui::Unindent(ImGui::GetFrameHeightWithSpacing());
   ImGui::Spacing();
   ImGui::PopID();
@@ -221,8 +227,16 @@ FirstRunView first_run_view(const GpuFacts& gpu, const EnginesHere& here, Profil
         downloadable_row(row, here);
         break;
       case core::EngineId::MaxineVfx:
-        row.usable = here.maxine;
+        row.usable = here.maxine || !here.maxine_license.empty();
         row.status = here.maxine_status;
+        if (!here.maxine && !here.maxine_license.empty()) {
+          // Le SDK ne se redistribue pas : le lecteur le télécharge depuis NGC avec la clé de
+          // l'utilisateur, une fois sa licence acceptée.
+          row.download = true;
+          row.needs_key = true;
+          row.license = here.maxine_license;
+          row.status = "à installer depuis NVIDIA NGC (clé d'API d'un compte NVIDIA gratuit)";
+        }
         break;
       default:
         row.status = "pas encore installable dans cette version";
@@ -244,7 +258,8 @@ core::Settings settings_after(const FirstRunView& view, core::Settings settings)
     // Un moteur à télécharger compte comme installé une fois coché (install_chosen le télécharge,
     // without_engine le retire s'il échoue) ; avec sa licence acceptée seulement.
     const bool taken = row.usable && (row.chosen || row.offer.id == core::EngineId::Vulkan) &&
-                       (!row.download || row.license.empty() || row.license_accepted);
+                       (!row.download || row.license.empty() || row.license_accepted) &&
+                       (!row.needs_key || row.key.front() != '\0');
     if (row.usable && (!row.download || taken)) settings.installed_engines.push_back(row.offer.id);
     if (taken) settings.chosen_engines.push_back(row.offer.id);
   }

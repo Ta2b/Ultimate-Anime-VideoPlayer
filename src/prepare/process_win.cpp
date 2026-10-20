@@ -11,7 +11,9 @@
 #endif
 #include <algorithm>
 #include <array>
+#include <cwchar>
 #include <optional>
+#include <string_view>
 #include <system_error>
 #include <utility>
 #include <vector>
@@ -125,12 +127,32 @@ std::expected<ProcessExit, Refusal> run_process(const ProcessSpec& spec, const L
   argv.insert(argv.end(), spec.args.begin(), spec.args.end());
   std::wstring command = widen(windows_command_line(argv));  // CreateProcessW peut la modifier
   const std::wstring application = spec.program.wstring();
+  const std::wstring working_dir = spec.working_dir.wstring();
+  // Bloc d'environnement Unicode : l'hérité, chaque nom de extra_env remplacé par sa valeur.
+  std::wstring env_block;
+  if (!spec.extra_env.empty()) {
+    std::vector<std::wstring> extra;
+    for (const std::string& e : spec.extra_env) extra.push_back(widen(e));
+    LPWCH inherited = GetEnvironmentStringsW();
+    for (const wchar_t* e = inherited; e != nullptr && *e != L'\0'; e += std::wcslen(e) + 1) {
+      const std::wstring_view entry(e);
+      const std::wstring_view name = entry.substr(0, entry.find(L'=', 1));
+      const bool replaced = std::ranges::any_of(extra, [&](const std::wstring& x) {
+        return x.size() > name.size() && x.starts_with(name) && x[name.size()] == L'=';
+      });
+      if (!replaced) env_block.append(entry).push_back(L'\0');
+    }
+    if (inherited != nullptr) FreeEnvironmentStringsW(inherited);
+    for (const std::wstring& x : extra) env_block.append(x).push_back(L'\0');
+    env_block.push_back(L'\0');
+  }
   PROCESS_INFORMATION started{};
   const auto start = Clock::now();
   const BOOL ok = CreateProcessW(
       application.c_str(), command.data(), nullptr, nullptr, TRUE,
       CREATE_NO_WINDOW | CREATE_SUSPENDED | EXTENDED_STARTUPINFO_PRESENT | CREATE_UNICODE_ENVIRONMENT,
-      nullptr, nullptr, &info.StartupInfo, &started);
+      env_block.empty() ? nullptr : env_block.data(), working_dir.empty() ? nullptr : working_dir.c_str(),
+      &info.StartupInfo, &started);
   DeleteProcThreadAttributeList(list);
   if (!ok) return failure(spec.program, "CreateProcessW");
   const Handle process(started.hProcess);

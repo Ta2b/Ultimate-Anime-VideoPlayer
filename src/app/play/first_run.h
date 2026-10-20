@@ -8,6 +8,7 @@
 // journal.
 #pragma once
 
+#include <array>
 #include <cstdint>
 #include <filesystem>
 #include <span>
@@ -50,11 +51,12 @@ struct EngineDownload {
 
 // Ce qui est déjà sur ce poste.
 struct EnginesHere {
-  bool tensorrt = false;      // backend ajp_backend_tensorrt trouvé
-  bool migraphx = false;      // ajp_backend_migraphx
-  bool openvino = false;      // ajp_backend_openvino
-  bool maxine = false;        // SDK Maxine importé, ou importable depuis --truehdr-sdk
-  std::string maxine_status;  // « importé », « à importer depuis /usr/local/VideoFX »…
+  bool tensorrt = false;       // backend ajp_backend_tensorrt trouvé
+  bool migraphx = false;       // ajp_backend_migraphx
+  bool openvino = false;       // ajp_backend_openvino
+  bool maxine = false;         // SDK Maxine importé, ou importable depuis --truehdr-sdk
+  std::string maxine_status;   // « importé », « à importer depuis /usr/local/VideoFX »…
+  std::string maxine_license;  // non vide : installable depuis NGC (maxine_install.h), sa licence
   std::vector<EngineDownload> downloads;
 };
 
@@ -66,6 +68,8 @@ struct EngineRow {
   bool download = false;  // à télécharger si coché
   std::string license;    // licence à accepter (download seulement)
   bool license_accepted = false;
+  bool needs_key = false;       // téléchargement par la clé d'API NGC de l'utilisateur (Maxine)
+  std::array<char, 128> key{};  // saisie, jamais écrite sur disque
 };
 
 struct FirstRunView {

@@ -11,10 +11,13 @@
 #include <poll.h>
 #include <signal.h>
 #include <spawn.h>
+#include <string>
+#include <string_view>
 #include <sys/wait.h>
 #include <system_error>
 #include <unistd.h>
 #include <utility>
+#include <vector>
 
 #include "prepare/process.h"
 
@@ -43,6 +46,27 @@ char** inherited_environment() {
 #else
   return environ;
 #endif
+}
+
+// L'environnement hérité, chaque nom de extra remplacé par sa valeur, en tableau pour posix_spawn.
+struct Environment {
+  std::vector<std::string> storage;
+  std::vector<char*> pointers;
+};
+Environment environment_with(const std::vector<std::string>& extra) {
+  Environment env;
+  for (char** e = inherited_environment(); *e != nullptr; ++e) {
+    const std::string_view entry(*e);
+    const std::string_view name = entry.substr(0, entry.find('='));
+    const bool replaced = std::ranges::any_of(extra, [&](const std::string& x) {
+      return x.size() > name.size() && x.starts_with(name) && x[name.size()] == '=';
+    });
+    if (!replaced) env.storage.emplace_back(entry);
+  }
+  env.storage.insert(env.storage.end(), extra.begin(), extra.end());
+  for (std::string& s : env.storage) env.pointers.push_back(s.data());
+  env.pointers.push_back(nullptr);
+  return env;
 }
 
 class Fd {
@@ -86,8 +110,9 @@ std::expected<Pipe, int> make_pipe() {
 // Actions et attributs de posix_spawn, détruits à la sortie de portée.
 class SpawnSetup {
  public:
-  explicit SpawnSetup(int output) {
+  SpawnSetup(int output, const std::filesystem::path& working_dir) {
     ::posix_spawn_file_actions_init(&actions_);
+    if (!working_dir.empty()) ::posix_spawn_file_actions_addchdir_np(&actions_, working_dir.c_str());
     ::posix_spawn_file_actions_addopen(&actions_, STDIN_FILENO, "/dev/null", O_RDONLY, 0);
     ::posix_spawn_file_actions_adddup2(&actions_, output, STDOUT_FILENO);
     ::posix_spawn_file_actions_adddup2(&actions_, output, STDERR_FILENO);
@@ -152,9 +177,12 @@ std::expected<ProcessExit, Refusal> run_process(const ProcessSpec& spec, const L
   const auto start = Clock::now();
   pid_t pid = 0;
   {
-    const SpawnSetup setup(pipe->write.get());
-    const int error = ::posix_spawn(&pid, spec.program.c_str(), setup.actions(), setup.attributes(),
-                                    argv.data(), inherited_environment());
+    const SpawnSetup setup(pipe->write.get(), spec.working_dir);
+    Environment env;
+    if (!spec.extra_env.empty()) env = environment_with(spec.extra_env);
+    const int error =
+        ::posix_spawn(&pid, spec.program.c_str(), setup.actions(), setup.attributes(), argv.data(),
+                      spec.extra_env.empty() ? inherited_environment() : env.pointers.data());
     if (error != 0) return spawn_failure(spec.program, error);
   }
   pipe->write.reset();  // seul l'enfant écrit : sa fin ferme le tube
