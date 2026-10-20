@@ -11,8 +11,14 @@ function(ajp_alias_dep name target)
   add_library(ajp::dep::${name} ALIAS ajp_dep_${name})
 endfunction()
 
+# toml++ en en-têtes seuls, partout : la bibliothèque compilée de vcpkg (Windows) n'exporte que
+# l'API à exceptions (toml::ex), et ajp se construit avec TOML_EXCEPTIONS=0 (toml::noex).
 find_package(tomlplusplus CONFIG REQUIRED)
-ajp_alias_dep(toml tomlplusplus::tomlplusplus)
+get_target_property(ajp_toml_include tomlplusplus::tomlplusplus INTERFACE_INCLUDE_DIRECTORIES)
+add_library(ajp_toml_headers INTERFACE)
+target_include_directories(ajp_toml_headers SYSTEM INTERFACE ${ajp_toml_include})
+target_compile_definitions(ajp_toml_headers INTERFACE TOML_HEADER_ONLY=1)
+ajp_alias_dep(toml ajp_toml_headers)
 
 find_package(spdlog CONFIG REQUIRED)
 ajp_alias_dep(spdlog spdlog::spdlog)
