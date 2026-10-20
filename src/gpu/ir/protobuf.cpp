@@ -183,3 +183,67 @@ std::expected<void, Refusal> append_floats(const Field& field, std::vector<float
 }
 
 }  // namespace ajp::gpu::ir::proto
+
+namespace ajp::gpu::ir::proto {
+
+void Writer::raw_varint(std::uint64_t value) {
+  while (value >= 0x80U) {
+    out_.push_back(static_cast<std::byte>((value & 0x7FU) | 0x80U));
+    value >>= 7U;
+  }
+  out_.push_back(static_cast<std::byte>(value));
+}
+
+void Writer::little_endian(std::uint64_t value, int width) {
+  for (int k = 0; k < width; ++k) {
+    out_.push_back(static_cast<std::byte>((value >> static_cast<unsigned>(8 * k)) & 0xFFU));
+  }
+}
+
+void Writer::tag(std::uint32_t number, WireType wire) {
+  raw_varint((static_cast<std::uint64_t>(number) << 3U) | static_cast<std::uint64_t>(wire));
+}
+
+void Writer::varint(std::uint32_t number, std::uint64_t value) {
+  tag(number, WireType::Varint);
+  raw_varint(value);
+}
+
+void Writer::fixed32(std::uint32_t number, std::uint32_t value) {
+  tag(number, WireType::Fixed32);
+  little_endian(value, 4);
+}
+
+void Writer::fixed64(std::uint32_t number, std::uint64_t value) {
+  tag(number, WireType::Fixed64);
+  little_endian(value, 8);
+}
+
+void Writer::bytes(std::uint32_t number, Bytes data) {
+  tag(number, WireType::Length);
+  raw_varint(data.size());
+  out_.insert(out_.end(), data.begin(), data.end());
+}
+
+void Writer::string(std::uint32_t number, std::string_view text) {
+  bytes(number, std::as_bytes(std::span(text)));
+}
+
+void Writer::field(const Field& field) {
+  switch (field.wire) {
+    case WireType::Varint:
+      varint(field.number, field.scalar);
+      break;
+    case WireType::Fixed64:
+      fixed64(field.number, field.scalar);
+      break;
+    case WireType::Fixed32:
+      fixed32(field.number, static_cast<std::uint32_t>(field.scalar));
+      break;
+    case WireType::Length:
+      bytes(field.number, field.bytes);
+      break;
+  }
+}
+
+}  // namespace ajp::gpu::ir::proto

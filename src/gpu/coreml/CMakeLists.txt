@@ -6,7 +6,7 @@ find_path(AJP_ORT_INCLUDE onnxruntime_cxx_api.h
   HINTS "${AJP_ORT_ROOT}/include" "${AJP_ORT_ROOT}/include/onnxruntime" REQUIRED)
 find_library(AJP_ORT_LIBRARY onnxruntime HINTS "${AJP_ORT_ROOT}/lib" REQUIRED)
 
-add_library(ajp_backend_coreml MODULE entry.cpp coreml_runtime.cpp)
+add_library(ajp_backend_coreml MODULE entry.cpp coreml_measure.cpp coreml_runtime.cpp)
 target_include_directories(ajp_backend_coreml SYSTEM PRIVATE "${AJP_ORT_INCLUDE}")
 target_link_libraries(ajp_backend_coreml PRIVATE
   ajp::vk_backend ajp::core_log ajp::dep::spdlog "${AJP_ORT_LIBRARY}")

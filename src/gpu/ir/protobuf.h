@@ -12,6 +12,8 @@
 #include <optional>
 #include <span>
 #include <string>
+#include <string_view>
+#include <utility>
 #include <vector>
 
 #include "core/types.h"
@@ -44,6 +46,30 @@ class Reader {
 
   Bytes data_;
   std::size_t pos_ = 0;
+};
+
+// Écriture du format filaire, pour recopier un message champ par champ en n'en changeant que
+// quelques-uns : un champ lu se réécrit tel quel (field), les autres se posent par leur numéro.
+class Writer {
+ public:
+  void varint(std::uint32_t number, std::uint64_t value);
+  void fixed32(std::uint32_t number, std::uint32_t value);
+  void fixed64(std::uint32_t number, std::uint64_t value);
+  void bytes(std::uint32_t number, Bytes data);
+  void string(std::uint32_t number, std::string_view text);
+  void message(std::uint32_t number, const Writer& inner) { bytes(number, inner.data()); }
+  // Tel qu'il a été lu ; un varint non canonique est réécrit au plus court.
+  void field(const Field& field);
+
+  Bytes data() const { return out_; }
+  std::vector<std::byte> take() && { return std::move(out_); }
+
+ private:
+  void tag(std::uint32_t number, WireType wire);
+  void raw_varint(std::uint64_t value);
+  void little_endian(std::uint64_t value, int width);
+
+  std::vector<std::byte> out_;
 };
 
 std::unexpected<Refusal> malformed(std::string detail);

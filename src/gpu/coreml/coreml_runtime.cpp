@@ -1,42 +1,22 @@
 #include "gpu/coreml/coreml_runtime.h"
 
 #include <algorithm>
-#include <array>
-#include <chrono>
-#include <cmath>
 #include <exception>
 #include <filesystem>
 #include <format>
 #include <fstream>
-#include <limits>
-#include <onnxruntime_cxx_api.h>
-#include <optional>
 #include <span>
 #include <sstream>
 #include <string>
 #include <unordered_map>
 #include <vector>
 
+#include "gpu/coreml/coreml_detail.h"
+#include "gpu/ir/onnx_io_type.h"
+#include "gpu/ir/onnx_model.h"
+#include "gpu/vulkan/backend/net_build.h"
+
 namespace ajp::gpu::coreml_rt {
-namespace {
-
-using vk::net::DimOverride;
-using vk::net::HostBinding;
-using vk::net::InputShape;
-
-constexpr std::uint32_t kVendorApple = 0x106B;
-
-// Mesure d'une session : inférences de chauffe, puis médiane des suivantes.
-constexpr int kWarmupRuns = 2;
-constexpr std::size_t kTimedRuns = 5;
-// Le Neural Engine garde un réseau s'il ne coûte pas plus que ce facteur du meilleur temps : il
-// laisse le GPU, partagé avec la chaîne MoltenVK, RIFE et le rendu, à tout le reste.
-constexpr double kAneTolerance = 1.25;
-// Écart moyen permis entre deux répartitions sur la même entrée (images entre 0 et 1).
-constexpr double kMaxMeanError = 0.01;
-
-// Les unités de calcul que Core ML reçoit pour un réseau entier.
-enum class Units : std::uint8_t { All, CpuAndGpu, CpuAndNeuralEngine };
 
 std::string_view units_option(Units units) {
   switch (units) {
@@ -73,19 +53,39 @@ std::unexpected<Refusal> refuse(RefusalCode code, std::string text) {
   return std::unexpected(Refusal{.code = code, .detail = std::move(text)});
 }
 
-// Le manifeste de l'artefact : le fichier ONNX, une ligne par dimension symbolique fixée, puis
-// les unités retenues par la mesure (absentes d'un artefact plus ancien).
-struct Manifest {
-  std::filesystem::path onnx;
-  std::vector<DimOverride> dims;
-  std::optional<Units> units;
-};
-
 std::filesystem::path cache_of(const std::filesystem::path& artifact) {
   std::filesystem::path p = artifact;
   p += ".mlcache";
   return p;
 }
+
+std::filesystem::path onnx_of(const std::filesystem::path& artifact) {
+  std::filesystem::path p = artifact;
+  p += ".onnx";
+  return p;
+}
+
+ONNXTensorElementDataType element_of(TensorType type) {
+  return type == TensorType::F32 ? ONNX_TENSOR_ELEMENT_DATA_TYPE_FLOAT
+                                 : ONNX_TENSOR_ELEMENT_DATA_TYPE_FLOAT16;
+}
+
+std::optional<TensorType> type_of(ONNXTensorElementDataType type) {
+  if (type == ONNX_TENSOR_ELEMENT_DATA_TYPE_FLOAT) return TensorType::F32;
+  if (type == ONNX_TENSOR_ELEMENT_DATA_TYPE_FLOAT16) return TensorType::F16;
+  return std::nullopt;
+}
+
+std::size_t element_bytes(TensorType type) {
+  return type == TensorType::F32 ? 4U : 2U;
+}
+
+namespace {
+
+using vk::net::HostBinding;
+using vk::net::InputShape;
+
+constexpr std::uint32_t kVendorApple = 0x106B;
 
 // FP16 du programme ML, sur les unités données (choose_units). Le modèle compilé est gardé dans
 // le cache de l'artefact : le chargement ne recompile pas.
@@ -107,121 +107,27 @@ Ort::SessionOptions session_options(const Manifest& manifest, const std::filesys
   return options;
 }
 
-ONNXTensorElementDataType element_of(TensorType type) {
-  return type == TensorType::F32 ? ONNX_TENSOR_ELEMENT_DATA_TYPE_FLOAT
-                                 : ONNX_TENSOR_ELEMENT_DATA_TYPE_FLOAT16;
+// Le fichier ONNX que la session ouvre : la copie à l'interface réécrite, ou l'original.
+std::filesystem::path session_onnx(const Manifest& manifest, const std::filesystem::path& artifact) {
+  return manifest.io ? onnx_of(artifact) : manifest.onnx;
 }
 
-std::optional<TensorType> type_of(ONNXTensorElementDataType type) {
-  if (type == ONNX_TENSOR_ELEMENT_DATA_TYPE_FLOAT) return TensorType::F32;
-  if (type == ONNX_TENSOR_ELEMENT_DATA_TYPE_FLOAT16) return TensorType::F16;
-  return std::nullopt;
-}
-
-std::size_t element_bytes(TensorType type) {
-  return type == TensorType::F32 ? 4U : 2U;
-}
-
-// Des entrées fixes et reproductibles entre 0 et 1, aux formes fixées par build (sinon celles du
-// modèle), les mêmes pour chaque répartition mesurée.
-struct Probe {
-  std::vector<std::string> inputs;
-  std::vector<std::vector<std::int64_t>> shapes;
-  std::vector<TensorType> types;
-  std::vector<std::vector<std::byte>> data;
-  std::vector<std::string> outputs;
-};
-
-std::expected<Probe, Refusal> make_probe(Ort::Session& session, std::span<const InputShape> fixed) {
-  Probe probe;
-  Ort::AllocatorWithDefaultOptions allocator;
-  for (std::size_t i = 0; i < session.GetInputCount(); ++i) {
-    std::string name = session.GetInputNameAllocated(i, allocator).get();
-    const Ort::TypeInfo info = session.GetInputTypeInfo(i);
-    const auto tensor = info.GetTensorTypeAndShapeInfo();
-    const std::optional<TensorType> type = type_of(tensor.GetElementType());
-    if (!type)
-      return refuse(RefusalCode::FormatUnsupported, std::format("Core ML : {} n'est pas flottant", name));
-    std::vector<std::int64_t> shape = tensor.GetShape();
-    if (const auto at = std::ranges::find(fixed, name, &InputShape::name); at != fixed.end())
-      shape = at->dims;
-    std::size_t count = 1;
-    for (const std::int64_t d : shape) {
-      if (d <= 0)
-        return refuse(RefusalCode::ShapeInvalid, std::format("Core ML : {}, dimension libre", name));
-      count *= static_cast<std::size_t>(d);
-    }
-    std::vector<float> values(count);
-    for (std::size_t k = 0; k < count; ++k)
-      values[k] = static_cast<float>((k * 2654435761U) % 1024U) / 1023.0F;
-    std::vector<std::byte> bytes(count * element_bytes(*type));
-    if (auto ok = vk::net::copy_converted(reinterpret_cast<const std::byte*>(values.data()), TensorType::F32,
-                                          bytes.data(), *type, count);
-        !ok)
-      return std::unexpected(ok.error());
-    probe.inputs.push_back(std::move(name));
-    probe.shapes.push_back(std::move(shape));
-    probe.types.push_back(*type);
-    probe.data.push_back(std::move(bytes));
+// Écrit <artefact>.onnx, le modèle à l'interface dans le type des tenseurs de la chaîne
+// (ir/onnx_io_type.h), et dit si la session doit l'ouvrir : faux sans rien écrire quand
+// l'interface y est déjà, ou quand le graphe ne se réécrit pas (sous-graphes) ; la conversion
+// par l'hôte reste alors, à chaque image (CoremlNet::run).
+std::expected<bool, Refusal> derive_onnx(const ModelSpec& model, const std::filesystem::path& artifact) {
+  auto bytes = vk::net::read_file(model.onnx_path);
+  if (!bytes) return std::unexpected(bytes.error());
+  const std::int32_t io = model.precision == TensorType::F16 ? ir::onnx::kFloat16 : ir::onnx::kFloat;
+  auto derived = ir::onnx::with_io_type(*bytes, io);
+  if (!derived) {
+    if (derived.error().code == RefusalCode::FeatureUnavailable) return false;
+    return std::unexpected(derived.error());
   }
-  for (std::size_t i = 0; i < session.GetOutputCount(); ++i)
-    probe.outputs.emplace_back(session.GetOutputNameAllocated(i, allocator).get());
-  return probe;
-}
-
-struct Timing {
-  double ms = 0.0;               // médiane d'une inférence
-  std::vector<float> first_out;  // première sortie, pour comparer deux répartitions
-};
-
-// Lève les exceptions d'ONNX Runtime.
-std::expected<Timing, Refusal> measure(Ort::Session& session, Probe& probe) {
-  const Ort::MemoryInfo memory = Ort::MemoryInfo::CreateCpu(OrtDeviceAllocator, OrtMemTypeCPU);
-  std::vector<Ort::Value> values;
-  std::vector<const char*> in_names;
-  for (std::size_t i = 0; i < probe.inputs.size(); ++i) {
-    values.push_back(Ort::Value::CreateTensor(memory, probe.data[i].data(), probe.data[i].size(),
-                                              probe.shapes[i].data(), probe.shapes[i].size(),
-                                              element_of(probe.types[i])));
-    in_names.push_back(probe.inputs[i].c_str());
-  }
-  std::vector<const char*> out_names;
-  for (const std::string& name : probe.outputs) out_names.push_back(name.c_str());
-  const auto run = [&] {
-    return session.Run(Ort::RunOptions{nullptr}, in_names.data(), values.data(), values.size(),
-                       out_names.data(), out_names.size());
-  };
-  for (int i = 0; i < kWarmupRuns; ++i) static_cast<void>(run());
-  std::array<double, kTimedRuns> times{};
-  std::vector<Ort::Value> outputs;
-  for (double& t : times) {
-    const auto start = std::chrono::steady_clock::now();
-    outputs = run();
-    t = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start).count();
-  }
-  std::ranges::nth_element(times, times.begin() + static_cast<std::ptrdiff_t>(kTimedRuns / 2));
-  Timing timing{.ms = times[kTimedRuns / 2], .first_out = {}};
-  if (outputs.empty()) return timing;
-  const auto info = outputs.front().GetTensorTypeAndShapeInfo();
-  const std::optional<TensorType> type = type_of(info.GetElementType());
-  if (!type) return timing;
-  timing.first_out.resize(info.GetElementCount());
-  if (auto ok = vk::net::copy_converted(static_cast<const std::byte*>(outputs.front().GetTensorRawData()),
-                                        *type, reinterpret_cast<std::byte*>(timing.first_out.data()),
-                                        TensorType::F32, timing.first_out.size());
-      !ok)
-    return std::unexpected(ok.error());
-  return timing;
-}
-
-// Sans sortie flottante à comparer : nul.
-double mean_error(const std::vector<float>& a, const std::vector<float>& b) {
-  if (a.size() != b.size()) return std::numeric_limits<double>::infinity();
-  if (a.empty()) return 0.0;
-  double sum = 0.0;
-  for (std::size_t i = 0; i < a.size(); ++i)
-    sum += std::abs(static_cast<double>(a[i]) - static_cast<double>(b[i]));
-  return sum / static_cast<double>(a.size());
+  if (derived->empty()) return false;
+  if (auto ok = vk::net::write_file(onnx_of(artifact), *derived); !ok) return std::unexpected(ok.error());
+  return true;
 }
 
 class CoremlNet final : public vk::net::RuntimeNet {
@@ -245,13 +151,15 @@ class CoremlNet final : public vk::net::RuntimeNet {
     try {
       const Ort::MemoryInfo memory = Ort::MemoryInfo::CreateCpu(OrtDeviceAllocator, OrtMemTypeCPU);
       Ort::IoBinding binding(session_);
-      // La mémoire du lecteur telle quelle quand le réseau prend son type ; sinon une copie
-      // convertie (un ONNX en FP32 : Core ML calcule en FP16 de toute façon).
+      // La mémoire du lecteur telle quelle : le réseau prend le type de ses tenseurs (interface
+      // réécrite à la construction, derive_onnx), ONNX Runtime l'enveloppe dans ses MLMultiArray
+      // et Core ML y lit et y écrit ; le passage en IOSurface reste à Core ML. Sinon (artefact
+      // plus ancien, graphe qui ne se réécrit pas) une copie convertie, dans les deux sens.
       const auto bind = [&](const HostBinding& b, TensorType wanted, std::vector<std::byte>& scratch) {
         std::byte* data = b.data;
         std::size_t bytes = b.bytes;
         if (wanted != b.type) {
-          bytes = b.bytes / (b.type == TensorType::F32 ? 4U : 2U) * (wanted == TensorType::F32 ? 4U : 2U);
+          bytes = b.bytes / element_bytes(b.type) * element_bytes(wanted);
           scratch.resize(bytes);
           data = scratch.data();
         }
@@ -262,7 +170,7 @@ class CoremlNet final : public vk::net::RuntimeNet {
         const HostBinding& b = inputs[i];
         Ort::Value value = bind(b, in_types_[i], in_scratch_[i]);
         if (in_types_[i] != b.type) {
-          const std::size_t count = b.bytes / (b.type == TensorType::F32 ? 4U : 2U);
+          const std::size_t count = b.bytes / element_bytes(b.type);
           if (auto ok = vk::net::copy_converted(b.data, b.type, in_scratch_[i].data(), in_types_[i], count);
               !ok)
             return ok;
@@ -275,7 +183,7 @@ class CoremlNet final : public vk::net::RuntimeNet {
       for (std::size_t i = 0; i < outputs.size(); ++i) {
         const HostBinding& b = outputs[i];
         if (out_types_[i] == b.type) continue;
-        const std::size_t count = b.bytes / (b.type == TensorType::F32 ? 4U : 2U);
+        const std::size_t count = b.bytes / element_bytes(b.type);
         if (auto ok = vk::net::copy_converted(out_scratch_[i].data(), out_types_[i], b.data, b.type, count);
             !ok)
           return ok;
@@ -301,18 +209,9 @@ std::expected<void, Refusal> write_manifest(const std::filesystem::path& path, c
   out << "onnx " << manifest.onnx.string() << '\n';
   for (const auto& [symbol, value] : manifest.dims) out << "dim " << value << ' ' << symbol << '\n';
   if (manifest.units) out << "units " << units_name(*manifest.units) << '\n';
+  if (manifest.io) out << "io rewritten\n";
   if (!out) return refuse(RefusalCode::CacheIo, std::format("{} : écriture", path.string()));
   return {};
-}
-
-// Les unités d'un artefact : celles de la mesure ; sans elle (un artefact plus ancien, une
-// mesure impossible), le GPU pour un réseau qui déforme (GridSample, que le Neural Engine
-// n'exécute pas), sinon toutes.
-std::expected<Units, Refusal> units_of(const Manifest& manifest) {
-  if (manifest.units) return *manifest.units;
-  auto warps = vk::net::onnx_uses_op(manifest.onnx, "GridSample");
-  if (!warps) return std::unexpected(warps.error());
-  return *warps ? Units::CpuAndGpu : Units::All;
 }
 
 std::expected<Manifest, Refusal> read_manifest(const std::filesystem::path& path) {
@@ -334,6 +233,8 @@ std::expected<Manifest, Refusal> read_manifest(const std::filesystem::path& path
       manifest.dims.emplace_back(std::move(symbol), value);
     } else if (line.starts_with("units ")) {
       manifest.units = units_from(line.substr(6));
+    } else if (line.starts_with("io ")) {
+      manifest.io = true;
     }
   }
   if (manifest.onnx.empty())
@@ -354,9 +255,12 @@ class CoremlRuntime final : public vk::net::Runtime {
                                      const std::filesystem::path& path, Progress& progress) override {
     auto dims = vk::net::symbolic_overrides(model.onnx_path, inputs);
     if (!dims) return std::unexpected(dims.error());
-    Manifest manifest{.onnx = model.onnx_path, .dims = std::move(*dims), .units = std::nullopt};
+    Manifest manifest{.onnx = model.onnx_path, .dims = std::move(*dims), .units = std::nullopt, .io = false};
+    auto io = derive_onnx(model, path);
+    if (!io) return std::unexpected(io.error());
+    manifest.io = *io;
     if (progress.report) progress.report(0.05F, "compilation Core ML");
-    auto units = choose_units(manifest, inputs, path, progress);
+    auto units = choose_units(manifest, inputs, progress, [&](Units u) { return open(manifest, path, u); });
     if (!units) return std::unexpected(units.error());
     manifest.units = *units;
     // Ouvrir la session compile le programme ML (déjà fait par la mesure, alors relu du cache)
@@ -364,8 +268,10 @@ class CoremlRuntime final : public vk::net::Runtime {
     if (auto session = open(manifest, path, *units); !session) return std::unexpected(session.error());
     if (progress.stop.stop_requested()) return refuse(RefusalCode::Cancelled, "construction annulée");
     if (auto ok = write_manifest(path, manifest); !ok) return ok;
-    if (progress.report)
-      progress.report(1.0F, std::format("modèle Core ML compilé ({})", units_name(*units)));
+    if (progress.report) {
+      progress.report(1.0F, std::format("modèle Core ML compilé ({}{})", units_name(*units),
+                                        manifest.io ? ", interface dans le type de la chaîne" : ""));
+    }
     return {};
   }
 
@@ -417,58 +323,14 @@ class CoremlRuntime final : public vk::net::Runtime {
  private:
   std::expected<Ort::Session, Refusal> open(const Manifest& manifest, const std::filesystem::path& artifact,
                                             Units units) {
+    const std::filesystem::path onnx = session_onnx(manifest, artifact);
     try {
       std::error_code error;
       std::filesystem::create_directories(cache_of(artifact), error);
-      return Ort::Session(*env_, manifest.onnx.c_str(), session_options(manifest, artifact, units));
+      return Ort::Session(*env_, onnx.c_str(), session_options(manifest, artifact, units));
     } catch (const std::exception& e) {
-      return refuse(RefusalCode::BuilderFailed,
-                    std::format("Core ML, {} : {}", manifest.onnx.string(), e.what()));
+      return refuse(RefusalCode::BuilderFailed, std::format("Core ML, {} : {}", onnx.string(), e.what()));
     }
-  }
-
-  // Chaque répartition sur les mêmes entrées, le GPU d'abord, qui sert de référence : une
-  // répartition dont la sortie s'en écarte est écartée. Le Neural Engine s'il reste dans
-  // kAneTolerance du meilleur temps, sinon la plus rapide. Un réseau qui déforme reste au GPU ;
-  // rien de mesurable : les unités par défaut (units_of).
-  std::expected<Units, Refusal> choose_units(const Manifest& manifest, std::span<const InputShape> inputs,
-                                             const std::filesystem::path& path, Progress& progress) {
-    auto fallback = units_of(manifest);
-    if (!fallback || *fallback == Units::CpuAndGpu) return fallback;
-    struct Tried {
-      Units units;
-      double ms;
-    };
-    std::vector<Tried> kept;
-    std::optional<std::vector<float>> reference;
-    constexpr std::array kOrder{Units::CpuAndGpu, Units::All, Units::CpuAndNeuralEngine};
-    for (std::size_t i = 0; i < kOrder.size(); ++i) {
-      if (progress.stop.stop_requested()) return refuse(RefusalCode::Cancelled, "construction annulée");
-      if (progress.report)
-        progress.report(0.1F + 0.25F * static_cast<float>(i),
-                        std::format("mesure Core ML ({})", units_name(kOrder[i])));
-      auto session = open(manifest, path, kOrder[i]);
-      if (!session) continue;
-      try {
-        auto probe = make_probe(*session, inputs);
-        if (!probe) return fallback;
-        auto timing = measure(*session, *probe);
-        if (!timing) continue;
-        if (!reference) {
-          reference = std::move(timing->first_out);
-        } else if (mean_error(*reference, timing->first_out) > kMaxMeanError) {
-          continue;
-        }
-        kept.push_back({.units = kOrder[i], .ms = timing->ms});
-      } catch (const std::exception&) {
-        continue;  // une répartition que Core ML refuse à l'exécution
-      }
-    }
-    if (kept.empty()) return fallback;
-    const auto fastest = std::ranges::min_element(kept, {}, &Tried::ms);
-    const auto ane = std::ranges::find(kept, Units::CpuAndNeuralEngine, &Tried::units);
-    if (ane != kept.end() && ane->ms <= kAneTolerance * fastest->ms) return ane->units;
-    return fastest->units;
   }
 
   std::shared_ptr<Ort::Env> env_;
