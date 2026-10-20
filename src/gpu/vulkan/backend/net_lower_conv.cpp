@@ -53,8 +53,21 @@ std::uint32_t matrix_tiles(std::uint32_t cout) {
   return div_up(cout, 16);
 }
 
-std::uint32_t matrix_shared_bytes(std::uint32_t subgroups, std::uint32_t tm) {
-  return (subgroups * tm * 16 * 32) + (subgroups * 256 * 4);
+// Deux tampons de A (lignes de kc / 8 uvec4, plus un dès kc = 32) et la tuile de l'épilogue
+// (net_conv_coopmat.glsl).
+std::uint32_t matrix_shared_bytes(std::uint32_t subgroups, std::uint32_t tm, std::uint32_t kc) {
+  const std::uint32_t row = (kc / 8) + ((kc / 32) + 1) / 2;
+  return (2 * subgroups * tm * 16 * row * 16) + (subgroups * 256 * 4);
+}
+
+// Canaux d'entrée par étape : le plus grand de 64, 32, 16 qui divise cinp et tient en mémoire
+// partagée. Moins d'étapes, moins de barrières.
+std::uint32_t matrix_step_channels(std::uint32_t cinp, std::uint32_t subgroups, std::uint32_t tm,
+                                   std::uint32_t max_shared) {
+  for (const std::uint32_t kc : {64U, 32U}) {
+    if (cinp % kc == 0 && matrix_shared_bytes(subgroups, tm, kc) <= max_shared) return kc;
+  }
+  return 16;
 }
 
 // La variante coopmat convient-elle à ce nœud ? Entrée float16 en Nhwc16, groupe unique.
@@ -96,7 +109,7 @@ std::expected<std::vector<KernelChoice>, Refusal> candidates(const ir::Graph& gr
     for (const std::uint32_t subgroups : {4U, 2U}) {
       for (const std::uint32_t tm : {2U, 1U, 4U}) {
         if (tm * tiles > 16 || subgroups * target.subgroup_size > target.max_workgroup_invocations ||
-            matrix_shared_bytes(subgroups, tm) > target.max_shared_memory) {
+            matrix_shared_bytes(subgroups, tm, 16) > target.max_shared_memory) {
           continue;
         }
         out.push_back({.variant = std::string(kMatrix), .tuning = {tm, subgroups}});
@@ -262,7 +275,7 @@ std::expected<void, Refusal> Lowerer::conv_matrix(std::size_t index, const Kerne
   if (!y) return std::unexpected(y.error());
   const std::uint32_t tiles = matrix_tiles(y->desc.c);
   if (tm < 1 || subgroups < 1 || tm * tiles > 16 || wg > target_.max_workgroup_invocations ||
-      matrix_shared_bytes(subgroups, tm) > target_.max_shared_memory) {
+      matrix_shared_bytes(subgroups, tm, 16) > target_.max_shared_memory) {
     return refuse_node(RefusalCode::InputMismatch, n, "réglage coopmat hors de ses bornes");
   }
   auto win = conv_window(graph_, n);
@@ -300,6 +313,7 @@ std::expected<void, Refusal> Lowerer::conv_matrix(std::size_t index, const Kerne
   constants.push_back(tm);
   constants.push_back(wg);
   constants.push_back(target_.subgroup_size);
+  constants.push_back(matrix_step_channels(x->desc.cp, subgroups, tm, target_.max_shared_memory));
   const ir::Tensor* weights = constant_input(graph_, n, ir::kConvW);
   const Binding w{.kind = BindingKind::Blob,
                   .index = add_blob(matrix_weights(*weights, x->desc.cp, tiles * 16))};

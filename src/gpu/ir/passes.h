@@ -49,6 +49,12 @@ int assign_layout(Graph& graph);
 // graphe obtenu peuvent s'écarter d'un arrondi float16. Renvoie le nombre de Cast retirés.
 int fold_float_casts(Graph& graph);
 
+// ConvTranspose de pas s ≥ 2 sans groupe, dont la sortie fait s fois l'entrée : Conv de pas 1 aux
+// s² × cout canaux (au plus max_channels) suivie d'un DepthToSpace, où se fond un DepthToSpace
+// lecteur unique de la sortie. Pour un moteur dont seules les Conv passent par les matrices
+// coopératives (OptimizeOptions). Renvoie le nombre de ConvTranspose réécrites.
+int transposes_as_convs(Graph& graph, std::int64_t max_channels);
+
 struct PassStats {
   int folded = 0;
   int dead = 0;
@@ -57,10 +63,15 @@ struct PassStats {
   int bias = 0;
   int residuals = 0;
   int activations = 0;
+  int transposes = 0;
   int nhwc = 0;
 };
 
+struct OptimizeOptions {
+  std::int64_t transpose_conv_channels = 0;  // > 0 : transposes_as_convs, avant les fusions
+};
+
 // Toutes les passes, dans l'ordre. Exige des formes connues (infer_shapes).
-std::expected<PassStats, Refusal> optimize(Graph& graph);
+std::expected<PassStats, Refusal> optimize(Graph& graph, const OptimizeOptions& options = {});
 
 }  // namespace ajp::gpu::ir
