@@ -1,6 +1,7 @@
 // GMFSS Fortuna sur le backend Vulkan (gpu/kernel_ops.h) contre kernels/ref : entrée du graphe
 // « paire » depuis deux images RGB, softmax splatting par additions atomiques de float.
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
@@ -93,6 +94,26 @@ TEST_CASE("KernelOps : entrée de GMFSS depuis deux images RGB", "[vk_backend][k
     const auto refused = ops.gmfss_frames(ta->tensor(), tb->tensor(), rife_sized->tensor());
     REQUIRE_FALSE(refused);
     CHECK(refused.error().code == RefusalCode::ShapeInvalid);
+  }
+}
+
+TEST_CASE("KernelOps : un tenseur rempli d'une valeur, l'instant de GMFSS Union",
+          "[vk_backend][kernels][gmfss]") {
+  TempDir dir("tensor_fill");
+  auto backend = make_backend(dir.path());
+  KernelOps& ops = *backend->kernels();
+  for (const TensorType type : types_of(*backend)) {
+    CAPTURE(static_cast<int>(type));
+    for (const auto& [w, h, c] : {std::array{1, 1, 1}, std::array{37, 5, 3}}) {
+      auto t = rgb_tensor(*backend, w, h, type, c);
+      REQUIRE(ops.fill(t->tensor(), 0.375F));
+      const std::size_t count = static_cast<std::size_t>(w * h * c);
+      const auto got =
+          planes_from(read_tensor(*backend, t->tensor(), element_of(type) * count), w, h, c, type);
+      for (const k::PlaneF& plane : got) {
+        for (const float v : plane.data) CHECK(v == 0.375F);
+      }
+    }
   }
 }
 

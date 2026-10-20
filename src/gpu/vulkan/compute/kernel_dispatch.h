@@ -177,7 +177,12 @@ static_assert(sizeof(ChromaPush) == 32 && sizeof(PlanesPush) == 32 && sizeof(Res
 static_assert(sizeof(YuvWindowPush) == 44 && sizeof(RgbWindowPush) == 28 && sizeof(RifeConstantsPush) == 16);
 static_assert(sizeof(RifeFramesPush) == 28 && sizeof(RgbPairPush) == 12 && sizeof(FlowMaxPush) == 24);
 static_assert(sizeof(WarpPush) == 44 && sizeof(TransferPush) == 32 && sizeof(PairPush) == 24);
-static_assert(sizeof(SplatPush) == 20 && sizeof(SplatNormalizePush) == 12);
+struct FillPush {
+  std::uint32_t count;
+  float value;
+};
+
+static_assert(sizeof(SplatPush) == 20 && sizeof(SplatNormalizePush) == 12 && sizeof(FillPush) == 8);
 
 // Constantes 0 à 5 de yuv.glsl : format, matrice, plage, octets par échantillon, chroma
 // entrelacée, chroma 4:2:0, tirées de kernels::info.

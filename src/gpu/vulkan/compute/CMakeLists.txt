@@ -48,6 +48,7 @@ set(tensor_shaders
   "${glsl}/rgb_window.comp"
   "${glsl}/rgba16_store.comp"
   "${glsl}/rife_constants.comp"
+  "${glsl}/tensor_fill.comp"
   "${glsl}/rife_frames.comp"
   "${glsl}/transfer.comp"
   "${glsl}/warp_blend.comp")

@@ -69,6 +69,15 @@ std::expected<void, Refusal> TensorRtBackend::gmfss_frames(const Tensor& a, cons
   return launched;
 }
 
+std::expected<void, Refusal> TensorRtBackend::fill(const Tensor& tensor, float value) {
+  if (!fp16_planes(tensor, 0))
+    return refuse(RefusalCode::ShapeInvalid, "fill : tenseur FP16 1 × c × h × w attendu");
+  if (auto ok = bind(); !ok) return ok;
+  std::size_t count = 1;
+  for (const auto d : tensor.shape.dims) count *= static_cast<std::size_t>(d);
+  return cuda_check(launch_fill(address(tensor), count, value, stream_), "fill<<<>>>");
+}
+
 std::expected<void, Refusal> TensorRtBackend::soft_splat(const Tensor& source, const Tensor& motion, float s,
                                                          const Tensor& out) {
   if (!fp16_planes(source, 0) || !fp16_planes(motion, kernels::kGmfssMotionChannels) ||

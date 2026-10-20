@@ -76,6 +76,8 @@ class KernelRunner {
   // précision de source). Refus FeatureUnavailable : appareil sans additions atomiques de float.
   Done soft_splat(Recorder& recorder, const TensorView& source, const TensorView& motion, float s,
                   const BufferView& sums, const TensorView& out);
+  // Chaque élément de tensor vaut value.
+  Done fill(Recorder& recorder, const TensorView& tensor, float value);
   // Écarts de luma BT.709 tirée du RGB par bloc 32 × 32 : sums reçoit la somme de chaque bloc
   // (block_count float), worst[0] le pire bloc en 1/256 de niveau (levels pas entre noir et
   // blanc), remis à zéro à chaque exécution.

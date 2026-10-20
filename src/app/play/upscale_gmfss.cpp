@@ -1,6 +1,7 @@
 // GMFSS Fortuna dans l'étage gpu (upscale_stage.h, kernels/spec/gmfss.h) : ses tenseurs nommés
 // comme ses graphes, rangés dans l'ordre de ses moteurs, puis l'image intermédiaire : le graphe
-// « paire » à la première de la paire, six softmax splats et le graphe « fusion » à chacune.
+// « paire » à la première de la paire, six softmax splats et le graphe « fusion » à chacune. La
+// fusion du modèle union reçoit aussi l'instant, un tenseur « time » 1 × 1 × 1 × 1.
 #include <algorithm>
 #include <array>
 #include <format>
@@ -51,6 +52,13 @@ std::expected<void, Refusal> UpscaleStage::allocate_gmfss() {
       if (auto ok = add(std::format("warped{}_{}", side, level), channels, scale); !ok) return ok;
     }
   }
+  const std::span<const std::string> fusion_names = setup_.gmfss_fusion->input_names();
+  if (std::ranges::contains(fusion_names, std::string_view("time"))) {
+    auto time = backend.alloc_tensor(gpu::TensorType::F16, gpu::Shape{.dims = {1, 1, 1, 1}});
+    if (!time) return std::unexpected(std::move(time.error()));
+    gmfss_.time = (*time)->tensor();
+    gmfss_.named.emplace_back("time", std::move(*time));
+  }
   const auto tensor = [&](std::string_view name) -> const gpu::Tensor* {
     const auto found = std::ranges::find(gmfss_.named, name, [](const auto& entry) { return entry.first; });
     return found == gmfss_.named.end() ? nullptr : &found->second->tensor();
@@ -69,7 +77,7 @@ std::expected<void, Refusal> UpscaleStage::allocate_gmfss() {
     return {};
   };
   if (auto ok = order(setup_.gmfss_pair->output_names(), gmfss_.pair_outputs, "paire"); !ok) return ok;
-  if (auto ok = order(setup_.gmfss_fusion->input_names(), gmfss_.fusion_inputs, "fusion"); !ok) return ok;
+  if (auto ok = order(fusion_names, gmfss_.fusion_inputs, "fusion"); !ok) return ok;
   if (setup_.gmfss_pair->input_names().size() != 1 || setup_.gmfss_fusion->output_names().size() != 1) {
     return refuse(RefusalCode::GraphInvalid,
                   "GMFSS : une entrée à la paire, une sortie à la fusion attendues");
@@ -104,6 +112,9 @@ std::expected<void, Refusal> UpscaleStage::interpolate_gmfss(std::uint32_t outpu
         !ok) {
       return ok;
     }
+  }
+  if (gmfss_.time) {
+    if (auto ok = ops.fill(*gmfss_.time, t); !ok) return ok;
   }
   std::array results{rife_out_->tensor()};
   if (auto ok = setup_.backend->enqueue(*setup_.gmfss_fusion, gmfss_.fusion_inputs, results); !ok) return ok;

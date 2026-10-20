@@ -25,4 +25,7 @@ std::size_t soft_splat_sums_bytes(int width, int height, int channels);
 // Les trois étapes, enfilées sur stream.
 cudaError_t launch_soft_splat(const SoftSplatParams& params, cudaStream_t stream);
 
+// count éléments FP16 à value (l'instant t de GMFSS Union), enfilé sur stream.
+cudaError_t launch_fill(void* data, std::size_t count, float value, cudaStream_t stream);
+
 }  // namespace ajp::gpu::cuda

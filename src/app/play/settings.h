@@ -40,9 +40,13 @@ render::GradeSettings with_preset(render::GradePreset preset, const render::Grad
 // Ce qui fait les images intermédiaires : RIFE (réseau, le modèle choisi au menu), le flux optique
 // matériel des RTX (NVIDIA Optical Flow : bien moins cher, mouvement moins fin, warp de RIFE), ou
 // GMFSS Fortuna (kernels/spec/gmfss.h : le plus fin sur l'animation, plusieurs fois plus lourd que
-// RIFE ; 720p en ×2 vise les cartes les plus puissantes).
-enum class MotionEngine : std::uint8_t { Rife, OpticalFlow, Gmfss };
-inline constexpr int kMotionEngineCount = 3;
+// RIFE ; 540 lignes de travail en ×2 tiennent sur une 4070 Ti), en base ou en union (GMFSS mêlé à
+// l'image de RIFE).
+enum class MotionEngine : std::uint8_t { Rife, OpticalFlow, Gmfss, GmfssUnion };
+inline constexpr int kMotionEngineCount = 4;
+constexpr bool is_gmfss(MotionEngine engine) {
+  return engine == MotionEngine::Gmfss || engine == MotionEngine::GmfssUnion;
+}
 std::string_view name(MotionEngine engine);   // « rife », la clé de play.toml
 std::string_view label(MotionEngine engine);  // « RIFE », pour le menu
 

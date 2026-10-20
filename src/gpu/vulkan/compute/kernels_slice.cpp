@@ -21,6 +21,7 @@ constexpr auto kHeldBlock = static_cast<std::uint32_t>(kernels::kHeldBlock);
 // Plans d'un groupe du splatting (axe z) : la géométrie d'un pixel se refait par groupe, les
 // atomiques d'un plan restent dans le même groupe.
 constexpr std::uint32_t kSplatGroup = 16;
+constexpr std::uint32_t kFillGroup = 64;  // local_size_x de tensor_fill.comp
 
 }  // namespace
 
@@ -102,6 +103,15 @@ Done KernelRunner::soft_splat(Recorder& recorder, const TensorView& source, cons
   const std::array buffers{all, out.buffer};
   return detail::run(*pipelines_, recorder, "gmfss_normalize", source.precision, {}, buffers, {},
                      bytes_of(normalize), {groups_for(source.width), groups_for(source.height), 1});
+}
+
+Done KernelRunner::fill(Recorder& recorder, const TensorView& tensor, float value) {
+  if (auto ok = check_tensor(tensor, tensor.planes, context_->caps().enabled, "remplissage"); !ok) return ok;
+  const std::uint32_t count = tensor.width * tensor.height * tensor.planes;
+  const detail::FillPush push{count, value};
+  const std::array buffers{tensor.buffer};
+  return detail::run(*pipelines_, recorder, "tensor_fill", tensor.precision, {}, buffers, {}, bytes_of(push),
+                     {groups_for(count, kFillGroup), 1, 1});
 }
 
 Done KernelRunner::rgb_pair_diff(Recorder& recorder, const TensorView& a, const TensorView& b,

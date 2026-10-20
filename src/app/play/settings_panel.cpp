@@ -153,17 +153,24 @@ void fluidity_tab(PlaySettings& d, const SettingsChoices& choices) {
           "du retard dans les scènes qui bougent : la chaîne laisse alors ces paires sans interpolation.");
     }
   }
-  if (d.motion_engine == MotionEngine::Gmfss) {
+  if (is_gmfss(d.motion_engine)) {
+    const bool union_model = d.motion_engine == MotionEngine::GmfssUnion;
     note(
         "Expérimental. GMFSS Fortuna (réseau fait pour l'animation) donne les images intermédiaires les plus "
-        "propres, pour plusieurs fois le coût de RIFE : visez 720 lignes de travail en ×1,5 ou ×2, sur une "
-        "carte puissante. TensorRT seulement pour l'instant ; ses deux moteurs se construisent la première "
-        "fois (plusieurs minutes).");
-    if (!choices.gmfss_available) {
+        "propres, pour plusieurs fois le coût de RIFE : sur une 4070 Ti, 540 lignes de travail tiennent en "
+        "×1,5 et ×2, pas 720. TensorRT seulement pour l'instant ; ses deux moteurs se construisent la "
+        "première fois (plusieurs minutes).");
+    if (union_model) {
       note(
-          std::format("Graphes introuvables : {} et {}, à exporter dans {} (tools/gmfss/export_gmfss.py) ; "
+          "Union mêle à GMFSS l'image d'un RIFE intégré au réseau : moins de défauts sur les mouvements "
+          "rapides, pour un peu plus de calcul à chaque image intermédiaire.");
+    }
+    if (!(union_model ? choices.gmfss_union_available : choices.gmfss_available)) {
+      const GmfssFiles files = gmfss_files(union_model ? GmfssVariant::Union : GmfssVariant::Base);
+      note(
+          std::format("Graphes introuvables : {} et {}, à exporter dans {} (tools/gmfss/export_gmfss.py{}) ; "
                       "RIFE prend la place.",
-                      kGmfssPairFile, kGmfssFusionFile, choices.rife_folder));
+                      files.pair, files.fusion, choices.rife_folder, union_model ? " --model union" : ""));
     }
   }
   if (d.motion_engine == MotionEngine::OpticalFlow) {

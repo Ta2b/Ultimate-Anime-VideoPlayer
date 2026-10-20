@@ -166,6 +166,8 @@ std::string_view name(MotionEngine engine) {
       return "optical_flow";
     case MotionEngine::Gmfss:
       return "gmfss";
+    case MotionEngine::GmfssUnion:
+      return "gmfss_union";
   }
   return "rife";
 }
@@ -178,6 +180,8 @@ std::string_view label(MotionEngine engine) {
       return "Flux optique NVIDIA (matériel)";
     case MotionEngine::Gmfss:
       return "GMFSS Fortuna (le plus fin, le plus lourd)";
+    case MotionEngine::GmfssUnion:
+      return "GMFSS Fortuna Union (GMFSS mêlé à RIFE)";
   }
   return "RIFE";
 }

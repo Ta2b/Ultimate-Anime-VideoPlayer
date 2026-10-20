@@ -76,6 +76,7 @@ class TensorRtBackend final : public Backend, public KernelOps {
   std::expected<PairScores, Refusal> scores_now(const Tensor& a, const Tensor& b) override;
   // GMFSS Fortuna (tensorrt_gmfss.cpp) : entrée du graphe « paire » et softmax splatting.
   std::expected<void, Refusal> gmfss_frames(const Tensor& a, const Tensor& b, const Tensor& frames) override;
+  std::expected<void, Refusal> fill(const Tensor& tensor, float value) override;
   std::expected<void, Refusal> soft_splat(const Tensor& source, const Tensor& motion, float s,
                                           const Tensor& out) override;
   // RTX HDR (tensorrt_true_hdr.cpp).

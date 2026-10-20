@@ -151,8 +151,10 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
   // Fluidité → Moteur : le flux optique matériel remplace RIFE, sans modèle ; RIFE reprend s'il manque.
   const bool want_flow = settings.rife_factor >= 2 && settings.motion_engine == MotionEngine::OpticalFlow;
   const std::vector<std::filesystem::path> gmfss_places = gmfss_dirs(p.paths.home, rife_choice);
-  const bool gmfss_found = find_gmfss(gmfss_places).has_value();
-  const bool want_gmfss = settings.rife_factor >= 2 && settings.motion_engine == MotionEngine::Gmfss;
+  const GmfssVariant gmfss_variant =
+      settings.motion_engine == MotionEngine::GmfssUnion ? GmfssVariant::Union : GmfssVariant::Base;
+  const bool gmfss_found = find_gmfss(gmfss_places, gmfss_variant).has_value();
+  const bool want_gmfss = settings.rife_factor >= 2 && is_gmfss(settings.motion_engine);
   if (settings.rife_factor >= 2 && !rife_model && !want_flow && !(want_gmfss && gmfss_found))
     return std::unexpected(choose_rife_model(p.options, p.paths.home, settings, rife_order).error());
   show_loading(p.screen, p.ui, "Chargement");
@@ -187,7 +189,7 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
   // GMFSS Fortuna à la place de RIFE, à la taille de travail ; RIFE reprend si ses graphes manquent.
   GmfssEngines gmfss;
   if (want_gmfss) {
-    auto loaded = prepare_gmfss(p, init, **backend, gmfss_places, work.width, work.height);
+    auto loaded = prepare_gmfss(p, init, **backend, gmfss_places, gmfss_variant, work.width, work.height);
     if (!loaded) {
       log->warn("{} ; RIFE à la place", loaded.error().detail);
       p.ui.controls().notify("GMFSS indisponible : RIFE", host_now_us());
@@ -246,7 +248,8 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
   const std::string label_text = std::format(
       "{}{}{}",
       flow_grid > 0 ? std::format("flux optique {} · ", factor_text(factor_of(settings)))
-      : use_gmfss   ? std::format("GMFSS Fortuna {} · ", factor_text(factor_of(settings)))
+      : use_gmfss ? std::format("GMFSS Fortuna{} {} · ", gmfss_variant == GmfssVariant::Union ? " Union" : "",
+                                factor_text(factor_of(settings)))
       : use_rife
           ? std::format("RIFE {} · {} · ", factor_text(factor_of(settings)), rife_model->stem().string())
           : std::string(),
@@ -348,7 +351,8 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
           .default_model = model ? model->default_name : std::string(),
           .source_height = video.height,
           .rife_available = rife_model.has_value() || flow_grid > 0 || gmfss_found,
-          .gmfss_available = gmfss_found,
+          .gmfss_available = find_gmfss(gmfss_places).has_value(),
+          .gmfss_union_available = find_gmfss(gmfss_places, GmfssVariant::Union).has_value(),
           .rife_loaded = rife_loaded,
           .rife_models = rife_choice ? rife_choice->available : std::vector<std::string>{},
           .default_rife_model = rife_choice ? rife_choice->default_name : std::string(),

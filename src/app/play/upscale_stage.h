@@ -162,6 +162,7 @@ class UpscaleStage final : public RingStage {
     std::vector<gpu::Tensor> pair_outputs;   // dans l'ordre de output_names() du moteur paire
     std::vector<gpu::Tensor> fusion_inputs;  // dans l'ordre de input_names() du moteur fusion
     std::vector<GmfssSplat> splats;
+    std::optional<gpu::Tensor> time;  // union : l'instant de l'image intermédiaire, pour sa fusion
   };
   GmfssBuffers gmfss_;
   std::uint64_t gmfss_pairs_ = 0;

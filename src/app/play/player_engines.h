@@ -16,6 +16,7 @@
 #include "app/play/build_progress.h"
 #include "app/play/chain.h"
 #include "app/play/display_edid.h"
+#include "app/play/gmfss_model.h"
 #include "app/play/placebo_screen.h"
 #include "app/play/player.h"
 #include "app/play/settings.h"
@@ -97,6 +98,7 @@ struct GmfssEngines {
 std::expected<std::optional<GmfssEngines>, Refusal> prepare_gmfss(Player& p, const gpu::BackendInit& init,
                                                                   gpu::Backend& backend,
                                                                   std::span<const std::filesystem::path> dirs,
-                                                                  int work_width, int work_height);
+                                                                  GmfssVariant variant, int work_width,
+                                                                  int work_height);
 
 }  // namespace ajp::app::play

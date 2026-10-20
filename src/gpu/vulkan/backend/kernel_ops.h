@@ -76,6 +76,7 @@ class VulkanKernelOps final : public KernelOps {
   std::expected<PairScores, Refusal> scores_now(const Tensor& a, const Tensor& b) override;
   std::expected<float, Refusal> flow_max_now(const Motion& motion) override;
   std::expected<void, Refusal> gmfss_frames(const Tensor& a, const Tensor& b, const Tensor& frames) override;
+  std::expected<void, Refusal> fill(const Tensor& tensor, float value) override;
   std::expected<void, Refusal> soft_splat(const Tensor& source, const Tensor& motion, float s,
                                           const Tensor& out) override;
   std::expected<void, Refusal> write_ring(const Tensor& rgb, const RingSlotDesc& slot,

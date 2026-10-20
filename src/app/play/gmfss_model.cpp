@@ -7,10 +7,11 @@
 
 namespace ajp::app::play {
 
-std::optional<GmfssModels> find_gmfss(std::span<const std::filesystem::path> dirs) {
+std::optional<GmfssModels> find_gmfss(std::span<const std::filesystem::path> dirs, GmfssVariant variant) {
+  const GmfssFiles files = gmfss_files(variant);
   std::error_code error;
   for (const std::filesystem::path& dir : dirs) {
-    GmfssModels found{.pair = dir / kGmfssPairFile, .fusion = dir / kGmfssFusionFile};
+    GmfssModels found{.pair = dir / files.pair, .fusion = dir / files.fusion};
     if (std::filesystem::is_regular_file(found.pair, error) &&
         std::filesystem::is_regular_file(found.fusion, error))
       return found;

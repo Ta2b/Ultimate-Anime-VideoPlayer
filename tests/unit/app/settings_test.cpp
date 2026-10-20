@@ -47,6 +47,10 @@ TEST_CASE("play.toml relit à l'identique ce qu'il a écrit", "[app][settings]")
   CHECK(*back == s);
   s.motion_engine = MotionEngine::Gmfss;
   CHECK(parse_settings(format_settings(s))->motion_engine == MotionEngine::Gmfss);
+  s.motion_engine = MotionEngine::GmfssUnion;
+  CHECK(parse_settings(format_settings(s))->motion_engine == MotionEngine::GmfssUnion);
+  CHECK(is_gmfss(MotionEngine::GmfssUnion));
+  CHECK_FALSE(is_gmfss(MotionEngine::Rife));
 }
 
 TEST_CASE("Grade : un préréglage nommé donne ses valeurs, gamut P3 reste celui du fichier",

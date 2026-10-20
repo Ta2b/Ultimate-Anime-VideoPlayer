@@ -125,6 +125,18 @@ std::expected<void, Refusal> VulkanKernelOps::soft_splat(const Tensor& source, c
   return submit(**rec);
 }
 
+std::expected<void, Refusal> VulkanKernelOps::fill(const Tensor& tensor, float value) {
+  auto view = tensor_view(tensor, 0, "fill");
+  if (!view) return std::unexpected(view.error());
+  OpKey key;
+  key.add(45);
+  add_view(key, *view);
+  key.add(std::bit_cast<std::uint32_t>(value));
+  auto rec = recording(key, [&](Recorder& r) { return runner_.fill(r, *view, value); });
+  if (!rec) return std::unexpected(rec.error());
+  return submit(**rec);
+}
+
 std::expected<PairScores, Refusal> VulkanKernelOps::scores_now(const Tensor& a, const Tensor& b) {
   auto va = tensor_view(a, 3, "scores_now : image a");
   if (!va) return std::unexpected(va.error());

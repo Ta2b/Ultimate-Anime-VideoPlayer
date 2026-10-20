@@ -75,6 +75,18 @@ std::size_t soft_splat_sums_bytes(int width, int height, int channels) {
          static_cast<std::size_t>(height) * sizeof(float);
 }
 
+__global__ void fill_half(__half* data, std::size_t count, __half value) {
+  const std::size_t i = static_cast<std::size_t>(blockIdx.x) * blockDim.x + threadIdx.x;
+  if (i < count) data[i] = value;
+}
+
+cudaError_t launch_fill(void* data, std::size_t count, float value, cudaStream_t stream) {
+  constexpr unsigned kThreads = 64;
+  const auto blocks = static_cast<unsigned>((count + kThreads - 1) / kThreads);
+  fill_half<<<blocks, kThreads, 0, stream>>>(static_cast<__half*>(data), count, __float2half_rn(value));
+  return cudaGetLastError();
+}
+
 cudaError_t launch_soft_splat(const SoftSplatParams& params, cudaStream_t stream) {
   const cudaError_t cleared = cudaMemsetAsync(
       params.sums, 0, soft_splat_sums_bytes(params.width, params.height, params.channels), stream);

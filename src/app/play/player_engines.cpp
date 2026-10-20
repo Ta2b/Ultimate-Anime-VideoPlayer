@@ -115,15 +115,17 @@ std::expected<std::optional<std::unique_ptr<gpu::Engine>>, Refusal> prepare_engi
 std::expected<std::optional<GmfssEngines>, Refusal> prepare_gmfss(Player& p, const gpu::BackendInit& init,
                                                                   gpu::Backend& backend,
                                                                   std::span<const std::filesystem::path> dirs,
-                                                                  int work_width, int work_height) {
-  const std::optional<GmfssModels> found = find_gmfss(dirs);
+                                                                  GmfssVariant variant, int work_width,
+                                                                  int work_height) {
+  const std::optional<GmfssModels> found = find_gmfss(dirs, variant);
   if (!found) {
     std::string tried;
     for (const std::filesystem::path& dir : dirs)
       tried += std::format("{}{}", tried.empty() ? "" : ", ", dir.string());
     return std::unexpected(
         Refusal{RefusalCode::FieldMissing,
-                std::format("GMFSS : {} et {} introuvables ({})", kGmfssPairFile, kGmfssFusionFile, tried)});
+                std::format("GMFSS : {} et {} introuvables ({})", gmfss_files(variant).pair,
+                            gmfss_files(variant).fusion, tried)});
   }
   const kernels::RifeGeometry g = kernels::rife_geometry(work_width, work_height);
   auto fixed =

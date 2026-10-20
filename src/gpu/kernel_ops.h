@@ -179,6 +179,10 @@ class KernelOps {
                                                   float /*s*/, const Tensor& /*out*/) {
     return std::unexpected(Refusal{RefusalCode::FormatUnsupported, "soft_splat : absent de ce backend"});
   }
+  // Chaque élément du tenseur prend value : l'instant t du graphe « fusion » de GMFSS Union.
+  virtual std::expected<void, Refusal> fill(const Tensor& /*tensor*/, float /*value*/) {
+    return std::unexpected(Refusal{RefusalCode::FormatUnsupported, "fill : absent de ce backend"});
+  }
   // Mémoire de l'appareil, utilisée et totale, en octets, pour les statistiques ; appelable depuis
   // n'importe quel thread. Rien si le backend ne sait pas la lire.
   struct DeviceMemory {

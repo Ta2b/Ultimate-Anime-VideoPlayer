@@ -99,6 +99,11 @@ TEST_CASE("GMFSS : les deux graphes du premier dossier qui les a, ses dimensions
   const auto found = find_gmfss(dirs);
   REQUIRE(found);
   CHECK(found->fusion == other / kGmfssFusionFile);
+  // Union : ses propres graphes, cherchés de même.
+  CHECK_FALSE(find_gmfss(dirs, GmfssVariant::Union));
+  std::ofstream(fake.rife / kGmfssUnionPairFile) << "x";
+  std::ofstream(fake.rife / kGmfssUnionFusionFile) << "x";
+  CHECK(find_gmfss(dirs, GmfssVariant::Union)->pair == fake.rife / kGmfssUnionPairFile);
   const auto dims = gmfss_dims(1280, 768);
   REQUIRE(dims.size() == 8);
   CHECK(dims[0].name == "H");

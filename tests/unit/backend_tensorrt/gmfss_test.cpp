@@ -80,6 +80,8 @@ TEST_CASE("Backend TensorRT : softmax splatting contre la référence", "[backen
     // Seul l'ordre des additions atomiques change les arrondis, puis le FP16 de la sortie.
     CHECK(worst <= k::tolerance::kRgbF16);
   }
+  REQUIRE(ops.fill(out->tensor(), 0.375F));
+  for (const float v : download(out->tensor())) CHECK(v == 0.375F);
   const auto late = ops.soft_splat(ts->tensor(), tm->tensor(), 1.5F, out->tensor());
   REQUIRE_FALSE(late);
   CHECK(late.error().code == RefusalCode::FieldOutOfRange);
