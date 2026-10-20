@@ -11,6 +11,10 @@
 // Ajout de ce depot : sur une sortie SDR (sdr_out = 1), l'image est en BT.709 gamma sdr_gamma,
 // son blanc place a `peak` nits ; le meme traitement s'y applique dans le gamut BT.709, sans
 // marge au-dessus du blanc. A sdr_out = 0, le defaut, rien ne change.
+// Ajout de ce depot : le HDR adaptatif (adapt = 1, route native, tous GPU) module l'aspect TrueHDR
+// emule par la scene : APL lisse et part des grands aplats clairs freinent l'expansion vers le
+// pic (eblouissement, limiteur OLED), une scene de nuit adoucit le contraste des ombres. A
+// adapt = 0, le defaut, rien ne change.
 //
 // Traitement par pixel, en lumiere lineaire absolue (nits) :
 //   1. noirs : pied de courbe doux sous `shadow_knee`, le noir reste a 0 ;
@@ -188,6 +192,13 @@
 //!MAXIMUM 2.8
 2.2
 
+//!PARAM adapt
+//!DESC 1 = HDR adaptatif : l'aspect TrueHDR emule suit la scene (APL, aplats clairs), 0 = courbe fixe
+//!TYPE float
+//!MINIMUM 0.0
+//!MAXIMUM 1.0
+0.0
+
 //!HOOK OUTPUT
 //!BIND HOOKED
 //!SAVE AJG_LOCAL
@@ -275,6 +286,7 @@ vec4 hook() {
 //!VAR float prev_pq
 //!VAR float cut
 //!VAR float ready
+//!VAR float bright
 //!VAR int width
 //!VAR int height
 //!VAR float history[32768]
@@ -285,24 +297,27 @@ vec4 hook() {
 //!SAVE AJG_MEAN8
 //!WIDTH 8
 //!HEIGHT 8
-//!COMPONENTS 2
+//!COMPONENTS 3
 //!DESC AnimeJaNai HDR grade - moyenne de scene 8x8
 
-// Moyenne de la carte de zone par 1/64 d'image : PQ et lumiere lineaire (nits / 10000).
+// Moyenne de la carte de zone par 1/64 d'image : PQ et lumiere lineaire (nits / 10000), et la
+// part des zones claires (au-dessus de 70 % du blanc SDR : ciel, murs blancs, neige).
 // 16 x 16 lectures bilineaires reparties sur la zone couverte par chaque texel.
 float stats_linear(float e) {
     float p = pow(clamp(e, 0.0, 1.0), 1.0 / 78.84375);
     return pow(max(p - 0.8359375, 0.0) / max(18.8515625 - 18.6875 * p, 1e-6), 6.27739463);
 }
 vec4 hook() {
-    vec2 acc = vec2(0.0);
+    vec3 acc = vec3(0.0);
+    float bright = 0.7 * sdr_white / 10000.0;
     for (int j = 0; j < 16; j++)
     for (int i = 0; i < 16; i++) {
         vec2 o = ((vec2(float(i), float(j)) + 0.5) / 16.0 - 0.5) / 8.0;
         float v = AJG_AREA_tex(AJG_AREA_pos + o).x;
-        acc += vec2(v, stats_linear(v));
+        float lin = stats_linear(v);
+        acc += vec3(v, lin, lin > bright ? 1.0 : 0.0);
     }
-    return vec4(acc / 256.0, 0.0, 1.0);
+    return vec4(acc / 256.0, 1.0);
 }
 
 //!HOOK OUTPUT
@@ -310,15 +325,15 @@ vec4 hook() {
 //!SAVE AJG_MEAN
 //!WIDTH 1
 //!HEIGHT 1
-//!COMPONENTS 2
+//!COMPONENTS 3
 //!DESC AnimeJaNai HDR grade - moyenne de scene
 
 vec4 hook() {
-    vec2 acc = vec2(0.0);
+    vec3 acc = vec3(0.0);
     for (int j = 0; j < 8; j++)
     for (int i = 0; i < 8; i++)
-        acc += AJG_MEAN8_tex((vec2(float(i), float(j)) + 0.5) / 8.0).xy;
-    return vec4(acc / 64.0, 0.0, 1.0);
+        acc += AJG_MEAN8_tex((vec2(float(i), float(j)) + 0.5) / 8.0).xyz;
+    return vec4(acc / 64.0, 1.0);
 }
 
 //!HOOK OUTPUT
@@ -336,7 +351,7 @@ vec4 hook() {
 // coutait 3 ms par image en D3D11.
 void hook() {
     ivec2 size = ivec2(AJG_AREA_size);
-    vec2 mean = AJG_MEAN_tex(vec2(0.5)).xy;
+    vec3 mean = AJG_MEAN_tex(vec2(0.5)).xyz;
     float mean_pq = mean.x;
     float mean_nits = 10000.0 * mean.y;
     // Changement de plan, premiere image ou nouvelle taille : pas d'historique.
@@ -344,11 +359,13 @@ void hook() {
               || abs(mean_pq - prev_pq) > 0.06;
     cut = reset ? 1.0 : 0.0;
     apl = reset ? mean_nits : mix(apl, mean_nits, 0.1);
+    bright = reset ? mean.z : mix(bright, mean.z, 0.1);
     prev_pq = mean_pq;
     width = size.x;
     height = size.y;
     ready = 1.0;
-    imageStore(out_image, ivec2(0, 0), vec4(apl, cut, mean_nits, 1.0));
+    // x : APL lisse (nits), y : changement de plan, z : moyenne de l'image, w : part claire lissee.
+    imageStore(out_image, ivec2(0, 0), vec4(apl, cut, mean_nits, bright));
 }
 
 //!HOOK OUTPUT
@@ -494,19 +511,33 @@ float highlight_ratio(float y, float isolation, float skin, float abl_scale) {
 // courantes, jusqu'a +20 % sur les primaires pures.
 vec3 truehdr_look(vec3 nits) {
     const vec3 luma = vec3(0.2627, 0.6780, 0.0593);
+    // HDR adaptatif : le haut de la courbe et le contraste des ombres suivent la scene lissee.
+    float top = peak;
+    float lo = em_lo;
+    if (adapt > 0.5) {
+        vec4 scene = AJG_STATS_tex(vec2(0.5));
+        float key = clamp(scene.x / sdr_white, 0.0, 1.0);  // APL lisse, en part du blanc SDR
+        float bright = clamp(scene.w, 0.0, 1.0);           // part lissee des grands aplats clairs
+        // Scene claire ou grands aplats clairs : moins d'expansion (eblouissement, limiteur OLED).
+        // Les eclats isoles gardent leur montee vers le pic (gains d'isolement plus bas).
+        float g = mix(1.0, 0.55, smoothstep(0.30, 0.70, key)) * mix(1.0, 0.75, smoothstep(0.05, 0.30, bright));
+        top = max(peak * g, min(peak, 1.5 * em_base));
+        // Scene de nuit : la moitie du contraste sous le pivot, les ombres restent lisibles.
+        lo = mix(1.0 + 0.5 * (em_lo - 1.0), em_lo, smoothstep(0.04, 0.15, key));
+    }
     vec3 x = max(nits, 0.0) / sdr_white;
     float Y = dot(x, luma);
     float idx = clamp(Y + 0.15 * (max(x.r, max(x.g, x.b)) - Y), 0.0, 1.0);
     if (idx < 1e-6) return vec3(0.0);
     float s2 = pow(idx, 2.0 / 2.4);
-    vec3 c = x * (em_base * s2 / idx * exp(log(max(peak / em_base, 1.0)) * pow(s2, 0.5 * em_pow)));
+    vec3 c = x * (em_base * s2 / idx * exp(log(max(top / em_base, 1.0)) * pow(s2, 0.5 * em_pow)));
     float Yn = max(dot(c, luma), 1e-6);
     float P = 0.2575 * em_base;
     float Y2;
     if (Yn < P) {
-        Y2 = P * pow(Yn / P, em_lo);
+        Y2 = P * pow(Yn / P, lo);
     } else {
-        float span = log(peak / P);
+        float span = log(top / P);
         float u = min(log(Yn / P) / span, 1.0);
         Y2 = P * exp(u * (em_hi - (em_hi - 1.0) * u) * span);
     }

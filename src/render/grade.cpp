@@ -33,6 +33,7 @@ constexpr std::array kGradeParams = {
     ParamBinding{"abl_hi", &GradeParams::abl_hi},
     ParamBinding{"gamut_p3", &GradeParams::gamut_p3},
     ParamBinding{"emulate", &GradeParams::emulate},
+    ParamBinding{"adapt", &GradeParams::adapt},
     ParamBinding{"sdr_white", &GradeParams::sdr_white},
     ParamBinding{"em_base", &GradeParams::em_base},
     ParamBinding{"em_pow", &GradeParams::em_pow},

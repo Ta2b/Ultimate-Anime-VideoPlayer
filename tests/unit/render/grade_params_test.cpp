@@ -43,6 +43,7 @@ TEST_CASE("route native SDR avec émulation TrueHDR : les réglages par défaut 
   CHECK(p.vibrance == 0.10);
   CHECK(p.abl == 0.0);
   CHECK(p.gamut_p3 == 0.0);
+  CHECK(p.adapt == 1.0);  // le HDR adaptatif : l'émulation suit la scène
 }
 
 TEST_CASE("route native SDR sans émulation : éclats jusqu'au pic depuis le blanc papier") {
@@ -57,6 +58,7 @@ TEST_CASE("route native SDR sans émulation : éclats jusqu'au pic depuis le bla
   CHECK(p.paper == 203.0);
   CHECK(p.in_max == 203.0);
   CHECK(p.emulate == 0.0);
+  CHECK(p.adapt == 0.0);
   CHECK(p.area_gain == Approx(1.25));
   CHECK(p.spec_gain == Approx(1.0 + 0.5 * (room - 1.0)));
   CHECK(p.vibrance == 0.15);
@@ -107,6 +109,7 @@ TEST_CASE("route TrueHDR : les éclats montent à partir de la moitié du pic") 
   CHECK(decision->params.paper == 400.0);
   CHECK(decision->params.in_max == 800.0);
   CHECK(decision->params.emulate == 0.0);
+  CHECK(decision->params.adapt == 0.0);  // RTX HDR : TrueHDR seul, le grade ne module rien
   CHECK(decision->params.spec_gain == Approx(2.2));
 }
 

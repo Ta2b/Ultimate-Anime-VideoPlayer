@@ -282,6 +282,63 @@ TEST_CASE("couleurs étendues : un rouge BT.709 va vers le rouge P3, le gris ne 
 }  // namespace ajp::render
 
 namespace ajp::render {
+namespace {
+
+// Une image uniforme à `nits` (PQ), comme une scène pleine d'un seul niveau.
+std::vector<std::uint16_t> uniform(double nits) {
+  std::vector<std::uint16_t> pixels(static_cast<std::size_t>(kSide) * kSide * 4);
+  const auto code = static_cast<std::uint16_t>(std::lround(nits_to_pq(nits) * 65535.0));
+  for (std::size_t i = 0; i < pixels.size(); i += 4) {
+    pixels[i] = pixels[i + 1] = pixels[i + 2] = code;
+    pixels[i + 3] = 65535;
+  }
+  return pixels;
+}
+
+// La route native avec l'aspect TrueHDR émulé, contraste 200 et gris moyen 51, sans autre retouche.
+GradeParams native_look(double adapt) {
+  GradeParams p;
+  p.peak = kPeak;
+  p.paper = 0.5 * kPeak;
+  p.in_max = kPeak;
+  p.shadows = 0.0;
+  p.area_gain = 1.0;
+  p.spec_gain = 1.0;
+  p.vibrance = 0.0;
+  p.gamut_p3 = 0.0;
+  p.emulate = 1.0;
+  p.adapt = adapt;
+  p.sdr_white = 203.0;
+  p.em_base = 204.0;
+  p.em_pow = 6.0 * std::pow(50.0 / 51.0, 0.35);
+  p.em_lo = 1.38;
+  p.em_hi = 1.28;
+  p.em_sat = 1.0;
+  return p;
+}
+
+}  // namespace
+
+TEST_CASE("HDR adaptatif : la nuit garde ses ombres, une scène claire s'étend moins", "[render][gpu]") {
+  Gpu gpu;
+  if (gpu.vk == nullptr) SKIP("pas d'appareil Vulkan");
+  REQUIRE(gpu.grade);
+  const auto center = [&](double nits, double adapt) {
+    return graded(gpu, uniform(nits), native_look(adapt))[kSide / 2];
+  };
+  // Nuit (3 nits, 1,5 % du blanc SDR) : moitié du contraste sous le pivot, plus clair qu'en fixe.
+  const double night_fixed = center(3.0, 0.0);
+  const double night_adapt = center(3.0, 1.0);
+  CHECK(night_adapt > 1.2 * night_fixed);
+  // Scène claire (180 nits, 89 % du blanc, tout en aplat clair) : l'expansion est freinée.
+  const double day_fixed = center(180.0, 0.0);
+  const double day_adapt = center(180.0, 1.0);
+  CHECK(day_fixed > 450.0);
+  CHECK(day_adapt < 0.7 * day_fixed);
+  CHECK(day_adapt > 180.0);
+  // Scène ordinaire (60 nits) : la courbe fixe, à l'arrondi près.
+  CHECK(std::abs(center(60.0, 1.0) - center(60.0, 0.0)) < 0.02 * center(60.0, 0.0));
+}
 
 TEST_CASE("sortie SDR : le grade neutre rend l'image telle quelle", "[render][gpu]") {
   Gpu gpu;

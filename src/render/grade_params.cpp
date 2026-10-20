@@ -184,7 +184,10 @@ std::expected<GradeDecision, Refusal> decide_grade(const GradeSettings& s, const
   p.emulate = 0.0;
   p.sdr_white = grade_limits::kSdrWhiteNits;
   const bool look = decision.mode == GradeMode::Native && s.truehdr_look;
-  if (look) apply_truehdr_look(s, peak, p);
+  if (look) {
+    apply_truehdr_look(s, peak, p);
+    p.adapt = 1.0;  // le HDR adaptatif : la route native de tous les GPU suit la scène
+  }
   if (decision.mode == GradeMode::Native && !look) {
     // Le SDR s'arrête au blanc papier : un blanc isolé peut atteindre le pic, un grand aplat
     // blanc seulement +50 % à highlights = 1.

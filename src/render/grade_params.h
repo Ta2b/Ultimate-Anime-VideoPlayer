@@ -122,6 +122,8 @@ struct GradeParams {
   double abl_hi = 250.0;
   double gamut_p3 = 1.0;
   double emulate = 0.0;
+  // HDR adaptatif (route native, tous GPU) : 1, l'aspect TrueHDR émulé suit la scène lissée.
+  double adapt = 0.0;
   double sdr_white = 203.0;
   double em_base = 200.0;
   double em_pow = 6.0;
