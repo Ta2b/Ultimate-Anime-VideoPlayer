@@ -10,6 +10,7 @@
 
 #include "gpu/ir/graph.h"
 #include "gpu/ir/ops.h"
+#include "gpu/vulkan/backend/net_alias.h"
 #include "gpu/vulkan/backend/net_lower_detail.h"
 #include "gpu/vulkan/backend/net_params.h"
 #include "gpu/vulkan/backend/net_weights.h"
@@ -205,8 +206,24 @@ std::expected<void, Refusal> Lowerer::node(std::size_t index, const KernelChoice
   }
 }
 
+bool Lowerer::viewed(const ir::Node& node) const {
+  switch (node.op) {
+    case ir::OpKind::Reshape:
+    case ir::OpKind::Squeeze:
+    case ir::OpKind::Unsqueeze:
+    case ir::OpKind::Identity:
+    case ir::OpKind::Slice:
+      break;
+    default:
+      return false;
+  }
+  const ir::TensorId out = node.outputs[0];
+  return out < aliases_.size() && aliases_[out].parent == node.inputs[0];
+}
+
 std::expected<void, Refusal> Lowerer::unary(std::size_t index) {
   const ir::Node& n = graph_.nodes[index];
+  if (viewed(n)) return {};  // Reshape et ses semblables, vus dans leur entrée
   auto x = bind(n.inputs[0]);
   if (!x) return std::unexpected(x.error());
   auto y = bind(n.outputs[0]);
@@ -300,16 +317,23 @@ std::expected<void, Refusal> Lowerer::concat(std::size_t index) {
   if (attrs == nullptr) return refuse_node(RefusalCode::GraphInvalid, n, "attributs absents");
   auto axis = axis4(n, attrs->axis, y->tensor->dims.size());
   if (!axis) return std::unexpected(axis.error());
+  const auto rank = static_cast<std::int64_t>(y->tensor->dims.size());
+  const auto logical = static_cast<std::size_t>(attrs->axis < 0 ? attrs->axis + rank : attrs->axis);
   std::uint32_t offset = 0;
+  std::int64_t start = 0;
   for (const ir::TensorId id : n.inputs) {
     auto x = bind(id);
     if (!x) return std::unexpected(x.error());
-    const std::array tensors{*x, *y};
-    auto name = shader("net_copy", tensors);
-    if (!name) return std::unexpected(name.error());
     CopyPush c{.iter = dims_of(x->desc)};
     c.out_offset[*axis] = offset;
     offset += c.iter[*axis];
+    // Entrée déjà écrite en place par son producteur.
+    const auto bytes = slab_offset(*y->tensor, logical, start);
+    start += x->tensor->dims[logical];
+    if (bytes && aliased(aliases_, id, n.outputs[0], *bytes)) continue;
+    const std::array tensors{*x, *y};
+    auto name = shader("net_copy", tensors);
+    if (!name) return std::unexpected(name.error());
     emit_linear(index, *name, {x->type, y->type}, {x->binding, y->binding}, copy_push(x->desc, y->desc, c),
                 count_of(x->desc));
   }
@@ -328,12 +352,13 @@ std::expected<void, Refusal> Lowerer::split(std::size_t index) {
   for (const ir::TensorId id : n.outputs) {
     auto y = bind(id);
     if (!y) return std::unexpected(y.error());
-    const std::array tensors{*x, *y};
-    auto name = shader("net_copy", tensors);
-    if (!name) return std::unexpected(name.error());
     CopyPush c{.iter = dims_of(y->desc)};
     c.start[*axis] = offset;
     offset += static_cast<std::int32_t>(c.iter[*axis]);
+    if (id < aliases_.size() && aliases_[id].parent == n.inputs[0]) continue;  // lue dans sa source
+    const std::array tensors{*x, *y};
+    auto name = shader("net_copy", tensors);
+    if (!name) return std::unexpected(name.error());
     emit_linear(index, *name, {x->type, y->type}, {x->binding, y->binding}, copy_push(x->desc, y->desc, c),
                 count_of(y->desc));
   }
@@ -342,6 +367,7 @@ std::expected<void, Refusal> Lowerer::split(std::size_t index) {
 
 std::expected<void, Refusal> Lowerer::slice(std::size_t index) {
   const ir::Node& n = graph_.nodes[index];
+  if (viewed(n)) return {};
   auto x = bind(n.inputs[0]);
   if (!x) return std::unexpected(x.error());
   auto y = bind(n.outputs[0]);
@@ -549,7 +575,7 @@ std::expected<Program, Refusal> lower(const ir::Graph& graph, std::span<const Ke
         Refusal{RefusalCode::InputMismatch,
                 std::format("{} choix pour {} nœuds", choices.size(), graph.nodes.size())});
   }
-  Lowerer lowerer(graph, target);
+  Lowerer lowerer(graph, target, plan_aliases(graph, target.storage_alignment));
   for (std::size_t k = 0; k < graph.nodes.size(); ++k) {
     if (auto ok = lowerer.node(k, choices[k]); !ok) return std::unexpected(ok.error());
   }

@@ -48,7 +48,10 @@ std::expected<void, Refusal> NetEngine::prepare(PipelineCache& pipelines) {
 
   const VkDeviceSize alignment =
       std::max<VkDeviceSize>(ir::kBufferAlignment, context_.caps().min_storage_buffer_alignment);
-  auto plan = ir::plan_memory(graph_, alignment);
+  if (!program_.aliases.empty() && program_.aliases.size() != graph_.tensors.size()) {
+    return mismatch(std::format("{} alias pour {} tenseurs", program_.aliases.size(), graph_.tensors.size()));
+  }
+  auto plan = ir::plan_memory(graph_, alignment, program_.aliases);
   if (!plan) return std::unexpected(plan.error());
   plan_ = std::move(*plan);
   places_.resize(graph_.tensors.size());
@@ -119,6 +122,28 @@ std::expected<BufferView, Refusal> NetEngine::resolve(const Binding& binding,
   }
   const ir::TensorId id = binding.index;
   if (id >= graph_.tensors.size()) return mismatch(std::format("tenseur {} absent", id));
+  // Un tenseur rangé dans un autre : une vue dans la place de sa racine.
+  ir::TensorId root = id;
+  VkDeviceSize offset = 0;
+  for (std::size_t hops = 0; !program_.aliases.empty() && program_.aliases[root].parent != ir::kNoTensor;
+       ++hops) {
+    if (hops == graph_.tensors.size())
+      return mismatch(std::format("{} : alias en boucle", graph_.tensors[id].name));
+    offset += program_.aliases[root].offset;
+    root = program_.aliases[root].parent;
+  }
+  auto base = root_view(root, inputs, outputs);
+  if (!base || root == id) return base;
+  const VkDeviceSize bytes = ir::storage_bytes(graph_.tensors[id]);
+  if (offset + bytes > base->size) {
+    return mismatch(std::format("{} : {} o à {} dépassent les {} o de {}", graph_.tensors[id].name, bytes,
+                                offset, base->size, graph_.tensors[root].name));
+  }
+  return BufferView{.buffer = base->buffer, .offset = base->offset + offset, .size = bytes};
+}
+
+std::expected<BufferView, Refusal> NetEngine::root_view(ir::TensorId id, std::span<const BufferView> inputs,
+                                                        std::span<const BufferView> outputs) const {
   if (const auto in = std::ranges::find(graph_.inputs, id); in != graph_.inputs.end()) {
     return inputs[static_cast<std::size_t>(in - graph_.inputs.begin())];
   }

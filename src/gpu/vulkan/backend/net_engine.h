@@ -1,5 +1,6 @@
 // Réseau chargé sur l'appareil : pipelines créés, poids envoyés une fois, arène des activations
-// allouée selon le plan mémoire de gpu_ir. Un enregistrement par jeu de tenseurs d'entrée et
+// allouée selon le plan mémoire de gpu_ir ; un tenseur rangé dans un autre (net_alias.h) est lié
+// par une vue dans sa racine. Un enregistrement par jeu de tenseurs d'entrée et
 // de sortie, fait au premier passage puis rejoué tel quel : rien n'est alloué ni recalculé par
 // image. Au-delà de kMaxRecordings jeux, le plus ancien est libéré (après la fin de sa dernière
 // exécution).
@@ -70,6 +71,9 @@ class NetEngine {
   std::expected<void, Refusal> prepare(PipelineCache& pipelines);
   std::expected<BufferView, Refusal> resolve(const Binding& binding, std::span<const BufferView> inputs,
                                              std::span<const BufferView> outputs) const;
+  // La place d'un tenseur qui n'est rangé dans aucun autre.
+  std::expected<BufferView, Refusal> root_view(ir::TensorId id, std::span<const BufferView> inputs,
+                                               std::span<const BufferView> outputs) const;
   std::expected<std::unique_ptr<Recording>, Refusal> record(std::span<const BufferView> inputs,
                                                             std::span<const BufferView> outputs);
 

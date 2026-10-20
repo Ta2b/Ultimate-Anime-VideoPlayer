@@ -23,7 +23,7 @@ namespace ajp::gpu::vk::net {
 
 // Version de l'abaissement : change à chaque changement des shaders, des constantes ou du
 // rangement des poids ; un artefact d'une autre version est refusé au chargement.
-inline constexpr std::uint32_t kLoweringVersion = 1;
+inline constexpr std::uint32_t kLoweringVersion = 2;
 
 // Variantes candidates d'un nœud, la première étant celle par défaut ; une seule pour les
 // opérations sans réglage. Refus OperatorUnknown : opérateur sans noyau Vulkan.
@@ -31,10 +31,11 @@ std::expected<std::vector<KernelChoice>, Refusal> candidates(const ir::Graph& gr
                                                              const Target& target);
 
 // Construit un programme nœud par nœud ; sert à lower() et à l'autotuner, qui chronomètre un
-// nœud seul.
+// nœud seul. Avec des alias (net_alias.h), les copies qu'ils rendent inutiles ne sont pas émises.
 class Lowerer {
  public:
-  Lowerer(const ir::Graph& graph, const Target& target) : graph_(graph), target_(target) {}
+  Lowerer(const ir::Graph& graph, const Target& target, std::vector<ir::Alias> aliases = {})
+      : graph_(graph), target_(target), aliases_(std::move(aliases)) {}
 
   // Ajoute les dispatchs et les blobs du nœud. Refus : OperatorUnknown (opérateur sans
   // noyau), InputMismatch (choix inconnu pour cet opérateur), ShapeInvalid (forme ou
@@ -42,7 +43,10 @@ class Lowerer {
   // calcul ou matrices coopératives absents).
   std::expected<void, Refusal> node(std::size_t index, const KernelChoice& choice);
 
-  Program take() { return std::move(program_); }
+  Program take() {
+    program_.aliases = std::move(aliases_);
+    return std::move(program_);
+  }
   const Program& program() const { return program_; }
 
  private:
@@ -55,6 +59,8 @@ class Lowerer {
   };
 
   std::expected<Bound, Refusal> bind(ir::TensorId id);
+  // La sortie du nœud est-elle une vue de sa première entrée (rien à émettre) ?
+  bool viewed(const ir::Node& node) const;
   std::uint32_t add_blob(std::vector<std::byte> bytes);
   std::expected<std::string, Refusal> shader(std::string_view base, std::span<const Bound> tensors) const;
   void emit(std::size_t node, std::string shader, std::vector<std::uint32_t> constants,
@@ -81,11 +87,13 @@ class Lowerer {
 
   const ir::Graph& graph_;
   Target target_;
+  std::vector<ir::Alias> aliases_;
   Program program_;
   std::map<ir::TensorId, std::uint32_t> constants_;  // constantes déjà rangées en blob
 };
 
-// Le programme entier : un choix par nœud, dans l'ordre du graphe.
+// Le programme entier : un choix par nœud, dans l'ordre du graphe, avec les alias que
+// target.storage_alignment permet.
 std::expected<Program, Refusal> lower(const ir::Graph& graph, std::span<const KernelChoice> choices,
                                       const Target& target);
 

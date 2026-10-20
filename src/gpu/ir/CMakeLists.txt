@@ -5,7 +5,7 @@ ajp_add_module(gpu_ir
   SOURCES
     describe.cpp graph.cpp import.cpp import_attrs.cpp interpreter.cpp memory_plan.cpp
     onnx_reader.cpp op_elementwise.cpp op_pixel.cpp op_sample.cpp op_shape.cpp op_slice.cpp
-    op_util.cpp op_window.cpp ops.cpp pass_fold.cpp pass_fuse.cpp pass_layout.cpp pass_pixel.cpp
+    op_util.cpp op_window.cpp ops.cpp pass_cast.cpp pass_fold.cpp pass_fuse.cpp pass_layout.cpp pass_pixel.cpp
     protobuf.cpp shape.cpp
   DEPS ajp::core_types
   PRIVATE_DEPS ajp::core_log ajp::kernels)

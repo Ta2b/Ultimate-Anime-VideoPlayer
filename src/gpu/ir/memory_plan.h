@@ -5,6 +5,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <expected>
+#include <span>
 #include <vector>
 
 #include "core/types.h"
@@ -24,6 +25,15 @@ struct Allocation {
   std::size_t last = 0;     // dernier nœud qui le lit
 };
 
+// Un tenseur rangé dans un autre, sans copie : tranche contiguë (entrée d'un Concat que son
+// producteur écrit en place, sortie d'un Split ou d'un Slice) ou même mémoire vue autrement
+// (Reshape). Le parent peut lui-même être rangé dans un autre ; la racine de la chaîne a sa propre
+// place, dans l'arène ou dans une entrée ou une sortie du graphe.
+struct Alias {
+  TensorId parent = kNoTensor;
+  std::uint64_t offset = 0;  // octets depuis le début du parent
+};
+
 struct MemoryPlan {
   std::vector<Allocation> allocations;  // activations internes, par identifiant de tenseur
   std::uint64_t arena_bytes = 0;        // taille de l'arène avec réutilisation
@@ -34,9 +44,11 @@ struct MemoryPlan {
 
 // Placement glouton du plus grand au plus petit, au plus bas décalage libre
 // pendant toute la durée de vie. Les tailles suivent la disposition de chaque
-// tenseur (storage_bytes). Refuse un graphe invalide, une forme inconnue et un
-// alignement hors de [1, kMaxBufferAlignment].
-std::expected<MemoryPlan, Refusal> plan_memory(const Graph& graph,
-                                               std::uint64_t alignment = kBufferAlignment);
+// tenseur (storage_bytes). Un tenseur rangé dans un autre (aliases, un par tenseur, ou vide)
+// n'a pas de place à lui : sa racine en tient lieu, réservée pendant la vie de toute sa famille.
+// Refuse un graphe invalide, une forme inconnue, un alignement hors de [1, kMaxBufferAlignment]
+// et des alias d'une autre taille que le graphe.
+std::expected<MemoryPlan, Refusal> plan_memory(const Graph& graph, std::uint64_t alignment = kBufferAlignment,
+                                               std::span<const Alias> aliases = {});
 
 }  // namespace ajp::gpu::ir

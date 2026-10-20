@@ -18,13 +18,19 @@ bool lives_overlap(const Allocation& a, const Allocation& b) {
 
 }  // namespace
 
-std::expected<MemoryPlan, Refusal> plan_memory(const Graph& graph, std::uint64_t alignment) {
+std::expected<MemoryPlan, Refusal> plan_memory(const Graph& graph, std::uint64_t alignment,
+                                               std::span<const Alias> aliases) {
   if (alignment == 0 || alignment > kMaxBufferAlignment) {
     return std::unexpected(
         Refusal{RefusalCode::FieldOutOfRange,
                 std::format("alignement {} hors de [1, {}]", alignment, kMaxBufferAlignment)});
   }
   if (auto ok = validate(graph); !ok) return std::unexpected(ok.error());
+  if (!aliases.empty() && aliases.size() != graph.tensors.size()) {
+    return std::unexpected(
+        Refusal{RefusalCode::InputMismatch,
+                std::format("{} alias pour {} tenseurs", aliases.size(), graph.tensors.size())});
+  }
   for (const Tensor& tensor : graph.tensors) {
     if (!tensor.known) {
       return std::unexpected(
@@ -54,8 +60,25 @@ std::expected<MemoryPlan, Refusal> plan_memory(const Graph& graph, std::uint64_t
     }
   }
 
+  // Chaque famille d'alias vit de la première écriture à la dernière lecture de ses membres,
+  // portées par sa racine.
+  const auto root_of = [&](TensorId id) {
+    for (std::size_t hops = 0; !aliases.empty() && aliases[id].parent != kNoTensor && hops < count; ++hops)
+      id = aliases[id].parent;
+    return id;
+  };
+  std::vector<bool> aliased(count, false);
+  for (TensorId id = 0; id < count; ++id) {
+    const TensorId root = root_of(id);
+    if (root == id || first[id] == kNoNode) continue;
+    aliased[id] = true;
+    first[root] = std::min(first[root], first[id]);
+    last[root] = std::max(last[root], last[id]);
+  }
+
   for (TensorId id = 0; id < count; ++id) {
     const Tensor& tensor = graph.tensors[id];
+    if (aliased[id]) continue;
     if (io[id]) {
       plan.io_bytes += storage_bytes(tensor);
     } else if (constant_read[id]) {

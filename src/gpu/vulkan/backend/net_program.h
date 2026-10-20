@@ -14,6 +14,8 @@
 #include <string>
 #include <vector>
 
+#include "gpu/ir/memory_plan.h"
+
 namespace ajp::gpu::vk::net {
 
 // Ce qu'un dispatch lie à un binding : un tenseur du graphe (entrée, sortie ou activation de
@@ -48,6 +50,7 @@ struct KernelChoice {
 struct Program {
   std::vector<Dispatch> dispatches;
   std::vector<std::vector<std::byte>> blobs;  // poids rangés, biais, constantes lues par les noyaux
+  std::vector<ir::Alias> aliases;             // un par tenseur (net_alias.h), ou vide : aucun
 };
 
 // Ce que l'appareil permet aux noyaux.
@@ -59,6 +62,7 @@ struct Target {
   std::uint32_t max_push_constants = 128;
   std::uint32_t max_shared_memory = 16384;
   std::uint32_t max_workgroup_invocations = 128;
+  std::uint32_t storage_alignment = 256;  // minStorageBufferOffsetAlignment : décalage d'une vue liée
 };
 
 }  // namespace ajp::gpu::vk::net

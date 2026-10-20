@@ -43,7 +43,9 @@ DeviceProfile profile_device(const VkContext& context) {
                                .subgroup_size = caps.subgroup_size,
                                .max_push_constants = caps.max_push_constants,
                                .max_shared_memory = caps.max_shared_memory,
-                               .max_workgroup_invocations = caps.max_workgroup_invocations};
+                               .max_workgroup_invocations = caps.max_workgroup_invocations,
+                               .storage_alignment = static_cast<std::uint32_t>(
+                                   std::max<VkDeviceSize>(caps.min_storage_buffer_alignment, 4))};
   // driverVersion se code autrement selon le constructeur : il entre brut, avec driverInfo lisible.
   profile.key = std::format("{:04x}:{:04x}:{}:{}:{:08x}", caps.vendor_id, caps.device_id, caps.driver_name,
                             caps.driver_info, caps.driver_version);

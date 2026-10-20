@@ -60,6 +60,9 @@ std::expected<ir::Graph, Refusal> prepare_graph(const BuildRequest& request, con
     return refuse(RefusalCode::FeatureUnavailable,
                   std::format("{} en float16 : l'appareil n'a pas le stockage 16 bits", request.model_id));
   }
+  // Les noyaux lisent et écrivent chaque tenseur dans son type : les Cast qu'ils feraient
+  // d'eux-mêmes disparaissent, ceux qu'un modèle FP16 garde autour de Resize par exemple.
+  if (ir::fold_float_casts(*graph) > 0) (void)ir::eliminate_dead_code(*graph);
   if (auto ok = check_interface(*graph); !ok) return std::unexpected(ok.error());
   return graph;
 }

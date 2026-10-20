@@ -2,6 +2,8 @@
 // (interpréteur, 1e-5), sur un réseau façon SPAN et un réseau façon RIFE.
 #include "gpu/ir/passes.h"
 
+#include <algorithm>
+#include <cmath>
 #include <cstdint>
 #include <string>
 #include <vector>
@@ -367,4 +369,63 @@ TEST_CASE("passes : un Cast de F16 vers F16 arrondit, il reste", "[gpu_ir][passe
     CHECK(y.f[k] == round_to_half(sum));
   }
   CHECK(y.f[0] != round_to_half(xs[0]) + round_to_half(zs[0]));  // l'arrondi a bien eu lieu
+}
+
+TEST_CASE("passes : Cast que des noyaux typés font d'eux-mêmes retirés", "[gpu_ir][passes]") {
+  // Le motif d'un modèle FP16 qui garde Resize en float : le Resize lit la source float16 et écrit
+  // en float16. Le Cast que lit aussi la Conv reste : elle garde la précision donnée.
+  ModelBuilder m;
+  m.input("x", {1, 2, 4, 4}, onnx::kFloat16)
+      .weight("scales", {4}, {1.0F, 1.0F, 2.0F, 2.0F})
+      .weight("w", {2, 2, 1, 1}, {1.0F, 0.5F, -0.5F, 1.0F})
+      .node("Cast", {"x"}, {"a"}, {attr_int("to", onnx::kFloat)})
+      .node("Resize", {"a", "", "scales"}, {"r"}, {attr_string("mode", "linear")})
+      .node("Cast", {"r"}, {"rh"}, {attr_int("to", onnx::kFloat16)})
+      .node("Relu", {"rh"}, {"y"})
+      .node("Conv", {"a", "w"}, {"c"})
+      .output("y", onnx::kFloat16)
+      .output("c");
+  const Graph before = build(m);
+  Graph after = before;
+  REQUIRE(optimize(after));
+  CHECK(fold_float_casts(after) == 1);
+  CHECK(count_ops(after, OpKind::Cast) == 1);
+  REQUIRE(validate(after));
+  const auto resize = std::ranges::find(after.nodes, OpKind::Resize, &Node::op);
+  REQUIRE(resize != after.nodes.end());
+  CHECK(after.tensors[resize->inputs[0]].type == DataType::F16);
+  CHECK(after.tensors[resize->outputs[0]].type == DataType::F16);
+
+  Value x = random_floats({1, 2, 4, 4}, 3);
+  x.type = DataType::F16;
+  for (float& v : x.f) v = round_to_half(v);
+  const std::vector<NamedValue> inputs{{.name = "x", .value = x}};
+  auto want = run(before, inputs);
+  auto got = run(after, inputs);
+  REQUIRE(want);
+  REQUIRE(got);
+  REQUIRE(got->size() == want->size());
+  for (std::size_t k = 0; k < got->size(); ++k) {
+    const std::vector<float>& g = (*got)[k].value.f;
+    const std::vector<float>& w = (*want)[k].value.f;
+    REQUIRE(g.size() == w.size());
+    // L'interpréteur n'arrondit qu'aux Cast : au plus un demi-pas de float16 d'écart.
+    for (std::size_t i = 0; i < g.size(); ++i)
+      CHECK(std::fabs(g[i] - w[i]) <= 1e-3F * (1.0F + std::fabs(w[i])));
+  }
+}
+
+TEST_CASE("passes : Cast entre types égaux et vers une sortie du graphe", "[gpu_ir][passes]") {
+  ModelBuilder m;
+  m.input("x", {1, 4})
+      .node("Sigmoid", {"x"}, {"s"})
+      .node("Cast", {"s"}, {"t"}, {attr_int("to", onnx::kFloat)})
+      .node("Cast", {"t"}, {"y"}, {attr_int("to", onnx::kFloat16)})
+      .output("y", onnx::kFloat16);
+  Graph graph = build(m);
+  CHECK(fold_float_casts(graph) == 2);  // le Sigmoid écrit directement la sortie, en float16
+  REQUIRE(validate(graph));
+  REQUIRE(graph.nodes.size() == 1);
+  CHECK(graph.tensors[graph.nodes[0].outputs[0]].name == "y");
+  CHECK(graph.tensors[graph.nodes[0].outputs[0]].type == DataType::F16);
 }

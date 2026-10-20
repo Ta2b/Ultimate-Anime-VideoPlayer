@@ -40,6 +40,15 @@ int fuse_activations(Graph& graph);
 // internes. Entrées et sorties du graphe restent en Nchw. Renvoie le nombre de tenseurs Nhwc16.
 int assign_layout(Graph& graph);
 
+// Retire les Cast entre float et float16 qu'un moteur aux noyaux typés fait de lui-même, quand
+// chaque noyau lit et écrit chaque tenseur dans son propre type et calcule en FP32 (Vulkan).
+// Vers float, la conversion est exacte : les lecteurs autres que les convolutions lisent la
+// source. Vers float16, le producteur du résultat, s'il en est le seul lecteur et n'est pas une
+// convolution, l'écrit lui-même en float16, avec le même arrondi. Un Cast entre types égaux
+// disparaît. Hors de optimize() : l'interpréteur n'arrondit qu'aux Cast, ses sorties sur le
+// graphe obtenu peuvent s'écarter d'un arrondi float16. Renvoie le nombre de Cast retirés.
+int fold_float_casts(Graph& graph);
+
 struct PassStats {
   int folded = 0;
   int dead = 0;
