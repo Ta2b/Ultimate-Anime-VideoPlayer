@@ -72,3 +72,20 @@ Le flux optique matériel NVIDIA a été retiré (fichiers `nvof_session`, `tens
 - « Cadence fixe » (Soins OLED) : plus de scintillement du VRR dans les scènes sombres, sans images
   sautées en plus.
 - Barre de lecture : en pause, elle disparaît après 20 s quand « Effacer la barre en pause » est coché.
+
+## Chaîne et moteurs (passe du 20 octobre)
+
+- **Warp après SPAN** (Fluidité → « Warp après SPAN », relance la lecture) : 1080p → 4K, RIFE ×3,
+  avec et sans la case. Relever avec `--stats` le coût par image et les paires en retard, et
+  comparer à l'œil les images intermédiaires (traits, bords d'objets rapides) : sans la case,
+  SPAN nettoie le warp ; avec, il ne passe qu'une fois par image source.
+- **SPAN réutilisé sur les dessins tenus** : le journal de fin dit « SPAN : N passes évitées ». Sur
+  un anime en deux, N doit approcher la moitié des paires tenues ; aucune image ne doit rester
+  figée pendant un fondu lent (au plus deux réutilisations de suite).
+- **Graphes CUDA de TensorRT** : même lecture qu'avant, coût CPU du thread gpu plus bas. Si un
+  moteur refuse la capture, il repasse en lancements directs sans message ; un écran noir ou une
+  image figée serait un bug de capture (désactiver en revenant au commit d'avant pour comparer).
+- **Windows** : `pwsh tools/release/package-windows.ps1` depuis l'invite « x64 Native Tools »
+  (`$env:AJP_WITH_CUDA = "ON"` pour le paquet TensorRT), puis l'écran de bienvenue
+  (`--first-run`) et une lecture avec TensorRT : le ring passe par des HANDLE NT.
+- **FlowJaNai** : suivre `tools/nvof_interp/README.md` (outil NVOF, flux d'ATD-12K, entraînement).
