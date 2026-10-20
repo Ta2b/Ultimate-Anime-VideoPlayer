@@ -79,7 +79,7 @@ TEST_CASE("ajp play : RIFE ×3 par défaut, --rife et --rife-model", "[app][opti
   CHECK(factor_text({.num = 3, .den = 2}) == "×1,5");
   CHECK(factor_text({.num = 3, .den = 1}) == "×3");
   CHECK(default_rife_candidates("/home/x").front() ==
-        std::filesystem::path("/home/x/.local/share/AnimeJaNai-HDR-linux/animejanai/rife/rife_v4.26.onnx"));
+        std::filesystem::path("/home/x/.local/share/AnimeJaNai-HDR-linux/animejanai/rife/rife_v4.25.onnx"));
 }
 
 TEST_CASE("ajp play : RTX HDR et ses réglages, refus nommés hors plage", "[app][options]") {

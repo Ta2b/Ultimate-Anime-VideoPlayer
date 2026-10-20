@@ -46,10 +46,16 @@ std::expected<ModelChoice, Refusal> choose_model(const PlayOptions& options,
 
 std::expected<ModelChoice, Refusal> choose_rife_model(const PlayOptions& options,
                                                       const std::filesystem::path& home,
-                                                      const PlaySettings& settings) {
-  auto found = find_rife_model(options, default_rife_candidates(home));
+                                                      const PlaySettings& settings,
+                                                      std::span<const std::string_view> preference) {
+  auto found = find_rife_model(options, default_rife_candidates(home, preference));
   if (!found) return std::unexpected(std::move(found.error()));
   return choose_in(*found, "rife_v", settings.rife_model, options.was_given("--rife-model"));
+}
+
+std::span<const std::string_view> rife_preference(const GpuFacts& gpu) {
+  if (gpu.vendor == GpuVendor::Nvidia && gpu.tensor_cores) return kRifeForRtx;
+  return kRifeForOthers;
 }
 
 std::vector<RifeEntry> rife_menu(const std::vector<std::string>& available) {

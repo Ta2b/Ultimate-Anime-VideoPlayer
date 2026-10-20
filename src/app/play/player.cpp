@@ -6,6 +6,8 @@
 #include <format>
 #include <fstream>
 #include <optional>
+#include <span>
+#include <string_view>
 #include <system_error>
 #include <utility>
 #include <variant>
@@ -140,8 +142,10 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
                                                    label(settings.downscale), work.width, work.height)
                                      : std::format("{}x{}", video.width, video.height);
   // Le modèle RIFE est cherché même sans interpolation : le menu peut l'allumer.
+  const std::span<const std::string_view> rife_order = rife_preference(gpu_facts(p.screen));
   std::optional<ModelChoice> rife_choice;
-  if (auto found = choose_rife_model(p.options, p.paths.home, settings)) rife_choice = std::move(*found);
+  if (auto found = choose_rife_model(p.options, p.paths.home, settings, rife_order))
+    rife_choice = std::move(*found);
   const std::optional<std::filesystem::path> rife_model =
       rife_choice ? std::optional(rife_choice->path) : std::nullopt;
   // Fluidité → Moteur : le flux optique matériel remplace RIFE, sans modèle ; RIFE reprend s'il manque.
@@ -150,7 +154,7 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
   const bool gmfss_found = find_gmfss(gmfss_places).has_value();
   const bool want_gmfss = settings.rife_factor >= 2 && settings.motion_engine == MotionEngine::Gmfss;
   if (settings.rife_factor >= 2 && !rife_model && !want_flow && !(want_gmfss && gmfss_found))
-    return std::unexpected(choose_rife_model(p.options, p.paths.home, settings).error());
+    return std::unexpected(choose_rife_model(p.options, p.paths.home, settings, rife_order).error());
   show_loading(p.screen, p.ui, "Chargement");
   const gpu::BackendInit init{
       .render = &p.screen.device(), .cache_dir = p.paths.engines, .log = backend_log()};

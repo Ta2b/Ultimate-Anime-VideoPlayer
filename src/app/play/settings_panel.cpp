@@ -128,8 +128,10 @@ void fluidity_tab(PlaySettings& d, const SettingsChoices& choices) {
     if (ImGui::BeginCombo("Modèle RIFE", rife_label(current).c_str())) {
       for (const RifeEntry& entry : rife_menu(choices.rife_models)) {
         const bool chosen = entry.file == current;
-        const std::string text =
-            entry.present ? rife_label(entry.file) : rife_label(entry.file) + " · absent";
+        std::string text = rife_label(entry.file);
+        if (!entry.present) text += " · absent";
+        if (entry.file == choices.default_rife_model) text += " · conseillé pour cette carte";
+        if (entry.file.find("heavy") != std::string::npos) text += " · déconseillé";
         if (ImGui::Selectable(text.c_str(), chosen, entry.present ? 0 : ImGuiSelectableFlags_Disabled))
           d.rife_model = entry.file == choices.default_rife_model ? std::string() : entry.file;
         if (chosen) ImGui::SetItemDefaultFocus();
@@ -141,14 +143,14 @@ void fluidity_tab(PlaySettings& d, const SettingsChoices& choices) {
       if (!entry.present) missing += std::format("{}{}", missing.empty() ? "" : ", ", entry.file);
     }
     if (!missing.empty() && d.motion_engine == MotionEngine::Rife) {
-      note(std::format("Absents de {} : {} (exports v1 de vs-mlrt convertis en FP16, docs/handoff-pc.md).",
+      note(std::format("Absents de {} : {} (exports ONNX de vs-mlrt convertis en FP16, docs/handoff-pc.md).",
                        choices.rife_folder, missing));
     }
     if (current.find("heavy") != std::string::npos) {
       note(
-          "RIFE heavy : plus fin sur les mouvements difficiles, mais environ 4 fois plus lent que RIFE 4.26 "
-          "(34 ms par passe à 720p sur une 4070 Ti). Même en ×2, la lecture prend du retard dans les scènes "
-          "qui bougent à chaque image : la chaîne laisse alors ces paires sans interpolation.");
+          "RIFE heavy : déconseillé. Environ 4 fois plus lent que RIFE 4.25 (34 ms par passe à 720p sur une "
+          "4070 Ti), pour plus d'artefacts selon les essais de la communauté. Même en ×2, la lecture prend "
+          "du retard dans les scènes qui bougent : la chaîne laisse alors ces paires sans interpolation.");
     }
   }
   if (d.motion_engine == MotionEngine::Gmfss) {

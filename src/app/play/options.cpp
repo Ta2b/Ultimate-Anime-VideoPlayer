@@ -281,8 +281,18 @@ std::string factor_text(Factor factor) {
 }
 
 std::vector<std::filesystem::path> default_rife_candidates(const std::filesystem::path& home) {
-  return {home / ".local/share/AnimeJaNai-HDR-linux/animejanai/rife" / kDefaultRifeFile,
-          home / ".local/share/AnimeJaNai/animejanai/rife" / kDefaultRifeFile};
+  const std::array files{kDefaultRifeFile};
+  return default_rife_candidates(home, files);
+}
+
+std::vector<std::filesystem::path> default_rife_candidates(const std::filesystem::path& home,
+                                                           std::span<const std::string_view> files) {
+  std::vector<std::filesystem::path> candidates;
+  for (const std::filesystem::path& dir : {home / ".local/share/AnimeJaNai-HDR-linux/animejanai/rife",
+                                           home / ".local/share/AnimeJaNai/animejanai/rife"}) {
+    for (const std::string_view file : files) candidates.push_back(dir / file);
+  }
+  return candidates;
 }
 
 namespace {

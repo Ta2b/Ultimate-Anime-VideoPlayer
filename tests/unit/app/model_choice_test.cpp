@@ -56,16 +56,34 @@ TEST_CASE("Modèle RIFE introuvable : refus qui cite les chemins essayés", "[ap
   const auto refused = choose_rife_model(PlayOptions{}, home, PlaySettings{});
   REQUIRE_FALSE(refused);
   CHECK(refused.error().code == RefusalCode::ModelUnreadable);
-  CHECK(refused.error().detail.find("rife_v4.26.onnx") != std::string::npos);
+  CHECK(refused.error().detail.find("rife_v4.25.onnx") != std::string::npos);
 }
 
-TEST_CASE("Menu RIFE : 4.26, 4.25, 4.13 et 4.6 toujours, puis le reste du dossier", "[app][model_choice]") {
+TEST_CASE("Modèle RIFE par défaut : 4.25 sur une RTX, 4.22 lite ailleurs, sinon le suivant présent",
+          "[app][model_choice]") {
+  const FakeHome fake("preference");
+  const GpuFacts rtx{.vendor = GpuVendor::Nvidia, .vram_bytes = 12ULL << 30U, .tensor_cores = true};
+  const GpuFacts amd{.vendor = GpuVendor::Amd, .vram_bytes = 16ULL << 30U};
+  // Le dossier n'a pas 4.25 : la RTX prend 4.26, la suivante présente.
+  CHECK(choose_rife_model(PlayOptions{}, fake.home, PlaySettings{}, rife_preference(rtx))->default_name ==
+        "rife_v4.26.onnx");
+  CHECK(choose_rife_model(PlayOptions{}, fake.home, PlaySettings{}, rife_preference(amd))->default_name ==
+        "rife_v4.22_lite.onnx");
+  std::ofstream(fake.rife / "rife_v4.25.onnx") << "x";
+  CHECK(choose_rife_model(PlayOptions{}, fake.home, PlaySettings{}, rife_preference(rtx))->default_name ==
+        "rife_v4.25.onnx");
+}
+
+TEST_CASE("Menu RIFE : le catalogue toujours, du plus conseillé au plus léger, puis le reste du dossier",
+          "[app][model_choice]") {
   const auto menu = rife_menu({"rife_v4.22_lite.onnx", "rife_v4.26.onnx", "rife_v4.26_heavy.onnx"});
-  CHECK(menu == std::vector<RifeEntry>{{"rife_v4.26.onnx", true},
-                                       {"rife_v4.25.onnx", false},
+  CHECK(menu == std::vector<RifeEntry>{{"rife_v4.25.onnx", false},
+                                       {"rife_v4.25_lite.onnx", false},
+                                       {"rife_v4.22_lite.onnx", true},
+                                       {"rife_v4.26.onnx", true},
+                                       {"rife_v4.18.onnx", false},
                                        {"rife_v4.13.onnx", false},
                                        {"rife_v4.6.onnx", false},
-                                       {"rife_v4.22_lite.onnx", true},
                                        {"rife_v4.26_heavy.onnx", true}});
 }
 

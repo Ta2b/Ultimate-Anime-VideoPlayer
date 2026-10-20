@@ -34,7 +34,7 @@ inline constexpr std::string_view kDefaultModelFile =
 // Facteur des modèles SPAN d'AnimeJaNai HD : 2 (sortie 2H × 2W).
 inline constexpr int kSpanFactor = 2;
 // RIFE du lecteur actuel (profil Quality) : RIFE 4.26, lu en place comme SPAN.
-inline constexpr std::string_view kDefaultRifeFile = "rife_v4.26.onnx";
+inline constexpr std::string_view kDefaultRifeFile = "rife_v4.25.onnx";
 // Interpolation par défaut : ×3. Sur la RTX 4070 Ti, une paire qui bouge coûte 2 RIFE à 720p et
 // 3 SPAN, environ 31 ms sur 41,7 : 8 images sautées sur 25 s d'ouverture, contre 304 à ×4
 // (19 octobre, ~/ajp-reports/vertical-slice.md). ×4 attend les optimisations de la parité.
@@ -125,7 +125,10 @@ std::string play_usage();
 // Où chercher le modèle par défaut, dans l'ordre : l'installation d'AnimeJaNai, puis le
 // profil par défaut du dépôt mpv-AnimeJaNai-HDR. home vient de SDL (SDL_GetUserFolder).
 std::vector<std::filesystem::path> default_model_candidates(const std::filesystem::path& home);
+// RIFE : kDefaultRifeFile dans chaque dossier ; avec files, chacun d'eux, dossier par dossier.
 std::vector<std::filesystem::path> default_rife_candidates(const std::filesystem::path& home);
+std::vector<std::filesystem::path> default_rife_candidates(const std::filesystem::path& home,
+                                                           std::span<const std::string_view> files);
 
 // Le modèle à charger : --model s'il est donné (il doit exister), sinon le premier
 // candidat présent. Refus ModelUnreadable avec les chemins essayés.
