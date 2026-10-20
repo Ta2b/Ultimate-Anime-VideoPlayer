@@ -18,6 +18,13 @@ ajp_fetch_submodule(jinja https://github.com/pallets/jinja.git 15206881c006c7966
 ajp_fetch_submodule(markupsafe https://github.com/pallets/markupsafe.git 297fc8e356e6836a62087949245d09a28e9f1b13)
 ajp_fetch_submodule(fast_float https://github.com/fastfloat/fast_float.git 97b54ca9e75f5303507699d27c6b4f4efe4641a1)
 
+# MSVC garde <stdatomic.h> derrière /experimental:c11atomics ; sans lui, le test d'atomiques du
+# meson.build échoue et cherche une libatomic qui n'existe pas sous Windows.
+if(VCPKG_TARGET_IS_WINDOWS)
+  string(APPEND VCPKG_C_FLAGS " /experimental:c11atomics")
+  string(APPEND VCPKG_CXX_FLAGS " ")  # vcpkg veut les deux drapeaux, ou aucun
+endif()
+
 vcpkg_find_acquire_program(PYTHON3)
 get_filename_component(PYTHON3_DIR "${PYTHON3}" DIRECTORY)
 vcpkg_add_to_path("${PYTHON3_DIR}")
