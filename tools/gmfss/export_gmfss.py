@@ -347,7 +347,9 @@ def exportable():
 
 
 def export(module, args, path, inputs, outputs, axes):
-    with exportable():
+    # Sans autograd : les entrées de la fusion sortent d'inference_mode, et l'IFNet de « union » les
+    # garderait pour la rétropropagation, ce qu'interdit PyTorch.
+    with torch.no_grad(), exportable():
         torch.onnx.export(
             module,
             tuple(args),
