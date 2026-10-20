@@ -26,7 +26,11 @@ Machine : CachyOS, RTX 4070 Ti (12 Go, Ada, compute 8.9), pilote 615.78.08, écr
 | Réduction « Perceptuelle » (Öztireli–Gross, écrite par nous) | à faire | — |
 | SPAN en FP8 ou INT8 (Ada), comparé à FP16 en PSNR/SSIM | à faire | — |
 | Mesures de la paire sans attente hôte (`scores_now`, `flow_max_now`) | à faire (≈ 0,5 ms par paire) | — |
-| Moteurs d'interpolation alternatifs | état des lieux commencé (Smooth Motion ci-dessous), arrêté | — |
+| Smooth Motion du pilote, en complément de RIFE | fait sur le cloud, à essayer ([tests-pc.md](tests-pc.md)) | `settings`, `placebo_screen` |
+| Flux optique matériel NVIDIA (NVOF 2.0) à la place de RIFE | fait sur le cloud, à essayer | `nvof_session`, `optical_flow_kernels.cu`, `kernels/spec/optical_flow.h` |
+| Choix du modèle RIFE (4.26, 4.26 heavy…) | fait ; heavy coûte 34 ms par passe à 1280x768, il prend du retard même en ×2 | `model_choice` |
+| Garder les poses (DRBA causal, MIT, routineLife1/DRBA) | fait sur le cloud, à essayer | `kernels/spec/poses.h`, `warp_kernels.cu` |
+| GMFSS Fortuna | écarté du temps réel : 213 à 230 ms par image à 720p, GMFlow et softsplat sans export ONNX simple ; à reprendre pour un export hors ligne | — |
 | FSR 3 FI, XeSS-FG, VTFrameProcessor | à noter au plan (autres systèmes), rien de codé | — |
 
 ## Construire et lancer
