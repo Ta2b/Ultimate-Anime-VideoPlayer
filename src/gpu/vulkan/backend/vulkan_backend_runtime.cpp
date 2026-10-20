@@ -1,9 +1,11 @@
 // Le backend Vulkan dont les réseaux passent par un autre runtime (net_runtime.h) : construction
 // et chargement par le runtime, tenseurs en mémoire hôte visible (celle du runtime, importée, sur
-// un GPU intégré ; ou partagée, en interop),
-// enqueue synchrone après l'attente de la file, ou mis en file sur la timeline importée par le
-// runtime (interop) : alors ni attente ni retour à l'hôte.
+// un GPU intégré ; ou partagée, en interop), enqueue mis en file sur la timeline importée par le
+// runtime (interop : ni attente ni retour à l'hôte), sinon différé au fil du runtime
+// (run_deferred : l'attente des entrées et le signal de l'étape hors du fil du GPU), sinon
+// synchrone sur ce fil après l'attente de la file.
 #include <format>
+#include <mutex>
 #include <optional>
 #include <random>
 #include <span>
@@ -222,6 +224,10 @@ std::expected<void, Refusal> VulkanBackend::enqueue_runtime(Engine& engine, std:
     }
   }
   if (!queue_) return refuse_backend(RefusalCode::DeviceUnavailable, "file du backend absente");
+  {
+    const std::scoped_lock lock(runtime_mutex_);
+    if (runtime_failure_) return std::unexpected(*runtime_failure_);
+  }
   const std::span<const net::HostBinding> all(bindings);
   const auto ins = all.first(inputs.size());
   const auto outs = all.subspan(inputs.size());
@@ -244,16 +250,42 @@ std::expected<void, Refusal> VulkanBackend::enqueue_runtime(Engine& engine, std:
       return ordered;
     }
   }
-  // Par l'hôte : les noyaux qui ont écrit les entrées sont finis, leurs écritures visibles de
-  // l'hôte (barrière de fin de chaque enregistrement) ; les sorties écrites ici le sont des
-  // soumissions suivantes, qui commencent après le retour (ou après le signal de l'étape).
-  if (auto ok = context_->wait_on_host(step ? queue_->at(step->wait) : queue_->last()); !ok)
-    return std::unexpected(ok.error());
-  auto ran = runtime_engine->net().run(ins, outs);
-  if (step) {
-    if (auto ok = queue_->signal_on_host(step->signal); !ok) return std::unexpected(ok.error());
+  // Par l'hôte, sans bloquer ce fil : le lot part, puis le runtime attend sur son propre fil que
+  // les noyaux qui ont écrit les entrées soient finis (leurs écritures visibles de l'hôte par la
+  // barrière de fin de chaque enregistrement), calcule, et signale l'étape ; ce fil enregistre
+  // déjà la suite, que le GPU attend sur la timeline. Les sorties écrites par le runtime le sont
+  // des soumissions suivantes, qui commencent après le signal.
+  if (!step) {
+    if (auto ok = queue_->flush(); !ok) return std::unexpected(ok.error());
+    step = queue_->host_step();
+    auto deferred = runtime_engine->net().run_deferred(
+        ins, outs, [this, wait = step->wait] { return queue_->wait_elsewhere(wait); },
+        [this, signal = step->signal](std::expected<void, Refusal> ran) {
+          finish_host_step(signal, std::move(ran));
+        });
+    if (deferred) return {};
+    if (deferred.error().code != RefusalCode::FeatureUnavailable) {
+      // Rien n'a été lancé : l'étape se signale ici, sans quoi la file attendrait sans fin.
+      if (auto ok = queue_->signal_on_host(step->signal); !ok) return std::unexpected(ok.error());
+      return deferred;
+    }
   }
+  // Par l'hôte, sur ce fil : l'attente des entrées, le calcul, le signal de l'étape.
+  if (auto ok = context_->wait_on_host(queue_->at(step->wait)); !ok) return std::unexpected(ok.error());
+  auto ran = runtime_engine->net().run(ins, outs);
+  if (auto ok = queue_->signal_on_host(step->signal); !ok) return std::unexpected(ok.error());
   return ran;
+}
+
+void VulkanBackend::finish_host_step(std::uint64_t signal, std::expected<void, Refusal> ran) {
+  if (!ran) {
+    log(BackendLogLevel::Error, std::format("réseau par {} : {}", runtime_->name(), ran.error().detail));
+    const std::scoped_lock lock(runtime_mutex_);
+    if (!runtime_failure_) runtime_failure_ = std::move(ran.error());
+  }
+  if (auto ok = queue_->signal_on_host(signal); !ok) {
+    log(BackendLogLevel::Error, std::format("signal de l'étape {} : {}", signal, ok.error().detail));
+  }
 }
 
 }  // namespace ajp::gpu::vk

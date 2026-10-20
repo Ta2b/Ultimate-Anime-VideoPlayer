@@ -8,6 +8,7 @@
 // d'exporter last() vers une autre file) ou à toute attente hôte.
 #pragma once
 
+#include <chrono>
 #include <cstdint>
 #include <expected>
 #include <optional>
@@ -51,8 +52,17 @@ class BackendQueue {
     std::uint64_t signal = 0;
   };
   std::optional<Step> external_step();
-  // Signal d'une étape par l'hôte, quand l'autre API ne l'a pas mise en file.
+  // Une étape faite par l'hôte (un runtime sans interop, sur son propre fil) : elle attend wait
+  // par wait_elsewhere et signale signal par signal_on_host. Les attentes de wait() restent à
+  // la prochaine soumission : l'étape ne lit que du travail déjà soumis, que flush() a fait
+  // partir.
+  Step host_step();
+  // Signal d'une étape par l'hôte, quand l'autre API ne l'a pas mise en file. Appelable depuis
+  // un autre fil que celui du contexte.
   Done signal_on_host(std::uint64_t value) { return timeline_.signal(value); }
+  // Attente de value depuis un autre fil que celui du contexte : ni lot (l'appelant a fait
+  // flush() avant), ni compteur host_waits. Refus VulkanCallFailed au délai dépassé.
+  Done wait_elsewhere(std::uint64_t value, std::chrono::nanoseconds timeout = std::chrono::seconds(10)) const;
   VkSemaphore semaphore() const { return timeline_.handle(); }
   // Valeur atteinte à cet instant : les soumissions jusqu'à elle sont finies (constat, sans
   // attente).

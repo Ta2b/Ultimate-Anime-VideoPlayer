@@ -4,10 +4,13 @@
 #include <array>
 #include <chrono>
 #include <cmath>
+#include <condition_variable>
 #include <cstring>
+#include <deque>
 #include <exception>
 #include <format>
 #include <fstream>
+#include <functional>
 #include <map>
 #include <mutex>
 #include <openvino/core/preprocess/pre_post_process.hpp>
@@ -17,7 +20,9 @@
 #include <openvino/runtime/intel_gpu/remote_properties.hpp>
 #include <openvino/runtime/intel_npu/properties.hpp>
 #include <optional>
+#include <stop_token>
 #include <string>
+#include <thread>
 #include <utility>
 #include <vector>
 
@@ -211,6 +216,18 @@ class OpenvinoNet final : public vk::net::RuntimeNet {
         names_(std::move(names)),
         usm_(std::move(usm)),
         bound_(names_.inputs.size() + names_.outputs.size()) {}
+  OpenvinoNet(const OpenvinoNet&) = delete;
+  OpenvinoNet& operator=(const OpenvinoNet&) = delete;
+  OpenvinoNet(OpenvinoNet&&) = delete;
+  OpenvinoNet& operator=(OpenvinoNet&&) = delete;
+  // Les étapes encore en file sont faites avant de rendre la requête : chacune signale la
+  // timeline que la chaîne attend.
+  ~OpenvinoNet() override {
+    if (!worker_.joinable()) return;
+    worker_.request_stop();
+    wake_.notify_all();
+    worker_.join();
+  }
   std::span<const std::string> input_names() const override { return names_.inputs; }
   std::span<const std::string> output_names() const override { return names_.outputs; }
 
@@ -218,6 +235,49 @@ class OpenvinoNet final : public vk::net::RuntimeNet {
                                    std::span<const HostBinding> outputs) override {
     if (inputs.size() != names_.inputs.size() || outputs.size() != names_.outputs.size())
       return refuse(RefusalCode::InputMismatch, "OpenVINO : nombre d'entrées ou de sorties");
+    const std::scoped_lock lock(request_mutex_);
+    return infer(inputs, outputs);
+  }
+
+  // Sur un fil propre au réseau, dans l'ordre des appels : ready (l'attente des entrées sur la
+  // timeline Vulkan), l'inférence, done (le signal de l'étape). Le fil du lecteur n'attend
+  // plus le GPU Intel, et le NPU calcule pendant que le GPU fait la chaîne. Une seule requête :
+  // la timeline ordonne les étapes, et les entrées de la suivante ne sont écrites qu'après le
+  // signal de la précédente ; une seconde requête l'attendrait de la même façon.
+  std::expected<void, Refusal> run_deferred(std::span<const HostBinding> inputs,
+                                            std::span<const HostBinding> outputs,
+                                            std::function<std::expected<void, Refusal>()> ready,
+                                            std::function<void(std::expected<void, Refusal>)> done) override {
+    if (inputs.size() != names_.inputs.size() || outputs.size() != names_.outputs.size())
+      return refuse(RefusalCode::InputMismatch, "OpenVINO : nombre d'entrées ou de sorties");
+    if (!ready || !done) return refuse(RefusalCode::InputMismatch, "OpenVINO : étape sans rappels");
+    {
+      const std::scoped_lock lock(jobs_mutex_);
+      jobs_.push_back(Job{.inputs = {inputs.begin(), inputs.end()},
+                          .outputs = {outputs.begin(), outputs.end()},
+                          .ready = std::move(ready),
+                          .done = std::move(done)});
+      if (!worker_.joinable()) worker_ = std::jthread([this](const std::stop_token& stop) { serve(stop); });
+    }
+    wake_.notify_one();
+    return {};
+  }
+
+ private:
+  struct Bound {
+    std::byte* data = nullptr;
+    TensorType type = TensorType::F16;
+    Shape shape;
+  };
+  struct Job {
+    std::vector<HostBinding> inputs;
+    std::vector<HostBinding> outputs;
+    std::function<std::expected<void, Refusal>()> ready;
+    std::function<void(std::expected<void, Refusal>)> done;
+  };
+
+  std::expected<void, Refusal> infer(std::span<const HostBinding> inputs,
+                                     std::span<const HostBinding> outputs) {
     try {
       for (std::size_t i = 0; i < inputs.size(); ++i) bind(i, compiled_.input(names_.inputs[i]), inputs[i]);
       for (std::size_t i = 0; i < outputs.size(); ++i)
@@ -229,12 +289,25 @@ class OpenvinoNet final : public vk::net::RuntimeNet {
     }
   }
 
- private:
-  struct Bound {
-    std::byte* data = nullptr;
-    TensorType type = TensorType::F16;
-    Shape shape;
-  };
+  // Le fil des étapes : chaque étape en file est faite, même à l'arrêt (sa timeline l'attend).
+  void serve(const std::stop_token& stop) {
+    while (true) {
+      std::optional<Job> job;
+      {
+        std::unique_lock lock(jobs_mutex_);
+        wake_.wait(lock, [&] { return !jobs_.empty() || stop.stop_requested(); });
+        if (jobs_.empty()) return;
+        job = std::move(jobs_.front());
+        jobs_.pop_front();
+      }
+      std::expected<void, Refusal> result = job->ready();
+      if (result) {
+        const std::scoped_lock lock(request_mutex_);
+        result = infer(job->inputs, job->outputs);
+      }
+      job->done(std::move(result));
+    }
+  }
 
   // Les tenseurs enveloppent la mémoire du lecteur, sans copie côté hôte, et restent liés tant
   // que la chaîne donne les mêmes : le greffon ne revérifie pas la mémoire à chaque image.
@@ -256,6 +329,11 @@ class OpenvinoNet final : public vk::net::RuntimeNet {
   vk::net::IoNames names_;
   std::shared_ptr<UsmPool> usm_;
   std::vector<Bound> bound_;
+  std::mutex request_mutex_;  // request_ et bound_ : le fil des étapes ou celui de run
+  std::mutex jobs_mutex_;
+  std::condition_variable wake_;
+  std::deque<Job> jobs_;
+  std::jthread worker_;
 };
 
 // Le NPU de la puce, s'il y en a un et que son pilote répond.

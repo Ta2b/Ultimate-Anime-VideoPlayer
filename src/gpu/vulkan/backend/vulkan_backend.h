@@ -12,6 +12,7 @@
 #include <filesystem>
 #include <functional>
 #include <memory>
+#include <mutex>
 #include <optional>
 #include <span>
 #include <string>
@@ -109,6 +110,10 @@ class VulkanBackend final : public Backend {
                                                std::span<Tensor> outputs);
   // Donne la timeline de la file au runtime ; sans succès, ses réseaux attendent sur l'hôte.
   void import_timeline();
+  // Fin d'une étape faite par le runtime sur son propre fil (RuntimeNet::run_deferred) : son
+  // échec éventuel est gardé pour le prochain enqueue, et l'étape est signalée quoi qu'il
+  // arrive, sans quoi la file attendrait sans fin.
+  void finish_host_step(std::uint64_t signal, std::expected<void, Refusal> ran);
 
   BackendLog log_;
   std::filesystem::path cache_dir_;
@@ -127,6 +132,9 @@ class VulkanBackend final : public Backend {
   // La timeline de queue_ vue du runtime (interop) : ses réseaux s'ordonnent côté GPU. Rendue
   // avant le runtime et la file.
   std::unique_ptr<net::ImportedSemaphore> imported_timeline_;
+  // Le premier échec d'une étape différée, écrit par le fil du runtime, rendu au prochain enqueue.
+  std::mutex runtime_mutex_;
+  std::optional<Refusal> runtime_failure_;
 };
 
 // Le contexte d'un appareil de rendu Vulkan partagé : sa file compute, son verrou de file.

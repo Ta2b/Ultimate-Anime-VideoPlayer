@@ -89,6 +89,20 @@ class RuntimeNet {
     return std::unexpected(
         Refusal{RefusalCode::FeatureUnavailable, "exécution ordonnée non prise en charge"});
   }
+  // Comme run, sans bloquer l'appelant : sur son propre fil, le runtime attend ready() (les
+  // entrées écrites : une attente hôte de la file Vulkan, hors du fil qui nourrit le GPU),
+  // calcule, puis appelle done(résultat) une fois ses sorties écrites (le signal hôte de l'étape
+  // sur la timeline, que la soumission suivante attend côté GPU). L'appelant ne touche ni aux
+  // entrées ni aux sorties avant done ; ready et done viennent d'un autre fil, et les appels se
+  // suivent dans l'ordre. Refus FeatureUnavailable (par défaut) avant de rien lancer :
+  // l'appelant fait alors l'étape par run.
+  virtual std::expected<void, Refusal> run_deferred(
+      std::span<const HostBinding> /*inputs*/, std::span<const HostBinding> /*outputs*/,
+      std::function<std::expected<void, Refusal>()> /*ready*/,
+      std::function<void(std::expected<void, Refusal>)> /*done*/) {
+    return std::unexpected(
+        Refusal{RefusalCode::FeatureUnavailable, "exécution différée non prise en charge"});
+  }
 };
 
 class Runtime {

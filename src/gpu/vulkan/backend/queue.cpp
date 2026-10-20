@@ -1,5 +1,6 @@
 #include "gpu/vulkan/backend/queue.h"
 
+#include <format>
 #include <utility>
 
 namespace ajp::gpu::vk {
@@ -27,9 +28,25 @@ Done BackendQueue::submit(Recording& recording, std::span<const TimelinePoint> e
 
 std::optional<BackendQueue::Step> BackendQueue::external_step() {
   if (!pending_.empty()) return std::nullopt;
+  return host_step();
+}
+
+BackendQueue::Step BackendQueue::host_step() {
   const Step step{.wait = value_, .signal = value_ + 1};
   ++value_;
   return step;
+}
+
+Done BackendQueue::wait_elsewhere(std::uint64_t value, std::chrono::nanoseconds timeout) const {
+  if (value == 0) return {};
+  const VkSemaphore semaphore = timeline_.handle();
+  const VkSemaphoreWaitInfo wait{.sType = VK_STRUCTURE_TYPE_SEMAPHORE_WAIT_INFO,
+                                 .semaphoreCount = 1,
+                                 .pSemaphores = &semaphore,
+                                 .pValues = &value};
+  const auto nanoseconds = static_cast<std::uint64_t>(timeout.count() < 0 ? 0 : timeout.count());
+  return check(context_->fn().vkWaitSemaphores(context_->device(), &wait, nanoseconds),
+               std::format("vkWaitSemaphores(valeur {}, autre fil)", value));
 }
 
 }  // namespace ajp::gpu::vk
