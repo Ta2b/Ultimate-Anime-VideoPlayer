@@ -25,6 +25,10 @@ int eliminate_identities(Graph& graph);
 // de PyTorch (CRD), ou leurs équivalents ONNX (DCR), en DepthToSpace et SpaceToDepth.
 int fuse_pixel_shuffles(Graph& graph);
 
+// GridSample dont la grille sort d'un Transpose (0, 2, 3, 1), celui de warp dans RIFE : la grille
+// est lue dans le tenseur [N, 2, H, W] d'avant (GridSampleAttrs::grid_nchw), sans copie.
+int fold_grid_transposes(Graph& graph);
+
 // Conv suivie de Add, Sub, Mul ou Div par une constante par canal : fondue dans
 // les poids et le biais de la Conv.
 int fuse_conv_bias(Graph& graph);
@@ -63,6 +67,7 @@ struct PassStats {
   int bias = 0;
   int residuals = 0;
   int activations = 0;
+  int grid_transposes = 0;
   int transposes = 0;
   int nhwc = 0;
 };

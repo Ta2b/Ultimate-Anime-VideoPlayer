@@ -201,7 +201,7 @@ void attr_fields(Ar& ar, S& a) {
   } else if constexpr (std::is_same_v<A, ir::ResizeAttrs>) {
     ar(a.mode), ar(a.coord), ar(a.nearest), ar(a.axes);
   } else if constexpr (std::is_same_v<A, ir::GridSampleAttrs>) {
-    ar(a.mode), ar(a.padding), ar(a.align_corners);
+    ar(a.mode), ar(a.padding), ar(a.align_corners), ar(a.grid_nchw);
   } else if constexpr (std::is_same_v<A, ir::ReduceAttrs>) {
     ar(a.keepdims), ar(a.noop_with_empty_axes);
   } else if constexpr (std::is_same_v<A, ir::PoolAttrs>) {

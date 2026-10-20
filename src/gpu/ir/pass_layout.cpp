@@ -46,8 +46,8 @@ bool accepts_nhwc(const Graph& graph, const Node& node, TensorId id) {
     case OpKind::Div:
     case OpKind::PRelu:
       return graph.tensors[id].dims == output_dims();  // un opérande diffusé reste en Nchw
-    case OpKind::GridSample:
-      return id != node.inputs[1];  // la grille [N, H, W, 2] n'a pas de canaux
+    case OpKind::GridSample:  // la grille [N, H, W, 2] n'a pas de canaux ; [N, 2, H, W] en a deux
+      return id != node.inputs[1] || std::get<GridSampleAttrs>(node.attrs).grid_nchw;
     default:
       return false;
   }
@@ -61,6 +61,10 @@ std::vector<TensorId> coupled(const Graph& graph, const Node& node) {
   if (node.op == OpKind::Conv) {
     candidates.push_back(node.outputs[0]);
     if (node.inputs.size() > kConvResidual) candidates.push_back(node.inputs[kConvResidual]);
+  } else if (node.op == OpKind::GridSample) {
+    // La grille est lue par position, dans sa propre disposition : seules l'image et la sortie
+    // sont couplées.
+    candidates = {node.inputs[0], node.outputs[0]};
   } else if (node.op != OpKind::ConvTranspose) {
     candidates = node.inputs;
     candidates.insert(candidates.end(), node.outputs.begin(), node.outputs.end());
@@ -121,6 +125,7 @@ std::expected<PassStats, Refusal> optimize(Graph& graph, const OptimizeOptions& 
   stats.dead = eliminate_dead_code(graph);
   stats.identities = eliminate_identities(graph);
   stats.pixel_shuffles = fuse_pixel_shuffles(graph);
+  stats.grid_transposes = fold_grid_transposes(graph);
   if (options.transpose_conv_channels > 0)
     stats.transposes = transposes_as_convs(graph, options.transpose_conv_channels);
   stats.bias = fuse_conv_bias(graph);
@@ -131,9 +136,10 @@ std::expected<PassStats, Refusal> optimize(Graph& graph, const OptimizeOptions& 
   if (auto ok = validate(graph); !ok) return std::unexpected(ok.error());
   make_logger()->debug(
       "passes : {} pliés, {} morts, {} sans effet, {} réarrangements, {} biais, {} résiduels, "
-      "{} activations, {} ConvTranspose en Conv, {} tenseurs NHWC16 ; {} nœuds restants",
+      "{} activations, {} grilles repliées, {} ConvTranspose en Conv, {} tenseurs NHWC16 ; "
+      "{} nœuds restants",
       stats.folded, stats.dead, stats.identities, stats.pixel_shuffles, stats.bias, stats.residuals,
-      stats.activations, stats.transposes, stats.nhwc, graph.nodes.size());
+      stats.activations, stats.grid_transposes, stats.transposes, stats.nhwc, graph.nodes.size());
   return stats;
 }
 

@@ -1,5 +1,5 @@
-// ConvTranspose réécrite en Conv puis DepthToSpace (transposes_as_convs) : mêmes sorties de
-// l'interpréteur, DepthToSpace suivant fondu, cas hors de portée laissés.
+// Réécritures de Transpose : ConvTranspose en Conv puis DepthToSpace (transposes_as_convs),
+// Transpose de grille replié dans GridSample ; mêmes sorties de l'interpréteur.
 #include <cstdint>
 #include <string>
 #include <vector>
@@ -82,4 +82,26 @@ TEST_CASE("ConvTranspose gardée : trop de canaux, ou passe éteinte", "[gpu_ir]
   CHECK(check(transpose_model(8, 4, 2, 1, ""), 16, after).transposes == 0);
   CHECK(count_ops(after, OpKind::ConvTranspose) == 1);
   CHECK(check(transpose_model(8, 4, 2, 1, ""), 0, after).transposes == 0);
+}
+
+TEST_CASE("GridSample : le Transpose de sa grille replié, mêmes sorties", "[gpu_ir][passes]") {
+  ModelBuilder m(17);
+  m.input("x", {1, 3, 4, 5}).input("flow", {1, 2, 4, 5});
+  m.node("Transpose", {"flow"}, {"grid"}, {attr_ints("perm", {0, 2, 3, 1})})
+      .node("GridSample", {"x", "grid"}, {"y"},
+            {attr_int("align_corners", 1), attr_string("padding_mode", "border")})
+      .output("y");
+  const Graph before = build(m);
+  Graph after = before;
+  auto stats = optimize(after);
+  REQUIRE(stats);
+  CHECK(stats->grid_transposes == 1);
+  CHECK(count_ops(after, OpKind::Transpose) == 0);
+  const std::vector<NamedValue> inputs{
+      {.name = "x", .value = random_floats({1, 3, 4, 5}, 44)},
+      {.name = "flow", .value = random_floats({1, 2, 4, 5}, 45, -1.2F, 1.2F)}};
+  const std::vector<NamedValue> expected = execute(before, inputs);
+  const std::vector<NamedValue> got = execute(after, inputs);
+  REQUIRE(got.size() == 1);
+  CHECK(max_abs_diff(got[0].value.f, expected[0].value.f) < 1e-6F);
 }

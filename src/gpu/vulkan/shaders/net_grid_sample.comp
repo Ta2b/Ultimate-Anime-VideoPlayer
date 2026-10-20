@@ -1,6 +1,7 @@
 #version 450
-// GridSample : x [N, C, H, W] échantillonnée aux positions de la grille [N, Ho, Wo, 2]
-// (x puis y, dans [−1, 1]), bilinéaire ou nearest, bords zeros ou border, align_corners.
+// GridSample : x [N, C, H, W] échantillonnée aux positions de la grille [N, Ho, Wo, 2], ou
+// [N, 2, Ho, Wo] (GRID_NCHW, le Transpose de RIFE replié), x puis y dans [−1, 1] ; bilinéaire ou
+// nearest, bords zeros ou border, align_corners.
 // Formules et ordre de l'interpréteur (gpu/ir/op_sample.cpp, eval_grid_sample) ; une position
 // non finie donne 0.
 #extension GL_GOOGLE_include_directive : require
@@ -14,6 +15,7 @@ layout(constant_id = 2) const uint TY = 0;
 layout(constant_id = 3) const uint NEAREST = 0;
 layout(constant_id = 4) const uint BORDER = 0;
 layout(constant_id = 5) const uint ALIGN = 0;
+layout(constant_id = 6) const uint GRID_NCHW = 0;
 
 AJP_NET_BUFFER(0, src, readonly)
 AJP_NET_BUFFER(1, grid, readonly)
@@ -21,7 +23,7 @@ AJP_NET_BUFFER(2, dst, writeonly)
 
 layout(push_constant) uniform Push {
   TDesc x;
-  TDesc g;  // [N, Ho, Wo, 2] vu en (n, c = Ho, h = Wo, w = 2)
+  TDesc g;  // [N, Ho, Wo, 2] vu en (n, c = Ho, h = Wo, w = 2), ou [N, 2, Ho, Wo] dans sa disposition
   TDesc y;
 } pc;
 
@@ -41,8 +43,10 @@ void main() {
   uint i = linear_invocation();
   if (i >= t_count(pc.y)) return;
   uvec4 o = t_coords(pc.y, i);
-  float gx = AJP_LOAD(grid, TG, t_index(pc.g, o.x, o.z, o.w, 0u));
-  float gy = AJP_LOAD(grid, TG, t_index(pc.g, o.x, o.z, o.w, 1u));
+  uint at_x = GRID_NCHW == 1u ? t_index(pc.g, o.x, 0u, o.z, o.w) : t_index(pc.g, o.x, o.z, o.w, 0u);
+  uint at_y = GRID_NCHW == 1u ? t_index(pc.g, o.x, 1u, o.z, o.w) : t_index(pc.g, o.x, o.z, o.w, 1u);
+  float gx = AJP_LOAD(grid, TG, at_x);
+  float gy = AJP_LOAD(grid, TG, at_y);
   float v = 0.0;
   if (!isnan(gx) && !isinf(gx) && !isnan(gy) && !isinf(gy)) {
     float px = pixel(gx, pc.x.w);

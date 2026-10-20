@@ -511,7 +511,8 @@ std::expected<void, Refusal> Lowerer::grid_sample(std::size_t index) {
   put(push, y->desc);
   emit_linear(index, *name,
               {x->type, g->type, y->type, attrs->mode == ir::GridMode::Nearest ? 1U : 0U,
-               attrs->padding == ir::GridPadding::Border ? 1U : 0U, attrs->align_corners ? 1U : 0U},
+               attrs->padding == ir::GridPadding::Border ? 1U : 0U, attrs->align_corners ? 1U : 0U,
+               attrs->grid_nchw ? 1U : 0U},
               {x->binding, g->binding, y->binding}, push, count_of(y->desc));
   return {};
 }

@@ -57,9 +57,9 @@ std::string node_params(const Graph& graph, const Node& node) {
     return std::format("{} b{}", block->mode == BlockMode::Crd ? "CRD" : "DCR", block->blocksize);
   }
   if (const auto* grid = std::get_if<GridSampleAttrs>(&node.attrs)) {
-    return std::format("{} {}{}", grid->mode == GridMode::Bilinear ? "bilinéaire" : "proche",
+    return std::format("{} {}{}{}", grid->mode == GridMode::Bilinear ? "bilinéaire" : "proche",
                        grid->padding == GridPadding::Border ? "border" : "zeros",
-                       grid->align_corners ? " align_corners" : "");
+                       grid->align_corners ? " align_corners" : "", grid->grid_nchw ? " grille NCHW" : "");
   }
   if (const auto* resize = std::get_if<ResizeAttrs>(&node.attrs)) {
     return resize->mode == ResizeMode::Linear ? "linéaire" : "proche";

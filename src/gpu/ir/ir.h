@@ -198,6 +198,7 @@ struct GridSampleAttrs {
   GridMode mode = GridMode::Bilinear;
   GridPadding padding = GridPadding::Zeros;
   bool align_corners = false;
+  bool grid_nchw = false;  // grille [N, 2, H, W] : le Transpose qui la rangeait en [N, H, W, 2], replié
 };
 
 struct ReduceAttrs {

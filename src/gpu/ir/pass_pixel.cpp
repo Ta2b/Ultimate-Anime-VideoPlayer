@@ -87,6 +87,27 @@ bool try_rearrangement(Graph& graph, std::size_t first) {
 
 }  // namespace
 
+int fold_grid_transposes(Graph& graph) {
+  const std::vector<std::size_t> producer = producers(graph);
+  int folded = 0;
+  for (Node& node : graph.nodes) {
+    auto* attrs = std::get_if<GridSampleAttrs>(&node.attrs);
+    if (node.op != OpKind::GridSample || attrs == nullptr || attrs->grid_nchw || node.inputs.size() < 2)
+      continue;
+    const std::size_t from = producer[node.inputs[1]];
+    if (from == kNoNode || graph.nodes[from].op != OpKind::Transpose) continue;
+    const Node& transpose = graph.nodes[from];
+    const auto* perm = std::get_if<TransposeAttrs>(&transpose.attrs);
+    const Tensor& source = graph.tensors[transpose.inputs[0]];
+    if (perm == nullptr || perm->perm != Dims{0, 2, 3, 1} || source.dims.size() != 4 || source.dims[1] != 2)
+      continue;
+    node.inputs[1] = transpose.inputs[0];
+    attrs->grid_nchw = true;
+    ++folded;
+  }
+  return folded;  // un Transpose sans lecteur part avec le code mort
+}
+
 int fuse_pixel_shuffles(Graph& graph) {
   int fused = 0;
   for (std::size_t n = 0; n < graph.nodes.size();) {

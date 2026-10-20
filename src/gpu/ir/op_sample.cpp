@@ -179,16 +179,20 @@ Evaluated eval_resize(const Node& node, std::span<const Value* const> in, std::s
 }
 
 Inferred infer_grid_sample(const Node& node, std::span<const Operand> in) {
-  if (auto attrs = attrs_of<GridSampleAttrs>(node); !attrs) return std::unexpected(attrs.error());
+  auto attrs = attrs_of<GridSampleAttrs>(node);
+  if (!attrs) return std::unexpected(attrs.error());
+  const bool nchw = (*attrs)->grid_nchw;
   const Dims& x = *in[0].dims;
   const Dims& grid = *in[1].dims;
   if (auto ok = expect_rank(node, x, 4, "l'entrée"); !ok) return std::unexpected(ok.error());
   if (auto ok = expect_rank(node, grid, 4, "la grille"); !ok) return std::unexpected(ok.error());
   if (auto ok = expect_float(node, in[0], "l'entrée"); !ok) return std::unexpected(ok.error());
   if (in[1].type != in[0].type) return graph_error(node, "grille du type de l'entrée");
-  if (grid[0] != x[0] || grid[3] != 2) return shape_error(node, "grille [N, H, W, 2] attendue");
+  if (nchw && (grid[0] != x[0] || grid[1] != 2)) return shape_error(node, "grille [N, 2, H, W] attendue");
+  if (!nchw && (grid[0] != x[0] || grid[3] != 2)) return shape_error(node, "grille [N, H, W, 2] attendue");
   if (x[2] < 1 || x[3] < 1) return shape_error(node, "image d'entrée vide");
-  return std::vector<OutputInfo>{{.type = in[0].type, .dims = Dims{x[0], x[1], grid[1], grid[2]}}};
+  const Dims out = nchw ? Dims{x[0], x[1], grid[2], grid[3]} : Dims{x[0], x[1], grid[1], grid[2]};
+  return std::vector<OutputInfo>{{.type = in[0].type, .dims = out}};
 }
 
 Evaluated eval_grid_sample(const Node& node, std::span<const Value* const> in,
@@ -201,8 +205,9 @@ Evaluated eval_grid_sample(const Node& node, std::span<const Value* const> in,
   const std::int64_t c_count = x.dims[1];
   const std::int64_t h = x.dims[2];
   const std::int64_t w = x.dims[3];
-  const std::int64_t h_out = grid.dims[1];
-  const std::int64_t w_out = grid.dims[2];
+  const std::int64_t h_out = a.grid_nchw ? grid.dims[2] : grid.dims[1];
+  const std::int64_t w_out = a.grid_nchw ? grid.dims[3] : grid.dims[2];
+  const std::size_t plane = static_cast<std::size_t>(h_out * w_out);
 
   // Coordonnée normalisée [-1, 1] vers pixel ; bornée hors du cadre pour rester entière.
   auto pixel = [&](float g, std::int64_t size) {
@@ -216,9 +221,11 @@ Evaluated eval_grid_sample(const Node& node, std::span<const Value* const> in,
   for (std::int64_t n = 0; n < x.dims[0]; ++n) {
     for (std::int64_t oy = 0; oy < h_out; ++oy) {
       for (std::int64_t ox = 0; ox < w_out; ++ox) {
-        const std::size_t g = static_cast<std::size_t>((((n * h_out) + oy) * w_out) + ox) * 2;
+        const std::size_t at_pixel = static_cast<std::size_t>((oy * w_out) + ox);
+        const std::size_t g = a.grid_nchw ? (static_cast<std::size_t>(n) * 2 * plane) + at_pixel
+                                          : ((static_cast<std::size_t>(n) * plane) + at_pixel) * 2;
         const float gx = grid.f[g];
-        const float gy = grid.f[g + 1];
+        const float gy = grid.f[a.grid_nchw ? g + plane : g + 1];
         if (!std::isfinite(gx) || !std::isfinite(gy)) continue;  // échantillon nul
         const float px = pixel(gx, w);
         const float py = pixel(gy, h);
