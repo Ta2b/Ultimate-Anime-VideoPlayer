@@ -159,9 +159,25 @@ Done KernelRunner::resize(Recorder& recorder, const TensorView& src, const Tenso
   if (!wx) return std::unexpected(wx.error());
   auto wy = compute_weights(static_cast<int>(src.height), static_cast<int>(dst.height), 0.0, filter);
   if (!wy) return std::unexpected(wy.error());
-  auto tx = detail::record_weights(recorder, *wx);
+  return resize(recorder, src, dst, *wx, *wy);
+}
+
+Done KernelRunner::resize(Recorder& recorder, const TensorView& src, const TensorView& dst,
+                          const WeightTable& wx, const WeightTable& wy) {
+  const Features& enabled = context_->caps().enabled;
+  if (auto ok = check_tensor(src, src.planes == 0 ? 1 : src.planes, enabled, "rééchantillonnage : source");
+      !ok) {
+    return ok;
+  }
+  if (auto ok = check_tensor(dst, src.planes, enabled, "rééchantillonnage : cible"); !ok) return ok;
+  if (wx.src != src.width || wx.dst != dst.width || wy.src != src.height || wy.dst != dst.height) {
+    return refuse(RefusalCode::InputMismatch,
+                  std::format("rééchantillonnage {}x{} vers {}x{} : tables de {}x{} vers {}x{}", src.width,
+                              src.height, dst.width, dst.height, wx.src, wy.src, wx.dst, wy.dst));
+  }
+  auto tx = detail::record_weights(recorder, wx);
   if (!tx) return std::unexpected(tx.error());
-  auto ty = detail::record_weights(recorder, *wy);
+  auto ty = detail::record_weights(recorder, wy);
   if (!ty) return std::unexpected(ty.error());
   auto rows = recorder.scratch(tensor_bytes(dst.width, src.height, src.planes, Precision::F32));
   if (!rows) return std::unexpected(rows.error());

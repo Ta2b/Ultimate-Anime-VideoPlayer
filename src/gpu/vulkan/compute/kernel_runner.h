@@ -16,6 +16,7 @@
 #include "gpu/vulkan/compute/pipeline.h"
 #include "gpu/vulkan/compute/recording.h"
 #include "gpu/vulkan/compute/refuse.h"
+#include "gpu/vulkan/compute/weights.h"
 #include "kernels/spec/resample.h"
 #include "kernels/spec/rife.h"
 
@@ -41,6 +42,10 @@ class KernelRunner {
 
   // Rééchantillonnage séparable d'un tenseur (ref resize) : dimensions paires dans [2, 16384].
   Done resize(Recorder& recorder, const TensorView& src, const TensorView& dst, kernels::Filter filter);
+  // Même passe avec les tables de l'appelant (wx : largeurs, wy : hauteurs), par exemple celles de
+  // la réduction fusionnée à l'ingestion ; des tables d'autres dimensions sont refusées.
+  Done resize(Recorder& recorder, const TensorView& src, const TensorView& dst, const WeightTable& wx,
+              const WeightTable& wy);
 
   // Remplissage mod-64 centré, bords noir studio (ref rife_pad) : padded a la taille remplie
   // de rife_geometry(src) et le format de src.

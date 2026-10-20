@@ -1,12 +1,16 @@
 // Images décodées vers un tampon YUV de disposition serrée : recopiées par l'hôte depuis la
 // mémoire hôte (décodage logiciel, tests), ou par le GPU depuis la VkImage multiplan de FFmpeg,
 // entre begin_vulkan_access et end_vulkan_access. Puis l'ingestion.
+#include <bit>
 #include <cstring>
 #include <format>
+#include <optional>
 #include <type_traits>
+#include <utility>
 
 #include "gpu/vulkan/backend/kernel_ops.h"
 #include "gpu/vulkan/backend/kernel_ops_detail.h"
+#include "gpu/vulkan/backend/reduce_weights.h"
 #include "kernels/spec/color.h"
 #include "kernels/spec/rife.h"
 
@@ -29,7 +33,8 @@ std::expected<kernels::Format, Refusal> kernel_format(PixelFormat format) {
     case PixelFormat::Yuv444p16:
       return kernels::Format::Yuv444p16;
     default:
-      return std::unexpected(Refusal{RefusalCode::FormatUnsupported, "image décodée : format RGB, YUV attendu"});
+      return std::unexpected(
+          Refusal{RefusalCode::FormatUnsupported, "image décodée : format RGB, YUV attendu"});
   }
 }
 
@@ -46,7 +51,8 @@ std::expected<ColorSpec, Refusal> color_spec(const ColorInfo& color) {
       spec.matrix = kernels::Matrix::Bt2020Ncl;
       break;
     case ColorMatrix::Rgb:
-      return std::unexpected(Refusal{RefusalCode::FormatUnsupported, "image décodée : matrice RGB sur du YUV"});
+      return std::unexpected(
+          Refusal{RefusalCode::FormatUnsupported, "image décodée : matrice RGB sur du YUV"});
   }
   spec.range = color.range == ColorRange::Full ? kernels::Range::Full : kernels::Range::Limited;
   spec.siting = color.siting == ChromaSiting::Center    ? kernels::Siting::Center
@@ -109,7 +115,8 @@ std::expected<std::size_t, Refusal> VulkanKernelOps::staging_for(kernels::Format
   std::size_t oldest = SIZE_MAX;
   for (std::size_t k = 0; k < staging_.size(); ++k) {
     const Staging& s = staging_[k];
-    if (s.format != format || s.width != width || s.height != height || s.buffer->use() != use || k == avoid) {
+    if (s.format != format || s.width != width || s.height != height || s.buffer->use() != use ||
+        k == avoid) {
       continue;
     }
     ++same;
@@ -132,14 +139,15 @@ std::expected<std::size_t, Refusal> VulkanKernelOps::staging_for(kernels::Format
   return staging_.size() - 1;
 }
 
-std::expected<VulkanKernelOps::Source, Refusal> VulkanKernelOps::source(const DecodedFrame& frame, std::size_t avoid) {
+std::expected<VulkanKernelOps::Source, Refusal> VulkanKernelOps::source(const DecodedFrame& frame,
+                                                                        std::size_t avoid) {
   if (frame.data == nullptr) return refuse_frame(RefusalCode::ShapeInvalid, "image décodée sans données");
   auto format = detail::kernel_format(frame.format);
   if (!format) return std::unexpected(format.error());
   if (!kernels::valid_frame_dimension(frame.width) || !kernels::valid_frame_dimension(frame.height)) {
     return refuse_frame(RefusalCode::ShapeInvalid,
-                        std::format("image décodée {}x{} : dimensions paires dans [2, {}] attendues", frame.width,
-                                    frame.height, kernels::kMaxDimension));
+                        std::format("image décodée {}x{} : dimensions paires dans [2, {}] attendues",
+                                    frame.width, frame.height, kernels::kMaxDimension));
   }
   const auto w = static_cast<std::uint32_t>(frame.width);
   const auto h = static_cast<std::uint32_t>(frame.height);
@@ -151,8 +159,9 @@ std::expected<VulkanKernelOps::Source, Refusal> VulkanKernelOps::source(const De
   auto slot = staging_for(*format, w, h, use, avoid);
   if (!slot) return std::unexpected(slot.error());
   Staging& s = staging_[*slot];
-  Source src{.view = {.buffer = s.buffer->view(), .format = *format, .width = w, .height = h, .layout = s.layout},
-             .staging = *slot};
+  Source src{
+      .view = {.buffer = s.buffer->view(), .format = *format, .width = w, .height = h, .layout = s.layout},
+      .staging = *slot};
   std::array<PlaneCopy, 3> planes{};
   const std::uint32_t count = plane_copies(src.view, planes);
   if (memory == FrameMemory::Host) {
@@ -168,14 +177,15 @@ std::expected<VulkanKernelOps::Source, Refusal> VulkanKernelOps::source(const De
         return refuse_frame(RefusalCode::ShapeInvalid, std::format("image hôte : plan {} trop court", p));
       }
       for (std::uint32_t y = 0; y < pc.height; ++y) {
-        std::memcpy(s.buffer->mapped() + pc.dst.offset + (std::size_t{y} * pc.dst.pitch), in.data() + (y * stride),
-                    row);
+        std::memcpy(s.buffer->mapped() + pc.dst.offset + (std::size_t{y} * pc.dst.pitch),
+                    in.data() + (y * stride), row);
       }
     }
     return src;
   }
   src.image = detail::to_image(frame.data->native_plane(0));
-  if (src.image == VK_NULL_HANDLE) return refuse_frame(RefusalCode::ShapeInvalid, "image Vulkan sans VkImage");
+  if (src.image == VK_NULL_HANDLE)
+    return refuse_frame(RefusalCode::ShapeInvalid, "image Vulkan sans VkImage");
   auto access = frame.data->begin_vulkan_access();
   if (!access) return std::unexpected(access.error());
   src.access = *access;
@@ -184,7 +194,8 @@ std::expected<VulkanKernelOps::Source, Refusal> VulkanKernelOps::source(const De
 
 void VulkanKernelOps::copy_image(VkCommandBuffer cb, const Source& src) const {
   const VulkanImageState& state = src.access->state;
-  const bool owned = state.queue_family != VK_QUEUE_FAMILY_IGNORED && state.queue_family != context_.queue_family();
+  const bool owned =
+      state.queue_family != VK_QUEUE_FAMILY_IGNORED && state.queue_family != context_.queue_family();
   const VkImageMemoryBarrier barrier{
       .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
       .srcAccessMask = VK_ACCESS_MEMORY_WRITE_BIT,
@@ -195,18 +206,19 @@ void VulkanKernelOps::copy_image(VkCommandBuffer cb, const Source& src) const {
       .dstQueueFamilyIndex = owned ? context_.queue_family() : VK_QUEUE_FAMILY_IGNORED,
       .image = src.image,
       .subresourceRange = {.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT, .levelCount = 1, .layerCount = 1}};
-  context_.fn().vkCmdPipelineBarrier(cb, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 0,
-                                     nullptr, 0, nullptr, 1, &barrier);
+  context_.fn().vkCmdPipelineBarrier(cb, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT,
+                                     0, 0, nullptr, 0, nullptr, 1, &barrier);
   std::array<PlaneCopy, 3> planes{};
   const std::uint32_t count = plane_copies(src.view, planes);
-  constexpr std::array<VkImageAspectFlagBits, 3> kAspects{VK_IMAGE_ASPECT_PLANE_0_BIT, VK_IMAGE_ASPECT_PLANE_1_BIT,
-                                                          VK_IMAGE_ASPECT_PLANE_2_BIT};
+  constexpr std::array<VkImageAspectFlagBits, 3> kAspects{
+      VK_IMAGE_ASPECT_PLANE_0_BIT, VK_IMAGE_ASPECT_PLANE_1_BIT, VK_IMAGE_ASPECT_PLANE_2_BIT};
   std::array<VkBufferImageCopy, 3> regions{};
   for (std::uint32_t p = 0; p < count; ++p) {
-    regions[p] = {.bufferOffset = src.view.buffer.offset + planes[p].dst.offset,
-                  .bufferRowLength = planes[p].dst.pitch / planes[p].texel,
-                  .imageSubresource = {.aspectMask = static_cast<VkImageAspectFlags>(kAspects[p]), .layerCount = 1},
-                  .imageExtent = {.width = planes[p].width, .height = planes[p].height, .depth = 1}};
+    regions[p] = {
+        .bufferOffset = src.view.buffer.offset + planes[p].dst.offset,
+        .bufferRowLength = planes[p].dst.pitch / planes[p].texel,
+        .imageSubresource = {.aspectMask = static_cast<VkImageAspectFlags>(kAspects[p]), .layerCount = 1},
+        .imageExtent = {.width = planes[p].width, .height = planes[p].height, .depth = 1}};
   }
   context_.fn().vkCmdCopyImageToBuffer(cb, src.image, VK_IMAGE_LAYOUT_GENERAL, src.view.buffer.buffer, count,
                                        regions.data());
@@ -254,9 +266,24 @@ std::expected<void, Refusal> VulkanKernelOps::ingest(const DecodedFrame& frame, 
     *color = {.matrix = kernels::kRifeMatrix, .range = color->range, .siting = kernels::kRifeSiting};
     chroma = kernels::kRifeChromaFilter;
   }
-  if (std::cmp_not_equal(dst->width, frame.width) || std::cmp_not_equal(dst->height, frame.height)) {
-    return refuse_frame(RefusalCode::ShapeInvalid, std::format("ingestion : image {}x{}, tenseur {}x{}", frame.width,
-                                                               frame.height, dst->width, dst->height));
+  // Tenseur plus petit que l'image : réduction fusionnée, l'image entière passe par un tenseur
+  // F32 de l'enregistrement puis par les tables de reduce_weights.
+  const bool reduced =
+      std::cmp_not_equal(dst->width, frame.width) || std::cmp_not_equal(dst->height, frame.height);
+  if (std::cmp_greater(dst->width, frame.width) || std::cmp_greater(dst->height, frame.height)) {
+    return refuse_frame(RefusalCode::ShapeInvalid,
+                        std::format("ingestion : image {}x{}, tenseur {}x{} plus grand", frame.width,
+                                    frame.height, dst->width, dst->height));
+  }
+  std::optional<WeightTable> wx;
+  std::optional<WeightTable> wy;
+  if (reduced) {
+    auto x = reduction_weights(frame.width, static_cast<int>(dst->width), spec.reduce);
+    if (!x) return std::unexpected(x.error());
+    auto y = reduction_weights(frame.height, static_cast<int>(dst->height), spec.reduce);
+    if (!y) return std::unexpected(y.error());
+    wx = std::move(*x);
+    wy = std::move(*y);
   }
   auto src = source(frame);
   if (!src) return std::unexpected(src.error());
@@ -268,11 +295,23 @@ std::expected<void, Refusal> VulkanKernelOps::ingest(const DecodedFrame& frame, 
   add_view(key, *dst);
   key.add(static_cast<std::uint64_t>(color->matrix)).add(static_cast<std::uint64_t>(color->range));
   key.add(static_cast<std::uint64_t>(color->siting)).add(static_cast<std::uint64_t>(chroma));
+  if (reduced) {
+    key.add(static_cast<std::uint64_t>(spec.reduce.kind));
+    key.add(std::bit_cast<std::uint32_t>(spec.reduce.b)).add(std::bit_cast<std::uint32_t>(spec.reduce.c));
+  }
   auto rec = recording(key, [&](Recorder& r) -> Done {
     if (src->access) {
       if (auto ok = r.commands([&](VkCommandBuffer cb) { copy_image(cb, *src); }); !ok) return ok;
     }
-    return runner_.ingest(r, src->view, *color, *dst, chroma);
+    if (!reduced) return runner_.ingest(r, src->view, *color, *dst, chroma);
+    const auto w = static_cast<std::uint32_t>(frame.width);
+    const auto h = static_cast<std::uint32_t>(frame.height);
+    auto full = r.scratch(tensor_bytes(w, h, 3, Precision::F32));
+    if (!full) return std::unexpected(full.error());
+    const TensorView image{
+        .buffer = *full, .width = w, .height = h, .planes = 3, .precision = Precision::F32};
+    if (auto ok = runner_.ingest(r, src->view, *color, image, chroma); !ok) return ok;
+    return runner_.resize(r, image, *dst, *wx, *wy);
   });
   if (!rec) return std::unexpected(rec.error());
   pending.dismiss();  // submit_frames ferme l'accès, soumission faite ou non
