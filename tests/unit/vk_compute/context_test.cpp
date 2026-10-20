@@ -28,6 +28,7 @@ struct OwnDevice {
   VkPhysicalDevice physical = VK_NULL_HANDLE;
   VkDevice device = VK_NULL_HANDLE;
   std::uint32_t family = 0;
+  std::uint32_t family_queues = 1;  // files que la famille offre (1 sur lavapipe, 16 sur NVIDIA)
   std::uint32_t api = VK_API_VERSION_1_2;
   VkPhysicalDeviceVulkan12Features v12{.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES,
                                        .timelineSemaphore = VK_TRUE};
@@ -78,6 +79,7 @@ std::unique_ptr<OwnDevice> own_device() {
       props, [](const VkQueueFamilyProperties& p) { return (p.queueFlags & VK_QUEUE_COMPUTE_BIT) != 0; });
   REQUIRE(compute != props.end());
   own->family = static_cast<std::uint32_t>(compute - props.begin());
+  own->family_queues = compute->queueCount;
   const float priority = 1.0F;
   const VkDeviceQueueCreateInfo queue{.sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO,
                                       .queueFamilyIndex = own->family,
@@ -212,6 +214,6 @@ TEST_CASE("adoption : appareil incomplet, version, timeline ou file refusés", "
   require_refusal(VkContext::adopt(bad_family), RefusalCode::DeviceUnavailable);
 
   AdoptedDevice bad_queue = own->adopted();
-  bad_queue.queue_index = 7;
+  bad_queue.queue_index = own->family_queues;  // première file hors de la famille
   require_refusal(VkContext::adopt(bad_queue), RefusalCode::DeviceUnavailable);
 }
