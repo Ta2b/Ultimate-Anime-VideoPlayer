@@ -12,6 +12,7 @@ ajp_add_module(vk_backend
     kernel_ops.cpp
     kernel_pair.cpp
     kernel_ring.cpp
+    kernel_slice.cpp
     net_artifact.cpp
     net_autotune.cpp
     net_build.cpp

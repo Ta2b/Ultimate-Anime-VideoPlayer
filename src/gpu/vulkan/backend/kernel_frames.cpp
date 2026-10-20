@@ -115,8 +115,7 @@ std::expected<std::size_t, Refusal> VulkanKernelOps::staging_for(kernels::Format
   std::size_t oldest = SIZE_MAX;
   for (std::size_t k = 0; k < staging_.size(); ++k) {
     const Staging& s = staging_[k];
-    if (s.format != format || s.width != width || s.height != height || s.buffer->use() != use ||
-        k == avoid) {
+    if (s.format != format || s.width != width || s.height != height || s.buffer.use() != use || k == avoid) {
       continue;
     }
     ++same;
@@ -158,9 +157,9 @@ std::expected<VulkanKernelOps::Source, Refusal> VulkanKernelOps::source(const De
   const MemoryUse use = memory == FrameMemory::Host ? MemoryUse::Upload : MemoryUse::Device;
   auto slot = staging_for(*format, w, h, use, avoid);
   if (!slot) return std::unexpected(slot.error());
-  Staging& s = staging_[*slot];
+  const Staging& s = staging_[*slot];
   Source src{
-      .view = {.buffer = s.buffer->view(), .format = *format, .width = w, .height = h, .layout = s.layout},
+      .view = {.buffer = s.buffer.view(), .format = *format, .width = w, .height = h, .layout = s.layout},
       .staging = *slot};
   std::array<PlaneCopy, 3> planes{};
   const std::uint32_t count = plane_copies(src.view, planes);
@@ -177,7 +176,7 @@ std::expected<VulkanKernelOps::Source, Refusal> VulkanKernelOps::source(const De
         return refuse_frame(RefusalCode::ShapeInvalid, std::format("image hôte : plan {} trop court", p));
       }
       for (std::uint32_t y = 0; y < pc.height; ++y) {
-        std::memcpy(s.buffer->mapped() + pc.dst.offset + (std::size_t{y} * pc.dst.pitch),
+        std::memcpy(s.buffer.mapped() + pc.dst.offset + (std::size_t{y} * pc.dst.pitch),
                     in.data() + (y * stride), row);
       }
     }
@@ -193,6 +192,7 @@ std::expected<VulkanKernelOps::Source, Refusal> VulkanKernelOps::source(const De
 }
 
 void VulkanKernelOps::copy_image(VkCommandBuffer cb, const Source& src) const {
+  if (!src.access) return;  // image hôte : rien à copier
   const VulkanImageState& state = src.access->state;
   const bool owned =
       state.queue_family != VK_QUEUE_FAMILY_IGNORED && state.queue_family != context_.queue_family();
@@ -231,8 +231,9 @@ std::expected<void, Refusal> VulkanKernelOps::submit_frames(Recording& recording
   signals_.clear();
   VulkanImageState after{.layout = VK_IMAGE_LAYOUT_GENERAL};
   for (std::size_t k = 0; k < sources.size(); ++k) {
-    if (!sources[k].access) continue;
-    const VulkanImageAccess& a = *sources[k].access;
+    const std::optional<VulkanImageAccess>& access = sources[k].access;
+    if (!access) continue;
+    const VulkanImageAccess& a = *access;
     guard.hold(frames[k]->data.get(), a.state);
     waits_.push_back({.semaphore = to_semaphore(a.semaphore), .value = a.wait_value});
     signals_.push_back({.semaphore = to_semaphore(a.semaphore), .value = a.signal_value});

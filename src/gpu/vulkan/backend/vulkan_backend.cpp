@@ -51,8 +51,8 @@ class VulkanTensorBuffer final : public TensorBuffer {
 std::string file_stem(std::string_view id) {
   std::string out;
   for (const char c : id) {
-    const bool safe = (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '-' ||
-                      c == '_' || c == '.';
+    const bool safe = (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') ||
+                      c == '-' || c == '_' || c == '.';
     out.push_back(safe ? c : '_');
   }
   return out.empty() ? std::string{"model"} : out;
@@ -60,7 +60,8 @@ std::string file_stem(std::string_view id) {
 
 std::expected<net::BuildRequest, Refusal> request_of(const ModelSpec& model, const ShapeSet& shapes) {
   if (model.precision != TensorType::F16 && model.precision != TensorType::F32) {
-    return refuse_backend(RefusalCode::FormatUnsupported, std::format("{} : précision entière non prise en charge", model.id));
+    return refuse_backend(RefusalCode::FormatUnsupported,
+                          std::format("{} : précision entière non prise en charge", model.id));
   }
   return net::BuildRequest{.onnx = model.onnx_path,
                            .model_id = model.id,
@@ -102,7 +103,9 @@ VulkanBackend::VulkanBackend(const BackendInit& init, BackendOptions options)
 
 VulkanBackend::~VulkanBackend() {
   kernels_.reset();  // attend la file, rend images et vues
-  if (queue_ && context_) (void)context_->wait_on_host(queue_->last());
+  if (queue_ && context_) {
+    [[maybe_unused]] const Done waited = context_->wait_on_host(queue_->last());
+  }
 }
 
 std::expected<std::unique_ptr<VulkanBackend>, Refusal> VulkanBackend::create(const BackendInit& init,
@@ -138,7 +141,9 @@ std::expected<void, Refusal> VulkanBackend::open(const BackendInit& init) {
   log(BackendLogLevel::Info,
       std::format("backend Vulkan : {}, famille {}, unités matricielles {}{}", context_->caps().device_name,
                   name(profile_.family), profile_.target.matrix_units ? "utilisées" : "non utilisées",
-                  profile_.matrix_hardware && !profile_.matrix_allowed ? " (présentes, hors liste d'autorisation)" : ""));
+                  profile_.matrix_hardware && !profile_.matrix_allowed
+                      ? " (présentes, hors liste d'autorisation)"
+                      : ""));
   return {};
 }
 
@@ -170,26 +175,31 @@ std::filesystem::path VulkanBackend::artifact_path(const ModelSpec& model, const
 
 std::expected<Artifact, Refusal> VulkanBackend::build(const ModelSpec& model, const ShapeSet& shapes,
                                                       Progress& progress) {
-  if (cache_dir_.empty()) return refuse_backend(RefusalCode::CacheIo, "aucun dossier de cache pour les artefacts");
+  if (cache_dir_.empty())
+    return refuse_backend(RefusalCode::CacheIo, "aucun dossier de cache pour les artefacts");
   if (progress.stop.stop_requested()) return refuse_backend(RefusalCode::Cancelled, "construction annulée");
   auto request = request_of(model, shapes);
   if (!request) return std::unexpected(request.error());
   const std::uint64_t key = net::artifact_key(*request, profile_);
-  const Artifact artifact{.cache_key = std::format("{:016x}", key), .path = artifact_path(model, shapes)};
+  Artifact artifact{.cache_key = std::format("{:016x}", key), .path = artifact_path(model, shapes)};
   // Un artefact déjà construit et toujours valable pour cet appareil et ces shaders sert tel quel.
   if (auto bytes = net::read_file(artifact.path)) {
     if (auto data = net::deserialize(*bytes); data && net::verify_artifact(*data, profile_)) return artifact;
   }
   std::optional<net::Autotuner> tuner;
   if (options_.autotune) {
-    tuner.emplace(*context_, *memory_, *pipelines_, profile_, cache_dir_ / "vulkan" / "autotune.tsv", options_.tuner);
+    tuner.emplace(*context_, *memory_, *pipelines_, profile_, cache_dir_ / "vulkan" / "autotune.tsv",
+                  options_.tuner);
   }
-  auto data = net::build_network(*request, profile_, tuner ? &*tuner : nullptr, progress.report, progress.stop);
+  auto data =
+      net::build_network(*request, profile_, tuner ? &*tuner : nullptr, progress.report, progress.stop);
   if (!data) return std::unexpected(data.error());
-  if (auto ok = net::write_file(artifact.path, net::serialize(*data)); !ok) return std::unexpected(ok.error());
-  log(BackendLogLevel::Info, std::format("{} construit : {} nœuds, {} dispatchs{}", model.id, data->graph.nodes.size(),
-                                         data->dispatches.size(),
-                                         tuner ? std::format(", {} couches mesurées", tuner->measured()) : ""));
+  if (auto ok = net::write_file(artifact.path, net::serialize(*data)); !ok)
+    return std::unexpected(ok.error());
+  log(BackendLogLevel::Info,
+      std::format("{} construit : {} nœuds, {} dispatchs{}", model.id, data->graph.nodes.size(),
+                  data->dispatches.size(),
+                  tuner ? std::format(", {} couches mesurées", tuner->measured()) : ""));
   return artifact;
 }
 
@@ -200,20 +210,22 @@ std::expected<std::unique_ptr<Engine>, Refusal> VulkanBackend::load(const Artifa
   if (!data) return std::unexpected(data.error());
   auto program = net::verify_artifact(*data, profile_);
   if (!program) return std::unexpected(program.error());
-  auto engine = net::NetEngine::create(*context_, *memory_, *pipelines_, std::move(data->graph), std::move(*program));
+  auto engine =
+      net::NetEngine::create(*context_, *memory_, *pipelines_, std::move(data->graph), std::move(*program));
   if (!engine) return std::unexpected(engine.error());
   return std::make_unique<VulkanEngine>(std::move(*engine));
 }
 
 std::expected<Tensor, Refusal> VulkanBackend::import(const ExternalImage& image) {
-  return refuse_backend(RefusalCode::FormatUnsupported,
-                        std::format("import d'une image {}x{} : le backend Vulkan lit les images décodées par "
-                                    "KernelOps::ingest et écrit le ring par write_ring, sans tenseur importé",
-                                    image.width, image.height));
+  return refuse_backend(
+      RefusalCode::FormatUnsupported,
+      std::format("import d'une image {}x{} : le backend Vulkan lit les images décodées par "
+                  "KernelOps::ingest et écrit le ring par write_ring, sans tenseur importé",
+                  image.width, image.height));
 }
 
 std::expected<std::unique_ptr<TensorBuffer>, Refusal> VulkanBackend::alloc_tensor(TensorType type,
-                                                                                   const Shape& shape) {
+                                                                                  const Shape& shape) {
   const std::size_t element = element_bytes(type);
   if (element == 0) return refuse_backend(RefusalCode::FormatUnsupported, "type de tenseur inconnu");
   std::uint64_t count = 1;
@@ -222,7 +234,8 @@ std::expected<std::unique_ptr<TensorBuffer>, Refusal> VulkanBackend::alloc_tenso
       return refuse_backend(RefusalCode::ShapeInvalid, std::format("dimension {} hors de [1, 2^24]", d));
     }
     count *= static_cast<std::uint64_t>(d);
-    if (count > (std::uint64_t{1} << 32)) return refuse_backend(RefusalCode::ShapeInvalid, "plus de 2^32 éléments");
+    if (count > (std::uint64_t{1} << 32))
+      return refuse_backend(RefusalCode::ShapeInvalid, "plus de 2^32 éléments");
   }
   // Arrondi à 4 octets : les noyaux lisent et écrivent des mots de 32 bits.
   const std::uint64_t bytes = (count * element + 3) / 4 * 4;
@@ -238,9 +251,9 @@ std::expected<void, Refusal> VulkanBackend::enqueue(Engine& engine, std::span<co
   net::NetEngine& net = vulkan->net();
   const ir::Graph& graph = net.graph();
   if (inputs.size() != graph.inputs.size() || outputs.size() != graph.outputs.size()) {
-    return refuse_backend(RefusalCode::InputMismatch, std::format("{} entrées et {} sorties, {} et {} attendues",
-                                                                  inputs.size(), outputs.size(), graph.inputs.size(),
-                                                                  graph.outputs.size()));
+    return refuse_backend(RefusalCode::InputMismatch,
+                          std::format("{} entrées et {} sorties, {} et {} attendues", inputs.size(),
+                                      outputs.size(), graph.inputs.size(), graph.outputs.size()));
   }
   // Chaque tenseur a le type et la forme NCHW de son entrée ou de sa sortie dans le graphe.
   std::array<BufferView, 8> views{};
@@ -255,11 +268,12 @@ std::expected<void, Refusal> VulkanBackend::enqueue(Engine& engine, std::span<co
     if (t.type != type || !shape_ok || t.handle == 0) {
       return refuse_backend(RefusalCode::InputMismatch,
                             std::format("{} : tenseur {} {}, {} {} attendu", want.name,
-                                        t.type == TensorType::F16 ? "F16" : "F32", ir::format_dims(ir::Dims(
-                                                                                       t.shape.dims.begin(), t.shape.dims.end())),
+                                        t.type == TensorType::F16 ? "F16" : "F32",
+                                        ir::format_dims(ir::Dims(t.shape.dims.begin(), t.shape.dims.end())),
                                         type == TensorType::F16 ? "F16" : "F32", ir::format_dims(want.dims)));
     }
-    views[at++] = {.buffer = detail::to_buffer(t.handle), .offset = t.offset, .size = ir::storage_bytes(want)};
+    views[at++] = {
+        .buffer = detail::to_buffer(t.handle), .offset = t.offset, .size = ir::storage_bytes(want)};
     return {};
   };
   for (std::size_t k = 0; k < inputs.size(); ++k) {
@@ -271,16 +285,19 @@ std::expected<void, Refusal> VulkanBackend::enqueue(Engine& engine, std::span<co
   auto recording = net.recording(std::span(views).first(inputs.size()),
                                  std::span(views).subspan(inputs.size(), outputs.size()));
   if (!recording) return std::unexpected(recording.error());
+  if (!queue_) return refuse_backend(RefusalCode::DeviceUnavailable, "file du backend absente");
   return queue_->submit(**recording);
 }
 
 std::expected<Fence, Refusal> VulkanBackend::signal() {
+  if (!queue_) return refuse_backend(RefusalCode::DeviceUnavailable, "file du backend absente");
   const TimelinePoint last = queue_->last();
   return Fence{.handle = handle_value(last.semaphore), .value = last.value};
 }
 
 std::expected<void, Refusal> VulkanBackend::wait(const Fence& fence) {
   if (fence.handle == 0) return {};
+  if (!queue_) return refuse_backend(RefusalCode::DeviceUnavailable, "file du backend absente");
   queue_->wait({.semaphore = detail::to_semaphore(fence.handle), .value = fence.value});
   return {};
 }

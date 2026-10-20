@@ -58,11 +58,13 @@ extern "C" AJP_BACKEND_EXPORT std::uint64_t ajp_backend_layout() noexcept {
   return ajp::gpu::kBackendLayout;
 }
 
-extern "C" AJP_BACKEND_EXPORT ajp::gpu::Backend* ajp_backend_create(int abi, const ajp::gpu::BackendInit* init) noexcept {
+extern "C" AJP_BACKEND_EXPORT ajp::gpu::Backend* ajp_backend_create(
+    int abi, const ajp::gpu::BackendInit* init) noexcept {
   if (init == nullptr) return nullptr;
   if (abi != ajp::gpu::kBackendAbi) {
-    tell(init, {ajp::RefusalCode::AbiMismatch,
-                std::format("backend Vulkan d'interface {}, appel en version {}", ajp::gpu::kBackendAbi, abi)});
+    tell(init,
+         {ajp::RefusalCode::AbiMismatch,
+          std::format("backend Vulkan d'interface {}, appel en version {}", ajp::gpu::kBackendAbi, abi)});
     return nullptr;
   }
   try {
@@ -74,7 +76,8 @@ extern "C" AJP_BACKEND_EXPORT ajp::gpu::Backend* ajp_backend_create(int abi, con
     }
     return backend->release();
   } catch (const std::exception& e) {
-    tell(init, {ajp::RefusalCode::LibraryUnavailable, std::format("backend Vulkan : exception {}", e.what())});
+    tell(init,
+         {ajp::RefusalCode::LibraryUnavailable, std::format("backend Vulkan : exception {}", e.what())});
   } catch (...) {
     tell(init, {ajp::RefusalCode::LibraryUnavailable, "backend Vulkan : exception inconnue"});
   }

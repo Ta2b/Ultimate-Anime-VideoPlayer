@@ -6,6 +6,7 @@
 #include <algorithm>
 #include <bit>
 #include <format>
+#include <optional>
 #include <type_traits>
 
 #include "gpu/vulkan/backend/kernel_ops_detail.h"
@@ -32,25 +33,28 @@ std::unexpected<Refusal> contract_refusal(Refusal refusal) {
 
 std::expected<TensorView, Refusal> tensor_view(const Tensor& t, std::uint32_t planes, std::string_view what) {
   if (t.type != TensorType::F16 && t.type != TensorType::F32) {
-    return std::unexpected(Refusal{RefusalCode::FormatUnsupported, std::format("{} : tenseur ni F16 ni F32", what)});
+    return std::unexpected(
+        Refusal{RefusalCode::FormatUnsupported, std::format("{} : tenseur ni F16 ni F32", what)});
   }
   const auto& d = t.shape.dims;
   const auto fits = [](std::int64_t v) { return v >= 1 && v <= kernels::kMaxDimension; };
   if (d[0] != 1 || (planes != 0 && d[1] != planes) || d[1] < 1 || d[1] > 64 || !fits(d[2]) || !fits(d[3])) {
-    return std::unexpected(Refusal{RefusalCode::ShapeInvalid,
-                                   std::format("{} : forme {}x{}x{}x{}, 1 x {} x h x w attendu", what, d[0], d[1],
-                                               d[2], d[3], planes)});
+    return std::unexpected(Refusal{
+        RefusalCode::ShapeInvalid,
+        std::format("{} : forme {}x{}x{}x{}, 1 x {} x h x w attendu", what, d[0], d[1], d[2], d[3], planes)});
   }
-  if (t.handle == 0) return std::unexpected(Refusal{RefusalCode::ShapeInvalid, std::format("{} : sans tampon", what)});
+  if (t.handle == 0)
+    return std::unexpected(Refusal{RefusalCode::ShapeInvalid, std::format("{} : sans tampon", what)});
   const Precision precision = t.type == TensorType::F16 ? Precision::F16 : Precision::F32;
   const auto w = static_cast<std::uint32_t>(d[3]);
   const auto h = static_cast<std::uint32_t>(d[2]);
   const auto c = static_cast<std::uint32_t>(d[1]);
-  return TensorView{.buffer = {.buffer = to_buffer(t.handle), .offset = t.offset, .size = tensor_bytes(w, h, c, precision)},
-                    .width = w,
-                    .height = h,
-                    .planes = c,
-                    .precision = precision};
+  return TensorView{
+      .buffer = {.buffer = to_buffer(t.handle), .offset = t.offset, .size = tensor_bytes(w, h, c, precision)},
+      .width = w,
+      .height = h,
+      .planes = c,
+      .precision = precision};
 }
 
 void add_view(OpKey& key, const TensorView& v) {
@@ -61,7 +65,6 @@ void add_view(OpKey& key, const TensorView& v) {
 }  // namespace detail
 
 using detail::add_view;
-using detail::contract_refusal;
 using detail::tensor_view;
 
 VulkanKernelOps::VulkanKernelOps(VkContext& context, MemoryAllocator& memory, PipelineCache& pipelines,
@@ -70,11 +73,12 @@ VulkanKernelOps::VulkanKernelOps(VkContext& context, MemoryAllocator& memory, Pi
 
 VulkanKernelOps::~VulkanKernelOps() {
   // Tout ce que la file a reçu s'achève avant de rendre images, vues et tampons.
-  (void)context_.wait_on_host(queue_.last());
+  [[maybe_unused]] const Done waited = context_.wait_on_host(queue_.last());
   for (const RingView& v : ring_views_) context_.fn().vkDestroyImageView(context_.device(), v.view, nullptr);
 }
 
-std::expected<void, Refusal> VulkanKernelOps::submit(Recording& recording, std::span<const TimelinePoint> waits,
+std::expected<void, Refusal> VulkanKernelOps::submit(Recording& recording,
+                                                     std::span<const TimelinePoint> waits,
                                                      std::span<const TimelinePoint> signals) {
   if (auto ok = queue_.submit(recording, waits, signals); !ok) return ok;
   reclaim();
@@ -92,7 +96,8 @@ void VulkanKernelOps::reclaim() {
   });
 }
 
-std::expected<void, Refusal> VulkanKernelOps::resample(const Tensor& in, kernels::Filter filter, const Tensor& out) {
+std::expected<void, Refusal> VulkanKernelOps::resample(const Tensor& in, kernels::Filter filter,
+                                                       const Tensor& out) {
   auto src = tensor_view(in, 3, "rééchantillonnage : source");
   if (!src) return std::unexpected(src.error());
   auto dst = tensor_view(out, 3, "rééchantillonnage : cible");
@@ -115,12 +120,13 @@ std::expected<void, Refusal> VulkanKernelOps::rife_crop(const Tensor& padded, co
   if (!src) return std::unexpected(src.error());
   auto dst = tensor_view(out, 3, "recadrage RIFE : sortie");
   if (!dst) return std::unexpected(dst.error());
-  const kernels::RifeGeometry g = kernels::rife_geometry(static_cast<int>(dst->width), static_cast<int>(dst->height));
+  const kernels::RifeGeometry g =
+      kernels::rife_geometry(static_cast<int>(dst->width), static_cast<int>(dst->height));
   if (std::cmp_not_equal(src->width, g.padded_width) || std::cmp_not_equal(src->height, g.padded_height)) {
-    return std::unexpected(Refusal{RefusalCode::ShapeInvalid,
-                                   std::format("recadrage RIFE : {}x{} rempli, {}x{} attendu pour {}x{}", src->width,
-                                               src->height, g.padded_width, g.padded_height, dst->width,
-                                               dst->height)});
+    return std::unexpected(
+        Refusal{RefusalCode::ShapeInvalid,
+                std::format("recadrage RIFE : {}x{} rempli, {}x{} attendu pour {}x{}", src->width,
+                            src->height, g.padded_width, g.padded_height, dst->width, dst->height)});
   }
   OpKey key;
   key.add(2);
@@ -131,10 +137,31 @@ std::expected<void, Refusal> VulkanKernelOps::rife_crop(const Tensor& padded, co
   return submit(**rec);
 }
 
-std::expected<void, Refusal> VulkanKernelOps::warp_blend(const Tensor& a, const Tensor& b, const Motion& motion,
-                                                         float t, const Tensor& out) {
+std::expected<void, Refusal> VulkanKernelOps::warp_blend(const Tensor& a, const Tensor& b,
+                                                         const Motion& motion, float t, const Tensor& out) {
+  return warp(a, b, motion, {}, t, out);
+}
+
+std::expected<void, Refusal> VulkanKernelOps::warp_blend_poses(const Tensor& a, const Tensor& b,
+                                                               const Motion& motion, const Motion* previous,
+                                                               float t, const Tensor& out) {
+  const auto same_area = [&](const kernels::Window& w) {
+    return w.x == motion.area.x && w.y == motion.area.y && w.width == motion.area.width &&
+           w.height == motion.area.height;
+  };
+  if (previous != nullptr &&
+      (previous->flow.shape.dims != motion.flow.shape.dims || !same_area(previous->area))) {
+    return std::unexpected(Refusal{RefusalCode::ShapeInvalid,
+                                   "poses : mouvement précédent d'autres plans ou d'une autre fenêtre"});
+  }
+  return warp(a, b, motion, {.keep = true, .previous = previous}, t, out);
+}
+
+std::expected<void, Refusal> VulkanKernelOps::warp(const Tensor& a, const Tensor& b, const Motion& motion,
+                                                   const Poses& poses, float t, const Tensor& out) {
   if (!(t > 0.0F && t < 1.0F)) {
-    return std::unexpected(Refusal{RefusalCode::FieldOutOfRange, std::format("warp : instant {} hors de ]0, 1[", t)});
+    return std::unexpected(
+        Refusal{RefusalCode::FieldOutOfRange, std::format("warp : instant {} hors de ]0, 1[", t)});
   }
   auto va = tensor_view(a, 3, "warp : image a");
   if (!va) return std::unexpected(va.error());
@@ -146,14 +173,22 @@ std::expected<void, Refusal> VulkanKernelOps::warp_blend(const Tensor& a, const 
   if (!flow) return std::unexpected(flow.error());
   auto mask = tensor_view(motion.mask, 1, "warp : masque");
   if (!mask) return std::unexpected(mask.error());
+  std::optional<TensorView> before;
+  if (poses.previous != nullptr) {
+    auto v = tensor_view(poses.previous->flow, 4, "poses : flot précédent");
+    if (!v) return std::unexpected(v.error());
+    before = *v;
+  }
   const MotionView mv{.flow = *flow, .mask = *mask, .area = motion.area};
+  const PoseView pv{.keep = poses.keep, .previous = before ? &*before : nullptr};
   OpKey key;
   key.add(3);
   for (const TensorView* v : {&*va, &*vb, &*vo, &*flow, &*mask}) add_view(key, *v);
   key.add(static_cast<std::uint64_t>(motion.area.x)).add(static_cast<std::uint64_t>(motion.area.y));
   key.add(static_cast<std::uint64_t>(motion.area.width)).add(static_cast<std::uint64_t>(motion.area.height));
-  key.add(std::bit_cast<std::uint32_t>(t));
-  auto rec = recording(key, [&](Recorder& r) { return runner_.warp_blend(r, *va, *vb, mv, t, *vo); });
+  key.add(std::bit_cast<std::uint32_t>(t)).add(poses.keep ? 1 : 0);
+  if (before) add_view(key, *before);
+  auto rec = recording(key, [&](Recorder& r) { return runner_.warp_blend(r, *va, *vb, mv, t, *vo, pv); });
   if (!rec) return std::unexpected(rec.error());
   return submit(**rec);
 }

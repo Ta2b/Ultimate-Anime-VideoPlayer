@@ -113,7 +113,8 @@ class Reader {
       return T{};
     }
     std::uint64_t v = 0;
-    for (std::size_t k = 0; k < sizeof(T); ++k) v |= std::to_integer<std::uint64_t>(bytes_[at_ + k]) << (8 * k);
+    for (std::size_t k = 0; k < sizeof(T); ++k)
+      v |= std::to_integer<std::uint64_t>(bytes_[at_ + k]) << (8 * k);
     at_ += sizeof(T);
     return static_cast<T>(v);
   }
@@ -347,32 +348,37 @@ std::vector<std::byte> serialize(const ArtifactData& data) {
 std::expected<ArtifactData, Refusal> deserialize(std::span<const std::byte> bytes) {
   constexpr std::size_t kHeader = kMagic.size() + 4;
   if (bytes.size() < kHeader + 8) {
-    return std::unexpected(Refusal{RefusalCode::CacheIo, std::format("artefact de {} o, tronqué", bytes.size())});
+    return std::unexpected(
+        Refusal{RefusalCode::CacheIo, std::format("artefact de {} o, tronqué", bytes.size())});
   }
   Reader header(bytes.first(kHeader));
   for (const char c : kMagic) {
     std::uint8_t got = 0;
     header(got);
     if (got != static_cast<std::uint8_t>(c)) {
-      return std::unexpected(Refusal{RefusalCode::FormatVersion, "ce n'est pas un artefact du moteur Vulkan"});
+      return std::unexpected(
+          Refusal{RefusalCode::FormatVersion, "ce n'est pas un artefact du moteur Vulkan"});
     }
   }
   std::uint32_t version = 0;
   header(version);
   if (version != kArtifactVersion) {
-    return std::unexpected(Refusal{
-        RefusalCode::FormatVersion, std::format("artefact au format {}, {} attendu", version, kArtifactVersion)});
+    return std::unexpected(
+        Refusal{RefusalCode::FormatVersion,
+                std::format("artefact au format {}, {} attendu", version, kArtifactVersion)});
   }
   const std::span<const std::byte> body = bytes.first(bytes.size() - 8);
   Reader tail(bytes.last(8));
   std::uint64_t sum = 0;
   tail(sum);
-  if (sum != fnv1a(body)) return std::unexpected(Refusal{RefusalCode::HashMismatch, "somme de l'artefact fausse"});
+  if (sum != fnv1a(body))
+    return std::unexpected(Refusal{RefusalCode::HashMismatch, "somme de l'artefact fausse"});
   Reader reader(body.subspan(kHeader));
   ArtifactData data;
   reader(data);
   if (reader.failed() || !reader.done() || !enums_valid(data)) {
-    return std::unexpected(Refusal{RefusalCode::CacheIo, "artefact illisible : champ tronqué ou hors de sa borne"});
+    return std::unexpected(
+        Refusal{RefusalCode::CacheIo, "artefact illisible : champ tronqué ou hors de sa borne"});
   }
   return data;
 }

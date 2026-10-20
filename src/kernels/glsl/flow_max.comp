@@ -1,0 +1,46 @@
+#version 450
+// Plus grand |déplacement| d'un mouvement dans sa fenêtre (gpu/kernel_ops.h, flow_max_now) : les
+// quatre plans du flot, maximum du groupe en mémoire partagée, puis un atomicMax des bits du
+// flottant (positifs : même ordre que les entiers) sur result[0], remis à zéro par
+// l'enregistrement. NaN compte pour 0.
+// Référence : kernels/ref/warp.cpp (flow_max) ; même calcul que warp_kernels.cu (flow_max).
+#extension GL_GOOGLE_include_directive : require
+#include "tensor.glsl"
+
+layout(local_size_x = 16, local_size_y = 16) in;
+
+layout(std430, binding = 0) readonly buffer Flow { AJP_TENSOR v[]; } flow;
+layout(std430, binding = 1) buffer Result { uint v[]; } result;
+
+layout(push_constant) uniform Push {
+  uint plane_width;
+  uint plane_height;
+  uint area_x;
+  uint area_y;
+  uint area_width;
+  uint area_height;
+} pc;
+
+shared float group_max[256];
+
+void main() {
+  uint x = gl_GlobalInvocationID.x;
+  uint y = gl_GlobalInvocationID.y;
+  float m = 0.0;
+  if (x < pc.area_width && y < pc.area_height) {
+    uint plane = pc.plane_width * pc.plane_height;
+    uint i = (pc.area_y + y) * pc.plane_width + pc.area_x + x;
+    for (uint c = 0u; c < 4u; ++c) {
+      float v = abs(float(flow.v[c * plane + i]));
+      m = v > m ? v : m;  // NaN ne gagne jamais
+    }
+  }
+  uint tid = gl_LocalInvocationIndex;
+  group_max[tid] = m;
+  barrier();
+  for (uint n = 128u; n > 0u; n >>= 1u) {
+    if (tid < n) group_max[tid] = max(group_max[tid], group_max[tid + n]);
+    barrier();
+  }
+  if (tid == 0u) atomicMax(result.v[0], floatBitsToUint(group_max[0]));
+}

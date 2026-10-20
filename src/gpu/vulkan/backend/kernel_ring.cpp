@@ -38,7 +38,8 @@ std::expected<VkImageView, Refusal> VulkanKernelOps::ring_view(const RingSlotDes
   context_.instance_functions().vkGetPhysicalDeviceFormatProperties(context_.physical_device(), kSlotFormat,
                                                                     &properties);
   if ((properties.optimalTilingFeatures & VK_FORMAT_FEATURE_STORAGE_IMAGE_BIT) == 0) {
-    return refuse_ring(RefusalCode::FeatureUnavailable, "ring : R16G16B16A16_UNORM sans écriture en stockage");
+    return refuse_ring(RefusalCode::FeatureUnavailable,
+                       "ring : R16G16B16A16_UNORM sans écriture en stockage");
   }
   const VkImageViewCreateInfo info{
       .sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
@@ -52,7 +53,8 @@ std::expected<VkImageView, Refusal> VulkanKernelOps::ring_view(const RingSlotDes
       !ok) {
     return std::unexpected(ok.error());
   }
-  ring_views_.push_back({.generation = slot.generation, .index = slot.index, .image = slot.image, .view = view});
+  ring_views_.push_back(
+      {.generation = slot.generation, .index = slot.index, .image = slot.image, .view = view});
   return view;
 }
 
@@ -68,14 +70,15 @@ std::expected<void, Refusal> VulkanKernelOps::write_ring(const Tensor& rgb, cons
                                                               slot.height, src->width, src->height));
   }
   if (slot.image == 0 || slot.semaphore == 0) {
-    return refuse_ring(RefusalCode::FeatureUnavailable,
-                       "ring : slot sans VkImage ni sémaphore de l'appareil partagé (import par handle exporté non pris "
-                       "en charge)");
+    return refuse_ring(
+        RefusalCode::FeatureUnavailable,
+        "ring : slot sans VkImage ni sémaphore de l'appareil partagé (import par handle exporté non pris "
+        "en charge)");
   }
   if (sync.signal_value % 2 != 1 || sync.signal_value <= sync.wait_value) {
     return refuse_ring(RefusalCode::FieldOutOfRange,
-                       std::format("ring : signal {} après {}, impair et croissant attendu", sync.signal_value,
-                                   sync.wait_value));
+                       std::format("ring : signal {} après {}, impair et croissant attendu",
+                                   sync.signal_value, sync.wait_value));
   }
   auto view = ring_view(slot);
   if (!view) return std::unexpected(view.error());
@@ -102,9 +105,10 @@ std::expected<void, Refusal> VulkanKernelOps::write_ring(const Tensor& rgb, cons
   if (!rec) return std::unexpected(rec.error());
   const VkSemaphore semaphore = detail::to_semaphore(static_cast<std::uintptr_t>(slot.semaphore));
   const std::array<TimelinePoint, 1> wait{TimelinePoint{.semaphore = semaphore, .value = sync.wait_value}};
-  const std::array<TimelinePoint, 1> signal{TimelinePoint{.semaphore = semaphore, .value = sync.signal_value}};
-  const std::span<const TimelinePoint> waits = sync.wait_value > 0 ? std::span<const TimelinePoint>(wait)
-                                                                    : std::span<const TimelinePoint>();
+  const std::array<TimelinePoint, 1> signal{
+      TimelinePoint{.semaphore = semaphore, .value = sync.signal_value}};
+  const std::span<const TimelinePoint> waits =
+      sync.wait_value > 0 ? std::span<const TimelinePoint>(wait) : std::span<const TimelinePoint>();
   if (auto ok = submit(**rec, waits, signal); !ok) return ok;
   for (RingView& v : ring_views_) {
     if (v.view == *view) v.last_write = queue_.last().value;

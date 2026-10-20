@@ -98,6 +98,13 @@ struct MotionView {
   kernels::Window area;
 };
 
+// Garder les poses (kernels/spec/poses.h) : previous est le flot au milieu de la paire précédente,
+// mêmes dimensions et même précision que celui du mouvement ; nul, la paire précédente était tenue.
+struct PoseView {
+  bool keep = false;
+  const TensorView* previous = nullptr;
+};
+
 // Disposition serrée : luma, puis Cb (ou CbCr), puis Cr, chaque pas arrondi à 4 octets.
 // Refus InputMismatch : dimensions hors contrat (paires dans [2, 16384] en 4:2:0).
 std::expected<YuvLayout, Refusal> tight_layout(kernels::Format format, std::uint32_t width,

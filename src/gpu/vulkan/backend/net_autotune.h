@@ -46,9 +46,9 @@ struct PresetTable {
 std::span<const PresetTable> preset_tables();
 
 struct TunerOptions {
-  std::uint32_t warmup = 2;    // passes non comptées
-  std::uint32_t passes = 5;    // passes mesurées : la médiane compte
-  std::uint32_t repeats = 3;   // dispatchs enchaînés par passe
+  std::uint32_t warmup = 2;   // passes non comptées
+  std::uint32_t passes = 5;   // passes mesurées : la médiane compte
+  std::uint32_t repeats = 3;  // dispatchs enchaînés par passe
 };
 
 // Une mesure : le choix et sa médiane, en microsecondes par exécution du nœud.
@@ -66,11 +66,12 @@ class Autotuner {
   // Le meilleur choix du nœud parmi candidates (non vide). scope distingue le modèle et la
   // résolution. Refus : Cancelled (stop demandé), ceux de l'abaissement et de l'exécution.
   std::expected<KernelChoice, Refusal> choose(const ir::Graph& graph, std::size_t node,
-                                              std::span<const KernelChoice> candidates, std::string_view scope,
-                                              std::stop_token stop = {});
+                                              std::span<const KernelChoice> candidates,
+                                              std::string_view scope, const std::stop_token& stop = {});
 
   // Mesure un choix seul (banc, tests). Refus : ceux de l'abaissement et de l'exécution.
-  std::expected<Measured, Refusal> measure(const ir::Graph& graph, std::size_t node, const KernelChoice& choice);
+  std::expected<Measured, Refusal> measure(const ir::Graph& graph, std::size_t node,
+                                           const KernelChoice& choice);
 
   // Écrit le cache, une entrée par ligne. Refus CacheIo.
   std::expected<void, Refusal> save() const;

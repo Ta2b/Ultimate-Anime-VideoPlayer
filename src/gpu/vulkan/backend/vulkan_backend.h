@@ -62,12 +62,14 @@ class VulkanBackend final : public Backend {
 
   BackendCaps capabilities() const override;
   DeviceMatch match(const DeviceUuid& render_device) const override;
-  std::expected<Artifact, Refusal> build(const ModelSpec& model, const ShapeSet& shapes, Progress& progress) override;
+  std::expected<Artifact, Refusal> build(const ModelSpec& model, const ShapeSet& shapes,
+                                         Progress& progress) override;
   std::expected<std::unique_ptr<Engine>, Refusal> load(const Artifact& artifact) override;
   // Le backend lit les images décodées par KernelOps::ingest et écrit le ring par write_ring :
   // aucune image ne devient tenseur sans copie. Refus FormatUnsupported, toujours.
   std::expected<Tensor, Refusal> import(const ExternalImage& image) override;
-  std::expected<std::unique_ptr<TensorBuffer>, Refusal> alloc_tensor(TensorType type, const Shape& shape) override;
+  std::expected<std::unique_ptr<TensorBuffer>, Refusal> alloc_tensor(TensorType type,
+                                                                     const Shape& shape) override;
   KernelOps* kernels() override { return kernels_.get(); }
   std::expected<void, Refusal> enqueue(Engine& engine, std::span<const Tensor> inputs,
                                        std::span<Tensor> outputs) override;

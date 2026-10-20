@@ -44,7 +44,8 @@ Done KernelRunner::rife_constants(Recorder& recorder, const TensorView& input, f
 }
 
 Done KernelRunner::warp_blend(Recorder& recorder, const TensorView& a, const TensorView& b,
-                              const MotionView& motion, float t, const TensorView& dst) {
+                              const MotionView& motion, float t, const TensorView& dst,
+                              const PoseView& poses) {
   if (!(t > 0.0F && t < 1.0F))
     return refuse(RefusalCode::FieldOutOfRange, std::format("instant {} hors de ]0, 1[", t));
   const Features& enabled = context_->caps().enabled;
@@ -64,6 +65,14 @@ Done KernelRunner::warp_blend(Recorder& recorder, const TensorView& a, const Ten
     if (p != a.precision)
       return refuse(RefusalCode::InputMismatch, "warp : tenseurs de précisions différentes");
   }
+  if (poses.previous != nullptr) {
+    const TensorView& p = *poses.previous;
+    if (auto ok = check_tensor(p, 4, enabled, "warp : mouvement précédent"); !ok) return ok;
+    if (p.width != motion.flow.width || p.height != motion.flow.height || p.precision != a.precision) {
+      return refuse(RefusalCode::InputMismatch,
+                    "warp : mouvement précédent d'autres dimensions ou précision");
+    }
+  }
   const kernels::Window& area = motion.area;
   // En 64 bits : x + width ne déborde pas.
   const std::int64_t right = std::int64_t{area.x} + area.width;
@@ -82,8 +91,11 @@ Done KernelRunner::warp_blend(Recorder& recorder, const TensorView& a, const Ten
                               static_cast<std::uint32_t>(area.y),
                               static_cast<std::uint32_t>(area.width),
                               static_cast<std::uint32_t>(area.height),
-                              t};
-  const std::array buffers{a.buffer, b.buffer, motion.flow.buffer, motion.mask.buffer, dst.buffer};
+                              t,
+                              poses.keep ? 1U : 0U,
+                              poses.previous != nullptr ? 1U : 0U};
+  const BufferView previous = poses.previous != nullptr ? poses.previous->buffer : motion.flow.buffer;
+  const std::array buffers{a.buffer, b.buffer, motion.flow.buffer, motion.mask.buffer, dst.buffer, previous};
   return detail::run(*pipelines_, recorder, "warp_blend", a.precision, {}, buffers, {}, bytes_of(push),
                      {groups_for(a.width), groups_for(a.height), 1});
 }

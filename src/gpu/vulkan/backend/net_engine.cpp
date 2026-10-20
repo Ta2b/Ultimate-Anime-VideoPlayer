@@ -107,9 +107,11 @@ std::expected<BufferView, Refusal> NetEngine::resolve(const Binding& binding,
                                                       std::span<const BufferView> outputs) const {
   switch (binding.kind) {
     case BindingKind::Dummy:
+      if (!dummy_) return mismatch("tampon factice absent");
       return dummy_->view();
     case BindingKind::Blob: {
-      if (binding.index >= blob_sizes_.size()) return mismatch(std::format("blob {} absent", binding.index));
+      if (binding.index >= blob_sizes_.size() || !blobs_)
+        return mismatch(std::format("blob {} absent", binding.index));
       return blobs_->view(blob_offsets_[binding.index], blob_sizes_[binding.index]);
     }
     case BindingKind::Tensor:
@@ -123,11 +125,12 @@ std::expected<BufferView, Refusal> NetEngine::resolve(const Binding& binding,
   if (const auto out = std::ranges::find(graph_.outputs, id); out != graph_.outputs.end()) {
     return outputs[static_cast<std::size_t>(out - graph_.outputs.begin())];
   }
-  if (!places_[id] || !arena_) {
+  const auto& place = places_[id];
+  if (!place || !arena_) {
     return std::unexpected(Refusal{RefusalCode::GraphInvalid,
                                    std::format("{} : aucune place dans l'arène", graph_.tensors[id].name)});
   }
-  return arena_->view(places_[id]->offset, ir::storage_bytes(graph_.tensors[id]));
+  return arena_->view(place->offset, ir::storage_bytes(graph_.tensors[id]));
 }
 
 std::expected<std::unique_ptr<Recording>, Refusal> NetEngine::record(std::span<const BufferView> inputs,

@@ -58,8 +58,23 @@ class KernelRunner {
 
   // a et b déformés par le mouvement et mélangés à l'instant t de ]0, 1[ (ref warp_blend_at ;
   // t = 1/2 : warp_blend). Tous les tenseurs de même précision.
+  // poses.keep : l'instant de chaque pixel réglé d'après poses.previous (ref warp_blend_poses).
   Done warp_blend(Recorder& recorder, const TensorView& a, const TensorView& b, const MotionView& motion,
-                  float t, const TensorView& dst);
+                  float t, const TensorView& dst, const PoseView& poses = {});
+
+  // Extensions de la tranche verticale (gpu/kernel_ops.h), sur des tenseurs RGB déjà ingérés.
+  //
+  // Plans 0 à 5 de l'entrée de RIFE : a et b (w × h) dans la fenêtre de rife_geometry(w, h) de
+  // input (11 plans), black autour ; les plans 6 à 10 restent à rife_constants.
+  Done rife_frames(Recorder& recorder, const TensorView& a, const TensorView& b, const TensorView& input,
+                   float black);
+  // Écarts de luma BT.709 tirée du RGB par bloc 32 × 32 : sums reçoit la somme de chaque bloc
+  // (block_count float), worst[0] le pire bloc en 1/256 de niveau (levels pas entre noir et
+  // blanc), remis à zéro à chaque exécution.
+  Done rgb_pair_diff(Recorder& recorder, const TensorView& a, const TensorView& b, const BufferView& sums,
+                     const BufferView& worst, float levels);
+  // Plus grand |déplacement| du mouvement dans sa fenêtre, en bits de float dans result[0].
+  Done flow_max(Recorder& recorder, const MotionView& motion, const BufferView& result);
 
   // Fonction de transfert ou conversion de primaires, pixel par pixel (ref transfer).
   Done transfer(Recorder& recorder, TransferOp op, const TensorView& src, const TensorView& dst,

@@ -83,7 +83,8 @@ class AccessGuard {
   // La responsabilité passe à un autre garde (submit_frames).
   void dismiss() { count_ = 0; }
   void release_all(const VulkanImageState& after, bool submitted) {
-    for (std::size_t k = 0; k < count_; ++k) frames_[k]->end_vulkan_access(submitted ? after : states_[k], submitted);
+    for (std::size_t k = 0; k < count_; ++k)
+      frames_[k]->end_vulkan_access(submitted ? after : states_[k], submitted);
     count_ = 0;
   }
 
@@ -97,7 +98,8 @@ class AccessGuard {
 
 template <class Body>
 std::expected<Recording*, Refusal> VulkanKernelOps::recording(const OpKey& key, Body&& body) {
-  if (!key.valid()) return std::unexpected(Refusal{RefusalCode::InputMismatch, "clé d'enregistrement trop longue"});
+  if (!key.valid())
+    return std::unexpected(Refusal{RefusalCode::InputMismatch, "clé d'enregistrement trop longue"});
   ++uses_;
   if (auto found = std::ranges::find(recordings_, key, &Cached::key); found != recordings_.end()) {
     found->used = uses_;

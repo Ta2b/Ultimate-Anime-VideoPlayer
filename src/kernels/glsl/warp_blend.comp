@@ -2,7 +2,10 @@
 // Warp arrière par flot et mélange de deux images à l'instant t : base de Fast et de
 // l'ordonnancement S3. À t = 1/2 exactement, le mouvement et le masque estimés par RIFE tels
 // quels ; sinon chaque point suit la ligne droite du mouvement et la loi de mélange ajustée.
-// Contrat : kernels/spec/warp.h ; référence : kernels/ref/warp.cpp (warp_blend, warp_blend_at).
+// Garder les poses (keep_poses) : l'instant de chaque pixel se règle d'après le mouvement au
+// milieu de la paire précédente (kernels/spec/poses.h), puis suit le même chemin.
+// Contrat : kernels/spec/warp.h ; référence : kernels/ref/warp.cpp (warp_blend, warp_blend_at,
+// warp_blend_poses).
 // Repris de animejanai-inference-rtx@118c272 src/kernels.cu:963-1013 (sample_plane,
 // sample_window, k_warp_blend) et 1051-1096 (k_warp_blend_mid).
 #extension GL_GOOGLE_include_directive : require
@@ -17,6 +20,9 @@ layout(std430, binding = 1) readonly buffer ImageB { AJP_TENSOR v[]; } b;
 layout(std430, binding = 2) readonly buffer Flow { AJP_TENSOR v[]; } flow;  // f0x, f0y, f1x, f1y
 layout(std430, binding = 3) readonly buffer Mask { AJP_TENSOR v[]; } mask;  // poids de a
 layout(std430, binding = 4) writeonly buffer Blend { AJP_TENSOR v[]; } dst;
+// Mouvement au milieu de la paire précédente, mêmes plans et même fenêtre ; lu seulement avec
+// keep_poses et has_previous (sinon le flot y est lié à sa place).
+layout(std430, binding = 5) readonly buffer Previous { AJP_TENSOR v[]; } previous;
 
 layout(push_constant) uniform Push {
   uint width;  // images a, b et sortie
@@ -28,6 +34,8 @@ layout(push_constant) uniform Push {
   uint area_width;
   uint area_height;
   float t;
+  uint keep_poses;    // 1 : garder les poses
+  uint has_previous;  // 0 : paire précédente tenue, sans mouvement
 } pc;
 
 // Les quatre voisins d'une lecture bilinéaire et ses fractions (spec/warp.h) : coordonnées
@@ -79,6 +87,48 @@ float image_at(bool from_a, uint c, float x, float y) {
                   float(b.v[base + t.i11]), t);
 }
 
+// Plan c du mouvement de la paire précédente, lu comme motion_at.
+float previous_at(uint c, float u, float v) {
+  Taps t = taps_in(pc.flow_width, pc.area_x, pc.area_y, pc.area_width, pc.area_height, u, v);
+  uint base = c * pc.flow_width * pc.flow_height;
+  return bilinear(float(previous.v[base + t.i00]), float(previous.v[base + t.i10]),
+                  float(previous.v[base + t.i01]), float(previous.v[base + t.i11]), t);
+}
+
+// L'instant réglé du pixel (u, v) pour garder les poses (keeping_poses de ref/warp.cpp) : le
+// déplacement de la paire, celui de la paire précédente remonté jusqu'au même point, et
+// pose_time (spec/poses.h).
+float pose_time_at(float u, float v, float t) {
+  float tp = t;
+  for (int k = 0; k < AJP_POSE_ITERATIONS; ++k) {
+    precise float u2 = u - ((1.0 - tp) * motion_at(0u, u, v) + tp * motion_at(2u, u, v));
+    precise float v2 = v - ((1.0 - tp) * motion_at(1u, u, v) + tp * motion_at(3u, u, v));
+    precise float dx = motion_at(2u, u2, v2) - motion_at(0u, u2, v2);
+    precise float dy = motion_at(3u, u2, v2) - motion_at(1u, u2, v2);
+    float before = 0.0;
+    if (pc.has_previous != 0u) {
+      precise float ax = u - tp * dx;
+      precise float ay = v - tp * dy;
+      float qx = ax;
+      float qy = ay;
+      for (int step = 0; step < 2; ++step) {
+        precise float nx = ax - previous_at(2u, qx, qy);
+        precise float ny = ay - previous_at(3u, qx, qy);
+        qx = nx;
+        qy = ny;
+      }
+      precise float px = previous_at(2u, qx, qy) - previous_at(0u, qx, qy);
+      precise float py = previous_at(3u, qx, qy) - previous_at(1u, qx, qy);
+      before = sqrt(px * px + py * py);
+    }
+    precise float now = sqrt(dx * dx + dy * dy);
+    precise float r = (before + AJP_POSE_EPSILON) / (before + now + 2.0 * AJP_POSE_EPSILON);
+    precise float timed = t < 0.5 ? 2.0 * t * r : 1.0 - 2.0 * (1.0 - t) * r;
+    tp = bounded(timed, AJP_POSE_TIME_LIMIT, 1.0 - AJP_POSE_TIME_LIMIT);
+  }
+  return tp;
+}
+
 // Déplacements vers a (xy) et vers b (zw), et poids de a, au point (u, v) du mouvement.
 struct Displacement {
   vec4 to;
@@ -118,7 +168,9 @@ void main() {
   precise float u = (float(x) + 0.5) / sx - 0.5;
   precise float v = (float(y) + 0.5) / sy - 0.5;
   Displacement d;
-  if (pc.t == 0.5) {
+  if (pc.keep_poses != 0u) {
+    d = from_middle(u, v, pose_time_at(u, v, pc.t));
+  } else if (pc.t == 0.5) {
     d = estimated(u, v);
   } else {
     d = from_middle(u, v, pc.t);

@@ -17,6 +17,7 @@ ajp_add_module(vk_compute
     kernel_runner.cpp
     kernel_types.cpp
     kernels_color.cpp
+    kernels_slice.cpp
     kernels_window.cpp
     library.cpp
     log.cpp
@@ -36,13 +37,16 @@ target_compile_definitions(ajp_vk_compute PUBLIC VK_NO_PROTOTYPES)
 set(glsl "${PROJECT_SOURCE_DIR}/src/kernels/glsl")
 # Les tenseurs des réseaux en float16 : variante « _f16 » des shaders qui en lisent ou écrivent.
 set(tensor_shaders
+  "${glsl}/flow_max.comp"
   "${glsl}/ingest_combine.comp"
   "${glsl}/output_matrix.comp"
   "${glsl}/resample_h.comp"
   "${glsl}/resample_v.comp"
+  "${glsl}/rgb_pair_diff.comp"
   "${glsl}/rgb_window.comp"
   "${glsl}/rgba16_store.comp"
   "${glsl}/rife_constants.comp"
+  "${glsl}/rife_frames.comp"
   "${glsl}/transfer.comp"
   "${glsl}/warp_blend.comp")
 ajp_add_spirv(ajp_vk_compute

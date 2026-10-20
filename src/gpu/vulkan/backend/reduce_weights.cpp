@@ -68,7 +68,7 @@ std::expected<WeightTable, Refusal> reduction_weights(int src, int dst, const Re
     const int low = std::clamp(first, 0, src - 1);
     const int high = std::clamp(last, 0, src - 1);
     std::vector<double>& row = rows[static_cast<std::size_t>(x)];
-    row.assign(static_cast<std::size_t>(high - low + 1), 0.0);
+    row.assign(static_cast<std::size_t>(high - low) + 1, 0.0);
     for (int i = first; i <= last; ++i) {
       row[static_cast<std::size_t>(std::clamp(i, 0, src - 1) - low)] +=
           weight(reduction, (i - center) / scale);

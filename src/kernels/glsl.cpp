@@ -166,6 +166,9 @@ void add_rife_warp(Table& t) {
   t.real("BLEND_LAW_C", kBlendLawC);
   t.real("MASK_EPSILON", kMaskEpsilon, "mm = clamp(masque, epsilon, 1 - epsilon)");
   t.real("SINGLE_RUN_MOTION_720", kSingleRunMotion720, "Pixels de mouvement à 720p");
+  t.integer("POSE_ITERATIONS", kPoseIterations, "Garder les poses (spec/poses.h)");
+  t.real("POSE_EPSILON", kPoseEpsilon);
+  t.real("POSE_TIME_LIMIT", kPoseTimeLimit);
 }
 
 void add_transfer(Table& t) {

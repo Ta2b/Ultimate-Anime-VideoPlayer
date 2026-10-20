@@ -62,13 +62,21 @@ class VulkanKernelOps final : public KernelOps {
   // Attend la fin de tout ce que la file a reçu, puis libère images retenues, vues et tampons.
   ~VulkanKernelOps() override;
 
-  std::expected<void, Refusal> ingest(const DecodedFrame& frame, const IngestSpec& spec, const Tensor& rgb) override;
+  std::expected<void, Refusal> ingest(const DecodedFrame& frame, const IngestSpec& spec,
+                                      const Tensor& rgb) override;
   std::expected<void, Refusal> resample(const Tensor& in, kernels::Filter filter, const Tensor& out) override;
   std::expected<void, Refusal> rife_pad(const DecodedFrame& frame, const Tensor& padded) override;
   std::expected<void, Refusal> rife_crop(const Tensor& padded, const Tensor& out) override;
   std::expected<void, Refusal> warp_blend(const Tensor& a, const Tensor& b, const Motion& motion, float t,
                                           const Tensor& out) override;
-  std::expected<void, Refusal> write_ring(const Tensor& rgb, const RingSlotDesc& slot, const RingWrite& sync) override;
+  std::expected<void, Refusal> warp_blend_poses(const Tensor& a, const Tensor& b, const Motion& motion,
+                                                const Motion* previous, float t, const Tensor& out) override;
+  std::expected<void, Refusal> rife_input(const Tensor& a, const Tensor& b, float t,
+                                          const Tensor& input) override;
+  std::expected<PairScores, Refusal> scores_now(const Tensor& a, const Tensor& b) override;
+  std::expected<float, Refusal> flow_max_now(const Motion& motion) override;
+  std::expected<void, Refusal> write_ring(const Tensor& rgb, const RingSlotDesc& slot,
+                                          const RingWrite& sync) override;
   std::expected<void, Refusal> measure(const DecodedFrame& a, const DecodedFrame& b) override;
   std::optional<PairScores> previous_scores() override;
 
@@ -86,7 +94,7 @@ class VulkanKernelOps final : public KernelOps {
     kernels::Format format = kernels::Format::Nv12;
     std::uint32_t width = 0;
     std::uint32_t height = 0;
-    std::optional<Buffer> buffer;  // Upload pour une image hôte, Device pour une image Vulkan
+    Buffer buffer;  // Upload pour une image hôte, Device pour une image Vulkan
     YuvLayout layout;
     std::uint64_t busy_until = 0;  // valeur de la file après laquelle il est libre
   };
@@ -95,8 +103,8 @@ class VulkanKernelOps final : public KernelOps {
     std::uint64_t until = 0;
   };
   struct ScoreSlot {
-    std::optional<Buffer> partials;  // Readback : lu par l'hôte sans copie
-    std::optional<Buffer> blocks;
+    Buffer partials;  // Readback : lu par l'hôte sans copie
+    Buffer blocks;
     std::uint64_t value = 0;  // 0 : rien en cours
     PairScores scores;
     std::uint32_t area = 0;  // pw × ph de RIFE
@@ -118,6 +126,13 @@ class VulkanKernelOps final : public KernelOps {
     std::optional<VulkanImageAccess> access;
   };
 
+  // Garder les poses : previous nul, la paire précédente était tenue.
+  struct Poses {
+    bool keep = false;
+    const Motion* previous = nullptr;
+  };
+  std::expected<void, Refusal> warp(const Tensor& a, const Tensor& b, const Motion& motion,
+                                    const Poses& poses, float t, const Tensor& out);
   // Recording de la clé, fait par body au premier passage, puis soumis sur la file.
   template <class Body>
   std::expected<Recording*, Refusal> recording(const OpKey& key, Body&& body);
@@ -125,8 +140,8 @@ class VulkanKernelOps final : public KernelOps {
                                       std::span<const TimelinePoint> signals = {});
   void reclaim();
   std::expected<Source, Refusal> source(const DecodedFrame& frame, std::size_t avoid = SIZE_MAX);
-  std::expected<std::size_t, Refusal> staging_for(kernels::Format format, std::uint32_t width, std::uint32_t height,
-                                                  MemoryUse use, std::size_t avoid);
+  std::expected<std::size_t, Refusal> staging_for(kernels::Format format, std::uint32_t width,
+                                                  std::uint32_t height, MemoryUse use, std::size_t avoid);
   void copy_image(VkCommandBuffer cb, const Source& src) const;
   static void add_source(OpKey& key, const Source& src);
   std::expected<void, Refusal> submit_frames(Recording& recording, std::span<Source> sources,
@@ -148,6 +163,11 @@ class VulkanKernelOps final : public KernelOps {
   std::uint64_t returned_order_ = 0;
   std::vector<RingView> ring_views_;
   std::uint32_t ring_generation_ = 0;
+  // Mesures rendues tout de suite (scores_now, flow_max_now) : relues par l'hôte sans copie.
+  std::optional<Buffer> pair_sums_;
+  std::optional<Buffer> pair_worst_;
+  std::optional<Buffer> flow_result_;
+  std::expected<Buffer*, Refusal> readback(std::optional<Buffer>& buffer, VkDeviceSize bytes);
   std::vector<TimelinePoint> waits_;  // réutilisés d'un appel à l'autre
   std::vector<TimelinePoint> signals_;
 };

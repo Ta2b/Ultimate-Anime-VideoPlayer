@@ -41,14 +41,15 @@ std::expected<ir::Graph, Refusal> prepare_graph(const BuildRequest& request, con
   auto graph = ir::load_onnx_file(request.onnx);
   if (!graph) return std::unexpected(graph.error());
   if (graph->inputs.size() != 1) {
-    return refuse(RefusalCode::InputMismatch,
-                  std::format("{} : {} entrées, le moteur Vulkan en prend une", request.model_id, graph->inputs.size()));
+    return refuse(RefusalCode::InputMismatch, std::format("{} : {} entrées, le moteur Vulkan en prend une",
+                                                          request.model_id, graph->inputs.size()));
   }
   const std::vector<ir::InputShape> shapes{
       {.name = graph->tensors[graph->inputs[0]].name, .dims = request.input_shape}};
   if (auto ok = ir::infer_shapes(*graph, shapes); !ok) return std::unexpected(ok.error());
   if (auto ok = ir::optimize(*graph); !ok) return std::unexpected(ok.error());
-  const bool has_f16 = std::ranges::any_of(graph->tensors, [](const ir::Tensor& t) { return t.type == ir::DataType::F16; });
+  const bool has_f16 =
+      std::ranges::any_of(graph->tensors, [](const ir::Tensor& t) { return t.type == ir::DataType::F16; });
   if (!request.fp16) {
     // Tout en float : une constante float16 garde ses valeurs (déjà représentables).
     for (ir::Tensor& t : graph->tensors) {
@@ -67,13 +68,15 @@ std::vector<ShaderHash> shader_hashes(std::span<const Dispatch> dispatches) {
   std::set<std::string> names;
   for (const Dispatch& d : dispatches) names.insert(d.shader);
   std::vector<ShaderHash> out;
-  for (const std::string& name : names) out.push_back({.shader = name, .hash = spirv_hash(spirv::words(name))});
+  out.reserve(names.size());
+  for (const std::string& name : names)
+    out.push_back({.shader = name, .hash = spirv_hash(spirv::words(name))});
   return out;
 }
 
 std::expected<ArtifactData, Refusal> build_network(const BuildRequest& request, const DeviceProfile& profile,
                                                    Autotuner* tuner, const BuildReport& report,
-                                                   std::stop_token stop) {
+                                                   const std::stop_token& stop) {
   const auto progress = [&](float fraction, const std::string& stage) {
     if (report) report(fraction, stage);
   };
@@ -130,14 +133,16 @@ std::expected<Program, Refusal> verify_artifact(const ArtifactData& data, const 
   }
   for (const ShaderHash& h : data.shaders) {
     if (spirv_hash(spirv::words(h.shader)) != h.hash) {
-      return refuse(RefusalCode::FormatVersion, std::format("shader {} changé depuis la construction", h.shader));
+      return refuse(RefusalCode::FormatVersion,
+                    std::format("shader {} changé depuis la construction", h.shader));
     }
   }
   if (auto ok = ir::validate(data.graph); !ok) return std::unexpected(ok.error());
   auto program = lower(data.graph, data.choices, profile.target);
   if (!program) return std::unexpected(program.error());
   if (program->dispatches != data.dispatches || shader_hashes(program->dispatches) != data.shaders) {
-    return refuse(RefusalCode::FormatVersion, "le programme ne se refait pas à l'identique : artefact à reconstruire");
+    return refuse(RefusalCode::FormatVersion,
+                  "le programme ne se refait pas à l'identique : artefact à reconstruire");
   }
   return program;
 }
@@ -152,7 +157,8 @@ std::uint64_t artifact_key(const BuildRequest& request, const DeviceProfile& pro
 std::expected<void, Refusal> write_file(const std::filesystem::path& path, std::span<const std::byte> bytes) {
   std::error_code error;
   std::filesystem::create_directories(path.parent_path(), error);
-  if (error) return refuse(RefusalCode::CacheIo, std::format("{} : {}", path.parent_path().string(), error.message()));
+  if (error)
+    return refuse(RefusalCode::CacheIo, std::format("{} : {}", path.parent_path().string(), error.message()));
   const std::filesystem::path temporary = path.string() + ".tmp";
   {
     std::ofstream out(temporary, std::ios::binary | std::ios::trunc);

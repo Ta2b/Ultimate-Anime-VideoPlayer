@@ -27,23 +27,20 @@ std::expected<void, Refusal> VulkanKernelOps::rife_pad(const DecodedFrame& frame
   const kernels::RifeGeometry g = kernels::rife_geometry(frame.width, frame.height);
   if (std::cmp_not_equal(dst->width, g.padded_width) || std::cmp_not_equal(dst->height, g.padded_height)) {
     return refuse_pair(RefusalCode::ShapeInvalid,
-                       std::format("entrée RIFE : tenseur {}x{}, {}x{} attendu pour {}x{}", dst->width, dst->height,
-                                   g.padded_width, g.padded_height, frame.width, frame.height));
+                       std::format("entrée RIFE : tenseur {}x{}, {}x{} attendu pour {}x{}", dst->width,
+                                   dst->height, g.padded_width, g.padded_height, frame.width, frame.height));
   }
   auto src = source(frame);
   if (!src) return std::unexpected(src.error());
   detail::AccessGuard pending;
   if (src->access) pending.hold(frame.data.get(), src->access->state);
   // L'image remplie, en YUV, dans un tampon de travail du même format.
-  auto pad = staging_for(*format, static_cast<std::uint32_t>(g.padded_width), static_cast<std::uint32_t>(g.padded_height),
-                         MemoryUse::Device, src->staging);
+  auto pad = staging_for(*format, static_cast<std::uint32_t>(g.padded_width),
+                         static_cast<std::uint32_t>(g.padded_height), MemoryUse::Device, src->staging);
   if (!pad) return std::unexpected(pad.error());
   const Staging& p = staging_[*pad];
-  const YuvView padded_yuv{.buffer = p.buffer->view(),
-                           .format = *format,
-                           .width = p.width,
-                           .height = p.height,
-                           .layout = p.layout};
+  const YuvView padded_yuv{
+      .buffer = p.buffer.view(), .format = *format, .width = p.width, .height = p.height, .layout = p.layout};
   const ColorSpec rife{.matrix = kernels::kRifeMatrix, .range = color->range, .siting = kernels::kRifeSiting};
   OpKey key;
   key.add(20);
@@ -76,8 +73,8 @@ std::expected<std::size_t, Refusal> VulkanKernelOps::score_slot(std::uint32_t wi
   std::size_t oldest = SIZE_MAX;
   for (std::size_t k = 0; k < scores_.size(); ++k) {
     const ScoreSlot& s = scores_[k];
-    if (s.partials->size() != VkDeviceSize{partials} * sizeof(float) ||
-        s.blocks->size() != VkDeviceSize{blocks} * sizeof(std::uint32_t)) {
+    if (s.partials.size() != VkDeviceSize{partials} * sizeof(float) ||
+        s.blocks.size() != VkDeviceSize{blocks} * sizeof(std::uint32_t)) {
       continue;
     }
     ++same;
@@ -85,12 +82,14 @@ std::expected<std::size_t, Refusal> VulkanKernelOps::score_slot(std::uint32_t wi
     if (oldest == SIZE_MAX || s.value < scores_[oldest].value) oldest = k;
   }
   if (same >= kScoreSlots && oldest != SIZE_MAX) {
-    if (auto ok = context_.wait_on_host(queue_.at(scores_[oldest].value)); !ok) return std::unexpected(ok.error());
+    if (auto ok = context_.wait_on_host(queue_.at(scores_[oldest].value)); !ok)
+      return std::unexpected(ok.error());
     return oldest;
   }
   auto p = Buffer::create(context_, memory_, VkDeviceSize{partials} * sizeof(float), MemoryUse::Readback);
   if (!p) return std::unexpected(p.error());
-  auto b = Buffer::create(context_, memory_, VkDeviceSize{blocks} * sizeof(std::uint32_t), MemoryUse::Readback);
+  auto b =
+      Buffer::create(context_, memory_, VkDeviceSize{blocks} * sizeof(std::uint32_t), MemoryUse::Readback);
   if (!b) return std::unexpected(b.error());
   scores_.push_back({.partials = std::move(*p), .blocks = std::move(*b)});
   return scores_.size() - 1;
@@ -99,8 +98,8 @@ std::expected<std::size_t, Refusal> VulkanKernelOps::score_slot(std::uint32_t wi
 std::expected<void, Refusal> VulkanKernelOps::measure(const DecodedFrame& a, const DecodedFrame& b) {
   if (a.format != b.format || a.width != b.width || a.height != b.height) {
     return refuse_pair(RefusalCode::ShapeInvalid,
-                       std::format("mesure : {}x{} et {}x{}, même format et même taille attendus", a.width, a.height,
-                                   b.width, b.height));
+                       std::format("mesure : {}x{} et {}x{}, même format et même taille attendus", a.width,
+                                   a.height, b.width, b.height));
   }
   auto sa = source(a);
   if (!sa) return std::unexpected(sa.error());
@@ -113,8 +112,8 @@ std::expected<void, Refusal> VulkanKernelOps::measure(const DecodedFrame& a, con
   const auto h = static_cast<std::uint32_t>(a.height);
   auto slot = score_slot(w, h);
   if (!slot) return std::unexpected(slot.error());
-  const BufferView partials = scores_[*slot].partials->view();
-  const BufferView blocks = scores_[*slot].blocks->view();
+  const BufferView partials = scores_[*slot].partials.view();
+  const BufferView blocks = scores_[*slot].blocks.view();
   OpKey key;
   key.add(30);
   add_source(key, *sa);
@@ -156,10 +155,10 @@ std::optional<PairScores> VulkanKernelOps::previous_scores() {
   }
   if (newest == nullptr) return std::nullopt;
   returned_order_ = newest->order;
-  const auto* partials = reinterpret_cast<const float*>(newest->partials->mapped());
+  const auto* partials = reinterpret_cast<const float*>(newest->partials.mapped());
   const double sum = scene_sum(std::span(partials, newest->count));
   std::uint32_t worst = 0;
-  std::memcpy(&worst, newest->blocks->mapped(), sizeof(worst));
+  std::memcpy(&worst, newest->blocks.mapped(), sizeof(worst));
   PairScores out = newest->scores;
   out.scene_score = sum / static_cast<double>(newest->area);
   out.worst_block = worst;

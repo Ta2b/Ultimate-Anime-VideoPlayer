@@ -118,7 +118,8 @@ TEST_CASE("KernelOps : refus nommés du contrat", "[vk_backend][kernels]") {
   const DecodedFrame frame =
       host_frame(synthetic_yuv(k::Format::Nv12, 18, 10, 3),
                  color_of(ColorMatrix::Bt709, ColorRange::Limited, ChromaSiting::Left), 3);
-  require_refusal(ops.ingest(frame, {}, small->tensor()), RefusalCode::ShapeInvalid);
+  // Plus petit, le tenseur demande une réduction ; plus grand, il est refusé.
+  require_refusal(ops.ingest(frame, {}, big->tensor()), RefusalCode::ShapeInvalid);
   CHECK_FALSE(ops.previous_scores());
 }
 

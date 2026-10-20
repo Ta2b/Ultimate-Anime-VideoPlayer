@@ -25,7 +25,8 @@ class Signature {
  public:
   Signature& add(std::int64_t v) {
     std::array<std::byte, 8> b{};
-    for (std::size_t k = 0; k < 8; ++k) b[k] = static_cast<std::byte>((static_cast<std::uint64_t>(v) >> (8 * k)) & 0xFFU);
+    for (std::size_t k = 0; k < 8; ++k)
+      b[k] = static_cast<std::byte>((static_cast<std::uint64_t>(v) >> (8 * k)) & 0xFFU);
     hash_ = fnv1a(b, hash_);
     return *this;
   }
@@ -96,8 +97,9 @@ class QueryPool {
     if (pool_ != VK_NULL_HANDLE) fn_.destroy(context_.device(), pool_, nullptr);
   }
   Done create() {
-    const VkQueryPoolCreateInfo info{
-        .sType = VK_STRUCTURE_TYPE_QUERY_POOL_CREATE_INFO, .queryType = VK_QUERY_TYPE_TIMESTAMP, .queryCount = 2};
+    const VkQueryPoolCreateInfo info{.sType = VK_STRUCTURE_TYPE_QUERY_POOL_CREATE_INFO,
+                                     .queryType = VK_QUERY_TYPE_TIMESTAMP,
+                                     .queryCount = 2};
     return check(fn_.create(context_.device(), &info, nullptr, &pool_), "vkCreateQueryPool");
   }
   VkQueryPool handle() const { return pool_; }
@@ -165,8 +167,8 @@ std::span<const PresetTable> preset_tables() {
   return kTables;
 }
 
-Autotuner::Autotuner(VkContext& context, MemoryAllocator& memory, PipelineCache& pipelines, DeviceProfile profile,
-                     std::filesystem::path cache_file, TunerOptions options)
+Autotuner::Autotuner(VkContext& context, MemoryAllocator& memory, PipelineCache& pipelines,
+                     DeviceProfile profile, std::filesystem::path cache_file, TunerOptions options)
     : context_(context),
       memory_(memory),
       pipelines_(pipelines),
@@ -206,25 +208,32 @@ std::expected<void, Refusal> Autotuner::save() const {
   const std::filesystem::path temporary = cache_file_.string() + ".tmp";
   {
     std::ofstream out(temporary, std::ios::trunc);
-    for (const auto& [key, choice] : cache_) out << key << '\t' << choice.variant << '\t' << tuning_text(choice) << '\n';
-    if (!out) return std::unexpected(Refusal{RefusalCode::CacheIo, std::format("écriture de {}", temporary.string())});
+    for (const auto& [key, choice] : cache_)
+      out << key << '\t' << choice.variant << '\t' << tuning_text(choice) << '\n';
+    if (!out)
+      return std::unexpected(
+          Refusal{RefusalCode::CacheIo, std::format("écriture de {}", temporary.string())});
   }
   std::filesystem::rename(temporary, cache_file_, error);
-  if (error) return std::unexpected(Refusal{RefusalCode::CacheIo, std::format("{} : {}", cache_file_.string(), error.message())});
+  if (error)
+    return std::unexpected(
+        Refusal{RefusalCode::CacheIo, std::format("{} : {}", cache_file_.string(), error.message())});
   return {};
 }
 
 std::expected<KernelChoice, Refusal> Autotuner::choose(const ir::Graph& graph, std::size_t node,
                                                        std::span<const KernelChoice> candidates,
-                                                       std::string_view scope, std::stop_token stop) {
+                                                       std::string_view scope, const std::stop_token& stop) {
   if (candidates.empty()) return std::unexpected(Refusal{RefusalCode::InputMismatch, "aucun candidat"});
   if (candidates.size() == 1) return candidates.front();
   const std::uint64_t signature = layer_signature(graph, node);
-  const auto known = [&](const KernelChoice& c) { return std::ranges::find(candidates, c) != candidates.end(); };
+  const auto known = [&](const KernelChoice& c) {
+    return std::ranges::find(candidates, c) != candidates.end();
+  };
   for (const PresetTable& table : preset_tables()) {
     if (table.family != profile_.family) continue;
     for (const PresetEntry& e : table.entries) {
-      const KernelChoice c{.variant = std::string(e.variant), .tuning = {e.tuning0, e.tuning1}};
+      KernelChoice c{.variant = std::string(e.variant), .tuning = {e.tuning0, e.tuning1}};
       if (e.signature == signature && known(c)) {
         ++cached_;
         return c;
@@ -247,7 +256,9 @@ std::expected<KernelChoice, Refusal> Autotuner::choose(const ir::Graph& graph, s
     }
     if (!best || m->median_us < best->median_us) best = std::move(*m);
   }
-  if (!best) return std::unexpected(*last_error);
+  if (!best) {
+    return std::unexpected(last_error.value_or(Refusal{RefusalCode::InputMismatch, "aucun candidat mesuré"}));
+  }
   ++measured_;
   cache_[key] = best->choice;
   return best->choice;
@@ -263,7 +274,8 @@ std::expected<Measured, Refusal> Autotuner::measure(const ir::Graph& graph, std:
   std::map<std::uint32_t, Buffer> tensors;
   std::vector<Buffer> blobs;
   for (const auto& bytes : program.blobs) {
-    auto buffer = Buffer::create(context_, memory_, std::max<std::size_t>(bytes.size(), 4), MemoryUse::Device);
+    auto buffer =
+        Buffer::create(context_, memory_, std::max<std::size_t>(bytes.size(), 4), MemoryUse::Device);
     if (!buffer) return std::unexpected(buffer.error());
     if (auto ok = upload(context_, memory_, *buffer, 0, bytes); !ok) return std::unexpected(ok.error());
     blobs.push_back(std::move(*buffer));
@@ -322,8 +334,9 @@ std::expected<Measured, Refusal> Autotuner::measure(const ir::Graph& graph, std:
     if (period_ns_ <= 0.0) return {};
     return recorder->commands([&](VkCommandBuffer cb) {
       if (index == 0) queries.fn().reset(cb, queries.handle(), 0, 2);
-      queries.fn().write(cb, index == 0 ? VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT : VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT,
-                         queries.handle(), index);
+      queries.fn().write(
+          cb, index == 0 ? VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT : VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT,
+          queries.handle(), index);
     });
   };
   if (auto ok = stamp(0); !ok) return std::unexpected(ok.error());
@@ -333,7 +346,8 @@ std::expected<Measured, Refusal> Autotuner::measure(const ir::Graph& graph, std:
       const Dispatch& d = program.dispatches[k];
       views.clear();
       for (const Binding& b : d.bindings) views.push_back(view(b));
-      if (auto ok = recorder->dispatch(*pipelines[k], views, {}, std::as_bytes(std::span(d.push)), d.groups); !ok) {
+      if (auto ok = recorder->dispatch(*pipelines[k], views, {}, std::as_bytes(std::span(d.push)), d.groups);
+          !ok) {
         return std::unexpected(ok.error());
       }
     }
@@ -351,8 +365,8 @@ std::expected<Measured, Refusal> Autotuner::measure(const ir::Graph& graph, std:
     double us = std::chrono::duration<double, std::micro>(host).count();
     if (period_ns_ > 0.0) {
       std::array<std::uint64_t, 2> ticks{};
-      if (auto ok = check(queries.fn().results(context_.device(), queries.handle(), 0, 2, sizeof(ticks), ticks.data(),
-                                               sizeof(std::uint64_t), VK_QUERY_RESULT_64_BIT),
+      if (auto ok = check(queries.fn().results(context_.device(), queries.handle(), 0, 2, sizeof(ticks),
+                                               ticks.data(), sizeof(std::uint64_t), VK_QUERY_RESULT_64_BIT),
                           "vkGetQueryPoolResults");
           !ok) {
         return std::unexpected(ok.error());

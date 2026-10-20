@@ -37,7 +37,7 @@ using BuildReport = std::function<void(float fraction, const std::string& stage)
 // l'abaissement, Cancelled (stop demandé), ceux de l'autotuner. tuner nul : choix par défaut.
 std::expected<ArtifactData, Refusal> build_network(const BuildRequest& request, const DeviceProfile& profile,
                                                    Autotuner* tuner, const BuildReport& report,
-                                                   std::stop_token stop);
+                                                   const std::stop_token& stop);
 
 // Le graphe d'un modèle importé, à cette forme, optimisé, dans la précision demandée.
 std::expected<ir::Graph, Refusal> prepare_graph(const BuildRequest& request, const Target& target);
