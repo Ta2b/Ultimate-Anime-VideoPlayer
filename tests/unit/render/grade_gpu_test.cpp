@@ -100,10 +100,10 @@ struct Gpu {
 
 // Saute sans appareil ; échoue quand la couche de validation est exigée et absente.
 void require_device(const Gpu& gpu) {
-  require_device(gpu);
   if (gpu.layer_missing && ajp::test::validation_mode() == ajp::test::ValidationMode::Require) {
     FAIL("couche de validation Vulkan exigée (AJP_TEST_VULKAN_VALIDATION=require) et absente");
   }
+  if (gpu.vk == nullptr) SKIP("pas d'appareil Vulkan");
 }
 
 // La sortie SDR des tests : BT.709, gamma 2,2 (celle d'un écran SDR sous libplacebo).
