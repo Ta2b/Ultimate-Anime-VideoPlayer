@@ -335,8 +335,11 @@ std::expected<RingStage::Output, Refusal> UpscaleStage::produce(const DecodedFra
   const Output made{.pts_us = instant.pts_us, .left = previous_->id, .right = frame.id};
   if (warps_spanned()) {
     const gpu::Tensor& out = middle_out_->tensor();
-    if (auto ok = interpolate_by_motion(output, spanned(current_ ^ 1U), spanned(current_), out); !ok)
+    if (auto ok = gmfss() ? interpolate_gmfss_spanned(output, spanned(current_ ^ 1U), spanned(current_), out)
+                          : interpolate_by_motion(output, spanned(current_ ^ 1U), spanned(current_), out);
+        !ok) {
       return std::unexpected(std::move(ok.error()));
+    }
     if (auto ok = write_slot(out, slot, sync); !ok) return std::unexpected(std::move(ok.error()));
     if (last) previous_ = Previous{.pts_us = frame.pts_us, .id = frame.id, .epoch = frame.epoch};
     return made;

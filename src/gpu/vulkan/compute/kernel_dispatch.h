@@ -155,12 +155,32 @@ struct SplatPush {
   std::uint32_t channels;
   std::uint32_t group;  // plans par groupe de l'axe z
   float s;
+  std::uint32_t motion_width;  // le mouvement sur sa grille (spec MotionGrid)
+  std::uint32_t motion_height;
+  float motion_scale;
+  float motion_x;
+  float motion_y;
+  std::uint32_t direct;  // même grille : lu tel quel
 };
 
 struct SplatNormalizePush {
   std::uint32_t width;
   std::uint32_t height;
   std::uint32_t channels;
+  std::uint32_t coverage;  // un plan de plus en sortie
+};
+
+struct GmfssComposePush {
+  std::uint32_t width;  // la sortie, scale × le travail
+  std::uint32_t height;
+  std::uint32_t low_width;
+  std::uint32_t low_height;
+  std::uint32_t scale;
+  std::uint32_t fusion_width;
+  std::uint32_t fusion_height;
+  std::uint32_t window_x;
+  std::uint32_t window_y;
+  float t;
 };
 
 // scene_diff, block_diff.
@@ -182,7 +202,8 @@ struct FillPush {
   float value;
 };
 
-static_assert(sizeof(SplatPush) == 20 && sizeof(SplatNormalizePush) == 12 && sizeof(FillPush) == 8);
+static_assert(sizeof(SplatPush) == 44 && sizeof(SplatNormalizePush) == 16 && sizeof(FillPush) == 8);
+static_assert(sizeof(GmfssComposePush) == 40);
 
 // Constantes 0 à 5 de yuv.glsl : format, matrice, plage, octets par échantillon, chroma
 // entrelacée, chroma 4:2:0, tirées de kernels::info.

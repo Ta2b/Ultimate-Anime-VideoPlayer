@@ -8,6 +8,8 @@
 //
 // GMFSS Fortuna (kernels/spec/gmfss.h) remplace RIFE, à la taille de travail : son graphe « paire »
 // une fois par paire, puis par image intermédiaire six softmax splats et son graphe « fusion ».
+// Déformé après SPAN, chaque image intermédiaire se compose des images agrandies splattées par son
+// flot, corrigées du résidu de la fusion : une passe de SPAN par image source au lieu d'une par sortie.
 // DistilDRBA (kernels/spec/distil_drba.h) aussi, à la taille de travail : une passe de son graphe
 // par image intermédiaire, sur trois images ; il lit l'image d'après la paire, une image de retard.
 //
@@ -20,6 +22,7 @@
 #include <expected>
 #include <memory>
 #include <optional>
+#include <span>
 #include <string>
 #include <utility>
 #include <vector>
@@ -31,6 +34,8 @@
 #include "core/ring.h"
 #include "gpu/backend.h"
 #include "gpu/kernel_ops.h"
+#include "kernels/spec/gmfss.h"
+#include "kernels/spec/warp.h"
 
 namespace ajp::app::play {
 
@@ -67,9 +72,11 @@ struct UpscaleSetup {
   // donne, et le warp déforme les images de travail avec ce mouvement mis à l'échelle.
   int rife_width = 0;
   int rife_height = 0;
-  // Variante mouvement de RIFE avec SPAN : SPAN une fois par image source, le warp à la taille de
-  // sortie sur les images agrandies (kernels/spec/warp.h : a, b et la sortie à une taille, le
-  // mouvement mis à l'échelle). Sans effet pour les autres estimateurs ou sans SPAN.
+  // Variante mouvement de RIFE ou GMFSS avec SPAN : SPAN une fois par image source, le warp à la
+  // taille de sortie sur les images agrandies (kernels/spec/warp.h : a, b et la sortie à une taille,
+  // le mouvement mis à l'échelle ; kernels/spec/gmfss.h : les images agrandies splattées par le flot
+  // du niveau 1, corrigées du résidu de la fusion). Sans effet pour les autres estimateurs ou sans
+  // SPAN.
   bool warp_after_span = false;
   std::vector<RingSlotDesc> slots;  // ring de render, à la taille de sortie de SPAN
 };
@@ -146,9 +153,16 @@ class UpscaleStage final : public RingStage {
   bool rife_in_pair_ = false;  // rife_in_ tient les images de la paire en cours
   bool rife_time_ = true;      // faux si le backend n'a pas rife_time
   // GMFSS (upscale_gmfss.cpp) : ses tenseurs, rangés dans l'ordre de ses moteurs ; puis l'image
-  // intermédiaire output + 1 sur outputs_ dans middle_.
+  // intermédiaire output + 1 sur outputs_ dans middle_, ou, déformée après SPAN, de a et b (les
+  // images agrandies) dans out.
   std::expected<void, Refusal> allocate_gmfss();
   std::expected<void, Refusal> interpolate_gmfss(std::uint32_t output);
+  std::expected<void, Refusal> interpolate_gmfss_spanned(std::uint32_t output, const gpu::Tensor& a,
+                                                         const gpu::Tensor& b, const gpu::Tensor& out);
+  // Le graphe « paire » à la première image intermédiaire de la paire, puis les splats de l'instant
+  // (les six de la fusion, et extra) et le graphe « fusion » dans rife_out_.
+  std::expected<void, Refusal> run_gmfss(std::uint32_t output,
+                                         std::span<const gpu::KernelOps::SplatJob> extra);
   // Le mouvement est estimé à la taille de RIFE puis déformé au warp (variante mouvement), plutôt
   // que l'image de RIFE elle-même.
   bool by_motion() const { return setup_.rife_motion != nullptr; }
@@ -157,7 +171,9 @@ class UpscaleStage final : public RingStage {
     return small_[index] ? small_[index]->tensor() : rgb_[index]->tensor();
   }
   // Warp après SPAN : les images sources sont agrandies à l'ingestion, dans spanned_.
-  bool warps_spanned() const { return setup_.warp_after_span && by_motion() && setup_.engine != nullptr; }
+  bool warps_spanned() const {
+    return setup_.warp_after_span && (by_motion() || gmfss()) && setup_.engine != nullptr;
+  }
   // SPAN de l'image en cours dans son tampon de spanned_, une fois (aucune passe sur un dessin tenu :
   // celui de la précédente).
   std::expected<void, Refusal> span_current();
@@ -229,8 +245,17 @@ class UpscaleStage final : public RingStage {
     std::vector<gpu::Tensor> pair_outputs;   // dans l'ordre de output_names() du moteur paire
     std::vector<gpu::Tensor> fusion_inputs;  // dans l'ordre de input_names() du moteur fusion
     std::vector<GmfssSplat> splats;
-    std::vector<gpu::KernelOps::SplatJob> jobs;  // les six splats de l'instant, un seul passage
+    std::vector<gpu::KernelOps::SplatJob> jobs;  // les splats de l'instant, un seul passage
     std::optional<gpu::Tensor> time;             // union : l'instant de l'image intermédiaire, pour sa fusion
+    // Déformation après SPAN : le flot du niveau 1 de chaque côté, sa grille (spec MotionGrid) pour
+    // l'image de travail et pour l'image agrandie, la fenêtre de la fusion ; les images de travail
+    // splattées (1 × 4 × h × w, couverture comprise) et les agrandies (1 × 4 × 2h × 2w).
+    std::array<gpu::Tensor, 2> level1{};
+    kernels::MotionGrid work_grid;
+    kernels::MotionGrid spanned_grid;
+    kernels::Window window;
+    std::array<std::unique_ptr<gpu::TensorBuffer>, 2> low;
+    std::array<std::unique_ptr<gpu::TensorBuffer>, 2> high;
   };
   GmfssBuffers gmfss_;
   std::uint64_t gmfss_pairs_ = 0;

@@ -7,6 +7,7 @@
 #include <cmath>
 #include <cstddef>
 #include <memory>
+#include <utility>
 #include <vector>
 
 #include <catch2/catch_test_macros.hpp>
@@ -15,6 +16,7 @@
 #include "kernels/ref/half.h"
 #include "kernels/spec/gmfss.h"
 #include "kernels/spec/tolerance.h"
+#include "kernels/spec/warp.h"
 
 namespace {
 
@@ -27,12 +29,12 @@ constexpr int kH = 24;
 constexpr int kChannels = 19;  // deux groupes de plans, le second incomplet
 
 // Des plans dans [lo, hi], déjà arrondis en FP16 comme le tenseur les garde.
-std::vector<k::PlaneF> planes(int count, int seed, float lo, float hi) {
+std::vector<k::PlaneF> planes_of(int w, int h, int count, int seed, float lo, float hi) {
   std::vector<k::PlaneF> out;
   for (int c = 0; c < count; ++c) {
-    k::PlaneF plane(kW, kH);
-    for (int y = 0; y < kH; ++y) {
-      for (int x = 0; x < kW; ++x) {
+    k::PlaneF plane(w, h);
+    for (int y = 0; y < h; ++y) {
+      for (int x = 0; x < w; ++x) {
         const float u = 0.5F + 0.5F * std::sin(0.37F * static_cast<float>(x + seed * 7 + c * 3) +
                                                0.23F * static_cast<float>(y - seed));
         plane.at(x, y) = k::ref::half_to_float(k::ref::float_to_half(lo + (hi - lo) * u));
@@ -41,6 +43,10 @@ std::vector<k::PlaneF> planes(int count, int seed, float lo, float hi) {
     out.push_back(std::move(plane));
   }
   return out;
+}
+
+std::vector<k::PlaneF> planes(int count, int seed, float lo, float hi) {
+  return planes_of(kW, kH, count, seed, lo, hi);
 }
 
 std::vector<float> flat(const std::vector<k::PlaneF>& planes) {
@@ -138,8 +144,8 @@ TEST_CASE("Backend TensorRT : les six splats d'un instant en un passage", "[back
     for (std::size_t i = 0; i < got.size(); ++i) worst = std::max(worst, std::fabs(got[i] - expected[i]));
     CHECK(worst <= k::tolerance::kRgbF16);
   }
-  // Au plus huit splats par passage ; un travail faux refuse le lot entier.
-  std::vector<gpu::KernelOps::SplatJob> many(9, jobs[0]);
+  // Au plus douze splats par passage ; un travail faux refuse le lot entier.
+  std::vector<gpu::KernelOps::SplatJob> many(13, jobs[0]);
   const auto too_many = ops.soft_splat_all(many);
   REQUIRE_FALSE(too_many);
   CHECK(too_many.error().code == RefusalCode::FieldOutOfRange);
@@ -147,4 +153,118 @@ TEST_CASE("Backend TensorRT : les six splats d'un instant en un passage", "[back
   const auto shape = ops.soft_splat_all(jobs);
   REQUIRE_FALSE(shape);
   CHECK(shape.error().code == RefusalCode::ShapeInvalid);
+}
+
+TEST_CASE(
+    "Backend TensorRT : le flot du niveau 1 pousse l'image de travail et l'agrandie, puis la composition",
+    "[backend_tensorrt][cuda][gmfss]") {
+  if (!has_cuda()) SKIP("pas de GPU NVIDIA");
+  Loaded loaded;
+  REQUIRE(loaded.backend != nullptr);
+  gpu::KernelOps& ops = *loaded.backend->kernels();
+  // Travail 20 × 12 dans des plans remplis 32 × 16, fenêtre en (6, 2) ; flot du niveau 1 en 16 × 8 ;
+  // sortie 40 × 24.
+  constexpr int w = 20;
+  constexpr int h = 12;
+  constexpr int mw = 16;
+  constexpr int mh = 8;
+  constexpr int ow = 40;
+  constexpr int oh = 24;
+  constexpr int fw = 32;
+  constexpr int fh = 16;
+  constexpr k::Window window{.x = 6, .y = 2, .width = w, .height = h};
+  constexpr k::MotionGrid work_grid{.scale = 2.0F, .x = 3.0F, .y = 1.0F};
+  constexpr k::MotionGrid spanned_grid{.scale = 4.0F, .x = 3.0F, .y = 1.0F};
+  constexpr float t = 0.3F;
+  int seed = 20;
+  const auto alloc = [&](int channels, int width, int height) {
+    auto tensor = loaded.backend->alloc_tensor(gpu::TensorType::F16, {.dims = {1, channels, height, width}});
+    REQUIRE(tensor);
+    return std::move(*tensor);
+  };
+  const auto make = [&](int width, int height, int count, float lo, float hi) {
+    auto tensor = alloc(count, width, height);
+    std::vector<k::PlaneF> values = planes_of(width, height, count, seed++, lo, hi);
+    upload(tensor->tensor(), flat(values));
+    return std::pair{std::move(tensor), std::move(values)};
+  };
+  auto [ta, work_a] = make(w, h, 3, 0.0F, 1.0F);
+  auto [tb, work_b] = make(w, h, 3, 0.0F, 1.0F);
+  auto [sa, span_a] = make(ow, oh, 3, 0.0F, 1.0F);
+  auto [sb, span_b] = make(ow, oh, 3, 0.0F, 1.0F);
+  auto [tf, fusion] = make(fw, fh, 3, 0.0F, 1.0F);
+  std::array<k::ref::SplatMotion, 2> motions;
+  std::array<std::unique_ptr<gpu::TensorBuffer>, 2> tm;
+  for (std::size_t side = 0; side < 2; ++side) {
+    const std::vector<k::PlaneF> flow = planes_of(mw, mh, 2, seed++, -1.5F, 1.5F);
+    const std::vector<k::PlaneF> metric =
+        planes_of(mw, mh, 1, seed++, -k::kGmfssMetricLimit, k::kGmfssMetricLimit);
+    motions[side] = {{flow[0], flow[1], metric[0]}};
+    tm[side] = alloc(k::kGmfssMotionChannels, mw, mh);
+    upload(tm[side]->tensor(), flat({flow[0], flow[1], metric[0]}));
+  }
+  std::array<std::unique_ptr<gpu::TensorBuffer>, 2> low{alloc(4, w, h), alloc(4, w, h)};
+  std::array<std::unique_ptr<gpu::TensorBuffer>, 2> high{alloc(4, ow, oh), alloc(4, ow, oh)};
+  const std::array<const std::vector<k::PlaneF>*, 2> works{&work_a, &work_b};
+  const std::array<const std::vector<k::PlaneF>*, 2> spans{&span_a, &span_b};
+  const std::array<const gpu::Tensor*, 2> work_tensors{&ta->tensor(), &tb->tensor()};
+  const std::array<const gpu::Tensor*, 2> span_tensors{&sa->tensor(), &sb->tensor()};
+  std::vector<gpu::KernelOps::SplatJob> jobs;
+  for (std::size_t side = 0; side < 2; ++side) {
+    const float s = k::gmfss_side_time(static_cast<int>(side), t);
+    jobs.push_back({.source = *work_tensors[side],
+                    .motion = tm[side]->tensor(),
+                    .s = s,
+                    .out = low[side]->tensor(),
+                    .grid = work_grid});
+    jobs.push_back({.source = *span_tensors[side],
+                    .motion = tm[side]->tensor(),
+                    .s = s,
+                    .out = high[side]->tensor(),
+                    .grid = spanned_grid});
+  }
+  REQUIRE(ops.soft_splat_all(jobs));
+  const auto worst_of = [](const std::vector<float>& got, const std::vector<float>& expected) {
+    REQUIRE(got.size() == expected.size());
+    float worst = 0.0F;
+    for (std::size_t i = 0; i < got.size(); ++i) worst = std::max(worst, std::fabs(got[i] - expected[i]));
+    return worst;
+  };
+  const auto splatted = [&](const gpu::Tensor& tensor, int width, int height) {
+    const std::vector<float> values = download(tensor);
+    k::ref::Splatted out{.planes = std::vector<k::PlaneF>(3, k::PlaneF(width, height)),
+                         .coverage = k::PlaneF(width, height)};
+    const std::size_t area = static_cast<std::size_t>(width) * static_cast<std::size_t>(height);
+    for (std::size_t c = 0; c < 3; ++c)
+      std::copy_n(values.begin() + static_cast<std::ptrdiff_t>(c * area), area, out.planes[c].data.begin());
+    std::copy_n(values.begin() + static_cast<std::ptrdiff_t>(3 * area), area, out.coverage.data.begin());
+    return out;
+  };
+  std::array<k::ref::Splatted, 2> got_low;
+  std::array<k::ref::Splatted, 2> got_high;
+  for (std::size_t side = 0; side < 2; ++side) {
+    CAPTURE(side);
+    const float s = k::gmfss_side_time(static_cast<int>(side), t);
+    got_low[side] = splatted(low[side]->tensor(), w, h);
+    got_high[side] = splatted(high[side]->tensor(), ow, oh);
+    const auto want_low = k::ref::soft_splat_at(*works[side], motions[side], s, work_grid);
+    const auto want_high = k::ref::soft_splat_at(*spans[side], motions[side], s, spanned_grid);
+    REQUIRE((want_low && want_high));
+    CHECK(worst_of(flat(got_low[side].planes), flat(want_low->planes)) <= k::tolerance::kRgbF16);
+    CHECK(worst_of(got_low[side].coverage.data, want_low->coverage.data) <= k::tolerance::kRgbF16);
+    CHECK(worst_of(flat(got_high[side].planes), flat(want_high->planes)) <= k::tolerance::kRgbF16);
+    CHECK(worst_of(got_high[side].coverage.data, want_high->coverage.data) <= k::tolerance::kRgbF16);
+  }
+  auto out = alloc(3, ow, oh);
+  REQUIRE(ops.gmfss_compose(high[0]->tensor(), high[1]->tensor(), low[0]->tensor(), low[1]->tensor(),
+                            tf->tensor(), window, t, out->tensor()));
+  const auto want =
+      k::ref::gmfss_compose(got_high[0], got_high[1], got_low[0], got_low[1], fusion, window, t);
+  REQUIRE(want);
+  CHECK(worst_of(download(out->tensor()), flat(*want)) <= k::tolerance::kRgbF16);
+  const auto outside =
+      ops.gmfss_compose(high[0]->tensor(), high[1]->tensor(), low[0]->tensor(), low[1]->tensor(),
+                        tf->tensor(), k::Window{.x = 14, .y = 2, .width = w, .height = h}, t, out->tensor());
+  REQUIRE_FALSE(outside);
+  CHECK(outside.error().code == RefusalCode::ShapeInvalid);
 }

@@ -136,10 +136,10 @@ std::expected<void, Refusal> VulkanKernelOps::soft_splat_all(std::span<const Spl
     if (!vs) return std::unexpected(vs.error());
     auto vm = tensor_view(job.motion, kernels::kGmfssMotionChannels, "soft_splat : mouvement");
     if (!vm) return std::unexpected(vm.error());
-    auto vo = tensor_view(job.out, vs->planes, "soft_splat : sortie");
+    auto vo = tensor_view(job.out, 0, "soft_splat : sortie");  // les plans de source, ou un de plus
     if (!vo) return std::unexpected(vo.error());
     bytes += KernelRunner::splat_sums_bytes(*vs);
-    views.push_back({.source = *vs, .motion = *vm, .s = job.s, .out = *vo});
+    views.push_back({.source = *vs, .motion = *vm, .s = job.s, .out = *vo, .grid = job.grid});
   }
   if (!splat_sums_ || splat_sums_->size() < bytes) {
     // Les enregistrements faits sur l'ancien tampon ne servent plus (sa poignée est dans leur clé),
@@ -158,9 +158,41 @@ std::expected<void, Refusal> VulkanKernelOps::soft_splat_all(std::span<const Spl
   for (const KernelRunner::SplatViews& v : views) {
     for (const TensorView* t : {&v.source, &v.motion, &v.out}) add_view(key, *t);
     key.add(std::bit_cast<std::uint32_t>(v.s));
+    for (const float g : {v.grid.scale, v.grid.x, v.grid.y}) key.add(std::bit_cast<std::uint32_t>(g));
   }
   key.add(detail::handle_bits(sums.buffer));
   auto rec = recording(key, [&](Recorder& r) { return runner_.soft_splat_all(r, views, sums); });
+  if (!rec) return std::unexpected(rec.error());
+  return submit(**rec);
+}
+
+std::expected<void, Refusal> VulkanKernelOps::gmfss_compose(const Tensor& high_a, const Tensor& high_b,
+                                                            const Tensor& low_a, const Tensor& low_b,
+                                                            const Tensor& fusion,
+                                                            const kernels::Window& window, float t,
+                                                            const Tensor& out) {
+  auto va = tensor_view(high_a, 4, "gmfss_compose : agrandie a");
+  if (!va) return std::unexpected(va.error());
+  auto vb = tensor_view(high_b, 4, "gmfss_compose : agrandie b");
+  if (!vb) return std::unexpected(vb.error());
+  auto la = tensor_view(low_a, 4, "gmfss_compose : travail a");
+  if (!la) return std::unexpected(la.error());
+  auto lb = tensor_view(low_b, 4, "gmfss_compose : travail b");
+  if (!lb) return std::unexpected(lb.error());
+  auto vf = tensor_view(fusion, 3, "gmfss_compose : fusion");
+  if (!vf) return std::unexpected(vf.error());
+  auto vo = tensor_view(out, 3, "gmfss_compose : sortie");
+  if (!vo) return std::unexpected(vo.error());
+  OpKey key;
+  key.add(46);
+  for (const TensorView* v : {&*va, &*vb, &*la, &*lb, &*vf, &*vo}) add_view(key, *v);
+  key.add(static_cast<std::uint64_t>(static_cast<std::uint32_t>(window.x)) << 32 |
+          static_cast<std::uint32_t>(window.y));
+  key.add(static_cast<std::uint64_t>(static_cast<std::uint32_t>(window.width)) << 32 |
+          static_cast<std::uint32_t>(window.height));
+  key.add(std::bit_cast<std::uint32_t>(t));
+  auto rec = recording(
+      key, [&](Recorder& r) { return runner_.gmfss_compose(r, *va, *vb, *la, *lb, *vf, window, t, *vo); });
   if (!rec) return std::unexpected(rec.error());
   return submit(**rec);
 }

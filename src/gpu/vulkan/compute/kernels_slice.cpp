@@ -85,16 +85,20 @@ Done KernelRunner::soft_splat_all(Recorder& recorder, std::span<const SplatViews
     if (!(job.s >= 0.0F && job.s <= 1.0F)) {
       return refuse(RefusalCode::FieldOutOfRange, std::format("splat : instant {} hors de [0, 1]", job.s));
     }
+    if (!(job.grid.scale > 0.0F)) {
+      return refuse(RefusalCode::FieldOutOfRange,
+                    std::format("splat : échelle du mouvement {}", job.grid.scale));
+    }
     if (job.source.planes == 0) return refuse(RefusalCode::InputMismatch, "splat : source sans plan");
     if (auto ok = check_tensor(job.source, job.source.planes, enabled, "splat : source"); !ok) return ok;
     if (auto ok = check_tensor(job.motion, kernels::kGmfssMotionChannels, enabled, "splat : mouvement"); !ok)
       return ok;
-    if (auto ok = check_tensor(job.out, job.source.planes, enabled, "splat : sortie"); !ok) return ok;
-    if (auto ok = check_same_size(job.source.width, job.source.height, job.motion.width, job.motion.height,
-                                  "splat : source et mouvement");
-        !ok) {
-      return ok;
+    if (job.out.planes != job.source.planes && job.out.planes != job.source.planes + 1) {
+      return refuse(RefusalCode::InputMismatch,
+                    std::format("splat : sortie de {} plans pour {} plans de source", job.out.planes,
+                                job.source.planes));
     }
+    if (auto ok = check_tensor(job.out, job.out.planes, enabled, "splat : sortie"); !ok) return ok;
     if (auto ok = check_same_size(job.source.width, job.source.height, job.out.width, job.out.height,
                                   "splat : source et sortie");
         !ok) {
@@ -124,7 +128,13 @@ Done KernelRunner::soft_splat_all(Recorder& recorder, std::span<const SplatViews
   }
   for (std::size_t j = 0; j < jobs.size(); ++j) {
     const SplatViews& job = jobs[j];
-    const detail::SplatPush push{job.source.width, job.source.height, job.source.planes, kSplatGroup, job.s};
+    // Même grille, sans décalage ni échelle : le mouvement du pixel, tel quel.
+    const bool direct = job.grid.scale == 1.0F && job.grid.x == 0.0F && job.grid.y == 0.0F &&
+                        job.motion.width == job.source.width && job.motion.height == job.source.height;
+    const detail::SplatPush push{
+        job.source.width, job.source.height, job.source.planes, kSplatGroup, job.s,
+        job.motion.width, job.motion.height, job.grid.scale,    job.grid.x,  job.grid.y,
+        direct ? 1U : 0U};
     const std::array scatter{job.source.buffer, job.motion.buffer, views[j]};
     if (auto ok = detail::run(*pipelines_, recorder, "gmfss_splat", job.source.precision, {}, scatter, {},
                               bytes_of(push),
@@ -137,7 +147,8 @@ Done KernelRunner::soft_splat_all(Recorder& recorder, std::span<const SplatViews
   }
   for (std::size_t j = 0; j < jobs.size(); ++j) {
     const SplatViews& job = jobs[j];
-    const detail::SplatNormalizePush normalize{job.source.width, job.source.height, job.source.planes};
+    const detail::SplatNormalizePush normalize{job.source.width, job.source.height, job.source.planes,
+                                               job.out.planes > job.source.planes ? 1U : 0U};
     const std::array buffers{views[j], job.out.buffer};
     if (auto ok =
             detail::run(*pipelines_, recorder, "gmfss_normalize", job.source.precision, {}, buffers, {},
@@ -148,6 +159,69 @@ Done KernelRunner::soft_splat_all(Recorder& recorder, std::span<const SplatViews
     }
   }
   return {};
+}
+
+Done KernelRunner::gmfss_compose(Recorder& recorder, const TensorView& high_a, const TensorView& high_b,
+                                 const TensorView& low_a, const TensorView& low_b, const TensorView& fusion,
+                                 const kernels::Window& window, float t, const TensorView& out) {
+  const Features& enabled = context_->caps().enabled;
+  if (!(t >= 0.0F && t <= 1.0F)) {
+    return refuse(RefusalCode::FieldOutOfRange, std::format("composition : instant {} hors de [0, 1]", t));
+  }
+  if (auto ok = check_tensor(high_a, 4, enabled, "composition : agrandie a"); !ok) return ok;
+  if (auto ok = check_tensor(high_b, 4, enabled, "composition : agrandie b"); !ok) return ok;
+  if (auto ok = check_tensor(low_a, 4, enabled, "composition : travail a"); !ok) return ok;
+  if (auto ok = check_tensor(low_b, 4, enabled, "composition : travail b"); !ok) return ok;
+  if (auto ok = check_tensor(fusion, 3, enabled, "composition : fusion"); !ok) return ok;
+  if (auto ok = check_tensor(out, 3, enabled, "composition : sortie"); !ok) return ok;
+  if (auto ok =
+          check_same_size(out.width, out.height, high_a.width, high_a.height, "composition : agrandie a");
+      !ok) {
+    return ok;
+  }
+  if (auto ok =
+          check_same_size(out.width, out.height, high_b.width, high_b.height, "composition : agrandie b");
+      !ok) {
+    return ok;
+  }
+  if (auto ok =
+          check_same_size(low_a.width, low_a.height, low_b.width, low_b.height, "composition : travail");
+      !ok) {
+    return ok;
+  }
+  if (out.width % low_a.width != 0 || out.height % low_a.height != 0 ||
+      out.width / low_a.width != out.height / low_a.height) {
+    return refuse(RefusalCode::InputMismatch,
+                  std::format("composition : sortie {}x{} pour un travail {}x{}, multiple entier attendu",
+                              out.width, out.height, low_a.width, low_a.height));
+  }
+  if (window.x < 0 || window.y < 0 || window.width != static_cast<int>(low_a.width) ||
+      window.height != static_cast<int>(low_a.height) ||
+      static_cast<std::uint32_t>(window.x) + low_a.width > fusion.width ||
+      static_cast<std::uint32_t>(window.y) + low_a.height > fusion.height) {
+    return refuse(RefusalCode::InputMismatch,
+                  std::format("composition : fenêtre {}x{} en ({}, {}) hors de la fusion {}x{}", window.width,
+                              window.height, window.x, window.y, fusion.width, fusion.height));
+  }
+  for (const TensorView* v : {&high_b, &low_a, &low_b, &fusion, &out}) {
+    if (v->precision != high_a.precision) {
+      return refuse(RefusalCode::InputMismatch, "composition : tenseurs de précisions différentes");
+    }
+  }
+  const detail::GmfssComposePush push{out.width,
+                                      out.height,
+                                      low_a.width,
+                                      low_a.height,
+                                      out.width / low_a.width,
+                                      fusion.width,
+                                      fusion.height,
+                                      static_cast<std::uint32_t>(window.x),
+                                      static_cast<std::uint32_t>(window.y),
+                                      t};
+  const std::array buffers{high_a.buffer, high_b.buffer, low_a.buffer,
+                           low_b.buffer,  fusion.buffer, out.buffer};
+  return detail::run(*pipelines_, recorder, "gmfss_compose", out.precision, {}, buffers, {}, bytes_of(push),
+                     {groups_for(out.width), groups_for(out.height), 1});
 }
 
 Done KernelRunner::fill(Recorder& recorder, const TensorView& tensor, float value) {

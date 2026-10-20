@@ -218,13 +218,14 @@ void fluidity_tab(PlaySettings& d, const SettingsChoices& choices, bool exportin
       "Un personnage animé en deux sur un fond qui défile garde son rythme (il tient sa pose puis change "
       "d'un coup) pendant que le fond s'interpole, au lieu de se déformer entre deux dessins. Avec RIFE 4.25 "
       "ou 4.22 lite, une seule passe par paire. En direct. DistilDRBA le fait de lui-même.");
-  ImGui::BeginDisabled(d.motion_engine != MotionEngine::Rife);
+  ImGui::BeginDisabled(d.motion_engine != MotionEngine::Rife && !is_gmfss(d.motion_engine));
   ImGui::Checkbox("Warp après SPAN", &d.warp_after_span);
   ImGui::EndDisabled();
   note(
       "SPAN agrandit chaque image source une seule fois, puis RIFE déforme les images agrandies : en "
       "×3, une passe de SPAN au lieu de trois. Les images intermédiaires ne sont plus nettoyées par SPAN. "
-      "Recharge la lecture.");
+      "Avec GMFSS, les images agrandies sont splattées par son flot et corrigées du résidu de sa fusion : "
+      "le détail de SPAN reste. Recharge la lecture.");
   if (exporting) return;  // Smooth Motion est une couche de l'écran, absente du fichier
   section("Smooth Motion (pilote NVIDIA)");
   ImGui::Checkbox("Doubler les images après RIFE", &d.smooth_motion);

@@ -60,4 +60,35 @@ inline constexpr float kGmfssNormalizeEpsilon = 1e-7F;
 // La métrique sort de tanh × 10 : e^z' reste dans [e^-10, e^10], sans débordement en FP32.
 inline constexpr float kGmfssMetricLimit = 10.0F;
 
+// Le mouvement sur une autre grille que la source (soft_splat_at) : le pixel source (x, y) lit le
+// mouvement en u = (x + 1/2) / scale − 1/2 + ox, v = (y + 1/2) / scale − 1/2 + oy, bilinéaire
+// borné au plan du mouvement (centres des pixels aux entiers, comme spec/warp.h), le flot lu
+// multiplié par scale, la métrique telle quelle. scale 1 et décalages nuls sur une grille de même
+// taille : le mouvement du pixel lui-même, tel quel (un flot non fini n'apporte alors rien, sans
+// toucher ses voisins). Ainsi le flot du niveau 1 (moitié de la taille remplie) pousse l'image de
+// travail (scale 2, ox = gauche / 2, oy = haut / 2 de rife_geometry) ou son agrandissement SPAN
+// (scale 4, mêmes décalages).
+// Couverture : avec un plan de sortie de plus que la source, ce plan vaut
+// poids accumulé / (poids accumulé + kGmfssNormalizeEpsilon) : 1 où une source arrive, 0 où rien
+// n'arrive.
+struct MotionGrid {
+  float scale = 1.0F;
+  float x = 0.0F;
+  float y = 0.0F;
+};
+
+// Déformation après SPAN (gmfss_compose) : SPAN agrandit chaque image source une fois, puis
+// l'image intermédiaire se compose des sources agrandies splattées par le flot du niveau 1,
+// corrigées du résidu de la fusion : out = H + up(F − L), H le mélange des sources agrandies
+// splattées, L le même mélange des sources à la taille de travail, F la sortie de la fusion dans
+// sa fenêtre, up l'agrandissement bilinéaire. Là où rien n'arrive, H et L sont nuls : la fusion
+// agrandie reste seule. Pour le pixel (X, Y) de la sortie (scale × la taille de travail, scale
+// entier) :
+//   xw = (X + 1/2) / scale − 1/2, yw de même ;
+//   chaque côté k donne (R, G, B, c) de sa source agrandie en (X, Y) et de sa source de travail en
+//   (xw, yw) (bilinéaire borné au plan) ; poids w0 = (1 − t) c0, w1 = t c1 ;
+//   M = (w0 P0 + w1 P1) / (w0 + w1 + kGmfssNormalizeEpsilon), sur chaque grille (H, L) ;
+//   F lu en (xw + fenêtre.x, yw + fenêtre.y), bilinéaire borné à la fenêtre ;
+//   out = clamp(H + F − L, 0, 1), par canal.
+
 }  // namespace ajp::kernels

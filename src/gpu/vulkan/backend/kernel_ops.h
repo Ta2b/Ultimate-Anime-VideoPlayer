@@ -38,9 +38,9 @@ namespace ajp::gpu::vk {
 
 // Clé d'un enregistrement : quelques mots qui fixent tous ses paramètres, sans allocation.
 struct OpKey {
-  // Assez pour les six splats d'un instant de GMFSS : trois vues de six mots chacun, l'instant,
-  // le tampon des sommes et le code de l'opération.
-  std::array<std::uint64_t, 128> words{};
+  // Assez pour les dix splats d'un instant de GMFSS déformé après SPAN : trois vues de six mots
+  // chacun, l'instant, la grille du mouvement, puis le tampon des sommes et le code de l'opération.
+  std::array<std::uint64_t, 256> words{};
   std::size_t size = 0;
 
   OpKey& add(std::uint64_t v) {
@@ -95,6 +95,10 @@ class VulkanKernelOps final : public KernelOps {
   std::expected<void, Refusal> soft_splat(const Tensor& source, const Tensor& motion, float s,
                                           const Tensor& out) override;
   std::expected<void, Refusal> soft_splat_all(std::span<const SplatJob> jobs) override;
+  std::expected<void, Refusal> gmfss_compose(const Tensor& high_a, const Tensor& high_b, const Tensor& low_a,
+                                             const Tensor& low_b, const Tensor& fusion,
+                                             const kernels::Window& window, float t,
+                                             const Tensor& out) override;
   std::expected<void, Refusal> write_ring(const Tensor& rgb, const RingSlotDesc& slot,
                                           const RingWrite& sync) override;
   std::expected<void, Refusal> measure(const DecodedFrame& a, const DecodedFrame& b) override;

@@ -83,6 +83,10 @@ class TensorRtBackend final : public Backend, public KernelOps {
   std::expected<void, Refusal> soft_splat(const Tensor& source, const Tensor& motion, float s,
                                           const Tensor& out) override;
   std::expected<void, Refusal> soft_splat_all(std::span<const KernelOps::SplatJob> jobs) override;
+  std::expected<void, Refusal> gmfss_compose(const Tensor& high_a, const Tensor& high_b, const Tensor& low_a,
+                                             const Tensor& low_b, const Tensor& fusion,
+                                             const kernels::Window& window, float t,
+                                             const Tensor& out) override;
   // RTX HDR (tensorrt_true_hdr.cpp).
   std::expected<void, Refusal> open_true_hdr(const vendor_hdr::InstalledSdk& sdk,
                                              const vendor_hdr::TrueHdrConfig& config) override;

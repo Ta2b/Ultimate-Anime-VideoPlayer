@@ -6,6 +6,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <memory>
+#include <utility>
 #include <vector>
 
 #include <catch2/catch_test_macros.hpp>
@@ -15,6 +16,7 @@
 #include "kernels/spec/gmfss.h"
 #include "kernels/spec/rife.h"
 #include "kernels/spec/tolerance.h"
+#include "kernels/spec/warp.h"
 
 using namespace ajp;
 using namespace ajp::gpu;
@@ -218,5 +220,121 @@ TEST_CASE("KernelOps : les six splats d'un instant en un passage, chacun contre 
     const auto shape = ops.soft_splat_all(jobs);
     REQUIRE_FALSE(shape);
     CHECK(shape.error().code == RefusalCode::ShapeInvalid);
+  }
+}
+
+TEST_CASE("KernelOps : le flot du niveau 1 pousse l'image de travail et l'agrandie, puis la composition",
+          "[vk_backend][kernels][gmfss]") {
+  // Travail 20 × 12 dans des plans remplis 32 × 16, fenêtre en (6, 2) ; flot du niveau 1 en 16 × 8 ;
+  // sortie 40 × 24. Les quatre splats passent ensemble, avec leur couverture ; la composition se
+  // compare à la référence nourrie de ce que le GPU a splatté.
+  TempDir dir("gmfss_compose");
+  auto backend = make_backend(dir.path());
+  KernelOps& ops = *backend->kernels();
+  constexpr int w = 20;
+  constexpr int h = 12;
+  constexpr int mw = 16;
+  constexpr int mh = 8;
+  constexpr int ow = 40;
+  constexpr int oh = 24;
+  constexpr int fw = 32;
+  constexpr int fh = 16;
+  constexpr k::Window window{.x = 6, .y = 2, .width = w, .height = h};
+  constexpr k::MotionGrid work_grid{.scale = 2.0F, .x = 3.0F, .y = 1.0F};
+  constexpr k::MotionGrid spanned_grid{.scale = 4.0F, .x = 3.0F, .y = 1.0F};
+  constexpr float t = 0.3F;
+  for (const TensorType type : types_of(*backend)) {
+    CAPTURE(static_cast<int>(type));
+    std::uint32_t seed = 101;
+    const auto make = [&](int width, int height, int planes, float lo, float hi) {
+      auto tensor = rgb_tensor(*backend, width, height, type, planes);
+      const std::vector<k::PlaneF> values = synthetic_planes(width, height, planes, seed++, type, lo, hi);
+      write_tensor(*backend, tensor->tensor(), planes_bytes(values, type));
+      return std::pair{std::move(tensor), values};
+    };
+    auto [ta, work_a] = make(w, h, 3, 0.0F, 1.0F);
+    auto [tb, work_b] = make(w, h, 3, 0.0F, 1.0F);
+    auto [sa, span_a] = make(ow, oh, 3, 0.0F, 1.0F);
+    auto [sb, span_b] = make(ow, oh, 3, 0.0F, 1.0F);
+    auto [tf, fusion] = make(fw, fh, 3, 0.0F, 1.0F);
+    std::array<k::ref::SplatMotion, 2> motions;
+    std::array<std::unique_ptr<TensorBuffer>, 2> tm;
+    for (std::size_t side = 0; side < 2; ++side) {
+      const std::vector<k::PlaneF> flow = synthetic_planes(mw, mh, 2, seed++, type, -1.5F, 1.5F);
+      const std::vector<k::PlaneF> metric =
+          synthetic_planes(mw, mh, 1, seed++, type, -k::kGmfssMetricLimit, k::kGmfssMetricLimit);
+      motions[side] = {{flow[0], flow[1], metric[0]}};
+      tm[side] = rgb_tensor(*backend, mw, mh, type, k::kGmfssMotionChannels);
+      write_tensor(*backend, tm[side]->tensor(), planes_bytes(motions[side].planes, type));
+    }
+    std::array<std::unique_ptr<TensorBuffer>, 2> low{rgb_tensor(*backend, w, h, type, 4),
+                                                     rgb_tensor(*backend, w, h, type, 4)};
+    std::array<std::unique_ptr<TensorBuffer>, 2> high{rgb_tensor(*backend, ow, oh, type, 4),
+                                                      rgb_tensor(*backend, ow, oh, type, 4)};
+    const std::array<const std::vector<k::PlaneF>*, 2> works{&work_a, &work_b};
+    const std::array<const std::vector<k::PlaneF>*, 2> spans{&span_a, &span_b};
+    const std::array<const Tensor*, 2> work_tensors{&ta->tensor(), &tb->tensor()};
+    const std::array<const Tensor*, 2> span_tensors{&sa->tensor(), &sb->tensor()};
+    std::vector<KernelOps::SplatJob> jobs;
+    for (std::size_t side = 0; side < 2; ++side) {
+      const float s = k::gmfss_side_time(static_cast<int>(side), t);
+      jobs.push_back({.source = *work_tensors[side],
+                      .motion = tm[side]->tensor(),
+                      .s = s,
+                      .out = low[side]->tensor(),
+                      .grid = work_grid});
+      jobs.push_back({.source = *span_tensors[side],
+                      .motion = tm[side]->tensor(),
+                      .s = s,
+                      .out = high[side]->tensor(),
+                      .grid = spanned_grid});
+    }
+    const auto done = ops.soft_splat_all(jobs);
+    if (!done && done.error().code == RefusalCode::FeatureUnavailable) SKIP(done.error().detail);
+    REQUIRE(done);
+    const float tolerance = type == TensorType::F16 ? k::tolerance::kRgbF16 : 1e-5F;
+    std::array<k::ref::Splatted, 2> got_low;
+    std::array<k::ref::Splatted, 2> got_high;
+    const auto splatted = [&](const Tensor& tensor, int width, int height) {
+      const std::size_t bytes = element_of(type) * static_cast<std::size_t>(width * height * 4);
+      std::vector<k::PlaneF> planes =
+          planes_from(read_tensor(*backend, tensor, bytes), width, height, 4, type);
+      k::ref::Splatted out{.coverage = planes[3]};
+      planes.pop_back();
+      out.planes = std::move(planes);
+      return out;
+    };
+    for (std::size_t side = 0; side < 2; ++side) {
+      CAPTURE(side);
+      const float s = k::gmfss_side_time(static_cast<int>(side), t);
+      got_low[side] = splatted(low[side]->tensor(), w, h);
+      got_high[side] = splatted(high[side]->tensor(), ow, oh);
+      const auto want_low = k::ref::soft_splat_at(*works[side], motions[side], s, work_grid);
+      const auto want_high = k::ref::soft_splat_at(*spans[side], motions[side], s, spanned_grid);
+      REQUIRE((want_low && want_high));
+      CHECK(max_diff(got_low[side].planes, want_low->planes) <= tolerance);
+      CHECK(max_diff({got_low[side].coverage}, {want_low->coverage}) <= tolerance);
+      CHECK(max_diff(got_high[side].planes, want_high->planes) <= tolerance);
+      CHECK(max_diff({got_high[side].coverage}, {want_high->coverage}) <= tolerance);
+    }
+    auto out = rgb_tensor(*backend, ow, oh, type);
+    REQUIRE(ops.gmfss_compose(high[0]->tensor(), high[1]->tensor(), low[0]->tensor(), low[1]->tensor(),
+                              tf->tensor(), window, t, out->tensor()));
+    const auto want =
+        k::ref::gmfss_compose(got_high[0], got_high[1], got_low[0], got_low[1], fusion, window, t);
+    REQUIRE(want);
+    const std::size_t bytes = element_of(type) * static_cast<std::size_t>(ow * oh * 3);
+    const auto composed = planes_from(read_tensor(*backend, out->tensor(), bytes), ow, oh, 3, type);
+    CHECK(max_diff(composed, *want) <= tolerance);
+    // Une fenêtre hors de la fusion, ou une sortie qui n'est pas un multiple du travail : refus.
+    const auto outside = ops.gmfss_compose(
+        high[0]->tensor(), high[1]->tensor(), low[0]->tensor(), low[1]->tensor(), tf->tensor(),
+        k::Window{.x = 14, .y = 2, .width = w, .height = h}, t, out->tensor());
+    REQUIRE_FALSE(outside);
+    CHECK(outside.error().code == RefusalCode::ShapeInvalid);
+    const auto uneven = ops.gmfss_compose(high[0]->tensor(), high[1]->tensor(), high[0]->tensor(),
+                                          high[1]->tensor(), tf->tensor(), window, t, out->tensor());
+    REQUIRE_FALSE(uneven);
+    CHECK(uneven.error().code == RefusalCode::ShapeInvalid);
   }
 }

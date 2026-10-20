@@ -20,6 +20,7 @@
 #include "kernels/spec/gmfss.h"
 #include "kernels/spec/resample.h"
 #include "kernels/spec/rife.h"
+#include "kernels/spec/warp.h"
 
 namespace ajp::gpu::vk {
 
@@ -77,17 +78,26 @@ class KernelRunner {
   // Les splats d'un même instant en un passage : les sommes de tous (contiguës dans sums, chacune
   // à son offset, arrondi à kSplatSumsAlign) remises à zéro ensemble, les additions de tous à côté
   // les unes des autres sans barrière entre elles, puis les normalisations de même.
+  // Un travail peut lire son mouvement sur une autre grille (grid, spec MotionGrid : motion d'une
+  // autre taille que source) et sortir un plan de plus, la couverture.
   struct SplatViews {
     TensorView source;
     TensorView motion;
     float s = 0.5F;
     TensorView out;
+    kernels::MotionGrid grid;
   };
   static constexpr VkDeviceSize kSplatSumsAlign = 256;
   static VkDeviceSize splat_sums_bytes(const TensorView& source);  // d'un travail, arrondis
   Done soft_splat_all(Recorder& recorder, std::span<const SplatViews> jobs, const BufferView& sums);
   Done soft_splat(Recorder& recorder, const TensorView& source, const TensorView& motion, float s,
                   const BufferView& sums, const TensorView& out);
+  // Composition après SPAN (spec gmfss_compose) : high_a, high_b (4 plans, taille de out), low_a,
+  // low_b (4 plans, taille de travail, out un multiple entier), fusion (3 plans) dont window est la
+  // fenêtre à la taille de travail ; out 3 plans ; t dans [0, 1] ; tous de même précision.
+  Done gmfss_compose(Recorder& recorder, const TensorView& high_a, const TensorView& high_b,
+                     const TensorView& low_a, const TensorView& low_b, const TensorView& fusion,
+                     const kernels::Window& window, float t, const TensorView& out);
   // Chaque élément de tensor vaut value.
   Done fill(Recorder& recorder, const TensorView& tensor, float value);
   // Écarts de luma BT.709 tirée du RGB par bloc 32 × 32 : sums reçoit la somme de chaque bloc

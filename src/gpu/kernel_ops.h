@@ -195,17 +195,37 @@ class KernelOps {
   // pour tous, au lieu de trois lancements par splat qui s'attendent l'un l'autre. Chaque travail
   // suit le contrat de soft_splat ; au premier refus, les sorties sont indéfinies. Par défaut, un
   // soft_splat par travail, dans l'ordre.
+  // Un travail peut lire son mouvement sur une autre grille que sa source (grid, spec MotionGrid)
+  // et sortir un plan de plus que sa source, la couverture (spec) ; ces deux-là ne passent pas par
+  // soft_splat, un backend sans soft_splat_all les refuse.
   struct SplatJob {
     Tensor source;
     Tensor motion;
     float s = 0.5F;
     Tensor out;
+    kernels::MotionGrid grid;
   };
   virtual std::expected<void, Refusal> soft_splat_all(std::span<const SplatJob> jobs) {
     for (const SplatJob& job : jobs) {
+      if (job.grid.scale != 1.0F || job.grid.x != 0.0F || job.grid.y != 0.0F ||
+          job.out.shape.dims[1] != job.source.shape.dims[1]) {
+        return std::unexpected(Refusal{RefusalCode::FormatUnsupported,
+                                       "soft_splat_all : grille et couverture absentes de ce backend"});
+      }
       if (auto ok = soft_splat(job.source, job.motion, job.s, job.out); !ok) return ok;
     }
     return {};
+  }
+  // Déformation après SPAN (spec gmfss_compose) : high_a et high_b les sources agrandies
+  // splattées (3 plans + couverture, taille de sortie), low_a et low_b les mêmes à la taille de
+  // travail, fusion la sortie du graphe « fusion » (3 plans, remplie) et window sa fenêtre (la
+  // taille de travail) ; out (3 plans, taille de sortie) reçoit H + F − L à l'instant t de ]0, 1[.
+  virtual std::expected<void, Refusal> gmfss_compose(const Tensor& /*high_a*/, const Tensor& /*high_b*/,
+                                                     const Tensor& /*low_a*/, const Tensor& /*low_b*/,
+                                                     const Tensor& /*fusion*/,
+                                                     const kernels::Window& /*window*/, float /*t*/,
+                                                     const Tensor& /*out*/) {
+    return std::unexpected(Refusal{RefusalCode::FormatUnsupported, "gmfss_compose : absent de ce backend"});
   }
   // Chaque élément du tenseur prend value : l'instant t du graphe « fusion » de GMFSS Union.
   virtual std::expected<void, Refusal> fill(const Tensor& /*tensor*/, float /*value*/) {

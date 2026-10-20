@@ -1,7 +1,8 @@
 #version 450
 // Softmax splatting de GMFSS, seconde passe : chaque plan accumulé par gmfss_splat.comp divisé
 // par le poids accumulé (dernier plan) + kGmfssNormalizeEpsilon. Un pixel que rien n'atteint vaut 0.
-// Référence : kernels/ref/gmfss.cpp (soft_splat) ; même calcul que gmfss_kernels.cu.
+// Avec pc.coverage, un plan de plus dans la sortie : poids / (poids + ε), la couverture (spec).
+// Référence : kernels/ref/gmfss.cpp (soft_splat_at) ; même calcul que gmfss_kernels.cu.
 #extension GL_GOOGLE_include_directive : require
 #include "tensor.glsl"
 #include "ajp_kernels_spec.glsl"
@@ -15,6 +16,7 @@ layout(push_constant) uniform Push {
   uint width;
   uint height;
   uint channels;
+  uint coverage;
 } pc;
 
 void main() {
@@ -23,6 +25,8 @@ void main() {
   if (x >= pc.width || y >= pc.height) return;
   uint plane = pc.width * pc.height;
   uint i = y * pc.width + x;
-  float total = sums.v[pc.channels * plane + i] + AJP_GMFSS_NORMALIZE_EPSILON;
+  float weight = sums.v[pc.channels * plane + i];
+  float total = weight + AJP_GMFSS_NORMALIZE_EPSILON;
   for (uint c = 0u; c < pc.channels; ++c) dst.v[c * plane + i] = AJP_TENSOR(sums.v[c * plane + i] / total);
+  if (pc.coverage != 0u) dst.v[pc.channels * plane + i] = AJP_TENSOR(weight / total);
 }

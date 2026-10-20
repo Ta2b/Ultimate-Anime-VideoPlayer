@@ -8,6 +8,7 @@
 #include <catch2/matchers/catch_matchers_floating_point.hpp>
 
 #include "kernels/spec.h"
+#include "kernels/spec/warp.h"
 
 using namespace ajp::kernels;
 using Catch::Matchers::WithinAbs;
@@ -102,4 +103,97 @@ TEST_CASE("Le splat refuse ce qui sort du contrat", "[kernels][gmfss]") {
   CHECK(ref::soft_splat(source, uniform(4, 4, 0, 0, 0), 1.5F).error().code == ErrorCode::ParameterOutOfRange);
   CHECK(gmfss_side_time(0, 0.25F) == 0.25F);
   CHECK(gmfss_side_time(1, 0.25F) == 0.75F);
+}
+
+TEST_CASE("Le mouvement sur une grille deux fois plus grosse se lit entre ses pixels", "[kernels][gmfss]") {
+  // Source 4 × 1 ; mouvement 2 × 1 : fx = 0 puis 2 pixels du mouvement, soit 0 puis 4 pixels source.
+  // Le pixel 0 lit u = −1/4 (borné à 0) : il reste ; le pixel 1 lit u = 1/4 : 1/2 × 2 = 1 pixel, il
+  // tombe en 2 ; le pixel 2 lit u = 3/4 : 3 pixels, hors du plan ; le pixel 3 lit u = 5/4 (borné à
+  // 1) : 4 pixels, hors du plan.
+  PlaneF value(4, 1, 0.0F);
+  for (int x = 0; x < 4; ++x) value.at(x, 0) = static_cast<float>(x + 1);
+  ref::SplatMotion motion = uniform(2, 1, 0.0F, 0.0F, 0.0F);
+  motion.planes[0].at(1, 0) = 2.0F;
+  const auto out = ref::soft_splat_at({value}, motion, 1.0F, MotionGrid{.scale = 2.0F});
+  REQUIRE(out);
+  CHECK_THAT(out->planes[0].at(0, 0), WithinAbs(1.0, 1e-5));
+  CHECK_THAT(out->planes[0].at(1, 0), WithinAbs(0.0, 1e-6));
+  CHECK_THAT(out->planes[0].at(2, 0), WithinAbs(2.0, 1e-5));
+  CHECK_THAT(out->planes[0].at(3, 0), WithinAbs(0.0, 1e-6));
+  // La couverture dit où une source arrive.
+  CHECK_THAT(out->coverage.at(0, 0), WithinAbs(1.0, 1e-5));
+  CHECK(out->coverage.at(1, 0) == 0.0F);
+  CHECK_THAT(out->coverage.at(2, 0), WithinAbs(1.0, 1e-5));
+  CHECK(out->coverage.at(3, 0) == 0.0F);
+  // Un décalage d'un pixel du mouvement : tous lisent le pixel 1 (borné) et partent de 4 pixels.
+  const auto shifted = ref::soft_splat_at({value}, motion, 1.0F, MotionGrid{.scale = 2.0F, .x = 1.0F});
+  REQUIRE(shifted);
+  for (int x = 0; x < 4; ++x) CHECK(shifted->planes[0].at(x, 0) == 0.0F);
+  // Sur la même grille, sans décalage : le splat ordinaire, couverture en plus.
+  const auto same = ref::soft_splat_at({value}, uniform(4, 1, 1.0F, 0.0F, 0.0F), 0.5F, MotionGrid{});
+  const auto plain = ref::soft_splat({value}, uniform(4, 1, 1.0F, 0.0F, 0.0F), 0.5F);
+  REQUIRE((same && plain));
+  CHECK(same->planes[0] == (*plain)[0]);
+  CHECK(ref::soft_splat_at({value}, motion, 0.5F, MotionGrid{.scale = 0.0F}).error().code ==
+        ErrorCode::ParameterOutOfRange);
+}
+
+TEST_CASE("La composition après SPAN rend la fusion où rien n'arrive, le détail agrandi ailleurs",
+          "[kernels][gmfss]") {
+  // Travail 2 × 1, sortie 4 × 2 ; la fusion 4 × 3 avec sa fenêtre 2 × 1 en (1, 1), du 9 autour.
+  const auto splatted = [](int w, int h, float value, float coverage) {
+    return ref::Splatted{.planes = {PlaneF(w, h, value), PlaneF(w, h, value), PlaneF(w, h, value)},
+                         .coverage = PlaneF(w, h, coverage)};
+  };
+  std::vector<PlaneF> fusion(3, PlaneF(4, 3, 9.0F));
+  const Window window{.x = 1, .y = 1, .width = 2, .height = 1};
+  for (PlaneF& p : fusion) {
+    p.at(1, 1) = 0.6F;
+    p.at(2, 1) = 0.6F;
+  }
+  const float t = 0.25F;
+  SECTION("les deux côtés arrivent : H + F − L") {
+    const auto out =
+        ref::gmfss_compose(splatted(4, 2, 0.5F, 1.0F), splatted(4, 2, 0.3F, 1.0F), splatted(2, 1, 0.4F, 1.0F),
+                           splatted(2, 1, 0.2F, 1.0F), fusion, window, t);
+    REQUIRE(out);
+    // H = 0,75 × 0,5 + 0,25 × 0,3 = 0,45 ; L = 0,75 × 0,4 + 0,25 × 0,2 = 0,35 ; 0,45 + 0,6 − 0,35.
+    for (const PlaneF& p : *out) {
+      for (const float v : p.data) CHECK_THAT(v, WithinAbs(0.7, 1e-4));
+    }
+  }
+  SECTION("rien n'arrive : la fusion agrandie seule") {
+    const auto out =
+        ref::gmfss_compose(splatted(4, 2, 0.0F, 0.0F), splatted(4, 2, 0.0F, 0.0F), splatted(2, 1, 0.0F, 0.0F),
+                           splatted(2, 1, 0.0F, 0.0F), fusion, window, t);
+    REQUIRE(out);
+    for (const float v : (*out)[0].data) CHECK_THAT(v, WithinAbs(0.6, 1e-5));
+  }
+  SECTION("un seul côté arrive : son détail, quel que soit l'instant") {
+    const auto out =
+        ref::gmfss_compose(splatted(4, 2, 0.9F, 1.0F), splatted(4, 2, 0.0F, 0.0F), splatted(2, 1, 0.7F, 1.0F),
+                           splatted(2, 1, 0.0F, 0.0F), fusion, window, t);
+    REQUIRE(out);
+    for (const float v : (*out)[1].data) CHECK_THAT(v, WithinAbs(0.8, 1e-4));  // 0,9 + 0,6 − 0,7
+  }
+  SECTION("la sortie reste dans [0, 1]") {
+    const auto out =
+        ref::gmfss_compose(splatted(4, 2, 1.0F, 1.0F), splatted(4, 2, 1.0F, 1.0F), splatted(2, 1, 0.0F, 1.0F),
+                           splatted(2, 1, 0.0F, 1.0F), fusion, window, t);
+    REQUIRE(out);
+    for (const float v : (*out)[2].data) CHECK(v == 1.0F);
+  }
+  SECTION("refus") {
+    const auto a = splatted(4, 2, 0.5F, 1.0F);
+    const auto l = splatted(2, 1, 0.5F, 1.0F);
+    CHECK(ref::gmfss_compose(a, a, l, l, fusion, window, 1.5F).error().code ==
+          ErrorCode::ParameterOutOfRange);
+    CHECK(ref::gmfss_compose(splatted(3, 2, 0.5F, 1.0F), a, l, l, fusion, window, t).error().code ==
+          ErrorCode::SizeMismatch);
+    CHECK(ref::gmfss_compose(a, a, l, l, fusion, Window{.x = 3, .y = 1, .width = 2, .height = 1}, t)
+              .error()
+              .code == ErrorCode::ParameterOutOfRange);
+    CHECK(ref::gmfss_compose(a, a, l, l, {fusion[0], fusion[1]}, window, t).error().code ==
+          ErrorCode::SizeMismatch);
+  }
 }

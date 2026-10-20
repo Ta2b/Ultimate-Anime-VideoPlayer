@@ -3,9 +3,13 @@
 // poids bilinéaire aux quatre pixels autour de sa destination, et le poids seul au dernier plan,
 // par additions atomiques en float. L'axe z découpe les plans en groupes de pc.group ; le
 // groupe 0 ajoute aussi le poids. Les sommes sont remises à zéro avant (kernels_slice.cpp).
-// Référence : kernels/ref/gmfss.cpp (soft_splat) ; même calcul que gmfss_kernels.cu.
+// Le mouvement se lit sur sa propre grille (spec MotionGrid) : tel quel si direct, sinon
+// bilinéaire borné à son plan, le flot multiplié par l'échelle.
+// Référence : kernels/ref/gmfss.cpp (soft_splat_at) ; même calcul que gmfss_kernels.cu.
 #extension GL_GOOGLE_include_directive : require
 #include "tensor.glsl"
+#include "ajp_kernels_spec.glsl"
+#include "common.glsl"
 #extension GL_EXT_shader_atomic_float : require
 
 layout(local_size_x = 16, local_size_y = 16) in;
@@ -20,7 +24,33 @@ layout(push_constant) uniform Push {
   uint channels;
   uint group;
   float s;
+  uint motion_width;
+  uint motion_height;
+  float motion_scale;
+  float motion_x;
+  float motion_y;
+  uint direct;
 } pc;
+
+// Plan c du mouvement lu en (u, v), bilinéaire borné au plan (centres des pixels aux entiers).
+float motion_at(uint c, float u, float v) {
+  uint w = pc.motion_width;
+  uint h = pc.motion_height;
+  u = bounded(u, 0.0, float(w - 1u));
+  v = bounded(v, 0.0, float(h - 1u));
+  uint x0 = uint(u);
+  uint y0 = uint(v);
+  uint x1 = min(x0 + 1u, w - 1u);
+  uint y1 = min(y0 + 1u, h - 1u);
+  float fx = u - float(x0);
+  float fy = v - float(y0);
+  uint base = c * w * h;
+  precise float top = float(motion.v[base + y0 * w + x0]) * (1.0 - fx) + float(motion.v[base + y0 * w + x1]) * fx;
+  precise float bottom =
+      float(motion.v[base + y1 * w + x0]) * (1.0 - fx) + float(motion.v[base + y1 * w + x1]) * fx;
+  precise float value = top * (1.0 - fy) + bottom * fy;
+  return value;
+}
 
 void main() {
   uint x = gl_GlobalInvocationID.x;
@@ -28,12 +58,26 @@ void main() {
   if (x >= pc.width || y >= pc.height) return;
   uint plane = pc.width * pc.height;
   uint i = y * pc.width + x;
-  precise float tx = float(x) + pc.s * float(motion.v[i]);
-  precise float ty = float(y) + pc.s * float(motion.v[plane + i]);
+  float fx;
+  float fy;
+  float z;
+  if (pc.direct != 0u) {
+    fx = float(motion.v[i]);
+    fy = float(motion.v[plane + i]);
+    z = float(motion.v[2u * plane + i]);
+  } else {
+    precise float u = (float(x) + 0.5) / pc.motion_scale - 0.5 + pc.motion_x;
+    precise float v = (float(y) + 0.5) / pc.motion_scale - 0.5 + pc.motion_y;
+    fx = pc.motion_scale * motion_at(0u, u, v);
+    fy = pc.motion_scale * motion_at(1u, u, v);
+    z = motion_at(2u, u, v);
+  }
+  precise float tx = float(x) + pc.s * fx;
+  precise float ty = float(y) + pc.s * fy;
   // Une destination hors de ]−1, taille[ n'a aucun coin dans le plan ; NaN et infinis échouent
   // aussi la comparaison.
   if (!(tx > -1.0 && tx < float(pc.width) && ty > -1.0 && ty < float(pc.height))) return;
-  float scale = exp(pc.s * float(motion.v[2u * plane + i]));
+  float scale = exp(pc.s * z);
   int x0 = int(floor(tx));
   int y0 = int(floor(ty));
   precise float east = tx - float(x0);
