@@ -8,17 +8,14 @@
 #include "gpu/ir/graph.h"
 #include "gpu/vulkan/backend/kernel_ops_detail.h"
 #include "gpu/vulkan/backend/net_build.h"
+#include "gpu/vulkan/backend/vulkan_backend_detail.h"
 #include "gpu/vulkan/compute/buffer.h"
 
 namespace ajp::gpu::vk {
-namespace {
+namespace detail {
 
 std::unexpected<Refusal> refuse_backend(RefusalCode code, std::string text) {
   return std::unexpected(Refusal{.code = code, .detail = std::move(text)});
-}
-
-std::uintptr_t handle_value(VkSemaphore semaphore) {
-  return static_cast<std::uintptr_t>(detail::to_bits(semaphore));
 }
 
 std::size_t element_bytes(TensorType type) {
@@ -34,6 +31,42 @@ std::size_t element_bytes(TensorType type) {
   return 0;
 }
 
+std::expected<std::uint64_t, Refusal> tensor_bytes(TensorType type, const Shape& shape) {
+  const std::size_t element = element_bytes(type);
+  if (element == 0) return refuse_backend(RefusalCode::FormatUnsupported, "type de tenseur inconnu");
+  std::uint64_t count = 1;
+  for (const std::int64_t d : shape.dims) {
+    if (d <= 0 || d > std::int64_t{1} << 24) {
+      return refuse_backend(RefusalCode::ShapeInvalid, std::format("dimension {} hors de [1, 2^24]", d));
+    }
+    count *= static_cast<std::uint64_t>(d);
+    if (count > (std::uint64_t{1} << 32))
+      return refuse_backend(RefusalCode::ShapeInvalid, "plus de 2^32 éléments");
+  }
+  return count * element;
+}
+
+std::string file_stem(std::string_view id) {
+  std::string out;
+  for (const char c : id) {
+    const bool safe = (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') ||
+                      c == '-' || c == '_' || c == '.';
+    out.push_back(safe ? c : '_');
+  }
+  return out.empty() ? std::string{"model"} : out;
+}
+
+}  // namespace detail
+
+namespace {
+
+using detail::file_stem;
+using detail::refuse_backend;
+
+std::uintptr_t handle_value(VkSemaphore semaphore) {
+  return static_cast<std::uintptr_t>(detail::to_bits(semaphore));
+}
+
 // Tenseur alloué par alloc_tensor : son tampon, libéré à la destruction.
 class VulkanTensorBuffer final : public TensorBuffer {
  public:
@@ -46,17 +79,6 @@ class VulkanTensorBuffer final : public TensorBuffer {
   Buffer buffer_;
   Tensor tensor_;
 };
-
-// Nom de fichier sûr pour l'identifiant d'un modèle.
-std::string file_stem(std::string_view id) {
-  std::string out;
-  for (const char c : id) {
-    const bool safe = (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') ||
-                      c == '-' || c == '_' || c == '.';
-    out.push_back(safe ? c : '_');
-  }
-  return out.empty() ? std::string{"model"} : out;
-}
 
 std::expected<net::BuildRequest, Refusal> request_of(const ModelSpec& model, const ShapeSet& shapes) {
   if (model.precision != TensorType::F16 && model.precision != TensorType::F32) {
@@ -138,6 +160,14 @@ std::expected<void, Refusal> VulkanBackend::open(const BackendInit& init) {
   queue_.emplace(std::move(*queue));
   profile_ = profile_device(*context_);
   kernels_ = std::make_unique<VulkanKernelOps>(*context_, *memory_, *pipelines_, *queue_);
+  if (options_.runtime) {
+    auto runtime = options_.runtime(context_->caps());
+    if (!runtime) return std::unexpected(runtime.error());
+    runtime_ = std::move(*runtime);
+    host_views_ = std::make_shared<HostViews>();
+    log(BackendLogLevel::Info, std::format("réseaux par {} {} sur {}", runtime_->name(), runtime_->version(),
+                                           runtime_->device_name()));
+  }
   log(BackendLogLevel::Info,
       std::format("backend Vulkan : {}, famille {}, unités matricielles {}{}", context_->caps().device_name,
                   name(profile_.family), profile_.target.matrix_units ? "utilisées" : "non utilisées",
@@ -153,6 +183,17 @@ void VulkanBackend::log(BackendLogLevel level, std::string_view message) const {
 
 BackendCaps VulkanBackend::capabilities() const {
   const DeviceCaps& caps = context_->caps();
+  if (runtime_) {
+    // Le réseau passe par le runtime, attendu sur l'hôte ; la chaîne reste sur Vulkan.
+    return {.name = std::string(runtime_->name()),
+            .device_name = std::format("{} (chaîne Vulkan : {})", runtime_->device_name(), caps.device_name),
+            .driver_version = runtime_->version(),
+            .needs_host_sync = true,
+            .fp16 = true,
+            .int8 = false,
+            .matrix_units = false,
+            .import_formats = {}};
+  }
   return {.name = "vulkan",
           .device_name = caps.device_name,
           .driver_version = caps.driver_info,
@@ -178,6 +219,7 @@ std::expected<Artifact, Refusal> VulkanBackend::build(const ModelSpec& model, co
   if (cache_dir_.empty())
     return refuse_backend(RefusalCode::CacheIo, "aucun dossier de cache pour les artefacts");
   if (progress.stop.stop_requested()) return refuse_backend(RefusalCode::Cancelled, "construction annulée");
+  if (runtime_) return build_runtime(model, shapes, progress);
   auto request = request_of(model, shapes);
   if (!request) return std::unexpected(request.error());
   const std::uint64_t key = net::artifact_key(*request, profile_);
@@ -204,6 +246,7 @@ std::expected<Artifact, Refusal> VulkanBackend::build(const ModelSpec& model, co
 }
 
 std::expected<std::unique_ptr<Engine>, Refusal> VulkanBackend::load(const Artifact& artifact) {
+  if (runtime_) return load_runtime(artifact);
   auto bytes = net::read_file(artifact.path);
   if (!bytes) return std::unexpected(bytes.error());
   auto data = net::deserialize(*bytes);
@@ -226,19 +269,11 @@ std::expected<Tensor, Refusal> VulkanBackend::import(const ExternalImage& image)
 
 std::expected<std::unique_ptr<TensorBuffer>, Refusal> VulkanBackend::alloc_tensor(TensorType type,
                                                                                   const Shape& shape) {
-  const std::size_t element = element_bytes(type);
-  if (element == 0) return refuse_backend(RefusalCode::FormatUnsupported, "type de tenseur inconnu");
-  std::uint64_t count = 1;
-  for (const std::int64_t d : shape.dims) {
-    if (d <= 0 || d > std::int64_t{1} << 24) {
-      return refuse_backend(RefusalCode::ShapeInvalid, std::format("dimension {} hors de [1, 2^24]", d));
-    }
-    count *= static_cast<std::uint64_t>(d);
-    if (count > (std::uint64_t{1} << 32))
-      return refuse_backend(RefusalCode::ShapeInvalid, "plus de 2^32 éléments");
-  }
+  if (runtime_) return alloc_runtime_tensor(type, shape);
+  auto dense = detail::tensor_bytes(type, shape);
+  if (!dense) return std::unexpected(dense.error());
   // Arrondi à 4 octets : les noyaux lisent et écrivent des mots de 32 bits.
-  const std::uint64_t bytes = (count * element + 3) / 4 * 4;
+  const std::uint64_t bytes = (*dense + 3) / 4 * 4;
   auto buffer = Buffer::create(*context_, *memory_, bytes, MemoryUse::Device);
   if (!buffer) return std::unexpected(buffer.error());
   return std::make_unique<VulkanTensorBuffer>(std::move(*buffer), type, shape);
@@ -246,6 +281,7 @@ std::expected<std::unique_ptr<TensorBuffer>, Refusal> VulkanBackend::alloc_tenso
 
 std::expected<void, Refusal> VulkanBackend::enqueue(Engine& engine, std::span<const Tensor> inputs,
                                                     std::span<Tensor> outputs) {
+  if (runtime_) return enqueue_runtime(engine, inputs, outputs);
   auto* vulkan = dynamic_cast<VulkanEngine*>(&engine);
   if (vulkan == nullptr) return refuse_backend(RefusalCode::InputMismatch, "moteur d'un autre backend");
   net::NetEngine& net = vulkan->net();

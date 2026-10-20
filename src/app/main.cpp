@@ -75,8 +75,9 @@ int main(int argc, char** argv) {
       .home = sdl_path(SDL_GetUserFolder(SDL_FOLDER_HOME)),
       .engines = data / "engines",
   };
-  // TensorRT d'abord (cartes NVIDIA), puis Vulkan (AMD, Intel, et NVIDIA sans TensorRT) ; chacun à
-  // côté de l'exécutable, puis dans l'arbre de construction.
+  // TensorRT d'abord (cartes NVIDIA), MIGraphX (AMD) et OpenVINO (Intel), qui refusent les autres
+  // fabricants, puis Vulkan (le recours partout) ; chacun à côté de l'exécutable, puis dans l'arbre
+  // de construction.
   const auto beside = [&](std::string_view backend) {
     for (const std::filesystem::path& dir : module_dirs(base))
       paths.backends.push_back(
@@ -85,6 +86,14 @@ int main(int argc, char** argv) {
   beside("tensorrt");
 #ifdef AJP_BACKEND_TENSORRT
   paths.backends.emplace_back(AJP_BACKEND_TENSORRT);
+#endif
+  beside("migraphx");
+#ifdef AJP_BACKEND_MIGRAPHX
+  paths.backends.emplace_back(AJP_BACKEND_MIGRAPHX);
+#endif
+  beside("openvino");
+#ifdef AJP_BACKEND_OPENVINO
+  paths.backends.emplace_back(AJP_BACKEND_OPENVINO);
 #endif
   beside("vulkan");
 #ifdef AJP_BACKEND_VULKAN

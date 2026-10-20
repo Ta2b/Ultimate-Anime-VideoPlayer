@@ -21,10 +21,12 @@ ajp_add_module(vk_backend
     net_lower.cpp
     net_lower_conv.cpp
     net_params.cpp
+    net_runtime.cpp
     net_weights.cpp
     queue.cpp
     reduce_weights.cpp
     vulkan_backend.cpp
+    vulkan_backend_runtime.cpp
   DEPS ajp::vk_compute ajp::gpu_ir ajp::core_types
   PRIVATE_DEPS ajp::kernels ajp::dep::spdlog)
 

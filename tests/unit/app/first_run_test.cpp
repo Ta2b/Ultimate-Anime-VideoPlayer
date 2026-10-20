@@ -134,3 +134,14 @@ TEST_CASE("TensorRT n'est essayé que s'il a été choisi", "[app][first_run]") 
   both.chosen_engines.push_back(core::EngineId::TensorRt);
   CHECK(backends_within(candidates, both).size() == 2);
 }
+
+TEST_CASE("MIGraphX et OpenVINO ne sont essayés que choisis", "[app][first_run]") {
+  const std::array<std::filesystem::path, 3> candidates{
+      "base/ajp_backend_migraphx.so", "base/ajp_backend_openvino.so", "base/ajp_backend_vulkan.so"};
+  core::Settings settings;
+  settings.chosen_engines = {core::EngineId::Vulkan, core::EngineId::OpenVino};
+  const auto kept = backends_within(candidates, settings);
+  REQUIRE(kept.size() == 2);
+  CHECK(kept.front().filename() == "ajp_backend_openvino.so");
+  CHECK(kept.back().filename() == "ajp_backend_vulkan.so");
+}

@@ -11,3 +11,10 @@ ajp_add_module(gpu DEPS ajp::core ajp::kernels ajp::vendor_hdr)
 
 # Socle de calcul Vulkan (vk_compute), sous vulkan/compute.
 add_subdirectory(vulkan)
+# Backends Vulkan dont les réseaux passent par le runtime du fabricant.
+if(AJP_WITH_MIGRAPHX)
+  add_subdirectory(migraphx)
+endif()
+if(AJP_WITH_OPENVINO)
+  add_subdirectory(openvino)
+endif()

@@ -28,13 +28,18 @@ std::optional<double> content_peak_nits(SDL_Window* window) {
   return static_cast<double>(headroom) * 203.0;
 }
 
-// Ce qui est sur ce poste pour l'écran de bienvenue : le backend TensorRT, le SDK Maxine importé
-// ou à importer.
+// Ce qui est sur ce poste pour l'écran de bienvenue : les backends TensorRT, MIGraphX et OpenVINO,
+// le SDK Maxine importé ou à importer.
 EnginesHere engines_here(const PlayOptions& options, const PlayerPaths& paths) {
   EnginesHere here;
   std::error_code error;
-  for (const std::filesystem::path& backend : paths.backends)
-    here.tensorrt |= std::filesystem::exists(backend, error);
+  for (const std::filesystem::path& backend : paths.backends) {
+    if (!std::filesystem::exists(backend, error)) continue;
+    const std::string file = backend.filename().string();
+    here.tensorrt |= file.contains("tensorrt");
+    here.migraphx |= file.contains("migraphx");
+    here.openvino |= file.contains("openvino");
+  }
   vendor_hdr::SdkStore store(paths.engines.parent_path() / "sdk", vendor_hdr::SdkKind::MaxineVfx);
   if (store.status().installed) {
     here.maxine = true;

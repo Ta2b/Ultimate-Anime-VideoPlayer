@@ -22,6 +22,7 @@
 #include "gpu/vulkan/backend/kernel_ops.h"
 #include "gpu/vulkan/backend/net_autotune.h"
 #include "gpu/vulkan/backend/net_engine.h"
+#include "gpu/vulkan/backend/net_runtime.h"
 #include "gpu/vulkan/backend/queue.h"
 #include "gpu/vulkan/compute/context.h"
 #include "gpu/vulkan/compute/memory.h"
@@ -29,10 +30,15 @@
 
 namespace ajp::gpu::vk {
 
+struct HostViews;  // vulkan_backend_detail.h
+
 // Réglages hors contrat, pour les tests et le banc.
 struct BackendOptions {
   bool autotune = true;  // false : le premier candidat de chaque nœud, sans mesure
   net::TunerOptions tuner;
+  // Les réseaux par un autre runtime (net_runtime.h), créé à l'ouverture de l'appareil :
+  // ajp_backend_migraphx, ajp_backend_openvino.
+  net::RuntimeFactory runtime;
 };
 
 // Un réseau chargé : son moteur et les noms de ses entrées et sorties.
@@ -87,6 +93,14 @@ class VulkanBackend final : public Backend {
   explicit VulkanBackend(const BackendInit& init, BackendOptions options);
   std::expected<void, Refusal> open(const BackendInit& init);
   void log(BackendLogLevel level, std::string_view message) const;
+  // Le chemin d'un runtime (vulkan_backend_runtime.cpp).
+  std::expected<Artifact, Refusal> build_runtime(const ModelSpec& model, const ShapeSet& shapes,
+                                                 Progress& progress);
+  std::expected<std::unique_ptr<Engine>, Refusal> load_runtime(const Artifact& artifact);
+  std::expected<std::unique_ptr<TensorBuffer>, Refusal> alloc_runtime_tensor(TensorType type,
+                                                                             const Shape& shape);
+  std::expected<void, Refusal> enqueue_runtime(Engine& engine, std::span<const Tensor> inputs,
+                                               std::span<Tensor> outputs);
 
   BackendLog log_;
   std::filesystem::path cache_dir_;
@@ -97,6 +111,8 @@ class VulkanBackend final : public Backend {
   DeviceProfile profile_;
   std::optional<BackendQueue> queue_;
   std::unique_ptr<VulkanKernelOps> kernels_;
+  std::shared_ptr<net::Runtime> runtime_;
+  std::shared_ptr<HostViews> host_views_;  // projections des tenseurs d'un runtime
 };
 
 // Le contexte d'un appareil de rendu Vulkan partagé : sa file compute, son verrou de file.

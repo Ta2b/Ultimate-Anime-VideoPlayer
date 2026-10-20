@@ -42,6 +42,8 @@ int start_profile_for(const GpuFacts& gpu);
 // Ce qui est déjà sur ce poste.
 struct EnginesHere {
   bool tensorrt = false;      // backend ajp_backend_tensorrt trouvé
+  bool migraphx = false;      // ajp_backend_migraphx
+  bool openvino = false;      // ajp_backend_openvino
   bool maxine = false;        // SDK Maxine importé, ou importable depuis --truehdr-sdk
   std::string maxine_status;  // « importé », « à importer depuis /usr/local/VideoFX »…
 };
@@ -72,8 +74,8 @@ core::Settings settings_after(const FirstRunView& view, core::Settings settings)
 // id fait partie des moteurs choisis à l'écran de bienvenue.
 bool chosen(const core::Settings& settings, core::EngineId id);
 
-// Les bibliothèques de backend à essayer, dans l'ordre : celle de TensorRT seulement s'il a été
-// choisi, Vulkan restant le recours.
+// Les bibliothèques de backend à essayer, dans l'ordre : celles de TensorRT, MIGraphX et OpenVINO
+// seulement si leur moteur a été choisi, Vulkan restant le recours.
 std::vector<std::filesystem::path> backends_within(std::span<const std::filesystem::path> candidates,
                                                    const core::Settings& engines);
 

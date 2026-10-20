@@ -1,9 +1,11 @@
 #include "app/play/first_run.h"
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <format>
 #include <optional>
+#include <string_view>
 #include <utility>
 
 #include <imgui.h>
@@ -108,20 +110,40 @@ bool chosen(const core::Settings& settings, core::EngineId id) {
 
 std::vector<std::filesystem::path> backends_within(std::span<const std::filesystem::path> candidates,
                                                    const core::Settings& engines) {
+  // Chaque bibliothèque d'un moteur facultatif ne s'essaie que choisie ; Vulkan, toujours.
+  constexpr std::array<std::pair<std::string_view, core::EngineId>, 3> kOptional{{
+      {"tensorrt", core::EngineId::TensorRt},
+      {"migraphx", core::EngineId::MiGraphX},
+      {"openvino", core::EngineId::OpenVino},
+  }};
   std::vector<std::filesystem::path> out;
   for (const std::filesystem::path& path : candidates) {
-    const bool tensorrt = path.filename().string().contains("tensorrt");
-    if (!tensorrt || chosen(engines, core::EngineId::TensorRt)) out.push_back(path);
+    const std::string file = path.filename().string();
+    const bool allowed = std::ranges::all_of(kOptional, [&](const auto& engine) {
+      return !file.contains(engine.first) || chosen(engines, engine.second);
+    });
+    if (allowed) out.push_back(path);
   }
   return out;
 }
 
 core::SystemInfo system_of(const GpuFacts& gpu) {
-  return core::SystemInfo{.os = core::Os::Linux,
+#if defined(_WIN32)
+  constexpr core::Os kOs = core::Os::Windows;
+#elif defined(__APPLE__)
+  constexpr core::Os kOs = core::Os::MacOs;
+#else
+  constexpr core::Os kOs = core::Os::Linux;
+#endif
+  // MIGraphX et OpenVINO refusent eux-mêmes un GPU qu'ils ne servent pas (repli sur Vulkan) : le
+  // fabricant suffit à les proposer.
+  return core::SystemInfo{.os = kOs,
                           .gpus = {core::GpuInfo{.vendor = gpu.vendor,
                                                  .name = gpu.name,
                                                  .vram_bytes = gpu.vram_bytes,
-                                                 .tensor_cores = gpu.tensor_cores}}};
+                                                 .tensor_cores = gpu.tensor_cores,
+                                                 .rocm_supported = gpu.vendor == GpuVendor::Amd,
+                                                 .openvino_gpu = gpu.vendor == GpuVendor::Intel}}};
 }
 
 std::string gpu_line(const GpuFacts& gpu) {
@@ -153,6 +175,14 @@ FirstRunView first_run_view(const GpuFacts& gpu, const EnginesHere& here, Profil
         row.usable = here.tensorrt;
         row.status = here.tensorrt ? "installé" : "absent de ce poste";
         break;
+      case core::EngineId::MiGraphX:
+        row.usable = here.migraphx;
+        row.status = here.migraphx ? "installé (ROCm requis)" : "absent de ce poste";
+        break;
+      case core::EngineId::OpenVino:
+        row.usable = here.openvino;
+        row.status = here.openvino ? "installé" : "absent de ce poste";
+        break;
       case core::EngineId::MaxineVfx:
         row.usable = here.maxine;
         row.status = here.maxine_status;
@@ -177,12 +207,15 @@ core::Settings settings_after(const FirstRunView& view, core::Settings settings)
     if (row.usable && (row.chosen || row.offer.id == core::EngineId::Vulkan))
       settings.chosen_engines.push_back(row.offer.id);
   }
-  const bool tensorrt = chosen(settings, core::EngineId::TensorRt);
+  // Le moteur des réseaux : le plus rapide choisi pour ce GPU, Vulkan sinon.
+  core::EngineId networks = core::EngineId::Vulkan;
+  for (const core::EngineId id :
+       {core::EngineId::OpenVino, core::EngineId::MiGraphX, core::EngineId::TensorRt}) {
+    if (chosen(settings, id)) networks = id;
+  }
   const auto usage = [](core::Usage u) { return static_cast<std::size_t>(u); };
-  settings.preferred[usage(core::Usage::Upscale)] =
-      tensorrt ? core::EngineId::TensorRt : core::EngineId::Vulkan;
-  settings.preferred[usage(core::Usage::Interpolate)] =
-      tensorrt ? core::EngineId::TensorRt : core::EngineId::Vulkan;
+  settings.preferred[usage(core::Usage::Upscale)] = networks;
+  settings.preferred[usage(core::Usage::Interpolate)] = networks;
   settings.preferred[usage(core::Usage::TrueHdr)] =
       chosen(settings, core::EngineId::MaxineVfx) ? std::optional(core::EngineId::MaxineVfx) : std::nullopt;
   return settings;
@@ -190,7 +223,9 @@ core::Settings settings_after(const FirstRunView& view, core::Settings settings)
 
 PlaySettings within_engines(PlaySettings settings, const core::Settings& engines,
                             std::vector<std::string>& notes) {
-  const bool inference = chosen(engines, core::EngineId::TensorRt) || chosen(engines, core::EngineId::Vulkan);
+  const bool inference = std::ranges::any_of(std::array{core::EngineId::TensorRt, core::EngineId::Vulkan,
+                                                        core::EngineId::MiGraphX, core::EngineId::OpenVino},
+                                             [&](core::EngineId id) { return chosen(engines, id); });
   if (!inference && (settings.upscale || settings.rife_factor >= 2)) {
     settings.upscale = false;
     settings.rife_factor = 0;

@@ -46,6 +46,12 @@ tools/deps/macos-from-source.sh ~/ajp-deps
 AJP_DEPS_PREFIX=~/ajp-deps tools/release/package-macos.sh   # build/package/ajp-macos-arm64.zip
 ```
 
+Sur les GPU AMD et Intel, les réseaux peuvent passer par le runtime du fabricant tandis que la
+chaîne reste sur Vulkan : `-DAJP_WITH_MIGRAPHX=ON` (ROCm installé) construit
+`ajp_backend_migraphx`, `-DAJP_WITH_OPENVINO=ON` construit `ajp_backend_openvino`. Chacun ne
+s'essaie que choisi à l'écran de bienvenue, et refuse les autres fabricants (Vulkan prend alors
+le relais).
+
 ## Licence
 
 À décider (MPL-2.0 ou permissive, jamais GPL, car le lecteur charge TensorRT).
