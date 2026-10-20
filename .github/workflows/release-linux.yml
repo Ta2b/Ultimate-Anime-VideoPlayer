@@ -1,7 +1,8 @@
 name: Release Linux
 
-# Une étiquette linux-v* : le lecteur Linux (Vulkan) construit ici, publié en préversion avec les
-# notes de tools/release/notes/<étiquette>.md. Le motif ne croise pas celui des releases Windows et
+# Une étiquette linux-v* (poussée, ou créée avec une release depuis GitHub) : le lecteur Linux
+# (Vulkan) construit ici et joint à sa release, créée en préversion avec les notes de
+# tools/release/notes/<étiquette>.md si elle n'existe pas encore. Le motif ne croise pas celui des releases Windows et
 # macOS (v*), qui ne se lancent donc pas.
 on:
   push:
@@ -46,5 +47,10 @@ jobs:
         run: |
           notes="tools/release/notes/$GITHUB_REF_NAME.md"
           [ -f "$notes" ] || notes=/dev/null
-          gh release create "$GITHUB_REF_NAME" --prerelease --title "$GITHUB_REF_NAME" \
-            --notes-file "$notes" "$RUNNER_TEMP"/package/ajp-*.tar.gz "$RUNNER_TEMP/package/SHA256SUMS"
+          assets=("$RUNNER_TEMP"/package/ajp-*.tar.gz "$RUNNER_TEMP/package/SHA256SUMS")
+          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+            gh release upload "$GITHUB_REF_NAME" --clobber "${assets[@]}"
+          else
+            gh release create "$GITHUB_REF_NAME" --prerelease --title "$GITHUB_REF_NAME" \
+              --notes-file "$notes" "${assets[@]}"
+          fi
