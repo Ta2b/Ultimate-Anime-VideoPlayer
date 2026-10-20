@@ -20,10 +20,12 @@
 #include "core/gpu_device.h"
 #include "core/ring.h"
 #include "core/types.h"
+#include "media/hw_api.h"
 #include "render/grade_params.h"
 
 struct SDL_Window;
 struct ImGuiPlatformIO;
+struct AVBufferRef;
 
 namespace ajp::app::play {
 
@@ -54,6 +56,11 @@ class PlaceboScreen final : public Screen {
 
   // L'appareil de rendu : son UUID choisit le GPU de CUDA et de NVDEC.
   const GpuDevice& device() const;
+  // L'appareil Vulkan prêté à FFmpeg (vulkan_share.h) : le décodeur Vulkan Video y décode des
+  // images que le backend Vulkan lit en place ; nullptr si FFmpeg ne l'a pas accepté.
+  const media::HwDeviceSource* shared_devices() const;
+  // Le même, en AVHWDeviceContext emprunté, pour l'encodeur de l'export ; nullptr sans partage.
+  AVBufferRef* vulkan_device() const;
   // Ce que Vulkan dit de l'appareil pour l'écran de bienvenue : sa mémoire locale (le plus grand
   // tas DEVICE_LOCAL) et les matrices coopératives (les cœurs Tensor d'une RTX).
   struct DeviceFacts {

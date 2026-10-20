@@ -150,11 +150,19 @@ VulkanDevice vulkan_description(pl_vulkan vk) {
 }
 
 // Ce que le backend Vulkan demande à l'appareil qu'il adopte (tenseurs float16, matrices
-// coopératives, additions atomiques de float), activé par libplacebo seulement là où le pilote le
-// propose.
+// coopératives, additions atomiques de float) et ce que FFmpeg attend du même appareil pour Vulkan
+// Video (video maintenance 1 et 2), activé par libplacebo seulement là où le pilote le propose.
 struct ComputeFeatures {
+  VkPhysicalDeviceVideoMaintenance2FeaturesKHR video2{
+      .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VIDEO_MAINTENANCE_2_FEATURES_KHR,
+      .videoMaintenance2 = VK_TRUE};
+  VkPhysicalDeviceVideoMaintenance1FeaturesKHR video1{
+      .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VIDEO_MAINTENANCE_1_FEATURES_KHR,
+      .pNext = &video2,
+      .videoMaintenance1 = VK_TRUE};
   VkPhysicalDeviceShaderAtomicFloatFeaturesEXT atomic{
       .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_ATOMIC_FLOAT_FEATURES_EXT,
+      .pNext = &video1,
       .shaderBufferFloat32AtomicAdd = VK_TRUE};
   VkPhysicalDeviceCooperativeMatrixFeaturesKHR matrix{
       .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_COOPERATIVE_MATRIX_FEATURES_KHR,
@@ -181,9 +189,18 @@ struct ComputeFeatures {
   ~ComputeFeatures() = default;
 };
 
-constexpr std::array<const char*, 3> kComputeExtensions{VK_KHR_COOPERATIVE_MATRIX_EXTENSION_NAME,
-                                                        VK_EXT_SHADER_ATOMIC_FLOAT_EXTENSION_NAME,
-                                                        VK_EXT_MEMORY_BUDGET_EXTENSION_NAME};
+// Les extensions demandées si l'appareil les a : celles du backend Vulkan, puis Vulkan Video, pour
+// que FFmpeg décode et encode sur cet appareil (vulkan_share.h) ; ses files vidéo sont créées en
+// plus (extra_queues).
+constexpr std::array<const char*, 15> kOptionalExtensions{
+    VK_KHR_COOPERATIVE_MATRIX_EXTENSION_NAME, VK_EXT_SHADER_ATOMIC_FLOAT_EXTENSION_NAME,
+    VK_EXT_MEMORY_BUDGET_EXTENSION_NAME,      VK_KHR_VIDEO_QUEUE_EXTENSION_NAME,
+    VK_KHR_VIDEO_DECODE_QUEUE_EXTENSION_NAME, VK_KHR_VIDEO_DECODE_H264_EXTENSION_NAME,
+    VK_KHR_VIDEO_DECODE_H265_EXTENSION_NAME,  VK_KHR_VIDEO_DECODE_AV1_EXTENSION_NAME,
+    VK_KHR_VIDEO_DECODE_VP9_EXTENSION_NAME,   VK_KHR_VIDEO_ENCODE_QUEUE_EXTENSION_NAME,
+    VK_KHR_VIDEO_ENCODE_H264_EXTENSION_NAME,  VK_KHR_VIDEO_ENCODE_H265_EXTENSION_NAME,
+    VK_KHR_VIDEO_ENCODE_AV1_EXTENSION_NAME,   VK_KHR_VIDEO_MAINTENANCE_1_EXTENSION_NAME,
+    VK_KHR_VIDEO_MAINTENANCE_2_EXTENSION_NAME};
 
 }  // namespace
 
@@ -193,6 +210,7 @@ PlaceboScreen::~PlaceboScreen() = default;
 
 PlaceboScreen::Impl::~Impl() {
   if (vk != nullptr) pl_gpu_finish(vk->gpu);
+  share.reset();  // avant l'appareil qu'il prête
   if (!grade_gpu_us.empty()) {
     std::ranges::sort(grade_gpu_us);
     const auto at = [&](double q) {
@@ -274,12 +292,19 @@ std::expected<std::unique_ptr<PlaceboScreen>, Refusal> PlaceboScreen::open(const
   vk_params.allow_software = options.allow_software;
   const ComputeFeatures compute;
   vk_params.features = &compute.features;
-  vk_params.opt_extensions = kComputeExtensions.data();
-  vk_params.num_opt_extensions = static_cast<int>(kComputeExtensions.size());
+  vk_params.opt_extensions = kOptionalExtensions.data();
+  vk_params.num_opt_extensions = static_cast<int>(kOptionalExtensions.size());
+  vk_params.extra_queues = VK_QUEUE_VIDEO_DECODE_BIT_KHR | VK_QUEUE_VIDEO_ENCODE_BIT_KHR;
   impl->vk = pl_vulkan_create(impl->log, &vk_params);
   if (impl->vk == nullptr)
     return refuse(RefusalCode::DeviceMismatch, "pl_vulkan_create : aucun appareil ne convient");
   const pl_gpu gpu = impl->vk->gpu;
+  if (auto share = VulkanShare::create(impl->inst, impl->vk)) {
+    impl->share = std::move(*share);
+  } else {
+    impl->channel->info("appareil Vulkan non partagé avec FFmpeg : {} ; ses images passeront par l'hôte",
+                        share.error().detail);
+  }
   if ((gpu->export_caps.tex & PL_HANDLE_FD) == 0 || (gpu->export_caps.sync & PL_HANDLE_FD) == 0) {
     // Sans export, le backend TensorRT ne peut pas importer le ring ; le backend Vulkan s'en passe.
     impl->channel->info("l'appareil n'exporte pas ses images ni ses sémaphores (fd) : ring sans poignées");
@@ -314,6 +339,14 @@ std::expected<std::unique_ptr<PlaceboScreen>, Refusal> PlaceboScreen::open(const
 
 const GpuDevice& PlaceboScreen::device() const {
   return impl_->device;
+}
+
+const media::HwDeviceSource* PlaceboScreen::shared_devices() const {
+  return impl_->share.get();
+}
+
+AVBufferRef* PlaceboScreen::vulkan_device() const {
+  return impl_->share ? impl_->share->vulkan() : nullptr;
 }
 PlaceboScreen::DeviceFacts PlaceboScreen::device_facts() const {
   DeviceFacts facts;

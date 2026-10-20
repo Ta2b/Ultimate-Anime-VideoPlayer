@@ -109,12 +109,16 @@ ExportOutcome run_export(Player& p, const ExportJob& job) {
                              .fps_den = rate.den,
                              .codec = job.codec,
                              .quality = job.quality,
-                             .vendor = exporter::vendor_of(p.screen.device_facts().pci_vendor)});
+                             .vendor = exporter::vendor_of(p.screen.device_facts().pci_vendor),
+                             .cuda_ordinal = export_cuda_ordinal(p.screen.device()),
+                             .vulkan_device = p.screen.vulkan_device()});
   if (!writer) return stopped(writer.error());
-  auto opened = FrameExport::open(p.screen, FrameExportSetup{.width = size.width,
-                                                             .height = size.height,
-                                                             .layout = (*writer)->layout(),
-                                                             .color = (*writer)->color()});
+  auto opened =
+      FrameExport::open(p.screen, FrameExportSetup{.width = size.width,
+                                                   .height = size.height,
+                                                   .layout = (*writer)->layout(),
+                                                   .color = (*writer)->color(),
+                                                   .cuda = (*writer)->upload() == exporter::Upload::Cuda});
   if (!opened) return stopped(opened.error());
   frames = std::move(*opened);
 
@@ -122,12 +126,14 @@ ExportOutcome run_export(Player& p, const ExportJob& job) {
   live->set_rife_factor(factor);
   live->set_reduction(reduction_of(settings.downscale));
   live->set_keep_poses(settings.keep_poses);
-  const PipelineConfig config{.file = p.options.file,
-                              .decoder = {.attempts = decoder_attempts(c.backend_name),
-                                          .render_device = p.screen.device().uuid,
-                                          .download = c.backend_name != "tensorrt"},
-                              .audio = false,
-                              .subtitles = false};
+  const PipelineConfig config{
+      .file = p.options.file,
+      .decoder = {.attempts = decoder_attempts(c.backend_name, p.screen.shared_devices() != nullptr),
+                  .render_device = p.screen.device().uuid,
+                  .devices = p.screen.shared_devices(),
+                  .download = c.backend_name != "tensorrt"},
+      .audio = false,
+      .subtitles = false};
   auto pipeline = Pipeline::open(
       config, [&](VideoStageInit stage) -> std::expected<std::unique_ptr<VideoStage>, Refusal> {
         const int width = stage.track->width;

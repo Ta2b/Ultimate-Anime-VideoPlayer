@@ -36,6 +36,8 @@ enum class Layout : std::uint8_t {
 // Comment l'encodeur reçoit ses images.
 enum class Upload : std::uint8_t {
   Host,    // images en mémoire hôte, copiées par l'encodeur lui-même
+  Cuda,    // mémoire CUDA : le rendu y copie ses plans sur le GPU, NVENC les lit sans l'hôte ; une
+           // image hôte y est chargée (av_hwframe_transfer_data)
   Vaapi,   // surfaces VA-API, chargées depuis l'hôte (av_hwframe_transfer_data)
   Vulkan,  // images Vulkan Video, chargées de même
 };

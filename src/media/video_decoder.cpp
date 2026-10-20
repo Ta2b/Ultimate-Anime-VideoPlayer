@@ -247,7 +247,8 @@ std::expected<std::optional<DecodedFrame>, Refusal> VideoDecoder::receive() {
   const std::int64_t duration = frame->duration > 0 ? frame->duration : s.nominal_duration_us;
   s.next_pts_us = pts == kNoPts ? kNoPts : pts + duration;
 
-  if (s.download && frame->hw_frames_ctx != nullptr) {
+  // Les images d'un appareil partagé restent sur le GPU : leur propriétaire les lit en place.
+  if (s.download && !s.hw.shared && frame->hw_frames_ctx != nullptr) {
     FramePtr host(av_frame_alloc());
     if (!host) return refuse(RefusalCode::DecodeFailed, "image : mémoire insuffisante");
     if (const int copied = av_hwframe_transfer_data(host.get(), frame.get(), 0); copied < 0)

@@ -140,8 +140,9 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
   live->set_keep_poses(settings.keep_poses);
   PipelineConfig config{
       .file = options.file,
-      .decoder = {.attempts = decoder_attempts(c.backend_name),
+      .decoder = {.attempts = decoder_attempts(c.backend_name, p.screen.shared_devices() != nullptr),
                   .render_device = p.screen.device().uuid,
+                  .devices = p.screen.shared_devices(),
                   .download = c.backend_name != "tensorrt"},
       .languages = {.audio = settings.audio_languages, .subtitles = settings.subtitle_languages},
       .audio_track = p.audio_track,

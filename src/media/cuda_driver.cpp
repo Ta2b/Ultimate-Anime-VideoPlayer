@@ -14,6 +14,7 @@
 #include <windows.h>
 #else
 #include <dlfcn.h>
+#include <unistd.h>
 #endif
 
 namespace ajp::media {
@@ -21,19 +22,45 @@ namespace {
 
 using CUresult = int;
 using CUdevice = int;
+using CUdeviceptr = unsigned long long;
 struct CUctxOpaque;
 struct CUstreamOpaque;
 struct CUeventOpaque;
+struct CUextMemoryOpaque;
 using CUcontext = CUctxOpaque*;
 using CUstream = CUstreamOpaque*;
 using CUevent = CUeventOpaque*;
+using CUexternalMemory = CUextMemoryOpaque*;
 struct CUuuid {
   std::array<char, 16> bytes;
+};
+// CUDA_EXTERNAL_MEMORY_HANDLE_DESC et CUDA_EXTERNAL_MEMORY_BUFFER_DESC, à l'identique.
+struct ExternalMemoryHandleDesc {
+  int type = 0;
+  union {
+    int fd;
+    struct {
+      void* handle;
+      const void* name;
+    } win32;
+  } handle{};
+  unsigned long long size = 0;
+  unsigned flags = 0;
+  std::array<unsigned, 16> reserved{};
+};
+struct ExternalMemoryBufferDesc {
+  unsigned long long offset = 0;
+  unsigned long long size = 0;
+  unsigned flags = 0;
+  std::array<unsigned, 16> reserved{};
 };
 
 constexpr CUresult kCudaSuccess = 0;
 constexpr unsigned kStreamNonBlocking = 1;   // CU_STREAM_NON_BLOCKING
 constexpr unsigned kEventDisableTiming = 2;  // CU_EVENT_DISABLE_TIMING
+constexpr int kHandleOpaqueFd = 1;           // CU_EXTERNAL_MEMORY_HANDLE_TYPE_OPAQUE_FD
+constexpr int kHandleOpaqueWin32 = 2;        // CU_EXTERNAL_MEMORY_HANDLE_TYPE_OPAQUE_WIN32
+constexpr unsigned kMemoryDedicated = 1;     // CUDA_EXTERNAL_MEMORY_DEDICATED
 
 #if defined(_WIN32)
 constexpr const char* kLibrary = "nvcuda.dll";
@@ -80,6 +107,11 @@ struct CudaDriver::Api {
   CUresult (*cuEventCreate)(CUevent*, unsigned) = nullptr;
   CUresult (*cuEventRecord)(CUevent, CUstream) = nullptr;
   CUresult (*cuEventDestroy)(CUevent) = nullptr;
+  CUresult (*cuImportExternalMemory)(CUexternalMemory*, const ExternalMemoryHandleDesc*) = nullptr;
+  CUresult (*cuExternalMemoryGetMappedBuffer)(CUdeviceptr*, CUexternalMemory,
+                                              const ExternalMemoryBufferDesc*) = nullptr;
+  CUresult (*cuDestroyExternalMemory)(CUexternalMemory) = nullptr;
+  CUresult (*cuMemFree)(CUdeviceptr) = nullptr;
 };
 
 namespace {
@@ -139,7 +171,11 @@ std::expected<std::shared_ptr<CudaDriver>, Refusal> CudaDriver::load() {
                      bind(library, "cuStreamDestroy_v2", api->cuStreamDestroy) &&
                      bind(library, "cuEventCreate", api->cuEventCreate) &&
                      bind(library, "cuEventRecord", api->cuEventRecord) &&
-                     bind(library, "cuEventDestroy_v2", api->cuEventDestroy);
+                     bind(library, "cuEventDestroy_v2", api->cuEventDestroy) &&
+                     bind(library, "cuImportExternalMemory", api->cuImportExternalMemory) &&
+                     bind(library, "cuExternalMemoryGetMappedBuffer", api->cuExternalMemoryGetMappedBuffer) &&
+                     bind(library, "cuDestroyExternalMemory", api->cuDestroyExternalMemory) &&
+                     bind(library, "cuMemFree_v2", api->cuMemFree);
   if (!bound) {
     close_library(library);
     return std::unexpected(
@@ -194,6 +230,64 @@ std::expected<std::uintptr_t, Refusal> CudaDriver::primary_context(int ordinal) 
     return refuse_cuda("cuDevicePrimaryCtxRelease", result);
   }
   return std::bit_cast<std::uintptr_t>(context);
+}
+
+std::expected<PrimaryContext, Refusal> CudaDriver::retain_primary(int ordinal) const {
+  CUdevice device = 0;
+  if (const CUresult result = api_->cuDeviceGet(&device, ordinal); result != kCudaSuccess) {
+    return refuse_cuda("cuDeviceGet", result);
+  }
+  CUcontext context = nullptr;
+  if (const CUresult result = api_->cuDevicePrimaryCtxRetain(&context, device); result != kCudaSuccess) {
+    return refuse_cuda("cuDevicePrimaryCtxRetain", result);
+  }
+  std::shared_ptr<const CudaDriver> driver = shared_from_this();
+  std::shared_ptr<const void> owner(
+      context, [driver, device](CUctxOpaque*) { driver->api_->cuDevicePrimaryCtxRelease(device); });
+  return PrimaryContext{.context = std::bit_cast<std::uintptr_t>(context), .owner = std::move(owner)};
+}
+
+std::expected<ImportedMemory, Refusal> CudaDriver::import_memory(std::uintptr_t context,
+                                                                 std::uintptr_t handle, std::size_t size,
+                                                                 std::size_t offset, std::size_t bytes,
+                                                                 bool dedicated) const {
+  const ContextScope scope(*api_, context);
+  if (!scope.ok()) return refuse_cuda("cuCtxPushCurrent", -1);
+  ExternalMemoryHandleDesc desc{};
+  desc.size = size;
+  if (dedicated) desc.flags = kMemoryDedicated;
+#if defined(_WIN32)
+  desc.type = kHandleOpaqueWin32;
+  desc.handle.win32.handle = std::bit_cast<void*>(handle);
+#else
+  // CUDA prend le descripteur importé ; Vulkan garde le sien, fermé avec le tampon.
+  desc.type = kHandleOpaqueFd;
+  desc.handle.fd = dup(static_cast<int>(handle));
+  if (desc.handle.fd < 0) return std::unexpected(Refusal{RefusalCode::IoFailed, "dup du descripteur Vulkan"});
+#endif
+  CUexternalMemory memory = nullptr;
+  if (const CUresult result = api_->cuImportExternalMemory(&memory, &desc); result != kCudaSuccess) {
+#if !defined(_WIN32)
+    close(desc.handle.fd);  // pris par CUDA seulement en cas de succès
+#endif
+    return refuse_cuda("cuImportExternalMemory", result);
+  }
+  const ExternalMemoryBufferDesc buffer{.offset = offset, .size = bytes};
+  CUdeviceptr pointer = 0;
+  if (const CUresult result = api_->cuExternalMemoryGetMappedBuffer(&pointer, memory, &buffer);
+      result != kCudaSuccess) {
+    api_->cuDestroyExternalMemory(memory);
+    return refuse_cuda("cuExternalMemoryGetMappedBuffer", result);
+  }
+  // Le tampon mappé se libère avant la mémoire importée, dans le contexte, par le dernier
+  // propriétaire, depuis n'importe quel thread.
+  std::shared_ptr<const CudaDriver> driver = shared_from_this();
+  std::shared_ptr<const void> owner(memory, [driver, context, pointer](CUextMemoryOpaque* m) {
+    const ContextScope destroy_scope(*driver->api_, context);
+    driver->api_->cuMemFree(pointer);
+    driver->api_->cuDestroyExternalMemory(m);
+  });
+  return ImportedMemory{.pointer = static_cast<std::uintptr_t>(pointer), .owner = std::move(owner)};
 }
 
 std::expected<std::uintptr_t, Refusal> CudaDriver::create_stream(std::uintptr_t context) const {

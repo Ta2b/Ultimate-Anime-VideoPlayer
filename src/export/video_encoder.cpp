@@ -10,6 +10,7 @@
 
 extern "C" {
 #include <libavutil/hwcontext.h>
+#include <libavutil/hwcontext_vulkan.h>
 #include <libavutil/opt.h>
 #include <libavutil/pixdesc.h>
 }
@@ -46,50 +47,132 @@ struct Opened {
   BufferPtr device;
   CodecContextPtr ctx;
   Layout layout = Layout::P010;
+  Upload upload = Upload::Host;
+  bool shared = false;  // l'appareil Vulkan du rendu (EncoderSetup::vulkan_device)
 };
 
+AVHWDeviceType device_type(Upload upload) {
+  switch (upload) {
+    case Upload::Cuda:
+      return AV_HWDEVICE_TYPE_CUDA;
+    case Upload::Vaapi:
+      return AV_HWDEVICE_TYPE_VAAPI;
+    case Upload::Vulkan:
+      return AV_HWDEVICE_TYPE_VULKAN;
+    case Upload::Host:
+      break;
+  }
+  return AV_HWDEVICE_TYPE_NONE;
+}
+
+AVPixelFormat device_format(Upload upload) {
+  switch (upload) {
+    case Upload::Cuda:
+      return AV_PIX_FMT_CUDA;
+    case Upload::Vaapi:
+      return AV_PIX_FMT_VAAPI;
+    case Upload::Vulkan:
+      return AV_PIX_FMT_VULKAN;
+    case Upload::Host:
+      break;
+  }
+  return AV_PIX_FMT_NONE;
+}
+
+// AV_CUDA_USE_PRIMARY_CONTEXT (hwcontext_cuda.h, qui exige les types CUDA) : le contexte primaire
+// du GPU, celui des noyaux, de NVDEC et des tampons de l'export.
+constexpr int kCudaUsePrimaryContext = 1;
+
+// Le contexte d'images d'un encodeur matériel ; renderable : images Vulkan de l'appareil du rendu
+// dans lesquelles libplacebo rend (COLOR_ATTACHMENT, en plus de ce que FFmpeg demande).
+std::expected<BufferPtr, std::string> open_frames(AVBufferRef& device, const EncoderCandidate& candidate,
+                                                  Layout layout, const EncoderSetup& setup, bool renderable) {
+  BufferPtr frames(av_hwframe_ctx_alloc(&device));
+  if (!frames) return std::unexpected(std::string("contexte d'images : mémoire"));
+  auto* fc = reinterpret_cast<AVHWFramesContext*>(frames->data);
+  fc->format = device_format(candidate.upload);
+  fc->sw_format = pixel_format(layout);
+  fc->width = setup.width;
+  fc->height = setup.height;
+  fc->initial_pool_size = candidate.upload == Upload::Vaapi ? 16 : 0;
+  if (renderable) {
+    auto* vk = static_cast<AVVulkanFramesContext*>(fc->hwctx);
+    vk->usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;  // FFmpeg y ajoute les siens
+  }
+  if (const int err = av_hwframe_ctx_init(frames.get()); err < 0)
+    return std::unexpected(
+        std::format("surfaces {} : {}", av_get_pix_fmt_name(fc->sw_format), av_error_text(err)));
+  return frames;
+}
+
+// L'appareil et le contexte d'images d'un encodeur qui reçoit ses images sur l'appareil ; le
+// texte du refus sinon. Un encodeur Vulkan prend l'appareil du rendu s'il est donné.
+std::expected<Opened, std::string> open_device(const AVCodec& codec, const EncoderCandidate& candidate,
+                                               const EncoderSetup& setup) {
+  Opened out;
+  out.upload = candidate.upload;
+  out.layout = candidate.ten_bit ? Layout::P010 : Layout::Nv12;
+  AVBufferRef* device = nullptr;
+  if (candidate.upload == Upload::Vulkan && setup.vulkan_device != nullptr) {
+    device = av_buffer_ref(setup.vulkan_device);
+    if (device == nullptr) return std::unexpected(std::string("appareil partagé : mémoire"));
+    out.shared = true;
+  } else {
+    const std::string ordinal = std::to_string(setup.cuda_ordinal);
+    const bool cuda = candidate.upload == Upload::Cuda;
+    const char* selector = cuda && setup.cuda_ordinal >= 0 ? ordinal.c_str() : nullptr;
+    if (const int err = av_hwdevice_ctx_create(&device, device_type(candidate.upload), selector, nullptr,
+                                               cuda ? kCudaUsePrimaryContext : 0);
+        err < 0) {
+      return std::unexpected(std::format("appareil : {}", av_error_text(err)));
+    }
+  }
+  out.device.reset(device);
+  auto frames = open_frames(*out.device, candidate, out.layout, setup, out.shared);
+  if (!frames && out.shared) {
+    // Sans rendu direct dans ses images, l'encodeur les charge depuis l'hôte, sur le même appareil.
+    log_channel("export")->info("{} : images non rendables sur l'appareil du rendu ({}) ; chargées",
+                                candidate.name, frames.error());
+    frames = open_frames(*out.device, candidate, out.layout, setup, false);
+  }
+  if (!frames) return std::unexpected(std::move(frames.error()));
+  out.ctx.reset(avcodec_alloc_context3(&codec));
+  if (!out.ctx) return std::unexpected(std::string("contexte : mémoire"));
+  out.ctx->hw_frames_ctx = av_buffer_ref(frames->get());
+  out.ctx->pix_fmt = reinterpret_cast<AVHWFramesContext*>((*frames)->data)->format;
+  return out;
+}
+
 // Une tentative : le contexte rempli, les options posées, l'encodeur ouvert ; le texte du refus
-// sinon.
+// sinon. Un encodeur CUDA dont l'appareil ne s'ouvre pas (FFmpeg sans CUDA) reçoit ses images de
+// l'hôte, comme avant.
 std::expected<Opened, std::string> attempt(const AVCodec& codec, const EncoderCandidate& candidate,
                                            const std::vector<EncoderOption>& options,
                                            const EncoderSetup& setup) {
+  const auto log = log_channel("export");
   Opened out;
-  AVPixelFormat pix_fmt = AV_PIX_FMT_NONE;
-  if (candidate.upload == Upload::Host) {
+  if (candidate.upload != Upload::Host) {
+    auto device = open_device(codec, candidate, setup);
+    if (device) {
+      out = std::move(*device);
+    } else if (candidate.upload != Upload::Cuda) {
+      return std::unexpected(std::move(device.error()));
+    } else {
+      log->info("{} : {} ; images chargées depuis l'hôte", candidate.name, device.error());
+    }
+  }
+  if (!out.ctx) {
     const std::optional<Layout> layout = host_layout(codec, candidate.ten_bit);
     if (!layout) return std::unexpected(std::string("aucun format hôte en 4:2:0 de cette profondeur"));
     out.layout = *layout;
-    pix_fmt = pixel_format(*layout);
-  } else {
-    out.layout = candidate.ten_bit ? Layout::P010 : Layout::Nv12;
-    const AVHWDeviceType type =
-        candidate.upload == Upload::Vaapi ? AV_HWDEVICE_TYPE_VAAPI : AV_HWDEVICE_TYPE_VULKAN;
-    AVBufferRef* device = nullptr;
-    if (const int err = av_hwdevice_ctx_create(&device, type, nullptr, nullptr, 0); err < 0)
-      return std::unexpected(std::format("appareil : {}", av_error_text(err)));
-    out.device.reset(device);
-    BufferPtr frames(av_hwframe_ctx_alloc(out.device.get()));
-    if (!frames) return std::unexpected(std::string("contexte d'images : mémoire"));
-    auto* fc = reinterpret_cast<AVHWFramesContext*>(frames->data);
-    fc->format = candidate.upload == Upload::Vaapi ? AV_PIX_FMT_VAAPI : AV_PIX_FMT_VULKAN;
-    fc->sw_format = pixel_format(out.layout);
-    fc->width = setup.width;
-    fc->height = setup.height;
-    fc->initial_pool_size = candidate.upload == Upload::Vaapi ? 16 : 0;
-    if (const int err = av_hwframe_ctx_init(frames.get()); err < 0)
-      return std::unexpected(
-          std::format("surfaces {} : {}", av_get_pix_fmt_name(fc->sw_format), av_error_text(err)));
-    pix_fmt = fc->format;
+    out.upload = Upload::Host;
     out.ctx.reset(avcodec_alloc_context3(&codec));
     if (!out.ctx) return std::unexpected(std::string("contexte : mémoire"));
-    out.ctx->hw_frames_ctx = av_buffer_ref(frames.get());
+    out.ctx->pix_fmt = pixel_format(*layout);
   }
-  if (!out.ctx) out.ctx.reset(avcodec_alloc_context3(&codec));
-  if (!out.ctx) return std::unexpected(std::string("contexte : mémoire"));
   AVCodecContext& c = *out.ctx;
   c.width = setup.width;
   c.height = setup.height;
-  c.pix_fmt = pix_fmt;
   c.time_base = kMicroseconds;
   if (setup.fps_num > 0 && setup.fps_den > 0) c.framerate = AVRational{setup.fps_num, setup.fps_den};
   c.sample_aspect_ratio = setup.sample_aspect;
@@ -104,7 +187,6 @@ std::expected<Opened, std::string> attempt(const AVCodec& codec, const EncoderCa
       setup.fps_num > 0 && setup.fps_den > 0 ? static_cast<double>(setup.fps_num) / setup.fps_den : 24.0;
   c.gop_size = std::clamp(static_cast<int>(std::lround(fps * 4.0)), 1, 600);
   c.flags |= AV_CODEC_FLAG_GLOBAL_HEADER;  // MKV : en-têtes de flux dans CodecPrivate
-  const auto log = log_channel("export");
   for (const EncoderOption& option : options) {
     const int err = av_opt_set(&c, option.key.c_str(), option.value.c_str(), AV_OPT_SEARCH_CHILDREN);
     if (err < 0)
@@ -140,14 +222,18 @@ std::expected<VideoEncoder, Refusal> VideoEncoder::open(const EncoderSetup& setu
     encoder.device_ = std::move(opened->device);
     encoder.ctx_ = std::move(opened->ctx);
     encoder.layout_ = opened->layout;
-    encoder.upload_ = candidate.upload;
+    encoder.upload_ = opened->upload;
+    encoder.shared_ = opened->shared;
     encoder.label_ = std::format("{} ({})", candidate.label, candidate.name);
     encoder.hw_frame_.reset(av_frame_alloc());
     encoder.packet_.reset(av_packet_alloc());
     if (!encoder.hw_frame_ || !encoder.packet_)
       return refuse(RefusalCode::EncodeFailed, "encodeur : mémoire");
-    log->info("encodeur {} : {}x{} {}", encoder.label_, setup.width, setup.height,
-              av_get_pix_fmt_name(pixel_format(encoder.layout_)));
+    log->info("encodeur {} : {}x{} {}{}", encoder.label_, setup.width, setup.height,
+              av_get_pix_fmt_name(pixel_format(encoder.layout_)),
+              encoder.upload_ == Upload::Cuda ? " en mémoire CUDA"
+              : encoder.shared_               ? " sur l'appareil du rendu"
+                                              : "");
     return encoder;
   }
   std::string detail = std::format("aucun encodeur {} ne s'ouvre", exporter::label(setup.codec));
@@ -168,7 +254,9 @@ std::expected<void, Refusal> VideoEncoder::drain(const PacketSink& sink) {
 
 std::expected<void, Refusal> VideoEncoder::encode(AVFrame* frame, const PacketSink& sink) {
   AVFrame* sent = frame;
-  if (frame != nullptr && upload_ != Upload::Host) {
+  // Une image hôte pour un encodeur qui lit l'appareil : chargée sur une surface du contexte
+  // d'images ; une image déjà au format de l'appareil part telle quelle.
+  if (frame != nullptr && upload_ != Upload::Host && frame->format != ctx_->pix_fmt) {
     av_frame_unref(hw_frame_.get());
     if (const int err = av_hwframe_get_buffer(ctx_->hw_frames_ctx, hw_frame_.get(), 0); err < 0)
       return refuse_av(RefusalCode::EncodeFailed, "av_hwframe_get_buffer", err);

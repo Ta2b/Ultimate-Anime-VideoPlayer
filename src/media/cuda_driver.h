@@ -1,10 +1,13 @@
 // Pilote CUDA chargé à l'exécution (libcuda.so.1, nvcuda.dll) : le lecteur
 // démarre sans CUDA. Seulement ce que media en attend : trouver l'appareil du
 // rendu par son UUID, créer le flux de décodage non bloquant, enregistrer un
-// événement par image. Interne au module ; ne tourne pas sans GPU NVIDIA.
+// événement par image ; et ce que l'export en attend : retenir le contexte
+// primaire et y importer la mémoire Vulkan de ses tampons, que NVENC lit sans
+// relecture hôte. Ne tourne pas sans GPU NVIDIA.
 #pragma once
 
 #include <array>
+#include <cstddef>
 #include <cstdint>
 #include <expected>
 #include <memory>
@@ -16,6 +19,19 @@
 namespace ajp::media {
 
 using CudaUuid = std::array<std::uint8_t, 16>;
+
+// Contexte primaire retenu (cuDevicePrimaryCtxRetain), rendu par le dernier propriétaire.
+struct PrimaryContext {
+  std::uintptr_t context = 0;  // CUcontext
+  std::shared_ptr<const void> owner;
+};
+
+// Mémoire d'un autre API importée dans un contexte, vue par son adresse d'appareil ; le dernier
+// propriétaire la démappe puis la rend (cuMemFree, cuDestroyExternalMemory).
+struct ImportedMemory {
+  std::uintptr_t pointer = 0;  // CUdeviceptr du premier octet demandé
+  std::shared_ptr<const void> owner;
+};
 
 // La bibliothèque n'est déchargée que si un symbole manque, avant cuInit. Dès
 // cuInit appelé, elle reste chargée jusqu'à la fin du processus, même après
@@ -46,6 +62,18 @@ class CudaDriver : public std::enable_shared_from_this<CudaDriver> {
   // AV_CUDA_USE_PRIMARY_CONTEXT. Lu sans le garder : il ne vit que tant qu'un
   // autre utilisateur le retient.
   std::expected<std::uintptr_t, Refusal> primary_context(int ordinal) const;
+  // Le même, retenu tant que son propriétaire vit : pour un utilisateur qui survit à FFmpeg
+  // (l'export rend ses tampons CUDA après l'encodeur).
+  std::expected<PrimaryContext, Refusal> retain_primary(int ordinal) const;
+
+  // Mémoire Vulkan exportée (descripteur POSIX, ou HANDLE NT sous Windows) importée dans le
+  // contexte : handle désigne size octets, dont [offset, offset + bytes) sont rendus par leur
+  // adresse. Le descripteur est dupliqué (CUDA prend le sien) ; le HANDLE est lu tel quel. Une
+  // allocation Vulkan dédiée (VkMemoryDedicatedAllocateInfo) se dit par dedicated. Refus
+  // HwDecodeUnavailable (nommant l'appel), IoFailed (dup).
+  std::expected<ImportedMemory, Refusal> import_memory(std::uintptr_t context, std::uintptr_t handle,
+                                                       std::size_t size, std::size_t offset,
+                                                       std::size_t bytes, bool dedicated) const;
 
   // Flux CU_STREAM_NON_BLOCKING dans le contexte donné (CUcontext).
   std::expected<std::uintptr_t, Refusal> create_stream(std::uintptr_t context) const;

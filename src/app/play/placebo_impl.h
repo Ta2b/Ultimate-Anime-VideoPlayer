@@ -21,6 +21,7 @@
 #include "app/play/osd_text.h"
 #include "app/play/placebo_imgui.h"
 #include "app/play/placebo_screen.h"
+#include "app/play/vulkan_share.h"
 #include "core/gpu_device.h"
 #include "core/ring.h"
 #include "render/grade.h"
@@ -100,6 +101,7 @@ struct PlaceboScreen::Impl {
   pl_vk_inst inst = nullptr;
   VkSurfaceKHR surface = VK_NULL_HANDLE;
   pl_vulkan vk = nullptr;
+  std::unique_ptr<VulkanShare> share;  // vk prêté à FFmpeg ; détruit avant lui
   pl_swapchain swapchain = nullptr;
   pl_renderer renderer = nullptr;
   GpuDevice device;

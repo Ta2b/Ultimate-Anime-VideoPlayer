@@ -45,12 +45,15 @@ TEST_CASE("Encodeur : celui du GPU du rendu d'abord", "[export]") {
   CHECK(names(encoder_candidates(Codec::H264, Quality::High, GpuVendor::Amd)).front() == "h264_amf");
 }
 
-TEST_CASE("Encodeur : VA-API et Vulkan Video chargent leurs surfaces depuis l'hôte", "[export]") {
+TEST_CASE("Encodeur : NVENC lit la mémoire CUDA, VA-API et Vulkan Video chargent leurs surfaces",
+          "[export]") {
   for (const EncoderCandidate& c : encoder_candidates(Codec::Hevc, Quality::High, GpuVendor::Amd)) {
     if (c.name == "hevc_vaapi")
       CHECK(c.upload == Upload::Vaapi);
     else if (c.name == "hevc_vulkan")
       CHECK(c.upload == Upload::Vulkan);
+    else if (c.name == "hevc_nvenc")
+      CHECK(c.upload == Upload::Cuda);
     else
       CHECK(c.upload == Upload::Host);
   }

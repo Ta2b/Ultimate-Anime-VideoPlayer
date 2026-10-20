@@ -49,7 +49,7 @@ gpu ─────── core, kernels, vendor_hdr
 prepare ─── core, gpu · privé : toml++, core_log
 render ──── core, subs
 present ─── core_types
-export ──── core_types · privé : FFmpeg, core_log
+export ──── core_types · privé : FFmpeg, Vulkan, core_log
 app ─────── tout, dont core_log
 ```
 
@@ -122,6 +122,16 @@ opaques, `vkGetInstanceProcAddr`, version d'API, extensions et fonctionnalités
 activées, familles de files, files graphique, calcul et décodage vidéo, et le
 verrou `lock_queue` / `unlock_queue` qu'un module prend autour de chaque
 soumission. `DeviceUuid` n'a qu'une définition, partagée par `media` et `gpu`.
+
+`app` prête ce même appareil à FFmpeg (`app/play/vulkan_share.h`, un
+`media::HwDeviceSource`) : l'écran le crée avec les extensions et les files Vulkan
+Video, et FFmpeg y décode et y encode. Le décodeur Vulkan Video rend alors des
+images que le backend Vulkan lit en place (`VulkanImageAccess`), sans copie hôte ;
+VA-API et les autres API sans partage restent copiées. À l'export, trois chemins
+évitent la relecture hôte quand ils le peuvent : NVENC lit des tampons Vulkan
+exportés vers CUDA (`media::CudaDriver::import_memory`), l'encodeur Vulkan Video
+reçoit ses propres images rendues dans leurs plans (`placebo_export_vulkan.cpp`),
+et tout autre encodeur lit ou charge des tampons hôte.
 
 ### Backends (`gpu/backend.h`, ABI 3)
 

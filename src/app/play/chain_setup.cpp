@@ -31,13 +31,15 @@ std::vector<std::filesystem::path> gmfss_dirs(const PlayerPaths& paths,
 
 }  // namespace
 
-std::vector<media::HwApi> decoder_attempts(std::string_view backend) {
+std::vector<media::HwApi> decoder_attempts(std::string_view backend, bool shared_vulkan) {
   if (backend == "tensorrt") return {media::HwApi::Cuda};
+  std::vector<media::HwApi> attempts;
+  if (shared_vulkan) attempts.push_back(media::HwApi::Vulkan);
 #if defined(__linux__)
-  return {media::HwApi::Vaapi, media::HwApi::Software};
-#else
-  return {media::HwApi::Software};
+  attempts.push_back(media::HwApi::Vaapi);
 #endif
+  attempts.push_back(media::HwApi::Software);
+  return attempts;
 }
 
 std::string_view ChainEngines::motion_name() const {

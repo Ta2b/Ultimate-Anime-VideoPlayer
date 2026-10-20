@@ -43,6 +43,7 @@ struct HwDevice {
   AVPixelFormat format = AV_PIX_FMT_NONE;    // format matériel attendu dans get_format
   BufferPtr device;                          // AVHWDeviceContext
   std::unique_ptr<CudaDecodeStream> stream;  // Cuda seulement
+  bool shared = false;  // appareil de DecoderOptions::devices : ses images restent sur le GPU
 };
 
 // Décodeur et appareil de cette API pour ce codec, ou refus nommé : codec sans

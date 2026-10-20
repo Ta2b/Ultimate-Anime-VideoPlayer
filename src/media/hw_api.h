@@ -49,6 +49,7 @@ struct DecoderOptions {
   // Chaque image matérielle copiée en mémoire hôte (av_hwframe_transfer_data) : le décodeur
   // matériel décharge le CPU même pour un backend qui n'importe pas ses surfaces (Vulkan avec
   // VA-API). Quelques Mo par image sur le bus, contre le décodage logiciel d'une HEVC 10 bits.
+  // Sauf les images d'un appareil partagé (devices), que son propriétaire lit en place.
   bool download = false;
 };
 

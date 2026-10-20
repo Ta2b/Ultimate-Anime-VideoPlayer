@@ -54,7 +54,8 @@ std::vector<EncoderOption> nvenc_rate(Codec codec, Quality quality) {
 }
 
 EncoderCandidate nvenc(Codec codec, Quality quality) {
-  EncoderCandidate c{.name = std::format("{}_nvenc", prefix(codec)), .label = "NVENC"};
+  EncoderCandidate c{
+      .name = std::format("{}_nvenc", prefix(codec)), .label = "NVENC", .upload = Upload::Cuda};
   c.fallback = nvenc_rate(codec, quality);
   c.options = c.fallback;
   c.options.insert(c.options.end(), {{"spatial-aq", "1"},

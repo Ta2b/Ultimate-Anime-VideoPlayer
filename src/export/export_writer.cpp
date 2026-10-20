@@ -30,6 +30,41 @@ void release_picture(void* opaque, std::uint8_t* /*data*/) {
   delete release;  // NOLINT(cppcoreguidelines-owning-memory) : rendu par av_buffer_create
 }
 
+// L'image FFmpeg lit la mémoire de la Picture, hôte ou CUDA ; release part avec sa dernière
+// référence. Un refus rend la Picture (release) : l'image reste vide.
+std::expected<void, Refusal> bind_picture(AVFrame& frame, Picture& picture, const ExportWriter::State& s) {
+  frame.format = pixel_format(s.encoder.layout());
+  if (picture.device) {
+    // Des adresses CUDA : l'image porte le format et le contexte d'images de l'encodeur, qui
+    // enregistre la mémoire auprès de NVENC la première fois et la lit en place.
+    if (s.encoder.upload() != Upload::Cuda || s.encoder.frames_context() == nullptr) {
+      if (picture.release) picture.release();
+      return std::unexpected(
+          Refusal{RefusalCode::EncodeFailed, "image en mémoire CUDA pour un encodeur hôte"});
+    }
+    frame.format = s.encoder.context().pix_fmt;
+    frame.hw_frames_ctx = av_buffer_ref(s.encoder.frames_context());
+    if (frame.hw_frames_ctx == nullptr) {
+      if (picture.release) picture.release();
+      return std::unexpected(Refusal{RefusalCode::EncodeFailed, "image : mémoire"});
+    }
+  }
+  frame.width = s.width;
+  frame.height = s.height;
+  auto* release = new std::function<void()>(std::move(picture.release));  // NOLINT : à FFmpeg
+  frame.buf[0] =
+      av_buffer_create(picture.planes[0], picture.bytes, release_picture, release, AV_BUFFER_FLAG_READONLY);
+  if (frame.buf[0] == nullptr) {
+    release_picture(release, nullptr);
+    return std::unexpected(Refusal{RefusalCode::EncodeFailed, "image : mémoire"});
+  }
+  for (std::size_t p = 0; p < picture.planes.size(); ++p) {
+    frame.data[p] = picture.planes[p];
+    frame.linesize[p] = picture.pitches[p];
+  }
+  return {};
+}
+
 }  // namespace
 
 std::expected<std::unique_ptr<ExportWriter>, Refusal> ExportWriter::open(const WriterConfig& config) {
@@ -44,11 +79,14 @@ std::expected<std::unique_ptr<ExportWriter>, Refusal> ExportWriter::open(const W
                                                  .color = color,
                                                  .codec = config.codec,
                                                  .quality = config.quality,
-                                                 .vendor = config.vendor});
+                                                 .vendor = config.vendor,
+                                                 .cuda_ordinal = config.cuda_ordinal,
+                                                 .vulkan_device = config.vulkan_device});
   if (!encoder) return std::unexpected(std::move(encoder.error()));
   if (auto begun = muxer->begin(encoder->context()); !begun) return std::unexpected(std::move(begun.error()));
   std::unique_ptr<ExportWriter> writer(new ExportWriter());
   writer->layout_ = encoder->layout();
+  writer->upload_ = encoder->upload();
   writer->color_ = color;
   writer->encoder_ = std::format("{} · {}", label(config.codec), encoder->label());
   writer->output_ = config.output;
@@ -79,6 +117,7 @@ ExportWriter::~ExportWriter() {
   }
   for (Picture& picture : queue_) {
     if (picture.release) picture.release();
+    av_frame_free(&picture.frame);
   }
   queue_.clear();
   state_.reset();  // l'encodeur rend ses dernières images ; un mux non fini supprime le fichier
@@ -112,6 +151,12 @@ std::optional<Refusal> ExportWriter::failure() const {
   return failure_;
 }
 
+AVBufferRef* ExportWriter::vulkan_frames() const {
+  const VideoEncoder& encoder = state_->encoder;
+  if (encoder.upload() != Upload::Vulkan || !encoder.shared_device()) return nullptr;
+  return encoder.frames_context();
+}
+
 WriterProgress ExportWriter::progress() const {
   return WriterProgress{.frames = frames_.load(), .bytes = bytes_.load()};
 }
@@ -143,11 +188,14 @@ void ExportWriter::run(const std::stop_token& stop) {
       picture = std::move(queue_.front());
       queue_.pop_front();
     }
-    // L'image FFmpeg lit la mémoire de l'appelant ; release part avec sa dernière référence.
     av_frame_unref(frame.get());
-    frame->format = pixel_format(layout_);
-    frame->width = s.width;
-    frame->height = s.height;
+    if (picture.frame != nullptr) {
+      // Une image de l'encodeur, rendue sur le GPU : prise telle quelle, avec sa synchronisation.
+      av_frame_move_ref(frame.get(), picture.frame);
+      av_frame_free(&picture.frame);
+    } else if (auto bound = bind_picture(*frame, picture, s); !bound) {
+      return fail(std::move(bound.error()));
+    }
     frame->color_primaries = s.color.primaries;
     frame->color_trc = s.color.transfer;
     frame->colorspace = s.color.matrix;
@@ -159,17 +207,6 @@ void ExportWriter::run(const std::stop_token& stop) {
     s.last_pts = pts;
     s.any = true;
     frame->pts = pts;
-    auto* release = new std::function<void()>(std::move(picture.release));  // NOLINT : à FFmpeg
-    frame->buf[0] =
-        av_buffer_create(picture.planes[0], picture.bytes, release_picture, release, AV_BUFFER_FLAG_READONLY);
-    if (frame->buf[0] == nullptr) {
-      release_picture(release, nullptr);
-      return fail(Refusal{RefusalCode::EncodeFailed, "image : mémoire"});
-    }
-    for (std::size_t p = 0; p < picture.planes.size(); ++p) {
-      frame->data[p] = picture.planes[p];
-      frame->linesize[p] = picture.pitches[p];
-    }
     auto encoded = s.encoder.encode(frame.get(), sink);
     av_frame_unref(frame.get());
     if (!encoded) return fail(std::move(encoded.error()));

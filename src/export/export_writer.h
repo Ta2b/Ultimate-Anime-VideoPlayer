@@ -1,7 +1,7 @@
-// L'écriture d'un export : les images converties par le rendu (YUV 4:2:0 en mémoire hôte), encodées
-// par l'encodeur matériel du GPU (encoder_choice.h) et écrites en MKV avec tout ce que la source
-// porte d'autre, copié tel quel : pistes audio et de sous-titres, polices jointes, chapitres et
-// métadonnées. FFmpeg reste hors de cet en-tête.
+// L'écriture d'un export : les images converties par le rendu (YUV 4:2:0 en mémoire hôte, ou en
+// mémoire CUDA pour NVENC), encodées par l'encodeur matériel du GPU (encoder_choice.h) et écrites
+// en MKV avec tout ce que la source porte d'autre, copié tel quel : pistes audio et de sous-titres,
+// polices jointes, chapitres et métadonnées. FFmpeg reste hors de cet en-tête.
 //
 // Un thread « export » encode et écrit : push() lui confie une image sans la copier (l'encodeur lit
 // la mémoire de l'appelant, puis appelle release), finish() vide l'encodeur et clôt le fichier.
@@ -27,6 +27,9 @@
 #include "core/types.h"
 #include "export/encoder_choice.h"
 
+struct AVBufferRef;
+struct AVFrame;
+
 namespace ajp::exporter {
 
 struct WriterConfig {
@@ -40,16 +43,27 @@ struct WriterConfig {
   Codec codec = Codec::Hevc;
   Quality quality = Quality::VeryHigh;
   GpuVendor vendor = GpuVendor::Other;  // GPU du rendu : l'encodeur essayé d'abord
+  int cuda_ordinal = -1;                // son ordinal CUDA, pour NVENC (EncoderSetup) ; -1 : inconnu
+  // L'appareil Vulkan de l'écran (AVHWDeviceContext, emprunté) : l'encodeur Vulkan Video y reçoit
+  // des images rendues sur le GPU (vulkan_frames()) au lieu d'en créer un autre et de charger
+  // chaque image depuis l'hôte. nullptr : son propre appareil.
+  AVBufferRef* vulkan_device = nullptr;
 };
 
 // Une image convertie, dans la disposition de l'encodeur ouvert (layout()). La mémoire reste à
 // l'appelant jusqu'à release, appelé une fois quand l'encodeur ne la lit plus, depuis n'importe
-// quel thread.
+// quel thread. En mémoire hôte ; ou, si l'encodeur lit la mémoire CUDA (upload() Cuda), des
+// adresses CUDA de son contexte, les plans à la suite (chroma après la luma, même pas), que
+// l'encodeur lit sans copie.
 struct Picture {
   std::array<std::uint8_t*, 3> planes{};
   std::array<int, 3> pitches{};  // octets par ligne
   std::size_t bytes = 0;         // étendue de la mémoire, du premier plan à la fin du dernier
   std::int64_t pts_us = 0;       // instant de présentation, depuis le début du fichier (RingFrame)
+  bool device = false;           // planes : adresses CUDA (upload() Cuda), pas de l'hôte
+  // Ou une image Vulkan de l'encodeur (vulkan_frames()), déjà rendue et synchronisée par son
+  // sémaphore : l'écriture la prend et la libère ; planes, bytes et release ne comptent pas.
+  AVFrame* frame = nullptr;
   std::function<void()> release;
 };
 
@@ -69,6 +83,11 @@ class ExportWriter {
   ExportWriter& operator=(const ExportWriter&) = delete;
 
   Layout layout() const { return layout_; }
+  Upload upload() const { return upload_; }  // Cuda : les Picture peuvent être en mémoire CUDA
+  // Le contexte d'images de l'encodeur Vulkan Video sur l'appareil partagé (WriterConfig), emprunté :
+  // les Picture peuvent être ses images (Picture::frame). nullptr : autre encodeur, ou son propre
+  // appareil.
+  AVBufferRef* vulkan_frames() const;
   const ColorInfo& color() const { return color_; }        // l'étiquette du flux : le rendu code ainsi
   const std::string& encoder() const { return encoder_; }  // « HEVC 10 bits · NVENC »
 
@@ -91,6 +110,7 @@ class ExportWriter {
   static constexpr std::size_t kQueueDepth = 4;
   std::unique_ptr<State> state_;
   Layout layout_ = Layout::P010;
+  Upload upload_ = Upload::Host;
   ColorInfo color_;
   std::string encoder_;
   std::filesystem::path output_;

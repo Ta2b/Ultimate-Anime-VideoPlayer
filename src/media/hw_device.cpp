@@ -164,6 +164,7 @@ std::expected<HwDevice, Refusal> open_hw_device(AVCodecID codec, HwApi api, cons
   if (options.devices != nullptr) {
     if (AVBufferRef* shared = options.devices->device(api); shared != nullptr) {
       hw.device.reset(shared);
+      hw.shared = true;
       if (reinterpret_cast<const AVHWDeviceContext*>(shared->data)->type != type) {
         return refuse_hw(api, "l'appareil partagé est d'un autre type");
       }
