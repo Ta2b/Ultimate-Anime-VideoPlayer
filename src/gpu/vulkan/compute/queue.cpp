@@ -1,8 +1,12 @@
 // Soumission sur la file compute (par lots), attentes hôte et command buffers jetables.
+#include <chrono>
 #include <cstddef>
 #include <format>
+#include <optional>
 #include <span>
 #include <vector>
+
+#include <spdlog/logger.h>
 
 #include "gpu/vulkan/compute/context.h"
 #include "gpu/vulkan/compute/recording.h"
@@ -43,7 +47,34 @@ Done VkContext::queue_submit(std::span<const VkSubmitInfo> infos) {
                                                    infos.data(), VK_NULL_HANDLE);
   if (unlock_queue_) unlock_queue_();
   ++queue_submits_;
+  if (result == VK_SUCCESS && !infos.empty() && infos.back().signalSemaphoreCount > 0) {
+    const VkSubmitInfo& info = infos.back();
+    const auto* timeline = static_cast<const VkTimelineSemaphoreSubmitInfo*>(info.pNext);
+    last_submitted_ = {.semaphore = info.pSignalSemaphores[0], .value = timeline->pSignalSemaphoreValues[0]};
+  }
   return check(result, "vkQueueSubmit");
+}
+
+bool VkContext::settle(std::optional<TimelinePoint> point) {
+  // Le lot part d'abord, même sous un GPU bloqué : il ne garde pas un enregistrement détruit, et un
+  // travail encore en attente lirait la ressource après sa fin de vie.
+  if (auto flushed = flush(); !flushed) log().error("fin de vie : {}", flushed.error().detail);
+  if (stalled_) return false;
+  const TimelinePoint target = point.value_or(last_submitted_);
+  if (target.semaphore == VK_NULL_HANDLE || target.value == 0) return true;
+  const VkSemaphoreWaitInfo wait{.sType = VK_STRUCTURE_TYPE_SEMAPHORE_WAIT_INFO,
+                                 .semaphoreCount = 1,
+                                 .pSemaphores = &target.semaphore,
+                                 .pValues = &target.value};
+  const auto timeout = std::chrono::duration_cast<std::chrono::nanoseconds>(kSettleTimeout);
+  const VkResult result =
+      device_fn_.vkWaitSemaphores(device_, &wait, static_cast<std::uint64_t>(timeout.count()));
+  if (result == VK_SUCCESS) return true;
+  stalled_ = true;
+  log().error(
+      "fin de vie : le GPU n'a pas atteint la valeur {} en {} s ({}) ; ses ressources restent en place",
+      target.value, kSettleTimeout.count(), result == VK_TIMEOUT ? "délai dépassé" : "appareil perdu");
+  return false;
 }
 
 Done VkContext::submit(Recording& recording, std::span<const TimelinePoint> waits,

@@ -119,7 +119,8 @@ VkContext::~VkContext() {
     // run_once attend chacune de ses soumissions : pool et sémaphore sont au repos.
     if (once_done_ != VK_NULL_HANDLE) f.vkDestroySemaphore(device_, once_done_, nullptr);
     if (once_pool_ != VK_NULL_HANDLE) f.vkDestroyCommandPool(device_, once_pool_, nullptr);
-    if (owns_device_ && f.vkDestroyDevice != nullptr) {
+    // Un GPU bloqué (settle) n'est ni attendu, ni détruit : la fin du processus le rend.
+    if (owns_device_ && f.vkDestroyDevice != nullptr && !stalled_) {
       // Fin de vie de l'appareil : tout travail encore soumis s'achève avant sa destruction.
       if (f.vkDeviceWaitIdle != nullptr) f.vkDeviceWaitIdle(device_);
       f.vkDestroyDevice(device_, nullptr);

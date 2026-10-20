@@ -19,7 +19,7 @@ namespace {
 // importée avant que le runtime ne libère la sienne.
 class HostImportedBuffer final : public TensorBuffer {
  public:
-  HostImportedBuffer(const VkContext& context, std::unique_ptr<net::HostMemory> host, TensorType type,
+  HostImportedBuffer(VkContext& context, std::unique_ptr<net::HostMemory> host, TensorType type,
                      const Shape& shape, std::uint64_t bytes, std::shared_ptr<HostViews> views)
       : context_(context),
         host_(std::move(host)),
@@ -35,6 +35,12 @@ class HostImportedBuffer final : public TensorBuffer {
     if (tensor_.handle != 0) {
       const std::scoped_lock lock(views_->mutex);
       views_->views.erase(tensor_.handle);
+    }
+    // Ce que la file a reçu finit avant ; un GPU bloqué garde tampon, mémoire importée et mémoire
+    // hôte.
+    if (!context_.settle()) {
+      [[maybe_unused]] const net::HostMemory* kept = host_.release();
+      return;
     }
     if (buffer_ != VK_NULL_HANDLE) context_.fn().vkDestroyBuffer(context_.device(), buffer_, nullptr);
     if (memory_ != VK_NULL_HANDLE) context_.fn().vkFreeMemory(context_.device(), memory_, nullptr);
@@ -109,7 +115,7 @@ class HostImportedBuffer final : public TensorBuffer {
   }
 
  private:
-  const VkContext& context_;
+  VkContext& context_;
   std::unique_ptr<net::HostMemory> host_;
   std::uint64_t bytes_;
   TensorType type_;
@@ -135,7 +141,7 @@ std::uint64_t host_import_alignment(const VkContext& context) {
 }
 
 std::expected<std::unique_ptr<TensorBuffer>, Refusal> host_imported_tensor(
-    const VkContext& context, net::Runtime& runtime, TensorType type, const Shape& shape, std::uint64_t bytes,
+    VkContext& context, net::Runtime& runtime, TensorType type, const Shape& shape, std::uint64_t bytes,
     std::uint64_t alignment, std::shared_ptr<HostViews> views) {
   if (alignment == 0)
     return detail::refuse_backend(RefusalCode::FeatureUnavailable, "VK_EXT_external_memory_host absente");
@@ -206,7 +212,7 @@ std::optional<std::uint32_t> device_type(const VkContext& context, std::uint32_t
 
 class SharedTensorBuffer final : public TensorBuffer {
  public:
-  SharedTensorBuffer(const VkContext& context, VkBuffer buffer, VkDeviceMemory memory, TensorType type,
+  SharedTensorBuffer(VkContext& context, VkBuffer buffer, VkDeviceMemory memory, TensorType type,
                      const Shape& shape, std::shared_ptr<HostViews> views)
       : context_(context),
         buffer_(buffer),
@@ -223,6 +229,8 @@ class SharedTensorBuffer final : public TensorBuffer {
       views_->views.erase(tensor_.handle);
     }
     imported_.reset();  // le runtime rend sa vue avant que la mémoire ne disparaisse
+    // Ce que la file a reçu finit avant ; un GPU bloqué garde tampon et mémoire.
+    if (!context_.settle()) return;
     context_.fn().vkDestroyBuffer(context_.device(), buffer_, nullptr);
     context_.fn().vkFreeMemory(context_.device(), memory_, nullptr);
   }
@@ -235,7 +243,7 @@ class SharedTensorBuffer final : public TensorBuffer {
   }
 
  private:
-  const VkContext& context_;
+  VkContext& context_;
   VkBuffer buffer_;
   VkDeviceMemory memory_;
   Tensor tensor_;
@@ -279,9 +287,9 @@ std::expected<int, Refusal> semaphore_fd(const VkContext& context, VkSemaphore s
   return fd;
 }
 
-std::expected<std::unique_ptr<TensorBuffer>, Refusal> shared_tensor(const VkContext& context,
-                                                                    net::Runtime& runtime, TensorType type,
-                                                                    const Shape& shape, std::uint64_t bytes,
+std::expected<std::unique_ptr<TensorBuffer>, Refusal> shared_tensor(VkContext& context, net::Runtime& runtime,
+                                                                    TensorType type, const Shape& shape,
+                                                                    std::uint64_t bytes,
                                                                     std::shared_ptr<HostViews> views) {
   const DeviceFunctions& fn = context.fn();
   const VkExternalMemoryBufferCreateInfo external{

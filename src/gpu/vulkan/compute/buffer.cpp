@@ -83,7 +83,8 @@ Buffer::~Buffer() {
 }
 
 void Buffer::destroy() {
-  if (buffer_ != VK_NULL_HANDLE) context_->fn().vkDestroyBuffer(context_->device(), buffer_, nullptr);
+  if (buffer_ != VK_NULL_HANDLE && !context_->stalled())
+    context_->fn().vkDestroyBuffer(context_->device(), buffer_, nullptr);
   buffer_ = VK_NULL_HANDLE;
   allocation_ = Allocation();
 }

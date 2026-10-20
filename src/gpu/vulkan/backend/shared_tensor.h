@@ -39,14 +39,14 @@ std::uint64_t host_import_alignment(const VkContext& context);
 // par Vulkan : vu par l'hôte et le runtime à la même adresse, inscrit dans views tant qu'il vit.
 // Refus : ceux du runtime (FeatureUnavailable s'il n'en alloue pas), de Vulkan.
 std::expected<std::unique_ptr<TensorBuffer>, Refusal> host_imported_tensor(
-    const VkContext& context, net::Runtime& runtime, TensorType type, const Shape& shape, std::uint64_t bytes,
+    VkContext& context, net::Runtime& runtime, TensorType type, const Shape& shape, std::uint64_t bytes,
     std::uint64_t alignment, std::shared_ptr<HostViews> views);
 
 // Un tenseur de bytes octets, inscrit dans views (adresse du runtime) tant qu'il vit. Refus :
 // ceux de Vulkan, de l'import, FeatureUnavailable hors de Linux.
-std::expected<std::unique_ptr<TensorBuffer>, Refusal> shared_tensor(const VkContext& context,
-                                                                    net::Runtime& runtime, TensorType type,
-                                                                    const Shape& shape, std::uint64_t bytes,
+std::expected<std::unique_ptr<TensorBuffer>, Refusal> shared_tensor(VkContext& context, net::Runtime& runtime,
+                                                                    TensorType type, const Shape& shape,
+                                                                    std::uint64_t bytes,
                                                                     std::shared_ptr<HostViews> views);
 
 }  // namespace ajp::gpu::vk

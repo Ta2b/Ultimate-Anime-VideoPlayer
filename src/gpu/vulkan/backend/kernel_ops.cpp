@@ -76,8 +76,9 @@ VulkanKernelOps::VulkanKernelOps(VkContext& context, MemoryAllocator& memory, Pi
     : context_(context), memory_(memory), pipelines_(pipelines), queue_(queue), runner_(context, pipelines) {}
 
 VulkanKernelOps::~VulkanKernelOps() {
-  // Tout ce que la file a reçu s'achève avant de rendre images, vues et tampons.
-  [[maybe_unused]] const Done waited = context_.wait_on_host(queue_.last());
+  // Tout ce que la file a reçu s'achève avant de rendre images, vues et tampons ; un GPU bloqué
+  // les garde.
+  if (!context_.settle(queue_.last())) return;
   for (const RingView& v : ring_views_) context_.fn().vkDestroyImageView(context_.device(), v.view, nullptr);
 }
 
