@@ -11,6 +11,8 @@ Contenu
   models/LICENCES.txt       licences des modèles (AnimeJaNai : CC BY-NC-SA 4.0 ; RIFE : MIT)
 
 Paquets du système (non livrés)
+  Une distribution à glibc 2.38 ou plus : Ubuntu 24.04, Debian 13, Fedora 39, Arch et plus récentes.
+  libstdc++, glib, fontconfig et freetype viennent du système, comme pour ses pilotes.
   Ubuntu, Debian : libvulkan1 mesa-vulkan-drivers libva2 libva-drm2 libva-x11-2
                    intel-media-va-driver
                    (intel-media-va-driver-non-free pour l'encodage, inutile ici)

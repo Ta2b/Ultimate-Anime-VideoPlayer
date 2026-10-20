@@ -19,7 +19,9 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  AJP_DEPS_PREFIX: ${{ github.workspace }}/../ajp-deps
+  # À côté de l'espace de travail, en chemin absolu : actions/cache refuse les chemins qui
+  # contiennent « .. », et le cache des dépendances n'était jamais enregistré.
+  AJP_DEPS_PREFIX: ${{ github.workspace }}-deps
   CC: gcc-13
   CXX: g++-13
 

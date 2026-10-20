@@ -270,15 +270,18 @@
     },
     {
       "name": "linux-release",
-      "configurePreset": "linux-release"
+      "configurePreset": "linux-release",
+      "nativeToolOptions": ["-k", "0"]
     },
     {
       "name": "macos-release",
-      "configurePreset": "macos-release"
+      "configurePreset": "macos-release",
+      "nativeToolOptions": ["-k", "0"]
     },
     {
       "name": "windows-release",
-      "configurePreset": "windows-release"
+      "configurePreset": "windows-release",
+      "nativeToolOptions": ["-k", "0"]
     }
   ],
   "testPresets": [

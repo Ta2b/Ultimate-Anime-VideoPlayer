@@ -49,6 +49,13 @@ system_lib() {
     libdbus*|libsystemd*|libudev*|libcap*|libgcrypt*|libgpg-error*|liblzma*|libz.so*|libzstd*) return 0 ;;
     libffi*|libexpat*|libbsd*|libmd.so*) return 0 ;;
     libva.so*|libva-*) return 0 ;;  # VA-API : la libva du système trouve ses pilotes (iHD, radeonsi)
+    libOpenCL.so*|libze_loader.so*) return 0 ;;  # chargeurs OpenCL et Level Zero (pilotes Intel)
+    # Chargées aussi par les pilotes (Mesa, VA-API) : une copie plus ancienne que celle du système
+    # passe avant elle et les casse (symbole manquant, configuration de /etc/fonts illisible).
+    # La glibc 2.38 qu'exige la construction (Ubuntu 24.04) les garantit assez récentes.
+    libstdc++.so*|libgcc_s.so*) return 0 ;;
+    libglib-2.0*|libgobject-2.0*|libgio-2.0*|libgmodule-2.0*|libpcre2*) return 0 ;;
+    libfontconfig*|libfreetype*|libharfbuzz*|libgraphite2*|libpng16*|libbrotli*|libbz2*) return 0 ;;
   esac
   case "$1" in /opt/rocm*) return 0 ;; esac
   return 1

@@ -10,7 +10,9 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  AJP_DEPS_PREFIX: ${{ github.workspace }}/../ajp-deps
+  # À côté de l'espace de travail, en chemin absolu : actions/cache refuse les chemins qui
+  # contiennent « .. », et le cache des dépendances n'était jamais enregistré.
+  AJP_DEPS_PREFIX: ${{ github.workspace }}-deps
   APT_BASE: >-
     ninja-build nasm autoconf automake libtool pkg-config python3-jinja2
     clang-20 clang-tidy-20 clang-format-20

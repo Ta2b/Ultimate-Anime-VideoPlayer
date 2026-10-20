@@ -42,7 +42,7 @@ for entry in "${SPAN[@]}"; do
 done
 
 archive="$CACHE/rife-fp16-1.7z"
-if ! echo "$RIFE_ARCHIVE_SHA  $archive" | sha256sum -c --quiet - 2>/dev/null; then
+if ! echo "$RIFE_ARCHIVE_SHA  $archive" | sha256sum -c --quiet - >/dev/null 2>&1; then  # pas encore en cache
   curl -fsSL -o "$archive" "$RIFE_URL"
   check "$RIFE_ARCHIVE_SHA" "$archive"
 fi
