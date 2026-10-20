@@ -84,13 +84,24 @@ jobs:
           # (src/gpu/migraphx/CMakeLists.txt les cherche sans les fichiers de config de ROCm).
           sudo apt-get install -y -qq --no-install-recommends migraphx-dev hip-dev
           echo "CMAKE_PREFIX_PATH=/opt/rocm" >> "$GITHUB_ENV"
+      # TensorRT et RTX HDR se construisent sur un poste NVIDIA (licence NVIDIA), joints à la release
+      # avant l'étiquette avec leur index engines-nvidia.lock : leurs moteurs entrent dans l'index
+      # du lecteur, et l'écran de bienvenue les propose.
       - name: Paquet
         env:
           AJP_WITH_OPENVINO: "ON"
           AJP_WITH_MIGRAPHX: "ON"
           AJP_RELEASE_REPO: ${{ vars.AJP_RELEASE_REPO || github.repository }}
+          GH_TOKEN: ${{ secrets.AJP_RELEASE_TOKEN || github.token }}
         run: |
-          [ "$GITHUB_REF_TYPE" = tag ] && export AJP_RELEASE_TAG="$GITHUB_REF_NAME"
+          if [ "$GITHUB_REF_TYPE" = tag ]; then
+            export AJP_RELEASE_TAG="$GITHUB_REF_NAME"
+            if gh release download "$GITHUB_REF_NAME" -R "$AJP_RELEASE_REPO" -p engines-nvidia.lock -D "$RUNNER_TEMP"; then
+              export AJP_ENGINES_LOCK="$RUNNER_TEMP/engines-nvidia.lock"
+            else
+              echo "::warning::pas d'engines-nvidia.lock dans la release $GITHUB_REF_NAME : ni TensorRT ni RTX HDR"
+            fi
+          fi
           tools/release/package-linux.sh "$RUNNER_TEMP/package"
       # Le quota de stockage des artefacts du compte peut être plein : le paquet est construit quand même.
       - name: Artefact

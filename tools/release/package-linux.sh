@@ -11,7 +11,9 @@
 #
 # Une release peut réunir deux constructions : la CI (OpenVINO, MIGraphX) et un poste NVIDIA
 # (TensorRT, RTX HDR). AJP_ENGINES_LOCK=<fichier ou lien de l'engines.lock de l'autre> reprend ses
-# moteurs non construits ici, dont les paquets restent ceux qu'elle a joints à la release.
+# moteurs non construits ici, dont les paquets restent ceux qu'elle a joints à la release. Le
+# poste NVIDIA joint les siens avant l'étiquette, son index renommé engines-nvidia.lock, que
+# release-linux.yml reprend.
 #
 # L'écran de bienvenue propose les moteurs qui conviennent au GPU ; les cochés se téléchargent
 # depuis la release (engine_install.h). Chaque moteur n'est empaqueté que s'il a été construit :
