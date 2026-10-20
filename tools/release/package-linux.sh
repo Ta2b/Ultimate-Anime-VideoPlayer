@@ -12,8 +12,8 @@
 # L'écran de bienvenue propose les moteurs qui conviennent au GPU ; les cochés se téléchargent
 # depuis la release (engine_install.h). Chaque moteur n'est empaqueté que s'il a été construit :
 #
-#   AJP_DEPS_PREFIX=<prefixe> [AJP_WITH_CUDA=ON] [AJP_WITH_MIGRAPHX=ON] [AJP_WITH_OPENVINO=ON] \
-#     [AJP_RELEASE_TAG=v0.2.0] tools/release/package-linux.sh [dossier-de-sortie]
+#   AJP_DEPS_PREFIX=<prefixe> [AJP_WITH_CUDA=ON [AJP_TENSORRT_ROOT=<racine>]] [AJP_WITH_MIGRAPHX=ON] \
+#     [AJP_WITH_OPENVINO=ON] [AJP_RELEASE_TAG=v0.2.0] tools/release/package-linux.sh [dossier-de-sortie]
 #
 # patchelf range chaque binaire sur $ORIGIN : rien ne dépend du préfixe de construction.
 set -euo pipefail
@@ -28,6 +28,7 @@ BASE_URL="https://github.com/Ta2b/Ultimate-Anime-VideoPlayer/releases/download/$
 
 cmake --preset linux-release -S "$ROOT" \
   -DAJP_WITH_CUDA="${AJP_WITH_CUDA:-OFF}" \
+  ${AJP_TENSORRT_ROOT:+-DAJP_TENSORRT_ROOT="$AJP_TENSORRT_ROOT"} \
   -DAJP_WITH_MIGRAPHX="${AJP_WITH_MIGRAPHX:-OFF}" \
   -DAJP_WITH_OPENVINO="${AJP_WITH_OPENVINO:-OFF}"
 cmake --build --preset linux-release

@@ -137,7 +137,7 @@ void downloadable_row(EngineRow& row, const EnginesHere& here) {
     row.license = download->license;
     row.status = std::format("à télécharger ({} Mo){}", (download->bytes + (1U << 20) - 1) >> 20, missing);
   } else {
-    row.status = "absent de ce poste";
+    row.status = "pas encore publié pour cette version";
   }
 }
 
