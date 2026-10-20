@@ -221,3 +221,27 @@ TEST_CASE("Moteur à télécharger : licence acceptée avant tout choix", "[app]
   CHECK_FALSE(chosen(failed, core::EngineId::TensorRt));
   CHECK(failed.preferred[static_cast<std::size_t>(core::Usage::Upscale)] == core::EngineId::Vulkan);
 }
+
+TEST_CASE("RTX HDR par notre paquet fermé : licence NVIDIA, ni clé ni NGC", "[app][first_run]") {
+  EnginesHere here{.tensorrt = true,
+                   .maxine_status = "SDK absent (/usr/local/VideoFX)",
+                   .maxine_license = "https://example.org/ngc"};
+  here.downloads.push_back(EngineDownload{
+      .id = core::EngineId::MaxineVfx, .bytes = 70ULL << 20, .license = "https://example.org/nvidia-sla"});
+  FirstRunView view = first_run_view(kRtx, here, ProfilesView{});
+  EngineRow* maxine = nullptr;
+  for (EngineRow& row : view.engines) {
+    if (row.offer.id == core::EngineId::MaxineVfx) maxine = &row;
+  }
+  REQUIRE(maxine != nullptr);
+  CHECK(maxine->usable);
+  CHECK(maxine->download);
+  CHECK_FALSE(maxine->needs_key);  // le paquet passe avant NGC
+  CHECK(maxine->license == "https://example.org/nvidia-sla");
+  CHECK(maxine->status == "à télécharger (70 Mo), paquet fermé sous licence NVIDIA");
+  CHECK_FALSE(maxine->chosen);
+
+  maxine->chosen = true;
+  maxine->license_accepted = true;
+  CHECK(chosen(settings_after(view, {}), core::EngineId::MaxineVfx));
+}

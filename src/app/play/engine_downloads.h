@@ -1,7 +1,7 @@
-// Les moteurs cochés à l'écran de bienvenue et à télécharger (et RTX HDR sous Linux, depuis NGC),
-// installés l'un après l'autre pendant que la fenêtre montre l'avancement. Un moteur qui échoue
-// sort des moteurs choisis (Vulkan, ou le HDR adaptatif, prend le relais) et l'écran le dit ;
-// fermer la fenêtre arrête tout.
+// Les moteurs cochés à l'écran de bienvenue et à télécharger (et RTX HDR sous Linux : notre paquet
+// fermé, ou à défaut le SDK depuis NGC), installés l'un après l'autre pendant que la fenêtre
+// montre l'avancement. Un moteur qui échoue sort des moteurs choisis (Vulkan, ou le HDR adaptatif,
+// prend le relais) et l'écran le dit ; fermer la fenêtre arrête tout.
 #pragma once
 
 #include <expected>

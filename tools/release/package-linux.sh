@@ -99,10 +99,10 @@ cp "$ROOT/tools/release/linux/LISEZMOI.txt" "$STAGE/"
 LOCK="$STAGE/engines.lock"
 echo "version = 1" > "$LOCK"
 
-engine_package() {  # id version licence dossier
+engine_package() {  # id version licence dossier [intact : binaires laissés tels quels]
   local id="$1" version="$2" license="$3" dir="$4"
   local archive="ajp-engine-$id-linux-x64.tar.gz"
-  origin "$dir"
+  [ -n "${5:-}" ] || origin "$dir"
   tar -C "$dir" -czf "$OUT/$archive" .
   {
     echo
@@ -154,8 +154,37 @@ if [ -f "$OV_MODULE" ]; then
   engine_package openvino "$VERSION" "" "$dir"
 fi
 
-# RTX HDR : le SDK Video Effects de NVIDIA ne se redistribue pas. engines.lock nomme sa ressource
-# NGC, que le lecteur télécharge avec la clé d'API de l'utilisateur (maxine_install.h). Les noms
+# RTX HDR : un paquet fermé à part, sous la licence de NVIDIA. Elle permet de livrer le SDK comme
+# partie du lecteur (§1.1.3), jamais sous sa licence libre (§8.8) : le paquet ne contient que ce
+# que le magasin des SDK copie pour TrueHDR (vendor_hdr/sdk_layout.cpp, kMaxineCopied), sans
+# modification (pas de patchelf), et le lecteur le télécharge sans clé ni compte NVIDIA puis
+# l'importe dans son magasin, qui le vérifie (maxine_install.h). Depuis le SDK installé :
+#   AJP_MAXINE_SDK=/usr/local/VideoFX
+if [ -n "${AJP_MAXINE_SDK:-}" ]; then
+  dir="$OUT/engine-maxine"; rm -rf "$dir"; mkdir -p "$dir/external/cuda/lib"
+  for entry in lib include share features/nvvfxtruehdr; do
+    [ -e "$AJP_MAXINE_SDK/$entry" ] || { echo "$AJP_MAXINE_SDK/$entry manquant" >&2; exit 1; }
+    mkdir -p "$dir/$(dirname "$entry")"
+    cp -a "$AJP_MAXINE_SDK/$entry" "$dir/$entry"
+  done
+  for lib in libcudart.so.12 libnppc.so.12 libnppial.so.12 libnppicc.so.12 libnppidei.so.12 libnppig.so.12 \
+    libcudnn.so.9; do
+    cp -L "$AJP_MAXINE_SDK/external/cuda/lib/$lib" "$dir/external/cuda/lib/"
+  done
+  cp "$ROOT/tools/release/linux/LISEZMOI-NVIDIA.txt" "$dir/"
+  header="$AJP_MAXINE_SDK/share/videofx_version.h"
+  part() { sed -n "s/^#define NVIDIA_VIDEOEFFECTS_SDK_VERSION_$1 *\([0-9]*\).*/\1/p" "$header"; }
+  sdk_version="$VERSION"
+  if [ -f "$header" ]; then
+    parsed="$(part MAJOR).$(part MINOR).$(part RELEASE).$(part BUILD)"
+    [[ "$parsed" =~ ^[0-9]+\.[0-9]+ ]] && sdk_version="$parsed"
+  fi
+  engine_package maxine_vfx "$sdk_version" \
+    "https://www.nvidia.com/en-us/agreements/enterprise-software/nvidia-software-license-agreement/" "$dir" intact
+fi
+
+# À défaut du paquet, engines.lock peut nommer la ressource NGC du SDK, que le lecteur télécharge
+# avec la clé d'API de l'utilisateur (maxine_install.h). Les noms
 # se lisent sur la page de la ressource « Video Effects SDK Core » du catalogue NGC, connecté :
 #   AJP_MAXINE_RESOURCE=<nom> AJP_MAXINE_VERSION=<version> AJP_MAXINE_FILE=<archive .tgz>
 #   AJP_MAXINE_LICENSE=<lien https de sa licence>

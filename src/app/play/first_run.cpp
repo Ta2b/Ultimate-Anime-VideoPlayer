@@ -295,10 +295,20 @@ FirstRunView first_run_view(const GpuFacts& gpu, const EnginesHere& here, Profil
         row.usable = here.coreml;
         row.status = here.coreml ? "livré avec le lecteur" : "absent de ce paquet";
         break;
-      case core::EngineId::MaxineVfx:
+      case core::EngineId::MaxineVfx: {
         row.usable = here.maxine || !here.maxine_license.empty();
         row.status = here.maxine_status;
-        if (!here.maxine && !here.maxine_license.empty()) {
+        const auto package =
+            std::ranges::find(here.downloads, core::EngineId::MaxineVfx, &EngineDownload::id);
+        if (!here.maxine && package != here.downloads.end()) {
+          // Notre paquet fermé : les seules bibliothèques de TrueHDR, sous la licence NVIDIA, à
+          // accepter à l'écran ; ni clé ni compte NVIDIA.
+          row.usable = true;
+          row.download = true;
+          row.license = package->license;
+          row.status = std::format("à télécharger ({} Mo), paquet fermé sous licence NVIDIA",
+                                   (package->bytes + (1U << 20) - 1) >> 20);
+        } else if (!here.maxine && !here.maxine_license.empty()) {
           // Le SDK ne se redistribue pas : le lecteur le télécharge depuis NGC avec la clé de
           // l'utilisateur, une fois sa licence acceptée.
           row.download = true;
@@ -307,6 +317,7 @@ FirstRunView first_run_view(const GpuFacts& gpu, const EnginesHere& here, Profil
           row.status = "à installer depuis NVIDIA NGC (clé d'API d'un compte NVIDIA gratuit)";
         }
         break;
+      }
       default:
         row.status = "pas encore installable dans cette version";
         break;

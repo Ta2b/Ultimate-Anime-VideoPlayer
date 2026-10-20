@@ -50,8 +50,8 @@ struct InstallProgress {
 };
 
 // Télécharge (en reprenant un .part), vérifie et extrait le paquet ; rend la bibliothèque du
-// backend. Refus : LibraryUnavailable (curl ou tar absents), DecodeFailed (transfert),
-// HashMismatch, FileUnwritable, Cancelled.
+// backend (le dossier extrait pour RTX HDR, qui n'a pas de module). Refus : LibraryUnavailable (curl ou tar
+// absents), DecodeFailed (transfert), HashMismatch, FileUnwritable, Cancelled.
 std::expected<std::filesystem::path, Refusal> install_package(const EngineCatalog& catalog,
                                                               const core::EnginePackage& package,
                                                               const InstallProgress& progress);

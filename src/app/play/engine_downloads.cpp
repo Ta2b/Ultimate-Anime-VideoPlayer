@@ -88,7 +88,12 @@ std::expected<bool, Refusal> install_chosen(PlaceboScreen& screen, PlayerUi& ui,
              sdk_dir](const InstallProgress& progress) {
         return install_maxine(catalog, source, key, sdk_dir, progress);
       };
-    } else if (const core::EnginePackage* package = package_for(catalog, row.offer.id)) {
+    } else if (const core::EnginePackage* package = package_for(catalog, row.offer.id);
+               package != nullptr && row.offer.id == core::EngineId::MaxineVfx) {
+      job = [&catalog, package = *package, sdk_dir](const InstallProgress& progress) {
+        return install_maxine_package(catalog, package, sdk_dir, progress);
+      };
+    } else if (package != nullptr) {
       job = [&catalog, package = *package](const InstallProgress& progress) -> std::expected<void, Refusal> {
         auto library = install_package(catalog, package, progress);
         if (!library) return std::unexpected(library.error());

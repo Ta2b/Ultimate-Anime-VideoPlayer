@@ -160,8 +160,10 @@ std::expected<std::filesystem::path, Refusal> install_package(const EngineCatalo
     std::filesystem::remove_all(staging, error);
     return std::unexpected(ok.error());
   }
+  // RTX HDR n'a pas de module : son paquet s'importe ensuite dans le magasin des SDK.
+  const bool module = package.engine != core::EngineId::MaxineVfx;
   const std::filesystem::path library = staging / core::backend_library(catalog.layout, package).filename();
-  if (!std::filesystem::is_regular_file(library, error)) {
+  if (module && !std::filesystem::is_regular_file(library, error)) {
     std::filesystem::remove_all(staging, error);
     return refuse(RefusalCode::HashMismatch,
                   std::format("paquet {} sans {}", name, library.filename().string()));
@@ -172,7 +174,7 @@ std::expected<std::filesystem::path, Refusal> install_package(const EngineCatalo
     return refuse(RefusalCode::FileUnwritable, std::format("{} : {}", target.string(), error.message()));
   std::filesystem::remove(part, error);
   report(1.0F, std::format("{} installé", name));
-  return core::backend_library(catalog.layout, package);
+  return module ? core::backend_library(catalog.layout, package) : target;
 }
 
 }  // namespace ajp::app::play

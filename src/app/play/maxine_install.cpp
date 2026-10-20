@@ -182,4 +182,27 @@ std::expected<void, Refusal> install_maxine(const EngineCatalog& catalog, const 
   return {};
 }
 
+std::expected<void, Refusal> install_maxine_package(const EngineCatalog& catalog,
+                                                    const core::EnginePackage& package,
+                                                    const std::filesystem::path& sdk_dir,
+                                                    const InstallProgress& progress) {
+  const auto report = [&](float fraction, const std::string& stage) {
+    if (progress.report) progress.report(fraction, stage);
+  };
+  const InstallProgress transfer{
+      .report = [&](float fraction, const std::string& stage) { report(fraction * 0.9F, stage); },
+      .stop = progress.stop};
+  auto extracted = install_package(catalog, package, transfer);
+  if (!extracted) return std::unexpected(extracted.error());
+  report(0.9F, "vérification et import de RTX HDR");
+  vendor_hdr::SdkStore store(sdk_dir, vendor_hdr::SdkKind::MaxineVfx);
+  auto imported = store.import(*extracted, progress.stop);
+  std::error_code error;
+  std::filesystem::remove_all(*extracted, error);  // la copie du magasin suffit
+  if (!imported) return std::unexpected(imported.error());
+  if (!imported->installed) return refuse(RefusalCode::SdkRejected, imported->reason);
+  report(1.0F, "RTX HDR installé");
+  return {};
+}
+
 }  // namespace ajp::app::play

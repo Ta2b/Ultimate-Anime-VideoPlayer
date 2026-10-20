@@ -7,6 +7,11 @@
 //
 // La clé n'est jamais écrite ailleurs que dans des fichiers 0600 du dossier des téléchargements,
 // effacés à la fin quelle qu'elle soit.
+//
+// Voie préférée, sans clé ni compte : notre paquet fermé (engines.lock, [[engine]] maxine_vfx).
+// La licence du SDK permet de le livrer comme partie du lecteur (§1.1.3), jamais sous sa licence
+// libre (§8.8) : un paquet à part, qui ne contient que ce que le magasin copie pour TrueHDR,
+// sans modification. NGC ne sert que s'il n'est pas publié.
 #pragma once
 
 #include <expected>
@@ -24,5 +29,12 @@ namespace ajp::app::play {
 std::expected<void, Refusal> install_maxine(const EngineCatalog& catalog, const core::NgcSdkSource& source,
                                             const std::string& api_key, const std::filesystem::path& sdk_dir,
                                             const InstallProgress& progress);
+
+// Télécharge et vérifie le paquet comme un moteur, l'importe dans le magasin (vérifié comme un
+// import manuel), puis efface le dossier extrait. Refus : ceux d'install_package et du magasin.
+std::expected<void, Refusal> install_maxine_package(const EngineCatalog& catalog,
+                                                    const core::EnginePackage& package,
+                                                    const std::filesystem::path& sdk_dir,
+                                                    const InstallProgress& progress);
 
 }  // namespace ajp::app::play
