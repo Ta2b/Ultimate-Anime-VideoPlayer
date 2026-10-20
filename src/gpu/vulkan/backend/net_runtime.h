@@ -149,6 +149,17 @@ struct IoNames {
 };
 std::expected<IoNames, Refusal> read_io_names(const std::filesystem::path& artifact);
 
+// Publie sous final_path l'artefact construit à staged, avec ses fichiers voisins (même nom
+// suivi d'une extension : noms d'E/S, appareil choisi) : chacun par renommage, les noms d'E/S
+// en dernier, qui font foi pour read_io_names. Un arrêt ou un second processus ne laisse donc
+// jamais un artefact tronqué sous le nom final. Refus CacheIo.
+std::expected<void, Refusal> publish_artifact(const std::filesystem::path& staged,
+                                              const std::filesystem::path& final_path);
+
+// Efface l'artefact et ses fichiers voisins, pour que la construction suivante le refasse.
+// Ce qui ne s'efface pas reste ; l'appelant a déjà son refus à rendre.
+void discard_artifact(const std::filesystem::path& artifact);
+
 // Copie count éléments de from vers to en convertissant entre F32 et F16 (même type : une copie).
 // Refus FormatUnsupported : un type entier différent de l'autre.
 std::expected<void, Refusal> copy_converted(const std::byte* from, TensorType from_type, std::byte* to,

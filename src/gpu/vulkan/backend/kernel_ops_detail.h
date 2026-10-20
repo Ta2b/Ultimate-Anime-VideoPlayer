@@ -11,6 +11,7 @@
 #include "core/frame.h"
 #include "gpu/tensor.h"
 #include "gpu/vulkan/backend/kernel_ops.h"
+#include "gpu/vulkan/compute/destroyed_log.h"
 #include "gpu/vulkan/compute/kernel_types.h"
 
 namespace ajp::gpu::vk {
@@ -30,11 +31,7 @@ Handle from_bits(std::uint64_t bits) {
 
 template <class Handle>
 std::uint64_t to_bits(Handle handle) {
-  if constexpr (std::is_pointer_v<Handle>) {
-    return reinterpret_cast<std::uintptr_t>(handle);
-  } else {
-    return static_cast<std::uint64_t>(handle);
-  }
+  return handle_word(handle);
 }
 
 VkBuffer to_buffer(std::uintptr_t handle);
@@ -101,6 +98,7 @@ std::expected<Recording*, Refusal> VulkanKernelOps::recording(const OpKey& key, 
   if (!key.valid())
     return std::unexpected(Refusal{RefusalCode::InputMismatch, "clé d'enregistrement trop longue"});
   ++uses_;
+  forget_destroyed();
   if (auto found = std::ranges::find(recordings_, key, &Cached::key); found != recordings_.end()) {
     found->used = uses_;
     return found->recording.get();

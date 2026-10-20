@@ -5,6 +5,7 @@
 // runtime (interop) : alors ni attente ni retour à l'hôte.
 #include <format>
 #include <optional>
+#include <random>
 #include <span>
 #include <string>
 #include <system_error>
@@ -102,15 +103,20 @@ std::expected<Artifact, Refusal> VulkanBackend::build_runtime(const ModelSpec& m
   // Un artefact déjà compilé, avec ses noms, sert tel quel : la clé couvre runtime et appareil.
   std::error_code ec;
   if (std::filesystem::exists(artifact.path, ec) && net::read_io_names(artifact.path)) return artifact;
-  std::filesystem::create_directories(artifact.path.parent_path(), ec);
-  if (ec) {
-    return refuse_backend(RefusalCode::CacheIo,
-                          std::format("{} : {}", artifact.path.parent_path().string(), ec.message()));
-  }
-  if (auto ok = runtime_->build(model, inputs, artifact.path, progress); !ok)
-    return std::unexpected(ok.error());
-  if (auto ok = net::write_io_names(artifact.path, names->inputs, names->outputs); !ok)
-    return std::unexpected(ok.error());
+  // Construit dans un dossier de travail propre à cet appel, puis publié fichier par fichier
+  // (net::publish_artifact) : un arrêt en cours de route, ou le lecteur et un export qui
+  // compilent le même réseau, ne laissent jamais un artefact tronqué sous le nom final.
+  std::random_device random;
+  const std::filesystem::path work =
+      artifact.path.parent_path() / std::format(".construction-{}-{}", random(), random());
+  std::filesystem::create_directories(work, ec);
+  if (ec) return refuse_backend(RefusalCode::CacheIo, std::format("{} : {}", work.string(), ec.message()));
+  const std::filesystem::path staged = work / artifact.path.filename();
+  auto built = runtime_->build(model, inputs, staged, progress);
+  if (built) built = net::write_io_names(staged, names->inputs, names->outputs);
+  if (built) built = net::publish_artifact(staged, artifact.path);
+  std::filesystem::remove_all(work, ec);
+  if (!built) return std::unexpected(built.error());
   log(BackendLogLevel::Info, std::format("{} compilé par {}", model.id, runtime_->name()));
   return artifact;
 }
@@ -119,7 +125,15 @@ std::expected<std::unique_ptr<Engine>, Refusal> VulkanBackend::load_runtime(cons
   auto names = net::read_io_names(artifact.path);
   if (!names) return std::unexpected(names.error());
   auto net = runtime_->load(artifact.path);
-  if (!net) return std::unexpected(net.error());
+  if (!net) {
+    // Un artefact que le runtime ne relit plus (disque abîmé, pilote ou runtime changés sans
+    // changer la clé) est effacé : la prochaine préparation le reconstruit au lieu d'échouer
+    // ici à chaque lancement.
+    net::discard_artifact(artifact.path);
+    log(BackendLogLevel::Warn, std::format("{} illisible ({}) : effacé pour être reconstruit",
+                                           artifact.path.filename().string(), net.error().detail));
+    return std::unexpected(net.error());
+  }
   return std::make_unique<RuntimeEngine>(std::move(*net), std::move(*names));
 }
 

@@ -157,6 +157,24 @@ TEST_CASE("File d'images : choix par l'horloge, retards, époques", "[app][frame
   CHECK(queue.take_all().size() == 1);
 }
 
+TEST_CASE("File d'images : l'image sans pts arrête le choix, bloc de deque après bloc", "[app][frames]") {
+  // Assez d'images pour que pop_front libère plusieurs blocs de la deque : le choix ne relit
+  // jamais l'image qu'il vient de retirer (ASan le verrait).
+  FrameQueue queue;
+  constexpr std::uint32_t kCount = 999;
+  for (std::uint32_t i = 0; i < kCount; ++i)
+    queue.push(test::ring_frame(i, i % 3 == 2 ? kNoPts : std::int64_t{i} * 1'000));
+  std::vector<RingFrame> late;
+  for (std::uint32_t i = 2; i < kCount; i += 3) {
+    late.clear();
+    const auto picked = queue.pick(std::int64_t{kCount} * 1'000, 0, late);
+    REQUIRE(picked);
+    CHECK(picked->slot == i);
+    CHECK(late.size() == 2);
+  }
+  CHECK(queue.empty());
+}
+
 TEST_CASE("Mesures : médiane, écart type, format", "[app][stats]") {
   FrameStats stats;
   for (int i = 0; i < 10; ++i) stats.presented(1000, (i + 1) * 41'700, true);

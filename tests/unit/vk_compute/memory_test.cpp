@@ -1,11 +1,13 @@
 // Sous-allocateur borné, tampons, envoi et lecture hôte, image RGBA16.
 #include <cstddef>
+#include <cstdint>
 #include <numeric>
 #include <optional>
 #include <vector>
 
 #include <catch2/catch_test_macros.hpp>
 
+#include "gpu/vulkan/compute/destroyed_log.h"
 #include "gpu/vulkan/compute/image.h"
 #include "rig.h"
 
@@ -106,4 +108,36 @@ TEST_CASE("image RGBA16 : stockage par la vue UINT, relue exactement", "[vk_comp
   const std::vector<std::uint16_t> codes = require_value(read_rgba16(*rig.context, *rig.memory, image));
   REQUIRE(codes.size() == 7U * 5U * 4U);
   CHECK(codes[3] == kernels::kOpaqueAlpha16);
+}
+
+TEST_CASE("journal des destructions : lu depuis une marque, perdu au-delà de sa capacité",
+          "[vk_compute][memory]") {
+  DestroyedLog log;
+  const std::uint64_t start = log.mark();
+  log.note(11);
+  log.note(22);
+  std::vector<std::uint64_t> gone;
+  const DestroyedLog::Read read = log.since(start, gone);
+  CHECK(read.complete);
+  CHECK(read.mark == start + 2);
+  CHECK(gone == std::vector<std::uint64_t>{11, 22});
+  gone.clear();
+  CHECK(log.since(read.mark, gone).complete);
+  CHECK(gone.empty());
+  for (std::size_t i = 0; i <= DestroyedLog::kCapacity; ++i) log.note(i);
+  CHECK_FALSE(log.since(read.mark, gone).complete);
+}
+
+TEST_CASE("tampons : chaque destruction entre au journal du contexte", "[vk_compute][memory]") {
+  Rig rig = make_rig();
+  auto memory =
+      require_value(MemoryAllocator::create(*rig.context, {.block_size = kMiB, .budget = 4 * kMiB}));
+  std::optional<Buffer> buffer =
+      require_value(Buffer::create(*rig.context, *memory, 64 * kKiB, MemoryUse::Device));
+  const std::uint64_t handle = handle_word(buffer->handle());
+  const std::uint64_t before = rig.context->destroyed().mark();
+  buffer.reset();
+  std::vector<std::uint64_t> gone;
+  CHECK(rig.context->destroyed().since(before, gone).complete);
+  CHECK(gone == std::vector<std::uint64_t>{handle});
 }

@@ -42,7 +42,10 @@ class HostImportedBuffer final : public TensorBuffer {
       [[maybe_unused]] const net::HostMemory* kept = host_.release();
       return;
     }
-    if (buffer_ != VK_NULL_HANDLE) context_.fn().vkDestroyBuffer(context_.device(), buffer_, nullptr);
+    if (buffer_ != VK_NULL_HANDLE) {
+      context_.fn().vkDestroyBuffer(context_.device(), buffer_, nullptr);
+      context_.destroyed().note(handle_word(buffer_));
+    }
     if (memory_ != VK_NULL_HANDLE) context_.fn().vkFreeMemory(context_.device(), memory_, nullptr);
     host_.reset();
   }
@@ -232,6 +235,7 @@ class SharedTensorBuffer final : public TensorBuffer {
     // Ce que la file a reçu finit avant ; un GPU bloqué garde tampon et mémoire.
     if (!context_.settle()) return;
     context_.fn().vkDestroyBuffer(context_.device(), buffer_, nullptr);
+    context_.destroyed().note(handle_word(buffer_));
     context_.fn().vkFreeMemory(context_.device(), memory_, nullptr);
   }
   const Tensor& tensor() const override { return tensor_; }

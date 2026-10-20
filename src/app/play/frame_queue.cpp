@@ -31,13 +31,14 @@ std::optional<RingFrame> FrameQueue::pick(std::int64_t media_now_us, std::int64_
                                           std::vector<RingFrame>& late) {
   std::optional<RingFrame> chosen;
   while (!frames_.empty()) {
-    const RingFrame& head = frames_.front();
-    const bool due = head.pts_us == kNoPts || head.pts_us <= media_now_us + lead_us;
+    // Lu avant pop_front, qui détruit l'élément (et parfois le bloc de la deque qui le porte).
+    const bool untimed = frames_.front().pts_us == kNoPts;
+    const bool due = untimed || frames_.front().pts_us <= media_now_us + lead_us;
     if (!due) break;
     if (chosen) late.push_back(*chosen);
-    chosen = head;
+    chosen = frames_.front();
     frames_.pop_front();
-    if (head.pts_us == kNoPts) break;  // sans horodatage : montrée seule, à son tour
+    if (untimed) break;  // sans horodatage : montrée seule, à son tour
   }
   return chosen;
 }

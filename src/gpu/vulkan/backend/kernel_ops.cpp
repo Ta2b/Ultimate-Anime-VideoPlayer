@@ -7,6 +7,7 @@
 #include <bit>
 #include <format>
 #include <optional>
+#include <span>
 #include <type_traits>
 
 #include "gpu/vulkan/backend/kernel_ops_detail.h"
@@ -73,7 +74,27 @@ using detail::tensor_view;
 
 VulkanKernelOps::VulkanKernelOps(VkContext& context, MemoryAllocator& memory, PipelineCache& pipelines,
                                  BackendQueue& queue)
-    : context_(context), memory_(memory), pipelines_(pipelines), queue_(queue), runner_(context, pipelines) {}
+    : context_(context),
+      memory_(memory),
+      pipelines_(pipelines),
+      queue_(queue),
+      runner_(context, pipelines),
+      destroyed_mark_(context.destroyed().mark()) {}
+
+void VulkanKernelOps::forget_destroyed() {
+  const DestroyedLog& log = context_.destroyed();
+  if (log.mark() == destroyed_mark_) return;
+  gone_.clear();
+  const DestroyedLog::Read read = log.since(destroyed_mark_, gone_);
+  destroyed_mark_ = read.mark;
+  // Un mot de clé égal par hasard à une poignée détruite ne coûte qu'un nouvel enregistrement.
+  std::erase_if(recordings_, [&](const Cached& cached) {
+    if (!read.complete) return true;
+    const std::span<const std::uint64_t> words(cached.key.words.data(),
+                                               std::min(cached.key.size, cached.key.words.size()));
+    return std::ranges::any_of(words, [&](std::uint64_t w) { return std::ranges::contains(gone_, w); });
+  });
+}
 
 VulkanKernelOps::~VulkanKernelOps() {
   // Tout ce que la file a reçu s'achève avant de rendre images, vues et tampons ; un GPU bloqué

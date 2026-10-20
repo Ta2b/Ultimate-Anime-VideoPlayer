@@ -8,12 +8,14 @@
 #include <format>
 #include <fstream>
 #include <optional>
+#include <span>
 #include <sstream>
 #include <variant>
 
 #include "ajp_vk_backend_spirv.h"
 #include "gpu/ir/graph.h"
 #include "gpu/vulkan/backend/net_artifact.h"
+#include "gpu/vulkan/backend/net_build.h"
 #include "gpu/vulkan/backend/net_lower.h"
 #include "gpu/vulkan/compute/buffer.h"
 #include "gpu/vulkan/compute/recording.h"
@@ -250,22 +252,12 @@ void Autotuner::load_cache() {
 
 std::expected<void, Refusal> Autotuner::save() const {
   if (cache_file_.empty()) return {};
-  std::error_code error;
-  std::filesystem::create_directories(cache_file_.parent_path(), error);
-  const std::filesystem::path temporary = cache_file_.string() + ".tmp";
-  {
-    std::ofstream out(temporary, std::ios::trunc);
-    for (const auto& [key, choice] : cache_)
-      out << key << '\t' << choice.variant << '\t' << tuning_text(choice) << '\n';
-    if (!out)
-      return std::unexpected(
-          Refusal{RefusalCode::CacheIo, std::format("écriture de {}", temporary.string())});
-  }
-  std::filesystem::rename(temporary, cache_file_, error);
-  if (error)
-    return std::unexpected(
-        Refusal{RefusalCode::CacheIo, std::format("{} : {}", cache_file_.string(), error.message())});
-  return {};
+  // Par write_file : nom de travail propre à cet écrivain, puis renommage.
+  std::ostringstream text;
+  for (const auto& [key, choice] : cache_)
+    text << key << '\t' << choice.variant << '\t' << tuning_text(choice) << '\n';
+  const std::string bytes = text.str();
+  return write_file(cache_file_, std::as_bytes(std::span(bytes)));
 }
 
 std::expected<KernelChoice, Refusal> Autotuner::choose(const ir::Graph& graph, std::size_t node,

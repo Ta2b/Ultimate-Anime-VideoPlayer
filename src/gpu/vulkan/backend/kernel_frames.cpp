@@ -111,15 +111,23 @@ std::expected<std::size_t, Refusal> VulkanKernelOps::staging_for(kernels::Format
                                                                  std::size_t avoid) {
   const auto completed = queue_.completed();
   if (!completed) return std::unexpected(completed.error());
+  ++staging_uses_;
   std::size_t same = 0;
   std::size_t oldest = SIZE_MAX;
+  std::size_t spare = SIZE_MAX;  // libre, d'une autre forme et sans service depuis longtemps
   for (std::size_t k = 0; k < staging_.size(); ++k) {
-    const Staging& s = staging_[k];
-    if (s.format != format || s.width != width || s.height != height || s.buffer.use() != use || k == avoid) {
+    Staging& s = staging_[k];
+    if (k == avoid) continue;
+    if (s.format != format || s.width != width || s.height != height || s.buffer.use() != use) {
+      if (spare == SIZE_MAX && s.busy_until <= *completed && staging_uses_ - s.used > kStagingIdleUses)
+        spare = k;
       continue;
     }
     ++same;
-    if (s.busy_until <= *completed) return k;
+    if (s.busy_until <= *completed) {
+      s.used = staging_uses_;
+      return k;
+    }
     if (oldest == SIZE_MAX || s.busy_until < staging_[oldest].busy_until) oldest = k;
   }
   if (same >= kStagingSlots && oldest != SIZE_MAX) {
@@ -127,14 +135,27 @@ std::expected<std::size_t, Refusal> VulkanKernelOps::staging_for(kernels::Format
     if (auto ok = context_.wait_on_host(queue_.at(staging_[oldest].busy_until)); !ok) {
       return std::unexpected(ok.error());
     }
+    staging_[oldest].used = staging_uses_;
     return oldest;
   }
   auto layout = tight_layout(format, width, height);
   if (!layout) return detail::contract_refusal(layout.error());
   auto buffer = Buffer::create(context_, memory_, layout->bytes, use);
   if (!buffer) return std::unexpected(buffer.error());
-  staging_.push_back(
-      {.format = format, .width = width, .height = height, .buffer = std::move(*buffer), .layout = *layout});
+  Staging made{.format = format,
+               .width = width,
+               .height = height,
+               .buffer = std::move(*buffer),
+               .layout = *layout,
+               .used = staging_uses_};
+  if (spare != SIZE_MAX) {
+    // Un tampon libre d'une autre forme (fichier précédent, autre taille) cède sa place : les
+    // tampons de transfert ne s'accumulent pas d'un fichier à l'autre. Sa destruction entre au
+    // journal, qui fait oublier les enregistrements qui le liaient.
+    staging_[spare] = std::move(made);
+    return spare;
+  }
+  staging_.push_back(std::move(made));
   return staging_.size() - 1;
 }
 
@@ -185,6 +206,14 @@ std::expected<VulkanKernelOps::Source, Refusal> VulkanKernelOps::source(const De
   src.image = detail::to_image(frame.data->native_plane(0));
   if (src.image == VK_NULL_HANDLE)
     return refuse_frame(RefusalCode::ShapeInvalid, "image Vulkan sans VkImage");
+  if (const std::uintptr_t pool = frame.data->native_pool_id(); pool != pool_id_) {
+    // Nouveau fichier, flux qui change de taille : l'ancien lot est rendu, ses images peuvent
+    // disparaître et leurs poignées revenir dans le nouveau.
+    pool_ = frame.data->native_pool();
+    pool_id_ = pool;
+    ++pool_generation_;
+  }
+  src.pool = pool_generation_;
   auto access = frame.data->begin_vulkan_access();
   if (!access) return std::unexpected(access.error());
   src.access = *access;
@@ -252,7 +281,7 @@ std::expected<void, Refusal> VulkanKernelOps::submit_frames(Recording& recording
 }
 
 void VulkanKernelOps::add_source(OpKey& key, const Source& src) {
-  key.add(handle_bits(src.view.buffer.buffer)).add(image_bits(src.image));
+  key.add(handle_bits(src.view.buffer.buffer)).add(image_bits(src.image)).add(src.pool);
   key.add(src.access ? src.access->state.layout : 0).add(src.access ? src.access->state.queue_family : 0);
 }
 

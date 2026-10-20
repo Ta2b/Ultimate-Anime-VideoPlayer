@@ -186,6 +186,34 @@ TEST_CASE("KernelOps : rééchantillonnage, entrée et sortie de RIFE, warp", "[
   }
 }
 
+TEST_CASE("KernelOps : un tampon détruit fait oublier ses enregistrements", "[vk_backend][kernels]") {
+  // Une valeur de poignée se réutilise après destruction : un enregistrement qui liait l'ancien
+  // tampon ne se rejoue plus jamais, ses descripteurs portant l'adresse d'une mémoire rendue.
+  TempDir dir("oubli");
+  auto backend = make_backend(dir.path());
+  KernelOps& ops = *backend->kernels();
+  auto& vulkan = dynamic_cast<vk::VulkanKernelOps&>(ops);
+  const k::RgbImage image = stored(synthetic_rgb(40, 24, 5), TensorType::F32);
+  auto in = rgb_tensor(*backend, 40, 24, TensorType::F32);
+  write_tensor(*backend, in->tensor(), rgb_bytes(image, TensorType::F32));
+  auto kept = rgb_tensor(*backend, 20, 12, TensorType::F32);
+  auto dropped = rgb_tensor(*backend, 20, 12, TensorType::F32);
+  require_ok(ops.resample(in->tensor(), k::Filter::Area, kept->tensor()));
+  require_ok(ops.resample(in->tensor(), k::Filter::Area, dropped->tensor()));
+  const std::size_t both = vulkan.recordings();
+  dropped.reset();
+  // Recréé de même taille : souvent la même poignée, et le résultat doit rester juste.
+  auto again = rgb_tensor(*backend, 20, 12, TensorType::F32);
+  require_ok(ops.resample(in->tensor(), k::Filter::Area, kept->tensor()));
+  CHECK(vulkan.recordings() == both - 1);
+  require_ok(ops.resample(in->tensor(), k::Filter::Area, again->tensor()));
+  CHECK(vulkan.recordings() == both);
+  const auto want = k::ref::resize(image, 20, 12, k::Filter::Area);
+  REQUIRE(want);
+  CHECK(max_abs_diff(download(*backend, *again, 20, 12), stored(*want, TensorType::F32)) <=
+        k::tolerance::kRgbF16);
+}
+
 TEST_CASE("KernelOps : écriture d'un slot du ring", "[vk_backend][kernels]") {
   TempDir dir("ring");
   auto backend = make_backend(dir.path());

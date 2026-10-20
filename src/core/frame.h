@@ -122,6 +122,13 @@ class FrameData {
   // devient la valeur de l'image, et la laisse dans after. false : rien n'a été soumis, l'image
   // garde sa valeur et son état, sans quoi le décodeur attendrait une valeur jamais signalée.
   virtual void end_vulkan_access(const VulkanImageState& /*after*/, bool /*submitted*/) const {}
+
+  // Mémoire native : le lot d'images (pool du décodeur) d'où vient celle-ci. Deux images du
+  // même lot rendent le même numéro ; une poignée d'image ne désigne un autre objet qu'une fois
+  // son lot détruit. native_pool garde le lot vivant tant que le pointeur rendu l'est : tant
+  // qu'on le tient, aucun autre lot ne peut prendre son numéro. 0 et nul : image hôte.
+  virtual std::uintptr_t native_pool_id() const { return 0; }
+  virtual std::shared_ptr<const void> native_pool() const { return nullptr; }
 };
 
 struct DecodedFrame {

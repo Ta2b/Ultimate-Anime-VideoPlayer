@@ -21,6 +21,7 @@ ajp_add_unit_tests(vk_backend
     net_conv_test.cpp
     net_ops_test.cpp
     net_rig.cpp
+    net_runtime_test.cpp
     slice_ops_test.cpp
   DEPS ajp::gpu_ir ajp::kernels ${CMAKE_DL_LIBS})
 

@@ -184,6 +184,20 @@ std::expected<std::unique_ptr<Recording>, Refusal> NetEngine::record(std::span<c
   return recorder->finish();
 }
 
+void NetEngine::forget_destroyed() {
+  const DestroyedLog& log = context_.destroyed();
+  if (log.mark() == destroyed_mark_) return;
+  gone_.clear();
+  const DestroyedLog::Read read = log.since(destroyed_mark_, gone_);
+  destroyed_mark_ = read.mark;
+  std::erase_if(recordings_, [&](const Cached& cached) {
+    if (!read.complete) return true;
+    return std::ranges::any_of(cached.views, [&](const BufferView& view) {
+      return std::ranges::contains(gone_, handle_word(view.buffer));
+    });
+  });
+}
+
 std::expected<Recording*, Refusal> NetEngine::recording(std::span<const BufferView> inputs,
                                                         std::span<const BufferView> outputs) {
   if (inputs.size() != graph_.inputs.size() || outputs.size() != graph_.outputs.size()) {
@@ -203,6 +217,7 @@ std::expected<Recording*, Refusal> NetEngine::recording(std::span<const BufferVi
     }
   }
   ++uses_;
+  forget_destroyed();
   const auto matches = [&](const Cached& c) {
     return std::ranges::equal(c.views.begin(), c.views.begin() + static_cast<std::ptrdiff_t>(inputs.size()),
                               inputs.begin(), inputs.end(), same_view) &&

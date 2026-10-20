@@ -1,12 +1,14 @@
 #include "media/frame_data.h"
 
 #include <cstddef>
+#include <memory>
 #include <optional>
 #include <span>
 #include <type_traits>
 #include <utility>
 
 extern "C" {
+#include <libavutil/buffer.h>
 #include <libavutil/hwcontext.h>
 #include <libavutil/hwcontext_vulkan.h>
 #include <libavutil/imgutils.h>
@@ -170,6 +172,20 @@ class AvFrameData final : public FrameData {
       image.access[0] = VK_ACCESS_2_NONE;  // la soumission signalée rend tout visible
     }
     vk.unlock();
+  }
+
+  std::uintptr_t native_pool_id() const override {
+    if (frame_->hw_frames_ctx == nullptr) return 0;
+    return reinterpret_cast<std::uintptr_t>(frame_->hw_frames_ctx->data);
+  }
+
+  // Une référence au contexte d'images de FFmpeg, qui porte le pool : le pointeur rendu est
+  // native_pool_id.
+  std::shared_ptr<const void> native_pool() const override {
+    if (frame_->hw_frames_ctx == nullptr) return nullptr;
+    AVBufferRef* ref = av_buffer_ref(frame_->hw_frames_ctx);
+    if (ref == nullptr) return nullptr;
+    return {ref->data, [ref](const void* /*data*/) mutable { av_buffer_unref(&ref); }};
   }
 
   const AVFrame& av() const { return *frame_; }

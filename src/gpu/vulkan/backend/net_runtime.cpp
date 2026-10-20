@@ -4,7 +4,10 @@
 #include <cstring>
 #include <format>
 #include <fstream>
+#include <string>
+#include <system_error>
 #include <unordered_set>
+#include <vector>
 
 #include "gpu/ir/onnx_model.h"
 #include "gpu/vulkan/backend/net_build.h"
@@ -51,6 +54,51 @@ std::expected<IoNames, Refusal> read_io_names(const std::filesystem::path& artif
   if (names.inputs.empty() || names.outputs.empty())
     return cache_refusal(std::format("{} : aucune entrée ou sortie", names_path(artifact).string()));
   return names;
+}
+
+namespace {
+
+// Les fichiers du dossier de artifact dont le nom est le sien, seul ou suivi d'une extension.
+std::vector<std::filesystem::path> artifact_files(const std::filesystem::path& artifact) {
+  std::vector<std::filesystem::path> files;
+  const std::string stem = artifact.filename().string();
+  std::error_code error;
+  for (const auto& entry : std::filesystem::directory_iterator(artifact.parent_path(), error)) {
+    const std::string name = entry.path().filename().string();
+    if (name == stem || name.starts_with(stem + ".")) files.push_back(entry.path());
+  }
+  return files;
+}
+
+}  // namespace
+
+std::expected<void, Refusal> publish_artifact(const std::filesystem::path& staged,
+                                              const std::filesystem::path& final_path) {
+  std::vector<std::filesystem::path> files = artifact_files(staged);
+  if (!std::ranges::contains(files, staged))
+    return cache_refusal(std::format("{} : artefact absent après la construction", staged.string()));
+  const std::filesystem::path names = names_path(staged);
+  std::ranges::stable_partition(files, [&](const std::filesystem::path& f) { return f != names; });
+  const std::string stem = staged.filename().string();
+  for (const std::filesystem::path& file : files) {
+    const std::string name = file.filename().string();
+    const std::filesystem::path target =
+        final_path.parent_path() / (final_path.filename().string() + name.substr(stem.size()));
+    std::error_code error;
+    // Un dossier (cache compilé de Core ML) ne remplace pas un dossier plein : l'ancien part.
+    if (std::filesystem::is_directory(file, error) && std::filesystem::exists(target, error))
+      std::filesystem::remove_all(target, error);
+    std::filesystem::rename(file, target, error);
+    if (error) return cache_refusal(std::format("{} : {}", target.string(), error.message()));
+  }
+  return {};
+}
+
+void discard_artifact(const std::filesystem::path& artifact) {
+  for (const std::filesystem::path& file : artifact_files(artifact)) {
+    std::error_code error;
+    std::filesystem::remove_all(file, error);
+  }
 }
 
 std::expected<void, Refusal> copy_converted(const std::byte* from, TensorType from_type, std::byte* to,

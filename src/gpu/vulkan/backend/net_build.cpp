@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <format>
 #include <fstream>
+#include <random>
 #include <set>
 #include <system_error>
 
@@ -178,14 +179,25 @@ std::expected<void, Refusal> write_file(const std::filesystem::path& path, std::
   std::filesystem::create_directories(path.parent_path(), error);
   if (error)
     return refuse(RefusalCode::CacheIo, std::format("{} : {}", path.parent_path().string(), error.message()));
-  const std::filesystem::path temporary = path.string() + ".tmp";
+  // Un nom de travail propre à cet écrivain : le lecteur et un export qui compilent le même
+  // réseau en même temps ne mêlent pas leurs octets ; le renommage publie un fichier entier.
+  std::random_device random;
+  const std::filesystem::path temporary = std::format("{}.tmp-{}-{}", path.string(), random(), random());
   {
     std::ofstream out(temporary, std::ios::binary | std::ios::trunc);
     out.write(reinterpret_cast<const char*>(bytes.data()), static_cast<std::streamsize>(bytes.size()));
-    if (!out) return refuse(RefusalCode::CacheIo, std::format("écriture de {}", temporary.string()));
+    out.close();
+    if (!out) {
+      std::filesystem::remove(temporary, error);
+      return refuse(RefusalCode::CacheIo, std::format("écriture de {}", temporary.string()));
+    }
   }
   std::filesystem::rename(temporary, path, error);
-  if (error) return refuse(RefusalCode::CacheIo, std::format("{} : {}", path.string(), error.message()));
+  if (error) {
+    const std::string why = error.message();
+    std::filesystem::remove(temporary, error);
+    return refuse(RefusalCode::CacheIo, std::format("{} : {}", path.string(), why));
+  }
   return {};
 }
 

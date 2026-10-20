@@ -115,9 +115,10 @@ void RingStage::emit(const ThreadReport& report) {
       released_[slot] = ready;  // le slot est écrit : sa prochaine attente part de ready + 1
       ++front_done_;
       if (!init_.ring->try_push(ring)) {
-        // Boîte de main pleine : contraire au contrat (borne = slots). Le slot est perdu pour
-        // ce ring ; on le dit plutôt que d'attendre.
-        report(Refusal{RefusalCode::SequenceOrder, "boîte de main pleine : RingFrame perdu"});
+        // Boîte de main pleine : contraire au contrat (borne = slots). Le slot ne reviendra
+        // jamais ; l'étage s'arrête en le disant plutôt que de se figer après quelques pertes.
+        fail(report, Refusal{RefusalCode::SequenceOrder, "boîte de main pleine : RingFrame perdu"});
+        break;
       }
     }
     if (failed_) continue;

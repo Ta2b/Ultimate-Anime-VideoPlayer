@@ -18,6 +18,7 @@
 
 #include "core/types.h"
 #include "gpu/vulkan/compute/caps.h"
+#include "gpu/vulkan/compute/destroyed_log.h"
 #include "gpu/vulkan/compute/functions.h"
 #include "gpu/vulkan/compute/library.h"
 #include "gpu/vulkan/compute/refuse.h"
@@ -95,6 +96,8 @@ class VkContext {
   const DeviceUuid& uuid() const { return caps_.uuid; }
   bool owns_device() const { return owns_device_; }
   spdlog::logger& log() const { return *log_; }
+  // Les tampons et images détruits (destroyed_log.h) : chaque destruction s'y note.
+  DestroyedLog& destroyed() const { return destroyed_; }
 
   // Soumet l'enregistrement sur la file compute : il attend waits côté GPU et signale
   // signals. Ses exécutions successives s'enchaînent côté GPU, sans attente hôte.
@@ -174,6 +177,7 @@ class VkContext {
   std::vector<VkCommandBuffer> batch_buffers_;
   TimelinePoint last_submitted_;  // le premier signal de la dernière soumission
   bool stalled_ = false;          // une fin de vie a attendu en vain : plus aucune n'attend
+  mutable DestroyedLog destroyed_;
   std::shared_ptr<spdlog::logger> log_;
 };
 

@@ -52,6 +52,9 @@ class VulkanKernelOps final : public KernelOps {
  public:
   static constexpr std::size_t kMaxRecordings = 64;
   static constexpr std::size_t kStagingSlots = 3;
+  // Remises de tampons de transfert sans servir après lesquelles un tampon d'une autre forme
+  // cède sa place : assez pour que deux formes en alternance gardent chacune les leurs.
+  static constexpr std::uint64_t kStagingIdleUses = 256;
   static constexpr std::size_t kScoreSlots = 3;
 
   VulkanKernelOps(VkContext& context, MemoryAllocator& memory, PipelineCache& pipelines, BackendQueue& queue);
@@ -106,6 +109,7 @@ class VulkanKernelOps final : public KernelOps {
     Buffer buffer;  // Upload pour une image hôte, Device pour une image Vulkan
     YuvLayout layout;
     std::uint64_t busy_until = 0;  // valeur de la file après laquelle il est libre
+    std::uint64_t used = 0;        // staging_uses_ à sa dernière remise
   };
   struct Retained {
     std::shared_ptr<const FrameData> frame;
@@ -132,6 +136,7 @@ class VulkanKernelOps final : public KernelOps {
     YuvView view;
     std::size_t staging = 0;
     VkImage image = VK_NULL_HANDLE;
+    std::uint64_t pool = 0;  // pool_generation_ du lot de l'image ; 0 pour une image hôte
     std::optional<VulkanImageAccess> access;
   };
 
@@ -145,6 +150,9 @@ class VulkanKernelOps final : public KernelOps {
   // Recording de la clé, fait par body au premier passage, puis soumis sur la file.
   template <class Body>
   std::expected<Recording*, Refusal> recording(const OpKey& key, Body&& body);
+  // Retire les enregistrements dont la clé porte un tampon ou une image détruits depuis la
+  // dernière recherche : leur poignée peut déjà désigner un autre objet (destroyed_log.h).
+  void forget_destroyed();
   std::expected<void, Refusal> submit(Recording& recording, std::span<const TimelinePoint> waits = {},
                                       std::span<const TimelinePoint> signals = {});
   void reclaim();
@@ -165,7 +173,16 @@ class VulkanKernelOps final : public KernelOps {
   KernelRunner runner_;
   std::vector<Cached> recordings_;
   std::uint64_t uses_ = 0;
+  std::uint64_t destroyed_mark_ = 0;  // DestroyedLog::mark à la dernière purge
+  std::vector<std::uint64_t> gone_;   // poignées détruites depuis, lues par forget_destroyed
+  // Le lot d'images du décodeur en cours, gardé vivant : ses poignées ne peuvent pas passer à un
+  // autre lot tant qu'on le tient. Un lot neuf change pool_generation_, qui entre dans les clés
+  // des enregistrements qui copient depuis une image : ceux de l'ancien lot ne se rejouent plus.
+  std::shared_ptr<const void> pool_;
+  std::uintptr_t pool_id_ = 0;
+  std::uint64_t pool_generation_ = 0;
   std::vector<Staging> staging_;
+  std::uint64_t staging_uses_ = 0;
   std::vector<Retained> retained_;
   std::vector<ScoreSlot> scores_;
   std::uint64_t score_order_ = 0;

@@ -166,7 +166,10 @@ void StorageImage::destroy() {
   const DeviceFunctions& fn = context_->fn();
   if (storage_view_ != VK_NULL_HANDLE) fn.vkDestroyImageView(context_->device(), storage_view_, nullptr);
   if (sampled_view_ != VK_NULL_HANDLE) fn.vkDestroyImageView(context_->device(), sampled_view_, nullptr);
-  if (image_ != VK_NULL_HANDLE) fn.vkDestroyImage(context_->device(), image_, nullptr);
+  if (image_ != VK_NULL_HANDLE) {
+    fn.vkDestroyImage(context_->device(), image_, nullptr);
+    context_->destroyed().note(handle_word(image_));
+  }
   storage_view_ = VK_NULL_HANDLE;
   sampled_view_ = VK_NULL_HANDLE;
   image_ = VK_NULL_HANDLE;

@@ -67,7 +67,11 @@ class NetEngine {
   };
 
   NetEngine(VkContext& context, MemoryAllocator& memory, ir::Graph graph, Program program)
-      : context_(context), memory_(memory), graph_(std::move(graph)), program_(std::move(program)) {}
+      : context_(context),
+        memory_(memory),
+        graph_(std::move(graph)),
+        program_(std::move(program)),
+        destroyed_mark_(context.destroyed().mark()) {}
   std::expected<void, Refusal> prepare(PipelineCache& pipelines);
   std::expected<BufferView, Refusal> resolve(const Binding& binding, std::span<const BufferView> inputs,
                                              std::span<const BufferView> outputs) const;
@@ -76,6 +80,9 @@ class NetEngine {
                                                std::span<const BufferView> outputs) const;
   std::expected<std::unique_ptr<Recording>, Refusal> record(std::span<const BufferView> inputs,
                                                             std::span<const BufferView> outputs);
+  // Retire les jeux dont un tampon a été détruit depuis la dernière recherche : sa poignée peut
+  // déjà désigner un autre tampon (destroyed_log.h).
+  void forget_destroyed();
 
   VkContext& context_;
   MemoryAllocator& memory_;
@@ -93,6 +100,8 @@ class NetEngine {
   std::optional<Buffer> dummy_;
   std::vector<Cached> recordings_;
   std::uint64_t uses_ = 0;
+  std::uint64_t destroyed_mark_ = 0;  // DestroyedLog::mark à la dernière purge
+  std::vector<std::uint64_t> gone_;
 };
 
 }  // namespace ajp::gpu::vk::net
