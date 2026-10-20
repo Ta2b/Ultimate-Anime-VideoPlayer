@@ -37,6 +37,8 @@ struct SettingsChoices {
   std::vector<std::string> models;       // fichiers SPAN du dossier des modèles
   std::string default_model;             // celui qu'un nom vide désigne
   int source_height = 0;                 // la réduction n'a de sens que sous cette hauteur
+  double source_fps = 0.0;               // images par seconde de la source ; 0 : inconnues
+  double display_hz = 0.0;               // fréquence de l'écran ; 0 : inconnue
   bool rife_available = false;           // une interpolation possible : modèle RIFE, flux optique ou GMFSS
   bool gmfss_available = false;          // graphes de GMFSS trouvés (gmfss_model.h)
   bool gmfss_union_available = false;    // ceux de GMFSS Union

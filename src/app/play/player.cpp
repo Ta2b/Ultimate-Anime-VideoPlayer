@@ -264,6 +264,12 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
 
   const int auto_peak = vendor_hdr::peak_from_display(content_peak_nits(p.screen.window()));
   int peak_nits = 0;
+  // Sortie SDR (--sdr, ou écran sans HDR) : TrueHDR ferait du HDR que libplacebo ramènerait aussitôt
+  // en SDR ; le grade SDR prend sa place.
+  if (settings.true_hdr && (p.options.sdr || !content_peak_nits(p.screen.window()))) {
+    log->info("RTX HDR : sortie SDR, TrueHDR n'est pas ouvert ; grade SDR à la place");
+    settings.true_hdr = false;
+  }
   if (settings.true_hdr) {
     show_loading(p.screen, p.ui, "Préparation de RTX HDR");
     auto opened = open_rtx_hdr(p.options.true_hdr_sdk, p.paths, settings, auto_peak, p.screen,
@@ -352,6 +358,10 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
           .models = model ? model->available : std::vector<std::string>{},
           .default_model = model ? model->default_name : std::string(),
           .source_height = video.height,
+          .source_fps = fps_of(video.frame_rate),
+          .display_hz = display_period_us(out.window()) > 0
+                            ? 1e6 / static_cast<double>(display_period_us(out.window()))
+                            : 0.0,
           .rife_available = rife_model.has_value() || flow_grid > 0 || gmfss_found,
           .gmfss_available = find_gmfss(gmfss_places).has_value(),
           .gmfss_union_available = find_gmfss(gmfss_places, GmfssVariant::Union).has_value(),

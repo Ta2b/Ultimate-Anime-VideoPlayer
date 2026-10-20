@@ -119,17 +119,28 @@ void fluidity_tab(PlaySettings& d, const SettingsChoices& choices) {
     if (factor == Factor{.num = kDefaultRifeFactor, .den = 1}) text += " (recommandé)";
     return text;
   };
+  // Grisé : plus d'images par seconde que l'écran n'en affiche (le choix en cours reste visible).
+  const auto too_fast = [&](Factor factor) {
+    return choices.source_fps > 0.0 && choices.display_hz > 0.0 && factor.num > factor.den &&
+           choices.source_fps * static_cast<double>(factor.num) / static_cast<double>(factor.den) >
+               1.01 * choices.display_hz;
+  };
   const Factor now = factor_of(d);
   if (ImGui::BeginCombo("Multiplicateur", factor_label(now).c_str())) {
     for (const Factor factor : kFactors) {
       const bool chosen = now == factor || (factor.num == 0 && now.num <= now.den);
-      if (ImGui::Selectable(factor_label(factor).c_str(), chosen)) {
+      const ImGuiSelectableFlags flags = too_fast(factor) && !chosen ? ImGuiSelectableFlags_Disabled : 0;
+      if (ImGui::Selectable(factor_label(factor).c_str(), chosen, flags)) {
         d.rife_factor = factor.num;
         d.rife_factor_den = factor.den;
       }
     }
     ImGui::EndCombo();
   }
+  if (choices.source_fps > 0.0 && choices.display_hz > 0.0)
+    note(std::format("Grisés : au-delà de l'écran ({:.0f} Hz pour {:.3f} i/s).", choices.display_hz,
+                     choices.source_fps)
+             .c_str());
   if (now.num > 4 * now.den)
     note(
         "Au-delà de ×4, chaque paire demande une passe RIFE par image créée : il faut un écran assez "
