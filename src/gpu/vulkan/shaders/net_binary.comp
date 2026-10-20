@@ -1,0 +1,50 @@
+#version 450
+// Opération élément par élément de deux entrées diffusées à la numpy : Add, Sub, Mul, Div, Mod
+// (fmod = 1, seul permis sur des flottants : reste tronqué), PRelu (pente b). Les entrées de dimension 1 sur
+// un axe où la sortie est plus grande sont diffusées. Référence : gpu/ir/op_elementwise.cpp.
+#extension GL_GOOGLE_include_directive : require
+#include "net_tensor.glsl"
+
+layout(local_size_x = 256) in;
+
+layout(constant_id = 0) const uint TA = 0;
+layout(constant_id = 1) const uint TB = 0;
+layout(constant_id = 2) const uint TY = 0;
+layout(constant_id = 3) const uint OP = 0;  // 0 Add, 1 Sub, 2 Mul, 3 Div, 4 Mod, 5 PRelu
+
+AJP_NET_BUFFER(0, lhs, readonly)
+AJP_NET_BUFFER(1, rhs, readonly)
+AJP_NET_BUFFER(2, dst, writeonly)
+
+layout(push_constant) uniform Push {
+  TDesc a;
+  TDesc b;
+  TDesc y;
+} pc;
+
+uint broadcast_index(TDesc d, uvec4 o) {
+  return t_index(d, d.n == 1u ? 0u : o.x, d.c == 1u ? 0u : o.y, d.h == 1u ? 0u : o.z, d.w == 1u ? 0u : o.w);
+}
+
+void main() {
+  uint i = linear_invocation();
+  if (i >= t_count(pc.y)) return;
+  uvec4 o = t_coords(pc.y, i);
+  float a = AJP_LOAD(lhs, TA, broadcast_index(pc.a, o));
+  float b = AJP_LOAD(rhs, TB, broadcast_index(pc.b, o));
+  float v;
+  if (OP == 0u) {
+    v = a + b;
+  } else if (OP == 1u) {
+    v = a - b;
+  } else if (OP == 2u) {
+    v = a * b;
+  } else if (OP == 3u) {
+    v = a / b;
+  } else if (OP == 4u) {
+    v = a - b * trunc(a / b);
+  } else {
+    v = a < 0.0 ? a * b : a;
+  }
+  AJP_STORE(dst, TY, t_index(pc.y, o.x, o.y, o.z, o.w), v)
+}

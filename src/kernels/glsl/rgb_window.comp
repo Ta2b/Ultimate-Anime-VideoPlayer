@@ -1,0 +1,37 @@
+#version 450
+// Fenêtre d'un tenseur planaire : le recadrage de la sortie remplie de RIFE (décalage négatif)
+// ou un remplissage (décalage positif, valeur fill hors de la source). L'élément (x, y) de
+// chaque plan de la destination lit la source en (x − shift_x, y − shift_y). Un plan par
+// gl_WorkGroupID.z. Contrat : kernels/spec/rife.h ; référence : kernels/ref/rife.cpp (rife_crop).
+#extension GL_GOOGLE_include_directive : require
+#include "tensor.glsl"
+#include "ajp_kernels_spec.glsl"
+
+layout(local_size_x = 16, local_size_y = 16) in;
+
+layout(std430, binding = 0) readonly buffer Source { AJP_TENSOR v[]; } src;
+layout(std430, binding = 1) writeonly buffer Destination { AJP_TENSOR v[]; } dst;
+
+layout(push_constant) uniform Push {
+  uint src_width;
+  uint src_height;
+  uint dst_width;
+  uint dst_height;
+  int shift_x;
+  int shift_y;
+  float fill;
+} pc;
+
+void main() {
+  uint x = gl_GlobalInvocationID.x;
+  uint y = gl_GlobalInvocationID.y;
+  uint plane = gl_GlobalInvocationID.z;
+  if (x >= pc.dst_width || y >= pc.dst_height) return;
+  int sx = int(x) - pc.shift_x;
+  int sy = int(y) - pc.shift_y;
+  bool inside = sx >= 0 && sy >= 0 && sx < int(pc.src_width) && sy < int(pc.src_height);
+  // Un float16_t relu en float puis rangé à nouveau reste identique.
+  float value = pc.fill;
+  if (inside) value = float(src.v[(plane * pc.src_height + uint(sy)) * pc.src_width + uint(sx)]);
+  dst.v[(plane * pc.dst_height + y) * pc.dst_width + x] = AJP_TENSOR(value);
+}

@@ -1,0 +1,352 @@
+// Abaissement des convolutions et choix des candidats de chaque nœud : Conv directe (float ou
+// fp16 empaqueté), Conv par matrices coopératives, ConvTranspose directe.
+#include <algorithm>
+#include <bit>
+#include <format>
+#include <optional>
+#include <variant>
+
+#include "gpu/ir/graph.h"
+#include "gpu/ir/ops.h"
+#include "gpu/vulkan/backend/net_lower.h"
+#include "gpu/vulkan/backend/net_lower_detail.h"
+#include "gpu/vulkan/backend/net_params.h"
+#include "gpu/vulkan/backend/net_weights.h"
+
+namespace ajp::gpu::vk::net {
+namespace {
+
+constexpr std::string_view kDirect = "direct";
+constexpr std::string_view kPacked = "direct_f16p";
+constexpr std::string_view kMatrix = "coopmat";
+constexpr std::uint32_t kMaxGroups = 65535;
+
+std::unexpected<Refusal> refuse_node(RefusalCode code, const ir::Node& node, std::string_view detail) {
+  return std::unexpected(
+      Refusal{.code = code, .detail = std::format("{} {} : {}", ir::name(node.op), node.name, detail)});
+}
+
+std::uint32_t div_up(std::uint32_t a, std::uint32_t b) {
+  return (a + b - 1) / b;
+}
+
+// Quads par défaut : 16 canaux de sortie par invocation quand il y en a assez.
+std::uint32_t default_quads(std::uint32_t cout_g) {
+  return cout_g >= 16 ? 4 : (cout_g >= 8 ? 2 : 1);
+}
+
+const ir::Tensor* constant_input(const ir::Graph& graph, const ir::Node& node, std::size_t k) {
+  if (!has_input(node, k)) return nullptr;
+  const ir::Tensor& t = graph.tensors[node.inputs[k]];
+  return t.kind == ir::TensorKind::Constant ? &t : nullptr;
+}
+
+std::uint32_t groups_of(const ir::Node& node) {
+  if (const auto* a = std::get_if<ir::ConvAttrs>(&node.attrs)) return static_cast<std::uint32_t>(a->group);
+  if (const auto* a = std::get_if<ir::ConvTransposeAttrs>(&node.attrs))
+    return static_cast<std::uint32_t>(a->group);
+  return 1;
+}
+
+// Tuiles de 16 canaux de sortie, et la mémoire partagée de la variante coopmat.
+std::uint32_t matrix_tiles(std::uint32_t cout) {
+  return div_up(cout, 16);
+}
+
+std::uint32_t matrix_shared_bytes(std::uint32_t subgroups, std::uint32_t tm) {
+  return (subgroups * tm * 16 * 32) + (subgroups * 256 * 4);
+}
+
+// La variante coopmat convient-elle à ce nœud ? Entrée float16 en Nhwc16, groupe unique.
+bool matrix_eligible(const ir::Graph& graph, const ir::Node& node, const Target& target) {
+  if (!target.matrix_units || target.subgroup_size == 0 || groups_of(node) != 1) return false;
+  const ir::Tensor& x = graph.tensors[node.inputs[ir::kConvX]];
+  const ir::Tensor& y = graph.tensors[node.outputs[0]];
+  return x.type == ir::DataType::F16 && x.layout == ir::Layout::Nhwc16 && x.known && y.known &&
+         y.dims.size() == 4 && matrix_tiles(static_cast<std::uint32_t>(y.dims[1])) <= 16 &&
+         constant_input(graph, node, ir::kConvW) != nullptr;
+}
+
+}  // namespace
+
+std::expected<std::vector<KernelChoice>, Refusal> candidates(const ir::Graph& graph, std::size_t index,
+                                                             const Target& target) {
+  const ir::Node& node = graph.nodes[index];
+  switch (node.op) {
+    case ir::OpKind::Shape:
+    case ir::OpKind::Gather:
+      return refuse_node(RefusalCode::OperatorUnknown, node,
+                         "aucun noyau Vulkan (entiers calculés pendant l'exécution)");
+    case ir::OpKind::Conv:
+    case ir::OpKind::ConvTranspose:
+      break;
+    default:
+      return std::vector<KernelChoice>{{.variant = "default"}};
+  }
+  const ir::Tensor& y = graph.tensors[node.outputs[0]];
+  if (!y.known || y.dims.size() != 4)
+    return refuse_node(RefusalCode::ShapeInvalid, node, "sortie de rang 4 attendue");
+  const std::uint32_t groups = std::max<std::uint32_t>(1, groups_of(node));
+  const std::uint32_t cout_g = static_cast<std::uint32_t>(y.dims[1]) / groups;
+  const std::uint32_t quads = default_quads(cout_g);
+  std::vector<KernelChoice> out;
+  const bool conv = node.op == ir::OpKind::Conv;
+  if (conv && matrix_eligible(graph, node, target)) {
+    const std::uint32_t tiles = matrix_tiles(static_cast<std::uint32_t>(y.dims[1]));
+    for (const std::uint32_t subgroups : {4U, 2U}) {
+      for (const std::uint32_t tm : {2U, 1U, 4U}) {
+        if (tm * tiles > 16 || subgroups * target.subgroup_size > target.max_workgroup_invocations ||
+            matrix_shared_bytes(subgroups, tm) > target.max_shared_memory) {
+          continue;
+        }
+        out.push_back({.variant = std::string(kMatrix), .tuning = {tm, subgroups}});
+      }
+    }
+  }
+  const bool packed = conv && target.f16_math && target.f16_storage &&
+                      graph.tensors[node.inputs[0]].type == ir::DataType::F16 && y.type == ir::DataType::F16;
+  for (const std::uint32_t q : {quads, 1U, 2U, 4U}) {
+    if (q > quads && q != quads) continue;
+    for (const std::uint32_t wg : {64U, 128U}) {
+      if (wg > target.max_workgroup_invocations) continue;
+      KernelChoice choice{.variant = std::string(kDirect), .tuning = {q, wg}};
+      if (std::ranges::find(out, choice) == out.end()) out.push_back(choice);
+      if (packed) {
+        KernelChoice half{.variant = std::string(kPacked), .tuning = {q, wg}};
+        if (std::ranges::find(out, half) == out.end()) out.push_back(half);
+      }
+    }
+  }
+  return out;
+}
+
+namespace {
+
+// Constantes 0 à 29 communes aux shaders de convolution (net_conv.comp).
+struct ConvConstants {
+  std::uint32_t tr = 0;
+  std::uint32_t lr = 0;
+  std::uint32_t crp = 1;
+  std::uint32_t act = 0;
+  float alpha = 0.0F;
+  float lo = 0.0F;
+  float hi = 0.0F;
+  std::uint32_t residual = 0;
+};
+
+std::vector<std::uint32_t> conv_constants(const Desc4& x, std::uint32_t tx, const Desc4& y, std::uint32_t ty,
+                                          const Window& w, std::uint32_t groups, const ConvConstants& e) {
+  return {tx,
+          ty,
+          e.tr,
+          x.order,
+          y.order,
+          e.lr,
+          x.cp,
+          y.cp,
+          e.crp,
+          x.n,
+          x.c,
+          x.h,
+          x.w,
+          y.c,
+          y.h,
+          y.w,
+          w.kh,
+          w.kw,
+          w.sh,
+          w.sw,
+          w.dh,
+          w.dw,
+          w.pt,
+          w.pl,
+          groups,
+          e.act,
+          std::bit_cast<std::uint32_t>(e.alpha),
+          std::bit_cast<std::uint32_t>(e.lo),
+          std::bit_cast<std::uint32_t>(e.hi),
+          e.residual};
+}
+
+}  // namespace
+
+std::expected<void, Refusal> Lowerer::conv(std::size_t index, const KernelChoice& choice) {
+  const ir::Node& n = graph_.nodes[index];
+  const bool packed = choice.variant == kPacked;
+  if ((!packed && choice.variant != kDirect) || choice.tuning.size() != 2) {
+    return refuse_node(RefusalCode::InputMismatch, n, std::format("variante {} inconnue", choice.variant));
+  }
+  const std::uint32_t quads = choice.tuning[0];
+  const std::uint32_t wg = choice.tuning[1];
+  if (quads < 1 || quads > 8 || wg < 1 || wg > target_.max_workgroup_invocations) {
+    return refuse_node(RefusalCode::InputMismatch, n, "réglage hors de ses bornes");
+  }
+  if (packed && !(target_.f16_math && target_.f16_storage)) {
+    return refuse_node(RefusalCode::FeatureUnavailable, n, "fp16 de calcul absent");
+  }
+  const auto* attrs = std::get_if<ir::ConvAttrs>(&n.attrs);
+  const ir::Tensor* weights = constant_input(graph_, n, ir::kConvW);
+  if (attrs == nullptr || weights == nullptr)
+    return refuse_node(RefusalCode::ShapeInvalid, n, "poids non constants");
+  auto x = bind(n.inputs[ir::kConvX]);
+  if (!x) return std::unexpected(x.error());
+  auto y = bind(n.outputs[0]);
+  if (!y) return std::unexpected(y.error());
+  auto win = conv_window(graph_, n);
+  if (!win) return std::unexpected(win.error());
+  const auto groups = static_cast<std::uint32_t>(attrs->group);
+  const std::uint32_t cout_g = y->desc.c / groups;
+  const std::uint32_t blocks = div_up(cout_g, 4 * quads);
+
+  ConvConstants e{.act = static_cast<std::uint32_t>(attrs->epilogue.act),
+                  .alpha = attrs->epilogue.alpha,
+                  .lo = attrs->epilogue.lo,
+                  .hi = attrs->epilogue.hi};
+  std::vector<Bound> tensors{*x, *y};
+  Binding residual{};
+  if (attrs->epilogue.residual) {
+    auto r = bind(n.inputs[ir::kConvResidual]);
+    if (!r) return std::unexpected(r.error());
+    e = {.tr = r->type,
+         .lr = r->desc.order,
+         .crp = r->desc.cp,
+         .act = e.act,
+         .alpha = e.alpha,
+         .lo = e.lo,
+         .hi = e.hi,
+         .residual = 1};
+    residual = r->binding;
+    tensors.push_back(*r);
+  }
+  Binding slope{};
+  if (attrs->epilogue.act == ir::Activation::PRelu) {
+    const ir::Tensor* s = constant_input(graph_, n, ir::kConvSlope);
+    if (s == nullptr) return refuse_node(RefusalCode::ShapeInvalid, n, "pente PRelu non constante");
+    slope = {.kind = BindingKind::Blob, .index = add_blob(channel_floats(s, y->desc.c))};
+  }
+  auto name = shader("net_conv", tensors);
+  if (!name) return std::unexpected(name.error());
+  if (packed) *name = "net_conv_f16p";
+  const std::uint32_t z = x->desc.n * groups * blocks;
+  if (y->desc.h > kMaxGroups || z > kMaxGroups)
+    return refuse_node(RefusalCode::ShapeInvalid, n, "trop de groupes");
+
+  std::vector<std::uint32_t> constants = conv_constants(x->desc, x->type, y->desc, y->type, *win, groups, e);
+  constants.push_back(quads);
+  constants.push_back(wg);
+  const Binding w{
+      .kind = BindingKind::Blob,
+      .index = add_blob(conv_weights(*weights, groups, 4 * quads, packed ? BlobType::F16 : BlobType::F32))};
+  const Binding b{.kind = BindingKind::Blob,
+                  .index = add_blob(channel_floats(constant_input(graph_, n, ir::kConvB), y->desc.c))};
+  emit(index, *name, std::move(constants), {x->binding, w, b, slope, residual, y->binding}, {},
+       {div_up(y->desc.w, wg), y->desc.h, z});
+  return {};
+}
+
+std::expected<void, Refusal> Lowerer::conv_matrix(std::size_t index, const KernelChoice& choice) {
+  const ir::Node& n = graph_.nodes[index];
+  if (choice.tuning.size() != 2)
+    return refuse_node(RefusalCode::InputMismatch, n, "réglage coopmat incomplet");
+  if (!matrix_eligible(graph_, n, target_)) {
+    return refuse_node(RefusalCode::FeatureUnavailable, n,
+                       "matrices coopératives indisponibles pour ce nœud");
+  }
+  const std::uint32_t tm = choice.tuning[0];
+  const std::uint32_t subgroups = choice.tuning[1];
+  const std::uint32_t wg = subgroups * target_.subgroup_size;
+  const auto* attrs = std::get_if<ir::ConvAttrs>(&n.attrs);
+  auto x = bind(n.inputs[ir::kConvX]);
+  if (!x) return std::unexpected(x.error());
+  auto y = bind(n.outputs[0]);
+  if (!y) return std::unexpected(y.error());
+  const std::uint32_t tiles = matrix_tiles(y->desc.c);
+  if (tm < 1 || subgroups < 1 || tm * tiles > 16 || wg > target_.max_workgroup_invocations ||
+      matrix_shared_bytes(subgroups, tm) > target_.max_shared_memory) {
+    return refuse_node(RefusalCode::InputMismatch, n, "réglage coopmat hors de ses bornes");
+  }
+  auto win = conv_window(graph_, n);
+  if (!win) return std::unexpected(win.error());
+
+  ConvConstants e{.act = static_cast<std::uint32_t>(attrs->epilogue.act),
+                  .alpha = attrs->epilogue.alpha,
+                  .lo = attrs->epilogue.lo,
+                  .hi = attrs->epilogue.hi};
+  std::vector<Bound> tensors{*x, *y};
+  Binding residual{};
+  if (attrs->epilogue.residual) {
+    auto r = bind(n.inputs[ir::kConvResidual]);
+    if (!r) return std::unexpected(r.error());
+    e = {.tr = r->type,
+         .lr = r->desc.order,
+         .crp = r->desc.cp,
+         .act = e.act,
+         .alpha = e.alpha,
+         .lo = e.lo,
+         .hi = e.hi,
+         .residual = 1};
+    residual = r->binding;
+    tensors.push_back(*r);
+  }
+  Binding slope{};
+  if (attrs->epilogue.act == ir::Activation::PRelu) {
+    const ir::Tensor* s = constant_input(graph_, n, ir::kConvSlope);
+    if (s == nullptr) return refuse_node(RefusalCode::ShapeInvalid, n, "pente PRelu non constante");
+    slope = {.kind = BindingKind::Blob, .index = add_blob(channel_floats(s, y->desc.c))};
+  }
+  const std::uint32_t pixels = y->desc.h * y->desc.w;
+  const std::uint32_t bm = subgroups * tm * 16;
+  std::vector<std::uint32_t> constants = conv_constants(x->desc, x->type, y->desc, y->type, *win, 1, e);
+  constants.push_back(tm);
+  constants.push_back(wg);
+  constants.push_back(target_.subgroup_size);
+  const ir::Tensor* weights = constant_input(graph_, n, ir::kConvW);
+  const Binding w{.kind = BindingKind::Blob,
+                  .index = add_blob(matrix_weights(*weights, x->desc.cp, tiles * 16))};
+  const Binding b{.kind = BindingKind::Blob,
+                  .index = add_blob(channel_floats(constant_input(graph_, n, ir::kConvB), y->desc.c))};
+  if (x->desc.n > kMaxGroups) return refuse_node(RefusalCode::ShapeInvalid, n, "trop d'images");
+  emit(index, "net_conv_coopmat_f16", std::move(constants), {x->binding, w, b, slope, residual, y->binding},
+       {}, {div_up(pixels, bm), 1, x->desc.n});
+  return {};
+}
+
+std::expected<void, Refusal> Lowerer::conv_transpose(std::size_t index, const KernelChoice& choice) {
+  const ir::Node& n = graph_.nodes[index];
+  if (choice.variant != kDirect || choice.tuning.size() != 2) {
+    return refuse_node(RefusalCode::InputMismatch, n, std::format("variante {} inconnue", choice.variant));
+  }
+  const std::uint32_t quads = choice.tuning[0];
+  const std::uint32_t wg = choice.tuning[1];
+  if (quads < 1 || quads > 8 || wg < 1 || wg > target_.max_workgroup_invocations) {
+    return refuse_node(RefusalCode::InputMismatch, n, "réglage hors de ses bornes");
+  }
+  const ir::Tensor* weights = constant_input(graph_, n, 1);
+  if (weights == nullptr) return refuse_node(RefusalCode::ShapeInvalid, n, "poids non constants");
+  auto x = bind(n.inputs[0]);
+  if (!x) return std::unexpected(x.error());
+  auto y = bind(n.outputs[0]);
+  if (!y) return std::unexpected(y.error());
+  auto win = conv_transpose_window(graph_, n);
+  if (!win) return std::unexpected(win.error());
+  const std::uint32_t groups = groups_of(n);
+  const std::uint32_t blocks = div_up(y->desc.c / groups, 4 * quads);
+  const std::array tensors{*x, *y};
+  auto name = shader("net_conv_transpose", tensors);
+  if (!name) return std::unexpected(name.error());
+  const std::uint32_t z = x->desc.n * groups * blocks;
+  if (y->desc.h > kMaxGroups || z > kMaxGroups)
+    return refuse_node(RefusalCode::ShapeInvalid, n, "trop de groupes");
+  std::vector<std::uint32_t> constants = conv_constants(x->desc, x->type, y->desc, y->type, *win, groups, {});
+  constants.push_back(quads);
+  constants.push_back(wg);
+  const Binding w{.kind = BindingKind::Blob,
+                  .index = add_blob(conv_transpose_weights(*weights, groups, 4 * quads))};
+  const Binding b{.kind = BindingKind::Blob,
+                  .index = add_blob(channel_floats(constant_input(graph_, n, 2), y->desc.c))};
+  emit(index, *name, std::move(constants), {x->binding, w, b, Binding{}, Binding{}, y->binding}, {},
+       {div_up(y->desc.w, wg), y->desc.h, z});
+  return {};
+}
+
+}  // namespace ajp::gpu::vk::net

@@ -1,0 +1,40 @@
+#version 450
+// ReduceMean : chaque sortie est la moyenne des éléments de x dont les axes gardés égalent les
+// siens. y est vu avec 1 sur chaque axe réduit (keepdims appliqué par l'hôte). Somme en float
+// dans l'ordre ligne de l'entrée, comme l'interpréteur (gpu/ir/op_pixel.cpp, eval_reduce_mean).
+#extension GL_GOOGLE_include_directive : require
+#include "net_tensor.glsl"
+
+layout(local_size_x = 256) in;
+
+layout(constant_id = 0) const uint TX = 0;
+layout(constant_id = 1) const uint TY = 0;
+
+AJP_NET_BUFFER(0, src, readonly)
+AJP_NET_BUFFER(1, dst, writeonly)
+
+layout(push_constant) uniform Push {
+  TDesc x;
+  TDesc y;
+  uint reduced;  // bit k : l'axe k (n, c, h, w) est réduit
+} pc;
+
+void main() {
+  uint i = linear_invocation();
+  if (i >= t_count(pc.y)) return;
+  uvec4 o = t_coords(pc.y, i);
+  uvec4 extent = uvec4((pc.reduced & 1u) != 0u ? pc.x.n : 1u, (pc.reduced & 2u) != 0u ? pc.x.c : 1u,
+                       (pc.reduced & 4u) != 0u ? pc.x.h : 1u, (pc.reduced & 8u) != 0u ? pc.x.w : 1u);
+  float sum = 0.0;
+  for (uint n = 0u; n < extent.x; ++n) {
+    for (uint c = 0u; c < extent.y; ++c) {
+      for (uint y = 0u; y < extent.z; ++y) {
+        for (uint x = 0u; x < extent.w; ++x) {
+          sum += AJP_LOAD(src, TX, t_index(pc.x, o.x + n, o.y + c, o.z + y, o.w + x));
+        }
+      }
+    }
+  }
+  float count = float(extent.x * extent.y * extent.z * extent.w);
+  AJP_STORE(dst, TY, t_index(pc.y, o.x, o.y, o.z, o.w), sum / count)
+}

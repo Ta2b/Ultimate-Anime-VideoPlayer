@@ -1,0 +1,75 @@
+#version 450
+// Dessins tenus : un groupe de travail par bloc 32 × 32 de la luma, tronqué aux bords.
+// s = Σ |a − b| en entiers, réduite en mémoire partagée ; écart = tronque(s × held_scale / n) ;
+// chaque bloc écrit son écart, et le pire passe par un atomicMax entier sur worst[0], que
+// l'enregistrement remet à zéro avant chaque exécution.
+// Contrat : kernels/spec/detect.h ; référence : kernels/ref/detect.cpp (block_diff_max).
+// Repris de animejanai-inference-rtx@118c272 src/kernels.cu:923-949 (k_block_diff).
+#extension GL_GOOGLE_include_directive : require
+#include "ajp_kernels_spec.glsl"
+#include "common.glsl"
+#include "yuv.glsl"
+
+const uint AJP_GROUP_X = 32u;
+const uint AJP_GROUP_Y = 8u;
+const uint AJP_GROUP_SIZE = AJP_GROUP_X * AJP_GROUP_Y;
+const uint AJP_BLOCK = uint(AJP_HELD_BLOCK);
+
+layout(local_size_x = AJP_GROUP_X, local_size_y = AJP_GROUP_Y) in;
+
+layout(std430, binding = 0) readonly buffer LumaA { uint words[]; } a;
+layout(std430, binding = 1) readonly buffer LumaB { uint words[]; } b;
+// [0] : pire écart ; [1 + by × blocs_x + bx] : écart du bloc (bx, by).
+layout(std430, binding = 2) buffer Result { uint value[]; } result;
+
+layout(push_constant) uniform Push {
+  uint a_offset;
+  uint a_pitch;
+  uint b_offset;
+  uint b_pitch;
+  uint width;
+  uint height;
+} pc;
+
+shared uint partial[AJP_GROUP_SIZE];
+
+uint held_scale() {
+  if (AJP_FORMAT == AJP_FORMAT_NV12) return AJP_HELD_SCALE_NV12;
+  if (AJP_FORMAT == AJP_FORMAT_P010) return AJP_HELD_SCALE_P010;
+  if (AJP_FORMAT == AJP_FORMAT_P016) return AJP_HELD_SCALE_P016;
+  if (AJP_FORMAT == AJP_FORMAT_YUV420P) return AJP_HELD_SCALE_YUV420P;
+  if (AJP_FORMAT == AJP_FORMAT_YUV420P10) return AJP_HELD_SCALE_YUV420P10;
+  return AJP_HELD_SCALE_YUV444P16;
+}
+
+uint code(bool from_a, uint x, uint y) {
+  uint byte = from_a ? sample_byte(pc.a_offset, pc.a_pitch, x, y) : sample_byte(pc.b_offset, pc.b_pitch, x, y);
+  return sample_in_word(from_a ? a.words[byte >> 2] : b.words[byte >> 2], byte);
+}
+
+void main() {
+  uint x0 = gl_WorkGroupID.x * AJP_BLOCK;
+  uint y0 = gl_WorkGroupID.y * AJP_BLOCK;
+  uint x1 = min(x0 + AJP_BLOCK, pc.width);
+  uint y1 = min(y0 + AJP_BLOCK, pc.height);
+  uint sum = 0u;
+  for (uint y = y0 + gl_LocalInvocationID.y; y < y1; y += AJP_GROUP_Y) {
+    for (uint x = x0 + gl_LocalInvocationID.x; x < x1; x += AJP_GROUP_X) {
+      uint va = code(true, x, y);
+      uint vb = code(false, x, y);
+      sum += va > vb ? va - vb : vb - va;
+    }
+  }
+  uint tid = gl_LocalInvocationIndex;
+  partial[tid] = sum;
+  barrier();
+  for (uint n = AJP_GROUP_SIZE / 2u; n > 0u; n >>= 1u) {
+    if (tid < n) partial[tid] += partial[tid + n];
+    barrier();
+  }
+  if (tid != 0u) return;
+  uint pixels = (x1 - x0) * (y1 - y0);
+  uint deviation = partial[0] * held_scale() / pixels;
+  result.value[1u + gl_WorkGroupID.y * gl_NumWorkGroups.x + gl_WorkGroupID.x] = deviation;
+  atomicMax(result.value[0], deviation);
+}

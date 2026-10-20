@@ -1,0 +1,94 @@
+#version 450
+// ConvTranspose 2D, écrite en collecte : chaque sortie (oy, ox) somme les entrées iy telles que
+// oy = iy × SH − PT + ky × DH (de même en x). Mêmes constantes, mêmes liaisons et même rangement
+// des poids que net_conv.comp ([groupe × bloc][kh][kw][cin][4 × QUADS], rangés par l'hôte depuis
+// les poids ONNX [cin][cout / groupes][kh][kw]) ; biais seul, sans résiduel ni activation (le
+// résiduel et la pente restent liés à des tampons factices). Référence : gpu/ir/op_window.cpp
+// (eval_conv_transpose).
+#extension GL_GOOGLE_include_directive : require
+#include "net_tensor.glsl"
+#include "net_activation.glsl"
+
+layout(local_size_x_id = 31) in;
+
+layout(constant_id = 0) const uint TX = 0;
+layout(constant_id = 1) const uint TY = 0;
+layout(constant_id = 2) const uint TR = 0;
+layout(constant_id = 3) const uint LX = 0;
+layout(constant_id = 4) const uint LY = 0;
+layout(constant_id = 5) const uint LR = 0;
+layout(constant_id = 6) const uint CXP = 16;
+layout(constant_id = 7) const uint CYP = 16;
+layout(constant_id = 8) const uint CRP = 16;
+layout(constant_id = 9) const uint N = 1;
+layout(constant_id = 10) const uint CIN = 1;
+layout(constant_id = 11) const uint HIN = 1;
+layout(constant_id = 12) const uint WIN = 1;
+layout(constant_id = 13) const uint COUT = 1;
+layout(constant_id = 14) const uint HOUT = 1;
+layout(constant_id = 15) const uint WOUT = 1;
+layout(constant_id = 16) const uint KH = 1;
+layout(constant_id = 17) const uint KW = 1;
+layout(constant_id = 18) const uint SH = 1;
+layout(constant_id = 19) const uint SW = 1;
+layout(constant_id = 20) const uint DH = 1;
+layout(constant_id = 21) const uint DW = 1;
+layout(constant_id = 22) const uint PT = 0;
+layout(constant_id = 23) const uint PL = 0;
+layout(constant_id = 24) const uint GROUPS = 1;
+layout(constant_id = 25) const uint ACT = 0;
+layout(constant_id = 26) const float ALPHA = 0.0;
+layout(constant_id = 27) const float LO = 0.0;
+layout(constant_id = 28) const float HI = 0.0;
+layout(constant_id = 29) const uint RESIDUAL = 0;
+layout(constant_id = 30) const uint QUADS = 1;
+
+const uint CING = CIN / GROUPS;
+const uint COUTG = COUT / GROUPS;
+const uint BLOCKS = (COUTG + 4u * QUADS - 1u) / (4u * QUADS);
+
+AJP_NET_BUFFER(0, src, readonly)
+layout(std430, binding = 1) readonly buffer Weights { vec4 w[]; } weights;
+layout(std430, binding = 2) readonly buffer Bias { float v[]; } bias;
+layout(std430, binding = 3) readonly buffer Slope { float v[]; } slope;
+AJP_NET_BUFFER(4, res, readonly)
+AJP_NET_BUFFER(5, dst, writeonly)
+
+void main() {
+  const TDesc xd = TDesc(N, CIN, HIN, WIN, LX, CXP);
+  const TDesc yd = TDesc(N, COUT, HOUT, WOUT, LY, CYP);
+  uint ox = gl_GlobalInvocationID.x;
+  uint oy = gl_WorkGroupID.y;
+  uint n = gl_WorkGroupID.z / (GROUPS * BLOCKS);
+  uint gb = gl_WorkGroupID.z % (GROUPS * BLOCKS);
+  if (ox >= WOUT) return;
+  uint g = gb / BLOCKS;
+  uint first_out = (gb % BLOCKS) * 4u * QUADS;
+
+  vec4 acc[QUADS];
+  for (uint q = 0u; q < QUADS; ++q) acc[q] = vec4(0.0);
+  for (uint ky = 0u; ky < KH; ++ky) {
+    int ty = int(oy + PT) - int(ky * DH);
+    if (ty < 0 || ty % int(SH) != 0 || ty / int(SH) >= int(HIN)) continue;
+    uint iy = uint(ty) / SH;
+    for (uint kx = 0u; kx < KW; ++kx) {
+      int tx = int(ox + PL) - int(kx * DW);
+      if (tx < 0 || tx % int(SW) != 0 || tx / int(SW) >= int(WIN)) continue;
+      uint ix = uint(tx) / SW;
+      uint row = ((gb * KH + ky) * KW + kx) * CING * QUADS;
+      for (uint ci = 0u; ci < CING; ++ci) {
+        float xv = AJP_LOAD(src, TX, t_index(xd, n, g * CING + ci, iy, ix));
+        for (uint q = 0u; q < QUADS; ++q) acc[q] += xv * weights.w[row + ci * QUADS + q];
+      }
+    }
+  }
+
+  for (uint q = 0u; q < QUADS; ++q) {
+    for (uint k = 0u; k < 4u; ++k) {
+      uint o = first_out + 4u * q + k;
+      if (o >= COUTG) return;
+      uint co = g * COUTG + o;
+      AJP_STORE(dst, TY, t_index(yd, n, co, oy, ox), acc[q][k] + bias.v[co])
+    }
+  }
+}

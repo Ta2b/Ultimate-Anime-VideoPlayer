@@ -1,0 +1,41 @@
+#version 450
+// Passe horizontale séparable (Spline36, bilinéaire ou Area) : chaque plan src_width × rows,
+// lu en élément de tenseur, vers un plan float dst_width × rows. Un plan par gl_WorkGroupID.z.
+// La table (start, poids) vient de l'hôte (compute_filter de zimg, spec/resample.h) ; l'indice
+// source passe par mirror_index. Somme de j = 0 à taps − 1, depuis 0, sans FMA.
+// Référence : kernels/ref/resample.cpp (resample_rows).
+// Repris de animejanai-inference-rtx@118c272 src/kernels.cu:415-429 (k_rs_h) et 244-258 (k_h_f32).
+#extension GL_GOOGLE_include_directive : require
+#include "tensor.glsl"
+#include "ajp_kernels_spec.glsl"
+#include "common.glsl"
+
+layout(local_size_x = 16, local_size_y = 16) in;
+
+layout(std430, binding = 0) readonly buffer Source { AJP_TENSOR v[]; } src;
+layout(std430, binding = 1) readonly buffer Starts { int start[]; } starts;
+layout(std430, binding = 2) readonly buffer Weights { float w[]; } weights;
+layout(std430, binding = 3) writeonly buffer Destination { float v[]; } dst;
+
+layout(push_constant) uniform Push {
+  uint src_width;
+  uint dst_width;
+  uint rows;
+  uint taps;
+} pc;
+
+void main() {
+  uint x = gl_GlobalInvocationID.x;
+  uint y = gl_GlobalInvocationID.y;
+  uint plane = gl_GlobalInvocationID.z;
+  if (x >= pc.dst_width || y >= pc.rows) return;
+  uint src_row = (plane * pc.rows + y) * pc.src_width;
+  int first = starts.start[x];
+  uint row = x * pc.taps;
+  precise float a = 0.0;
+  for (uint j = 0u; j < pc.taps; ++j) {
+    uint sx = uint(mirror_index(first + int(j), int(pc.src_width)));
+    a += weights.w[row + j] * float(src.v[src_row + sx]);
+  }
+  dst.v[(plane * pc.rows + y) * pc.dst_width + x] = a;
+}

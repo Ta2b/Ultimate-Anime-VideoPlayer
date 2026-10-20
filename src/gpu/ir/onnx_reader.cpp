@@ -333,7 +333,9 @@ std::expected<void, Refusal> read_dimension(Bytes bytes, ValueInfo& info) {
     if (field.number == 1) {
       auto dim = proto::as_int64(field);
       if (!dim) return std::unexpected(dim.error());
-      if (*dim < 0) return proto::malformed(std::format("{} : dimension {}", info.name, *dim));
+      // Certains exports (RIFE 4.26) écrivent -1 pour une dimension dynamique : elle reste
+      // inconnue, comme une dimension sans valeur. Toute autre valeur négative est refusée.
+      if (*dim < -1) return proto::malformed(std::format("{} : dimension {}", info.name, *dim));
       value = *dim;
     } else if (field.number == 2) {
       return read_string(field, symbol);

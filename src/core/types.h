@@ -71,7 +71,7 @@ enum class RefusalCode : std::uint8_t {
   VendorCallFailed,    // un appel d'un SDK constructeur a renvoyé une erreur
   InputMismatch,       // image ou tampon hors du contrat d'entrée (taille, format, tramage)
   IoFailed,            // lecture, copie ou écriture de fichier impossible
-
+  // gpu/ir : lecture ONNX et IR de graphes
   OnnxMalformed,     // octets qui ne forment pas un ModelProto lisible
   OnnxExternalData,  // poids hors du fichier ONNX, refusés
   OnnxUnsupported,   // type, opset ou construction ONNX hors du sous-ensemble lu
@@ -86,6 +86,11 @@ enum class RefusalCode : std::uint8_t {
 
   // media : pistes annexes de la source
   PacketBacklog,  // paquets annexes non retirés : réserve de la source pleine avant la première image
+  // gpu/vulkan/compute : socle de calcul Vulkan
+  VulkanCallFailed,    // un appel Vulkan a renvoyé une erreur ; le détail cite l'appel et son VkResult
+  DeviceUnavailable,   // aucun appareil, aucune file compute, ou UUID introuvable
+  FeatureUnavailable,  // version, extension, fonction, format ou limite absents de l'appareil
+  GpuMemoryExhausted,  // mémoire de l'appareil, sous-allocateur ou pool de descripteurs à leur borne
 };
 
 struct Refusal {
@@ -219,6 +224,14 @@ constexpr std::string_view name(RefusalCode code) {
       return "DeviceMismatch";
     case RefusalCode::PacketBacklog:
       return "PacketBacklog";
+    case RefusalCode::VulkanCallFailed:
+      return "VulkanCallFailed";
+    case RefusalCode::DeviceUnavailable:
+      return "DeviceUnavailable";
+    case RefusalCode::FeatureUnavailable:
+      return "FeatureUnavailable";
+    case RefusalCode::GpuMemoryExhausted:
+      return "GpuMemoryExhausted";
   }
   return "Unknown";
 }

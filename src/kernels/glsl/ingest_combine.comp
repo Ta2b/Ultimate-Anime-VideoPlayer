@@ -1,0 +1,56 @@
+#version 450
+// Ingestion : luma et chroma (rééchantillonnée en 4:2:0, lue telle quelle en 4:4:4), puis la
+// matrice pixel par pixel, vers le tenseur RGB planaire des réseaux, jamais borné.
+// Contrat : kernels/spec/color.h ; référence : kernels/ref/color.cpp (yuv_to_rgb).
+// Repris de animejanai-inference-rtx@118c272 src/kernels.cu:141-165 (k_pre_combine) et
+// 334-360 (k_pre444).
+#extension GL_GOOGLE_include_directive : require
+#include "tensor.glsl"
+#include "ajp_kernels_spec.glsl"
+#include "common.glsl"
+#include "yuv.glsl"
+
+layout(local_size_x = 16, local_size_y = 16) in;
+
+layout(std430, binding = 0) readonly buffer Frame { uint words[]; } frame;
+// 4:2:0 : Cb puis Cr, plans float w × h en codes du conteneur. 4:4:4 : lié mais jamais lu.
+layout(std430, binding = 1) readonly buffer Chroma { float v[]; } chroma;
+layout(std430, binding = 2) writeonly buffer Rgb { AJP_TENSOR v[]; } rgb;
+
+layout(push_constant) uniform Push {
+  uint y_offset;
+  uint y_pitch;
+  uint cb_offset;
+  uint cb_pitch;
+  uint cr_offset;
+  uint cr_pitch;
+  uint width;
+  uint height;
+} pc;
+
+uint code_at(uint offset, uint pitch, uint i, uint y) {
+  uint byte = sample_byte(offset, pitch, i, y);
+  return sample_in_word(frame.words[byte >> 2], byte);
+}
+
+void main() {
+  uint x = gl_GlobalInvocationID.x;
+  uint y = gl_GlobalInvocationID.y;
+  if (x >= pc.width || y >= pc.height) return;
+  uint plane = pc.width * pc.height;
+  uint i = y * pc.width + x;
+  float luma = float(code_at(pc.y_offset, pc.y_pitch, x, y));
+  float u;
+  float v;
+  if (AJP_SUBSAMPLED) {
+    u = chroma.v[i];
+    v = chroma.v[plane + i];
+  } else {
+    u = float(code_at(pc.cb_offset, pc.cb_pitch, x, y));
+    v = float(code_at(pc.cr_offset, pc.cr_pitch, x, y));
+  }
+  vec3 p = yuv_to_rgb(luma, u, v);
+  rgb.v[i] = AJP_TENSOR(p.r);
+  rgb.v[plane + i] = AJP_TENSOR(p.g);
+  rgb.v[2u * plane + i] = AJP_TENSOR(p.b);
+}
