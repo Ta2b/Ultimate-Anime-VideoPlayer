@@ -55,7 +55,7 @@ def load_ifnet(repo: Path, weights: Path):
     for arch, module in (("v1", "models.drba.distilDRBA"), ("v2_lite", "models.drba.distilDRBA_v2_lite")):
         net = importlib.import_module(module).IFNet()
         try:
-            net.load_state_dict(torch.load(weights, map_location="cpu"), strict=True)
+            net.load_state_dict(torch.load(weights, map_location="cpu", weights_only=True), strict=True)
         except RuntimeError:
             continue
         return net.eval(), arch

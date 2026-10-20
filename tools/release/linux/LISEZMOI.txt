@@ -7,8 +7,8 @@ Contenu
   lib/                      FFmpeg, libplacebo, SDL3, libass et leurs dépendances
   engines.lock              l'index des moteurs facultatifs téléchargeables
   models/onnx/              SPAN AnimeJaNai HD V3.1 (Sharp1 et normal, Performance et Balanced)
-  models/rife/              RIFE 4.25 et 4.22 lite (fp16)
-  models/LICENCES.txt       licences des modèles (AnimeJaNai : CC BY-NC-SA 4.0 ; RIFE : MIT)
+  models/rife/              RIFE 4.25 et 4.22 lite, DistilDRBA v2 lite (fp16)
+  models/LICENCES.txt       licences des modèles (AnimeJaNai : CC BY-NC-SA 4.0 ; RIFE, DistilDRBA : MIT)
 
 Paquets du système (non livrés)
   Une distribution à glibc 2.38 ou plus : Ubuntu 24.04, Debian 13, Fedora 39, Arch et plus récentes.
