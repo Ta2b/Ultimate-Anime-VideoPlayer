@@ -64,7 +64,9 @@ jobs:
         run: sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
       - name: OpenVINO
         run: |
-          pip install --user openvino==2025.3.0
+          # 2026 : roue manylinux_2_28 en ABI C++11, comme le reste du lecteur (la 2025.3, manylinux2014,
+          # impose _GLIBCXX_USE_CXX11_ABI=0 et ne se lie pas à nos bibliothèques).
+          pip install --user openvino==2026.4.1
           echo "OpenVINO_DIR=$(python3 -c 'from openvino.utils import get_cmake_path; print(get_cmake_path())')" >> "$GITHUB_ENV"
       - name: ROCm et MIGraphX
         run: |
