@@ -303,7 +303,7 @@ TEST_CASE("sortie SDR : couleurs et contraste poussés, sans dépasser le blanc"
   REQUIRE(gpu.grade);
   GradeParams vivid = sdr_neutral();
   vivid.vibrance = 0.45;
-  vivid.emulate = 2.0;
+  vivid.emulate = 1.0;
   vivid.sdr_white = 203.0;
   vivid.em_base = 200.0;
   vivid.em_lo = 1.19;
@@ -317,11 +317,36 @@ TEST_CASE("sortie SDR : couleurs et contraste poussés, sans dépasser le blanc"
   CHECK(saturation(pushed[mid]) > saturation(plain[mid]) + 0.01);
   for (const Rgb& px : graded_codes(gpu, sky, vivid))
     for (const double c : px) CHECK((c >= 0.0 && c <= 1.0));
-  // Le gris : le blanc reste blanc, les ombres descendent (contraste sous le pivot).
+  // Le gris : le blanc reste blanc et neutre.
   const std::vector<Rgb> gray = graded_codes(gpu, sdr_ramp(1.0, 1.0, 1.0), vivid);
   CHECK(gray.back()[0] > 0.985);
-  CHECK(gray[kSide / 8][0] < (kSide / 8 + 1.0) / kSide);
   CHECK(std::abs(gray[kSide / 8][0] - gray[kSide / 8][2]) < 4e-3);
+}
+
+TEST_CASE("sortie SDR : le contraste maximal de RTX HDR n'écrase pas les sombres", "[render][gpu]") {
+  Gpu gpu;
+  if (gpu.vk == nullptr) SKIP("pas d'appareil Vulkan");
+  REQUIRE(gpu.grade);
+  // Contraste 200, gris moyen 51 (les réglages de RTX HDR de Tatoub), le reste neutre.
+  GradeParams look = sdr_neutral();
+  look.emulate = 1.0;
+  look.sdr_white = 203.0;
+  look.em_base = 204.0;
+  look.em_pow = 6.0 * std::pow(50.0 / 51.0, 0.35);
+  look.em_lo = 1.38;
+  look.em_hi = 1.28;
+  look.em_sat = 1.0;
+  const std::vector<Rgb> out = graded_codes(gpu, sdr_ramp(1.0, 1.0, 1.0), look);
+  // La médiane d'une scène de nuit de Re:Zero : code 0,145, 2,9 nits. Avec le seul contraste sous
+  // le pivot, elle tombait à 1 nit ; l'aspect TrueHDR la garde au-dessus de 2 nits.
+  const auto code = [](std::size_t x) { return static_cast<double>(x + 1) / kSide; };
+  for (std::size_t x = 0; x < out.size(); ++x) {
+    const double in = code(x);
+    if (in < 0.1 || in > 0.3) continue;
+    const double nits_in = 203.0 * std::pow(in, 2.2);
+    const double nits_out = 203.0 * std::pow(out[x][1], 2.2);
+    CHECK(nits_out > 0.7 * nits_in);
+  }
 }
 
 TEST_CASE("sortie SDR : le vrai noir OLED met les quasi-noirs à 0", "[render][gpu]") {

@@ -134,7 +134,7 @@ TEST_CASE("sortie SDR : couleurs, noirs et contraste au blanc de l'écran, sans 
     CHECK(p.vibrance == settings.vibrance_rtx);
     CHECK(p.shadows == settings.shadows);
     CHECK(p.guard == settings.guard);
-    CHECK(p.emulate == 2.0);
+    CHECK(p.emulate == 1.0);  // l'aspect TrueHDR entier, ramené au blanc SDR
     CHECK(p.em_lo > 1.0);
     CHECK(p.em_base == 200.0);
     CHECK(p.black_hi == 0.5);

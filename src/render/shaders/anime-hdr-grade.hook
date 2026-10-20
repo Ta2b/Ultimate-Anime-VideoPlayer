@@ -126,10 +126,10 @@
 0.0
 
 //!PARAM emulate
-//!DESC 1 = aspect RTX TrueHDR applique au SDR converti par MPV, 2 = son contraste et sa saturation seuls (sortie SDR)
+//!DESC 1 = aspect RTX TrueHDR applique au SDR converti par MPV (sortie SDR : jusqu'a son blanc)
 //!TYPE float
 //!MINIMUM 0.0
-//!MAXIMUM 2.0
+//!MAXIMUM 1.0
 0.0
 
 //!PARAM sdr_white
@@ -494,19 +494,12 @@ float highlight_ratio(float y, float isolation, float skin, float abl_scale) {
 // courantes, jusqu'a +20 % sur les primaires pures.
 vec3 truehdr_look(vec3 nits) {
     const vec3 luma = vec3(0.2627, 0.6780, 0.0593);
-    vec3 c;
-    if (emulate > 1.5) {
-        // Sortie SDR : pas de montee vers un pic, le contraste et la saturation seuls.
-        c = max(nits, 0.0);
-        if (dot(c, luma) < 1e-6 * sdr_white) return vec3(0.0);
-    } else {
-        vec3 x = max(nits, 0.0) / sdr_white;
-        float Y = dot(x, luma);
-        float idx = clamp(Y + 0.15 * (max(x.r, max(x.g, x.b)) - Y), 0.0, 1.0);
-        if (idx < 1e-6) return vec3(0.0);
-        float s2 = pow(idx, 2.0 / 2.4);
-        c = x * (em_base * s2 / idx * exp(log(max(peak / em_base, 1.0)) * pow(s2, 0.5 * em_pow)));
-    }
+    vec3 x = max(nits, 0.0) / sdr_white;
+    float Y = dot(x, luma);
+    float idx = clamp(Y + 0.15 * (max(x.r, max(x.g, x.b)) - Y), 0.0, 1.0);
+    if (idx < 1e-6) return vec3(0.0);
+    float s2 = pow(idx, 2.0 / 2.4);
+    vec3 c = x * (em_base * s2 / idx * exp(log(max(peak / em_base, 1.0)) * pow(s2, 0.5 * em_pow)));
     float Yn = max(dot(c, luma), 1e-6);
     float P = 0.2575 * em_base;
     float Y2;

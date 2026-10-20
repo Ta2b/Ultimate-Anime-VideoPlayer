@@ -52,7 +52,10 @@ GradeParams sdr_params(const GradeSettings& s) {
   p.emulate = 0.0;
   if (s.truehdr_look) {
     apply_truehdr_look(s, p.peak, p);
-    p.emulate = 2.0;
+    // L'aspect TrueHDR entier (emulate = 1) dans le blanc SDR : la courbe envoie toujours le blanc
+    // à peak et relève les sombres comme TrueHDR (s2 = idx^(2/2,4)) avant le contraste sous le
+    // pivot. Le contraste seul, sans ce relèvement, écrasait les noirs : à contraste 200, la
+    // médiane d'une scène de nuit passait de 2,9 à 0,46 nit (−84 %, contre −31 % en HDR10).
     p.em_base = std::clamp(4.0 * s.middle_gray, 40.0, 400.0);  // le pivot : 0,2575 × em_base
   }
   p.black_lo = s.true_black ? s.black_lo : 0.0;
