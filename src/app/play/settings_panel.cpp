@@ -184,19 +184,19 @@ void fluidity_tab(PlaySettings& d, const SettingsChoices& choices) {
     const bool union_model = d.motion_engine == MotionEngine::GmfssUnion;
     note(
         "Expérimental. GMFSS Fortuna (réseau fait pour l'animation) donne les images intermédiaires les plus "
-        "propres, pour plusieurs fois le coût de RIFE : sur une 4070 Ti, 540 lignes de travail tiennent en "
-        "×1,5 et ×2, pas 720. TensorRT seulement pour l'instant ; ses deux moteurs se construisent la "
-        "première fois (plusieurs minutes).");
+        "propres, pour plusieurs fois le coût de RIFE. Avec ses graphes au flot à demi-échelle (_s05, "
+        "préférés), 720 lignes de travail tiennent en ×2 sur une 4070 Ti. Ses deux moteurs se construisent "
+        "la première fois (plusieurs minutes).");
     if (union_model) {
       note(
           "Union mêle à GMFSS l'image d'un RIFE intégré au réseau : moins de défauts sur les mouvements "
           "rapides, pour un peu plus de calcul à chaque image intermédiaire.");
     }
     if (!(union_model ? choices.gmfss_union_available : choices.gmfss_available)) {
-      const GmfssFiles files = gmfss_files(union_model ? GmfssVariant::Union : GmfssVariant::Base);
+      const GmfssFiles files = gmfss_files(union_model ? GmfssVariant::Union : GmfssVariant::Base, true);
       note(
-          std::format("Graphes introuvables : {} et {}, à exporter dans {} (tools/gmfss/export_gmfss.py{}) ; "
-                      "RIFE prend la place.",
+          std::format("Graphes introuvables : {} et {}, à exporter dans {} (tools/gmfss/export_gmfss.py{} "
+                      "--scale 0.5 --width 256 --height 256) ; RIFE prend la place.",
                       files.pair, files.fusion, choices.rife_folder, union_model ? " --model union" : ""));
     }
   }

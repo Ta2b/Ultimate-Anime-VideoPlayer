@@ -128,11 +128,11 @@ std::expected<std::optional<GmfssEngines>, Refusal> prepare_gmfss(Player& p, con
                 std::format("GMFSS : {} et {} introuvables ({})", gmfss_files(variant).pair,
                             gmfss_files(variant).fusion, tried)});
   }
-  const kernels::RifeGeometry g = kernels::rife_geometry(work_width, work_height);
+  const kernels::RifeGeometry g = kernels::rife_geometry(work_width, work_height, found->align);
   auto fixed =
       static_gmfss(*found, g.padded_width, g.padded_height, p.paths.engines.parent_path() / "modeles");
   if (!fixed) return std::unexpected(std::move(fixed.error()));
-  GmfssEngines engines;
+  GmfssEngines engines{.align = found->align};
   // Les entrées des graphes : « frames » à la paire, « half0 » (la première) à la fusion.
   auto pair =
       prepare_engine(p, init, backend, fixed->pair,

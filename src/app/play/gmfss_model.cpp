@@ -4,17 +4,22 @@
 #include <system_error>
 
 #include "app/play/derived_model.h"
+#include "kernels/spec/rife.h"
 
 namespace ajp::app::play {
 
 std::optional<GmfssModels> find_gmfss(std::span<const std::filesystem::path> dirs, GmfssVariant variant) {
-  const GmfssFiles files = gmfss_files(variant);
   std::error_code error;
-  for (const std::filesystem::path& dir : dirs) {
-    GmfssModels found{.pair = dir / files.pair, .fusion = dir / files.fusion};
-    if (std::filesystem::is_regular_file(found.pair, error) &&
-        std::filesystem::is_regular_file(found.fusion, error))
-      return found;
+  for (const bool half_flow : {true, false}) {
+    const GmfssFiles files = gmfss_files(variant, half_flow);
+    for (const std::filesystem::path& dir : dirs) {
+      GmfssModels found{.pair = dir / files.pair,
+                        .fusion = dir / files.fusion,
+                        .align = half_flow ? kGmfssHalfAlign : kernels::kRifeAlign};
+      if (std::filesystem::is_regular_file(found.pair, error) &&
+          std::filesystem::is_regular_file(found.fusion, error))
+        return found;
+    }
   }
   return std::nullopt;
 }
@@ -37,7 +42,7 @@ std::expected<GmfssModels, Refusal> static_gmfss(const GmfssModels& models, int 
   if (!pair) return std::unexpected(std::move(pair.error()));
   auto fusion = derived_model(models.fusion, size, dir, fix);
   if (!fusion) return std::unexpected(std::move(fusion.error()));
-  return GmfssModels{.pair = std::move(*pair), .fusion = std::move(*fusion)};
+  return GmfssModels{.pair = std::move(*pair), .fusion = std::move(*fusion), .align = models.align};
 }
 
 }  // namespace ajp::app::play

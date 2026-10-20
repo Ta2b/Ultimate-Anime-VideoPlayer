@@ -25,12 +25,25 @@ inline constexpr std::string_view kGmfssPairFile = "gmfss_fortuna_base_pair.onnx
 inline constexpr std::string_view kGmfssFusionFile = "gmfss_fortuna_base_fusion.onnx";
 inline constexpr std::string_view kGmfssUnionPairFile = "gmfss_fortuna_union_pair.onnx";
 inline constexpr std::string_view kGmfssUnionFusionFile = "gmfss_fortuna_union_fusion.onnx";
+// GMFlow à l'échelle 0,5 (export_gmfss.py --scale 0.5) : le flot à un quart de la taille de travail,
+// 3,5 fois moins cher pour la paire (8,3 ms contre 29,4 à 720p sur une 4070 Ti) et la même qualité
+// mesurée (21,2 dB sur 19 triplets de Re:Zero) ; plans remplis au multiple de 128. Préférés quand
+// ils sont là.
+inline constexpr std::string_view kGmfssHalfPairFile = "gmfss_fortuna_base_s05_pair.onnx";
+inline constexpr std::string_view kGmfssHalfFusionFile = "gmfss_fortuna_base_s05_fusion.onnx";
+inline constexpr std::string_view kGmfssUnionHalfPairFile = "gmfss_fortuna_union_s05_pair.onnx";
+inline constexpr std::string_view kGmfssUnionHalfFusionFile = "gmfss_fortuna_union_s05_fusion.onnx";
+inline constexpr int kGmfssHalfAlign = 128;
 
 struct GmfssFiles {
   std::string_view pair;
   std::string_view fusion;
 };
-constexpr GmfssFiles gmfss_files(GmfssVariant variant) {
+constexpr GmfssFiles gmfss_files(GmfssVariant variant, bool half_flow = false) {
+  if (half_flow) {
+    return variant == GmfssVariant::Union ? GmfssFiles{kGmfssUnionHalfPairFile, kGmfssUnionHalfFusionFile}
+                                          : GmfssFiles{kGmfssHalfPairFile, kGmfssHalfFusionFile};
+  }
   return variant == GmfssVariant::Union ? GmfssFiles{kGmfssUnionPairFile, kGmfssUnionFusionFile}
                                         : GmfssFiles{kGmfssPairFile, kGmfssFusionFile};
 }
@@ -38,9 +51,11 @@ constexpr GmfssFiles gmfss_files(GmfssVariant variant) {
 struct GmfssModels {
   std::filesystem::path pair;
   std::filesystem::path fusion;
+  int align = 64;  // multiple des plans remplis : 128 pour le flot à l'échelle 0,5
 };
 
-// Les deux graphes de variant du premier de ces dossiers qui les a tous les deux.
+// Les deux graphes de variant du premier de ces dossiers qui les a tous les deux, ceux du flot à
+// l'échelle 0,5 d'abord.
 std::optional<GmfssModels> find_gmfss(std::span<const std::filesystem::path> dirs,
                                       GmfssVariant variant = GmfssVariant::Base);
 

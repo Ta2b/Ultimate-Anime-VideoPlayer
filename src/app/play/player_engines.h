@@ -97,6 +97,7 @@ std::expected<std::optional<std::unique_ptr<gpu::Engine>>, Refusal> prepare_engi
 struct GmfssEngines {
   std::unique_ptr<gpu::Engine> pair;
   std::unique_ptr<gpu::Engine> fusion;
+  int align = 64;  // multiple des plans remplis des deux graphes (gmfss_model.h)
 };
 // DistilDRBA pour des images de travail work_width × work_height : son graphe, trouvé dans le
 // premier de dirs qui l'a, fixé à la taille remplie de RIFE, construit puis chargé. Rien si

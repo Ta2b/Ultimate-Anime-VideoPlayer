@@ -330,6 +330,7 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
                                                 .rife_align = rife_align,
                                                 .gmfss_pair = gmfss.pair.get(),
                                                 .gmfss_fusion = gmfss.fusion.get(),
+                                                .gmfss_align = gmfss.align,
                                                 .distil_drba = drba.get(),
                                                 .rife_factor = factor_of(settings),
                                                 .true_hdr = settings.true_hdr,

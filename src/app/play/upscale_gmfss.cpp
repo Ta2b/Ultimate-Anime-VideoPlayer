@@ -23,7 +23,8 @@ std::unexpected<Refusal> refuse(RefusalCode code, std::string detail) {
 
 std::expected<void, Refusal> UpscaleStage::allocate_gmfss() {
   gpu::Backend& backend = *setup_.backend;
-  const kernels::RifeGeometry g = kernels::rife_geometry(setup_.work_width, setup_.work_height);
+  const kernels::RifeGeometry g =
+      kernels::rife_geometry(setup_.work_width, setup_.work_height, setup_.gmfss_align);
   const auto alloc = [&](int channels, int scale) {
     return backend.alloc_tensor(
         gpu::TensorType::F16,

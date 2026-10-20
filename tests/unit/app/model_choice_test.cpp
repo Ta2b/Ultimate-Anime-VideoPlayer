@@ -99,6 +99,14 @@ TEST_CASE("GMFSS : les deux graphes du premier dossier qui les a, ses dimensions
   std::ofstream(fake.rife / kGmfssUnionPairFile) << "x";
   std::ofstream(fake.rife / kGmfssUnionFusionFile) << "x";
   CHECK(find_gmfss(dirs, GmfssVariant::Union)->pair == fake.rife / kGmfssUnionPairFile);
+  // Le flot à l'échelle 0,5 passe devant, plans au multiple de 128.
+  std::ofstream(other / kGmfssHalfPairFile) << "x";
+  std::ofstream(other / kGmfssHalfFusionFile) << "x";
+  const auto half = find_gmfss(dirs);
+  REQUIRE(half);
+  CHECK(half->pair == other / kGmfssHalfPairFile);
+  CHECK(half->align == kGmfssHalfAlign);
+  CHECK(find_gmfss(dirs, GmfssVariant::Union)->align == 64);
   const auto dims = gmfss_dims(1280, 768);
   REQUIRE(dims.size() == 8);
   CHECK(dims[0].name == "H");

@@ -46,6 +46,7 @@ struct UpscaleSetup {
   // deux ou aucun.
   gpu::Engine* gmfss_pair = nullptr;
   gpu::Engine* gmfss_fusion = nullptr;
+  int gmfss_align = 64;  // multiple des plans remplis de GMFSS : 128 pour le flot à l'échelle 0,5
   // DistilDRBA à la place de RIFE, aux plans remplis de rife_geometry(travail).
   gpu::Engine* distil_drba = nullptr;
   Factor rife_factor{.num = 1, .den = 1};  // ×num/den quand l'interpolation tourne (au plus ×8)
