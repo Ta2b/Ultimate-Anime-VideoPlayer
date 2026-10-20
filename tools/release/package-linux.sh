@@ -28,7 +28,8 @@ OUT="$(mkdir -p "${1:-$ROOT/build/package}" && cd "${1:-$ROOT/build/package}" &&
 command -v patchelf >/dev/null || { echo "patchelf manquant (apt install patchelf)" >&2; exit 1; }
 VERSION="$(sed -n 's/^  VERSION \([0-9.]*\)$/\1/p' "$ROOT/CMakeLists.txt")"
 TAG="${AJP_RELEASE_TAG:-v$VERSION}"
-BASE_URL="https://github.com/Ta2b/Ultimate-Anime-VideoPlayer/releases/download/$TAG"
+# Le dépôt dont la release porte les paquets : il doit être public pour que le lecteur les télécharge.
+BASE_URL="https://github.com/${AJP_RELEASE_REPO:-Ta2b/Ultimate-Anime-VideoPlayer}/releases/download/$TAG"
 
 cmake --preset linux-release -S "$ROOT" \
   -DAJP_WITH_CUDA="${AJP_WITH_CUDA:-OFF}" \
