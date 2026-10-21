@@ -1,0 +1,14 @@
+{
+  "name": "libass",
+  "version-string": "0.17.5-the-database-896614fa",
+  "description": "Portable subtitle renderer for ASS/SSA, fork the-database (overlay ajp).",
+  "homepage": "https://github.com/the-database/libass",
+  "license": "ISC",
+  "dependencies": [
+    "freetype",
+    "fribidi",
+    "harfbuzz",
+    { "name": "fontconfig", "platform": "!windows & !osx" },
+    { "name": "vcpkg-tool-meson", "host": true }
+  ]
+}

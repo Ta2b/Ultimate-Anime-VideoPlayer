@@ -1,0 +1,14 @@
+{
+  "name": "libplacebo",
+  "version": "7.360.1",
+  "description": "Reusable library for GPU-accelerated video/image rendering primitives (overlay ajp).",
+  "homepage": "https://code.videolan.org/videolan/libplacebo",
+  "license": "LGPL-2.1-or-later",
+  "supports": "!uwp",
+  "dependencies": [
+    "lcms",
+    "shaderc",
+    "vulkan-headers",
+    { "name": "vcpkg-tool-meson", "host": true }
+  ]
+}

@@ -1,0 +1,74 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  AJP_DEPS_PREFIX: ${{ github.workspace }}/../ajp-deps
+  APT_BASE: >-
+    ninja-build nasm autoconf automake libtool pkg-config python3-jinja2
+    clang-20 clang-tidy-20 clang-format-20
+
+jobs:
+  rules:
+    name: Format et règles
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - run: sudo apt-get update -qq && sudo apt-get install -y -qq clang-format-20
+      - name: clang-format
+        run: git ls-files -z -- '*.cpp' '*.h' '*.cu' '*.cuh' | xargs -0 -r clang-format-20 --dry-run --Werror
+      - name: Taille des fichiers
+        run: tools/ci/check-file-size.sh
+      - name: Aucun getenv
+        run: tools/ci/check-no-getenv.sh
+
+  core:
+    name: Cœur (${{ matrix.name }})
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { name: gcc-13, cc: gcc-13, cxx: g++-13, preset: linux-prefix-core }
+          - { name: clang-20, cc: clang-20, cxx: clang++-20, preset: linux-prefix-core }
+          - { name: asan-ubsan, cc: gcc-13, cxx: g++-13, preset: linux-prefix-asan-core }
+          - { name: tsan, cc: gcc-13, cxx: g++-13, preset: linux-prefix-tsan }
+    env:
+      CC: ${{ matrix.cc }}
+      CXX: ${{ matrix.cxx }}
+    steps:
+      - uses: actions/checkout@v4
+      - run: sudo apt-get update -qq && sudo apt-get install -y -qq $APT_BASE
+      - uses: actions/cache@v4
+        with:
+          path: ${{ env.AJP_DEPS_PREFIX }}
+          key: deps-core-${{ matrix.cc }}-${{ hashFiles('tools/deps/linux-from-source.sh') }}
+      - run: tools/deps/linux-from-source.sh --core "$AJP_DEPS_PREFIX" "$RUNNER_TEMP/deps-src"
+      - run: cmake --preset ${{ matrix.preset }}
+      - run: cmake --build --preset ${{ matrix.preset }}
+      - run: ctest --preset ${{ matrix.preset }}
+
+  tidy:
+    name: clang-tidy
+    runs-on: ubuntu-24.04
+    env:
+      CC: clang-20
+      CXX: clang++-20
+    steps:
+      - uses: actions/checkout@v4
+      - run: sudo apt-get update -qq && sudo apt-get install -y -qq $APT_BASE
+      - uses: actions/cache@v4
+        with:
+          path: ${{ env.AJP_DEPS_PREFIX }}
+          key: deps-core-clang-20-${{ hashFiles('tools/deps/linux-from-source.sh') }}
+      - run: tools/deps/linux-from-source.sh --core "$AJP_DEPS_PREFIX" "$RUNNER_TEMP/deps-src"
+      - run: cmake --preset linux-prefix-core
+      - name: clang-tidy sur src/
+        run: git ls-files -z -- 'src/*.cpp' | xargs -0 -r -n1 -P4 clang-tidy-20 -p build/linux-prefix-core --quiet

@@ -1,0 +1,24 @@
+# Les avertissements sont des erreurs en CI.
+Checks: >
+  -*,
+  bugprone-*,
+  -bugprone-easily-swappable-parameters,
+  -bugprone-exception-escape,
+  cppcoreguidelines-avoid-non-const-global-variables,
+  cppcoreguidelines-pro-type-cstyle-cast,
+  cppcoreguidelines-slicing,
+  misc-const-correctness,
+  misc-unused-using-decls,
+  modernize-use-nullptr,
+  modernize-use-override,
+  modernize-use-using,
+  performance-*,
+  -performance-enum-size,
+  readability-container-size-empty,
+  readability-make-member-function-const,
+  readability-redundant-*,
+WarningsAsErrors: '*'
+HeaderFilterRegex: 'src/.*'
+CheckOptions:
+  - key: misc-const-correctness.AnalyzeValues
+    value: false
