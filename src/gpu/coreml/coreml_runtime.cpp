@@ -5,12 +5,21 @@
 #include <filesystem>
 #include <format>
 #include <fstream>
+#include <functional>
+#include <mutex>
+#include <optional>
 #include <span>
 #include <sstream>
+#include <stop_token>
 #include <string>
+#include <thread>
 #include <unordered_map>
+#include <utility>
+#include <variant>
 #include <vector>
 
+#include "core/inbox.h"
+#include "core/thread.h"
 #include "gpu/coreml/coreml_detail.h"
 #include "gpu/ir/onnx_io_type.h"
 #include "gpu/ir/onnx_model.h"
@@ -136,11 +145,24 @@ class CoremlNet final : public vk::net::RuntimeNet {
             std::vector<TensorType> in_types, std::vector<TensorType> out_types)
       : env_(std::move(env)),
         session_(std::move(session)),
+        binding_(session_),
         names_(std::move(names)),
         in_types_(std::move(in_types)),
         out_types_(std::move(out_types)),
         in_scratch_(in_types_.size()),
-        out_scratch_(out_types_.size()) {}
+        out_scratch_(out_types_.size()),
+        bound_(in_types_.size() + out_types_.size()) {}
+  CoremlNet(const CoremlNet&) = delete;
+  CoremlNet& operator=(const CoremlNet&) = delete;
+  CoremlNet(CoremlNet&&) = delete;
+  CoremlNet& operator=(CoremlNet&&) = delete;
+  // Les étapes encore en file sont faites avant de rendre la session : chacune signale la
+  // timeline que la chaîne attend.
+  ~CoremlNet() override {
+    if (!worker_.joinable()) return;
+    worker_.request_stop();
+    worker_.join();
+  }
   std::span<const std::string> input_names() const override { return names_.inputs; }
   std::span<const std::string> output_names() const override { return names_.outputs; }
 
@@ -148,38 +170,79 @@ class CoremlNet final : public vk::net::RuntimeNet {
                                    std::span<const HostBinding> outputs) override {
     if (inputs.size() != names_.inputs.size() || outputs.size() != names_.outputs.size())
       return refuse(RefusalCode::InputMismatch, "Core ML : nombre d'entrées ou de sorties");
+    const std::scoped_lock lock(session_mutex_);
+    return infer(inputs, outputs);
+  }
+
+  // Sur un fil propre au réseau, dans l'ordre des appels : ready (l'attente des entrées sur la
+  // timeline Vulkan), l'inférence, done (le signal de l'étape). Le fil du lecteur n'attend plus
+  // Core ML : le Neural Engine calcule pendant que le GPU fait le reste de la chaîne.
+  std::expected<void, Refusal> run_deferred(std::span<const HostBinding> inputs,
+                                            std::span<const HostBinding> outputs,
+                                            std::function<std::expected<void, Refusal>()> ready,
+                                            std::function<void(std::expected<void, Refusal>)> done) override {
+    if (inputs.size() != names_.inputs.size() || outputs.size() != names_.outputs.size())
+      return refuse(RefusalCode::InputMismatch, "Core ML : nombre d'entrées ou de sorties");
+    if (!ready || !done) return refuse(RefusalCode::InputMismatch, "Core ML : étape sans rappels");
+    {
+      const std::scoped_lock lock(jobs_mutex_);
+      if (failed_) return std::unexpected(*failed_);
+      if (!worker_.joinable()) {
+        auto worker = start_thread(
+            "coreml", ThreadReport([this](const Refusal& refusal) { note_failure(refusal); }),
+            [this](const std::stop_token& stop, const ThreadReport& /*report*/) { serve(stop); });
+        if (!worker) return std::unexpected(std::move(worker.error()));
+        worker_ = std::move(*worker);
+      }
+    }
+    if (!jobs_.try_push(Job{.inputs = {inputs.begin(), inputs.end()},
+                            .outputs = {outputs.begin(), outputs.end()},
+                            .ready = std::move(ready),
+                            .done = std::move(done)})) {
+      // Rien n'est lancé : l'appelant fait l'étape lui-même, et signale la timeline.
+      return refuse(RefusalCode::ThreadUnavailable,
+                    std::format("Core ML : {} étapes en file, le fil n'en reprend pas", kStepBound));
+    }
+    return {};
+  }
+
+ private:
+  struct Bound {
+    std::byte* data = nullptr;
+    std::size_t bytes = 0;
+    TensorType type = TensorType::F16;
+    Shape shape;
+  };
+  struct Job {
+    std::vector<HostBinding> inputs;
+    std::vector<HostBinding> outputs;
+    std::function<std::expected<void, Refusal>()> ready;
+    std::function<void(std::expected<void, Refusal>)> done;
+  };
+
+  // La mémoire du lecteur telle quelle : le réseau prend le type de ses tenseurs (interface
+  // réécrite à la construction, derive_onnx), ONNX Runtime l'enveloppe dans ses MLMultiArray et
+  // Core ML y lit et y écrit ; le passage en IOSurface reste à Core ML. Sinon (artefact plus
+  // ancien, graphe qui ne se réécrit pas) une copie convertie, dans les deux sens.
+  std::expected<void, Refusal> infer(std::span<const HostBinding> inputs,
+                                     std::span<const HostBinding> outputs) {
     try {
-      const Ort::MemoryInfo memory = Ort::MemoryInfo::CreateCpu(OrtDeviceAllocator, OrtMemTypeCPU);
-      Ort::IoBinding binding(session_);
-      // La mémoire du lecteur telle quelle : le réseau prend le type de ses tenseurs (interface
-      // réécrite à la construction, derive_onnx), ONNX Runtime l'enveloppe dans ses MLMultiArray
-      // et Core ML y lit et y écrit ; le passage en IOSurface reste à Core ML. Sinon (artefact
-      // plus ancien, graphe qui ne se réécrit pas) une copie convertie, dans les deux sens.
-      const auto bind = [&](const HostBinding& b, TensorType wanted, std::vector<std::byte>& scratch) {
-        std::byte* data = b.data;
-        std::size_t bytes = b.bytes;
-        if (wanted != b.type) {
-          bytes = b.bytes / element_bytes(b.type) * element_bytes(wanted);
-          scratch.resize(bytes);
-          data = scratch.data();
-        }
-        return Ort::Value::CreateTensor(memory, data, bytes, b.shape.dims.data(), b.shape.dims.size(),
-                                        element_of(wanted));
-      };
       for (std::size_t i = 0; i < inputs.size(); ++i) {
         const HostBinding& b = inputs[i];
-        Ort::Value value = bind(b, in_types_[i], in_scratch_[i]);
+        const Bound target = staged(b, in_types_[i], in_scratch_[i]);
         if (in_types_[i] != b.type) {
           const std::size_t count = b.bytes / element_bytes(b.type);
-          if (auto ok = vk::net::copy_converted(b.data, b.type, in_scratch_[i].data(), in_types_[i], count);
-              !ok)
+          if (auto ok = vk::net::copy_converted(b.data, b.type, target.data, in_types_[i], count); !ok)
             return ok;
         }
-        binding.BindInput(names_.inputs[i].c_str(), value);
+        bind(i, target, [&](const Ort::Value& v) { binding_.BindInput(names_.inputs[i].c_str(), v); });
       }
-      for (std::size_t i = 0; i < outputs.size(); ++i)
-        binding.BindOutput(names_.outputs[i].c_str(), bind(outputs[i], out_types_[i], out_scratch_[i]));
-      session_.Run(Ort::RunOptions{nullptr}, binding);
+      for (std::size_t i = 0; i < outputs.size(); ++i) {
+        const Bound target = staged(outputs[i], out_types_[i], out_scratch_[i]);
+        bind(inputs.size() + i, target,
+             [&](const Ort::Value& v) { binding_.BindOutput(names_.outputs[i].c_str(), v); });
+      }
+      session_.Run(Ort::RunOptions{nullptr}, binding_);
       for (std::size_t i = 0; i < outputs.size(); ++i) {
         const HostBinding& b = outputs[i];
         if (out_types_[i] == b.type) continue;
@@ -194,14 +257,69 @@ class CoremlNet final : public vk::net::RuntimeNet {
     }
   }
 
- private:
+  // La mémoire que le réseau lit ou écrit pour b : la sienne, ou la copie dans le type du réseau.
+  static Bound staged(const HostBinding& b, TensorType wanted, std::vector<std::byte>& scratch) {
+    if (wanted == b.type) return {.data = b.data, .bytes = b.bytes, .type = wanted, .shape = b.shape};
+    scratch.resize(b.bytes / element_bytes(b.type) * element_bytes(wanted));
+    return {.data = scratch.data(), .bytes = scratch.size(), .type = wanted, .shape = b.shape};
+  }
+
+  // Lié une fois tant que la chaîne donne la même mémoire : ni tenseur ni liaison refaits à
+  // chaque image.
+  template <class Attach>
+  void bind(std::size_t slot, const Bound& target, Attach&& attach) {
+    Bound& last = bound_[slot];
+    if (last.data == target.data && last.bytes == target.bytes && last.type == target.type &&
+        last.shape == target.shape)
+      return;
+    Ort::Value value = Ort::Value::CreateTensor(memory_, target.data, target.bytes, target.shape.dims.data(),
+                                                target.shape.dims.size(), element_of(target.type));
+    attach(value);
+    last = target;
+  }
+
+  void note_failure(const Refusal& refusal) {
+    const std::scoped_lock lock(jobs_mutex_);
+    if (!failed_) failed_ = refusal;
+  }
+
+  // Le fil des étapes : chaque étape en file est faite, même à l'arrêt (sa timeline l'attend), et
+  // chacune appelle done, quoi qu'il arrive : la file attendrait sans fin un signal perdu.
+  void serve(const std::stop_token& stop) {
+    while (std::optional<Inbox<Job>::Message> message = jobs_.wait(stop)) {
+      Job& job = std::get<Job>(*message);
+      std::expected<void, Refusal> result;
+      try {
+        result = job.ready();
+        if (result) {
+          const std::scoped_lock lock(session_mutex_);
+          result = infer(job.inputs, job.outputs);
+        }
+      } catch (...) {
+        result = std::unexpected(refusal_from_exception(RefusalCode::DeviceUnavailable, "Core ML, étape"));
+      }
+      job.done(std::move(result));
+    }
+  }
+
   std::shared_ptr<Ort::Env> env_;  // vit plus longtemps que la session
   Ort::Session session_;
+  Ort::MemoryInfo memory_ = Ort::MemoryInfo::CreateCpu(OrtDeviceAllocator, OrtMemTypeCPU);
+  Ort::IoBinding binding_;  // garde les tenseurs liés (bound_) d'un appel à l'autre
   vk::net::IoNames names_;
   std::vector<TensorType> in_types_;
   std::vector<TensorType> out_types_;
   std::vector<std::vector<std::byte>> in_scratch_;
   std::vector<std::vector<std::byte>> out_scratch_;
+  std::vector<Bound> bound_;  // entrées puis sorties
+  // Étapes en file pour le fil ; au-delà, l'appelant fait l'étape lui-même.
+  static constexpr std::size_t kStepBound = 16;
+
+  std::mutex session_mutex_;  // session_, binding_, bound_ et les copies : le fil des étapes ou celui de run
+  std::mutex jobs_mutex_;     // failed_ et le lancement du fil
+  Inbox<Job> jobs_{{kStepBound}};
+  std::optional<Refusal> failed_;  // le fil des étapes a cédé : plus aucune étape différée
+  std::jthread worker_;
 };
 
 std::expected<void, Refusal> write_manifest(const std::filesystem::path& path, const Manifest& manifest) {
