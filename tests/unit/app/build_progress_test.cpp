@@ -4,6 +4,8 @@
 
 #include <filesystem>
 #include <fstream>
+#include <string>
+#include <vector>
 
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/matchers/catch_matchers_floating_point.hpp>
@@ -73,6 +75,26 @@ TEST_CASE("La durée attendue vient de la construction passée la plus proche en
   CHECK_THAT(expected_build_seconds(dir, "/m/other.onnx", 720 * 1280), WithinAbs(kDefaultBuildSeconds, 1e-9));
   CHECK_THAT(expected_build_seconds(dir / "absent", "/m/span.onnx", 720 * 1280),
              WithinAbs(kDefaultBuildSeconds, 1e-9));
+  std::filesystem::remove_all(dir);
+}
+
+TEST_CASE("Un long journal se lit par ses deux bouts", "[app][build]") {
+  const auto dir = std::filesystem::temp_directory_path() / "ajp-build-progress-long";
+  std::filesystem::remove_all(dir);
+  std::filesystem::create_directories(dir);
+  {
+    std::ofstream log(dir / "c.engine.build.log");
+    log << "&&&& RUNNING # trtexec --onnx=/m/rife.onnx --optShapes=input:1x8x720x1280 --skipInference\n";
+    // Un journal verbeux de 2 Mo entre la commande et la fin.
+    const std::string line(1023, 'v');
+    for (int i = 0; i < 2048; ++i) log << line << '\n';
+    log << "Engine built in 42.5 sec.\nCreated engine with size: 12 MiB\n";
+  }
+  const std::vector<PastBuild> builds = past_builds(dir);
+  REQUIRE(builds.size() == 1);
+  CHECK(builds[0].onnx == std::filesystem::path("/m/rife.onnx"));
+  CHECK(builds[0].pixels == std::int64_t{720} * 1280);
+  CHECK_THAT(builds[0].seconds, WithinAbs(42.5, 1e-9));
   std::filesystem::remove_all(dir);
 }
 

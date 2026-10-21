@@ -3,6 +3,8 @@
 #include <algorithm>
 #include <charconv>
 #include <cmath>
+#include <cstdint>
+#include <filesystem>
 #include <fstream>
 #include <sstream>
 #include <string>
@@ -18,7 +20,26 @@ constexpr double kPixelExponent = 0.8;
 constexpr std::int64_t kReferencePixels = std::int64_t{1280} * 720;
 constexpr std::size_t kMaxLogs = 128;               // journaux lus au plus
 constexpr std::uintmax_t kMaxLogBytes = 4U << 20U;  // un journal plus gros est ignoré
+// Ce que read_build_log lit d'un journal : la commande (première ligne) et « Engine built in » vers
+// la fin (--skipInference, rapport des couches dans son propre fichier).
+constexpr std::size_t kLogEndBytes = 32U << 10U;
 constexpr std::string_view kBuiltIn = "Engine built in ";
+
+// Le début et la fin d'un journal, ou tout s'il est court : 128 journaux de 4 Mo lus en entier
+// au départ de chaque construction faisaient jusqu'à 512 Mo de lecture pour une ligne et un nombre.
+std::string log_ends(const std::filesystem::path& path, std::uintmax_t size) {
+  std::ifstream file(path, std::ios::binary);
+  if (size <= 2 * kLogEndBytes) {
+    std::ostringstream text;
+    text << file.rdbuf();
+    return text.str();
+  }
+  std::string text(2 * kLogEndBytes + 1, '\n');
+  file.read(text.data(), static_cast<std::streamsize>(kLogEndBytes));
+  file.seekg(-static_cast<std::streamoff>(kLogEndBytes), std::ios::end);
+  file.read(text.data() + kLogEndBytes + 1, static_cast<std::streamsize>(kLogEndBytes));
+  return file ? text : std::string();
+}
 
 // La valeur d'une option « --nom=valeur » de la ligne de commande, jusqu'à l'option suivante.
 std::optional<std::string_view> option(std::string_view line, std::string_view name) {
@@ -114,12 +135,10 @@ std::vector<PastBuild> past_builds(const std::filesystem::path& cache_dir) {
     if (read >= kMaxLogs) break;
     const std::filesystem::path& path = entry.path();
     if (!path.string().ends_with(".build.log") || !entry.is_regular_file(error)) continue;
-    if (entry.file_size(error) > kMaxLogBytes || error) continue;
+    const std::uintmax_t size = entry.file_size(error);
+    if (size > kMaxLogBytes || error) continue;
     ++read;
-    std::ifstream file(path, std::ios::binary);
-    std::ostringstream text;
-    text << file.rdbuf();
-    if (auto past = read_build_log(text.str())) builds.push_back(std::move(*past));
+    if (auto past = read_build_log(log_ends(path, size))) builds.push_back(std::move(*past));
   }
   return builds;
 }
