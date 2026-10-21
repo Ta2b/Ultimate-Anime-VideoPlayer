@@ -20,6 +20,7 @@ ajp_add_unit_tests(vk_backend
     kernel_planes_test.cpp
     net_alias_test.cpp
     net_conv_test.cpp
+    net_measure_test.cpp
     net_ops_test.cpp
     net_rig.cpp
     net_runtime_test.cpp

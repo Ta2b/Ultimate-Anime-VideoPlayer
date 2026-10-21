@@ -1,31 +1,23 @@
-// La mesure des répartitions Core ML (coreml_detail.h) : des entrées reproductibles, quelques
-// inférences par répartition, la médiane de leurs temps et la première sortie pour comparer.
+// La mesure des répartitions Core ML (coreml_detail.h) : l'image de test de vk::net::probe_image
+// à chaque entrée, la médiane des temps de kUnitTimedRuns inférences par répartition et la
+// première sortie pour comparer, puis vk::net::choose_unit.
 #include <algorithm>
 #include <array>
 #include <chrono>
-#include <cmath>
 #include <exception>
 #include <format>
-#include <limits>
 
 #include "gpu/coreml/coreml_detail.h"
+#include "gpu/vulkan/backend/net_measure.h"
 
 namespace ajp::gpu::coreml_rt {
 namespace {
 
 using vk::net::InputShape;
 
-// Mesure d'une session : inférences de chauffe, puis médiane des suivantes.
-constexpr int kWarmupRuns = 2;
-constexpr std::size_t kTimedRuns = 5;
-// Le Neural Engine garde un réseau s'il ne coûte pas plus que ce facteur du meilleur temps : il
-// laisse le GPU, partagé avec la chaîne MoltenVK, RIFE et le rendu, à tout le reste.
-constexpr double kAneTolerance = 1.25;
-// Écart moyen permis entre deux répartitions sur la même entrée (images entre 0 et 1).
-constexpr double kMaxMeanError = 0.01;
-
-// Des entrées fixes et reproductibles entre 0 et 1, aux formes fixées par build (sinon celles du
-// modèle), les mêmes pour chaque répartition mesurée.
+// Des entrées fixes et reproductibles entre 0 et 1 (l'image de test, décalée d'une entrée à la
+// suivante), aux formes fixées par build (sinon celles du modèle), les mêmes pour chaque
+// répartition mesurée.
 struct Probe {
   std::vector<std::string> inputs;
   std::vector<std::vector<std::int64_t>> shapes;
@@ -53,9 +45,7 @@ std::expected<Probe, Refusal> make_probe(Ort::Session& session, std::span<const 
         return refuse(RefusalCode::ShapeInvalid, std::format("Core ML : {}, dimension libre", name));
       count *= static_cast<std::size_t>(d);
     }
-    std::vector<float> values(count);
-    for (std::size_t k = 0; k < count; ++k)
-      values[k] = static_cast<float>((k * 2654435761U) % 1024U) / 1023.0F;
+    const std::vector<float> values = vk::net::probe_image(shape, static_cast<int>(i));
     std::vector<std::byte> bytes(count * element_bytes(*type));
     if (auto ok = vk::net::copy_converted(reinterpret_cast<const std::byte*>(values.data()), TensorType::F32,
                                           bytes.data(), *type, count);
@@ -88,21 +78,21 @@ std::expected<Timing, Refusal> measure(Ort::Session& session, Probe& probe) {
     in_names.push_back(probe.inputs[i].c_str());
   }
   std::vector<const char*> out_names;
+  out_names.reserve(probe.outputs.size());
   for (const std::string& name : probe.outputs) out_names.push_back(name.c_str());
   const auto run = [&] {
     return session.Run(Ort::RunOptions{nullptr}, in_names.data(), values.data(), values.size(),
                        out_names.data(), out_names.size());
   };
-  for (int i = 0; i < kWarmupRuns; ++i) static_cast<void>(run());
-  std::array<double, kTimedRuns> times{};
+  for (int i = 0; i < vk::net::kUnitWarmupRuns; ++i) static_cast<void>(run());
+  std::array<double, vk::net::kUnitTimedRuns> times{};
   std::vector<Ort::Value> outputs;
   for (double& t : times) {
     const auto start = std::chrono::steady_clock::now();
     outputs = run();
     t = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start).count();
   }
-  std::ranges::nth_element(times, times.begin() + static_cast<std::ptrdiff_t>(kTimedRuns / 2));
-  Timing timing{.ms = times[kTimedRuns / 2], .first_out = {}};
+  Timing timing{.ms = vk::net::median(times), .first_out = {}};
   if (outputs.empty()) return timing;
   const auto info = outputs.front().GetTensorTypeAndShapeInfo();
   const std::optional<TensorType> type = type_of(info.GetElementType());
@@ -114,16 +104,6 @@ std::expected<Timing, Refusal> measure(Ort::Session& session, Probe& probe) {
       !ok)
     return std::unexpected(ok.error());
   return timing;
-}
-
-// Sans sortie flottante à comparer : nul.
-double mean_error(const std::vector<float>& a, const std::vector<float>& b) {
-  if (a.size() != b.size()) return std::numeric_limits<double>::infinity();
-  if (a.empty()) return 0.0;
-  double sum = 0.0;
-  for (std::size_t i = 0; i < a.size(); ++i)
-    sum += std::abs(static_cast<double>(a[i]) - static_cast<double>(b[i]));
-  return sum / static_cast<double>(a.size());
 }
 
 }  // namespace
@@ -139,13 +119,13 @@ std::expected<Units, Refusal> choose_units(const Manifest& manifest, std::span<c
                                            Progress& progress, const OpenSession& open) {
   auto fallback = units_of(manifest);
   if (!fallback || *fallback == Units::CpuAndGpu) return fallback;
-  struct Tried {
-    Units units;
-    double ms;
-  };
-  std::vector<Tried> kept;
-  std::optional<std::vector<float>> reference;
+  // La première répartition mesurée sert de référence ; le Neural Engine seul est préféré (il
+  // laisse le GPU, partagé avec la chaîne MoltenVK, RIFE et le rendu, à tout le reste).
   constexpr std::array kOrder{Units::CpuAndGpu, Units::All, Units::CpuAndNeuralEngine};
+  constexpr std::size_t kPreferred = 2;
+  static_assert(kOrder[kPreferred] == Units::CpuAndNeuralEngine);
+  std::array<std::optional<vk::net::UnitMeasure>, kOrder.size()> measured{};
+  std::optional<std::vector<float>> reference;
   for (std::size_t i = 0; i < kOrder.size(); ++i) {
     if (progress.stop.stop_requested()) return refuse(RefusalCode::Cancelled, "construction annulée");
     if (progress.report)
@@ -158,21 +138,16 @@ std::expected<Units, Refusal> choose_units(const Manifest& manifest, std::span<c
       if (!probe) return fallback;
       auto timing = measure(*session, *probe);
       if (!timing) continue;
-      if (!reference) {
-        reference = std::move(timing->first_out);
-      } else if (mean_error(*reference, timing->first_out) > kMaxMeanError) {
-        continue;
-      }
-      kept.push_back({.units = kOrder[i], .ms = timing->ms});
+      const double error = reference ? vk::net::mean_error(*reference, timing->first_out) : 0.0;
+      if (!reference) reference = std::move(timing->first_out);
+      measured[i] = vk::net::UnitMeasure{.ms = timing->ms, .error = error};
     } catch (const std::exception&) {
       continue;  // une répartition que Core ML refuse à l'exécution
     }
   }
-  if (kept.empty()) return fallback;
-  const auto fastest = std::ranges::min_element(kept, {}, &Tried::ms);
-  const auto ane = std::ranges::find(kept, Units::CpuAndNeuralEngine, &Tried::units);
-  if (ane != kept.end() && ane->ms <= kAneTolerance * fastest->ms) return ane->units;
-  return fastest->units;
+  const std::optional<std::size_t> chosen = vk::net::choose_unit(measured, kPreferred);
+  if (!chosen) return fallback;
+  return kOrder[*chosen];
 }
 
 }  // namespace ajp::gpu::coreml_rt

@@ -17,6 +17,7 @@
 #include "gpu/vulkan/backend/net_artifact.h"
 #include "gpu/vulkan/backend/net_build.h"
 #include "gpu/vulkan/backend/net_lower.h"
+#include "gpu/vulkan/backend/net_measure.h"
 #include "gpu/vulkan/compute/buffer.h"
 #include "gpu/vulkan/compute/recording.h"
 #include "kernels/ref/half.h"
@@ -122,12 +123,6 @@ class QueryPool {
   std::uint32_t count_;
   VkQueryPool pool_ = VK_NULL_HANDLE;
 };
-
-double median(std::vector<double> values) {
-  std::ranges::sort(values);
-  const std::size_t n = values.size();
-  return n % 2 == 1 ? values[n / 2] : 0.5 * (values[(n / 2) - 1] + values[n / 2]);
-}
 
 double deviation(const std::vector<double>& values) {
   double mean = 0.0;

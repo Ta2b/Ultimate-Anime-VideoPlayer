@@ -3,7 +3,7 @@
 #include <algorithm>
 #include <array>
 #include <chrono>
-#include <cmath>
+#include <cstdint>
 #include <cstring>
 #include <exception>
 #include <format>
@@ -15,11 +15,13 @@
 #include <openvino/runtime/intel_gpu/remote_properties.hpp>
 #include <openvino/runtime/intel_npu/properties.hpp>
 #include <optional>
+#include <stdexcept>
 #include <string>
 #include <utility>
 #include <vector>
 
 #include "gpu/openvino/openvino_net.h"
+#include "gpu/vulkan/backend/net_measure.h"
 
 namespace ajp::gpu::openvino_rt {
 namespace {
@@ -27,16 +29,6 @@ namespace {
 using vk::net::InputShape;
 
 constexpr std::uint32_t kVendorIntel = 0x8086;
-
-// Mesure d'un modèle compilé : inférences de chauffe, puis médiane des suivantes.
-constexpr int kWarmupRuns = 2;
-constexpr std::size_t kTimedRuns = 5;
-// Le NPU garde un réseau s'il ne coûte pas plus que ce facteur du temps du GPU : il laisse le
-// GPU, partagé avec la chaîne Vulkan, RIFE, le décodage et le rendu, à tout le reste.
-constexpr double kNpuTolerance = 1.25;
-// Écart moyen permis entre les sorties du NPU et du GPU sur la même entrée (images entre 0 et 1) :
-// au-delà, le compilateur du NPU a perdu en précision et le GPU garde le réseau.
-constexpr double kNpuMaxMeanError = 0.01;
 
 // Les réglages que l'appareil connaît (supported_properties), les autres écartés : un pilote ou
 // un NPU plus ancien refuserait la compilation entière pour une propriété inconnue.
@@ -80,26 +72,32 @@ std::filesystem::path device_path(const std::filesystem::path& artifact) {
   return p;
 }
 
-// Une entrée fixe et reproductible entre 0 et 1, la même pour le GPU et le NPU.
-ov::Tensor probe_input(const ov::Output<const ov::Node>& input) {
+// L'image de test de l'entrée (vk::net::probe_image, décalée de shift), la même pour le GPU et le
+// NPU.
+ov::Tensor probe_input(const ov::Output<const ov::Node>& input, int shift) {
   ov::Tensor tensor(input.get_element_type(), input.get_shape());
-  std::vector<float> values(tensor.get_size());
-  for (std::size_t i = 0; i < values.size(); ++i)
-    values[i] = static_cast<float>((i * 2654435761U) % 1024U) / 1023.0F;
+  std::vector<std::int64_t> dims;
+  dims.reserve(input.get_shape().size());
+  for (const std::size_t d : input.get_shape()) dims.push_back(static_cast<std::int64_t>(d));
+  const std::vector<float> values = vk::net::probe_image(dims, shift);
   const TensorType type = input.get_element_type() == ov::element::f32 ? TensorType::F32 : TensorType::F16;
-  static_cast<void>(vk::net::copy_converted(reinterpret_cast<const std::byte*>(values.data()),
-                                            TensorType::F32, static_cast<std::byte*>(tensor.data()), type,
-                                            values.size()));
+  if (auto ok = vk::net::copy_converted(reinterpret_cast<const std::byte*>(values.data()), TensorType::F32,
+                                        static_cast<std::byte*>(tensor.data()), type, values.size());
+      !ok)
+    throw std::runtime_error(ok.error().detail);
   return tensor;
 }
 
 // Le tenseur par valeur : la poignée se partage, et data() const est déprécié depuis OpenVINO 2025.3.
+// Lève std::runtime_error, comme OpenVINO : try_npu les rattrape.
 std::vector<float> as_floats(ov::Tensor tensor) {
   std::vector<float> out(tensor.get_size());
   const TensorType type = tensor.get_element_type() == ov::element::f32 ? TensorType::F32 : TensorType::F16;
-  static_cast<void>(vk::net::copy_converted(static_cast<const std::byte*>(tensor.data()), type,
-                                            reinterpret_cast<std::byte*>(out.data()), TensorType::F32,
-                                            out.size()));
+  if (auto ok =
+          vk::net::copy_converted(static_cast<const std::byte*>(tensor.data()), type,
+                                  reinterpret_cast<std::byte*>(out.data()), TensorType::F32, out.size());
+      !ok)
+    throw std::runtime_error(ok.error().detail);
   return out;
 }
 
@@ -108,28 +106,21 @@ struct Measure {
   std::vector<float> first_out;  // première sortie, pour comparer deux appareils
 };
 
+// Chaque entrée a son décalage de l'image de test : les deux images d'une paire diffèrent.
 Measure measure(ov::CompiledModel& compiled) {
   ov::InferRequest request = compiled.create_infer_request();
+  int shift = 0;
   for (const ov::Output<const ov::Node>& input : compiled.inputs())
-    request.set_tensor(input, probe_input(input));
-  for (int i = 0; i < kWarmupRuns; ++i) request.infer();
-  std::array<double, kTimedRuns> times{};
+    request.set_tensor(input, probe_input(input, shift++));
+  for (int i = 0; i < vk::net::kUnitWarmupRuns; ++i) request.infer();
+  std::array<double, vk::net::kUnitTimedRuns> times{};
   for (double& t : times) {
     const auto start = std::chrono::steady_clock::now();
     request.infer();
     t = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start).count();
   }
-  std::ranges::nth_element(times, times.begin() + kTimedRuns / 2);
-  return {.ms = times[kTimedRuns / 2],
+  return {.ms = vk::net::median(times),
           .first_out = as_floats(request.get_tensor(compiled.outputs().front()))};
-}
-
-double mean_error(const std::vector<float>& a, const std::vector<float>& b) {
-  if (a.size() != b.size() || a.empty()) return INFINITY;
-  double sum = 0.0;
-  for (std::size_t i = 0; i < a.size(); ++i)
-    sum += std::abs(static_cast<double>(a[i]) - static_cast<double>(b[i]));
-  return sum / static_cast<double>(a.size());
 }
 
 // Le NPU de la puce, s'il y en a un et que son pilote répond.
@@ -145,8 +136,8 @@ class OpenvinoRuntime final : public vk::net::Runtime {
       : core_(std::move(core)), gpu_(std::move(gpu)), full_name_(std::move(full_name)), npu_(std::move(npu)) {
     try {
       usm_ = std::make_shared<UsmPool>(core_->get_default_context(gpu_));
-    } catch (const std::exception&) {
-      // contexte du GPU indisponible : les tenseurs passent par la mémoire du backend
+    } catch (const std::exception&) {  // NOLINT(bugprone-empty-catch) : contexte du GPU indisponible,
+      // les tenseurs passent par la mémoire du backend
     }
   }
   std::string_view name() const override { return "openvino"; }
@@ -170,6 +161,7 @@ class OpenvinoRuntime final : public vk::net::Runtime {
         std::map<std::string, ov::PartialShape> shapes;
         for (const InputShape& input : inputs) {
           std::vector<ov::Dimension> dims;
+          dims.reserve(input.dims.size());
           for (const std::int64_t d : input.dims) dims.emplace_back(d);
           shapes[input.name] = ov::PartialShape(dims);
         }
@@ -186,13 +178,14 @@ class OpenvinoRuntime final : public vk::net::Runtime {
       ov::CompiledModel compiled = core_->compile_model(graph, gpu_, gpu_config(*core_, gpu_));
       std::string device = gpu_;
       if (npu_) {
+        const std::string npu_device = npu_->device;
         auto warps = vk::net::onnx_uses_op(model.onnx_path, "GridSample");
         if (!warps) return std::unexpected(warps.error());
         // RIFE, GMFSS et DRBA déforment par GridSample, que le NPU ne fait pas : ils restent sur le GPU.
         if (!*warps) {
           if (auto chosen = try_npu(model, graph, compiled, progress)) {
             compiled = std::move(*chosen);
-            device = npu_->device;
+            device = npu_device;
           }
         }
       }
@@ -242,22 +235,27 @@ class OpenvinoRuntime final : public vk::net::Runtime {
   }
 
  private:
-  // Le réseau compilé pour le NPU s'il y tient : compilé sans erreur, aussi juste que le GPU sur
-  // la même entrée, et pas plus lent que kNpuTolerance fois le GPU. Sinon rien : le GPU le garde.
+  // Le réseau compilé pour le NPU s'il y tient (vk::net::choose_unit, le GPU en référence) :
+  // compilé sans erreur, aussi juste que le GPU sur la même entrée, et pas plus lent que
+  // kUnitTolerance fois le GPU. Sinon rien : le GPU le garde.
   std::optional<ov::CompiledModel> try_npu(const ModelSpec& model, const std::shared_ptr<ov::Model>& graph,
                                            ov::CompiledModel& on_gpu, Progress& progress) {
     const auto say = [&](float fraction, const std::string& text) {
       if (progress.report) progress.report(fraction, text);
     };
+    if (!npu_) return std::nullopt;
+    const std::string device = npu_->device;
     try {
       say(0.40F, "compilation OpenVINO (NPU)");
-      ov::CompiledModel on_npu = core_->compile_model(graph, npu_->device, npu_config(*core_, npu_->device));
+      ov::CompiledModel on_npu = core_->compile_model(graph, device, npu_config(*core_, device));
       if (progress.stop.stop_requested()) return std::nullopt;
       say(0.75F, "mesure du GPU et du NPU");
       const Measure gpu = measure(on_gpu);
       const Measure npu = measure(on_npu);
-      const double error = mean_error(gpu.first_out, npu.first_out);
-      const bool kept = error <= kNpuMaxMeanError && npu.ms <= gpu.ms * kNpuTolerance;
+      const double error = vk::net::mean_error(gpu.first_out, npu.first_out);
+      const std::array<std::optional<vk::net::UnitMeasure>, 2> units{
+          vk::net::UnitMeasure{.ms = gpu.ms}, vk::net::UnitMeasure{.ms = npu.ms, .error = error}};
+      const bool kept = vk::net::choose_unit(units, 1) == 1U;
       say(0.95F, std::format("{} : NPU {:.1f} ms, GPU {:.1f} ms, écart {:.4f} : {}", model.id, npu.ms, gpu.ms,
                              error, kept ? "NPU" : "GPU"));
       if (!kept) return std::nullopt;
@@ -285,8 +283,8 @@ std::optional<Npu> find_npu(ov::Core& core) {
       try {
         const std::uint32_t driver = core.get_property(device, ov::intel_npu::driver_version);
         label += std::format(", pilote {}", driver);
-      } catch (const std::exception&) {
-        // propriété absente de ce greffon : le nom suffit
+      } catch (const std::exception&) {  // NOLINT(bugprone-empty-catch) : propriété absente de ce
+        // greffon, le nom suffit
       }
       return Npu{.device = device, .label = std::move(label)};
     } catch (const std::exception&) {
@@ -317,8 +315,8 @@ std::expected<std::shared_ptr<vk::net::Runtime>, Refusal> make_runtime(const vk:
           chosen = device;
           break;
         }
-      } catch (const std::exception&) {
-        // propriété absente de ce pilote : on garde le premier GPU
+      } catch (const std::exception&) {  // NOLINT(bugprone-empty-catch) : propriété absente de ce
+        // pilote, on garde le premier GPU
       }
     }
     if (chosen.empty())
