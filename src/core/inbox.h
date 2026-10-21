@@ -2,7 +2,8 @@
 //
 // Chaque type de message a sa propre borne. Quand try_push échoue, le
 // producteur n'attend pas ici : il attend dans sa propre boîte un crédit du
-// consommateur. wait() est le seul point d'attente du thread propriétaire.
+// consommateur. wait() est le seul point d'attente du thread propriétaire ; try_pop
+// prend ce qui attend déjà sans attendre.
 #pragma once
 
 #include <array>
@@ -48,10 +49,14 @@ class Inbox {
   std::optional<Message> wait(std::stop_token stop) {
     std::unique_lock lock(mutex_);
     if (!ready_.wait(lock, std::move(stop), [this] { return !queue_.empty(); })) return std::nullopt;
-    Message message = std::move(queue_.front());
-    queue_.pop_front();
-    --counts_[message.index()];
-    return message;
+    return pop();
+  }
+
+  // Le prochain message s'il y en a déjà un, sans attendre ; std::nullopt sinon.
+  std::optional<Message> try_pop() {
+    std::scoped_lock lock(mutex_);
+    if (queue_.empty()) return std::nullopt;
+    return pop();
   }
 
   // Nombre de messages de type M en attente.
@@ -62,6 +67,14 @@ class Inbox {
   }
 
  private:
+  // Sous mutex_, file non vide.
+  Message pop() {
+    Message message = std::move(queue_.front());
+    queue_.pop_front();
+    --counts_[message.index()];
+    return message;
+  }
+
   template <class M>
   static constexpr std::size_t index_of() {
     constexpr std::array matches{std::is_same_v<M, Msg>...};

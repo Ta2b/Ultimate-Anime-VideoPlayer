@@ -46,24 +46,34 @@ bool RingStage::try_push(DecodedFrame&& frame) {
 void RingStage::run(const std::stop_token& stop, const ThreadReport& report) {
   while (auto message = inbox_.wait(stop)) {
     bool quit = false;
-    std::visit(
-        [&](auto& m) {
-          using M = std::decay_t<decltype(m)>;
-          if constexpr (std::is_same_v<M, DecodedFrame>) {
-            pending_.push_back(std::move(m));
-          } else if constexpr (std::is_same_v<M, SlotFree>) {
-            // Un SlotFree d'un autre ring, ou hors des slots, est ignoré (core/ring.h).
-            if (m.generation == generation_ && m.slot < free_.size()) {
-              free_[m.slot] = true;
-              released_[m.slot] = m.semaphore_value;
+    const auto take = [&](StageInbox::Message& taken) {
+      std::visit(
+          [&](auto& m) {
+            using M = std::decay_t<decltype(m)>;
+            if constexpr (std::is_same_v<M, DecodedFrame>) {
+              pending_.push_back(std::move(m));
+            } else if constexpr (std::is_same_v<M, SlotFree>) {
+              // Un SlotFree d'un autre ring, ou hors des slots, est ignoré (core/ring.h).
+              if (m.generation == generation_ && m.slot < free_.size()) {
+                free_[m.slot] = true;
+                released_[m.slot] = m.semaphore_value;
+              }
+            } else if constexpr (std::is_same_v<M, Flush>) {
+              epoch_ = m.epoch;
+            } else {
+              quit = quit || std::holds_alternative<cmd::Quit>(m);
             }
-          } else if constexpr (std::is_same_v<M, Flush>) {
-            epoch_ = m.epoch;
-          } else {
-            quit = std::holds_alternative<cmd::Quit>(m);
-          }
-        },
-        *message);
+          },
+          taken);
+    };
+    take(*message);
+    // Tout ce qui attend déjà avant de produire : l'image suivante arrivée derrière la tête est
+    // alors dans pending_, et outputs() peut l'ingérer et la mesurer en avance (next()).
+    while (!quit) {
+      auto more = inbox_.try_pop();
+      if (!more) break;
+      take(*more);
+    }
     if (quit) return;
     emit(report);
   }
@@ -87,11 +97,16 @@ void RingStage::emit(const ThreadReport& report) {
     if (front_outputs_ == 0 && wants_next() && pending_.size() < 2) return;  // attend la suivante
     if (front_outputs_ == 0) {
       auto count = outputs(frame);
+      if (count && *count > kMaxOutputs) {
+        count = std::unexpected(
+            Refusal{RefusalCode::FieldOutOfRange,
+                    std::format("{} sorties pour une image, au plus {}", *count, kMaxOutputs)});
+      }
       if (!count) {
         fail(report, count.error());
         continue;
       }
-      front_outputs_ = std::clamp(*count, 1U, kMaxOutputs);
+      front_outputs_ = std::max(*count, 1U);
       front_done_ = 0;
     }
     while (front_done_ < front_outputs_) {

@@ -115,9 +115,12 @@ double vsync_speed(double refresh_hz, double output_fps) {
 std::expected<CadenceChoice, Refusal> fit_cadence(const DisplayInfo& display, double source_fps,
                                                   Ratio factor) {
   if (auto ok = check_rates(display, source_fps); !ok) return std::unexpected(ok.error());
-  if (factor.den < 1 || factor.num < factor.den || factor.value() > limits::kMaxFactorProduct) {
+  // Le produit des interpolations fait une seule grille de sortie : au plus une paire de
+  // l'accumulateur de cadence (×10), plus serré que kMaxFactorProduct qui compte l'agrandissement.
+  if (factor.den < 1 || factor.num < factor.den ||
+      factor.num > std::int64_t{kMaxInstantsPerPair} * factor.den) {
     return refuse(RefusalCode::FieldOutOfRange,
-                  std::format("facteur {}/{} hors de [1, 16]", factor.num, factor.den));
+                  std::format("facteur {}/{} hors de [1, {}]", factor.num, factor.den, kMaxInstantsPerPair));
   }
   CadenceChoice choice = on_timestamps(factor, source_fps);
   if (display.vrr) return choice;

@@ -39,7 +39,8 @@ inline constexpr int kMaxVsyncsPerFrame = 16;
 // rapide que l'écran, rapport trop loin d'un entier, valeur inconnue).
 double vsync_speed(double refresh_hz, double output_fps);
 
-// Cale un facteur imposé sur l'écran, sans le changer. Facteur 1 : aucune interpolation.
+// Cale un facteur imposé sur l'écran, sans le changer. Facteur 1 : aucune interpolation ; au
+// plus kMaxInstantsPerPair (core/cadence.h), ce que tient l'accumulateur de cadence.
 std::expected<CadenceChoice, Refusal> fit_cadence(const DisplayInfo& display, double source_fps,
                                                   Ratio factor);
 

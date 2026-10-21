@@ -54,6 +54,27 @@ TEST_CASE("Inbox : l'arrêt réveille un thread qui attend", "[Inbox]") {
   CHECK_FALSE(got_message);
 }
 
+TEST_CASE("Inbox : try_pop prend ce qui attend déjà, dans l'ordre, sans attendre", "[Inbox]") {
+  TestInbox inbox({2, 1});
+  CHECK_FALSE(inbox.try_pop());
+  CHECK(inbox.try_push(Frame{1}));
+  CHECK(inbox.try_push(Command{"c"}));
+  CHECK(inbox.try_push(Frame{2}));
+  CHECK_FALSE(inbox.try_push(Frame{3}));  // borne des Frame atteinte
+
+  auto first = inbox.try_pop();
+  REQUIRE(first);
+  CHECK(std::get<Frame>(*first).index == 1);
+  CHECK(inbox.try_push(Frame{3}));  // la place rendue par try_pop
+  auto second = inbox.try_pop();
+  REQUIRE(second);
+  CHECK(std::get<Command>(*second).text == "c");
+  CHECK(inbox.pending<Frame>() == 2);
+  CHECK(std::get<Frame>(*inbox.try_pop()).index == 2);
+  CHECK(std::get<Frame>(*inbox.try_pop()).index == 3);
+  CHECK_FALSE(inbox.try_pop());
+}
+
 TEST_CASE("Inbox : plusieurs producteurs, un consommateur, rien de perdu", "[Inbox]") {
   constexpr int kProducers = 4;
   constexpr int kPerProducer = 1000;

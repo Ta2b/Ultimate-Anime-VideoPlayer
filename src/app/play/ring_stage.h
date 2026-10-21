@@ -20,6 +20,7 @@
 
 #include "app/play/pipeline.h"
 #include "app/play/video_stage.h"
+#include "core/cadence.h"
 #include "core/frame.h"
 #include "core/inbox.h"
 #include "core/messages.h"
@@ -30,6 +31,8 @@ namespace ajp::app::play {
 class RingStage : public VideoStage, public FrameSink {
  public:
   static constexpr std::size_t kMaxFrames = 4;
+  // Une paire de l'accumulateur de cadence au plus (×10) : au-delà, outputs() est refusé.
+  static constexpr auto kMaxOutputs = static_cast<std::uint32_t>(core::kMaxInstantsPerPair);
 
   RingStage(const RingStage&) = delete;
   RingStage& operator=(const RingStage&) = delete;
@@ -61,7 +64,7 @@ class RingStage : public VideoStage, public FrameSink {
     SourceId right;
   };
   // Nombre de sorties de frame (1 à kMaxOutputs), décidé une fois quand elle arrive en tête ;
-  // par défaut 1. Un refus arrête la vidéo comme un refus de produce.
+  // par défaut 1. Un refus arrête la vidéo comme un refus de produce, et plus de kMaxOutputs aussi.
   virtual std::expected<std::uint32_t, Refusal> outputs(const DecodedFrame& /*frame*/) { return 1U; }
   // Vrai : l'image en tête attend la suivante avant outputs (DistilDRBA lit l'image d'après la
   // paire), une image de retard. next() la donne pendant outputs et produce : la suivante de la
@@ -76,8 +79,6 @@ class RingStage : public VideoStage, public FrameSink {
   virtual std::expected<Output, Refusal> produce(const DecodedFrame& frame, std::uint32_t output,
                                                  std::uint32_t slot, std::uint64_t wait_value,
                                                  std::uint64_t signal_value) = 0;
-
-  static constexpr std::uint32_t kMaxOutputs = 8;
 
  private:
   using StageInbox = Inbox<DecodedFrame, SlotFree, Command, Flush>;

@@ -15,11 +15,13 @@
 #include <cstdint>
 #include <optional>
 
+#include "core/cadence.h"
 #include "gpu/kernel_ops.h"
 
 namespace ajp::app::play {
 
-inline constexpr std::uint32_t kMaxRifeFactor = 10;
+// Le facteur que tient une paire de l'accumulateur de cadence (et le ring, RingStage::kMaxOutputs).
+inline constexpr auto kMaxRifeFactor = static_cast<std::uint32_t>(core::kMaxInstantsPerPair);
 inline constexpr std::int64_t kMaxPairGapUs = 250'000;
 
 struct PairFacts {

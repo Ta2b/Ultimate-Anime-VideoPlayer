@@ -195,6 +195,8 @@ TEST_CASE("pacing : valeurs hors plage refusées", "[pacing]") {
   CHECK(code_of(choose_cadence(fixed(120.0), kNtsc, {4, 1}, 3.0)) == RefusalCode::FactorProductTooLarge);
   CHECK(code_of(fit_cadence(fixed(120.0), kNtsc, {0, 1})) == kOut);
   CHECK(code_of(fit_cadence(fixed(120.0), kNtsc, {17, 1})) == kOut);
+  CHECK(code_of(fit_cadence(fixed(120.0), kNtsc, {11, 1})) == kOut);  // au-delà d'une paire (C5)
+  CHECK(fit_cadence(fixed(120.0), kNtsc, {10, 1}));
   // VRR n'a pas besoin du rafraîchissement.
   CHECK(choose_cadence(vrr(0.0), kNtsc, {2, 1}, 8.0));
 }
@@ -244,6 +246,10 @@ TEST_CASE("pacing : pace_rule ne retouche qu'une règle à une seule interpolati
     REQUIRE(judder);
     CHECK(judder->rule.steps[0].factor == Ratio{3, 1});
     CHECK(judder->cadence.grid == Grid::Timestamps);
+  }
+  SECTION("deux interpolations au-delà de ×10 : refusées à la résolution, pas à l'accumulateur") {
+    const Rule rule{.steps = {interpolate({4, 1}), interpolate({4, 1})}};
+    CHECK(code_of(pace_rule(rule, fixed(144.0), kNtsc)) == RefusalCode::FieldOutOfRange);
   }
   SECTION("aucune interpolation : la source seule, calée sur l'écran") {
     const Rule rule{.steps = {upscale(2)}};
