@@ -1,7 +1,15 @@
 #include "cuda_driver.h"
 
-#include <dlfcn.h>
 #include <format>
+
+#if defined(_WIN32)
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <windows.h>
+#else
+#include <dlfcn.h>
+#endif
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -15,6 +23,35 @@ using Handle = void*;  // CUcontext, CUstream, CUevent
 constexpr unsigned kStreamNonBlocking = 0x1;   // CU_STREAM_NON_BLOCKING
 constexpr unsigned kEventDisableTiming = 0x2;  // CU_EVENT_DISABLE_TIMING
 const Handle kLegacyStream = nullptr;          // flux 0 hérité (API pilote, sans _ptds)
+
+namespace {
+
+// Le pilote CUDA, ouvert par son nom comme le lecteur l'ouvre.
+#if defined(_WIN32)
+constexpr const char* kCudaLibrary = "nvcuda.dll";
+void* open_driver() {
+  return LoadLibraryA(kCudaLibrary);
+}
+void* driver_symbol(void* library, const char* name) {
+  return reinterpret_cast<void*>(GetProcAddress(static_cast<HMODULE>(library), name));
+}
+void close_driver(void* library) {
+  FreeLibrary(static_cast<HMODULE>(library));
+}
+#else
+constexpr const char* kCudaLibrary = "libcuda.so.1";
+void* open_driver() {
+  return dlopen(kCudaLibrary, RTLD_NOW | RTLD_LOCAL);
+}
+void* driver_symbol(void* library, const char* name) {
+  return dlsym(library, name);
+}
+void close_driver(void* library) {
+  dlclose(library);
+}
+#endif
+
+}  // namespace
 
 struct CudaApi {
   void* library = nullptr;
@@ -42,7 +79,7 @@ struct CudaApi {
   CUresult (*event_record)(Handle, Handle) = nullptr;
 
   ~CudaApi() {
-    if (library != nullptr) dlclose(library);
+    if (library != nullptr) close_driver(library);
   }
 };
 
@@ -50,15 +87,15 @@ namespace {
 
 template <class Fn>
 bool bind(void* library, const char* name, Fn*& slot) {
-  slot = reinterpret_cast<Fn*>(dlsym(library, name));
+  slot = reinterpret_cast<Fn*>(driver_symbol(library, name));
   return slot != nullptr;
 }
 
 std::unique_ptr<CudaApi> load_api(std::string& why) {
   auto api = std::make_unique<CudaApi>();
-  api->library = dlopen("libcuda.so.1", RTLD_NOW | RTLD_LOCAL);
+  api->library = open_driver();
   if (api->library == nullptr) {
-    why = "pilote CUDA absent (libcuda.so.1)";
+    why = std::format("pilote CUDA absent ({})", kCudaLibrary);
     return nullptr;
   }
   void* lib = api->library;

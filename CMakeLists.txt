@@ -34,6 +34,11 @@ endif()
 
 set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
+# windows.h fait de min et max des macros, qui cassent std::max et std::numeric_limits<T>::min
+# dans tout fichier qui l'inclut, même par un en-tête tiers.
+if(WIN32)
+  add_compile_definitions(NOMINMAX)
+endif()
 set(CMAKE_CXX_EXTENSIONS OFF)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 # Les modules C++ sont interdits : pas de balayage, ni d'options .modmap dans

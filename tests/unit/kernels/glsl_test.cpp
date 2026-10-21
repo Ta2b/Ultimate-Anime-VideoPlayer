@@ -1,7 +1,6 @@
 #include "kernels/glsl.h"
 
 #include <bit>
-#include <charconv>
 #include <cstdint>
 #include <cstdlib>
 #include <format>
@@ -13,6 +12,7 @@
 
 #include <catch2/catch_test_macros.hpp>
 
+#include "core/charconv.h"
 #include "kernels/spec.h"
 
 using namespace ajp::kernels;
@@ -34,7 +34,7 @@ void check_reads_back(float value) {
   const std::string& text = *literal;
   CHECK(text.find_first_of(".e") != std::string::npos);
   float direct = 0.0F;
-  const auto [end, error] = std::from_chars(text.data(), text.data() + text.size(), direct);
+  const auto [end, error] = ajp::core::from_chars(text.data(), text.data() + text.size(), direct);
   REQUIRE(error == std::errc{});
   REQUIRE(end == text.data() + text.size());
   CHECK(std::bit_cast<std::uint32_t>(direct) == std::bit_cast<std::uint32_t>(value));

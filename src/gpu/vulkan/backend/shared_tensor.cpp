@@ -176,7 +176,7 @@ std::expected<int, Refusal> semaphore_fd(const VkContext& /*context*/, VkSemapho
 }
 
 std::expected<std::unique_ptr<TensorBuffer>, Refusal> shared_tensor(
-    const VkContext& /*context*/, net::Runtime& /*runtime*/, TensorType /*type*/, const Shape& /*shape*/,
+    VkContext& /*context*/, net::Runtime& /*runtime*/, TensorType /*type*/, const Shape& /*shape*/,
     std::uint64_t /*bytes*/, std::shared_ptr<HostViews> /*views*/) {
   return detail::refuse_backend(RefusalCode::FeatureUnavailable, "interop de mémoire : Linux seulement");
 }
