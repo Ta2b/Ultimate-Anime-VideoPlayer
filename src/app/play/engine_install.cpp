@@ -1,5 +1,6 @@
 #include "app/play/engine_install.h"
 
+#include <algorithm>
 #include <chrono>
 #include <format>
 #include <fstream>
@@ -68,7 +69,13 @@ const core::EnginePackage* package_for(const EngineCatalog& catalog, core::Engin
 
 bool installed(const EngineCatalog& catalog, const core::EnginePackage& package) {
   std::error_code error;
-  return std::filesystem::is_regular_file(core::backend_library(catalog.layout, package), error);
+  if (!std::filesystem::is_regular_file(core::backend_library(catalog.layout, package), error)) return false;
+  // Le dossier porte la version du runtime (TensorRT 11), pas celle du paquet : un backend d'une
+  // version plus ancienne du lecteur y resterait, refusé à l'ouverture (check_backend_abi) sans être
+  // retéléchargé. Seul le paquet de cet engines.lock compte.
+  std::ifstream marker(core::engine_dir(catalog.layout, package) / kPackageMarker);
+  std::string sha256;
+  return marker >> sha256 && sha256 == package.sha256;
 }
 
 std::vector<std::filesystem::path> installed_backends(const EngineCatalog& catalog) {
@@ -78,6 +85,17 @@ std::vector<std::filesystem::path> installed_backends(const EngineCatalog& catal
     const core::EnginePackage* package = package_for(catalog, id);
     if (package != nullptr && installed(catalog, *package))
       out.push_back(core::backend_library(catalog.layout, *package));
+  }
+  return out;
+}
+
+std::vector<core::EngineId> stale_backends(const EngineCatalog& catalog, const core::Settings& engines) {
+  std::vector<core::EngineId> out;
+  for (const core::EngineId id :
+       {core::EngineId::TensorRt, core::EngineId::MiGraphX, core::EngineId::OpenVino}) {
+    if (std::ranges::find(engines.chosen_engines, id) == engines.chosen_engines.end()) continue;
+    const core::EnginePackage* package = package_for(catalog, id);
+    if (package != nullptr && !installed(catalog, *package)) out.push_back(id);
   }
   return out;
 }
@@ -171,6 +189,10 @@ std::expected<std::filesystem::path, Refusal> install_package(const EngineCatalo
     std::filesystem::remove_all(staging, error);
     return refuse(RefusalCode::HashMismatch,
                   std::format("paquet {} sans {}", name, library.filename().string()));
+  }
+  if (std::ofstream marker(staging / kPackageMarker); !(marker << package.sha256 << '\n')) {
+    std::filesystem::remove_all(staging, error);
+    return refuse(RefusalCode::FileUnwritable, std::format("{} : écriture impossible", staging.string()));
   }
   std::filesystem::remove_all(target, error);
   std::filesystem::rename(staging, target, error);

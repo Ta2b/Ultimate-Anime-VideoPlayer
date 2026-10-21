@@ -14,10 +14,12 @@
 #include <optional>
 #include <stop_token>
 #include <string>
+#include <string_view>
 #include <vector>
 
 #include "core/engines.h"
 #include "core/model_index.h"
+#include "core/settings.h"
 #include "core/types.h"
 
 namespace ajp::app::play {
@@ -35,10 +37,17 @@ struct EngineCatalog {
 EngineCatalog load_catalog(const std::filesystem::path& index, const std::filesystem::path& data_dir);
 
 const core::EnginePackage* package_for(const EngineCatalog& catalog, core::EngineId engine);
+// Le paquet est installé : sa bibliothèque est là, et paquet.sha256, écrit à l'installation, porte le
+// SHA-256 de ce paquet-ci. Un dossier laissé par un autre paquet (ou d'avant ce fichier) se réinstalle.
+inline constexpr std::string_view kPackageMarker = "paquet.sha256";
 bool installed(const EngineCatalog& catalog, const core::EnginePackage& package);
 
 // Les bibliothèques des backends installés, par préférence : TensorRT, MIGraphX, OpenVINO.
 std::vector<std::filesystem::path> installed_backends(const EngineCatalog& catalog);
+// Les backends téléchargeables cochés dans settings.toml dont le paquet de cet engines.lock n'est
+// pas installé (dossier d'une version plus ancienne du lecteur, effacé…) : l'écran des moteurs les
+// propose de nouveau au lancement.
+std::vector<core::EngineId> stale_backends(const EngineCatalog& catalog, const core::Settings& engines);
 
 // Ce qui manque au système pour que le moteur tourne, que le lecteur ne peut pas installer seul
 // (pilote ROCm, pilote compute Intel), avec la commande à lancer ; rien s'il ne manque rien.
