@@ -22,6 +22,7 @@
 #include "gpu/coreml/coreml_vt.h"
 #include "gpu/ir/onnx_io_type.h"
 #include "gpu/ir/onnx_model.h"
+#include "gpu/ir/onnx_unshuffle.h"
 #include "gpu/ir/protobuf.h"
 #include "gpu/system_interpolator.h"
 #include "gpu/vulkan/backend/net_build.h"
@@ -147,7 +148,9 @@ std::filesystem::path session_onnx(const Manifest& manifest, const std::filesyst
 // - les entrées à la forme de la construction. Une dimension libre sans nom (les exports RIFE de
 //   vs-mlrt écrivent -1) échappe aux surcharges par nom, et le fournisseur CoreML laisse alors au
 //   CPU chaque nœud qui demande une forme connue : Reshape, DepthToSpace CRD, Resize qui réduit
-//   (RIFE 4.22 lite : 28 nœuds sur 200 confiés à Core ML, en 4 morceaux).
+//   (RIFE 4.22 lite : 28 nœuds sur 200 confiés à Core ML, en 4 morceaux) ;
+// - pour un lot de 1, le dépliage de pixels 6-D des SPAN en 5-D (ir/onnx_unshuffle.h) : le
+//   fournisseur refuse les rangs au-delà de 5, et ses trois nœuds passaient par le CPU.
 std::expected<bool, Refusal> derive_onnx(const ModelSpec& model, std::span<const InputShape> inputs,
                                          const std::filesystem::path& artifact) {
   auto bytes = vk::net::read_file(model.onnx_path);
@@ -169,6 +172,17 @@ std::expected<bool, Refusal> derive_onnx(const ModelSpec& model, std::span<const
   if (!shaped->empty()) {
     current = std::move(*shaped);
     derived = true;
+  }
+  const bool batch_of_one = !inputs.empty() && std::ranges::all_of(inputs, [](const InputShape& input) {
+    return !input.dims.empty() && input.dims[0] == 1;
+  });
+  if (batch_of_one) {
+    auto unbatched = ir::onnx::with_unshuffle_5d(current);
+    if (!unbatched) return std::unexpected(unbatched.error());
+    if (!unbatched->empty()) {
+      current = std::move(*unbatched);
+      derived = true;
+    }
   }
   if (!derived) return false;
   if (auto ok = vk::net::write_file(onnx_of(artifact), current); !ok) return std::unexpected(ok.error());
@@ -378,9 +392,9 @@ class CoremlRuntime final : public vk::net::Runtime {
   std::string_view name() const override { return "coreml"; }
   std::string device_name() const override { return std::format("{} (Core ML)", device_); }
   std::string version() const override { return Ort::GetVersionString(); }
-  // Entrées à la forme de la construction (derive_onnx) : les artefacts d'avant, à formes
-  // libres, laissaient au CPU une part des réseaux, et se reconstruisent.
-  std::string_view recipe() const override { return "fixed-inputs"; }
+  // Entrées à la forme de la construction et dépliage 5-D (derive_onnx) : les artefacts d'avant
+  // laissaient au CPU une part des réseaux, et se reconstruisent.
+  std::string_view recipe() const override { return "fixed-inputs-5d"; }
   std::string_view extension() const override { return ".coreml"; }
 
   std::expected<void, Refusal> build(const ModelSpec& model, std::span<const InputShape> inputs,
