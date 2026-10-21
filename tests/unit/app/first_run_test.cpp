@@ -24,6 +24,8 @@ const EngineRow* row_of(const FirstRunView& view, core::EngineId id) {
   const auto found = std::ranges::find(view.engines, id, [](const EngineRow& row) { return row.offer.id; });
   return found == view.engines.end() ? nullptr : &*found;
 }
+// La ligne pointe dans la vue : une vue temporaire meurt avant qu'on la lise (ASan).
+const EngineRow* row_of(FirstRunView&& view, core::EngineId id) = delete;
 
 }  // namespace
 
@@ -93,8 +95,8 @@ TEST_CASE("MIGraphX proposé aux seuls GPU que ROCm sert", "[app][first_run]") {
   CHECK_FALSE(rocm_listed("AMD Radeon 680M (RADV REMBRANDT)"));
   const GpuFacts rx6500m{
       .name = "AMD Radeon RX 6500M (RADV NAVI24)", .vendor = GpuVendor::Amd, .vram_bytes = 4 * kGiB};
-  const EngineRow* migraphx =
-      row_of(first_run_view(rx6500m, kHere, ProfilesView{}), core::EngineId::MiGraphX);
+  const FirstRunView view = first_run_view(rx6500m, kHere, ProfilesView{});
+  const EngineRow* migraphx = row_of(view, core::EngineId::MiGraphX);
   REQUIRE(migraphx != nullptr);
   CHECK_FALSE(migraphx->chosen);
 }
