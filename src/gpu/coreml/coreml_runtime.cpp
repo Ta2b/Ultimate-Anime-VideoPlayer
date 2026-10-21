@@ -11,10 +11,12 @@
 #include <span>
 #include <sstream>
 #include <string>
+#include <string_view>
 #include <unordered_map>
 #include <utility>
 #include <vector>
 
+#include "core/log.h"
 #include "gpu/coreml/coreml_detail.h"
 #include "gpu/coreml/coreml_steps.h"
 #include "gpu/coreml/coreml_vt.h"
@@ -95,12 +97,29 @@ using vk::net::InputShape;
 
 constexpr std::uint32_t kVendorApple = 0x106B;
 
+// Le journal d'ONNX Runtime dans celui du lecteur (param : le canal) : ses avertissements et
+// erreurs, et le bilan que le fournisseur CoreML écrit en information à l'ouverture d'une session
+// (nœuds pris, en combien de morceaux ; ceux qu'il laisse tournent sur le CPU).
+void ORT_API_CALL forward_log(void* param, OrtLoggingLevel severity, const char* /*category*/,
+                              const char* /*logid*/, const char* /*code_location*/, const char* message) {
+  auto* channel = static_cast<spdlog::logger*>(param);
+  const std::string_view text(message != nullptr ? message : "");
+  if (severity >= ORT_LOGGING_LEVEL_ERROR) {
+    channel->error("{}", text);
+  } else if (severity == ORT_LOGGING_LEVEL_WARNING) {
+    channel->warn("{}", text);
+  } else if (text.contains("number of nodes supported by CoreML")) {
+    channel->info("{}", text);
+  }
+}
+
 // FP16 du programme ML, sur les unités données (choose_units). Le modèle compilé est gardé dans
 // le cache de l'artefact : le chargement ne recompile pas.
 Ort::SessionOptions session_options(const Manifest& manifest, const std::filesystem::path& artifact,
                                     Units units) {
   Ort::SessionOptions options;
   options.SetGraphOptimizationLevel(GraphOptimizationLevel::ORT_ENABLE_ALL);
+  options.SetLogSeverityLevel(ORT_LOGGING_LEVEL_INFO);  // le bilan du fournisseur (forward_log)
   for (const auto& [symbol, value] : manifest.dims)
     Ort::ThrowOnError(Ort::GetApi().AddFreeDimensionOverrideByName(options, symbol.c_str(), value));
   const std::unordered_map<std::string, std::string> coreml{
@@ -490,7 +509,11 @@ std::expected<std::shared_ptr<vk::net::Runtime>, Refusal> make_runtime(const vk:
     const std::vector<std::string> providers = Ort::GetAvailableProviders();
     if (std::ranges::find(providers, "CoreMLExecutionProvider") == providers.end())
       return refuse(RefusalCode::LibraryUnavailable, "ONNX Runtime sans fournisseur CoreML");
-    auto env = std::make_shared<Ort::Env>(ORT_LOGGING_LEVEL_WARNING, "ajp");
+    // Le canal vit autant que l'environnement, qui garde son adresse.
+    auto channel = log_channel("onnxruntime");
+    spdlog::logger* sink = channel.get();
+    std::shared_ptr<Ort::Env> env(new Ort::Env(ORT_LOGGING_LEVEL_WARNING, "ajp", &forward_log, sink),
+                                  [channel = std::move(channel)](Ort::Env* e) { delete e; });
     return std::make_shared<CoremlRuntime>(std::move(env), caps.device_name);
   } catch (const std::exception& e) {
     return refuse(RefusalCode::LibraryUnavailable, std::format("ONNX Runtime : {}", e.what()));

@@ -137,9 +137,11 @@ if ! done_marker libass "$(ref_of libass)"; then
   mark libass "$(ref_of libass)"
 fi
 
-# ONNX Runtime (fournisseur CoreML) pour ajp_backend_coreml : la version publiée, vérifiée.
-ORT_VERSION=1.22.0
-ORT_SHA256=cab6dcbd77e7ec775390e7b73a8939d45fec3379b017c7cb74f5b204c1a1cc07
+# ONNX Runtime (fournisseur CoreML) pour ajp_backend_coreml : la version publiée, vérifiée. Avant
+# 1.31, le fournisseur refusait chaque nœud FP16 (tools/ci/coreml_report.py : SPAN 2 nœuds sur 56,
+# RIFE 34 sur 247), qui tournaient alors sur le CPU ; en 1.31, 53 sur 56 et 247 sur 247.
+ORT_VERSION=1.31.0
+ORT_SHA256=1031b36dd3bdaa8d976a6130d9cf2a05e9be320b93ae804f8427b91dc3432afc
 if ! done_marker onnxruntime "$ORT_VERSION $ORT_SHA256"; then
   ort="onnxruntime-osx-arm64-$ORT_VERSION"
   curl -fsSL -o "$WORK/$ort.tgz" \
