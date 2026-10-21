@@ -25,8 +25,8 @@ struct Features {
   // Avec le modèle mémoire activé, toute portée Device (atomiques de block_diff, flow_max,
   // gmfss_splat) exige cette fonction : les deux vont ensemble, ou aucune des deux.
   bool vulkan_memory_model_device_scope = false;
-  bool cooperative_matrix = false;      // VK_KHR_cooperative_matrix (unités matricielles)
-  bool float_atomic_add = false;        // VK_EXT_shader_atomic_float : softmax splatting de GMFSS
+  bool cooperative_matrix = false;  // VK_KHR_cooperative_matrix (unités matricielles)
+  bool float_atomic_add = false;    // VK_EXT_shader_atomic_float : softmax splatting de GMFSS
 };
 
 struct DeviceCaps {
