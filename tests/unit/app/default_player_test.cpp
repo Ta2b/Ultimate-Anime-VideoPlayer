@@ -52,8 +52,13 @@ TEST_CASE("Lecteur par défaut : Exec échappe le chemin selon la spécification
 }
 
 TEST_CASE("Lecteur par défaut : un chemin qu'une ligne ne porte pas est refusé", "[app][default_player]") {
-  for (const std::string_view path : {std::string_view("/opt/a\nb/ajp"), std::string_view("/opt/a\tb/ajp"),
-                                      std::string_view("/opt/\xC3/ajp"), std::string_view()}) {
+  std::vector<std::string_view> paths{"/opt/a\nb/ajp", "/opt/a\tb/ajp", ""};
+#ifndef _WIN32
+  // Un chemin POSIX est fait d'octets, pas forcément d'UTF-8 ; sous Windows il est en UTF-16, et
+  // fs::path refuse de lire cet octet seul.
+  paths.emplace_back("/opt/\xC3/ajp");
+#endif
+  for (const std::string_view path : paths) {
     const auto entry = desktop_entry(fs::path(std::string(path)));
     REQUIRE_FALSE(entry);
     CHECK(entry.error().code == RefusalCode::FieldOutOfRange);
