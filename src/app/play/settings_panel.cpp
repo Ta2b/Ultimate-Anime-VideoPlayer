@@ -205,7 +205,8 @@ void language_rows(const char* first, std::vector<std::string>& list) {
   }
 }
 
-void sound_tab(PlaySettings& d) {
+// Vrai pendant qu'on tient le curseur du délai audio.
+bool sound_tab(PlaySettings& d) {
   section("Langue");
   language_rows("Langue de l'audio", d.audio_languages);
   note(
@@ -214,6 +215,7 @@ void sound_tab(PlaySettings& d) {
       "Vaut au prochain fichier ; la piste en cours se change dans la barre.");
   section("Synchronisation");
   ImGui::SliderInt("Délai audio (ms)", &d.audio_delay_ms, -1000, 1000);
+  const bool held = ImGui::IsItemActive();
   if (ImGui::Button("Remettre à 0")) d.audio_delay_ms = 0;
   note("Positif : le son est retardé. Ctrl + clic sur le curseur pour saisir une valeur (±5000 ms).");
   d.audio_delay_ms = std::clamp(d.audio_delay_ms, limits::kAudioDelayMs.lo, limits::kAudioDelayMs.hi);
@@ -229,6 +231,7 @@ void sound_tab(PlaySettings& d) {
       "Le temps entre le choix d'une image et son apparition : estimé d'après le rendu et la file de "
       "l'écran, ou imposé ici si l'image paraît en avance ou en retard sur le son.");
   d.video_latency_ms = std::clamp(d.video_latency_ms, limits::kVideoLatencyMs.lo, limits::kVideoLatencyMs.hi);
+  return held;
 }
 
 void subtitles_tab(PlaySettings& d) {
@@ -322,6 +325,7 @@ SettingsPanel::Result SettingsPanel::draw(const PlaySettings& running, const Set
                                       ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoSavedSettings;
   if (ImGui::Begin("Paramètres", &keep, kFlags)) {
     ImGui::PushItemWidth(-width * 0.42F);
+    bool delay_held = false;
     if (ImGui::BeginTabBar("##sections")) {
       if (ImGui::BeginTabItem("Profils")) {
         // Le champ reçoit le nom du profil actif quand le profil ou son nom change (autre profil,
@@ -360,7 +364,7 @@ SettingsPanel::Result SettingsPanel::draw(const PlaySettings& running, const Set
         ImGui::EndTabItem();
       }
       if (ImGui::BeginTabItem("Son")) {
-        sound_tab(draft_);
+        delay_held = sound_tab(draft_);
         ImGui::EndTabItem();
       }
       if (ImGui::BeginTabItem("Stats")) {
@@ -384,7 +388,10 @@ SettingsPanel::Result SettingsPanel::draw(const PlaySettings& running, const Set
     ImGui::PopItemWidth();
 
     // La part directe s'applique tout de suite ; le reste attend « Appliquer ».
-    const PlaySettings live = live_part(running, draft_, choices.rife_loaded);
+    PlaySettings live = live_part(running, draft_, choices.rife_loaded);
+    // Chaque délai recale le son (il reprend les blocs en file) : un glissement hacherait le son à
+    // chaque image, le délai s'applique donc au relâchement (saisie au clavier comprise).
+    if (delay_held) live.audio_delay_ms = running.audio_delay_ms;
     if (live != running) result.live = live;
     const Change pending = change_between(live, draft_, choices.rife_loaded);
     if (pending.cost == ChangeCost::Reopen) {
