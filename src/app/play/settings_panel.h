@@ -99,6 +99,7 @@ class SettingsPanel {
   PlaySettings seen_;   // running au tour précédent
   std::array<char, 64> rename_{};               // nouveau nom du profil actif, en cours de saisie
   int shown_profile_ = 0;                       // profil dont rename_ porte le nom
+  std::string shown_name_;                      // son nom quand rename_ l'a reçu
   std::optional<core::EngineId> engine_draft_;  // moteur coché dans l'onglet Moteurs, pas appliqué
   std::unique_ptr<ExportDraft> export_;         // l'onglet Export, gardé d'une ouverture à l'autre
 };

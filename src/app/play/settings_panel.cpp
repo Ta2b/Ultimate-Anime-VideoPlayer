@@ -308,12 +308,6 @@ void profiles_tab(const ProfilesView& view, std::array<char, 64>& rename, std::v
   note("Changer d'avis dans les autres onglets modifie le profil actif ; il est gardé dans user.toml.");
 
   section("Profil actif");
-  const std::optional<ProfileRow>& current = view.rows[static_cast<std::size_t>(view.active - 1)];
-  if (current && rename[0] == '\0') {
-    const std::size_t n = std::min(current->name.size(), rename.size() - 1);
-    std::copy_n(current->name.data(), n, rename.data());
-    rename[n] = '\0';
-  }
   ImGui::InputText("Nom", rename.data(), rename.size());
   ImGui::SameLine();
   if (ImGui::Button("Renommer") && rename[0] != '\0')
@@ -354,9 +348,17 @@ SettingsPanel::Result SettingsPanel::draw(const PlaySettings& running, const Set
     ImGui::PushItemWidth(-width * 0.42F);
     if (ImGui::BeginTabBar("##sections")) {
       if (ImGui::BeginTabItem("Profils")) {
-        if (choices.profiles.active != shown_profile_) {  // nom à renommer : celui du profil actif
-          rename_[0] = '\0';
+        // Le champ reçoit le nom du profil actif quand le profil ou son nom change (autre profil,
+        // retour au profil d'origine), pas quand il est vide : on peut l'effacer puis taper.
+        const std::optional<ProfileRow>& current =
+            choices.profiles.rows[static_cast<std::size_t>(choices.profiles.active - 1)];
+        const std::string name = current ? current->name : std::string();
+        if (choices.profiles.active != shown_profile_ || name != shown_name_) {
+          const std::size_t n = std::min(name.size(), rename_.size() - 1);
+          std::copy_n(name.data(), n, rename_.data());
+          rename_[n] = '\0';
           shown_profile_ = choices.profiles.active;
+          shown_name_ = name;
         }
         profiles_tab(choices.profiles, rename_, actions);
         ImGui::EndTabItem();
