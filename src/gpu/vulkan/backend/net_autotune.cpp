@@ -7,6 +7,7 @@
 #include <cstring>
 #include <format>
 #include <fstream>
+#include <functional>
 #include <optional>
 #include <ranges>
 #include <span>
@@ -598,13 +599,22 @@ std::expected<Measured, Refusal> Autotuner::measure_with(const ir::Graph& graph,
   if (stamped) {
     if (auto ok = context_.submit(**recording); !ok) return std::unexpected(ok.error());
     if (auto ok = context_.wait_on_host((*recording)->last_run()); !ok) return std::unexpected(ok.error());
+    // Avec WAIT : la soumission est finie, mais MoltenVK ne range les estampilles qu'un peu après,
+    // dans le rappel de fin du tampon de commandes ; sans, il répond VK_NOT_READY.
     std::vector<std::uint64_t> ticks(queries.count());
-    if (auto ok = check(queries.fn().results(context_.device(), queries.handle(), 0, queries.count(),
-                                             ticks.size() * sizeof(std::uint64_t), ticks.data(),
-                                             sizeof(std::uint64_t), VK_QUERY_RESULT_64_BIT),
-                        "vkGetQueryPoolResults");
+    if (auto ok = check(
+            queries.fn().results(context_.device(), queries.handle(), 0, queries.count(),
+                                 ticks.size() * sizeof(std::uint64_t), ticks.data(), sizeof(std::uint64_t),
+                                 VK_QUERY_RESULT_64_BIT | VK_QUERY_RESULT_WAIT_BIT),
+            "vkGetQueryPoolResults");
         !ok) {
       return std::unexpected(ok.error());
+    }
+    // Des estampilles qui n'avancent pas d'une passe à l'autre ne mesurent rien : la mesure passe
+    // à l'hôte, pour ce choix et les suivants.
+    if (std::ranges::adjacent_find(ticks, std::greater_equal<>()) != ticks.end()) {
+      period_ns_ = 0.0;
+      return measure_with(graph, node, choice, options);
     }
     for (std::uint32_t pass = options.warmup; pass < passes; ++pass) {
       const double us = static_cast<double>(ticks[pass + 1] - ticks[pass]) * period_ns_ / 1000.0;

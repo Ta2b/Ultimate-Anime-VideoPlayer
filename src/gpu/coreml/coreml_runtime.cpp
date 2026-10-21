@@ -30,13 +30,13 @@ namespace ajp::gpu::coreml_rt {
 std::string_view units_option(Units units) {
   switch (units) {
     case Units::CpuAndGpu:
-      return "MLComputeUnitsCPUAndGPU";
+      return "CPUAndGPU";
     case Units::CpuAndNeuralEngine:
-      return "MLComputeUnitsCPUAndNeuralEngine";
+      return "CPUAndNeuralEngine";
     case Units::All:
       break;
   }
-  return "MLComputeUnitsAll";
+  return "ALL";
 }
 
 std::string_view units_name(Units units) {
