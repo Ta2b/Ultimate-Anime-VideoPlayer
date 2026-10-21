@@ -102,7 +102,10 @@ TEST_CASE("exécution : les enregistrements d'un lot partagent un VkSubmitInfo",
   require_ok(rig.context->flush());
   CHECK(rig.context->queue_submits() == submits + 1);
   CHECK(rig.context->submit_infos() == infos + 1);
+  // Les signaux d'un même VkSubmitInfo ne sont pas vus d'un coup par l'hôte : lavapipe les pose
+  // l'un après l'autre, et sous charge b peut encore valoir 0 quand a vaut 2.
   require_ok(rig.context->wait_on_host(a->last_run()));
+  require_ok(rig.context->wait_on_host(b->last_run()));
   CHECK(require_value(a->runs().value()) == 2);
   CHECK(require_value(b->runs().value()) == 1);
   CHECK(max_abs_diff(download_rgb(rig, dst), image) <= 1e-3F);
