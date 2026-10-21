@@ -13,6 +13,7 @@ namespace {
 
 std::vector<std::string> names(const std::vector<EncoderCandidate>& candidates) {
   std::vector<std::string> out;
+  out.reserve(candidates.size());
   for (const EncoderCandidate& c : candidates) out.push_back(c.name);
   return out;
 }
@@ -113,6 +114,31 @@ TEST_CASE("Encodeur : NVENC, quantification et passes selon la qualité", "[expo
       encoder_candidates(Codec::Hevc, Quality::Standard, GpuVendor::Nvidia).front();
   CHECK(has(standard.options, "cq", "24"));
   CHECK_FALSE(has(standard.options, "multipass", "qres"));
+}
+
+TEST_CASE("Encodeur : NVENC, options Ada et Blackwell essayées d'abord", "[export]") {
+  const EncoderCandidate best = encoder_candidates(Codec::Hevc, Quality::VeryHigh, GpuVendor::Nvidia).front();
+  REQUIRE(best.recent.size() == 2);
+  // UHQ d'abord, puis Ada seul : un refus de UHQ garde l'anticipation et le filtre temporel.
+  CHECK(has(best.recent[0], "tune", "uhq"));
+  CHECK_FALSE(has(best.recent[1], "tune", "uhq"));
+  for (const auto& recent : best.recent) {
+    CHECK(has(recent, "lookahead_level", "3"));
+    CHECK(has(recent, "tf_level", "4"));
+    CHECK(has(recent, "bf", "4"));  // le filtre temporel veut 4 B-frames
+  }
+  CHECK_FALSE(has(best.options, "tf_level", "4"));
+
+  const EncoderCandidate h264 = encoder_candidates(Codec::H264, Quality::VeryHigh, GpuVendor::Nvidia).front();
+  REQUIRE(h264.recent.size() == 1);
+  CHECK(has(h264.recent[0], "lookahead_level", "3"));
+  CHECK_FALSE(has(h264.recent[0], "tf_level", "4"));
+
+  const EncoderCandidate high = encoder_candidates(Codec::Av1, Quality::High, GpuVendor::Nvidia).front();
+  REQUIRE(high.recent.size() == 1);
+  CHECK(has(high.recent[0], "tf_level", "4"));
+
+  CHECK(encoder_candidates(Codec::Hevc, Quality::High, GpuVendor::Amd).front().recent.empty());
 }
 
 TEST_CASE("Encodeur : libellés", "[export]") {

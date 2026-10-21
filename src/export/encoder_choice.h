@@ -58,6 +58,9 @@ struct EncoderCandidate {
   Upload upload = Upload::Host;
   bool ten_bit = true;  // P010 (ou YUV 4:2:0 10 bits) ; faux : NV12
   std::vector<EncoderOption> options;
+  // Les options d'une génération récente (Ada, Blackwell), chacune un jeu ajouté à options et
+  // essayé avant lui, le plus exigeant d'abord : un GPU plus ancien les refuse à l'ouverture.
+  std::vector<std::vector<EncoderOption>> recent;
   // Le jeu réduit, essayé quand le GPU refuse une option du premier (B-frames, AQ temporelle d'une
   // génération plus ancienne) : le contrôle de débit et la quantification seulement.
   std::vector<EncoderOption> fallback;

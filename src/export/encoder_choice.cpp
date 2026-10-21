@@ -65,6 +65,16 @@ EncoderCandidate nvenc(Codec codec, Quality quality) {
                                      {"bf", "3"},
                                      {"b_ref_mode", "middle"}});
   if (quality == Quality::VeryHigh) c.options.push_back({"multipass", "qres"});
+  // Ada et après : l'anticipation à 3 niveaux, et en HEVC et AV1 le filtre temporel (4 B-frames
+  // au moins) ; Blackwell, en très haute qualité : le réglage UHQ, qui les règle lui-même.
+  std::vector<EncoderOption> ada{{"lookahead_level", "3"}};
+  if (codec != Codec::H264) ada.insert(ada.end(), {{"bf", "4"}, {"tf_level", "4"}});
+  if (codec != Codec::H264 && quality == Quality::VeryHigh) {
+    std::vector<EncoderOption> uhq = ada;
+    uhq.push_back({"tune", "uhq"});
+    c.recent.push_back(std::move(uhq));
+  }
+  c.recent.push_back(std::move(ada));
   return c;
 }
 

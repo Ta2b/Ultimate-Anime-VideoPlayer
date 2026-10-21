@@ -6,6 +6,7 @@
 #include <format>
 #include <optional>
 #include <span>
+#include <string>
 #include <system_error>
 #include <utility>
 #include <vector>
@@ -166,6 +167,14 @@ std::expected<Opened, std::string> open_device(const AVCodec& codec, const Encod
   return out;
 }
 
+// « lookahead_level=3 tf_level=4 », pour le journal.
+std::string describe(const std::vector<EncoderOption>& options) {
+  std::string text;
+  for (const EncoderOption& option : options)
+    text += std::format("{}{}={}", text.empty() ? "" : " ", option.key, option.value);
+  return text;
+}
+
 // Une tentative : le contexte rempli, les options posées, l'encodeur ouvert ; le texte du refus
 // sinon. Un encodeur CUDA dont l'appareil ne s'ouvre pas (FFmpeg sans CUDA) reçoit ses images de
 // l'hôte, comme avant.
@@ -231,7 +240,18 @@ std::expected<VideoEncoder, Refusal> VideoEncoder::open(const EncoderSetup& setu
       tried.push_back(std::format("{} absent", candidate.name));
       continue;
     }
-    auto opened = attempt(*codec, candidate, candidate.options, setup);
+    std::expected<Opened, std::string> opened = std::unexpected(std::string());
+    for (const std::vector<EncoderOption>& recent : candidate.recent) {
+      std::vector<EncoderOption> options = candidate.options;
+      options.insert(options.end(), recent.begin(), recent.end());
+      opened = attempt(*codec, candidate, options, setup);
+      if (opened) {
+        log->info("{} : options récentes {}", candidate.name, describe(recent));
+        break;
+      }
+      log->debug("{} refuse les options {} ({})", candidate.name, describe(recent), opened.error());
+    }
+    if (!opened) opened = attempt(*codec, candidate, candidate.options, setup);
     if (!opened && candidate.fallback != candidate.options) {
       log->info("{} refuse ses options complètes ({}) : options réduites", candidate.name, opened.error());
       opened = attempt(*codec, candidate, candidate.fallback, setup);
