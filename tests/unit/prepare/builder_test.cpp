@@ -3,6 +3,7 @@
 #include "prepare/builder.h"
 
 #include <algorithm>
+#include <array>
 #include <thread>
 #include <utility>
 #include <vector>
@@ -406,7 +407,8 @@ TEST_CASE("TrtexecBuilder : un trtexec à la fois par GPU, les temps de chacun g
                                   .sha256 = sha256_file(bench.dir_ / "modeles/autre.onnx").value(),
                                   .precision = TensorType::F16};
   const TrtexecBuilder builder(bench.config);
-  std::vector<bool> built(2);
+  // Pas de std::vector<bool> : ses éléments partagent un mot, que les deux threads écriraient.
+  std::array<bool, 2> built{};
   {
     std::vector<std::jthread> threads;
     for (std::size_t i = 0; i < built.size(); ++i) {
@@ -417,7 +419,7 @@ TEST_CASE("TrtexecBuilder : un trtexec à la fois par GPU, les temps de chacun g
       });
     }
   }
-  CHECK(built == std::vector<bool>{true, true});
+  CHECK(built == std::array<bool, 2>{true, true});
   CHECK(test::read_lines(bench.cache() / "trtexec.runs") ==
         std::vector<std::string>{"début", "fin", "début", "fin"});
   CHECK(bench.timing_cache() == std::vector<std::string>{"passe", "passe"});
