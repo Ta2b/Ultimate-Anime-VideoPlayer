@@ -284,8 +284,24 @@ class UpscaleStage final : public RingStage {
   PairMotion now_ = PairMotion::Unknown;
   bool poses_ = false;       // garder les poses pour la paire en cours (réglage lu à son début)
   bool single_run_ = false;  // la paire en cours n'a qu'une passe RIFE, au milieu
+  // Mouvement fort (upscale_motion.cpp) : la paire précédente en avait, la paire en cours passe
+  // RIFE à chaque instant sans passe au milieu (direct_run_), et la mesure de son premier instant,
+  // lancée sans attente, décide de la suivante. Oublié à une coupe ou à un saut (forget_motion).
+  bool strong_motion_ = false;
+  bool direct_run_ = false;
+  bool flow_max_async_ = true;  // faux si le backend n'a pas flow_max_start
+  struct PendingMotion {
+    std::uint64_t ticket = 0;  // 0 : aucune
+    float scale = 1.0F;        // vers le mouvement maximal au milieu
+    bool known = false;        // faux après une coupe ou un saut : relue, mais ignorée
+  };
+  PendingMotion motion_;
+  void forget_motion();
+  // La mesure en vol relue (sans attente : une paire est passée), strong_motion_ mis à jour.
+  std::expected<void, Refusal> settle_motion();
   std::uint64_t single_pairs_ = 0;
   std::uint64_t multi_pairs_ = 0;
+  std::uint64_t direct_pairs_ = 0;  // dont sans passe au milieu
   std::uint64_t rife_runs_ = 0;
   std::uint64_t late_pairs_ = 0;               // paires non interpolées pour rattraper l'horloge
   std::unique_ptr<gpu::TensorBuffer> output_;  // 1 × 3 × 2h × 2w ; absent sans SPAN

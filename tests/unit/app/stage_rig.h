@@ -61,6 +61,11 @@ class FakeBackend final : public gpu::Backend, public gpu::KernelOps {
   void offer_ahead(bool on) { ahead_ = on; }
   // Cette image est refusée à l'ingestion (VendorCallFailed).
   void refuse_ingest(SourceId id) { refused_ = id; }
+  // Le mouvement maximal que rendent flow_max_now et flow_max_take, en pixels ; 0 par défaut.
+  void motion_max(float pixels) {
+    const std::scoped_lock lock(mutex_);
+    motion_max_ = pixels;
+  }
 
   std::vector<std::string> log() const;
   std::size_t count(std::string_view entry) const;  // entrées du journal égales à entry
@@ -119,8 +124,30 @@ class FakeBackend final : public gpu::Backend, public gpu::KernelOps {
   std::expected<std::uint64_t, Refusal> scores_start(const gpu::Tensor& a, const gpu::Tensor& b) override;
   std::expected<gpu::PairScores, Refusal> scores_take(std::uint64_t ticket) override;
   std::expected<float, Refusal> flow_max_now(const gpu::Motion& /*motion*/) override {
-    if (auto ok = note("flow_max_now"); !ok) return std::unexpected(ok.error());
-    return 0.0F;
+    const std::scoped_lock lock(mutex_);
+    log_.emplace_back("flow_max_now");
+    return motion_max_;
+  }
+  std::expected<std::uint64_t, Refusal> flow_max_start(const gpu::Motion& /*motion*/) override {
+    const std::scoped_lock lock(mutex_);
+    if (!ahead_) return std::unexpected(Refusal{RefusalCode::FormatUnsupported, "flow_max_start : absent"});
+    log_.emplace_back("flow_max_start");
+    flow_tickets_[next_ticket_] = motion_max_;
+    return next_ticket_++;
+  }
+  std::expected<float, Refusal> flow_max_take(std::uint64_t ticket) override {
+    const std::scoped_lock lock(mutex_);
+    const auto found = flow_tickets_.find(ticket);
+    if (found == flow_tickets_.end())
+      return std::unexpected(Refusal{RefusalCode::SequenceOrder, "flow_max_take : ticket inconnu"});
+    const float value = found->second;
+    flow_tickets_.erase(found);
+    log_.emplace_back("flow_max_take");
+    return value;
+  }
+  std::size_t pending_flow_tickets() const {
+    const std::scoped_lock lock(mutex_);
+    return flow_tickets_.size();
   }
   std::expected<void, Refusal> warp_blend_poses(const gpu::Tensor& /*a*/, const gpu::Tensor& /*b*/,
                                                 const gpu::Motion& /*motion*/,
@@ -160,6 +187,8 @@ class FakeBackend final : public gpu::Backend, public gpu::KernelOps {
   std::map<std::uintptr_t, SourceId> ingested_;  // tenseur → dernière image ingérée dedans
   std::map<PairKey, gpu::PairScores> scores_;
   std::map<std::uint64_t, gpu::PairScores> tickets_;
+  std::map<std::uint64_t, float> flow_tickets_;
+  float motion_max_ = 0.0F;
   std::uintptr_t next_handle_ = 1;
   std::uint64_t next_ticket_ = 1;
   std::uint64_t fence_ = 0;

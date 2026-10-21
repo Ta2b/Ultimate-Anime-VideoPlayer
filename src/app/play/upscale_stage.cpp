@@ -35,8 +35,9 @@ UpscaleStage::UpscaleStage(VideoStageInit init, UpscaleSetup setup)
 UpscaleStage::~UpscaleStage() {
   stop();
   if (setup_.rife_motion != nullptr) {
-    log_channel("gpu")->info("RIFE mouvement : {} passes ; {} paires à une passe, {} à plusieurs", rife_runs_,
-                             single_pairs_, multi_pairs_);
+    log_channel("gpu")->info(
+        "RIFE mouvement : {} passes ; {} paires à une passe, {} à plusieurs (dont {} sans passe au milieu)",
+        rife_runs_, single_pairs_, multi_pairs_, direct_pairs_);
   }
   if (gmfss()) log_channel("gpu")->info("GMFSS : {} paires", gmfss_pairs_);
   if (spans_reused_ > 0)
@@ -242,6 +243,7 @@ std::expected<std::uint32_t, Refusal> UpscaleStage::outputs(const DecodedFrame& 
   PairFacts facts{.factor = wanted,
                   .same_epoch = previous_ && previous_->epoch == frame.epoch,
                   .gap_us = previous_ ? frame.pts_us - previous_->pts_us : 0};
+  if (!facts.same_epoch) forget_motion();  // début ou saut : le mouvement d'avant ne dit plus rien
   if (facts.factor > 1 && facts.same_epoch) {
     const auto asked = std::chrono::steady_clock::now();
     auto scores = drba() ? drba_scores(frame) : pair_scores();
@@ -253,6 +255,7 @@ std::expected<std::uint32_t, Refusal> UpscaleStage::outputs(const DecodedFrame& 
     ++pairs_;
     if (setup_.live) setup_.live->count_pair();
     if (kernels::is_scene_cut(scores->scene_score)) {
+      forget_motion();
       ++cuts_;
       if (setup_.live) setup_.live->count_cut();
     } else if (kernels::is_held(scores->worst_block)) {
@@ -357,87 +360,6 @@ std::expected<RingStage::Output, Refusal> UpscaleStage::produce(const DecodedFra
   // ×1,5 : l'image n'est pas sur la grille de cette paire, elle sert seulement de suivante.
   if (last) previous_ = Previous{.pts_us = frame.pts_us, .id = frame.id, .epoch = frame.epoch};
   return made;
-}
-
-std::expected<void, Refusal> UpscaleStage::interpolate_image(float t) {
-  if (auto ok = fill_rife_input(t); !ok) return ok;
-  const std::array inputs{rife_in_->tensor()};
-  std::array results{rife_out_->tensor()};
-  if (auto ok = setup_.backend->enqueue(*setup_.rife, inputs, results); !ok) return ok;
-  return setup_.backend->kernels()->rife_crop(rife_out_->tensor(), middle_->tensor());
-}
-
-std::expected<void, Refusal> UpscaleStage::run_motion(float t, const gpu::Tensor& flow,
-                                                      const gpu::Tensor& mask) {
-  if (auto ok = fill_rife_input(t); !ok) return ok;
-  const std::array inputs{rife_in_->tensor()};
-  std::array results{flow, mask};
-  ++rife_runs_;
-  return setup_.backend->enqueue(*setup_.rife_motion, inputs, results);
-}
-
-gpu::Motion UpscaleStage::mid_motion(std::uint32_t index) const {
-  const MotionBuffers& mid = mids_[index];
-  // RIFE estime à sa taille, dans ses plans remplis ; le warp met le mouvement à l'échelle.
-  const kernels::RifeGeometry g =
-      kernels::rife_geometry(setup_.rife_width, setup_.rife_height, setup_.rife_align);
-  return {.flow = mid.flow->tensor(),
-          .mask = mid.mask->tensor(),
-          .area = kernels::Window{
-              .x = g.left, .y = g.top, .width = setup_.rife_width, .height = setup_.rife_height}};
-}
-
-std::expected<void, Refusal> UpscaleStage::interpolate_by_motion(std::uint32_t output, const gpu::Tensor& a,
-                                                                 const gpu::Tensor& b,
-                                                                 const gpu::Tensor& out) {
-  gpu::KernelOps& ops = *setup_.backend->kernels();
-  const float t = instants_[output].t;
-  const gpu::Motion middle = mid_motion(mid_);
-  if (output == 0) {
-    poses_ = setup_.live && setup_.live->keep_poses();
-    single_run_ = false;
-    // RIFE au milieu ; s'il reste plus d'une image à faire, son mouvement maximal dit si cette
-    // passe suffit (kernels/spec/warp.h, seuil mis à la hauteur de RIFE). Garder les poses
-    // demande le mouvement du milieu à chaque instant : une seule passe.
-    if (auto ok = run_motion(0.5F, middle.flow, middle.mask); !ok) return ok;
-    if (poses_) {
-      single_run_ = true;
-    } else if (intermediates_ > 1) {
-      // Warp après SPAN : SPAN de b enfilé entre la mesure et sa relecture, qui ne l'attend pas.
-      auto ticket = ops.flow_max_start(middle);
-      std::expected<float, Refusal> biggest;
-      if (ticket) {
-        if (warps_spanned()) {
-          if (auto ok = span_current(); !ok) return ok;
-        }
-        biggest = ops.flow_max_take(*ticket);
-      } else {
-        biggest = ops.flow_max_now(middle);
-      }
-      if (!biggest) return std::unexpected(std::move(biggest.error()));
-      single_run_ = *biggest < kernels::single_run_motion(setup_.rife_height);
-      if (single_run_) {
-        ++single_pairs_;
-      } else {
-        ++multi_pairs_;
-      }
-    }
-    now_ = PairMotion::Moving;
-  }
-  // Warp après SPAN : b agrandie ici (si la relecture du mouvement maximal ne l'a pas déjà enfilée),
-  // après la passe de RIFE et la mesure que l'hôte attend : elles ne passent pas derrière SPAN.
-  if (warps_spanned()) {
-    if (auto ok = span_current(); !ok) return ok;
-  }
-  if (poses_ && before_ != PairMotion::Unknown) {
-    const gpu::Motion previous = mid_motion(mid_ ^ 1U);
-    return ops.warp_blend_poses(a, b, middle, before_ == PairMotion::Moving ? &previous : nullptr, t, out);
-  }
-  if (single_run_ || t == 0.5F) return ops.warp_blend(a, b, middle, t, out);
-  // Mouvement fort : RIFE à cet instant, son mouvement tel quel (t = 1/2 au warp : « estimé »).
-  const gpu::Motion other{.flow = flow_->tensor(), .mask = mask_->tensor(), .area = middle.area};
-  if (auto ok = run_motion(t, other.flow, other.mask); !ok) return ok;
-  return ops.warp_blend(a, b, other, 0.5F, out);
 }
 
 std::expected<void, Refusal> UpscaleStage::span_current() {

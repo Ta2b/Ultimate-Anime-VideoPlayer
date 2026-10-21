@@ -32,6 +32,7 @@ struct Rig : test::StageRig {
   test::FakeEngine span{"span", {"input"}, {"output"}};
   test::FakeEngine rife{"rife", {"input"}, {"output"}};
   test::FakeEngine drba{"drba", {"pair01", "pair12"}, {"output"}};
+  test::FakeEngine motion{"rife_motion", {"input"}, {"flow", "mask"}};
   std::shared_ptr<LiveSettings> live = std::make_shared<LiveSettings>();
 
   // SPAN toujours ; RIFE ×num/den par les réglages en direct quand with_rife.
@@ -150,6 +151,48 @@ TEST_CASE("Étage gpu : RIFE ×3, deux instants par paire, l'entrée remplie une
   CHECK(rig.backend.count("engine rife") == 4);
   CHECK(rig.backend.count("rife_input") == 2);  // les images de la paire une fois
   CHECK(rig.backend.count("rife_time") == 2);   // puis l'instant seul
+}
+
+TEST_CASE("Étage gpu : RIFE mouvement, une passe au milieu tant que le mouvement est faible",
+          "[app][stage]") {
+  Rig rig;
+  UpscaleSetup s = rig.setup(true, Factor{.num = 3, .den = 1});
+  s.rife = nullptr;
+  s.rife_motion = &rig.motion;
+  rig.start(std::move(s));
+  rig.feed(1, 4);
+  REQUIRE(rig.collect(10));
+  rig.stage.reset();
+  CHECK(shape_of(rig.sink.frames()) ==
+        std::vector<std::string>{"1", "1-2", "1-2", "2", "2-3", "2-3", "3", "3-4", "3-4", "4"});
+  CHECK(rig.backend.count("engine rife_motion") == 3);  // une par paire, au milieu
+  CHECK(rig.backend.count("flow_max_start") == 3);
+  CHECK(rig.backend.count("flow_max_take") == 3);
+  CHECK(rig.backend.count("warp_blend") == 6);
+}
+
+TEST_CASE("Étage gpu : RIFE mouvement fort, sans passe au milieu après la première paire, oublié à la coupe",
+          "[app][stage]") {
+  Rig rig;
+  rig.backend.motion_max(40.0F);  // au-delà du seuil d'une passe (3,75 px à 180 lignes)
+  rig.backend.score(SourceId{4}, SourceId{5}, 0.5, 1000);  // coupe de scène
+  UpscaleSetup s = rig.setup(true, Factor{.num = 3, .den = 1});
+  s.rife = nullptr;
+  s.rife_motion = &rig.motion;
+  rig.start(std::move(s));
+  rig.feed(1, 4);  // 1, puis trois paires interpolées
+  REQUIRE(rig.collect(1 + 3 * 3));
+  rig.feed(5, 7);  // 5 seule (coupe), puis deux paires interpolées
+  REQUIRE(rig.collect(1 + 3 * 3 + 1 + 2 * 3));
+  rig.stage.reset();
+  // (1,2) : milieu puis 1/3 et 2/3, trois passes ; (2,3) et (3,4) : deux passes, sans milieu.
+  // Après la coupe, (5,6) repart du milieu (trois passes), puis (6,7) en deux.
+  CHECK(rig.backend.count("engine rife_motion") == 3 + 2 + 2 + 3 + 2);
+  // Une mesure par paire : relue tout de suite après le milieu, ou à la paire suivante sans lui.
+  CHECK(rig.backend.count("flow_max_start") == 5);
+  CHECK(rig.backend.count("flow_max_take") == 4);
+  CHECK(rig.backend.pending_flow_tickets() == 1);  // celle de (6,7), sans paire après elle
+  CHECK(rig.backend.count("warp_blend") == 2 * 5);
 }
 
 TEST_CASE("Étage gpu : mesures en avance quand la suivante attend déjà, scores_now sans elles",
