@@ -18,7 +18,7 @@
 #ifndef TOML_EXCEPTIONS
 #define TOML_EXCEPTIONS 0
 #endif
-#include <toml++/toml.hpp>
+#include <toml++-ajp/toml.hpp>
 
 namespace ajp::app::play {
 namespace {

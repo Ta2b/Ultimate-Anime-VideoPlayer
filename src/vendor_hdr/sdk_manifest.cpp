@@ -6,7 +6,7 @@
 #include <utility>
 
 #define TOML_EXCEPTIONS 0
-#include <toml++/toml.hpp>
+#include <toml++-ajp/toml.hpp>
 
 #include "vendor_hdr/sdk_layout.h"
 

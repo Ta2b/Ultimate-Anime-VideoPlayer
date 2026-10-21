@@ -12,12 +12,17 @@ function(ajp_alias_dep name target)
 endfunction()
 
 # toml++ en en-têtes seuls, partout : la bibliothèque compilée de vcpkg (Windows) n'exporte que
-# l'API à exceptions (toml::ex), et ajp se construit avec TOML_EXCEPTIONS=0 (toml::noex).
+# l'API à exceptions (toml::ex), et ajp se construit avec TOML_EXCEPTIONS=0 (toml::noex). Ses
+# en-têtes sont lus dans la copie corrigée de cmake/TomlFixes.cmake (<toml++-ajp/toml.hpp>), et
+# src/core/toml_config.h complète sa configuration.
+include("${CMAKE_CURRENT_LIST_DIR}/TomlFixes.cmake")
 find_package(tomlplusplus CONFIG REQUIRED)
 get_target_property(ajp_toml_include tomlplusplus::tomlplusplus INTERFACE_INCLUDE_DIRECTORIES)
+ajp_toml_fixed_include("${ajp_toml_include}" ajp_toml_fixed)
 add_library(ajp_toml_headers INTERFACE)
-target_include_directories(ajp_toml_headers SYSTEM INTERFACE ${ajp_toml_include})
-target_compile_definitions(ajp_toml_headers INTERFACE TOML_HEADER_ONLY=1)
+target_include_directories(ajp_toml_headers SYSTEM INTERFACE "${ajp_toml_fixed}")
+target_compile_definitions(ajp_toml_headers INTERFACE TOML_HEADER_ONLY=1
+                                                      "TOML_CONFIG_HEADER=\"${CMAKE_CURRENT_LIST_DIR}/../src/core/toml_config.h\"")
 ajp_alias_dep(toml ajp_toml_headers)
 
 find_package(spdlog CONFIG REQUIRED)

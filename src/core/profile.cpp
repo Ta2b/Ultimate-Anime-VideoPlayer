@@ -6,7 +6,7 @@
 #include <sstream>
 
 #define TOML_EXCEPTIONS 0
-#include <toml++/toml.hpp>
+#include <toml++-ajp/toml.hpp>
 
 namespace ajp::core {
 namespace {
