@@ -60,11 +60,16 @@ jobs:
           "OpenVINO_DIR=$dir" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
       - name: Paquet
         shell: pwsh
+        env:
+          # Les liens d'engines.lock visent la release de cette étiquette : sans elle, le script
+          # prend v<version du projet>, une release qui n'existe pas.
+          TAG: ${{ github.event_name == 'push' && github.ref_name || inputs.tag }}
         # msvc-dev-cmd pose le vcpkg de Visual Studio : le nôtre, à la référence du manifeste.
         run: |
           $env:VCPKG_ROOT = $env:AJP_VCPKG
           $env:AJP_WITH_OPENVINO = "ON"
           $env:AJP_RELEASE_REPO = "${{ vars.AJP_RELEASE_REPO || github.repository }}"
+          if ($env:TAG) { $env:AJP_RELEASE_TAG = $env:TAG }
           pwsh tools/release/package-windows.ps1 "$env:RUNNER_TEMP/package"
       # Les tests sans GPU du build même du paquet (préréglage de test windows-release) : un échec
       # arrête tout avant l'artefact et la release.
@@ -96,8 +101,21 @@ jobs:
           GH_TOKEN: ${{ secrets.AJP_RELEASE_TOKEN || github.token }}
           AJP_RELEASE_REPO: ${{ vars.AJP_RELEASE_REPO || github.repository }}
           TAG: ${{ github.event_name == 'push' && github.ref_name || inputs.tag }}
+        # La construction macOS de la même étiquette peut créer la release au même moment : un
+        # refus de création ne compte que si la release n'existe toujours pas.
         run: |
           gh release view $env:TAG -R $env:AJP_RELEASE_REPO *> $null
-          if ($LASTEXITCODE -ne 0) { gh release create $env:TAG -R $env:AJP_RELEASE_REPO --prerelease --title $env:TAG --notes $env:TAG }
+          if ($LASTEXITCODE -ne 0) {
+            $notes = "tools/release/notes/$env:TAG.md"
+            if (Test-Path $notes) {
+              gh release create $env:TAG -R $env:AJP_RELEASE_REPO --prerelease --title $env:TAG --notes-file $notes
+            } else {
+              gh release create $env:TAG -R $env:AJP_RELEASE_REPO --prerelease --title $env:TAG --notes $env:TAG
+            }
+            if ($LASTEXITCODE -ne 0) {
+              gh release view $env:TAG -R $env:AJP_RELEASE_REPO *> $null
+              if ($LASTEXITCODE -ne 0) { throw "release $env:TAG" }
+            }
+          }
           $assets = @(Get-ChildItem "$env:RUNNER_TEMP/package" -File | Where-Object { $_.Name -like "ajp-*" -or $_.Name -eq "SHA256SUMS-windows.txt" } | ForEach-Object { $_.FullName })
           gh release upload $env:TAG -R $env:AJP_RELEASE_REPO @assets --clobber

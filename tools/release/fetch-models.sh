@@ -16,7 +16,10 @@ set -euo pipefail
 
 DEST="${1:?dossier de destination}"
 CACHE="${2:-${XDG_CACHE_HOME:-$HOME/.cache}/ajp-release-models}"
-command -v 7z >/dev/null || { echo "7z manquant (apt install p7zip-full)" >&2; exit 1; }
+# 7z (p7zip) ou 7zz (7-Zip, Homebrew sous macOS) ; sha256sum ou, sous macOS, shasum.
+SEVENZ="$(command -v 7z || command -v 7zz || true)"
+[ -n "$SEVENZ" ] || { echo "7z manquant (apt install p7zip-full, brew install sevenzip)" >&2; exit 1; }
+if command -v sha256sum >/dev/null; then SHA256=(sha256sum); else SHA256=(shasum -a 256); fi
 mkdir -p "$DEST/onnx" "$DEST/rife" "$CACHE"
 
 SPAN_COMMIT=55a8ae53bb0e2dc531449b68a9a0717c61ae982b
@@ -39,7 +42,7 @@ DRBA=(
 )
 
 check() {  # sha256 fichier
-  echo "$1  $2" | sha256sum -c --quiet - || { echo "SHA-256 inattendu : $2" >&2; exit 1; }
+  echo "$1  $2" | "${SHA256[@]}" -c --status - || { echo "SHA-256 inattendu : $2" >&2; exit 1; }
 }
 
 for entry in "${SPAN[@]}"; do
@@ -49,13 +52,13 @@ for entry in "${SPAN[@]}"; do
 done
 
 archive="$CACHE/rife-fp16-1.7z"
-if ! echo "$RIFE_ARCHIVE_SHA  $archive" | sha256sum -c --quiet - >/dev/null 2>&1; then  # pas encore en cache
+if ! echo "$RIFE_ARCHIVE_SHA  $archive" | "${SHA256[@]}" -c --status - >/dev/null 2>&1; then  # pas encore en cache
   curl -fsSL -o "$archive" "$RIFE_URL"
   check "$RIFE_ARCHIVE_SHA" "$archive"
 fi
 for entry in "${RIFE[@]}"; do
   read -r sha name <<<"$entry"
-  7z e -y -bso0 -o"$DEST/rife" "$archive" "$name"
+  "$SEVENZ" e -y -bso0 -o"$DEST/rife" "$archive" "$name"
   check "$sha" "$DEST/rife/$name"
 done
 

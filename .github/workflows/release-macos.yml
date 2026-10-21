@@ -70,8 +70,13 @@ jobs:
           GH_TOKEN: ${{ secrets.AJP_RELEASE_TOKEN || github.token }}
           AJP_RELEASE_REPO: ${{ vars.AJP_RELEASE_REPO || github.repository }}
           TAG: ${{ github.ref_type == 'tag' && github.ref_name || inputs.tag }}
+        # La construction Windows de la même étiquette peut créer la release au même moment : un
+        # refus de création ne compte que si la release n'existe toujours pas.
         run: |
+          notes="tools/release/notes/$TAG.md"
+          [ -f "$notes" ] || notes=/dev/null
           gh release view "$TAG" -R "$AJP_RELEASE_REPO" >/dev/null 2>&1 \
-            || gh release create "$TAG" -R "$AJP_RELEASE_REPO" --prerelease --title "$TAG" --notes ""
+            || gh release create "$TAG" -R "$AJP_RELEASE_REPO" --prerelease --title "$TAG" --notes-file "$notes" \
+            || gh release view "$TAG" -R "$AJP_RELEASE_REPO" >/dev/null
           gh release upload "$TAG" -R "$AJP_RELEASE_REPO" "$RUNNER_TEMP/package/ajp-macos-arm64.zip" \
             "$RUNNER_TEMP/package/ajp-macos-arm64.zip.sha256" --clobber

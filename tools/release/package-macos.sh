@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Paquet macOS du lecteur : AJP.app (le lecteur, les backends Vulkan et Core ML, leurs
-# bibliothèques, ONNX Runtime et MoltenVK), signé ad hoc, dans ajp-macos-arm64.zip et sa somme SHA-256.
+# bibliothèques, ONNX Runtime, MoltenVK et les modèles), signé ad hoc, dans ajp-macos-arm64.zip
+# et sa somme SHA-256.
 #
 #   AJP_DEPS_PREFIX=<prefixe> tools/release/package-macos.sh [dossier-de-sortie]
 #
@@ -28,6 +29,12 @@ cp "$BUILD/src/gpu/vulkan/backend/ajp_backend_vulkan.so" "$APP/Contents/PlugIns/
 cp "$BUILD/src/gpu/coreml/ajp_backend_coreml.so" "$APP/Contents/PlugIns/"
 mkdir -p "$APP/Contents/Resources/licenses"
 cp "$AJP_DEPS_PREFIX/onnxruntime/LICENSE" "$APP/Contents/Resources/licenses/onnxruntime.txt"
+# Les modèles, comme sous Linux et Windows : le lecteur les cherche dans models/ à côté de
+# SDL_GetBasePath, Contents/Resources dans un paquet .app (sauf AJP_WITHOUT_MODELS).
+if [ -z "${AJP_WITHOUT_MODELS:-}" ]; then
+  command -v 7z >/dev/null || command -v 7zz >/dev/null || brew install --quiet sevenzip
+  "$ROOT/tools/release/fetch-models.sh" "$APP/Contents/Resources/models"
+fi
 
 # Le chargeur Vulkan et MoltenVK, ouverts à l'exécution : copiés à la main. Le chargeur lit les
 # pilotes de Contents/Resources/vulkan/icd.d du paquet.
