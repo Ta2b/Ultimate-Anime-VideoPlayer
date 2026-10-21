@@ -8,9 +8,12 @@
 #include <format>
 #include <fstream>
 #include <optional>
+#include <ranges>
 #include <span>
 #include <sstream>
+#include <string_view>
 #include <variant>
+#include <vector>
 
 #include "ajp_vk_backend_spirv.h"
 #include "gpu/ir/graph.h"
@@ -177,6 +180,20 @@ std::string tuning_text(const KernelChoice& c) {
   return out;
 }
 
+// L'inverse de tuning_text ; une valeur illisible : rien.
+std::optional<std::vector<std::uint32_t>> tuning_of(std::string_view text) {
+  std::vector<std::uint32_t> out;
+  if (text.empty()) return out;
+  for (const auto part : std::views::split(text, ',')) {
+    const std::string_view item(part.begin(), part.end());
+    std::uint32_t v = 0;
+    const auto [ptr, ec] = std::from_chars(item.data(), item.data() + item.size(), v);
+    if (ec != std::errc{} || ptr != item.data() + item.size()) return std::nullopt;
+    out.push_back(v);
+  }
+  return out;
+}
+
 }  // namespace
 
 float tuning_input(ir::DataType type, std::uint64_t index) {
@@ -220,20 +237,16 @@ std::uint64_t layer_signature(const ir::Graph& graph, std::size_t node) {
   return s.value();
 }
 
-std::span<const PresetTable> preset_tables() {
-  // Vides : à remplir depuis des mesures de référence, famille par famille.
-  static constexpr std::array<PresetTable, 0> kTables{};
-  return kTables;
-}
-
 Autotuner::Autotuner(VkContext& context, MemoryAllocator& memory, PipelineCache& pipelines,
-                     DeviceProfile profile, std::filesystem::path cache_file, TunerOptions options)
+                     DeviceProfile profile, std::filesystem::path cache_file, TunerOptions options,
+                     std::span<const PresetTable> presets)
     : context_(context),
       memory_(memory),
       pipelines_(pipelines),
       profile_(std::move(profile)),
       cache_file_(std::move(cache_file)),
       options_(options),
+      presets_(presets),
       period_ns_(timestamp_period(context)) {
   load_cache();
 }
@@ -248,19 +261,11 @@ void Autotuner::load_cache() {
     if (b == std::string::npos) continue;  // ligne abîmée : ignorée, elle se remesurera
     // Quatrième colonne, la version du pilote ; absente des caches plus anciens : revérifiée.
     const std::size_t c = line.find('\t', b + 1);
-    KernelChoice choice{.variant = line.substr(a + 1, b - a - 1)};
-    std::stringstream tunings(line.substr(b + 1, c == std::string::npos ? std::string::npos : c - b - 1));
-    std::string item;
-    bool valid = true;
-    while (std::getline(tunings, item, ',')) {
-      std::uint32_t v = 0;
-      const auto [ptr, ec] = std::from_chars(item.data(), item.data() + item.size(), v);
-      valid = valid && ec == std::errc{} && ptr == item.data() + item.size();
-      choice.tuning.push_back(v);
-    }
-    if (valid) {
-      cache_[line.substr(0, a)] = {.choice = std::move(choice),
-                                   .driver = c == std::string::npos ? std::string() : line.substr(c + 1)};
+    auto tuning = tuning_of(std::string_view(line).substr(b + 1, c == std::string::npos ? c : c - b - 1));
+    if (tuning) {
+      cache_[line.substr(0, a)] = {
+          .choice = {.variant = line.substr(a + 1, b - a - 1), .tuning = std::move(*tuning)},
+          .driver = c == std::string::npos ? std::string() : line.substr(c + 1)};
     }
   }
 }
@@ -298,11 +303,14 @@ std::expected<KernelChoice, Refusal> Autotuner::choose(const ir::Graph& graph, s
     }
     remembered = found->second.choice;
   }
-  for (const PresetTable& table : preset_tables()) {
+  for (const PresetTable& table : presets_) {
     if (remembered || table.family != profile_.family) continue;
     for (const PresetEntry& e : table.entries) {
-      KernelChoice c{.variant = std::string(e.variant), .tuning = {e.tuning0, e.tuning1}};
-      if (e.signature == signature && known(c)) {
+      if (e.signature != signature) continue;
+      auto tuning = tuning_of(e.tuning);
+      KernelChoice c{.variant = std::string(e.variant),
+                     .tuning = tuning ? std::move(*tuning) : std::vector<std::uint32_t>{}};
+      if (tuning && known(c)) {
         remembered = std::move(c);
         break;
       }

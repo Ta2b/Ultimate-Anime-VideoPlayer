@@ -38,13 +38,12 @@ namespace ajp::gpu::vk::net {
 // tenseurs, sans les valeurs des poids ni les noms.
 std::uint64_t layer_signature(const ir::Graph& graph, std::size_t node);
 
-// Réglages connus d'avance pour une famille. La structure est prête ; les tables sont vides
-// tant qu'aucune mesure de référence ne les remplit.
+// Réglages connus d'avance pour une famille, relevés dans le cache d'un PC de référence
+// (net_presets.cpp, tools/vk/presets_from_cache.py) : le choix d'une couche de même signature.
 struct PresetEntry {
   std::uint64_t signature = 0;
   std::string_view variant;
-  std::uint32_t tuning0 = 0;
-  std::uint32_t tuning1 = 0;
+  std::string_view tuning;  // comme au cache : « 64,2,1 »
 };
 struct PresetTable {
   GpuFamily family = GpuFamily::Unknown;
@@ -80,8 +79,10 @@ struct Measured {
 
 class Autotuner {
  public:
+  // presets : les tables pré-réglées (celles du lecteur hors tests).
   Autotuner(VkContext& context, MemoryAllocator& memory, PipelineCache& pipelines, DeviceProfile profile,
-            std::filesystem::path cache_file, TunerOptions options = {});
+            std::filesystem::path cache_file, TunerOptions options = {},
+            std::span<const PresetTable> presets = preset_tables());
 
   // Le meilleur choix du nœud parmi candidates (non vide). scope distingue le modèle et la
   // résolution. Refus : Cancelled (stop demandé), ceux de l'abaissement et de l'exécution.
@@ -123,6 +124,7 @@ class Autotuner {
   DeviceProfile profile_;
   std::filesystem::path cache_file_;
   TunerOptions options_;
+  std::span<const PresetTable> presets_;
   double period_ns_ = 0.0;  // 0 : pas de requêtes d'horodatage, mesure hôte
   struct Remembered {
     KernelChoice choice;

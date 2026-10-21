@@ -17,6 +17,7 @@ ajp_add_module(vk_backend
     net_alias.cpp
     net_artifact.cpp
     net_autotune.cpp
+    net_presets.cpp
     net_build.cpp
     net_engine.cpp
     net_lower.cpp

@@ -4,12 +4,14 @@
 #include "gpu/vulkan/backend/family.h"
 
 #include <algorithm>
+#include <array>
 #include <chrono>
 #include <cmath>
 #include <cstdint>
 #include <filesystem>
 #include <format>
 #include <set>
+#include <string>
 #include <vector>
 
 #include <catch2/catch_test_macros.hpp>
@@ -184,6 +186,49 @@ TEST_CASE("Autotuner : mesure, cache par appareil et relecture", "[vk_backend][a
   CHECK(std::ranges::find(options, require_value(narrow.choose(graph, 0, options, "test"))) != options.end());
   CHECK(narrow.pruned() >= 1);
   CHECK(narrow.pruned() + narrow.rejected() < options.size());
+}
+
+TEST_CASE("Autotuner : table pré-réglée de la famille", "[vk_backend][autotune]") {
+  NetRig rig = make_net_rig();
+  const DeviceProfile profile = profile_device(*rig.context);
+  ir::test::ModelBuilder m;
+  m.input("x", {1, 8, 16, 16});
+  m.weight("w", {16, 8, 3, 3}, std::vector<float>(16 * 8 * 9, 0.02F));
+  m.node("Conv", {"x", "w"}, {"y"}, {ir::test::attr_ints("pads", {1, 1, 1, 1})}).output("y");
+  ir::Graph graph = require_value(ir::load_onnx(m.bytes()));
+  require_ok(ir::infer_shapes(graph));
+  (void)require_value(ir::optimize(graph));
+  const auto options = require_value(net::candidates(graph, 0, profile.target));
+  REQUIRE(options.size() > 1);
+  // Le dernier candidat, souvent à trois ou quatre réglages : la table les porte tous.
+  const net::KernelChoice& preset = options.back();
+  INFO(preset.variant << " (" << preset.tuning.size() << " réglages)");
+  std::string tuning;
+  for (const std::uint32_t t : preset.tuning) tuning += std::format("{}{}", tuning.empty() ? "" : ",", t);
+  const std::uint64_t signature = net::layer_signature(graph, 0);
+  const net::TunerOptions quick{.warmup = 1, .passes = 2, .repeats = 1};
+  const auto tuner_with = [&](GpuFamily family, std::string_view text) {
+    const std::array<net::PresetEntry, 1> entries{{{signature, preset.variant, text}}};
+    const std::array<net::PresetTable, 1> tables{{{.family = family, .entries = entries}}};
+    net::Autotuner tuner(*rig.context, *rig.memory, *rig.pipelines, profile, {}, quick, tables);
+    const net::KernelChoice chosen = require_value(tuner.choose(graph, 0, options, "test"));
+    return std::pair{chosen, tuner.measured()};
+  };
+  // De la table : rien de mesuré, la sortie revérifiée contre le noyau direct.
+  {
+    const std::array<net::PresetEntry, 1> entries{{{signature, preset.variant, tuning}}};
+    const std::array<net::PresetTable, 1> tables{{{.family = profile.family, .entries = entries}}};
+    net::Autotuner tuner(*rig.context, *rig.memory, *rig.pipelines, profile, {}, quick, tables);
+    CHECK(require_value(tuner.choose(graph, 0, options, "test")) == preset);
+    CHECK(tuner.measured() == 0);
+    CHECK(tuner.reverified() == 1);
+    CHECK(tuner.cached() == 1);
+  }
+  // Une autre famille, des réglages qu'aucun candidat n'a, illisibles : mesuré.
+  const GpuFamily other = profile.family == GpuFamily::NvidiaAda ? GpuFamily::AmdRdna4 : GpuFamily::NvidiaAda;
+  CHECK(tuner_with(other, tuning).second == 1);
+  CHECK(tuner_with(profile.family, tuning + ",7").second == 1);
+  CHECK(tuner_with(profile.family, "x").second == 1);
 }
 
 TEST_CASE("Autotuner : motif d'entrée pseudo-aléatoire et périodique", "[vk_backend][autotune]") {
