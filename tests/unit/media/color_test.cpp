@@ -150,10 +150,31 @@ TEST_CASE("color : étiquettes reconnues", "[media][color]") {
   CHECK(color_info(*f, AV_PIX_FMT_YUV420P10LE)->primaries == Primaries::DciP3);
 }
 
+TEST_CASE("color : une matrice voisine de celles du vocabulaire la remplace", "[media][color]") {
+  FramePtr f = frame(1920, 1080);
+  const auto matrix = [&](AVColorSpace space) {
+    f->colorspace = space;
+    return color_info(*f, AV_PIX_FMT_YUV420P10LE)->matrix;
+  };
+  CHECK(matrix(AVCOL_SPC_BT2020_CL) == ColorMatrix::Bt2020Ncl);
+  CHECK(matrix(AVCOL_SPC_SMPTE240M) == ColorMatrix::Bt709);
+  CHECK(matrix(AVCOL_SPC_FCC) == ColorMatrix::Bt601);
+  f->color_primaries = AVCOL_PRI_BT2020;
+  CHECK(matrix(AVCOL_SPC_CHROMA_DERIVED_NCL) == ColorMatrix::Bt2020Ncl);
+  f->color_primaries = AVCOL_PRI_BT709;
+  CHECK(matrix(AVCOL_SPC_CHROMA_DERIVED_CL) == ColorMatrix::Bt709);
+  FramePtr sd = frame(720, 480);
+  sd->colorspace = AVCOL_SPC_CHROMA_DERIVED_NCL;
+  sd->color_primaries = AVCOL_PRI_SMPTE170M;
+  CHECK(color_info(*sd, AV_PIX_FMT_YUV420P)->matrix == ColorMatrix::Bt601);
+}
+
 TEST_CASE("color : ce que core/frame.h ne sait pas dire est refusé", "[media][color]") {
   FramePtr f = frame(1920, 1080);
-  f->colorspace = AVCOL_SPC_SMPTE240M;
-  CHECK(refusal_of(*f) == RefusalCode::FormatUnsupported);
+  for (const AVColorSpace space : {AVCOL_SPC_ICTCP, AVCOL_SPC_IPT_C2, AVCOL_SPC_YCGCO, AVCOL_SPC_SMPTE2085}) {
+    f->colorspace = space;
+    CHECK(refusal_of(*f) == RefusalCode::FormatUnsupported);
+  }
   f->colorspace = AVCOL_SPC_BT709;
   f->color_trc = AVCOL_TRC_LOG;
   CHECK(refusal_of(*f) == RefusalCode::FormatUnsupported);

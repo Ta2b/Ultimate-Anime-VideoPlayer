@@ -5,7 +5,9 @@
 // Comportement fixé par tests/unit/media/color_test.cpp.
 #include "media/color.h"
 
+#include <atomic>
 #include <cmath>
+#include <cstdint>
 #include <format>
 #include <string>
 
@@ -16,6 +18,7 @@ extern "C" {
 }
 
 #include "media/av_util.h"
+#include "media/log.h"
 
 namespace ajp::media {
 namespace {
@@ -34,7 +37,26 @@ bool is_subsampled(AVPixelFormat format) {
   return desc != nullptr && (desc->log2_chroma_w > 0 || desc->log2_chroma_h > 0);
 }
 
-std::expected<ColorMatrix, Refusal> map_matrix(AVColorSpace space, int width, int height) {
+// Une matrice voisine d'une du vocabulaire la remplace, avec un avertissement par matrice et par
+// processus (la couleur est lue à chaque image) : un léger écart de teinte vaut mieux qu'un
+// fichier refusé. Les autres (ICtCp et IPT de Dolby Vision, YCgCo) donneraient des couleurs
+// fausses : refusées.
+ColorMatrix stand_in(AVColorSpace space, ColorMatrix used) {
+  static std::atomic<std::uint64_t> warned{0};
+  const std::uint64_t bit = std::uint64_t{1} << (static_cast<unsigned>(space) & 63U);
+  if ((warned.fetch_or(bit) & bit) == 0) {
+    make_logger()->warn("matrice {} lue comme {} : couleurs approchées",
+                        name_or_number(av_color_space_name(space), static_cast<int>(space)),
+                        used == ColorMatrix::Bt2020Ncl ? "BT.2020 NCL"
+                        : used == ColorMatrix::Bt709   ? "BT.709"
+                                                       : "BT.601");
+  }
+  return used;
+}
+
+std::expected<ColorMatrix, Refusal> map_matrix(AVColorSpace space, AVColorPrimaries primaries, int width,
+                                               int height) {
+  const ColorMatrix guessed = width >= 1280 || height > 576 ? ColorMatrix::Bt709 : ColorMatrix::Bt601;
   switch (space) {
     case AVCOL_SPC_BT709:
       return ColorMatrix::Bt709;
@@ -46,7 +68,18 @@ std::expected<ColorMatrix, Refusal> map_matrix(AVColorSpace space, int width, in
     case AVCOL_SPC_RGB:
       return ColorMatrix::Rgb;
     case AVCOL_SPC_UNSPECIFIED:
-      return width >= 1280 || height > 576 ? ColorMatrix::Bt709 : ColorMatrix::Bt601;
+      return guessed;
+    case AVCOL_SPC_BT2020_CL:  // mêmes coefficients, appliqués à la lumière linéaire
+      return stand_in(space, ColorMatrix::Bt2020Ncl);
+    case AVCOL_SPC_SMPTE240M:  // Kr 0,212 et Kb 0,087 contre 0,2126 et 0,0722
+      return stand_in(space, ColorMatrix::Bt709);
+    case AVCOL_SPC_FCC:  // Kr 0,30 et Kb 0,11 contre 0,299 et 0,114
+      return stand_in(space, ColorMatrix::Bt601);
+    case AVCOL_SPC_CHROMA_DERIVED_NCL:  // dérivée des primaires : la matrice qui les accompagne
+    case AVCOL_SPC_CHROMA_DERIVED_CL:
+      return stand_in(space, primaries == AVCOL_PRI_BT2020  ? ColorMatrix::Bt2020Ncl
+                             : primaries == AVCOL_PRI_BT709 ? ColorMatrix::Bt709
+                                                            : guessed);
     default:
       return refuse(RefusalCode::FormatUnsupported,
                     "matrice " + name_or_number(av_color_space_name(space), static_cast<int>(space)));
@@ -168,7 +201,7 @@ std::expected<ColorInfo, Refusal> color_info(const AVFrame& frame, AVPixelFormat
   if (rgb) {
     color.matrix = ColorMatrix::Rgb;  // des pixels RGB n'ont pas de matrice YUV
   } else {
-    auto matrix = map_matrix(frame.colorspace, frame.width, frame.height);
+    auto matrix = map_matrix(frame.colorspace, frame.color_primaries, frame.width, frame.height);
     if (!matrix) return std::unexpected(matrix.error());
     color.matrix = *matrix;
   }

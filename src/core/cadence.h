@@ -79,7 +79,7 @@ class CadenceStep {
 // Repris de vf_animejanai.c (rife_acc, rife_num, rife_den) : voir cadence.cpp.
 class CadenceAccumulator {
  public:
-  // Refuse un facteur hors de 1 < num/den <= 8 ou des bornes de ses termes.
+  // Refuse un facteur hors de 1 < num/den <= kMaxInstantsPerPair ou des bornes de ses termes.
   static std::expected<CadenceAccumulator, Refusal> create(Ratio factor);
 
   Ratio factor() const { return {num_, den_}; }
