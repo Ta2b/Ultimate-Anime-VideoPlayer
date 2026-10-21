@@ -22,11 +22,29 @@
 #include "app/play/osd_text.h"
 #include "app/play/placebo_impl.h"
 #include "app/play/placebo_screen.h"
+#include "app/play/window_size.h"
 #include "core/clock.h"
 #include "core/log.h"
 
 namespace ajp::app::play {
 namespace {
+
+// La fenêtre en points de l'écran sous Windows et X11 aussi (window_size.h), centrée sur son
+// écran.
+void fit_display_scale(spdlog::logger& log, SDL_Window* window, int width, int height) {
+  const float density = SDL_GetWindowPixelDensity(window);
+  const float scale = SDL_GetWindowDisplayScale(window);
+  if (!(density > 0.0F) || !(scale > 0.0F)) return;
+  const SDL_DisplayID display = SDL_GetDisplayForWindow(window);
+  SDL_Rect usable{};
+  if (display == 0 || !SDL_GetDisplayUsableBounds(display, &usable)) usable = SDL_Rect{};
+  const WindowSize size = window_size_for(width, height, scale / density, usable.w, usable.h);
+  if (size.width == width && size.height == height) return;
+  if (!SDL_SetWindowSize(window, size.width, size.height)) return;
+  SDL_SetWindowPosition(window, static_cast<int>(SDL_WINDOWPOS_CENTERED_DISPLAY(display)),
+                        static_cast<int>(SDL_WINDOWPOS_CENTERED_DISPLAY(display)));
+  log.info("fenêtre {} × {} : échelle du bureau {:.0f} %", size.width, size.height, scale / density * 100.0F);
+}
 
 std::unexpected<Refusal> refuse(RefusalCode code, std::string detail) {
   return std::unexpected(Refusal{code, std::move(detail)});
@@ -231,6 +249,7 @@ std::expected<std::unique_ptr<PlaceboScreen>, Refusal> PlaceboScreen::open(const
     return refuse(RefusalCode::LibraryUnavailable, std::format("SDL_CreateWindow : {}", SDL_GetError()));
   }
   impl->fullscreen = options.fullscreen;
+  if (!options.fullscreen) fit_display_scale(*impl->channel, impl->window, options.width, options.height);
 
   pl_log_params log_params{};
   log_params.log_cb = placebo_log;

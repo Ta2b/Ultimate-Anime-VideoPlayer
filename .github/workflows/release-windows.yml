@@ -2,13 +2,18 @@ name: Release Windows
 
 # Lancé à la main (ou par une étiquette v*) : le lecteur universel et son backend Vulkan, les
 # moteurs OpenVINO (GPU Intel et NPU) et MIGraphX de Windows ML (AMD RDNA 3 et après, à l'essai),
-# sans TensorRT (son paquet se construit sur le PC de référence, où TensorRT est installé).
+# et TensorRT quand l'entrée tensorrt le demande : la CI télécharge alors le kit CUDA et TensorRT,
+# sous leurs licences NVIDIA, que le propriétaire du dépôt accepte en cochant l'entrée.
 on:
   workflow_dispatch:
     inputs:
       tag:
         description: "Étiquette de la release où joindre le paquet (vide : artefact seulement)"
         required: false
+      tensorrt:
+        description: "Construire TensorRT : j'accepte les licences du kit CUDA et de TensorRT de NVIDIA"
+        type: boolean
+        default: false
   push:
     tags: ["v*"]
 
@@ -62,6 +67,11 @@ jobs:
       - name: Windows ML
         shell: pwsh
         run: pwsh tools/deps/windows-winml.ps1 "$env:RUNNER_TEMP/winml"
+      # Seulement sur l'entrée tensorrt (licences NVIDIA acceptées par le propriétaire du dépôt).
+      - name: CUDA et TensorRT
+        if: inputs.tensorrt
+        shell: pwsh
+        run: pwsh tools/deps/windows-tensorrt.ps1 "$env:RUNNER_TEMP/nvidia"
       - name: Paquet
         shell: pwsh
         env:
@@ -73,6 +83,7 @@ jobs:
           $env:VCPKG_ROOT = $env:AJP_VCPKG
           $env:AJP_WITH_OPENVINO = "ON"
           $env:AJP_WITH_WINML = "ON"
+          if ("${{ inputs.tensorrt }}" -eq "true") { $env:AJP_WITH_CUDA = "ON" }
           $env:AJP_RELEASE_REPO = "${{ vars.AJP_RELEASE_REPO || github.repository }}"
           if ($env:TAG) { $env:AJP_RELEASE_TAG = $env:TAG }
           pwsh tools/release/package-windows.ps1 "$env:RUNNER_TEMP/package"

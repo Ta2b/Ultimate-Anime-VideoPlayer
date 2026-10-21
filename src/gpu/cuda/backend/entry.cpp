@@ -1,8 +1,14 @@
 // Points d'entrée de ajp_backend_tensorrt.so (gpu/backend.h). Aucune exception ne traverse la
 // frontière C : un échec devient nullptr et un refus dans init->refusal.
+#ifdef _WIN32
+#include <windows.h>
+#else
 #include <dlfcn.h>
+#endif
+
 #include <filesystem>
 #include <format>
+#include <string>
 #include <system_error>
 
 #include "core/thread.h"
@@ -11,12 +17,38 @@
 
 namespace {
 
+// Le fichier de cette bibliothèque ; vide s'il échappe.
+std::filesystem::path own_file() {
+#ifdef _WIN32
+  HMODULE self = nullptr;
+  if (GetModuleHandleExW(
+          GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
+          reinterpret_cast<LPCWSTR>(&own_file), &self) == 0)
+    return {};
+  std::wstring name(MAX_PATH, L'\0');
+  for (;;) {
+    const DWORD length = GetModuleFileNameW(self, name.data(), static_cast<DWORD>(name.size()));
+    if (length == 0) return {};
+    if (length < name.size()) return std::filesystem::path(name.substr(0, length));
+    name.resize(name.size() * 2);
+  }
+#else
+  Dl_info info{};
+  if (dladdr(reinterpret_cast<void*>(&own_file), &info) == 0 || info.dli_fname == nullptr) return {};
+  return info.dli_fname;
+#endif
+}
+
 // trtexec livré à côté de la bibliothèque ; à défaut, celui trouvé à la configuration
 // (AJP_TRTEXEC_PATH, poste de développement).
 std::filesystem::path trtexec_path() {
-  Dl_info info{};
-  if (dladdr(reinterpret_cast<void*>(&ajp_backend_abi), &info) != 0 && info.dli_fname != nullptr) {
-    const auto beside = std::filesystem::path(info.dli_fname).parent_path() / "trtexec";
+#ifdef _WIN32
+  constexpr const char* kTrtexec = "trtexec.exe";
+#else
+  constexpr const char* kTrtexec = "trtexec";
+#endif
+  if (const std::filesystem::path self = own_file(); !self.empty()) {
+    const auto beside = self.parent_path() / kTrtexec;
     std::error_code error;
     if (std::filesystem::is_regular_file(beside, error)) return beside;
   }

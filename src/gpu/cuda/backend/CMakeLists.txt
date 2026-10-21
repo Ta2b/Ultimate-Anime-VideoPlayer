@@ -7,9 +7,11 @@ target_include_directories(ajp_backend_tensorrt_kernels PRIVATE "${PROJECT_SOURC
 target_link_libraries(ajp_backend_tensorrt_kernels PRIVATE ajp::dep::cudart)
 # -lineinfo pour ncu ; ptxas donne les registres de chaque noyau au journal de build, et un
 # débordement de registres en mémoire locale est une erreur (pixel_kernels.cuh).
+# Les avertissements du compilateur hôte : GCC et Clang sous Linux, MSVC sous Windows.
 target_compile_options(ajp_backend_tensorrt_kernels PRIVATE
-  $<$<COMPILE_LANGUAGE:CUDA>:-Werror=all-warnings -Xcompiler=-Wall,-Wextra -lineinfo
-  --ptxas-options=--verbose,--warn-on-spills>)
+  $<$<COMPILE_LANGUAGE:CUDA>:-Werror=all-warnings -lineinfo --ptxas-options=--verbose,--warn-on-spills>
+  $<$<AND:$<COMPILE_LANGUAGE:CUDA>,$<NOT:$<PLATFORM_ID:Windows>>>:-Xcompiler=-Wall,-Wextra>
+  $<$<AND:$<COMPILE_LANGUAGE:CUDA>,$<PLATFORM_ID:Windows>>:-Xcompiler=/W3>)
 set_target_properties(ajp_backend_tensorrt_kernels PROPERTIES POSITION_INDEPENDENT_CODE ON)
 
 add_library(ajp_backend_tensorrt MODULE
@@ -22,7 +24,9 @@ target_link_libraries(ajp_backend_tensorrt PRIVATE
 target_compile_definitions(ajp_backend_tensorrt PRIVATE AJP_TRTEXEC_PATH="${AJP_TRTEXEC}")
 set_target_properties(ajp_backend_tensorrt PROPERTIES
   PREFIX "" CXX_VISIBILITY_PRESET hidden VISIBILITY_INLINES_HIDDEN ON)
-target_link_options(ajp_backend_tensorrt PRIVATE LINKER:--exclude-libs,ALL LINKER:--no-undefined)
+if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+  target_link_options(ajp_backend_tensorrt PRIVATE LINKER:--exclude-libs,ALL LINKER:--no-undefined)
+endif()
 ajp_set_warnings(ajp_backend_tensorrt)
 
 # Les bibliothèques statiques liées dans un objet partagé doivent être compilées en PIC. prepare

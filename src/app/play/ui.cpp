@@ -1,12 +1,14 @@
 #include "app/play/ui.h"
 
 #include <algorithm>
+#include <array>
 #include <cctype>
 #include <cfloat>
 #include <cmath>
 #include <cstdint>
 #include <filesystem>
 #include <fstream>
+#include <initializer_list>
 #include <optional>
 #include <string>
 #include <system_error>
@@ -19,6 +21,9 @@
 #include <imgui.h>
 #if AJP_WITH_FONTCONFIG
 #include <fontconfig/fontconfig.h>
+#endif
+#ifdef _WIN32
+#include <windows.h>
 #endif
 
 #include "app/play/placebo_imgui.h"
@@ -65,8 +70,7 @@ std::optional<FontFile> system_font(const char* pattern) {
 }
 
 // Le fichier entier dans font.data ; false s'il ne se lit pas.
-bool read_font(FontFile& font) {
-  const std::filesystem::path path(font.path);
+bool read_font(const std::filesystem::path& path, FontFile& font) {
   std::error_code error;
   const std::uintmax_t size = std::filesystem::file_size(path, error);
   if (error || size == 0 || size > static_cast<std::uintmax_t>(kMaxFontBytes)) return false;
@@ -75,17 +79,60 @@ bool read_font(FontFile& font) {
   return file && file.read(reinterpret_cast<char*>(font.data.data()), static_cast<std::streamsize>(size));
 }
 
+#ifdef _WIN32
+// Le dossier des polices de Windows (%WINDIR%\Fonts).
+std::filesystem::path windows_fonts() {
+  std::array<wchar_t, MAX_PATH> dir{};
+  const UINT length = GetWindowsDirectoryW(dir.data(), static_cast<UINT>(dir.size()));
+  const std::filesystem::path root = length > 0 && length < dir.size()
+                                         ? std::filesystem::path(dir.data())
+                                         : std::filesystem::path(L"C:\\Windows");
+  return root / L"Fonts";
+}
+
+// La première de ces polices du dossier de Windows qui se lit (index : celle de la collection).
+std::optional<FontFile> first_font(const std::filesystem::path& dir,
+                                   std::initializer_list<std::pair<const wchar_t*, int>> files) {
+  for (const auto& [name, index] : files) {
+    const std::filesystem::path path = dir / name;
+    const std::u8string utf8 = path.u8string();
+    FontFile font{.path = std::string(utf8.begin(), utf8.end()), .index = index};
+    if (read_font(path, font)) return font;
+  }
+  return std::nullopt;
+}
+
+// Sans fontconfig, les polices que Windows 10 et 11 installent toujours : Segoe UI (latin
+// accentué, grec, cyrillique), Yu Gothic pour le japonais des titres de pistes (Meiryo ou MS
+// Gothic, polices supplémentaires, à défaut), Segoe UI Symbol pour les symboles qui manquent aux
+// deux (▶, filets).
+std::vector<FontFile> search_fonts() {
+  std::vector<FontFile> fonts;
+  const std::filesystem::path dir = windows_fonts();
+  std::optional<FontFile> main = first_font(dir, {{L"segoeui.ttf", 0}, {L"arial.ttf", 0}});
+  if (!main) return fonts;
+  fonts.push_back(std::move(*main));
+  if (std::optional<FontFile> japanese = first_font(
+          dir, {{L"YuGothM.ttc", 0}, {L"YuGothR.ttc", 0}, {L"meiryo.ttc", 0}, {L"msgothic.ttc", 0}}))
+    fonts.push_back(std::move(*japanese));
+  if (std::optional<FontFile> symbols = first_font(dir, {{L"seguisym.ttf", 0}}))
+    fonts.push_back(std::move(*symbols));
+  return fonts;
+}
+#else
 // Police du bureau (sans-serif), complétée par une police japonaise pour les titres de pistes.
 std::vector<FontFile> search_fonts() {
   std::vector<FontFile> fonts;
   std::optional<FontFile> main = system_font("sans-serif");
-  if (!main || !read_font(*main)) return fonts;
+  if (!main || !read_font(std::filesystem::path(main->path), *main)) return fonts;
   fonts.push_back(std::move(*main));
   std::optional<FontFile> japanese = system_font("sans-serif:lang=ja");
-  if (japanese && japanese->path != fonts.front().path && read_font(*japanese))
+  if (japanese && japanese->path != fonts.front().path &&
+      read_font(std::filesystem::path(japanese->path), *japanese))
     fonts.push_back(std::move(*japanese));
   return fonts;
 }
+#endif
 
 bool add_font(ImFontAtlas& fonts, FontFile& file, bool merge) {
   ImFontConfig config;

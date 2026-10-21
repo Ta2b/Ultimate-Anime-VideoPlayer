@@ -118,8 +118,10 @@ add_library(ajp::dep::nanobench ALIAS ajp_dep_nanobench)
 if(AJP_WITH_CUDA)
   set(AJP_TENSORRT_ROOT "" CACHE PATH "Racine de TensorRT 11 : include/, lib/ et bin/trtexec")
   find_path(AJP_TENSORRT_INCLUDE_DIR NvInfer.h HINTS "${AJP_TENSORRT_ROOT}/include" REQUIRED)
-  find_library(AJP_NVINFER_LIBRARY nvinfer HINTS "${AJP_TENSORRT_ROOT}/lib" REQUIRED)
-  find_library(AJP_NVONNXPARSER_LIBRARY nvonnxparser HINTS "${AJP_TENSORRT_ROOT}/lib" REQUIRED)
+  # Sous Windows, les bibliothèques d'import portent la version (nvinfer_11.lib).
+  find_library(AJP_NVINFER_LIBRARY NAMES nvinfer nvinfer_11 HINTS "${AJP_TENSORRT_ROOT}/lib" REQUIRED)
+  find_library(AJP_NVONNXPARSER_LIBRARY NAMES nvonnxparser nvonnxparser_11 HINTS "${AJP_TENSORRT_ROOT}/lib"
+               REQUIRED)
   find_program(AJP_TRTEXEC trtexec HINTS "${AJP_TENSORRT_ROOT}/bin")
 
   add_library(ajp_dep_tensorrt INTERFACE)

@@ -40,6 +40,7 @@ $Extra = @()
 if ($env:AJP_VCPKG_BUILDTREES) { $Extra += "-DVCPKG_INSTALL_OPTIONS=--x-buildtrees-root=$env:AJP_VCPKG_BUILDTREES" }
 # Triplet sans Debug (x64-windows-release) : la moitié des ports à compiler sur la CI.
 if ($WinMl -eq "ON") { $Extra += "-DAJP_WINML_ROOT=$env:AJP_WINML_ROOT" }
+if ($Cuda -eq "ON" -and $env:AJP_TENSORRT_ROOT) { $Extra += "-DAJP_TENSORRT_ROOT=$env:AJP_TENSORRT_ROOT" }
 if ($env:AJP_VCPKG_TRIPLET) {
   $Extra += "-DVCPKG_TARGET_TRIPLET=$env:AJP_VCPKG_TRIPLET", "-DVCPKG_HOST_TRIPLET=$env:AJP_VCPKG_TRIPLET"
 }
@@ -94,7 +95,10 @@ if (Test-Path $TrtModule) {
   }
   Copy-Item "$trtRoot/bin/trtexec.exe" $dir -ErrorAction SilentlyContinue
   # Le runtime CUDA lié au backend (cudart64_*.dll), du kit CUDA.
-  if ($env:CUDA_PATH) { Copy-Item "$env:CUDA_PATH/bin/cudart64_*.dll" $dir -ErrorAction SilentlyContinue }
+  if ($env:CUDA_PATH) {
+    Copy-Item "$env:CUDA_PATH/bin/cudart64_*.dll" $dir -ErrorAction SilentlyContinue
+    Copy-Item "$env:CUDA_PATH/bin/x64/cudart64_*.dll" $dir -ErrorAction SilentlyContinue
+  }
   $nvinfer = Get-ChildItem "$dir/nvinfer_*.dll" | Where-Object { $_.Name -match '^nvinfer_(\d+)\.dll$' } | Select-Object -First 1
   $trtVersion = if ($nvinfer) { $Matches[1] } else { $Version }
   Add-Engine "tensorrt" $trtVersion "https://docs.nvidia.com/deeplearning/tensorrt/latest/reference/sla.html" $dir
