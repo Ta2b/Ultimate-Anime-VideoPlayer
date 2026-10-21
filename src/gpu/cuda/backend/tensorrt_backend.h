@@ -118,6 +118,8 @@ class TensorRtBackend final : public Backend, public KernelOps {
                                                   const Tensor& low_a, const Tensor& low_b,
                                                   const Tensor& fusion, const kernels::Window& window,
                                                   float t, const RingTarget& ring) override;
+  // Export par puits CUDA (tensorrt_export.cpp) : RGB → NV12 ou P010 dans l'image de l'encodeur.
+  std::expected<void, Refusal> write_yuv(const Tensor& rgb, const YuvTarget& target) override;
 
  private:
   // Une image décodée tenue jusqu'à la fin de son ingestion côté GPU : FFmpeg la réécrit dès
@@ -287,6 +289,23 @@ class TensorRtBackend final : public Backend, public KernelOps {
   // Lignes filtrées de l'ingestion à filtre étiré (slice_kernels.h, IngestParams::rows).
   float* ingest_rows_ = nullptr;
   std::size_t ingest_rows_size_ = 0;
+  // write_yuv : les tables de la réduction de chroma pour une taille et un siting, en mémoire
+  // d'appareil, et les lignes réduites en largeur (export_kernels.h) ; refaites au changement.
+  struct YuvTables {
+    int width = 0;
+    int height = 0;
+    kernels::Siting siting = kernels::Siting::Left;
+    int* x_start = nullptr;
+    float* x_weights = nullptr;
+    int x_taps = 0;
+    int* y_start = nullptr;
+    float* y_weights = nullptr;
+    int y_taps = 0;
+    void* rows = nullptr;
+  };
+  YuvTables yuv_;
+  std::expected<void, Refusal> yuv_tables(int width, int height, kernels::Siting siting);
+  void release_yuv_tables();
   // Objets texture par adresse et forme (texture()) ; au-delà de kTextures, tous détruits et
   // recréés à la demande (changements de taille répétés).
   struct TextureKey {

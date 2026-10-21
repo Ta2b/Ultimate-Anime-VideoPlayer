@@ -149,6 +149,40 @@ constexpr std::uint16_t quantize(float raw, Format f) {
   return static_cast<std::uint16_t>(code * q.qdiv);
 }
 
+// Tramage de la sortie quantifiée. None : quantize, l'arrondi au plus proche. Bayer8 : un seuil
+// ordonné 8 × 8 par position (quantize_dithered), pour l'export (le tramage que libplacebo y
+// appliquait) : les dégradés lents ne font pas de marches visibles en 8 bits.
+enum class Dither : std::uint8_t { None, Bayer8 };
+
+// Matrice de Bayer d'ordre 8 à la position (x, y) : 16 m(x₀, y₀) + 4 m(x₁, y₁) + m(x₂, y₂), où
+// x_k et y_k sont les bits de x et y modulo 8 et m(a, b) = 2 (a ⊕ b) + b (matrice d'ordre 2
+// [[0, 2], [3, 1]]). Chaque valeur de 0 à 63 une fois par bloc 8 × 8 ; première ligne 0 32 8 40 2
+// 34 10 42.
+constexpr int bayer8(int x, int y) {
+  const auto m = [](int a, int b) { return 2 * (a ^ b) + b; };
+  return 16 * m(x & 1, y & 1) + 4 * m((x >> 1) & 1, (y >> 1) & 1) + m((x >> 2) & 1, (y >> 2) & 1);
+}
+
+// Seuil de la position : (bayer8 + 1/2) / 64, dans ]0, 1[, de moyenne 1/2 sur un bloc.
+constexpr float bayer8_threshold(int x, int y) {
+  return (static_cast<float>(bayer8(x, y)) + 0.5F) / 64.0F;
+}
+
+// Quantification tramée : v = raw / qdiv + seuil ; code = qmax si v ≥ qmax, ⌊v⌋ si v > 0, 0 sinon
+// (NaN compris), puis × qdiv. Un seuil de 1/2 arrondit au plus proche, égalités vers le haut ; la
+// moyenne des codes d'un aplat sur un bloc 8 × 8 vaut raw / qdiv à 1/64 près.
+constexpr std::uint16_t quantize_dithered(float raw, Format f, float threshold) {
+  const Quantizer q = quantizer(f);
+  const float v = raw / q.qdiv + threshold;
+  float code = 0.0F;
+  if (v >= q.qmax) {
+    code = q.qmax;
+  } else if (v > 0.0F) {
+    code = static_cast<float>(static_cast<std::int64_t>(v));
+  }
+  return static_cast<std::uint16_t>(code * q.qdiv);
+}
+
 // Pixel normalisé : Y dans [0, 1], Cb et Cr dans [−1/2, 1/2] pour un pixel dans le gamut.
 struct Yuv {
   float y = 0.0F;
@@ -192,6 +226,16 @@ constexpr std::uint16_t encode_luma(float y, Format f, const YuvScale& s) {
 
 constexpr std::uint16_t encode_chroma(float c, Format f, const YuvScale& s) {
   return quantize(c * s.cscale + s.coff, f);
+}
+
+// Les mêmes, tramées au seuil de leur position (bayer8_threshold) : la luma à celle du pixel, Cb
+// et Cr à celle de l'échantillon de chroma, le même seuil pour les deux.
+constexpr std::uint16_t encode_luma_dithered(float y, Format f, const YuvScale& s, float threshold) {
+  return quantize_dithered(y * s.yscale + s.yoff, f, threshold);
+}
+
+constexpr std::uint16_t encode_chroma_dithered(float c, Format f, const YuvScale& s, float threshold) {
+  return quantize_dithered(c * s.cscale + s.coff, f, threshold);
 }
 
 // Sortie RGBA16 UNORM du ring : code = tronque(clamp(v, 0, 1) × 65535 + 0,5), alpha = 65535.

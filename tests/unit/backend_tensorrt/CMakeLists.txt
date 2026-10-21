@@ -3,7 +3,7 @@
 # copié dans le dépôt) ; absent, le test qui l'exécute se SKIP.
 set(AJP_SPAN_MODEL "$ENV{HOME}/.local/share/AnimeJaNai-HDR-linux/animejanai/onnx/2x_AnimeJaNai_HD_V3.1Sharp1_Performance_SPANF3_b5f48_unshuffle_fp16.onnx"
     CACHE FILEPATH "Modèle SPAN ×2 d'AnimeJaNai pour le test du backend TensorRT")
-add_executable(ajp_backend_tensorrt_tests backend_motion_test.cpp backend_test.cpp gmfss_test.cpp)
+add_executable(ajp_backend_tensorrt_tests backend_motion_test.cpp backend_test.cpp export_test.cpp gmfss_test.cpp)
 target_link_libraries(ajp_backend_tensorrt_tests PRIVATE
   ajp::gpu ajp::kernels ajp::prepare ajp::dep::cudart ${CMAKE_DL_LIBS} Catch2::Catch2WithMain)
 target_compile_definitions(ajp_backend_tensorrt_tests PRIVATE

@@ -14,6 +14,7 @@
 // lit entre begin_vulkan_access et end_vulkan_access (core/frame.h).
 #pragma once
 
+#include <atomic>
 #include <cstddef>
 #include <cstdint>
 #include <expected>
@@ -70,6 +71,28 @@ struct RingWrite {
 struct RingTarget {
   const RingSlotDesc* slot = nullptr;
   RingWrite sync;
+};
+
+// Une image YUV 4:2:0 à chroma entrelacée en mémoire d'appareil du backend : une image du pool de
+// l'encodeur que write_yuv remplit (export par puits CUDA). La luma fait width × height
+// échantillons, la chroma (width / 2) × (height / 2) paires CbCr ; adresses et pas en octets.
+struct YuvTarget {
+  std::uintptr_t luma = 0;
+  std::uintptr_t chroma = 0;
+  std::size_t luma_pitch = 0;
+  std::size_t chroma_pitch = 0;
+  int width = 0;  // paires
+  int height = 0;
+  kernels::Format format = kernels::Format::P010;  // Nv12 ou P010
+  kernels::Matrix matrix = kernels::Matrix::Bt709;
+  kernels::Range range = kernels::Range::Limited;
+  kernels::Siting siting = kernels::kOutputSiting;  // celui que le flux encodé déclare
+  kernels::Dither dither = kernels::Dither::Bayer8;
+  // L'image finie côté GPU : le backend range done_value dans *done (release) depuis un rappel
+  // hôte du flux, après les noyaux ; l'appelant le lit sans bloquer avant de confier l'image.
+  // Les valeurs d'un même done croissent ; *done doit vivre jusqu'au rappel.
+  std::atomic<std::uint64_t>* done = nullptr;
+  std::uint64_t done_value = 0;
 };
 
 // Mesures d'une paire de sources (kernels/spec/detect.h), lues sur la luma non remplie.
@@ -266,6 +289,12 @@ class KernelOps {
                                                           const RingTarget& /*target*/) {
     return std::unexpected(
         Refusal{RefusalCode::FormatUnsupported, "gmfss_compose_ring : absent de ce backend"});
+  }
+  // Le tenseur RGB, de la taille de la cible, en YUV dans la cible (ref rgb_to_yuv avec le tramage
+  // et le siting de target) ; les codes à kernels::tolerance::kCode de la référence. Puis *done
+  // reçoit done_value. BackendCaps::yuv_targets dit que le backend l'a ; sinon, refusé.
+  virtual std::expected<void, Refusal> write_yuv(const Tensor& /*rgb*/, const YuvTarget& /*target*/) {
+    return std::unexpected(Refusal{RefusalCode::FormatUnsupported, "write_yuv : absent de ce backend"});
   }
   // Chaque élément du tenseur prend value : l'instant t du graphe « fusion » de GMFSS Union.
   virtual std::expected<void, Refusal> fill(const Tensor& /*tensor*/, float /*value*/) {

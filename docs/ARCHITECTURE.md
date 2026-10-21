@@ -127,11 +127,14 @@ soumission. `DeviceUuid` n'a qu'une définition, partagée par `media` et `gpu`.
 `media::HwDeviceSource`) : l'écran le crée avec les extensions et les files Vulkan
 Video, et FFmpeg y décode et y encode. Le décodeur Vulkan Video rend alors des
 images que le backend Vulkan lit en place (`VulkanImageAccess`), sans copie hôte ;
-VA-API et les autres API sans partage restent copiées. À l'export, trois chemins
-évitent la relecture hôte quand ils le peuvent : NVENC lit des tampons Vulkan
-exportés vers CUDA (`media::CudaDriver::import_memory`), l'encodeur Vulkan Video
-reçoit ses propres images rendues dans leurs plans (`placebo_export_vulkan.cpp`),
-et tout autre encodeur lit ou charge des tampons hôte.
+VA-API et les autres API sans partage restent copiées. À l'export, quatre chemins
+évitent la relecture hôte quand ils le peuvent. Sous TensorRT, quand NVENC encode
+à la taille de la chaîne, l'étage gpu écrit chaque image en P010 ou NV12 tramé
+directement dans une image du pool de l'encodeur (`KernelOps::write_yuv`,
+`app/play/export_sink.h`) : ni ring, ni libplacebo, ni copie. Sinon NVENC lit des
+tampons Vulkan exportés vers CUDA (`media::CudaDriver::import_memory`), l'encodeur
+Vulkan Video reçoit ses propres images rendues dans leurs plans
+(`placebo_export_vulkan.cpp`), et tout autre encodeur lit ou charge des tampons hôte.
 
 ### Backends (`gpu/backend.h`, ABI 3)
 

@@ -28,10 +28,10 @@ Result<void> check_yuv(const YuvImage& image);
 // Ingestion : YUV → RGB planaire float, nominalement [0, 1] et jamais borné.
 Result<RgbImage> yuv_to_rgb(const YuvImage& in, const ColorSpec& color, Filter chroma = kChainChromaFilter);
 
-// Sortie : RGB planaire float → YUV quantifié du format, sans tramage. La chaîne passe
-// kOutputSiting ; RIFE passe kRifeSiting.
+// Sortie : RGB planaire float → YUV quantifié du format, sans tramage par défaut. La chaîne passe
+// kOutputSiting ; RIFE passe kRifeSiting ; l'export par puits CUDA, Bayer8 et le siting de son flux.
 Result<YuvImage> rgb_to_yuv(const RgbImage& in, Format format, const ColorSpec& color,
-                            Filter chroma = kChainChromaFilter);
+                            Filter chroma = kChainChromaFilter, Dither dither = Dither::None);
 
 // Sortie du ring : RGBA16 UNORM entrelacé, alpha opaque (unorm16).
 Result<std::vector<std::uint16_t>> to_rgba16(const RgbImage& in);

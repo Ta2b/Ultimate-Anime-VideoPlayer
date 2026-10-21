@@ -15,9 +15,14 @@
 #include <SDL3/SDL_keycode.h>
 #include <SDL3/SDL_timer.h>
 
+extern "C" {
+#include <libavutil/frame.h>
+}
+
 #include "app/play/chain_setup.h"
 #include "app/play/controls.h"
 #include "app/play/export_depth.h"
+#include "app/play/export_sink.h"
 #include "app/play/first_run.h"
 #include "app/play/live_settings.h"
 #include "app/play/pipeline.h"
@@ -88,8 +93,8 @@ ExportOutcome run_export(Player& p, const ExportJob& job) {
   if (!*prepared) return {.end = ExportEnd::Quit};
   ChainEngines& c = **prepared;
   const media::TrackInfo& video = p.video;
-  const ExportSize size = export_size({.width = c.work.width * c.factor, .height = c.work.height * c.factor},
-                                      {.width = video.width, .height = video.height}, job.height);
+  const ExportSize chain_size{.width = c.work.width * c.factor, .height = c.work.height * c.factor};
+  const ExportSize size = export_size(chain_size, {.width = video.width, .height = video.height}, job.height);
   const Factor factor = c.interpolates() ? factor_of(settings) : Factor{};
   media::Rational rate = export_rate(video.frame_rate, factor);
   if (rate.num <= 0) rate = export_rate({.num = 24'000, .den = 1'001}, factor);  // fréquence inconnue
@@ -118,14 +123,31 @@ ExportOutcome run_export(Player& p, const ExportJob& job) {
                              .caller_frames = depth.buffers,
                              .constant_rate = job.constant_rate});
   if (!writer) return stopped(writer.error());
-  auto opened = FrameExport::open(p.screen, FrameExportSetup{.width = size.width,
-                                                             .height = size.height,
-                                                             .layout = (*writer)->layout(),
-                                                             .color = (*writer)->color(),
-                                                             .cuda_frames = (*writer)->cuda_frames(),
-                                                             .buffers = depth.buffers});
-  if (!opened) return stopped(opened.error());
-  frames = std::move(*opened);
+  // Sous TensorRT avec NVENC à la taille de la chaîne, l'étage gpu écrit les images de l'encodeur
+  // lui-même (export_sink.h) ; sinon le ring, rendu par libplacebo (placebo_export.h).
+  std::shared_ptr<ExportSink> sink;
+  const bool yuv_targets = c.backend->capabilities().yuv_targets;
+  if (const auto blocker = sink_blocker(yuv_targets, (*writer)->cuda_frames() != nullptr, (*writer)->layout(),
+                                        (*writer)->color().matrix, size, chain_size)) {
+    if (yuv_targets) log->info("export : rendu par libplacebo, {}", *blocker);
+  } else if (auto made =
+                 ExportSink::open(sink_setup(pool_frames((*writer)->cuda_frames()), size, (*writer)->layout(),
+                                             (*writer)->color(), depth.ring_slots))) {
+    sink = std::move(*made);
+    log->info("export : images écrites en YUV dans celles de l'encodeur, sans ring ni libplacebo");
+  } else {
+    log->warn("export : puits CUDA refusé ({}), rendu par libplacebo", made.error().detail);
+  }
+  if (!sink) {
+    auto opened = FrameExport::open(p.screen, FrameExportSetup{.width = size.width,
+                                                               .height = size.height,
+                                                               .layout = (*writer)->layout(),
+                                                               .color = (*writer)->color(),
+                                                               .cuda_frames = (*writer)->cuda_frames(),
+                                                               .buffers = depth.buffers});
+    if (!opened) return stopped(opened.error());
+    frames = std::move(*opened);
+  }
 
   auto live = std::make_shared<LiveSettings>();
   live->set_rife_factor(factor);
@@ -141,11 +163,24 @@ ExportOutcome run_export(Player& p, const ExportJob& job) {
         const int width = stage.track->width;
         const int height = stage.track->height;
         const WorkSize sized = work_size(width, height, settings.work_height);
-        auto slots = p.screen.create_ring(sized.width * c.factor, sized.height * c.factor, depth.ring_slots);
-        if (!slots) return std::unexpected(std::move(slots.error()));
+        const ExportSize output{.width = sized.width * c.factor, .height = sized.height * c.factor};
+        std::vector<RingSlotDesc> slots;
+        if (sink) {
+          if (output != size) {
+            return std::unexpected(Refusal{RefusalCode::ShapeInvalid,
+                                           std::format("export : sortie {}x{} au lieu de {}x{}", output.width,
+                                                       output.height, size.width, size.height)});
+          }
+          slots = sink->slots();
+        } else {
+          auto ring = p.screen.create_ring(output.width, output.height, depth.ring_slots);
+          if (!ring) return std::unexpected(std::move(ring.error()));
+          slots = std::move(*ring);
+        }
         // Sans horloge : aucune paire sautée pour retard, chaque image intermédiaire est faite.
-        return UpscaleStage::start(std::move(stage),
-                                   c.upscale(settings, live, nullptr, width, height, std::move(*slots)));
+        UpscaleSetup setup = c.upscale(settings, live, nullptr, width, height, std::move(slots));
+        setup.yuv_slots = sink;
+        return UpscaleStage::start(std::move(stage), std::move(setup));
       });
   if (!pipeline) return stopped(pipeline.error());
 
@@ -157,8 +192,9 @@ ExportOutcome run_export(Player& p, const ExportJob& job) {
   log->info("export : profil {} : {} slots, {} tampons de conversion, file d'écriture de {}",
             depth.throughput ? "débit" : "mémoire", depth.ring_slots, depth.buffers, depth.queue);
 
-  std::deque<RingFrame> waiting;  // reçues du thread gpu, pas encore converties
-  bool ended = false;             // StreamEnded vu
+  std::deque<RingFrame> waiting;          // reçues du thread gpu, pas encore converties
+  std::optional<exporter::Picture> held;  // puits : prise au slot, refusée par la file pleine
+  bool ended = false;                     // StreamEnded vu
   std::optional<Refusal> failure;
   std::optional<ExportEnd> interrupted;
   std::int64_t converted = 0;
@@ -177,7 +213,7 @@ ExportOutcome run_export(Player& p, const ExportJob& job) {
       break;
     }
     bool moved = false;
-    while (true) {
+    while (frames) {
       auto delivered = frames->deliver(push);
       if (!delivered) {
         failure = std::move(delivered.error());
@@ -203,7 +239,27 @@ ExportOutcome run_export(Player& p, const ExportJob& job) {
                  *message);
     }
     if (failure) break;
-    while (!waiting.empty() && frames->has_room()) {
+    // Puits : chaque image finie part à l'écriture dans l'ordre, son slot repart avec une image neuve.
+    while (sink) {
+      if (!held) {
+        if (waiting.empty() || !sink->ready(waiting.front())) break;
+        const RingFrame frame = waiting.front();
+        auto taken = sink->take(frame.slot);
+        if (!taken) {
+          failure = std::move(taken.error());
+          break;
+        }
+        waiting.pop_front();
+        static_cast<void>((*pipeline)->stages().slot_free(release_of(frame)));
+        held = exporter::Picture{.pts_us = frame.pts_us, .frame = *taken};
+        last_pts = frame.pts_us;
+        ++converted;
+        moved = true;
+      }
+      if (!(*writer)->try_push(std::move(*held))) break;  // refusée : l'image reste à held
+      held.reset();
+    }
+    while (frames && !waiting.empty() && frames->has_room()) {
       const RingFrame frame = waiting.front();
       waiting.pop_front();
       FrameExport::Converted done = frames->convert(frame);
@@ -217,7 +273,7 @@ ExportOutcome run_export(Player& p, const ExportJob& job) {
       moved = true;
     }
     if (failure) break;
-    if (drained && waiting.empty() && frames->idle()) break;
+    if (drained && waiting.empty() && (frames ? frames->idle() : !held)) break;
 
     const std::int64_t now = host_now_us();
     if (now - shown_at >= kProgressEveryUs) {
@@ -256,12 +312,14 @@ ExportOutcome run_export(Player& p, const ExportJob& job) {
   // Ordre d'arrêt : les slots rendus, les threads arrêtés, l'écriture (abandonnée si elle n'est pas
   // finie : le fichier partiel est supprimé), la conversion, puis les moteurs avant leur backend.
   for (const RingFrame& frame : waiting)
-    static_cast<void>((*pipeline)->stages().slot_free(p.screen.retire(frame)));
+    static_cast<void>((*pipeline)->stages().slot_free(sink ? release_of(frame) : p.screen.retire(frame)));
   waiting.clear();
+  if (held) av_frame_free(&held->frame);
   (*pipeline)->stages().quit();
   pipeline->reset();
   writer->reset();
   frames.reset();
+  sink.reset();  // attend les écritures YUV en vol : le backend vit encore
   prepared->reset();
 
   if (interrupted == ExportEnd::Quit) return {.end = ExportEnd::Quit};

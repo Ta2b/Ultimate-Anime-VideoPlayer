@@ -34,6 +34,10 @@ inline constexpr std::size_t kWriterHeldBeyondQueue = 2;
 static_assert(export_depth(3).buffers > export_depth(3).queue + kWriterHeldBeyondQueue);
 static_assert(export_depth(1).buffers > export_depth(1).queue + kWriterHeldBeyondQueue);
 static_assert(export_depth(3).buffers <= FrameExport::kMaxBuffers);
+// Le puits CUDA (export_sink.h) tient une image du pool par slot, plus celle que la file pleine
+// refuse : le pool que l'écriture prévoit pour les tampons de conversion les couvre.
+static_assert(export_depth(3).buffers >= export_depth(3).ring_slots + 1);
+static_assert(export_depth(1).buffers >= export_depth(1).ring_slots + 1);
 static_assert(export_depth(3).ring_slots <= kMaxRingSlots);
 
 }  // namespace ajp::app::play

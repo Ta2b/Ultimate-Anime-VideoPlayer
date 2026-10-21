@@ -146,6 +146,22 @@ std::expected<void, Refusal> FakeBackend::write_ring(const gpu::Tensor&, const R
   return {};
 }
 
+std::expected<void, Refusal> FakeBackend::write_yuv(const gpu::Tensor& /*rgb*/,
+                                                    const gpu::YuvTarget& target) {
+  const std::scoped_lock lock(mutex_);
+  if (!yuv_targets_) return refuse(RefusalCode::FormatUnsupported, "write_yuv : absent");
+  if (target.done == nullptr) return refuse(RefusalCode::FieldOutOfRange, "write_yuv : sans signal");
+  push("write_yuv");
+  yuv_written_.push_back({.luma = target.luma, .done_value = target.done_value});
+  target.done->store(target.done_value, std::memory_order_release);  // le GPU factice a déjà fini
+  return {};
+}
+
+std::vector<YuvWritten> FakeBackend::yuv_written() const {
+  const std::scoped_lock lock(mutex_);
+  return yuv_written_;
+}
+
 gpu::PairScores FakeBackend::scores_of(const gpu::Tensor& a, const gpu::Tensor& b) {
   const auto left = ingested_.find(a.handle);
   const auto right = ingested_.find(b.handle);

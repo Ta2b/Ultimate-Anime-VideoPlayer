@@ -43,7 +43,8 @@ namespace ajp::gpu {
 // 7 : KernelOps::rife_pair (une paire sans réécrire le maillage de RIFE).
 // 8 : KernelOps::soft_splat_fill (les splats d'un instant et le remplissage de l'instant ensemble).
 // 9 : KernelOps::warp_blend_ring, warp_blend_poses_ring, gmfss_compose_ring ; BackendCaps::ring_targets.
-inline constexpr int kBackendAbi = 9;
+// 10 : KernelOps::write_yuv (export par puits CUDA) ; BackendCaps::yuv_targets.
+inline constexpr int kBackendAbi = 10;
 
 using DeviceUuid = ajp::DeviceUuid;
 
@@ -80,6 +81,9 @@ struct BackendCaps {
   int lanes = 1;
   // Images intermédiaires écrites directement dans le slot (KernelOps::warp_blend_ring…).
   bool ring_targets = false;
+  // KernelOps::write_yuv : une image écrite en YUV dans la mémoire CUDA de l'encodeur, sur le
+  // contexte primaire de l'appareil de rendu (celui de NVENC).
+  bool yuv_targets = false;
 };
 
 // Un modèle ONNX tel que livré, identifié par son hachage.
@@ -217,7 +221,7 @@ inline constexpr std::uint64_t kBackendLayout = layout_fingerprint({
     shape_fingerprint<DecodedFrame, ColorInfo, HdrMetadata, VulkanImageAccess,
                       std::expected<VulkanImageAccess, Refusal>>(),
     shape_fingerprint<IngestSpec, Motion, RingWrite, PairScores, std::optional<PairScores>, RingSlotDesc,
-                      ExportedHandle>(),
+                      ExportedHandle, RingTarget, YuvTarget>(),
 });
 
 // Ce que le chargeur vérifie avant ajp_backend_create, avec ajp_backend_abi() et

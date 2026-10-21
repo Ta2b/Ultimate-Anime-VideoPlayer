@@ -51,6 +51,12 @@ struct RingWritten {
   std::uint64_t signal_value = 0;
 };
 
+// Une écriture YUV de l'export (write_yuv), telle que le backend l'a reçue.
+struct YuvWritten {
+  std::uintptr_t luma = 0;  // l'image de la cible
+  std::uint64_t done_value = 0;
+};
+
 // Le backend et ses noyaux : chaque appel va dans le journal (« ingest 3 », « engine span »,
 // « rife_input »…), les mesures d'une paire viennent du test par l'identité des images ingérées
 // dans les tenseurs mesurés, tout le reste réussit sans rien calculer.
@@ -69,6 +75,9 @@ class FakeBackend final : public gpu::Backend, public gpu::KernelOps {
   // BackendCaps::ring_targets : warp_blend_ring et les autres écrivent le slot (written()) au lieu
   // d'un tenseur ; faux par défaut.
   void offer_ring_targets(bool on) { ring_targets_ = on; }
+  // BackendCaps::yuv_targets : write_yuv écrit la cible (yuv_written()) et la signale aussitôt ;
+  // faux par défaut.
+  void offer_yuv_targets(bool on) { yuv_targets_ = on; }
   // Le mouvement maximal que rendent flow_max_now et flow_max_take, en pixels ; 0 par défaut.
   void motion_max(float pixels) {
     const std::scoped_lock lock(mutex_);
@@ -83,10 +92,15 @@ class FakeBackend final : public gpu::Backend, public gpu::KernelOps {
   // Le tenseur écrit par chaque appel de rife_crop ou rife_input, dans l'ordre.
   std::vector<std::uintptr_t> targets(std::string_view entry) const;
   std::vector<RingWritten> written() const;
+  std::vector<YuvWritten> yuv_written() const;
 
   // gpu::Backend
   gpu::BackendCaps capabilities() const override {
-    return {.name = "factice", .device_name = "aucun", .lanes = lanes_, .ring_targets = ring_targets_};
+    return {.name = "factice",
+            .device_name = "aucun",
+            .lanes = lanes_,
+            .ring_targets = ring_targets_,
+            .yuv_targets = yuv_targets_};
   }
   gpu::DeviceMatch match(const DeviceUuid& /*render_device*/) const override {
     return gpu::DeviceMatch::Same;
@@ -210,6 +224,7 @@ class FakeBackend final : public gpu::Backend, public gpu::KernelOps {
                                                      const gpu::RingTarget& ring) override {
     return note_ring("warp_blend_poses_ring", ring);
   }
+  std::expected<void, Refusal> write_yuv(const gpu::Tensor& rgb, const gpu::YuvTarget& target) override;
   std::expected<void, Refusal> gmfss_compose_ring(const gpu::Tensor& /*high_a*/,
                                                   const gpu::Tensor& /*high_b*/, const gpu::Tensor& /*low_a*/,
                                                   const gpu::Tensor& /*low_b*/, const gpu::Tensor& /*fusion*/,
@@ -234,6 +249,7 @@ class FakeBackend final : public gpu::Backend, public gpu::KernelOps {
   int lanes_ = 1;
   gpu::Lane lane_ = gpu::Lane::Upscale;
   std::vector<RingWritten> written_;
+  std::vector<YuvWritten> yuv_written_;
   std::map<std::uintptr_t, SourceId> ingested_;  // tenseur → dernière image ingérée dedans
   std::map<PairKey, gpu::PairScores> scores_;
   std::map<std::uint64_t, gpu::PairScores> tickets_;
@@ -245,6 +261,7 @@ class FakeBackend final : public gpu::Backend, public gpu::KernelOps {
   bool ahead_ = true;
   bool rife_pair_ = false;
   bool ring_targets_ = false;
+  bool yuv_targets_ = false;
   std::optional<SourceId> refused_;
 };
 

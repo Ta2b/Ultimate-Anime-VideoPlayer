@@ -84,7 +84,8 @@ Result<RgbImage> yuv_to_rgb(const YuvImage& in, const ColorSpec& color, Filter c
   return out;
 }
 
-Result<YuvImage> rgb_to_yuv(const RgbImage& in, Format format, const ColorSpec& color, Filter chroma) {
+Result<YuvImage> rgb_to_yuv(const RgbImage& in, Format format, const ColorSpec& color, Filter chroma,
+                            Dither dither) {
   if (auto ok = check_rgb(in, "image RGB à convertir"); !ok) return std::unexpected(ok.error());
   const int w = in.width();
   const int h = in.height();
@@ -100,7 +101,9 @@ Result<YuvImage> rgb_to_yuv(const RgbImage& in, Format format, const ColorSpec& 
   for (int y = 0; y < h; ++y) {
     for (int x = 0; x < w; ++x) {
       const Yuv p = to_yuv(in.at(x, y), k);
-      out.y.at(x, y) = encode_luma(p.y, format, scale);
+      out.y.at(x, y) = dither == Dither::Bayer8
+                           ? encode_luma_dithered(p.y, format, scale, bayer8_threshold(x, y))
+                           : encode_luma(p.y, format, scale);
       u.at(x, y) = p.u;
       v.at(x, y) = p.v;
     }
@@ -115,9 +118,17 @@ Result<YuvImage> rgb_to_yuv(const RgbImage& in, Format format, const ColorSpec& 
     u = std::move(*down_u);
     v = std::move(*down_v);
   }
-  for (std::size_t i = 0; i < u.data.size(); ++i) {
-    out.u.data[i] = encode_chroma(u.data[i], format, scale);
-    out.v.data[i] = encode_chroma(v.data[i], format, scale);
+  for (int y = 0; y < u.height; ++y) {
+    for (int x = 0; x < u.width; ++x) {
+      if (dither == Dither::Bayer8) {
+        const float threshold = bayer8_threshold(x, y);
+        out.u.at(x, y) = encode_chroma_dithered(u.at(x, y), format, scale, threshold);
+        out.v.at(x, y) = encode_chroma_dithered(v.at(x, y), format, scale, threshold);
+      } else {
+        out.u.at(x, y) = encode_chroma(u.at(x, y), format, scale);
+        out.v.at(x, y) = encode_chroma(v.at(x, y), format, scale);
+      }
+    }
   }
   return out;
 }

@@ -112,6 +112,8 @@ std::expected<std::unique_ptr<VideoStage>, Refusal> UpscaleStage::start(VideoSta
     return refuse(RefusalCode::ShapeInvalid,
                   "étage gpu : RIFE image, GMFSS et DistilDRBA à la taille de travail seulement");
   }
+  if (setup.yuv_slots && setup.true_hdr)
+    return refuse(RefusalCode::FieldOutOfRange, "étage gpu : export en YUV sans RTX HDR seulement");
   if (setup.slots.empty() || setup.slots.size() > kMaxRingSlots) {
     return refuse(RefusalCode::FieldOutOfRange, std::format("étage gpu : 1 à {} slots", kMaxRingSlots));
   }
@@ -134,10 +136,15 @@ std::expected<void, Refusal> UpscaleStage::allocate() {
   gpu::Backend& backend = *setup_.backend;
   const gpu::BackendCaps caps = backend.capabilities();
   copies_ = caps.lanes > 1 ? 2U : 1U;
-  ring_direct_ =
-      caps.ring_targets && !setup_.true_hdr && (warps_spanned() || (by_motion() && setup_.engine == nullptr));
+  if (setup_.yuv_slots && !caps.yuv_targets) {
+    return refuse(RefusalCode::FormatUnsupported,
+                  std::format("étage gpu : le backend {} n'écrit pas en YUV pour l'encodeur", caps.name));
+  }
+  ring_direct_ = caps.ring_targets && !setup_.true_hdr && !setup_.yuv_slots &&
+                 (warps_spanned() || (by_motion() && setup_.engine == nullptr));
   if (ring_direct_)
     log_channel("gpu")->info("images intermédiaires écrites directement dans le slot du ring");
+  if (setup_.yuv_slots) log_channel("gpu")->info("images écrites en YUV dans celles de l'encodeur");
   const int w = setup_.work_width;
   const int h = setup_.work_height;
   const auto alloc = [&](std::unique_ptr<gpu::TensorBuffer>& into, const gpu::Shape& shape) {
@@ -445,6 +452,7 @@ std::expected<void, Refusal> UpscaleStage::finish(const gpu::Tensor& rgb, std::u
 std::expected<void, Refusal> UpscaleStage::write_slot(const gpu::Tensor& image, std::uint32_t slot,
                                                       const gpu::RingWrite& sync) {
   gpu::KernelOps& ops = *setup_.backend->kernels();
+  if (setup_.yuv_slots) return ops.write_yuv(image, setup_.yuv_slots->target(slot, sync.signal_value));
   if (setup_.true_hdr && setup_.live) {
     if (const auto params = setup_.live->take_true_hdr()) {
       if (auto set = ops.set_true_hdr(*params); !set) {

@@ -39,6 +39,15 @@
 
 namespace ajp::app::play {
 
+// Les slots de l'export par puits CUDA (export_sink.h) : chaque slot est une image de l'encodeur,
+// que write_slot remplit en YUV (KernelOps::write_yuv) au lieu du ring ; done_value est la valeur
+// qu'aurait signalée le slot du ring (RingFrame::ready_value). Appelé depuis le thread gpu.
+class YuvSlots {
+ public:
+  virtual ~YuvSlots() = default;
+  virtual gpu::YuvTarget target(std::uint32_t slot, std::uint64_t done_value) const = 0;
+};
+
 struct UpscaleSetup {
   gpu::Backend* backend = nullptr;  // vit plus longtemps que l'étage
   gpu::Engine* engine = nullptr;    // SPAN aux formes de travail ; nullptr : sans agrandissement
@@ -80,6 +89,9 @@ struct UpscaleSetup {
   // SPAN.
   bool warp_after_span = false;
   std::vector<RingSlotDesc> slots;  // ring de render, à la taille de sortie de SPAN
+  // Export par puits CUDA : les images de l'encodeur derrière les slots (sans image ni sémaphore
+  // dans slots), écrites par write_yuv ; ni écriture directe du ring, ni RTX HDR. nullptr : le ring.
+  std::shared_ptr<const YuvSlots> yuv_slots;
 };
 
 class UpscaleStage final : public RingStage {

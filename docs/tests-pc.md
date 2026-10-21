@@ -211,6 +211,16 @@ un réglage à faire taire.
   lieu de 496, et `ffprobe -show_entries frame=pts_time` des intervalles tous égaux. Le journal de
   fin dit « export écrit : N images dont R répétées ». Décochée, 496 images à cadence variable,
   comme avant.
+- **Export par puits CUDA** (étude 1, 5.3 ; ABI des backends 10) : sous TensorRT avec NVENC, à la
+  taille de la chaîne (Taille : « sortie de la chaîne »), le journal dit « images écrites en YUV
+  dans celles de l'encodeur, sans ring ni libplacebo ». Test `[backend_tensorrt][export]` (NV12 et
+  P010, avec et sans tramage, sitings gauche et haut-gauche : un code au plus de la référence).
+  Puis un export HEVC 10 bits 4K comparé à un export à une autre taille (même clip, ancien chemin
+  libplacebo) : pas de décalage de couleur ni de chroma (`ffmpeg -lavfi psnr` au-dessus de 50 dB
+  après mise à la même taille), et `nsys` ne montre plus de rendu libplacebo ni de copie
+  `cuMemcpy2D` par image ; la VRAM baisse (plus de ring d'export : environ 500 Mo en 4K au profil
+  « débit »). Échap pendant l'export ne doit laisser ni avertissement « écritures YUV jamais
+  signalées » ni plantage.
 
 ## Linux sur RX 6500M (RDNA2 Navi 24, 4 Go)
 

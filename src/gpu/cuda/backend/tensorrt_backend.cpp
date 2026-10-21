@@ -199,6 +199,7 @@ TensorRtBackend::~TensorRtBackend() {
   }
   if (splat_sums_ != nullptr) cudaFree(splat_sums_);
   if (ingest_rows_ != nullptr) cudaFree(ingest_rows_);
+  release_yuv_tables();
   runtime_.reset();
   for (Held& held : held_) {
     held.data.reset();
@@ -229,7 +230,8 @@ BackendCaps TensorRtBackend::capabilities() const {
       .matrix_units = true,
       .import_formats = {PixelFormat::Nv12, PixelFormat::P010, PixelFormat::P016},
       .lanes = lanes_,
-      .ring_targets = true};
+      .ring_targets = true,
+      .yuv_targets = true};
 }
 
 DeviceMatch TensorRtBackend::match(const DeviceUuid& render_device) const {

@@ -2,7 +2,7 @@
 # complète avec les vrais threads source, audio (pilote SDL « dummy ») et subs, sur un
 # clip généré à l'exécution par l'écrivain de clips des tests de media.
 ajp_add_unit_tests(app
-  SOURCES build_progress_test.cpp chapters_test.cpp controls_test.cpp decoder_options_test.cpp display_edid_test.cpp engine_install_test.cpp engine_switch_test.cpp export_job_test.cpp first_run_test.cpp model_choice_test.cpp motion_model_test.cpp profiles_test.cpp resume_test.cpp settings_test.cpp stage_rig.cpp tracks_test.cpp upscale_stage_test.cpp doubles.cpp options_test.cpp pipeline_test.cpp rife_plan_test.cpp ring_stage_test.cpp session_period_test.cpp session_test.cpp subtitle_queue_test.cpp wiring_test.cpp ../media/clip_writer.cpp ../vendor_hdr/support.cpp
+  SOURCES build_progress_test.cpp chapters_test.cpp controls_test.cpp decoder_options_test.cpp display_edid_test.cpp engine_install_test.cpp engine_switch_test.cpp export_job_test.cpp export_sink_test.cpp first_run_test.cpp model_choice_test.cpp motion_model_test.cpp profiles_test.cpp resume_test.cpp settings_test.cpp stage_rig.cpp tracks_test.cpp upscale_stage_test.cpp doubles.cpp options_test.cpp pipeline_test.cpp rife_plan_test.cpp ring_stage_test.cpp session_period_test.cpp session_test.cpp subtitle_queue_test.cpp wiring_test.cpp ../media/clip_writer.cpp ../vendor_hdr/support.cpp
   DEPS ajp::vendor_hdr ajp::dep::ffmpeg ajp::dep::sdl3)
 # Le faux SDK Maxine des tests vendor_hdr (support.cpp) sert au test d'installation de RTX HDR ;
 # ses bibliothèques factices chargeables ne servent pas ici.
