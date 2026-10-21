@@ -14,7 +14,8 @@
       "toolchainFile": "$env{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake",
       "cacheVariables": {
         "VCPKG_OVERLAY_PORTS": "${sourceDir}/ports",
-        "VCPKG_MANIFEST_FEATURES": "tests;player"
+        "VCPKG_MANIFEST_FEATURES": "tests;player",
+        "AJP_WARNINGS_AS_ERRORS": "ON"
       }
     },
     {
@@ -26,7 +27,8 @@
         "CMAKE_PREFIX_PATH": "$env{AJP_DEPS_PREFIX}",
         "CMAKE_INSTALL_RPATH": "$env{AJP_DEPS_PREFIX}/lib",
         "CMAKE_BUILD_RPATH": "$env{AJP_DEPS_PREFIX}/lib",
-        "AJP_TRANSITIVE_RPATH": "ON"
+        "AJP_TRANSITIVE_RPATH": "ON",
+        "AJP_WARNINGS_AS_ERRORS": "ON"
       },
       "environment": {
         "PKG_CONFIG_PATH": "$env{AJP_DEPS_PREFIX}/lib/pkgconfig:$env{AJP_DEPS_PREFIX}/share/pkgconfig:$penv{PKG_CONFIG_PATH}"

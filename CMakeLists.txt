@@ -15,7 +15,9 @@ option(AJP_WITH_OPENVINO "Construire ajp_backend_openvino (réseaux par OpenVINO
 option(AJP_WITH_COREML "Construire ajp_backend_coreml (réseaux par Core ML via ONNX Runtime, Mac Apple Silicon)" OFF)
 option(AJP_BUILD_TESTS "Construire les tests unitaires" ON)
 option(AJP_BUILD_PLAYER "Construire le lecteur ; OFF ne garde que core, kernels et leurs tests" ON)
-option(AJP_WARNINGS_AS_ERRORS "Avertissements en erreurs" ON)
+# Avertissements en erreurs : ON dans les préréglages de développement et de CI (base, prefix), OFF
+# par défaut, pour qu'un compilateur plus récent (avertissements nouveaux) construise encore.
+option(AJP_WARNINGS_AS_ERRORS "Avertissements en erreurs" OFF)
 option(AJP_TRANSITIVE_RPATH "RPATH valable pour les dépendances indirectes (préfixe Linux)" OFF)
 
 if(AJP_WITH_CUDA)
