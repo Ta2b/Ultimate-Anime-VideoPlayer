@@ -117,8 +117,9 @@ std::optional<PastBuild> read_build_log(std::string_view text) {
   std::string_view number = text.substr(built + kBuiltIn.size());
   number = number.substr(0, number.find(' '));
   double seconds = 0.0;
+  // from_chars lit aussi « inf » et « nan » : « Engine built in Inference » donnait une durée infinie.
   if (!size || core::from_chars(number.data(), number.data() + number.size(), seconds).ec != std::errc{} ||
-      !(seconds > 0.0))
+      !std::isfinite(seconds) || !(seconds > 0.0))
     return std::nullopt;
   return PastBuild{.onnx = std::filesystem::path(std::string(*onnx)),
                    .width = size->second,

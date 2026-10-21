@@ -53,6 +53,13 @@ TEST_CASE("Un journal de construction donne le modèle, les pixels et la durée"
       read_build_log("&&&& RUNNING trtexec --onnx=/m/a.onnx --optShapes=input:1x3x720x1280\n"
                      "&&&& FAILED\n"));  // pas de durée
   CHECK_FALSE(read_build_log("pas un journal"));
+  // Trouvé par tests/fuzz : from_chars lit « Inf » au début d'un mot.
+  CHECK_FALSE(
+      read_build_log("# trtexec --onnx=/m/a.onnx --optShapes=input:1x3x720x1280\n"
+                     "[I] Engine built in Inference\n"));
+  CHECK_FALSE(
+      read_build_log("# trtexec --onnx=/m/a.onnx --optShapes=input:1x3x720x1280\n"
+                     "[I] Engine built in nan sec.\n"));
 }
 
 TEST_CASE("La durée attendue vient de la construction passée la plus proche en pixels", "[app][build]") {
