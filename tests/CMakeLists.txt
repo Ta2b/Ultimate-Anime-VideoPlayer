@@ -12,3 +12,8 @@ foreach(dir IN LISTS module_dirs)
     add_subdirectory("${dir}")
   endif()
 endforeach()
+
+# Fuzz des entrées venues de l'extérieur (tests/fuzz), avec le lecteur ; POSIX seulement.
+if(TARGET ajp_app AND NOT WIN32)
+  add_subdirectory(fuzz)
+endif()

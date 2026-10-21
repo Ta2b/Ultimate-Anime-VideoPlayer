@@ -1,0 +1,66 @@
+# Réglages de « ajp play », écrits par le menu des paramètres.
+version = 1
+
+[audio]
+delay_ms = 0
+languages = [ 'jpn' ]
+volume = 1.0
+
+[grade]
+area_rtx = 0.34999999999999998
+enabled = true
+expand = 0.5
+gamut_p3 = false
+guard = 0.80000000000000004
+highlights = 0.90000000000000002
+highlights_rtx = 0.80000000000000004
+oled_black = 'auto'
+oled_black_steps = 2.0
+preset = 'eclatant'
+shadows = 0.40000000000000002
+vibrance = 0.5
+vibrance_rtx = 0.45000000000000001
+
+[hdr]
+contrast = 100
+debanding = true
+engine = 'adaptive'
+middle_gray = 50
+peak = 0
+saturation = 100
+
+[image]
+downscale = 'area'
+model = '2x_AnimeJaNai_HD_V3.1Sharp1_Performance_SPANF3_b5f48_unshuffle_fp16.onnx'
+upscale = true
+work_height = 720
+
+[interpolation]
+engine = 'rife'
+keep_poses = false
+model = ''
+rife = 3
+smooth_motion = false
+span_order = 'auto'
+
+[oled]
+care = true
+steady_cadence = false
+
+[stats]
+all = false
+chain = false
+frames = false
+memory = false
+output = false
+position = false
+rife = false
+tracks = false
+
+[subtitles]
+languages = [ 'fre', 'eng' ]
+scale = 1.0
+
+[sync]
+display = true
+video_latency_ms = 0

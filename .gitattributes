@@ -1,2 +1,5 @@
 # Les scripts bash restent en LF, même extraits sous Windows (core.autocrlf des runners).
 *.sh text eol=lf
+
+# Le corpus du fuzz : des octets exacts, jamais convertis en CRLF.
+tests/fuzz/corpus/** -text

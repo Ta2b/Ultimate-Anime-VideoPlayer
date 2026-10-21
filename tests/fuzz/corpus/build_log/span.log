@@ -1,0 +1,4 @@
+&&&& RUNNING TensorRT.trtexec [TensorRT v110300] [b99] # /x/trtexec --onnx=/m/SPAN fp16.onnx --optShapes=input:1x3x720x1280 --skipInference
+[I] ...
+[10/19/2026-20:57:42] [I] Engine built in 60.2205 sec.
+&&&& PASSED
