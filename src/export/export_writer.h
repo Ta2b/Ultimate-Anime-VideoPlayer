@@ -32,6 +32,9 @@ struct AVFrame;
 
 namespace ajp::exporter {
 
+class FrameEncoder;
+class Muxer;
+
 struct WriterConfig {
   std::filesystem::path source;  // le fichier lu : ses autres pistes, chapitres et métadonnées
   std::filesystem::path output;  // .mkv, remplacé s'il existe
@@ -78,6 +81,10 @@ class ExportWriter {
   // lance le thread. Refus : MediaUnreadable (source), EncoderUnavailable (avec les encodeurs
   // essayés), FileUnwritable, EncodeFailed, ThreadUnavailable.
   static std::expected<std::unique_ptr<ExportWriter>, Refusal> open(const WriterConfig& config);
+  // De même avec un encodeur déjà ouvert à la place de celui de FFmpeg (video_encoder.h) : les
+  // tests de l'écriture lui donnent un encodeur factice qui garde N images (export_writer_test.cpp).
+  static std::expected<std::unique_ptr<ExportWriter>, Refusal> open(const WriterConfig& config,
+                                                                    std::unique_ptr<FrameEncoder> encoder);
   ~ExportWriter();
   ExportWriter(const ExportWriter&) = delete;
   ExportWriter& operator=(const ExportWriter&) = delete;
@@ -108,6 +115,10 @@ class ExportWriter {
 
  private:
   ExportWriter() = default;
+  // Le fichier commencé (en-tête écrit) et le thread lancé, sur une source ouverte et un encodeur.
+  static std::expected<std::unique_ptr<ExportWriter>, Refusal> start(const WriterConfig& config,
+                                                                     Muxer&& muxer, const ColorInfo& color,
+                                                                     std::unique_ptr<FrameEncoder> encoder);
   void run(const std::stop_token& stop);
 
   static constexpr std::size_t kQueueDepth = 4;

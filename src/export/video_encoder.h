@@ -15,6 +15,33 @@
 
 namespace ajp::exporter {
 
+// Ce que l'écriture (export_writer.cpp) attend d'un encodeur ouvert. VideoEncoder l'est par
+// FFmpeg ; les tests de l'écriture le sont par un encodeur factice qui garde N images avant de les
+// rendre, comme NVENC avec son anticipation (export_writer_test.cpp).
+class FrameEncoder {
+ public:
+  using PacketSink = std::function<std::expected<void, Refusal>(AVPacket&)>;
+
+  FrameEncoder() = default;
+  FrameEncoder(const FrameEncoder&) = delete;
+  FrameEncoder& operator=(const FrameEncoder&) = delete;
+  FrameEncoder(FrameEncoder&&) = default;
+  FrameEncoder& operator=(FrameEncoder&&) = default;
+  virtual ~FrameEncoder() = default;
+
+  virtual const AVCodecContext& context() const = 0;
+  virtual Layout layout() const = 0;
+  virtual Upload upload() const = 0;                // comment l'encodeur ouvert reçoit ses images
+  virtual AVBufferRef* frames_context() const = 0;  // nullptr pour un encodeur hôte
+  virtual bool shared_device() const = 0;
+  virtual const std::string& label() const = 0;  // « NVENC (hevc_nvenc) »
+  // Encode une image au format de layout(), datée dans la base de temps de context() : en mémoire
+  // hôte, chargée sur l'appareil si l'encodeur le demande ; ou déjà au format de l'appareil
+  // (AV_PIX_FMT_CUDA, hw_frames_ctx posé sur frames_context()), envoyée telle quelle. nullptr vide
+  // l'encodeur. Chaque paquet prêt passe par sink. Refus : EncodeFailed.
+  virtual std::expected<void, Refusal> encode(AVFrame* frame, const PacketSink& sink) = 0;
+};
+
 struct EncoderSetup {
   int width = 0;
   int height = 0;
@@ -33,26 +60,21 @@ struct EncoderSetup {
   AVBufferRef* vulkan_device = nullptr;
 };
 
-class VideoEncoder {
+class VideoEncoder final : public FrameEncoder {
  public:
   // Refus : EncoderUnavailable, avec chaque candidat essayé et sa raison.
   static std::expected<VideoEncoder, Refusal> open(const EncoderSetup& setup);
 
-  const AVCodecContext& context() const { return *ctx_; }
-  Layout layout() const { return layout_; }
-  Upload upload() const { return upload_; }  // comment l'encodeur ouvert reçoit ses images
-  AVBufferRef* frames_context() const { return ctx_->hw_frames_ctx; }  // nullptr pour un encodeur hôte
+  const AVCodecContext& context() const override { return *ctx_; }
+  Layout layout() const override { return layout_; }
+  Upload upload() const override { return upload_; }
+  AVBufferRef* frames_context() const override { return ctx_->hw_frames_ctx; }
   // Vulkan sur l'appareil du rendu : ses images (frames_context()) se rendent dans leurs plans
   // quand le GPU le permet (COLOR_ATTACHMENT), et s'envoient telles quelles (AV_PIX_FMT_VULKAN).
-  bool shared_device() const { return shared_; }
-  const std::string& label() const { return label_; }  // « NVENC (hevc_nvenc) »
+  bool shared_device() const override { return shared_; }
+  const std::string& label() const override { return label_; }
 
-  using PacketSink = std::function<std::expected<void, Refusal>(AVPacket&)>;
-  // Encode une image au format de layout(), datée dans la base de temps de context() : en mémoire
-  // hôte, chargée sur l'appareil si l'encodeur le demande ; ou déjà au format de l'appareil
-  // (AV_PIX_FMT_CUDA, hw_frames_ctx posé sur frames_context()), envoyée telle quelle. nullptr vide
-  // l'encodeur. Chaque paquet prêt passe par sink. Refus : EncodeFailed.
-  std::expected<void, Refusal> encode(AVFrame* frame, const PacketSink& sink);
+  std::expected<void, Refusal> encode(AVFrame* frame, const PacketSink& sink) override;
 
  private:
   VideoEncoder() = default;

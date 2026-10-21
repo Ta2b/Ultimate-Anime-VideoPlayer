@@ -251,7 +251,11 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
     for (;
          p.next_key < p.options.keys.size() && host_now_us() - p.began_us >= p.options.keys[p.next_key].first;
          ++p.next_key) {
-      press(p.options.keys[p.next_key].second, out.window());
+      const std::string& name = p.options.keys[p.next_key].second;
+      if (auto job = scripted_export(name, chain.running, p.video, p.options.file))
+        actions.emplace_back(StartExport{.job = std::move(*job)});
+      else
+        press(name, out.window());
     }
     const bool snapshot_now = p.snapshot.maybe(out, p.began_us);
     SDL_Event event;

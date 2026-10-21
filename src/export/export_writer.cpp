@@ -13,7 +13,7 @@ namespace ajp::exporter {
 
 struct ExportWriter::State {
   Muxer muxer;
-  VideoEncoder encoder;
+  std::unique_ptr<FrameEncoder> encoder;
   AvColor color;
   int width = 0;
   int height = 0;
@@ -33,17 +33,17 @@ void release_picture(void* opaque, std::uint8_t* /*data*/) {
 // L'image FFmpeg lit la mémoire de la Picture, hôte ou CUDA ; release part avec sa dernière
 // référence. Un refus rend la Picture (release) : l'image reste vide.
 std::expected<void, Refusal> bind_picture(AVFrame& frame, Picture& picture, const ExportWriter::State& s) {
-  frame.format = pixel_format(s.encoder.layout());
+  frame.format = pixel_format(s.encoder->layout());
   if (picture.device) {
     // Des adresses CUDA : l'image porte le format et le contexte d'images de l'encodeur, qui
     // enregistre la mémoire auprès de NVENC la première fois et la lit en place.
-    if (s.encoder.upload() != Upload::Cuda || s.encoder.frames_context() == nullptr) {
+    if (s.encoder->upload() != Upload::Cuda || s.encoder->frames_context() == nullptr) {
       if (picture.release) picture.release();
       return std::unexpected(
           Refusal{RefusalCode::EncodeFailed, "image en mémoire CUDA pour un encodeur hôte"});
     }
-    frame.format = s.encoder.context().pix_fmt;
-    frame.hw_frames_ctx = av_buffer_ref(s.encoder.frames_context());
+    frame.format = s.encoder->context().pix_fmt;
+    frame.hw_frames_ctx = av_buffer_ref(s.encoder->frames_context());
     if (frame.hw_frames_ctx == nullptr) {
       if (picture.release) picture.release();
       return std::unexpected(Refusal{RefusalCode::EncodeFailed, "image : mémoire"});
@@ -83,15 +83,29 @@ std::expected<std::unique_ptr<ExportWriter>, Refusal> ExportWriter::open(const W
                                                  .cuda_ordinal = config.cuda_ordinal,
                                                  .vulkan_device = config.vulkan_device});
   if (!encoder) return std::unexpected(std::move(encoder.error()));
-  if (auto begun = muxer->begin(encoder->context()); !begun) return std::unexpected(std::move(begun.error()));
+  return start(config, std::move(*muxer), color, std::make_unique<VideoEncoder>(std::move(*encoder)));
+}
+
+std::expected<std::unique_ptr<ExportWriter>, Refusal> ExportWriter::open(
+    const WriterConfig& config, std::unique_ptr<FrameEncoder> encoder) {
+  auto muxer = Muxer::open(config.source, config.output);
+  if (!muxer) return std::unexpected(std::move(muxer.error()));
+  const ColorInfo color = config.color.value_or(muxer->source_color());
+  return start(config, std::move(*muxer), color, std::move(encoder));
+}
+
+std::expected<std::unique_ptr<ExportWriter>, Refusal> ExportWriter::start(
+    const WriterConfig& config, Muxer&& muxer, const ColorInfo& color,
+    std::unique_ptr<FrameEncoder> encoder) {
+  if (auto begun = muxer.begin(encoder->context()); !begun) return std::unexpected(std::move(begun.error()));
   std::unique_ptr<ExportWriter> writer(new ExportWriter());
   writer->layout_ = encoder->layout();
   writer->upload_ = encoder->upload();
   writer->color_ = color;
   writer->encoder_ = std::format("{} · {}", label(config.codec), encoder->label());
   writer->output_ = config.output;
-  writer->state_ = std::make_unique<State>(State{.muxer = std::move(*muxer),
-                                                 .encoder = std::move(*encoder),
+  writer->state_ = std::make_unique<State>(State{.muxer = std::move(muxer),
+                                                 .encoder = std::move(encoder),
                                                  .color = av_color(color),
                                                  .width = config.width,
                                                  .height = config.height});
@@ -152,13 +166,13 @@ std::optional<Refusal> ExportWriter::failure() const {
 }
 
 AVBufferRef* ExportWriter::vulkan_frames() const {
-  const VideoEncoder& encoder = state_->encoder;
+  const FrameEncoder& encoder = *state_->encoder;
   if (encoder.upload() != Upload::Vulkan || !encoder.shared_device()) return nullptr;
   return encoder.frames_context();
 }
 
 AVBufferRef* ExportWriter::cuda_frames() const {
-  const VideoEncoder& encoder = state_->encoder;
+  const FrameEncoder& encoder = *state_->encoder;
   return encoder.upload() == Upload::Cuda ? encoder.frames_context() : nullptr;
 }
 
@@ -212,12 +226,12 @@ void ExportWriter::run(const std::stop_token& stop) {
     s.last_pts = pts;
     s.any = true;
     frame->pts = pts;
-    auto encoded = s.encoder.encode(frame.get(), sink);
+    auto encoded = s.encoder->encode(frame.get(), sink);
     av_frame_unref(frame.get());
     if (!encoded) return fail(std::move(encoded.error()));
     frames_.fetch_add(1);
   }
-  if (auto flushed = s.encoder.encode(nullptr, sink); !flushed) return fail(std::move(flushed.error()));
+  if (auto flushed = s.encoder->encode(nullptr, sink); !flushed) return fail(std::move(flushed.error()));
   if (auto closed = s.muxer.finish(); !closed) return fail(std::move(closed.error()));
   bytes_.store(s.muxer.bytes());
   log->info("export écrit : {} images, {} Mo, {}", frames_.load(), bytes_.load() / 1'000'000, utf8(output_));

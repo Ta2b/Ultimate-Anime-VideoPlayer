@@ -77,7 +77,8 @@ struct PlayOptions {
   int snapshot_frames = 1;  // --snapshot-frames=N : N présentations de suite, numérotées  // --snapshot-at=S
                             // : après S s de lecture (ou de construction)
   // --keys=S:touche,… : touches pressées d'office à ces instants (essais sans clavier), par
-  // exemple « 3:Right,5:Space,6:Space,8:F ». Noms de touches de SDL.
+  // exemple « 3:Right,5:Space,6:Space,8:F ». Noms de touches de SDL ; « export » ou
+  // « export=FICHIER.mkv » lance l'export de la chaîne en cours (scripted_input.h).
   std::vector<std::pair<std::int64_t, std::string>> keys;
   // --work-height=N : la source plus haute que N est réduite par Area à N lignes avant SPAN
   // (1080p vers 720p, puis ×2 vers 1440p, comme le profil du lecteur actuel) ; 0 : jamais.

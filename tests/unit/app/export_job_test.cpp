@@ -7,6 +7,7 @@
 
 #include <catch2/catch_test_macros.hpp>
 
+#include "app/play/scripted_input.h"
 #include "prepare/utf8.h"
 
 namespace ajp::app::play {
@@ -105,6 +106,34 @@ TEST_CASE("Export : nom proposé à côté de la source, numéroté s'il est pri
   std::ofstream(first).put('x');
   CHECK(prepare::utf8_path(default_export_path(source, size, {.num = 48'000, .den = 1'001}).filename()) ==
         "Épisode 01 [ajp 3840x2160 47.952fps] (2).mkv");
+}
+
+TEST_CASE("Export : « export » de --keys lance l'export de la chaîne en cours sans clic", "[app][export]") {
+  const TempDir dir("keys");
+  const std::filesystem::path source = dir.path / "clip.mkv";
+  PlaySettings running;
+  running.rife_factor = 2;
+  running.rife_factor_den = 1;
+  running.true_hdr = true;
+  media::TrackInfo video;
+  video.width = 1920;
+  video.height = 1080;
+  video.frame_rate = {.num = 24'000, .den = 1'001};
+
+  CHECK_FALSE(scripted_export("Space", running, video, source));
+  CHECK_FALSE(scripted_export("exporter", running, video, source));
+  const auto job = scripted_export("export", running, video, source);
+  REQUIRE(job);
+  CHECK(job->chain == running);  // export_run.h en retire RTX HDR lui-même (export_chain)
+  CHECK(job->height == kExportChainHeight);
+  CHECK(job->codec == exporter::Codec::Hevc);
+  CHECK(job->quality == exporter::Quality::VeryHigh);
+  // Le nom proposé : la sortie de la chaîne (720p ×2 par défaut) à la fréquence interpolée.
+  CHECK(job->output == dir.path / "clip [ajp 2560x1440 47.952fps].mkv");
+
+  const auto named = scripted_export("export=/tmp/sortie.mkv", running, video, source);
+  REQUIRE(named);
+  CHECK(named->output == std::filesystem::path("/tmp/sortie.mkv"));
 }
 
 TEST_CASE("Export : libellé du codec et de la qualité", "[app][export]") {

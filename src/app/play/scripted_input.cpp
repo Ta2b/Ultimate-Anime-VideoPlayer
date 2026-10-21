@@ -8,6 +8,7 @@
 
 #include "core/charconv.h"
 #include "core/log.h"
+#include "prepare/utf8.h"
 
 namespace ajp::app::play {
 
@@ -73,6 +74,20 @@ void press(const std::string& name, SDL_Window* window) {
   }
   log_channel("app")->info("--keys : {}", name);
   SDL_PushEvent(&event);
+}
+
+std::optional<ExportJob> scripted_export(std::string_view name, const PlaySettings& running,
+                                         const media::TrackInfo& video, const std::filesystem::path& source) {
+  constexpr std::string_view kExport = "export";
+  if (name != kExport && !name.starts_with("export=")) return std::nullopt;
+  ExportJob job{.chain = running};
+  const ExportSize size = export_size(chain_output(job.chain, video.width, video.height),
+                                      {.width = video.width, .height = video.height}, job.height);
+  job.output = name.size() > kExport.size() + 1
+                   ? prepare::path_from_utf8(name.substr(kExport.size() + 1))
+                   : default_export_path(source, size, export_rate(video.frame_rate, factor_of(job.chain)));
+  log_channel("app")->info("--keys : export vers {}", prepare::utf8_path(job.output));
+  return job;
 }
 
 }  // namespace ajp::app::play
