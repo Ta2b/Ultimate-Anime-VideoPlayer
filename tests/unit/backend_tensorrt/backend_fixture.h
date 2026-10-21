@@ -1,10 +1,9 @@
-// Le backend TensorRT chargé par dlopen, comme le lecteur le charge, et l'aller-retour des tenseurs
-// FP16 avec l'hôte : partagés par les tests du backend.
+// Le backend TensorRT chargé par son chemin (dlopen, LoadLibrary), comme le lecteur le charge, et
+// l'aller-retour des tenseurs FP16 avec l'hôte : partagés par les tests du backend.
 #pragma once
 
 #include <cstdint>
 #include <cuda_runtime_api.h>
-#include <dlfcn.h>
 #include <filesystem>
 #include <type_traits>
 #include <vector>
@@ -14,9 +13,25 @@
 #include "gpu/backend.h"
 #include "kernels/ref/half.h"
 
+#if defined(_WIN32)
+#include <windows.h>
+#else
+#include <dlfcn.h>
+#endif
+
 namespace ajp::test {
 
 struct Library {
+#if defined(_WIN32)
+  void* handle = LoadLibraryA(AJP_BACKEND_TENSORRT);
+  ~Library() {
+    if (handle != nullptr) FreeLibrary(static_cast<HMODULE>(handle));
+  }
+  template <class F>
+  F* symbol(const char* name) const {
+    return reinterpret_cast<F*>(reinterpret_cast<void*>(GetProcAddress(static_cast<HMODULE>(handle), name)));
+  }
+#else
   void* handle = dlopen(AJP_BACKEND_TENSORRT, RTLD_NOW | RTLD_LOCAL);
   ~Library() {
     if (handle != nullptr) dlclose(handle);
@@ -25,6 +40,7 @@ struct Library {
   F* symbol(const char* name) const {
     return reinterpret_cast<F*>(dlsym(handle, name));
   }
+#endif
 };
 
 inline bool has_cuda() {

@@ -1,4 +1,4 @@
-// Backend TensorRT chargé comme le lecteur le charge (dlopen), sur la RTX : warp et mélange par le
+// Backend TensorRT chargé comme le lecteur le charge (par son chemin), sur la RTX : warp et mélange par le
 // mouvement, entrée de RIFE, mesures d'une paire, RTX HDR, et le vrai modèle SPAN d'AnimeJaNai
 // s'il est installé (lu en place, jamais copié). Sans GPU NVIDIA, chaque test se SKIP.
 #include <algorithm>
@@ -7,7 +7,6 @@
 #include <cmath>
 #include <cstring>
 #include <cuda_runtime_api.h>
-#include <dlfcn.h>
 #include <filesystem>
 #include <memory>
 #include <type_traits>

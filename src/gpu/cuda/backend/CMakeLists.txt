@@ -6,11 +6,13 @@ add_library(ajp_backend_tensorrt_kernels STATIC export_kernels.cu gmfss_kernels.
 target_include_directories(ajp_backend_tensorrt_kernels PRIVATE "${PROJECT_SOURCE_DIR}/src")
 target_link_libraries(ajp_backend_tensorrt_kernels PRIVATE ajp::dep::cudart)
 # -lineinfo pour ncu ; ptxas donne les registres de chaque noyau au journal de build, et un
-# débordement de registres en mémoire locale est une erreur (pixel_kernels.cuh).
+# débordement de registres en mémoire locale est une erreur (pixel_kernels.cuh) sous Linux, où le
+# PC de référence et la CI le vérifient ; le code de l'appareil est le même sous Windows, où les
+# en-têtes de MSVC que lit nvcc ne doivent pas arrêter la release.
 # Les avertissements du compilateur hôte : GCC et Clang sous Linux, MSVC sous Windows.
 target_compile_options(ajp_backend_tensorrt_kernels PRIVATE
-  $<$<COMPILE_LANGUAGE:CUDA>:-Werror=all-warnings -lineinfo --ptxas-options=--verbose,--warn-on-spills>
-  $<$<AND:$<COMPILE_LANGUAGE:CUDA>,$<NOT:$<PLATFORM_ID:Windows>>>:-Xcompiler=-Wall,-Wextra>
+  $<$<COMPILE_LANGUAGE:CUDA>:-lineinfo --ptxas-options=--verbose,--warn-on-spills>
+  $<$<AND:$<COMPILE_LANGUAGE:CUDA>,$<NOT:$<PLATFORM_ID:Windows>>>:-Werror=all-warnings -Xcompiler=-Wall,-Wextra>
   $<$<AND:$<COMPILE_LANGUAGE:CUDA>,$<PLATFORM_ID:Windows>>:-Xcompiler=/W3>)
 set_target_properties(ajp_backend_tensorrt_kernels PROPERTIES POSITION_INDEPENDENT_CODE ON)
 

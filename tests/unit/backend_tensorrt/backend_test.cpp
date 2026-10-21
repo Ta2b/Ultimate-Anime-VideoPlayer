@@ -1,4 +1,4 @@
-// Backend TensorRT chargé comme le lecteur le charge (dlopen), sur la RTX : ABI, tenseurs,
+// Backend TensorRT chargé comme le lecteur le charge (par son chemin), sur la RTX : ABI, tenseurs,
 // ingestion NV12 et réductions fusionnées contre la référence CPU. Le mouvement, RIFE, RTX HDR
 // et le vrai SPAN sont dans backend_motion_test.cpp. Sans GPU NVIDIA, chaque test se SKIP.
 #include "gpu/backend.h"
@@ -9,7 +9,6 @@
 #include <cmath>
 #include <cstring>
 #include <cuda_runtime_api.h>
-#include <dlfcn.h>
 #include <filesystem>
 #include <memory>
 #include <type_traits>
