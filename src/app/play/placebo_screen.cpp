@@ -139,6 +139,10 @@ SlotFree PlaceboScreen::retire(const RingFrame& frame) {
   return impl_->ring.retire(impl_->vk->gpu, frame);
 }
 
+bool PlaceboScreen::ready(const RingFrame& frame) const {
+  return impl_->ring.ready(frame);
+}
+
 std::expected<ScreenTiming, Refusal> PlaceboScreen::show(const ShowRequest& request) {
   Impl& s = *impl_;
   const pl_gpu gpu = s.vk->gpu;

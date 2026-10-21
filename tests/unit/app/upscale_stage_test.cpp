@@ -460,8 +460,11 @@ TEST_CASE("Étage gpu : en retard sur l'horloge maître, la paire sort sans inte
   UpscaleSetup s = rig.setup(true);
   s.clock = &clock;
   rig.start(std::move(s), &clock);
-  rig.feed(1, 4);
-  REQUIRE(rig.collect(4));
+  // Une à une : seule en file, une image n'est jamais sautée, même passée.
+  for (std::uint32_t id = 1; id <= 4; ++id) {
+    rig.feed(id, id);
+    REQUIRE(rig.collect(id));
+  }
   rig.stage.reset();
 
   CHECK(shape_of(rig.sink.frames()) == std::vector<std::string>{"1", "2", "3", "4"});
@@ -470,6 +473,55 @@ TEST_CASE("Étage gpu : en retard sur l'horloge maître, la paire sort sans inte
   CHECK(rig.backend.count("engine rife") == 0);
   CHECK(rig.live->counts().late == 3);
   CHECK(rig.live->counts().pairs == 0);  // non mesurées : rien à interpoler
+}
+
+TEST_CASE("Étage gpu : une image déjà passée, une plus récente derrière elle, est sautée sans calcul",
+          "[app][stage]") {
+  Rig rig;
+  test::FakeClock clock;
+  clock.value =
+      ClockSnapshot{.media_us = 10'000'000, .host_us = host_now_us(), .rate = 1.0, .epoch = 0, .valid = true};
+  UpscaleSetup s = rig.setup(false, Factor{.num = 1, .den = 1}, 1);
+  s.clock = &clock;
+  rig.start(std::move(s), &clock);
+  rig.feed(1, 1);
+  REQUIRE(rig.collect(1, false));  // le seul slot est tenu : la 2 à la 5 s'amassent derrière
+  rig.feed(2, 5);
+  REQUIRE(rig.collect(2));
+  (void)rig.collect(3, true, 300ms);
+  rig.stage.reset();
+
+  // Seule en file au moment d'être décidée, une image est faite ; avec une plus récente derrière
+  // elle, sautée. Selon l'arrivée des quatre, une seule au plus est faite avant la 5, dernière en
+  // file : celle qui attendait le slot décidée, les autres sautées.
+  const std::vector<std::string> shape = shape_of(rig.sink.frames());
+  const std::uint64_t skipped = rig.live->skipped();
+  REQUIRE(shape.size() >= 2);
+  CHECK(shape.front() == "1");
+  CHECK(shape.back() == "5");
+  CHECK(shape.size() <= 3);
+  CHECK(skipped >= 2);
+  CHECK(shape.size() + skipped == 5);
+  CHECK(rig.backend.count("engine span") == shape.size());
+  CHECK(rig.credits.load() == 5);
+  CHECK(rig.reported().empty());
+}
+
+TEST_CASE("Étage gpu : horloge arrêtée ou sans horloge, rien n'est sauté", "[app][stage]") {
+  Rig rig;
+  test::FakeClock clock;
+  clock.value =
+      ClockSnapshot{.media_us = 10'000'000, .host_us = host_now_us(), .rate = 0.0, .epoch = 0, .valid = true};
+  UpscaleSetup s = rig.setup(false, Factor{.num = 1, .den = 1}, 1);
+  s.clock = &clock;
+  rig.start(std::move(s), &clock);
+  rig.feed(1, 1);
+  REQUIRE(rig.collect(1, false));
+  rig.feed(2, 5);
+  REQUIRE(rig.collect(5));
+  rig.stage.reset();
+  CHECK(shape_of(rig.sink.frames()) == std::vector<std::string>{"1", "2", "3", "4", "5"});
+  CHECK(rig.live->skipped() == 0);
 }
 
 TEST_CASE("Étage gpu : un instant en retard est sauté, les suivants de la paire sont faits", "[app][stage]") {

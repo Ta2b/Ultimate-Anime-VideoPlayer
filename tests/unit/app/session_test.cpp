@@ -84,6 +84,73 @@ TEST_CASE("Les images doublées par l'horloge sont sautées et leurs slots rendu
   CHECK(rig.stages.freed[2].slot == 0);
 }
 
+TEST_CASE("Une image pas encore écrite n'est ni montrée ni rendue : l'écran garde la sienne",
+          "[app][session]") {
+  Rig rig;
+  rig.session.handle(ring_frame(0, 0));
+  rig.tick();
+  rig.run_clock(0);
+  rig.screen.unwritten = {1, 2};
+  rig.session.handle(ring_frame(1, 41'708));
+  rig.session.handle(ring_frame(2, 83'417));
+  rig.session.handle(ring_frame(3, 125'125));
+  rig.run_clock(130'000);  // les trois sont dues ; la 3 est écrite, mais derrière la 1
+  const std::size_t presented = rig.screen.shown.size();
+  rig.tick();
+  CHECK(rig.screen.shown.size() == presented);  // rien de neuf à présenter
+  CHECK(rig.stages.freed.empty());
+  // La 1 écrite : elle seule part, la 2 l'arrête encore.
+  rig.screen.write(1);
+  rig.tick();
+  CHECK(rig.shown_pts() == 41'708);
+  REQUIRE(rig.stages.freed.size() == 1);
+  CHECK(rig.stages.freed[0].slot == 0);
+  // Toutes écrites : la plus récente est montrée, la 2 sautée.
+  rig.screen.write(2);
+  rig.tick();
+  CHECK(rig.shown_pts() == 125'125);
+  CHECK(rig.session.stats().dropped == 1);
+}
+
+TEST_CASE("Amorce : la première image attend d'être écrite, l'horloge aussi", "[app][session]") {
+  Rig rig;
+  rig.screen.unwritten = {0};
+  rig.session.handle(ring_frame(0, 40'000));
+  rig.tick();
+  CHECK_FALSE(rig.screen.shown.back().frame);
+  CHECK(rig.stages.log.empty());
+  rig.screen.write(0);
+  rig.tick();
+  CHECK(rig.shown_pts() == 40'000);
+  CHECK(rig.stages.log == std::vector<std::string>{"play 0 40000"});
+}
+
+TEST_CASE("Seek : une image pas encore écrite est rendue une fois écrite, jamais avant", "[app][session]") {
+  Rig rig(SessionConfig{.duration_us = 60'000'000});
+  rig.session.handle(ring_frame(0, 1'000'000));
+  rig.tick();
+  rig.screen.unwritten = {1, 2};
+  rig.session.handle(ring_frame(1, 1'041'000));
+  rig.session.command(cmd::Seek{.target_us = 5'000'000});
+  rig.session.handle(ring_frame(2, 1'083'000, 0));  // d'avant le seek, arrivée après
+  rig.tick();
+  CHECK(rig.stages.freed.empty());
+  CHECK(rig.screen.retired.empty());
+  rig.screen.write(2);
+  rig.tick();
+  REQUIRE(rig.stages.freed.size() == 1);
+  CHECK(rig.stages.freed[0].slot == 2);
+  rig.screen.write(1);
+  rig.tick();
+  REQUIRE(rig.stages.freed.size() == 2);
+  CHECK(rig.stages.freed[1].slot == 1);
+  // À l'arrêt, tout est rendu, écrit ou non.
+  rig.screen.unwritten = {3};
+  rig.session.handle(ring_frame(3, 5'000'000, 1));
+  rig.session.end();
+  CHECK(rig.stages.freed.size() == 4);
+}
+
 TEST_CASE("Seek : pause, Flush puis Seek, et les images de l'époque passée sont rendues", "[app][session]") {
   Rig rig(SessionConfig{.duration_us = 60'000'000});
   rig.session.handle(ring_frame(0, 1'000'000));

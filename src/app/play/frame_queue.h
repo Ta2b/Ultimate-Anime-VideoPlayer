@@ -10,6 +10,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <deque>
+#include <functional>
 #include <optional>
 #include <vector>
 
@@ -34,8 +35,10 @@ class FrameQueue {
   // L'image à montrer quand l'horloge vaut media_now_us à la vsync : la dernière dont
   // pts ≤ media_now_us + lead_us. Celles qui la précèdent vont dans late. Une image sans
   // pts (kNoPts) est montrée dès qu'elle est en tête. Rien si la tête n'est pas atteinte.
-  std::optional<RingFrame> pick(std::int64_t media_now_us, std::int64_t lead_us,
-                                std::vector<RingFrame>& late);
+  // ready, s'il est donné : seules comptent les images de tête qu'il dit écrites ; la première
+  // qui ne l'est pas arrête le choix, et elle reste en file avec celles d'après.
+  std::optional<RingFrame> pick(std::int64_t media_now_us, std::int64_t lead_us, std::vector<RingFrame>& late,
+                                const std::function<bool(const RingFrame&)>& ready = {});
 
   // Retire l'image de tête (montrée sans horloge, à l'amorce d'une époque).
   std::optional<RingFrame> pop_front();

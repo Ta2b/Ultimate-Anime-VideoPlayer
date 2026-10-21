@@ -50,6 +50,12 @@ UpscaleStage::~UpscaleStage() {
     log_channel("gpu")->info("RIFE : {} paires en retard sur l'horloge, {} instants sautés pour la rattraper",
                              late_pairs_, late_instants_);
   }
+  if (skipped_ > 0) {
+    log_channel("gpu")->info(
+        "{} images source sautées avant calcul, déjà passées : la chaîne est plus lente "
+        "que la vidéo",
+        skipped_);
+  }
   if (interpolates()) {
     log_channel("gpu")->info("RIFE {} : {} paires, {} interpolées, {} coupes de scène, {} dessins tenus",
                              factor_text(setup_.live ? setup_.live->rife_factor() : setup_.rife_factor),
@@ -354,6 +360,21 @@ std::expected<std::uint32_t, Refusal> UpscaleStage::outputs(const DecodedFrame& 
     if (auto ok = look_ahead(frame, spec); !ok) return std::unexpected(std::move(ok.error()));
   }
   return outputs_;
+}
+
+bool UpscaleStage::passed(const DecodedFrame& frame, const DecodedFrame& next) {
+  if (setup_.clock == nullptr || frame.pts_us == kNoPts || next.pts_us == kNoPts) return false;
+  const ClockSnapshot now = setup_.clock->snapshot();
+  if (!now.valid || now.epoch != frame.epoch || now.rate <= 0.0) return false;
+  if (next.pts_us > now.media_at(host_now_us())) return false;
+  // La suite repart de l'image d'après, comme au début d'une époque : ni paire, ni grille de
+  // cadence, ni fenêtre de DistilDRBA ne passent par-dessus l'image sautée.
+  previous_.reset();
+  cadence_.reset();
+  drba_.continuous = false;
+  ++skipped_;
+  if (setup_.live) setup_.live->count_skipped();
+  return true;
 }
 
 std::expected<RingStage::Output, Refusal> UpscaleStage::produce(const DecodedFrame& frame,

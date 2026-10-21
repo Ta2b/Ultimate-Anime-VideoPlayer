@@ -117,6 +117,9 @@ class LiveSettings {
   void count_cut() { cuts_.fetch_add(1, std::memory_order_relaxed); }
   void count_held() { held_.fetch_add(1, std::memory_order_relaxed); }
   void count_late() { late_.fetch_add(1, std::memory_order_relaxed); }
+  // Images source sautées par gpu avant tout calcul, déjà passées à leur tour (RingStage::passed).
+  void count_skipped() { skipped_.fetch_add(1, std::memory_order_relaxed); }
+  std::uint64_t skipped() const { return skipped_.load(std::memory_order_relaxed); }
   RifeCounts counts() const {
     return RifeCounts{.pairs = pairs_.load(std::memory_order_relaxed),
                       .interpolated = interpolated_.load(std::memory_order_relaxed),
@@ -138,6 +141,7 @@ class LiveSettings {
   std::atomic<std::uint64_t> cuts_{0};
   std::atomic<std::uint64_t> held_{0};
   std::atomic<std::uint64_t> late_{0};
+  std::atomic<std::uint64_t> skipped_{0};
 };
 
 }  // namespace ajp::app::play

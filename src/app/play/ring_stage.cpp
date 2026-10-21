@@ -95,6 +95,13 @@ void RingStage::emit(const ThreadReport& report) {
     }
     const DecodedFrame& frame = pending_.front();
     if (front_outputs_ == 0 && wants_next() && pending_.size() < 2) return;  // attend la suivante
+    if (front_outputs_ == 0 && pending_.size() > 1 && pending_[1].epoch == frame.epoch &&
+        passed(frame, pending_[1])) {
+      pending_.pop_front();
+      --in_flight_;
+      init_.credit();
+      continue;
+    }
     if (front_outputs_ == 0) {
       auto count = outputs(frame);
       if (count && *count > kMaxOutputs) {

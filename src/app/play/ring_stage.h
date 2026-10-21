@@ -72,6 +72,11 @@ class RingStage : public VideoStage, public FrameSink {
   // même époque, ou nullptr (première image d'une époque qui finit, fin du flux pas encore vue).
   // Sans suivante, la dernière image du flux reste en attente : elle n'est pas montrée.
   virtual bool wants_next() const { return false; }
+  // Vrai : frame, en tête et pas encore produite, est déjà passée (next, la suivante de la même
+  // époque, est due) ; elle est sautée sans calcul, et la sous-classe oublie ce qui la supposait.
+  // Une chaîne plus lente que la source montre ainsi moins d'images au lieu de retenir la source,
+  // et avec elle le son et l'horloge. Par défaut : jamais (export).
+  virtual bool passed(const DecodedFrame& /*frame*/, const DecodedFrame& /*next*/) { return false; }
   const DecodedFrame* next() const {
     return pending_.size() > 1 && pending_[1].epoch == pending_[0].epoch ? &pending_[1] : nullptr;
   }

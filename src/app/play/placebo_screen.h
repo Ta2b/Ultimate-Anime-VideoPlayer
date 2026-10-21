@@ -99,6 +99,7 @@ class PlaceboScreen final : public Screen {
   OutputSize size() const override;
   std::expected<ScreenTiming, Refusal> show(const ShowRequest& request) override;
   SlotFree retire(const RingFrame& frame) override;
+  bool ready(const RingFrame& frame) const override;
   void set_fullscreen(bool on) override;
   bool fullscreen() const override;
 

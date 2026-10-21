@@ -2,6 +2,7 @@
 // boîtes des autres threads, l'horloge maître et le thread gpu.
 #pragma once
 
+#include <algorithm>
 #include <atomic>
 #include <cstdint>
 #include <deque>
@@ -65,10 +66,15 @@ struct FakeScreen final : Screen {
   bool is_fullscreen = false;
   std::vector<Shown> shown;
   std::vector<RingFrame> retired;
+  std::vector<std::uint32_t> unwritten;  // slots dont l'écriture n'est pas finie (ready faux)
 
   OutputSize size() const override { return output; }
   std::expected<ScreenTiming, Refusal> show(const ShowRequest& request) override;
   SlotFree retire(const RingFrame& frame) override;
+  bool ready(const RingFrame& frame) const override {
+    return std::ranges::find(unwritten, frame.slot) == unwritten.end();
+  }
+  void write(std::uint32_t slot) { std::erase(unwritten, slot); }
   void set_fullscreen(bool on) override { is_fullscreen = on; }
   bool fullscreen() const override { return is_fullscreen; }
 };

@@ -112,6 +112,7 @@ class UpscaleStage final : public RingStage {
   UpscaleStage(VideoStageInit init, UpscaleSetup setup);
   std::expected<void, Refusal> allocate();
   std::expected<std::uint32_t, Refusal> outputs(const DecodedFrame& frame) override;
+  bool passed(const DecodedFrame& frame, const DecodedFrame& next) override;
   std::expected<Output, Refusal> produce(const DecodedFrame& frame, std::uint32_t output, std::uint32_t slot,
                                          std::uint64_t wait_value, std::uint64_t signal_value) override;
   // Où va une image intermédiaire : un tenseur, ou directement le slot du ring (ring_direct_).
@@ -363,6 +364,7 @@ class UpscaleStage final : public RingStage {
   std::uint64_t multi_pairs_ = 0;
   std::uint64_t direct_pairs_ = 0;  // dont sans passe au milieu
   std::uint64_t rife_runs_ = 0;
+  std::uint64_t skipped_ = 0;     // images source sautées avant calcul (passed)
   std::uint64_t late_pairs_ = 0;  // paires dont des instants sont sautés pour rattraper l'horloge
   std::uint64_t late_instants_ = 0;
   std::unique_ptr<gpu::TensorBuffer> output_;  // 1 × 3 × 2h × 2w ; absent sans SPAN

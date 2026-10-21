@@ -39,6 +39,8 @@ class PlaceboRing {
   std::expected<pl_tex, Refusal> acquire(pl_gpu gpu, const RingFrame& frame);
   // Cède le slot à CUDA après le dernier rendu qui l'a lu (signal de ready_value + 1).
   SlotFree retire(pl_gpu gpu, const RingFrame& frame);
+  // Le sémaphore du slot a atteint ready_value : l'image est écrite. Lu sans attendre.
+  bool ready(const RingFrame& frame) const;
   void clear(pl_gpu gpu);
 
  private:
@@ -53,6 +55,8 @@ class PlaceboRing {
 
   std::vector<Slot> slots_;
   std::uint32_t generation_ = 0;
+  VkDevice device_ = VK_NULL_HANDLE;
+  PFN_vkGetSemaphoreCounterValue counter_ = nullptr;
 };
 
 // Sous-titres et OSD en calques monochromes, au-dessus de l'image, en pixels de la sortie.

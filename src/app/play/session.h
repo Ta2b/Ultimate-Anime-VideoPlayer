@@ -51,6 +51,8 @@ class StatsSource {
   virtual std::int64_t output_period_us() const { return 0; }
   // La même cadence, exacte (images par seconde) : la synchro sur l'écran s'y cale ; 0 : inconnue.
   virtual double output_fps() const { return 0.0; }
+  // Images source que gpu a sautées avant leur calcul, déjà passées : la chaîne ne suit pas.
+  virtual std::uint64_t skipped() const { return 0; }
 };
 
 struct SessionConfig {
@@ -150,6 +152,7 @@ class Session {
   void on_refusal(const StageRefusal& refusal);
   void request_subtitles(const RingFrame& frame);
   void retire(const RingFrame& frame);
+  void retire_written();  // les images rendues avant d'être écrites, qui le sont maintenant
   void choose(std::int64_t host_now);
   const subs::SubtitleFrame* subtitles_for(std::int64_t pts_us);
   void check_end(std::int64_t host_now);
@@ -171,6 +174,7 @@ class Session {
   FrameQueue queue_;
   std::optional<RingFrame> current_;  // montrée, slot tenu par main
   std::vector<RingFrame> late_;       // réservé une fois, réutilisé à chaque tour
+  std::vector<RingFrame> unwritten_;  // rendues par main avant d'être écrites : parties une fois écrites
   SubtitleQueue subtitles_{kMaxKeptSubtitles};
   std::size_t subtitle_requests_ = 0;  // demandes de l'époque sans réponse
 

@@ -130,6 +130,10 @@ class Screen {
   // valeur est signalée côté GPU après le dernier rendu qui l'a lu, ou tout de suite après
   // ready_value pour une image jamais montrée.
   virtual SlotFree retire(const RingFrame& frame) = 0;
+  // Le slot de frame est écrit (ready_value atteint), lu sans attendre. Montrée ou rendue avant,
+  // l'image ferait attendre son écriture à la file de l'affichage, et derrière elle chaque
+  // présentation suivante, interface et OSD compris. Faute de pouvoir le lire : vrai.
+  virtual bool ready(const RingFrame& /*frame*/) const { return true; }
   virtual void set_fullscreen(bool on) = 0;
   virtual bool fullscreen() const = 0;
 };

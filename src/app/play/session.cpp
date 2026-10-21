@@ -42,6 +42,7 @@ Session::Session(SessionConfig config, Stages& stages, Screen& screen, const Mas
       clock_(clock),
       show_stats_(config_.stats) {
   late_.reserve(kMaxRingSlots);
+  unwritten_.reserve(kMaxRingSlots);
 }
 
 void Session::begin(std::int64_t /*host_now*/) {
@@ -207,13 +208,28 @@ void Session::request_subtitles(const RingFrame& frame) {
 }
 
 void Session::retire(const RingFrame& frame) {
+  // Pas encore écrite (seek, image d'avant un seek) : la rendre maintenant ferait attendre son
+  // écriture à la file de l'affichage. Elle part au premier tour où elle l'est.
+  if (!screen_.ready(frame)) {
+    unwritten_.push_back(frame);
+    return;
+  }
   stages_.slot_free(screen_.retire(frame));
+}
+
+void Session::retire_written() {
+  std::erase_if(unwritten_, [this](const RingFrame& frame) {
+    if (!screen_.ready(frame)) return false;
+    stages_.slot_free(screen_.retire(frame));
+    return true;
+  });
 }
 
 void Session::choose(std::int64_t host_now) {
   if (prerolling_) {
     const RingFrame* head = queue_.first_of(epoch_);
-    if (head == nullptr) return;  // l'image d'avant le seek reste à l'écran
+    // Pas encore là, ou pas encore écrite : l'image d'avant le seek reste à l'écran.
+    if (head == nullptr || !screen_.ready(*head)) return;
     // L'horloge ne court pas encore : la première image attend ses sous-titres (au plus
     // kPrerollSubtitleWaitUs), pour ne pas être montrée sans eux puis recomposée.
     if (!preroll_since_us_) preroll_since_us_ = host_now;
@@ -242,7 +258,11 @@ void Session::choose(std::int64_t host_now) {
   const std::int64_t period = display_period();
   const std::int64_t lead_us = display_delay_us(period) + period / 2;
   late_.clear();
-  const std::optional<RingFrame> picked = queue_.pick(now.media_at(host_now), lead_us, late_);
+  // Seules les images déjà écrites : l'écran garde la sienne tant que la suivante se calcule, au
+  // lieu d'attendre le GPU des moteurs à chaque présentation.
+  const std::optional<RingFrame> picked =
+      queue_.pick(now.media_at(host_now), lead_us, late_,
+                  [this](const RingFrame& frame) { return screen_.ready(frame); });
   for (const RingFrame& frame : late_) {
     retire(frame);
     ++stats_.dropped;
@@ -268,6 +288,7 @@ const subs::SubtitleFrame* Session::subtitles_for(std::int64_t pts_us) {
 
 std::expected<std::optional<PresentRecord>, Refusal> Session::tick(std::int64_t host_now, const UiFrame& ui) {
   fresh_ = false;
+  retire_written();
   follow_display();
   choose(host_now);
   const bool fresh = fresh_;
@@ -402,8 +423,11 @@ void Session::check_end(std::int64_t host_now) {
 }
 
 void Session::end() {
-  for (const RingFrame& frame : queue_.take_all()) retire(frame);
-  if (current_) retire(*current_);
+  // À l'arrêt, l'écran peut attendre les écritures : tout est rendu tout de suite.
+  for (const RingFrame& frame : queue_.take_all()) stages_.slot_free(screen_.retire(frame));
+  for (const RingFrame& frame : unwritten_) stages_.slot_free(screen_.retire(frame));
+  unwritten_.clear();
+  if (current_) stages_.slot_free(screen_.retire(*current_));
   current_.reset();
   subtitles_.clear();
   stages_.quit();
@@ -416,10 +440,12 @@ std::vector<std::string> Session::osd_lines() const {
   if (show.all || show.tracks) lines.insert(lines.end(), config_.tracks.begin(), config_.tracks.end());
   if ((show.all || show.output) && !config_.output.empty()) lines.push_back(config_.output);
   if (show.all || show.frames) {
-    lines.push_back(std::format("image {} (σ {}) · rendu {} · sautées {}",
+    const std::uint64_t skipped = config_.extra != nullptr ? config_.extra->skipped() : 0;
+    lines.push_back(std::format("image {} (σ {}) · rendu {} · sautées {}{}",
                                 format_ms(stats_.frame_interval.median()),
                                 format_ms(static_cast<std::int64_t>(stats_.frame_interval.stddev())),
-                                format_ms(stats_.render.median()), stats_.dropped));
+                                format_ms(stats_.render.median()), stats_.dropped,
+                                skipped > 0 ? std::format(" (+ {} avant calcul)", skipped) : std::string()));
     const std::int64_t period = pacing_period_us();
     std::string synced;
     if (speed_ != 1.0) {

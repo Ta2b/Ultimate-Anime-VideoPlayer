@@ -73,6 +73,23 @@ std::expected<std::vector<RingSlotDesc>, Refusal> PlaceboRing::create(pl_gpu gpu
   if (format == nullptr || (format->caps & PL_FMT_CAP_STORABLE) == 0) {
     return refuse(RefusalCode::FormatUnsupported, "rgba16 n'est pas inscriptible sur cet appareil");
   }
+  // Lecture des sémaphores sans attente (ready) : Vulkan 1.2, ou VK_KHR_timeline_semaphore.
+  const pl_vulkan vk = pl_vulkan_get(gpu);
+  device_ = VK_NULL_HANDLE;
+  counter_ = nullptr;
+  if (vk != nullptr) {
+    const auto device_proc =
+        reinterpret_cast<PFN_vkGetDeviceProcAddr>(vk->get_proc_addr(vk->instance, "vkGetDeviceProcAddr"));
+    if (device_proc != nullptr) {
+      counter_ = reinterpret_cast<PFN_vkGetSemaphoreCounterValue>(
+          device_proc(vk->device, "vkGetSemaphoreCounterValue"));
+      if (counter_ == nullptr) {
+        counter_ = reinterpret_cast<PFN_vkGetSemaphoreCounterValue>(
+            device_proc(vk->device, "vkGetSemaphoreCounterValueKHR"));
+      }
+    }
+    device_ = vk->device;
+  }
   // Sémaphore de la première cession, attendu sur l'hôte une fois pour tout le ring : le slot
   // doit être en GENERAL côté CUDA avant sa première écriture, qui n'attend que 0.
   pl_vulkan_sem_params temp_params{};
@@ -153,6 +170,14 @@ std::expected<pl_tex, Refusal> PlaceboRing::acquire(pl_gpu gpu, const RingFrame&
     slot.placebo_value = frame.ready_value;
   }
   return slot.tex;
+}
+
+bool PlaceboRing::ready(const RingFrame& frame) const {
+  // Hors du ring courant, ou sans moyen de lire : vrai, acquire ou retire en décident.
+  if (counter_ == nullptr || frame.generation != generation_ || frame.slot >= slots_.size()) return true;
+  std::uint64_t value = 0;
+  if (counter_(device_, slots_[frame.slot].semaphore, &value) != VK_SUCCESS) return true;
+  return value >= frame.ready_value;
 }
 
 SlotFree PlaceboRing::retire(pl_gpu gpu, const RingFrame& frame) {
