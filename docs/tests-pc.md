@@ -124,6 +124,29 @@ un réglage à faire taire.
   - ring en RGB10A2 au lieu de RGBA16 : moitié moins d'octets par image à 4K et haute fréquence,
     à vérifier sur les dégradés du grade HDR.
 
+## Voies de calcul et export « débit » (21 octobre, compilé dans le cloud, jamais lancé sur une RTX)
+
+- **Trois voies** : le journal d'ouverture dit « TensorRT … 3 voies de calcul » (une seule sous
+  7,5 Gio, la 4050 mobile). Lecture ×4 avec RIFE puis GMFSS : aucune image intermédiaire cassée
+  ou mêlée à la suivante (l'ordre entre voies est automatique, une erreur se verrait là), i/s
+  contre le banc de 45,9. `nsys profile --trace=cuda` sur 10 s : SPAN d'une image (voie
+  d'agrandissement) doit recouvrir RIFE ou GMFSS de la paire (voie d'interpolation).
+- **Doubles tampons et instant de RIFE** : l'entrée de RIFE et l'image intermédiaire alternent
+  entre deux tampons, et l'instant suivant d'une paire ne réécrit plus que le plan t
+  (`cuMemsetD16Async`, sans noyau). À ×3 et plus, une capture à t = 1/3 identique à celle de
+  fd3af4a, avec RIFE 4.25 (11 plans) et 4.22 lite (7 plans).
+- **Export « débit »** (TensorRT, plusieurs voies) : le journal dit « export : profil débit : 8
+  slots, 10 tampons de conversion, file d'écriture de 8 ». Débit contre 59 et 105 i/s, mémoire
+  GPU de l'encodeur relevée avec `nvidia-smi` (le pool CUDA de NVENC grandit avec la file).
+- **Écarté : un graphe CUDA par instant** (étude 2, 3.5). La capture figerait les événements des
+  voies (anneau de 64 par voie, ordre automatique entre voies) et ceux du profil par étape ; une
+  relecture désordonnerait les attentes entre voies. Le gain visé, trois lancements de moins par
+  instant, est petit devant les ~7 ms de RIFE, et trtexec ne montrait aucun gain avec
+  `--useCudaGraph` (reports/optimisation.md). Les moteurs gardent leur propre graphe. À
+  reprendre seulement si `nsys` montre le CPU de lancement comme goulot.
+- **Sans objet : double tampon des sommes du splat** : elles servent de brouillon dans un seul
+  appel de `soft_splat_all`, sur une seule voie ; rien d'autre ne les lit.
+
 ## Linux sur RX 6500M (RDNA2 Navi 24, 4 Go)
 
 Backend Vulkan seul (pas de matrices coopératives, ROCm ne sert pas Navi 24 : MIGraphX n'est plus

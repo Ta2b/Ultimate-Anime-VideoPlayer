@@ -97,7 +97,7 @@ std::expected<void, Refusal> VulkanKernelOps::rife_time(const Tensor& input, flo
   key.add(46);
   add_view(key, *vi);
   key.add(std::bit_cast<std::uint32_t>(t));
-  auto rec = recording(key, [&](Recorder& r) { return runner_.rife_constants(r, *vi, t); });
+  auto rec = recording(key, [&](Recorder& r) { return runner_.rife_time(r, *vi, t); });
   if (!rec) return std::unexpected(rec.error());
   return submit(**rec);
 }

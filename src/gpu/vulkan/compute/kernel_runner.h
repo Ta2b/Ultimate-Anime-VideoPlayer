@@ -62,6 +62,9 @@ class KernelRunner {
   Done rife_crop(Recorder& recorder, const TensorView& padded, const TensorView& dst);
   // Plans constants 6 à 10 du tenseur d'entrée de RIFE (11 plans pw × ph), t dans [0, 1].
   Done rife_constants(Recorder& recorder, const TensorView& input, float t);
+  // Le plan 6 seul, à l'instant t de ]0, 1[ : l'instant suivant d'une entrée déjà remplie, les
+  // images et le maillage laissés tels quels. Un remplissage de tampon, sans noyau.
+  Done rife_time(Recorder& recorder, const TensorView& input, float t);
 
   // a et b déformés par le mouvement et mélangés à l'instant t de ]0, 1[ (ref warp_blend_at ;
   // t = 1/2 : warp_blend). Tous les tenseurs de même précision.

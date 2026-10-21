@@ -68,7 +68,32 @@ void check_constants(Rig& rig, Precision p) {
   CHECK(std::ranges::all_of(head, [](std::byte b) { return b == std::byte{0x7F}; }));
 }
 
+// L'instant suivant d'une entrée remplie : le plan 6 seul change, au même arrondi que le noyau.
+void check_time(Rig& rig, Precision p) {
+  TensorBuffer input = tensor_target(rig, 128, 64, k::kRifeInputChannels, p);
+  record_and_run(rig, [&](Recorder& r) { return rig.kernels().rife_constants(r, input.view, 0.3F); });
+  const std::vector<k::PlaneF> before = download_planes(rig, input);
+  for (const float t : {0.7F, 1.0F / 3.0F}) {
+    INFO("t = " << t);
+    record_and_run(rig, [&](Recorder& r) { return rig.kernels().rife_time(r, input.view, t); });
+    const std::vector<k::PlaneF> planes = download_planes(rig, input);
+    for (auto i = static_cast<std::size_t>(k::kRifeChannelTime); i < planes.size(); ++i) {
+      const bool time = i == static_cast<std::size_t>(k::kRifeChannelTime);
+      CHECK(max_abs_diff(planes[i], time ? stored(k::PlaneF(128, 64, t), p) : before[i]) == 0.0F);
+    }
+    // Les plans des images gardent les octets de tensor_target, que rien n'a écrits.
+    const std::vector<std::byte> head = read_bytes(rig, input.buffer, 64);
+    CHECK(std::ranges::all_of(head, [](std::byte b) { return b == std::byte{0x7F}; }));
+  }
+}
+
 }  // namespace
+
+TEST_CASE("RIFE : instant suivant, le plan de l'instant seul réécrit", "[vk_compute][rife]") {
+  Rig rig = make_rig();
+  check_time(rig, Precision::F32);
+  if (rig.context->caps().enabled.storage_buffer_16bit) check_time(rig, Precision::F16);
+}
 
 TEST_CASE("RIFE : remplissage mod-64 centré, bords noir studio, exact", "[vk_compute][rife]") {
   Rig rig = make_rig();
@@ -193,6 +218,9 @@ TEST_CASE("RIFE : tailles, formats et instants hors contrat refusés", "[vk_comp
   require_refusal(kr.rife_constants(r, input.view, 1.5F), RefusalCode::FieldOutOfRange);
   require_refusal(kr.rife_constants(r, input.view, std::numeric_limits<float>::quiet_NaN()),
                   RefusalCode::FieldOutOfRange);
+  require_refusal(kr.rife_time(r, rgb_padded.view, 0.5F), RefusalCode::InputMismatch);
+  require_refusal(kr.rife_time(r, input.view, 0.0F), RefusalCode::FieldOutOfRange);
+  require_refusal(kr.rife_time(r, input.view, 1.0F), RefusalCode::FieldOutOfRange);
   CHECK(require_value(r.finish())->dispatches() == 0);
   // Le bon remplissage, lui, passe.
   record_and_run(rig, [&](Recorder& rec) { return kr.rife_pad(rec, frame.view, padded.view); });

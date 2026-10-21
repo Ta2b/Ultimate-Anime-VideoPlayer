@@ -1,13 +1,16 @@
 // RIFE dans le backend TensorRT de la tranche verticale : entrée remplie (rife_input, puis son
 // instant seul par rife_time), recadrage de la sortie (rife_crop, du contrat) et mesures d'une
 // paire (scores_start, scores_take).
+#include <cstdint>
 #include <cstring>
+#include <cuda.h>
 #include <format>
 #include <string>
 
 #include "gpu/cuda/backend/cuda_status.h"
 #include "gpu/cuda/backend/rife_kernels.h"
 #include "gpu/cuda/backend/tensorrt_backend.h"
+#include "kernels/ref/half.h"
 #include "kernels/spec/rife.h"
 
 namespace ajp::gpu::cuda {
@@ -84,18 +87,21 @@ std::expected<void, Refusal> TensorRtBackend::rife_time(const Tensor& input, flo
     return refuse(RefusalCode::FieldOutOfRange, std::format("rife_time : instant {} hors de ]0, 1[", t));
   }
   if (auto ok = bind(); !ok) return ok;
-  const RifeInputParams params{.padded_width = width_of(input),
-                               .padded_height = height_of(input),
-                               .time = t,
-                               .input = address(input),
-                               .planes = static_cast<int>(planes),
-                               .frames = false};
   if (auto ok = order({input.handle}, {input.handle}); !ok) return ok;
+  // Seul le plan de l'instant change : les images et le maillage restent ceux de rife_input.
+  // Une mise à valeur 16 bits du plan, sans noyau, au même arrondi que __float2half_rn.
+  const std::size_t plane =
+      static_cast<std::size_t>(width_of(input)) * static_cast<std::size_t>(height_of(input));
+  const CUdeviceptr time_plane =
+      input.handle + input.offset + std::size_t{kernels::kRifeChannelTime} * plane * sizeof(std::uint16_t);
   GpuTiming& timing = stage("entrée de RIFE");
   timing.begin(stream_);
-  auto launched = cuda_check(launch_rife_input(params, stream_), "rife_input<<<>>>");
+  const CUresult set = cuMemsetD16Async(time_plane, kernels::ref::float_to_half(t), plane, stream_);
   timing.end(stream_);
-  return launched;
+  if (set != CUDA_SUCCESS)
+    return refuse(RefusalCode::VendorCallFailed,
+                  std::format("cuMemsetD16Async : erreur {}", static_cast<int>(set)));
+  return {};
 }
 
 std::expected<void, Refusal> TensorRtBackend::rife_crop(const Tensor& padded, const Tensor& out) {

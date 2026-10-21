@@ -3,11 +3,13 @@
 #include "gpu/vulkan/compute/kernel_runner.h"
 
 #include <array>
+#include <bit>
 #include <cstdint>
 #include <format>
 
 #include "gpu/vulkan/compute/kernel_dispatch.h"
 #include "gpu/vulkan/compute/weights.h"
+#include "kernels/ref/half.h"
 
 namespace ajp::gpu::vk {
 namespace {
@@ -42,6 +44,26 @@ Done KernelRunner::rife_constants(Recorder& recorder, const TensorView& input, f
   const std::array buffers{input.buffer};
   return detail::run(*pipelines_, recorder, "rife_constants", input.precision, {}, buffers, {},
                      bytes_of(push), {groups_for(input.width), groups_for(input.height), 1});
+}
+
+Done KernelRunner::rife_time(Recorder& recorder, const TensorView& input, float t) {
+  if (!kernels::is_rife_input_planes(input.planes)) {
+    return refuse(RefusalCode::InputMismatch,
+                  std::format("instant RIFE : {} plans, 11 ou 7 attendus", input.planes));
+  }
+  if (auto ok = check_tensor(input, input.planes, context_->caps().enabled, "instant RIFE"); !ok) return ok;
+  if (!(t > 0.0F && t < 1.0F)) {
+    return refuse(RefusalCode::FieldOutOfRange, std::format("instant RIFE {} hors de ]0, 1[", t));
+  }
+  // Le mot de 32 bits répété : un float, ou deux float16 au même arrondi que packHalf2x16.
+  const std::uint32_t half = kernels::ref::float_to_half(t);
+  const std::uint32_t word =
+      input.precision == Precision::F16 ? half | (half << 16U) : std::bit_cast<std::uint32_t>(t);
+  const VkDeviceSize plane = tensor_bytes(input.width, input.height, 1, input.precision);
+  return recorder.fill({.buffer = input.buffer.buffer,
+                        .offset = input.buffer.offset + plane * kernels::kRifeChannelTime,
+                        .size = plane},
+                       word);
 }
 
 Done KernelRunner::warp_blend(Recorder& recorder, const TensorView& a, const TensorView& b,
