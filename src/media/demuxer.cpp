@@ -25,12 +25,14 @@ struct Demuxer::State {
   PacketPtr scratch;            // reçoit av_read_frame avant d'être partagé
   std::deque<Packet> pushback;  // lus par le seek pour vérifier son point clé, rendus par read()
   std::shared_ptr<spdlog::logger> log = make_logger();
+  std::uint32_t file_seeks = 0;
 
   std::expected<std::optional<Packet>, Refusal> read_file() const;
   std::expected<std::optional<Packet>, Refusal> peek_keyframe(int reference);
   std::expected<void, Refusal> seek_stream(int reference, std::int64_t ts, int flags, std::string_view what);
   std::expected<std::int64_t, Refusal> seek_before(std::int64_t target_us, int reference);
   std::expected<std::optional<std::int64_t>, Refusal> seek_after(std::int64_t target_us, int reference);
+  std::int64_t indexed_before(std::int64_t target_us, int reference) const;
 };
 
 namespace {
@@ -234,6 +236,7 @@ std::expected<std::optional<Packet>, Refusal> Demuxer::State::peek_keyframe(int 
 std::expected<void, Refusal> Demuxer::State::seek_stream(int reference, std::int64_t ts, int flags,
                                                          std::string_view what) {
   pushback.clear();
+  ++file_seeks;
   if (const int err = av_seek_frame(format.get(), reference, ts, flags); err < 0) {
     return refuse_av(RefusalCode::SeekFailed, what, err);
   }
@@ -284,6 +287,7 @@ std::expected<std::optional<std::int64_t>, Refusal> Demuxer::State::seek_after(s
                                                                                int reference) {
   const AVRational time_base = format->streams[reference]->time_base;
   pushback.clear();
+  ++file_seeks;
   if (av_seek_frame(format.get(), reference, from_us(target_us, time_base, start_us), 0) < 0) {
     return std::nullopt;
   }
@@ -291,6 +295,19 @@ std::expected<std::optional<std::int64_t>, Refusal> Demuxer::State::seek_after(s
   if (!key) return std::unexpected(key.error());
   if (!*key || (*key)->pts_us == kNoPts) return std::nullopt;
   return (*key)->pts_us;
+}
+
+// Le point clé à ou avant la cible d'après l'index du conteneur, quand cet index est en pts
+// (MKV : les Cues, chargées par le premier seek) ; kNoPts sinon (MP4 range le sien en dts,
+// d'autres n'en ont pas).
+std::int64_t Demuxer::State::indexed_before(std::int64_t target_us, int reference) const {
+  if (std::string_view(format->iformat->name).find("matroska") == std::string_view::npos) return kNoPts;
+  AVStream* stream = format->streams[reference];
+  const int at = av_index_search_timestamp(stream, from_us(target_us, stream->time_base, start_us),
+                                           AVSEEK_FLAG_BACKWARD);
+  const AVIndexEntry* entry = at < 0 ? nullptr : avformat_index_get_entry(stream, at);
+  if (entry == nullptr || (entry->flags & AVINDEX_KEYFRAME) == 0) return kNoPts;
+  return to_us(entry->timestamp, stream->time_base, start_us);
 }
 
 std::expected<void, Refusal> Demuxer::seek(std::int64_t target_us, int reference, SeekTarget where) {
@@ -310,12 +327,22 @@ std::expected<void, Refusal> Demuxer::seek(std::int64_t target_us, int reference
   // leurs pts lus (un index en dts tromperait), et le plus proche gagne.
   auto after = state_->seek_after(target_us, reference);
   if (!after) return std::unexpected(after.error());
+  // Index en pts : le point clé d'avant s'y lit sans repositionner le fichier, et la lecture
+  // reste sur celui d'après quand il est le plus proche.
+  if (*after) {
+    const std::int64_t indexed = state_->indexed_before(target_us, reference);
+    if (indexed != kNoPts && indexed <= target_us && **after - target_us < target_us - indexed) return {};
+  }
   auto before = state_->seek_before(target_us, reference);
   if (!before) return std::unexpected(before.error());
   if (!*after || *before == kNoPts || **after - target_us >= target_us - *before) return {};
   auto again = state_->seek_after(target_us, reference);
   if (!again) return std::unexpected(again.error());
   return {};
+}
+
+std::uint32_t Demuxer::file_seeks() const {
+  return state_->file_seeks;
 }
 
 }  // namespace ajp::media

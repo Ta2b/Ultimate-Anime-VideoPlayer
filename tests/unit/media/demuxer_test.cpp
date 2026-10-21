@@ -177,9 +177,18 @@ TEST_CASE("Demuxer : seek sur le point clé précédent ou le plus proche", "[me
   };
   REQUIRE(demuxer.seek(17 * test::kFrameUs, 0, SeekTarget::PreviousKeyframe));
   CHECK(first_video_pts() == 10 * test::kFrameUs);
+  // L'index du MKV (Cues, chargées par le premier seek) donne le point clé d'avant : le fichier
+  // n'est repositionné qu'une fois quand celui d'après gagne, deux fois sinon.
+  std::uint32_t seeks = demuxer.file_seeks();
   REQUIRE(demuxer.seek(18 * test::kFrameUs, 0, SeekTarget::NearestKeyframe));
   CHECK(first_video_pts() == 20 * test::kFrameUs);
+  CHECK(demuxer.file_seeks() - seeks == 1);
+  seeks = demuxer.file_seeks();
   REQUIRE(demuxer.seek(12 * test::kFrameUs, 0, SeekTarget::NearestKeyframe));
+  CHECK(first_video_pts() == 10 * test::kFrameUs);
+  CHECK(demuxer.file_seeks() - seeks == 2);
+  // À égale distance, le point clé d'avant, comme sans index.
+  REQUIRE(demuxer.seek(15 * test::kFrameUs, 0, SeekTarget::NearestKeyframe));
   CHECK(first_video_pts() == 10 * test::kFrameUs);
 }
 
