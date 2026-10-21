@@ -151,6 +151,12 @@ TEST_CASE("resolve : le hachage suit le contenu du Plan", "[resolve]") {
   CHECK(a->hash == b->hash);
   CHECK(a->hash != c->hash);
   CHECK(a->hash == compute_hash(*a));
+  // Une fréquence calculée autrement, au dernier bit près, garde le même hachage.
+  Plan d = *a;
+  d.output_fps = std::nextafter(a->output_fps, 1000.0);
+  CHECK(compute_hash(d) == a->hash);
+  d.output_fps = a->output_fps + 0.001;
+  CHECK(compute_hash(d) != a->hash);
 }
 
 TEST_CASE("resolve : sur un écran fixe, l'interpolation unique prend le facteur calé", "[resolve][pacing]") {
