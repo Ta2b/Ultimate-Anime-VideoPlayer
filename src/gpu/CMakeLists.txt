@@ -18,6 +18,8 @@ endif()
 if(AJP_WITH_OPENVINO)
   add_subdirectory(openvino)
 endif()
+# Les images de l'interpolation d'Apple (coreml/vt_pixels.h) : portables, vérifiées partout.
+ajp_add_module(coreml_pixels SOURCES coreml/vt_pixels.cpp DEPS ajp::gpu ajp::kernels)
 if(AJP_WITH_COREML)
   add_subdirectory(coreml)
 endif()

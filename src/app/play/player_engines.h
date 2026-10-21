@@ -116,6 +116,14 @@ std::expected<std::optional<std::unique_ptr<gpu::Engine>>, Refusal> prepare_dist
     Player& p, const gpu::BackendInit& init, gpu::Backend& backend,
     std::span<const std::filesystem::path> dirs, int work_width, int work_height);
 
+// L'interpolation d'Apple pour des images de travail work_width × work_height, chargée comme RIFE
+// image (plans v2, remplis au multiple de 64) : son modèle (apple_model.h), essayé à la
+// construction par le runtime Core ML. Rien si l'utilisateur ferme la fenêtre. Refus
+// FeatureUnavailable : un autre backend que Core ML ; ceux du modèle et du runtime (macOS avant
+// 15.4, puce ou taille refusées).
+std::expected<std::optional<std::unique_ptr<gpu::Engine>>, Refusal> prepare_apple(
+    Player& p, const gpu::BackendInit& init, gpu::Backend& backend, int work_width, int work_height);
+
 std::expected<std::optional<GmfssEngines>, Refusal> prepare_gmfss(Player& p, const gpu::BackendInit& init,
                                                                   gpu::Backend& backend,
                                                                   std::span<const std::filesystem::path> dirs,

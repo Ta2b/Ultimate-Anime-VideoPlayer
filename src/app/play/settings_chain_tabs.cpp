@@ -141,6 +141,7 @@ void fluidity_tab(PlaySettings& d, const SettingsChoices& choices, bool exportin
   section("Moteur de l'interpolation");
   for (int i = 0; i < kMotionEngineCount; ++i) {
     const auto engine = static_cast<MotionEngine>(i);
+    if (!offered(engine) && d.motion_engine != engine) continue;
     if (ImGui::RadioButton(std::string(label(engine)).c_str(), d.motion_engine == engine))
       d.motion_engine = engine;
   }
@@ -200,6 +201,13 @@ void fluidity_tab(PlaySettings& d, const SettingsChoices& choices, bool exportin
                       "prend la place.",
                       kDistilDrbaFile, choices.rife_folder));
     }
+  }
+  if (d.motion_engine == MotionEngine::Apple) {
+    note(
+        "L'interpolation d'Apple : le réseau de flot optique de macOS (VideoToolbox, macOS 15.4 ou plus), "
+        "sur le Neural Engine et le GPU de la puce, sans modèle à télécharger. Sous le backend Core ML "
+        "seulement ; ailleurs, ou sur un Mac qui ne l'offre pas, RIFE prend la place. Essayée la première "
+        "fois pour cette taille.");
   }
   if (exporting) {
     // Les limites de la lecture en direct ne valent pas à l'export.

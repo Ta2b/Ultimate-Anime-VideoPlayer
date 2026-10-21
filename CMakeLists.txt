@@ -32,6 +32,12 @@ if(AJP_WITH_CUDA)
   set(CMAKE_CUDA_STANDARD_REQUIRED ON)
 endif()
 
+# L'interpolation d'Apple (gpu/coreml/coreml_vt.mm) est en Objective-C++, pour VideoToolbox :
+# activé ici, au-dessus de toutes les cibles qui le lient (les tests du backend Vulkan compris).
+if(APPLE AND AJP_WITH_COREML)
+  enable_language(OBJCXX)
+endif()
+
 set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 # windows.h fait de min et max des macros, qui cassent std::max et std::numeric_limits<T>::min

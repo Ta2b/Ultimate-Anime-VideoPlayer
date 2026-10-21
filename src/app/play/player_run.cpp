@@ -177,7 +177,8 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
           .display_hz = display_period_us(out.window()) > 0
                             ? 1e6 / static_cast<double>(display_period_us(out.window()))
                             : 0.0,
-          .rife_available = c.rife_model.has_value() || c.gmfss_found || c.drba_found,
+          .rife_available =
+              c.rife_model.has_value() || c.gmfss_found || c.drba_found || offered(MotionEngine::Apple),
           .gmfss_available = find_gmfss(c.gmfss_places).has_value(),
           .gmfss_union_available = find_gmfss(c.gmfss_places, GmfssVariant::Union).has_value(),
           .distil_drba_available = c.drba_found,

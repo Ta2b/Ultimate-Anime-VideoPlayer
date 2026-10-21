@@ -56,7 +56,7 @@ media::DecoderOptions decoder_options(std::string_view backend, const GpuDevice&
 }
 
 std::string_view ChainEngines::motion_name() const {
-  return use_gmfss() ? "GMFSS" : use_drba() ? "DistilDRBA" : "RIFE";
+  return use_gmfss() ? "GMFSS" : use_drba() ? "DistilDRBA" : use_apple() ? "Apple" : "RIFE";
 }
 
 std::string ChainEngines::motion_label(const PlaySettings& settings) const {
@@ -64,6 +64,7 @@ std::string ChainEngines::motion_label(const PlaySettings& settings) const {
     return std::format("GMFSS Fortuna{} {} · ", gmfss_variant == GmfssVariant::Union ? " Union" : "",
                        factor_text(factor_of(settings)));
   if (use_drba()) return std::format("DistilDRBA {} · ", factor_text(factor_of(settings)));
+  if (use_apple()) return std::format("Apple {} · VideoToolbox · ", factor_text(factor_of(settings)));
   if ((rife || rife_motion) && rife_model)
     return std::format("RIFE {} · {} · ", factor_text(factor_of(settings)), rife_model->stem().string());
   return {};
@@ -132,8 +133,9 @@ std::expected<std::optional<ChainEngines>, Refusal> prepare_chain(Player& p, con
   const bool want_gmfss = settings.rife_factor >= 2 && is_gmfss(settings.motion_engine);
   c.drba_found = find_distil_drba(c.gmfss_places).has_value();
   const bool want_drba = settings.rife_factor >= 2 && settings.motion_engine == MotionEngine::DistilDrba;
+  const bool want_apple = settings.rife_factor >= 2 && settings.motion_engine == MotionEngine::Apple;
   if (settings.rife_factor >= 2 && !c.rife_model && !(want_gmfss && c.gmfss_found) &&
-      !(want_drba && c.drba_found))
+      !(want_drba && c.drba_found) && !want_apple)
     return std::unexpected(
         choose_rife_model(p.options, p.paths.home, settings, rife_order, p.paths.models).error());
   show_loading(p.screen, p.ui, "Chargement");
@@ -203,7 +205,25 @@ std::expected<std::optional<ChainEngines>, Refusal> prepare_chain(Player& p, con
       c.drba = std::move(**loaded);
     }
   }
-  const bool use_rife = settings.rife_factor >= 2 && c.rife_model && !c.use_gmfss() && !c.use_drba();
+  // L'interpolation d'Apple à la place de RIFE image, à la taille de travail ; RIFE reprend sous un
+  // autre backend que Core ML, ou sur un Mac qui ne l'offre pas.
+  if (want_apple) {
+    auto loaded = prepare_apple(p, init, *c.backend, c.work.width, c.work.height);
+    if (!loaded) {
+      log->warn("{} ; {}", loaded.error().detail, c.rife_model ? "RIFE à la place" : "sans interpolation");
+      p.ui.controls().notify(
+          c.rife_model ? "Interpolation d'Apple indisponible : RIFE" : "Interpolation d'Apple indisponible",
+          host_now_us());
+    } else if (!*loaded) {
+      return std::nullopt;
+    } else {
+      c.rife = std::move(**loaded);
+      c.apple = true;
+      c.rife_planes = kernels::kRifeV2InputChannels;
+    }
+  }
+  const bool use_rife =
+      settings.rife_factor >= 2 && c.rife_model && !c.use_gmfss() && !c.use_drba() && !c.use_apple();
   c.rife_align = use_rife ? rife_padding_multiple(*c.rife_model) : kernels::kRifeAlign;
   c.geometry = kernels::rife_geometry(c.rife_size.width, c.rife_size.height, c.rife_align);
   c.image_geometry = kernels::rife_geometry(c.work.width, c.work.height, c.rife_align);

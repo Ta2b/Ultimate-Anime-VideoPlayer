@@ -83,13 +83,15 @@ struct ChainEngines {
   std::unique_ptr<gpu::Engine> engine;  // SPAN
   GmfssEngines gmfss;
   std::unique_ptr<gpu::Engine> drba;
-  std::unique_ptr<gpu::Engine> rife;
+  std::unique_ptr<gpu::Engine> rife;  // RIFE image, ou l'interpolation d'Apple (apple)
   std::unique_ptr<gpu::Engine> rife_motion;
+  bool apple = false;
 
   bool use_gmfss() const { return gmfss.pair != nullptr; }
   bool use_drba() const { return drba != nullptr; }
+  bool use_apple() const { return apple && rife != nullptr; }
   bool interpolates() const { return rife || rife_motion || use_gmfss() || use_drba(); }
-  // « GMFSS », « DistilDRBA » ou « RIFE », pour les compteurs.
+  // « GMFSS », « DistilDRBA », « Apple » ou « RIFE », pour les compteurs.
   std::string_view motion_name() const;
   // « RIFE ×2 · rife_v4.25 · », ou rien sans interpolation.
   std::string motion_label(const PlaySettings& settings) const;

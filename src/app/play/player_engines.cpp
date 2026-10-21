@@ -9,6 +9,7 @@
 #include <SDL3/SDL_events.h>
 #include <SDL3/SDL_timer.h>
 
+#include "app/play/apple_model.h"
 #include "app/play/controls.h"
 #include "app/play/engine_build.h"
 #include "app/play/gmfss_model.h"
@@ -201,6 +202,27 @@ std::expected<std::optional<std::unique_ptr<gpu::Engine>>, Refusal> prepare_dist
       gpu::Shape{.dims = {1, kernels::kDistilDrbaInputPlanes, g.padded_height, g.padded_width}},
       EngineLabel{.name = "DistilDRBA",
                   .model = found->stem().string(),
+                  .width = g.padded_width,
+                  .height = g.padded_height},
+      gpu::Lane::Interpolate);
+}
+
+std::expected<std::optional<std::unique_ptr<gpu::Engine>>, Refusal> prepare_apple(
+    Player& p, const gpu::BackendInit& init, gpu::Backend& backend, int work_width, int work_height) {
+  const std::string backend_name = backend.capabilities().name;
+  if (backend_name != "coreml") {
+    return std::unexpected(
+        Refusal{RefusalCode::FeatureUnavailable,
+                std::format("interpolation d'Apple : backend Core ML seulement (ici {})", backend_name)});
+  }
+  auto model = apple_model(p.paths.engines.parent_path() / "modeles");
+  if (!model) return std::unexpected(std::move(model.error()));
+  const kernels::RifeGeometry g = kernels::rife_geometry(work_width, work_height);
+  return prepare_engine(
+      p, init, backend, *model,
+      gpu::Shape{.dims = {1, kernels::kRifeV2InputChannels, g.padded_height, g.padded_width}},
+      EngineLabel{.name = "Apple",
+                  .model = "VTFrameRateConversion",
                   .width = g.padded_width,
                   .height = g.padded_height},
       gpu::Lane::Interpolate);

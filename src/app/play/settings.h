@@ -42,11 +42,22 @@ render::GradeSettings with_preset(render::GradePreset preset, const render::Grad
 // poses), GMFSS Fortuna (kernels/spec/gmfss.h : le plus fin sur l'animation, plusieurs fois plus
 // lourd que RIFE ; 540 lignes de travail en ×2 tiennent sur une 4070 Ti), en base ou en union
 // (GMFSS mêlé à l'image de RIFE), ou DistilDRBA (kernels/spec/distil_drba.h : un RIFE à trois images
-// entraîné à imiter DRBA, les poses gardées par le réseau lui-même, une image de retard).
-enum class MotionEngine : std::uint8_t { Rife, Gmfss, GmfssUnion, DistilDrba };
-inline constexpr int kMotionEngineCount = 4;
+// entraîné à imiter DRBA, les poses gardées par le réseau lui-même, une image de retard), ou
+// l'interpolation d'Apple (VTFrameRateConversion de VideoToolbox, macOS 15.4, sous le backend Core
+// ML : gpu/system_interpolator.h).
+enum class MotionEngine : std::uint8_t { Rife, Gmfss, GmfssUnion, DistilDrba, Apple };
+inline constexpr int kMotionEngineCount = 5;
 constexpr bool is_gmfss(MotionEngine engine) {
   return engine == MotionEngine::Gmfss || engine == MotionEngine::GmfssUnion;
+}
+// Proposé sur ce système : l'interpolation d'Apple sur un Mac seulement. play.toml garde le choix
+// partout ; ailleurs, la chaîne reprend RIFE.
+constexpr bool offered(MotionEngine engine) {
+#if defined(__APPLE__)
+  return true;
+#else
+  return engine != MotionEngine::Apple;
+#endif
 }
 std::string_view name(MotionEngine engine);   // « rife », la clé de play.toml
 std::string_view label(MotionEngine engine);  // « RIFE », pour le menu

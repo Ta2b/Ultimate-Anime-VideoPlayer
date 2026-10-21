@@ -6,11 +6,24 @@ find_path(AJP_ORT_INCLUDE onnxruntime_cxx_api.h
   HINTS "${AJP_ORT_ROOT}/include" "${AJP_ORT_ROOT}/include/onnxruntime" REQUIRED)
 find_library(AJP_ORT_LIBRARY onnxruntime HINTS "${AJP_ORT_ROOT}/lib" REQUIRED)
 
+# L'interpolation d'Apple (coreml_vt.h) : VideoToolbox, en Objective-C++ sur un Mac ; ailleurs, un
+# refus (OBJCXX activé par le CMakeLists.txt de tête).
+if(APPLE)
+  set(ajp_coreml_vt coreml_vt.mm)
+  set_source_files_properties(coreml_vt.mm PROPERTIES COMPILE_OPTIONS "-fobjc-arc")
+else()
+  set(ajp_coreml_vt coreml_vt_none.cpp)
+endif()
+
 # Le runtime à part de ses points d'entrée : les tests du backend Vulkan le lient pour comparer
 # ses sorties à l'interpréteur sur le vrai matériel (vendor_runtime_test.cpp).
-ajp_add_module(coreml_rt SOURCES coreml_measure.cpp coreml_runtime.cpp
-  DEPS ajp::vk_backend ajp::core_log PRIVATE_DEPS ajp::dep::spdlog "${AJP_ORT_LIBRARY}")
+ajp_add_module(coreml_rt SOURCES coreml_measure.cpp coreml_runtime.cpp coreml_steps.cpp ${ajp_coreml_vt}
+  DEPS ajp::vk_backend ajp::core_log ajp::coreml_pixels PRIVATE_DEPS ajp::dep::spdlog "${AJP_ORT_LIBRARY}")
 target_include_directories(ajp_coreml_rt SYSTEM PRIVATE "${AJP_ORT_INCLUDE}")
+if(APPLE)
+  target_link_libraries(ajp_coreml_rt PRIVATE
+    "-framework VideoToolbox" "-framework CoreVideo" "-framework CoreMedia" "-framework Foundation")
+endif()
 set_target_properties(ajp_coreml_rt PROPERTIES
   POSITION_INDEPENDENT_CODE ON
   CXX_VISIBILITY_PRESET hidden

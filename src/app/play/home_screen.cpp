@@ -125,7 +125,7 @@ SettingsChoices home_choices(const HomeScreen& h, const HomeState& st, const Pla
       .source_fps = kHomeSource.fps,
       .source_rate = media::Rational{.num = 24000, .den = 1001},
       .display_hz = period > 0 ? 1e6 / static_cast<double>(period) : 0.0,
-      .rife_available = rife.has_value() || gmfss || drba,
+      .rife_available = rife.has_value() || gmfss || drba || offered(MotionEngine::Apple),
       .gmfss_available = gmfss,
       .gmfss_union_available = find_gmfss(places, GmfssVariant::Union).has_value(),
       .distil_drba_available = drba,

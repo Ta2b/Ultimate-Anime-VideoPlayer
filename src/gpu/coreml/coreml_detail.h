@@ -24,15 +24,23 @@ namespace ajp::gpu::coreml_rt {
 
 std::unexpected<Refusal> refuse(RefusalCode code, std::string text);
 
+// Le cadre des images de l'interpolation d'Apple (coreml_vt.h), à la place d'un réseau.
+struct VtFrames {
+  int width = 0;
+  int height = 0;
+};
+
 // Le manifeste de l'artefact : le fichier ONNX, une ligne par dimension symbolique fixée, les
 // unités retenues par la mesure (absentes d'un artefact plus ancien), et si le réseau ouvert est
 // la copie <artefact>.onnx, réécrite à l'interface : dans le type des tenseurs de la chaîne, aux
-// formes de la construction (onnx_of).
+// formes de la construction (onnx_of). Pour le modèle d'un interpolateur du système
+// (gpu/system_interpolator.h), le cadre de l'interpolation d'Apple, sans session ONNX Runtime.
 struct Manifest {
   std::filesystem::path onnx;
   std::vector<vk::net::DimOverride> dims;
   std::optional<Units> units;
   bool io = false;
+  std::optional<VtFrames> videotoolbox;
 };
 
 std::filesystem::path cache_of(const std::filesystem::path& artifact);  // <artefact>.mlcache

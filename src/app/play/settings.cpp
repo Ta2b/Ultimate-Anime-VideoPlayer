@@ -120,6 +120,8 @@ std::string_view name(MotionEngine engine) {
       return "gmfss_union";
     case MotionEngine::DistilDrba:
       return "distil_drba";
+    case MotionEngine::Apple:
+      return "apple";
   }
   return "rife";
 }
@@ -134,6 +136,8 @@ std::string_view label(MotionEngine engine) {
       return "GMFSS Fortuna Union (GMFSS mêlé à RIFE)";
     case MotionEngine::DistilDrba:
       return "DistilDRBA (poses gardées par le réseau)";
+    case MotionEngine::Apple:
+      return "Apple (VideoToolbox, macOS 15.4)";
   }
   return "RIFE";
 }

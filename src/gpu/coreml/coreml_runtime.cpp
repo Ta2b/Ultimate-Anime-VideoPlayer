@@ -10,19 +10,18 @@
 #include <optional>
 #include <span>
 #include <sstream>
-#include <stop_token>
 #include <string>
-#include <thread>
 #include <unordered_map>
 #include <utility>
-#include <variant>
 #include <vector>
 
-#include "core/inbox.h"
-#include "core/thread.h"
 #include "gpu/coreml/coreml_detail.h"
+#include "gpu/coreml/coreml_steps.h"
+#include "gpu/coreml/coreml_vt.h"
 #include "gpu/ir/onnx_io_type.h"
 #include "gpu/ir/onnx_model.h"
+#include "gpu/ir/protobuf.h"
+#include "gpu/system_interpolator.h"
 #include "gpu/vulkan/backend/net_build.h"
 
 namespace ajp::gpu::coreml_rt {
@@ -157,6 +156,32 @@ std::expected<bool, Refusal> derive_onnx(const ModelSpec& model, std::span<const
   return true;
 }
 
+// La version de la marque d'un interpolateur du système (gpu/system_interpolator.h), ou rien pour
+// un réseau : les seuls champs producer_name et producer_version du ModelProto, sans décoder le
+// graphe (poids externes compris, que le reste de la construction lit à sa façon).
+std::expected<std::optional<std::string>, Refusal> interpolator_mark(const std::filesystem::path& onnx) {
+  constexpr std::uint32_t kProducerName = 2;
+  constexpr std::uint32_t kProducerVersion = 3;
+  auto bytes = vk::net::read_file(onnx);
+  if (!bytes) return std::unexpected(bytes.error());
+  std::optional<std::string> producer;
+  std::string version;
+  ir::proto::Reader reader(*bytes);
+  for (auto field = reader.next(); field && *field; field = reader.next()) {
+    const ir::proto::Field& f = **field;
+    if (f.number != kProducerName && f.number != kProducerVersion) continue;
+    auto text = ir::proto::as_string(f);
+    if (!text) return std::nullopt;
+    if (f.number == kProducerName) {
+      producer = std::move(*text);
+    } else {
+      version = std::move(*text);
+    }
+  }
+  if (producer != kSystemInterpolatorProducer) return std::nullopt;
+  return std::optional<std::string>(std::move(version));
+}
+
 class CoremlNet final : public vk::net::RuntimeNet {
  public:
   CoremlNet(std::shared_ptr<Ort::Env> env, Ort::Session session, vk::net::IoNames names,
@@ -174,13 +199,7 @@ class CoremlNet final : public vk::net::RuntimeNet {
   CoremlNet& operator=(const CoremlNet&) = delete;
   CoremlNet(CoremlNet&&) = delete;
   CoremlNet& operator=(CoremlNet&&) = delete;
-  // Les étapes encore en file sont faites avant de rendre la session : chacune signale la
-  // timeline que la chaîne attend.
-  ~CoremlNet() override {
-    if (!worker_.joinable()) return;
-    worker_.request_stop();
-    worker_.join();
-  }
+  ~CoremlNet() override = default;
   std::span<const std::string> input_names() const override { return names_.inputs; }
   std::span<const std::string> output_names() const override { return names_.outputs; }
 
@@ -192,36 +211,14 @@ class CoremlNet final : public vk::net::RuntimeNet {
     return infer(inputs, outputs);
   }
 
-  // Sur un fil propre au réseau, dans l'ordre des appels : ready (l'attente des entrées sur la
-  // timeline Vulkan), l'inférence, done (le signal de l'étape). Le fil du lecteur n'attend plus
-  // Core ML : le Neural Engine calcule pendant que le GPU fait le reste de la chaîne.
+  // Sur le fil du réseau (DeferredSteps), dans l'ordre des appels.
   std::expected<void, Refusal> run_deferred(std::span<const HostBinding> inputs,
                                             std::span<const HostBinding> outputs,
                                             std::function<std::expected<void, Refusal>()> ready,
                                             std::function<void(std::expected<void, Refusal>)> done) override {
     if (inputs.size() != names_.inputs.size() || outputs.size() != names_.outputs.size())
       return refuse(RefusalCode::InputMismatch, "Core ML : nombre d'entrées ou de sorties");
-    if (!ready || !done) return refuse(RefusalCode::InputMismatch, "Core ML : étape sans rappels");
-    {
-      const std::scoped_lock lock(jobs_mutex_);
-      if (failed_) return std::unexpected(*failed_);
-      if (!worker_.joinable()) {
-        auto worker = start_thread(
-            "coreml", ThreadReport([this](const Refusal& refusal) { note_failure(refusal); }),
-            [this](const std::stop_token& stop, const ThreadReport& /*report*/) { serve(stop); });
-        if (!worker) return std::unexpected(std::move(worker.error()));
-        worker_ = std::move(*worker);
-      }
-    }
-    if (!jobs_.try_push(Job{.inputs = {inputs.begin(), inputs.end()},
-                            .outputs = {outputs.begin(), outputs.end()},
-                            .ready = std::move(ready),
-                            .done = std::move(done)})) {
-      // Rien n'est lancé : l'appelant fait l'étape lui-même, et signale la timeline.
-      return refuse(RefusalCode::ThreadUnavailable,
-                    std::format("Core ML : {} étapes en file, le fil n'en reprend pas", kStepBound));
-    }
-    return {};
+    return steps_.push(inputs, outputs, std::move(ready), std::move(done));
   }
 
  private:
@@ -230,12 +227,6 @@ class CoremlNet final : public vk::net::RuntimeNet {
     std::size_t bytes = 0;
     TensorType type = TensorType::F16;
     Shape shape;
-  };
-  struct Job {
-    std::vector<HostBinding> inputs;
-    std::vector<HostBinding> outputs;
-    std::function<std::expected<void, Refusal>()> ready;
-    std::function<void(std::expected<void, Refusal>)> done;
   };
 
   // La mémoire du lecteur telle quelle : le réseau prend le type de ses tenseurs (interface
@@ -296,30 +287,6 @@ class CoremlNet final : public vk::net::RuntimeNet {
     last = target;
   }
 
-  void note_failure(const Refusal& refusal) {
-    const std::scoped_lock lock(jobs_mutex_);
-    if (!failed_) failed_ = refusal;
-  }
-
-  // Le fil des étapes : chaque étape en file est faite, même à l'arrêt (sa timeline l'attend), et
-  // chacune appelle done, quoi qu'il arrive : la file attendrait sans fin un signal perdu.
-  void serve(const std::stop_token& stop) {
-    while (std::optional<Inbox<Job>::Message> message = jobs_.wait(stop)) {
-      Job& job = std::get<Job>(*message);
-      std::expected<void, Refusal> result;
-      try {
-        result = job.ready();
-        if (result) {
-          const std::scoped_lock lock(session_mutex_);
-          result = infer(job.inputs, job.outputs);
-        }
-      } catch (...) {
-        result = std::unexpected(refusal_from_exception(RefusalCode::DeviceUnavailable, "Core ML, étape"));
-      }
-      job.done(std::move(result));
-    }
-  }
-
   std::shared_ptr<Ort::Env> env_;  // vit plus longtemps que la session
   Ort::Session session_;
   Ort::MemoryInfo memory_ = Ort::MemoryInfo::CreateCpu(OrtDeviceAllocator, OrtMemTypeCPU);
@@ -330,14 +297,12 @@ class CoremlNet final : public vk::net::RuntimeNet {
   std::vector<std::vector<std::byte>> in_scratch_;
   std::vector<std::vector<std::byte>> out_scratch_;
   std::vector<Bound> bound_;  // entrées puis sorties
-  // Étapes en file pour le fil ; au-delà, l'appelant fait l'étape lui-même.
-  static constexpr std::size_t kStepBound = 16;
-
   std::mutex session_mutex_;  // session_, binding_, bound_ et les copies : le fil des étapes ou celui de run
-  std::mutex jobs_mutex_;     // failed_ et le lancement du fil
-  Inbox<Job> jobs_{{kStepBound}};
-  std::optional<Refusal> failed_;  // le fil des étapes a cédé : plus aucune étape différée
-  std::jthread worker_;
+  // Dernier membre : arrêté le premier, ses étapes en file faites sur une session encore là.
+  DeferredSteps steps_{"", [this](std::span<const HostBinding> inputs, std::span<const HostBinding> outputs) {
+                         const std::scoped_lock lock(session_mutex_);
+                         return infer(inputs, outputs);
+                       }};
 };
 
 std::expected<void, Refusal> write_manifest(const std::filesystem::path& path, const Manifest& manifest) {
@@ -346,6 +311,8 @@ std::expected<void, Refusal> write_manifest(const std::filesystem::path& path, c
   for (const auto& [symbol, value] : manifest.dims) out << "dim " << value << ' ' << symbol << '\n';
   if (manifest.units) out << "units " << units_name(*manifest.units) << '\n';
   if (manifest.io) out << "io rewritten\n";
+  if (manifest.videotoolbox)
+    out << "videotoolbox " << manifest.videotoolbox->width << ' ' << manifest.videotoolbox->height << '\n';
   if (!out) return refuse(RefusalCode::CacheIo, std::format("{} : écriture", path.string()));
   return {};
 }
@@ -371,6 +338,13 @@ std::expected<Manifest, Refusal> read_manifest(const std::filesystem::path& path
       manifest.units = units_from(line.substr(6));
     } else if (line.starts_with("io ")) {
       manifest.io = true;
+    } else if (line.starts_with("videotoolbox ")) {
+      std::istringstream fields(line.substr(13));
+      VtFrames frames;
+      fields >> frames.width >> frames.height;
+      if (fields.fail() || frames.width <= 0 || frames.height <= 0)
+        return refuse(RefusalCode::CacheIo, std::format("{} : ligne « {} »", path.string(), line));
+      manifest.videotoolbox = frames;
     }
   }
   if (manifest.onnx.empty())
@@ -392,6 +366,9 @@ class CoremlRuntime final : public vk::net::Runtime {
 
   std::expected<void, Refusal> build(const ModelSpec& model, std::span<const InputShape> inputs,
                                      const std::filesystem::path& path, Progress& progress) override {
+    auto mark = interpolator_mark(model.onnx_path);
+    if (!mark) return std::unexpected(mark.error());
+    if (*mark) return build_interpolator(model, **mark, inputs, path, progress);
     auto dims = vk::net::symbolic_overrides(model.onnx_path, inputs);
     if (!dims) return std::unexpected(dims.error());
     Manifest manifest{.onnx = model.onnx_path, .dims = std::move(*dims), .units = std::nullopt, .io = false};
@@ -420,6 +397,8 @@ class CoremlRuntime final : public vk::net::Runtime {
     if (!names) return std::unexpected(names.error());
     auto manifest = read_manifest(path);
     if (!manifest) return std::unexpected(manifest.error());
+    if (manifest->videotoolbox)
+      return vt_net(std::move(*names), manifest->videotoolbox->width, manifest->videotoolbox->height);
     auto units = units_of(*manifest);
     if (!units) return std::unexpected(units.error());
     auto session = open(*manifest, path, *units);
@@ -460,6 +439,30 @@ class CoremlRuntime final : public vk::net::Runtime {
   }
 
  private:
+  // L'interpolation d'Apple à la place du graphe : essayée à la taille des plans remplis de la
+  // chaîne, son cadre gardé dans le manifeste. Refus FeatureUnavailable : une autre version de la
+  // marque, un Mac qui ne l'offre pas ; la chaîne reprend alors RIFE.
+  std::expected<void, Refusal> build_interpolator(const ModelSpec& model, std::string_view version,
+                                                  std::span<const InputShape> inputs,
+                                                  const std::filesystem::path& path, Progress& progress) {
+    if (version != kVideoToolboxFrameRate)
+      return refuse(RefusalCode::FeatureUnavailable,
+                    std::format("interpolateur du système inconnu ({})", version));
+    if (inputs.size() != 1 || inputs[0].dims.size() != 4 || inputs[0].dims[1] != 7 ||
+        inputs[0].dims[2] <= 0 || inputs[0].dims[3] <= 0)
+      return refuse(RefusalCode::InputMismatch, "interpolation d'Apple : entrée 1 × 7 × H × W attendue");
+    const VtFrames frames{.width = static_cast<int>(inputs[0].dims[3]),
+                          .height = static_cast<int>(inputs[0].dims[2])};
+    if (progress.report) progress.report(0.1F, "interpolation d'Apple : essai de VideoToolbox");
+    auto probe = vt_probe(frames.width, frames.height);
+    if (!probe) return std::unexpected(probe.error());
+    if (progress.stop.stop_requested()) return refuse(RefusalCode::Cancelled, "construction annulée");
+    const Manifest manifest{.onnx = model.onnx_path, .videotoolbox = frames};
+    if (auto ok = write_manifest(path, manifest); !ok) return ok;
+    if (progress.report) progress.report(1.0F, std::format("interpolation d'Apple prête ({})", *probe));
+    return {};
+  }
+
   std::expected<Ort::Session, Refusal> open(const Manifest& manifest, const std::filesystem::path& artifact,
                                             Units units) {
     const std::filesystem::path onnx = session_onnx(manifest, artifact);

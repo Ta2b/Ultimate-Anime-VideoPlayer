@@ -58,6 +58,15 @@ TEST_CASE("play.toml relit à l'identique ce qu'il a écrit", "[app][settings]")
   CHECK(parse_settings(format_settings(s))->motion_engine == MotionEngine::GmfssUnion);
   CHECK(is_gmfss(MotionEngine::GmfssUnion));
   CHECK_FALSE(is_gmfss(MotionEngine::Rife));
+  // L'interpolation d'Apple se garde partout ; elle n'est proposée que sur un Mac.
+  s.motion_engine = MotionEngine::Apple;
+  CHECK(parse_settings(format_settings(s))->motion_engine == MotionEngine::Apple);
+#if defined(__APPLE__)
+  CHECK(offered(MotionEngine::Apple));
+#else
+  CHECK_FALSE(offered(MotionEngine::Apple));
+#endif
+  CHECK(offered(MotionEngine::Rife));
 }
 
 TEST_CASE("Mode HDR : moteur RTX HDR, HDR adaptatif ou SDR, et les fichiers d'avant", "[app][settings]") {
