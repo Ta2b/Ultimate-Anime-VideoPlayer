@@ -1,6 +1,41 @@
-Préversion de test pour Linux x86-64 : GPU AMD, Intel et NVIDIA par le moteur Vulkan, et des moteurs à télécharger depuis l'écran de bienvenue (TensorRT et RTX HDR, MIGraphX, OpenVINO). Rien de cette version n'a encore tourné sur un vrai GPU : des choses peuvent casser.
+Préversion de test pour Linux x86-64 : GPU AMD, Intel et NVIDIA par le moteur Vulkan, et des moteurs à télécharger depuis l'écran de bienvenue (TensorRT et RTX HDR, MIGraphX, OpenVINO). Elle remplace la preview.2 et reprend les corrections de la preview.3, qui n'a pas été publiée. Elle n'a tourné que dans les tests automatiques et sur une seule carte NVIDIA : des choses peuvent casser, surtout sur AMD et Intel.
+
+## Corrections
+- **Gel du PC à la fermeture** (moteur Vulkan) : fermer le lecteur, ou changer un réglage qui reconstruit la chaîne, pouvait bloquer la carte graphique une seconde puis laisser le lecteur figé pour de bon. Il rendait sa mémoire GPU pendant que la carte travaillait encore dessus. Il attend maintenant la fin de ce travail, et aucune attente ne peut plus le bloquer plus de 3 s.
+- **TensorRT et RTX HDR « pas encore publiés »** : l'écran de bienvenue refusait tout l'index des moteurs de la preview.2 à cause de l'entrée RTX HDR. Ils se téléchargent maintenant, et une entrée inconnue d'une version future est écartée seule.
+- **Mémoire pleine sans ReBAR** (RTX 4050 portable, Optimus, cartes plus anciennes) : le moteur Vulkan refusait la lecture en 4K quand le petit tas de 256 Mo partagé avec le processeur était plein. Il passe maintenant à la mémoire système pour les envois et les relectures ; les réseaux restent dans la mémoire de la carte.
+- **Fichiers de réglages abîmés** : un fichier de réglages ou de profils mal formé (`play.toml`, `settings.toml`, `user.toml`) pouvait faire planter le lecteur. Il est maintenant refusé proprement.
+- **Coupure de courant** : les réglages, les points de reprise et les profils sont écrits sur le disque avant de remplacer l'ancien fichier, donc une coupure juste après un enregistrement ne laisse plus un fichier vide (btrfs, NTFS).
+- **Couleurs** : les vidéos en BT.2020 à luminance constante, SMPTE 240M ou FCC se lisent avec la matrice la plus proche au lieu d'être refusées.
+- **TensorRT** : les vidéos que NVDEC ne décode pas, comme le H.264 10 bits des fansubs Hi10P, sont décodées par le processeur au lieu d'être refusées.
+- **Écran sans fréquence connue** : quand le système ne donne pas la fréquence de l'écran, les images ne partent plus par deux, l'une collée à l'autre.
+- **Interface** : le panneau de réglages s'affiche aussitôt quand on l'ouvre au clavier (P), le nom d'un profil peut être effacé puis retapé, et les messages à l'écran gardent leurs lignes vides et ne cassent plus sur une accolade dans un titre.
 
 ## Nouveautés
+
+### Lecture
+- **Écrans à fréquence fixe** : la cadence se cale sur le rafraîchissement quand il tombe juste (24 im/s sur 120 Hz par exemple), et le son suit en se rééchantillonnant. Le lecteur vise l'instant où l'image apparaît vraiment, et le réglage « Latence de l'écran » corrige son estimation.
+- **Warp et SPAN** : nouveau réglage, sur « Auto » par défaut. Au-dessus d'une sortie 1080p, l'interpolation se fait après SPAN, donc SPAN ne tourne qu'une fois par image source (en ×3 vers la 4K, trois fois moins). « Avant SPAN » garde la qualité maximale.
+- **RIFE à ×3 et plus** : tant que le mouvement reste fort, la passe du milieu qui servait seulement à le mesurer est sautée.
+- **Avances et retours rapides** dans les MKV : le lecteur lit l'image clé dans l'index du fichier au lieu de chercher jusqu'à trois fois.
+- En pause, le lecteur ne se réveille plus chaque milliseconde, et l'ouverture d'une chaîne ne relit plus chaque modèle en entier.
+
+### Fluidité mesurée
+- Les mesures (Tab) ont une ligne « fluidité » : les images neuves par seconde face à la cadence attendue, les images manquées et le retard p95 des images sur l'horloge. Les paires laissées sans interpolation exprès (coupes de scène, dessins tenus) sont comptées à part, entre parenthèses.
+- `--stats` ajoute les colonnes `missing`, `lag_us` et `uninterpolated`. `ajp play --one-lane` fait tout passer par une seule file GPU, pour lire le coût propre de chaque réseau.
+
+### DistilDRBA v2 Lite
+- L'interpolation DistilDRBA est livrée dans `models/rife/`, à côté de RIFE : elle se choisit dans les réglages d'interpolation.
+
+### Export
+- L'extension du fichier choisit le conteneur : `.mkv` (par défaut, garde toutes les pistes), `.mp4` ou `.mov`, où chaque image tombe à son temps exact, même à 120 im/s. Le panneau d'export propose MP4 ou MOV à partir de 100 im/s. MP4 et MOV ne gardent que les pistes qu'ils acceptent (pas de sous-titres ASS ni de TrueHD).
+- Quand le pilote le permet, les images rendues vont droit à l'encodeur sur la carte graphique, sans repasser par le processeur.
+
+### Premier lancement plus court
+- L'autotuner Vulkan essaie chaque variante une fois et ne mesure en entier que les plus rapides. Une mise à jour du pilote ne relance plus toutes les mesures : chaque choix est seulement revérifié.
+- TensorRT garde un cache de mesures par GPU, partagé entre les modèles et les tailles d'image.
+- Les GPU AMD RDNA3 et RDNA4 pas encore listés, et les nouvelles cartes NVIDIA, se voient proposer les matrices coopératives, vérifiées par l'autotuner.
+- Les polices de l'interface se chargent pendant l'ouverture de l'écran.
 
 ### Optimisations
 - **Intel Core Ultra (NPU)** : au premier lancement, OpenVINO mesure SPAN sur le NPU et sur le GPU, et garde le NPU s'il est presque aussi rapide et donne la même image. Le GPU reste alors libre pour RIFE et le rendu. Il faut le pilote NPU d'Intel (`linux-npu-driver`).
@@ -18,7 +53,7 @@ Préversion de test pour Linux x86-64 : GPU AMD, Intel et NVIDIA par le moteur V
 - **OpenVINO** (Intel) : les GPU Arc et Xe, intégrés ou non. Il faut le pilote compute d'Intel (`intel-opencl-icd libze-intel-gpu1`).
 
 ### Modèles inclus
-- L'archive contient les modèles SPAN AnimeJaNai HD V3.1 (Sharp1 et normal, Performance et Balanced) et RIFE 4.25 et 4.22 lite : la lecture avec agrandissement et interpolation marche dès l'extraction.
+- L'archive contient les modèles SPAN AnimeJaNai HD V3.1 (Sharp1 et normal, Performance et Balanced), RIFE 4.25 et 4.22 lite, et DistilDRBA v2 Lite : la lecture avec agrandissement et interpolation marche dès l'extraction.
 
 ### Décodage matériel sous Linux
 - Avec le moteur Vulkan, la vidéo était décodée par le processeur. Elle passe maintenant par VA-API, puis repli sur le processeur.
