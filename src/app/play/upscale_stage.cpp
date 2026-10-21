@@ -47,7 +47,8 @@ UpscaleStage::~UpscaleStage() {
                              drba_.runs, drba_.edges);
   }
   if (late_pairs_ > 0) {
-    log_channel("gpu")->info("RIFE : {} paires non interpolées pour rattraper l'horloge", late_pairs_);
+    log_channel("gpu")->info("RIFE : {} paires en retard sur l'horloge, {} instants sautés pour la rattraper",
+                             late_pairs_, late_instants_);
   }
   if (interpolates()) {
     log_channel("gpu")->info("RIFE {} : {} paires, {} interpolées, {} coupes de scène, {} dessins tenus",
@@ -228,16 +229,28 @@ std::expected<std::uint32_t, Refusal> UpscaleStage::outputs(const DecodedFrame& 
                        !step->instants().front().is_source();
   // ×N demandé, arrondi au-dessus (×1,5 compte pour ×2) ; 1 : pas d'interpolation.
   std::uint32_t wanted = on_grid ? static_cast<std::uint32_t>((factor.num + factor.den - 1) / factor.den) : 1;
-  // En retard sur l'horloge maître (GPU débordé : 4K ×3, scène lourde) : le premier instant
-  // intermédiaire de cette paire est déjà passé, l'image seule suffit pour rattraper.
+  // En retard sur l'horloge maître (GPU débordé : 4K ×3, scène lourde) : les instants
+  // intermédiaires de tête qui seront passés quand ils seront prêts (l'horloge une période de
+  // sortie plus loin) sont sautés, les suivants faits ; l'image seule s'il n'en reste aucun.
+  std::size_t late = 0;
   if (on_grid && setup_.clock != nullptr && previous_ && previous_->epoch == frame.epoch) {
     const ClockSnapshot now = setup_.clock->snapshot();
-    const std::optional<std::int64_t> first = step->instants().front().pts_us;
-    if (now.valid && now.epoch == frame.epoch && now.rate > 0.0 && first &&
-        now.media_at(host_now_us()) > *first) {
-      wanted = 1;
-      ++late_pairs_;
-      if (setup_.live) setup_.live->count_late();
+    if (now.valid && now.epoch == frame.epoch && now.rate > 0.0) {
+      const std::int64_t period =
+          std::max<std::int64_t>(frame.pts_us - previous_->pts_us, 0) * factor.den / factor.num;
+      const std::int64_t ready = now.media_at(host_now_us()) + period;
+      std::size_t middles = 0;
+      for (const core::OutputInstant& at : step->instants()) {
+        if (at.is_source()) continue;
+        if (late == middles && at.pts_us && *at.pts_us < ready) ++late;
+        ++middles;
+      }
+      if (late > 0) {
+        ++late_pairs_;
+        late_instants_ += late;
+        if (setup_.live) setup_.live->count_late();
+      }
+      if (middles > 0 && late == middles) wanted = 1;
     }
   }
   PairFacts facts{.factor = wanted,
@@ -271,8 +284,13 @@ std::expected<std::uint32_t, Refusal> UpscaleStage::outputs(const DecodedFrame& 
   if (on_grid && !runs && cadence_) cadence_->resync();
   if (runs && step) {
     outputs_ = 0;
+    std::size_t skipped = 0;
     for (const core::OutputInstant& at : step->instants()) {
       const bool source = at.is_source();
+      if (!source && skipped < late) {  // déjà en retard : sauté
+        ++skipped;
+        continue;
+      }
       instants_[outputs_++] = Instant{
           .t = source ? 1.0F
                       : static_cast<float>(static_cast<double>(at.t.num) / static_cast<double>(at.t.den)),

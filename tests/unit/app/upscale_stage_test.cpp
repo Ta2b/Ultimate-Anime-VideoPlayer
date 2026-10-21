@@ -281,6 +281,27 @@ TEST_CASE("Étage gpu : en retard sur l'horloge maître, la paire sort sans inte
   CHECK(rig.live->counts().pairs == 0);  // non mesurées : rien à interpoler
 }
 
+TEST_CASE("Étage gpu : un instant en retard est sauté, les suivants de la paire sont faits", "[app][stage]") {
+  Rig rig;
+  test::FakeClock clock;
+  // L'horloge reste à 41 ms (vitesse quasi nulle) : prêts une période de sortie plus tard (13,3 ms
+  // à ×3), les instants avant 54,3 ms sont en retard, soit le premier de la paire (1, 2) seul.
+  clock.value =
+      ClockSnapshot{.media_us = 41'000, .host_us = host_now_us(), .rate = 1e-6, .epoch = 0, .valid = true};
+  UpscaleSetup s = rig.setup(true, Factor{.num = 3, .den = 1});
+  s.clock = &clock;
+  rig.start(std::move(s), &clock);
+  rig.feed(1, 3);
+  REQUIRE(rig.collect(6));
+  rig.stage.reset();
+
+  CHECK(shape_of(rig.sink.frames()) == std::vector<std::string>{"1", "1-2", "2", "2-3", "2-3", "3"});
+  CHECK(pts_of(rig.sink.frames())[1] == 66'667);  // 53 333 sauté
+  CHECK(rig.backend.count("engine rife") == 1 + 2);
+  CHECK(rig.live->counts().late == 1);
+  CHECK(rig.live->counts().interpolated == 2);
+}
+
 TEST_CASE("Étage gpu : DistilDRBA attend l'image suivante, la dernière n'est pas montrée", "[app][stage]") {
   Rig rig;
   UpscaleSetup s = rig.setup(true);
