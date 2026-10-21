@@ -5,14 +5,19 @@
 // chantier app-shell ; ici, seulement la lecture.
 #include <SDL3/SDL_filesystem.h>
 #include <SDL3/SDL_init.h>
+#include <spdlog/sinks/basic_file_sink.h>
 #include <spdlog/sinks/stdout_color_sinks.h>
+#include <spdlog/spdlog.h>
 
 extern "C" {
 #include <libavutil/log.h>
 }
 
+#include <chrono>
 #include <cstdio>
+#include <exception>
 #include <filesystem>
+#include <memory>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -100,7 +105,24 @@ int main(int argc, char** argv) {
     std::fprintf(stdout, "%s\n", done->c_str());
     return 0;
   }
-  ajp::install_log_sinks({std::make_shared<spdlog::sinks::stderr_color_sink_mt>()}, spdlog::level::info);
+  // Le journal va aussi dans <données>/ajp.log, recommencé à chaque lancement : ouvert depuis le
+  // Finder ou l'Explorateur, le lecteur n'a pas de terminal, et c'est le fichier à joindre à un
+  // rapport. Sans fichier (dossier en lecture seule, chemin hors de la page de code), stderr seul.
+  std::vector<spdlog::sink_ptr> sinks{std::make_shared<spdlog::sinks::stderr_color_sink_mt>()};
+  const std::filesystem::path log_file = data.empty() ? std::filesystem::path() : data / "ajp.log";
+  if (!log_file.empty()) {
+    try {
+      sinks.push_back(std::make_shared<spdlog::sinks::basic_file_sink_mt>(log_file.string(), true));
+    } catch (const std::exception&) {
+      sinks.resize(1);
+    }
+  }
+  const bool logs_to_file = sinks.size() > 1;
+  ajp::install_log_sinks(std::move(sinks), spdlog::level::info);
+  if (logs_to_file) {
+    spdlog::flush_every(std::chrono::seconds(1));  // un arrêt brutal perd au plus une seconde
+    ajp::log_channel("app")->info("journal : {}", log_file.string());
+  }
   av_log_set_level(AV_LOG_ERROR);  // FFmpeg écrit sur stderr ; ses avertissements de sonde sont du bruit
   if (!SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO)) {
     return fail({ajp::RefusalCode::LibraryUnavailable, std::string("SDL_Init : ") + SDL_GetError()});
@@ -145,5 +167,8 @@ int main(int argc, char** argv) {
   std::filesystem::create_directories(paths.engines, error);
   const auto played = ajp::app::play::play(*options, paths);
   SDL_Quit();
-  return played ? 0 : fail(played.error());
+  if (played) return 0;
+  // Par le journal, qui l'écrit aussi sur stderr : le refus reste dans ajp.log.
+  ajp::log_channel("app")->error("{} {}", ajp::name(played.error().code), played.error().detail);
+  return 1;
 }
