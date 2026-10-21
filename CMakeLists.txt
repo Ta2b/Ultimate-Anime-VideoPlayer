@@ -84,3 +84,7 @@ if(AJP_BUILD_TESTS)
   enable_testing()
   add_subdirectory(tests)
 endif()
+
+# Windows : argv et les chemins en UTF-8 dans chaque exécutable (cmake/WindowsUtf8.cmake).
+include(WindowsUtf8)
+ajp_utf8_manifests()
