@@ -237,6 +237,9 @@ class TensorRtBackend final : public Backend, public KernelOps {
   // Sommes FP32 du softmax splatting, partagées par tous les splats (le flux les ordonne).
   float* splat_sums_ = nullptr;
   std::size_t splat_bytes_ = 0;
+  // Lignes filtrées de l'ingestion à filtre étiré (slice_kernels.h, IngestParams::rows).
+  float* ingest_rows_ = nullptr;
+  std::size_t ingest_rows_size_ = 0;
   // RTX HDR : l'effet, son pont de flux, et ses deux tampons linéaires (RGBA8 tramé, RGB10A2).
   struct TrueHdrState;
   std::unique_ptr<TrueHdrState> true_hdr_;

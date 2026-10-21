@@ -102,7 +102,7 @@ std::expected<void, Refusal> TensorRtBackend::ingest(const DecodedFrame& frame, 
   const kernels::YuvScale scale = kernels::yuv_scale(
       *format, frame.color.range == ColorRange::Full ? kernels::Range::Full : kernels::Range::Limited);
   const kernels::Coefficients k = kernels::coefficients(*matrix);
-  const IngestParams params{
+  IngestParams params{
       .luma =
           reinterpret_cast<const void*>(frame.data->native_plane(0)),  // NOLINT(performance-no-int-to-ptr)
       .chroma =
@@ -135,7 +135,18 @@ std::expected<void, Refusal> TensorRtBackend::ingest(const DecodedFrame& frame, 
     return refuse(RefusalCode::FormatUnsupported, "ingestion : plans ou pas de ligne CUDA absents");
   }
   if (auto ok = bind(); !ok) return ok;
-  if (auto ok = order({}, {rgb.handle}); !ok) return ok;
+  const std::size_t rows = ingest_rows_bytes(params);
+  if (rows > ingest_rows_size_) {
+    // cudaFree attend la fin de tout ce que l'appareil exécute, l'ingestion précédente comprise.
+    if (ingest_rows_ != nullptr) cudaFree(ingest_rows_);
+    ingest_rows_ = nullptr;
+    ingest_rows_size_ = 0;
+    if (auto ok = cuda_check(cudaMalloc(reinterpret_cast<void**>(&ingest_rows_), rows), "cudaMalloc"); !ok)
+      return ok;
+    ingest_rows_size_ = rows;
+  }
+  params.rows = ingest_rows_;
+  if (auto ok = order({}, {rgb.handle, reinterpret_cast<std::uintptr_t>(&ingest_rows_)}); !ok) return ok;
   if (frame.data->ready_event() != 0) {
     auto* ready =
         reinterpret_cast<cudaEvent_t>(frame.data->ready_event());  // NOLINT(performance-no-int-to-ptr)

@@ -52,7 +52,14 @@ struct IngestParams {
   float chroma_x = 0.0F;
   float chroma_y = 0.5F;
   void* rgb = nullptr;  // 1 × 3 × height × width, FP16
+  // Filtres étirés (triangle, cubique, Spline36) : deux passes séparables, la première convertit et
+  // filtre les lignes dans rows (3 × height × out_width, FP32, ingest_rows_bytes octets), la
+  // seconde filtre les colonnes. Les prises par pixel passent de nx × ny à nx + ny.
+  float* rows = nullptr;
 };
+
+// Octets de IngestParams::rows pour ces paramètres ; 0 sans filtre séparable (même taille, Area).
+std::size_t ingest_rows_bytes(const IngestParams& params);
 
 cudaError_t launch_ingest(const IngestParams& params, cudaStream_t stream);
 

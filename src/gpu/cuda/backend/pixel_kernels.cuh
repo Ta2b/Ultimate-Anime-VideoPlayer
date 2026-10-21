@@ -1,6 +1,6 @@
 // Règles communes des noyaux pixel du backend TensorRT (étude 3) : blocs de 256 fils (16 × 16, ou
 // 32 × 8 pour la mesure), au moins quatre blocs résidents par SM, soit 64 registres au plus par fil ;
-// trois pour les noyaux lourds (warp : 85 registres, la moitié des fils d'un SM d'Ada). ptxas
+// trois pour les noyaux lourds (warp, Area : 85 registres, la moitié des fils d'un SM d'Ada). ptxas
 // refuse tout débordement de registres (--warn-on-spills en erreur, CMakeLists.txt).
 // Réductions d'un bloc par mélange de registres, sans arbre en mémoire partagée.
 #pragma once

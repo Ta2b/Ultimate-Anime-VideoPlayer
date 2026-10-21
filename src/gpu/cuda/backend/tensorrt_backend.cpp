@@ -198,6 +198,7 @@ TensorRtBackend::~TensorRtBackend() {
     if (read.done != nullptr) cudaEventDestroy(read.done);
   }
   if (splat_sums_ != nullptr) cudaFree(splat_sums_);
+  if (ingest_rows_ != nullptr) cudaFree(ingest_rows_);
   runtime_.reset();
   for (Held& held : held_) {
     held.data.reset();
