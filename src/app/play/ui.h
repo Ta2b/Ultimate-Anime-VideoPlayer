@@ -17,6 +17,7 @@
 #include "app/play/controls.h"
 #include "app/play/controls_draw.h"
 #include "app/play/first_run.h"
+#include "app/play/home_view.h"
 #include "app/play/input.h"
 #include "app/play/links.h"
 #include "app/play/settings_panel.h"
@@ -72,6 +73,9 @@ class PlayerUi {
   const ImDrawData* preparation(std::int64_t now_us, const PrepareView& view);
   // L'image de l'écran de bienvenue (first_run.h), recomposée à chaque appel.
   const ImDrawData* welcome(std::int64_t now_us, FirstRunView& view);
+  // L'image de l'écran d'accueil (home_view.h) et du menu des paramètres s'il est ouvert ;
+  // recomposée à chaque appel. Les réglages changés au menu vont dans actions.
+  const ImDrawData* home(std::int64_t now_us, HomeView& view, std::vector<Input>& actions);
 
   Controls& controls() { return controls_; }
   // Les pistes que les menus de la barre proposent, et celles choisies.
@@ -82,6 +86,9 @@ class PlayerUi {
   void set_profiles(ProfilesView profiles);
   void set_black_status(std::string status);  // ligne du vrai noir dans l'onglet Grade
   void toggle_settings();
+  void open_settings();
+  // Le nom de la vidéo, en haut de l'image pendant la lecture.
+  void set_title(std::string title);
   void close_settings();
   bool settings_open() const { return panel_.is_open(); }
   // Rend les textures de l'interface à l'écran avant qu'il ne soit détruit.
@@ -91,6 +98,8 @@ class PlayerUi {
   PlayerUi(SDL_Window* window, std::string title);
   void apply_scale();
   bool over_ui() const;
+  void begin_frame(std::int64_t now_us);
+  void follow_text_input();
 
   SDL_Window* window_;
   std::vector<FontFile> fonts_;  // lues par l'atlas d'ImGui tant que le contexte vit
@@ -112,6 +121,7 @@ class PlayerUi {
   float wheel_ = 0.0F;         // crans de molette pas encore rendus en pas de volume
   bool cursor_hidden_ = false;
   bool text_input_ = false;
+  bool home_ = false;  // l'écran d'accueil est à l'écran : le menu y prend la molette
   std::int64_t last_frame_us_ = 0;
   const ImDrawData* draw_ = nullptr;  // dernière image recomposée, si quelque chose y est visible
   int bottom_ = 0;                    // hauteur de la barre dans cette image

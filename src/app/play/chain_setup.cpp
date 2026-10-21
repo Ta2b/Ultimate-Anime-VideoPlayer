@@ -17,7 +17,8 @@ namespace {
 // Hauteur où RIFE estime le mouvement quand la chaîne travaille plus haut (sortie 4K).
 constexpr int kRifeMotionHeight = 720;
 
-// Où chercher les graphes de GMFSS : à côté du modèle RIFE choisi, puis dans les dossiers RIFE.
+}  // namespace
+
 std::vector<std::filesystem::path> gmfss_dirs(const PlayerPaths& paths,
                                               const std::optional<ModelChoice>& rife) {
   std::vector<std::filesystem::path> dirs;
@@ -28,8 +29,6 @@ std::vector<std::filesystem::path> gmfss_dirs(const PlayerPaths& paths,
   }
   return dirs;
 }
-
-}  // namespace
 
 std::vector<media::HwApi> decoder_attempts(std::string_view backend, bool shared_vulkan) {
   if (backend == "tensorrt") return {media::HwApi::Cuda, media::HwApi::Software};

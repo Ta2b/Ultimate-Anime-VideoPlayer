@@ -62,7 +62,7 @@ bool valid_factor(Factor factor);
 std::string factor_text(Factor factor);
 
 struct PlayOptions {
-  std::filesystem::path file;
+  std::filesystem::path file;                  // vide : l'écran d'accueil choisit la vidéo
   std::optional<std::filesystem::path> model;  // --model : absent, celui du lecteur actuel
   bool upscale = true;                         // --no-upscale : image source telle quelle
   int window_width = 1280;                     // --window=LxH

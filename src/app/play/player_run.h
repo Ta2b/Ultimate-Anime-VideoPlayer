@@ -5,6 +5,7 @@
 
 #include <cstdint>
 #include <expected>
+#include <filesystem>
 #include <optional>
 
 #include "app/play/engine_switch.h"
@@ -20,8 +21,9 @@ namespace ajp::app::play {
 struct Reopen {
   PlaySettings settings;
   std::int64_t position_us = 0;
-  std::optional<EngineChange> engines;  // onglet Moteurs : à faire avant de rouvrir
-  std::optional<ExportJob> export_job;  // onglet Export : à faire avant de rouvrir
+  std::optional<EngineChange> engines;             // onglet Moteurs : à faire avant de rouvrir
+  std::optional<ExportJob> export_job;             // onglet Export : à faire avant de rouvrir
+  std::optional<std::filesystem::path> next_file;  // fichier glissé sur la fenêtre : le lire à la place
 };
 
 // Une ouverture de la chaîne : moteurs, RTX HDR, threads, session et boucle de main, jusqu'à la

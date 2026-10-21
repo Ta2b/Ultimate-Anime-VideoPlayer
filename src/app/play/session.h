@@ -133,6 +133,7 @@ class Session {
   void end();
 
   bool finished() const { return finished_; }
+  bool quit_asked() const { return quit_; }  // q ou fenêtre fermée, pas la fin du fichier
   bool paused() const { return paused_; }
   std::uint32_t epoch() const { return epoch_; }
   const FrameStats& stats() const { return stats_; }
@@ -164,6 +165,7 @@ class Session {
   bool paused_ = false;                           // pause demandée par l'utilisateur
   bool stream_ended_ = false;
   bool finished_ = false;
+  bool quit_ = false;
   std::optional<std::int64_t> pending_seek_us_;  // cible du dernier seek, jusqu'à sa première image
 
   FrameQueue queue_;

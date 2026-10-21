@@ -40,6 +40,10 @@ namespace ajp::app::play {
 // Linux, VA-API (le bloc vidéo d'AMD ou d'Intel) copié en mémoire hôte, puis le décodage logiciel.
 std::vector<media::HwApi> decoder_attempts(std::string_view backend, bool shared_vulkan);
 
+// Où chercher les graphes de GMFSS : à côté du modèle RIFE choisi, puis dans les dossiers RIFE.
+std::vector<std::filesystem::path> gmfss_dirs(const PlayerPaths& paths,
+                                              const std::optional<ModelChoice>& rife);
+
 // Images décodées tenues au plus en même temps : par le thread source, par l'étage gpu
 // (RingStage::kMaxFrames en vol) et par le backend après ingest. Autant de surfaces NVDEC rendues
 // sans copie (DecoderOptions::direct_surfaces).

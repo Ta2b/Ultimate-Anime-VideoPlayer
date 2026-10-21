@@ -1,6 +1,8 @@
 #include "app/play/scripted_input.h"
 
 #include <charconv>
+#include <deque>
+#include <string>
 #include <system_error>
 
 #include <SDL3/SDL_events.h>
@@ -32,6 +34,17 @@ std::optional<std::pair<float, float>> mouse_point(std::string_view text) {
 // Touche pressée d'office (--keys) : un événement SDL de plus dans la file, comme le clavier.
 // « mouse=XxY » déplace la souris (la barre de lecture paraît), « click=XxY » y clique.
 void press(const std::string& name, SDL_Window* window) {
+  if (name.starts_with("drop=")) {           // un fichier glissé sur la fenêtre
+    static std::deque<std::string> dropped;  // SDL garde le pointeur jusqu'à la lecture de l'événement
+    dropped.push_back(name.substr(5));
+    SDL_Event drop{};
+    drop.type = SDL_EVENT_DROP_FILE;
+    drop.drop.windowID = SDL_GetWindowID(window);
+    drop.drop.data = dropped.back().c_str();
+    log_channel("app")->info("--keys : fichier glissé {}", dropped.back());
+    SDL_PushEvent(&drop);
+    return;
+  }
   if (const auto point = mouse_point(name)) {
     int w = 0;
     int h = 0;
