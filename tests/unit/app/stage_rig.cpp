@@ -1,6 +1,7 @@
 #include "stage_rig.h"
 
 #include <algorithm>
+#include <array>
 #include <format>
 #include <thread>
 
@@ -61,10 +62,21 @@ std::vector<RingWritten> FakeBackend::written() const {
   return written_;
 }
 
+std::vector<std::string> FakeBackend::laned() const {
+  const std::scoped_lock lock(mutex_);
+  return laned_;
+}
+
 std::expected<void, Refusal> FakeBackend::note(std::string entry) {
   const std::scoped_lock lock(mutex_);
-  log_.push_back(std::move(entry));
+  push(std::move(entry));
   return {};
+}
+
+void FakeBackend::push(std::string entry) {
+  constexpr std::array<std::string_view, gpu::kLanes> kNames{"measure", "upscale", "interpolate"};
+  laned_.push_back(std::format("{} {}", kNames[gpu::lane_index(lane_)], entry));
+  log_.push_back(std::move(entry));
 }
 
 std::expected<gpu::Artifact, Refusal> FakeBackend::build(const gpu::ModelSpec& model, const gpu::ShapeSet&,
@@ -88,7 +100,7 @@ std::expected<std::unique_ptr<gpu::TensorBuffer>, Refusal> FakeBackend::alloc_te
     if (d <= 0) return refuse(RefusalCode::ShapeInvalid, "backend factice : dimension nulle");
   }
   const std::scoped_lock lock(mutex_);
-  log_.push_back("alloc");
+  push("alloc");
   return std::make_unique<FakeTensorBuffer>(type, shape, next_handle_++);
 }
 
@@ -106,14 +118,14 @@ std::expected<void, Refusal> FakeBackend::ingest(const DecodedFrame& frame, cons
     return refuse(RefusalCode::VendorCallFailed,
                   std::format("backend factice : image {} refusée", frame.id.value));
   ingested_[rgb.handle] = frame.id;
-  log_.push_back(std::format("ingest {}", frame.id.value));
+  push(std::format("ingest {}", frame.id.value));
   return {};
 }
 
 std::expected<void, Refusal> FakeBackend::write_ring(const gpu::Tensor&, const RingSlotDesc& slot,
                                                      const gpu::RingWrite& sync) {
   const std::scoped_lock lock(mutex_);
-  log_.push_back(std::format("write {}", slot.index));
+  push(std::format("write {}", slot.index));
   written_.push_back({.slot = slot.index, .wait_value = sync.wait_value, .signal_value = sync.signal_value});
   return {};
 }
@@ -133,7 +145,7 @@ gpu::PairScores FakeBackend::scores_of(const gpu::Tensor& a, const gpu::Tensor& 
 std::expected<gpu::PairScores, Refusal> FakeBackend::scores_now(const gpu::Tensor& a, const gpu::Tensor& b) {
   const std::scoped_lock lock(mutex_);
   const gpu::PairScores scores = scores_of(a, b);
-  log_.push_back(std::format("scores_now {} {}", scores.left.value, scores.right.value));
+  push(std::format("scores_now {} {}", scores.left.value, scores.right.value));
   return scores;
 }
 
@@ -141,7 +153,7 @@ std::expected<std::uint64_t, Refusal> FakeBackend::scores_start(const gpu::Tenso
   const std::scoped_lock lock(mutex_);
   if (!ahead_) return refuse(RefusalCode::FormatUnsupported, "scores_start : absent de ce backend");
   const gpu::PairScores scores = scores_of(a, b);
-  log_.push_back(std::format("scores_start {} {}", scores.left.value, scores.right.value));
+  push(std::format("scores_start {} {}", scores.left.value, scores.right.value));
   tickets_[next_ticket_] = scores;
   return next_ticket_++;
 }
@@ -152,7 +164,7 @@ std::expected<gpu::PairScores, Refusal> FakeBackend::scores_take(std::uint64_t t
   if (found == tickets_.end()) return refuse(RefusalCode::SequenceOrder, "scores_take : ticket inconnu");
   const gpu::PairScores scores = found->second;
   tickets_.erase(found);
-  log_.push_back("scores_take");
+  push("scores_take");
   return scores;
 }
 

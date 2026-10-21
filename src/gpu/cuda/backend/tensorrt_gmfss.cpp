@@ -6,6 +6,7 @@
 #include <format>
 #include <span>
 #include <string>
+#include <vector>
 
 #include "gpu/cuda/backend/cuda_status.h"
 #include "gpu/cuda/backend/gmfss_kernels.h"
@@ -66,6 +67,7 @@ std::expected<void, Refusal> TensorRtBackend::gmfss_frames(const Tensor& a, cons
                                .black = 0.0F,  // la chaîne ingère en plage limitée : le noir vaut 0
                                .input = address(frames),
                                .planes = kernels::kGmfssFramePlanes};
+  if (auto ok = order({a.handle, b.handle}, {frames.handle}); !ok) return ok;
   GpuTiming& timing = stage("entrée de GMFSS");
   timing.begin(stream_);
   auto launched = cuda_check(launch_rife_input(params, stream_), "rife_input<<<>>> (GMFSS)");
@@ -79,6 +81,7 @@ std::expected<void, Refusal> TensorRtBackend::fill(const Tensor& tensor, float v
   if (auto ok = bind(); !ok) return ok;
   std::size_t count = 1;
   for (const auto d : tensor.shape.dims) count *= static_cast<std::size_t>(d);
+  if (auto ok = order({}, {tensor.handle}); !ok) return ok;
   return cuda_check(launch_fill(address(tensor), count, value, stream_), "fill<<<>>>");
 }
 
@@ -163,6 +166,16 @@ std::expected<void, Refusal> TensorRtBackend::soft_splat_all(std::span<const Ker
                         .out = address(job.out)};
     offset += (bytes + kAlign - 1) / kAlign * kAlign;
   }
+  // Sources et mouvements lus, sorties et sommes écrites (les sommes sous une clé fixe : elles
+  // changent d'adresse en grandissant).
+  std::vector<std::uintptr_t> reads;
+  std::vector<std::uintptr_t> writes{reinterpret_cast<std::uintptr_t>(&splat_sums_)};
+  for (const KernelOps::SplatJob& job : jobs) {
+    reads.push_back(job.source.handle);
+    reads.push_back(job.motion.handle);
+    writes.push_back(job.out.handle);
+  }
+  if (auto ok = order(reads, writes); !ok) return ok;
   GpuTiming& timing = stage("splatting de GMFSS");
   timing.begin(stream_);
   auto launched = cuda_check(launch_soft_splat_all(batch, splat_sums_, total, stream_), "soft_splat<<<>>>");
@@ -218,6 +231,10 @@ std::expected<void, Refusal> TensorRtBackend::gmfss_compose(const Tensor& high_a
                                   .window_y = window.y,
                                   .t = t,
                                   .out = address(out)};
+  if (auto ok =
+          order({high_a.handle, high_b.handle, low_a.handle, low_b.handle, fusion.handle}, {out.handle});
+      !ok)
+    return ok;
   GpuTiming& timing = stage("composition de GMFSS");
   timing.begin(stream_);
   auto launched = cuda_check(launch_gmfss_compose(params, stream_), "gmfss_compose<<<>>>");

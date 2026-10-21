@@ -195,6 +195,15 @@ class UpscaleStage final : public RingStage {
                                           const gpu::RingWrite& sync);
 
   UpscaleSetup setup_;
+  // Voie du backend (gpu/lanes.h) des travaux qui suivent : ingestion et mesures sur Measure, SPAN
+  // et écriture du ring sur Upscale (les écritures du ring signalent dans l'ordre sur une seule
+  // file), RIFE, GMFSS, DistilDRBA et warp sur Interpolate. Le backend ordonne les voies d'après
+  // les tenseurs lus et écrits.
+  void use_lane(gpu::Lane lane) {
+    lane_ = lane;
+    setup_.backend->use_lane(lane);
+  }
+  gpu::Lane lane_ = gpu::Lane::Upscale;
   // Deux images de travail RGB, à tour de rôle : current_ vient d'être ingérée, l'autre est la
   // précédente (valable si previous_ est rempli).
   std::array<std::unique_ptr<gpu::TensorBuffer>, 2> rgb_;

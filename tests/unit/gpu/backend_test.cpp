@@ -16,7 +16,7 @@ using ajp::Refusal;
 using ajp::RefusalCode;
 using namespace ajp::gpu;
 
-static_assert(kBackendAbi == 5);
+static_assert(kBackendAbi == 6);
 // Aucune exception ne traverse les points d'entrée : sous MSVC, une exception sortie d'une
 // fonction extern "C" est un comportement indéfini chez l'appelant.
 static_assert(std::is_nothrow_invocable_r_v<int, BackendAbiFn>);
@@ -169,6 +169,9 @@ TEST_CASE("Backend : un backend complet s'écrit contre l'interface", "[backend]
   REQUIRE(ops != nullptr);
   CHECK(ops->resample({}, ajp::kernels::Filter::Area, {}).error().code == RefusalCode::ShapeInvalid);
   CHECK_FALSE(ops->previous_scores());
+  // Un backend qui ne connaît pas les voies : une seule, et use_lane ne change rien.
+  CHECK(backend.capabilities().lanes == 1);
+  backend.use_lane(Lane::Interpolate);
 }
 
 TEST_CASE("Backend : la file rend ses erreurs en refus nommés", "[backend]") {

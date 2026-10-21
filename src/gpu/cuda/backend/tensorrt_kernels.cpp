@@ -1,6 +1,8 @@
 // KernelOps du backend TensorRT : ingestion des images NVDEC et écriture du ring.
 #include <algorithm>
+#include <array>
 #include <format>
+#include <span>
 
 #include "gpu/cuda/backend/cuda_status.h"
 #include "gpu/cuda/backend/slice_kernels.h"
@@ -68,7 +70,7 @@ std::expected<void, Refusal> TensorRtBackend::hold(const DecodedFrame& frame) {
   }
   if (free == nullptr) {
     free = &held_[0];
-    if (auto ok = cuda_check(cudaEventSynchronize(free->done), "cudaEventSynchronize"); !ok) return ok;
+    if (auto ok = wait_event(free->done); !ok) return ok;
     free->data.reset();
   }
   free->data = frame.data;
@@ -133,6 +135,7 @@ std::expected<void, Refusal> TensorRtBackend::ingest(const DecodedFrame& frame, 
     return refuse(RefusalCode::FormatUnsupported, "ingestion : plans ou pas de ligne CUDA absents");
   }
   if (auto ok = bind(); !ok) return ok;
+  if (auto ok = order({}, {rgb.handle}); !ok) return ok;
   if (frame.data->ready_event() != 0) {
     auto* ready =
         reinterpret_cast<cudaEvent_t>(frame.data->ready_event());  // NOLINT(performance-no-int-to-ptr)
@@ -195,7 +198,8 @@ std::expected<ImportedSlot*, Refusal> TensorRtBackend::slot(const RingSlotDesc& 
 
 std::expected<ImportedSlot*, Refusal> TensorRtBackend::begin_write(const Tensor& rgb,
                                                                    const RingSlotDesc& desc,
-                                                                   const RingWrite& sync) {
+                                                                   const RingWrite& sync,
+                                                                   std::uintptr_t scratch) {
   if (sync.signal_value <= sync.wait_value || sync.signal_value % 2 == 0) {
     return refuse(RefusalCode::SequenceOrder,
                   std::format("slot {} : valeur à signaler {} impaire et > {} attendue", desc.index,
@@ -206,6 +210,14 @@ std::expected<ImportedSlot*, Refusal> TensorRtBackend::begin_write(const Tensor&
                                                          desc.index, desc.height, desc.width));
   }
   if (auto ok = bind(); !ok) return std::unexpected(std::move(ok.error()));
+  // Ring recréé : les écritures de l'ancienne génération, sur toutes les voies, avant le relâche
+  // de ses imports (slot) ; puis l'écriture elle-même, qui lit rgb.
+  if (desc.generation > generation_) {
+    if (auto ok = join(); !ok) return std::unexpected(std::move(ok.error()));
+  }
+  const std::array scratch_writes{scratch};
+  if (auto ok = order(std::span(&rgb.handle, 1), std::span(scratch_writes).first(scratch != 0 ? 1 : 0)); !ok)
+    return std::unexpected(std::move(ok.error()));
   auto imported = slot(desc);
   if (!imported) return std::unexpected(std::move(imported.error()));
   if (sync.wait_value != 0) {

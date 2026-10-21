@@ -6,8 +6,10 @@
 
 #include <chrono>
 #include <cstdint>
+#include <map>
 #include <memory>
 #include <string>
+#include <string_view>
 #include <thread>
 #include <vector>
 
@@ -66,6 +68,30 @@ std::vector<std::string> shape_of(const std::vector<RingFrame>& frames) {
                                     : std::to_string(f.left.value) + "-" + std::to_string(f.right.value));
   }
   return out;
+}
+
+// La voie attendue d'un travail du journal (« ingest 3 » : measure) ; vide pour les autres (alloc).
+std::string lane_of(std::string_view entry) {
+  if (entry.starts_with("ingest") || entry.starts_with("scores_")) return "measure";
+  if (entry == "engine span" || entry.starts_with("write")) return "upscale";
+  if (entry.starts_with("engine rife") || entry.starts_with("rife_") || entry.starts_with("warp_blend") ||
+      entry.starts_with("flow_max"))
+    return "interpolate";
+  return "";
+}
+
+// Chaque travail du journal sur sa voie ; combien sur chacune.
+std::map<std::string, int> check_lanes(const std::vector<std::string>& laned) {
+  std::map<std::string, int> per_lane;
+  for (const std::string& line : laned) {
+    const std::size_t space = line.find(' ');
+    const std::string want = lane_of(std::string_view(line).substr(space + 1));
+    if (want.empty()) continue;
+    INFO(line);
+    CHECK(line.substr(0, space) == want);
+    ++per_lane[want];
+  }
+  return per_lane;
 }
 
 std::vector<std::int64_t> pts_of(const std::vector<RingFrame>& frames) {
@@ -169,6 +195,34 @@ TEST_CASE("Étage gpu : RIFE mouvement, une passe au milieu tant que le mouvemen
   CHECK(rig.backend.count("flow_max_start") == 3);
   CHECK(rig.backend.count("flow_max_take") == 3);
   CHECK(rig.backend.count("warp_blend") == 6);
+}
+
+TEST_CASE("Étage gpu : mesures, SPAN et RIFE chacun sur sa voie, SPAN avant le warp aussi", "[app][stage]") {
+  SECTION("RIFE image ×3") {
+    Rig rig;
+    rig.start(rig.setup(true, Factor{.num = 3, .den = 1}));
+    rig.feed(1, 3);
+    REQUIRE(rig.collect(7));
+    rig.stage.reset();
+    const std::map<std::string, int> per_lane = check_lanes(rig.backend.laned());
+    CHECK(per_lane.size() == 3);
+    CHECK(rig.backend.count("engine rife") == 4);
+  }
+  SECTION("RIFE mouvement, warp après SPAN : SPAN enfilé au milieu du travail de la paire") {
+    Rig rig;
+    UpscaleSetup s = rig.setup(true, Factor{.num = 3, .den = 1});
+    s.rife = nullptr;
+    s.rife_motion = &rig.motion;
+    s.warp_after_span = true;
+    rig.start(std::move(s));
+    rig.feed(1, 4);
+    REQUIRE(rig.collect(10));
+    rig.stage.reset();
+    const std::map<std::string, int> per_lane = check_lanes(rig.backend.laned());
+    CHECK(per_lane.size() == 3);
+    CHECK(rig.backend.count("engine span") == 4);  // une passe par image source
+    CHECK(rig.backend.count("warp_blend") == 6);   // sur la voie de RIFE, reprise après SPAN
+  }
 }
 
 TEST_CASE("Étage gpu : RIFE mouvement fort, sans passe au milieu après la première paire, oublié à la coupe",

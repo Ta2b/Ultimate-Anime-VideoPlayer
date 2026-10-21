@@ -112,7 +112,7 @@ void show_loading(PlaceboScreen& screen, PlayerUi& ui, std::string label) {
 
 std::expected<std::optional<std::unique_ptr<gpu::Engine>>, Refusal> prepare_engine(
     Player& p, const gpu::BackendInit& init, gpu::Backend& backend, const std::filesystem::path& onnx,
-    const gpu::Shape& shape, EngineLabel label) {
+    const gpu::Shape& shape, EngineLabel label, gpu::Lane lane) {
   auto sha256 = prepare::sha256_file(onnx);
   if (!sha256) return std::unexpected(std::move(sha256.error()));
   auto build = EngineBuild::start(
@@ -128,7 +128,9 @@ std::expected<std::optional<std::unique_ptr<gpu::Engine>>, Refusal> prepare_engi
   if (!*artifact) return std::nullopt;  // fenêtre fermée pendant la construction
   log_channel("app")->info("moteur {} {}", label.name, (*artifact)->path.string());
   show_loading(p.screen, p.ui, "Chargement des moteurs");
+  backend.use_lane(lane);
   auto loaded = backend.load(**artifact);
+  backend.use_lane(gpu::Lane::Upscale);
   if (!loaded) return std::unexpected(std::move(loaded.error()));
   return std::optional(std::move(*loaded));
 }
@@ -160,7 +162,8 @@ std::expected<std::optional<GmfssEngines>, Refusal> prepare_gmfss(Player& p, con
                      EngineLabel{.name = "GMFSS (paire)",
                                  .model = found->pair.stem().string(),
                                  .width = g.padded_width,
-                                 .height = g.padded_height});
+                                 .height = g.padded_height},
+                     gpu::Lane::Interpolate);
   if (!pair) return std::unexpected(std::move(pair.error()));
   if (!*pair) return std::nullopt;
   engines.pair = std::move(**pair);
@@ -169,7 +172,8 @@ std::expected<std::optional<GmfssEngines>, Refusal> prepare_gmfss(Player& p, con
                                EngineLabel{.name = "GMFSS (fusion)",
                                            .model = found->fusion.stem().string(),
                                            .width = g.padded_width,
-                                           .height = g.padded_height});
+                                           .height = g.padded_height},
+                               gpu::Lane::Interpolate);
   if (!fusion) return std::unexpected(std::move(fusion.error()));
   if (!*fusion) return std::nullopt;
   engines.fusion = std::move(**fusion);
@@ -197,7 +201,8 @@ std::expected<std::optional<std::unique_ptr<gpu::Engine>>, Refusal> prepare_dist
       EngineLabel{.name = "DistilDRBA",
                   .model = found->stem().string(),
                   .width = g.padded_width,
-                  .height = g.padded_height});
+                  .height = g.padded_height},
+      gpu::Lane::Interpolate);
 }
 
 }  // namespace ajp::app::play

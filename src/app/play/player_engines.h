@@ -92,10 +92,11 @@ gpu::BackendLog backend_log();
 void show_loading(PlaceboScreen& screen, PlayerUi& ui, std::string label);
 
 // Construit (ou lit du cache) puis charge un moteur, la préparation à l'écran. Rien si
-// l'utilisateur ferme la fenêtre.
+// l'utilisateur ferme la fenêtre. lane : la voie où le moteur tournera (ses activations y sont
+// posées, gpu/lanes.h) ; le backend revient ensuite sur Upscale.
 std::expected<std::optional<std::unique_ptr<gpu::Engine>>, Refusal> prepare_engine(
     Player& p, const gpu::BackendInit& init, gpu::Backend& backend, const std::filesystem::path& onnx,
-    const gpu::Shape& shape, EngineLabel label);
+    const gpu::Shape& shape, EngineLabel label, gpu::Lane lane);
 
 // GMFSS Fortuna pour des images de travail work_width × work_height : ses deux graphes, trouvés dans
 // le premier de dirs qui les a, fixés à la taille remplie de RIFE (dérivés dans le dossier de

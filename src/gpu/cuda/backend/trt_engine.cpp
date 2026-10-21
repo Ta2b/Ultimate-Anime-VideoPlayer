@@ -131,10 +131,19 @@ std::expected<std::unique_ptr<TrtEngine>, Refusal> TrtEngine::load(
   return engine;
 }
 
-std::expected<void, Refusal> TrtEngine::enqueue(cudaStream_t stream, std::span<const Tensor> inputs,
+std::expected<void, Refusal> TrtEngine::enqueue(cudaStream_t stream,
+                                                const std::shared_ptr<SharedActivations>& arena,
+                                                std::span<const Tensor> inputs,
                                                 std::span<const Tensor> outputs) {
   if (inputs.size() != inputs_.size() || outputs.size() != outputs_.size()) {
     return refuse(RefusalCode::ShapeInvalid, "nombre d'entrées ou de sorties différent du moteur");
+  }
+  // Lancé sur une autre voie que celle de son chargement : ses activations passent dans la zone
+  // de cette voie (posée juste après).
+  if (shared_ && arena && arena != shared_) {
+    if (auto ok = arena->reserve(engine_->getDeviceMemorySizeV2()); !ok) return ok;
+    shared_ = arena;
+    shared_generation_ = 0;
   }
   // La zone commune a grandi depuis le dernier lancement : posée à nouveau, les graphes capturés
   // sur l'ancienne adresse jetés.

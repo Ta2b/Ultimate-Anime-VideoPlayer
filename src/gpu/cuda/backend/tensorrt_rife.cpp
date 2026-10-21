@@ -67,6 +67,7 @@ std::expected<void, Refusal> TensorRtBackend::rife_input(const Tensor& a, const 
                                .time = t,
                                .input = address(input),
                                .planes = static_cast<int>(planes)};
+  if (auto ok = order({a.handle, b.handle}, {input.handle}); !ok) return ok;
   GpuTiming& timing = stage("entrée de RIFE");
   timing.begin(stream_);
   auto launched = cuda_check(launch_rife_input(params, stream_), "rife_input<<<>>>");
@@ -89,6 +90,7 @@ std::expected<void, Refusal> TensorRtBackend::rife_time(const Tensor& input, flo
                                .input = address(input),
                                .planes = static_cast<int>(planes),
                                .frames = false};
+  if (auto ok = order({input.handle}, {input.handle}); !ok) return ok;
   GpuTiming& timing = stage("entrée de RIFE");
   timing.begin(stream_);
   auto launched = cuda_check(launch_rife_input(params, stream_), "rife_input<<<>>>");
@@ -117,6 +119,7 @@ std::expected<void, Refusal> TensorRtBackend::rife_crop(const Tensor& padded, co
                               .width = g.width,
                               .height = g.height,
                               .out = address(out)};
+  if (auto ok = order({padded.handle}, {out.handle}); !ok) return ok;
   GpuTiming& timing = stage("recadrage de RIFE");
   timing.begin(stream_);
   auto launched = cuda_check(launch_rife_crop(params, stream_), "rife_crop<<<>>>");
@@ -145,6 +148,7 @@ std::expected<std::uint64_t, Refusal> TensorRtBackend::scores_start(const Tensor
       ready = cuda_check(cudaEventCreateWithFlags(&slot.done, cudaEventDisableTiming), "cudaEventCreate");
   }
   // Le flux ordonne les emplacements : un ticket périmé n'est plus relu, rien n'est à attendre.
+  if (ready) ready = order({a.handle, b.handle}, {reinterpret_cast<std::uintptr_t>(slot.device)});
   if (ready)
     ready = cuda_check(cudaMemsetAsync(slot.device, 0, sizeof(PairSums), stream_), "cudaMemsetAsync");
   if (ready) {
@@ -180,8 +184,7 @@ std::expected<PairScores, Refusal> TensorRtBackend::scores_take(std::uint64_t ti
     return refuse(RefusalCode::SequenceOrder, std::format("scores_take : ticket {} périmé", ticket));
   // Attente hôte voulue : la décision de lancer RIFE dépend de cette paire (kernels/spec/detect.h).
   // Elle ne couvre que la mesure, pas ce que le flux a reçu depuis.
-  if (auto ok = cuda_check(cudaEventSynchronize(slot.done), "cudaEventSynchronize"); !ok)
-    return std::unexpected(std::move(ok.error()));
+  if (auto ok = wait_event(slot.done); !ok) return std::unexpected(std::move(ok.error()));
   slot.ticket = 0;
   // Σ |ΔY| × (pas 8 bits / 255) : l'écart en codes rapporté à la crête, sur l'aire remplie de RIFE.
   const double scene = slot.host->total * (219.0 / 255.0) / slot.area;

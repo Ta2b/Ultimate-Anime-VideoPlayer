@@ -138,11 +138,7 @@ std::expected<std::unique_ptr<TensorRtBackend>, Refusal> TensorRtBackend::create
   if (auto ok = backend->bind(); !ok) return std::unexpected(ok.error());
   cudaRuntimeGetVersion(&backend->runtime_version_);
   cudaDriverGetVersion(&backend->driver_version_);
-  if (auto ok = cuda_check(cudaStreamCreateWithFlags(&backend->stream_, cudaStreamNonBlocking),
-                           "cudaStreamCreateWithFlags");
-      !ok) {
-    return std::unexpected(ok.error());
-  }
+  if (auto ok = backend->create_lanes(); !ok) return std::unexpected(ok.error());
   for (Held& held : backend->held_) {
     if (auto ok = cuda_check(cudaEventCreateWithFlags(&held.done, cudaEventDisableTiming), "cudaEventCreate");
         !ok) {
@@ -170,15 +166,16 @@ std::expected<std::unique_ptr<TensorRtBackend>, Refusal> TensorRtBackend::create
   if (!backend->runtime_)
     return refuse(RefusalCode::LibraryUnavailable, "nvinfer1::createInferRuntime a échoué");
   backend->log(BackendLogLevel::Info,
-               std::format("TensorRT {} sur {} (sm {}.{})", getInferLibVersion(), backend->properties_.name,
-                           backend->properties_.major, backend->properties_.minor));
+               std::format("TensorRT {} sur {} (sm {}.{}), {} voie{} de calcul", getInferLibVersion(),
+                           backend->properties_.name, backend->properties_.major, backend->properties_.minor,
+                           backend->lanes_, backend->lanes_ > 1 ? "s" : ""));
   return backend;
 }
 
 TensorRtBackend::~TensorRtBackend() {
   if (stream_ == nullptr) return;
   cudaSetDevice(device_);
-  cudaStreamSynchronize(stream_);
+  for (cudaStream_t lane : streams_) cudaStreamSynchronize(lane);
   for (auto& [name, timing] : stages_) {
     if (const std::string line = timing->summary(); !line.empty())
       log(BackendLogLevel::Info, "profil GPU · " + line);
@@ -209,7 +206,7 @@ TensorRtBackend::~TensorRtBackend() {
   for (cudaEvent_t fence : fences_) {
     if (fence != nullptr) cudaEventDestroy(fence);
   }
-  cudaStreamDestroy(stream_);
+  destroy_lanes();
 }
 
 std::expected<void, Refusal> TensorRtBackend::bind() const {
@@ -229,7 +226,8 @@ BackendCaps TensorRtBackend::capabilities() const {
       .fp16 = true,
       .int8 = false,
       .matrix_units = true,
-      .import_formats = {PixelFormat::Nv12, PixelFormat::P010, PixelFormat::P016}};
+      .import_formats = {PixelFormat::Nv12, PixelFormat::P010, PixelFormat::P016},
+      .lanes = lanes_};
 }
 
 DeviceMatch TensorRtBackend::match(const DeviceUuid& render_device) const {
@@ -267,8 +265,9 @@ std::expected<Artifact, Refusal> TensorRtBackend::build(const ModelSpec& model, 
 
 std::expected<std::unique_ptr<Engine>, Refusal> TensorRtBackend::load(const Artifact& artifact) {
   if (auto ok = bind(); !ok) return std::unexpected(ok.error());
-  if (!activations_) activations_ = std::make_shared<SharedActivations>();
-  auto engine = TrtEngine::load(*runtime_, artifact.path, activations_);
+  // Les activations dans la zone de la voie choisie avant le chargement (use_lane) ; un moteur
+  // lancé sur l'autre voie y passe à son lancement.
+  auto engine = TrtEngine::load(*runtime_, artifact.path, arena());
   if (!engine) return std::unexpected(std::move(engine.error()));
   return std::unique_ptr<Engine>(std::move(*engine));
 }
@@ -310,11 +309,19 @@ std::expected<void, Refusal> TensorRtBackend::enqueue(Engine& engine, std::span<
   auto* trt = dynamic_cast<TrtEngine*>(&engine);
   if (trt == nullptr) return refuse(RefusalCode::DeviceMismatch, "enqueue : moteur d'un autre backend");
   if (auto ok = bind(); !ok) return ok;
+  // Le moteur lit ses entrées, écrit ses sorties, sa zone d'activation et son contexte.
+  const std::shared_ptr<SharedActivations>& zone = arena();
+  std::vector<std::uintptr_t> reads;
+  std::vector<std::uintptr_t> writes{reinterpret_cast<std::uintptr_t>(zone.get()),
+                                     reinterpret_cast<std::uintptr_t>(trt)};
+  for (const Tensor& tensor : inputs) reads.push_back(tensor.handle);
+  for (const Tensor& tensor : outputs) writes.push_back(tensor.handle);
+  if (auto ok = order(reads, writes); !ok) return ok;
   const Shape shape = trt->input_shape(0);
   GpuTiming& timing = stage(std::format("moteur {}×{}×{}", shape.dims[1], shape.dims[2], shape.dims[3]));
   span_timing_->begin(stream_);
   timing.begin(stream_);
-  auto queued = trt->enqueue(stream_, inputs, outputs);
+  auto queued = trt->enqueue(stream_, zone, inputs, outputs);
   timing.end(stream_);
   span_timing_->end(stream_);
   chain_timing_->end(stream_);
@@ -328,8 +335,10 @@ std::expected<void, Refusal> TensorRtBackend::enqueue(Engine& engine, std::span<
 std::expected<Fence, Refusal> TensorRtBackend::signal() {
   cudaEvent_t event = fences_[fence_count_ % kFences];
   ++fence_count_;
-  if (auto ok =
-          bind().and_then([&] { return cuda_check(cudaEventRecord(event, stream_), "cudaEventRecord"); });
+  // La barrière suit le travail de toutes les voies.
+  if (auto ok = bind().and_then([&] { return join(); }).and_then([&] {
+        return cuda_check(cudaEventRecord(event, stream_), "cudaEventRecord");
+      });
       !ok) {
     return std::unexpected(std::move(ok.error()));
   }
@@ -338,8 +347,13 @@ std::expected<Fence, Refusal> TensorRtBackend::signal() {
 
 std::expected<void, Refusal> TensorRtBackend::wait(const Fence& fence) {
   auto* event = reinterpret_cast<cudaEvent_t>(fence.handle);  // NOLINT(performance-no-int-to-ptr)
-  return bind().and_then(
-      [&] { return cuda_check(cudaStreamWaitEvent(stream_, event, 0), "cudaStreamWaitEvent"); });
+  if (auto ok = bind(); !ok) return ok;
+  // Toutes les voies attendent : le travail enfilé après, sur n'importe laquelle, suit la barrière.
+  for (std::size_t lane = 0; lane < static_cast<std::size_t>(lanes_); ++lane) {
+    const cudaStream_t stream = lanes_ > 1 ? streams_[lane] : stream_;
+    if (auto ok = cuda_check(cudaStreamWaitEvent(stream, event, 0), "cudaStreamWaitEvent"); !ok) return ok;
+  }
+  return {};
 }
 
 }  // namespace ajp::gpu::cuda

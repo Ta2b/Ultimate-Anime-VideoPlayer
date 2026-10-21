@@ -1,7 +1,7 @@
-// Backend TensorRT (gpu/backend.h, ABI 2) : moteurs construits par trtexec (prepare), exécutés
-// sur un flux CUDA non bloquant du contexte primaire de la RTX du rendu, et les noyaux de la
-// chaîne que la tranche verticale demande : ingestion des images NVDEC et écriture du ring
-// importé de Vulkan.
+// Backend TensorRT (gpu/backend.h) : moteurs construits par trtexec (prepare), exécutés sur les
+// flux CUDA non bloquants du contexte primaire de la RTX du rendu, un par voie de calcul
+// (gpu/lanes.h), et les noyaux de la chaîne que la tranche verticale demande : ingestion des
+// images NVDEC et écriture du ring importé de Vulkan.
 //
 // Chargé à l'exécution (ajp_backend_tensorrt.so) : le lecteur démarre sans CUDA ni TensorRT.
 // Les noyaux et l'enveloppe TensorRT sont provisoires (slice_kernels.h, trt_engine.h) : ils
@@ -13,6 +13,7 @@
 #include <cuda_runtime_api.h>
 #include <expected>
 #include <filesystem>
+#include <initializer_list>
 #include <map>
 #include <memory>
 #include <optional>
@@ -24,6 +25,7 @@
 #include "gpu/cuda/backend/gpu_timing.h"
 #include "gpu/cuda/backend/ring_slot.h"
 #include "gpu/kernel_ops.h"
+#include "gpu/lanes.h"
 
 namespace nvinfer1 {
 class IRuntime;
@@ -57,6 +59,7 @@ class TensorRtBackend final : public Backend, public KernelOps {
                                        std::span<Tensor> outputs) override;
   std::expected<Fence, Refusal> signal() override;
   std::expected<void, Refusal> wait(const Fence& fence) override;
+  void use_lane(Lane lane) override;  // tensorrt_lanes.cpp
 
   // KernelOps : ingest et write_ring ; les autres noyaux de la chaîne sont refusés ici.
   std::expected<void, Refusal> ingest(const DecodedFrame& frame, const IngestSpec& spec,
@@ -109,17 +112,58 @@ class TensorRtBackend final : public Backend, public KernelOps {
     std::shared_ptr<const FrameData> data;
     cudaEvent_t done = nullptr;
   };
-  static constexpr std::size_t kHeldFrames = 8;
+  // Deux paires en vol sur les voies, plus l'image lue en avance.
+  static constexpr std::size_t kHeldFrames = 12;
   static constexpr std::size_t kFences = 16;
+  // Événements par voie, posés à tour de rôle après chaque opération (tensorrt_lanes.cpp).
+  static constexpr std::size_t kLaneMarks = 64;
+  // Sous cette mémoire, une seule voie et une seule zone d'activation : la RTX 4050 mobile à 6 Go
+  // ne paie pas la zone de plus (une carte de 8 Go, qui en annonce un peu moins, garde les voies).
+  static constexpr std::size_t kLaneMemory = std::size_t{15} << 29;  // 7,5 Gio
 
   TensorRtBackend() = default;
   std::expected<void, Refusal> bind() const;  // le device courant est propre à chaque thread
+  // Voies (tensorrt_lanes.cpp). Avant une opération de la voie courante qui lit reads et écrit
+  // writes (des adresses : tenseurs, zone d'activation, moteur, sommes) : l'événement de
+  // l'opération précédente de la voie posé, les attentes sur les autres voies enfilées. Rien
+  // sous une seule voie : l'ordre de la file suffit.
+  std::expected<void, Refusal> order(std::initializer_list<std::uintptr_t> reads,
+                                     std::initializer_list<std::uintptr_t> writes);
+  std::expected<void, Refusal> order(std::span<const std::uintptr_t> reads,
+                                     std::span<const std::uintptr_t> writes);
+  // La voie courante suit tout le travail déjà enfilé sur les autres.
+  std::expected<void, Refusal> join();
+  std::expected<void, Refusal> apply(const LaneHazards::Op& op);
+  std::expected<void, Refusal> record(std::size_t lane);  // l'événement en attente de lane
+  std::expected<void, Refusal> create_lanes();
+  void destroy_lanes();
+  // Attente hôte d'un événement : interrogé quelques centaines de µs d'abord, puis attendu (le
+  // contexte en attente bloquante réveille le thread 50 à 200 µs après l'événement, T14).
+  static std::expected<void, Refusal> wait_event(cudaEvent_t event);
+  // La zone d'activation de la voie courante : l'agrandissement a la sienne, l'interpolation et
+  // la mesure l'autre ; une seule sous une voie.
+  const std::shared_ptr<SharedActivations>& arena();
+  // La voie lane le temps d'une portée : RTX HDR reste sur la file de son ouverture.
+  class LaneScope {
+   public:
+    LaneScope(TensorRtBackend& backend, Lane lane) : backend_(backend), previous_(backend.lane_) {
+      backend.use_lane(lane);
+    }
+    ~LaneScope() { backend_.use_lane(previous_); }
+    LaneScope(const LaneScope&) = delete;
+    LaneScope& operator=(const LaneScope&) = delete;
+
+   private:
+    TensorRtBackend& backend_;
+    Lane previous_;
+  };
   void log(BackendLogLevel level, std::string_view message) const;
   std::expected<void, Refusal> hold(const DecodedFrame& frame);
   std::expected<ImportedSlot*, Refusal> slot(const RingSlotDesc& desc);
-  // Écriture d'un slot : protocole vérifié, slot importé, attente de wait_value enfilée.
+  // Écriture d'un slot : protocole vérifié, voies ordonnées (rgb lu, scratch écrit s'il n'est pas
+  // nul), slot importé, attente de wait_value enfilée.
   std::expected<ImportedSlot*, Refusal> begin_write(const Tensor& rgb, const RingSlotDesc& desc,
-                                                    const RingWrite& sync);
+                                                    const RingWrite& sync, std::uintptr_t scratch = 0);
   void release_retired();
   // warp_blend et warp_blend_poses : le même noyau, l'instant réglé ou non.
   struct Poses {
@@ -137,10 +181,16 @@ class TensorRtBackend final : public Backend, public KernelOps {
   std::filesystem::path cache_dir_;
   std::filesystem::path trtexec_;
   BackendLog log_;
-  cudaStream_t stream_ = nullptr;
+  cudaStream_t stream_ = nullptr;  // la file de la voie courante, l'une de streams_
+  std::array<cudaStream_t, kLanes> streams_{};
+  std::array<std::array<cudaEvent_t, kLaneMarks>, kLanes> lane_events_{};
+  std::array<std::uint64_t, kLanes> unrecorded_{};  // rang dont l'événement reste à poser ; 0 : aucun
+  Lane lane_ = Lane::Upscale;
+  int lanes_ = 1;
+  LaneHazards hazards_;
   std::unique_ptr<TrtLog> trt_log_;
   std::unique_ptr<nvinfer1::IRuntime> runtime_;
-  std::shared_ptr<SharedActivations> activations_;  // celle de tous les moteurs (trt_engine.h)
+  std::array<std::shared_ptr<SharedActivations>, 2> arenas_;  // zones d'activation (trt_engine.h)
   std::array<Held, kHeldFrames> held_{};
   std::array<cudaEvent_t, kFences> fences_{};
   std::uint64_t fence_count_ = 0;

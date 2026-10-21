@@ -77,6 +77,7 @@ std::expected<void, Refusal> TensorRtBackend::open_true_hdr(const vendor_hdr::In
                            "cudaMallocPitch");
       !ok)
     return ok;
+  state->lane = lane_;
   state->bridge = std::make_unique<LegacyBridge>(stream_);
   if (auto ok = state->bridge->create(); !ok) return ok;
   // Maxine prend le contexte courant : le contexte primaire du backend, rendu courant par bind().
@@ -108,7 +109,8 @@ std::expected<void, Refusal> TensorRtBackend::write_ring_true_hdr(
                   std::format("RTX HDR ouvert pour {}x{}, slot en {}x{}", true_hdr_->width, true_hdr_->height,
                               desc.width, desc.height));
   }
-  auto imported = begin_write(rgb, desc, sync);
+  const LaneScope on_bridge(*this, true_hdr_->lane);
+  auto imported = begin_write(rgb, desc, sync, reinterpret_cast<std::uintptr_t>(true_hdr_.get()));
   if (!imported) return std::unexpected(std::move(imported.error()));
   TrueHdrState& hdr = *true_hdr_;
   hdr.prepared = prepared;
@@ -154,6 +156,9 @@ std::expected<std::vector<float>, Refusal> TensorRtBackend::true_hdr_ramp(
   if (bands == 0 || hdr.width / bands < 8)
     return refuse(RefusalCode::ShapeInvalid, std::format("rampe de {} marches sur {} px", bands, hdr.width));
   if (auto ok = bind(); !ok) return std::unexpected(ok.error());
+  const LaneScope on_bridge(*this, hdr.lane);
+  if (auto ok = order({}, {reinterpret_cast<std::uintptr_t>(true_hdr_.get())}); !ok)
+    return std::unexpected(ok.error());
   // Une bande verticale par niveau, assez large pour que son centre ne voie pas ses voisines.
   const int band = hdr.width / bands;
   auto* rgba8 = static_cast<std::uint8_t*>(hdr.rgba8);

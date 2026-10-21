@@ -69,6 +69,9 @@ class FakeBackend final : public gpu::Backend, public gpu::KernelOps {
 
   std::vector<std::string> log() const;
   std::size_t count(std::string_view entry) const;  // entrées du journal égales à entry
+  // Le même journal, chaque entrée précédée de la voie où elle a été enfilée (« measure ingest 3 »,
+  // « upscale engine span », « interpolate rife_input »).
+  std::vector<std::string> laned() const;
   std::vector<RingWritten> written() const;
 
   // gpu::Backend
@@ -83,6 +86,10 @@ class FakeBackend final : public gpu::Backend, public gpu::KernelOps {
   std::expected<std::unique_ptr<gpu::TensorBuffer>, Refusal> alloc_tensor(gpu::TensorType type,
                                                                           const gpu::Shape& shape) override;
   gpu::KernelOps* kernels() override { return this; }
+  void use_lane(gpu::Lane lane) override {
+    const std::scoped_lock lock(mutex_);
+    lane_ = lane;
+  }
   std::expected<void, Refusal> enqueue(gpu::Engine& engine, std::span<const gpu::Tensor> inputs,
                                        std::span<gpu::Tensor> outputs) override;
   std::expected<gpu::Fence, Refusal> signal() override { return gpu::Fence{.handle = 1, .value = ++fence_}; }
@@ -125,13 +132,13 @@ class FakeBackend final : public gpu::Backend, public gpu::KernelOps {
   std::expected<gpu::PairScores, Refusal> scores_take(std::uint64_t ticket) override;
   std::expected<float, Refusal> flow_max_now(const gpu::Motion& /*motion*/) override {
     const std::scoped_lock lock(mutex_);
-    log_.emplace_back("flow_max_now");
+    push("flow_max_now");
     return motion_max_;
   }
   std::expected<std::uint64_t, Refusal> flow_max_start(const gpu::Motion& /*motion*/) override {
     const std::scoped_lock lock(mutex_);
     if (!ahead_) return std::unexpected(Refusal{RefusalCode::FormatUnsupported, "flow_max_start : absent"});
-    log_.emplace_back("flow_max_start");
+    push("flow_max_start");
     flow_tickets_[next_ticket_] = motion_max_;
     return next_ticket_++;
   }
@@ -142,7 +149,7 @@ class FakeBackend final : public gpu::Backend, public gpu::KernelOps {
       return std::unexpected(Refusal{RefusalCode::SequenceOrder, "flow_max_take : ticket inconnu"});
     const float value = found->second;
     flow_tickets_.erase(found);
-    log_.emplace_back("flow_max_take");
+    push("flow_max_take");
     return value;
   }
   std::size_t pending_flow_tickets() const {
@@ -179,10 +186,13 @@ class FakeBackend final : public gpu::Backend, public gpu::KernelOps {
  private:
   using PairKey = std::pair<std::uint32_t, std::uint32_t>;
   std::expected<void, Refusal> note(std::string entry);
+  void push(std::string entry);  // sous le verrou
   gpu::PairScores scores_of(const gpu::Tensor& a, const gpu::Tensor& b);
 
   mutable std::mutex mutex_;
   std::vector<std::string> log_;
+  std::vector<std::string> laned_;
+  gpu::Lane lane_ = gpu::Lane::Upscale;
   std::vector<RingWritten> written_;
   std::map<std::uintptr_t, SourceId> ingested_;  // tenseur → dernière image ingérée dedans
   std::map<PairKey, gpu::PairScores> scores_;

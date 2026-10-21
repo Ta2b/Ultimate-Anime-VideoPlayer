@@ -194,6 +194,7 @@ std::expected<std::uint32_t, Refusal> UpscaleStage::outputs(const DecodedFrame& 
   }
   prepared_ = vendor_hdr::InputPreparation{.matrix = frame.color.matrix, .range = frame.color.range};
   gpu::KernelOps& ops = *setup_.backend->kernels();
+  use_lane(gpu::Lane::Measure);  // ingestion, mesures de la paire, suivante en avance
   current_ ^= 1U;
   rife_in_pair_ = false;  // les images de rife_in_ sont celles de la paire d'avant
   gpu::IngestSpec spec;
@@ -338,6 +339,7 @@ std::expected<RingStage::Output, Refusal> UpscaleStage::produce(const DecodedFra
   const Instant& instant = instants_[std::min<std::size_t>(output, instants_.size() - 1)];
   const bool last = output + 1 >= outputs_;
   if (instant.t >= 1.0F) {  // l'image elle-même, toujours la dernière de la paire
+    use_lane(gpu::Lane::Upscale);
     std::expected<void, Refusal> ok;
     if (warps_spanned()) {
       ok = span_current().and_then([&] { return write_slot(spanned(current_), slot, sync); });
@@ -354,6 +356,7 @@ std::expected<RingStage::Output, Refusal> UpscaleStage::produce(const DecodedFra
   // Image intermédiaire, entre la précédente et celle-ci (rife_runs demande la précédente).
   if (!previous_) return refuse(RefusalCode::SequenceOrder, "RIFE : pas d'image précédente");
   const Output made{.pts_us = instant.pts_us, .left = previous_->id, .right = frame.id};
+  use_lane(gpu::Lane::Interpolate);
   if (warps_spanned()) {
     const gpu::Tensor& out = middle_out_->tensor();
     if (auto ok = gmfss() ? interpolate_gmfss_spanned(output, spanned(current_ ^ 1U), spanned(current_), out)
@@ -361,6 +364,7 @@ std::expected<RingStage::Output, Refusal> UpscaleStage::produce(const DecodedFra
         !ok) {
       return std::unexpected(std::move(ok.error()));
     }
+    use_lane(gpu::Lane::Upscale);
     if (auto ok = write_slot(out, slot, sync); !ok) return std::unexpected(std::move(ok.error()));
     if (last) previous_ = Previous{.pts_us = frame.pts_us, .id = frame.id, .epoch = frame.epoch};
     return made;
@@ -373,6 +377,7 @@ std::expected<RingStage::Output, Refusal> UpscaleStage::produce(const DecodedFra
   } else if (auto ok = interpolate_image(instant.t); !ok) {
     return std::unexpected(std::move(ok.error()));
   }
+  use_lane(gpu::Lane::Upscale);
   if (auto ok = finish(middle_->tensor(), slot, sync); !ok) return std::unexpected(std::move(ok.error()));
   output_has_source_ = false;
   // ×1,5 : l'image n'est pas sur la grille de cette paire, elle sert seulement de suivante.
@@ -389,9 +394,14 @@ std::expected<void, Refusal> UpscaleStage::span_current() {
   }
   // L'autre tampon que celui de la précédente, qui reste le bord a des warps de la paire.
   span_of_[current_] = span_of_[current_ ^ 1U] ^ 1U;
+  // Sur la voie de SPAN, au milieu du travail de la paire : la voie de l'appelant reprend après.
+  const gpu::Lane back = lane_;
+  use_lane(gpu::Lane::Upscale);
   const std::array inputs{rgb_[current_]->tensor()};
   std::array results{spanned(current_)};
-  return setup_.backend->enqueue(*setup_.engine, inputs, results);
+  auto ok = setup_.backend->enqueue(*setup_.engine, inputs, results);
+  use_lane(back);
+  return ok;
 }
 
 std::expected<void, Refusal> UpscaleStage::finish(const gpu::Tensor& rgb, std::uint32_t slot,

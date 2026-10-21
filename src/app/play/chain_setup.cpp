@@ -136,7 +136,8 @@ std::expected<std::optional<ChainEngines>, Refusal> prepare_chain(Player& p, con
                                  EngineLabel{.name = "SPAN",
                                              .model = c.model->path.stem().string(),
                                              .width = c.work.width,
-                                             .height = c.work.height});
+                                             .height = c.work.height},
+                                 gpu::Lane::Upscale);
     if (!loaded) return std::unexpected(std::move(loaded.error()));
     if (!*loaded) return std::nullopt;
     c.engine = std::move(**loaded);
@@ -193,7 +194,8 @@ std::expected<std::optional<ChainEngines>, Refusal> prepare_chain(Player& p, con
                                    EngineLabel{.name = "RIFE",
                                                .model = derived->stem().string(),
                                                .width = g.padded_width,
-                                               .height = g.padded_height});
+                                               .height = g.padded_height},
+                                   gpu::Lane::Interpolate);
       if (!loaded) return std::unexpected(std::move(loaded.error()));
       if (!*loaded) return std::nullopt;
       c.rife_motion = std::move(**loaded);
@@ -206,7 +208,8 @@ std::expected<std::optional<ChainEngines>, Refusal> prepare_chain(Player& p, con
                                  EngineLabel{.name = "RIFE",
                                              .model = c.rife_model->stem().string(),
                                              .width = g.padded_width,
-                                             .height = g.padded_height});
+                                             .height = g.padded_height},
+                                 gpu::Lane::Interpolate);
     if (!loaded) return std::unexpected(std::move(loaded.error()));
     if (!*loaded) return std::nullopt;
     c.rife = std::move(**loaded);

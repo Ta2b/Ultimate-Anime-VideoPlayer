@@ -29,6 +29,7 @@
 #include "core/ring.h"
 #include "core/types.h"
 #include "gpu/kernel_ops.h"
+#include "gpu/lanes.h"
 #include "gpu/tensor.h"
 
 namespace ajp::gpu {
@@ -38,7 +39,8 @@ namespace ajp::gpu {
 // 3 : enqueue(), signal() et wait() rendent leur refus ; ajp_backend_layout().
 // 4 : KernelOps sans le flux optique matériel (open_optical_flow, optical_flow).
 // 5 : KernelOps::soft_splat_all (les splats d'un instant en un passage).
-inline constexpr int kBackendAbi = 5;
+// 6 : voies de calcul (gpu/lanes.h) : Backend::use_lane, BackendCaps::lanes.
+inline constexpr int kBackendAbi = 6;
 
 using DeviceUuid = ajp::DeviceUuid;
 
@@ -71,6 +73,8 @@ struct BackendCaps {
   bool int8 = false;
   bool matrix_units = false;                // unités matricielles utilisées
   std::vector<PixelFormat> import_formats;  // formats acceptés par import()
+  // Voies qui se recouvrent vraiment sur l'appareil (gpu/lanes.h) ; 1 : use_lane ne change rien.
+  int lanes = 1;
 };
 
 // Un modèle ONNX tel que livré, identifié par son hachage.
@@ -150,6 +154,10 @@ class Backend {
                                                std::span<Tensor> outputs) = 0;
   virtual std::expected<Fence, Refusal> signal() = 0;
   virtual std::expected<void, Refusal> wait(const Fence& fence) = 0;  // côté GPU, sauf si needs_host_sync
+  // La voie des appels suivants de ce thread (gpu/lanes.h) : load() y pose les activations d'un
+  // moteur, enqueue() et les noyaux s'enfilent sur sa file. Les dépendances entre voies sont
+  // l'affaire du backend ; signal() suit le travail de toutes. Un backend à une voie l'ignore.
+  virtual void use_lane(Lane /*lane*/) {}
 };
 
 // Empreinte binaire de la frontière : FNV-1a 64 bits sur une suite de nombres.

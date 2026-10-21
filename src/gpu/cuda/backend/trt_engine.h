@@ -27,10 +27,11 @@ class IExecutionContext;
 
 namespace ajp::gpu::cuda {
 
-// Mémoire d'activation partagée par les moteurs d'un backend : ils s'exécutent l'un après
-// l'autre sur sa file, une zone de la taille du plus gros suffit. Sans elle, RIFE, SPAN et les
-// graphes de GMFSS gardent chacun la leur : plusieurs centaines de Mo de plus sur les 6 Go d'une
-// RTX 4050 mobile.
+// Mémoire d'activation partagée par les moteurs d'une voie du backend (gpu/lanes.h) : ils
+// s'exécutent l'un après l'autre sur sa file, une zone de la taille du plus gros suffit. Sans
+// elle, RIFE, SPAN et les graphes de GMFSS gardent chacun la leur : plusieurs centaines de Mo de
+// plus sur les 6 Go d'une RTX 4050 mobile. Deux voies de calcul, deux zones : SPAN tourne
+// pendant RIFE ou GMFSS sans écrire leur mémoire.
 class SharedActivations {
  public:
   SharedActivations() = default;
@@ -78,8 +79,10 @@ class TrtEngine final : public Engine {
   // Pose les adresses et lance le moteur sur stream. Les formes doivent être celles du moteur.
   // Les mêmes adresses une troisième fois : le lancement passe par un graphe CUDA capturé à la
   // deuxième (la première prépare le contexte), qui rejoue les noyaux sans les relancer un à un.
-  std::expected<void, Refusal> enqueue(cudaStream_t stream, std::span<const Tensor> inputs,
-                                       std::span<const Tensor> outputs);
+  // arena : la zone de la voie de stream ; un moteur chargé avec une zone commune y passe (elle
+  // grandit à sa taille au besoin, ses graphes sont refaits). L'appelant ordonne les voies.
+  std::expected<void, Refusal> enqueue(cudaStream_t stream, const std::shared_ptr<SharedActivations>& arena,
+                                       std::span<const Tensor> inputs, std::span<const Tensor> outputs);
 
   // Le mot du moteur pour le journal du backend (graphes CUDA coupés après kCaptureAttempts
   // captures refusées), une fois ; vide sinon.

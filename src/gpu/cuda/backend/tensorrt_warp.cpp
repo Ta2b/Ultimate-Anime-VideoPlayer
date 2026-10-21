@@ -100,6 +100,10 @@ std::expected<void, Refusal> TensorRtBackend::warp(const Tensor& a, const Tensor
       .keep_poses = poses.keep,
       .previous_flow = poses.previous != nullptr ? address(poses.previous->flow) : nullptr,
       .out = const_cast<void*>(address(out))};  // NOLINT : écrit
+  const std::uintptr_t previous = poses.previous != nullptr ? poses.previous->flow.handle : 0;
+  if (auto ok = order({a.handle, b.handle, motion.flow.handle, motion.mask.handle, previous}, {out.handle});
+      !ok)
+    return ok;
   GpuTiming& timing = stage("warp et mélange");
   timing.begin(stream_);
   auto launched = cuda_check(launch_warp_blend(params, stream_), "warp_blend<<<>>>");
@@ -125,6 +129,7 @@ std::expected<std::uint64_t, Refusal> TensorRtBackend::flow_max_start(const Moti
     if (ready)
       ready = cuda_check(cudaEventCreateWithFlags(&slot.done, cudaEventDisableTiming), "cudaEventCreate");
   }
+  if (ready) ready = order({motion.flow.handle}, {reinterpret_cast<std::uintptr_t>(slot.device)});
   if (ready)
     ready = cuda_check(cudaMemsetAsync(slot.device, 0, sizeof(unsigned int), stream_), "cudaMemsetAsync");
   if (ready) {
@@ -155,8 +160,7 @@ std::expected<float, Refusal> TensorRtBackend::flow_max_take(std::uint64_t ticke
   if (ticket == 0 || slot.ticket != ticket)
     return refuse(RefusalCode::SequenceOrder, std::format("flow_max_take : ticket {} périmé", ticket));
   // Attente hôte voulue : relancer RIFE aux autres instants dépend de ce maximum.
-  if (auto ok = cuda_check(cudaEventSynchronize(slot.done), "cudaEventSynchronize"); !ok)
-    return std::unexpected(std::move(ok.error()));
+  if (auto ok = wait_event(slot.done); !ok) return std::unexpected(std::move(ok.error()));
   slot.ticket = 0;
   float value = 0.0F;
   static_assert(sizeof(value) == sizeof(*slot.host));
