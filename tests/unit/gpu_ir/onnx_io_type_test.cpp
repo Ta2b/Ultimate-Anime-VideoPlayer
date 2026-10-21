@@ -4,6 +4,7 @@
 #include "gpu/ir/onnx_io_type.h"
 
 #include <cstdint>
+#include <span>
 #include <string>
 #include <vector>
 
@@ -190,4 +191,66 @@ TEST_CASE("onnx : interface non réécrite autour d'un sous-graphe ou d'un passa
   auto bad_type = onnx::with_io_type(through.bytes(), onnx::kInt64);
   REQUIRE_FALSE(bad_type);
   CHECK(bad_type.error().code == RefusalCode::FeatureUnavailable);
+}
+
+TEST_CASE("onnx : dimensions symboliques et anonymes fixées sur les entrées", "[gpu_ir][onnx]") {
+  // Une entrée à dimensions nommées (dim_param) et une autre à -1 sans nom, comme les RIFE de
+  // vs-mlrt : les deux déclarent ensuite la forme demandée, le graphe et les poids restent.
+  ModelBuilder m;
+  m.input("x", {1, 3, -1, -1});
+  test::ProtoWriter shape;
+  for (const std::int64_t d : {1, 3, -1, -1}) shape.message(1, test::ProtoWriter{}.varint(1, d));
+  m.graph().message(11, test::ProtoWriter{}.bytes(1, "z").message(
+                            2, test::ProtoWriter{}.message(
+                                   1, test::ProtoWriter{}.varint(1, onnx::kFloat16).message(2, shape))));
+  m.weight("w", {1}, {2.0F}).node("Mul", {"x", "w"}, {"t"}).node("Add", {"t", "z"}, {"y"}).output("y");
+  const std::vector<std::byte> original = m.bytes();
+  auto before = onnx::read_onnx(original);
+  REQUIRE(before);
+  REQUIRE(before->graph.inputs.size() == 2);
+  CHECK(before->graph.inputs[1].symbols == Names{"", "", "?", "?"});
+
+  const std::vector<onnx::InputDims> fixed{{.name = "x", .dims = {1, 3, 540, 960}},
+                                           {.name = "z", .dims = {1, 3, 540, 960}}};
+  auto rewritten = onnx::with_input_dims(original, fixed);
+  REQUIRE(rewritten);
+  REQUIRE_FALSE(rewritten->empty());
+  auto model = onnx::read_onnx(*rewritten);
+  REQUIRE(model);
+  const onnx::Graph& g = model->graph;
+  REQUIRE(g.inputs.size() == 2);
+  for (const onnx::ValueInfo& v : g.inputs) {
+    CHECK(v.has_shape);
+    CHECK(v.dims == std::vector<std::int64_t>{1, 3, 540, 960});
+    CHECK(v.symbols == Names{"", "", "", ""});
+  }
+  CHECK(g.inputs[0].elem_type == onnx::kFloat);
+  CHECK(g.inputs[1].elem_type == onnx::kFloat16);
+  REQUIRE(g.nodes.size() == 2);
+  CHECK(g.nodes[1].inputs == Names{"t", "z"});
+  REQUIRE(g.initializers.size() == 1);
+  CHECK(g.initializers[0].floats == std::vector<float>{2.0F});
+
+  // Déjà fixées : rien à réécrire.
+  auto again = onnx::with_input_dims(*rewritten, fixed);
+  REQUIRE(again);
+  CHECK(again->empty());
+}
+
+TEST_CASE("onnx : dimensions refusées quand elles contredisent le fichier", "[gpu_ir][onnx]") {
+  ModelBuilder m;
+  m.input("x", {1, 3, -1, -1}).node("Relu", {"x"}, {"y"}).output("y");
+  const std::vector<std::byte> bytes = m.bytes();
+  const auto refused = [&](onnx::InputDims dims) {
+    auto out = onnx::with_input_dims(bytes, std::span(&dims, 1));
+    REQUIRE_FALSE(out);
+    CHECK(out.error().code == RefusalCode::InputMismatch);
+  };
+  refused({.name = "absente", .dims = {1, 3, 8, 8}});
+  refused({.name = "x", .dims = {1, 3, 8}});     // rang
+  refused({.name = "x", .dims = {1, 4, 8, 8}});  // dimension fixe du fichier
+  refused({.name = "x", .dims = {1, 3, 0, 8}});  // non positive
+  auto none = onnx::with_input_dims(bytes, {});
+  REQUIRE(none);
+  CHECK(none->empty());
 }

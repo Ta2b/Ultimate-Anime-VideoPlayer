@@ -93,6 +93,8 @@ std::expected<Artifact, Refusal> VulkanBackend::build_runtime(const ModelSpec& m
                                      model.precision == TensorType::F16 ? "f16" : "f32", runtime_->version(),
                                      runtime_->device_name(), runtime_->name());
   if (shared_memory_) key_text += "|interop";  // programme compilé pour la mémoire de l'appareil
+  if (const std::string_view revision = runtime_->artifact_revision(); !revision.empty())
+    key_text += std::format("|r{}", revision);
   for (const auto& input : inputs) {
     key_text += '|' + input.name;
     for (const std::int64_t d : input.dims) key_text += std::format(",{}", d);

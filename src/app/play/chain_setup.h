@@ -35,9 +35,10 @@ namespace ajp::app::play {
 
 // Les décodeurs à essayer pour un backend : NVDEC en mémoire CUDA pour TensorRT, puis le décodage
 // logiciel pour ce que NVDEC refuse (H.264 10 bits, VP9 profils 1 et 3…), envoyé par le backend
-// (host_upload.h) ; ailleurs, Vulkan Video sur l'appareil de l'écran quand FFmpeg le partage
-// (shared_vulkan : les images restent sur le GPU, le backend Vulkan les lit en place), puis, sous
-// Linux, VA-API (le bloc vidéo d'AMD ou d'Intel) copié en mémoire hôte, puis le décodage logiciel.
+// (host_upload.h) ; ailleurs, sous macOS VideoToolbox (le bloc média des puces M) copié en mémoire
+// hôte, Vulkan Video sur l'appareil de l'écran quand FFmpeg le partage (shared_vulkan : les images
+// restent sur le GPU, le backend Vulkan les lit en place), puis, sous Linux, VA-API (le bloc vidéo
+// d'AMD ou d'Intel) copié en mémoire hôte, puis le décodage logiciel.
 std::vector<media::HwApi> decoder_attempts(std::string_view backend, bool shared_vulkan);
 
 // Où chercher les graphes de GMFSS : à côté du modèle RIFE choisi, puis dans les dossiers RIFE.

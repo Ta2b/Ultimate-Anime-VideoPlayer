@@ -121,21 +121,29 @@ std::filesystem::path session_onnx(const Manifest& manifest, const std::filesyst
   return manifest.io ? onnx_of(artifact) : manifest.onnx;
 }
 
-// Écrit <artefact>.onnx, le modèle à l'interface dans le type des tenseurs de la chaîne
-// (ir/onnx_io_type.h), et dit si la session doit l'ouvrir : faux sans rien écrire quand
-// l'interface y est déjà, ou quand le graphe ne se réécrit pas (sous-graphes) ; la conversion
-// par l'hôte reste alors, à chaque image (CoremlNet::run).
-std::expected<bool, Refusal> derive_onnx(const ModelSpec& model, const std::filesystem::path& artifact) {
+// Écrit <artefact>.onnx, le modèle à l'interface dans le type des tenseurs de la chaîne et aux
+// formes d'entrée fixées (ir/onnx_io_type.h), et dit si la session doit l'ouvrir : faux sans rien
+// écrire quand le fichier les déclare déjà. Un graphe dont l'interface ne se retype pas
+// (sous-graphes) garde la conversion par l'hôte, à chaque image (CoremlNet::run). Les formes
+// fixées comptent plus encore : une dimension sans nom que la session ne peut pas fixer
+// (symbolic_overrides) laisserait au processeur chaque nœud dont Core ML ignore la forme.
+std::expected<bool, Refusal> derive_onnx(const ModelSpec& model, std::span<const InputShape> inputs,
+                                         const std::filesystem::path& artifact) {
   auto bytes = vk::net::read_file(model.onnx_path);
   if (!bytes) return std::unexpected(bytes.error());
   const std::int32_t io = model.precision == TensorType::F16 ? ir::onnx::kFloat16 : ir::onnx::kFloat;
-  auto derived = ir::onnx::with_io_type(*bytes, io);
-  if (!derived) {
-    if (derived.error().code == RefusalCode::FeatureUnavailable) return false;
-    return std::unexpected(derived.error());
-  }
-  if (derived->empty()) return false;
-  if (auto ok = vk::net::write_file(onnx_of(artifact), *derived); !ok) return std::unexpected(ok.error());
+  auto retyped = ir::onnx::with_io_type(*bytes, io);
+  if (!retyped && retyped.error().code != RefusalCode::FeatureUnavailable)
+    return std::unexpected(retyped.error());
+  std::vector<std::byte> current = retyped ? std::move(*retyped) : std::vector<std::byte>{};
+  const bool typed = !current.empty();
+  std::vector<ir::onnx::InputDims> fixed;
+  for (const InputShape& input : inputs) fixed.push_back({.name = input.name, .dims = input.dims});
+  auto pinned = ir::onnx::with_input_dims(typed ? std::span<const std::byte>(current) : *bytes, fixed);
+  if (!pinned) return std::unexpected(pinned.error());
+  if (!pinned->empty()) current = std::move(*pinned);
+  if (current.empty()) return false;
+  if (auto ok = vk::net::write_file(onnx_of(artifact), current); !ok) return std::unexpected(ok.error());
   return true;
 }
 
@@ -367,6 +375,9 @@ class CoremlRuntime final : public vk::net::Runtime {
   std::string_view name() const override { return "coreml"; }
   std::string device_name() const override { return std::format("{} (Core ML)", device_); }
   std::string version() const override { return Ort::GetVersionString(); }
+  // 2 : formes d'entrée fixées dans l'ONNX dérivé (derive_onnx) ; les artefacts d'avant
+  // laissaient au processeur la plus grande part de RIFE.
+  std::string_view artifact_revision() const override { return "2"; }
   std::string_view extension() const override { return ".coreml"; }
 
   std::expected<void, Refusal> build(const ModelSpec& model, std::span<const InputShape> inputs,
@@ -374,7 +385,7 @@ class CoremlRuntime final : public vk::net::Runtime {
     auto dims = vk::net::symbolic_overrides(model.onnx_path, inputs);
     if (!dims) return std::unexpected(dims.error());
     Manifest manifest{.onnx = model.onnx_path, .dims = std::move(*dims), .units = std::nullopt, .io = false};
-    auto io = derive_onnx(model, path);
+    auto io = derive_onnx(model, inputs, path);
     if (!io) return std::unexpected(io.error());
     manifest.io = *io;
     if (progress.report) progress.report(0.05F, "compilation Core ML");
@@ -387,8 +398,9 @@ class CoremlRuntime final : public vk::net::Runtime {
     if (progress.stop.stop_requested()) return refuse(RefusalCode::Cancelled, "construction annulée");
     if (auto ok = write_manifest(path, manifest); !ok) return ok;
     if (progress.report) {
-      progress.report(1.0F, std::format("modèle Core ML compilé ({}{})", units_name(*units),
-                                        manifest.io ? ", interface dans le type de la chaîne" : ""));
+      progress.report(1.0F,
+                      std::format("modèle Core ML compilé ({}{})", units_name(*units),
+                                  manifest.io ? ", ONNX dérivé : interface et formes de la chaîne" : ""));
     }
     return {};
   }

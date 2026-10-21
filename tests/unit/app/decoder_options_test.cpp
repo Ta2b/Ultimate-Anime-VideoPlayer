@@ -26,5 +26,21 @@ TEST_CASE("decoder_options : surfaces directes sous TensorRT seulement", "[app][
   CHECK(vulkan.attempts.back() == media::HwApi::Software);
 }
 
+TEST_CASE("decoder_attempts : le décodeur matériel de chaque système avant le logiciel", "[app][decoder]") {
+  using media::HwApi;
+#if defined(__APPLE__)
+  // VideoToolbox d'abord : MoltenVK n'a pas de file vidéo.
+  CHECK(decoder_attempts("coreml", true) ==
+        std::vector<HwApi>{HwApi::VideoToolbox, HwApi::Vulkan, HwApi::Software});
+  CHECK(decoder_attempts("vulkan", false) == std::vector<HwApi>{HwApi::VideoToolbox, HwApi::Software});
+#elif defined(__linux__)
+  CHECK(decoder_attempts("vulkan", true) == std::vector<HwApi>{HwApi::Vulkan, HwApi::Vaapi, HwApi::Software});
+  CHECK(decoder_attempts("vulkan", false) == std::vector<HwApi>{HwApi::Vaapi, HwApi::Software});
+#else
+  CHECK(decoder_attempts("vulkan", true) == std::vector<HwApi>{HwApi::Vulkan, HwApi::Software});
+#endif
+  CHECK(decoder_attempts("tensorrt", true) == std::vector<HwApi>{HwApi::Cuda, HwApi::Software});
+}
+
 }  // namespace
 }  // namespace ajp::app::play
