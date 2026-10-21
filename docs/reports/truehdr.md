@@ -186,8 +186,9 @@ vérifient le SDK avant de toucher au GPU.
 
 ## Questions ouvertes
 
-1. **`DebandingOff`** (nvVFXTrueHDR.h:21, nouveau en 1.3) : il allège TrueHDR. Sur la mire synthétique, il ne change aucun pixel. Faut-il l'exposer comme réglage, ou l'activer sur sources propres ? Il demande
-   un rechargement du modèle.
+1. **`DebandingOff`** (nvVFXTrueHDR.h:21, nouveau en 1.3) : il allège TrueHDR. Sur la mire
+   synthétique, il ne change aucun pixel. Faut-il l'exposer comme réglage, ou l'activer sur
+   sources propres ? Il demande un rechargement du modèle.
 2. **Rampe de calibration** en une seule image à 32 bandes plutôt que 32 images : à mesurer.
    TrueHDR peut dépendre du voisinage.
 3. **Fusion avec `origin/w2/fondations`** (205f7d1). `git merge-tree` donne deux conflits
