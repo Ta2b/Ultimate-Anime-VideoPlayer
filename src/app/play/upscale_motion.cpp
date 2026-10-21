@@ -17,16 +17,16 @@ namespace ajp::app::play {
 
 std::expected<void, Refusal> UpscaleStage::interpolate_image(float t) {
   if (auto ok = fill_rife_input(t); !ok) return ok;
-  const std::array inputs{rife_in_->tensor()};
+  const std::array inputs{rife_in()};
   std::array results{rife_out_->tensor()};
   if (auto ok = setup_.backend->enqueue(*setup_.rife, inputs, results); !ok) return ok;
-  return setup_.backend->kernels()->rife_crop(rife_out_->tensor(), middle_->tensor());
+  return setup_.backend->kernels()->rife_crop(rife_out_->tensor(), middle());
 }
 
 std::expected<void, Refusal> UpscaleStage::run_motion(float t, const gpu::Tensor& flow,
                                                       const gpu::Tensor& mask) {
   if (auto ok = fill_rife_input(t); !ok) return ok;
-  const std::array inputs{rife_in_->tensor()};
+  const std::array inputs{rife_in()};
   std::array results{flow, mask};
   ++rife_runs_;
   return setup_.backend->enqueue(*setup_.rife_motion, inputs, results);

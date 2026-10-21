@@ -8,12 +8,14 @@
 #include <cstdint>
 #include <map>
 #include <memory>
+#include <set>
 #include <string>
 #include <string_view>
 #include <thread>
 #include <vector>
 
 #include <catch2/catch_test_macros.hpp>
+#include <catch2/generators/catch_generators.hpp>
 
 #include "app/play/live_settings.h"
 #include "app/play/options.h"
@@ -72,7 +74,7 @@ std::vector<std::string> shape_of(const std::vector<RingFrame>& frames) {
 
 // La voie attendue d'un travail du journal (« ingest 3 » : measure) ; vide pour les autres (alloc).
 std::string lane_of(std::string_view entry) {
-  if (entry.starts_with("ingest") || entry.starts_with("scores_")) return "measure";
+  if (entry.starts_with("ingest") || entry.starts_with("scores_") || entry == "rife_input") return "measure";
   if (entry == "engine span" || entry.starts_with("write")) return "upscale";
   if (entry.starts_with("engine rife") || entry.starts_with("rife_") || entry.starts_with("warp_blend") ||
       entry.starts_with("flow_max"))
@@ -223,6 +225,28 @@ TEST_CASE("Étage gpu : mesures, SPAN et RIFE chacun sur sa voie, SPAN avant le 
     CHECK(rig.backend.count("engine span") == 4);  // une passe par image source
     CHECK(rig.backend.count("warp_blend") == 6);   // sur la voie de RIFE, reprise après SPAN
   }
+}
+
+TEST_CASE(
+    "Étage gpu : avec plusieurs voies, entrée de RIFE et image intermédiaire dans deux tampons à tour de "
+    "rôle",
+    "[app][stage]") {
+  const int lanes = GENERATE(1, 3);
+  Rig rig;
+  rig.backend.offer_lanes(lanes);
+  rig.start(rig.setup(true, Factor{.num = 3, .den = 1}));
+  rig.feed(1, 4);
+  REQUIRE(rig.collect(10));
+  rig.stage.reset();
+  const std::vector<std::uintptr_t> inputs = rig.backend.targets("rife_input");
+  const std::vector<std::uintptr_t> crops = rig.backend.targets("rife_crop");
+  REQUIRE(inputs.size() == 3);  // une par paire, au premier instant
+  REQUIRE(crops.size() == 6);   // une par instant
+  INFO(lanes << " voie(s)");
+  for (std::size_t i = 1; i < inputs.size(); ++i) CHECK((inputs[i] != inputs[i - 1]) == (lanes > 1));
+  for (std::size_t i = 1; i < crops.size(); ++i) CHECK((crops[i] != crops[i - 1]) == (lanes > 1));
+  CHECK(std::set(inputs.begin(), inputs.end()).size() == (lanes > 1 ? 2U : 1U));
+  CHECK(rig.backend.count("rife_time") == 3);  // le second instant de chaque paire
 }
 
 TEST_CASE("Étage gpu : RIFE mouvement fort, sans passe au milieu après la première paire, oublié à la coupe",

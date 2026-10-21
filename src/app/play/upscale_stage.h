@@ -103,7 +103,7 @@ class UpscaleStage final : public RingStage {
   // (les trois à une taille : celle de travail, ou de sortie après SPAN).
   std::expected<void, Refusal> interpolate_by_motion(std::uint32_t output, const gpu::Tensor& a,
                                                      const gpu::Tensor& b, const gpu::Tensor& out);
-  // RIFE image à l'instant t, recadrée dans middle_.
+  // RIFE image à l'instant t, recadrée dans middle().
   std::expected<void, Refusal> interpolate_image(float t);
   // La variante mouvement de RIFE à l'instant t, dans flow et mask.
   std::expected<void, Refusal> run_motion(float t, const gpu::Tensor& flow, const gpu::Tensor& mask);
@@ -117,7 +117,7 @@ class UpscaleStage final : public RingStage {
   // ingestion (rgb_[current_] reçoit b, l'image d'avant la paire passe dans drba_.before) ; les
   // mesures de la paire (reprises de l'arrivée précédente si elle les a prises pour sa suivante) ;
   // la suivante ingérée dans drba_.after et mesurée contre b ; puis l'image intermédiaire
-  // output + 1 sur outputs_ dans middle_.
+  // output + 1 sur outputs_ dans middle().
   std::expected<void, Refusal> allocate_drba();
   std::expected<void, Refusal> drba_arrive(const DecodedFrame& frame, const gpu::IngestSpec& spec);
   std::expected<gpu::PairScores, Refusal> drba_scores(const DecodedFrame& frame);
@@ -148,13 +148,18 @@ class UpscaleStage final : public RingStage {
   std::expected<gpu::PairScores, Refusal> pair_scores();
   // La suivante de frame, si elle attend, ingérée et mesurée contre frame.
   std::expected<void, Refusal> look_ahead(const DecodedFrame& frame, const gpu::IngestSpec& spec);
-  // rife_in_ à l'instant t pour la paire en cours : ses images y sont écrites une fois par paire,
-  // l'instant seul ensuite (rife_time), quand le backend le sait.
+  // rife_in() à l'instant t pour la paire en cours : ses images y sont écrites une fois par paire
+  // (prepare_rife_input), l'instant seul ensuite (rife_time), quand le backend le sait ; rien si
+  // l'instant y est déjà.
   std::expected<void, Refusal> fill_rife_input(float t);
-  bool rife_in_pair_ = false;  // rife_in_ tient les images de la paire en cours
+  // Les images de la paire dans l'autre entrée de RIFE, sur la voie des mesures, avant le travail
+  // de la paire : elles s'écrivent pendant que RIFE lit encore l'entrée de la paire précédente.
+  std::expected<void, Refusal> prepare_rife_input();
+  bool rife_in_pair_ = false;  // rife_in() tient les images de la paire en cours
+  float rife_in_t_ = 0.0F;     // et cet instant
   bool rife_time_ = true;      // faux si le backend n'a pas rife_time
   // GMFSS (upscale_gmfss.cpp) : ses tenseurs, rangés dans l'ordre de ses moteurs ; puis l'image
-  // intermédiaire output + 1 sur outputs_ dans middle_, ou, déformée après SPAN, de a et b (les
+  // intermédiaire output + 1 sur outputs_ dans middle(), ou, déformée après SPAN, de a et b (les
   // images agrandies) dans out.
   std::expected<void, Refusal> allocate_gmfss();
   std::expected<void, Refusal> interpolate_gmfss(std::uint32_t output);
@@ -225,10 +230,19 @@ class UpscaleStage final : public RingStage {
   std::uint32_t intermediates_ = 0;  // celles qui sont interpolées
   std::optional<core::CadenceAccumulator> cadence_;
   Factor cadence_factor_;
-  vendor_hdr::InputPreparation prepared_;        // couleur de l'image en cours, pour RTX HDR
-  std::unique_ptr<gpu::TensorBuffer> rife_in_;   // 1 × rife_planes × ph × pw
+  vendor_hdr::InputPreparation prepared_;  // couleur de l'image en cours, pour RTX HDR
+  // Tampons passés d'une voie à l'autre (entrée de RIFE, image intermédiaire) : deux quand le
+  // backend a plusieurs voies, l'un s'écrit pendant que l'autre est encore lu ; un sinon.
+  std::uint32_t copies_ = 1;
+  std::array<std::unique_ptr<gpu::TensorBuffer>, 2> rife_ins_;  // 1 × rife_planes × ph × pw
+  std::uint32_t rife_pair_ = 0;                                 // celle de la paire en cours
+  const gpu::Tensor& rife_in() const { return rife_ins_[rife_pair_]->tensor(); }
   std::unique_ptr<gpu::TensorBuffer> rife_out_;  // 1 × 3 × ph × pw
-  std::unique_ptr<gpu::TensorBuffer> middle_;    // 1 × 3 × h × w : image intermédiaire recadrée
+  // 1 × 3 × h × w : image intermédiaire recadrée, une par instant à tour de rôle (next_middle).
+  std::array<std::unique_ptr<gpu::TensorBuffer>, 2> middles_;
+  std::uint32_t middle_at_ = 0;
+  const gpu::Tensor& middle() const { return middles_[middle_at_]->tensor(); }
+  void next_middle() { middle_at_ = (middle_at_ + 1) % copies_; }
   // Mouvement au milieu de la paire (variante mouvement de RIFE) : deux, à tour de rôle, celui de
   // la paire précédente servant à garder les poses.
   struct MotionBuffers {
@@ -316,9 +330,11 @@ class UpscaleStage final : public RingStage {
   std::uint64_t late_pairs_ = 0;  // paires dont des instants sont sautés pour rattraper l'horloge
   std::uint64_t late_instants_ = 0;
   std::unique_ptr<gpu::TensorBuffer> output_;  // 1 × 3 × 2h × 2w ; absent sans SPAN
-  // Warp après SPAN : deux images sources agrandies (span_of_), et l'image intermédiaire.
+  // Warp après SPAN : deux images sources agrandies (span_of_), et l'image intermédiaire (une par
+  // instant à tour de rôle, comme middles_).
   std::array<std::unique_ptr<gpu::TensorBuffer>, 2> spanned_;
-  std::unique_ptr<gpu::TensorBuffer> middle_out_;
+  std::array<std::unique_ptr<gpu::TensorBuffer>, 2> middle_outs_;
+  const gpu::Tensor& middle_out() const { return middle_outs_[middle_at_]->tensor(); }
   // Pour le journal de fin : paires vues, interpolées, coupes, dessins tenus.
   std::uint64_t pairs_ = 0;
   std::uint64_t interpolated_ = 0;

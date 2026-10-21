@@ -5,7 +5,8 @@
 // (RingStage::next). Ses mesures contre l'image en cours sont enfilées avant RIFE et SPAN de la
 // paire en cours : à son tour, scores_take n'attend qu'elles.
 //
-// Entrée de RIFE : les images de la paire une fois, puis l'instant seul pour les autres instants.
+// Entrée de RIFE : les images de la paire une fois, sur la voie des mesures et dans l'autre des deux
+// entrées, puis l'instant seul pour les autres instants.
 #include <utility>
 
 #include "app/play/upscale_stage.h"
@@ -76,15 +77,33 @@ std::expected<void, Refusal> UpscaleStage::look_ahead(const DecodedFrame& frame,
   return {};
 }
 
+std::expected<void, Refusal> UpscaleStage::prepare_rife_input() {
+  // Le premier instant que RIFE estimera : le milieu pour la variante mouvement, sauf si le
+  // mouvement fort de la paire précédente le fait sauter (direct_run_, décidé au premier instant ;
+  // rife_time corrige une prévision fausse).
+  const bool direct = by_motion() && strong_motion_ && intermediates_ > 1 && flow_max_async_ &&
+                      !(setup_.live && setup_.live->keep_poses());
+  const float t = by_motion() && !direct ? 0.5F : instants_[0].t;
+  rife_pair_ = (rife_pair_ + 1) % copies_;
+  auto ok =
+      setup_.backend->kernels()->rife_input(rife_source(current_ ^ 1U), rife_source(current_), t, rife_in());
+  rife_in_pair_ = ok.has_value();
+  rife_in_t_ = t;
+  return ok;
+}
+
 std::expected<void, Refusal> UpscaleStage::fill_rife_input(float t) {
+  if (rife_in_pair_ && rife_in_t_ == t) return {};
   gpu::KernelOps& ops = *setup_.backend->kernels();
   if (rife_in_pair_ && rife_time_) {
-    auto ok = ops.rife_time(rife_in_->tensor(), t);
+    auto ok = ops.rife_time(rife_in(), t);
+    if (ok) rife_in_t_ = t;
     if (ok || ok.error().code != RefusalCode::FormatUnsupported) return ok;
     rife_time_ = false;
   }
-  auto ok = ops.rife_input(rife_source(current_ ^ 1U), rife_source(current_), t, rife_in_->tensor());
+  auto ok = ops.rife_input(rife_source(current_ ^ 1U), rife_source(current_), t, rife_in());
   rife_in_pair_ = ok.has_value();
+  rife_in_t_ = t;
   return ok;
 }
 

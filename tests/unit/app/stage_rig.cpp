@@ -67,8 +67,15 @@ std::vector<std::string> FakeBackend::laned() const {
   return laned_;
 }
 
-std::expected<void, Refusal> FakeBackend::note(std::string entry) {
+std::vector<std::uintptr_t> FakeBackend::targets(std::string_view entry) const {
   const std::scoped_lock lock(mutex_);
+  const auto found = targets_.find(entry);
+  return found == targets_.end() ? std::vector<std::uintptr_t>{} : found->second;
+}
+
+std::expected<void, Refusal> FakeBackend::note(std::string entry, std::uintptr_t target) {
+  const std::scoped_lock lock(mutex_);
+  if (target != 0) targets_[entry].push_back(target);
   push(std::move(entry));
   return {};
 }

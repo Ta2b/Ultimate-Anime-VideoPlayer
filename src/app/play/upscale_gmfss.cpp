@@ -149,7 +149,7 @@ std::expected<void, Refusal> UpscaleStage::run_gmfss(std::uint32_t output,
 
 std::expected<void, Refusal> UpscaleStage::interpolate_gmfss(std::uint32_t output) {
   if (auto ok = run_gmfss(output, {}); !ok) return ok;
-  return setup_.backend->kernels()->rife_crop(rife_out_->tensor(), middle_->tensor());
+  return setup_.backend->kernels()->rife_crop(rife_out_->tensor(), middle());
 }
 
 std::expected<void, Refusal> UpscaleStage::interpolate_gmfss_spanned(std::uint32_t output,

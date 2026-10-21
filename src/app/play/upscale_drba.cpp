@@ -114,7 +114,7 @@ std::expected<void, Refusal> UpscaleStage::interpolate_drba(std::uint32_t output
   if (auto ok = setup_.backend->enqueue(*setup_.distil_drba, inputs, results); !ok) return ok;
   ++drba_.runs;
   if (!whole) ++drba_.edges;
-  return ops.rife_crop(rife_out_->tensor(), middle_->tensor());
+  return ops.rife_crop(rife_out_->tensor(), middle());
 }
 
 }  // namespace ajp::app::play

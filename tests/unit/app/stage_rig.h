@@ -9,6 +9,7 @@
 #include <chrono>
 #include <condition_variable>
 #include <cstdint>
+#include <functional>
 #include <map>
 #include <memory>
 #include <mutex>
@@ -59,6 +60,8 @@ class FakeBackend final : public gpu::Backend, public gpu::KernelOps {
   void score(SourceId left, SourceId right, double scene_score, std::uint32_t worst_block);
   // scores_start et scores_take offerts ; faux : refusés comme par un backend qui ne les a pas.
   void offer_ahead(bool on) { ahead_ = on; }
+  // Le nombre de voies de calcul que disent les capacités ; 1 par défaut.
+  void offer_lanes(int lanes) { lanes_ = lanes; }
   // Cette image est refusée à l'ingestion (VendorCallFailed).
   void refuse_ingest(SourceId id) { refused_ = id; }
   // Le mouvement maximal que rendent flow_max_now et flow_max_take, en pixels ; 0 par défaut.
@@ -72,10 +75,14 @@ class FakeBackend final : public gpu::Backend, public gpu::KernelOps {
   // Le même journal, chaque entrée précédée de la voie où elle a été enfilée (« measure ingest 3 »,
   // « upscale engine span », « interpolate rife_input »).
   std::vector<std::string> laned() const;
+  // Le tenseur écrit par chaque appel de rife_crop ou rife_input, dans l'ordre.
+  std::vector<std::uintptr_t> targets(std::string_view entry) const;
   std::vector<RingWritten> written() const;
 
   // gpu::Backend
-  gpu::BackendCaps capabilities() const override { return {.name = "factice", .device_name = "aucun"}; }
+  gpu::BackendCaps capabilities() const override {
+    return {.name = "factice", .device_name = "aucun", .lanes = lanes_};
+  }
   gpu::DeviceMatch match(const DeviceUuid& /*render_device*/) const override {
     return gpu::DeviceMatch::Same;
   }
@@ -106,8 +113,8 @@ class FakeBackend final : public gpu::Backend, public gpu::KernelOps {
                                         const gpu::Tensor& /*padded*/) override {
     return note("rife_pad");
   }
-  std::expected<void, Refusal> rife_crop(const gpu::Tensor& /*padded*/, const gpu::Tensor& /*out*/) override {
-    return note("rife_crop");
+  std::expected<void, Refusal> rife_crop(const gpu::Tensor& /*padded*/, const gpu::Tensor& out) override {
+    return note("rife_crop", out.handle);
   }
   std::expected<void, Refusal> warp_blend(const gpu::Tensor& /*a*/, const gpu::Tensor& /*b*/,
                                           const gpu::Motion& /*motion*/, float /*t*/,
@@ -121,8 +128,8 @@ class FakeBackend final : public gpu::Backend, public gpu::KernelOps {
   }
   std::optional<gpu::PairScores> previous_scores() override { return std::nullopt; }
   std::expected<void, Refusal> rife_input(const gpu::Tensor& /*a*/, const gpu::Tensor& /*b*/, float /*t*/,
-                                          const gpu::Tensor& /*input*/) override {
-    return note("rife_input");
+                                          const gpu::Tensor& input) override {
+    return note("rife_input", input.handle);
   }
   std::expected<void, Refusal> rife_time(const gpu::Tensor& /*input*/, float /*t*/) override {
     return note("rife_time");
@@ -185,13 +192,15 @@ class FakeBackend final : public gpu::Backend, public gpu::KernelOps {
 
  private:
   using PairKey = std::pair<std::uint32_t, std::uint32_t>;
-  std::expected<void, Refusal> note(std::string entry);
+  std::expected<void, Refusal> note(std::string entry, std::uintptr_t target = 0);
   void push(std::string entry);  // sous le verrou
   gpu::PairScores scores_of(const gpu::Tensor& a, const gpu::Tensor& b);
 
   mutable std::mutex mutex_;
   std::vector<std::string> log_;
   std::vector<std::string> laned_;
+  std::map<std::string, std::vector<std::uintptr_t>, std::less<>> targets_;
+  int lanes_ = 1;
   gpu::Lane lane_ = gpu::Lane::Upscale;
   std::vector<RingWritten> written_;
   std::map<std::uintptr_t, SourceId> ingested_;  // tenseur → dernière image ingérée dedans

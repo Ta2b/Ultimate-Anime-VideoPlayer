@@ -132,6 +132,7 @@ std::expected<std::unique_ptr<VideoStage>, Refusal> UpscaleStage::start(VideoSta
 
 std::expected<void, Refusal> UpscaleStage::allocate() {
   gpu::Backend& backend = *setup_.backend;
+  copies_ = backend.capabilities().lanes > 1 ? 2U : 1U;
   const int w = setup_.work_width;
   const int h = setup_.work_height;
   const auto alloc = [&](std::unique_ptr<gpu::TensorBuffer>& into, const gpu::Shape& shape) {
@@ -147,7 +148,9 @@ std::expected<void, Refusal> UpscaleStage::allocate() {
     for (auto& spanned : spanned_) {
       if (auto ok = alloc(spanned, out_shape); !ok) return ok;
     }
-    if (auto ok = alloc(middle_out_, out_shape); !ok) return ok;
+    for (std::uint32_t i = 0; i < copies_; ++i) {
+      if (auto ok = alloc(middle_outs_[i], out_shape); !ok) return ok;
+    }
   } else if (setup_.engine != nullptr) {
     if (auto ok = alloc(output_, out_shape); !ok) return ok;
   }
@@ -157,7 +160,9 @@ std::expected<void, Refusal> UpscaleStage::allocate() {
     }
   }
   if (interpolates() && !warps_spanned()) {
-    if (auto ok = alloc(middle_, planes(3, w, h)); !ok) return ok;
+    for (std::uint32_t i = 0; i < copies_; ++i) {
+      if (auto ok = alloc(middles_[i], planes(3, w, h)); !ok) return ok;
+    }
   }
   if (looks_ahead()) {
     if (auto ok = allocate_ahead(); !ok) return ok;
@@ -167,8 +172,10 @@ std::expected<void, Refusal> UpscaleStage::allocate() {
   if (interpolates()) {
     const kernels::RifeGeometry g =
         kernels::rife_geometry(setup_.rife_width, setup_.rife_height, setup_.rife_align);
-    if (auto ok = alloc(rife_in_, planes(setup_.rife_planes, g.padded_width, g.padded_height)); !ok)
-      return ok;
+    for (std::uint32_t i = 0; i < copies_; ++i) {
+      if (auto ok = alloc(rife_ins_[i], planes(setup_.rife_planes, g.padded_width, g.padded_height)); !ok)
+        return ok;
+    }
     if (setup_.rife != nullptr) {
       if (auto ok = alloc(rife_out_, planes(3, g.padded_width, g.padded_height)); !ok) return ok;
     } else {
@@ -196,7 +203,7 @@ std::expected<std::uint32_t, Refusal> UpscaleStage::outputs(const DecodedFrame& 
   gpu::KernelOps& ops = *setup_.backend->kernels();
   use_lane(gpu::Lane::Measure);  // ingestion, mesures de la paire, suivante en avance
   current_ ^= 1U;
-  rife_in_pair_ = false;  // les images de rife_in_ sont celles de la paire d'avant
+  rife_in_pair_ = false;  // les images de rife_in() sont celles de la paire d'avant
   gpu::IngestSpec spec;
   if (setup_.live) spec.reduce = setup_.live->reduction();
   const bool ingested = looks_ahead() && take_ahead(frame, spec);  // déjà, derrière la précédente
@@ -315,6 +322,9 @@ std::expected<std::uint32_t, Refusal> UpscaleStage::outputs(const DecodedFrame& 
   spans_reused_in_row_ = reuse_span_ ? spans_reused_in_row_ + 1 : 0;
   if (reuse_span_) ++spans_reused_;
   if (intermediates_ > 0) mid_ ^= 1U;
+  if (intermediates_ > 0 && (setup_.rife != nullptr || by_motion())) {
+    if (auto ok = prepare_rife_input(); !ok) return std::unexpected(std::move(ok.error()));
+  }
   if (drba()) {
     // Mesurée et sans coupe, la paire laisse a comme image d'avant à la paire suivante.
     drba_.continuous = facts.scores.has_value() && !kernels::is_scene_cut(facts.scores->scene_score);
@@ -357,8 +367,9 @@ std::expected<RingStage::Output, Refusal> UpscaleStage::produce(const DecodedFra
   if (!previous_) return refuse(RefusalCode::SequenceOrder, "RIFE : pas d'image précédente");
   const Output made{.pts_us = instant.pts_us, .left = previous_->id, .right = frame.id};
   use_lane(gpu::Lane::Interpolate);
+  next_middle();  // l'autre tampon : SPAN ou l'écriture du ring lit peut-être encore le précédent
   if (warps_spanned()) {
-    const gpu::Tensor& out = middle_out_->tensor();
+    const gpu::Tensor& out = middle_out();
     if (auto ok = gmfss() ? interpolate_gmfss_spanned(output, spanned(current_ ^ 1U), spanned(current_), out)
                           : interpolate_by_motion(output, spanned(current_ ^ 1U), spanned(current_), out);
         !ok) {
@@ -372,13 +383,13 @@ std::expected<RingStage::Output, Refusal> UpscaleStage::produce(const DecodedFra
   if (by_motion() || gmfss() || drba()) {
     auto ok = gmfss()  ? interpolate_gmfss(output)
               : drba() ? interpolate_drba(output)
-                       : interpolate_by_motion(output, rgb_[current_ ^ 1U]->tensor(), now, middle_->tensor());
+                       : interpolate_by_motion(output, rgb_[current_ ^ 1U]->tensor(), now, middle());
     if (!ok) return std::unexpected(std::move(ok.error()));
   } else if (auto ok = interpolate_image(instant.t); !ok) {
     return std::unexpected(std::move(ok.error()));
   }
   use_lane(gpu::Lane::Upscale);
-  if (auto ok = finish(middle_->tensor(), slot, sync); !ok) return std::unexpected(std::move(ok.error()));
+  if (auto ok = finish(middle(), slot, sync); !ok) return std::unexpected(std::move(ok.error()));
   output_has_source_ = false;
   // ×1,5 : l'image n'est pas sur la grille de cette paire, elle sert seulement de suivante.
   if (last) previous_ = Previous{.pts_us = frame.pts_us, .id = frame.id, .epoch = frame.epoch};
