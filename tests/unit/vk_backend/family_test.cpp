@@ -5,10 +5,15 @@
 
 #include <algorithm>
 #include <chrono>
+#include <cmath>
+#include <cstdint>
 #include <filesystem>
 #include <format>
+#include <set>
+#include <vector>
 
 #include <catch2/catch_test_macros.hpp>
+#include <catch2/generators/catch_generators.hpp>
 
 #include "../gpu_ir/onnx_builder.h"
 #include "core/gpu_device.h"
@@ -18,6 +23,7 @@
 #include "gpu/vulkan/backend/device_profile.h"
 #include "gpu/vulkan/backend/net_autotune.h"
 #include "gpu/vulkan/backend/net_lower.h"
+#include "kernels/ref/half.h"
 #include "net_rig.h"
 
 using namespace ajp;
@@ -121,4 +127,107 @@ TEST_CASE("Autotuner : mesure, cache par appareil et relecture", "[vk_backend][a
   (void)require_value(reread.choose(graph, 0, options, "autre"));
   CHECK(reread.measured() == 1);
   std::filesystem::remove(file);
+}
+
+TEST_CASE("Autotuner : motif d'entrée pseudo-aléatoire et périodique", "[vk_backend][autotune]") {
+  for (const auto& [type, period] : {std::pair{ir::DataType::F16, net::kPatternPeriodF16},
+                                     std::pair{ir::DataType::F32, net::kPatternPeriodF32}}) {
+    std::set<float> distinct;
+    double mean = 0.0;
+    for (std::uint64_t i = 0; i < period; ++i) {
+      const float v = net::tuning_input(type, i);
+      REQUIRE(v >= -1.0F);
+      REQUIRE(v <= 1.0F);
+      CHECK(net::tuning_input(type, i + period) == v);
+      distinct.insert(v);
+      mean += v;
+    }
+    mean /= period;
+    CHECK(std::abs(mean) < 0.02);
+    CHECK(distinct.size() > period / 4);
+    // Un voisin, une ligne de 1920, un plan de 1920 × 1080 ne retombent pas sur la même valeur.
+    std::size_t same = 0;
+    for (std::uint64_t i = 0; i < 4096; ++i) {
+      const float v = net::tuning_input(type, i);
+      same += static_cast<std::size_t>(v == net::tuning_input(type, i + 1)) +
+              static_cast<std::size_t>(v == net::tuning_input(type, i + 1920)) +
+              static_cast<std::size_t>(v == net::tuning_input(type, i + (1920 * 1080)));
+    }
+    CHECK(same < 64);
+  }
+  const float h = net::tuning_input(ir::DataType::F16, 7);
+  CHECK(kernels::ref::half_to_float(kernels::ref::float_to_half(h)) == h);
+  CHECK(net::tuning_input(ir::DataType::I64, 3) == 0.0F);
+}
+
+// Chaque candidat d'une Conv 3 × 3 sur les entrées de tuning_input, contre le même calcul sur
+// l'hôte : le motif couvre bien chaque élément, période après période (les entrées dépassent la
+// période du type), et un noyau qui se tromperait de voisin y serait visible.
+TEST_CASE("Autotuner : chaque candidat contre l'hôte, entrées pseudo-aléatoires", "[vk_backend][autotune]") {
+  NetRig rig = make_net_rig();
+  const bool f16 = GENERATE(false, true);
+  if (f16) require_f16(rig);
+  const DeviceProfile profile = profile_device(*rig.context);
+  constexpr std::int64_t kIn = 3;
+  constexpr std::int64_t kOut = 4;
+  constexpr std::int64_t kH = 72;
+  constexpr std::int64_t kW = 88;  // 3 × 72 × 88 = 19 008 : au-delà des deux périodes
+  std::vector<float> weights(kOut * kIn * 9);
+  for (std::size_t k = 0; k < weights.size(); ++k)
+    weights[k] = static_cast<float>(static_cast<int>((k * 7) % 11) - 5) * 0.0625F;
+  ir::test::ModelBuilder m;
+  m.input("x", {1, kIn, kH, kW}, f16 ? ir::onnx::kFloat16 : ir::onnx::kFloat);
+  if (f16) {
+    m.initializer(ir::test::tensor_f16("w", {kOut, kIn, 3, 3}, weights));
+  } else {
+    m.weight("w", {kOut, kIn, 3, 3}, weights);
+  }
+  m.node("Conv", {"x", "w"}, {"y"}, {ir::test::attr_ints("pads", {1, 1, 1, 1})})
+      .output("y", f16 ? ir::onnx::kFloat16 : ir::onnx::kFloat);
+  ir::Graph graph = require_value(ir::load_onnx(m.bytes()));
+  require_ok(ir::infer_shapes(graph));
+  (void)require_value(ir::optimize(graph));
+  REQUIRE(graph.nodes.size() == 1);
+  const ir::DataType type = f16 ? ir::DataType::F16 : ir::DataType::F32;
+  std::vector<float> expected(static_cast<std::size_t>(kOut * kH * kW), 0.0F);
+  float peak = 0.0F;
+  for (std::int64_t o = 0; o < kOut; ++o) {
+    for (std::int64_t y = 0; y < kH; ++y) {
+      for (std::int64_t x = 0; x < kW; ++x) {
+        double sum = 0.0;
+        for (std::int64_t c = 0; c < kIn; ++c) {
+          for (std::int64_t dy = -1; dy <= 1; ++dy) {
+            for (std::int64_t dx = -1; dx <= 1; ++dx) {
+              if (y + dy < 0 || y + dy >= kH || x + dx < 0 || x + dx >= kW) continue;
+              const auto index = static_cast<std::uint64_t>((((c * kH) + y + dy) * kW) + x + dx);
+              sum += static_cast<double>(
+                         weights[static_cast<std::size_t>((((o * kIn) + c) * 9) + ((dy + 1) * 3) + dx + 1)]) *
+                     net::tuning_input(type, index);
+            }
+          }
+        }
+        expected[static_cast<std::size_t>((((o * kH) + y) * kW) + x)] = static_cast<float>(sum);
+        peak = std::max(peak, std::abs(static_cast<float>(sum)));
+      }
+    }
+  }
+  // Une sortie qui varie d'un pixel à l'autre : un motif constant la rendrait presque uniforme.
+  CHECK(std::set<float>(expected.begin(), expected.end()).size() > expected.size() / 2);
+  const auto options = require_value(net::candidates(graph, 0, profile.target));
+  REQUIRE_FALSE(options.empty());
+  net::Autotuner tuner(*rig.context, *rig.memory, *rig.pipelines, profile, {},
+                       {.warmup = 0, .passes = 1, .repeats = 1});
+  const float tolerance = f16 ? 4e-3F : 1e-5F;
+  for (const net::KernelChoice& choice : options) {
+    INFO(choice.variant);
+    const net::Measured measured = require_value(tuner.measure(graph, 0, choice));
+    REQUIRE(measured.output.size() == expected.size());
+    std::size_t wrong = 0;
+    for (std::size_t i = 0; i < expected.size(); ++i) {
+      const float slack = (tolerance * peak) + (tolerance * std::abs(expected[i]));
+      wrong += static_cast<std::size_t>(!(std::abs(measured.output[i] - expected[i]) <= slack));
+    }
+    CHECK(wrong == 0);
+    CHECK(measured.median_us > 0.0);
+  }
 }

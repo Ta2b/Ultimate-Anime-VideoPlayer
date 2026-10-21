@@ -94,10 +94,11 @@ double timestamp_period(const VkContext& context) {
   return static_cast<double>(properties.limits.timestampPeriod);
 }
 
-// Pool de deux requêtes, détruit avec l'objet.
+// Pool de count requêtes, détruit avec l'objet.
 class QueryPool {
  public:
-  QueryPool(const VkContext& context, QueryFunctions fn) : context_(context), fn_(fn) {}
+  QueryPool(const VkContext& context, QueryFunctions fn, std::uint32_t count)
+      : context_(context), fn_(fn), count_(count) {}
   QueryPool(const QueryPool&) = delete;
   QueryPool& operator=(const QueryPool&) = delete;
   QueryPool(QueryPool&&) = delete;
@@ -108,15 +109,17 @@ class QueryPool {
   Done create() {
     const VkQueryPoolCreateInfo info{.sType = VK_STRUCTURE_TYPE_QUERY_POOL_CREATE_INFO,
                                      .queryType = VK_QUERY_TYPE_TIMESTAMP,
-                                     .queryCount = 2};
+                                     .queryCount = count_};
     return check(fn_.create(context_.device(), &info, nullptr, &pool_), "vkCreateQueryPool");
   }
   VkQueryPool handle() const { return pool_; }
+  std::uint32_t count() const { return count_; }
   const QueryFunctions& fn() const { return fn_; }
 
  private:
   const VkContext& context_;
   QueryFunctions fn_;
+  std::uint32_t count_;
   VkQueryPool pool_ = VK_NULL_HANDLE;
 };
 
@@ -135,10 +138,10 @@ double deviation(const std::vector<double>& values) {
   return std::sqrt(sum / static_cast<double>(values.size()));
 }
 
-// Motif des entrées d'une mesure, par mot de 32 bits : 1 et 0,5 en float16, 0,5 en float.
-std::uint32_t input_pattern(ir::DataType type) {
-  if (type == ir::DataType::F16) return 0x38003C00U;
-  return type == ir::DataType::F32 ? 0x3F000000U : 0U;
+// Octets du motif de tuning_input : une période du type, 0 hors float16 et float.
+std::size_t pattern_bytes(ir::DataType type) {
+  if (type == ir::DataType::F16) return std::size_t{kPatternPeriodF16} * 2;
+  return type == ir::DataType::F32 ? std::size_t{kPatternPeriodF32} * 4 : 0;
 }
 
 std::vector<float> as_floats(std::span<const std::byte> bytes, ir::DataType type) {
@@ -180,6 +183,18 @@ std::string tuning_text(const KernelChoice& c) {
 }
 
 }  // namespace
+
+float tuning_input(ir::DataType type, std::uint64_t index) {
+  if (type != ir::DataType::F16 && type != ir::DataType::F32) return 0.0F;
+  // splitmix64 de l'index dans la période, 24 bits gardés : exacts en float.
+  std::uint64_t z =
+      (index % (type == ir::DataType::F16 ? kPatternPeriodF16 : kPatternPeriodF32)) + 0x9E3779B97F4A7C15ULL;
+  z = (z ^ (z >> 30U)) * 0xBF58476D1CE4E5B9ULL;
+  z = (z ^ (z >> 27U)) * 0x94D049BB133111EBULL;
+  z ^= z >> 31U;
+  const float v = (static_cast<float>(z >> 40U) / 8388608.0F) - 1.0F;
+  return type == ir::DataType::F16 ? kernels::ref::half_to_float(kernels::ref::float_to_half(v)) : v;
+}
 
 std::uint64_t layer_signature(const ir::Graph& graph, std::size_t node) {
   const ir::Node& n = graph.nodes[node];
@@ -317,21 +332,59 @@ std::expected<KernelChoice, Refusal> Autotuner::choose(const ir::Graph& graph, s
   return best->choice;
 }
 
+std::expected<const Buffer*, Refusal> Autotuner::pattern(ir::DataType type) {
+  const std::size_t bytes = pattern_bytes(type);
+  if (bytes == 0) return nullptr;
+  std::optional<Buffer>& slot = type == ir::DataType::F16 ? pattern_f16_ : pattern_f32_;
+  if (!slot) {
+    std::vector<std::byte> host(bytes);
+    if (type == ir::DataType::F16) {
+      for (std::size_t i = 0; i < bytes / 2; ++i) {
+        const std::uint16_t bits = kernels::ref::float_to_half(tuning_input(type, i));
+        std::memcpy(host.data() + (2 * i), &bits, 2);
+      }
+    } else {
+      for (std::size_t i = 0; i < bytes / 4; ++i) {
+        const float v = tuning_input(type, i);
+        std::memcpy(host.data() + (4 * i), &v, 4);
+      }
+    }
+    auto buffer = Buffer::create(context_, memory_, bytes, MemoryUse::Device);
+    if (!buffer) return std::unexpected(buffer.error());
+    if (auto ok = upload(context_, memory_, *buffer, 0, host); !ok) return std::unexpected(ok.error());
+    slot = std::move(*buffer);
+  }
+  return &*slot;
+}
+
 std::expected<Measured, Refusal> Autotuner::measure(const ir::Graph& graph, std::size_t node,
                                                     const KernelChoice& choice) {
   Lowerer lowerer(graph, profile_.target);
   if (auto ok = lowerer.node(node, choice); !ok) return std::unexpected(ok.error());
   const Program program = lowerer.take();
 
-  // Des tampons neufs pour les tenseurs du nœud, les blobs envoyés une fois, un tampon factice.
+  // Des tampons neufs pour les tenseurs du nœud et les blobs, ceux-ci écrits dans un tampon de
+  // transit commun puis copiés par la préparation ; un tampon factice.
   std::map<std::uint32_t, Buffer> tensors;
   std::vector<Buffer> blobs;
+  std::size_t staged = 0;
   for (const auto& bytes : program.blobs) {
     auto buffer =
         Buffer::create(context_, memory_, std::max<std::size_t>(bytes.size(), 4), MemoryUse::Device);
     if (!buffer) return std::unexpected(buffer.error());
-    if (auto ok = upload(context_, memory_, *buffer, 0, bytes); !ok) return std::unexpected(ok.error());
     blobs.push_back(std::move(*buffer));
+    staged += bytes.size();
+  }
+  std::optional<Buffer> staging;
+  if (staged > 0) {
+    auto buffer = Buffer::create(context_, memory_, staged, MemoryUse::Upload);
+    if (!buffer) return std::unexpected(buffer.error());
+    std::size_t offset = 0;
+    for (const auto& bytes : program.blobs) {
+      std::memcpy(buffer->mapped() + offset, bytes.data(), bytes.size());
+      offset += bytes.size();
+    }
+    staging = std::move(*buffer);
   }
   auto dummy = Buffer::create(context_, memory_, 256, MemoryUse::Device);
   if (!dummy) return std::unexpected(dummy.error());
@@ -361,77 +414,132 @@ std::expected<Measured, Refusal> Autotuner::measure(const ir::Graph& graph, std:
     return dummy->view();
   };
 
-  // Les entrées remplies d'un motif fixe, le reste de zéros : une entrée non initialisée pourrait
-  // porter des NaN, et la sortie doit pouvoir se comparer d'un candidat à l'autre.
+  // Le motif de chaque entrée, nullptr pour les tenseurs remplis de zéros : une entrée non
+  // initialisée pourrait porter des NaN, et la sortie doit pouvoir se comparer d'un candidat à
+  // l'autre.
   const ir::Node& n = graph.nodes[node];
-  {
-    auto fill = Recorder::begin(context_, memory_);
-    if (!fill) return std::unexpected(fill.error());
-    for (const auto& [id, buffer] : tensors) {
-      const bool input = std::ranges::contains(n.inputs, static_cast<ir::TensorId>(id));
-      const std::uint32_t word = input ? input_pattern(graph.tensors[id].type) : 0U;
-      if (auto ok = fill->fill(buffer.view(), word); !ok) return std::unexpected(ok.error());
+  std::map<std::uint32_t, const Buffer*> sources;
+  for (const auto& [id, buffer] : tensors) {
+    const Buffer* source = nullptr;
+    if (std::ranges::contains(n.inputs, static_cast<ir::TensorId>(id))) {
+      auto found = pattern(graph.tensors[id].type);
+      if (!found) return std::unexpected(found.error());
+      source = *found;
     }
-    auto recording = fill->finish();
+    sources.emplace(id, source);
+  }
+  // La préparation : les zéros, puis les blobs depuis le transit et le motif sur chaque entrée,
+  // copié période par période.
+  const auto prepare = [&](Recorder& recorder) -> Done {
+    for (const auto& [id, buffer] : tensors) {
+      if (sources.at(id) != nullptr) continue;
+      if (auto ok = recorder.fill(buffer.view(), 0U); !ok) return ok;
+    }
+    return recorder.commands([&](VkCommandBuffer cb) {
+      const DeviceFunctions& fn = context_.fn();
+      VkDeviceSize offset = 0;
+      for (std::size_t k = 0; staging && k < program.blobs.size(); ++k) {
+        const VkDeviceSize size = program.blobs[k].size();
+        if (size == 0) continue;
+        const VkBufferCopy region{.srcOffset = offset, .dstOffset = 0, .size = size};
+        fn.vkCmdCopyBuffer(cb, staging->handle(), blobs[k].handle(), 1, &region);
+        offset += size;
+      }
+      std::vector<VkBufferCopy> regions;
+      for (const auto& [id, buffer] : tensors) {
+        const Buffer* source = sources.at(id);
+        if (source == nullptr) continue;
+        regions.clear();
+        for (VkDeviceSize at = 0; at < buffer.size(); at += source->size())
+          regions.push_back(
+              {.srcOffset = 0, .dstOffset = at, .size = std::min(source->size(), buffer.size() - at)});
+        fn.vkCmdCopyBuffer(cb, source->handle(), buffer.handle(), static_cast<std::uint32_t>(regions.size()),
+                           regions.data());
+      }
+    });
+  };
+
+  // Avec l'horodatage, une seule soumission : la préparation, puis toutes les passes, une
+  // estampille avant la première et après chacune (fin de pipeline : chaque intervalle couvre une
+  // passe entière). Sans, la préparation à part, puis une passe par soumission, chronométrée sur
+  // l'hôte.
+  const bool stamped = period_ns_ > 0.0;
+  const std::uint32_t passes = options_.warmup + std::max<std::uint32_t>(1, options_.passes);
+  const std::uint32_t repeats = std::max<std::uint32_t>(1, options_.repeats);
+  const std::uint32_t recorded = stamped ? passes : 1;
+  QueryPool queries(context_, query_functions(context_), passes + 1);
+  if (stamped) {
+    if (auto ok = queries.create(); !ok) return std::unexpected(ok.error());
+  } else {
+    auto setup = Recorder::begin(context_, memory_);
+    if (!setup) return std::unexpected(setup.error());
+    if (auto ok = prepare(*setup); !ok) return std::unexpected(ok.error());
+    auto recording = setup->finish();
     if (!recording) return std::unexpected(recording.error());
     if (auto ok = context_.submit(**recording); !ok) return std::unexpected(ok.error());
     if (auto ok = context_.wait_on_host((*recording)->last_run()); !ok) return std::unexpected(ok.error());
   }
-
-  QueryPool queries(context_, query_functions(context_));
-  if (period_ns_ > 0.0) {
-    if (auto ok = queries.create(); !ok) return std::unexpected(ok.error());
-  }
-  const std::uint32_t repeats = std::max<std::uint32_t>(1, options_.repeats);
-  auto recorder = Recorder::begin(context_, memory_,
-                                  {.sets = static_cast<std::uint32_t>(program.dispatches.size()) * repeats,
-                                   .buffers = buffers * repeats,
-                                   .images = 1});
+  auto recorder =
+      Recorder::begin(context_, memory_,
+                      {.sets = static_cast<std::uint32_t>(program.dispatches.size()) * repeats * recorded,
+                       .buffers = buffers * repeats * recorded,
+                       .images = 1});
   if (!recorder) return std::unexpected(recorder.error());
   const auto stamp = [&](std::uint32_t index) -> Done {
-    if (period_ns_ <= 0.0) return {};
+    if (!stamped) return {};
     return recorder->commands([&](VkCommandBuffer cb) {
-      if (index == 0) queries.fn().reset(cb, queries.handle(), 0, 2);
-      queries.fn().write(
-          cb, index == 0 ? VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT : VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT,
-          queries.handle(), index);
+      if (index == 0) queries.fn().reset(cb, queries.handle(), 0, queries.count());
+      queries.fn().write(cb, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, queries.handle(), index);
     });
   };
+  if (stamped) {
+    if (auto ok = prepare(*recorder); !ok) return std::unexpected(ok.error());
+  }
   if (auto ok = stamp(0); !ok) return std::unexpected(ok.error());
   std::vector<BufferView> views;
-  for (std::uint32_t r = 0; r < repeats; ++r) {
-    for (std::size_t k = 0; k < program.dispatches.size(); ++k) {
-      const Dispatch& d = program.dispatches[k];
-      views.clear();
-      for (const Binding& b : d.bindings) views.push_back(view(b));
-      if (auto ok = recorder->dispatch(*pipelines[k], views, {}, std::as_bytes(std::span(d.push)), d.groups);
-          !ok) {
-        return std::unexpected(ok.error());
+  for (std::uint32_t pass = 0; pass < recorded; ++pass) {
+    for (std::uint32_t r = 0; r < repeats; ++r) {
+      for (std::size_t k = 0; k < program.dispatches.size(); ++k) {
+        const Dispatch& d = program.dispatches[k];
+        views.clear();
+        for (const Binding& b : d.bindings) views.push_back(view(b));
+        if (auto ok =
+                recorder->dispatch(*pipelines[k], views, {}, std::as_bytes(std::span(d.push)), d.groups);
+            !ok) {
+          return std::unexpected(ok.error());
+        }
       }
     }
+    if (auto ok = stamp(pass + 1); !ok) return std::unexpected(ok.error());
   }
-  if (auto ok = stamp(1); !ok) return std::unexpected(ok.error());
   auto recording = recorder->finish();
   if (!recording) return std::unexpected(recording.error());
 
   std::vector<double> samples;
-  for (std::uint32_t pass = 0; pass < options_.warmup + std::max<std::uint32_t>(1, options_.passes); ++pass) {
-    const auto start = std::chrono::steady_clock::now();
+  if (stamped) {
     if (auto ok = context_.submit(**recording); !ok) return std::unexpected(ok.error());
     if (auto ok = context_.wait_on_host((*recording)->last_run()); !ok) return std::unexpected(ok.error());
-    const auto host = std::chrono::steady_clock::now() - start;
-    double us = std::chrono::duration<double, std::micro>(host).count();
-    if (period_ns_ > 0.0) {
-      std::array<std::uint64_t, 2> ticks{};
-      if (auto ok = check(queries.fn().results(context_.device(), queries.handle(), 0, 2, sizeof(ticks),
-                                               ticks.data(), sizeof(std::uint64_t), VK_QUERY_RESULT_64_BIT),
-                          "vkGetQueryPoolResults");
-          !ok) {
-        return std::unexpected(ok.error());
-      }
-      us = static_cast<double>(ticks[1] - ticks[0]) * period_ns_ / 1000.0;
+    std::vector<std::uint64_t> ticks(queries.count());
+    if (auto ok = check(queries.fn().results(context_.device(), queries.handle(), 0, queries.count(),
+                                             ticks.size() * sizeof(std::uint64_t), ticks.data(),
+                                             sizeof(std::uint64_t), VK_QUERY_RESULT_64_BIT),
+                        "vkGetQueryPoolResults");
+        !ok) {
+      return std::unexpected(ok.error());
     }
-    if (pass >= options_.warmup) samples.push_back(us / repeats);
+    for (std::uint32_t pass = options_.warmup; pass < passes; ++pass) {
+      const double us = static_cast<double>(ticks[pass + 1] - ticks[pass]) * period_ns_ / 1000.0;
+      samples.push_back(us / repeats);
+    }
+  } else {
+    for (std::uint32_t pass = 0; pass < passes; ++pass) {
+      const auto start = std::chrono::steady_clock::now();
+      if (auto ok = context_.submit(**recording); !ok) return std::unexpected(ok.error());
+      if (auto ok = context_.wait_on_host((*recording)->last_run()); !ok) return std::unexpected(ok.error());
+      const auto host = std::chrono::steady_clock::now() - start;
+      if (pass >= options_.warmup)
+        samples.push_back(std::chrono::duration<double, std::micro>(host).count() / repeats);
+    }
   }
   Measured result{.choice = choice, .median_us = median(samples), .spread_us = deviation(samples)};
   if (const auto out = tensors.find(n.outputs[0]); out != tensors.end()) {
