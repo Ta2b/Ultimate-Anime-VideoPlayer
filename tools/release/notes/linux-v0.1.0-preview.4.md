@@ -82,6 +82,12 @@ Sous Linux, elle remplace la preview.2 et reprend les corrections de la preview.
 ### Écran de bienvenue
 - MIGraphX n'est plus proposé aux GPU AMD que ROCm ne gère pas (RX 6500, RX 6600, RX 6700, GPU intégrés).
 
+### Lecteur et système
+- **Accueil sans vidéo** : lancé sans fichier (double-clic sur `ajp`, `ajp.exe` ou AJP.app), le lecteur ouvre ses réglages, avec tous leurs onglets, et un bouton « Ouvrir une vidéo ». Une vidéo glissée sur la fenêtre se lit aussi, et la fin d'une vidéo ramène à l'accueil.
+- **Lecteur par défaut** : l'onglet « Système » des réglages inscrit le lecteur dans « Ouvrir avec » et le propose comme lecteur vidéo par défaut, ou retire cette inscription. En ligne de commande : `ajp --register` ou `ajp --unregister`. Sous Windows, le choix final se fait dans Paramètres > Applications par défaut, que le bouton ouvre. Sous macOS : Finder, « Lire les informations » sur une vidéo, « Ouvrir avec », puis « Tout modifier ».
+- **Moteurs mis à jour** : après une mise à jour du lecteur, un moteur téléchargé pour une version plus ancienne est retéléchargé tout seul au lancement, au lieu de laisser Vulkan le remplacer. Si sa licence a changé, le lecteur le dit et attend votre accord dans l'onglet « Moteurs » des réglages.
+- **Windows** : les noms de fichiers et de dossiers accentués ou en japonais s'ouvrent.
+
 ## Installation
 
 ### Linux
@@ -102,7 +108,7 @@ Sur un GPU de 4 Go (RX 6500, RX 6500M) : commencez par le profil 7 « Léger 108
 
 L'archive contient le lecteur et son moteur Vulkan, avec les mêmes modèles que sous Linux. OpenVINO (GPU Intel Arc et Xe, NPU des Core Ultra) se télécharge depuis l'écran de bienvenue ; il faut un pilote graphique Intel récent. TensorRT et RTX HDR ne sont pas encore proposés sous Windows : les cartes NVIDIA passent par le moteur Vulkan.
 
-Décompressez `ajp-windows-x64.zip`, puis, dans le dossier `ajp` :
+Décompressez `ajp-windows-x64.zip`, puis lancez `ajp.exe` dans le dossier `ajp`, ou depuis un terminal :
 
 ```
 ajp.exe play "épisode.mkv" --fullscreen
