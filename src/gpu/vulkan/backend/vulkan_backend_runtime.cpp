@@ -4,12 +4,17 @@
 // runtime (interop : ni attente ni retour à l'hôte), sinon différé au fil du runtime
 // (run_deferred : l'attente des entrées et le signal de l'étape hors du fil du GPU), sinon
 // synchrone sur ce fil après l'attente de la file.
+#include <algorithm>
+#include <chrono>
+#include <filesystem>
 #include <format>
+#include <memory>
 #include <mutex>
 #include <optional>
 #include <random>
 #include <span>
 #include <string>
+#include <string_view>
 #include <system_error>
 #include <vector>
 
@@ -29,18 +34,66 @@ namespace {
 
 using detail::refuse_backend;
 
+// Le temps d'un réseau du runtime, des entrées prêtes (l'attente de la file finie) aux sorties
+// écrites, mesuré sur l'hôte (le runtime y rend la main) ; résumé au journal du backend quand le
+// moteur est rendu. Une image en retard se lit alors du réseau ou du reste de la chaîne.
+class RuntimeTiming {
+ public:
+  using Clock = std::chrono::steady_clock;
+  void add(Clock::duration took) {
+    const std::scoped_lock lock(mutex_);
+    if (samples_.size() < kMaxSamples)
+      samples_.push_back(std::chrono::duration<float, std::milli>(took).count());
+  }
+  // « médiane 18.20 ms, p95 21.04 ms (1234 passes) », ou rien sans mesure.
+  std::optional<std::string> summary() {
+    const std::scoped_lock lock(mutex_);
+    if (samples_.empty()) return std::nullopt;
+    std::ranges::sort(samples_);
+    return std::format("médiane {:.2f} ms, p95 {:.2f} ms ({} passes)", samples_[samples_.size() / 2],
+                       samples_[samples_.size() * 95 / 100], samples_.size());
+  }
+
+ private:
+  static constexpr std::size_t kMaxSamples = std::size_t{1} << 18;
+  std::mutex mutex_;  // le fil du runtime (étapes différées) ou celui du GPU (run)
+  std::vector<float> samples_;
+};
+
 class RuntimeEngine final : public Engine {
  public:
-  explicit RuntimeEngine(std::unique_ptr<net::RuntimeNet> net, net::IoNames names)
-      : net_(std::move(net)), names_(std::move(names)) {}
+  RuntimeEngine(std::unique_ptr<net::RuntimeNet> net, net::IoNames names, std::string label, BackendLog log)
+      : label_(std::move(label)), log_(std::move(log)), net_(std::move(net)), names_(std::move(names)) {}
+  RuntimeEngine(const RuntimeEngine&) = delete;
+  RuntimeEngine& operator=(const RuntimeEngine&) = delete;
+  RuntimeEngine(RuntimeEngine&&) = delete;
+  RuntimeEngine& operator=(RuntimeEngine&&) = delete;
+  // Le réseau d'abord : ses étapes en file faites et mesurées, puis le résumé.
+  ~RuntimeEngine() override {
+    net_.reset();
+    if (const auto summary = timing_->summary(); summary && log_)
+      log_(BackendLogLevel::Info, std::format("profil · {} : {}", label_, *summary));
+  }
   std::span<const std::string> input_names() const override { return names_.inputs; }
   std::span<const std::string> output_names() const override { return names_.outputs; }
   net::RuntimeNet& net() { return *net_; }
+  const std::shared_ptr<RuntimeTiming>& timing() const { return timing_; }
 
  private:
+  std::string label_;
+  BackendLog log_;
+  std::shared_ptr<RuntimeTiming> timing_ = std::make_shared<RuntimeTiming>();
   std::unique_ptr<net::RuntimeNet> net_;
   net::IoNames names_;
 };
+
+// « coreml 2x_AnimeJaNai_HD_V3.1Sharp1_Performance_SPANF3_b5f48_unshuffle_fp16 » : le runtime et
+// le nom de l'artefact sans sa clé.
+std::string runtime_label(std::string_view runtime, const std::filesystem::path& artifact) {
+  std::string stem = artifact.stem().string();
+  if (const std::size_t dash = stem.rfind('-'); dash != std::string::npos && dash > 0) stem.resize(dash);
+  return std::format("{} {}", runtime, stem);
+}
 
 // Tampon hôte visible, inscrit dans les projections du backend tant qu'il vit.
 class HostTensorBuffer final : public TensorBuffer {
@@ -138,7 +191,8 @@ std::expected<std::unique_ptr<Engine>, Refusal> VulkanBackend::load_runtime(cons
                                            artifact.path.filename().string(), net.error().detail));
     return std::unexpected(net.error());
   }
-  return std::make_unique<RuntimeEngine>(std::move(*net), std::move(*names));
+  return std::make_unique<RuntimeEngine>(std::move(*net), std::move(*names),
+                                         runtime_label(runtime_->name(), artifact.path), log_);
 }
 
 void VulkanBackend::import_timeline(BackendQueue& queue) {
@@ -260,9 +314,18 @@ std::expected<void, Refusal> VulkanBackend::enqueue_runtime(Engine& engine, std:
   if (!step) {
     if (auto ok = queue_->flush(); !ok) return std::unexpected(ok.error());
     step = queue_->host_step();
+    // ready puis done, sur le fil du runtime, l'un après l'autre : la mesure va de l'un à l'autre.
+    auto ready_at = std::make_shared<RuntimeTiming::Clock::time_point>();
     auto deferred = runtime_engine->net().run_deferred(
-        ins, outs, [this, wait = step->wait] { return queue_->wait_elsewhere(wait); },
-        [this, &queue = *queue_, signal = step->signal](std::expected<void, Refusal> ran) {
+        ins, outs,
+        [this, wait = step->wait, ready_at] {
+          auto ready = queue_->wait_elsewhere(wait);
+          *ready_at = RuntimeTiming::Clock::now();
+          return ready;
+        },
+        [this, &queue = *queue_, signal = step->signal, ready_at,
+         timing = runtime_engine->timing()](std::expected<void, Refusal> ran) {
+          if (ran) timing->add(RuntimeTiming::Clock::now() - *ready_at);
           finish_host_step(queue, signal, std::move(ran));
         });
     if (deferred) return {};
@@ -274,7 +337,9 @@ std::expected<void, Refusal> VulkanBackend::enqueue_runtime(Engine& engine, std:
   }
   // Par l'hôte, sur ce fil : l'attente des entrées, le calcul, le signal de l'étape.
   if (auto ok = context_->wait_on_host(queue_->at(step->wait)); !ok) return std::unexpected(ok.error());
+  const auto started = RuntimeTiming::Clock::now();
   auto ran = runtime_engine->net().run(ins, outs);
+  if (ran) runtime_engine->timing()->add(RuntimeTiming::Clock::now() - started);
   if (auto ok = queue_->signal_on_host(step->signal); !ok) return std::unexpected(ok.error());
   return ran;
 }
