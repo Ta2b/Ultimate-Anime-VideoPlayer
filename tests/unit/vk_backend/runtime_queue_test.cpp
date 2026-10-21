@@ -26,6 +26,7 @@ namespace {
 struct Calls {
   std::atomic<int> run{0};
   std::atomic<int> deferred{0};
+  bool full = false;  // run_deferred refuse comme une file d'étapes pleine
 };
 struct Seen {
   int run = 0;
@@ -55,6 +56,8 @@ class CopyNet final : public vk::net::RuntimeNet {
                                             std::function<std::expected<void, Refusal>()> ready,
                                             std::function<void(std::expected<void, Refusal>)> done) override {
     ++calls_->deferred;
+    if (calls_->full)
+      return std::unexpected(Refusal{.code = RefusalCode::ThreadUnavailable, .detail = "file pleine"});
     if (worker_.joinable()) worker_.join();
     worker_ = std::thread([in = std::vector(inputs.begin(), inputs.end()),
                            out = std::vector(outputs.begin(), outputs.end()), ready = std::move(ready),
@@ -113,7 +116,8 @@ void unlock_queue(void* context, std::uint32_t /*family*/, std::uint32_t /*index
 
 // Un réseau du runtime sur l'appareil d'owner, adopté avec (shared) ou sans verrou de file :
 // l'entrée recopiée dans la sortie, et ce que le runtime a reçu.
-Seen run_adopted(vk::VulkanBackend& owner, const std::filesystem::path& dir, bool shared, Locks& locks) {
+Seen run_adopted(vk::VulkanBackend& owner, const std::filesystem::path& dir, bool shared, Locks& locks,
+                 bool full = false) {
   std::filesystem::create_directories(dir);
   const vk::VkContext& c = owner.context();
   GpuDevice render{.api = GpuApi::Vulkan,
@@ -140,6 +144,7 @@ Seen run_adopted(vk::VulkanBackend& owner, const std::filesystem::path& dir, boo
     render.vulkan->queue_context = &locks;
   }
   auto calls = std::make_shared<Calls>();
+  calls->full = full;
   vk::BackendOptions options{.runtime = [calls](const vk::DeviceCaps&) {
     return std::expected<std::shared_ptr<vk::net::Runtime>, Refusal>(std::make_shared<CopyRuntime>(calls));
   }};
@@ -191,4 +196,13 @@ TEST_CASE("Runtime : différé sur la file du backend, synchrone sur une file pa
     CHECK(locks.lock > 0);
     CHECK(locks.lock == locks.unlock);
   }
+}
+
+TEST_CASE("Runtime : file d'étapes pleine, l'étape faite sur le fil du GPU", "[vk_backend][runtime]") {
+  TempDir dir("file-runtime-pleine");
+  auto owner = make_backend(dir.path() / "owner");
+  Locks locks;
+  const Seen seen = run_adopted(*owner, dir.path() / "pleine", false, locks, true);
+  CHECK(seen.deferred == 1);
+  CHECK(seen.run == 1);
 }

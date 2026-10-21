@@ -336,7 +336,10 @@ std::expected<void, Refusal> VulkanBackend::enqueue_runtime(Engine& engine, std:
           finish_host_step(queue, signal, std::move(ran));
         });
     if (deferred) return {};
-    if (deferred.error().code != RefusalCode::FeatureUnavailable) {
+    // File d'étapes pleine (ThreadUnavailable) : rien n'est lancé, et l'étape se fait ici, après
+    // celles en file ; le fil du GPU attend le runtime au lieu de faire échouer l'image.
+    const RefusalCode code = deferred.error().code;
+    if (code != RefusalCode::FeatureUnavailable && code != RefusalCode::ThreadUnavailable) {
       // Rien n'a été lancé : l'étape se signale ici, sans quoi la file attendrait sans fin.
       if (auto ok = queue_->signal_on_host(step->signal); !ok) return std::unexpected(ok.error());
       return deferred;
