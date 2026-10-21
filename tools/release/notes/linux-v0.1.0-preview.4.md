@@ -1,6 +1,14 @@
-Préversion de test pour Linux x86-64 : GPU AMD, Intel et NVIDIA par le moteur Vulkan, et des moteurs à télécharger depuis l'écran de bienvenue (TensorRT et RTX HDR, MIGraphX, OpenVINO). Elle remplace la preview.2 et reprend les corrections de la preview.3, qui n'a pas été publiée. Elle n'a tourné que dans les tests automatiques et sur une seule carte NVIDIA : des choses peuvent casser, surtout sur AMD et Intel.
+Préversion de test pour Linux x86-64, Windows x64 et macOS (Apple Silicon). Le moteur Vulkan sert les GPU AMD, Intel et NVIDIA ; sur Mac, il passe par MoltenVK, à côté de Core ML. Des moteurs se téléchargent depuis l'écran de bienvenue : TensorRT et RTX HDR, MIGraphX et OpenVINO sous Linux, OpenVINO sous Windows.
 
-## Corrections
+Sous Linux, elle remplace la preview.2 et reprend les corrections de la preview.3, qui n'a pas été publiée ; elle n'a tourné que dans les tests automatiques et sur une seule carte NVIDIA. Pour Windows et macOS, c'est la première version, et elle n'a encore tourné sur aucun PC Windows ni sur aucun Mac : seuls les tests sans GPU passent, sur les machines de GitHub. Des choses vont casser, surtout sur AMD, sur Intel et sur Mac, et vos retours aident.
+
+## Fichiers
+- `ajp-linux-x64.tar.gz` : Linux, vérifiable avec `SHA256SUMS`.
+- `ajp-windows-x64.zip` : Windows, vérifiable avec `SHA256SUMS-windows.txt`.
+- `ajp-macos-arm64.zip` : macOS, vérifiable avec `ajp-macos-arm64.zip.sha256`.
+- `ajp-engine-…` : les moteurs que l'écran de bienvenue télécharge lui-même. Inutile de les prendre à la main.
+
+## Corrections depuis la preview.2 Linux
 - **Gel du PC à la fermeture** (moteur Vulkan) : fermer le lecteur, ou changer un réglage qui reconstruit la chaîne, pouvait bloquer la carte graphique une seconde puis laisser le lecteur figé pour de bon. Il rendait sa mémoire GPU pendant que la carte travaillait encore dessus. Il attend maintenant la fin de ce travail, et aucune attente ne peut plus le bloquer plus de 3 s.
 - **TensorRT et RTX HDR « pas encore publiés »** : l'écran de bienvenue refusait tout l'index des moteurs de la preview.2 à cause de l'entrée RTX HDR. Ils se téléchargent maintenant, et une entrée inconnue d'une version future est écartée seule.
 - **Mémoire pleine sans ReBAR** (RTX 4050 portable, Optimus, cartes plus anciennes) : le moteur Vulkan refusait la lecture en 4K quand le petit tas de 256 Mo partagé avec le processeur était plein. Il passe maintenant à la mémoire système pour les envois et les relectures ; les réseaux restent dans la mémoire de la carte.
@@ -11,7 +19,7 @@ Préversion de test pour Linux x86-64 : GPU AMD, Intel et NVIDIA par le moteur V
 - **Écran sans fréquence connue** : quand le système ne donne pas la fréquence de l'écran, les images ne partent plus par deux, l'une collée à l'autre.
 - **Interface** : le panneau de réglages s'affiche aussitôt quand on l'ouvre au clavier (P), le nom d'un profil peut être effacé puis retapé, et les messages à l'écran gardent leurs lignes vides et ne cassent plus sur une accolade dans un titre.
 
-## Nouveautés
+## Nouveautés depuis la preview.2 Linux
 
 ### Lecture
 - **Écrans à fréquence fixe** : la cadence se cale sur le rafraîchissement quand il tombe juste (24 im/s sur 120 Hz par exemple), et le son suit en se rééchantillonnant. Le lecteur vise l'instant où l'image apparaît vraiment, et le réglage « Latence de l'écran » corrige son estimation.
@@ -76,7 +84,9 @@ Préversion de test pour Linux x86-64 : GPU AMD, Intel et NVIDIA par le moteur V
 
 ## Installation
 
-Téléchargez `ajp-linux-x64.tar.gz` (vérifiable avec `SHA256SUMS`), puis :
+### Linux
+
+Téléchargez `ajp-linux-x64.tar.gz`, puis :
 
 ```
 tar xf ajp-linux-x64.tar.gz
@@ -87,3 +97,31 @@ cd ajp-linux-x64
 Il faut une distribution récente (glibc 2.38 ou plus : Ubuntu 24.04, Debian 13, Fedora 39, Arch). Paquets du système nécessaires (Ubuntu/Debian) : `libvulkan1 mesa-vulkan-drivers libva2 libva-drm2 libva-x11-2 intel-media-va-driver`, plus le pilote NVIDIA propriétaire (550 ou plus) sur une carte NVIDIA. Le fichier `LISEZMOI.txt` de l'archive donne les équivalents Fedora et Arch, les licences des modèles et les réglages conseillés pour les GPU de 4 Go.
 
 Sur un GPU de 4 Go (RX 6500, RX 6500M) : commencez par le profil 7 « Léger 1080p » et passez en 720p si `--stats` laisse de la marge. Branchez l'écran sur la carte graphique.
+
+### Windows
+
+L'archive contient le lecteur et son moteur Vulkan, avec les mêmes modèles que sous Linux. OpenVINO (GPU Intel Arc et Xe, NPU des Core Ultra) se télécharge depuis l'écran de bienvenue ; il faut un pilote graphique Intel récent. TensorRT et RTX HDR ne sont pas encore proposés sous Windows : les cartes NVIDIA passent par le moteur Vulkan.
+
+Décompressez `ajp-windows-x64.zip`, puis, dans le dossier `ajp` :
+
+```
+ajp.exe play "épisode.mkv" --fullscreen
+```
+
+Il faut Windows 10 ou 11 en 64 bits et le pilote graphique à jour.
+
+### macOS
+
+`AJP.app` contient le moteur Vulkan (MoltenVK) et Core ML, qui choisit pour chaque modèle entre le GPU et le Neural Engine, avec les mêmes modèles que sous Linux. L'application est signée sans certificat Apple : au premier lancement, macOS la bloque. Faites un clic droit sur AJP.app puis « Ouvrir », ou lancez `xattr -dr com.apple.quarantine AJP.app`.
+
+Lancement depuis le Terminal :
+
+```
+AJP.app/Contents/MacOS/ajp play "épisode.mkv" --fullscreen
+```
+
+Il faut macOS 14 ou plus sur un Mac M1 ou plus récent.
+
+## Licences des modèles
+
+Les modèles SPAN AnimeJaNai sont sous licence Creative Commons BY-NC-SA 4.0 (pas d'usage commercial). RIFE et DistilDRBA sont sous licence MIT. Le fichier `models/LICENCES.txt` de chaque paquet donne les détails.
