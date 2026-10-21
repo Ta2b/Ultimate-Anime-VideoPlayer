@@ -8,15 +8,18 @@
 #include <array>
 #include <atomic>
 #include <chrono>
+#include <condition_variable>
 #include <cstdint>
 #include <deque>
 #include <filesystem>
 #include <memory>
+#include <mutex>
 #include <optional>
 #include <thread>
 #include <vector>
 
 #include <catch2/catch_test_macros.hpp>
+#include <catch2/generators/catch_generators.hpp>
 
 #include "clip_writer.h"
 #include "export/av_handles.h"
@@ -30,12 +33,13 @@ using namespace std::chrono_literals;
 constexpr int kWidth = 64;
 constexpr int kHeight = 48;
 constexpr std::int64_t kFrameUs = 40'000;
-// Les tampons de la conversion (FrameExport::kBuffers) : lus en place, c'est tout ce que l'encodeur
-// peut tenir avant que l'export ne se fige.
+// Les tampons de la conversion (FrameExportSetup::buffers par défaut) : lus en place, c'est tout ce que
+// l'encodeur peut tenir avant que l'export ne se fige.
 constexpr std::size_t kBuffers = 6;
 
 // Un encodeur qui garde les `hold` dernières images reçues (une référence sur leur mémoire, comme
-// NVENC qui lit en place) et rend un paquet factice par image ; vidé, il rend tout.
+// NVENC qui lit en place) et rend un paquet factice par image ; vidé, il rend tout. Porte fermée
+// (close_gate), il s'arrête au début de chaque image jusqu'à open_gate.
 class HoldingEncoder : public FrameEncoder {
  public:
   explicit HoldingEncoder(std::size_t hold)
@@ -65,6 +69,11 @@ class HoldingEncoder : public FrameEncoder {
       release_all();
       return {};
     }
+    entered_.fetch_add(1);
+    {
+      std::unique_lock lock(gate_mutex_);
+      gate_.wait(lock, [this] { return !gate_closed_; });
+    }
     AVFrame* kept = av_frame_clone(frame);
     if (kept == nullptr) return refuse(RefusalCode::EncodeFailed, "encodeur factice : mémoire");
     held_.push_back(kept);
@@ -84,6 +93,18 @@ class HoldingEncoder : public FrameEncoder {
   }
 
   int seen() const { return seen_.load(); }
+  int entered() const { return entered_.load(); }  // images commencées, porte passée ou non
+  void close_gate() {
+    const std::scoped_lock lock(gate_mutex_);
+    gate_closed_ = true;
+  }
+  void open_gate() {
+    {
+      const std::scoped_lock lock(gate_mutex_);
+      gate_closed_ = false;
+    }
+    gate_.notify_all();
+  }
   // Les pts reçus, à lire après finish() (le thread est joint).
   const std::vector<std::int64_t>& pts() const { return pts_; }
 
@@ -100,6 +121,10 @@ class HoldingEncoder : public FrameEncoder {
   std::deque<AVFrame*> held_;
   std::vector<std::int64_t> pts_;
   std::atomic<int> seen_{0};
+  std::atomic<int> entered_{0};
+  std::mutex gate_mutex_;
+  std::condition_variable gate_;
+  bool gate_closed_ = false;
 };
 
 // Les tampons de la conversion : pris libres, rendus par Picture::release (depuis le thread export)
@@ -250,6 +275,42 @@ TEST_CASE("Écriture : copiés dans les images de l'encodeur, les tampons revien
   writer->reset();
   std::error_code error;
   CHECK(std::filesystem::file_size(output, error) > 0);
+  std::filesystem::remove(output, error);
+}
+
+TEST_CASE("Écriture : la file tient queue_depth images, pas une de plus", "[export][writer]") {
+  const std::size_t depth = GENERATE(kDefaultQueueDepth, std::size_t{8});
+  const std::filesystem::path output = output_path("ajp-export-writer-depth.mkv");
+  auto encoder = std::make_unique<HoldingEncoder>(0);
+  HoldingEncoder* fake = encoder.get();
+  fake->close_gate();
+  WriterConfig config = config_for(output);
+  config.queue_depth = depth;
+  auto writer = ExportWriter::open(config, std::move(encoder));
+  REQUIRE(writer);
+
+  std::vector<std::vector<std::uint8_t>> memory(depth + 2, std::vector<std::uint8_t>(Buffers::bytes()));
+  const auto picture = [&](std::size_t n) {
+    std::uint8_t* base = memory[n].data();
+    return Picture{.planes = {base, base + Buffers::luma_bytes(),
+                              base + Buffers::luma_bytes() + Buffers::chroma_bytes()},
+                   .pitches = {kWidth * 2, kWidth, kWidth},
+                   .bytes = Buffers::bytes(),
+                   .pts_us = static_cast<std::int64_t>(n) * kFrameUs,
+                   .release = [] {}};
+  };
+  // La première sort de la file et attend à la porte de l'encodeur : la file en reçoit depth.
+  push(**writer, picture(0));
+  for (int i = 0; i < 5000 && fake->entered() < 1; ++i) std::this_thread::sleep_for(1ms);
+  REQUIRE(fake->entered() == 1);
+  for (std::size_t n = 1; n <= depth; ++n) CHECK((*writer)->try_push(picture(n)));
+  CHECK_FALSE((*writer)->try_push(picture(depth + 1)));
+
+  fake->open_gate();
+  REQUIRE((*writer)->finish());
+  CHECK((*writer)->progress().frames == static_cast<std::int64_t>(depth + 1));
+  writer->reset();
+  std::error_code error;
   std::filesystem::remove(output, error);
 }
 

@@ -58,6 +58,9 @@ struct EncoderSetup {
   // L'appareil Vulkan du rendu (AVHWDeviceContext, emprunté), pour un encodeur Vulkan Video : ses
   // images y sont rendues (shared_device()). nullptr : l'encodeur crée le sien.
   AVBufferRef* vulkan_device = nullptr;
+  // Images de l'encodeur que l'export tient hors de lui (tampons de l'appelant et file d'écriture,
+  // WriterConfig) : le pool CUDA les alloue en plus de celles que NVENC garde.
+  int held_frames = 10;
 };
 
 class VideoEncoder final : public FrameEncoder {

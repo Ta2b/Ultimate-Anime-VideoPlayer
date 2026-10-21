@@ -17,6 +17,7 @@
 
 #include "app/play/chain_setup.h"
 #include "app/play/controls.h"
+#include "app/play/export_depth.h"
 #include "app/play/first_run.h"
 #include "app/play/live_settings.h"
 #include "app/play/pipeline.h"
@@ -30,8 +31,6 @@
 namespace ajp::app::play {
 namespace {
 
-// Slots du ring de l'export, comme à la lecture : le thread gpu écrit pendant que main convertit.
-constexpr std::uint32_t kExportRingSlots = 4;
 // La progression est redessinée 4 fois par seconde : la présentation (FIFO) ne freine pas l'export.
 constexpr std::int64_t kProgressEveryUs = 250'000;
 
@@ -95,6 +94,9 @@ ExportOutcome run_export(Player& p, const ExportJob& job) {
   media::Rational rate = export_rate(video.frame_rate, factor);
   if (rate.num <= 0) rate = export_rate({.num = 24'000, .den = 1'001}, factor);  // fréquence inconnue
   p.screen.set_source_color(ColorInfo{});  // les images du ring sans RTX HDR, comme à la lecture
+  // Le ring, la conversion et la file d'écriture : deux paires en vol si les voies de calcul le
+  // permettent (export_depth.h).
+  const ExportDepth depth = export_depth(c.backend->capabilities().lanes);
   show_loading(p.screen, p.ui, "Ouverture de l'export");
 
   // Ordre de déclaration = ordre inverse de destruction : l'écriture, qui rend ses images aux
@@ -111,13 +113,16 @@ ExportOutcome run_export(Player& p, const ExportJob& job) {
                              .quality = job.quality,
                              .vendor = exporter::vendor_of(p.screen.device_facts().pci_vendor),
                              .cuda_ordinal = export_cuda_ordinal(p.screen.device()),
-                             .vulkan_device = p.screen.vulkan_device()});
+                             .vulkan_device = p.screen.vulkan_device(),
+                             .queue_depth = depth.queue,
+                             .caller_frames = depth.buffers});
   if (!writer) return stopped(writer.error());
   auto opened = FrameExport::open(p.screen, FrameExportSetup{.width = size.width,
                                                              .height = size.height,
                                                              .layout = (*writer)->layout(),
                                                              .color = (*writer)->color(),
-                                                             .cuda_frames = (*writer)->cuda_frames()});
+                                                             .cuda_frames = (*writer)->cuda_frames(),
+                                                             .buffers = depth.buffers});
   if (!opened) return stopped(opened.error());
   frames = std::move(*opened);
 
@@ -138,7 +143,7 @@ ExportOutcome run_export(Player& p, const ExportJob& job) {
         const int width = stage.track->width;
         const int height = stage.track->height;
         const WorkSize sized = work_size(width, height, settings.work_height);
-        auto slots = p.screen.create_ring(sized.width * c.factor, sized.height * c.factor, kExportRingSlots);
+        auto slots = p.screen.create_ring(sized.width * c.factor, sized.height * c.factor, depth.ring_slots);
         if (!slots) return std::unexpected(std::move(slots.error()));
         // Sans horloge : aucune paire sautée pour retard, chaque image intermédiaire est faite.
         return UpscaleStage::start(std::move(stage),
@@ -151,6 +156,8 @@ ExportOutcome run_export(Player& p, const ExportJob& job) {
   log->info("export : {} → {} ; {}x{} à {} i/s · {} ; {}", prepare::utf8_path(p.options.file),
             prepare::utf8_path(job.output), size.width, size.height, rate_text(rate), (*writer)->encoder(),
             chain_text);
+  log->info("export : profil {} : {} slots, {} tampons de conversion, file d'écriture de {}",
+            depth.throughput ? "débit" : "mémoire", depth.ring_slots, depth.buffers, depth.queue);
 
   std::deque<RingFrame> waiting;  // reçues du thread gpu, pas encore converties
   bool ended = false;             // StreamEnded vu

@@ -1,5 +1,6 @@
 #include "export/export_writer.h"
 
+#include <algorithm>
 #include <format>
 #include <utility>
 
@@ -71,17 +72,19 @@ std::expected<std::unique_ptr<ExportWriter>, Refusal> ExportWriter::open(const W
   auto muxer = Muxer::open(config.source, config.output);
   if (!muxer) return std::unexpected(std::move(muxer.error()));
   const ColorInfo color = config.color.value_or(muxer->source_color());
-  auto encoder = VideoEncoder::open(EncoderSetup{.width = config.width,
-                                                 .height = config.height,
-                                                 .fps_num = config.fps_num,
-                                                 .fps_den = config.fps_den,
-                                                 .sample_aspect = muxer->source_aspect(),
-                                                 .color = color,
-                                                 .codec = config.codec,
-                                                 .quality = config.quality,
-                                                 .vendor = config.vendor,
-                                                 .cuda_ordinal = config.cuda_ordinal,
-                                                 .vulkan_device = config.vulkan_device});
+  auto encoder = VideoEncoder::open(
+      EncoderSetup{.width = config.width,
+                   .height = config.height,
+                   .fps_num = config.fps_num,
+                   .fps_den = config.fps_den,
+                   .sample_aspect = muxer->source_aspect(),
+                   .color = color,
+                   .codec = config.codec,
+                   .quality = config.quality,
+                   .vendor = config.vendor,
+                   .cuda_ordinal = config.cuda_ordinal,
+                   .vulkan_device = config.vulkan_device,
+                   .held_frames = static_cast<int>(config.caller_frames + config.queue_depth)});
   if (!encoder) return std::unexpected(std::move(encoder.error()));
   return start(config, std::move(*muxer), color, std::make_unique<VideoEncoder>(std::move(*encoder)));
 }
@@ -104,6 +107,7 @@ std::expected<std::unique_ptr<ExportWriter>, Refusal> ExportWriter::start(
   writer->color_ = color;
   writer->encoder_ = std::format("{} · {}", label(config.codec), encoder->label());
   writer->output_ = config.output;
+  writer->queue_depth_ = std::max<std::size_t>(config.queue_depth, 1);
   writer->state_ = std::make_unique<State>(State{.muxer = std::move(muxer),
                                                  .encoder = std::move(encoder),
                                                  .color = av_color(color),
@@ -140,7 +144,7 @@ ExportWriter::~ExportWriter() {
 bool ExportWriter::try_push(Picture&& picture) {
   {
     const std::scoped_lock lock(mutex_);
-    if (done_ || finishing_ || failure_ || queue_.size() >= kQueueDepth) return false;
+    if (done_ || finishing_ || failure_ || queue_.size() >= queue_depth_) return false;
     queue_.push_back(std::move(picture));
   }
   wake_.notify_all();

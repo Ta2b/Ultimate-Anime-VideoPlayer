@@ -11,6 +11,7 @@
 #include <array>
 #include <atomic>
 #include <condition_variable>
+#include <cstddef>
 #include <cstdint>
 #include <deque>
 #include <expected>
@@ -35,6 +36,9 @@ namespace ajp::exporter {
 class FrameEncoder;
 class Muxer;
 
+// Profondeur de la file d'écriture par défaut (WriterConfig::queue_depth).
+inline constexpr std::size_t kDefaultQueueDepth = 4;
+
 struct WriterConfig {
   std::filesystem::path source;  // le fichier lu : ses autres pistes, chapitres et métadonnées
   std::filesystem::path output;  // .mkv, remplacé s'il existe
@@ -51,6 +55,12 @@ struct WriterConfig {
   // des images rendues sur le GPU (vulkan_frames()) au lieu d'en créer un autre et de charger
   // chaque image depuis l'hôte. nullptr : son propre appareil.
   AVBufferRef* vulkan_device = nullptr;
+  // Images confiées et pas encore encodées : try_push refuse au-delà. 8 au profil « débit » de
+  // l'export (app/play/export_depth.h).
+  std::size_t queue_depth = kDefaultQueueDepth;
+  // Images de l'encodeur (cuda_frames()) que l'appelant tient à la fois, rendues et pas encore
+  // confiées (FrameExport : ses tampons) : le pool CUDA les compte en plus de la file.
+  std::size_t caller_frames = 6;
 };
 
 // Une image convertie, dans la disposition de l'encodeur ouvert (layout()). La mémoire reste à
@@ -121,7 +131,7 @@ class ExportWriter {
                                                                      std::unique_ptr<FrameEncoder> encoder);
   void run(const std::stop_token& stop);
 
-  static constexpr std::size_t kQueueDepth = 4;
+  std::size_t queue_depth_ = kDefaultQueueDepth;
   std::unique_ptr<State> state_;
   Layout layout_ = Layout::P010;
   Upload upload_ = Upload::Host;

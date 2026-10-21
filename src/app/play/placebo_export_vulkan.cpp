@@ -138,7 +138,7 @@ FrameExport::Converted FrameExport::convert_vulkan(const RingFrame& frame) {
   const auto given_back = [&](Refusal failure) {
     return Converted{.freed = s.ring.retire(gpu, frame), .failure = std::move(failure)};
   };
-  if (v.pending.size() >= kBuffers)
+  if (v.pending.size() >= buffers_.size())
     return given_back(Refusal{RefusalCode::SequenceOrder, "export : aucune image libre"});
   AVFrame* out = av_frame_alloc();
   if (out == nullptr) return given_back(Refusal{RefusalCode::GpuMemoryExhausted, "export : image"});

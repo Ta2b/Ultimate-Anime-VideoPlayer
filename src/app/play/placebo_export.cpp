@@ -120,7 +120,9 @@ int export_cuda_ordinal(const GpuDevice& device) {
 }
 
 FrameExport::FrameExport(PlaceboScreen& screen, const FrameExportSetup& setup)
-    : screen_(screen), setup_(setup) {}
+    : screen_(screen),
+      setup_(setup),
+      buffers_(std::span(storage_).first(std::clamp<std::size_t>(setup.buffers, 1, kMaxBuffers))) {}
 
 std::expected<std::unique_ptr<FrameExport>, Refusal> FrameExport::open(PlaceboScreen& screen,
                                                                        const FrameExportSetup& setup) {
@@ -256,8 +258,8 @@ FrameExport::~FrameExport() {
 }
 
 bool FrameExport::has_room() const {
-  if (vulkan_) return vulkan_->pending.size() < kBuffers;
-  if (cuda_ && cuda_->pending.size() >= kBuffers)
+  if (vulkan_) return vulkan_->pending.size() < buffers_.size();
+  if (cuda_ && cuda_->pending.size() >= buffers_.size())
     return false;  // l'écriture n'en prend plus : rendu suspendu
   return std::ranges::any_of(buffers_, [](const Buffer& b) { return !b.in_flight && !b.held.load(); });
 }
@@ -429,7 +431,7 @@ std::expected<AVFrame*, Refusal> FrameExport::copy_to_pool(const Buffer& buffer)
 
 std::expected<bool, Refusal> FrameExport::deliver_cuda(const std::function<bool(exporter::Picture&&)>& push) {
   Cuda& c = *cuda_;
-  while (!order_.empty() && c.pending.size() < kBuffers) {
+  while (!order_.empty() && c.pending.size() < buffers_.size()) {
     Buffer& buffer = buffers_[order_.front()];
     if (!ready(buffer)) break;
     auto copied = copy_to_pool(buffer);

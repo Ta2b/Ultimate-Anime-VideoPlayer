@@ -62,11 +62,14 @@ struct FrameExportSetup {
   // (ExportWriter::vulkan_frames(), emprunté) : les images sont rendues dans ses plans et confiées
   // telles quelles. Si leurs plans ne se rendent pas sur ce GPU, tampons hôte.
   AVBufferRef* vulkan_frames = nullptr;
+  // Tampons de conversion (images de l'encodeur Vulkan rendues et pas encore confiées, pour
+  // vulkan_frames), de 1 à FrameExport::kMaxBuffers : 10 au profil « débit » (export_depth.h).
+  std::size_t buffers = 6;
 };
 
 class FrameExport {
  public:
-  static constexpr std::size_t kBuffers = 6;
+  static constexpr std::size_t kMaxBuffers = 12;
 
   // Refus : format de texture absent ou sans rendu ni relecture (FeatureUnavailable), mémoire.
   static std::expected<std::unique_ptr<FrameExport>, Refusal> open(PlaceboScreen& screen,
@@ -166,7 +169,8 @@ class FrameExport {
   bool async_ = true;  // relecture hôte par rappel ; sinon bloquante (GPU sans rappels)
   std::optional<Cuda> cuda_;
   std::optional<VulkanFrames> vulkan_;
-  std::array<Buffer, kBuffers> buffers_;
+  std::array<Buffer, kMaxBuffers> storage_;
+  std::span<Buffer> buffers_;      // les setup.buffers premiers de storage_
   std::deque<std::size_t> order_;  // tampons en copie ou prêts, dans l'ordre des convert()
 };
 

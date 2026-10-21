@@ -1,4 +1,4 @@
-// Les calculs purs de l'export : chaîne, taille encodée, fréquence, nom du fichier.
+// Les calculs purs de l'export : chaîne, taille encodée, fréquence, nom du fichier, profondeur.
 #include "app/play/export_job.h"
 
 #include <filesystem>
@@ -7,6 +7,7 @@
 
 #include <catch2/catch_test_macros.hpp>
 
+#include "app/play/export_depth.h"
 #include "app/play/scripted_input.h"
 #include "prepare/utf8.h"
 
@@ -141,6 +142,19 @@ TEST_CASE("Export : libellé du codec et de la qualité", "[app][export]") {
         "HEVC 10 bits · qualité très haute");
   CHECK(export_label(exporter::Codec::Av1, exporter::Quality::Standard) == "AV1 10 bits · qualité standard");
   CHECK(export_label(exporter::Codec::Lossless, exporter::Quality::High) == "Sans perte (FFV1)");
+}
+
+TEST_CASE("Export : profil débit avec plusieurs voies de calcul, profondeur d'avant sinon", "[app][export]") {
+  const ExportDepth one = export_depth(1);
+  CHECK_FALSE(one.throughput);
+  CHECK(one.ring_slots == 4);
+  CHECK(one.buffers == 6);
+  CHECK(one.queue == 4);
+  const ExportDepth three = export_depth(3);
+  CHECK(three.throughput);
+  CHECK(three.ring_slots == 8);  // deux paires ×3 et de quoi convertir
+  CHECK(three.queue == 8);
+  CHECK(three.buffers > three.queue);  // la file se remplit : une image confiée garde son tampon
 }
 
 }  // namespace ajp::app::play

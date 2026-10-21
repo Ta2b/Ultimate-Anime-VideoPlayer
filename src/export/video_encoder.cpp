@@ -86,12 +86,13 @@ AVPixelFormat device_format(Upload upload) {
 constexpr int kCudaUsePrimaryContext = 1;
 
 // Images du pool CUDA allouées à l'ouverture. NVENC garde chaque image d'entrée jusqu'à la sortie
-// de son paquet (lookahead et B-frames des options), et l'export en tient une douzaine de plus
-// (ses tampons, la file d'écriture). Allouées d'avance, aucun cuMemAlloc ne tombe pendant les
-// premières images, quand les moteurs de la chaîne capturent leurs graphes CUDA.
-int cuda_pool_frames(const std::vector<EncoderOption>& options) {
-  constexpr int kInFlight = 12;
-  int held = 0;
+// de son paquet (lookahead et B-frames des options), et l'export en tient held de plus (ses
+// tampons, la file d'écriture), plus deux (celle qu'on copie, celle qu'on encode). Allouées
+// d'avance, aucun cuMemAlloc ne tombe pendant les premières images, quand les moteurs de la chaîne
+// capturent leurs graphes CUDA.
+int cuda_pool_frames(const std::vector<EncoderOption>& options, int export_held) {
+  constexpr int kInFlight = 2;
+  int held = std::max(export_held, 0);
   for (const EncoderOption& option : options) {
     if (option.key != "rc-lookahead" && option.key != "bf") continue;
     int value = 0;
@@ -114,7 +115,7 @@ std::expected<BufferPtr, std::string> open_frames(AVBufferRef& device, const Enc
   fc->width = setup.width;
   fc->height = setup.height;
   fc->initial_pool_size = candidate.upload == Upload::Vaapi  ? 16
-                          : candidate.upload == Upload::Cuda ? cuda_pool_frames(options)
+                          : candidate.upload == Upload::Cuda ? cuda_pool_frames(options, setup.held_frames)
                                                              : 0;
   if (renderable) {
     auto* vk = static_cast<AVVulkanFramesContext*>(fc->hwctx);
