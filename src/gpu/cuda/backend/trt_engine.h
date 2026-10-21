@@ -96,8 +96,8 @@ class TrtEngine final : public Engine {
   std::vector<Shape> output_shapes_;
   // Graphes capturés, par jeu d'adresses (les tampons de l'étage tournent sur quelques-uns).
   // Une capture refusée est réessayée au lancement suivant : un appel CUDA d'un autre fil au
-  // mauvais moment peut l'invalider (CUDA 901 vu une fois au début d'un export sur le PC) ;
-  // graphs_off_ après kCaptureAttempts refus, et les lancements restent directs.
+  // mauvais moment peut l'invalider (les noyaux NVENC sur le flux par défaut le faisaient avant
+  // aux_streams_) ; graphs_off_ après kCaptureAttempts refus, et les lancements restent directs.
   static constexpr std::size_t kMaxGraphs = 8;
   static constexpr int kCaptureAttempts = 3;
   struct Graph {
@@ -106,6 +106,11 @@ class TrtEngine final : public Engine {
     bool warmed = false;
   };
   std::vector<Graph> graphs_;
+  // Files auxiliaires du moteur, non bloquantes, créées ici et données au contexte : celles que
+  // TensorRT crée seul sont bloquantes, et un lancement sur le flux par défaut d'un autre fil (les
+  // noyaux de l'encodeur NVENC) dépend alors d'elles ; pendant une capture, ce lancement l'invalide
+  // (CUDA 906 chez lui, 901 ici).
+  std::vector<cudaStream_t> aux_streams_;
   bool graphs_off_ = false;
   int capture_failures_ = 0;
   std::string notice_;

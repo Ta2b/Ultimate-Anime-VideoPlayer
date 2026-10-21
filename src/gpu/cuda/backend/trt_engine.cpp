@@ -52,6 +52,8 @@ std::expected<void, Refusal> SharedActivations::reserve(std::int64_t bytes) {
 
 TrtEngine::~TrtEngine() {
   drop_graphs();
+  context_.reset();
+  for (cudaStream_t aux : aux_streams_) cudaStreamDestroy(aux);
 }
 
 void TrtEngine::drop_graphs() {
@@ -80,6 +82,14 @@ std::expected<std::unique_ptr<TrtEngine>, Refusal> TrtEngine::load(
                                 : engine->engine_->createExecutionContext());
   if (!engine->context_) {
     return refuse(RefusalCode::VendorCallFailed, "ICudaEngine::createExecutionContext a échoué");
+  }
+  for (int i = 0; i < engine->engine_->getNbAuxStreams(); ++i) {
+    cudaStream_t aux = nullptr;
+    if (cudaStreamCreateWithFlags(&aux, cudaStreamNonBlocking) != cudaSuccess) {
+      static_cast<void>(cudaGetLastError());
+      return refuse(RefusalCode::VendorCallFailed, "cudaStreamCreateWithFlags (file auxiliaire)");
+    }
+    engine->aux_streams_.push_back(aux);
   }
   if (shared) {
     if (auto ok = shared->reserve(engine->engine_->getDeviceMemorySizeV2()); !ok)
@@ -151,6 +161,9 @@ std::expected<void, Refusal> TrtEngine::enqueue(cudaStream_t stream, std::span<c
                     std::format("sortie {} : forme ou type différents du moteur", outputs_[i]));
     }
   }
+  // Pour le prochain enqueueV3 seulement, d'après TensorRT : reposées à chaque lancement.
+  if (!aux_streams_.empty())
+    context_->setAuxStreams(aux_streams_.data(), static_cast<std::int32_t>(aux_streams_.size()));
   if (graphs_off_) return launch(stream, nullptr);
   std::vector<std::uintptr_t> addresses;
   addresses.reserve(inputs.size() + outputs.size());
