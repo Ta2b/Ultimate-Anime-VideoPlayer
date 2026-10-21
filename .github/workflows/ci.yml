@@ -68,7 +68,9 @@ jobs:
   # ASan et UBSan la couche est coupée pour la durée : les deux autres tâches la font déjà parler.
   # Les préréglages de test portent LSAN_OPTIONS, TSAN_OPTIONS et, sous ASan, le chargeur Vulkan
   # qui garde pilotes et couches chargés jusqu'à la sortie (tools/ci/lsan.supp dit pourquoi).
-  # clang-tidy n'analyse que les fichiers que cette configuration compile (clang-tidy-src.sh).
+  # clang-tidy n'analyse que les fichiers que cette configuration compile (clang-tidy-src.sh) : la
+  # tâche analysée construit aussi le backend OpenVINO (roue PyPI), que rien d'autre ne passait au
+  # crible avant la release. Elle tourne sur chaque pull request, comme les autres.
   player:
     name: Lecteur Linux (${{ matrix.name }})
     if: github.event_name != 'push' || github.ref == 'refs/heads/main'
@@ -98,7 +100,13 @@ jobs:
           key: deps-player-gcc-13-${{ hashFiles('tools/deps/linux-from-source.sh') }}
           restore-keys: deps-player-gcc-13-
       - run: tools/deps/linux-from-source.sh "$AJP_DEPS_PREFIX" "$RUNNER_TEMP/deps-src"
-      - run: cmake --preset ${{ matrix.preset }}
+      - name: OpenVINO
+        if: matrix.tidy
+        run: |
+          source tools/release/versions.env
+          pip install --user "openvino==$OPENVINO_VERSION"
+          echo "OpenVINO_DIR=$(python3 -c 'from openvino.utils import get_cmake_path; print(get_cmake_path())')" >> "$GITHUB_ENV"
+      - run: cmake --preset ${{ matrix.preset }} ${{ matrix.tidy && '-DAJP_WITH_OPENVINO=ON' || '' }}
       - run: cmake --build --preset ${{ matrix.preset }}
       - name: Tests (Vulkan logiciel sous Xvfb)
         run: xvfb-run -a ctest --preset ${{ matrix.preset }}
