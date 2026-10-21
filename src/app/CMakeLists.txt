@@ -16,6 +16,10 @@ ajp_add_module(app
        ajp::render ajp::present ajp::export
   PRIVATE_DEPS ajp::dep::ffmpeg ajp::dep::placebo ajp::dep::sdl3 ajp::dep::spdlog ajp::dep::vulkan
                ajp::dep::imgui ajp::dep::toml ${CMAKE_DL_LIBS})
+# L'EDID des écrans sous Windows (display_edid.cpp) : SetupAPI.
+if(WIN32)
+  target_link_libraries(ajp_app PRIVATE setupapi)
+endif()
 # Police de l'interface : celle du bureau par fontconfig quand il est là, sinon celle d'ImGui.
 if(TARGET ajp::dep::fontconfig)
   target_link_libraries(ajp_app PRIVATE ajp::dep::fontconfig)

@@ -10,6 +10,15 @@
 #include <system_error>
 #include <vector>
 
+#ifdef _WIN32
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <windows.h>
+// SetupAPI après windows.h.
+#include <setupapi.h>
+#endif
+
 namespace ajp::app::play {
 namespace {
 
@@ -107,6 +116,7 @@ std::string pnp_id(std::uint8_t high, std::uint8_t low) {
   return id;
 }
 
+#ifndef _WIN32
 std::vector<std::uint8_t> read_file(const std::filesystem::path& path) {
   std::ifstream file(path, std::ios::binary);
   return {std::istreambuf_iterator<char>(file), std::istreambuf_iterator<char>()};
@@ -118,6 +128,7 @@ std::string trimmed(const std::filesystem::path& path) {
   std::getline(file, text);
   return text;
 }
+#endif
 
 }  // namespace
 
@@ -179,7 +190,40 @@ std::string describe(const DisplayFacts& d) {
   return text;
 }
 
-std::optional<DisplayFacts> read_display(std::string_view wanted) {
+namespace {
+
+#ifdef _WIN32
+// Les écrans présents (classe de périphériques Monitor) et l'EDID que Windows garde de chacun dans
+// le registre (Enum\DISPLAY\…\Device Parameters\EDID), lisible sans droits.
+std::vector<DisplayFacts> connected_displays() {
+  constexpr GUID kMonitorClass{0x4d36e96e, 0xe325, 0x11ce, {0xbf, 0xc1, 0x08, 0x00, 0x2b, 0xe1, 0x03, 0x18}};
+  constexpr std::size_t kMaxEdid = 256 * kBlock;
+  std::vector<DisplayFacts> found;
+  HDEVINFO set = SetupDiGetClassDevsW(&kMonitorClass, nullptr, nullptr, DIGCF_PRESENT);
+  if (set == INVALID_HANDLE_VALUE) return found;
+  SP_DEVINFO_DATA device{};
+  device.cbSize = sizeof(device);
+  for (DWORD i = 0; SetupDiEnumDeviceInfo(set, i, &device) != FALSE; ++i) {
+    HKEY key = SetupDiOpenDevRegKey(set, &device, DICS_FLAG_GLOBAL, 0, DIREG_DEV, KEY_READ);
+    if (key == INVALID_HANDLE_VALUE) continue;
+    std::vector<std::uint8_t> edid(kMaxEdid);
+    DWORD size = static_cast<DWORD>(edid.size());
+    DWORD type = 0;
+    const LSTATUS read = RegQueryValueExW(key, L"EDID", nullptr, &type, edid.data(), &size);
+    RegCloseKey(key);
+    if (read != ERROR_SUCCESS || type != REG_BINARY || size < kBlock) continue;
+    edid.resize(size);
+    DisplayFacts facts = parse_edid(edid);
+    facts.connector = std::format("monitor{}", i);
+    found.push_back(std::move(facts));
+  }
+  SetupDiDestroyDeviceInfoList(set);
+  return found;
+}
+#else
+// Les sorties branchées de DRM et leur EDID (/sys/class/drm/<sortie>/edid). Sur macOS, rien :
+// l'OLED y reste inconnu et le pic vient de SDL (host_facts.cpp).
+std::vector<DisplayFacts> connected_displays() {
   std::vector<DisplayFacts> found;
   std::error_code error;
   for (const auto& entry : std::filesystem::directory_iterator("/sys/class/drm", error)) {
@@ -191,6 +235,14 @@ std::optional<DisplayFacts> read_display(std::string_view wanted) {
     facts.connector = dir.filename().string();
     found.push_back(std::move(facts));
   }
+  return found;
+}
+#endif
+
+}  // namespace
+
+std::optional<DisplayFacts> read_display(std::string_view wanted) {
+  const std::vector<DisplayFacts> found = connected_displays();
   if (found.empty()) return std::nullopt;
   if (found.size() == 1) return found.front();
   for (const DisplayFacts& facts : found) {

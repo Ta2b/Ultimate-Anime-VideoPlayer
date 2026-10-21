@@ -1,4 +1,5 @@
-// L'écran tel que son EDID le décrit (Linux : /sys/class/drm/<sortie>/edid, lisible sans droits) :
+// L'écran tel que son EDID le décrit (Linux : /sys/class/drm/<sortie>/edid ; Windows : le registre
+// des écrans présents, par SetupAPI ; les deux lisibles sans droits) :
 // nom, bloc HDR statique de CTA-861 (PQ, luminances), et s'il est OLED, dans l'ordre du plan :
 //   1. DisplayID 2.0, bloc 0x21 (paramètres de l'écran), octet 0x1E, bits 6:4 = 010b : définitif ;
 //   2. table des modèles connus, par fabricant et product id EDID ou par nom ;
@@ -38,8 +39,9 @@ struct DisplayFacts {
 DisplayFacts parse_edid(std::span<const std::uint8_t> edid);
 // « MAG 272U E16 · HDR10, pic 1037 nits, moyenne 265, noir 0,00064 nit · OLED : non (EDID) »
 std::string describe(const DisplayFacts& display);
-// L'écran branché (/sys/class/drm/*-*/status = connected) ; s'il y en a plusieurs, celui dont le nom
-// se retrouve dans wanted (nom de l'écran selon SDL). Rien si aucun EDID ne se lit.
+// L'écran branché (Linux : /sys/class/drm/*-*/status = connected ; Windows : présent) ; s'il y en a
+// plusieurs, celui dont le nom se retrouve dans wanted (nom de l'écran selon SDL). Rien si aucun
+// EDID ne se lit, et toujours rien sur macOS.
 std::optional<DisplayFacts> read_display(std::string_view wanted);
 
 }  // namespace ajp::app::play
