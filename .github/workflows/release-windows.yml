@@ -63,6 +63,13 @@ jobs:
           $env:AJP_WITH_OPENVINO = "ON"
           $env:AJP_RELEASE_REPO = "${{ vars.AJP_RELEASE_REPO || github.repository }}"
           pwsh tools/release/package-windows.ps1 "$env:RUNNER_TEMP/package"
+      # Les tests sans GPU du build même du paquet (préréglage de test windows-release) : un échec
+      # arrête tout avant l'artefact et la release.
+      - name: Tests sans GPU
+        shell: pwsh
+        run: |
+          ctest --preset windows-release
+          if ($LASTEXITCODE -ne 0) { throw "tests" }
       - uses: actions/cache/save@v4
         if: always()
         with:

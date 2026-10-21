@@ -115,9 +115,7 @@
       },
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Release",
-        "AJP_BUILD_TESTS": "OFF",
-        "AJP_WARNINGS_AS_ERRORS": "OFF",
-        "VCPKG_MANIFEST_FEATURES": "player"
+        "AJP_WARNINGS_AS_ERRORS": "OFF"
       }
     },
     {
@@ -213,7 +211,6 @@
       },
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Release",
-        "AJP_BUILD_TESTS": "OFF",
         "AJP_WARNINGS_AS_ERRORS": "OFF",
         "CMAKE_OSX_DEPLOYMENT_TARGET": "14.0",
         "CMAKE_OSX_ARCHITECTURES": "arm64",
@@ -408,6 +405,36 @@
     {
       "name": "windows-ci",
       "configurePreset": "windows-ci",
+      "output": {
+        "outputOnFailure": true
+      },
+      "filter": {
+        "include": {
+          "name": "^(core|media|prepare|subs|app): "
+        }
+      },
+      "execution": {
+        "noTestsAction": "error"
+      }
+    },
+    {
+      "name": "windows-release",
+      "configurePreset": "windows-release",
+      "output": {
+        "outputOnFailure": true
+      },
+      "filter": {
+        "include": {
+          "name": "^(core|media|prepare|subs|app): "
+        }
+      },
+      "execution": {
+        "noTestsAction": "error"
+      }
+    },
+    {
+      "name": "macos-release",
+      "configurePreset": "macos-release",
       "output": {
         "outputOnFailure": true
       },

@@ -48,6 +48,10 @@ jobs:
           path: ${{ env.AJP_DEPS_PREFIX }}
           key: ${{ steps.deps-cache.outputs.cache-primary-key }}
       - run: tools/release/package-macos.sh "$RUNNER_TEMP/package"
+      # Les tests sans GPU du build même du paquet (préréglage de test macos-release) : un échec
+      # arrête tout avant l'artefact et la release.
+      - name: Tests sans GPU
+        run: ctest --preset macos-release
       # Le quota de stockage des artefacts du compte peut être plein : le paquet est construit quand même.
       - uses: actions/upload-artifact@v4
         continue-on-error: true
