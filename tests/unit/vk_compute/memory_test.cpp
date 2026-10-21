@@ -86,6 +86,38 @@ TEST_CASE("mémoire : un bloc à sa taille propre n'entre pas en réserve", "[vk
   CHECK(memory->reserved() == 0);
 }
 
+TEST_CASE("mémoire : des blocs propres en réserve jusqu'à large_spares", "[vk_compute][memory]") {
+  Rig rig = make_rig();
+  auto memory = require_value(MemoryAllocator::create(
+      *rig.context, {.block_size = kMiB, .budget = 8 * kMiB, .large_spares = 5 * kMiB}));
+  {
+    Buffer big = require_value(Buffer::create(*rig.context, *memory, 2 * kMiB, MemoryUse::Device));
+  }
+  // Gardé vide, puis repris tel quel par la même taille : aucun bloc neuf.
+  CHECK(memory->block_count() == 1);
+  CHECK(memory->spare_count() == 1);
+  {
+    Buffer again = require_value(Buffer::create(*rig.context, *memory, 2 * kMiB, MemoryUse::Device));
+    CHECK(memory->block_count() == 1);
+    CHECK(memory->reserved() == 2 * kMiB);
+    // Deux autres blocs propres : 2 + 3 + 4 Mio vides dépassent 5 Mio, les plus anciens partent.
+    Buffer three = require_value(Buffer::create(*rig.context, *memory, 3 * kMiB, MemoryUse::Device));
+  }
+  CHECK(memory->reserved() == 5 * kMiB);
+  {
+    Buffer four = require_value(Buffer::create(*rig.context, *memory, 4 * kMiB, MemoryUse::Device));
+  }
+  CHECK(memory->reserved() == 4 * kMiB);
+  {
+    // Le budget reprend la réserve quand il manque : 4 + 6 Mio dépassent 8 Mio.
+    Buffer six = require_value(Buffer::create(*rig.context, *memory, 6 * kMiB, MemoryUse::Device));
+    CHECK(memory->reserved() == 6 * kMiB);
+    CHECK(memory->spare_count() == 0);
+  }
+  // Plus grand que toute la réserve : rendu aussitôt.
+  CHECK(memory->reserved() == 0);
+}
+
 TEST_CASE("mémoire : limites de l'appareil dans les bornes", "[vk_compute][memory]") {
   Rig rig = make_rig();
   const MemoryLimits limits = device_limits(*rig.context);

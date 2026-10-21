@@ -29,6 +29,10 @@ enum class Tiling : std::uint8_t { Linear, Optimal };
 struct MemoryLimits {
   VkDeviceSize block_size = VkDeviceSize{64} << 20U;  // une demande plus grande a son propre bloc
   VkDeviceSize budget = VkDeviceSize{2} << 30U;       // total des blocs réservés à l'appareil
+  // Octets des blocs propres (plus grands qu'un bloc) gardés vides en réserve : les tenseurs de
+  // GMFSS (94 Mio) et les sorties 4K reviennent aux mêmes tailles à chaque changement de chaîne,
+  // et chaque vkAllocateMemory coûte des millisecondes. 0 : rendus aussitôt.
+  VkDeviceSize large_spares = 0;
 };
 
 // Limites à la taille de l'appareil : un budget des trois quarts du plus grand tas DEVICE_LOCAL,
@@ -37,6 +41,7 @@ struct MemoryLimits {
 // VK_EXT_memory_budget activée sur l'appareil, le budget est ce que le pilote dit disponible au
 // processus sur ce tas à cet instant (son budget moins son usage : le ring et l'affichage y sont
 // déjà), moins la même réserve, sans dépasser la règle des trois quarts ni descendre sous 1 Gio.
+// La réserve des blocs propres : un huitième du budget, au plus 1 Gio.
 MemoryLimits device_limits(const VkContext& context);
 
 // Types de mémoire permis pour use, du préféré au dernier recours (à score égal, l'ordre du
@@ -99,8 +104,9 @@ class MemoryAllocator {
   VkDeviceSize reserved() const { return reserved_; }  // octets des blocs alloués à l'appareil
   VkDeviceSize used() const { return used_; }          // octets des portions vivantes
   std::size_t block_count() const { return blocks_.size(); }
-  // Blocs vides gardés en réserve (un par type et tiling, de la taille d'un bloc) : la prochaine
-  // demande les reprend sans vkAllocateMemory ; le budget les reprend d'abord quand il manque.
+  // Blocs vides gardés en réserve (un par type et tiling, de la taille d'un bloc ; des blocs
+  // propres jusqu'à large_spares octets) : la prochaine demande les reprend sans vkAllocateMemory ;
+  // le budget les reprend d'abord quand il manque.
   std::size_t spare_count() const;
 
  private:

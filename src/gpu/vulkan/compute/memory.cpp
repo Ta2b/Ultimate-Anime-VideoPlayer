@@ -94,6 +94,7 @@ MemoryLimits device_limits(const VkContext& context) {
     const VkDeviceSize real = available > reserve ? available - reserve : 0;
     limits.budget = std::max(floor, std::min(limits.budget, real));
   }
+  limits.large_spares = std::min(limits.budget / 8, VkDeviceSize{1} << 30U);
   return limits;
 }
 
@@ -284,17 +285,35 @@ void MemoryAllocator::release(std::uint64_t id, VkDeviceSize offset, VkDeviceSiz
   if (--block.live == 0 && !context_.stalled()) {
     // Un bloc vide de la taille courante reste en réserve, un par type et tiling : une chaîne
     // qui change (nouveau moteur, seek) relâche et redemande les mêmes tailles, et chaque
-    // vkAllocateMemory coûte des millisecondes. Les autres blocs vides (taille à part, second
-    // du même type) retournent à l'appareil : la mémoire réservée suit l'usage.
-    const bool spare_present = std::ranges::any_of(blocks_, [&](const auto& other) {
-      return other.get() != &block && other->live == 0 && other->type == block.type &&
-             other->tiling == block.tiling;
-    });
-    if (block.size != limits_.block_size || spare_present) {
-      free_block(found);
+    // vkAllocateMemory coûte des millisecondes. Un bloc propre aussi, tant que les blocs propres
+    // vides tiennent dans large_spares (les plus anciens partent d'abord). Les autres blocs vides
+    // retournent à l'appareil : la mémoire réservée suit l'usage.
+    block.free = {Range{.offset = 0, .size = block.size}};
+    if (block.size != limits_.block_size) {
+      if (block.size > limits_.large_spares) {
+        free_block(found);
+        return;
+      }
+      VkDeviceSize kept = block.size;
+      for (const auto& other : blocks_) {
+        if (other->id != id && other->live == 0 && other->size != limits_.block_size) kept += other->size;
+      }
+      for (auto it = blocks_.begin(); it != blocks_.end() && kept > limits_.large_spares;) {
+        if ((*it)->id != id && (*it)->live == 0 && (*it)->size != limits_.block_size) {
+          kept -= (*it)->size;
+          free_block(it);
+          it = blocks_.begin();
+        } else {
+          ++it;
+        }
+      }
       return;
     }
-    block.free = {Range{.offset = 0, .size = block.size}};
+    const bool spare_present = std::ranges::any_of(blocks_, [&](const auto& other) {
+      return other->id != id && other->live == 0 && other->size == limits_.block_size &&
+             other->type == block.type && other->tiling == block.tiling;
+    });
+    if (spare_present) free_block(found);
     return;
   }
   const auto at = std::ranges::lower_bound(block.free, offset, {}, &Range::offset);
