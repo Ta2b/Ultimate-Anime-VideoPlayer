@@ -38,24 +38,41 @@ DEPS=(
 
 fetch() {  # nom url ref
   local dir="$WORK/$1"
-  if [[ -d "$dir/.git" ]]; then return; fi
+  if [[ -d "$dir/.git" ]]; then
+    # Déjà à cette référence : rien à faire. D'une autre (version changée) : recloné.
+    [[ "$(git -C "$dir" rev-parse -q --verify "$3^{commit}" || true)" == "$(git -C "$dir" rev-parse HEAD)" ]] && return
+    rm -rf "$dir"
+  fi
   if git clone -q --depth 1 --branch "$3" "$2" "$dir" 2>/dev/null; then return; fi
   # Une référence qui n'est ni tag ni branche : un commit.
   git clone -q --filter=blob:none "$2" "$dir"
   git -C "$dir" checkout -q "$3"
 }
 
-done_marker() { [[ -f "$PREFIX/.built-$1" ]]; }
-mark() { touch "$PREFIX/.built-$1"; }
+# Une dépendance est à jour quand son marqueur porte sa signature : sa référence, ses options et
+# la référence de ce qu'elle compile d'une autre. Changer une version ou une option rebâtit cette
+# dépendance seule ; le cache de la CI, restauré même d'une version plus ancienne du script,
+# garde les autres.
+ref_of() {  # nom : sa référence dans DEPS (bash 3 de macOS : pas de tableau associatif)
+  local entry name url ref
+  for entry in "${DEPS[@]}"; do
+    read -r name url ref <<<"$entry"
+    if [[ "$name" == "$1" ]]; then echo "$ref"; return; fi
+  done
+}
+done_marker() { [[ -f "$PREFIX/.built-$1" && "$(<"$PREFIX/.built-$1")" == "$2" ]]; }
+mark() { printf '%s\n' "$2" >"$PREFIX/.built-$1"; }
 
 cmake_dep() {  # nom [options...]
   local name="$1"; shift
-  done_marker "$name" && return
+  local signature
+  signature="$(ref_of "$name") $*"
+  done_marker "$name" "$signature" && return
   cmake -S "$WORK/$name" -B "$WORK/$name/_build" -G Ninja -DCMAKE_BUILD_TYPE=Release \
     -DCMAKE_INSTALL_PREFIX="$PREFIX" -DCMAKE_PREFIX_PATH="$PREFIX" "$@"
   cmake --build "$WORK/$name/_build" -j "$JOBS"
   cmake --install "$WORK/$name/_build"
-  mark "$name"
+  mark "$name" "$signature"
 }
 
 CORE_DEPS=" tomlplusplus catch2 spdlog "
@@ -77,51 +94,56 @@ fi
 cmake_dep vulkan-headers
 cmake_dep sdl3 -DSDL_TESTS=OFF -DSDL_EXAMPLES=OFF
 
-if ! done_marker nanobench; then
+if ! done_marker nanobench "$(ref_of nanobench)"; then
   install -D -m 644 "$WORK/nanobench/src/include/nanobench.h" "$PREFIX/include/nanobench.h"
-  mark nanobench
+  mark nanobench "$(ref_of nanobench)"
 fi
 
 # imgui n'a pas de système de construction : on installe ses sources, que
 # cmake/Dependencies.cmake compile avec les backends SDL3 et Vulkan.
-if ! done_marker imgui; then
+if ! done_marker imgui "$(ref_of imgui)"; then
   mkdir -p "$PREFIX/share/imgui"
   cp -r "$WORK/imgui/"*.h "$WORK/imgui/"*.cpp "$WORK/imgui/backends" "$PREFIX/share/imgui/"
-  mark imgui
+  mark imgui "$(ref_of imgui)"
 fi
 
-if ! done_marker nv-codec-headers; then
+if ! done_marker nv-codec-headers "$(ref_of nv-codec-headers)"; then
   make -C "$WORK/nv-codec-headers" PREFIX="$PREFIX" install
-  mark nv-codec-headers
+  mark nv-codec-headers "$(ref_of nv-codec-headers)"
 fi
 
 # FFmpeg en LGPL partagée, comme le triplet dynamique de vcpkg. VA-API demande les en-têtes de
 # libva (libva-dev, libva-devel) ; la libva du système sert à l'exécution.
-if ! done_marker ffmpeg; then
-  (cd "$WORK/ffmpeg" && ./configure --prefix="$PREFIX" --enable-shared --disable-static \
-      --disable-programs --disable-doc --disable-debug \
-      --enable-ffnvcodec --enable-nvdec --enable-cuvid \
-      --enable-vulkan --enable-vaapi --enable-libdav1d \
-      --extra-cflags="-I$PREFIX/include" --extra-ldflags="-L$PREFIX/lib" \
-    && make -j "$JOBS" && make install)
-  mark ffmpeg
+FFMPEG_OPTS=(--prefix="$PREFIX" --enable-shared --disable-static
+  --disable-programs --disable-doc --disable-debug
+  --enable-ffnvcodec --enable-nvdec --enable-cuvid
+  --enable-vulkan --enable-vaapi --enable-libdav1d
+  --extra-cflags="-I$PREFIX/include" --extra-ldflags="-L$PREFIX/lib")
+signature="$(ref_of ffmpeg) ${FFMPEG_OPTS[*]} nv-codec-headers $(ref_of nv-codec-headers)"
+if ! done_marker ffmpeg "$signature"; then
+  (cd "$WORK/ffmpeg" && ./configure "${FFMPEG_OPTS[@]}" && make -j "$JOBS" && make install)
+  mark ffmpeg "$signature"
 fi
 
-if ! done_marker libplacebo; then
+PLACEBO_OPTS=(--prefix="$PREFIX" --libdir=lib
+  --buildtype=release -Dvulkan=enabled -Dshaderc=enabled -Dlcms=enabled
+  -Dopengl=disabled -Dd3d11=disabled -Ddemos=false -Dtests=false
+  -Dvulkan-registry="$PREFIX/share/vulkan/registry/vk.xml")
+# Le registre Vulkan vient de vulkan-headers : une autre version rebâtit libplacebo.
+signature="$(ref_of libplacebo) ${PLACEBO_OPTS[*]} vulkan-headers $(ref_of vulkan-headers)"
+if ! done_marker libplacebo "$signature"; then
   git -C "$WORK/libplacebo" submodule update --init --depth 1 -q
-  meson setup "$WORK/libplacebo/_build" "$WORK/libplacebo" --prefix="$PREFIX" --libdir=lib \
-    --buildtype=release -Dvulkan=enabled -Dshaderc=enabled -Dlcms=enabled \
-    -Dopengl=disabled -Dd3d11=disabled -Ddemos=false -Dtests=false \
-    -Dvulkan-registry="$PREFIX/share/vulkan/registry/vk.xml"
+  rm -rf "$WORK/libplacebo/_build"
+  meson setup "$WORK/libplacebo/_build" "$WORK/libplacebo" "${PLACEBO_OPTS[@]}"
   meson compile -C "$WORK/libplacebo/_build"
   meson install -C "$WORK/libplacebo/_build"
-  mark libplacebo
+  mark libplacebo "$signature"
 fi
 
-if ! done_marker libass; then
+if ! done_marker libass "$(ref_of libass)"; then
   (cd "$WORK/libass" && ./autogen.sh && ./configure --prefix="$PREFIX" --disable-static \
     && make -j "$JOBS" && make install)
-  mark libass
+  mark libass "$(ref_of libass)"
 fi
 
 echo "Dépendances prêtes dans $PREFIX"

@@ -41,6 +41,7 @@ jobs:
           key: deps-macos-arm64-${{ hashFiles('tools/deps/macos-from-source.sh') }}-${{ github.run_id }}
           restore-keys: |
             deps-macos-arm64-${{ hashFiles('tools/deps/macos-from-source.sh') }}-
+            deps-macos-arm64-
       - run: tools/deps/macos-from-source.sh "$AJP_DEPS_PREFIX" "$RUNNER_TEMP/deps-src"
       - uses: actions/cache/save@v4
         if: always()

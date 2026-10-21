@@ -54,6 +54,7 @@ jobs:
         with:
           path: ${{ env.AJP_DEPS_PREFIX }}
           key: deps-player-gcc-13-${{ hashFiles('tools/deps/linux-from-source.sh') }}
+          restore-keys: deps-player-gcc-13-
       - run: tools/deps/linux-from-source.sh "$AJP_DEPS_PREFIX" "$RUNNER_TEMP/deps-src"
       - name: OpenVINO
         run: |
@@ -88,6 +89,7 @@ jobs:
           key: deps-player-gcc-13-${{ hashFiles('tools/deps/linux-from-source.sh') }}-${{ github.run_id }}
           restore-keys: |
             deps-player-gcc-13-${{ hashFiles('tools/deps/linux-from-source.sh') }}
+            deps-player-gcc-13-
       - run: tools/deps/linux-from-source.sh "$AJP_DEPS_PREFIX" "$RUNNER_TEMP/deps-src"
       - uses: actions/cache/save@v4
         if: always()
