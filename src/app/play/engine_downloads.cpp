@@ -21,7 +21,7 @@
 namespace ajp::app::play {
 namespace {
 
-constexpr std::uint32_t kFrameMs = 100;
+constexpr std::int32_t kFrameMs = 100;
 
 struct Shared {
   std::mutex mutex;
@@ -69,7 +69,8 @@ std::optional<std::expected<void, Refusal>> run_install(PlaceboScreen& screen, P
     }
     if (auto shown = screen.show(ShowRequest{.ui = ui.preparation(host_now_us(), view)}); !shown)
       log_channel("app")->warn("installation : {}", shown.error().detail);
-    SDL_Delay(kFrameMs);
+    // Une image toutes les 100 ms, plus tôt si un événement arrive.
+    (void)SDL_WaitEventTimeout(nullptr, kFrameMs);
   }
 }
 

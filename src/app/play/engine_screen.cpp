@@ -28,7 +28,7 @@ namespace ajp::app::play {
 namespace {
 
 // L'écran des moteurs suit la souris : ~60 images par seconde.
-constexpr std::uint32_t kWelcomeFrameMs = 16;
+constexpr std::int32_t kWelcomeFrameMs = 16;
 
 constexpr std::size_t usage(core::Usage u) {
   return static_cast<std::size_t>(u);
@@ -64,7 +64,8 @@ std::expected<std::optional<FirstRunView>, Refusal> welcome(PlaceboScreen& scree
     snapshot.maybe(screen, started);
     if (auto shown = screen.show(ShowRequest{.ui = ui.welcome(host_now_us(), view)}); !shown)
       return std::unexpected(std::move(shown.error()));
-    SDL_Delay(kWelcomeFrameMs);
+    // Une image toutes les 16 ms, plus tôt si un événement arrive.
+    (void)SDL_WaitEventTimeout(nullptr, kWelcomeFrameMs);
   }
   return view;
 }

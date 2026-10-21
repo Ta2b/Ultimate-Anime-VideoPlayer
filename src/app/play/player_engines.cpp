@@ -26,7 +26,7 @@ namespace {
 constexpr std::int64_t kQuietBuildUs = 250'000;
 // Pendant une construction, la superposition est redessinée 10 fois par seconde au plus : le GPU
 // sert à mesurer les tactiques.
-constexpr std::uint32_t kBuildFrameMs = 100;
+constexpr std::int32_t kBuildFrameMs = 100;
 
 // Tours d'attente de main pendant la construction d'un moteur : la fenêtre reste vivante et la
 // superposition montre la préparation. Rien si l'utilisateur ferme la fenêtre ou quitte (q) ; Tab
@@ -79,7 +79,8 @@ std::expected<std::optional<gpu::Artifact>, Refusal> wait_engine(EngineBuild& bu
       auto shown = screen.show(ShowRequest{.ui = ui.preparation(now, view)});
       if (!shown) return std::unexpected(std::move(shown.error()));
     }
-    SDL_Delay(kBuildFrameMs);
+    // Une image toutes les 100 ms, plus tôt si un événement arrive.
+    (void)SDL_WaitEventTimeout(nullptr, kBuildFrameMs);
   }
 }
 
