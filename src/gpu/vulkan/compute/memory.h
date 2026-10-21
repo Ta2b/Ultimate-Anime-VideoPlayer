@@ -39,6 +39,15 @@ struct MemoryLimits {
 // déjà), moins la même réserve, sans dépasser la règle des trois quarts ni descendre sous 1 Gio.
 MemoryLimits device_limits(const VkContext& context);
 
+// Types de mémoire permis pour use, du préféré au dernier recours (à score égal, l'ordre du
+// pilote) : quand vkAllocateMemory est à court sur l'un (le BAR de 256 Mio sans ReBAR, sur une
+// RTX 4050 mobile ou une carte ancienne), l'allocateur passe au suivant, la mémoire système
+// visible de l'hôte pour un tampon d'envoi. Pour l'appareil seul, les types DEVICE_LOCAL
+// seulement quand il y en a : un tenseur en mémoire système rendrait le réseau des dizaines de
+// fois plus lent sans le dire ; mieux vaut le refus nommé, que la chaîne sait contourner.
+std::vector<std::uint32_t> memory_candidates(const VkPhysicalDeviceMemoryProperties& properties,
+                                             std::uint32_t allowed, MemoryUse use);
+
 class MemoryAllocator;
 
 // Une portion d'un bloc, rendue à l'allocateur à sa destruction. L'allocateur doit lui survivre.
@@ -82,7 +91,7 @@ class MemoryAllocator {
   ~MemoryAllocator();
 
   // Refus : FeatureUnavailable (aucun type de mémoire ne convient), GpuMemoryExhausted (budget
-  // atteint, ou vkAllocateMemory à court), VulkanCallFailed.
+  // atteint, ou vkAllocateMemory à court sur chaque type candidat), VulkanCallFailed.
   std::expected<Allocation, Refusal> allocate(const VkMemoryRequirements& requirements, MemoryUse use,
                                               Tiling tiling);
 
@@ -111,8 +120,9 @@ class MemoryAllocator {
   };
 
   MemoryAllocator(const VkContext& context, MemoryLimits limits);
-  std::expected<std::uint32_t, Refusal> choose_type(std::uint32_t allowed, MemoryUse use) const;
-  std::expected<Block*, Refusal> new_block(std::uint32_t type, Tiling tiling, VkDeviceSize size);
+  // heap_full : vkAllocateMemory à court sur ce type (pas le budget, commun à tous les types).
+  std::expected<Block*, Refusal> new_block(std::uint32_t type, Tiling tiling, VkDeviceSize size,
+                                           bool& heap_full);
   void free_block(std::vector<std::unique_ptr<Block>>::iterator at);
   // Rend les blocs vides en réserve jusqu'à ce que needed octets tiennent dans le budget.
   void evict_spares(VkDeviceSize needed);

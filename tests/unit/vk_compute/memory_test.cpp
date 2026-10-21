@@ -94,6 +94,31 @@ TEST_CASE("mémoire : limites de l'appareil dans les bornes", "[vk_compute][memo
   CHECK(limits.budget >= limits.block_size);
 }
 
+// Une RTX 4050 mobile sans ReBAR : la VRAM, la mémoire système (cohérente, puis en cache) et le
+// BAR de 256 Mio, seul type DEVICE_LOCAL visible de l'hôte ; puis un type paresseux, jamais pris.
+TEST_CASE("mémoire : types candidats du préféré au dernier recours", "[vk_compute][memory]") {
+  constexpr VkMemoryPropertyFlags kLocal = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;
+  constexpr VkMemoryPropertyFlags kHost =
+      VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
+  VkPhysicalDeviceMemoryProperties p{};
+  p.memoryTypeCount = 5;
+  p.memoryTypes[0] = {.propertyFlags = kLocal, .heapIndex = 0};
+  p.memoryTypes[1] = {.propertyFlags = kHost, .heapIndex = 1};
+  p.memoryTypes[2] = {.propertyFlags = kHost | VK_MEMORY_PROPERTY_HOST_CACHED_BIT, .heapIndex = 1};
+  p.memoryTypes[3] = {.propertyFlags = kLocal | kHost, .heapIndex = 2};
+  p.memoryTypes[4] = {.propertyFlags = kLocal | VK_MEMORY_PROPERTY_LAZILY_ALLOCATED_BIT, .heapIndex = 0};
+  using Types = std::vector<std::uint32_t>;
+  // Le BAR plein, l'envoi passe à la mémoire système.
+  CHECK(memory_candidates(p, 0x1F, MemoryUse::Upload) == Types{3, 1, 2});
+  CHECK(memory_candidates(p, 0x1F, MemoryUse::Readback) == Types{2, 1, 3});
+  // L'appareil seul reste en DEVICE_LOCAL : la VRAM, puis le BAR.
+  CHECK(memory_candidates(p, 0x1F, MemoryUse::Device) == Types{0, 3});
+  // Sans type DEVICE_LOCAL permis, ce qui reste.
+  CHECK(memory_candidates(p, 0x06, MemoryUse::Device) == Types{1, 2});
+  CHECK(memory_candidates(p, 0x07, MemoryUse::Upload) == Types{1, 2});
+  CHECK(memory_candidates(p, 0x11, MemoryUse::Upload).empty());
+}
+
 TEST_CASE("mémoire : budget atteint refusé par son nom", "[vk_compute][memory]") {
   Rig rig = make_rig();
   auto memory =

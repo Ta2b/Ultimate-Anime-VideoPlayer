@@ -2,8 +2,9 @@
 
 #include <algorithm>
 #include <format>
-#include <optional>
+#include <functional>
 #include <utility>
+#include <vector>
 
 #include "gpu/vulkan/compute/refuse.h"
 
@@ -42,6 +43,30 @@ VkDeviceSize align_up(VkDeviceSize value, VkDeviceSize alignment) {
 }
 
 }  // namespace
+
+std::vector<std::uint32_t> memory_candidates(const VkPhysicalDeviceMemoryProperties& properties,
+                                             std::uint32_t allowed, MemoryUse use) {
+  const VkMemoryPropertyFlags required = required_flags(use);
+  const VkMemoryPropertyFlags preferred = preferred_flags(use);
+  std::vector<std::pair<int, std::uint32_t>> scored;
+  for (std::uint32_t i = 0; i < properties.memoryTypeCount; ++i) {
+    const VkMemoryPropertyFlags flags = properties.memoryTypes[i].propertyFlags;
+    if ((allowed & (1U << i)) == 0 || (flags & required) != required || (flags & kExcluded) != 0) continue;
+    // Le type préféré d'abord ; pour l'appareil seul, un type invisible de l'hôte ensuite.
+    int score = (flags & preferred) == preferred ? 2 : 0;
+    if (use == MemoryUse::Device && (flags & VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT) == 0) score += 1;
+    scored.emplace_back(score, i);
+  }
+  std::ranges::stable_sort(scored, std::greater{}, &std::pair<int, std::uint32_t>::first);
+  // Pour l'appareil seul, pas de repli hors de DEVICE_LOCAL quand un tel type est permis.
+  if (use == MemoryUse::Device && !scored.empty() && scored.front().first >= 2) {
+    std::erase_if(scored, [](const auto& entry) { return entry.first < 2; });
+  }
+  std::vector<std::uint32_t> types;
+  types.reserve(scored.size());
+  for (const auto& [score, type] : scored) types.push_back(type);
+  return types;
+}
 
 MemoryLimits device_limits(const VkContext& context) {
   const bool budget_known =
@@ -146,33 +171,10 @@ void MemoryAllocator::evict_spares(VkDeviceSize needed) {
   }
 }
 
-std::expected<std::uint32_t, Refusal> MemoryAllocator::choose_type(std::uint32_t allowed,
-                                                                   MemoryUse use) const {
-  const VkMemoryPropertyFlags required = required_flags(use);
-  const VkMemoryPropertyFlags preferred = preferred_flags(use);
-  std::optional<std::uint32_t> best;
-  int best_score = -1;
-  for (std::uint32_t i = 0; i < properties_.memoryTypeCount; ++i) {
-    const VkMemoryPropertyFlags flags = properties_.memoryTypes[i].propertyFlags;
-    if ((allowed & (1U << i)) == 0 || (flags & required) != required || (flags & kExcluded) != 0) continue;
-    // Le type préféré d'abord ; pour l'appareil seul, un type invisible de l'hôte ensuite.
-    int score = (flags & preferred) == preferred ? 2 : 0;
-    if (use == MemoryUse::Device && (flags & VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT) == 0) score += 1;
-    if (score > best_score) {
-      best = i;
-      best_score = score;
-    }
-  }
-  if (!best) {
-    return refuse(
-        RefusalCode::FeatureUnavailable,
-        std::format("aucun type de mémoire pour l'usage {} (types permis {:#x})", use_name(use), allowed));
-  }
-  return *best;
-}
-
 std::expected<MemoryAllocator::Block*, Refusal> MemoryAllocator::new_block(std::uint32_t type, Tiling tiling,
-                                                                           VkDeviceSize size) {
+                                                                           VkDeviceSize size,
+                                                                           bool& heap_full) {
+  heap_full = false;
   // La réserve d'abord : un bloc vide d'un autre type ou tiling ne sert pas cette demande.
   if (size > limits_.budget - reserved_ && !context_.stalled()) evict_spares(size);
   if (size > limits_.budget - reserved_) {
@@ -183,9 +185,9 @@ std::expected<MemoryAllocator::Block*, Refusal> MemoryAllocator::new_block(std::
   const VkMemoryAllocateInfo info{
       .sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO, .allocationSize = size, .memoryTypeIndex = type};
   VkDeviceMemory memory = VK_NULL_HANDLE;
-  if (auto ok = check(context_.fn().vkAllocateMemory(context_.device(), &info, nullptr, &memory),
-                      std::format("vkAllocateMemory({} o, type {})", size, type));
-      !ok) {
+  const VkResult allocated = context_.fn().vkAllocateMemory(context_.device(), &info, nullptr, &memory);
+  if (auto ok = check(allocated, std::format("vkAllocateMemory({} o, type {})", size, type)); !ok) {
+    heap_full = allocated == VK_ERROR_OUT_OF_DEVICE_MEMORY;
     return std::unexpected(ok.error());
   }
   void* mapped = nullptr;
@@ -231,25 +233,37 @@ bool MemoryAllocator::carve(Block& block, VkDeviceSize size, VkDeviceSize alignm
 std::expected<Allocation, Refusal> MemoryAllocator::allocate(const VkMemoryRequirements& requirements,
                                                              MemoryUse use, Tiling tiling) {
   if (requirements.size == 0) return refuse(RefusalCode::FieldOutOfRange, "allocation de 0 o");
-  auto type = choose_type(requirements.memoryTypeBits, use);
-  if (!type) return std::unexpected(type.error());
+  const std::vector<std::uint32_t> types = memory_candidates(properties_, requirements.memoryTypeBits, use);
+  if (types.empty()) {
+    return refuse(RefusalCode::FeatureUnavailable,
+                  std::format("aucun type de mémoire pour l'usage {} (types permis {:#x})", use_name(use),
+                              requirements.memoryTypeBits));
+  }
 
   Block* chosen = nullptr;
   VkDeviceSize offset = 0;
-  for (const auto& block : blocks_) {
-    if (block->type == *type && block->tiling == tiling &&
-        carve(*block, requirements.size, requirements.alignment, offset)) {
-      chosen = block.get();
+  Refusal full{.code = RefusalCode::GpuMemoryExhausted, .detail = {}};  // le dernier tas à court
+  for (const std::uint32_t type : types) {
+    for (const auto& block : blocks_) {
+      if (block->type == type && block->tiling == tiling &&
+          carve(*block, requirements.size, requirements.alignment, offset)) {
+        chosen = block.get();
+        break;
+      }
+    }
+    if (chosen != nullptr) break;
+    // Une demande plus grande qu'un bloc a son bloc propre, à sa taille exacte.
+    bool heap_full = false;
+    auto block = new_block(type, tiling, std::max(requirements.size, limits_.block_size), heap_full);
+    if (block) {
+      chosen = *block;
+      carve(*chosen, requirements.size, requirements.alignment, offset);
       break;
     }
+    if (!heap_full) return std::unexpected(std::move(block.error()));
+    full = std::move(block.error());  // ce tas est plein : le type suivant
   }
-  if (chosen == nullptr) {
-    // Une demande plus grande qu'un bloc a son bloc propre, à sa taille exacte.
-    auto block = new_block(*type, tiling, std::max(requirements.size, limits_.block_size));
-    if (!block) return std::unexpected(block.error());
-    chosen = *block;
-    carve(*chosen, requirements.size, requirements.alignment, offset);
-  }
+  if (chosen == nullptr) return std::unexpected(std::move(full));
   ++chosen->live;
   used_ += requirements.size;
   Allocation allocation;
