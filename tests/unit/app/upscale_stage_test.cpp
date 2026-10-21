@@ -230,6 +230,61 @@ TEST_CASE("Étage gpu : mesures, SPAN et RIFE chacun sur sa voie, SPAN avant le 
   }
 }
 
+TEST_CASE("Étage gpu : le warp écrit l'image intermédiaire dans le slot quand le backend le permet",
+          "[app][stage]") {
+  const bool spanned = GENERATE(true, false);
+  INFO((spanned ? "warp après SPAN" : "sans SPAN"));
+  struct Run {
+    std::vector<RingFrame> frames;
+    std::vector<test::RingWritten> written;
+    std::size_t blends = 0;
+    std::size_t ring_blends = 0;
+    std::size_t ring_writes = 0;  // par write_ring
+    std::size_t allocs = 0;
+  };
+  const auto run = [&](bool direct) {
+    Rig rig;
+    rig.backend.offer_ring_targets(direct);
+    UpscaleSetup s = rig.setup(true, Factor{.num = 3, .den = 1});
+    s.rife = nullptr;
+    s.rife_motion = &rig.motion;
+    s.warp_after_span = spanned;
+    if (!spanned) {
+      s.engine = nullptr;
+      s.slots = test::StageRig::slots(4, kWidth, kHeight);
+    }
+    rig.start(std::move(s));
+    rig.feed(1, 4);
+    REQUIRE(rig.collect(10));
+    rig.stage.reset();
+    Run out{.frames = rig.sink.frames(),
+            .written = rig.backend.written(),
+            .blends = rig.backend.count("warp_blend"),
+            .ring_blends = rig.backend.count("warp_blend_ring"),
+            .allocs = rig.backend.count("alloc")};
+    for (const std::string& entry : rig.backend.log())
+      out.ring_writes += entry.starts_with("write ") ? 1U : 0U;
+    return out;
+  };
+  const Run plain = run(false);
+  const Run direct = run(true);
+  CHECK(shape_of(direct.frames) == shape_of(plain.frames));
+  CHECK(plain.blends == 6);
+  CHECK(plain.ring_writes == 10);
+  CHECK(direct.blends == 0);
+  CHECK(direct.ring_blends == 6);
+  CHECK(direct.ring_writes == 4);            // les images sources seules
+  CHECK(direct.allocs == plain.allocs - 1);  // une voie : un tampon d'image intermédiaire de moins
+  // Chaque slot écrit une fois, par le warp ou par write_ring, au protocole des sémaphores.
+  REQUIRE(direct.written.size() == direct.frames.size());
+  for (std::size_t i = 0; i < direct.frames.size(); ++i) {
+    INFO("sortie " << i);
+    CHECK(direct.written[i].slot == direct.frames[i].slot);
+    CHECK(direct.written[i].signal_value == direct.frames[i].ready_value);
+    CHECK(direct.written[i].wait_value == plain.written[i].wait_value);
+  }
+}
+
 TEST_CASE(
     "Étage gpu : avec plusieurs voies, entrée de RIFE et image intermédiaire dans deux tampons à tour de "
     "rôle",

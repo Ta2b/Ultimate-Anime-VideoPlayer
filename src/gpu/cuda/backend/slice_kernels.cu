@@ -218,12 +218,6 @@ __global__ void __launch_bounds__(kPixelThreads, kHeavyBlocksPerSm) ingest_area(
   store_rgb(p, x, y, area_at(p, x, y));
 }
 
-// kernels/spec/color.h unorm16 : clamp, × 65535, + 0,5, troncature.
-__device__ unsigned short unorm16(float v) {
-  v = v != v ? 0.0F : fminf(fmaxf(v, 0.0F), 1.0F);  // NaN donne 0
-  return static_cast<unsigned short>(v * 65535.0F + 0.5F);
-}
-
 __global__ void __launch_bounds__(kPixelThreads, kPixelBlocksPerSm) write_rgba16(WriteParams p) {
   const int x = static_cast<int>(blockIdx.x * blockDim.x + threadIdx.x);
   const int y = static_cast<int>(blockIdx.y * blockDim.y + threadIdx.y);
@@ -232,9 +226,7 @@ __global__ void __launch_bounds__(kPixelThreads, kPixelBlocksPerSm) write_rgba16
   const std::size_t i =
       static_cast<std::size_t>(y) * static_cast<std::size_t>(p.width) + static_cast<std::size_t>(x);
   const auto* in = static_cast<const __half*>(p.rgb);
-  const ushort4 pixel = make_ushort4(unorm16(__half2float(in[i])), unorm16(__half2float(in[plane + i])),
-                                     unorm16(__half2float(in[2 * plane + i])), 65535);
-  surf2Dwrite(pixel, p.surface, x * static_cast<int>(sizeof(ushort4)), y);
+  store_rgba16(p.surface, x, y, in[i], in[plane + i], in[2 * plane + i]);
 }
 
 dim3 grid_for(int width, int height) {

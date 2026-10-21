@@ -65,6 +65,13 @@ struct RingWrite {
   std::uint64_t signal_value = 0;  // RingFrame::ready_value, impaire, > wait_value
 };
 
+// Une image intermédiaire écrite directement dans un slot du ring, au protocole de write_ring :
+// ses noyaux attendent wait_value, le slot est signalé à signal_value après eux.
+struct RingTarget {
+  const RingSlotDesc* slot = nullptr;
+  RingWrite sync;
+};
+
 // Mesures d'une paire de sources (kernels/spec/detect.h), lues sur la luma non remplie.
 struct PairScores {
   SourceId left;
@@ -236,6 +243,29 @@ class KernelOps {
                                                      const kernels::Window& /*window*/, float /*t*/,
                                                      const Tensor& /*out*/) {
     return std::unexpected(Refusal{RefusalCode::FormatUnsupported, "gmfss_compose : absent de ce backend"});
+  }
+  // Les mêmes, l'image écrite directement dans le slot (étude 1, P4) : le code RGBA16 que write_ring
+  // écrirait de out, au bit près, sans le tenseur ni sa relecture. a, b et high_a ont la taille du
+  // slot. BackendCaps::ring_targets dit que le backend les a ; sinon, refusés.
+  virtual std::expected<void, Refusal> warp_blend_ring(const Tensor& /*a*/, const Tensor& /*b*/,
+                                                       const Motion& /*motion*/, float /*t*/,
+                                                       const RingTarget& /*target*/) {
+    return std::unexpected(Refusal{RefusalCode::FormatUnsupported, "warp_blend_ring : absent de ce backend"});
+  }
+  virtual std::expected<void, Refusal> warp_blend_poses_ring(const Tensor& /*a*/, const Tensor& /*b*/,
+                                                             const Motion& /*motion*/,
+                                                             const Motion* /*previous*/, float /*t*/,
+                                                             const RingTarget& /*target*/) {
+    return std::unexpected(
+        Refusal{RefusalCode::FormatUnsupported, "warp_blend_poses_ring : absent de ce backend"});
+  }
+  virtual std::expected<void, Refusal> gmfss_compose_ring(const Tensor& /*high_a*/, const Tensor& /*high_b*/,
+                                                          const Tensor& /*low_a*/, const Tensor& /*low_b*/,
+                                                          const Tensor& /*fusion*/,
+                                                          const kernels::Window& /*window*/, float /*t*/,
+                                                          const RingTarget& /*target*/) {
+    return std::unexpected(
+        Refusal{RefusalCode::FormatUnsupported, "gmfss_compose_ring : absent de ce backend"});
   }
   // Chaque élément du tenseur prend value : l'instant t du graphe « fusion » de GMFSS Union.
   virtual std::expected<void, Refusal> fill(const Tensor& /*tensor*/, float /*value*/) {

@@ -108,6 +108,16 @@ class TensorRtBackend final : public Backend, public KernelOps {
   std::expected<float, Refusal> flow_max_take(std::uint64_t ticket) override;
   std::expected<void, Refusal> warp_blend_poses(const Tensor& a, const Tensor& b, const Motion& motion,
                                                 const Motion* previous, float t, const Tensor& out) override;
+  // Les mêmes, directement dans le slot (BackendCaps::ring_targets).
+  std::expected<void, Refusal> warp_blend_ring(const Tensor& a, const Tensor& b, const Motion& motion,
+                                               float t, const RingTarget& ring) override;
+  std::expected<void, Refusal> warp_blend_poses_ring(const Tensor& a, const Tensor& b, const Motion& motion,
+                                                     const Motion* previous, float t,
+                                                     const RingTarget& ring) override;
+  std::expected<void, Refusal> gmfss_compose_ring(const Tensor& high_a, const Tensor& high_b,
+                                                  const Tensor& low_a, const Tensor& low_b,
+                                                  const Tensor& fusion, const kernels::Window& window,
+                                                  float t, const RingTarget& ring) override;
 
  private:
   // Une image décodée tenue jusqu'à la fin de son ingestion côté GPU : FFmpeg la réécrit dès
@@ -173,6 +183,14 @@ class TensorRtBackend final : public Backend, public KernelOps {
   // nul), slot importé, attente de wait_value enfilée.
   std::expected<ImportedSlot*, Refusal> begin_write(const Tensor& rgb, const RingSlotDesc& desc,
                                                     const RingWrite& sync, std::uintptr_t scratch = 0);
+  // La partie de begin_write propre au slot : protocole, import, attente de wait_value. Les voies
+  // sont ordonnées par l'appelant.
+  std::expected<ImportedSlot*, Refusal> begin_slot(const RingSlotDesc& desc, const RingWrite& sync);
+  // Où écrit un warp ou une composition : le tenseur out, ou directement le slot de ring.
+  struct Target {
+    const Tensor* out = nullptr;
+    const RingTarget* ring = nullptr;
+  };
   void release_retired();
   // warp_blend et warp_blend_poses : le même noyau, l'instant réglé ou non.
   struct Poses {
@@ -180,7 +198,27 @@ class TensorRtBackend final : public Backend, public KernelOps {
     const Motion* previous = nullptr;
   };
   std::expected<void, Refusal> warp(const Tensor& a, const Tensor& b, const Motion& motion,
-                                    const Poses& poses, float t, const Tensor& out);
+                                    const Poses& poses, float t, const Target& target);
+  std::expected<void, Refusal> compose(const Tensor& high_a, const Tensor& high_b, const Tensor& low_a,
+                                       const Tensor& low_b, const Tensor& fusion,
+                                       const kernels::Window& window, float t, const Target& target);
+  // launch(surface) chronométré sous name : surface nulle vers un tenseur ; vers un slot, l'attente
+  // de wait_value avant et le signal après, comme write_ring.
+  template <typename Launch>
+  std::expected<void, Refusal> launch_into(const Target& target, std::string_view name, Launch&& launch) {
+    ImportedSlot* imported = nullptr;
+    if (target.ring != nullptr) {
+      auto begun = begin_slot(*target.ring->slot, target.ring->sync);
+      if (!begun) return std::unexpected(std::move(begun.error()));
+      imported = *begun;
+    }
+    GpuTiming& timing = stage(name);
+    timing.begin(stream_);
+    std::expected<void, Refusal> launched = launch(imported != nullptr ? imported->surface() : 0);
+    timing.end(stream_);
+    if (!launched || imported == nullptr) return launched;
+    return imported->signal(target.ring->sync.signal_value, stream_);
+  }
   // Objet texture d'un tenseur FP16 lu par le filtre bilinéaire (warp, composition de GMFSS ;
   // tensorrt_textures.cpp), créé à sa première lecture et gardé ; 0 quand le tenseur n'y est pas
   // admissible (pitch, alignement, taille) : le noyau garde la lecture exacte.

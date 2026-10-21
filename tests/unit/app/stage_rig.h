@@ -66,6 +66,9 @@ class FakeBackend final : public gpu::Backend, public gpu::KernelOps {
   void refuse_ingest(SourceId id) { refused_ = id; }
   // rife_pair offert ; faux par défaut : refusé comme par un backend qui ne l'a pas.
   void offer_rife_pair(bool on) { rife_pair_ = on; }
+  // BackendCaps::ring_targets : warp_blend_ring et les autres écrivent le slot (written()) au lieu
+  // d'un tenseur ; faux par défaut.
+  void offer_ring_targets(bool on) { ring_targets_ = on; }
   // Le mouvement maximal que rendent flow_max_now et flow_max_take, en pixels ; 0 par défaut.
   void motion_max(float pixels) {
     const std::scoped_lock lock(mutex_);
@@ -83,7 +86,7 @@ class FakeBackend final : public gpu::Backend, public gpu::KernelOps {
 
   // gpu::Backend
   gpu::BackendCaps capabilities() const override {
-    return {.name = "factice", .device_name = "aucun", .lanes = lanes_};
+    return {.name = "factice", .device_name = "aucun", .lanes = lanes_, .ring_targets = ring_targets_};
   }
   gpu::DeviceMatch match(const DeviceUuid& /*render_device*/) const override {
     return gpu::DeviceMatch::Same;
@@ -196,10 +199,31 @@ class FakeBackend final : public gpu::Backend, public gpu::KernelOps {
   std::expected<void, Refusal> fill(const gpu::Tensor& /*tensor*/, float /*value*/) override {
     return note("fill");
   }
+  std::expected<void, Refusal> warp_blend_ring(const gpu::Tensor& /*a*/, const gpu::Tensor& /*b*/,
+                                               const gpu::Motion& /*motion*/, float /*t*/,
+                                               const gpu::RingTarget& ring) override {
+    return note_ring("warp_blend_ring", ring);
+  }
+  std::expected<void, Refusal> warp_blend_poses_ring(const gpu::Tensor& /*a*/, const gpu::Tensor& /*b*/,
+                                                     const gpu::Motion& /*motion*/,
+                                                     const gpu::Motion* /*previous*/, float /*t*/,
+                                                     const gpu::RingTarget& ring) override {
+    return note_ring("warp_blend_poses_ring", ring);
+  }
+  std::expected<void, Refusal> gmfss_compose_ring(const gpu::Tensor& /*high_a*/,
+                                                  const gpu::Tensor& /*high_b*/, const gpu::Tensor& /*low_a*/,
+                                                  const gpu::Tensor& /*low_b*/, const gpu::Tensor& /*fusion*/,
+                                                  const kernels::Window& /*window*/, float /*t*/,
+                                                  const gpu::RingTarget& ring) override {
+    return note_ring("gmfss_compose_ring", ring);
+  }
 
  private:
   using PairKey = std::pair<std::uint32_t, std::uint32_t>;
   std::expected<void, Refusal> note(std::string entry, std::uintptr_t target = 0);
+  // Comme write_ring : entry au journal et l'écriture du slot dans written() ; refusé sans
+  // offer_ring_targets.
+  std::expected<void, Refusal> note_ring(std::string entry, const gpu::RingTarget& ring);
   void push(std::string entry);  // sous le verrou
   gpu::PairScores scores_of(const gpu::Tensor& a, const gpu::Tensor& b);
 
@@ -220,6 +244,7 @@ class FakeBackend final : public gpu::Backend, public gpu::KernelOps {
   std::uint64_t fence_ = 0;
   bool ahead_ = true;
   bool rife_pair_ = false;
+  bool ring_targets_ = false;
   std::optional<SourceId> refused_;
 };
 

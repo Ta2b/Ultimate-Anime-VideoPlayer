@@ -42,7 +42,8 @@ namespace ajp::gpu {
 // 6 : voies de calcul (gpu/lanes.h) : Backend::use_lane, BackendCaps::lanes.
 // 7 : KernelOps::rife_pair (une paire sans réécrire le maillage de RIFE).
 // 8 : KernelOps::soft_splat_fill (les splats d'un instant et le remplissage de l'instant ensemble).
-inline constexpr int kBackendAbi = 8;
+// 9 : KernelOps::warp_blend_ring, warp_blend_poses_ring, gmfss_compose_ring ; BackendCaps::ring_targets.
+inline constexpr int kBackendAbi = 9;
 
 using DeviceUuid = ajp::DeviceUuid;
 
@@ -77,6 +78,8 @@ struct BackendCaps {
   std::vector<PixelFormat> import_formats;  // formats acceptés par import()
   // Voies qui se recouvrent vraiment sur l'appareil (gpu/lanes.h) ; 1 : use_lane ne change rien.
   int lanes = 1;
+  // Images intermédiaires écrites directement dans le slot (KernelOps::warp_blend_ring…).
+  bool ring_targets = false;
 };
 
 // Un modèle ONNX tel que livré, identifié par son hachage.

@@ -1,6 +1,7 @@
 // GMFSS Fortuna dans le backend TensorRT : entrée du graphe « paire » depuis deux images RGB
 // (gmfss_frames, le noyau de rife_input sans ses plans constants), softmax splatting entre les
 // deux graphes (soft_splat, gmfss_kernels.cu) et composition après SPAN (gmfss_compose).
+#include <array>
 #include <cstddef>
 #include <cstdint>
 #include <format>
@@ -216,10 +217,34 @@ std::expected<void, Refusal> TensorRtBackend::gmfss_compose(const Tensor& high_a
                                                             const Tensor& fusion,
                                                             const kernels::Window& window, float t,
                                                             const Tensor& out) {
-  if (!fp16_planes(out, 3) || !fp16_planes(high_a, 4) || !fp16_planes(high_b, 4) || !fp16_planes(low_a, 4) ||
-      !fp16_planes(low_b, 4) || !fp16_planes(fusion, 3) || width_of(high_a) != width_of(out) ||
-      height_of(high_a) != height_of(out) || width_of(high_b) != width_of(out) ||
-      height_of(high_b) != height_of(out) || width_of(low_b) != width_of(low_a) ||
+  if (!fp16_planes(out, 3) || width_of(high_a) != width_of(out) || height_of(high_a) != height_of(out)) {
+    return refuse(RefusalCode::ShapeInvalid, "gmfss_compose : sortie FP16 de 3 plans, taille des agrandies");
+  }
+  return compose(high_a, high_b, low_a, low_b, fusion, window, t, Target{.out = &out});
+}
+
+std::expected<void, Refusal> TensorRtBackend::gmfss_compose_ring(const Tensor& high_a, const Tensor& high_b,
+                                                                 const Tensor& low_a, const Tensor& low_b,
+                                                                 const Tensor& fusion,
+                                                                 const kernels::Window& window, float t,
+                                                                 const RingTarget& ring) {
+  if (ring.slot == nullptr || ring.slot->width != width_of(high_a) ||
+      ring.slot->height != height_of(high_a)) {
+    return refuse(RefusalCode::ShapeInvalid, std::format("gmfss_compose_ring : slot {}x{} attendu",
+                                                         width_of(high_a), height_of(high_a)));
+  }
+  return compose(high_a, high_b, low_a, low_b, fusion, window, t, Target{.ring = &ring});
+}
+
+std::expected<void, Refusal> TensorRtBackend::compose(const Tensor& high_a, const Tensor& high_b,
+                                                      const Tensor& low_a, const Tensor& low_b,
+                                                      const Tensor& fusion, const kernels::Window& window,
+                                                      float t, const Target& target) {
+  const int width = width_of(high_a);
+  const int height = height_of(high_a);
+  if (!fp16_planes(high_a, 4) || !fp16_planes(high_b, 4) || !fp16_planes(low_a, 4) ||
+      !fp16_planes(low_b, 4) || !fp16_planes(fusion, 3) || width_of(high_b) != width ||
+      height_of(high_b) != height || width_of(low_b) != width_of(low_a) ||
       height_of(low_b) != height_of(low_a)) {
     return refuse(
         RefusalCode::ShapeInvalid,
@@ -228,10 +253,10 @@ std::expected<void, Refusal> TensorRtBackend::gmfss_compose(const Tensor& high_a
   }
   const int lw = width_of(low_a);
   const int lh = height_of(low_a);
-  if (width_of(out) % lw != 0 || height_of(out) % lh != 0 || width_of(out) / lw != height_of(out) / lh) {
+  if (width % lw != 0 || height % lh != 0 || width / lw != height / lh) {
     return refuse(RefusalCode::ShapeInvalid,
                   std::format("gmfss_compose : sortie {}x{} pour un travail {}x{}, multiple entier attendu",
-                              width_of(out), height_of(out), lw, lh));
+                              width, height, lw, lh));
   }
   if (window.x < 0 || window.y < 0 || window.width != lw || window.height != lh ||
       window.x > width_of(fusion) - lw || window.y > height_of(fusion) - lh) {
@@ -246,30 +271,29 @@ std::expected<void, Refusal> TensorRtBackend::gmfss_compose(const Tensor& high_a
   const GmfssComposeParams params{
       .high_a = address(high_a),
       .high_b = address(high_b),
-      .width = width_of(out),
-      .height = height_of(out),
+      .width = width,
+      .height = height,
       .low_a = address(low_a),
       .low_b = address(low_b),
       .low_width = lw,
       .low_height = lh,
-      .scale = width_of(out) / lw,
+      .scale = width / lw,
       .fusion = address(fusion),
       .fusion_width = width_of(fusion),
       .fusion_height = height_of(fusion),
       .window_x = window.x,
       .window_y = window.y,
       .t = t,
-      .out = address(out),
+      .out = target.out != nullptr ? address(*target.out) : nullptr,
       .textures = {.low_a = texture(low_a), .low_b = texture(low_b), .fusion = texture(fusion)}};
-  if (auto ok =
-          order({high_a.handle, high_b.handle, low_a.handle, low_b.handle, fusion.handle}, {out.handle});
-      !ok)
-    return ok;
-  GpuTiming& timing = stage("composition de GMFSS");
-  timing.begin(stream_);
-  auto launched = cuda_check(launch_gmfss_compose(params, stream_), "gmfss_compose<<<>>>");
-  timing.end(stream_);
-  return launched;
+  const std::array reads{high_a.handle, high_b.handle, low_a.handle, low_b.handle, fusion.handle};
+  const std::array writes{target.out != nullptr ? target.out->handle : 0};
+  if (auto ok = order(reads, std::span(writes).first(target.out != nullptr ? 1 : 0)); !ok) return ok;
+  return launch_into(target, "composition de GMFSS", [&](cudaSurfaceObject_t surface) {
+    GmfssComposeParams into = params;
+    into.surface = surface;
+    return cuda_check(launch_gmfss_compose(into, stream_), "gmfss_compose<<<>>>");
+  });
 }
 
 }  // namespace ajp::gpu::cuda

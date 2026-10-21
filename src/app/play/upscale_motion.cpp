@@ -58,9 +58,24 @@ std::expected<void, Refusal> UpscaleStage::settle_motion() {
   return {};
 }
 
+std::expected<void, Refusal> UpscaleStage::blend(const gpu::Tensor& a, const gpu::Tensor& b,
+                                                 const gpu::Motion& motion, float t,
+                                                 const Target& out) const {
+  gpu::KernelOps& ops = *setup_.backend->kernels();
+  return out.ring != nullptr ? ops.warp_blend_ring(a, b, motion, t, *out.ring)
+                             : ops.warp_blend(a, b, motion, t, *out.tensor);
+}
+
+std::expected<void, Refusal> UpscaleStage::blend_poses(const gpu::Tensor& a, const gpu::Tensor& b,
+                                                       const gpu::Motion& motion, const gpu::Motion* previous,
+                                                       float t, const Target& out) const {
+  gpu::KernelOps& ops = *setup_.backend->kernels();
+  return out.ring != nullptr ? ops.warp_blend_poses_ring(a, b, motion, previous, t, *out.ring)
+                             : ops.warp_blend_poses(a, b, motion, previous, t, *out.tensor);
+}
+
 std::expected<void, Refusal> UpscaleStage::interpolate_by_motion(std::uint32_t output, const gpu::Tensor& a,
-                                                                 const gpu::Tensor& b,
-                                                                 const gpu::Tensor& out) {
+                                                                 const gpu::Tensor& b, const Target& out) {
   gpu::KernelOps& ops = *setup_.backend->kernels();
   const float t = instants_[output].t;
   const gpu::Motion middle = mid_motion(mid_);
@@ -123,7 +138,7 @@ std::expected<void, Refusal> UpscaleStage::interpolate_by_motion(std::uint32_t o
     if (warps_spanned()) {
       if (auto ok = span_current(); !ok) return ok;
     }
-    return ops.warp_blend(a, b, other, 0.5F, out);
+    return blend(a, b, other, 0.5F, out);
   }
   // Warp après SPAN : b agrandie ici (si la relecture du mouvement maximal ne l'a pas déjà enfilée),
   // après la passe de RIFE et la mesure que l'hôte attend : elles ne passent pas derrière SPAN.
@@ -132,12 +147,12 @@ std::expected<void, Refusal> UpscaleStage::interpolate_by_motion(std::uint32_t o
   }
   if (poses_ && before_ != PairMotion::Unknown) {
     const gpu::Motion previous = mid_motion(mid_ ^ 1U);
-    return ops.warp_blend_poses(a, b, middle, before_ == PairMotion::Moving ? &previous : nullptr, t, out);
+    return blend_poses(a, b, middle, before_ == PairMotion::Moving ? &previous : nullptr, t, out);
   }
-  if (single_run_ || t == 0.5F) return ops.warp_blend(a, b, middle, t, out);
+  if (single_run_ || t == 0.5F) return blend(a, b, middle, t, out);
   // Mouvement fort : RIFE à cet instant, son mouvement tel quel.
   if (auto ok = run_motion(t, other.flow, other.mask); !ok) return ok;
-  return ops.warp_blend(a, b, other, 0.5F, out);
+  return blend(a, b, other, 0.5F, out);
 }
 
 }  // namespace ajp::app::play

@@ -198,6 +198,13 @@ un réglage à faire taire.
   gardée »). Test `[media][decoder][nvidia]` « surfaces directes », puis une lecture longue HEVC
   10 bits sans « données invalides » au journal, et la VRAM comparée à 10b9e9f (environ 80 Mo de
   plus en 1080p).
+- **Images intermédiaires écrites dans le slot** (étude 1, 5.2 ; ABI des backends 9) : le warp de
+  RIFE mouvement et la composition de GMFSS après SPAN (et le warp sans SPAN) écrivent le slot
+  RGBA16 eux-mêmes, sans le tenseur de 50 Mo en 4K ni la passe `write_rgba16` ; le journal dit
+  « images intermédiaires écrites directement dans le slot du ring ». Pas avec RTX HDR. Le code
+  écrit est celui du chemin par tenseur au bit près (arrondi FP16 puis `unorm16`) : un export
+  RIFE mouvement ×2 4K sur 10b9e9f et sur ce commit doit donner des images identiques (md5 par
+  image), et `nsys` ne doit plus montrer `write_rgba16` qu'une fois par image source.
 
 ## Linux sur RX 6500M (RDNA2 Navi 24, 4 Go)
 

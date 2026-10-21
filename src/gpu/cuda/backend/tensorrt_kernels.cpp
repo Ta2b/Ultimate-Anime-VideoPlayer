@@ -211,24 +211,29 @@ std::expected<ImportedSlot*, Refusal> TensorRtBackend::begin_write(const Tensor&
                                                                    const RingSlotDesc& desc,
                                                                    const RingWrite& sync,
                                                                    std::uintptr_t scratch) {
-  if (sync.signal_value <= sync.wait_value || sync.signal_value % 2 == 0) {
-    return refuse(RefusalCode::SequenceOrder,
-                  std::format("slot {} : valeur à signaler {} impaire et > {} attendue", desc.index,
-                              sync.signal_value, sync.wait_value));
-  }
   if (!rgb_tensor(rgb, desc.width, desc.height)) {
     return refuse(RefusalCode::ShapeInvalid, std::format("slot {} : tenseur FP16 1×3×{}×{} attendu",
                                                          desc.index, desc.height, desc.width));
   }
   if (auto ok = bind(); !ok) return std::unexpected(std::move(ok.error()));
-  // Ring recréé : les écritures de l'ancienne génération, sur toutes les voies, avant le relâche
-  // de ses imports (slot) ; puis l'écriture elle-même, qui lit rgb.
-  if (desc.generation > generation_) {
-    if (auto ok = join(); !ok) return std::unexpected(std::move(ok.error()));
-  }
   const std::array scratch_writes{scratch};
   if (auto ok = order(std::span(&rgb.handle, 1), std::span(scratch_writes).first(scratch != 0 ? 1 : 0)); !ok)
     return std::unexpected(std::move(ok.error()));
+  return begin_slot(desc, sync);
+}
+
+std::expected<ImportedSlot*, Refusal> TensorRtBackend::begin_slot(const RingSlotDesc& desc,
+                                                                  const RingWrite& sync) {
+  if (sync.signal_value <= sync.wait_value || sync.signal_value % 2 == 0) {
+    return refuse(RefusalCode::SequenceOrder,
+                  std::format("slot {} : valeur à signaler {} impaire et > {} attendue", desc.index,
+                              sync.signal_value, sync.wait_value));
+  }
+  // Ring recréé : les écritures de l'ancienne génération, sur toutes les voies, avant le relâche
+  // de ses imports (slot).
+  if (desc.generation > generation_) {
+    if (auto ok = join(); !ok) return std::unexpected(std::move(ok.error()));
+  }
   auto imported = slot(desc);
   if (!imported) return std::unexpected(std::move(imported.error()));
   if (sync.wait_value != 0) {

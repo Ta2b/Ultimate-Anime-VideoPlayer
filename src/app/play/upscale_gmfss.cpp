@@ -155,7 +155,7 @@ std::expected<void, Refusal> UpscaleStage::interpolate_gmfss(std::uint32_t outpu
 std::expected<void, Refusal> UpscaleStage::interpolate_gmfss_spanned(std::uint32_t output,
                                                                      const gpu::Tensor& a,
                                                                      const gpu::Tensor& b,
-                                                                     const gpu::Tensor& out) {
+                                                                     const Target& out) {
   // SPAN de b avant ses splats (a l'a été à son tour) ; les quatre splats du détail rejoignent le
   // passage des six de la fusion.
   if (auto ok = span_current(); !ok) return ok;
@@ -177,9 +177,15 @@ std::expected<void, Refusal> UpscaleStage::interpolate_gmfss_spanned(std::uint32
                        .grid = gmfss_.spanned_grid};
   }
   if (auto ok = run_gmfss(output, extra); !ok) return ok;
-  return setup_.backend->kernels()->gmfss_compose(gmfss_.high[0]->tensor(), gmfss_.high[1]->tensor(),
-                                                  gmfss_.low[0]->tensor(), gmfss_.low[1]->tensor(),
-                                                  rife_out_->tensor(), gmfss_.window, t, out);
+  gpu::KernelOps& ops = *setup_.backend->kernels();
+  const gpu::Tensor& high_a = gmfss_.high[0]->tensor();
+  const gpu::Tensor& high_b = gmfss_.high[1]->tensor();
+  const gpu::Tensor& low_a = gmfss_.low[0]->tensor();
+  const gpu::Tensor& low_b = gmfss_.low[1]->tensor();
+  return out.ring != nullptr ? ops.gmfss_compose_ring(high_a, high_b, low_a, low_b, rife_out_->tensor(),
+                                                      gmfss_.window, t, *out.ring)
+                             : ops.gmfss_compose(high_a, high_b, low_a, low_b, rife_out_->tensor(),
+                                                 gmfss_.window, t, *out.tensor);
 }
 
 }  // namespace ajp::app::play

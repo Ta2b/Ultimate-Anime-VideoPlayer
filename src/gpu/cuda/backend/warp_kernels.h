@@ -30,6 +30,9 @@ struct WarpBlendParams {
   bool keep_poses = false;
   const void* previous_flow = nullptr;
   void* out = nullptr;  // 1 × 3 × height × width, FP16
+  // Non nul : la sortie va dans ce slot RGBA16 UNORM du ring (width × height), au code que
+  // write_rgba16 écrirait de out, et out n'est pas écrit (étude 1, P4).
+  cudaSurfaceObject_t surface = 0;
   // Objets texture des mêmes tenseurs (vus en largeur × plans · hauteur), ou 0. Tous ceux des
   // tenseurs lus présents, largeur paire et sortie alignée sur 4 octets : le noyau lit par le
   // filtre bilinéaire matériel et écrit deux pixels par fil (half2) ; sinon, la lecture exacte.

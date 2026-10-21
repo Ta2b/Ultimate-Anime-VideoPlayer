@@ -99,10 +99,25 @@ class UpscaleStage final : public RingStage {
   std::expected<std::uint32_t, Refusal> outputs(const DecodedFrame& frame) override;
   std::expected<Output, Refusal> produce(const DecodedFrame& frame, std::uint32_t output, std::uint32_t slot,
                                          std::uint64_t wait_value, std::uint64_t signal_value) override;
+  // Où va une image intermédiaire : un tenseur, ou directement le slot du ring (ring_direct_).
+  struct Target {
+    const gpu::Tensor* tensor = nullptr;
+    const gpu::RingTarget* ring = nullptr;
+  };
   // Image intermédiaire output + 1 sur outputs_ par le mouvement de rife_motion, de a et b dans out
   // (les trois à une taille : celle de travail, ou de sortie après SPAN).
   std::expected<void, Refusal> interpolate_by_motion(std::uint32_t output, const gpu::Tensor& a,
-                                                     const gpu::Tensor& b, const gpu::Tensor& out);
+                                                     const gpu::Tensor& b, const Target& out);
+  // warp_blend et warp_blend_poses vers out (KernelOps, ou leurs variantes _ring).
+  std::expected<void, Refusal> blend(const gpu::Tensor& a, const gpu::Tensor& b, const gpu::Motion& motion,
+                                     float t, const Target& out) const;
+  std::expected<void, Refusal> blend_poses(const gpu::Tensor& a, const gpu::Tensor& b,
+                                           const gpu::Motion& motion, const gpu::Motion* previous, float t,
+                                           const Target& out) const;
+  // Le warp et la composition écrivent l'image intermédiaire directement dans le slot
+  // (BackendCaps::ring_targets, étude 1) : après SPAN, ou sans SPAN par la variante mouvement ; pas
+  // avec RTX HDR, qui lit un tenseur. middle_outs_ et middles_ ne sont alors pas alloués.
+  bool ring_direct_ = false;
   // RIFE image à l'instant t, recadrée dans middle().
   std::expected<void, Refusal> interpolate_image(float t);
   // La variante mouvement de RIFE à l'instant t, dans flow et mask.
@@ -169,7 +184,7 @@ class UpscaleStage final : public RingStage {
   std::expected<void, Refusal> allocate_gmfss();
   std::expected<void, Refusal> interpolate_gmfss(std::uint32_t output);
   std::expected<void, Refusal> interpolate_gmfss_spanned(std::uint32_t output, const gpu::Tensor& a,
-                                                         const gpu::Tensor& b, const gpu::Tensor& out);
+                                                         const gpu::Tensor& b, const Target& out);
   // Le graphe « paire » à la première image intermédiaire de la paire, puis les splats de l'instant
   // (les six de la fusion, et extra) et le graphe « fusion » dans rife_out_.
   std::expected<void, Refusal> run_gmfss(std::uint32_t output,

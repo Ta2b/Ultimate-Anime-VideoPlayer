@@ -228,7 +228,8 @@ BackendCaps TensorRtBackend::capabilities() const {
       .int8 = false,
       .matrix_units = true,
       .import_formats = {PixelFormat::Nv12, PixelFormat::P010, PixelFormat::P016},
-      .lanes = lanes_};
+      .lanes = lanes_,
+      .ring_targets = true};
 }
 
 DeviceMatch TensorRtBackend::match(const DeviceUuid& render_device) const {

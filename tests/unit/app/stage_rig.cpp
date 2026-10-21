@@ -80,6 +80,15 @@ std::expected<void, Refusal> FakeBackend::note(std::string entry, std::uintptr_t
   return {};
 }
 
+std::expected<void, Refusal> FakeBackend::note_ring(std::string entry, const gpu::RingTarget& ring) {
+  const std::scoped_lock lock(mutex_);
+  if (!ring_targets_) return refuse(RefusalCode::FormatUnsupported, std::format("{} : absent", entry));
+  push(std::move(entry));
+  written_.push_back(
+      {.slot = ring.slot->index, .wait_value = ring.sync.wait_value, .signal_value = ring.sync.signal_value});
+  return {};
+}
+
 void FakeBackend::push(std::string entry) {
   constexpr std::array<std::string_view, gpu::kLanes> kNames{"measure", "upscale", "interpolate"};
   laned_.push_back(std::format("{} {}", kNames[gpu::lane_index(lane_)], entry));

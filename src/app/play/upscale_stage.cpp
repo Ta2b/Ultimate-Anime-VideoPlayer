@@ -132,7 +132,12 @@ std::expected<std::unique_ptr<VideoStage>, Refusal> UpscaleStage::start(VideoSta
 
 std::expected<void, Refusal> UpscaleStage::allocate() {
   gpu::Backend& backend = *setup_.backend;
-  copies_ = backend.capabilities().lanes > 1 ? 2U : 1U;
+  const gpu::BackendCaps caps = backend.capabilities();
+  copies_ = caps.lanes > 1 ? 2U : 1U;
+  ring_direct_ =
+      caps.ring_targets && !setup_.true_hdr && (warps_spanned() || (by_motion() && setup_.engine == nullptr));
+  if (ring_direct_)
+    log_channel("gpu")->info("images intermédiaires écrites directement dans le slot du ring");
   const int w = setup_.work_width;
   const int h = setup_.work_height;
   const auto alloc = [&](std::unique_ptr<gpu::TensorBuffer>& into, const gpu::Shape& shape) {
@@ -148,7 +153,7 @@ std::expected<void, Refusal> UpscaleStage::allocate() {
     for (auto& spanned : spanned_) {
       if (auto ok = alloc(spanned, out_shape); !ok) return ok;
     }
-    for (std::uint32_t i = 0; i < copies_; ++i) {
+    for (std::uint32_t i = 0; i < copies_ && !ring_direct_; ++i) {
       if (auto ok = alloc(middle_outs_[i], out_shape); !ok) return ok;
     }
   } else if (setup_.engine != nullptr) {
@@ -159,7 +164,7 @@ std::expected<void, Refusal> UpscaleStage::allocate() {
       if (auto ok = alloc(small, planes(3, setup_.rife_width, setup_.rife_height)); !ok) return ok;
     }
   }
-  if (interpolates() && !warps_spanned()) {
+  if (interpolates() && !warps_spanned() && !ring_direct_) {
     for (std::uint32_t i = 0; i < copies_; ++i) {
       if (auto ok = alloc(middles_[i], planes(3, w, h)); !ok) return ok;
     }
@@ -368,22 +373,35 @@ std::expected<RingStage::Output, Refusal> UpscaleStage::produce(const DecodedFra
   const Output made{.pts_us = instant.pts_us, .left = previous_->id, .right = frame.id};
   use_lane(gpu::Lane::Interpolate);
   next_middle();  // l'autre tampon : SPAN ou l'écriture du ring lit peut-être encore le précédent
+  const gpu::RingTarget ring{.slot = &setup_.slots[slot], .sync = sync};
   if (warps_spanned()) {
-    const gpu::Tensor& out = middle_out();
+    const Target out = ring_direct_ ? Target{.ring = &ring} : Target{.tensor = &middle_out()};
     if (auto ok = gmfss() ? interpolate_gmfss_spanned(output, spanned(current_ ^ 1U), spanned(current_), out)
                           : interpolate_by_motion(output, spanned(current_ ^ 1U), spanned(current_), out);
         !ok) {
       return std::unexpected(std::move(ok.error()));
     }
     use_lane(gpu::Lane::Upscale);
-    if (auto ok = write_slot(out, slot, sync); !ok) return std::unexpected(std::move(ok.error()));
+    if (out.tensor != nullptr) {
+      if (auto ok = write_slot(*out.tensor, slot, sync); !ok) return std::unexpected(std::move(ok.error()));
+    }
+    if (last) previous_ = Previous{.pts_us = frame.pts_us, .id = frame.id, .epoch = frame.epoch};
+    return made;
+  }
+  if (by_motion() && ring_direct_) {  // sans SPAN : le warp écrit la sortie elle-même
+    if (auto ok = interpolate_by_motion(output, rgb_[current_ ^ 1U]->tensor(), now, Target{.ring = &ring});
+        !ok)
+      return std::unexpected(std::move(ok.error()));
+    use_lane(gpu::Lane::Upscale);
+    output_has_source_ = false;
     if (last) previous_ = Previous{.pts_us = frame.pts_us, .id = frame.id, .epoch = frame.epoch};
     return made;
   }
   if (by_motion() || gmfss() || drba()) {
     auto ok = gmfss()  ? interpolate_gmfss(output)
               : drba() ? interpolate_drba(output)
-                       : interpolate_by_motion(output, rgb_[current_ ^ 1U]->tensor(), now, middle());
+                       : interpolate_by_motion(output, rgb_[current_ ^ 1U]->tensor(), now,
+                                               Target{.tensor = &middle()});
     if (!ok) return std::unexpected(std::move(ok.error()));
   } else if (auto ok = interpolate_image(instant.t); !ok) {
     return std::unexpected(std::move(ok.error()));
