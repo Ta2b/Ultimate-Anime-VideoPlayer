@@ -36,7 +36,16 @@ find_program(AJP_SPIRV_VAL NAMES spirv-val HINTS "$ENV{VULKAN_SDK}/bin")
 # En cache : include_guard(GLOBAL) n'exécute ce fichier qu'une fois, et un autre dossier qui
 # appelle ajp_add_spirv ne verrait pas une variable ordinaire posée ici.
 set(AJP_SPIRV_SCRIPT "${CMAKE_CURRENT_LIST_FILE}" CACHE INTERNAL "Script de conversion SPIR-V vers C++")
-set(AJP_SPIRV_TARGET_ENV "vulkan1.2" CACHE STRING "Environnement cible de glslc et spirv-val")
+# La cible de glslc et spirv-val est la version minimale qu'exige le lecteur (kMinApiVersion,
+# src/gpu/vulkan/compute/vulkan.h), lue là pour ne jamais s'en écarter : un module plus récent
+# serait refusé par un appareil que le lecteur accepte, un plus ancien priverait les shaders du
+# cœur de cette version. tools/ci/check-shaders.sh la lit de même.
+file(STRINGS "${CMAKE_CURRENT_LIST_DIR}/../src/gpu/vulkan/compute/vulkan.h" ajp_min_api
+     REGEX "kMinApiVersion = VK_API_VERSION_1_[0-9]+;")
+if(NOT ajp_min_api MATCHES "VK_API_VERSION_1_([0-9]+)")
+  message(FATAL_ERROR "kMinApiVersion introuvable dans src/gpu/vulkan/compute/vulkan.h")
+endif()
+set(AJP_SPIRV_TARGET_ENV "vulkan1.${CMAKE_MATCH_1}" CACHE INTERNAL "Environnement cible de glslc et spirv-val")
 
 # Une commande par shader : glslc vers un .spv temporaire, spirv-val, puis la liste de mots.
 # Le .inc n'est écrit qu'après une validation réussie : un module refusé ne reste jamais à jour.

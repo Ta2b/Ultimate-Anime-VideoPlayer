@@ -18,7 +18,9 @@ namespace ajp::gpu::vk {
 using DeviceUuid = std::array<std::uint8_t, VK_UUID_SIZE>;
 
 // Version minimale de l'instance et de l'appareil : timeline semaphores et stockage 16 bits
-// sont du cœur en 1.2, comme pour libplacebo (PL_VK_MIN_VERSION).
+// sont du cœur en 1.2, comme pour libplacebo (PL_VK_MIN_VERSION). cmake/AjpSpirv.cmake et
+// tools/ci/check-shaders.sh lisent cette ligne pour la cible des shaders (vulkan1.N) : en garder
+// la forme « kMinApiVersion = VK_API_VERSION_1_N; ».
 inline constexpr std::uint32_t kMinApiVersion = VK_API_VERSION_1_2;
 
 }  // namespace ajp::gpu::vk
