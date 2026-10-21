@@ -108,6 +108,13 @@ std::expected<void, Refusal> TensorRtBackend::soft_splat_all(std::span<const Ker
       return refuse(RefusalCode::ShapeInvalid,
                     "soft_splat : source, mouvement (3 plans) et sortie FP16 de même taille attendus");
     }
+    // La sortie n'est jamais une entrée : le splat lit la source et le mouvement de tous les
+    // travaux pendant que la normalisation écrit les sorties.
+    const auto same = [](const auto& a, const auto& b) {
+      return a.handle == b.handle && a.offset == b.offset;
+    };
+    if (same(job.out, job.motion) || same(job.out, job.source))
+      return refuse(RefusalCode::ShapeInvalid, "soft_splat : la sortie est l'une des entrées");
     if (!(job.s >= 0.0F && job.s <= 1.0F))
       return refuse(RefusalCode::FieldOutOfRange,
                     std::format("soft_splat : instant {} hors de [0, 1]", job.s));

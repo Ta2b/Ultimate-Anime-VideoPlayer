@@ -157,6 +157,11 @@ AVBufferRef* ExportWriter::vulkan_frames() const {
   return encoder.frames_context();
 }
 
+AVBufferRef* ExportWriter::cuda_frames() const {
+  const VideoEncoder& encoder = state_->encoder;
+  return encoder.upload() == Upload::Cuda ? encoder.frames_context() : nullptr;
+}
+
 WriterProgress ExportWriter::progress() const {
   return WriterProgress{.frames = frames_.load(), .bytes = bytes_.load()};
 }

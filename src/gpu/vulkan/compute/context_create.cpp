@@ -245,8 +245,10 @@ Done VkContext::create_device(const CreateOptions& options) {
     extensions.push_back(name.c_str());
   }
 
+  // Le modèle mémoire Vulkan vient avec sa portée Device : activé seul, les atomiques de portée
+  // Device des noyaux (block_diff, flow_max, gmfss_splat) seraient hors contrat (VUID 06265).
   const bool matrix = options.cooperative_matrix && available.cooperative_matrix &&
-                      available.vulkan_memory_model &&
+                      available.vulkan_memory_model && available.vulkan_memory_model_device_scope &&
                       has_extension(present, VK_KHR_COOPERATIVE_MATRIX_EXTENSION_NAME);
   std::vector<std::string> enabled_extensions = options.extensions;
   if (matrix && std::ranges::find(options.extensions, VK_KHR_COOPERATIVE_MATRIX_EXTENSION_NAME) ==
@@ -287,7 +289,8 @@ Done VkContext::create_device(const CreateOptions& options) {
                                        .pNext = extension_chain,
                                        .shaderFloat16 = flag(available.shader_float16),
                                        .timelineSemaphore = VK_TRUE,
-                                       .vulkanMemoryModel = flag(matrix)};
+                                       .vulkanMemoryModel = flag(matrix),
+                                       .vulkanMemoryModelDeviceScope = flag(matrix)};
   if (caps_.api_version >= VK_API_VERSION_1_3) v12.pNext = &v13;
   VkPhysicalDeviceVulkan11Features v11{.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_1_FEATURES,
                                        .pNext = &v12,

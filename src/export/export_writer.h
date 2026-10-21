@@ -61,8 +61,8 @@ struct Picture {
   std::size_t bytes = 0;         // étendue de la mémoire, du premier plan à la fin du dernier
   std::int64_t pts_us = 0;       // instant de présentation, depuis le début du fichier (RingFrame)
   bool device = false;           // planes : adresses CUDA (upload() Cuda), pas de l'hôte
-  // Ou une image Vulkan de l'encodeur (vulkan_frames()), déjà rendue et synchronisée par son
-  // sémaphore : l'écriture la prend et la libère ; planes, bytes et release ne comptent pas.
+  // Ou une image de l'encodeur (vulkan_frames(), cuda_frames()), déjà rendue ou copiée sur le
+  // GPU : l'écriture la prend et la libère ; planes, bytes et release ne comptent pas.
   AVFrame* frame = nullptr;
   std::function<void()> release;
 };
@@ -88,6 +88,9 @@ class ExportWriter {
   // les Picture peuvent être ses images (Picture::frame). nullptr : autre encodeur, ou son propre
   // appareil.
   AVBufferRef* vulkan_frames() const;
+  // Le contexte d'images CUDA de l'encodeur (NVENC), emprunté : les Picture peuvent être ses images
+  // (Picture::frame), copiées sur le GPU. nullptr : autre encodeur.
+  AVBufferRef* cuda_frames() const;
   const ColorInfo& color() const { return color_; }        // l'étiquette du flux : le rendu code ainsi
   const std::string& encoder() const { return encoder_; }  // « HEVC 10 bits · NVENC »
 

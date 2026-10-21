@@ -107,13 +107,15 @@ TEST_CASE("exécution : les enregistrements d'un lot partagent un VkSubmitInfo",
   CHECK(require_value(b->runs().value()) == 1);
   CHECK(max_abs_diff(download_rgb(rig, dst), image) <= 1e-3F);
   CHECK(max_abs_diff(download_rgb(rig, dst2), image) <= 1e-3F);
-  // Une attente d'ailleurs ouvre un groupe : a part sans attendre la porte de b.
+  // Une attente d'ailleurs ouvre un groupe : a part sans attendre la porte de b. Les deux lectures
+  // hôte ci-dessus ont chacune soumis leur copie : le compte repart d'ici.
   TimelineSemaphore gate = require_value(TimelineSemaphore::create(*rig.context, 0));
   const std::array waits{gate.at(1)};
+  const std::uint64_t before_gate = rig.context->submit_infos();
   require_ok(rig.context->enqueue(*a));
   require_ok(rig.context->enqueue(*b, waits));
   require_ok(rig.context->flush());
-  CHECK(rig.context->submit_infos() == infos + 3);
+  CHECK(rig.context->submit_infos() == before_gate + 2);
   require_ok(rig.context->wait_on_host(a->last_run()));
   CHECK(require_value(a->runs().value()) == 3);
   CHECK(require_value(b->runs().value()) == 1);

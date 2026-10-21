@@ -2,8 +2,8 @@
 // démarre sans CUDA. Seulement ce que media en attend : trouver l'appareil du
 // rendu par son UUID, créer le flux de décodage non bloquant, enregistrer un
 // événement par image ; et ce que l'export en attend : retenir le contexte
-// primaire et y importer la mémoire Vulkan de ses tampons, que NVENC lit sans
-// relecture hôte. Ne tourne pas sans GPU NVIDIA.
+// primaire, y importer la mémoire Vulkan de ses tampons et la copier dans les
+// images de NVENC, sans relecture hôte. Ne tourne pas sans GPU NVIDIA.
 #pragma once
 
 #include <array>
@@ -81,6 +81,14 @@ class CudaDriver : public std::enable_shared_from_this<CudaDriver> {
 
   // Événement enregistré sur le flux, détruit avec le dernier propriétaire.
   std::expected<ReadyEvent, Refusal> record(std::uintptr_t context, std::uintptr_t stream) const;
+
+  // Copie d'appareil à appareil lancée sur le flux (cuMemcpy2DAsync) : height lignes de
+  // width_bytes octets, de src (lignes espacées de src_pitch) vers dst (dst_pitch).
+  std::expected<void, Refusal> copy_2d(std::uintptr_t context, std::uintptr_t stream, std::uintptr_t dst,
+                                       std::size_t dst_pitch, std::uintptr_t src, std::size_t src_pitch,
+                                       std::size_t width_bytes, std::size_t height) const;
+  // Attend la fin de tout ce que le flux a lancé.
+  std::expected<void, Refusal> synchronize(std::uintptr_t context, std::uintptr_t stream) const;
 
   struct Api;  // table des fonctions du pilote, définie dans le .cpp
 

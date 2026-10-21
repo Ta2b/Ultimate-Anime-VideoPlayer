@@ -113,12 +113,11 @@ ExportOutcome run_export(Player& p, const ExportJob& job) {
                              .cuda_ordinal = export_cuda_ordinal(p.screen.device()),
                              .vulkan_device = p.screen.vulkan_device()});
   if (!writer) return stopped(writer.error());
-  auto opened =
-      FrameExport::open(p.screen, FrameExportSetup{.width = size.width,
-                                                   .height = size.height,
-                                                   .layout = (*writer)->layout(),
-                                                   .color = (*writer)->color(),
-                                                   .cuda = (*writer)->upload() == exporter::Upload::Cuda});
+  auto opened = FrameExport::open(p.screen, FrameExportSetup{.width = size.width,
+                                                             .height = size.height,
+                                                             .layout = (*writer)->layout(),
+                                                             .color = (*writer)->color(),
+                                                             .cuda_frames = (*writer)->cuda_frames()});
   if (!opened) return stopped(opened.error());
   frames = std::move(*opened);
 
@@ -173,7 +172,16 @@ ExportOutcome run_export(Player& p, const ExportJob& job) {
       break;
     }
     bool moved = false;
-    while (frames->deliver(push)) moved = true;
+    while (true) {
+      auto delivered = frames->deliver(push);
+      if (!delivered) {
+        failure = std::move(delivered.error());
+        break;
+      }
+      if (!*delivered) break;
+      moved = true;
+    }
+    if (failure) break;
     // Lu avant de vider la boîte : le thread gpu poste ses RingFrame avant de se dire au repos.
     const bool drained = ended && (*pipeline)->video_idle();
     (*pipeline)->pump();

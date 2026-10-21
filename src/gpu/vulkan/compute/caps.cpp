@@ -36,11 +36,15 @@ void read_link(const VkBaseInStructure& link, Features& f) {
       f.timeline_semaphore = f.timeline_semaphore || yes(v12.timelineSemaphore);
       f.shader_float16 = f.shader_float16 || yes(v12.shaderFloat16);
       f.vulkan_memory_model = f.vulkan_memory_model || yes(v12.vulkanMemoryModel);
+      f.vulkan_memory_model_device_scope =
+          f.vulkan_memory_model_device_scope || yes(v12.vulkanMemoryModelDeviceScope);
       break;
     }
     case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_MEMORY_MODEL_FEATURES: {
       const auto& model = reinterpret_cast<const VkPhysicalDeviceVulkanMemoryModelFeatures&>(link);
       f.vulkan_memory_model = f.vulkan_memory_model || yes(model.vulkanMemoryModel);
+      f.vulkan_memory_model_device_scope =
+          f.vulkan_memory_model_device_scope || yes(model.vulkanMemoryModelDeviceScope);
       break;
     }
     case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_COOPERATIVE_MATRIX_FEATURES_KHR: {

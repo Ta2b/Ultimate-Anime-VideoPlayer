@@ -27,10 +27,12 @@ struct CUctxOpaque;
 struct CUstreamOpaque;
 struct CUeventOpaque;
 struct CUextMemoryOpaque;
+struct CUarrayOpaque;
 using CUcontext = CUctxOpaque*;
 using CUstream = CUstreamOpaque*;
 using CUevent = CUeventOpaque*;
 using CUexternalMemory = CUextMemoryOpaque*;
+using CUarray = CUarrayOpaque*;
 struct CUuuid {
   std::array<char, 16> bytes;
 };
@@ -54,8 +56,29 @@ struct ExternalMemoryBufferDesc {
   unsigned flags = 0;
   std::array<unsigned, 16> reserved{};
 };
+// CUDA_MEMCPY2D, à l'identique : les types de mémoire sont des enum (unsigned), suivis d'un
+// pointeur, donc du même bourrage.
+struct Memcpy2D {
+  std::size_t src_x_bytes = 0;
+  std::size_t src_y = 0;
+  unsigned src_memory_type = 0;
+  const void* src_host = nullptr;
+  CUdeviceptr src_device = 0;
+  CUarray src_array = nullptr;
+  std::size_t src_pitch = 0;
+  std::size_t dst_x_bytes = 0;
+  std::size_t dst_y = 0;
+  unsigned dst_memory_type = 0;
+  void* dst_host = nullptr;
+  CUdeviceptr dst_device = 0;
+  CUarray dst_array = nullptr;
+  std::size_t dst_pitch = 0;
+  std::size_t width_bytes = 0;
+  std::size_t height = 0;
+};
 
 constexpr CUresult kCudaSuccess = 0;
+constexpr unsigned kMemoryTypeDevice = 2;    // CU_MEMORYTYPE_DEVICE
 constexpr unsigned kStreamNonBlocking = 1;   // CU_STREAM_NON_BLOCKING
 constexpr unsigned kEventDisableTiming = 2;  // CU_EVENT_DISABLE_TIMING
 constexpr int kHandleOpaqueFd = 1;           // CU_EXTERNAL_MEMORY_HANDLE_TYPE_OPAQUE_FD
@@ -112,6 +135,8 @@ struct CudaDriver::Api {
                                               const ExternalMemoryBufferDesc*) = nullptr;
   CUresult (*cuDestroyExternalMemory)(CUexternalMemory) = nullptr;
   CUresult (*cuMemFree)(CUdeviceptr) = nullptr;
+  CUresult (*cuMemcpy2DAsync)(const Memcpy2D*, CUstream) = nullptr;
+  CUresult (*cuStreamSynchronize)(CUstream) = nullptr;
 };
 
 namespace {
@@ -175,7 +200,9 @@ std::expected<std::shared_ptr<CudaDriver>, Refusal> CudaDriver::load() {
                      bind(library, "cuImportExternalMemory", api->cuImportExternalMemory) &&
                      bind(library, "cuExternalMemoryGetMappedBuffer", api->cuExternalMemoryGetMappedBuffer) &&
                      bind(library, "cuDestroyExternalMemory", api->cuDestroyExternalMemory) &&
-                     bind(library, "cuMemFree_v2", api->cuMemFree);
+                     bind(library, "cuMemFree_v2", api->cuMemFree) &&
+                     bind(library, "cuMemcpy2DAsync_v2", api->cuMemcpy2DAsync) &&
+                     bind(library, "cuStreamSynchronize", api->cuStreamSynchronize);
   if (!bound) {
     close_library(library);
     return std::unexpected(
@@ -326,6 +353,37 @@ std::expected<ReadyEvent, Refusal> CudaDriver::record(std::uintptr_t context, st
     driver->api_->cuEventDestroy(e);
   });
   return ReadyEvent{.handle = std::bit_cast<std::uintptr_t>(event), .owner = std::move(owner)};
+}
+
+std::expected<void, Refusal> CudaDriver::copy_2d(std::uintptr_t context, std::uintptr_t stream,
+                                                 std::uintptr_t dst, std::size_t dst_pitch,
+                                                 std::uintptr_t src, std::size_t src_pitch,
+                                                 std::size_t width_bytes, std::size_t height) const {
+  const ContextScope scope(*api_, context);
+  if (!scope.ok()) return refuse_cuda("cuCtxPushCurrent", -1);
+  Memcpy2D copy{};
+  copy.src_memory_type = kMemoryTypeDevice;
+  copy.src_device = static_cast<CUdeviceptr>(src);
+  copy.src_pitch = src_pitch;
+  copy.dst_memory_type = kMemoryTypeDevice;
+  copy.dst_device = static_cast<CUdeviceptr>(dst);
+  copy.dst_pitch = dst_pitch;
+  copy.width_bytes = width_bytes;
+  copy.height = height;
+  if (const CUresult result = api_->cuMemcpy2DAsync(&copy, std::bit_cast<CUstream>(stream));
+      result != kCudaSuccess) {
+    return refuse_cuda("cuMemcpy2DAsync", result);
+  }
+  return {};
+}
+
+std::expected<void, Refusal> CudaDriver::synchronize(std::uintptr_t context, std::uintptr_t stream) const {
+  const ContextScope scope(*api_, context);
+  if (!scope.ok()) return refuse_cuda("cuCtxPushCurrent", -1);
+  if (const CUresult result = api_->cuStreamSynchronize(std::bit_cast<CUstream>(stream));
+      result != kCudaSuccess)
+    return refuse_cuda("cuStreamSynchronize", result);
+  return {};
 }
 
 }  // namespace ajp::media

@@ -59,9 +59,11 @@ jobs:
 
   # Tous les modules, lecteur compris, sous Xvfb avec Vulkan logiciel (lavapipe) et la couche de
   # validation exigée (AJP_TEST_VULKAN_VALIDATION, tests/support/vulkan_validation.h : chaque
-  # erreur de la couche fait échouer l'exécutable) : une fois tel quel, une fois sous ASan et
-  # UBSan, une fois sous TSan. Les préréglages de test portent LSAN_OPTIONS (tools/ci/lsan.supp)
-  # et TSAN_OPTIONS.
+  # erreur de la couche fait échouer l'exécutable) : une fois tel quel, une fois sous TSan. Sous
+  # ASan et UBSan la couche est coupée : déchargée à la destruction de l'instance, elle laisse à
+  # LeakSanitizer 128 octets « <unknown module> » par processus qu'aucune suppression ne peut
+  # nommer (tools/ci/lsan.supp), et les deux autres tâches la font déjà parler. Les préréglages de
+  # test portent LSAN_OPTIONS et TSAN_OPTIONS.
   player:
     name: Lecteur Linux (${{ matrix.name }})
     if: github.event_name != 'push' || github.ref == 'refs/heads/main'
@@ -70,13 +72,13 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - { name: lavapipe, preset: linux-prefix, tidy: true }
-          - { name: asan-ubsan, preset: linux-prefix-asan, tidy: false }
-          - { name: tsan, preset: linux-prefix-tsan-player, tidy: false }
+          - { name: lavapipe, preset: linux-prefix, tidy: true, validation: require }
+          - { name: asan-ubsan, preset: linux-prefix-asan, tidy: false, validation: "off" }
+          - { name: tsan, preset: linux-prefix-tsan-player, tidy: false, validation: require }
     env:
       CC: gcc-13
       CXX: g++-13
-      AJP_TEST_VULKAN_VALIDATION: require
+      AJP_TEST_VULKAN_VALIDATION: ${{ matrix.validation }}
     steps:
       - uses: actions/checkout@v4
       - name: Paquets système

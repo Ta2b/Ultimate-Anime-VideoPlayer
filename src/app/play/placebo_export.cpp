@@ -10,6 +10,12 @@
 
 #include <libplacebo/renderer.h>
 
+extern "C" {
+#include <libavutil/buffer.h>
+#include <libavutil/frame.h>
+#include <libavutil/hwcontext.h>
+}
+
 #include "app/play/placebo_impl.h"
 #include "core/log.h"
 
@@ -150,7 +156,9 @@ std::expected<std::unique_ptr<FrameExport>, Refusal> FrameExport::open(PlaceboSc
           RefusalCode::FeatureUnavailable,
           std::format("export : plan {} à l'offset {}, multiple de {} attendu", p, end, offset_align));
     out->offsets_[p] = end;
-    out->pitches_[p] = align_up(static_cast<std::size_t>(params.w) * format->texel_size, pitch_align);
+    out->row_bytes_[p] = static_cast<std::size_t>(params.w) * format->texel_size;
+    out->rows_[p] = params.h;
+    out->pitches_[p] = align_up(out->row_bytes_[p], pitch_align);
     end = out->offsets_[p] + out->pitches_[p] * static_cast<std::size_t>(params.h);
   }
   out->bytes_ = align_up(end, kHostAlign);
@@ -165,9 +173,9 @@ std::expected<std::unique_ptr<FrameExport>, Refusal> FrameExport::open(PlaceboSc
       out->close_vulkan(gpu);
     }
   }
-  if (setup.cuda) {
-    if (auto opened = out->open_cuda(gpu)) {
-      log->info("export : images rendues en mémoire CUDA, lues en place par l'encodeur");
+  if (setup.cuda_frames != nullptr) {
+    if (auto opened = out->open_cuda(gpu, setup.cuda_frames)) {
+      log->info("export : images rendues en mémoire CUDA, copiées sur le GPU dans celles de l'encodeur");
       return out;
     } else {
       log->warn("export : tampons hôte, l'encodeur chargera ses images : {}", opened.error().detail);
@@ -183,7 +191,7 @@ std::expected<std::unique_ptr<FrameExport>, Refusal> FrameExport::open(PlaceboSc
   return out;
 }
 
-std::expected<void, Refusal> FrameExport::open_cuda(pl_gpu gpu) {
+std::expected<void, Refusal> FrameExport::open_cuda(pl_gpu gpu, AVBufferRef* frames) {
   if ((gpu->export_caps.buf & kCudaHandle) == 0)
     return refuse(RefusalCode::FeatureUnavailable, "tampons Vulkan non exportables vers CUDA");
   auto driver = media::CudaDriver::load();
@@ -193,6 +201,12 @@ std::expected<void, Refusal> FrameExport::open_cuda(pl_gpu gpu) {
   auto primary = (*driver)->retain_primary(*ordinal);
   if (!primary) return std::unexpected(primary.error());
   cuda_ = Cuda{.driver = *driver, .primary = *primary};
+  auto stream = (*driver)->create_stream(primary->context);
+  if (!stream) return std::unexpected(stream.error());
+  cuda_->stream = *stream;
+  cuda_->frames = av_buffer_ref(frames);
+  if (cuda_->frames == nullptr)
+    return refuse(RefusalCode::GpuMemoryExhausted, "contexte d'images de l'encodeur");
   for (Buffer& buffer : buffers_) {
     pl_buf_params params{};
     params.size = bytes_;
@@ -215,6 +229,13 @@ std::expected<void, Refusal> FrameExport::open_cuda(pl_gpu gpu) {
 }
 
 void FrameExport::close_cuda(pl_gpu gpu) {
+  if (cuda_) {
+    // Les copies sont toutes finies (deliver_cuda les attend) : les images repartent au pool.
+    for (Pending& pending : cuda_->pending) av_frame_free(&pending.frame);
+    cuda_->pending.clear();
+    if (cuda_->stream != 0) cuda_->driver->destroy_stream(cuda_->primary.context, cuda_->stream);
+    av_buffer_unref(&cuda_->frames);
+  }
   for (Buffer& buffer : buffers_) {
     buffer.memory.owner.reset();  // CUDA rend la mémoire avant que Vulkan ne la libère
     pl_buf_destroy(gpu, &buffer.buf);
@@ -236,6 +257,8 @@ FrameExport::~FrameExport() {
 
 bool FrameExport::has_room() const {
   if (vulkan_) return vulkan_->pending.size() < kBuffers;
+  if (cuda_ && cuda_->pending.size() >= kBuffers)
+    return false;  // l'écriture n'en prend plus : rendu suspendu
   return std::ranges::any_of(buffers_, [](const Buffer& b) { return !b.in_flight && !b.held.load(); });
 }
 
@@ -342,18 +365,16 @@ bool FrameExport::ready(Buffer& buffer) {
   return buffer.planes_done >= plane_count_;
 }
 
-bool FrameExport::deliver(const std::function<bool(exporter::Picture&&)>& push) {
+std::expected<bool, Refusal> FrameExport::deliver(const std::function<bool(exporter::Picture&&)>& push) {
   if (vulkan_) return deliver_vulkan(push);
+  if (cuda_) return deliver_cuda(push);
   if (order_.empty()) return false;
   Buffer& buffer = buffers_[order_.front()];
   if (!ready(buffer)) return false;
   exporter::Picture picture;
-  picture.device = buffer.buf != nullptr;
   for (int p = 0; p < plane_count_; ++p) {
     const auto i = static_cast<std::size_t>(p);
-    // En mémoire CUDA, l'adresse d'appareil tient lieu de pointeur : FFmpeg ne la déréférence pas.
-    picture.planes[i] = picture.device ? reinterpret_cast<std::uint8_t*>(buffer.memory.pointer + offsets_[i])
-                                       : buffer.data + offsets_[i];
+    picture.planes[i] = buffer.data + offsets_[i];
     picture.pitches[i] = static_cast<int>(pitches_[i]);
   }
   picture.bytes = bytes_;
@@ -366,6 +387,64 @@ bool FrameExport::deliver(const std::function<bool(exporter::Picture&&)>& push) 
   }
   buffer.in_flight = false;
   order_.pop_front();
+  return true;
+}
+
+std::expected<AVFrame*, Refusal> FrameExport::copy_to_pool(const Buffer& buffer) {
+  const Cuda& c = *cuda_;
+  AVFrame* frame = av_frame_alloc();
+  if (frame == nullptr) return refuse(RefusalCode::GpuMemoryExhausted, "export : image de l'encodeur");
+  // Le pool de l'encodeur est sans borne (VideoEncoder) : une image par appel, rendue au pool par
+  // l'écriture après encodage.
+  if (const int err = av_hwframe_get_buffer(c.frames, frame, 0); err < 0) {
+    av_frame_free(&frame);
+    return refuse(RefusalCode::GpuMemoryExhausted, std::format("export : av_hwframe_get_buffer : {}", err));
+  }
+  for (int p = 0; p < plane_count_; ++p) {
+    const auto i = static_cast<std::size_t>(p);
+    if (frame->data[p] == nullptr || frame->linesize[p] < 0 ||
+        static_cast<std::size_t>(frame->linesize[p]) < row_bytes_[i]) {
+      av_frame_free(&frame);
+      return refuse(RefusalCode::VendorCallFailed,
+                    std::format("export : plan {} de l'image de l'encodeur", p));
+    }
+    // En mémoire CUDA, data est l'adresse d'appareil : FFmpeg ne la déréférence pas.
+    auto copied =
+        c.driver->copy_2d(c.primary.context, c.stream, std::bit_cast<std::uintptr_t>(frame->data[p]),
+                          static_cast<std::size_t>(frame->linesize[p]), buffer.memory.pointer + offsets_[i],
+                          pitches_[i], row_bytes_[i], static_cast<std::size_t>(rows_[i]));
+    if (!copied) {
+      av_frame_free(&frame);
+      return std::unexpected(copied.error());
+    }
+  }
+  // Quelques mégaoctets d'appareil à appareil : attendre ici coûte moins qu'un événement par image,
+  // et le tampon source repart libre au rendu dès le retour.
+  if (auto done = c.driver->synchronize(c.primary.context, c.stream); !done) {
+    av_frame_free(&frame);
+    return std::unexpected(done.error());
+  }
+  return frame;
+}
+
+std::expected<bool, Refusal> FrameExport::deliver_cuda(const std::function<bool(exporter::Picture&&)>& push) {
+  Cuda& c = *cuda_;
+  while (!order_.empty() && c.pending.size() < kBuffers) {
+    Buffer& buffer = buffers_[order_.front()];
+    if (!ready(buffer)) break;
+    auto copied = copy_to_pool(buffer);
+    if (!copied) return std::unexpected(copied.error());
+    c.pending.push_back({.frame = *copied, .pts_us = buffer.pts_us});
+    buffer.in_flight = false;
+    order_.pop_front();
+  }
+  if (c.pending.empty()) return false;
+  Pending& next = c.pending.front();
+  exporter::Picture picture;
+  picture.pts_us = next.pts_us;
+  picture.frame = next.frame;
+  if (!push(std::move(picture))) return false;
+  c.pending.pop_front();
   return true;
 }
 

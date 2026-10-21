@@ -125,10 +125,14 @@ TEST_CASE("Le mouvement sur une grille deux fois plus grosse se lit entre ses pi
   CHECK(out->coverage.at(1, 0) == 0.0F);
   CHECK_THAT(out->coverage.at(2, 0), WithinAbs(1.0, 1e-5));
   CHECK(out->coverage.at(3, 0) == 0.0F);
-  // Un décalage d'un pixel du mouvement : tous lisent le pixel 1 (borné) et partent de 4 pixels.
+  // Un décalage d'un pixel du mouvement (spec : u = (x + 1/2) / scale − 1/2 + ox) : le pixel 0 lit
+  // u = 3/4, soit 3/2 × 2 = 3 pixels, il tombe en 3 ; les pixels 1 à 3 lisent u ≥ 1 (borné à 1) :
+  // 4 pixels, hors du plan.
   const auto shifted = ref::soft_splat_at({value}, motion, 1.0F, MotionGrid{.scale = 2.0F, .x = 1.0F});
   REQUIRE(shifted);
-  for (int x = 0; x < 4; ++x) CHECK(shifted->planes[0].at(x, 0) == 0.0F);
+  for (int x = 0; x < 3; ++x) CHECK(shifted->planes[0].at(x, 0) == 0.0F);
+  CHECK_THAT(shifted->planes[0].at(3, 0), WithinAbs(1.0, 1e-5));
+  CHECK_THAT(shifted->coverage.at(3, 0), WithinAbs(1.0, 1e-5));
   // Sur la même grille, sans décalage : le splat ordinaire, couverture en plus.
   const auto same = ref::soft_splat_at({value}, uniform(4, 1, 1.0F, 0.0F, 0.0F), 0.5F, MotionGrid{});
   const auto plain = ref::soft_splat({value}, uniform(4, 1, 1.0F, 0.0F, 0.0F), 0.5F);

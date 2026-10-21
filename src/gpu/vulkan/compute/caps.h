@@ -22,6 +22,9 @@ struct Features {
   bool subgroup_size_control = false;   // Vulkan 1.3
   bool compute_full_subgroups = false;  // Vulkan 1.3
   bool vulkan_memory_model = false;     // exigé par les shaders à matrices coopératives
+  // Avec le modèle mémoire activé, toute portée Device (atomiques de block_diff, flow_max,
+  // gmfss_splat) exige cette fonction : les deux vont ensemble, ou aucune des deux.
+  bool vulkan_memory_model_device_scope = false;
   bool cooperative_matrix = false;      // VK_KHR_cooperative_matrix (unités matricielles)
   bool float_atomic_add = false;        // VK_EXT_shader_atomic_float : softmax splatting de GMFSS
 };

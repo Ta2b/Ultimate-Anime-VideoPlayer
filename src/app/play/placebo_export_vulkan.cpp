@@ -91,7 +91,7 @@ void FrameExport::close_vulkan(pl_gpu gpu) {
   for (VulkanFrames::Wrap& wrap : vulkan_->wraps) {
     for (pl_tex& tex : wrap.planes) pl_tex_destroy(gpu, &tex);
   }
-  for (VulkanFrames::Pending& pending : vulkan_->pending) av_frame_free(&pending.frame);
+  for (Pending& pending : vulkan_->pending) av_frame_free(&pending.frame);
   av_buffer_unref(&vulkan_->frames);
   vulkan_.reset();
 }
@@ -195,7 +195,7 @@ FrameExport::Converted FrameExport::convert_vulkan(const RingFrame& frame) {
 bool FrameExport::deliver_vulkan(const std::function<bool(exporter::Picture&&)>& push) {
   VulkanFrames& v = *vulkan_;
   if (v.pending.empty()) return false;
-  VulkanFrames::Pending& next = v.pending.front();
+  Pending& next = v.pending.front();
   exporter::Picture picture;
   picture.pts_us = next.pts_us;
   picture.frame = next.frame;
