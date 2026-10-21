@@ -44,12 +44,14 @@ Remove-Item -Recurse -Force $CudaRoot -ErrorAction SilentlyContinue
 New-Item -ItemType Directory -Force -Path $CudaRoot | Out-Null
 # nvcc et son frontal (nvvm, crt), le runtime et le pilote (cudart.lib, cuda.lib), les en-têtes
 # de CCCL ; les composants absents d'une version (crt, nvvm séparés depuis CUDA 13) sont passés.
-foreach ($component in "cuda_nvcc", "cuda_crt", "libnvvm", "cuda_cudart", "cuda_cccl", "cuda_nvrtc") {
-  $entry = $Manifest.$component
-  if (-not $entry -or -not $entry."windows-x86_64") {
-    Write-Host "  $component : absent de CUDA $Cuda"
+# Un composant renommé garde ses deux noms, l'ancien d'abord : cuda_cccl est devenu cccl.
+foreach ($names in @("cuda_nvcc"), @("cuda_crt"), @("libnvvm"), @("cuda_cudart"), @("cuda_cccl", "cccl"), @("cuda_nvrtc")) {
+  $component = $names | Where-Object { $Manifest.$_ -and $Manifest.$_."windows-x86_64" } | Select-Object -First 1
+  if (-not $component) {
+    Write-Host "  $($names -join ' ou ') : absent de CUDA $Cuda"
     continue
   }
+  $entry = $Manifest.$component
   $archive = $entry."windows-x86_64"
   $file = Join-Path $Downloads (Split-Path $archive.relative_path -Leaf)
   if (-not (Test-Path $file)) { Invoke-WebRequest -Uri "$Redist/$($archive.relative_path)" -OutFile $file -UseBasicParsing }
@@ -63,10 +65,23 @@ foreach ($component in "cuda_nvcc", "cuda_crt", "libnvvm", "cuda_cudart", "cuda_
   # Chaque archive a un dossier racine <composant>-windows-x86_64-<version>-archive.
   $top = Get-ChildItem $unpacked -Directory | Select-Object -First 1
   Copy-Item -Path (Join-Path $top.FullName "*") -Destination $CudaRoot -Recurse -Force
-  Write-Host "  $component $($entry.version)"
+  Write-Host "  $component $($entry.version) : $((Get-ChildItem $top.FullName -Name) -join ', ')"
 }
 $Nvcc = Join-Path $CudaRoot "bin/nvcc.exe"
 if (-not (Test-Path $Nvcc)) { throw "nvcc.exe absent de $CudaRoot" }
+# nvcc cherche CCCL dans include/cccl depuis CUDA 13, et CMake refuse une cible importée
+# (CUDA::cudart) dont un dossier d'en-têtes manque : CCCL doit y être, ou à plat dans include/.
+$Include = Join-Path $CudaRoot "include"
+$Cccl = Join-Path $Include "cccl"
+if (Test-Path (Join-Path $Cccl "cuda/std")) {
+  Write-Host "  CCCL : include/cccl"
+} elseif (Test-Path (Join-Path $Include "cuda/std")) {
+  New-Item -ItemType Directory -Force -Path $Cccl | Out-Null
+  Write-Host "  CCCL : à plat dans include/"
+} else {
+  Get-ChildItem $Include -Directory -Name | ForEach-Object { Write-Host "  include/$_" }
+  throw "en-têtes de CCCL (cuda/std) absents de $Include"
+}
 
 # --- TensorRT : son zip, dont le dossier racine porte la version (TensorRT-11.3.0.99). ---
 $TrtZip = Join-Path $Downloads (Split-Path $TrtUrl -Leaf)
