@@ -202,6 +202,14 @@ présente plus ses images mais attend leur valeur, et ne détruit l'ancien ring
 qu'après le premier `RingFrame` de la nouvelle génération et la fin de ces
 attentes côté GPU.
 
+`RingFrame::submitted_us` est l'instant hôte où `gpu` a soumis l'image. Main mesure
+le retard de chaque image, de cette soumission au tour où il la voit écrite, et en
+garde la médiane des neuf dernières (`app/play/frame_latency.h`, mesures hors de
+0 à 1 s ignorées). `gpu` la lit avant chaque paire : un instant dont le pts précède
+`ready_media_us` (au plus tôt une période de sortie, au plus tard ce retard) serait
+jeté par main une fois prêt, et n'est pas calculé. Sous surcharge, le GPU cesse
+ainsi de prendre du retard sur des images que personne ne verra.
+
 ### Écran et cadence (`core/resolve.h`)
 
 `DisplayInfo` décrit l'écran : taille, rafraîchissement (0 sans VRR : inconnu),
