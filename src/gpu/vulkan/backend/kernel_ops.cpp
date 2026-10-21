@@ -83,6 +83,11 @@ VulkanKernelOps::VulkanKernelOps(VkContext& context, MemoryAllocator& memory, Pi
   context_.before_flush([this] { return uploads_wait(); });
 }
 
+VulkanKernelOps::Cached* VulkanKernelOps::cached(const OpKey& key) {
+  const auto found = std::ranges::find(recordings_, key, &Cached::key);
+  return found == recordings_.end() ? nullptr : &*found;
+}
+
 void VulkanKernelOps::forget_destroyed() {
   const DestroyedLog& log = context_.destroyed();
   if (log.mark() == destroyed_mark_) return;
@@ -220,9 +225,11 @@ std::expected<void, Refusal> VulkanKernelOps::warp(const Tensor& a, const Tensor
   for (const TensorView* v : {&*va, &*vb, &*vo, &*flow, &*mask}) add_view(key, *v);
   key.add(static_cast<std::uint64_t>(motion.area.x)).add(static_cast<std::uint64_t>(motion.area.y));
   key.add(static_cast<std::uint64_t>(motion.area.width)).add(static_cast<std::uint64_t>(motion.area.height));
-  key.add(std::bit_cast<std::uint32_t>(t)).add(poses.keep ? 1 : 0);
+  key.add(poses.keep ? 1 : 0);
   if (before) add_view(key, *before);
-  auto rec = recording(key, [&](Recorder& r) { return runner_.warp_blend(r, *va, *vb, mv, t, *vo, pv); });
+  const std::array time{std::bit_cast<std::uint32_t>(t)};
+  auto rec =
+      recording_with(key, time, [&](Recorder& r) { return runner_.warp_blend(r, *va, *vb, mv, t, *vo, pv); });
   if (!rec) return std::unexpected(rec.error());
   return submit(**rec);
 }

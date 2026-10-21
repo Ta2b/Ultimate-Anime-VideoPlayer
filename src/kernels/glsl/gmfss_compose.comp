@@ -16,6 +16,8 @@ layout(std430, binding = 2) readonly buffer LowA { AJP_TENSOR v[]; } low_a;  // 
 layout(std430, binding = 3) readonly buffer LowB { AJP_TENSOR v[]; } low_b;
 layout(std430, binding = 4) readonly buffer Fusion { AJP_TENSOR v[]; } fusion;  // 3 plans remplis
 layout(std430, binding = 5) writeonly buffer Out { AJP_TENSOR v[]; } dst;      // 3 plans, taille de sortie
+// L'instant, mot de paramètre réécrit d'une exécution à l'autre sans réenregistrer.
+layout(std430, binding = 6) readonly buffer Params { float t; } params;
 
 layout(push_constant) uniform Push {
   uint width;
@@ -27,7 +29,6 @@ layout(push_constant) uniform Push {
   uint fusion_height;
   uint window_x;
   uint window_y;
-  float t;
 } pc;
 
 // Les quatre voisins d'une lecture bilinéaire bornée à une fenêtre w × h en (x0w, y0w) d'un plan
@@ -71,8 +72,8 @@ float low_at_b(uint base, Taps t) {
 }
 
 float mix_sides(float p0, float c0, float p1, float c1) {
-  precise float w0 = (1.0 - pc.t) * c0;
-  precise float w1 = pc.t * c1;
+  precise float w0 = (1.0 - params.t) * c0;
+  precise float w1 = params.t * c1;
   precise float value = (w0 * p0 + w1 * p1) / (w0 + w1 + AJP_GMFSS_NORMALIZE_EPSILON);
   return value;
 }

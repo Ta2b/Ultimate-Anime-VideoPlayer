@@ -2,7 +2,8 @@
 // Les plans constants de l'entrée de RIFE (vsmlrt get_rife_input), écrits dans le tenseur à
 // 11 plans à leurs indices de spec/rife.h : instant t, grilles X et Y, multiplicateurs
 // 2 / (pw − 1) et 2 / (ph − 1). L'entrée v2 (7 plans) n'a que l'instant. Les images a et b
-// s'y écrivent par rife_frames.comp.
+// s'y écrivent par rife_frames.comp. L'instant se lit dans un mot de paramètre, que le backend
+// réécrit d'une exécution à l'autre sans réenregistrer (planes = 7 : l'instant seul, rife_time).
 // Référence : kernels/ref/rife.cpp (rife_constant_planes, rife_input).
 // Repris de animejanai-inference-rtx@118c272 src/kernels.cu:629-644 (k_rife_consts).
 #extension GL_GOOGLE_include_directive : require
@@ -12,12 +13,12 @@
 layout(local_size_x = 16, local_size_y = 16) in;
 
 layout(std430, binding = 0) writeonly buffer Input { AJP_TENSOR v[]; } input_planes;
+layout(std430, binding = 1) readonly buffer Params { float t; } params;
 
 layout(push_constant) uniform Push {
   uint width;   // pw, multiple de 64
   uint height;  // ph, multiple de 64
-  float t;
-  uint planes;  // 11, ou 7 (v2)
+  uint planes;  // 11, ou 7 : l'instant seul (v2, ou rife_time)
 } pc;
 
 // rife_mesh(i, n) = 2 i / (n − 1) − 1.
@@ -35,7 +36,7 @@ void main() {
   uint y = gl_GlobalInvocationID.y;
   if (x >= pc.width || y >= pc.height) return;
   uint i = y * pc.width + x;
-  store(AJP_RIFE_CHANNEL_TIME, i, pc.t);
+  store(AJP_RIFE_CHANNEL_TIME, i, params.t);
   if (pc.planes < uint(AJP_RIFE_INPUT_CHANNELS)) return;
   store(AJP_RIFE_CHANNEL_MESH_X, i, mesh(x, pc.width));
   store(AJP_RIFE_CHANNEL_MESH_Y, i, mesh(y, pc.height));

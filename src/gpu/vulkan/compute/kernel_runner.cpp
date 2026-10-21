@@ -9,7 +9,6 @@
 
 #include "gpu/vulkan/compute/kernel_dispatch.h"
 #include "gpu/vulkan/compute/weights.h"
-#include "kernels/ref/half.h"
 
 namespace ajp::gpu::vk {
 namespace {
@@ -40,8 +39,15 @@ Done KernelRunner::rife_constants(Recorder& recorder, const TensorView& input, f
   if (!(t >= 0.0F && t <= 1.0F)) {
     return refuse(RefusalCode::FieldOutOfRange, std::format("instant RIFE {} hors de [0, 1]", t));
   }
-  const detail::RifeConstantsPush push{input.width, input.height, t, input.planes};
-  const std::array buffers{input.buffer};
+  return rife_constant_planes(recorder, input, t, input.planes);
+}
+
+Done KernelRunner::rife_constant_planes(Recorder& recorder, const TensorView& input, float t,
+                                        std::uint32_t planes) {
+  auto time = recorder.parameter(std::bit_cast<std::uint32_t>(t));
+  if (!time) return std::unexpected(time.error());
+  const detail::RifeConstantsPush push{input.width, input.height, planes};
+  const std::array buffers{input.buffer, *time};
   return detail::run(*pipelines_, recorder, "rife_constants", input.precision, {}, buffers, {},
                      bytes_of(push), {groups_for(input.width), groups_for(input.height), 1});
 }
@@ -52,18 +58,15 @@ Done KernelRunner::rife_time(Recorder& recorder, const TensorView& input, float 
                   std::format("instant RIFE : {} plans, 11 ou 7 attendus", input.planes));
   }
   if (auto ok = check_tensor(input, input.planes, context_->caps().enabled, "instant RIFE"); !ok) return ok;
+  if (input.width % kernels::kRifeAlign != 0 || input.height % kernels::kRifeAlign != 0) {
+    return refuse(RefusalCode::InputMismatch, std::format("instant RIFE {}x{} : multiples de {} attendus",
+                                                          input.width, input.height, kernels::kRifeAlign));
+  }
   if (!(t > 0.0F && t < 1.0F)) {
     return refuse(RefusalCode::FieldOutOfRange, std::format("instant RIFE {} hors de ]0, 1[", t));
   }
-  // Le mot de 32 bits répété : un float, ou deux float16 au même arrondi que packHalf2x16.
-  const std::uint32_t half = kernels::ref::float_to_half(t);
-  const std::uint32_t word =
-      input.precision == Precision::F16 ? half | (half << 16U) : std::bit_cast<std::uint32_t>(t);
-  const VkDeviceSize plane = tensor_bytes(input.width, input.height, 1, input.precision);
-  return recorder.fill({.buffer = input.buffer.buffer,
-                        .offset = input.buffer.offset + plane * kernels::kRifeChannelTime,
-                        .size = plane},
-                       word);
+  // Le plan de l'instant seul ; un remplissage de tampon garderait t dans l'enregistrement.
+  return rife_constant_planes(recorder, input, t, static_cast<std::uint32_t>(kernels::kRifeV2InputChannels));
 }
 
 Done KernelRunner::warp_blend(Recorder& recorder, const TensorView& a, const TensorView& b,
@@ -114,11 +117,13 @@ Done KernelRunner::warp_blend(Recorder& recorder, const TensorView& a, const Ten
                               static_cast<std::uint32_t>(area.y),
                               static_cast<std::uint32_t>(area.width),
                               static_cast<std::uint32_t>(area.height),
-                              t,
                               poses.keep ? 1U : 0U,
                               poses.previous != nullptr ? 1U : 0U};
   const BufferView previous = poses.previous != nullptr ? poses.previous->buffer : motion.flow.buffer;
-  const std::array buffers{a.buffer, b.buffer, motion.flow.buffer, motion.mask.buffer, dst.buffer, previous};
+  auto time = recorder.parameter(std::bit_cast<std::uint32_t>(t));
+  if (!time) return std::unexpected(time.error());
+  const std::array buffers{a.buffer, b.buffer, motion.flow.buffer, motion.mask.buffer, dst.buffer,
+                           previous, *time};
   return detail::run(*pipelines_, recorder, "warp_blend", a.precision, {}, buffers, {}, bytes_of(push),
                      {groups_for(a.width), groups_for(a.height), 1});
 }

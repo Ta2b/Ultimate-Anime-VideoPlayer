@@ -92,11 +92,12 @@ struct RgbWindowPush {
   float fill;
 };
 
+// L'instant de rife_constants, warp_blend, gmfss_compose et gmfss_splat n'est pas dans leur push :
+// c'est un mot de paramètre (Recorder::parameter), lié après leurs tampons.
 struct RifeConstantsPush {
   std::uint32_t width;
   std::uint32_t height;
-  float t;
-  std::uint32_t planes;  // 11, ou 7 (v2) : l'instant seul
+  std::uint32_t planes;  // 11, ou 7 : l'instant seul (v2, ou rife_time)
 };
 
 struct WarpPush {
@@ -108,7 +109,6 @@ struct WarpPush {
   std::uint32_t area_y;
   std::uint32_t area_width;
   std::uint32_t area_height;
-  float t;
   std::uint32_t keep_poses;
   std::uint32_t has_previous;
 };
@@ -153,8 +153,7 @@ struct SplatPush {
   std::uint32_t width;
   std::uint32_t height;
   std::uint32_t channels;
-  std::uint32_t group;  // plans par groupe de l'axe z
-  float s;
+  std::uint32_t group;         // plans par groupe de l'axe z
   std::uint32_t motion_width;  // le mouvement sur sa grille (spec MotionGrid)
   std::uint32_t motion_height;
   float motion_scale;
@@ -180,7 +179,6 @@ struct GmfssComposePush {
   std::uint32_t fusion_height;
   std::uint32_t window_x;
   std::uint32_t window_y;
-  float t;
 };
 
 // scene_diff, block_diff.
@@ -194,16 +192,16 @@ struct PairPush {
 };
 
 static_assert(sizeof(ChromaPush) == 32 && sizeof(PlanesPush) == 32 && sizeof(ResamplePush) == 16);
-static_assert(sizeof(YuvWindowPush) == 44 && sizeof(RgbWindowPush) == 28 && sizeof(RifeConstantsPush) == 16);
+static_assert(sizeof(YuvWindowPush) == 44 && sizeof(RgbWindowPush) == 28 && sizeof(RifeConstantsPush) == 12);
 static_assert(sizeof(RifeFramesPush) == 28 && sizeof(RgbPairPush) == 12 && sizeof(FlowMaxPush) == 24);
-static_assert(sizeof(WarpPush) == 44 && sizeof(TransferPush) == 32 && sizeof(PairPush) == 24);
+static_assert(sizeof(WarpPush) == 40 && sizeof(TransferPush) == 32 && sizeof(PairPush) == 24);
 struct FillPush {
   std::uint32_t count;
   float value;
 };
 
-static_assert(sizeof(SplatPush) == 44 && sizeof(SplatNormalizePush) == 16 && sizeof(FillPush) == 8);
-static_assert(sizeof(GmfssComposePush) == 40);
+static_assert(sizeof(SplatPush) == 40 && sizeof(SplatNormalizePush) == 16 && sizeof(FillPush) == 8);
+static_assert(sizeof(GmfssComposePush) == 36);
 
 // Constantes 0 à 5 de yuv.glsl : format, matrice, plage, octets par échantillon, chroma
 // entrelacée, chroma 4:2:0, tirées de kernels::info.

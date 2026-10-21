@@ -63,7 +63,11 @@ class KernelRunner {
   // Plans constants 6 à 10 du tenseur d'entrée de RIFE (11 plans pw × ph), t dans [0, 1].
   Done rife_constants(Recorder& recorder, const TensorView& input, float t);
   // Le plan 6 seul, à l'instant t de ]0, 1[ : l'instant suivant d'une entrée déjà remplie, les
-  // images et le maillage laissés tels quels. Un remplissage de tampon, sans noyau.
+  // images et le maillage laissés tels quels.
+  //
+  // L'instant de ces noyaux, de warp_blend, de soft_splat_all et de gmfss_compose est un mot de
+  // paramètre de l'enregistrement (Recorder::parameter), dans l'ordre de leurs appels : le
+  // backend le réécrit pour rejouer l'enregistrement à un autre instant.
   Done rife_time(Recorder& recorder, const TensorView& input, float t);
 
   // a et b déformés par le mouvement et mélangés à l'instant t de ]0, 1[ (ref warp_blend_at ;
@@ -134,6 +138,9 @@ class KernelRunner {
   static std::uint32_t block_count(std::uint32_t width, std::uint32_t height);
 
  private:
+  // rife_constants sur ses planes premiers plans : 11, ou 7 pour l'instant seul.
+  Done rife_constant_planes(Recorder& recorder, const TensorView& input, float t, std::uint32_t planes);
+
   const VkContext* context_;
   PipelineCache* pipelines_;
 };

@@ -17,13 +17,14 @@ layout(local_size_x = 16, local_size_y = 16) in;
 layout(std430, binding = 0) readonly buffer Source { AJP_TENSOR v[]; } source;
 layout(std430, binding = 1) readonly buffer Motion { AJP_TENSOR v[]; } motion;  // fx, fy, z
 layout(std430, binding = 2) buffer Sums { float v[]; } sums;  // channels + 1 plans
+// L'instant s, mot de paramètre réécrit d'une exécution à l'autre sans réenregistrer.
+layout(std430, binding = 3) readonly buffer Params { float s; } params;
 
 layout(push_constant) uniform Push {
   uint width;
   uint height;
   uint channels;
   uint group;
-  float s;
   uint motion_width;
   uint motion_height;
   float motion_scale;
@@ -72,12 +73,12 @@ void main() {
     fy = pc.motion_scale * motion_at(1u, u, v);
     z = motion_at(2u, u, v);
   }
-  precise float tx = float(x) + pc.s * fx;
-  precise float ty = float(y) + pc.s * fy;
+  precise float tx = float(x) + params.s * fx;
+  precise float ty = float(y) + params.s * fy;
   // Une destination hors de ]−1, taille[ n'a aucun coin dans le plan ; NaN et infinis échouent
   // aussi la comparaison.
   if (!(tx > -1.0 && tx < float(pc.width) && ty > -1.0 && ty < float(pc.height))) return;
-  float scale = exp(pc.s * z);
+  float scale = exp(params.s * z);
   int x0 = int(floor(tx));
   int y0 = int(floor(ty));
   precise float east = tx - float(x0);

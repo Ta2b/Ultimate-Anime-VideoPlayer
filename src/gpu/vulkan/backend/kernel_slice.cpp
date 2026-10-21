@@ -91,8 +91,8 @@ std::expected<void, Refusal> VulkanKernelOps::rife_input(const Tensor& a, const 
   OpKey key;
   key.add(40);
   for (const TensorView* view : {&v->a, &v->b, &v->input}) add_view(key, *view);
-  key.add(std::bit_cast<std::uint32_t>(t));
-  auto rec = recording(key, [&](Recorder& r) -> Done {
+  const std::array time{std::bit_cast<std::uint32_t>(t)};
+  auto rec = recording_with(key, time, [&](Recorder& r) -> Done {
     if (auto ok = runner_.rife_frames(r, v->a, v->b, v->input, kStudioBlack, v->input.planes); !ok) return ok;
     return runner_.rife_constants(r, v->input, t);
   });
@@ -107,9 +107,9 @@ std::expected<void, Refusal> VulkanKernelOps::rife_pair(const Tensor& a, const T
   OpKey key;
   key.add(47);
   for (const TensorView* view : {&v->a, &v->b, &v->input}) add_view(key, *view);
-  key.add(std::bit_cast<std::uint32_t>(t));
+  const std::array time{std::bit_cast<std::uint32_t>(t)};
   // Les images, puis le plan de l'instant ; le maillage écrit par rife_input reste.
-  auto rec = recording(key, [&](Recorder& r) -> Done {
+  auto rec = recording_with(key, time, [&](Recorder& r) -> Done {
     if (auto ok = runner_.rife_frames(r, v->a, v->b, v->input, kStudioBlack, v->input.planes); !ok) return ok;
     return runner_.rife_time(r, v->input, t);
   });
@@ -131,8 +131,8 @@ std::expected<void, Refusal> VulkanKernelOps::rife_time(const Tensor& input, flo
   OpKey key;
   key.add(46);
   add_view(key, *vi);
-  key.add(std::bit_cast<std::uint32_t>(t));
-  auto rec = recording(key, [&](Recorder& r) { return runner_.rife_time(r, *vi, t); });
+  const std::array time{std::bit_cast<std::uint32_t>(t)};
+  auto rec = recording_with(key, time, [&](Recorder& r) { return runner_.rife_time(r, *vi, t); });
   if (!rec) return std::unexpected(rec.error());
   return submit(**rec);
 }
@@ -167,6 +167,11 @@ std::expected<void, Refusal> VulkanKernelOps::soft_splat_all(std::span<const Spl
   views.reserve(jobs.size());
   VkDeviceSize bytes = 0;
   for (const SplatJob& job : jobs) {
+    // Ici et non au seul enregistrement : un enregistrement repris ne revoit que ses mots de paramètre.
+    if (!(job.s >= 0.0F && job.s <= 1.0F)) {
+      return refuse_slice(RefusalCode::FieldOutOfRange,
+                          std::format("soft_splat : instant {} hors de [0, 1]", job.s));
+    }
     auto vs = tensor_view(job.source, 0, "soft_splat : source");
     if (!vs) return std::unexpected(vs.error());
     auto vm = tensor_view(job.motion, kernels::kGmfssMotionChannels, "soft_splat : mouvement");
@@ -190,13 +195,15 @@ std::expected<void, Refusal> VulkanKernelOps::soft_splat_all(std::span<const Spl
   const BufferView sums = splat_sums_->view();
   OpKey key;
   key.add(44);
+  splat_times_.clear();
   for (const KernelRunner::SplatViews& v : views) {
     for (const TensorView* t : {&v.source, &v.motion, &v.out}) add_view(key, *t);
-    key.add(std::bit_cast<std::uint32_t>(v.s));
     for (const float g : {v.grid.scale, v.grid.x, v.grid.y}) key.add(std::bit_cast<std::uint32_t>(g));
+    splat_times_.push_back(std::bit_cast<std::uint32_t>(v.s));
   }
   key.add(detail::handle_bits(sums.buffer));
-  auto rec = recording(key, [&](Recorder& r) { return runner_.soft_splat_all(r, views, sums); });
+  auto rec =
+      recording_with(key, splat_times_, [&](Recorder& r) { return runner_.soft_splat_all(r, views, sums); });
   if (!rec) return std::unexpected(rec.error());
   return submit(**rec);
 }
@@ -206,6 +213,10 @@ std::expected<void, Refusal> VulkanKernelOps::gmfss_compose(const Tensor& high_a
                                                             const Tensor& fusion,
                                                             const kernels::Window& window, float t,
                                                             const Tensor& out) {
+  if (!(t >= 0.0F && t <= 1.0F)) {
+    return refuse_slice(RefusalCode::FieldOutOfRange,
+                        std::format("gmfss_compose : instant {} hors de [0, 1]", t));
+  }
   auto va = tensor_view(high_a, 4, "gmfss_compose : agrandie a");
   if (!va) return std::unexpected(va.error());
   auto vb = tensor_view(high_b, 4, "gmfss_compose : agrandie b");
@@ -225,9 +236,10 @@ std::expected<void, Refusal> VulkanKernelOps::gmfss_compose(const Tensor& high_a
           static_cast<std::uint32_t>(window.y));
   key.add(static_cast<std::uint64_t>(static_cast<std::uint32_t>(window.width)) << 32 |
           static_cast<std::uint32_t>(window.height));
-  key.add(std::bit_cast<std::uint32_t>(t));
-  auto rec = recording(
-      key, [&](Recorder& r) { return runner_.gmfss_compose(r, *va, *vb, *la, *lb, *vf, window, t, *vo); });
+  const std::array time{std::bit_cast<std::uint32_t>(t)};
+  auto rec = recording_with(key, time, [&](Recorder& r) {
+    return runner_.gmfss_compose(r, *va, *vb, *la, *lb, *vf, window, t, *vo);
+  });
   if (!rec) return std::unexpected(rec.error());
   return submit(**rec);
 }

@@ -23,6 +23,8 @@ layout(std430, binding = 4) writeonly buffer Blend { AJP_TENSOR v[]; } dst;
 // Mouvement au milieu de la paire précédente, mêmes plans et même fenêtre ; lu seulement avec
 // keep_poses et has_previous (sinon le flot y est lié à sa place).
 layout(std430, binding = 5) readonly buffer Previous { AJP_TENSOR v[]; } previous;
+// L'instant, mot de paramètre réécrit d'une exécution à l'autre sans réenregistrer.
+layout(std430, binding = 6) readonly buffer Params { float t; } params;
 
 layout(push_constant) uniform Push {
   uint width;  // images a, b et sortie
@@ -33,7 +35,6 @@ layout(push_constant) uniform Push {
   uint area_y;
   uint area_width;
   uint area_height;
-  float t;
   uint keep_poses;    // 1 : garder les poses
   uint has_previous;  // 0 : paire précédente tenue, sans mouvement
 } pc;
@@ -169,11 +170,11 @@ void main() {
   precise float v = (float(y) + 0.5) / sy - 0.5;
   Displacement d;
   if (pc.keep_poses != 0u) {
-    d = from_middle(u, v, pose_time_at(u, v, pc.t));
-  } else if (pc.t == 0.5) {
+    d = from_middle(u, v, pose_time_at(u, v, params.t));
+  } else if (params.t == 0.5) {
     d = estimated(u, v);
   } else {
-    d = from_middle(u, v, pc.t);
+    d = from_middle(u, v, params.t);
   }
   precise float ax = float(x) + sx * d.to.x;
   precise float ay = float(y) + sy * d.to.y;

@@ -3,6 +3,7 @@
 // GMFSS. Mêmes calculs que les noyaux CUDA du backend TensorRT (rife_kernels.cu,
 // warp_kernels.cu, gmfss_kernels.cu).
 #include <array>
+#include <bit>
 #include <cstdint>
 #include <format>
 #include <span>
@@ -131,11 +132,12 @@ Done KernelRunner::soft_splat_all(Recorder& recorder, std::span<const SplatViews
     // Même grille, sans décalage ni échelle : le mouvement du pixel, tel quel.
     const bool direct = job.grid.scale == 1.0F && job.grid.x == 0.0F && job.grid.y == 0.0F &&
                         job.motion.width == job.source.width && job.motion.height == job.source.height;
-    const detail::SplatPush push{
-        job.source.width, job.source.height, job.source.planes, kSplatGroup, job.s,
-        job.motion.width, job.motion.height, job.grid.scale,    job.grid.x,  job.grid.y,
-        direct ? 1U : 0U};
-    const std::array scatter{job.source.buffer, job.motion.buffer, views[j]};
+    const detail::SplatPush push{job.source.width, job.source.height, job.source.planes, kSplatGroup,
+                                 job.motion.width, job.motion.height, job.grid.scale,    job.grid.x,
+                                 job.grid.y,       direct ? 1U : 0U};
+    auto s = recorder.parameter(std::bit_cast<std::uint32_t>(job.s));
+    if (!s) return std::unexpected(s.error());
+    const std::array scatter{job.source.buffer, job.motion.buffer, views[j], *s};
     if (auto ok = detail::run(*pipelines_, recorder, "gmfss_splat", job.source.precision, {}, scatter, {},
                               bytes_of(push),
                               {groups_for(job.source.width), groups_for(job.source.height),
@@ -216,10 +218,11 @@ Done KernelRunner::gmfss_compose(Recorder& recorder, const TensorView& high_a, c
                                       fusion.width,
                                       fusion.height,
                                       static_cast<std::uint32_t>(window.x),
-                                      static_cast<std::uint32_t>(window.y),
-                                      t};
-  const std::array buffers{high_a.buffer, high_b.buffer, low_a.buffer,
-                           low_b.buffer,  fusion.buffer, out.buffer};
+                                      static_cast<std::uint32_t>(window.y)};
+  auto time = recorder.parameter(std::bit_cast<std::uint32_t>(t));
+  if (!time) return std::unexpected(time.error());
+  const std::array buffers{high_a.buffer, high_b.buffer, low_a.buffer, low_b.buffer,
+                           fusion.buffer, out.buffer,    *time};
   return detail::run(*pipelines_, recorder, "gmfss_compose", out.precision, {}, buffers, {}, bytes_of(push),
                      {groups_for(out.width), groups_for(out.height), 1});
 }

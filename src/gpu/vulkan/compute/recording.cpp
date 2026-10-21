@@ -1,5 +1,6 @@
 #include "gpu/vulkan/compute/recording.h"
 
+#include <algorithm>
 #include <cstring>
 #include <format>
 #include <string_view>
@@ -24,6 +25,26 @@ Recording::~Recording() {
   // garde le pool, dont le command buffer est peut-être encore en exécution.
   if (!context_.settle(last_run())) return;
   if (pool_ != VK_NULL_HANDLE) context_.fn().vkDestroyCommandPool(context_.device(), pool_, nullptr);
+}
+
+bool Recording::idle() const {
+  if (submitted_ == 0) return true;
+  const auto reached = runs_.value();
+  return reached && *reached >= submitted_;
+}
+
+Done Recording::set_parameters(std::span<const std::uint32_t> values) {
+  if (values.size() != parameters_.size()) {
+    return refuse(RefusalCode::InputMismatch,
+                  std::format("{} mots de paramètre, {} attendus", values.size(), parameters_.size()));
+  }
+  if (std::ranges::equal(values, parameters_)) return {};
+  if (!idle()) return refuse(RefusalCode::InputMismatch, "paramètres réécrits pendant une exécution");
+  for (std::size_t i = 0; i < values.size(); ++i) {
+    std::memcpy(parameter_words_[i], &values[i], sizeof(std::uint32_t));
+    parameters_[i] = values[i];
+  }
+  return {};
 }
 
 std::expected<Recorder, Refusal> Recorder::begin(VkContext& context, MemoryAllocator& memory,
@@ -125,6 +146,16 @@ std::expected<BufferView, Refusal> Recorder::constants(std::span<const std::byte
   auto view = scratch(bytes.size(), MemoryUse::Upload);
   if (!view) return view;
   std::memcpy(recording_->owned_.back().mapped(), bytes.data(), bytes.size());
+  return view;
+}
+
+std::expected<BufferView, Refusal> Recorder::parameter(std::uint32_t value) {
+  auto view = scratch(sizeof value, MemoryUse::Upload);
+  if (!view) return view;
+  std::byte* word = recording_->owned_.back().mapped();
+  std::memcpy(word, &value, sizeof value);
+  recording_->parameters_.push_back(value);
+  recording_->parameter_words_.push_back(word);
   return view;
 }
 

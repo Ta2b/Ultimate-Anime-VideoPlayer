@@ -13,6 +13,7 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include "backend_rig.h"
+#include "gpu/vulkan/backend/kernel_ops.h"
 #include "gpu/vulkan/backend/reduce_weights.h"
 #include "kernels/ref/resample.h"
 #include "kernels/ref/rife.h"
@@ -258,6 +259,67 @@ TEST_CASE("KernelOps : entrée de RIFE depuis deux images RGB, puis la paire sui
       CHECK(refused.error().code == RefusalCode::FieldOutOfRange);
     }
   }
+}
+
+// Un facteur 11011/3200 à 165 Hz donne un instant neuf à chaque image : l'instant est un mot de
+// paramètre de l'enregistrement, pas un mot de sa clé, et kParameterSlots enregistrements suffisent.
+TEST_CASE("KernelOps : mille instants, une poignée d'enregistrements", "[vk_backend][kernels]") {
+  TempDir dir("rife_times");
+  auto backend = make_backend(dir.path());
+  KernelOps& ops = *backend->kernels();
+  auto& vulkan = dynamic_cast<vk::VulkanKernelOps&>(ops);
+  const k::RifeGeometry g = k::rife_geometry(70, 38);
+  auto ta = rgb_tensor(*backend, 70, 38, TensorType::F32);
+  auto tb = rgb_tensor(*backend, 70, 38, TensorType::F32);
+  write_tensor(*backend, ta->tensor(), rgb_bytes(synthetic_rgb(70, 38, 21), TensorType::F32));
+  write_tensor(*backend, tb->tensor(), rgb_bytes(synthetic_rgb(70, 38, 22), TensorType::F32));
+  auto input = rgb_tensor(*backend, g.padded_width, g.padded_height, TensorType::F32, k::kRifeInputChannels);
+  REQUIRE(ops.rife_input(ta->tensor(), tb->tensor(), 0.5F, input->tensor()));
+  const std::size_t plane =
+      static_cast<std::size_t>(g.padded_width) * static_cast<std::size_t>(g.padded_height);
+  const auto time_plane = [&] {
+    const auto planes = planes_from(read_tensor(*backend, input->tensor(), 4 * plane * k::kRifeInputChannels),
+                                    g.padded_width, g.padded_height, k::kRifeInputChannels, TensorType::F32);
+    return planes[k::kRifeChannelTime];
+  };
+  const std::size_t before = vulkan.recordings();
+  const auto all_equal = [&](const k::PlaneF& p, float t) {
+    return std::ranges::all_of(p.data, [t](float v) { return v == t; });
+  };
+  // Chaque instant relu : l'enregistrement repris a bien l'instant demandé.
+  for (int n = 1; n < 40; ++n) {
+    const float t = static_cast<float>(n) / 40.0F;
+    CAPTURE(t);
+    REQUIRE(ops.rife_time(input->tensor(), t));
+    CHECK(all_equal(time_plane(), t));
+  }
+  // Mille instants à la suite sans relecture : plus d'exécutions en file que d'enregistrements.
+  float last = 0.0F;
+  for (int n = 1; n <= 1000; ++n) {
+    last = static_cast<float>(n % 997 + 1) / 1001.0F;
+    REQUIRE(ops.rife_time(input->tensor(), last));
+  }
+  CHECK(all_equal(time_plane(), last));
+  CHECK(vulkan.recordings() - before <= vk::VulkanKernelOps::kParameterSlots);
+  // Le maillage de rife_input n'a pas bougé.
+  const auto planes = planes_from(read_tensor(*backend, input->tensor(), 4 * plane * k::kRifeInputChannels),
+                                  g.padded_width, g.padded_height, k::kRifeInputChannels, TensorType::F32);
+  const auto want = k::ref::rife_input(k::RgbImage(g.padded_width, g.padded_height, 0.0F),
+                                       k::RgbImage(g.padded_width, g.padded_height, 0.0F), last);
+  REQUIRE(want);
+  for (const int c :
+       {k::kRifeChannelMeshX, k::kRifeChannelMeshY, k::kRifeChannelStepX, k::kRifeChannelStepY}) {
+    CAPTURE(c);
+    const std::size_t ci = static_cast<std::size_t>(c);
+    float worst = 0.0F;
+    for (std::size_t i = 0; i < plane; ++i)
+      worst = std::max(worst, std::fabs(planes[ci].data[i] - (*want)[ci].data[i]));
+    CHECK(worst <= 1e-6F);
+  }
+  // Hors de ]0, 1[ : refusé avant de reprendre un enregistrement.
+  const auto refused = ops.rife_time(input->tensor(), 1.0F);
+  REQUIRE_FALSE(refused);
+  CHECK(refused.error().code == RefusalCode::FieldOutOfRange);
 }
 
 TEST_CASE("KernelOps : mesures d'une paire RGB rendues tout de suite", "[vk_backend][kernels]") {

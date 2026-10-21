@@ -5,6 +5,9 @@
 #include <array>
 #include <cstdint>
 #include <expected>
+#include <format>
+#include <optional>
+#include <span>
 #include <string_view>
 #include <type_traits>
 #include <utility>
@@ -109,7 +112,7 @@ std::expected<Recording*, Refusal> VulkanKernelOps::recording(const OpKey& key, 
     return std::unexpected(Refusal{RefusalCode::InputMismatch, "clé d'enregistrement trop longue"});
   ++uses_;
   forget_destroyed();
-  if (auto found = std::ranges::find(recordings_, key, &Cached::key); found != recordings_.end()) {
+  if (Cached* found = cached(key); found != nullptr) {
     found->used = uses_;
     return found->recording.get();
   }
@@ -125,6 +128,55 @@ std::expected<Recording*, Refusal> VulkanKernelOps::recording(const OpKey& key, 
   }
   recordings_.push_back({.key = key, .recording = std::move(*made), .used = uses_});
   return recordings_.back().recording.get();
+}
+
+template <class Body>
+std::expected<Recording*, Refusal> VulkanKernelOps::recording_with(OpKey key,
+                                                                   std::span<const std::uint32_t> parameters,
+                                                                   Body&& body) {
+  key.add(0);  // le numéro de l'enregistrement parmi kParameterSlots, en dernier mot
+  if (!key.valid())
+    return std::unexpected(Refusal{RefusalCode::InputMismatch, "clé d'enregistrement trop longue"});
+  forget_destroyed();
+  Cached* same = nullptr;
+  Cached* idle = nullptr;
+  Cached* oldest = nullptr;
+  std::optional<std::uint32_t> missing;
+  for (std::uint32_t slot = 0; slot < kParameterSlots; ++slot) {
+    key.words[key.size - 1] = slot;
+    Cached* found = cached(key);
+    if (found == nullptr) {
+      if (!missing) missing = slot;
+      continue;
+    }
+    if (std::ranges::equal(found->recording->parameters(), parameters)) {
+      same = found;
+      break;
+    }
+    if (idle == nullptr && found->recording->idle()) idle = found;
+    if (oldest == nullptr || found->used < oldest->used) oldest = found;
+  }
+  Cached* chosen = same != nullptr ? same : idle;
+  if (chosen == nullptr && missing) {
+    key.words[key.size - 1] = *missing;
+    auto made = recording(key, std::forward<Body>(body));
+    if (!made) return made;
+    if (!std::ranges::equal((*made)->parameters(), parameters)) {
+      return std::unexpected(
+          Refusal{RefusalCode::InputMismatch, std::format("{} mots de paramètre enregistrés, {} donnés",
+                                                          (*made)->parameters().size(), parameters.size())});
+    }
+    return made;
+  }
+  if (chosen == nullptr) {
+    // Les kParameterSlots exécutions précédentes sont encore en file : la plus ancienne d'abord.
+    chosen = oldest;
+    if (auto ok = context_.wait_on_host(chosen->recording->last_run()); !ok)
+      return std::unexpected(ok.error());
+  }
+  if (auto ok = chosen->recording->set_parameters(parameters); !ok) return std::unexpected(ok.error());
+  chosen->used = ++uses_;
+  return chosen->recording.get();
 }
 
 }  // namespace ajp::gpu::vk

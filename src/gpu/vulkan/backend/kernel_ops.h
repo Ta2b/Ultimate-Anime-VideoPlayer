@@ -64,6 +64,9 @@ struct OpKey {
 class VulkanKernelOps final : public KernelOps {
  public:
   static constexpr std::size_t kMaxRecordings = 64;
+  // Enregistrements d'une même opération qui ne diffèrent que par leurs mots de paramètre
+  // (l'instant t) : pendant qu'une exécution lit les siens, la suivante en prend un autre.
+  static constexpr std::uint32_t kParameterSlots = 3;
   static constexpr std::size_t kStagingSlots = 3;
   // Remises de tampons de transfert sans servir après lesquelles un tampon d'une autre forme
   // cède sa place : assez pour que deux formes en alternance gardent chacune les leurs.
@@ -205,6 +208,16 @@ class VulkanKernelOps final : public KernelOps {
   // Recording de la clé, fait par body au premier passage, puis soumis sur la file.
   template <class Body>
   std::expected<Recording*, Refusal> recording(const OpKey& key, Body&& body);
+  // Le même, avec des mots de paramètre (Recorder::parameter, dans l'ordre de body) hors de la
+  // clé : l'instant t qui change à chaque image (un facteur 11011/3200 à 165 Hz en donne des
+  // milliers) ne fait ni enregistrement neuf ni éviction. Parmi kParameterSlots enregistrements
+  // de la clé : celui qui a déjà ces mots, sinon un à l'arrêt (mots réécrits), sinon un neuf,
+  // sinon le plus ancien, attendu sur l'hôte (le GPU a kParameterSlots exécutions de retard).
+  template <class Body>
+  std::expected<Recording*, Refusal> recording_with(OpKey key, std::span<const std::uint32_t> parameters,
+                                                    Body&& body);
+  // Le Cached de key, ou nullptr.
+  Cached* cached(const OpKey& key);
   // Retire les enregistrements dont la clé porte un tampon ou une image détruits depuis la
   // dernière recherche : leur poignée peut déjà désigner un autre objet (destroyed_log.h).
   void forget_destroyed();
@@ -256,6 +269,7 @@ class VulkanKernelOps final : public KernelOps {
   BackendQueue& queue_;
   KernelRunner runner_;
   std::vector<Cached> recordings_;
+  std::vector<std::uint32_t> splat_times_;  // les instants d'un soft_splat_all, réutilisés
   std::uint64_t uses_ = 0;
   std::uint64_t destroyed_mark_ = 0;  // DestroyedLog::mark à la dernière purge
   std::vector<std::uint64_t> gone_;   // poignées détruites depuis, lues par forget_destroyed

@@ -47,6 +47,16 @@ class Recording {
   // Atteint quand la dernière exécution soumise s'achève ; valeur 0 avant la première.
   TimelinePoint last_run() const { return runs_.at(submitted_); }
   const TimelineSemaphore& runs() const { return runs_; }
+  // La dernière exécution soumise est finie, ou aucune ne l'a été : constat, sans attente. Une
+  // exécution encore dans le lot du contexte (VkContext::enqueue) n'est pas finie.
+  bool idle() const;
+
+  // Les mots de paramètre (l'instant d'un warp, d'un splat), dans l'ordre de Recorder::parameter :
+  // les noyaux les lisent à chaque exécution, et ils changent entre deux sans réenregistrement.
+  std::span<const std::uint32_t> parameters() const { return parameters_; }
+  // Réécrit les mots ; seulement à l'arrêt (idle), sinon le GPU les lirait pendant qu'ils
+  // changent. Refus InputMismatch : autre nombre de mots, ou exécution en cours.
+  Done set_parameters(std::span<const std::uint32_t> values);
 
  private:
   friend class Recorder;
@@ -60,6 +70,8 @@ class Recording {
   VkCommandPool pool_ = VK_NULL_HANDLE;
   VkCommandBuffer command_buffer_ = VK_NULL_HANDLE;
   std::vector<Buffer> owned_;
+  std::vector<std::uint32_t> parameters_;
+  std::vector<std::byte*> parameter_words_;  // la projection de chaque mot, dans owned_
   std::uint32_t dispatches_ = 0;
   std::uint32_t barriers_ = 0;
   std::uint64_t submitted_ = 0;
@@ -86,6 +98,10 @@ class Recorder {
   // Données de l'hôte figées dans l'enregistrement (tables de poids) : un tampon Upload rempli
   // maintenant, lu à chaque exécution.
   std::expected<BufferView, Refusal> constants(std::span<const std::byte> bytes);
+  // Un mot de paramètre, value d'abord : un tampon Upload de 4 octets que les noyaux lisent à
+  // chaque exécution et que Recording::set_parameters réécrit entre deux. Ce qui ne change que
+  // lui (l'instant t) ne demande ainsi pas d'enregistrement neuf.
+  std::expected<BufferView, Refusal> parameter(std::uint32_t value);
 
   // Un dispatch, après une barrière sur tout ce qui le précède dans l'enregistrement si une
   // commande depuis la dernière barrière a touché l'un de ses tampons (une plage qui recouvre
