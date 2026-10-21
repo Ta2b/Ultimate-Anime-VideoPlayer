@@ -19,8 +19,9 @@
 #ifndef NOMINMAX
 #define NOMINMAX
 #endif
-#include <shlobj.h>
 #include <windows.h>
+// Le shell après windows.h.
+#include <shlobj.h>
 
 #include <SDL3/SDL_misc.h>
 #endif
