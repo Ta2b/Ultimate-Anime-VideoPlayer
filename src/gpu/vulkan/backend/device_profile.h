@@ -19,8 +19,13 @@ struct DeviceProfile {
   std::string matrix_shapes;    // tuiles annoncées par le pilote (« 16×16×16 f16→f32, … »), ou vide
   net::Target target;
   // « 10de:2782:NVIDIA:615.78.08:9a13a200 » : constructeur, appareil, nom, version lisible et
-  // driverVersion du pilote.
+  // driverVersion du pilote. Les artefacts y sont liés : refaits à chaque pilote, ce qui coûte
+  // peu tant que l'autotuner retrouve ses mesures.
   std::string key;
+  // « 10de:2782:NVIDIA » : la même carte sous le même pilote, d'une version à l'autre. Les mesures
+  // de l'autotuner y sont liées ; driver_build dit sous quelle version chacune a été vérifiée.
+  std::string stable_key;
+  std::string driver_build;  // « 615.78.08:9a13a200 »
 };
 
 DeviceProfile profile_device(const VkContext& context);

@@ -126,6 +126,28 @@ TEST_CASE("Autotuner : mesure, cache par appareil et relecture", "[vk_backend][a
   // Une autre résolution ou un autre modèle se mesure à part.
   (void)require_value(reread.choose(graph, 0, options, "autre"));
   CHECK(reread.measured() == 1);
+  // Une autre version du même pilote : rien de remesuré, la sortie du choix revérifiée une fois.
+  DeviceProfile updated = profile;
+  updated.driver_build += "+1";
+  updated.key = updated.stable_key + ":" + updated.driver_build;
+  {
+    net::Autotuner after(*rig.context, *rig.memory, *rig.pipelines, updated, file, quick);
+    CHECK(require_value(after.choose(graph, 0, options, "test")) == best);
+    CHECK(after.measured() == 0);
+    CHECK(after.reverified() == 1);
+    CHECK(after.cached() == 1);
+    require_ok(after.save());
+  }
+  net::Autotuner settled(*rig.context, *rig.memory, *rig.pipelines, updated, file, quick);
+  CHECK(require_value(settled.choose(graph, 0, options, "test")) == best);
+  CHECK(settled.reverified() == 0);
+  CHECK(settled.cached() == 1);
+  // Un autre pilote (ou une autre carte) se mesure à part.
+  DeviceProfile other = profile;
+  other.stable_key += "-autre";
+  net::Autotuner elsewhere(*rig.context, *rig.memory, *rig.pipelines, other, file, quick);
+  (void)require_value(elsewhere.choose(graph, 0, options, "test"));
+  CHECK(elsewhere.measured() == 1);
   std::filesystem::remove(file);
 
   // Le sondage : tout est mesuré en entier sous un facteur immense, seul le plus rapide sous 1.

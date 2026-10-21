@@ -1,7 +1,9 @@
 // Autotuner du moteur Vulkan : pour chaque nœud qui a plusieurs variantes (convolutions), garde
 // la plus rapide sur cet appareil parmi celles dont la sortie concorde avec celle du noyau direct
-// (un pilote dont les matrices coopératives se trompent ne casse pas l'image). Ordre de recherche : table
-// pré-réglée de la famille, cache (par GPU et pilote, modèle et résolution, signature de la couche), puis
+// (un pilote dont les matrices coopératives se trompent ne casse pas l'image). Ordre de recherche : cache
+// (par GPU et nom de pilote, modèle et résolution, signature de la couche), table pré-réglée de la
+// famille, puis mesure. Un choix du cache tranché sous une autre version du pilote, ou lu dans la
+// table, n'est pas remesuré : sa sortie est revérifiée une fois par version contre le noyau direct. En
 // mesure : chaque candidat est sondé (une passe) puis, s'il n'est pas loin du plus rapide, chronométré
 // seul, sur des entrées pseudo-aléatoires, par requêtes d'horodatage : toutes ses passes
 // (échauffement compris, plusieurs dispatchs enchaînés chacune) dans une soumission, une estampille
@@ -98,12 +100,19 @@ class Autotuner {
   std::size_t cached() const { return cached_; }      // choix lus dans le cache ou une table
   std::size_t rejected() const { return rejected_; }  // candidats écartés : sortie discordante
   std::size_t pruned() const { return pruned_; }      // candidats écartés dès leur sondage
+  // choix repris d'une autre version du pilote ou de la table, sortie revérifiée (comptés dans cached)
+  std::size_t reverified() const { return reverified_; }
   bool timestamps() const { return period_ns_ > 0.0; }
 
  private:
   void load_cache();
   std::expected<Measured, Refusal> measure_with(const ir::Graph& graph, std::size_t node,
                                                 const KernelChoice& choice, const TunerOptions& options);
+  // La sortie de choice concorde-t-elle avec celle d'un noyau direct des candidats ? Vrai pour un
+  // noyau direct, faux sans noyau direct parmi eux.
+  std::expected<bool, Refusal> agrees_with_direct(const ir::Graph& graph, std::size_t node,
+                                                  const KernelChoice& choice,
+                                                  std::span<const KernelChoice> candidates);
   // Le motif de tuning_input du type, envoyé au premier appel puis copié sur chaque entrée ;
   // nullptr hors float16 et float.
   std::expected<const Buffer*, Refusal> pattern(ir::DataType type);
@@ -115,11 +124,16 @@ class Autotuner {
   std::filesystem::path cache_file_;
   TunerOptions options_;
   double period_ns_ = 0.0;  // 0 : pas de requêtes d'horodatage, mesure hôte
-  std::map<std::string, KernelChoice> cache_;
+  struct Remembered {
+    KernelChoice choice;
+    std::string driver;  // DeviceProfile::driver_build sous lequel sa sortie a été vérifiée
+  };
+  std::map<std::string, Remembered> cache_;
   std::size_t measured_ = 0;
   std::size_t cached_ = 0;
   std::size_t rejected_ = 0;
   std::size_t pruned_ = 0;
+  std::size_t reverified_ = 0;
   std::optional<Buffer> pattern_f16_;
   std::optional<Buffer> pattern_f32_;
 };

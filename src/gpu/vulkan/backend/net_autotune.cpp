@@ -251,8 +251,10 @@ void Autotuner::load_cache() {
     const std::size_t a = line.find('\t');
     const std::size_t b = a == std::string::npos ? a : line.find('\t', a + 1);
     if (b == std::string::npos) continue;  // ligne abîmée : ignorée, elle se remesurera
+    // Quatrième colonne, la version du pilote ; absente des caches plus anciens : revérifiée.
+    const std::size_t c = line.find('\t', b + 1);
     KernelChoice choice{.variant = line.substr(a + 1, b - a - 1)};
-    std::stringstream tunings(line.substr(b + 1));
+    std::stringstream tunings(line.substr(b + 1, c == std::string::npos ? std::string::npos : c - b - 1));
     std::string item;
     bool valid = true;
     while (std::getline(tunings, item, ',')) {
@@ -261,7 +263,10 @@ void Autotuner::load_cache() {
       valid = valid && ec == std::errc{} && ptr == item.data() + item.size();
       choice.tuning.push_back(v);
     }
-    if (valid) cache_[line.substr(0, a)] = std::move(choice);
+    if (valid) {
+      cache_[line.substr(0, a)] = {.choice = std::move(choice),
+                                   .driver = c == std::string::npos ? std::string() : line.substr(c + 1)};
+    }
   }
 }
 
@@ -269,8 +274,10 @@ std::expected<void, Refusal> Autotuner::save() const {
   if (cache_file_.empty()) return {};
   // Par write_file : nom de travail propre à cet écrivain, puis renommage.
   std::ostringstream text;
-  for (const auto& [key, choice] : cache_)
-    text << key << '\t' << choice.variant << '\t' << tuning_text(choice) << '\n';
+  for (const auto& [key, entry] : cache_) {
+    text << key << '\t' << entry.choice.variant << '\t' << tuning_text(entry.choice) << '\t' << entry.driver
+         << '\n';
+  }
   const std::string bytes = text.str();
   return write_file(cache_file_, std::as_bytes(std::span(bytes)));
 }
@@ -284,21 +291,40 @@ std::expected<KernelChoice, Refusal> Autotuner::choose(const ir::Graph& graph, s
   const auto known = [&](const KernelChoice& c) {
     return std::ranges::find(candidates, c) != candidates.end();
   };
+  // La carte et le nom du pilote, pas sa version : une mise à jour du pilote ne remesure rien. La
+  // version des candidats : une entrée tranchée avant l'ajout d'une variante est remesurée.
+  const std::string key =
+      std::format("{}|{}|{:016x}|{}", profile_.stable_key, scope, signature, kCandidateSet);
+  std::optional<KernelChoice> remembered;
+  if (const auto found = cache_.find(key); found != cache_.end() && known(found->second.choice)) {
+    if (found->second.driver == profile_.driver_build) {
+      ++cached_;
+      return found->second.choice;
+    }
+    remembered = found->second.choice;
+  }
   for (const PresetTable& table : preset_tables()) {
-    if (table.family != profile_.family) continue;
+    if (remembered || table.family != profile_.family) continue;
     for (const PresetEntry& e : table.entries) {
       KernelChoice c{.variant = std::string(e.variant), .tuning = {e.tuning0, e.tuning1}};
       if (e.signature == signature && known(c)) {
-        ++cached_;
-        return c;
+        remembered = std::move(c);
+        break;
       }
     }
   }
-  // La version des candidats : une entrée tranchée avant l'ajout d'une variante est remesurée.
-  const std::string key = std::format("{}|{}|{:016x}|{}", profile_.key, scope, signature, kCandidateSet);
-  if (const auto found = cache_.find(key); found != cache_.end() && known(found->second)) {
-    ++cached_;
-    return found->second;
+  // Tranché sous une autre version du pilote, ou lu dans la table : sa sortie, pas son temps, se
+  // revérifie. Discordante, le nœud se remesure.
+  if (remembered) {
+    auto same = agrees_with_direct(graph, node, *remembered, candidates);
+    if (!same) return std::unexpected(same.error());
+    if (*same) {
+      ++cached_;
+      ++reverified_;
+      cache_[key] = {.choice = *remembered, .driver = profile_.driver_build};
+      return *remembered;
+    }
+    ++rejected_;
   }
   // Le noyau direct d'abord : sa sortie sert de référence aux autres variantes. Chaque candidat
   // est d'abord sondé (une passe d'échauffement, une passe comptée, un dispatch) et sa sortie
@@ -336,7 +362,7 @@ std::expected<KernelChoice, Refusal> Autotuner::choose(const ir::Graph& graph, s
   }
   if (probes.size() == 1) {  // un seul candidat concordant : rien à départager
     ++measured_;
-    cache_[key] = probes.front().choice;
+    cache_[key] = {.choice = probes.front().choice, .driver = profile_.driver_build};
     return probes.front().choice;
   }
   const double fastest = std::ranges::min(probes, {}, &Probe::us).us;
@@ -358,8 +384,22 @@ std::expected<KernelChoice, Refusal> Autotuner::choose(const ir::Graph& graph, s
     return std::unexpected(last_error.value_or(Refusal{RefusalCode::InputMismatch, "aucun candidat mesuré"}));
   }
   ++measured_;
-  cache_[key] = best->choice;
+  cache_[key] = {.choice = best->choice, .driver = profile_.driver_build};
   return best->choice;
+}
+
+std::expected<bool, Refusal> Autotuner::agrees_with_direct(const ir::Graph& graph, std::size_t node,
+                                                           const KernelChoice& choice,
+                                                           std::span<const KernelChoice> candidates) {
+  if (choice.variant == "direct") return true;
+  const auto direct = std::ranges::find(candidates, std::string_view("direct"), &KernelChoice::variant);
+  if (direct == candidates.end()) return false;
+  const TunerOptions once{.warmup = 0, .passes = 1, .repeats = 1};
+  auto reference = measure_with(graph, node, *direct, once);
+  if (!reference) return std::unexpected(reference.error());
+  auto mine = measure_with(graph, node, choice, once);
+  if (!mine) return std::unexpected(mine.error());
+  return agrees(mine->output, reference->output);
 }
 
 std::expected<const Buffer*, Refusal> Autotuner::pattern(ir::DataType type) {

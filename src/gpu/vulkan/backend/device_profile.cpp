@@ -96,8 +96,9 @@ DeviceProfile profile_device(const VkContext& context) {
       .storage_alignment =
           static_cast<std::uint32_t>(std::max<VkDeviceSize>(caps.min_storage_buffer_alignment, 4))};
   // driverVersion se code autrement selon le constructeur : il entre brut, avec driverInfo lisible.
-  profile.key = std::format("{:04x}:{:04x}:{}:{}:{:08x}", caps.vendor_id, caps.device_id, caps.driver_name,
-                            caps.driver_info, caps.driver_version);
+  profile.stable_key = std::format("{:04x}:{:04x}:{}", caps.vendor_id, caps.device_id, caps.driver_name);
+  profile.driver_build = std::format("{}:{:08x}", caps.driver_info, caps.driver_version);
+  profile.key = std::format("{}:{}", profile.stable_key, profile.driver_build);
   return profile;
 }
 
