@@ -133,7 +133,7 @@ std::expected<ProcessExit, Refusal> run_process(const ProcessSpec& spec, const L
   if (!spec.extra_env.empty()) {
     std::vector<std::wstring> extra;
     for (const std::string& e : spec.extra_env) extra.push_back(widen(e));
-    LPWCH inherited = GetEnvironmentStringsW();
+    LPWCH inherited = GetEnvironmentStringsW();  // env: hérité
     for (const wchar_t* e = inherited; e != nullptr && *e != L'\0'; e += std::wcslen(e) + 1) {
       const std::wstring_view entry(e);
       const std::wstring_view name = entry.substr(0, entry.find(L'=', 1));

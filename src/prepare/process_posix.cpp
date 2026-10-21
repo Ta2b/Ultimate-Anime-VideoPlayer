@@ -42,9 +42,9 @@ std::unexpected<Refusal> spawn_failure(const std::filesystem::path& program, int
 // L'environnement du lecteur, transmis sans être lu.
 char** inherited_environment() {
 #ifdef __APPLE__
-  return *_NSGetEnviron();
+  return *_NSGetEnviron();  // env: hérité
 #else
-  return environ;
+  return environ;  // env: hérité
 #endif
 }
 
