@@ -49,10 +49,13 @@ struct Bench {
 
   SubtitleFrame render(double seconds, int width = kScriptWidth, int height = kScriptHeight,
                        float scale = 1.0F) {
+    return render_on(seconds, {.width = width, .height = height, .font_scale = scale});
+  }
+
+  SubtitleFrame render_on(double seconds, const ajp::subs::RenderTarget& target) {
     recycle();
-    const RenderRequest request{.pts_us = static_cast<std::int64_t>(seconds * 1e6),
-                                .epoch = 0,
-                                .target = {.width = width, .height = height, .font_scale = scale}};
+    const RenderRequest request{
+        .pts_us = static_cast<std::int64_t>(seconds * 1e6), .epoch = 0, .target = target};
     auto outcome = renderer.render(track, request, pool);
     REQUIRE(outcome);
     REQUIRE(std::holds_alternative<SubtitleFrame>(*outcome));
@@ -239,4 +242,43 @@ TEST_CASE("Rendu : un fichier SRT converti s'affiche à ses horodatages, en bas,
   // Deux lignes : nettement plus haut qu'une seule.
   const Box two = draw(bench.render(3.5)).covered();
   CHECK(two.y1 - two.y0 > 3 * (one.y1 - one.y0) / 2);
+}
+
+TEST_CASE("Rendu : en bandes noires, le script se cale sur l'image et ses pixels restent carrés",
+          "[render]") {
+  Bench bench(ajp::subs::test::square_script());
+  // 16:9 sur 16:10 : une bande de 20 lignes en haut et en bas. Le carré reste carré (libass le
+  // déduisait 11 % plus haut que large) et se place sur l'image, 20 lignes plus bas.
+  const Box letterbox =
+      draw(bench.render_on(0.5, {.width = 640, .height = 400, .video_width = 1920, .video_height = 1080}))
+          .covered();
+  REQUIRE_FALSE(letterbox.empty());
+  CHECK(std::abs(letterbox.x0 - 100) <= 1);
+  CHECK(std::abs(letterbox.y0 - 120) <= 1);
+  CHECK(std::abs((letterbox.x1 - letterbox.x0) - 100) <= 2);
+  CHECK(std::abs((letterbox.y1 - letterbox.y0) - 100) <= 2);
+
+  // Fenêtre plus large que la vidéo : 80 colonnes de chaque côté.
+  const Box pillarbox =
+      draw(bench.render_on(0.5, {.width = 800, .height = 360, .video_width = 640, .video_height = 360}))
+          .covered();
+  REQUIRE_FALSE(pillarbox.empty());
+  CHECK(std::abs(pillarbox.x0 - 180) <= 1);
+  CHECK(std::abs(pillarbox.y0 - 100) <= 1);
+  CHECK(std::abs((pillarbox.x1 - pillarbox.x0) - (pillarbox.y1 - pillarbox.y0)) <= 2);
+}
+
+TEST_CASE("Rendu : en bandes noires, l'ASS reste sur l'image, le SRT descend dans la bande",
+          "[render][srt]") {
+  // 16:9 sur 4:3 : 60 lignes de bande en bas, l'image finit à la ligne 420.
+  const ajp::subs::RenderTarget target{.width = 640, .height = 480, .video_width = 640, .video_height = 360};
+  Bench ass(ajp::subs::test::reference_script());
+  const Box on_image = draw(ass.render_on(0.5, target)).covered();
+  REQUIRE_FALSE(on_image.empty());
+  CHECK(on_image.y1 <= 420 - 20 + 4);  // marge verticale du style au-dessus du bas de l'image
+
+  Bench srt("1\n00:00:00,000 --> 00:00:01,000\nBas\n", Bench::Format::Srt);
+  const Box in_band = draw(srt.render_on(0.5, target)).covered();
+  REQUIRE_FALSE(in_band.empty());
+  CHECK(in_band.y1 > 420);
 }

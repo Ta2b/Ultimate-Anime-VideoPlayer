@@ -1,6 +1,7 @@
 #include "subs/subtitle_renderer.h"
 
 #include <algorithm>
+#include <cmath>
 #include <cstddef>
 #include <format>
 #include <span>
@@ -46,6 +47,19 @@ Rgba8 color_of(std::uint32_t rgbt) {
           .g = static_cast<std::uint8_t>(rgbt >> 16),
           .b = static_cast<std::uint8_t>(rgbt >> 8),
           .a = static_cast<std::uint8_t>(255U - (rgbt & 0xFFU))};
+}
+
+// Rectangle de la vidéo dans la sortie, aspect gardé, comme pl_rect2df_aspect_copy le place.
+struct VideoRect {
+  int width = 0;
+  int height = 0;
+};
+
+VideoRect fit(const RenderTarget& target) {
+  const double scale = std::min(static_cast<double>(target.width) / target.video_width,
+                                static_cast<double>(target.height) / target.video_height);
+  return {.width = std::clamp(static_cast<int>(std::lround(target.video_width * scale)), 1, target.width),
+          .height = std::clamp(static_cast<int>(std::lround(target.video_height * scale)), 1, target.height)};
 }
 
 std::size_t to_size(int value) {
@@ -121,13 +135,26 @@ std::expected<void, Refusal> SubtitleRenderer::refresh_fonts() {
   return {};
 }
 
-void SubtitleRenderer::configure(const RenderTarget& target) {
+void SubtitleRenderer::configure(const RenderTarget& target, bool use_margins) {
   ass_set_frame_size(renderer_.get(), target.width, target.height);
   const bool video_known = target.video_width != 0;
   ass_set_storage_size(renderer_.get(), video_known ? target.video_width : target.width,
                        video_known ? target.video_height : target.height);
+  // L'écran montre la vidéo centrée, à son aspect, avec des bandes noires si la fenêtre n'a pas sa
+  // forme : libass y cale le script. Sans ces marges, il étale le script sur toute la sortie et
+  // déduit des pixels non carrés (aspect de la sortie / aspect de la vidéo, 0,9 en 16:10 pour du
+  // 16:9) : les lettres s'allongent et les panneaux \pos glissent hors de leur place.
+  const VideoRect shown =
+      video_known ? fit(target) : VideoRect{.width = target.width, .height = target.height};
+  const int left = (target.width - shown.width) / 2;
+  const int top = (target.height - shown.height) / 2;
+  ass_set_margins(renderer_.get(), top, target.height - shown.height - top, left,
+                  target.width - shown.width - left);
+  ass_set_use_margins(renderer_.get(), use_margins ? 1 : 0);
+  ass_set_pixel_aspect(renderer_.get(), 1.0);  // l'écran ne déforme pas l'image
   ass_set_font_scale(renderer_.get(), static_cast<double>(target.font_scale));
   target_ = target;
+  use_margins_ = use_margins;
   in_sync_ = false;
 }
 
@@ -151,7 +178,12 @@ std::expected<RenderOutcome, Refusal> SubtitleRenderer::render(const SubtitleTra
   if (stale_fonts_) {
     if (auto refreshed = refresh_fonts(); !refreshed) return std::unexpected(std::move(refreshed.error()));
   }
-  if (target_ != request.target) configure(request.target);
+  // Comme mpv : une piste texte (SRT) peut descendre dans la bande noire du bas, une piste ASS
+  // reste sur l'image, où ses auteurs l'ont placée.
+  if (const bool use_margins = track.kind() == TrackKind::Text;
+      target_ != request.target || use_margins != use_margins_) {
+    configure(request.target, use_margins);
+  }
   if (const bool vsfilter = vsfilter_converts(track.script_matrix(), request.target.video_matrix);
       vsfilter != vsfilter_) {
     vsfilter_ = vsfilter;

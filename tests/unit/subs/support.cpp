@@ -51,6 +51,12 @@ std::string_view reference_script() {
   return script;
 }
 
+std::string square_script() {
+  return std::string(kHeader) +
+         "Dialogue: 0,0:00:00.00,0:00:01.00,Default,,0,0,0,,"
+         "{\\an7\\pos(100,100)\\bord0\\shad0\\p1}m 0 0 l 100 0 100 100 0 100{\\p0}\n";
+}
+
 std::string numbered_script(int lines) {
   std::string script(kHeader);
   for (int i = 0; i < lines; ++i) {

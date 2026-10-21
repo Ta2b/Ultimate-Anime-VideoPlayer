@@ -95,7 +95,7 @@ class SubtitleRenderer {
   static std::expected<Handle, Refusal> make(ass_library* library, const RendererOptions& options);
   SubtitleRenderer(Handle renderer, ass_library* library, RendererOptions options);
   std::expected<void, Refusal> refresh_fonts();
-  void configure(const RenderTarget& target);
+  void configure(const RenderTarget& target, bool use_margins);
   std::expected<RenderOutcome, Refusal> build(SubtitleFrame frame, AtlasPool& pool);
   std::unexpected<Refusal> refuse_content(Refusal refusal);
 
@@ -105,6 +105,7 @@ class SubtitleRenderer {
   bool rendered_ = false;     // ass_render_frame appelé depuis la création du moteur
   bool stale_fonts_ = false;  // à recréer avant le prochain rendu
   std::optional<RenderTarget> target_;
+  bool use_margins_ = false;              // ass_set_use_margins de la dernière configuration
   std::vector<const ass_image*> pieces_;  // images visibles du dernier ass_render_frame
   // Dernier contenu bâti. in_sync_ : il correspond au dernier ass_render_frame,
   // dont libass compare l'image suivante. refused_ : ce contenu a été refusé.

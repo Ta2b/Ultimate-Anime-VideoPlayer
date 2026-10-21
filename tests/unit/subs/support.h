@@ -29,6 +29,10 @@ std::string_view reference_script();
 // Script de n lignes distinctes, la ligne i sur [i, i + 1) s.
 std::string numbered_script(int lines);
 
+// Script sur 640×360 : sur [0, 1) s, un carré dessiné (\p1) de 100 × 100, coin haut gauche en
+// (100, 100), blanc, sans bordure ni ombre.
+std::string square_script();
+
 inline constexpr int kScriptWidth = 640;
 inline constexpr int kScriptHeight = 360;
 
