@@ -237,6 +237,13 @@ class KernelOps {
   virtual std::expected<void, Refusal> fill(const Tensor& /*tensor*/, float /*value*/) {
     return std::unexpected(Refusal{RefusalCode::FormatUnsupported, "fill : absent de ce backend"});
   }
+  // soft_splat_all(jobs) puis fill(time, t), que le backend peut fusionner (le remplissage part
+  // avec la normalisation des splats). Par défaut, les deux appels dans l'ordre.
+  virtual std::expected<void, Refusal> soft_splat_fill(std::span<const SplatJob> jobs, const Tensor& time,
+                                                       float t) {
+    if (auto ok = soft_splat_all(jobs); !ok) return ok;
+    return fill(time, t);
+  }
   // Mémoire de l'appareil, utilisée et totale, en octets, pour les statistiques ; appelable depuis
   // n'importe quel thread. Rien si le backend ne sait pas la lire.
   struct DeviceMemory {

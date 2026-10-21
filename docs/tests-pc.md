@@ -178,6 +178,15 @@ un réglage à faire taire.
   l'écart montait à 10/1024 dans l'émulation. À mesurer : `ncu` sur les deux noyaux contre
   3d159a5, et une capture RIFE ×3 avec garde des poses comparée à 3d159a5 (écart attendu sous
   2/1024). Un journal « objet texture refusé » signale un pilote qui refuse le format half.
+- **Splat en tuiles** (étude 3, 4.3 ; ABI des backends 8) : chaque tuile 16 × 16 de source
+  accumule dans une fenêtre partagée de 32 × 32 cellules placée sur son déplacement moyen (un
+  panoramique y reste entier), 4 plans par passe plus les poids, puis une addition globale par
+  cellule touchée ; les écarts de plus de 8 px au déplacement moyen vont directement aux sommes
+  globales. `exp` une fois par pixel pour tous les plans, `gridDim.z` = travail, normalisation en
+  `half2` avec l'instant de GMFSS Union rempli dans le même lancement (`soft_splat_fill`).
+  Écart à l'étude : 4 plans par passe et 20 Ko de mémoire partagée (4 blocs par SM) au lieu de 8
+  plans et 72 Ko (1 bloc par SM). Tests `[gmfss]` (flots de ±6 px et de −14 à 22 px), puis
+  `ncu` sur `splat_all` contre 3d159a5 et une capture GMFSS ×2 égale à l'ordre des additions près.
 - **Pas encore : `--kernels=exact`** : la voie exacte n'a pas d'interrupteur ; elle sert quand
   un tenseur n'a pas d'objet texture.
 - **Écarté : sous-échantillonner `pair_diff`** (étude 3, 4.4) : la mesure de détection est fixée

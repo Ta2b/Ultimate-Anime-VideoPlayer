@@ -69,25 +69,32 @@ TEST_CASE("Backend TensorRT : softmax splatting contre la référence", "[backen
     return std::move(*t);
   };
   const std::vector<k::PlaneF> source = planes(kChannels, 1, 0.0F, 1.0F);
-  const std::vector<k::PlaneF> flow = planes(2, 2, -6.0F, 6.0F);
   const std::vector<k::PlaneF> metric = planes(1, 3, -k::kGmfssMetricLimit, k::kGmfssMetricLimit);
-  const k::ref::SplatMotion motion{{flow[0], flow[1], metric[0]}};
   auto ts = alloc(kChannels);
   auto tm = alloc(k::kGmfssMotionChannels);
   auto out = alloc(kChannels);
   upload(ts->tensor(), flat(source));
-  upload(tm->tensor(), flat(std::vector<k::PlaneF>(motion.planes.begin(), motion.planes.end())));
-  for (const float s : {0.5F, 0.25F, 1.0F}) {
-    CAPTURE(s);
-    REQUIRE(ops.soft_splat(ts->tensor(), tm->tensor(), s, out->tensor()));
-    const auto want = k::ref::soft_splat(source, motion, s);
-    REQUIRE(want);
-    const std::vector<float> got = download(out->tensor());
-    const std::vector<float> expected = flat(*want);
-    float worst = 0.0F;
-    for (std::size_t i = 0; i < got.size(); ++i) worst = std::max(worst, std::fabs(got[i] - expected[i]));
-    // Seul l'ordre des additions atomiques change les arrondis, puis le FP16 de la sortie.
-    CHECK(worst <= k::tolerance::kRgbF16);
+  // ±6 px : les contributions restent dans la fenêtre partagée de leur tuile. De −14 à 22 px : la
+  // fenêtre suit le déplacement moyen de la tuile, les écarts au-delà de sa marge vont directement
+  // aux sommes globales, et une partie sort de l'image.
+  for (const auto& [lo, hi] : {std::pair{-6.0F, 6.0F}, std::pair{-14.0F, 22.0F}}) {
+    CAPTURE(lo, hi);
+    const std::vector<k::PlaneF> flow = planes(2, 2, lo, hi);
+    const k::ref::SplatMotion motion{{flow[0], flow[1], metric[0]}};
+    upload(tm->tensor(), flat(std::vector<k::PlaneF>(motion.planes.begin(), motion.planes.end())));
+    for (const float s : {0.5F, 0.25F, 1.0F}) {
+      CAPTURE(s);
+      REQUIRE(ops.soft_splat(ts->tensor(), tm->tensor(), s, out->tensor()));
+      const auto want = k::ref::soft_splat(source, motion, s);
+      REQUIRE(want);
+      const std::vector<float> got = download(out->tensor());
+      const std::vector<float> expected = flat(*want);
+      float worst = 0.0F;
+      for (std::size_t i = 0; i < got.size(); ++i) worst = std::max(worst, std::fabs(got[i] - expected[i]));
+      // Seul l'ordre des additions change les arrondis (atomiques, fenêtre partagée puis globale),
+      // puis le FP16 de la sortie.
+      CHECK(worst <= k::tolerance::kRgbF16);
+    }
   }
   REQUIRE(ops.fill(out->tensor(), 0.375F));
   for (const float v : download(out->tensor())) CHECK(v == 0.375F);
@@ -133,7 +140,15 @@ TEST_CASE("Backend TensorRT : les six splats d'un instant en un passage", "[back
                       .out = tensors[n - 1]->tensor()});
     }
   }
-  REQUIRE(ops.soft_splat_all(jobs));
+  // Les splats et l'instant de la fusion en un passage : l'instant part avec la normalisation.
+  auto time = loaded.backend->alloc_tensor(gpu::TensorType::F16, {.dims = {1, 1, 3, 5}});
+  REQUIRE(time);
+  REQUIRE(ops.soft_splat_fill(jobs, (*time)->tensor(), t));
+  for (const float v : download((*time)->tensor()))
+    CHECK(v == k::ref::half_to_float(k::ref::float_to_half(t)));
+  const auto shared = ops.soft_splat_fill(jobs, jobs[1].source, t);
+  REQUIRE_FALSE(shared);
+  CHECK(shared.error().code == RefusalCode::ShapeInvalid);
   for (std::size_t j = 0; j < jobs.size(); ++j) {
     CAPTURE(j);
     const auto want = k::ref::soft_splat(sources[j], motions[j], jobs[j].s);

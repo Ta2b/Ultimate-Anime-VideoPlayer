@@ -88,6 +88,8 @@ class TensorRtBackend final : public Backend, public KernelOps {
   std::expected<void, Refusal> soft_splat(const Tensor& source, const Tensor& motion, float s,
                                           const Tensor& out) override;
   std::expected<void, Refusal> soft_splat_all(std::span<const KernelOps::SplatJob> jobs) override;
+  std::expected<void, Refusal> soft_splat_fill(std::span<const KernelOps::SplatJob> jobs, const Tensor& time,
+                                               float t) override;
   std::expected<void, Refusal> gmfss_compose(const Tensor& high_a, const Tensor& high_b, const Tensor& low_a,
                                              const Tensor& low_b, const Tensor& fusion,
                                              const kernels::Window& window, float t,
@@ -128,6 +130,8 @@ class TensorRtBackend final : public Backend, public KernelOps {
   // rife_input, et rife_pair sans le maillage (tensorrt_rife.cpp).
   std::expected<void, Refusal> fill_rife(const Tensor& a, const Tensor& b, float t, const Tensor& input,
                                          bool mesh, const char* op);
+  // soft_splat_all, et time rempli à t avec la normalisation s'il n'est pas nul (tensorrt_gmfss.cpp).
+  std::expected<void, Refusal> splat(std::span<const KernelOps::SplatJob> jobs, const Tensor* time, float t);
   // Voies (tensorrt_lanes.cpp). Avant une opération de la voie courante qui lit reads et écrit
   // writes (des adresses : tenseurs, zone d'activation, moteur, sommes) : l'événement de
   // l'opération précédente de la voie posé, les attentes sur les autres voies enfilées. Rien

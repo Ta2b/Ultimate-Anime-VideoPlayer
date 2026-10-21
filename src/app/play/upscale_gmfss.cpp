@@ -139,10 +139,10 @@ std::expected<void, Refusal> UpscaleStage::run_gmfss(std::uint32_t output,
                            .out = splat.warped});
   }
   gmfss_.jobs.insert(gmfss_.jobs.end(), extra.begin(), extra.end());
-  if (auto ok = ops.soft_splat_all(gmfss_.jobs); !ok) return ok;
-  if (gmfss_.time) {
-    if (auto ok = ops.fill(*gmfss_.time, t); !ok) return ok;
-  }
+  if (auto ok =
+          gmfss_.time ? ops.soft_splat_fill(gmfss_.jobs, *gmfss_.time, t) : ops.soft_splat_all(gmfss_.jobs);
+      !ok)
+    return ok;
   std::array results{rife_out_->tensor()};
   return setup_.backend->enqueue(*setup_.gmfss_fusion, gmfss_.fusion_inputs, results);
 }

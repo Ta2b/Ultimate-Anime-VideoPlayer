@@ -92,6 +92,26 @@ std::expected<void, Refusal> TensorRtBackend::soft_splat(const Tensor& source, c
 }
 
 std::expected<void, Refusal> TensorRtBackend::soft_splat_all(std::span<const KernelOps::SplatJob> jobs) {
+  return splat(jobs, nullptr, 0.0F);
+}
+
+std::expected<void, Refusal> TensorRtBackend::soft_splat_fill(std::span<const KernelOps::SplatJob> jobs,
+                                                              const Tensor& time, float t) {
+  if (!fp16_planes(time, 0))
+    return refuse(RefusalCode::ShapeInvalid, "fill : tenseur FP16 1 × c × h × w attendu");
+  // Remplie pendant la normalisation : l'instant n'est ni lu ni écrit par un splat du lot.
+  for (const KernelOps::SplatJob& job : jobs) {
+    for (const Tensor* other : {&job.source, &job.motion, &job.out}) {
+      if (other->handle == time.handle)
+        return refuse(RefusalCode::ShapeInvalid, "soft_splat_fill : l'instant partage la mémoire d'un splat");
+    }
+  }
+  if (jobs.empty()) return fill(time, t);
+  return splat(jobs, &time, t);
+}
+
+std::expected<void, Refusal> TensorRtBackend::splat(std::span<const KernelOps::SplatJob> jobs,
+                                                    const Tensor* time, float t) {
   if (jobs.empty()) return {};
   if (jobs.size() > static_cast<std::size_t>(kMaxSplatJobs)) {
     return refuse(
@@ -140,6 +160,12 @@ std::expected<void, Refusal> TensorRtBackend::soft_splat_all(std::span<const Ker
     splat_bytes_ = total;
   }
   SoftSplatBatch batch{};
+  if (time != nullptr) {
+    batch.fill = address(*time);
+    batch.fill_count = 1;
+    for (const auto d : time->shape.dims) batch.fill_count *= static_cast<std::size_t>(d);
+    batch.fill_value = t;
+  }
   std::size_t offset = 0;
   for (const KernelOps::SplatJob& job : jobs) {
     const int channels = static_cast<int>(job.source.shape.dims[1]);
@@ -176,6 +202,7 @@ std::expected<void, Refusal> TensorRtBackend::soft_splat_all(std::span<const Ker
     reads.push_back(job.motion.handle);
     writes.push_back(job.out.handle);
   }
+  if (time != nullptr) writes.push_back(time->handle);
   if (auto ok = order(reads, writes); !ok) return ok;
   GpuTiming& timing = stage("splatting de GMFSS");
   timing.begin(stream_);

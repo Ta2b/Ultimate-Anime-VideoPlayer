@@ -41,7 +41,8 @@ namespace ajp::gpu {
 // 5 : KernelOps::soft_splat_all (les splats d'un instant en un passage).
 // 6 : voies de calcul (gpu/lanes.h) : Backend::use_lane, BackendCaps::lanes.
 // 7 : KernelOps::rife_pair (une paire sans réécrire le maillage de RIFE).
-inline constexpr int kBackendAbi = 7;
+// 8 : KernelOps::soft_splat_fill (les splats d'un instant et le remplissage de l'instant ensemble).
+inline constexpr int kBackendAbi = 8;
 
 using DeviceUuid = ajp::DeviceUuid;
 

@@ -29,18 +29,20 @@ struct SoftSplatParams {
   int coverage = 0;       // out a un plan de plus : la couverture (spec)
   float* sums = nullptr;  // (channels + 1) plans FP32, le dernier pour les poids
   void* out = nullptr;    // 1 × channels (+ 1) × height × width, FP16
+  int pairs = 0;          // rempli par launch_soft_splat_all : normalisation en half2
 };
 
 inline constexpr int kMaxSplatJobs = 12;
 
 // Un lot de splats : chacun ses tenseurs et ses sommes, toutes dans un même tampon que le lot
-// remet à zéro d'un seul memset. Les tables de blocs (préfixes, l'entrée count donne le total)
-// sont remplies par launch_soft_splat_all.
+// remet à zéro d'un seul memset. fill, s'il n'est pas nul : fill_count éléments FP16 mis à
+// fill_value par le lancement de la normalisation (l'instant t de GMFSS Union).
 struct SoftSplatBatch {
   SoftSplatParams jobs[kMaxSplatJobs];
   int count = 0;
-  unsigned splat_blocks[kMaxSplatJobs + 1];      // tuiles × groupes de plans, par travail
-  unsigned normalize_blocks[kMaxSplatJobs + 1];  // tuiles, par travail
+  void* fill = nullptr;
+  std::size_t fill_count = 0;
+  float fill_value = 0.0F;
 };
 
 // Octets des sommes d'un splat de params.
