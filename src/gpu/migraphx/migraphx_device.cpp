@@ -248,8 +248,8 @@ class DeviceNet final : public vk::net::RuntimeNet {
     return params;
   }
 
-  // L'adresse d'une entrée : le tenseur importé, ou une copie convertie (programme en float pour
-  // des tenseurs F16 : quantize_fp16 garde ses entrées), par l'hôte.
+  // L'adresse d'une entrée : le tenseur importé, ou une copie convertie par l'hôte (programme en
+  // float pour des tenseurs F16 : interface non réécrite à la construction).
   std::expected<void*, Refusal> input(const std::string& name, const migraphx::shape& shape,
                                       const HostBinding& b) {
     if (b.device == nullptr)

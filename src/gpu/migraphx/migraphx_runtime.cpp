@@ -1,6 +1,7 @@
 #include "gpu/migraphx/migraphx_runtime.h"
 
 #include <algorithm>
+#include <cstdint>
 #include <cstring>
 #include <exception>
 #include <format>
@@ -11,7 +12,10 @@
 #include <string>
 #include <vector>
 
+#include "gpu/ir/onnx_io_type.h"
+#include "gpu/ir/onnx_model.h"
 #include "gpu/migraphx/migraphx_detail.h"
+#include "gpu/vulkan/backend/net_build.h"
 
 namespace ajp::gpu::migraphx_rt {
 namespace {
@@ -52,7 +56,8 @@ class MigraphxNet final : public vk::net::RuntimeNet {
         if (!want) return refuse(RefusalCode::FormatUnsupported, std::format("{} : type MIGraphX", name));
         void* data = inputs[i].data;
         if (*want != inputs[i].type) {
-          // Programme en float (quantize_fp16 garde ses entrées), tenseurs du lecteur en F16.
+          // Interface non réécrite à la construction (sous-graphes, programme plus ancien) :
+          // programme en float, tenseurs du lecteur en F16.
           staged_[i].resize(shape.bytes());
           if (auto ok = vk::net::copy_converted(inputs[i].data, inputs[i].type, staged_[i].data(), *want,
                                                 shape.elements());
@@ -107,7 +112,9 @@ class MigraphxRuntime final : public vk::net::Runtime {
   std::string_view name() const override { return "migraphx"; }
   std::string device_name() const override { return device_name_; }
   std::string version() const override {
-    return std::format("{}.{}.{}", MIGRAPHX_VERSION_MAJOR, MIGRAPHX_VERSION_MINOR, MIGRAPHX_VERSION_PATCH);
+    // « -io » : programmes à l'interface dans le type de la chaîne ; les plus anciens, en float,
+    // se recompilent une fois.
+    return std::format("{}.{}.{}-io", MIGRAPHX_VERSION_MAJOR, MIGRAPHX_VERSION_MINOR, MIGRAPHX_VERSION_PATCH);
   }
   std::string_view extension() const override { return ".mxr"; }
 
@@ -137,11 +144,23 @@ class MigraphxRuntime final : public vk::net::Runtime {
         options.set_input_parameter_shape(input.name,
                                           std::vector<std::size_t>(input.dims.begin(), input.dims.end()));
       }
-      migraphx::program program = migraphx::parse_onnx(model.onnx_path.string().c_str(), options);
+      // L'interface dans le type des tenseurs de la chaîne (ir/onnx_io_type.h), un Cast compilé
+      // sur l'appareil à chaque entrée et sortie : quantize_fp16 laisse les paramètres d'un ONNX
+      // float en float, et chaque image passerait sinon par l'hôte, run_ordered refusé. Un graphe
+      // qui ne se réécrit pas (sous-graphes) se lit tel quel : conversion par l'hôte, comme avant.
+      auto onnx = vk::net::read_file(model.onnx_path);
+      if (!onnx) return std::unexpected(onnx.error());
+      const std::int32_t io = model.precision == TensorType::F16 ? ir::onnx::kFloat16 : ir::onnx::kFloat;
+      auto derived = ir::onnx::with_io_type(*onnx, io);
+      if (!derived && derived.error().code != RefusalCode::FeatureUnavailable)
+        return std::unexpected(derived.error());
+      const bool rewritten = derived && !derived->empty();
+      const std::vector<std::byte>& source = rewritten ? *derived : *onnx;
+      migraphx::program program = migraphx::parse_onnx_buffer(source.data(), source.size(), options);
       if (progress.stop.stop_requested()) return refuse(RefusalCode::Cancelled, "construction annulée");
-      // Un ONNX en float demandé en F16 : MIGraphX range ses calculs en half, entrées comprises
-      // converties dans le programme.
-      bool float_graph = false;
+      // Un ONNX en float demandé en F16 : MIGraphX range ses calculs en half. Une interface
+      // réécrite venait d'un ONNX float.
+      bool float_graph = rewritten;
       const migraphx::program_parameter_shapes shapes = program.get_parameter_shapes();
       for (const char* name : shapes.names()) float_graph |= shapes[name].type() == migraphx_shape_float_type;
       if (model.precision == TensorType::F16 && float_graph) migraphx::quantize_fp16(program);
