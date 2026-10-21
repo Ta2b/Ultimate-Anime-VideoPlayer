@@ -28,12 +28,15 @@ from pathlib import Path
 # (nom, fichier sous models/, formes des entrées, répartitions essayées)
 CASES = [
     ("SPAN Performance 540p", "onnx/2x_AnimeJaNai_HD_V3.1_Performance_SPANF3_b5f48_unshuffle_fp16.onnx",
-     [[1, 3, 540, 960]], ["CPUAndGPU", "ALL", "CPUOnly"]),
+     [[1, 3, 540, 960]], ["CPUAndGPU", "ALL"]),
+    ("SPAN Performance 540p en FP32", "onnx/2x_AnimeJaNai_HD_V3.1_Performance_SPANF3_b5f48_unshuffle_fp16.onnx",
+     [[1, 3, 540, 960]], ["CPUAndGPU"]),
     ("SPAN Performance 1080p", "onnx/2x_AnimeJaNai_HD_V3.1_Performance_SPANF3_b5f48_unshuffle_fp16.onnx",
      [[1, 3, 1080, 1920]], ["CPUAndGPU", "ALL"]),
     ("SPAN Balanced 540p", "onnx/2x_AnimeJaNai_HD_V3.1_Balanced_SPANF3_b8f64_unshuffle_fp16.onnx",
      [[1, 3, 540, 960]], ["CPUAndGPU", "ALL"]),
     ("RIFE 4.25 720p", "rife/rife_v4.25.onnx", [[1, 11, 768, 1280]], ["CPUAndGPU", "ALL"]),
+    ("RIFE 4.25 720p en FP32", "rife/rife_v4.25.onnx", [[1, 11, 768, 1280]], ["CPUAndGPU"]),
     ("RIFE 4.22 lite 720p", "rife/rife_v4.22_lite.onnx", [[1, 11, 768, 1280]], ["CPUAndGPU", "ALL"]),
     ("DistilDRBA v2 lite 540p", "rife/distil_drba_v2_lite.onnx", [[1, 7, 576, 1024], [1, 7, 576, 1024]],
      ["CPUAndGPU"]),
@@ -44,14 +47,41 @@ CAPABILITY = re.compile(r"number of partitions supported by CoreML: (\d+).*?node
                         r"supported by CoreML: (\d+)")
 UNSUPPORTED = re.compile(r"Operator type: \[(\w+)\] index: \[\d+\] name: \[([^\]]*)\] supported: \[0\]")
 CPU_NODES = re.compile(r"placed on \[CPUExecutionProvider\]\. Number of nodes: \d+\n((?:[ \t]+\S+ \([^)\n]*\)\n)+)")
+# Les raisons des refus : les lignes des constructeurs du fournisseur CoreML, hors du bilan par nœud.
+REASON = re.compile(r"\[[VIW]:onnxruntime:[^,]*, (\w+\.(?:cc|mm|h)):\d+ (\w+)\] (.*)")
 DEVICE = re.compile(r"Operation: ([^,\s]+),? Device Usage: (\w+)(?:, Estimated Cost: ([\d.eE+-]+))?",
                     re.IGNORECASE)
 
 
-def fixed_model(source: Path, shapes: list[list[int]], target: Path) -> None:
+def to_fp32(model) -> None:
+    """Tout en FP32 : poids, constantes, types des valeurs, Cast vers FP16."""
+    import numpy as np
+    from onnx import TensorProto, numpy_helper
+
+    def widened(tensor):
+        return numpy_helper.from_array(numpy_helper.to_array(tensor).astype(np.float32), tensor.name)
+
+    graph = model.graph
+    for i, tensor in enumerate(graph.initializer):
+        if tensor.data_type == TensorProto.FLOAT16:
+            graph.initializer[i].CopyFrom(widened(tensor))
+    for value in [*graph.input, *graph.output, *graph.value_info]:
+        if value.type.tensor_type.elem_type == TensorProto.FLOAT16:
+            value.type.tensor_type.elem_type = TensorProto.FLOAT
+    for node in graph.node:
+        for attribute in node.attribute:
+            if node.op_type == "Cast" and attribute.name == "to" and attribute.i == TensorProto.FLOAT16:
+                attribute.i = TensorProto.FLOAT
+            if attribute.HasField("t") and attribute.t.data_type == TensorProto.FLOAT16:
+                attribute.t.CopyFrom(widened(attribute.t))
+
+
+def fixed_model(source: Path, shapes: list[list[int]], target: Path, fp32: bool = False) -> None:
     import onnx
 
     model = onnx.load(str(source))
+    if fp32:
+        to_fp32(model)
     initializers = {i.name for i in model.graph.initializer}
     inputs = [i for i in model.graph.input if i.name not in initializers]
     for value, dims in zip(inputs, shapes, strict=True):
@@ -82,6 +112,7 @@ def run_case(model: Path, units: str, runs: int, cache: Path) -> None:
     started = time.perf_counter()
     session = ort.InferenceSession(str(model), options, providers=[("CoreMLExecutionProvider", coreml)])
     opened = time.perf_counter() - started
+    print("OPTIONS", session.get_provider_options().get("CoreMLExecutionProvider"), flush=True)
     rng = np.random.default_rng(0)
     feeds = {}
     for value in session.get_inputs():
@@ -110,6 +141,16 @@ def summarize(log: str) -> list[str]:
     unsupported = collections.Counter(m[1] for m in UNSUPPORTED.finditer(log))
     if unsupported:
         lines.append("  refusés par CoreML : " + ", ".join(f"{op} ×{n}" for op, n in unsupported.most_common()))
+    reasons = collections.Counter()
+    for m in REASON.finditer(log):
+        if "Operator type:" in m[3] or not any(k in m[1].lower() for k in ("builder", "helper", "coreml")):
+            continue
+        reasons[f"{m[1]} {m[2]} : {re.sub(r'[0-9]+', '#', m[3])[:160]}"] += 1
+    for reason, n in reasons.most_common(12):
+        lines.append(f"  raison ×{n} : {reason}")
+    options = re.search(r"OPTIONS .*", log)
+    if options:
+        lines.append("  " + options[0][:400])
     devices = collections.defaultdict(collections.Counter)
     costs = collections.Counter()
     for m in DEVICE.finditer(log):
@@ -128,7 +169,7 @@ def summarize(log: str) -> list[str]:
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("models", type=Path)
-    parser.add_argument("--runs", type=int, default=8)
+    parser.add_argument("--runs", type=int, default=4)
     parser.add_argument("--child", nargs=2, metavar=("MODEL", "UNITS"))
     args = parser.parse_args()
     if args.child:
@@ -144,8 +185,9 @@ def main() -> int:
             if not source.exists():
                 print(f"{name} : {source} absent")
                 continue
-            model = Path(work) / (source.stem + "_" + "x".join(map(str, shapes[0])) + ".onnx")
-            fixed_model(source, shapes, model)
+            fp32 = name.endswith("FP32")
+            model = Path(work) / (source.stem + "_" + "x".join(map(str, shapes[0])) + ("_fp32" if fp32 else "") + ".onnx")
+            fixed_model(source, shapes, model, fp32)
             for units in unit_list:
                 child = subprocess.run(
                     [sys.executable, "-I", __file__, str(args.models), "--runs", str(args.runs),
