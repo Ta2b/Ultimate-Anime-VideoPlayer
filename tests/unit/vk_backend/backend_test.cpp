@@ -215,6 +215,19 @@ TEST_CASE("Backend : artefact, aller-retour et refus", "[vk_backend][backend]") 
   changed = data;
   changed.dispatches.front().groups[0] += 1;
   require_refusal(vk::net::verify_artifact(changed, backend->profile()), RefusalCode::FormatVersion);
+  // Sans abaisser, rien n'y paraît ; le chargement refait le programme et réécrit l'artefact.
+  require_ok(vk::net::check_artifact(changed, backend->profile()));
+  require_ok(vk::net::write_file(artifact.path, vk::net::serialize(changed)));
+  CHECK(build(*backend, model, shapes(12, 16)).path == artifact.path);
+  CHECK(require_value(vk::net::read_file(artifact.path)) == vk::net::serialize(changed));
+  (void)require_value(backend->load(artifact));
+  CHECK(require_value(vk::net::read_file(artifact.path)) == bytes);
+  changed = data;
+  changed.choices.front().variant = "disparue";
+  require_refusal(vk::net::check_artifact(changed, backend->profile()), RefusalCode::FormatVersion);
+  changed = data;
+  changed.choices.pop_back();
+  require_refusal(vk::net::check_artifact(changed, backend->profile()), RefusalCode::FormatVersion);
 
   // Un artefact abîmé sur le disque n'est pas chargé ; build le refait.
   std::ofstream(artifact.path, std::ios::binary | std::ios::trunc).write("abc", 3);

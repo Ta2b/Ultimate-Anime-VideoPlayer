@@ -1,8 +1,8 @@
 // Construction et rechargement des réseaux du moteur Vulkan. build_network importe l'ONNX,
 // fixe la forme d'entrée, applique les passes de gpu_ir, choisit un noyau par nœud (autotuner
 // ou choix par défaut) et abaisse le graphe : tout refus arrive ici, jamais à l'exécution.
-// verify_artifact rend le programme d'un artefact relu, après avoir vérifié qu'il a été fait
-// pour cet appareil, ces shaders et cette version de l'abaissement.
+// check_artifact dit sans rien abaisser si un artefact relu a été fait pour cet appareil, ces
+// shaders et cette version de l'abaissement ; verify_artifact rend en plus son programme.
 #pragma once
 
 #include <cstdint>
@@ -45,9 +45,14 @@ std::expected<ir::Graph, Refusal> prepare_graph(const BuildRequest& request, con
 // Hachages SPIR-V des shaders que le programme utilise, un par nom.
 std::vector<ShaderHash> shader_hashes(std::span<const Dispatch> dispatches);
 
-// Refus : DeviceMismatch (artefact d'un autre appareil ou pilote), FormatVersion (autre
-// abaissement, autres shaders, ou programme qui ne se refait pas à l'identique), ceux de
-// ir::validate et de l'abaissement.
+// Ce qui se vérifie sans ranger un seul poids : versions, appareil, shaders, graphe valide, un
+// choix par nœud parmi ses candidats d'aujourd'hui. Refus : DeviceMismatch (artefact d'un autre
+// appareil ou pilote), FormatVersion (autre abaissement, autres shaders, choix inconnu), ceux de
+// ir::validate et de candidates.
+std::expected<void, Refusal> check_artifact(const ArtifactData& data, const DeviceProfile& profile);
+
+// check_artifact, puis l'abaissement, qui doit refaire les dispatchs à l'identique. Refus : ceux
+// de check_artifact et de l'abaissement, FormatVersion (programme qui ne se refait pas).
 std::expected<Program, Refusal> verify_artifact(const ArtifactData& data, const DeviceProfile& profile);
 
 // Clé de cache de l'artefact : modèle, forme, précision, appareil et versions.

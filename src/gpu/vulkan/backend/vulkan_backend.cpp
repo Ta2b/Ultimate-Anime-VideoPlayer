@@ -5,10 +5,12 @@
 #include <limits>
 #include <type_traits>
 #include <utility>
+#include <vector>
 
 #include "gpu/ir/graph.h"
 #include "gpu/vulkan/backend/kernel_ops_detail.h"
 #include "gpu/vulkan/backend/net_build.h"
+#include "gpu/vulkan/backend/net_lower.h"
 #include "gpu/vulkan/backend/shared_tensor.h"
 #include "gpu/vulkan/backend/vulkan_backend_detail.h"
 #include "gpu/vulkan/compute/buffer.h"
@@ -259,8 +261,9 @@ std::expected<Artifact, Refusal> VulkanBackend::build(const ModelSpec& model, co
   const std::uint64_t key = net::artifact_key(*request, profile_);
   Artifact artifact{.cache_key = std::format("{:016x}", key), .path = artifact_path(model, shapes)};
   // Un artefact déjà construit et toujours valable pour cet appareil et ces shaders sert tel quel.
+  // Rien ne s'abaisse ici : load le fait, une fois, pour ranger les poids.
   if (auto bytes = net::read_file(artifact.path)) {
-    if (auto data = net::deserialize(*bytes); data && net::verify_artifact(*data, profile_)) return artifact;
+    if (auto data = net::deserialize(*bytes); data && net::check_artifact(*data, profile_)) return artifact;
   }
   std::optional<net::Autotuner> tuner;
   if (options_.autotune) {
@@ -287,8 +290,21 @@ std::expected<std::unique_ptr<Engine>, Refusal> VulkanBackend::load(const Artifa
   if (!bytes) return std::unexpected(bytes.error());
   auto data = net::deserialize(*bytes);
   if (!data) return std::unexpected(data.error());
-  auto program = net::verify_artifact(*data, profile_);
+  if (auto ok = net::check_artifact(*data, profile_); !ok) return std::unexpected(ok.error());
+  auto program = net::lower(data->graph, data->choices, profile_.target);
   if (!program) return std::unexpected(program.error());
+  // Mêmes graphe, choix, appareil et shaders, mais un abaissement qui a changé sans changer de
+  // version : le programme d'aujourd'hui sert, et l'artefact est réécrit pour lui.
+  if (std::vector<net::ShaderHash> shaders = net::shader_hashes(program->dispatches);
+      program->dispatches != data->dispatches || shaders != data->shaders) {
+    log(BackendLogLevel::Warn, std::format("{} : programme refait autrement qu'à sa construction, artefact "
+                                           "réécrit",
+                                           artifact.path.filename().string()));
+    data->dispatches = program->dispatches;
+    data->shaders = std::move(shaders);
+    if (auto ok = net::write_file(artifact.path, net::serialize(*data)); !ok)
+      log(BackendLogLevel::Warn, ok.error().detail);
+  }
   auto engine =
       net::NetEngine::create(*context_, *memory_, *pipelines_, std::move(data->graph), std::move(*program));
   if (!engine) return std::unexpected(engine.error());

@@ -142,7 +142,7 @@ std::expected<ArtifactData, Refusal> build_network(const BuildRequest& request, 
   return data;
 }
 
-std::expected<Program, Refusal> verify_artifact(const ArtifactData& data, const DeviceProfile& profile) {
+std::expected<void, Refusal> check_artifact(const ArtifactData& data, const DeviceProfile& profile) {
   if (data.lowering != kLoweringVersion) {
     return refuse(RefusalCode::FormatVersion,
                   std::format("artefact d'abaissement {}, {} attendu", data.lowering, kLoweringVersion));
@@ -158,6 +158,23 @@ std::expected<Program, Refusal> verify_artifact(const ArtifactData& data, const 
     }
   }
   if (auto ok = ir::validate(data.graph); !ok) return std::unexpected(ok.error());
+  if (data.choices.size() != data.graph.nodes.size()) {
+    return refuse(RefusalCode::FormatVersion,
+                  std::format("{} choix pour {} nœuds", data.choices.size(), data.graph.nodes.size()));
+  }
+  for (std::size_t k = 0; k < data.choices.size(); ++k) {
+    auto options = candidates(data.graph, k, profile.target);
+    if (!options) return std::unexpected(options.error());
+    if (std::ranges::find(*options, data.choices[k]) == options->end()) {
+      return refuse(RefusalCode::FormatVersion,
+                    std::format("nœud {} : variante {} plus proposée", k, data.choices[k].variant));
+    }
+  }
+  return {};
+}
+
+std::expected<Program, Refusal> verify_artifact(const ArtifactData& data, const DeviceProfile& profile) {
+  if (auto ok = check_artifact(data, profile); !ok) return std::unexpected(ok.error());
   auto program = lower(data.graph, data.choices, profile.target);
   if (!program) return std::unexpected(program.error());
   if (program->dispatches != data.dispatches || shader_hashes(program->dispatches) != data.shaders) {
