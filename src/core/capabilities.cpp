@@ -129,12 +129,20 @@ std::vector<CapabilityRow> panel_rows(std::span<const CapabilityFacts> facts) {
   return rows;
 }
 
-Capabilities to_resolve_capabilities(std::span<const CapabilityFacts> facts) {
+Capabilities to_resolve_capabilities(std::span<const CapabilityFacts> facts,
+                                     std::string_view true_hdr_environment) {
   Capabilities caps;
+  bool true_hdr_installed = false;
   for (const CapabilityFacts& one : facts) {
     if (!usable(one)) continue;
     if (one.id.kind == CapabilityKind::Model) caps.models.push_back(one.id.name);
-    if (one.id.kind == CapabilityKind::Route && one.id.name == kRouteTrueHdr) caps.true_hdr = true;
+    if (one.id.kind == CapabilityKind::Route && one.id.name == kRouteTrueHdr) true_hdr_installed = true;
+  }
+  // L'ordre de vendor_hdr place le système, le GPU et le moteur avant le SDK : sa cause l'emporte.
+  if (!true_hdr_environment.empty()) {
+    caps.true_hdr_blocker = std::string(true_hdr_environment);
+  } else {
+    caps.true_hdr_blocker = true_hdr_installed ? std::string() : std::string(kTrueHdrNotInstalled);
   }
   return caps;
 }

@@ -13,6 +13,7 @@ option(AJP_WITH_CUDA "Construire le backend TensorRT et les noyaux CUDA" OFF)
 option(AJP_BUILD_TESTS "Construire les tests unitaires" ON)
 option(AJP_BUILD_PLAYER "Construire le lecteur ; OFF ne garde que core, kernels et leurs tests" ON)
 option(AJP_WARNINGS_AS_ERRORS "Avertissements en erreurs" ON)
+option(AJP_TRANSITIVE_RPATH "RPATH valable pour les dépendances indirectes (préfixe Linux)" OFF)
 
 if(AJP_WITH_CUDA)
   set(CMAKE_CUDA_ARCHITECTURES "75-real;86-real;89-real;120-real;120-virtual"
@@ -33,6 +34,14 @@ set(CMAKE_CXX_SCAN_FOR_MODULES OFF)
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
 include(AjpModule)
 include(Dependencies)
+
+# Les bibliothèques d'un préfixe comme /opt/ajp-deps n'ont pas toutes de RUNPATH :
+# libavcodec n'y trouverait pas libswresample. Un DT_RPATH, à la différence de
+# DT_RUNPATH, vaut aussi pour les dépendances indirectes : chaque exécutable et
+# bibliothèque partagée se lance alors sans LD_LIBRARY_PATH. Posé avant toute cible.
+if(AJP_TRANSITIVE_RPATH AND CMAKE_SYSTEM_NAME STREQUAL "Linux")
+  add_link_options("LINKER:--disable-new-dtags")
+endif()
 
 # Ordre des feuilles vers la racine : une cible ne dépend que de ce qui précède.
 add_subdirectory(src/core)

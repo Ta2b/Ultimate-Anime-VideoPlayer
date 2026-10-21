@@ -103,7 +103,8 @@ std::expected<std::vector<LoadedLibrary>, Refusal> load_maxine_runtime(const fs:
   }
   for (const Candidate& candidate : *pending) {
     if (candidate.required) return std::unexpected(candidate.failure);
-    log().info("Maxine : {} non chargée, ignorée ({})", utf8(candidate.relative), candidate.failure.detail);
+    make_logger()->info("Maxine : {} non chargée, ignorée ({})", utf8(candidate.relative),
+                        candidate.failure.detail);
   }
   return loaded;
 }

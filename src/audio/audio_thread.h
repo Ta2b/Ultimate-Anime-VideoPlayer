@@ -23,6 +23,7 @@
 #include "core/clock.h"
 #include "core/inbox.h"
 #include "core/messages.h"
+#include "core/thread.h"
 #include "core/types.h"
 
 namespace ajp::audio {
@@ -38,7 +39,9 @@ struct AudioThreadOptions {
 
 class AudioThread {
  public:
-  // Refuse des options hors bornes. output doit être ouvert ; le thread le possède ensuite.
+  // Refuse des options hors bornes, ou un thread refusé par le système (ThreadUnavailable).
+  // output doit être ouvert ; le thread le possède ensuite. Une exception qui arrêterait la
+  // boucle part, en refus ThreadFailed, au journal et à options.refused.
   static std::expected<std::unique_ptr<AudioThread>, Refusal> start(std::unique_ptr<AudioOutput> output,
                                                                     AudioThreadOptions options);
   AudioThread(const AudioThread&) = delete;
@@ -70,6 +73,7 @@ class AudioThread {
   AudioInbox inbox_;  // vit plus longtemps que la sortie, dont le rappel y écrit
   std::unique_ptr<AudioPlayer> player_;
   std::shared_ptr<const MasterClock> clock_;
+  ThreadReport report_;  // journal et options.refused
   std::jthread thread_;  // dernier membre : s'arrête avant que le reste ne soit détruit
 };
 

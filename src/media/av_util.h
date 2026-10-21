@@ -52,7 +52,7 @@ std::unexpected<Refusal> refuse(RefusalCode code, std::string detail);
 std::unexpected<Refusal> refuse_av(RefusalCode code, std::string_view where, int error);
 
 // Horodatage d'un flux en microsecondes depuis le début du fichier ;
-// kNoTimestamp reste kNoTimestamp.
+// kNoPts reste kNoPts.
 std::int64_t to_us(std::int64_t ts, AVRational time_base, std::int64_t start_us);
 // Inverse de to_us, pour viser une position dans un flux. Arrondi vers le bas :
 // un seek AVSEEK_FLAG_BACKWARD ne doit jamais viser après la cible.

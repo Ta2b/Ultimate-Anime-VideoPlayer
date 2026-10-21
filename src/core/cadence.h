@@ -15,6 +15,7 @@
 #include <optional>
 #include <span>
 
+#include "core/frame.h"
 #include "core/profile.h"
 #include "core/types.h"
 
@@ -32,6 +33,11 @@ struct SourceStamp {
   std::optional<std::int64_t> pts_us;  // absent : horodatage invalide
   std::uint32_t epoch = 0;
 };
+
+// La source d'une image décodée ; kNoPts y devient un horodatage absent (known_pts).
+inline SourceStamp stamp_of(const DecodedFrame& frame) {
+  return {.id = frame.id, .pts_us = known_pts(frame.pts_us), .epoch = frame.epoch};
+}
 
 // Un instant de sortie, à la position t de la paire (gauche, droite).
 struct OutputInstant {

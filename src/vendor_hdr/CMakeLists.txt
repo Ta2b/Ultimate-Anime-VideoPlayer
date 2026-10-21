@@ -6,7 +6,6 @@ ajp_add_module(vendor_hdr
     binary_probe.cpp
     blockers.cpp
     dynamic_library.cpp
-    log.cpp
     maxine_abi_check.cpp
     maxine_runtime.cpp
     maxine_vfx.cpp
@@ -20,4 +19,4 @@ ajp_add_module(vendor_hdr
     true_hdr.cpp
     true_hdr_stage.cpp
   DEPS ajp::core_types
-  PRIVATE_DEPS ajp::dep::spdlog ajp::dep::toml ${CMAKE_DL_LIBS})
+  PRIVATE_DEPS ajp::core_log ajp::dep::toml ${CMAKE_DL_LIBS})

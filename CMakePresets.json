@@ -25,7 +25,8 @@
       "cacheVariables": {
         "CMAKE_PREFIX_PATH": "$env{AJP_DEPS_PREFIX}",
         "CMAKE_INSTALL_RPATH": "$env{AJP_DEPS_PREFIX}/lib",
-        "CMAKE_BUILD_RPATH": "$env{AJP_DEPS_PREFIX}/lib"
+        "CMAKE_BUILD_RPATH": "$env{AJP_DEPS_PREFIX}/lib",
+        "AJP_TRANSITIVE_RPATH": "ON"
       },
       "environment": {
         "PKG_CONFIG_PATH": "$env{AJP_DEPS_PREFIX}/lib/pkgconfig:$env{AJP_DEPS_PREFIX}/share/pkgconfig:$penv{PKG_CONFIG_PATH}"
@@ -122,6 +123,14 @@
       }
     },
     {
+      "name": "linux-prefix-tsan-player",
+      "displayName": "Linux préfixe, lecteur complet sous TSan",
+      "inherits": "linux-prefix",
+      "cacheVariables": {
+        "CMAKE_CXX_FLAGS": "-fsanitize=thread"
+      }
+    },
+    {
       "name": "linux-prefix-asan-core",
       "displayName": "Linux préfixe, cœur sous ASan et UBSan",
       "inherits": "linux-prefix-core",
@@ -168,6 +177,10 @@
       "configurePreset": "linux-prefix-tsan"
     },
     {
+      "name": "linux-prefix-tsan-player",
+      "configurePreset": "linux-prefix-tsan-player"
+    },
+    {
       "name": "core",
       "configurePreset": "core"
     },
@@ -189,6 +202,10 @@
       "configurePreset": "asan",
       "output": {
         "outputOnFailure": true
+      },
+      "environment": {
+        "LSAN_OPTIONS": "suppressions=${sourceDir}/tools/ci/lsan.supp",
+        "VK_LOADER_DISABLE_DYNAMIC_LIBRARY_UNLOADING": "1"
       }
     },
     {
@@ -222,6 +239,10 @@
       "configurePreset": "linux-prefix-asan",
       "output": {
         "outputOnFailure": true
+      },
+      "environment": {
+        "LSAN_OPTIONS": "suppressions=${sourceDir}/tools/ci/lsan.supp",
+        "VK_LOADER_DISABLE_DYNAMIC_LIBRARY_UNLOADING": "1"
       }
     },
     {
@@ -237,6 +258,16 @@
       }
     },
     {
+      "name": "linux-prefix-tsan-player",
+      "configurePreset": "linux-prefix-tsan-player",
+      "output": {
+        "outputOnFailure": true
+      },
+      "environment": {
+        "TSAN_OPTIONS": "halt_on_error=1 second_deadlock_stack=1 ignore_noninstrumented_modules=1"
+      }
+    },
+    {
       "name": "core",
       "configurePreset": "core",
       "output": {
@@ -248,6 +279,9 @@
       "configurePreset": "linux-prefix-asan-core",
       "output": {
         "outputOnFailure": true
+      },
+      "environment": {
+        "LSAN_OPTIONS": "suppressions=${sourceDir}/tools/ci/lsan.supp"
       }
     }
   ]
