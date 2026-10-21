@@ -52,12 +52,13 @@ constexpr bool is_gmfss(MotionEngine engine) {
 }
 // Proposé sur ce système : l'interpolation d'Apple sur un Mac seulement. play.toml garde le choix
 // partout ; ailleurs, la chaîne reprend RIFE.
-constexpr bool offered(MotionEngine engine) {
 #if defined(__APPLE__)
-  return true;
+inline constexpr bool kAppleOffered = true;
 #else
-  return engine != MotionEngine::Apple;
+inline constexpr bool kAppleOffered = false;
 #endif
+constexpr bool offered(MotionEngine engine) {
+  return kAppleOffered || engine != MotionEngine::Apple;
 }
 std::string_view name(MotionEngine engine);   // « rife », la clé de play.toml
 std::string_view label(MotionEngine engine);  // « RIFE », pour le menu

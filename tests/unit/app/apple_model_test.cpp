@@ -43,7 +43,10 @@ TEST_CASE("apple_model : écrit une fois, réécrit s'il est abîmé", "[app][ap
 
   const auto stamp = std::filesystem::last_write_time(*written);
   REQUIRE(apple_model(dir));
-  CHECK(std::filesystem::last_write_time(*written) == stamp);  // déjà là : rien d'écrit
+  // Déjà là : rien d'écrit. Comparé hors de CHECK, que Catch2 n'affiche pas une date sur 128 bits
+  // (macOS).
+  const bool untouched = std::filesystem::last_write_time(*written) == stamp;
+  CHECK(untouched);
 
   std::ofstream(*written, std::ios::binary | std::ios::trunc) << "abîmé";
   REQUIRE(apple_model(dir));
