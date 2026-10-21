@@ -42,7 +42,7 @@ constexpr std::size_t kBuffers = 7;
 // (close_gate), il s'arrête au début de chaque image jusqu'à open_gate.
 class HoldingEncoder : public FrameEncoder {
  public:
-  explicit HoldingEncoder(std::size_t hold)
+  explicit HoldingEncoder(std::size_t hold, AVRational rate = {25, 1})
       : hold_(hold), ctx_(avcodec_alloc_context3(nullptr)), packet_(av_packet_alloc()) {
     ctx_->codec_type = AVMEDIA_TYPE_VIDEO;
     ctx_->codec_id = AV_CODEC_ID_FFV1;
@@ -50,7 +50,7 @@ class HoldingEncoder : public FrameEncoder {
     ctx_->height = kHeight;
     ctx_->pix_fmt = AV_PIX_FMT_YUV420P10LE;
     ctx_->time_base = kMicroseconds;
-    ctx_->framerate = AVRational{25, 1};
+    ctx_->framerate = rate;
   }
   ~HoldingEncoder() override { release_all(); }
   HoldingEncoder(const HoldingEncoder&) = delete;
@@ -377,6 +377,75 @@ TEST_CASE("Écriture : à cadence variable, les instants manquants restent vides
   for (std::size_t n = 1; n < pts.size(); ++n) CHECK(pts[n] - pts[0] == kShownUs[n]);
   CHECK(progress.frames == static_cast<std::int64_t>(kShownUs.size()));
   CHECK(progress.repeated == 0);
+}
+
+TEST_CASE("Écriture : un MP4 garde chaque instant sur son pas, à 120000/1001 i/s (E5)", "[export][writer]") {
+  // Une source avec de l'audio PCM, des sous-titres et une police : rien de cela ne va dans un MP4,
+  // et l'en-tête s'écrit quand même.
+  static const auto source = media::test::write_clip(media::test::ClipSpec{
+      .name = "export-writer-mp4-source.mkv",
+      .width = kWidth,
+      .height = kHeight,
+      .frames = 10,
+      .audio = {{.language = "jpn"}},
+      .subtitles = {{.language = "fre", .events = {{.start_ms = 0, .duration_ms = 200, .text = "Bonjour"}}}},
+      .attachments = {{.filename = "Police.ttf", .mime_type = "font/ttf", .data = "police"}},
+      .chapters = {{.start_ms = 0, .end_ms = 200, .title = "Début"}}});
+  REQUIRE(source);
+  const std::filesystem::path output = output_path("ajp-export-writer-exact.mp4");
+  constexpr AVRational kRate{120'000, 1'001};
+  WriterConfig config = config_for(output);
+  config.source = *source;
+  config.fps_num = kRate.num;
+  config.fps_den = kRate.den;
+  config.constant_rate = false;
+  auto writer = ExportWriter::open(config, std::make_unique<HoldingEncoder>(1, kRate));
+  if (!writer) FAIL(writer.error().detail);
+  Buffers buffers;
+  for (std::int64_t n = 0; n < static_cast<std::int64_t>(kBuffers); ++n) {
+    const auto i = buffers.take();
+    REQUIRE(i);
+    // L'instant à la microseconde près, comme la cadence le donne : 0, 8342, 16683…
+    push(**writer, buffers.in_place(*i, (n * kRate.den * 1'000'000 + kRate.num / 2) / kRate.num));
+  }
+  REQUIRE((*writer)->finish());
+  writer->reset();
+
+  AVFormatContext* raw = nullptr;
+  REQUIRE(avformat_open_input(&raw, output.string().c_str(), nullptr, nullptr) == 0);
+  const InputPtr input(raw);
+  REQUIRE(avformat_find_stream_info(raw, nullptr) >= 0);
+  // La vidéo seule, et la piste texte des chapitres que movenc ajoute (lue comme des données).
+  int media = 0;
+  for (unsigned i = 0; i < raw->nb_streams; ++i)
+    if (raw->streams[i]->codecpar->codec_type != AVMEDIA_TYPE_DATA) ++media;
+  CHECK(media == 1);
+  CHECK(raw->nb_chapters == 1);
+  const AVStream& video = *raw->streams[0];
+  CHECK(video.time_base.num == 1);
+  CHECK(video.time_base.den == kRate.num);
+  std::vector<std::int64_t> pts;
+  const PacketPtr packet(av_packet_alloc());
+  while (av_read_frame(raw, packet.get()) >= 0) {
+    if (packet->stream_index == 0) pts.push_back(packet->pts);
+    av_packet_unref(packet.get());
+  }
+  REQUIRE(pts.size() == kBuffers);
+  for (std::size_t n = 1; n < pts.size(); ++n) CHECK(pts[n] - pts[n - 1] == kRate.den);
+  std::error_code error;
+  std::filesystem::remove(output, error);
+}
+
+TEST_CASE("Écriture : FFV1 refusé dans un MOV, une extension inconnue aussi", "[export][writer]") {
+  const auto mov = ExportWriter::open(config_for(output_path("ajp-export-writer-ffv1.mov")),
+                                      std::make_unique<HoldingEncoder>(1));
+  REQUIRE_FALSE(mov);
+  CHECK(mov.error().code == RefusalCode::EncodeFailed);
+  CHECK_FALSE(std::filesystem::exists(std::filesystem::temp_directory_path() / "ajp-export-writer-ffv1.mov"));
+  const auto avi = ExportWriter::open(config_for(output_path("ajp-export-writer.avi")),
+                                      std::make_unique<HoldingEncoder>(1));
+  REQUIRE_FALSE(avi);
+  CHECK(avi.error().code == RefusalCode::FileUnwritable);
 }
 
 TEST_CASE("Écriture : un refus de l'encodeur arrête l'export et le dit", "[export][writer]") {

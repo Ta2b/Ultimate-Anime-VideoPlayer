@@ -43,7 +43,7 @@ inline constexpr std::size_t kDefaultQueueDepth = 4;
 
 struct WriterConfig {
   std::filesystem::path source;  // le fichier lu : ses autres pistes, chapitres et métadonnées
-  std::filesystem::path output;  // .mkv, remplacé s'il existe
+  std::filesystem::path output;  // .mkv, .mp4 ou .mov (export/container.h), remplacé s'il existe
   int width = 0;                 // taille encodée, paire
   int height = 0;
   int fps_num = 0;  // fréquence de sortie (source × interpolation) : un repère du contrôle de débit

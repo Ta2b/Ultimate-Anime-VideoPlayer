@@ -1,23 +1,26 @@
-// Le fichier d'un export : un MKV où la vidéo encodée vient en premier, suivie des pistes de la
-// source copiées telles quelles (audio, sous-titres, polices jointes), avec ses chapitres et ses
-// métadonnées. Les paquets copiés sont lus au fil de l'écriture, jusqu'à l'instant de la vidéo,
-// pour que le mux les entrelace sans tout garder en mémoire. Interne au module.
+// Le fichier d'un export : un MKV, un MP4 ou un MOV (export/container.h) où la vidéo encodée vient en
+// premier, suivie des pistes de la source copiées telles quelles (audio, sous-titres, polices jointes), avec
+// ses chapitres et ses métadonnées. Les paquets copiés sont lus au fil de l'écriture, jusqu'à l'instant de la
+// vidéo, pour que le mux les entrelace sans tout garder en mémoire. Interne au module.
 #pragma once
 
 #include <cstdint>
 #include <expected>
 #include <filesystem>
+#include <limits>
 #include <vector>
 
 #include "core/frame.h"
 #include "core/types.h"
 #include "export/av_handles.h"
+#include "export/container.h"
 
 namespace ajp::exporter {
 
 class Muxer {
  public:
-  // Ouvre la source et prépare la sortie, sans créer le fichier. Refus : MediaUnreadable.
+  // Ouvre la source et prépare la sortie, sans créer le fichier, dans le conteneur de son extension.
+  // Refus : MediaUnreadable, FileUnwritable (extension inconnue).
   static std::expected<Muxer, Refusal> open(const std::filesystem::path& source,
                                             const std::filesystem::path& output);
   Muxer(Muxer&& other) noexcept;
@@ -49,6 +52,7 @@ class Muxer {
   void close_output();
 
   std::filesystem::path output_path_;
+  Container container_ = Container::Matroska;
   InputPtr input_;
   AVFormatContext* output_ = nullptr;
   std::vector<int> map_;  // flux de la source → flux de la sortie, -1 : non copié
@@ -58,6 +62,8 @@ class Muxer {
   PacketPtr pending_;  // le prochain paquet copié, lu d'avance
   std::int64_t pending_us_ = 0;
   std::int64_t written_ = 0;  // octets du fichier clos
+  // Dernier dts vidéo écrit, dans la base de la piste : MP4 et MOV refusent un dts égal.
+  std::int64_t last_dts_ = std::numeric_limits<std::int64_t>::min();
   bool copies_done_ = false;
   bool opened_ = false;  // le fichier existe
   bool finished_ = false;

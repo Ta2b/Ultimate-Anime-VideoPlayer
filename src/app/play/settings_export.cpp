@@ -4,6 +4,7 @@
 #include <array>
 #include <filesystem>
 #include <format>
+#include <optional>
 #include <string>
 #include <system_error>
 
@@ -11,6 +12,7 @@
 
 #include "app/play/panel_style.h"
 #include "app/play/settings_chain_tabs.h"
+#include "export/container.h"
 #include "prepare/utf8.h"
 
 namespace ajp::app::play {
@@ -20,6 +22,9 @@ using panel::note;
 using panel::section;
 
 namespace {
+
+// Au-delà, l'arrondi du MKV à la milliseconde se voit dans les écarts entre images.
+constexpr int kExactRateFps = 100;
 
 constexpr std::array<int, 6> kHeights{kExportChainHeight, kExportSourceHeight, 720, 1080, 1440, 2160};
 
@@ -56,10 +61,14 @@ void copy_path(std::array<char, 1024>& to, const std::string& text) {
 }
 
 // Ce qui empêche d'exporter vers ce fichier, ou rien.
-std::string path_problem(const std::filesystem::path& output, const std::filesystem::path& source) {
+std::string path_problem(const std::filesystem::path& output, const std::filesystem::path& source,
+                         exporter::Codec codec) {
   std::error_code error;
   if (output.empty()) return "Choisissez le fichier exporté.";
-  if (output.extension() != ".mkv") return "Le fichier exporté est un MKV : son nom finit par .mkv.";
+  const std::optional<exporter::Container> container = exporter::container_of(output);
+  if (!container)
+    return "Le fichier exporté est un MKV, un MP4 ou un MOV : son nom finit par .mkv, .mp4 ou .mov.";
+  if (!exporter::carries(*container, codec)) return "FFV1 ne va pas dans un MOV : choisissez .mkv ou .mp4.";
   if (!std::filesystem::is_directory(output.parent_path(), error)) return "Ce dossier n'existe pas.";
   if (std::filesystem::equivalent(output, source, error)) return "Ce fichier est la vidéo lue.";
   return {};
@@ -160,7 +169,9 @@ void export_tab(ExportDraft& draft, const PlaySettings& running, const SettingsC
     draft.named_for.clear();
   }
   const std::filesystem::path output = prepare::path_from_utf8(draft.path.data());
-  const std::string problem = path_problem(output, choices.source_file);
+  const std::string problem = path_problem(output, choices.source_file, job.codec);
+  const exporter::Container container =
+      exporter::container_of(output).value_or(exporter::Container::Matroska);
   std::error_code error;
   if (!problem.empty()) {
     ImGui::PushStyleColor(ImGuiCol_Text, kWarn);
@@ -169,10 +180,21 @@ void export_tab(ExportDraft& draft, const PlaySettings& running, const SettingsC
   } else if (std::filesystem::exists(output, error)) {
     note("Ce fichier existe : il sera remplacé.");
   }
-  note(
-      "L'audio, les sous-titres, les polices et les chapitres de la source sont copiés tels quels. La "
-      "lecture "
-      "s'arrête pendant l'export puis reprend au même endroit ; Échap annule l'export.");
+  if (container == exporter::Container::Matroska) {
+    note(
+        "L'audio, les sous-titres, les polices et les chapitres de la source sont copiés tels quels. La "
+        "lecture s'arrête pendant l'export puis reprend au même endroit ; Échap annule l'export.");
+    if (rate.den > 0 && rate.num >= kExactRateFps * rate.den)
+      note(
+          "À cette fréquence, le MKV arrondit chaque image à la milliseconde (8, 8 puis 9 ms à 120 i/s) : "
+          "un nom en .mp4 ou .mov garde les instants exacts, sans les sous-titres ASS ni les polices.");
+  } else {
+    note(
+        "Le MP4 et le MOV gardent les instants exacts de chaque image. Les chapitres de la source sont "
+        "copiés, l'audio s'il y va (AAC, AC-3, E-AC-3 ; FLAC, Opus et DTS en MP4 ; jamais TrueHD), mais ni "
+        "les sous-titres ASS ni les polices. La lecture s'arrête pendant l'export puis reprend au même "
+        "endroit ; Échap annule l'export.");
+  }
   ImGui::BeginDisabled(!problem.empty());
   if (ImGui::Button("Exporter")) {
     ExportJob start = job;

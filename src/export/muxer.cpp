@@ -1,7 +1,9 @@
 #include "export/muxer.h"
 
+#include <algorithm>
 #include <format>
 #include <limits>
+#include <optional>
 #include <string>
 #include <string_view>
 #include <system_error>
@@ -50,12 +52,45 @@ bool attachment_ready(const AVStream& in, AVDictionary** out_metadata) {
   return true;
 }
 
+// Une piste copiée que le conteneur porte sans refus à l'en-tête. avformat_query_codec accepte
+// presque tout en MP4 et en MOV, mais movenc refuse FLAC et Opus hors MP4, TrueHD partout
+// (« expérimental »), le MP3 sous 16 kHz en MP4 ; en sous-titres, il ne porte que mov_text.
+bool carried(Container container, const AVCodecParameters& par, const AVOutputFormat& format) {
+  if (avformat_query_codec(&format, par.codec_id, FF_COMPLIANCE_NORMAL) != 1) return false;
+  if (container == Container::Matroska) return true;
+  switch (par.codec_id) {
+    case AV_CODEC_ID_AAC:
+    case AV_CODEC_ID_AC3:
+    case AV_CODEC_ID_EAC3:
+    case AV_CODEC_ID_ALAC:
+    case AV_CODEC_ID_MOV_TEXT:
+      return true;
+    case AV_CODEC_ID_MP3:
+      return container == Container::Mov || par.sample_rate >= 16'000;
+    case AV_CODEC_ID_FLAC:
+    case AV_CODEC_ID_OPUS:
+    case AV_CODEC_ID_DTS:
+      return container == Container::Mp4;
+    case AV_CODEC_ID_PCM_S16LE:
+    case AV_CODEC_ID_PCM_S16BE:
+    case AV_CODEC_ID_PCM_S24LE:
+    case AV_CODEC_ID_PCM_S24BE:
+      return container == Container::Mov;
+    default:
+      return false;
+  }
+}
+
 }  // namespace
 
 std::expected<Muxer, Refusal> Muxer::open(const std::filesystem::path& source,
                                           const std::filesystem::path& output) {
   Muxer m;
   m.output_path_ = output;
+  const std::optional<Container> container = container_of(output);
+  if (!container)
+    return refuse(RefusalCode::FileUnwritable, std::format("{} : ni .mkv, ni .mp4, ni .mov", utf8(output)));
+  m.container_ = *container;
   AVFormatContext* input = nullptr;
   const std::string source_text = utf8(source);
   if (const int err = avformat_open_input(&input, source_text.c_str(), nullptr, nullptr); err < 0)
@@ -67,7 +102,9 @@ std::expected<Muxer, Refusal> Muxer::open(const std::filesystem::path& source,
   if (input->start_time != AV_NOPTS_VALUE)
     m.start_us_ = av_rescale_q(input->start_time, AV_TIME_BASE_Q, kMicroseconds);
   const std::string output_text = utf8(output);
-  if (const int err = avformat_alloc_output_context2(&m.output_, nullptr, "matroska", output_text.c_str());
+  const std::string format(format_name(m.container_));
+  if (const int err =
+          avformat_alloc_output_context2(&m.output_, nullptr, format.c_str(), output_text.c_str());
       err < 0)
     return refuse_av(RefusalCode::FileUnwritable, output_text, err);
   m.pending_.reset(av_packet_alloc());
@@ -77,6 +114,7 @@ std::expected<Muxer, Refusal> Muxer::open(const std::filesystem::path& source,
 
 Muxer::Muxer(Muxer&& other) noexcept
     : output_path_(std::move(other.output_path_)),
+      container_(other.container_),
       input_(std::move(other.input_)),
       output_(std::exchange(other.output_, nullptr)),
       map_(std::move(other.map_)),
@@ -86,6 +124,7 @@ Muxer::Muxer(Muxer&& other) noexcept
       pending_(std::move(other.pending_)),
       pending_us_(other.pending_us_),
       written_(other.written_),
+      last_dts_(other.last_dts_),
       copies_done_(other.copies_done_),
       opened_(std::exchange(other.opened_, false)),
       finished_(other.finished_) {}
@@ -133,6 +172,11 @@ std::expected<void, Refusal> Muxer::begin(const AVCodecContext& encoder) {
   encoder_time_base_ = encoder.time_base;
   const AVFormatContext& in = *input_;
   AVFormatContext& out = *output_;
+  const std::string_view container = label(container_);
+  if (avformat_query_codec(out.oformat, encoder.codec_id, FF_COMPLIANCE_NORMAL) != 1) {
+    return refuse(RefusalCode::EncodeFailed, std::format("le {} ne porte pas {} : choisissez .mkv", container,
+                                                         avcodec_get_name(encoder.codec_id)));
+  }
   av_dict_copy(&out.metadata, in.metadata, 0);
 
   // La vidéo encodée d'abord : les lecteurs prennent la première piste vidéo.
@@ -144,6 +188,9 @@ std::expected<void, Refusal> Muxer::begin(const AVCodecContext& encoder) {
   video->avg_frame_rate = encoder.framerate;
   video->sample_aspect_ratio = encoder.sample_aspect_ratio;
   video->disposition = AV_DISPOSITION_DEFAULT;
+  // hvc1 : les paramètres de flux dans l'en-tête (AV_CODEC_FLAG_GLOBAL_HEADER), ce qu'Apple lit.
+  if (container_ != Container::Matroska && encoder.codec_id == AV_CODEC_ID_HEVC)
+    video->codecpar->codec_tag = MKTAG('h', 'v', 'c', '1');
   if (source_video_ >= 0) {
     for (const char* key : {"language", "title"}) {
       if (const char* value = tag(in.streams[source_video_]->metadata, key))
@@ -151,7 +198,7 @@ std::expected<void, Refusal> Muxer::begin(const AVCodecContext& encoder) {
     }
   }
 
-  // Les autres pistes de la source, copiées, si le MKV sait les porter.
+  // Les autres pistes de la source, copiées, si le conteneur sait les porter.
   map_.assign(in.nb_streams, -1);
   for (unsigned i = 0; i < in.nb_streams; ++i) {
     AVStream& st = *in.streams[i];
@@ -160,13 +207,16 @@ std::expected<void, Refusal> Muxer::begin(const AVCodecContext& encoder) {
     AVDictionary* extra = nullptr;
     bool keep = false;
     if (media) {
-      keep = avformat_query_codec(out.oformat, st.codecpar->codec_id, FF_COMPLIANCE_NORMAL) == 1;
+      keep = carried(container_, *st.codecpar, *out.oformat);
       if (!keep)
-        log->warn("piste {} ({}) non copiée : le MKV ne la porte pas", i,
-                  avcodec_get_name(st.codecpar->codec_id));
+        log->warn("piste {} ({}) non copiée : le {} ne la porte pas", i,
+                  avcodec_get_name(st.codecpar->codec_id), container);
     } else if (type == AVMEDIA_TYPE_ATTACHMENT) {
-      keep = attachment_ready(st, &extra);
-      if (!keep) log->warn("pièce jointe {} non copiée : ni nom ni type", i);
+      keep = carries_attachments(container_) && attachment_ready(st, &extra);
+      if (!keep && carries_attachments(container_))
+        log->warn("pièce jointe {} non copiée : ni nom ni type", i);
+      if (!keep && !carries_attachments(container_))
+        log->warn("pièce jointe {} non copiée : le {} n'en porte pas", i, container);
     }
     if (!keep) {
       av_dict_free(&extra);
@@ -214,8 +264,14 @@ std::expected<void, Refusal> Muxer::begin(const AVCodecContext& encoder) {
       return refuse_av(RefusalCode::FileUnwritable, path, err);
     opened_ = true;
   }
-  if (const int err = avformat_write_header(&out, nullptr); err < 0)
-    return refuse_av(RefusalCode::EncodeFailed, "mux : en-tête", err);
+  AVDictionary* options = nullptr;
+  if (const int timescale = video_timescale(encoder.framerate.num, encoder.framerate.den);
+      container_ != Container::Matroska && timescale > 0) {
+    av_dict_set_int(&options, "video_track_timescale", timescale, 0);
+  }
+  const int header = avformat_write_header(&out, &options);
+  av_dict_free(&options);
+  if (header < 0) return refuse_av(RefusalCode::EncodeFailed, "mux : en-tête", header);
   return read_copy();
 }
 
@@ -266,6 +322,18 @@ std::expected<void, Refusal> Muxer::write_video(AVPacket& packet) {
   AVStream* video = output_->streams[0];
   av_packet_rescale_ts(&packet, encoder_time_base_, video->time_base);
   packet.stream_index = video->index;
+  // Deux instants dans le même pas de la piste : le second passe au pas suivant (MKV tolère
+  // l'égalité, MP4 et MOV la refusent).
+  if (packet.dts != AV_NOPTS_VALUE) {
+    if (packet.dts <= last_dts_) {
+      if (container_ != Container::Matroska) {
+        log_channel("export")->debug("dts vidéo {} après {} : décalé d'un pas", packet.dts, last_dts_);
+        packet.dts = last_dts_ + 1;
+        if (packet.pts != AV_NOPTS_VALUE && packet.pts < packet.dts) packet.pts = packet.dts;
+      }
+    }
+    last_dts_ = std::max(last_dts_, packet.dts);
+  }
   if (const int err = av_interleaved_write_frame(output_, &packet); err < 0)
     return refuse_av(RefusalCode::EncodeFailed, "mux : paquet vidéo", err);
   return {};
