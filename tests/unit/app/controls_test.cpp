@@ -207,5 +207,17 @@ TEST_CASE("L'interface se recompose seulement quand elle change", "[app][control
   CHECK_FALSE(controls.needs_frame(gone + kS, view, false));
 }
 
+TEST_CASE("Un menu ouvert au clavier, barre effacée, redessine l'interface", "[app][controls]") {
+  Controls controls;
+  const ControlsView view{.position_us = 10 * kS, .duration_us = 100 * kS};
+  // Une touche seule ne fait pas paraître la barre : sans rien de visible, pas d'image.
+  CHECK_FALSE(controls.needs_frame(kS, view, true));
+  controls.set_held(true);  // PlayerUi::toggle_settings
+  CHECK(controls.needs_frame(kS, view, true));
+  controls.framed(kS, view, true);
+  controls.set_held(false);  // menu refermé : une dernière image pour l'ôter
+  CHECK(controls.needs_frame(kS + kUiFrameUs, view, false));
+}
+
 }  // namespace
 }  // namespace ajp::app::play

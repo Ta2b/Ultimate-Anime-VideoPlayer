@@ -435,12 +435,16 @@ void PlayerUi::toggle_settings() {
     panel_.open(running_);
   }
   look_.keep_visible = panel_.is_open();
+  // Ouvert au clavier, barre effacée : sans cela, aucune image ne se dessine avant que la souris
+  // bouge, et le menu n'apparaît pas.
+  controls_.set_held(look_.keep_visible);
   input_pending_ = true;
 }
 
 void PlayerUi::close_settings() {
   panel_.close();
   look_.keep_visible = false;
+  controls_.set_held(false);
   input_pending_ = true;
 }
 
