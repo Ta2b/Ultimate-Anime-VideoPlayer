@@ -149,8 +149,10 @@ std::expected<std::unique_ptr<FrameExport>, Refusal> FrameExport::open(PlaceboSc
     params.format = format;
     params.renderable = true;
     params.host_readable = true;
-    out->planes_[p] = pl_tex_create(gpu, &params);
-    if (out->planes_[p] == nullptr) return refuse(RefusalCode::VendorCallFailed, "export : pl_tex_create");
+    for (auto& set : out->planes_) {
+      set[p] = pl_tex_create(gpu, &params);
+      if (set[p] == nullptr) return refuse(RefusalCode::VendorCallFailed, "export : pl_tex_create");
+    }
     // Les plans à la suite, au même pas (la chroma entrelacée a autant d'octets par ligne que la
     // luma) : la disposition des images CUDA de FFmpeg, que NVENC lit d'un seul enregistrement.
     if (end % offset_align != 0)
@@ -253,7 +255,9 @@ FrameExport::~FrameExport() {
   }
   close_cuda(gpu);
   close_vulkan(gpu);
-  for (pl_tex& tex : planes_) pl_tex_destroy(gpu, &tex);
+  for (auto& set : planes_) {
+    for (pl_tex& tex : set) pl_tex_destroy(gpu, &tex);
+  }
   pl_renderer_destroy(&renderer_);
 }
 
@@ -318,12 +322,16 @@ FrameExport::Converted FrameExport::convert(const RingFrame& frame) {
     return Converted{.freed = s.ring.retire(gpu, frame),
                      .failure = Refusal{RefusalCode::SequenceOrder, "export : aucun tampon libre"}};
   }
+  const std::size_t set = next_set_;
+  next_set_ = (next_set_ + 1) % kPlaneSets;
+  const std::array<pl_tex, 3>& targets = planes_[set];
   Converted out =
-      render(frame, std::span<const pl_tex>(planes_.data(), static_cast<std::size_t>(plane_count_)), false);
+      render(frame, std::span<const pl_tex>(targets.data(), static_cast<std::size_t>(plane_count_)), false);
   if (out.failure) return out;
   const std::vector<PlaneFormat> planes = planes_of(setup_.layout);
 
   Buffer& buffer = *free;
+  buffer.set = set;
   buffer.planes_done = 0;
   buffer.in_flight = true;
   buffer.pts_us = frame.pts_us;
@@ -335,7 +343,7 @@ FrameExport::Converted FrameExport::convert(const RingFrame& frame) {
   };
   for (std::size_t p = 0; p < planes.size(); ++p) {
     pl_tex_transfer_params download{};
-    download.tex = planes_[p];
+    download.tex = targets[p];
     download.row_pitch = pitches_[p];
     if (buffer.buf != nullptr) {
       download.buf = buffer.buf;  // copie sur le GPU ; prêt quand le tampon n'est plus en usage
@@ -363,7 +371,7 @@ bool FrameExport::ready(Buffer& buffer) {
   if (buffer.buf != nullptr) return !pl_buf_poll(gpu, buffer.buf, 0);  // copie et export finis
   if (buffer.planes_done >= plane_count_) return true;
   // Les rappels des relectures finies passent pendant une interrogation de libplacebo.
-  static_cast<void>(pl_tex_poll(gpu, planes_[0], 0));
+  static_cast<void>(pl_tex_poll(gpu, planes_[buffer.set][0], 0));
   return buffer.planes_done >= plane_count_;
 }
 

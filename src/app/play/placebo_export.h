@@ -105,6 +105,7 @@ class FrameExport {
     pl_buf buf = nullptr;          // ou d'appareil, exporté vers CUDA (data nul)
     media::ImportedMemory memory;  // son adresse CUDA
     int planes_done = 0;           // relectures hôte de plans finies (rappels de libplacebo)
+    std::size_t set = 0;           // le jeu de plans relu (planes_)
     bool in_flight = false;        // en copie ou prêt
     std::int64_t pts_us = 0;
     std::atomic<bool> held{false};  // lu par l'encodeur, rendu par Picture::release
@@ -160,7 +161,11 @@ class FrameExport {
   PlaceboScreen& screen_;
   FrameExportSetup setup_;
   pl_renderer renderer_ = nullptr;
-  std::array<pl_tex, 3> planes_{};
+  // Deux jeux de plans de sortie, l'un après l'autre : le rendu d'une image n'attend pas la relecture
+  // de la précédente (file de transfert à part sur la plupart des GPU).
+  static constexpr std::size_t kPlaneSets = 2;
+  std::array<std::array<pl_tex, 3>, kPlaneSets> planes_{};
+  std::size_t next_set_ = 0;
   int plane_count_ = 0;
   std::array<std::size_t, 3> offsets_{};  // les plans à la suite : chroma après la luma, même pas
   std::array<std::size_t, 3> pitches_{};
