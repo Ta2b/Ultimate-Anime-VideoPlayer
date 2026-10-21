@@ -68,10 +68,8 @@ Options d'essai : `--keys=S:touche,…` (aussi `mouse=XxY`, `click=XxY`, `ctrl+2
 ## Mesures de référence
 
 Extrait de référence choisi par Tatoub : Re:Zero saison 4 épisode 18, 16:00 → 18:00, build optimisé,
-fenêtre 1280x720 (2560x1440 pixels), verrou GPU, bureau chargé (~40 % de GPU hors lecture).
-
-| Essai | Sautées | Intervalle moyen (σ) | Retard final |
-|---|---|---|---|
+fenêtre 1280x720 (2560x1440 pixels), verrou GPU, bureau chargé (~40 % de GPU hors lecture). Les
+mesures prises avec RTX HDR ne se publient pas (licence de NVIDIA) : elles restent sur le PC.
 
 GPU par appel (médiane) : RIFE 4.26 à 720p 7,6 ms ; SPAN 720p → 1440p 4,1 ms ; SPAN 1080p → 2160p
 11,5 ms ; warp et mélange 0,06 ms ; ingestion + Area 0,40 ms ;

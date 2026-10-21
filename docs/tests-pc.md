@@ -142,7 +142,7 @@ un réglage à faire taire.
   voies (anneau de 64 par voie, ordre automatique entre voies) et ceux du profil par étape ; une
   relecture désordonnerait les attentes entre voies. Le gain visé, trois lancements de moins par
   instant, est petit devant les ~7 ms de RIFE, et trtexec ne montrait aucun gain avec
-  `--useCudaGraph` (reports/optimisation.md). Les moteurs gardent leur propre graphe. À
+  `--useCudaGraph` (mesure du 19 octobre sur la 4070 Ti). Les moteurs gardent leur propre graphe. À
   reprendre seulement si `nsys` montre le CPU de lancement comme goulot.
 - **Sans objet : double tampon des sommes du splat** : elles servent de brouillon dans un seul
   appel de `soft_splat_all`, sur une seule voie ; rien d'autre ne les lit.

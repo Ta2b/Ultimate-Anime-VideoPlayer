@@ -58,7 +58,8 @@ après l'interpolation, OSD) → écran.
 | RIFE ×4, ouverture (0:50), 25 s | 1185 | **304** | 19,8 ms (19,0) | 303 / 587 |
 | RIFE ×3, ouverture, 25 s | 1224 | 8 | **14,0 ms (0,6)** | 319 / 603 |
 
-Défaut retenu : ×3 (72 im/s). Les essais avec RTX HDR restent hors du dépôt (licence de NVIDIA). Sous-titres : 0 présentation sans sous-titres en attente partout.
+Défaut retenu : ×3 (72 im/s). Les essais avec RTX HDR restent hors du dépôt (licence de NVIDIA).
+Sous-titres : 0 présentation sans sous-titres en attente partout.
 
 Temps d'un réseau seul (trtexec, --noDataTransfers, sous le verrou GPU, bureau actif) :
 - SPAN Performance 720p → 1440p : médiane 4,37 ms (référence du lecteur actuel : 4,24 ms) ;
