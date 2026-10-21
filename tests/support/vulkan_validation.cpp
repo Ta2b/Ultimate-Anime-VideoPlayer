@@ -24,12 +24,27 @@ std::string current_test() {
   return Catch::getResultCapture().getCurrentTestName();
 }
 
+// Une variable d'environnement, vide si absente. Sous Windows, _dupenv_s : la CRT déprécie getenv
+// (C4996), une erreur avec /WX.
+std::string env_value(const char* name) {
+#ifdef _WIN32
+  char* value = nullptr;
+  std::size_t size = 0;
+  if (_dupenv_s(&value, &size, name) != 0 || value == nullptr) return {};
+  std::string text(value);
+  std::free(value);
+  return text;
+#else
+  const char* value = std::getenv(name);
+  return value == nullptr ? std::string{} : std::string{value};
+#endif
+}
+
 }  // namespace
 
 ValidationMode validation_mode() {
   // Les tests lisent l'environnement ; src/ jamais (tools/ci/check-no-getenv.sh).
-  const char* value = std::getenv("AJP_TEST_VULKAN_VALIDATION");
-  const std::string_view text = value == nullptr ? std::string_view{} : std::string_view{value};
+  const std::string text = env_value("AJP_TEST_VULKAN_VALIDATION");
   if (text == "off" || text == "0") return ValidationMode::Off;
   if (text == "require") return ValidationMode::Require;
   return ValidationMode::IfPresent;

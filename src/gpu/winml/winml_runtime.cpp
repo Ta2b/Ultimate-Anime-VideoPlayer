@@ -4,12 +4,11 @@
 
 #ifdef _WIN32
 #include <windows.h>
-#else
-#include <cstdlib>
 #endif
 
 #include <algorithm>
 #include <chrono>
+#include <cstdlib>
 #include <cstring>
 #include <exception>
 #include <filesystem>
@@ -103,10 +102,12 @@ std::mutex& session_mutex() {
   return mutex;
 }
 
+// Sous Windows, _wputenv_s change la copie de la CRT (getenv) et celle du système
+// (GetEnvironmentVariable) : le fournisseur peut lire l'une ou l'autre.
 void set_variable(const char* name, const std::filesystem::path& value) {
 #ifdef _WIN32
   const std::filesystem::path wide_name(name);
-  SetEnvironmentVariableW(wide_name.c_str(), value.c_str());
+  _wputenv_s(wide_name.c_str(), value.c_str());
 #else
   setenv(name, value.c_str(), 1);
 #endif
