@@ -26,6 +26,28 @@ TEST_CASE("Les langues du conteneur ont leur nom français", "[app][tracks]") {
   CHECK(language_name("und").empty());
   CHECK(language_name("").empty());
   CHECK(language_name("tlh") == "tlh");  // inconnue : telle quelle
+  // Toutes les formes ISO 639 d'une langue : une seule ligne de la table.
+  CHECK(language_name("uk") == "Ukrainien");
+  CHECK(language_name("ukr") == "Ukrainien");
+  CHECK(language_name("zho") == "Chinois");
+  CHECK(language_name("nld") == "Néerlandais");
+  CHECK(language_name("pt_BR") == "Portugais");
+}
+
+TEST_CASE("Les menus des langues préférées proposent les langues marquées, dans l'ordre", "[app][tracks]") {
+  const std::span<const Language> menu = menu_languages();
+  REQUIRE(menu.size() == 11);
+  CHECK(menu.front().code == "jpn");
+  CHECK(menu[1].code == "fre");
+  CHECK(menu.back().code == "ara");
+  for (const Language& language : menu) {
+    CHECK(language.menu);
+    CHECK(language_name(language.code) == language.name);
+  }
+  CHECK(same_language("fra", "fre"));
+  CHECK(same_language("fr-CA", "FRE"));
+  CHECK(same_language("ja", "jpn"));
+  CHECK_FALSE(same_language("jpn", "chi"));
 }
 
 TEST_CASE("Le libellé d'une piste dit sa langue et son titre", "[app][tracks]") {

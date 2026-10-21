@@ -15,7 +15,7 @@
 #include "app/play/settings_chain_tabs.h"
 #include "app/play/settings_engines.h"
 #include "app/play/settings_export.h"
-#include "media/language.h"
+#include "app/play/tracks.h"
 
 namespace ajp::app::play {
 namespace {
@@ -174,33 +174,9 @@ void grade_tab(PlaySettings& d, const SettingsChoices& choices) {
       "Naturel : le grade du lecteur actuel. Tout s'applique en direct.");
 }
 
-struct TrackLanguage {
-  std::string_view tag;
-  const char* label;
-};
-constexpr std::array<TrackLanguage, 11> kTrackLanguages{{
-    {"jpn", "Japonais"},
-    {"fre", "Français"},
-    {"eng", "Anglais"},
-    {"ger", "Allemand"},
-    {"spa", "Espagnol"},
-    {"ita", "Italien"},
-    {"por", "Portugais"},
-    {"rus", "Russe"},
-    {"chi", "Chinois"},
-    {"kor", "Coréen"},
-    {"ara", "Arabe"},
-}};
-
-bool same_language(std::string_view a, std::string_view b) {
-  return media::canonical_language(a.substr(0, a.find('-'))) == media::canonical_language(b);
-}
-
 std::string language_label(std::string_view tag) {
-  for (const TrackLanguage& language : kTrackLanguages) {
-    if (same_language(tag, language.tag)) return language.label;
-  }
-  return std::string(tag);  // une balise écrite à la main dans play.toml
+  std::string name = language_name(tag);
+  return name.empty() ? std::string(tag) : name;  // une balise écrite à la main dans play.toml
 }
 
 // Les deux premiers rangs d'une liste de langues : la voulue, puis celle d'après si elle manque ;
@@ -213,13 +189,13 @@ void language_rows(const char* first, std::vector<std::string>& list) {
     if (ImGui::BeginCombo(rank == 0 ? first : "Sinon", current.c_str())) {
       if (ImGui::Selectable("Selon le fichier", rank >= list.size()))
         list.resize(std::min(rank, list.size()));
-      for (const TrackLanguage& language : kTrackLanguages) {
-        const bool selected = rank < list.size() && same_language(list[rank], language.tag);
-        if (!ImGui::Selectable(language.label, selected)) continue;
+      for (const Language& language : menu_languages()) {
+        const bool selected = rank < list.size() && same_language(list[rank], language.code);
+        if (!ImGui::Selectable(std::string(language.name).c_str(), selected)) continue;
         if (rank < list.size()) {
-          list[rank] = std::string(language.tag);
+          list[rank] = std::string(language.code);
         } else {
-          list.emplace_back(language.tag);
+          list.emplace_back(language.code);
         }
       }
       ImGui::EndCombo();

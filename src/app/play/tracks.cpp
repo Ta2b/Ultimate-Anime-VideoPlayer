@@ -6,27 +6,41 @@
 #include <format>
 #include <utility>
 
+#include "media/language.h"
+
 namespace ajp::app::play {
 namespace {
 
-struct Language {
-  std::string_view code;  // ISO 639-1 ou 639-2 (B et T)
-  std::string_view name;
-};
-
-constexpr std::array<Language, 44> kLanguages{{
-    {"ja", "Japonais"},     {"jpn", "Japonais"},    {"fr", "Français"},  {"fre", "Français"},
-    {"fra", "Français"},    {"en", "Anglais"},      {"eng", "Anglais"},  {"de", "Allemand"},
-    {"ger", "Allemand"},    {"deu", "Allemand"},    {"es", "Espagnol"},  {"spa", "Espagnol"},
-    {"it", "Italien"},      {"ita", "Italien"},     {"pt", "Portugais"}, {"por", "Portugais"},
-    {"ru", "Russe"},        {"rus", "Russe"},       {"ar", "Arabe"},     {"ara", "Arabe"},
-    {"zh", "Chinois"},      {"chi", "Chinois"},     {"zho", "Chinois"},  {"ko", "Coréen"},
-    {"kor", "Coréen"},      {"pl", "Polonais"},     {"pol", "Polonais"}, {"nl", "Néerlandais"},
-    {"dut", "Néerlandais"}, {"nld", "Néerlandais"}, {"tr", "Turc"},      {"tur", "Turc"},
-    {"id", "Indonésien"},   {"ind", "Indonésien"},  {"th", "Thaï"},      {"tha", "Thaï"},
-    {"vi", "Vietnamien"},   {"vie", "Vietnamien"},  {"ms", "Malais"},    {"may", "Malais"},
-    {"msa", "Malais"},      {"hi", "Hindi"},        {"hin", "Hindi"},    {"uk", "Ukrainien"},
+// La seule table des noms de langue : une ligne par langue, les autres formes (« ja », « fra »,
+// « zho ») s'y ramènent par media::canonical_language.
+constexpr std::array<Language, 20> kLanguages{{
+    {.code = "jpn", .name = "Japonais", .menu = true},
+    {.code = "fre", .name = "Français", .menu = true},
+    {.code = "eng", .name = "Anglais", .menu = true},
+    {.code = "ger", .name = "Allemand", .menu = true},
+    {.code = "spa", .name = "Espagnol", .menu = true},
+    {.code = "ita", .name = "Italien", .menu = true},
+    {.code = "por", .name = "Portugais", .menu = true},
+    {.code = "rus", .name = "Russe", .menu = true},
+    {.code = "chi", .name = "Chinois", .menu = true},
+    {.code = "kor", .name = "Coréen", .menu = true},
+    {.code = "ara", .name = "Arabe", .menu = true},
+    {.code = "pol", .name = "Polonais"},
+    {.code = "dut", .name = "Néerlandais"},
+    {.code = "tur", .name = "Turc"},
+    {.code = "ind", .name = "Indonésien"},
+    {.code = "tha", .name = "Thaï"},
+    {.code = "vie", .name = "Vietnamien"},
+    {.code = "may", .name = "Malais"},
+    {.code = "hin", .name = "Hindi"},
+    {.code = "ukr", .name = "Ukrainien"},
 }};
+
+constexpr auto kMenuLanguages = [] {
+  std::array<Language, std::ranges::count(kLanguages, true, &Language::menu)> menu{};
+  std::ranges::copy_if(kLanguages, menu.begin(), &Language::menu);
+  return menu;
+}();
 
 std::string lower(std::string_view text) {
   std::string out(text);
@@ -35,15 +49,29 @@ std::string lower(std::string_view text) {
   return out;
 }
 
+// La langue primaire en minuscules (« en-US » : « en »).
+std::string primary(std::string_view tag) {
+  return lower(tag.substr(0, tag.find_first_of("-_")));
+}
+
 }  // namespace
 
 std::string language_name(std::string_view tag) {
-  const std::string code = lower(tag.substr(0, tag.find_first_of("-_")));  // « en-US » : « en »
+  const std::string code = primary(tag);
   if (code.empty() || code == "und" || code == "mul" || code == "zxx") return {};
+  const std::string_view canonical = media::canonical_language(code);
   for (const Language& language : kLanguages) {
-    if (language.code == code) return std::string(language.name);
+    if (language.code == canonical) return std::string(language.name);
   }
   return std::string(tag);
+}
+
+std::span<const Language> menu_languages() {
+  return kMenuLanguages;
+}
+
+bool same_language(std::string_view a, std::string_view b) {
+  return media::canonical_language(primary(a)) == media::canonical_language(primary(b));
 }
 
 std::string track_label(const media::TrackInfo& track) {

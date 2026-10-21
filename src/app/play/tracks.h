@@ -24,9 +24,20 @@ struct TrackMenu {
   std::optional<int> subtitle_selected;  // rien : sous-titres désactivés
 };
 
+// Une langue que l'interface nomme. code : ISO 639-2/B, la forme de media::canonical_language.
+struct Language {
+  std::string_view code;
+  std::string_view name;
+  bool menu = false;  // proposée aux menus des langues préférées (onglets Son et Sous-titres)
+};
+
 // Nom français d'une langue du conteneur (« jpn », « fr », « en-US ») ; la balise telle quelle si
 // elle est inconnue, vide si elle est absente ou indéterminée (« und »).
 std::string language_name(std::string_view tag);
+// Les langues des menus des langues préférées, dans leur ordre.
+std::span<const Language> menu_languages();
+// Même langue primaire, quelle que soit la forme : « fra », « fr-CA » et « FRE » se valent.
+bool same_language(std::string_view a, std::string_view b);
 
 // « Langue · titre », sans répéter la langue si le titre la contient déjà ; le codec pour un
 // sous-titre qui n'est pas de l'ASS ; « Piste N » sans langue ni titre.
