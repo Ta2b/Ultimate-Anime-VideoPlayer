@@ -144,6 +144,33 @@ TEST_CASE("Installation : un paquet complet depuis une archive locale", "[app][i
   CHECK(f.stages.back() == "openvino installé");
 }
 
+TEST_CASE("Installation : le dossier d'un autre paquet de même version se réinstalle", "[app][install]") {
+  Fixture f("autre-paquet");
+  const core::EnginePackage package = f.openvino_package();
+  const fs::path target = core::engine_dir(f.catalog.layout, package);
+  // Un backend d'une version plus ancienne du lecteur, sous le même numéro de runtime.
+  write_all(core::backend_library(f.catalog.layout, package), "ancien backend\n");
+  CHECK_FALSE(installed(f.catalog, package));
+  write_all(target / std::string(kPackageMarker), std::string(64, '0') + "\n");
+  CHECK_FALSE(installed(f.catalog, package));
+  require_installed(install_package(f.catalog, package, f.progress()));
+  CHECK(read_all(target / std::string(kPackageMarker)) == package.sha256 + "\n");
+  CHECK(installed(f.catalog, package));
+}
+
+TEST_CASE("Installation : un backend coché mais pas installé est à reproposer", "[app][install]") {
+  Fixture f("a-reproposer");
+  const core::EnginePackage package = f.openvino_package();
+  f.catalog.packages = {package};
+  core::Settings engines;
+  CHECK(stale_backends(f.catalog, engines).empty());  // pas coché
+  engines.chosen_engines = {core::EngineId::Vulkan, core::EngineId::OpenVino};
+  write_all(core::backend_library(f.catalog.layout, package), "ancien backend\n");
+  CHECK(stale_backends(f.catalog, engines) == std::vector{core::EngineId::OpenVino});
+  require_installed(install_package(f.catalog, package, f.progress()));
+  CHECK(stale_backends(f.catalog, engines).empty());
+}
+
 TEST_CASE("Installation : un SHA-256 faux refuse le paquet et jette le fichier", "[app][install]") {
   Fixture f("sha");
   core::EnginePackage package = f.openvino_package();

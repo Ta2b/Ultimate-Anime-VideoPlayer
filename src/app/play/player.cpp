@@ -145,7 +145,13 @@ std::expected<void, Refusal> play(const PlayOptions& options, const PlayerPaths&
                                    .paths = paths,
                                    .catalog = catalog,
                                    .engines_path = engines_path};
-  if (!engines->first_run_done || options.first_run) {
+  // Un backend coché dont le paquet a changé (autre version du lecteur) : l'écran des moteurs le
+  // propose de nouveau, au lieu de laisser Vulkan le remplacer sans rien dire.
+  const std::vector<core::EngineId> stale = stale_backends(catalog, *engines);
+  for (const core::EngineId id : stale)
+    log->warn("{} : le paquet installé n'est pas celui de cette version ; écran des moteurs",
+              engine_label(id));
+  if (!engines->first_run_done || options.first_run || !stale.empty()) {
     auto shown = run_engine_screen(engine_screen, *engines, profiles, false, next_key, snapshot);
     if (!shown) return std::unexpected(std::move(shown.error()));
     if (!*shown) return {};
