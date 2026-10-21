@@ -41,7 +41,7 @@ bool amd_matrix_cores(std::string_view gpu_name);
 // ROCm (donc MIGraphX) ne sert officiellement que Navi 21, RDNA3, RDNA4 et les Instinct : une
 // RX 6500M (Navi 24) ou un iGPU Radeon ne doit pas se voir proposer son téléchargement.
 bool rocm_listed(std::string_view gpu_name);
-core::SystemInfo system_of(const GpuFacts& gpu);
+core::SystemInfo system_of(const GpuFacts& gpu, core::Os os);
 // « NVIDIA GeForce RTX 4070 Ti · 12 Go · cœurs Tensor »
 std::string gpu_line(const GpuFacts& gpu);
 
@@ -61,6 +61,8 @@ struct EngineDownload {
 
 // Ce qui est déjà sur ce poste.
 struct EnginesHere {
+  // Le système dont l'écran propose les moteurs : celui de l'hôte, ou celui qu'un test vérifie.
+  core::Os os = core::kHostOs;
   bool tensorrt = false;       // backend ajp_backend_tensorrt trouvé
   bool migraphx = false;       // ajp_backend_migraphx
   bool openvino = false;       // ajp_backend_openvino

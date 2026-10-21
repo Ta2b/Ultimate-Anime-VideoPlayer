@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <bit>
 #include <format>
+#include <span>
 #include <string>
 #include <utility>
 #include <vector>
@@ -179,9 +180,28 @@ std::vector<HwApi> default_attempts() {
 #endif
 }
 
+namespace {
+
+// L'opération Vulkan Video qui décode ce codec, NONE pour les autres.
+VkVideoCodecOperationFlagsKHR vulkan_decode_operation(AVCodecID codec) {
+  switch (codec) {
+    case AV_CODEC_ID_H264:
+      return VK_VIDEO_CODEC_OPERATION_DECODE_H264_BIT_KHR;
+    case AV_CODEC_ID_HEVC:
+      return VK_VIDEO_CODEC_OPERATION_DECODE_H265_BIT_KHR;
+    case AV_CODEC_ID_AV1:
+      return VK_VIDEO_CODEC_OPERATION_DECODE_AV1_BIT_KHR;
+    case AV_CODEC_ID_VP9:
+      return VK_VIDEO_CODEC_OPERATION_DECODE_VP9_BIT_KHR;
+    default:
+      return VK_VIDEO_CODEC_OPERATION_NONE_KHR;
+  }
+}
+
+}  // namespace
+
 bool is_vulkan_video_codec(AVCodecID codec) {
-  return codec == AV_CODEC_ID_H264 || codec == AV_CODEC_ID_HEVC || codec == AV_CODEC_ID_AV1 ||
-         codec == AV_CODEC_ID_VP9;
+  return vulkan_decode_operation(codec) != VK_VIDEO_CODEC_OPERATION_NONE_KHR;
 }
 
 std::expected<HwDevice, Refusal> open_hw_device(AVCodecID codec, HwApi api, const DecoderOptions& options) {
@@ -230,6 +250,20 @@ std::expected<HwDevice, Refusal> open_hw_device(AVCodecID codec, HwApi api, cons
       return hw;
     }
   }
+}
+
+std::expected<void, Refusal> vulkan_decode_queue(const AVBufferRef& device, AVCodecID codec) {
+  const VkVideoCodecOperationFlagsKHR operation = vulkan_decode_operation(codec);
+  if (operation == VK_VIDEO_CODEC_OPERATION_NONE_KHR) return {};
+  const auto& ctx = *reinterpret_cast<const AVHWDeviceContext*>(device.data);
+  const auto& vk = *static_cast<const AVVulkanDeviceContext*>(ctx.hwctx);
+  for (const AVVulkanDeviceQueueFamily& family : std::span(vk.qf, static_cast<std::size_t>(vk.nb_qf))) {
+    const auto flags = static_cast<VkQueueFlags>(family.flags);
+    const auto operations = static_cast<VkVideoCodecOperationFlagsKHR>(family.video_caps);
+    if ((flags & VK_QUEUE_VIDEO_DECODE_BIT_KHR) != 0 && (operations & operation) == operation) return {};
+  }
+  return refuse_hw(HwApi::Vulkan,
+                   std::format("aucune file de l'appareil ne décode {}", avcodec_get_name(codec)));
 }
 
 std::optional<DeviceUuid> vulkan_device_uuid(const AVBufferRef& device) {

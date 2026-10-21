@@ -1,8 +1,10 @@
 #include "app/play/vulkan_share.h"
 
+#include <algorithm>
 #include <array>
 #include <cstdint>
 #include <format>
+#include <span>
 #include <string>
 #include <vector>
 
@@ -88,8 +90,8 @@ std::expected<std::unique_ptr<VulkanShare>, Refusal> VulkanShare::create(pl_vk_i
   std::vector<VkQueueFamilyProperties> families(count);
   get_families(vk->phys_device, &count, families.data());
   hw->nb_qf = 0;
-  // pl_vulkan.queues est déprécié depuis libplacebo 6.271, mais reste la seule liste de toutes les
-  // files créées, familles vidéo (extra_queues) comprises.
+  // pl_vulkan.queues est déprécié depuis libplacebo 6.271, mais reste la seule liste des files de
+  // libplacebo (graphique, calcul, transfert). Les familles vidéo n'y sont pas : elles suivent.
 #if defined(__GNUC__)
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wdeprecated-declarations"
@@ -112,6 +114,20 @@ std::expected<std::unique_ptr<VulkanShare>, Refusal> VulkanShare::create(pl_vk_i
 #elif defined(_MSC_VER)
 #pragma warning(pop)
 #endif
+  // Les familles vidéo, créées avec toutes leurs files (kVideoQueueFlags) : sans elles, FFmpeg ne
+  // trouve aucune file de décodage (« Decoding of hevc is not supported by this device »).
+  for (std::uint32_t family = 0; family < count && hw->nb_qf < kMaxFamilies; ++family) {
+    const VkQueueFamilyProperties& props = families[family];
+    if ((props.queueFlags & kVideoQueueFlags) == 0 || props.queueCount == 0) continue;
+    const auto listed = std::ranges::any_of(
+        std::span(hw->qf, static_cast<std::size_t>(hw->nb_qf)),
+        [&](const AVVulkanDeviceQueueFamily& qf) { return qf.idx == static_cast<int>(family); });
+    if (listed) continue;
+    hw->qf[hw->nb_qf++] = AVVulkanDeviceQueueFamily{.idx = static_cast<int>(family),
+                                                    .num = static_cast<int>(props.queueCount),
+                                                    .flags = static_cast<VkQueueFlagBits>(props.queueFlags),
+                                                    .video_caps = VK_VIDEO_CODEC_OPERATION_NONE_KHR};
+  }
   if (hw->nb_qf == 0) return refuse(RefusalCode::VendorCallFailed, "aucune file de libplacebo à partager");
   if (const int err = av_hwdevice_ctx_init(ref); err < 0)
     return refuse(RefusalCode::VendorCallFailed, std::format("av_hwdevice_ctx_init : {}", av_text(err)));

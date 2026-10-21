@@ -228,18 +228,11 @@ bool rocm_listed(std::string_view gpu_name) {
   return false;
 }
 
-core::SystemInfo system_of(const GpuFacts& gpu) {
-#if defined(_WIN32)
-  constexpr core::Os kOs = core::Os::Windows;
-#elif defined(__APPLE__)
-  constexpr core::Os kOs = core::Os::MacOs;
-#else
-  constexpr core::Os kOs = core::Os::Linux;
-#endif
+core::SystemInfo system_of(const GpuFacts& gpu, core::Os os) {
   // OpenVINO refuse lui-même un GPU qu'il ne sert pas (repli sur Vulkan) : le fabricant suffit.
   // MIGraphX aussi, mais après un téléchargement de ROCm : la liste officielle le filtre avant.
   return core::SystemInfo{
-      .os = kOs,
+      .os = os,
       .gpus = {core::GpuInfo{.vendor = gpu.vendor,
                              .name = gpu.name,
                              .vram_bytes = gpu.vram_bytes,
@@ -272,7 +265,7 @@ int start_profile_for(const GpuFacts& gpu) {
 FirstRunView first_run_view(const GpuFacts& gpu, const EnginesHere& here, ProfilesView profiles,
                             const core::Settings& current) {
   FirstRunView view{.gpu = gpu_line(gpu), .profiles = std::move(profiles)};
-  for (const core::EngineOffer& offer : core::recommend_engines(system_of(gpu))) {
+  for (const core::EngineOffer& offer : core::recommend_engines(system_of(gpu, here.os))) {
     EngineRow row{.offer = offer};
     switch (offer.id) {
       case core::EngineId::Vulkan:

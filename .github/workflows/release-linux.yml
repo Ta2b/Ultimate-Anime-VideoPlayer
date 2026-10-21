@@ -11,10 +11,17 @@ name: Release Linux
 # Avant toute poussée : tools/release/preflight/run.sh fait la même construction et les mêmes
 # tests dans un conteneur Ubuntu 24.04 local, avec toutes les erreurs d'un coup.
 # Versions et paquets : tools/release/versions.env.
+# À la main : le paquet de la branche choisie, joint à la release de l'étiquette donnée (un
+# correctif du lecteur dans une release déjà publiée), ou en artefact sans étiquette.
 on:
   push:
     tags: ["linux-v*"]
     branches: ["release/linux"]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Étiquette de la release où joindre le paquet (vide : artefact seulement)"
+        required: false
 
 permissions:
   contents: write
@@ -25,6 +32,8 @@ concurrency:
   cancel-in-progress: true
 
 env:
+  # L'étiquette de la release visée : celle poussée, ou celle donnée à la main ; vide sinon.
+  AJP_TAG: ${{ (github.event_name == 'push' && github.ref_type == 'tag') && github.ref_name || inputs.tag || '' }}
   # À côté de l'espace de travail, en chemin absolu : actions/cache refuse les chemins qui
   # contiennent « .. », et le cache des dépendances n'était jamais enregistré.
   AJP_DEPS_PREFIX: ${{ github.workspace }}-deps
@@ -126,18 +135,18 @@ jobs:
           AJP_RELEASE_REPO: ${{ vars.AJP_RELEASE_REPO || github.repository }}
           GH_TOKEN: ${{ secrets.AJP_RELEASE_TOKEN || github.token }}
         run: |
-          if [ "$GITHUB_REF_TYPE" = tag ]; then
-            export AJP_RELEASE_TAG="$GITHUB_REF_NAME"
-            if gh release download "$GITHUB_REF_NAME" -R "$AJP_RELEASE_REPO" -p engines-nvidia.lock -D "$RUNNER_TEMP"; then
+          if [ -n "$AJP_TAG" ]; then
+            export AJP_RELEASE_TAG="$AJP_TAG"
+            if gh release download "$AJP_TAG" -R "$AJP_RELEASE_REPO" -p engines-nvidia.lock -D "$RUNNER_TEMP"; then
               export AJP_ENGINES_LOCK="$RUNNER_TEMP/engines-nvidia.lock"
             else
-              echo "::warning::pas d'engines-nvidia.lock dans la release $GITHUB_REF_NAME : ni TensorRT ni RTX HDR"
+              echo "::warning::pas d'engines-nvidia.lock dans la release $AJP_TAG : ni TensorRT ni RTX HDR"
             fi
           fi
           tools/release/package-linux.sh "$RUNNER_TEMP/package"
       # Le quota de stockage des artefacts du compte peut être plein : le paquet est construit quand même.
       - name: Artefact
-        if: github.ref_type == 'branch'
+        if: env.AJP_TAG == ''
         continue-on-error: true
         uses: actions/upload-artifact@v4
         with:
@@ -149,19 +158,19 @@ jobs:
             ${{ runner.temp }}/package/SHA256SUMS
           compression-level: 0
       - name: Préversion
-        if: github.ref_type == 'tag'
+        if: env.AJP_TAG != ''
         env:
           # Un dépôt public à part peut porter les releases (le lecteur télécharge ses moteurs sans
           # compte) : variable AJP_RELEASE_REPO et secret AJP_RELEASE_TOKEN qui peut y écrire.
           GH_TOKEN: ${{ secrets.AJP_RELEASE_TOKEN || github.token }}
           AJP_RELEASE_REPO: ${{ vars.AJP_RELEASE_REPO || github.repository }}
         run: |
-          notes="tools/release/notes/$GITHUB_REF_NAME.md"
+          notes="tools/release/notes/$AJP_TAG.md"
           [ -f "$notes" ] || notes=/dev/null
           assets=("$RUNNER_TEMP"/package/ajp-*.tar.gz "$RUNNER_TEMP/package/engines.lock" "$RUNNER_TEMP/package/SHA256SUMS")
-          if gh release view "$GITHUB_REF_NAME" -R "$AJP_RELEASE_REPO" >/dev/null 2>&1; then
-            gh release upload "$GITHUB_REF_NAME" -R "$AJP_RELEASE_REPO" --clobber "${assets[@]}"
+          if gh release view "$AJP_TAG" -R "$AJP_RELEASE_REPO" >/dev/null 2>&1; then
+            gh release upload "$AJP_TAG" -R "$AJP_RELEASE_REPO" --clobber "${assets[@]}"
           else
-            gh release create "$GITHUB_REF_NAME" -R "$AJP_RELEASE_REPO" --prerelease --title "$GITHUB_REF_NAME" \
+            gh release create "$AJP_TAG" -R "$AJP_RELEASE_REPO" --prerelease --title "$AJP_TAG" \
               --notes-file "$notes" "${assets[@]}"
           fi

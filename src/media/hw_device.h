@@ -67,4 +67,10 @@ bool is_vulkan_video_codec(AVCodecID codec);
 // UUID d'un appareil Vulkan (VkPhysicalDeviceIDProperties::deviceUUID).
 std::optional<DeviceUuid> vulkan_device_uuid(const AVBufferRef& device);
 
+// Refus nommé si aucune file de l'appareil Vulkan ne décode ce codec Vulkan Video ; rien à
+// vérifier pour un codec décodé par compute shaders. FFmpeg ne voit l'absence qu'au premier
+// get_format, et ff_vk_decode_init rend alors 0 (« Decoding of hevc is not supported by this
+// device ») : aucune image ne sortirait, sans repli sur l'essai suivant.
+std::expected<void, Refusal> vulkan_decode_queue(const AVBufferRef& device, AVCodecID codec);
+
 }  // namespace ajp::media

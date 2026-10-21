@@ -14,6 +14,14 @@
 namespace ajp::core {
 
 enum class Os : std::uint8_t { Windows, Linux, MacOs };
+// Le système pour lequel ce lecteur est compilé.
+#if defined(_WIN32)
+inline constexpr Os kHostOs = Os::Windows;
+#elif defined(__APPLE__)
+inline constexpr Os kHostOs = Os::MacOs;
+#else
+inline constexpr Os kHostOs = Os::Linux;
+#endif
 using GpuVendor = ajp::GpuVendor;  // déduit de l'identifiant PCI (core/gpu_device.h)
 
 struct GpuInfo {

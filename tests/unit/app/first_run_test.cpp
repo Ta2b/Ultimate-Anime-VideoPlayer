@@ -18,7 +18,8 @@ const GpuFacts kRtx{.name = "NVIDIA GeForce RTX 4070 Ti",
                     .vendor = GpuVendor::Nvidia,
                     .vram_bytes = 12 * kGiB,
                     .tensor_cores = true};
-const EnginesHere kHere{.tensorrt = true, .maxine = true, .maxine_status = "importé"};
+// Les moteurs proposés dépendent du système : ces cas sont ceux de Linux, sur tout hôte.
+const EnginesHere kHere{.os = core::Os::Linux, .tensorrt = true, .maxine = true, .maxine_status = "importé"};
 
 const EngineRow* row_of(const FirstRunView& view, core::EngineId id) {
   const auto found = std::ranges::find(view.engines, id, [](const EngineRow& row) { return row.offer.id; });
@@ -48,6 +49,40 @@ TEST_CASE("Une RTX de 12 Go : TensorRT et Maxine cochés, profil 1", "[app][firs
   CHECK_FALSE(amd->chosen);
   CHECK_FALSE(amd->usable);
   CHECK(row_of(view, core::EngineId::DirectMl) == nullptr);  // Windows seulement
+}
+
+TEST_CASE("Sous Windows, RTX HDR passe par le RTX Video SDK et DirectML reste décoché", "[app][first_run]") {
+  EnginesHere here = kHere;
+  here.os = core::Os::Windows;
+  const FirstRunView view = first_run_view(kRtx, here, ProfilesView{});
+  const EngineRow* tensorrt = row_of(view, core::EngineId::TensorRt);
+  const EngineRow* directml = row_of(view, core::EngineId::DirectMl);
+  REQUIRE(tensorrt != nullptr);
+  REQUIRE(directml != nullptr);
+  CHECK(tensorrt->chosen);
+  CHECK_FALSE(directml->chosen);
+  CHECK(row_of(view, core::EngineId::RtxVideoSdk) != nullptr);
+  CHECK(row_of(view, core::EngineId::MaxineVfx) == nullptr);  // Linux seulement
+}
+
+TEST_CASE("Sur Mac, Core ML est livré et coché, sans moteur NVIDIA ni AMD", "[app][first_run]") {
+  const GpuFacts m2{.name = "Apple M2", .vendor = GpuVendor::Apple, .vram_bytes = 16 * kGiB};
+  const FirstRunView view =
+      first_run_view(m2, EnginesHere{.os = core::Os::MacOs, .coreml = true}, ProfilesView{});
+  const EngineRow* coreml = row_of(view, core::EngineId::Metal);
+  REQUIRE(coreml != nullptr);
+  CHECK(coreml->usable);
+  CHECK(coreml->chosen);
+  CHECK(row_of(view, core::EngineId::TensorRt) == nullptr);
+  CHECK(row_of(view, core::EngineId::MaxineVfx) == nullptr);
+  CHECK(row_of(view, core::EngineId::MiGraphX) == nullptr);
+
+  // Un paquet sans le backend Core ML ne le coche pas.
+  const FirstRunView bare = first_run_view(m2, EnginesHere{.os = core::Os::MacOs}, ProfilesView{});
+  const EngineRow* missing = row_of(bare, core::EngineId::Metal);
+  REQUIRE(missing != nullptr);
+  CHECK_FALSE(missing->chosen);
+  CHECK(missing->status == "absent de ce paquet");
 }
 
 TEST_CASE("Profil conseillé selon le GPU", "[app][first_run]") {
@@ -195,7 +230,7 @@ TEST_CASE("MIGraphX et OpenVINO ne sont essayés que choisis", "[app][first_run]
 }
 
 TEST_CASE("Moteur à télécharger : licence acceptée avant tout choix", "[app][first_run]") {
-  EnginesHere here;
+  EnginesHere here{.os = core::Os::Linux};
   here.downloads.push_back(EngineDownload{
       .id = core::EngineId::TensorRt, .bytes = 900ULL << 20, .license = "https://example.org/sla"});
   FirstRunView view = first_run_view(kRtx, here, ProfilesView{});
@@ -225,7 +260,8 @@ TEST_CASE("Moteur à télécharger : licence acceptée avant tout choix", "[app]
 }
 
 TEST_CASE("RTX HDR par notre paquet fermé : licence NVIDIA, ni clé ni NGC", "[app][first_run]") {
-  EnginesHere here{.tensorrt = true,
+  EnginesHere here{.os = core::Os::Linux,
+                   .tensorrt = true,
                    .maxine_status = "SDK absent (/usr/local/VideoFX)",
                    .maxine_license = "https://example.org/ngc"};
   here.downloads.push_back(EngineDownload{

@@ -21,6 +21,11 @@ struct AVBufferRef;
 
 namespace ajp::app::play {
 
+// Les familles de files vidéo que l'écran fait créer à libplacebo en plus des siennes
+// (pl_vulkan_params::extra_queues) : toutes leurs files, sans pool ni place dans pl_vulkan.queues.
+inline constexpr VkQueueFlags kVideoQueueFlags =
+    VK_QUEUE_VIDEO_DECODE_BIT_KHR | VK_QUEUE_VIDEO_ENCODE_BIT_KHR;
+
 class VulkanShare final : public media::HwDeviceSource {
  public:
   // Refus VendorCallFailed : FFmpeg n'accepte pas l'appareil (fonctions, files, extensions).

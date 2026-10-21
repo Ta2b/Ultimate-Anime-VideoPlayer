@@ -211,7 +211,7 @@ std::expected<std::unique_ptr<PlaceboScreen>, Refusal> PlaceboScreen::open(const
   vk_params.features = &compute.features;
   vk_params.opt_extensions = kOptionalExtensions.data();
   vk_params.num_opt_extensions = static_cast<int>(kOptionalExtensions.size());
-  vk_params.extra_queues = VK_QUEUE_VIDEO_DECODE_BIT_KHR | VK_QUEUE_VIDEO_ENCODE_BIT_KHR;
+  vk_params.extra_queues = kVideoQueueFlags;
   impl->vk = pl_vulkan_create(impl->log, &vk_params);
   if (impl->vk == nullptr)
     return refuse(RefusalCode::DeviceMismatch, "pl_vulkan_create : aucun appareil ne convient");

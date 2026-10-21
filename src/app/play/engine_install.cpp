@@ -28,13 +28,7 @@ bool any_exists(std::initializer_list<std::string_view> paths) {
 }  // namespace
 
 core::Os host_os() {
-#if defined(_WIN32)
-  return core::Os::Windows;
-#elif defined(__APPLE__)
-  return core::Os::MacOs;
-#else
-  return core::Os::Linux;
-#endif
+  return core::kHostOs;
 }
 
 EngineCatalog load_catalog(const std::filesystem::path& index, const std::filesystem::path& data_dir) {

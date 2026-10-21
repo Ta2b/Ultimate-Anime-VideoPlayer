@@ -198,6 +198,9 @@ struct VideoDecoder::State {
     auto device = open_hw_device(id, attempt, options);
     if (!device) return std::unexpected(device.error());
     hw = std::move(*device);
+    if (attempt == HwApi::Vulkan) {
+      if (auto queue = vulkan_decode_queue(*hw.device, id); !queue) return std::unexpected(queue.error());
+    }
     if (attempt == HwApi::Cuda && options.direct_surfaces > 0) {
       const std::int64_t pixels = std::int64_t{track.width} * track.height;
       direct = pixels <= kMaxDirectSurfacePixels;

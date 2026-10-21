@@ -4,6 +4,7 @@
 
 extern "C" {
 #include <libavutil/hwcontext.h>
+#include <libavutil/hwcontext_vulkan.h>
 }
 
 #include "media/cuda_driver.h"
@@ -40,7 +41,12 @@ TEST_CASE("hw : CUDA exige l'UUID du rendu", "[media][hw]") {
   auto device = open_hw_device(AV_CODEC_ID_HEVC, HwApi::Cuda, DecoderOptions{});
   REQUIRE_FALSE(device);
   CHECK(device.error().code == RefusalCode::HwDecodeUnavailable);
+#if defined(__APPLE__)
+  // FFmpeg n'a pas NVDEC sous macOS : l'API est écartée avant l'appareil, comme dans le cas suivant.
+  CHECK(device.error().detail.find("aucun décodeur") != std::string::npos);
+#else
   CHECK(device.error().detail.find("UUID") != std::string::npos);
+#endif
 }
 
 TEST_CASE("hw : une API sans décodeur pour ce codec est écartée avant tout appareil", "[media][hw]") {
@@ -87,6 +93,30 @@ TEST_CASE("hw : un appareil Vulkan partagé est repris tel quel, d'un autre type
   auto refused = open_hw_device(kVulkanCodec, HwApi::Cuda, {.devices = &wrong});
   REQUIRE_FALSE(refused);
   CHECK(refused.error().detail.find("autre type") != std::string::npos);
+}
+
+TEST_CASE("hw : Vulkan Video exige une file de l'appareil qui décode le codec", "[media][hw]") {
+  // Un appareil partagé dont seules les files sont posées : la vérification ne lit qu'elles.
+  BufferPtr device(av_hwdevice_ctx_alloc(AV_HWDEVICE_TYPE_VULKAN));
+  if (!device) SKIP("FFmpeg sans Vulkan");
+  auto& ctx = *reinterpret_cast<AVHWDeviceContext*>(device->data);
+  auto& vk = *static_cast<AVVulkanDeviceContext*>(ctx.hwctx);
+  vk.nb_qf = 1;
+  vk.qf[0] = AVVulkanDeviceQueueFamily{
+      .idx = 0, .num = 1, .flags = VK_QUEUE_COMPUTE_BIT, .video_caps = VK_VIDEO_CODEC_OPERATION_NONE_KHR};
+  auto none = vulkan_decode_queue(*device, AV_CODEC_ID_HEVC);
+  REQUIRE_FALSE(none);
+  CHECK(none.error().code == RefusalCode::HwDecodeUnavailable);
+  CHECK(none.error().detail == "vulkan : aucune file de l'appareil ne décode hevc");
+  CHECK(vulkan_decode_queue(*device, AV_CODEC_ID_FFV1).has_value());  // compute shaders
+
+  vk.nb_qf = 2;
+  vk.qf[1] = AVVulkanDeviceQueueFamily{.idx = 3,
+                                       .num = 1,
+                                       .flags = VK_QUEUE_VIDEO_DECODE_BIT_KHR,
+                                       .video_caps = VK_VIDEO_CODEC_OPERATION_DECODE_H264_BIT_KHR};
+  CHECK(vulkan_decode_queue(*device, AV_CODEC_ID_H264).has_value());
+  CHECK_FALSE(vulkan_decode_queue(*device, AV_CODEC_ID_HEVC).has_value());
 }
 
 TEST_CASE("hw : Vulkan ne décode par défaut que les codecs Vulkan Video", "[media][hw]") {
