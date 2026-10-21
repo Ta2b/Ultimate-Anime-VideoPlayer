@@ -86,8 +86,12 @@ int main(int argc, char** argv) {
     return 0;
   }
   const auto base = sdl_path(SDL_GetBasePath());
+  char* pref = SDL_GetPrefPath("ajp", "ajp");  // avant SDL_Init comme permis : l'inscription s'en sert
+  const auto data = sdl_path(pref);
+  SDL_free(pref);
   const ajp::app::play::PlayerPlace place{.executable = base / std::string(kExecutable),
-                                          .home = sdl_path(SDL_GetUserFolder(SDL_FOLDER_HOME))};
+                                          .home = sdl_path(SDL_GetUserFolder(SDL_FOLDER_HOME)),
+                                          .data = ajp::app::play::user_data(data)};
   if (options->registration != ajp::app::play::Registration::None) {
     const auto done = options->registration == ajp::app::play::Registration::Register
                           ? ajp::app::play::register_player(place)
@@ -101,11 +105,9 @@ int main(int argc, char** argv) {
   if (!SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO)) {
     return fail({ajp::RefusalCode::LibraryUnavailable, std::string("SDL_Init : ") + SDL_GetError()});
   }
-  char* pref = SDL_GetPrefPath("ajp", "ajp");
-  const auto data = sdl_path(pref);
-  SDL_free(pref);
   ajp::app::play::PlayerPaths paths{
       .home = place.home,
+      .data = place.data,
       .executable = place.executable,
       .engines = data / "engines",
       .engine_index = base / "engines.lock",

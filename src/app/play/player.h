@@ -19,6 +19,7 @@ namespace ajp::app::play {
 
 struct PlayerPaths {
   std::filesystem::path home;        // dossier de l'utilisateur (SDL_GetUserFolder)
+  std::filesystem::path data;        // ses données (default_player.h : PlayerPlace::data)
   std::filesystem::path executable;  // le lecteur lui-même, que l'inscription comme lecteur par défaut nomme
   std::filesystem::path engines;     // moteurs construits (SDL_GetPrefPath)
   std::vector<std::filesystem::path>

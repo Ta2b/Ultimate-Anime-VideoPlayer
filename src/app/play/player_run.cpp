@@ -200,7 +200,7 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
           .engine_note = fallback_note(p.engines, p.library->path()),
           .display_text = p.display ? describe(*p.display) : std::string("EDID illisible : OLED inconnu"),
           .source_file = p.options.file,
-          .place = {.executable = p.paths.executable, .home = p.paths.home}});
+          .place = {.executable = p.paths.executable, .home = p.paths.home, .data = p.paths.data}});
   p.profiles.source =
       core::SourceInfo{.width = video.width, .height = video.height, .fps = fps_of(video.frame_rate)};
   if (c.model) p.profiles.default_model = c.model->default_name;

@@ -143,7 +143,8 @@ void refresh_desktop_database(const std::filesystem::path& dir) {
     if (!std::filesystem::exists(tool, error)) continue;
     const prepare::ProcessSpec spec{
         .program = tool, .args = {prepare::utf8_path(dir)}, .timeout = std::chrono::seconds(15)};
-    static_cast<void>(prepare::run_process(spec, [](std::string_view) {}, std::stop_token()));
+    const bool refreshed = prepare::run_process(spec, [](std::string_view) {}, std::stop_token()).has_value();
+    static_cast<void>(refreshed);  // au mieux, voir plus haut
     return;
   }
 }
@@ -188,8 +189,15 @@ std::expected<std::string, Refusal> desktop_entry(const std::filesystem::path& e
       kAppName, desktop_string(path), exec_argument(path), mimes);
 }
 
-std::filesystem::path desktop_file(const std::filesystem::path& home) {
-  return home / ".local" / "share" / "applications" / std::string(kDesktopId);
+std::filesystem::path desktop_file(const PlayerPlace& place) {
+  const std::filesystem::path data = place.data.empty() ? place.home / ".local" / "share" : place.data;
+  return data / "applications" / std::string(kDesktopId);
+}
+
+std::filesystem::path user_data(std::filesystem::path pref) {
+  if (pref.empty()) return {};
+  if (!pref.has_filename()) pref = pref.parent_path();  // la barre finale de SDL
+  return pref.parent_path().parent_path();
 }
 
 std::vector<RegistryValue> registry_values(std::string_view executable) {
@@ -224,6 +232,7 @@ std::vector<std::string> registry_trees(std::string_view executable) {
 
 std::vector<RegistryValue> registry_shared_values() {
   std::vector<RegistryValue> values;
+  values.reserve(kExtensions.size() + 1);
   for (const std::string_view extension : kExtensions)
     values.push_back({std::format("{}{}\\OpenWithProgids", kClasses, extension), std::string(kProgId), ""});
   values.push_back({std::string(kRegisteredApplications), std::string(kRegisteredName), ""});
@@ -244,11 +253,11 @@ std::expected<std::string, Refusal> register_player(const PlayerPlace& place) {
       "AJP.app déclare déjà les vidéos qu'il ouvre. Pour en faire le lecteur par défaut : clic droit sur "
       "une vidéo > Lire les informations > Ouvrir avec : AJP > Tout modifier.");
 #else
-  if (place.home.empty())
+  if (place.home.empty() && place.data.empty())
     return refuse(RefusalCode::FieldMissing, "lecteur par défaut : dossier personnel inconnu");
   auto text = desktop_entry(place.executable);
   if (!text) return std::unexpected(std::move(text.error()));
-  const std::filesystem::path file = desktop_file(place.home);
+  const std::filesystem::path file = desktop_file(place);
   std::error_code error;
   std::filesystem::create_directories(file.parent_path(), error);
   std::filesystem::path temp = file;
@@ -281,9 +290,9 @@ std::expected<std::string, Refusal> unregister_player(const PlayerPlace& place) 
   return std::string(
       "Sous macOS, l'inscription suit AJP.app : la retirer, c'est mettre l'app à la corbeille.");
 #else
-  if (place.home.empty())
+  if (place.home.empty() && place.data.empty())
     return refuse(RefusalCode::FieldMissing, "lecteur par défaut : dossier personnel inconnu");
-  const std::filesystem::path file = desktop_file(place.home);
+  const std::filesystem::path file = desktop_file(place);
   std::error_code error;
   if (!std::filesystem::remove(file, error)) {
     if (error) {

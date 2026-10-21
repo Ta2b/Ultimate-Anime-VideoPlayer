@@ -110,7 +110,7 @@ TEST_CASE("Lecteur par défaut : inscrit puis retiré dans le dossier de l'utili
   const auto registered = register_player(place);
   REQUIRE(registered);
   CHECK(registered->contains("xdg-mime default io.github.ta2b.ajp.desktop"));
-  const fs::path file = desktop_file(home);
+  const fs::path file = desktop_file(place);
   CHECK(file == home / ".local/share/applications/io.github.ta2b.ajp.desktop");
   std::ifstream in(file, std::ios::binary);
   const std::string written{std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>()};
@@ -129,6 +129,30 @@ TEST_CASE("Lecteur par défaut : inscrit puis retiré dans le dossier de l'utili
   const auto nowhere = register_player(PlayerPlace{.executable = place.executable});
   REQUIRE_FALSE(nowhere);
   CHECK(nowhere.error().code == RefusalCode::FieldMissing);
+}
+
+TEST_CASE("Lecteur par défaut : dans les données de l'utilisateur ($XDG_DATA_HOME)",
+          "[app][default_player]") {
+  const fs::path root = fs::temp_directory_path() / "ajp-default-player-data-test";
+  std::error_code error;
+  fs::remove_all(root, error);
+  // SDL_GetPrefPath("ajp", "ajp") : <données>/ajp/ajp/, barre finale comprise.
+  CHECK(user_data(root / "donnees" / "ajp" / "ajp" / "") == root / "donnees");
+  CHECK(user_data(root / "donnees" / "ajp" / "ajp") == root / "donnees");
+  CHECK(user_data({}).empty());
+  const PlayerPlace place{.executable = "/opt/ajp-linux-x64/ajp",
+                          .home = root / "maison",
+                          .data = user_data(root / "donnees/ajp/ajp/")};
+  const fs::path file = desktop_file(place);
+  CHECK(file == root / "donnees/applications/io.github.ta2b.ajp.desktop");
+  const auto registered = register_player(place);
+  REQUIRE(registered);
+  CHECK(registered->contains(file.string()));
+  CHECK(fs::exists(file));
+  CHECK_FALSE(fs::exists(place.home / ".local"));
+  REQUIRE(unregister_player(place));
+  CHECK_FALSE(fs::exists(file));
+  fs::remove_all(root, error);
 }
 #endif
 

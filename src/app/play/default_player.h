@@ -1,15 +1,16 @@
 // Le lecteur par défaut : AJP s'inscrit auprès du système pour paraître dans « Ouvrir avec » et
 // pouvoir devenir le lecteur des vidéos (« ajp --register », onglet Système des paramètres).
 //
-//   Linux   : un fichier .desktop dans ~/.local/share/applications (spécification XDG Desktop
-//             Entry) ; « Définir par défaut » le donne à xdg-mime pour chaque type vidéo.
+//   Linux   : un fichier .desktop dans $XDG_DATA_HOME/applications, ~/.local/share/applications
+//             sans la variable (spécification XDG Desktop Entry) ; « Définir par défaut » le
+//             donne à xdg-mime pour chaque type vidéo.
 //   Windows : les clés du registre de l'utilisateur (HKCU) d'un ProgID, des extensions vidéo et de
 //             Capabilities, que Paramètres > Applications par défaut propose. Windows ne laisse
 //             aucun programme se choisir lui-même : « Définir par défaut » ouvre cette page.
 //   macOS   : rien à écrire, l'Info.plist d'AJP.app déclare les vidéos qu'il ouvre
 //             (tools/release/package-macos.sh) ; le Finder fait le reste.
 //
-// Rien n'est lu de l'environnement : le dossier de l'utilisateur vient de SDL, comme ailleurs.
+// Rien n'est lu de l'environnement : les dossiers de l'utilisateur viennent de SDL, comme ailleurs.
 #pragma once
 
 #include <expected>
@@ -27,6 +28,9 @@ namespace ajp::app::play {
 struct PlayerPlace {
   std::filesystem::path executable;  // ajp ou ajp.exe, chemin absolu
   std::filesystem::path home;        // dossier de l'utilisateur (SDL_GetUserFolder)
+  // Données de l'utilisateur, celles de SDL_GetPrefPath (user_data) : sous Linux $XDG_DATA_HOME,
+  // ~/.local/share sans la variable. Vide : <home>/.local/share.
+  std::filesystem::path data;
 };
 
 inline constexpr std::string_view kAppName = "Ultimate Anime Video Player";
@@ -41,8 +45,12 @@ std::span<const std::string_view> video_extensions();
 // Le .desktop du lecteur. Refus FieldOutOfRange pour un chemin qu'une ligne ne peut porter (saut
 // de ligne, caractère de contrôle, UTF-8 mal formé).
 std::expected<std::string, Refusal> desktop_entry(const std::filesystem::path& executable);
-// <home>/.local/share/applications/io.github.ta2b.ajp.desktop
-std::filesystem::path desktop_file(const std::filesystem::path& home);
+// <data>/applications/io.github.ta2b.ajp.desktop ; sans data, sous <home>/.local/share.
+std::filesystem::path desktop_file(const PlayerPlace& place);
+
+// Les données de l'utilisateur d'après le dossier de préférences de SDL (<données>/ajp/ajp/,
+// SDL_GetPrefPath("ajp", "ajp")) ; vide pour un dossier vide.
+std::filesystem::path user_data(std::filesystem::path pref);
 
 // Une valeur chaîne (REG_SZ) du registre de l'utilisateur, en UTF-8 : clé sous HKEY_CURRENT_USER,
 // nom (vide : la valeur par défaut de la clé), donnée.
