@@ -68,6 +68,11 @@ int fake_trtexec(std::string_view mode, const std::vector<std::string>& args) {
     if (mode != "empty") out << "moteur factice pour " << value_of(args, "--onnx=");
   }
   append_line(timing_cache, "passe");  // le cache reçu, plus les temps de cette construction
+  if (const fs::path layers = value_of(args, "--exportLayerInfo="); !layers.empty() && mode != "no-layers") {
+    std::ofstream(layers) << R"j({"Layers": [{"Name": "input", "LayerType": "Reformat"},
+ {"Name": "/conv1/Conv + PWN(/act/PRelu)", "LayerType":"CaskConvolution"},
+ {"Name": "output", "LayerType" : "Reformat"}], "Bindings": ["input", "output"]})j";
+  }
   say("[I] Engine built in 0.02 sec.");
   say("&&&& PASSED TensorRT.trtexec [TensorRT v110300] [b99]");
   return 0;

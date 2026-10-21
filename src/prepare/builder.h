@@ -41,12 +41,13 @@ using EngineCheck = std::function<std::expected<void, Refusal>(const std::filesy
 
 // Ce que la construction fera, calculé sans rien lancer.
 struct BuildPlan {
-  std::string settings;            // hachés dans la clé, ceux du fork
-  SanitizedSettings command;       // réglages de la ligne de commande, TensorRT 11
-  std::string engine_file;         // « aji-v3-<clé>.engine »
-  std::filesystem::path engine;    // cache_dir / engine_file
-  std::filesystem::path log_file;  // « <moteur>.build.log », gardé pour le diagnostic
-  std::string label;               // « 1920x1080 » pour l'OSD
+  std::string settings;              // hachés dans la clé, ceux du fork
+  SanitizedSettings command;         // réglages de la ligne de commande, TensorRT 11
+  std::string engine_file;           // « aji-v3-<clé>.engine »
+  std::filesystem::path engine;      // cache_dir / engine_file
+  std::filesystem::path log_file;    // « <moteur>.build.log », gardé pour le diagnostic
+  std::filesystem::path layer_info;  // « <moteur>.layers.json », rapport des couches (trtexec_command.h)
+  std::string label;                 // « 1920x1080 » pour l'OSD
 };
 
 std::expected<BuildPlan, Refusal> plan_build(const TrtexecConfig& config, const gpu::ModelSpec& model,

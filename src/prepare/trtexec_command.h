@@ -63,13 +63,30 @@ struct TrtexecPaths {
   std::filesystem::path onnx;
   std::filesystem::path engine;        // sortie, dans le dossier de travail
   std::filesystem::path timing_cache;  // copie de travail du cache persistant (builder.cpp)
+  std::filesystem::path layer_info;    // rapport des couches (--exportLayerInfo) ; vide : aucun
 };
 
 // « <moteur>.timing.cache », persistant à côté du moteur publié : les temps des
 // tactiques servent aux constructions suivantes.
 std::filesystem::path timing_cache_for(const std::filesystem::path& engine);
 
-// Arguments de trtexec, sans argv[0] ni guillemets : aucun shell ne les relit.
+// « <moteur>.layers.json » : le rapport des couches de la dernière construction, à côté du moteur.
+std::filesystem::path layer_info_for(const std::filesystem::path& engine);
+
+// Arguments de trtexec, sans argv[0] ni guillemets : aucun shell ne les relit. Avec un rapport des
+// couches (étude 4, 6.1), --profilingVerbosity=detailed et --exportLayerInfo, hors de la clé : ils
+// ne changent ni les tactiques ni la précision, et un moteur déjà construit reste valable.
+// --avgTiming n'y est pas : trtexec 11 en fait déjà 8 mesures par tactique (sampleOptions.h,
+// defaultAvgTiming), ce que l'étude croyait à 1.
 std::vector<std::string> trtexec_arguments(const TrtexecPaths& paths, std::string_view command_settings);
+
+// Ce que dit un rapport des couches de trtexec (JSON de IEngineInspector) : couches, dont les
+// reformatages (LayerType « Reformat ») ; le détail, couches FP32 hors îlots comprises, est dans
+// tools/trt/layer_report.py. Lu sans analyseur JSON : seules les clés LayerType comptent.
+struct LayerCounts {
+  int layers = 0;
+  int reformats = 0;
+};
+LayerCounts layer_counts(std::string_view json);
 
 }  // namespace ajp::prepare

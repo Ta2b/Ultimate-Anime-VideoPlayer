@@ -5,6 +5,8 @@
 
 #include <format>
 #include <fstream>
+#include <iterator>
+#include <string_view>
 #include <system_error>
 #include <utility>
 
@@ -84,6 +86,26 @@ void keep_timing_cache(const fs::path& staged, const fs::path& persistent, spdlo
   }
 }
 
+// Le rapport des couches publié à côté du moteur, et son résumé au journal : un reformatage hors
+// des E/S est une fusion manquée, à corriger dans l'export ONNX (tools/trt/layer_report.py).
+void keep_layer_info(const fs::path& staged, const BuildPlan& plan, std::string_view model,
+                     spdlog::logger& log) {
+  std::ifstream in(staged, std::ios::binary);
+  if (!in) {
+    log.warn("{} {} : trtexec n'a pas écrit de rapport des couches", model, plan.label);
+    return;
+  }
+  const std::string json{std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>()};
+  in.close();
+  const LayerCounts counts = layer_counts(json);
+  if (auto kept = publish_file(staged, plan.layer_info); !kept) {
+    log.warn("{} {} : rapport des couches non gardé : {}", model, plan.label, kept.error().detail);
+    return;
+  }
+  log.info("{} {} : {} couches dont {} reformatages ; rapport {}", model, plan.label, counts.layers,
+           counts.reformats, utf8_path(plan.layer_info));
+}
+
 }  // namespace
 
 std::expected<BuildPlan, Refusal> plan_build(const TrtexecConfig& config, const gpu::ModelSpec& model,
@@ -104,6 +126,7 @@ std::expected<BuildPlan, Refusal> plan_build(const TrtexecConfig& config, const 
   plan.engine = config.cache_dir / plan.engine_file;
   plan.log_file = plan.engine;
   plan.log_file += ".build.log";
+  plan.layer_info = layer_info_for(plan.engine);
   return plan;
 }
 
@@ -154,10 +177,14 @@ std::expected<void, Refusal> TrtexecBuilder::run(const BuildPlan& plan, const gp
                                                  gpu::Progress& progress) const {
   const fs::path timing_cache = timing_cache_for(plan.engine);
   const fs::path staged_cache = output.parent_path() / "timing.cache";
+  const fs::path staged_layers = output.parent_path() / "layers.json";
   stage_timing_cache(timing_cache, staged_cache, *log_);
   const ProcessSpec spec{
       .program = config_.trtexec,
-      .args = trtexec_arguments({.onnx = model.onnx_path, .engine = output, .timing_cache = staged_cache},
+      .args = trtexec_arguments({.onnx = model.onnx_path,
+                                 .engine = output,
+                                 .timing_cache = staged_cache,
+                                 .layer_info = staged_layers},
                                 plan.command.kept),
       .timeout = config_.timeout,
   };
@@ -196,6 +223,7 @@ std::expected<void, Refusal> TrtexecBuilder::run(const BuildPlan& plan, const gp
     if (auto usable = check_(output); !usable) return usable;
   }
   keep_timing_cache(staged_cache, timing_cache, *log_);
+  keep_layer_info(staged_layers, plan, model.id, *log_);
   return {};
 }
 

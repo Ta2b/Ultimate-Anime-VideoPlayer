@@ -231,6 +231,14 @@ un réglage à faire taire.
   fluide avec SPAN et RIFE ×2, seek compris.
 - **Événements NVDEC réutilisés** (5.4 ; M3) : test `[media][hw][nvidia]` « les événements de fin
   de copie reviennent au pool du flux », puis la suite NVDEC `[media][decoder][nvidia]` inchangée.
+- **Rapport des couches TensorRT** (étude 4, 6.1) : après une construction (supprimer un moteur
+  pour la relancer), le journal dit « <modèle> <formes> : N couches dont R reformatages ; rapport
+  …layers.json » et ce fichier est à côté du moteur. La clé ne change pas : les moteurs déjà
+  construits ne sont pas reconstruits. Puis, pour SPAN, RIFE et GMFSS :
+  `python3 tools/trt/layer_report.py <moteur>.layers.json --onnx <modèle>.onnx`. SPAN doit sortir
+  sans couche FP32 ; RIFE et GMFSS n'en ont que dans leurs îlots (GridSample, Resize, grille).
+  Un « ÉCHEC reformatage » (tenseur interne pleine image) est une fusion manquée à corriger dans
+  l'export ONNX ; noter le nombre de reformatages par modèle pour la décision NHWC (6.4).
 
 ## Linux sur RX 6500M (RDNA2 Navi 24, 4 Go)
 

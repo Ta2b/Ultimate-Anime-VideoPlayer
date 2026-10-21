@@ -96,6 +96,34 @@ TEST_CASE("trtexec_arguments : chemins sans guillemets, timing cache en dernier"
                                  "--timingCacheFile=/cache/aji-v3-x.engine.timing.cache"});
 }
 
+TEST_CASE("trtexec_arguments : rapport des couches détaillé, hors de la clé", "[prepare][trtexec]") {
+  const TrtexecPaths paths{.onnx = "/m/span.onnx",
+                           .engine = "/cache/.aji-build-1/model.engine",
+                           .timing_cache = "/cache/.aji-build-1/timing.cache",
+                           .layer_info = "/cache/.aji-build-1/layers.json"};
+  CHECK(trtexec_arguments(paths, "--skipInference") ==
+        std::vector<std::string>{"--onnx=/m/span.onnx", "--saveEngine=/cache/.aji-build-1/model.engine",
+                                 "--skipInference", "--profilingVerbosity=detailed",
+                                 "--exportLayerInfo=/cache/.aji-build-1/layers.json",
+                                 "--timingCacheFile=/cache/.aji-build-1/timing.cache"});
+  CHECK(layer_info_for("/cache/aji-v3-x.engine") == "/cache/aji-v3-x.engine.layers.json");
+}
+
+TEST_CASE("layer_counts : couches et reformatages du rapport de trtexec", "[prepare][trtexec]") {
+  const std::string json = R"j({"Layers": [
+    {"Name": "Reformatting CopyNode for Input Tensor 0 to /conv1/Conv", "LayerType": "Reformat"},
+    {"Name": "/conv1/Conv + PWN(/act/PRelu)", "LayerType" :"CaskConvolution"},
+    {"Name": "/up/Resize", "LayerType":
+       "Reformat"},
+    {"Name": "{ForeignNode[/a.../b]}", "LayerType": "Myelin"}],
+  "Bindings": ["input", "output"]})j";
+  const LayerCounts counts = layer_counts(json);
+  CHECK(counts.layers == 4);
+  CHECK(counts.reformats == 2);
+  CHECK(layer_counts("").layers == 0);
+  CHECK(layer_counts(R"({"Layers": []})").reformats == 0);
+}
+
 TEST_CASE("check_shapes : dimensions positives et ordonnées", "[prepare][trtexec]") {
   CHECK(check_shapes(fixed(3, 720, 1280)));
   CHECK(test::refusal(check_shapes(fixed(3, 0, 1280))) == RefusalCode::FieldOutOfRange);

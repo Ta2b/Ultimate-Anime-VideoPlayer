@@ -131,13 +131,37 @@ std::filesystem::path timing_cache_for(const std::filesystem::path& engine) {
   return cache;
 }
 
+std::filesystem::path layer_info_for(const std::filesystem::path& engine) {
+  std::filesystem::path info = engine;
+  info += ".layers.json";
+  return info;
+}
+
 std::vector<std::string> trtexec_arguments(const TrtexecPaths& paths, std::string_view command_settings) {
   std::vector<std::string> args{"--onnx=" + utf8_path(paths.onnx), "--saveEngine=" + utf8_path(paths.engine)};
   for (auto&& word : std::views::split(command_settings, ' ')) {
     if (!word.empty()) args.emplace_back(word.begin(), word.end());
   }
+  if (!paths.layer_info.empty()) {
+    args.emplace_back("--profilingVerbosity=detailed");
+    args.push_back("--exportLayerInfo=" + utf8_path(paths.layer_info));
+  }
   args.push_back("--timingCacheFile=" + utf8_path(paths.timing_cache));
   return args;
+}
+
+LayerCounts layer_counts(std::string_view json) {
+  constexpr std::string_view kKey = "\"LayerType\"";
+  LayerCounts counts;
+  for (std::size_t at = json.find(kKey); at != std::string_view::npos; at = json.find(kKey, at + 1)) {
+    std::size_t value = at + kKey.size();
+    while (value < json.size() && (json[value] == ' ' || json[value] == ':' || json[value] == '\n' ||
+                                   json[value] == '\t' || json[value] == '\r'))
+      ++value;
+    ++counts.layers;
+    if (json.substr(value).starts_with("\"Reformat\"")) ++counts.reformats;
+  }
+  return counts;
 }
 
 }  // namespace ajp::prepare
