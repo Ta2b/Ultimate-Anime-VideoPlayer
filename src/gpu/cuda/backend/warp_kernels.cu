@@ -1,6 +1,8 @@
 // Noyaux du warp (warp_kernels.h), calqués sur kernels/ref/warp.cpp.
+#include <cstdint>
 #include <cuda_fp16.h>
 
+#include "gpu/cuda/backend/bilinear.cuh"
 #include "gpu/cuda/backend/pixel_kernels.cuh"
 #include "gpu/cuda/backend/warp_kernels.h"
 #include "kernels/spec/poses.h"
@@ -16,63 +18,52 @@ dim3 grid_for(int width, int height) {
               static_cast<unsigned>((height + kBlock - 1) / kBlock));
 }
 
-// Échantillon bilinéaire du plan c d'un tenseur FP16 (w × h par plan), coordonnées relatives au
-// coin (ox, oy) d'une fenêtre fw × fh, bornées à la fenêtre (bilinear_at de ref/warp.cpp).
-__device__ float bilinear(const __half* t, int plane_w, int plane_h, int c, int ox, int oy, int fw, int fh,
-                          float x, float y) {
-  x = fminf(fmaxf(x, 0.0F), static_cast<float>(fw - 1));
-  y = fminf(fmaxf(y, 0.0F), static_cast<float>(fh - 1));
-  const int x0 = static_cast<int>(x);
-  const int y0 = static_cast<int>(y);
-  const int x1 = min(x0 + 1, fw - 1);
-  const int y1 = min(y0 + 1, fh - 1);
-  const float fx = x - static_cast<float>(x0);
-  const float fy = y - static_cast<float>(y0);
-  const __half* p =
-      t + static_cast<std::size_t>(c) * static_cast<std::size_t>(plane_w) * static_cast<std::size_t>(plane_h);
-  const auto at = [&](int xx, int yy) {
-    return __half2float(p[static_cast<std::size_t>(oy + yy) * static_cast<std::size_t>(plane_w) +
-                          static_cast<std::size_t>(ox + xx)]);
-  };
-  const float top = at(x0, y0) * (1.0F - fx) + at(x1, y0) * fx;
-  const float bottom = at(x0, y1) * (1.0F - fx) + at(x1, y1) * fx;
-  return top * (1.0F - fy) + bottom * fy;
+__device__ Planes motion_planes(const WarpBlendParams& p, const void* data, cudaTextureObject_t texture) {
+  return Planes{.data = static_cast<const __half*>(data),
+                .texture = texture,
+                .plane_w = p.plane_width,
+                .plane_h = p.plane_height,
+                .ox = p.window_x,
+                .oy = p.window_y,
+                .fw = p.window_width,
+                .fh = p.window_height};
+}
+
+__device__ Planes image_planes(const WarpBlendParams& p, const void* data, cudaTextureObject_t texture) {
+  return Planes{.data = static_cast<const __half*>(data),
+                .texture = texture,
+                .plane_w = p.width,
+                .plane_h = p.height,
+                .fw = p.width,
+                .fh = p.height};
 }
 
 // L'instant réglé du pixel (u, v) pour garder les poses (keeping_poses de ref/warp.cpp).
+template <typename S>
 __device__ float pose_time_at(const WarpBlendParams& p, float u, float v) {
-  const auto* flow = static_cast<const __half*>(p.flow);
-  const auto* previous = static_cast<const __half*>(p.previous_flow);
-  const int pw = p.plane_width;
-  const int ph = p.plane_height;
-  const int wx = p.window_x;
-  const int wy = p.window_y;
-  const int fw = p.window_width;
-  const int fh = p.window_height;
-  const auto at = [&](const __half* f, int c, float x, float y) {
-    return bilinear(f, pw, ph, c, wx, wy, fw, fh, x, y);
-  };
+  const Planes flow = motion_planes(p, p.flow, p.textures.flow);
+  const Planes previous = motion_planes(p, p.previous_flow, p.textures.previous_flow);
   const float t = p.time;
   float tp = t;
   for (int k = 0; k < kernels::kPoseIterations; ++k) {
-    const float u2 = u - ((1.0F - tp) * at(flow, 0, u, v) + tp * at(flow, 2, u, v));
-    const float v2 = v - ((1.0F - tp) * at(flow, 1, u, v) + tp * at(flow, 3, u, v));
-    const float dx = at(flow, 2, u2, v2) - at(flow, 0, u2, v2);
-    const float dy = at(flow, 3, u2, v2) - at(flow, 1, u2, v2);
+    const float u2 = u - ((1.0F - tp) * S::sample(flow, 0, u, v) + tp * S::sample(flow, 2, u, v));
+    const float v2 = v - ((1.0F - tp) * S::sample(flow, 1, u, v) + tp * S::sample(flow, 3, u, v));
+    const float dx = S::sample(flow, 2, u2, v2) - S::sample(flow, 0, u2, v2);
+    const float dy = S::sample(flow, 3, u2, v2) - S::sample(flow, 1, u2, v2);
     float before = 0.0F;
-    if (previous != nullptr) {
+    if (p.previous_flow != nullptr) {
       const float ax = u - tp * dx;
       const float ay = v - tp * dy;
       float qx = ax;
       float qy = ay;
       for (int step = 0; step < 2; ++step) {
-        const float nx = ax - at(previous, 2, qx, qy);
-        const float ny = ay - at(previous, 3, qx, qy);
+        const float nx = ax - S::sample(previous, 2, qx, qy);
+        const float ny = ay - S::sample(previous, 3, qx, qy);
         qx = nx;
         qy = ny;
       }
-      before = hypotf(at(previous, 2, qx, qy) - at(previous, 0, qx, qy),
-                      at(previous, 3, qx, qy) - at(previous, 1, qx, qy));
+      before = hypotf(S::sample(previous, 2, qx, qy) - S::sample(previous, 0, qx, qy),
+                      S::sample(previous, 3, qx, qy) - S::sample(previous, 1, qx, qy));
     }
     const float now = hypotf(dx, dy);
     const float r = (before + kernels::kPoseEpsilon) / (before + now + 2.0F * kernels::kPoseEpsilon);
@@ -83,20 +74,14 @@ __device__ float pose_time_at(const WarpBlendParams& p, float u, float v) {
   return tp;
 }
 
-__global__ void __launch_bounds__(kPixelThreads, kHeavyBlocksPerSm) warp_blend(WarpBlendParams p) {
-  const int x = static_cast<int>(blockIdx.x * blockDim.x + threadIdx.x);
-  const int y = static_cast<int>(blockIdx.y * blockDim.y + threadIdx.y);
-  if (x >= p.width || y >= p.height) return;
-  const auto* flow = static_cast<const __half*>(p.flow);
-  const auto* mask = static_cast<const __half*>(p.mask);
-  const int pw = p.plane_width;
-  const int ph = p.plane_height;
-  const int wx = p.window_x;
-  const int wy = p.window_y;
-  const int fw = p.window_width;
-  const int fh = p.window_height;
-  const float sx = static_cast<float>(p.width) / static_cast<float>(fw);
-  const float sy = static_cast<float>(p.height) / static_cast<float>(fh);
+// Les trois canaux du pixel (x, y) de la sortie : mouvement lu dans la fenêtre, puis les deux
+// images déformées et mélangées.
+template <typename S>
+__device__ void warp_pixel(const WarpBlendParams& p, int x, int y, float* rgb) {
+  const Planes flow = motion_planes(p, p.flow, p.textures.flow);
+  const Planes mask = motion_planes(p, p.mask, p.textures.mask);
+  const float sx = static_cast<float>(p.width) / static_cast<float>(p.window_width);
+  const float sy = static_cast<float>(p.height) / static_cast<float>(p.window_height);
   const float u = (static_cast<float>(x) + 0.5F) / sx - 0.5F;
   const float v = (static_cast<float>(y) + 0.5F) / sy - 0.5F;
   float ax;
@@ -105,25 +90,21 @@ __global__ void __launch_bounds__(kPixelThreads, kHeavyBlocksPerSm) warp_blend(W
   float by;
   float weight;
   if (!p.from_middle) {
-    ax = bilinear(flow, pw, ph, 0, wx, wy, fw, fh, u, v);
-    ay = bilinear(flow, pw, ph, 1, wx, wy, fw, fh, u, v);
-    bx = bilinear(flow, pw, ph, 2, wx, wy, fw, fh, u, v);
-    by = bilinear(flow, pw, ph, 3, wx, wy, fw, fh, u, v);
-    weight = bilinear(mask, pw, ph, 0, wx, wy, fw, fh, u, v);
+    ax = S::sample(flow, 0, u, v);
+    ay = S::sample(flow, 1, u, v);
+    bx = S::sample(flow, 2, u, v);
+    by = S::sample(flow, 3, u, v);
+    weight = S::sample(mask, 0, u, v);
   } else {
-    const float t = p.keep_poses ? pose_time_at(p, u, v) : p.time;
-    const float a0x = bilinear(flow, pw, ph, 0, wx, wy, fw, fh, u, v);
-    const float a0y = bilinear(flow, pw, ph, 1, wx, wy, fw, fh, u, v);
-    const float a1x = bilinear(flow, pw, ph, 2, wx, wy, fw, fh, u, v);
-    const float a1y = bilinear(flow, pw, ph, 3, wx, wy, fw, fh, u, v);
-    const float u2 = u - ((1.0F - t) * a0x + t * a1x);
-    const float v2 = v - ((1.0F - t) * a0y + t * a1y);
-    const float tx =
-        bilinear(flow, pw, ph, 2, wx, wy, fw, fh, u2, v2) - bilinear(flow, pw, ph, 0, wx, wy, fw, fh, u2, v2);
-    const float ty =
-        bilinear(flow, pw, ph, 3, wx, wy, fw, fh, u2, v2) - bilinear(flow, pw, ph, 1, wx, wy, fw, fh, u2, v2);
-    const float mm = fminf(fmaxf(bilinear(mask, pw, ph, 0, wx, wy, fw, fh, u2, v2), kernels::kMaskEpsilon),
-                           1.0F - kernels::kMaskEpsilon);
+    // L'instant réglé se lit toujours exactement : le rapport des deux mouvements amplifie la
+    // fraction sur 8 bits de la texture (émulée sur les images du test : écart porté de 2 à 10/1024).
+    const float t = p.keep_poses ? pose_time_at<Exact>(p, u, v) : p.time;
+    const float u2 = u - ((1.0F - t) * S::sample(flow, 0, u, v) + t * S::sample(flow, 2, u, v));
+    const float v2 = v - ((1.0F - t) * S::sample(flow, 1, u, v) + t * S::sample(flow, 3, u, v));
+    const float tx = S::sample(flow, 2, u2, v2) - S::sample(flow, 0, u2, v2);
+    const float ty = S::sample(flow, 3, u2, v2) - S::sample(flow, 1, u2, v2);
+    const float mm =
+        fminf(fmaxf(S::sample(mask, 0, u2, v2), kernels::kMaskEpsilon), 1.0F - kernels::kMaskEpsilon);
     const float z = kernels::kBlendLawA * logf(mm / (1.0F - mm)) +
                     kernels::kBlendLawB * logf((1.0F - t) / t) + kernels::kBlendLawC;
     ax = -t * tx;
@@ -132,19 +113,52 @@ __global__ void __launch_bounds__(kPixelThreads, kHeavyBlocksPerSm) warp_blend(W
     by = (1.0F - t) * ty;
     weight = 1.0F / (1.0F + expf(-z));
   }
-  const auto* a = static_cast<const __half*>(p.a);
-  const auto* b = static_cast<const __half*>(p.b);
-  auto* out = static_cast<__half*>(p.out);
+  const Planes a = image_planes(p, p.a, p.textures.a);
+  const Planes b = image_planes(p, p.b, p.textures.b);
   const float fx = static_cast<float>(x);
   const float fy = static_cast<float>(y);
+  for (int c = 0; c < 3; ++c) {
+    const float va = S::sample(a, c, fx + sx * ax, fy + sy * ay);
+    const float vb = S::sample(b, c, fx + sx * bx, fy + sy * by);
+    rgb[c] = va * weight + vb * (1.0F - weight);
+  }
+}
+
+__global__ void __launch_bounds__(kPixelThreads, kHeavyBlocksPerSm) warp_blend(WarpBlendParams p) {
+  const int x = static_cast<int>(blockIdx.x * blockDim.x + threadIdx.x);
+  const int y = static_cast<int>(blockIdx.y * blockDim.y + threadIdx.y);
+  if (x >= p.width || y >= p.height) return;
+  float rgb[3];
+  warp_pixel<Exact>(p, x, y, rgb);
+  auto* out = static_cast<__half*>(p.out);
   const std::size_t plane = static_cast<std::size_t>(p.width) * static_cast<std::size_t>(p.height);
   const std::size_t i =
       static_cast<std::size_t>(y) * static_cast<std::size_t>(p.width) + static_cast<std::size_t>(x);
-  for (int c = 0; c < 3; ++c) {
-    const float va = bilinear(a, p.width, p.height, c, 0, 0, p.width, p.height, fx + sx * ax, fy + sy * ay);
-    const float vb = bilinear(b, p.width, p.height, c, 0, 0, p.width, p.height, fx + sx * bx, fy + sy * by);
-    out[static_cast<std::size_t>(c) * plane + i] = __float2half_rn(va * weight + vb * (1.0F - weight));
+  for (int c = 0; c < 3; ++c) out[static_cast<std::size_t>(c) * plane + i] = __float2half_rn(rgb[c]);
+}
+
+// Deux pixels voisins par fil, lus par les objets texture : un bloc 16 × 16 couvre 32 × 16 pixels.
+__global__ void __launch_bounds__(kPixelThreads, kHeavyBlocksPerSm) warp_blend_filtered(WarpBlendParams p) {
+  const int x = 2 * static_cast<int>(blockIdx.x * blockDim.x + threadIdx.x);
+  const int y = static_cast<int>(blockIdx.y * blockDim.y + threadIdx.y);
+  if (x >= p.width || y >= p.height) return;  // largeur paire : x + 1 est dans l'image
+  // Un pixel après l'autre : déroulés, les deux calculs entrelacés débordent de la borne lourde
+  // sur sm_86 et sm_89 (les poses lues exactement).
+  __half2 pair[3];
+#pragma unroll 1
+  for (int k = 0; k < 2; ++k) {
+    float rgb[3];
+    warp_pixel<Filtered>(p, x + k, y, rgb);
+    for (int c = 0; c < 3; ++c) {
+      const __half v = __float2half_rn(rgb[c]);
+      pair[c] = k == 0 ? __halves2half2(v, v) : __halves2half2(__low2half(pair[c]), v);
+    }
   }
+  auto* out = static_cast<__half2*>(p.out);
+  const std::size_t plane = static_cast<std::size_t>(p.width) / 2 * static_cast<std::size_t>(p.height);
+  const std::size_t i =
+      (static_cast<std::size_t>(y) * static_cast<std::size_t>(p.width) + static_cast<std::size_t>(x)) / 2;
+  for (int c = 0; c < 3; ++c) out[static_cast<std::size_t>(c) * plane + i] = pair[c];
 }
 
 __global__ void __launch_bounds__(kPixelThreads, kPixelBlocksPerSm) flow_max(FlowMaxParams p) {
@@ -168,7 +182,15 @@ __global__ void __launch_bounds__(kPixelThreads, kPixelBlocksPerSm) flow_max(Flo
 }  // namespace
 
 cudaError_t launch_warp_blend(const WarpBlendParams& params, cudaStream_t stream) {
-  warp_blend<<<grid_for(params.width, params.height), dim3(kBlock, kBlock), 0, stream>>>(params);
+  const WarpBlendParams::Textures& t = params.textures;
+  const bool previous = params.keep_poses && params.previous_flow != nullptr;
+  if (t.a != 0 && t.b != 0 && t.flow != 0 && t.mask != 0 && (!previous || t.previous_flow != 0) &&
+      params.width % 2 == 0 && reinterpret_cast<std::uintptr_t>(params.out) % 4 == 0) {
+    warp_blend_filtered<<<grid_for(params.width / 2, params.height), dim3(kBlock, kBlock), 0, stream>>>(
+        params);
+  } else {
+    warp_blend<<<grid_for(params.width, params.height), dim3(kBlock, kBlock), 0, stream>>>(params);
+  }
   return cudaGetLastError();
 }
 

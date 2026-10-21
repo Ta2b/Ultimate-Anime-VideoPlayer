@@ -216,22 +216,24 @@ std::expected<void, Refusal> TensorRtBackend::gmfss_compose(const Tensor& high_a
   if (!(t >= 0.0F && t <= 1.0F))
     return refuse(RefusalCode::FieldOutOfRange, std::format("gmfss_compose : instant {} hors de [0, 1]", t));
   if (auto ok = bind(); !ok) return ok;
-  const GmfssComposeParams params{.high_a = address(high_a),
-                                  .high_b = address(high_b),
-                                  .width = width_of(out),
-                                  .height = height_of(out),
-                                  .low_a = address(low_a),
-                                  .low_b = address(low_b),
-                                  .low_width = lw,
-                                  .low_height = lh,
-                                  .scale = width_of(out) / lw,
-                                  .fusion = address(fusion),
-                                  .fusion_width = width_of(fusion),
-                                  .fusion_height = height_of(fusion),
-                                  .window_x = window.x,
-                                  .window_y = window.y,
-                                  .t = t,
-                                  .out = address(out)};
+  const GmfssComposeParams params{
+      .high_a = address(high_a),
+      .high_b = address(high_b),
+      .width = width_of(out),
+      .height = height_of(out),
+      .low_a = address(low_a),
+      .low_b = address(low_b),
+      .low_width = lw,
+      .low_height = lh,
+      .scale = width_of(out) / lw,
+      .fusion = address(fusion),
+      .fusion_width = width_of(fusion),
+      .fusion_height = height_of(fusion),
+      .window_x = window.x,
+      .window_y = window.y,
+      .t = t,
+      .out = address(out),
+      .textures = {.low_a = texture(low_a), .low_b = texture(low_b), .fusion = texture(fusion)}};
   if (auto ok =
           order({high_a.handle, high_b.handle, low_a.handle, low_b.handle, fusion.handle}, {out.handle});
       !ok)

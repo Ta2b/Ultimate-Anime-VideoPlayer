@@ -14,7 +14,7 @@ set_target_properties(ajp_backend_tensorrt_kernels PROPERTIES POSITION_INDEPENDE
 
 add_library(ajp_backend_tensorrt MODULE
   entry.cpp gpu_timing.cpp ring_slot.cpp tensorrt_backend.cpp tensorrt_gmfss.cpp
-  tensorrt_kernels.cpp tensorrt_lanes.cpp tensorrt_rife.cpp tensorrt_warp.cpp tensorrt_true_hdr.cpp
+  tensorrt_kernels.cpp tensorrt_lanes.cpp tensorrt_rife.cpp tensorrt_textures.cpp tensorrt_warp.cpp tensorrt_true_hdr.cpp
   trt_engine.cpp)
 target_include_directories(ajp_backend_tensorrt PRIVATE "${PROJECT_SOURCE_DIR}/src")
 target_link_libraries(ajp_backend_tensorrt PRIVATE

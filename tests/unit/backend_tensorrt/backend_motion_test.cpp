@@ -23,6 +23,7 @@
 #include "kernels/ref/warp.h"
 #include "kernels/spec/detect.h"
 #include "kernels/spec/rife.h"
+#include "kernels/spec/tolerance.h"
 #include "prepare/sha256.h"
 
 namespace {
@@ -30,16 +31,24 @@ namespace {
 using namespace ajp;
 using namespace ajp::test;
 
-TEST_CASE("Backend TensorRT : warp et mélange par le mouvement, contre la référence",
-          "[backend_tensorrt][cuda]") {
-  if (!has_cuda()) SKIP("pas de GPU NVIDIA");
-  // Mouvement dans des plans 40×32, image dans la fenêtre 40×24 à (0, 4) ; images 1,5 fois plus
-  // grandes (mouvement estimé à 720p, warp à 1080p).
-  constexpr int pw = 40;
-  constexpr int ph = 32;
-  constexpr int w = 60;
-  constexpr int h = 36;
-  const kernels::Window area{.x = 0, .y = 4, .width = 40, .height = 24};
+// Mouvement dans des plans pw × ph, image dans la fenêtre area ; images 1,5 fois plus grandes
+// (mouvement estimé à 720p, warp à 1080p). tolerance : l'écart admis à la référence, pour warp_blend
+// et warp_blend_poses.
+struct WarpCase {
+  int pw = 0;
+  int ph = 0;
+  int w = 0;
+  int h = 0;
+  kernels::Window area;
+  double tolerance = 0.0;
+};
+
+void check_warp(const WarpCase& wc) {
+  const int pw = wc.pw;
+  const int ph = wc.ph;
+  const int w = wc.w;
+  const int h = wc.h;
+  const kernels::Window area = wc.area;
   const auto q = [](float v) { return kernels::ref::half_to_float(kernels::ref::float_to_half(v)); };
   kernels::ref::Motion motion;
   for (auto& plane : motion.flow) plane = kernels::PlaneF(pw, ph);
@@ -111,7 +120,7 @@ TEST_CASE("Backend TensorRT : warp et mélange par le mouvement, contre la réf�
         }
       }
     }
-    CHECK(worst < 2e-3);  // l'arrondi FP16 de la sortie
+    CHECK(worst < wc.tolerance);
   }
   // Garder les poses : la paire précédente bougeait à 30 % (valeurs FP16 exactes), puis était tenue.
   kernels::ref::Motion before = motion;
@@ -145,7 +154,7 @@ TEST_CASE("Backend TensorRT : warp et mélange par le mouvement, contre la réf�
           }
         }
       }
-      CHECK(worst < 2e-3);
+      CHECK(worst < wc.tolerance);
     }
   }
   const auto max = loaded.backend->kernels()->flow_max_now(gm);
@@ -159,11 +168,38 @@ TEST_CASE("Backend TensorRT : warp et mélange par le mouvement, contre la réf�
             .error()
             .code == RefusalCode::FieldOutOfRange);
   const gpu::Motion outside{
-      .flow = tflow->tensor(), .mask = tmask->tensor(), .area = {.x = 0, .y = 10, .width = 40, .height = 24}};
+      .flow = tflow->tensor(),
+      .mask = tmask->tensor(),
+      .area = {.x = 0, .y = ph - area.height + 1, .width = area.width, .height = area.height}};
   CHECK(loaded.backend->kernels()
             ->warp_blend(ta->tensor(), tb->tensor(), outside, 0.5F, out->tensor())
             .error()
             .code == RefusalCode::ShapeInvalid);
+}
+
+TEST_CASE("Backend TensorRT : warp et mélange par le mouvement, contre la référence",
+          "[backend_tensorrt][cuda]") {
+  if (!has_cuda()) SKIP("pas de GPU NVIDIA");
+  // Largeurs de 80 et 120 octets, hors du pas de 32 des objets texture : la lecture exacte, à
+  // l'arrondi FP16 de la sortie près.
+  check_warp({.pw = 40,
+              .ph = 32,
+              .w = 60,
+              .h = 36,
+              .area = {.x = 0, .y = 4, .width = 40, .height = 24},
+              .tolerance = 2e-3});
+}
+
+TEST_CASE("Backend TensorRT : warp par objets texture, deux pixels par fil, contre la référence",
+          "[backend_tensorrt][cuda]") {
+  if (!has_cuda()) SKIP("pas de GPU NVIDIA");
+  // Largeurs de 128 et 192 octets : le filtre bilinéaire matériel et la sortie half2.
+  check_warp({.pw = 64,
+              .ph = 48,
+              .w = 96,
+              .h = 48,
+              .area = {.x = 0, .y = 8, .width = 64, .height = 32},
+              .tolerance = kernels::tolerance::kWarpFiltered});
 }
 
 TEST_CASE("Backend TensorRT : entrée de RIFE, 11 plans remplis, puis recadrage de la fenêtre",

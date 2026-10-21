@@ -99,7 +99,12 @@ std::expected<void, Refusal> TensorRtBackend::warp(const Tensor& a, const Tensor
       .from_middle = poses.keep || t != 0.5F,
       .keep_poses = poses.keep,
       .previous_flow = poses.previous != nullptr ? address(poses.previous->flow) : nullptr,
-      .out = const_cast<void*>(address(out))};  // NOLINT : écrit
+      .out = const_cast<void*>(address(out)),  // NOLINT : écrit
+      .textures = {.a = texture(a),
+                   .b = texture(b),
+                   .flow = texture(motion.flow),
+                   .mask = texture(motion.mask),
+                   .previous_flow = poses.previous != nullptr ? texture(poses.previous->flow) : 0}};
   const std::uintptr_t previous = poses.previous != nullptr ? poses.previous->flow.handle : 0;
   if (auto ok = order({a.handle, b.handle, motion.flow.handle, motion.mask.handle, previous}, {out.handle});
       !ok)

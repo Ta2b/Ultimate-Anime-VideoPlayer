@@ -6,6 +6,7 @@
 #include <array>
 #include <cmath>
 #include <cstddef>
+#include <cstdint>
 #include <memory>
 #include <utility>
 #include <vector>
@@ -267,4 +268,51 @@ TEST_CASE(
                         tf->tensor(), k::Window{.x = 14, .y = 2, .width = w, .height = h}, t, out->tensor());
   REQUIRE_FALSE(outside);
   CHECK(outside.error().code == RefusalCode::ShapeInvalid);
+}
+
+TEST_CASE("Backend TensorRT : composition par objets texture, deux pixels par fil, contre la référence",
+          "[backend_tensorrt][cuda][gmfss]") {
+  if (!has_cuda()) SKIP("pas de GPU NVIDIA");
+  Loaded loaded;
+  REQUIRE(loaded.backend != nullptr);
+  // Travail 32 × 16, fusion 48 × 24 (fenêtre en (8, 4)), sortie 64 × 32 : largeurs de 64, 96 et
+  // 128 octets, au pas des objets texture. À l'échelle 2 la fraction vaut 1/4 ou 3/4, que le filtre
+  // matériel rend exactement ; la marge de kWarpFiltered couvre sa précision interne.
+  constexpr int w = 32;
+  constexpr int h = 16;
+  constexpr k::Window window{.x = 8, .y = 4, .width = w, .height = h};
+  constexpr float t = 0.3F;
+  const auto splatted = [](int width, int height, int seed) {
+    return k::ref::Splatted{.planes = planes_of(width, height, 3, seed, 0.0F, 1.0F),
+                            .coverage = planes_of(width, height, 1, seed + 1, 0.0F, 1.0F)[0]};
+  };
+  const auto tensor_of = [&](std::vector<k::PlaneF> values, const k::PlaneF* coverage) {
+    if (coverage != nullptr) values.push_back(*coverage);
+    auto tensor = loaded.backend->alloc_tensor(
+        gpu::TensorType::F16,
+        {.dims = {1, static_cast<std::int64_t>(values.size()), values[0].height, values[0].width}});
+    REQUIRE(tensor);
+    upload((*tensor)->tensor(), flat(values));
+    return std::move(*tensor);
+  };
+  const std::array<k::ref::Splatted, 2> high{splatted(2 * w, 2 * h, 3), splatted(2 * w, 2 * h, 5)};
+  const std::array<k::ref::Splatted, 2> low{splatted(w, h, 7), splatted(w, h, 9)};
+  const std::vector<k::PlaneF> fusion = planes_of(48, 24, 3, 11, 0.0F, 1.0F);
+  const auto ha = tensor_of(high[0].planes, &high[0].coverage);
+  const auto hb = tensor_of(high[1].planes, &high[1].coverage);
+  const auto la = tensor_of(low[0].planes, &low[0].coverage);
+  const auto lb = tensor_of(low[1].planes, &low[1].coverage);
+  const auto tf = tensor_of(fusion, nullptr);
+  auto out = loaded.backend->alloc_tensor(gpu::TensorType::F16, {.dims = {1, 3, 2 * h, 2 * w}});
+  REQUIRE(out);
+  REQUIRE(loaded.backend->kernels()->gmfss_compose(ha->tensor(), hb->tensor(), la->tensor(), lb->tensor(),
+                                                   tf->tensor(), window, t, (*out)->tensor()));
+  const auto want = k::ref::gmfss_compose(high[0], high[1], low[0], low[1], fusion, window, t);
+  REQUIRE(want);
+  const std::vector<float> got = download((*out)->tensor());
+  const std::vector<float> expected = flat(*want);
+  REQUIRE(got.size() == expected.size());
+  float worst = 0.0F;
+  for (std::size_t i = 0; i < got.size(); ++i) worst = std::max(worst, std::fabs(got[i] - expected[i]));
+  CHECK(worst <= k::tolerance::kWarpFiltered);
 }

@@ -167,6 +167,19 @@ un réglage à faire taire.
   reçoit un `rife_input` complet à sa première paire, puis `rife_pair` (les images et l'instant,
   4 plans de 11 en moins). Capture ×3 RIFE 4.25 égale à 015aab1 après plusieurs paires ; avec
   4.22 lite (7 plans) rien ne change. Un backend d'avant (ABI 6) est refusé au chargement.
+- **Warp et composition par objets texture** (étude 3, 4.2) : quand les largeurs des tenseurs
+  sont des multiples de 16 pixels (pas de 32 octets de `texturePitchAlignment`) et les adresses
+  alignées, `warp_blend`, `warp_blend_poses` et `gmfss_compose` lisent par le filtre bilinéaire
+  matériel (objets gardés par le backend, un par adresse et forme) et écrivent deux pixels par
+  fil en `half2` ; sinon la lecture exacte d'avant. Tests `[backend_tensorrt][cuda]` « warp par
+  objets texture » et « composition par objets texture » (tolérance `kWarpFiltered`, 4/1024 :
+  l'émulation de la fraction 8 bits donne 2,1/1024 au pire) ; les anciens tests gardent la voie
+  exacte (largeurs 40 et 60). L'instant réglé des poses reste lu exactement : lu par texture,
+  l'écart montait à 10/1024 dans l'émulation. À mesurer : `ncu` sur les deux noyaux contre
+  3d159a5, et une capture RIFE ×3 avec garde des poses comparée à 3d159a5 (écart attendu sous
+  2/1024). Un journal « objet texture refusé » signale un pilote qui refuse le format half.
+- **Pas encore : `--kernels=exact`** : la voie exacte n'a pas d'interrupteur ; elle sert quand
+  un tenseur n'a pas d'objet texture.
 - **Écarté : sous-échantillonner `pair_diff`** (étude 3, 4.4) : la mesure de détection est fixée
   par kernels/spec/detect.h et les tests de référence Vulkan ; la changer change les décisions.
 

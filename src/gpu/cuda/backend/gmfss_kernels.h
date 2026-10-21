@@ -72,6 +72,14 @@ struct GmfssComposeParams {
   int window_y = 0;
   float t = 0.5F;
   void* out = nullptr;  // 1 × 3 × height × width
+  // Objets texture des sources de travail et de la fusion (vues en largeur × plans · hauteur), ou
+  // 0. Les trois présents, largeur paire et tenseurs pleine taille alignés sur 4 octets : lecture
+  // par le filtre bilinéaire matériel, deux pixels par fil (half2) ; sinon, la lecture exacte.
+  struct Textures {
+    cudaTextureObject_t low_a = 0;
+    cudaTextureObject_t low_b = 0;
+    cudaTextureObject_t fusion = 0;
+  } textures;
 };
 
 cudaError_t launch_gmfss_compose(const GmfssComposeParams& params, cudaStream_t stream);

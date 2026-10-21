@@ -30,6 +30,16 @@ struct WarpBlendParams {
   bool keep_poses = false;
   const void* previous_flow = nullptr;
   void* out = nullptr;  // 1 × 3 × height × width, FP16
+  // Objets texture des mêmes tenseurs (vus en largeur × plans · hauteur), ou 0. Tous ceux des
+  // tenseurs lus présents, largeur paire et sortie alignée sur 4 octets : le noyau lit par le
+  // filtre bilinéaire matériel et écrit deux pixels par fil (half2) ; sinon, la lecture exacte.
+  struct Textures {
+    cudaTextureObject_t a = 0;
+    cudaTextureObject_t b = 0;
+    cudaTextureObject_t flow = 0;
+    cudaTextureObject_t mask = 0;
+    cudaTextureObject_t previous_flow = 0;
+  } textures;
 };
 
 cudaError_t launch_warp_blend(const WarpBlendParams& params, cudaStream_t stream);

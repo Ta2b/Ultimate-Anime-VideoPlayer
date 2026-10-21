@@ -175,7 +175,7 @@ std::expected<std::unique_ptr<TensorRtBackend>, Refusal> TensorRtBackend::create
 TensorRtBackend::~TensorRtBackend() {
   if (stream_ == nullptr) return;
   cudaSetDevice(device_);
-  for (cudaStream_t lane : streams_) cudaStreamSynchronize(lane);
+  destroy_textures();
   for (auto& [name, timing] : stages_) {
     if (const std::string line = timing->summary(); !line.empty())
       log(BackendLogLevel::Info, "profil GPU · " + line);

@@ -43,4 +43,10 @@ inline constexpr double kSceneScoreRelative = 1e-4;
 // et expf approchées : à confirmer par le golden de chaque port.
 inline constexpr float kWarp = 2.0F / 1024.0F;
 
+// Le même warp lu par le filtre bilinéaire matériel (objets texture CUDA, bilinear.cuh) : la
+// fraction sur 8 bits écarte chaque prise d'au plus le gradient local / 512 (/ 256 si le matériel
+// tronque). Émulé sur les images du test du backend TensorRT (flot jusqu'à 1,5 px par pixel),
+// l'écart atteint 2,1/1024 en troncature ; l'instant réglé des poses reste lu exactement.
+inline constexpr float kWarpFiltered = 4.0F / 1024.0F;
+
 }  // namespace ajp::kernels::tolerance

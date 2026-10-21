@@ -177,6 +177,11 @@ class TensorRtBackend final : public Backend, public KernelOps {
   };
   std::expected<void, Refusal> warp(const Tensor& a, const Tensor& b, const Motion& motion,
                                     const Poses& poses, float t, const Tensor& out);
+  // Objet texture d'un tenseur FP16 lu par le filtre bilinéaire (warp, composition de GMFSS ;
+  // tensorrt_textures.cpp), créé à sa première lecture et gardé ; 0 quand le tenseur n'y est pas
+  // admissible (pitch, alignement, taille) : le noyau garde la lecture exacte.
+  cudaTextureObject_t texture(const Tensor& tensor);
+  void destroy_textures();  // les files vidées d'abord
 
   int device_ = 0;
   cudaDeviceProp properties_{};
@@ -240,6 +245,16 @@ class TensorRtBackend final : public Backend, public KernelOps {
   // Lignes filtrées de l'ingestion à filtre étiré (slice_kernels.h, IngestParams::rows).
   float* ingest_rows_ = nullptr;
   std::size_t ingest_rows_size_ = 0;
+  // Objets texture par adresse et forme (texture()) ; au-delà de kTextures, tous détruits et
+  // recréés à la demande (changements de taille répétés).
+  struct TextureKey {
+    std::uintptr_t address = 0;
+    std::int64_t width = 0;
+    std::int64_t rows = 0;  // plans · hauteur
+    auto operator<=>(const TextureKey&) const = default;
+  };
+  static constexpr std::size_t kTextures = 256;
+  std::map<TextureKey, cudaTextureObject_t> textures_;
   // RTX HDR : l'effet, son pont de flux, et ses deux tampons linéaires (RGBA8 tramé, RGB10A2).
   struct TrueHdrState;
   std::unique_ptr<TrueHdrState> true_hdr_;

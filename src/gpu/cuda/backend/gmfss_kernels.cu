@@ -2,8 +2,10 @@
 // kernels/glsl/gmfss_splat.comp, gmfss_normalize.comp et gmfss_compose.comp ; référence
 // kernels/ref/gmfss.cpp. Un lot : la grille est linéaire, chaque bloc retrouve son travail par les
 // préfixes de la table, puis sa tuile 16 × 16 et son groupe de plans ; aucun bloc n'est lancé pour rien.
+#include <cstdint>
 #include <cuda_fp16.h>
 
+#include "gpu/cuda/backend/bilinear.cuh"
 #include "gpu/cuda/backend/gmfss_kernels.h"
 #include "gpu/cuda/backend/pixel_kernels.cuh"
 #include "kernels/spec/gmfss.h"
@@ -25,23 +27,6 @@ __host__ __device__ int groups_of(int channels) {
 
 __device__ std::size_t at(int x, int y, int width) {
   return static_cast<std::size_t>(y) * static_cast<std::size_t>(width) + static_cast<std::size_t>(x);
-}
-
-// Lecture bilinéaire d'un plan FP16 pw × ph dans sa fenêtre (ox, oy, fw, fh), coordonnées
-// relatives au coin de la fenêtre et bornées à elle (bilinear_at de ref/warp.cpp).
-__device__ float bilinear(const __half* p, int pw, int ox, int oy, int fw, int fh, float x, float y) {
-  x = fminf(fmaxf(x, 0.0F), static_cast<float>(fw - 1));
-  y = fminf(fmaxf(y, 0.0F), static_cast<float>(fh - 1));
-  const int x0 = static_cast<int>(x);
-  const int y0 = static_cast<int>(y);
-  const int x1 = min(x0 + 1, fw - 1);
-  const int y1 = min(y0 + 1, fh - 1);
-  const float fx = x - static_cast<float>(x0);
-  const float fy = y - static_cast<float>(y0);
-  const auto read = [&](int xx, int yy) { return __half2float(p[at(ox + xx, oy + yy, pw)]); };
-  const float top = read(x0, y0) * (1.0F - fx) + read(x1, y0) * fx;
-  const float bottom = read(x0, y1) * (1.0F - fx) + read(x1, y1) * fx;
-  return top * (1.0F - fy) + bottom * fy;
 }
 
 // Le travail du bloc et le rang du bloc dans ce travail.
@@ -73,15 +58,16 @@ __global__ void __launch_bounds__(kPixelThreads, kPixelBlocksPerSm) splat_all(So
     fy = __half2float(motion[plane + i]);
     z = __half2float(motion[2 * plane + i]);
   } else {
-    const std::size_t mplane =
-        static_cast<std::size_t>(p.motion_width) * static_cast<std::size_t>(p.motion_height);
     const float u = (static_cast<float>(x) + 0.5F) / p.motion_scale - 0.5F + p.motion_x;
     const float v = (static_cast<float>(y) + 0.5F) / p.motion_scale - 0.5F + p.motion_y;
-    const int mw = p.motion_width;
-    const int mh = p.motion_height;
-    fx = p.motion_scale * bilinear(motion, mw, 0, 0, mw, mh, u, v);
-    fy = p.motion_scale * bilinear(motion + mplane, mw, 0, 0, mw, mh, u, v);
-    z = bilinear(motion + 2 * mplane, mw, 0, 0, mw, mh, u, v);
+    const Planes planes{.data = motion,
+                        .plane_w = p.motion_width,
+                        .plane_h = p.motion_height,
+                        .fw = p.motion_width,
+                        .fh = p.motion_height};
+    fx = p.motion_scale * Exact::sample(planes, 0, u, v);
+    fy = p.motion_scale * Exact::sample(planes, 1, u, v);
+    z = Exact::sample(planes, 2, u, v);
   }
   const float tx = static_cast<float>(x) + p.s * fx;
   const float ty = static_cast<float>(y) + p.s * fy;
@@ -152,46 +138,106 @@ __global__ void __launch_bounds__(kPixelThreads, kPixelBlocksPerSm) normalize_al
     out[static_cast<std::size_t>(p.channels) * plane + i] = __float2half_rn(weight / total);
 }
 
+// Les plans lus en (xw, yw) par la composition : sources de travail, et fusion dans sa fenêtre.
+struct ComposeReads {
+  Planes low_a;
+  Planes low_b;
+  Planes fusion;
+};
+
+__device__ ComposeReads compose_reads(const GmfssComposeParams& p) {
+  const auto low = [&](const void* data, cudaTextureObject_t texture) {
+    return Planes{.data = static_cast<const __half*>(data),
+                  .texture = texture,
+                  .plane_w = p.low_width,
+                  .plane_h = p.low_height,
+                  .fw = p.low_width,
+                  .fh = p.low_height};
+  };
+  return ComposeReads{.low_a = low(p.low_a, p.textures.low_a),
+                      .low_b = low(p.low_b, p.textures.low_b),
+                      .fusion = Planes{.data = static_cast<const __half*>(p.fusion),
+                                       .texture = p.textures.fusion,
+                                       .plane_w = p.fusion_width,
+                                       .plane_h = p.fusion_height,
+                                       .ox = p.window_x,
+                                       .oy = p.window_y,
+                                       .fw = p.low_width,
+                                       .fh = p.low_height}};
+}
+
+__device__ float mix(float t, float p0, float c0, float p1, float c1) {
+  const float w0 = (1.0F - t) * c0;
+  const float w1 = t * c1;
+  return (w0 * p0 + w1 * p1) / (w0 + w1 + kernels::kGmfssNormalizeEpsilon);
+}
+
+// high : les quatre plans (R, G, B, couverture) des deux sources agrandies au pixel ; rgb : sortie.
+template <typename S>
+__device__ void compose_pixel(const GmfssComposeParams& p, const ComposeReads& r, int x, int y,
+                              const float (&high_a)[4], const float (&high_b)[4], float* rgb) {
+  const float scale = static_cast<float>(p.scale);
+  const float xw = (static_cast<float>(x) + 0.5F) / scale - 0.5F;
+  const float yw = (static_cast<float>(y) + 0.5F) / scale - 0.5F;
+  const float la = S::sample(r.low_a, 3, xw, yw);
+  const float lb = S::sample(r.low_b, 3, xw, yw);
+  for (int c = 0; c < 3; ++c) {
+    const float high = mix(p.t, high_a[c], high_a[3], high_b[c], high_b[3]);
+    const float lo = mix(p.t, S::sample(r.low_a, c, xw, yw), la, S::sample(r.low_b, c, xw, yw), lb);
+    const float fused = S::sample(r.fusion, c, xw, yw);
+    rgb[c] = fminf(fmaxf(high + fused - lo, 0.0F), 1.0F);
+  }
+}
+
 __global__ void __launch_bounds__(kPixelThreads, kPixelBlocksPerSm) compose(GmfssComposeParams p) {
   const int x = static_cast<int>(blockIdx.x * blockDim.x + threadIdx.x);
   const int y = static_cast<int>(blockIdx.y * blockDim.y + threadIdx.y);
   if (x >= p.width || y >= p.height) return;
   const std::size_t plane = static_cast<std::size_t>(p.width) * static_cast<std::size_t>(p.height);
-  const std::size_t low_plane =
-      static_cast<std::size_t>(p.low_width) * static_cast<std::size_t>(p.low_height);
-  const std::size_t fusion_plane =
-      static_cast<std::size_t>(p.fusion_width) * static_cast<std::size_t>(p.fusion_height);
   const std::size_t i = at(x, y, p.width);
-  const float scale = static_cast<float>(p.scale);
-  const float xw = (static_cast<float>(x) + 0.5F) / scale - 0.5F;
-  const float yw = (static_cast<float>(y) + 0.5F) / scale - 0.5F;
   const auto* high_a = static_cast<const __half*>(p.high_a);
   const auto* high_b = static_cast<const __half*>(p.high_b);
-  const auto* low_a = static_cast<const __half*>(p.low_a);
-  const auto* low_b = static_cast<const __half*>(p.low_b);
-  const auto* fusion = static_cast<const __half*>(p.fusion);
-  const auto low = [&](const __half* t, int c) {
-    return bilinear(t + static_cast<std::size_t>(c) * low_plane, p.low_width, 0, 0, p.low_width, p.low_height,
-                    xw, yw);
-  };
-  const auto mix = [&](float p0, float c0, float p1, float c1) {
-    const float w0 = (1.0F - p.t) * c0;
-    const float w1 = p.t * c1;
-    return (w0 * p0 + w1 * p1) / (w0 + w1 + kernels::kGmfssNormalizeEpsilon);
-  };
-  const float ca = __half2float(high_a[3 * plane + i]);
-  const float cb = __half2float(high_b[3 * plane + i]);
-  const float la = low(low_a, 3);
-  const float lb = low(low_b, 3);
-  auto* out = static_cast<__half*>(p.out);
-  for (int c = 0; c < 3; ++c) {
-    const std::size_t k = static_cast<std::size_t>(c) * plane + i;
-    const float high = mix(__half2float(high_a[k]), ca, __half2float(high_b[k]), cb);
-    const float lo = mix(low(low_a, c), la, low(low_b, c), lb);
-    const float fused = bilinear(fusion + static_cast<std::size_t>(c) * fusion_plane, p.fusion_width,
-                                 p.window_x, p.window_y, p.low_width, p.low_height, xw, yw);
-    out[k] = __float2half_rn(fminf(fmaxf(high + fused - lo, 0.0F), 1.0F));
+  float ha[4];
+  float hb[4];
+  for (int c = 0; c < 4; ++c) {
+    ha[c] = __half2float(high_a[static_cast<std::size_t>(c) * plane + i]);
+    hb[c] = __half2float(high_b[static_cast<std::size_t>(c) * plane + i]);
   }
+  float rgb[3];
+  compose_pixel<Exact>(p, compose_reads(p), x, y, ha, hb, rgb);
+  auto* out = static_cast<__half*>(p.out);
+  for (int c = 0; c < 3; ++c) out[static_cast<std::size_t>(c) * plane + i] = __float2half_rn(rgb[c]);
+}
+
+// Deux pixels voisins par fil : sources agrandies lues et sortie écrite en half2, sources de
+// travail et fusion par les objets texture. À l'échelle 2, la fraction vaut 1/4 ou 3/4 : le
+// filtre matériel la rend exactement.
+__global__ void __launch_bounds__(kPixelThreads, kPixelBlocksPerSm) compose_filtered(GmfssComposeParams p) {
+  const int x = 2 * static_cast<int>(blockIdx.x * blockDim.x + threadIdx.x);
+  const int y = static_cast<int>(blockIdx.y * blockDim.y + threadIdx.y);
+  if (x >= p.width || y >= p.height) return;  // largeur paire : x + 1 est dans l'image
+  const std::size_t plane = static_cast<std::size_t>(p.width) / 2 * static_cast<std::size_t>(p.height);
+  const std::size_t i = at(x, y, p.width) / 2;
+  const auto* high_a = static_cast<const __half2*>(p.high_a);
+  const auto* high_b = static_cast<const __half2*>(p.high_b);
+  float ha[2][4];
+  float hb[2][4];
+  for (int c = 0; c < 4; ++c) {
+    const float2 va = __half22float2(high_a[static_cast<std::size_t>(c) * plane + i]);
+    const float2 vb = __half22float2(high_b[static_cast<std::size_t>(c) * plane + i]);
+    ha[0][c] = va.x;
+    ha[1][c] = va.y;
+    hb[0][c] = vb.x;
+    hb[1][c] = vb.y;
+  }
+  const ComposeReads reads = compose_reads(p);
+  float left[3];
+  float right[3];
+  compose_pixel<Filtered>(p, reads, x, y, ha[0], hb[0], left);
+  compose_pixel<Filtered>(p, reads, x + 1, y, ha[1], hb[1], right);
+  auto* out = static_cast<__half2*>(p.out);
+  for (int c = 0; c < 3; ++c)
+    out[static_cast<std::size_t>(c) * plane + i] = __floats2half2_rn(left[c], right[c]);
 }
 
 __global__ void fill_half(__half* data, std::size_t count, __half value) {
@@ -239,9 +285,18 @@ cudaError_t launch_soft_splat_all(SoftSplatBatch& batch, void* sums, std::size_t
 
 cudaError_t launch_gmfss_compose(const GmfssComposeParams& params, cudaStream_t stream) {
   const dim3 block(kBlock, kBlock);
-  const dim3 grid(static_cast<unsigned>(tiles_across(params.width)),
-                  static_cast<unsigned>(tiles_across(params.height)));
-  compose<<<grid, block, 0, stream>>>(params);
+  const GmfssComposeParams::Textures& t = params.textures;
+  const auto aligned = [](const void* data) { return reinterpret_cast<std::uintptr_t>(data) % 4 == 0; };
+  if (t.low_a != 0 && t.low_b != 0 && t.fusion != 0 && params.width % 2 == 0 && aligned(params.high_a) &&
+      aligned(params.high_b) && aligned(params.out)) {
+    const dim3 grid(static_cast<unsigned>(tiles_across(params.width / 2)),
+                    static_cast<unsigned>(tiles_across(params.height)));
+    compose_filtered<<<grid, block, 0, stream>>>(params);
+  } else {
+    const dim3 grid(static_cast<unsigned>(tiles_across(params.width)),
+                    static_cast<unsigned>(tiles_across(params.height)));
+    compose<<<grid, block, 0, stream>>>(params);
+  }
   return cudaGetLastError();
 }
 
