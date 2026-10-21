@@ -345,7 +345,11 @@ std::expected<std::string, Refusal> choose_as_default(const PlayerPlace& place) 
 void leave_lone_console() {
 #ifdef _WIN32
   std::array<DWORD, 2> processes{};
-  if (GetConsoleProcessList(processes.data(), static_cast<DWORD>(processes.size())) == 1) FreeConsole();
+  if (GetConsoleProcessList(processes.data(), static_cast<DWORD>(processes.size())) == 1) {
+    FreeConsole();
+  } else {
+    SetConsoleOutputCP(CP_UTF8);  // le journal est en UTF-8 : « échoué », pas « ├®chou├® »
+  }
 #endif
 }
 

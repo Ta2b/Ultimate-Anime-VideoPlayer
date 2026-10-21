@@ -258,7 +258,17 @@ std::expected<std::unique_ptr<PlaceboScreen>, Refusal> PlaceboScreen::open(const
   // l'ignorent. Lue à l'énumération des appareils de l'instance, plus bas.
   SDL_setenv_unsafe("ANV_QUEUE_OVERRIDE", "gc=2", 0);
 #endif
+  // Le chargeur Vulkan que SDL a ouvert pour la fenêtre : libplacebo n'est pas toujours lié au
+  // chargeur (le port vcpkg de Windows le construit sans, -Dvk-proc-addr=disabled), et le Mac
+  // charge le sien par son chemin, plus haut.
+  const auto get_proc_addr =
+      reinterpret_cast<PFN_vkGetInstanceProcAddr>(SDL_Vulkan_GetVkGetInstanceProcAddr());
+  if (get_proc_addr == nullptr) {
+    return refuse(RefusalCode::LibraryUnavailable,
+                  std::format("SDL_Vulkan_GetVkGetInstanceProcAddr : {}", SDL_GetError()));
+  }
   pl_vk_inst_params inst_params{};
+  inst_params.get_proc_addr = get_proc_addr;
   inst_params.extensions = sdl_extensions;
   inst_params.num_extensions = static_cast<int>(count);
   impl->inst = pl_vk_inst_create(impl->log, &inst_params);
