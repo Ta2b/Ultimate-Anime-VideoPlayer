@@ -43,14 +43,16 @@ ov::AnyMap supported_only(ov::Core& core, const std::string& device, ov::AnyMap 
 }
 
 // GPU (Arc, Xe intégré) : latence d'une requête à la fois, en f16 ; la file du GPU en priorité
-// haute et sans ralenti, pour ne pas passer derrière le rendu du lecteur sur le même GPU ; les
-// tâches hôte du greffon sur les cœurs performants d'un processeur hybride (Core Ultra).
+// ordinaire, celle de l'affichage : en priorité haute, chaque inférence passait devant le rendu
+// des images déjà prêtes, qui manquait alors des rafraîchissements pendant tout le calcul (le
+// GPU alterne les contextes de même priorité par tranches de temps) ; sans ralenti ; les tâches
+// hôte du greffon sur les cœurs performants d'un processeur hybride (Core Ultra).
 ov::AnyMap gpu_config(ov::Core& core, const std::string& device) {
   return supported_only(core, device,
                         {ov::hint::performance_mode(ov::hint::PerformanceMode::LATENCY),
                          ov::hint::execution_mode(ov::hint::ExecutionMode::PERFORMANCE),
                          ov::hint::inference_precision(ov::element::f16), ov::hint::num_requests(1),
-                         ov::intel_gpu::hint::queue_priority(ov::hint::Priority::HIGH),
+                         ov::intel_gpu::hint::queue_priority(ov::hint::Priority::MEDIUM),
                          ov::intel_gpu::hint::queue_throttle(ov::intel_gpu::hint::ThrottleLevel::HIGH),
                          ov::intel_gpu::hint::host_task_priority(ov::hint::Priority::HIGH)});
 }
