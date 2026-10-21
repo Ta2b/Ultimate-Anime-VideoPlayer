@@ -31,6 +31,8 @@ CASES = [
      [[1, 3, 540, 960]], ["CPUAndGPU", "ALL"]),
     ("SPAN Performance 540p en FP32", "onnx/2x_AnimeJaNai_HD_V3.1_Performance_SPANF3_b5f48_unshuffle_fp16.onnx",
      [[1, 3, 540, 960]], ["CPUAndGPU", "ALL"]),
+    ("SPAN Performance 540p, dépliage 5-D", "onnx/2x_AnimeJaNai_HD_V3.1_Performance_SPANF3_b5f48_unshuffle_fp16.onnx",
+     [[1, 3, 540, 960]], ["CPUAndGPU", "ALL"]),
     ("SPAN Performance 1080p", "onnx/2x_AnimeJaNai_HD_V3.1_Performance_SPANF3_b5f48_unshuffle_fp16.onnx",
      [[1, 3, 1080, 1920]], ["CPUAndGPU", "ALL"]),
     ("SPAN Balanced 540p", "onnx/2x_AnimeJaNai_HD_V3.1_Balanced_SPANF3_b8f64_unshuffle_fp16.onnx",
@@ -79,12 +81,47 @@ def to_fp32(model) -> None:
                 attribute.t.CopyFrom(widened(attribute.t))
 
 
-def fixed_model(source: Path, shapes: list[list[int]], target: Path, fp32: bool = False) -> None:
+def unshuffle_5d(model) -> int:
+    """Le dépliage de pixels en 6-D (Reshape, Transpose [0,1,3,5,2,4], Reshape), que le fournisseur
+    CoreML laisse au CPU (rang au-delà de 5), en 5-D sans le lot (de 1) : la forme cible perd sa
+    première dimension (Slice), la permutation devient [0,2,4,1,3]. Même ordre des canaux."""
+    import numpy as np
+    from onnx import helper, numpy_helper
+
+    graph = model.graph
+    producers = {o: n for n in graph.node for o in n.output}
+    found = []
+    for node in graph.node:
+        perm = next((list(a.ints) for a in node.attribute if a.name == "perm"), None)
+        reshape = producers.get(node.input[0]) if node.op_type == "Transpose" else None
+        if perm == [0, 1, 3, 5, 2, 4] and reshape is not None and reshape.op_type == "Reshape":
+            found.append((node, reshape))
+    for transpose, reshape in found:
+        shape = reshape.input[1] + ".ajp5d"
+        graph.initializer.extend([numpy_helper.from_array(np.array([1], np.int64), shape + ".starts"),
+                                  numpy_helper.from_array(np.array([6], np.int64), shape + ".ends")])
+        graph.node.insert(list(graph.node).index(reshape),
+                          helper.make_node("Slice", [reshape.input[1], shape + ".starts", shape + ".ends"], [shape]))
+        reshape.input[1] = shape
+        for a in transpose.attribute:
+            if a.name == "perm":
+                a.ints[:] = [0, 2, 4, 1, 3]
+        stale = {reshape.output[0], transpose.output[0]}
+        kept = [v for v in graph.value_info if v.name not in stale]
+        del graph.value_info[:]
+        graph.value_info.extend(kept)
+    return len(found)
+
+
+def fixed_model(source: Path, shapes: list[list[int]], target: Path, fp32: bool = False,
+                unshuffle: bool = False) -> None:
     import onnx
 
     model = onnx.load(str(source))
     if fp32:
         to_fp32(model)
+    if unshuffle:
+        print(f"  dépliages 6-D réécrits : {unshuffle_5d(model)}")
     initializers = {i.name for i in model.graph.initializer}
     inputs = [i for i in model.graph.input if i.name not in initializers]
     for value, dims in zip(inputs, shapes, strict=True):
@@ -202,8 +239,10 @@ def main() -> int:
                 print(f"{name} : {source} absent")
                 continue
             fp32 = name.endswith("FP32")
-            model = Path(work) / (source.stem + "_" + "x".join(map(str, shapes[0])) + ("_fp32" if fp32 else "") + ".onnx")
-            fixed_model(source, shapes, model, fp32)
+            unshuffle = "5-D" in name
+            model = Path(work) / (source.stem + "_" + "x".join(map(str, shapes[0])) + ("_fp32" if fp32 else "")
+                                  + ("_5d" if unshuffle else "") + ".onnx")
+            fixed_model(source, shapes, model, fp32, unshuffle)
             for units in unit_list:
                 child = subprocess.run(
                     [sys.executable, "-I", __file__, str(args.models), "--runs", str(args.runs),
