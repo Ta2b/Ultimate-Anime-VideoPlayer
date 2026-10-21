@@ -3,7 +3,8 @@ name: CI
 # Chaque poussée sur main, cloud/** et release/** passe les règles (rules.yml). Les matrices de
 # construction et de tests tournent sur main, sur chaque pull request, chaque nuit et à la
 # demande (workflow_dispatch sur n'importe quelle branche) : une branche de travail ne les lance
-# pas à chaque poussée. Versions et paquets : tools/release/versions.env.
+# pas à chaque poussée. La construction Windows, plus chère, tourne la nuit, à la demande et sur
+# les pull requests vers main. Versions et paquets : tools/release/versions.env.
 on:
   push:
     branches: [main, "cloud/**", "release/**"]
@@ -99,3 +100,63 @@ jobs:
       - name: clang-tidy sur src/
         if: matrix.tidy
         run: tools/ci/clang-tidy-src.sh build/linux-prefix
+
+  # MSVC et vcpkg, sans GPU : la construction avec /WX (une rupture de MSVC ou d'un port paraît ici
+  # et non au moment de livrer), puis les tests des modules qui n'ouvrent pas d'appareil
+  # (préréglage de test windows-ci). Mêmes chemins courts, triplet et cache de ports que
+  # release-windows.yml ; restauration et sauvegarde séparées, pour garder les ports compilés
+  # même quand la construction échoue plus loin.
+  windows:
+    name: Windows (MSVC)
+    if: >-
+      github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'pull_request' && github.base_ref == 'main')
+    runs-on: windows-2025
+    env:
+      AJP_VCPKG: C:\v
+      AJP_VCPKG_BUILDTREES: C:\vb
+      VCPKG_BINARY_SOURCES: "clear;files,C:\\vc,readwrite"
+      AJP_VCPKG_TRIPLET: x64-windows-release
+    steps:
+      - uses: actions/checkout@v4
+      - id: vcpkg-cache
+        uses: actions/cache/restore@v4
+        with:
+          path: C:\vc
+          key: vcpkg-windows-x64-ci-${{ hashFiles('vcpkg.json', 'ports/**') }}-${{ github.run_id }}
+          restore-keys: |
+            vcpkg-windows-x64-ci-${{ hashFiles('vcpkg.json', 'ports/**') }}-
+            vcpkg-windows-x64-ci-
+            vcpkg-windows-x64-release-
+      - name: vcpkg à la référence du manifeste
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path C:\vc | Out-Null
+          $baseline = (Get-Content vcpkg.json | ConvertFrom-Json).'builtin-baseline'
+          git clone -q https://github.com/microsoft/vcpkg $env:AJP_VCPKG
+          git -C $env:AJP_VCPKG checkout -q $baseline
+          & "$env:AJP_VCPKG/bootstrap-vcpkg.bat" -disableMetrics
+      - uses: ilammy/msvc-dev-cmd@v1
+      - name: Configuration
+        shell: pwsh
+        # msvc-dev-cmd pose le vcpkg de Visual Studio : le nôtre, à la référence du manifeste.
+        run: |
+          $env:VCPKG_ROOT = $env:AJP_VCPKG
+          cmake --preset windows-ci "-DVCPKG_INSTALL_OPTIONS=--x-buildtrees-root=$env:AJP_VCPKG_BUILDTREES" `
+            "-DVCPKG_TARGET_TRIPLET=$env:AJP_VCPKG_TRIPLET" "-DVCPKG_HOST_TRIPLET=$env:AJP_VCPKG_TRIPLET"
+          if ($LASTEXITCODE -ne 0) { throw "configuration" }
+      - name: Construction
+        shell: pwsh
+        run: |
+          cmake --build --preset windows-ci
+          if ($LASTEXITCODE -ne 0) { throw "construction" }
+      - name: Tests sans GPU
+        shell: pwsh
+        run: |
+          ctest --preset windows-ci
+          if ($LASTEXITCODE -ne 0) { throw "tests" }
+      - uses: actions/cache/save@v4
+        if: always()
+        with:
+          path: C:\vc
+          key: ${{ steps.vcpkg-cache.outputs.cache-primary-key }}

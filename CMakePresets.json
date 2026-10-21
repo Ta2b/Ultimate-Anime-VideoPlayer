@@ -92,6 +92,19 @@
       }
     },
     {
+      "name": "windows-ci",
+      "displayName": "Windows, construction MSVC et tests sans GPU (CI), vcpkg",
+      "inherits": "base",
+      "condition": {
+        "type": "equals",
+        "lhs": "${hostSystemName}",
+        "rhs": "Windows"
+      },
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release"
+      }
+    },
+    {
       "name": "windows-release",
       "displayName": "Windows, lecteur universel (Vulkan ; TensorRT si AJP_WITH_CUDA), vcpkg",
       "inherits": "base",
@@ -284,6 +297,10 @@
       "name": "windows-release",
       "configurePreset": "windows-release",
       "nativeToolOptions": ["-k", "0"]
+    },
+    {
+      "name": "windows-ci",
+      "configurePreset": "windows-ci"
     }
   ],
   "testPresets": [
@@ -386,6 +403,21 @@
       },
       "environment": {
         "LSAN_OPTIONS": "suppressions=${sourceDir}/tools/ci/lsan.supp"
+      }
+    },
+    {
+      "name": "windows-ci",
+      "configurePreset": "windows-ci",
+      "output": {
+        "outputOnFailure": true
+      },
+      "filter": {
+        "include": {
+          "name": "^(core|media|prepare|subs|app): "
+        }
+      },
+      "execution": {
+        "noTestsAction": "error"
       }
     }
   ]

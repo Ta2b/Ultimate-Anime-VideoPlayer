@@ -270,7 +270,8 @@ se trouvent sans `LD_LIBRARY_PATH`.
 - Journal : la convention de la section Journal.
 - Tests : Catch2, un exécutable par module dans `tests/unit/<module>/`. Tous les
   tests passent sous ASan et UBSan, et sous TSan, lecteur compris (Xvfb et
-  lavapipe en CI).
+  lavapipe en CI). Sous Windows, la CI construit avec MSVC et `/WX` puis lance
+  les tests de core, media, prepare, subs et app (préréglage `windows-ci`).
 - Code repris d'un dépôt existant : dépôt et commit d'origine en tête de fichier,
   et un test de parité avant sa première modification.
 
