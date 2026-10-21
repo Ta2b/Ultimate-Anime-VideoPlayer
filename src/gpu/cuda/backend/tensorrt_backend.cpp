@@ -3,6 +3,7 @@
 #include <NvInferRuntime.h>
 #include <NvInferVersion.h>
 #include <algorithm>
+#include <bit>
 #include <cuda.h>
 #include <format>
 #include <utility>
@@ -176,6 +177,12 @@ TensorRtBackend::~TensorRtBackend() {
   if (stream_ == nullptr) return;
   cudaSetDevice(device_);
   destroy_textures();
+  if (const int used = std::popcount(used_lanes_); used > 1 && !stages_.empty()) {
+    log(BackendLogLevel::Info,
+        std::format("profil GPU · {} voies en parallèle : chaque temps court sur la file de son étape, "
+                    "recouvrement avec les autres voies compris (--one-lane : coût propre de chaque moteur)",
+                    used));
+  }
   for (auto& [name, timing] : stages_) {
     if (const std::string line = timing->summary(); !line.empty())
       log(BackendLogLevel::Info, "profil GPU · " + line);

@@ -89,6 +89,7 @@ UpscaleSetup ChainEngines::upscale(const PlaySettings& settings, std::shared_ptr
                       .distil_drba = drba.get(),
                       .rife_factor = factor_of(settings),
                       .true_hdr = settings.true_hdr,
+                      .one_lane = one_lane,
                       .live = std::move(live),
                       .clock = clock,
                       .source_width = width,
@@ -105,6 +106,7 @@ std::expected<std::optional<ChainEngines>, Refusal> prepare_chain(Player& p, con
   const auto log = log_channel("app");
   const media::TrackInfo& video = p.video;
   ChainEngines c;
+  c.one_lane = p.options.one_lane;
   if (settings.upscale) {
     auto chosen = choose_model(p.options, p.paths.home, settings, p.paths.models);
     if (!chosen) return std::unexpected(std::move(chosen.error()));

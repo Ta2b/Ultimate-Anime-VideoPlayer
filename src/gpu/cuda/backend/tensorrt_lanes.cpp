@@ -101,6 +101,7 @@ std::expected<void, Refusal> TensorRtBackend::order(std::initializer_list<std::u
 std::expected<void, Refusal> TensorRtBackend::order(std::span<const std::uintptr_t> reads,
                                                     std::span<const std::uintptr_t> writes) {
   if (lanes_ == 1) return {};
+  used_lanes_ |= 1U << lane_index(lane_);
   return apply(hazards_.access(lane_, reads, writes));
 }
 

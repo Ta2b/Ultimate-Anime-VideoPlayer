@@ -66,6 +66,9 @@ struct UpscaleSetup {
   gpu::Engine* distil_drba = nullptr;
   Factor rife_factor{.num = 1, .den = 1};  // ×num/den quand l'interpolation tourne (au plus ×8)
   bool true_hdr = false;  // RTX HDR à l'écriture du ring (backend déjà ouvert pour la sortie)
+  // --one-lane : tout sur la voie Upscale, sans recouvrement. Plus lent, mais le temps GPU de
+  // chaque moteur redevient son coût propre au lieu d'inclure celui des autres voies.
+  bool one_lane = false;
   // Réglages changés en cours de lecture (facteur RIFE, réduction, RTX HDR) et compteurs de RIFE ;
   // nullptr : rife_factor et Area pour toute la lecture.
   std::shared_ptr<LiveSettings> live;
@@ -237,8 +240,8 @@ class UpscaleStage final : public RingStage {
   // file), RIFE, GMFSS, DistilDRBA et warp sur Interpolate. Le backend ordonne les voies d'après
   // les tenseurs lus et écrits.
   void use_lane(gpu::Lane lane) {
-    lane_ = lane;
-    setup_.backend->use_lane(lane);
+    lane_ = setup_.one_lane ? gpu::Lane::Upscale : lane;
+    setup_.backend->use_lane(lane_);
   }
   gpu::Lane lane_ = gpu::Lane::Upscale;
   // Deux images de travail RGB, à tour de rôle : current_ vient d'être ingérée, l'autre est la

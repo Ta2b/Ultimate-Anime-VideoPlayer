@@ -123,6 +123,8 @@ std::expected<PlayOptions, Refusal> parse_play_options(std::span<const std::stri
       options.software_gpu = true;
     } else if (arg == "--sdr") {
       options.sdr = true;
+    } else if (arg == "--one-lane") {
+      options.one_lane = true;
     } else if (arg == "--no-resume") {
       options.resume = false;
     } else {
@@ -238,6 +240,8 @@ std::string play_usage() {
       "                         ou de construction d'un moteur si elle dure jusque-là\n"
       "  --rife-image           RIFE image à chaque instant (sans la variante mouvement)\n"
       "  --sdr                  sortie SDR même sur un écran HDR (essais du grade SDR)\n"
+      "  --one-lane             une seule file de calcul : plus lent, mais le profil GPU donne le\n"
+      "                         coût propre de chaque moteur\n"
       "  --software-gpu         accepte un Vulkan logiciel (lavapipe), pour les essais sans GPU\n"
       "  --first-run            écran de bienvenue (moteurs, profil de démarrage), même déjà vu\n"
       "  --keys=S:touche,…      touches pressées d'office (essais), ex. 3:Right,5:Space ;\n"

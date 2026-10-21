@@ -37,6 +37,10 @@ TEST_CASE("ajp play : fichier et options", "[app][options]") {
   const auto sdr = parse({"épisode.mkv", "--sdr"});
   REQUIRE(sdr);
   CHECK(sdr->sdr);
+  CHECK_FALSE(options->one_lane);
+  const auto one = parse({"épisode.mkv", "--one-lane"});
+  REQUIRE(one);
+  CHECK(one->one_lane);
 }
 
 TEST_CASE("ajp play : refus nommés", "[app][options]") {

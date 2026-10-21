@@ -234,6 +234,25 @@ TEST_CASE("Étage gpu : mesures, SPAN et RIFE chacun sur sa voie, SPAN avant le 
     CHECK(rig.backend.count("engine span") == 4);  // une passe par image source
     CHECK(rig.backend.count("warp_blend") == 6);   // sur la voie de RIFE, reprise après SPAN
   }
+  SECTION("--one-lane : tout sur la voie Upscale") {
+    Rig rig;
+    UpscaleSetup s = rig.setup(true, Factor{.num = 3, .den = 1});
+    s.one_lane = true;
+    rig.start(std::move(s));
+    rig.feed(1, 3);
+    REQUIRE(rig.collect(7));
+    rig.stage.reset();
+    std::size_t work = 0;
+    for (const std::string& line : rig.backend.laned()) {
+      const std::size_t space = line.find(' ');
+      if (lane_of(std::string_view(line).substr(space + 1)).empty()) continue;
+      INFO(line);
+      CHECK(line.substr(0, space) == "upscale");
+      ++work;
+    }
+    CHECK(work > 0);
+    CHECK(rig.backend.count("engine rife") == 4);
+  }
 }
 
 TEST_CASE("Étage gpu : le warp écrit l'image intermédiaire dans le slot quand le backend le permet",

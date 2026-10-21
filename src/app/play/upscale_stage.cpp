@@ -135,7 +135,7 @@ std::expected<std::unique_ptr<VideoStage>, Refusal> UpscaleStage::start(VideoSta
 std::expected<void, Refusal> UpscaleStage::allocate() {
   gpu::Backend& backend = *setup_.backend;
   const gpu::BackendCaps caps = backend.capabilities();
-  copies_ = caps.lanes > 1 ? 2U : 1U;
+  copies_ = caps.lanes > 1 && !setup_.one_lane ? 2U : 1U;
   if (setup_.yuv_slots && !caps.yuv_targets) {
     return refuse(RefusalCode::FormatUnsupported,
                   std::format("étage gpu : le backend {} n'écrit pas en YUV pour l'encodeur", caps.name));

@@ -242,6 +242,9 @@ class TensorRtBackend final : public Backend, public KernelOps {
   std::array<std::uint64_t, kLanes> unrecorded_{};  // rang dont l'événement reste à poser ; 0 : aucun
   Lane lane_ = Lane::Upscale;
   int lanes_ = 1;
+  // Voies qui ont reçu du travail, un bit par voie : à plusieurs, le profil de fin dit que ses
+  // temps incluent le recouvrement.
+  std::uint32_t used_lanes_ = 0;
   LaneHazards hazards_;
   std::unique_ptr<TrtLog> trt_log_;
   std::unique_ptr<nvinfer1::IRuntime> runtime_;

@@ -101,7 +101,7 @@ ExportOutcome run_export(Player& p, const ExportJob& job) {
   p.screen.set_source_color(ColorInfo{});  // les images du ring sans RTX HDR, comme à la lecture
   // Le ring, la conversion et la file d'écriture : deux paires en vol si les voies de calcul le
   // permettent (export_depth.h).
-  const ExportDepth depth = export_depth(c.backend->capabilities().lanes);
+  const ExportDepth depth = export_depth(c.one_lane ? 1 : c.backend->capabilities().lanes);
   show_loading(p.screen, p.ui, "Ouverture de l'export");
 
   // Ordre de déclaration = ordre inverse de destruction : l'écriture, qui rend ses images aux
