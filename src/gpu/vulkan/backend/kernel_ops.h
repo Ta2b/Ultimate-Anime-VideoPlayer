@@ -269,6 +269,7 @@ class VulkanKernelOps final : public KernelOps {
   BackendQueue& queue_;
   KernelRunner runner_;
   std::vector<Cached> recordings_;
+  RetiredRecordings retired_;               // sortis du cache, libérés à leur arrêt (après recordings_)
   std::vector<std::uint32_t> splat_times_;  // les instants d'un soft_splat_all, réutilisés
   std::uint64_t uses_ = 0;
   std::uint64_t destroyed_mark_ = 0;  // DestroyedLog::mark à la dernière purge

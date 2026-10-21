@@ -124,8 +124,10 @@ std::expected<Recording*, Refusal> VulkanKernelOps::recording(const OpKey& key, 
   auto made = recorder->finish();
   if (!made) return std::unexpected(made.error());
   if (recordings_.size() >= kMaxRecordings) {
-    // Le plus ancien part ; sa destruction attend sa dernière exécution (rare : clés bornées).
-    recordings_.erase(std::ranges::min_element(recordings_, {}, &Cached::used));
+    // Le plus ancien part, libéré à la fin de sa dernière exécution, sans attente hôte.
+    const auto oldest = std::ranges::min_element(recordings_, {}, &Cached::used);
+    retired_.retire(std::move(oldest->recording));
+    recordings_.erase(oldest);
   }
   recordings_.push_back({.key = key, .recording = std::move(*made), .used = uses_});
   return recordings_.back().recording.get();

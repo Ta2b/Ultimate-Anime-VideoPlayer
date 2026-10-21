@@ -75,6 +75,32 @@ TEST_CASE("exécution : un enregistrement plus grand que son premier pool de des
   }
 }
 
+TEST_CASE("exécution : un enregistrement retiré vit jusqu'à la fin de sa dernière exécution",
+          "[vk_compute][execution]") {
+  Rig rig = make_rig();
+  const kernels::RgbImage image = synthetic_rgb(33, 17, 5, 0.0F, 1000.0F);
+  TensorBuffer src = upload_rgb(rig, image, Precision::F32);
+  TensorBuffer middle = tensor_target(rig, 33, 17, 3, Precision::F32);
+  TensorBuffer dst = tensor_target(rig, 33, 17, 3, Precision::F32);
+  RetiredRecordings retired;
+  // Jamais soumis : à l'arrêt, libéré tout de suite.
+  retired.retire(round_trip(rig, src.view, middle.view, dst.view));
+  CHECK(retired.size() == 0);
+  // Encore dans le lot : gardé sans attente, puis libéré une fois exécuté.
+  std::unique_ptr<Recording> recording = round_trip(rig, src.view, middle.view, dst.view);
+  require_ok(rig.context->enqueue(*recording));
+  const TimelinePoint last = recording->last_run();
+  CHECK_FALSE(recording->idle());
+  retired.retire(std::move(recording));
+  CHECK(retired.size() == 1);
+  retired.collect();
+  CHECK(retired.size() == 1);
+  require_ok(rig.context->wait_on_host(last));
+  retired.collect();
+  CHECK(retired.size() == 0);
+  CHECK(max_abs_diff(download_rgb(rig, dst), image) <= 1000.0F * 1e-3F);
+}
+
 TEST_CASE("exécution : une barrière entre commandes dépendantes seulement", "[vk_compute][execution]") {
   Rig rig = make_rig();
   const kernels::RgbImage image = synthetic_rgb(24, 20, 3, 0.0F, 1000.0F);

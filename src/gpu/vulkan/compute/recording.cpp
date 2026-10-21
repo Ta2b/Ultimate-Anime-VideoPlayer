@@ -47,6 +47,17 @@ Done Recording::set_parameters(std::span<const std::uint32_t> values) {
   return {};
 }
 
+void RetiredRecordings::retire(std::unique_ptr<Recording> recording) {
+  if (recording == nullptr || recording->idle()) return;  // libéré ici, sans attente
+  collect();
+  if (recordings_.size() >= kMaxRetired) recordings_.erase(recordings_.begin());
+  recordings_.push_back(std::move(recording));
+}
+
+void RetiredRecordings::collect() {
+  std::erase_if(recordings_, [](const std::unique_ptr<Recording>& r) { return r->idle(); });
+}
+
 std::expected<Recorder, Refusal> Recorder::begin(VkContext& context, MemoryAllocator& memory,
                                                  DescriptorLimits limits) {
   auto runs = TimelineSemaphore::create(context, 0);

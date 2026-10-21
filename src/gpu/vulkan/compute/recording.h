@@ -78,6 +78,30 @@ class Recording {
   bool finished_ = false;
 };
 
+// Enregistrements sortis d'un cache (éviction, tampon détruit) alors que le GPU exécute peut-être
+// encore le dernier : gardés jusqu'à leur arrêt (Recording::idle) au lieu d'une attente hôte à
+// l'éviction, puis libérés par collect(). Au-delà de kMaxRetired, le plus ancien est libéré tout de
+// suite (~Recording attend sa fin). Les tampons qu'ils lient doivent leur survivre, comme au cache.
+class RetiredRecordings {
+ public:
+  static constexpr std::size_t kMaxRetired = 32;
+
+  RetiredRecordings() = default;
+  RetiredRecordings(const RetiredRecordings&) = delete;
+  RetiredRecordings& operator=(const RetiredRecordings&) = delete;
+  RetiredRecordings(RetiredRecordings&&) = default;
+  RetiredRecordings& operator=(RetiredRecordings&&) = default;
+  ~RetiredRecordings() = default;
+
+  void retire(std::unique_ptr<Recording> recording);
+  // Libère ceux qui sont à l'arrêt : constat sur leur sémaphore, sans attente.
+  void collect();
+  std::size_t size() const { return recordings_.size(); }
+
+ private:
+  std::vector<std::unique_ptr<Recording>> recordings_;
+};
+
 // Ce qu'un dispatch attend : ce qui le précède et touche l'un de ses tampons ou une image (une
 // barrière avant lui, seulement alors), ou rien (aucune barrière, même sur un tampon commun : il
 // n'écrit rien que le précédent lit ni ne lit ce qu'il écrit, comme les additions atomiques de

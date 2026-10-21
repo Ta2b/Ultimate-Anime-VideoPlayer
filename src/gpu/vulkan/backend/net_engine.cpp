@@ -185,16 +185,18 @@ std::expected<std::unique_ptr<Recording>, Refusal> NetEngine::record(std::span<c
 }
 
 void NetEngine::forget_destroyed() {
+  retired_.collect();
   const DestroyedLog& log = context_.destroyed();
   if (log.mark() == destroyed_mark_) return;
   gone_.clear();
   const DestroyedLog::Read read = log.since(destroyed_mark_, gone_);
   destroyed_mark_ = read.mark;
-  std::erase_if(recordings_, [&](const Cached& cached) {
-    if (!read.complete) return true;
-    return std::ranges::any_of(cached.views, [&](const BufferView& view) {
+  std::erase_if(recordings_, [&](Cached& cached) {
+    const bool gone = !read.complete || std::ranges::any_of(cached.views, [&](const BufferView& view) {
       return std::ranges::contains(gone_, handle_word(view.buffer));
     });
+    if (gone) retired_.retire(std::move(cached.recording));
+    return gone;
   });
 }
 
@@ -231,7 +233,9 @@ std::expected<Recording*, Refusal> NetEngine::recording(std::span<const BufferVi
   auto made = record(inputs, outputs);
   if (!made) return std::unexpected(made.error());
   if (recordings_.size() >= kMaxRecordings) {
-    recordings_.erase(std::ranges::min_element(recordings_, {}, &Cached::used));
+    const auto oldest = std::ranges::min_element(recordings_, {}, &Cached::used);
+    retired_.retire(std::move(oldest->recording));
+    recordings_.erase(oldest);
   }
   Cached entry{.views = {inputs.begin(), inputs.end()}, .recording = std::move(*made), .used = uses_};
   entry.views.insert(entry.views.end(), outputs.begin(), outputs.end());

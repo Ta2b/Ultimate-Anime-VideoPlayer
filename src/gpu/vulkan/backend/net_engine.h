@@ -2,8 +2,8 @@
 // allouée selon le plan mémoire de gpu_ir ; un tenseur rangé dans un autre (net_alias.h) est lié
 // par une vue dans sa racine. Un enregistrement par jeu de tenseurs d'entrée et
 // de sortie, fait au premier passage puis rejoué tel quel : rien n'est alloué ni recalculé par
-// image. Au-delà de kMaxRecordings jeux, le plus ancien est libéré (après la fin de sa dernière
-// exécution).
+// image. Au-delà de kMaxRecordings jeux, le plus ancien sort du cache et se libère à la fin de sa
+// dernière exécution, sans attente hôte (RetiredRecordings).
 #pragma once
 
 #include <cstddef>
@@ -29,7 +29,9 @@ namespace ajp::gpu::vk::net {
 
 class NetEngine {
  public:
-  static constexpr std::size_t kMaxRecordings = 8;
+  // SPAN en régime : deux entrées RGB × deux sorties en alternance, plus la sortie finale et
+  // l'image du milieu : jusqu'à 7 jeux ; le double pour la lecture anticipée et l'export.
+  static constexpr std::size_t kMaxRecordings = 16;
 
   // Refus : FeatureUnavailable (shader absent), ceux du plan mémoire, de l'allocateur et du
   // cache de pipelines.
@@ -100,6 +102,7 @@ class NetEngine {
   std::optional<Buffer> blobs_;
   std::optional<Buffer> dummy_;
   std::vector<Cached> recordings_;
+  RetiredRecordings retired_;  // sortis du cache, libérés à leur arrêt (avant l'arène)
   std::uint64_t uses_ = 0;
   std::uint64_t destroyed_mark_ = 0;  // DestroyedLog::mark à la dernière purge
   std::vector<std::uint64_t> gone_;

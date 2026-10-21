@@ -89,17 +89,21 @@ VulkanKernelOps::Cached* VulkanKernelOps::cached(const OpKey& key) {
 }
 
 void VulkanKernelOps::forget_destroyed() {
+  retired_.collect();
   const DestroyedLog& log = context_.destroyed();
   if (log.mark() == destroyed_mark_) return;
   gone_.clear();
   const DestroyedLog::Read read = log.since(destroyed_mark_, gone_);
   destroyed_mark_ = read.mark;
   // Un mot de clé égal par hasard à une poignée détruite ne coûte qu'un nouvel enregistrement.
-  std::erase_if(recordings_, [&](const Cached& cached) {
-    if (!read.complete) return true;
+  std::erase_if(recordings_, [&](Cached& cached) {
     const std::span<const std::uint64_t> words(cached.key.words.data(),
                                                std::min(cached.key.size, cached.key.words.size()));
-    return std::ranges::any_of(words, [&](std::uint64_t w) { return std::ranges::contains(gone_, w); });
+    const bool gone = !read.complete || std::ranges::any_of(words, [&](std::uint64_t w) {
+      return std::ranges::contains(gone_, w);
+    });
+    if (gone) retired_.retire(std::move(cached.recording));
+    return gone;
   });
 }
 
