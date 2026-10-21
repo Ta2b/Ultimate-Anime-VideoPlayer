@@ -2,8 +2,8 @@
 // et chargement par le runtime, tenseurs en mémoire hôte visible (celle du runtime, importée, sur
 // un GPU intégré ; ou partagée, en interop), enqueue mis en file sur la timeline importée par le
 // runtime (interop : ni attente ni retour à l'hôte), sinon différé au fil du runtime
-// (run_deferred : l'attente des entrées et le signal de l'étape hors du fil du GPU), sinon
-// synchrone sur ce fil après l'attente de la file.
+// (run_deferred : l'attente des entrées et le signal de l'étape hors du fil du GPU) quand la file
+// n'est qu'au backend, sinon synchrone sur ce fil après l'attente de la file.
 #include <algorithm>
 #include <chrono>
 #include <filesystem>
@@ -297,7 +297,9 @@ std::expected<void, Refusal> VulkanBackend::enqueue_runtime(Engine& engine, std:
   if (step) {
     auto ordered =
         runtime_engine->net().run_ordered(ins, outs, *imported_timeline_, step->wait, step->signal);
-    if (ordered) return {};
+    // Sur une file partagée avec l'affichage, la suite n'y part qu'une fois l'étape signalée : la
+    // soumission qui attendrait côté GPU le signal de l'autre API y retiendrait l'affichage.
+    if (ordered) return context_->shares_queue() ? context_->wait_on_host(queue_->at(step->signal)) : Done{};
     if (ordered.error().code != RefusalCode::FeatureUnavailable) {
       // Rien ne signalera l'étape : l'hôte le fait, une fois la précédente atteinte, sans quoi
       // la file attendrait sans fin.
@@ -310,10 +312,15 @@ std::expected<void, Refusal> VulkanBackend::enqueue_runtime(Engine& engine, std:
   // les noyaux qui ont écrit les entrées soient finis (leurs écritures visibles de l'hôte par la
   // barrière de fin de chaque enregistrement), calcule, et signale l'étape ; ce fil enregistre
   // déjà la suite, que le GPU attend sur la timeline. Les sorties écrites par le runtime le sont
-  // des soumissions suivantes, qui commencent après le signal.
-  if (!step) {
+  // des soumissions suivantes, qui commencent après le signal. Pas sur une file partagée avec
+  // l'affichage : la suite y attendrait le signal de l'hôte et retiendrait chaque image affichée
+  // pendant tout le calcul (les pilotes Mesa retiennent même la soumission sur l'hôte).
+  const bool by_host = !step;  // sans étape déjà prise par l'interop
+  if (by_host) {
     if (auto ok = queue_->flush(); !ok) return std::unexpected(ok.error());
     step = queue_->host_step();
+  }
+  if (by_host && !context_->shares_queue()) {
     // ready puis done, sur le fil du runtime, l'un après l'autre : la mesure va de l'un à l'autre.
     auto ready_at = std::make_shared<RuntimeTiming::Clock::time_point>();
     auto deferred = runtime_engine->net().run_deferred(

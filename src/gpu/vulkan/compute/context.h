@@ -104,6 +104,10 @@ class VkContext {
   VkQueue queue() const { return queue_; }
   std::uint32_t queue_family() const { return queue_family_; }
   std::uint32_t queue_index() const { return queue_index_; }
+  // La file est-elle partagée avec un autre module (l'affichage de libplacebo), sous son verrou ?
+  // Une soumission qui y attend un point que l'hôte signalera plus tard retient tout ce qui la
+  // suit, l'affichage compris.
+  bool shares_queue() const { return static_cast<bool>(lock_queue_); }
   const DeviceCaps& caps() const { return caps_; }
   const DeviceUuid& uuid() const { return caps_.uuid; }
   bool owns_device() const { return owns_device_; }

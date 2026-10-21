@@ -42,7 +42,7 @@ void placebo_log(void* priv, pl_log_level level, const char* message) {
 }
 
 // Les files de libplacebo se verrouillent par ses fonctions : le backend Vulkan, qui adopte
-// l'appareil, soumet sur sa file de calcul (sur une file à lui sous MoltenVK : backend_queue).
+// l'appareil, soumet sous ce verrou quand il n'a pas de file à lui (engine_queue).
 void lock_placebo_queue(void* context, std::uint32_t family, std::uint32_t index) {
   const auto vk = static_cast<pl_vulkan>(context);
   vk->lock_queue(vk, family, index);
@@ -52,24 +52,33 @@ void unlock_placebo_queue(void* context, std::uint32_t family, std::uint32_t ind
   vk->unlock_queue(vk, family, index);
 }
 
-// Sous MoltenVK, chaque famille n'a qu'une file, et chaque file Vulkan est une file de commandes
-// Metal, qui exécute ses tampons dans l'ordre : sur la file de libplacebo, le rendu de chaque
-// image attendrait derrière les passes des moteurs, et derrière chaque réseau de Core ML (une
-// attente de la timeline que l'hôte signale à la fin du calcul). Les familles de MoltenVK sont
-// toutes générales : libplacebo les crée toutes (extra_queues), n'en emploie qu'une, et le backend
-// prend la suivante, que Metal mène de front avec l'affichage. Un slot du ring passe d'une famille
-// à l'autre sans transfert de propriété, qui est sans effet sous MoltenVK.
+// Une file Vulkan exécute ses soumissions dans l'ordre : sur la file de l'affichage, chaque image
+// attendrait derrière les passes des moteurs, et derrière chaque réseau d'un runtime (une attente
+// de la timeline que l'hôte signale à la fin du calcul, que les pilotes Mesa retiennent même sur
+// l'hôte). libplacebo crée toutes les files de ses familles et n'emploie que la première de
+// chacune (queue_count = 1, son défaut) : le backend prend la deuxième de sa famille de calcul,
+// sinon de sa famille graphique, que le GPU ordonnance à côté de l'affichage (préemption, tranches
+// de temps). Sous MoltenVK, une file par famille, chacune file de commandes Metal, toutes
+// générales : libplacebo les crée toutes (extra_queues) et le backend prend une autre famille ;
+// un slot du ring passe de l'une à l'autre sans transfert de propriété, sans effet sous MoltenVK.
+// Ailleurs, une autre famille demanderait ce transfert à chaque slot : le backend reste dans
+// celles de libplacebo, où ses images sont partagées (VK_SHARING_MODE_CONCURRENT).
 #ifdef __APPLE__
 constexpr VkQueueFlags kBackendQueueFlags = VK_QUEUE_COMPUTE_BIT;
 #else
 constexpr VkQueueFlags kBackendQueueFlags = 0;
 #endif
+constexpr std::uint32_t kPlaceboQueues = 1;  // pl_vulkan_params.queue_count
 
-// La file du backend : une file de calcul créée que libplacebo n'emploie pas (Mac seulement),
-// sinon la première de sa file de calcul, partagée sous son verrou.
-QueueRef backend_queue(pl_vulkan vk) {
-  const QueueRef shared{.family = vk->queue_compute.index, .index = 0};
-  if constexpr (kBackendQueueFlags == 0) return shared;
+struct EngineQueue {
+  QueueRef queue;
+  bool shared = true;  // la file de calcul de libplacebo, sous son verrou
+};
+
+EngineQueue engine_queue(pl_vulkan vk) {
+  const auto compute = static_cast<std::uint32_t>(vk->queue_compute.index);
+  const auto graphics = static_cast<std::uint32_t>(vk->queue_graphics.index);
+  const EngineQueue shared{.queue = {.family = compute, .index = 0}};
   const auto get_families = reinterpret_cast<PFN_vkGetPhysicalDeviceQueueFamilyProperties>(
       vk->get_proc_addr(vk->instance, "vkGetPhysicalDeviceQueueFamilyProperties"));
   if (get_families == nullptr) return shared;
@@ -77,31 +86,45 @@ QueueRef backend_queue(pl_vulkan vk) {
   get_families(vk->phys_device, &count, nullptr);
   std::vector<VkQueueFamilyProperties> families(count);
   get_families(vk->phys_device, &count, families.data());
-  for (std::uint32_t family = 0; family < count; ++family) {
-    const bool placebo = family == vk->queue_graphics.index || family == vk->queue_compute.index ||
-                         family == vk->queue_transfer.index;
-    if (!placebo && families[family].queueCount > 0 &&
-        (families[family].queueFlags & kBackendQueueFlags) == kBackendQueueFlags) {
-      return QueueRef{.family = family, .index = 0};
+  const auto computes = [&](std::uint32_t family) {
+    return family < count && (families[family].queueFlags & VK_QUEUE_COMPUTE_BIT) != 0;
+  };
+  for (const std::uint32_t family : {compute, graphics}) {
+    if (computes(family) && families[family].queueCount > kPlaceboQueues)
+      return EngineQueue{.queue = {.family = family, .index = kPlaceboQueues}, .shared = false};
+  }
+  if constexpr (kBackendQueueFlags != 0) {
+    const auto transfer = static_cast<std::uint32_t>(vk->queue_transfer.index);
+    for (std::uint32_t family = 0; family < count; ++family) {
+      const bool placebo = family == graphics || family == compute || family == transfer;
+      if (!placebo && families[family].queueCount > 0 &&
+          (families[family].queueFlags & kBackendQueueFlags) == kBackendQueueFlags) {
+        return EngineQueue{.queue = {.family = family, .index = 0}, .shared = false};
+      }
     }
   }
   return shared;
 }
 
 // L'appareil de libplacebo tel que gpu/backend.h le décrit : un backend Vulkan l'adopte au lieu
-// d'en créer un autre, et lit ainsi les images du ring sans les exporter.
+// d'en créer un autre, et lit ainsi les images du ring sans les exporter. Le verrou seulement sur
+// une file partagée : sur la sienne, le backend soumet seul (personne d'autre n'y touche, FFmpeg
+// ne reçoit que les files de libplacebo).
 VulkanDevice vulkan_description(pl_vulkan vk) {
+  const EngineQueue engines = engine_queue(vk);
   VulkanDevice d{.instance = vk->instance,
                  .physical_device = vk->phys_device,
                  .device = vk->device,
                  .get_instance_proc_addr = reinterpret_cast<VoidFunction>(vk->get_proc_addr),
                  .api_version = vk->api_version,
                  .enabled_features = vk->features,
-                 .graphics = {.family = vk->queue_graphics.index, .index = 0},
-                 .compute = backend_queue(vk),
-                 .lock_queue = lock_placebo_queue,
-                 .unlock_queue = unlock_placebo_queue,
-                 .queue_context = const_cast<pl_vulkan_t*>(vk)};
+                 .graphics = {.family = static_cast<std::uint32_t>(vk->queue_graphics.index), .index = 0},
+                 .compute = engines.queue};
+  if (engines.shared) {
+    d.lock_queue = lock_placebo_queue;
+    d.unlock_queue = unlock_placebo_queue;
+    d.queue_context = const_cast<pl_vulkan_t*>(vk);
+  }
   for (int i = 0; i < vk->num_extensions; ++i) d.device_extensions.emplace_back(vk->extensions[i]);
   return d;
 }
@@ -228,6 +251,13 @@ std::expected<std::unique_ptr<PlaceboScreen>, Refusal> PlaceboScreen::open(const
     impl->channel->info(
         "Smooth Motion : couche du pilote NVIDIA demandée (NVPRESENT_ENABLE_SMOOTH_MOTION=1)");
   }
+#if defined(__linux__)
+  // Le pilote Intel de Mesa (ANV) n'expose qu'une file graphique, que l'affichage et les moteurs
+  // partageraient : deux, chacune son contexte sur le moteur de rendu, que le GPU alterne par
+  // tranches de temps. Une valeur déjà posée par l'utilisateur prime ; les autres pilotes
+  // l'ignorent. Lue à l'énumération des appareils de l'instance, plus bas.
+  SDL_setenv_unsafe("ANV_QUEUE_OVERRIDE", "gc=2", 0);
+#endif
   pl_vk_inst_params inst_params{};
   inst_params.extensions = sdl_extensions;
   inst_params.num_extensions = static_cast<int>(count);
@@ -248,6 +278,7 @@ std::expected<std::unique_ptr<PlaceboScreen>, Refusal> PlaceboScreen::open(const
   vk_params.opt_extensions = kOptionalExtensions.data();
   vk_params.num_opt_extensions = static_cast<int>(kOptionalExtensions.size());
   vk_params.extra_queues = kVideoQueueFlags | kBackendQueueFlags;
+  vk_params.queue_count = static_cast<int>(kPlaceboQueues);  // la file d'après reste aux moteurs
   impl->vk = pl_vulkan_create(impl->log, &vk_params);
   if (impl->vk == nullptr)
     return refuse(RefusalCode::DeviceMismatch, "pl_vulkan_create : aucun appareil ne convient");
@@ -276,9 +307,15 @@ std::expected<std::unique_ptr<PlaceboScreen>, Refusal> PlaceboScreen::open(const
   impl->device = GpuDevice{.api = GpuApi::Vulkan, .name = "Vulkan (libplacebo)"};
   for (std::size_t i = 0; i < impl->device.uuid.size(); ++i) impl->device.uuid[i] = gpu->uuid[i];
   impl->device.vulkan = vulkan_description(impl->vk);
-  if (impl->device.vulkan->compute.family != impl->vk->queue_compute.index) {
-    impl->channel->info("moteurs sur la file {} de l'appareil, à part de celle de l'affichage ({})",
-                        impl->device.vulkan->compute.family, impl->vk->queue_graphics.index);
+  const QueueRef engines = impl->device.vulkan->compute;
+  if (impl->device.vulkan->lock_queue == nullptr) {
+    impl->channel->info("moteurs sur leur propre file (famille {}, file {}), à côté de l'affichage",
+                        engines.family, engines.index);
+  } else {
+    impl->channel->warn(
+        "moteurs sur la file de l'affichage (famille {}) : l'appareil n'en a pas d'autre, chaque "
+        "passe des moteurs retarde l'image affichée",
+        engines.family);
   }
   auto osd = OsdText::create();
   if (!osd) return std::unexpected(std::move(osd.error()));

@@ -125,7 +125,14 @@ ce que libplacebo et FFmpeg demandent pour partager un `VkDevice` : handles
 opaques, `vkGetInstanceProcAddr`, version d'API, extensions et fonctionnalités
 activées, familles de files, files graphique, calcul et décodage vidéo, et le
 verrou `lock_queue` / `unlock_queue` qu'un module prend autour de chaque
-soumission. `DeviceUuid` n'a qu'une définition, partagée par `media` et `gpu`.
+soumission. La file de calcul décrite est celle des moteurs : libplacebo n'emploie
+que la première file de chaque famille, et les moteurs prennent la suivante quand
+l'appareil en a une (sous Linux, ANV en expose deux par `ANV_QUEUE_OVERRIDE`), ou une
+autre famille sous MoltenVK ; le verrou n'est alors pas donné. Sans file libre, ils
+partagent celle de libplacebo sous son verrou, et le réseau d'un autre runtime y est
+fait de façon synchrone : aucune soumission n'y attend un signal que l'hôte donnera
+plus tard, qui retiendrait l'affichage. `DeviceUuid` n'a qu'une définition, partagée
+par `media` et `gpu`.
 
 `app` prête ce même appareil à FFmpeg (`app/play/vulkan_share.h`, un
 `media::HwDeviceSource`) : l'écran le crée avec les extensions et les files Vulkan
