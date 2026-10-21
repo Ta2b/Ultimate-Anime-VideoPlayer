@@ -61,7 +61,7 @@ TEST_CASE("ajp play : fichier et options", "[app][options]") {
 }
 
 TEST_CASE("ajp play : refus nommés", "[app][options]") {
-  CHECK(parse({}).error().code == RefusalCode::FieldMissing);
+  CHECK(parse({})->file.empty());  // l'écran d'accueil
   CHECK(parse({"a.mkv", "--vitesse=2"}).error().code == RefusalCode::OptionUnknown);
   CHECK(parse({"a.mkv", "b.mkv"}).error().code == RefusalCode::OptionUnknown);
   CHECK(parse({"a.mkv", "--window=10x10"}).error().code == RefusalCode::FieldOutOfRange);

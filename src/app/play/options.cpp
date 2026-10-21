@@ -218,10 +218,7 @@ std::expected<PlayOptions, Refusal> parse_play_options(std::span<const std::stri
   if (options.registration != Registration::None && !options.file.empty()) {
     return refuse(RefusalCode::OptionUnknown, "--register et --unregister s'emploient sans fichier vidéo");
   }
-  if (options.file.empty() && !options.help && options.registration == Registration::None) {
-    return refuse(RefusalCode::FieldMissing, "ajp play : fichier vidéo absent");
-  }
-  return options;
+  return options;  // sans fichier : l'écran d'accueil (home_screen.h)
 }
 
 bool PlayOptions::was_given(std::string_view name) const {
@@ -236,7 +233,7 @@ WorkSize work_size(int width, int height, int work_height) {
 
 std::string play_usage() {
   return std::format(
-      "ajp play <fichier> [options]\n"
+      "ajp play [fichier] [options]   (sans fichier : écran d'accueil, Ouvrir une vidéo)\n"
       "  --model=FICHIER.onnx   modèle SPAN ×2 (défaut : {})\n"
       "  --no-upscale           image source telle quelle\n"
       "  --window=LxH           taille de la fenêtre (défaut 1280x720)\n"

@@ -18,7 +18,8 @@ namespace ajp::app::play {
 // « mouse=XxY » ou « click=XxY » : le point de la fenêtre, en fractions de sa taille.
 std::optional<std::pair<float, float>> mouse_point(std::string_view text);
 // Une touche (« space », « ctrl+2 »), ou la souris déplacée (« mouse=XxY ») ou cliquée
-// (« click=XxY ») ; une touche inconnue est signalée au journal et ignorée.
+// (« click=XxY »), ou un fichier glissé sur la fenêtre (« drop=CHEMIN ») ; une touche inconnue est
+// signalée au journal et ignorée.
 void press(const std::string& name, SDL_Window* window);
 // « export » ou « export=FICHIER.mkv » : l'export de la chaîne en cours (running), en HEVC très
 // haute qualité à la taille de la sortie, vers FICHIER ou le nom proposé à côté de la source

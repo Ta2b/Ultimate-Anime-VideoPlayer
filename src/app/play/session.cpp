@@ -87,7 +87,10 @@ void Session::command(const Command& command) {
                    }
                    seek_to(base + seek.delta_us, seek.exact);
                  },
-                 [this](const cmd::Quit&) { finished_ = true; },
+                 [this](const cmd::Quit&) {
+                   finished_ = true;
+                   quit_ = true;
+                 },
                  [this](const cmd::SetVolume& volume) {
                    if (!stages_.audio(volume)) {
                      on_refusal({.stage = "main",

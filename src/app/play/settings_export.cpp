@@ -78,6 +78,10 @@ std::string path_problem(const std::filesystem::path& output, const std::filesys
 
 void export_tab(ExportDraft& draft, const PlaySettings& running, const SettingsChoices& choices,
                 std::vector<Input>& actions) {
+  if (choices.source_file.empty()) {  // l'écran d'accueil : aucune vidéo à exporter
+    note("Ouvrez une vidéo : l'export reprend sa chaîne et se propose à côté d'elle.");
+    return;
+  }
   ExportJob& job = draft.job;
   if (!draft.chain_set) {
     job.chain = running;

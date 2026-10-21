@@ -48,12 +48,13 @@ struct Chain {
   ProfileState& profiles;
   bool rife_loaded = false;
   bool true_hdr_open = false;
-  int auto_peak = 0;                    // pic automatique de RTX HDR
-  int peak_nits = 0;                    // pic donné à RTX HDR, 0 sans lui
-  bool dirty = false;                   // play.toml à réécrire
-  std::optional<PlaySettings> reopen;   // demandé par le menu des paramètres
-  std::optional<EngineChange> engines;  // onglet Moteurs : à faire avant de rouvrir
-  std::optional<ExportJob> export_job;  // onglet Export : à faire avant de rouvrir
+  int auto_peak = 0;                               // pic automatique de RTX HDR
+  int peak_nits = 0;                               // pic donné à RTX HDR, 0 sans lui
+  bool dirty = false;                              // play.toml à réécrire
+  std::optional<PlaySettings> reopen;              // demandé par le menu des paramètres
+  std::optional<EngineChange> engines;             // onglet Moteurs : à faire avant de rouvrir
+  std::optional<ExportJob> export_job;             // onglet Export : à faire avant de rouvrir
+  std::optional<std::filesystem::path> next_file;  // glissé sur la fenêtre (macOS : ouvert du Finder)
   const std::optional<DisplayFacts>& display;
   // Vrai noir OLED : la rampe passée par TrueHDR (codes PQ, de gpu), les seuils en cours, et le
   // recalage demandé (au plus 5 fois par seconde).
@@ -86,6 +87,8 @@ double fps_of(const media::Rational& rate);
 ProfilesView view_of(const ProfileState& state);
 // La chaîne en cours devient celle du profil actif, dans user.toml.
 void remember_chain(ProfileState& state, const PlaySettings& s);
+// La chaîne (modèle, hauteur, RIFE, HDR) diffère : le profil actif la retient.
+bool chain_differs(const PlaySettings& a, const PlaySettings& b);
 
 // Soins OLED, grade avec les seuils du vrai noir, et recalage de ces seuils sur la rampe mesurée.
 void apply_oled_care(Chain& to, const PlaySettings& s);

@@ -67,7 +67,7 @@ std::string factor_text(Factor factor);
 enum class Registration : std::uint8_t { None, Register, Unregister };
 
 struct PlayOptions {
-  std::filesystem::path file;
+  std::filesystem::path file;                  // vide : l'écran d'accueil choisit la vidéo
   std::optional<std::filesystem::path> model;  // --model : absent, celui du lecteur actuel
   bool upscale = true;                         // --no-upscale : image source telle quelle
   int window_width = 1280;                     // --window=LxH
@@ -129,9 +129,8 @@ struct WorkSize {
 };
 WorkSize work_size(int width, int height, int work_height);
 
-// Arguments qui suivent « play ». Une option inconnue (OptionUnknown), une valeur
-// illisible ou hors plage (FieldOutOfRange), un fichier absent de la ligne (FieldMissing)
-// sont refusés.
+// Arguments qui suivent « play ». Une option inconnue (OptionUnknown), ou une valeur
+// illisible ou hors plage (FieldOutOfRange), sont refusées ; sans fichier, l'écran d'accueil.
 std::expected<PlayOptions, Refusal> parse_play_options(std::span<const std::string_view> args);
 
 std::string play_usage();

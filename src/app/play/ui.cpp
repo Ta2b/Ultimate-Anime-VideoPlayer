@@ -274,7 +274,31 @@ void PlayerUi::apply_scale() {
 }
 
 bool PlayerUi::over_ui() const {
-  return controls_.drawn() && ImGui::GetIO().WantCaptureMouse;
+  return (controls_.drawn() || home_) && ImGui::GetIO().WantCaptureMouse;
+}
+
+void PlayerUi::begin_frame(std::int64_t now_us) {
+  ImGuiIO& io = ImGui::GetIO();
+  int width = 0;
+  int height = 0;
+  SDL_GetWindowSizeInPixels(window_, &width, &height);
+  io.DisplaySize = {static_cast<float>(std::max(width, 1)), static_cast<float>(std::max(height, 1))};
+  io.DisplayFramebufferScale = {1.0F, 1.0F};
+  io.DeltaTime = last_frame_us_ > 0 ? std::max(1e-4F, static_cast<float>(now_us - last_frame_us_) * 1e-6F)
+                                    : 1.0F / 60.0F;
+  last_frame_us_ = now_us;
+  ImGui::NewFrame();
+}
+
+void PlayerUi::follow_text_input() {
+  const bool wanted = ImGui::GetIO().WantTextInput;
+  if (wanted == text_input_) return;
+  text_input_ = wanted;
+  if (text_input_) {
+    SDL_StartTextInput(window_);
+  } else {
+    SDL_StopTextInput(window_);
+  }
 }
 
 bool PlayerUi::handle(const SDL_Event& event, std::int64_t now_us, std::vector<Input>& actions) {
@@ -370,17 +394,10 @@ UiFrame PlayerUi::frame(std::int64_t now_us, const ControlsView& view, std::vect
     return UiFrame{.draw = draw_, .changed = false, .bottom = bottom_, .top = top_};
   settle_ = input_pending_ ? kSettleFrames : std::max(settle_ - 1, 0);
   input_pending_ = false;
+  home_ = false;
 
-  ImGuiIO& io = ImGui::GetIO();
-  int width = 0;
-  int height = 0;
-  SDL_GetWindowSizeInPixels(window_, &width, &height);
-  io.DisplaySize = {static_cast<float>(std::max(width, 1)), static_cast<float>(std::max(height, 1))};
-  io.DisplayFramebufferScale = {1.0F, 1.0F};
-  io.DeltaTime = last_frame_us_ > 0 ? std::max(1e-4F, static_cast<float>(now_us - last_frame_us_) * 1e-6F)
-                                    : 1.0F / 60.0F;
-  last_frame_us_ = now_us;
-  ImGui::NewFrame();
+  const ImGuiIO& io = ImGui::GetIO();
+  begin_frame(now_us);
   // Les clics que l'interface ne prend pas vont à l'image : simple clic pause, double plein écran,
   // clic droit pause.
   const bool captured = io.WantCaptureMouse;
@@ -403,14 +420,7 @@ UiFrame PlayerUi::frame(std::int64_t now_us, const ControlsView& view, std::vect
   }
   ImGui::Render();
   controls_.framed(now_us, view, drawn);
-  if (io.WantTextInput != text_input_) {
-    text_input_ = io.WantTextInput;
-    if (text_input_) {
-      SDL_StartTextInput(window_);
-    } else {
-      SDL_StopTextInput(window_);
-    }
-  }
+  follow_text_input();
   draw_ = drawn ? ImGui::GetDrawData() : nullptr;
   const bool bar = controls_.shown(now_us, view.paused);
   bottom_ = bar ? static_cast<int>(std::ceil(controls_height(look_.scale))) : 0;
@@ -419,16 +429,8 @@ UiFrame PlayerUi::frame(std::int64_t now_us, const ControlsView& view, std::vect
 }
 
 const ImDrawData* PlayerUi::preparation(std::int64_t now_us, const PrepareView& view) {
-  ImGuiIO& io = ImGui::GetIO();
-  int width = 0;
-  int height = 0;
-  SDL_GetWindowSizeInPixels(window_, &width, &height);
-  io.DisplaySize = {static_cast<float>(std::max(width, 1)), static_cast<float>(std::max(height, 1))};
-  io.DisplayFramebufferScale = {1.0F, 1.0F};
-  io.DeltaTime = last_frame_us_ > 0 ? std::max(1e-4F, static_cast<float>(now_us - last_frame_us_) * 1e-6F)
-                                    : 1.0F / 60.0F;
-  last_frame_us_ = now_us;
-  ImGui::NewFrame();
+  home_ = false;
+  begin_frame(now_us);
   clicks_.clear();
   draw_preparation(view, look_, now_us);
   ImGui::Render();
@@ -438,20 +440,34 @@ const ImDrawData* PlayerUi::preparation(std::int64_t now_us, const PrepareView& 
 }
 
 const ImDrawData* PlayerUi::welcome(std::int64_t now_us, FirstRunView& view) {
-  ImGuiIO& io = ImGui::GetIO();
-  int width = 0;
-  int height = 0;
-  SDL_GetWindowSizeInPixels(window_, &width, &height);
-  io.DisplaySize = {static_cast<float>(std::max(width, 1)), static_cast<float>(std::max(height, 1))};
-  io.DisplayFramebufferScale = {1.0F, 1.0F};
-  io.DeltaTime = last_frame_us_ > 0 ? std::max(1e-4F, static_cast<float>(now_us - last_frame_us_) * 1e-6F)
-                                    : 1.0F / 60.0F;
-  last_frame_us_ = now_us;
-  ImGui::NewFrame();
+  home_ = false;
+  begin_frame(now_us);
   clicks_.clear();
   draw_first_run(view, look_.scale);
   ImGui::Render();
   draw_ = nullptr;
+  controls_.framed(now_us, ControlsView{}, false);
+  return ImGui::GetDrawData();
+}
+
+const ImDrawData* PlayerUi::home(std::int64_t now_us, HomeView& view, std::vector<Input>& actions) {
+  if (cursor_hidden_) {  // retour d'une lecture où la souris s'était effacée
+    SDL_ShowCursor();
+    cursor_hidden_ = false;
+  }
+  home_ = true;
+  input_pending_ = false;
+  begin_frame(now_us);
+  clicks_.clear();
+  draw_home(view, look_.scale, panel_.is_open());
+  if (panel_.is_open()) {
+    const SettingsPanel::Result result = panel_.draw(running_, choices_, look_.scale, actions);
+    if (result.live) actions.emplace_back(ApplySettings{.settings = *result.live});
+    if (result.reopen) actions.emplace_back(ApplySettings{.settings = *result.reopen, .reopen = true});
+  }
+  ImGui::Render();
+  follow_text_input();
+  draw_ = nullptr;  // la barre de lecture se recompose à son premier tour
   controls_.framed(now_us, ControlsView{}, false);
   return ImGui::GetDrawData();
 }
@@ -488,6 +504,15 @@ void PlayerUi::toggle_settings() {
   // Ouvert au clavier, barre effacée : sans cela, aucune image ne se dessine avant que la souris
   // bouge, et le menu n'apparaît pas.
   controls_.set_held(look_.keep_visible);
+  input_pending_ = true;
+}
+
+void PlayerUi::open_settings() {
+  if (!panel_.is_open()) toggle_settings();
+}
+
+void PlayerUi::set_title(std::string title) {
+  look_.title = std::move(title);
   input_pending_ = true;
 }
 

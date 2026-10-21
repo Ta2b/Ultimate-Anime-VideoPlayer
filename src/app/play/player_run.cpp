@@ -28,6 +28,7 @@
 #include "app/play/export_run.h"
 #include "app/play/first_run.h"
 #include "app/play/gmfss_model.h"
+#include "app/play/home_screen.h"
 #include "app/play/host_facts.h"
 #include "app/play/input.h"
 #include "app/play/model_choice.h"
@@ -46,6 +47,7 @@
 #include "media/demuxer.h"
 #include "media/selection.h"
 #include "prepare/sha256.h"
+#include "prepare/utf8.h"
 #include "vendor_hdr/sdk_store.h"
 #include "vendor_hdr/true_hdr.h"
 
@@ -72,7 +74,10 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
   const media::TrackInfo& video = p.video;
   auto prepared = prepare_chain(p, settings);
   if (!prepared) return std::unexpected(std::move(prepared.error()));
-  if (!*prepared) return std::nullopt;
+  if (!*prepared) {  // q ou la fenêtre fermée pendant la préparation des moteurs
+    p.quit = true;
+    return std::nullopt;
+  }
   ChainEngines& c = **prepared;
   const int factor = c.factor;
   const WorkSize work = c.work;
@@ -263,6 +268,12 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
     const bool snapshot_now = p.snapshot.maybe(out, p.began_us);
     SDL_Event event;
     while (SDL_PollEvent(&event)) {
+      if (auto dropped = dropped_file(event)) {  // une autre vidéo : la chaîne se ferme pour elle
+        log->info("fichier glissé : {}", prepare::utf8_path(*dropped));
+        chain.next_file = std::move(*dropped);
+        chain.reopen = chain.running;
+        continue;
+      }
       if (p.ui.handle(event, host_now_us(), actions)) continue;  // saisie dans l'interface
       if (auto input = input_of(event, keys)) actions.push_back(*input);
     }
@@ -316,6 +327,7 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
       log->warn("{}", saved.error().detail);
   }
   remember();
+  p.quit = session.quit_asked();
   log_summary(session);
   for (const std::string& refusal : session.refusals()) log->warn("{}", refusal);
   std::optional<Reopen> reopen;
@@ -323,7 +335,8 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
     reopen = Reopen{.settings = *chain.reopen,
                     .position_us = std::max<std::int64_t>(session.view().position_us, 0),
                     .engines = chain.engines,
-                    .export_job = chain.export_job};
+                    .export_job = chain.export_job,
+                    .next_file = chain.next_file};
     reopen->settings.volume = p.ui.controls().volume();
     p.audio_track = (*pipeline)->tracks().audio_selected;
     p.subtitle_track = (*pipeline)->tracks().subtitle_selected;

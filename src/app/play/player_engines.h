@@ -82,6 +82,7 @@ struct Player {
   std::filesystem::path resume_path;    // mémoire de lecture (resume.h) ; vide : aucune
   bool resumed = false;                 // la lecture reprend là où elle s'était arrêtée : à annoncer
   std::string notice;                   // à annoncer à la prochaine ouverture (moteur changé)
+  bool quit = false;                    // la dernière ouverture s'est fermée par q ou la fenêtre
 };
 
 // Les messages des backends, sur le canal « backend » du journal.
