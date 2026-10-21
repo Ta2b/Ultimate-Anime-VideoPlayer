@@ -205,6 +205,12 @@ un réglage à faire taire.
   écrit est celui du chemin par tenseur au bit près (arrondi FP16 puis `unorm16`) : un export
   RIFE mouvement ×2 4K sur 10b9e9f et sur ce commit doit donner des images identiques (md5 par
   image), et `nsys` ne doit plus montrer `write_rgba16` qu'une fois par image source.
+- **Cadence fixe à l'export** (étude 1, 5.3) : case « Cadence fixe » (cochée par défaut) dans
+  Exporter → Encodage. Aux coupes et aux dessins tenus, la paire n'est pas interpolée et l'image
+  précédente est répétée à l'instant manquant : le clip du PC en RIFE ×2 doit donner 529 images au
+  lieu de 496, et `ffprobe -show_entries frame=pts_time` des intervalles tous égaux. Le journal de
+  fin dit « export écrit : N images dont R répétées ». Décochée, 496 images à cadence variable,
+  comme avant.
 
 ## Linux sur RX 6500M (RDNA2 Navi 24, 4 Go)
 

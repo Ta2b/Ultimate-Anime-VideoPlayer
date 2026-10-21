@@ -115,7 +115,8 @@ ExportOutcome run_export(Player& p, const ExportJob& job) {
                              .cuda_ordinal = export_cuda_ordinal(p.screen.device()),
                              .vulkan_device = p.screen.vulkan_device(),
                              .queue_depth = depth.queue,
-                             .caller_frames = depth.buffers});
+                             .caller_frames = depth.buffers,
+                             .constant_rate = job.constant_rate});
   if (!writer) return stopped(writer.error());
   auto opened = FrameExport::open(p.screen, FrameExportSetup{.width = size.width,
                                                              .height = size.height,

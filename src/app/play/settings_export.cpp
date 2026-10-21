@@ -138,6 +138,13 @@ void export_tab(ExportDraft& draft, const PlaySettings& running, const SettingsC
         "Très haute vise une image identique à l'œil à la lecture ; Haute et Standard donnent des fichiers "
         "plus "
         "légers.");
+  ImGui::Checkbox("Cadence fixe", &job.constant_rate);
+  note(job.constant_rate
+           ? "Aux coupes de scène et sur les dessins tenus, la chaîne n'interpole pas : l'image précédente "
+             "est répétée à ces instants, et le fichier garde une cadence fixe que tout logiciel de montage "
+             "lit."
+           : "Les instants que la chaîne n'interpole pas (coupes de scène, dessins tenus) manquent : le "
+             "fichier est à cadence variable, un peu plus léger, lu sans souci par les lecteurs.");
 
   section("Fichier");
   const media::Rational rate = export_rate(choices.source_rate, factor_of(job.chain));

@@ -18,8 +18,12 @@ struct ExportWriter::State {
   AvColor color;
   int width = 0;
   int height = 0;
+  int fps_num = 0;
+  int fps_den = 1;
+  bool constant_rate = true;
   std::int64_t last_pts = 0;
   bool any = false;  // une image déjà encodée : last_pts vaut
+  FramePtr last;     // cadence fixe : la dernière image encodée, à répéter
 };
 
 namespace {
@@ -72,19 +76,20 @@ std::expected<std::unique_ptr<ExportWriter>, Refusal> ExportWriter::open(const W
   auto muxer = Muxer::open(config.source, config.output);
   if (!muxer) return std::unexpected(std::move(muxer.error()));
   const ColorInfo color = config.color.value_or(muxer->source_color());
-  auto encoder = VideoEncoder::open(
-      EncoderSetup{.width = config.width,
-                   .height = config.height,
-                   .fps_num = config.fps_num,
-                   .fps_den = config.fps_den,
-                   .sample_aspect = muxer->source_aspect(),
-                   .color = color,
-                   .codec = config.codec,
-                   .quality = config.quality,
-                   .vendor = config.vendor,
-                   .cuda_ordinal = config.cuda_ordinal,
-                   .vulkan_device = config.vulkan_device,
-                   .held_frames = static_cast<int>(config.caller_frames + config.queue_depth)});
+  auto encoder = VideoEncoder::open(EncoderSetup{
+      .width = config.width,
+      .height = config.height,
+      .fps_num = config.fps_num,
+      .fps_den = config.fps_den,
+      .sample_aspect = muxer->source_aspect(),
+      .color = color,
+      .codec = config.codec,
+      .quality = config.quality,
+      .vendor = config.vendor,
+      .cuda_ordinal = config.cuda_ordinal,
+      .vulkan_device = config.vulkan_device,
+      .held_frames =
+          static_cast<int>(config.caller_frames + config.queue_depth + (config.constant_rate ? 1U : 0U))});
   if (!encoder) return std::unexpected(std::move(encoder.error()));
   return start(config, std::move(*muxer), color, std::make_unique<VideoEncoder>(std::move(*encoder)));
 }
@@ -112,7 +117,10 @@ std::expected<std::unique_ptr<ExportWriter>, Refusal> ExportWriter::start(
                                                  .encoder = std::move(encoder),
                                                  .color = av_color(color),
                                                  .width = config.width,
-                                                 .height = config.height});
+                                                 .height = config.height,
+                                                 .fps_num = config.fps_num,
+                                                 .fps_den = config.fps_den,
+                                                 .constant_rate = config.constant_rate});
   ExportWriter* self = writer.get();
   auto thread =
       start_thread("export", ThreadReport([self](const Refusal& refusal) {
@@ -181,7 +189,7 @@ AVBufferRef* ExportWriter::cuda_frames() const {
 }
 
 WriterProgress ExportWriter::progress() const {
-  return WriterProgress{.frames = frames_.load(), .bytes = bytes_.load()};
+  return WriterProgress{.frames = frames_.load(), .repeated = repeated_.load(), .bytes = bytes_.load()};
 }
 
 void ExportWriter::run(const std::stop_token& stop) {
@@ -198,6 +206,23 @@ void ExportWriter::run(const std::stop_token& stop) {
     if (!failure_) failure_ = std::move(refusal);
     done_ = true;
     wake_.notify_all();
+  };
+  // Cadence fixe : la dernière image encodée, répétée en parts égales jusqu'à next_pts.
+  const auto repeat_last = [&](std::int64_t next_pts) -> std::expected<void, Refusal> {
+    if (!s.last) return {};
+    const std::int64_t repeats = repeats_between(s.last_pts, next_pts, s.fps_num, s.fps_den);
+    const std::int64_t from = s.last_pts;
+    const std::int64_t gap = next_pts - from;
+    for (std::int64_t k = 1; k <= repeats; ++k) {
+      FramePtr copy(av_frame_clone(s.last.get()));  // une référence de plus sur la même mémoire
+      if (!copy) return std::unexpected(Refusal{RefusalCode::EncodeFailed, "image : mémoire"});
+      copy->pts = from + k * gap / (repeats + 1);
+      s.last_pts = copy->pts;
+      if (auto encoded = s.encoder->encode(copy.get(), sink); !encoded) return encoded;
+      frames_.fetch_add(1);
+      repeated_.fetch_add(1);
+    }
+    return {};
   };
   FramePtr frame(av_frame_alloc());
   if (!frame) return fail(Refusal{RefusalCode::EncodeFailed, "image : mémoire"});
@@ -227,18 +252,25 @@ void ExportWriter::run(const std::stop_token& stop) {
     // Sur la ligne du conteneur, comme les pistes copiées ; strictement croissant pour l'encodeur.
     std::int64_t pts = picture.pts_us + s.muxer.start_us();
     if (s.any && pts <= s.last_pts) pts = s.last_pts + 1;
+    if (auto repeated = repeat_last(pts); !repeated) return fail(std::move(repeated.error()));
     s.last_pts = pts;
     s.any = true;
     frame->pts = pts;
+    if (s.constant_rate) {
+      s.last.reset(av_frame_clone(frame.get()));
+      if (!s.last) return fail(Refusal{RefusalCode::EncodeFailed, "image : mémoire"});
+    }
     auto encoded = s.encoder->encode(frame.get(), sink);
     av_frame_unref(frame.get());
     if (!encoded) return fail(std::move(encoded.error()));
     frames_.fetch_add(1);
   }
+  s.last.reset();  // rendue avant le vidage : l'appelant retrouve toutes ses images après finish()
   if (auto flushed = s.encoder->encode(nullptr, sink); !flushed) return fail(std::move(flushed.error()));
   if (auto closed = s.muxer.finish(); !closed) return fail(std::move(closed.error()));
   bytes_.store(s.muxer.bytes());
-  log->info("export écrit : {} images, {} Mo, {}", frames_.load(), bytes_.load() / 1'000'000, utf8(output_));
+  log->info("export écrit : {} images dont {} répétées, {} Mo, {}", frames_.load(), repeated_.load(),
+            bytes_.load() / 1'000'000, utf8(output_));
   const std::scoped_lock lock(mutex_);
   done_ = true;
   wake_.notify_all();

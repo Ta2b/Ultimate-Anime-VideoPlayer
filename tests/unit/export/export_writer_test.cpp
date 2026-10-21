@@ -35,7 +35,7 @@ constexpr int kHeight = 48;
 constexpr std::int64_t kFrameUs = 40'000;
 // Les tampons de la conversion (FrameExportSetup::buffers par défaut) : lus en place, c'est tout ce que
 // l'encodeur peut tenir avant que l'export ne se fige.
-constexpr std::size_t kBuffers = 6;
+constexpr std::size_t kBuffers = 7;
 
 // Un encodeur qui garde les `hold` dernières images reçues (une référence sur leur mémoire, comme
 // NVENC qui lit en place) et rend un paquet factice par image ; vidé, il rend tout. Porte fermée
@@ -312,6 +312,71 @@ TEST_CASE("Écriture : la file tient queue_depth images, pas une de plus", "[exp
   writer->reset();
   std::error_code error;
   std::filesystem::remove(output, error);
+}
+
+TEST_CASE("Écriture : répétitions de la cadence fixe", "[export][writer]") {
+  CHECK(repeats_between(0, 40'000, 25, 1) == 0);
+  CHECK(repeats_between(0, 59'999, 25, 1) == 0);  // moins d'une période et demie
+  CHECK(repeats_between(0, 60'000, 25, 1) == 1);  // arrondi au plus proche
+  CHECK(repeats_between(0, 80'000, 25, 1) == 1);
+  CHECK(repeats_between(0, 120'000, 25, 1) == 2);
+  // ×2 sur 23,976 i/s : une paire laissée sans interpolation creuse un trou d'une image.
+  CHECK(repeats_between(0, 41'708, 48'000, 1'001) == 1);
+  CHECK(repeats_between(0, 20'854, 48'000, 1'001) == 0);
+  CHECK(repeats_between(100, 100, 25, 1) == 0);
+  CHECK(repeats_between(100, 50, 25, 1) == 0);
+  CHECK(repeats_between(0, 1'000'000, 0, 1) == 0);
+  // Une heure sans image : un saut d'horodatage, pas un dessin tenu.
+  CHECK(repeats_between(0, std::int64_t{3'600} * 1'000'000, 25, 1) == 0);
+  CHECK(repeats_between(0, (kMaxRepeatRun + 1) * 40'000, 25, 1) == kMaxRepeatRun);
+}
+
+// 25 i/s : les instants 80, 200 et 240 ms manquent (une coupe, un dessin tenu sur deux images).
+constexpr std::array<std::int64_t, 5> kShownUs{0, 40'000, 120'000, 160'000, 280'000};
+
+std::vector<std::int64_t> write_shown(const char* name, bool constant_rate, WriterProgress& progress) {
+  const std::filesystem::path output = output_path(name);
+  auto encoder = std::make_unique<HoldingEncoder>(2);
+  const HoldingEncoder* fake = encoder.get();
+  WriterConfig config = config_for(output);
+  config.constant_rate = constant_rate;
+  auto writer = ExportWriter::open(config, std::move(encoder));
+  REQUIRE(writer);
+  Buffers buffers;
+  for (const std::int64_t pts : kShownUs) {
+    const auto i = buffers.take();
+    REQUIRE(i);
+    push(**writer, buffers.in_place(*i, pts));
+  }
+  REQUIRE((*writer)->finish());
+  // Les répétitions lisent la mémoire de l'image répétée : tout revient une fois l'encodeur vidé.
+  CHECK(buffers.free_count() == kBuffers);
+  progress = (*writer)->progress();
+  std::vector<std::int64_t> pts = fake->pts();
+  writer->reset();
+  std::error_code error;
+  CHECK(std::filesystem::file_size(output, error) > 0);
+  std::filesystem::remove(output, error);
+  return pts;
+}
+
+TEST_CASE("Écriture : à cadence fixe, l'image précédente remplit les instants manquants",
+          "[export][writer]") {
+  WriterProgress progress;
+  const std::vector<std::int64_t> pts = write_shown("ajp-export-writer-constant.mkv", true, progress);
+  REQUIRE(pts.size() == 8);
+  for (std::size_t n = 1; n < pts.size(); ++n) CHECK(pts[n] - pts[n - 1] == kFrameUs);
+  CHECK(progress.frames == 8);
+  CHECK(progress.repeated == 3);
+}
+
+TEST_CASE("Écriture : à cadence variable, les instants manquants restent vides", "[export][writer]") {
+  WriterProgress progress;
+  const std::vector<std::int64_t> pts = write_shown("ajp-export-writer-variable.mkv", false, progress);
+  REQUIRE(pts.size() == kShownUs.size());
+  for (std::size_t n = 1; n < pts.size(); ++n) CHECK(pts[n] - pts[0] == kShownUs[n]);
+  CHECK(progress.frames == static_cast<std::int64_t>(kShownUs.size()));
+  CHECK(progress.repeated == 0);
 }
 
 TEST_CASE("Écriture : un refus de l'encodeur arrête l'export et le dit", "[export][writer]") {

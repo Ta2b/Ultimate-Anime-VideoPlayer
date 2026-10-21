@@ -148,13 +148,15 @@ TEST_CASE("Export : profil débit avec plusieurs voies de calcul, profondeur d'a
   const ExportDepth one = export_depth(1);
   CHECK_FALSE(one.throughput);
   CHECK(one.ring_slots == 4);
-  CHECK(one.buffers == 6);
+  CHECK(one.buffers == 7);
   CHECK(one.queue == 4);
   const ExportDepth three = export_depth(3);
   CHECK(three.throughput);
   CHECK(three.ring_slots == 8);  // deux paires ×3 et de quoi convertir
   CHECK(three.queue == 8);
-  CHECK(three.buffers > three.queue);  // la file se remplit : une image confiée garde son tampon
+  // La file se remplit : une image confiée garde son tampon, comme celle en cours d'encodage et la
+  // précédente que la cadence fixe répète.
+  CHECK(three.buffers > three.queue + kWriterHeldBeyondQueue);
 }
 
 }  // namespace ajp::app::play

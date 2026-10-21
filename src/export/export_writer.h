@@ -5,7 +5,9 @@
 //
 // Un thread « export » encode et écrit : push() lui confie une image sans la copier (l'encodeur lit
 // la mémoire de l'appelant, puis appelle release), finish() vide l'encodeur et clôt le fichier.
-// Détruit sans finish(), l'export est abandonné et le fichier partiel supprimé.
+// Détruit sans finish(), l'export est abandonné et le fichier partiel supprimé. À cadence fixe, il
+// garde une référence sur la dernière image encodée, qu'il répète aux instants manquants : une
+// image de l'appelant de plus tenue à la fois.
 #pragma once
 
 #include <array>
@@ -61,7 +63,29 @@ struct WriterConfig {
   // Images de l'encodeur (cuda_frames()) que l'appelant tient à la fois, rendues et pas encore
   // confiées (FrameExport : ses tampons) : le pool CUDA les compte en plus de la file.
   std::size_t caller_frames = 6;
+  // Cadence fixe : l'image précédente répétée aux instants de la grille que la chaîne ne produit
+  // pas (coupe de scène, dessin tenu : la paire n'est pas interpolée), pour un fichier que les
+  // logiciels de montage lisent à fps_num / fps_den. Faux : ces instants manquent, cadence variable.
+  bool constant_rate = true;
 };
+
+// Plus longue suite de répétitions comblée (cinq minutes à 120 i/s) : un écart plus grand est un
+// saut d'horodatage de la source, pas une image tenue, et reste tel quel.
+inline constexpr std::int64_t kMaxRepeatRun = 36'000;
+
+// Cadence fixe : combien de fois l'image de previous_us se répète avant celle de next_us, pour
+// que l'écart, partagé en parts égales, approche la période 10⁶ × fps_den / fps_num µs. Arrondi au
+// plus proche : un écart de moins d'une période et demie ne répète rien. La k-ième répétition
+// tombe à previous_us + k × (next_us − previous_us) / (n + 1).
+constexpr std::int64_t repeats_between(std::int64_t previous_us, std::int64_t next_us, int fps_num,
+                                       int fps_den) {
+  if (fps_num <= 0 || fps_den <= 0 || next_us <= previous_us) return 0;
+  constexpr std::int64_t kUs = 1'000'000;
+  const std::int64_t gap = next_us - previous_us;
+  const std::int64_t periods = (2 * gap * fps_num + kUs * fps_den) / (2 * kUs * fps_den);
+  const std::int64_t repeats = periods - 1;
+  return repeats > 0 && repeats <= kMaxRepeatRun ? repeats : 0;
+}
 
 // Une image convertie, dans la disposition de l'encodeur ouvert (layout()). La mémoire reste à
 // l'appelant jusqu'à release, appelé une fois quand l'encodeur ne la lit plus, depuis n'importe
@@ -81,8 +105,9 @@ struct Picture {
 };
 
 struct WriterProgress {
-  std::int64_t frames = 0;  // images encodées
-  std::int64_t bytes = 0;   // octets écrits
+  std::int64_t frames = 0;    // images encodées, répétitions comprises
+  std::int64_t repeated = 0;  // dont répétitions de la cadence fixe
+  std::int64_t bytes = 0;     // octets écrits
 };
 
 class ExportWriter {
@@ -145,6 +170,7 @@ class ExportWriter {
   bool done_ = false;               // sous mutex_ : le thread a fini (clos, ou refusé)
   std::optional<Refusal> failure_;  // sous mutex_
   std::atomic<std::int64_t> frames_{0};
+  std::atomic<std::int64_t> repeated_{0};
   std::atomic<std::int64_t> bytes_{0};
   std::jthread thread_;
 };

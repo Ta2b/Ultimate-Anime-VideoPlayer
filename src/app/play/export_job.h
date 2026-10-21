@@ -22,6 +22,7 @@ struct ExportJob {
   int height = kExportChainHeight;  // ou kExportSourceHeight, ou un nombre de lignes
   exporter::Codec codec = exporter::Codec::Hevc;
   exporter::Quality quality = exporter::Quality::VeryHigh;
+  bool constant_rate = true;     // WriterConfig::constant_rate
   std::filesystem::path output;  // .mkv
   friend bool operator==(const ExportJob&, const ExportJob&) = default;
 };

@@ -63,8 +63,8 @@ struct FrameExportSetup {
   // telles quelles. Si leurs plans ne se rendent pas sur ce GPU, tampons hôte.
   AVBufferRef* vulkan_frames = nullptr;
   // Tampons de conversion (images de l'encodeur Vulkan rendues et pas encore confiées, pour
-  // vulkan_frames), de 1 à FrameExport::kMaxBuffers : 10 au profil « débit » (export_depth.h).
-  std::size_t buffers = 6;
+  // vulkan_frames), de 1 à FrameExport::kMaxBuffers : 11 au profil « débit » (export_depth.h).
+  std::size_t buffers = 7;
 };
 
 class FrameExport {
