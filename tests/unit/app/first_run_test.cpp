@@ -128,6 +128,13 @@ TEST_CASE("MIGraphX proposé aux seuls GPU que ROCm sert", "[app][first_run]") {
   CHECK_FALSE(rocm_listed("AMD Radeon RX 6500M"));
   CHECK_FALSE(rocm_listed("AMD Radeon RX 6800M"));
   CHECK_FALSE(rocm_listed("AMD Radeon 680M (RADV REMBRANDT)"));
+  // Ryzen AI 9 HX et Ryzen AI Max, pas le Ryzen AI 7 350.
+  CHECK(rocm_listed("AMD Radeon 890M (RADV GFX1150)"));
+  CHECK(rocm_listed("AMD Radeon 8060S Graphics (RADV GFX1151)"));
+  CHECK(rocm_listed("AMD Radeon(TM) 890M Graphics"));
+  CHECK(rocm_listed("AMD Radeon(TM) 8050S Graphics"));
+  CHECK_FALSE(rocm_listed("AMD Radeon 860M (RADV GFX1152)"));
+  CHECK_FALSE(rocm_listed("AMD Radeon(TM) 860M Graphics"));
   const GpuFacts rx6500m{
       .name = "AMD Radeon RX 6500M (RADV NAVI24)", .vendor = GpuVendor::Amd, .vram_bytes = 4 * kGiB};
   const FirstRunView view = first_run_view(rx6500m, kHere, ProfilesView{});

@@ -208,12 +208,17 @@ bool rocm_listed(std::string_view gpu_name) {
   const std::string name = lower(gpu_name);
   // RADV nomme la puce (« AMD Radeon RX 6500M (RADV NAVI24) ») : elle seule décide. RDNA4 y
   // porte son nom GFX (« AMD Radeon RX 9070 XT (RADV GFX1201) »).
-  constexpr std::array kListedChips{"navi21",  "navi31",  "navi32",  "navi33",  "navi44", "navi48",
-                                    "gfx1100", "gfx1101", "gfx1102", "gfx1200", "gfx1201"};
+  // Les Ryzen AI 9 HX et Ryzen AI Max (GFX1150, GFX1151) depuis ROCm 7.2.1 ; pas le Ryzen AI 7
+  // (Radeon 860M, GFX1152).
+  constexpr std::array kListedChips{"navi21",  "navi31",  "navi32",  "navi33",  "navi44",
+                                    "navi48",  "gfx1100", "gfx1101", "gfx1102", "gfx1150",
+                                    "gfx1151", "gfx1200", "gfx1201"};
   if (name.contains("(radv ")) {
     return std::ranges::any_of(kListedChips, [&](std::string_view chip) { return name.contains(chip); });
   }
   if (name.contains("instinct") || name.contains("pro w6800") || name.contains("pro w7")) return true;
+  constexpr std::array kListedApus{"880m", "890m", "8050s", "8060s"};
+  if (std::ranges::any_of(kListedApus, [&](std::string_view apu) { return name.contains(apu); })) return true;
   // AMDVLK et Windows ne donnent que le produit : RX 6800 à 6950 de bureau (les « M » et « S »
   // portables sont des Navi 22), toutes les RX 7000 et 9000 de bureau.
   for (std::size_t at = name.find("rx "); at != std::string::npos; at = name.find("rx ", at + 1)) {
