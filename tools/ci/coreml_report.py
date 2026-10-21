@@ -30,13 +30,13 @@ CASES = [
     ("SPAN Performance 540p", "onnx/2x_AnimeJaNai_HD_V3.1_Performance_SPANF3_b5f48_unshuffle_fp16.onnx",
      [[1, 3, 540, 960]], ["CPUAndGPU", "ALL"]),
     ("SPAN Performance 540p en FP32", "onnx/2x_AnimeJaNai_HD_V3.1_Performance_SPANF3_b5f48_unshuffle_fp16.onnx",
-     [[1, 3, 540, 960]], ["CPUAndGPU"]),
+     [[1, 3, 540, 960]], ["CPUAndGPU", "ALL"]),
     ("SPAN Performance 1080p", "onnx/2x_AnimeJaNai_HD_V3.1_Performance_SPANF3_b5f48_unshuffle_fp16.onnx",
      [[1, 3, 1080, 1920]], ["CPUAndGPU", "ALL"]),
     ("SPAN Balanced 540p", "onnx/2x_AnimeJaNai_HD_V3.1_Balanced_SPANF3_b8f64_unshuffle_fp16.onnx",
      [[1, 3, 540, 960]], ["CPUAndGPU", "ALL"]),
     ("RIFE 4.25 720p", "rife/rife_v4.25.onnx", [[1, 11, 768, 1280]], ["CPUAndGPU", "ALL"]),
-    ("RIFE 4.25 720p en FP32", "rife/rife_v4.25.onnx", [[1, 11, 768, 1280]], ["CPUAndGPU"]),
+    ("RIFE 4.25 720p en FP32", "rife/rife_v4.25.onnx", [[1, 11, 768, 1280]], ["CPUAndGPU", "ALL"]),
     ("RIFE 4.22 lite 720p", "rife/rife_v4.22_lite.onnx", [[1, 11, 768, 1280]], ["CPUAndGPU", "ALL"]),
     ("DistilDRBA v2 lite 540p", "rife/distil_drba_v2_lite.onnx", [[1, 7, 576, 1024], [1, 7, 576, 1024]],
      ["CPUAndGPU"]),
@@ -49,8 +49,11 @@ UNSUPPORTED = re.compile(r"Operator type: \[(\w+)\] index: \[\d+\] name: \[([^\]
 CPU_NODES = re.compile(r"placed on \[CPUExecutionProvider\]\. Number of nodes: \d+\n((?:[ \t]+\S+ \([^)\n]*\)\n)+)")
 # Les raisons des refus : les lignes des constructeurs du fournisseur CoreML, hors du bilan par nœud.
 REASON = re.compile(r"\[[VIW]:onnxruntime:[^,]*, (\w+\.(?:cc|mm|h)):\d+ (\w+)\] (.*)")
-DEVICE = re.compile(r"Operation: ([^,\s]+),? Device Usage: (\w+)(?:, Estimated Cost: ([\d.eE+-]+))?",
+DEVICE = re.compile(r"Operation: ([^,\s]+),? Device Usage: <?(\w+)[^,\n]*(?:, Estimated Cost: ([\d.eE+-]+))?",
                     re.IGNORECASE)
+# Le type refusé d'une entrée, en clair (10 : FLOAT16, 1 : FLOAT).
+DTYPE = re.compile(r"\[(\w+)\] Input type: \[(\d+)\] is not currently supported")
+MLPROGRAM = re.compile(r"ML ?Program|NeuralNetwork", re.IGNORECASE)
 
 
 def to_fp32(model) -> None:
@@ -141,6 +144,16 @@ def summarize(log: str) -> list[str]:
     unsupported = collections.Counter(m[1] for m in UNSUPPORTED.finditer(log))
     if unsupported:
         lines.append("  refusés par CoreML : " + ", ".join(f"{op} ×{n}" for op, n in unsupported.most_common()))
+    dtypes = collections.Counter(f"{m[1]} en {m[2]}" for m in DTYPE.finditer(log))
+    if dtypes:
+        lines.append("  types refusés : " + ", ".join(f"{k} ×{n}" for k, n in dtypes.most_common(6)))
+    formats = collections.Counter(re.sub(r"[0-9]+", "#", line.strip())[:200]
+                                  for line in log.splitlines() if MLPROGRAM.search(line))
+    for line, n in formats.most_common(4):
+        lines.append(f"  format ×{n} : {line}")
+    plan = [line.strip()[:200] for line in log.splitlines() if "Device Usage" in line][:2]
+    for line in plan:
+        lines.append(f"  plan (brut) : {line}")
     reasons = collections.Counter()
     for m in REASON.finditer(log):
         if "Operator type:" in m[3] or not any(k in m[1].lower() for k in ("builder", "helper", "coreml")):
@@ -171,6 +184,7 @@ def main() -> int:
     parser.add_argument("models", type=Path)
     parser.add_argument("--runs", type=int, default=4)
     parser.add_argument("--child", nargs=2, metavar=("MODEL", "UNITS"))
+    parser.add_argument("--only", action="append", default=[], help="garder les cas dont le nom contient ceci")
     args = parser.parse_args()
     if args.child:
         with tempfile.TemporaryDirectory() as cache:
@@ -181,6 +195,8 @@ def main() -> int:
     print(f"ONNX Runtime {ort.__version__}, fournisseurs {ort.get_available_providers()}")
     with tempfile.TemporaryDirectory() as work:
         for name, file, shapes, unit_list in CASES:
+            if args.only and not any(o in name for o in args.only):
+                continue
             source = args.models / file
             if not source.exists():
                 print(f"{name} : {source} absent")
