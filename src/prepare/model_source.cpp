@@ -21,9 +21,25 @@ std::unexpected<Refusal> refuse(RefusalCode code, std::string detail) {
   return std::unexpected(Refusal{code, std::move(detail)});
 }
 
+OnnxType onnx_type(gpu::TensorType type) {
+  switch (type) {
+    case gpu::TensorType::F32:
+      return OnnxType::Float;
+    case gpu::TensorType::F16:
+      return OnnxType::Float16;
+    case gpu::TensorType::U8:
+      return OnnxType::Uint8;
+    case gpu::TensorType::I8:
+      return OnnxType::Int8;
+  }
+  return OnnxType::Undefined;
+}
+
+}  // namespace
+
 // La taille vient du système de fichiers, jamais de tellg() : sur un dossier,
 // tellg() rend une position sans rapport avec un contenu (LLONG_MAX sous ext4).
-std::expected<std::vector<std::byte>, Refusal> read_bytes(const std::filesystem::path& file) {
+std::expected<std::vector<std::byte>, Refusal> read_onnx_bytes(const std::filesystem::path& file) {
   std::error_code error;
   const bool regular = std::filesystem::is_regular_file(file, error);
   const std::uintmax_t size = regular ? std::filesystem::file_size(file, error) : 0;
@@ -45,27 +61,11 @@ std::expected<std::vector<std::byte>, Refusal> read_bytes(const std::filesystem:
   return bytes;
 }
 
-OnnxType onnx_type(gpu::TensorType type) {
-  switch (type) {
-    case gpu::TensorType::F32:
-      return OnnxType::Float;
-    case gpu::TensorType::F16:
-      return OnnxType::Float16;
-    case gpu::TensorType::U8:
-      return OnnxType::Uint8;
-    case gpu::TensorType::I8:
-      return OnnxType::Int8;
-  }
-  return OnnxType::Undefined;
-}
-
-}  // namespace
-
 std::expected<ModelSource, Refusal> read_model(const gpu::ModelSpec& model, std::string_view input_name) {
   if (!is_sha256_hex(model.sha256)) {
     return refuse(RefusalCode::FieldOutOfRange, "ModelSpec.sha256 de " + model.id + " n'est pas un SHA-256");
   }
-  auto graph = read_bytes(model.onnx_path);
+  auto graph = read_onnx_bytes(model.onnx_path);
   if (!graph) return std::unexpected(graph.error());
   Sha256 file_hash;
   file_hash.update(*graph);

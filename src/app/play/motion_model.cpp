@@ -4,8 +4,6 @@
 #include <array>
 #include <cstdint>
 #include <format>
-#include <fstream>
-#include <iterator>
 #include <string>
 #include <string_view>
 #include <utility>
@@ -13,6 +11,7 @@
 
 #include "app/play/derived_model.h"
 #include "kernels/spec/rife.h"
+#include "prepare/model_source.h"
 #include "prepare/onnx_outputs.h"
 #include "prepare/onnx_scan.h"
 
@@ -82,10 +81,9 @@ std::expected<std::filesystem::path, Refusal> motion_model(const std::filesystem
 }
 
 std::expected<int, Refusal> rife_input_planes(const std::filesystem::path& rife_onnx) {
-  std::ifstream in(rife_onnx, std::ios::binary);
-  if (!in) return std::unexpected(Refusal{RefusalCode::ModelUnreadable, rife_onnx.string()});
-  const std::vector<char> raw((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
-  const auto summary = prepare::scan_onnx(std::as_bytes(std::span(raw)));
+  auto raw = prepare::read_onnx_bytes(rife_onnx);
+  if (!raw) return std::unexpected(std::move(raw.error()));
+  const auto summary = prepare::scan_onnx(*raw);
   if (!summary) return std::unexpected(summary.error());
   const auto& inputs = summary->inputs;
   const std::int64_t planes = inputs.size() == 1 && inputs[0].dims.size() == 4 ? inputs[0].dims[1] : 0;

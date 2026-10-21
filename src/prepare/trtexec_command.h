@@ -62,13 +62,9 @@ SanitizedSettings sanitize_trt11(std::string_view settings);
 struct TrtexecPaths {
   std::filesystem::path onnx;
   std::filesystem::path engine;        // sortie, dans le dossier de travail
-  std::filesystem::path timing_cache;  // copie de travail du cache persistant (builder.cpp)
+  std::filesystem::path timing_cache;  // copie de travail du cache de l'appareil (builder.h)
   std::filesystem::path layer_info;    // rapport des couches (--exportLayerInfo) ; vide : aucun
 };
-
-// « <moteur>.timing.cache », persistant à côté du moteur publié : les temps des
-// tactiques servent aux constructions suivantes.
-std::filesystem::path timing_cache_for(const std::filesystem::path& engine);
 
 // « <moteur>.layers.json » : le rapport des couches de la dernière construction, à côté du moteur.
 std::filesystem::path layer_info_for(const std::filesystem::path& engine);

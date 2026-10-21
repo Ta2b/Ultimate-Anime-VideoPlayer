@@ -14,8 +14,10 @@
 
 #include "prepare/cache.h"
 #include "prepare/cache_io.h"
+#include "prepare/key_lock.h"
 #include "prepare/log.h"
 #include "prepare/process.h"
+#include "prepare/sha256.h"
 #include "prepare/trtexec_progress.h"
 #include "prepare/utf8.h"
 
@@ -64,11 +66,23 @@ std::expected<void, Refusal> judge(const ProcessExit& exit, const TrtexecProgres
   return {};
 }
 
+// Le verrou du GPU (device_timing_cache), sans attendre s'il est libre ; sinon l'OSD dit
+// pourquoi la construction ne démarre pas, et l'attente reste annulable.
+std::expected<KeyLock, Refusal> lock_device(const fs::path& timing_cache, gpu::Progress& progress) {
+  fs::path lock_file = timing_cache;
+  lock_file += ".build-lock";
+  auto held = KeyLock::acquire(lock_file, progress.stop, LockWait::TryOnly);
+  if (held || held.error().code != RefusalCode::CacheBusy) return held;
+  report(progress, 0.0F, "En attente d'une autre construction sur ce GPU");
+  return KeyLock::acquire(lock_file, progress.stop);
+}
+
 // trtexec réécrit son timing cache sur place, sans temporaire : tué pendant
 // cette écriture, il laisserait un cache corrompu que chaque construction
 // suivante refuserait. Il travaille donc sur une copie du dossier de travail,
-// publiée par renommage après une construction réussie. Le fork lui passait le
-// cache persistant (aji_trt.cpp:876-889) ; la clé du moteur n'en dépend pas.
+// publiée par renommage après une construction réussie, sous le verrou du GPU.
+// Le fork lui passait le cache persistant (aji_trt.cpp:876-889) ; la clé du
+// moteur n'en dépend pas.
 void stage_timing_cache(const fs::path& persistent, const fs::path& staged, spdlog::logger& log) {
   std::error_code error;
   if (!fs::exists(persistent, error)) return;
@@ -107,6 +121,11 @@ void keep_layer_info(const fs::path& staged, const BuildPlan& plan, std::string_
 }
 
 }  // namespace
+
+std::filesystem::path device_timing_cache(const TrtexecConfig& config) {
+  const std::string id = sha256_hex(config.runtime.token() + "\n" + config.device.token()).substr(0, 16);
+  return config.cache_dir / std::format("aji-timing-{}.cache", id);
+}
 
 std::expected<BuildPlan, Refusal> plan_build(const TrtexecConfig& config, const gpu::ModelSpec& model,
                                              const ModelSource& source, const gpu::ShapeSet& shapes) {
@@ -175,7 +194,9 @@ std::expected<gpu::Artifact, Refusal> TrtexecBuilder::rebuild(const gpu::ModelSp
 std::expected<void, Refusal> TrtexecBuilder::run(const BuildPlan& plan, const gpu::ModelSpec& model,
                                                  const ModelSource& source, const fs::path& output,
                                                  gpu::Progress& progress) const {
-  const fs::path timing_cache = timing_cache_for(plan.engine);
+  const fs::path timing_cache = device_timing_cache(config_);
+  auto device = lock_device(timing_cache, progress);
+  if (!device) return std::unexpected(std::move(device.error()));
   const fs::path staged_cache = output.parent_path() / "timing.cache";
   const fs::path staged_layers = output.parent_path() / "layers.json";
   stage_timing_cache(timing_cache, staged_cache, *log_);

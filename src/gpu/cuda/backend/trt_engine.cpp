@@ -2,9 +2,11 @@
 
 #include <NvInferRuntime.h>
 #include <algorithm>
+#include <cstdint>
 #include <format>
 #include <fstream>
-#include <iterator>
+#include <memory>
+#include <system_error>
 
 namespace ajp::gpu::cuda {
 namespace {
@@ -22,6 +24,40 @@ std::optional<Shape> fixed_shape(const nvinfer1::Dims& dims) {
     shape.dims[static_cast<std::size_t>(i)] = dims.d[i];
   }
   return shape;
+}
+
+// Un plan au-delà ne vient pas de nos modèles (GMFSS, le plus gros, pèse quelques centaines de Mo).
+constexpr std::uintmax_t kMaxPlanBytes = std::uintmax_t{8} << 30U;
+
+struct Plan {
+  std::unique_ptr<char[]> bytes;
+  std::size_t size = 0;
+};
+
+// Le plan entier d'un seul read, sa taille donnée par le système de fichiers (tellg() sur un dossier
+// rend n'importe quoi) : l'istreambuf_iterator d'avant lisait octet par octet, 0,5 à 1 s par moteur
+// de 150 Mo au démarrage (constat T3). IStreamReaderV2 ne ferait pas mieux sans GPUDirect Storage :
+// le lecteur d'exemple de NVIDIA le dit (samples/common/streamReader.h), et ses lectures vers la
+// mémoire d'appareil passent de toute façon par un tampon hôte.
+std::expected<Plan, Refusal> read_plan(const std::filesystem::path& path) {
+  std::error_code error;
+  const bool regular = std::filesystem::is_regular_file(path, error);
+  const std::uintmax_t size = regular ? std::filesystem::file_size(path, error) : 0;
+  if (!regular || error)
+    return refuse(RefusalCode::IoFailed, std::format("moteur {} illisible", path.string()));
+  if (size == 0) return refuse(RefusalCode::IoFailed, std::format("moteur {} vide", path.string()));
+  if (size > kMaxPlanBytes) {
+    return refuse(RefusalCode::IoFailed,
+                  std::format("moteur {} de {} octets, au-delà de {}", path.string(), size, kMaxPlanBytes));
+  }
+  Plan plan{.bytes = std::make_unique_for_overwrite<char[]>(static_cast<std::size_t>(size)),
+            .size = static_cast<std::size_t>(size)};
+  std::ifstream file(path, std::ios::binary);
+  file.read(plan.bytes.get(), static_cast<std::streamsize>(size));
+  if (!file || file.gcount() != static_cast<std::streamsize>(size)) {
+    return refuse(RefusalCode::IoFailed, std::format("moteur {} tronqué pendant sa lecture", path.string()));
+  }
+  return plan;
 }
 
 }  // namespace
@@ -66,13 +102,12 @@ void TrtEngine::drop_graphs() {
 std::expected<std::unique_ptr<TrtEngine>, Refusal> TrtEngine::load(
     nvinfer1::IRuntime& runtime, const std::filesystem::path& path,
     std::shared_ptr<SharedActivations> shared) {
-  std::ifstream file(path, std::ios::binary);
-  if (!file) return refuse(RefusalCode::IoFailed, std::format("moteur {} illisible", path.string()));
-  const std::vector<char> blob{std::istreambuf_iterator<char>(file), std::istreambuf_iterator<char>()};
-  if (blob.empty()) return refuse(RefusalCode::IoFailed, std::format("moteur {} vide", path.string()));
+  auto plan = read_plan(path);
+  if (!plan) return std::unexpected(std::move(plan.error()));
 
   std::unique_ptr<TrtEngine> engine(new TrtEngine());
-  engine->engine_.reset(runtime.deserializeCudaEngine(blob.data(), blob.size()));
+  engine->engine_.reset(runtime.deserializeCudaEngine(plan->bytes.get(), plan->size));
+  plan->bytes.reset();  // les poids sont sur le GPU : le plan hôte (des centaines de Mo) part tout de suite
   if (!engine->engine_) {
     return refuse(RefusalCode::VendorCallFailed,
                   std::format("IRuntime::deserializeCudaEngine({}) a échoué", path.filename().string()));

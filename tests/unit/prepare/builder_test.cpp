@@ -10,6 +10,7 @@
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/generators/catch_generators.hpp>
 
+#include "prepare/key_lock.h"
 #include "prepare/sha256.h"
 #include "support.h"
 
@@ -66,9 +67,7 @@ class Bench {
   }
   // Lancements de trtexec, comptés par le faux trtexec à côté du modèle.
   std::size_t builder_calls() const { return test::read_lines(model.onnx_path.string() + ".calls").size(); }
-  std::vector<std::string> timing_cache(const ShapeSet& shapes) const {
-    return test::read_lines(timing_cache_for(plan(shapes).engine));
-  }
+  std::vector<std::string> timing_cache() const { return test::read_lines(device_timing_cache(config)); }
   std::vector<std::string> logged_args(const ShapeSet& shapes) const {
     std::vector<std::string> args;
     for (const std::string& line : test::read_lines(plan(shapes).log_file)) {
@@ -122,7 +121,7 @@ TEST_CASE("TrtexecBuilder : construit, publie, puis réutilise le moteur", "[pre
   // trtexec écrit dans une copie du timing cache, publiée après la construction.
   CHECK(args.back().starts_with("--timingCacheFile=" + (bench.cache() / ".aji-build-").string()));
   CHECK(args.back().ends_with("timing.cache"));
-  CHECK(bench.timing_cache(kHd) == std::vector<std::string>{"passe"});
+  CHECK(bench.timing_cache() == std::vector<std::string>{"passe"});
 
   REQUIRE_FALSE(steps.seen.empty());
   CHECK(std::ranges::is_sorted(steps.seen, {}, &std::pair<float, std::string>::first));
@@ -172,7 +171,7 @@ TEST_CASE("TrtexecBuilder : chaque échec de trtexec devient un refus, rien n'es
       }));
   Bench bench(mode);
   bench.config.timeout = timeout;
-  test::write_file(timing_cache_for(bench.plan(kHd).engine), "ancien\n");
+  test::write_file(device_timing_cache(bench.config), "ancien\n");
   Steps steps;
   auto progress = steps.progress();
   const auto result = TrtexecBuilder(bench.config).build(bench.model, kHd, progress);
@@ -180,7 +179,7 @@ TEST_CASE("TrtexecBuilder : chaque échec de trtexec devient un refus, rien n'es
   CHECK_FALSE(test::fs::exists(bench.plan(kHd).engine));
   CHECK(test::stage_count(bench.cache()) == 0);
   // Un trtexec qui plante en écrivant son timing cache ne touche pas au cache persistant.
-  CHECK(bench.timing_cache(kHd) == std::vector<std::string>{"ancien"});
+  CHECK(bench.timing_cache() == std::vector<std::string>{"ancien"});
   if (mode == "fail") {
     CHECK(result.error().detail.find("fausse erreur de construction") != std::string::npos);
     CHECK(test::read_lines(bench.plan(kHd).log_file).back().starts_with("[ajp] "));
@@ -340,7 +339,7 @@ TEST_CASE("TrtexecBuilder : rebuild remplace le moteur refusé par load(), pas u
   CHECK(bench.builder_calls() == 2);
   CHECK(test::read_file(second->path) == "moteur factice pour " + bench.model.onnx_path.string());
   CHECK(test::stage_count(bench.cache()) == 0);
-  CHECK(bench.timing_cache(kHd) == std::vector<std::string>{"passe", "passe"});  // reçu, puis enrichi
+  CHECK(bench.timing_cache() == std::vector<std::string>{"passe", "passe"});  // reçu, puis enrichi
 
   // Un échec de la reconstruction garde le moteur en place.
   test::write_file(first->path, "encore tronqué");
@@ -371,4 +370,78 @@ TEST_CASE("TrtexecBuilder : deux demandes simultanées, un seul trtexec", "[prep
   CHECK_FALSE(paths[0].empty());
   CHECK(paths[0] == paths[1]);
   CHECK(bench.builder_calls() == 1);
+}
+
+TEST_CASE("TrtexecBuilder : un timing cache par GPU, partagé par les tailles et les modèles",
+          "[prepare][builder]") {
+  Bench bench("ok");
+  const TrtexecBuilder builder(bench.config);
+  Steps steps;
+  auto progress = steps.progress();
+  REQUIRE(builder.build(bench.model, kHd, progress));
+  REQUIRE(builder.build(bench.model, fixed(3, 720, 1280), progress));
+  // La seconde taille a reçu les temps de la première, puis ajouté les siens.
+  CHECK(bench.timing_cache() == std::vector<std::string>{"passe", "passe"});
+  const auto cache = device_timing_cache(bench.config);
+  CHECK(cache.parent_path() == bench.cache());
+  CHECK(cache.filename().string().starts_with("aji-timing-"));
+  CHECK(std::ranges::none_of(test::fs::directory_iterator(bench.cache()), [](const auto& entry) {
+    return entry.path().string().ends_with(".engine.timing.cache");
+  }));
+
+  // Un autre GPU, ou une autre version de TensorRT : un autre cache.
+  TrtexecConfig other = bench.config;
+  other.device.uuid[0] = 1;
+  CHECK(device_timing_cache(other) != cache);
+  other = bench.config;
+  other.runtime.minor = 4;
+  CHECK(device_timing_cache(other) != cache);
+}
+
+TEST_CASE("TrtexecBuilder : un trtexec à la fois par GPU, les temps de chacun gardés", "[prepare][builder]") {
+  Bench bench("slow");
+  test::write_file(bench.dir_ / "modeles/autre.onnx", test::onnx({.ops = {"Conv", "PRelu"}}));
+  const ajp::gpu::ModelSpec other{.id = "autre",
+                                  .onnx_path = bench.dir_ / "modeles/autre.onnx",
+                                  .sha256 = sha256_file(bench.dir_ / "modeles/autre.onnx").value(),
+                                  .precision = TensorType::F16};
+  const TrtexecBuilder builder(bench.config);
+  std::vector<bool> built(2);
+  {
+    std::vector<std::jthread> threads;
+    for (std::size_t i = 0; i < built.size(); ++i) {
+      threads.emplace_back([&, i] {
+        Steps steps;
+        auto progress = steps.progress();
+        built[i] = builder.build(i == 0 ? bench.model : other, kHd, progress).has_value();
+      });
+    }
+  }
+  CHECK(built == std::vector<bool>{true, true});
+  CHECK(test::read_lines(bench.cache() / "trtexec.runs") ==
+        std::vector<std::string>{"début", "fin", "début", "fin"});
+  CHECK(bench.timing_cache() == std::vector<std::string>{"passe", "passe"});
+}
+
+TEST_CASE("TrtexecBuilder : l'attente du GPU se dit et s'annule", "[prepare][builder]") {
+  Bench bench("ok");
+  test::fs::create_directories(bench.cache());
+  test::fs::path lock_file = device_timing_cache(bench.config);
+  lock_file += ".build-lock";
+  std::stop_source stop;
+  std::vector<std::string> stages;
+  ajp::gpu::Progress progress{.report =
+                                  [&](float, const std::string& stage) {
+                                    stages.push_back(stage);
+                                    if (stage == "En attente d'une autre construction sur ce GPU")
+                                      stop.request_stop();
+                                  },
+                              .stop = stop.get_token()};
+  auto held = KeyLock::acquire(lock_file);
+  REQUIRE(held);
+  CHECK(test::refusal(TrtexecBuilder(bench.config).build(bench.model, kHd, progress)) ==
+        RefusalCode::Cancelled);
+  CHECK(std::ranges::find(stages, "En attente d'une autre construction sur ce GPU") != stages.end());
+  CHECK(bench.builder_calls() == 0);
+  CHECK(test::stage_count(bench.cache()) == 0);
 }

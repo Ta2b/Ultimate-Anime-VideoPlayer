@@ -30,6 +30,9 @@ struct ModelSource {
   std::string content_key;  // onnx_source_key : graphe et poids externes
 };
 
+// Le fichier ONNX entier, d'un seul read (de 1 octet à kMaxOnnxBytes) : ModelUnreadable sinon.
+std::expected<std::vector<std::byte>, Refusal> read_onnx_bytes(const std::filesystem::path& file);
+
 // Lit l'ONNX, vérifie son SHA-256, ses poids externes, son entrée et la précision de toutes.
 // L'entrée est celle du nom donné ; un graphe aux entrées toutes statiques peut les nommer
 // autrement (sa première sert alors aux formes).

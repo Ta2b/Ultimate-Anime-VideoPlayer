@@ -2,9 +2,10 @@
 
 #include <format>
 #include <fstream>
-#include <iterator>
 #include <system_error>
+#include <utility>
 
+#include "prepare/model_source.h"
 #include "prepare/sha256.h"
 
 namespace ajp::app::play {
@@ -27,12 +28,9 @@ std::expected<std::filesystem::path, Refusal> derived_model(const std::filesyste
   std::error_code error;
   if (std::filesystem::exists(target, error)) return target;
 
-  std::ifstream in(source, std::ios::binary);
-  if (!in) return refuse(RefusalCode::ModelUnreadable, source.string());
-  const std::vector<char> raw((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
-  std::vector<std::byte> model(raw.size());
-  for (std::size_t i = 0; i < raw.size(); ++i) model[i] = static_cast<std::byte>(raw[i]);
-  auto derived = transform(model);
+  auto model = prepare::read_onnx_bytes(source);
+  if (!model) return std::unexpected(std::move(model.error()));
+  auto derived = transform(*model);
   if (!derived) return std::unexpected(std::move(derived.error()));
 
   std::filesystem::create_directories(dir, error);

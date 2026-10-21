@@ -125,12 +125,6 @@ SanitizedSettings sanitize_trt11(std::string_view settings) {
   return result;
 }
 
-std::filesystem::path timing_cache_for(const std::filesystem::path& engine) {
-  std::filesystem::path cache = engine;
-  cache += ".timing.cache";
-  return cache;
-}
-
 std::filesystem::path layer_info_for(const std::filesystem::path& engine) {
   std::filesystem::path info = engine;
   info += ".layers.json";

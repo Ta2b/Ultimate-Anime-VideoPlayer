@@ -89,11 +89,11 @@ TEST_CASE("sanitize_trt11 : chaque drapeau retiré est nommé", "[prepare][trtex
 TEST_CASE("trtexec_arguments : chemins sans guillemets, timing cache en dernier", "[prepare][trtexec]") {
   const TrtexecPaths paths{.onnx = "/modèles/span.onnx",
                            .engine = "/cache/.aji-build-1/model.engine",
-                           .timing_cache = timing_cache_for("/cache/aji-v3-x.engine")};
+                           .timing_cache = "/cache/.aji-build-1/timing.cache"};
   CHECK(trtexec_arguments(paths, "--stronglyTyped  --skipInference ") ==
         std::vector<std::string>{"--onnx=/modèles/span.onnx", "--saveEngine=/cache/.aji-build-1/model.engine",
                                  "--stronglyTyped", "--skipInference",
-                                 "--timingCacheFile=/cache/aji-v3-x.engine.timing.cache"});
+                                 "--timingCacheFile=/cache/.aji-build-1/timing.cache"});
 }
 
 TEST_CASE("trtexec_arguments : rapport des couches détaillé, hors de la clé", "[prepare][trtexec]") {

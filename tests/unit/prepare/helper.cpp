@@ -59,7 +59,13 @@ int fake_trtexec(std::string_view mode, const std::vector<std::string>& args) {
     std::abort();
   }
   if (mode == "hang") std::this_thread::sleep_for(std::chrono::seconds(60));
-  if (mode == "slow") std::this_thread::sleep_for(milliseconds(300));
+  // Lancements lents notés dans le dossier des moteurs : deux constructions ne s'y chevauchent pas.
+  const fs::path runs = engine.parent_path().parent_path() / "trtexec.runs";
+  if (mode == "slow") {
+    append_line(runs, "début");
+    std::this_thread::sleep_for(milliseconds(300));
+    append_line(runs, "fin");
+  }
   if (mode == "mutate") append_line(value_of(args, "--onnx="), "octets ajoutés pendant la construction");
   say("[I] [TRT] Total Activation Memory: 1024 bytes");
   say("[I] [TRT] Engine generation completed in 0.01 seconds.");

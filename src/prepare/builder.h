@@ -2,10 +2,10 @@
 //
 // Repris de animejanai-inference-rtx@118c272 src/aji_trt.cpp:542-582
 // (engine_path_for), 691-760 (run_build_process), 762-806 (run_build_spec) et
-// 862-890 (make_build_spec). Un moteur à la fois : l'appelant est le thread
-// preparer. Un plantage de trtexec devient un refus et épargne le lecteur ;
-// un moteur n'est publié dans le cache que complet et vérifié, et son timing
-// cache seulement après une construction réussie.
+// 862-890 (make_build_spec). Un trtexec à la fois par GPU, entre threads et
+// processus (device_timing_cache). Un plantage de trtexec devient un refus et
+// épargne le lecteur ; un moteur n'est publié dans le cache que complet et
+// vérifié, et le timing cache seulement après une construction réussie.
 #pragma once
 
 #include <chrono>
@@ -49,6 +49,16 @@ struct BuildPlan {
   std::filesystem::path layer_info;  // « <moteur>.layers.json », rapport des couches (trtexec_command.h)
   std::string label;                 // « 1920x1080 » pour l'OSD
 };
+
+// Timing cache de l'appareil (étude 4, 6.2) : « aji-timing-<16 hex>.cache » dans le dossier des
+// moteurs, un par GPU et par version de TensorRT et de CUDA (les jetons de la clé des moteurs),
+// partagé par tous les modèles et toutes les tailles : une nouvelle taille de travail reprend les
+// temps déjà mesurés au lieu de tout remesurer. Son verrou « <cache>.build-lock » ne laisse tourner
+// qu'un trtexec à la fois sur ce GPU : la copie de travail se publie sans perdre les temps d'une
+// autre construction, et deux constructions simultanées fausseraient chacune les mesures de
+// l'autre (le GPU alterne entre leurs contextes pendant les chronométrages). Le fork gardait un
+// cache par moteur (aji_trt.cpp:876-889).
+std::filesystem::path device_timing_cache(const TrtexecConfig& config);
 
 std::expected<BuildPlan, Refusal> plan_build(const TrtexecConfig& config, const gpu::ModelSpec& model,
                                              const ModelSource& source, const gpu::ShapeSet& shapes);

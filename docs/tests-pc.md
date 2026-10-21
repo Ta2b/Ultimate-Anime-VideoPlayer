@@ -239,6 +239,21 @@ un réglage à faire taire.
   sans couche FP32 ; RIFE et GMFSS n'en ont que dans leurs îlots (GridSample, Resize, grille).
   Un « ÉCHEC reformatage » (tenseur interne pleine image) est une fusion manquée à corriger dans
   l'export ONNX ; noter le nombre de reformatages par modèle pour la décision NHWC (6.4).
+- **Timing cache du GPU** (étude 4, 6.2) : un seul `aji-timing-<16 hex>.cache` dans le dossier des
+  moteurs au lieu d'un `<moteur>.timing.cache` par moteur (les anciens peuvent être supprimés).
+  Construire SPAN en 1080p, puis changer la hauteur de travail (720p) : la seconde construction doit
+  prendre nettement moins de temps que la première (comparer « moteur SPAN prêt en … s » au
+  journal). Pendant une construction, ouvrir une deuxième fenêtre du lecteur sur une autre vidéo :
+  son OSD dit « En attente d'une autre construction sur ce GPU » jusqu'à la fin de la première, et
+  Échap l'annule sans attendre.
+- **Écarté : construire deux moteurs en parallèle** (constat P8, même à 12 Go et plus) : deux
+  trtexec sur le même GPU chronomètrent leurs tactiques pendant que le GPU alterne entre leurs deux
+  contextes, et un moteur mal choisi reste dans le cache. Le timing cache partagé raccourcit les
+  constructions suivantes sans ce risque.
+- **Lecture des moteurs d'un bloc** (constat T3) : le chargement d'un moteur en cache (journal
+  « moteur … prêt en … s ») doit passer sous 0,2 s pour SPAN et rester à peu près proportionnel à la
+  taille du fichier pour GMFSS. `IStreamReaderV2` n'est pas utilisé : sans GPUDirect Storage, il ne
+  lit pas plus vite qu'un seul `read`.
 
 ## Linux sur RX 6500M (RDNA2 Navi 24, 4 Go)
 
