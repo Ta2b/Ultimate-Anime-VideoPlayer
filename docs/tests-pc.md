@@ -21,6 +21,16 @@ Première passe attendue sur la RTX : `AJP_TEST_VULKAN_VALIDATION=require ajp-gp
 build/linux-prefix-cuda -R "vk_|render"` ; toute erreur relevée est un vrai défaut à corriger, pas
 un réglage à faire taire.
 
+## Tables pré-réglées du moteur Vulkan
+
+Sur chaque PC de référence (RTX 4070 Ti, RX 9070 XT, Core Ultra 155H), après une lecture avec le
+moteur Vulkan de chaque profil utile : copier `<cache>/vulkan/autotune.tsv` (le dossier de cache est
+dans le journal d'ouverture) et l'envoyer au cloud. Il en tire les tables avec
+`python3 tools/vk/presets_from_cache.py --family NvidiaAda 4070ti.tsv --family AmdRdna4 9070xt.tsv`
+(familles : `src/gpu/vulkan/backend/family.h`). Une carte de la même famille reprend alors ces choix
+à sa première construction au lieu de tout mesurer ; chaque choix repris est vérifié une fois
+contre le noyau direct.
+
 ## Garder les poses (DRBA)
 
 - `ajp_backend_tensorrt_tests "warp et mélange"` : le warp à poses gardées doit suivre la
