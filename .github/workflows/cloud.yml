@@ -1,0 +1,53 @@
+name: Cloud
+
+# Une poussée sur cloud/** qui touche le code : le lecteur construit et testé sous Vulkan logiciel
+# (lavapipe, Xvfb, couche de validation exigée), sans sanitizers ni clang-tidy. Les matrices de
+# ci.yml ne tournent pas sur ces branches et son nightly ne part que de main : une branche de
+# travail restait sans construction jusqu'à sa pull request. Les règles passent par ci.yml.
+on:
+  push:
+    branches: ["cloud/**"]
+    paths:
+      - "src/**"
+      - "tests/**"
+      - "cmake/**"
+      - "CMakeLists.txt"
+      - "CMakePresets.json"
+      - "tools/deps/linux-from-source.sh"
+
+concurrency:
+  group: cloud-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # À côté de l'espace de travail, en chemin absolu : actions/cache refuse les chemins qui
+  # contiennent « .. ».
+  AJP_DEPS_PREFIX: ${{ github.workspace }}-deps
+
+jobs:
+  player:
+    name: Lecteur Linux (lavapipe)
+    runs-on: ubuntu-24.04
+    env:
+      CC: gcc-13
+      CXX: g++-13
+      AJP_TEST_VULKAN_VALIDATION: require
+    steps:
+      - uses: actions/checkout@v4
+      - name: Paquets système
+        run: |
+          source tools/release/versions.env
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq $APT_BUILD $APT_PLAYER $APT_TESTS
+          pip install --user meson
+      # Le même cache que la tâche lavapipe de ci.yml.
+      - uses: actions/cache@v4
+        with:
+          path: ${{ env.AJP_DEPS_PREFIX }}
+          key: deps-player-gcc-13-${{ hashFiles('tools/deps/linux-from-source.sh') }}
+          restore-keys: deps-player-gcc-13-
+      - run: tools/deps/linux-from-source.sh "$AJP_DEPS_PREFIX" "$RUNNER_TEMP/deps-src"
+      - run: cmake --preset linux-prefix
+      - run: cmake --build --preset linux-prefix
+      - name: Tests (Vulkan logiciel sous Xvfb)
+        run: xvfb-run -a ctest --preset linux-prefix

@@ -3,8 +3,9 @@ name: CI
 # Chaque poussée sur main, cloud/** et release/** passe les règles (rules.yml). Les matrices de
 # construction et de tests tournent sur main, sur chaque pull request, chaque nuit et à la
 # demande (workflow_dispatch sur n'importe quelle branche) : une branche de travail ne les lance
-# pas à chaque poussée. La construction Windows, plus chère, tourne la nuit, à la demande et sur
-# les pull requests vers main. Versions et paquets : tools/release/versions.env.
+# pas à chaque poussée (cloud.yml y construit le lecteur sous lavapipe quand le code change). La
+# construction Windows, plus chère, tourne la nuit, à la demande et sur les pull requests vers
+# main. Versions et paquets : tools/release/versions.env.
 on:
   push:
     branches: [main, "cloud/**", "release/**"]
