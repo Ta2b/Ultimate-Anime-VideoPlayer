@@ -22,6 +22,9 @@ using proto::Writer;
 
 // Numéros de champ d'onnx.proto (ONNX 1.17).
 constexpr std::uint32_t kModelGraph = 7;
+constexpr std::uint32_t kModelMetadata = 14;
+constexpr std::uint32_t kEntryKey = 1;
+constexpr std::uint32_t kEntryValue = 2;
 constexpr std::uint32_t kGraphNode = 1;
 constexpr std::uint32_t kGraphInput = 11;
 constexpr std::uint32_t kGraphOutput = 12;
@@ -377,6 +380,43 @@ std::expected<std::vector<std::byte>, Refusal> with_input_dims(std::span<const s
     return {};
   });
   if (!ok) return std::unexpected(ok.error());
+  return std::move(out).take();
+}
+
+std::expected<std::vector<std::byte>, Refusal> with_metadata(std::span<const std::byte> model,
+                                                             std::string_view key, std::string_view value) {
+  // La clé et la valeur d'une entrée de métadonnées ; les autres champs ignorés.
+  const auto entry_of = [](Bytes bytes) -> std::expected<std::pair<std::string, std::string>, Refusal> {
+    std::pair<std::string, std::string> entry;
+    proto::Reader reader(bytes);
+    for (auto field = reader.next(); field && *field; field = reader.next()) {
+      if ((*field)->number != kEntryKey && (*field)->number != kEntryValue) continue;
+      auto text = proto::as_string(**field);
+      if (!text) return std::unexpected(text.error());
+      ((*field)->number == kEntryKey ? entry.first : entry.second) = std::move(*text);
+    }
+    return entry;
+  };
+  bool present = false;
+  Writer out;
+  auto ok = for_each_field(model, [&](const Field& field) -> std::expected<void, Refusal> {
+    if (field.number == kModelMetadata && field.wire == proto::WireType::Length) {
+      auto entry = entry_of(field.bytes);
+      if (!entry) return std::unexpected(entry.error());
+      if (entry->first == key) {
+        present = present || entry->second == value;
+        return {};  // remplacée à la fin
+      }
+    }
+    out.field(field);
+    return {};
+  });
+  if (!ok) return std::unexpected(ok.error());
+  if (present) return std::vector<std::byte>{};
+  Writer entry;
+  entry.string(kEntryKey, key);
+  entry.string(kEntryValue, value);
+  out.message(kModelMetadata, entry);
   return std::move(out).take();
 }
 

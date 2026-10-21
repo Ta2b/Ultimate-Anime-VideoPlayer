@@ -1,10 +1,13 @@
 // Réécriture de l'interface ONNX (onnx_io_type.h) : entrées et sorties retypées, Cast ajoutés
 // autour d'un graphe intact, poids compris ; le modèle réécrit calcule comme l'original par
-// l'interpréteur ; rien n'est réécrit quand l'interface est déjà dans le type.
+// l'interpréteur ; rien n'est réécrit quand l'interface est déjà dans le type. Les métadonnées
+// du modèle (with_metadata).
 #include "gpu/ir/onnx_io_type.h"
 
 #include <cstdint>
+#include <span>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include <catch2/catch_test_macros.hpp>
@@ -259,4 +262,55 @@ TEST_CASE("onnx : forme d'entrée refusée quand elle contredit le fichier", "[g
   CHECK(refused("x", {1, 3, 8}) == RefusalCode::InputMismatch);     // autre rang
   CHECK(refused("x", {1, 3, 8, 0}) == RefusalCode::InputMismatch);  // forme voulue encore libre
   CHECK(refused("z", {1, 3, 8, 8}) == RefusalCode::InputMismatch);  // pas une entrée
+}
+
+namespace {
+
+// Les métadonnées du ModelProto (champ 14 : clé 1, valeur 2), que le décodeur n'expose pas.
+std::vector<std::pair<std::string, std::string>> metadata_of(std::span<const std::byte> model) {
+  std::vector<std::pair<std::string, std::string>> out;
+  proto::Reader reader(model);
+  for (auto field = reader.next(); field && *field; field = reader.next()) {
+    if ((*field)->number != 14) continue;
+    std::pair<std::string, std::string> entry;
+    proto::Reader inner((*field)->bytes);
+    for (auto f = inner.next(); f && *f; f = inner.next()) {
+      if ((*f)->number == 1) entry.first = *proto::as_string(**f);
+      if ((*f)->number == 2) entry.second = *proto::as_string(**f);
+    }
+    out.push_back(std::move(entry));
+  }
+  return out;
+}
+
+}  // namespace
+
+TEST_CASE("onnx : une entrée de métadonnées posée, remplacée, ou déjà là", "[gpu_ir][onnx]") {
+  ModelBuilder m;
+  m.input("x", {1, 2, 2, 2}).weight("w", {1}, {2.0F}).node("Mul", {"x", "w"}, {"y"}).output("y");
+  const std::vector<std::byte> original = m.bytes();
+  auto keyed = onnx::with_metadata(original, "COREML_CACHE_KEY", "ajp");
+  REQUIRE(keyed);
+  REQUIRE_FALSE(keyed->empty());
+  using Entries = std::vector<std::pair<std::string, std::string>>;
+  CHECK(metadata_of(*keyed) == Entries{{"COREML_CACHE_KEY", "ajp"}});
+  // Le graphe et ses poids intacts : le modèle calcule comme avant.
+  auto before = onnx::read_onnx(original);
+  auto after = onnx::read_onnx(*keyed);
+  REQUIRE(before);
+  REQUIRE(after);
+  CHECK(after->graph.nodes.size() == before->graph.nodes.size());
+  REQUIRE(after->graph.initializers.size() == 1);
+  CHECK(after->graph.initializers[0].floats == std::vector<float>{2.0F});
+  // Déjà là : rien à réécrire.
+  auto again = onnx::with_metadata(*keyed, "COREML_CACHE_KEY", "ajp");
+  REQUIRE(again);
+  CHECK(again->empty());
+  // Une autre valeur remplace la première ; une autre clé s'ajoute à côté.
+  auto replaced = onnx::with_metadata(*keyed, "COREML_CACHE_KEY", "autre");
+  REQUIRE(replaced);
+  CHECK(metadata_of(*replaced) == Entries{{"COREML_CACHE_KEY", "autre"}});
+  auto both = onnx::with_metadata(*replaced, "producteur", "ajp");
+  REQUIRE(both);
+  CHECK(metadata_of(*both) == Entries{{"COREML_CACHE_KEY", "autre"}, {"producteur", "ajp"}});
 }

@@ -25,8 +25,9 @@ if(AJP_WITH_WINML)
   endif()
   add_subdirectory(winml)
 endif()
-# Les images de l'interpolation d'Apple (coreml/vt_pixels.h) : portables, vérifiées partout.
-ajp_add_module(coreml_pixels SOURCES coreml/vt_pixels.cpp DEPS ajp::gpu ajp::kernels)
+# Les parties portables du backend Core ML, vérifiées partout : les images de l'interpolation
+# d'Apple (coreml/vt_pixels.h), la place et les noms du modèle compilé (coreml/coreml_compiled.h).
+ajp_add_module(coreml_pixels SOURCES coreml/coreml_compiled.cpp coreml/vt_pixels.cpp DEPS ajp::gpu ajp::kernels)
 if(AJP_WITH_COREML)
   add_subdirectory(coreml)
 endif()

@@ -17,7 +17,9 @@
 #include <vector>
 
 #include "core/log.h"
+#include "gpu/coreml/coreml_compiled.h"
 #include "gpu/coreml/coreml_detail.h"
+#include "gpu/coreml/coreml_direct.h"
 #include "gpu/coreml/coreml_steps.h"
 #include "gpu/coreml/coreml_vt.h"
 #include "gpu/ir/onnx_io_type.h"
@@ -73,6 +75,12 @@ std::filesystem::path cache_of(const std::filesystem::path& artifact) {
 std::filesystem::path onnx_of(const std::filesystem::path& artifact) {
   std::filesystem::path p = artifact;
   p += ".onnx";
+  return p;
+}
+
+std::filesystem::path direct_of(const std::filesystem::path& artifact) {
+  std::filesystem::path p = artifact;
+  p += ".mlmodelc";
   return p;
 }
 
@@ -142,6 +150,9 @@ std::filesystem::path session_onnx(const Manifest& manifest, const std::filesyst
 
 // Écrit <artefact>.onnx, le modèle tel que la session l'ouvre, et dit si elle doit l'ouvrir (faux
 // sans rien écrire quand l'original l'est déjà) :
+// - la clé du cache de Core ML dans ses métadonnées (COREML_CACHE_KEY) : sans elle, ONNX Runtime
+//   retrouve le modèle compilé par le chemin du fichier ONNX, qui change entre la construction
+//   (dossier de travail) et le chargement, et recompilait le réseau au premier lancement ;
 // - l'interface dans le type des tenseurs de la chaîne (ir/onnx_io_type.h), sauf pour un graphe
 //   qui ne se réécrit pas (sous-graphes) : la conversion par l'hôte reste alors, à chaque image
 //   (CoremlNet::run) ;
@@ -184,6 +195,13 @@ std::expected<bool, Refusal> derive_onnx(const ModelSpec& model, std::span<const
       derived = true;
     }
   }
+  // Le cache est propre à l'artefact (cache_of) : une clé fixe y suffit.
+  auto keyed = ir::onnx::with_metadata(current, "COREML_CACHE_KEY", "ajp");
+  if (!keyed) return std::unexpected(keyed.error());
+  if (!keyed->empty()) {
+    current = std::move(*keyed);
+    derived = true;
+  }
   if (!derived) return false;
   if (auto ok = vk::net::write_file(onnx_of(artifact), current); !ok) return std::unexpected(ok.error());
   return true;
@@ -215,19 +233,86 @@ std::expected<std::optional<std::string>, Refusal> interpolator_mark(const std::
   return std::optional<std::string>(std::move(version));
 }
 
-class CoremlNet final : public vk::net::RuntimeNet {
+// Ce qui calcule le réseau sur des liaisons déjà dans ses types : ONNX Runtime, ou Core ML
+// directement (coreml_direct.h). Appelé sous le verrou de CoremlNet ; lève les exceptions
+// d'ONNX Runtime.
+class Executor {
  public:
-  CoremlNet(std::shared_ptr<Ort::Env> env, Ort::Session session, vk::net::IoNames names,
-            std::vector<TensorType> in_types, std::vector<TensorType> out_types)
+  virtual ~Executor() = default;
+  virtual std::expected<void, Refusal> run(std::span<const HostBinding> inputs,
+                                           std::span<const HostBinding> outputs) = 0;
+};
+
+// ONNX Runtime et son fournisseur CoreML : il enveloppe la mémoire des entrées dans ses
+// MLMultiArray, et recopie chaque sortie que Core ML lui rend dans celle de la chaîne.
+class OrtExecutor final : public Executor {
+ public:
+  OrtExecutor(std::shared_ptr<Ort::Env> env, Ort::Session session, const vk::net::IoNames& names)
       : env_(std::move(env)),
         session_(std::move(session)),
         binding_(session_),
+        names_(names),
+        bound_(names_.inputs.size() + names_.outputs.size()) {}
+
+  std::expected<void, Refusal> run(std::span<const HostBinding> inputs,
+                                   std::span<const HostBinding> outputs) override {
+    for (std::size_t i = 0; i < inputs.size(); ++i)
+      bind(i, inputs[i], [&](const Ort::Value& v) { binding_.BindInput(names_.inputs[i].c_str(), v); });
+    for (std::size_t i = 0; i < outputs.size(); ++i) {
+      bind(inputs.size() + i, outputs[i],
+           [&](const Ort::Value& v) { binding_.BindOutput(names_.outputs[i].c_str(), v); });
+    }
+    session_.Run(Ort::RunOptions{nullptr}, binding_);
+    return {};
+  }
+
+ private:
+  // Lié une fois tant que la chaîne donne la même mémoire : ni tenseur ni liaison refaits à
+  // chaque image.
+  template <class Attach>
+  void bind(std::size_t slot, const HostBinding& target, Attach&& attach) {
+    HostBinding& last = bound_[slot];
+    if (last.data == target.data && last.bytes == target.bytes && last.type == target.type &&
+        last.shape == target.shape)
+      return;
+    Ort::Value value = Ort::Value::CreateTensor(memory_, target.data, target.bytes, target.shape.dims.data(),
+                                                target.shape.dims.size(), element_of(target.type));
+    attach(value);
+    last = target;
+  }
+
+  std::shared_ptr<Ort::Env> env_;  // vit plus longtemps que la session
+  Ort::Session session_;
+  Ort::MemoryInfo memory_ = Ort::MemoryInfo::CreateCpu(OrtDeviceAllocator, OrtMemTypeCPU);
+  Ort::IoBinding binding_;  // garde les tenseurs liés (bound_) d'un appel à l'autre
+  vk::net::IoNames names_;
+  std::vector<HostBinding> bound_;  // entrées puis sorties
+};
+
+// Core ML lui-même, sur le modèle qu'ONNX Runtime a compilé : les sorties écrites en place.
+class DirectExecutor final : public Executor {
+ public:
+  explicit DirectExecutor(std::unique_ptr<DirectModel> model) : model_(std::move(model)) {}
+  std::expected<void, Refusal> run(std::span<const HostBinding> inputs,
+                                   std::span<const HostBinding> outputs) override {
+    return model_->predict(inputs, outputs);
+  }
+
+ private:
+  std::unique_ptr<DirectModel> model_;
+};
+
+class CoremlNet final : public vk::net::RuntimeNet {
+ public:
+  CoremlNet(std::unique_ptr<Executor> executor, vk::net::IoNames names, std::vector<TensorType> in_types,
+            std::vector<TensorType> out_types)
+      : executor_(std::move(executor)),
         names_(std::move(names)),
         in_types_(std::move(in_types)),
         out_types_(std::move(out_types)),
         in_scratch_(in_types_.size()),
         out_scratch_(out_types_.size()),
-        bound_(in_types_.size() + out_types_.size()) {}
+        staged_(in_types_.size() + out_types_.size()) {}
   CoremlNet(const CoremlNet&) = delete;
   CoremlNet& operator=(const CoremlNet&) = delete;
   CoremlNet(CoremlNet&&) = delete;
@@ -255,36 +340,25 @@ class CoremlNet final : public vk::net::RuntimeNet {
   }
 
  private:
-  struct Bound {
-    std::byte* data = nullptr;
-    std::size_t bytes = 0;
-    TensorType type = TensorType::F16;
-    Shape shape;
-  };
-
   // La mémoire du lecteur telle quelle : le réseau prend le type de ses tenseurs (interface
-  // réécrite à la construction, derive_onnx), ONNX Runtime l'enveloppe dans ses MLMultiArray et
-  // Core ML y lit et y écrit ; le passage en IOSurface reste à Core ML. Sinon (artefact plus
+  // réécrite à la construction, derive_onnx), et Core ML y lit et y écrit. Sinon (artefact plus
   // ancien, graphe qui ne se réécrit pas) une copie convertie, dans les deux sens.
   std::expected<void, Refusal> infer(std::span<const HostBinding> inputs,
                                      std::span<const HostBinding> outputs) {
     try {
       for (std::size_t i = 0; i < inputs.size(); ++i) {
         const HostBinding& b = inputs[i];
-        const Bound target = staged(b, in_types_[i], in_scratch_[i]);
+        staged_[i] = staged(b, in_types_[i], in_scratch_[i]);
         if (in_types_[i] != b.type) {
           const std::size_t count = b.bytes / element_bytes(b.type);
-          if (auto ok = vk::net::copy_converted(b.data, b.type, target.data, in_types_[i], count); !ok)
+          if (auto ok = vk::net::copy_converted(b.data, b.type, staged_[i].data, in_types_[i], count); !ok)
             return ok;
         }
-        bind(i, target, [&](const Ort::Value& v) { binding_.BindInput(names_.inputs[i].c_str(), v); });
       }
-      for (std::size_t i = 0; i < outputs.size(); ++i) {
-        const Bound target = staged(outputs[i], out_types_[i], out_scratch_[i]);
-        bind(inputs.size() + i, target,
-             [&](const Ort::Value& v) { binding_.BindOutput(names_.outputs[i].c_str(), v); });
-      }
-      session_.Run(Ort::RunOptions{nullptr}, binding_);
+      for (std::size_t i = 0; i < outputs.size(); ++i)
+        staged_[inputs.size() + i] = staged(outputs[i], out_types_[i], out_scratch_[i]);
+      const std::span<const HostBinding> all(staged_);
+      if (auto ok = executor_->run(all.first(inputs.size()), all.subspan(inputs.size())); !ok) return ok;
       for (std::size_t i = 0; i < outputs.size(); ++i) {
         const HostBinding& b = outputs[i];
         if (out_types_[i] == b.type) continue;
@@ -300,38 +374,21 @@ class CoremlNet final : public vk::net::RuntimeNet {
   }
 
   // La mémoire que le réseau lit ou écrit pour b : la sienne, ou la copie dans le type du réseau.
-  static Bound staged(const HostBinding& b, TensorType wanted, std::vector<std::byte>& scratch) {
-    if (wanted == b.type) return {.data = b.data, .bytes = b.bytes, .type = wanted, .shape = b.shape};
+  static HostBinding staged(const HostBinding& b, TensorType wanted, std::vector<std::byte>& scratch) {
+    if (wanted == b.type) return b;
     scratch.resize(b.bytes / element_bytes(b.type) * element_bytes(wanted));
     return {.data = scratch.data(), .bytes = scratch.size(), .type = wanted, .shape = b.shape};
   }
 
-  // Lié une fois tant que la chaîne donne la même mémoire : ni tenseur ni liaison refaits à
-  // chaque image.
-  template <class Attach>
-  void bind(std::size_t slot, const Bound& target, Attach&& attach) {
-    Bound& last = bound_[slot];
-    if (last.data == target.data && last.bytes == target.bytes && last.type == target.type &&
-        last.shape == target.shape)
-      return;
-    Ort::Value value = Ort::Value::CreateTensor(memory_, target.data, target.bytes, target.shape.dims.data(),
-                                                target.shape.dims.size(), element_of(target.type));
-    attach(value);
-    last = target;
-  }
-
-  std::shared_ptr<Ort::Env> env_;  // vit plus longtemps que la session
-  Ort::Session session_;
-  Ort::MemoryInfo memory_ = Ort::MemoryInfo::CreateCpu(OrtDeviceAllocator, OrtMemTypeCPU);
-  Ort::IoBinding binding_;  // garde les tenseurs liés (bound_) d'un appel à l'autre
+  std::unique_ptr<Executor> executor_;
   vk::net::IoNames names_;
   std::vector<TensorType> in_types_;
   std::vector<TensorType> out_types_;
   std::vector<std::vector<std::byte>> in_scratch_;
   std::vector<std::vector<std::byte>> out_scratch_;
-  std::vector<Bound> bound_;  // entrées puis sorties
-  std::mutex session_mutex_;  // session_, binding_, bound_ et les copies : le fil des étapes ou celui de run
-  // Dernier membre : arrêté le premier, ses étapes en file faites sur une session encore là.
+  std::vector<HostBinding> staged_;  // entrées puis sorties, dans les types du réseau
+  std::mutex session_mutex_;         // executor_, staged_ et les copies : le fil des étapes ou celui de run
+  // Dernier membre : arrêté le premier, ses étapes en file faites sur un réseau encore là.
   DeferredSteps steps_{"", [this](std::span<const HostBinding> inputs, std::span<const HostBinding> outputs) {
                          const std::scoped_lock lock(session_mutex_);
                          return infer(inputs, outputs);
@@ -344,6 +401,7 @@ std::expected<void, Refusal> write_manifest(const std::filesystem::path& path, c
   for (const auto& [symbol, value] : manifest.dims) out << "dim " << value << ' ' << symbol << '\n';
   if (manifest.units) out << "units " << units_name(*manifest.units) << '\n';
   if (manifest.io) out << "io rewritten\n";
+  if (manifest.direct) out << "direct\n";
   if (manifest.videotoolbox)
     out << "videotoolbox " << manifest.videotoolbox->width << ' ' << manifest.videotoolbox->height << '\n';
   if (!out) return refuse(RefusalCode::CacheIo, std::format("{} : écriture", path.string()));
@@ -371,6 +429,8 @@ std::expected<Manifest, Refusal> read_manifest(const std::filesystem::path& path
       manifest.units = units_from(line.substr(6));
     } else if (line.starts_with("io ")) {
       manifest.io = true;
+    } else if (line == "direct") {
+      manifest.direct = true;
     } else if (line.starts_with("videotoolbox ")) {
       std::istringstream fields(line.substr(13));
       VtFrames frames;
@@ -385,6 +445,36 @@ std::expected<Manifest, Refusal> read_manifest(const std::filesystem::path& path
   return manifest;
 }
 
+// Le chemin direct (coreml_direct.h) pour cet artefact : le seul modèle compilé du cache copié à
+// côté (direct_of), retenu si Core ML le charge et que sa sortie retrouve celle de la session sur
+// l'image de test. Sinon ONNX Runtime à chaque image, comme avant, et la raison au journal.
+bool adopt_direct(Ort::Session& session, std::span<const InputShape> inputs,
+                  const std::filesystem::path& artifact, Units units) {
+  const std::filesystem::path target = direct_of(artifact);
+  const auto reject = [&](std::string_view why) {
+    log_channel("coreml")->info("{} : Core ML direct écarté ({}) ; ONNX Runtime à chaque image",
+                                artifact.filename().string(), why);
+    std::error_code error;
+    std::filesystem::remove_all(target, error);
+    return false;
+  };
+  const std::optional<std::filesystem::path> compiled = single_compiled(cache_of(artifact));
+  if (!compiled) return reject("pas un modèle compilé unique : réseau coupé en morceaux");
+  std::error_code error;
+  std::filesystem::remove_all(target, error);
+  std::filesystem::copy(*compiled, target, std::filesystem::copy_options::recursive, error);
+  if (error) return reject(std::format("copie de {} : {}", compiled->string(), error.message()));
+  auto measured =
+      direct_error(session, inputs, [&](std::span<const std::string> in, std::span<const std::string> out) {
+        return open_direct(target, units, in, out);
+      });
+  if (!measured) return reject(measured.error().detail);
+  if (measured->mean > kDirectMaxMeanError || measured->max > kDirectMaxError)
+    return reject(std::format("écart à ONNX Runtime de {:.3g} en moyenne, {:.3g} au pire", measured->mean,
+                              measured->max));
+  return true;
+}
+
 class CoremlRuntime final : public vk::net::Runtime {
  public:
   CoremlRuntime(std::shared_ptr<Ort::Env> env, std::string device)
@@ -393,8 +483,9 @@ class CoremlRuntime final : public vk::net::Runtime {
   std::string device_name() const override { return std::format("{} (Core ML)", device_); }
   std::string version() const override { return Ort::GetVersionString(); }
   // Entrées à la forme de la construction et dépliage 5-D (derive_onnx) : les artefacts d'avant
-  // laissaient au CPU une part des réseaux, et se reconstruisent.
-  std::string_view recipe() const override { return "fixed-inputs-5d"; }
+  // laissaient au CPU une part des réseaux. Puis Core ML direct (adopt_direct) et la clé du cache
+  // de Core ML : les artefacts d'avant n'ont pas le modèle compilé à côté, et se reconstruisent.
+  std::string_view recipe() const override { return "fixed-inputs-5d-direct"; }
   std::string_view extension() const override { return ".coreml"; }
 
   std::expected<void, Refusal> build(const ModelSpec& model, std::span<const InputShape> inputs,
@@ -414,12 +505,17 @@ class CoremlRuntime final : public vk::net::Runtime {
     manifest.units = *units;
     // Ouvrir la session compile le programme ML (déjà fait par la mesure, alors relu du cache)
     // et remplit le cache de l'artefact.
-    if (auto session = open(manifest, path, *units); !session) return std::unexpected(session.error());
+    auto session = open(manifest, path, *units);
+    if (!session) return std::unexpected(session.error());
+    if (progress.stop.stop_requested()) return refuse(RefusalCode::Cancelled, "construction annulée");
+    if (progress.report) progress.report(0.9F, "vérification de Core ML direct");
+    manifest.direct = adopt_direct(*session, inputs, path, *units);
     if (progress.stop.stop_requested()) return refuse(RefusalCode::Cancelled, "construction annulée");
     if (auto ok = write_manifest(path, manifest); !ok) return ok;
     if (progress.report) {
-      progress.report(1.0F, std::format("modèle Core ML compilé ({}{})", units_name(*units),
-                                        manifest.io ? ", interface réécrite" : ""));
+      progress.report(1.0F, std::format("modèle Core ML compilé ({}{}{})", units_name(*units),
+                                        manifest.io ? ", interface réécrite" : "",
+                                        manifest.direct ? ", exécuté en direct" : ""));
     }
     return {};
   }
@@ -434,6 +530,17 @@ class CoremlRuntime final : public vk::net::Runtime {
       return vt_net(std::move(*names), manifest->videotoolbox->width, manifest->videotoolbox->height);
     auto units = units_of(*manifest);
     if (!units) return std::unexpected(units.error());
+    if (manifest->direct) {
+      auto direct = open_direct(direct_of(path), *units, names->inputs, names->outputs);
+      if (direct) {
+        std::vector<TensorType> in_types((*direct)->input_types().begin(), (*direct)->input_types().end());
+        std::vector<TensorType> out_types((*direct)->output_types().begin(), (*direct)->output_types().end());
+        return std::make_unique<CoremlNet>(std::make_unique<DirectExecutor>(std::move(*direct)),
+                                           std::move(*names), std::move(in_types), std::move(out_types));
+      }
+      log_channel("coreml")->warn("{} : {} ; ONNX Runtime à la place", path.filename().string(),
+                                  direct.error().detail);
+    }
     auto session = open(*manifest, path, *units);
     if (!session) return std::unexpected(session.error());
     try {
@@ -464,7 +571,8 @@ class CoremlRuntime final : public vk::net::Runtime {
           s.GetOutputCount(), [&](std::size_t i, auto& a) { return s.GetOutputNameAllocated(i, a); },
           [&](std::size_t i) { return s.GetOutputTypeInfo(i); }, names->outputs);
       if (!out_types) return std::unexpected(out_types.error());
-      return std::make_unique<CoremlNet>(env_, std::move(*session), std::move(*names), std::move(*in_types),
+      auto executor = std::make_unique<OrtExecutor>(env_, std::move(*session), *names);
+      return std::make_unique<CoremlNet>(std::move(executor), std::move(*names), std::move(*in_types),
                                          std::move(*out_types));
     } catch (const std::exception& e) {
       return refuse(RefusalCode::CacheIo, std::format("Core ML, {} : {}", path.string(), e.what()));

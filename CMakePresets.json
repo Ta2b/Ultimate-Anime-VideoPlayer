@@ -440,7 +440,7 @@
       },
       "filter": {
         "include": {
-          "name": "^(core|media|prepare|subs|app): "
+          "name": "^(core|media|prepare|subs|app|coreml_rt): "
         }
       },
       "execution": {

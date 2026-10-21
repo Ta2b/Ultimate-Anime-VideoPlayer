@@ -43,4 +43,12 @@ struct InputDims {
 std::expected<std::vector<std::byte>, Refusal> with_input_dims(std::span<const std::byte> model,
                                                                std::span<const InputDims> inputs);
 
+// Le modèle avec l'entrée key = value dans ses métadonnées (metadata_props du ModelProto), à la
+// place d'une entrée de même clé ; le reste du fichier recopié octet par octet. Le fichier
+// réécrit, ou vide quand l'entrée y est déjà. Pour Core ML par ONNX Runtime : COREML_CACHE_KEY
+// nomme le modèle compilé du cache, qui sans elle est retrouvé par le chemin du fichier ONNX.
+// Refus OnnxMalformed : celui du lecteur protobuf.
+std::expected<std::vector<std::byte>, Refusal> with_metadata(std::span<const std::byte> model,
+                                                             std::string_view key, std::string_view value);
+
 }  // namespace ajp::gpu::ir::onnx
