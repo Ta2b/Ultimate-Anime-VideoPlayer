@@ -1,6 +1,7 @@
 #include "app/play/osd_text.h"
 
 #include <algorithm>
+#include <cstddef>
 #include <format>
 #include <utility>
 #include <variant>
@@ -8,13 +9,16 @@
 namespace ajp::app::play {
 namespace {
 
-// Neutralise ce qu'ASS interprète dans un texte de dialogue : accolades et barre oblique.
+// Neutralise ce qu'ASS interprète dans un texte de dialogue : accolades (en parenthèses) et barre
+// oblique ; les fins de ligne, qui couperaient la ligne Dialogue, sont retirées.
 std::string escaped(std::string_view line) {
   std::string out;
   out.reserve(line.size());
   for (const char c : line) {
-    if (c == '{' || c == '}') {
+    if (c == '{') {
       out += '(';
+    } else if (c == '}') {
+      out += ')';
     } else if (c == '\\') {
       out += '/';
     } else if (c != '\n' && c != '\r') {
@@ -28,10 +32,11 @@ std::string escaped(std::string_view line) {
 
 std::string osd_script(std::span<const std::string> lines, OutputSize size) {
   const int font = std::max(12, size.height / 42);
+  // Une coupure entre deux lignes, même vides : une ligne vide en tête reste un saut de ligne.
   std::string text;
-  for (const std::string& line : lines) {
-    if (!text.empty()) text += "\\N";
-    text += escaped(line);
+  for (std::size_t i = 0; i < lines.size(); ++i) {
+    if (i > 0) text += "\\N";
+    text += escaped(lines[i]);
   }
   return std::format(
       "[Script Info]\nScriptType: v4.00+\nPlayResX: {}\nPlayResY: {}\nWrapStyle: 2\nScaledBorderAndShadow: "
