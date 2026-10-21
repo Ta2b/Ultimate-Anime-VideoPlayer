@@ -144,6 +144,17 @@ TEST_CASE("Installation : un paquet complet depuis une archive locale", "[app][i
   CHECK(f.stages.back() == "openvino installé");
 }
 
+TEST_CASE("Installation : le paquet installé et sa licence restent notés à côté du moteur",
+          "[app][install]") {
+  Fixture f("note");
+  core::EnginePackage package = f.openvino_package();
+  CHECK_FALSE(installed_package(f.catalog, package));
+  package.license = "https://exemple.invalid/licence";
+  require_installed(install_package(f.catalog, package, f.progress()));
+  CHECK(installed_package(f.catalog, package) ==
+        InstalledPackage{.sha256 = package.sha256, .license = "https://exemple.invalid/licence"});
+}
+
 TEST_CASE("Installation : un SHA-256 faux refuse le paquet et jette le fichier", "[app][install]") {
   Fixture f("sha");
   core::EnginePackage package = f.openvino_package();

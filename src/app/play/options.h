@@ -8,6 +8,7 @@
 //                      [--truehdr] [--truehdr-sdk=DOSSIER] [--truehdr-peak=NITS]
 //                      [--truehdr-contrast=N] [--truehdr-saturation=N] [--truehdr-gray=N]
 //                      [--first-run]
+//   ajp --register | --unregister
 //
 // Le modèle par défaut est celui du lecteur actuel du propriétaire (AnimeJaNai, slot par
 // défaut de animejanai.conf) : SPAN V3.1 Sharp1 Performance, ×2. Il est lu en place, en
@@ -61,6 +62,10 @@ bool valid_factor(Factor factor);
 // « ×3 », « ×1,5 ».
 std::string factor_text(Factor factor);
 
+// --register, --unregister : le lecteur s'inscrit auprès du système (« Ouvrir avec », lecteur par
+// défaut : default_player.h) ou retire son inscription, puis quitte, sans fichier.
+enum class Registration : std::uint8_t { None, Register, Unregister };
+
 struct PlayOptions {
   std::filesystem::path file;
   std::optional<std::filesystem::path> model;  // --model : absent, celui du lecteur actuel
@@ -108,6 +113,7 @@ struct PlayOptions {
   bool resume = true;
   // --first-run : l'écran de bienvenue (moteurs, profil de démarrage) même s'il a déjà été vu.
   bool first_run = false;
+  Registration registration = Registration::None;
   // Options données sur la ligne de commande (« --rife », « --truehdr »…) : elles remplacent les
   // réglages de play.toml pour cette lecture.
   std::vector<std::string> given;

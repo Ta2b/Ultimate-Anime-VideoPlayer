@@ -71,6 +71,20 @@ bool installed(const EngineCatalog& catalog, const core::EnginePackage& package)
   return std::filesystem::is_regular_file(core::backend_library(catalog.layout, package), error);
 }
 
+std::optional<InstalledPackage> installed_package(const EngineCatalog& catalog,
+                                                  const core::EnginePackage& package) {
+  std::ifstream in(core::engine_dir(catalog.layout, package) / std::string(kPackageNote));
+  if (!in) return std::nullopt;
+  InstalledPackage found;
+  std::string line;
+  while (std::getline(in, line)) {
+    if (line.starts_with("sha256=")) found.sha256 = line.substr(7);
+    if (line.starts_with("licence=")) found.license = line.substr(8);
+  }
+  if (found.sha256.empty()) return std::nullopt;
+  return found;
+}
+
 std::vector<std::filesystem::path> installed_backends(const EngineCatalog& catalog) {
   std::vector<std::filesystem::path> out;
   for (const core::EngineId id :
@@ -171,6 +185,14 @@ std::expected<std::filesystem::path, Refusal> install_package(const EngineCatalo
     std::filesystem::remove_all(staging, error);
     return refuse(RefusalCode::HashMismatch,
                   std::format("paquet {} sans {}", name, library.filename().string()));
+  }
+  {
+    std::ofstream note(staging / std::string(kPackageNote), std::ios::trunc);
+    note << "sha256=" << package.sha256 << "\nlicence=" << package.license << '\n';
+    if (!note.flush()) {
+      std::filesystem::remove_all(staging, error);
+      return refuse(RefusalCode::FileUnwritable, std::format("{} : note du paquet", staging.string()));
+    }
   }
   std::filesystem::remove_all(target, error);
   std::filesystem::rename(staging, target, error);

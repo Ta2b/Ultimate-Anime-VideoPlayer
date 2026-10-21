@@ -22,4 +22,12 @@ std::expected<bool, Refusal> install_chosen(PlaceboScreen& screen, PlayerUi& ui,
                                             const FirstRunView& view, core::Settings& engines,
                                             const std::filesystem::path& sdk_dir);
 
+// Les moteurs choisis et installés dont le module parle une autre interface que ce lecteur
+// (gpu::kBackendAbi : installés par une version précédente) se réinstallent depuis le paquet de
+// cette version, sous la licence déjà acceptée pour eux. Une licence changée attend l'onglet Moteurs ;
+// un échec laisse Vulkan prendre le relais, comme au premier lancement. false : fenêtre fermée.
+std::expected<bool, Refusal> update_stale_engines(PlaceboScreen& screen, PlayerUi& ui,
+                                                  const EngineCatalog& catalog,
+                                                  const core::Settings& engines);
+
 }  // namespace ajp::app::play

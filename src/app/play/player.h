@@ -18,8 +18,9 @@
 namespace ajp::app::play {
 
 struct PlayerPaths {
-  std::filesystem::path home;     // dossier de l'utilisateur (SDL_GetUserFolder)
-  std::filesystem::path engines;  // moteurs construits (SDL_GetPrefPath)
+  std::filesystem::path home;        // dossier de l'utilisateur (SDL_GetUserFolder)
+  std::filesystem::path executable;  // le lecteur lui-même, que l'inscription comme lecteur par défaut nomme
+  std::filesystem::path engines;     // moteurs construits (SDL_GetPrefPath)
   std::vector<std::filesystem::path>
       backends;                        // ajp_backend_tensorrt.so, ajp_backend_vulkan.so…, par préférence
   std::filesystem::path engine_index;  // engines.lock livré avec le lecteur (engine_install.h)

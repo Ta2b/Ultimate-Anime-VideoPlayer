@@ -1,4 +1,5 @@
-// ajp : « ajp play <fichier> [options] », ou « ajp <fichier> ».
+// ajp : « ajp play <fichier> [options] », ou « ajp <fichier> » ; « ajp --register » l'inscrit
+// comme lecteur vidéo auprès du système (default_player.h).
 //
 // Tranche verticale : la ligne de commande complète (export, bench, engines…) vient du
 // chantier app-shell ; ici, seulement la lecture.
@@ -16,9 +17,11 @@ extern "C" {
 #include <string_view>
 #include <vector>
 
+#include "app/play/default_player.h"
 #include "app/play/options.h"
 #include "app/play/player.h"
 #include "core/log.h"
+#include "prepare/utf8.h"
 
 #ifdef _WIN32
 // Portables à deux GPU (Optimus, PowerXpress) : les pilotes NVIDIA et AMD donnent le GPU dédié,
@@ -32,9 +35,18 @@ __declspec(dllexport) int AmdPowerXpressRequestHighPerformance = 1;  // NOLINT
 
 namespace {
 
+// SDL rend ses chemins en UTF-8, quel que soit le système.
 std::filesystem::path sdl_path(const char* path) {
-  return path != nullptr ? std::filesystem::path(path) : std::filesystem::path();
+  return path != nullptr ? ajp::prepare::path_from_utf8(path) : std::filesystem::path();
 }
+
+// Le lecteur, que l'inscription nomme : à côté de SDL_GetBasePath hors de macOS, où AJP.app
+// s'inscrit par son Info.plist.
+#ifdef _WIN32
+constexpr std::string_view kExecutable = "ajp.exe";
+#else
+constexpr std::string_view kExecutable = "ajp";
+#endif
 
 // Les modules des backends (bibliothèques MODULE de CMake : .so hors de Windows, macOS compris).
 #ifdef _WIN32
@@ -61,6 +73,7 @@ int fail(const ajp::Refusal& refusal) {
 }  // namespace
 
 int main(int argc, char** argv) {
+  ajp::app::play::leave_lone_console();
   std::vector<std::string_view> args(argv + 1, argv + argc);
   if (!args.empty() && args.front() == "play") args.erase(args.begin());
   const auto options = ajp::app::play::parse_play_options(args);
@@ -72,6 +85,17 @@ int main(int argc, char** argv) {
     std::fputs(ajp::app::play::play_usage().c_str(), stdout);
     return 0;
   }
+  const auto base = sdl_path(SDL_GetBasePath());
+  const ajp::app::play::PlayerPlace place{.executable = base / std::string(kExecutable),
+                                          .home = sdl_path(SDL_GetUserFolder(SDL_FOLDER_HOME))};
+  if (options->registration != ajp::app::play::Registration::None) {
+    const auto done = options->registration == ajp::app::play::Registration::Register
+                          ? ajp::app::play::register_player(place)
+                          : ajp::app::play::unregister_player(place);
+    if (!done) return fail(done.error());
+    std::fprintf(stdout, "%s\n", done->c_str());
+    return 0;
+  }
   ajp::install_log_sinks({std::make_shared<spdlog::sinks::stderr_color_sink_mt>()}, spdlog::level::info);
   av_log_set_level(AV_LOG_ERROR);  // FFmpeg écrit sur stderr ; ses avertissements de sonde sont du bruit
   if (!SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO)) {
@@ -80,9 +104,9 @@ int main(int argc, char** argv) {
   char* pref = SDL_GetPrefPath("ajp", "ajp");
   const auto data = sdl_path(pref);
   SDL_free(pref);
-  const auto base = sdl_path(SDL_GetBasePath());
   ajp::app::play::PlayerPaths paths{
-      .home = sdl_path(SDL_GetUserFolder(SDL_FOLDER_HOME)),
+      .home = place.home,
+      .executable = place.executable,
       .engines = data / "engines",
       .engine_index = base / "engines.lock",
       .models = base / "models",

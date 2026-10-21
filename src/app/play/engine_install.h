@@ -14,6 +14,7 @@
 #include <optional>
 #include <stop_token>
 #include <string>
+#include <string_view>
 #include <vector>
 
 #include "core/engines.h"
@@ -36,6 +37,19 @@ EngineCatalog load_catalog(const std::filesystem::path& index, const std::filesy
 
 const core::EnginePackage* package_for(const EngineCatalog& catalog, core::EngineId engine);
 bool installed(const EngineCatalog& catalog, const core::EnginePackage& package);
+
+// Le paquet extrait dans le dossier de version du moteur, d'après kPackageNote qu'install_package
+// y écrit : son SHA-256 et la licence acceptée pour lui. Rien pour un moteur installé avant cette
+// note : le dossier porte la version du runtime (« 11 » pour TensorRT), pas celle du lecteur, et
+// un module d'une version précédente du lecteur y reste après une mise à jour.
+inline constexpr std::string_view kPackageNote = "paquet.txt";
+struct InstalledPackage {
+  std::string sha256;
+  std::string license;
+  friend bool operator==(const InstalledPackage&, const InstalledPackage&) = default;
+};
+std::optional<InstalledPackage> installed_package(const EngineCatalog& catalog,
+                                                  const core::EnginePackage& package);
 
 // Les bibliothèques des backends installés, par préférence : TensorRT, MIGraphX, OpenVINO.
 std::vector<std::filesystem::path> installed_backends(const EngineCatalog& catalog);

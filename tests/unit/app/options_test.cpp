@@ -19,6 +19,23 @@ std::expected<PlayOptions, Refusal> parse(std::vector<std::string_view> args) {
   return parse_play_options(args);
 }
 
+TEST_CASE("ajp --register et --unregister : sans fichier, l'un ou l'autre", "[app][options]") {
+  const auto registering = parse({"--register"});
+  REQUIRE(registering);
+  CHECK(registering->registration == Registration::Register);
+  CHECK(registering->file.empty());
+  const auto unregistering = parse({"--unregister", "--unregister"});
+  REQUIRE(unregistering);
+  CHECK(unregistering->registration == Registration::Unregister);
+  CHECK(parse({"épisode.mkv"})->registration == Registration::None);
+  for (const auto& args : {std::vector<std::string_view>{"--register", "--unregister"},
+                           std::vector<std::string_view>{"--register", "épisode.mkv"}}) {
+    const auto refused = parse(args);
+    REQUIRE_FALSE(refused);
+    CHECK(refused.error().code == RefusalCode::OptionUnknown);
+  }
+}
+
 TEST_CASE("ajp play : fichier et options", "[app][options]") {
   const auto options = parse({"--model", "/m/span.onnx", "épisode.mkv", "--window=960x540", "--seconds=4.5",
                               "--fullscreen-after=2", "--start=90", "--stats=/tmp/s.tsv"});

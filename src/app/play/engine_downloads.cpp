@@ -6,12 +6,14 @@
 #include <memory>
 #include <mutex>
 #include <optional>
+#include <span>
 #include <string>
 #include <utility>
 
 #include <SDL3/SDL_events.h>
 #include <SDL3/SDL_timer.h>
 
+#include "app/play/backend_library.h"
 #include "app/play/controls_draw.h"
 #include "app/play/maxine_install.h"
 #include "core/clock.h"
@@ -116,6 +118,47 @@ std::expected<bool, Refusal> install_chosen(PlaceboScreen& screen, PlayerUi& ui,
                                                                                : "Vulkan à la place"),
                          host_now_us());
     engines = without_engine(std::move(engines), row.offer.id);
+  }
+  return true;
+}
+
+std::expected<bool, Refusal> update_stale_engines(PlaceboScreen& screen, PlayerUi& ui,
+                                                  const EngineCatalog& catalog,
+                                                  const core::Settings& engines) {
+  const auto log = log_channel("app");
+  for (const core::EnginePackage& package : catalog.packages) {
+    if (package.engine == core::EngineId::MaxineVfx || !chosen(engines, package.engine) ||
+        !installed(catalog, package))
+      continue;
+    const std::filesystem::path library = core::backend_library(catalog.layout, package);
+    if (auto opened = BackendLibrary::open(std::span(&library, 1));
+        opened || opened.error().code != RefusalCode::AbiMismatch)
+      continue;  // la bibliothèque se referme ici, avant que l'installation ne remplace son dossier
+    const std::string label(engine_label(package.engine));
+    // Rien n'est noté pour un moteur installé avant la note du paquet : il ne l'a été que par
+    // l'écran des moteurs, licence acceptée, et c'est la même que celle du paquet de cette version.
+    if (const auto previous = installed_package(catalog, package);
+        previous && previous->license != package.license) {
+      log->warn("{} : module d'une version précédente, licence changée ({}) : onglet Moteurs", label,
+                package.license);
+      ui.controls().notify(std::format("{} : nouvelle licence à accepter (Moteurs)", label), host_now_us());
+      continue;
+    }
+    log->info("{} : module d'une version précédente du lecteur, réinstallation", label);
+    auto outcome =
+        run_install(screen, ui, std::format("Mise à jour de {}", label),
+                    [&catalog, package](const InstallProgress& progress) -> std::expected<void, Refusal> {
+                      auto installed_library = install_package(catalog, package, progress);
+                      if (!installed_library) return std::unexpected(installed_library.error());
+                      return {};
+                    });
+    if (!outcome) return false;
+    if (*outcome) {
+      log->info("{} mis à jour", label);
+    } else {
+      log->warn("{} non mis à jour : {}", label, outcome->error().detail);
+      ui.controls().notify(std::format("{} non mis à jour : Vulkan à la place", label), host_now_us());
+    }
   }
   return true;
 }

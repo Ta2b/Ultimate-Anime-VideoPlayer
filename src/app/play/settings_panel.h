@@ -1,7 +1,7 @@
 // Le menu des paramètres : un panneau à droite de l'écran, par onglets (Image, Fluidité, RTX HDR,
-// Son, Statistiques, Moteurs : settings_engines.h). Les réglages en direct s'appliquent pendant qu'on les
-// change ; ceux qui demandent de rouvrir la chaîne attendent « Appliquer », sous un encadré qui dit ce qui
-// sera reconstruit ou rechargé (settings.h : change_between).
+// Son, Statistiques, Moteurs : settings_engines.h, Système : settings_system.h). Les réglages en direct
+// s'appliquent pendant qu'on les change ; ceux qui demandent de rouvrir la chaîne attendent « Appliquer »,
+// sous un encadré qui dit ce qui sera reconstruit ou rechargé (settings.h : change_between).
 #pragma once
 
 #include <array>
@@ -11,8 +11,10 @@
 #include <string>
 #include <vector>
 
+#include "app/play/default_player.h"
 #include "app/play/input.h"
 #include "app/play/settings.h"
+#include "app/play/settings_system.h"
 #include "core/engines.h"
 #include "media/track.h"
 
@@ -67,6 +69,7 @@ struct SettingsChoices {
   std::filesystem::path source_file;            // le fichier lu : l'export se propose à côté
   std::string black_status;                     // seuils du vrai noir en cours
   ProfilesView profiles;
+  PlayerPlace place;  // l'exécutable et le dossier de l'utilisateur (onglet Système)
 };
 
 class SettingsPanel {
@@ -102,6 +105,7 @@ class SettingsPanel {
   std::string shown_name_;                      // son nom quand rename_ l'a reçu
   std::optional<core::EngineId> engine_draft_;  // moteur coché dans l'onglet Moteurs, pas appliqué
   std::unique_ptr<ExportDraft> export_;         // l'onglet Export, gardé d'une ouverture à l'autre
+  SystemNote system_;                           // l'onglet Système : sa dernière action
 };
 
 }  // namespace ajp::app::play

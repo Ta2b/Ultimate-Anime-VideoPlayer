@@ -128,6 +128,11 @@ std::expected<PlayOptions, Refusal> parse_play_options(std::span<const std::stri
       options.one_lane = true;
     } else if (arg == "--no-resume") {
       options.resume = false;
+    } else if (arg == "--register" || arg == "--unregister") {
+      const Registration wanted = arg == "--register" ? Registration::Register : Registration::Unregister;
+      if (options.registration != Registration::None && options.registration != wanted)
+        return refuse(RefusalCode::OptionUnknown, "--register et --unregister ensemble");
+      options.registration = wanted;
     } else {
       std::expected<void, Refusal> applied;
       bool known = false;
@@ -210,7 +215,10 @@ std::expected<PlayOptions, Refusal> parse_play_options(std::span<const std::stri
       if (!known) return refuse(RefusalCode::OptionUnknown, std::format("option inconnue : {}", arg));
     }
   }
-  if (options.file.empty() && !options.help) {
+  if (options.registration != Registration::None && !options.file.empty()) {
+    return refuse(RefusalCode::OptionUnknown, "--register et --unregister s'emploient sans fichier vidéo");
+  }
+  if (options.file.empty() && !options.help && options.registration == Registration::None) {
     return refuse(RefusalCode::FieldMissing, "ajp play : fichier vidéo absent");
   }
   return options;
@@ -256,6 +264,8 @@ std::string play_usage() {
       "  --truehdr              RTX HDR (Maxine TrueHDR), SDK importé une fois depuis --truehdr-sdk\n"
       "  --truehdr-peak=NITS    pic de TrueHDR (défaut : celui de l'écran, sinon 1000)\n"
       "  --truehdr-contrast=N, --truehdr-saturation=N (0 à 200, 100), --truehdr-gray=N (10 à 100, 50)\n"
+      "ajp --register           inscrit le lecteur auprès du système (« Ouvrir avec », lecteur par\n"
+      "                         défaut) ; --unregister retire cette inscription\n"
       "Touches : espace pause, flèches seek 5 s, f plein écran, q quitter.\n",
       kDefaultModelFile, kDefaultRifeFactor, kDefaultRifeFile);
 }

@@ -60,6 +60,10 @@ dylibbundler -of -b -cd -d "$APP/Contents/Frameworks" -p @executable_path/../Fra
 install_name_tool -add_rpath @executable_path/../Frameworks "$APP/Contents/MacOS/ajp" 2>/dev/null || true
 
 VERSION="$(sed -n 's/^  VERSION \([0-9.]*\)$/\1/p' "$ROOT/CMakeLists.txt")"
+# Les vidéos qu'AJP.app ouvre depuis le Finder (« Ouvrir avec », puis « Tout modifier » pour en
+# faire le lecteur par défaut ; rang Alternate : il ne prend la place de personne de lui-même).
+# macOS ne déclare ni .mkv ni .webm : l'app importe leurs types. Le fichier arrive par un Apple
+# Event, que SDL3 rend en SDL_EVENT_DROP_FILE.
 cat > "$APP/Contents/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -77,9 +81,34 @@ cat > "$APP/Contents/Info.plist" <<PLIST
   <key>CFBundleDocumentTypes</key>
   <array>
     <dict>
+      <key>CFBundleTypeName</key><string>Vidéo</string>
       <key>CFBundleTypeRole</key><string>Viewer</string>
+      <key>LSHandlerRank</key><string>Alternate</string>
       <key>LSItemContentTypes</key>
-      <array><string>public.movie</string><string>org.matroska.mkv</string></array>
+      <array><string>public.movie</string><string>org.matroska.mkv</string><string>org.webmproject.webm</string></array>
+    </dict>
+  </array>
+  <key>UTImportedTypeDeclarations</key>
+  <array>
+    <dict>
+      <key>UTTypeIdentifier</key><string>org.matroska.mkv</string>
+      <key>UTTypeDescription</key><string>Vidéo Matroska</string>
+      <key>UTTypeConformsTo</key><array><string>public.movie</string></array>
+      <key>UTTypeTagSpecification</key>
+      <dict>
+        <key>public.filename-extension</key><array><string>mkv</string></array>
+        <key>public.mime-type</key><array><string>video/x-matroska</string></array>
+      </dict>
+    </dict>
+    <dict>
+      <key>UTTypeIdentifier</key><string>org.webmproject.webm</string>
+      <key>UTTypeDescription</key><string>Vidéo WebM</string>
+      <key>UTTypeConformsTo</key><array><string>public.movie</string></array>
+      <key>UTTypeTagSpecification</key>
+      <dict>
+        <key>public.filename-extension</key><array><string>webm</string></array>
+        <key>public.mime-type</key><array><string>video/webm</string></array>
+      </dict>
     </dict>
   </array>
 </dict>

@@ -375,6 +375,10 @@ SettingsPanel::Result SettingsPanel::draw(const PlaySettings& running, const Set
         export_tab(*export_, running, choices, actions);
         ImGui::EndTabItem();
       }
+      if (ImGui::BeginTabItem("Système")) {
+        system_tab(choices.place, system_);
+        ImGui::EndTabItem();
+      }
       ImGui::EndTabBar();
     }
     ImGui::PopItemWidth();

@@ -22,6 +22,7 @@
 #include "app/play/chain_stats.h"
 #include "app/play/display_edid.h"
 #include "app/play/engine_build.h"
+#include "app/play/engine_downloads.h"
 #include "app/play/engine_install.h"
 #include "app/play/engine_screen.h"
 #include "app/play/engine_switch.h"
@@ -150,6 +151,10 @@ std::expected<void, Refusal> play(const PlayOptions& options, const PlayerPaths&
     if (!shown) return std::unexpected(std::move(shown.error()));
     if (!*shown) return {};
   }
+  // Un moteur d'une version précédente du lecteur ne s'ouvrirait pas : il se met à jour d'abord.
+  auto updated = update_stale_engines(**screen, **ui, catalog, *engines);
+  if (!updated) return std::unexpected(std::move(updated.error()));
+  if (!*updated) return {};
 
   PlaySettings from_profile = *saved;
   if (const auto& start = profiles.data.file.profiles[static_cast<std::size_t>(profiles.active - 1)]) {
