@@ -1,5 +1,6 @@
-// Contexte : chargeur introuvable, création et rapport des capacités, choix par UUID, et
-// adoption d'un appareil créé par le test, qui reste à lui.
+// Contexte : chargeur introuvable, création et rapport des capacités, choix par UUID, adoption d'un
+// appareil créé par le test, qui reste à lui, et l'appareil retrouvé dans un autre runtime (UUID,
+// puis bus PCI).
 #include <algorithm>
 #include <array>
 #include <filesystem>
@@ -130,6 +131,7 @@ TEST_CASE("contexte : appareil créé, file compute, capacités rapportées", "[
   CHECK(report.find(caps.device_name) != std::string::npos);
   CHECK(report.find(uuid_text(caps.uuid)) != std::string::npos);
   CHECK(report.find("timeline") != std::string::npos);
+  if (caps.pci) CHECK(report.find(pci_text(*caps.pci)) != std::string::npos);
   CHECK(ctx.host_waits() == 0);
 }
 
@@ -145,6 +147,36 @@ TEST_CASE("contexte : appareil choisi par UUID, UUID inconnu refusé", "[vk_comp
   const auto refused = VkContext::create({.device = unknown});
   require_refusal(refused, RefusalCode::DeviceUnavailable);
   CHECK(refused.error().detail.find(uuid_text(uuid)) != std::string::npos);
+}
+
+TEST_CASE("contexte : l'appareil retrouvé dans un autre runtime, par UUID puis bus PCI",
+          "[vk_compute][context]") {
+  DeviceCaps caps;
+  caps.uuid.fill(0x11);
+  caps.pci = PciAddress{.domain = 0, .bus = 0x03, .device = 0, .function = 0};
+  DeviceUuid other{};
+  other.fill(0x22);
+  DeviceUuid same = caps.uuid;
+
+  // ROCm et RADV ne dérivent pas l'UUID de la même façon : le bus retrouve le GPU.
+  const std::array by_bus{DeviceIdentity{.uuid = other, .pci = PciAddress{.bus = 0x0c}},
+                          DeviceIdentity{.uuid = other, .pci = PciAddress{.bus = 0x03, .function = 1}}};
+  CHECK(match_device(by_bus, caps) == 1U);
+  // Un UUID égal l'emporte sur un bus égal plus haut dans la liste.
+  const std::array by_uuid{DeviceIdentity{.uuid = other, .pci = PciAddress{.bus = 0x03}},
+                           DeviceIdentity{.uuid = same, .pci = std::nullopt}};
+  CHECK(match_device(by_uuid, caps) == 1U);
+  // Ni l'un ni l'autre : rien (l'appelant prend le premier).
+  const std::array none{DeviceIdentity{.uuid = other, .pci = PciAddress{.domain = 1, .bus = 0x03}},
+                        DeviceIdentity{}};
+  CHECK_FALSE(match_device(none, caps));
+  // Sans VK_EXT_pci_bus_info, l'UUID seul.
+  caps.pci.reset();
+  CHECK_FALSE(match_device(by_bus, caps));
+  CHECK(match_device(by_uuid, caps) == 1U);
+  CHECK_FALSE(match_device({}, caps));
+
+  CHECK(pci_text(PciAddress{.domain = 0, .bus = 0x0c, .device = 0x1f, .function = 3}) == "0000:0c:1f.3");
 }
 
 TEST_CASE("contexte : couche de validation demandée", "[vk_compute][context]") {

@@ -5,6 +5,7 @@
 #include <format>
 #include <iterator>
 #include <string_view>
+#include <vector>
 
 namespace ajp::gpu::vk {
 namespace {
@@ -107,8 +108,14 @@ DeviceCaps probe_device(const InstanceFunctions& fn, VkPhysicalDevice device, st
   fn.vkGetPhysicalDeviceProperties(device, &base);
   const std::uint32_t api = std::min(instance_api, base.apiVersion);
 
+  const std::vector<VkExtensionProperties> extensions = device_extensions(fn, device);
+  // La structure d'une extension n'entre dans la chaîne que si l'appareil a l'extension.
+  VkPhysicalDevicePCIBusInfoPropertiesEXT pci{
+      .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PCI_BUS_INFO_PROPERTIES_EXT};
+  const bool has_pci = has_extension(extensions, VK_EXT_PCI_BUS_INFO_EXTENSION_NAME);
   VkPhysicalDeviceSubgroupSizeControlProperties sizes{
-      .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SUBGROUP_SIZE_CONTROL_PROPERTIES};
+      .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SUBGROUP_SIZE_CONTROL_PROPERTIES,
+      .pNext = has_pci ? &pci : nullptr};
   VkPhysicalDeviceDriverProperties driver{.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DRIVER_PROPERTIES,
                                           .pNext = api >= VK_API_VERSION_1_3 ? &sizes : nullptr};
   VkPhysicalDeviceSubgroupProperties subgroup{.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SUBGROUP_PROPERTIES,
@@ -139,6 +146,10 @@ DeviceCaps probe_device(const InstanceFunctions& fn, VkPhysicalDevice device, st
       .max_image_dimension_2d = limits.maxImageDimension2D,
   };
   std::copy(std::begin(ids.deviceUUID), std::end(ids.deviceUUID), caps.uuid.begin());
+  if (has_pci) {
+    caps.pci = PciAddress{
+        .domain = pci.pciDomain, .bus = pci.pciBus, .device = pci.pciDevice, .function = pci.pciFunction};
+  }
   if ((subgroup.supportedStages & VK_SHADER_STAGE_COMPUTE_BIT) != 0) {
     caps.subgroup_size = subgroup.subgroupSize;
     caps.subgroup_operations = subgroup.supportedOperations;
@@ -147,7 +158,7 @@ DeviceCaps probe_device(const InstanceFunctions& fn, VkPhysicalDevice device, st
     caps.min_subgroup_size = sizes.minSubgroupSize;
     caps.max_subgroup_size = sizes.maxSubgroupSize;
   }
-  caps.cooperative_matrix = has_extension(device_extensions(fn, device), "VK_KHR_cooperative_matrix");
+  caps.cooperative_matrix = has_extension(extensions, "VK_KHR_cooperative_matrix");
   return caps;
 }
 
@@ -187,16 +198,35 @@ std::string uuid_text(const DeviceUuid& uuid) {
   return out;
 }
 
+std::string pci_text(const PciAddress& pci) {
+  return std::format("{:04x}:{:02x}:{:02x}.{:x}", pci.domain, pci.bus, pci.device, pci.function);
+}
+
+std::optional<std::size_t> match_device(std::span<const DeviceIdentity> others, const DeviceCaps& caps) {
+  for (std::size_t i = 0; i < others.size(); ++i) {
+    if (others[i].uuid == caps.uuid) return i;
+  }
+  if (!caps.pci) return std::nullopt;
+  const PciAddress& wanted = *caps.pci;
+  for (std::size_t i = 0; i < others.size(); ++i) {
+    const std::optional<PciAddress>& pci = others[i].pci;
+    if (pci && pci->domain == wanted.domain && pci->bus == wanted.bus && pci->device == wanted.device)
+      return i;
+  }
+  return std::nullopt;
+}
+
 std::string describe(const DeviceCaps& caps) {
   const Features& f = caps.enabled;
   const auto flag = [](bool on, const char* name) { return on ? std::format(", {}", name) : std::string{}; };
   return std::format(
-      "{} ({} {}), Vulkan {}, UUID {}{}{}{}{}{}{}{}, sous-groupes de {}, push {} o, groupe {} invocations, "
+      "{} ({} {}), Vulkan {}, UUID {}{}{}{}{}{}{}{}{}, sous-groupes de {}, push {} o, groupe {} invocations, "
       "partagée {} o, tampon {} o{}",
       caps.device_name, caps.driver_name, caps.driver_info, version_text(caps.api_version),
-      uuid_text(caps.uuid), flag(f.timeline_semaphore, "timeline"),
-      flag(f.storage_buffer_16bit, "stockage 16 bits"), flag(f.shader_float16, "fp16"),
-      flag(f.shader_int16, "int16"), flag(f.subgroup_size_control, "contrôle des sous-groupes"),
+      uuid_text(caps.uuid), caps.pci ? std::format(", PCI {}", pci_text(*caps.pci)) : std::string{},
+      flag(f.timeline_semaphore, "timeline"), flag(f.storage_buffer_16bit, "stockage 16 bits"),
+      flag(f.shader_float16, "fp16"), flag(f.shader_int16, "int16"),
+      flag(f.subgroup_size_control, "contrôle des sous-groupes"),
       flag(f.compute_full_subgroups, "sous-groupes pleins"), flag(f.float_atomic_add, "atomiques float"),
       caps.subgroup_size, caps.max_push_constants, caps.max_workgroup_invocations, caps.max_shared_memory,
       caps.max_storage_buffer_range, flag(caps.cooperative_matrix, "VK_KHR_cooperative_matrix présent"));

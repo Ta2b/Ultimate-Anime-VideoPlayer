@@ -3,7 +3,9 @@
 #pragma once
 
 #include <array>
+#include <cstddef>
 #include <cstdint>
+#include <optional>
 #include <span>
 #include <string>
 #include <vector>
@@ -29,6 +31,15 @@ struct Features {
   bool float_atomic_add = false;    // VK_EXT_shader_atomic_float : softmax splatting de GMFSS
 };
 
+// Adresse PCI d'un appareil (VK_EXT_pci_bus_info).
+struct PciAddress {
+  std::uint32_t domain = 0;
+  std::uint32_t bus = 0;
+  std::uint32_t device = 0;
+  std::uint32_t function = 0;
+  bool operator==(const PciAddress&) const = default;
+};
+
 struct DeviceCaps {
   std::string device_name;
   std::string driver_name;  // VkPhysicalDeviceDriverProperties
@@ -39,6 +50,7 @@ struct DeviceCaps {
   std::uint32_t device_id = 0;
   VkPhysicalDeviceType type = VK_PHYSICAL_DEVICE_TYPE_OTHER;
   DeviceUuid uuid{};
+  std::optional<PciAddress> pci;  // sans VK_EXT_pci_bus_info (lavapipe, MoltenVK) : absente
   Features enabled;
   // Sous-groupes (Vulkan 1.1) : taille et opérations en calcul ; 0 si le calcul n'y a pas accès.
   std::uint32_t subgroup_size = 0;
@@ -81,5 +93,21 @@ std::string describe(const DeviceCaps& caps);
 
 // UUID en hexadécimal, 32 chiffres.
 std::string uuid_text(const DeviceUuid& uuid);
+
+// « 0000:03:00.0 » : domaine, bus, appareil et fonction, comme lspci -D.
+std::string pci_text(const PciAddress& pci);
+
+// Un appareil tel qu'un autre runtime le voit (HIP, OpenVINO) : ce qu'il sait de son identité.
+struct DeviceIdentity {
+  std::optional<DeviceUuid> uuid;
+  std::optional<PciAddress> pci;
+};
+
+// L'index, parmi others, de l'appareil Vulkan de caps : même UUID d'abord, sinon même adresse PCI
+// (domaine, bus et appareil : HIP ne donne pas la fonction, toujours 0 pour un GPU) ; nullopt si
+// aucun. Le repli par le bus sert là où les deux runtimes ne dérivent pas l'UUID de la même façon
+// (RADV le tire du bus PCI, ROCm de l'identifiant unique du KFD) : sur un PC à plusieurs GPU AMD,
+// l'UUID seul ne retrouvait aucun appareil et le premier était pris.
+std::optional<std::size_t> match_device(std::span<const DeviceIdentity> others, const DeviceCaps& caps);
 
 }  // namespace ajp::gpu::vk

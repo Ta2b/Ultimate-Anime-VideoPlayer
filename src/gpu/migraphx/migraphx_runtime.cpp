@@ -1,6 +1,7 @@
 #include "gpu/migraphx/migraphx_runtime.h"
 
 #include <algorithm>
+#include <cstddef>
 #include <cstdint>
 #include <cstring>
 #include <exception>
@@ -16,6 +17,7 @@
 #include "gpu/ir/onnx_model.h"
 #include "gpu/migraphx/migraphx_detail.h"
 #include "gpu/vulkan/backend/net_build.h"
+#include "gpu/vulkan/compute/caps.h"
 
 namespace ajp::gpu::migraphx_rt {
 namespace {
@@ -234,17 +236,25 @@ std::expected<std::shared_ptr<vk::net::Runtime>, Refusal> make_runtime(const vk:
   int count = 0;
   if (hipGetDeviceCount(&count) != hipSuccess || count == 0)
     return refuse(RefusalCode::DeviceUnavailable, "aucun GPU ROCm (HIP) visible");
-  // Le GPU HIP de même UUID que l'appareil Vulkan, sinon le premier.
-  int chosen = 0;
+  // Le GPU HIP de l'appareil Vulkan (vk::match_device : même UUID, sinon même bus PCI), sinon le
+  // premier.
+  std::vector<vk::DeviceIdentity> seen(static_cast<std::size_t>(count));
   for (int i = 0; i < count; ++i) {
+    vk::DeviceIdentity& identity = seen[static_cast<std::size_t>(i)];
     hipDevice_t device{};
     hipUUID uuid{};
-    if (hipDeviceGet(&device, i) == hipSuccess && hipDeviceGetUuid(&uuid, device) == hipSuccess &&
-        std::memcmp(uuid.bytes, caps.uuid.data(), caps.uuid.size()) == 0) {
-      chosen = i;
-      break;
+    if (hipDeviceGet(&device, i) == hipSuccess && hipDeviceGetUuid(&uuid, device) == hipSuccess) {
+      vk::DeviceUuid bytes{};
+      std::memcpy(bytes.data(), uuid.bytes, bytes.size());
+      identity.uuid = bytes;
+    }
+    if (hipDeviceProp_t props{}; hipGetDeviceProperties(&props, i) == hipSuccess) {
+      identity.pci = vk::PciAddress{.domain = static_cast<std::uint32_t>(props.pciDomainID),
+                                    .bus = static_cast<std::uint32_t>(props.pciBusID),
+                                    .device = static_cast<std::uint32_t>(props.pciDeviceID)};
     }
   }
+  const int chosen = static_cast<int>(vk::match_device(seen, caps).value_or(0));
   hipDeviceProp_t props{};
   if (hipGetDeviceProperties(&props, chosen) != hipSuccess)
     return refuse(RefusalCode::DeviceUnavailable, "hipGetDeviceProperties");

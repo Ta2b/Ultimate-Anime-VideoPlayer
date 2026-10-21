@@ -4,7 +4,6 @@
 #include <array>
 #include <chrono>
 #include <cstdint>
-#include <cstring>
 #include <exception>
 #include <format>
 #include <fstream>
@@ -22,6 +21,7 @@
 
 #include "gpu/openvino/openvino_net.h"
 #include "gpu/vulkan/backend/net_measure.h"
+#include "gpu/vulkan/compute/caps.h"
 
 namespace ajp::gpu::openvino_rt {
 namespace {
@@ -303,24 +303,30 @@ std::expected<std::shared_ptr<vk::net::Runtime>, Refusal> make_runtime(const vk:
   }
   try {
     auto core = std::make_shared<ov::Core>();
-    // Le GPU OpenVINO de même UUID que l'appareil Vulkan (« GPU.0 » l'intégré, « GPU.1 » une
-    // carte Arc), sinon le premier.
-    std::string chosen;
+    // Le GPU OpenVINO de l'appareil Vulkan (« GPU.0 » l'intégré, « GPU.1 » une carte Arc ;
+    // vk::match_device : même UUID, sinon même bus PCI), sinon le premier.
+    std::vector<std::string> gpus;
+    std::vector<vk::DeviceIdentity> seen;
     for (const std::string& device : core->get_available_devices()) {
       if (!device.starts_with("GPU")) continue;
-      if (chosen.empty()) chosen = device;
+      vk::DeviceIdentity& identity = seen.emplace_back();
+      gpus.push_back(device);
       try {
-        const ov::device::UUID uuid = core->get_property(device, ov::device::uuid);
-        if (std::memcmp(uuid.uuid.data(), caps.uuid.data(), caps.uuid.size()) == 0) {
-          chosen = device;
-          break;
-        }
+        identity.uuid = core->get_property(device, ov::device::uuid).uuid;
       } catch (const std::exception&) {  // NOLINT(bugprone-empty-catch) : propriété absente de ce
-        // pilote, on garde le premier GPU
+        // pilote, le bus PCI peut encore servir
+      }
+      try {
+        const ov::device::PCIInfo pci = core->get_property(device, ov::device::pci_info);
+        identity.pci = vk::PciAddress{
+            .domain = pci.domain, .bus = pci.bus, .device = pci.device, .function = pci.function};
+      } catch (const std::exception&) {  // NOLINT(bugprone-empty-catch) : propriété absente de ce
+        // pilote, l'UUID seul
       }
     }
-    if (chosen.empty())
+    if (gpus.empty())
       return refuse(RefusalCode::DeviceUnavailable, "aucun GPU OpenVINO (pilote compute Intel)");
+    const std::string chosen = gpus[vk::match_device(seen, caps).value_or(0)];
     const std::string full = core->get_property(chosen, ov::device::full_name);
     std::optional<Npu> npu = find_npu(*core);
     return std::make_shared<OpenvinoRuntime>(std::move(core), chosen, full, std::move(npu));
