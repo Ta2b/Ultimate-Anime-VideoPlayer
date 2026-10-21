@@ -186,6 +186,7 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
           .rife_models = c.rife_choice ? c.rife_choice->available : std::vector<std::string>{},
           .default_rife_model = c.rife_choice ? c.rife_choice->default_name : std::string(),
           .rife_folder = c.gmfss_places.front().string(),
+          .nvidia = vendor_from_pci(p.screen.device_facts().pci_vendor) == GpuVendor::Nvidia,
           .true_hdr_available = std::filesystem::exists(p.options.true_hdr_sdk) || settings.true_hdr,
           .hdr_output = p.screen.hdr_output(),
           .auto_peak = auto_peak,

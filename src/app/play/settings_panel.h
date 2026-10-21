@@ -57,6 +57,7 @@ struct SettingsChoices {
   std::vector<std::string> rife_models;  // fichiers RIFE du dossier du modèle par défaut
   std::string default_rife_model;        // celui qu'un nom vide désigne
   std::string rife_folder;               // le dossier des modèles RIFE (et des graphes de GMFSS)
+  bool nvidia = false;                   // GPU NVIDIA : RTX HDR et Smooth Motion ne sont offerts qu'à lui
   bool true_hdr_available = false;       // SDK Maxine présent
   bool hdr_output = true;                // l'écran reçoit du PQ (sinon ni HDR natif ni grade)
   int auto_peak = 0;                     // pic automatique de RTX HDR, en nits

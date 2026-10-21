@@ -34,6 +34,7 @@ void hdr_tab(PlaySettings& d, const SettingsChoices& choices) {
   const int route = d.true_hdr ? 0 : (d.hdr_native ? 1 : 2);
   if (ImGui::BeginCombo("Moteur HDR", kRoutes[static_cast<std::size_t>(route)])) {
     for (int i = 0; i < static_cast<int>(kRoutes.size()); ++i) {
+      if (i == 0 && !choices.nvidia) continue;  // TrueHDR ne tourne que sur un GPU NVIDIA
       ImGui::BeginDisabled(i == 0 && !choices.true_hdr_available);
       if (ImGui::Selectable(kRoutes[static_cast<std::size_t>(i)], i == route)) {
         d.true_hdr = i == 0;
@@ -43,9 +44,10 @@ void hdr_tab(PlaySettings& d, const SettingsChoices& choices) {
     }
     ImGui::EndCombo();
   }
-  if (!choices.true_hdr_available) note("SDK Maxine VideoFX introuvable (/usr/local/VideoFX).");
+  if (choices.nvidia && !choices.true_hdr_available)
+    note("RTX HDR : le SDK Maxine VideoFX n'est pas installé (écran des moteurs).");
   if (!choices.hdr_output) note("L'écran ne reçoit pas de HDR10 : la sortie reste SDR.");
-  section("Réglages du mode HDR (RTX HDR et HDR adaptatif)");
+  section(choices.nvidia ? "Réglages du mode HDR (RTX HDR et HDR adaptatif)" : "Réglages du HDR adaptatif");
   bool automatic = d.true_hdr_peak == 0;
   if (ImGui::Checkbox(std::format("Pic automatique ({} nits)", choices.auto_peak).c_str(), &automatic))
     d.true_hdr_peak =
@@ -56,20 +58,23 @@ void hdr_tab(PlaySettings& d, const SettingsChoices& choices) {
     d.true_hdr_peak = peak;
   ImGui::EndDisabled();
   ImGui::SliderInt("Gris moyen", &d.true_hdr_gray, limits::kTrueHdrGray.lo, limits::kTrueHdrGray.hi);
-  ImGui::BeginDisabled(!d.true_hdr);
-  ImGui::Checkbox("Débandage (RTX HDR)", &d.true_hdr_debanding);
-  ImGui::EndDisabled();
+  if (choices.nvidia) {
+    ImGui::BeginDisabled(!d.true_hdr);
+    ImGui::Checkbox("Débandage (RTX HDR)", &d.true_hdr_debanding);
+    ImGui::EndDisabled();
+  }
   if (ImGui::Button("Valeurs par défaut")) {
     const PlaySettings defaults;
     d.true_hdr_peak = defaults.true_hdr_peak;
     d.true_hdr_gray = defaults.true_hdr_gray;
     d.true_hdr_debanding = defaults.true_hdr_debanding;
   }
-  note(
-      "Réglages appliqués en direct, sur RTX HDR comme sur le HDR adaptatif. Contraste et saturation sont "
-      "dans l'onglet Grade, communs au HDR et au SDR. Gris moyen : luminosité des tons moyens. Le HDR "
-      "adaptatif suit la scène : moins d'expansion sur les scènes claires et les "
-      "grands aplats blancs, ombres plus douces la nuit, éclats isolés vers le pic.");
+  note(std::format(
+      "Réglages appliqués en direct{}. Contraste et saturation sont dans l'onglet Grade, communs au HDR et "
+      "au SDR. Gris moyen : luminosité des tons moyens. Le HDR adaptatif suit la scène : moins d'expansion "
+      "sur les scènes claires et les grands aplats blancs, ombres plus douces la nuit, éclats isolés vers le "
+      "pic.",
+      choices.nvidia ? ", sur RTX HDR comme sur le HDR adaptatif" : ""));
 }
 
 // Un curseur sur un réglage du grade (double) ; true s'il a bougé. La valeur revient arrondie au

@@ -133,6 +133,7 @@ SettingsChoices home_choices(const HomeScreen& h, const HomeState& st, const Pla
       .rife_models = rife ? rife->available : std::vector<std::string>{},
       .default_rife_model = rife ? rife->default_name : std::string(),
       .rife_folder = places.empty() ? std::string() : prepare::utf8_path(places.front()),
+      .nvidia = vendor_from_pci(h.screen.device_facts().pci_vendor) == GpuVendor::Nvidia,
       .true_hdr_available = std::filesystem::exists(h.options.true_hdr_sdk, error) || running.true_hdr,
       .hdr_output = !h.options.sdr && content_peak_nits(h.screen.window()).has_value(),
       .auto_peak = vendor_hdr::peak_from_display(content_peak_nits(h.screen.window())),

@@ -24,7 +24,7 @@ struct HeightChoice {
   const char* label;
 };
 constexpr std::array<HeightChoice, 5> kHeights{{
-    {0, "Source (sans réduction : 4K)"},
+    {0, "Source (sans réduction)"},
     {900, "900 lignes"},
     {720, "720 lignes (recommandé)"},
     {540, "540 lignes"},
@@ -51,16 +51,30 @@ void image_tab(PlaySettings& d, const SettingsChoices& choices) {
   note("Performance : le plus rapide. Balanced : plus fin, plus lent. Sharp1 : contours plus nets.");
 
   section("Réduction avant l'agrandissement");
+  // La source sans réduction, avec sa hauteur quand on la connaît : « 1080 lignes », pas « 4K », que
+  // la sortie n'atteint qu'agrandie par SPAN.
+  const auto label_of = [&](const HeightChoice& choice) {
+    if (choice.lines == 0 && choices.source_height > 0)
+      return std::format("Source, sans réduction ({} lignes)", choices.source_height);
+    return std::string(choice.label);
+  };
   const auto height = std::ranges::find(kHeights, d.work_height, &HeightChoice::lines);
   const std::string height_label =
-      height != kHeights.end() ? std::string(height->label) : std::format("{} lignes", d.work_height);
+      height != kHeights.end() ? label_of(*height) : std::format("{} lignes", d.work_height);
   if (ImGui::BeginCombo("Hauteur de travail", height_label.c_str())) {
     for (const HeightChoice& choice : kHeights) {
-      if (ImGui::Selectable(choice.label, choice.lines == d.work_height)) d.work_height = choice.lines;
+      if (ImGui::Selectable(label_of(choice).c_str(), choice.lines == d.work_height))
+        d.work_height = choice.lines;
     }
     ImGui::EndCombo();
   }
   const bool reduces = d.work_height > 0 && d.work_height < choices.source_height;
+  if (choices.source_height > 0) {
+    const int work = reduces ? d.work_height : choices.source_height;
+    note(d.upscale
+             ? std::format("Sortie : {} lignes, le double de la hauteur de travail (SPAN ×2).", work * 2)
+             : std::format("Sans agrandissement, la sortie garde la hauteur de travail : {} lignes.", work));
+  }
   if (reduces) {
     if (ImGui::BeginCombo("Algorithme", std::string(label(d.downscale)).c_str())) {
       for (int i = 0; i < kDownscaleCount; ++i) {
@@ -82,8 +96,9 @@ void image_tab(PlaySettings& d, const SettingsChoices& choices) {
 }
 
 void fluidity_tab(PlaySettings& d, const SettingsChoices& choices, bool exporting) {
-  const bool four_k =
-      (d.work_height == 0 || d.work_height >= choices.source_height) && choices.source_height >= 1080;
+  // Sortie 4K : une source 1080p (ou plus) sans réduction, agrandie par SPAN.
+  const bool four_k = d.upscale && (d.work_height == 0 || d.work_height >= choices.source_height) &&
+                      choices.source_height >= 1080;
   section("Interpolation");
   ImGui::BeginDisabled(!choices.rife_available);
   // Une liste déroulante plutôt qu'un bouton par facteur : ×1,5 puis ×2 à ×10 tiennent sur une ligne.
@@ -213,10 +228,11 @@ void fluidity_tab(PlaySettings& d, const SettingsChoices& choices, bool exportin
     // Les limites de la lecture en direct ne valent pas à l'export.
   } else if (four_k && now.num >= 3 * now.den) {
     note(
-        "En 4K sans réduction, ×2 tient sur cette carte ; ×3 et ×4 prennent du retard dans les scènes qui "
-        "bougent (SPAN 1080p → 2160p coûte 11 ms par image).");
+        "Sortie 4K (source sans réduction agrandie par SPAN) : ×3 et plus demandent un GPU haut de gamme ; "
+        "SPAN 1080p → 2160p est la passe la plus lourde (11 ms par image sur une RTX 4070 Ti). Une hauteur "
+        "de travail de 720 lignes allège tout.");
   } else if (four_k) {
-    note("En 4K, RIFE estime le mouvement en 720p et déforme les images 1080p : ×2 tient sur cette carte.");
+    note("Sortie 4K : RIFE estime le mouvement sur une copie en 720 lignes, plus légère.");
   }
   note("Les coupes de scène et les dessins tenus ne sont pas interpolés.");
   ImGui::BeginDisabled(d.motion_engine != MotionEngine::Rife);
@@ -241,7 +257,8 @@ void fluidity_tab(PlaySettings& d, const SettingsChoices& choices, bool exportin
       "splattées par son flot et corrigées du résidu de sa fusion : le détail de SPAN reste. Avant SPAN, "
       "SPAN nettoie aussi chaque image intermédiaire. Auto choisit Après dès que la sortie dépasse 1080p. "
       "Recharge la lecture.");
-  if (exporting) return;  // Smooth Motion est une couche de l'écran, absente du fichier
+  // Smooth Motion est une couche de l'écran, absente du fichier, et du seul pilote NVIDIA.
+  if (exporting || !choices.nvidia) return;
   section("Smooth Motion (pilote NVIDIA)");
   ImGui::Checkbox("Doubler les images après RIFE", &d.smooth_motion);
   note(
