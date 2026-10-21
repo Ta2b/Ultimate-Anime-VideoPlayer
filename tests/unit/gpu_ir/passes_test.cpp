@@ -432,3 +432,29 @@ TEST_CASE("passes : Cast entre types égaux et vers une sortie du graphe", "[gpu
   CHECK(graph.tensors[graph.nodes[0].outputs[0]].name == "y");
   CHECK(graph.tensors[graph.nodes[0].outputs[0]].type == DataType::F16);
 }
+
+// Un flot (2 canaux), une image (3), un masque (1) restent en Nchw : rangés par 16, ils liraient
+// 5 à 16 fois leurs octets. Les activations de 8 canaux et plus passent en Nhwc16.
+TEST_CASE("passes : les tenseurs de moins de 8 canaux restent en Nchw", "[gpu_ir][passes]") {
+  ModelBuilder m;
+  m.input("x", {1, 3, 6, 6});
+  m.weight("w8", {8, 3, 3, 3}, std::vector<float>(8 * 3 * 9, 0.1F));
+  m.weight("w2", {2, 8, 3, 3}, std::vector<float>(2 * 8 * 9, 0.1F));
+  m.weight("w1", {1, 2, 1, 1}, std::vector<float>(2, 0.5F));
+  m.node("Conv", {"x", "w8"}, {"wide"}, {attr_ints("pads", {1, 1, 1, 1})});
+  m.node("Relu", {"wide"}, {"wide_r"});
+  m.node("Conv", {"wide_r", "w2"}, {"flow"}, {attr_ints("pads", {1, 1, 1, 1})});
+  m.node("Tanh", {"flow"}, {"flow_t"});
+  m.node("Conv", {"flow_t", "w1"}, {"mask"});
+  m.node("Sigmoid", {"mask"}, {"y"}).output("y");
+  Graph graph = build(m);
+  REQUIRE(optimize(graph));
+  for (const Tensor& t : graph.tensors) {
+    if (t.kind != TensorKind::Activation || t.dims.size() != 4 ||
+        is_graph_output(graph, find_tensor(graph, t.name).value()))
+      continue;
+    INFO(t.name << " : " << t.dims[1] << " canaux");
+    CHECK(t.layout == (t.dims[1] >= 8 ? Layout::Nhwc16 : Layout::Nchw));
+  }
+  CHECK(std::ranges::any_of(graph.tensors, [](const Tensor& t) { return t.layout == Layout::Nhwc16; }));
+}

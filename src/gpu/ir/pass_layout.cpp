@@ -9,12 +9,17 @@
 namespace ajp::gpu::ir {
 namespace {
 
-// Activation interne de rang 4 et flottante : seule candidate à Nhwc16.
+// Canaux en dessous desquels un tenseur reste en Nchw : rangés par 16, le flot (2), une image
+// (3) ou un masque (1) liraient et écriraient 5 à 16 fois leurs octets utiles.
+constexpr std::int64_t kNhwcMinChannels = 8;
+
+// Activation interne de rang 4 et flottante, d'au moins kNhwcMinChannels canaux : seule
+// candidate à Nhwc16.
 bool internal_image(const Graph& graph, TensorId id) {
   if (id == kNoTensor) return false;
   const Tensor& t = graph.tensors[id];
   return t.kind == TensorKind::Activation && t.known && t.dims.size() == 4 && t.type != DataType::I64 &&
-         !is_graph_output(graph, id);
+         t.dims[1] >= kNhwcMinChannels && !is_graph_output(graph, id);
 }
 
 // Le nœud sait-il lire ou écrire ce tenseur en NHWC ? Les opérations qui
