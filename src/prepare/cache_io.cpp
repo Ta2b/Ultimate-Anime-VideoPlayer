@@ -11,15 +11,10 @@
 #include <tuple>
 #include <vector>
 
+#include "core/file_sync.h"
 #include "prepare/utf8.h"
 
-#ifdef _WIN32
-#ifndef NOMINMAX
-#define NOMINMAX
-#endif
-#include <windows.h>
-#else
-#include <fcntl.h>
+#ifndef _WIN32
 #include <unistd.h>
 #endif
 
@@ -47,13 +42,8 @@ std::expected<void, Refusal> mark_stage(const fs::path& folder, std::string_view
 
 // Le renommage lui-même survit à une coupure (POSIX ; NTFS le journalise seul).
 // Au mieux : le contenu, déjà écrit, reste valide si cette écriture échoue.
-void sync_directory([[maybe_unused]] const fs::path& folder) {
-#ifndef _WIN32
-  const int fd = ::open(folder.c_str(), O_RDONLY | O_CLOEXEC | O_DIRECTORY);
-  if (fd < 0) return;
-  ::fsync(fd);
-  ::close(fd);
-#endif
+void sync_directory(const fs::path& folder) {
+  core::sync_directory(folder);
 }
 
 bool starts_with(const fs::path& entry, std::string_view prefix) {
@@ -94,28 +84,8 @@ Refusal io_refusal(std::string_view operation, const fs::path& path, std::error_
 }
 
 std::expected<void, Refusal> sync_file(const fs::path& file) {
-#ifdef _WIN32
-  // FlushFileBuffers demande une poignée ouverte en écriture.
-  HANDLE handle = CreateFileW(file.c_str(), GENERIC_WRITE, FILE_SHARE_READ | FILE_SHARE_WRITE, nullptr,
-                              OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
-  if (handle == INVALID_HANDLE_VALUE) {
-    return std::unexpected(io_refusal("ouverture avant écriture sur disque", file,
-                                      {static_cast<int>(GetLastError()), std::system_category()}));
-  }
-  const bool flushed = FlushFileBuffers(handle) != 0;
-  const std::error_code error{flushed ? 0 : static_cast<int>(GetLastError()), std::system_category()};
-  CloseHandle(handle);
-#else
-  const int fd = ::open(file.c_str(), O_RDONLY | O_CLOEXEC);
-  if (fd < 0) {
-    return std::unexpected(
-        io_refusal("ouverture avant écriture sur disque", file, {errno, std::generic_category()}));
-  }
-  const bool flushed = ::fsync(fd) == 0;
-  const std::error_code error{flushed ? 0 : errno, std::generic_category()};
-  ::close(fd);
-#endif
-  if (!flushed) return std::unexpected(io_refusal("écriture sur disque", file, error));
+  if (const std::error_code error = core::sync_file(file))
+    return std::unexpected(io_refusal("écriture sur disque", file, error));
   return {};
 }
 

@@ -9,6 +9,8 @@
 #include <system_error>
 #include <vector>
 
+#include "core/user_overlay.h"
+
 namespace ajp::app::play {
 namespace {
 
@@ -57,24 +59,11 @@ std::vector<Entry> load(const std::filesystem::path& store) {
 }
 
 std::expected<void, Refusal> save(const std::filesystem::path& store, const std::vector<Entry>& entries) {
-  const auto refused = [&](std::string_view what) {
-    return std::unexpected(
-        Refusal{RefusalCode::FileUnwritable, std::format("{} : {}", store.string(), what)});
-  };
-  std::error_code error;
-  std::filesystem::create_directories(store.parent_path(), error);
-  // Écrit à côté puis renommé : une coupure ne laisse jamais un fichier à moitié écrit.
-  std::filesystem::path temporary = store;
-  temporary += ".tmp";
-  {
-    std::ofstream out(temporary, std::ios::trunc);
-    if (!out) return refused("écriture impossible");
-    for (const Entry& e : entries) out << e.position_us << '\t' << e.size << '\t' << e.path << '\n';
-    if (!out.flush()) return refused("écriture interrompue");
-  }
-  std::filesystem::rename(temporary, store, error);
-  if (error) return refused(error.message());
-  return {};
+  // Écrit à côté, sur le disque, puis renommé : une coupure ne laisse jamais un fichier à moitié
+  // écrit ni vide.
+  std::string text;
+  for (const Entry& e : entries) text += std::format("{}\t{}\t{}\n", e.position_us, e.size, e.path);
+  return core::write_text_atomically(store, text);
 }
 
 }  // namespace

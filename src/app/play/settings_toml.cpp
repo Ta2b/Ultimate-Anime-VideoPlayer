@@ -13,6 +13,7 @@
 #include <vector>
 
 #include "app/play/settings.h"
+#include "core/user_overlay.h"
 
 #ifndef TOML_EXCEPTIONS
 #define TOML_EXCEPTIONS 0
@@ -354,19 +355,7 @@ std::expected<PlaySettings, Refusal> load_settings(const std::filesystem::path& 
 
 std::expected<void, Refusal> save_settings(const std::filesystem::path& path, const PlaySettings& settings) {
   if (auto valid = validate(settings); !valid) return std::unexpected(valid.error());
-  std::error_code error;
-  std::filesystem::create_directories(path.parent_path(), error);
-  std::filesystem::path temp = path;
-  temp += ".tmp";
-  {
-    std::ofstream file(temp, std::ios::binary | std::ios::trunc);
-    file << format_settings(settings);
-    if (!file.flush()) return refuse(RefusalCode::FileUnwritable, temp.string());
-  }
-  std::filesystem::rename(temp, path, error);
-  if (error)
-    return refuse(RefusalCode::FileUnwritable, std::format("{} : {}", path.string(), error.message()));
-  return {};
+  return core::write_text_atomically(path, format_settings(settings));
 }
 
 }  // namespace ajp::app::play

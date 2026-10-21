@@ -10,6 +10,7 @@
 #include <system_error>
 #include <thread>
 
+#include "core/file_sync.h"
 #include "core/toml_fields.h"
 
 namespace ajp::core {
@@ -304,12 +305,18 @@ std::expected<void, Refusal> write_text_atomically(const std::filesystem::path& 
       return refuse(RefusalCode::FileUnwritable, temp.string());
     }
   }
+  // Sur le disque avant le renommage : une coupure juste après ne laisse pas un fichier vide.
+  if (const std::error_code synced = sync_file(temp)) {
+    std::filesystem::remove(temp, error);
+    return refuse(RefusalCode::FileUnwritable, std::format("{} : {}", temp.string(), synced.message()));
+  }
   std::filesystem::rename(temp, path, error);
   if (error) {
     const std::string why = error.message();
     std::filesystem::remove(temp, error);
     return refuse(RefusalCode::FileUnwritable, std::format("{} : {}", path.string(), why));
   }
+  sync_directory(path.has_parent_path() ? path.parent_path() : std::filesystem::path("."));
   return {};
 }
 
