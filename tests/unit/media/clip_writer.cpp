@@ -375,6 +375,12 @@ std::expected<std::filesystem::path, std::string> write_clip(const ClipSpec& spe
     if (auto written = writer.write(temporary); !written) return std::unexpected(written.error());
   }
   std::filesystem::rename(temporary, path, ec);
+  if (ec && std::filesystem::exists(path)) {
+    // Windows refuse de remplacer un fichier qu'un lecteur tient ouvert (FFmpeg l'ouvre sans
+    // FILE_SHARE_DELETE) : le clip déjà là vient du même ClipSpec, publié entier par un renommage.
+    std::filesystem::remove(temporary, ec);
+    return path;
+  }
   if (ec) return fail(std::format("renommage : {}", ec.message()));
   return path;
 }

@@ -292,7 +292,9 @@ std::expected<OnnxSummary, Refusal> scan_onnx(Bytes model) {
 
 bool is_safe_location(const std::string& location) {
   const std::filesystem::path relative = path_from_utf8(location);
-  if (location.empty() || relative.is_absolute() || relative.has_root_name() ||
+  // has_root_path : sous Windows, « /etc/passwd » n'est pas absolu (pas de lecteur) mais part de
+  // la racine du lecteur courant ; « C:poids.bin » a un lecteur sans racine.
+  if (location.empty() || relative.has_root_path() ||
       location.find('\\') != std::string::npos || location.find(':') != std::string::npos) {
     return false;
   }

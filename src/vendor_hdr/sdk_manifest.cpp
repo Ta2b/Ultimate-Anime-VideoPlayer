@@ -20,7 +20,8 @@ std::unexpected<ManifestProblem> problem(std::string reason) {
 // Chemin relatif qui ne remonte jamais : ni absolu, ni « .. », ni vide.
 bool contained(std::string_view text) {
   const std::filesystem::path path(text);
-  if (text.empty() || path.is_absolute() || path.has_root_name()) return false;
+  // has_root_path : sous Windows, « /x » n'est pas absolu mais part de la racine du lecteur.
+  if (text.empty() || path.has_root_path()) return false;
   for (const std::filesystem::path& part : path) {
     if (part == "..") return false;
   }
