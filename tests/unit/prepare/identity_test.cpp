@@ -4,6 +4,8 @@
 // compilés tels quels. Un écart invaliderait les moteurs déjà construits.
 #include "prepare/identity.h"
 
+#include <chrono>
+#include <filesystem>
 #include <string>
 
 #include <catch2/catch_test_macros.hpp>
@@ -53,6 +55,25 @@ TEST_CASE("sha256_file et is_sha256_hex", "[prepare][identity]") {
   CHECK(is_sha256_hex(sha256_hex("abc")));
   CHECK_FALSE(is_sha256_hex("ABC"));
   CHECK_FALSE(is_sha256_hex(std::string(64, 'A')));
+}
+
+TEST_CASE("sha256_file_known : gardé tant que taille et date tiennent", "[prepare][identity]") {
+  const test::TempDir dir;
+  const std::filesystem::path file = dir / "m.onnx";
+  test::write_file(file, "abc");
+  CHECK(sha256_file_known(file).value() == sha256_hex("abc"));
+  // Même taille, autre contenu, date reculée à l'identique : le hachage gardé sert (c'est le
+  // contrat : reconnaître un modèle, pas vérifier un fichier).
+  const auto modified = std::filesystem::last_write_time(file);
+  test::write_file(file, "abd");
+  std::filesystem::last_write_time(file, modified);
+  CHECK(sha256_file_known(file).value() == sha256_hex("abc"));
+  // Une autre date, ou une autre taille : rehaché.
+  std::filesystem::last_write_time(file, modified + std::chrono::seconds(2));
+  CHECK(sha256_file_known(file).value() == sha256_hex("abd"));
+  test::write_file(file, "abcd");
+  CHECK(sha256_file_known(file).value() == sha256_hex("abcd"));
+  CHECK(test::refusal(sha256_file_known(dir / "absent")) == RefusalCode::CacheIo);
 }
 
 TEST_CASE("files_digest : noms logiques triés, contenu et taille encadrés", "[prepare][identity]") {

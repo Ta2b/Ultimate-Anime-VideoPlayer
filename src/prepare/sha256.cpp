@@ -6,6 +6,9 @@
 #include <cstring>
 #include <format>
 #include <fstream>
+#include <map>
+#include <mutex>
+#include <system_error>
 #include <vector>
 
 #include "prepare/utf8.h"
@@ -110,6 +113,32 @@ std::expected<std::string, Refusal> sha256_file(const std::filesystem::path& fil
   if (stream.bad())
     return std::unexpected(Refusal{RefusalCode::CacheIo, "lecture interrompue : " + utf8_path(file)});
   return hash.hex();
+}
+
+std::expected<std::string, Refusal> sha256_file_known(const std::filesystem::path& file) {
+  struct Known {
+    std::uintmax_t size = 0;
+    std::filesystem::file_time_type modified;
+    std::string digest;
+  };
+  static std::mutex mutex;
+  static std::map<std::filesystem::path, Known> known;
+  std::error_code error;
+  const std::uintmax_t size = std::filesystem::file_size(file, error);
+  const std::filesystem::file_time_type modified =
+      error ? std::filesystem::file_time_type{} : std::filesystem::last_write_time(file, error);
+  if (error) return sha256_file(file);  // son refus, avec le chemin
+  {
+    const std::scoped_lock lock(mutex);
+    if (const auto found = known.find(file);
+        found != known.end() && found->second.size == size && found->second.modified == modified)
+      return found->second.digest;
+  }
+  auto digest = sha256_file(file);
+  if (!digest) return digest;
+  const std::scoped_lock lock(mutex);
+  known.insert_or_assign(file, Known{.size = size, .modified = modified, .digest = *digest});
+  return digest;
 }
 
 bool is_sha256_hex(std::string_view text) {

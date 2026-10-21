@@ -29,7 +29,7 @@ SpanInt8Lookup refused(std::string note) {
 }  // namespace
 
 SpanInt8Lookup find_span_int8(const std::filesystem::path& span, const std::filesystem::path& dir) {
-  auto sha = prepare::sha256_file(span);
+  auto sha = prepare::sha256_file_known(span);
   if (!sha) return refused(sha.error().detail);
   // Par path et non par string : un nom Unicode ne passe pas par la page de code sous Windows.
   std::filesystem::path stem = dir / span.stem();
@@ -63,7 +63,7 @@ SpanInt8Lookup find_span_int8(const std::filesystem::path& span, const std::file
     return refused(std::format("{} : sous les garde-fous ({} ; il faut {:.0f} dB, {:.0f} dB et {:.3f})",
                                where, scores, kInt8MinPsnrMeanDb, kInt8MinPsnrWorstDb, kInt8MinSsimWorst));
   }
-  auto model_sha = prepare::sha256_file(variant.onnx);
+  auto model_sha = prepare::sha256_file_known(variant.onnx);
   if (!model_sha) return refused(model_sha.error().detail);
   if (receipt["model_sha256"].value_or(std::string_view()) != *model_sha)
     return refused(std::format("{} : modifié depuis son reçu", prepare::utf8_path(onnx.filename())));

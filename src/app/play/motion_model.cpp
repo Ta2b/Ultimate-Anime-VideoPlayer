@@ -4,6 +4,9 @@
 #include <array>
 #include <cstdint>
 #include <format>
+#include <functional>
+#include <map>
+#include <mutex>
 #include <string>
 #include <string_view>
 #include <utility>
@@ -14,6 +17,7 @@
 #include "prepare/model_source.h"
 #include "prepare/onnx_outputs.h"
 #include "prepare/onnx_scan.h"
+#include "prepare/sha256.h"
 
 namespace ajp::app::play {
 namespace {
@@ -73,14 +77,7 @@ std::expected<std::vector<std::byte>, Refusal> with_motion_outputs(std::span<con
   return std::unexpected(Refusal{RefusalCode::FieldMissing, "pas de flot final reconnu (ensemble ?)"});
 }
 
-}  // namespace
-
-std::expected<std::filesystem::path, Refusal> motion_model(const std::filesystem::path& rife_onnx,
-                                                           const std::filesystem::path& dir) {
-  return derived_model(rife_onnx, "mouvement", dir, with_motion_outputs);
-}
-
-std::expected<int, Refusal> rife_input_planes(const std::filesystem::path& rife_onnx) {
+std::expected<int, Refusal> scan_input_planes(const std::filesystem::path& rife_onnx) {
   auto raw = prepare::read_onnx_bytes(rife_onnx);
   if (!raw) return std::unexpected(std::move(raw.error()));
   const auto summary = prepare::scan_onnx(*raw);
@@ -93,6 +90,31 @@ std::expected<int, Refusal> rife_input_planes(const std::filesystem::path& rife_
                                                rife_onnx.filename().string(), planes)});
   }
   return static_cast<int>(planes);
+}
+
+}  // namespace
+
+std::expected<std::filesystem::path, Refusal> motion_model(const std::filesystem::path& rife_onnx,
+                                                           const std::filesystem::path& dir) {
+  return derived_model(rife_onnx, "mouvement", dir, with_motion_outputs);
+}
+
+std::expected<int, Refusal> rife_input_planes(const std::filesystem::path& rife_onnx) {
+  // Les entrées du graphe viennent après ses nœuds et ses poids : tout le fichier est lu. Le
+  // résultat est gardé pour le processus, par fichier et tant qu'il ne change pas (son SHA-256).
+  static std::mutex mutex;
+  static std::map<std::string, int, std::less<>> known;
+  auto sha = prepare::sha256_file_known(rife_onnx);
+  if (!sha) return std::unexpected(std::move(sha.error()));
+  {
+    const std::scoped_lock lock(mutex);
+    if (const auto found = known.find(*sha); found != known.end()) return found->second;
+  }
+  auto planes = scan_input_planes(rife_onnx);
+  if (!planes) return planes;
+  const std::scoped_lock lock(mutex);
+  known.insert_or_assign(*sha, *planes);
+  return planes;
 }
 
 int rife_padding_multiple(const std::filesystem::path& rife_onnx) {

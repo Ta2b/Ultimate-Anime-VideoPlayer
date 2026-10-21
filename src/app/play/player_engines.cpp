@@ -113,7 +113,7 @@ void show_loading(PlaceboScreen& screen, PlayerUi& ui, std::string label) {
 std::expected<std::optional<std::unique_ptr<gpu::Engine>>, Refusal> prepare_engine(
     Player& p, const gpu::BackendInit& init, gpu::Backend& backend, const std::filesystem::path& onnx,
     const gpu::Shape& shape, EngineLabel label, gpu::Lane lane) {
-  auto sha256 = prepare::sha256_file(onnx);
+  auto sha256 = prepare::sha256_file_known(onnx);
   if (!sha256) return std::unexpected(std::move(sha256.error()));
   auto build = EngineBuild::start(
       EngineRequest{.library = p.library,

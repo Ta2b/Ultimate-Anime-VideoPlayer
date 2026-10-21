@@ -21,7 +21,7 @@ std::expected<std::filesystem::path, Refusal> derived_model(const std::filesyste
                                                             std::string_view suffix,
                                                             const std::filesystem::path& dir,
                                                             const ModelTransform& transform) {
-  auto sha = prepare::sha256_file(source);
+  auto sha = prepare::sha256_file_known(source);
   if (!sha) return std::unexpected(std::move(sha.error()));
   std::filesystem::path target =
       dir / std::format("{}-{}-{}.onnx", source.stem().string(), suffix, sha->substr(0, 16));

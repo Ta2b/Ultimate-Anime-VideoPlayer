@@ -43,6 +43,10 @@ std::string sha256_hex(std::string_view bytes);
 
 // Hachage d'un fichier entier, lu par blocs. Refus CacheIo s'il est illisible.
 std::expected<std::string, Refusal> sha256_file(const std::filesystem::path& file);
+// Comme sha256_file, gardé pour le processus tant que le fichier garde sa taille et sa date de
+// modification : chaque ouverture de chaîne rehachait ses modèles (GMFSS : ~60 Mo, des
+// centaines de ms). Pour reconnaître un modèle, pas pour vérifier un téléchargement.
+std::expected<std::string, Refusal> sha256_file_known(const std::filesystem::path& file);
 
 // 64 chiffres hexadécimaux minuscules.
 bool is_sha256_hex(std::string_view text);

@@ -57,6 +57,8 @@ static_assert(kRingSlots <= kMaxKeptSubtitles, "les sous-titres gardés doivent 
 
 // Seuils du vrai noir recalés au plus 5 fois par seconde pendant qu'on règle.
 constexpr std::int64_t kBlackRefreshUs = 200'000;
+// En pause, l'attente d'un événement SDL au plus : le seuil de réactivité aux messages des threads.
+constexpr std::int32_t kPausedWaitMs = 10;
 
 }  // namespace
 
@@ -294,9 +296,17 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
       break;
     }
     if (*record && stats.is_open()) write_record(stats, **record);
-    // Rien de présenté (rien n'a changé, ou fenêtre cachée) : la FIFO n'impose pas le rythme,
-    // la boucle reprend dans 1 ms pour ne manquer ni l'image suivante ni une touche.
-    if (!*record) SDL_Delay(1);
+    // Rien de présenté (rien n'a changé, ou fenêtre cachée) : la FIFO n'impose pas le rythme. En
+    // lecture, la boucle reprend dans 1 ms pour ne pas manquer l'image suivante ; en pause, elle
+    // attend une touche ou la souris, au plus kPausedWaitMs : les messages des autres threads
+    // (image d'un seek, avancée d'un export) ne réveillent pas SDL.
+    if (!*record) {
+      if (session.view().paused) {
+        (void)SDL_WaitEventTimeout(nullptr, kPausedWaitMs);
+      } else {
+        SDL_Delay(1);
+      }
+    }
   }
   if (chain.dirty) {
     if (auto saved = save_settings(p.settings_path,
