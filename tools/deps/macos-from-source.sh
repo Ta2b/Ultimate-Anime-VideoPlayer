@@ -84,7 +84,9 @@ for entry in "${DEPS[@]}"; do
 done
 
 cmake_dep tomlplusplus -DTOMLPLUSPLUS_BUILD_TESTS=OFF -DTOMLPLUSPLUS_BUILD_EXAMPLES=OFF
-cmake_dep catch2 -DCATCH_INSTALL_DOCS=OFF -DCATCH_INSTALL_EXTRAS=ON
+# Catch2 en C++17 au moins, comme les tests : AppleClang compile par défaut en C++14 pour Catch2, et
+# la bibliothèque n'a alors pas les StringMaker de std::string_view ni de std::byte qu'ils appellent.
+cmake_dep catch2 -DCATCH_INSTALL_DOCS=OFF -DCATCH_INSTALL_EXTRAS=ON -DCMAKE_CXX_STANDARD=17
 cmake_dep spdlog -DSPDLOG_USE_STD_FORMAT=ON -DSPDLOG_BUILD_SHARED=OFF -DCMAKE_POSITION_INDEPENDENT_CODE=ON
 cmake_dep vulkan-headers
 cmake_dep sdl3 -DSDL_TESTS=OFF -DSDL_EXAMPLES=OFF
