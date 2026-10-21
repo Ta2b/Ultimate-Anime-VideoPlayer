@@ -86,7 +86,7 @@ UpscaleSetup ChainEngines::upscale(const PlaySettings& settings, std::shared_ptr
                       .work_height = sized.height,
                       .rife_width = rife_motion ? rife_size.width : 0,
                       .rife_height = rife_motion ? rife_size.height : 0,
-                      .warp_after_span = settings.warp_after_span,
+                      .warp_after_span = warp_after_span(settings.span_order, sized.height * kSpanFactor),
                       .slots = std::move(slots)};
 }
 

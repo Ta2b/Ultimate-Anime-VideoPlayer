@@ -51,6 +51,22 @@ constexpr bool is_gmfss(MotionEngine engine) {
 std::string_view name(MotionEngine engine);   // « rife », la clé de play.toml
 std::string_view label(MotionEngine engine);  // « RIFE », pour le menu
 
+// Le warp de l'interpolation par rapport à SPAN (variante mouvement de RIFE ou GMFSS, avec SPAN).
+// Avant : SPAN agrandit chaque sortie, intermédiaires compris (×3 : trois passes par image source),
+// et nettoie les défauts du warp. Après : SPAN agrandit chaque image source une fois, le warp
+// déforme les images agrandies à la taille de sortie. Auto : après dès que la sortie dépasse
+// kWarpAfterSpanAbove lignes, où SPAN coûte le plus (1080p → 4K : environ 8 ms par passe sur une
+// RTX 4070 Ti, contre 0,4 ms pour le warp).
+enum class SpanOrder : std::uint8_t { Auto, Before, After };
+inline constexpr int kSpanOrderCount = 3;
+inline constexpr int kWarpAfterSpanAbove = 1080;
+std::string_view name(SpanOrder order);   // « auto », la clé de play.toml
+std::string_view label(SpanOrder order);  // « Auto (après SPAN au-dessus de 1080p) », pour le menu
+// Le warp passe-t-il après SPAN pour une sortie de output_height lignes ?
+constexpr bool warp_after_span(SpanOrder order, int output_height) {
+  return order == SpanOrder::After || (order == SpanOrder::Auto && output_height > kWarpAfterSpanAbove);
+}
+
 enum class OledBlack : std::uint8_t { Auto, On, Off };
 inline constexpr int kOledBlackCount = 3;
 std::string_view name(OledBlack mode);   // « auto », la clé de play.toml
@@ -82,11 +98,8 @@ struct PlaySettings {
   // Garder les poses (DRBA, kernels/spec/poses.h) : un personnage animé en deux garde son rythme
   // pendant que le fond s'interpole ; en direct.
   bool keep_poses = false;
-  // Warp après SPAN (variante mouvement de RIFE, avec SPAN) : SPAN agrandit chaque image source une
-  // fois, et le warp déforme ces images agrandies à la taille de sortie ; SPAN ne repasse plus sur
-  // les images intermédiaires (×3 : une passe au lieu de trois). Les défauts du warp ne sont plus
-  // nettoyés par SPAN. Recharge la chaîne.
-  bool warp_after_span = false;
+  // Le warp avant ou après SPAN (SpanOrder) ; Auto par défaut. Recharge la chaîne.
+  SpanOrder span_order = SpanOrder::Auto;
   // Smooth Motion du pilote NVIDIA (RTX 40 et 50, pilote ≥ 580) : sa couche Vulkan double les
   // images présentées, au-dessus de RIFE (×3 puis ×2 : 72 → 144 images par seconde). Posé au
   // lancement, avant l'instance Vulkan : vaut au prochain lancement.

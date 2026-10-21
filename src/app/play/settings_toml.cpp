@@ -143,7 +143,23 @@ std::expected<PlaySettings, Refusal> parse_settings(std::string_view toml_text) 
     reads.push_back(read(*interpolation, "interpolation", "smooth_motion", s.smooth_motion));
     reads.push_back(read(*interpolation, "interpolation", "model", s.rife_model));
     reads.push_back(read(*interpolation, "interpolation", "keep_poses", s.keep_poses));
-    reads.push_back(read(*interpolation, "interpolation", "warp_after_span", s.warp_after_span));
+    // span_order ; les fichiers d'avant portent warp_after_span, qui ne compte que s'il est vrai (faux
+    // était le défaut, écrit partout : il laisse Auto).
+    bool legacy_after = false;
+    reads.push_back(read(*interpolation, "interpolation", "warp_after_span", legacy_after));
+    if (legacy_after) s.span_order = SpanOrder::After;
+    std::string order(name(s.span_order));
+    reads.push_back(read(*interpolation, "interpolation", "span_order", order));
+    bool order_known = false;
+    for (int i = 0; i < kSpanOrderCount; ++i) {
+      if (name(static_cast<SpanOrder>(i)) == order) {
+        s.span_order = static_cast<SpanOrder>(i);
+        order_known = true;
+      }
+    }
+    if (!order_known)
+      reads.emplace_back(
+          refuse(RefusalCode::FieldOutOfRange, std::format("interpolation.span_order : « {} »", order)));
     std::string engine(name(s.motion_engine));
     reads.push_back(read(*interpolation, "interpolation", "engine", engine));
     // Le flux optique matériel des RTX a été retiré : RIFE le remplace, sans plainte.
@@ -266,7 +282,7 @@ std::string format_settings(const PlaySettings& s) {
   toml::table interpolation{{"engine", std::string(name(s.motion_engine))},
                             {"model", s.rife_model},
                             {"keep_poses", s.keep_poses},
-                            {"warp_after_span", s.warp_after_span},
+                            {"span_order", std::string(name(s.span_order))},
                             {"smooth_motion", s.smooth_motion}};
   if (s.rife_factor_den == 2) {
     interpolation.insert("rife", static_cast<double>(s.rife_factor) / 2.0);

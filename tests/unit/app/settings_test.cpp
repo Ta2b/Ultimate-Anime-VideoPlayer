@@ -45,7 +45,7 @@ TEST_CASE("play.toml relit à l'identique ce qu'il a écrit", "[app][settings]")
   s.motion_engine = MotionEngine::DistilDrba;
   s.rife_model = "rife_v4.22_lite.onnx";
   s.keep_poses = true;
-  s.warp_after_span = true;
+  s.span_order = SpanOrder::Before;
   s.grade_values.expand = 0.3;
   s.audio_languages = {"fre", "jpn"};
   s.subtitle_languages = {};
@@ -83,6 +83,27 @@ TEST_CASE("Mode HDR : moteur RTX HDR, HDR adaptatif ou SDR, et les fichiers d'av
   const auto both = parse_settings("[rtx_hdr]\nenabled = true\n[hdr]\nengine = \"adaptive\"\n");
   REQUIRE(both);
   CHECK(hdr_engine_key(*both) == "adaptive");
+}
+
+TEST_CASE("Warp et SPAN : Auto passe après SPAN au-dessus de 1080p ; les fichiers d'avant",
+          "[app][settings]") {
+  CHECK(PlaySettings{}.span_order == SpanOrder::Auto);
+  CHECK_FALSE(warp_after_span(SpanOrder::Auto, 1080));
+  CHECK(warp_after_span(SpanOrder::Auto, 1440));
+  CHECK(warp_after_span(SpanOrder::Auto, 2160));
+  CHECK_FALSE(warp_after_span(SpanOrder::Before, 2160));
+  CHECK(warp_after_span(SpanOrder::After, 720));
+  for (const auto order : {SpanOrder::Auto, SpanOrder::Before, SpanOrder::After}) {
+    PlaySettings s;
+    s.span_order = order;
+    CHECK(parse_settings(format_settings(s))->span_order == order);
+  }
+  // warp_after_span = false, le défaut d'avant écrit partout, laisse Auto ; vrai donne Après.
+  CHECK(parse_settings("[interpolation]\nwarp_after_span = false\n")->span_order == SpanOrder::Auto);
+  CHECK(parse_settings("[interpolation]\nwarp_after_span = true\n")->span_order == SpanOrder::After);
+  CHECK(parse_settings("[interpolation]\nwarp_after_span = true\nspan_order = \"before\"\n")->span_order ==
+        SpanOrder::Before);
+  CHECK_FALSE(parse_settings("[interpolation]\nspan_order = \"milieu\"\n"));
 }
 
 TEST_CASE("Grade : un préréglage nommé donne ses valeurs, gamut P3 reste celui du fichier",
@@ -233,6 +254,14 @@ TEST_CASE("Ce qu'un changement demande : direct ou réouverture, dit avant d'app
   gmfss_heavy.rife_model = "rife_v4.26_heavy.onnx";
   CHECK(change_between(gmfss, gmfss_heavy, true).cost == ChangeCost::Live);
   CHECK(live_part(gmfss, gmfss_heavy, true).rife_model == "rife_v4.26_heavy.onnx");
+  // L'ordre du warp et de SPAN recharge la chaîne qui interpole, et attend sans interpolation.
+  PlaySettings before = on;
+  before.span_order = SpanOrder::Before;
+  CHECK(change_between(on, before, true).reason.find("avant SPAN") != std::string::npos);
+  PlaySettings before_off = off;
+  before_off.span_order = SpanOrder::Before;
+  CHECK(change_between(off, before_off, true).cost == ChangeCost::Live);
+  CHECK(live_part(off, before_off, true).span_order == SpanOrder::Before);
 }
 
 TEST_CASE("Libellé d'un modèle RIFE", "[app][settings]") {

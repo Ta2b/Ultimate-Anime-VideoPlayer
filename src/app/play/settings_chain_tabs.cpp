@@ -219,13 +219,20 @@ void fluidity_tab(PlaySettings& d, const SettingsChoices& choices, bool exportin
       "d'un coup) pendant que le fond s'interpole, au lieu de se déformer entre deux dessins. Avec RIFE 4.25 "
       "ou 4.22 lite, une seule passe par paire. En direct. DistilDRBA le fait de lui-même.");
   ImGui::BeginDisabled(d.motion_engine != MotionEngine::Rife && !is_gmfss(d.motion_engine));
-  ImGui::Checkbox("Warp après SPAN", &d.warp_after_span);
+  if (ImGui::BeginCombo("Warp et SPAN", std::string(label(d.span_order)).c_str())) {
+    for (int i = 0; i < kSpanOrderCount; ++i) {
+      const auto order = static_cast<SpanOrder>(i);
+      if (ImGui::Selectable(std::string(label(order)).c_str(), order == d.span_order)) d.span_order = order;
+    }
+    ImGui::EndCombo();
+  }
   ImGui::EndDisabled();
   note(
-      "SPAN agrandit chaque image source une seule fois, puis RIFE déforme les images agrandies : en "
-      "×3, une passe de SPAN au lieu de trois. Les images intermédiaires ne sont plus nettoyées par SPAN. "
-      "Avec GMFSS, les images agrandies sont splattées par son flot et corrigées du résidu de sa fusion : "
-      "le détail de SPAN reste. Recharge la lecture.");
+      "Après SPAN : SPAN agrandit chaque image source une seule fois, puis RIFE déforme les images "
+      "agrandies : en ×3, une passe de SPAN au lieu de trois. Avec GMFSS, les images agrandies sont "
+      "splattées par son flot et corrigées du résidu de sa fusion : le détail de SPAN reste. Avant SPAN, "
+      "SPAN nettoie aussi chaque image intermédiaire. Auto choisit Après dès que la sortie dépasse 1080p. "
+      "Recharge la lecture.");
   if (exporting) return;  // Smooth Motion est une couche de l'écran, absente du fichier
   section("Smooth Motion (pilote NVIDIA)");
   ImGui::Checkbox("Doubler les images après RIFE", &d.smooth_motion);

@@ -138,6 +138,30 @@ std::string_view label(MotionEngine engine) {
   return "RIFE";
 }
 
+std::string_view name(SpanOrder order) {
+  switch (order) {
+    case SpanOrder::Auto:
+      return "auto";
+    case SpanOrder::Before:
+      return "before";
+    case SpanOrder::After:
+      return "after";
+  }
+  return "auto";
+}
+
+std::string_view label(SpanOrder order) {
+  switch (order) {
+    case SpanOrder::Auto:
+      return "Auto (après SPAN au-dessus de 1080p)";
+    case SpanOrder::Before:
+      return "Avant SPAN (qualité maximale)";
+    case SpanOrder::After:
+      return "Après SPAN (le plus rapide)";
+  }
+  return "Auto (après SPAN au-dessus de 1080p)";
+}
+
 std::string_view name(OledBlack mode) {
   switch (mode) {
     case OledBlack::Auto:
@@ -277,7 +301,7 @@ PlaySettings live_part(const PlaySettings& running, const PlaySettings& wanted, 
   if (wanted.rife_factor < 2) {  // sans interpolation, rien à recharger
     s.motion_engine = wanted.motion_engine;
     s.rife_model = wanted.rife_model;
-    s.warp_after_span = wanted.warp_after_span;
+    s.span_order = wanted.span_order;
   }
   // Le modèle RIFE ne sert pas à un autre moteur du mouvement : le changer ne recharge rien.
   if (running.motion_engine == wanted.motion_engine && wanted.motion_engine != MotionEngine::Rife)
@@ -323,8 +347,11 @@ Change change_between(const PlaySettings& running, const PlaySettings& wanted, b
   if (wanted.rife_factor >= 2 && wanted.motion_engine == MotionEngine::Rife &&
       running.rife_model != wanted.rife_model)
     reopen.emplace_back("le modèle RIFE est chargé (construit la première fois pour cette taille)");
-  if (wanted.rife_factor >= 2 && running.warp_after_span != wanted.warp_after_span)
-    reopen.emplace_back(wanted.warp_after_span ? "le warp passe après SPAN" : "le warp repasse avant SPAN");
+  if (wanted.rife_factor >= 2 && running.span_order != wanted.span_order) {
+    reopen.emplace_back(wanted.span_order == SpanOrder::Before  ? "le warp passe avant SPAN"
+                        : wanted.span_order == SpanOrder::After ? "le warp passe après SPAN"
+                                                                : "le warp passe selon la sortie");
+  }
   if (!reopen.empty()) {
     std::string reason;
     for (const std::string_view part : reopen)
