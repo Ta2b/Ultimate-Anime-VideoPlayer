@@ -275,13 +275,20 @@ TEST_CASE("Étage gpu : le warp écrit l'image intermédiaire dans le slot quand
   CHECK(direct.ring_blends == 6);
   CHECK(direct.ring_writes == 4);            // les images sources seules
   CHECK(direct.allocs == plain.allocs - 1);  // une voie : un tampon d'image intermédiaire de moins
-  // Chaque slot écrit une fois, par le warp ou par write_ring, au protocole des sémaphores.
+  // Chaque slot écrit une fois, par le warp ou par write_ring, au protocole des sémaphores : la
+  // sortie attend la libération de l'image précédente du même slot (release_of), 0 au premier tour.
+  // Quel slot revient quand dépend du fil main : la valeur se déduit dans chaque passe.
   REQUIRE(direct.written.size() == direct.frames.size());
   for (std::size_t i = 0; i < direct.frames.size(); ++i) {
     INFO("sortie " << i);
     CHECK(direct.written[i].slot == direct.frames[i].slot);
     CHECK(direct.written[i].signal_value == direct.frames[i].ready_value);
-    CHECK(direct.written[i].wait_value == plain.written[i].wait_value);
+    std::uint64_t freed = 0;
+    for (std::size_t j = 0; j < i; ++j) {
+      if (direct.frames[j].slot == direct.frames[i].slot)
+        freed = release_of(direct.frames[j]).semaphore_value;
+    }
+    CHECK(direct.written[i].wait_value == freed);
   }
 }
 
