@@ -161,7 +161,7 @@ jobs:
       - name: Construction
         shell: pwsh
         run: |
-          cmake --build --preset windows-ci
+          cmake --build --preset windows-ci -- -k 0  # toutes les erreurs de MSVC en une passe
           if ($LASTEXITCODE -ne 0) { throw "construction" }
       - name: Tests sans GPU
         shell: pwsh

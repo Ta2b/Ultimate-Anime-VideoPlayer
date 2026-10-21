@@ -133,8 +133,8 @@ std::expected<ProcessExit, Refusal> run_process(const ProcessSpec& spec, const L
   if (!spec.extra_env.empty()) {
     std::vector<std::wstring> extra;
     for (const std::string& e : spec.extra_env) extra.push_back(widen(e));
-    LPWCH inherited = GetEnvironmentStringsW();  // env: hérité
-    for (const wchar_t* e = inherited; e != nullptr && *e != L'\0'; e += std::wcslen(e) + 1) {
+    LPWCH parent_env = GetEnvironmentStringsW();  // env: hérité
+    for (const wchar_t* e = parent_env; e != nullptr && *e != L'\0'; e += std::wcslen(e) + 1) {
       const std::wstring_view entry(e);
       const std::wstring_view name = entry.substr(0, entry.find(L'=', 1));
       const bool replaced = std::ranges::any_of(extra, [&](const std::wstring& x) {
@@ -142,7 +142,7 @@ std::expected<ProcessExit, Refusal> run_process(const ProcessSpec& spec, const L
       });
       if (!replaced) env_block.append(entry).push_back(L'\0');
     }
-    if (inherited != nullptr) FreeEnvironmentStringsW(inherited);
+    if (parent_env != nullptr) FreeEnvironmentStringsW(parent_env);
     for (const std::wstring& x : extra) env_block.append(x).push_back(L'\0');
     env_block.push_back(L'\0');
   }

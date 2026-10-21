@@ -7,7 +7,8 @@
 #                  models-rife-fp16-1 d'animejanai-inference ; RIFE est sous licence MIT
 #                  DistilDRBA v2 lite en fp16, converti par tools/drba/export_distil_drba.py depuis
 #                  routineLife1/DistilDRBA (db51bde, weights/v2_lite.pkl), depuis la release
-#                  models-drba-1 d'ajp-releases ; DistilDRBA est sous licence MIT
+#                  models-drba-1 d'ajp-releases, sinon de la branche assets/distil-drba-v2-lite du
+#                  dépôt ; DistilDRBA est sous licence MIT
 #
 #   tools/release/fetch-models.sh <dest> [dossier-de-cache]
 #
@@ -37,6 +38,8 @@ RIFE=(
   "8b30b93ef8ab0b3cd1bb8905ad8b911eb887ff4b2900558eb1914d99568e2ca5 rife_v4.22_lite.onnx"
 )
 DRBA_URL="https://github.com/Ta2b/ajp-releases/releases/download/models-drba-1"
+# Le même fichier, tant que la release models-drba-1 n'existe pas (le SHA-256 vérifie les deux).
+DRBA_MIRROR="https://raw.githubusercontent.com/Ta2b/Ultimate-Anime-VideoPlayer/305b4cd5de2d516d2e55bb5a12b299828374ca39"
 DRBA=(
   "7048367e94f6c43d9296f71adec95ddba7ef4c4b8efdbd8d91b8021891dbc39a distil_drba_v2_lite.onnx"
 )
@@ -64,7 +67,7 @@ done
 
 for entry in "${DRBA[@]}"; do
   read -r sha name <<<"$entry"
-  curl -fsSL -o "$DEST/rife/$name" "$DRBA_URL/$name"
+  curl -fsSL -o "$DEST/rife/$name" "$DRBA_URL/$name" || curl -fsSL -o "$DEST/rife/$name" "$DRBA_MIRROR/$name"
   check "$sha" "$DEST/rife/$name"
 done
 

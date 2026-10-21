@@ -39,7 +39,7 @@ if ($env:AJP_VCPKG_TRIPLET) {
 }
 cmake --preset windows-release -S $Root "-DAJP_WITH_CUDA=$Cuda" "-DAJP_WITH_OPENVINO=$OpenVino" @Extra
 if ($LASTEXITCODE -ne 0) { throw "configuration" }
-cmake --build --preset windows-release
+cmake --build --preset windows-release -- -k 0  # toutes les erreurs de MSVC en une passe
 if ($LASTEXITCODE -ne 0) { throw "construction" }
 $Build = Join-Path $Root "build/windows-release"
 
