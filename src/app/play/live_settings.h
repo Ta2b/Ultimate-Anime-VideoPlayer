@@ -13,6 +13,7 @@
 #include <utility>
 #include <vector>
 
+#include "app/play/frame_latency.h"
 #include "app/play/settings.h"
 #include "gpu/kernel_ops.h"
 #include "vendor_hdr/true_hdr.h"
@@ -120,6 +121,9 @@ class LiveSettings {
   // Images source sautées par gpu avant tout calcul, déjà passées à leur tour (RingStage::passed).
   void count_skipped() { skipped_.fetch_add(1, std::memory_order_relaxed); }
   std::uint64_t skipped() const { return skipped_.load(std::memory_order_relaxed); }
+  // Retard des images de sortie, mesuré par main (Session), lu par gpu.
+  FrameLatency& latency() { return latency_; }
+  const FrameLatency& latency() const { return latency_; }
   RifeCounts counts() const {
     return RifeCounts{.pairs = pairs_.load(std::memory_order_relaxed),
                       .interpolated = interpolated_.load(std::memory_order_relaxed),
@@ -142,6 +146,7 @@ class LiveSettings {
   std::atomic<std::uint64_t> held_{0};
   std::atomic<std::uint64_t> late_{0};
   std::atomic<std::uint64_t> skipped_{0};
+  FrameLatency latency_;
 };
 
 }  // namespace ajp::app::play

@@ -475,6 +475,30 @@ TEST_CASE("Étage gpu : en retard sur l'horloge maître, la paire sort sans inte
   CHECK(rig.live->counts().pairs == 0);  // non mesurées : rien à interpoler
 }
 
+TEST_CASE("Étage gpu : GPU débordé, le retard mesuré des images fait sauter toute la paire", "[app][stage]") {
+  Rig rig;
+  test::FakeClock clock;
+  // À 41 ms, une période de sortie plus loin (13,3 ms à ×3) ne passe que le premier instant de la
+  // paire (1, 2) ; le retard mesuré, 1 s à 2,7 % de vitesse, mène à 68 ms : les deux le sont. Le
+  // seuil ne fait que croître avec le temps du test : le résultat n'en dépend pas.
+  clock.value =
+      ClockSnapshot{.media_us = 41'000, .host_us = host_now_us(), .rate = 0.027, .epoch = 0, .valid = true};
+  rig.live->latency().observe(FrameLatency::kMaxSampleUs);
+  UpscaleSetup s = rig.setup(true, Factor{.num = 3, .den = 1});
+  s.clock = &clock;
+  rig.start(std::move(s), &clock);
+  // Une à une : seule en file, une image n'est jamais sautée.
+  rig.feed(1, 1);
+  REQUIRE(rig.collect(1));
+  rig.feed(2, 2);
+  REQUIRE(rig.collect(2));
+  rig.stage.reset();
+
+  CHECK(shape_of(rig.sink.frames()) == std::vector<std::string>{"1", "2"});
+  CHECK(rig.backend.count("engine rife") == 0);
+  CHECK(rig.live->counts().late == 1);
+}
+
 TEST_CASE("Étage gpu : une image déjà passée, une plus récente derrière elle, est sautée sans calcul",
           "[app][stage]") {
   Rig rig;

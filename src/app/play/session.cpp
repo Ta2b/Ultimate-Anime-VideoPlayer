@@ -43,6 +43,7 @@ Session::Session(SessionConfig config, Stages& stages, Screen& screen, const Mas
       show_stats_(config_.stats) {
   late_.reserve(kMaxRingSlots);
   unwritten_.reserve(kMaxRingSlots);
+  unmeasured_.reserve(kMaxRingSlots);
 }
 
 void Session::begin(std::int64_t /*host_now*/) {
@@ -159,6 +160,8 @@ void Session::seek_to(std::int64_t target_us, bool exact) {
     retire(frame);
     ++stats_.stale;
   }
+  // Rendues, leurs slots repartent : leur écriture ne se mesure plus.
+  std::erase_if(unmeasured_, [this](const RingFrame& frame) { return frame.epoch < epoch_; });
   stats_.restart_pacing();
   subtitles_.clear();
   subtitle_requests_ = 0;
@@ -174,6 +177,9 @@ void Session::on_frame(const RingFrame& frame) {
     ++stats_.stale;
     return;
   }
+  // Une image reçue tient son slot jusqu'à être écrite : jamais plus de kMaxRingSlots en attente.
+  if (config_.latency != nullptr && frame.submitted_us > 0 && unmeasured_.size() < kMaxRingSlots)
+    unmeasured_.push_back(frame);
   queue_.push(frame);
   request_subtitles(frame);
 }
@@ -221,6 +227,16 @@ void Session::retire_written() {
   std::erase_if(unwritten_, [this](const RingFrame& frame) {
     if (!screen_.ready(frame)) return false;
     stages_.slot_free(screen_.retire(frame));
+    return true;
+  });
+}
+
+// Avant tout retour de slot du tour : un slot rendu puis réécrit paraîtrait écrit bien plus tard.
+void Session::measure_latency(std::int64_t host_now) {
+  if (config_.latency == nullptr) return;
+  std::erase_if(unmeasured_, [&](const RingFrame& frame) {
+    if (!screen_.ready(frame)) return false;
+    config_.latency->observe(host_now - frame.submitted_us);
     return true;
   });
 }
@@ -288,6 +304,7 @@ const subs::SubtitleFrame* Session::subtitles_for(std::int64_t pts_us) {
 
 std::expected<std::optional<PresentRecord>, Refusal> Session::tick(std::int64_t host_now, const UiFrame& ui) {
   fresh_ = false;
+  measure_latency(host_now);
   retire_written();
   follow_display();
   choose(host_now);
@@ -427,6 +444,7 @@ void Session::end() {
   for (const RingFrame& frame : queue_.take_all()) stages_.slot_free(screen_.retire(frame));
   for (const RingFrame& frame : unwritten_) stages_.slot_free(screen_.retire(frame));
   unwritten_.clear();
+  unmeasured_.clear();
   if (current_) stages_.slot_free(screen_.retire(*current_));
   current_.reset();
   subtitles_.clear();

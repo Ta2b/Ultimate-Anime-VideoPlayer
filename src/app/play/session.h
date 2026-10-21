@@ -19,6 +19,7 @@
 #include <vector>
 
 #include "app/play/controls.h"
+#include "app/play/frame_latency.h"
 #include "app/play/frame_queue.h"
 #include "app/play/frame_stats.h"
 #include "app/play/links.h"
@@ -85,6 +86,9 @@ struct SessionConfig {
   bool steady_cadence = false;
   StatsSettings stats;                 // mesures affichées (Tab bascule toutes)
   const StatsSource* extra = nullptr;  // vit plus longtemps que la session
+  // Le retard des images, de leur soumission par gpu à leur écriture vue par main : la session le
+  // mesure, gpu le lit. Vit plus longtemps que la session ; rien : pas de mesure.
+  FrameLatency* latency = nullptr;
 };
 
 // Une ligne par présentation, pour --stats.
@@ -153,6 +157,7 @@ class Session {
   void request_subtitles(const RingFrame& frame);
   void retire(const RingFrame& frame);
   void retire_written();  // les images rendues avant d'être écrites, qui le sont maintenant
+  void measure_latency(std::int64_t host_now);  // les images écrites depuis le tour d'avant
   void choose(std::int64_t host_now);
   const subs::SubtitleFrame* subtitles_for(std::int64_t pts_us);
   void check_end(std::int64_t host_now);
@@ -172,9 +177,10 @@ class Session {
   std::optional<std::int64_t> pending_seek_us_;  // cible du dernier seek, jusqu'à sa première image
 
   FrameQueue queue_;
-  std::optional<RingFrame> current_;  // montrée, slot tenu par main
-  std::vector<RingFrame> late_;       // réservé une fois, réutilisé à chaque tour
-  std::vector<RingFrame> unwritten_;  // rendues par main avant d'être écrites : parties une fois écrites
+  std::optional<RingFrame> current_;   // montrée, slot tenu par main
+  std::vector<RingFrame> late_;        // réservé une fois, réutilisé à chaque tour
+  std::vector<RingFrame> unwritten_;   // rendues par main avant d'être écrites : parties une fois écrites
+  std::vector<RingFrame> unmeasured_;  // reçues, pas encore vues écrites : leur retard reste à mesurer
   SubtitleQueue subtitles_{kMaxKeptSubtitles};
   std::size_t subtitle_requests_ = 0;  // demandes de l'époque sans réponse
 

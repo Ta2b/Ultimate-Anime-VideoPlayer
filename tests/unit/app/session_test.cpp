@@ -112,6 +112,36 @@ TEST_CASE("Une image pas encore écrite n'est ni montrée ni rendue : l'écran g
   CHECK(rig.session.stats().dropped == 1);
 }
 
+TEST_CASE("Retard des images : de la soumission à l'écriture vue par main", "[app][session]") {
+  FrameLatency latency;
+  Rig rig(SessionConfig{.latency = &latency});
+  rig.screen.now_us = 1'000'000;
+  rig.screen.unwritten = {0};
+  RingFrame first = ring_frame(0, 40'000);
+  first.submitted_us = 1'000'000;
+  rig.session.handle(first);
+  rig.tick();
+  CHECK(latency.us() == 0);  // pas encore écrite
+  rig.screen.now_us = 1'030'000;
+  rig.screen.write(0);
+  rig.tick();
+  CHECK(latency.us() == 30'000);
+  // Sans instant de soumission : rien à mesurer.
+  rig.session.handle(ring_frame(1, 81'708));
+  rig.tick();
+  CHECK(latency.us() == 30'000);
+  // Seek : une image de l'époque passée, rendue, ne se mesure plus, même écrite plus tard.
+  rig.screen.unwritten = {2};
+  RingFrame stale = ring_frame(2, 123'417);
+  stale.submitted_us = rig.screen.now_us;
+  rig.session.handle(stale);
+  rig.session.command(cmd::Seek{.target_us = 5'000'000});
+  rig.screen.now_us += 500'000;
+  rig.screen.write(2);
+  rig.tick();
+  CHECK(latency.us() == 30'000);
+}
+
 TEST_CASE("Amorce : la première image attend d'être écrite, l'horloge aussi", "[app][session]") {
   Rig rig;
   rig.screen.unwritten = {0};

@@ -92,6 +92,9 @@ struct RingFrame {
   bool uninterpolated = false;
   std::uint32_t epoch = 0;        // d'une époque passée : main ne la présente pas, mais rend le slot
   std::uint64_t ready_value = 0;  // valeur du sémaphore du slot à attendre avant lecture
+  // Instant hôte (host_now_us) où gpu a soumis l'écriture du slot ; 0 : inconnu. main en tire le
+  // retard des images (app/play/frame_latency.h).
+  std::int64_t submitted_us = 0;
 };
 
 // Le SlotFree qui rend le slot d'une image reçue, présentée ou jetée (étape 2 du protocole).

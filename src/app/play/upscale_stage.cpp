@@ -256,15 +256,16 @@ std::expected<std::uint32_t, Refusal> UpscaleStage::outputs(const DecodedFrame& 
   // ×N demandé, arrondi au-dessus (×1,5 compte pour ×2) ; 1 : pas d'interpolation.
   std::uint32_t wanted = on_grid ? static_cast<std::uint32_t>((factor.num + factor.den - 1) / factor.den) : 1;
   // En retard sur l'horloge maître (GPU débordé : 4K ×3, scène lourde) : les instants
-  // intermédiaires de tête qui seront passés quand ils seront prêts (l'horloge une période de
-  // sortie plus loin) sont sautés, les suivants faits ; l'image seule s'il n'en reste aucun.
+  // intermédiaires de tête qui seront passés quand ils seront prêts (une période de sortie plus
+  // loin, ou après le retard mesuré des images) sont sautés, les suivants faits ; l'image seule
+  // s'il n'en reste aucun.
   std::size_t late = 0;
   if (on_grid && setup_.clock != nullptr && previous_ && previous_->epoch == frame.epoch) {
     const ClockSnapshot now = setup_.clock->snapshot();
     if (now.valid && now.epoch == frame.epoch && now.rate > 0.0) {
       const std::int64_t period =
           std::max<std::int64_t>(frame.pts_us - previous_->pts_us, 0) * factor.den / factor.num;
-      const std::int64_t ready = now.media_at(host_now_us()) + period;
+      const std::int64_t ready = ready_media_us(now, host_now_us(), period, latency_us());
       std::size_t middles = 0;
       for (const core::OutputInstant& at : step->instants()) {
         if (at.is_source()) continue;
@@ -366,7 +367,8 @@ bool UpscaleStage::passed(const DecodedFrame& frame, const DecodedFrame& next) {
   if (setup_.clock == nullptr || frame.pts_us == kNoPts || next.pts_us == kNoPts) return false;
   const ClockSnapshot now = setup_.clock->snapshot();
   if (!now.valid || now.epoch != frame.epoch || now.rate <= 0.0) return false;
-  if (next.pts_us > now.media_at(host_now_us())) return false;
+  // L'image d'après sera passée quand celle-ci serait prête : celle-ci ne paraîtrait jamais.
+  if (next.pts_us > ready_media_us(now, host_now_us(), 0, latency_us())) return false;
   // La suite repart de l'image d'après, comme au début d'une époque : ni paire, ni grille de
   // cadence, ni fenêtre de DistilDRBA ne passent par-dessus l'image sautée.
   previous_.reset();

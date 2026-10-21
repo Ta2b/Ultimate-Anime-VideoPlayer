@@ -6,6 +6,7 @@
 #include <utility>
 #include <variant>
 
+#include "core/clock.h"
 #include "core/thread.h"
 
 namespace ajp::app::play {
@@ -121,6 +122,7 @@ void RingStage::emit(const ThreadReport& report) {
       while (slot < free_.size() && !free_[slot]) ++slot;
       if (slot == free_.size()) return;  // attend un SlotFree
       const std::uint64_t ready = released_[slot] + 1;
+      const std::int64_t submitted = host_now_us();
       auto produced = produce(frame, front_done_, slot, released_[slot], ready);
       if (!produced) {
         fail(report, produced.error());
@@ -133,7 +135,8 @@ void RingStage::emit(const ThreadReport& report) {
                            .right = produced->right,
                            .uninterpolated = produced->uninterpolated,
                            .epoch = frame.epoch,
-                           .ready_value = ready};
+                           .ready_value = ready,
+                           .submitted_us = submitted};
       free_[slot] = false;
       released_[slot] = ready;  // le slot est écrit : sa prochaine attente part de ready + 1
       ++front_done_;

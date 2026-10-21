@@ -172,6 +172,8 @@ class UpscaleStage final : public RingStage {
   Ahead ahead_;
   bool ahead_scores_ = true;  // faux si le backend n'a pas scores_start
   bool looks_ahead() const { return interpolates() && !drba(); }
+  // Retard mesuré des images de sortie (FrameLatency) ; 0 sans mesure.
+  std::int64_t latency_us() const { return setup_.live ? setup_.live->latency().us() : 0; }
   std::expected<void, Refusal> allocate_ahead();
   // L'image déjà ingérée en avance passe dans rgb_[current_] (et small_) ; faux sinon.
   bool take_ahead(const DecodedFrame& frame, const gpu::IngestSpec& spec);

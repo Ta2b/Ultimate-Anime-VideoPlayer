@@ -160,6 +160,7 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
   session_config.stats = settings.stats;
   session_config.subtitle_scale = settings.subtitle_scale;
   session_config.extra = &chain_stats;
+  session_config.latency = &live->latency();
   log->info("{}", label_text);
   for (const std::string& line : session_config.tracks) log->info("{}", line);
   log->info("{}", session_config.output);
