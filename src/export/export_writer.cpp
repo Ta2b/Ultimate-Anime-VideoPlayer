@@ -23,7 +23,10 @@ struct ExportWriter::State {
   bool constant_rate = true;
   std::int64_t last_pts = 0;
   bool any = false;  // une image déjà encodée : last_pts vaut
-  FramePtr last;     // cadence fixe : la dernière image encodée, à répéter
+  // Images reçues à un instant déjà passé, décalées juste après le précédent : un doublon d'instant
+  // en amont (cadence), dit au journal plutôt que caché.
+  std::int64_t shifted = 0;
+  FramePtr last;  // cadence fixe : la dernière image encodée, à répéter
 };
 
 namespace {
@@ -251,7 +254,12 @@ void ExportWriter::run(const std::stop_token& stop) {
     frame->chroma_location = s.color.siting;
     // Sur la ligne du conteneur, comme les pistes copiées ; strictement croissant pour l'encodeur.
     std::int64_t pts = picture.pts_us + s.muxer.start_us();
-    if (s.any && pts <= s.last_pts) pts = s.last_pts + 1;
+    if (s.any && pts <= s.last_pts) {
+      if (s.shifted++ == 0)
+        log->warn("image à {} µs, pas après la précédente ({} µs) : décalée à {} µs", pts, s.last_pts,
+                  s.last_pts + 1);
+      pts = s.last_pts + 1;
+    }
     if (auto repeated = repeat_last(pts); !repeated) return fail(std::move(repeated.error()));
     s.last_pts = pts;
     s.any = true;
@@ -271,6 +279,7 @@ void ExportWriter::run(const std::stop_token& stop) {
   bytes_.store(s.muxer.bytes());
   log->info("export écrit : {} images dont {} répétées, {} Mo, {}", frames_.load(), repeated_.load(),
             bytes_.load() / 1'000'000, utf8(output_));
+  if (s.shifted > 0) log->warn("{} images reçues à un instant déjà passé, décalées", s.shifted);
   const std::scoped_lock lock(mutex_);
   done_ = true;
   wake_.notify_all();
