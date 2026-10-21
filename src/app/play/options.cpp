@@ -7,6 +7,7 @@
 #include <system_error>
 #include <utility>
 
+#include "app/play/settings.h"
 #include "core/charconv.h"
 
 namespace ajp::app::play {
@@ -161,13 +162,15 @@ std::expected<PlayOptions, Refusal> parse_play_options(std::span<const std::stri
           options.true_hdr_sdk = std::filesystem::path(text);
         } else if (name.starts_with("--truehdr-")) {
           const auto setting = number<int>(text);
+          // Les bornes de play.toml (limits::), le pic à 0 pour « celui de l'écran ».
           const bool peak = name == "--truehdr-peak";
-          const core::Range<int> range = peak                       ? core::Range<int>{0, 2000}
-                                         : name == "--truehdr-gray" ? core::Range<int>{10, 100}
-                                                                    : core::Range<int>{0, 200};
-          if (!setting || !range.contains(*setting) || (peak && *setting != 0 && *setting < 400)) {
-            return refuse(RefusalCode::FieldOutOfRange, std::format("{} : « {} » hors de {} à {}", name, text,
-                                                                    peak ? 400 : range.lo, range.hi));
+          const core::Range<int> range = peak                           ? limits::kTrueHdrPeak
+                                         : name == "--truehdr-gray"     ? limits::kTrueHdrGray
+                                         : name == "--truehdr-contrast" ? limits::kTrueHdrContrast
+                                                                        : limits::kTrueHdrSaturation;
+          if (!setting || !(range.contains(*setting) || (peak && *setting == 0))) {
+            return refuse(RefusalCode::FieldOutOfRange,
+                          std::format("{} : « {} » hors de {} à {}", name, text, range.lo, range.hi));
           }
           if (peak) options.true_hdr_peak = *setting;
           if (name == "--truehdr-contrast") options.true_hdr_contrast = *setting;
