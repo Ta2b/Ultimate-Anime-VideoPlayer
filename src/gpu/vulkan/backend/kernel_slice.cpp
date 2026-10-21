@@ -253,7 +253,7 @@ std::expected<std::uint64_t, Refusal> VulkanKernelOps::scores_start(const Tensor
 
 std::expected<PairScores, Refusal> VulkanKernelOps::scores_take(std::uint64_t ticket) {
   PairRead& slot = pair_reads_[ticket % pair_reads_.size()];
-  if (ticket == 0 || slot.ticket != ticket) {
+  if (ticket == 0 || slot.ticket != ticket || !slot.sums || !slot.worst) {
     return refuse_slice(RefusalCode::SequenceOrder, std::format("scores_take : ticket {} périmé", ticket));
   }
   // Attente hôte voulue : la décision de lancer RIFE dépend de cette paire (kernels/spec/detect.h).
@@ -302,7 +302,7 @@ std::expected<std::uint64_t, Refusal> VulkanKernelOps::flow_max_start(const Moti
 
 std::expected<float, Refusal> VulkanKernelOps::flow_max_take(std::uint64_t ticket) {
   FlowRead& slot = flow_reads_[ticket % flow_reads_.size()];
-  if (ticket == 0 || slot.ticket != ticket) {
+  if (ticket == 0 || slot.ticket != ticket || !slot.result) {
     return refuse_slice(RefusalCode::SequenceOrder, std::format("flow_max_take : ticket {} périmé", ticket));
   }
   // Attente hôte voulue : relancer RIFE aux autres instants dépend de ce maximum.

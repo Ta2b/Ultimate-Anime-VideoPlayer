@@ -34,7 +34,7 @@ class Scratch {
 
   // Écrit text dans name, lisible du seul utilisateur.
   std::expected<std::filesystem::path, Refusal> secret(std::string_view name, std::string_view text) const {
-    const std::filesystem::path path = dir_ / name;
+    std::filesystem::path path = dir_ / name;
     {
       std::ofstream out(path, std::ios::binary | std::ios::trunc);
       if (!out) return refuse(RefusalCode::FileUnwritable, path.string());

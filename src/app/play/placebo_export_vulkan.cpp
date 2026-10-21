@@ -79,7 +79,7 @@ std::expected<void, Refusal> FrameExport::open_vulkan(pl_gpu gpu, AVBufferRef* f
     av_frame_free(&probe);
     return refuse(RefusalCode::VendorCallFailed, "av_hwframe_get_buffer");
   }
-  auto planes = wrap_planes(gpu, *probe);
+  auto planes = wrap_planes(*vulkan_, gpu, *probe);
   av_frame_free(&probe);
   if (!planes) return std::unexpected(planes.error());
   return {};
@@ -96,8 +96,8 @@ void FrameExport::close_vulkan(pl_gpu gpu) {
   vulkan_.reset();
 }
 
-std::expected<std::array<pl_tex, 2>, Refusal> FrameExport::wrap_planes(pl_gpu gpu, const AVFrame& frame) {
-  VulkanFrames& v = *vulkan_;
+std::expected<std::array<pl_tex, 2>, Refusal> FrameExport::wrap_planes(VulkanFrames& v, pl_gpu gpu,
+                                                                       const AVFrame& frame) {
   const FrameParts parts = parts_of(*v.frames, frame);
   const auto image = std::bit_cast<std::uint64_t>(parts.image->img[0]);
   const auto known = std::ranges::find(v.wraps, image, &VulkanFrames::Wrap::image);
@@ -131,10 +131,9 @@ std::expected<std::array<pl_tex, 2>, Refusal> FrameExport::wrap_planes(pl_gpu gp
   return wrap.planes;
 }
 
-FrameExport::Converted FrameExport::convert_vulkan(const RingFrame& frame) {
+FrameExport::Converted FrameExport::convert_vulkan(VulkanFrames& v, const RingFrame& frame) {
   PlaceboScreen::Impl& s = *screen_.impl_;
   const pl_gpu gpu = s.vk->gpu;
-  VulkanFrames& v = *vulkan_;
   const auto given_back = [&](Refusal failure) {
     return Converted{.freed = s.ring.retire(gpu, frame), .failure = std::move(failure)};
   };
@@ -146,7 +145,7 @@ FrameExport::Converted FrameExport::convert_vulkan(const RingFrame& frame) {
     av_frame_free(&out);
     return given_back(Refusal{RefusalCode::VendorCallFailed, "export : av_hwframe_get_buffer"});
   }
-  auto planes = wrap_planes(gpu, *out);
+  auto planes = wrap_planes(v, gpu, *out);
   if (!planes) {
     av_frame_free(&out);
     return given_back(std::move(planes.error()));
@@ -192,10 +191,9 @@ FrameExport::Converted FrameExport::convert_vulkan(const RingFrame& frame) {
   return converted;
 }
 
-bool FrameExport::deliver_vulkan(const std::function<bool(exporter::Picture&&)>& push) {
-  VulkanFrames& v = *vulkan_;
+bool FrameExport::deliver_vulkan(VulkanFrames& v, const std::function<bool(exporter::Picture&&)>& push) {
   if (v.pending.empty()) return false;
-  Pending& next = v.pending.front();
+  const Pending& next = v.pending.front();
   exporter::Picture picture;
   picture.pts_us = next.pts_us;
   picture.frame = next.frame;

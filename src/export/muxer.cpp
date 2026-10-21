@@ -131,7 +131,7 @@ std::int64_t Muxer::bytes() const {
 std::expected<void, Refusal> Muxer::begin(const AVCodecContext& encoder) {
   const auto log = log_channel("export");
   encoder_time_base_ = encoder.time_base;
-  AVFormatContext& in = *input_;
+  const AVFormatContext& in = *input_;
   AVFormatContext& out = *output_;
   av_dict_copy(&out.metadata, in.metadata, 0);
 

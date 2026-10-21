@@ -60,10 +60,10 @@ jobs:
   # Tous les modules, lecteur compris, sous Xvfb avec Vulkan logiciel (lavapipe) et la couche de
   # validation exigée (AJP_TEST_VULKAN_VALIDATION, tests/support/vulkan_validation.h : chaque
   # erreur de la couche fait échouer l'exécutable) : une fois tel quel, une fois sous TSan. Sous
-  # ASan et UBSan la couche est coupée : déchargée à la destruction de l'instance, elle laisse à
-  # LeakSanitizer 128 octets « <unknown module> » par processus qu'aucune suppression ne peut
-  # nommer (tools/ci/lsan.supp), et les deux autres tâches la font déjà parler. Les préréglages de
-  # test portent LSAN_OPTIONS et TSAN_OPTIONS.
+  # ASan et UBSan la couche est coupée pour la durée : les deux autres tâches la font déjà parler.
+  # Les préréglages de test portent LSAN_OPTIONS, TSAN_OPTIONS et, sous ASan, le chargeur Vulkan
+  # qui garde pilotes et couches chargés jusqu'à la sortie (tools/ci/lsan.supp dit pourquoi).
+  # clang-tidy n'analyse que les fichiers que cette configuration compile (clang-tidy-src.sh).
   player:
     name: Lecteur Linux (${{ matrix.name }})
     if: github.event_name != 'push' || github.ref == 'refs/heads/main'
@@ -98,4 +98,4 @@ jobs:
         run: xvfb-run -a ctest --preset ${{ matrix.preset }}
       - name: clang-tidy sur src/
         if: matrix.tidy
-        run: git ls-files -z -- 'src/*.cpp' | xargs -0 -r -n1 -P4 clang-tidy-20 -p build/linux-prefix --quiet
+        run: tools/ci/clang-tidy-src.sh build/linux-prefix

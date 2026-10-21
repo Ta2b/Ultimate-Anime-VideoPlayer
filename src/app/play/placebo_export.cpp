@@ -248,7 +248,7 @@ void FrameExport::close_cuda(pl_gpu gpu) {
 FrameExport::~FrameExport() {
   const pl_gpu gpu = screen_.impl_->vk->gpu;
   pl_gpu_finish(gpu);  // les copies en cours écrivent dans les tampons : finies avant de les rendre
-  for (Buffer& buffer : buffers_) {
+  for (const Buffer& buffer : buffers_) {
     if (buffer.data != nullptr) ::operator delete[](buffer.data, std::align_val_t{kHostAlign});
   }
   close_cuda(gpu);
@@ -309,7 +309,7 @@ FrameExport::Converted FrameExport::render(const RingFrame& frame, std::span<con
 }
 
 FrameExport::Converted FrameExport::convert(const RingFrame& frame) {
-  if (vulkan_) return convert_vulkan(frame);
+  if (vulkan_) return convert_vulkan(*vulkan_, frame);
   PlaceboScreen::Impl& s = *screen_.impl_;
   const pl_gpu gpu = s.vk->gpu;
   const auto free =
@@ -368,8 +368,8 @@ bool FrameExport::ready(Buffer& buffer) {
 }
 
 std::expected<bool, Refusal> FrameExport::deliver(const std::function<bool(exporter::Picture&&)>& push) {
-  if (vulkan_) return deliver_vulkan(push);
-  if (cuda_) return deliver_cuda(push);
+  if (vulkan_) return deliver_vulkan(*vulkan_, push);
+  if (cuda_) return deliver_cuda(*cuda_, push);
   if (order_.empty()) return false;
   Buffer& buffer = buffers_[order_.front()];
   if (!ready(buffer)) return false;
@@ -392,8 +392,7 @@ std::expected<bool, Refusal> FrameExport::deliver(const std::function<bool(expor
   return true;
 }
 
-std::expected<AVFrame*, Refusal> FrameExport::copy_to_pool(const Buffer& buffer) {
-  const Cuda& c = *cuda_;
+std::expected<AVFrame*, Refusal> FrameExport::copy_to_pool(const Cuda& c, const Buffer& buffer) {
   AVFrame* frame = av_frame_alloc();
   if (frame == nullptr) return refuse(RefusalCode::GpuMemoryExhausted, "export : image de l'encodeur");
   // Le pool de l'encodeur est sans borne (VideoEncoder) : une image par appel, rendue au pool par
@@ -429,19 +428,19 @@ std::expected<AVFrame*, Refusal> FrameExport::copy_to_pool(const Buffer& buffer)
   return frame;
 }
 
-std::expected<bool, Refusal> FrameExport::deliver_cuda(const std::function<bool(exporter::Picture&&)>& push) {
-  Cuda& c = *cuda_;
+std::expected<bool, Refusal> FrameExport::deliver_cuda(Cuda& c,
+                                                       const std::function<bool(exporter::Picture&&)>& push) {
   while (!order_.empty() && c.pending.size() < buffers_.size()) {
     Buffer& buffer = buffers_[order_.front()];
     if (!ready(buffer)) break;
-    auto copied = copy_to_pool(buffer);
+    auto copied = copy_to_pool(c, buffer);
     if (!copied) return std::unexpected(copied.error());
     c.pending.push_back({.frame = *copied, .pts_us = buffer.pts_us});
     buffer.in_flight = false;
     order_.pop_front();
   }
   if (c.pending.empty()) return false;
-  Pending& next = c.pending.front();
+  const Pending& next = c.pending.front();
   exporter::Picture picture;
   picture.pts_us = next.pts_us;
   picture.frame = next.frame;

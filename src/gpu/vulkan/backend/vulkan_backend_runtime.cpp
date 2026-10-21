@@ -139,8 +139,8 @@ std::expected<std::unique_ptr<Engine>, Refusal> VulkanBackend::load_runtime(cons
   return std::make_unique<RuntimeEngine>(std::move(*net), std::move(*names));
 }
 
-void VulkanBackend::import_timeline() {
-  auto fd = semaphore_fd(*context_, queue_->semaphore());
+void VulkanBackend::import_timeline(BackendQueue& queue) {
+  auto fd = semaphore_fd(*context_, queue.semaphore());
   if (!fd) {
     log(BackendLogLevel::Warn,
         std::format("timeline non exportée ({}) : attente par l'hôte", fd.error().detail));
@@ -260,8 +260,8 @@ std::expected<void, Refusal> VulkanBackend::enqueue_runtime(Engine& engine, std:
     step = queue_->host_step();
     auto deferred = runtime_engine->net().run_deferred(
         ins, outs, [this, wait = step->wait] { return queue_->wait_elsewhere(wait); },
-        [this, signal = step->signal](std::expected<void, Refusal> ran) {
-          finish_host_step(signal, std::move(ran));
+        [this, &queue = *queue_, signal = step->signal](std::expected<void, Refusal> ran) {
+          finish_host_step(queue, signal, std::move(ran));
         });
     if (deferred) return {};
     if (deferred.error().code != RefusalCode::FeatureUnavailable) {
@@ -277,13 +277,14 @@ std::expected<void, Refusal> VulkanBackend::enqueue_runtime(Engine& engine, std:
   return ran;
 }
 
-void VulkanBackend::finish_host_step(std::uint64_t signal, std::expected<void, Refusal> ran) {
+void VulkanBackend::finish_host_step(BackendQueue& queue, std::uint64_t signal,
+                                     std::expected<void, Refusal> ran) {
   if (!ran) {
     log(BackendLogLevel::Error, std::format("réseau par {} : {}", runtime_->name(), ran.error().detail));
     const std::scoped_lock lock(runtime_mutex_);
     if (!runtime_failure_) runtime_failure_ = std::move(ran.error());
   }
-  if (auto ok = queue_->signal_on_host(signal); !ok) {
+  if (auto ok = queue.signal_on_host(signal); !ok) {
     log(BackendLogLevel::Error, std::format("signal de l'étape {} : {}", signal, ok.error().detail));
   }
 }

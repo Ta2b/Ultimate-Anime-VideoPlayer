@@ -81,9 +81,12 @@ constexpr CUresult kCudaSuccess = 0;
 constexpr unsigned kMemoryTypeDevice = 2;    // CU_MEMORYTYPE_DEVICE
 constexpr unsigned kStreamNonBlocking = 1;   // CU_STREAM_NON_BLOCKING
 constexpr unsigned kEventDisableTiming = 2;  // CU_EVENT_DISABLE_TIMING
-constexpr int kHandleOpaqueFd = 1;           // CU_EXTERNAL_MEMORY_HANDLE_TYPE_OPAQUE_FD
-constexpr int kHandleOpaqueWin32 = 2;        // CU_EXTERNAL_MEMORY_HANDLE_TYPE_OPAQUE_WIN32
-constexpr unsigned kMemoryDedicated = 1;     // CUDA_EXTERNAL_MEMORY_DEDICATED
+#if defined(_WIN32)
+constexpr int kHandleOpaqueWin32 = 2;  // CU_EXTERNAL_MEMORY_HANDLE_TYPE_OPAQUE_WIN32
+#else
+constexpr int kHandleOpaqueFd = 1;  // CU_EXTERNAL_MEMORY_HANDLE_TYPE_OPAQUE_FD
+#endif
+constexpr unsigned kMemoryDedicated = 1;  // CUDA_EXTERNAL_MEMORY_DEDICATED
 
 #if defined(_WIN32)
 constexpr const char* kLibrary = "nvcuda.dll";

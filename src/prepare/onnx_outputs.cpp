@@ -96,9 +96,12 @@ std::expected<std::vector<OnnxNode>, Refusal> onnx_nodes(std::span<const std::by
     while (parts.next(part)) {
       if (!part.delimited) continue;
       std::string text(reinterpret_cast<const char*>(part.payload.data()), part.payload.size());
-      if (part.number == kNodeInput) node.inputs.push_back(std::move(text));
-      if (part.number == kNodeOutput) node.outputs.push_back(std::move(text));
-      if (part.number == kNodeOpType) node.op_type = std::move(text);
+      if (part.number == kNodeInput)
+        node.inputs.push_back(std::move(text));
+      else if (part.number == kNodeOutput)
+        node.outputs.push_back(std::move(text));
+      else if (part.number == kNodeOpType)
+        node.op_type = std::move(text);
     }
     if (!parts.ok()) return malformed("ONNX : nœud malformé");
   }

@@ -175,7 +175,8 @@ Result<std::vector<PlaneF>> gmfss_compose(const Splatted& high_a, const Splatted
                     window.width, window.height, window.x, window.y, fusion[0].width, fusion[0].height, w,
                     h));
   }
-  const float scale = static_cast<float>(ow / w);
+  const int factor = ow / w;  // multiple entier, vérifié plus haut
+  const float scale = static_cast<float>(factor);
   std::vector<PlaneF> out(3, PlaneF(ow, oh));
   const auto mix = [&](float p0, float c0, float p1, float c1) {
     const float w0 = (1.0F - t) * c0;

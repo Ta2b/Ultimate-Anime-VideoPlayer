@@ -108,9 +108,9 @@ std::expected<void, Refusal> UpscaleStage::allocate_gmfss() {
                                     gpu::Shape{.dims = {1, 4, setup_.work_height, setup_.work_width}});
     if (!low) return std::unexpected(std::move(low.error()));
     gmfss_.low[static_cast<std::size_t>(side)] = std::move(*low);
-    auto high = backend.alloc_tensor(
-        gpu::TensorType::F16,
-        gpu::Shape{.dims = {1, 4, setup_.work_height * kSpanFactor, setup_.work_width * kSpanFactor}});
+    auto high = backend.alloc_tensor(gpu::TensorType::F16,
+                                     gpu::Shape{.dims = {1, 4, std::int64_t{setup_.work_height} * kSpanFactor,
+                                                         std::int64_t{setup_.work_width} * kSpanFactor}});
     if (!high) return std::unexpected(std::move(high.error()));
     gmfss_.high[static_cast<std::size_t>(side)] = std::move(*high);
   }

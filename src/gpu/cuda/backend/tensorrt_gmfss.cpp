@@ -148,6 +148,7 @@ std::expected<void, Refusal> TensorRtBackend::soft_splat_all(std::span<const Ker
     const bool direct = job.grid.scale == 1.0F && job.grid.x == 0.0F && job.grid.y == 0.0F &&
                         width_of(job.motion) == width_of(job.source) &&
                         height_of(job.motion) == height_of(job.source);
+    const std::size_t first_sum = offset / sizeof(float);  // offset compte des octets
     batch.jobs[batch.count++] =
         SoftSplatParams{.source = address(job.source),
                         .motion = address(job.motion),
@@ -162,7 +163,7 @@ std::expected<void, Refusal> TensorRtBackend::soft_splat_all(std::span<const Ker
                         .motion_y = job.grid.y,
                         .direct = direct ? 1 : 0,
                         .coverage = job.out.shape.dims[1] > job.source.shape.dims[1] ? 1 : 0,
-                        .sums = splat_sums_ + offset / sizeof(float),
+                        .sums = splat_sums_ + first_sum,
                         .out = address(job.out)};
     offset += (bytes + kAlign - 1) / kAlign * kAlign;
   }

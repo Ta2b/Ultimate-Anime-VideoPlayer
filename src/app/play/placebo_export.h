@@ -141,16 +141,17 @@ class FrameExport {
   void close_cuda(pl_gpu gpu);
   // Les tampons prêts copiés chacun dans une image du pool de l'encodeur, puis la plus ancienne
   // image copiée confiée.
-  std::expected<bool, Refusal> deliver_cuda(const std::function<bool(exporter::Picture&&)>& push);
+  std::expected<bool, Refusal> deliver_cuda(Cuda& c, const std::function<bool(exporter::Picture&&)>& push);
   // Une image prise au pool, les plans du tampon copiés dedans, la copie finie.
-  std::expected<AVFrame*, Refusal> copy_to_pool(const Buffer& buffer);
+  std::expected<AVFrame*, Refusal> copy_to_pool(const Cuda& c, const Buffer& buffer);
   // Les images de l'encodeur : une image d'essai prise au pool, ses plans enveloppés et rendables.
   // Refus FeatureUnavailable (format des plans, pas de rendu), VendorCallFailed.
   std::expected<void, Refusal> open_vulkan(pl_gpu gpu, AVBufferRef* frames);
   void close_vulkan(pl_gpu gpu);
-  std::expected<std::array<pl_tex, 2>, Refusal> wrap_planes(pl_gpu gpu, const AVFrame& frame);
-  Converted convert_vulkan(const RingFrame& frame);
-  bool deliver_vulkan(const std::function<bool(exporter::Picture&&)>& push);
+  std::expected<std::array<pl_tex, 2>, Refusal> wrap_planes(VulkanFrames& v, pl_gpu gpu,
+                                                            const AVFrame& frame);
+  Converted convert_vulkan(VulkanFrames& v, const RingFrame& frame);
+  bool deliver_vulkan(VulkanFrames& v, const std::function<bool(exporter::Picture&&)>& push);
   // Rend l'image du ring dans ces plans de sortie (un par plan de la disposition ; packed : plans
   // 10 bits dans 16, rx10) et rend le slot.
   Converted render(const RingFrame& frame, std::span<const pl_tex> targets, bool packed);

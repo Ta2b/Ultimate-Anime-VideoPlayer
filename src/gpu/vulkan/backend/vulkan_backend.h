@@ -109,11 +109,11 @@ class VulkanBackend final : public Backend {
   std::expected<void, Refusal> enqueue_runtime(Engine& engine, std::span<const Tensor> inputs,
                                                std::span<Tensor> outputs);
   // Donne la timeline de la file au runtime ; sans succès, ses réseaux attendent sur l'hôte.
-  void import_timeline();
+  void import_timeline(BackendQueue& queue);
   // Fin d'une étape faite par le runtime sur son propre fil (RuntimeNet::run_deferred) : son
   // échec éventuel est gardé pour le prochain enqueue, et l'étape est signalée quoi qu'il
   // arrive, sans quoi la file attendrait sans fin.
-  void finish_host_step(std::uint64_t signal, std::expected<void, Refusal> ran);
+  void finish_host_step(BackendQueue& queue, std::uint64_t signal, std::expected<void, Refusal> ran);
 
   BackendLog log_;
   std::filesystem::path cache_dir_;

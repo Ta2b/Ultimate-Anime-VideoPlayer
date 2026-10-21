@@ -4,6 +4,7 @@
 #include <format>
 #include <limits>
 #include <type_traits>
+#include <utility>
 
 #include "gpu/ir/graph.h"
 #include "gpu/vulkan/backend/kernel_ops_detail.h"
@@ -133,7 +134,7 @@ std::expected<AdoptedDevice, Refusal> adopted_device(const GpuDevice& render) {
 }
 
 VulkanBackend::VulkanBackend(const BackendInit& init, BackendOptions options)
-    : log_(init.log), cache_dir_(init.cache_dir), options_(options) {}
+    : log_(init.log), cache_dir_(init.cache_dir), options_(std::move(options)) {}
 
 VulkanBackend::~VulkanBackend() {
   kernels_.reset();  // attend la file, rend images et vues
@@ -142,7 +143,7 @@ VulkanBackend::~VulkanBackend() {
 
 std::expected<std::unique_ptr<VulkanBackend>, Refusal> VulkanBackend::create(const BackendInit& init,
                                                                              BackendOptions options) {
-  std::unique_ptr<VulkanBackend> backend(new VulkanBackend(init, options));
+  std::unique_ptr<VulkanBackend> backend(new VulkanBackend(init, std::move(options)));
   if (auto ok = backend->open(init); !ok) return std::unexpected(ok.error());
   return backend;
 }
@@ -186,10 +187,10 @@ std::expected<void, Refusal> VulkanBackend::open(const BackendInit& init) {
                       : 0U;
   auto queue = BackendQueue::create(*context_, exports);
   if (!queue) return std::unexpected(queue.error());
-  queue_.emplace(std::move(*queue));
-  if (export_timeline) import_timeline();
+  BackendQueue& made = queue_.emplace(std::move(*queue));
+  if (export_timeline) import_timeline(made);
   profile_ = profile_device(*context_);
-  kernels_ = std::make_unique<VulkanKernelOps>(*context_, *memory_, *pipelines_, *queue_);
+  kernels_ = std::make_unique<VulkanKernelOps>(*context_, *memory_, *pipelines_, made);
   if (runtime_) {
     log(BackendLogLevel::Info,
         std::format("réseaux par {} {} sur {}{}{}", runtime_->name(), runtime_->version(),

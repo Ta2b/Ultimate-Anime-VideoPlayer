@@ -34,7 +34,7 @@ using Job = std::function<std::expected<void, Refusal>(const InstallProgress&)>;
 
 // Une installation sur son thread, la fenêtre vivante ; rien si elle se ferme.
 std::optional<std::expected<void, Refusal>> run_install(PlaceboScreen& screen, PlayerUi& ui,
-                                                        std::string label, Job job) {
+                                                        const std::string& label, Job job) {
   auto shared = std::make_shared<Shared>();
   auto worker =
       start_thread("install", ThreadReport([shared](const Refusal& refusal) {
@@ -64,7 +64,7 @@ std::optional<std::expected<void, Refusal>> run_install(PlaceboScreen& screen, P
     PrepareView view;
     {
       const std::scoped_lock lock(shared->mutex);
-      if (shared->result) return std::move(*shared->result);
+      if (shared->result) return std::move(shared->result);
       view = PrepareView{.label = label, .fraction = shared->fraction, .details = {shared->stage}};
     }
     if (auto shown = screen.show(ShowRequest{.ui = ui.preparation(host_now_us(), view)}); !shown)

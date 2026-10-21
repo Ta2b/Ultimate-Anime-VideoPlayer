@@ -51,7 +51,7 @@ std::string ChainEngines::motion_label(const PlaySettings& settings) const {
     return std::format("GMFSS Fortuna{} {} · ", gmfss_variant == GmfssVariant::Union ? " Union" : "",
                        factor_text(factor_of(settings)));
   if (use_drba()) return std::format("DistilDRBA {} · ", factor_text(factor_of(settings)));
-  if (rife || rife_motion)
+  if ((rife || rife_motion) && rife_model)
     return std::format("RIFE {} · {} · ", factor_text(factor_of(settings)), rife_model->stem().string());
   return {};
 }

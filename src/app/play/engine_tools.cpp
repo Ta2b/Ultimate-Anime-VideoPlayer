@@ -39,7 +39,7 @@ std::optional<float> curl_percent(std::string_view line) {
   return value / 100.0F;
 }
 
-std::expected<void, Refusal> run_tool(prepare::ProcessSpec spec, const prepare::LineSink& on_line,
+std::expected<void, Refusal> run_tool(const prepare::ProcessSpec& spec, const prepare::LineSink& on_line,
                                       const std::stop_token& stop, std::string_view what) {
   std::string last;
   const auto sink = [&](std::string_view line) {
