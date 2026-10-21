@@ -225,7 +225,11 @@ std::expected<std::unique_ptr<CudaDecodeStream>, Refusal> CudaDecodeStream::atta
 
 CudaDecodeStream::CudaDecodeStream(std::shared_ptr<CudaDriver> driver, AVBufferRef& device,
                                    std::uintptr_t context, std::uintptr_t stream)
-    : driver_(std::move(driver)), device_(av_buffer_ref(&device)), context_(context), stream_(stream) {}
+    : driver_(std::move(driver)),
+      device_(av_buffer_ref(&device)),
+      context_(context),
+      stream_(stream),
+      events_(driver_->event_pool(context)) {}
 
 CudaDecodeStream::~CudaDecodeStream() {
   // Le contexte d'appareil peut survivre au décodeur (images encore tenues) :
@@ -239,7 +243,7 @@ CudaDecodeStream::~CudaDecodeStream() {
 }
 
 std::expected<ReadyEvent, Refusal> CudaDecodeStream::record() const {
-  return driver_->record(context_, stream_);
+  return driver_->record(events_, stream_);
 }
 
 }  // namespace ajp::media

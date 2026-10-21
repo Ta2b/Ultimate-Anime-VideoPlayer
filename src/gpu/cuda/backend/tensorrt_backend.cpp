@@ -199,6 +199,7 @@ TensorRtBackend::~TensorRtBackend() {
   }
   if (splat_sums_ != nullptr) cudaFree(splat_sums_);
   if (ingest_rows_ != nullptr) cudaFree(ingest_rows_);
+  uploads_.reset();  // attend ses envois et les ingestions qui les lisent
   release_yuv_tables();
   runtime_.reset();
   for (Held& held : held_) {

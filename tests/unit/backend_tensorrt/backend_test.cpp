@@ -16,6 +16,7 @@
 #include <vector>
 
 #include <catch2/catch_test_macros.hpp>
+#include <catch2/generators/catch_generators.hpp>
 
 #include "backend_fixture.h"
 #include "backend_frames.h"
@@ -103,6 +104,63 @@ TEST_CASE("Backend TensorRT : ingestion NV12 BT.709 contre la référence", "[ba
     }
   }
   CHECK(worst < 2e-3);  // FP16 sur [0, 1] : un demi-pas à 1 vaut 2^-11 ≈ 4,9e-4
+}
+
+TEST_CASE("Backend TensorRT : ingestion des images du décodage logiciel, comme celles de NVDEC",
+          "[backend_tensorrt][cuda][host]") {
+  if (!has_cuda()) SKIP("pas de GPU NVIDIA");
+  // H.264 10 bits (Hi10P) sort en YUV 4:2:0 planaire 10 bits ; les autres formats du logiciel.
+  const kernels::Format format = GENERATE(kernels::Format::Yuv420p10, kernels::Format::Yuv420p,
+                                          kernels::Format::Nv12, kernels::Format::P010);
+  constexpr int w = 70;
+  constexpr int h = 38;
+  const auto unit = static_cast<std::uint16_t>(kernels::level_unit(format));
+  kernels::YuvImage image(format, w, h, static_cast<std::uint16_t>(16 * unit),
+                          static_cast<std::uint16_t>(128 * unit), static_cast<std::uint16_t>(128 * unit));
+  for (int y = 0; y < h; ++y) {
+    for (int x = 0; x < w; ++x)
+      image.y.data[image.y.index(x, y)] = static_cast<std::uint16_t>((16 + (x * 3 + y * 5) % 220) * unit);
+  }
+  for (int y = 0; y < h / 2; ++y) {
+    for (int x = 0; x < w / 2; ++x) {
+      image.u.data[image.u.index(x, y)] = static_cast<std::uint16_t>((64 + 3 * x) * unit);
+      image.v.data[image.v.index(x, y)] = static_cast<std::uint16_t>((200 - 4 * y) * unit);
+    }
+  }
+  const auto expected =
+      kernels::ref::yuv_to_rgb(image, {.matrix = kernels::Matrix::Bt709}, kernels::Filter::Bilinear);
+  REQUIRE(expected);
+
+  Loaded loaded;
+  REQUIRE(loaded.backend != nullptr);
+  auto rgb = loaded.backend->alloc_tensor(gpu::TensorType::F16, {.dims = {1, 3, h, w}});
+  REQUIRE(rgb);
+  const PixelFormat pixel = format == kernels::Format::Yuv420p10 ? PixelFormat::Yuv420p10
+                            : format == kernels::Format::Yuv420p ? PixelFormat::Yuv420p
+                            : format == kernels::Format::P010    ? PixelFormat::P010
+                                                                 : PixelFormat::Nv12;
+  DecodedFrame frame = frame_of(std::make_shared<HostYuv>(image), w, h);
+  frame.format = pixel;
+  frame.color =
+      ColorInfo{.matrix = ColorMatrix::Bt709, .range = ColorRange::Limited, .siting = ChromaSiting::Left};
+  // Plus d'images que d'envois en vol : les tampons épinglés tournent, chaque envoi relu juste.
+  for (int i = 0; i < 5; ++i) REQUIRE(loaded.backend->kernels()->ingest(frame, {}, (*rgb)->tensor()));
+  const auto got = download((*rgb)->tensor());
+  double worst = 0.0;
+  for (int c = 0; c < 3; ++c) {
+    for (int y = 2; y < h - 2; ++y) {
+      for (int x = 2; x < w - 2; ++x) {
+        const float want = expected->planes[static_cast<std::size_t>(c)].at(x, y);
+        const float have = got[static_cast<std::size_t>((c * h + y) * w + x)];
+        worst = std::max(worst, static_cast<double>(std::fabs(want - have)));
+      }
+    }
+  }
+  CHECK(worst < 2e-3);
+  // Un format que l'ingestion ne lit pas est refusé et nommé.
+  frame.format = PixelFormat::Yuv444p16;
+  CHECK(loaded.backend->kernels()->ingest(frame, {}, (*rgb)->tensor()).error().code ==
+        RefusalCode::FormatUnsupported);
 }
 
 TEST_CASE("Backend TensorRT : réduction Area fusionnée à l'ingestion, rapport 1,5 (1080p vers 720p)",

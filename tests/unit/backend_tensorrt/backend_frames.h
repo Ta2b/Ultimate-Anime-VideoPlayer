@@ -59,6 +59,66 @@ class CudaNv12 final : public FrameData {
   std::size_t chroma_pitch_ = 0;
 };
 
+// Image YUV 4:2:0 en mémoire hôte, comme le décodage logiciel la rend : trois plans (YUV 4:2:0
+// planaire) ou deux (NV12, P010, P016), échantillons de 8 ou 16 bits, lignes à marge.
+class HostYuv final : public FrameData {
+ public:
+  explicit HostYuv(const kernels::YuvImage& image) {
+    const kernels::FormatInfo info = kernels::info(image.format);
+    sample_ = static_cast<std::size_t>(info.bytes);
+    planes_ = info.interleaved ? 2 : 3;
+    add(image.y);
+    if (planes_ == 3) {
+      add(image.u);
+      add(image.v);
+      return;
+    }
+    // Entrelacée : Cb et Cr alternent sur une ligne de chroma.
+    const auto cw = static_cast<std::size_t>(image.u.width);
+    const auto ch = static_cast<std::size_t>(image.u.height);
+    strides_.push_back(2 * cw * sample_ + 32);
+    bytes_.emplace_back(strides_.back() * ch);
+    for (std::size_t y = 0; y < ch; ++y) {
+      for (std::size_t x = 0; x < cw; ++x) {
+        const auto at = static_cast<int>(x);
+        put(bytes_.back(), y * strides_.back() + 2 * x * sample_, image.u.at(at, static_cast<int>(y)));
+        put(bytes_.back(), y * strides_.back() + (2 * x + 1) * sample_, image.v.at(at, static_cast<int>(y)));
+      }
+    }
+  }
+  FrameMemory memory() const override { return FrameMemory::Host; }
+  int plane_count() const override { return planes_; }
+  std::span<const std::byte> host_plane(int plane) const override {
+    return bytes_[static_cast<std::size_t>(plane)];
+  }
+  std::size_t host_stride(int plane) const override { return strides_[static_cast<std::size_t>(plane)]; }
+  std::uintptr_t native_plane(int) const override { return 0; }
+  std::size_t native_pitch(int) const override { return 0; }
+  std::uintptr_t ready_event() const override { return 0; }
+  std::uint64_t ready_value() const override { return 0; }
+
+ private:
+  void put(std::vector<std::byte>& bytes, std::size_t at, std::uint16_t value) const {
+    bytes[at] = static_cast<std::byte>(value & 0xFF);
+    if (sample_ == 2) bytes[at + 1] = static_cast<std::byte>(value >> 8);
+  }
+  void add(const kernels::PlaneU16& plane) {
+    const auto w = static_cast<std::size_t>(plane.width);
+    const auto h = static_cast<std::size_t>(plane.height);
+    strides_.push_back(w * sample_ + 32);
+    bytes_.emplace_back(strides_.back() * h);
+    for (std::size_t y = 0; y < h; ++y) {
+      for (std::size_t x = 0; x < w; ++x)
+        put(bytes_.back(), y * strides_.back() + x * sample_,
+            plane.at(static_cast<int>(x), static_cast<int>(y)));
+    }
+  }
+  std::size_t sample_ = 1;
+  int planes_ = 2;
+  std::vector<std::vector<std::byte>> bytes_;
+  std::vector<std::size_t> strides_;
+};
+
 // Image RGB w × h : plan c, pixel (x, y) à 0,1 × (c + 1) + 0,001 × (x + y).
 inline std::vector<float> ramp(int w, int h) {
   std::vector<float> v(static_cast<std::size_t>(3 * w * h));

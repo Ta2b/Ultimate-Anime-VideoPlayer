@@ -23,6 +23,7 @@
 #include "core/types.h"
 #include "gpu/backend.h"
 #include "gpu/cuda/backend/gpu_timing.h"
+#include "gpu/cuda/backend/host_upload.h"
 #include "gpu/cuda/backend/ring_slot.h"
 #include "gpu/kernel_ops.h"
 #include "gpu/lanes.h"
@@ -289,6 +290,8 @@ class TensorRtBackend final : public Backend, public KernelOps {
   // Lignes filtrées de l'ingestion à filtre étiré (slice_kernels.h, IngestParams::rows).
   float* ingest_rows_ = nullptr;
   std::size_t ingest_rows_size_ = 0;
+  // Envois des images du décodage logiciel (host_upload.h), créés à la première.
+  std::unique_ptr<HostUploads> uploads_;
   // write_yuv : les tables de la réduction de chroma pour une taille et un siting, en mémoire
   // d'appareil, et les lignes réduites en largeur (export_kernels.h) ; refaites au changement.
   struct YuvTables {

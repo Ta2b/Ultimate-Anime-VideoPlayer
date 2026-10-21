@@ -13,7 +13,8 @@ TEST_CASE("decoder_options : surfaces directes sous TensorRT seulement", "[app][
   GpuDevice render;
   render.uuid[0] = 7;
   const media::DecoderOptions trt = decoder_options("tensorrt", render, nullptr);
-  CHECK(trt.attempts == std::vector<media::HwApi>{media::HwApi::Cuda});
+  // Le logiciel prend ce que NVDEC refuse : le backend envoie ses images (host_upload.h).
+  CHECK(trt.attempts == std::vector<media::HwApi>{media::HwApi::Cuda, media::HwApi::Software});
   CHECK(trt.render_device == render.uuid);
   CHECK_FALSE(trt.download);
   CHECK(trt.direct_surfaces == kHeldDecodedFrames);

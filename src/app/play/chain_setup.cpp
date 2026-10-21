@@ -32,7 +32,7 @@ std::vector<std::filesystem::path> gmfss_dirs(const PlayerPaths& paths,
 }  // namespace
 
 std::vector<media::HwApi> decoder_attempts(std::string_view backend, bool shared_vulkan) {
-  if (backend == "tensorrt") return {media::HwApi::Cuda};
+  if (backend == "tensorrt") return {media::HwApi::Cuda, media::HwApi::Software};
   std::vector<media::HwApi> attempts;
   if (shared_vulkan) attempts.push_back(media::HwApi::Vulkan);
 #if defined(__linux__)

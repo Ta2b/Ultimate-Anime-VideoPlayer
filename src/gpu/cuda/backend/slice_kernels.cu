@@ -31,10 +31,15 @@ __device__ float chroma_at(const IngestParams& p, float cx, float cy, int c) {
   const int x1 = clamp_index(static_cast<int>(fx) + 1, cw);
   const int y0 = clamp_index(static_cast<int>(fy), ch);
   const int y1 = clamp_index(static_cast<int>(fy) + 1, ch);
-  const float top = sample(p.chroma, p.chroma_pitch, 2 * x0 + c, y0, p.sixteen_bits) * (1.0F - ax) +
-                    sample(p.chroma, p.chroma_pitch, 2 * x1 + c, y0, p.sixteen_bits) * ax;
-  const float bottom = sample(p.chroma, p.chroma_pitch, 2 * x0 + c, y1, p.sixteen_bits) * (1.0F - ax) +
-                       sample(p.chroma, p.chroma_pitch, 2 * x1 + c, y1, p.sixteen_bits) * ax;
+  // Entrelacée : Cb et Cr alternent dans chroma. Planaire : Cb dans chroma, Cr dans chroma_v.
+  const bool planar = p.chroma_v != nullptr;
+  const void* plane = planar && c == 1 ? p.chroma_v : p.chroma;
+  const int stride = planar ? 1 : 2;
+  const int lane = planar ? 0 : c;
+  const float top = sample(plane, p.chroma_pitch, stride * x0 + lane, y0, p.sixteen_bits) * (1.0F - ax) +
+                    sample(plane, p.chroma_pitch, stride * x1 + lane, y0, p.sixteen_bits) * ax;
+  const float bottom = sample(plane, p.chroma_pitch, stride * x0 + lane, y1, p.sixteen_bits) * (1.0F - ax) +
+                       sample(plane, p.chroma_pitch, stride * x1 + lane, y1, p.sixteen_bits) * ax;
   return top * (1.0F - ay) + bottom * ay;
 }
 

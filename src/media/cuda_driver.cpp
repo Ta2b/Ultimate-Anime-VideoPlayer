@@ -7,6 +7,7 @@
 #include <bit>
 #include <cstring>
 #include <format>
+#include <mutex>
 #include <string>
 #include <utility>
 
@@ -335,26 +336,81 @@ void CudaDriver::destroy_stream(std::uintptr_t context, std::uintptr_t stream) c
   api_->cuStreamDestroy(std::bit_cast<CUstream>(stream));
 }
 
-std::expected<ReadyEvent, Refusal> CudaDriver::record(std::uintptr_t context, std::uintptr_t stream) const {
-  const ContextScope scope(*api_, context);
+class CudaDriver::EventPool {
+ public:
+  EventPool(std::shared_ptr<const CudaDriver> driver, std::uintptr_t context)
+      : driver_(std::move(driver)), context_(context) {}
+  ~EventPool() {
+    const ContextScope scope(*driver_->api_, context_);
+    for (CUevent event : free_) driver_->api_->cuEventDestroy(event);
+  }
+  EventPool(const EventPool&) = delete;
+  EventPool& operator=(const EventPool&) = delete;
+
+  std::uintptr_t context() const { return context_; }
+  // Un événement libre, ou nul : à créer.
+  CUevent take() {
+    const std::scoped_lock lock(mutex_);
+    if (free_.empty()) return nullptr;
+    CUevent event = free_.back();
+    free_.pop_back();
+    return event;
+  }
+  void created() {
+    const std::scoped_lock lock(mutex_);
+    ++created_;
+  }
+  std::size_t created_count() const {
+    const std::scoped_lock lock(mutex_);
+    return created_;
+  }
+  // Par le thread qui relâche la dernière copie de l'image (gpu) ; au-delà de kMaxFreeEvents
+  // libres, détruit dans le contexte comme FFmpeg détruit les siens.
+  void give_back(CUevent event) {
+    {
+      const std::scoped_lock lock(mutex_);
+      if (free_.size() < kMaxFreeEvents) {
+        free_.push_back(event);
+        return;
+      }
+    }
+    const ContextScope scope(*driver_->api_, context_);
+    driver_->api_->cuEventDestroy(event);
+  }
+
+ private:
+  std::shared_ptr<const CudaDriver> driver_;
+  std::uintptr_t context_;
+  mutable std::mutex mutex_;
+  std::vector<CUevent> free_;
+  std::size_t created_ = 0;
+};
+
+std::shared_ptr<CudaDriver::EventPool> CudaDriver::event_pool(std::uintptr_t context) const {
+  return std::make_shared<EventPool>(shared_from_this(), context);
+}
+
+std::size_t CudaDriver::created(const EventPool& pool) {
+  return pool.created_count();
+}
+
+std::expected<ReadyEvent, Refusal> CudaDriver::record(const std::shared_ptr<EventPool>& pool,
+                                                      std::uintptr_t stream) const {
+  const ContextScope scope(*api_, pool->context());
   if (!scope.ok()) return refuse_cuda("cuCtxPushCurrent", -1);
-  CUevent event = nullptr;
-  if (const CUresult result = api_->cuEventCreate(&event, kEventDisableTiming); result != kCudaSuccess) {
-    return refuse_cuda("cuEventCreate", result);
+  CUevent event = pool->take();
+  if (event == nullptr) {
+    if (const CUresult result = api_->cuEventCreate(&event, kEventDisableTiming); result != kCudaSuccess) {
+      return refuse_cuda("cuEventCreate", result);
+    }
+    pool->created();
   }
   if (const CUresult result = api_->cuEventRecord(event, std::bit_cast<CUstream>(stream));
       result != kCudaSuccess) {
-    api_->cuEventDestroy(event);
+    pool->give_back(event);
     return refuse_cuda("cuEventRecord", result);
   }
-  // L'événement vit tant qu'une copie de l'image le tient ; le pilote aussi. Il
-  // est détruit par le thread qui relâche la dernière copie (gpu), dans son
-  // contexte, comme FFmpeg le fait pour les siens.
-  std::shared_ptr<const CudaDriver> driver = shared_from_this();
-  std::shared_ptr<const void> owner(event, [driver, context](CUeventOpaque* e) {
-    const ContextScope destroy_scope(*driver->api_, context);
-    driver->api_->cuEventDestroy(e);
-  });
+  std::shared_ptr<const void> owner(event, [pool](CUeventOpaque* e) { pool->give_back(e); });
   return ReadyEvent{.handle = std::bit_cast<std::uintptr_t>(event), .owner = std::move(owner)};
 }
 

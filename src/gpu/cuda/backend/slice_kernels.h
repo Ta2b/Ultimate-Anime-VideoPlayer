@@ -1,7 +1,8 @@
-// Noyaux CUDA provisoires du backend TensorRT de la tranche verticale : ingestion NV12 ou
-// P010 (mémoire linéaire de NVDEC) vers RGB planaire FP16, réduction Area comprise quand le
-// tenseur est plus petit que l'image (1080p vers 720p, une seule passe), et écriture RGB FP16
-// vers un slot RGBA16 UNORM du ring importé de Vulkan.
+// Noyaux CUDA provisoires du backend TensorRT de la tranche verticale : ingestion NV12, P010 ou
+// P016 (mémoire linéaire de NVDEC), ou YUV 4:2:0 planaire du décodage logiciel envoyé par
+// host_upload.h, vers RGB planaire FP16, réduction Area comprise quand le tenseur est plus petit
+// que l'image (1080p vers 720p, une seule passe), et écriture RGB FP16 vers un slot RGBA16 UNORM
+// du ring importé de Vulkan.
 //
 // Provisoire : le socle CUDA (chantier pc/cuda-compute, src/gpu/cuda/compute) porte les noyaux
 // exacts de kernels/spec (chroma Spline36 en codes bruts). Ici la chroma est bilinéaire, avec
@@ -24,11 +25,12 @@ inline constexpr int kReduceSpline36 = 3;
 inline constexpr int kMaxReduceTaps = 32;
 
 struct IngestParams {
-  const void* luma = nullptr;    // plan Y
-  const void* chroma = nullptr;  // plan CbCr entrelacé
-  std::size_t luma_pitch = 0;    // octets
-  std::size_t chroma_pitch = 0;
-  int width = 0;  // image décodée
+  const void* luma = nullptr;      // plan Y
+  const void* chroma = nullptr;    // plan CbCr entrelacé, ou Cb seul en 4:2:0 planaire
+  const void* chroma_v = nullptr;  // plan Cr en 4:2:0 planaire (décodage logiciel) ; nul : entrelacé
+  std::size_t luma_pitch = 0;      // octets
+  std::size_t chroma_pitch = 0;    // celui de Cb et de Cr en planaire
+  int width = 0;                   // image décodée
   int height = 0;
   // Tenseur de sortie : la taille de l'image, ou plus petit pour une réduction Area fusionnée
   // (chaque pixel de sortie moyenne sa boîte de source, pixels convertis en RGB un à un, pondérés
@@ -40,7 +42,7 @@ struct IngestParams {
   int reduce_kind = kReduceArea;
   float reduce_b = 0.0F;
   float reduce_c = 0.0F;
-  bool sixteen_bits = false;  // P010 ou P016 : échantillons de 16 bits
+  bool sixteen_bits = false;  // P010, P016 ou YUV 4:2:0 10 bits : échantillons de 16 bits
   // Normalisation et matrice (kernels/spec/color.h : yuv_scale, coefficients).
   float yoff = 0.0F;
   float yscale = 1.0F;

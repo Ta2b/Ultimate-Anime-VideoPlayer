@@ -11,6 +11,7 @@
 
 extern "C" {
 #include <libavcodec/packet.h>
+#include <libavutil/cpu.h>
 #include <libavutil/mathematics.h>
 }
 
@@ -264,10 +265,13 @@ TEST_CASE("VideoDecoder : FFV1 sous Vulkan sur option, décodé par le GPU ou re
   const bool gpu = decoder->api() == HwApi::Vulkan;
   if (gpu) {
     CHECK(decoder->rejected().empty());
+    CHECK(decoder->threads() == 1);
   } else {
     REQUIRE(decoder->rejected().size() == 1);
     CHECK(decoder->rejected()[0].api == HwApi::Vulkan);
     CHECK(decoder->rejected()[0].why.detail.starts_with("vulkan"));
+    // Repli avant la première image : rouvert en logiciel sur ses threads, paquets rejoués.
+    CHECK(decoder->threads() == std::clamp(av_cpu_count(), 1, kAutoDecoderThreads));
   }
   for (const DecodedFrame& frame : frames) {
     CHECK(frame.data->memory() == (gpu ? FrameMemory::Vulkan : FrameMemory::Host));

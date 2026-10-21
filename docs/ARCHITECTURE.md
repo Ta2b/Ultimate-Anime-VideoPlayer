@@ -110,7 +110,11 @@ retour, `audio` et `subs` retirent leurs paquets à leur propre rythme, jamais s
 la vidéo ni la première image. Une `PacketQueue` se borne en durée et en octets,
 pas en nombre de paquets (TrueHD, rafales ASS). Vulkan ne décode par défaut que
 les codecs Vulkan Video (H.264, HEVC, AV1, VP9) ; les décodeurs FFmpeg par compute
-shaders (FFV1, ProRes…) demandent `DecoderOptions::vulkan_compute`.
+shaders (FFV1, ProRes…) demandent `DecoderOptions::vulkan_compute`. Sous TensorRT,
+le décodage logiciel prend ce que NVDEC refuse (H.264 10 bits des fansubs, VP9
+profils 1 et 3) : un repli avant la première image rouvre le décodeur en logiciel
+sur tous ses threads et rejoue les paquets déjà envoyés, et le backend envoie ces
+images par un tampon épinglé sur une file de transfert (`host_upload.h`).
 
 ### Appareil de rendu (`core/gpu_device.h`)
 

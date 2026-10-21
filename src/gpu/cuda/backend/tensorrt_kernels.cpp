@@ -1,10 +1,12 @@
-// KernelOps du backend TensorRT : ingestion des images NVDEC et écriture du ring.
+// KernelOps du backend TensorRT : ingestion des images NVDEC ou du décodage logiciel, et écriture
+// du ring.
 #include <algorithm>
 #include <array>
 #include <format>
 #include <span>
 
 #include "gpu/cuda/backend/cuda_status.h"
+#include "gpu/cuda/backend/host_upload.h"
 #include "gpu/cuda/backend/slice_kernels.h"
 #include "gpu/cuda/backend/tensorrt_backend.h"
 #include "kernels/spec/color.h"
@@ -21,7 +23,8 @@ std::unexpected<Refusal> not_here(std::string_view kernel) {
                 std::format("{} : pas encore dans le backend TensorRT de la tranche verticale", kernel));
 }
 
-std::optional<kernels::Format> interleaved_format(PixelFormat format) {
+// Les formats lus par l'ingestion : ceux de NVDEC, et le 4:2:0 planaire du décodage logiciel.
+std::optional<kernels::Format> ingest_format(PixelFormat format, bool host) {
   switch (format) {
     case PixelFormat::Nv12:
       return kernels::Format::Nv12;
@@ -29,6 +32,12 @@ std::optional<kernels::Format> interleaved_format(PixelFormat format) {
       return kernels::Format::P010;
     case PixelFormat::P016:
       return kernels::Format::P016;
+    case PixelFormat::Yuv420p:
+      if (host) return kernels::Format::Yuv420p;
+      return std::nullopt;
+    case PixelFormat::Yuv420p10:
+      if (host) return kernels::Format::Yuv420p10;
+      return std::nullopt;
     default:
       return std::nullopt;
   }
@@ -79,14 +88,18 @@ std::expected<void, Refusal> TensorRtBackend::hold(const DecodedFrame& frame) {
 
 std::expected<void, Refusal> TensorRtBackend::ingest(const DecodedFrame& frame, const IngestSpec& spec,
                                                      const Tensor& rgb) {
-  if (!frame.data || frame.data->memory() != FrameMemory::Cuda) {
-    return refuse(RefusalCode::FormatUnsupported, "ingestion : image CUDA (NVDEC) attendue");
+  const bool host = frame.data && frame.data->memory() == FrameMemory::Host;
+  if (!frame.data || (!host && frame.data->memory() != FrameMemory::Cuda)) {
+    return refuse(RefusalCode::FormatUnsupported,
+                  "ingestion : image CUDA (NVDEC) ou hôte (décodage logiciel) attendue");
   }
-  const auto format = interleaved_format(frame.format);
+  const auto format = ingest_format(frame.format, host);
   const auto matrix = matrix_of(frame.color.matrix);
   if (!format || !matrix || spec.rife_conversion) {
     return refuse(RefusalCode::FormatUnsupported,
-                  "ingestion : NV12, P010 ou P016 en YUV, chaîne d'agrandissement");
+                  host
+                      ? "ingestion hôte : NV12, P010, P016 ou YUV 4:2:0 8 ou 10 bits, chaîne d'agrandissement"
+                      : "ingestion : NV12, P010 ou P016 en YUV, chaîne d'agrandissement");
   }
   // Tenseur à la taille de l'image, ou plus petit : réduction Area fusionnée (slice_kernels.h).
   // Extension de ce backend au contrat de KernelOps::ingest, signalée pour l'intégration.
@@ -119,7 +132,7 @@ std::expected<void, Refusal> TensorRtBackend::ingest(const DecodedFrame& frame, 
                                                                 : kReduceArea,
       .reduce_b = spec.reduce.b,
       .reduce_c = spec.reduce.c,
-      .sixteen_bits = *format != kernels::Format::Nv12,
+      .sixteen_bits = kernels::info(*format).bytes == 2,
       .yoff = scale.yoff,
       .yscale = scale.yscale,
       .coff = scale.coff,
@@ -130,9 +143,14 @@ std::expected<void, Refusal> TensorRtBackend::ingest(const DecodedFrame& frame, 
       .chroma_y = frame.color.siting == ChromaSiting::TopLeft ? 0.0F : 0.5F,
       .rgb = address(rgb),
   };
-  if (params.luma == nullptr || params.chroma == nullptr || params.luma_pitch == 0 ||
-      params.chroma_pitch == 0) {
+  if (!host && (params.luma == nullptr || params.chroma == nullptr || params.luma_pitch == 0 ||
+                params.chroma_pitch == 0)) {
     return refuse(RefusalCode::FormatUnsupported, "ingestion : plans ou pas de ligne CUDA absents");
+  }
+  std::optional<HostUploads::Layout> layout;
+  if (host) {
+    layout = HostUploads::layout(frame.format, frame.width, frame.height);
+    if (!layout) return refuse(RefusalCode::FormatUnsupported, "ingestion hôte : format sans disposition");
   }
   if (auto ok = bind(); !ok) return ok;
   const std::size_t rows = ingest_rows_bytes(params);
@@ -147,7 +165,17 @@ std::expected<void, Refusal> TensorRtBackend::ingest(const DecodedFrame& frame, 
   }
   params.rows = ingest_rows_;
   if (auto ok = order({}, {rgb.handle, reinterpret_cast<std::uintptr_t>(&ingest_rows_)}); !ok) return ok;
-  if (frame.data->ready_event() != 0) {
+  if (host) {
+    // Copie épinglée puis envoi sur la file de transfert, attendu par la voie courante.
+    if (!uploads_) uploads_ = std::make_unique<HostUploads>();
+    auto planes = uploads_->upload(*frame.data, *layout, stream_, stage("envoi de l'image décodée"));
+    if (!planes) return std::unexpected(std::move(planes.error()));
+    params.luma = planes->luma;
+    params.chroma = planes->chroma;
+    params.chroma_v = planes->chroma_v;
+    params.luma_pitch = planes->luma_pitch;
+    params.chroma_pitch = planes->chroma_pitch;
+  } else if (frame.data->ready_event() != 0) {
     auto* ready =
         reinterpret_cast<cudaEvent_t>(frame.data->ready_event());  // NOLINT(performance-no-int-to-ptr)
     if (auto ok = cuda_check(cudaStreamWaitEvent(stream_, ready, 0), "cudaStreamWaitEvent"); !ok) return ok;
@@ -157,6 +185,8 @@ std::expected<void, Refusal> TensorRtBackend::ingest(const DecodedFrame& frame, 
   timing.begin(stream_);
   if (auto ok = cuda_check(launch_ingest(params, stream_), "ingest<<<>>>"); !ok) return ok;
   timing.end(stream_);
+  // Une image hôte est déjà copiée : elle repart au décodeur sans attendre le GPU.
+  if (host) return uploads_->consumed(stream_);
   return hold(frame);
 }
 

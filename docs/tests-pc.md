@@ -221,6 +221,16 @@ un réglage à faire taire.
   `cuMemcpy2D` par image ; la VRAM baisse (plus de ring d'export : environ 500 Mo en 4K au profil
   « débit »). Échap pendant l'export ne doit laisser ni avertissement « écritures YUV jamais
   signalées » ni plantage.
+- **H.264 10 bits sous TensorRT** (étude 1, 5.4 ; M1) : test `[backend_tensorrt][host]` (YUV 4:2:0
+  planaire 8 et 10 bits, NV12 et P010 en mémoire hôte, cinq images pour faire tourner les trois
+  envois). Puis un clip Hi10P, par exemple `ffmpeg -f lavfi -i testsrc2=size=1920x1080:rate=24000/1001
+  -t 20 -c:v libx264 -profile:v high10 -pix_fmt yuv420p10le hi10p.mkv` : il s'ouvre (avant, refus
+  « aucun des essais »), le journal dit « cuda : format matériel non proposé par get_format » puis
+  « décodage logiciel rouvert sur N threads, K paquets rejoués » avec N au-delà de 1, et le profil
+  GPU de fin de lecture a une ligne « envoi de l'image décodée » (vers 0,3 ms en 1080p). Lecture
+  fluide avec SPAN et RIFE ×2, seek compris.
+- **Événements NVDEC réutilisés** (5.4 ; M3) : test `[media][hw][nvidia]` « les événements de fin
+  de copie reviennent au pool du flux », puis la suite NVDEC `[media][decoder][nvidia]` inchangée.
 
 ## Linux sur RX 6500M (RDNA2 Navi 24, 4 Go)
 

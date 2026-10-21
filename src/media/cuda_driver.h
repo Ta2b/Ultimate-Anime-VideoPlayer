@@ -79,8 +79,19 @@ class CudaDriver : public std::enable_shared_from_this<CudaDriver> {
   std::expected<std::uintptr_t, Refusal> create_stream(std::uintptr_t context) const;
   void destroy_stream(std::uintptr_t context, std::uintptr_t stream) const;
 
-  // Événement enregistré sur le flux, détruit avec le dernier propriétaire.
-  std::expected<ReadyEvent, Refusal> record(std::uintptr_t context, std::uintptr_t stream) const;
+  // Événements de fin de copie d'un contexte, réutilisés (M3) : créer puis détruire un CUevent par
+  // image coûtait deux appels au pilote, chacun sous cuCtxPushCurrent. L'événement d'une image
+  // revient au pool quand sa dernière copie tombe ; une attente déjà enfilée (cuStreamWaitEvent)
+  // porte sur l'enregistrement de son moment, jamais sur le suivant. Le pool vit tant que lui ou
+  // une image le tient, puis détruit ses événements dans le contexte.
+  class EventPool;
+  static constexpr std::size_t kMaxFreeEvents = 64;
+  std::shared_ptr<EventPool> event_pool(std::uintptr_t context) const;
+  // Événement du pool enregistré sur le flux, rendu au pool avec le dernier propriétaire.
+  std::expected<ReadyEvent, Refusal> record(const std::shared_ptr<EventPool>& pool,
+                                            std::uintptr_t stream) const;
+  // Événements créés par le pool depuis sa création.
+  static std::size_t created(const EventPool& pool);
 
   // Copie d'appareil à appareil lancée sur le flux (cuMemcpy2DAsync) : height lignes de
   // width_bytes octets, de src (lignes espacées de src_pitch) vers dst (dst_pitch).

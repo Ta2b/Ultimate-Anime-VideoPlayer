@@ -34,8 +34,12 @@ class VideoDecoder {
   VideoDecoder& operator=(VideoDecoder&&) noexcept;
   ~VideoDecoder();
 
-  // API qui décode vraiment : Software après un repli dans get_format.
+  // API qui décode vraiment : Software après un repli dans get_format. Un repli avant la première
+  // image rouvre le décodeur en logiciel sur ses threads (le contexte matériel n'en a qu'un) et
+  // rejoue les paquets déjà envoyés : H.264 10 bits sous NVDEC, par exemple.
   HwApi api() const;
+  // Threads du décodeur en cours : 1 sous une API matérielle.
+  int threads() const;
   std::span<const Attempt> rejected() const;
   // Erreurs de données (AVERROR_INVALIDDATA) passées depuis l'ouverture, journalisées.
   // Un flux abîmé perd des images mais continue, avec ou sans threads d'images :

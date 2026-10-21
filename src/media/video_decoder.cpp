@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cstdint>
+#include <deque>
 #include <format>
 #include <string>
 #include <utility>
@@ -33,8 +34,13 @@ int software_threads(int requested) {
 }  // namespace
 
 struct VideoDecoder::State {
+  // Paquets gardés au plus avant la première image, pour la réouverture en logiciel.
+  static constexpr std::size_t kMaxReplayPackets = 64;
+
   HwDevice hw;  // déclaré avant codec : détruit après lui
   CodecContextPtr codec;
+  TrackInfo opened;           // la piste de l'ouverture, pour la réouverture en logiciel
+  int requested_threads = 0;  // DecoderOptions::threads
   HwApi api = HwApi::Software;
   bool software_allowed = false;
   bool download = false;
@@ -46,6 +52,16 @@ struct VideoDecoder::State {
   std::int64_t next_pts_us = kNoPts;
   std::int64_t nominal_duration_us = 0;
   int data_errors = 0;
+  // Bascule en logiciel avant la première image (get_format) : le contexte matériel ne décode que
+  // sur un thread, il est rouvert en logiciel sur les threads demandés et les paquets envoyés
+  // depuis l'ouverture (sent) sont rejoués (replay), la fin du flux après eux si elle était partie.
+  bool output = false;       // une image rendue depuis l'ouverture
+  bool replayable = true;    // sent tient tous les paquets envoyés depuis l'ouverture
+  bool reopen = false;       // à rouvrir en logiciel au retour de FFmpeg
+  bool ended = false;        // send_end appelé
+  bool end_pending = false;  // send_end à renvoyer après replay
+  std::vector<Packet> sent;
+  std::deque<Packet> replay;
   std::shared_ptr<spdlog::logger> log = make_logger();
 
   // Données abîmées : l'image en cause est perdue, le décodage continue.
@@ -76,8 +92,72 @@ struct VideoDecoder::State {
       }
       self.fall_back("format matériel non proposé par get_format (profil, taille ou pilote)");
       if (!self.software_allowed) return AV_PIX_FMT_NONE;
+      self.reopen = !self.output && self.replayable;
     }
     return avcodec_default_get_format(ctx, formats);
+  }
+
+  // avcodec_send_packet, le paquet gardé pour une réouverture tant qu'aucune image n'est sortie.
+  int submit(const Packet& packet) {
+    const bool keep = !output && replayable && sent.size() < kMaxReplayPackets;
+    if (!output && !keep) replayable = false;
+    if (keep) sent.push_back(packet);
+    const int err = avcodec_send_packet(codec.get(), packet.av.get());
+    if (keep && err == AVERROR(EAGAIN)) sent.pop_back();
+    return err;
+  }
+
+  // Vrai si le décodeur est rouvert, les paquets à rejouer dans replay. Sans décodeur logiciel
+  // ouvrable, le contexte basculé garde le flux, sur un seul thread.
+  bool reopen_software() {
+    reopen = false;
+    replayable = false;
+    HwDevice old_hw = std::exchange(hw, HwDevice{});  // déclaré avant : détruit après le codec
+    CodecContextPtr old_codec = std::move(codec);
+    const AVCodec* decoder = avcodec_find_decoder(opened.parameters->av().codec_id);
+    auto reopened =
+        decoder != nullptr
+            ? open_codec(*decoder, opened, requested_threads)
+            : std::expected<void, Refusal>(std::unexpected(
+                  Refusal{RefusalCode::DecoderUnavailable, std::format("aucun décodeur {}", opened.codec)}));
+    if (!reopened) {
+      codec = std::move(old_codec);
+      hw = std::move(old_hw);
+      sent.clear();
+      log->warn("décodage logiciel sur un thread, réouverture refusée : {}", reopened.error().detail);
+      return false;
+    }
+    direct = false;
+    replay.assign(sent.begin(), sent.end());
+    sent.clear();
+    if (pending) {
+      replay.push_back(std::move(*pending));
+      pending.reset();
+    }
+    end_pending = ended;
+    log->info("décodage logiciel rouvert sur {} threads, {} paquets rejoués", codec->thread_count,
+              replay.size());
+    return true;
+  }
+
+  // Les paquets à rejouer, puis la fin du flux ; arrêté par EAGAIN, repris au receive() suivant.
+  std::expected<void, Refusal> resend() {
+    while (!replay.empty()) {
+      const int err = avcodec_send_packet(codec.get(), replay.front().av.get());
+      if (err == AVERROR(EAGAIN)) return {};
+      if (err == AVERROR_INVALIDDATA) {
+        data_error("paquet rejoué");
+      } else if (err < 0) {
+        return refuse_av(RefusalCode::DecodeFailed, "paquet rejoué", err);
+      }
+      replay.pop_front();
+    }
+    if (end_pending) {
+      end_pending = false;
+      const int err = avcodec_send_packet(codec.get(), nullptr);
+      if (err < 0 && err != AVERROR_EOF) return refuse_av(RefusalCode::DecodeFailed, "fin du flux", err);
+    }
+    return {};
   }
 
   std::expected<void, Refusal> open_codec(const AVCodec& decoder, const TrackInfo& track, int threads) {
@@ -169,6 +249,8 @@ std::expected<VideoDecoder, Refusal> VideoDecoder::open(const TrackInfo& track,
                                                         const DecoderOptions& options) {
   if (auto valid = check_options(track, options); !valid) return std::unexpected(valid.error());
   auto state = std::make_unique<State>();
+  state->opened = track;
+  state->requested_threads = options.threads;
   state->software_allowed = std::ranges::contains(options.attempts, HwApi::Software);
   state->download = options.download;
   if (track.frame_rate.num > 0 && track.frame_rate.den > 0) {
@@ -196,6 +278,9 @@ std::expected<VideoDecoder, Refusal> VideoDecoder::open(const TrackInfo& track,
 HwApi VideoDecoder::api() const {
   return state_->api;
 }
+int VideoDecoder::threads() const {
+  return state_->codec ? state_->codec->thread_count : 0;
+}
 std::span<const Attempt> VideoDecoder::rejected() const {
   return state_->rejected;
 }
@@ -220,7 +305,16 @@ std::expected<void, Refusal> VideoDecoder::send(const Packet& packet) {
   State& s = *state_;
   if (s.pending) return refuse(RefusalCode::DecodeFailed, "paquet précédent encore en attente");
   if (!packet.av) return refuse(RefusalCode::DecodeFailed, "paquet sans données");
-  const int err = avcodec_send_packet(s.codec.get(), packet.av.get());
+  if (!s.replay.empty()) {  // derrière les paquets rejoués
+    s.replay.push_back(packet);
+    return {};
+  }
+  const int err = s.submit(packet);
+  if (s.reopen) {
+    // Paquet reçu : il est dans le rejeu ; refusé par EAGAIN, il passe après les autres.
+    if (err == AVERROR(EAGAIN)) s.pending = packet;
+    if (s.reopen_software() || err == AVERROR(EAGAIN)) return {};
+  }
   if (err == AVERROR(EAGAIN)) {
     s.pending = packet;
   } else if (err == AVERROR_INVALIDDATA) {
@@ -232,15 +326,27 @@ std::expected<void, Refusal> VideoDecoder::send(const Packet& packet) {
 }
 
 std::expected<void, Refusal> VideoDecoder::send_end() {
-  const int err = avcodec_send_packet(state_->codec.get(), nullptr);
+  State& s = *state_;
+  s.ended = true;
+  if (!s.replay.empty()) {
+    s.end_pending = true;
+    return {};
+  }
+  const int err = avcodec_send_packet(s.codec.get(), nullptr);
+  if (s.reopen && s.reopen_software()) return {};
   if (err < 0 && err != AVERROR_EOF) return refuse_av(RefusalCode::DecodeFailed, "fin du flux", err);
   return {};
 }
 
 std::expected<std::optional<DecodedFrame>, Refusal> VideoDecoder::receive() {
   State& s = *state_;
-  if (s.pending) {
-    const int err = avcodec_send_packet(s.codec.get(), s.pending->av.get());
+  if (auto resent = s.resend(); !resent) return std::unexpected(resent.error());
+  if (s.pending && s.replay.empty()) {
+    const int err = s.submit(*s.pending);
+    if (s.reopen) {
+      if (err != AVERROR(EAGAIN)) s.pending.reset();  // reçu : déjà dans sent
+      if (s.reopen_software()) return std::nullopt;
+    }
     if (err == AVERROR_INVALIDDATA) s.data_error("envoi d'un paquet en attente");
     if (err >= 0 || err == AVERROR_INVALIDDATA) s.pending.reset();
     if (err < 0 && err != AVERROR(EAGAIN) && err != AVERROR_INVALIDDATA) {
@@ -256,6 +362,8 @@ std::expected<std::optional<DecodedFrame>, Refusal> VideoDecoder::receive() {
     s.data_error("réception d'une image");
     err = avcodec_receive_frame(s.codec.get(), frame.get());
   }
+  // L'image éventuelle du contexte basculé ressortira du rejeu.
+  if (s.reopen && s.reopen_software()) return std::nullopt;
   if (err == AVERROR(EAGAIN)) return std::nullopt;
   if (err == AVERROR_EOF) {
     s.drained = true;
@@ -263,6 +371,11 @@ std::expected<std::optional<DecodedFrame>, Refusal> VideoDecoder::receive() {
   }
   if (err < 0) return refuse_av(RefusalCode::DecodeFailed, "réception d'une image", err);
   if (frame->hw_frames_ctx == nullptr) s.fall_back("le décodeur a rendu une image logicielle");
+  if (!s.output) {
+    s.output = true;
+    s.sent.clear();
+    s.sent.shrink_to_fit();
+  }
 
   // Un trou d'horodatage se comble par l'image précédente plus sa durée. Sans image
   // précédente (début, ou après un flush), il reste inconnu : kNoPts, jamais un 0 inventé.
@@ -294,6 +407,10 @@ void VideoDecoder::flush() {
   State& s = *state_;
   avcodec_flush_buffers(s.codec.get());
   s.pending.reset();
+  s.replay.clear();
+  s.sent.clear();
+  s.end_pending = false;
+  s.ended = false;
   s.drained = false;
   s.next_pts_us = kNoPts;
 }

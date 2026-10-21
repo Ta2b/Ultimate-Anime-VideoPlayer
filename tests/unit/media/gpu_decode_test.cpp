@@ -157,6 +157,39 @@ TEST_CASE("NVDEC : contexte primaire de l'appareil choisi par UUID, flux de copi
   CHECK(mismatch.error().detail.find("UUID") != std::string::npos);
 }
 
+TEST_CASE("NVDEC : les événements de fin de copie reviennent au pool du flux", "[media][hw][nvidia]") {
+  const Cuda cuda = require_cuda();
+  auto primary = cuda.driver->retain_primary(0);
+  REQUIRE(primary.has_value());
+  auto stream = cuda.driver->create_stream(primary->context);
+  REQUIRE(stream.has_value());
+  {
+    auto pool = cuda.driver->event_pool(primary->context);
+    {
+      auto first = cuda.driver->record(pool, *stream);
+      REQUIRE(first.has_value());
+      CHECK(first->handle != 0);
+    }
+    // Rendu avec sa dernière copie, l'événement est repris : trois tenus en même temps en créent deux.
+    std::vector<ReadyEvent> held;
+    for (int i = 0; i < 3; ++i) {
+      auto event = cuda.driver->record(pool, *stream);
+      REQUIRE(event.has_value());
+      held.push_back(std::move(*event));
+    }
+    CHECK(CudaDriver::created(*pool) == 3);
+    CHECK(held[0].handle != held[1].handle);
+    CHECK(held[1].handle != held[2].handle);
+    held.clear();
+    auto again = cuda.driver->record(pool, *stream);
+    REQUIRE(again.has_value());
+    CHECK(CudaDriver::created(*pool) == 3);
+    REQUIRE(cuda.driver->synchronize(primary->context, *stream));
+    pool.reset();  // l'image tient encore le sien : le pool vit jusqu'à elle
+  }
+  cuda.driver->destroy_stream(primary->context, *stream);
+}
+
 TEST_CASE("NVDEC : H.264, HEVC et AV1 en mémoire CUDA, pas de ligne et plans cohérents",
           "[media][decoder][nvidia]") {
   const std::string encoder = GENERATE("h264_nvenc", "hevc_nvenc", "av1_nvenc");
