@@ -151,6 +151,12 @@ TEST_CASE("Étage gpu : RIFE ×2, une image intermédiaire par paire ; coupe et 
   CHECK(shape_of(frames) == std::vector<std::string>{"1", "1-2", "2", "2-3", "3", "4", "4-5", "5", "6"});
   CHECK(pts_of(frames) == std::vector<std::int64_t>{40'000, 60'000, 80'000, 100'000, 120'000, 160'000,
                                                     180'000, 200'000, 240'000});
+  // La coupe (4) et le dessin tenu (6) sont marqués : leur écart n'est pas un manque.
+  std::vector<std::int64_t> marked;
+  for (const RingFrame& f : frames) {
+    if (f.uninterpolated) marked.push_back(f.pts_us);
+  }
+  CHECK(marked == std::vector<std::int64_t>{160'000, 240'000});
   CHECK(rig.backend.count("engine rife") == 3);
   CHECK(rig.backend.count("rife_input") == 3);
   CHECK(rig.backend.count("rife_crop") == 3);
@@ -440,6 +446,8 @@ TEST_CASE("Étage gpu : en retard sur l'horloge maître, la paire sort sans inte
   rig.stage.reset();
 
   CHECK(shape_of(rig.sink.frames()) == std::vector<std::string>{"1", "2", "3", "4"});
+  // Faute de temps : de vrais manques, pas des paires laissées à dessein.
+  CHECK(std::ranges::none_of(rig.sink.frames(), &RingFrame::uninterpolated));
   CHECK(rig.backend.count("engine rife") == 0);
   CHECK(rig.live->counts().late == 3);
   CHECK(rig.live->counts().pairs == 0);  // non mesurées : rien à interpoler

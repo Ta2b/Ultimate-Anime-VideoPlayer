@@ -96,8 +96,9 @@ struct PresentRecord {
   // Ce qui a demandé la présentation : « i » image neuve, « s » sous-titres, « o » OSD, « u »
   // interface, « t » taille de sortie ; plusieurs lettres si plusieurs ont changé.
   std::string why;
-  std::int64_t missing = 0;  // total des images manquées (FrameStats::missing)
-  std::int64_t lag_us = 0;   // retard de l'image neuve sur l'horloge ; 0 pour un redessin
+  std::int64_t missing = 0;         // total des images manquées (FrameStats::missing)
+  std::int64_t lag_us = 0;          // retard de l'image neuve sur l'horloge ; 0 pour un redessin
+  std::int64_t uninterpolated = 0;  // total des instants sans image à dessein (FrameStats)
 };
 
 class Session {

@@ -45,6 +45,8 @@ struct FrameStats {
   // présentation, ou jamais produites (paire non interpolée, GPU en retard). Ce que « dropped »
   // ne voit pas quand le GPU suit de justesse : la file reste vide et l'écran garde l'image.
   std::int64_t missing = 0;
+  // Instants laissés sans image à dessein (coupes de scène, dessins tenus) : pas des manques.
+  std::int64_t uninterpolated = 0;
   Window lag;                             // retard des images neuves sur l'horloge à leur présentation, ≥ 0
   double shown_fps = 0.0;                 // images neuves par seconde, relu chaque seconde
   std::int64_t last_new_pts_us = kNoPts;  // pts de la dernière image neuve ; kNoPts après un seek
@@ -55,8 +57,10 @@ struct FrameStats {
   // l'image est neuve.
   void presented(std::int64_t render_us, std::int64_t present_us, bool fresh);
   // Une image neuve de pts pts_us présentée lag_us après son instant d'horloge ; period_us : la
-  // période attendue entre deux images (0 : inconnue, rien n'est compté manquant).
-  void paced(std::int64_t pts_us, std::int64_t lag_us, std::int64_t period_us);
+  // période attendue entre deux images (0 : inconnue, rien n'est compté manquant). on_purpose :
+  // la paire qui finit sur elle est restée sans interpolation à dessein (RingFrame::uninterpolated),
+  // l'écart compte alors dans uninterpolated.
+  void paced(std::int64_t pts_us, std::int64_t lag_us, std::int64_t period_us, bool on_purpose = false);
   // Le seek ou la reprise d'une nouvelle époque : l'écart de pts suivant n'est pas un manque.
   void restart_pacing();
 };

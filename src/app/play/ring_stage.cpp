@@ -124,6 +124,7 @@ void RingStage::emit(const ThreadReport& report) {
                            .pts_us = produced->pts_us,
                            .left = produced->left,
                            .right = produced->right,
+                           .uninterpolated = produced->uninterpolated,
                            .epoch = frame.epoch,
                            .ready_value = ready};
       free_[slot] = false;

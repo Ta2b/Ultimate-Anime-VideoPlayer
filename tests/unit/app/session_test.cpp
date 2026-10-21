@@ -408,6 +408,10 @@ TEST_CASE("Fluidité : les images manquées se lisent dans l'écart des pts", "[
   CHECK(stats.missing == 2);
   CHECK(stats.lag.percentile(100) == 1'000);
   CHECK(stats.lag.latest() == 0);
+  // Une coupe ou un dessin tenu, laissés sans interpolation à dessein : comptés à part.
+  stats.paced(1'180'000, 0, 40'000, true);
+  CHECK(stats.missing == 2);
+  CHECK(stats.uninterpolated == 1);
 }
 
 TEST_CASE("Fluidité : les images neuves par seconde, relues chaque seconde", "[app][session]") {

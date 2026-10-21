@@ -64,13 +64,13 @@ void FrameStats::presented(std::int64_t render_us, std::int64_t present_us, bool
   last_new_present_us = present_us;
 }
 
-void FrameStats::paced(std::int64_t pts_us, std::int64_t lag_us, std::int64_t period_us) {
+void FrameStats::paced(std::int64_t pts_us, std::int64_t lag_us, std::int64_t period_us, bool on_purpose) {
   if (pts_us == kNoPts) return;
   if (last_new_pts_us != kNoPts && period_us > 0 && pts_us > last_new_pts_us) {
     // n périodes entre les deux images : n − 1 manquées. Le quart de période de marge couvre
     // l'arrondi des pts et un écran à peine plus lent que la sortie.
     const std::int64_t periods = (pts_us - last_new_pts_us + period_us / 4) / period_us;
-    if (periods > 1) missing += periods - 1;
+    if (periods > 1) (on_purpose ? uninterpolated : missing) += periods - 1;
   }
   last_new_pts_us = pts_us;
   lag.add(std::max<std::int64_t>(lag_us, 0));

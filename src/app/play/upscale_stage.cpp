@@ -301,6 +301,10 @@ std::expected<std::uint32_t, Refusal> UpscaleStage::outputs(const DecodedFrame& 
   intermediates_ = 0;
   instants_[0] = Instant{.t = 1.0F, .pts_us = frame.pts_us};
   const bool runs = on_grid && rife_runs(facts);
+  // Coupe ou dessin tenu : les instants de la paire manquent à dessein, pas faute de temps.
+  uninterpolated_ =
+      on_grid && !runs && facts.factor > 1 && facts.scores &&
+      (kernels::is_scene_cut(facts.scores->scene_score) || kernels::is_held(facts.scores->worst_block));
   if (on_grid && !runs && cadence_) cadence_->resync();
   if (runs && step) {
     outputs_ = 0;
@@ -373,7 +377,8 @@ std::expected<RingStage::Output, Refusal> UpscaleStage::produce(const DecodedFra
     if (!ok) return std::unexpected(std::move(ok.error()));
     output_has_source_ = setup_.engine != nullptr;
     previous_ = Previous{.pts_us = frame.pts_us, .id = frame.id, .epoch = frame.epoch};
-    return Output{.pts_us = frame.pts_us, .left = frame.id, .right = frame.id};
+    return Output{
+        .pts_us = frame.pts_us, .left = frame.id, .right = frame.id, .uninterpolated = uninterpolated_};
   }
   // Image intermédiaire, entre la précédente et celle-ci (rife_runs demande la précédente).
   if (!previous_) return refuse(RefusalCode::SequenceOrder, "RIFE : pas d'image précédente");

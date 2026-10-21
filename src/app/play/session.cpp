@@ -329,7 +329,8 @@ std::expected<std::optional<PresentRecord>, Refusal> Session::tick(std::int64_t 
                            .dropped = stats_.dropped,
                            .why = std::move(why),
                            .missing = stats_.missing,
-                           .lag_us = fresh && stats_.lag.count() > 0 ? stats_.lag.latest() : 0};
+                           .lag_us = fresh && stats_.lag.count() > 0 ? stats_.lag.latest() : 0,
+                           .uninterpolated = stats_.uninterpolated};
   }
   check_end(host_now);
   return record;
@@ -379,7 +380,8 @@ void Session::pace(const RingFrame& frame, std::int64_t visible_us) {
   // Le retard ne se lit que pendant la lecture : en pause ou avant le départ, l'horloge est figée.
   const ClockSnapshot now = clock_.snapshot();
   const bool running = !paused_ && now.valid && now.epoch == epoch_ && frame.pts_us != kNoPts;
-  stats_.paced(frame.pts_us, running ? now.media_at(visible_us) - frame.pts_us : 0, pacing_period_us());
+  stats_.paced(frame.pts_us, running ? now.media_at(visible_us) - frame.pts_us : 0, pacing_period_us(),
+               frame.uninterpolated);
 }
 
 void Session::check_end(std::int64_t host_now) {
@@ -422,9 +424,12 @@ std::vector<std::string> Session::osd_lines() const {
       std::ranges::replace(synced, '.', ',');
     }
     lines.push_back(std::format(
-        "fluidité {}{} im/s · manquées {} · retard p95 {}{}", format_fps(stats_.shown_fps),
+        "fluidité {}{} im/s · manquées {}{} · retard p95 {}{}", format_fps(stats_.shown_fps),
         period > 0 ? std::format(" / {}", format_fps(1e6 / static_cast<double>(period))) : std::string(),
-        stats_.missing, format_ms(stats_.lag.percentile(95)), synced));
+        stats_.missing,
+        stats_.uninterpolated > 0 ? std::format(" (+ {} coupes et dessins tenus)", stats_.uninterpolated)
+                                  : std::string(),
+        format_ms(stats_.lag.percentile(95)), synced));
   }
   if ((show.all || show.rife) && config_.extra != nullptr) {
     if (auto rife = config_.extra->rife()) lines.push_back(std::move(*rife));

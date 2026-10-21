@@ -324,17 +324,17 @@ void apply(const Input& input, Chain& to, std::int64_t now_us) {
 void write_record(std::ofstream& stats, const PresentRecord& record) {
   stats << record.host_us << '\t' << record.pts_us << '\t' << (record.fresh ? 1 : 0) << '\t'
         << record.render_us << '\t' << record.interval_us << '\t' << record.dropped << '\t' << record.why
-        << '\t' << record.missing << '\t' << record.lag_us << '\n';
+        << '\t' << record.missing << '\t' << record.lag_us << '\t' << record.uninterpolated << '\n';
 }
 
 void log_summary(const Session& session) {
   const FrameStats& stats = session.stats();
   log_channel("app")->info(
-      "fin : {} images neuves, {} présentations, {} sautées, {} manquées, {} jetées au seek, {} sans "
-      "sous-titres en attente ; "
+      "fin : {} images neuves, {} présentations, {} sautées, {} manquées, {} sans interpolation à "
+      "dessein (coupes, dessins tenus), {} jetées au seek, {} sans sous-titres en attente ; "
       "temps par image médian {} (σ {}), p95 {} ; retard p95 {} ; composition médiane {}",
-      stats.new_frames, stats.presents, stats.dropped, stats.missing, stats.stale, stats.subtitle_gaps,
-      format_ms(stats.frame_interval.median()),
+      stats.new_frames, stats.presents, stats.dropped, stats.missing, stats.uninterpolated, stats.stale,
+      stats.subtitle_gaps, format_ms(stats.frame_interval.median()),
       format_ms(static_cast<std::int64_t>(stats.frame_interval.stddev())),
       format_ms(stats.frame_interval.percentile(95)), format_ms(stats.lag.percentile(95)),
       format_ms(stats.render.median()));

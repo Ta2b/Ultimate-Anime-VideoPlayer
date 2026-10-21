@@ -260,6 +260,7 @@ class UpscaleStage final : public RingStage {
   std::array<Instant, core::kMaxInstantsPerPair> instants_{};
   std::uint32_t outputs_ = 1;
   std::uint32_t intermediates_ = 0;  // celles qui sont interpolées
+  bool uninterpolated_ = false;      // la paire courante, laissée sans interpolation à dessein
   std::optional<core::CadenceAccumulator> cadence_;
   Factor cadence_factor_;
   vendor_hdr::InputPreparation prepared_;  // couleur de l'image en cours, pour RTX HDR

@@ -85,8 +85,11 @@ struct RingFrame {
   // Instant dans la paire, t = t_num / t_den dans [0, 1[ : 0 est la source left.
   std::int64_t t_num = 0;
   std::int64_t t_den = 1;
-  bool repeated = false;          // REPEATED : l'image d'un instant déjà calculé, rien de recalculé
-  bool scene_cut = false;         // coupe de scène entre left et right : aucune interpolation
+  bool repeated = false;   // REPEATED : l'image d'un instant déjà calculé, rien de recalculé
+  bool scene_cut = false;  // coupe de scène entre left et right : aucune interpolation
+  // La paire qui finit sur cette image est restée sans images intermédiaires, à dessein (coupe
+  // de scène, dessin tenu) : l'écart de pts qui la précède n'est pas un manque.
+  bool uninterpolated = false;
   std::uint32_t epoch = 0;        // d'une époque passée : main ne la présente pas, mais rend le slot
   std::uint64_t ready_value = 0;  // valeur du sémaphore du slot à attendre avant lecture
 };
