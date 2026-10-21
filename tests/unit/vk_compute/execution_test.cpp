@@ -1,11 +1,13 @@
 // Exécution : enregistrement rejoué, sémaphores timeline, barrières, refus du Recorder et
 // cache de pipelines.
 #include <array>
+#include <cstddef>
 #include <cstring>
 #include <vector>
 
 #include <catch2/catch_test_macros.hpp>
 
+#include "gpu/vulkan/compute/descriptors.h"
 #include "gpu/vulkan/compute/sync.h"
 #include "rig.h"
 
@@ -51,6 +53,26 @@ TEST_CASE("exécution : un enregistrement rejoué donne le même résultat", "[v
   const kernels::RgbImage second = download_rgb(rig, dst);
   CHECK(max_abs_diff(second, other) <= 1000.0F * 1e-3F);
   CHECK(max_abs_diff(second, first) > 1.0F);
+}
+
+TEST_CASE("exécution : un enregistrement plus grand que son premier pool de descripteurs",
+          "[vk_compute][execution]") {
+  Rig rig = make_rig();
+  const kernels::RgbImage image = synthetic_rgb(33, 17, 5, 0.0F, 1000.0F);
+  TensorBuffer src = upload_rgb(rig, image, Precision::F32);
+  TensorBuffer middle = tensor_target(rig, 33, 17, 3, Precision::F32);
+  TensorBuffer dst = tensor_target(rig, 33, 17, 3, Precision::F32);
+  // Un ensemble et deux tampons par pool : le second dispatch ouvre le second pool.
+  Recorder recorder =
+      require_value(Recorder::begin(*rig.context, *rig.memory, {.sets = 1, .buffers = 2, .images = 1}));
+  require_ok(rig.kernels().transfer(recorder, TransferOp::PqInverseEotf, src.view, middle.view));
+  require_ok(rig.kernels().transfer(recorder, TransferOp::PqEotf, middle.view, dst.view));
+  const std::unique_ptr<Recording> recording = require_value(recorder.finish());
+  CHECK(recording->dispatches() == 2);
+  for (int replay = 0; replay < 2; ++replay) {
+    run(rig, *recording);
+    CHECK(max_abs_diff(download_rgb(rig, dst), image) <= 1000.0F * 1e-3F);
+  }
 }
 
 TEST_CASE("exécution : une barrière entre commandes dépendantes seulement", "[vk_compute][execution]") {
@@ -194,8 +216,11 @@ TEST_CASE("exécution : refus du Recorder et des soumissions", "[vk_compute][exe
   require_refusal(recorder.dispatch(pipeline, empty, {}, push, {1, 1, 1}), RefusalCode::InputMismatch);
   require_refusal(recorder.fill({.buffer = a.view.buffer.buffer, .offset = 2, .size = 8}, 0),
                   RefusalCode::InputMismatch);
-  // Le pool ne tient qu'un ensemble : le second dispatch est refusé avant le pilote.
-  require_ok(recorder.dispatch(pipeline, buffers, {}, push, {1, 1, 1}));
+  // Le pool ne tient qu'un ensemble : chaque dispatch en ouvre un autre, jusqu'à kMaxPools ; le
+  // suivant est refusé avant le pilote.
+  for (std::size_t n = 0; n < DescriptorArena::kMaxPools; ++n) {
+    require_ok(recorder.dispatch(pipeline, buffers, {}, push, {1, 1, 1}));
+  }
   require_refusal(recorder.dispatch(pipeline, buffers, {}, push, {1, 1, 1}), RefusalCode::GpuMemoryExhausted);
   const std::unique_ptr<Recording> recording = require_value(recorder.finish());
   require_refusal(recorder.finish(), RefusalCode::InputMismatch);

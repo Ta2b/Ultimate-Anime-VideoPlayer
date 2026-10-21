@@ -110,7 +110,7 @@ class Recorder {
   // stockage du pipeline, puis ses vues échantillonnées. Refus :
   // InputMismatch (nombre de tampons, d'images ou d'octets de push différent du pipeline ; vue
   // vide, mal alignée ou trop grande), FeatureUnavailable (groupes au-delà des limites),
-  // GpuMemoryExhausted (pool de descripteurs plein).
+  // GpuMemoryExhausted (pools de descripteurs pleins, DescriptorArena::kMaxPools).
   Done dispatch(const Pipeline& pipeline, std::span<const BufferView> buffers,
                 std::span<const VkImageView> images, std::span<const std::byte> push,
                 std::array<std::uint32_t, 3> groups, DispatchOrder order = DispatchOrder::AfterPrevious);

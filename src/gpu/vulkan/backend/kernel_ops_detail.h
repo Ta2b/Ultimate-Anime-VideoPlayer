@@ -116,7 +116,8 @@ std::expected<Recording*, Refusal> VulkanKernelOps::recording(const OpKey& key, 
     found->used = uses_;
     return found->recording.get();
   }
-  // Assez pour les dix splats d'un instant déformé après SPAN : deux dispatchs chacun.
+  // Le premier pool : assez pour les dix splats d'un instant déformé après SPAN (deux dispatchs
+  // chacun) ; un enregistrement plus grand en ouvre d'autres.
   auto recorder = Recorder::begin(context_, memory_, {.sets = 32, .buffers = 128, .images = 4});
   if (!recorder) return std::unexpected(recorder.error());
   if (auto ok = body(*recorder); !ok) return detail::contract_refusal(ok.error());
