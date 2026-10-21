@@ -91,7 +91,7 @@ jobs:
           source tools/release/versions.env
           sudo apt-get update -qq
           sudo apt-get install -y -qq $APT_BUILD $APT_COMPILERS $APT_PLAYER $APT_TESTS
-          pip install --user meson
+          pip install --user "meson==$MESON_VERSION"
       - uses: actions/cache@v4
         with:
           path: ${{ env.AJP_DEPS_PREFIX }}

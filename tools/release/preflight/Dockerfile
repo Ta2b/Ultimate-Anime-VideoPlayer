@@ -24,7 +24,7 @@ USER runner
 WORKDIR /home/runner
 ENV PIP_BREAK_SYSTEM_PACKAGES=1 PATH=/home/runner/.local/bin:$PATH CC=gcc-13 CXX=g++-13 \
     AJP_DEPS_PREFIX=/home/runner/ajp-deps
-RUN pip install --user -q meson "cmake~=3.31.0"
+RUN . /ajp/versions.env && pip install --user -q "meson==${MESON_VERSION}" "cmake~=3.31.0"
 
 FROM base AS deps
 COPY --chown=runner tools/deps/linux-from-source.sh /home/runner/linux-from-source.sh

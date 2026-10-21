@@ -47,12 +47,15 @@ jobs:
           & "$env:AJP_VCPKG/bootstrap-vcpkg.bat" -disableMetrics
       - uses: ilammy/msvc-dev-cmd@v1
       # OpenVINO par sa roue PyPI, qui porte ses en-têtes, ses bibliothèques et sa configuration
-      # CMake (même version que sous Linux).
+      # CMake, à la version de tools/release/versions.env (la même que sous Linux).
       - name: OpenVINO
         shell: pwsh
         run: |
-          python -m pip install -q openvino==2026.4.1
-          if ($LASTEXITCODE -ne 0) { throw "pip openvino" }
+          $line = Select-String -Path tools/release/versions.env -Pattern '^OPENVINO_VERSION=(\S+)'
+          if (-not $line) { throw "OPENVINO_VERSION absent de tools/release/versions.env" }
+          $version = $line.Matches[0].Groups[1].Value
+          python -m pip install -q "openvino==$version"
+          if ($LASTEXITCODE -ne 0) { throw "pip openvino $version" }
           $dir = python -c "from openvino.utils import get_cmake_path; print(get_cmake_path())"
           "OpenVINO_DIR=$dir" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
       - name: Paquet
