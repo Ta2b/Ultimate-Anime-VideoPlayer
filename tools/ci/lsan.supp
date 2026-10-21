@@ -1,6 +1,15 @@
 # Suppressions de LeakSanitizer : des fuites de bibliothèques tierces seulement, chacune
 # justifiée. Lu par les préréglages de test ASan (CMakePresets.json, LSAN_OPTIONS).
 #
+# Ces préréglages posent aussi VK_LOADER_DISABLE_DYNAMIC_LIBRARY_UNLOADING=1 : le chargeur Vulkan
+# décharge sinon pilote et couches à la destruction de la dernière VkInstance, et leurs globaux
+# encore alloués deviennent des fuites « <unknown module> » qu'aucune ligne ne peut nommer. Cas
+# vu en CI : sur un CPU AMD Zen (les runners GitHub), Mesa alloue une fois par processus le masque
+# d'affinité de son cache L3 (128 octets, util_cpu_caps.L3_affinity_mask, src/util/u_cpu_detect.c,
+# jamais libéré) ; lavapipe déchargé, les tests qui ouvrent Vulkan échouaient, sur un CPU Intel
+# aucun. Gardés chargés, ces globaux restent atteignables et leurs vraies fuites gardent un nom de
+# module.
+#
 # libdbus : SDL3 ouvre D-Bus dès SDL_InitSubSystem (SDL_DBus_Init) ; le tampon de lecture
 # de la connexion reste à libdbus jusqu'à la fin du processus, même après SDL_Quit avec
 # SDL_HINT_SHUTDOWN_DBUS_ON_QUIT (essayé dans les tests audio : la fuite demeure).

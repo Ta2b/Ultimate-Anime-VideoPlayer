@@ -204,7 +204,8 @@
         "outputOnFailure": true
       },
       "environment": {
-        "LSAN_OPTIONS": "suppressions=${sourceDir}/tools/ci/lsan.supp"
+        "LSAN_OPTIONS": "suppressions=${sourceDir}/tools/ci/lsan.supp",
+        "VK_LOADER_DISABLE_DYNAMIC_LIBRARY_UNLOADING": "1"
       }
     },
     {
@@ -240,7 +241,8 @@
         "outputOnFailure": true
       },
       "environment": {
-        "LSAN_OPTIONS": "suppressions=${sourceDir}/tools/ci/lsan.supp"
+        "LSAN_OPTIONS": "suppressions=${sourceDir}/tools/ci/lsan.supp",
+        "VK_LOADER_DISABLE_DYNAMIC_LIBRARY_UNLOADING": "1"
       }
     },
     {
