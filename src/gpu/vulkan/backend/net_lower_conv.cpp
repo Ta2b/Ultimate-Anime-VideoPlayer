@@ -154,6 +154,9 @@ std::expected<std::vector<KernelChoice>, Refusal> candidates(const ir::Graph& gr
   const std::uint32_t cout_g = static_cast<std::uint32_t>(result[1]) / groups;
   const std::uint32_t quads = default_quads(cout_g);
   std::vector<KernelChoice> out;
+  // Les variantes coopmat, en tête pour une famille de la liste d'autorisation, après les autres
+  // sinon (Target::matrix_first) : sans autotuner, un appareil hors liste garde le noyau direct.
+  std::vector<KernelChoice> matrix;
   const bool conv = node.op == ir::OpKind::Conv;
   if (conv && matrix_eligible(graph, node, target)) {
     const std::uint32_t tiles = matrix_tiles(static_cast<std::uint32_t>(result[1]));
@@ -166,14 +169,15 @@ std::expected<std::vector<KernelChoice>, Refusal> candidates(const ir::Graph& gr
             detail::matrix_shared_bytes(subgroups, tm, 16, 0) > target.max_shared_memory) {
           continue;
         }
-        out.push_back({.variant = std::string(kMatrix), .tuning = {tm, subgroups}});
+        matrix.push_back({.variant = std::string(kMatrix), .tuning = {tm, subgroups}});
         if (tm == 2 && detail::matrix_shared_bytes(subgroups, tm, 16, tiles * 16) <= target.max_shared_memory)
-          out.push_back({.variant = std::string(kMatrix), .tuning = {tm, subgroups, 1}});
+          matrix.push_back({.variant = std::string(kMatrix), .tuning = {tm, subgroups, 1}});
         if (target.matrix_f16_acc)
-          out.push_back({.variant = std::string(kMatrixAcc16), .tuning = {tm, subgroups}});
+          matrix.push_back({.variant = std::string(kMatrixAcc16), .tuning = {tm, subgroups}});
       }
     }
   }
+  if (target.matrix_first) std::swap(out, matrix);
   const bool packed = conv && target.f16_math && target.f16_storage &&
                       graph.tensors[node.inputs[0]].type == ir::DataType::F16 && y.type == ir::DataType::F16;
   for (const std::uint32_t q : {quads, 1U, 2U, 4U}) {
@@ -232,6 +236,7 @@ std::expected<std::vector<KernelChoice>, Refusal> candidates(const ir::Graph& gr
       }
     }
   }
+  if (!target.matrix_first) out.insert(out.end(), matrix.begin(), matrix.end());
   return out;
 }
 

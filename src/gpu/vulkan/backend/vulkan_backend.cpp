@@ -203,13 +203,16 @@ std::expected<void, Refusal> VulkanBackend::open(const BackendInit& init) {
                     imported_timeline_ ? ", ordonnés côté GPU" : ""));
   }
   log(BackendLogLevel::Info,
-      std::format(
-          "backend Vulkan : {}, famille {}, unités matricielles {}{}{}", context_->caps().device_name,
-          name(profile_.family), profile_.target.matrix_units ? "utilisées" : "non utilisées",
-          profile_.matrix_hardware && !profile_.matrix_allowed ? " (présentes, hors liste d'autorisation)"
-                                                               : "",
-          profile_.matrix_shapes.empty() ? ""
-                                         : std::format(" ; tuiles du pilote : {}", profile_.matrix_shapes)));
+      std::format("backend Vulkan : {}, famille {}, unités matricielles {}{}{}", context_->caps().device_name,
+                  name(profile_.family), profile_.target.matrix_units ? "utilisées" : "non utilisées",
+                  !profile_.matrix_hardware ? ""
+                  : profile_.matrix_unlisted
+                      ? " (hors liste d'autorisation : vérifiées par l'autotuner, jamais par défaut)"
+                  : !profile_.matrix_allowed ? " (présentes, hors liste d'autorisation)"
+                                             : "",
+                  profile_.matrix_shapes.empty()
+                      ? ""
+                      : std::format(" ; tuiles du pilote : {}", profile_.matrix_shapes)));
   return {};
 }
 

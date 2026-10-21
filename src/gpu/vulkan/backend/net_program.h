@@ -58,7 +58,10 @@ struct Program {
 struct Target {
   bool f16_storage = false;   // tenseurs float16 (variantes « _f16 »)
   bool f16_math = false;      // calcul en fp16 (« _f16p »)
-  bool matrix_units = false;  // matrices coopératives autorisées (famille et pilote, voir family.h)
+  bool matrix_units = false;  // matrices coopératives proposées (famille et pilote, voir family.h)
+  // Et en tête des candidats, choix par défaut sans autotuner : famille de la liste
+  // d'autorisation ; faux pour un appareil hors liste (matrix_units_unlisted).
+  bool matrix_first = false;
   // Tuiles 16 × 16 × 16 à sommes float16 aussi annoncées (variante coopmat_acc16, deux fois plus
   // rapide sur GeForce, retenue seulement si sa sortie concorde).
   bool matrix_f16_acc = false;

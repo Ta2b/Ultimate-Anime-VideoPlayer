@@ -46,6 +46,12 @@ TEST_CASE("Familles : identifiants PCI connus", "[vk_backend][family]") {
   CHECK(detect_family(pci::kIntel, 0x7D55, false) == GpuFamily::IntelXeLpg);  // Arc du Core Ultra 7 155H
   CHECK(detect_family(pci::kIntel, 0xA780, false) == GpuFamily::IntelXeLp);   // UHD 770
   CHECK(detect_family(pci::kIntel, 0xE20B, false) == GpuFamily::IntelXe2);    // Arc B580
+  // AMD hors des plages : la puce que RADV nomme ; un autre pilote reste avant RDNA3.
+  CHECK(detect_family(pci::kAmd, 0x7600, false, "AMD Radeon RX 9060 (RADV NAVI44)") == GpuFamily::AmdRdna4);
+  CHECK(detect_family(pci::kAmd, 0x1114, false, "AMD Radeon 890M (RADV GFX1150)") == GpuFamily::AmdRdna3);
+  CHECK(detect_family(pci::kAmd, 0x73BF, false, "AMD Radeon RX 6800 (RADV NAVI21)") ==
+        GpuFamily::AmdBeforeRdna3);
+  CHECK(detect_family(pci::kAmd, 0x1114, false, "AMD Radeon 890M") == GpuFamily::AmdBeforeRdna3);
   CHECK(detect_family(pci::kNvidia, 0x2782, true) == GpuFamily::Software);
   CHECK(detect_family(0x10005, 0, false) == GpuFamily::Unknown);
 }
@@ -62,6 +68,11 @@ TEST_CASE("Familles : liste d'autorisation des unités matricielles", "[vk_backe
   CHECK_FALSE(matrix_units_allowed(GpuFamily::AmdBeforeRdna3, DriverKind::AmdProprietary));
   CHECK_FALSE(matrix_units_allowed(GpuFamily::AmdRdna4, DriverKind::Other));
   CHECK_FALSE(matrix_units_allowed(GpuFamily::Software, DriverKind::Other));
+  // Hors liste : une puce NVIDIA inconnue sous le pilote propriétaire, proposée sans être par défaut.
+  CHECK(matrix_units_unlisted(GpuFamily::Unknown, DriverKind::NvidiaProprietary));
+  CHECK_FALSE(matrix_units_unlisted(GpuFamily::Unknown, DriverKind::Other));
+  CHECK_FALSE(matrix_units_unlisted(GpuFamily::AmdBeforeRdna3, DriverKind::AmdProprietary));
+  CHECK_FALSE(matrix_units_unlisted(GpuFamily::Software, DriverKind::Other));
   CHECK(net::preset_tables().empty());
 }
 
@@ -85,7 +96,20 @@ TEST_CASE("Familles : variante matricielle choisie ou écartée selon l'appareil
       std::ranges::any_of(options, [](const net::KernelChoice& c) { return c.variant == "coopmat"; });
   if (profile.family == GpuFamily::Software) CHECK_FALSE(profile.target.matrix_units);
   CHECK(any_matrix == profile.target.matrix_units);
-  if (profile.target.matrix_units) CHECK(options.front().variant == "coopmat");
+  if (profile.target.matrix_first) CHECK(options.front().variant == "coopmat");
+  // Proposées sans être en tête (appareil hors liste), puis en tête (liste d'autorisation).
+  net::Target target = profile.target;
+  target.matrix_units = true;
+  if (target.subgroup_size == 0) target.subgroup_size = 32;
+  target.matrix_first = false;
+  const auto behind = require_value(net::candidates(graph, static_cast<std::size_t>(conv), target));
+  REQUIRE(std::ranges::any_of(behind, [](const net::KernelChoice& c) { return c.variant == "coopmat"; }));
+  CHECK(behind.front().variant != "coopmat");
+  CHECK(behind.back().variant.starts_with("coopmat"));
+  target.matrix_first = true;
+  const auto ahead = require_value(net::candidates(graph, static_cast<std::size_t>(conv), target));
+  CHECK(ahead.front().variant == "coopmat");
+  CHECK(ahead.size() == behind.size());
   if (profile.family == GpuFamily::NvidiaAda && profile.driver == DriverKind::NvidiaProprietary) {
     CHECK(profile.matrix_hardware);
     CHECK(profile.target.matrix_units);

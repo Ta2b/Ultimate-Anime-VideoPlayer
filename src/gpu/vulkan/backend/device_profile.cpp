@@ -73,7 +73,8 @@ MatrixTiles matrix_tiles(const VkContext& context) {
 DeviceProfile profile_device(const VkContext& context) {
   const DeviceCaps& caps = context.caps();
   DeviceProfile profile;
-  profile.family = detect_family(caps.vendor_id, caps.device_id, caps.type == VK_PHYSICAL_DEVICE_TYPE_CPU);
+  profile.family = detect_family(caps.vendor_id, caps.device_id, caps.type == VK_PHYSICAL_DEVICE_TYPE_CPU,
+                                 caps.device_name);
   profile.driver = driver_kind(caps.driver_name);
   const Features& f = caps.enabled;
   const bool matrix_features = f.cooperative_matrix && f.vulkan_memory_model && f.storage_buffer_16bit &&
@@ -82,19 +83,21 @@ DeviceProfile profile_device(const VkContext& context) {
   profile.matrix_hardware = tiles.f32_sums;
   profile.matrix_shapes = tiles.shapes;
   profile.matrix_allowed = matrix_units_allowed(profile.family, profile.driver);
-  profile.target = net::Target{
-      .f16_storage = f.storage_buffer_16bit,
-      .f16_math = f.storage_buffer_16bit && f.shader_float16,
-      .matrix_units = profile.matrix_hardware && profile.matrix_allowed,
-      .matrix_f16_acc = profile.matrix_hardware && profile.matrix_allowed && tiles.f16_sums,
-      .subgroup_size = caps.subgroup_size,
-      .subgroup_min = f.subgroup_size_control ? caps.min_subgroup_size : 0,
-      .subgroup_max = f.subgroup_size_control ? caps.max_subgroup_size : 0,
-      .max_push_constants = caps.max_push_constants,
-      .max_shared_memory = caps.max_shared_memory,
-      .max_workgroup_invocations = caps.max_workgroup_invocations,
-      .storage_alignment =
-          static_cast<std::uint32_t>(std::max<VkDeviceSize>(caps.min_storage_buffer_alignment, 4))};
+  profile.matrix_unlisted = !profile.matrix_allowed && matrix_units_unlisted(profile.family, profile.driver);
+  const bool offered = profile.matrix_hardware && (profile.matrix_allowed || profile.matrix_unlisted);
+  profile.target = net::Target{.f16_storage = f.storage_buffer_16bit,
+                               .f16_math = f.storage_buffer_16bit && f.shader_float16,
+                               .matrix_units = offered,
+                               .matrix_first = profile.matrix_hardware && profile.matrix_allowed,
+                               .matrix_f16_acc = offered && tiles.f16_sums,
+                               .subgroup_size = caps.subgroup_size,
+                               .subgroup_min = f.subgroup_size_control ? caps.min_subgroup_size : 0,
+                               .subgroup_max = f.subgroup_size_control ? caps.max_subgroup_size : 0,
+                               .max_push_constants = caps.max_push_constants,
+                               .max_shared_memory = caps.max_shared_memory,
+                               .max_workgroup_invocations = caps.max_workgroup_invocations,
+                               .storage_alignment = static_cast<std::uint32_t>(
+                                   std::max<VkDeviceSize>(caps.min_storage_buffer_alignment, 4))};
   // driverVersion se code autrement selon le constructeur : il entre brut, avec driverInfo lisible.
   profile.stable_key = std::format("{:04x}:{:04x}:{}", caps.vendor_id, caps.device_id, caps.driver_name);
   profile.driver_build = std::format("{}:{:08x}", caps.driver_info, caps.driver_version);

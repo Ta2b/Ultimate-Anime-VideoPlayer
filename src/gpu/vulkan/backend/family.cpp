@@ -51,6 +51,17 @@ GpuFamily find(const Range (&ranges)[N], std::uint32_t device, GpuFamily otherwi
   return otherwise;
 }
 
+// La puce que RADV met entre parenthèses : NAVI3x et GFX11xx sont des RDNA3 (3.5 compris),
+// NAVI4x et GFX12xx des RDNA4 ; le reste, ou un autre pilote, reste avant RDNA3.
+GpuFamily radv_family(std::string_view device_name) {
+  const std::size_t at = device_name.find("(RADV ");
+  if (at == std::string_view::npos) return GpuFamily::AmdBeforeRdna3;
+  const std::string_view chip = device_name.substr(at + 6);
+  if (chip.starts_with("NAVI3") || chip.starts_with("GFX11")) return GpuFamily::AmdRdna3;
+  if (chip.starts_with("NAVI4") || chip.starts_with("GFX12")) return GpuFamily::AmdRdna4;
+  return GpuFamily::AmdBeforeRdna3;
+}
+
 }  // namespace
 
 std::string_view name(GpuFamily family) {
@@ -85,13 +96,14 @@ std::string_view name(GpuFamily family) {
   return "inconnue";
 }
 
-GpuFamily detect_family(std::uint32_t vendor_id, std::uint32_t device_id, bool cpu) {
+GpuFamily detect_family(std::uint32_t vendor_id, std::uint32_t device_id, bool cpu,
+                        std::string_view device_name) {
   if (cpu) return GpuFamily::Software;
   switch (vendor_id) {
     case pci::kNvidia:
       return find(kNvidia, device_id, GpuFamily::Unknown);
     case pci::kAmd:
-      return find(kAmd, device_id, GpuFamily::AmdBeforeRdna3);
+      return find(kAmd, device_id, radv_family(device_name));
     case pci::kIntel:
       return find(kIntel, device_id, GpuFamily::Unknown);
     default:
@@ -126,6 +138,10 @@ bool matrix_units_allowed(GpuFamily family, DriverKind driver) {
     default:
       return false;
   }
+}
+
+bool matrix_units_unlisted(GpuFamily family, DriverKind driver) {
+  return family == GpuFamily::Unknown && driver == DriverKind::NvidiaProprietary;
 }
 
 }  // namespace ajp::gpu::vk
