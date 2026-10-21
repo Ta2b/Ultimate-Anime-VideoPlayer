@@ -11,6 +11,7 @@
 #include <expected>
 #include <memory>
 #include <string>
+#include <thread>
 #include <vector>
 
 #include "app/play/controls.h"
@@ -29,10 +30,33 @@ namespace ajp::app::play {
 
 class PlaceboScreen;
 
+// Une police du système, lue en mémoire : son fichier et son numéro dans une collection (.ttc).
+struct FontFile {
+  std::string path;
+  int index = 0;
+  std::vector<unsigned char> data;
+};
+
+// Les polices de l'interface, cherchées (fontconfig) et lues sur un thread pendant que l'écran
+// s'ouvre : à froid, FcInit bâtit son cache (300 ms pour une centaine de polices) et la police
+// japonaise pèse souvent 17 Mo. Sans fontconfig, aucune : la police vectorielle d'ImGui.
+class FontSearch {
+ public:
+  static FontSearch start();
+  // Les polices trouvées, la principale d'abord ; attend la fin de la recherche. Sans thread
+  // (refusé par le système), la recherche se fait ici.
+  std::vector<FontFile> take();
+
+ private:
+  std::unique_ptr<std::vector<FontFile>> found_ = std::make_unique<std::vector<FontFile>>();
+  std::jthread thread_;
+};
+
 class PlayerUi {
  public:
   // Refus : contexte ImGui impossible (LibraryUnavailable).
-  static std::expected<std::unique_ptr<PlayerUi>, Refusal> create(SDL_Window* window, std::string title);
+  static std::expected<std::unique_ptr<PlayerUi>, Refusal> create(SDL_Window* window, std::string title,
+                                                                  FontSearch& fonts);
   ~PlayerUi();
   PlayerUi(const PlayerUi&) = delete;
   PlayerUi& operator=(const PlayerUi&) = delete;
@@ -69,6 +93,7 @@ class PlayerUi {
   bool over_ui() const;
 
   SDL_Window* window_;
+  std::vector<FontFile> fonts_;  // lues par l'atlas d'ImGui tant que le contexte vit
   ImGuiContext* context_ = nullptr;
   Controls controls_;
   UiLook look_;

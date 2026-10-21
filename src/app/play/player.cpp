@@ -71,6 +71,7 @@ std::expected<media::TrackInfo, Refusal> probe_video(const std::filesystem::path
 
 std::expected<void, Refusal> play(const PlayOptions& options, const PlayerPaths& paths) {
   const auto log = log_channel("app");
+  FontSearch fonts = FontSearch::start();  // pendant la lecture des réglages et l'ouverture de l'écran
   auto video = probe_video(options.file);
   if (!video) return std::unexpected(std::move(video.error()));
   const std::filesystem::path settings_path = paths.engines.parent_path() / "play.toml";
@@ -108,7 +109,7 @@ std::expected<void, Refusal> play(const PlayOptions& options, const PlayerPaths&
                                         .smooth_motion = saved->smooth_motion,
                                         .allow_software = options.software_gpu});
   if (!screen) return std::unexpected(std::move(screen.error()));
-  auto ui = PlayerUi::create((*screen)->window(), options.file.filename().string());
+  auto ui = PlayerUi::create((*screen)->window(), options.file.filename().string(), fonts);
   if (!ui) return std::unexpected(std::move(ui.error()));
   // L'interface rend ses textures à l'écran avant qu'ils ne partent, quelle que soit la sortie.
   class Release {

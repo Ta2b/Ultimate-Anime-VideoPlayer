@@ -4,9 +4,12 @@
 #include <cctype>
 #include <cfloat>
 #include <cmath>
+#include <cstdint>
 #include <filesystem>
+#include <fstream>
 #include <optional>
 #include <string>
+#include <system_error>
 #include <utility>
 
 #include <SDL3/SDL_events.h>
@@ -21,16 +24,13 @@
 #include "app/play/placebo_imgui.h"
 #include "app/play/placebo_screen.h"
 #include "core/log.h"
+#include "core/thread.h"
 
 namespace ajp::app::play {
 namespace {
 
-constexpr float kFontSize = 17.0F;  // pixels à l'échelle 1, multipliés par l'échelle de l'écran
-
-struct FontFile {
-  std::string path;
-  int index = 0;
-};
+constexpr float kFontSize = 17.0F;        // pixels à l'échelle 1, multipliés par l'échelle de l'écran
+constexpr int kMaxFontBytes = 256 << 20;  // ImGui prend la taille en int
 
 // Le fichier de police que fontconfig choisit pour pattern (« sans-serif », « sans-serif:lang=ja ») ;
 // seulement TrueType ou OpenType, ce que lit ImGui.
@@ -53,7 +53,7 @@ std::optional<FontFile> system_font(const char* pattern) {
     std::ranges::transform(ext, ext.begin(),
                            [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
     if (ext == ".ttf" || ext == ".otf" || ext == ".ttc" || ext == ".otc")
-      found = FontFile{std::move(path), index};
+      found = FontFile{.path = std::move(path), .index = index};
   }
   if (match != nullptr) FcPatternDestroy(match);
   FcPatternDestroy(wanted);
@@ -64,26 +64,49 @@ std::optional<FontFile> system_font(const char* pattern) {
 #endif
 }
 
-bool add_font(ImFontAtlas& fonts, const FontFile& file, bool merge) {
+// Le fichier entier dans font.data ; false s'il ne se lit pas.
+bool read_font(FontFile& font) {
+  const std::filesystem::path path(font.path);
+  std::error_code error;
+  const std::uintmax_t size = std::filesystem::file_size(path, error);
+  if (error || size == 0 || size > static_cast<std::uintmax_t>(kMaxFontBytes)) return false;
+  std::ifstream file(path, std::ios::binary);
+  font.data.resize(static_cast<std::size_t>(size));
+  return file && file.read(reinterpret_cast<char*>(font.data.data()), static_cast<std::streamsize>(size));
+}
+
+// Police du bureau (sans-serif), complétée par une police japonaise pour les titres de pistes.
+std::vector<FontFile> search_fonts() {
+  std::vector<FontFile> fonts;
+  std::optional<FontFile> main = system_font("sans-serif");
+  if (!main || !read_font(*main)) return fonts;
+  fonts.push_back(std::move(*main));
+  std::optional<FontFile> japanese = system_font("sans-serif:lang=ja");
+  if (japanese && japanese->path != fonts.front().path && read_font(*japanese))
+    fonts.push_back(std::move(*japanese));
+  return fonts;
+}
+
+bool add_font(ImFontAtlas& fonts, FontFile& file, bool merge) {
   ImFontConfig config;
   config.MergeMode = merge;
   config.FontNo = static_cast<ImU32>(std::max(file.index, 0));
-  return fonts.AddFontFromFileTTF(file.path.c_str(), kFontSize, &config) != nullptr;
+  config.FontDataOwnedByAtlas = false;  // file.data vit dans PlayerUi
+  return fonts.AddFontFromMemoryTTF(file.data.data(), static_cast<int>(file.data.size()), kFontSize,
+                                    &config) != nullptr;
 }
 
-// Police du bureau (sans-serif), complétée par une police japonaise pour les titres de pistes ;
-// sans fontconfig, la police vectorielle d'ImGui. ImGui 1.92 rastérise à la taille demandée.
-void load_fonts(ImFontAtlas& fonts) {
+// Les polices trouvées par FontSearch ; sinon la police vectorielle d'ImGui. ImGui 1.92 rastérise
+// à la taille demandée.
+void load_fonts(ImFontAtlas& atlas, std::vector<FontFile>& fonts) {
   const auto log = log_channel("app");
-  const std::optional<FontFile> main = system_font("sans-serif");
-  if (!main || !add_font(fonts, *main, false)) {
-    fonts.AddFontDefaultVector();
+  if (fonts.empty() || !add_font(atlas, fonts.front(), false)) {
+    atlas.AddFontDefaultVector();
     log->info("interface : police vectorielle d'ImGui");
     return;
   }
-  log->info("interface : police {}", main->path);
-  const std::optional<FontFile> japanese = system_font("sans-serif:lang=ja");
-  if (japanese && japanese->path != main->path) add_font(fonts, *japanese, true);
+  log->info("interface : police {}", fonts.front().path);
+  for (std::size_t i = 1; i < fonts.size(); ++i) add_font(atlas, fonts[i], true);
 }
 
 // Thème sombre et sobre, accent bleu clair (celui de la barre de progression).
@@ -181,6 +204,31 @@ ImGuiKey imgui_key(SDL_Keycode key) {
 
 }  // namespace
 
+FontSearch FontSearch::start() {
+  FontSearch search;
+  auto thread = start_thread("polices", ThreadReport([](const Refusal& refusal) {
+                               log_channel("app")->warn("polices : {}", refusal.detail);
+                             }),
+                             [found = search.found_.get()](const std::stop_token&, const ThreadReport&) {
+                               *found = search_fonts();
+                             });
+  if (thread) {
+    search.thread_ = std::move(*thread);
+  } else {
+    log_channel("app")->warn("polices : {} ; cherchées à l'ouverture de l'interface", thread.error().detail);
+  }
+  return search;
+}
+
+std::vector<FontFile> FontSearch::take() {
+  if (thread_.joinable()) {
+    thread_.join();
+  } else if (found_->empty()) {
+    *found_ = search_fonts();
+  }
+  return std::move(*found_);
+}
+
 PlayerUi::PlayerUi(SDL_Window* window, std::string title) : window_(window) {
   look_.title = std::move(title);
 }
@@ -194,7 +242,8 @@ PlayerUi::~PlayerUi() {
   ImGui::DestroyContext(context_);
 }
 
-std::expected<std::unique_ptr<PlayerUi>, Refusal> PlayerUi::create(SDL_Window* window, std::string title) {
+std::expected<std::unique_ptr<PlayerUi>, Refusal> PlayerUi::create(SDL_Window* window, std::string title,
+                                                                   FontSearch& fonts) {
   if (!IMGUI_CHECKVERSION()) return std::unexpected(Refusal{RefusalCode::LibraryUnavailable, "Dear ImGui"});
   auto ui = std::unique_ptr<PlayerUi>(new PlayerUi(window, std::move(title)));
   ui->context_ = ImGui::CreateContext();
@@ -206,7 +255,8 @@ std::expected<std::unique_ptr<PlayerUi>, Refusal> PlayerUi::create(SDL_Window* w
   io.ConfigFlags |= ImGuiConfigFlags_NoMouseCursorChange;
   io.BackendPlatformName = "ajp_play_sdl3";
   ImGuiLayer::configure(io);
-  load_fonts(*io.Fonts);
+  ui->fonts_ = fonts.take();
+  load_fonts(*io.Fonts, ui->fonts_);
   ui->apply_scale();
   return ui;
 }
