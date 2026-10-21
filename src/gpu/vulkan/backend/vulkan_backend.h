@@ -51,13 +51,18 @@ struct BackendOptions {
 // Un réseau chargé : son moteur et les noms de ses entrées et sorties.
 class VulkanEngine final : public Engine {
  public:
-  explicit VulkanEngine(std::unique_ptr<net::NetEngine> net) : net_(std::move(net)) {}
+  explicit VulkanEngine(std::unique_ptr<net::NetEngine> net)
+      : net_(std::move(net)), views_(net_->graph().inputs.size() + net_->graph().outputs.size()) {}
   std::span<const std::string> input_names() const override { return net_->input_names(); }
   std::span<const std::string> output_names() const override { return net_->output_names(); }
   net::NetEngine& net() { return *net_; }
+  // Les vues des entrées puis des sorties d'un enqueue, à la taille du graphe (14 sorties pour la
+  // paire de GMFSS) : allouées une fois au chargement, pas à chaque image.
+  std::span<BufferView> io_views() { return views_; }
 
  private:
   std::unique_ptr<net::NetEngine> net_;
+  std::vector<BufferView> views_;
 };
 
 class VulkanBackend final : public Backend {

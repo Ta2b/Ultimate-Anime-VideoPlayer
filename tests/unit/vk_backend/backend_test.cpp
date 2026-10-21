@@ -3,6 +3,7 @@
 // opérateur inconnu refusé à la construction, appareil de rendu qui ne convient pas.
 #include <algorithm>
 #include <cstring>
+#include <format>
 #include <fstream>
 
 #include <catch2/catch_test_macros.hpp>
@@ -129,6 +130,59 @@ TEST_CASE("Backend : construction, chargement et enqueue d'un SPAN contre l'inte
   const auto again = build(*backend, model, shapes(20, 28));
   CHECK(again.path == artifact.path);
   CHECK(again.cache_key == artifact.cache_key);
+}
+
+// Plus de huit entrées et sorties (la paire de GMFSS en a 15) : onze convolutions 1x1 d'une même
+// entrée, chacune une sortie, rejouées contre l'interpréteur.
+TEST_CASE("Backend : enqueue d'un graphe à onze sorties", "[vk_backend][backend]") {
+  TempDir dir("wide");
+  auto backend = make_backend(dir.path() / "cache");
+  constexpr int kOutputs = 11;
+  ModelBuilder m;
+  m.input("input", {1, 3, -1, -1}, ir::onnx::kFloat);
+  for (int k = 0; k < kOutputs; ++k) {
+    const std::string w = std::format("w{}", k);
+    const std::string b = std::format("b{}", k);
+    const auto seed = static_cast<std::size_t>(k);
+    m.initializer(ir::test::tensor_f32(w, {3, 3, 1, 1}, test_values(ir::DataType::F32, {9}, 10 + seed).f));
+    m.initializer(ir::test::tensor_f32(b, {3}, test_values(ir::DataType::F32, {3}, 40 + seed).f));
+    m.node("Conv", {"input", w, b}, {std::format("out{}", k)});
+    m.output(std::format("out{}", k), ir::onnx::kFloat);
+  }
+  const ModelSpec model = write_model(dir.path(), "wide_test", m.bytes(), TensorType::F32);
+  auto engine = require_value(backend->load(build(*backend, model, shapes(6, 10))));
+  REQUIRE(engine->output_names().size() == kOutputs);
+
+  const ir::Value x = test_values(ir::DataType::F32, {1, 3, 6, 10}, 3);
+  auto in = require_value(backend->alloc_tensor(TensorType::F32, Shape{{1, 3, 6, 10}}));
+  kernels::RgbImage image(10, 6);
+  for (std::size_t c = 0; c < 3; ++c) {
+    std::copy_n(x.f.begin() + static_cast<std::ptrdiff_t>(c * 60), 60, image.planes[c].data.begin());
+  }
+  write_tensor(*backend, in->tensor(), rgb_bytes(image, TensorType::F32));
+  std::vector<std::unique_ptr<TensorBuffer>> buffers;
+  std::vector<Tensor> outputs;
+  for (int k = 0; k < kOutputs; ++k) {
+    buffers.push_back(require_value(backend->alloc_tensor(TensorType::F32, Shape{{1, 3, 6, 10}})));
+    outputs.push_back(buffers.back()->tensor());
+  }
+  std::array inputs{in->tensor()};
+  require_ok(backend->enqueue(*engine, inputs, outputs));
+  require_ok(backend->wait(require_value(backend->signal())));
+
+  const vk::net::BuildRequest request{
+      .onnx = model.onnx_path, .model_id = model.id, .input_shape = {1, 3, 6, 10}, .fp16 = false};
+  const ir::Graph graph = require_value(vk::net::prepare_graph(request, backend->profile().target));
+  const std::vector<ir::NamedValue> named{{"input", x}};
+  const std::vector<ir::Value> want = run_reference(graph, named);
+  REQUIRE(want.size() == kOutputs);
+  for (std::size_t k = 0; k < want.size(); ++k) {
+    const kernels::RgbImage got =
+        rgb_from(read_tensor(*backend, outputs[k], 4U * 3 * 6 * 10), 10, 6, TensorType::F32);
+    ir::Value got_value{.type = want[k].type, .dims = want[k].dims};
+    for (const auto& p : got.planes) got_value.f.insert(got_value.f.end(), p.data.begin(), p.data.end());
+    require_close(got_value, want[k], kFp32, std::format("sortie {}", k));
+  }
 }
 
 TEST_CASE("Backend : artefact, aller-retour et refus", "[vk_backend][backend]") {

@@ -328,10 +328,7 @@ std::expected<void, Refusal> VulkanBackend::enqueue(Engine& engine, std::span<co
                                       outputs.size(), graph.inputs.size(), graph.outputs.size()));
   }
   // Chaque tenseur a le type et la forme NCHW de son entrée ou de sa sortie dans le graphe.
-  std::array<BufferView, 8> views{};
-  if (inputs.size() + outputs.size() > views.size()) {
-    return refuse_backend(RefusalCode::InputMismatch, "plus de 8 entrées et sorties");
-  }
+  const std::span<BufferView> views = vulkan->io_views();
   std::size_t at = 0;
   const auto check = [&](const Tensor& t, ir::TensorId id) -> std::expected<void, Refusal> {
     const ir::Tensor& want = graph.tensors[id];
@@ -354,8 +351,7 @@ std::expected<void, Refusal> VulkanBackend::enqueue(Engine& engine, std::span<co
   for (std::size_t k = 0; k < outputs.size(); ++k) {
     if (auto ok = check(outputs[k], graph.outputs[k]); !ok) return ok;
   }
-  auto recording = net.recording(std::span(views).first(inputs.size()),
-                                 std::span(views).subspan(inputs.size(), outputs.size()));
+  auto recording = net.recording(views.first(inputs.size()), views.subspan(inputs.size(), outputs.size()));
   if (!recording) return std::unexpected(recording.error());
   if (!queue_) return refuse_backend(RefusalCode::DeviceUnavailable, "file du backend absente");
   return queue_->submit(**recording);
