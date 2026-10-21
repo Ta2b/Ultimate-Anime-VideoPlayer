@@ -27,8 +27,9 @@ struct SourceInfo {
 struct DisplayInfo {
   int width = 0;
   int height = 0;
-  double refresh_hz = 0.0;
+  double refresh_hz = 0.0;  // fixe : le rafraîchissement ; VRR : le plafond du panneau
   bool hdr = false;
+  bool vrr = false;  // rafraîchissement variable actif
 };
 
 // Première règle dont les bornes, incluses, contiennent la source ; nullptr sinon.

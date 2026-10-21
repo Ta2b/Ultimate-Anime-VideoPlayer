@@ -48,6 +48,13 @@
             "vulkan-binding"
           ]
         },
+        {
+          "name": "curl",
+          "default-features": false,
+          "features": [
+            "ssl"
+          ]
+        },
         "vulkan-headers",
         "nanobench"
       ]

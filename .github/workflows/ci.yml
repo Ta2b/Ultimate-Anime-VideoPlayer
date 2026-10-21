@@ -55,20 +55,39 @@ jobs:
       - run: cmake --build --preset ${{ matrix.preset }}
       - run: ctest --preset ${{ matrix.preset }}
 
-  tidy:
-    name: clang-tidy
+  player:
+    name: Lecteur Linux (lavapipe)
     runs-on: ubuntu-24.04
     env:
-      CC: clang-20
-      CXX: clang++-20
+      CC: gcc-13
+      CXX: g++-13
     steps:
       - uses: actions/checkout@v4
-      - run: sudo apt-get update -qq && sudo apt-get install -y -qq $APT_BASE
+      - name: Paquets système
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq $APT_BASE \
+            mesa-vulkan-drivers vulkan-tools libvulkan-dev glslc glslang-tools spirv-tools xvfb \
+            libfreetype-dev libharfbuzz-dev libfribidi-dev libfontconfig-dev libshaderc-dev glslang-dev \
+            liblcms2-dev libdav1d-dev libasound2-dev libpulse-dev libcurl4-openssl-dev \
+            libx11-dev libxext-dev libxrandr-dev libxcursor-dev libxi-dev libxss-dev libxtst-dev \
+            libxfixes-dev libxinerama-dev libxkbcommon-dev libxkbcommon-x11-dev libwayland-dev \
+            wayland-protocols libdecor-0-dev libdrm-dev libgbm-dev libegl-dev libudev-dev libdbus-1-dev
+          pip install --user meson
       - uses: actions/cache@v4
         with:
           path: ${{ env.AJP_DEPS_PREFIX }}
-          key: deps-core-clang-20-${{ hashFiles('tools/deps/linux-from-source.sh') }}
-      - run: tools/deps/linux-from-source.sh --core "$AJP_DEPS_PREFIX" "$RUNNER_TEMP/deps-src"
-      - run: cmake --preset linux-prefix-core
+          key: deps-player-gcc-13-${{ hashFiles('tools/deps/linux-from-source.sh') }}
+      - run: tools/deps/linux-from-source.sh "$AJP_DEPS_PREFIX" "$RUNNER_TEMP/deps-src"
+      - run: cmake --preset linux-prefix
+      - run: cmake --build --preset linux-prefix
+      - name: Tests (Vulkan logiciel sous Xvfb)
+        run: xvfb-run -a ctest --preset linux-prefix
       - name: clang-tidy sur src/
-        run: git ls-files -z -- 'src/*.cpp' | xargs -0 -r -n1 -P4 clang-tidy-20 -p build/linux-prefix-core --quiet
+        run: git ls-files -z -- 'src/*.cpp' | xargs -0 -r -n1 -P4 clang-tidy-20 -p build/linux-prefix --quiet
+      # Les jobs ASan du cœur ne construisent pas src/gpu : on y passe les tests gpu_ir.
+      - name: Tests gpu_ir sous ASan et UBSan
+        run: |
+          cmake --preset linux-prefix-asan
+          cmake --build --preset linux-prefix-asan --target ajp_gpu_ir_tests
+          build/linux-prefix-asan/tests/unit/gpu_ir/ajp_gpu_ir_tests
