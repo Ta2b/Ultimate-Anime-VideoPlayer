@@ -13,34 +13,25 @@
 #include "gpu/backend.h"
 #include "kernels/ref/half.h"
 
-#if defined(_WIN32)
-#include <windows.h>
-#else
-#include <dlfcn.h>
-#endif
-
 namespace ajp::test {
 
+// Dans backend_fixture.cpp : <windows.h> y reste, ses macros (small, near, far…) hors des tests.
+void* open_backend_library();
+void close_backend_library(void* handle);
+void* backend_symbol(void* handle, const char* name);
+
 struct Library {
-#if defined(_WIN32)
-  void* handle = LoadLibraryA(AJP_BACKEND_TENSORRT);
-  ~Library() {
-    if (handle != nullptr) FreeLibrary(static_cast<HMODULE>(handle));
-  }
+  void* handle = open_backend_library();
+  Library() = default;
+  Library(const Library&) = delete;
+  Library& operator=(const Library&) = delete;
+  Library(Library&&) = delete;
+  Library& operator=(Library&&) = delete;
+  ~Library() { close_backend_library(handle); }
   template <class F>
   F* symbol(const char* name) const {
-    return reinterpret_cast<F*>(reinterpret_cast<void*>(GetProcAddress(static_cast<HMODULE>(handle), name)));
+    return reinterpret_cast<F*>(backend_symbol(handle, name));
   }
-#else
-  void* handle = dlopen(AJP_BACKEND_TENSORRT, RTLD_NOW | RTLD_LOCAL);
-  ~Library() {
-    if (handle != nullptr) dlclose(handle);
-  }
-  template <class F>
-  F* symbol(const char* name) const {
-    return reinterpret_cast<F*>(dlsym(handle, name));
-  }
-#endif
 };
 
 inline bool has_cuda() {
