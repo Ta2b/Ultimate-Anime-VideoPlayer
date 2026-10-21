@@ -65,6 +65,30 @@ system_lib() {
   return 1
 }
 
+# Ce que le paquet demande au système doit porter le même nom sur Debian et Ubuntu, Fedora et Arch.
+# libbz2.so.1.0, par exemple, n'existe que sous Debian et Ubuntu (Fedora n'a que libbz2.so.1) : le
+# FFmpeg livré la demandait et le lecteur ne démarrait pas sous Fedora. Une bibliothèque hors de
+# cette liste fait refuser le paquet : la livrer (system_lib), ou s'en passer.
+PORTABLE_SONAMES=" ld-linux-x86-64.so.2 libc.so.6 libm.so.6 libdl.so.2 libpthread.so.0 librt.so.1
+  libresolv.so.2 libutil.so.1 libgcc_s.so.1 libstdc++.so.6 libX11.so.6 libxcb.so.1 libdrm.so.2
+  libvulkan.so.1 libva.so.2 libva-drm.so.2 libva-x11.so.2 libOpenCL.so.1 libze_loader.so.1
+  libcuda.so.1 libfontconfig.so.1 libfreetype.so.6 libharfbuzz.so.0 libz.so.1 liblzma.so.5
+  libzstd.so.1 "
+PORTABLE_SONAMES="${PORTABLE_SONAMES//$'\n'/ }"
+
+check_portable() {  # dossier des binaires vérifiés, [autres dossiers livrés à côté…]
+  local bad=0 f soname dir
+  while read -r f; do
+    while read -r soname; do
+      for dir in "$@"; do [ -e "$dir/$soname" ] && continue 2; done
+      case "$PORTABLE_SONAMES" in *" $soname "*) continue ;; esac
+      echo "$f demande $soname au système, un nom qui n'est pas le même partout : à livrer ou à retirer" >&2
+      bad=1
+    done < <(readelf -d "$f" | sed -n 's/.*(NEEDED).*\[\(.*\)\]/\1/p')
+  done < <(find "$1" -maxdepth 1 -type f -exec sh -c 'file -b "$1" | grep -q ELF' _ {} \; -print)
+  return "$bad"
+}
+
 # Les dépendances hors système de chaque binaire donné, copiées dans $1 (sans écraser).
 copy_deps() {
   local dest="$1"; shift
@@ -106,6 +130,8 @@ cp "$BUILD/src/gpu/vulkan/backend/ajp_backend_vulkan.so" "$STAGE/"
 copy_deps "$STAGE/lib" "$STAGE/ajp" "$STAGE/ajp_backend_vulkan.so"
 patchelf --set-rpath '$ORIGIN/lib' "$STAGE/ajp" "$STAGE/ajp_backend_vulkan.so"
 origin "$STAGE/lib"
+check_portable "$STAGE/lib"
+check_portable "$STAGE" "$STAGE/lib"
 cp "$ROOT/LICENSE" "$STAGE/" 2>/dev/null || true
 cp "$ROOT/tools/release/linux/LISEZMOI.txt" "$STAGE/"
 # Les modèles SPAN et RIFE, pour lire dès l'extraction (AJP_WITHOUT_MODELS=1 pour s'en passer).
@@ -146,6 +172,7 @@ if [ -f "$TRT_MODULE" ]; then
   copy_beside "$dir" "$dir/ajp_backend_tensorrt.so" libnvinfer 'libnvinfer_builder_resource*' \
     'libnvinfer_plugin.so.[0-9]*' 'libnvonnxparser.so.[0-9]*'
   for f in "$dir"/*; do [ -e "$STAGE/lib/$(basename "$f")" ] && [ "$f" != "$dir/ajp_backend_tensorrt.so" ] && rm "$f"; done
+  check_portable "$dir" "$STAGE/lib"
   TRT_VERSION="$(basename "$(ls "$dir"/libnvinfer.so.* | sort | tail -1)" | sed 's/^libnvinfer\.so\.//')"
   engine_package tensorrt "${TRT_VERSION:-$VERSION}" \
     "https://docs.nvidia.com/deeplearning/tensorrt/latest/reference/sla.html" "$dir"
@@ -174,6 +201,7 @@ if [ -f "$OV_MODULE" ]; then
     'libopenvino_onnx_frontend.so*' 'cache.json'
   copy_deps "$dir" "$dir"/libopenvino_*
   for f in "$dir"/*; do [ -e "$STAGE/lib/$(basename "$f")" ] && [ "$f" != "$dir/ajp_backend_openvino.so" ] && rm "$f"; done
+  check_portable "$dir" "$STAGE/lib"
   engine_package openvino "$VERSION" "" "$dir"
 fi
 
