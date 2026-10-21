@@ -265,6 +265,18 @@ un réglage à faire taire.
   formats) et l'OSD montre « SPAN ×2 · <modèle> INT8 ». À mesurer contre le FP16 sur le même clip :
   la ligne SPAN du profil GPU (attendu × 1,3 à 1,6) et l'image côte à côte sur les aplats et les
   traits fins ; sans gain, supprimer les deux fichiers. Le moteur INT8 ne se publie pas.
+- **À mesurer : E/S NHWC** (étude 4, 6.4), lecteur fermé. Pour chaque moteur du cache (SPAN, RIFE,
+  GMFSS) : `trtexec --loadEngine=<moteur> --noDataTransfers --dumpProfile --separateProfileRun
+  --exportProfile=profil.json`, puis `python3 tools/trt/layer_report.py <moteur>.layers.json
+  --profile profil.json`. Le script dit la part du temps des reformatages d'E/S. Sous 3 %, rien à
+  faire ; au-delà, reconstruire à la main avec `--inputIOFormats=hwc8 --outputIOFormats=hwc8` et
+  comparer le « GPU Compute Time » médian : seulement si le gain dépasse le coût des noyaux
+  d'ingestion et de lecture réécrits pour ce format, ils seront écrits.
+- **À mesurer : cache L2 persistant** (6.4) : `trtexec --loadEngine=<moteur> --noDataTransfers
+  --useCudaGraph --persistentCacheRatio=0`, puis `=0.5` et `=1`, et comparer le « GPU Compute Time »
+  médian. Attendu : rien pour SPAN en 1080p (chaque activation de 48 canaux pèse environ 200 Mo, bien
+  plus que les 48 Mo de L2 de la 4070 Ti) ; peut-être un peu pour RIFE en 720p. Le lecteur ne règle
+  `setPersistentCacheLimit` qu'après un gain mesuré, et alors pour ce moteur seulement.
 
 ## Linux sur RX 6500M (RDNA2 Navi 24, 4 Go)
 

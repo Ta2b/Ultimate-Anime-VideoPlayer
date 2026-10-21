@@ -16,7 +16,12 @@ Code de sortie 1 si un reformatage pleine image ou une couche FP32 hors îlots e
 Myelin regroupe parfois un sous-graphe entier en une couche (« ForeignNode ») : ce qui s'y passe
 n'est pas dans le rapport.
 
+Avec --profile (un seul rapport), le profil par couche de trtexec (--exportProfile, sur le PC) donne
+la part du temps des reformatages, celle des E/S à part : c'est elle qui décide de l'essai d'E/S
+NHWC (6.4, --inputIOFormats=hwc8 et des noyaux d'ingestion et de lecture qui suivent ce format).
+
   python3 tools/trt/layer_report.py moteurs/aji-v3-….engine.layers.json --onnx modele.onnx
+  python3 tools/trt/layer_report.py moteurs/aji-v3-….engine.layers.json --profile profil.json
 """
 
 from __future__ import annotations
@@ -102,6 +107,37 @@ def check(report: Path, islands: set[str], full_image: float) -> int:
     return failures
 
 
+# Part du temps des reformatages d'E/S au-delà de laquelle des E/S NHWC valent l'essai (6.4).
+NHWC_TRIAL_SHARE = 3.0
+
+
+def profile_shares(report: Path, profile: Path) -> None:
+    """Temps des reformatages, d'après le profil par couche de trtexec (--exportProfile)."""
+    data = json.loads(report.read_text(encoding="utf-8"))
+    layers = data["Layers"] if isinstance(data, dict) else data
+    bindings = set(data.get("Bindings", [])) if isinstance(data, dict) else set()
+    kinds = {}
+    for layer in layers:
+        names = {t.get("Name") for key in ("Inputs", "Outputs") for t in tensors(layer, key)}
+        if layer.get("LayerType") == "Reformat":
+            kinds[layer.get("Name")] = "io" if names & bindings else "internal"
+    rows = [r for r in json.loads(profile.read_text(encoding="utf-8")) if "name" in r]
+    total = sum(float(r.get("averageMs", 0.0)) for r in rows)
+    if total <= 0:
+        sys.exit(f"{profile} : profil vide")
+    io = sum(float(r["averageMs"]) for r in rows if kinds.get(r["name"]) == "io")
+    internal = sum(float(r["averageMs"]) for r in rows if kinds.get(r["name"]) == "internal")
+    unknown = [r["name"] for r in rows if "Reformat" in r["name"] and r["name"] not in kinds]
+    print(f"{profile.name} : {total:.3f} ms par passe ; reformatages d'E/S {io:.3f} ms ({100 * io / total:.1f} %), "
+          f"internes {internal:.3f} ms ({100 * internal / total:.1f} %)")
+    for name in unknown:
+        print(f"  note : {name} absent du rapport des couches (autre moteur ?)")
+    if 100 * io / total >= NHWC_TRIAL_SHARE:
+        print(f"  E/S NHWC à essayer (au moins {NHWC_TRIAL_SHARE:.0f} % du temps) : --inputIOFormats=hwc8")
+    else:
+        print(f"  E/S NHWC sans intérêt (moins de {NHWC_TRIAL_SHARE:.0f} % du temps)")
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("reports", type=Path, nargs="+", help="rapports « <moteur>.layers.json »")
@@ -110,7 +146,12 @@ def main() -> int:
         "--full-image", type=float, default=0.25,
         help="part de la plus grande E/S à partir de laquelle un reformatage interne est un échec (0,25)",
     )
+    parser.add_argument("--profile", type=Path, help="profil par couche de trtexec (--exportProfile) du même moteur")
     args = parser.parse_args()
+    if args.profile:
+        if len(args.reports) != 1:
+            parser.error("--profile va avec un seul rapport")
+        profile_shares(args.reports[0], args.profile)
     islands = onnx_islands(args.onnx) if args.onnx else set()
     failures = sum(check(report, islands, args.full_image) for report in args.reports)
     return 1 if failures else 0
