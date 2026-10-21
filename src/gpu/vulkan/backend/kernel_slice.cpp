@@ -45,38 +45,73 @@ std::expected<Buffer*, Refusal> VulkanKernelOps::readback(std::optional<Buffer>&
   return &buffer.emplace(std::move(*made));
 }
 
-std::expected<void, Refusal> VulkanKernelOps::rife_input(const Tensor& a, const Tensor& b, float t,
-                                                         const Tensor& input) {
+namespace {
+
+// Les vues de rife_input et de rife_pair, vérifiées : a, b et l'entrée.
+struct RifeViews {
+  TensorView a;
+  TensorView b;
+  TensorView input;
+};
+
+std::expected<RifeViews, Refusal> rife_views(const Tensor& a, const Tensor& b, float t, const Tensor& input,
+                                             std::string_view op) {
   if (!(t > 0.0F && t < 1.0F)) {
-    return refuse_slice(RefusalCode::FieldOutOfRange,
-                        std::format("rife_input : instant {} hors de ]0, 1[", t));
+    return refuse_slice(RefusalCode::FieldOutOfRange, std::format("{} : instant {} hors de ]0, 1[", op, t));
   }
-  auto va = tensor_view(a, 3, "rife_input : image a");
+  auto va = tensor_view(a, 3, std::format("{} : image a", op));
   if (!va) return std::unexpected(va.error());
-  auto vb = tensor_view(b, 3, "rife_input : image b");
+  auto vb = tensor_view(b, 3, std::format("{} : image b", op));
   if (!vb) return std::unexpected(vb.error());
-  auto vi = tensor_view(input, 0, "rife_input : entrée");
+  auto vi = tensor_view(input, 0, std::format("{} : entrée", op));
   if (!vi) return std::unexpected(vi.error());
   if (!kernels::is_rife_input_planes(vi->planes)) {
     return refuse_slice(RefusalCode::ShapeInvalid,
-                        std::format("rife_input : {} plans, 11 (v1) ou 7 (v2) attendus", vi->planes));
+                        std::format("{} : {} plans, 11 (v1) ou 7 (v2) attendus", op, vi->planes));
   }
   if (va->width != vb->width || va->height != vb->height) {
-    return refuse_slice(RefusalCode::ShapeInvalid, "rife_input : deux images RGB de même taille attendues");
+    return refuse_slice(RefusalCode::ShapeInvalid,
+                        std::format("{} : deux images RGB de même taille attendues", op));
   }
   if (!kernels::rife_fits(static_cast<int>(va->width), static_cast<int>(va->height),
                           static_cast<int>(vi->width), static_cast<int>(vi->height))) {
     return refuse_slice(RefusalCode::ShapeInvalid,
-                        std::format("rife_input : tenseur 1×{}×H×W attendu, multiples de {} d'au moins {}x{}",
+                        std::format("{} : tenseur 1×{}×H×W attendu, multiples de {} d'au moins {}x{}", op,
                                     vi->planes, kernels::kRifeAlign, va->width, va->height));
   }
+  return RifeViews{.a = *va, .b = *vb, .input = *vi};
+}
+
+}  // namespace
+
+std::expected<void, Refusal> VulkanKernelOps::rife_input(const Tensor& a, const Tensor& b, float t,
+                                                         const Tensor& input) {
+  auto v = rife_views(a, b, t, input, "rife_input");
+  if (!v) return std::unexpected(v.error());
   OpKey key;
   key.add(40);
-  for (const TensorView* v : {&*va, &*vb, &*vi}) add_view(key, *v);
+  for (const TensorView* view : {&v->a, &v->b, &v->input}) add_view(key, *view);
   key.add(std::bit_cast<std::uint32_t>(t));
   auto rec = recording(key, [&](Recorder& r) -> Done {
-    if (auto ok = runner_.rife_frames(r, *va, *vb, *vi, kStudioBlack, vi->planes); !ok) return ok;
-    return runner_.rife_constants(r, *vi, t);
+    if (auto ok = runner_.rife_frames(r, v->a, v->b, v->input, kStudioBlack, v->input.planes); !ok) return ok;
+    return runner_.rife_constants(r, v->input, t);
+  });
+  if (!rec) return std::unexpected(rec.error());
+  return submit(**rec);
+}
+
+std::expected<void, Refusal> VulkanKernelOps::rife_pair(const Tensor& a, const Tensor& b, float t,
+                                                        const Tensor& input) {
+  auto v = rife_views(a, b, t, input, "rife_pair");
+  if (!v) return std::unexpected(v.error());
+  OpKey key;
+  key.add(47);
+  for (const TensorView* view : {&v->a, &v->b, &v->input}) add_view(key, *view);
+  key.add(std::bit_cast<std::uint32_t>(t));
+  // Les images, puis le plan de l'instant ; le maillage écrit par rife_input reste.
+  auto rec = recording(key, [&](Recorder& r) -> Done {
+    if (auto ok = runner_.rife_frames(r, v->a, v->b, v->input, kStudioBlack, v->input.planes); !ok) return ok;
+    return runner_.rife_time(r, v->input, t);
   });
   if (!rec) return std::unexpected(rec.error());
   return submit(**rec);
@@ -184,7 +219,7 @@ std::expected<void, Refusal> VulkanKernelOps::gmfss_compose(const Tensor& high_a
   auto vo = tensor_view(out, 3, "gmfss_compose : sortie");
   if (!vo) return std::unexpected(vo.error());
   OpKey key;
-  key.add(46);
+  key.add(48);
   for (const TensorView* v : {&*va, &*vb, &*la, &*lb, &*vf, &*vo}) add_view(key, *v);
   key.add(static_cast<std::uint64_t>(static_cast<std::uint32_t>(window.x)) << 32 |
           static_cast<std::uint32_t>(window.y));

@@ -4,6 +4,7 @@
 // suivante, le protocole des slots, les refus de démarrage, et l'arrêt sur une image refusée.
 #include "app/play/upscale_stage.h"
 
+#include <algorithm>
 #include <chrono>
 #include <cstdint>
 #include <map>
@@ -74,7 +75,9 @@ std::vector<std::string> shape_of(const std::vector<RingFrame>& frames) {
 
 // La voie attendue d'un travail du journal (« ingest 3 » : measure) ; vide pour les autres (alloc).
 std::string lane_of(std::string_view entry) {
-  if (entry.starts_with("ingest") || entry.starts_with("scores_") || entry == "rife_input") return "measure";
+  if (entry.starts_with("ingest") || entry.starts_with("scores_") || entry == "rife_input" ||
+      entry == "rife_pair")
+    return "measure";
   if (entry == "engine span" || entry.starts_with("write")) return "upscale";
   if (entry.starts_with("engine rife") || entry.starts_with("rife_") || entry.starts_with("warp_blend") ||
       entry.starts_with("flow_max"))
@@ -247,6 +250,27 @@ TEST_CASE(
   for (std::size_t i = 1; i < crops.size(); ++i) CHECK((crops[i] != crops[i - 1]) == (lanes > 1));
   CHECK(std::set(inputs.begin(), inputs.end()).size() == (lanes > 1 ? 2U : 1U));
   CHECK(rig.backend.count("rife_time") == 3);  // le second instant de chaque paire
+}
+
+TEST_CASE("Étage gpu : le maillage de RIFE écrit une fois par tampon, les paires suivantes sans lui",
+          "[app][stage]") {
+  const int lanes = GENERATE(1, 3);
+  Rig rig;
+  rig.backend.offer_lanes(lanes);
+  rig.backend.offer_rife_pair(true);
+  rig.start(rig.setup(true, Factor{.num = 3, .den = 1}));
+  rig.feed(1, 5);
+  REQUIRE(rig.collect(13));
+  rig.stage.reset();
+  INFO(lanes << " voie(s)");
+  const std::vector<std::uintptr_t> full = rig.backend.targets("rife_input");
+  const std::vector<std::uintptr_t> pairs = rig.backend.targets("rife_pair");
+  const std::size_t copies = lanes > 1 ? 2 : 1;
+  CHECK(full.size() == copies);  // une fois par tampon d'entrée
+  CHECK(pairs.size() == 4 - copies);
+  CHECK(std::set(full.begin(), full.end()).size() == copies);
+  for (const std::uintptr_t target : pairs) CHECK(std::ranges::find(full, target) != full.end());
+  CHECK(rig.backend.count("rife_time") == 4);  // le second instant de chaque paire
 }
 
 TEST_CASE("Étage gpu : RIFE mouvement fort, sans passe au milieu après la première paire, oublié à la coupe",

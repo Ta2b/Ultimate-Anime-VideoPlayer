@@ -92,6 +92,8 @@ class VulkanKernelOps final : public KernelOps {
   std::expected<void, Refusal> rife_input(const Tensor& a, const Tensor& b, float t,
                                           const Tensor& input) override;
   std::expected<void, Refusal> rife_time(const Tensor& input, float t) override;
+  std::expected<void, Refusal> rife_pair(const Tensor& a, const Tensor& b, float t,
+                                         const Tensor& input) override;
   std::expected<PairScores, Refusal> scores_now(const Tensor& a, const Tensor& b) override;
   std::expected<std::uint64_t, Refusal> scores_start(const Tensor& a, const Tensor& b) override;
   std::expected<PairScores, Refusal> scores_take(std::uint64_t ticket) override;

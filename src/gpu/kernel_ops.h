@@ -135,6 +135,12 @@ class KernelOps {
   virtual std::expected<void, Refusal> rife_time(const Tensor& /*input*/, float /*t*/) {
     return std::unexpected(Refusal{RefusalCode::FormatUnsupported, "rife_time : absent de ce backend"});
   }
+  // rife_input d'une nouvelle paire dans une entrée déjà remplie une fois par rife_input : les
+  // images et l'instant seuls, le maillage (plans 7 à 10, constants à taille donnée) reste.
+  virtual std::expected<void, Refusal> rife_pair(const Tensor& /*a*/, const Tensor& /*b*/, float /*t*/,
+                                                 const Tensor& /*input*/) {
+    return std::unexpected(Refusal{RefusalCode::FormatUnsupported, "rife_pair : absent de ce backend"});
+  }
   // Mesures de la paire a, b (RGB de même taille, luma BT.709 tirée du RGB), rendues tout de suite
   // au prix d'une attente hôte, pour décider de RIFE avant de le lancer. left et right sont nuls.
   virtual std::expected<PairScores, Refusal> scores_now(const Tensor& /*a*/, const Tensor& /*b*/) {

@@ -40,7 +40,7 @@ __global__ void __launch_bounds__(kPixelThreads, kPixelBlocksPerSm) rife_input(R
   const auto* a = static_cast<const __half*>(p.a);
   const auto* b = static_cast<const __half*>(p.b);
   const __half black = __float2half_rn(p.black);
-  for (int c = 0; c < 3 && p.frames; ++c) {
+  for (int c = 0; c < 3; ++c) {
     out[static_cast<std::size_t>(c) * plane + i] =
         inside ? a[static_cast<std::size_t>(c) * source_plane + j] : black;
     out[static_cast<std::size_t>(3 + c) * plane + i] =
@@ -48,7 +48,7 @@ __global__ void __launch_bounds__(kPixelThreads, kPixelBlocksPerSm) rife_input(R
   }
   if (p.planes <= 6) return;  // GMFSS : les deux images seules
   out[6 * plane + i] = __float2half_rn(p.time);
-  if (p.planes < 11) return;  // RIFE v2 : la grille est dans le graphe
+  if (p.planes < 11 || !p.mesh) return;  // RIFE v2 : la grille est dans le graphe
   // kernels::rife_mesh et rife_mesh_step.
   out[7 * plane + i] =
       __float2half_rn(2.0F * static_cast<float>(x) / static_cast<float>(p.padded_width - 1) - 1.0F);

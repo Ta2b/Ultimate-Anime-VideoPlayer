@@ -64,6 +64,8 @@ class FakeBackend final : public gpu::Backend, public gpu::KernelOps {
   void offer_lanes(int lanes) { lanes_ = lanes; }
   // Cette image est refusée à l'ingestion (VendorCallFailed).
   void refuse_ingest(SourceId id) { refused_ = id; }
+  // rife_pair offert ; faux par défaut : refusé comme par un backend qui ne l'a pas.
+  void offer_rife_pair(bool on) { rife_pair_ = on; }
   // Le mouvement maximal que rendent flow_max_now et flow_max_take, en pixels ; 0 par défaut.
   void motion_max(float pixels) {
     const std::scoped_lock lock(mutex_);
@@ -133,6 +135,11 @@ class FakeBackend final : public gpu::Backend, public gpu::KernelOps {
   }
   std::expected<void, Refusal> rife_time(const gpu::Tensor& /*input*/, float /*t*/) override {
     return note("rife_time");
+  }
+  std::expected<void, Refusal> rife_pair(const gpu::Tensor& /*a*/, const gpu::Tensor& /*b*/, float /*t*/,
+                                         const gpu::Tensor& input) override {
+    if (!rife_pair_) return std::unexpected(Refusal{RefusalCode::FormatUnsupported, "rife_pair : absent"});
+    return note("rife_pair", input.handle);
   }
   std::expected<gpu::PairScores, Refusal> scores_now(const gpu::Tensor& a, const gpu::Tensor& b) override;
   std::expected<std::uint64_t, Refusal> scores_start(const gpu::Tensor& a, const gpu::Tensor& b) override;
@@ -212,6 +219,7 @@ class FakeBackend final : public gpu::Backend, public gpu::KernelOps {
   std::uint64_t next_ticket_ = 1;
   std::uint64_t fence_ = 0;
   bool ahead_ = true;
+  bool rife_pair_ = false;
   std::optional<SourceId> refused_;
 };
 

@@ -184,7 +184,8 @@ TEST_CASE("KernelOps : réductions fusionnées à l'ingestion, contre la défini
   CHECK(refused.error().code == RefusalCode::ShapeInvalid);
 }
 
-TEST_CASE("KernelOps : entrée de RIFE depuis deux images RGB, contre kernels/ref", "[vk_backend][kernels]") {
+TEST_CASE("KernelOps : entrée de RIFE depuis deux images RGB, puis la paire suivante, contre kernels/ref",
+          "[vk_backend][kernels]") {
   TempDir dir("rife_input");
   auto backend = make_backend(dir.path());
   KernelOps& ops = *backend->kernels();
@@ -211,10 +212,8 @@ TEST_CASE("KernelOps : entrée de RIFE depuis deux images RGB, contre kernels/re
     for (const int planes : {k::kRifeInputChannels, k::kRifeV2InputChannels}) {
       CAPTURE(planes);
       auto input = rgb_tensor(*backend, g.padded_width, g.padded_height, type, planes);
-      for (const float t : {0.5F, 0.25F}) {
-        CAPTURE(t);
-        REQUIRE(ops.rife_input(ta->tensor(), tb->tensor(), t, input->tensor()));
-        const auto want = k::ref::rife_input(pad(a), pad(b), t);
+      const auto check = [&](const k::RgbImage& first, const k::RgbImage& second, float t) {
+        const auto want = k::ref::rife_input(pad(first), pad(second), t);
         REQUIRE(want);
         const std::size_t element = type == TensorType::F16 ? 2 : 4;
         const std::size_t plane =
@@ -233,16 +232,31 @@ TEST_CASE("KernelOps : entrée de RIFE depuis deux images RGB, contre kernels/re
                 std::max(worst, std::fabs(got[static_cast<std::size_t>(c)].data[i] - stored_plane.data[i]));
           CHECK(worst <= k::tolerance::kRgbF16);
         }
+      };
+      for (const float t : {0.5F, 0.25F}) {
+        CAPTURE(t);
+        REQUIRE(ops.rife_input(ta->tensor(), tb->tensor(), t, input->tensor()));
+        check(a, b, t);
       }
+      // Paire suivante : les images et l'instant seuls, le maillage de rife_input reste.
+      REQUIRE(ops.rife_pair(tb->tensor(), ta->tensor(), 0.75F, input->tensor()));
+      check(b, a, 0.75F);
     }
     auto input = rgb_tensor(*backend, g.padded_width, g.padded_height, type, k::kRifeInputChannels);
     auto eight = rgb_tensor(*backend, g.padded_width, g.padded_height, type, 8);
-    const auto odd = ops.rife_input(ta->tensor(), tb->tensor(), 0.5F, eight->tensor());
-    REQUIRE_FALSE(odd);
-    CHECK(odd.error().code == RefusalCode::ShapeInvalid);
-    const auto refused = ops.rife_input(ta->tensor(), tb->tensor(), 1.0F, input->tensor());
-    REQUIRE_FALSE(refused);
-    CHECK(refused.error().code == RefusalCode::FieldOutOfRange);
+    for (const bool pair : {false, true}) {
+      CAPTURE(pair);
+      const auto fill = [&](float t, const Tensor& into) {
+        return pair ? ops.rife_pair(ta->tensor(), tb->tensor(), t, into)
+                    : ops.rife_input(ta->tensor(), tb->tensor(), t, into);
+      };
+      const auto odd = fill(0.5F, eight->tensor());
+      REQUIRE_FALSE(odd);
+      CHECK(odd.error().code == RefusalCode::ShapeInvalid);
+      const auto refused = fill(1.0F, input->tensor());
+      REQUIRE_FALSE(refused);
+      CHECK(refused.error().code == RefusalCode::FieldOutOfRange);
+    }
   }
 }
 

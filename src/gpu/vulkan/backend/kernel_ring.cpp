@@ -92,7 +92,7 @@ std::expected<void, Refusal> VulkanKernelOps::write_ring(const Tensor& rgb, cons
                                   .spirv = net::spirv::words(shader)});
   if (!pipeline) return std::unexpected(pipeline.error());
   OpKey key;
-  key.add(40);
+  key.add(50);
   detail::add_view(key, *src);
   key.add(detail::to_bits(*view));
   auto rec = recording(key, [&](Recorder& r) -> Done {

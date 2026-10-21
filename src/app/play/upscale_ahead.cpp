@@ -85,8 +85,24 @@ std::expected<void, Refusal> UpscaleStage::prepare_rife_input() {
                       !(setup_.live && setup_.live->keep_poses());
   const float t = by_motion() && !direct ? 0.5F : instants_[0].t;
   rife_pair_ = (rife_pair_ + 1) % copies_;
-  auto ok =
-      setup_.backend->kernels()->rife_input(rife_source(current_ ^ 1U), rife_source(current_), t, rife_in());
+  return write_rife_pair(t);
+}
+
+std::expected<void, Refusal> UpscaleStage::write_rife_pair(float t) {
+  gpu::KernelOps& ops = *setup_.backend->kernels();
+  const gpu::Tensor& a = rife_source(current_ ^ 1U);
+  const gpu::Tensor& b = rife_source(current_);
+  std::expected<void, Refusal> ok;
+  bool written = false;
+  if (rife_mesh_[rife_pair_] && rife_pair_op_) {
+    ok = ops.rife_pair(a, b, t, rife_in());
+    written = ok || ok.error().code != RefusalCode::FormatUnsupported;
+    if (!written) rife_pair_op_ = false;
+  }
+  if (!written) {
+    ok = ops.rife_input(a, b, t, rife_in());
+    rife_mesh_[rife_pair_] = ok.has_value();
+  }
   rife_in_pair_ = ok.has_value();
   rife_in_t_ = t;
   return ok;
@@ -101,10 +117,7 @@ std::expected<void, Refusal> UpscaleStage::fill_rife_input(float t) {
     if (ok || ok.error().code != RefusalCode::FormatUnsupported) return ok;
     rife_time_ = false;
   }
-  auto ok = ops.rife_input(rife_source(current_ ^ 1U), rife_source(current_), t, rife_in());
-  rife_in_pair_ = ok.has_value();
-  rife_in_t_ = t;
-  return ok;
+  return write_rife_pair(t);
 }
 
 }  // namespace ajp::app::play

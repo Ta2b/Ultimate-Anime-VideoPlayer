@@ -157,6 +157,10 @@ un réglage à faire taire.
   registres, sans arbre en mémoire partagée), `splat_all` et `ingest`, contre 092b364 ; une capture
   GMFSS ×2 égale à 092b364 à l'ordre des additions atomiques près (déjà libre avant), et les mêmes
   coupes et dessins tenus sur l'extrait de référence (la somme de `pair_diff` change d'ordre).
+- **Maillage de RIFE écrit une fois** (étude 3, 4.4 ; ABI des backends 7) : chaque tampon d'entrée
+  reçoit un `rife_input` complet à sa première paire, puis `rife_pair` (les images et l'instant,
+  4 plans de 11 en moins). Capture ×3 RIFE 4.25 égale à 015aab1 après plusieurs paires ; avec
+  4.22 lite (7 plans) rien ne change. Un backend d'avant (ABI 6) est refusé au chargement.
 - **Écarté : sous-échantillonner `pair_diff`** (étude 3, 4.4) : la mesure de détection est fixée
   par kernels/spec/detect.h et les tests de référence Vulkan ; la changer change les décisions.
 

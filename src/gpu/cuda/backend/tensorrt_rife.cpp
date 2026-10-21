@@ -1,6 +1,6 @@
 // RIFE dans le backend TensorRT de la tranche verticale : entrée remplie (rife_input, puis son
-// instant seul par rife_time), recadrage de la sortie (rife_crop, du contrat) et mesures d'une
-// paire (scores_start, scores_take).
+// instant seul par rife_time, les paires suivantes sans le maillage par rife_pair), recadrage de
+// la sortie (rife_crop, du contrat) et mesures d'une paire (scores_start, scores_take).
 #include <cstdint>
 #include <cstring>
 #include <cuda.h>
@@ -40,22 +40,33 @@ void* address(const Tensor& tensor) {
 
 std::expected<void, Refusal> TensorRtBackend::rife_input(const Tensor& a, const Tensor& b, float t,
                                                          const Tensor& input) {
+  return fill_rife(a, b, t, input, true, "rife_input");
+}
+
+std::expected<void, Refusal> TensorRtBackend::rife_pair(const Tensor& a, const Tensor& b, float t,
+                                                        const Tensor& input) {
+  return fill_rife(a, b, t, input, false, "rife_pair");
+}
+
+std::expected<void, Refusal> TensorRtBackend::fill_rife(const Tensor& a, const Tensor& b, float t,
+                                                        const Tensor& input, bool mesh, const char* op) {
   if (!fp16_planes(a, 3) || !fp16_planes(b, 3) || a.shape.dims != b.shape.dims) {
-    return refuse(RefusalCode::ShapeInvalid, "rife_input : deux images RGB FP16 de même taille attendues");
+    return refuse(RefusalCode::ShapeInvalid,
+                  std::format("{} : deux images RGB FP16 de même taille attendues", op));
   }
   const std::int64_t planes = input.shape.dims[1];
   if (!kernels::is_rife_input_planes(planes) || !fp16_planes(input, planes) ||
       !kernels::rife_fits(width_of(a), height_of(a), width_of(input), height_of(input))) {
     return refuse(RefusalCode::ShapeInvalid,
-                  std::format("rife_input : tenseur FP16 1×(11 ou 7)×H×W attendu, H et W multiples de {} "
+                  std::format("{} : tenseur FP16 1×(11 ou 7)×H×W attendu, H et W multiples de {} "
                               "et au moins {}×{}",
-                              kernels::kRifeAlign, height_of(a), width_of(a)));
+                              op, kernels::kRifeAlign, height_of(a), width_of(a)));
   }
   // La fenêtre se lit sur le tenseur : le multiple de remplissage dépend du modèle (spec/rife.h).
   const kernels::RifeGeometry g =
       kernels::rife_window(width_of(a), height_of(a), width_of(input), height_of(input));
   if (!(t > 0.0F && t < 1.0F)) {
-    return refuse(RefusalCode::FieldOutOfRange, std::format("rife_input : instant {} hors de ]0, 1[", t));
+    return refuse(RefusalCode::FieldOutOfRange, std::format("{} : instant {} hors de ]0, 1[", op, t));
   }
   if (auto ok = bind(); !ok) return ok;
   const RifeInputParams params{.a = address(a),
@@ -69,11 +80,13 @@ std::expected<void, Refusal> TensorRtBackend::rife_input(const Tensor& a, const 
                                .black = 0.0F,  // la chaîne ingère en plage limitée : le noir vaut 0
                                .time = t,
                                .input = address(input),
-                               .planes = static_cast<int>(planes)};
+                               .planes = static_cast<int>(planes),
+                               .mesh = mesh};
   if (auto ok = order({a.handle, b.handle}, {input.handle}); !ok) return ok;
   GpuTiming& timing = stage("entrée de RIFE");
   timing.begin(stream_);
-  auto launched = cuda_check(launch_rife_input(params, stream_), "rife_input<<<>>>");
+  auto launched =
+      cuda_check(launch_rife_input(params, stream_), mesh ? "rife_input<<<>>>" : "rife_pair<<<>>>");
   timing.end(stream_);
   return launched;
 }

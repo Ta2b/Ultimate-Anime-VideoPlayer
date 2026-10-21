@@ -77,6 +77,8 @@ class TensorRtBackend final : public Backend, public KernelOps {
   std::expected<void, Refusal> rife_input(const Tensor& a, const Tensor& b, float t,
                                           const Tensor& input) override;
   std::expected<void, Refusal> rife_time(const Tensor& input, float t) override;
+  std::expected<void, Refusal> rife_pair(const Tensor& a, const Tensor& b, float t,
+                                         const Tensor& input) override;
   std::expected<PairScores, Refusal> scores_now(const Tensor& a, const Tensor& b) override;
   std::expected<std::uint64_t, Refusal> scores_start(const Tensor& a, const Tensor& b) override;
   std::expected<PairScores, Refusal> scores_take(std::uint64_t ticket) override;
@@ -123,6 +125,9 @@ class TensorRtBackend final : public Backend, public KernelOps {
 
   TensorRtBackend() = default;
   std::expected<void, Refusal> bind() const;  // le device courant est propre à chaque thread
+  // rife_input, et rife_pair sans le maillage (tensorrt_rife.cpp).
+  std::expected<void, Refusal> fill_rife(const Tensor& a, const Tensor& b, float t, const Tensor& input,
+                                         bool mesh, const char* op);
   // Voies (tensorrt_lanes.cpp). Avant une opération de la voie courante qui lit reads et écrit
   // writes (des adresses : tenseurs, zone d'activation, moteur, sommes) : l'événement de
   // l'opération précédente de la voie posé, les attentes sur les autres voies enfilées. Rien

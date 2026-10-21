@@ -155,9 +155,14 @@ class UpscaleStage final : public RingStage {
   // Les images de la paire dans l'autre entrée de RIFE, sur la voie des mesures, avant le travail
   // de la paire : elles s'écrivent pendant que RIFE lit encore l'entrée de la paire précédente.
   std::expected<void, Refusal> prepare_rife_input();
-  bool rife_in_pair_ = false;  // rife_in() tient les images de la paire en cours
-  float rife_in_t_ = 0.0F;     // et cet instant
-  bool rife_time_ = true;      // faux si le backend n'a pas rife_time
+  // Les images de la paire en cours et l'instant t dans rife_in() : sans réécrire le maillage s'il
+  // y est déjà (rife_pair), sinon tout (rife_input).
+  std::expected<void, Refusal> write_rife_pair(float t);
+  bool rife_in_pair_ = false;        // rife_in() tient les images de la paire en cours
+  float rife_in_t_ = 0.0F;           // et cet instant
+  bool rife_time_ = true;            // faux si le backend n'a pas rife_time
+  bool rife_pair_op_ = true;         // faux si le backend n'a pas rife_pair
+  std::array<bool, 2> rife_mesh_{};  // rife_ins_[i] tient le maillage, écrit par un rife_input
   // GMFSS (upscale_gmfss.cpp) : ses tenseurs, rangés dans l'ordre de ses moteurs ; puis l'image
   // intermédiaire output + 1 sur outputs_ dans middle(), ou, déformée après SPAN, de a et b (les
   // images agrandies) dans out.
