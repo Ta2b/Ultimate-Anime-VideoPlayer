@@ -181,8 +181,11 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
           .true_hdr_available = std::filesystem::exists(p.options.true_hdr_sdk) || settings.true_hdr,
           .hdr_output = p.screen.hdr_output(),
           .auto_peak = auto_peak,
-          .engines = engine_badges(p.paths.engines, c.model ? c.model->path : std::filesystem::path(), work,
-                                   c.rife || c.rife_motion ? c.rife_model : std::nullopt,
+          .engines = engine_badges(p.paths.engines,
+                                   c.span_int8 ? c.span_int8->onnx
+                                   : c.model   ? c.model->path
+                                               : std::filesystem::path(),
+                                   work, c.rife || c.rife_motion ? c.rife_model : std::nullopt,
                                    c.rife_motion ? c.geometry : c.image_geometry),
           .chosen_engines = chosen_line(p.engines),
           .switchable = installed_switchable(p.catalog, p.paths),

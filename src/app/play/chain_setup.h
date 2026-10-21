@@ -20,6 +20,7 @@
 #include "app/play/player_engines.h"
 #include "app/play/ring_stage.h"
 #include "app/play/settings.h"
+#include "app/play/span_int8.h"
 #include "app/play/upscale_stage.h"
 #include "core/clock.h"
 #include "core/gpu_device.h"
@@ -55,11 +56,12 @@ media::DecoderOptions decoder_options(std::string_view backend, const GpuDevice&
 // Ordre de déclaration = ordre inverse de destruction : les moteurs partent avant leur backend.
 struct ChainEngines {
   BackendLibrary::Instance backend;
-  std::string backend_name;          // « tensorrt », « vulkan »
-  std::optional<ModelChoice> model;  // SPAN ; rien : sans agrandissement
-  int factor = 1;                    // kSpanFactor avec SPAN
-  WorkSize work;                     // entrée des moteurs pour la vidéo de la lecture
-  std::string reduce;                // « 1920x1080 → Area 1280x720 », ou « 1920x1080 »
+  std::string backend_name;           // « tensorrt », « vulkan »
+  std::optional<ModelChoice> model;   // SPAN ; rien : sans agrandissement
+  std::optional<SpanInt8> span_int8;  // sa variante INT8, construite à sa place (span_int8.h)
+  int factor = 1;                     // kSpanFactor avec SPAN
+  WorkSize work;                      // entrée des moteurs pour la vidéo de la lecture
+  std::string reduce;                 // « 1920x1080 → Area 1280x720 », ou « 1920x1080 »
   // RIFE cherché même sans interpolation : le menu peut l'allumer.
   std::optional<ModelChoice> rife_choice;
   std::optional<std::filesystem::path> rife_model;

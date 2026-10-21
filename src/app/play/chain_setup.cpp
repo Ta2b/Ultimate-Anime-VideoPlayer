@@ -68,8 +68,9 @@ std::string ChainEngines::motion_label(const PlaySettings& settings) const {
 
 std::string ChainEngines::span_label() const {
   if (!model) return std::format("sans agrandissement · {}", reduce);
-  return std::format("SPAN ×{} · {} · {} · {} → {}x{}", factor, model->path.stem().string(), backend_name,
-                     reduce, work.width * factor, work.height * factor);
+  return std::format("SPAN ×{} · {}{} · {} · {} → {}x{}", factor, model->path.stem().string(),
+                     span_int8 ? " INT8" : "", backend_name, reduce, work.width * factor,
+                     work.height * factor);
 }
 
 UpscaleSetup ChainEngines::upscale(const PlaySettings& settings, std::shared_ptr<LiveSettings> live,
@@ -140,14 +141,29 @@ std::expected<std::optional<ChainEngines>, Refusal> prepare_chain(Player& p, con
   log->info("backend {} ({}) depuis {}", c.backend_name, c.backend->capabilities().device_name,
             p.library->path().string());
 
+  // SPAN INT8 sous TensorRT quand tools/span/quantize_span.py en a laissé une variante qui passe ses
+  // garde-fous (span_int8.h) ; le SPAN choisi sinon, et aussi si TensorRT refuse la variante.
+  if (c.model && c.backend->capabilities().int8) {
+    SpanInt8Lookup int8 = find_span_int8(c.model->path, p.paths.engines.parent_path() / "modeles");
+    if (!int8.note.empty()) log->info("SPAN INT8 : {}", int8.note);
+    c.span_int8 = std::move(int8.variant);
+  }
   if (c.model) {
-    auto loaded = prepare_engine(p, init, *c.backend, c.model->path,
-                                 gpu::Shape{.dims = {1, 3, c.work.height, c.work.width}},
-                                 EngineLabel{.name = "SPAN",
-                                             .model = c.model->path.stem().string(),
-                                             .width = c.work.width,
-                                             .height = c.work.height},
-                                 gpu::Lane::Upscale);
+    const auto prepare_span = [&] {
+      return prepare_engine(p, init, *c.backend, c.span_int8 ? c.span_int8->onnx : c.model->path,
+                            gpu::Shape{.dims = {1, 3, c.work.height, c.work.width}},
+                            EngineLabel{.name = c.span_int8 ? "SPAN INT8" : "SPAN",
+                                        .model = c.model->path.stem().string(),
+                                        .width = c.work.width,
+                                        .height = c.work.height},
+                            gpu::Lane::Upscale);
+    };
+    auto loaded = prepare_span();
+    if (!loaded && c.span_int8) {
+      log->warn("SPAN INT8 refusé ({}) : SPAN FP16", loaded.error().detail);
+      c.span_int8.reset();
+      loaded = prepare_span();
+    }
     if (!loaded) return std::unexpected(std::move(loaded.error()));
     if (!*loaded) return std::nullopt;
     c.engine = std::move(**loaded);

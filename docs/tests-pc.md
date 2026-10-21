@@ -254,6 +254,17 @@ un réglage à faire taire.
   « moteur … prêt en … s ») doit passer sous 0,2 s pour SPAN et rester à peu près proportionnel à la
   taille du fichier pour GMFSS. `IStreamReaderV2` n'est pas utilisé : sans GPUDirect Storage, il ne
   lit pas plus vite qu'un seul `read`.
+- **SPAN INT8** (étude 4, 6.3) : `pip install "nvidia-modelopt[onnx]" pillow` dans l'environnement
+  Python qui a torch, un corpus d'au moins 100 images SDR d'anime tirées de vos vidéos (commande
+  ffmpeg en tête de `tools/span/quantize_span.py`, aucune sortie de RTX HDR ou TrueHDR), puis
+  `python -I tools/span/quantize_span.py <SPAN>.onnx --corpus <images> --out "%APPDATA%\ajp\ajp\modeles"`
+  (le dossier « modeles » des données du lecteur, à côté de « engines »). Le script dit le PSNR et
+  le SSIM de chaque image de validation ; sous 42 dB de moyenne, 38 dB au pire ou 0,985 de SSIM, il
+  n'écrit que le reçu. Quand il passe, le lecteur sous TensorRT dit « SPAN INT8 : … (PSNR moyen …) »,
+  construit « SPAN INT8 » (environ deux fois plus de couches au rapport, des `Int8` dans les
+  formats) et l'OSD montre « SPAN ×2 · <modèle> INT8 ». À mesurer contre le FP16 sur le même clip :
+  la ligne SPAN du profil GPU (attendu × 1,3 à 1,6) et l'image côte à côte sur les aplats et les
+  traits fins ; sans gain, supprimer les deux fichiers. Le moteur INT8 ne se publie pas.
 
 ## Linux sur RX 6500M (RDNA2 Navi 24, 4 Go)
 
