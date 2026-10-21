@@ -5,6 +5,7 @@
 #include <format>
 #include <string>
 #include <utility>
+#include <vector>
 
 // hwcontext_cuda.h n'a besoin que de CUcontext et CUstream : on les déclare
 // comme nv-codec-headers (dynlink_cuda.h), sans en-tête du kit CUDA.
@@ -88,22 +89,58 @@ std::expected<HwDevice, Refusal> open_cuda(HwDevice hw, const DecoderOptions& op
   return hw;
 }
 
-// FFmpeg ne choisit un appareil Vulkan que par index ou par nom : on essaie
-// les index jusqu'à trouver l'UUID du rendu.
+// L'UUID de chaque appareil physique de l'instance d'un appareil FFmpeg, dans l'ordre de
+// vkEnumeratePhysicalDevices : celui des index de av_hwdevice_ctx_create.
+std::vector<DeviceUuid> vulkan_uuids(const AVBufferRef& device) {
+  const auto& ctx = *reinterpret_cast<const AVHWDeviceContext*>(device.data);
+  const auto& vk = *static_cast<const AVVulkanDeviceContext*>(ctx.hwctx);
+  const auto enumerate = reinterpret_cast<PFN_vkEnumeratePhysicalDevices>(
+      vk.get_proc_addr(vk.inst, "vkEnumeratePhysicalDevices"));
+  const auto get_properties = reinterpret_cast<PFN_vkGetPhysicalDeviceProperties2>(
+      vk.get_proc_addr(vk.inst, "vkGetPhysicalDeviceProperties2"));
+  if (enumerate == nullptr || get_properties == nullptr) return {};
+  std::uint32_t count = 0;
+  if (enumerate(vk.inst, &count, nullptr) != VK_SUCCESS) return {};
+  std::vector<VkPhysicalDevice> physical(count);
+  if (enumerate(vk.inst, &count, physical.data()) != VK_SUCCESS) return {};
+  std::vector<DeviceUuid> uuids;
+  for (VkPhysicalDevice p : physical) {
+    VkPhysicalDeviceIDProperties ids{.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ID_PROPERTIES};
+    VkPhysicalDeviceProperties2 properties{.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2,
+                                           .pNext = &ids};
+    get_properties(p, &properties);
+    DeviceUuid uuid{};
+    std::ranges::copy(ids.deviceUUID, uuid.begin());
+    uuids.push_back(uuid);
+  }
+  return uuids;
+}
+
+// FFmpeg ne choisit un appareil Vulkan que par index ou par nom. Le premier créé dit, par son
+// instance, l'index de l'UUID du rendu : seul celui-là est créé ensuite. Si l'ordre ne tient pas
+// d'une instance à l'autre, on essaie les index un à un.
 std::expected<HwDevice, Refusal> open_vulkan(HwDevice hw, const DecoderOptions& options) {
-  if (!options.render_device) {
-    auto device = create_device(HwApi::Vulkan, {}, 0);
-    if (!device) return std::unexpected(device.error());
-    hw.device = std::move(*device);
+  auto first = create_device(HwApi::Vulkan, options.render_device ? "0" : std::string{}, 0);
+  if (!first) return std::unexpected(first.error());  // aucun appareil Vulkan : la vraie cause
+  if (!options.render_device || vulkan_device_uuid(**first) == options.render_device) {
+    hw.device = std::move(*first);
     return hw;
   }
-  int tried = 0;
+  const std::vector<DeviceUuid> uuids = vulkan_uuids(**first);
+  first->reset();
+  if (const auto at = std::ranges::find(uuids, *options.render_device); at != uuids.end()) {
+    auto device = create_device(HwApi::Vulkan, std::to_string(at - uuids.begin()), 0);
+    if (device && vulkan_device_uuid(**device) == options.render_device) {
+      hw.device = std::move(*device);
+      return hw;
+    }
+  } else if (!uuids.empty()) {
+    return refuse_hw(HwApi::Vulkan, std::format("aucun des {} appareils n'a l'UUID du rendu", uuids.size()));
+  }
+  int tried = 1;
   for (; tried < kMaxVulkanDevices; ++tried) {
     auto device = create_device(HwApi::Vulkan, std::to_string(tried), 0);
-    if (!device) {
-      if (tried == 0) return std::unexpected(device.error());  // aucun appareil Vulkan : la vraie cause
-      break;
-    }
+    if (!device) break;
     if (vulkan_device_uuid(**device) == options.render_device) {
       hw.device = std::move(*device);
       return hw;
