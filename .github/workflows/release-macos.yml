@@ -49,6 +49,10 @@ jobs:
           path: ${{ env.AJP_DEPS_PREFIX }}
           key: ${{ steps.deps-cache.outputs.cache-primary-key }}
       - run: tools/release/package-macos.sh "$RUNNER_TEMP/package"
+      # spirv-val ne voit pas ce que seul Metal refuse : chaque shader passe par SPIRV-Cross et le
+      # compilateur Metal, comme MoltenVK le fera à la création du pipeline.
+      - name: Shaders en Metal
+        run: tools/ci/check-msl.sh build/macos-release
       # Les tests sans GPU du build même du paquet (préréglage de test macos-release) : un échec
       # arrête tout avant l'artefact et la release.
       - name: Tests sans GPU
