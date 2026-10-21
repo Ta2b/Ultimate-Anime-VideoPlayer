@@ -1,6 +1,7 @@
 // Noyaux du warp (warp_kernels.h), calqués sur kernels/ref/warp.cpp.
 #include <cuda_fp16.h>
 
+#include "gpu/cuda/backend/pixel_kernels.cuh"
 #include "gpu/cuda/backend/warp_kernels.h"
 #include "kernels/spec/poses.h"
 #include "kernels/spec/warp.h"
@@ -82,7 +83,7 @@ __device__ float pose_time_at(const WarpBlendParams& p, float u, float v) {
   return tp;
 }
 
-__global__ void warp_blend(WarpBlendParams p) {
+__global__ void __launch_bounds__(kPixelThreads, kHeavyBlocksPerSm) warp_blend(WarpBlendParams p) {
   const int x = static_cast<int>(blockIdx.x * blockDim.x + threadIdx.x);
   const int y = static_cast<int>(blockIdx.y * blockDim.y + threadIdx.y);
   if (x >= p.width || y >= p.height) return;
@@ -146,7 +147,7 @@ __global__ void warp_blend(WarpBlendParams p) {
   }
 }
 
-__global__ void flow_max(FlowMaxParams p) {
+__global__ void __launch_bounds__(kPixelThreads, kPixelBlocksPerSm) flow_max(FlowMaxParams p) {
   const int x = static_cast<int>(blockIdx.x * blockDim.x + threadIdx.x);
   const int y = static_cast<int>(blockIdx.y * blockDim.y + threadIdx.y);
   float m = 0.0F;
@@ -160,15 +161,8 @@ __global__ void flow_max(FlowMaxParams p) {
       m = fmaxf(m, fabsf(__half2float(flow[static_cast<std::size_t>(c) * plane + i])));
   }
   // Maximum du bloc, puis un atomicMax par bloc (flottants positifs : ordre des entiers).
-  __shared__ float block_max[kBlock * kBlock];
-  const int t = static_cast<int>(threadIdx.y * blockDim.x + threadIdx.x);
-  block_max[t] = m != m ? 0.0F : m;
-  __syncthreads();
-  for (int stride = kBlock * kBlock / 2; stride > 0; stride /= 2) {
-    if (t < stride) block_max[t] = fmaxf(block_max[t], block_max[t + stride]);
-    __syncthreads();
-  }
-  if (t == 0) atomicMax(p.result, __float_as_uint(block_max[0]));
+  m = block_reduce(m != m ? 0.0F : m, 0.0F, Max{});
+  if (threadIdx.x == 0 && threadIdx.y == 0) atomicMax(p.result, __float_as_uint(m));
 }
 
 }  // namespace

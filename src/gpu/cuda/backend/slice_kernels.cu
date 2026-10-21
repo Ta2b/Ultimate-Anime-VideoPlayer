@@ -1,6 +1,7 @@
 // Noyaux provisoires de la tranche verticale (voir slice_kernels.h).
 #include <cuda_fp16.h>
 
+#include "gpu/cuda/backend/pixel_kernels.cuh"
 #include "gpu/cuda/backend/slice_kernels.h"
 
 namespace ajp::gpu::cuda {
@@ -62,6 +63,7 @@ __device__ float3 area_at(const IngestParams& p, int x, int y) {
   const int last_x = min(static_cast<int>(ceilf(x1)), p.width);
   const int last_y = min(static_cast<int>(ceilf(y1)), p.height);
   float3 sum = make_float3(0.0F, 0.0F, 0.0F);
+#pragma unroll 1
   for (int j = static_cast<int>(floorf(y0)); j < last_y; ++j) {
     const float wy = fminf(y1, static_cast<float>(j + 1)) - fmaxf(y0, static_cast<float>(j));
     for (int i = static_cast<int>(floorf(x0)); i < last_x; ++i) {
@@ -123,20 +125,25 @@ __device__ float3 filtered_at(const IngestParams& p, int x, int y) {
   const int j0 = static_cast<int>(ceilf(cy - radius * sy));
   const int nx = min(static_cast<int>(floorf(cx + radius * sx)) - i0 + 1, kMaxReduceTaps);
   const int ny = min(static_cast<int>(floorf(cy + radius * sy)) - j0 + 1, kMaxReduceTaps);
+  // Boucles non déroulées : sm_120 déroule sinon les 32 prises et déborde de 255 registres ; wx
+  // reste en mémoire locale (128 octets de pile) jusqu'à l'ingest en deux passes.
   float wx[kMaxReduceTaps];
   float total_x = 0.0F;
+#pragma unroll 1
   for (int i = 0; i < nx; ++i) {
     wx[i] = reduce_weight(p, (static_cast<float>(i0 + i) - cx) / sx);
     total_x += wx[i];
   }
   float3 sum = make_float3(0.0F, 0.0F, 0.0F);
   float total_y = 0.0F;
+#pragma unroll 1
   for (int j = 0; j < ny; ++j) {
     const float wy = reduce_weight(p, (static_cast<float>(j0 + j) - cy) / sy);
     if (wy == 0.0F) continue;
     total_y += wy;
     const int row = clamp_index(j0 + j, p.height);
     float3 line = make_float3(0.0F, 0.0F, 0.0F);
+#pragma unroll 1
     for (int i = 0; i < nx; ++i) {
       if (wx[i] == 0.0F) continue;
       const float3 c = rgb_at(p, clamp_index(i0 + i, p.width), row);
@@ -152,7 +159,7 @@ __device__ float3 filtered_at(const IngestParams& p, int x, int y) {
   return make_float3(sum.x * norm, sum.y * norm, sum.z * norm);
 }
 
-__global__ void ingest(IngestParams p) {
+__global__ void __launch_bounds__(kPixelThreads, kPixelBlocksPerSm) ingest(IngestParams p) {
   const int x = static_cast<int>(blockIdx.x * blockDim.x + threadIdx.x);
   const int y = static_cast<int>(blockIdx.y * blockDim.y + threadIdx.y);
   if (x >= p.out_width || y >= p.out_height) return;
@@ -180,7 +187,7 @@ __device__ unsigned short unorm16(float v) {
   return static_cast<unsigned short>(v * 65535.0F + 0.5F);
 }
 
-__global__ void write_rgba16(WriteParams p) {
+__global__ void __launch_bounds__(kPixelThreads, kPixelBlocksPerSm) write_rgba16(WriteParams p) {
   const int x = static_cast<int>(blockIdx.x * blockDim.x + threadIdx.x);
   const int y = static_cast<int>(blockIdx.y * blockDim.y + threadIdx.y);
   if (x >= p.width || y >= p.height) return;

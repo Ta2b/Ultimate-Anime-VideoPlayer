@@ -5,8 +5,11 @@ add_library(ajp_backend_tensorrt_kernels STATIC gmfss_kernels.cu hdr_kernels.cu 
   slice_kernels.cu warp_kernels.cu)
 target_include_directories(ajp_backend_tensorrt_kernels PRIVATE "${PROJECT_SOURCE_DIR}/src")
 target_link_libraries(ajp_backend_tensorrt_kernels PRIVATE ajp::dep::cudart)
+# -lineinfo pour ncu ; ptxas donne les registres de chaque noyau au journal de build, et un
+# débordement de registres en mémoire locale est une erreur (pixel_kernels.cuh).
 target_compile_options(ajp_backend_tensorrt_kernels PRIVATE
-  $<$<COMPILE_LANGUAGE:CUDA>:-Werror=all-warnings -Xcompiler=-Wall,-Wextra>)
+  $<$<COMPILE_LANGUAGE:CUDA>:-Werror=all-warnings -Xcompiler=-Wall,-Wextra -lineinfo
+  --ptxas-options=--verbose,--warn-on-spills>)
 set_target_properties(ajp_backend_tensorrt_kernels PROPERTIES POSITION_INDEPENDENT_CODE ON)
 
 add_library(ajp_backend_tensorrt MODULE

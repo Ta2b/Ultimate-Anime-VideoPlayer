@@ -146,6 +146,19 @@ un réglage à faire taire.
   reprendre seulement si `nsys` montre le CPU de lancement comme goulot.
 - **Sans objet : double tampon des sommes du splat** : elles servent de brouillon dans un seul
   appel de `soft_splat_all`, sur une seule voie ; rien d'autre ne les lit.
+- **Registres des noyaux** (étude 3, 4.4 et 4.5) : blocs de 256 fils, au moins 4 blocs par SM
+  (64 registres), 3 pour `warp_blend` (80 registres) ; ptxas affiche les registres de chaque
+  noyau au build, et un débordement en mémoire locale arrête le build. Vérifié dans le cloud
+  (CUDA 13) sur sm_75, 86, 89 et 120 : le build Windows de la release doit passer pareil avec le
+  CUDA du PC. sm_120 débordait déjà sans borne (ingest : 255 registres et 712 octets, boucles des
+  32 prises déroulées) ; boucles de l'ingest non déroulées, adresses avancées dans `pair_diff` et
+  le splat. Le splat lit chaque plan de source une fois pour les quatre coins (quatre fois avant).
+- **À mesurer** : `ncu --set full` sur `pair_diff`, `flow_max` (réductions par mélange de
+  registres, sans arbre en mémoire partagée), `splat_all` et `ingest`, contre 092b364 ; une capture
+  GMFSS ×2 égale à 092b364 à l'ordre des additions atomiques près (déjà libre avant), et les mêmes
+  coupes et dessins tenus sur l'extrait de référence (la somme de `pair_diff` change d'ordre).
+- **Écarté : sous-échantillonner `pair_diff`** (étude 3, 4.4) : la mesure de détection est fixée
+  par kernels/spec/detect.h et les tests de référence Vulkan ; la changer change les décisions.
 
 ## Linux sur RX 6500M (RDNA2 Navi 24, 4 Go)
 

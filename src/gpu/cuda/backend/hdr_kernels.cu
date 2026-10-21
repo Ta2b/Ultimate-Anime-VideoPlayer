@@ -2,6 +2,7 @@
 #include <cuda_fp16.h>
 
 #include "gpu/cuda/backend/hdr_kernels.h"
+#include "gpu/cuda/backend/pixel_kernels.cuh"
 
 namespace ajp::gpu::cuda {
 namespace {
@@ -29,7 +30,7 @@ __device__ unsigned int dither8(float value, std::uint32_t x, std::uint32_t y, s
   return static_cast<unsigned int>(code);
 }
 
-__global__ void to_rgba8(ToRgba8Params p) {
+__global__ void __launch_bounds__(kPixelThreads, kPixelBlocksPerSm) to_rgba8(ToRgba8Params p) {
   const int x = static_cast<int>(blockIdx.x * blockDim.x + threadIdx.x);
   const int y = static_cast<int>(blockIdx.y * blockDim.y + threadIdx.y);
   if (x >= p.width || y >= p.height) return;
@@ -51,7 +52,8 @@ __device__ unsigned short widen10(unsigned int code) {
   return static_cast<unsigned short>((code * 65535U + 511U) / 1023U);
 }
 
-__global__ void rgb10a2_to_surface(Rgb10a2ToSurfaceParams p) {
+__global__ void __launch_bounds__(kPixelThreads, kPixelBlocksPerSm)
+    rgb10a2_to_surface(Rgb10a2ToSurfaceParams p) {
   const int x = static_cast<int>(blockIdx.x * blockDim.x + threadIdx.x);
   const int y = static_cast<int>(blockIdx.y * blockDim.y + threadIdx.y);
   if (x >= p.width || y >= p.height) return;

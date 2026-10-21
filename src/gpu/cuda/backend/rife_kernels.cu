@@ -1,6 +1,7 @@
 // Noyaux de RIFE de la tranche verticale (voir rife_kernels.h).
 #include <cuda_fp16.h>
 
+#include "gpu/cuda/backend/pixel_kernels.cuh"
 #include "gpu/cuda/backend/rife_kernels.h"
 
 namespace ajp::gpu::cuda {
@@ -9,6 +10,7 @@ namespace {
 constexpr int kBlock = 16;
 constexpr int kTile = 32;     // bloc des dessins tenus (kernels::kHeldBlock)
 constexpr int kTileRows = 8;  // fils par colonne du bloc : 32 × 8 fils, 4 lignes chacun
+static_assert(kBlock * kBlock == kPixelThreads && kTile * kTileRows == kPixelThreads);
 constexpr float kRed = 0.2126F;
 constexpr float kGreen = 0.7152F;
 constexpr float kBlue = 0.0722F;
@@ -22,7 +24,7 @@ __device__ std::size_t at(int x, int y, int width) {
   return static_cast<std::size_t>(y) * static_cast<std::size_t>(width) + static_cast<std::size_t>(x);
 }
 
-__global__ void rife_input(RifeInputParams p) {
+__global__ void __launch_bounds__(kPixelThreads, kPixelBlocksPerSm) rife_input(RifeInputParams p) {
   const int x = static_cast<int>(blockIdx.x * blockDim.x + threadIdx.x);
   const int y = static_cast<int>(blockIdx.y * blockDim.y + threadIdx.y);
   if (x >= p.padded_width || y >= p.padded_height) return;
@@ -56,7 +58,7 @@ __global__ void rife_input(RifeInputParams p) {
   out[10 * plane + i] = __float2half_rn(2.0F / static_cast<float>(p.padded_height - 1));
 }
 
-__global__ void rife_crop(RifeCropParams p) {
+__global__ void __launch_bounds__(kPixelThreads, kPixelBlocksPerSm) rife_crop(RifeCropParams p) {
   const int x = static_cast<int>(blockIdx.x * blockDim.x + threadIdx.x);
   const int y = static_cast<int>(blockIdx.y * blockDim.y + threadIdx.y);
   if (x >= p.width || y >= p.height) return;
@@ -71,14 +73,14 @@ __global__ void rife_crop(RifeCropParams p) {
     out[static_cast<std::size_t>(c) * out_plane + to] = in[static_cast<std::size_t>(c) * in_plane + from];
 }
 
-__device__ float luma(const __half* rgb, std::size_t plane, std::size_t i) {
-  return kRed * __half2float(rgb[i]) + kGreen * __half2float(rgb[plane + i]) +
-         kBlue * __half2float(rgb[2 * plane + i]);
+// Luma du pixel pointé dans le plan R de trois plans RGB consécutifs.
+__device__ float luma(const __half* red, std::size_t plane) {
+  return kRed * __half2float(red[0]) + kGreen * __half2float(red[plane]) +
+         kBlue * __half2float(red[2 * plane]);
 }
 
 // Un bloc CUDA par bloc de 32 × 32 pixels, tronqué aux bords.
-__global__ void pair_diff(PairDiffParams p) {
-  __shared__ float sums[kTile * kTileRows];
+__global__ void __launch_bounds__(kPixelThreads, kPixelBlocksPerSm) pair_diff(PairDiffParams p) {
   const int x = static_cast<int>(blockIdx.x) * kTile + static_cast<int>(threadIdx.x);
   const int y0 = static_cast<int>(blockIdx.y) * kTile;
   const std::size_t plane = static_cast<std::size_t>(p.width) * static_cast<std::size_t>(p.height);
@@ -86,23 +88,26 @@ __global__ void pair_diff(PairDiffParams p) {
   const auto* b = static_cast<const __half*>(p.b);
   float sum = 0.0F;
   if (x < p.width) {
-    for (int y = y0 + static_cast<int>(threadIdx.y); y < min(y0 + kTile, p.height); y += kTileRows) {
-      const std::size_t i = at(x, y, p.width);
-      sum += fabsf(luma(a, plane, i) - luma(b, plane, i));
+    // Pointeurs avancés d'une ligne de fils : sm_120 garde sinon les 24 adresses 64 bits des quatre
+    // lignes déroulées et déborde sous la borne de 64 registres.
+    const int last = min(y0 + kTile, p.height);
+    const int first = y0 + static_cast<int>(threadIdx.y);
+    const std::size_t step = static_cast<std::size_t>(kTileRows) * static_cast<std::size_t>(p.width);
+    const std::size_t start = first < last ? at(x, first, p.width) : 0;
+    const __half* pa = a + start;
+    const __half* pb = b + start;
+    for (int y = first; y < last; y += kTileRows) {
+      sum += fabsf(luma(pa, plane) - luma(pb, plane));
+      pa += step;
+      pb += step;
     }
   }
-  const int t = static_cast<int>(threadIdx.y) * kTile + static_cast<int>(threadIdx.x);
-  sums[t] = sum;
-  __syncthreads();
-  for (int stride = kTile * kTileRows / 2; stride > 0; stride /= 2) {
-    if (t < stride) sums[t] += sums[t + stride];
-    __syncthreads();
-  }
-  if (t == 0) {
+  sum = block_reduce(sum, 0.0F, Sum{});
+  if (threadIdx.x == 0 && threadIdx.y == 0) {
     const int w = min(kTile, p.width - static_cast<int>(blockIdx.x) * kTile);
     const int h = min(kTile, p.height - y0);
-    atomicAdd(p.total, static_cast<double>(sums[0]));
-    const float mean = sums[0] / static_cast<float>(w * h);
+    atomicAdd(p.total, static_cast<double>(sum));
+    const float mean = sum / static_cast<float>(w * h);
     atomicMax(p.worst, static_cast<unsigned int>(mean * p.levels * 256.0F));
   }
 }

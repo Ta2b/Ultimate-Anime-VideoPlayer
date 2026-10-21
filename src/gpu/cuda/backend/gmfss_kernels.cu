@@ -5,6 +5,7 @@
 #include <cuda_fp16.h>
 
 #include "gpu/cuda/backend/gmfss_kernels.h"
+#include "gpu/cuda/backend/pixel_kernels.cuh"
 #include "kernels/spec/gmfss.h"
 
 namespace ajp::gpu::cuda {
@@ -51,7 +52,7 @@ __device__ int job_of(const unsigned* first, int count, unsigned block, unsigned
   return j;
 }
 
-__global__ void splat_all(SoftSplatBatch b) {
+__global__ void __launch_bounds__(kPixelThreads, kPixelBlocksPerSm) splat_all(SoftSplatBatch b) {
   unsigned local = 0;
   const SoftSplatParams& p = b.jobs[job_of(b.splat_blocks, b.count, blockIdx.x, local)];
   const int across = tiles_across(p.width);
@@ -99,20 +100,38 @@ __global__ void splat_all(SoftSplatBatch b) {
   const float share[4] = {west * north, east * north, west * south, east * south};
   const int first = group * kGroup;
   const int last = min(p.channels, first + kGroup);
-  const auto* source = static_cast<const __half*>(p.source);
+  // Chaque plan de source se lit une fois pour les quatre coins (au lieu d'une fois par coin), et
+  // les adresses avancent d'un plan : sm_120 gardait sinon 32 adresses 64 bits et débordait.
+  float* corner[4];
+  float weight[4];
+  unsigned inside = 0;
+#pragma unroll
   for (int k = 0; k < 4; ++k) {
-    if (cx[k] < 0 || cx[k] >= p.width || cy[k] < 0 || cy[k] >= p.height) continue;
-    const std::size_t j = at(cx[k], cy[k], p.width);
-    const float weight = scale * share[k];
-    for (int c = first; c < last; ++c) {
-      atomicAdd(&p.sums[static_cast<std::size_t>(c) * plane + j],
-                __half2float(source[static_cast<std::size_t>(c) * plane + i]) * weight);
+    const bool in = cx[k] >= 0 && cx[k] < p.width && cy[k] >= 0 && cy[k] < p.height;
+    inside |= in ? 1U << k : 0U;
+    weight[k] = scale * share[k];
+    corner[k] = p.sums + static_cast<std::size_t>(first) * plane + (in ? at(cx[k], cy[k], p.width) : 0);
+  }
+  const __half* from = static_cast<const __half*>(p.source) + static_cast<std::size_t>(first) * plane + i;
+  for (int c = first; c < last; ++c) {
+    const float value = __half2float(*from);
+#pragma unroll
+    for (int k = 0; k < 4; ++k) {
+      if ((inside >> k & 1U) != 0) atomicAdd(corner[k], value * weight[k]);
+      corner[k] += plane;
     }
-    if (group == 0) atomicAdd(&p.sums[static_cast<std::size_t>(p.channels) * plane + j], weight);
+    from += plane;
+  }
+  if (group != 0) return;
+  // Après la boucle, corner[k] pointe sur le plan last ; celui des poids est p.channels.
+  const std::size_t weights = static_cast<std::size_t>(p.channels - last) * plane;
+#pragma unroll
+  for (int k = 0; k < 4; ++k) {
+    if ((inside >> k & 1U) != 0) atomicAdd(corner[k] + weights, weight[k]);
   }
 }
 
-__global__ void normalize_all(SoftSplatBatch b) {
+__global__ void __launch_bounds__(kPixelThreads, kPixelBlocksPerSm) normalize_all(SoftSplatBatch b) {
   unsigned local = 0;
   const SoftSplatParams& p = b.jobs[job_of(b.normalize_blocks, b.count, blockIdx.x, local)];
   const int across = tiles_across(p.width);
@@ -133,7 +152,7 @@ __global__ void normalize_all(SoftSplatBatch b) {
     out[static_cast<std::size_t>(p.channels) * plane + i] = __float2half_rn(weight / total);
 }
 
-__global__ void compose(GmfssComposeParams p) {
+__global__ void __launch_bounds__(kPixelThreads, kPixelBlocksPerSm) compose(GmfssComposeParams p) {
   const int x = static_cast<int>(blockIdx.x * blockDim.x + threadIdx.x);
   const int y = static_cast<int>(blockIdx.y * blockDim.y + threadIdx.y);
   if (x >= p.width || y >= p.height) return;
