@@ -92,6 +92,8 @@ std::string_view name(GpuFamily family) {
       return "Intel Alchemist";
     case GpuFamily::IntelXe2:
       return "Intel Xe2";
+    case GpuFamily::Apple:
+      return "Apple";
   }
   return "inconnue";
 }
@@ -106,6 +108,8 @@ GpuFamily detect_family(std::uint32_t vendor_id, std::uint32_t device_id, bool c
       return find(kAmd, device_id, radv_family(device_name));
     case pci::kIntel:
       return find(kIntel, device_id, GpuFamily::Unknown);
+    case pci::kApple:
+      return GpuFamily::Apple;
     default:
       return GpuFamily::Unknown;
   }

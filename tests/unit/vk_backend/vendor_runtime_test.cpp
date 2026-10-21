@@ -36,6 +36,7 @@
 #endif
 #if defined(AJP_TEST_WITH_COREML)
 #include "gpu/coreml/coreml_runtime.h"
+#include "gpu/coreml/coreml_units.h"
 #endif
 
 using namespace ajp;
@@ -275,3 +276,18 @@ TEST_CASE("Référence : chaque runtime du fabricant retrouve la sortie enregist
   }
   if (ran == 0) SKIP("aucun matériel pour les runtimes de ce build : " << absent);
 }
+
+#if defined(AJP_TEST_WITH_COREML)
+// Les valeurs de MLComputeUnits qu'ONNX Runtime accepte (coreml_options.cc) : un nom d'Apple
+// (« MLComputeUnitsAll ») fait échouer la création de chaque session Core ML, sur tout Mac.
+TEST_CASE("Core ML : unités de calcul sous les noms d'ONNX Runtime", "[vk_backend][coreml]") {
+  using coreml_rt::Units;
+  CHECK(coreml_rt::units_option(Units::All) == "ALL");
+  CHECK(coreml_rt::units_option(Units::CpuAndGpu) == "CPUAndGPU");
+  CHECK(coreml_rt::units_option(Units::CpuAndNeuralEngine) == "CPUAndNeuralEngine");
+  for (const Units u : {Units::All, Units::CpuAndGpu, Units::CpuAndNeuralEngine}) {
+    CHECK(coreml_rt::units_from(coreml_rt::units_name(u)) == u);
+  }
+  CHECK_FALSE(coreml_rt::units_from("ALL").has_value());
+}
+#endif

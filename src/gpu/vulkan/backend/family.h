@@ -23,6 +23,7 @@ enum class GpuFamily : std::uint8_t {
   IntelXeLpg,  // Meteor Lake et Arrow Lake (Arc intégré des Core Ultra 100 et 200)
   IntelAlchemist,
   IntelXe2,
+  Apple,  // puces M d'Apple sous MoltenVK
 };
 
 std::string_view name(GpuFamily family);

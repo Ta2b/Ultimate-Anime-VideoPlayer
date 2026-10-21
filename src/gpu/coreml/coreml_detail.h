@@ -17,16 +17,10 @@
 #include <vector>
 
 #include "core/types.h"
+#include "gpu/coreml/coreml_units.h"
 #include "gpu/vulkan/backend/net_runtime.h"
 
 namespace ajp::gpu::coreml_rt {
-
-// Les unités de calcul que Core ML reçoit pour un réseau entier.
-enum class Units : std::uint8_t { All, CpuAndGpu, CpuAndNeuralEngine };
-
-std::string_view units_option(Units units);  // la valeur de MLComputeUnits
-std::string_view units_name(Units units);    // « all », « gpu », « ane » : le manifeste
-std::optional<Units> units_from(std::string_view name);
 
 std::unexpected<Refusal> refuse(RefusalCode code, std::string text);
 

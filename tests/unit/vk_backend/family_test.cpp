@@ -55,6 +55,7 @@ TEST_CASE("Familles : identifiants PCI connus", "[vk_backend][family]") {
         GpuFamily::AmdBeforeRdna3);
   CHECK(detect_family(pci::kAmd, 0x1114, false, "AMD Radeon 890M") == GpuFamily::AmdBeforeRdna3);
   CHECK(detect_family(pci::kNvidia, 0x2782, true) == GpuFamily::Software);
+  CHECK(detect_family(pci::kApple, 0x1B0002, false) == GpuFamily::Apple);  // M4 Pro sous MoltenVK
   CHECK(detect_family(0x10005, 0, false) == GpuFamily::Unknown);
 }
 
@@ -75,7 +76,21 @@ TEST_CASE("Familles : liste d'autorisation des unités matricielles", "[vk_backe
   CHECK_FALSE(matrix_units_unlisted(GpuFamily::Unknown, DriverKind::Other));
   CHECK_FALSE(matrix_units_unlisted(GpuFamily::AmdBeforeRdna3, DriverKind::AmdProprietary));
   CHECK_FALSE(matrix_units_unlisted(GpuFamily::Software, DriverKind::Other));
-  CHECK(net::preset_tables().empty());
+  // Tables livrées : une famille réelle chacune, une entrée par signature, des réglages lisibles.
+  for (const net::PresetTable& table : net::preset_tables()) {
+    INFO(name(table.family));
+    CHECK(table.family != GpuFamily::Unknown);
+    CHECK(table.family != GpuFamily::Software);
+    CHECK_FALSE(table.entries.empty());
+    std::set<std::uint64_t> seen;
+    for (const net::PresetEntry& e : table.entries) {
+      INFO(std::format("{:016x} {} {}", e.signature, e.variant, e.tuning));
+      CHECK(seen.insert(e.signature).second);
+      CHECK_FALSE(e.variant.empty());
+      CHECK_FALSE(e.tuning.empty());
+      CHECK(e.tuning.find_first_not_of("0123456789,") == std::string_view::npos);
+    }
+  }
 }
 
 TEST_CASE("Familles : variante matricielle choisie ou écartée selon l'appareil", "[vk_backend][family]") {
