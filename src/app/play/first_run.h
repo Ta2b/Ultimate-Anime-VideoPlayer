@@ -41,6 +41,9 @@ bool amd_matrix_cores(std::string_view gpu_name);
 // ROCm (donc MIGraphX) ne sert officiellement que Navi 21, RDNA3, RDNA4 et les Instinct : une
 // RX 6500M (Navi 24) ou un iGPU Radeon ne doit pas se voir proposer son téléchargement.
 bool rocm_listed(std::string_view gpu_name);
+// MIGraphX de Windows ML sert les AMD RDNA 3 et après, cartes et APU (Radeon 740M à 780M, 840M à
+// 890M, 8040S à 8060S) : la Radeon 860M y est, pas une RX 6000.
+bool winml_listed(std::string_view gpu_name);
 core::SystemInfo system_of(const GpuFacts& gpu, core::Os os);
 // « NVIDIA GeForce RTX 4070 Ti · 12 Go · cœurs Tensor »
 std::string gpu_line(const GpuFacts& gpu);

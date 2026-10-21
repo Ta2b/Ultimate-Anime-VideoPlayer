@@ -233,6 +233,16 @@ bool rocm_listed(std::string_view gpu_name) {
   return false;
 }
 
+bool winml_listed(std::string_view gpu_name) {
+  if (amd_matrix_cores(gpu_name)) return true;  // RX 7000, RX 9000, Radeon Pro W7000, R9700
+  const std::string name = lower(gpu_name);
+  // Les APU RDNA 3 (Phoenix, Hawk Point), RDNA 3.5 (Strix, Krackan, Strix Halo), que le pilote
+  // AMD nomme par leur produit.
+  constexpr std::array kRdna3Apus{"740m", "760m", "780m",  "820m",  "840m", "860m",
+                                  "880m", "890m", "8040s", "8050s", "8060s"};
+  return std::ranges::any_of(kRdna3Apus, [&](std::string_view apu) { return name.contains(apu); });
+}
+
 core::SystemInfo system_of(const GpuFacts& gpu, core::Os os) {
   // OpenVINO refuse lui-même un GPU qu'il ne sert pas (repli sur Vulkan) : le fabricant suffit.
   // MIGraphX aussi, mais après un téléchargement de ROCm : la liste officielle le filtre avant.
@@ -243,6 +253,7 @@ core::SystemInfo system_of(const GpuFacts& gpu, core::Os os) {
                              .vram_bytes = gpu.vram_bytes,
                              .tensor_cores = gpu.tensor_cores,
                              .rocm_supported = gpu.vendor == GpuVendor::Amd && rocm_listed(gpu.name),
+                             .winml_migraphx = gpu.vendor == GpuVendor::Amd && winml_listed(gpu.name),
                              .openvino_gpu = gpu.vendor == GpuVendor::Intel}}};
 }
 
@@ -383,7 +394,7 @@ std::string_view engine_label(core::EngineId id) {
     case core::EngineId::MaxineVfx:
       return "NVIDIA Maxine (RTX HDR)";
     case core::EngineId::MiGraphX:
-      return "MIGraphX (ROCm)";
+      return core::kHostOs == core::Os::Windows ? "MIGraphX (Windows ML)" : "MIGraphX (ROCm)";
     case core::EngineId::OpenVino:
       return "OpenVINO";
     case core::EngineId::DirectMl:

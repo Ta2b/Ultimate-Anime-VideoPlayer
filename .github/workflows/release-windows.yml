@@ -1,8 +1,8 @@
 name: Release Windows
 
-# Lancé à la main (ou par une étiquette v*) : le lecteur universel et son backend Vulkan, le moteur
-# OpenVINO (GPU Intel et NPU), sans TensorRT (son paquet se construit sur le PC de référence, où
-# TensorRT est installé).
+# Lancé à la main (ou par une étiquette v*) : le lecteur universel et son backend Vulkan, les
+# moteurs OpenVINO (GPU Intel et NPU) et MIGraphX de Windows ML (AMD RDNA 3 et après, à l'essai),
+# sans TensorRT (son paquet se construit sur le PC de référence, où TensorRT est installé).
 on:
   workflow_dispatch:
     inputs:
@@ -58,6 +58,10 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw "pip openvino $version" }
           $dir = python -c "from openvino.utils import get_cmake_path; print(get_cmake_path())"
           "OpenVINO_DIR=$dir" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+      # Windows ML par son paquet NuGet, à la version et à l'empreinte de versions.env.
+      - name: Windows ML
+        shell: pwsh
+        run: pwsh tools/deps/windows-winml.ps1 "$env:RUNNER_TEMP/winml"
       - name: Paquet
         shell: pwsh
         env:
@@ -68,6 +72,7 @@ jobs:
         run: |
           $env:VCPKG_ROOT = $env:AJP_VCPKG
           $env:AJP_WITH_OPENVINO = "ON"
+          $env:AJP_WITH_WINML = "ON"
           $env:AJP_RELEASE_REPO = "${{ vars.AJP_RELEASE_REPO || github.repository }}"
           if ($env:TAG) { $env:AJP_RELEASE_TAG = $env:TAG }
           pwsh tools/release/package-windows.ps1 "$env:RUNNER_TEMP/package"

@@ -13,6 +13,7 @@ ajp_add_unit_tests(vk_backend
   SOURCES
     backend_rig.cpp
     backend_test.cpp
+    deferred_steps_test.cpp
     entry_test.cpp
     family_test.cpp
     gmfss_ops_test.cpp
@@ -44,7 +45,7 @@ target_compile_definitions(ajp_vk_backend_tests PRIVATE
   AJP_TEST_REFERENCE_DIR="${CMAKE_CURRENT_BINARY_DIR}/reference"
   AJP_SPAN_MODEL="${AJP_SPAN_MODEL}")
 add_dependencies(ajp_vk_backend_tests ajp_backend_vulkan ajp_vk_backend_fake)
-foreach(vendor IN ITEMS migraphx openvino coreml)
+foreach(vendor IN ITEMS migraphx openvino coreml winml)
   if(TARGET ajp_${vendor}_rt)
     string(TOUPPER "${vendor}" upper)
     target_link_libraries(ajp_vk_backend_tests PRIVATE ajp::${vendor}_rt)

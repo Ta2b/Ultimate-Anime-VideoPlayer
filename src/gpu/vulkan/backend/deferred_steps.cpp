@@ -1,4 +1,4 @@
-#include "gpu/coreml/coreml_steps.h"
+#include "gpu/vulkan/backend/deferred_steps.h"
 
 #include <format>
 #include <utility>
@@ -6,7 +6,7 @@
 
 #include "core/thread.h"
 
-namespace ajp::gpu::coreml_rt {
+namespace ajp::gpu::vk::net {
 
 DeferredSteps::~DeferredSteps() {
   if (!worker_.joinable()) return;
@@ -14,20 +14,20 @@ DeferredSteps::~DeferredSteps() {
   worker_.join();
 }
 
-std::expected<void, Refusal> DeferredSteps::push(std::span<const vk::net::HostBinding> inputs,
-                                                 std::span<const vk::net::HostBinding> outputs,
+std::expected<void, Refusal> DeferredSteps::push(std::span<const HostBinding> inputs,
+                                                 std::span<const HostBinding> outputs,
                                                  std::function<std::expected<void, Refusal>()> ready,
                                                  std::function<void(std::expected<void, Refusal>)> done) {
   if (!ready || !done)
-    return std::unexpected(
-        Refusal{.code = RefusalCode::InputMismatch, .detail = "Core ML : étape sans rappels"});
+    return std::unexpected(Refusal{.code = RefusalCode::InputMismatch,
+                                   .detail = std::format("{} : étape sans rappels", runtime_)});
   {
     const std::scoped_lock lock(mutex_);
     if (failed_) return std::unexpected(*failed_);
     if (!worker_.joinable()) {
-      auto worker = start_thread(
-          "coreml" + label_, ThreadReport([this](const Refusal& refusal) { note_failure(refusal); }),
-          [this](const std::stop_token& stop, const ThreadReport& /*report*/) { serve(stop); });
+      auto worker =
+          start_thread(thread_, ThreadReport([this](const Refusal& refusal) { note_failure(refusal); }),
+                       [this](const std::stop_token& stop, const ThreadReport& /*report*/) { serve(stop); });
       if (!worker) return std::unexpected(std::move(worker.error()));
       worker_ = std::move(*worker);
     }
@@ -36,9 +36,9 @@ std::expected<void, Refusal> DeferredSteps::push(std::span<const vk::net::HostBi
                           .outputs = {outputs.begin(), outputs.end()},
                           .ready = std::move(ready),
                           .done = std::move(done)})) {
-    return std::unexpected(
-        Refusal{.code = RefusalCode::ThreadUnavailable,
-                .detail = std::format("Core ML : {} étapes en file, le fil n'en reprend pas", kStepBound)});
+    return std::unexpected(Refusal{
+        .code = RefusalCode::ThreadUnavailable,
+        .detail = std::format("{} : {} étapes en file, le fil n'en reprend pas", runtime_, kStepBound)});
   }
   return {};
 }
@@ -56,10 +56,11 @@ void DeferredSteps::serve(const std::stop_token& stop) {
       result = job.ready();
       if (result) result = compute_(job.inputs, job.outputs);
     } catch (...) {
-      result = std::unexpected(refusal_from_exception(RefusalCode::DeviceUnavailable, "Core ML, étape"));
+      result = std::unexpected(
+          refusal_from_exception(RefusalCode::DeviceUnavailable, std::format("{}, étape", runtime_)));
     }
     job.done(std::move(result));
   }
 }
 
-}  // namespace ajp::gpu::coreml_rt
+}  // namespace ajp::gpu::vk::net

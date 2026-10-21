@@ -55,7 +55,8 @@ std::optional<InstalledPackage> installed_package(const EngineCatalog& catalog,
 std::vector<std::filesystem::path> installed_backends(const EngineCatalog& catalog);
 
 // Ce qui manque au système pour que le moteur tourne, que le lecteur ne peut pas installer seul
-// (pilote ROCm, pilote compute Intel), avec la commande à lancer ; rien s'il ne manque rien.
+// (pilote ROCm, pilote compute Intel, Windows 11 24H2 pour MIGraphX de Windows ML), avec la commande
+// à lancer ; rien s'il ne manque rien.
 std::optional<std::string> missing_prerequisite(core::EngineId engine);
 
 struct InstallProgress {

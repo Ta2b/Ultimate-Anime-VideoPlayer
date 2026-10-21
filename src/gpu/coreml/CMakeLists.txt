@@ -17,7 +17,7 @@ endif()
 
 # Le runtime à part de ses points d'entrée : les tests du backend Vulkan le lient pour comparer
 # ses sorties à l'interpréteur sur le vrai matériel (vendor_runtime_test.cpp).
-ajp_add_module(coreml_rt SOURCES coreml_measure.cpp coreml_runtime.cpp coreml_steps.cpp ${ajp_coreml_vt}
+ajp_add_module(coreml_rt SOURCES coreml_measure.cpp coreml_runtime.cpp ${ajp_coreml_vt}
   DEPS ajp::vk_backend ajp::core_log ajp::coreml_pixels PRIVATE_DEPS ajp::dep::spdlog "${AJP_ORT_LIBRARY}")
 target_include_directories(ajp_coreml_rt SYSTEM PRIVATE "${AJP_ORT_INCLUDE}")
 if(APPLE)

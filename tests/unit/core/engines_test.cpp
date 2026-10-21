@@ -72,6 +72,36 @@ TEST_CASE("Moteurs : ancien AMD sous Windows, DirectML proposé sans être coch�
   CHECK(has(*find(offers, EngineId::Vulkan), Badge::Recommended));
 }
 
+TEST_CASE("Moteurs : Radeon 860M sous Windows, MIGraphX de Windows ML à l'essai", "[engines]") {
+  SystemInfo system{
+      .os = Os::Windows,
+      .gpus = {
+          GpuInfo{.vendor = GpuVendor::Amd, .name = "AMD Radeon(TM) 860M Graphics", .winml_migraphx = true}}};
+  auto offers = recommend_engines(system);
+  const EngineOffer* migraphx = find(offers, EngineId::MiGraphX);
+  REQUIRE(migraphx);
+  CHECK(migraphx->relevant);
+  CHECK_FALSE(migraphx->preselected);
+  CHECK(migraphx->reason == Reason::CompareWithVulkan);
+  CHECK(migraphx->delivery == Delivery::Download);
+  CHECK(has(*migraphx, Badge::AmdOnly));
+  CHECK_FALSE(has(*migraphx, Badge::Recommended));
+  CHECK_FALSE(find(offers, EngineId::DirectMl)->relevant);
+  // À l'essai seulement : Vulkan reste le moteur recommandé.
+  CHECK(has(*find(offers, EngineId::Vulkan), Badge::Recommended));
+}
+
+TEST_CASE("Moteurs : ROCm ne compte que sous Linux, Windows ML que sous Windows", "[engines]") {
+  SystemInfo windows{.os = Os::Windows,
+                     .gpus = {GpuInfo{.vendor = GpuVendor::Amd, .name = "RX 6800", .rocm_supported = true}}};
+  CHECK_FALSE(find(recommend_engines(windows), EngineId::MiGraphX)->relevant);
+  CHECK(find(recommend_engines(windows), EngineId::DirectMl)->relevant);
+  SystemInfo linux_apu{
+      .os = Os::Linux,
+      .gpus = {GpuInfo{.vendor = GpuVendor::Amd, .name = "AMD Radeon 860M", .winml_migraphx = true}}};
+  CHECK_FALSE(find(recommend_engines(linux_apu), EngineId::MiGraphX)->relevant);
+}
+
 TEST_CASE("Moteurs : Mac, Metal inclus et recommandé", "[engines]") {
   SystemInfo system{.os = Os::MacOs, .gpus = {GpuInfo{.vendor = GpuVendor::Apple, .name = "M3"}}};
   auto offers = recommend_engines(system);

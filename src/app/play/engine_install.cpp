@@ -8,6 +8,10 @@
 #include <string_view>
 #include <system_error>
 
+#ifdef _WIN32
+#include <windows.h>
+#endif
+
 #include "app/play/engine_tools.h"
 
 namespace ajp::app::play {
@@ -23,6 +27,37 @@ bool any_exists(std::initializer_list<std::string_view> paths) {
     if (std::filesystem::exists(std::filesystem::path(p), error)) return true;
   }
   return false;
+}
+
+// MIGraphX de Windows ML demande Windows 11 24H2 (build 26100) ; le pilote AMD, Windows ML le
+// vérifie lui-même (winml_library.h).
+constexpr unsigned long kWinmlBuild = 26100;
+
+#ifdef _WIN32
+// Le build de Windows par RtlGetVersion (GetVersionEx rend celui du manifeste) ; 0 s'il échappe.
+unsigned long windows_build() {
+  using GetVersion = LONG(WINAPI*)(OSVERSIONINFOW*);
+  const HMODULE ntdll = GetModuleHandleW(L"ntdll.dll");
+  if (ntdll == nullptr) return 0;
+  const auto get =
+      reinterpret_cast<GetVersion>(reinterpret_cast<void*>(GetProcAddress(ntdll, "RtlGetVersion")));
+  OSVERSIONINFOW info{};
+  info.dwOSVersionInfoSize = sizeof(info);
+  if (get == nullptr || get(&info) != 0) return 0;
+  return info.dwBuildNumber;
+}
+#else
+unsigned long windows_build() {
+  return 0;
+}
+#endif
+
+std::optional<std::string> windows_prerequisite(core::EngineId engine) {
+  if (engine != core::EngineId::MiGraphX) return std::nullopt;  // les pilotes fournissent le reste
+  const unsigned long build = windows_build();
+  if (build == 0 || build >= kWinmlBuild) return std::nullopt;
+  return std::format("Windows 11 24H2 requis (build {} installé) : mettre Windows à jour par Windows Update",
+                     build);
 }
 
 }  // namespace
@@ -97,7 +132,8 @@ std::vector<std::filesystem::path> installed_backends(const EngineCatalog& catal
 }
 
 std::optional<std::string> missing_prerequisite(core::EngineId engine) {
-  if (host_os() != core::Os::Linux) return std::nullopt;  // les pilotes Windows les fournissent
+  if (host_os() == core::Os::Windows) return windows_prerequisite(engine);
+  if (host_os() != core::Os::Linux) return std::nullopt;
   switch (engine) {
     case core::EngineId::MiGraphX:
       // Le module est lié au runtime HIP de ROCm 7 (libamdhip64.so.7) : un ROCm 6 ne le charge pas.

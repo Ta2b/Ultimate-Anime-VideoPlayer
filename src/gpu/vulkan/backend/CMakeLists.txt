@@ -6,6 +6,7 @@ include(AjpSpirv)
 
 ajp_add_module(vk_backend
   SOURCES
+    deferred_steps.cpp
     device_profile.cpp
     family.cpp
     kernel_frames.cpp

@@ -29,7 +29,8 @@ struct GpuInfo {
   std::string name;
   std::uint64_t vram_bytes = 0;
   bool tensor_cores = false;    // NVIDIA RTX (Turing et après)
-  bool rocm_supported = false;  // AMD reconnu par MIGraphX
+  bool rocm_supported = false;  // AMD reconnu par MIGraphX de ROCm (Linux)
+  bool winml_migraphx = false;  // AMD RDNA 3 et après, que MIGraphX de Windows ML sert (Windows)
   bool openvino_gpu = false;    // Intel Arc ou intégré récent reconnu par OpenVINO
 };
 
@@ -71,7 +72,7 @@ enum class Reason : std::uint8_t {
   AlwaysIncluded,
   FastestForThisGpu,
   RtxHdrForThisGpu,
-  CompareWithVulkan,  // DirectML : utile seulement si Vulkan mesure moins bien
+  CompareWithVulkan,  // DirectML, MIGraphX de Windows ML : à l'essai, utile si Vulkan mesure moins bien
   NoMatchingGpu,
 };
 

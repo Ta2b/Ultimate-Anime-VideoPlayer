@@ -150,13 +150,18 @@ jobs:
           git -C $env:AJP_VCPKG checkout -q $baseline
           & "$env:AJP_VCPKG/bootstrap-vcpkg.bat" -disableMetrics
       - uses: ilammy/msvc-dev-cmd@v1
+      # Le paquet NuGet de Windows ML : MIGraphX de Windows ML se construit avec /WX comme le reste.
+      - name: Windows ML
+        shell: pwsh
+        run: pwsh tools/deps/windows-winml.ps1 "$env:RUNNER_TEMP/winml"
       - name: Configuration
         shell: pwsh
         # msvc-dev-cmd pose le vcpkg de Visual Studio : le nôtre, à la référence du manifeste.
         run: |
           $env:VCPKG_ROOT = $env:AJP_VCPKG
           cmake --preset windows-ci "-DVCPKG_INSTALL_OPTIONS=--x-buildtrees-root=$env:AJP_VCPKG_BUILDTREES" `
-            "-DVCPKG_TARGET_TRIPLET=$env:AJP_VCPKG_TRIPLET" "-DVCPKG_HOST_TRIPLET=$env:AJP_VCPKG_TRIPLET"
+            "-DVCPKG_TARGET_TRIPLET=$env:AJP_VCPKG_TRIPLET" "-DVCPKG_HOST_TRIPLET=$env:AJP_VCPKG_TRIPLET" `
+            -DAJP_WITH_WINML=ON "-DAJP_WINML_ROOT=$env:AJP_WINML_ROOT"
           if ($LASTEXITCODE -ne 0) { throw "configuration" }
       - name: Construction
         shell: pwsh

@@ -38,6 +38,9 @@
 #include "gpu/coreml/coreml_runtime.h"
 #include "gpu/coreml/coreml_units.h"
 #endif
+#if defined(AJP_TEST_WITH_WINML)
+#include "gpu/winml/winml_runtime.h"
+#endif
 
 using namespace ajp;
 using namespace ajp::gpu;
@@ -219,6 +222,9 @@ std::vector<Vendor> vendors() {
 #if defined(AJP_TEST_WITH_COREML)
   out.push_back({"coreml", &coreml_rt::make_runtime});
 #endif
+#if defined(AJP_TEST_WITH_WINML)
+  out.push_back({"winml", &winml_rt::make_runtime});
+#endif
   return out;
 }
 
@@ -247,7 +253,8 @@ TEST_CASE("Référence : le moteur Vulkan retrouve la sortie enregistrée de cha
 TEST_CASE("Référence : chaque runtime du fabricant retrouve la sortie enregistrée de chaque modèle",
           "[vk_backend][reference][vendor]") {
   const std::vector<Vendor> candidates = vendors();
-  if (candidates.empty()) SKIP("aucun runtime de fabricant dans ce build (MIGraphX, OpenVINO, Core ML)");
+  if (candidates.empty())
+    SKIP("aucun runtime de fabricant dans ce build (MIGraphX, OpenVINO, Core ML, Windows ML)");
   NetRig rig = make_net_rig();
   require_f16(rig);
   TempDir dir("reference-vendor");

@@ -56,16 +56,28 @@ std::vector<EngineOffer> recommend_engines(const SystemInfo& system) {
     } else {
       offers.push_back(hdr_sdk(EngineId::MaxineVfx, Badge::LinuxOnly, rtx));
     }
-    offers.push_back(vendor_engine(EngineId::MiGraphX, Badge::AmdOnly,
-                                   gpu.vendor == GpuVendor::Amd && gpu.rocm_supported));
+    if (system.os == Os::Windows) {
+      // MIGraphX de Windows ML (sans ROCm), à l'essai sur les AMD RDNA 3 et après : proposé, jamais
+      // coché d'office, à comparer avec Vulkan.
+      const bool fits = gpu.vendor == GpuVendor::Amd && gpu.winml_migraphx;
+      offers.push_back(EngineOffer{.id = EngineId::MiGraphX,
+                                   .delivery = Delivery::Download,
+                                   .badges = {Badge::AmdOnly},
+                                   .reason = fits ? Reason::CompareWithVulkan : Reason::NoMatchingGpu,
+                                   .relevant = fits,
+                                   .preselected = false});
+    } else {
+      offers.push_back(vendor_engine(EngineId::MiGraphX, Badge::AmdOnly,
+                                     gpu.vendor == GpuVendor::Amd && gpu.rocm_supported));
+    }
     offers.push_back(vendor_engine(EngineId::OpenVino, Badge::IntelOnly,
                                    gpu.vendor == GpuVendor::Intel && gpu.openvino_gpu));
   }
 
   if (system.os == Os::Windows) {
-    // Seulement pour les anciens AMD sans MIGraphX, et seulement si Vulkan fait moins bien :
-    // proposé, jamais coché d'office, en attendant la mesure.
-    const bool old_amd = gpu.vendor == GpuVendor::Amd && !gpu.rocm_supported;
+    // Seulement pour les anciens AMD sans MIGraphX de Windows ML, et seulement si Vulkan fait
+    // moins bien : proposé, jamais coché d'office, en attendant la mesure.
+    const bool old_amd = gpu.vendor == GpuVendor::Amd && !gpu.winml_migraphx;
     offers.push_back(EngineOffer{.id = EngineId::DirectMl,
                                  .delivery = Delivery::Download,
                                  .badges = {Badge::Compatibility, Badge::WindowsOnly},
