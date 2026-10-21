@@ -25,6 +25,8 @@ constexpr std::int64_t kPrerollSubtitleWaitUs = 100'000;
 // part de ces attentes se lisse sur une dizaine de présentations, et au-delà de la moitié la file
 // est tenue pour pleine.
 constexpr double kQueueFillSmoothing = 0.1;
+// Période d'écran supposée tant qu'aucune présentation rapprochée ne la borne : 60 Hz.
+constexpr std::int64_t kAssumedPeriodUs = 16'667;
 
 template <class... F>
 struct Overloaded : F... {
@@ -339,8 +341,14 @@ std::int64_t Session::pacing_period_us() const {
   return nominal > 0 ? std::max(nominal, display_period()) : 0;
 }
 
+// Mesurée faute de mieux : la présentation est à la demande, chaque intervalle est donc un
+// multiple de la période (six à 24 i/s sur 144 Hz, des centaines avant la première image) et le
+// plus court des derniers la borne. La médiane rendait la cadence du contenu : l'image suivante
+// devenait due une période d'image trop tôt et les images partaient par paires.
 std::int64_t Session::display_period() const {
-  return config_.display_period_us > 0 ? config_.display_period_us : stats_.present_interval.median();
+  if (config_.display_period_us > 0) return config_.display_period_us;
+  const std::int64_t shortest = stats_.present_interval.percentile(0);
+  return shortest > 0 ? std::min(shortest, kAssumedPeriodUs) : kAssumedPeriodUs;
 }
 
 // Imposé par le réglage, ou estimé : la file de l'écran a de la place, l'image part après son

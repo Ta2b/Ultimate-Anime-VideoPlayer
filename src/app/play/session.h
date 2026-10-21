@@ -200,7 +200,7 @@ class Session {
   void pace(const RingFrame& frame, std::int64_t visible_us);
   // Synchro sur l'écran : la vitesse qui cale la sortie, demandée quand elle change.
   void follow_display();
-  std::int64_t display_period() const;  // la période de l'écran, connue ou mesurée ; 0 sinon
+  std::int64_t display_period() const;  // la période de l'écran, connue, mesurée ou supposée
   std::int64_t display_delay_us(std::int64_t period) const;
 
   double speed_ = 1.0;
