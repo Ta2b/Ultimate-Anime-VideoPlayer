@@ -2,9 +2,10 @@
 // la plus rapide sur cet appareil parmi celles dont la sortie concorde avec celle du noyau direct
 // (un pilote dont les matrices coopératives se trompent ne casse pas l'image). Ordre de recherche : table
 // pré-réglée de la famille, cache (par GPU et pilote, modèle et résolution, signature de la couche), puis
-// mesure : chaque candidat est chronométré seul, sur des entrées pseudo-aléatoires, par requêtes
-// d'horodatage : toutes ses passes (échauffement compris, plusieurs dispatchs enchaînés chacune) dans
-// une soumission, une estampille entre deux, et la médiane des passes comptées l'emporte.
+// mesure : chaque candidat est sondé (une passe) puis, s'il n'est pas loin du plus rapide, chronométré
+// seul, sur des entrées pseudo-aléatoires, par requêtes d'horodatage : toutes ses passes
+// (échauffement compris, plusieurs dispatchs enchaînés chacune) dans une soumission, une estampille
+// entre deux, et la médiane des passes comptées l'emporte.
 #pragma once
 
 #include <cstddef>
@@ -61,6 +62,9 @@ struct TunerOptions {
   std::uint32_t warmup = 2;   // passes non comptées
   std::uint32_t passes = 5;   // passes mesurées : la médiane compte
   std::uint32_t repeats = 3;  // dispatchs enchaînés par passe
+  // Après un sondage de chaque candidat (une passe), seuls ceux à moins de ce facteur du plus
+  // rapide sont mesurés en entier.
+  double keep_within = 2.0;
 };
 
 // Une mesure : le choix et sa médiane, en microsecondes par exécution du nœud.
@@ -93,10 +97,13 @@ class Autotuner {
   std::size_t measured() const { return measured_; }  // choix tranchés par mesure
   std::size_t cached() const { return cached_; }      // choix lus dans le cache ou une table
   std::size_t rejected() const { return rejected_; }  // candidats écartés : sortie discordante
+  std::size_t pruned() const { return pruned_; }      // candidats écartés dès leur sondage
   bool timestamps() const { return period_ns_ > 0.0; }
 
  private:
   void load_cache();
+  std::expected<Measured, Refusal> measure_with(const ir::Graph& graph, std::size_t node,
+                                                const KernelChoice& choice, const TunerOptions& options);
   // Le motif de tuning_input du type, envoyé au premier appel puis copié sur chaque entrée ;
   // nullptr hors float16 et float.
   std::expected<const Buffer*, Refusal> pattern(ir::DataType type);
@@ -112,6 +119,7 @@ class Autotuner {
   std::size_t measured_ = 0;
   std::size_t cached_ = 0;
   std::size_t rejected_ = 0;
+  std::size_t pruned_ = 0;
   std::optional<Buffer> pattern_f16_;
   std::optional<Buffer> pattern_f32_;
 };

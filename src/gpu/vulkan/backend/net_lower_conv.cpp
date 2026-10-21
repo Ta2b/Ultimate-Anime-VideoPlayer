@@ -212,8 +212,9 @@ std::expected<std::vector<KernelChoice>, Refusal> candidates(const ir::Graph& gr
   }
   // Conv 3 × 3 : Winograd, 2,25 fois moins de produits, pour les GPU sans unités matricielles
   // (Arc intégré, RDNA2, UHD) ; aux tailles de sous-groupe que l'appareil laisse choisir aussi
-  // (Intel : SIMD8, SIMD16 ou SIMD32).
-  if (winograd_eligible(graph, node, target)) {
+  // (Intel : SIMD8, SIMD16 ou SIMD32). Là où la variante coopmat convient, elle l'emporte : pas
+  // de Winograd à mesurer.
+  if (!matrix_eligible(graph, node, target) && winograd_eligible(graph, node, target)) {
     for (const std::uint32_t q : {1U, 2U}) {
       if (q == 2 && cout_g < 8) continue;
       for (const std::uint32_t wg : {64U, 128U}) {

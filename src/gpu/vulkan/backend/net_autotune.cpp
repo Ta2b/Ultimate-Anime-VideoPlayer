@@ -300,26 +300,56 @@ std::expected<KernelChoice, Refusal> Autotuner::choose(const ir::Graph& graph, s
     ++cached_;
     return found->second;
   }
-  // Le noyau direct d'abord : sa sortie sert de référence aux autres variantes.
+  // Le noyau direct d'abord : sa sortie sert de référence aux autres variantes. Chaque candidat
+  // est d'abord sondé (une passe d'échauffement, une passe comptée, un dispatch) et sa sortie
+  // comparée ; seuls ceux à moins de keep_within fois le meilleur sondage sont mesurés en entier.
   std::vector<KernelChoice> order(candidates.begin(), candidates.end());
   std::ranges::stable_partition(order, [](const KernelChoice& c) { return c.variant == "direct"; });
-  std::optional<Measured> best;
+  struct Probe {
+    KernelChoice choice;
+    double us = 0.0;
+  };
+  std::vector<Probe> probes;
   std::optional<Refusal> last_error;
   std::optional<std::vector<float>> reference;
+  const TunerOptions probe{.warmup = 1, .passes = 1, .repeats = 1};
   for (const KernelChoice& c : order) {
     if (stop.stop_requested()) return std::unexpected(Refusal{RefusalCode::Cancelled, "autotuner arrêté"});
-    auto m = measure(graph, node, c);
+    auto m = measure_with(graph, node, c, probe);
     if (!m) {
       last_error = m.error();
       continue;
     }
     if (!reference) {
-      reference = m->output;
+      reference = std::move(m->output);
     } else if (!agrees(m->output, *reference)) {
       ++rejected_;
       last_error =
           Refusal{RefusalCode::InputMismatch,
                   std::format("{} {} : sortie discordante du noyau direct", c.variant, tuning_text(c))};
+      continue;
+    }
+    probes.push_back({.choice = c, .us = m->median_us});
+  }
+  if (probes.empty()) {
+    return std::unexpected(last_error.value_or(Refusal{RefusalCode::InputMismatch, "aucun candidat mesuré"}));
+  }
+  if (probes.size() == 1) {  // un seul candidat concordant : rien à départager
+    ++measured_;
+    cache_[key] = probes.front().choice;
+    return probes.front().choice;
+  }
+  const double fastest = std::ranges::min(probes, {}, &Probe::us).us;
+  std::optional<Measured> best;
+  for (const Probe& p : probes) {
+    if (p.us > options_.keep_within * fastest) {
+      ++pruned_;
+      continue;
+    }
+    if (stop.stop_requested()) return std::unexpected(Refusal{RefusalCode::Cancelled, "autotuner arrêté"});
+    auto m = measure(graph, node, p.choice);
+    if (!m) {
+      last_error = m.error();
       continue;
     }
     if (!best || m->median_us < best->median_us) best = std::move(*m);
@@ -359,6 +389,12 @@ std::expected<const Buffer*, Refusal> Autotuner::pattern(ir::DataType type) {
 
 std::expected<Measured, Refusal> Autotuner::measure(const ir::Graph& graph, std::size_t node,
                                                     const KernelChoice& choice) {
+  return measure_with(graph, node, choice, options_);
+}
+
+std::expected<Measured, Refusal> Autotuner::measure_with(const ir::Graph& graph, std::size_t node,
+                                                         const KernelChoice& choice,
+                                                         const TunerOptions& options) {
   Lowerer lowerer(graph, profile_.target);
   if (auto ok = lowerer.node(node, choice); !ok) return std::unexpected(ok.error());
   const Program program = lowerer.take();
@@ -464,8 +500,8 @@ std::expected<Measured, Refusal> Autotuner::measure(const ir::Graph& graph, std:
   // passe entière). Sans, la préparation à part, puis une passe par soumission, chronométrée sur
   // l'hôte.
   const bool stamped = period_ns_ > 0.0;
-  const std::uint32_t passes = options_.warmup + std::max<std::uint32_t>(1, options_.passes);
-  const std::uint32_t repeats = std::max<std::uint32_t>(1, options_.repeats);
+  const std::uint32_t passes = options.warmup + std::max<std::uint32_t>(1, options.passes);
+  const std::uint32_t repeats = std::max<std::uint32_t>(1, options.repeats);
   const std::uint32_t recorded = stamped ? passes : 1;
   QueryPool queries(context_, query_functions(context_), passes + 1);
   if (stamped) {
@@ -527,7 +563,7 @@ std::expected<Measured, Refusal> Autotuner::measure(const ir::Graph& graph, std:
         !ok) {
       return std::unexpected(ok.error());
     }
-    for (std::uint32_t pass = options_.warmup; pass < passes; ++pass) {
+    for (std::uint32_t pass = options.warmup; pass < passes; ++pass) {
       const double us = static_cast<double>(ticks[pass + 1] - ticks[pass]) * period_ns_ / 1000.0;
       samples.push_back(us / repeats);
     }
@@ -537,7 +573,7 @@ std::expected<Measured, Refusal> Autotuner::measure(const ir::Graph& graph, std:
       if (auto ok = context_.submit(**recording); !ok) return std::unexpected(ok.error());
       if (auto ok = context_.wait_on_host((*recording)->last_run()); !ok) return std::unexpected(ok.error());
       const auto host = std::chrono::steady_clock::now() - start;
-      if (pass >= options_.warmup)
+      if (pass >= options.warmup)
         samples.push_back(std::chrono::duration<double, std::micro>(host).count() / repeats);
     }
   }

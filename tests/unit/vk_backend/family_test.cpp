@@ -127,6 +127,17 @@ TEST_CASE("Autotuner : mesure, cache par appareil et relecture", "[vk_backend][a
   (void)require_value(reread.choose(graph, 0, options, "autre"));
   CHECK(reread.measured() == 1);
   std::filesystem::remove(file);
+
+  // Le sondage : tout est mesuré en entier sous un facteur immense, seul le plus rapide sous 1.
+  net::Autotuner wide(*rig.context, *rig.memory, *rig.pipelines, profile, {},
+                      {.warmup = 1, .passes = 2, .repeats = 1, .keep_within = 1e9});
+  (void)require_value(wide.choose(graph, 0, options, "test"));
+  CHECK(wide.pruned() == 0);
+  net::Autotuner narrow(*rig.context, *rig.memory, *rig.pipelines, profile, {},
+                        {.warmup = 1, .passes = 2, .repeats = 1, .keep_within = 1.0});
+  CHECK(std::ranges::find(options, require_value(narrow.choose(graph, 0, options, "test"))) != options.end());
+  CHECK(narrow.pruned() >= 1);
+  CHECK(narrow.pruned() + narrow.rejected() < options.size());
 }
 
 TEST_CASE("Autotuner : motif d'entrée pseudo-aléatoire et périodique", "[vk_backend][autotune]") {

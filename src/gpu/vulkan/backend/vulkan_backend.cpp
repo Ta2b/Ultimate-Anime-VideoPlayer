@@ -278,8 +278,9 @@ std::expected<Artifact, Refusal> VulkanBackend::build(const ModelSpec& model, co
   log(BackendLogLevel::Info,
       std::format("{} construit : {} nœuds, {} dispatchs{}", model.id, data->graph.nodes.size(),
                   data->dispatches.size(),
-                  tuner ? std::format(", {} couches mesurées, {} variantes écartées (sortie discordante)",
-                                      tuner->measured(), tuner->rejected())
+                  tuner ? std::format(", {} couches mesurées, {} variantes écartées (sortie discordante), "
+                                      "{} dès leur sondage",
+                                      tuner->measured(), tuner->rejected(), tuner->pruned())
                         : ""));
   return artifact;
 }
