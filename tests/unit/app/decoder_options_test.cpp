@@ -1,5 +1,7 @@
 // Les options du décodeur par backend : TensorRT lit les surfaces NVDEC en place, sans copie de
 // sécurité ni copie en mémoire hôte ; les autres backends gardent la copie de FFmpeg.
+#include <algorithm>
+
 #include <catch2/catch_test_macros.hpp>
 
 #include "app/play/chain_setup.h"
@@ -24,6 +26,12 @@ TEST_CASE("decoder_options : surfaces directes sous TensorRT seulement", "[app][
   CHECK(vulkan.download);
   CHECK(vulkan.direct_surfaces == 0);
   CHECK(vulkan.attempts.back() == media::HwApi::Software);
+#if defined(__APPLE__)
+  CHECK(vulkan.attempts.front() == media::HwApi::VideoToolbox);
+  CHECK(decoder_options("coreml", render, nullptr).attempts.front() == media::HwApi::VideoToolbox);
+#else
+  CHECK(std::ranges::find(vulkan.attempts, media::HwApi::VideoToolbox) == vulkan.attempts.end());
+#endif
 }
 
 }  // namespace

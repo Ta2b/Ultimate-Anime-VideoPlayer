@@ -38,6 +38,7 @@ namespace ajp::app::play {
 // (host_upload.h) ; ailleurs, Vulkan Video sur l'appareil de l'écran quand FFmpeg le partage
 // (shared_vulkan : les images restent sur le GPU, le backend Vulkan les lit en place), puis, sous
 // Linux, VA-API (le bloc vidéo d'AMD ou d'Intel) copié en mémoire hôte, puis le décodage logiciel.
+// Sur un Mac, VideoToolbox (le bloc média de la puce) d'abord, copié en mémoire hôte.
 std::vector<media::HwApi> decoder_attempts(std::string_view backend, bool shared_vulkan);
 
 // Où chercher les graphes de GMFSS : à côté du modèle RIFE choisi, puis dans les dossiers RIFE.

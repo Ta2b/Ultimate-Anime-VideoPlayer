@@ -191,3 +191,72 @@ TEST_CASE("onnx : interface non réécrite autour d'un sous-graphe ou d'un passa
   REQUIRE_FALSE(bad_type);
   CHECK(bad_type.error().code == RefusalCode::FeatureUnavailable);
 }
+
+namespace {
+
+// Une entrée dont les dimensions négatives sont écrites -1, sans nom (exports RIFE de vs-mlrt).
+test::ProtoWriter unnamed_input(std::string_view name, const std::vector<std::int64_t>& dims) {
+  test::ProtoWriter shape;
+  for (const std::int64_t d : dims) shape.message(1, test::ProtoWriter{}.varint(1, d < 0 ? -1 : d));
+  test::ProtoWriter tensor_type;
+  tensor_type.varint(1, onnx::kFloat16).message(2, shape);
+  return test::ProtoWriter{}.bytes(1, name).message(2, test::ProtoWriter{}.message(1, tensor_type));
+}
+
+}  // namespace
+
+TEST_CASE("onnx : entrées fixées à la forme voulue, dimensions libres nommées ou non", "[gpu_ir][onnx]") {
+  ModelBuilder m;
+  m.input("x", {1, 2, -1, -1}).weight("w", {1}, {2.0F}).node("Mul", {"x", "w"}, {"t"});
+  m.graph().message(11, unnamed_input("y", {1, 2, -1, -1}));
+  m.node("Add", {"t", "y"}, {"z"}).output("z");
+  const std::vector<std::byte> original = m.bytes();
+  const std::vector<std::int64_t> shape{1, 2, 4, 6};
+  const std::vector<onnx::InputDims> fixed{{.name = "x", .dims = shape}, {.name = "y", .dims = shape}};
+  auto rewritten = onnx::with_input_dims(original, fixed);
+  REQUIRE(rewritten);
+  REQUIRE_FALSE(rewritten->empty());
+
+  auto before = onnx::read_onnx(original);
+  auto model = onnx::read_onnx(*rewritten);
+  REQUIRE(before);
+  REQUIRE(model);
+  CHECK(before->graph.inputs[0].symbols == Names{"", "", "d2", "d3"});
+  CHECK(before->graph.inputs[1].symbols == Names{"", "", "?", "?"});
+  const onnx::Graph& g = model->graph;
+  REQUIRE(g.inputs.size() == 2);
+  for (const onnx::ValueInfo& v : g.inputs) {
+    CHECK(v.dims == shape);
+    CHECK(v.symbols == Names{"", "", "", ""});
+  }
+  CHECK(g.inputs[0].elem_type == onnx::kFloat);
+  CHECK(g.inputs[1].elem_type == onnx::kFloat16);
+  REQUIRE(g.nodes.size() == before->graph.nodes.size());
+  for (std::size_t k = 0; k < g.nodes.size(); ++k) {
+    CHECK(g.nodes[k].op_type == before->graph.nodes[k].op_type);
+    CHECK(g.nodes[k].inputs == before->graph.nodes[k].inputs);
+  }
+  REQUIRE(g.initializers.size() == 1);
+  CHECK(g.initializers[0].floats == std::vector<float>{2.0F});
+
+  // Déjà fixées : rien à réécrire.
+  auto again = onnx::with_input_dims(*rewritten, fixed);
+  REQUIRE(again);
+  CHECK(again->empty());
+}
+
+TEST_CASE("onnx : forme d'entrée refusée quand elle contredit le fichier", "[gpu_ir][onnx]") {
+  ModelBuilder m;
+  m.input("x", {1, 3, -1, -1}).node("Relu", {"x"}, {"y"}).output("y");
+  const std::vector<std::byte> bytes = m.bytes();
+  const auto refused = [&](std::string_view name, std::vector<std::int64_t> dims) {
+    const std::vector<onnx::InputDims> fixed{{.name = name, .dims = dims}};
+    auto out = onnx::with_input_dims(bytes, fixed);
+    REQUIRE_FALSE(out);
+    return out.error().code;
+  };
+  CHECK(refused("x", {1, 4, 8, 8}) == RefusalCode::InputMismatch);  // 3 canaux dans le fichier
+  CHECK(refused("x", {1, 3, 8}) == RefusalCode::InputMismatch);     // autre rang
+  CHECK(refused("x", {1, 3, 8, 0}) == RefusalCode::InputMismatch);  // forme voulue encore libre
+  CHECK(refused("z", {1, 3, 8, 8}) == RefusalCode::InputMismatch);  // pas une entrée
+}

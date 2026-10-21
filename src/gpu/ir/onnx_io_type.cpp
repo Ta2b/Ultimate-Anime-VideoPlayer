@@ -39,6 +39,9 @@ constexpr std::uint32_t kValueName = 1;
 constexpr std::uint32_t kValueType = 2;
 constexpr std::uint32_t kTypeTensor = 1;
 constexpr std::uint32_t kTensorElemType = 1;
+constexpr std::uint32_t kTensorShape = 2;
+constexpr std::uint32_t kShapeDim = 1;
+constexpr std::uint32_t kDimValue = 1;
 // Cast prend son type cible en entier (attribut to) depuis l'opset 6.
 constexpr std::int64_t kCastOpset = 6;
 
@@ -256,6 +259,45 @@ std::expected<void, Refusal> copy_graph(Bytes graph, const Plan& plan, std::int3
   return {};
 }
 
+// Le ValueInfoProto à la forme dims : tensor_type garde son type, sa forme est réécrite.
+std::expected<void, Refusal> copy_with_dims(Bytes info, std::span<const std::int64_t> dims, Writer& out) {
+  Writer w;
+  auto ok = for_each_field(info, [&](const Field& field) -> std::expected<void, Refusal> {
+    if (field.number != kValueType || field.wire != proto::WireType::Length) {
+      w.field(field);
+      return {};
+    }
+    Writer type;
+    auto inner = for_each_field(field.bytes, [&](const Field& t) -> std::expected<void, Refusal> {
+      if (t.number != kTypeTensor || t.wire != proto::WireType::Length) {
+        type.field(t);
+        return {};
+      }
+      Writer tensor;
+      auto fields = for_each_field(t.bytes, [&](const Field& e) -> std::expected<void, Refusal> {
+        if (e.number != kTensorShape) tensor.field(e);
+        return {};
+      });
+      if (!fields) return fields;
+      Writer shape;
+      for (const std::int64_t d : dims) {
+        Writer dim;
+        dim.varint(kDimValue, static_cast<std::uint64_t>(d));
+        shape.message(kShapeDim, dim);
+      }
+      tensor.message(kTensorShape, shape);
+      type.message(kTypeTensor, tensor);
+      return {};
+    });
+    if (!inner) return inner;
+    w.message(kValueType, type);
+    return {};
+  });
+  if (!ok) return ok;
+  out.message(kGraphInput, w);
+  return {};
+}
+
 }  // namespace
 
 std::expected<std::vector<std::byte>, Refusal> with_io_type(std::span<const std::byte> model,
@@ -272,6 +314,66 @@ std::expected<std::vector<std::byte>, Refusal> with_io_type(std::span<const std:
     if (field.number == kModelGraph && field.wire == proto::WireType::Length)
       return copy_graph(field.bytes, *plan, elem_type, out);
     out.field(field);
+    return {};
+  });
+  if (!ok) return std::unexpected(ok.error());
+  return std::move(out).take();
+}
+
+std::expected<std::vector<std::byte>, Refusal> with_input_dims(std::span<const std::byte> model,
+                                                               std::span<const InputDims> inputs) {
+  auto decoded = read_onnx(model);
+  if (!decoded) return std::unexpected(decoded.error());
+  const auto mismatch = [](std::string detail) {
+    return std::unexpected(Refusal{RefusalCode::InputMismatch, std::move(detail)});
+  };
+  bool changes = false;
+  for (const InputDims& wanted : inputs) {
+    const auto& graph_inputs = decoded->graph.inputs;
+    const auto at = std::ranges::find(graph_inputs, wanted.name, &ValueInfo::name);
+    if (at == graph_inputs.end()) return mismatch(std::format("{} : pas une entrée du graphe", wanted.name));
+    if (std::ranges::any_of(wanted.dims, [](std::int64_t d) { return d <= 0; }))
+      return mismatch(std::format("{} : forme voulue avec une dimension libre", wanted.name));
+    if (!at->has_shape) {
+      changes = true;
+      continue;
+    }
+    if (at->dims.size() != wanted.dims.size())
+      return mismatch(
+          std::format("{} : rang {} au lieu de {}", wanted.name, at->dims.size(), wanted.dims.size()));
+    for (std::size_t k = 0; k < at->dims.size(); ++k) {
+      if (!at->symbols[k].empty()) {
+        changes = true;
+      } else if (at->dims[k] != wanted.dims[k]) {
+        return mismatch(
+            std::format("{} : dimension {} fixée à {}, pas {}", wanted.name, k, at->dims[k], wanted.dims[k]));
+      }
+    }
+  }
+  if (!changes) return std::vector<std::byte>{};
+  Writer out;
+  auto ok = for_each_field(model, [&](const Field& field) -> std::expected<void, Refusal> {
+    if (field.number != kModelGraph || field.wire != proto::WireType::Length) {
+      out.field(field);
+      return {};
+    }
+    Writer graph;
+    auto copied = for_each_field(field.bytes, [&](const Field& g) -> std::expected<void, Refusal> {
+      if (g.number != kGraphInput || g.wire != proto::WireType::Length) {
+        graph.field(g);
+        return {};
+      }
+      auto name = name_of(g.bytes);
+      if (!name) return std::unexpected(name.error());
+      const auto at = std::ranges::find(inputs, std::string_view(*name), &InputDims::name);
+      if (at == inputs.end()) {
+        graph.field(g);
+        return {};
+      }
+      return copy_with_dims(g.bytes, at->dims, graph);
+    });
+    if (!copied) return copied;
+    out.message(kModelGraph, graph);
     return {};
   });
   if (!ok) return std::unexpected(ok.error());

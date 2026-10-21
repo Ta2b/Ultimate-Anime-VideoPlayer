@@ -111,6 +111,9 @@ class Runtime {
   virtual std::string_view name() const = 0;  // BackendCaps::name : « migraphx », « openvino »
   virtual std::string device_name() const = 0;
   virtual std::string version() const = 0;  // entre dans la clé des artefacts
+  // Ce que build fait du modèle, quand cela change sans que version change : entre aussi dans la
+  // clé, et une autre recette reconstruit les artefacts. Vide : aucune (la clé d'avant).
+  virtual std::string_view recipe() const { return {}; }
   virtual std::string_view extension() const = 0;
   // Compile le modèle, ses entrées fixées à ces formes (vide : celles du fichier, toutes
   // statiques), et l'écrit à path. Refus : ceux du runtime, Cancelled.

@@ -26,7 +26,8 @@ std::unexpected<Refusal> refuse(RefusalCode code, std::string text);
 
 // Le manifeste de l'artefact : le fichier ONNX, une ligne par dimension symbolique fixée, les
 // unités retenues par la mesure (absentes d'un artefact plus ancien), et si le réseau ouvert est
-// la copie <artefact>.onnx à l'interface dans le type des tenseurs de la chaîne (onnx_of).
+// la copie <artefact>.onnx, réécrite à l'interface : dans le type des tenseurs de la chaîne, aux
+// formes de la construction (onnx_of).
 struct Manifest {
   std::filesystem::path onnx;
   std::vector<vk::net::DimOverride> dims;
