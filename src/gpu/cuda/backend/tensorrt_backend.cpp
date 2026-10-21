@@ -318,6 +318,10 @@ std::expected<void, Refusal> TensorRtBackend::enqueue(Engine& engine, std::span<
   timing.end(stream_);
   span_timing_->end(stream_);
   chain_timing_->end(stream_);
+  if (std::string notice = trt->take_notice(); !notice.empty()) {
+    log(BackendLogLevel::Warn,
+        std::format("moteur {}×{}×{} : {}", shape.dims[1], shape.dims[2], shape.dims[3], notice));
+  }
   return queued;
 }
 

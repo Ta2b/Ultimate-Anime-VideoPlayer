@@ -182,18 +182,30 @@ std::expected<void, Refusal> TrtEngine::launch(cudaStream_t stream, Graph* graph
     return direct();
   }
   cudaGraph_t captured = nullptr;
-  bool ok = cudaStreamBeginCapture(stream, cudaStreamCaptureModeThreadLocal) == cudaSuccess;
-  if (ok) {
-    const bool queued = context_->enqueueV3(stream);
-    ok = cudaStreamEndCapture(stream, &captured) == cudaSuccess && queued && captured != nullptr;
+  bool queued = false;
+  cudaError_t error = cudaStreamBeginCapture(stream, cudaStreamCaptureModeThreadLocal);
+  if (error == cudaSuccess) {
+    queued = context_->enqueueV3(stream);
+    error = cudaStreamEndCapture(stream, &captured);  // termine aussi une capture invalidée
   }
-  if (ok) ok = cudaGraphInstantiate(&graph->exec, captured, 0) == cudaSuccess;
+  if (error == cudaSuccess && queued && captured != nullptr)
+    error = cudaGraphInstantiate(&graph->exec, captured, 0);
   if (captured != nullptr) cudaGraphDestroy(captured);
-  if (!ok) {
-    // Moteur que la capture refuse : lancements directs, l'erreur de capture effacée.
+  if (error != cudaSuccess || !queued || captured == nullptr) {
+    // Capture refusée : rien n'a tourné (la capture enregistre sans exécuter), le lancement
+    // direct fait le travail et l'erreur est effacée. Le lancement suivant réessaie ; après
+    // kCaptureAttempts refus, les graphes sont coupés et le backend le dit dans le journal.
     graph->exec = nullptr;
-    graphs_off_ = true;
     static_cast<void>(cudaGetLastError());
+    ++capture_failures_;
+    if (capture_failures_ >= kCaptureAttempts) {
+      graphs_off_ = true;
+      notice_ = std::format("graphes CUDA coupés : capture refusée {} fois, dernière erreur : {}",
+                            capture_failures_,
+                            !queued                ? "enqueueV3 a échoué pendant la capture"
+                            : error != cudaSuccess ? cudaGetErrorString(error)
+                                                   : "graphe vide");
+    }
     return direct();
   }
   if (cudaGraphLaunch(graph->exec, stream) != cudaSuccess)

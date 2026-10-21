@@ -13,6 +13,7 @@
 #include <memory>
 #include <span>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "core/types.h"
@@ -80,6 +81,10 @@ class TrtEngine final : public Engine {
   std::expected<void, Refusal> enqueue(cudaStream_t stream, std::span<const Tensor> inputs,
                                        std::span<const Tensor> outputs);
 
+  // Le mot du moteur pour le journal du backend (graphes CUDA coupés après kCaptureAttempts
+  // captures refusées), une fois ; vide sinon.
+  std::string take_notice() { return std::exchange(notice_, std::string()); }
+
  private:
   TrtEngine() = default;
 
@@ -89,9 +94,12 @@ class TrtEngine final : public Engine {
   std::vector<std::string> outputs_;
   std::vector<Shape> input_shapes_;
   std::vector<Shape> output_shapes_;
-  // Graphes capturés, par jeu d'adresses (les tampons de l'étage tournent sur quelques-uns) ;
-  // graphs_off_ après un refus de capture : les lancements restent directs.
+  // Graphes capturés, par jeu d'adresses (les tampons de l'étage tournent sur quelques-uns).
+  // Une capture refusée est réessayée au lancement suivant : un appel CUDA d'un autre fil au
+  // mauvais moment peut l'invalider (CUDA 901 vu une fois au début d'un export sur le PC) ;
+  // graphs_off_ après kCaptureAttempts refus, et les lancements restent directs.
   static constexpr std::size_t kMaxGraphs = 8;
+  static constexpr int kCaptureAttempts = 3;
   struct Graph {
     std::vector<std::uintptr_t> addresses;
     cudaGraphExec_t exec = nullptr;
@@ -99,6 +107,8 @@ class TrtEngine final : public Engine {
   };
   std::vector<Graph> graphs_;
   bool graphs_off_ = false;
+  int capture_failures_ = 0;
+  std::string notice_;
   std::shared_ptr<SharedActivations> shared_;
   std::uint64_t shared_generation_ = 0;  // zone posée sur le contexte ; 0 : aucune
   void drop_graphs();

@@ -1,10 +1,12 @@
 #include "export/video_encoder.h"
 
 #include <algorithm>
+#include <charconv>
 #include <cmath>
 #include <format>
 #include <optional>
 #include <span>
+#include <system_error>
 #include <utility>
 #include <vector>
 
@@ -83,10 +85,27 @@ AVPixelFormat device_format(Upload upload) {
 // du GPU, celui des noyaux, de NVDEC et des tampons de l'export.
 constexpr int kCudaUsePrimaryContext = 1;
 
+// Images du pool CUDA allouées à l'ouverture. NVENC garde chaque image d'entrée jusqu'à la sortie
+// de son paquet (lookahead et B-frames des options), et l'export en tient une douzaine de plus
+// (ses tampons, la file d'écriture). Allouées d'avance, aucun cuMemAlloc ne tombe pendant les
+// premières images, quand les moteurs de la chaîne capturent leurs graphes CUDA.
+int cuda_pool_frames(const std::vector<EncoderOption>& options) {
+  constexpr int kInFlight = 12;
+  int held = 0;
+  for (const EncoderOption& option : options) {
+    if (option.key != "rc-lookahead" && option.key != "bf") continue;
+    int value = 0;
+    const char* end = option.value.data() + option.value.size();
+    if (std::from_chars(option.value.data(), end, value).ec == std::errc() && value > 0) held += value;
+  }
+  return held + kInFlight;
+}
+
 // Le contexte d'images d'un encodeur matériel ; renderable : images Vulkan de l'appareil du rendu
 // dans lesquelles libplacebo rend (COLOR_ATTACHMENT, en plus de ce que FFmpeg demande).
 std::expected<BufferPtr, std::string> open_frames(AVBufferRef& device, const EncoderCandidate& candidate,
-                                                  Layout layout, const EncoderSetup& setup, bool renderable) {
+                                                  const std::vector<EncoderOption>& options, Layout layout,
+                                                  const EncoderSetup& setup, bool renderable) {
   BufferPtr frames(av_hwframe_ctx_alloc(&device));
   if (!frames) return std::unexpected(std::string("contexte d'images : mémoire"));
   auto* fc = reinterpret_cast<AVHWFramesContext*>(frames->data);
@@ -94,7 +113,9 @@ std::expected<BufferPtr, std::string> open_frames(AVBufferRef& device, const Enc
   fc->sw_format = pixel_format(layout);
   fc->width = setup.width;
   fc->height = setup.height;
-  fc->initial_pool_size = candidate.upload == Upload::Vaapi ? 16 : 0;
+  fc->initial_pool_size = candidate.upload == Upload::Vaapi  ? 16
+                          : candidate.upload == Upload::Cuda ? cuda_pool_frames(options)
+                                                             : 0;
   if (renderable) {
     auto* vk = static_cast<AVVulkanFramesContext*>(fc->hwctx);
     vk->usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;  // FFmpeg y ajoute les siens
@@ -108,6 +129,7 @@ std::expected<BufferPtr, std::string> open_frames(AVBufferRef& device, const Enc
 // L'appareil et le contexte d'images d'un encodeur qui reçoit ses images sur l'appareil ; le
 // texte du refus sinon. Un encodeur Vulkan prend l'appareil du rendu s'il est donné.
 std::expected<Opened, std::string> open_device(const AVCodec& codec, const EncoderCandidate& candidate,
+                                               const std::vector<EncoderOption>& options,
                                                const EncoderSetup& setup) {
   Opened out;
   out.upload = candidate.upload;
@@ -128,12 +150,12 @@ std::expected<Opened, std::string> open_device(const AVCodec& codec, const Encod
     }
   }
   out.device.reset(device);
-  auto frames = open_frames(*out.device, candidate, out.layout, setup, out.shared);
+  auto frames = open_frames(*out.device, candidate, options, out.layout, setup, out.shared);
   if (!frames && out.shared) {
     // Sans rendu direct dans ses images, l'encodeur les charge depuis l'hôte, sur le même appareil.
     log_channel("export")->info("{} : images non rendables sur l'appareil du rendu ({}) ; chargées",
                                 candidate.name, frames.error());
-    frames = open_frames(*out.device, candidate, out.layout, setup, false);
+    frames = open_frames(*out.device, candidate, options, out.layout, setup, false);
   }
   if (!frames) return std::unexpected(std::move(frames.error()));
   out.ctx.reset(avcodec_alloc_context3(&codec));
@@ -152,7 +174,7 @@ std::expected<Opened, std::string> attempt(const AVCodec& codec, const EncoderCa
   const auto log = log_channel("export");
   Opened out;
   if (candidate.upload != Upload::Host) {
-    auto device = open_device(codec, candidate, setup);
+    auto device = open_device(codec, candidate, options, setup);
     if (device) {
       out = std::move(*device);
     } else if (candidate.upload != Upload::Cuda) {
