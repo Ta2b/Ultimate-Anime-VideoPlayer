@@ -13,11 +13,13 @@ fréquent (le premier dans l'ordre, à égalité) ; elle est signalée.
 Sur un appareil de la famille, un choix de la table n'est pas remesuré : sa sortie est vérifiée une
 fois contre le noyau direct, comme un choix repris d'une autre version du pilote.
 
-  python3 tools/vk/presets_from_cache.py --family NvidiaAda autotune-4070ti.tsv
+Les caches relevés sont gardés dans tools/vk/presets, nommés « <Famille>-<carte>-<n>.tsv » : sans
+--family, le script les relit tous, et une nouvelle famille s'ajoute sans faire perdre les autres.
+
+  cp autotune.tsv tools/vk/presets/AmdRdna4-rx9070xt-1.tsv
+  python3 tools/vk/presets_from_cache.py
   python3 tools/vk/presets_from_cache.py --family NvidiaAda a.tsv --family AmdRdna4 b.tsv
   clang-format-20 -i src/gpu/vulkan/backend/net_presets.cpp
-
-Sans --family, la table est vide.
 """
 
 from __future__ import annotations
@@ -31,6 +33,7 @@ import sys
 ROOT = pathlib.Path(__file__).resolve().parents[2]
 BACKEND = ROOT / "src" / "gpu" / "vulkan" / "backend"
 OUT = BACKEND / "net_presets.cpp"
+KEPT = ROOT / "tools" / "vk" / "presets"
 
 
 def candidate_set() -> str:
@@ -95,7 +98,8 @@ def table_text(family: str, choices: dict[int, collections.Counter]) -> list[str
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--family", nargs=2, action="append", default=[], metavar=("FAMILLE", "CACHE"),
-                        help="une famille de GpuFamily et le autotune.tsv d'un appareil de cette famille")
+                        help="une famille de GpuFamily et le autotune.tsv d'un appareil de cette famille "
+                             "(sans : tools/vk/presets/<Famille>-*.tsv)")
     parser.add_argument("--out", type=pathlib.Path, default=OUT)
     args = parser.parse_args()
 
@@ -103,7 +107,8 @@ def main() -> int:
     known = families()
     merged: dict[str, dict[int, collections.Counter]] = {}
     sources: dict[str, set[str]] = collections.defaultdict(set)
-    for family, cache in args.family:
+    sources_given = args.family or [(p.name.split("-", 1)[0], str(p)) for p in sorted(KEPT.glob("*.tsv"))]
+    for family, cache in sources_given:
         if family not in known or family in ("Unknown", "Software"):
             sys.exit(f"{family} : famille inconnue (family.h : {', '.join(sorted(known))})")
         choices, cards, stale = read_cache(pathlib.Path(cache), wanted_set)

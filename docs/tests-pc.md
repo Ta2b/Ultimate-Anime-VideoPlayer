@@ -23,13 +23,17 @@ un réglage à faire taire.
 
 ## Tables pré-réglées du moteur Vulkan
 
-Sur chaque PC de référence (RTX 4070 Ti, RX 9070 XT, Core Ultra 155H), après une lecture avec le
-moteur Vulkan de chaque profil utile : copier `<cache>/vulkan/autotune.tsv` (le dossier de cache est
-dans le journal d'ouverture) et l'envoyer au cloud. Il en tire les tables avec
-`python3 tools/vk/presets_from_cache.py --family NvidiaAda 4070ti.tsv --family AmdRdna4 9070xt.tsv`
-(familles : `src/gpu/vulkan/backend/family.h`). Une carte de la même famille reprend alors ces choix
-à sa première construction au lieu de tout mesurer ; chaque choix repris est vérifié une fois
-contre le noyau direct.
+Sur chaque PC de référence (RTX 4070 Ti, RX 9070 XT, Core Ultra 155H, un Mac M), après une lecture
+avec le moteur Vulkan de chaque profil utile : copier `<cache>/vulkan/autotune.tsv` (le dossier de
+cache est dans le journal d'ouverture) et l'envoyer au cloud. Il le garde sous
+`tools/vk/presets/<Famille>-<carte>-<n>.tsv` (familles : `src/gpu/vulkan/backend/family.h`) et
+régénère toutes les tables avec `python3 tools/vk/presets_from_cache.py`. Une carte de la même
+famille reprend alors ces choix à sa première construction au lieu de tout mesurer ; chaque choix
+repris est vérifié une fois contre le noyau direct.
+
+Déjà relevé : NVIDIA Ada (RTX 4070 Ti, pilote 615.78.08), SPAN en 720p et RIFE 4.25 en mouvement.
+Deux lectures ont tranché 13 couches sur 29 différemment, à des temps voisins : une troisième lecture
+départagerait.
 
 ## Garder les poses (DRBA)
 
