@@ -77,6 +77,10 @@ struct PairScores {
 // Mesures lancées sans attente (scores_start, flow_max_start) et pas encore relues, par sorte.
 inline constexpr std::size_t kPendingReadbacks = 2;
 
+// Images décodées qu'un backend garde au plus après ingest, le temps que le GPU finisse de les lire
+// en place (TensorRT avec NVDEC) : le décodeur leur réserve autant de surfaces.
+inline constexpr int kMaxIngestHeldFrames = 12;
+
 class KernelOps {
  public:
   virtual ~KernelOps() = default;

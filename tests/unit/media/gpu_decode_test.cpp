@@ -20,6 +20,7 @@
 //   Les fuites des tests [vulkan] se vérifient sur lavapipe (with-lavapipe, la CI).
 #include <bit>
 #include <cstdint>
+#include <deque>
 #include <filesystem>
 #include <memory>
 #include <string>
@@ -206,6 +207,55 @@ TEST_CASE("NVDEC : extra_hw_frames agrandit le pool, les images tenues survivent
   REQUIRE(more.frames.size() > 32);
   REQUIRE(more.frames.size() > static_cast<std::size_t>(more.surfaces));
   check_content(more.frames);
+}
+
+TEST_CASE("NVDEC : surfaces directes, les images tenues gardent leur contenu", "[media][decoder][nvidia]") {
+  const Cuda cuda = require_cuda();
+  const auto clip = test::require_gpu_clip(test::gpu_clip("h264_nvenc"));
+  constexpr int kHeld = 18;  // app::play::kHeldDecodedFrames
+  auto demuxer = Demuxer::open(clip);
+  REQUIRE(demuxer.has_value());
+  auto decoder =
+      VideoDecoder::open(demuxer->tracks()[0],
+                         {.attempts = {HwApi::Cuda}, .render_device = cuda.uuid, .direct_surfaces = kHeld});
+  INFO((decoder ? std::string() : decoder.error().detail));
+  REQUIRE(decoder.has_value());
+  CHECK(decoder->direct_surfaces());
+  // L'aval tient kHeld images à la fois, la plus ancienne vérifiée puis rendue : le décodage
+  // continue sans manquer de surface de sortie, et aucune image tenue n'est réécrite.
+  std::deque<DecodedFrame> held;
+  int checked = 0;
+  const auto check_oldest = [&] {
+    INFO("image " << checked);
+    // Sans copie : l'image porte le démappage de sa surface (nvdec.c, frame->buf[1]).
+    CHECK(av_frame_of(*held.front().data)->buf[1] != nullptr);
+    CHECK(held.front().pts_us == static_cast<std::int64_t>(checked) * test::kFrameUs);
+    CHECK(test::frame_of_flat_luma(center_luma(held.front())) == checked);
+    held.pop_front();
+    ++checked;
+  };
+  while (!decoder->drained()) {
+    auto frame = decoder->receive();
+    INFO((frame ? std::string() : frame.error().detail));
+    REQUIRE(frame.has_value());
+    if (*frame) {
+      held.push_back(std::move(**frame));
+      if (held.size() > static_cast<std::size_t>(kHeld)) check_oldest();
+      continue;
+    }
+    if (decoder->drained()) break;
+    auto packet = demuxer->read();
+    REQUIRE(packet.has_value());
+    if (!*packet) {
+      REQUIRE(decoder->send_end());
+    } else if ((*packet)->track == 0) {
+      REQUIRE(decoder->send(**packet));
+    }
+  }
+  CHECK(decoder->hw_surfaces() >= kHeld);
+  CHECK(decoder->data_errors() == 0);
+  while (!held.empty()) check_oldest();
+  CHECK(checked == kFrames);
 }
 
 TEST_CASE("Vulkan Video : H.264, HEVC et AV1 décodés sur la file vidéo du GPU", "[media][decoder][nvidia]") {

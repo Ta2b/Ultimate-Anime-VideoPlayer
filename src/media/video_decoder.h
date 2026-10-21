@@ -1,11 +1,15 @@
 // Décodage vidéo avec libavcodec : matériel par une liste d'essais ordonnée,
 // repli logiciel si la liste le permet, refus nommé si rien ne marche.
 //
-// NVDEC garde sa copie de sécurité : FFmpeg 9.0.2 copie chaque image dans le
-// pool CUDA (nvdec.c:568, av_frame_make_writable) sauf si
-// AV_HWACCEL_FLAG_UNSAFE_OUTPUT est posé. Ce drapeau rendrait directement les
-// surfaces du décodeur, en nombre fixe : une image tenue par gpu bloquerait
-// le décodage, ou serait réécrite sous ses pieds. On ne le pose jamais.
+// NVDEC copie par défaut chaque image dans le pool CUDA (nvdec.c:568,
+// av_frame_make_writable). Avec DecoderOptions::direct_surfaces, il pose
+// AV_HWACCEL_FLAG_UNSAFE_OUTPUT : l'image est la surface de sortie mappée par
+// cuvidMapVideoFrame, rendue au démappage quand sa dernière référence tombe
+// (frame->buf[1]). La surface de décodage, elle, n'est plus tenue par l'image
+// rendue (decode.c:724), seulement par le DPB du décodeur : il ne s'en trouve
+// pas à court, et une image tenue n'est jamais réécrite. Seules les surfaces de sortie sont en
+// nombre fixe (le pool, 64 au plus) : l'aval en tient au plus direct_surfaces,
+// et extra_hw_frames monte à ce nombre.
 #pragma once
 
 #include <expected>
@@ -41,6 +45,8 @@ class VideoDecoder {
   // AVHWFramesContext), extra_hw_frames compris ; 0 en logiciel ou avant la
   // première image. Sous NVDEC, c'est ulNumDecodeSurfaces avant sa limite de 32.
   int hw_surfaces() const;
+  // Vrai si NVDEC rend ses surfaces sans copie (DecoderOptions::direct_surfaces).
+  bool direct_surfaces() const;
 
   // Envoie un paquet de la piste ; à appeler quand receive() a rendu std::nullopt.
   std::expected<void, Refusal> send(const Packet& packet);

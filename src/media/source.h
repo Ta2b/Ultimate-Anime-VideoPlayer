@@ -73,6 +73,10 @@ struct PacketRoute {
   PacketSink* sink = nullptr;
 };
 
+// Images décodées que le thread source tient au plus : celle que gpu a refusée, et la dernière
+// écartée par un seek exact (livrée si la fin du flux vient avant la cible).
+inline constexpr int kSourceHeldFrames = 2;
+
 inline constexpr std::size_t kDefaultReserveBytes = std::size_t{64} << 20U;
 inline constexpr std::size_t kMinReserveBytes = std::size_t{64} << 10U;
 inline constexpr std::size_t kMaxReserveBytes = std::size_t{1} << 30U;

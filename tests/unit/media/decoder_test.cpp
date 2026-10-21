@@ -218,6 +218,8 @@ TEST_CASE("VideoDecoder : options hors plage refusées", "[media][decoder]") {
   CHECK(code({.attempts = {HwApi::Software, HwApi::Software}}) == RefusalCode::FieldOutOfRange);
   CHECK(code({.attempts = {HwApi::Software}, .extra_hw_frames = 33}) == RefusalCode::FieldOutOfRange);
   CHECK(code({.attempts = {HwApi::Software}, .extra_hw_frames = -1}) == RefusalCode::FieldOutOfRange);
+  CHECK(code({.attempts = {HwApi::Software}, .direct_surfaces = 33}) == RefusalCode::FieldOutOfRange);
+  CHECK(code({.attempts = {HwApi::Software}, .direct_surfaces = -1}) == RefusalCode::FieldOutOfRange);
   CHECK(code({.attempts = {HwApi::Software}, .threads = 65}) == RefusalCode::FieldOutOfRange);
   CHECK(code(software()) == std::nullopt);
   auto audio = VideoDecoder::open(demuxer->tracks()[1], software());

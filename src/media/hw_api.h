@@ -51,9 +51,20 @@ struct DecoderOptions {
   // VA-API). Quelques Mo par image sur le bus, contre le décodage logiciel d'une HEVC 10 bits.
   // Sauf les images d'un appareil partagé (devices), que son propriétaire lit en place.
   bool download = false;
+  // Images décodées que l'aval tient à la fois (SourceLoop, l'étage gpu, le backend), [0, 32].
+  // Non nul sous NVDEC : les surfaces sortent sans copie de sécurité
+  // (AV_HWACCEL_FLAG_UNSAFE_OUTPUT) et extra_hw_frames monte à ce nombre au moins. Une image
+  // tenue garde alors une surface de sortie du décodeur, réservée d'avance (nvdec.c:417 : autant
+  // que le pool, 64 au plus), au lieu d'une copie dans le pool CUDA ; une de plus ne se
+  // mapperait pas, et l'image serait perdue. Le prix : environ 25 surfaces de plus qu'avec la
+  // copie, ~80 Mo en 1080p 8 bits ; au-delà de kMaxDirectSurfacePixels, la copie reste.
+  int direct_surfaces = 0;
 };
 
 inline constexpr int kMaxExtraHwFrames = 32;
+// Au-delà de 2560 × 1440, les surfaces directes coûteraient plus de 300 Mo (10 bits) : la copie
+// de sécurité, une par image, coûte moins qu'elles sur une carte de 6 Go.
+inline constexpr std::int64_t kMaxDirectSurfacePixels = std::int64_t{2560} * 1440;
 inline constexpr int kMaxDecoderThreads = 64;
 inline constexpr int kAutoDecoderThreads = 8;
 

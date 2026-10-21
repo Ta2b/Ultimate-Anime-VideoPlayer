@@ -18,13 +18,17 @@
 #include "app/play/model_choice.h"
 #include "app/play/options.h"
 #include "app/play/player_engines.h"
+#include "app/play/ring_stage.h"
 #include "app/play/settings.h"
 #include "app/play/upscale_stage.h"
 #include "core/clock.h"
+#include "core/gpu_device.h"
 #include "core/ring.h"
 #include "core/types.h"
+#include "gpu/kernel_ops.h"
 #include "kernels/spec/rife.h"
 #include "media/hw_api.h"
+#include "media/source.h"
 
 namespace ajp::app::play {
 
@@ -33,6 +37,19 @@ namespace ajp::app::play {
 // le GPU, le backend Vulkan les lit en place), puis, sous Linux, VA-API (le bloc vidéo d'AMD ou
 // d'Intel) copié en mémoire hôte, puis le décodage logiciel.
 std::vector<media::HwApi> decoder_attempts(std::string_view backend, bool shared_vulkan);
+
+// Images décodées tenues au plus en même temps : par le thread source, par l'étage gpu
+// (RingStage::kMaxFrames en vol) et par le backend après ingest. Autant de surfaces NVDEC rendues
+// sans copie (DecoderOptions::direct_surfaces).
+inline constexpr int kHeldDecodedFrames =
+    media::kSourceHeldFrames + static_cast<int>(RingStage::kMaxFrames) + gpu::kMaxIngestHeldFrames;
+static_assert(kHeldDecodedFrames <= media::kMaxExtraHwFrames, "NVDEC : 32 surfaces en plus au plus");
+
+// Les options du décodeur pour ce backend et cet écran : les essais de decoder_attempts ; sous
+// TensorRT, qui lit les images NVDEC en place, les surfaces directes ; ailleurs, la copie en
+// mémoire hôte des images matérielles (DecoderOptions::download).
+media::DecoderOptions decoder_options(std::string_view backend, const GpuDevice& render,
+                                      const media::HwDeviceSource* shared);
 
 // Ordre de déclaration = ordre inverse de destruction : les moteurs partent avant leur backend.
 struct ChainEngines {

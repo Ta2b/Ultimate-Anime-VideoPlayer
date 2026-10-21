@@ -117,7 +117,7 @@ class TensorRtBackend final : public Backend, public KernelOps {
     cudaEvent_t done = nullptr;
   };
   // Deux paires en vol sur les voies, plus l'image lue en avance.
-  static constexpr std::size_t kHeldFrames = 12;
+  static constexpr auto kHeldFrames = static_cast<std::size_t>(kMaxIngestHeldFrames);
   static constexpr std::size_t kFences = 16;
   // Événements par voie, posés à tour de rôle après chaque opération (tensorrt_lanes.cpp).
   static constexpr std::size_t kLaneMarks = 64;

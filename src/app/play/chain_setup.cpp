@@ -42,6 +42,16 @@ std::vector<media::HwApi> decoder_attempts(std::string_view backend, bool shared
   return attempts;
 }
 
+media::DecoderOptions decoder_options(std::string_view backend, const GpuDevice& render,
+                                      const media::HwDeviceSource* shared) {
+  const bool tensorrt = backend == "tensorrt";
+  return {.attempts = decoder_attempts(backend, shared != nullptr),
+          .render_device = render.uuid,
+          .devices = shared,
+          .download = !tensorrt,
+          .direct_surfaces = tensorrt ? kHeldDecodedFrames : 0};
+}
+
 std::string_view ChainEngines::motion_name() const {
   return use_gmfss() ? "GMFSS" : use_drba() ? "DistilDRBA" : "RIFE";
 }

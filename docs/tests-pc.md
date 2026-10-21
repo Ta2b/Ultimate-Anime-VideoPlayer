@@ -191,6 +191,13 @@ un réglage à faire taire.
   un tenseur n'a pas d'objet texture.
 - **Écarté : sous-échantillonner `pair_diff`** (étude 3, 4.4) : la mesure de détection est fixée
   par kernels/spec/detect.h et les tests de référence Vulkan ; la changer change les décisions.
+- **Surfaces NVDEC directes** (étude 1, 5.1) : sous TensorRT, NVDEC rend ses surfaces sans la
+  copie de sécurité de FFmpeg (`AV_HWACCEL_FLAG_UNSAFE_OUTPUT`) ; le journal d'ouverture dit
+  « NVDEC : surfaces rendues sans copie, 18 images tenues au plus » (2 au thread source, 4 à
+  l'étage gpu, 12 au backend). Au-delà de 2560 × 1440, la copie reste (« copie de sécurité
+  gardée »). Test `[media][decoder][nvidia]` « surfaces directes », puis une lecture longue HEVC
+  10 bits sans « données invalides » au journal, et la VRAM comparée à 10b9e9f (environ 80 Mo de
+  plus en 1080p).
 
 ## Linux sur RX 6500M (RDNA2 Navi 24, 4 Go)
 

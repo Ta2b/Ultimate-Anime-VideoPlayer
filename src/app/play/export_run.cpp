@@ -132,10 +132,7 @@ ExportOutcome run_export(Player& p, const ExportJob& job) {
   live->set_keep_poses(settings.keep_poses);
   const PipelineConfig config{
       .file = p.options.file,
-      .decoder = {.attempts = decoder_attempts(c.backend_name, p.screen.shared_devices() != nullptr),
-                  .render_device = p.screen.device().uuid,
-                  .devices = p.screen.shared_devices(),
-                  .download = c.backend_name != "tensorrt"},
+      .decoder = decoder_options(c.backend_name, p.screen.device(), p.screen.shared_devices()),
       .audio = false,
       .subtitles = false};
   auto pipeline = Pipeline::open(

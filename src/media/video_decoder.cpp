@@ -1,6 +1,7 @@
 #include "media/video_decoder.h"
 
 #include <algorithm>
+#include <cstdint>
 #include <format>
 #include <string>
 #include <utility>
@@ -37,7 +38,8 @@ struct VideoDecoder::State {
   HwApi api = HwApi::Software;
   bool software_allowed = false;
   bool download = false;
-  int extra_hw_frames = 0;
+  int extra_hw_frames = 0;  // de l'essai en cours
+  bool direct = false;      // NVDEC sans copie de sécurité (DecoderOptions::direct_surfaces)
   std::vector<Attempt> rejected;
   std::optional<Packet> pending;  // refusé par EAGAIN, renvoyé au prochain receive()
   bool drained = false;
@@ -90,6 +92,7 @@ struct VideoDecoder::State {
     // Les hwaccels ne gagnent rien aux threads d'images ; le logiciel, si.
     ctx->thread_count = hw.device ? 1 : software_threads(threads);
     if (hw.device) ctx->hw_device_ctx = av_buffer_ref(hw.device.get());
+    if (direct) ctx->hwaccel_flags |= AV_HWACCEL_FLAG_UNSAFE_OUTPUT;
     if (const int err = avcodec_open2(ctx.get(), &decoder, nullptr); err < 0) {
       return refuse_av(RefusalCode::DecoderUnavailable, std::format("{} : avcodec_open2", name(api)), err);
     }
@@ -102,6 +105,8 @@ struct VideoDecoder::State {
     const AVCodecID id = track.parameters->av().codec_id;
     api = attempt;
     hw = HwDevice{};
+    direct = false;
+    extra_hw_frames = options.extra_hw_frames;
     if (attempt == HwApi::Software) {
       const AVCodec* decoder = avcodec_find_decoder(id);
       if (decoder == nullptr) {
@@ -113,6 +118,15 @@ struct VideoDecoder::State {
     auto device = open_hw_device(id, attempt, options);
     if (!device) return std::unexpected(device.error());
     hw = std::move(*device);
+    if (attempt == HwApi::Cuda && options.direct_surfaces > 0) {
+      const std::int64_t pixels = std::int64_t{track.width} * track.height;
+      direct = pixels <= kMaxDirectSurfacePixels;
+      if (direct) {
+        extra_hw_frames = std::max(extra_hw_frames, options.direct_surfaces);
+      } else {
+        log->info("NVDEC : copie de sécurité gardée, {}x{} au-delà de 1440p", track.width, track.height);
+      }
+    }
     return open_codec(*hw.codec, track, options.threads);
   }
 };
@@ -134,6 +148,10 @@ std::expected<void, Refusal> check_options(const TrackInfo& track, const Decoder
     return refuse(RefusalCode::FieldOutOfRange,
                   std::format("DecoderOptions.extra_hw_frames = {}", options.extra_hw_frames));
   }
+  if (options.direct_surfaces < 0 || options.direct_surfaces > kMaxExtraHwFrames) {
+    return refuse(RefusalCode::FieldOutOfRange,
+                  std::format("DecoderOptions.direct_surfaces = {}", options.direct_surfaces));
+  }
   if (options.threads < 0 || options.threads > kMaxDecoderThreads) {
     return refuse(RefusalCode::FieldOutOfRange, std::format("DecoderOptions.threads = {}", options.threads));
   }
@@ -152,7 +170,6 @@ std::expected<VideoDecoder, Refusal> VideoDecoder::open(const TrackInfo& track,
   if (auto valid = check_options(track, options); !valid) return std::unexpected(valid.error());
   auto state = std::make_unique<State>();
   state->software_allowed = std::ranges::contains(options.attempts, HwApi::Software);
-  state->extra_hw_frames = options.extra_hw_frames;
   state->download = options.download;
   if (track.frame_rate.num > 0 && track.frame_rate.den > 0) {
     state->nominal_duration_us = av_rescale(1'000'000, track.frame_rate.den, track.frame_rate.num);
@@ -161,6 +178,10 @@ std::expected<VideoDecoder, Refusal> VideoDecoder::open(const TrackInfo& track,
     auto opened = state->try_attempt(attempt, track, options);
     if (opened) {
       state->log->info("piste {} : {} décodé par {}", track.index, track.codec, name(attempt));
+      if (state->direct) {
+        state->log->info("NVDEC : surfaces rendues sans copie, {} images tenues au plus",
+                         options.direct_surfaces);
+      }
       return VideoDecoder(std::move(state));
     }
     state->log->info("piste {} : {} écarté : {}", track.index, name(attempt), opened.error().detail);
@@ -180,6 +201,9 @@ std::span<const Attempt> VideoDecoder::rejected() const {
 }
 int VideoDecoder::data_errors() const {
   return state_->data_errors;
+}
+bool VideoDecoder::direct_surfaces() const {
+  return state_->direct && state_->api == HwApi::Cuda;
 }
 int VideoDecoder::hw_surfaces() const {
   const AVBufferRef* frames = state_->codec->hw_frames_ctx;
