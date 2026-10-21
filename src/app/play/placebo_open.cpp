@@ -42,7 +42,7 @@ void placebo_log(void* priv, pl_log_level level, const char* message) {
 }
 
 // Les files de libplacebo se verrouillent par ses fonctions : le backend Vulkan, qui adopte
-// l'appareil, soumet sur la même file de calcul.
+// l'appareil, soumet sur sa file de calcul (sur une file à lui sous MoltenVK : backend_queue).
 void lock_placebo_queue(void* context, std::uint32_t family, std::uint32_t index) {
   const auto vk = static_cast<pl_vulkan>(context);
   vk->lock_queue(vk, family, index);
@@ -50,6 +50,42 @@ void lock_placebo_queue(void* context, std::uint32_t family, std::uint32_t index
 void unlock_placebo_queue(void* context, std::uint32_t family, std::uint32_t index) {
   const auto vk = static_cast<pl_vulkan>(context);
   vk->unlock_queue(vk, family, index);
+}
+
+// Sous MoltenVK, chaque famille n'a qu'une file, et chaque file Vulkan est une file de commandes
+// Metal, qui exécute ses tampons dans l'ordre : sur la file de libplacebo, le rendu de chaque
+// image attendrait derrière les passes des moteurs, et derrière chaque réseau de Core ML (une
+// attente de la timeline que l'hôte signale à la fin du calcul). Les familles de MoltenVK sont
+// toutes générales : libplacebo les crée toutes (extra_queues), n'en emploie qu'une, et le backend
+// prend la suivante, que Metal mène de front avec l'affichage. Un slot du ring passe d'une famille
+// à l'autre sans transfert de propriété, qui est sans effet sous MoltenVK.
+#ifdef __APPLE__
+constexpr VkQueueFlags kBackendQueueFlags = VK_QUEUE_COMPUTE_BIT;
+#else
+constexpr VkQueueFlags kBackendQueueFlags = 0;
+#endif
+
+// La file du backend : une file de calcul créée que libplacebo n'emploie pas (Mac seulement),
+// sinon la première de sa file de calcul, partagée sous son verrou.
+QueueRef backend_queue(pl_vulkan vk) {
+  const QueueRef shared{.family = vk->queue_compute.index, .index = 0};
+  if constexpr (kBackendQueueFlags == 0) return shared;
+  const auto get_families = reinterpret_cast<PFN_vkGetPhysicalDeviceQueueFamilyProperties>(
+      vk->get_proc_addr(vk->instance, "vkGetPhysicalDeviceQueueFamilyProperties"));
+  if (get_families == nullptr) return shared;
+  std::uint32_t count = 0;
+  get_families(vk->phys_device, &count, nullptr);
+  std::vector<VkQueueFamilyProperties> families(count);
+  get_families(vk->phys_device, &count, families.data());
+  for (std::uint32_t family = 0; family < count; ++family) {
+    const bool placebo = family == vk->queue_graphics.index || family == vk->queue_compute.index ||
+                         family == vk->queue_transfer.index;
+    if (!placebo && families[family].queueCount > 0 &&
+        (families[family].queueFlags & kBackendQueueFlags) == kBackendQueueFlags) {
+      return QueueRef{.family = family, .index = 0};
+    }
+  }
+  return shared;
 }
 
 // L'appareil de libplacebo tel que gpu/backend.h le décrit : un backend Vulkan l'adopte au lieu
@@ -61,8 +97,8 @@ VulkanDevice vulkan_description(pl_vulkan vk) {
                  .get_instance_proc_addr = reinterpret_cast<VoidFunction>(vk->get_proc_addr),
                  .api_version = vk->api_version,
                  .enabled_features = vk->features,
-                 .graphics = {.family = static_cast<std::uint32_t>(vk->queue_graphics.index), .index = 0},
-                 .compute = {.family = static_cast<std::uint32_t>(vk->queue_compute.index), .index = 0},
+                 .graphics = {.family = vk->queue_graphics.index, .index = 0},
+                 .compute = backend_queue(vk),
                  .lock_queue = lock_placebo_queue,
                  .unlock_queue = unlock_placebo_queue,
                  .queue_context = const_cast<pl_vulkan_t*>(vk)};
@@ -211,7 +247,7 @@ std::expected<std::unique_ptr<PlaceboScreen>, Refusal> PlaceboScreen::open(const
   vk_params.features = &compute.features;
   vk_params.opt_extensions = kOptionalExtensions.data();
   vk_params.num_opt_extensions = static_cast<int>(kOptionalExtensions.size());
-  vk_params.extra_queues = kVideoQueueFlags;
+  vk_params.extra_queues = kVideoQueueFlags | kBackendQueueFlags;
   impl->vk = pl_vulkan_create(impl->log, &vk_params);
   if (impl->vk == nullptr)
     return refuse(RefusalCode::DeviceMismatch, "pl_vulkan_create : aucun appareil ne convient");
@@ -240,6 +276,10 @@ std::expected<std::unique_ptr<PlaceboScreen>, Refusal> PlaceboScreen::open(const
   impl->device = GpuDevice{.api = GpuApi::Vulkan, .name = "Vulkan (libplacebo)"};
   for (std::size_t i = 0; i < impl->device.uuid.size(); ++i) impl->device.uuid[i] = gpu->uuid[i];
   impl->device.vulkan = vulkan_description(impl->vk);
+  if (impl->device.vulkan->compute.family != impl->vk->queue_compute.index) {
+    impl->channel->info("moteurs sur la file {} de l'appareil, à part de celle de l'affichage ({})",
+                        impl->device.vulkan->compute.family, impl->vk->queue_graphics.index);
+  }
   auto osd = OsdText::create();
   if (!osd) return std::unexpected(std::move(osd.error()));
   impl->osd = std::move(*osd);
