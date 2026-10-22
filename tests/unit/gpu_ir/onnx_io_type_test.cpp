@@ -314,3 +314,123 @@ TEST_CASE("onnx : une entrée de métadonnées posée, remplacée, ou déjà là
   REQUIRE(both);
   CHECK(metadata_of(*both) == Entries{{"COREML_CACHE_KEY", "autre"}, {"producteur", "ajp"}});
 }
+
+namespace {
+
+// Les types des value_info (champ 13 de GraphProto), que le décodeur n'expose pas.
+std::vector<std::int64_t> value_info_types(std::span<const std::byte> model) {
+  std::vector<std::int64_t> types;
+  const auto inside = [](std::span<const std::byte> bytes, std::uint32_t number) {
+    proto::Reader reader(bytes);
+    for (auto f = reader.next(); f && *f; f = reader.next()) {
+      if ((*f)->number == number) return (*f)->bytes;
+    }
+    return std::span<const std::byte>{};
+  };
+  proto::Reader reader(model);
+  for (auto field = reader.next(); field && *field; field = reader.next()) {
+    if ((*field)->number != 7) continue;
+    proto::Reader graph((*field)->bytes);
+    for (auto g = graph.next(); g && *g; g = graph.next()) {
+      if ((*g)->number != 13) continue;
+      const std::span<const std::byte> tensor = inside(inside((*g)->bytes, 2), 1);
+      proto::Reader fields(tensor);
+      for (auto e = fields.next(); e && *e; e = fields.next()) {
+        if ((*e)->number == 1) types.push_back(static_cast<std::int64_t>((*e)->scalar));
+      }
+    }
+  }
+  return types;
+}
+
+}  // namespace
+
+TEST_CASE("onnx : un modèle FLOAT16 entier en FLOAT calcule comme l'original", "[gpu_ir][onnx]") {
+  using ajp::kernels::ref::float_to_half;
+  using ajp::kernels::ref::half_to_float;
+  // Poids en raw_data et en int32_data, une constante, une value_info et un Cast vers FLOAT16.
+  ModelBuilder m;
+  m.input("x", {1, 2, 2, 2}, onnx::kFloat16)
+      .initializer(test::tensor_f16("w", {1}, std::vector<float>{2.5F}))
+      .initializer(test::tensor_header("b", onnx::kFloat16, std::vector<std::int64_t>{1})
+                       .packed_varints(5, std::vector<std::int64_t>{float_to_half(0.5F)}))
+      .node("Mul", {"x", "w"}, {"t"})
+      .node("Add", {"t", "b"}, {"u"})
+      .node("Constant", {}, {"c"},
+            {test::attr_tensor("value", test::tensor_f16("c", {1}, std::vector<float>{1.0F}))})
+      .node("Sub", {"u", "c"}, {"v"})
+      .node("Cast", {"v"}, {"y"}, {test::attr_int("to", onnx::kFloat16)})
+      .output("y", onnx::kFloat16);
+  m.graph().message(13, test::value_info("t", onnx::kFloat16, {1, 2, 2, 2}));
+  const std::vector<std::byte> original = m.bytes();
+  auto converted = onnx::with_float32(original);
+  REQUIRE(converted);
+  REQUIRE_FALSE(converted->empty());
+
+  auto model = onnx::read_onnx(*converted);
+  REQUIRE(model);
+  const onnx::Graph& g = model->graph;
+  REQUIRE(g.inputs.size() == 1);
+  CHECK(g.inputs[0].elem_type == onnx::kFloat);
+  CHECK(g.inputs[0].dims == std::vector<std::int64_t>{1, 2, 2, 2});
+  REQUIRE(g.outputs.size() == 1);
+  CHECK(g.outputs[0].elem_type == onnx::kFloat);
+  REQUIRE(g.initializers.size() == 2);
+  CHECK(g.initializers[0].data_type == onnx::kFloat);
+  CHECK(g.initializers[0].floats == std::vector<float>{2.5F});
+  CHECK(g.initializers[1].data_type == onnx::kFloat);
+  CHECK(g.initializers[1].floats == std::vector<float>{0.5F});
+  REQUIRE(g.nodes.size() == 5);
+  REQUIRE(g.nodes[2].attributes.size() == 1);
+  REQUIRE(g.nodes[2].attributes[0].tensors.size() == 1);
+  CHECK(g.nodes[2].attributes[0].tensors[0].data_type == onnx::kFloat);
+  CHECK(g.nodes[2].attributes[0].tensors[0].floats == std::vector<float>{1.0F});
+  CHECK(cast_to(g.nodes[4]) == onnx::kFloat);
+  CHECK(value_info_types(*converted) == std::vector<std::int64_t>{onnx::kFloat});
+  // Déjà en FLOAT : rien à réécrire.
+  auto again = onnx::with_float32(*converted);
+  REQUIRE(again);
+  CHECK(again->empty());
+
+  // Le même calcul, à l'arrondi F16 près des résultats intermédiaires de l'original.
+  auto before = load_onnx(original);
+  auto after = load_onnx(*converted);
+  REQUIRE(before);
+  REQUIRE(after);
+  REQUIRE(infer_shapes(*before, {}));
+  REQUIRE(infer_shapes(*after, {}));
+  std::vector<float> values = test::sequence(8, -1.0F, 1.0F);
+  for (float& v : values) v = half_to_float(float_to_half(v));
+  const Value expected = test::execute1(*before, {{"x", test::floats({1, 2, 2, 2}, values, DataType::F16)}});
+  const Value got = test::execute1(*after, {{"x", test::floats({1, 2, 2, 2}, values)}});
+  CHECK(got.type == DataType::F32);
+  CHECK(test::max_abs_diff(got.f, expected.f) <= 2e-3F);
+
+  // Puis l'interface remise en FLOAT16 (la chaîne), le calcul restant en FLOAT.
+  auto typed = onnx::with_io_type(*converted, onnx::kFloat16);
+  REQUIRE(typed);
+  REQUIRE_FALSE(typed->empty());
+  auto interfaced = load_onnx(*typed);
+  REQUIRE(interfaced);
+  REQUIRE(infer_shapes(*interfaced, {}));
+  const Value half = test::execute1(*interfaced, {{"x", test::floats({1, 2, 2, 2}, values, DataType::F16)}});
+  CHECK(half.type == DataType::F16);
+  CHECK(test::max_abs_diff(half.f, expected.f) <= 2e-3F);
+}
+
+TEST_CASE("onnx : rien à convertir en FLOAT, ou un sous-graphe refusé", "[gpu_ir][onnx]") {
+  ModelBuilder plain;
+  plain.input("x", {2}).weight("w", {1}, {2.0F}).node("Mul", {"x", "w"}, {"y"}).output("y");
+  auto same = onnx::with_float32(plain.bytes());
+  REQUIRE(same);
+  CHECK(same->empty());
+
+  ModelBuilder branch;
+  branch.input("x", {2}, onnx::kFloat16)
+      .node("If", {"x"}, {"y"},
+            {test::ProtoWriter{}.bytes(1, "then_branch").message(6, test::ProtoWriter{}).varint(20, 5)})
+      .output("y", onnx::kFloat16);
+  auto refused = onnx::with_float32(branch.bytes());
+  REQUIRE_FALSE(refused);
+  CHECK(refused.error().code == RefusalCode::FeatureUnavailable);
+}

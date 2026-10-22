@@ -1,8 +1,9 @@
 // Réécriture de l'interface d'un fichier ONNX : dans un autre type flottant (with_io_type), ou à
-// des formes fixes (with_input_dims). Dans un autre type, chaque entrée ou sortie du graphe en
-// FLOAT ou FLOAT16 qui n'est pas dans le type voulu le prend, et un Cast ajouté la relie au reste
-// du graphe, inchangé (les nœuds qui la lisaient ou l'écrivaient passent par un nom interne). Le
-// reste du fichier est recopié octet par octet, poids compris.
+// des formes fixes (with_input_dims) ; et du modèle entier en FLOAT (with_float32). Dans un autre
+// type, chaque entrée ou sortie du graphe en FLOAT ou FLOAT16 qui n'est pas dans le type voulu le
+// prend, et un Cast ajouté la relie au reste du graphe, inchangé (les nœuds qui la lisaient ou
+// l'écrivaient passent par un nom interne). Le reste du fichier est recopié octet par octet, poids
+// compris.
 //
 // Pour les runtimes qui prennent le fichier ONNX tel quel (Core ML par ONNX Runtime) : le réseau
 // lit et écrit les tenseurs de la chaîne dans leur type, sans conversion par l'hôte à chaque image.
@@ -26,6 +27,15 @@ namespace ajp::gpu::ir::onnx {
 // ceux du décodeur.
 std::expected<std::vector<std::byte>, Refusal> with_io_type(std::span<const std::byte> model,
                                                             std::int32_t elem_type);
+
+// Le modèle entier en FLOAT : poids, constantes et formes FLOAT16 convertis, le type cible
+// FLOAT16 d'un Cast (ou d'un générateur, dtype) remplacé par FLOAT ; l'interface aussi, que
+// with_io_type remet ensuite dans le type de la chaîne. Pour le NPU d'AMD (VitisAI), dont le
+// compilateur prend un modèle FLOAT pour le calculer en BF16. Le fichier réécrit, ou vide quand
+// rien n'y est en FLOAT16. Refus FeatureUnavailable : un sous-graphe (If, Loop…), un tenseur
+// creux, des fonctions locales, un poids FLOAT16 hors du fichier ; OnnxMalformed,
+// OnnxUnsupported : ceux du décodeur.
+std::expected<std::vector<std::byte>, Refusal> with_float32(std::span<const std::byte> model);
 
 // Une entrée du graphe et la forme où la fixer.
 struct InputDims {
