@@ -10,7 +10,7 @@ find_library(AJP_ORT_LIBRARY onnxruntime HINTS "${AJP_ORT_ROOT}/lib" REQUIRED)
 # direct (coreml_direct.h) : VideoToolbox, Metal et Core ML, en Objective-C++ sur un Mac ; ailleurs,
 # un refus (OBJCXX activé par le CMakeLists.txt de tête).
 if(APPLE)
-  set(ajp_coreml_objc coreml_direct.mm coreml_vt.mm vt_gpu.mm)
+  set(ajp_coreml_objc coreml_direct.mm coreml_vt.mm vt_buffers.mm vt_gpu.mm)
   set_source_files_properties(${ajp_coreml_objc} PROPERTIES COMPILE_OPTIONS "-fobjc-arc")
 else()
   set(ajp_coreml_objc coreml_direct_none.cpp coreml_vt_none.cpp)
