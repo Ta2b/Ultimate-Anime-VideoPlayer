@@ -21,40 +21,7 @@ constexpr std::uint32_t code(char a, char b, char c, char d) {
 constexpr std::array kOrder{Pixels::RgbaHalf,      Pixels::Bgra8,       Pixels::Yuv420Full10,
                             Pixels::Yuv420Video10, Pixels::Yuv420Full8, Pixels::Yuv420Video8};
 
-// BT.709 (kernels/spec/rife.h : kRifeMatrix).
-constexpr float kKr = 0.2126F;
-constexpr float kKb = 0.0722F;
-constexpr float kKg = 1.0F - kKr - kKb;
-constexpr float kCbScale = 2.0F * (1.0F - kKb);  // B − Y = Cb × 1,8556
-constexpr float kCrScale = 2.0F * (1.0F - kKr);  // R − Y = Cr × 1,5748
-constexpr float kGCb = kKb * kCbScale / kKg;
-constexpr float kGCr = kKr * kCrScale / kKg;
 constexpr std::uint16_t kHalfOne = 0x3C00;
-
-// Les niveaux d'un format YCbCr : luma = offset + Y × scale, chroma = milieu + C × scale.
-struct Levels {
-  float y_offset;
-  float y_scale;
-  float c_mid;
-  float c_scale;
-  float max;
-  unsigned shift;  // 10 bits : la valeur dans les bits de poids fort du mot de 16 bits
-  bool wide;       // mots de 16 bits
-};
-
-Levels levels(Pixels format) {
-  switch (format) {
-    case Pixels::Yuv420Full10:
-      return {0.0F, 1023.0F, 512.0F, 1023.0F, 1023.0F, 6, true};
-    case Pixels::Yuv420Video10:
-      return {64.0F, 876.0F, 512.0F, 896.0F, 1023.0F, 6, true};
-    case Pixels::Yuv420Full8:
-      return {0.0F, 255.0F, 128.0F, 255.0F, 255.0F, 0, false};
-    case Pixels::Yuv420Video8:
-    default:
-      return {16.0F, 219.0F, 128.0F, 224.0F, 255.0F, 0, false};
-  }
-}
 
 float from_half(std::uint16_t bits) {
 #if defined(__FLT16_MANT_DIG__)
@@ -228,6 +195,20 @@ void unpack_yuv(Pixels format, const Planes& in, const std::array<OutPlane, 3>& 
 }
 
 }  // namespace
+
+Levels levels(Pixels format) {
+  switch (format) {
+    case Pixels::Yuv420Full10:
+      return {0.0F, 1023.0F, 512.0F, 1023.0F, 1023.0F, 6, true};
+    case Pixels::Yuv420Video10:
+      return {64.0F, 876.0F, 512.0F, 896.0F, 1023.0F, 6, true};
+    case Pixels::Yuv420Full8:
+      return {0.0F, 255.0F, 128.0F, 255.0F, 255.0F, 0, false};
+    case Pixels::Yuv420Video8:
+    default:
+      return {16.0F, 219.0F, 128.0F, 224.0F, 255.0F, 0, false};
+  }
+}
 
 std::uint32_t four_cc(Pixels format) {
   switch (format) {

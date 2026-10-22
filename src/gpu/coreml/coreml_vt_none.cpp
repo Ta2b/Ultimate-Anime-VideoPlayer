@@ -16,7 +16,12 @@ std::expected<std::string, Refusal> vt_probe(int /*width*/, int /*height*/) {
 }
 
 std::expected<std::unique_ptr<vk::net::RuntimeNet>, Refusal> vt_net(vk::net::IoNames /*names*/, int /*width*/,
-                                                                    int /*height*/) {
+                                                                    int /*height*/,
+                                                                    std::shared_ptr<Surfaces> /*surfaces*/) {
+  return unavailable();
+}
+
+std::expected<void, Refusal> vt_gpu_check(vt::Pixels /*format*/, int /*width*/, int /*height*/) {
   return unavailable();
 }
 

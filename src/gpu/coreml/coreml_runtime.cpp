@@ -566,7 +566,8 @@ class CoremlRuntime final : public vk::net::Runtime {
     auto manifest = read_manifest(path);
     if (!manifest) return std::unexpected(manifest.error());
     if (manifest->videotoolbox)
-      return vt_net(std::move(*names), manifest->videotoolbox->width, manifest->videotoolbox->height);
+      return vt_net(std::move(*names), manifest->videotoolbox->width, manifest->videotoolbox->height,
+                    surfaces_);
     auto units = units_of(*manifest);
     if (!units) return std::unexpected(units.error());
     if (manifest->direct) {

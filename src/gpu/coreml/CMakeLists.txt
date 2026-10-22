@@ -6,10 +6,11 @@ find_path(AJP_ORT_INCLUDE onnxruntime_cxx_api.h
   HINTS "${AJP_ORT_ROOT}/include" "${AJP_ORT_ROOT}/include/onnxruntime" REQUIRED)
 find_library(AJP_ORT_LIBRARY onnxruntime HINTS "${AJP_ORT_ROOT}/lib" REQUIRED)
 
-# L'interpolation d'Apple (coreml_vt.h) et Core ML direct (coreml_direct.h) : VideoToolbox et Core
-# ML, en Objective-C++ sur un Mac ; ailleurs, un refus (OBJCXX activé par le CMakeLists.txt de tête).
+# L'interpolation d'Apple (coreml_vt.h, ses conversions sur le GPU par Metal : vt_gpu.h) et Core ML
+# direct (coreml_direct.h) : VideoToolbox, Metal et Core ML, en Objective-C++ sur un Mac ; ailleurs,
+# un refus (OBJCXX activé par le CMakeLists.txt de tête).
 if(APPLE)
-  set(ajp_coreml_objc coreml_direct.mm coreml_vt.mm)
+  set(ajp_coreml_objc coreml_direct.mm coreml_vt.mm vt_gpu.mm)
   set_source_files_properties(${ajp_coreml_objc} PROPERTIES COMPILE_OPTIONS "-fobjc-arc")
 else()
   set(ajp_coreml_objc coreml_direct_none.cpp coreml_vt_none.cpp)
@@ -23,7 +24,7 @@ target_include_directories(ajp_coreml_rt SYSTEM PRIVATE "${AJP_ORT_INCLUDE}")
 if(APPLE)
   target_link_libraries(ajp_coreml_rt PRIVATE
     "-framework CoreML" "-framework VideoToolbox" "-framework CoreVideo" "-framework CoreMedia"
-    "-framework Foundation" "-framework IOSurface")
+    "-framework Foundation" "-framework IOSurface" "-framework Metal")
 endif()
 set_target_properties(ajp_coreml_rt PROPERTIES
   POSITION_INDEPENDENT_CODE ON

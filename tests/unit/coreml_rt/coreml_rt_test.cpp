@@ -20,6 +20,7 @@
 
 #include "../gpu_ir/test_util.h"
 #include "gpu/coreml/coreml_runtime.h"
+#include "gpu/coreml/coreml_vt.h"
 #include "gpu/vulkan/backend/net_runtime.h"
 #include "kernels/ref/half.h"
 
@@ -178,6 +179,33 @@ TEST_CASE("Core ML : un réseau exécuté en direct retrouve l'interpréteur et 
   if (!through_ort) FAIL(through_ort.error().detail);
   const std::vector<std::uint16_t> by_ort = run_once(**through_ort, input);
   CHECK(irt::max_abs_diff(as_floats(by_ort), as_floats(first)) <= 1e-3F);
+}
+
+// Les conversions de l'interpolation d'Apple sur le GPU (vt_gpu.h), sans VideoToolbox : chaque
+// format contre vt::pack et vt::unpack, puis en 1080p les deux que l'interpolateur offre d'abord.
+TEST_CASE("Interpolation d'Apple : les conversions du GPU retrouvent celles du CPU", "[coreml][vt]") {
+  struct Size {
+    vt::Pixels format;
+    int width;
+    int height;
+  };
+  const std::vector<Size> sizes{{vt::Pixels::RgbaHalf, 128, 64},     {vt::Pixels::Bgra8, 128, 64},
+                                {vt::Pixels::Yuv420Full10, 128, 64}, {vt::Pixels::Yuv420Video10, 128, 64},
+                                {vt::Pixels::Yuv420Full8, 128, 64},  {vt::Pixels::Yuv420Video8, 128, 64},
+                                {vt::Pixels::RgbaHalf, 1920, 1080},  {vt::Pixels::Yuv420Video10, 1920, 1080}};
+  int checked = 0;
+  for (const Size& size : sizes) {
+    const std::string what = std::format("{} {}x{}", vt::name(size.format), size.width, size.height);
+    auto ok = vt_gpu_check(size.format, size.width, size.height);
+    if (ok) {
+      ++checked;
+    } else if (ok.error().code == RefusalCode::FeatureUnavailable) {
+      WARN(std::format("{} : {}", what, ok.error().detail));
+    } else {
+      FAIL_CHECK(std::format("{} : {}", what, ok.error().detail));
+    }
+  }
+  if (checked == 0) SKIP("conversions sur le GPU indisponibles ici");
 }
 
 }  // namespace ajp::gpu::coreml_rt

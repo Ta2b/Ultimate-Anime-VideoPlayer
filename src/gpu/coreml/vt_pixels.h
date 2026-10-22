@@ -27,6 +27,27 @@ enum class Pixels : std::uint8_t {
   Yuv420Video8,   // kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange, « 420v »
 };
 
+// BT.709 (kernels/spec/rife.h : kRifeMatrix), ici et dans les noyaux du GPU (vt_gpu.h).
+inline constexpr float kKr = 0.2126F;
+inline constexpr float kKb = 0.0722F;
+inline constexpr float kKg = 1.0F - kKr - kKb;
+inline constexpr float kCbScale = 2.0F * (1.0F - kKb);  // B − Y = Cb × 1,8556
+inline constexpr float kCrScale = 2.0F * (1.0F - kKr);  // R − Y = Cr × 1,5748
+inline constexpr float kGCb = kKb * kCbScale / kKg;
+inline constexpr float kGCr = kKr * kCrScale / kKg;
+
+// Les niveaux d'un format YCbCr : luma = offset + Y × scale, chroma = milieu + C × scale.
+struct Levels {
+  float y_offset;
+  float y_scale;
+  float c_mid;
+  float c_scale;
+  float max;
+  unsigned shift;  // 10 bits : la valeur dans les bits de poids fort du mot de 16 bits
+  bool wide;       // mots de 16 bits
+};
+Levels levels(Pixels format);
+
 // Le code de format de Core Video (OSType), et son nom de quatre lettres.
 std::uint32_t four_cc(Pixels format);
 std::string_view name(Pixels format);

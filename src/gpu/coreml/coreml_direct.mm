@@ -18,6 +18,7 @@
 #include <vector>
 
 #include "gpu/coreml/coreml_compiled.h"
+#include "gpu/coreml/coreml_surfaces.h"
 
 // La spécialisation pour l'inférence (MLOptimizationHints) : SDK de macOS 14.4 et plus, comme
 // ONNX Runtime la pose (HAS_COREMLOPTIMIZATIONHINT).
@@ -144,6 +145,32 @@ class Surfaces {
   std::unordered_map<const std::byte*, Entry> entries_;
   std::uint64_t next_ = 1;
 };
+
+LentSurface::LentSurface(std::shared_ptr<Surfaces> surfaces, const std::byte* data, IOSurfaceRef surface)
+    : surfaces_(std::move(surfaces)), data_(data), surface_(surface) {
+  CFRetain(surface_);
+  surfaces_->lend(data_);
+}
+
+LentSurface::LentSurface(LentSurface&& other) noexcept
+    : surfaces_(std::move(other.surfaces_)),
+      data_(other.data_),
+      surface_(std::exchange(other.surface_, nullptr)) {}
+
+LentSurface::~LentSurface() {
+  if (surface_ == nullptr) return;
+  surfaces_->take_back(data_);
+  CFRelease(surface_);
+}
+
+std::optional<LentSurface> lend_surface(const std::shared_ptr<Surfaces>& surfaces, const HostBinding& b) {
+  if (surfaces == nullptr || b.data == nullptr) return std::nullopt;
+  const std::optional<Surfaces::Found> found = surfaces->find(b.data, b.type, b.shape, b.bytes);
+  if (!found) return std::nullopt;
+  IOSurfaceRef surface = CVPixelBufferGetIOSurface(found->pixels.get());
+  if (surface == nullptr) return std::nullopt;
+  return std::optional<LentSurface>(std::in_place, surfaces, b.data, surface);
+}
 
 namespace {
 
