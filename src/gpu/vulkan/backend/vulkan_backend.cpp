@@ -198,7 +198,7 @@ std::expected<void, Refusal> VulkanBackend::open(const BackendInit& init) {
         std::format("réseaux par {} {} sur {}{}{}", runtime_->name(), runtime_->version(),
                     runtime_->device_name(),
                     shared_memory_         ? ", mémoire partagée avec la chaîne Vulkan"
-                    : host_alignment_ != 0 ? ", tenseurs en mémoire hôte du runtime, sans copie"
+                    : host_alignment_ != 0 ? ", tenseurs dans la mémoire hôte du runtime, importée"
                                            : ", tenseurs par l'hôte",
                     imported_timeline_ ? ", ordonnés côté GPU" : ""));
   }

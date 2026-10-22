@@ -8,6 +8,8 @@
 
 #include <algorithm>
 #include <chrono>
+#include <cstddef>
+#include <cstdint>
 #include <cstdlib>
 #include <cstring>
 #include <exception>
@@ -279,6 +281,29 @@ class WinmlNet final : public vk::net::RuntimeNet {
       }};
 };
 
+// La mémoire épinglée du fournisseur (son allocateur HOST_ACCESSIBLE : hipHostMalloc), qu'un GPU
+// intégré importe dans Vulkan (Runtime::allocate_host) : la chaîne y écrit les entrées du réseau et
+// y lit ses sorties, et HIP les copie par DMA. D'une mémoire ordinaire, il les recopie d'abord par
+// le CPU dans la sienne, à chaque image. Liée comme mémoire du CPU, comme avant : ONNX Runtime suit
+// le même chemin, HIP reconnaît ses pages.
+class PinnedMemory final : public vk::net::HostMemory {
+ public:
+  PinnedMemory(std::shared_ptr<Shared> shared, OrtAllocator* allocator, void* raw, std::byte* data)
+      : shared_(std::move(shared)), allocator_(allocator), raw_(raw), data_(data) {}
+  PinnedMemory(const PinnedMemory&) = delete;
+  PinnedMemory& operator=(const PinnedMemory&) = delete;
+  PinnedMemory(PinnedMemory&&) = delete;
+  PinnedMemory& operator=(PinnedMemory&&) = delete;
+  ~PinnedMemory() override { allocator_->Free(allocator_, raw_); }
+  std::byte* data() const override { return data_; }
+
+ private:
+  std::shared_ptr<Shared> shared_;  // l'allocateur appartient à l'environnement
+  OrtAllocator* allocator_;
+  void* raw_;
+  std::byte* data_;  // raw_ aligné
+};
+
 class WinmlRuntime final : public vk::net::Runtime {
  public:
   WinmlRuntime(std::shared_ptr<Shared> shared, Ort::ConstEpDevice device, std::string device_name,
@@ -296,6 +321,41 @@ class WinmlRuntime final : public vk::net::Runtime {
     return std::format("onnxruntime {} + MIGraphX {}", ort_version(), ep_version_);
   }
   std::string_view extension() const override { return ".winml"; }
+
+  // Sans allocateur épinglé, refus FeatureUnavailable : la mémoire du backend pour tous les
+  // tenseurs, comme avant. Une allocation refusée : ce tenseur seul (FormatUnsupported).
+  std::expected<std::unique_ptr<vk::net::HostMemory>, Refusal> allocate_host(
+      std::uint64_t bytes, std::uint64_t alignment, TensorType /*type*/, const Shape& /*shape*/) override {
+    try {
+      const OrtApi& api = Ort::GetApi();
+      const OrtMemoryInfo* info = api.EpDevice_MemoryInfo(device_, OrtDeviceMemoryType_HOST_ACCESSIBLE);
+      if (info == nullptr)
+        return refuse(RefusalCode::FeatureUnavailable, "MIGraphX (Windows ML) : pas de mémoire épinglée");
+      OrtAllocator* allocator = nullptr;
+      Ort::ThrowOnError(api.GetSharedAllocator(shared_->env, info, &allocator));
+      if (allocator == nullptr)
+        return refuse(RefusalCode::FeatureUnavailable,
+                      "MIGraphX (Windows ML) : pas d'allocateur de mémoire épinglée");
+      // HIP rend des pages entières, déjà alignées ; sinon une marge pour aligner l'adresse.
+      for (const std::uint64_t margin : {std::uint64_t{0}, alignment}) {
+        void* raw = allocator->Alloc(allocator, static_cast<std::size_t>(bytes + margin));
+        if (raw == nullptr)
+          return refuse(
+              RefusalCode::FormatUnsupported,
+              std::format("MIGraphX (Windows ML) : {} o de mémoire épinglée refusés", bytes + margin));
+        const auto address = reinterpret_cast<std::uintptr_t>(raw);
+        const std::uintptr_t aligned = (address + alignment - 1) / alignment * alignment;
+        if (aligned - address <= margin)
+          return std::make_unique<PinnedMemory>(shared_, allocator, raw,
+                                                reinterpret_cast<std::byte*>(aligned));
+        allocator->Free(allocator, raw);
+      }
+      return refuse(RefusalCode::FormatUnsupported, "MIGraphX (Windows ML) : mémoire épinglée non alignée");
+    } catch (const std::exception& e) {
+      return refuse(RefusalCode::FeatureUnavailable,
+                    std::format("MIGraphX (Windows ML), mémoire épinglée : {}", e.what()));
+    }
+  }
 
   std::expected<void, Refusal> build(const ModelSpec& model, std::span<const InputShape> inputs,
                                      const std::filesystem::path& path, Progress& progress) override {
