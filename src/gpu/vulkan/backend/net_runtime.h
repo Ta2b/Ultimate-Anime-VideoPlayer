@@ -134,10 +134,14 @@ class Runtime {
     return std::unexpected(Refusal{RefusalCode::FeatureUnavailable, "import de mémoire non pris en charge"});
   }
   // Mémoire hôte du runtime pour un tenseur (GPU intégré) : bytes octets, adresse multiple de
-  // alignment, que le backend importe dans Vulkan. Refus FeatureUnavailable par défaut : le
-  // backend prend alors sa propre mémoire hôte, que le runtime copie.
+  // alignment, que le backend importe dans Vulkan ; type et shape, ceux du tenseur qu'elle portera
+  // (Core ML en fait une IOSurface à sa forme). Refus FeatureUnavailable par défaut : le backend
+  // prend alors sa propre mémoire hôte, que le runtime copie, pour tous les tenseurs ;
+  // FormatUnsupported : pour ce tenseur seulement.
   virtual std::expected<std::unique_ptr<HostMemory>, Refusal> allocate_host(std::uint64_t /*bytes*/,
-                                                                            std::uint64_t /*alignment*/) {
+                                                                            std::uint64_t /*alignment*/,
+                                                                            TensorType /*type*/,
+                                                                            const Shape& /*shape*/) {
     return std::unexpected(
         Refusal{RefusalCode::FeatureUnavailable, "mémoire hôte du runtime non prise en charge"});
   }

@@ -1,10 +1,12 @@
 // Le runtime Core ML sur un Mac, sans GPU (la machine virtuelle de la CI : Core ML y calcule sur
 // le CPU) : un petit réseau construit, chargé et exécuté en direct par Core ML (coreml_direct.h),
-// qui retrouve l'interpréteur de gpu_ir et le même artefact exécuté par ONNX Runtime. Les noms
-// d'entrée et de sortie ne sont pas des identifiants du programme ML : Core ML direct les retrouve
-// sous les noms qu'ONNX Runtime leur donne.
+// qui retrouve l'interpréteur de gpu_ir et le même artefact exécuté par ONNX Runtime, sur la
+// mémoire ordinaire puis sur les IOSurface que le runtime donne à la chaîne. Les noms d'entrée et
+// de sortie ne sont pas des identifiants du programme ML : Core ML direct les retrouve sous les
+// noms qu'ONNX Runtime leur donne.
 #include <cstddef>
 #include <cstdint>
+#include <cstring>
 #include <filesystem>
 #include <format>
 #include <fstream>
@@ -26,7 +28,8 @@ namespace {
 
 namespace irt = ir::test;
 
-constexpr std::int64_t kSide = 16;
+// Des lignes de 128 o : ni le système ni Core ML n'ont à bourrer celles des IOSurface.
+constexpr std::int64_t kSide = 64;
 constexpr std::size_t kCount = 3 * kSide * kSide;
 
 struct TempDir {
@@ -70,21 +73,26 @@ bool has_line(const std::string& text, const std::string& line) {
   return false;
 }
 
-// Une exécution du réseau chargé sur l'entrée FP16 : la sortie FP16.
-std::vector<std::uint16_t> run_once(vk::net::RuntimeNet& net, std::vector<std::uint16_t>& input) {
-  std::vector<std::uint16_t> output(kCount, 0xFFFF);
-  const Shape shape{.dims = {1, 3, kSide, kSide}};
-  const vk::net::HostBinding in{.data = reinterpret_cast<std::byte*>(input.data()),
-                                .bytes = input.size() * 2,
-                                .type = TensorType::F16,
-                                .shape = shape};
-  const vk::net::HostBinding out{.data = reinterpret_cast<std::byte*>(output.data()),
-                                 .bytes = output.size() * 2,
-                                 .type = TensorType::F16,
-                                 .shape = shape};
+const Shape kShape{.dims = {1, 3, kSide, kSide}};
+
+// Une exécution du réseau chargé, de l'entrée FP16 à in vers la sortie FP16 à out : la sortie.
+std::vector<std::uint16_t> run_at(vk::net::RuntimeNet& net, std::byte* in_data, std::byte* out_data) {
+  std::memset(out_data, 0xFF, kCount * 2);
+  const vk::net::HostBinding in{
+      .data = in_data, .bytes = kCount * 2, .type = TensorType::F16, .shape = kShape};
+  const vk::net::HostBinding out{
+      .data = out_data, .bytes = kCount * 2, .type = TensorType::F16, .shape = kShape};
   auto ok = net.run({{in}}, {{out}});
   if (!ok) FAIL(ok.error().detail);
+  std::vector<std::uint16_t> output(kCount);
+  std::memcpy(output.data(), out_data, kCount * 2);
   return output;
+}
+
+// La même, sur la mémoire ordinaire.
+std::vector<std::uint16_t> run_once(vk::net::RuntimeNet& net, std::vector<std::uint16_t>& input) {
+  std::vector<std::uint16_t> output(kCount);
+  return run_at(net, reinterpret_cast<std::byte*>(input.data()), reinterpret_cast<std::byte*>(output.data()));
 }
 
 std::vector<float> as_floats(const std::vector<std::uint16_t>& half) {
@@ -118,9 +126,11 @@ TEST_CASE("Core ML : un réseau exécuté en direct retrouve l'interpréteur et 
   const std::vector<std::string> inputs{"input.1"};
   const std::vector<std::string> outputs{"out:0"};
   REQUIRE(vk::net::write_io_names(artifact, inputs, outputs));
-  // Un seul morceau confié à Core ML, sa sortie conforme : le chemin direct est retenu.
+  // Un seul morceau confié à Core ML, sa sortie conforme, sur la mémoire ordinaire et sur des
+  // IOSurface : le chemin direct est retenu, avec elles.
   const std::string manifest = read_text(artifact);
   CHECK(has_line(manifest, "direct"));
+  CHECK(has_line(manifest, "surfaces"));
   CHECK(std::filesystem::is_directory(std::filesystem::path(artifact.string() + ".mlmodelc")));
 
   // L'entrée dans [0, 1[, en FP16 ; la référence de l'interpréteur sur les mêmes valeurs.
@@ -139,6 +149,21 @@ TEST_CASE("Core ML : un réseau exécuté en direct retrouve l'interpréteur et 
   CHECK(irt::max_abs_diff(as_floats(first), expected.f) <= 2e-2F);
   // Les enveloppes gardées d'un appel à l'autre : la même sortie.
   CHECK(run_once(**direct, input) == first);
+
+  // Sur les IOSurface du runtime, comme la chaîne les reçoit (Runtime::allocate_host) : la même
+  // sortie, deux fois de suite.
+  {
+    auto in_surface = (*runtime)->allocate_host(kCount * 2, 16384, TensorType::F16, kShape);
+    if (!in_surface) FAIL(in_surface.error().detail);
+    auto out_surface = (*runtime)->allocate_host(kCount * 2, 16384, TensorType::F16, kShape);
+    if (!out_surface) FAIL(out_surface.error().detail);
+    std::memcpy((*in_surface)->data(), input.data(), kCount * 2);
+    for (int pass = 0; pass < 2; ++pass) {
+      const std::vector<std::uint16_t> on_surfaces =
+          run_at(**direct, (*in_surface)->data(), (*out_surface)->data());
+      CHECK(irt::max_abs_diff(as_floats(on_surfaces), as_floats(first)) <= 1e-3F);
+    }
+  }
 
   // Le même artefact sans le chemin direct : ONNX Runtime, la même sortie.
   {

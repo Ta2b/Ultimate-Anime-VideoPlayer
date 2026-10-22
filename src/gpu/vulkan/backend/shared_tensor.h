@@ -37,10 +37,13 @@ std::uint64_t host_import_alignment(const VkContext& context);
 
 // Un tenseur de bytes octets dans une mémoire hôte du runtime (Runtime::allocate_host), importée
 // par Vulkan : vu par l'hôte et le runtime à la même adresse, inscrit dans views tant qu'il vit.
-// Refus : ceux du runtime (FeatureUnavailable s'il n'en alloue pas), de Vulkan.
+// verify : le GPU écrit et relit d'abord quelques octets, pour vérifier qu'il voit bien cette
+// mémoire et pas une copie (une soumission attendue sur l'hôte).
+// Refus : ceux du runtime (FeatureUnavailable s'il n'en alloue pas, FormatUnsupported pas pour ce
+// tenseur), de Vulkan ; FeatureUnavailable : le GPU n'en voit qu'une copie.
 std::expected<std::unique_ptr<TensorBuffer>, Refusal> host_imported_tensor(
     VkContext& context, net::Runtime& runtime, TensorType type, const Shape& shape, std::uint64_t bytes,
-    std::uint64_t alignment, std::shared_ptr<HostViews> views);
+    std::uint64_t alignment, std::shared_ptr<HostViews> views, bool verify);
 
 // Un tenseur de bytes octets, inscrit dans views (adresse du runtime) tant qu'il vit. Refus :
 // ceux de Vulkan, de l'import, FeatureUnavailable hors de Linux.

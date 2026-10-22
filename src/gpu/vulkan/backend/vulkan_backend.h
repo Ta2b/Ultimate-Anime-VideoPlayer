@@ -134,6 +134,7 @@ class VulkanBackend final : public Backend {
   bool shared_memory_ = false;             // interop : tenseurs du runtime en mémoire exportée
   // Alignement des mémoires hôte du runtime que Vulkan importe (GPU intégré) ; 0 : sans import.
   std::uint64_t host_alignment_ = 0;
+  bool host_import_checked_ = false;  // le GPU a relu un premier import (host_imported_tensor)
   // La timeline de queue_ vue du runtime (interop) : ses réseaux s'ordonnent côté GPU. Rendue
   // avant le runtime et la file.
   std::unique_ptr<net::ImportedSemaphore> imported_timeline_;

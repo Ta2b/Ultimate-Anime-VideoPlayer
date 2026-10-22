@@ -1,6 +1,8 @@
 #include "gpu/vulkan/backend/shared_tensor.h"
 
 #include <algorithm>
+#include <cstdint>
+#include <cstring>
 #include <format>
 #include <optional>
 #include <string_view>
@@ -96,6 +98,7 @@ class HostImportedBuffer final : public TensorBuffer {
     if (!type || requirements.size > allocation_size)
       return detail::refuse_backend(RefusalCode::FeatureUnavailable,
                                     "mémoire hôte du runtime : aucun type importable");
+    coherent_ = (properties.memoryTypes[*type].propertyFlags & VK_MEMORY_PROPERTY_HOST_COHERENT_BIT) != 0;
     const VkImportMemoryHostPointerInfoEXT host_import{
         .sType = VK_STRUCTURE_TYPE_IMPORT_MEMORY_HOST_POINTER_INFO_EXT,
         .handleType = kHandle,
@@ -117,6 +120,47 @@ class HostImportedBuffer final : public TensorBuffer {
     return {};
   }
 
+  // Le GPU voit-il la mémoire de l'hôte elle-même, et pas une copie (un pilote qui accepterait
+  // l'adresse sans la partager) ? Il recopie un mot que le CPU a écrit et en remplit un autre, que
+  // le CPU relit. Sur une mémoire cohérente seulement ; remise à zéro ensuite.
+  Done verify() {
+    constexpr std::uint32_t kFromHost = 0xA5C3'5A3CU;
+    constexpr std::uint32_t kFromDevice = 0x3C5A'C3A5U;
+    if (!coherent_ || bytes_ < 12) return {};
+    std::byte* const data = host_->data();
+    const auto word = [data](std::size_t at) {
+      std::uint32_t value = 0;
+      std::memcpy(&value, data + (at * 4), 4);
+      return value;
+    };
+    std::memcpy(data, &kFromHost, 4);
+    std::memset(data + 4, 0, 8);
+    const DeviceFunctions& fn = context_.fn();
+    auto ran = context_.run_once([&](VkCommandBuffer cb) {
+      const VkMemoryBarrier from_host{
+          .sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER,
+          .srcAccessMask = VK_ACCESS_HOST_WRITE_BIT,
+          .dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT | VK_ACCESS_TRANSFER_WRITE_BIT};
+      fn.vkCmdPipelineBarrier(cb, VK_PIPELINE_STAGE_HOST_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 1,
+                              &from_host, 0, nullptr, 0, nullptr);
+      const VkBufferCopy region{.srcOffset = 0, .dstOffset = 4, .size = 4};
+      fn.vkCmdCopyBuffer(cb, buffer_, buffer_, 1, &region);
+      fn.vkCmdFillBuffer(cb, buffer_, 8, 4, kFromDevice);
+      const VkMemoryBarrier to_host{.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER,
+                                    .srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT,
+                                    .dstAccessMask = VK_ACCESS_HOST_READ_BIT};
+      fn.vkCmdPipelineBarrier(cb, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_HOST_BIT, 0, 1, &to_host,
+                              0, nullptr, 0, nullptr);
+    });
+    if (!ran) return ran;
+    const bool shared = word(1) == kFromHost && word(2) == kFromDevice;
+    std::memset(data, 0, 12);
+    if (!shared)
+      return detail::refuse_backend(RefusalCode::FeatureUnavailable,
+                                    "mémoire hôte du runtime : Vulkan n'en voit qu'une copie");
+    return {};
+  }
+
  private:
   VkContext& context_;
   std::unique_ptr<net::HostMemory> host_;
@@ -127,6 +171,7 @@ class HostImportedBuffer final : public TensorBuffer {
   VkBuffer buffer_ = VK_NULL_HANDLE;
   VkDeviceMemory memory_ = VK_NULL_HANDLE;
   Tensor tensor_{};
+  bool coherent_ = false;
 };
 
 }  // namespace
@@ -145,12 +190,12 @@ std::uint64_t host_import_alignment(const VkContext& context) {
 
 std::expected<std::unique_ptr<TensorBuffer>, Refusal> host_imported_tensor(
     VkContext& context, net::Runtime& runtime, TensorType type, const Shape& shape, std::uint64_t bytes,
-    std::uint64_t alignment, std::shared_ptr<HostViews> views) {
+    std::uint64_t alignment, std::shared_ptr<HostViews> views, bool verify) {
   if (alignment == 0)
     return detail::refuse_backend(RefusalCode::FeatureUnavailable, "VK_EXT_external_memory_host absente");
   // L'adresse et la taille importées sont des multiples de l'alignement de l'appareil.
   const std::uint64_t allocation_size = (bytes + alignment - 1) / alignment * alignment;
-  auto host = runtime.allocate_host(allocation_size, alignment);
+  auto host = runtime.allocate_host(allocation_size, alignment, type, shape);
   if (!host) return std::unexpected(host.error());
   if (reinterpret_cast<std::uintptr_t>((*host)->data()) % alignment != 0)
     return detail::refuse_backend(RefusalCode::FeatureUnavailable,
@@ -158,6 +203,9 @@ std::expected<std::unique_ptr<TensorBuffer>, Refusal> host_imported_tensor(
   auto buffer =
       std::make_unique<HostImportedBuffer>(context, std::move(*host), type, shape, bytes, std::move(views));
   if (auto ok = buffer->import(allocation_size); !ok) return std::unexpected(ok.error());
+  if (verify) {
+    if (auto ok = buffer->verify(); !ok) return std::unexpected(ok.error());
+  }
   return buffer;
 }
 

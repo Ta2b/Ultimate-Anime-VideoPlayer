@@ -1,11 +1,13 @@
 #include "gpu/coreml/coreml_runtime.h"
 
 #include <algorithm>
+#include <cstdint>
 #include <exception>
 #include <filesystem>
 #include <format>
 #include <fstream>
 #include <functional>
+#include <memory>
 #include <mutex>
 #include <optional>
 #include <span>
@@ -402,6 +404,7 @@ std::expected<void, Refusal> write_manifest(const std::filesystem::path& path, c
   if (manifest.units) out << "units " << units_name(*manifest.units) << '\n';
   if (manifest.io) out << "io rewritten\n";
   if (manifest.direct) out << "direct\n";
+  if (manifest.surfaces) out << "surfaces\n";
   if (manifest.videotoolbox)
     out << "videotoolbox " << manifest.videotoolbox->width << ' ' << manifest.videotoolbox->height << '\n';
   if (!out) return refuse(RefusalCode::CacheIo, std::format("{} : écriture", path.string()));
@@ -431,6 +434,8 @@ std::expected<Manifest, Refusal> read_manifest(const std::filesystem::path& path
       manifest.io = true;
     } else if (line == "direct") {
       manifest.direct = true;
+    } else if (line == "surfaces") {
+      manifest.surfaces = true;
     } else if (line.starts_with("videotoolbox ")) {
       std::istringstream fields(line.substr(13));
       VtFrames frames;
@@ -447,16 +452,23 @@ std::expected<Manifest, Refusal> read_manifest(const std::filesystem::path& path
 
 // Le chemin direct (coreml_direct.h) pour cet artefact : le seul modèle compilé du cache copié à
 // côté (direct_of), retenu si Core ML le charge et que sa sortie retrouve celle de la session sur
-// l'image de test. Sinon ONNX Runtime à chaque image, comme avant, et la raison au journal.
-bool adopt_direct(Ort::Session& session, std::span<const InputShape> inputs,
-                  const std::filesystem::path& artifact, Units units) {
+// l'image de test. Sinon ONNX Runtime à chaque image, comme avant, et la raison au journal. Ses
+// IOSurface de même, sur un passage de plus ; sans elles, la mémoire des tenseurs telle quelle.
+struct DirectChoice {
+  bool direct = false;
+  bool surfaces = false;
+};
+
+DirectChoice adopt_direct(Ort::Session& session, std::span<const InputShape> inputs,
+                          const std::filesystem::path& artifact, Units units,
+                          const std::shared_ptr<Surfaces>& surfaces) {
   const std::filesystem::path target = direct_of(artifact);
   const auto reject = [&](std::string_view why) {
     log_channel("coreml")->info("{} : Core ML direct écarté ({}) ; ONNX Runtime à chaque image",
                                 artifact.filename().string(), why);
     std::error_code error;
     std::filesystem::remove_all(target, error);
-    return false;
+    return DirectChoice{};
   };
   const std::optional<std::filesystem::path> compiled = single_compiled(cache_of(artifact));
   if (!compiled) return reject("pas un modèle compilé unique : réseau coupé en morceaux");
@@ -464,15 +476,28 @@ bool adopt_direct(Ort::Session& session, std::span<const InputShape> inputs,
   std::filesystem::remove_all(target, error);
   std::filesystem::copy(*compiled, target, std::filesystem::copy_options::recursive, error);
   if (error) return reject(std::format("copie de {} : {}", compiled->string(), error.message()));
-  auto measured =
-      direct_error(session, inputs, [&](std::span<const std::string> in, std::span<const std::string> out) {
-        return open_direct(target, units, in, out);
-      });
+  auto measured = direct_error(
+      session, inputs,
+      [&](std::span<const std::string> in, std::span<const std::string> out) {
+        return open_direct(target, units, in, out, surfaces);
+      },
+      surfaces);
   if (!measured) return reject(measured.error().detail);
   if (measured->mean > kDirectMaxMeanError || measured->max > kDirectMaxError)
     return reject(std::format("écart à ONNX Runtime de {:.3g} en moyenne, {:.3g} au pire", measured->mean,
                               measured->max));
-  return true;
+  if (!measured->on_surfaces) {
+    log_channel("coreml")->info("{} : Core ML direct sans IOSurface ({})", artifact.filename().string(),
+                                measured->surfaces_skipped);
+    return {.direct = true};
+  }
+  if (measured->surface_mean > kDirectMaxMeanError || measured->surface_max > kDirectMaxError) {
+    log_channel("coreml")->info(
+        "{} : Core ML direct sans IOSurface (écart de {:.3g} en moyenne, {:.3g} au pire)",
+        artifact.filename().string(), measured->surface_mean, measured->surface_max);
+    return {.direct = true};
+  }
+  return {.direct = true, .surfaces = true};
 }
 
 class CoremlRuntime final : public vk::net::Runtime {
@@ -485,8 +510,18 @@ class CoremlRuntime final : public vk::net::Runtime {
   // Entrées à la forme de la construction et dépliage 5-D (derive_onnx) : les artefacts d'avant
   // laissaient au CPU une part des réseaux. Puis Core ML direct (adopt_direct) et la clé du cache
   // de Core ML : les artefacts d'avant n'ont pas le modèle compilé à côté, et se reconstruisent.
-  std::string_view recipe() const override { return "fixed-inputs-5d-direct"; }
+  // Puis les IOSurface, vérifiées à la construction.
+  std::string_view recipe() const override { return "fixed-inputs-5d-direct-surfaces"; }
   std::string_view extension() const override { return ".coreml"; }
+
+  // Les tenseurs de la chaîne en IOSurface (coreml_direct.h), que Vulkan importe : Core ML direct
+  // les donne tels quels au GPU et au Neural Engine.
+  std::expected<std::unique_ptr<vk::net::HostMemory>, Refusal> allocate_host(std::uint64_t bytes,
+                                                                             std::uint64_t alignment,
+                                                                             TensorType type,
+                                                                             const Shape& shape) override {
+    return allocate_surface(surfaces_, bytes, alignment, type, shape);
+  }
 
   std::expected<void, Refusal> build(const ModelSpec& model, std::span<const InputShape> inputs,
                                      const std::filesystem::path& path, Progress& progress) override {
@@ -509,13 +544,17 @@ class CoremlRuntime final : public vk::net::Runtime {
     if (!session) return std::unexpected(session.error());
     if (progress.stop.stop_requested()) return refuse(RefusalCode::Cancelled, "construction annulée");
     if (progress.report) progress.report(0.9F, "vérification de Core ML direct");
-    manifest.direct = adopt_direct(*session, inputs, path, *units);
+    const DirectChoice direct = adopt_direct(*session, inputs, path, *units, surfaces_);
+    manifest.direct = direct.direct;
+    manifest.surfaces = direct.surfaces;
     if (progress.stop.stop_requested()) return refuse(RefusalCode::Cancelled, "construction annulée");
     if (auto ok = write_manifest(path, manifest); !ok) return ok;
     if (progress.report) {
       progress.report(1.0F, std::format("modèle Core ML compilé ({}{}{})", units_name(*units),
                                         manifest.io ? ", interface réécrite" : "",
-                                        manifest.direct ? ", exécuté en direct" : ""));
+                                        manifest.surfaces ? ", exécuté en direct sur IOSurface"
+                                        : manifest.direct ? ", exécuté en direct"
+                                                          : ""));
     }
     return {};
   }
@@ -531,7 +570,8 @@ class CoremlRuntime final : public vk::net::Runtime {
     auto units = units_of(*manifest);
     if (!units) return std::unexpected(units.error());
     if (manifest->direct) {
-      auto direct = open_direct(direct_of(path), *units, names->inputs, names->outputs);
+      auto direct = open_direct(direct_of(path), *units, names->inputs, names->outputs,
+                                manifest->surfaces ? surfaces_ : nullptr);
       if (direct) {
         std::vector<TensorType> in_types((*direct)->input_types().begin(), (*direct)->input_types().end());
         std::vector<TensorType> out_types((*direct)->output_types().begin(), (*direct)->output_types().end());
@@ -618,6 +658,7 @@ class CoremlRuntime final : public vk::net::Runtime {
 
   std::shared_ptr<Ort::Env> env_;
   std::string device_;
+  std::shared_ptr<Surfaces> surfaces_ = make_surfaces();
 };
 
 }  // namespace

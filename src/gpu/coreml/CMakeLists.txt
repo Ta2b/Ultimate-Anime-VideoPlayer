@@ -23,7 +23,7 @@ target_include_directories(ajp_coreml_rt SYSTEM PRIVATE "${AJP_ORT_INCLUDE}")
 if(APPLE)
   target_link_libraries(ajp_coreml_rt PRIVATE
     "-framework CoreML" "-framework VideoToolbox" "-framework CoreVideo" "-framework CoreMedia"
-    "-framework Foundation")
+    "-framework Foundation" "-framework IOSurface")
 endif()
 set_target_properties(ajp_coreml_rt PROPERTIES
   POSITION_INDEPENDENT_CODE ON

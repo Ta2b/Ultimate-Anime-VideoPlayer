@@ -5,9 +5,11 @@
 #include <array>
 #include <chrono>
 #include <cmath>
+#include <cstring>
 #include <exception>
 #include <format>
 #include <limits>
+#include <memory>
 #include <optional>
 
 #include "gpu/coreml/coreml_detail.h"
@@ -141,7 +143,8 @@ double max_error(std::span<const float> a, std::span<const float> b) {
 }  // namespace
 
 std::expected<DirectError, Refusal> direct_error(Ort::Session& session, std::span<const InputShape> inputs,
-                                                 const OpenDirect& open) {
+                                                 const OpenDirect& open,
+                                                 const std::shared_ptr<Surfaces>& surfaces) {
   const auto unsupported = [](std::string text) {
     return refuse(RefusalCode::FormatUnsupported, std::format("Core ML direct : {}", text));
   };
@@ -198,17 +201,55 @@ std::expected<DirectError, Refusal> direct_error(Ort::Session& session, std::spa
                      .type = *type,
                      .shape = *shape});
     }
+    // L'écart des sorties de out à la référence, versé dans mean et max.
+    const auto compare = [&](std::span<const vk::net::HostBinding> got_at, double& mean,
+                             double& max) -> std::expected<void, Refusal> {
+      for (std::size_t i = 0; i < got_at.size(); ++i) {
+        auto got = as_floats(got_at[i].data, got_at[i].type, expected[i].size());
+        if (!got) return std::unexpected(got.error());
+        mean = std::max(mean, vk::net::mean_error(expected[i], *got));
+        max = std::max(max, max_error(expected[i], *got));
+      }
+      return {};
+    };
     DirectError worst;
     for (int pass = 0; pass < 2; ++pass) {
       for (auto& bytes : out_bytes) std::ranges::fill(bytes, std::byte{0});
       if (auto ok = (*direct)->predict(in, out); !ok) return std::unexpected(ok.error());
-      for (std::size_t i = 0; i < out.size(); ++i) {
-        auto got = as_floats(out_bytes[i].data(), out[i].type, expected[i].size());
-        if (!got) return std::unexpected(got.error());
-        worst.mean = std::max(worst.mean, vk::net::mean_error(expected[i], *got));
-        worst.max = std::max(worst.max, max_error(expected[i], *got));
+      if (auto ok = compare(out, worst.mean, worst.max); !ok) return std::unexpected(ok.error());
+    }
+    if (surfaces == nullptr) {
+      worst.surfaces_skipped = "pas d'IOSurface ici";
+      return worst;
+    }
+    // Les mêmes liaisons sur des IOSurface, l'entrée recopiée, la sortie remise à zéro.
+    std::vector<std::unique_ptr<vk::net::HostMemory>> held;
+    std::vector<vk::net::HostBinding> in_surface = in;
+    std::vector<vk::net::HostBinding> out_surface = out;
+    for (std::vector<vk::net::HostBinding>* list : {&in_surface, &out_surface}) {
+      for (vk::net::HostBinding& b : *list) {
+        auto surface = allocate_surface(surfaces, b.bytes, 0, b.type, b.shape);
+        if (!surface) {
+          worst.surfaces_skipped = surface.error().detail;
+          return worst;
+        }
+        b.data = (*surface)->data();
+        held.push_back(std::move(*surface));
       }
     }
+    for (std::size_t i = 0; i < in.size(); ++i) std::memcpy(in_surface[i].data, in[i].data, in[i].bytes);
+    for (const vk::net::HostBinding& b : out_surface) std::memset(b.data, 0, b.bytes);
+    if (auto ok = (*direct)->predict(in_surface, out_surface); !ok) {
+      worst.surfaces_skipped = ok.error().detail;
+      return worst;
+    }
+    if (!model.on_surfaces()) {
+      worst.surfaces_skipped = "Core ML ne prend pas les IOSurface de ses tenseurs";
+      return worst;
+    }
+    if (auto ok = compare(out_surface, worst.surface_mean, worst.surface_max); !ok)
+      return std::unexpected(ok.error());
+    worst.on_surfaces = true;
     return worst;
   } catch (const std::exception& e) {
     return refuse(RefusalCode::DeviceUnavailable, std::format("Core ML direct, comparaison : {}", e.what()));

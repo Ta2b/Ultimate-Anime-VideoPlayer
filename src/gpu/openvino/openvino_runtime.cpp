@@ -207,7 +207,8 @@ class OpenvinoRuntime final : public vk::net::Runtime {
 
   // Une mémoire USM hôte du GPU (alignée sur la page par le pilote, que l'appelant vérifie).
   std::expected<std::unique_ptr<vk::net::HostMemory>, Refusal> allocate_host(
-      std::uint64_t bytes, std::uint64_t /*alignment*/) override {
+      std::uint64_t bytes, std::uint64_t /*alignment*/, TensorType /*type*/,
+      const Shape& /*shape*/) override {
     if (!usm_) return refuse(RefusalCode::FeatureUnavailable, "OpenVINO : contexte du GPU indisponible");
     try {
       auto [tensor, data] = usm_->allocate(bytes);

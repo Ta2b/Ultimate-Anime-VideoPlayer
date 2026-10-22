@@ -220,15 +220,24 @@ std::expected<std::unique_ptr<TensorBuffer>, Refusal> VulkanBackend::alloc_runti
   if (!dense) return std::unexpected(dense.error());
   if (shared_memory_)
     return shared_tensor(*context_, *runtime_, type, shape, (*dense + 3) / 4 * 4, host_views_);
-  // GPU intégré : la mémoire hôte du runtime (USM d'OpenVINO), importée par Vulkan, que le réseau
-  // lit et écrit sans copie. Au premier refus, la mémoire hôte du backend pour la suite.
+  // GPU intégré : la mémoire hôte du runtime (USM d'OpenVINO, IOSurface de Core ML), importée par
+  // Vulkan, que le réseau lit et écrit sans copie. Au premier refus, la mémoire hôte du backend
+  // pour la suite ; un refus pour ce tenseur seul (FormatUnsupported), pour lui seulement.
   if (host_alignment_ != 0) {
     auto imported = host_imported_tensor(*context_, *runtime_, type, shape, (*dense + 3) / 4 * 4,
-                                         host_alignment_, host_views_);
-    if (imported) return imported;
-    host_alignment_ = 0;
-    log(BackendLogLevel::Info, std::format("tenseurs de {} par la mémoire du backend ({})", runtime_->name(),
-                                           imported.error().detail));
+                                         host_alignment_, host_views_, !host_import_checked_);
+    if (imported) {
+      host_import_checked_ = true;
+      return imported;
+    }
+    if (imported.error().code == RefusalCode::FormatUnsupported) {
+      log(BackendLogLevel::Debug, std::format("un tenseur de {} par la mémoire du backend ({})",
+                                              runtime_->name(), imported.error().detail));
+    } else {
+      host_alignment_ = 0;
+      log(BackendLogLevel::Info, std::format("tenseurs de {} par la mémoire du backend ({})",
+                                             runtime_->name(), imported.error().detail));
+    }
   }
   // En cache côté hôte : le runtime y lit les entrées et y écrit les sorties ; les noyaux de la
   // chaîne y accèdent comme à tout tampon de stockage.

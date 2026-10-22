@@ -36,8 +36,9 @@ struct VtFrames {
 // unités retenues par la mesure (absentes d'un artefact plus ancien), si le réseau ouvert est
 // la copie <artefact>.onnx, réécrite à l'interface : dans le type des tenseurs de la chaîne, aux
 // formes de la construction (onnx_of), et si Core ML l'exécute directement, sans ONNX Runtime
-// (coreml_direct.h, direct_of). Pour le modèle d'un interpolateur du système
-// (gpu/system_interpolator.h), le cadre de l'interpolation d'Apple, sans session ONNX Runtime.
+// (coreml_direct.h, direct_of), sur les IOSurface de la chaîne ou non. Pour le modèle d'un
+// interpolateur du système (gpu/system_interpolator.h), le cadre de l'interpolation d'Apple, sans
+// session ONNX Runtime.
 struct Manifest {
   std::filesystem::path onnx;
   std::vector<vk::net::DimOverride> dims;
@@ -45,6 +46,7 @@ struct Manifest {
   bool io = false;
   std::optional<VtFrames> videotoolbox;
   bool direct = false;
+  bool surfaces = false;
 };
 
 std::filesystem::path cache_of(const std::filesystem::path& artifact);   // <artefact>.mlcache
@@ -77,14 +79,21 @@ inline constexpr double kDirectMaxError = 2e-2;
 
 // L'écart entre la session et Core ML direct sur l'image de test de choose_units, deux passages
 // de suite (le second sur les enveloppes gardées) : la pire sortie, en moyenne et au pire pixel.
+// Puis, si surfaces, un passage sur des IOSurface (allocate_surface) comme celles de la chaîne,
+// qu'open doit ouvrir avec surfaces : son écart, ou pourquoi il n'a pas eu lieu.
 // Refus : ceux d'open, de Core ML, d'ONNX Runtime ; FormatUnsupported : d'autres types ou formes.
 struct DirectError {
   double mean = 0.0;
   double max = 0.0;
+  bool on_surfaces = false;
+  std::string surfaces_skipped;  // la raison, sans passage sur IOSurface
+  double surface_mean = 0.0;
+  double surface_max = 0.0;
 };
 std::expected<DirectError, Refusal> direct_error(Ort::Session& session,
                                                  std::span<const vk::net::InputShape> inputs,
-                                                 const OpenDirect& open);
+                                                 const OpenDirect& open,
+                                                 const std::shared_ptr<Surfaces>& surfaces);
 
 // Les unités d'un artefact : celles de la mesure ; sans elle (un artefact plus ancien, une
 // mesure impossible), le GPU pour un réseau qui déforme (GridSample, que le Neural Engine
