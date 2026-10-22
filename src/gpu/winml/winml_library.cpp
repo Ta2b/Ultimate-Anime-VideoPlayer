@@ -39,11 +39,11 @@ std::string ort_version() {
   return {};
 }
 
-std::expected<Provider, Refusal> find_migraphx() {
+std::expected<Provider, Refusal> find_provider(Ep /*ep*/) {
   return refuse(RefusalCode::LibraryUnavailable, "Windows ML : Windows seulement");
 }
 
-std::expected<Provider, Refusal> ensure_migraphx(const std::function<void(double)>& /*progress*/,
+std::expected<Provider, Refusal> ensure_provider(Ep /*ep*/, const std::function<void(double)>& /*progress*/,
                                                  const std::stop_token& /*stop*/) {
   return refuse(RefusalCode::LibraryUnavailable, "Windows ML : Windows seulement");
 }
@@ -54,9 +54,24 @@ namespace {
 
 constexpr const wchar_t* kOrtLibrary = L"onnxruntime.dll";
 constexpr const wchar_t* kWinmlLibrary = L"Microsoft.Windows.AI.MachineLearning.dll";
-// Les conditions de Windows ML pour MIGraphX, dites quand le catalogue ne le propose pas.
-constexpr std::string_view kConditions =
-    "GPU AMD RDNA 3 ou plus récent, pilote AMD récent (25.10.13.09 ou après) et Windows 11 24H2";
+
+// Ce qui distingue un fournisseur dans le catalogue : son nom pour le lecteur, le mot de son nom
+// de catalogue (« MIGraphXExecutionProvider »), et les conditions de Windows ML, dites quand le
+// catalogue ne le propose pas.
+struct Kind {
+  std::string_view label;
+  std::string_view key;
+  std::string_view conditions;
+};
+
+Kind kind_of(Ep ep) {
+  if (ep == Ep::VitisAi)
+    return {.label = "VitisAI", .key = "vitisai", .conditions = "NPU de Ryzen AI (XDNA 2) et son pilote AMD"};
+  return {.label = "MIGraphX",
+          .key = "migraphx",
+          .conditions =
+              "GPU AMD RDNA 3 ou plus récent, pilote AMD récent (25.10.13.09 ou après) et Windows 11 24H2"};
+}
 
 std::string hresult(HRESULT hr) {
   return std::format("0x{:08X}", static_cast<std::uint32_t>(hr));
@@ -199,9 +214,10 @@ std::string lower(std::string_view text) {
   return out;
 }
 
-// Les fournisseurs du catalogue, et le premier dont le nom dit MIGraphX
-// (« MIGraphXExecutionProvider »).
+// Les fournisseurs du catalogue, et le premier dont le nom contient key
+// (« migraphx » : « MIGraphXExecutionProvider »).
 struct Found {
+  std::string_view key;
   std::string name;
   std::string family;  // son paquet, pour la recherche par nom
   std::vector<std::string> all;
@@ -211,7 +227,7 @@ BOOL CALLBACK visit(WinMLEpHandle /*ep*/, const WinMLEpInfo* info, void* context
   auto* found = static_cast<Found*>(context);
   if (info == nullptr || info->name == nullptr) return TRUE;
   found->all.emplace_back(info->name);
-  if (found->name.empty() && lower(info->name).contains("migraphx")) {
+  if (found->name.empty() && lower(info->name).contains(found->key)) {
     found->name = info->name;
     found->family = info->packageFamilyName != nullptr ? info->packageFamilyName : "";
   }
@@ -240,9 +256,9 @@ class OpenCatalog {
     return {};
   }
 
-  // Le fournisseur MIGraphX : son nom exact parmi ceux du catalogue, puis sa poignée.
-  std::expected<WinMLEpHandle, Refusal> migraphx() {
-    Found found;
+  // Le fournisseur : son nom exact parmi ceux du catalogue, puis sa poignée.
+  std::expected<WinMLEpHandle, Refusal> provider(const Kind& kind) {
+    Found found{.key = kind.key};
     if (const HRESULT hr = fns_.enumerate(handle_, &visit, &found); FAILED(hr)) {
       return refuse(RefusalCode::LibraryUnavailable,
                     std::format("Windows ML : catalogue illisible ({})", hresult(hr)));
@@ -251,8 +267,8 @@ class OpenCatalog {
       std::string offered;
       for (const std::string& name : found.all) offered += (offered.empty() ? "" : ", ") + name;
       return refuse(RefusalCode::LibraryUnavailable,
-                    std::format("Windows ML ne propose pas MIGraphX sur cette machine ({} ; proposés : {})",
-                                kConditions, offered.empty() ? "aucun" : offered));
+                    std::format("Windows ML ne propose pas {} sur cette machine ({} ; proposés : {})",
+                                kind.label, kind.conditions, offered.empty() ? "aucun" : offered));
     }
     WinMLEpHandle ep = nullptr;
     const HRESULT hr =
@@ -319,24 +335,25 @@ std::string ort_version() {
   return libraries ? std::string((*libraries)->ort->GetVersionString()) : std::string();
 }
 
-std::expected<Provider, Refusal> find_migraphx() {
+std::expected<Provider, Refusal> find_provider(Ep which) {
   auto libraries = loaded();
   if (!libraries) return std::unexpected(libraries.error());
   OpenCatalog catalog((*libraries)->catalog);
   if (auto ok = catalog.open(); !ok) return std::unexpected(ok.error());
-  auto ep = catalog.migraphx();
+  auto ep = catalog.provider(kind_of(which));
   if (!ep) return std::unexpected(ep.error());
   return catalog.describe(*ep);
 }
 
-std::expected<Provider, Refusal> ensure_migraphx(const std::function<void(double)>& progress,
+std::expected<Provider, Refusal> ensure_provider(Ep which, const std::function<void(double)>& progress,
                                                  const std::stop_token& stop) {
   auto libraries = loaded();
   if (!libraries) return std::unexpected(libraries.error());
+  const Kind kind = kind_of(which);
   const Catalog& fns = (*libraries)->catalog;
   OpenCatalog catalog(fns);
   if (auto ok = catalog.open(); !ok) return std::unexpected(ok.error());
-  auto ep = catalog.migraphx();
+  auto ep = catalog.provider(kind);
   if (!ep) return std::unexpected(ep.error());
   if (Provider p = catalog.describe(*ep); p.ready) return p;
 
@@ -346,8 +363,9 @@ std::expected<Provider, Refusal> ensure_migraphx(const std::function<void(double
   async.callback = &install_done;
   async.progress = &install_progress;
   if (const HRESULT hr = fns.ensure_async(*ep, &async); FAILED(hr)) {
-    return refuse(RefusalCode::DeviceUnavailable,
-                  std::format("Windows ML : l'installation de MIGraphX ne démarre pas ({})", hresult(hr)));
+    return refuse(
+        RefusalCode::DeviceUnavailable,
+        std::format("Windows ML : l'installation de {} ne démarre pas ({})", kind.label, hresult(hr)));
   }
   bool cancelled = false;
   {
@@ -364,15 +382,18 @@ std::expected<Provider, Refusal> ensure_migraphx(const std::function<void(double
   }
   const HRESULT status = fns.async_status(&async, FALSE);
   fns.async_close(&async);
-  if (cancelled && FAILED(status)) return refuse(RefusalCode::Cancelled, "installation de MIGraphX annulée");
+  if (cancelled && FAILED(status))
+    return refuse(RefusalCode::Cancelled, std::format("installation de {} annulée", kind.label));
   if (FAILED(status)) {
     return refuse(RefusalCode::DeviceUnavailable,
-                  std::format("Windows ML : l'installation de MIGraphX échoue ({})", hresult(status)));
+                  std::format("Windows ML : l'installation de {} échoue ({})", kind.label, hresult(status)));
   }
   Provider p = catalog.describe(*ep);
   if (!p.ready) {
-    return refuse(RefusalCode::DeviceUnavailable,
-                  "Windows ML : MIGraphX installé mais pas prêt (redémarrer Windows peut être nécessaire)");
+    return refuse(
+        RefusalCode::DeviceUnavailable,
+        std::format("Windows ML : {} installé mais pas prêt (redémarrer Windows peut être nécessaire)",
+                    kind.label));
   }
   return p;
 }

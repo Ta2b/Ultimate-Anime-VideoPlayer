@@ -41,12 +41,15 @@ TEST_CASE("winml : le manifeste relit ce qu'il écrit, chemin UTF-8 compris") {
   const std::filesystem::path artifact = dir.path / "span-abc.winml";
   CHECK(cache_of(artifact).filename() == "span-abc.winml.mxcache");
   CHECK(onnx_of(artifact).filename() == "span-abc.winml.onnx");
+  CHECK(npu_onnx_of(artifact).filename() == "span-abc.winml.npu.onnx");
+  CHECK(npu_cache_of(artifact).filename() == "span-abc.winml.vaicache");
 
   Manifest written;
   written.onnx = std::filesystem::path(u8"C:/Utilisateurs/Élodie/モデル/2x_AnimeJaNai.onnx");
   written.dims = {{"batch_size", 1}, {"height", 1080}, {"width with space", 1920}};
   written.io = true;
   written.fp16 = true;
+  written.npu = true;
   REQUIRE(write_manifest(artifact, written));
 
   auto read = read_manifest(artifact);
@@ -55,6 +58,7 @@ TEST_CASE("winml : le manifeste relit ce qu'il écrit, chemin UTF-8 compris") {
   CHECK(read->dims == written.dims);
   CHECK(read->io);
   CHECK(read->fp16);
+  CHECK(read->npu);
 
   Manifest plain;
   plain.onnx = dir.path / "plain.onnx";
@@ -65,6 +69,7 @@ TEST_CASE("winml : le manifeste relit ce qu'il écrit, chemin UTF-8 compris") {
   CHECK(read->dims.empty());
   CHECK_FALSE(read->io);
   CHECK_FALSE(read->fp16);
+  CHECK_FALSE(read->npu);
 }
 
 TEST_CASE("winml : un manifeste absent ou abîmé se refuse en CacheIo") {

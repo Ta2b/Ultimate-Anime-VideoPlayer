@@ -5,11 +5,13 @@
 // ne s'y substitue pas. Rien n'est lié à l'import, et un module sans elles se charge quand même :
 // make_runtime refuse alors, et le lecteur prend Vulkan.
 //
-// Le fournisseur MIGraphX d'AMD n'est pas livré : Windows le distribue (Windows Update) aux
-// machines qui remplissent ses conditions (GPU AMD RDNA 3 ou plus récent, pilote AMD récent,
-// Windows 11 24H2), et le catalogue l'installe à la demande.
+// Les fournisseurs d'AMD ne sont pas livrés : Windows les distribue (Windows Update) aux machines
+// qui remplissent leurs conditions, et le catalogue les installe à la demande. MIGraphX : GPU AMD
+// RDNA 3 ou plus récent, pilote AMD récent, Windows 11 24H2. VitisAI : NPU d'un Ryzen AI (XDNA 2)
+// et son pilote.
 #pragma once
 
+#include <cstdint>
 #include <expected>
 #include <filesystem>
 #include <functional>
@@ -20,10 +22,17 @@
 
 namespace ajp::gpu::winml_rt {
 
-// Le nom du fournisseur MIGraphX dans le catalogue et dans ONNX Runtime.
+// Les noms des fournisseurs dans le catalogue et dans ONNX Runtime.
 inline constexpr const char* kMigraphxProvider = "MIGraphXExecutionProvider";
+inline constexpr const char* kVitisAiProvider = "VitisAIExecutionProvider";
 
-// Le fournisseur MIGraphX du catalogue.
+// Les fournisseurs du catalogue que le runtime prend.
+enum class Ep : std::uint8_t {
+  Migraphx,  // le GPU AMD
+  VitisAi,   // le NPU d'un Ryzen AI
+};
+
+// Un fournisseur du catalogue.
 struct Provider {
   std::string version;            // celle de son paquet (MSIX)
   bool ready = false;             // installé et utilisable
@@ -38,13 +47,13 @@ std::expected<void, Refusal> load_libraries();
 // La version d'ONNX Runtime chargé (« 1.27.1 »). Après load_libraries.
 std::string ort_version();
 
-// Le fournisseur MIGraphX que le catalogue propose sur cette machine. Refus LibraryUnavailable :
-// le catalogue ne le propose pas (conditions de Windows ML non remplies), ou ne s'ouvre pas.
-std::expected<Provider, Refusal> find_migraphx();
+// Le fournisseur que le catalogue propose sur cette machine. Refus LibraryUnavailable : le
+// catalogue ne le propose pas (conditions de Windows ML non remplies), ou ne s'ouvre pas.
+std::expected<Provider, Refusal> find_provider(Ep ep);
 
 // Le fournisseur prêt : téléchargé et installé par Windows au besoin, progress (0 à 1) appelé du
 // fil de l'appelant ; stop l'annule (Cancelled). Refus DeviceUnavailable : l'installation échoue.
-std::expected<Provider, Refusal> ensure_migraphx(const std::function<void(double)>& progress,
+std::expected<Provider, Refusal> ensure_provider(Ep ep, const std::function<void(double)>& progress,
                                                  const std::stop_token& stop);
 
 }  // namespace ajp::gpu::winml_rt

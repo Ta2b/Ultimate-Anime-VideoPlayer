@@ -29,6 +29,18 @@ std::filesystem::path onnx_of(const std::filesystem::path& artifact) {
   return p;
 }
 
+std::filesystem::path npu_onnx_of(const std::filesystem::path& artifact) {
+  std::filesystem::path p = artifact;
+  p += ".npu.onnx";
+  return p;
+}
+
+std::filesystem::path npu_cache_of(const std::filesystem::path& artifact) {
+  std::filesystem::path p = artifact;
+  p += ".vaicache";
+  return p;
+}
+
 // Le chemin ONNX s'écrit en UTF-8, quelle que soit la page de code de Windows.
 std::expected<void, Refusal> write_manifest(const std::filesystem::path& path, const Manifest& manifest) {
   std::ofstream out(path, std::ios::binary | std::ios::trunc);
@@ -37,6 +49,7 @@ std::expected<void, Refusal> write_manifest(const std::filesystem::path& path, c
   for (const auto& [symbol, value] : manifest.dims) out << "dim " << value << ' ' << symbol << '\n';
   if (manifest.io) out << "io rewritten\n";
   if (manifest.fp16) out << "fp16\n";
+  if (manifest.npu) out << "npu\n";
   if (!out) return refuse(RefusalCode::CacheIo, std::format("{} : écriture", path.string()));
   return {};
 }
@@ -65,6 +78,8 @@ std::expected<Manifest, Refusal> read_manifest(const std::filesystem::path& path
       manifest.io = true;
     } else if (line == "fp16") {
       manifest.fp16 = true;
+    } else if (line == "npu") {
+      manifest.npu = true;
     }
   }
   if (manifest.onnx.empty())
