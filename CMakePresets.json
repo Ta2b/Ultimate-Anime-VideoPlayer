@@ -410,7 +410,7 @@
       },
       "filter": {
         "include": {
-          "name": "^(core|media|prepare|subs|app): "
+          "name": "^(core|core_log|media|prepare|subs|app): "
         }
       },
       "execution": {
@@ -425,7 +425,7 @@
       },
       "filter": {
         "include": {
-          "name": "^(core|media|prepare|subs|app): "
+          "name": "^(core|core_log|media|prepare|subs|app): "
         }
       },
       "execution": {
@@ -440,7 +440,7 @@
       },
       "filter": {
         "include": {
-          "name": "^(core|media|prepare|subs|app|coreml_rt): "
+          "name": "^(core|core_log|media|prepare|subs|app|coreml_rt): "
         }
       },
       "execution": {
