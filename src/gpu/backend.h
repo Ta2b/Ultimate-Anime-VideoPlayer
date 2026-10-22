@@ -50,8 +50,8 @@ using DeviceUuid = ajp::DeviceUuid;
 
 enum class DeviceMatch : std::uint8_t { Same, Different, Unknown };
 
-// Un backend a sa propre copie de spdlog : il journalise par BackendInit::log, que app relie
-// à log_channel("backend") (core/log.h). Le rappel ne lève jamais.
+// Un backend journalise par BackendInit::log, que app relie à log_channel("backend")
+// (core/log.h) ; ses canaux y vont par install_module_log_sinks. Le rappel ne lève jamais.
 enum class BackendLogLevel : std::uint8_t { Debug, Info, Warn, Error };
 using BackendLog = std::function<void(BackendLogLevel level, std::string_view message)>;
 

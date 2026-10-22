@@ -253,8 +253,10 @@ spdlog en `SPDLOG_USE_STD_FORMAT`, par la cible `ajp::core_log` :
   tous les canaux partagent alors un répartiteur, si bien qu'un puits installé
   plus tard (fichier, OSD) reçoit aussi les messages des canaux déjà créés ;
 - le niveau d'un canal est celui du journal par défaut à sa création ;
-- un backend a sa propre copie de spdlog : il écrit par `BackendInit::log`, que
-  `app` relie à un canal.
+- un backend écrit par `BackendInit::log`, que `app` relie à un canal ; ses
+  propres canaux y vont par `install_module_log_sinks()`, un répartiteur à lui,
+  sans toucher au journal par défaut : sous Windows, `spdlog.dll` est partagé avec
+  le lecteur, et y poser le rappel le ferait se rappeler lui-même.
 
 ## Moteurs
 

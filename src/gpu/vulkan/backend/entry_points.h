@@ -1,8 +1,8 @@
 // Points d'entrée extern "C" d'une bibliothèque de backend bâtie sur VulkanBackend
 // (gpu/backend.h) : ajp_backend_vulkan, et ajp_backend_migraphx, ajp_backend_openvino dont les
 // réseaux passent par un autre runtime. Aucune exception ne traverse la frontière : une exception
-// interne devient un refus nommé. Le journal de la bibliothèque (sa propre copie de spdlog) va au
-// rappel BackendInit::log ; avec plusieurs backends créés, le dernier rappel reçoit tout.
+// interne devient un refus nommé. Les canaux de la bibliothèque (core/log.h) vont au rappel
+// BackendInit::log ; avec plusieurs backends créés, le dernier rappel reçoit tout.
 //
 // Inclus par un seul fichier de chaque bibliothèque, qui écrit :
 //   AJP_VULKAN_BACKEND_ENTRY_POINTS("Vulkan", options_function)
@@ -36,13 +36,15 @@ inline BackendLogLevel level_of(spdlog::level::level_enum level) {
   }
 }
 
-// Les canaux de spdlog de la bibliothèque vers le rappel du lecteur.
+// Les canaux de la bibliothèque vers le rappel du lecteur, par le répartiteur de la bibliothèque
+// et non par le journal par défaut : sous Windows, spdlog.dll est partagé avec le lecteur, dont le
+// rappel écrit dans ce journal ; il s'y appellerait lui-même (« resource deadlock would occur »).
 inline void route_logs(const BackendLog& log) {
   if (!log) return;
   auto sink = std::make_shared<spdlog::sinks::callback_sink_mt>([log](const spdlog::details::log_msg& msg) {
     log(level_of(msg.level), std::string_view(msg.payload.data(), msg.payload.size()));
   });
-  install_log_sinks({sink}, spdlog::level::debug);
+  install_module_log_sinks({sink}, spdlog::level::debug);
 }
 
 inline void tell(const BackendInit* init, Refusal refusal) {

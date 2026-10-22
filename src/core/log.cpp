@@ -1,5 +1,6 @@
 #include "core/log.h"
 
+#include <mutex>
 #include <string>
 #include <utility>
 
@@ -18,9 +19,30 @@ std::shared_ptr<LogHub> hub_of(const spdlog::logger& logger) {
   return std::dynamic_pointer_cast<LogHub>(logger.sinks().front());
 }
 
+// Le répartiteur de install_module_log_sinks, à ce binaire seul, et le niveau de ses canaux.
+struct ModuleHub {
+  std::mutex mutex;
+  std::shared_ptr<LogHub> hub;                            // sous mutex ; nul hors d'un backend
+  spdlog::level::level_enum level = spdlog::level::info;  // sous mutex
+};
+
+ModuleHub& module_hub() {
+  static ModuleHub module;
+  return module;
+}
+
 }  // namespace
 
 std::shared_ptr<spdlog::logger> log_channel(std::string_view module) {
+  {
+    ModuleHub& routed = module_hub();
+    const std::scoped_lock lock(routed.mutex);
+    if (routed.hub != nullptr) {
+      auto channel = std::make_shared<spdlog::logger>(std::string(module), routed.hub);
+      channel->set_level(routed.level);
+      return channel;
+    }
+  }
   // Les puits du journal par défaut ne changent jamais en place (install_log_sinks remplace le
   // journal, ou le contenu de son répartiteur sous son verrou) et son niveau est atomique : le
   // copier pendant qu'un autre thread s'en sert est sûr.
@@ -41,6 +63,15 @@ void install_log_sinks(std::vector<spdlog::sink_ptr> sinks, spdlog::level::level
   }
   hub->set_level(level);
   hub->set_sinks(std::move(sinks));
+}
+
+void install_module_log_sinks(std::vector<spdlog::sink_ptr> sinks, spdlog::level::level_enum level) {
+  ModuleHub& routed = module_hub();
+  const std::scoped_lock lock(routed.mutex);
+  if (routed.hub == nullptr) routed.hub = std::make_shared<LogHub>();
+  routed.level = level;
+  routed.hub->set_level(level);
+  routed.hub->set_sinks(std::move(sinks));
 }
 
 }  // namespace ajp

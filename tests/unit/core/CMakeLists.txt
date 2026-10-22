@@ -4,3 +4,6 @@ ajp_add_unit_tests(core
           model_index_test.cpp pacing_test.cpp profile_format_test.cpp profile_test.cpp resolve_test.cpp
           settings_test.cpp thread_test.cpp user_overlay_test.cpp
   DEPS ajp::core_log)
+
+# Le répartiteur d'un backend (install_module_log_sinks) vaut pour tout son binaire : à part.
+ajp_add_unit_tests(core_log SOURCES log_module_test.cpp)
