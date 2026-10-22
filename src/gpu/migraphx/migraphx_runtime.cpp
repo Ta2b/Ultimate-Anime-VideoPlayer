@@ -126,9 +126,11 @@ class MigraphxRuntime final : public vk::net::Runtime {
   bool imports_memory() const override { return true; }
 #endif
   void use_device_memory(bool on) override { device_memory_ = on; }
+  bool imports_semaphores() const override { return imports_memory(); }
   std::expected<std::unique_ptr<vk::net::ImportedMemory>, Refusal> import_memory(
-      int fd, std::uint64_t bytes) override {
-    return detail::import_memory(device_, fd, bytes);
+      vk::net::HandleValue handle, std::uint64_t bytes, TensorType /*type*/,
+      const Shape& /*shape*/) override {
+    return detail::import_memory(device_, static_cast<int>(handle), bytes);
   }
   std::expected<std::unique_ptr<vk::net::ImportedSemaphore>, Refusal> import_semaphore(int fd) override {
     if (!device_memory_)

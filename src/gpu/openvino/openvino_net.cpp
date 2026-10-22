@@ -6,6 +6,7 @@
 #include <mutex>
 #include <optional>
 #include <span>
+#include <stdexcept>
 #include <stop_token>
 #include <string>
 #include <thread>
@@ -23,13 +24,15 @@ using vk::net::HostBinding;
 
 class OpenvinoNet final : public vk::net::RuntimeNet {
  public:
-  // usm : les mémoires USM du GPU, pour un réseau compilé sur ce GPU ; nul sur le NPU, qui lit
-  // toute mémoire hôte de la même façon.
-  OpenvinoNet(ov::CompiledModel compiled, vk::net::IoNames names, std::shared_ptr<UsmPool> usm)
+  // usm, imports : les mémoires USM du GPU et les mémoires de la chaîne importées, pour un réseau
+  // compilé sur ce GPU ; nuls sur le NPU, qui lit toute mémoire hôte de la même façon.
+  OpenvinoNet(ov::CompiledModel compiled, vk::net::IoNames names, std::shared_ptr<UsmPool> usm,
+              std::shared_ptr<DeviceImports> imports)
       : compiled_(std::move(compiled)),
         request_(compiled_.create_infer_request()),
         names_(std::move(names)),
         usm_(std::move(usm)),
+        imports_(std::move(imports)),
         bound_(names_.inputs.size() + names_.outputs.size()) {}
   OpenvinoNet(const OpenvinoNet&) = delete;
   OpenvinoNet& operator=(const OpenvinoNet&) = delete;
@@ -92,6 +95,7 @@ class OpenvinoNet final : public vk::net::RuntimeNet {
  private:
   struct Bound {
     std::byte* data = nullptr;
+    void* device = nullptr;
     TensorType type = TensorType::F16;
     Shape shape;
   };
@@ -140,24 +144,36 @@ class OpenvinoNet final : public vk::net::RuntimeNet {
   }
 
   // Les tenseurs enveloppent la mémoire du lecteur, sans copie côté hôte, et restent liés tant
-  // que la chaîne donne les mêmes : le greffon ne revérifie pas la mémoire à chaque image.
+  // que la chaîne donne les mêmes : le greffon ne revérifie pas la mémoire à chaque image. Une
+  // mémoire d'appareil (b.device, interop) est un import de la chaîne, que le GPU lit et écrit
+  // en place. Lève les exceptions d'OpenVINO, et std::runtime_error pour une liaison sans import.
   void bind(std::size_t slot, const ov::Output<const ov::Node>& port, const HostBinding& b) {
     Bound& last = bound_[slot];
-    if (last.data == b.data && last.type == b.type && last.shape == b.shape) return;
+    if (last.data == b.data && last.device == b.device && last.type == b.type && last.shape == b.shape)
+      return;
     ov::Shape shape;
     for (const std::int64_t d : b.shape.dims) shape.push_back(static_cast<std::size_t>(d));
-    if (usm_ && usm_->owns(b.data, b.bytes)) {
+    if (b.device != nullptr) {
+      std::optional<ov::RemoteTensor> imported =
+          imports_ ? imports_->tensor_for(b.device, element_of(b.type), shape, b.bytes) : std::nullopt;
+      if (!imported) {
+        throw std::runtime_error(imports_ ? "tenseur de la chaîne hors de ses imports (décalage, taille)"
+                                          : "tenseur de la chaîne en mémoire d'appareil sur le NPU");
+      }
+      request_.set_tensor(port, *imported);
+    } else if (usm_ && usm_->owns(b.data, b.bytes)) {
       request_.set_tensor(port, usm_->wrap(element_of(b.type), shape, b.data));
     } else {
       request_.set_tensor(port, ov::Tensor(element_of(b.type), shape, b.data));
     }
-    last = {.data = b.data, .type = b.type, .shape = b.shape};
+    last = {.data = b.data, .device = b.device, .type = b.type, .shape = b.shape};
   }
 
   ov::CompiledModel compiled_;
   ov::InferRequest request_;
   vk::net::IoNames names_;
   std::shared_ptr<UsmPool> usm_;
+  std::shared_ptr<DeviceImports> imports_;
   std::vector<Bound> bound_;
   // Étapes en file pour le fil ; au-delà, l'appelant fait l'étape lui-même.
   static constexpr std::size_t kStepBound = 16;
@@ -172,8 +188,10 @@ class OpenvinoNet final : public vk::net::RuntimeNet {
 }  // namespace
 
 std::unique_ptr<vk::net::RuntimeNet> make_net(ov::CompiledModel compiled, vk::net::IoNames names,
-                                              std::shared_ptr<UsmPool> usm) {
-  return std::make_unique<OpenvinoNet>(std::move(compiled), std::move(names), std::move(usm));
+                                              std::shared_ptr<UsmPool> usm,
+                                              std::shared_ptr<DeviceImports> imports) {
+  return std::make_unique<OpenvinoNet>(std::move(compiled), std::move(names), std::move(usm),
+                                       std::move(imports));
 }
 
 }  // namespace ajp::gpu::openvino_rt

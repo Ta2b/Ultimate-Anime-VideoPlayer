@@ -176,14 +176,15 @@ std::expected<void, Refusal> VulkanBackend::open(const BackendInit& init) {
     if (!runtime) return std::unexpected(runtime.error());
     runtime_ = std::move(*runtime);
     host_views_ = std::make_shared<HostViews>();
-    shared_memory_ = runtime_->imports_memory() && exports_memory(*context_);
-    runtime_->use_device_memory(shared_memory_);
+    shared_memory_.store(runtime_->imports_memory() && exports_memory(*context_, runtime_->memory_handle()));
+    runtime_->use_device_memory(shared_memory_.load());
     // GPU intégré seulement : sur une carte, la mémoire hôte se lit par le bus, et le runtime
     // copie mieux vers la mémoire de la carte que ses noyaux ne la liraient de loin.
-    if (!shared_memory_ && context_->caps().type == VK_PHYSICAL_DEVICE_TYPE_INTEGRATED_GPU)
+    if (!shared_memory_.load() && context_->caps().type == VK_PHYSICAL_DEVICE_TYPE_INTEGRATED_GPU)
       host_alignment_ = host_import_alignment(*context_);
   }
-  const bool export_timeline = shared_memory_ && exports_semaphores(*context_);
+  const bool export_timeline =
+      shared_memory_.load() && runtime_->imports_semaphores() && exports_semaphores(*context_);
   const VkExternalSemaphoreHandleTypeFlags exports =
       export_timeline ? VkExternalSemaphoreHandleTypeFlags{VK_EXTERNAL_SEMAPHORE_HANDLE_TYPE_OPAQUE_FD_BIT}
                       : 0U;
@@ -197,7 +198,7 @@ std::expected<void, Refusal> VulkanBackend::open(const BackendInit& init) {
     log(BackendLogLevel::Info,
         std::format("réseaux par {} {} sur {}{}{}", runtime_->name(), runtime_->version(),
                     runtime_->device_name(),
-                    shared_memory_         ? ", mémoire partagée avec la chaîne Vulkan"
+                    shared_memory_.load()  ? ", mémoire partagée avec la chaîne Vulkan"
                     : host_alignment_ != 0 ? ", tenseurs dans la mémoire hôte du runtime, importée"
                                            : ", tenseurs par l'hôte",
                     imported_timeline_ ? ", ordonnés côté GPU" : ""));

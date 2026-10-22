@@ -7,6 +7,7 @@
 // extern "C" ; les tests l'utilisent directement.
 #pragma once
 
+#include <atomic>
 #include <cstdint>
 #include <expected>
 #include <filesystem>
@@ -131,7 +132,10 @@ class VulkanBackend final : public Backend {
   std::unique_ptr<VulkanKernelOps> kernels_;
   std::shared_ptr<net::Runtime> runtime_;
   std::shared_ptr<HostViews> host_views_;  // projections des tenseurs d'un runtime
-  bool shared_memory_ = false;             // interop : tenseurs du runtime en mémoire exportée
+  // interop : tenseurs du runtime en mémoire exportée ; lu par le préparateur (build_runtime),
+  // éteint par le fil du GPU (alloc_runtime_tensor) si l'import échoue.
+  std::atomic<bool> shared_memory_ = false;
+  bool shared_checked_ = false;  // un premier tenseur partagé vérifié (shared_tensor)
   // Alignement des mémoires hôte du runtime que Vulkan importe (GPU intégré) ; 0 : sans import.
   std::uint64_t host_alignment_ = 0;
   bool host_import_checked_ = false;  // le GPU a relu un premier import (host_imported_tensor)

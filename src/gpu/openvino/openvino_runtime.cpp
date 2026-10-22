@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <array>
+#include <atomic>
 #include <chrono>
 #include <cstdint>
 #include <exception>
@@ -19,6 +20,7 @@
 #include <utility>
 #include <vector>
 
+#include "gpu/openvino/openvino_import.h"
 #include "gpu/openvino/openvino_net.h"
 #include "gpu/vulkan/backend/net_measure.h"
 #include "gpu/vulkan/compute/caps.h"
@@ -137,16 +139,23 @@ class OpenvinoRuntime final : public vk::net::Runtime {
                   std::optional<Npu> npu)
       : core_(std::move(core)), gpu_(std::move(gpu)), full_name_(std::move(full_name)), npu_(std::move(npu)) {
     try {
-      usm_ = std::make_shared<UsmPool>(core_->get_default_context(gpu_));
+      const ov::RemoteContext context = core_->get_default_context(gpu_);
+      usm_ = std::make_shared<UsmPool>(context);
+      // La mémoire de la chaîne ne s'importe que sur une carte : sur un GPU intégré, la mémoire hôte
+      // du runtime (USM) est déjà partagée, sans copie.
+      if (core_->get_property(gpu_, ov::device::type) == ov::device::Type::DISCRETE)
+        imports_ = DeviceImports::open(context);
     } catch (const std::exception&) {  // NOLINT(bugprone-empty-catch) : contexte du GPU indisponible,
       // les tenseurs passent par la mémoire du backend
     }
   }
   std::string_view name() const override { return "openvino"; }
   // Entre dans la clé des artefacts : un NPU qui apparaît (pilote installé) ou change de pilote
-  // fait reconstruire, et la mesure choisit à nouveau.
+  // fait reconstruire, et la mesure choisit à nouveau. En mémoire d'appareil le NPU ne sert pas
+  // (il ne lit pas la mémoire de la carte) : la clé le dit.
   std::string device_name() const override {
-    return std::format("{} ({}){}", full_name_, gpu_, npu_ ? std::format(" + NPU {}", npu_->label) : "");
+    const bool npu = npu_ && !device_memory_.load();
+    return std::format("{} ({}){}", full_name_, gpu_, npu ? std::format(" + NPU {}", npu_->label) : "");
   }
   std::string version() const override {
     const ov::Version v = ov::get_openvino_version();
@@ -179,7 +188,8 @@ class OpenvinoRuntime final : public vk::net::Runtime {
       if (progress.report) progress.report(0.15F, "compilation OpenVINO (GPU)");
       ov::CompiledModel compiled = core_->compile_model(graph, gpu_, gpu_config(*core_, gpu_));
       std::string device = gpu_;
-      if (npu_) {
+      // En mémoire d'appareil, le réseau reste sur le GPU : le NPU ne lit pas cette mémoire.
+      if (npu_ && !device_memory_.load()) {
         const std::string npu_device = npu_->device;
         auto warps = vk::net::onnx_uses_op(model.onnx_path, "GridSample");
         if (!warps) return std::unexpected(warps.error());
@@ -206,6 +216,25 @@ class OpenvinoRuntime final : public vk::net::Runtime {
   }
 
   // Une mémoire USM hôte du GPU (alignée sur la page par le pilote, que l'appelant vérifie).
+  // Interop sur une carte Arc : la chaîne exporte sa mémoire d'appareil (dma-buf sous Linux, HANDLE
+  // NT sous Windows) et OpenVINO la lit et l'écrit en place. Les réseaux lient chaque tenseur selon
+  // ce qu'il est (openvino_net.cpp), donc un import refusé laisse les autres à la mémoire hôte.
+  bool imports_memory() const override { return imports_ != nullptr; }
+  vk::net::MemoryHandle memory_handle() const override {
+#if defined(_WIN32)
+    return vk::net::MemoryHandle::OpaqueWin32;
+#else
+    return vk::net::MemoryHandle::DmaBuf;
+#endif
+  }
+  bool mixes_memory() const override { return true; }
+  void use_device_memory(bool on) override { device_memory_.store(on); }
+  std::expected<std::unique_ptr<vk::net::ImportedMemory>, Refusal> import_memory(
+      vk::net::HandleValue handle, std::uint64_t /*bytes*/, TensorType type, const Shape& shape) override {
+    if (!imports_) return refuse(RefusalCode::FeatureUnavailable, "OpenVINO : pas d'import sur ce GPU");
+    return imports_->import(handle, type, shape);
+  }
+
   std::expected<std::unique_ptr<vk::net::HostMemory>, Refusal> allocate_host(
       std::uint64_t bytes, std::uint64_t /*alignment*/, TensorType /*type*/,
       const Shape& /*shape*/) override {
@@ -225,13 +254,14 @@ class OpenvinoRuntime final : public vk::net::Runtime {
     try {
       std::string device = gpu_;
       if (std::ifstream tag(device_path(path)); tag) std::getline(tag, device);
-      const bool on_npu = npu_ && device == npu_->device;
+      const bool on_npu = npu_ && device == npu_->device && !device_memory_.load();
       if (!on_npu) device = gpu_;  // un GPU renuméroté garde son artefact (la clé couvre le modèle)
       std::ifstream in(path, std::ios::binary);
       if (!in) return refuse(RefusalCode::CacheIo, std::format("{} : lecture", path.string()));
       ov::CompiledModel compiled =
           core_->import_model(in, device, on_npu ? npu_config(*core_, device) : gpu_config(*core_, device));
-      return make_net(std::move(compiled), std::move(*names), on_npu ? nullptr : usm_);
+      return make_net(std::move(compiled), std::move(*names), on_npu ? nullptr : usm_,
+                      on_npu ? nullptr : imports_);
     } catch (const std::exception& e) {
       return refuse(RefusalCode::CacheIo, std::format("OpenVINO, {} : {}", path.string(), e.what()));
     }
@@ -273,7 +303,9 @@ class OpenvinoRuntime final : public vk::net::Runtime {
   std::string gpu_;
   std::string full_name_;
   std::optional<Npu> npu_;
-  std::shared_ptr<UsmPool> usm_;  // nul sans contexte GPU
+  std::shared_ptr<UsmPool> usm_;             // nul sans contexte GPU
+  std::shared_ptr<DeviceImports> imports_;   // nul hors carte dédiée
+  std::atomic<bool> device_memory_ = false;  // le backend lie la mémoire de la chaîne (interop)
 };
 
 // Le NPU de la puce (Core Ultra), s'il y en a un : son nom et la version de son pilote, qui

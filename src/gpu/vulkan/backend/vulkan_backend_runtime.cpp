@@ -145,7 +145,7 @@ std::expected<Artifact, Refusal> VulkanBackend::build_runtime(const ModelSpec& m
   std::string key_text = std::format("{}|{}|{}|{}|{}|{}", model.id, model.sha256,
                                      model.precision == TensorType::F16 ? "f16" : "f32", runtime_->version(),
                                      runtime_->device_name(), runtime_->name());
-  if (shared_memory_) key_text += "|interop";  // programme compilé pour la mémoire de l'appareil
+  if (shared_memory_.load()) key_text += "|interop";  // programme compilé pour la mémoire de l'appareil
   if (const std::string_view recipe = runtime_->recipe(); !recipe.empty())
     key_text += std::format("|{}", recipe);
   for (const auto& input : inputs) {
@@ -218,8 +218,26 @@ std::expected<std::unique_ptr<TensorBuffer>, Refusal> VulkanBackend::alloc_runti
     TensorType type, const Shape& shape) {
   auto dense = detail::tensor_bytes(type, shape);
   if (!dense) return std::unexpected(dense.error());
-  if (shared_memory_)
-    return shared_tensor(*context_, *runtime_, type, shape, (*dense + 3) / 4 * 4, host_views_);
+  if (shared_memory_.load()) {
+    auto shared = shared_tensor(*context_, *memory_, *runtime_, type, shape, (*dense + 3) / 4 * 4,
+                                host_views_, !shared_checked_);
+    if (shared || !runtime_->mixes_memory()) {
+      if (shared) shared_checked_ = true;
+      return shared;
+    }
+    // Le runtime lie aussi bien la mémoire de l'hôte : ce tenseur y passe, et tous les suivants
+    // si aucun import n'a encore réussi (pilote qui n'importe pas, vérification refusée) ; les
+    // réseaux construits ensuite le sont pour la mémoire de l'hôte, sous leur propre clé.
+    if (!shared_checked_) {
+      shared_memory_.store(false);
+      runtime_->use_device_memory(false);
+      log(BackendLogLevel::Info, std::format("tenseurs de {} par la mémoire du backend ({})",
+                                             runtime_->name(), shared.error().detail));
+    } else {
+      log(BackendLogLevel::Warn, std::format("un tenseur de {} par la mémoire du backend ({})",
+                                             runtime_->name(), shared.error().detail));
+    }
+  }
   // GPU intégré : la mémoire hôte du runtime, importée par Vulkan : USM d'OpenVINO et IOSurface de
   // Core ML, que le réseau lit et écrit sans copie ; mémoire épinglée de MIGraphX sous Windows, que
   // HIP copie par DMA, sans passer par le CPU. Au premier refus, la mémoire hôte du backend pour la

@@ -9,6 +9,7 @@ ajp_add_module(vk_backend
     deferred_steps.cpp
     device_profile.cpp
     family.cpp
+    host_tensor.cpp
     kernel_frames.cpp
     kernel_image.cpp
     kernel_ops.cpp

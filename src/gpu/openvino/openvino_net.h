@@ -1,6 +1,7 @@
 // Les réseaux du runtime OpenVINO (openvino_runtime.cpp), interne au module : un refus nommé, le
 // type d'élément d'un tenseur, les mémoires USM hôte du GPU que Vulkan importe, et le réseau
-// compilé qui les reconnaît (openvino_net.cpp).
+// compilé qui les reconnaît, comme les mémoires d'appareil de la chaîne qu'OpenVINO importe
+// (openvino_import.h) : openvino_net.cpp.
 #pragma once
 
 #include <cstddef>
@@ -14,6 +15,7 @@
 #include <string>
 #include <utility>
 
+#include "gpu/openvino/openvino_import.h"
 #include "gpu/openvino/openvino_runtime.h"
 
 namespace ajp::gpu::openvino_rt {
@@ -88,9 +90,11 @@ class UsmMemory final : public vk::net::HostMemory {
 };
 
 // Un réseau compilé prêt à servir la chaîne : ses tenseurs enveloppent la mémoire du lecteur sans
-// copie côté hôte. usm : les mémoires USM du GPU, pour un réseau compilé sur ce GPU ; nul sur le
-// NPU, qui lit toute mémoire hôte de la même façon.
+// copie côté hôte. usm et imports : les mémoires USM du GPU et celles de la chaîne importées sur
+// une carte, pour un réseau compilé sur ce GPU ; nuls sur le NPU, qui lit toute mémoire hôte de la
+// même façon.
 std::unique_ptr<vk::net::RuntimeNet> make_net(ov::CompiledModel compiled, vk::net::IoNames names,
-                                              std::shared_ptr<UsmPool> usm);
+                                              std::shared_ptr<UsmPool> usm,
+                                              std::shared_ptr<DeviceImports> imports);
 
 }  // namespace ajp::gpu::openvino_rt

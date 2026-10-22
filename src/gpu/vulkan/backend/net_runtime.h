@@ -7,10 +7,11 @@
 // de la file Vulkan (BackendCaps::needs_host_sync), et rend la main une fois ses sorties écrites.
 // Sur un GPU intégré, cette mémoire hôte peut être celle du runtime (Runtime::allocate_host),
 // importée par Vulkan : le réseau n'y copie plus rien.
-// Avec l'interop (MIGraphX sous Linux), ils vivent en mémoire d'appareil Vulkan exportée et
-// importée par le runtime : même attente, sans aller-retour par le bus PCIe. Si le runtime importe
-// aussi le sémaphore timeline de la file Vulkan, plus d'attente hôte du tout : le réseau attend
-// la chaîne et la chaîne attend le réseau côté GPU (RuntimeNet::run_ordered).
+// Avec l'interop (MIGraphX sous Linux, OpenVINO sur une carte Arc), ils vivent en mémoire
+// d'appareil Vulkan exportée et importée par le runtime : même attente, sans aller-retour par le
+// bus PCIe. Si le runtime importe aussi le sémaphore timeline de la file Vulkan, plus d'attente
+// hôte du tout : le réseau attend la chaîne et la chaîne attend le réseau côté GPU
+// (RuntimeNet::run_ordered).
 #pragma once
 
 #include <cstddef>
@@ -41,11 +42,28 @@ struct HostBinding {
   void* device = nullptr;
 };
 
+// Le type du descripteur sous lequel la mémoire d'appareil Vulkan passe au runtime.
+enum class MemoryHandle : std::uint8_t {
+  OpaqueFd,     // Linux, descripteur opaque : HIP de MIGraphX
+  DmaBuf,       // Linux, dma-buf : OpenCL d'OpenVINO
+  OpaqueWin32,  // Windows, HANDLE NT : OpenCL d'OpenVINO
+};
+// Le descripteur lui-même : un descripteur de fichier sous Linux, un HANDLE NT sous Windows.
+using HandleValue = std::intptr_t;
+
 // Mémoire d'appareil Vulkan importée par le runtime ; rendue à sa destruction.
 class ImportedMemory {
  public:
   virtual ~ImportedMemory() = default;
-  virtual void* device() const = 0;  // adresse dans l'espace du runtime (pointeur HIP)
+  // Ce qui la désigne dans HostBinding::device : un pointeur HIP (MIGraphX, qui y ajoute le
+  // décalage d'un tenseur), le cl_mem d'OpenCL (OpenVINO, sans décalage).
+  virtual void* device() const = 0;
+  // La vérification du premier import : le runtime lit sur l'appareil le mot de 32 bits à
+  // l'octet 0 et écrit value à l'octet 4, avant de rendre le mot lu. Refus FeatureUnavailable par
+  // défaut : l'import n'est pas vérifié.
+  virtual std::expected<std::uint32_t, Refusal> exchange(std::uint32_t /*value*/) {
+    return std::unexpected(Refusal{RefusalCode::FeatureUnavailable, "échange non pris en charge"});
+  }
 };
 
 // Sémaphore timeline Vulkan importé par le runtime ; rendu à sa destruction.
@@ -121,16 +139,28 @@ class Runtime {
                                              const std::filesystem::path& path, Progress& progress) = 0;
   virtual std::expected<std::unique_ptr<RuntimeNet>, Refusal> load(const std::filesystem::path& path) = 0;
 
-  // Interop (Linux) : le runtime sait-il importer une mémoire Vulkan exportée en descripteur
-  // opaque ? Le backend appelle alors use_device_memory(true) avant toute construction si
-  // l'appareil Vulkan exporte aussi (VK_KHR_external_memory_fd) : les réseaux lisent et écrivent
-  // la mémoire de la chaîne, sans copie par l'hôte.
+  // Interop : le runtime sait-il importer une mémoire Vulkan exportée sous memory_handle() ? Le
+  // backend appelle alors use_device_memory(true) avant toute construction si l'appareil Vulkan
+  // l'exporte aussi (shared_tensor.h, exports_memory) : les réseaux lisent et écrivent la mémoire
+  // de la chaîne, sans copie par l'hôte.
   virtual bool imports_memory() const { return false; }
+  virtual MemoryHandle memory_handle() const { return MemoryHandle::OpaqueFd; }
   virtual void use_device_memory(bool /*on*/) {}
-  // Importe bytes octets ; le runtime prend le descripteur en cas de succès. Refus
-  // FeatureUnavailable par défaut.
-  virtual std::expected<std::unique_ptr<ImportedMemory>, Refusal> import_memory(int /*fd*/,
-                                                                                std::uint64_t /*bytes*/) {
+  // Le sémaphore timeline de la file aussi (import_semaphore) ? Sans quoi la file ne l'exporte
+  // pas, et l'hôte ordonne chaque étape.
+  virtual bool imports_semaphores() const { return false; }
+  // Un import refusé laisse-t-il ce tenseur, et les suivants, à la mémoire hôte du backend ? Oui
+  // pour un runtime dont chaque réseau lie chaque tenseur selon ce qu'il est (OpenVINO) ; non pour
+  // un runtime compilé pour la mémoire d'appareil (MIGraphX) : le refus est alors celui de la
+  // chaîne.
+  virtual bool mixes_memory() const { return false; }
+  // Importe bytes octets (au moins ceux du tenseur type × shape qu'ils porteront) ; le runtime
+  // prend le descripteur en cas de succès, l'appelant le garde sinon. Refus FeatureUnavailable
+  // par défaut.
+  virtual std::expected<std::unique_ptr<ImportedMemory>, Refusal> import_memory(HandleValue /*handle*/,
+                                                                                std::uint64_t /*bytes*/,
+                                                                                TensorType /*type*/,
+                                                                                const Shape& /*shape*/) {
     return std::unexpected(Refusal{RefusalCode::FeatureUnavailable, "import de mémoire non pris en charge"});
   }
   // Mémoire hôte du runtime pour un tenseur (GPU intégré) : bytes octets, adresse multiple de
@@ -145,9 +175,9 @@ class Runtime {
     return std::unexpected(
         Refusal{RefusalCode::FeatureUnavailable, "mémoire hôte du runtime non prise en charge"});
   }
-  // Importe le sémaphore timeline de la file Vulkan (descripteur opaque) ; le runtime prend le
-  // descripteur en cas de succès. Seulement avec use_device_memory(true). Refus
-  // FeatureUnavailable par défaut.
+  // Importe le sémaphore timeline de la file Vulkan (descripteur opaque, Linux) ; le runtime
+  // prend le descripteur en cas de succès. Seulement avec use_device_memory(true) et
+  // imports_semaphores(). Refus FeatureUnavailable par défaut.
   virtual std::expected<std::unique_ptr<ImportedSemaphore>, Refusal> import_semaphore(int /*fd*/) {
     return std::unexpected(
         Refusal{RefusalCode::FeatureUnavailable, "import de sémaphore non pris en charge"});
