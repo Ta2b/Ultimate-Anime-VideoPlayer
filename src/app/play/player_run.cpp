@@ -208,6 +208,7 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
           .display_hz = display_period_us(out.window()) > 0
                             ? 1e6 / static_cast<double>(display_period_us(out.window()))
                             : 0.0,
+          .display_vrr = p.display && p.display->vrr.value_or(false),
           .rife_available =
               c.rife_model.has_value() || c.gmfss_found || c.drba_found || offered(MotionEngine::Apple),
           // Seul TensorRT sait importer les graphes de GMFSS (MatMul, Softmax, LayerNorm) : le
@@ -319,11 +320,10 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
   std::int64_t saved_at = host_now_us();
   std::int64_t display_polled_at = saved_at;
   p.ui.controls().show_deferred(host_now_us());
-  // Le mode auto : son plafond suit l'écran et le réglage « écran à fréquence variable ».
+  // Le mode auto : son plafond suit la fréquence de l'écran.
   const auto apply_auto = [&] {
     const bool on = chain.running.rife_auto && chain.rife_loaded && chain.running.rife_factor >= 2;
-    chain.live.set_auto(on, core::auto_ceiling(display_refresh_hz(out.window()), fps_of(video.frame_rate),
-                                               chain.running.rife_auto_vrr));
+    chain.live.set_auto(on, core::auto_ceiling(display_refresh_hz(out.window()), fps_of(video.frame_rate)));
   };
   apply_auto();
   while (!session.finished() && !chain.reopen) {

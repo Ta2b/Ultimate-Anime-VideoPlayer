@@ -108,11 +108,8 @@ struct PlaySettings {
   int rife_factor = kDefaultRifeFactor;  // 0 : aucune interpolation
   int rife_factor_den = 1;               // 2 : ×rife_factor / 2 (×1,5 : 3 et 2)
   // Mode auto : le multiplicateur ×k (entier, jusqu'à rife_factor) suit ce que le GPU tient
-  // (core/auto_rate.h) ; en direct. rife_auto_vrr : l'écran est à fréquence variable (G-Sync,
-  // FreeSync), sans quoi seuls les paliers qui tiennent un nombre entier de rafraîchissements
-  // sont permis.
+  // (core/auto_rate.h) ; en direct.
   bool rife_auto = false;
-  bool rife_auto_vrr = false;
   MotionEngine motion_engine = MotionEngine::Rife;
   std::string rife_model;  // fichier ONNX de RIFE (nom seul) ; vide : le défaut de la carte
   // Garder les poses (DRBA, kernels/spec/poses.h) : un personnage animé en deux garde son rythme

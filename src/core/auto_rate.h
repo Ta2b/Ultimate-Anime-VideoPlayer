@@ -10,11 +10,10 @@ namespace ajp::core {
 
 inline constexpr int kAutoMaxStep = 6;  // ×6 de 23,976 : 143,86 i/s, sous un écran de 165 Hz
 
-// Le plus grand palier que l'écran accepte pour une source de `source_fps` i/s, 1 s'il n'en accepte
-// aucun (mode auto sans effet). VRR : tout palier sous la fréquence maximale de l'écran. Fréquence
-// fixe : seulement un palier dont les images tiennent un nombre entier de rafraîchissements (sinon
-// du judder), à 1 % près.
-int auto_ceiling(double display_hz, double source_fps, bool vrr);
+// Le plus grand palier dont la cadence tient sous la fréquence de l'écran (à 1 % près) pour une source
+// de `source_fps` i/s ; 1 si l'écran est inconnu. Sans VRR, les paliers qui ne tiennent pas un nombre
+// entier de rafraîchissements font du judder : le menu l'avertit, il ne les interdit pas.
+int auto_ceiling(double display_hz, double source_fps);
 
 class AutoRate {
  public:

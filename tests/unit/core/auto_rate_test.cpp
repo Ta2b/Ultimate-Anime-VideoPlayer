@@ -6,13 +6,11 @@ using ajp::core::auto_ceiling;
 using ajp::core::AutoRate;
 
 TEST_CASE("auto : le plafond suit l'écran", "[core][auto_rate]") {
-  CHECK(auto_ceiling(165.0, 23.976, true) == 6);  // 143,86 i/s sous 165 Hz
-  CHECK(auto_ceiling(120.0, 23.976, true) == 5);  // 119,88
-  CHECK(auto_ceiling(60.0, 23.976, true) == 2);
-  CHECK(auto_ceiling(165.0, 23.976, false) == 1);  // aucun palier n'y tient en entier
-  CHECK(auto_ceiling(144.0, 24.0, false) == 6);
-  CHECK(auto_ceiling(120.0, 24.0, false) == 5);
-  CHECK(auto_ceiling(0.0, 24.0, true) == 1);
+  CHECK(auto_ceiling(165.0, 23.976) == 6);  // 143,86 i/s sous 165 Hz
+  CHECK(auto_ceiling(120.0, 23.976) == 5);  // 119,88
+  CHECK(auto_ceiling(60.0, 23.976) == 2);
+  CHECK(auto_ceiling(144.0, 24.0) == 6);
+  CHECK(auto_ceiling(0.0, 24.0) == 1);
 }
 
 TEST_CASE("auto : descend vite, remonte lentement", "[core][auto_rate]") {

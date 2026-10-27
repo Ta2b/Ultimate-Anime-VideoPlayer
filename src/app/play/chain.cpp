@@ -126,7 +126,7 @@ void apply_live(Chain& to, const PlaySettings& wanted, std::int64_t now_us) {
                                             : std::string("Interpolation désactivée"),
                     now_us);
   }
-  if (wanted.rife_auto != r.rife_auto || wanted.rife_auto_vrr != r.rife_auto_vrr) {
+  if (wanted.rife_auto != r.rife_auto) {
     if (wanted.rife_auto) controls.notify("Interpolation auto", now_us);
   }
   if (to.header_text && (factor_of(wanted) != factor_of(r) || wanted.downscale != r.downscale ||

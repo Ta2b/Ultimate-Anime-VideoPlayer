@@ -145,13 +145,15 @@ void fluidity_tab(PlaySettings& d, const SettingsChoices& choices, bool exportin
     ImGui::EndCombo();
   }
   if (d.rife_auto && now.num > now.den) {
-    ImGui::Checkbox("Écran à fréquence variable (G-Sync, FreeSync)", &d.rife_auto_vrr);
     note(
         "Auto choisit seul le multiplicateur de ×1 à ×6 (24 à 144 i/s pour 23,976) : il baisse dès que le "
         "GPU prend du retard, remonte après quelques secondes sans retard, et réessaie de plus en plus "
-        "tard un palier qui vient d'échouer. Sans écran à fréquence variable, seuls les paliers qui tiennent "
-        "un nombre entier de rafraîchissements sont permis (sinon du judder) : sur 165 Hz fixe, Auto reste "
-        "à ×1. Lecture seulement ; l'export garde un multiplicateur fixe.");
+        "tard un palier qui vient d'échouer. Lecture seulement ; l'export garde un multiplicateur fixe.");
+    if (!choices.display_vrr)
+      note(
+          "VRR désactivé ou indisponible : à fréquence fixe, un multiplicateur qui ne tombe pas sur un "
+          "nombre entier de rafraîchissements (×k de 23,976 sur 165 Hz) fait vibrer le mouvement "
+          "(judder). Active G-Sync / FreeSync / Adaptive Sync pour l'éviter.");
   }
   if (choices.source_fps > 0.0 && choices.display_hz > 0.0)
     note(std::format("Grisés : au-delà de l'écran ({:.0f} Hz pour {:.3f} i/s).", choices.display_hz,

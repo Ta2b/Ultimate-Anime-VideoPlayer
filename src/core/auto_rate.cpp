@@ -1,22 +1,14 @@
 #include "core/auto_rate.h"
 
 #include <algorithm>
-#include <cmath>
 
 namespace ajp::core {
 
-int auto_ceiling(double display_hz, double source_fps, bool vrr) {
+int auto_ceiling(double display_hz, double source_fps) {
   if (display_hz <= 0.0 || source_fps <= 0.0) return 1;
   int best = 1;
   for (int step = 2; step <= kAutoMaxStep; ++step) {
-    const double output = source_fps * step;
-    if (vrr) {
-      if (output <= display_hz * 1.01) best = step;
-      continue;
-    }
-    const double per_refresh = display_hz / output;  // rafraîchissements par image
-    const double whole = std::round(per_refresh);
-    if (whole >= 1.0 && std::abs(per_refresh - whole) <= 0.01 * whole) best = step;
+    if (source_fps * step <= display_hz * 1.01) best = step;
   }
   return best;
 }

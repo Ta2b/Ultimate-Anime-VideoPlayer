@@ -331,7 +331,6 @@ PlaySettings live_part(const PlaySettings& running, const PlaySettings& wanted, 
   PlaySettings s = running;
   s.downscale = wanted.downscale;
   s.rife_auto = wanted.rife_auto;
-  s.rife_auto_vrr = wanted.rife_auto_vrr;
   if (rife_loaded || wanted.rife_factor < 2) {
     s.rife_factor = wanted.rife_factor;
     s.rife_factor_den = wanted.rife_factor_den;

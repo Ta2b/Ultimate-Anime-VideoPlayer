@@ -10,10 +10,23 @@
 #include <system_error>
 #include <vector>
 
+#if defined(__linux__)
+#include <bit>
+#include <cstdint>
+#include <cstring>
+#include <drm/drm.h>
+#include <drm/drm_mode.h>
+#include <fcntl.h>
+#include <string>
+#include <sys/ioctl.h>
+#include <unistd.h>
+#endif
+
 #ifdef _WIN32
 #ifndef NOMINMAX
 #define NOMINMAX
 #endif
+#include <dxgi1_5.h>
 #include <windows.h>
 // SetupAPI après windows.h.
 #include <setupapi.h>
@@ -187,12 +200,33 @@ std::string describe(const DisplayFacts& d) {
       text += " · OLED : inconnu";
       break;
   }
+  if (d.vrr) text += *d.vrr ? " · VRR actif" : " · VRR inactif";
   return text;
 }
 
 namespace {
 
 #ifdef _WIN32
+// Windows laisse présenter sans attendre le vsync (DXGI_FEATURE_PRESENT_ALLOW_TEARING) : l'écran à
+// fréquence variable est là et le système l'utilise. Rien si DXGI 1.5 manque.
+std::optional<bool> windows_vrr() {
+  IDXGIFactory1* factory = nullptr;
+  if (FAILED(CreateDXGIFactory1(__uuidof(IDXGIFactory1), reinterpret_cast<void**>(&factory))) ||
+      factory == nullptr)
+    return std::nullopt;
+  std::optional<bool> result;
+  IDXGIFactory5* newer = nullptr;
+  if (SUCCEEDED(factory->QueryInterface(__uuidof(IDXGIFactory5), reinterpret_cast<void**>(&newer))) &&
+      newer) {
+    BOOL tearing = FALSE;
+    if (SUCCEEDED(newer->CheckFeatureSupport(DXGI_FEATURE_PRESENT_ALLOW_TEARING, &tearing, sizeof(tearing))))
+      result = tearing != FALSE;
+    newer->Release();
+  }
+  factory->Release();
+  return result;
+}
+
 // Les écrans présents (classe de périphériques Monitor) et l'EDID que Windows garde de chacun dans
 // le registre (Enum\DISPLAY\…\Device Parameters\EDID), lisible sans droits.
 std::vector<DisplayFacts> connected_displays() {
@@ -215,12 +249,68 @@ std::vector<DisplayFacts> connected_displays() {
     edid.resize(size);
     DisplayFacts facts = parse_edid(edid);
     facts.connector = std::format("monitor{}", i);
+    facts.vrr = windows_vrr();
     found.push_back(std::move(facts));
   }
   SetupDiDestroyDeviceInfoList(set);
   return found;
 }
 #else
+#if defined(__linux__)
+// La valeur d'une propriété DRM d'un objet (connecteur, CRTC), par son nom ; rien si elle manque.
+std::optional<std::uint64_t> drm_property(int fd, std::uint32_t object, std::uint32_t type,
+                                          std::string_view name) {
+  drm_mode_obj_get_properties get{};
+  get.obj_id = object;
+  get.obj_type = type;
+  if (ioctl(fd, DRM_IOCTL_MODE_OBJ_GETPROPERTIES, &get) < 0 || get.count_props == 0) return std::nullopt;
+  std::vector<std::uint32_t> ids(get.count_props);
+  std::vector<std::uint64_t> values(get.count_props);
+  get.props_ptr = std::bit_cast<std::uintptr_t>(ids.data());
+  get.prop_values_ptr = std::bit_cast<std::uintptr_t>(values.data());
+  if (ioctl(fd, DRM_IOCTL_MODE_OBJ_GETPROPERTIES, &get) < 0) return std::nullopt;
+  for (std::size_t i = 0; i < std::min<std::size_t>(get.count_props, ids.size()); ++i) {
+    drm_mode_get_property prop{};
+    prop.prop_id = ids[i];
+    if (ioctl(fd, DRM_IOCTL_MODE_GETPROPERTY, &prop) < 0) continue;
+    if (name == std::string_view(static_cast<const char*>(prop.name), strnlen(prop.name, sizeof(prop.name))))
+      return values[i];
+  }
+  return std::nullopt;
+}
+
+// Le VRR d'une sortie (« card1-DP-1 ») : vrr_capable du connecteur ET VRR_ENABLED du CRTC que son
+// encodeur alimente, lus en lecture seule sur le nœud DRM (le même état que celui posé par le
+// compositeur).
+std::optional<bool> drm_vrr(const std::filesystem::path& dir) {
+  const std::string name = dir.filename().string();
+  const std::size_t dash = name.find('-');
+  if (dash == std::string::npos) return std::nullopt;
+  const std::string connector_text = trimmed(dir / "connector_id");
+  if (connector_text.empty()) return std::nullopt;
+  const std::uint32_t connector_id =
+      static_cast<std::uint32_t>(std::strtoul(connector_text.c_str(), nullptr, 10));
+  const int fd = open(("/dev/dri/" + name.substr(0, dash)).c_str(), O_RDWR | O_CLOEXEC);
+  if (fd < 0) return std::nullopt;
+  std::optional<bool> result;
+  const auto capable = drm_property(fd, connector_id, DRM_MODE_OBJECT_CONNECTOR, "vrr_capable");
+  if (capable) {
+    result = false;
+    drm_mode_get_connector connector{};
+    connector.connector_id = connector_id;
+    drm_mode_get_encoder encoder{};
+    if (*capable != 0 && ioctl(fd, DRM_IOCTL_MODE_GETCONNECTOR, &connector) >= 0 &&
+        connector.encoder_id != 0) {
+      encoder.encoder_id = connector.encoder_id;
+      if (ioctl(fd, DRM_IOCTL_MODE_GETENCODER, &encoder) >= 0 && encoder.crtc_id != 0)
+        result = drm_property(fd, encoder.crtc_id, DRM_MODE_OBJECT_CRTC, "VRR_ENABLED").value_or(0) != 0;
+    }
+  }
+  close(fd);
+  return result;
+}
+#endif
+
 // Les sorties branchées de DRM et leur EDID (/sys/class/drm/<sortie>/edid). Sur macOS, rien :
 // l'OLED y reste inconnu et le pic vient de SDL (host_facts.cpp).
 std::vector<DisplayFacts> connected_displays() {
@@ -233,6 +323,9 @@ std::vector<DisplayFacts> connected_displays() {
     if (edid.size() < kBlock) continue;
     DisplayFacts facts = parse_edid(edid);
     facts.connector = dir.filename().string();
+#if defined(__linux__)
+    facts.vrr = drm_vrr(dir);
+#endif
     found.push_back(std::move(facts));
   }
   return found;
