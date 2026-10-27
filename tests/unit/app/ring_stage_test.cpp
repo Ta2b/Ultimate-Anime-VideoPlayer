@@ -62,6 +62,7 @@ class ProbeStage final : public RingStage {
     released_.notify_all();
   }
   bool holding() const { return holding_.load(); }
+  void wait_for_next(bool on) { waits_.store(on); }
   // Pour chaque image passée par outputs(), dans l'ordre : vrai si next() la suivait.
   std::vector<bool> saw_next() const {
     const std::scoped_lock lock(mutex_);
@@ -69,6 +70,7 @@ class ProbeStage final : public RingStage {
   }
 
  private:
+  bool wants_next() const override { return waits_.load(); }
   std::expected<std::uint32_t, Refusal> outputs(const DecodedFrame& /*frame*/) override {
     const std::scoped_lock lock(mutex_);
     saw_next_.push_back(next() != nullptr);
@@ -91,6 +93,7 @@ class ProbeStage final : public RingStage {
   std::uint32_t held_;
   std::uint32_t outputs_;
   std::atomic<bool> holding_{false};
+  std::atomic<bool> waits_{false};
   std::vector<bool> saw_next_;
 };
 
@@ -144,6 +147,21 @@ TEST_CASE("Ring : ce qui attend dans la boîte est pris avant de produire, la su
   // 1 était seule ; 2 voit 3, prise de la boîte avec elle ; 3 est la dernière.
   CHECK(stage.saw_next() == std::vector<bool>{false, true, false});
   CHECK(bench.credits.load() == 3);
+  CHECK(bench.reported().empty());
+}
+
+TEST_CASE("Ring : un étage qui attend la suivante produit la dernière image à la fin du flux",
+          "[app][ring]") {
+  Bench bench;
+  ProbeStage stage(bench.init(), 8, /*held=*/0, /*outputs=*/1);
+  stage.wait_for_next(true);
+  REQUIRE(stage.frames().try_push(frame(1)));
+  REQUIRE(stage.frames().try_push(frame(2)));
+  // 1 voit 2 ; 2 attend une suivante qui ne vient pas.
+  REQUIRE(wait_for([&] { return bench.ring.size() == 1; }));
+  REQUIRE(stage.post(StreamEnd{.epoch = 0}));
+  REQUIRE(wait_for([&] { return bench.ring.size() == 2; }));
+  CHECK(stage.saw_next() == std::vector<bool>{true, false});
   CHECK(bench.reported().empty());
 }
 

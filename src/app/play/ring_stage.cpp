@@ -14,7 +14,7 @@ namespace ajp::app::play {
 RingStage::RingStage(VideoStageInit init, std::uint32_t slots, std::uint32_t generation)
     : init_(std::move(init)),
       generation_(generation),
-      inbox_(StageInbox::Bounds{kMaxFrames, slots, 16, 4}),
+      inbox_(StageInbox::Bounds{kMaxFrames, slots, 16, 4, 4}),
       released_(slots, 0),
       free_(slots, true) {}
 
@@ -61,6 +61,9 @@ void RingStage::run(const std::stop_token& stop, const ThreadReport& report) {
               }
             } else if constexpr (std::is_same_v<M, Flush>) {
               epoch_ = m.epoch;
+              ended_ = false;
+            } else if constexpr (std::is_same_v<M, StreamEnd>) {
+              ended_ = m.epoch == epoch_;
             } else {
               quit = quit || std::holds_alternative<cmd::Quit>(m);
             }
@@ -95,7 +98,9 @@ void RingStage::emit(const ThreadReport& report) {
       continue;
     }
     const DecodedFrame& frame = pending_.front();
-    if (front_outputs_ == 0 && wants_next() && pending_.size() < 2) return;  // attend la suivante
+    if (front_outputs_ == 0 && wants_next() && pending_.size() < 2 &&
+        !(ended_.load() && in_flight_.load() <= pending_.size()))
+      return;  // attend la suivante
     if (front_outputs_ == 0 && pending_.size() > 1 && pending_[1].epoch == frame.epoch &&
         passed(frame, pending_[1])) {
       pending_.pop_front();

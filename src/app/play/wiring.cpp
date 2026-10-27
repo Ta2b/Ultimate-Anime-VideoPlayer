@@ -56,6 +56,7 @@ void HostClock::flush(std::uint32_t epoch) {
 
 void MainMail::end_of_stream(std::uint32_t epoch) {
   if (audio_ != nullptr) audio_->post(audio::EndOfStream{.epoch = epoch});
+  if (video_ != nullptr) video_->post(StreamEnd{.epoch = epoch});
   inbox_.try_push(StreamEnded{.epoch = epoch});
 }
 

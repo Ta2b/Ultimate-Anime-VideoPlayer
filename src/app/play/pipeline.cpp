@@ -193,6 +193,7 @@ std::expected<std::unique_ptr<Pipeline>, Refusal> Pipeline::open(const PipelineC
                                          .clock = p->clock_});
   if (!video) return std::unexpected(std::move(video.error()));
   p->video_ = std::move(*video);
+  p->mail_.attach_video(p->video_.get());
   p->stages_ = std::make_unique<ThreadStages>(StageLinks{.source = &p->source_inbox_,
                                                          .video = p->video_.get(),
                                                          .audio = p->audio_.get(),

@@ -70,6 +70,7 @@ class MainMail final : public RingSink, public subs::SubtitleSink, public media:
   MainMail(MainInbox& inbox, audio::AudioThread* audio) : inbox_(inbox), audio_(audio) {}
   // Avant le départ du thread source, seul à appeler end_of_stream.
   void attach_audio(audio::AudioThread* audio) { audio_ = audio; }
+  void attach_video(VideoStage* video) { video_ = video; }
 
   bool try_push(const RingFrame& frame) override { return inbox_.try_push(RingFrame{frame}); }
   bool try_push(subs::SubtitleFrame&& frame) override { return inbox_.try_push(std::move(frame)); }
@@ -84,6 +85,7 @@ class MainMail final : public RingSink, public subs::SubtitleSink, public media:
  private:
   MainInbox& inbox_;
   audio::AudioThread* audio_;
+  VideoStage* video_ = nullptr;
 };
 
 struct StageLinks {

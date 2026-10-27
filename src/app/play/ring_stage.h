@@ -43,10 +43,11 @@ class RingStage : public VideoStage, public FrameSink {
   bool post(const SlotFree& free) override { return inbox_.try_push(SlotFree{free}); }
   bool post(const Flush& flush) override { return inbox_.try_push(Flush{flush}); }
   bool post(const Command& command) override { return inbox_.try_push(Command{command}); }
+  bool post(const StreamEnd& end) override { return inbox_.try_push(StreamEnd{end}); }
   // Les RingFrame partent dans la boîte de main avant que l'image quitte in_flight_.
   bool idle() const override {
     const std::size_t frames = in_flight_.load();
-    return frames == 0 || (frames == 1 && wants_next());
+    return frames == 0 || (frames == 1 && wants_next() && !ended_.load());
   }
 
  protected:
@@ -70,7 +71,7 @@ class RingStage : public VideoStage, public FrameSink {
   // Vrai : l'image en tête attend la suivante avant outputs (DistilDRBA lit l'image d'après la
   // paire), une image de retard. next() la donne pendant outputs et produce : la suivante de la
   // même époque, ou nullptr (première image d'une époque qui finit, fin du flux pas encore vue).
-  // Sans suivante, la dernière image du flux reste en attente : elle n'est pas montrée.
+  // Sans suivante, la dernière image du flux est produite à StreamEnd, next() valant nullptr.
   virtual bool wants_next() const { return false; }
   // Vrai : frame, en tête et pas encore produite, est déjà passée (next, la suivante de la même
   // époque, est due) ; elle est sautée sans calcul, et la sous-classe oublie ce qui la supposait.
@@ -87,7 +88,7 @@ class RingStage : public VideoStage, public FrameSink {
                                                  std::uint64_t signal_value) = 0;
 
  private:
-  using StageInbox = Inbox<DecodedFrame, SlotFree, Command, Flush>;
+  using StageInbox = Inbox<DecodedFrame, SlotFree, Command, Flush, StreamEnd>;
   void run(const std::stop_token& stop, const ThreadReport& report);
   void emit(const ThreadReport& report);
   void fail(const ThreadReport& report, const Refusal& refusal);
@@ -96,6 +97,7 @@ class RingStage : public VideoStage, public FrameSink {
   std::uint32_t generation_;
   StageInbox inbox_;
   std::atomic<std::size_t> in_flight_{0};
+  std::atomic<bool> ended_{false};  // StreamEnd reçu pour l'époque courante : plus d'image à venir
   // Possédé par le thread gpu.
   std::deque<DecodedFrame> pending_;
   std::uint32_t front_outputs_ = 0;      // sorties de l'image en tête ; 0 : pas encore décidé
