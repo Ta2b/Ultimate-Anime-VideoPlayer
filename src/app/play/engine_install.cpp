@@ -186,6 +186,15 @@ std::string detect_cuda_arch() {
   return done ? arch : std::string();
 }
 
+std::uint64_t download_bytes(const EngineCatalog& catalog, const core::EnginePackage& package,
+                             std::string_view arch) {
+  std::uint64_t total = package.size;
+  for (const core::VendorFile& file :
+       core::vendor_files_for(catalog.vendor_files, package.engine, catalog.layout.os, arch))
+    total += file.packed_size;
+  return total;
+}
+
 std::expected<void, Refusal> fetch_vendor_file(const core::VendorFile& file,
                                                const std::filesystem::path& dest,
                                                const std::filesystem::path& scratch,

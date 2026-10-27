@@ -71,6 +71,11 @@ struct InstallProgress {
 // « sm89 » pour une carte de capacité 8.9, lu par nvidia-smi ; vide s'il manque ou se tait.
 std::string detect_cuda_arch();
 
+// Les octets que l'installation transfère : le paquet, plus les fichiers tiers de l'architecture
+// du GPU (`arch`, vide : toutes). Ce que l'écran des moteurs annonce avant le téléchargement.
+std::uint64_t download_bytes(const EngineCatalog& catalog, const core::EnginePackage& package,
+                             std::string_view arch);
+
 // Un fichier de VendorFile : la plage de ses octets dans l'archive (curl --range), décompressée
 // vers `dest`, taille et SHA-256 vérifiés. Rien n'est laissé à `dest` sur échec. Refus : ceux de
 // install_package.

@@ -99,10 +99,12 @@ bool tensorrt_backend_present(const PlayerPaths& paths) {
 // le SDK Maxine importé ou à importer.
 EnginesHere engines_here(const PlayOptions& options, const PlayerPaths& paths, const EngineCatalog& catalog) {
   EnginesHere here;
+  // L'architecture du GPU ne se lit (nvidia-smi) que s'il y a des fichiers tiers à choisir.
+  const std::string arch = catalog.vendor_files.empty() ? std::string() : detect_cuda_arch();
   for (const core::EnginePackage& package : catalog.packages) {
     here.downloads.push_back(EngineDownload{.id = package.engine,
                                             .installed = installed(catalog, package),
-                                            .bytes = package.size,
+                                            .bytes = download_bytes(catalog, package, arch),
                                             .license = package.license,
                                             .missing = missing_prerequisite(package.engine).value_or("")});
   }

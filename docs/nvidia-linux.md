@@ -8,8 +8,14 @@ machine, et ce qu'il reste à mesurer.
 
 - **Vulkan** : livrée à tous. Décodage Vulkan Video, réseaux en shaders (matrices coopératives,
   préréglages Ada pour SPAN 720p et RIFE 4.25 dans `tools/vk/presets/`).
-- **TensorRT + CUDA + NVDEC** : la voie de performance maximale, **construite sur la machine**. Les
-  paquets NVIDIA ne sont pas publiés (licence NVIDIA) : l'écran de bienvenue le dit et renvoie ici.
+- **TensorRT + CUDA + NVDEC** : la voie de performance maximale. Nos releases ne redistribuent pas
+  les bibliothèques de NVIDIA (licence TensorRT, clause 12.1 : seules libnvinfer et libnvinfer_plugin
+  sont redistribuables, avec des conditions). L'appli les **télécharge chez NVIDIA** (les roues
+  de pypi.nvidia.com) après l'acceptation de la licence à l'écran des moteurs : notre paquet ne
+  porte que le module et le lecteur n'en tire que les fichiers utiles à la carte (libnvinfer, le
+  lecteur ONNX, les ressources de l'architecture du GPU, NVRTC), par plages HTTP, chacun vérifié par
+  son SHA-256 (`[[vendor_file]]` d'engines.lock ; `tools/release/vendor-index.py` les écrit). Sans
+  index (une release sans paquet NVIDIA), la construction sur la machine reste possible.
 
 ## Construire la voie TensorRT sur la machine
 
