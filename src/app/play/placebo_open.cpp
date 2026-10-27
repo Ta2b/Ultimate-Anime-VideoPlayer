@@ -93,6 +93,27 @@ struct EngineQueue {
   bool shared = true;  // la file de calcul de libplacebo, sous son verrou
 };
 
+// Le LUID de l'adaptateur (VkPhysicalDeviceIDProperties), que D3D11VA retrouve par DXGI pour
+// décoder sur le GPU du rendu ; rien hors de Windows, ou si le pilote ne le donne pas.
+std::optional<DeviceLuid> device_luid(pl_vulkan vk) {
+#if defined(_WIN32)
+  const auto get_properties = reinterpret_cast<PFN_vkGetPhysicalDeviceProperties2>(
+      vk->get_proc_addr(vk->instance, "vkGetPhysicalDeviceProperties2"));
+  if (get_properties == nullptr) return std::nullopt;
+  VkPhysicalDeviceIDProperties ids{.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ID_PROPERTIES};
+  VkPhysicalDeviceProperties2 properties{.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2,
+                                         .pNext = &ids};
+  get_properties(vk->phys_device, &properties);
+  if (ids.deviceLUIDValid == VK_FALSE) return std::nullopt;
+  DeviceLuid luid{};
+  std::copy_n(ids.deviceLUID, luid.size(), luid.begin());
+  return luid;
+#else
+  static_cast<void>(vk);
+  return std::nullopt;
+#endif
+}
+
 EngineQueue engine_queue(pl_vulkan vk) {
   const auto compute = static_cast<std::uint32_t>(vk->queue_compute.index);
   const auto graphics = static_cast<std::uint32_t>(vk->queue_graphics.index);
@@ -336,6 +357,7 @@ std::expected<std::unique_ptr<PlaceboScreen>, Refusal> PlaceboScreen::open(const
   impl->device = GpuDevice{.api = GpuApi::Vulkan, .name = "Vulkan (libplacebo)"};
   for (std::size_t i = 0; i < impl->device.uuid.size(); ++i) impl->device.uuid[i] = gpu->uuid[i];
   impl->device.vulkan = vulkan_description(impl->vk);
+  impl->device.luid = device_luid(impl->vk);
   const QueueRef engines = impl->device.vulkan->compute;
   if (impl->device.vulkan->lock_queue == nullptr) {
     impl->channel->info("moteurs sur leur propre file (famille {}, file {}), à côté de l'affichage",
