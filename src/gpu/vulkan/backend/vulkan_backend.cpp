@@ -143,7 +143,9 @@ VulkanBackend::~VulkanBackend() {
   if (queue_ && context_) context_->settle(queue_->last());
   if (pipelines_ && !pipeline_cache_file_.empty()) {
     const std::vector<std::byte> bytes = pipelines_->serialize();
-    if (!bytes.empty()) (void)net::write_file(pipeline_cache_file_, bytes);  // un cache perdu se refait
+    // Un cache perdu se refait.
+    if (!bytes.empty() && !net::write_file(pipeline_cache_file_, bytes))
+      log(BackendLogLevel::Warn, "cache de pipelines non écrit");
   }
 }
 
