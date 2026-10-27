@@ -63,16 +63,14 @@ TEST_CASE("Une RTX de 12 Go : TensorRT et Maxine cochés, profil 1", "[app][firs
   CHECK(row_of(view, core::EngineId::DirectMl) == nullptr);  // Windows seulement
 }
 
-TEST_CASE("Sous Windows, RTX HDR passe par le RTX Video SDK et DirectML reste décoché", "[app][first_run]") {
+TEST_CASE("Sous Windows, RTX HDR passe par le RTX Video SDK, sans offre DirectML", "[app][first_run]") {
   EnginesHere here = kHere;
   here.os = core::Os::Windows;
   const FirstRunView view = first_run_view(kRtx, here, ProfilesView{});
   const EngineRow* tensorrt = row_of(view, core::EngineId::TensorRt);
-  const EngineRow* directml = row_of(view, core::EngineId::DirectMl);
   REQUIRE(tensorrt != nullptr);
-  REQUIRE(directml != nullptr);
   CHECK(tensorrt->chosen);
-  CHECK_FALSE(directml->chosen);
+  CHECK(row_of(view, core::EngineId::DirectMl) == nullptr);
   CHECK(row_of(view, core::EngineId::RtxVideoSdk) != nullptr);
   CHECK(row_of(view, core::EngineId::MaxineVfx) == nullptr);  // Linux seulement
 }
@@ -181,9 +179,7 @@ TEST_CASE("MIGraphX de Windows ML proposé à l'essai aux AMD RDNA 3 et après",
   CHECK(migraphx->download);
   CHECK_FALSE(migraphx->chosen);  // à l'essai, et sa licence attend l'accord
   CHECK(migraphx->status == "à télécharger (40 Mo)");
-  const EngineRow* directml = row_of(view, core::EngineId::DirectMl);
-  REQUIRE(directml != nullptr);
-  CHECK_FALSE(directml->offer.relevant);
+  CHECK(row_of(view, core::EngineId::DirectMl) == nullptr);
 }
 
 TEST_CASE("Commencer écrit des moteurs valides pour settings.toml", "[app][first_run]") {

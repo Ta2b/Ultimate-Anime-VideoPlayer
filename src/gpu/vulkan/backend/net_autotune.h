@@ -45,8 +45,11 @@ struct PresetEntry {
   std::string_view variant;
   std::string_view tuning;  // comme au cache : « 64,2,1 »
 };
+// driver : le pilote sous lequel la table a été relevée ; rien, une table valable pour tous (RADV et
+// le pilote AMD classent différemment les variantes matricielles).
 struct PresetTable {
   GpuFamily family = GpuFamily::Unknown;
+  std::optional<DriverKind> driver;
   std::span<const PresetEntry> entries;
 };
 std::span<const PresetTable> preset_tables();

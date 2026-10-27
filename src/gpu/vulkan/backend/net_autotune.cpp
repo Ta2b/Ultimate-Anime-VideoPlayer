@@ -311,6 +311,7 @@ std::expected<KernelChoice, Refusal> Autotuner::choose(const ir::Graph& graph, s
   }
   for (const PresetTable& table : presets_) {
     if (remembered || table.family != profile_.family) continue;
+    if (table.driver && *table.driver != profile_.driver) continue;
     for (const PresetEntry& e : table.entries) {
       if (e.signature != signature) continue;
       auto tuning = tuning_of(e.tuning);

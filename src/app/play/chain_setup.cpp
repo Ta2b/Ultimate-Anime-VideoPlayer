@@ -40,6 +40,11 @@ std::vector<media::HwApi> decoder_attempts(std::string_view backend, bool shared
   attempts.push_back(media::HwApi::VideoToolbox);
 #endif
   if (shared_vulkan) attempts.push_back(media::HwApi::Vulkan);
+#if defined(_WIN32)
+  // Le bloc vidéo du GPU par D3D11VA quand Vulkan Video ne prend pas le codec : copié en mémoire
+  // hôte, bien plus léger que le décodage logiciel.
+  attempts.push_back(media::HwApi::D3d11va);
+#endif
 #if defined(__linux__)
   if (!nvidia_gpu) attempts.push_back(media::HwApi::Vaapi);
 #endif

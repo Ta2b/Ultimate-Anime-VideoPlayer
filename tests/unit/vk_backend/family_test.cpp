@@ -50,10 +50,12 @@ TEST_CASE("Familles : identifiants PCI connus", "[vk_backend][family]") {
   CHECK(detect_family(pci::kIntel, 0xE20B, false) == GpuFamily::IntelXe2);    // Arc B580
   // AMD hors des plages : la puce que RADV nomme ; un autre pilote reste avant RDNA3.
   CHECK(detect_family(pci::kAmd, 0x7600, false, "AMD Radeon RX 9060 (RADV NAVI44)") == GpuFamily::AmdRdna4);
-  CHECK(detect_family(pci::kAmd, 0x1114, false, "AMD Radeon 890M (RADV GFX1150)") == GpuFamily::AmdRdna3);
+  CHECK(detect_family(pci::kAmd, 0x1999, false, "AMD Radeon 890M (RADV GFX1150)") == GpuFamily::AmdRdna3);
   CHECK(detect_family(pci::kAmd, 0x73BF, false, "AMD Radeon RX 6800 (RADV NAVI21)") ==
         GpuFamily::AmdBeforeRdna3);
-  CHECK(detect_family(pci::kAmd, 0x1114, false, "AMD Radeon 890M") == GpuFamily::AmdBeforeRdna3);
+  CHECK(detect_family(pci::kAmd, 0x1999, false, "AMD Radeon 890M") == GpuFamily::AmdBeforeRdna3);
+  CHECK(detect_family(pci::kAmd, 0x1114, false, "AMD Radeon 860M") == GpuFamily::AmdRdna3);  // Krackan
+  CHECK(detect_family(pci::kAmd, 0x1586, false, "AMD Radeon 8060S") == GpuFamily::AmdRdna3);  // Strix Halo
   CHECK(detect_family(pci::kNvidia, 0x2782, true) == GpuFamily::Software);
   CHECK(detect_family(pci::kApple, 0x1B0002, false) == GpuFamily::Apple);  // M4 Pro sous MoltenVK
   CHECK(detect_family(0x10005, 0, false) == GpuFamily::Unknown);
@@ -243,6 +245,17 @@ TEST_CASE("Autotuner : table pré-réglée de la famille", "[vk_backend][autotun
   const GpuFamily other = profile.family == GpuFamily::NvidiaAda ? GpuFamily::AmdRdna4 : GpuFamily::NvidiaAda;
   CHECK(tuner_with(other, tuning).second == 1);
   CHECK(tuner_with(profile.family, tuning + ",7").second == 1);
+  // Une table relevée sous un autre pilote que celui-ci : ignorée, la couche se mesure.
+  {
+    const std::array<net::PresetEntry, 1> entries{{{signature, preset.variant, tuning}}};
+    const DriverKind elsewhere =
+        profile.driver == DriverKind::Radv ? DriverKind::AmdProprietary : DriverKind::Radv;
+    const std::array<net::PresetTable, 1> tables{
+        {{.family = profile.family, .driver = elsewhere, .entries = entries}}};
+    net::Autotuner tuner(*rig.context, *rig.memory, *rig.pipelines, profile, {}, quick, tables);
+    require_value(tuner.choose(graph, 0, options, "test"));
+    CHECK(tuner.measured() == 1);
+  }
   CHECK(tuner_with(profile.family, "x").second == 1);
 }
 

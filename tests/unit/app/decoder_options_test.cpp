@@ -33,6 +33,9 @@ TEST_CASE("decoder_options : surfaces directes sous TensorRT seulement", "[app][
   const media::DecoderOptions on_nvidia = decoder_options("vulkan", nvidia, nullptr);
   CHECK(std::ranges::find(on_nvidia.attempts, media::HwApi::Vaapi) == on_nvidia.attempts.end());
 #endif
+#if defined(_WIN32)
+  CHECK(std::ranges::find(vulkan.attempts, media::HwApi::D3d11va) != vulkan.attempts.end());
+#endif
 #if defined(__APPLE__)
   CHECK(vulkan.attempts.front() == media::HwApi::VideoToolbox);
   CHECK(decoder_options("coreml", render, nullptr).attempts.front() == media::HwApi::VideoToolbox);

@@ -45,7 +45,7 @@ TEST_CASE("Moteurs : RTX 4070 Ti sous Windows", "[engines]") {
   CHECK_FALSE(find(offers, EngineId::MaxineVfx));
   CHECK_FALSE(find(offers, EngineId::Metal));
   CHECK_FALSE(find(offers, EngineId::MiGraphX)->relevant);
-  CHECK_FALSE(find(offers, EngineId::DirectMl)->relevant);
+  CHECK_FALSE(find(offers, EngineId::DirectMl));
 }
 
 TEST_CASE("Moteurs : AMD récent sous Linux", "[engines]") {
@@ -61,14 +61,10 @@ TEST_CASE("Moteurs : AMD récent sous Linux", "[engines]") {
   CHECK(has(*find(offers, EngineId::Vulkan), Badge::Compatibility));
 }
 
-TEST_CASE("Moteurs : ancien AMD sous Windows, DirectML proposé sans être coché", "[engines]") {
+TEST_CASE("Moteurs : ancien AMD sous Windows, Vulkan recommandé et aucune offre DirectML", "[engines]") {
   SystemInfo system{.os = Os::Windows, .gpus = {GpuInfo{.vendor = GpuVendor::Amd, .name = "RX 580"}}};
   auto offers = recommend_engines(system);
-  const EngineOffer* dml = find(offers, EngineId::DirectMl);
-  REQUIRE(dml);
-  CHECK(dml->relevant);
-  CHECK_FALSE(dml->preselected);
-  CHECK(dml->reason == Reason::CompareWithVulkan);
+  CHECK_FALSE(find(offers, EngineId::DirectMl));
   CHECK(has(*find(offers, EngineId::Vulkan), Badge::Recommended));
 }
 
@@ -86,7 +82,7 @@ TEST_CASE("Moteurs : Radeon 860M sous Windows, MIGraphX de Windows ML à l'essai
   CHECK(migraphx->delivery == Delivery::Download);
   CHECK(has(*migraphx, Badge::AmdOnly));
   CHECK_FALSE(has(*migraphx, Badge::Recommended));
-  CHECK_FALSE(find(offers, EngineId::DirectMl)->relevant);
+  CHECK_FALSE(find(offers, EngineId::DirectMl));
   // À l'essai seulement : Vulkan reste le moteur recommandé.
   CHECK(has(*find(offers, EngineId::Vulkan), Badge::Recommended));
 }
@@ -95,7 +91,7 @@ TEST_CASE("Moteurs : ROCm ne compte que sous Linux, Windows ML que sous Windows"
   SystemInfo windows{.os = Os::Windows,
                      .gpus = {GpuInfo{.vendor = GpuVendor::Amd, .name = "RX 6800", .rocm_supported = true}}};
   CHECK_FALSE(find(recommend_engines(windows), EngineId::MiGraphX)->relevant);
-  CHECK(find(recommend_engines(windows), EngineId::DirectMl)->relevant);
+  CHECK_FALSE(find(recommend_engines(windows), EngineId::DirectMl));
   SystemInfo linux_apu{
       .os = Os::Linux,
       .gpus = {GpuInfo{.vendor = GpuVendor::Amd, .name = "AMD Radeon 860M", .winml_migraphx = true}}};
