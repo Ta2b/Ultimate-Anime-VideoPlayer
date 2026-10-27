@@ -3,8 +3,10 @@
 #pragma once
 
 #include <filesystem>
+#include <mutex>
 #include <optional>
 #include <string>
+#include <thread>
 #include <utility>
 #include <vector>
 
@@ -38,6 +40,9 @@ class ChainStats final : public StatsSource {
         source_fps_(source_fps),
         telemetry_(telemetry) {}
   std::optional<std::string> rife() const override;
+  // La mémoire vidéo et la ligne GPU de l'OSD : relues à 2 Hz par un fil à part (cudaMemGetInfo
+  // prend le verrou du contexte CUDA, NVML dix appels : le fil d'affichage n'attend ni l'un ni
+  // l'autre). Le fil naît au premier appel, donc seulement quand l'OSD les demande.
   std::optional<std::string> memory() const override;
   std::optional<std::string> gpu() const override;
   std::int64_t output_period_us() const override;
@@ -52,6 +57,17 @@ class ChainStats final : public StatsSource {
   std::string engine_;
   double source_fps_;
   GpuTelemetry* telemetry_;
+
+  std::optional<std::string> read_memory() const;
+  std::optional<std::string> read_gpu() const;
+  void start_sampler() const;
+
+  mutable std::mutex sampled_mutex_;
+  mutable std::optional<std::string> memory_text_;
+  mutable std::optional<std::string> gpu_text_;
+  mutable std::once_flag sampler_started_;
+  // En dernier : arrêté et joint avant que les membres qu'il lit ne partent.
+  mutable std::jthread sampler_;
 };
 
 }  // namespace ajp::app::play

@@ -88,3 +88,14 @@ de files de calcul dédiée), LN-16 (préréglages Vulkan pour d'autres modèles
 horodatée) attendent les mesures E2 et E5. LN-18 (blanc de référence de KWin) demande
 `color-management-v1` ou libdisplay-info. La vitesse de lecture demande un étirement audio sans
 changement de hauteur (le régulateur de dérive est borné à quelques millièmes).
+
+## Contre-audit NVIDIA Linux (N1 à N14)
+
+Traités : N1 (cudaMemGetInfo et NVML lus à 2 Hz par un fil à part, plus sur le fil d'affichage), N6
+(le partage du contexte primaire ne teste que le mode d'ordonnancement), N7 (`hold()` attend la plus
+ancienne image tenue), N10 (l'avertissement Resizable BAR ne sort plus sous TensorRT).
+
+Non traités, à lire sur la carte ou trop risqués sans compilation CUDA : N2 (`cudaDeviceSynchronize`
+et `cudaFree` en cours de lecture : mesure M4 d'abord), N3 (TrueHDR en 8 bits : mire de dégradés), N4
+(Spline36 tronquée à 32 prises : seulement un avertissement), N5 (drapeau d'allocation dédiée de
+l'import), N8 (seuil PSNR de l'autotuner), N9, N11 à N14.

@@ -128,6 +128,7 @@ class TensorRtBackend final : public Backend, public KernelOps {
   struct Held {
     std::shared_ptr<const FrameData> data;
     cudaEvent_t done = nullptr;
+    std::uint64_t sequence = 0;  // l'ordre de prise : la plus petite est la plus ancienne
   };
   // Deux paires en vol sur les voies, plus l'image lue en avance.
   static constexpr auto kHeldFrames = static_cast<std::size_t>(kMaxIngestHeldFrames);
@@ -251,6 +252,7 @@ class TensorRtBackend final : public Backend, public KernelOps {
   std::unique_ptr<nvinfer1::IRuntime> runtime_;
   std::array<std::shared_ptr<SharedActivations>, 2> arenas_;  // zones d'activation (trt_engine.h)
   std::array<Held, kHeldFrames> held_{};
+  std::uint64_t held_sequence_ = 0;
   std::array<cudaEvent_t, kFences> fences_{};
   std::uint64_t fence_count_ = 0;
   std::unique_ptr<GpuTiming> span_timing_;  // le moteur seul

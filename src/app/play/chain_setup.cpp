@@ -141,8 +141,6 @@ std::expected<std::optional<ChainEngines>, Refusal> prepare_chain(Player& p, con
         video.width, video.height, c.work.width, c.work.height);
   const GpuFacts gpu = gpu_facts(p.screen);
   log->info("GPU : {}", gpu_line(gpu));
-  if (const std::string rebar = rebar_text(gpu); rebar.rfind("inactif", 0) == 0)
-    log->warn("Resizable BAR inactif : activer Above 4G Decoding et Resizable BAR dans le BIOS");
   if (p.screen.device().vendor() == GpuVendor::Nvidia) {
     const std::string& driver = p.screen.device().driver_version;
     if (settings.true_hdr && nvidia_driver_older_than(driver, kRtxHdrDriverMajor))
@@ -175,6 +173,10 @@ std::expected<std::optional<ChainEngines>, Refusal> prepare_chain(Player& p, con
   c.backend_name = c.backend->capabilities().name;
   log->info("backend {} ({}) depuis {}", c.backend_name, c.backend->capabilities().device_name,
             p.library->path().string());
+  // Sous TensorRT les copies passent par CUDA : le BAR ne joue que pour le moteur Vulkan.
+  if (const std::string rebar = rebar_text(gpu);
+      c.backend_name != "tensorrt" && rebar.rfind("inactif", 0) == 0)
+    log->warn("Resizable BAR inactif : activer Above 4G Decoding et Resizable BAR dans le BIOS");
 
   // SPAN INT8 sous TensorRT quand tools/span/quantize_span.py en a laissé une variante qui passe ses
   // garde-fous (span_int8.h) ; le SPAN choisi sinon, et aussi si TensorRT refuse la variante.

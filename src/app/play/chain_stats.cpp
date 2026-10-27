@@ -2,7 +2,9 @@
 
 #include <algorithm>
 #include <cctype>
+#include <chrono>
 #include <cmath>
+#include <condition_variable>
 #include <format>
 #include <utility>
 
@@ -64,7 +66,7 @@ std::int64_t ChainStats::output_period_us() const {
   return rate > 0.0 ? static_cast<std::int64_t>(std::llround(1e6 / rate)) : 0;
 }
 
-std::optional<std::string> ChainStats::gpu() const {
+std::optional<std::string> ChainStats::read_gpu() const {
   if (telemetry_ == nullptr) return std::nullopt;
   const std::optional<GpuSample> sample = telemetry_->sample(host_now_us());
   if (!sample) return std::nullopt;
@@ -73,12 +75,44 @@ std::optional<std::string> ChainStats::gpu() const {
   return line;
 }
 
-std::optional<std::string> ChainStats::memory() const {
+std::optional<std::string> ChainStats::read_memory() const {
   const auto memory = kernels_.device_memory();
   if (!memory) return std::nullopt;
   constexpr double kMiB = 1024.0 * 1024.0;
   return std::format("mémoire vidéo {:.0f} / {:.0f} Mio", static_cast<double>(memory->used) / kMiB,
                      static_cast<double>(memory->total) / kMiB);
+}
+
+void ChainStats::start_sampler() const {
+  std::call_once(sampler_started_, [this] {
+    sampler_ = std::jthread([this](const std::stop_token& stop) {
+      std::mutex idle;
+      std::condition_variable_any wake;
+      while (!stop.stop_requested()) {
+        auto memory = read_memory();
+        auto gpu = read_gpu();
+        {
+          const std::scoped_lock lock(sampled_mutex_);
+          memory_text_ = std::move(memory);
+          gpu_text_ = std::move(gpu);
+        }
+        std::unique_lock lock(idle);
+        wake.wait_for(lock, stop, std::chrono::milliseconds(500), [] { return false; });
+      }
+    });
+  });
+}
+
+std::optional<std::string> ChainStats::memory() const {
+  start_sampler();
+  const std::scoped_lock lock(sampled_mutex_);
+  return memory_text_;
+}
+
+std::optional<std::string> ChainStats::gpu() const {
+  start_sampler();
+  const std::scoped_lock lock(sampled_mutex_);
+  return gpu_text_;
 }
 
 }  // namespace ajp::app::play
