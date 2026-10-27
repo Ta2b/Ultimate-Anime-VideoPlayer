@@ -225,6 +225,8 @@ std::expected<PlaySettings, Refusal> parse_settings(std::string_view toml_text) 
       reads.emplace_back(
           refuse(RefusalCode::FieldOutOfRange, std::format("picture.scaler : « {} »", scaler)));
   }
+  if (const toml::table* playlist = section(root, "playlist"))
+    reads.push_back(read(*playlist, "playlist", "autoplay_next", s.autoplay_next));
   if (const toml::table* subtitles = section(root, "subtitles")) {
     reads.push_back(read(*subtitles, "subtitles", "scale", s.subtitle_scale));
     reads.push_back(read_languages(*subtitles, "subtitles", s.subtitle_languages));
@@ -323,6 +325,7 @@ std::string format_settings(const PlaySettings& s) {
                                    {"languages", languages(s.audio_languages)}});
   root.insert("sync", toml::table{{"display", s.display_sync}, {"video_latency_ms", s.video_latency_ms}});
   root.insert("picture", toml::table{{"deband", s.deband}, {"scaler", std::string(name(s.final_scaler))}});
+  root.insert("playlist", toml::table{{"autoplay_next", s.autoplay_next}});
   root.insert("subtitles",
               toml::table{{"scale", std::round(static_cast<double>(s.subtitle_scale) * 100.0) / 100.0},
                           {"languages", languages(s.subtitle_languages)}});

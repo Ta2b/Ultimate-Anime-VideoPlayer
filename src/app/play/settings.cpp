@@ -342,6 +342,7 @@ PlaySettings live_part(const PlaySettings& running, const PlaySettings& wanted, 
   s.hdr_native = wanted.hdr_native;
   s.final_scaler = wanted.final_scaler;
   s.deband = wanted.deband;
+  s.autoplay_next = wanted.autoplay_next;
   s.audio_delay_ms = wanted.audio_delay_ms;
   s.display_sync = wanted.display_sync;
   s.video_latency_ms = wanted.video_latency_ms;

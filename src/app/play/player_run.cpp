@@ -25,6 +25,7 @@
 #include "app/play/engine_install.h"
 #include "app/play/engine_screen.h"
 #include "app/play/engine_switch.h"
+#include "app/play/episodes.h"
 #include "app/play/export_run.h"
 #include "app/play/first_run.h"
 #include "app/play/gmfss_model.h"
@@ -238,6 +239,7 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
       .true_hdr_open = settings.true_hdr,
       .auto_peak = auto_peak,
       .peak_nits = peak_nits,
+      .file = p.options.file,
       .display = p.display,
       .header_text =
           [&c, hdr_out](const PlaySettings& s) {
@@ -378,6 +380,14 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
   p.quit = session.quit_asked();
   log_summary(session);
   for (const std::string& refusal : session.refusals()) log->warn("{}", refusal);
+  // Fin de la vidéo, sans demande de quitter : l'épisode suivant du dossier, si le réglage le veut.
+  if (!chain.reopen && !failure && !session.quit_asked() && chain.running.autoplay_next && !p.options.file.empty()) {
+    if (const auto next = sibling_episode(p.options.file, 1)) {
+      log->info("épisode suivant : {}", prepare::utf8_path(*next));
+      chain.next_file = *next;
+      chain.reopen = chain.running;
+    }
+  }
   std::optional<Reopen> reopen;
   if (chain.reopen && !failure) {
     reopen = Reopen{.settings = *chain.reopen,

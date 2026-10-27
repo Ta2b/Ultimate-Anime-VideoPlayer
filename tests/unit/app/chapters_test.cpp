@@ -51,3 +51,18 @@ TEST_CASE("chapitres : libellé avec ou sans titre", "[app][chapters]") {
   CHECK(chapter_label(kChapters, 1) == "Chapitre 2/4 · Opening");
   CHECK(chapter_label(kChapters, 2) == "Chapitre 3/4");
 }
+
+TEST_CASE("chapitres : les génériques se reconnaissent à leur titre", "[app][chapters]") {
+  for (const char* title : {"Opening", "OP", "OP2", "ED 1", "Ending", "Intro", "Générique de fin", "Credits"})
+    CHECK(is_credits_chapter({.start_us = 0, .title = title}));
+  for (const char* title : {"", "Avant-générique", "Partie A", "Preview", "Episode", "Cooperation"})
+    CHECK_FALSE(is_credits_chapter({.start_us = 0, .title = title}));
+}
+
+TEST_CASE("chapitres : passer le générique mène au chapitre suivant ou à la fin", "[app][chapters]") {
+  constexpr std::int64_t kDuration = 1'440'000'000;
+  CHECK(credits_skip_target(kChapters, 100'000'000, kDuration) == 180'000'000);  // dans « Opening »
+  CHECK(credits_skip_target(kChapters, 1'350'000'000, kDuration) == kDuration);  // « Ending » est le dernier
+  CHECK_FALSE(credits_skip_target(kChapters, 10'000'000, kDuration));            // « Avant-générique »
+  CHECK_FALSE(credits_skip_target({}, 10'000'000, kDuration));
+}

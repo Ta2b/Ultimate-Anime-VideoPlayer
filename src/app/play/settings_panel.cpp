@@ -244,6 +244,11 @@ bool sound_tab(PlaySettings& d) {
       "Positif : le son est retardé. Ctrl + clic sur le curseur pour saisir une valeur (jusqu'à ±10 000 "
       "ms).");
   d.audio_delay_ms = std::clamp(d.audio_delay_ms, limits::kAudioDelayMs.lo, limits::kAudioDelayMs.hi);
+  ImGui::Checkbox("Lire l'épisode suivant à la fin", &d.autoplay_next);
+  note(
+      "À la fin d'une vidéo ouverte par un fichier, lit la suivante du même dossier (ordre naturel des "
+      "noms : ep2 avant ep10). N : épisode suivant, Maj + N : précédent, O : passer le générique "
+      "(chapitre Opening ou Ending, sinon 85 s).");
   ImGui::Checkbox("Caler la lecture sur l'écran", &d.display_sync);
   note(
       "Sur un écran à fréquence fixe, la lecture accélère ou ralentit d'au plus 0,125 % pour que chaque "

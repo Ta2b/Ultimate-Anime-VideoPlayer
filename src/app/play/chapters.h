@@ -28,6 +28,19 @@ std::optional<std::size_t> chapter_at(std::span<const ChapterMark> chapters, std
 std::optional<std::size_t> chapter_step(std::span<const ChapterMark> chapters, std::int64_t position_us,
                                         int direction);
 
+// Le chapitre est-il un générique (opening, ending, intro, outro, crédits) d'après son titre ? « OP »,
+// « ED 2 », « Opening », « Générique de fin »… Les titres de Matroska n'ont pas de norme ; sans
+// titre, jamais.
+bool is_credits_chapter(const ChapterMark& chapter);
+
+// Où mène « passer le générique » depuis position_us : le début du chapitre suivant si l'on est dans
+// un générique, la fin de la vidéo si c'est le dernier chapitre ; rien hors d'un générique.
+std::optional<std::int64_t> credits_skip_target(std::span<const ChapterMark> chapters,
+                                                std::int64_t position_us, std::int64_t duration_us);
+
+// Le saut de repli hors d'un générique reconnu : la durée classique d'un opening d'anime.
+inline constexpr std::int64_t kSkipFallbackUs = 85'000'000;
+
 // « Chapitre 3/12 · Opening », ou « Chapitre 3/12 » sans titre.
 std::string chapter_label(std::span<const ChapterMark> chapters, std::size_t index);
 

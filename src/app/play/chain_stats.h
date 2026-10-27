@@ -42,6 +42,7 @@ class ChainStats final : public StatsSource {
   std::optional<std::string> gpu() const override;
   std::int64_t output_period_us() const override;
   double output_fps() const override;
+  std::int64_t source_period_us() const override;
   std::uint64_t skipped() const override { return live_.skipped(); }
 
  private:

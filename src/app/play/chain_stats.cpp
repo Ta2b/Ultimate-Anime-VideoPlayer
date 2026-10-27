@@ -55,6 +55,10 @@ double ChainStats::output_fps() const {
                                                                     : source_fps_;
 }
 
+std::int64_t ChainStats::source_period_us() const {
+  return source_fps_ > 0.0 ? static_cast<std::int64_t>(std::llround(1e6 / source_fps_)) : 0;
+}
+
 std::int64_t ChainStats::output_period_us() const {
   const double rate = output_fps();
   return rate > 0.0 ? static_cast<std::int64_t>(std::llround(1e6 / rate)) : 0;
