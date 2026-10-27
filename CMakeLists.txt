@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.28)
 
 project(ajp
-  VERSION 0.1.0
+  VERSION 0.2.0
   DESCRIPTION "Lecteur vidéo anime : upscaling, interpolation et HDR en temps réel"
   LANGUAGES CXX)
 
