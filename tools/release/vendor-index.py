@@ -20,6 +20,7 @@ import hashlib
 import re
 import struct
 import sys
+import time
 import urllib.request
 import zlib
 
@@ -42,8 +43,16 @@ class Source:
                 f.seek(start)
                 return f.read(length)
         req = urllib.request.Request(self.url, headers={"Range": f"bytes={start}-{start + length - 1}"})
-        with urllib.request.urlopen(req) as r:
-            return r.read()
+        # Le CDN de NVIDIA coupe parfois une connexion (« Connection reset by peer ») : une plage se
+        # redemande, la lecture complète n'a pas à recommencer.
+        for attempt in range(6):
+            try:
+                with urllib.request.urlopen(req, timeout=60) as r:
+                    return r.read()
+            except OSError:
+                if attempt == 5:
+                    raise
+                time.sleep(1 + 2 * attempt)
 
     def stream(self, start, length, chunk=1 << 20):
         done = 0

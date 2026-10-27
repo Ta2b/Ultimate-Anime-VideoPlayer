@@ -6,11 +6,13 @@
 
 #include <algorithm>
 #include <chrono>
+#include <cstdlib>
 #include <filesystem>
 #include <format>
 #include <fstream>
 #include <iterator>
 #include <string>
+#include <tuple>
 #include <vector>
 
 #include <catch2/catch_test_macros.hpp>
@@ -371,4 +373,44 @@ TEST_CASE("Installation : la clé NGC vide ou mal collée est refusée avant tou
     require_refused(result, RefusalCode::FieldOutOfRange);
   }
   CHECK(f.stages.empty());
+}
+
+// Les index de tools/release/nvidia-vendor contre pypi.nvidia.com (réseau, ~0,8 Go pour une carte
+// sm89) : caché, à lancer à la main (« [.vendor] »). Chaque fichier de la carte est tiré par sa
+// plage, décompressé, et son SHA-256 est comparé à l'index.
+TEST_CASE("Fichiers tiers : les index de NVIDIA se téléchargent et se vérifient", "[.vendor][app][install]") {
+  // Lancé depuis le dossier de construction (build/<préréglage>) ; AJP_VENDOR_DIR en prend un autre.
+  const char* custom = std::getenv("AJP_VENDOR_DIR");
+  const fs::path dir = custom != nullptr ? fs::path(custom) : fs::path("../../tools/release/nvidia-vendor");
+  REQUIRE(fs::exists(dir / "tensorrt-linux-x64.lock"));
+  Fixture f("vendor-reel");
+  std::uint64_t downloaded = 0;
+  for (const auto& [os, lock, arch] : {std::tuple{core::Os::Linux, "tensorrt-linux-x64.lock", "sm89"},
+                                       std::tuple{core::Os::Windows, "tensorrt-windows-x64.lock", "sm89"}}) {
+    const auto index = core::read_engine_index("version = 1\n" + read_all(dir / lock));
+    REQUIRE(index);
+    for (const auto& skipped : index->skipped) WARN("écartée : " << skipped.detail);
+    const auto files = core::vendor_files_for(index->vendor_files, core::EngineId::TensorRt, os, arch);
+    CAPTURE(lock);
+    REQUIRE(files.size() == 7);  // libnvinfer, plugin, onnxparser, ptx, sm89, nvrtc, nvrtc-builtins
+    std::uint64_t packed = 0;
+    for (const auto& file : files) packed += file.packed_size;
+    INFO(std::format("{} : {} fichiers, {} Mo à télécharger", lock, files.size(), packed >> 20));
+    if (os != host_os()) continue;  // le téléchargement réel : ceux de cet OS seulement
+    // AJP_VENDOR_OUT : garder les fichiers tirés (pour essayer le moteur depuis un dossier composé ainsi).
+    const char* keep = std::getenv("AJP_VENDOR_OUT");
+    const fs::path out = keep != nullptr ? fs::path(keep) : f.root / "tiers";
+    fs::create_directories(out);
+    for (const auto& file : files) {
+      const auto start = std::chrono::steady_clock::now();
+      require_done(fetch_vendor_file(file, out / file.name, f.root / "tmp", f.progress()));
+      const double seconds = std::chrono::duration<double>(std::chrono::steady_clock::now() - start).count();
+      WARN(std::format("{} : {} Mo (paquet {} Mo) en {:.0f} s", file.name, file.size >> 20,
+                       file.packed_size >> 20, seconds));
+      CHECK(fs::file_size(out / file.name) == file.size);
+      CHECK(core::sha256_file(out / file.name).value() == file.sha256);
+      downloaded += file.packed_size;
+    }
+  }
+  WARN(std::format("total transféré : {} Mo", downloaded >> 20));
 }
