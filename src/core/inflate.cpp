@@ -101,7 +101,8 @@ class Inflater {
       code |= bits(1);
       if (failed_) return -1;
       const int count = h.count[static_cast<std::size_t>(len)];
-      if (code - count < first) return h.symbol[static_cast<std::size_t>(index + (code - first))];
+      if (code - count < first)
+        return h.symbol[static_cast<std::size_t>(index) + static_cast<std::size_t>(code - first)];
       index += count;
       first += count;
       first <<= 1;
