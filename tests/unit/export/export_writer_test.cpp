@@ -12,9 +12,12 @@
 #include <cstdint>
 #include <deque>
 #include <filesystem>
+#include <fstream>
+#include <iterator>
 #include <memory>
 #include <mutex>
 #include <optional>
+#include <string>
 #include <thread>
 #include <vector>
 
@@ -473,6 +476,36 @@ TEST_CASE("Écriture : un refus de l'encodeur arrête l'export et le dit", "[exp
   writer->reset();  // abandonné : le fichier partiel est supprimé
   std::error_code error;
   CHECK_FALSE(std::filesystem::exists(output, error));
+}
+
+TEST_CASE("Écriture : un export refusé laisse intact le fichier qui portait déjà ce nom", "[export][writer]") {
+  class RefusingEncoder final : public HoldingEncoder {
+   public:
+    RefusingEncoder() : HoldingEncoder(1) {}
+    std::expected<void, Refusal> encode(AVFrame* frame, const PacketSink& /*sink*/) override {
+      if (frame == nullptr) return {};
+      return refuse(RefusalCode::EncodeFailed, "encodeur factice : image refusée");
+    }
+  };
+  const std::filesystem::path output = output_path("ajp-export-writer-existing.mkv");
+  {
+    std::ofstream previous(output, std::ios::binary | std::ios::trunc);
+    previous << "ancien export";
+  }
+  {
+    auto writer = ExportWriter::open(config_for(output), std::make_unique<RefusingEncoder>());
+    REQUIRE(writer);
+    Buffers buffers;
+    push(**writer, buffers.in_place(0, 0));
+    for (int i = 0; i < 5000 && !(*writer)->failure(); ++i) std::this_thread::sleep_for(1ms);
+    REQUIRE((*writer)->failure());
+  }  // abandonné : seul le fichier partiel disparaît
+  std::ifstream kept(output, std::ios::binary);
+  std::string content((std::istreambuf_iterator<char>(kept)), std::istreambuf_iterator<char>());
+  CHECK(content == "ancien export");
+  std::error_code error;
+  CHECK_FALSE(std::filesystem::exists(std::filesystem::path(output).concat(".partial"), error));
+  std::filesystem::remove(output, error);
 }
 
 }  // namespace ajp::exporter

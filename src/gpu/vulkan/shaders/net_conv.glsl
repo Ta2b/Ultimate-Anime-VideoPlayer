@@ -199,7 +199,7 @@ void main() {
         uint co = g * COUTG + o;
         float v = acc[p * QUADS + q][k] + bias.v[co];
         if (RESIDUAL == 1u) v += AJP_LOAD(res, TR, t_index(rd, n, co, oy, ox));
-        v = net_activate(ACT, v, ALPHA, LO, HI, slope.v[co]);
+        v = net_activate(ACT, v, ALPHA, LO, HI, ACT == kActPrelu ? slope.v[co] : 0.0);
         // Porte de SPAN : sortie de la forme de x, lue au même élément.
         if (RESIDUAL == 2u) v *= AJP_LOAD(src, TX, t_index(xd, n, co, oy, ox)) + AJP_LOAD(res, TR, t_index(rd, n, co, oy, ox));
         AJP_STORE(dst, TY, t_index_space(yd, sb, SPACE_CRD == 1u, n, co, oy, ox), v)

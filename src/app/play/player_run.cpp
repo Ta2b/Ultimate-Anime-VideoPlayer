@@ -65,7 +65,7 @@ constexpr std::int32_t kPausedWaitMs = 10;
 }  // namespace
 
 std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings settings,
-                                                        std::int64_t start_us) {
+                                                        std::int64_t start_us, bool start_paused) {
   const auto log = log_channel("app");
   std::vector<std::string> unavailable;
   settings = within_engines(settings, p.engines, unavailable);
@@ -167,6 +167,7 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
   for (const std::string& line : session_config.tracks) log->info("{}", line);
   log->info("{}", session_config.output);
   Session session(std::move(session_config), (*pipeline)->stages(), out, (*pipeline)->clock());
+  if (start_paused) session.command(cmd::Pause{});
   p.ui.set_tracks((*pipeline)->tracks());
   p.ui.set_settings(
       settings,
@@ -342,6 +343,7 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
   if (chain.reopen && !failure) {
     reopen = Reopen{.settings = *chain.reopen,
                     .position_us = std::max<std::int64_t>(session.view().position_us, 0),
+                    .paused = session.paused() && !chain.next_file,
                     .engines = chain.engines,
                     .export_job = chain.export_job,
                     .next_file = chain.next_file};

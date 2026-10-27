@@ -98,6 +98,22 @@ std::expected<TrackInfo, Refusal> describe(const AVStream& stream, TrackKind kin
     info.width = par.width;
     info.height = par.height;
     info.frame_rate = frame_rate_of(stream);
+    switch (par.color_space) {
+      case AVCOL_SPC_BT709:
+        info.color_matrix = ColorMatrix::Bt709;
+        break;
+      case AVCOL_SPC_BT470BG:
+      case AVCOL_SPC_SMPTE170M:
+        info.color_matrix = ColorMatrix::Bt601;
+        break;
+      case AVCOL_SPC_BT2020_NCL:
+      case AVCOL_SPC_BT2020_CL:
+        info.color_matrix = ColorMatrix::Bt2020Ncl;
+        break;
+      default:
+        break;
+    }
+    info.full_range = par.color_range == AVCOL_RANGE_JPEG;
   } else if (kind == TrackKind::Audio) {
     info.sample_rate = par.sample_rate;
     info.channels = par.ch_layout.nb_channels;

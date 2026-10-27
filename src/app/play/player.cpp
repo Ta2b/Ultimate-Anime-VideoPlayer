@@ -294,9 +294,10 @@ std::expected<void, Refusal> play(const PlayOptions& options, const PlayerPaths&
       }
     }
     std::expected<void, Refusal> result;
+    bool start_paused = false;
     std::optional<std::filesystem::path> next_file;
     while (true) {
-      auto outcome = run_chain(player, settings, start_us);
+      auto outcome = run_chain(player, settings, start_us, start_paused);
       if (!outcome) {
         result = std::unexpected(std::move(outcome.error()));
         break;
@@ -323,6 +324,7 @@ std::expected<void, Refusal> play(const PlayOptions& options, const PlayerPaths&
       }
       settings = (*outcome)->settings;
       start_us = (*outcome)->position_us;
+      start_paused = (*outcome)->paused;
       player.details = settings.stats.all;
       if (auto written = save_settings(
               settings_path, settings_to_save(settings, player.from_file, player.started, file_options));

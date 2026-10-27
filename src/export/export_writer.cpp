@@ -175,6 +175,11 @@ std::expected<void, Refusal> ExportWriter::finish() {
   return {};
 }
 
+std::string ExportWriter::warning() const {
+  const std::scoped_lock lock(mutex_);
+  return warning_;
+}
+
 std::optional<Refusal> ExportWriter::failure() const {
   const std::scoped_lock lock(mutex_);
   return failure_;
@@ -277,6 +282,10 @@ void ExportWriter::run(const std::stop_token& stop) {
   if (auto flushed = s.encoder->encode(nullptr, sink); !flushed) return fail(std::move(flushed.error()));
   if (auto closed = s.muxer.finish(); !closed) return fail(std::move(closed.error()));
   bytes_.store(s.muxer.bytes());
+  {
+    const std::scoped_lock lock(mutex_);
+    warning_ = s.muxer.copy_error();
+  }
   log->info("export écrit : {} images dont {} répétées, {} Mo, {}", frames_.load(), repeated_.load(),
             bytes_.load() / 1'000'000, utf8(output_));
   if (s.shifted > 0) log->warn("{} images reçues à un instant déjà passé, décalées", s.shifted);

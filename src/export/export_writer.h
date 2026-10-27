@@ -145,6 +145,9 @@ class ExportWriter {
   // Le refus qui a arrêté le thread, s'il y en a un.
   std::optional<Refusal> failure() const;
   WriterProgress progress() const;
+  // Après un finish() réussi : non vide si la lecture des pistes copiées (audio, sous-titres) a été
+  // interrompue par une erreur de la source. Le fichier est écrit mais ces pistes s'arrêtent avant la fin.
+  std::string warning() const;
 
   struct State;  // FFmpeg : contexte d'encodeur et mux, dans export_writer.cpp
 
@@ -169,6 +172,7 @@ class ExportWriter {
   bool finishing_ = false;          // sous mutex_ : plus d'image, vider et clore
   bool done_ = false;               // sous mutex_ : le thread a fini (clos, ou refusé)
   std::optional<Refusal> failure_;  // sous mutex_
+  std::string warning_;             // sous mutex_
   std::atomic<std::int64_t> frames_{0};
   std::atomic<std::int64_t> repeated_{0};
   std::atomic<std::int64_t> bytes_{0};

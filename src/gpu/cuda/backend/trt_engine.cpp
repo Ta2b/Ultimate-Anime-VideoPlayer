@@ -68,19 +68,34 @@ SharedActivations::~SharedActivations() {
 
 std::expected<void, Refusal> SharedActivations::reserve(std::int64_t bytes) {
   if (bytes <= bytes_) return {};
-  // Les moteurs déjà posés sur l'ancienne zone peuvent encore y travailler.
-  if (data_ != nullptr) {
+  const auto refused = [bytes] {
+    return refuse(RefusalCode::GpuMemoryExhausted,
+                  std::format("activations partagées : {} Mo refusés par cudaMalloc", bytes >> 20));
+  };
+  // La nouvelle zone d'abord, l'ancienne intacte : un refus ne laisse pas aux moteurs déjà posés
+  // un pointeur libéré.
+  void* fresh = nullptr;
+  if (cudaMalloc(&fresh, static_cast<std::size_t>(bytes)) != cudaSuccess) {
+    static_cast<void>(cudaGetLastError());
+    if (data_ == nullptr) return refused();
+    // Pas de place pour les deux zones à la fois : l'ancienne part avant le nouvel essai. Les
+    // moteurs la reposent (generation change) ; sans zone ils échoueront à l'exécution, sans
+    // écrire dans de la mémoire libérée.
     cudaDeviceSynchronize();
     cudaFree(data_);
     data_ = nullptr;
     bytes_ = 0;
+    ++generation_;
+    if (cudaMalloc(&fresh, static_cast<std::size_t>(bytes)) != cudaSuccess) {
+      static_cast<void>(cudaGetLastError());
+      return refused();
+    }
+  } else if (data_ != nullptr) {
+    // Les moteurs déjà posés sur l'ancienne zone peuvent encore y travailler.
+    cudaDeviceSynchronize();
+    cudaFree(data_);
   }
-  if (cudaMalloc(&data_, static_cast<std::size_t>(bytes)) != cudaSuccess) {
-    data_ = nullptr;
-    static_cast<void>(cudaGetLastError());
-    return refuse(RefusalCode::GpuMemoryExhausted,
-                  std::format("activations partagées : {} Mo refusés par cudaMalloc", bytes >> 20));
-  }
+  data_ = fresh;
   bytes_ = bytes;
   ++generation_;
   return {};

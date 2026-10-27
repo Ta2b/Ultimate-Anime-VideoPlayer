@@ -15,6 +15,7 @@
 #include "app/play/settings_chain_tabs.h"
 #include "app/play/settings_engines.h"
 #include "app/play/settings_export.h"
+#include "app/play/text_fit.h"
 #include "app/play/tracks.h"
 
 namespace ajp::app::play {
@@ -344,9 +345,7 @@ SettingsPanel::Result SettingsPanel::draw(const PlaySettings& running, const Set
             choices.profiles.rows[static_cast<std::size_t>(choices.profiles.active - 1)];
         const std::string name = current ? current->name : std::string();
         if (choices.profiles.active != shown_profile_ || name != shown_name_) {
-          const std::size_t n = std::min(name.size(), rename_.size() - 1);
-          std::copy_n(name.data(), n, rename_.data());
-          rename_[n] = '\0';
+          copy_text(rename_, name);
           shown_profile_ = choices.profiles.active;
           shown_name_ = name;
         }

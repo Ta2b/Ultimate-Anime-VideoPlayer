@@ -101,10 +101,9 @@ TEST_CASE("color : HDR10 lu en PQ et HLG, ignoré en SDR même invalide", "[medi
   f->color_trc = AVCOL_TRC_ARIB_STD_B67;
   CHECK(color_info(*f, AV_PIX_FMT_YUV420P10LE)->hdr.has_value());
 
-  mastering->max_luminance = av_make_q(-5, 1);  // invalide : refusé seulement s'il sert
-  CHECK(refusal_of(*f) == RefusalCode::FormatUnsupported);
-  f->color_trc = AVCOL_TRC_BT709;
+  mastering->max_luminance = av_make_q(-5, 1);  // invalide : ignoré, l'image reste lisible
   CHECK(refusal_of(*f) == std::nullopt);
+  CHECK_FALSE(color_info(*f, AV_PIX_FMT_YUV420P10LE)->hdr.has_value());
 }
 
 TEST_CASE("color : primaires devinées d'après la matrice", "[media][color]") {
@@ -169,7 +168,7 @@ TEST_CASE("color : une matrice voisine de celles du vocabulaire la remplace", "[
   CHECK(color_info(*sd, AV_PIX_FMT_YUV420P)->matrix == ColorMatrix::Bt601);
 }
 
-TEST_CASE("color : ce que core/frame.h ne sait pas dire est refusé", "[media][color]") {
+TEST_CASE("color : ce que core/frame.h ne sait pas dire est refusé ou approché", "[media][color]") {
   FramePtr f = frame(1920, 1080);
   for (const AVColorSpace space : {AVCOL_SPC_ICTCP, AVCOL_SPC_IPT_C2, AVCOL_SPC_YCGCO, AVCOL_SPC_SMPTE2085}) {
     f->colorspace = space;
@@ -179,11 +178,15 @@ TEST_CASE("color : ce que core/frame.h ne sait pas dire est refusé", "[media][c
   f->color_trc = AVCOL_TRC_LOG;
   CHECK(refusal_of(*f) == RefusalCode::FormatUnsupported);
   f->color_trc = AVCOL_TRC_BT709;
-  f->color_primaries = AVCOL_PRI_SMPTE432;  // P3 D65 : pas DCI-P3
-  CHECK(refusal_of(*f) == RefusalCode::FormatUnsupported);
+  f->color_primaries = AVCOL_PRI_SMPTE432;  // P3 D65 : lu comme DCI-P3, avec un avertissement
+  CHECK(refusal_of(*f) == std::nullopt);
+  CHECK(color_info(*f, AV_PIX_FMT_YUV420P)->primaries == Primaries::DciP3);
   f->color_primaries = AVCOL_PRI_BT709;
+  f->color_trc = AVCOL_TRC_SMPTE240M;
+  CHECK(color_info(*f, AV_PIX_FMT_YUV420P)->transfer == Transfer::Bt1886);
+  f->color_trc = AVCOL_TRC_BT709;
   f->chroma_location = AVCHROMA_LOC_BOTTOM;
-  CHECK(refusal_of(*f) == RefusalCode::FormatUnsupported);
+  CHECK(color_info(*f, AV_PIX_FMT_YUV420P)->siting == ChromaSiting::Center);
   // Sans sous-échantillonnage, le siting est sans objet.
   FramePtr full = frame(1920, 1080, AV_PIX_FMT_YUV444P16LE);
   full->chroma_location = AVCHROMA_LOC_BOTTOM;

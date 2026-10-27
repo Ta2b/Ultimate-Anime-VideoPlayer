@@ -12,6 +12,7 @@
 
 #include "app/play/panel_style.h"
 #include "app/play/settings_chain_tabs.h"
+#include "app/play/text_fit.h"
 #include "export/container.h"
 #include "prepare/utf8.h"
 
@@ -48,16 +49,14 @@ const char* codec_note(exporter::Codec codec) {
     case exporter::Codec::H264:
       return "H.264 8 bits : pour les lecteurs anciens ; les dégradés y sont moins fins.";
     case exporter::Codec::Lossless:
-      return "FFV1 sans perte, encodé par le processeur : des fichiers très lourds, pour retravailler la "
-             "vidéo.";
+      return "FFV1 sans perte du codec, en YUV 4:2:0 10 bits (la couleur est réduite avant l'encodage), "
+             "encodé par le processeur : des fichiers très lourds, pour retravailler la vidéo.";
   }
   return "";
 }
 
 void copy_path(std::array<char, 1024>& to, const std::string& text) {
-  const std::size_t n = std::min(text.size(), to.size() - 1);
-  std::copy_n(text.data(), n, to.data());
-  to[n] = '\0';
+  copy_text(to, text);
 }
 
 // Ce qui empêche d'exporter vers ce fichier, ou rien.
@@ -190,7 +189,7 @@ void export_tab(ExportDraft& draft, const PlaySettings& running, const SettingsC
     ImGui::TextWrapped("%s", problem.c_str());
     ImGui::PopStyleColor();
   } else if (std::filesystem::exists(output, error)) {
-    note("Ce fichier existe : il sera remplacé.");
+    note("Ce fichier existe : il ne sera remplacé qu'à la fin d'un export réussi.");
   }
   if (container == exporter::Container::Matroska) {
     note(

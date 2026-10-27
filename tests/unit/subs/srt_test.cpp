@@ -59,11 +59,18 @@ TEST_CASE("parse_srt : les horodatages délimitent les cues, même sans ligne vi
   CHECK((*bare)[1].text == "B");
 }
 
-TEST_CASE("parse_srt : un horodatage mal formé au milieu du fichier est refusé à sa ligne", "[srt]") {
-  const auto broken = parse_srt("1\n00:00:01,000 --> 00:00:02,000\nA\n\n2\n00:00:03,000 --> 00:00:04\nB\n");
-  REQUIRE_FALSE(broken);
-  CHECK(broken.error().code == RefusalCode::SubtitleFormat);
-  CHECK(broken.error().detail.find("ligne 6") != std::string::npos);
+TEST_CASE("parse_srt : une cue à l'horodatage mal formé est écartée, pas le fichier", "[srt]") {
+  std::vector<std::string> skipped;
+  const auto broken = parse_srt(
+      "1\n00:00:01,000 --> 00:00:02,000\nA\n\n2\n00:00:03,000 --> 00:00:04\nB\n\n3\n"
+      "00:00:05,000 --> 00:00:06,000\nC\n",
+      &skipped);
+  REQUIRE(broken);
+  REQUIRE(broken->size() == 2);
+  CHECK(broken->at(0).text == "A");
+  CHECK(broken->at(1).text == "C");
+  REQUIRE(skipped.size() == 1);
+  CHECK(skipped.front().find("ligne 6") != std::string::npos);
   // Une flèche dans un dialogue n'est pas un horodatage.
   const auto arrow = parse_srt("00:00:01,000 --> 00:00:02,000\nA --> B\n");
   REQUIRE(arrow);
@@ -80,7 +87,9 @@ TEST_CASE("parse_srt : refuse un horodatage hors plage ou mal formé, avec la li
   REQUIRE_FALSE(backwards);
   CHECK(backwards.error().detail.find("fin avant début") != std::string::npos);
 
-  CHECK_FALSE(parse_srt("00:00:01,5 --> 00:00:02,000\nA\n"));        // millisecondes sur 3 chiffres
+  const auto short_millis = parse_srt("00:00:01,5 --> 00:00:02,000\nA\n");  // entier, comme FFmpeg
+  REQUIRE(short_millis);
+  CHECK(short_millis->front().start_us == 1'005'000);
   CHECK_FALSE(parse_srt("00:00:01,000 -> 00:00:02,000\nA\n"));       // flèche
   CHECK_FALSE(parse_srt("00:00:01,000 --> 00:00:02,000junk\nA\n"));  // suite collée
   CHECK_FALSE(parse_srt("Bonjour\n"));

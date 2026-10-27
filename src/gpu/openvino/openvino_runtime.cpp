@@ -20,6 +20,7 @@
 #include <utility>
 #include <vector>
 
+#include "core/log.h"
 #include "gpu/openvino/openvino_import.h"
 #include "gpu/openvino/openvino_net.h"
 #include "gpu/vulkan/backend/net_measure.h"
@@ -143,10 +144,15 @@ class OpenvinoRuntime final : public vk::net::Runtime {
       usm_ = std::make_shared<UsmPool>(context);
       // La mémoire de la chaîne ne s'importe que sur une carte : sur un GPU intégré, la mémoire hôte
       // du runtime (USM) est déjà partagée, sans copie.
-      if (core_->get_property(gpu_, ov::device::type) == ov::device::Type::DISCRETE)
+      if (core_->get_property(gpu_, ov::device::type) == ov::device::Type::DISCRETE) {
         imports_ = DeviceImports::open(context);
-    } catch (const std::exception&) {  // NOLINT(bugprone-empty-catch) : contexte du GPU indisponible,
-      // les tenseurs passent par la mémoire du backend
+        if (!imports_)
+          log_channel("openvino")->warn("import de mémoire d'appareil indisponible (OpenCL introuvable)");
+      }
+    } catch (const std::exception& e) {  // contexte du GPU indisponible : les tenseurs passent par la
+      // mémoire du backend, sans USM ni interop
+      log_channel("openvino")->warn("mémoire partagée indisponible ({}) : tenseurs par la mémoire du backend",
+                                    e.what());
     }
   }
   std::string_view name() const override { return "openvino"; }

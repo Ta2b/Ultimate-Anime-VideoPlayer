@@ -8,6 +8,7 @@
 #include <expected>
 #include <filesystem>
 #include <limits>
+#include <string>
 #include <vector>
 
 #include "core/frame.h"
@@ -41,17 +42,23 @@ class Muxer {
   std::expected<void, Refusal> write_video(AVPacket& packet);
   // Les paquets copiés restants, puis la fin du fichier. Refus : EncodeFailed.
   std::expected<void, Refusal> finish();
-  // Ferme le fichier sans le finir et le supprime.
+  // Ferme le fichier sans le finir et supprime le fichier partiel : un fichier existant au même
+  // chemin n'est touché qu'à la fin réussie de finish().
   void abandon();
+  // Non vide : la lecture des pistes copiées s'est arrêtée sur une erreur (pas la fin du fichier),
+  // l'audio et les sous-titres s'arrêtent là. L'export reste écrit.
+  const std::string& copy_error() const { return copy_error_; }
   std::int64_t bytes() const;  // octets écrits jusqu'ici
 
  private:
   Muxer() = default;
   std::expected<void, Refusal> read_copy();  // le paquet copié suivant dans pending_, ou la fin
   std::expected<void, Refusal> write_copies(std::int64_t until_us);
-  void close_output();
+  int close_output();  // < 0 : la fermeture du fichier a échoué (écriture finale, disque plein)
 
   std::filesystem::path output_path_;
+  std::filesystem::path partial_path_;  // écrit ici, puis renommé en output_path_ à la fin
+  std::string copy_error_;
   Container container_ = Container::Matroska;
   InputPtr input_;
   AVFormatContext* output_ = nullptr;

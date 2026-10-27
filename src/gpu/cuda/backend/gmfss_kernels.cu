@@ -98,7 +98,9 @@ __global__ void __launch_bounds__(kPixelThreads, kPixelBlocksPerSm) splat_all(So
   if (shift.z == 0.0F) return;  // tout le bloc : rien n'arrive dans le plan
   const int ox = x0 - kMargin + __float2int_rn(shift.x / shift.z);
   const int oy = y0 - kMargin + __float2int_rn(shift.y / shift.z);
-  const float scale = active ? expf(p.s * z) : 0.0F;  // une fois par pixel, pour tous les plans
+  // z borné comme dans le port GLSL (NaN : le bas de l'intervalle, comme fmaxf).
+  const float bounded_z = fminf(fmaxf(z, -kernels::kGmfssMetricLimit), kernels::kGmfssMetricLimit);
+  const float scale = active ? expf(p.s * bounded_z) : 0.0F;  // une fois par pixel, pour tous les plans
   const int cx0 = active ? static_cast<int>(floorf(tx)) : 0;
   const int cy0 = active ? static_cast<int>(floorf(ty)) : 0;
   const float east = tx - static_cast<float>(cx0);

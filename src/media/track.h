@@ -7,6 +7,7 @@
 #include <cstdint>
 #include <expected>
 #include <memory>
+#include <optional>
 #include <span>
 #include <string>
 
@@ -57,6 +58,9 @@ struct TrackInfo {
   int width = 0;  // vidéo
   int height = 0;
   Rational frame_rate;  // fréquence moyenne, {0, 1} si inconnue
+  // Ce que le conteneur étiquette (codecpar) : rien si non renseigné, ou hors de ces trois valeurs.
+  std::optional<ColorMatrix> color_matrix;
+  bool full_range = false;
 
   int sample_rate = 0;  // audio
   int channels = 0;

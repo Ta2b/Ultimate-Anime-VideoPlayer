@@ -235,7 +235,8 @@ void Pipeline::pump() {
 }
 
 SessionConfig Pipeline::session_config() const {
-  // Matrice de la vidéo pour les couleurs VSFilter : celle que mpv devine à la taille.
+  // Matrice de la vidéo pour les couleurs VSFilter : celle que le flux annonce, sinon celle que mpv
+  // devine à la taille. La plage vient du flux aussi : en plage pleine, VSFilter ne convertit pas.
   const bool hd = video_track_.width >= 1280 || video_track_.height > 576;
   return SessionConfig{
       .duration_us = duration_us_,
@@ -243,8 +244,10 @@ SessionConfig Pipeline::session_config() const {
       .subtitles = subtitle_track_.has_value(),
       .video_width = video_track_.width,
       .video_height = video_track_.height,
-      .video_matrix = subs::VideoMatrix{.matrix = hd ? ColorMatrix::Bt709 : ColorMatrix::Bt601,
-                                        .range = ColorRange::Limited},
+      .video_matrix =
+          subs::VideoMatrix{
+              .matrix = video_track_.color_matrix.value_or(hd ? ColorMatrix::Bt709 : ColorMatrix::Bt601),
+              .range = video_track_.full_range ? ColorRange::Full : ColorRange::Limited},
   };
 }
 

@@ -205,7 +205,7 @@ void main() {
           uint ox = p % WOUT;
           float v = tile_c[sg * 256u + e] + bias.v[co];
           if (RESIDUAL == 1u) v += AJP_LOAD(res, TR, t_index(rd, n, co, oy, ox));
-          v = net_activate(ACT, v, ALPHA, LO, HI, slope.v[co]);
+          v = net_activate(ACT, v, ALPHA, LO, HI, ACT == kActPrelu ? slope.v[co] : 0.0);
           if (RESIDUAL == 2u) v *= source_at(n, co, oy, ox) + AJP_LOAD(res, TR, t_index(rd, n, co, oy, ox));
           AJP_STORE(dst, TY, t_index_space(yd, sb, SPACE_CRD == 1u, n, co, oy, ox), v)
         }

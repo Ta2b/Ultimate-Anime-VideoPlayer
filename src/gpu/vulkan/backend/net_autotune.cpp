@@ -320,9 +320,9 @@ std::expected<KernelChoice, Refusal> Autotuner::choose(const ir::Graph& graph, s
   // Tranché sous une autre version du pilote, ou lu dans la table : sa sortie, pas son temps, se
   // revérifie. Discordante, le nœud se remesure.
   if (remembered) {
-    auto same = agrees_with_direct(graph, node, *remembered, candidates);
-    if (!same) return std::unexpected(same.error());
-    if (*same) {
+    // Un choix qui ne s'exécute plus (pilote changé, limite dépassée) est discordant : on remesure.
+    const auto same = agrees_with_direct(graph, node, *remembered, candidates);
+    if (same && *same) {
       ++cached_;
       ++reverified_;
       cache_[key] = {.choice = *remembered, .driver = profile_.driver_build};

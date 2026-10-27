@@ -87,6 +87,10 @@ std::expected<Muxer, Refusal> Muxer::open(const std::filesystem::path& source,
                                           const std::filesystem::path& output) {
   Muxer m;
   m.output_path_ = output;
+  // Le fichier est écrit à côté, puis renommé : annuler ou échouer laisse intact un fichier qui
+  // porterait déjà ce nom. Le format est donné par son nom, non par l'extension.
+  m.partial_path_ = output;
+  m.partial_path_ += ".partial";
   const std::optional<Container> container = container_of(output);
   if (!container)
     return refuse(RefusalCode::FileUnwritable, std::format("{} : ni .mkv, ni .mp4, ni .mov", utf8(output)));
@@ -101,7 +105,7 @@ std::expected<Muxer, Refusal> Muxer::open(const std::filesystem::path& source,
   m.source_video_ = av_find_best_stream(input, AVMEDIA_TYPE_VIDEO, -1, -1, nullptr, 0);
   if (input->start_time != AV_NOPTS_VALUE)
     m.start_us_ = av_rescale_q(input->start_time, AV_TIME_BASE_Q, kMicroseconds);
-  const std::string output_text = utf8(output);
+  const std::string output_text = utf8(m.partial_path_);
   const std::string format(format_name(m.container_));
   if (const int err =
           avformat_alloc_output_context2(&m.output_, nullptr, format.c_str(), output_text.c_str());
@@ -114,6 +118,8 @@ std::expected<Muxer, Refusal> Muxer::open(const std::filesystem::path& source,
 
 Muxer::Muxer(Muxer&& other) noexcept
     : output_path_(std::move(other.output_path_)),
+      partial_path_(std::move(other.partial_path_)),
+      copy_error_(std::move(other.copy_error_)),
       container_(other.container_),
       input_(std::move(other.input_)),
       output_(std::exchange(other.output_, nullptr)),
@@ -137,18 +143,20 @@ Muxer::~Muxer() {
   close_output();
 }
 
-void Muxer::close_output() {
-  if (output_ == nullptr) return;
-  if (output_->pb != nullptr && (output_->oformat->flags & AVFMT_NOFILE) == 0) avio_closep(&output_->pb);
+int Muxer::close_output() {
+  if (output_ == nullptr) return 0;
+  int err = 0;
+  if (output_->pb != nullptr && (output_->oformat->flags & AVFMT_NOFILE) == 0) err = avio_closep(&output_->pb);
   avformat_free_context(output_);
   output_ = nullptr;
+  return err;
 }
 
 void Muxer::abandon() {
   close_output();
   if (opened_) {
     std::error_code ignored;
-    std::filesystem::remove(output_path_, ignored);
+    std::filesystem::remove(partial_path_, ignored);
     opened_ = false;
   }
 }
@@ -259,7 +267,7 @@ std::expected<void, Refusal> Muxer::begin(const AVCodecContext& encoder) {
   }
 
   if ((out.oformat->flags & AVFMT_NOFILE) == 0) {
-    const std::string path = utf8(output_path_);
+    const std::string path = utf8(partial_path_);
     if (const int err = avio_open(&out.pb, path.c_str(), AVIO_FLAG_WRITE); err < 0)
       return refuse_av(RefusalCode::FileUnwritable, path, err);
     opened_ = true;
@@ -283,7 +291,8 @@ std::expected<void, Refusal> Muxer::read_copy() {
       return {};
     }
     if (err < 0) {  // la fin de la source illisible : la vidéo encodée reste, les copies s'arrêtent
-      log_channel("export")->warn("lecture des pistes copiées arrêtée : {}", av_error_text(err));
+      copy_error_ = av_error_text(err);
+      log_channel("export")->warn("lecture des pistes copiées arrêtée : {}", copy_error_);
       copies_done_ = true;
       return {};
     }
@@ -344,8 +353,20 @@ std::expected<void, Refusal> Muxer::finish() {
   if (const int err = av_write_trailer(output_); err < 0)
     return refuse_av(RefusalCode::EncodeFailed, "mux : fin du fichier", err);
   written_ = bytes();
+  if (const int err = close_output(); err < 0) {  // le dernier vidage du tampon a échoué : fichier tronqué
+    abandon();
+    return refuse_av(RefusalCode::FileUnwritable, utf8(output_path_), err);
+  }
+  // Le fichier est complet : il prend la place de l'ancien, d'un seul geste.
+  std::error_code moved;
+  std::filesystem::rename(partial_path_, output_path_, moved);
+  if (moved) {
+    abandon();
+    return refuse(RefusalCode::FileUnwritable,
+                  std::format("{} : {}", utf8(output_path_), moved.message()));
+  }
   finished_ = true;
-  close_output();
+  opened_ = false;
   return {};
 }
 

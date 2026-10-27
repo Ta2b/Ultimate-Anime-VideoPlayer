@@ -607,7 +607,10 @@ std::expected<std::vector<std::byte>, Refusal> with_metadata(std::span<const std
   const auto entry_of = [](Bytes bytes) -> std::expected<std::pair<std::string, std::string>, Refusal> {
     std::pair<std::string, std::string> entry;
     proto::Reader reader(bytes);
-    for (auto field = reader.next(); field && *field; field = reader.next()) {
+    while (true) {
+      auto field = reader.next();
+      if (!field) return std::unexpected(field.error());  // entrée tronquée : refusée, pas lue en partie
+      if (!*field) break;
       if ((*field)->number != kEntryKey && (*field)->number != kEntryValue) continue;
       auto text = proto::as_string(**field);
       if (!text) return std::unexpected(text.error());
@@ -615,6 +618,9 @@ std::expected<std::vector<std::byte>, Refusal> with_metadata(std::span<const std
     }
     return entry;
   };
+  // Une seule entrée de cette clé, à la bonne valeur : le modèle est déjà tel qu'on le veut. Des
+  // doublons sont tous retirés, la seule entrée voulue est réécrite à la fin.
+  int matching = 0;
   bool present = false;
   Writer out;
   auto ok = for_each_field(model, [&](const Field& field) -> std::expected<void, Refusal> {
@@ -622,7 +628,8 @@ std::expected<std::vector<std::byte>, Refusal> with_metadata(std::span<const std
       auto entry = entry_of(field.bytes);
       if (!entry) return std::unexpected(entry.error());
       if (entry->first == key) {
-        present = present || entry->second == value;
+        ++matching;
+        present = entry->second == value;
         return {};  // remplacée à la fin
       }
     }
@@ -630,7 +637,7 @@ std::expected<std::vector<std::byte>, Refusal> with_metadata(std::span<const std
     return {};
   });
   if (!ok) return std::unexpected(ok.error());
-  if (present) return std::vector<std::byte>{};
+  if (present && matching == 1) return std::vector<std::byte>{};
   Writer entry;
   entry.string(kEntryKey, key);
   entry.string(kEntryValue, value);

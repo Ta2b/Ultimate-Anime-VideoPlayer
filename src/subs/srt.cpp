@@ -79,7 +79,7 @@ std::optional<std::int64_t> take_timestamp(std::string_view& s) {
   if (!minutes || !take(s, ":")) return std::nullopt;
   const auto seconds = take_number(s, 2, 2);
   if (!seconds || !(take(s, ",") || take(s, "."))) return std::nullopt;
-  const auto millis = take_number(s, 3, 3);
+  const auto millis = take_number(s, 1, 3);  // un entier de millisecondes, comme sscanf dans FFmpeg
   if (!millis || *hours > kSrtMaxHours || *minutes > 59 || *seconds > 59) return std::nullopt;
   const std::int64_t total_seconds = (std::int64_t{*hours} * 60 + *minutes) * 60 + *seconds;
   return total_seconds * 1'000'000 + std::int64_t{*millis} * 1000;
@@ -137,7 +137,8 @@ std::string_view text_track_header() {
          "Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text\n";
 }
 
-std::expected<std::vector<SrtCue>, Refusal> parse_srt(std::string_view file) {
+std::expected<std::vector<SrtCue>, Refusal> parse_srt(std::string_view file,
+                                                      std::vector<std::string>* skipped) {
   if (file.starts_with("\xEF\xBB\xBF")) file.remove_prefix(3);
   const std::vector<std::string_view> lines = split_lines(file);
 
@@ -145,6 +146,7 @@ std::expected<std::vector<SrtCue>, Refusal> parse_srt(std::string_view file) {
   // horodatages délimitent les cues. Le texte court jusqu'à la cue suivante,
   // même sans ligne vide avant son numéro ; ses lignes vides sont écartées.
   std::vector<SrtCue> cues;
+  std::vector<std::string> skipped_lines;
   std::size_t i = 0;
   while (i < lines.size()) {
     if (is_blank(lines[i])) {
@@ -153,8 +155,16 @@ std::expected<std::vector<SrtCue>, Refusal> parse_srt(std::string_view file) {
     }
     if (is_index(lines[i]) && starts_cue(lines, i)) ++i;  // numéro de cue, facultatif
     const auto timing = parse_timing(lines[i]);
-    if (!timing) return refuse_line(i + 1, "horodatage attendu", lines[i]);
-    if (timing->end_us < timing->start_us) return refuse_line(i + 1, "fin avant début", lines[i]);
+    const char* fault = !timing ? "horodatage attendu" : timing->end_us < timing->start_us ? "fin avant début" : nullptr;
+    if (fault != nullptr) {
+      // Une ligne qui se donne pour un horodatage et n'en est pas un perd sa cue, pas le fichier.
+      // Un texte sans horodatage avant la première cue : ce n'est pas du SRT.
+      if (!looks_like_timing(lines[i])) return refuse_line(i + 1, fault, lines[i]);
+      skipped_lines.push_back(refuse_line(i + 1, fault, lines[i]).error().detail);
+      for (++i; i < lines.size() && !starts_cue(lines, i); ++i) {
+      }
+      continue;
+    }
     ++i;
 
     std::string text;
@@ -165,6 +175,10 @@ std::expected<std::vector<SrtCue>, Refusal> parse_srt(std::string_view file) {
     }
     cues.push_back({.start_us = timing->start_us, .end_us = timing->end_us, .text = std::move(text)});
   }
+  // Rien de lisible et des cues fautives : le fichier est refusé, à la première.
+  if (cues.empty() && !skipped_lines.empty())
+    return std::unexpected(Refusal{RefusalCode::SubtitleFormat, skipped_lines.front()});
+  if (skipped != nullptr) *skipped = std::move(skipped_lines);
   return cues;
 }
 

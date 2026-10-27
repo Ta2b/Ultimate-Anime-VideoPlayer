@@ -3,9 +3,11 @@
 #include <algorithm>
 #include <array>
 #include <cstdint>
+#include <iterator>
 #include <memory>
 #include <mutex>
 #include <span>
+#include <string>
 #include <string_view>
 #include <system_error>
 #include <utility>
@@ -162,7 +164,19 @@ PlaySettings home_settings(const HomeScreen& h, const HomeState& st, const PlayS
 
 std::optional<std::filesystem::path> dropped_file(const SDL_Event& event) {
   if (event.type != SDL_EVENT_DROP_FILE || event.drop.data == nullptr) return std::nullopt;
-  return prepare::path_from_utf8(event.drop.data);
+  std::filesystem::path path = prepare::path_from_utf8(event.drop.data);
+  // Un dossier ou un fichier qui n'est pas une vidéo (sous-titres, image, texte) ne ferme pas la
+  // lecture en cours : il ne se lirait pas, et la vidéo serait perdue pour rien.
+  std::error_code error;
+  if (!std::filesystem::is_regular_file(path, error) || error) return std::nullopt;
+  std::string extension = prepare::utf8_path(path.extension());
+  std::ranges::transform(extension, extension.begin(),
+                         [](char c) { return static_cast<char>(c >= 'A' && c <= 'Z' ? c - 'A' + 'a' : c); });
+  static constexpr std::string_view kNotVideo[] = {".srt", ".ass", ".ssa", ".sub", ".idx", ".vtt", ".txt",
+                                                   ".nfo", ".jpg", ".jpeg", ".png", ".gif", ".webp", ".bmp",
+                                                   ".toml", ".onnx", ".ttf", ".otf", ".zip", ".7z", ".rar"};
+  if (std::ranges::find(kNotVideo, extension) != std::end(kNotVideo)) return std::nullopt;
+  return path;
 }
 
 std::expected<std::optional<std::filesystem::path>, Refusal> run_home(const HomeScreen& h, HomeState& st,

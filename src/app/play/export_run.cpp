@@ -303,9 +303,11 @@ ExportOutcome run_export(Player& p, const ExportJob& job) {
     if (!moved) SDL_Delay(1);
   }
 
+  std::string truncated;  // la source n'a pas pu être relue jusqu'au bout pour les pistes copiées
   if (!interrupted && !failure) {
     show_loading(p.screen, p.ui, "Finalisation de l'export");
     if (auto finished = (*writer)->finish(); !finished) failure = std::move(finished.error());
+    else truncated = (*writer)->warning();
   }
   const double elapsed = static_cast<double>(host_now_us() - started) / 1e6;
   const exporter::WriterProgress written = (*writer)->progress();
@@ -329,10 +331,13 @@ ExportOutcome run_export(Player& p, const ExportJob& job) {
   }
   if (failure) return stopped(*failure);
   log->info("export terminé : {} images, {} octets, {:.1f} s", written.frames, written.bytes, elapsed);
-  return {.end = ExportEnd::Done,
-          .notice = std::format("Export terminé : {} ({} images, {:.0f} Mo, {})",
-                                prepare::utf8_path(job.output.filename()), written.frames,
-                                static_cast<double>(written.bytes) / 1e6, seconds_text(elapsed))};
+  std::string notice = std::format("Export terminé : {} ({} images, {:.0f} Mo, {})",
+                                   prepare::utf8_path(job.output.filename()), written.frames,
+                                   static_cast<double>(written.bytes) / 1e6, seconds_text(elapsed));
+  if (!truncated.empty())
+    notice += std::format(" — attention : l'audio et les sous-titres s'arrêtent avant la fin, la source "
+                          "n'a pas pu être relue ({})", truncated);
+  return {.end = ExportEnd::Done, .notice = std::move(notice)};
 }
 
 }  // namespace ajp::app::play

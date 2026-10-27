@@ -49,7 +49,8 @@ struct HomeState {
   SnapshotPlan& snapshot;
 };
 
-// Le fichier d'un SDL_EVENT_DROP_FILE ; rien pour un autre événement.
+// Le fichier d'un SDL_EVENT_DROP_FILE ; rien pour un autre événement, ni pour un dossier ou un fichier
+// qui n'est pas une vidéo (sous-titres, image, texte).
 std::optional<std::filesystem::path> dropped_file(const SDL_Event& event);
 
 // L'accueil jusqu'à une vidéo choisie ; rien si l'utilisateur quitte. problem : pourquoi la vidéo

@@ -60,8 +60,17 @@ std::unexpected<Refusal> refuse(RefusalCode code, std::string text) {
 }
 
 ONNXTensorElementDataType element_of(TensorType type) {
-  return type == TensorType::F32 ? ONNX_TENSOR_ELEMENT_DATA_TYPE_FLOAT
-                                 : ONNX_TENSOR_ELEMENT_DATA_TYPE_FLOAT16;
+  switch (type) {
+    case TensorType::F32:
+      return ONNX_TENSOR_ELEMENT_DATA_TYPE_FLOAT;
+    case TensorType::U8:
+      return ONNX_TENSOR_ELEMENT_DATA_TYPE_UINT8;
+    case TensorType::I8:
+      return ONNX_TENSOR_ELEMENT_DATA_TYPE_INT8;
+    case TensorType::F16:
+      break;
+  }
+  return ONNX_TENSOR_ELEMENT_DATA_TYPE_FLOAT16;
 }
 
 std::optional<TensorType> type_of(ONNXTensorElementDataType type) {

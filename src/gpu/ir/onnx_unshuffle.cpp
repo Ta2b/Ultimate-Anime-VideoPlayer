@@ -147,6 +147,11 @@ Plan plan_of(const Graph& g) {
     if (!is_op(reshape, "Reshape") || reshape.inputs.size() != 2 || reshape.inputs[1].empty() ||
         reshape.outputs.size() != 1)
       continue;
+    // Un 0 de la forme recopie la dimension de même rang de l'entrée : retirer le premier élément
+    // le ferait recopier la mauvaise. Une forme constante qui en contient un reste telle quelle.
+    const auto constant = std::ranges::find(g.initializers, reshape.inputs[1], &Tensor::name);
+    if (constant != g.initializers.end() && std::ranges::find(constant->ints, 0) != constant->ints.end())
+      continue;
     const std::string& folded = reshape.outputs[0];
     if (readers[folded].size() != 1 || outputs.contains(folded)) continue;
     const std::string& permuted = transpose.outputs[0];
