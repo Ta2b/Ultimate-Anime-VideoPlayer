@@ -30,6 +30,14 @@ OUT="$(mkdir -p "${1:-$ROOT/build/package}" && cd "${1:-$ROOT/build/package}" &&
 command -v patchelf >/dev/null || { echo "patchelf manquant (apt install patchelf)" >&2; exit 1; }
 VERSION="$(sed -n 's/^  VERSION \([0-9.]*\)$/\1/p' "$ROOT/CMakeLists.txt")"
 TAG="${AJP_RELEASE_TAG:-v$VERSION}"
+# Archives reproductibles : mêmes fichiers, mêmes octets. Sans cela, remplacer un paquet d'une
+# release publiée (gh release upload --clobber) change son SHA-256 et invalide les engines.lock des
+# lecteurs déjà installés. Date : celle du commit, ou SOURCE_DATE_EPOCH.
+COMMIT="$(git -C "$ROOT" rev-parse HEAD 2>/dev/null || echo inconnu)"
+EPOCH="${SOURCE_DATE_EPOCH:-$(git -C "$ROOT" log -1 --format=%ct 2>/dev/null || echo 0)}"
+pack() {  # dossier-parent entrée archive.tar.gz : tar trié, propriétaire neutre, gzip sans nom ni date
+  tar --sort=name --owner=0 --group=0 --numeric-owner --mtime="@$EPOCH" -C "$1" -cf - "$2" | gzip -9n > "$3"
+}
 # Le dépôt dont la release porte les paquets : il doit être public pour que le lecteur les télécharge.
 BASE_URL="https://github.com/${AJP_RELEASE_REPO:-Ta2b/Ultimate-Anime-VideoPlayer}/releases/download/$TAG"
 
@@ -133,6 +141,8 @@ origin "$STAGE/lib"
 check_portable "$STAGE/lib"
 check_portable "$STAGE" "$STAGE/lib"
 cp "$ROOT/LICENSE" "$ROOT/THIRD_PARTY_NOTICES.md" "$STAGE/"
+# De quel commit vient ce paquet : l'étiquette seule ne le garantit pas.
+printf 'version %s\ncommit %s\n' "$TAG" "$COMMIT" > "$STAGE/BUILD_INFO.txt"
 cp "$ROOT/tools/release/linux/LISEZMOI.txt" "$STAGE/"
 # Les modèles SPAN et RIFE, pour lire dès l'extraction (AJP_WITHOUT_MODELS=1 pour s'en passer).
 [ -n "${AJP_WITHOUT_MODELS:-}" ] || "$ROOT/tools/release/fetch-models.sh" "$STAGE/models"
@@ -145,7 +155,7 @@ engine_package() {  # id version licence dossier [intact : binaires laissés tel
   local id="$1" version="$2" license="$3" dir="$4"
   local archive="ajp-engine-$id-linux-x64.tar.gz"
   [ -n "${5:-}" ] || origin "$dir"
-  tar -C "$dir" -czf "$OUT/$archive" .
+  pack "$dir" . "$OUT/$archive"
   {
     echo
     echo "[[engine]]"
@@ -272,7 +282,7 @@ if [ -n "${AJP_ENGINES_LOCK:-}" ]; then
 fi
 cp "$LOCK" "$OUT/engines.lock"
 
-tar -C "$OUT" -czf "$OUT/ajp-linux-x64.tar.gz" ajp-linux-x64
+pack "$OUT" ajp-linux-x64 "$OUT/ajp-linux-x64.tar.gz"
 ( cd "$OUT" && sha256sum ajp-*.tar.gz engines.lock > SHA256SUMS )
 echo "lecteur : $OUT/ajp-linux-x64.tar.gz"
 echo "à joindre à la release $TAG : $OUT/ajp-*.tar.gz, engines.lock et SHA256SUMS"
