@@ -103,6 +103,9 @@ bool fmod_of(const Node& node) {
   return attrs != nullptr && attrs->fmod;
 }
 
+// Règle NaN des activations : Relu et Clip masquent un NaN (en 0, en lo : x > 0 et fmax le
+// refusent), LeakyRelu, Sigmoid et Tanh le propagent. ONNX ne fixe pas le comportement ; ce choix
+// est celui de la référence des tests, et les noyaux GLSL doivent le suivre.
 float activate(const Node& node, float x, float lo, float hi) {
   switch (node.op) {
     case OpKind::Relu:

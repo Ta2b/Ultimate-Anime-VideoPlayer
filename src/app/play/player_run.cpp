@@ -146,7 +146,8 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
         const int width = stage.track->width;
         const int height = stage.track->height;
         const WorkSize sized = work_size(width, height, settings.work_height);
-        auto slots = out.create_ring(sized.width * factor, sized.height * factor, kRingSlots);
+        auto slots = out.create_ring(sized.width * factor, sized.height * factor, kRingSlots,
+                                     c.backend_name == "tensorrt");
         if (!slots) return std::unexpected(std::move(slots.error()));
         const MasterClock* clock = stage.clock;
         return UpscaleStage::start(std::move(stage),

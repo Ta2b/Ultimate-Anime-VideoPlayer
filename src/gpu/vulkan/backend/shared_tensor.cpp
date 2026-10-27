@@ -151,9 +151,11 @@ class SharedTensorBuffer final : public TensorBuffer {
       const std::scoped_lock lock(views_->mutex);
       views_->views.erase(tensor_.handle);
     }
-    imported_.reset();  // le runtime rend sa vue avant que la mémoire ne disparaisse
-    // Ce que la file a reçu finit avant ; un GPU bloqué garde tampon et mémoire.
+    // Ce que la file a reçu finit avant, y compris les soumissions qui attendent l'étape d'un
+    // runtime en vol ; un GPU bloqué garde tampon et mémoire. Le runtime rend sa vue ensuite,
+    // avant que la mémoire ne disparaisse.
     if (!context_.settle()) return;
+    imported_.reset();
     context_.fn().vkDestroyBuffer(context_.device(), buffer_, nullptr);
     context_.destroyed().note(handle_word(buffer_));
     context_.fn().vkFreeMemory(context_.device(), memory_, nullptr);

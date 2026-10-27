@@ -5,11 +5,9 @@ name: Release Linux
 # tools/release/notes/<étiquette>.md si elle n'existe pas encore. Les builds Windows et macOS
 # partent de la même étiquette et se joignent à la même release. Une poussée sur la branche
 # release/linux construit le même paquet sans release : il reste en artefact de l'exécution.
-# Rien ne s'empaquette sans les règles (rules.yml) ni les tests unitaires sous Vulkan logiciel,
-# construits avec les options livrées (tâche tests) : un commit étiqueté qui ne les passe pas n'a
-# pas de release.
-# Avant toute poussée : tools/release/preflight/run.sh fait la même construction et les mêmes
-# tests dans un conteneur Ubuntu 24.04 local, avec toutes les erreurs d'un coup.
+# Rien ne s'empaquette sans les règles (rules.yml). Les tests unitaires ne tournent plus ici : ils
+# se lancent sur le poste (tools/release/preflight/run.sh fait la même construction et les mêmes
+# tests dans un conteneur Ubuntu 24.04 local, avec toutes les erreurs d'un coup) et par ci.yml.
 # Versions et paquets : tools/release/versions.env.
 # À la main : le paquet de la branche choisie, joint à la release de l'étiquette donnée (un
 # correctif du lecteur dans une release déjà publiée), ou en artefact sans étiquette.
@@ -44,42 +42,9 @@ jobs:
   rules:
     uses: ./.github/workflows/rules.yml
 
-  # Les tests avec les options de la version livrée (préréglage linux-release, tests activés),
-  # comme l'étage tests du préflight : sans ROCm, dont les tests n'ont pas de GPU ici.
-  tests:
-    name: Tests (version livrée, Vulkan logiciel)
-    runs-on: ubuntu-24.04
-    env:
-      AJP_TEST_VULKAN_VALIDATION: require
-    steps:
-      - uses: actions/checkout@v4
-      - name: Paquets système
-        run: |
-          source tools/release/versions.env
-          sudo apt-get update -qq
-          sudo apt-get install -y -qq $APT_BUILD $APT_PLAYER $APT_TESTS
-          pip install --user "meson==$MESON_VERSION"
-      - uses: actions/cache@v4
-        with:
-          path: ${{ env.AJP_DEPS_PREFIX }}
-          key: deps-player-gcc-13-${{ hashFiles('tools/deps/linux-from-source.sh') }}
-          restore-keys: deps-player-gcc-13-
-      - run: tools/deps/linux-from-source.sh "$AJP_DEPS_PREFIX" "$RUNNER_TEMP/deps-src"
-      - name: OpenVINO
-        run: |
-          source tools/release/versions.env
-          pip install --user "openvino==$OPENVINO_VERSION"
-          echo "OpenVINO_DIR=$(python3 -c 'from openvino.utils import get_cmake_path; print(get_cmake_path())')" >> "$GITHUB_ENV"
-      - run: >-
-          cmake --preset linux-release -B build/linux-release-tests -DAJP_BUILD_TESTS=ON
-          -DAJP_WITH_CUDA=OFF -DAJP_WITH_OPENVINO=ON -DAJP_WITH_MIGRAPHX=OFF
-      - run: cmake --build build/linux-release-tests
-      - name: Tests (Vulkan logiciel sous Xvfb)
-        run: xvfb-run -a ctest --test-dir build/linux-release-tests --output-on-failure -j "$(nproc)"
-
   package:
     name: Lecteur Linux (x64)
-    needs: [rules, tests]
+    needs: [rules]
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4

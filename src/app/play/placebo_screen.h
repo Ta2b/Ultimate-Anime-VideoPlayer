@@ -76,7 +76,8 @@ class PlaceboScreen final : public Screen {
 
   // Crée le ring : count slots RGBA16 de width × height, exportés (mémoire et sémaphore
   // timeline) et cédés à CUDA en disposition GENERAL, prêts pour la première écriture.
-  std::expected<std::vector<RingSlotDesc>, Refusal> create_ring(int width, int height, std::uint32_t count);
+  std::expected<std::vector<RingSlotDesc>, Refusal> create_ring(int width, int height, std::uint32_t count,
+                                                                bool external = true);
   // Couleur des images du ring : celle de la source (l'agrandissement ne la change pas).
   void set_source_color(const ColorInfo& color);
   // Forme du pixel de la vidéo (SAR, largeur / hauteur) : l'image s'affiche étirée de ce rapport.

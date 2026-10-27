@@ -144,7 +144,8 @@ class VulkanBackend final : public Backend {
   std::unique_ptr<net::ImportedSemaphore> imported_timeline_;
   // Le premier échec d'une étape différée, écrit par le fil du runtime, rendu au prochain enqueue.
   std::mutex runtime_mutex_;
-  std::optional<Refusal> runtime_failure_;
+  std::optional<Refusal> runtime_failure_;  // figé après kMaxStepFailures échecs de suite
+  int step_failures_ = 0;                   // échecs de suite des étapes différées
 };
 
 // Le contexte d'un appareil de rendu Vulkan partagé : sa file compute, son verrou de file.

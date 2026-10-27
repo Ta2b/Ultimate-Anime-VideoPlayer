@@ -173,7 +173,8 @@ ExportOutcome run_export(Player& p, const ExportJob& job) {
           }
           slots = sink->slots();
         } else {
-          auto ring = p.screen.create_ring(output.width, output.height, depth.ring_slots);
+          auto ring = p.screen.create_ring(output.width, output.height, depth.ring_slots,
+                                           c.backend_name == "tensorrt");
           if (!ring) return std::unexpected(std::move(ring.error()));
           slots = std::move(*ring);
         }
