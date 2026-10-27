@@ -24,6 +24,12 @@ struct Flush {
   std::uint32_t epoch = 0;
 };
 
+// La source a livré la dernière image de l'époque : un étage qui attend la suivante (DistilDRBA)
+// produit alors la dernière sans elle.
+struct StreamEnd {
+  std::uint32_t epoch = 0;
+};
+
 // Base opaque d'un Program (moteurs d'un Plan), construit par prepare, exécuté par gpu.
 class ProgramBase {
  public:

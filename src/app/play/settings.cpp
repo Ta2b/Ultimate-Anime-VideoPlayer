@@ -166,6 +166,30 @@ std::string_view label(SpanOrder order) {
   return "Auto (après SPAN au-dessus de 1080p)";
 }
 
+std::string_view name(FinalScaler scaler) {
+  switch (scaler) {
+    case FinalScaler::Default:
+      return "default";
+    case FinalScaler::EwaLanczos:
+      return "ewa_lanczos";
+    case FinalScaler::EwaLanczosSharp:
+      return "ewa_lanczos_sharp";
+  }
+  return "default";
+}
+
+std::string_view label(FinalScaler scaler) {
+  switch (scaler) {
+    case FinalScaler::Default:
+      return "Défaut de libplacebo";
+    case FinalScaler::EwaLanczos:
+      return "EWA Lanczos (fin)";
+    case FinalScaler::EwaLanczosSharp:
+      return "EWA Lanczos net";
+  }
+  return "Défaut de libplacebo";
+}
+
 std::string_view name(OledBlack mode) {
   switch (mode) {
     case OledBlack::Auto:
@@ -316,6 +340,9 @@ PlaySettings live_part(const PlaySettings& running, const PlaySettings& wanted, 
   s.true_hdr_peak = wanted.true_hdr_peak;
   s.true_hdr_debanding = wanted.true_hdr_debanding;
   s.hdr_native = wanted.hdr_native;
+  s.final_scaler = wanted.final_scaler;
+  s.deband = wanted.deband;
+  s.autoplay_next = wanted.autoplay_next;
   s.audio_delay_ms = wanted.audio_delay_ms;
   s.display_sync = wanted.display_sync;
   s.video_latency_ms = wanted.video_latency_ms;

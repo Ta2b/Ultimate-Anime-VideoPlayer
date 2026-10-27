@@ -143,7 +143,9 @@ VulkanBackend::~VulkanBackend() {
   if (queue_ && context_) context_->settle(queue_->last());
   if (pipelines_ && !pipeline_cache_file_.empty()) {
     const std::vector<std::byte> bytes = pipelines_->serialize();
-    if (!bytes.empty()) (void)net::write_file(pipeline_cache_file_, bytes);  // un cache perdu se refait
+    // Un cache perdu se refait.
+    if (!bytes.empty() && !net::write_file(pipeline_cache_file_, bytes))
+      log(BackendLogLevel::Warn, "cache de pipelines non écrit");
   }
 }
 
@@ -295,13 +297,13 @@ std::expected<Artifact, Refusal> VulkanBackend::build(const ModelSpec& model, co
   if (auto ok = net::write_file(artifact.path, net::serialize(*data)); !ok)
     return std::unexpected(ok.error());
   log(BackendLogLevel::Info,
-      std::format(
-          "{} construit : {} nœuds, {} dispatchs{}", model.id, data->graph.nodes.size(),
-          data->dispatches.size(),
-          tuner ? std::format(", {} couches mesurées, {} variantes écartées (sortie discordante), "
-                              "{} dès leur sondage, {} choix revérifiés sous ce pilote",
-                              tuner->measured(), tuner->rejected(), tuner->pruned(), tuner->reverified())
-                : ""));
+      std::format("{} construit : {} nœuds, {} dispatchs{}", model.id, data->graph.nodes.size(),
+                  data->dispatches.size(),
+                  tuner ? std::format(", {} couches mesurées, {} variantes écartées (sortie discordante), "
+                                      "{} dès leur sondage, {} choix revérifiés sous ce pilote ({}, {})",
+                                      tuner->measured(), tuner->rejected(), tuner->pruned(),
+                                      tuner->reverified(), name(profile_.family), profile_.driver_build)
+                        : ""));
   return artifact;
 }
 

@@ -117,6 +117,23 @@ TEST_CASE("warp : mouvement estimé sur une fenêtre plus petite, mis à l'éche
   CHECK(*peak == 1.0F);  // les 99 hors de la fenêtre ne comptent pas
 }
 
+TEST_CASE("warp : le mouvement maximal est un percentile, un point aberrant ne le fait pas monter",
+          "[warp]") {
+  ref::Motion motion = uniform_motion(64, 32, {0, 0, 64, 32}, 3.0F, 0.0F, 0.5F);  // 2048 points
+  motion.flow[0].at(10, 10) = 50.0F;                                              // un seul aberrant
+  const auto calm = ref::flow_max(motion);
+  REQUIRE(calm);
+  CHECK(*calm == 3.0F);
+  // Dix points sur 2048 (> 0,1 %) : ce n'est plus un aberrant.
+  for (int x = 0; x < 10; ++x) motion.flow[0].at(x, 20) = 50.0F;
+  const auto moving = ref::flow_max(motion);
+  REQUIRE(moving);
+  CHECK(*moving == 50.0F);
+  motion.flow[0].at(0, 0) = 1000.0F;  // au-delà de la dernière case : bord de la dernière
+  CHECK(*ref::flow_max(motion) == 50.0F);
+  CHECK(flow_bin(1000.0F) == kFlowBins - 1);
+}
+
 TEST_CASE("warp : à t = 1/2, warp_blend_at égale warp_blend", "[warp]") {
   const ref::Motion motion = uniform_motion(16, 4, {0, 0, 16, 4}, -1.5F, 1.5F, 0.3F);
   const auto mid = ref::warp_blend(ramp(16, 4, 0.0F), ramp(16, 4, -3.0F), motion);

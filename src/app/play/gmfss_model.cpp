@@ -8,9 +8,10 @@
 
 namespace ajp::app::play {
 
-std::optional<GmfssModels> find_gmfss(std::span<const std::filesystem::path> dirs, GmfssVariant variant) {
+std::optional<GmfssModels> find_gmfss(std::span<const std::filesystem::path> dirs, GmfssVariant variant,
+                                      bool prefer_half) {
   std::error_code error;
-  for (const bool half_flow : {true, false}) {
+  for (const bool half_flow : {prefer_half, !prefer_half}) {
     const GmfssFiles files = gmfss_files(variant, half_flow);
     for (const std::filesystem::path& dir : dirs) {
       GmfssModels found{.pair = dir / files.pair,

@@ -78,11 +78,12 @@ std::expected<void, Refusal> TensorRtBackend::hold(const DecodedFrame& frame) {
     if (!held.data && free == nullptr) free = &held;
   }
   if (free == nullptr) {
-    free = &held_[0];
+    free = &*std::ranges::min_element(held_, {}, &Held::sequence);
     if (auto ok = wait_event(free->done); !ok) return ok;
     free->data.reset();
   }
   free->data = frame.data;
+  free->sequence = ++held_sequence_;
   return cuda_check(cudaEventRecord(free->done, stream_), "cudaEventRecord");
 }
 

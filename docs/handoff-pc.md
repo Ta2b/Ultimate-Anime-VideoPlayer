@@ -24,7 +24,7 @@ Machine : CachyOS, RTX 4070 Ti (12 Go, Ada, compute 8.9), pilote 615.78.08, écr
 | Taille des sous-titres en direct ; karaoké sans recomposition en trop | fait | `subs/subtitle_renderer`, `session` |
 | Statistiques à la demande, profil GPU par étape, `--stats` | fait | `session`, `gpu_timing` |
 | Réduction « Perceptuelle » (Öztireli–Gross, écrite par nous) | à faire | — |
-| SPAN en FP8 ou INT8 (Ada), comparé à FP16 en PSNR/SSIM | à faire | — |
+| SPAN en FP8 ou INT8 (Ada), comparé à FP16 en PSNR/SSIM | outil et garde-fous en place (`span_int8`), comparaison PSNR/SSIM à faire | — |
 | Mesures de la paire sans attente hôte (`scores_now`, `flow_max_now`) | à faire (≈ 0,5 ms par paire) | — |
 | Smooth Motion du pilote, en complément de RIFE | fait sur le cloud, à essayer ([tests-pc.md](tests-pc.md)) | `settings`, `placebo_screen` |
 | Choix du modèle RIFE (catalogue 4.25, 4.25 lite, 4.22 lite, 4.26, 4.18, 4.13, 4.6 ; heavy déconseillé) | fait, en direct ; défaut 4.25 sur une RTX, 4.22 lite ailleurs (le premier présent) ; heavy coûte 34 ms par passe à 1280x768 | `model_choice` |

@@ -114,7 +114,9 @@ SettingsChoices home_choices(const HomeScreen& h, const HomeState& st, const Pla
                                      h.paths.models))
     rife = std::move(*found);
   const std::vector<std::filesystem::path> places = gmfss_dirs(h.paths, rife);
-  const bool gmfss = find_gmfss(places).has_value();
+  // Sans vidéo ouverte, on ne sait pas quel moteur sera pris : GMFSS ne tourne que sous TensorRT,
+  // donc sur une carte NVIDIA.
+  const bool gmfss = find_gmfss(places).has_value() && gpu_facts(h.screen).vendor == GpuVendor::Nvidia;
   const bool drba = find_distil_drba(places).has_value();
   const std::int64_t period = display_period_us(h.screen.window());
   const std::optional<DisplayFacts> display = read_display(display_name(h.screen.window()));
@@ -128,7 +130,7 @@ SettingsChoices home_choices(const HomeScreen& h, const HomeState& st, const Pla
       .display_hz = period > 0 ? 1e6 / static_cast<double>(period) : 0.0,
       .rife_available = rife.has_value() || gmfss || drba || offered(MotionEngine::Apple),
       .gmfss_available = gmfss,
-      .gmfss_union_available = find_gmfss(places, GmfssVariant::Union).has_value(),
+      .gmfss_union_available = gmfss && find_gmfss(places, GmfssVariant::Union).has_value(),
       .distil_drba_available = drba,
       .rife_loaded = false,
       .rife_models = rife ? rife->available : std::vector<std::string>{},

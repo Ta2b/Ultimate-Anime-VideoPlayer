@@ -56,7 +56,9 @@ std::expected<void, Refusal> share_primary_context(int ordinal) {
       cuDevicePrimaryCtxGetState(device, &flags, &active) != CUDA_SUCCESS) {
     return refuse(RefusalCode::VendorCallFailed, "cuDevicePrimaryCtxGetState");
   }
-  if (flags == CU_CTX_SCHED_BLOCKING_SYNC) return {};
+  // Le mode d'ordonnancement seul : un autre bit (carte hôte, mémoire locale) ne gêne pas NVDEC.
+  constexpr unsigned kSchedMask = 0x7;
+  if ((flags & kSchedMask) == CU_CTX_SCHED_BLOCKING_SYNC) return {};
   if (active != 0) {
     return refuse(
         RefusalCode::DeviceMismatch,

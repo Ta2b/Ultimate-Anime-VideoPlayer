@@ -25,9 +25,11 @@
 #include "app/play/engine_install.h"
 #include "app/play/engine_screen.h"
 #include "app/play/engine_switch.h"
+#include "app/play/episodes.h"
 #include "app/play/export_run.h"
 #include "app/play/first_run.h"
 #include "app/play/gmfss_model.h"
+#include "app/play/gpu_telemetry.h"
 #include "app/play/home_screen.h"
 #include "app/play/host_facts.h"
 #include "app/play/input.h"
@@ -155,8 +157,9 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
       });
   if (!pipeline) return std::unexpected(std::move(pipeline.error()));
 
+  const std::unique_ptr<GpuTelemetry> telemetry = GpuTelemetry::open(p.screen.device());
   const ChainStats chain_stats(*live, *c.backend->kernels(), rife_loaded, std::string(c.motion_name()),
-                               fps_of(video.frame_rate));
+                               fps_of(video.frame_rate), telemetry.get());
   SessionConfig session_config = (*pipeline)->session_config();
   session_config.start_us = start_us;
   p.screen.set_sample_aspect(session_config.video_sar);
@@ -165,6 +168,7 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
   session_config.header = {label_text};
   session_config.tracks = (*pipeline)->describe();
   p.screen.set_grade(grade_of(settings, settings.true_hdr, peak_nits, auto_peak, {}, {}, source_hdr));
+  p.screen.set_finish(settings.final_scaler, settings.deband);
   session_config.output = output_text(out, settings, peak_nits);
   session_config.display_period_us = display_period_us(out.window());
   session_config.display_hz = display_refresh_hz(out.window());
@@ -195,8 +199,11 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
                             : 0.0,
           .rife_available =
               c.rife_model.has_value() || c.gmfss_found || c.drba_found || offered(MotionEngine::Apple),
-          .gmfss_available = find_gmfss(c.gmfss_places).has_value(),
-          .gmfss_union_available = find_gmfss(c.gmfss_places, GmfssVariant::Union).has_value(),
+          // Seul TensorRT sait importer les graphes de GMFSS (MatMul, Softmax, LayerNorm) : le
+          // moteur Vulkan les refuserait, le menu ne les propose donc pas.
+          .gmfss_available = c.backend_name == "tensorrt" && find_gmfss(c.gmfss_places).has_value(),
+          .gmfss_union_available =
+              c.backend_name == "tensorrt" && find_gmfss(c.gmfss_places, GmfssVariant::Union).has_value(),
           .distil_drba_available = c.drba_found,
           .rife_loaded = rife_loaded,
           .rife_models = c.rife_choice ? c.rife_choice->available : std::vector<std::string>{},
@@ -235,6 +242,7 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
       .true_hdr_open = settings.true_hdr,
       .auto_peak = auto_peak,
       .peak_nits = peak_nits,
+      .file = p.options.file,
       .display = p.display,
       .header_text =
           [&c, hdr_out](const PlaySettings& s) {
@@ -375,6 +383,15 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
   p.quit = session.quit_asked();
   log_summary(session);
   for (const std::string& refusal : session.refusals()) log->warn("{}", refusal);
+  // Fin de la vidéo, sans demande de quitter : l'épisode suivant du dossier, si le réglage le veut.
+  if (!chain.reopen && !failure && !session.quit_asked() && chain.running.autoplay_next &&
+      !p.options.file.empty()) {
+    if (const auto next = sibling_episode(p.options.file, 1)) {
+      log->info("épisode suivant : {}", prepare::utf8_path(*next));
+      chain.next_file = *next;
+      chain.reopen = chain.running;
+    }
+  }
   std::optional<Reopen> reopen;
   if (chain.reopen && !failure) {
     reopen = Reopen{.settings = *chain.reopen,

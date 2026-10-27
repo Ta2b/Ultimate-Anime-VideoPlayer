@@ -144,6 +144,17 @@
       }
     },
     {
+      "name": "linux-prefix-cuda-machine",
+      "displayName": "Linux préfixe, CUDA sm_89, -O3, LTO et x86-64-v3 (le lecteur de la machine NVIDIA, sans effet sur les noyaux GPU)",
+      "inherits": "linux-prefix-cuda",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "RelWithDebInfo",
+        "CMAKE_CXX_FLAGS_RELWITHDEBINFO": "-O3 -g -DNDEBUG",
+        "CMAKE_CXX_FLAGS": "-march=x86-64-v3",
+        "CMAKE_INTERPROCEDURAL_OPTIMIZATION": "ON"
+      }
+    },
+    {
       "name": "linux-prefix-core",
       "displayName": "Linux, cœur seul (sans lecteur)",
       "inherits": "prefix",
@@ -255,6 +266,10 @@
     {
       "name": "linux-prefix-cuda-release",
       "configurePreset": "linux-prefix-cuda-release"
+    },
+    {
+      "name": "linux-prefix-cuda-machine",
+      "configurePreset": "linux-prefix-cuda-machine"
     },
     {
       "name": "linux-prefix-core",

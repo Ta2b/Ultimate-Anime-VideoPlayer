@@ -74,17 +74,8 @@ std::vector<EngineOffer> recommend_engines(const SystemInfo& system) {
                                    gpu.vendor == GpuVendor::Intel && gpu.openvino_gpu));
   }
 
-  if (system.os == Os::Windows) {
-    // Seulement pour les anciens AMD sans MIGraphX de Windows ML, et seulement si Vulkan fait
-    // moins bien : proposé, jamais coché d'office, en attendant la mesure.
-    const bool old_amd = gpu.vendor == GpuVendor::Amd && !gpu.winml_migraphx;
-    offers.push_back(EngineOffer{.id = EngineId::DirectMl,
-                                 .delivery = Delivery::Download,
-                                 .badges = {Badge::Compatibility, Badge::WindowsOnly},
-                                 .reason = old_amd ? Reason::CompareWithVulkan : Reason::NoMatchingGpu,
-                                 .relevant = old_amd,
-                                 .preselected = false});
-  }
+  // Pas d'offre DirectML : aucun moteur DirectML n'existe dans cette version (les anciens AMD
+  // restent sur Vulkan).
 
   // Vulkan est recommandé quand aucun moteur plus rapide ne convient à ce GPU.
   bool faster_engine = false;

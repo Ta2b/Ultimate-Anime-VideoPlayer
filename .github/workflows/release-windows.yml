@@ -112,7 +112,8 @@ jobs:
             ${{ runner.temp }}/package/ajp-*
             ${{ runner.temp }}/package/SHA256SUMS-windows.txt
       - name: Joindre à la release
-        if: github.event_name == 'push' || inputs.tag != ''
+        # Jamais avec TensorRT : un paquet qui embarque des composants NVIDIA reste un artefact.
+        if: (github.event_name == 'push' || inputs.tag != '') && !inputs.tensorrt
         shell: pwsh
         env:
           # Un dépôt public à part peut porter les releases (le lecteur télécharge ses moteurs sans

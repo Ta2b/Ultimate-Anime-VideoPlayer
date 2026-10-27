@@ -93,6 +93,27 @@ struct EngineQueue {
   bool shared = true;  // la file de calcul de libplacebo, sous son verrou
 };
 
+// Le LUID de l'adaptateur (VkPhysicalDeviceIDProperties), que D3D11VA retrouve par DXGI pour
+// décoder sur le GPU du rendu ; rien hors de Windows, ou si le pilote ne le donne pas.
+std::optional<DeviceLuid> device_luid(pl_vulkan vk) {
+#if defined(_WIN32)
+  const auto get_properties = reinterpret_cast<PFN_vkGetPhysicalDeviceProperties2>(
+      vk->get_proc_addr(vk->instance, "vkGetPhysicalDeviceProperties2"));
+  if (get_properties == nullptr) return std::nullopt;
+  VkPhysicalDeviceIDProperties ids{.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ID_PROPERTIES};
+  VkPhysicalDeviceProperties2 properties{.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2,
+                                         .pNext = &ids};
+  get_properties(vk->phys_device, &properties);
+  if (ids.deviceLUIDValid == VK_FALSE) return std::nullopt;
+  DeviceLuid luid{};
+  std::copy_n(ids.deviceLUID, luid.size(), luid.begin());
+  return luid;
+#else
+  static_cast<void>(vk);
+  return std::nullopt;
+#endif
+}
+
 EngineQueue engine_queue(pl_vulkan vk) {
   const auto compute = static_cast<std::uint32_t>(vk->queue_compute.index);
   const auto graphics = static_cast<std::uint32_t>(vk->queue_graphics.index);
@@ -336,6 +357,23 @@ std::expected<std::unique_ptr<PlaceboScreen>, Refusal> PlaceboScreen::open(const
   impl->device = GpuDevice{.api = GpuApi::Vulkan, .name = "Vulkan (libplacebo)"};
   for (std::size_t i = 0; i < impl->device.uuid.size(); ++i) impl->device.uuid[i] = gpu->uuid[i];
   impl->device.vulkan = vulkan_description(impl->vk);
+  impl->device.luid = device_luid(impl->vk);
+  // Le fabricant se déduit du vendorID, jamais du nom : sans lui la télémétrie NVML, l'avertissement de
+  // pilote et le choix de décodeur voient un fabricant inconnu.
+  if (const auto properties_of = reinterpret_cast<PFN_vkGetPhysicalDeviceProperties>(
+          impl->vk->get_proc_addr(impl->vk->instance, "vkGetPhysicalDeviceProperties"));
+      properties_of != nullptr) {
+    VkPhysicalDeviceProperties properties{};
+    properties_of(impl->vk->phys_device, &properties);
+    impl->device.pci_vendor = properties.vendorID;
+    impl->device.pci_device = properties.deviceID;
+    impl->device.name = properties.deviceName;
+    if (impl->device.vendor() == GpuVendor::Nvidia) {
+      // NVIDIA code sa version en 10.8.8.6 : « 615.78.08 ».
+      const std::uint32_t v = properties.driverVersion;
+      impl->device.driver_version = std::format("{}.{}.{:02}", v >> 22, (v >> 14) & 0xFF, (v >> 6) & 0xFF);
+    }
+  }
   const QueueRef engines = impl->device.vulkan->compute;
   if (impl->device.vulkan->lock_queue == nullptr) {
     impl->channel->info("moteurs sur leur propre file (famille {}, file {}), à côté de l'affichage",
@@ -380,6 +418,14 @@ PlaceboScreen::DeviceFacts PlaceboScreen::device_facts() const {
       const VkMemoryHeap& heap = properties.memoryHeaps[i];
       if ((heap.flags & VK_MEMORY_HEAP_DEVICE_LOCAL_BIT) != 0U)
         facts.vram_bytes = std::max<std::uint64_t>(facts.vram_bytes, heap.size);
+    }
+    constexpr VkMemoryPropertyFlags kVisibleLocal =
+        VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT | VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT;
+    for (std::uint32_t i = 0; i < properties.memoryTypeCount; ++i) {
+      const VkMemoryType& type = properties.memoryTypes[i];
+      if ((type.propertyFlags & kVisibleLocal) == kVisibleLocal)
+        facts.host_visible_vram_bytes = std::max<std::uint64_t>(facts.host_visible_vram_bytes,
+                                                                properties.memoryHeaps[type.heapIndex].size);
     }
   }
   const auto extensions = reinterpret_cast<PFN_vkEnumerateDeviceExtensionProperties>(

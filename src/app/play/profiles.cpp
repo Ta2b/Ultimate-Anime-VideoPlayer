@@ -248,7 +248,7 @@ void apply_user_keys(std::string_view user_toml) {
     key_slot() = core::KeyMap::defaults();
     return;
   }
-  key_slot() = std::move(*parsed);
+  key_slot() = *parsed;
 }
 
 const core::KeyMap& configured_keys() {

@@ -6,8 +6,11 @@
 #include <utility>
 #include <variant>
 
+#include "app/play/chapters.h"
+#include "app/play/episodes.h"
 #include "core/clock.h"
 #include "core/log.h"
+#include "prepare/utf8.h"
 #include "vendor_hdr/sdk_store.h"
 
 namespace ajp::app::play {
@@ -162,6 +165,12 @@ void apply_live(Chain& to, const PlaySettings& wanted, std::int64_t now_us) {
                       now_us);
     }
   }
+  if (wanted.final_scaler != r.final_scaler || wanted.deband != r.deband) {
+    to.screen.set_finish(wanted.final_scaler, wanted.deband);
+    controls.notify(
+        std::format("Image : {}, débandage {}", label(wanted.final_scaler), wanted.deband ? "oui" : "non"),
+        now_us);
+  }
   if (wanted.audio_delay_ms != r.audio_delay_ms)
     to.session.command(cmd::SetAudioDelay{.delay_us = std::int64_t{wanted.audio_delay_ms} * 1000});
   if (wanted.display_sync != r.display_sync) to.session.set_display_sync(wanted.display_sync);
@@ -269,10 +278,7 @@ void apply(const Input& input, Chain& to, std::int64_t now_us) {
               switch_chain(to, wanted, now_us);
               return;
             }
-            if (std::holds_alternative<cmd::StepFrame>(command)) {
-              controls.notify("Image par image : pas encore disponible", now_us);
-              return;
-            }
+            if (std::holds_alternative<cmd::StepFrame>(command)) controls.activity(now_us);
             if (std::holds_alternative<cmd::TogglePause>(command)) {
               log_channel("app")->info("action : {}", session.paused() ? "lecture" : "pause");
             } else if (const auto* seek = std::get_if<cmd::Seek>(&command)) {
@@ -316,6 +322,33 @@ void apply(const Input& input, Chain& to, std::int64_t now_us) {
             if (auto next = next_audio(to.pipeline.tracks())) switch_audio(to, *next, now_us);
           },
           [&](const CycleSubtitles&) { switch_subtitles(to, next_subtitle(to.pipeline.tracks()), now_us); },
+          [&](const StepEpisode& step) {
+            const auto neighbour = sibling_episode(to.file, step.direction);
+            if (!neighbour) {
+              controls.notify(step.direction > 0 ? "Pas d'épisode suivant dans ce dossier"
+                                                 : "Pas d'épisode précédent dans ce dossier",
+                              now_us);
+              return;
+            }
+            log_channel("app")->info("épisode {} : {}", step.direction > 0 ? "suivant" : "précédent",
+                                     prepare::utf8_path(*neighbour));
+            to.next_file = *neighbour;
+            to.reopen = to.running;
+          },
+          [&](const SkipCredits&) {
+            const ControlsView view = session.view();
+            std::int64_t target = 0;
+            if (const auto credits = credits_skip_target(view.chapters, view.position_us, view.duration_us)) {
+              target = *credits;
+              controls.notify("Générique passé", now_us);
+            } else {
+              target = view.position_us + kSkipFallbackUs;
+              controls.notify("Saut de 85 s", now_us);
+            }
+            if (view.duration_us > 0) target = std::min(target, view.duration_us);
+            session.command(Command{cmd::Seek{.target_us = target}});
+            controls.activity(now_us);
+          },
           [&](const StepChapter& step) {
             const ControlsView view = session.view();
             const auto chapter = chapter_step(view.chapters, view.position_us, step.direction);

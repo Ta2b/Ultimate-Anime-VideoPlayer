@@ -3,7 +3,7 @@
 #
 #   <dest>/onnx/   SPAN AnimeJaNai HD V3.1 (Sharp1 et normal, Performance et Balanced), depuis le
 #                  dépôt mpv-AnimeJaNai-HDR à un commit fixé ; licence CC BY-NC-SA 4.0
-#   <dest>/rife/   RIFE 4.25 et 4.22 lite en fp16 (conversions de vs-mlrt), depuis la release
+#   <dest>/rife/   RIFE 4.25, 4.22, 4.22 lite, 4.26 et 4.26 heavy en fp16 (conversions de vs-mlrt), depuis la release
 #                  models-rife-fp16-1 d'animejanai-inference ; RIFE est sous licence MIT
 #                  DistilDRBA v2 lite en fp16, converti par tools/drba/export_distil_drba.py depuis
 #                  routineLife1/DistilDRBA (db51bde, weights/v2_lite.pkl), depuis la release
@@ -35,7 +35,10 @@ RIFE_URL="https://github.com/the-database/animejanai-inference/releases/download
 RIFE_ARCHIVE_SHA=3fcf3429f3bb661d15c59aa58ed7ba28c0ca7f79e2388f8e0165dd8bbe0648f9
 RIFE=(
   "de0fb71ae50fe082eb3903fd5cf752063dea5e9fd61e8bbf3c4577e11b877c9c rife_v4.25.onnx"
+  "7fdb67dcf02d23cd573b5269bb41c600b7d4241cfda366099e736938d8f7abc6 rife_v4.22.onnx"
   "8b30b93ef8ab0b3cd1bb8905ad8b911eb887ff4b2900558eb1914d99568e2ca5 rife_v4.22_lite.onnx"
+  "fd6b06538898c9a94d20f0fe55febceadbcde5ad64952240733b7275ef4c9d59 rife_v4.26.onnx"
+  "ae45000d804282764554820a665588352ff08025d0b5761023aad52425766928 rife_v4.26_heavy.onnx"
 )
 DRBA_URL="https://github.com/Ta2b/ajp-releases/releases/download/models-drba-1"
 # Le même fichier, tant que la release models-drba-1 n'existe pas (le SHA-256 vérifie les deux).
@@ -71,16 +74,32 @@ for entry in "${DRBA[@]}"; do
   check "$sha" "$DEST/rife/$name"
 done
 
+# GMFSS Fortuna (base et union) et le demi-flot de DistilDRBA : exportés par le workflow
+# export-interpolation-models.yml, joints à la release models-interp-1 avec leur SHA256SUMS. Facultatifs :
+# tant que la release n'existe pas, les paquets partent sans eux (le lecteur les signale absents).
+INTERP_URL="${AJP_INTERP_MODELS_URL:-https://github.com/Ta2b/ajp-releases/releases/download/models-interp-1}"
+if curl -fsSL -o "$CACHE/interp-SHA256SUMS" "$INTERP_URL/SHA256SUMS" 2>/dev/null; then
+  while read -r sha name; do
+    [ -n "${name:-}" ] || continue
+    curl -fsSL -o "$DEST/rife/$name" "$INTERP_URL/$name"
+    check "$sha" "$DEST/rife/$name"
+  done < "$CACHE/interp-SHA256SUMS"
+else
+  echo "modèles d'interpolation (GMFSS, DRBA demi-flot) : release models-interp-1 absente, non joints" >&2
+fi
+
 cat > "$DEST/LICENCES.txt" <<'TXT'
 Modèles livrés avec le lecteur
 
 onnx/  AnimeJaNai HD V3.1 (SPAN), par the-database : Creative Commons BY-NC-SA 4.0
        (attribution, pas d'usage commercial, partage dans les mêmes conditions).
        https://github.com/the-database/mpv-upscale-2x_animejanai
-rife/  RIFE 4.25 et 4.22 lite (Practical-RIFE, hzwer), conversions ONNX de vs-mlrt passées en
+rife/  RIFE 4.25, 4.22, 4.22 lite, 4.26 et 4.26 heavy (Practical-RIFE, hzwer), conversions ONNX de vs-mlrt passées en
        fp16 par animejanai-inference : licence MIT.
        https://github.com/hzwer/Practical-RIFE
        DistilDRBA v2 lite (routineLife1, « neko »), converti en ONNX fp16 par ajp : licence MIT.
        https://github.com/routineLife1/DistilDRBA
+       GMFSS Fortuna base et union (vsgmfss_fortuna, HolyWu), exportés en ONNX par ajp : licence MIT.
+       https://github.com/HolyWu/vs-gmfss_fortuna
 TXT
 echo "modèles : $DEST"

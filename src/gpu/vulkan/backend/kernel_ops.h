@@ -316,6 +316,7 @@ class VulkanKernelOps final : public KernelOps {
     std::optional<Buffer> result;
     std::uint64_t ticket = 0;
     std::uint64_t value = 0;
+    std::uint64_t points = 0;  // points comptés dans l'histogramme
   };
   std::array<PairRead, kPendingReadbacks> pair_reads_;
   std::array<FlowRead, kPendingReadbacks> flow_reads_;

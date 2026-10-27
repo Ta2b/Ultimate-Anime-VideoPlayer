@@ -151,6 +151,20 @@ void grade_tab(PlaySettings& d, const SettingsChoices& choices) {
   } else {
     note("Sortie HDR10 sans moteur HDR : pas de grade (moteur à choisir dans l'onglet HDR).");
   }
+  section("Composition finale");
+  if (ImGui::BeginCombo("Filtre vers la fenêtre", std::string(label(d.final_scaler)).c_str())) {
+    for (int i = 0; i < kFinalScalerCount; ++i) {
+      const auto scaler = static_cast<FinalScaler>(i);
+      if (ImGui::Selectable(std::string(label(scaler)).c_str(), scaler == d.final_scaler))
+        d.final_scaler = scaler;
+    }
+    ImGui::EndCombo();
+  }
+  ImGui::Checkbox("Débander les aplats et dégradés", &d.deband);
+  note(
+      "Le filtre étire la sortie de la chaîne (par exemple 1440p) vers la fenêtre ou l'écran 4K ; EWA "
+      "Lanczos est le plus fin, plus lourd pour le GPU. Le débandage adoucit les marches des aplats et "
+      "des dégradés, courants en anime, sans toucher aux contours. Aucun effet sur l'export.");
   section("Noir absolu OLED");
   if (ImGui::BeginCombo("Noir absolu", std::string(label(d.oled_black)).c_str())) {
     for (int i = 0; i < kOledBlackCount; ++i) {
@@ -230,6 +244,11 @@ bool sound_tab(PlaySettings& d) {
       "Positif : le son est retardé. Ctrl + clic sur le curseur pour saisir une valeur (jusqu'à ±10 000 "
       "ms).");
   d.audio_delay_ms = std::clamp(d.audio_delay_ms, limits::kAudioDelayMs.lo, limits::kAudioDelayMs.hi);
+  ImGui::Checkbox("Lire l'épisode suivant à la fin", &d.autoplay_next);
+  note(
+      "À la fin d'une vidéo ouverte par un fichier, lit la suivante du même dossier (ordre naturel des "
+      "noms : ep2 avant ep10). N : épisode suivant, Maj + N : précédent, O : passer le générique "
+      "(chapitre Opening ou Ending, sinon 85 s).");
   ImGui::Checkbox("Caler la lecture sur l'écran", &d.display_sync);
   note(
       "Sur un écran à fréquence fixe, la lecture accélère ou ralentit d'au plus 0,125 % pour que chaque "

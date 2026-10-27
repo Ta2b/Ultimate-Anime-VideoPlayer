@@ -12,8 +12,10 @@
 #include <vector>
 
 extern "C" {
+#include <libavcodec/packet.h>
 #include <libavutil/hwcontext.h>
 #include <libavutil/hwcontext_vulkan.h>
+#include <libavutil/mastering_display_metadata.h>
 #include <libavutil/opt.h>
 #include <libavutil/pixdesc.h>
 }
@@ -178,6 +180,40 @@ std::string describe(const std::vector<EncoderOption>& options) {
 // Une tentative : le contexte rempli, les options posées, l'encodeur ouvert ; le texte du refus
 // sinon. Un encodeur CUDA dont l'appareil ne s'ouvre pas (FFmpeg sans CUDA) reçoit ses images de
 // l'hôte, comme avant.
+// HDR10 : l'affichage de mastering (ST 2086) et les niveaux de lumière de la source, joints au
+// flux pour que le lecteur du fichier exporté ne perde pas le réglage de l'écran.
+void hdr_side_data(AVCodecContext& c, const HdrMetadata& hdr) {
+  const auto rational = [](float value) { return av_d2q(static_cast<double>(value), 1'000'000); };
+  if (hdr.max_luminance > 0.0F) {
+    AVPacketSideData* side = av_packet_side_data_new(&c.coded_side_data, &c.nb_coded_side_data,
+                                                     AV_PKT_DATA_MASTERING_DISPLAY_METADATA,
+                                                     sizeof(AVMasteringDisplayMetadata), 0);
+    if (side != nullptr) {
+      auto* mastering = reinterpret_cast<AVMasteringDisplayMetadata*>(side->data);
+      for (std::size_t i = 0; i < 3; ++i) {
+        mastering->display_primaries[i][0] = rational(hdr.primaries_xy[2 * i]);
+        mastering->display_primaries[i][1] = rational(hdr.primaries_xy[2 * i + 1]);
+      }
+      mastering->white_point[0] = rational(hdr.white_xy[0]);
+      mastering->white_point[1] = rational(hdr.white_xy[1]);
+      mastering->max_luminance = rational(hdr.max_luminance);
+      mastering->min_luminance = rational(hdr.min_luminance);
+      mastering->has_primaries = 1;
+      mastering->has_luminance = 1;
+    }
+  }
+  if (hdr.max_cll > 0.0F || hdr.max_fall > 0.0F) {
+    AVPacketSideData* side =
+        av_packet_side_data_new(&c.coded_side_data, &c.nb_coded_side_data, AV_PKT_DATA_CONTENT_LIGHT_LEVEL,
+                                sizeof(AVContentLightMetadata), 0);
+    if (side != nullptr) {
+      auto* light = reinterpret_cast<AVContentLightMetadata*>(side->data);
+      light->MaxCLL = static_cast<unsigned>(std::lround(hdr.max_cll));
+      light->MaxFALL = static_cast<unsigned>(std::lround(hdr.max_fall));
+    }
+  }
+}
+
 std::expected<Opened, std::string> attempt(const AVCodec& codec, const EncoderCandidate& candidate,
                                            const std::vector<EncoderOption>& options,
                                            const EncoderSetup& setup) {
@@ -214,6 +250,7 @@ std::expected<Opened, std::string> attempt(const AVCodec& codec, const EncoderCa
   c.colorspace = color.matrix;
   c.color_range = color.range;
   c.chroma_sample_location = color.siting;
+  if (setup.color.hdr && setup.color.transfer == Transfer::Pq) hdr_side_data(c, *setup.color.hdr);
   // Une image clé toutes les 4 s environ : on se déplace vite dans le fichier.
   const double fps =
       setup.fps_num > 0 && setup.fps_den > 0 ? static_cast<double>(setup.fps_num) / setup.fps_den : 24.0;

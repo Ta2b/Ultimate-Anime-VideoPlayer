@@ -185,6 +185,8 @@ TEST_CASE("shared_tensor : le runtime voit la mémoire de la chaîne, la vérifi
       if (!shared) {
         // La vérification a refusé : le runtime ne voit pas ce que la chaîne écrit. Ce refus est la
         // protection voulue ; c'est l'appareil (lavapipe exporte une copie) qui ne permet pas le test.
+        if (shared.error().detail.find("mmap") != std::string::npos)
+          SKIP("le descripteur exporté par le pilote ne se mappe pas côté hôte : " << shared.error().detail);
         if (shared.error().detail.find("ne voit pas") != std::string::npos)
           SKIP("l'appareil n'expose pas sa mémoire exportée au mappage, la vérification refuse : "
                << shared.error().detail);
@@ -221,6 +223,8 @@ TEST_CASE("shared_tensor : un runtime qui ne voit qu'une copie est refusé", "[v
       auto views = std::make_shared<HostViews>();
       auto shared = shared_tensor(**context, **memory, runtime, TensorType::F16, kShape, kBytes, views, true);
       REQUIRE_FALSE(shared);
+      if (shared.error().detail.find("mmap") != std::string::npos)
+        SKIP("le descripteur exporté par le pilote ne se mappe pas côté hôte : " << shared.error().detail);
       CHECK(shared.error().code == RefusalCode::FeatureUnavailable);
       CHECK(shared.error().detail.find("ne voit pas") != std::string::npos);
       CHECK(views->views.empty());
@@ -237,6 +241,8 @@ TEST_CASE("shared_tensor : sans échange de mots, le tenseur reste non vérifié
   FakeRuntime runtime(net::MemoryHandle::OpaqueFd, Seen::NoExchange);
   auto views = std::make_shared<HostViews>();
   auto shared = shared_tensor(**context, **memory, runtime, TensorType::F16, kShape, kBytes, views, true);
+  if (!shared && shared.error().detail.find("mmap") != std::string::npos)
+    SKIP("le descripteur exporté par le pilote ne se mappe pas côté hôte : " << shared.error().detail);
   if (!shared) FAIL(vk::test::describe(shared.error()));
   CHECK(views->views.contains((*shared)->tensor().handle));
 }

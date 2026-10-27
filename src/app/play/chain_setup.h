@@ -37,9 +37,13 @@ namespace ajp::app::play {
 // logiciel pour ce que NVDEC refuse (H.264 10 bits, VP9 profils 1 et 3…), envoyé par le backend
 // (host_upload.h) ; ailleurs, Vulkan Video sur l'appareil de l'écran quand FFmpeg le partage
 // (shared_vulkan : les images restent sur le GPU, le backend Vulkan les lit en place), puis, sous
-// Linux, VA-API (le bloc vidéo d'AMD ou d'Intel) copié en mémoire hôte, puis le décodage logiciel.
+// Linux, VA-API (le bloc vidéo d'AMD ou d'Intel) et, sous Windows, D3D11VA, copiés en mémoire hôte,
+// puis le décodage logiciel.
 // Sur un Mac, VideoToolbox (le bloc média de la puce) d'abord, copié en mémoire hôte.
-std::vector<media::HwApi> decoder_attempts(std::string_view backend, bool shared_vulkan);
+// Sur une carte NVIDIA, VA-API n'existe que par un pilote tiers au-dessus de NVDEC : l'essai est
+// sauté (nvidia_gpu).
+std::vector<media::HwApi> decoder_attempts(std::string_view backend, bool shared_vulkan,
+                                           bool nvidia_gpu = false);
 
 // Où chercher les graphes de GMFSS : à côté du modèle RIFE choisi, puis dans les dossiers RIFE.
 std::vector<std::filesystem::path> gmfss_dirs(const PlayerPaths& paths,
@@ -74,6 +78,7 @@ struct ChainEngines {
   GmfssVariant gmfss_variant = GmfssVariant::Base;
   bool gmfss_found = false;
   bool drba_found = false;
+  int drba_align = 64;                   // multiple des plans remplis de DistilDRBA : 128 au demi-flot
   WorkSize rife_size;                    // où RIFE mouvement estime (720p pour une sortie 4K), sinon work
   kernels::RifeGeometry geometry;        // de rife_size
   kernels::RifeGeometry image_geometry;  // de work

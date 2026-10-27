@@ -107,7 +107,8 @@ std::expected<std::vector<RingSlotDesc>, Refusal> PlaceboRing::create(pl_gpu gpu
   // Exporter la mémoire et les sémaphores ne sert qu'au backend TensorRT (import dans CUDA) ; le
   // backend Vulkan écrit sur l'appareil même du rendu. Un appareil qui n'exporte pas (lavapipe)
   // garde un ring sans poignées.
-  const bool exported = (gpu->export_caps.tex & kExport) != 0 && (gpu->export_caps.sync & kExport) != 0;
+  const bool exported =
+      external && (gpu->export_caps.tex & kExport) != 0 && (gpu->export_caps.sync & kExport) != 0;
   const pl_handle_type handles = exported ? kExport : pl_handle_type{};
   const HandleKind kind = exported ? kExportKind : HandleKind::None;
   std::vector<RingSlotDesc> descs;

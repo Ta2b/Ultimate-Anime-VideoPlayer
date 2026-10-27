@@ -2,6 +2,7 @@
 #include "kernels/ref/warp.h"
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <cstddef>
 #include <format>
@@ -200,13 +201,16 @@ Result<RgbImage> warp_blend_poses(const RgbImage& a, const RgbImage& b, const Mo
 Result<float> flow_max(const Motion& motion) {
   if (auto ok = check_motion(motion); !ok) return std::unexpected(ok.error());
   const Window& a = motion.area;
-  float m = 0.0F;
-  for (const PlaneF& p : motion.flow) {
-    for (int y = a.y; y < a.y + a.height; ++y) {
-      for (int x = a.x; x < a.x + a.width; ++x) m = std::fmax(m, std::fabs(p.at(x, y)));
+  std::array<unsigned int, kFlowBins> bins{};
+  for (int y = a.y; y < a.y + a.height; ++y) {
+    for (int x = a.x; x < a.x + a.width; ++x) {
+      float m = 0.0F;
+      for (const PlaneF& p : motion.flow) m = std::fmax(m, std::fabs(p.at(x, y)));
+      ++bins[static_cast<std::size_t>(flow_bin(m))];
     }
   }
-  return m;
+  return flow_percentile(
+      bins.data(), static_cast<unsigned long long>(a.width) * static_cast<unsigned long long>(a.height));
 }
 
 }  // namespace ajp::kernels::ref

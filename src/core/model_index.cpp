@@ -299,7 +299,8 @@ std::string sha256_hex(std::string_view data) {
   return to_hex(hash.finish());
 }
 
-std::expected<std::string, Refusal> sha256_file(const std::filesystem::path& path, std::stop_token stop) {
+std::expected<std::string, Refusal> sha256_file(const std::filesystem::path& path,
+                                                const std::stop_token& stop) {
   std::ifstream in(path, std::ios::binary);
   if (!in) return refuse(RefusalCode::FileUnreadable, path.string());
   Sha256 hash;
@@ -395,7 +396,7 @@ std::vector<ModelEntry> models_for_profile(std::span<const ModelEntry> lock, int
 }
 
 std::expected<void, Refusal> verify_file(const std::filesystem::path& path, std::uint64_t size,
-                                         std::string_view sha256, std::stop_token stop) {
+                                         std::string_view sha256, const std::stop_token& stop) {
   std::error_code error;
   const std::uintmax_t actual_size = std::filesystem::file_size(path, error);
   if (error) return refuse(RefusalCode::FileUnreadable, path.string());

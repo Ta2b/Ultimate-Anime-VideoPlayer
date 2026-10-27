@@ -48,6 +48,36 @@ inline constexpr float kMaskEpsilon = 1e-4F;
 // une seule passe RIFE sert toute la paire (warp_blend_at aux autres instants).
 inline constexpr float kSingleRunMotion720 = 15.0F;
 
+// Mouvement « maximal » d'une paire : le percentile 99,9 % des déplacements par point (le plus
+// grand des quatre plans du flot), pas le maximum absolu qu'un point aberrant suffirait à faire
+// monter. Histogramme de kFlowBins cases de kFlowBinStep pixels ; la dernière prend tout le reste.
+// Les trois implémentations (ref, GLSL, CUDA) comptent les mêmes cases, entières : même résultat.
+inline constexpr int kFlowBins = 256;
+inline constexpr float kFlowBinStep = 0.25F;
+inline constexpr double kFlowPercentile = 0.999;
+
+// La case d'un déplacement (NaN compte pour 0).
+constexpr int flow_bin(float magnitude) {
+  if (!(magnitude > 0.0F)) return 0;
+  const float scaled = magnitude / kFlowBinStep;
+  return scaled >= static_cast<float>(kFlowBins - 1) ? kFlowBins - 1 : static_cast<int>(scaled);
+}
+
+// Le percentile des `points` déplacements comptés dans `bins` : bord bas de la case qui le tient.
+// Aucun point : 0.
+inline float flow_percentile(const unsigned int* bins, unsigned long long points) {
+  if (points == 0) return 0.0F;
+  auto rank = static_cast<unsigned long long>(static_cast<double>(points) * kFlowPercentile);
+  if (static_cast<double>(rank) < static_cast<double>(points) * kFlowPercentile) ++rank;
+  if (rank == 0) rank = 1;
+  unsigned long long seen = 0;
+  for (int i = 0; i < kFlowBins; ++i) {
+    seen += bins[i];
+    if (seen >= rank) return static_cast<float>(i) * kFlowBinStep;
+  }
+  return static_cast<float>(kFlowBins - 1) * kFlowBinStep;
+}
+
 constexpr float single_run_motion(int rife_height) {
   return kSingleRunMotion720 * static_cast<float>(rife_height) / 720.0F;
 }

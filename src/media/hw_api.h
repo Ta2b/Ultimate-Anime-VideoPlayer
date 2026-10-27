@@ -34,6 +34,9 @@ struct DecoderOptions {
   // Ordre d'essai ; sans Software, aucun repli logiciel n'est permis.
   std::vector<HwApi> attempts;
   std::optional<DeviceUuid> render_device;  // exigé par Cuda et, s'il est connu, vérifié par Vulkan
+  // Windows : LUID de l'adaptateur du rendu, pour que D3D11VA décode sur le même GPU (un portable
+  // hybride a un adaptateur par défaut qui peut être l'iGPU).
+  std::optional<DeviceLuid> render_luid;
   const HwDeviceSource* devices = nullptr;
   int extra_hw_frames = 4;  // surfaces en plus pour l'anticipation de gpu, [0, 32]
   // Décodage logiciel, [0, 64]. 0 : automatique, un thread par cœur et

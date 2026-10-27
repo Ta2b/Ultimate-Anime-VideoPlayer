@@ -15,6 +15,7 @@
 #include <string>
 #include <vector>
 
+#include "app/play/final_scaler.h"
 #include "app/play/links.h"
 #include "core/frame.h"
 #include "core/gpu_device.h"
@@ -67,6 +68,9 @@ class PlaceboScreen final : public Screen {
     std::string name;              // VkPhysicalDeviceProperties::deviceName
     std::uint32_t pci_vendor = 0;  // vendorID
     std::uint64_t vram_bytes = 0;
+    // Le plus grand tas visible de l'hôte parmi ceux de la VRAM : ~256 Mio sans Resizable BAR,
+    // la VRAM entière avec ; 0 si aucun type DEVICE_LOCAL | HOST_VISIBLE.
+    std::uint64_t host_visible_vram_bytes = 0;
     bool cooperative_matrix = false;
   };
   DeviceFacts device_facts() const;
@@ -85,6 +89,8 @@ class PlaceboScreen final : public Screen {
   // Grade (render/grade.h) posé sur OUTPUT : celui du PQ sur une sortie HDR10, celui du SDR sur une
   // sortie SDR BT.709 (sRGB, gamma 2,2 ou 2,4) ; rien : sans grade.
   void set_grade(const render::GradeChoice& choice);
+  // Composition finale : filtre qui étire vers la fenêtre, débandage ; sans effet sur l'export.
+  void set_finish(FinalScaler scaler, bool deband);
   bool hdr_output() const;  // la dernière présentation était en PQ
   // Vrai noir OLED : ces niveaux (0 à 1, dans la couleur des images du ring : SDR, ou PQ après
   // TrueHDR) passent par libplacebo et le grade en cours sans le vrai noir ; rend leurs nits en

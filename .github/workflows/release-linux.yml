@@ -90,9 +90,9 @@ jobs:
           # (src/gpu/migraphx/CMakeLists.txt les cherche sans les fichiers de config de ROCm).
           sudo apt-get install -y -qq --no-install-recommends migraphx-dev hip-dev
           echo "CMAKE_PREFIX_PATH=/opt/rocm" >> "$GITHUB_ENV"
-      # TensorRT et RTX HDR se construisent sur un poste NVIDIA (licence NVIDIA), joints à la release
-      # avant l'étiquette avec leur index engines-nvidia.lock : leurs moteurs entrent dans l'index
-      # du lecteur, et l'écran de bienvenue les propose.
+      # TensorRT et RTX HDR ne sont pas publiés (licence NVIDIA) : ils se construisent sur la machine
+      # NVIDIA (docs/nvidia-linux.md). Un poste qui voudrait quand même les joindre à une release le
+      # fait avant l'étiquette, avec leur index engines-nvidia.lock, que cette étape reprend s'il existe.
       - name: Paquet
         env:
           AJP_WITH_OPENVINO: "ON"
@@ -105,7 +105,7 @@ jobs:
             if gh release download "$AJP_TAG" -R "$AJP_RELEASE_REPO" -p engines-nvidia.lock -D "$RUNNER_TEMP"; then
               export AJP_ENGINES_LOCK="$RUNNER_TEMP/engines-nvidia.lock"
             else
-              echo "::warning::pas d'engines-nvidia.lock dans la release $AJP_TAG : ni TensorRT ni RTX HDR"
+              echo "::notice::pas d'engines-nvidia.lock dans la release $AJP_TAG : voulu, TensorRT et RTX HDR se construisent sur la machine NVIDIA (docs/nvidia-linux.md)"
             fi
           fi
           tools/release/package-linux.sh "$RUNNER_TEMP/package"

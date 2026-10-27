@@ -38,6 +38,8 @@ TEST_CASE("play.toml relit à l'identique ce qu'il a écrit", "[app][settings]")
   s.grade_values.guard = 0.25;
   s.grade_values.gamut_p3 = true;
   s.oled_black = OledBlack::On;
+  s.final_scaler = FinalScaler::EwaLanczosSharp;
+  s.deband = true;
   s.oled_black_steps = 3.5;
   s.oled_care = false;
   s.steady_cadence = true;

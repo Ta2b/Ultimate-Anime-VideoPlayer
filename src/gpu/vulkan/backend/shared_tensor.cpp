@@ -311,7 +311,8 @@ std::expected<std::unique_ptr<TensorBuffer>, Refusal> shared_tensor(
                                   "interop : descripteur non exporté pour ce tampon");
   const DeviceFunctions& fn = context.fn();
   const VkExternalMemoryBufferCreateInfo external{
-      .sType = VK_STRUCTURE_TYPE_EXTERNAL_MEMORY_BUFFER_CREATE_INFO, .handleTypes = vk_handle(handle)};
+      .sType = VK_STRUCTURE_TYPE_EXTERNAL_MEMORY_BUFFER_CREATE_INFO,
+      .handleTypes = static_cast<VkExternalMemoryHandleTypeFlags>(vk_handle(handle))};
   const VkBufferCreateInfo info{.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
                                 .pNext = &external,
                                 .size = bytes,
@@ -332,9 +333,10 @@ std::expected<std::unique_ptr<TensorBuffer>, Refusal> shared_tensor(
   }
   const VkMemoryDedicatedAllocateInfo dedicated{.sType = VK_STRUCTURE_TYPE_MEMORY_DEDICATED_ALLOCATE_INFO,
                                                 .buffer = buffer};
-  const VkExportMemoryAllocateInfo export_info{.sType = VK_STRUCTURE_TYPE_EXPORT_MEMORY_ALLOCATE_INFO,
-                                               .pNext = &dedicated,
-                                               .handleTypes = vk_handle(handle)};
+  const VkExportMemoryAllocateInfo export_info{
+      .sType = VK_STRUCTURE_TYPE_EXPORT_MEMORY_ALLOCATE_INFO,
+      .pNext = &dedicated,
+      .handleTypes = static_cast<VkExternalMemoryHandleTypeFlags>(vk_handle(handle))};
   const VkMemoryAllocateInfo allocate{.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO,
                                       .pNext = &export_info,
                                       .allocationSize = requirements.size,

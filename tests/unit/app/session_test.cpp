@@ -244,6 +244,22 @@ TEST_CASE("Seek : pause, Flush puis Seek, et les images de l'époque passée son
   CHECK(rig.stages.log.back() == "play 2 11000000");
 }
 
+TEST_CASE("Image par image : pause, puis un seek exact d'une image de la source", "[app][session]") {
+  Rig rig(SessionConfig{.duration_us = 60'000'000});
+  rig.session.handle(ring_frame(0, 1'000'000));
+  rig.tick();
+  rig.stages.log.clear();
+
+  rig.session.command(cmd::StepFrame{.direction = 1});
+  CHECK(rig.stages.log == std::vector<std::string>{"pause", "pause", "flush 1", "seek 1041667"});
+  CHECK(rig.session.paused());
+  // La touche répétée part de la cible, et reculer redescend d'une image.
+  rig.session.command(cmd::StepFrame{.direction = 1});
+  CHECK(rig.stages.log.back() == "seek 1083334");
+  rig.session.command(cmd::StepFrame{.direction = -1});
+  CHECK(rig.stages.log.back() == "seek 1041667");
+}
+
 TEST_CASE("Seek : un Flush refusé n'empêche pas le Seek, et le tout est rejoué jusqu'à passer",
           "[app][session]") {
   Rig rig(SessionConfig{.duration_us = 60'000'000});

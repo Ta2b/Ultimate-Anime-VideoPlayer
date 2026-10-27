@@ -175,6 +175,9 @@ bool agrees(const std::vector<float>& out, const std::vector<float>& ref) {
   return true;
 }
 
+// Écart de vitesse sous lequel la précision départage deux variantes.
+constexpr double kPrecisionTie = 1.05;
+
 std::string tuning_text(const KernelChoice& c) {
   std::string out;
   for (const std::uint32_t t : c.tuning) out += std::format("{}{}", out.empty() ? "" : ",", t);
@@ -311,6 +314,7 @@ std::expected<KernelChoice, Refusal> Autotuner::choose(const ir::Graph& graph, s
   }
   for (const PresetTable& table : presets_) {
     if (remembered || table.family != profile_.family) continue;
+    if (table.driver && *table.driver != profile_.driver) continue;
     for (const PresetEntry& e : table.entries) {
       if (e.signature != signature) continue;
       auto tuning = tuning_of(e.tuning);
@@ -375,7 +379,7 @@ std::expected<KernelChoice, Refusal> Autotuner::choose(const ir::Graph& graph, s
     return probes.front().choice;
   }
   const double fastest = std::ranges::min(probes, {}, &Probe::us).us;
-  std::optional<Measured> best;
+  std::vector<Measured> measured;
   for (const Probe& p : probes) {
     if (p.us > options_.keep_within * fastest) {
       ++pruned_;
@@ -387,7 +391,22 @@ std::expected<KernelChoice, Refusal> Autotuner::choose(const ir::Graph& graph, s
       last_error = m.error();
       continue;
     }
-    if (!best || m->median_us < best->median_us) best = std::move(*m);
+    measured.push_back(std::move(*m));
+  }
+  // À vitesse proche (moins de 5 %), la variante aux sommes en float l'emporte sur celle aux sommes
+  // en float16 : la précision ne coûte alors rien, et un écart de bruit ne tranche pas.
+  const auto fp16_sums = [](const Measured& m) {
+    return m.choice.variant == "coopmat_acc16" || m.choice.variant == "direct_f16p";
+  };
+  std::optional<Measured> best;
+  if (!measured.empty()) {
+    const double quickest = std::ranges::min(measured, {}, &Measured::median_us).median_us;
+    for (Measured& m : measured) {
+      if (m.median_us > kPrecisionTie * quickest) continue;
+      if (!best || fp16_sums(*best) > fp16_sums(m) ||
+          (fp16_sums(*best) == fp16_sums(m) && m.median_us < best->median_us))
+        best = std::move(m);
+    }
   }
   if (!best) {
     return std::unexpected(last_error.value_or(Refusal{RefusalCode::InputMismatch, "aucun candidat mesuré"}));

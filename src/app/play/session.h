@@ -47,11 +47,15 @@ class StatsSource {
   virtual ~StatsSource() = default;
   virtual std::optional<std::string> rife() const = 0;
   virtual std::optional<std::string> memory() const = 0;
+  // Horloges, puissance et chaleur de la carte (NVML) ; rien sans NVML ou sur une autre carte.
+  virtual std::optional<std::string> gpu() const { return std::nullopt; }
   // Période nominale des images de sortie (la source, divisée par le facteur de RIFE) ; 0 :
   // inconnue. Sans elle, la session ne compte pas les images manquées.
   virtual std::int64_t output_period_us() const { return 0; }
   // La même cadence, exacte (images par seconde) : la synchro sur l'écran s'y cale ; 0 : inconnue.
   virtual double output_fps() const { return 0.0; }
+  // Période d'une image de la source (le pas de l'image par image) ; 0 : inconnue.
+  virtual std::int64_t source_period_us() const { return 0; }
   // Images source que gpu a sautées avant leur calcul, déjà passées : la chaîne ne suit pas.
   virtual std::uint64_t skipped() const { return 0; }
 };

@@ -3,8 +3,13 @@
 #include <filesystem>
 #include <format>
 #include <system_error>
+#include <vector>
 
 #include <SDL3/SDL_properties.h>
+
+#if defined(_WIN32)
+#include <windows.h>
+#endif
 
 #include "vendor_hdr/sdk_store.h"
 
@@ -27,6 +32,40 @@ double display_refresh_hz(SDL_Window* window) {
   return mode->refresh_rate > 0.0F ? static_cast<double>(mode->refresh_rate) : 0.0;
 }
 
+#if defined(_WIN32)
+namespace {
+
+// Le niveau de blanc SDR réglé dans Windows (« luminosité du contenu SDR »), en nits, pour le
+// premier écran en HDR ; 203 si Windows ne le dit pas. SDL exprime la marge HDR relativement à ce
+// blanc : la crête réelle est la marge × ce niveau.
+double windows_sdr_white_nits() {
+  constexpr double kDefault = 203.0;
+  UINT32 paths = 0;
+  UINT32 modes = 0;
+  if (GetDisplayConfigBufferSizes(QDC_ONLY_ACTIVE_PATHS, &paths, &modes) != ERROR_SUCCESS) return kDefault;
+  std::vector<DISPLAYCONFIG_PATH_INFO> path_info(paths);
+  std::vector<DISPLAYCONFIG_MODE_INFO> mode_info(modes);
+  if (QueryDisplayConfig(QDC_ONLY_ACTIVE_PATHS, &paths, path_info.data(), &modes, mode_info.data(),
+                         nullptr) != ERROR_SUCCESS)
+    return kDefault;
+  for (UINT32 i = 0; i < paths; ++i) {
+    DISPLAYCONFIG_GET_ADVANCED_COLOR_INFO color{};
+    color.header = {DISPLAYCONFIG_DEVICE_INFO_GET_ADVANCED_COLOR_INFO, sizeof(color),
+                    path_info[i].targetInfo.adapterId, path_info[i].targetInfo.id};
+    if (DisplayConfigGetDeviceInfo(&color.header) != ERROR_SUCCESS || color.advancedColorEnabled == 0)
+      continue;
+    DISPLAYCONFIG_SDR_WHITE_LEVEL white{};
+    white.header = {DISPLAYCONFIG_DEVICE_INFO_GET_SDR_WHITE_LEVEL, sizeof(white),
+                    path_info[i].targetInfo.adapterId, path_info[i].targetInfo.id};
+    if (DisplayConfigGetDeviceInfo(&white.header) != ERROR_SUCCESS || white.SDRWhiteLevel == 0) continue;
+    return static_cast<double>(white.SDRWhiteLevel) / 1000.0 * 80.0;  // 1000 = 80 nits
+  }
+  return kDefault;
+}
+
+}  // namespace
+#endif
+
 // Crête vue par le contenu sur l'écran de la fenêtre : la marge HDR de SDL3 (relative au blanc de
 // référence du compositeur) × 203 nits ; rien si l'écran n'est pas en HDR (display.md).
 std::optional<double> content_peak_nits(SDL_Window* window) {
@@ -34,7 +73,11 @@ std::optional<double> content_peak_nits(SDL_Window* window) {
   if (!SDL_GetBooleanProperty(props, SDL_PROP_WINDOW_HDR_ENABLED_BOOLEAN, false)) return std::nullopt;
   const float headroom = SDL_GetFloatProperty(props, SDL_PROP_WINDOW_HDR_HEADROOM_FLOAT, 0.0F);
   if (!(headroom > 1.0F)) return std::nullopt;
+#if defined(_WIN32)
+  return static_cast<double>(headroom) * windows_sdr_white_nits();
+#else
   return static_cast<double>(headroom) * 203.0;
+#endif
 }
 
 bool maxine_available(const PlayOptions& options, const PlayerPaths& paths) {
@@ -91,6 +134,7 @@ GpuFacts gpu_facts(const PlaceboScreen& screen) {
       .name = facts.name,
       .vendor = vendor,
       .vram_bytes = facts.vram_bytes,
+      .host_visible_vram_bytes = facts.host_visible_vram_bytes,
       .tensor_cores = vendor == GpuVendor::Nvidia && facts.cooperative_matrix,
       .wmma = vendor == GpuVendor::Amd && facts.cooperative_matrix && amd_matrix_cores(facts.name)};
 }

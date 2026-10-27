@@ -39,6 +39,12 @@ struct StepChapter {
 };
 struct CycleSubtitles {};
 struct ToggleSettings {};
+// Épisode suivant (+1) ou précédent (−1) du dossier (episodes.h) : « n » et Maj + « n ».
+struct StepEpisode {
+  int direction = 1;
+};
+// Passer le générique (opening ou ending) : « o ».
+struct SkipCredits {};
 // Modification d'un profil dans user.toml (nom, profil de démarrage, retour à la base).
 struct EditProfile {
   core::UserEdit edit;
@@ -59,9 +65,10 @@ using EngineChange = std::variant<UseEngine, OpenEngineScreen>;
 struct StartExport {
   ExportJob job;
 };
-using Input = std::variant<Command, ToggleFullscreen, LeaveFullscreen, ToggleMute, VolumeStep, SelectAudio,
-                           SelectSubtitles, CycleAudio, CycleSubtitles, StepChapter, ToggleSettings,
-                           ApplySettings, EditProfile, UseEngine, OpenEngineScreen, StartExport>;
+using Input =
+    std::variant<Command, ToggleFullscreen, LeaveFullscreen, ToggleMute, VolumeStep, SelectAudio,
+                 SelectSubtitles, CycleAudio, CycleSubtitles, StepChapter, StepEpisode, SkipCredits,
+                 ToggleSettings, ApplySettings, EditProfile, UseEngine, OpenEngineScreen, StartExport>;
 
 // L'action d'un événement SDL, ou rien. Fermer la fenêtre vaut cmd::Quit.
 std::optional<Input> input_of(const SDL_Event& event, const core::KeyMap& keys);

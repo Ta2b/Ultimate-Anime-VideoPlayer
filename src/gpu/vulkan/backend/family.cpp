@@ -27,6 +27,8 @@ constexpr Range kAmd[] = {
     {0x15BF, 0x15BF, GpuFamily::AmdRdna3},  // Phoenix
     {0x15C8, 0x15C8, GpuFamily::AmdRdna3},  // Phoenix 2
     {0x150E, 0x150E, GpuFamily::AmdRdna3},  // Strix
+    {0x1114, 0x1114, GpuFamily::AmdRdna3},  // Krackan
+    {0x1586, 0x1586, GpuFamily::AmdRdna3},  // Strix Halo
     {0x7550, 0x755F, GpuFamily::AmdRdna4},  // Navi 48
     {0x7590, 0x759F, GpuFamily::AmdRdna4},  // Navi 44
 };

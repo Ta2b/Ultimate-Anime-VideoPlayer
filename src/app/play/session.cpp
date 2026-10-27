@@ -33,6 +33,7 @@ constexpr std::int64_t kPrerollSubtitleWaitUs = 100'000;
 constexpr double kQueueFillSmoothing = 0.1;
 // Période d'écran supposée tant qu'aucune présentation rapprochée ne la borne : 60 Hz.
 constexpr std::int64_t kAssumedPeriodUs = 16'667;
+constexpr std::int64_t kAssumedFramePeriodUs = 41'667;  // une image de la source à 24 i/s, faute de mieux
 
 template <class... F>
 struct Overloaded : F... {
@@ -94,6 +95,20 @@ void Session::command(const Command& command) {
                      base = current_->pts_us;
                    }
                    seek_to(base + seek.delta_us, seek.exact);
+                 },
+                 [this](const cmd::StepFrame& step) {
+                   // Image par image : en pause, un seek exact d'une image de la source. Le seek
+                   // part de la position visée, donc des pressions rapprochées avancent d'autant.
+                   if (!paused_) this->command(cmd::Pause{});
+                   std::int64_t base = 0;
+                   if (pending_seek_us_) {
+                     base = *pending_seek_us_;
+                   } else if (current_ && current_->pts_us != kNoPts) {
+                     base = current_->pts_us;
+                   }
+                   std::int64_t period = config_.extra != nullptr ? config_.extra->source_period_us() : 0;
+                   if (period <= 0) period = kAssumedFramePeriodUs;
+                   seek_to(std::max<std::int64_t>(base + step.direction * period, 0), true);
                  },
                  [this](const cmd::Quit&) {
                    finished_ = true;
@@ -550,6 +565,9 @@ std::vector<std::string> Session::osd_lines() const {
   }
   if ((show.all || show.memory) && config_.extra != nullptr) {
     if (auto memory = config_.extra->memory()) lines.push_back(std::move(*memory));
+  }
+  if ((show.all || show.memory) && config_.extra != nullptr) {
+    if (auto gpu = config_.extra->gpu()) lines.push_back(std::move(*gpu));
   }
   if (show.all || show.position) {
     const std::int64_t position = current_ ? current_->pts_us : kNoPts;

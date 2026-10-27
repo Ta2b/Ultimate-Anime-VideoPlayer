@@ -139,7 +139,10 @@ void downloadable_row(EngineRow& row, const EnginesHere& here) {
     row.license = download->license;
     row.status = std::format("à télécharger ({} Mo){}", (download->bytes + (1U << 20) - 1) >> 20, missing);
   } else {
-    row.status = "pas encore publié pour cette version";
+    row.status =
+        row.offer.id == core::EngineId::TensorRt && here.os == core::Os::Linux
+            ? "non publié (licence NVIDIA) : à construire sur cette machine, voir docs/nvidia-linux.md"
+            : "pas encore publié pour cette version";
   }
 }
 
@@ -257,12 +260,26 @@ core::SystemInfo system_of(const GpuFacts& gpu, core::Os os) {
                              .openvino_gpu = gpu.vendor == GpuVendor::Intel}}};
 }
 
+std::string rebar_text(const GpuFacts& gpu) {
+  constexpr std::uint64_t kDedicated = 3 * kGiB;  // en dessous, mémoire partagée ou carte sans intérêt
+  if ((gpu.vendor != GpuVendor::Nvidia && gpu.vendor != GpuVendor::Amd) || gpu.vram_bytes < kDedicated ||
+      gpu.host_visible_vram_bytes == 0)
+    return {};
+  const bool wide = gpu.host_visible_vram_bytes >= gpu.vram_bytes / 4 * 3;
+  const double size = static_cast<double>(gpu.host_visible_vram_bytes);
+  const std::string text = gpu.host_visible_vram_bytes >= kGiB
+                               ? std::format("{} Go", std::lround(size / static_cast<double>(kGiB)))
+                               : std::format("{} Mo", std::lround(size / (1024.0 * 1024.0)));
+  return std::format("{}, {}", wide ? "actif" : "inactif", text);
+}
+
 std::string gpu_line(const GpuFacts& gpu) {
   std::string line = gpu.name.empty() ? std::string("GPU inconnu") : gpu.name;
   if (gpu.vram_bytes > 0) {
     line += std::format(" · {} Go", static_cast<int>(std::lround(static_cast<double>(gpu.vram_bytes) /
                                                                  static_cast<double>(kGiB))));
   }
+  if (const std::string rebar = rebar_text(gpu); !rebar.empty()) line += " · Resizable BAR " + rebar;
   if (gpu.tensor_cores) line += " · cœurs Tensor";
   if (gpu.wmma) line += " · unités matricielles (WMMA)";
   return line;

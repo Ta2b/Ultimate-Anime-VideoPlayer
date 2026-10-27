@@ -6,6 +6,8 @@
 #include <utility>
 
 #include "app/play/drba_model.h"
+#include "app/play/first_run.h"
+#include "app/play/gpu_telemetry.h"
 #include "app/play/host_facts.h"
 #include "app/play/motion_model.h"
 #include "core/clock.h"
@@ -30,7 +32,8 @@ std::vector<std::filesystem::path> gmfss_dirs(const PlayerPaths& paths,
   return dirs;
 }
 
-std::vector<media::HwApi> decoder_attempts(std::string_view backend, bool shared_vulkan) {
+std::vector<media::HwApi> decoder_attempts(std::string_view backend, bool shared_vulkan,
+                                           [[maybe_unused]] bool nvidia_gpu) {
   if (backend == "tensorrt") return {media::HwApi::Cuda, media::HwApi::Software};
   std::vector<media::HwApi> attempts;
 #if defined(__APPLE__)
@@ -38,8 +41,13 @@ std::vector<media::HwApi> decoder_attempts(std::string_view backend, bool shared
   attempts.push_back(media::HwApi::VideoToolbox);
 #endif
   if (shared_vulkan) attempts.push_back(media::HwApi::Vulkan);
+#if defined(_WIN32)
+  // Le bloc vidéo du GPU par D3D11VA quand Vulkan Video ne prend pas le codec : copié en mémoire
+  // hôte, bien plus léger que le décodage logiciel.
+  attempts.push_back(media::HwApi::D3d11va);
+#endif
 #if defined(__linux__)
-  attempts.push_back(media::HwApi::Vaapi);
+  if (!nvidia_gpu) attempts.push_back(media::HwApi::Vaapi);
 #endif
   attempts.push_back(media::HwApi::Software);
   return attempts;
@@ -48,8 +56,9 @@ std::vector<media::HwApi> decoder_attempts(std::string_view backend, bool shared
 media::DecoderOptions decoder_options(std::string_view backend, const GpuDevice& render,
                                       const media::HwDeviceSource* shared) {
   const bool tensorrt = backend == "tensorrt";
-  return {.attempts = decoder_attempts(backend, shared != nullptr),
+  return {.attempts = decoder_attempts(backend, shared != nullptr, render.vendor() == GpuVendor::Nvidia),
           .render_device = render.uuid,
+          .render_luid = render.luid,
           .devices = shared,
           .download = !tensorrt,
           .direct_surfaces = tensorrt ? kHeldDecodedFrames : 0};
@@ -91,6 +100,7 @@ UpscaleSetup ChainEngines::upscale(const PlaySettings& settings, std::shared_ptr
                       .gmfss_fusion = gmfss.fusion.get(),
                       .gmfss_align = gmfss.align,
                       .distil_drba = drba.get(),
+                      .drba_align = drba_align,
                       .rife_factor = factor_of(settings),
                       .true_hdr = settings.true_hdr,
                       .one_lane = one_lane,
@@ -122,7 +132,24 @@ std::expected<std::optional<ChainEngines>, Refusal> prepare_chain(Player& p, con
   c.reduce = reduced ? std::format("{}x{} → {} {}x{}", video.width, video.height, label(settings.downscale),
                                    c.work.width, c.work.height)
                      : std::format("{}x{}", video.width, video.height);
-  const std::span<const std::string_view> rife_order = rife_preference(gpu_facts(p.screen));
+  // Spline36 ne tient que 32 prises : au-delà d'un rapport d'environ 5,3 le filtre est tronqué.
+  constexpr double kSplineMaxRatio = 5.3;
+  if (reduced && settings.downscale == Downscale::Spline36 &&
+      static_cast<double>(video.width) / c.work.width > kSplineMaxRatio)
+    log->warn(
+        "réduction Spline36 de {}x{} vers {}x{} : rapport au-delà de 5,3, filtre tronqué ; Area ou une "
+        "hauteur de travail plus haute l'évite",
+        video.width, video.height, c.work.width, c.work.height);
+  const GpuFacts gpu = gpu_facts(p.screen);
+  log->info("GPU : {}", gpu_line(gpu));
+  if (p.screen.device().vendor() == GpuVendor::Nvidia) {
+    const std::string& driver = p.screen.device().driver_version;
+    if (settings.true_hdr && nvidia_driver_older_than(driver, kRtxHdrDriverMajor))
+      log->warn("pilote NVIDIA {} : RTX HDR demande {} ou plus récent", driver, kRtxHdrDriverMajor);
+    if (settings.smooth_motion && nvidia_driver_older_than(driver, 580, 82, 7))
+      log->warn("pilote NVIDIA {} : Smooth Motion demande 580.82.07 ou plus récent", driver);
+  }
+  const std::span<const std::string_view> rife_order = rife_preference(gpu);
   if (auto found = choose_rife_model(p.options, p.paths.home, settings, rife_order, p.paths.models))
     c.rife_choice = std::move(*found);
   if (c.rife_choice) c.rife_model = c.rife_choice->path;
@@ -147,6 +174,10 @@ std::expected<std::optional<ChainEngines>, Refusal> prepare_chain(Player& p, con
   c.backend_name = c.backend->capabilities().name;
   log->info("backend {} ({}) depuis {}", c.backend_name, c.backend->capabilities().device_name,
             p.library->path().string());
+  // Sous TensorRT les copies passent par CUDA : le BAR ne joue que pour le moteur Vulkan.
+  if (const std::string rebar = rebar_text(gpu);
+      c.backend_name != "tensorrt" && rebar.rfind("inactif", 0) == 0)
+    log->warn("Resizable BAR inactif : activer Above 4G Decoding et Resizable BAR dans le BIOS");
 
   // SPAN INT8 sous TensorRT quand tools/span/quantize_span.py en a laissé une variante qui passe ses
   // garde-fous (span_int8.h) ; le SPAN choisi sinon, et aussi si TensorRT refuse la variante.
@@ -196,7 +227,8 @@ std::expected<std::optional<ChainEngines>, Refusal> prepare_chain(Player& p, con
   }
   // DistilDRBA à la place de RIFE, à la taille de travail ; RIFE reprend si son graphe manque.
   if (want_drba) {
-    auto loaded = prepare_distil_drba(p, init, *c.backend, c.gmfss_places, c.work.width, c.work.height);
+    auto loaded =
+        prepare_distil_drba(p, init, *c.backend, c.gmfss_places, c.work.width, c.work.height, c.drba_align);
     if (!loaded) {
       log->warn("{} ; {}", loaded.error().detail, c.rife_model ? "RIFE à la place" : "sans interpolation");
       p.ui.controls().notify(c.rife_model ? "DistilDRBA indisponible : RIFE" : "DistilDRBA indisponible",
