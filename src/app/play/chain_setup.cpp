@@ -32,7 +32,8 @@ std::vector<std::filesystem::path> gmfss_dirs(const PlayerPaths& paths,
   return dirs;
 }
 
-std::vector<media::HwApi> decoder_attempts(std::string_view backend, bool shared_vulkan, bool nvidia_gpu) {
+std::vector<media::HwApi> decoder_attempts(std::string_view backend, bool shared_vulkan,
+                                           [[maybe_unused]] bool nvidia_gpu) {
   if (backend == "tensorrt") return {media::HwApi::Cuda, media::HwApi::Software};
   std::vector<media::HwApi> attempts;
 #if defined(__APPLE__)
