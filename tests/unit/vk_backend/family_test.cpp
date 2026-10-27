@@ -54,7 +54,7 @@ TEST_CASE("Familles : identifiants PCI connus", "[vk_backend][family]") {
   CHECK(detect_family(pci::kAmd, 0x73BF, false, "AMD Radeon RX 6800 (RADV NAVI21)") ==
         GpuFamily::AmdBeforeRdna3);
   CHECK(detect_family(pci::kAmd, 0x1999, false, "AMD Radeon 890M") == GpuFamily::AmdBeforeRdna3);
-  CHECK(detect_family(pci::kAmd, 0x1114, false, "AMD Radeon 860M") == GpuFamily::AmdRdna3);  // Krackan
+  CHECK(detect_family(pci::kAmd, 0x1114, false, "AMD Radeon 860M") == GpuFamily::AmdRdna3);   // Krackan
   CHECK(detect_family(pci::kAmd, 0x1586, false, "AMD Radeon 8060S") == GpuFamily::AmdRdna3);  // Strix Halo
   CHECK(detect_family(pci::kNvidia, 0x2782, true) == GpuFamily::Software);
   CHECK(detect_family(pci::kApple, 0x1B0002, false) == GpuFamily::Apple);  // M4 Pro sous MoltenVK
