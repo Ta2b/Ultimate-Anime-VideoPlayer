@@ -358,6 +358,22 @@ std::expected<std::unique_ptr<PlaceboScreen>, Refusal> PlaceboScreen::open(const
   for (std::size_t i = 0; i < impl->device.uuid.size(); ++i) impl->device.uuid[i] = gpu->uuid[i];
   impl->device.vulkan = vulkan_description(impl->vk);
   impl->device.luid = device_luid(impl->vk);
+  // Le fabricant se déduit du vendorID, jamais du nom : sans lui la télémétrie NVML, l'avertissement de
+  // pilote et le choix de décodeur voient un fabricant inconnu.
+  if (const auto properties_of = reinterpret_cast<PFN_vkGetPhysicalDeviceProperties>(
+          impl->vk->get_proc_addr(impl->vk->instance, "vkGetPhysicalDeviceProperties"));
+      properties_of != nullptr) {
+    VkPhysicalDeviceProperties properties{};
+    properties_of(impl->vk->phys_device, &properties);
+    impl->device.pci_vendor = properties.vendorID;
+    impl->device.pci_device = properties.deviceID;
+    impl->device.name = properties.deviceName;
+    if (impl->device.vendor() == GpuVendor::Nvidia) {
+      // NVIDIA code sa version en 10.8.8.6 : « 615.78.08 ».
+      const std::uint32_t v = properties.driverVersion;
+      impl->device.driver_version = std::format("{}.{}.{:02}", v >> 22, (v >> 14) & 0xFF, (v >> 6) & 0xFF);
+    }
+  }
   const QueueRef engines = impl->device.vulkan->compute;
   if (impl->device.vulkan->lock_queue == nullptr) {
     impl->channel->info("moteurs sur leur propre file (famille {}, file {}), à côté de l'affichage",
