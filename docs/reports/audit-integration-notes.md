@@ -37,4 +37,10 @@ Branche `claude/project-thread-ta5cur`, vers `cloud/vulkan`. Suite complète : 1
 - **Lecture** : la fin n'est déclarée que lorsque le thread gpu est au repos, en plus de la grâce d'une seconde (PL-09).
 - **Release** : tests retirés du workflow Linux (lancés sur le poste et par `ci.yml`).
 - À vérifier sur matériel : fin de lecture avec un moteur lent à la première exécution ; AAC/MP4 et Opus/MKV (pas d'amorce audible au début) ; export dont la durée d'image compte (lecteurs stricts) ; reprise après un GPU bloqué.
-- Toujours non entrepris : UI-02/07/08/10/12/17, PL-07/08/11/14/15/18, MD-08/18, NE-02 à 05 et 08, VK-01 à 04/07/12 à 16, RT-03/04/07 à 11, IR-01/06/07/08/11/15, DS-06/07/09/10/18/21/23, NC-02 à 08, NA-03/04/07/08, NM-01 à 04.
+- **Vulkan** : autotune.tsv fusionné à l'écriture (VK-15) ; groupes de dispatch coopmat bornés à la construction (VK-07) ; cache de pipelines du pilote enregistré dans `cache/vulkan/pipelines-<vendeur>-<appareil>.bin` (VK-09). VK-08 (pente PRelu) était déjà faite.
+- **IR** : pliage coûteux (sortie × entrée > 2^32) laissé à l'exécution (IR-01).
+- **CUDA** : purge du cache de textures avant le lancement (NC-02) ; à compiler sur un poste CUDA.
+- **Interface** : infobulles en pause (UI-17), libellés et avertissement du panneau (UI-10), actions de l'onglet Système sur un autre fil (UI-07).
+- Déjà bornés avant cette passe : PL-10 (kNoPts), PL-11 (fenêtre de 4096 attentes).
+- À vérifier sur matériel en plus : second lancement sans compilation de pipelines ; infobulle de la barre en pause ; « Définir par défaut » sans geler la vidéo ; `lecture` d'un modèle hostile (pliage).
+- Toujours non entrepris : UI-02/08/12, PL-07/08/14/15/18, MD-08/18, NE-02 à 05 et 08, VK-01/16, RT-03/04/07 à 11, IR-06/07/08/11/15, DS-06/07/09/10/18/21/23, NC-03 à 08, NA-03/04/07/08, NM-01 à 04, RD-06 (état temporel du grade : demande un compteur d'image vidéo dans le hook), RD-16. NC-03 (plage pleine des scores de scène) demande de passer la plage de la source au backend CUDA.
