@@ -117,6 +117,7 @@ struct PlaceboScreen::Impl {
   int ui_failures = 0;     // échecs de suite du dessin de l'interface
   bool ui_failed = false;  // abandonnée après kMaxUiFailures échecs de suite
   pl_color_space source{};
+  double sample_aspect = 1.0;  // SAR de la vidéo, pour la forme de l'image à l'écran
   OutputSize swapchain_size;
   bool fullscreen = false;
   bool hdr_output = false;

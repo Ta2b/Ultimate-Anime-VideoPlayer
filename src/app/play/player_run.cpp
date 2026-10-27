@@ -96,10 +96,20 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
     log->info("RTX HDR : sortie SDR, TrueHDR n'est pas ouvert ; grade SDR à la place");
     settings.true_hdr = false;
   }
+  // La couleur de la source telle que le flux l'étiquette : l'écran convertit depuis elle (gamut, courbe,
+  // HDR10 ou HLG), RTX HDR s'ouvre pour elle.
+  const std::optional<ColorInfo> source_color = media::track_color(video);
+  const ColorInfo source = source_color.value_or(ColorInfo{});
+  const bool source_hdr = source.transfer == Transfer::Pq || source.transfer == Transfer::Hlg;
+  if (settings.true_hdr && source_hdr) {
+    log->info("RTX HDR : la source est déjà HDR, TrueHDR n'est pas ouvert");
+    p.ui.controls().notify("Source déjà HDR : RTX HDR inutile", host_now_us());
+    settings.true_hdr = false;
+  }
   if (settings.true_hdr) {
     show_loading(p.screen, p.ui, "Préparation de RTX HDR");
     auto opened = open_rtx_hdr(p.options.true_hdr_sdk, p.paths, settings, auto_peak, p.screen,
-                               *c.backend->kernels(), work.width * factor, work.height * factor);
+                               *c.backend->kernels(), work.width * factor, work.height * factor, source);
     if (opened) {
       peak_nits = *opened;
     } else {
@@ -108,10 +118,10 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
       p.ui.controls().notify("RTX HDR indisponible : HDR adaptatif", host_now_us());
       settings.true_hdr = false;
       settings.hdr_native = true;
-      p.screen.set_source_color(ColorInfo{});
+      p.screen.set_source_color(source);
     }
   } else {
-    p.screen.set_source_color(ColorInfo{});  // celle de la source, reprise à la première image
+    p.screen.set_source_color(source);
   }
 
   const std::string label_text = std::format(
@@ -148,11 +158,12 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
                                fps_of(video.frame_rate));
   SessionConfig session_config = (*pipeline)->session_config();
   session_config.start_us = start_us;
+  p.screen.set_sample_aspect(session_config.video_sar);
   session_config.stop_after_us = options.stop_after_us;
   session_config.fullscreen_after_us = options.fullscreen_after_us;
   session_config.header = {label_text};
   session_config.tracks = (*pipeline)->describe();
-  p.screen.set_grade(grade_of(settings, settings.true_hdr, peak_nits, auto_peak));
+  p.screen.set_grade(grade_of(settings, settings.true_hdr, peak_nits, auto_peak, {}, {}, source_hdr));
   session_config.output = output_text(out, settings, peak_nits);
   session_config.display_period_us = display_period_us(out.window());
   session_config.display_hz = display_refresh_hz(out.window());
@@ -226,7 +237,8 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
       .display = p.display,
       .hdr_wanted = settings.true_hdr != wanted_hdr.true_hdr || settings.hdr_native != wanted_hdr.hdr_native
                         ? std::optional(wanted_hdr)
-                        : std::nullopt};
+                        : std::nullopt,
+      .source_hdr = source_hdr};
   apply_oled_care(chain, settings);
 
   std::ofstream stats;

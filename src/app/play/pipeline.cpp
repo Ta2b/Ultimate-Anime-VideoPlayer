@@ -245,6 +245,9 @@ SessionConfig Pipeline::session_config() const {
       .subtitles = subtitle_track_.has_value(),
       .video_width = video_track_.width,
       .video_height = video_track_.height,
+      .video_sar = video_track_.sample_aspect.num > 0
+                       ? static_cast<double>(video_track_.sample_aspect.num) / video_track_.sample_aspect.den
+                       : 1.0,
       .video_matrix =
           subs::VideoMatrix{
               .matrix = video_track_.color_matrix.value_or(hd ? ColorMatrix::Bt709 : ColorMatrix::Bt601),

@@ -226,3 +226,40 @@ TEST_CASE("color : métadonnées HDR10 lues, valeurs hors bornes physiques refus
   light->MaxCLL = 20000;
   CHECK_FALSE(hdr_metadata(*f));
 }
+
+TEST_CASE("track_color : la couleur du flux, devinée comme celle d'une image", "[media][color]") {
+  const auto track_of = [](int width, int height, AVPixelFormat format, AVColorSpace space,
+                           AVColorPrimaries primaries, AVColorTransferCharacteristic trc) {
+    AVCodecParameters* par = avcodec_parameters_alloc();
+    par->codec_type = AVMEDIA_TYPE_VIDEO;
+    par->width = width;
+    par->height = height;
+    par->format = format;
+    par->color_space = space;
+    par->color_primaries = primaries;
+    par->color_trc = trc;
+    auto copy = CodecParameters::copy_of(*par);
+    avcodec_parameters_free(&par);
+    REQUIRE(copy);
+    return TrackInfo{.kind = TrackKind::Video, .width = width, .height = height, .parameters = *copy};
+  };
+
+  const auto hdr = track_color(track_of(3840, 2160, AV_PIX_FMT_YUV420P10LE, AVCOL_SPC_BT2020_NCL,
+                                        AVCOL_PRI_BT2020, AVCOL_TRC_SMPTE2084));
+  REQUIRE(hdr);
+  CHECK(hdr->transfer == Transfer::Pq);
+  CHECK(hdr->primaries == Primaries::Bt2020);
+  CHECK(hdr->matrix == ColorMatrix::Bt2020Ncl);
+
+  // Une définition standard sans étiquette : BT.601, comme pour une image décodée.
+  const auto dvd = track_color(track_of(720, 480, AV_PIX_FMT_YUV420P, AVCOL_SPC_UNSPECIFIED,
+                                        AVCOL_PRI_UNSPECIFIED, AVCOL_TRC_UNSPECIFIED));
+  REQUIRE(dvd);
+  CHECK(dvd->matrix == ColorMatrix::Bt601);
+  CHECK(dvd->primaries == Primaries::Bt601_525);
+  CHECK(dvd->transfer == Transfer::Bt1886);
+
+  // Pas une piste vidéo, ou pas de paramètres : rien.
+  CHECK_FALSE(track_color(TrackInfo{.kind = TrackKind::Audio}));
+  CHECK_FALSE(track_color(TrackInfo{.kind = TrackKind::Video}));
+}

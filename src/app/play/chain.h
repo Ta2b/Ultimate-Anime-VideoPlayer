@@ -70,6 +70,7 @@ struct Chain {
   bool black_dirty = true;
   std::int64_t black_at_us = 0;
   std::optional<HdrIntent> hdr_wanted;  // présent seulement pendant un repli HDR
+  bool source_hdr = false;              // la vidéo est PQ ou HLG : le grade ne la retouche pas comme du SDR
 };
 
 // Les réglages avec, pendant un repli HDR, le mode que le profil demande à la place du mode de
@@ -85,13 +86,15 @@ vendor_hdr::TrueHdrParams true_hdr_params(const PlaySettings& s, int auto_peak);
 // BT.2020 au pic donné à TrueHDR, que rend la fonction.
 std::expected<int, Refusal> open_rtx_hdr(const std::filesystem::path& sdk_source, const PlayerPaths& paths,
                                          const PlaySettings& settings, int auto_peak, PlaceboScreen& screen,
-                                         gpu::KernelOps& kernels, int width, int height);
+                                         gpu::KernelOps& kernels, int width, int height,
+                                         const ColorInfo& source);
 
 // Le grade de la chaîne pour chaque sortie : en PQ, route TrueHDR si RTX HDR est ouvert, native si le
 // HDR natif est choisi, aucun sinon ; en SDR, sur toutes les routes. Rien là où il est neutre.
 render::GradeChoice grade_of(const PlaySettings& s, bool true_hdr_open, int peak_nits, int auto_peak,
                              const std::optional<DisplayFacts>& display = {},
-                             const std::optional<render::BlackThresholds>& black = {});
+                             const std::optional<render::BlackThresholds>& black = {},
+                             bool source_hdr = false);
 // La sortie de l'écran, pour l'OSD et le journal.
 std::string output_text(const PlaceboScreen& screen, const PlaySettings& s, int peak_nits);
 double fps_of(const media::Rational& rate);

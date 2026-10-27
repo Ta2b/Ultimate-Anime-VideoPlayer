@@ -114,6 +114,10 @@ void PlaceboScreen::set_source_color(const ColorInfo& color) {
   impl_->source = color_space_of(color);
 }
 
+void PlaceboScreen::set_sample_aspect(double sar) {
+  impl_->sample_aspect = std::isfinite(sar) && sar > 0.0 ? sar : 1.0;
+}
+
 void PlaceboScreen::set_grade(const render::GradeChoice& choice) {
   impl_->grade_choice = choice;
   impl_->select_grade(impl_->target_color);

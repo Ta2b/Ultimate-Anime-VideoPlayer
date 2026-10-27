@@ -79,6 +79,8 @@ class PlaceboScreen final : public Screen {
   std::expected<std::vector<RingSlotDesc>, Refusal> create_ring(int width, int height, std::uint32_t count);
   // Couleur des images du ring : celle de la source (l'agrandissement ne la change pas).
   void set_source_color(const ColorInfo& color);
+  // Forme du pixel de la vidéo (SAR, largeur / hauteur) : l'image s'affiche étirée de ce rapport.
+  void set_sample_aspect(double sar);
   // Grade (render/grade.h) posé sur OUTPUT : celui du PQ sur une sortie HDR10, celui du SDR sur une
   // sortie SDR BT.709 (sRGB, gamma 2,2 ou 2,4) ; rien : sans grade.
   void set_grade(const render::GradeChoice& choice);

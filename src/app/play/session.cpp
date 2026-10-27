@@ -225,6 +225,7 @@ void Session::request_subtitles(const RingFrame& frame) {
                                                .height = size.height,
                                                .video_width = config_.video_width,
                                                .video_height = config_.video_height,
+                                               .sample_aspect = config_.video_sar,
                                                .video_matrix = config_.video_matrix,
                                                .font_scale = config_.subtitle_scale}};
   if (stages_.request_subtitles(request)) ++subtitle_requests_;

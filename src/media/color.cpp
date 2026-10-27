@@ -8,8 +8,10 @@
 #include <atomic>
 #include <cmath>
 #include <cstdint>
+#include <cstring>
 #include <format>
 #include <string>
+#include <utility>
 
 extern "C" {
 #include <libavutil/mastering_display_metadata.h>
@@ -19,6 +21,7 @@ extern "C" {
 
 #include "media/av_util.h"
 #include "media/log.h"
+#include "media/track.h"
 
 namespace ajp::media {
 namespace {
@@ -308,6 +311,35 @@ std::expected<std::optional<HdrMetadata>, Refusal> hdr_metadata(const AVFrame& f
                   std::format("HDR10 : MaxCLL {} et MaxFALL {} nits", hdr.max_cll, hdr.max_fall));
   }
   return hdr;
+}
+
+std::optional<ColorInfo> track_color(const TrackInfo& track) {
+  if (track.kind != TrackKind::Video || !track.parameters) return std::nullopt;
+  const AVCodecParameters& par = track.parameters->av();
+  FramePtr frame(av_frame_alloc());
+  if (!frame) return std::nullopt;
+  frame->width = par.width;
+  frame->height = par.height;
+  frame->colorspace = par.color_space;
+  frame->color_range = par.color_range;
+  frame->color_primaries = par.color_primaries;
+  frame->color_trc = par.color_trc;
+  frame->chroma_location = par.chroma_location;
+  // Les métadonnées HDR10 du flux, quand le conteneur les donne : les mêmes que celles que le décodeur
+  // posera sur les images.
+  static constexpr std::pair<AVPacketSideDataType, AVFrameSideDataType> kHdrData[] = {
+      {AV_PKT_DATA_MASTERING_DISPLAY_METADATA, AV_FRAME_DATA_MASTERING_DISPLAY_METADATA},
+      {AV_PKT_DATA_CONTENT_LIGHT_LEVEL, AV_FRAME_DATA_CONTENT_LIGHT_LEVEL}};
+  for (const auto& [packet_type, frame_type] : kHdrData) {
+    const AVPacketSideData* data =
+        av_packet_side_data_get(par.coded_side_data, par.nb_coded_side_data, packet_type);
+    if (data == nullptr) continue;
+    if (AVFrameSideData* copy = av_frame_new_side_data(frame.get(), frame_type, data->size))
+      std::memcpy(copy->data, data->data, data->size);
+  }
+  auto color = color_info(*frame, static_cast<AVPixelFormat>(par.format));
+  if (!color) return std::nullopt;
+  return *color;
 }
 
 }  // namespace ajp::media

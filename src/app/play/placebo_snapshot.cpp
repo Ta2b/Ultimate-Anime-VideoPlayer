@@ -37,7 +37,9 @@ std::expected<void, Refusal> PlaceboScreen::Impl::save_snapshot(const pl_frame* 
   sdr.repr = pl_color_repr_rgb;
   sdr.color = pq ? target.color : pl_color_space_srgb;
   sdr.crop = {0, 0, static_cast<float>(out.width), static_cast<float>(out.height)};
-  if (image != nullptr) pl_rect2df_aspect_copy(&sdr.crop, &image->crop, 0.0F);
+  if (image != nullptr)
+    pl_rect2df_aspect_set(&sdr.crop, pl_rect2df_aspect(&image->crop) * static_cast<float>(sample_aspect),
+                          0.0F);
   const std::size_t bytes = pq ? 2 : 1;
   std::vector<std::uint8_t> pixels(static_cast<std::size_t>(out.width) *
                                    static_cast<std::size_t>(out.height) * 4 * bytes);

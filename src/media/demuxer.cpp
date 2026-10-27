@@ -98,6 +98,9 @@ std::expected<TrackInfo, Refusal> describe(const AVStream& stream, TrackKind kin
     info.width = par.width;
     info.height = par.height;
     info.frame_rate = frame_rate_of(stream);
+    const AVRational sar =
+        stream.sample_aspect_ratio.num > 0 ? stream.sample_aspect_ratio : par.sample_aspect_ratio;
+    if (sar.num > 0 && sar.den > 0) info.sample_aspect = {sar.num, sar.den};
     switch (par.color_space) {
       case AVCOL_SPC_BT709:
         info.color_matrix = ColorMatrix::Bt709;

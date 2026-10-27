@@ -62,7 +62,8 @@ vendor_hdr::TrueHdrParams true_hdr_params(const PlaySettings& s, int auto_peak) 
 // BT.2020 au pic donné à TrueHDR, que rend la fonction.
 std::expected<int, Refusal> open_rtx_hdr(const std::filesystem::path& sdk_source, const PlayerPaths& paths,
                                          const PlaySettings& settings, int auto_peak, PlaceboScreen& screen,
-                                         gpu::KernelOps& kernels, int width, int height) {
+                                         gpu::KernelOps& kernels, int width, int height,
+                                         const ColorInfo& source) {
   const auto log = log_channel("app");
   vendor_hdr::SdkStore store(paths.engines.parent_path() / "sdk", vendor_hdr::SdkKind::MaxineVfx);
   vendor_hdr::SdkStatus sdk = store.status();
@@ -78,8 +79,7 @@ std::expected<int, Refusal> open_rtx_hdr(const std::filesystem::path& sdk_source
   if (!params) return std::unexpected(std::move(params.error()));
   if (auto ok = kernels.open_true_hdr(
           *sdk.installed,
-          vendor_hdr::TrueHdrConfig{
-              .width = width, .height = height, .source = ColorInfo{}, .params = *params});
+          vendor_hdr::TrueHdrConfig{.width = width, .height = height, .source = source, .params = *params});
       !ok) {
     return std::unexpected(std::move(ok.error()));
   }
@@ -92,7 +92,7 @@ std::expected<int, Refusal> open_rtx_hdr(const std::filesystem::path& sdk_source
 
 render::GradeChoice grade_of(const PlaySettings& s, bool true_hdr_open, int peak_nits, int auto_peak,
                              const std::optional<DisplayFacts>& display,
-                             const std::optional<render::BlackThresholds>& black) {
+                             const std::optional<render::BlackThresholds>& black, bool source_hdr) {
   const int peak = true_hdr_open && peak_nits > 0 ? peak_nits
                    : s.true_hdr_peak > 0          ? s.true_hdr_peak
                    : auto_peak > 0                ? auto_peak
@@ -121,7 +121,7 @@ render::GradeChoice grade_of(const PlaySettings& s, bool true_hdr_open, int peak
   render::GradeChoice choice;
   for (const bool pq : {true, false}) {
     auto decision = render::decide_grade(g, render::GradeContext{.route = route,
-                                                                 .source_hdr = false,
+                                                                 .source_hdr = source_hdr,
                                                                  .output_pq = pq,
                                                                  .enabled = s.grade,
                                                                  .peak_nits = static_cast<double>(peak)});
@@ -155,7 +155,8 @@ void apply_oled_care(Chain& to, const PlaySettings& s) {
 
 // Le grade de la chaîne avec ses seuils du vrai noir.
 void set_grade(Chain& to, const PlaySettings& s) {
-  to.screen.set_grade(grade_of(s, to.true_hdr_open, to.peak_nits, to.auto_peak, to.display, to.black));
+  to.screen.set_grade(
+      grade_of(s, to.true_hdr_open, to.peak_nits, to.auto_peak, to.display, to.black, to.source_hdr));
 }
 
 // Vrai noir OLED : recale les seuils sur la rampe de 32 marches mesurée à la sortie (route native :

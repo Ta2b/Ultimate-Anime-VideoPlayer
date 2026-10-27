@@ -183,7 +183,8 @@ std::expected<ScreenTiming, Refusal> PlaceboScreen::show(const ShowRequest& requ
     image.repr = pl_color_repr_rgb;
     image.color = s.source;
     image.crop = {0, 0, static_cast<float>((*tex)->params.w), static_cast<float>((*tex)->params.h)};
-    pl_rect2df_aspect_copy(&target.crop, &image.crop, 0.0F);
+    pl_rect2df_aspect_set(&target.crop, pl_rect2df_aspect(&image.crop) * static_cast<float>(s.sample_aspect),
+                          0.0F);
   }
 
   auto overlays = s.overlays->build(request.subtitles, request.osd.empty() ? nullptr : &request.osd, *s.osd,

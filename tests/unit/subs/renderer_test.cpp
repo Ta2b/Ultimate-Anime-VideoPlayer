@@ -268,6 +268,24 @@ TEST_CASE("Rendu : en bandes noires, le script se cale sur l'image et ses pixels
   CHECK(std::abs((pillarbox.x1 - pillarbox.x0) - (pillarbox.y1 - pillarbox.y0)) <= 2);
 }
 
+TEST_CASE("Rendu : un pixel non carré étire la vidéo à l'affichage, le script la suit", "[render]") {
+  Bench bench(ajp::subs::test::square_script());
+  // Un DVD 4:3 anamorphe : 480 × 480 de stockage, pixel 4:3, donc 640 × 480 à l'écran. La vidéo
+  // remplit la fenêtre 640 × 480 sans bande ; avec des pixels carrés elle laisserait 80 colonnes.
+  const Box square =
+      draw(bench.render_on(0.5, {.width = 640, .height = 480, .video_width = 480, .video_height = 480}))
+          .covered();
+  const Box anamorphic = draw(bench.render_on(0.5, {.width = 640,
+                                                    .height = 480,
+                                                    .video_width = 480,
+                                                    .video_height = 480,
+                                                    .sample_aspect = 4.0 / 3.0}))
+                             .covered();
+  REQUIRE_FALSE(square.empty());
+  REQUIRE_FALSE(anamorphic.empty());
+  CHECK(anamorphic.x0 < square.x0 - 50);
+}
+
 TEST_CASE("Rendu : en bandes noires, l'ASS reste sur l'image, le SRT descend dans la bande",
           "[render][srt]") {
   // 16:9 sur 4:3 : 60 lignes de bande en bas, l'image finit à la ligne 420.
