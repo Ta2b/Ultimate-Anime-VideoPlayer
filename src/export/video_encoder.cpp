@@ -190,9 +190,9 @@ void hdr_side_data(AVCodecContext& c, const HdrMetadata& hdr) {
                                                      sizeof(AVMasteringDisplayMetadata), 0);
     if (side != nullptr) {
       auto* mastering = reinterpret_cast<AVMasteringDisplayMetadata*>(side->data);
-      for (int i = 0; i < 3; ++i) {
-        mastering->display_primaries[i][0] = rational(hdr.primaries_xy[static_cast<std::size_t>(2 * i)]);
-        mastering->display_primaries[i][1] = rational(hdr.primaries_xy[static_cast<std::size_t>(2 * i + 1)]);
+      for (std::size_t i = 0; i < 3; ++i) {
+        mastering->display_primaries[i][0] = rational(hdr.primaries_xy[2 * i]);
+        mastering->display_primaries[i][1] = rational(hdr.primaries_xy[2 * i + 1]);
       }
       mastering->white_point[0] = rational(hdr.white_xy[0]);
       mastering->white_point[1] = rational(hdr.white_xy[1]);
