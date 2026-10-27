@@ -295,14 +295,13 @@ std::expected<Artifact, Refusal> VulkanBackend::build(const ModelSpec& model, co
   if (auto ok = net::write_file(artifact.path, net::serialize(*data)); !ok)
     return std::unexpected(ok.error());
   log(BackendLogLevel::Info,
-      std::format(
-          "{} construit : {} nœuds, {} dispatchs{}", model.id, data->graph.nodes.size(),
-          data->dispatches.size(),
-          tuner ? std::format(", {} couches mesurées, {} variantes écartées (sortie discordante), "
-                              "{} dès leur sondage, {} choix revérifiés sous ce pilote ({}, {})",
-                              tuner->measured(), tuner->rejected(), tuner->pruned(), tuner->reverified(),
-                              name(profile_.family), profile_.driver_build)
-                : ""));
+      std::format("{} construit : {} nœuds, {} dispatchs{}", model.id, data->graph.nodes.size(),
+                  data->dispatches.size(),
+                  tuner ? std::format(", {} couches mesurées, {} variantes écartées (sortie discordante), "
+                                      "{} dès leur sondage, {} choix revérifiés sous ce pilote ({}, {})",
+                                      tuner->measured(), tuner->rejected(), tuner->pruned(),
+                                      tuner->reverified(), name(profile_.family), profile_.driver_build)
+                        : ""));
   return artifact;
 }
 
