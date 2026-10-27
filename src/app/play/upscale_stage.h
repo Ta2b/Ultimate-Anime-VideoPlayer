@@ -155,6 +155,7 @@ class UpscaleStage final : public RingStage {
   std::expected<gpu::PairScores, Refusal> drba_scores(const DecodedFrame& frame);
   std::expected<void, Refusal> drba_next(const DecodedFrame& frame, const gpu::IngestSpec& spec,
                                          bool measure);
+  std::expected<void, Refusal> settle_after_scores();
   std::expected<void, Refusal> interpolate_drba(std::uint32_t output);
   // Mesures en avance (upscale_ahead.cpp) : quand l'image suivante attend déjà derrière celle-ci,
   // elle est ingérée et mesurée contre elle avant le travail de la paire en cours. À son arrivée,
@@ -331,12 +332,26 @@ class UpscaleStage final : public RingStage {
     std::unique_ptr<gpu::TensorBuffer> after;
     std::unique_ptr<gpu::TensorBuffer> pair01;  // 1 × 7 × ph × pw
     std::unique_ptr<gpu::TensorBuffer> pair12;
+    // Les deux images dont pair01 et pair12 tiennent les plans d'images : une autre sortie de la
+    // même paire sur les mêmes images ne réécrit que l'instant (rife_time).
+    struct Filled {
+      const gpu::Tensor* first = nullptr;
+      const gpu::Tensor* second = nullptr;
+    };
+    Filled filled01;
+    Filled filled12;
+    bool time_only = true;  // faux si le backend refuse rife_time
     bool before_ok = false;
     bool after_ok = false;
     bool continuous = false;  // la paire en cours suit la précédente sans coupe, mesures prises
     std::optional<SourceId> after_id;
     std::uint32_t after_epoch = 0;
     std::optional<gpu::PairScores> after_scores;  // mesures de (b, after), si prises
+    // Mesure de (b, after) lancée sans attente (scores_start) : relue à la première sortie qui
+    // en a besoin, ou à l'arrivée de after, le GPU ayant alors fini.
+    std::optional<std::uint64_t> after_ticket;
+    SourceId ticket_left;
+    SourceId ticket_right;
     std::uint64_t runs = 0;
     std::uint64_t edges = 0;  // passes sans l'image d'un côté (début, coupe, fin)
   };
