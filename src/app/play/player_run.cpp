@@ -117,6 +117,7 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
     settings.true_hdr = false;
     settings.hdr_native = true;
   }
+  bool rtx_hdr_failed = false;  // TrueHDR a refusé de s'ouvrir : le panneau ne le propose plus
   if (settings.true_hdr) {
     show_loading(p.screen, p.ui, "Préparation de RTX HDR");
     auto opened = open_rtx_hdr(p.options.true_hdr_sdk, p.paths, settings, auto_peak, p.screen,
@@ -129,6 +130,7 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
       p.ui.controls().notify("RTX HDR indisponible : HDR adaptatif", host_now_us());
       settings.true_hdr = false;
       settings.hdr_native = true;
+      rtx_hdr_failed = true;
       p.screen.set_source_color(source);
     }
   } else {
@@ -219,8 +221,8 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
           .default_rife_model = c.rife_choice ? c.rife_choice->default_name : std::string(),
           .rife_folder = c.gmfss_places.front().string(),
           .nvidia = vendor_from_pci(p.screen.device_facts().pci_vendor) == GpuVendor::Nvidia,
-          .true_hdr_available =
-              c.backend_name == "tensorrt" && (maxine_available(p.options, p.paths) || settings.true_hdr),
+          .true_hdr_available = c.backend_name == "tensorrt" && !rtx_hdr_failed &&
+                                (maxine_available(p.options, p.paths) || settings.true_hdr),
           .true_hdr_backend = c.backend_name == "tensorrt",
           .hdr_output = p.screen.hdr_output(),
           .auto_peak = auto_peak,
