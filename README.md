@@ -69,4 +69,4 @@ le relais).
 
 ## Licence
 
-À décider (MPL-2.0 ou permissive, jamais GPL, car le lecteur charge TensorRT).
+Mozilla Public License 2.0 (fichier `LICENSE`). Les composants tiers et les modèles gardent leur licence : voir `THIRD_PARTY_NOTICES.md`.

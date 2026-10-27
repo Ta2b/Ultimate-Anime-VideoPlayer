@@ -132,7 +132,7 @@ patchelf --set-rpath '$ORIGIN/lib' "$STAGE/ajp" "$STAGE/ajp_backend_vulkan.so"
 origin "$STAGE/lib"
 check_portable "$STAGE/lib"
 check_portable "$STAGE" "$STAGE/lib"
-cp "$ROOT/LICENSE" "$STAGE/" 2>/dev/null || true
+cp "$ROOT/LICENSE" "$ROOT/THIRD_PARTY_NOTICES.md" "$STAGE/"
 cp "$ROOT/tools/release/linux/LISEZMOI.txt" "$STAGE/"
 # Les modèles SPAN et RIFE, pour lire dès l'extraction (AJP_WITHOUT_MODELS=1 pour s'en passer).
 [ -n "${AJP_WITHOUT_MODELS:-}" ] || "$ROOT/tools/release/fetch-models.sh" "$STAGE/models"

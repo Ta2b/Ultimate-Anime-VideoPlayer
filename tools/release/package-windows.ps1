@@ -57,6 +57,7 @@ Remove-Item -Recurse -Force $Stage -ErrorAction SilentlyContinue
 New-Item -ItemType Directory -Force -Path $Stage | Out-Null
 Copy-Item "$Build/src/app/ajp.exe" $Stage
 Copy-Item "$Build/src/app/*.dll" $Stage
+Copy-Item "$Root/LICENSE", "$Root/THIRD_PARTY_NOTICES.md" $Stage
 Copy-Item "$Build/src/gpu/vulkan/backend/ajp_backend_vulkan.dll" $Stage
 Copy-Item "$Build/src/gpu/vulkan/backend/*.dll" $Stage -Exclude "ajp_backend_*" -ErrorAction SilentlyContinue
 # Le chargeur Vulkan vient du pilote (vulkan-1.dll dans System32) : jamais livré.

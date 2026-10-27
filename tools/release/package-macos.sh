@@ -29,6 +29,7 @@ cp "$BUILD/src/gpu/vulkan/backend/ajp_backend_vulkan.so" "$APP/Contents/PlugIns/
 cp "$BUILD/src/gpu/coreml/ajp_backend_coreml.so" "$APP/Contents/PlugIns/"
 mkdir -p "$APP/Contents/Resources/licenses"
 cp "$AJP_DEPS_PREFIX/onnxruntime/LICENSE" "$APP/Contents/Resources/licenses/onnxruntime.txt"
+cp "$ROOT/LICENSE" "$ROOT/THIRD_PARTY_NOTICES.md" "$APP/Contents/Resources/licenses/"
 # Les modèles, comme sous Linux et Windows : le lecteur les cherche dans models/ à côté de
 # SDL_GetBasePath, Contents/Resources dans un paquet .app (sauf AJP_WITHOUT_MODELS).
 if [ -z "${AJP_WITHOUT_MODELS:-}" ]; then
