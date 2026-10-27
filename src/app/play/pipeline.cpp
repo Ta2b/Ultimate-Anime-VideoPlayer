@@ -67,7 +67,8 @@ std::expected<std::unique_ptr<Pipeline>, Refusal> Pipeline::open(const PipelineC
     }
     const media::TrackInfo& track = *demuxer->track(*choice.audio);
     if (!audio_failure && p->audio_codec(track.index) == nullptr) {
-      audio_failure = Refusal{RefusalCode::TrackUnavailable, std::format("piste audio {} illisible", track.index)};
+      audio_failure =
+          Refusal{RefusalCode::TrackUnavailable, std::format("piste audio {} illisible", track.index)};
     }
     if (!audio_failure) {
       // La sortie prend le format de la piste, plafonné : au-delà de ce que SDL ouvre, le

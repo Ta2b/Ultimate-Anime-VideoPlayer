@@ -146,7 +146,8 @@ Muxer::~Muxer() {
 int Muxer::close_output() {
   if (output_ == nullptr) return 0;
   int err = 0;
-  if (output_->pb != nullptr && (output_->oformat->flags & AVFMT_NOFILE) == 0) err = avio_closep(&output_->pb);
+  if (output_->pb != nullptr && (output_->oformat->flags & AVFMT_NOFILE) == 0)
+    err = avio_closep(&output_->pb);
   avformat_free_context(output_);
   output_ = nullptr;
   return err;
@@ -362,8 +363,7 @@ std::expected<void, Refusal> Muxer::finish() {
   std::filesystem::rename(partial_path_, output_path_, moved);
   if (moved) {
     abandon();
-    return refuse(RefusalCode::FileUnwritable,
-                  std::format("{} : {}", utf8(output_path_), moved.message()));
+    return refuse(RefusalCode::FileUnwritable, std::format("{} : {}", utf8(output_path_), moved.message()));
   }
   finished_ = true;
   opened_ = false;

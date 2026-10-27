@@ -26,8 +26,8 @@ using Rank = std::tuple<int, bool, bool, bool, int>;
 bool is_full_dialogue(const TrackInfo& track) {
   std::string word;
   const auto special = [&] {
-    static constexpr std::string_view kWords[] = {"sign", "signs", "song", "songs", "commentary",
-                                                  "commentaire", "sdh", "cc", "hearing"};
+    static constexpr std::string_view kWords[] = {"sign",        "signs", "song", "songs",  "commentary",
+                                                  "commentaire", "sdh",   "cc",   "hearing"};
     return std::ranges::find(kWords, word) != std::end(kWords);
   };
   bool found = false;

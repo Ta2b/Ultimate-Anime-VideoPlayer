@@ -99,7 +99,8 @@ TEST_CASE("Une horloge qui court ou une pause n'est pas une perte d'audio", "[ap
     rig.run_clock(40'000);
     rig.tick();
   }
-  CHECK(std::ranges::count_if(rig.stages.log, [](const std::string& l) { return l.starts_with("audio perdu"); }) == 0);
+  CHECK(std::ranges::count_if(rig.stages.log,
+                              [](const std::string& l) { return l.starts_with("audio perdu"); }) == 0);
 }
 
 TEST_CASE("Les images doublées par l'horloge sont sautées et leurs slots rendus", "[app][session]") {

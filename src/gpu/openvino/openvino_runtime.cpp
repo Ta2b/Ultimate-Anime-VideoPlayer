@@ -151,8 +151,8 @@ class OpenvinoRuntime final : public vk::net::Runtime {
       }
     } catch (const std::exception& e) {  // contexte du GPU indisponible : les tenseurs passent par la
       // mémoire du backend, sans USM ni interop
-      log_channel("openvino")->warn("mémoire partagée indisponible ({}) : tenseurs par la mémoire du backend",
-                                    e.what());
+      log_channel("openvino")
+          ->warn("mémoire partagée indisponible ({}) : tenseurs par la mémoire du backend", e.what());
     }
   }
   std::string_view name() const override { return "openvino"; }

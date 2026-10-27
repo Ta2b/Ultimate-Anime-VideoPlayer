@@ -230,10 +230,31 @@ std::expected<std::filesystem::path, Refusal> install_package(const EngineCatalo
       return refuse(RefusalCode::FileUnwritable, std::format("{} : note du paquet", staging.string()));
     }
   }
-  std::filesystem::remove_all(target, error);
+  // L'ancien dossier est mis de côté avant d'être remplacé, puis effacé : si l'un de ses fichiers est
+  // encore ouvert (Windows), il ne reste pas à moitié supprimé, et il est remis en place sur échec.
+  std::filesystem::path aside = target;
+  aside += ".ancien";
+  std::filesystem::remove_all(aside, error);
+  const bool replaced = std::filesystem::exists(target, error);
+  if (replaced) {
+    error.clear();
+    std::filesystem::rename(target, aside, error);
+    if (error) {
+      const std::string reason = error.message();
+      std::filesystem::remove_all(staging, error);
+      return refuse(RefusalCode::FileUnwritable, std::format("{} : {}", target.string(), reason));
+    }
+  }
+  error.clear();
   std::filesystem::rename(staging, target, error);
-  if (error)
-    return refuse(RefusalCode::FileUnwritable, std::format("{} : {}", target.string(), error.message()));
+  if (error) {
+    const std::string reason = error.message();
+    std::error_code restore;
+    if (replaced) std::filesystem::rename(aside, target, restore);
+    return refuse(RefusalCode::FileUnwritable, std::format("{} : {}", target.string(), reason));
+  }
+  if (replaced) std::filesystem::remove_all(aside, error);
+  error.clear();
   std::filesystem::remove(part, error);
   report(1.0F, std::format("{} installé", name));
   return module ? core::backend_library(catalog.layout, package) : target;

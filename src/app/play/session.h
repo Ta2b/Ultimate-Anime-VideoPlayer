@@ -183,7 +183,7 @@ class Session {
     std::int64_t at_us = 0;
   };
   std::optional<SeekRetry> retry_seek_;
-  std::int64_t last_tick_us_ = 0;  // instant hôte du dernier tick
+  std::int64_t last_tick_us_ = 0;                       // instant hôte du dernier tick
   std::optional<std::int64_t> clock_stalled_since_us_;  // des images attendent une horloge arrêtée
   std::int64_t audio_stall_grace_us_ = 1'500'000;
 

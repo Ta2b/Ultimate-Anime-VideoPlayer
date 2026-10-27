@@ -155,7 +155,9 @@ std::expected<std::vector<SrtCue>, Refusal> parse_srt(std::string_view file,
     }
     if (is_index(lines[i]) && starts_cue(lines, i)) ++i;  // numéro de cue, facultatif
     const auto timing = parse_timing(lines[i]);
-    const char* fault = !timing ? "horodatage attendu" : timing->end_us < timing->start_us ? "fin avant début" : nullptr;
+    const char* fault = !timing                             ? "horodatage attendu"
+                        : timing->end_us < timing->start_us ? "fin avant début"
+                                                            : nullptr;
     if (fault != nullptr) {
       // Une ligne qui se donne pour un horodatage et n'en est pas un perd sa cue, pas le fichier.
       // Un texte sans horodatage avant la première cue : ce n'est pas du SRT.

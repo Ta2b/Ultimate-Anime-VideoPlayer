@@ -274,7 +274,8 @@ Evaluated eval_range(const Node& /*node*/, std::span<const Value* const> in,
   Value out = make_output(outs[0]);
   if (in[0]->type == DataType::I64) {
     for (std::size_t k = 0; k < out.i.size(); ++k)
-      out.i[k] = in[0]->i[0] + (static_cast<std::int64_t>(k) * in[2]->i[0]);  // bornes ≤ 2^53 : sans débordement
+      out.i[k] =
+          in[0]->i[0] + (static_cast<std::int64_t>(k) * in[2]->i[0]);  // bornes ≤ 2^53 : sans débordement
   } else {
     // Comme ONNX Runtime : start + k × delta, en float.
     for (std::size_t k = 0; k < out.f.size(); ++k)

@@ -118,14 +118,16 @@ std::expected<Primaries, Refusal> map_primaries(AVColorPrimaries primaries, Colo
     default: {  // BT.470M, FILM, SMPTE428, SMPTE432 (P3 D65), EBU3213 : les plus proches
       static std::atomic<std::uint64_t> warned{0};
       const bool p3 = primaries == AVCOL_PRI_SMPTE428 || primaries == AVCOL_PRI_SMPTE432;
-      const Primaries used = p3 ? Primaries::DciP3
+      const Primaries used = p3                               ? Primaries::DciP3
                              : primaries == AVCOL_PRI_EBU3213 ? Primaries::Bt601_625
                              : primaries == AVCOL_PRI_BT470M  ? Primaries::Bt601_525
                                                               : Primaries::Bt709;
       approximated(warned, static_cast<int>(primaries), "primaires",
                    name_or_number(av_color_primaries_name(primaries), static_cast<int>(primaries)),
-                   p3 ? "DCI-P3" : used == Primaries::Bt601_625 ? "BT.601 625"
-                                 : used == Primaries::Bt601_525 ? "BT.601 525" : "BT.709");
+                   p3                             ? "DCI-P3"
+                   : used == Primaries::Bt601_625 ? "BT.601 625"
+                   : used == Primaries::Bt601_525 ? "BT.601 525"
+                                                  : "BT.709");
       return used;
     }
   }
@@ -254,8 +256,7 @@ std::expected<ColorInfo, Refusal> color_info(const AVFrame& frame, AVPixelFormat
   auto hdr = hdr_metadata(frame);
   if (!hdr) {  // métadonnées indicatives aberrantes : l'image reste lisible sans elles
     static std::atomic<bool> warned{false};
-    if (!warned.exchange(true))
-      make_logger()->warn("métadonnées HDR10 ignorées : {}", hdr.error().detail);
+    if (!warned.exchange(true)) make_logger()->warn("métadonnées HDR10 ignorées : {}", hdr.error().detail);
     return color;
   }
   color.hdr = *hdr;

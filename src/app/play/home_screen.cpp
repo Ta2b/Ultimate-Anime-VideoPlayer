@@ -172,9 +172,9 @@ std::optional<std::filesystem::path> dropped_file(const SDL_Event& event) {
   std::string extension = prepare::utf8_path(path.extension());
   std::ranges::transform(extension, extension.begin(),
                          [](char c) { return static_cast<char>(c >= 'A' && c <= 'Z' ? c - 'A' + 'a' : c); });
-  static constexpr std::string_view kNotVideo[] = {".srt", ".ass", ".ssa", ".sub", ".idx", ".vtt", ".txt",
-                                                   ".nfo", ".jpg", ".jpeg", ".png", ".gif", ".webp", ".bmp",
-                                                   ".toml", ".onnx", ".ttf", ".otf", ".zip", ".7z", ".rar"};
+  static constexpr std::string_view kNotVideo[] = {
+      ".srt", ".ass",  ".ssa", ".sub",  ".idx",  ".vtt", ".txt", ".nfo", ".jpg", ".jpeg", ".png",
+      ".gif", ".webp", ".bmp", ".toml", ".onnx", ".ttf", ".otf", ".zip", ".7z",  ".rar"};
   if (std::ranges::find(kNotVideo, extension) != std::end(kNotVideo)) return std::nullopt;
   return path;
 }

@@ -211,21 +211,22 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
       core::SourceInfo{.width = video.width, .height = video.height, .fps = fps_of(video.frame_rate)};
   if (c.model) p.profiles.default_model = c.model->default_name;
   p.ui.set_profiles(view_of(p.profiles));
-  Chain chain{.session = session,
-              .screen = out,
-              .ui = p.ui,
-              .pipeline = **pipeline,
-              .live = *live,
-              .running = settings,
-              .profiles = p.profiles,
-              .rife_loaded = rife_loaded,
-              .true_hdr_open = settings.true_hdr,
-              .auto_peak = auto_peak,
-              .peak_nits = peak_nits,
-              .display = p.display,
-              .hdr_wanted = settings.true_hdr != wanted_hdr.true_hdr || settings.hdr_native != wanted_hdr.hdr_native
-                                ? std::optional(wanted_hdr)
-                                : std::nullopt};
+  Chain chain{
+      .session = session,
+      .screen = out,
+      .ui = p.ui,
+      .pipeline = **pipeline,
+      .live = *live,
+      .running = settings,
+      .profiles = p.profiles,
+      .rife_loaded = rife_loaded,
+      .true_hdr_open = settings.true_hdr,
+      .auto_peak = auto_peak,
+      .peak_nits = peak_nits,
+      .display = p.display,
+      .hdr_wanted = settings.true_hdr != wanted_hdr.true_hdr || settings.hdr_native != wanted_hdr.hdr_native
+                        ? std::optional(wanted_hdr)
+                        : std::nullopt};
   apply_oled_care(chain, settings);
 
   std::ofstream stats;
@@ -238,6 +239,13 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
   if (p.began_us == 0) p.began_us = host_now_us();
   std::vector<Input> actions;
   session.begin(host_now_us());
+  if (p.unsaved) {
+    if (auto saved =
+            save_settings(p.settings_path, settings_to_save(*p.unsaved, p.from_file, p.started, p.options));
+        !saved)
+      log->warn("{}", saved.error().detail);
+    p.unsaved.reset();
+  }
   if (p.resumed) {
     p.ui.controls().notify(std::format("Reprise à {}", format_clock(start_us, session.view().duration_us)),
                            host_now_us());
@@ -300,8 +308,9 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
     actions.clear();
     // play.toml réécrit au plus une fois par seconde pendant qu'on règle.
     if (chain.dirty && host_now_us() - saved_at >= 1'000'000) {
-      if (auto saved = save_settings(p.settings_path,
-                                     settings_to_save(with_intended_hdr(chain, chain.running), p.from_file, p.started, p.options));
+      if (auto saved = save_settings(
+              p.settings_path,
+              settings_to_save(with_intended_hdr(chain, chain.running), p.from_file, p.started, p.options));
           !saved)
         log->warn("{}", saved.error().detail);
       chain.dirty = false;
@@ -330,8 +339,8 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
     }
   }
   if (chain.dirty) {
-    if (auto saved = save_settings(p.settings_path,
-                                   settings_to_save(with_intended_hdr(chain, chain.running), p.from_file, p.started, p.options));
+    if (auto saved = save_settings(p.settings_path, settings_to_save(with_intended_hdr(chain, chain.running),
+                                                                     p.from_file, p.started, p.options));
         !saved)
       log->warn("{}", saved.error().detail);
   }

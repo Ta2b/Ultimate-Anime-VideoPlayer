@@ -478,7 +478,8 @@ TEST_CASE("Écriture : un refus de l'encodeur arrête l'export et le dit", "[exp
   CHECK_FALSE(std::filesystem::exists(output, error));
 }
 
-TEST_CASE("Écriture : un export refusé laisse intact le fichier qui portait déjà ce nom", "[export][writer]") {
+TEST_CASE("Écriture : un export refusé laisse intact le fichier qui portait déjà ce nom",
+          "[export][writer]") {
   class RefusingEncoder final : public HoldingEncoder {
    public:
     RefusingEncoder() : HoldingEncoder(1) {}

@@ -326,24 +326,36 @@ std::expected<void, Refusal> play(const PlayOptions& options, const PlayerPaths&
       start_us = (*outcome)->position_us;
       start_paused = (*outcome)->paused;
       player.details = settings.stats.all;
-      if (auto written = save_settings(
-              settings_path, settings_to_save(settings, player.from_file, player.started, file_options));
-          !written)
-        log->warn("{}", written.error().detail);
       if ((*outcome)->next_file) {
+        if (auto written = save_settings(
+                settings_path, settings_to_save(settings, player.from_file, player.started, file_options));
+            !written)
+          log->warn("{}", written.error().detail);
+        player.unsaved.reset();
         next_file = (*outcome)->next_file;
         break;
       }
+      player.unsaved = settings;  // écrits quand la chaîne rouverte est ouverte (run_chain)
       log->info("réouverture à {}", format_position(start_us));
     }
-    if (!result) return result;
+    // Une vidéo choisie à l'accueil qui échoue y ramène avec la raison, plutôt que de fermer le
+    // lecteur ; lancé sur un fichier, l'échec reste celui du programme (code de sortie, message).
+    std::string failed;
+    if (!result) {
+      if (!from_home || player.quit) return result;
+      failed = std::format("« {} » s'est arrêtée : {}", file.filename().string(), result.error().detail);
+      log->error("{}", failed);
+    }
     // Ce que la lecture a changé suit dans la vidéo suivante ou l'accueil.
     library = std::move(player.library);
     snapshot = std::move(player.snapshot);
     next_key = player.next_key;
     profiles = std::move(player.profiles);
     *engines = std::move(player.engines);
-    if (next_file) {
+    if (!failed.empty()) {
+      problem = std::move(failed);
+      file.clear();
+    } else if (next_file) {
       file = std::move(*next_file);
     } else if (from_home && !player.quit) {
       file.clear();  // fin de la vidéo : retour à l'accueil

@@ -115,7 +115,8 @@ std::string describe_nodes(const Graph& graph) {
 std::string describe_stats(const PassStats& stats) {
   return std::format(
       "  pliés {}, morts {}, sans effet {}, réarrangements {}, biais {}, résiduels {}, activations {}, "
-      "portes {}, DepthToSpace fondus {}, grilles repliées {}, ConvTranspose en Conv {}, tenseurs NHWC16 {}\n",
+      "portes {}, DepthToSpace fondus {}, grilles repliées {}, ConvTranspose en Conv {}, tenseurs NHWC16 "
+      "{}\n",
       stats.folded, stats.dead, stats.identities, stats.pixel_shuffles, stats.bias, stats.residuals,
       stats.activations, stats.gates, stats.spaces, stats.grid_transposes, stats.transposes, stats.nhwc);
 }

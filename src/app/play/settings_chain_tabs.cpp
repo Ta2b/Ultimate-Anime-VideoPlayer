@@ -105,14 +105,14 @@ void fluidity_tab(PlaySettings& d, const SettingsChoices& choices, bool exportin
   // Jusqu'à ×8 : au-delà, le profil (core::limits::kInterpFactor) refuserait la règle, et le choix
   // ne survivrait pas au fichier suivant.
   constexpr std::array<Factor, 9> kFactors{{{.num = 0, .den = 1},
-                                             {.num = 3, .den = 2},
-                                             {.num = 2, .den = 1},
-                                             {.num = 3, .den = 1},
-                                             {.num = 4, .den = 1},
-                                             {.num = 5, .den = 1},
-                                             {.num = 6, .den = 1},
-                                             {.num = 7, .den = 1},
-                                             {.num = 8, .den = 1}}};
+                                            {.num = 3, .den = 2},
+                                            {.num = 2, .den = 1},
+                                            {.num = 3, .den = 1},
+                                            {.num = 4, .den = 1},
+                                            {.num = 5, .den = 1},
+                                            {.num = 6, .den = 1},
+                                            {.num = 7, .den = 1},
+                                            {.num = 8, .den = 1}}};
   const auto factor_label = [](Factor factor) {
     if (factor.num <= factor.den) return std::string("Désactivée");
     std::string text = factor_text(factor);

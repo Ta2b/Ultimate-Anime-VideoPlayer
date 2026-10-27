@@ -24,7 +24,8 @@ class ImportedHip final : public vk::net::ImportedMemory {
  public:
   // Prend le descripteur : HIP ne le ferme pas (clr : ~ExternalBuffer() est vide, ROCr n'y touche pas),
   // et un descripteur resté ouvert garde le dma-buf, donc la mémoire vidéo, après vkFreeMemory.
-  ImportedHip(hipExternalMemory_t memory, void* pointer, int fd) : memory_(memory), pointer_(pointer), fd_(fd) {}
+  ImportedHip(hipExternalMemory_t memory, void* pointer, int fd)
+      : memory_(memory), pointer_(pointer), fd_(fd) {}
   ImportedHip(const ImportedHip&) = delete;
   ImportedHip& operator=(const ImportedHip&) = delete;
   ImportedHip(ImportedHip&&) = delete;

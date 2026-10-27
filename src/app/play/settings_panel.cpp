@@ -226,7 +226,9 @@ bool sound_tab(PlaySettings& d) {
   ImGui::SliderInt("Délai audio (ms)", &d.audio_delay_ms, -1000, 1000);
   const bool held = ImGui::IsItemActive();
   if (ImGui::Button("Remettre à 0")) d.audio_delay_ms = 0;
-  note("Positif : le son est retardé. Ctrl + clic sur le curseur pour saisir une valeur (jusqu'à ±10 000 ms).");
+  note(
+      "Positif : le son est retardé. Ctrl + clic sur le curseur pour saisir une valeur (jusqu'à ±10 000 "
+      "ms).");
   d.audio_delay_ms = std::clamp(d.audio_delay_ms, limits::kAudioDelayMs.lo, limits::kAudioDelayMs.hi);
   ImGui::Checkbox("Caler la lecture sur l'écran", &d.display_sync);
   note(

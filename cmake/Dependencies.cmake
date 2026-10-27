@@ -72,10 +72,6 @@ endif()
 
 find_package(SDL3 CONFIG REQUIRED)
 
-# Téléchargement des moteurs et des modèles depuis l'index haché.
-find_package(CURL REQUIRED)
-ajp_alias_dep(curl CURL::libcurl)
-
 ajp_alias_dep(sdl3 SDL3::SDL3)
 
 find_package(VulkanHeaders CONFIG QUIET)

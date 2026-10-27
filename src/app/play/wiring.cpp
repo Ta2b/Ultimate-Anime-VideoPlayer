@@ -140,7 +140,8 @@ bool ThreadStages::set_speed(double speed) {
 }
 
 bool ThreadStages::audio_lost(std::uint32_t epoch, std::int64_t media_us) {
-  if (links_.audio == nullptr || links_.lead == nullptr || links_.lead->host_leads() || !playing_) return false;
+  if (links_.audio == nullptr || links_.lead == nullptr || links_.lead->host_leads() || !playing_)
+    return false;
   links_.host_clock->start(epoch, media_us, host_now_us());
   // L'audio, s'il revient, se cale sur l'horloge hôte (silence ou rognage) au lieu de la mener.
   links_.audio->post(audio::SyncTo{.master = links_.host_clock});
