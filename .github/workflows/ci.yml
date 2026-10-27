@@ -23,6 +23,11 @@ env:
   # contiennent « .. », et le cache des dépendances n'était jamais enregistré.
   AJP_DEPS_PREFIX: ${{ github.workspace }}-deps
   APT_COMPILERS: clang-20 clang-tidy-20 clang-format-20
+  CCACHE_DIR: ${{ github.workspace }}-ccache
+  CCACHE_BASEDIR: ${{ github.workspace }}
+  CCACHE_MAXSIZE: 600M
+  CMAKE_C_COMPILER_LAUNCHER: ccache
+  CMAKE_CXX_COMPILER_LAUNCHER: ccache
 
 jobs:
   rules:
@@ -88,17 +93,27 @@ jobs:
       AJP_TEST_VULKAN_VALIDATION: ${{ matrix.validation }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          # clang-tidy ne regarde, sur une pull request, que les fichiers qu'elle change.
+          fetch-depth: ${{ matrix.tidy && 0 || 1 }}
+      # clang et clang-tidy (plusieurs centaines de Mo avec LLVM) ne servent qu'à la tâche
+      # analysée ; clang-format reste à rules.yml. ccache : la construction repart du cache.
       - name: Paquets système
         run: |
           source tools/release/versions.env
           sudo apt-get update -qq
-          sudo apt-get install -y -qq $APT_BUILD $APT_COMPILERS $APT_PLAYER $APT_TESTS
+          sudo apt-get install -y -qq $APT_BUILD $APT_PLAYER $APT_TESTS ccache ${{ matrix.tidy && 'clang-20 clang-tidy-20' || '' }}
           pip install --user "meson==$MESON_VERSION"
       - uses: actions/cache@v4
         with:
           path: ${{ env.AJP_DEPS_PREFIX }}
           key: deps-player-gcc-13-${{ hashFiles('tools/deps/linux-from-source.sh') }}
           restore-keys: deps-player-gcc-13-
+      - uses: actions/cache@v4
+        with:
+          path: ${{ env.CCACHE_DIR }}
+          key: ccache-player-${{ matrix.name }}-${{ github.sha }}
+          restore-keys: ccache-player-${{ matrix.name }}-
       - run: tools/deps/linux-from-source.sh "$AJP_DEPS_PREFIX" "$RUNNER_TEMP/deps-src"
       - name: OpenVINO
         if: matrix.tidy
@@ -108,10 +123,15 @@ jobs:
           echo "OpenVINO_DIR=$(python3 -c 'from openvino.utils import get_cmake_path; print(get_cmake_path())')" >> "$GITHUB_ENV"
       - run: cmake --preset ${{ matrix.preset }} ${{ matrix.tidy && '-DAJP_WITH_OPENVINO=ON' || '' }}
       - run: cmake --build --preset ${{ matrix.preset }}
+      - run: ccache -s
       - name: Tests (Vulkan logiciel sous Xvfb)
-        run: xvfb-run -a ctest --preset ${{ matrix.preset }}
+        run: xvfb-run -a ctest --preset ${{ matrix.preset }} -j 3
+      # Une pull request n'analyse que les fichiers qu'elle change (tout src/ si un en-tête ou un
+      # CMakeLists.txt change) ; main, la nuit et les lancements à la demande analysent tout.
       - name: clang-tidy sur src/
         if: matrix.tidy
+        env:
+          AJP_TIDY_BASE: ${{ github.event_name == 'pull_request' && format('origin/{0}', github.base_ref) || '' }}
         run: tools/ci/clang-tidy-src.sh build/linux-prefix
 
   # MSVC et vcpkg, sans GPU : la construction avec /WX (une rupture de MSVC ou d'un port paraît ici
