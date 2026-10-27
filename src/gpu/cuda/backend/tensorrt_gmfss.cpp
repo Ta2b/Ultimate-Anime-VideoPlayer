@@ -49,13 +49,19 @@ std::expected<void, Refusal> TensorRtBackend::gmfss_frames(const Tensor& a, cons
   if (!fp16_planes(a, 3) || !fp16_planes(b, 3) || a.shape.dims != b.shape.dims) {
     return refuse(RefusalCode::ShapeInvalid, "gmfss_frames : deux images RGB FP16 de même taille attendues");
   }
-  const kernels::RifeGeometry g = kernels::rife_geometry(width_of(a), height_of(a));
-  if (!fp16_planes(frames, kernels::kGmfssFramePlanes) || width_of(frames) != g.padded_width ||
-      height_of(frames) != g.padded_height) {
+  // La fenêtre se lit sur le tenseur reçu (multiple de 64, 128 pour le demi-flot s05), comme dans
+  // le backend Vulkan : l'application l'a alloué à l'alignement du modèle.
+  if (!fp16_planes(frames, kernels::kGmfssFramePlanes) ||
+      !kernels::rife_fits(static_cast<int>(width_of(a)), static_cast<int>(height_of(a)),
+                          static_cast<int>(width_of(frames)), static_cast<int>(height_of(frames)))) {
     return refuse(RefusalCode::ShapeInvalid,
-                  std::format("gmfss_frames : tenseur FP16 1×{}×{}×{} attendu", kernels::kGmfssFramePlanes,
-                              g.padded_height, g.padded_width));
+                  std::format("gmfss_frames : tenseur FP16 1×{}×h×w, multiples de 64 au moins égaux à "
+                              "l'image {}x{}, attendu",
+                              kernels::kGmfssFramePlanes, width_of(a), height_of(a)));
   }
+  const kernels::RifeGeometry g =
+      kernels::rife_window(static_cast<int>(width_of(a)), static_cast<int>(height_of(a)),
+                           static_cast<int>(width_of(frames)), static_cast<int>(height_of(frames)));
   if (auto ok = bind(); !ok) return ok;
   const RifeInputParams params{.a = address(a),
                                .b = address(b),

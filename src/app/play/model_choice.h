@@ -45,8 +45,8 @@ inline constexpr std::array<std::string_view, 6> kRifeForRtx{"rife_v4.25.onnx", 
                                                              "rife_v4.25_lite.onnx", "rife_v4.22.onnx",
                                                              "rife_v4.22_lite.onnx", "rife_v4.26_heavy.onnx"};
 inline constexpr std::array<std::string_view, 6> kRifeForOthers{
-    "rife_v4.22_lite.onnx", "rife_v4.25_lite.onnx", "rife_v4.22.onnx",
-    "rife_v4.25.onnx",      "rife_v4.26.onnx",      "rife_v4.26_heavy.onnx"};
+    "rife_v4.26.onnx", "rife_v4.22_lite.onnx", "rife_v4.25_lite.onnx",
+    "rife_v4.25.onnx", "rife_v4.22.onnx",      "rife_v4.26_heavy.onnx"};
 std::span<const std::string_view> rife_preference(const GpuFacts& gpu);
 
 // RIFE : --rife-model, sinon settings.rife_model s'il est au catalogue, sinon le premier de

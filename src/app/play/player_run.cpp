@@ -199,8 +199,11 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
                             : 0.0,
           .rife_available =
               c.rife_model.has_value() || c.gmfss_found || c.drba_found || offered(MotionEngine::Apple),
-          .gmfss_available = find_gmfss(c.gmfss_places).has_value(),
-          .gmfss_union_available = find_gmfss(c.gmfss_places, GmfssVariant::Union).has_value(),
+          // Seul TensorRT sait importer les graphes de GMFSS (MatMul, Softmax, LayerNorm) : le
+          // moteur Vulkan les refuserait, le menu ne les propose donc pas.
+          .gmfss_available = c.backend_name == "tensorrt" && find_gmfss(c.gmfss_places).has_value(),
+          .gmfss_union_available =
+              c.backend_name == "tensorrt" && find_gmfss(c.gmfss_places, GmfssVariant::Union).has_value(),
           .distil_drba_available = c.drba_found,
           .rife_loaded = rife_loaded,
           .rife_models = c.rife_choice ? c.rife_choice->available : std::vector<std::string>{},

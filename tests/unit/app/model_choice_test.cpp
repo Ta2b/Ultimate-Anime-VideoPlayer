@@ -65,7 +65,7 @@ TEST_CASE("Modèle RIFE introuvable : refus qui cite les chemins essayés", "[ap
   CHECK(refused.error().detail.find("rife_v4.25.onnx") != std::string::npos);
 }
 
-TEST_CASE("Modèle RIFE par défaut : 4.25 sur une RTX, 4.22 lite ailleurs, sinon le suivant présent",
+TEST_CASE("Modèle RIFE par défaut : 4.25 sur une RTX, 4.26 ailleurs, sinon le suivant présent",
           "[app][model_choice]") {
   const FakeHome fake("preference");
   const GpuFacts rtx{.vendor = GpuVendor::Nvidia, .vram_bytes = 12ULL << 30U, .tensor_cores = true};
@@ -74,7 +74,7 @@ TEST_CASE("Modèle RIFE par défaut : 4.25 sur une RTX, 4.22 lite ailleurs, sino
   CHECK(choose_rife_model(PlayOptions{}, fake.home, PlaySettings{}, rife_preference(rtx))->default_name ==
         "rife_v4.26.onnx");
   CHECK(choose_rife_model(PlayOptions{}, fake.home, PlaySettings{}, rife_preference(amd))->default_name ==
-        "rife_v4.22_lite.onnx");
+        "rife_v4.26.onnx");
   std::ofstream(fake.rife / "rife_v4.25.onnx") << "x";
   CHECK(choose_rife_model(PlayOptions{}, fake.home, PlaySettings{}, rife_preference(rtx))->default_name ==
         "rife_v4.25.onnx");

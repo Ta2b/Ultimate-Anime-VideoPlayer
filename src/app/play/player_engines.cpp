@@ -143,7 +143,7 @@ std::expected<std::optional<GmfssEngines>, Refusal> prepare_gmfss(Player& p, con
                                                                   std::span<const std::filesystem::path> dirs,
                                                                   GmfssVariant variant, int work_width,
                                                                   int work_height) {
-  const std::optional<GmfssModels> found = find_gmfss(dirs, variant);
+  const std::optional<GmfssModels> found = find_gmfss(dirs, variant, drba_half_flow(work_height));
   if (!found) {
     std::string tried;
     for (const std::filesystem::path& dir : dirs)

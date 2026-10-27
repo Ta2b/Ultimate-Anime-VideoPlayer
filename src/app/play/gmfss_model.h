@@ -55,9 +55,10 @@ struct GmfssModels {
 };
 
 // Les deux graphes de variant du premier de ces dossiers qui les a tous les deux, ceux du flot à
-// l'échelle 0,5 d'abord.
+// l'échelle 0,5 d'abord si prefer_half (la règle de DistilDRBA : drba_half_flow), les autres
+// d'abord sinon ; l'autre jeu sert de repli.
 std::optional<GmfssModels> find_gmfss(std::span<const std::filesystem::path> dirs,
-                                      GmfssVariant variant = GmfssVariant::Base);
+                                      GmfssVariant variant = GmfssVariant::Base, bool prefer_half = true);
 
 // Les dimensions nommées des deux graphes pour des plans remplis de padded_width × padded_height
 // (multiples de 64) : « H », « W », puis « H/2 » à « W/8 ».
