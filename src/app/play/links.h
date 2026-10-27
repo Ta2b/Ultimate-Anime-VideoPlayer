@@ -73,6 +73,9 @@ class Stages {
   virtual bool pause() = 0;
   // Un slot revient au thread gpu (protocole de core/ring.h).
   virtual bool slot_free(const SlotFree& free) = 0;
+  // Le thread gpu n'a plus d'image en cours : après StreamEnded, la fin de lecture n'attend plus
+  // une chaîne lente (première exécution d'un moteur) que la grâce d'une seconde.
+  virtual bool idle() const { return true; }
   // Demande l'image de sous-titres d'un pts de sortie ; la réponse arrive dans MainInbox.
   virtual bool request_subtitles(const subs::RenderRequest& request) = 0;
   // Réglage du son (cmd::SetVolume, cmd::SetAudioDelay) au thread audio ; true sans piste audio.

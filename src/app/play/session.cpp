@@ -477,7 +477,8 @@ void Session::check_end(std::int64_t host_now) {
       fullscreen_done_ = true;
     }
   }
-  if (stream_ended_ && !paused_ && queue_.empty() && host_now - last_fresh_host_us_ > kEndGraceUs) {
+  if (stream_ended_ && !paused_ && queue_.empty() && stages_.idle() &&
+      host_now - last_fresh_host_us_ > kEndGraceUs) {
     finished_ = true;
   }
 }

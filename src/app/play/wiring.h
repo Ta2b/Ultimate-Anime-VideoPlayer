@@ -106,6 +106,7 @@ class ThreadStages final : public Stages {
   bool play(std::uint32_t epoch, std::int64_t media_us) override;
   bool pause() override;
   bool slot_free(const SlotFree& free) override { return links_.video->post(free); }
+  bool idle() const override { return links_.video->idle(); }
   bool request_subtitles(const subs::RenderRequest& request) override;
   bool audio(const Command& command) override;
   bool set_speed(double speed) override;
