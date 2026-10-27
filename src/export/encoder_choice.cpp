@@ -224,7 +224,7 @@ std::string_view label(Codec codec) {
     case Codec::H264:
       return "H.264 8 bits";
     case Codec::Lossless:
-      return "Sans perte (FFV1)";
+      return "FFV1 4:2:0 10 bits, sans perte du codec";
   }
   return "?";
 }

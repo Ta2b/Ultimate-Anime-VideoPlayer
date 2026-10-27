@@ -53,7 +53,7 @@ media::Rational export_rate(media::Rational source, Factor factor);
 std::filesystem::path default_export_path(const std::filesystem::path& source, ExportSize size,
                                           media::Rational rate);
 
-// « HEVC 10 bits · qualité très haute », « Sans perte (FFV1) » : pour l'interface.
+// « HEVC 10 bits · qualité très haute », « FFV1 4:2:0 10 bits, sans perte du codec » : pour l'interface.
 std::string export_label(exporter::Codec codec, exporter::Quality quality);
 
 }  // namespace ajp::app::play

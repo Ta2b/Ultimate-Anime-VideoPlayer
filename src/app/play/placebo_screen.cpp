@@ -72,6 +72,10 @@ bool PlaceboScreen::hdr_output() const {
   return impl_->hdr_output;
 }
 
+void PlaceboScreen::new_scene() {
+  if (impl_->renderer != nullptr) pl_renderer_flush_cache(impl_->renderer);
+}
+
 void PlaceboScreen::flush() {
   pl_gpu_flush(impl_->vk->gpu);
 }

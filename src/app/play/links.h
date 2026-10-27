@@ -141,6 +141,9 @@ class Screen {
   // l'image ferait attendre son écriture à la file de l'affichage, et derrière elle chaque
   // présentation suivante, interface et OSD compris. Faute de pouvoir le lire : vrai.
   virtual bool ready(const RingFrame& /*frame*/) const { return true; }
+  // Un seek ou un autre fichier : l'état tenu d'une image à l'autre (détection de pic, grade) vient
+  // de la scène d'avant et ne dit plus rien.
+  virtual void new_scene() {}
   virtual void set_fullscreen(bool on) = 0;
   virtual bool fullscreen() const = 0;
 };

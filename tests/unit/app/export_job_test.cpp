@@ -141,7 +141,7 @@ TEST_CASE("Export : libellé du codec et de la qualité", "[app][export]") {
   CHECK(export_label(exporter::Codec::Hevc, exporter::Quality::VeryHigh) ==
         "HEVC 10 bits · qualité très haute");
   CHECK(export_label(exporter::Codec::Av1, exporter::Quality::Standard) == "AV1 10 bits · qualité standard");
-  CHECK(export_label(exporter::Codec::Lossless, exporter::Quality::High) == "Sans perte (FFV1)");
+  CHECK(export_label(exporter::Codec::Lossless, exporter::Quality::High) == "FFV1 4:2:0 10 bits, sans perte du codec");
 }
 
 TEST_CASE("Export : profil débit avec plusieurs voies de calcul, profondeur d'avant sinon", "[app][export]") {

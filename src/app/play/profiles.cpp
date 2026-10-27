@@ -229,7 +229,7 @@ std::string profile_summary(const core::Profile& profile, const core::SourceInfo
   }
   if (text.empty()) text = "source telle quelle";
   if (s.true_hdr) text += " · RTX HDR";
-  if (s.hdr_native) text += " · HDR adaptatif";
+  if (s.hdr_native) text += s.grade ? " · HDR adaptatif" : " · HDR sans grade (expansion simple)";
   return text;
 }
 

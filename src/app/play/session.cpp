@@ -159,6 +159,7 @@ void Session::seek_to(std::int64_t target_us, bool exact) {
   retry_seek_.reset();
   clock_stalled_since_us_.reset();
   stages_.pause();
+  screen_.new_scene();
   ++epoch_;
   // Le Seek part même si une boîte a refusé son Flush : la source qui a reçu le sien attend ce
   // Seek pour reprendre (media/source.h). La diffusion se rejoue ensuite, à une époque neuve,
