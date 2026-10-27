@@ -226,6 +226,7 @@ class TensorRtBackend final : public Backend, public KernelOps {
   // tensorrt_textures.cpp), créé à sa première lecture et gardé ; 0 quand le tenseur n'y est pas
   // admissible (pitch, alignement, taille) : le noyau garde la lecture exacte.
   cudaTextureObject_t texture(const Tensor& tensor);
+  void trim_textures();     // au-delà de kTextures, tous détruits ; à appeler avant texture()
   void destroy_textures();  // les files vidées d'abord
 
   int device_ = 0;
