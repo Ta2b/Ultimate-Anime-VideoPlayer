@@ -176,7 +176,9 @@ std::expected<std::filesystem::path, Refusal> install_package(const EngineCatalo
 
   // Le transfert reprend un .part laissé par un essai interrompu ; un .part déjà complet mais faux
   // repart de zéro.
-  if (!core::verify_file(part, package.size, package.sha256)) {
+  const auto resumed = core::verify_file(part, package.size, package.sha256, progress.stop);
+  if (!resumed && resumed.error().code == RefusalCode::Cancelled) return std::unexpected(resumed.error());
+  if (!resumed) {
     if (std::filesystem::file_size(part, error) >= package.size && !error)
       std::filesystem::remove(part, error);
     report(0.0F, std::format("téléchargement de {} ({} Mo)", name, package.size >> 20));
@@ -191,7 +193,7 @@ std::expected<std::filesystem::path, Refusal> install_package(const EngineCatalo
         progress.stop, std::format("téléchargement de {}", name));
     if (!fetched) return std::unexpected(fetched.error());
     report(0.9F, std::format("vérification de {}", name));
-    if (auto ok = core::verify_file(part, package.size, package.sha256); !ok) {
+    if (auto ok = core::verify_file(part, package.size, package.sha256, progress.stop); !ok) {
       std::filesystem::remove(part, error);  // un fichier faux ne se reprend pas
       return std::unexpected(ok.error());
     }
