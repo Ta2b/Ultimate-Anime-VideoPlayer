@@ -54,7 +54,7 @@ jobs:
         run: |
           source tools/release/versions.env
           sudo apt-get update -qq
-          sudo apt-get install -y -qq $APT_BUILD $APT_COMPILERS
+          sudo apt-get install -y -qq $APT_BUILD $APT_COMPILERS ccache
       # Un script de dépendances modifié restaure le préfixe précédent : ses marqueurs signés ne
       # font rebâtir que les dépendances dont la version ou les options ont changé.
       - uses: actions/cache@v4
@@ -62,6 +62,11 @@ jobs:
           path: ${{ env.AJP_DEPS_PREFIX }}
           key: deps-core-${{ matrix.cc }}-${{ hashFiles('tools/deps/linux-from-source.sh') }}
           restore-keys: deps-core-${{ matrix.cc }}-
+      - uses: actions/cache@v4
+        with:
+          path: ${{ env.CCACHE_DIR }}
+          key: ccache-core-${{ matrix.name }}-${{ github.sha }}
+          restore-keys: ccache-core-${{ matrix.name }}-
       - run: tools/deps/linux-from-source.sh --core "$AJP_DEPS_PREFIX" "$RUNNER_TEMP/deps-src"
       - run: cmake --preset ${{ matrix.preset }}
       - run: cmake --build --preset ${{ matrix.preset }}
