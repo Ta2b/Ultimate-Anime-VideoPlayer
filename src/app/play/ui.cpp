@@ -408,12 +408,14 @@ bool PlayerUi::handle(const SDL_Event& event, std::int64_t now_us, std::vector<I
       return true;
     case SDL_EVENT_KEY_DOWN:
     case SDL_EVENT_KEY_UP: {
-      if (!text_input_) return false;
+      // Les modificateurs arrivent toujours à ImGui (Ctrl + clic sur un curseur ouvre sa saisie,
+      // et un Ctrl relâché hors saisie ne reste pas enfoncé) ; les touches, seulement en saisie.
       const SDL_Keymod mod = event.key.mod;
       io.AddKeyEvent(ImGuiMod_Ctrl, (mod & SDL_KMOD_CTRL) != 0);
       io.AddKeyEvent(ImGuiMod_Shift, (mod & SDL_KMOD_SHIFT) != 0);
       io.AddKeyEvent(ImGuiMod_Alt, (mod & SDL_KMOD_ALT) != 0);
       io.AddKeyEvent(ImGuiMod_Super, (mod & SDL_KMOD_GUI) != 0);
+      if (!text_input_) return false;
       if (const ImGuiKey key = imgui_key(event.key.key); key != ImGuiKey_None)
         io.AddKeyEvent(key, event.type == SDL_EVENT_KEY_DOWN);
       input_pending_ = true;

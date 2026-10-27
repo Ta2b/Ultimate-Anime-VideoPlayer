@@ -282,14 +282,22 @@ std::expected<std::uint32_t, Refusal> UpscaleStage::outputs(const DecodedFrame& 
   }
   PairFacts facts{.factor = wanted,
                   .same_epoch = previous_ && previous_->epoch == frame.epoch,
-                  .gap_us = previous_ ? frame.pts_us - previous_->pts_us : 0};
+                  .gap_us = previous_ && previous_->pts_us != kNoPts && frame.pts_us != kNoPts
+                                ? frame.pts_us - previous_->pts_us
+                                : 0};
   if (!facts.same_epoch) forget_motion();  // début ou saut : le mouvement d'avant ne dit plus rien
   if (facts.factor > 1 && facts.same_epoch) {
     const auto asked = std::chrono::steady_clock::now();
     auto scores = drba() ? drba_scores(frame) : pair_scores();
-    scores_wait_us_.push_back(
+    // Les dernières attentes seulement : le journal de fin les résume, la mémoire reste bornée.
+    const auto waited =
         std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - asked)
-            .count());
+            .count();
+    if (scores_wait_us_.size() < kScoresWaitKept) {
+      scores_wait_us_.push_back(waited);
+    } else {
+      scores_wait_us_[scores_wait_next_++ % kScoresWaitKept] = waited;
+    }
     if (!scores) return std::unexpected(std::move(scores.error()));
     facts.scores = *scores;
     ++pairs_;

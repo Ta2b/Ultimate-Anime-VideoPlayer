@@ -83,6 +83,14 @@ void export_tab(ExportDraft& draft, const PlaySettings& running, const SettingsC
     return;
   }
   ExportJob& job = draft.job;
+  // Une autre vidéo (glisser-déposer, fichier suivant) : la chaîne, le nom proposé et un chemin
+  // saisi pour la précédente ne valent plus.
+  if (draft.source != choices.source_file) {
+    draft.source = choices.source_file;
+    draft.chain_set = false;
+    draft.path_edited = false;
+    draft.named_for.clear();
+  }
   if (!draft.chain_set) {
     job.chain = running;
     draft.chain_set = true;

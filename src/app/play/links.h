@@ -81,6 +81,10 @@ class Stages {
   // l'horloge hôte mène à cette vitesse et l'audio la suit ; 1, l'audio mène de nouveau. false :
   // la boîte audio est pleine, rien n'a changé.
   virtual bool set_speed(double /*speed*/) { return true; }
+  // L'audio qui mène ne fournit plus d'horloge (piste illisible, trou, début tardif, fin avant la
+  // vidéo) : l'horloge hôte mène à sa place, depuis media_us, jusqu'au prochain Flush. false :
+  // rien n'a changé (pas d'audio, ou l'hôte mène déjà).
+  virtual bool audio_lost(std::uint32_t /*epoch*/, std::int64_t /*media_us*/) { return false; }
   // cmd::Quit à tous les threads.
   virtual void quit() = 0;
 };

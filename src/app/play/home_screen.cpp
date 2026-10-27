@@ -116,7 +116,6 @@ SettingsChoices home_choices(const HomeScreen& h, const HomeState& st, const Pla
   const bool drba = find_distil_drba(places).has_value();
   const std::int64_t period = display_period_us(h.screen.window());
   const std::optional<DisplayFacts> display = read_display(display_name(h.screen.window()));
-  std::error_code error;
   return SettingsChoices{
       .models = model ? model->available : std::vector<std::string>{},
       .default_model = model ? model->default_name : std::string(),
@@ -134,7 +133,7 @@ SettingsChoices home_choices(const HomeScreen& h, const HomeState& st, const Pla
       .default_rife_model = rife ? rife->default_name : std::string(),
       .rife_folder = places.empty() ? std::string() : prepare::utf8_path(places.front()),
       .nvidia = vendor_from_pci(h.screen.device_facts().pci_vendor) == GpuVendor::Nvidia,
-      .true_hdr_available = std::filesystem::exists(h.options.true_hdr_sdk, error) || running.true_hdr,
+      .true_hdr_available = maxine_available(h.options, h.paths) || running.true_hdr,
       .hdr_output = !h.options.sdr && content_peak_nits(h.screen.window()).has_value(),
       .auto_peak = vendor_hdr::peak_from_display(content_peak_nits(h.screen.window())),
       .engines = engine_badges(h.paths.engines, {}, WorkSize{}, std::nullopt, kernels::RifeGeometry{}),

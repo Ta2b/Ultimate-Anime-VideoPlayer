@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <format>
+#include <optional>
 #include <utility>
 
 #include "audio/output.h"
@@ -51,35 +52,60 @@ std::expected<std::unique_ptr<Pipeline>, Refusal> Pipeline::open(const PipelineC
   // Toutes les pistes audio et de sous-titres lisibles sont routées : la barre de lecture en
   // change pendant la lecture (les ponts ne gardent que la piste choisie).
   if (config.audio && choice.audio) {
+    // Une piste audio illisible, ou une sortie qui ne s'ouvre pas, ne ferme plus la lecture : la
+    // vidéo joue sans son, sur l'horloge hôte, et le refus paraît à l'OSD.
+    std::optional<Refusal> audio_failure;
     for (const media::TrackInfo& track : demuxer->tracks()) {
       if (track.kind != media::TrackKind::Audio) continue;
       auto info = audio_codec_info(track);
       if (!info) {
-        if (track.index == *choice.audio) return std::unexpected(std::move(info.error()));
+        if (track.index == *choice.audio) audio_failure = std::move(info.error());
         continue;
       }
       p->audio_codecs_.emplace_back(track.index, std::move(*info));
       p->menu_.audio.push_back({.index = track.index, .label = track_label(track)});
     }
     const media::TrackInfo& track = *demuxer->track(*choice.audio);
-    auto output =
-        audio::AudioOutput::open_sdl({.sample_rate = track.sample_rate, .channels = track.channels});
-    if (!output) return std::unexpected(std::move(output.error()));
-    audio::AudioThreadOptions options{
-        .credit = [inbox = &p->source_inbox_](Credit credit) { inbox->try_push(credit); },
-        .refused = [mail = &p->mail_](const Refusal& refusal) { mail->report("audio", refusal, false); }};
-    auto thread = audio::AudioThread::start(std::move(*output), std::move(options));
-    if (!thread) return std::unexpected(std::move(thread.error()));
-    p->audio_ = std::move(*thread);
-    p->audio_->post(audio::AudioTrack{.codec = *p->audio_codec(track.index)});
-    p->audio_bridge_ = std::make_unique<AudioBridge>(*p->audio_, track.index);
-    p->lead_ = std::make_shared<LeadClock>(p->audio_->clock(), p->host_clock_);
-    p->clock_ = p->lead_.get();
-    p->mail_.attach_audio(p->audio_.get());
-    for (const auto& [index, codec] : p->audio_codecs_)
-      routes.push_back({.track = index, .sink = p->audio_bridge_.get()});
-    p->audio_track_ = track;
-    p->menu_.audio_selected = track.index;
+    if (!audio_failure && p->audio_codec(track.index) == nullptr) {
+      audio_failure = Refusal{RefusalCode::TrackUnavailable, std::format("piste audio {} illisible", track.index)};
+    }
+    if (!audio_failure) {
+      // La sortie prend le format de la piste, plafonné : au-delà de ce que SDL ouvre, le
+      // périphérique choisit (0) et le décodeur remixe vers lui.
+      const bool rate_ok = track.sample_rate >= audio::limits::kMinSampleRate &&
+                           track.sample_rate <= audio::limits::kMaxSampleRate;
+      auto output = audio::AudioOutput::open_sdl(
+          {.sample_rate = rate_ok ? track.sample_rate : 0,
+           .channels = std::clamp(track.channels, 0, audio::limits::kMaxChannels)});
+      if (!output) {
+        audio_failure = std::move(output.error());
+      } else {
+        audio::AudioThreadOptions options{
+            .credit = [inbox = &p->source_inbox_](Credit credit) { inbox->try_push(credit); },
+            .refused = [mail = &p->mail_](const Refusal& refusal) { mail->report("audio", refusal, false); }};
+        auto thread = audio::AudioThread::start(std::move(*output), std::move(options));
+        if (!thread) {
+          audio_failure = std::move(thread.error());
+        } else {
+          p->audio_ = std::move(*thread);
+        }
+      }
+    }
+    if (audio_failure) {
+      p->audio_codecs_.clear();
+      p->menu_.audio.clear();
+      p->mail_.report("audio", *audio_failure, false);
+    } else {
+      p->audio_->post(audio::AudioTrack{.codec = *p->audio_codec(track.index)});
+      p->audio_bridge_ = std::make_unique<AudioBridge>(*p->audio_, track.index);
+      p->lead_ = std::make_shared<LeadClock>(p->audio_->clock(), p->host_clock_);
+      p->clock_ = p->lead_.get();
+      p->mail_.attach_audio(p->audio_.get());
+      for (const auto& [index, codec] : p->audio_codecs_)
+        routes.push_back({.track = index, .sink = p->audio_bridge_.get()});
+      p->audio_track_ = track;
+      p->menu_.audio_selected = track.index;
+    }
   }
 
   if (config.subtitles) {
@@ -171,8 +197,11 @@ std::expected<void, Refusal> Pipeline::select_audio(int track, std::uint32_t fro
   // lit ses derniers paquets, le nouveau ceux de la nouvelle époque.
   audio_bridge_->select(track, from_epoch);
   seek();
-  if (!audio_->post(audio::AudioTrack{.codec = *codec}))
+  if (!audio_->post(audio::AudioTrack{.codec = *codec})) {
+    // Le décodeur n'a pas changé : le pont garde la piste d'avant, comme le menu.
+    audio_bridge_->undo_select();
     return std::unexpected(Refusal{RefusalCode::PacketBacklog, "piste audio : boîte audio pleine"});
+  }
   menu_.audio_selected = track;
   if (const media::TrackInfo* info = track_info(track)) audio_track_ = *info;
   return {};

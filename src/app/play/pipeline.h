@@ -110,12 +110,14 @@ class Pipeline {
   // Les horloges vivent plus longtemps que les threads qui les lisent.
   std::shared_ptr<HostClock> host_clock_ = std::make_shared<HostClock>();
   std::shared_ptr<LeadClock> lead_;  // avec audio : l'audio ou l'horloge hôte, selon l'écran
+  // La boîte de la source est déclarée avant l'audio : le thread audio crédite cette boîte depuis
+  // release_packet jusqu'à sa propre destruction, donc la boîte lui survit.
+  media::SourceInbox source_inbox_{media::kSourceInboxBounds};
   std::unique_ptr<audio::AudioThread> audio_;
   std::unique_ptr<AudioBridge> audio_bridge_;
   std::shared_ptr<subs::SubsInbox> subs_inbox_;
   std::unique_ptr<subs::SubsThread> subs_thread_;
   std::unique_ptr<SubsBridge> subs_bridge_;
-  media::SourceInbox source_inbox_{media::kSourceInboxBounds};
   std::unique_ptr<VideoStage> video_;
   std::unique_ptr<ThreadStages> stages_;
   const MasterClock* clock_ = host_clock_.get();

@@ -2,6 +2,7 @@
 // pause, sous-titres, fin de flux.
 #include "app/play/session.h"
 
+#include <algorithm>
 #include <optional>
 #include <string>
 #include <vector>
@@ -66,6 +67,39 @@ TEST_CASE("Amorce : la première image part tout de suite, puis l'horloge démar
   REQUIRE(rig.stages.freed.size() == 1);  // le slot 0 revient à gpu, valeur suivante
   CHECK(rig.stages.freed[0].slot == 0);
   CHECK(rig.stages.freed[0].semaphore_value == 2);
+}
+
+TEST_CASE("Une horloge audio qui ne court jamais cède la main à l'horloge hôte", "[app][session]") {
+  Rig rig;
+  rig.session.handle(ring_frame(0, 40'000));
+  rig.session.handle(ring_frame(1, 80'000));
+  rig.tick();  // amorce : la première image part, l'horloge ne démarre pas
+  auto lost = [&] { return std::ranges::count(rig.stages.log, "audio perdu 0 40000"); };
+  // Avant le délai, rien : un démarrage lent de l'audio est normal.
+  rig.screen.now_us += 1'000'000;
+  rig.tick();
+  CHECK(lost() == 0);
+  rig.screen.now_us += 1'000'000;
+  rig.tick();
+  CHECK(lost() == 0);  // le délai court depuis le premier constat
+  rig.screen.now_us += 1'000'000;
+  rig.tick();
+  CHECK(lost() == 1);
+  CHECK(rig.session.refusals().size() == 1);  // l'avis est visible, non fatal
+  CHECK_FALSE(rig.session.finished());
+}
+
+TEST_CASE("Une horloge qui court ou une pause n'est pas une perte d'audio", "[app][session]") {
+  Rig rig;
+  rig.session.handle(ring_frame(0, 40'000));
+  rig.session.handle(ring_frame(1, 80'000));
+  rig.tick();
+  for (int i = 0; i < 10; ++i) {
+    rig.screen.now_us += 1'000'000;
+    rig.run_clock(40'000);
+    rig.tick();
+  }
+  CHECK(std::ranges::count_if(rig.stages.log, [](const std::string& l) { return l.starts_with("audio perdu"); }) == 0);
 }
 
 TEST_CASE("Les images doublées par l'horloge sont sautées et leurs slots rendus", "[app][session]") {
@@ -207,6 +241,34 @@ TEST_CASE("Seek : pause, Flush puis Seek, et les images de l'époque passée son
   rig.tick();
   CHECK(rig.shown_pts() == 11'000'000);
   CHECK(rig.stages.log.back() == "play 2 11000000");
+}
+
+TEST_CASE("Seek : un Flush refusé n'empêche pas le Seek, et le tout est rejoué jusqu'à passer",
+          "[app][session]") {
+  Rig rig(SessionConfig{.duration_us = 60'000'000});
+  rig.session.handle(ring_frame(0, 1'000'000));
+  rig.tick();
+  rig.stages.log.clear();
+
+  rig.stages.refuse_flushes = 1;
+  rig.session.command(cmd::Seek{.target_us = 5'000'000});
+  // La source qui a reçu son Flush attend le Seek : il part malgré le refus d'une autre boîte.
+  CHECK(rig.stages.log == std::vector<std::string>{"pause", "flush 1 refusé", "seek 5000000"});
+  CHECK(rig.session.refusals().size() == 1);
+
+  // Le tour suivant, après le délai, rejoue Flush puis Seek à une époque neuve.
+  rig.stages.log.clear();
+  rig.screen.now_us += 100'000;
+  rig.tick();
+  CHECK(rig.stages.log == std::vector<std::string>{"pause", "flush 2", "seek 5000000"});
+  CHECK(rig.session.epoch() == 2);
+  CHECK(rig.session.refusals().size() == 1);  // un seul avis, pas un par essai
+
+  // Réussi, il n'est plus rejoué.
+  rig.stages.log.clear();
+  rig.screen.now_us += 100'000;
+  rig.tick();
+  CHECK(rig.stages.log.empty());
 }
 
 TEST_CASE("Un seek est borné au fichier", "[app][session]") {

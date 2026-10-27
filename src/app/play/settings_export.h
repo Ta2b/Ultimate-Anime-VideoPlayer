@@ -4,6 +4,7 @@
 #pragma once
 
 #include <array>
+#include <filesystem>
 #include <string>
 #include <vector>
 
@@ -20,6 +21,7 @@ struct ExportDraft {
   std::array<char, 1024> path{};  // le fichier, en UTF-8, en cours de saisie
   bool path_edited = false;       // tant qu'il ne l'est pas, le nom suit la taille et la fréquence
   std::string named_for;          // la taille et la fréquence du nom proposé
+  std::filesystem::path source;   // la vidéo dont l'onglet a repris la chaîne et le nom
 };
 
 void export_tab(ExportDraft& draft, const PlaySettings& running, const SettingsChoices& choices,

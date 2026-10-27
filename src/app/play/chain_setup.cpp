@@ -185,8 +185,8 @@ std::expected<std::optional<ChainEngines>, Refusal> prepare_chain(Player& p, con
     auto loaded =
         prepare_gmfss(p, init, *c.backend, c.gmfss_places, c.gmfss_variant, c.work.width, c.work.height);
     if (!loaded) {
-      log->warn("{} ; RIFE à la place", loaded.error().detail);
-      p.ui.controls().notify("GMFSS indisponible : RIFE", host_now_us());
+      log->warn("{} ; {}", loaded.error().detail, c.rife_model ? "RIFE à la place" : "sans interpolation");
+      p.ui.controls().notify(c.rife_model ? "GMFSS indisponible : RIFE" : "GMFSS indisponible", host_now_us());
     } else if (!*loaded) {
       return std::nullopt;
     } else {
@@ -197,8 +197,9 @@ std::expected<std::optional<ChainEngines>, Refusal> prepare_chain(Player& p, con
   if (want_drba) {
     auto loaded = prepare_distil_drba(p, init, *c.backend, c.gmfss_places, c.work.width, c.work.height);
     if (!loaded) {
-      log->warn("{} ; RIFE à la place", loaded.error().detail);
-      p.ui.controls().notify("DistilDRBA indisponible : RIFE", host_now_us());
+      log->warn("{} ; {}", loaded.error().detail, c.rife_model ? "RIFE à la place" : "sans interpolation");
+      p.ui.controls().notify(c.rife_model ? "DistilDRBA indisponible : RIFE" : "DistilDRBA indisponible",
+                             host_now_us());
     } else if (!*loaded) {
       return std::nullopt;
     } else {

@@ -7,6 +7,11 @@
 namespace ajp::app::play::test {
 
 bool FakeStages::flush(std::uint32_t epoch) {
+  if (refuse_flushes > 0) {
+    --refuse_flushes;
+    log.push_back(std::format("flush {} refusé", epoch));
+    return false;
+  }
   log.push_back(std::format("flush {}", epoch));
   return true;
 }

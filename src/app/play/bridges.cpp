@@ -47,9 +47,19 @@ void AudioBridge::expect_seek(std::uint32_t epoch, std::optional<std::int64_t> t
 
 void AudioBridge::select(int track, std::uint32_t from_epoch) {
   const std::scoped_lock lock(mutex_);
+  undo_track_ = track_;
+  undo_previous_ = previous_;
+  undo_switch_epoch_ = switch_epoch_;
   previous_ = track_;
   track_ = track;
   switch_epoch_ = from_epoch;
+}
+
+void AudioBridge::undo_select() {
+  const std::scoped_lock lock(mutex_);
+  track_ = undo_track_;
+  previous_ = undo_previous_;
+  switch_epoch_ = undo_switch_epoch_;
 }
 
 int AudioBridge::track_for(std::uint32_t epoch) const {

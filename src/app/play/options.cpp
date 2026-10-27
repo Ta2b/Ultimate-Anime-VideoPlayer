@@ -28,7 +28,8 @@ std::optional<T> number(std::string_view text) {
 // Secondes, décimales permises (« 12.5 »), en microsecondes dans limits::kSeconds.
 std::expected<std::int64_t, Refusal> seconds(std::string_view option, std::string_view text) {
   const auto value = number<double>(text);
-  if (!value || !std::isfinite(*value) || *value < 0.0 ||
+  // Comparé en double avant toute conversion : un double hors de l'int64 serait indéfini.
+  if (!value || !std::isfinite(*value) || *value < 0.0 || *value > static_cast<double>(limits::kSeconds.hi) ||
       !limits::kSeconds.contains(static_cast<std::int64_t>(*value))) {
     return refuse(RefusalCode::FieldOutOfRange,
                   std::format("{} : « {} » n'est pas une durée en secondes "

@@ -88,8 +88,15 @@ void PlaceboScreen::release_ui(ImGuiPlatformIO& platform) {
 void PlaceboScreen::Impl::draw_ui(const ImDrawData* data, const pl_frame& target) {
   if (data == nullptr || ui_failed) return;
   if (auto drawn = ui->draw(*data, target, kUiWhiteNits); !drawn) {
-    channel->warn("interface : {} {}", name(drawn.error().code), drawn.error().detail);
-    ui_failed = true;
+    // Un échec isolé (texture ou tampon d'un redimensionnement) ne retire pas l'interface : elle
+    // n'est abandonnée qu'après des échecs de suite.
+    ++ui_failures;
+    ui_failed = ui_failures >= kMaxUiFailures;
+    if (ui_failures == 1 || ui_failed)
+      channel->warn("interface : {} {}{}", name(drawn.error().code), drawn.error().detail,
+                    ui_failed ? " (abandonnée)" : "");
+  } else {
+    ui_failures = 0;
   }
 }
 

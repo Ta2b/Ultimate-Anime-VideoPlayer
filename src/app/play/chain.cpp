@@ -63,6 +63,14 @@ bool chain_differs(const PlaySettings& a, const PlaySettings& b) {
          a.hdr_native != b.hdr_native;
 }
 
+PlaySettings with_intended_hdr(const Chain& to, PlaySettings settings) {
+  if (to.hdr_wanted) {
+    settings.true_hdr = to.hdr_wanted->true_hdr;
+    settings.hdr_native = to.hdr_wanted->hdr_native;
+  }
+  return settings;
+}
+
 namespace {
 
 // Piste audio : le pont change de piste à l'époque du seek qui suit, à la position courante.
@@ -280,14 +288,20 @@ void apply(const Input& input, Chain& to, std::int64_t now_us) {
           },
           [&](const ToggleSettings&) { to.ui.toggle_settings(); },
           [&](const ApplySettings& apply) {
-            // Changer la chaîne au menu modifie le profil actif.
-            if (chain_differs(to.running, apply.settings)) {
-              remember_chain(to.profiles, apply.settings);
+            // Changer la chaîne au menu modifie le profil actif. Un repli HDR en cours n'est pas
+            // retenu : sauf si l'utilisateur a lui-même changé le mode HDR, le profil garde le mode
+            // demandé (with_intended_hdr).
+            if (apply.settings.true_hdr != to.running.true_hdr ||
+                apply.settings.hdr_native != to.running.hdr_native)
+              to.hdr_wanted.reset();
+            const PlaySettings intended = with_intended_hdr(to, apply.settings);
+            if (chain_differs(with_intended_hdr(to, to.running), intended)) {
+              remember_chain(to.profiles, intended);
               to.ui.set_profiles(view_of(to.profiles));
             }
             if (apply.reopen) {
               log_channel("app")->info("paramètres : réouverture de la chaîne");
-              to.reopen = apply.settings;
+              to.reopen = intended;
             } else {
               apply_live(to, apply.settings, now_us);
             }

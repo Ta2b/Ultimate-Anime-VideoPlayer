@@ -161,6 +161,7 @@ class Session {
   void choose(std::int64_t host_now);
   const subs::SubtitleFrame* subtitles_for(std::int64_t pts_us);
   void check_end(std::int64_t host_now);
+  void watch_clock(const ClockSnapshot& now, std::int64_t host_now);
 
   SessionConfig config_;
   Stages& stages_;
@@ -175,6 +176,16 @@ class Session {
   bool finished_ = false;
   bool quit_ = false;
   std::optional<std::int64_t> pending_seek_us_;  // cible du dernier seek, jusqu'à sa première image
+  // Seek dont une boîte a refusé le Flush ou le Seek : rejoué par tick, jusqu'à ce que tout passe.
+  struct SeekRetry {
+    std::int64_t target_us = 0;
+    bool exact = false;
+    std::int64_t at_us = 0;
+  };
+  std::optional<SeekRetry> retry_seek_;
+  std::int64_t last_tick_us_ = 0;  // instant hôte du dernier tick
+  std::optional<std::int64_t> clock_stalled_since_us_;  // des images attendent une horloge arrêtée
+  std::int64_t audio_stall_grace_us_ = 1'500'000;
 
   FrameQueue queue_;
   std::optional<RingFrame> current_;   // montrée, slot tenu par main

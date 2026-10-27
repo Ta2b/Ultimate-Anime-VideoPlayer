@@ -70,6 +70,8 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
   std::vector<std::string> unavailable;
   settings = within_engines(settings, p.engines, unavailable);
   for (const std::string& line : unavailable) log->warn("{}", line);
+  // Le mode HDR demandé, avant tout repli de l'environnement : c'est lui que les profils gardent.
+  const HdrIntent wanted_hdr{.true_hdr = settings.true_hdr, .hdr_native = settings.hdr_native};
   const PlayOptions options = options_for(p.options, settings);
   const media::TrackInfo& video = p.video;
   auto prepared = prepare_chain(p, settings);
@@ -188,7 +190,7 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
           .default_rife_model = c.rife_choice ? c.rife_choice->default_name : std::string(),
           .rife_folder = c.gmfss_places.front().string(),
           .nvidia = vendor_from_pci(p.screen.device_facts().pci_vendor) == GpuVendor::Nvidia,
-          .true_hdr_available = std::filesystem::exists(p.options.true_hdr_sdk) || settings.true_hdr,
+          .true_hdr_available = maxine_available(p.options, p.paths) || settings.true_hdr,
           .hdr_output = p.screen.hdr_output(),
           .auto_peak = auto_peak,
           .engines = engine_badges(p.paths.engines,
@@ -219,7 +221,10 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
               .true_hdr_open = settings.true_hdr,
               .auto_peak = auto_peak,
               .peak_nits = peak_nits,
-              .display = p.display};
+              .display = p.display,
+              .hdr_wanted = settings.true_hdr != wanted_hdr.true_hdr || settings.hdr_native != wanted_hdr.hdr_native
+                                ? std::optional(wanted_hdr)
+                                : std::nullopt};
   apply_oled_care(chain, settings);
 
   std::ofstream stats;
@@ -295,7 +300,7 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
     // play.toml réécrit au plus une fois par seconde pendant qu'on règle.
     if (chain.dirty && host_now_us() - saved_at >= 1'000'000) {
       if (auto saved = save_settings(p.settings_path,
-                                     settings_to_save(chain.running, p.from_file, p.started, p.options));
+                                     settings_to_save(with_intended_hdr(chain, chain.running), p.from_file, p.started, p.options));
           !saved)
         log->warn("{}", saved.error().detail);
       chain.dirty = false;
@@ -325,7 +330,7 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
   }
   if (chain.dirty) {
     if (auto saved = save_settings(p.settings_path,
-                                   settings_to_save(chain.running, p.from_file, p.started, p.options));
+                                   settings_to_save(with_intended_hdr(chain, chain.running), p.from_file, p.started, p.options));
         !saved)
       log->warn("{}", saved.error().detail);
   }

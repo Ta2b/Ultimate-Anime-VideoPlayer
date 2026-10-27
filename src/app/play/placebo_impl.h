@@ -113,7 +113,9 @@ struct PlaceboScreen::Impl {
   std::unique_ptr<Overlays> overlays;
   std::unique_ptr<OsdText> osd;
   std::unique_ptr<ImGuiLayer> ui;
-  bool ui_failed = false;
+  static constexpr int kMaxUiFailures = 5;
+  int ui_failures = 0;   // échecs de suite du dessin de l'interface
+  bool ui_failed = false;  // abandonnée après kMaxUiFailures échecs de suite
   pl_color_space source{};
   OutputSize swapchain_size;
   bool fullscreen = false;

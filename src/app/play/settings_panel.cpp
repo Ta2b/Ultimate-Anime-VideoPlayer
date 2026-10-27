@@ -54,10 +54,13 @@ void hdr_tab(PlaySettings& d, const SettingsChoices& choices) {
         automatic ? 0 : std::clamp(choices.auto_peak, limits::kTrueHdrPeak.lo, limits::kTrueHdrPeak.hi);
   ImGui::BeginDisabled(automatic);
   int peak = automatic ? choices.auto_peak : d.true_hdr_peak;
-  if (ImGui::SliderInt("Pic (nits)", &peak, limits::kTrueHdrPeak.lo, limits::kTrueHdrPeak.hi) && !automatic)
+  if (ImGui::SliderInt("Pic (nits)", &peak, limits::kTrueHdrPeak.lo, limits::kTrueHdrPeak.hi, "%d",
+                       ImGuiSliderFlags_AlwaysClamp) &&
+      !automatic)
     d.true_hdr_peak = peak;
   ImGui::EndDisabled();
-  ImGui::SliderInt("Gris moyen", &d.true_hdr_gray, limits::kTrueHdrGray.lo, limits::kTrueHdrGray.hi);
+  ImGui::SliderInt("Gris moyen", &d.true_hdr_gray, limits::kTrueHdrGray.lo, limits::kTrueHdrGray.hi, "%d",
+                   ImGuiSliderFlags_AlwaysClamp);
   if (choices.nvidia) {
     ImGui::BeginDisabled(!d.true_hdr);
     ImGui::Checkbox("Débandage (RTX HDR)", &d.true_hdr_debanding);
@@ -95,9 +98,9 @@ bool grade_slider(const char* label, double& value, core::Range<double> range) {
 void look_section(PlaySettings& d) {
   section("Contraste et saturation (HDR et SDR)");
   ImGui::SliderInt("Contraste", &d.true_hdr_contrast, limits::kTrueHdrContrast.lo,
-                   limits::kTrueHdrContrast.hi);
+                   limits::kTrueHdrContrast.hi, "%d", ImGuiSliderFlags_AlwaysClamp);
   ImGui::SliderInt("Saturation", &d.true_hdr_saturation, limits::kTrueHdrSaturation.lo,
-                   limits::kTrueHdrSaturation.hi);
+                   limits::kTrueHdrSaturation.hi, "%d", ImGuiSliderFlags_AlwaysClamp);
   if (ImGui::Button("Contraste et saturation par défaut")) {
     const PlaySettings defaults;
     d.true_hdr_contrast = defaults.true_hdr_contrast;
@@ -222,7 +225,7 @@ bool sound_tab(PlaySettings& d) {
   ImGui::SliderInt("Délai audio (ms)", &d.audio_delay_ms, -1000, 1000);
   const bool held = ImGui::IsItemActive();
   if (ImGui::Button("Remettre à 0")) d.audio_delay_ms = 0;
-  note("Positif : le son est retardé. Ctrl + clic sur le curseur pour saisir une valeur (±5000 ms).");
+  note("Positif : le son est retardé. Ctrl + clic sur le curseur pour saisir une valeur (jusqu'à ±10 000 ms).");
   d.audio_delay_ms = std::clamp(d.audio_delay_ms, limits::kAudioDelayMs.lo, limits::kAudioDelayMs.hi);
   ImGui::Checkbox("Caler la lecture sur l'écran", &d.display_sync);
   note(
@@ -231,7 +234,8 @@ bool sound_tab(PlaySettings& d) {
       "les 17 s à 60 Hz sinon). Le son suit, sans changement audible. Sans calage possible (VRR, cadence "
       "trop loin), le son reste maître.");
   ImGui::SliderInt("Latence de l'écran (ms)", &d.video_latency_ms, limits::kVideoLatencyMs.lo,
-                   limits::kVideoLatencyMs.hi, d.video_latency_ms == 0 ? "estimée" : "%d ms");
+                   limits::kVideoLatencyMs.hi, d.video_latency_ms == 0 ? "estimée" : "%d ms",
+                   ImGuiSliderFlags_AlwaysClamp);
   note(
       "Le temps entre le choix d'une image et son apparition : estimé d'après le rendu et la file de "
       "l'écran, ou imposé ici si l'image paraît en avance ou en retard sur le son.");
@@ -250,7 +254,8 @@ void subtitles_tab(PlaySettings& d) {
   section("Taille");
   int percent = static_cast<int>(std::lround(d.subtitle_scale * 100.0F));
   if (ImGui::SliderInt("Taille (%)", &percent, static_cast<int>(limits::kSubtitleScale.lo * 100.0F),
-                       static_cast<int>(limits::kSubtitleScale.hi * 100.0F))) {
+                       static_cast<int>(limits::kSubtitleScale.hi * 100.0F), "%d",
+                       ImGuiSliderFlags_AlwaysClamp)) {
     d.subtitle_scale = static_cast<float>(percent) / 100.0F;
   }
   if (ImGui::Button("Taille d'origine")) d.subtitle_scale = 1.0F;

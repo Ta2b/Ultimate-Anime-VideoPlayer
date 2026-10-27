@@ -37,6 +37,13 @@ struct ProfileState {
   std::string default_model;  // le modèle SPAN par défaut, pour un réglage « modèle par défaut »
 };
 
+// Le mode HDR que le profil demande, quand un repli de l'environnement (sortie SDR, échec de RTX
+// HDR) en fait tourner un autre : le repli n'est jamais mémorisé à la place de la préférence.
+struct HdrIntent {
+  bool true_hdr = false;
+  bool hdr_native = false;
+};
+
 // Ce qui vit le temps d'une ouverture de la chaîne, et ce que les actions y changent.
 struct Chain {
   Session& session;
@@ -62,7 +69,12 @@ struct Chain {
   std::optional<render::BlackThresholds> black;
   bool black_dirty = true;
   std::int64_t black_at_us = 0;
+  std::optional<HdrIntent> hdr_wanted;  // présent seulement pendant un repli HDR
 };
+
+// Les réglages avec, pendant un repli HDR, le mode que le profil demande à la place du mode de
+// repli : ce que remember_chain et play.toml retiennent.
+PlaySettings with_intended_hdr(const Chain& to, PlaySettings settings);
 
 // Couleur de la sortie de RTX HDR : PQ BT.2020 au pic donné à TrueHDR.
 ColorInfo pq_color(int peak_nits);

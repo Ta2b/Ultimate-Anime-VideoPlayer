@@ -77,6 +77,8 @@ std::expected<std::unique_ptr<VulkanShare>, Refusal> VulkanShare::create(pl_vk_i
 #elif defined(_MSC_VER)
 #pragma warning(pop)
 #endif
+#else
+#error "libavutil sans lock_queue/unlock_queue : FFmpeg et libplacebo soumettraient sur les mêmes files sans verrou (VK_KHR_internally_synchronized_queues à activer)"
 #endif
 
   // Les familles de files dont libplacebo a créé les files, avec leurs capacités ; FFmpeg complète
