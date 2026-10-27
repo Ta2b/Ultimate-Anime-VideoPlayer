@@ -1,0 +1,74 @@
+# Exporte les graphes ONNX de GMFSS Fortuna (base et union, flot entier et demi-flot) et de
+# DistilDRBA (flot entier et demi-flot) avec les scripts du dépôt, et les range en artefact. Avec
+# « publier », les joint aussi à la release models-interp-1 du dépôt de releases, d'où
+# tools/release/fetch-models.sh les prend pour les paquets.
+#
+# Les graphes sont comparés au réseau d'origine par les scripts eux-mêmes (coupe exacte de GMFSS,
+# deux tailles, FP16 sous 0,1) : un écart fait échouer l'étape.
+name: Exporter les modèles d'interpolation
+
+on:
+  workflow_dispatch:
+    inputs:
+      publier:
+        description: "Joindre les graphes à la release models-interp-1 (écrit sur le dépôt de releases)"
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+env:
+  DISTIL_DRBA_COMMIT: db51bde
+  GMFSS_WHEEL: vsgmfss_fortuna==1.0.0
+
+jobs:
+  export:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Outils Python
+        run: |
+          pip install torch --index-url https://download.pytorch.org/whl/cpu
+          pip install onnx onnxruntime numpy
+      - name: GMFSS Fortuna (base et union, flot entier et demi-flot)
+        run: |
+          pip download --no-deps "$GMFSS_WHEEL" -d "$RUNNER_TEMP/gmfss"
+          python -m zipfile -e "$RUNNER_TEMP"/gmfss/*.whl "$RUNNER_TEMP/gmfss/roue"
+          for model in base union; do
+            python -I tools/gmfss/export_gmfss.py "$RUNNER_TEMP/gmfss/roue/vsgmfss_fortuna" \
+              --out out --model "$model" --width 256 --height 192
+            python -I tools/gmfss/export_gmfss.py "$RUNNER_TEMP/gmfss/roue/vsgmfss_fortuna" \
+              --out out --model "$model" --scale 0.5 --width 256 --height 256
+          done
+      - name: DistilDRBA v2 lite (flot entier et demi-flot)
+        run: |
+          git clone https://github.com/routineLife1/DistilDRBA "$RUNNER_TEMP/DistilDRBA"
+          git -C "$RUNNER_TEMP/DistilDRBA" checkout "$DISTIL_DRBA_COMMIT"
+          python -I tools/drba/export_distil_drba.py "$RUNNER_TEMP/DistilDRBA" \
+            --weights "$RUNNER_TEMP/DistilDRBA/weights/v2_lite.pkl" --out out/distil_drba_v2_lite.onnx
+          python -I tools/drba/export_distil_drba.py "$RUNNER_TEMP/DistilDRBA" \
+            --weights "$RUNNER_TEMP/DistilDRBA/weights/v2_lite.pkl" --scale 0.5 \
+            --out out/distil_drba_v2_lite_s05.onnx
+      - name: Empreintes
+        run: cd out && sha256sum *.onnx | tee SHA256SUMS
+      - uses: actions/upload-artifact@v4
+        with:
+          name: modeles-interpolation
+          path: out/
+          compression-level: 0
+      - name: Release models-interp-1
+        if: inputs.publier
+        env:
+          AJP_RELEASE_REPO: ${{ vars.AJP_RELEASE_REPO || github.repository }}
+          GH_TOKEN: ${{ secrets.AJP_RELEASE_TOKEN || github.token }}
+        run: |
+          gh release view models-interp-1 -R "$AJP_RELEASE_REPO" >/dev/null 2>&1 \
+            || gh release create models-interp-1 -R "$AJP_RELEASE_REPO" \
+                 --title "Modèles d'interpolation (GMFSS Fortuna, DistilDRBA)" \
+                 --notes "Graphes ONNX exportés par .github/workflows/export-interpolation-models.yml. GMFSS Fortuna (vsgmfss_fortuna, HolyWu, MIT) et DistilDRBA (routineLife1, MIT)."
+          gh release upload models-interp-1 out/* -R "$AJP_RELEASE_REPO" --clobber
