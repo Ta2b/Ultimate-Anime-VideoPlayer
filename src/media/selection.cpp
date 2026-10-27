@@ -75,13 +75,60 @@ bool subtitle_readable(std::string_view codec) {
          codec == "text";
 }
 
-TrackChoice choose_tracks(std::span<const TrackInfo> tracks, const LanguagePriorities& priorities) {
+namespace {
+
+// La meilleure piste de sous-titres lisible dans `language` (dialogue complet d'abord), sinon rien.
+std::optional<int> subtitle_in(std::span<const TrackInfo> tracks, const std::string& language) {
+  const std::vector<std::string> wanted{language};
+  return best_track(tracks, TrackKind::Subtitle, [&](const TrackInfo& t) -> std::optional<Rank> {
+    if (!subtitle_readable(t.codec)) return std::nullopt;
+    const int score = language_score(wanted, track_language(t));
+    if (score > 0) return Rank{score, is_full_dialogue(t), !t.forced, t.is_default, -t.index};
+    return std::nullopt;
+  });
+}
+
+std::optional<int> audio_in(std::span<const TrackInfo> tracks, const std::string& language) {
+  const std::vector<std::string> wanted{language};
+  return best_track(tracks, TrackKind::Audio, [&](const TrackInfo& t) -> std::optional<Rank> {
+    const int score = language_score(wanted, track_language(t));
+    if (score <= 0) return std::nullopt;
+    return Rank{score, true, t.is_default, false, -t.index};
+  });
+}
+
+}  // namespace
+
+TrackChoice choose_tracks(std::span<const TrackInfo> tracks, const LanguagePriorities& priorities_in) {
+  LanguagePriorities priorities = priorities_in;
   TrackChoice choice;
   choice.video = best_track(tracks, TrackKind::Video, [](const TrackInfo& t) -> std::optional<Rank> {
     if (t.attached_picture) return std::nullopt;
     return Rank{0, true, t.is_default, false, -t.index};
   });
-
+  for (const LanguagePreset& preset : priorities.presets) {
+    // Un préréglage sans langue d'audio prend la piste que le fichier préfère.
+    const std::optional<int> audio = preset.audio.empty()
+                                         ? best_track(tracks, TrackKind::Audio,
+                                                      [](const TrackInfo& t) -> std::optional<Rank> {
+                                                        return Rank{0, true, t.is_default, false, -t.index};
+                                                      })
+                                         : audio_in(tracks, preset.audio);
+    if (!audio) continue;
+    std::optional<int> subtitle;
+    if (!preset.subtitles.empty()) {
+      subtitle = subtitle_in(tracks, preset.subtitles);
+      if (!subtitle) continue;
+    }
+    choice.audio = audio;
+    choice.subtitle = subtitle;
+    return choice;
+  }
+  // Aucun préréglage entier : leurs langues, de rang en rang, rejoignent les listes.
+  for (const LanguagePreset& preset : priorities.presets) {
+    if (!preset.audio.empty()) priorities.audio.push_back(preset.audio);
+    if (!preset.subtitles.empty()) priorities.subtitles.push_back(preset.subtitles);
+  }
   choice.audio = best_track(tracks, TrackKind::Audio, [&](const TrackInfo& t) -> std::optional<Rank> {
     return Rank{language_score(priorities.audio, track_language(t)), true, t.is_default, false, -t.index};
   });

@@ -42,12 +42,9 @@ std::expected<void, Refusal> check(std::string_view key, T value, core::Range<T>
                 std::format("{} : {} hors de {} à {}", key, value, range.lo, range.hi));
 }
 
-// Des balises de langue : lettres et tirets (« fre », « en-US »), kMaxLanguages au plus.
+// Des balises de langue : lettres et tirets (« fre », « en-US »).
 std::expected<void, Refusal> check_languages(std::string_view key,
                                              const std::vector<std::string>& languages) {
-  if (languages.size() > limits::kMaxLanguages)
-    return refuse(RefusalCode::FieldOutOfRange,
-                  std::format("{} : {} langues, {} au plus", key, languages.size(), limits::kMaxLanguages));
   for (const std::string& tag : languages) {
     const bool letters = !tag.empty() && tag.size() <= 16 && std::ranges::all_of(tag, [](char c) {
       return std::isalpha(static_cast<unsigned char>(c)) != 0 || c == '-';
@@ -247,10 +244,21 @@ std::expected<PlaySettings, Refusal> validate(const PlaySettings& s) {
   for (const auto& checked : checks) {
     if (!checked) return std::unexpected(checked.error());
   }
-  if (auto ok = check_languages("audio.languages", s.audio_languages); !ok)
-    return std::unexpected(ok.error());
-  if (auto ok = check_languages("subtitles.languages", s.subtitle_languages); !ok)
-    return std::unexpected(ok.error());
+  if (s.language_presets.size() > limits::kLanguagePresets)
+    return refuse(RefusalCode::FieldOutOfRange,
+                  std::format("languages.presets : {} préréglages, {} au plus", s.language_presets.size(),
+                              limits::kLanguagePresets));
+  for (const media::LanguagePreset& preset : s.language_presets) {
+    if (auto ok = check_languages(
+            "languages.audio", preset.audio.empty() ? std::vector<std::string>{} : std::vector{preset.audio});
+        !ok)
+      return std::unexpected(ok.error());
+    if (auto ok =
+            check_languages("languages.subtitles", preset.subtitles.empty() ? std::vector<std::string>{}
+                                                                            : std::vector{preset.subtitles});
+        !ok)
+      return std::unexpected(ok.error());
+  }
   if (s.true_hdr_peak != 0) {
     if (auto peak = check("hdr.peak", s.true_hdr_peak, limits::kTrueHdrPeak); !peak)
       return std::unexpected(peak.error());
@@ -349,8 +357,7 @@ PlaySettings live_part(const PlaySettings& running, const PlaySettings& wanted, 
   s.video_latency_ms = wanted.video_latency_ms;
   s.volume = wanted.volume;
   s.subtitle_scale = wanted.subtitle_scale;
-  s.audio_languages = wanted.audio_languages;  // au prochain fichier
-  s.subtitle_languages = wanted.subtitle_languages;
+  s.language_presets = wanted.language_presets;  // au prochain fichier
   s.grade = wanted.grade;
   s.grade_preset = wanted.grade_preset;
   s.grade_values = wanted.grade_values;

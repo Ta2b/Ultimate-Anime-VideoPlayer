@@ -150,7 +150,7 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
   PipelineConfig config{
       .file = options.file,
       .decoder = decoder_options(c.backend_name, p.screen.device(), p.screen.shared_devices()),
-      .languages = {.audio = settings.audio_languages, .subtitles = settings.subtitle_languages},
+      .languages = {.presets = settings.language_presets},
       .audio_track = p.audio_track,
       .subtitle_track = p.subtitle_track};
   PlaceboScreen& out = p.screen;

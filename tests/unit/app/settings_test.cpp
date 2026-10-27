@@ -50,8 +50,7 @@ TEST_CASE("play.toml relit à l'identique ce qu'il a écrit", "[app][settings]")
   s.gmfss_quality = true;
   s.span_order = SpanOrder::Before;
   s.grade_values.expand = 0.3;
-  s.audio_languages = {"fre", "jpn"};
-  s.subtitle_languages = {};
+  s.language_presets = {{"eng", ""}, {"", "fre"}};
   const auto back = parse_settings(format_settings(s));
   REQUIRE(back);
   CHECK(*back == s);
@@ -174,12 +173,18 @@ TEST_CASE("Hors plage, type faux ou TOML invalide : refus nommé", "[app][settin
   REQUIRE_FALSE(path);
   CHECK(parse_settings("[subtitles]\nscale = 3.0\n").error().detail.find("subtitles.scale") !=
         std::string::npos);
-  const auto languages = parse_settings("[audio]\nlanguages = [\"eng\", \"en-US\"]\n");
+  // L'ancien format (deux listes) devient deux préférences.
+  const auto languages =
+      parse_settings("[audio]\nlanguages = [\"eng\", \"jpn\"]\n[subtitles]\nlanguages = [\"fre\"]\n");
   REQUIRE(languages);
-  CHECK(languages->audio_languages == std::vector<std::string>{"eng", "en-US"});
-  CHECK(languages->subtitle_languages == PlaySettings{}.subtitle_languages);
+  CHECK(languages->language_presets == std::vector<ajp::media::LanguagePreset>{{"eng", "fre"}, {"jpn", ""}});
+  const auto written =
+      parse_settings("[languages]\naudio_1 = \"jpn\"\nsubtitles_1 = \"fre\"\naudio_2 = \"fre\"\n");
+  REQUIRE(written);
+  CHECK(written->language_presets == PlaySettings{}.language_presets);
+  CHECK(parse_settings("[languages]\naudio_1 = 3\n").error().code == RefusalCode::FieldType);
+  CHECK(parse_settings("[languages]\naudio_1 = \"fr/../x\"\n").error().code == RefusalCode::FieldOutOfRange);
   CHECK(parse_settings("[subtitles]\nlanguages = \"fre\"\n").error().code == RefusalCode::FieldType);
-  CHECK(parse_settings("[audio]\nlanguages = [\"fr/../x\"]\n").error().code == RefusalCode::FieldOutOfRange);
   const auto broken = parse_settings("[image\n");
   REQUIRE_FALSE(broken);
   CHECK(broken.error().code == RefusalCode::ProfileUnreadable);

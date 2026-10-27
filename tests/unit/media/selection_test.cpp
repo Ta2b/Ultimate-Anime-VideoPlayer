@@ -100,3 +100,35 @@ TEST_CASE("selection : les sous-titres image ne sont jamais choisis", "[media][s
   CHECK_FALSE(
       choose_tracks(std::vector<TrackInfo>{track(1, TrackKind::Audio, "jpn"), pgs}, en).subtitle.has_value());
 }
+
+TEST_CASE("selection : deux préférences audio + sous-titres, la première entière gagne",
+          "[media][selection][presets]") {
+  using ajp::media::LanguagePreset;
+  const LanguagePriorities jp_fr_then_fr{
+      .presets = {LanguagePreset{"jpn", "fre"}, LanguagePreset{"fre", ""}}};
+  const std::vector<TrackInfo> both{track(1, TrackKind::Audio, "fre"), track(2, TrackKind::Audio, "jpn"),
+                                    track(3, TrackKind::Subtitle, "fre"),
+                                    track(4, TrackKind::Subtitle, "eng")};
+  const auto first = choose_tracks(both, jp_fr_then_fr);
+  CHECK(first.audio == 2);
+  CHECK(first.subtitle == 3);
+
+  // Sans sous-titres français : la préférence 1 n'est pas entière, la 2 prend audio français, sans
+  // sous-titres.
+  const std::vector<TrackInfo> no_subs{track(1, TrackKind::Audio, "fre"), track(2, TrackKind::Audio, "jpn"),
+                                       track(4, TrackKind::Subtitle, "eng", true)};
+  const auto second = choose_tracks(no_subs, jp_fr_then_fr);
+  CHECK(second.audio == 1);
+  CHECK_FALSE(second.subtitle.has_value());
+
+  // Sans audio japonais : idem.
+  const std::vector<TrackInfo> no_jp{track(1, TrackKind::Audio, "fre"), track(3, TrackKind::Subtitle, "fre")};
+  const auto no_japanese = choose_tracks(no_jp, jp_fr_then_fr);
+  CHECK(no_japanese.audio == 1);
+  CHECK_FALSE(no_japanese.subtitle.has_value());
+
+  // Aucune préférence entière : on retombe sur la meilleure langue de chaque liste.
+  const std::vector<TrackInfo> neither{track(1, TrackKind::Audio, "eng", true),
+                                       track(2, TrackKind::Audio, "ger")};
+  CHECK(choose_tracks(neither, jp_fr_then_fr).audio == 1);
+}

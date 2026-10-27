@@ -64,9 +64,9 @@ std::expected<void, Refusal> read(const toml::table& table, std::string_view sec
   return refuse(RefusalCode::FieldType, std::format("{}.{}", section, key));
 }
 
-// Une liste de langues : un tableau de balises (« ["fre", "eng"] ») ; FieldType sinon.
-std::expected<void, Refusal> read_languages(const toml::table& table, std::string_view section,
-                                            std::vector<std::string>& out) {
+// L'ancienne liste de langues : un tableau de balises (« ["fre", "eng"] ») ; FieldType sinon.
+std::expected<void, Refusal> read_legacy_languages(const toml::table& table, std::string_view section,
+                                                   std::vector<std::string>& out) {
   const toml::node* node = table.get("languages");
   if (node == nullptr) return {};
   const toml::array* list = node->as_array();
@@ -120,6 +120,8 @@ std::expected<PlaySettings, Refusal> parse_settings(std::string_view toml_text) 
   }
   const toml::table& root = parsed.table();
   PlaySettings s;
+  std::vector<std::string> legacy_audio;
+  std::vector<std::string> legacy_subtitles;
   std::vector<std::expected<void, Refusal>> reads;
   if (const toml::table* image = section(root, "image")) {
     std::string downscale(name(s.downscale));
@@ -205,7 +207,7 @@ std::expected<PlaySettings, Refusal> parse_settings(std::string_view toml_text) 
   if (const toml::table* audio = section(root, "audio")) {
     reads.push_back(read(*audio, "audio", "delay_ms", s.audio_delay_ms));
     reads.push_back(read(*audio, "audio", "volume", s.volume));
-    reads.push_back(read_languages(*audio, "audio", s.audio_languages));
+    reads.push_back(read_legacy_languages(*audio, "audio", legacy_audio));
   }
   if (const toml::table* sync = section(root, "sync")) {
     reads.push_back(read(*sync, "sync", "display", s.display_sync));
@@ -230,7 +232,21 @@ std::expected<PlaySettings, Refusal> parse_settings(std::string_view toml_text) 
     reads.push_back(read(*playlist, "playlist", "autoplay_next", s.autoplay_next));
   if (const toml::table* subtitles = section(root, "subtitles")) {
     reads.push_back(read(*subtitles, "subtitles", "scale", s.subtitle_scale));
-    reads.push_back(read_languages(*subtitles, "subtitles", s.subtitle_languages));
+    reads.push_back(read_legacy_languages(*subtitles, "subtitles", legacy_subtitles));
+  }
+  if (const toml::table* languages = section(root, "languages")) {
+    reads.push_back(read(*languages, "languages", "audio_1", s.language_presets[0].audio));
+    reads.push_back(read(*languages, "languages", "subtitles_1", s.language_presets[0].subtitles));
+    reads.push_back(read(*languages, "languages", "audio_2", s.language_presets[1].audio));
+    reads.push_back(read(*languages, "languages", "subtitles_2", s.language_presets[1].subtitles));
+  } else if (!legacy_audio.empty() || !legacy_subtitles.empty()) {
+    // Le format d'avant : deux listes, converties en deux préréglages (rang 1, puis rang 2).
+    const auto rank = [](const std::vector<std::string>& list, std::size_t i) {
+      return i < list.size() ? list[i] : std::string{};
+    };
+    s.language_presets = {
+        {rank(legacy_audio, 0), rank(legacy_subtitles, 0)},
+        {legacy_audio.size() > 1 ? legacy_audio[1] : rank(legacy_audio, 0), rank(legacy_subtitles, 1)}};
   }
   if (const toml::table* oled = section(root, "oled")) {
     reads.push_back(read(*oled, "oled", "care", s.oled_care));
@@ -317,20 +333,23 @@ std::string format_settings(const PlaySettings& s) {
                                  {"peak", s.true_hdr_peak},
                                  {"debanding", s.true_hdr_debanding}});
   // Le volume au centième : 0.85 et non 0.8500000238418579.
-  const auto languages = [](const std::vector<std::string>& tags) {
-    toml::array list;
-    for (const std::string& tag : tags) list.push_back(tag);
-    return list;
-  };
   root.insert("audio", toml::table{{"delay_ms", s.audio_delay_ms},
-                                   {"volume", std::round(static_cast<double>(s.volume) * 100.0) / 100.0},
-                                   {"languages", languages(s.audio_languages)}});
+                                   {"volume", std::round(static_cast<double>(s.volume) * 100.0) / 100.0}});
+  {
+    media::LanguagePreset first =
+        s.language_presets.size() > 0 ? s.language_presets[0] : media::LanguagePreset{};
+    media::LanguagePreset second =
+        s.language_presets.size() > 1 ? s.language_presets[1] : media::LanguagePreset{};
+    root.insert("languages", toml::table{{"audio_1", first.audio},
+                                         {"subtitles_1", first.subtitles},
+                                         {"audio_2", second.audio},
+                                         {"subtitles_2", second.subtitles}});
+  }
   root.insert("sync", toml::table{{"display", s.display_sync}, {"video_latency_ms", s.video_latency_ms}});
   root.insert("picture", toml::table{{"deband", s.deband}, {"scaler", std::string(name(s.final_scaler))}});
   root.insert("playlist", toml::table{{"autoplay_next", s.autoplay_next}});
   root.insert("subtitles",
-              toml::table{{"scale", std::round(static_cast<double>(s.subtitle_scale) * 100.0) / 100.0},
-                          {"languages", languages(s.subtitle_languages)}});
+              toml::table{{"scale", std::round(static_cast<double>(s.subtitle_scale) * 100.0) / 100.0}});
   // Les réglages du grade au centième, comme le menu les montre.
   const auto hundredth = [](double v) { return std::round(v * 100.0) / 100.0; };
   const render::GradeSettings& g = s.grade_values;

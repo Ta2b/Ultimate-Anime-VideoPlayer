@@ -11,10 +11,23 @@
 
 namespace ajp::media {
 
+// Un préréglage : l'audio et les sous-titres voulus ensemble. audio vide : la piste que le fichier
+// préfère (sa langue ne compte pas) ; subtitles vide : aucun sous-titre.
+struct LanguagePreset {
+  std::string audio;
+  std::string subtitles;
+  friend bool operator==(const LanguagePreset&, const LanguagePreset&) = default;
+};
+
 // Langues voulues, de la plus voulue à la moins voulue : « jpn », « ja », « en-US »…
+// presets : des couples audio + sous-titres, du préféré au moins préféré ; le premier dont l'audio
+// ET les sous-titres existent dans le fichier est pris tel quel (sans sous-titres si son rang le
+// dit). Si aucun n'est entier, on retombe sur les listes ci-dessous, complétées des langues des
+// préréglages, piste par piste.
 struct LanguagePriorities {
   std::vector<std::string> audio;
   std::vector<std::string> subtitles;
+  std::vector<LanguagePreset> presets;
 };
 
 // Index de flux choisis ; std::nullopt : aucune piste de ce type.
