@@ -281,6 +281,11 @@ std::expected<void, Refusal> Muxer::begin(const AVCodecContext& encoder) {
   const int header = avformat_write_header(&out, &options);
   av_dict_free(&options);
   if (header < 0) return refuse_av(RefusalCode::EncodeFailed, "mux : en-tête", header);
+  // Aucune piste à copier : read_copy lirait tout le fichier source pour rien.
+  if (std::ranges::all_of(map_, [](int index) { return index < 0; })) {
+    copies_done_ = true;
+    return {};
+  }
   return read_copy();
 }
 

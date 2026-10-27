@@ -225,6 +225,7 @@ void ExportWriter::run(const std::stop_token& stop) {
       FramePtr copy(av_frame_clone(s.last.get()));  // une référence de plus sur la même mémoire
       if (!copy) return std::unexpected(Refusal{RefusalCode::EncodeFailed, "image : mémoire"});
       copy->pts = from + k * gap / (repeats + 1);
+      copy->duration = gap / (repeats + 1);
       s.last_pts = copy->pts;
       if (auto encoded = s.encoder->encode(copy.get(), sink); !encoded) return encoded;
       frames_.fetch_add(1);
@@ -269,6 +270,9 @@ void ExportWriter::run(const std::stop_token& stop) {
     s.last_pts = pts;
     s.any = true;
     frame->pts = pts;
+    // La durée d'une image, pour que la dernière en ait une (sans elle, un maintien final est perdu) :
+    // la période nominale de la sortie.
+    if (s.fps_num > 0) frame->duration = av_rescale(1'000'000, s.fps_den, s.fps_num);
     if (s.constant_rate) {
       s.last.reset(av_frame_clone(frame.get()));
       if (!s.last) return fail(Refusal{RefusalCode::EncodeFailed, "image : mémoire"});
