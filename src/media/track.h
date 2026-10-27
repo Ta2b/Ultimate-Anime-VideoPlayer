@@ -57,7 +57,7 @@ struct TrackInfo {
 
   int width = 0;  // vidéo
   int height = 0;
-  Rational frame_rate;  // fréquence moyenne, {0, 1} si inconnue
+  Rational frame_rate;     // fréquence moyenne, {0, 1} si inconnue
   Rational sample_aspect;  // forme du pixel (SAR) : celle du flux, sinon du conteneur ; {0, 1} si inconnue
   // Ce que le conteneur étiquette (codecpar) : rien si non renseigné, ou hors de ces trois valeurs.
   std::optional<ColorMatrix> color_matrix;

@@ -306,7 +306,8 @@ ExportOutcome run_export(Player& p, const ExportJob& job) {
   std::string truncated;  // la source n'a pas pu être relue jusqu'au bout pour les pistes copiées
   if (!interrupted && !failure) {
     show_loading(p.screen, p.ui, "Finalisation de l'export");
-    if (auto finished = (*writer)->finish(); !finished) failure = std::move(finished.error());
+    if (auto finished = (*writer)->finish(); !finished)
+      failure = std::move(finished.error());
     else
       truncated = (*writer)->warning();
   }

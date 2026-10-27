@@ -115,8 +115,8 @@ class ThreadStages final : public Stages {
  private:
   StageLinks links_;
   std::uint32_t flushed_epoch_ = 0;
-  bool playing_ = false;  // play depuis la dernière pause : l'horloge hôte reprise court
-  double speed_ = 1.0;    // dernière vitesse acceptée par set_speed
+  bool playing_ = false;     // play depuis la dernière pause : l'horloge hôte reprise court
+  double speed_ = 1.0;       // dernière vitesse acceptée par set_speed
   bool audio_lost_ = false;  // l'horloge hôte mène faute d'audio, jusqu'au prochain Flush
 };
 

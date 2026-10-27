@@ -193,7 +193,7 @@ std::expected<void, Refusal> play(const PlayOptions& options, const PlayerPaths&
   // glissée sur la fenêtre pendant la lecture prend la place de celle en cours.
   const bool from_home = !given;
   std::filesystem::path file = options.file;
-  std::string problem;                      // la vidéo choisie ne se lit pas : dit à l'accueil
+  std::string problem;  // la vidéo choisie ne se lit pas : dit à l'accueil
   for (const std::string& note : startup_notes) {
     if (note.empty()) continue;
     problem += problem.empty() ? note : " · " + note;

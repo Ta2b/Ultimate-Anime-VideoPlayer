@@ -65,7 +65,7 @@ struct SessionConfig {
   bool subtitles = false;                // une piste est choisie : demander leurs images
   int video_width = 0;                   // taille de stockage de la vidéo, pour libass
   int video_height = 0;
-  double video_sar = 1.0;  // forme du pixel de la vidéo (largeur / hauteur), 1 : carré
+  double video_sar = 1.0;                         // forme du pixel de la vidéo (largeur / hauteur), 1 : carré
   std::optional<subs::VideoMatrix> video_matrix;  // couleurs VSFilter
   float subtitle_scale = 1.0F;                    // taille des sous-titres (subs::RenderTarget::font_scale)
   std::vector<std::string> header;                // la chaîne : modèles, tailles, moteur
