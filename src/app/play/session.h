@@ -132,6 +132,7 @@ class Session {
   // Les pistes et la sortie ont changé (piste choisie, pic de RTX HDR) : relues au tour suivant.
   void set_tracks(std::vector<std::string> tracks);
   void set_output(std::string output);
+  void set_header(std::vector<std::string> header);
   // Un tour : choisit l'image, puis compose et présente seulement si quelque chose a changé
   // (image neuve, sous-titres, OSD, interface, taille de sortie) ; rien sinon. Rend les slots. Un
   // refus de l'écran est rendu tel quel : la boucle s'arrête.

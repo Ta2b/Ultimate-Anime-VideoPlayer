@@ -138,6 +138,11 @@ void Session::set_tracks(std::vector<std::string> tracks) {
   osd_at_us_.reset();
 }
 
+void Session::set_header(std::vector<std::string> header) {
+  config_.header = std::move(header);
+  osd_at_us_.reset();
+}
+
 void Session::set_output(std::string output) {
   config_.output = std::move(output);
   osd_at_us_.reset();

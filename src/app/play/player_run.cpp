@@ -236,6 +236,13 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
       .auto_peak = auto_peak,
       .peak_nits = peak_nits,
       .display = p.display,
+      .header_text =
+          [&c, hdr_out](const PlaySettings& s) {
+            return std::format(
+                "{}{}{}", c.motion_label(s),
+                s.true_hdr ? "RTX HDR · " : (s.hdr_native && hdr_out ? "HDR adaptatif · " : ""),
+                c.span_label());
+          },
       .hdr_wanted = settings.true_hdr != wanted_hdr.true_hdr || settings.hdr_native != wanted_hdr.hdr_native
                         ? std::optional(wanted_hdr)
                         : std::nullopt,

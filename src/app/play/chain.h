@@ -7,6 +7,7 @@
 #include <expected>
 #include <filesystem>
 #include <fstream>
+#include <functional>
 #include <optional>
 #include <string>
 #include <vector>
@@ -69,6 +70,9 @@ struct Chain {
   std::optional<render::BlackThresholds> black;
   bool black_dirty = true;
   std::int64_t black_at_us = 0;
+  // L'en-tête « chaîne » de l'OSD pour ces réglages, recalculé quand le facteur, la réduction ou le
+  // moteur HDR changent à chaud ; vide : l'en-tête reste celui de l'ouverture.
+  std::function<std::string(const PlaySettings&)> header_text;
   std::optional<HdrIntent> hdr_wanted;  // présent seulement pendant un repli HDR
   bool source_hdr = false;              // la vidéo est PQ ou HLG : le grade ne la retouche pas comme du SDR
 };

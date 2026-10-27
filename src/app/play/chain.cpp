@@ -123,6 +123,10 @@ void apply_live(Chain& to, const PlaySettings& wanted, std::int64_t now_us) {
                                             : std::string("Interpolation désactivée"),
                     now_us);
   }
+  if (to.header_text && (factor_of(wanted) != factor_of(r) || wanted.downscale != r.downscale ||
+                         wanted.hdr_native != r.hdr_native)) {
+    to.session.set_header({to.header_text(wanted)});
+  }
   if (wanted.keep_poses != r.keep_poses) {
     to.live.set_keep_poses(wanted.keep_poses);
     controls.notify(
