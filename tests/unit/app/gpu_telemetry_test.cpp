@@ -20,6 +20,16 @@ TEST_CASE("Raisons d'écrêtage : puissance et chaleur comptent, le ralenti non"
   CHECK(throttle_text(0x40 | 0x80) == "chaleur + frein de puissance");
 }
 
+TEST_CASE("Version du pilote : plus ancien que, et prudence si illisible", "[app][telemetry]") {
+  CHECK(nvidia_driver_older_than("535.104.05", 550));
+  CHECK_FALSE(nvidia_driver_older_than("615.78.08", 550));
+  CHECK(nvidia_driver_older_than("580.65.06", 580, 82, 7));
+  CHECK_FALSE(nvidia_driver_older_than("580.82.07", 580, 82, 7));
+  CHECK_FALSE(nvidia_driver_older_than("580.82.09", 580, 82, 7));
+  CHECK_FALSE(nvidia_driver_older_than("Mesa 25.1.4", 550));
+  CHECK_FALSE(nvidia_driver_older_than("", 550));
+}
+
 TEST_CASE("Ligne de l'OSD et avertissement de sous-cadencement", "[app][telemetry]") {
   GpuSample s{.sm_mhz = 2520,
               .sm_max_mhz = 3105,

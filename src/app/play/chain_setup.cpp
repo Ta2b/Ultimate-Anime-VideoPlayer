@@ -8,6 +8,7 @@
 
 #include "app/play/drba_model.h"
 #include "app/play/first_run.h"
+#include "app/play/gpu_telemetry.h"
 #include "app/play/host_facts.h"
 #include "app/play/motion_model.h"
 #include "core/clock.h"
@@ -128,6 +129,13 @@ std::expected<std::optional<ChainEngines>, Refusal> prepare_chain(Player& p, con
   log->info("GPU : {}", gpu_line(gpu));
   if (const std::string rebar = rebar_text(gpu); rebar.rfind("inactif", 0) == 0)
     log->warn("Resizable BAR inactif : activer Above 4G Decoding et Resizable BAR dans le BIOS");
+  if (p.screen.device().vendor() == GpuVendor::Nvidia) {
+    const std::string& driver = p.screen.device().driver_version;
+    if (settings.true_hdr && nvidia_driver_older_than(driver, kRtxHdrDriverMajor))
+      log->warn("pilote NVIDIA {} : RTX HDR demande {} ou plus récent", driver, kRtxHdrDriverMajor);
+    if (settings.smooth_motion && nvidia_driver_older_than(driver, 580, 82, 7))
+      log->warn("pilote NVIDIA {} : Smooth Motion demande 580.82.07 ou plus récent", driver);
+  }
   const std::span<const std::string_view> rife_order = rife_preference(gpu);
   if (auto found = choose_rife_model(p.options, p.paths.home, settings, rife_order, p.paths.models))
     c.rife_choice = std::move(*found);

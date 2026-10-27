@@ -64,6 +64,24 @@ std::string telemetry_warning(const GpuSample& s) {
   return {};
 }
 
+bool nvidia_driver_older_than(std::string_view version, int major, int minor, int patch) {
+  std::array<int, 3> parts{};
+  std::size_t index = 0;
+  bool any = false;
+  for (const char c : version) {
+    if (c >= '0' && c <= '9') {
+      parts[index] = parts[index] * 10 + (c - '0');
+      any = true;
+    } else if (c == '.' && index + 1 < parts.size() && any) {
+      ++index;
+    } else {
+      break;
+    }
+  }
+  if (!any) return false;
+  return parts < std::array<int, 3>{major, minor, patch};
+}
+
 #if defined(__linux__)
 
 namespace {

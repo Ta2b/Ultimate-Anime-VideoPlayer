@@ -10,6 +10,7 @@
 #include <memory>
 #include <optional>
 #include <string>
+#include <string_view>
 
 #include "core/gpu_device.h"
 
@@ -43,6 +44,13 @@ std::string telemetry_line(const GpuSample& sample);
 // Un avertissement quand la carte est sous-cadencée alors qu'elle est chargée (horloge SM sous
 // 70 % du maximum à plus de 80 % de charge) ; vide sinon. L'écrêtage se lit déjà dans la ligne.
 std::string telemetry_warning(const GpuSample& sample);
+
+// Le pilote NVIDIA « 580.82.07 » est-il plus ancien que major.minor.patch ? Faux si la version ne se
+// lit pas (pilote Mesa, texte libre) : on ne s'alarme pas sans la connaître.
+bool nvidia_driver_older_than(std::string_view version, int major, int minor = 0, int patch = 0);
+
+// Les versions minimales annoncées par la release : RTX HDR (Maxine) 550, Smooth Motion 580.82.07.
+inline constexpr int kRtxHdrDriverMajor = 550;
 
 class GpuTelemetry {
  public:
