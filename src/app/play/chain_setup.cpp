@@ -1,7 +1,6 @@
 #include "app/play/chain_setup.h"
 
 #include <algorithm>
-#include <cstdlib>
 #include <format>
 #include <span>
 #include <utility>
@@ -42,7 +41,7 @@ std::vector<media::HwApi> decoder_attempts(std::string_view backend, bool shared
 #endif
   if (shared_vulkan) attempts.push_back(media::HwApi::Vulkan);
 #if defined(__linux__)
-  if (!nvidia_gpu || std::getenv("AJP_VAAPI") != nullptr) attempts.push_back(media::HwApi::Vaapi);
+  if (!nvidia_gpu) attempts.push_back(media::HwApi::Vaapi);
 #endif
   attempts.push_back(media::HwApi::Software);
   return attempts;

@@ -31,9 +31,9 @@ RTX HDR (Maxine) s'importe depuis le SDK installé : `--truehdr-sdk /usr/local/V
 
 | Réglage | Effet | Désactivation |
 |---|---|---|
-| Voie CUDA de l'agrandissement en haute priorité (LN-04) | le GPU lui donne la main en premier | `AJP_CUDA_LANE_PRIORITY=off` |
+| Voie CUDA de l'agrandissement en haute priorité (LN-04) | le GPU lui donne la main en premier | aucune, toujours active |
 | `CUDA_DEVICE_MAX_CONNECTIONS=32` (LN-05) | une file matérielle par flux au lieu de 8 partagées | poser une autre valeur dans l'environnement |
-| VA-API non essayé sur NVIDIA propriétaire (LN-14) | pas d'échec à chaque ouverture | `AJP_VAAPI=1` le rétablit |
+| VA-API non essayé sur NVIDIA propriétaire (LN-14) | pas d'échec à chaque ouverture | aucune |
 | Smooth Motion grisé sans RIFE (LN-15) | évite la lecture calée | |
 | Resizable BAR journalisé et affiché au premier lancement (LN-09) | « Resizable BAR actif, 12 Go » ou avertissement | |
 | Télémétrie NVML dans l'OSD, touche Tab (LN-10) | horloges, P-state, puissance, température, PCIe, écrêtage ; avertit si les horloges sont basses sous charge | |
@@ -51,8 +51,8 @@ Sans effet sur l'export. Clés `play.toml` : `[picture] scaler`, `deband`.
 
 L'auteur de DistilDRBA conseille un flot de 0,5 au lieu de 1 en 4K. Le lecteur prend
 `distil_drba_v2_lite_s05.onnx` (plans remplis à un multiple de 128) dès que la hauteur de travail
-atteint 1440p, et le graphe entier sinon ; l'un sert de repli à l'autre. Pour comparer :
-`AJP_DRBA_FLOW_SCALE=1` (flot entier) ou `=0.5` (demi-flot). **À mesurer** : PSNR/SSIM entre les deux
+atteint 1440p, et le graphe entier sinon ; l'un sert de repli à l'autre. Aucune bascule dans
+l’environnement (règle du projet) : le seuil est dans `drba_half_flow`. **À mesurer** : PSNR/SSIM entre les deux
 sur un extrait en 2160p, et temps par paire (`--stats`).
 
 Les graphes GMFSS Fortuna (base, union, avec demi-flot) et le demi-flot de DRBA s'exportent par le
@@ -78,8 +78,8 @@ workflow `Exporter les modèles d'interpolation` (Actions), qui peut les joindre
 
 E1 : état du BAR (le lecteur l'affiche maintenant). E2 : Vulkan contre TensorRT, bureau au repos
 (`--stats`). E3 : plafond ×3/×4, navigateur fermé. E4 : horloges pendant 2 min de ×3 (la ligne GPU
-de l'OSD le montre). E5 : trace Nsight Systems de 20 s en ×3, avec et sans
-`AJP_CUDA_LANE_PRIORITY=off`, puis `CUDA_DEVICE_MAX_CONNECTIONS=8`. E6 : SPAN INT8 contre FP16.
+de l'OSD le montre). E5 : trace Nsight Systems de 20 s en ×3, avec `CUDA_DEVICE_MAX_CONNECTIONS` par
+défaut puis à 8. E6 : SPAN INT8 contre FP16.
 
 ## Pas encore fait
 

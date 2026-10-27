@@ -40,7 +40,7 @@ namespace ajp::app::play {
 // Linux, VA-API (le bloc vidéo d'AMD ou d'Intel) copié en mémoire hôte, puis le décodage logiciel.
 // Sur un Mac, VideoToolbox (le bloc média de la puce) d'abord, copié en mémoire hôte.
 // Sur une carte NVIDIA, VA-API n'existe que par un pilote tiers au-dessus de NVDEC : l'essai est
-// sauté (nvidia_gpu) ; AJP_VAAPI=1 le rétablit.
+// sauté (nvidia_gpu) .
 std::vector<media::HwApi> decoder_attempts(std::string_view backend, bool shared_vulkan,
                                            bool nvidia_gpu = false);
 

@@ -29,8 +29,7 @@ struct DrbaModel {
 std::optional<DrbaModel> find_distil_drba(std::span<const std::filesystem::path> dirs,
                                           bool prefer_half = false);
 
-// Le flot à l'échelle 0,5 pour cette hauteur de travail : à partir de 1440p (la 4K), sauf
-// AJP_DRBA_FLOW_SCALE=1 (flot entier) ou =0.5 (demi-flot) qui tranche pour un essai de qualité.
+// Le flot à l'échelle 0,5 pour cette hauteur de travail : à partir de 1440p (la 4K).
 bool drba_half_flow(int work_height);
 
 // Le graphe aux dimensions « H » et « W » fixées pour ces plans remplis, dérivé (s'il manque) dans

@@ -1,6 +1,5 @@
 #include "app/play/drba_model.h"
 
-#include <cstdlib>
 #include <format>
 #include <string_view>
 #include <system_error>
@@ -24,11 +23,6 @@ std::optional<DrbaModel> find_distil_drba(std::span<const std::filesystem::path>
 }
 
 bool drba_half_flow(int work_height) {
-  if (const char* forced = std::getenv("AJP_DRBA_FLOW_SCALE")) {
-    const std::string_view value(forced);
-    if (value == "1") return false;
-    if (value == "0.5") return true;
-  }
   return work_height >= 1440;
 }
 
