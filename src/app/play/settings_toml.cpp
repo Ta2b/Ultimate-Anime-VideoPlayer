@@ -338,9 +338,9 @@ std::string format_settings(const PlaySettings& s) {
   root.insert("audio", toml::table{{"delay_ms", s.audio_delay_ms},
                                    {"volume", std::round(static_cast<double>(s.volume) * 100.0) / 100.0}});
   {
-    media::LanguagePreset first =
-        s.language_presets.size() > 0 ? s.language_presets[0] : media::LanguagePreset{};
-    media::LanguagePreset second =
+    const media::LanguagePreset first =
+        !s.language_presets.empty() ? s.language_presets[0] : media::LanguagePreset{};
+    const media::LanguagePreset second =
         s.language_presets.size() > 1 ? s.language_presets[1] : media::LanguagePreset{};
     root.insert("languages", toml::table{{"audio_1", first.audio},
                                          {"subtitles_1", first.subtitles},
