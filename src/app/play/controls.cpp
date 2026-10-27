@@ -139,7 +139,7 @@ void Controls::notify(std::string text, std::int64_t now_us) {
   toast_at_us_ = now_us;
 }
 
-void Controls::defer(std::string text) {
+void Controls::defer(const std::string& text) {
   if (!deferred_.empty()) deferred_ += "  ·  ";
   deferred_ += text;
 }
