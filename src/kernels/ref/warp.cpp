@@ -209,7 +209,8 @@ Result<float> flow_max(const Motion& motion) {
       ++bins[static_cast<std::size_t>(flow_bin(m))];
     }
   }
-  return flow_percentile(bins.data(), static_cast<unsigned long long>(a.width) * static_cast<unsigned long long>(a.height));
+  return flow_percentile(
+      bins.data(), static_cast<unsigned long long>(a.width) * static_cast<unsigned long long>(a.height));
 }
 
 }  // namespace ajp::kernels::ref
