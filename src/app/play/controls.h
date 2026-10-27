@@ -99,6 +99,9 @@ class Controls {
 
   // Message bref (volume, piste, réglage), en haut de l'écran.
   void notify(std::string text, std::int64_t now_us);
+  // Message d'avant la lecture (installation, repli) : mis de côté, montré à la première image.
+  void defer(std::string text);
+  void show_deferred(std::int64_t now_us);
   std::optional<std::string_view> toast(std::int64_t now_us) const;
   float toast_opacity(std::int64_t now_us) const;
 
@@ -128,6 +131,7 @@ class Controls {
   std::optional<std::int64_t> drag_seek_at_;
   std::int64_t drag_target_us_ = -1;
   std::string toast_;
+  std::string deferred_;
   std::int64_t toast_at_us_ = 0;
   std::optional<std::int64_t> framed_at_;
   std::int64_t framed_position_step_ = -1;

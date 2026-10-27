@@ -141,6 +141,8 @@ class Session {
   void end();
 
   bool finished() const { return finished_; }
+  // La fenêtre a changé d'écran : nouvelle période et nouvelle fréquence, la synchro les suit.
+  void set_display(std::int64_t period_us, double hz);
   bool quit_asked() const { return quit_; }  // q ou fenêtre fermée, pas la fin du fichier
   bool paused() const { return paused_; }
   std::uint32_t epoch() const { return epoch_; }

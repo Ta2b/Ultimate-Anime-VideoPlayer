@@ -113,10 +113,9 @@ std::expected<bool, Refusal> install_chosen(PlaceboScreen& screen, PlayerUi& ui,
       continue;
     }
     log->warn("{} non installé : {}", engine_label(row.offer.id), outcome->error().detail);
-    ui.controls().notify(std::format("{} non installé : {}", engine_label(row.offer.id),
-                                     row.offer.id == core::EngineId::MaxineVfx ? "HDR adaptatif à la place"
-                                                                               : "Vulkan à la place"),
-                         host_now_us());
+    ui.controls().defer(std::format(
+        "{} non installé : {}", engine_label(row.offer.id),
+        row.offer.id == core::EngineId::MaxineVfx ? "HDR adaptatif à la place" : "Vulkan à la place"));
     engines = without_engine(std::move(engines), row.offer.id);
   }
   return true;
@@ -141,7 +140,7 @@ std::expected<bool, Refusal> update_stale_engines(PlaceboScreen& screen, PlayerU
         previous && previous->license != package.license) {
       log->warn("{} : module d'une version précédente, licence changée ({}) : onglet Moteurs", label,
                 package.license);
-      ui.controls().notify(std::format("{} : nouvelle licence à accepter (Moteurs)", label), host_now_us());
+      ui.controls().defer(std::format("{} : nouvelle licence à accepter (Moteurs)", label));
       continue;
     }
     log->info("{} : module d'une version précédente du lecteur, réinstallation", label);
@@ -157,7 +156,7 @@ std::expected<bool, Refusal> update_stale_engines(PlaceboScreen& screen, PlayerU
       log->info("{} mis à jour", label);
     } else {
       log->warn("{} non mis à jour : {}", label, outcome->error().detail);
-      ui.controls().notify(std::format("{} non mis à jour : Vulkan à la place", label), host_now_us());
+      ui.controls().defer(std::format("{} non mis à jour : Vulkan à la place", label));
     }
   }
   return true;

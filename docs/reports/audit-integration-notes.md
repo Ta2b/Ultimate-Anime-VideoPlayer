@@ -47,3 +47,16 @@ Branche `claude/project-thread-ta5cur`, vers `cloud/vulkan`. Suite complète : 1
 - Déjà faits avant cette passe, constatés à la relecture : MD-09, PL-10, PL-11, PL-16, RD-16, VK-08, NE-08 (troncature UTF-8).
 - À vérifier sur matériel en plus : fermeture avec un fichier sur partage réseau coupé ; raccourcis redéfinis dans user.toml (lecture, accueil, écran des moteurs) ; grade HDR adaptatif (stable en pause, lissage normal en lecture) ; téléchargement d'un moteur annulé pendant la vérification (le .part est gardé) ; sous-titres animés à forte cadence.
 - Toujours non entrepris : UI-08/12, PL-07/08/14, MD-18, NE-02 à 05, VK-01/16, RT-03/04/07 à 11, IR-06/07/08/11/15, DS-06/07/09/10/18/21/23, NC-04 à 08, NA-03/04/07, NM-01 à 04, RD-16 (fait). Ils demandent soit une décision de conception (PL-07 : code mort du profil, PL-08 : écran changé en cours de lecture, UI-08 : code mort), soit du matériel (RT-04, RT-08/09, NC-04 à 08), soit une refonte (VK-01, NE-05).
+
+## Troisième passe (recommandations de fiches-restantes-decisions.md)
+
+Fait : NM-05 (sous-titres externes, encodages BOM/UTF-16/Windows-1252), DS-06/07/16 (archives Linux reproductibles, BUILD_INFO.txt, file-prefix-map), RD-04, RD-13, RD-18, NA-04 (en-tête OSD recalculé à chaud), NM-01, NM-04, NE-02, RD-08/PL-08 (`Session::set_display`, cadence de l'écran relue toutes les 500 ms), NA-03 (messages d'avant lecture mis de côté puis montrés à la première image), NE-04 (avertissement MP4/MOV).
+
+Non faits, avec raison :
+- MD-15 : un seek exact repart du point clé précédent, donc les événements ASS depuis ce point sont reçus ; seul le seek « point clé le plus proche » en perd. Corriger demande de relire le démuxeur en amont et de jeter l'audio/vidéo en trop : trop risqué sans test de lecture.
+- NM-03 : l'alignement par silence existe déjà quand l'horloge maître est la vidéo ; le cas audio maître publie l'horloge au pts du premier bloc. Toucher cela change la synchro A/V : à régler à l'oreille.
+- NE-03, IR-07, RT-07, RT-08, VK-14, DS-23 : voir fiches ; sans effet vérifiable ici.
+- GMFSS base : non supprimé (voir réponse).
+
+À tester sur matériel : sous-titres externes avec vrais fichiers (SRT Windows-1252, UTF-16), hash des paquets Linux identique sur deux builds, changement d'écran en cours de lecture (60 → 144 Hz), message « non installé » visible au lancement, en-tête OSD au changement du facteur RIFE.
+Remarque : « app: SPAN INT8 » a échoué deux fois dans un ctest -j8 complet puis réussi seul et en boucle (flaky sous charge).

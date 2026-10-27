@@ -461,6 +461,13 @@ std::int64_t Session::display_delay_us(std::int64_t period) const {
   return stats_.render.median() + period / 2;
 }
 
+void Session::set_display(std::int64_t period_us, double hz) {
+  if (period_us == config_.display_period_us && hz == config_.display_hz) return;
+  config_.display_period_us = period_us;
+  config_.display_hz = hz;
+  follow_display();
+}
+
 void Session::follow_display() {
   double speed = 1.0;
   if (config_.display_sync && config_.extra != nullptr) {

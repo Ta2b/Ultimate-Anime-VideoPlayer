@@ -292,6 +292,8 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
   if (settings.audio_delay_ms != 0)
     session.command(cmd::SetAudioDelay{.delay_us = std::int64_t{settings.audio_delay_ms} * 1000});
   std::int64_t saved_at = host_now_us();
+  std::int64_t display_polled_at = saved_at;
+  p.ui.controls().show_deferred(host_now_us());
   while (!session.finished() && !chain.reopen) {
     for (;
          p.next_key < p.options.keys.size() && host_now_us() - p.began_us >= p.options.keys[p.next_key].first;
@@ -313,6 +315,11 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
       }
       if (p.ui.handle(event, host_now_us(), actions)) continue;  // saisie dans l'interface
       if (auto input = input_of(event, keys)) actions.push_back(*input);
+    }
+    // L'écran de la fenêtre peut changer (déplacement, mode d'affichage) : on relit sa cadence.
+    if (host_now_us() - display_polled_at >= 500'000) {
+      display_polled_at = host_now_us();
+      session.set_display(display_period_us(out.window()), display_refresh_hz(out.window()));
     }
     (*pipeline)->pump();
     while (auto message = try_take((*pipeline)->inbox())) session.handle(std::move(*message));

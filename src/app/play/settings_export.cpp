@@ -198,12 +198,14 @@ void export_tab(ExportDraft& draft, const PlaySettings& running, const SettingsC
     if (rate.den > 0 && rate.num >= kExactRateFps * rate.den)
       note(
           "À cette fréquence, le MKV arrondit chaque image à la milliseconde (8, 8 puis 9 ms à 120 i/s) : "
-          "un nom en .mp4 ou .mov garde les instants exacts, sans les sous-titres ASS ni les polices.");
+          "un nom en .mp4 ou .mov garde les instants exacts, sans les sous-titres (ASS, SRT, PGS) ni les "
+          "polices.");
   } else {
     note(
         "Le MP4 et le MOV gardent les instants exacts de chaque image. Les chapitres de la source sont "
         "copiés, l'audio s'il y va (AAC, AC-3, E-AC-3 ; FLAC, Opus et DTS en MP4 ; jamais TrueHD), mais ni "
-        "les sous-titres ASS ni les polices. La lecture s'arrête pendant l'export puis reprend au même "
+        "les sous-titres (ASS, SRT, PGS) ni les polices. Pour tout garder, nommez le fichier en .mkv. La "
+        "lecture s'arrête pendant l'export puis reprend au même "
         "endroit ; Échap annule l'export.");
   }
   ImGui::BeginDisabled(!problem.empty());
