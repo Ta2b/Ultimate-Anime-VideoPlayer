@@ -58,7 +58,8 @@ struct SettingsChoices {
   std::string default_rife_model;        // celui qu'un nom vide désigne
   std::string rife_folder;               // le dossier des modèles RIFE (et des graphes de GMFSS)
   bool nvidia = false;                   // GPU NVIDIA : RTX HDR et Smooth Motion ne sont offerts qu'à lui
-  bool true_hdr_available = false;       // SDK Maxine présent
+  bool true_hdr_available = false;       // SDK Maxine présent et moteur TensorRT en service
+  bool true_hdr_backend = true;          // le moteur TensorRT, seul à ouvrir TrueHDR, est celui du lecteur
   bool hdr_output = true;                // l'écran reçoit du PQ (sinon ni HDR natif ni grade)
   int auto_peak = 0;                     // pic automatique de RTX HDR, en nits
   std::vector<EngineBadge> engines;

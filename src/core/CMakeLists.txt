@@ -13,6 +13,6 @@ ajp_add_module(core_log
 ajp_add_module(core
   SOURCES cadence.cpp capabilities.cpp debug_flags.cpp drawings.cpp engines.cpp ini_import.cpp
           ini_import_steps.cpp keys.cpp model_index.cpp pacing.cpp plan.cpp profile.cpp resolve.cpp
-          file_sync.cpp settings.cpp user_overlay.cpp
+          file_sync.cpp inflate.cpp settings.cpp user_overlay.cpp
   DEPS ajp::core_types
   PRIVATE_DEPS ajp::dep::toml)

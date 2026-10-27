@@ -1,5 +1,6 @@
 #include "app/play/host_facts.h"
 
+#include <algorithm>
 #include <filesystem>
 #include <format>
 #include <system_error>
@@ -85,6 +86,13 @@ bool maxine_available(const PlayOptions& options, const PlayerPaths& paths) {
   if (store.status().installed) return true;
   std::error_code error;
   return std::filesystem::exists(options.true_hdr_sdk, error);
+}
+
+bool tensorrt_backend_present(const PlayerPaths& paths) {
+  std::error_code error;
+  return std::ranges::any_of(paths.backends, [&](const std::filesystem::path& backend) {
+    return backend.filename().string().contains("tensorrt") && std::filesystem::exists(backend, error);
+  });
 }
 
 // Ce qui est sur ce poste pour l'écran de bienvenue : les backends TensorRT, MIGraphX et OpenVINO,

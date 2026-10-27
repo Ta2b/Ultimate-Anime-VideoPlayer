@@ -108,6 +108,15 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
     p.ui.controls().notify("Source déjà HDR : RTX HDR inutile", host_now_us());
     settings.true_hdr = false;
   }
+  // TrueHDR s'ouvre par le moteur TensorRT (open_true_hdr n'existe que là) : sous Vulkan, la route
+  // native prend sa place sans essayer, et le panneau ne propose plus RTX HDR (true_hdr_available).
+  if (settings.true_hdr && c.backend_name != "tensorrt") {
+    log->info("RTX HDR : le moteur {} ne l'ouvre pas (TensorRT requis) ; HDR adaptatif à la place",
+              c.backend_name);
+    p.ui.controls().notify("RTX HDR demande le moteur TensorRT : HDR adaptatif", host_now_us());
+    settings.true_hdr = false;
+    settings.hdr_native = true;
+  }
   if (settings.true_hdr) {
     show_loading(p.screen, p.ui, "Préparation de RTX HDR");
     auto opened = open_rtx_hdr(p.options.true_hdr_sdk, p.paths, settings, auto_peak, p.screen,
@@ -210,7 +219,9 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
           .default_rife_model = c.rife_choice ? c.rife_choice->default_name : std::string(),
           .rife_folder = c.gmfss_places.front().string(),
           .nvidia = vendor_from_pci(p.screen.device_facts().pci_vendor) == GpuVendor::Nvidia,
-          .true_hdr_available = maxine_available(p.options, p.paths) || settings.true_hdr,
+          .true_hdr_available =
+              c.backend_name == "tensorrt" && (maxine_available(p.options, p.paths) || settings.true_hdr),
+          .true_hdr_backend = c.backend_name == "tensorrt",
           .hdr_output = p.screen.hdr_output(),
           .auto_peak = auto_peak,
           .engines = engine_badges(p.paths.engines,

@@ -45,7 +45,11 @@ void hdr_tab(PlaySettings& d, const SettingsChoices& choices) {
     }
     ImGui::EndCombo();
   }
-  if (choices.nvidia && !choices.true_hdr_available)
+  if (choices.nvidia && !choices.true_hdr_backend)
+    note(
+        "RTX HDR demande le moteur TensorRT (écran des moteurs) : sous Vulkan, le HDR adaptatif le "
+        "remplace.");
+  else if (choices.nvidia && !choices.true_hdr_available)
     note("RTX HDR : le SDK Maxine VideoFX n'est pas installé (écran des moteurs).");
   if (!choices.hdr_output) note("L'écran ne reçoit pas de HDR10 : la sortie reste SDR.");
   section(choices.nvidia ? "Réglages du mode HDR (RTX HDR et HDR adaptatif)" : "Réglages du HDR adaptatif");
