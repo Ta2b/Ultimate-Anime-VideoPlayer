@@ -73,7 +73,12 @@ class Pipeline {
 
 class PipelineCache {
  public:
-  static std::expected<std::unique_ptr<PipelineCache>, Refusal> create(const VkContext& context);
+  // `initial` : les octets d'un cache enregistré par serialize() ; le pilote ignore ceux qui ne sont
+  // pas les siens (autre appareil, autre pilote).
+  static std::expected<std::unique_ptr<PipelineCache>, Refusal> create(
+      const VkContext& context, std::span<const std::byte> initial = {});
+  // Le cache du pilote tel qu'il s'enregistre ; vide si le pilote ne le rend pas.
+  std::vector<std::byte> serialize() const;
 
   PipelineCache(const PipelineCache&) = delete;
   PipelineCache& operator=(const PipelineCache&) = delete;

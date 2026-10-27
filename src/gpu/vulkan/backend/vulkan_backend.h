@@ -123,6 +123,7 @@ class VulkanBackend final : public Backend {
 
   BackendLog log_;
   std::filesystem::path cache_dir_;
+  std::filesystem::path pipeline_cache_file_;  // vide : sans dossier de cache
   BackendOptions options_;
   std::unique_ptr<VkContext> context_;
   std::unique_ptr<MemoryAllocator> memory_;
