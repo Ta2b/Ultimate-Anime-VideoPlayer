@@ -110,11 +110,12 @@ void SourceLoop::recover_position() {
   forget_position();
   idle_ = true;  // sans position sûre, rien ne part avant le prochain seek abouti
   if (!last_pts_us_) return;
-  if (auto back = media_.demuxer.seek(*last_pts_us_, media_.video_track, SeekTarget::PreviousKeyframe); !back)
+  const std::int64_t back_to = *last_pts_us_;
+  if (auto back = media_.demuxer.seek(back_to, media_.video_track, SeekTarget::PreviousKeyframe); !back)
     return;
   media_.decoder.flush();
   forget_position();
-  drop_before_ = *last_pts_us_;
+  drop_before_ = back_to;
   idle_ = false;
 }
 

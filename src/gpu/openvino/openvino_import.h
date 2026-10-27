@@ -48,7 +48,7 @@ class DeviceImports : public std::enable_shared_from_this<DeviceImports> {
 
  private:
   ov::RemoteContext context_;
-  SetDestructor set_destructor_;  // nul sous Linux
+  [[maybe_unused]] SetDestructor set_destructor_;  // nul sous Linux
   std::mutex mutex_;
   std::map<void*, ov::RemoteTensor> live_;  // cl_mem → tenseur de l'import
 };
