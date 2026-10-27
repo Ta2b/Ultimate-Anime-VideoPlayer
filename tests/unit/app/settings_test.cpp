@@ -48,6 +48,8 @@ TEST_CASE("play.toml relit à l'identique ce qu'il a écrit", "[app][settings]")
   s.rife_model = "rife_v4.22_lite.onnx";
   s.keep_poses = true;
   s.gmfss_quality = true;
+  s.rife_auto = true;
+  s.rife_auto_vrr = true;
   s.span_order = SpanOrder::Before;
   s.grade_values.expand = 0.3;
   s.language_presets = {{"eng", ""}, {"", "fre"}};

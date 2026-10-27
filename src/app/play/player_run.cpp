@@ -319,6 +319,13 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
   std::int64_t saved_at = host_now_us();
   std::int64_t display_polled_at = saved_at;
   p.ui.controls().show_deferred(host_now_us());
+  // Le mode auto : son plafond suit l'écran et le réglage « écran à fréquence variable ».
+  const auto apply_auto = [&] {
+    const bool on = chain.running.rife_auto && chain.rife_loaded && chain.running.rife_factor >= 2;
+    chain.live.set_auto(on, core::auto_ceiling(display_refresh_hz(out.window()), fps_of(video.frame_rate),
+                                               chain.running.rife_auto_vrr));
+  };
+  apply_auto();
   while (!session.finished() && !chain.reopen) {
     for (;
          p.next_key < p.options.keys.size() && host_now_us() - p.began_us >= p.options.keys[p.next_key].first;
@@ -345,6 +352,7 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
     if (host_now_us() - display_polled_at >= 500'000) {
       display_polled_at = host_now_us();
       session.set_display(display_period_us(out.window()), display_refresh_hz(out.window()));
+      apply_auto();
     }
     (*pipeline)->pump();
     while (auto message = try_take((*pipeline)->inbox())) session.handle(std::move(*message));

@@ -126,16 +126,32 @@ void fluidity_tab(PlaySettings& d, const SettingsChoices& choices, bool exportin
                1.01 * choices.display_hz;
   };
   const Factor now = factor_of(d);
-  if (ImGui::BeginCombo("Multiplicateur", factor_label(now).c_str())) {
+  const std::string factor_shown = d.rife_auto && now.num > now.den ? std::string("Auto") : factor_label(now);
+  if (ImGui::BeginCombo("Multiplicateur", factor_shown.c_str())) {
+    if (!exporting && ImGui::Selectable("Auto", d.rife_auto && now.num > now.den)) {
+      d.rife_auto = true;
+      if (now.num <= now.den) d.rife_factor = 6;  // le plafond du mode auto
+      d.rife_factor_den = 1;
+    }
     for (const Factor factor : kFactors) {
-      const bool chosen = now == factor || (factor.num == 0 && now.num <= now.den);
+      const bool chosen = !d.rife_auto && (now == factor || (factor.num == 0 && now.num <= now.den));
       const ImGuiSelectableFlags flags = too_fast(factor) && !chosen ? ImGuiSelectableFlags_Disabled : 0;
       if (ImGui::Selectable(factor_label(factor).c_str(), chosen, flags)) {
         d.rife_factor = factor.num;
         d.rife_factor_den = factor.den;
+        d.rife_auto = false;
       }
     }
     ImGui::EndCombo();
+  }
+  if (d.rife_auto && now.num > now.den) {
+    ImGui::Checkbox("Écran à fréquence variable (G-Sync, FreeSync)", &d.rife_auto_vrr);
+    note(
+        "Auto choisit seul le multiplicateur de ×1 à ×6 (24 à 144 i/s pour 23,976) : il baisse dès que le "
+        "GPU prend du retard, remonte après quelques secondes sans retard, et réessaie de plus en plus "
+        "tard un palier qui vient d'échouer. Sans écran à fréquence variable, seuls les paliers qui tiennent "
+        "un nombre entier de rafraîchissements sont permis (sinon du judder) : sur 165 Hz fixe, Auto reste "
+        "à ×1. Lecture seulement ; l'export garde un multiplicateur fixe.");
   }
   if (choices.source_fps > 0.0 && choices.display_hz > 0.0)
     note(std::format("Grisés : au-delà de l'écran ({:.0f} Hz pour {:.3f} i/s).", choices.display_hz,

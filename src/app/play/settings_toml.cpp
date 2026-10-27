@@ -147,6 +147,8 @@ std::expected<PlaySettings, Refusal> parse_settings(std::string_view toml_text) 
     reads.push_back(read(*interpolation, "interpolation", "model", s.rife_model));
     reads.push_back(read(*interpolation, "interpolation", "keep_poses", s.keep_poses));
     reads.push_back(read(*interpolation, "interpolation", "gmfss_quality", s.gmfss_quality));
+    reads.push_back(read(*interpolation, "interpolation", "auto", s.rife_auto));
+    reads.push_back(read(*interpolation, "interpolation", "auto_vrr", s.rife_auto_vrr));
     // span_order ; les fichiers d'avant portent warp_after_span, qui ne compte que s'il est vrai (faux
     // était le défaut, écrit partout : il laisse Auto).
     bool legacy_after = false;
@@ -318,6 +320,8 @@ std::string format_settings(const PlaySettings& s) {
                             {"model", s.rife_model},
                             {"keep_poses", s.keep_poses},
                             {"gmfss_quality", s.gmfss_quality},
+                            {"auto", s.rife_auto},
+                            {"auto_vrr", s.rife_auto_vrr},
                             {"span_order", std::string(name(s.span_order))},
                             {"smooth_motion", s.smooth_motion}};
   if (s.rife_factor_den == 2) {

@@ -15,6 +15,7 @@
 
 #include "app/play/frame_latency.h"
 #include "app/play/settings.h"
+#include "core/auto_rate.h"
 #include "gpu/kernel_ops.h"
 #include "vendor_hdr/true_hdr.h"
 
@@ -74,6 +75,24 @@ class LiveSettings {
   Factor rife_factor() const {
     const std::uint32_t packed = rife_factor_.load();
     return {.num = static_cast<int>(packed >> 8U), .den = static_cast<int>(packed & 0xffU)};
+  }
+
+  // Mode auto : le multiplicateur ×k suit ce que le GPU tient (core/auto_rate.h). Quand il est
+  // actif, factor_now() remplace rife_factor(). `ceiling` : le palier le plus haut que l'écran permet.
+  void set_auto(bool on, int ceiling) {
+    const std::scoped_lock lock(mutex_);
+    auto_on_ = on;
+    auto_.set_ceiling(ceiling);
+  }
+  // gpu : l'issue de la paire qui vient d'être traitée.
+  void auto_pair(bool late) {
+    const std::scoped_lock lock(mutex_);
+    if (auto_on_) auto_.pair(late);
+  }
+  // Le facteur à appliquer maintenant : le palier auto, ou le facteur réglé.
+  Factor factor_now() const {
+    const std::scoped_lock lock(mutex_);
+    return auto_on_ ? Factor{.num = auto_.step(), .den = 1} : rife_factor();
   }
 
   // Garder les poses (kernels/spec/poses.h), lu par gpu au début de chaque paire.
@@ -147,6 +166,8 @@ class LiveSettings {
   std::atomic<std::uint64_t> late_{0};
   std::atomic<std::uint64_t> skipped_{0};
   FrameLatency latency_;
+  bool auto_on_ = false;
+  core::AutoRate auto_;
 };
 
 }  // namespace ajp::app::play

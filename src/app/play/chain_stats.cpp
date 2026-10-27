@@ -47,12 +47,12 @@ std::optional<std::string> ChainStats::rife() const {
   if (!interpolates_) return std::nullopt;
   const RifeCounts c = live_.counts();
   return std::format("{} {} : {} paires, {} interpolées, {} dessins tenus, {} coupes, {} en retard", engine_,
-                     factor_text(live_.rife_factor()), c.pairs, c.interpolated, c.held, c.cuts, c.late);
+                     factor_text(live_.factor_now()), c.pairs, c.interpolated, c.held, c.cuts, c.late);
 }
 
 double ChainStats::output_fps() const {
   if (source_fps_ <= 0.0) return 0.0;
-  const Factor factor = live_.rife_factor();  // rien, 0 ou 1 : pas d'interpolation
+  const Factor factor = live_.factor_now();  // rien, 0 ou 1 : pas d'interpolation
   return interpolates_ && factor.den > 0 && factor.num > factor.den ? source_fps_ * factor.num / factor.den
                                                                     : source_fps_;
 }
