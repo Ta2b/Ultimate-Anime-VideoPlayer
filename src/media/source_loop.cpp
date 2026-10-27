@@ -40,6 +40,8 @@ SourceLoop::SourceLoop(SourceMedia media, SourceLinks links, SourceInbox& inbox)
       reserve_(sinks_of(links_), links_.reserve_bytes) {}
 
 void SourceLoop::run(const std::stop_token& stop) {
+  // L'arrêt du thread coupe aussi une lecture suspendue sur le fichier (partage réseau muet).
+  const std::stop_callback interrupt(stop, [this] { media_.demuxer.interrupt(); });
   while (!stop.stop_requested() && !quit_) {
     // Le courrier d'abord, sans bloquer : ce thread est le seul à vider la boîte.
     while (has_mail() && !quit_) {

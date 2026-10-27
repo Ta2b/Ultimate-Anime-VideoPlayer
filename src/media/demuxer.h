@@ -44,6 +44,11 @@ class Demuxer {
   // Ne lit plus que ces pistes ; le conteneur saute les autres.
   std::expected<void, Refusal> keep_only(std::span<const int> tracks);
 
+  // Fait échouer, depuis n'importe quel thread, la lecture ou le seek en cours et toutes les
+  // suivantes : la fermeture ne reste pas suspendue à un partage réseau qui ne répond plus. Sans
+  // retour possible ; le Demuxer ne sert plus qu'à être détruit.
+  void interrupt();
+
   // Paquet suivant dans l'ordre du fichier ; std::nullopt en fin de fichier.
   std::expected<std::optional<Packet>, Refusal> read();
 

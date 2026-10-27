@@ -1,6 +1,7 @@
 #include "media/demuxer.h"
 
 #include <algorithm>
+#include <atomic>
 #include <deque>
 #include <format>
 #include <string>
@@ -26,6 +27,7 @@ struct Demuxer::State {
   std::deque<Packet> pushback;  // lus par le seek pour vérifier son point clé, rendus par read()
   std::shared_ptr<spdlog::logger> log = make_logger();
   std::uint32_t file_seeks = 0;
+  std::atomic<bool> interrupted{false};  // lu par le rappel d'interruption de FFmpeg
 
   std::expected<std::optional<Packet>, Refusal> read_file() const;
   std::expected<std::optional<Packet>, Refusal> peek_keyframe(int reference);
@@ -137,10 +139,18 @@ Demuxer::~Demuxer() = default;
 std::expected<Demuxer, Refusal> Demuxer::open(const std::filesystem::path& path) {
   auto state = std::make_unique<State>();
   const std::string where = utf8_path(path);
-  AVFormatContext* raw = nullptr;
-  if (const int err = avformat_open_input(&raw, where.c_str(), nullptr, nullptr); err < 0) {
-    return refuse_av(RefusalCode::MediaUnreadable, where, err);
-  }
+  AVFormatContext* raw = avformat_alloc_context();
+  if (raw == nullptr) return refuse(RefusalCode::MediaUnreadable, where + " : mémoire insuffisante");
+  // Le rappel d'interruption lit le drapeau de l'état, qui garde son adresse quand le Demuxer bouge.
+  raw->interrupt_callback = {
+      .callback = [](void* opaque) { return static_cast<State*>(opaque)->interrupted.load() ? 1 : 0; },
+      .opaque = state.get()};
+  // Un partage réseau muet rend la main au bout de 30 s ; sans effet sur un fichier local.
+  AVDictionary* options = nullptr;
+  av_dict_set(&options, "rw_timeout", "30000000", 0);
+  const int opened = avformat_open_input(&raw, where.c_str(), nullptr, &options);
+  av_dict_free(&options);
+  if (opened < 0) return refuse_av(RefusalCode::MediaUnreadable, where, opened);
   state->format.reset(raw);
   if (const int err = avformat_find_stream_info(raw, nullptr); err < 0) {
     return refuse_av(RefusalCode::MediaUnreadable, where, err);
@@ -167,6 +177,10 @@ std::expected<Demuxer, Refusal> Demuxer::open(const std::filesystem::path& path)
   state->log->debug("{} : {} pistes, {} chapitres, {} µs", where, state->tracks.size(),
                     state->chapters.size(), state->duration_us);
   return Demuxer(std::move(state));
+}
+
+void Demuxer::interrupt() {
+  state_->interrupted.store(true);
 }
 
 const std::vector<TrackInfo>& Demuxer::tracks() const {
