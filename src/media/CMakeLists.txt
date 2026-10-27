@@ -9,6 +9,10 @@ ajp_add_module(media
   DEPS ajp::core_types
   PRIVATE_DEPS ajp::dep::ffmpeg ajp::core_log ajp::dep::vulkan ${CMAKE_DL_LIBS})
 
+if(WIN32)
+  target_link_libraries(ajp_media PRIVATE dxgi)
+endif()
+
 if(TARGET ajp::dep::va)
   target_sources(ajp_media PRIVATE vaapi_device.cpp)
   target_link_libraries(ajp_media PRIVATE ajp::dep::va)

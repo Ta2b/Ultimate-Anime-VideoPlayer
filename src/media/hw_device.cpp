@@ -2,7 +2,9 @@
 
 #include <algorithm>
 #include <bit>
+#include <cstring>
 #include <format>
+#include <optional>
 #include <span>
 #include <string>
 #include <utility>
@@ -19,6 +21,11 @@ extern "C" {
 #include <libavutil/hwcontext_cuda.h>
 #include <libavutil/hwcontext_vulkan.h>
 }
+
+#if defined(_WIN32)
+#include <dxgi.h>
+#include <windows.h>
+#endif
 
 namespace ajp::media {
 namespace {
@@ -62,6 +69,30 @@ std::optional<std::pair<const AVCodec*, AVPixelFormat>> find_hw_decoder(AVCodecI
   }
   return std::nullopt;
 }
+
+#if defined(_WIN32)
+// L'indice DXGI de l'adaptateur de ce LUID, celui que D3D11VA prend pour sélecteur ; rien si
+// DXGI ne le trouve (l'adaptateur par défaut sert alors).
+std::optional<int> dxgi_adapter_index(const DeviceLuid& luid) {
+  IDXGIFactory1* factory = nullptr;
+  if (FAILED(CreateDXGIFactory1(__uuidof(IDXGIFactory1), reinterpret_cast<void**>(&factory)))) {
+    return std::nullopt;
+  }
+  std::optional<int> found;
+  IDXGIAdapter1* adapter = nullptr;
+  for (UINT i = 0; !found && factory->EnumAdapters1(i, &adapter) != DXGI_ERROR_NOT_FOUND; ++i) {
+    DXGI_ADAPTER_DESC1 desc{};
+    if (SUCCEEDED(adapter->GetDesc1(&desc))) {
+      DeviceLuid have{};
+      std::memcpy(have.data(), &desc.AdapterLuid, have.size());
+      if (have == luid) found = static_cast<int>(i);
+    }
+    adapter->Release();
+  }
+  factory->Release();
+  return found;
+}
+#endif
 
 std::expected<BufferPtr, Refusal> create_device(HwApi api, const std::string& device, int flags) {
   AVBufferRef* ref = nullptr;
@@ -243,8 +274,14 @@ std::expected<HwDevice, Refusal> open_hw_device(AVCodecID codec, HwApi api, cons
     }
 #endif
     default: {
-      // D3D11VA, VA-API, VideoToolbox : adaptateur par défaut (voir open_questions).
-      auto device = create_device(api, {}, 0);
+      // D3D11VA (l'adaptateur du rendu), VideoToolbox : adaptateur par défaut.
+      std::string selector;
+#if defined(_WIN32)
+      if (api == HwApi::D3d11va && options.render_luid) {
+        if (const auto index = dxgi_adapter_index(*options.render_luid)) selector = std::to_string(*index);
+      }
+#endif
+      auto device = create_device(api, selector, 0);
       if (!device) return std::unexpected(device.error());
       hw.device = std::move(*device);
       return hw;

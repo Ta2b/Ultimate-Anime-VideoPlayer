@@ -271,10 +271,6 @@ std::expected<std::unique_ptr<PlaceboScreen>, Refusal> PlaceboScreen::open(const
         "Smooth Motion : couche du pilote NVIDIA demandée (NVPRESENT_ENABLE_SMOOTH_MOTION=1)");
   }
 #if defined(__linux__)
-  // Les trois voies CUDA, le flux de décodage, celui des copies et le pont de Maxine se partagent
-  // 8 files matérielles par défaut : des flux sans lien s'y alignent. 32 en donne une à chacun.
-  // Lue au premier appel CUDA, donc posée ici, avant tout ; une valeur de l'utilisateur prime.
-  SDL_setenv_unsafe("CUDA_DEVICE_MAX_CONNECTIONS", "32", 0);
   // Le pilote Intel de Mesa (ANV) n'expose qu'une file graphique, que l'affichage et les moteurs
   // partageraient : deux, chacune son contexte sur le moteur de rendu, que le GPU alterne par
   // tranches de temps. Une valeur déjà posée par l'utilisateur prime ; les autres pilotes

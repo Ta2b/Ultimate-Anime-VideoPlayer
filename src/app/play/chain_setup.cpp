@@ -57,6 +57,7 @@ media::DecoderOptions decoder_options(std::string_view backend, const GpuDevice&
   const bool tensorrt = backend == "tensorrt";
   return {.attempts = decoder_attempts(backend, shared != nullptr, render.vendor() == GpuVendor::Nvidia),
           .render_device = render.uuid,
+          .render_luid = render.luid,
           .devices = shared,
           .download = !tensorrt,
           .direct_surfaces = tensorrt ? kHeldDecodedFrames : 0};
@@ -130,6 +131,14 @@ std::expected<std::optional<ChainEngines>, Refusal> prepare_chain(Player& p, con
   c.reduce = reduced ? std::format("{}x{} → {} {}x{}", video.width, video.height, label(settings.downscale),
                                    c.work.width, c.work.height)
                      : std::format("{}x{}", video.width, video.height);
+  // Spline36 ne tient que 32 prises : au-delà d'un rapport d'environ 5,3 le filtre est tronqué.
+  constexpr double kSplineMaxRatio = 5.3;
+  if (reduced && settings.downscale == Downscale::Spline36 &&
+      static_cast<double>(video.width) / c.work.width > kSplineMaxRatio)
+    log->warn(
+        "réduction Spline36 de {}x{} vers {}x{} : rapport au-delà de 5,3, filtre tronqué ; Area ou une "
+        "hauteur de travail plus haute l'évite",
+        video.width, video.height, c.work.width, c.work.height);
   const GpuFacts gpu = gpu_facts(p.screen);
   log->info("GPU : {}", gpu_line(gpu));
   if (const std::string rebar = rebar_text(gpu); rebar.rfind("inactif", 0) == 0)
