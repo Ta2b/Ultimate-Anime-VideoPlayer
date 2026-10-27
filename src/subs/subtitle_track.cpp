@@ -1,5 +1,4 @@
 #include "subs/subtitle_track.h"
-#include "subs/text_encoding.h"
 
 #include <algorithm>
 #include <format>
@@ -14,6 +13,7 @@
 
 #include "subs/log.h"
 #include "subs/srt.h"
+#include "subs/text_encoding.h"
 #include "subs/timebase.h"
 
 namespace ajp::subs {
