@@ -195,6 +195,9 @@ class Session {
   std::vector<RingFrame> unmeasured_;  // reçues, pas encore vues écrites : leur retard reste à mesurer
   SubtitleQueue subtitles_{kMaxKeptSubtitles};
   std::size_t subtitle_requests_ = 0;  // demandes de l'époque sans réponse
+  // La plus récente image dont la demande a dû attendre une réponse : la seule qui compte, les
+  // précédentes auraient donné des sous-titres déjà périmés.
+  std::optional<RingFrame> subtitle_waiting_;
 
   bool fresh_ = false;       // ce tour montre une image neuve
   bool shown_once_ = false;  // une présentation a eu lieu : la suivante seulement si ça change

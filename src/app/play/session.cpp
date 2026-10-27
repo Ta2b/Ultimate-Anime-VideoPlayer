@@ -182,6 +182,7 @@ void Session::seek_to(std::int64_t target_us, bool exact) {
   stats_.restart_pacing();
   subtitles_.clear();
   subtitle_requests_ = 0;
+  subtitle_waiting_.reset();
   prerolling_ = true;
   preroll_since_us_.reset();
   stream_ended_ = false;
@@ -204,6 +205,11 @@ void Session::on_frame(const RingFrame& frame) {
 void Session::on_subtitles(subs::SubtitleFrame&& frame) {
   if (frame.epoch != epoch_) return;  // demande d'avant un seek : l'atlas rentre chez subs
   if (subtitle_requests_ > 0) --subtitle_requests_;
+  if (subtitle_waiting_) {
+    const RingFrame waiting = *subtitle_waiting_;
+    subtitle_waiting_.reset();
+    request_subtitles(waiting);
+  }
   if (!config_.subtitles) return;  // désactivés depuis la demande
   subtitles_.push(std::move(frame), current_ ? current_->pts_us : kNoPts);
 }
@@ -217,7 +223,11 @@ void Session::on_refusal(const StageRefusal& refusal) {
 }
 
 void Session::request_subtitles(const RingFrame& frame) {
-  if (!config_.subtitles || frame.pts_us == kNoPts || subtitle_requests_ >= kMaxSubtitleRequests) return;
+  if (!config_.subtitles || frame.pts_us == kNoPts) return;
+  if (subtitle_requests_ >= kMaxSubtitleRequests) {
+    subtitle_waiting_ = frame;
+    return;
+  }
   const OutputSize size = screen_.size();
   const subs::RenderRequest request{.pts_us = frame.pts_us,
                                     .epoch = frame.epoch,
