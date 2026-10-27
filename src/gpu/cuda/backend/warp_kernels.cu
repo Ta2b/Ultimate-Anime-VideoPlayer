@@ -173,8 +173,12 @@ __global__ void __launch_bounds__(kPixelThreads, kHeavyBlocksPerSm) warp_blend_f
 __global__ void __launch_bounds__(kPixelThreads, kPixelBlocksPerSm) flow_max(FlowMaxParams p) {
   const int x = static_cast<int>(blockIdx.x * blockDim.x + threadIdx.x);
   const int y = static_cast<int>(blockIdx.y * blockDim.y + threadIdx.y);
-  float m = 0.0F;
+  __shared__ unsigned int bins[kernels::kFlowBins];
+  const int tid = static_cast<int>(threadIdx.y * blockDim.x + threadIdx.x);
+  for (int b = tid; b < kernels::kFlowBins; b += static_cast<int>(blockDim.x * blockDim.y)) bins[b] = 0U;
+  __syncthreads();
   if (x < p.window_width && y < p.window_height) {
+    float m = 0.0F;
     const auto* flow = static_cast<const __half*>(p.flow);
     const std::size_t plane =
         static_cast<std::size_t>(p.plane_width) * static_cast<std::size_t>(p.plane_height);
@@ -182,10 +186,15 @@ __global__ void __launch_bounds__(kPixelThreads, kPixelBlocksPerSm) flow_max(Flo
                           static_cast<std::size_t>(p.window_x + x);
     for (int c = 0; c < 4; ++c)
       m = fmaxf(m, fabsf(__half2float(flow[static_cast<std::size_t>(c) * plane + i])));
+    // Même case que kernels::flow_bin (le quart de pixel est exact en flottant).
+    const float scaled = m * 4.0F;
+    atomicAdd(&bins[scaled >= 255.0F ? 255 : static_cast<int>(scaled)], 1U);
   }
-  // Maximum du bloc, puis un atomicMax par bloc (flottants positifs : ordre des entiers).
-  m = block_reduce(m != m ? 0.0F : m, 0.0F, Max{});
-  if (threadIdx.x == 0 && threadIdx.y == 0) atomicMax(p.result, __float_as_uint(m));
+  __syncthreads();
+  // L'histogramme du bloc s'ajoute à celui de la paire.
+  for (int b = tid; b < kernels::kFlowBins; b += static_cast<int>(blockDim.x * blockDim.y)) {
+    if (bins[b] != 0U) atomicAdd(&p.result[b], bins[b]);
+  }
 }
 
 }  // namespace

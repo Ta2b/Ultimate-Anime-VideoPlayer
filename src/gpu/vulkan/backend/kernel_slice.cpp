@@ -15,6 +15,7 @@
 #include "gpu/vulkan/backend/kernel_ops_detail.h"
 #include "kernels/spec/gmfss.h"
 #include "kernels/spec/rife.h"
+#include "kernels/spec/warp.h"
 
 namespace ajp::gpu::vk {
 namespace {
@@ -327,7 +328,7 @@ std::expected<std::uint64_t, Refusal> VulkanKernelOps::flow_max_start(const Moti
   if (!flow) return std::unexpected(flow.error());
   const std::uint64_t ticket = flow_tickets_ + 1;
   FlowRead& slot = flow_reads_[ticket % flow_reads_.size()];
-  auto result_buffer = readback(slot.result, sizeof(std::uint32_t), slot.value);
+  auto result_buffer = readback(slot.result, kernels::kFlowBins * sizeof(std::uint32_t), slot.value);
   if (!result_buffer) return std::unexpected(result_buffer.error());
   const BufferView result = (*result_buffer)->view();
   const MotionView mv{.flow = *flow, .mask = *flow, .area = motion.area};
@@ -344,6 +345,8 @@ std::expected<std::uint64_t, Refusal> VulkanKernelOps::flow_max_start(const Moti
   flow_tickets_ = ticket;
   slot.ticket = ticket;
   slot.value = queue_.last().value;
+  slot.points =
+      static_cast<std::uint64_t>(motion.area.width) * static_cast<std::uint64_t>(motion.area.height);
   return ticket;
 }
 
@@ -355,9 +358,9 @@ std::expected<float, Refusal> VulkanKernelOps::flow_max_take(std::uint64_t ticke
   // Attente hôte voulue : relancer RIFE aux autres instants dépend de ce maximum.
   if (auto ok = context_.wait_on_host(queue_.at(slot.value)); !ok) return std::unexpected(ok.error());
   slot.ticket = 0;
-  float value = 0.0F;
-  std::memcpy(&value, slot.result->mapped(), sizeof(value));
-  return value;
+  std::array<std::uint32_t, kernels::kFlowBins> bins{};
+  std::memcpy(bins.data(), slot.result->mapped(), sizeof(bins));
+  return kernels::flow_percentile(bins.data(), slot.points);
 }
 
 }  // namespace ajp::gpu::vk

@@ -13,6 +13,7 @@
 #include "gpu/vulkan/compute/kernel_dispatch.h"
 #include "gpu/vulkan/compute/kernel_runner.h"
 #include "kernels/spec/detect.h"
+#include "kernels/spec/warp.h"
 
 namespace ajp::gpu::vk {
 namespace {
@@ -275,10 +276,10 @@ Done KernelRunner::flow_max(Recorder& recorder, const MotionView& motion, const 
         std::format("plus grand déplacement : fenêtre {}x{} en ({}, {}) hors du mouvement {}x{}", area.width,
                     area.height, area.x, area.y, motion.flow.width, motion.flow.height));
   }
-  if (result.size < sizeof(std::uint32_t))
+  constexpr VkDeviceSize kHistogramBytes = kernels::kFlowBins * sizeof(std::uint32_t);
+  if (result.size < kHistogramBytes)
     return refuse(RefusalCode::InputMismatch, "plus grand déplacement : résultat");
-  if (auto ok =
-          recorder.fill({.buffer = result.buffer, .offset = result.offset, .size = sizeof(std::uint32_t)}, 0);
+  if (auto ok = recorder.fill({.buffer = result.buffer, .offset = result.offset, .size = kHistogramBytes}, 0);
       !ok) {
     return ok;
   }

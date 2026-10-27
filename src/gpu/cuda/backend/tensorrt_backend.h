@@ -281,10 +281,11 @@ class TensorRtBackend final : public Backend, public KernelOps {
     double area = 0.0;  // aire remplie de RIFE
   };
   struct FlowRead {
-    unsigned int* device = nullptr;  // bits du maximum
+    unsigned int* device = nullptr;  // histogramme des déplacements (kernels::kFlowBins cases)
     unsigned int* host = nullptr;
     cudaEvent_t done = nullptr;
     std::uint64_t ticket = 0;
+    std::uint64_t points = 0;  // points comptés
   };
   std::array<PairRead, kPendingReadbacks> pair_reads_{};
   std::array<FlowRead, kPendingReadbacks> flow_reads_{};
