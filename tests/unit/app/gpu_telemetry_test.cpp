@@ -53,3 +53,19 @@ TEST_CASE("Ligne de l'OSD et avertissement de sous-cadencement", "[app][telemetr
 
 }  // namespace
 }  // namespace ajp::app::play
+
+namespace ajp::app::play {
+
+TEST_CASE("amdgpu : pp_dpm_sclk donne l'horloge étoilée et la plus haute", "[app][telemetry]") {
+  const DpmClocks clocks = parse_amdgpu_dpm("0: 500Mhz \n1: 1900Mhz \n2: 2900Mhz *\n");
+  CHECK(clocks.current_mhz == 2900);
+  CHECK(clocks.max_mhz == 2900);
+  const DpmClocks idle = parse_amdgpu_dpm("0: 500Mhz *\n1: 1900Mhz \n2: 2900Mhz \n");
+  CHECK(idle.current_mhz == 500);
+  CHECK(idle.max_mhz == 2900);
+  const DpmClocks none = parse_amdgpu_dpm("");
+  CHECK(none.current_mhz == 0);
+  CHECK(none.max_mhz == 0);
+}
+
+}  // namespace ajp::app::play

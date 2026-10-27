@@ -97,6 +97,15 @@ int main(int argc, char** argv) {
   // Minuteur à 1 ms : les attentes courtes (vidange de l'export, démarrage) ne s'arrondissent pas
   // aux 15,6 ms par défaut de Windows. La cadence de lecture suit, elle, le swapchain.
   timeBeginPeriod(1);
+#ifdef PROCESS_POWER_THROTTLING_IGNORE_TIMER_RESOLUTION
+  // Windows 11 ignore sinon la résolution demandée d'un processus dont la fenêtre est masquée, et
+  // peut le brider en économie d'énergie : la lecture n'est pas un travail de fond.
+  PROCESS_POWER_THROTTLING_STATE throttling{.Version = PROCESS_POWER_THROTTLING_CURRENT_VERSION,
+                                            .ControlMask = PROCESS_POWER_THROTTLING_EXECUTION_SPEED |
+                                                           PROCESS_POWER_THROTTLING_IGNORE_TIMER_RESOLUTION,
+                                            .StateMask = 0};
+  SetProcessInformation(GetCurrentProcess(), ProcessPowerThrottling, &throttling, sizeof(throttling));
+#endif
 #endif
   ajp::app::play::leave_lone_console();
   std::vector<std::string_view> args(argv + 1, argv + argc);

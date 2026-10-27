@@ -259,7 +259,22 @@ std::expected<VideoDecoder, Refusal> VideoDecoder::open(const TrackInfo& track,
   if (track.frame_rate.num > 0 && track.frame_rate.den > 0) {
     state->nominal_duration_us = av_rescale(1'000'000, track.frame_rate.den, track.frame_rate.num);
   }
+  // H.264 High 10 (Hi10P, les vieux fansubs), High 4:2:2 et 4:4:4 : aucun bloc vidéo (NVDEC, AMD,
+  // Intel, Vulkan Video) ne les décode ; les essais matériels, qui s'ouvriraient puis reculeraient,
+  // sont sautés quand le logiciel est permis.
+  const AVCodecParameters& av = track.parameters->av();
+  constexpr int kProfileMask = 0xFF;  // sans les bits Intra et Constraint
+  const int h264_profile = av.profile == AV_PROFILE_UNKNOWN ? 0 : av.profile & kProfileMask;
+  const bool hardware_hopeless =
+      state->software_allowed && av.codec_id == AV_CODEC_ID_H264 &&
+      (h264_profile == AV_PROFILE_H264_HIGH_10 || h264_profile == AV_PROFILE_H264_HIGH_422 ||
+       h264_profile == AV_PROFILE_H264_HIGH_444_PREDICTIVE);
   for (const HwApi attempt : options.attempts) {
+    if (hardware_hopeless && attempt != HwApi::Software) {
+      state->log->info("piste {} : {} sauté, aucun décodeur matériel pour ce profil H.264", track.index,
+                       name(attempt));
+      continue;
+    }
     auto opened = state->try_attempt(attempt, track, options);
     if (opened) {
       state->log->info("piste {} : {} décodé par {}", track.index, track.codec, name(attempt));

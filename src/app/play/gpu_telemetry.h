@@ -1,6 +1,8 @@
-// Télémétrie de la carte NVIDIA pendant la lecture : horloges, état de performance, puissance,
+// Télémétrie de la carte pendant la lecture : horloges, état de performance, puissance,
 // température, charge, lien PCIe et limites actives, lus par NVML (libnvidia-ml.so.1, fournie par
-// le pilote : rien à redistribuer). Absente sans NVML ou hors Linux : l'OSD s'en passe.
+// le pilote : rien à redistribuer). Sur une carte AMD sous Linux, les mêmes mesures viennent de
+// sysfs (amdgpu : gpu_busy_percent, pp_dpm_sclk, hwmon). Absente sinon (Windows : ADLX n'est pas
+// lu) : l'OSD s'en passe.
 //
 // Sert à voir ce que les rapports relevaient à la main avec nvidia-smi : la carte descend-elle
 // en P-state, ou plafonne-t-elle en puissance, pendant une lecture chargée ?
@@ -45,6 +47,14 @@ std::string telemetry_line(const GpuSample& sample);
 // 70 % du maximum à plus de 80 % de charge) ; vide sinon. L'écrêtage se lit déjà dans la ligne.
 std::string telemetry_warning(const GpuSample& sample);
 
+// Une ligne de pp_dpm_sclk ou pp_dpm_mclk du pilote amdgpu (« 0: 500Mhz \n1: 1900Mhz \n2: 2900Mhz * ») :
+// l'horloge courante (la ligne étoilée) et la plus haute, en MHz ; 0 et 0 si le texte ne se lit pas.
+struct DpmClocks {
+  unsigned current_mhz = 0;
+  unsigned max_mhz = 0;
+};
+DpmClocks parse_amdgpu_dpm(std::string_view text);
+
 // Le pilote NVIDIA « 580.82.07 » est-il plus ancien que major.minor.patch ? Faux si la version ne se
 // lit pas (pilote Mesa, texte libre) : on ne s'alarme pas sans la connaître.
 bool nvidia_driver_older_than(std::string_view version, int major, int minor = 0, int patch = 0);
@@ -54,7 +64,7 @@ inline constexpr int kRtxHdrDriverMajor = 550;
 
 class GpuTelemetry {
  public:
-  // Rien si la carte n'est pas NVIDIA, si NVML manque, ou si l'UUID n'y est pas connu.
+  // Rien si la carte n'est ni NVIDIA (NVML présent, UUID connu) ni AMD sous Linux (sysfs amdgpu).
   static std::unique_ptr<GpuTelemetry> open(const GpuDevice& device);
   ~GpuTelemetry();
   GpuTelemetry(const GpuTelemetry&) = delete;

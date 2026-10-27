@@ -20,7 +20,7 @@ ajp_add_module(app
 # Le registre et SHChangeNotify de l'inscription comme lecteur par défaut (default_player.cpp) :
 # advapi32 et shell32.
 if(WIN32)
-  target_link_libraries(ajp_app PRIVATE setupapi advapi32 shell32 winmm)
+  target_link_libraries(ajp_app PRIVATE setupapi advapi32 shell32 winmm user32)
 endif()
 # Police de l'interface : celle du bureau par fontconfig quand il est là, sinon celle d'ImGui.
 if(TARGET ajp::dep::fontconfig)

@@ -5,6 +5,8 @@
 #include <cstdio>
 #include <filesystem>
 #include <format>
+#include <fstream>
+#include <sstream>
 #include <utility>
 
 #include "vendor_hdr/dynamic_library.h"
@@ -57,6 +59,34 @@ std::string telemetry_line(const GpuSample& s) {
   return line;
 }
 
+DpmClocks parse_amdgpu_dpm(std::string_view text) {
+  DpmClocks clocks;
+  std::size_t at = 0;
+  while (at < text.size()) {
+    std::size_t end = text.find('\n', at);
+    if (end == std::string_view::npos) end = text.size();
+    const std::string_view line = text.substr(at, end - at);
+    at = end + 1;
+    const std::size_t colon = line.find(':');
+    if (colon == std::string_view::npos) continue;
+    unsigned mhz = 0;
+    bool any = false;
+    for (std::size_t i = colon + 1; i < line.size() && (line[i] == ' ' || (line[i] >= '0' && line[i] <= '9'));
+         ++i) {
+      if (line[i] == ' ') {
+        if (any) break;
+        continue;
+      }
+      mhz = (mhz * 10) + static_cast<unsigned>(line[i] - '0');
+      any = true;
+    }
+    if (!any) continue;
+    clocks.max_mhz = std::max(clocks.max_mhz, mhz);
+    if (line.ends_with('*')) clocks.current_mhz = mhz;
+  }
+  return clocks;
+}
+
 std::string telemetry_warning(const GpuSample& s) {
   if (s.sm_max_mhz > 0 && s.gpu_percent > 80 && s.sm_mhz * 10 < s.sm_max_mhz * 7)
     return std::format("horloges basses sous charge ({} sur {} MHz) : mode « performances maximales » ?",
@@ -96,10 +126,43 @@ constexpr int kClockSm = 1;
 constexpr int kClockMem = 2;
 constexpr std::int64_t kRefreshUs = 500'000;
 
+std::string read_text(const std::filesystem::path& path) {
+  std::ifstream in(path);
+  std::ostringstream text;
+  text << in.rdbuf();
+  return text.str();
+}
+
+// Un entier de sysfs, 0 s'il manque ou ne se lit pas.
+std::uint64_t read_number(const std::filesystem::path& path, int base = 10) {
+  const std::string text = read_text(path);
+  try {
+    return text.empty() ? 0 : std::stoull(text, nullptr, base);
+  } catch (const std::exception&) {
+    return 0;
+  }
+}
+
+// Le dossier sysfs de la carte AMD (vendeur 0x1002, ce deviceID) ; vide si introuvable. Plusieurs
+// cartes identiques : la première (l'UUID Vulkan ne se retrouve pas dans sysfs).
+std::filesystem::path find_amd_card(std::uint32_t pci_device) {
+  std::error_code error;
+  for (const auto& entry : std::filesystem::directory_iterator("/sys/class/drm", error)) {
+    const std::string name = entry.path().filename().string();
+    if (!name.starts_with("card") || name.find('-') != std::string::npos) continue;
+    const std::filesystem::path device = entry.path() / "device";
+    if (read_number(device / "vendor", 16) == pci::kAmd && read_number(device / "device", 16) == pci_device)
+      return device;
+  }
+  return {};
+}
+
 }  // namespace
 
 struct GpuTelemetry::Impl {
-  vendor_hdr::DynamicLibrary library;
+  std::optional<vendor_hdr::DynamicLibrary> library;
+  std::filesystem::path amd_card;  // sysfs amdgpu, à la place de NVML
+  std::filesystem::path amd_hwmon;
   int (*shutdown)() = nullptr;
   Handle device = nullptr;
   int (*clock)(Handle, int, unsigned*) = nullptr;
@@ -115,6 +178,7 @@ struct GpuTelemetry::Impl {
   std::optional<GpuSample> last;
   std::int64_t last_us = 0;
 
+  Impl() = default;
   explicit Impl(vendor_hdr::DynamicLibrary lib) : library(std::move(lib)) {}
   ~Impl() {
     if (shutdown != nullptr) shutdown();
@@ -125,6 +189,18 @@ GpuTelemetry::GpuTelemetry(std::unique_ptr<Impl> impl) : impl_(std::move(impl)) 
 GpuTelemetry::~GpuTelemetry() = default;
 
 std::unique_ptr<GpuTelemetry> GpuTelemetry::open(const GpuDevice& device) {
+  if (device.vendor() == GpuVendor::Amd) {
+    const std::filesystem::path card = find_amd_card(device.pci_device);
+    if (card.empty()) return nullptr;
+    auto impl = std::make_unique<Impl>();
+    impl->amd_card = card;
+    std::error_code error;
+    for (const auto& entry : std::filesystem::directory_iterator(card / "hwmon", error)) {
+      impl->amd_hwmon = entry.path();
+      break;
+    }
+    return std::unique_ptr<GpuTelemetry>(new GpuTelemetry(std::move(impl)));
+  }
   if (device.vendor() != GpuVendor::Nvidia) return nullptr;
   // Une bibliothèque du pilote s'ouvre par son chemin absolu (dynamic_library.h) : les dossiers
   // où les distributions la rangent.
@@ -142,7 +218,7 @@ std::unique_ptr<GpuTelemetry> GpuTelemetry::open(const GpuDevice& device) {
   }
   if (!library) return nullptr;
   auto impl = std::make_unique<Impl>(std::move(*library));
-  const vendor_hdr::DynamicLibrary& lib = impl->library;
+  const vendor_hdr::DynamicLibrary& lib = *impl->library;
   const auto init = lib.symbol<int()>("nvmlInit_v2");
   const auto shutdown = lib.symbol<int()>("nvmlShutdown");
   const auto by_uuid = lib.symbol<int(const char*, Handle*)>("nvmlDeviceGetHandleByUUID");
@@ -172,6 +248,25 @@ std::optional<GpuSample> GpuTelemetry::sample(std::int64_t host_us) {
   Impl& i = *impl_;
   if (i.last && host_us - i.last_us < kRefreshUs) return i.last;
   GpuSample s;
+  if (!i.amd_card.empty()) {
+    const DpmClocks core = parse_amdgpu_dpm(read_text(i.amd_card / "pp_dpm_sclk"));
+    s.sm_mhz = core.current_mhz;
+    s.sm_max_mhz = core.max_mhz;
+    s.mem_mhz = parse_amdgpu_dpm(read_text(i.amd_card / "pp_dpm_mclk")).current_mhz;
+    s.gpu_percent = static_cast<unsigned>(read_number(i.amd_card / "gpu_busy_percent"));
+    if (!i.amd_hwmon.empty()) {
+      // En microwatts et en millidegrés.
+      const std::uint64_t watts = read_number(i.amd_hwmon / "power1_average") != 0
+                                      ? read_number(i.amd_hwmon / "power1_average")
+                                      : read_number(i.amd_hwmon / "power1_input");
+      s.power_mw = static_cast<unsigned>(watts / 1000);
+      s.power_limit_mw = static_cast<unsigned>(read_number(i.amd_hwmon / "power1_cap") / 1000);
+      s.temperature_c = static_cast<unsigned>(read_number(i.amd_hwmon / "temp1_input") / 1000);
+    }
+    i.last = s;
+    i.last_us = host_us;
+    return s;
+  }
   i.clock(i.device, kClockSm, &s.sm_mhz);
   if (i.clock != nullptr) i.clock(i.device, kClockMem, &s.mem_mhz);
   if (i.max_clock != nullptr) i.max_clock(i.device, kClockSm, &s.sm_max_mhz);
