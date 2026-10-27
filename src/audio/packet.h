@@ -21,9 +21,17 @@ struct AudioCodecInfo {
   std::vector<std::uint8_t> extradata;
 };
 
+// Donnée annexe d'un paquet (AVPacketSideDataType) : amorce et remplissage de l'encodeur
+// (SKIP_SAMPLES), nouveau extradata, changement de paramètres.
+struct AudioSideData {
+  int type = 0;
+  std::vector<std::uint8_t> bytes;
+};
+
 // Un paquet compressé, horodaté en microsecondes.
 struct AudioPacket {
   std::vector<std::uint8_t> data;
+  std::vector<AudioSideData> side_data;
   std::optional<std::int64_t> pts_us;  // absent : suit le paquet précédent
   std::uint32_t epoch = 0;             // époque du Flush ; un paquet d'une époque passée est jeté
   // Seek exact : les échantillons antérieurs à cet instant sont jetés après décodage.

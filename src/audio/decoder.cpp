@@ -106,6 +106,14 @@ std::expected<std::vector<PcmBlock>, Refusal> AudioDecoder::decode(const AudioPa
     return refuse(RefusalCode::AudioDecodeFailed, "mémoire insuffisante");
   }
   std::memcpy(packet_->data, packet.data.data(), packet.data.size());
+  for (const AudioSideData& side : packet.side_data) {
+    if (side.bytes.empty()) continue;
+    // Un refus de mémoire laisse le paquet sans sa donnée annexe : le son reste juste, sans le rognage.
+    if (uint8_t* data = av_packet_new_side_data(packet_.get(), static_cast<AVPacketSideDataType>(side.type),
+                                                side.bytes.size())) {
+      std::memcpy(data, side.bytes.data(), side.bytes.size());
+    }
+  }
   packet_->pts = packet.pts_us.value_or(AV_NOPTS_VALUE);
   packet_->time_base = kMicrosecondBase;
   if (const int error = avcodec_send_packet(context_.get(), packet_.get()); error < 0) {
