@@ -1,4 +1,5 @@
 #include "subs/subtitle_track.h"
+#include "subs/text_encoding.h"
 
 #include <algorithm>
 #include <format>
@@ -57,7 +58,7 @@ std::expected<std::string, Refusal> read_script(const std::filesystem::path& pat
     return refuse(RefusalCode::SubtitleUnreadable, std::format("{} : lecture", path.string()));
   }
   text.resize(static_cast<std::size_t>(file.gcount()));
-  return text;
+  return to_utf8(text);  // UTF-16 et Windows-1252 des fichiers externes
 }
 
 }  // namespace
