@@ -115,6 +115,7 @@ ExportOutcome run_export(Player& p, const ExportJob& job) {
   std::unique_ptr<FrameExport> frames;
   auto writer = exporter::ExportWriter::open(
       exporter::WriterConfig{.source = p.options.file,
+                             .source_video = video.index,
                              .output = job.output,
                              .width = size.width,
                              .height = size.height,

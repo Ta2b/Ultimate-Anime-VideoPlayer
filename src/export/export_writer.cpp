@@ -76,7 +76,7 @@ std::expected<void, Refusal> bind_picture(AVFrame& frame, Picture& picture, cons
 }  // namespace
 
 std::expected<std::unique_ptr<ExportWriter>, Refusal> ExportWriter::open(const WriterConfig& config) {
-  auto muxer = Muxer::open(config.source, config.output);
+  auto muxer = Muxer::open(config.source, config.output, config.source_video);
   if (!muxer) return std::unexpected(std::move(muxer.error()));
   const ColorInfo color = config.color.value_or(muxer->source_color());
   auto encoder = VideoEncoder::open(EncoderSetup{
@@ -99,7 +99,7 @@ std::expected<std::unique_ptr<ExportWriter>, Refusal> ExportWriter::open(const W
 
 std::expected<std::unique_ptr<ExportWriter>, Refusal> ExportWriter::open(
     const WriterConfig& config, std::unique_ptr<FrameEncoder> encoder) {
-  auto muxer = Muxer::open(config.source, config.output);
+  auto muxer = Muxer::open(config.source, config.output, config.source_video);
   if (!muxer) return std::unexpected(std::move(muxer.error()));
   const ColorInfo color = config.color.value_or(muxer->source_color());
   return start(config, std::move(*muxer), color, std::move(encoder));

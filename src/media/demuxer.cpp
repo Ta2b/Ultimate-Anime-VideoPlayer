@@ -168,9 +168,14 @@ std::expected<Demuxer, Refusal> Demuxer::open(const std::filesystem::path& path)
   }
   for (unsigned i = 0; i < raw->nb_chapters; ++i) {
     const AVChapter& chapter = *raw->chapters[i];
-    state->chapters.push_back({.start_us = to_us(chapter.start, chapter.time_base, state->start_us),
-                               .end_us = to_us(chapter.end, chapter.time_base, state->start_us),
-                               .title = tag(chapter.metadata, "title")});
+    Chapter next{.start_us = to_us(chapter.start, chapter.time_base, state->start_us),
+                 .end_us = to_us(chapter.end, chapter.time_base, state->start_us),
+                 .title = tag(chapter.metadata, "title")};
+    // Plusieurs éditions Matroska (ou un chapitre répété) donnent le même chapitre plusieurs fois.
+    const bool again = std::ranges::any_of(state->chapters, [&](const Chapter& known) {
+      return known.start_us == next.start_us && known.title == next.title;
+    });
+    if (!again) state->chapters.push_back(std::move(next));
   }
   state->scratch.reset(av_packet_alloc());
   if (!state->scratch) return refuse(RefusalCode::MediaUnreadable, where + " : mémoire insuffisante");

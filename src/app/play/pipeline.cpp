@@ -1,8 +1,10 @@
 #include "app/play/pipeline.h"
 
 #include <algorithm>
+#include <chrono>
 #include <format>
 #include <optional>
+#include <thread>
 #include <utility>
 
 #include "audio/output.h"
@@ -150,7 +152,14 @@ std::expected<std::unique_ptr<Pipeline>, Refusal> Pipeline::open(const PipelineC
     if (!thread) return std::unexpected(std::move(thread.error()));
     p->subs_thread_ = std::move(*thread);
     for (const subs::AttachFont& font : fonts) {
-      if (!p->subs_inbox_->try_push(subs::AttachFont{font})) {
+      // La boîte tient 64 polices à la fois : au-delà, on laisse au thread subs le temps d'en
+      // prendre (une seconde au plus) avant d'en écarter une.
+      bool pushed = p->subs_inbox_->try_push(subs::AttachFont{font});
+      for (int wait = 0; !pushed && wait < 1000; ++wait) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        pushed = p->subs_inbox_->try_push(subs::AttachFont{font});
+      }
+      if (!pushed) {
         p->mail_.report("subs", {RefusalCode::SubtitleBacklog, std::format("police {} écartée", font.name)},
                         false);
       }

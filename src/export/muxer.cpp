@@ -84,7 +84,7 @@ bool carried(Container container, const AVCodecParameters& par, const AVOutputFo
 }  // namespace
 
 std::expected<Muxer, Refusal> Muxer::open(const std::filesystem::path& source,
-                                          const std::filesystem::path& output) {
+                                          const std::filesystem::path& output, int video_stream) {
   Muxer m;
   m.output_path_ = output;
   // Le fichier est écrit à côté, puis renommé : annuler ou échouer laisse intact un fichier qui
@@ -102,7 +102,10 @@ std::expected<Muxer, Refusal> Muxer::open(const std::filesystem::path& source,
   m.input_.reset(input);
   if (const int err = avformat_find_stream_info(input, nullptr); err < 0)
     return refuse_av(RefusalCode::MediaUnreadable, std::format("{} : flux", source_text), err);
-  m.source_video_ = av_find_best_stream(input, AVMEDIA_TYPE_VIDEO, -1, -1, nullptr, 0);
+  const bool chosen = video_stream >= 0 && std::cmp_less(video_stream, input->nb_streams) &&
+                      input->streams[video_stream]->codecpar->codec_type == AVMEDIA_TYPE_VIDEO;
+  m.source_video_ =
+      chosen ? video_stream : av_find_best_stream(input, AVMEDIA_TYPE_VIDEO, -1, -1, nullptr, 0);
   if (input->start_time != AV_NOPTS_VALUE)
     m.start_us_ = av_rescale_q(input->start_time, AV_TIME_BASE_Q, kMicroseconds);
   const std::string output_text = utf8(m.partial_path_);

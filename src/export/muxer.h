@@ -22,8 +22,10 @@ class Muxer {
  public:
   // Ouvre la source et prépare la sortie, sans créer le fichier, dans le conteneur de son extension.
   // Refus : MediaUnreadable, FileUnwritable (extension inconnue).
+  // video_stream : le flux vidéo que le lecteur a choisi (SAR, couleur et langue viennent de lui) ;
+  // -1 : le meilleur selon FFmpeg.
   static std::expected<Muxer, Refusal> open(const std::filesystem::path& source,
-                                            const std::filesystem::path& output);
+                                            const std::filesystem::path& output, int video_stream = -1);
   Muxer(Muxer&& other) noexcept;
   Muxer& operator=(Muxer&&) = delete;
   Muxer(const Muxer&) = delete;

@@ -43,6 +43,7 @@ inline constexpr std::size_t kDefaultQueueDepth = 4;
 
 struct WriterConfig {
   std::filesystem::path source;  // le fichier lu : ses autres pistes, chapitres et métadonnées
+  int source_video = -1;         // le flux vidéo choisi par le lecteur (Muxer::open) ; -1 : le meilleur
   std::filesystem::path output;  // .mkv, .mp4 ou .mov (export/container.h), remplacé s'il existe
   int width = 0;                 // taille encodée, paire
   int height = 0;
