@@ -14,8 +14,8 @@
 extern "C" {
 #include <libavcodec/packet.h>
 #include <libavutil/hwcontext.h>
-#include <libavutil/mastering_display_metadata.h>
 #include <libavutil/hwcontext_vulkan.h>
+#include <libavutil/mastering_display_metadata.h>
 #include <libavutil/opt.h>
 #include <libavutil/pixdesc.h>
 }
@@ -203,9 +203,9 @@ void hdr_side_data(AVCodecContext& c, const HdrMetadata& hdr) {
     }
   }
   if (hdr.max_cll > 0.0F || hdr.max_fall > 0.0F) {
-    AVPacketSideData* side = av_packet_side_data_new(&c.coded_side_data, &c.nb_coded_side_data,
-                                                     AV_PKT_DATA_CONTENT_LIGHT_LEVEL,
-                                                     sizeof(AVContentLightMetadata), 0);
+    AVPacketSideData* side =
+        av_packet_side_data_new(&c.coded_side_data, &c.nb_coded_side_data, AV_PKT_DATA_CONTENT_LIGHT_LEVEL,
+                                sizeof(AVContentLightMetadata), 0);
     if (side != nullptr) {
       auto* light = reinterpret_cast<AVContentLightMetadata*>(side->data);
       light->MaxCLL = static_cast<unsigned>(std::lround(hdr.max_cll));

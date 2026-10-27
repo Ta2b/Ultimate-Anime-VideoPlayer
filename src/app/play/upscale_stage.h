@@ -64,7 +64,7 @@ struct UpscaleSetup {
   int gmfss_align = 64;  // multiple des plans remplis de GMFSS : 128 pour le flot à l'échelle 0,5
   // DistilDRBA à la place de RIFE, aux plans remplis de rife_geometry(travail).
   gpu::Engine* distil_drba = nullptr;
-  int drba_align = 64;  // multiple des plans remplis de DistilDRBA : 128 au demi-flot
+  int drba_align = 64;                     // multiple des plans remplis de DistilDRBA : 128 au demi-flot
   Factor rife_factor{.num = 1, .den = 1};  // ×num/den quand l'interpolation tourne (au plus ×8)
   bool true_hdr = false;  // RTX HDR à l'écriture du ring (backend déjà ouvert pour la sortie)
   // --one-lane : tout sur la voie Upscale, sans recouvrement. Plus lent, mais le temps GPU de

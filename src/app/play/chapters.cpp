@@ -31,7 +31,8 @@ std::optional<std::size_t> chapter_step(std::span<const ChapterMark> chapters, s
 
 bool is_credits_chapter(const ChapterMark& chapter) {
   std::string title = chapter.title;
-  std::ranges::transform(title, title.begin(), [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+  std::ranges::transform(title, title.begin(),
+                         [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
   // Les mots du titre : lettres seules, « OP2 » donne « op ».
   std::vector<std::string_view> words;
   std::size_t at = 0;
@@ -48,11 +49,12 @@ bool is_credits_chapter(const ChapterMark& chapter) {
         return std::ranges::find(kBefore, word) != std::end(kBefore);
       }))
     return false;
-  constexpr std::string_view kWords[] = {"op",     "ed",      "opening", "ending", "intro",
-                                         "outro",  "credits", "credit",  "generique"};
-  return std::ranges::any_of(words, [&](std::string_view word) {
-    return std::ranges::find(kWords, word) != std::end(kWords);
-  }) || title.contains("générique");
+  constexpr std::string_view kWords[] = {"op",    "ed",      "opening", "ending",   "intro",
+                                         "outro", "credits", "credit",  "generique"};
+  return std::ranges::any_of(
+             words,
+             [&](std::string_view word) { return std::ranges::find(kWords, word) != std::end(kWords); }) ||
+         title.contains("générique");
 }
 
 std::optional<std::int64_t> credits_skip_target(std::span<const ChapterMark> chapters,

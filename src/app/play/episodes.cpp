@@ -67,9 +67,8 @@ std::optional<std::filesystem::path> sibling_episode(const std::filesystem::path
     return natural_compare(prepare::utf8_path(a.filename()), prepare::utf8_path(b.filename())) < 0;
   };
   std::ranges::sort(videos, order);
-  const auto here = std::ranges::find_if(videos, [&](const std::filesystem::path& v) {
-    return v.filename() == current.filename();
-  });
+  const auto here = std::ranges::find_if(
+      videos, [&](const std::filesystem::path& v) { return v.filename() == current.filename(); });
   if (here == videos.end()) return std::nullopt;
   if (direction > 0) return here + 1 != videos.end() ? std::optional(*(here + 1)) : std::nullopt;
   return here != videos.begin() ? std::optional(*(here - 1)) : std::nullopt;

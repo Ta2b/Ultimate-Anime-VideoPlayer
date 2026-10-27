@@ -65,9 +65,10 @@ using EngineChange = std::variant<UseEngine, OpenEngineScreen>;
 struct StartExport {
   ExportJob job;
 };
-using Input = std::variant<Command, ToggleFullscreen, LeaveFullscreen, ToggleMute, VolumeStep, SelectAudio,
-                           SelectSubtitles, CycleAudio, CycleSubtitles, StepChapter, StepEpisode, SkipCredits, ToggleSettings,
-                           ApplySettings, EditProfile, UseEngine, OpenEngineScreen, StartExport>;
+using Input =
+    std::variant<Command, ToggleFullscreen, LeaveFullscreen, ToggleMute, VolumeStep, SelectAudio,
+                 SelectSubtitles, CycleAudio, CycleSubtitles, StepChapter, StepEpisode, SkipCredits,
+                 ToggleSettings, ApplySettings, EditProfile, UseEngine, OpenEngineScreen, StartExport>;
 
 // L'action d'un événement SDL, ou rien. Fermer la fenêtre vaut cmd::Quit.
 std::optional<Input> input_of(const SDL_Event& event, const core::KeyMap& keys);

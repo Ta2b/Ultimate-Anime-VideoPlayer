@@ -29,7 +29,8 @@ std::expected<void, Refusal> TensorRtBackend::create_lanes() {
   // le GPU lui donne la main en premier. AJP_CUDA_LANE_PRIORITY=off rend les trois égales (essais).
   int least = 0;
   int greatest = 0;
-  if (auto ok = cuda_check(cudaDeviceGetStreamPriorityRange(&least, &greatest), "cudaDeviceGetStreamPriorityRange");
+  if (auto ok =
+          cuda_check(cudaDeviceGetStreamPriorityRange(&least, &greatest), "cudaDeviceGetStreamPriorityRange");
       !ok) {
     return ok;
   }

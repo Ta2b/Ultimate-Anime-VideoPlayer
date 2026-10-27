@@ -381,7 +381,8 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
   log_summary(session);
   for (const std::string& refusal : session.refusals()) log->warn("{}", refusal);
   // Fin de la vidéo, sans demande de quitter : l'épisode suivant du dossier, si le réglage le veut.
-  if (!chain.reopen && !failure && !session.quit_asked() && chain.running.autoplay_next && !p.options.file.empty()) {
+  if (!chain.reopen && !failure && !session.quit_asked() && chain.running.autoplay_next &&
+      !p.options.file.empty()) {
     if (const auto next = sibling_episode(p.options.file, 1)) {
       log->info("épisode suivant : {}", prepare::utf8_path(*next));
       chain.next_file = *next;

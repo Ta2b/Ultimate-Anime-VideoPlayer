@@ -196,8 +196,8 @@ std::expected<std::optional<std::unique_ptr<gpu::Engine>>, Refusal> prepare_dist
   }
   align = found->align;
   const kernels::RifeGeometry g = kernels::rife_geometry(work_width, work_height, found->align);
-  auto fixed =
-      static_distil_drba(found->path, g.padded_width, g.padded_height, p.paths.engines.parent_path() / "modeles");
+  auto fixed = static_distil_drba(found->path, g.padded_width, g.padded_height,
+                                  p.paths.engines.parent_path() / "modeles");
   if (!fixed) return std::unexpected(std::move(fixed.error()));
   return prepare_engine(
       p, init, backend, *fixed,
