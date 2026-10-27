@@ -135,13 +135,14 @@ std::expected<void, Refusal> play(const PlayOptions& options, const PlayerPaths&
     log->info("chaîne de play.toml reprise dans le profil {}", profiles.active);
   }
   const std::string title = given ? std::format("ajp — {}", options.file.filename().string()) : "ajp";
-  auto screen = PlaceboScreen::open(ScreenOptions{.title = title,
-                                                  .width = options.window_width,
-                                                  .height = options.window_height,
-                                                  .fullscreen = options.fullscreen,
-                                                  .hdr = !options.sdr,
-                                                  .smooth_motion = saved->smooth_motion && saved->rife_factor >= 2,
-                                                  .allow_software = options.software_gpu});
+  auto screen =
+      PlaceboScreen::open(ScreenOptions{.title = title,
+                                        .width = options.window_width,
+                                        .height = options.window_height,
+                                        .fullscreen = options.fullscreen,
+                                        .hdr = !options.sdr,
+                                        .smooth_motion = saved->smooth_motion && saved->rife_factor >= 2,
+                                        .allow_software = options.software_gpu});
   if (!screen) return std::unexpected(std::move(screen.error()));
   auto ui = PlayerUi::create((*screen)->window(), given ? options.file.filename().string() : "", fonts);
   if (!ui) return std::unexpected(std::move(ui.error()));

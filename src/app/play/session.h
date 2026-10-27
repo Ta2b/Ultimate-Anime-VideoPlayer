@@ -47,6 +47,8 @@ class StatsSource {
   virtual ~StatsSource() = default;
   virtual std::optional<std::string> rife() const = 0;
   virtual std::optional<std::string> memory() const = 0;
+  // Horloges, puissance et chaleur de la carte (NVML) ; rien sans NVML ou sur une autre carte.
+  virtual std::optional<std::string> gpu() const { return std::nullopt; }
   // Période nominale des images de sortie (la source, divisée par le facteur de RIFE) ; 0 :
   // inconnue. Sans elle, la session ne compte pas les images manquées.
   virtual std::int64_t output_period_us() const { return 0; }

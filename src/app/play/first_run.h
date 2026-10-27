@@ -31,8 +31,8 @@ struct GpuFacts {
   GpuVendor vendor = GpuVendor::Other;
   std::uint64_t vram_bytes = 0;
   std::uint64_t host_visible_vram_bytes = 0;  // tas VRAM visible de l'hôte : toute la VRAM avec Resizable BAR
-  bool tensor_cores = false;  // NVIDIA avec matrices coopératives Vulkan : une RTX
-  bool wmma = false;          // AMD RDNA3 ou RDNA4 avec matrices coopératives Vulkan
+  bool tensor_cores = false;                  // NVIDIA avec matrices coopératives Vulkan : une RTX
+  bool wmma = false;                          // AMD RDNA3 ou RDNA4 avec matrices coopératives Vulkan
 };
 
 // La carte AMD a-t-elle des unités matricielles (WMMA : RDNA3, RDNA4) ? Par le nom du pilote :

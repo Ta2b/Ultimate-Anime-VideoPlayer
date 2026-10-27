@@ -222,7 +222,8 @@ std::expected<PlaySettings, Refusal> parse_settings(std::string_view toml_text) 
       }
     }
     if (!scaler_known)
-      reads.emplace_back(refuse(RefusalCode::FieldOutOfRange, std::format("picture.scaler : « {} »", scaler)));
+      reads.emplace_back(
+          refuse(RefusalCode::FieldOutOfRange, std::format("picture.scaler : « {} »", scaler)));
   }
   if (const toml::table* subtitles = section(root, "subtitles")) {
     reads.push_back(read(*subtitles, "subtitles", "scale", s.subtitle_scale));

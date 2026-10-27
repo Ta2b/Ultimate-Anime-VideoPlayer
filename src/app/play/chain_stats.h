@@ -8,6 +8,7 @@
 #include <utility>
 #include <vector>
 
+#include "app/play/gpu_telemetry.h"
 #include "app/play/live_settings.h"
 #include "app/play/options.h"
 #include "app/play/session.h"
@@ -29,14 +30,16 @@ std::vector<EngineBadge> engine_badges(const std::filesystem::path& cache_dir,
 class ChainStats final : public StatsSource {
  public:
   ChainStats(const LiveSettings& live, gpu::KernelOps& kernels, bool interpolates, std::string engine,
-             double source_fps)
+             double source_fps, GpuTelemetry* telemetry = nullptr)
       : live_(live),
         kernels_(kernels),
         interpolates_(interpolates),
         engine_(std::move(engine)),
-        source_fps_(source_fps) {}
+        source_fps_(source_fps),
+        telemetry_(telemetry) {}
   std::optional<std::string> rife() const override;
   std::optional<std::string> memory() const override;
+  std::optional<std::string> gpu() const override;
   std::int64_t output_period_us() const override;
   double output_fps() const override;
   std::uint64_t skipped() const override { return live_.skipped(); }
@@ -47,6 +50,7 @@ class ChainStats final : public StatsSource {
   bool interpolates_;
   std::string engine_;
   double source_fps_;
+  GpuTelemetry* telemetry_;
 };
 
 }  // namespace ajp::app::play

@@ -128,8 +128,8 @@ struct PlaceboScreen::Impl {
   std::optional<std::filesystem::path> snapshot;
   int snapshot_count = 1;  // présentations à écrire, numérotées s'il y en a plusieurs
   int snapshot_index = 0;
-  std::optional<render::Grade> grade;  // absent si les hooks ne se lisent pas (dit au journal)
-  render::GradeChoice grade_choice;    // posé par set_grade
+  std::optional<render::Grade> grade;               // absent si les hooks ne se lisent pas (dit au journal)
+  render::GradeChoice grade_choice;                 // posé par set_grade
   FinalScaler final_scaler = FinalScaler::Default;  // posés par set_finish
   bool deband = false;
   // Ce que le grade porte : rien, le grade PQ (vrai) ou le grade SDR (faux) de grade_choice.

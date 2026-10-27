@@ -171,7 +171,13 @@ engine_package() {  # id version licence dossier [intact : binaires laissés tel
 }
 
 TRT_MODULE="$BUILD/src/gpu/cuda/backend/ajp_backend_tensorrt.so"
-if [ -f "$TRT_MODULE" ]; then
+# TensorRT et RTX HDR ne sont pas publiés (licence NVIDIA) : ils ne s'empaquettent que sur demande
+# expresse (AJP_PACKAGE_NVIDIA=1), pour qu'un poste NVIDIA qui construit le paquet ne les joigne pas
+# par mégarde. Le chemin normal est la construction sur la machine (docs/nvidia-linux.md).
+if [ -f "$TRT_MODULE" ] && [ -z "${AJP_PACKAGE_NVIDIA:-}" ]; then
+  echo "TensorRT trouvé, non empaqueté (AJP_PACKAGE_NVIDIA=1 pour le joindre)" >&2
+fi
+if [ -f "$TRT_MODULE" ] && [ -n "${AJP_PACKAGE_NVIDIA:-}" ]; then
   dir="$OUT/engine-tensorrt"; rm -rf "$dir"; mkdir -p "$dir"
   cp "$TRT_MODULE" "$dir/"
   TRTEXEC="$(sed -n 's/^AJP_TRTEXEC:[A-Z]*=//p' "$BUILD/CMakeCache.txt")"
@@ -221,7 +227,7 @@ fi
 # modification (pas de patchelf), et le lecteur le télécharge sans clé ni compte NVIDIA puis
 # l'importe dans son magasin, qui le vérifie (maxine_install.h). Depuis le SDK installé :
 #   AJP_MAXINE_SDK=/usr/local/VideoFX
-if [ -n "${AJP_MAXINE_SDK:-}" ]; then
+if [ -n "${AJP_MAXINE_SDK:-}" ] && [ -n "${AJP_PACKAGE_NVIDIA:-}" ]; then
   dir="$OUT/engine-maxine"; rm -rf "$dir"; mkdir -p "$dir/external/cuda/lib"
   for entry in lib include share features/nvvfxtruehdr; do
     [ -e "$AJP_MAXINE_SDK/$entry" ] || { echo "$AJP_MAXINE_SDK/$entry manquant" >&2; exit 1; }

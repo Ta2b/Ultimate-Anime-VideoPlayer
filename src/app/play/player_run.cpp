@@ -28,6 +28,7 @@
 #include "app/play/export_run.h"
 #include "app/play/first_run.h"
 #include "app/play/gmfss_model.h"
+#include "app/play/gpu_telemetry.h"
 #include "app/play/home_screen.h"
 #include "app/play/host_facts.h"
 #include "app/play/input.h"
@@ -155,8 +156,9 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
       });
   if (!pipeline) return std::unexpected(std::move(pipeline.error()));
 
+  const std::unique_ptr<GpuTelemetry> telemetry = GpuTelemetry::open(p.screen.device());
   const ChainStats chain_stats(*live, *c.backend->kernels(), rife_loaded, std::string(c.motion_name()),
-                               fps_of(video.frame_rate));
+                               fps_of(video.frame_rate), telemetry.get());
   SessionConfig session_config = (*pipeline)->session_config();
   session_config.start_us = start_us;
   p.screen.set_sample_aspect(session_config.video_sar);

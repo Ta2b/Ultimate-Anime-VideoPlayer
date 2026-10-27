@@ -9,6 +9,7 @@
 #include "app/play/build_progress.h"
 #include "app/play/settings.h"
 #include "app/play/span_int8.h"
+#include "core/clock.h"
 
 namespace ajp::app::play {
 
@@ -57,6 +58,15 @@ double ChainStats::output_fps() const {
 std::int64_t ChainStats::output_period_us() const {
   const double rate = output_fps();
   return rate > 0.0 ? static_cast<std::int64_t>(std::llround(1e6 / rate)) : 0;
+}
+
+std::optional<std::string> ChainStats::gpu() const {
+  if (telemetry_ == nullptr) return std::nullopt;
+  const std::optional<GpuSample> sample = telemetry_->sample(host_now_us());
+  if (!sample) return std::nullopt;
+  std::string line = telemetry_line(*sample);
+  if (const std::string warning = telemetry_warning(*sample); !warning.empty()) line += " · " + warning;
+  return line;
 }
 
 std::optional<std::string> ChainStats::memory() const {

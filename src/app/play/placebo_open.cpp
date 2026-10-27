@@ -390,8 +390,8 @@ PlaceboScreen::DeviceFacts PlaceboScreen::device_facts() const {
     for (std::uint32_t i = 0; i < properties.memoryTypeCount; ++i) {
       const VkMemoryType& type = properties.memoryTypes[i];
       if ((type.propertyFlags & kVisibleLocal) == kVisibleLocal)
-        facts.host_visible_vram_bytes = std::max<std::uint64_t>(
-            facts.host_visible_vram_bytes, properties.memoryHeaps[type.heapIndex].size);
+        facts.host_visible_vram_bytes = std::max<std::uint64_t>(facts.host_visible_vram_bytes,
+                                                                properties.memoryHeaps[type.heapIndex].size);
     }
   }
   const auto extensions = reinterpret_cast<PFN_vkEnumerateDeviceExtensionProperties>(

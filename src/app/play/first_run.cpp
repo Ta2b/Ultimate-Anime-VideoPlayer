@@ -139,7 +139,10 @@ void downloadable_row(EngineRow& row, const EnginesHere& here) {
     row.license = download->license;
     row.status = std::format("à télécharger ({} Mo){}", (download->bytes + (1U << 20) - 1) >> 20, missing);
   } else {
-    row.status = "pas encore publié pour cette version";
+    row.status =
+        row.offer.id == core::EngineId::TensorRt && here.os == core::Os::Linux
+            ? "non publié (licence NVIDIA) : à construire sur cette machine, voir docs/nvidia-linux.md"
+            : "pas encore publié pour cette version";
   }
 }
 

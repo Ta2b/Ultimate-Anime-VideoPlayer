@@ -551,6 +551,9 @@ std::vector<std::string> Session::osd_lines() const {
   if ((show.all || show.memory) && config_.extra != nullptr) {
     if (auto memory = config_.extra->memory()) lines.push_back(std::move(*memory));
   }
+  if ((show.all || show.memory) && config_.extra != nullptr) {
+    if (auto gpu = config_.extra->gpu()) lines.push_back(std::move(*gpu));
+  }
   if (show.all || show.position) {
     const std::int64_t position = current_ ? current_->pts_us : kNoPts;
     lines.push_back(std::format("{} / {}{}", format_position(position), format_position(config_.duration_us),

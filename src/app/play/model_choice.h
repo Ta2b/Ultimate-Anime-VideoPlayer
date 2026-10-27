@@ -35,18 +35,18 @@ std::expected<ModelChoice, Refusal> choose_model(const PlayOptions& options,
 // vs-mlrt à 11 plans d'entrée, convertis en FP16 à îlots FP32 (tools/rife/convert_rife_fp16.py), sous
 // ces noms. 4.26 garde les déformations les plus faibles ; 4.26 heavy est la plus lourde.
 // --rife-model lit encore tout autre fichier, pour les essais.
-inline constexpr std::array<std::string_view, 6> kRifeCatalogue{"rife_v4.25.onnx",      "rife_v4.25_lite.onnx",
-                                                                "rife_v4.22.onnx",      "rife_v4.22_lite.onnx",
-                                                                "rife_v4.26.onnx",      "rife_v4.26_heavy.onnx"};
+inline constexpr std::array<std::string_view, 6> kRifeCatalogue{"rife_v4.25.onnx", "rife_v4.25_lite.onnx",
+                                                                "rife_v4.22.onnx", "rife_v4.22_lite.onnx",
+                                                                "rife_v4.26.onnx", "rife_v4.26_heavy.onnx"};
 
 // Le modèle par défaut, le premier présent dans cet ordre : 4.25 sur une RTX ; 4.22 lite, plus
 // légère, sur les autres cartes (AMD, Intel, GTX).
 inline constexpr std::array<std::string_view, 6> kRifeForRtx{"rife_v4.25.onnx",      "rife_v4.26.onnx",
                                                              "rife_v4.25_lite.onnx", "rife_v4.22.onnx",
                                                              "rife_v4.22_lite.onnx", "rife_v4.26_heavy.onnx"};
-inline constexpr std::array<std::string_view, 6> kRifeForOthers{"rife_v4.22_lite.onnx", "rife_v4.25_lite.onnx",
-                                                                "rife_v4.22.onnx",      "rife_v4.25.onnx",
-                                                                "rife_v4.26.onnx",      "rife_v4.26_heavy.onnx"};
+inline constexpr std::array<std::string_view, 6> kRifeForOthers{
+    "rife_v4.22_lite.onnx", "rife_v4.25_lite.onnx", "rife_v4.22.onnx",
+    "rife_v4.25.onnx",      "rife_v4.26.onnx",      "rife_v4.26_heavy.onnx"};
 std::span<const std::string_view> rife_preference(const GpuFacts& gpu);
 
 // RIFE : --rife-model, sinon settings.rife_model s'il est au catalogue, sinon le premier de
