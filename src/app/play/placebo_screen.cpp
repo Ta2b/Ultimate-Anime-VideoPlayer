@@ -108,6 +108,17 @@ void PlaceboScreen::Impl::draw_ui(const ImDrawData* data, const pl_frame& target
 std::expected<void, Refusal> PlaceboScreen::Impl::compose(const pl_frame* image,
                                                           const pl_frame& target) const {
   pl_render_params params = pl_render_default_params;
+  switch (final_scaler) {
+    case FinalScaler::Default:
+      break;
+    case FinalScaler::EwaLanczos:
+      params.upscaler = &pl_filter_ewa_lanczos;
+      break;
+    case FinalScaler::EwaLanczosSharp:
+      params.upscaler = &pl_filter_ewa_lanczossharp;
+      break;
+  }
+  if (deband) params.deband_params = &pl_deband_default_params;
   // Le grade chargé est celui du PQ ou du SDR : sur une autre cible (instantané SDR d'une sortie
   // HDR10), il est sauté.
   const bool graded_now = grade.has_value() && graded(target.color);

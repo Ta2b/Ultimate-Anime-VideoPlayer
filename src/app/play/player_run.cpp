@@ -165,6 +165,7 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
   session_config.header = {label_text};
   session_config.tracks = (*pipeline)->describe();
   p.screen.set_grade(grade_of(settings, settings.true_hdr, peak_nits, auto_peak, {}, {}, source_hdr));
+  p.screen.set_finish(settings.final_scaler, settings.deband);
   session_config.output = output_text(out, settings, peak_nits);
   session_config.display_period_us = display_period_us(out.window());
   session_config.display_hz = display_refresh_hz(out.window());

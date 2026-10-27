@@ -30,6 +30,18 @@ const EngineRow* row_of(FirstRunView&& view, core::EngineId id) = delete;
 
 }  // namespace
 
+TEST_CASE("Resizable BAR : actif si le tas visible approche la VRAM, inactif à 256 Mo", "[app][first_run]") {
+  GpuFacts gpu = kRtx;
+  CHECK(rebar_text(gpu).empty());  // le pilote n'expose aucun tas visible
+  gpu.host_visible_vram_bytes = 12ULL << 30U;
+  CHECK(rebar_text(gpu) == "actif, 12 Go");
+  CHECK(gpu_line(gpu) == "NVIDIA GeForce RTX 4070 Ti · 12 Go · Resizable BAR actif, 12 Go · cœurs Tensor");
+  gpu.host_visible_vram_bytes = 256ULL << 20U;
+  CHECK(rebar_text(gpu) == "inactif, 256 Mo");
+  gpu.vendor = GpuVendor::Intel;
+  CHECK(rebar_text(gpu).empty());
+}
+
 TEST_CASE("Une RTX de 12 Go : TensorRT et Maxine cochés, profil 1", "[app][first_run]") {
   CHECK(gpu_line(kRtx) == "NVIDIA GeForce RTX 4070 Ti · 12 Go · cœurs Tensor");
   CHECK(start_profile_for(kRtx) == 1);

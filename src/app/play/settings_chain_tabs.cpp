@@ -152,7 +152,7 @@ void fluidity_tab(PlaySettings& d, const SettingsChoices& choices, bool exportin
   }
   ImGui::EndDisabled();
   if (!choices.rife_available)
-    note("Ni modèle RIFE (rife_v4.25.onnx, rife_v4.22_lite.onnx) ni graphes GMFSS trouvés.");
+    note("Ni modèle RIFE (rife_v4.25.onnx, rife_v4.26.onnx, rife_v4.22_lite.onnx…) ni graphes GMFSS trouvés.");
   section("Moteur de l'interpolation");
   for (int i = 0; i < kMotionEngineCount; ++i) {
     const auto engine = static_cast<MotionEngine>(i);
@@ -260,13 +260,17 @@ void fluidity_tab(PlaySettings& d, const SettingsChoices& choices, bool exportin
   // Smooth Motion est une couche de l'écran, absente du fichier, et du seul pilote NVIDIA.
   if (exporting || !choices.nvidia) return;
   section("Smooth Motion (pilote NVIDIA)");
+  // Sans RIFE la lecture cale (16 images neuves en 8 s contre 192) : l'option reste éteinte.
+  const bool without_rife = d.rife_factor < 2;
+  if (without_rife) d.smooth_motion = false;
+  ImGui::BeginDisabled(without_rife);
   ImGui::Checkbox("Doubler les images après RIFE", &d.smooth_motion);
+  ImGui::EndDisabled();
   note(
       "Expérimental. La couche du pilote NVIDIA (RTX 40 et 50) génère une image entre deux images "
       "présentées : RIFE ×3 puis Smooth Motion donnent environ 144 images par seconde. Vaut au prochain "
       "lancement. Sans RIFE, la lecture peut caler : gardez RIFE à ×2 ou plus.");
-  if (d.smooth_motion && d.rife_factor < 2)
-    note("RIFE est désactivé : Smooth Motion risque de caler la lecture.");
+  if (without_rife) note("Grisé : activez RIFE à ×2 ou plus, sans quoi la lecture cale.");
 }
 
 }  // namespace ajp::app::play

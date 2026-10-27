@@ -5,6 +5,8 @@
 // à tour de rôle : un rang ancien se lit sur un événement plus récent de la même file, attente
 // plus forte, jamais plus faible.
 #include <chrono>
+#include <cstdlib>
+#include <string_view>
 #include <thread>
 
 #include "gpu/cuda/backend/cuda_status.h"
@@ -23,9 +25,20 @@ constexpr auto kQueryBeforeWait = std::chrono::microseconds(200);
 std::expected<void, Refusal> TensorRtBackend::create_lanes() {
   // 8 Go et plus : trois voies ; sinon toutes passent par la file de l'agrandissement.
   lanes_ = properties_.totalGlobalMem >= kLaneMemory ? static_cast<int>(kLanes) : 1;
+  // La voie de l'agrandissement porte l'échéance d'affichage : quand les voies se disputent les SM,
+  // le GPU lui donne la main en premier. AJP_CUDA_LANE_PRIORITY=off rend les trois égales (essais).
+  int least = 0;
+  int greatest = 0;
+  if (auto ok = cuda_check(cudaDeviceGetStreamPriorityRange(&least, &greatest), "cudaDeviceGetStreamPriorityRange");
+      !ok) {
+    return ok;
+  }
+  const char* const switch_off = std::getenv("AJP_CUDA_LANE_PRIORITY");
+  const bool prioritised = switch_off == nullptr || std::string_view(switch_off) != "off";
   for (std::size_t lane = 0; lane < kLanes; ++lane) {
-    if (auto ok = cuda_check(cudaStreamCreateWithFlags(&streams_[lane], cudaStreamNonBlocking),
-                             "cudaStreamCreateWithFlags");
+    const int priority = prioritised && lane == lane_index(Lane::Upscale) ? greatest : least;
+    if (auto ok = cuda_check(cudaStreamCreateWithPriority(&streams_[lane], cudaStreamNonBlocking, priority),
+                             "cudaStreamCreateWithPriority");
         !ok) {
       return ok;
     }

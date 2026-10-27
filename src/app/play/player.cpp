@@ -140,7 +140,7 @@ std::expected<void, Refusal> play(const PlayOptions& options, const PlayerPaths&
                                                   .height = options.window_height,
                                                   .fullscreen = options.fullscreen,
                                                   .hdr = !options.sdr,
-                                                  .smooth_motion = saved->smooth_motion,
+                                                  .smooth_motion = saved->smooth_motion && saved->rife_factor >= 2,
                                                   .allow_software = options.software_gpu});
   if (!screen) return std::unexpected(std::move(screen.error()));
   auto ui = PlayerUi::create((*screen)->window(), given ? options.file.filename().string() : "", fonts);

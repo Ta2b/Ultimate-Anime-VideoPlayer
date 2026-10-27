@@ -18,6 +18,7 @@
 #include <string_view>
 #include <vector>
 
+#include "app/play/final_scaler.h"
 #include "app/play/options.h"
 #include "core/profile.h"
 #include "core/types.h"
@@ -127,6 +128,10 @@ struct PlaySettings {
   // HDR adaptatif : le SDR passe en PQ par libplacebo et le grade émule l'aspect TrueHDR en
   // suivant la scène (route native, mêmes contraste, saturation, gris moyen et pic).
   bool hdr_native = false;
+  // Composition finale de libplacebo (toutes les routes) : filtre qui étire la chaîne vers la
+  // fenêtre, et débandage des aplats et dégradés, sans effet sur l'export ; en direct.
+  FinalScaler final_scaler = FinalScaler::Default;
+  bool deband = false;
   int audio_delay_ms = 0;
   // Synchro sur l'écran (SessionConfig::display_sync), en direct ; délai d'affichage de la vidéo
   // en ms, 0 : estimé (SessionConfig::video_latency_us).

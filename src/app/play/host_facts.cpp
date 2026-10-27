@@ -91,6 +91,7 @@ GpuFacts gpu_facts(const PlaceboScreen& screen) {
       .name = facts.name,
       .vendor = vendor,
       .vram_bytes = facts.vram_bytes,
+      .host_visible_vram_bytes = facts.host_visible_vram_bytes,
       .tensor_cores = vendor == GpuVendor::Nvidia && facts.cooperative_matrix,
       .wmma = vendor == GpuVendor::Amd && facts.cooperative_matrix && amd_matrix_cores(facts.name)};
 }

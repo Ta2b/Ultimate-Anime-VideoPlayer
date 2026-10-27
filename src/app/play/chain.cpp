@@ -162,6 +162,12 @@ void apply_live(Chain& to, const PlaySettings& wanted, std::int64_t now_us) {
                       now_us);
     }
   }
+  if (wanted.final_scaler != r.final_scaler || wanted.deband != r.deband) {
+    to.screen.set_finish(wanted.final_scaler, wanted.deband);
+    controls.notify(std::format("Image : {}, débandage {}", label(wanted.final_scaler),
+                                wanted.deband ? "oui" : "non"),
+                    now_us);
+  }
   if (wanted.audio_delay_ms != r.audio_delay_ms)
     to.session.command(cmd::SetAudioDelay{.delay_us = std::int64_t{wanted.audio_delay_ms} * 1000});
   if (wanted.display_sync != r.display_sync) to.session.set_display_sync(wanted.display_sync);

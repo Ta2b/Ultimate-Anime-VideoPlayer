@@ -30,6 +30,7 @@ struct GpuFacts {
   std::string name;  // « NVIDIA GeForce RTX 4070 Ti »
   GpuVendor vendor = GpuVendor::Other;
   std::uint64_t vram_bytes = 0;
+  std::uint64_t host_visible_vram_bytes = 0;  // tas VRAM visible de l'hôte : toute la VRAM avec Resizable BAR
   bool tensor_cores = false;  // NVIDIA avec matrices coopératives Vulkan : une RTX
   bool wmma = false;          // AMD RDNA3 ou RDNA4 avec matrices coopératives Vulkan
 };
@@ -47,6 +48,10 @@ bool winml_listed(std::string_view gpu_name);
 core::SystemInfo system_of(const GpuFacts& gpu, core::Os os);
 // « NVIDIA GeForce RTX 4070 Ti · 12 Go · cœurs Tensor »
 std::string gpu_line(const GpuFacts& gpu);
+
+// Resizable BAR (ou Smart Access Memory) : « actif, 16 Go », « inactif, 256 Mo », ou rien quand la
+// carte n'est pas une carte à mémoire dédiée ou que le pilote n'expose pas de tas visible.
+std::string rebar_text(const GpuFacts& gpu);
 
 // Profil de démarrage conseillé : 1 (1440p, RIFE ×3) pour une RTX ou une RDNA3/RDNA4 de 11 Go et
 // plus, 7 (1080p, ×2)

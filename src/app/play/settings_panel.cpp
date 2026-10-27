@@ -151,6 +151,20 @@ void grade_tab(PlaySettings& d, const SettingsChoices& choices) {
   } else {
     note("Sortie HDR10 sans moteur HDR : pas de grade (moteur à choisir dans l'onglet HDR).");
   }
+  section("Composition finale");
+  if (ImGui::BeginCombo("Filtre vers la fenêtre", std::string(label(d.final_scaler)).c_str())) {
+    for (int i = 0; i < kFinalScalerCount; ++i) {
+      const auto scaler = static_cast<FinalScaler>(i);
+      if (ImGui::Selectable(std::string(label(scaler)).c_str(), scaler == d.final_scaler))
+        d.final_scaler = scaler;
+    }
+    ImGui::EndCombo();
+  }
+  ImGui::Checkbox("Débander les aplats et dégradés", &d.deband);
+  note(
+      "Le filtre étire la sortie de la chaîne (par exemple 1440p) vers la fenêtre ou l'écran 4K ; EWA "
+      "Lanczos est le plus fin, plus lourd pour le GPU. Le débandage adoucit les marches des aplats et "
+      "des dégradés, courants en anime, sans toucher aux contours. Aucun effet sur l'export.");
   section("Noir absolu OLED");
   if (ImGui::BeginCombo("Noir absolu", std::string(label(d.oled_black)).c_str())) {
     for (int i = 0; i < kOledBlackCount; ++i) {

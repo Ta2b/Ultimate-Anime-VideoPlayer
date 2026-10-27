@@ -1,11 +1,13 @@
 #include "app/play/chain_setup.h"
 
 #include <algorithm>
+#include <cstdlib>
 #include <format>
 #include <span>
 #include <utility>
 
 #include "app/play/drba_model.h"
+#include "app/play/first_run.h"
 #include "app/play/host_facts.h"
 #include "app/play/motion_model.h"
 #include "core/clock.h"
@@ -30,7 +32,7 @@ std::vector<std::filesystem::path> gmfss_dirs(const PlayerPaths& paths,
   return dirs;
 }
 
-std::vector<media::HwApi> decoder_attempts(std::string_view backend, bool shared_vulkan) {
+std::vector<media::HwApi> decoder_attempts(std::string_view backend, bool shared_vulkan, bool nvidia_gpu) {
   if (backend == "tensorrt") return {media::HwApi::Cuda, media::HwApi::Software};
   std::vector<media::HwApi> attempts;
 #if defined(__APPLE__)
@@ -39,7 +41,7 @@ std::vector<media::HwApi> decoder_attempts(std::string_view backend, bool shared
 #endif
   if (shared_vulkan) attempts.push_back(media::HwApi::Vulkan);
 #if defined(__linux__)
-  attempts.push_back(media::HwApi::Vaapi);
+  if (!nvidia_gpu || std::getenv("AJP_VAAPI") != nullptr) attempts.push_back(media::HwApi::Vaapi);
 #endif
   attempts.push_back(media::HwApi::Software);
   return attempts;
@@ -48,7 +50,7 @@ std::vector<media::HwApi> decoder_attempts(std::string_view backend, bool shared
 media::DecoderOptions decoder_options(std::string_view backend, const GpuDevice& render,
                                       const media::HwDeviceSource* shared) {
   const bool tensorrt = backend == "tensorrt";
-  return {.attempts = decoder_attempts(backend, shared != nullptr),
+  return {.attempts = decoder_attempts(backend, shared != nullptr, render.vendor() == GpuVendor::Nvidia),
           .render_device = render.uuid,
           .devices = shared,
           .download = !tensorrt,
@@ -122,7 +124,11 @@ std::expected<std::optional<ChainEngines>, Refusal> prepare_chain(Player& p, con
   c.reduce = reduced ? std::format("{}x{} → {} {}x{}", video.width, video.height, label(settings.downscale),
                                    c.work.width, c.work.height)
                      : std::format("{}x{}", video.width, video.height);
-  const std::span<const std::string_view> rife_order = rife_preference(gpu_facts(p.screen));
+  const GpuFacts gpu = gpu_facts(p.screen);
+  log->info("GPU : {}", gpu_line(gpu));
+  if (const std::string rebar = rebar_text(gpu); rebar.rfind("inactif", 0) == 0)
+    log->warn("Resizable BAR inactif : activer Above 4G Decoding et Resizable BAR dans le BIOS");
+  const std::span<const std::string_view> rife_order = rife_preference(gpu);
   if (auto found = choose_rife_model(p.options, p.paths.home, settings, rife_order, p.paths.models))
     c.rife_choice = std::move(*found);
   if (c.rife_choice) c.rife_model = c.rife_choice->path;

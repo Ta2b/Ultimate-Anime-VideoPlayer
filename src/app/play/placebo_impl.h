@@ -130,6 +130,8 @@ struct PlaceboScreen::Impl {
   int snapshot_index = 0;
   std::optional<render::Grade> grade;  // absent si les hooks ne se lisent pas (dit au journal)
   render::GradeChoice grade_choice;    // posé par set_grade
+  FinalScaler final_scaler = FinalScaler::Default;  // posés par set_finish
+  bool deband = false;
   // Ce que le grade porte : rien, le grade PQ (vrai) ou le grade SDR (faux) de grade_choice.
   std::optional<bool> grade_loaded_pq;
   // Charge dans le grade le choix qui va à cette cible ; graded() dit s'il s'applique à une cible.

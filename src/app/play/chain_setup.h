@@ -39,7 +39,10 @@ namespace ajp::app::play {
 // (shared_vulkan : les images restent sur le GPU, le backend Vulkan les lit en place), puis, sous
 // Linux, VA-API (le bloc vidéo d'AMD ou d'Intel) copié en mémoire hôte, puis le décodage logiciel.
 // Sur un Mac, VideoToolbox (le bloc média de la puce) d'abord, copié en mémoire hôte.
-std::vector<media::HwApi> decoder_attempts(std::string_view backend, bool shared_vulkan);
+// Sur une carte NVIDIA, VA-API n'existe que par un pilote tiers au-dessus de NVDEC : l'essai est
+// sauté (nvidia_gpu) ; AJP_VAAPI=1 le rétablit.
+std::vector<media::HwApi> decoder_attempts(std::string_view backend, bool shared_vulkan,
+                                           bool nvidia_gpu = false);
 
 // Où chercher les graphes de GMFSS : à côté du modèle RIFE choisi, puis dans les dossiers RIFE.
 std::vector<std::filesystem::path> gmfss_dirs(const PlayerPaths& paths,
