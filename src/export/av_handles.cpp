@@ -6,6 +6,8 @@
 
 extern "C" {
 #include <libavutil/error.h>
+#include <libavutil/mastering_display_metadata.h>
+#include <libavutil/rational.h>
 }
 
 namespace ajp::exporter {
@@ -172,6 +174,37 @@ ColorInfo color_of(const AVCodecParameters& video) {
       break;
     default:
       break;
+  }
+  // HDR10 : l'affichage de mastering et les niveaux de lumière que le conteneur porte, rejoints à
+  // l'encodeur (video_encoder.cpp : hdr_side_data) pour que le fichier exporté les garde.
+  if (out.transfer == Transfer::Pq || out.transfer == Transfer::Hlg) {
+    const auto rational = [](AVRational r) { return r.den != 0 ? static_cast<float>(av_q2d(r)) : 0.0F; };
+    HdrMetadata hdr;
+    bool found = false;
+    if (const AVPacketSideData* side = av_packet_side_data_get(
+            video.coded_side_data, video.nb_coded_side_data, AV_PKT_DATA_MASTERING_DISPLAY_METADATA)) {
+      const auto& display = *reinterpret_cast<const AVMasteringDisplayMetadata*>(side->data);
+      if (display.has_primaries != 0) {
+        for (std::size_t i = 0; i < 3; ++i) {
+          hdr.primaries_xy[2 * i] = rational(display.display_primaries[i][0]);
+          hdr.primaries_xy[2 * i + 1] = rational(display.display_primaries[i][1]);
+        }
+        hdr.white_xy = {rational(display.white_point[0]), rational(display.white_point[1])};
+      }
+      if (display.has_luminance != 0) {
+        hdr.max_luminance = rational(display.max_luminance);
+        hdr.min_luminance = rational(display.min_luminance);
+      }
+      found = true;
+    }
+    if (const AVPacketSideData* side = av_packet_side_data_get(
+            video.coded_side_data, video.nb_coded_side_data, AV_PKT_DATA_CONTENT_LIGHT_LEVEL)) {
+      const auto& level = *reinterpret_cast<const AVContentLightMetadata*>(side->data);
+      hdr.max_cll = static_cast<float>(level.MaxCLL);
+      hdr.max_fall = static_cast<float>(level.MaxFALL);
+      found = true;
+    }
+    if (found) out.hdr = hdr;
   }
   return out;
 }
