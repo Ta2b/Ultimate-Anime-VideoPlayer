@@ -85,6 +85,12 @@ ExportOutcome run_export(Player& p, const ExportJob& job) {
   if (job.output.empty() || std::filesystem::equivalent(job.output, p.options.file, unknown))
     return stopped(Refusal{RefusalCode::FileUnwritable, "le fichier exporté remplacerait la source"});
 
+  // Le dossier de destination avant la préparation des moteurs, qui dure : un refus tardif la perdrait.
+  if (const auto parent = job.output.parent_path();
+      !parent.empty() && !std::filesystem::is_directory(parent, unknown)) {
+    return stopped(
+        Refusal{RefusalCode::FileUnwritable, std::format("dossier introuvable : {}", parent.string())});
+  }
   std::vector<std::string> unavailable;
   const PlaySettings settings = within_engines(export_chain(job.chain), p.engines, unavailable);
   for (const std::string& line : unavailable) log->warn("{}", line);
