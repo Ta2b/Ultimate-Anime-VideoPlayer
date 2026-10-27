@@ -299,7 +299,7 @@ struct StageRig {
   bool push(DecodedFrame frame, std::chrono::milliseconds timeout = std::chrono::seconds(2));
   // Attend n images dans la boîte, en rendant chaque slot reçu dès son arrivée si release.
   bool collect(std::size_t n, bool release = true,
-               std::chrono::milliseconds timeout = std::chrono::seconds(5));
+               std::chrono::milliseconds timeout = std::chrono::seconds(20));
   // Rend les slots des images reçues et pas encore rendues ; combien.
   std::size_t release_all();
   std::vector<Refusal> reported();

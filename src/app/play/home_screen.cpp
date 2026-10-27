@@ -3,9 +3,11 @@
 #include <algorithm>
 #include <array>
 #include <cstdint>
+#include <iterator>
 #include <memory>
 #include <mutex>
 #include <span>
+#include <string>
 #include <string_view>
 #include <system_error>
 #include <utility>
@@ -116,7 +118,6 @@ SettingsChoices home_choices(const HomeScreen& h, const HomeState& st, const Pla
   const bool drba = find_distil_drba(places).has_value();
   const std::int64_t period = display_period_us(h.screen.window());
   const std::optional<DisplayFacts> display = read_display(display_name(h.screen.window()));
-  std::error_code error;
   return SettingsChoices{
       .models = model ? model->available : std::vector<std::string>{},
       .default_model = model ? model->default_name : std::string(),
@@ -134,7 +135,7 @@ SettingsChoices home_choices(const HomeScreen& h, const HomeState& st, const Pla
       .default_rife_model = rife ? rife->default_name : std::string(),
       .rife_folder = places.empty() ? std::string() : prepare::utf8_path(places.front()),
       .nvidia = vendor_from_pci(h.screen.device_facts().pci_vendor) == GpuVendor::Nvidia,
-      .true_hdr_available = std::filesystem::exists(h.options.true_hdr_sdk, error) || running.true_hdr,
+      .true_hdr_available = maxine_available(h.options, h.paths) || running.true_hdr,
       .hdr_output = !h.options.sdr && content_peak_nits(h.screen.window()).has_value(),
       .auto_peak = vendor_hdr::peak_from_display(content_peak_nits(h.screen.window())),
       .engines = engine_badges(h.paths.engines, {}, WorkSize{}, std::nullopt, kernels::RifeGeometry{}),
@@ -163,7 +164,19 @@ PlaySettings home_settings(const HomeScreen& h, const HomeState& st, const PlayS
 
 std::optional<std::filesystem::path> dropped_file(const SDL_Event& event) {
   if (event.type != SDL_EVENT_DROP_FILE || event.drop.data == nullptr) return std::nullopt;
-  return prepare::path_from_utf8(event.drop.data);
+  std::filesystem::path path = prepare::path_from_utf8(event.drop.data);
+  // Un dossier ou un fichier qui n'est pas une vidéo (sous-titres, image, texte) ne ferme pas la
+  // lecture en cours : il ne se lirait pas, et la vidéo serait perdue pour rien.
+  std::error_code error;
+  if (!std::filesystem::is_regular_file(path, error) || error) return std::nullopt;
+  std::string extension = prepare::utf8_path(path.extension());
+  std::ranges::transform(extension, extension.begin(),
+                         [](char c) { return static_cast<char>(c >= 'A' && c <= 'Z' ? c - 'A' + 'a' : c); });
+  static constexpr std::string_view kNotVideo[] = {
+      ".srt", ".ass",  ".ssa", ".sub",  ".idx",  ".vtt", ".txt", ".nfo", ".jpg", ".jpeg", ".png",
+      ".gif", ".webp", ".bmp", ".toml", ".onnx", ".ttf", ".otf", ".zip", ".7z",  ".rar"};
+  if (std::ranges::find(kNotVideo, extension) != std::end(kNotVideo)) return std::nullopt;
+  return path;
 }
 
 std::expected<std::optional<std::filesystem::path>, Refusal> run_home(const HomeScreen& h, HomeState& st,
@@ -203,7 +216,7 @@ std::expected<std::optional<std::filesystem::path>, Refusal> run_home(const Home
     h.ui.set_profiles(view_of(st.profiles));
   };
 
-  const core::KeyMap keys = core::KeyMap::defaults();
+  const core::KeyMap& keys = configured_keys();
   const std::int64_t opened = host_now_us();
   std::vector<Input> actions;
   std::optional<std::filesystem::path> chosen;

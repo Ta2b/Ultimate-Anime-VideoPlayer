@@ -28,7 +28,8 @@ std::optional<T> number(std::string_view text) {
 // Secondes, décimales permises (« 12.5 »), en microsecondes dans limits::kSeconds.
 std::expected<std::int64_t, Refusal> seconds(std::string_view option, std::string_view text) {
   const auto value = number<double>(text);
-  if (!value || !std::isfinite(*value) || *value < 0.0 ||
+  // Comparé en double avant toute conversion : un double hors de l'int64 serait indéfini.
+  if (!value || !std::isfinite(*value) || *value < 0.0 || *value > static_cast<double>(limits::kSeconds.hi) ||
       !limits::kSeconds.contains(static_cast<std::int64_t>(*value))) {
     return refuse(RefusalCode::FieldOutOfRange,
                   std::format("{} : « {} » n'est pas une durée en secondes "
@@ -244,8 +245,8 @@ std::string play_usage() {
       "  --fullscreen-after=S   passe en plein écran après S secondes\n"
       "  --stats=FICHIER        temps de chaque image présentée\n"
       "  --snapshot=FICHIER     la fenêtre en PPM, après --snapshot-at=S secondes (3) de lecture,\n"
-      "  --snapshot-frames=N    N présentations de suite (FICHIER-001.ppm…), pour le scintillement\n"
       "                         ou de construction d'un moteur si elle dure jusque-là\n"
+      "  --snapshot-frames=N    N présentations de suite (FICHIER-001.ppm…), pour le scintillement\n"
       "  --rife-image           RIFE image à chaque instant (sans la variante mouvement)\n"
       "  --sdr                  sortie SDR même sur un écran HDR (essais du grade SDR)\n"
       "  --one-lane             une seule file de calcul : plus lent, mais le profil GPU donne le\n"

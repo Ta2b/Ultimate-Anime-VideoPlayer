@@ -7,6 +7,7 @@
 extern "C" {
 #include <libavcodec/codec_desc.h>
 #include <libavcodec/codec_par.h>
+#include <libavcodec/packet.h>
 }
 
 #include "core/frame.h"
@@ -47,9 +48,19 @@ void AudioBridge::expect_seek(std::uint32_t epoch, std::optional<std::int64_t> t
 
 void AudioBridge::select(int track, std::uint32_t from_epoch) {
   const std::scoped_lock lock(mutex_);
+  undo_track_ = track_;
+  undo_previous_ = previous_;
+  undo_switch_epoch_ = switch_epoch_;
   previous_ = track_;
   track_ = track;
   switch_epoch_ = from_epoch;
+}
+
+void AudioBridge::undo_select() {
+  const std::scoped_lock lock(mutex_);
+  track_ = undo_track_;
+  previous_ = undo_previous_;
+  switch_epoch_ = undo_switch_epoch_;
 }
 
 int AudioBridge::track_for(std::uint32_t epoch) const {
@@ -63,6 +74,17 @@ bool AudioBridge::try_push(media::Packet&& packet) {
   audio::AudioPacket out{.pts_us = known_pts(packet.pts_us), .epoch = packet.epoch};
   out.data.resize(bytes.size());
   for (std::size_t i = 0; i < bytes.size(); ++i) out.data[i] = static_cast<std::uint8_t>(bytes[i]);
+  if (packet.av) {
+    for (int i = 0; i < packet.av->side_data_elems; ++i) {
+      const AVPacketSideData& side = packet.av->side_data[i];
+      if (side.type != AV_PKT_DATA_SKIP_SAMPLES && side.type != AV_PKT_DATA_NEW_EXTRADATA &&
+          side.type != AV_PKT_DATA_PARAM_CHANGE) {
+        continue;
+      }
+      out.side_data.push_back({.type = static_cast<int>(side.type),
+                               .bytes = std::vector<std::uint8_t>(side.data, side.data + side.size)});
+    }
+  }
   {
     const std::scoped_lock lock(mutex_);
     if (trim_us_ && packet.epoch == trim_epoch_) out.discard_before_us = trim_us_;

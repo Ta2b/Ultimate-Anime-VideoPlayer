@@ -143,7 +143,7 @@ TEST_CASE("Encodeur : NVENC, options Ada et Blackwell essayées d'abord", "[expo
 
 TEST_CASE("Encodeur : libellés", "[export]") {
   CHECK(label(Codec::Hevc) == "HEVC 10 bits");
-  CHECK(label(Codec::Lossless) == "Sans perte (FFV1)");
+  CHECK(label(Codec::Lossless) == "FFV1 4:2:0 10 bits, sans perte du codec");
   CHECK(label(Quality::VeryHigh) == "Très haute");
   CHECK(label(Quality::Standard) == "Standard");
 }

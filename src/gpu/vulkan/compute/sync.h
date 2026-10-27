@@ -41,10 +41,11 @@ class TimelineSemaphore {
   Done signal(std::uint64_t value);
 
  private:
-  TimelineSemaphore(const DeviceFunctions* fn, VkDevice device, VkSemaphore semaphore)
-      : fn_(fn), device_(device), semaphore_(semaphore) {}
+  TimelineSemaphore(const VkContext* context, VkSemaphore semaphore)
+      : context_(context), fn_(&context->fn()), device_(context->device()), semaphore_(semaphore) {}
   void destroy();
 
+  const VkContext* context_ = nullptr;  // sous un GPU bloqué, le sémaphore reste en place
   const DeviceFunctions* fn_ = nullptr;
   VkDevice device_ = VK_NULL_HANDLE;
   VkSemaphore semaphore_ = VK_NULL_HANDLE;

@@ -9,6 +9,7 @@
 #include <hip/hip_runtime_api.h>
 #include <map>
 #include <string_view>
+#include <unistd.h>
 #include <utility>
 #include <vector>
 
@@ -21,7 +22,10 @@ using vk::net::HostBinding;
 
 class ImportedHip final : public vk::net::ImportedMemory {
  public:
-  ImportedHip(hipExternalMemory_t memory, void* pointer) : memory_(memory), pointer_(pointer) {}
+  // Prend le descripteur : HIP ne le ferme pas (clr : ~ExternalBuffer() est vide, ROCr n'y touche pas),
+  // et un descripteur resté ouvert garde le dma-buf, donc la mémoire vidéo, après vkFreeMemory.
+  ImportedHip(hipExternalMemory_t memory, void* pointer, int fd)
+      : memory_(memory), pointer_(pointer), fd_(fd) {}
   ImportedHip(const ImportedHip&) = delete;
   ImportedHip& operator=(const ImportedHip&) = delete;
   ImportedHip(ImportedHip&&) = delete;
@@ -29,12 +33,14 @@ class ImportedHip final : public vk::net::ImportedMemory {
   ~ImportedHip() override {
     (void)hipFree(pointer_);
     (void)hipDestroyExternalMemory(memory_);
+    if (fd_ >= 0) close(fd_);
   }
   void* device() const override { return pointer_; }
 
  private:
   hipExternalMemory_t memory_;
   void* pointer_;
+  int fd_;
 };
 
 // Tampon HIP à soi : paramètres internes du programme (scratch), conversions de type.
@@ -338,7 +344,7 @@ std::expected<std::unique_ptr<vk::net::ImportedMemory>, Refusal> import_memory(i
     return refuse(RefusalCode::DeviceUnavailable,
                   std::format("hipExternalMemoryGetMappedBuffer : {}", hipGetErrorString(e)));
   }
-  return std::make_unique<ImportedHip>(memory, pointer);
+  return std::make_unique<ImportedHip>(memory, pointer, fd);
 }
 
 std::expected<std::unique_ptr<vk::net::ImportedSemaphore>, Refusal> import_semaphore(int device, int fd) {

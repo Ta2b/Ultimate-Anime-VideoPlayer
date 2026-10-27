@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.28)
 
 project(ajp
-  VERSION 0.1.0
+  VERSION 0.2.0
   DESCRIPTION "Lecteur vidéo anime : upscaling, interpolation et HDR en temps réel"
   LANGUAGES CXX)
 
@@ -62,6 +62,16 @@ include(Dependencies)
 # bibliothèque partagée se lance alors sans LD_LIBRARY_PATH. Posé avant toute cible.
 if(AJP_TRANSITIVE_RPATH AND CMAKE_SYSTEM_NAME STREQUAL "Linux")
   add_link_options("LINKER:--disable-new-dtags")
+endif()
+
+# Les chemins de l'arbre de construction n'entrent pas dans les binaires (assertions, __FILE__,
+# informations de débogage) : ni ceux de la machine qui construit, ni ceux du préfixe des
+# dépendances. Les mêmes sources donnent les mêmes octets d'une machine à l'autre.
+if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang|AppleClang")
+  add_compile_options("-ffile-prefix-map=${CMAKE_SOURCE_DIR}=." "-ffile-prefix-map=${CMAKE_BINARY_DIR}=_build")
+  if(DEFINED ENV{AJP_DEPS_PREFIX} AND NOT "$ENV{AJP_DEPS_PREFIX}" STREQUAL "")
+    add_compile_options("-ffile-prefix-map=$ENV{AJP_DEPS_PREFIX}=/deps")
+  endif()
 endif()
 
 # La libc++ de Xcode 16 (LLVM 19) range std::jthread et <stop_token> parmi ses fonctions

@@ -72,7 +72,8 @@ struct Target {
   std::uint32_t max_push_constants = 128;
   std::uint32_t max_shared_memory = 16384;
   std::uint32_t max_workgroup_invocations = 128;
-  std::uint32_t storage_alignment = 256;  // minStorageBufferOffsetAlignment : décalage d'une vue liée
+  std::uint32_t max_workgroup_count_x = 65535;  // maxComputeWorkGroupCount[0] : groupes d'un dispatch en x
+  std::uint32_t storage_alignment = 256;        // minStorageBufferOffsetAlignment : décalage d'une vue liée
 };
 
 }  // namespace ajp::gpu::vk::net

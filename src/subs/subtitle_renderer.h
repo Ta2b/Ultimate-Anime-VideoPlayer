@@ -48,6 +48,7 @@ struct RenderTarget {
   int height = 0;
   int video_width = 0;  // 0 : inconnue, la sortie sert de stockage
   int video_height = 0;
+  double sample_aspect = 1.0;  // forme du pixel de la vidéo (SAR) : l'écran l'étire à l'affichage
   std::optional<VideoMatrix> video_matrix;  // nullopt : inconnue, couleurs du script telles quelles
   // Échelle des polices (ass_set_font_scale, comme sub-scale de mpv) : kMinFontScale à kMaxFontScale.
   float font_scale = 1.0F;

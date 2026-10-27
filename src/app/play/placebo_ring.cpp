@@ -44,30 +44,37 @@ void close_handle(std::uintptr_t handle) {
 static_assert(static_cast<std::uint32_t>(kLayout) == kRingLayout);
 
 // Cède tex à CUDA : la transition et le transfert de file sont faits quand sem atteint value.
-bool hand_to_cuda(pl_gpu gpu, pl_tex tex, VkSemaphore sem, std::uint64_t value) {
+// qf : VK_QUEUE_FAMILY_EXTERNAL pour CUDA, VK_QUEUE_FAMILY_IGNORED sur le même VkDevice (le backend
+// Vulkan écrit le slot sans acquisition : aucun transfert de propriété, core/ring.h).
+bool hand_to_cuda(pl_gpu gpu, pl_tex tex, VkSemaphore sem, std::uint64_t value, std::uint32_t qf) {
   pl_vulkan_hold_params hold{};
   hold.tex = tex;
   hold.layout = kLayout;
-  hold.qf = VK_QUEUE_FAMILY_EXTERNAL;
+  hold.qf = qf;
   hold.semaphore = {.sem = sem, .value = value};
   return pl_vulkan_hold_ex(gpu, &hold);
 }
 
 // Reprend tex de CUDA : libplacebo attend que sem atteigne value avant de la lire.
-void take_from_cuda(pl_gpu gpu, pl_tex tex, VkSemaphore sem, std::uint64_t value) {
+void take_from_cuda(pl_gpu gpu, pl_tex tex, VkSemaphore sem, std::uint64_t value, std::uint32_t qf) {
   pl_vulkan_release_params release{};
   release.tex = tex;
   release.layout = kLayout;
-  release.qf = VK_QUEUE_FAMILY_EXTERNAL;
+  release.qf = qf;
   release.semaphore = {.sem = sem, .value = value};
   pl_vulkan_release_ex(gpu, &release);
 }
 
 }  // namespace
 
+std::uint32_t PlaceboRing::family() const {
+  return external_ ? VK_QUEUE_FAMILY_EXTERNAL : VK_QUEUE_FAMILY_IGNORED;
+}
+
 std::expected<std::vector<RingSlotDesc>, Refusal> PlaceboRing::create(pl_gpu gpu, int width, int height,
-                                                                      std::uint32_t count) {
+                                                                      std::uint32_t count, bool external) {
   clear(gpu);
+  external_ = external;
   ++generation_;
   const pl_fmt format = pl_find_named_fmt(gpu, "rgba16");
   if (format == nullptr || (format->caps & PL_FMT_CAP_STORABLE) == 0) {
@@ -122,7 +129,7 @@ std::expected<std::vector<RingSlotDesc>, Refusal> PlaceboRing::create(pl_gpu gpu
     slot.semaphore = pl_vulkan_sem_create(gpu, &sem_params);
     if (exported && slot.semaphore != VK_NULL_HANDLE) slot.semaphore_export = raw_handle(handle);
     const bool ok = slot.tex != nullptr && slot.semaphore != VK_NULL_HANDLE &&
-                    hand_to_cuda(gpu, slot.tex, handover, std::uint64_t{i} + 1);
+                    hand_to_cuda(gpu, slot.tex, handover, std::uint64_t{i} + 1, family());
     slots_.push_back(slot);
     if (!ok) {
       pl_gpu_finish(gpu);
@@ -166,7 +173,7 @@ std::expected<pl_tex, Refusal> PlaceboRing::acquire(pl_gpu gpu, const RingFrame&
   if (!tex) return tex;
   Slot& slot = slots_[frame.slot];
   if (slot.placebo_value != frame.ready_value) {
-    take_from_cuda(gpu, slot.tex, slot.semaphore, frame.ready_value);
+    take_from_cuda(gpu, slot.tex, slot.semaphore, frame.ready_value, family());
     slot.placebo_value = frame.ready_value;
   }
   return slot.tex;
@@ -186,8 +193,8 @@ SlotFree PlaceboRing::retire(pl_gpu gpu, const RingFrame& frame) {
     // Jamais montrée : libplacebo attend tout de même ready_value avant de la rendre, pour que
     // les valeurs du sémaphore restent croissantes (core/ring.h).
     if (slot.placebo_value != frame.ready_value)
-      take_from_cuda(gpu, slot.tex, slot.semaphore, frame.ready_value);
-    hand_to_cuda(gpu, slot.tex, slot.semaphore, frame.ready_value + 1);
+      take_from_cuda(gpu, slot.tex, slot.semaphore, frame.ready_value, family());
+    hand_to_cuda(gpu, slot.tex, slot.semaphore, frame.ready_value + 1, family());
     slot.placebo_value = 0;
   }
   return release_of(frame);

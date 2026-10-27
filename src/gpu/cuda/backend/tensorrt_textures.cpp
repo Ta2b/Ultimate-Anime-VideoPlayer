@@ -17,7 +17,6 @@ cudaTextureObject_t TensorRtBackend::texture(const Tensor& tensor) {
   const std::int64_t rows = tensor.shape.dims[0] * tensor.shape.dims[1] * tensor.shape.dims[2];
   const TextureKey key{.address = address, .width = width, .rows = rows};
   if (const auto found = textures_.find(key); found != textures_.end()) return found->second;
-  if (textures_.size() >= kTextures) destroy_textures();
   // Pitch multiple de texturePitchAlignment (32 octets : 16 pixels FP16), adresse alignée sur
   // textureAlignment, tailles dans maxTexture2DLinear ; sinon 0, gardé aussi : le noyau lit exact.
   const auto pitch = static_cast<std::size_t>(width) * 2;
@@ -48,6 +47,11 @@ cudaTextureObject_t TensorRtBackend::texture(const Tensor& tensor) {
   }
   textures_.emplace(key, object);
   return object;
+}
+
+void TensorRtBackend::trim_textures() {
+  // Avant les objets d'un lancement, jamais pendant : ceux déjà pris pour ses paramètres restent.
+  if (textures_.size() >= kTextures) destroy_textures();
 }
 
 void TensorRtBackend::destroy_textures() {

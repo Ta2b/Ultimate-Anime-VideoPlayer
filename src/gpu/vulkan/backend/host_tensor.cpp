@@ -84,14 +84,15 @@ class HostImportedBuffer final : public TensorBuffer {
     VkPhysicalDeviceMemoryProperties properties{};
     context_.instance_functions().vkGetPhysicalDeviceMemoryProperties(context_.physical_device(),
                                                                       &properties);
-    // Un type permis par le tampon et par l'adresse, cohérent avec l'hôte de préférence.
+    // Un type permis par le tampon et par l'adresse, et cohérent avec l'hôte : aucun flush ni
+    // invalidate n'existe aux frontières des étapes du runtime, un type non cohérent est refusé
+    // (le tensor est alors relu par copie).
     std::optional<std::uint32_t> type;
     for (std::uint32_t i = 0; i < properties.memoryTypeCount; ++i) {
       if ((requirements.memoryTypeBits & pointer.memoryTypeBits & (1U << i)) == 0) continue;
-      const bool coherent =
-          (properties.memoryTypes[i].propertyFlags & VK_MEMORY_PROPERTY_HOST_COHERENT_BIT) != 0;
-      if (!type || coherent) type = i;
-      if (coherent) break;
+      if ((properties.memoryTypes[i].propertyFlags & VK_MEMORY_PROPERTY_HOST_COHERENT_BIT) == 0) continue;
+      type = i;
+      break;
     }
     if (!type || requirements.size > allocation_size)
       return detail::refuse_backend(RefusalCode::FeatureUnavailable,

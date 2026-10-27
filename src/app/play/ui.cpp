@@ -408,12 +408,14 @@ bool PlayerUi::handle(const SDL_Event& event, std::int64_t now_us, std::vector<I
       return true;
     case SDL_EVENT_KEY_DOWN:
     case SDL_EVENT_KEY_UP: {
-      if (!text_input_) return false;
+      // Les modificateurs arrivent toujours à ImGui (Ctrl + clic sur un curseur ouvre sa saisie,
+      // et un Ctrl relâché hors saisie ne reste pas enfoncé) ; les touches, seulement en saisie.
       const SDL_Keymod mod = event.key.mod;
       io.AddKeyEvent(ImGuiMod_Ctrl, (mod & SDL_KMOD_CTRL) != 0);
       io.AddKeyEvent(ImGuiMod_Shift, (mod & SDL_KMOD_SHIFT) != 0);
       io.AddKeyEvent(ImGuiMod_Alt, (mod & SDL_KMOD_ALT) != 0);
       io.AddKeyEvent(ImGuiMod_Super, (mod & SDL_KMOD_GUI) != 0);
+      if (!text_input_) return false;
       if (const ImGuiKey key = imgui_key(event.key.key); key != ImGuiKey_None)
         io.AddKeyEvent(key, event.type == SDL_EVENT_KEY_DOWN);
       input_pending_ = true;
@@ -437,7 +439,9 @@ UiFrame PlayerUi::frame(std::int64_t now_us, const ControlsView& view, std::vect
   }
   // ImGui place certains éléments (onglets, fenêtre qui s'ouvre) une image après les avoir reçus :
   // après une entrée, deux images de plus, même en pause sans autre événement.
-  if (!controls_.needs_frame(now_us, view, input_pending_ || settle_ > 0))
+  if (input_pending_) last_input_us_ = now_us;
+  const bool tooltip_due = hover_waiting_ && now_us - last_input_us_ < kTooltipWindowUs;
+  if (!controls_.needs_frame(now_us, view, input_pending_ || settle_ > 0 || tooltip_due))
     return UiFrame{.draw = draw_, .changed = false, .bottom = bottom_, .top = top_};
   settle_ = input_pending_ ? kSettleFrames : std::max(settle_ - 1, 0);
   input_pending_ = false;
@@ -465,6 +469,7 @@ UiFrame PlayerUi::frame(std::int64_t now_us, const ControlsView& view, std::vect
     look_.keep_visible = panel_.is_open();  // fermé par sa croix
     drawn = true;
   }
+  hover_waiting_ = ImGui::IsAnyItemHovered();
   ImGui::Render();
   controls_.framed(now_us, view, drawn);
   follow_text_input();

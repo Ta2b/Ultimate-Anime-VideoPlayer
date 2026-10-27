@@ -8,6 +8,7 @@
 // les deux enveloppes d'une même image ne se gênent pas.
 #include <algorithm>
 #include <bit>
+#include <cstdint>
 #include <format>
 #include <optional>
 #include <utility>
@@ -165,18 +166,26 @@ FrameExport::Converted FrameExport::convert_vulkan(VulkanFrames& v, const RingFr
   const bool packed = plane_formats_of(parts.context->format[0]).value_or(PlaneFormats{}).packed;
   Converted converted = render(frame, std::span<const pl_tex>(*planes), packed);
   // Reprise des plans, rendus ou non : chaque enveloppe signale une valeur de plus (deux signaux
-  // d'une même soumission vont croissant), l'image passe à la dernière.
+  // d'une même soumission vont croissant), l'image passe à la dernière valeur réellement signalée.
+  // Un plan dont la reprise échoue ne signale rien : la valeur n'avance pas pour lui, sinon
+  // l'encodeur attendrait pour toujours un signal qui ne vient pas.
   VkImageLayout layout = image.layout[0];
   bool held = true;
+  std::uint64_t signalled = image.sem_value[0];
   for (std::size_t p = 0; p < planes->size(); ++p) {
     pl_vulkan_hold_params hold{};
     hold.tex = (*planes)[p];
     hold.out_layout = &layout;
     hold.qf = VK_QUEUE_FAMILY_IGNORED;
-    hold.semaphore = pl_vulkan_sem{.sem = image.sem[0], .value = image.sem_value[0] + 1 + p};
-    held = pl_vulkan_hold_ex(gpu, &hold) && held;
+    const std::uint64_t value = image.sem_value[0] + 1 + p;
+    hold.semaphore = pl_vulkan_sem{.sem = image.sem[0], .value = value};
+    if (pl_vulkan_hold_ex(gpu, &hold)) {
+      signalled = value;
+    } else {
+      held = false;
+    }
   }
-  image.sem_value[0] += planes->size();
+  image.sem_value[0] = signalled;
   image.layout[0] = layout;
   image.access[0] = VK_ACCESS_2_NONE;  // la soumission signalée rend tout visible
   if (parts.context->unlock_frame != nullptr) parts.context->unlock_frame(parts.frames, parts.image);

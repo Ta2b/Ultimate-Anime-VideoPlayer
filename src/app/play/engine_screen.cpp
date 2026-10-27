@@ -39,7 +39,7 @@ constexpr std::size_t usage(core::Usage u) {
 std::expected<std::optional<FirstRunView>, Refusal> welcome(PlaceboScreen& screen, PlayerUi& ui,
                                                             FirstRunView view, const PlayOptions& options,
                                                             std::size_t& next_key, SnapshotPlan& snapshot) {
-  const core::KeyMap keys = core::KeyMap::defaults();
+  const core::KeyMap& keys = configured_keys();
   const std::int64_t started = host_now_us();
   std::vector<Input> actions;
   while (!view.done && !view.cancelled) {

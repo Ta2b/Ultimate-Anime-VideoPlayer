@@ -29,6 +29,7 @@ class SourceLoop {
   void on_flush(const Flush& flush);
   void on_seek(const cmd::Seek& seek);
   void forget_position();
+  void recover_position();  // un seek refusé après avoir déplacé le fichier : retour à la dernière image
   Progress advance();
   Progress decode();
   Progress route(Packet packet);
@@ -42,6 +43,7 @@ class SourceLoop {
 
   std::optional<DecodedFrame> held_frame_;    // décodée, pas encore acceptée
   std::optional<std::int64_t> drop_before_;   // seek exact en cours : cible en µs
+  std::optional<std::int64_t> last_pts_us_;   // pts de la dernière image tenue : où revenir si un seek échoue
   std::optional<DecodedFrame> last_dropped_;  // seek exact : livrée si la fin vient avant la cible
   std::uint32_t epoch_ = 0;
   std::uint32_t next_id_ = 1;   // 0 reste « aucune source »

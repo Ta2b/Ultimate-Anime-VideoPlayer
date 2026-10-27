@@ -65,6 +65,7 @@ struct SessionConfig {
   bool subtitles = false;                // une piste est choisie : demander leurs images
   int video_width = 0;                   // taille de stockage de la vidéo, pour libass
   int video_height = 0;
+  double video_sar = 1.0;                         // forme du pixel de la vidéo (largeur / hauteur), 1 : carré
   std::optional<subs::VideoMatrix> video_matrix;  // couleurs VSFilter
   float subtitle_scale = 1.0F;                    // taille des sous-titres (subs::RenderTarget::font_scale)
   std::vector<std::string> header;                // la chaîne : modèles, tailles, moteur
@@ -131,6 +132,7 @@ class Session {
   // Les pistes et la sortie ont changé (piste choisie, pic de RTX HDR) : relues au tour suivant.
   void set_tracks(std::vector<std::string> tracks);
   void set_output(std::string output);
+  void set_header(std::vector<std::string> header);
   // Un tour : choisit l'image, puis compose et présente seulement si quelque chose a changé
   // (image neuve, sous-titres, OSD, interface, taille de sortie) ; rien sinon. Rend les slots. Un
   // refus de l'écran est rendu tel quel : la boucle s'arrête.
@@ -139,6 +141,8 @@ class Session {
   void end();
 
   bool finished() const { return finished_; }
+  // La fenêtre a changé d'écran : nouvelle période et nouvelle fréquence, la synchro les suit.
+  void set_display(std::int64_t period_us, double hz);
   bool quit_asked() const { return quit_; }  // q ou fenêtre fermée, pas la fin du fichier
   bool paused() const { return paused_; }
   std::uint32_t epoch() const { return epoch_; }
@@ -161,6 +165,7 @@ class Session {
   void choose(std::int64_t host_now);
   const subs::SubtitleFrame* subtitles_for(std::int64_t pts_us);
   void check_end(std::int64_t host_now);
+  void watch_clock(const ClockSnapshot& now, std::int64_t host_now);
 
   SessionConfig config_;
   Stages& stages_;
@@ -175,6 +180,16 @@ class Session {
   bool finished_ = false;
   bool quit_ = false;
   std::optional<std::int64_t> pending_seek_us_;  // cible du dernier seek, jusqu'à sa première image
+  // Seek dont une boîte a refusé le Flush ou le Seek : rejoué par tick, jusqu'à ce que tout passe.
+  struct SeekRetry {
+    std::int64_t target_us = 0;
+    bool exact = false;
+    std::int64_t at_us = 0;
+  };
+  std::optional<SeekRetry> retry_seek_;
+  std::int64_t last_tick_us_ = 0;                       // instant hôte du dernier tick
+  std::optional<std::int64_t> clock_stalled_since_us_;  // des images attendent une horloge arrêtée
+  std::int64_t audio_stall_grace_us_ = 1'500'000;
 
   FrameQueue queue_;
   std::optional<RingFrame> current_;   // montrée, slot tenu par main
@@ -183,6 +198,9 @@ class Session {
   std::vector<RingFrame> unmeasured_;  // reçues, pas encore vues écrites : leur retard reste à mesurer
   SubtitleQueue subtitles_{kMaxKeptSubtitles};
   std::size_t subtitle_requests_ = 0;  // demandes de l'époque sans réponse
+  // La plus récente image dont la demande a dû attendre une réponse : la seule qui compte, les
+  // précédentes auraient donné des sous-titres déjà périmés.
+  std::optional<RingFrame> subtitle_waiting_;
 
   bool fresh_ = false;       // ce tour montre une image neuve
   bool shown_once_ = false;  // une présentation a eu lieu : la suivante seulement si ça change

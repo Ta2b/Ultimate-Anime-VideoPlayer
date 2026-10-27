@@ -123,6 +123,7 @@ class VulkanBackend final : public Backend {
 
   BackendLog log_;
   std::filesystem::path cache_dir_;
+  std::filesystem::path pipeline_cache_file_;  // vide : sans dossier de cache
   BackendOptions options_;
   std::unique_ptr<VkContext> context_;
   std::unique_ptr<MemoryAllocator> memory_;
@@ -144,7 +145,8 @@ class VulkanBackend final : public Backend {
   std::unique_ptr<net::ImportedSemaphore> imported_timeline_;
   // Le premier échec d'une étape différée, écrit par le fil du runtime, rendu au prochain enqueue.
   std::mutex runtime_mutex_;
-  std::optional<Refusal> runtime_failure_;
+  std::optional<Refusal> runtime_failure_;  // figé après kMaxStepFailures échecs de suite
+  int step_failures_ = 0;                   // échecs de suite des étapes différées
 };
 
 // Le contexte d'un appareil de rendu Vulkan partagé : sa file compute, son verrou de file.

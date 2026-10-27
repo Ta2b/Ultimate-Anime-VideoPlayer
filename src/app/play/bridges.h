@@ -33,10 +33,14 @@ std::expected<audio::AudioCodecInfo, Refusal> audio_codec_info(const media::Trac
 // lit encore), ceux d'après prennent la nouvelle (après le Flush, audio ouvre son décodeur).
 class AudioBridge final : public media::PacketSink {
  public:
-  AudioBridge(audio::AudioThread& audio, int track) : audio_(audio), track_(track), previous_(track) {}
+  AudioBridge(audio::AudioThread& audio, int track)
+      : audio_(audio), track_(track), previous_(track), undo_track_(track), undo_previous_(track) {}
 
   // Depuis main, avant le seek d'époque from_epoch qui fait entendre la piste track.
   void select(int track, std::uint32_t from_epoch);
+  // Annule le dernier select (le thread audio a refusé la piste) : les paquets des époques
+  // suivantes restent routés vers la piste d'avant.
+  void undo_select();
   // La piste que garde un paquet de cette époque.
   int track_for(std::uint32_t epoch) const;
 
@@ -54,6 +58,10 @@ class AudioBridge final : public media::PacketSink {
   int track_;
   int previous_;
   std::uint32_t switch_epoch_ = 0;
+  // Ce que select a remplacé, pour undo_select.
+  int undo_track_;
+  int undo_previous_;
+  std::uint32_t undo_switch_epoch_ = 0;
 };
 
 // La piste de sous-titres choisie, en SelectTrack : ASS avec son en-tête, ou texte (SRT).

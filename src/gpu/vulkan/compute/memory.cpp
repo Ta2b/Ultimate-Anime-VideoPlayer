@@ -282,7 +282,11 @@ void MemoryAllocator::release(std::uint64_t id, VkDeviceSize offset, VkDeviceSiz
   if (found == blocks_.end()) return;
   Block& block = **found;
   used_ -= size;
-  if (--block.live == 0 && !context_.stalled()) {
+  const bool emptied = --block.live == 0;
+  // Sous un GPU bloqué, la portion reste prise : la rendre à la liste libre la ferait réutiliser
+  // pendant que le GPU la lit peut-être encore.
+  if (context_.stalled()) return;
+  if (emptied) {
     // Un bloc vide de la taille courante reste en réserve, un par type et tiling : une chaîne
     // qui change (nouveau moteur, seek) relâche et redemande les mêmes tailles, et chaque
     // vkAllocateMemory coûte des millisecondes. Un bloc propre aussi, tant que les blocs propres

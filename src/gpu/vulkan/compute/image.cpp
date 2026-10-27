@@ -164,9 +164,11 @@ StorageImage::~StorageImage() {
 void StorageImage::destroy() {
   if (context_ == nullptr) return;
   const DeviceFunctions& fn = context_->fn();
-  if (storage_view_ != VK_NULL_HANDLE) fn.vkDestroyImageView(context_->device(), storage_view_, nullptr);
-  if (sampled_view_ != VK_NULL_HANDLE) fn.vkDestroyImageView(context_->device(), sampled_view_, nullptr);
-  if (image_ != VK_NULL_HANDLE) {
+  // Ce que la file a reçu finit avant ; un GPU bloqué garde l'image et ses vues.
+  // (le contexte n'est jamais const : l'image n'en garde qu'un pointeur const)
+  if (image_ != VK_NULL_HANDLE && const_cast<VkContext*>(context_)->settle()) {
+    if (storage_view_ != VK_NULL_HANDLE) fn.vkDestroyImageView(context_->device(), storage_view_, nullptr);
+    if (sampled_view_ != VK_NULL_HANDLE) fn.vkDestroyImageView(context_->device(), sampled_view_, nullptr);
     fn.vkDestroyImage(context_->device(), image_, nullptr);
     context_->destroyed().note(handle_word(image_));
   }

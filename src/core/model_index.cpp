@@ -299,12 +299,13 @@ std::string sha256_hex(std::string_view data) {
   return to_hex(hash.finish());
 }
 
-std::expected<std::string, Refusal> sha256_file(const std::filesystem::path& path) {
+std::expected<std::string, Refusal> sha256_file(const std::filesystem::path& path, std::stop_token stop) {
   std::ifstream in(path, std::ios::binary);
   if (!in) return refuse(RefusalCode::FileUnreadable, path.string());
   Sha256 hash;
   std::vector<char> buffer(std::size_t{1} << 16);
   while (in) {
+    if (stop.stop_requested()) return refuse(RefusalCode::Cancelled, path.string());
     in.read(buffer.data(), static_cast<std::streamsize>(buffer.size()));
     const auto count = static_cast<std::size_t>(in.gcount());
     hash.update(std::as_bytes(std::span(buffer.data(), count)));
@@ -394,7 +395,7 @@ std::vector<ModelEntry> models_for_profile(std::span<const ModelEntry> lock, int
 }
 
 std::expected<void, Refusal> verify_file(const std::filesystem::path& path, std::uint64_t size,
-                                         std::string_view sha256) {
+                                         std::string_view sha256, std::stop_token stop) {
   std::error_code error;
   const std::uintmax_t actual_size = std::filesystem::file_size(path, error);
   if (error) return refuse(RefusalCode::FileUnreadable, path.string());
@@ -402,7 +403,7 @@ std::expected<void, Refusal> verify_file(const std::filesystem::path& path, std:
     return refuse(RefusalCode::HashMismatch,
                   std::format("{} : {} octets, {} attendus", path.filename().string(), actual_size, size));
   }
-  auto actual = sha256_file(path);
+  auto actual = sha256_file(path, stop);
   if (!actual) return std::unexpected(actual.error());
   if (*actual != sha256) {
     return refuse(RefusalCode::HashMismatch,

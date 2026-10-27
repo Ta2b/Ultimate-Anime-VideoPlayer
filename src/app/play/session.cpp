@@ -14,6 +14,12 @@ namespace {
 
 // Fin de flux : plus rien n'arrive depuis ce délai, la lecture est finie.
 constexpr std::int64_t kEndGraceUs = 1'000'000;
+// Un seek dont une boîte a refusé un message est rejoué après ce délai.
+constexpr std::int64_t kSeekRetryUs = 50'000;
+// Des images attendent l'horloge audio depuis 1,5 s (Session::audio_stall_grace_us_) : l'horloge
+// hôte prend la main. Après une première perte, le délai est plus court : la piste est
+// probablement illisible.
+constexpr std::int64_t kAudioStallRepeatUs = 400'000;
 constexpr std::size_t kMaxRefusals = 3;
 // L'OSD se recompose quatre fois par seconde, pas à chaque vsync.
 constexpr std::int64_t kOsdPeriodUs = 250'000;
@@ -132,6 +138,11 @@ void Session::set_tracks(std::vector<std::string> tracks) {
   osd_at_us_.reset();
 }
 
+void Session::set_header(std::vector<std::string> header) {
+  config_.header = std::move(header);
+  osd_at_us_.reset();
+}
+
 void Session::set_output(std::string output) {
   config_.output = std::move(output);
   osd_at_us_.reset();
@@ -149,12 +160,24 @@ void Session::toggle_fullscreen() {
 void Session::seek_to(std::int64_t target_us, bool exact) {
   target_us = std::max<std::int64_t>(target_us, 0);
   if (config_.duration_us > 0) target_us = std::min(target_us, config_.duration_us);
+  const bool retrying = retry_seek_.has_value();
+  retry_seek_.reset();
+  clock_stalled_since_us_.reset();
   stages_.pause();
+  screen_.new_scene();
   ++epoch_;
-  if (!stages_.flush(epoch_) || !stages_.seek(cmd::Seek{.target_us = target_us, .exact = exact})) {
-    on_refusal({.stage = "main",
-                .refusal = {RefusalCode::SeekFailed,
-                            std::format("seek vers {} : boîte pleine", format_position(target_us))}});
+  // Le Seek part même si une boîte a refusé son Flush : la source qui a reçu le sien attend ce
+  // Seek pour reprendre (media/source.h). La diffusion se rejoue ensuite, à une époque neuve,
+  // tant qu'une boîte a refusé quelque chose.
+  const bool flushed = stages_.flush(epoch_);
+  const bool sought = stages_.seek(cmd::Seek{.target_us = target_us, .exact = exact});
+  if (!flushed || !sought) {
+    retry_seek_ = SeekRetry{.target_us = target_us, .exact = exact, .at_us = last_tick_us_ + kSeekRetryUs};
+    if (!retrying) {
+      on_refusal({.stage = "main",
+                  .refusal = {RefusalCode::SeekFailed,
+                              std::format("seek vers {} : boîte pleine", format_position(target_us))}});
+    }
   }
   for (const RingFrame& frame : queue_.take_stale(epoch_)) {
     retire(frame);
@@ -165,6 +188,7 @@ void Session::seek_to(std::int64_t target_us, bool exact) {
   stats_.restart_pacing();
   subtitles_.clear();
   subtitle_requests_ = 0;
+  subtitle_waiting_.reset();
   prerolling_ = true;
   preroll_since_us_.reset();
   stream_ended_ = false;
@@ -187,6 +211,11 @@ void Session::on_frame(const RingFrame& frame) {
 void Session::on_subtitles(subs::SubtitleFrame&& frame) {
   if (frame.epoch != epoch_) return;  // demande d'avant un seek : l'atlas rentre chez subs
   if (subtitle_requests_ > 0) --subtitle_requests_;
+  if (subtitle_waiting_) {
+    const RingFrame waiting = *subtitle_waiting_;
+    subtitle_waiting_.reset();
+    request_subtitles(waiting);
+  }
   if (!config_.subtitles) return;  // désactivés depuis la demande
   subtitles_.push(std::move(frame), current_ ? current_->pts_us : kNoPts);
 }
@@ -200,7 +229,11 @@ void Session::on_refusal(const StageRefusal& refusal) {
 }
 
 void Session::request_subtitles(const RingFrame& frame) {
-  if (!config_.subtitles || frame.pts_us == kNoPts || subtitle_requests_ >= kMaxSubtitleRequests) return;
+  if (!config_.subtitles || frame.pts_us == kNoPts) return;
+  if (subtitle_requests_ >= kMaxSubtitleRequests) {
+    subtitle_waiting_ = frame;
+    return;
+  }
   const OutputSize size = screen_.size();
   const subs::RenderRequest request{.pts_us = frame.pts_us,
                                     .epoch = frame.epoch,
@@ -208,6 +241,7 @@ void Session::request_subtitles(const RingFrame& frame) {
                                                .height = size.height,
                                                .video_width = config_.video_width,
                                                .video_height = config_.video_height,
+                                               .sample_aspect = config_.video_sar,
                                                .video_matrix = config_.video_matrix,
                                                .font_scale = config_.subtitle_scale}};
   if (stages_.request_subtitles(request)) ++subtitle_requests_;
@@ -268,6 +302,7 @@ void Session::choose(std::int64_t host_now) {
     return;
   }
   const ClockSnapshot now = clock_.snapshot();
+  watch_clock(now, host_now);
   if (!now.valid || now.epoch != epoch_) return;  // horloge pas encore partie : l'image reste
   // L'image choisie maintenant paraît après display_delay_us ; elle doit être celle dont le pts
   // est le plus proche de cet instant, à une demi-période près.
@@ -290,6 +325,28 @@ void Session::choose(std::int64_t host_now) {
   last_fresh_host_us_ = host_now;
 }
 
+// Des images attendent une horloge qui ne court pas : l'audio maître n'en fournit plus (piste
+// illisible, trou, début tardif, fin avant la vidéo). Passé le délai, l'horloge hôte mène et la
+// vidéo repart ; sans cela elle resterait figée, la source bloquée sur l'image tenue.
+void Session::watch_clock(const ClockSnapshot& now, std::int64_t host_now) {
+  const bool running = now.valid && now.epoch == epoch_ && now.rate != 0.0;
+  if (running || paused_ || current_ == std::nullopt || queue_.first_of(epoch_) == nullptr) {
+    clock_stalled_since_us_.reset();
+    return;
+  }
+  if (!clock_stalled_since_us_) {
+    clock_stalled_since_us_ = host_now;
+    return;
+  }
+  if (host_now - *clock_stalled_since_us_ < audio_stall_grace_us_) return;
+  clock_stalled_since_us_.reset();
+  if (!stages_.audio_lost(epoch_, current_->pts_us)) return;
+  audio_stall_grace_us_ = kAudioStallRepeatUs;  // l'audio a déjà manqué : la prochaine fois, plus vite
+  on_refusal({.stage = "main",
+              .refusal = {RefusalCode::DeviceUnavailable, "audio absent : l'horloge de l'écran mène"},
+              .fatal = false});
+}
+
 Session::SubtitleLook Session::look_of(const subs::SubtitleFrame* frame) {
   if (frame == nullptr || !frame->atlas || frame->rects.empty()) return {};
   return SubtitleLook{.generation = frame->atlas->generation, .rects = frame->rects};
@@ -304,6 +361,8 @@ const subs::SubtitleFrame* Session::subtitles_for(std::int64_t pts_us) {
 
 std::expected<std::optional<PresentRecord>, Refusal> Session::tick(std::int64_t host_now, const UiFrame& ui) {
   fresh_ = false;
+  last_tick_us_ = host_now;
+  if (retry_seek_ && host_now >= retry_seek_->at_us) seek_to(retry_seek_->target_us, retry_seek_->exact);
   measure_latency(host_now);
   retire_written();
   follow_display();
@@ -402,6 +461,13 @@ std::int64_t Session::display_delay_us(std::int64_t period) const {
   return stats_.render.median() + period / 2;
 }
 
+void Session::set_display(std::int64_t period_us, double hz) {
+  if (period_us == config_.display_period_us && hz == config_.display_hz) return;
+  config_.display_period_us = period_us;
+  config_.display_hz = hz;
+  follow_display();
+}
+
 void Session::follow_display() {
   double speed = 1.0;
   if (config_.display_sync && config_.extra != nullptr) {
@@ -434,7 +500,8 @@ void Session::check_end(std::int64_t host_now) {
       fullscreen_done_ = true;
     }
   }
-  if (stream_ended_ && !paused_ && queue_.empty() && host_now - last_fresh_host_us_ > kEndGraceUs) {
+  if (stream_ended_ && !paused_ && queue_.empty() && stages_.idle() &&
+      host_now - last_fresh_host_us_ > kEndGraceUs) {
     finished_ = true;
   }
 }

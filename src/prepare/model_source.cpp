@@ -35,6 +35,17 @@ OnnxType onnx_type(gpu::TensorType type) {
   return OnnxType::Undefined;
 }
 
+// Un poids externe dont le chemin, une fois les liens symboliques suivis, sort du dossier du modèle.
+// Une résolution impossible n'est pas un refus : le fichier manquant échoue plus loin, à la lecture.
+bool escapes_folder(const std::filesystem::path& folder, const std::string& location) {
+  std::error_code root_error;
+  std::error_code file_error;
+  const std::filesystem::path root = std::filesystem::weakly_canonical(folder, root_error);
+  const std::filesystem::path file = std::filesystem::weakly_canonical(folder / location, file_error);
+  if (root_error || file_error) return false;
+  return std::ranges::mismatch(root, file).in1 != root.end();
+}
+
 }  // namespace
 
 // La taille vient du système de fichiers, jamais de tellg() : sur un dossier,
@@ -77,7 +88,7 @@ std::expected<ModelSource, Refusal> read_model(const gpu::ModelSpec& model, std:
   auto summary = scan_onnx(*graph);
   if (!summary) return std::unexpected(summary.error());
   for (const std::string& location : summary->external_locations) {
-    if (!is_safe_location(location)) {
+    if (!is_safe_location(location) || escapes_folder(model.onnx_path.parent_path(), location)) {
       return refuse(RefusalCode::ModelMismatch, "poids externe hors du dossier du modèle : " + location);
     }
   }

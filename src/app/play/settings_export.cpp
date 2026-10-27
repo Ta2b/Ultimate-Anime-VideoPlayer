@@ -12,6 +12,7 @@
 
 #include "app/play/panel_style.h"
 #include "app/play/settings_chain_tabs.h"
+#include "app/play/text_fit.h"
 #include "export/container.h"
 #include "prepare/utf8.h"
 
@@ -48,16 +49,14 @@ const char* codec_note(exporter::Codec codec) {
     case exporter::Codec::H264:
       return "H.264 8 bits : pour les lecteurs anciens ; les dégradés y sont moins fins.";
     case exporter::Codec::Lossless:
-      return "FFV1 sans perte, encodé par le processeur : des fichiers très lourds, pour retravailler la "
-             "vidéo.";
+      return "FFV1 sans perte du codec, en YUV 4:2:0 10 bits (la couleur est réduite avant l'encodage), "
+             "encodé par le processeur : des fichiers très lourds, pour retravailler la vidéo.";
   }
   return "";
 }
 
 void copy_path(std::array<char, 1024>& to, const std::string& text) {
-  const std::size_t n = std::min(text.size(), to.size() - 1);
-  std::copy_n(text.data(), n, to.data());
-  to[n] = '\0';
+  copy_text(to, text);
 }
 
 // Ce qui empêche d'exporter vers ce fichier, ou rien.
@@ -83,6 +82,14 @@ void export_tab(ExportDraft& draft, const PlaySettings& running, const SettingsC
     return;
   }
   ExportJob& job = draft.job;
+  // Une autre vidéo (glisser-déposer, fichier suivant) : la chaîne, le nom proposé et un chemin
+  // saisi pour la précédente ne valent plus.
+  if (draft.source != choices.source_file) {
+    draft.source = choices.source_file;
+    draft.chain_set = false;
+    draft.path_edited = false;
+    draft.named_for.clear();
+  }
   if (!draft.chain_set) {
     job.chain = running;
     draft.chain_set = true;
@@ -182,7 +189,7 @@ void export_tab(ExportDraft& draft, const PlaySettings& running, const SettingsC
     ImGui::TextWrapped("%s", problem.c_str());
     ImGui::PopStyleColor();
   } else if (std::filesystem::exists(output, error)) {
-    note("Ce fichier existe : il sera remplacé.");
+    note("Ce fichier existe : il ne sera remplacé qu'à la fin d'un export réussi.");
   }
   if (container == exporter::Container::Matroska) {
     note(
@@ -191,12 +198,14 @@ void export_tab(ExportDraft& draft, const PlaySettings& running, const SettingsC
     if (rate.den > 0 && rate.num >= kExactRateFps * rate.den)
       note(
           "À cette fréquence, le MKV arrondit chaque image à la milliseconde (8, 8 puis 9 ms à 120 i/s) : "
-          "un nom en .mp4 ou .mov garde les instants exacts, sans les sous-titres ASS ni les polices.");
+          "un nom en .mp4 ou .mov garde les instants exacts, sans les sous-titres (ASS, SRT, PGS) ni les "
+          "polices.");
   } else {
     note(
         "Le MP4 et le MOV gardent les instants exacts de chaque image. Les chapitres de la source sont "
         "copiés, l'audio s'il y va (AAC, AC-3, E-AC-3 ; FLAC, Opus et DTS en MP4 ; jamais TrueHD), mais ni "
-        "les sous-titres ASS ni les polices. La lecture s'arrête pendant l'export puis reprend au même "
+        "les sous-titres (ASS, SRT, PGS) ni les polices. Pour tout garder, nommez le fichier en .mkv. La "
+        "lecture s'arrête pendant l'export puis reprend au même "
         "endroit ; Échap annule l'export.");
   }
   ImGui::BeginDisabled(!problem.empty());

@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <array>
+#include <chrono>
 #include <filesystem>
 #include <format>
 #include <fstream>
@@ -59,6 +60,26 @@ std::unexpected<Refusal> refuse(RefusalCode code, std::string detail) {
   return std::unexpected(Refusal{code, std::move(detail)});
 }
 
+// Un fichier de configuration que le lecteur n'a pas compris sera réécrit au prochain changement
+// de réglage : il est mis de côté d'abord (« nom.invalide-AAAAMMJJ-HHMMSS »), pour qu'aucun profil
+// ni réglage valide qu'il contenait ne se perde sans copie. Rien si le fichier est illisible
+// (droits) : il n'est pas écrasé non plus. Rend le message à montrer à l'accueil.
+std::string set_aside(const std::filesystem::path& path, const Refusal& why) {
+  std::error_code error;
+  if (why.code == RefusalCode::FileUnreadable || !std::filesystem::exists(path, error)) return {};
+  const auto now = std::chrono::floor<std::chrono::seconds>(std::chrono::system_clock::now());
+  std::filesystem::path aside = path;
+  aside += std::format(".invalide-{:%Y%m%d-%H%M%S}", now);
+  std::filesystem::rename(path, aside, error);
+  if (error) {
+    log_channel("app")->warn("{} : mise de côté impossible ({})", path.string(), error.message());
+    return {};
+  }
+  log_channel("app")->warn("{} mis de côté dans {}", path.string(), aside.string());
+  return std::format("{} était invalide : copie gardée sous {}", path.filename().string(),
+                     aside.filename().string());
+}
+
 // La piste vidéo que la source choisira, lue d'avance : sa taille fixe le moteur et le ring.
 std::expected<media::TrackInfo, Refusal> probe_video(const std::filesystem::path& file) {
   auto demuxer = media::Demuxer::open(file);
@@ -82,9 +103,11 @@ std::expected<void, Refusal> play(const PlayOptions& options, const PlayerPaths&
     given = std::move(*video);
   }
   const std::filesystem::path settings_path = paths.engines.parent_path() / "play.toml";
+  std::vector<std::string> startup_notes;  // fichiers mis de côté, dits à l'accueil
   auto saved = load_settings(settings_path);
   if (!saved) {
     log->warn("{} ; réglages par défaut", saved.error().detail);
+    startup_notes.push_back(set_aside(settings_path, saved.error()));
     saved = PlaySettings{};
   }
   // Le profil de démarrage fixe la chaîne ; les options données la remplacent pour cette lecture.
@@ -94,9 +117,11 @@ std::expected<void, Refusal> play(const PlayOptions& options, const PlayerPaths&
                                                            .fps = fps_of(given->frame_rate)}
                                         : kHomeSource};
   if (auto loaded = load_profiles(profiles.user_path)) {
+    apply_user_keys(loaded->user_text);
     profiles.data = std::move(*loaded);
   } else {
     log->warn("{} ; profils de base", loaded.error().detail);
+    startup_notes.push_back(set_aside(profiles.user_path, loaded.error()));
     profiles.data = Profiles{.file = *core::parse_profile(base_profiles_toml())};
   }
   profiles.active = profiles.data.file.start_profile;
@@ -143,6 +168,7 @@ std::expected<void, Refusal> play(const PlayOptions& options, const PlayerPaths&
   auto engines = core::load_settings(engines_path);
   if (!engines) {
     log->warn("{} ; écran de bienvenue", engines.error().detail);
+    startup_notes.push_back(set_aside(engines_path, engines.error()));
     engines = core::Settings{};
   }
   // Les moteurs téléchargeables de cette version (engines.lock livré avec le lecteur).
@@ -168,7 +194,11 @@ std::expected<void, Refusal> play(const PlayOptions& options, const PlayerPaths&
   // glissée sur la fenêtre pendant la lecture prend la place de celle en cours.
   const bool from_home = !given;
   std::filesystem::path file = options.file;
-  std::string problem;                      // la vidéo choisie ne se lit pas : dit à l'accueil
+  std::string problem;  // la vidéo choisie ne se lit pas : dit à l'accueil
+  for (const std::string& note : startup_notes) {
+    if (note.empty()) continue;
+    problem += problem.empty() ? note : " · " + note;
+  }
   std::shared_ptr<BackendLibrary> library;  // ouverte à la première vidéo, gardée pour les suivantes
   const HomeScreen home{.screen = **screen,
                         .ui = **ui,
@@ -265,9 +295,10 @@ std::expected<void, Refusal> play(const PlayOptions& options, const PlayerPaths&
       }
     }
     std::expected<void, Refusal> result;
+    bool start_paused = false;
     std::optional<std::filesystem::path> next_file;
     while (true) {
-      auto outcome = run_chain(player, settings, start_us);
+      auto outcome = run_chain(player, settings, start_us, start_paused);
       if (!outcome) {
         result = std::unexpected(std::move(outcome.error()));
         break;
@@ -294,25 +325,38 @@ std::expected<void, Refusal> play(const PlayOptions& options, const PlayerPaths&
       }
       settings = (*outcome)->settings;
       start_us = (*outcome)->position_us;
+      start_paused = (*outcome)->paused;
       player.details = settings.stats.all;
-      if (auto written = save_settings(
-              settings_path, settings_to_save(settings, player.from_file, player.started, file_options));
-          !written)
-        log->warn("{}", written.error().detail);
       if ((*outcome)->next_file) {
+        if (auto written = save_settings(
+                settings_path, settings_to_save(settings, player.from_file, player.started, file_options));
+            !written)
+          log->warn("{}", written.error().detail);
+        player.unsaved.reset();
         next_file = (*outcome)->next_file;
         break;
       }
+      player.unsaved = settings;  // écrits quand la chaîne rouverte est ouverte (run_chain)
       log->info("réouverture à {}", format_position(start_us));
     }
-    if (!result) return result;
+    // Une vidéo choisie à l'accueil qui échoue y ramène avec la raison, plutôt que de fermer le
+    // lecteur ; lancé sur un fichier, l'échec reste celui du programme (code de sortie, message).
+    std::string failed;
+    if (!result) {
+      if (!from_home || player.quit) return result;
+      failed = std::format("« {} » s'est arrêtée : {}", file.filename().string(), result.error().detail);
+      log->error("{}", failed);
+    }
     // Ce que la lecture a changé suit dans la vidéo suivante ou l'accueil.
     library = std::move(player.library);
     snapshot = std::move(player.snapshot);
     next_key = player.next_key;
     profiles = std::move(player.profiles);
     *engines = std::move(player.engines);
-    if (next_file) {
+    if (!failed.empty()) {
+      problem = std::move(failed);
+      file.clear();
+    } else if (next_file) {
       file = std::move(*next_file);
     } else if (from_home && !player.quit) {
       file.clear();  // fin de la vidéo : retour à l'accueil

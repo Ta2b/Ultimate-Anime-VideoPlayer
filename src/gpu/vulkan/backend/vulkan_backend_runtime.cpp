@@ -32,6 +32,9 @@
 namespace ajp::gpu::vk {
 namespace {
 
+// Échecs de suite d'étapes différées au-delà desquels le backend refuse tout nouveau réseau.
+constexpr int kMaxStepFailures = 3;
+
 using detail::refuse_backend;
 
 // Le temps d'un réseau du runtime, des entrées prêtes (l'attente de la file finie) aux sorties
@@ -384,10 +387,18 @@ std::expected<void, Refusal> VulkanBackend::enqueue_runtime(Engine& engine, std:
 
 void VulkanBackend::finish_host_step(BackendQueue& queue, std::uint64_t signal,
                                      std::expected<void, Refusal> ran) {
-  if (!ran) {
-    log(BackendLogLevel::Error, std::format("réseau par {} : {}", runtime_->name(), ran.error().detail));
+  {
+    // Un échec isolé (délai de VideoToolbox, exception d'un runtime) coûte l'image de cette étape,
+    // dont les sorties restent celles de l'image précédente ; seuls des échecs de suite ferment le
+    // backend, comme le chemin synchrone, qui n'échoue que pour l'étape concernée.
     const std::scoped_lock lock(runtime_mutex_);
-    if (!runtime_failure_) runtime_failure_ = std::move(ran.error());
+    if (ran) {
+      step_failures_ = 0;
+    } else {
+      log(BackendLogLevel::Error, std::format("réseau par {} : {}", runtime_->name(), ran.error().detail));
+      if (++step_failures_ >= kMaxStepFailures && !runtime_failure_)
+        runtime_failure_ = std::move(ran.error());
+    }
   }
   if (auto ok = queue.signal_on_host(signal); !ok) {
     log(BackendLogLevel::Error, std::format("signal de l'étape {} : {}", signal, ok.error().detail));

@@ -112,6 +112,7 @@ std::expected<void, Refusal> TensorRtBackend::ingest(const DecodedFrame& frame, 
         std::format("ingestion : tenseur FP16 1×3×h×w attendu, au plus {}×{} (Area ne fait que réduire)",
                     frame.height, frame.width));
   }
+  pair_levels_ = frame.color.range == ColorRange::Full ? 255.0F : 219.0F;  // pas de luma de la source
   const kernels::YuvScale scale = kernels::yuv_scale(
       *format, frame.color.range == ColorRange::Full ? kernels::Range::Full : kernels::Range::Limited);
   const kernels::Coefficients k = kernels::coefficients(*matrix);

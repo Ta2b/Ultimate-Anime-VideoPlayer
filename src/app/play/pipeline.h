@@ -20,6 +20,7 @@
 #include <vector>
 
 #include "app/play/bridges.h"
+#include "app/play/external_subtitles.h"
 #include "app/play/links.h"
 #include "app/play/session.h"
 #include "app/play/tracks.h"
@@ -102,6 +103,8 @@ class Pipeline {
   Pipeline() = default;
   const audio::AudioCodecInfo* audio_codec(int track) const;
   const media::TrackInfo* track_info(int track) const;
+  // Le SelectTrack d'une piste du menu : du conteneur, ou un fichier à côté de la vidéo.
+  std::expected<subs::SelectTrack, Refusal> subtitle_select(int index) const;
 
   // Ordre de déclaration = ordre inverse de destruction : la source s'arrête la première,
   // la boîte de main disparaît la dernière.
@@ -110,12 +113,14 @@ class Pipeline {
   // Les horloges vivent plus longtemps que les threads qui les lisent.
   std::shared_ptr<HostClock> host_clock_ = std::make_shared<HostClock>();
   std::shared_ptr<LeadClock> lead_;  // avec audio : l'audio ou l'horloge hôte, selon l'écran
+  // La boîte de la source est déclarée avant l'audio : le thread audio crédite cette boîte depuis
+  // release_packet jusqu'à sa propre destruction, donc la boîte lui survit.
+  media::SourceInbox source_inbox_{media::kSourceInboxBounds};
   std::unique_ptr<audio::AudioThread> audio_;
   std::unique_ptr<AudioBridge> audio_bridge_;
   std::shared_ptr<subs::SubsInbox> subs_inbox_;
   std::unique_ptr<subs::SubsThread> subs_thread_;
   std::unique_ptr<SubsBridge> subs_bridge_;
-  media::SourceInbox source_inbox_{media::kSourceInboxBounds};
   std::unique_ptr<VideoStage> video_;
   std::unique_ptr<ThreadStages> stages_;
   const MasterClock* clock_ = host_clock_.get();
@@ -129,7 +134,8 @@ class Pipeline {
   std::string decoder_api_;
   TrackMenu menu_;
   std::vector<std::pair<int, audio::AudioCodecInfo>> audio_codecs_;  // pistes audio décodables
-  std::vector<media::TrackInfo> tracks_;                             // audio et sous-titres
+  std::vector<ExternalSubtitle> external_;  // à côté de la vidéo, au menu après les pistes du conteneur
+  std::vector<media::TrackInfo> tracks_;    // audio et sous-titres
 };
 
 }  // namespace ajp::app::play

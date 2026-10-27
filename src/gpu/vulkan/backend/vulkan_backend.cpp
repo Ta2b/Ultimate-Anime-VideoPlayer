@@ -141,6 +141,10 @@ VulkanBackend::VulkanBackend(const BackendInit& init, BackendOptions options)
 VulkanBackend::~VulkanBackend() {
   kernels_.reset();  // attend la file, rend images et vues
   if (queue_ && context_) context_->settle(queue_->last());
+  if (pipelines_ && !pipeline_cache_file_.empty()) {
+    const std::vector<std::byte> bytes = pipelines_->serialize();
+    if (!bytes.empty()) (void)net::write_file(pipeline_cache_file_, bytes);  // un cache perdu se refait
+  }
 }
 
 std::expected<std::unique_ptr<VulkanBackend>, Refusal> VulkanBackend::create(const BackendInit& init,
@@ -167,7 +171,18 @@ std::expected<void, Refusal> VulkanBackend::open(const BackendInit& init) {
   auto memory = MemoryAllocator::create(*context_, device_limits(*context_));
   if (!memory) return std::unexpected(memory.error());
   memory_ = std::move(*memory);
-  auto pipelines = PipelineCache::create(*context_);
+  // Le cache de pipelines du pilote revient d'un lancement à l'autre : le pilote écarte lui-même
+  // des octets qui ne sont pas les siens (autre appareil ou autre version).
+  if (!cache_dir_.empty()) {
+    const DeviceCaps& caps = context_->caps();
+    pipeline_cache_file_ =
+        cache_dir_ / "vulkan" / std::format("pipelines-{:04x}-{:04x}.bin", caps.vendor_id, caps.device_id);
+  }
+  std::vector<std::byte> saved;
+  if (!pipeline_cache_file_.empty()) {
+    if (auto bytes = net::read_file(pipeline_cache_file_)) saved = std::move(*bytes);
+  }
+  auto pipelines = PipelineCache::create(*context_, saved);
   if (!pipelines) return std::unexpected(pipelines.error());
   pipelines_ = std::move(*pipelines);
   // Le runtime avant la file : en interop, la timeline de la file s'exporte vers lui.

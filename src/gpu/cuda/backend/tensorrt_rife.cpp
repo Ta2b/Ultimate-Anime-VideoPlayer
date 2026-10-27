@@ -175,7 +175,7 @@ std::expected<std::uint64_t, Refusal> TensorRtBackend::scores_start(const Tensor
                                 .b = address(b),
                                 .width = width_of(a),
                                 .height = height_of(a),
-                                .levels = 219.0F,  // plage limitée, comme l'ingestion de la chaîne
+                                .levels = pair_levels_,  // la plage de la dernière source ingérée
                                 .total = &slot.device->total,
                                 .worst = &slot.device->worst};
     GpuTiming& timing = stage("mesures de la paire");

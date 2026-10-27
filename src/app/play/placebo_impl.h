@@ -33,8 +33,10 @@ namespace ajp::app::play {
 // tenu par CUDA (gpu), soit rendu à libplacebo le temps que main le lise (core/ring.h).
 class PlaceboRing {
  public:
+  // external : le consommateur est une autre API (CUDA), à qui les slots sont cédés par
+  // VK_QUEUE_FAMILY_EXTERNAL ; sinon le backend écrit sur le même VkDevice, sans transfert de file.
   std::expected<std::vector<RingSlotDesc>, Refusal> create(pl_gpu gpu, int width, int height,
-                                                           std::uint32_t count);
+                                                           std::uint32_t count, bool external);
   // La texture d'un RingFrame : rendue à libplacebo, qui attend ready_value, à sa première lecture.
   std::expected<pl_tex, Refusal> acquire(pl_gpu gpu, const RingFrame& frame);
   // Cède le slot à CUDA après le dernier rendu qui l'a lu (signal de ready_value + 1).
@@ -52,9 +54,11 @@ class PlaceboRing {
     std::uint64_t placebo_value = 0;  // ready_value que libplacebo attend ; 0 : tenu par CUDA
   };
   std::expected<pl_tex, Refusal> slot_of(const RingFrame& frame);
+  std::uint32_t family() const;
 
   std::vector<Slot> slots_;
   std::uint32_t generation_ = 0;
+  bool external_ = true;
   VkDevice device_ = VK_NULL_HANDLE;
   PFN_vkGetSemaphoreCounterValue counter_ = nullptr;
 };
@@ -113,8 +117,11 @@ struct PlaceboScreen::Impl {
   std::unique_ptr<Overlays> overlays;
   std::unique_ptr<OsdText> osd;
   std::unique_ptr<ImGuiLayer> ui;
-  bool ui_failed = false;
+  static constexpr int kMaxUiFailures = 5;
+  int ui_failures = 0;     // échecs de suite du dessin de l'interface
+  bool ui_failed = false;  // abandonnée après kMaxUiFailures échecs de suite
   pl_color_space source{};
+  double sample_aspect = 1.0;  // SAR de la vidéo, pour la forme de l'image à l'écran
   OutputSize swapchain_size;
   bool fullscreen = false;
   bool hdr_output = false;

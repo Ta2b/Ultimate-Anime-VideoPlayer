@@ -53,6 +53,7 @@
   X(vkCreateShaderModule)                 \
   X(vkDestroyShaderModule)                \
   X(vkCreatePipelineCache)                \
+  X(vkGetPipelineCacheData)               \
   X(vkDestroyPipelineCache)               \
   X(vkCreateComputePipelines)             \
   X(vkDestroyPipeline)                    \

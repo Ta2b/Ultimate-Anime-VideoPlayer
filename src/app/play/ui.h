@@ -112,6 +112,11 @@ class PlayerUi {
   bool input_pending_ = false;
   static constexpr int kSettleFrames = 2;
   int settle_ = 0;  // images encore à recomposer après la dernière entrée
+  // Un élément survolé attend son infobulle (immobilité de la souris puis délai d'ImGui) : en pause,
+  // l'interface se recompose jusqu'à kTooltipWindowUs après la dernière entrée.
+  static constexpr std::int64_t kTooltipWindowUs = 300'000;
+  bool hover_waiting_ = false;
+  std::int64_t last_input_us_ = 0;
   struct Click {
     int button = 0;
     int count = 1;

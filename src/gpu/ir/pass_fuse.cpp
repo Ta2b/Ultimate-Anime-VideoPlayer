@@ -8,6 +8,7 @@
 
 #include "gpu/ir/graph.h"
 #include "gpu/ir/passes.h"
+#include "kernels/ref/half.h"
 
 namespace ajp::gpu::ir {
 namespace {
@@ -96,6 +97,14 @@ bool fold_into_conv(Graph& graph, Node& conv, OpKind op, const std::vector<float
       default:
         return false;
     }
+  }
+  // Une Value F16 de l'IR est exactement représentable en binary16 : les poids et le biais fondus
+  // sont arrondis une fois ici, et non à l'envoi au GPU.
+  if (w.type == DataType::F16) {
+    for (float& v : w.f) v = kernels::ref::round_to_half(v);
+  }
+  if (b.type == DataType::F16) {
+    for (float& v : b.f) v = kernels::ref::round_to_half(v);
   }
   if (op == OpKind::Mul || op == OpKind::Div)
     conv.inputs[kConvW] = add_constant(graph, conv.name + "/poids", std::move(w));

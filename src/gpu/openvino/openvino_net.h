@@ -25,7 +25,17 @@ inline std::unexpected<Refusal> refuse(RefusalCode code, std::string text) {
 }
 
 inline ov::element::Type element_of(TensorType type) {
-  return type == TensorType::F32 ? ov::element::f32 : ov::element::f16;
+  switch (type) {
+    case TensorType::F32:
+      return ov::element::f32;
+    case TensorType::U8:
+      return ov::element::u8;
+    case TensorType::I8:
+      return ov::element::i8;
+    case TensorType::F16:
+      break;
+  }
+  return ov::element::f16;
 }
 
 // Les mémoires USM hôte du contexte GPU (Runtime::allocate_host), que Vulkan importe sur un GPU

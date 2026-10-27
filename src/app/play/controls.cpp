@@ -139,6 +139,17 @@ void Controls::notify(std::string text, std::int64_t now_us) {
   toast_at_us_ = now_us;
 }
 
+void Controls::defer(const std::string& text) {
+  if (!deferred_.empty()) deferred_ += "  ·  ";
+  deferred_ += text;
+}
+
+void Controls::show_deferred(std::int64_t now_us) {
+  if (deferred_.empty()) return;
+  notify(std::move(deferred_), now_us);
+  deferred_.clear();
+}
+
 std::optional<std::string_view> Controls::toast(std::int64_t now_us) const {
   if (toast_.empty() || toast_opacity(now_us) <= 0.0F) return std::nullopt;
   return toast_;

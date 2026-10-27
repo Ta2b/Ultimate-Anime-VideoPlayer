@@ -83,6 +83,7 @@ vec4 hook() {
 //!BUFFER AJG_STATE
 //!VAR float apl
 //!VAR float prev_pq
+//!VAR float prev_nits
 //!VAR float cut
 //!VAR float ready
 //!VAR float bright
@@ -156,10 +157,16 @@ void hook() {
     // Changement de plan, premiere image ou nouvelle taille : pas d'historique.
     bool reset = ready < 0.5 || width != size.x || height != size.y
               || abs(mean_pq - prev_pq) > 0.06;
+    // Mêmes moyennes qu'à la passe précédente : la même image représentée (pause, interface, OSD,
+    // cadence de l'écran), pas une nouvelle image vidéo. Le lissage n'avance qu'avec la vidéo.
+    bool again = !reset && mean_pq == prev_pq && mean_nits == prev_nits;
     cut = reset ? 1.0 : 0.0;
-    apl = reset ? mean_nits : mix(apl, mean_nits, 0.1);
-    bright = reset ? mean.z : mix(bright, mean.z, 0.1);
+    if (!again) {
+        apl = reset ? mean_nits : mix(apl, mean_nits, 0.1);
+        bright = reset ? mean.z : mix(bright, mean.z, 0.1);
+    }
     prev_pq = mean_pq;
+    prev_nits = mean_nits;
     width = size.x;
     height = size.y;
     ready = 1.0;

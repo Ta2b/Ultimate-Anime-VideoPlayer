@@ -78,7 +78,9 @@ void main() {
   // Une destination hors de ]−1, taille[ n'a aucun coin dans le plan ; NaN et infinis échouent
   // aussi la comparaison.
   if (!(tx > -1.0 && tx < float(pc.width) && ty > -1.0 && ty < float(pc.height))) return;
-  float scale = exp(params.s * z);
+  // z est borné comme la sortie tanh × 10 du modèle l'annonce : exp(s z) ne déborde pas, un graphe
+  // hors contrat donne un poids fini (NaN : le bas de l'intervalle, comme fmaxf).
+  float scale = exp(params.s * bounded(z, -AJP_GMFSS_METRIC_LIMIT, AJP_GMFSS_METRIC_LIMIT));
   int x0 = int(floor(tx));
   int y0 = int(floor(ty));
   precise float east = tx - float(x0);

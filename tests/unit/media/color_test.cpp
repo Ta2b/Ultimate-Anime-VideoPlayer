@@ -101,10 +101,9 @@ TEST_CASE("color : HDR10 lu en PQ et HLG, ignoré en SDR même invalide", "[medi
   f->color_trc = AVCOL_TRC_ARIB_STD_B67;
   CHECK(color_info(*f, AV_PIX_FMT_YUV420P10LE)->hdr.has_value());
 
-  mastering->max_luminance = av_make_q(-5, 1);  // invalide : refusé seulement s'il sert
-  CHECK(refusal_of(*f) == RefusalCode::FormatUnsupported);
-  f->color_trc = AVCOL_TRC_BT709;
+  mastering->max_luminance = av_make_q(-5, 1);  // invalide : ignoré, l'image reste lisible
   CHECK(refusal_of(*f) == std::nullopt);
+  CHECK_FALSE(color_info(*f, AV_PIX_FMT_YUV420P10LE)->hdr.has_value());
 }
 
 TEST_CASE("color : primaires devinées d'après la matrice", "[media][color]") {
@@ -169,7 +168,7 @@ TEST_CASE("color : une matrice voisine de celles du vocabulaire la remplace", "[
   CHECK(color_info(*sd, AV_PIX_FMT_YUV420P)->matrix == ColorMatrix::Bt601);
 }
 
-TEST_CASE("color : ce que core/frame.h ne sait pas dire est refusé", "[media][color]") {
+TEST_CASE("color : ce que core/frame.h ne sait pas dire est refusé ou approché", "[media][color]") {
   FramePtr f = frame(1920, 1080);
   for (const AVColorSpace space : {AVCOL_SPC_ICTCP, AVCOL_SPC_IPT_C2, AVCOL_SPC_YCGCO, AVCOL_SPC_SMPTE2085}) {
     f->colorspace = space;
@@ -179,11 +178,15 @@ TEST_CASE("color : ce que core/frame.h ne sait pas dire est refusé", "[media][c
   f->color_trc = AVCOL_TRC_LOG;
   CHECK(refusal_of(*f) == RefusalCode::FormatUnsupported);
   f->color_trc = AVCOL_TRC_BT709;
-  f->color_primaries = AVCOL_PRI_SMPTE432;  // P3 D65 : pas DCI-P3
-  CHECK(refusal_of(*f) == RefusalCode::FormatUnsupported);
+  f->color_primaries = AVCOL_PRI_SMPTE432;  // P3 D65 : lu comme DCI-P3, avec un avertissement
+  CHECK(refusal_of(*f) == std::nullopt);
+  CHECK(color_info(*f, AV_PIX_FMT_YUV420P)->primaries == Primaries::DciP3);
   f->color_primaries = AVCOL_PRI_BT709;
+  f->color_trc = AVCOL_TRC_SMPTE240M;
+  CHECK(color_info(*f, AV_PIX_FMT_YUV420P)->transfer == Transfer::Bt1886);
+  f->color_trc = AVCOL_TRC_BT709;
   f->chroma_location = AVCHROMA_LOC_BOTTOM;
-  CHECK(refusal_of(*f) == RefusalCode::FormatUnsupported);
+  CHECK(color_info(*f, AV_PIX_FMT_YUV420P)->siting == ChromaSiting::Center);
   // Sans sous-échantillonnage, le siting est sans objet.
   FramePtr full = frame(1920, 1080, AV_PIX_FMT_YUV444P16LE);
   full->chroma_location = AVCHROMA_LOC_BOTTOM;
@@ -222,4 +225,41 @@ TEST_CASE("color : métadonnées HDR10 lues, valeurs hors bornes physiques refus
   mastering->display_primaries[0][0] = av_make_q(708, 1000);
   light->MaxCLL = 20000;
   CHECK_FALSE(hdr_metadata(*f));
+}
+
+TEST_CASE("track_color : la couleur du flux, devinée comme celle d'une image", "[media][color]") {
+  const auto track_of = [](int width, int height, AVPixelFormat format, AVColorSpace space,
+                           AVColorPrimaries primaries, AVColorTransferCharacteristic trc) {
+    AVCodecParameters* par = avcodec_parameters_alloc();
+    par->codec_type = AVMEDIA_TYPE_VIDEO;
+    par->width = width;
+    par->height = height;
+    par->format = format;
+    par->color_space = space;
+    par->color_primaries = primaries;
+    par->color_trc = trc;
+    auto copy = CodecParameters::copy_of(*par);
+    avcodec_parameters_free(&par);
+    REQUIRE(copy);
+    return TrackInfo{.kind = TrackKind::Video, .width = width, .height = height, .parameters = *copy};
+  };
+
+  const auto hdr = track_color(track_of(3840, 2160, AV_PIX_FMT_YUV420P10LE, AVCOL_SPC_BT2020_NCL,
+                                        AVCOL_PRI_BT2020, AVCOL_TRC_SMPTE2084));
+  REQUIRE(hdr);
+  CHECK(hdr->transfer == Transfer::Pq);
+  CHECK(hdr->primaries == Primaries::Bt2020);
+  CHECK(hdr->matrix == ColorMatrix::Bt2020Ncl);
+
+  // Une définition standard sans étiquette : BT.601, comme pour une image décodée.
+  const auto dvd = track_color(track_of(720, 480, AV_PIX_FMT_YUV420P, AVCOL_SPC_UNSPECIFIED,
+                                        AVCOL_PRI_UNSPECIFIED, AVCOL_TRC_UNSPECIFIED));
+  REQUIRE(dvd);
+  CHECK(dvd->matrix == ColorMatrix::Bt601);
+  CHECK(dvd->primaries == Primaries::Bt601_525);
+  CHECK(dvd->transfer == Transfer::Bt1886);
+
+  // Pas une piste vidéo, ou pas de paramètres : rien.
+  CHECK_FALSE(track_color(TrackInfo{.kind = TrackKind::Audio}));
+  CHECK_FALSE(track_color(TrackInfo{.kind = TrackKind::Video}));
 }

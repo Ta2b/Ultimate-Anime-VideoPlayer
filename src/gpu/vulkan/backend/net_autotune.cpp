@@ -252,7 +252,7 @@ Autotuner::Autotuner(VkContext& context, MemoryAllocator& memory, PipelineCache&
   load_cache();
 }
 
-void Autotuner::load_cache() {
+void Autotuner::read_cache(std::map<std::string, Remembered>& into) const {
   if (cache_file_.empty()) return;
   std::ifstream in(cache_file_);
   std::string line;
@@ -264,9 +264,10 @@ void Autotuner::load_cache() {
     const std::size_t c = line.find('\t', b + 1);
     auto tuning = tuning_of(std::string_view(line).substr(b + 1, c == std::string::npos ? c : c - b - 1));
     if (tuning) {
-      cache_[line.substr(0, a)] = {
-          .choice = {.variant = line.substr(a + 1, b - a - 1), .tuning = std::move(*tuning)},
-          .driver = c == std::string::npos ? std::string() : line.substr(c + 1)};
+      into.try_emplace(
+          line.substr(0, a),
+          Remembered{.choice = {.variant = line.substr(a + 1, b - a - 1), .tuning = std::move(*tuning)},
+                     .driver = c == std::string::npos ? std::string() : line.substr(c + 1)});
     }
   }
 }
@@ -274,8 +275,12 @@ void Autotuner::load_cache() {
 std::expected<void, Refusal> Autotuner::save() const {
   if (cache_file_.empty()) return {};
   // Par write_file : nom de travail propre à cet écrivain, puis renommage.
+  // Les mesures qu'un autre processus (le lecteur, un export) a écrites depuis la lecture sont
+  // gardées : les nôtres priment, les siennes s'ajoutent.
+  std::map<std::string, Remembered> merged = cache_;
+  read_cache(merged);
   std::ostringstream text;
-  for (const auto& [key, entry] : cache_) {
+  for (const auto& [key, entry] : merged) {
     text << key << '\t' << entry.choice.variant << '\t' << tuning_text(entry.choice) << '\t' << entry.driver
          << '\n';
   }
@@ -320,9 +325,9 @@ std::expected<KernelChoice, Refusal> Autotuner::choose(const ir::Graph& graph, s
   // Tranché sous une autre version du pilote, ou lu dans la table : sa sortie, pas son temps, se
   // revérifie. Discordante, le nœud se remesure.
   if (remembered) {
-    auto same = agrees_with_direct(graph, node, *remembered, candidates);
-    if (!same) return std::unexpected(same.error());
-    if (*same) {
+    // Un choix qui ne s'exécute plus (pilote changé, limite dépassée) est discordant : on remesure.
+    const auto same = agrees_with_direct(graph, node, *remembered, candidates);
+    if (same && *same) {
       ++cached_;
       ++reverified_;
       cache_[key] = {.choice = *remembered, .driver = profile_.driver_build};

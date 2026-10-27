@@ -101,18 +101,18 @@ void fluidity_tab(PlaySettings& d, const SettingsChoices& choices, bool exportin
                       choices.source_height >= 1080;
   section("Interpolation");
   ImGui::BeginDisabled(!choices.rife_available);
-  // Une liste déroulante plutôt qu'un bouton par facteur : ×1,5 puis ×2 à ×10 tiennent sur une ligne.
-  constexpr std::array<Factor, 11> kFactors{{{.num = 0, .den = 1},
-                                             {.num = 3, .den = 2},
-                                             {.num = 2, .den = 1},
-                                             {.num = 3, .den = 1},
-                                             {.num = 4, .den = 1},
-                                             {.num = 5, .den = 1},
-                                             {.num = 6, .den = 1},
-                                             {.num = 7, .den = 1},
-                                             {.num = 8, .den = 1},
-                                             {.num = 9, .den = 1},
-                                             {.num = 10, .den = 1}}};
+  // Une liste déroulante plutôt qu'un bouton par facteur : ×1,5 puis ×2 à ×8 tiennent sur une ligne.
+  // Jusqu'à ×8 : au-delà, le profil (core::limits::kInterpFactor) refuserait la règle, et le choix
+  // ne survivrait pas au fichier suivant.
+  constexpr std::array<Factor, 9> kFactors{{{.num = 0, .den = 1},
+                                            {.num = 3, .den = 2},
+                                            {.num = 2, .den = 1},
+                                            {.num = 3, .den = 1},
+                                            {.num = 4, .den = 1},
+                                            {.num = 5, .den = 1},
+                                            {.num = 6, .den = 1},
+                                            {.num = 7, .den = 1},
+                                            {.num = 8, .den = 1}}};
   const auto factor_label = [](Factor factor) {
     if (factor.num <= factor.den) return std::string("Désactivée");
     std::string text = factor_text(factor);
@@ -148,7 +148,7 @@ void fluidity_tab(PlaySettings& d, const SettingsChoices& choices, bool exportin
   } else if (now.num > 4 * now.den) {
     note(
         "Au-delà de ×4, chaque paire demande une passe RIFE par image créée : il faut un écran assez "
-        "rapide (×10 en 24 i/s donne 240 Hz) et un GPU qui suit, sinon des images sont sautées.");
+        "rapide (×8 en 24 i/s donne 192 Hz) et un GPU qui suit, sinon des images sont sautées.");
   }
   ImGui::EndDisabled();
   if (!choices.rife_available)

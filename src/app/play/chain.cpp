@@ -63,6 +63,14 @@ bool chain_differs(const PlaySettings& a, const PlaySettings& b) {
          a.hdr_native != b.hdr_native;
 }
 
+PlaySettings with_intended_hdr(const Chain& to, PlaySettings settings) {
+  if (to.hdr_wanted) {
+    settings.true_hdr = to.hdr_wanted->true_hdr;
+    settings.hdr_native = to.hdr_wanted->hdr_native;
+  }
+  return settings;
+}
+
 namespace {
 
 // Piste audio : le pont change de piste à l'époque du seek qui suit, à la position courante.
@@ -114,6 +122,10 @@ void apply_live(Chain& to, const PlaySettings& wanted, std::int64_t now_us) {
     controls.notify(wanted.rife_factor >= 2 ? std::format("Interpolation {}", factor_text(factor_of(wanted)))
                                             : std::string("Interpolation désactivée"),
                     now_us);
+  }
+  if (to.header_text && (factor_of(wanted) != factor_of(r) || wanted.downscale != r.downscale ||
+                         wanted.hdr_native != r.hdr_native)) {
+    to.session.set_header({to.header_text(wanted)});
   }
   if (wanted.keep_poses != r.keep_poses) {
     to.live.set_keep_poses(wanted.keep_poses);
@@ -196,6 +208,16 @@ void switch_profile(Chain& to, int slot, std::int64_t now_us) {
   }
 }
 
+// Raccourcis Ctrl+G, Ctrl+I, Ctrl+0 : la chaîne voulue, en direct si elle le permet.
+void switch_chain(Chain& to, const PlaySettings& wanted, std::int64_t now_us) {
+  const Change change = change_between(to.running, wanted, to.rife_loaded);
+  if (change.cost == ChangeCost::Reopen) {
+    to.reopen = wanted;
+  } else if (change.cost == ChangeCost::Live) {
+    apply_live(to, wanted, now_us);
+  }
+}
+
 // Onglet Moteurs : la chaîne se ferme pour changer de moteur ou rouvrir l'écran des moteurs, puis
 // se rouvre avec les mêmes réglages au même endroit.
 void ask_engines(Chain& to, EngineChange request) {
@@ -225,6 +247,30 @@ void apply(const Input& input, Chain& to, std::int64_t now_us) {
           [&](const Command& command) {
             if (const auto* select = std::get_if<cmd::SelectProfile>(&command)) {  // Ctrl+1 à 9, menu
               switch_profile(to, select->slot, now_us);
+              return;
+            }
+            if (std::holds_alternative<cmd::ToggleGrade>(command)) {
+              PlaySettings wanted = to.running;
+              wanted.grade = !wanted.grade;
+              switch_chain(to, wanted, now_us);
+              return;
+            }
+            if (std::holds_alternative<cmd::ToggleInterpolation>(command)) {
+              PlaySettings wanted = to.running;
+              wanted.rife_factor = wanted.rife_factor >= 2 ? 0 : kDefaultRifeFactor;
+              if (wanted.rife_factor == kDefaultRifeFactor) wanted.rife_factor_den = 1;
+              switch_chain(to, wanted, now_us);
+              return;
+            }
+            if (std::holds_alternative<cmd::ProcessingOff>(command)) {  // la source telle quelle
+              PlaySettings wanted = to.running;
+              wanted.grade = false;
+              wanted.rife_factor = 0;
+              switch_chain(to, wanted, now_us);
+              return;
+            }
+            if (std::holds_alternative<cmd::StepFrame>(command)) {
+              controls.notify("Image par image : pas encore disponible", now_us);
               return;
             }
             if (std::holds_alternative<cmd::TogglePause>(command)) {
@@ -280,14 +326,20 @@ void apply(const Input& input, Chain& to, std::int64_t now_us) {
           },
           [&](const ToggleSettings&) { to.ui.toggle_settings(); },
           [&](const ApplySettings& apply) {
-            // Changer la chaîne au menu modifie le profil actif.
-            if (chain_differs(to.running, apply.settings)) {
-              remember_chain(to.profiles, apply.settings);
+            // Changer la chaîne au menu modifie le profil actif. Un repli HDR en cours n'est pas
+            // retenu : sauf si l'utilisateur a lui-même changé le mode HDR, le profil garde le mode
+            // demandé (with_intended_hdr).
+            if (apply.settings.true_hdr != to.running.true_hdr ||
+                apply.settings.hdr_native != to.running.hdr_native)
+              to.hdr_wanted.reset();
+            const PlaySettings intended = with_intended_hdr(to, apply.settings);
+            if (chain_differs(with_intended_hdr(to, to.running), intended)) {
+              remember_chain(to.profiles, intended);
               to.ui.set_profiles(view_of(to.profiles));
             }
             if (apply.reopen) {
               log_channel("app")->info("paramètres : réouverture de la chaîne");
-              to.reopen = apply.settings;
+              to.reopen = intended;
             } else {
               apply_live(to, apply.settings, now_us);
             }

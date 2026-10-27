@@ -8,8 +8,10 @@
 #include <atomic>
 #include <cmath>
 #include <cstdint>
+#include <cstring>
 #include <format>
 #include <string>
+#include <utility>
 
 extern "C" {
 #include <libavutil/mastering_display_metadata.h>
@@ -19,6 +21,7 @@ extern "C" {
 
 #include "media/av_util.h"
 #include "media/log.h"
+#include "media/track.h"
 
 namespace ajp::media {
 namespace {
@@ -52,6 +55,15 @@ ColorMatrix stand_in(AVColorSpace space, ColorMatrix used) {
                                                        : "BT.601");
   }
   return used;
+}
+
+// Un champ voisin d'une valeur du vocabulaire la remplace, avertie une fois par genre et par valeur
+// et par processus : primaires, transfert et siting ne valent pas un fichier refusé.
+void approximated(std::atomic<std::uint64_t>& warned, int value, const char* kind, const std::string& name,
+                  const char* used) {
+  const std::uint64_t bit = std::uint64_t{1} << (static_cast<unsigned>(value) & 63U);
+  if ((warned.fetch_or(bit) & bit) == 0)
+    make_logger()->warn("{} {} lu comme {} : couleurs approchées", kind, name, used);
 }
 
 std::expected<ColorMatrix, Refusal> map_matrix(AVColorSpace space, AVColorPrimaries primaries, int width,
@@ -106,10 +118,21 @@ std::expected<Primaries, Refusal> map_primaries(AVColorPrimaries primaries, Colo
       if (height == 576) return Primaries::Bt601_625;
       if (height == 480 || height == 486) return Primaries::Bt601_525;
       return Primaries::Bt709;
-    default:
-      return refuse(
-          RefusalCode::FormatUnsupported,
-          "primaires " + name_or_number(av_color_primaries_name(primaries), static_cast<int>(primaries)));
+    default: {  // BT.470M, FILM, SMPTE428, SMPTE432 (P3 D65), EBU3213 : les plus proches
+      static std::atomic<std::uint64_t> warned{0};
+      const bool p3 = primaries == AVCOL_PRI_SMPTE428 || primaries == AVCOL_PRI_SMPTE432;
+      const Primaries used = p3                               ? Primaries::DciP3
+                             : primaries == AVCOL_PRI_EBU3213 ? Primaries::Bt601_625
+                             : primaries == AVCOL_PRI_BT470M  ? Primaries::Bt601_525
+                                                              : Primaries::Bt709;
+      approximated(warned, static_cast<int>(primaries), "primaires",
+                   name_or_number(av_color_primaries_name(primaries), static_cast<int>(primaries)),
+                   p3                             ? "DCI-P3"
+                   : used == Primaries::Bt601_625 ? "BT.601 625"
+                   : used == Primaries::Bt601_525 ? "BT.601 525"
+                                                  : "BT.709");
+      return used;
+    }
   }
 }
 
@@ -133,7 +156,15 @@ std::expected<Transfer, Refusal> map_transfer(AVColorTransferCharacteristic trc,
       return Transfer::Hlg;
     case AVCOL_TRC_UNSPECIFIED:
       return range == ColorRange::Limited ? Transfer::Bt1886 : Transfer::Srgb;
-    default:
+    case AVCOL_TRC_SMPTE240M:  // proches de BT.709 : l'écart se lit à peine
+    case AVCOL_TRC_IEC61966_2_4:
+    case AVCOL_TRC_BT1361_ECG: {
+      static std::atomic<std::uint64_t> warned{0};
+      approximated(warned, static_cast<int>(trc), "transfert",
+                   name_or_number(av_color_transfer_name(trc), static_cast<int>(trc)), "BT.1886");
+      return Transfer::Bt1886;
+    }
+    default:  // LOG, LOG_SQRT, SMPTE428 : une courbe fausse changerait toute l'image
       return refuse(RefusalCode::FormatUnsupported,
                     "transfert " + name_or_number(av_color_transfer_name(trc), static_cast<int>(trc)));
   }
@@ -149,10 +180,14 @@ std::expected<ChromaSiting, Refusal> map_siting(AVChromaLocation location, Color
       return ChromaSiting::Center;
     case AVCHROMA_LOC_TOPLEFT:
       return ChromaSiting::TopLeft;
-    default:
-      return refuse(
-          RefusalCode::FormatUnsupported,
-          "siting " + name_or_number(av_chroma_location_name(location), static_cast<int>(location)));
+    default: {  // TOP, BOTTOM, BOTTOMLEFT : un demi-pixel de chroma d'écart, au plus
+      static std::atomic<std::uint64_t> warned{0};
+      const bool left = location == AVCHROMA_LOC_BOTTOMLEFT;
+      approximated(warned, static_cast<int>(location), "siting",
+                   name_or_number(av_chroma_location_name(location), static_cast<int>(location)),
+                   left ? "gauche" : "centre");
+      return left ? ChromaSiting::Left : ChromaSiting::Center;
+    }
   }
 }
 
@@ -222,7 +257,11 @@ std::expected<ColorInfo, Refusal> color_info(const AVFrame& frame, AVPixelFormat
   // décrivent pas ses pixels et sont ignorées, comme mpv (mp_image.c:1054-1058).
   if (color.transfer != Transfer::Pq && color.transfer != Transfer::Hlg) return color;
   auto hdr = hdr_metadata(frame);
-  if (!hdr) return std::unexpected(hdr.error());
+  if (!hdr) {  // métadonnées indicatives aberrantes : l'image reste lisible sans elles
+    static std::atomic<bool> warned{false};
+    if (!warned.exchange(true)) make_logger()->warn("métadonnées HDR10 ignorées : {}", hdr.error().detail);
+    return color;
+  }
   color.hdr = *hdr;
   return color;
 }
@@ -272,6 +311,35 @@ std::expected<std::optional<HdrMetadata>, Refusal> hdr_metadata(const AVFrame& f
                   std::format("HDR10 : MaxCLL {} et MaxFALL {} nits", hdr.max_cll, hdr.max_fall));
   }
   return hdr;
+}
+
+std::optional<ColorInfo> track_color(const TrackInfo& track) {
+  if (track.kind != TrackKind::Video || !track.parameters) return std::nullopt;
+  const AVCodecParameters& par = track.parameters->av();
+  FramePtr frame(av_frame_alloc());
+  if (!frame) return std::nullopt;
+  frame->width = par.width;
+  frame->height = par.height;
+  frame->colorspace = par.color_space;
+  frame->color_range = par.color_range;
+  frame->color_primaries = par.color_primaries;
+  frame->color_trc = par.color_trc;
+  frame->chroma_location = par.chroma_location;
+  // Les métadonnées HDR10 du flux, quand le conteneur les donne : les mêmes que celles que le décodeur
+  // posera sur les images.
+  static constexpr std::pair<AVPacketSideDataType, AVFrameSideDataType> kHdrData[] = {
+      {AV_PKT_DATA_MASTERING_DISPLAY_METADATA, AV_FRAME_DATA_MASTERING_DISPLAY_METADATA},
+      {AV_PKT_DATA_CONTENT_LIGHT_LEVEL, AV_FRAME_DATA_CONTENT_LIGHT_LEVEL}};
+  for (const auto& [packet_type, frame_type] : kHdrData) {
+    const AVPacketSideData* data =
+        av_packet_side_data_get(par.coded_side_data, par.nb_coded_side_data, packet_type);
+    if (data == nullptr) continue;
+    if (AVFrameSideData* copy = av_frame_new_side_data(frame.get(), frame_type, data->size))
+      std::memcpy(copy->data, data->data, data->size);
+  }
+  auto color = color_info(*frame, static_cast<AVPixelFormat>(par.format));
+  if (!color) return std::nullopt;
+  return *color;
 }
 
 }  // namespace ajp::media

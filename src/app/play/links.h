@@ -73,6 +73,9 @@ class Stages {
   virtual bool pause() = 0;
   // Un slot revient au thread gpu (protocole de core/ring.h).
   virtual bool slot_free(const SlotFree& free) = 0;
+  // Le thread gpu n'a plus d'image en cours : après StreamEnded, la fin de lecture n'attend plus
+  // une chaîne lente (première exécution d'un moteur) que la grâce d'une seconde.
+  virtual bool idle() const { return true; }
   // Demande l'image de sous-titres d'un pts de sortie ; la réponse arrive dans MainInbox.
   virtual bool request_subtitles(const subs::RenderRequest& request) = 0;
   // Réglage du son (cmd::SetVolume, cmd::SetAudioDelay) au thread audio ; true sans piste audio.
@@ -81,6 +84,10 @@ class Stages {
   // l'horloge hôte mène à cette vitesse et l'audio la suit ; 1, l'audio mène de nouveau. false :
   // la boîte audio est pleine, rien n'a changé.
   virtual bool set_speed(double /*speed*/) { return true; }
+  // L'audio qui mène ne fournit plus d'horloge (piste illisible, trou, début tardif, fin avant la
+  // vidéo) : l'horloge hôte mène à sa place, depuis media_us, jusqu'au prochain Flush. false :
+  // rien n'a changé (pas d'audio, ou l'hôte mène déjà).
+  virtual bool audio_lost(std::uint32_t /*epoch*/, std::int64_t /*media_us*/) { return false; }
   // cmd::Quit à tous les threads.
   virtual void quit() = 0;
 };
@@ -134,6 +141,9 @@ class Screen {
   // l'image ferait attendre son écriture à la file de l'affichage, et derrière elle chaque
   // présentation suivante, interface et OSD compris. Faute de pouvoir le lire : vrai.
   virtual bool ready(const RingFrame& /*frame*/) const { return true; }
+  // Un seek ou un autre fichier : l'état tenu d'une image à l'autre (détection de pic, grade) vient
+  // de la scène d'avant et ne dit plus rien.
+  virtual void new_scene() {}
   virtual void set_fullscreen(bool on) = 0;
   virtual bool fullscreen() const = 0;
 };

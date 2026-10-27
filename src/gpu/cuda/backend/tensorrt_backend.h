@@ -226,6 +226,7 @@ class TensorRtBackend final : public Backend, public KernelOps {
   // tensorrt_textures.cpp), créé à sa première lecture et gardé ; 0 quand le tenseur n'y est pas
   // admissible (pitch, alignement, taille) : le noyau garde la lecture exacte.
   cudaTextureObject_t texture(const Tensor& tensor);
+  void trim_textures();     // au-delà de kTextures, tous détruits ; à appeler avant texture()
   void destroy_textures();  // les files vidées d'abord
 
   int device_ = 0;
@@ -321,6 +322,7 @@ class TensorRtBackend final : public Backend, public KernelOps {
     auto operator<=>(const TextureKey&) const = default;
   };
   static constexpr std::size_t kTextures = 256;
+  float pair_levels_ = 219.0F;  // pas de luma 8 bits de la source ingérée : 219 limitée, 255 pleine
   std::map<TextureKey, cudaTextureObject_t> textures_;
   // RTX HDR : l'effet, son pont de flux, et ses deux tampons linéaires (RGBA8 tramé, RGB10A2).
   struct TrueHdrState;

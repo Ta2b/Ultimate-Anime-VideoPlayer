@@ -29,6 +29,7 @@ cp "$BUILD/src/gpu/vulkan/backend/ajp_backend_vulkan.so" "$APP/Contents/PlugIns/
 cp "$BUILD/src/gpu/coreml/ajp_backend_coreml.so" "$APP/Contents/PlugIns/"
 mkdir -p "$APP/Contents/Resources/licenses"
 cp "$AJP_DEPS_PREFIX/onnxruntime/LICENSE" "$APP/Contents/Resources/licenses/onnxruntime.txt"
+cp "$ROOT/LICENSE" "$ROOT/THIRD_PARTY_NOTICES.md" "$APP/Contents/Resources/licenses/"
 # Les modèles, comme sous Linux et Windows : le lecteur les cherche dans models/ à côté de
 # SDL_GetBasePath, Contents/Resources dans un paquet .app (sauf AJP_WITHOUT_MODELS).
 if [ -z "${AJP_WITHOUT_MODELS:-}" ]; then
@@ -74,8 +75,8 @@ cat > "$APP/Contents/Info.plist" <<PLIST
   <key>CFBundleIdentifier</key><string>io.github.ta2b.ajp</string>
   <key>CFBundleExecutable</key><string>ajp</string>
   <key>CFBundlePackageType</key><string>APPL</string>
-  <key>CFBundleShortVersionString</key><string>${VERSION:-0.1.0}</string>
-  <key>CFBundleVersion</key><string>${VERSION:-0.1.0}</string>
+  <key>CFBundleShortVersionString</key><string>${VERSION:-0.2.0}</string>
+  <key>CFBundleVersion</key><string>${VERSION:-0.2.0}</string>
   <key>LSMinimumSystemVersion</key><string>14.0</string>
   <key>NSHighResolutionCapable</key><true/>
   <key>CFBundleDocumentTypes</key>

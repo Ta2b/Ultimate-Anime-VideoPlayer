@@ -28,6 +28,9 @@ std::optional<double> content_peak_nits(SDL_Window* window);
 // Le nom de l'écran de la fenêtre selon SDL, pour choisir son EDID.
 std::string display_name(SDL_Window* window);
 GpuFacts gpu_facts(const PlaceboScreen& screen);
+// Le SDK Maxine est utilisable : importé dans le magasin du lecteur, ou présent à importer. La
+// même définition que l'écran de bienvenue, pour le panneau de réglages.
+bool maxine_available(const PlayOptions& options, const PlayerPaths& paths);
 // Les backends présents ou téléchargeables (catalog), le SDK Maxine importé ou à importer.
 EnginesHere engines_here(const PlayOptions& options, const PlayerPaths& paths, const EngineCatalog& catalog);
 

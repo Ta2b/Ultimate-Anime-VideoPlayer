@@ -7,6 +7,7 @@
 #include <cstdint>
 #include <expected>
 #include <memory>
+#include <optional>
 #include <span>
 #include <string>
 
@@ -56,7 +57,11 @@ struct TrackInfo {
 
   int width = 0;  // vidéo
   int height = 0;
-  Rational frame_rate;  // fréquence moyenne, {0, 1} si inconnue
+  Rational frame_rate;     // fréquence moyenne, {0, 1} si inconnue
+  Rational sample_aspect;  // forme du pixel (SAR) : celle du flux, sinon du conteneur ; {0, 1} si inconnue
+  // Ce que le conteneur étiquette (codecpar) : rien si non renseigné, ou hors de ces trois valeurs.
+  std::optional<ColorMatrix> color_matrix;
+  bool full_range = false;
 
   int sample_rate = 0;  // audio
   int channels = 0;
@@ -66,6 +71,11 @@ struct TrackInfo {
 
   std::shared_ptr<const CodecParameters> parameters;
 };
+
+// La couleur d'une piste vidéo telle que le conteneur et le flux l'étiquettent, devinée comme pour une
+// image décodée (mêmes règles) : connue avant la première image. Rien pour une piste qui n'est pas de
+// la vidéo, ou dont la couleur sort du vocabulaire de core/frame.h.
+std::optional<ColorInfo> track_color(const TrackInfo& track);
 
 struct Chapter {
   std::int64_t start_us = 0;

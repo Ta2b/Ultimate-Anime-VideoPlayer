@@ -65,11 +65,13 @@ constexpr std::int32_t kPausedWaitMs = 10;
 }  // namespace
 
 std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings settings,
-                                                        std::int64_t start_us) {
+                                                        std::int64_t start_us, bool start_paused) {
   const auto log = log_channel("app");
   std::vector<std::string> unavailable;
   settings = within_engines(settings, p.engines, unavailable);
   for (const std::string& line : unavailable) log->warn("{}", line);
+  // Le mode HDR demandé, avant tout repli de l'environnement : c'est lui que les profils gardent.
+  const HdrIntent wanted_hdr{.true_hdr = settings.true_hdr, .hdr_native = settings.hdr_native};
   const PlayOptions options = options_for(p.options, settings);
   const media::TrackInfo& video = p.video;
   auto prepared = prepare_chain(p, settings);
@@ -94,10 +96,20 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
     log->info("RTX HDR : sortie SDR, TrueHDR n'est pas ouvert ; grade SDR à la place");
     settings.true_hdr = false;
   }
+  // La couleur de la source telle que le flux l'étiquette : l'écran convertit depuis elle (gamut, courbe,
+  // HDR10 ou HLG), RTX HDR s'ouvre pour elle.
+  const std::optional<ColorInfo> source_color = media::track_color(video);
+  const ColorInfo source = source_color.value_or(ColorInfo{});
+  const bool source_hdr = source.transfer == Transfer::Pq || source.transfer == Transfer::Hlg;
+  if (settings.true_hdr && source_hdr) {
+    log->info("RTX HDR : la source est déjà HDR, TrueHDR n'est pas ouvert");
+    p.ui.controls().notify("Source déjà HDR : RTX HDR inutile", host_now_us());
+    settings.true_hdr = false;
+  }
   if (settings.true_hdr) {
     show_loading(p.screen, p.ui, "Préparation de RTX HDR");
     auto opened = open_rtx_hdr(p.options.true_hdr_sdk, p.paths, settings, auto_peak, p.screen,
-                               *c.backend->kernels(), work.width * factor, work.height * factor);
+                               *c.backend->kernels(), work.width * factor, work.height * factor, source);
     if (opened) {
       peak_nits = *opened;
     } else {
@@ -106,10 +118,10 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
       p.ui.controls().notify("RTX HDR indisponible : HDR adaptatif", host_now_us());
       settings.true_hdr = false;
       settings.hdr_native = true;
-      p.screen.set_source_color(ColorInfo{});
+      p.screen.set_source_color(source);
     }
   } else {
-    p.screen.set_source_color(ColorInfo{});  // celle de la source, reprise à la première image
+    p.screen.set_source_color(source);
   }
 
   const std::string label_text = std::format(
@@ -134,7 +146,8 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
         const int width = stage.track->width;
         const int height = stage.track->height;
         const WorkSize sized = work_size(width, height, settings.work_height);
-        auto slots = out.create_ring(sized.width * factor, sized.height * factor, kRingSlots);
+        auto slots = out.create_ring(sized.width * factor, sized.height * factor, kRingSlots,
+                                     c.backend_name == "tensorrt");
         if (!slots) return std::unexpected(std::move(slots.error()));
         const MasterClock* clock = stage.clock;
         return UpscaleStage::start(std::move(stage),
@@ -146,11 +159,12 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
                                fps_of(video.frame_rate));
   SessionConfig session_config = (*pipeline)->session_config();
   session_config.start_us = start_us;
+  p.screen.set_sample_aspect(session_config.video_sar);
   session_config.stop_after_us = options.stop_after_us;
   session_config.fullscreen_after_us = options.fullscreen_after_us;
   session_config.header = {label_text};
   session_config.tracks = (*pipeline)->describe();
-  p.screen.set_grade(grade_of(settings, settings.true_hdr, peak_nits, auto_peak));
+  p.screen.set_grade(grade_of(settings, settings.true_hdr, peak_nits, auto_peak, {}, {}, source_hdr));
   session_config.output = output_text(out, settings, peak_nits);
   session_config.display_period_us = display_period_us(out.window());
   session_config.display_hz = display_refresh_hz(out.window());
@@ -165,6 +179,7 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
   for (const std::string& line : session_config.tracks) log->info("{}", line);
   log->info("{}", session_config.output);
   Session session(std::move(session_config), (*pipeline)->stages(), out, (*pipeline)->clock());
+  if (start_paused) session.command(cmd::Pause{});
   p.ui.set_tracks((*pipeline)->tracks());
   p.ui.set_settings(
       settings,
@@ -188,7 +203,7 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
           .default_rife_model = c.rife_choice ? c.rife_choice->default_name : std::string(),
           .rife_folder = c.gmfss_places.front().string(),
           .nvidia = vendor_from_pci(p.screen.device_facts().pci_vendor) == GpuVendor::Nvidia,
-          .true_hdr_available = std::filesystem::exists(p.options.true_hdr_sdk) || settings.true_hdr,
+          .true_hdr_available = maxine_available(p.options, p.paths) || settings.true_hdr,
           .hdr_output = p.screen.hdr_output(),
           .auto_peak = auto_peak,
           .engines = engine_badges(p.paths.engines,
@@ -208,18 +223,30 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
       core::SourceInfo{.width = video.width, .height = video.height, .fps = fps_of(video.frame_rate)};
   if (c.model) p.profiles.default_model = c.model->default_name;
   p.ui.set_profiles(view_of(p.profiles));
-  Chain chain{.session = session,
-              .screen = out,
-              .ui = p.ui,
-              .pipeline = **pipeline,
-              .live = *live,
-              .running = settings,
-              .profiles = p.profiles,
-              .rife_loaded = rife_loaded,
-              .true_hdr_open = settings.true_hdr,
-              .auto_peak = auto_peak,
-              .peak_nits = peak_nits,
-              .display = p.display};
+  Chain chain{
+      .session = session,
+      .screen = out,
+      .ui = p.ui,
+      .pipeline = **pipeline,
+      .live = *live,
+      .running = settings,
+      .profiles = p.profiles,
+      .rife_loaded = rife_loaded,
+      .true_hdr_open = settings.true_hdr,
+      .auto_peak = auto_peak,
+      .peak_nits = peak_nits,
+      .display = p.display,
+      .header_text =
+          [&c, hdr_out](const PlaySettings& s) {
+            return std::format(
+                "{}{}{}", c.motion_label(s),
+                s.true_hdr ? "RTX HDR · " : (s.hdr_native && hdr_out ? "HDR adaptatif · " : ""),
+                c.span_label());
+          },
+      .hdr_wanted = settings.true_hdr != wanted_hdr.true_hdr || settings.hdr_native != wanted_hdr.hdr_native
+                        ? std::optional(wanted_hdr)
+                        : std::nullopt,
+      .source_hdr = source_hdr};
   apply_oled_care(chain, settings);
 
   std::ofstream stats;
@@ -227,11 +254,18 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
     stats.open(*options.stats);
     stats << "host_us\tpts_us\tfresh\trender_us\tinterval_us\tdropped\twhy\tmissing\tlag_us\n";
   }
-  const core::KeyMap keys = core::KeyMap::defaults();
+  const core::KeyMap& keys = configured_keys();
   std::optional<Refusal> failure;
   if (p.began_us == 0) p.began_us = host_now_us();
   std::vector<Input> actions;
   session.begin(host_now_us());
+  if (p.unsaved) {
+    if (auto saved =
+            save_settings(p.settings_path, settings_to_save(*p.unsaved, p.from_file, p.started, p.options));
+        !saved)
+      log->warn("{}", saved.error().detail);
+    p.unsaved.reset();
+  }
   if (p.resumed) {
     p.ui.controls().notify(std::format("Reprise à {}", format_clock(start_us, session.view().duration_us)),
                            host_now_us());
@@ -258,6 +292,8 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
   if (settings.audio_delay_ms != 0)
     session.command(cmd::SetAudioDelay{.delay_us = std::int64_t{settings.audio_delay_ms} * 1000});
   std::int64_t saved_at = host_now_us();
+  std::int64_t display_polled_at = saved_at;
+  p.ui.controls().show_deferred(host_now_us());
   while (!session.finished() && !chain.reopen) {
     for (;
          p.next_key < p.options.keys.size() && host_now_us() - p.began_us >= p.options.keys[p.next_key].first;
@@ -280,6 +316,11 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
       if (p.ui.handle(event, host_now_us(), actions)) continue;  // saisie dans l'interface
       if (auto input = input_of(event, keys)) actions.push_back(*input);
     }
+    // L'écran de la fenêtre peut changer (déplacement, mode d'affichage) : on relit sa cadence.
+    if (host_now_us() - display_polled_at >= 500'000) {
+      display_polled_at = host_now_us();
+      session.set_display(display_period_us(out.window()), display_refresh_hz(out.window()));
+    }
     (*pipeline)->pump();
     while (auto message = try_take((*pipeline)->inbox())) session.handle(std::move(*message));
     // Vrai noir : la rampe que gpu a passée par TrueHDR, puis les seuils recalés.
@@ -294,8 +335,9 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
     actions.clear();
     // play.toml réécrit au plus une fois par seconde pendant qu'on règle.
     if (chain.dirty && host_now_us() - saved_at >= 1'000'000) {
-      if (auto saved = save_settings(p.settings_path,
-                                     settings_to_save(chain.running, p.from_file, p.started, p.options));
+      if (auto saved = save_settings(
+              p.settings_path,
+              settings_to_save(with_intended_hdr(chain, chain.running), p.from_file, p.started, p.options));
           !saved)
         log->warn("{}", saved.error().detail);
       chain.dirty = false;
@@ -324,8 +366,8 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
     }
   }
   if (chain.dirty) {
-    if (auto saved = save_settings(p.settings_path,
-                                   settings_to_save(chain.running, p.from_file, p.started, p.options));
+    if (auto saved = save_settings(p.settings_path, settings_to_save(with_intended_hdr(chain, chain.running),
+                                                                     p.from_file, p.started, p.options));
         !saved)
       log->warn("{}", saved.error().detail);
   }
@@ -337,6 +379,7 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
   if (chain.reopen && !failure) {
     reopen = Reopen{.settings = *chain.reopen,
                     .position_us = std::max<std::int64_t>(session.view().position_us, 0),
+                    .paused = session.paused() && !chain.next_file,
                     .engines = chain.engines,
                     .export_job = chain.export_job,
                     .next_file = chain.next_file};

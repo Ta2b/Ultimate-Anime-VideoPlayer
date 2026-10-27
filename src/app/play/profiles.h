@@ -16,6 +16,7 @@
 #include <vector>
 
 #include "app/play/settings.h"
+#include "core/keys.h"
 #include "core/profile.h"
 #include "core/resolve.h"
 #include "core/types.h"
@@ -49,6 +50,12 @@ struct Profiles {
   core::ProfileFile file;
   std::string user_text;  // user.toml tel qu'il est sur le disque, vide s'il manque
 };
+// Les raccourcis de la section [keys] de user.toml, pour les écrans et la lecture. Tant que
+// apply_user_keys n'a pas été appelée, ou si la section est invalide (avertissement au journal,
+// le reste du fichier reste utilisé), ce sont les raccourcis par défaut.
+void apply_user_keys(std::string_view user_toml);
+const core::KeyMap& configured_keys();
+
 std::expected<Profiles, Refusal> load_profiles(const std::filesystem::path& user_toml);
 // Applique edits à user.toml (seulement ce qui diffère de la base) et l'écrit d'un coup.
 std::expected<Profiles, Refusal> edit_profiles(const std::filesystem::path& user_toml,

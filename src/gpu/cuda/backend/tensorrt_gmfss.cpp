@@ -268,6 +268,7 @@ std::expected<void, Refusal> TensorRtBackend::compose(const Tensor& high_a, cons
   if (!(t >= 0.0F && t <= 1.0F))
     return refuse(RefusalCode::FieldOutOfRange, std::format("gmfss_compose : instant {} hors de [0, 1]", t));
   if (auto ok = bind(); !ok) return ok;
+  trim_textures();
   const GmfssComposeParams params{
       .high_a = address(high_a),
       .high_b = address(high_b),

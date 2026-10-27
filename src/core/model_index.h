@@ -13,6 +13,7 @@
 #include <filesystem>
 #include <optional>
 #include <span>
+#include <stop_token>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -46,7 +47,8 @@ class Sha256 {
 
 std::string to_hex(std::span<const std::uint8_t> bytes);  // minuscules
 std::string sha256_hex(std::string_view data);
-std::expected<std::string, Refusal> sha256_file(const std::filesystem::path& path);
+// Refus Cancelled si `stop` est demandé pendant la lecture (plusieurs Go).
+std::expected<std::string, Refusal> sha256_file(const std::filesystem::path& path, std::stop_token stop = {});
 
 // --- Noms stables, écrits dans les index, settings.toml et la ligne de commande. ---
 
@@ -124,7 +126,7 @@ std::vector<ModelEntry> models_for_profile(std::span<const ModelEntry> lock, int
 
 // Refus HashMismatch si la taille ou le SHA-256 du fichier diffèrent de l'attendu.
 std::expected<void, Refusal> verify_file(const std::filesystem::path& path, std::uint64_t size,
-                                         std::string_view sha256);
+                                         std::string_view sha256, std::stop_token stop = {});
 
 // --- Installation, sous le dossier de données de l'utilisateur. ---
 

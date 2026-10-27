@@ -83,6 +83,9 @@ struct Player {
   bool resumed = false;                 // la lecture reprend là où elle s'était arrêtée : à annoncer
   std::string notice;                   // à annoncer à la prochaine ouverture (moteur changé)
   bool quit = false;                    // la dernière ouverture s'est fermée par q ou la fenêtre
+  // Réglages d'une réouverture demandée : écrits dans play.toml une fois la chaîne ouverte, pas avant
+  // (une chaîne qui ne s'ouvre pas ne doit pas devenir celle du prochain lancement).
+  std::optional<PlaySettings> unsaved;
 };
 
 // Les messages des backends, sur le canal « backend » du journal.

@@ -76,7 +76,8 @@ constexpr double support(Filter f) {
 // Application : somme float, de j = 0 à taps − 1, depuis 0 ; passe horizontale, puis verticale ;
 // intermédiaire float entre les passes, rien n'est borné avant la quantification finale.
 
-// Miroir sans répétition du bord, puis clamp (kernels.cu mirr) : −1 → 0, n → n − 1.
+// Miroir par symétrie au demi-échantillon (le bord est répété), puis clamp (kernels.cu mirr) :
+// −1 → 0, n → n − 1.
 constexpr int mirror_index(int i, int n) {
   i = i < 0 ? -i - 1 : i;
   i = i >= n ? 2 * n - 1 - i : i;

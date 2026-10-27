@@ -55,10 +55,16 @@ struct VideoRect {
   int height = 0;
 };
 
+double pixel_aspect(const RenderTarget& target) {
+  return std::isfinite(target.sample_aspect) && target.sample_aspect > 0.0 ? target.sample_aspect : 1.0;
+}
+
 VideoRect fit(const RenderTarget& target) {
-  const double scale = std::min(static_cast<double>(target.width) / target.video_width,
+  // La vidéo s'affiche à sa largeur d'affichage : stockage × forme du pixel.
+  const double shown_width = target.video_width * pixel_aspect(target);
+  const double scale = std::min(static_cast<double>(target.width) / shown_width,
                                 static_cast<double>(target.height) / target.video_height);
-  return {.width = std::clamp(static_cast<int>(std::lround(target.video_width * scale)), 1, target.width),
+  return {.width = std::clamp(static_cast<int>(std::lround(shown_width * scale)), 1, target.width),
           .height = std::clamp(static_cast<int>(std::lround(target.video_height * scale)), 1, target.height)};
 }
 
@@ -151,7 +157,9 @@ void SubtitleRenderer::configure(const RenderTarget& target, bool use_margins) {
   ass_set_margins(renderer_.get(), top, target.height - shown.height - top, left,
                   target.width - shown.width - left);
   ass_set_use_margins(renderer_.get(), use_margins ? 1 : 0);
-  ass_set_pixel_aspect(renderer_.get(), 1.0);  // l'écran ne déforme pas l'image
+  // Le script est écrit pour le stockage de la vidéo, que l'écran étire de la forme de son pixel :
+  // libass compense pour que les lettres gardent leurs proportions (1 pour un pixel carré).
+  ass_set_pixel_aspect(renderer_.get(), pixel_aspect(target));
   ass_set_font_scale(renderer_.get(), static_cast<double>(target.font_scale));
   target_ = target;
   use_margins_ = use_margins;

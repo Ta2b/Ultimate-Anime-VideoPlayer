@@ -91,10 +91,12 @@ Result<Splatted> soft_splat_at(const std::vector<PlaneF>& source, const SplatMot
         fy = grid.scale * bilinear(motion.planes[1], u, v);
         z = bilinear(motion.planes[2], u, v);
       }
-      const float scale = std::exp(s * z);
+      // Comme le port GLSL : z borné (NaN : le bas de l'intervalle), destination dans ]−1, taille[.
+      const float bounded_z = z > -kGmfssMetricLimit ? std::min(z, kGmfssMetricLimit) : -kGmfssMetricLimit;
+      const float scale = std::exp(s * bounded_z);
       const float tx = static_cast<float>(x) + s * fx;
       const float ty = static_cast<float>(y) + s * fy;
-      if (!std::isfinite(tx) || !std::isfinite(ty)) continue;
+      if (!(tx > -1.0F && tx < static_cast<float>(w) && ty > -1.0F && ty < static_cast<float>(h))) continue;
       const int x0 = static_cast<int>(std::floor(tx));
       const int y0 = static_cast<int>(std::floor(ty));
       const float east = tx - static_cast<float>(x0);

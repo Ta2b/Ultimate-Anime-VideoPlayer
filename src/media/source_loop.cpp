@@ -40,6 +40,8 @@ SourceLoop::SourceLoop(SourceMedia media, SourceLinks links, SourceInbox& inbox)
       reserve_(sinks_of(links_), links_.reserve_bytes) {}
 
 void SourceLoop::run(const std::stop_token& stop) {
+  // L'arrêt du thread coupe aussi une lecture suspendue sur le fichier (partage réseau muet).
+  const std::stop_callback interrupt(stop, [this] { media_.demuxer.interrupt(); });
   while (!stop.stop_requested() && !quit_) {
     // Le courrier d'abord, sans bloquer : ce thread est le seul à vider la boîte.
     while (has_mail() && !quit_) {
@@ -90,13 +92,32 @@ void SourceLoop::on_flush(const Flush& flush) {
 void SourceLoop::on_seek(const cmd::Seek& seek) {
   awaiting_seek_ = false;
   const SeekTarget where = seek.exact ? SeekTarget::PreviousKeyframe : SeekTarget::NearestKeyframe;
+  const std::uint32_t file_seeks = media_.demuxer.file_seeks();
   if (auto moved = media_.demuxer.seek(seek.target_us, media_.video_track, where); !moved) {
-    links_.listener->failed(moved.error());  // refusé : la lecture reprend où elle était
+    links_.listener->failed(moved.error());
+    // Refusé sans toucher au fichier (cible hors bornes) : la lecture reprend où elle était. Le
+    // fichier a bougé (une lecture a échoué après le repositionnement) : le décodeur ne tient plus
+    // sa position, on revient à la dernière image tenue plutôt que de livrer des images corrompues.
+    if (media_.demuxer.file_seeks() != file_seeks) recover_position();
     return;
   }
   media_.decoder.flush();
   forget_position();
   drop_before_ = seek.exact ? std::optional(seek.target_us) : std::nullopt;
+  idle_ = false;
+}
+
+void SourceLoop::recover_position() {
+  media_.decoder.flush();
+  forget_position();
+  idle_ = true;  // sans position sûre, rien ne part avant le prochain seek abouti
+  if (!last_pts_us_) return;
+  const std::int64_t back_to = *last_pts_us_;
+  if (auto back = media_.demuxer.seek(back_to, media_.video_track, SeekTarget::PreviousKeyframe); !back)
+    return;
+  media_.decoder.flush();
+  forget_position();
+  drop_before_ = back_to;
   idle_ = false;
 }
 
@@ -186,6 +207,7 @@ void SourceLoop::keep(DecodedFrame frame) {
   drop_before_.reset();
   last_dropped_.reset();
   held_frame_ = std::move(frame);
+  if (held_frame_->pts_us != kNoPts) last_pts_us_ = held_frame_->pts_us;
   held_frame_->id = SourceId{next_id_++};
 }
 

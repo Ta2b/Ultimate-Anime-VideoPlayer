@@ -80,9 +80,12 @@ DescriptorArena::~DescriptorArena() {
 }
 
 void DescriptorArena::destroy() {
-  // Les ensembles disparaissent avec leurs pools.
-  for (const VkDescriptorPool pool : pools_)
-    context_->fn().vkDestroyDescriptorPool(context_->device(), pool, nullptr);
+  // Les ensembles disparaissent avec leurs pools, sauf sous un GPU bloqué, qui les lit peut-être
+  // encore (VkContext::settle).
+  if (context_ != nullptr && !context_->stalled()) {
+    for (const VkDescriptorPool pool : pools_)
+      context_->fn().vkDestroyDescriptorPool(context_->device(), pool, nullptr);
+  }
   pools_.clear();
 }
 

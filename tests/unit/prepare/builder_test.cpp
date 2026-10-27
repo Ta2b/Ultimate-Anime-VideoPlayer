@@ -281,6 +281,20 @@ TEST_CASE("TrtexecBuilder : graphe statique à plusieurs entrées nommées autre
   }
 }
 
+#ifndef _WIN32
+TEST_CASE("TrtexecBuilder : un poids externe qui sort du dossier par un lien symbolique est refusé",
+          "[prepare][builder]") {
+  Bench bench("ok", {.external = {"poids.bin"}});
+  Steps steps;
+  auto progress = steps.progress();
+  test::TempDir outside;
+  test::write_file(outside.path() / "secret.bin", "hors du dossier");
+  test::fs::create_symlink(outside.path() / "secret.bin", bench.model.onnx_path.parent_path() / "poids.bin");
+  CHECK(test::refusal(TrtexecBuilder(bench.config).build(bench.model, kHd, progress)) ==
+        RefusalCode::ModelMismatch);
+}
+#endif
+
 TEST_CASE("TrtexecBuilder : la vérification du moteur peut refuser sa publication", "[prepare][builder]") {
   Bench bench("ok");
   const TrtexecBuilder builder(bench.config, [](const test::fs::path&) -> std::expected<void, ajp::Refusal> {

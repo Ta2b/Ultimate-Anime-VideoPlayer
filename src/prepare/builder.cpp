@@ -224,6 +224,8 @@ std::expected<void, Refusal> TrtexecBuilder::run(const BuildPlan& plan, const gp
     return std::unexpected(exit.error());
   }
   log_file << "[ajp] trtexec : " << describe(*exit) << '\n';
+  log_file.flush();
+  if (!log_file) log_->warn("journal {} illisible ou incomplet (disque plein ?)", utf8_path(plan.log_file));
   if (auto verdict = judge(*exit, parsed, plan, config_.timeout); !verdict) {
     log_file << "[ajp] " << verdict.error().detail << '\n';
     return verdict;

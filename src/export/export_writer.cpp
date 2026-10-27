@@ -76,7 +76,7 @@ std::expected<void, Refusal> bind_picture(AVFrame& frame, Picture& picture, cons
 }  // namespace
 
 std::expected<std::unique_ptr<ExportWriter>, Refusal> ExportWriter::open(const WriterConfig& config) {
-  auto muxer = Muxer::open(config.source, config.output);
+  auto muxer = Muxer::open(config.source, config.output, config.source_video);
   if (!muxer) return std::unexpected(std::move(muxer.error()));
   const ColorInfo color = config.color.value_or(muxer->source_color());
   auto encoder = VideoEncoder::open(EncoderSetup{
@@ -99,7 +99,7 @@ std::expected<std::unique_ptr<ExportWriter>, Refusal> ExportWriter::open(const W
 
 std::expected<std::unique_ptr<ExportWriter>, Refusal> ExportWriter::open(
     const WriterConfig& config, std::unique_ptr<FrameEncoder> encoder) {
-  auto muxer = Muxer::open(config.source, config.output);
+  auto muxer = Muxer::open(config.source, config.output, config.source_video);
   if (!muxer) return std::unexpected(std::move(muxer.error()));
   const ColorInfo color = config.color.value_or(muxer->source_color());
   return start(config, std::move(*muxer), color, std::move(encoder));
@@ -175,6 +175,11 @@ std::expected<void, Refusal> ExportWriter::finish() {
   return {};
 }
 
+std::string ExportWriter::warning() const {
+  const std::scoped_lock lock(mutex_);
+  return warning_;
+}
+
 std::optional<Refusal> ExportWriter::failure() const {
   const std::scoped_lock lock(mutex_);
   return failure_;
@@ -220,6 +225,7 @@ void ExportWriter::run(const std::stop_token& stop) {
       FramePtr copy(av_frame_clone(s.last.get()));  // une référence de plus sur la même mémoire
       if (!copy) return std::unexpected(Refusal{RefusalCode::EncodeFailed, "image : mémoire"});
       copy->pts = from + k * gap / (repeats + 1);
+      copy->duration = gap / (repeats + 1);
       s.last_pts = copy->pts;
       if (auto encoded = s.encoder->encode(copy.get(), sink); !encoded) return encoded;
       frames_.fetch_add(1);
@@ -264,6 +270,9 @@ void ExportWriter::run(const std::stop_token& stop) {
     s.last_pts = pts;
     s.any = true;
     frame->pts = pts;
+    // La durée d'une image, pour que la dernière en ait une (sans elle, un maintien final est perdu) :
+    // la période nominale de la sortie.
+    if (s.fps_num > 0) frame->duration = av_rescale(1'000'000, s.fps_den, s.fps_num);
     if (s.constant_rate) {
       s.last.reset(av_frame_clone(frame.get()));
       if (!s.last) return fail(Refusal{RefusalCode::EncodeFailed, "image : mémoire"});
@@ -277,6 +286,10 @@ void ExportWriter::run(const std::stop_token& stop) {
   if (auto flushed = s.encoder->encode(nullptr, sink); !flushed) return fail(std::move(flushed.error()));
   if (auto closed = s.muxer.finish(); !closed) return fail(std::move(closed.error()));
   bytes_.store(s.muxer.bytes());
+  {
+    const std::scoped_lock lock(mutex_);
+    warning_ = s.muxer.copy_error();
+  }
   log->info("export écrit : {} images dont {} répétées, {} Mo, {}", frames_.load(), repeated_.load(),
             bytes_.load() / 1'000'000, utf8(output_));
   if (s.shifted > 0) log->warn("{} images reçues à un instant déjà passé, décalées", s.shifted);

@@ -26,15 +26,19 @@ std::expected<TimelineSemaphore, Refusal> TimelineSemaphore::create(
     const VkContext& context, std::uint64_t initial, VkExternalSemaphoreHandleTypeFlags exports) {
   auto semaphore = create_timeline(context.fn(), context.device(), initial, exports);
   if (!semaphore) return std::unexpected(semaphore.error());
-  return TimelineSemaphore(&context.fn(), context.device(), *semaphore);
+  return TimelineSemaphore(&context, *semaphore);
 }
 
 TimelineSemaphore::TimelineSemaphore(TimelineSemaphore&& other) noexcept
-    : fn_(other.fn_), device_(other.device_), semaphore_(std::exchange(other.semaphore_, VK_NULL_HANDLE)) {}
+    : context_(other.context_),
+      fn_(other.fn_),
+      device_(other.device_),
+      semaphore_(std::exchange(other.semaphore_, VK_NULL_HANDLE)) {}
 
 TimelineSemaphore& TimelineSemaphore::operator=(TimelineSemaphore&& other) noexcept {
   if (this != &other) {
     destroy();
+    context_ = other.context_;
     fn_ = other.fn_;
     device_ = other.device_;
     semaphore_ = std::exchange(other.semaphore_, VK_NULL_HANDLE);
@@ -47,7 +51,9 @@ TimelineSemaphore::~TimelineSemaphore() {
 }
 
 void TimelineSemaphore::destroy() {
-  if (semaphore_ != VK_NULL_HANDLE) fn_->vkDestroySemaphore(device_, semaphore_, nullptr);
+  // Un GPU bloqué (VkContext::settle) lit peut-être encore ce sémaphore : il reste en place.
+  if (semaphore_ != VK_NULL_HANDLE && !(context_ != nullptr && context_->stalled()))
+    fn_->vkDestroySemaphore(device_, semaphore_, nullptr);
   semaphore_ = VK_NULL_HANDLE;
 }
 

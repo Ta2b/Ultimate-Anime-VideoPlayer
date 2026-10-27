@@ -43,6 +43,7 @@ inline constexpr std::size_t kDefaultQueueDepth = 4;
 
 struct WriterConfig {
   std::filesystem::path source;  // le fichier lu : ses autres pistes, chapitres et métadonnées
+  int source_video = -1;         // le flux vidéo choisi par le lecteur (Muxer::open) ; -1 : le meilleur
   std::filesystem::path output;  // .mkv, .mp4 ou .mov (export/container.h), remplacé s'il existe
   int width = 0;                 // taille encodée, paire
   int height = 0;
@@ -145,6 +146,9 @@ class ExportWriter {
   // Le refus qui a arrêté le thread, s'il y en a un.
   std::optional<Refusal> failure() const;
   WriterProgress progress() const;
+  // Après un finish() réussi : non vide si la lecture des pistes copiées (audio, sous-titres) a été
+  // interrompue par une erreur de la source. Le fichier est écrit mais ces pistes s'arrêtent avant la fin.
+  std::string warning() const;
 
   struct State;  // FFmpeg : contexte d'encodeur et mux, dans export_writer.cpp
 
@@ -169,6 +173,7 @@ class ExportWriter {
   bool finishing_ = false;          // sous mutex_ : plus d'image, vider et clore
   bool done_ = false;               // sous mutex_ : le thread a fini (clos, ou refusé)
   std::optional<Refusal> failure_;  // sous mutex_
+  std::string warning_;             // sous mutex_
   std::atomic<std::int64_t> frames_{0};
   std::atomic<std::int64_t> repeated_{0};
   std::atomic<std::int64_t> bytes_{0};

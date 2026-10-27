@@ -106,15 +106,19 @@ class ThreadStages final : public Stages {
   bool play(std::uint32_t epoch, std::int64_t media_us) override;
   bool pause() override;
   bool slot_free(const SlotFree& free) override { return links_.video->post(free); }
+  bool idle() const override { return links_.video->idle(); }
   bool request_subtitles(const subs::RenderRequest& request) override;
   bool audio(const Command& command) override;
   bool set_speed(double speed) override;
+  bool audio_lost(std::uint32_t epoch, std::int64_t media_us) override;
   void quit() override;
 
  private:
   StageLinks links_;
   std::uint32_t flushed_epoch_ = 0;
-  bool playing_ = false;  // play depuis la dernière pause : l'horloge hôte reprise court
+  bool playing_ = false;     // play depuis la dernière pause : l'horloge hôte reprise court
+  double speed_ = 1.0;       // dernière vitesse acceptée par set_speed
+  bool audio_lost_ = false;  // l'horloge hôte mène faute d'audio, jusqu'au prochain Flush
 };
 
 }  // namespace ajp::app::play

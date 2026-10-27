@@ -11,6 +11,28 @@ namespace {
 
 // Au-delà, plier coûterait plus de mémoire que de calculer à l'exécution.
 constexpr std::size_t kMaxFoldedElements = std::size_t{1} << 22;
+// Travail d'un pliage coûteux (sortie × plus grande entrée) : au-delà, le nœud reste à l'exécution
+// plutôt que de figer le chargement d'un modèle hostile sur un seul cœur.
+constexpr std::uint64_t kMaxFoldedWork = std::uint64_t{1} << 32;
+
+bool too_costly(const Graph& graph, const Node& node) {
+  switch (node.op) {
+    case OpKind::Conv:
+    case OpKind::ConvTranspose:
+    case OpKind::AveragePool:
+    case OpKind::GridSample:
+      break;
+    default:
+      return false;
+  }
+  std::uint64_t out = 0;
+  for (const TensorId id : node.outputs) out += element_count(graph.tensors[id].dims);
+  std::uint64_t in = 1;
+  for (const TensorId id : node.inputs) {
+    if (id != kNoTensor) in = std::max<std::uint64_t>(in, element_count(graph.tensors[id].dims));
+  }
+  return out * in > kMaxFoldedWork;
+}
 
 bool constant(const Graph& graph, TensorId id) {
   return id == kNoTensor || graph.tensors[id].kind == TensorKind::Constant;
@@ -93,7 +115,7 @@ std::expected<int, Refusal> fold_constants(Graph& graph) {
       const Tensor& t = graph.tensors[id];
       return t.known && element_count(t.dims) <= kMaxFoldedElements;
     });
-    if (!(shape_of_known || inputs_constant) || !small) {
+    if (!(shape_of_known || inputs_constant) || !small || too_costly(graph, node)) {
       kept.push_back(std::move(node));
       continue;
     }

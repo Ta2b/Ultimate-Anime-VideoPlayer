@@ -28,9 +28,13 @@ std::string_view text_track_header();
 // Découpe un fichier SRT en UTF-8 (BOM et fins de ligne CRLF acceptés). Les
 // horodatages délimitent les cues, comme dans FFmpeg : un numéro collé au texte
 // précédent ouvre quand même la cue suivante, une ligne vide dans un texte est
-// écartée. Refus SubtitleFormat : texte avant le premier horodatage, horodatage
-// mal formé ou hors plage, fin avant début ; le détail donne le numéro de ligne.
-std::expected<std::vector<SrtCue>, Refusal> parse_srt(std::string_view file);
+// écartée. Une cue dont l'horodatage est mal formé, hors plage ou dont la fin précède le début est
+// écartée avec son texte, et dite dans `skipped` (une phrase par cue, avec son numéro de ligne) ;
+// le reste du fichier se lit. Les millisecondes sont un entier de 1 à 3 chiffres, comme dans
+// FFmpeg. Refus SubtitleFormat : texte avant le premier horodatage, ou aucune cue lisible; le
+// détail donne le numéro de ligne.
+std::expected<std::vector<SrtCue>, Refusal> parse_srt(std::string_view file,
+                                                      std::vector<std::string>* skipped = nullptr);
 
 // Texte SRT en texte d'événement ASS : <i> <b> <u> <s> et <font color face size>
 // deviennent des balises ASS, '\n' devient \N. Les blocs {…} ASS, fréquents

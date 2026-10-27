@@ -176,7 +176,9 @@ std::expected<std::filesystem::path, Refusal> install_package(const EngineCatalo
 
   // Le transfert reprend un .part laissé par un essai interrompu ; un .part déjà complet mais faux
   // repart de zéro.
-  if (!core::verify_file(part, package.size, package.sha256)) {
+  const auto resumed = core::verify_file(part, package.size, package.sha256, progress.stop);
+  if (!resumed && resumed.error().code == RefusalCode::Cancelled) return std::unexpected(resumed.error());
+  if (!resumed) {
     if (std::filesystem::file_size(part, error) >= package.size && !error)
       std::filesystem::remove(part, error);
     report(0.0F, std::format("téléchargement de {} ({} Mo)", name, package.size >> 20));
@@ -191,7 +193,7 @@ std::expected<std::filesystem::path, Refusal> install_package(const EngineCatalo
         progress.stop, std::format("téléchargement de {}", name));
     if (!fetched) return std::unexpected(fetched.error());
     report(0.9F, std::format("vérification de {}", name));
-    if (auto ok = core::verify_file(part, package.size, package.sha256); !ok) {
+    if (auto ok = core::verify_file(part, package.size, package.sha256, progress.stop); !ok) {
       std::filesystem::remove(part, error);  // un fichier faux ne se reprend pas
       return std::unexpected(ok.error());
     }
@@ -230,10 +232,31 @@ std::expected<std::filesystem::path, Refusal> install_package(const EngineCatalo
       return refuse(RefusalCode::FileUnwritable, std::format("{} : note du paquet", staging.string()));
     }
   }
-  std::filesystem::remove_all(target, error);
+  // L'ancien dossier est mis de côté avant d'être remplacé, puis effacé : si l'un de ses fichiers est
+  // encore ouvert (Windows), il ne reste pas à moitié supprimé, et il est remis en place sur échec.
+  std::filesystem::path aside = target;
+  aside += ".ancien";
+  std::filesystem::remove_all(aside, error);
+  const bool replaced = std::filesystem::exists(target, error);
+  if (replaced) {
+    error.clear();
+    std::filesystem::rename(target, aside, error);
+    if (error) {
+      const std::string reason = error.message();
+      std::filesystem::remove_all(staging, error);
+      return refuse(RefusalCode::FileUnwritable, std::format("{} : {}", target.string(), reason));
+    }
+  }
+  error.clear();
   std::filesystem::rename(staging, target, error);
-  if (error)
-    return refuse(RefusalCode::FileUnwritable, std::format("{} : {}", target.string(), error.message()));
+  if (error) {
+    const std::string reason = error.message();
+    std::error_code restore;
+    if (replaced) std::filesystem::rename(aside, target, restore);
+    return refuse(RefusalCode::FileUnwritable, std::format("{} : {}", target.string(), reason));
+  }
+  if (replaced) std::filesystem::remove_all(aside, error);
+  error.clear();
   std::filesystem::remove(part, error);
   report(1.0F, std::format("{} installé", name));
   return module ? core::backend_library(catalog.layout, package) : target;

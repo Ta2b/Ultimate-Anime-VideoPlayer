@@ -7,6 +7,7 @@
 #include <cstdint>
 #include <deque>
 #include <expected>
+#include <format>
 #include <memory>
 #include <mutex>
 #include <optional>
@@ -33,6 +34,7 @@ struct FakeStages final : Stages {
   std::vector<subs::RenderRequest> requests;
   std::vector<double> speeds;  // vitesses acceptées, dans l'ordre
   bool refuse_speed = false;   // boîte audio pleine : set_speed refuse
+  int refuse_flushes = 0;      // les n prochains Flush sont refusés (boîte pleine), le Seek passe
   bool quit_called = false;
 
   bool flush(std::uint32_t epoch) override;
@@ -45,6 +47,10 @@ struct FakeStages final : Stages {
   bool set_speed(double speed) override {
     if (refuse_speed) return false;
     speeds.push_back(speed);
+    return true;
+  }
+  bool audio_lost(std::uint32_t epoch, std::int64_t media_us) override {
+    log.push_back(std::format("audio perdu {} {}", epoch, media_us));
     return true;
   }
   void quit() override { quit_called = true; }

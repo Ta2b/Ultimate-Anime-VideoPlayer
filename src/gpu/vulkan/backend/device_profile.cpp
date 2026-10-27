@@ -96,6 +96,7 @@ DeviceProfile profile_device(const VkContext& context) {
                                .max_push_constants = caps.max_push_constants,
                                .max_shared_memory = caps.max_shared_memory,
                                .max_workgroup_invocations = caps.max_workgroup_invocations,
+                               .max_workgroup_count_x = caps.max_workgroup_count[0],
                                .storage_alignment = static_cast<std::uint32_t>(
                                    std::max<VkDeviceSize>(caps.min_storage_buffer_alignment, 4))};
   // driverVersion se code autrement selon le constructeur : il entre brut, avec driverInfo lisible.

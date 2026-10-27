@@ -63,12 +63,17 @@ std::string PlaceboScreen::output_description() const {
 }
 
 std::expected<std::vector<RingSlotDesc>, Refusal> PlaceboScreen::create_ring(int width, int height,
-                                                                             std::uint32_t count) {
-  return impl_->ring.create(impl_->vk->gpu, width, height, count);
+                                                                             std::uint32_t count,
+                                                                             bool external) {
+  return impl_->ring.create(impl_->vk->gpu, width, height, count, external);
 }
 
 bool PlaceboScreen::hdr_output() const {
   return impl_->hdr_output;
+}
+
+void PlaceboScreen::new_scene() {
+  if (impl_->renderer != nullptr) pl_renderer_flush_cache(impl_->renderer);
 }
 
 void PlaceboScreen::flush() {
@@ -88,8 +93,15 @@ void PlaceboScreen::release_ui(ImGuiPlatformIO& platform) {
 void PlaceboScreen::Impl::draw_ui(const ImDrawData* data, const pl_frame& target) {
   if (data == nullptr || ui_failed) return;
   if (auto drawn = ui->draw(*data, target, kUiWhiteNits); !drawn) {
-    channel->warn("interface : {} {}", name(drawn.error().code), drawn.error().detail);
-    ui_failed = true;
+    // Un échec isolé (texture ou tampon d'un redimensionnement) ne retire pas l'interface : elle
+    // n'est abandonnée qu'après des échecs de suite.
+    ++ui_failures;
+    ui_failed = ui_failures >= kMaxUiFailures;
+    if (ui_failures == 1 || ui_failed)
+      channel->warn("interface : {} {}{}", name(drawn.error().code), drawn.error().detail,
+                    ui_failed ? " (abandonnée)" : "");
+  } else {
+    ui_failures = 0;
   }
 }
 
@@ -176,7 +188,8 @@ std::expected<ScreenTiming, Refusal> PlaceboScreen::show(const ShowRequest& requ
     image.repr = pl_color_repr_rgb;
     image.color = s.source;
     image.crop = {0, 0, static_cast<float>((*tex)->params.w), static_cast<float>((*tex)->params.h)};
-    pl_rect2df_aspect_copy(&target.crop, &image.crop, 0.0F);
+    pl_rect2df_aspect_set(&target.crop, pl_rect2df_aspect(&image.crop) * static_cast<float>(s.sample_aspect),
+                          0.0F);
   }
 
   auto overlays = s.overlays->build(request.subtitles, request.osd.empty() ? nullptr : &request.osd, *s.osd,

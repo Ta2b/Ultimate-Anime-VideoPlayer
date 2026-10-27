@@ -76,6 +76,14 @@ void MainMail::report(std::string stage, const Refusal& refusal, bool fatal) {
 
 bool ThreadStages::flush(std::uint32_t epoch) {
   flushed_epoch_ = epoch;
+  if (audio_lost_) {  // l'audio a une nouvelle chance à cette époque, sauf si l'écran mène
+    audio_lost_ = false;
+    if (speed_ == 1.0 && links_.audio != nullptr && links_.lead != nullptr && links_.lead->host_leads() &&
+        links_.audio->post(audio::SyncTo{})) {
+      links_.host_clock->set_rate(1.0, host_now_us());
+      links_.lead->lead_with_host(false);
+    }
+  }
   bool sent = links_.source->try_push(Flush{.epoch = epoch});
   sent = links_.video->post(Flush{.epoch = epoch}) && sent;
   if (links_.audio != nullptr) sent = links_.audio->post(Flush{.epoch = epoch}) && sent;
@@ -111,9 +119,10 @@ bool ThreadStages::pause() {
 // reprend la position de l'audio, à cette vitesse, puis l'audio la suit (audio::SyncTo).
 bool ThreadStages::set_speed(double speed) {
   const std::int64_t now = host_now_us();
-  const bool host_leads = speed != 1.0;
+  const bool host_leads = speed != 1.0 || audio_lost_;
   if (links_.audio == nullptr || links_.lead == nullptr || links_.lead->host_leads() == host_leads) {
     links_.host_clock->set_rate(speed, now);
+    speed_ = speed;
     return true;
   }
   if (host_leads) {
@@ -126,6 +135,18 @@ bool ThreadStages::set_speed(double speed) {
     links_.host_clock->set_rate(1.0, now);
   }
   links_.lead->lead_with_host(host_leads);
+  speed_ = speed;
+  return true;
+}
+
+bool ThreadStages::audio_lost(std::uint32_t epoch, std::int64_t media_us) {
+  if (links_.audio == nullptr || links_.lead == nullptr || links_.lead->host_leads() || !playing_)
+    return false;
+  links_.host_clock->start(epoch, media_us, host_now_us());
+  // L'audio, s'il revient, se cale sur l'horloge hôte (silence ou rognage) au lieu de la mener.
+  links_.audio->post(audio::SyncTo{.master = links_.host_clock});
+  links_.lead->lead_with_host(true);
+  audio_lost_ = true;
   return true;
 }
 

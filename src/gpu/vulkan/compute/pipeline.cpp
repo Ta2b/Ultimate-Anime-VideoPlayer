@@ -18,15 +18,29 @@ Pipeline::~Pipeline() {
   if (set_layout_ != VK_NULL_HANDLE) fn.vkDestroyDescriptorSetLayout(device, set_layout_, nullptr);
 }
 
-std::expected<std::unique_ptr<PipelineCache>, Refusal> PipelineCache::create(const VkContext& context) {
+std::expected<std::unique_ptr<PipelineCache>, Refusal> PipelineCache::create(
+    const VkContext& context, std::span<const std::byte> initial) {
   std::unique_ptr<PipelineCache> cache(new PipelineCache(context));
-  const VkPipelineCacheCreateInfo info{.sType = VK_STRUCTURE_TYPE_PIPELINE_CACHE_CREATE_INFO};
+  const VkPipelineCacheCreateInfo info{.sType = VK_STRUCTURE_TYPE_PIPELINE_CACHE_CREATE_INFO,
+                                       .initialDataSize = initial.size(),
+                                       .pInitialData = initial.data()};
   if (auto ok = check(context.fn().vkCreatePipelineCache(context.device(), &info, nullptr, &cache->cache_),
                       "vkCreatePipelineCache");
       !ok) {
     return std::unexpected(ok.error());
   }
   return cache;
+}
+
+std::vector<std::byte> PipelineCache::serialize() const {
+  std::size_t size = 0;
+  const DeviceFunctions& fn = context_.fn();
+  if (fn.vkGetPipelineCacheData(context_.device(), cache_, &size, nullptr) != VK_SUCCESS || size == 0)
+    return {};
+  std::vector<std::byte> bytes(size);
+  if (fn.vkGetPipelineCacheData(context_.device(), cache_, &size, bytes.data()) != VK_SUCCESS) return {};
+  bytes.resize(size);
+  return bytes;
 }
 
 PipelineCache::~PipelineCache() {

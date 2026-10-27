@@ -70,3 +70,33 @@ TEST_CASE("selection : sans langue voulue, panneaux de la langue de l'audio, pui
   CHECK_FALSE(choose_tracks(nothing, wants_fr).subtitle.has_value());
   CHECK_FALSE(choose_tracks(nothing, wants_fr).video.has_value());
 }
+
+TEST_CASE("selection : la piste de dialogue avant Signs & Songs, commentaire et SDH", "[media][selection]") {
+  TrackInfo signs = track(2, TrackKind::Subtitle, "eng", true);
+  signs.title = "Signs & Songs";
+  TrackInfo commentary = track(3, TrackKind::Subtitle, "eng");
+  commentary.title = "Director's Commentary";
+  TrackInfo sdh = track(4, TrackKind::Subtitle, "eng");
+  sdh.title = "English [SDH]";
+  TrackInfo full = track(5, TrackKind::Subtitle, "eng");
+  full.title = "Full Subtitles";
+  const LanguagePriorities en{.audio = {"jpn"}, .subtitles = {"en"}};
+
+  const std::vector<TrackInfo> tracks{track(1, TrackKind::Audio, "jpn"), signs, commentary, sdh, full};
+  CHECK(choose_tracks(tracks, en).subtitle == 5);
+
+  // Faute de mieux, une piste spéciale vaut mieux que rien.
+  const std::vector<TrackInfo> only_signs{track(1, TrackKind::Audio, "jpn"), signs, commentary};
+  CHECK(choose_tracks(only_signs, en).subtitle == 2);
+}
+
+TEST_CASE("selection : les sous-titres image ne sont jamais choisis", "[media][selection]") {
+  TrackInfo pgs = track(2, TrackKind::Subtitle, "eng", true);
+  pgs.codec = "hdmv_pgs_subtitle";
+  TrackInfo ass = track(3, TrackKind::Subtitle, "eng");
+  ass.codec = "ass";
+  const LanguagePriorities en{.audio = {"jpn"}, .subtitles = {"en"}};
+  CHECK(choose_tracks(std::vector<TrackInfo>{track(1, TrackKind::Audio, "jpn"), pgs, ass}, en).subtitle == 3);
+  CHECK_FALSE(
+      choose_tracks(std::vector<TrackInfo>{track(1, TrackKind::Audio, "jpn"), pgs}, en).subtitle.has_value());
+}

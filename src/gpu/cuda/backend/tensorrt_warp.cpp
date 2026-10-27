@@ -112,6 +112,7 @@ std::expected<void, Refusal> TensorRtBackend::warp(const Tensor& a, const Tensor
     return refuse(RefusalCode::FieldOutOfRange, std::format("warp_blend : instant {}", t));
   if (auto ok = check_motion(motion); !ok) return ok;
   if (auto ok = bind(); !ok) return ok;
+  trim_textures();
   const WarpBlendParams params{
       .a = address(a),
       .b = address(b),

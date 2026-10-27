@@ -4,12 +4,16 @@
 #include <format>
 #include <fstream>
 #include <limits>
+#include <string>
 #include <string_view>
 #include <system_error>
+#include <vector>
 
 #include <ass/ass.h>
 
+#include "subs/log.h"
 #include "subs/srt.h"
+#include "subs/text_encoding.h"
 #include "subs/timebase.h"
 
 namespace ajp::subs {
@@ -54,7 +58,7 @@ std::expected<std::string, Refusal> read_script(const std::filesystem::path& pat
     return refuse(RefusalCode::SubtitleUnreadable, std::format("{} : lecture", path.string()));
   }
   text.resize(static_cast<std::size_t>(file.gcount()));
-  return text;
+  return to_utf8(text);  // UTF-16 et Windows-1252 des fichiers externes
 }
 
 }  // namespace
@@ -105,8 +109,10 @@ std::expected<SubtitleTrack, Refusal> SubtitleTrack::from_srt(const AssLibrary& 
   if (file.size() > kMaxScriptBytes) {
     return refuse(RefusalCode::SubtitleUnreadable, std::format("fichier SRT de {} octets", file.size()));
   }
-  auto cues = parse_srt(file);
+  std::vector<std::string> skipped;
+  auto cues = parse_srt(file, &skipped);
   if (!cues) return std::unexpected(std::move(cues.error()));
+  for (const std::string& what : skipped) make_logger()->warn("{} : cue ignorée", what);
   auto track = text(library);
   if (!track) return track;
   for (SrtCue& cue : *cues) {

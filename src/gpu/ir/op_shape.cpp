@@ -242,8 +242,15 @@ std::expected<std::int64_t, Refusal> range_length(const Node& node, std::span<co
   if (in[0].type == DataType::I64) {
     const std::int64_t delta = in[2].value->i[0];
     if (delta == 0) return graph_error(node, "pas nul");
-    count =
-        std::ceil(static_cast<double>(in[1].value->i[0] - in[0].value->i[0]) / static_cast<double>(delta));
+    // Au-delà de 2^53, le double ne compte plus exactement, et la différence déborderait en int64.
+    constexpr std::int64_t kExactBound = std::int64_t{1} << 53;
+    for (std::size_t k = 0; k < 2; ++k) {
+      if (in[k].value->i[0] > kExactBound || in[k].value->i[0] < -kExactBound)
+        return shape_error(node, "bornes de Range trop grandes");
+    }
+    if (delta > kExactBound || delta < -kExactBound) return shape_error(node, "pas de Range trop grand");
+    count = std::ceil((static_cast<double>(in[1].value->i[0]) - static_cast<double>(in[0].value->i[0])) /
+                      static_cast<double>(delta));
   } else {
     const float delta = in[2].value->f[0];
     if (delta == 0.0F || !std::isfinite(delta)) return graph_error(node, "pas nul ou non fini");
@@ -267,7 +274,8 @@ Evaluated eval_range(const Node& /*node*/, std::span<const Value* const> in,
   Value out = make_output(outs[0]);
   if (in[0]->type == DataType::I64) {
     for (std::size_t k = 0; k < out.i.size(); ++k)
-      out.i[k] = in[0]->i[0] + (static_cast<std::int64_t>(k) * in[2]->i[0]);
+      out.i[k] =
+          in[0]->i[0] + (static_cast<std::int64_t>(k) * in[2]->i[0]);  // bornes ≤ 2^53 : sans débordement
   } else {
     // Comme ONNX Runtime : start + k × delta, en float.
     for (std::size_t k = 0; k < out.f.size(); ++k)
