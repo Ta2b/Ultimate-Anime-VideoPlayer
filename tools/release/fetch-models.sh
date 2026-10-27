@@ -74,6 +74,20 @@ for entry in "${DRBA[@]}"; do
   check "$sha" "$DEST/rife/$name"
 done
 
+# GMFSS Fortuna (base et union) et le demi-flot de DistilDRBA : exportés par le workflow
+# export-interpolation-models.yml, joints à la release models-interp-1 avec leur SHA256SUMS. Facultatifs :
+# tant que la release n'existe pas, les paquets partent sans eux (le lecteur les signale absents).
+INTERP_URL="${AJP_INTERP_MODELS_URL:-https://github.com/Ta2b/ajp-releases/releases/download/models-interp-1}"
+if curl -fsSL -o "$CACHE/interp-SHA256SUMS" "$INTERP_URL/SHA256SUMS" 2>/dev/null; then
+  while read -r sha name; do
+    [ -n "${name:-}" ] || continue
+    curl -fsSL -o "$DEST/rife/$name" "$INTERP_URL/$name"
+    check "$sha" "$DEST/rife/$name"
+  done < "$CACHE/interp-SHA256SUMS"
+else
+  echo "modèles d'interpolation (GMFSS, DRBA demi-flot) : release models-interp-1 absente, non joints" >&2
+fi
+
 cat > "$DEST/LICENCES.txt" <<'TXT'
 Modèles livrés avec le lecteur
 
@@ -85,5 +99,7 @@ rife/  RIFE 4.25, 4.22, 4.22 lite, 4.26 et 4.26 heavy (Practical-RIFE, hzwer), c
        https://github.com/hzwer/Practical-RIFE
        DistilDRBA v2 lite (routineLife1, « neko »), converti en ONNX fp16 par ajp : licence MIT.
        https://github.com/routineLife1/DistilDRBA
+       GMFSS Fortuna base et union (vsgmfss_fortuna, HolyWu), exportés en ONNX par ajp : licence MIT.
+       https://github.com/HolyWu/vs-gmfss_fortuna
 TXT
 echo "modèles : $DEST"
