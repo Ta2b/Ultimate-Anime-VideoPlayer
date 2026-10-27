@@ -20,6 +20,7 @@
 #include <vector>
 
 #include "app/play/bridges.h"
+#include "app/play/external_subtitles.h"
 #include "app/play/links.h"
 #include "app/play/session.h"
 #include "app/play/tracks.h"
@@ -102,6 +103,8 @@ class Pipeline {
   Pipeline() = default;
   const audio::AudioCodecInfo* audio_codec(int track) const;
   const media::TrackInfo* track_info(int track) const;
+  // Le SelectTrack d'une piste du menu : du conteneur, ou un fichier à côté de la vidéo.
+  std::expected<subs::SelectTrack, Refusal> subtitle_select(int index) const;
 
   // Ordre de déclaration = ordre inverse de destruction : la source s'arrête la première,
   // la boîte de main disparaît la dernière.
@@ -131,7 +134,8 @@ class Pipeline {
   std::string decoder_api_;
   TrackMenu menu_;
   std::vector<std::pair<int, audio::AudioCodecInfo>> audio_codecs_;  // pistes audio décodables
-  std::vector<media::TrackInfo> tracks_;                             // audio et sous-titres
+  std::vector<ExternalSubtitle> external_;  // à côté de la vidéo, au menu après les pistes du conteneur
+  std::vector<media::TrackInfo> tracks_;    // audio et sous-titres
 };
 
 }  // namespace ajp::app::play

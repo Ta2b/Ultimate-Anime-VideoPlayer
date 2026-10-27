@@ -35,7 +35,8 @@ std::expected<std::unique_ptr<Pipeline>, Refusal> Pipeline::open(const PipelineC
     choice.audio = config.audio_track;
   if (config.subtitle_track) {
     const std::optional<int> wanted = *config.subtitle_track;
-    if (!wanted || kind_of(*wanted) == media::TrackKind::Subtitle) choice.subtitle = wanted;
+    if (!wanted || kind_of(*wanted) == media::TrackKind::Subtitle || *wanted >= kExternalSubtitleBase)
+      choice.subtitle = wanted;
   }
   if (!choice.video) {
     return std::unexpected(
@@ -109,15 +110,38 @@ std::expected<std::unique_ptr<Pipeline>, Refusal> Pipeline::open(const PipelineC
     }
   }
 
+  for (const media::TrackInfo& track : demuxer->tracks()) {
+    if (track.kind == media::TrackKind::Audio || track.kind == media::TrackKind::Subtitle)
+      p->tracks_.push_back(track);
+  }
+
   if (config.subtitles) {
     for (const media::TrackInfo& track : demuxer->tracks()) {
       if (track.kind != media::TrackKind::Subtitle || !subtitle_track(track, subs_track_id(track.index)))
         continue;
       p->menu_.subtitles.push_back({.index = track.index, .label = track_label(track)});
     }
+    // Les fichiers à côté de la vidéo : après les pistes du conteneur, choisis d'office seulement
+    // quand le conteneur n'en a aucune et qu'aucun choix n'a été fait.
+    p->external_ = find_external_subtitles(config.file);
+    for (std::size_t k = 0; k < p->external_.size(); ++k) {
+      const int index = kExternalSubtitleBase + static_cast<int>(k);
+      p->menu_.subtitles.push_back({.index = index, .label = p->external_[k].label});
+      p->tracks_.push_back({.index = index,
+                            .kind = media::TrackKind::Subtitle,
+                            .codec = "externe",
+                            .title = p->external_[k].path.filename().string()});
+    }
+    if (!choice.subtitle && !config.subtitle_track && !p->external_.empty() &&
+        std::ranges::none_of(demuxer->tracks(), [](const media::TrackInfo& t) {
+          return t.kind == media::TrackKind::Subtitle;
+        })) {
+      choice.subtitle = kExternalSubtitleBase;
+    }
     if (choice.subtitle && !std::ranges::contains(p->menu_.subtitles, *choice.subtitle, &TrackEntry::index)) {
       auto refused = subtitle_track(*demuxer->track(*choice.subtitle), 0);
       p->mail_.report("subs", refused.error(), false);
+      choice.subtitle.reset();
     }
   }
   if (!p->menu_.subtitles.empty()) {
@@ -134,17 +158,19 @@ std::expected<std::unique_ptr<Pipeline>, Refusal> Pipeline::open(const PipelineC
     std::optional<int> chosen;
     if (choice.subtitle && std::ranges::contains(p->menu_.subtitles, *choice.subtitle, &TrackEntry::index)) {
       chosen = choice.subtitle;
-      p->subs_inbox_->try_push(*subtitle_track(*demuxer->track(*chosen), subs_track_id(*chosen)));
-      p->subtitle_track_ = *demuxer->track(*chosen);
+      if (auto select = p->subtitle_select(*chosen)) {
+        p->subs_inbox_->try_push(std::move(*select));
+        p->subtitle_track_ = *p->track_info(*chosen);
+      } else {
+        chosen.reset();
+      }
     }
     p->menu_.subtitle_selected = chosen;
     p->subs_bridge_ = std::make_unique<SubsBridge>(p->subs_inbox_, chosen);
-    for (const TrackEntry& entry : p->menu_.subtitles)
-      routes.push_back({.track = entry.index, .sink = p->subs_bridge_.get()});
-  }
-  for (const media::TrackInfo& track : demuxer->tracks()) {
-    if (track.kind == media::TrackKind::Audio || track.kind == media::TrackKind::Subtitle)
-      p->tracks_.push_back(track);
+    for (const TrackEntry& entry : p->menu_.subtitles) {
+      if (entry.index < kExternalSubtitleBase)
+        routes.push_back({.track = entry.index, .sink = p->subs_bridge_.get()});
+    }
   }
 
   auto media = media::open_source(std::move(*demuxer), *choice.video, config.decoder);
@@ -208,6 +234,21 @@ std::expected<void, Refusal> Pipeline::select_audio(int track, std::uint32_t fro
   return {};
 }
 
+std::expected<subs::SelectTrack, Refusal> Pipeline::subtitle_select(int index) const {
+  const media::TrackInfo* info = track_info(index);
+  if (info == nullptr)
+    return std::unexpected(
+        Refusal{RefusalCode::TrackUnavailable, std::format("piste de sous-titres {} absente", index)});
+  if (index >= kExternalSubtitleBase) {
+    const auto k = static_cast<std::size_t>(index - kExternalSubtitleBase);
+    if (k >= external_.size())
+      return std::unexpected(Refusal{RefusalCode::TrackUnavailable, "sous-titres externes absents"});
+    return subs::SelectTrack{.id = subs_track_id(index),
+                             .source = subs::ExternalFile{.path = external_[k].path}};
+  }
+  return subtitle_track(*info, subs_track_id(index));
+}
+
 std::expected<void, Refusal> Pipeline::select_subtitles(std::optional<int> track) {
   if (!subs_bridge_)
     return std::unexpected(Refusal{RefusalCode::TrackUnavailable, "aucune piste de sous-titres lisible"});
@@ -221,7 +262,7 @@ std::expected<void, Refusal> Pipeline::select_subtitles(std::optional<int> track
   if (info == nullptr || !std::ranges::contains(menu_.subtitles, *track, &TrackEntry::index))
     return std::unexpected(
         Refusal{RefusalCode::TrackUnavailable, std::format("piste de sous-titres {} absente", *track)});
-  auto select = subtitle_track(*info, subs_track_id(*track));
+  auto select = subtitle_select(*track);
   if (!select) return std::unexpected(std::move(select.error()));
   if (!subs_inbox_->try_push(std::move(*select)))
     return std::unexpected(Refusal{RefusalCode::SubtitleBacklog, "piste de sous-titres : boîte pleine"});
