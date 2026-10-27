@@ -54,7 +54,7 @@ jobs:
         run: |
           source tools/release/versions.env
           sudo apt-get update -qq
-          sudo apt-get install -y -qq $APT_BUILD $APT_COMPILERS ccache
+          sudo apt-get install -y -qq --no-install-recommends $APT_BUILD $APT_COMPILERS ccache
       # Un script de dépendances modifié restaure le préfixe précédent : ses marqueurs signés ne
       # font rebâtir que les dépendances dont la version ou les options ont changé.
       - uses: actions/cache@v4
@@ -151,6 +151,7 @@ jobs:
       (github.event_name == 'pull_request' && github.base_ref == 'main')
     runs-on: windows-2025
     env:
+      SCCACHE_GHA_ENABLED: "true"
       AJP_VCPKG: C:\v
       AJP_VCPKG_BUILDTREES: C:\vb
       VCPKG_BINARY_SOURCES: "clear;files,C:\\vc,readwrite"
@@ -175,6 +176,9 @@ jobs:
           git -C $env:AJP_VCPKG checkout -q $baseline
           & "$env:AJP_VCPKG/bootstrap-vcpkg.bat" -disableMetrics
       - uses: ilammy/msvc-dev-cmd@v1
+      # sccache (cache GitHub) pour cl.exe : /Z7 (CMAKE_MSVC_DEBUG_INFORMATION_FORMAT=Embedded) met
+      # les informations de débogage dans les objets, seule forme que sccache sait mettre en cache.
+      - uses: mozilla-actions/sccache-action@v0.0.9
       # Le paquet NuGet de Windows ML : MIGraphX de Windows ML se construit avec /WX comme le reste.
       - name: Windows ML
         shell: pwsh
@@ -186,7 +190,9 @@ jobs:
           $env:VCPKG_ROOT = $env:AJP_VCPKG
           cmake --preset windows-ci "-DVCPKG_INSTALL_OPTIONS=--x-buildtrees-root=$env:AJP_VCPKG_BUILDTREES" `
             "-DVCPKG_TARGET_TRIPLET=$env:AJP_VCPKG_TRIPLET" "-DVCPKG_HOST_TRIPLET=$env:AJP_VCPKG_TRIPLET" `
-            -DAJP_WITH_WINML=ON "-DAJP_WINML_ROOT=$env:AJP_WINML_ROOT"
+            -DAJP_WITH_WINML=ON "-DAJP_WINML_ROOT=$env:AJP_WINML_ROOT" `
+            -DCMAKE_C_COMPILER_LAUNCHER=sccache -DCMAKE_CXX_COMPILER_LAUNCHER=sccache `
+            -DCMAKE_MSVC_DEBUG_INFORMATION_FORMAT=Embedded
           if ($LASTEXITCODE -ne 0) { throw "configuration" }
       - name: Construction
         shell: pwsh
