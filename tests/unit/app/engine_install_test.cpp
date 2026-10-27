@@ -122,6 +122,104 @@ void require_refused(const std::expected<T, Refusal>& result, RefusalCode code) 
 
 }  // namespace
 
+namespace {
+
+// Une « roue » factice : un préfixe de remplissage, puis les octets du membre ; curl en lit la plage.
+struct Wheel {
+  explicit Wheel(Fixture& f, std::string_view member, bool deflated) : fixture(f) {
+    path = f.root / (deflated ? "roue-deflate.whl" : "roue-stockee.whl");
+    constexpr std::string_view kPrefix = "PK-entete-";
+    write_all(path, std::string(kPrefix) + std::string(member) + "-fin-de-la-roue");
+    file.engine = core::EngineId::OpenVino;
+    file.platform = f.catalog.layout.os;
+    file.url = "file://" + path.generic_string();
+    file.data_offset = kPrefix.size();
+    file.packed_size = member.size();
+    file.deflated = deflated;
+  }
+  Fixture& fixture;
+  fs::path path;
+  core::VendorFile file;
+};
+
+constexpr std::string_view kDeflated{"\x4b\x4c\x4a\x4e\x44\x45\x00", 7};  // « abcabcabcabcabcabc »
+constexpr std::string_view kPlain = "abcabcabcabcabcabc";
+
+}  // namespace
+
+TEST_CASE("Fichier tiers : la plage d'une roue, décompressée et vérifiée", "[app][install]") {
+  Fixture f("tiers");
+  Wheel wheel(f, kDeflated, true);
+  wheel.file.name = "libtiers.so.1";
+  wheel.file.size = kPlain.size();
+  wheel.file.sha256 = core::sha256_hex(kPlain);
+  const fs::path dest = f.root / "sortie" / "libtiers.so.1";
+  fs::create_directories(dest.parent_path());
+  require_done(fetch_vendor_file(wheel.file, dest, f.root / "tmp", f.progress()));
+  CHECK(read_all(dest) == kPlain);
+  CHECK_FALSE(fs::exists(fs::path(dest.string() + ".partiel")));
+
+  // Un membre stocké se recopie tel quel.
+  Wheel stored(f, kPlain, false);
+  stored.file.name = "stocke.so";
+  stored.file.size = kPlain.size();
+  stored.file.sha256 = core::sha256_hex(kPlain);
+  require_done(fetch_vendor_file(stored.file, f.root / "sortie" / "stocke.so", f.root / "tmp", f.progress()));
+  CHECK(read_all(f.root / "sortie" / "stocke.so") == kPlain);
+
+  // Un SHA-256 faux ne laisse rien à l'arrivée.
+  core::VendorFile wrong = wheel.file;
+  wrong.sha256 = core::sha256_hex("autre");
+  const fs::path refused = f.root / "sortie" / "faux.so";
+  require_refused(fetch_vendor_file(wrong, refused, f.root / "tmp", f.progress()), RefusalCode::HashMismatch);
+  CHECK_FALSE(fs::exists(refused));
+  CHECK_FALSE(fs::exists(fs::path(refused.string() + ".partiel")));
+
+  // Une plage qui dépasse la roue est refusée, et rien n'arrive à destination.
+  core::VendorFile beyond = wheel.file;
+  beyond.data_offset = fs::file_size(wheel.path) + 10;
+  const auto outside = fetch_vendor_file(beyond, f.root / "sortie" / "loin.so", f.root / "tmp", f.progress());
+  if (!outside && outside.error().code == RefusalCode::LibraryUnavailable) SKIP(outside.error().detail);
+  CHECK_FALSE(outside);
+  CHECK_FALSE(fs::exists(f.root / "sortie" / "loin.so"));
+}
+
+TEST_CASE("Installation : les fichiers tiers de l'architecture du GPU rejoignent le module",
+          "[app][install]") {
+  Fixture f("tiers-installation");
+  const core::EnginePackage package = f.openvino_package();
+  Wheel wheel(f, kPlain, false);
+  const auto vendor = [&](std::string name, std::string arch) {
+    core::VendorFile file = wheel.file;
+    file.name = std::move(name);
+    file.arch = std::move(arch);
+    file.size = kPlain.size();
+    file.sha256 = core::sha256_hex(kPlain);
+    return file;
+  };
+  f.catalog.vendor_files = {vendor("commun.so", ""), vendor("ada.so", "sm89"),
+                            vendor("blackwell.so", "sm120")};
+  InstallProgress progress = f.progress();
+  progress.cuda_arch = "sm89";
+  const fs::path library = require_installed(install_package(f.catalog, package, progress));
+  const fs::path target = core::engine_dir(f.catalog.layout, package);
+  CHECK(fs::exists(library));
+  CHECK(read_all(target / "commun.so") == kPlain);
+  CHECK(read_all(target / "ada.so") == kPlain);
+  CHECK_FALSE(fs::exists(target / "blackwell.so"));
+
+  // Un fichier tiers refusé fait échouer l'installation, sans dossier à moitié rempli.
+  Fixture g("tiers-refuse");
+  const core::EnginePackage other = g.openvino_package();
+  Wheel bad(g, kPlain, false);
+  bad.file.name = "faux.so";
+  bad.file.size = kPlain.size();
+  bad.file.sha256 = core::sha256_hex("autre");
+  g.catalog.vendor_files = {bad.file};
+  require_refused(install_package(g.catalog, other, g.progress()), RefusalCode::HashMismatch);
+  CHECK_FALSE(installed(g.catalog, other));
+}
+
 TEST_CASE("Installation : un paquet complet depuis une archive locale", "[app][install]") {
   Fixture f("complet");
   const core::EnginePackage package = f.openvino_package();

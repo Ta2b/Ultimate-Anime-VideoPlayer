@@ -82,6 +82,26 @@ struct EnginePackage {
   friend bool operator==(const EnginePackage&, const EnginePackage&) = default;
 };
 
+// Un fichier que le lecteur tire d'une archive zip (une roue) que NVIDIA publie, sans la
+// télécharger entière : par une plage HTTP sur ses octets, puis décompressé. Rien de NVIDIA ne
+// passe par nos releases (licence de redistribution) ; le lien est direct, et c'est le SHA-256 du
+// fichier décompressé, écrit ici, qui fait foi (la roue change de hachage d'une version à l'autre,
+// pas ses membres). Le paquet du même moteur et de la même plateforme (EnginePackage) apporte notre
+// module ; ces fichiers se joignent à lui dans son dossier de version.
+struct VendorFile {
+  EngineId engine = EngineId::TensorRt;
+  Os platform = Os::Linux;
+  std::string url;                // https : la roue
+  std::string name;               // nom du fichier installé (lettres, chiffres, « . », « _ », « - »)
+  std::uint64_t data_offset = 0;  // début des octets du membre dans la roue (après son en-tête local)
+  std::uint64_t packed_size = 0;  // octets du membre dans la roue
+  bool deflated = true;           // false : stocké tel quel
+  std::uint64_t size = 0;         // octets du fichier décompressé
+  std::string sha256;             // du fichier décompressé
+  std::string arch;               // « sm89 » : seulement pour ce GPU ; vide : toujours
+  friend bool operator==(const VendorFile&, const VendorFile&) = default;
+};
+
 inline constexpr int kIndexVersion = 1;
 
 namespace limits {
@@ -99,7 +119,8 @@ std::expected<std::vector<EnginePackage>, Refusal> parse_engine_index(std::strin
 // Refus : TOML illisible, version d'index inconnue, [[engine]] qui n'est pas un tableau.
 struct EngineIndex {
   std::vector<EnginePackage> packages;
-  std::vector<Refusal> skipped;  // une par entrée écartée
+  std::vector<VendorFile> vendor_files;  // [[vendor_file]], facultatif
+  std::vector<Refusal> skipped;          // une par entrée écartée
 };
 std::expected<EngineIndex, Refusal> read_engine_index(std::string_view toml_text);
 
@@ -119,6 +140,11 @@ struct NgcSdkSource {
 };
 // Rien si l'index n'a pas de table [maxine_vfx].
 std::expected<std::optional<NgcSdkSource>, Refusal> parse_maxine_source(std::string_view toml_text);
+
+// Les fichiers d'un moteur pour une plateforme : ceux sans architecture, et ceux de `arch` (vide :
+// toutes les architectures, quand le GPU n'a pas pu se lire).
+std::vector<VendorFile> vendor_files_for(std::span<const VendorFile> files, EngineId engine, Os platform,
+                                         std::string_view arch);
 
 const ModelEntry* find_model(std::span<const ModelEntry> lock, std::string_view id);
 const EnginePackage* find_package(std::span<const EnginePackage> index, EngineId engine, Os platform);

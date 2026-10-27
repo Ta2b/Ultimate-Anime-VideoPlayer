@@ -1,6 +1,8 @@
 #include "app/play/engine_install.h"
 
+#include <algorithm>
 #include <chrono>
+#include <cstdio>
 #include <format>
 #include <fstream>
 #include <initializer_list>
@@ -13,6 +15,7 @@
 #endif
 
 #include "app/play/engine_tools.h"
+#include "core/inflate.h"
 
 namespace ajp::app::play {
 namespace {
@@ -81,6 +84,9 @@ EngineCatalog load_catalog(const std::filesystem::path& index, const std::filesy
   }
   for (core::EnginePackage& package : parsed->packages) {
     if (package.platform == catalog.layout.os) catalog.packages.push_back(std::move(package));
+  }
+  for (core::VendorFile& file : parsed->vendor_files) {
+    if (file.platform == catalog.layout.os) catalog.vendor_files.push_back(std::move(file));
   }
   // Une entrée écartée (un moteur d'une release plus récente) n'empêche pas les autres.
   const auto add_problem = [&](const std::string& what) {
@@ -156,6 +162,138 @@ std::optional<std::string> missing_prerequisite(core::EngineId engine) {
   }
 }
 
+std::string detect_cuda_arch() {
+  const auto smi = system_tool("nvidia-smi");
+  if (!smi) return {};
+  std::string arch;
+  auto done = run_tool(
+      {.program = *smi,
+       .args = {"--query-gpu=compute_cap", "--format=csv,noheader"},
+       .timeout = std::chrono::seconds(10)},
+      [&](std::string_view line) {
+        // « 8.9 » : la première carte, la carte de rendu.
+        if (!arch.empty()) return;
+        const std::size_t dot = line.find('.');
+        if (dot == std::string_view::npos || dot == 0 || dot + 1 >= line.size()) return;
+        const auto digit = [](char c) { return c >= '0' && c <= '9'; };
+        if (!digit(line[dot - 1]) || !digit(line[dot + 1])) return;
+        arch = std::format("sm{}{}", line[dot - 1], line[dot + 1]);
+        // sm100 et plus : « 10.0 » donne sm100 ; la majeure a deux chiffres.
+        if (dot >= 2 && digit(line[dot - 2]))
+          arch = std::format("sm{}{}{}", line[dot - 2], line[dot - 1], line[dot + 1]);
+      },
+      {}, "nvidia-smi");
+  return done ? arch : std::string();
+}
+
+std::expected<void, Refusal> fetch_vendor_file(const core::VendorFile& file,
+                                               const std::filesystem::path& dest,
+                                               const std::filesystem::path& scratch,
+                                               const InstallProgress& progress) {
+  const auto curl = system_tool("curl");
+  if (!curl) return refuse(RefusalCode::LibraryUnavailable, "curl introuvable sur ce système");
+  std::error_code error;
+  std::filesystem::create_directories(scratch, error);
+  const std::filesystem::path packed = scratch / (file.name + ".part");
+  std::filesystem::remove(packed, error);
+  const auto cleanup = [&] {
+    std::error_code ignored;
+    std::filesystem::remove(packed, ignored);
+  };
+  if (file.packed_size == 0) return refuse(RefusalCode::FieldOutOfRange, file.name + " : taille nulle");
+  const std::uint64_t last = file.data_offset + file.packed_size - 1;
+  auto fetched = run_tool(
+      {.program = *curl,
+       .args = {"--fail", "--location", "--retry", "3", "--progress-bar", "--range",
+                std::format("{}-{}", file.data_offset, last), "--output", packed.string(), file.url},
+       .timeout = std::chrono::hours(2)},
+      [&](std::string_view line) {
+        if (const auto f = curl_percent(line); f && progress.report) progress.report(*f * 0.7F, file.name);
+      },
+      progress.stop, std::format("téléchargement de {}", file.name));
+  if (!fetched) {
+    cleanup();
+    return std::unexpected(fetched.error());
+  }
+  const std::uintmax_t got = std::filesystem::file_size(packed, error);
+  if (error || got != file.packed_size) {
+    cleanup();
+    return refuse(RefusalCode::HashMismatch, std::format("{} : {} octets reçus, {} attendus", file.name,
+                                                         error ? 0 : got, file.packed_size));
+  }
+  std::filesystem::path partial = dest;
+  partial += ".partiel";
+  std::FILE* in = std::fopen(packed.string().c_str(), "rb");
+  std::FILE* out = std::fopen(partial.string().c_str(), "wb");
+  const auto close = [&] {
+    if (in != nullptr) std::fclose(in);
+    if (out != nullptr) std::fclose(out);
+    in = out = nullptr;
+  };
+  if (in == nullptr || out == nullptr) {
+    close();
+    cleanup();
+    return refuse(RefusalCode::FileUnwritable, partial.string());
+  }
+  core::Sha256 hash;
+  std::uint64_t produced = 0;
+  bool write_failed = false;
+  const auto sink = [&](std::span<const std::uint8_t> bytes) {
+    if (progress.stop.stop_requested()) return false;
+    if (std::fwrite(bytes.data(), 1, bytes.size(), out) != bytes.size()) {
+      write_failed = true;
+      return false;
+    }
+    hash.update(std::as_bytes(bytes));
+    produced += bytes.size();
+    return true;
+  };
+  std::expected<void, Refusal> result;
+  if (file.deflated) {
+    auto inflated = core::inflate_raw(
+        [&](std::span<std::uint8_t> buffer) { return std::fread(buffer.data(), 1, buffer.size(), in); },
+        sink);
+    if (!inflated) result = std::unexpected(inflated.error());
+  } else {
+    std::array<std::uint8_t, 1U << 16> buffer{};
+    while (const std::size_t n = std::fread(buffer.data(), 1, buffer.size(), in)) {
+      if (!sink(std::span<const std::uint8_t>(buffer).first(n))) break;
+    }
+  }
+  const bool flushed = std::fflush(out) == 0;
+  close();
+  cleanup();
+  const auto discard = [&] {
+    std::error_code ignored;
+    std::filesystem::remove(partial, ignored);
+  };
+  if (progress.stop.stop_requested()) {
+    discard();
+    return refuse(RefusalCode::Cancelled, file.name);
+  }
+  if (write_failed || !flushed) {
+    discard();
+    return refuse(RefusalCode::FileUnwritable, partial.string());
+  }
+  if (!result) {
+    discard();
+    return std::unexpected(result.error());
+  }
+  const std::string sha = core::to_hex(hash.finish());
+  if (produced != file.size || sha != file.sha256) {
+    discard();
+    return refuse(RefusalCode::HashMismatch,
+                  std::format("{} : {} octets, SHA-256 {} ; {} octets et {} attendus", file.name, produced,
+                              sha, file.size, file.sha256));
+  }
+  std::filesystem::rename(partial, dest, error);
+  if (error) {
+    discard();
+    return refuse(RefusalCode::FileUnwritable, std::format("{} : {}", dest.string(), error.message()));
+  }
+  return {};
+}
+
 std::expected<std::filesystem::path, Refusal> install_package(const EngineCatalog& catalog,
                                                               const core::EnginePackage& package,
                                                               const InstallProgress& progress) {
@@ -223,6 +361,19 @@ std::expected<std::filesystem::path, Refusal> install_package(const EngineCatalo
     std::filesystem::remove_all(staging, error);
     return refuse(RefusalCode::HashMismatch,
                   std::format("paquet {} sans {}", name, library.filename().string()));
+  }
+  // Les fichiers que NVIDIA publie, tirés de ses archives et joints au module : ce qui est à nous
+  // vient de notre release, le reste du lien direct (core::VendorFile).
+  const std::vector<core::VendorFile> vendor =
+      core::vendor_files_for(catalog.vendor_files, package.engine, catalog.layout.os, progress.cuda_arch);
+  for (std::size_t i = 0; i < vendor.size(); ++i) {
+    report(0.93F + 0.06F * static_cast<float>(i) / static_cast<float>(vendor.size()),
+           std::format("téléchargement de {} ({}/{})", vendor[i].name, i + 1, vendor.size()));
+    if (auto ok = fetch_vendor_file(vendor[i], staging / vendor[i].name, catalog.layout.downloads, progress);
+        !ok) {
+      std::filesystem::remove_all(staging, error);
+      return std::unexpected(ok.error());
+    }
   }
   {
     std::ofstream note(staging / std::string(kPackageNote), std::ios::trunc);

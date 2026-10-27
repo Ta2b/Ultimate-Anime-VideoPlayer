@@ -27,9 +27,10 @@ core::Os host_os();
 
 struct EngineCatalog {
   core::InstallLayout layout;
-  std::vector<core::EnginePackage> packages;  // ceux de cet OS
-  std::optional<core::NgcSdkSource> maxine;   // SDK de RTX HDR sous Linux (maxine_install.h)
-  std::string problem;                        // index absent ou illisible, pour le journal
+  std::vector<core::EnginePackage> packages;   // ceux de cet OS
+  std::vector<core::VendorFile> vendor_files;  // fichiers tirés des archives de NVIDIA, de cet OS
+  std::optional<core::NgcSdkSource> maxine;    // SDK de RTX HDR sous Linux (maxine_install.h)
+  std::string problem;                         // index absent ou illisible, pour le journal
 };
 
 // L'index index lu pour cet OS, installé sous data_dir ; vide (problem dit pourquoi) s'il manque.
@@ -62,7 +63,21 @@ std::optional<std::string> missing_prerequisite(core::EngineId engine);
 struct InstallProgress {
   std::function<void(float fraction, const std::string& stage)> report;
   std::stop_token stop;
+  // L'architecture du GPU (« sm89 ») pour les fichiers tiers qui en dépendent ; vide : ceux de
+  // toutes les architectures (detect_cuda_arch rend vide quand le GPU ne se lit pas).
+  std::string cuda_arch;
 };
+
+// « sm89 » pour une carte de capacité 8.9, lu par nvidia-smi ; vide s'il manque ou se tait.
+std::string detect_cuda_arch();
+
+// Un fichier de VendorFile : la plage de ses octets dans l'archive (curl --range), décompressée
+// vers `dest`, taille et SHA-256 vérifiés. Rien n'est laissé à `dest` sur échec. Refus : ceux de
+// install_package.
+std::expected<void, Refusal> fetch_vendor_file(const core::VendorFile& file,
+                                               const std::filesystem::path& dest,
+                                               const std::filesystem::path& scratch,
+                                               const InstallProgress& progress);
 
 // Télécharge (en reprenant un .part), vérifie et extrait le paquet ; rend la bibliothèque du
 // backend (le dossier extrait pour RTX HDR, qui n'a pas de module). Refus : LibraryUnavailable (curl ou tar

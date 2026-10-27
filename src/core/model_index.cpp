@@ -198,6 +198,66 @@ std::expected<EnginePackage, Refusal> parse_package(const toml::table& table, co
                        .license = license->value_or("")};
 }
 
+std::expected<VendorFile, Refusal> parse_vendor_file(const toml::table& table, const std::string& where,
+                                                     const std::vector<VendorFile>& previous) {
+  VendorFile file;
+  auto id = fields::required<std::string>(table, "id", where);
+  if (!id) return std::unexpected(id.error());
+  const std::optional<EngineId> engine = parse_engine(*id);
+  if (!engine) return refuse(RefusalCode::FieldOutOfRange, std::format("{}.id = « {} »", where, *id));
+  file.engine = *engine;
+  auto platform_name = fields::required<std::string>(table, "platform", where);
+  if (!platform_name) return std::unexpected(platform_name.error());
+  const std::optional<Os> platform = parse_os(*platform_name);
+  if (!platform)
+    return refuse(RefusalCode::FieldOutOfRange, std::format("{}.platform = « {} »", where, *platform_name));
+  file.platform = *platform;
+  auto url = fields::required<std::string>(table, "url", where);
+  if (!url) return std::unexpected(url.error());
+  if (!url->starts_with("https://"))
+    return refuse(RefusalCode::FieldOutOfRange, where + ".url (https seulement)");
+  file.url = std::move(*url);
+  auto name = fields::required<std::string>(table, "name", where);
+  if (!name) return std::unexpected(name.error());
+  if (!safe_name(*name)) return refuse(RefusalCode::FieldType, std::format("{}.name = « {} »", where, *name));
+  file.name = std::move(*name);
+  auto sha = fields::required<std::string>(table, "sha256", where);
+  if (!sha) return std::unexpected(sha.error());
+  if (!hex_digest(*sha)) return refuse(RefusalCode::FieldType, where + ".sha256");
+  file.sha256 = std::move(*sha);
+  const auto number = [&](std::string_view key, Range<std::int64_t> range,
+                          std::uint64_t& out) -> std::expected<void, Refusal> {
+    auto value = fields::required<std::int64_t>(table, key, where);
+    if (!value) return std::unexpected(value.error());
+    if (auto r = fields::in_range(*value, range, std::format("{}.{}", where, key)); !r)
+      return std::unexpected(r.error());
+    out = static_cast<std::uint64_t>(*value);
+    return {};
+  };
+  constexpr Range<std::int64_t> kOffset{0, 1LL << 40};
+  if (auto r = number("data_offset", kOffset, file.data_offset); !r) return std::unexpected(r.error());
+  if (auto r = number("packed_size", limits::kDownloadSize, file.packed_size); !r)
+    return std::unexpected(r.error());
+  if (auto r = number("size", limits::kDownloadSize, file.size); !r) return std::unexpected(r.error());
+  auto method = fields::required<std::string>(table, "method", where);
+  if (!method) return std::unexpected(method.error());
+  if (*method != "deflate" && *method != "stored")
+    return refuse(RefusalCode::FieldOutOfRange, std::format("{}.method = « {} »", where, *method));
+  file.deflated = *method == "deflate";
+  if (!file.deflated && file.packed_size != file.size)
+    return refuse(RefusalCode::FieldOutOfRange, where + " (stocké : packed_size et size diffèrent)");
+  auto arch = fields::optional<std::string>(table, "arch", where);
+  if (!arch) return std::unexpected(arch.error());
+  file.arch = arch->value_or("");
+  if (!file.arch.empty() && !safe_name(file.arch))
+    return refuse(RefusalCode::FieldType, std::format("{}.arch = « {} »", where, file.arch));
+  const auto twin = std::ranges::find_if(previous, [&](const VendorFile& other) {
+    return other.engine == file.engine && other.platform == file.platform && other.name == file.name;
+  });
+  if (twin != previous.end()) return refuse(RefusalCode::FieldOutOfRange, where + " (nom déjà défini)");
+  return file;
+}
+
 template <class E, std::size_t N>
 std::optional<E> find_value(std::string_view text,
                             const std::array<std::pair<std::string_view, E>, N>& names) {
@@ -346,6 +406,13 @@ std::expected<EngineIndex, Refusal> read_engine_index(std::string_view toml_text
       parse_entries<EnginePackage>(toml_text, "engines.lock", "engine", parse_package, &index.skipped);
   if (!packages) return std::unexpected(std::move(packages.error()));
   index.packages = std::move(*packages);
+  // Une table absente : pas de fichier tiers. Une entrée refusée l'est comme un paquet, seule.
+  auto root = fields::parse(toml_text, RefusalCode::FileUnreadable, "engines.lock");
+  if (root && (*root)["vendor_file"].is_array_of_tables()) {
+    auto files = parse_entries<VendorFile>(toml_text, "engines.lock", "vendor_file", parse_vendor_file,
+                                           &index.skipped);
+    if (files) index.vendor_files = std::move(*files);
+  }
   return index;
 }
 
@@ -374,6 +441,16 @@ std::expected<std::optional<NgcSdkSource>, Refusal> parse_maxine_source(std::str
     return refuse(RefusalCode::FieldOutOfRange, "maxine_vfx.license : https seulement");
   source.license = std::move(*license);
   return source;
+}
+
+std::vector<VendorFile> vendor_files_for(std::span<const VendorFile> files, EngineId engine, Os platform,
+                                         std::string_view arch) {
+  std::vector<VendorFile> out;
+  for (const VendorFile& file : files) {
+    if (file.engine != engine || file.platform != platform) continue;
+    if (file.arch.empty() || arch.empty() || file.arch == arch) out.push_back(file);
+  }
+  return out;
 }
 
 const ModelEntry* find_model(std::span<const ModelEntry> lock, std::string_view id) {
