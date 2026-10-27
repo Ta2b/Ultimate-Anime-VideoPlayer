@@ -27,3 +27,14 @@ Branche `claude/project-thread-ta5cur`, vers `cloud/vulkan`. Suite complète : 1
 - Raccourcis Ctrl+G, Ctrl+I, Ctrl+0 avec et sans RIFE chargé.
 - Autotune Vulkan (VK-05/08) sur RDNA3/4, Intel Arc et NVIDIA : sortie identique à la référence.
 - Modèle avec lien symbolique sortant du dossier : refusé.
+
+## Deuxième passe (sans test matériel, suite de suites verte : 1180 tests, lavapipe)
+- **Synchronisation Vulkan** : détruire ou libérer une ressource d'une file bloquée la laisse fuir au lieu de la détruire (`VkContext::stalled()`) ; propriété de file des images du ring (`EXTERNAL` ou `IGNORED` selon placebo) ; mémoire hôte importée cohérente seulement.
+- **Runtimes différés** : trois échecs consécutifs d'une étape hôte arrêtent la chaîne au lieu de répéter l'échec.
+- **IR** : poids et biais F16 fusionnés arrondis à la demi-précision.
+- **Export** : durée des images posée (NE-06) ; pas de lecture de tout le fichier source sans piste à copier (NE-07).
+- **Audio** : amorce, remplissage et changements d'extradata des paquets atteignent le décodeur (MD-11).
+- **Lecture** : la fin n'est déclarée que lorsque le thread gpu est au repos, en plus de la grâce d'une seconde (PL-09).
+- **Release** : tests retirés du workflow Linux (lancés sur le poste et par `ci.yml`).
+- À vérifier sur matériel : fin de lecture avec un moteur lent à la première exécution ; AAC/MP4 et Opus/MKV (pas d'amorce audible au début) ; export dont la durée d'image compte (lecteurs stricts) ; reprise après un GPU bloqué.
+- Toujours non entrepris : UI-02/07/08/10/12/17, PL-07/08/11/14/15/18, MD-08/18, NE-02 à 05 et 08, VK-01 à 04/07/12 à 16, RT-03/04/07 à 11, IR-01/06/07/08/11/15, DS-06/07/09/10/18/21/23, NC-02 à 08, NA-03/04/07/08, NM-01 à 04.
