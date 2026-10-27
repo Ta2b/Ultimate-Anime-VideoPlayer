@@ -163,8 +163,13 @@ std::expected<std::vector<KernelChoice>, Refusal> candidates(const ir::Graph& gr
     // 8 sous-groupes (256 invocations en wave32) : les grandes images des RDNA4 et des Ada.
     // Troisième réglage à 1 : B de chaque étape copiée en mémoire partagée une fois pour tout le
     // groupe, plutôt que lue par chaque sous-groupe dans le tampon des poids.
+    const std::uint64_t pixels =
+        static_cast<std::uint64_t>(result[2]) * static_cast<std::uint64_t>(result[3]);
     for (const std::uint32_t subgroups : {4U, 2U, 8U}) {
       for (const std::uint32_t tm : {2U, 1U, 4U}) {
+        // Les groupes du dispatch (net_lower_conv.cpp, conv coopmat) tiennent dans la limite en x.
+        const std::uint64_t block = static_cast<std::uint64_t>(subgroups) * tm * 16;
+        if ((pixels + block - 1) / block > target.max_workgroup_count_x) continue;
         if (tm * tiles > 16 || subgroups * matrix_subgroup(target) > target.max_workgroup_invocations ||
             detail::matrix_shared_bytes(subgroups, tm, 16, 0) > target.max_shared_memory) {
           continue;

@@ -106,7 +106,6 @@ class Autotuner {
   bool timestamps() const { return period_ns_ > 0.0; }
 
  private:
-  void load_cache();
   std::expected<Measured, Refusal> measure_with(const ir::Graph& graph, std::size_t node,
                                                 const KernelChoice& choice, const TunerOptions& options);
   // La sortie de choice concorde-t-elle avec celle d'un noyau direct des candidats ? Vrai pour un
@@ -131,6 +130,9 @@ class Autotuner {
     std::string driver;  // DeviceProfile::driver_build sous lequel sa sortie a été vérifiée
   };
   std::map<std::string, Remembered> cache_;
+  // Les lignes du fichier de cache, ajoutées à `into` sans écraser ce qu'elle contient déjà.
+  void read_cache(std::map<std::string, Remembered>& into) const;
+  void load_cache() { read_cache(cache_); }
   std::size_t measured_ = 0;
   std::size_t cached_ = 0;
   std::size_t rejected_ = 0;
