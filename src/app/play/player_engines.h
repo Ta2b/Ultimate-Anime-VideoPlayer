@@ -114,10 +114,10 @@ struct GmfssEngines {
 // DistilDRBA pour des images de travail work_width × work_height : son graphe, trouvé dans le
 // premier de dirs qui l'a, fixé à la taille remplie de RIFE, construit puis chargé. Rien si
 // l'utilisateur ferme la fenêtre. Refus : FieldMissing (graphe absent), et ceux de la dérivation
-// et du backend.
+// et du backend. align : le multiple des plans remplis du graphe trouvé (64, ou 128 au demi-flot).
 std::expected<std::optional<std::unique_ptr<gpu::Engine>>, Refusal> prepare_distil_drba(
     Player& p, const gpu::BackendInit& init, gpu::Backend& backend,
-    std::span<const std::filesystem::path> dirs, int work_width, int work_height);
+    std::span<const std::filesystem::path> dirs, int work_width, int work_height, int& align);
 
 // L'interpolation d'Apple pour des images de travail work_width × work_height, chargée comme RIFE
 // image (plans v2, remplis au multiple de 64) : son modèle (apple_model.h), essayé à la

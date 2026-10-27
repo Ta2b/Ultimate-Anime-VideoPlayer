@@ -77,6 +77,7 @@ struct ChainEngines {
   GmfssVariant gmfss_variant = GmfssVariant::Base;
   bool gmfss_found = false;
   bool drba_found = false;
+  int drba_align = 64;  // multiple des plans remplis de DistilDRBA : 128 au demi-flot
   WorkSize rife_size;                    // où RIFE mouvement estime (720p pour une sortie 4K), sinon work
   kernels::RifeGeometry geometry;        // de rife_size
   kernels::RifeGeometry image_geometry;  // de work

@@ -29,7 +29,7 @@ std::unexpected<Refusal> refuse(RefusalCode code, std::string detail) {
 
 std::expected<void, Refusal> UpscaleStage::allocate_drba() {
   gpu::Backend& backend = *setup_.backend;
-  const kernels::RifeGeometry g = kernels::rife_geometry(setup_.work_width, setup_.work_height);
+  const kernels::RifeGeometry g = kernels::rife_geometry(setup_.work_width, setup_.work_height, setup_.drba_align);
   const auto alloc = [&](std::unique_ptr<gpu::TensorBuffer>& into, int channels, int width,
                          int height) -> std::expected<void, Refusal> {
     auto tensor =

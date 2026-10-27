@@ -1,6 +1,8 @@
 #include "app/play/drba_model.h"
 
+#include <cstdlib>
 #include <format>
+#include <string_view>
 #include <system_error>
 #include <vector>
 
@@ -9,13 +11,25 @@
 
 namespace ajp::app::play {
 
-std::optional<std::filesystem::path> find_distil_drba(std::span<const std::filesystem::path> dirs) {
+std::optional<DrbaModel> find_distil_drba(std::span<const std::filesystem::path> dirs, bool prefer_half) {
   std::error_code error;
-  for (const std::filesystem::path& dir : dirs) {
-    std::filesystem::path found = dir / kDistilDrbaFile;
-    if (std::filesystem::is_regular_file(found, error)) return found;
+  for (const bool half : {prefer_half, !prefer_half}) {
+    for (const std::filesystem::path& dir : dirs) {
+      std::filesystem::path found = dir / (half ? kDistilDrbaHalfFile : kDistilDrbaFile);
+      if (std::filesystem::is_regular_file(found, error))
+        return DrbaModel{.path = std::move(found), .align = half ? kDistilDrbaHalfAlign : 64};
+    }
   }
   return std::nullopt;
+}
+
+bool drba_half_flow(int work_height) {
+  if (const char* forced = std::getenv("AJP_DRBA_FLOW_SCALE")) {
+    const std::string_view value(forced);
+    if (value == "1") return false;
+    if (value == "0.5") return true;
+  }
+  return work_height >= 1440;
 }
 
 std::expected<std::filesystem::path, Refusal> static_distil_drba(const std::filesystem::path& model,

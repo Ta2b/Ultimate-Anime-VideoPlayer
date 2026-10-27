@@ -185,8 +185,8 @@ std::expected<std::optional<GmfssEngines>, Refusal> prepare_gmfss(Player& p, con
 
 std::expected<std::optional<std::unique_ptr<gpu::Engine>>, Refusal> prepare_distil_drba(
     Player& p, const gpu::BackendInit& init, gpu::Backend& backend,
-    std::span<const std::filesystem::path> dirs, int work_width, int work_height) {
-  const std::optional<std::filesystem::path> found = find_distil_drba(dirs);
+    std::span<const std::filesystem::path> dirs, int work_width, int work_height, int& align) {
+  const std::optional<DrbaModel> found = find_distil_drba(dirs, drba_half_flow(work_height));
   if (!found) {
     std::string tried;
     for (const std::filesystem::path& dir : dirs)
@@ -194,15 +194,16 @@ std::expected<std::optional<std::unique_ptr<gpu::Engine>>, Refusal> prepare_dist
     return std::unexpected(Refusal{RefusalCode::FieldMissing,
                                    std::format("DistilDRBA : {} introuvable ({})", kDistilDrbaFile, tried)});
   }
-  const kernels::RifeGeometry g = kernels::rife_geometry(work_width, work_height);
+  align = found->align;
+  const kernels::RifeGeometry g = kernels::rife_geometry(work_width, work_height, found->align);
   auto fixed =
-      static_distil_drba(*found, g.padded_width, g.padded_height, p.paths.engines.parent_path() / "modeles");
+      static_distil_drba(found->path, g.padded_width, g.padded_height, p.paths.engines.parent_path() / "modeles");
   if (!fixed) return std::unexpected(std::move(fixed.error()));
   return prepare_engine(
       p, init, backend, *fixed,
       gpu::Shape{.dims = {1, kernels::kDistilDrbaInputPlanes, g.padded_height, g.padded_width}},
       EngineLabel{.name = "DistilDRBA",
-                  .model = found->stem().string(),
+                  .model = found->path.stem().string(),
                   .width = g.padded_width,
                   .height = g.padded_height},
       gpu::Lane::Interpolate);

@@ -12,6 +12,7 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include "app/play/derived_model.h"
+#include "app/play/drba_model.h"
 #include "app/play/gmfss_model.h"
 
 namespace ajp::app::play {
@@ -148,3 +149,17 @@ TEST_CASE("Modèle dérivé : nommé par l'empreinte de la source, fait une seul
 
 }  // namespace
 }  // namespace ajp::app::play
+
+TEST_CASE("DistilDRBA : demi-flot préféré en 4K, l'un sert de repli à l'autre", "[app][model_choice]") {
+  const FakeHome fake("drba");
+  const std::array dirs{fake.rife};
+  CHECK_FALSE(find_distil_drba(dirs));
+  std::ofstream(fake.rife / kDistilDrbaFile) << "x";
+  CHECK(find_distil_drba(dirs, true)->align == 64);  // pas de demi-flot : le graphe entier
+  std::ofstream(fake.rife / kDistilDrbaHalfFile) << "x";
+  CHECK(find_distil_drba(dirs, true)->path == fake.rife / kDistilDrbaHalfFile);
+  CHECK(find_distil_drba(dirs, true)->align == 128);
+  CHECK(find_distil_drba(dirs, false)->path == fake.rife / kDistilDrbaFile);
+  CHECK_FALSE(drba_half_flow(1080));
+  CHECK(drba_half_flow(2160));
+}
