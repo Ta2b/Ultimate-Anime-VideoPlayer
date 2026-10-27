@@ -131,6 +131,8 @@ SettingsChoices home_choices(const HomeScreen& h, const HomeState& st, const Pla
       .rife_available = rife.has_value() || gmfss || drba || offered(MotionEngine::Apple),
       .gmfss_available = gmfss,
       .gmfss_union_available = gmfss && find_gmfss(places, GmfssVariant::Union).has_value(),
+      .gmfss_quality_available = gmfss && gmfss_quality_available(places, GmfssVariant::Base),
+      .gmfss_union_quality_available = gmfss && gmfss_quality_available(places, GmfssVariant::Union),
       .distil_drba_available = drba,
       .rife_loaded = false,
       .rife_models = rife ? rife->available : std::vector<std::string>{},

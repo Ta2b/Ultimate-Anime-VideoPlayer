@@ -330,6 +330,7 @@ PlaySettings live_part(const PlaySettings& running, const PlaySettings& wanted, 
     s.motion_engine = wanted.motion_engine;
     s.rife_model = wanted.rife_model;
     s.span_order = wanted.span_order;
+    s.gmfss_quality = wanted.gmfss_quality;
   }
   // Le modèle RIFE ne sert pas à un autre moteur du mouvement : le changer ne recharge rien.
   if (running.motion_engine == wanted.motion_engine && wanted.motion_engine != MotionEngine::Rife)
@@ -382,6 +383,13 @@ Change change_between(const PlaySettings& running, const PlaySettings& wanted, b
     reopen.emplace_back(wanted.span_order == SpanOrder::Before  ? "le warp passe avant SPAN"
                         : wanted.span_order == SpanOrder::After ? "le warp passe après SPAN"
                                                                 : "le warp passe selon la sortie");
+  }
+  if (wanted.rife_factor >= 2 && is_gmfss(wanted.motion_engine) &&
+      running.motion_engine == wanted.motion_engine && running.gmfss_quality != wanted.gmfss_quality) {
+    reopen.emplace_back(
+        wanted.gmfss_quality
+            ? "GMFSS passe en qualité (GMFlow en FP32, construit la première fois pour cette taille)"
+            : "GMFSS passe en performance (GMFlow en FP16)");
   }
   if (!reopen.empty()) {
     std::string reason;

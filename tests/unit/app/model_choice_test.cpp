@@ -115,6 +115,27 @@ TEST_CASE("GMFSS : les deux graphes du premier dossier qui les a, ses dimensions
   CHECK(half->pair == other / kGmfssHalfPairFile);
   CHECK(half->align == kGmfssHalfAlign);
   CHECK(find_gmfss(dirs, GmfssVariant::Union)->align == 64);
+  // Le flot à demi-échelle passe devant partout : le flot entier ne sert que de repli.
+  CHECK(find_gmfss(dirs, GmfssVariant::Base, true)->pair == other / kGmfssHalfPairFile);
+  CHECK(find_gmfss(dirs, GmfssVariant::Base, false)->pair == other / kGmfssPairFile);
+  // Le mode qualité : sa paire (s05q) avec la fusion s05 du mode performance, dans un même dossier ;
+  // sans elle, le mode performance reste.
+  CHECK_FALSE(gmfss_quality_available(dirs, GmfssVariant::Base));
+  const auto without = find_gmfss(dirs, GmfssVariant::Base, true, true);
+  REQUIRE(without);
+  CHECK_FALSE(without->quality);
+  CHECK(without->pair == other / kGmfssHalfPairFile);
+  std::ofstream(other / kGmfssHalfQualityPairFile) << "x";
+  CHECK(gmfss_quality_available(dirs, GmfssVariant::Base));
+  const auto quality = find_gmfss(dirs, GmfssVariant::Base, true, true);
+  REQUIRE(quality);
+  CHECK(quality->quality);
+  CHECK(quality->pair == other / kGmfssHalfQualityPairFile);
+  CHECK(quality->fusion == other / kGmfssHalfFusionFile);  // la fusion n'est pas écrite deux fois
+  CHECK(quality->align == kGmfssHalfAlign);
+  CHECK_FALSE(find_gmfss(dirs, GmfssVariant::Base, true, false)->quality);
+  // Union a sa propre paire de qualité : celle de base ne lui sert pas.
+  CHECK_FALSE(gmfss_quality_available(dirs, GmfssVariant::Union));
   const auto dims = gmfss_dims(1280, 768);
   REQUIRE(dims.size() == 8);
   CHECK(dims[0].name == "H");

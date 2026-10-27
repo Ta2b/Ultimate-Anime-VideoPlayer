@@ -142,16 +142,16 @@ def frames_for(width, height, seed):
 def check(reference, gmfss, pair_path, fusion_path, width, height, t):
     """Écart à GMFSS.forward (FP32, fonctions d'origine) de la coupe en PyTorch puis des graphes
     ONNX, splats faits ici ; rend les écarts maximaux de la coupe et de l'ONNX, et l'écart moyen de l'ONNX."""
-    dtype = next(gmfss.parameters()).dtype
+    dtype = io_dtype(gmfss)
     img0, img1 = frames_for(width, height, seed=width * 7 + height)
     expected = reference(img0, img1, torch.tensor([t]))
     frames = torch.cat([img0, img1], 1).to(dtype)
     union = gmfss.model_type == "union"
     extra = [torch.tensor([[[[t]]]], dtype=dtype)] if union else []
     with exportable():
-        pair_outputs = Pair(gmfss)(frames)
+        pair_outputs = graph(gmfss, Pair(gmfss))(frames)
         half0, half1, warped = splat_all(pair_outputs, t)
-        cut = Fusion(gmfss)(half0, half1, *extra, *warped).float()
+        cut = graph(gmfss, Fusion(gmfss))(half0, half1, *extra, *warped).float()
     torch_gap = (cut - expected).abs().max().item()
 
     onnx_pair = [torch.from_numpy(a) for a in run_onnx(pair_path, {"frames": frames})]
@@ -161,23 +161,80 @@ def check(reference, gmfss, pair_path, fusion_path, width, height, t):
     onnx_out = torch.from_numpy(run_onnx(fusion_path, feeds)[0]).float()
     onnx_gap = (onnx_out - expected).abs().max().item()
     mean_gap = (onnx_out - expected).abs().mean().item()
+    p999_gap = torch.quantile((onnx_out - expected).abs().flatten(), 0.999).item()
     print(f"  {width}x{height} t={t} : coupe {torch_gap:.2e}, graphe paire {pair_gap:.2e}, "
-          f"ONNX de bout en bout {onnx_gap:.2e} (moyenne {mean_gap:.2e})")
-    return torch_gap, onnx_gap, mean_gap
+          f"ONNX de bout en bout {onnx_gap:.2e} (moyenne {mean_gap:.2e}, p99,9 % {p999_gap:.2e})")
+    return torch_gap, onnx_gap, mean_gap, p999_gap
+
+
+class Fp32Io(torch.nn.Module):
+    """Un module calculé en FP32 dont les entrées et les sorties du graphe restent en FP16 : le
+    lecteur donne et lit des tenseurs FP16, les conversions sont dans le graphe."""
+
+    def __init__(self, module):
+        super().__init__()
+        self.module = module
+
+    def forward(self, *args):
+        out = self.module(*[a.float() for a in args])
+        return tuple(o.half() for o in out) if isinstance(out, (tuple, list)) else out.half()
+
+
+def io_dtype(gmfss):
+    """Le type des entrées et des sorties du graphe : celui des poids, sauf en FP32 converti."""
+    return getattr(gmfss, "io_dtype", None) or next(gmfss.feat_ext.parameters()).dtype
+
+
+def graph(gmfss, module):
+    return Fp32Io(module) if getattr(gmfss, "cast_io", False) else module
+
+
+def prepare(gmfss, precision):
+    """fp16 : tout en FP16 ; flownet32 : FP16 sauf GMFlow ; fp32 : tout en FP32, entrées et sorties
+    du graphe en FP16."""
+    if precision == "fp32":
+        gmfss.float()
+        gmfss.io_dtype, gmfss.cast_io = torch.float16, True
+        return gmfss
+    gmfss.half()
+    gmfss.io_dtype = torch.float16
+    return fp32_flownet(gmfss) if precision == "flownet32" else gmfss
+
+
+def fp32_flownet(gmfss):
+    """GMFlow reste en FP32 dans le modèle FP16 : ses deux images entrent et son flot sort en FP16
+    (conversions du graphe), mais le flot est calculé en FP32. Mesuré (RTX 4070 Ti, TensorRT 11.3,
+    1280x768, graphe « paire » une fois par paire) : en demi-flot de base il coûte 17,9 ms au lieu de
+    14,0 (+28 %) et ramène l'écart de l'image finale à un quart (pire pixel 5,6e-3 au lieu de 2,4e-2,
+    p99,9 % 1,3e-3 au lieu de 5,9e-3) ; pour union il coûte 38 ms au lieu de 18 (×2), et en plein flot
+    91 ms au lieu de 35 pour base (×2,6) : à ne retenir que pour base en demi-flot. Les mises en
+    correspondance ou la propagation seules en FP32 n'améliorent rien : l'erreur vient du backbone et
+    du transformeur. Ni la métrique ni les sources n'y sont pour rien."""
+    flownet = gmfss.flownet.float()
+    inner = flownet.forward
+
+    def forward(*args, **kwargs):
+        args = [a.float() if torch.is_tensor(a) and a.is_floating_point() else a for a in args]
+        kwargs = {k: v.float() if torch.is_tensor(v) and v.is_floating_point() else v for k, v in kwargs.items()}
+        out = inner(*args, **kwargs)
+        return out.half() if torch.is_tensor(out) else out
+
+    flownet.forward = forward
+    return gmfss
 
 
 def export_pair(gmfss, model_type, out, stem, width, height):
-    dtype = next(gmfss.parameters()).dtype
+    dtype = io_dtype(gmfss)
     pair_path = out / f"{stem}_pair.onnx"
     fusion_path = out / f"{stem}_fusion.onnx"
     img0, img1 = frames_for(width, height, seed=1)
     frames = torch.cat([img0, img1], 1).to(dtype)
     with torch.inference_mode(), exportable():
-        pair_outputs = Pair(gmfss)(frames)
+        pair_outputs = graph(gmfss, Pair(gmfss))(frames)
         half0, half1, warped = splat_all(pair_outputs, 0.5)
-    export(Pair(gmfss), (frames,), pair_path, ["frames"], pair_names(), pair_axes())
+    export(graph(gmfss, Pair(gmfss)), (frames,), pair_path, ["frames"], pair_names(), pair_axes())
     extra = [torch.tensor([[[[0.5]]]], dtype=dtype)] if model_type == "union" else []
-    export(Fusion(gmfss), (half0, half1, *extra, *warped), fusion_path, fusion_names(model_type), ["out"],
+    export(graph(gmfss, Fusion(gmfss)), (half0, half1, *extra, *warped), fusion_path, fusion_names(model_type), ["out"],
            fusion_axes())
     settle_dims(pair_path, model_type)
     settle_dims(fusion_path, model_type)
@@ -194,7 +251,12 @@ def main():
     parser.add_argument("--scale", type=float, choices=(1.0, 0.5), default=1.0,
                         help="échelle de GMFlow (scale de GMFSS) : 0,5 calcule le flot à un quart de la "
                              "taille de travail, dimensions multiples de 128 ; graphes suffixés _s05")
+    parser.add_argument("--precision", choices=("fp16", "flownet32", "fp32"), default="fp16",
+                        help="fp16 : tout en FP16 ; flownet32 : FP16, GMFlow en FP32 ; fp32 : tout en FP32 ; "
+                             "les entrées et les sorties du graphe restent en FP16")
     args = parser.parse_args()
+    if args.precision == "flownet32" and args.scale != 0.5:
+        parser.error("--precision flownet32 : le mode qualité n'existe qu'au flot à demi-échelle (--scale 0.5)")
     align = 64 if args.scale == 1.0 else 128
     if args.width % align or args.height % align:
         parser.error(f"largeur et hauteur multiples de {align}")
@@ -203,7 +265,9 @@ def main():
     models = str(args.package / "models")
     reference = GMFSS(models, args.model, args.scale, False).eval()
     args.out.mkdir(parents=True, exist_ok=True)
-    stem = f"gmfss_fortuna_{args.model}" + ("" if args.scale == 1.0 else "_s05")
+    # _s05q : la paire du mode qualité (GMFlow en FP32) ; sa fusion est celle du mode performance (_s05),
+    # elle n'est pas écrite deux fois.
+    stem = f"gmfss_fortuna_{args.model}" + ("" if args.scale == 1.0 else "_s05q" if args.precision == "flownet32" else "_s05")
     sizes = ((args.width, args.height, 0.5), (args.width + align, args.height + 2 * align, 0.25))
 
     # FP32 d'abord, vérifié strictement à deux tailles : la coupe et les tailles variables tiennent.
@@ -219,12 +283,23 @@ def main():
                  "la coupe ou l'export ne tient pas")
 
     # Puis le FP16 que TensorRT construit (grilles d'échantillonnage en FP32), le même code tracé.
-    half = GMFSS(models, args.model, args.scale, False).eval().half()
+    half = prepare(GMFSS(models, args.model, args.scale, False).eval(), args.precision)
     pair_path, fusion_path = export_pair(half, args.model, args.out, stem, args.width, args.height)
-    print(f"{pair_path}\n{fusion_path}")
-    worst = max(max(check(reference, half, pair_path, fusion_path, *size)[:2]) for size in sizes)
-    if not np.isfinite(worst) or worst > 0.1:
-        sys.exit(f"FP16 : écart {worst:.2e} au-delà de 0,1")
+    print(pair_path if args.precision == "flownet32" else f"{pair_path}\n{fusion_path}")
+    gaps = [check(reference, half, pair_path, fusion_path, *size) for size in sizes]
+    worst = max(max(gap[:2]) for gap in gaps)
+    mean = max(gap[2] for gap in gaps)
+    p999 = max(gap[3] for gap in gaps)
+    # Le pire pixel d'une petite image de test ne décide pas : à 256x256 il valait 0,097 sur ce poste,
+    # 0,127 sur le runner de la CI, pour une moyenne de 1e-3 et un p99,9 % de 2e-2, et il se tient à
+    # 0,09 même avec tout le réseau en FP32 (les sorties du graphe sont en FP16 : le flot, arrondi à
+    # 0,03 px près, déplace quelques pixels de contour). Le seuil garde donc le pire pixel comme garde-fou
+    # grossier (0,2) et fait décider la moyenne et le p99,9 %. Relevé : moyenne ≤ 2,0e-3, p99,9 % ≤ 3,6e-2.
+    if not all(np.isfinite((worst, mean, p999))) or worst > 0.2 or mean > 5e-3 or p999 > 6e-2:
+        sys.exit(f"{args.precision} : pire pixel {worst:.2e} (≤ 0,2), moyenne {mean:.2e} (≤ 5e-3), "
+                 f"p99,9 % {p999:.2e} (≤ 6e-2) : le graphe s'écarte trop de l'original")
+    if args.precision == "flownet32":
+        fusion_path.unlink()  # identique à celle de _s05 (seul GMFlow, dans la paire, change) : pas de doublon
 
 
 if __name__ == "__main__":

@@ -190,9 +190,31 @@ void fluidity_tab(PlaySettings& d, const SettingsChoices& choices, bool exportin
     const bool union_model = d.motion_engine == MotionEngine::GmfssUnion;
     note(
         "Expérimental. GMFSS Fortuna (réseau fait pour l'animation) donne les images intermédiaires les plus "
-        "propres, pour plusieurs fois le coût de RIFE. Avec ses graphes au flot à demi-échelle (_s05, "
-        "préférés), 720 lignes de travail tiennent en ×2 sur une 4070 Ti. Ses deux moteurs se construisent "
-        "la première fois (plusieurs minutes).");
+        "propres, pour plusieurs fois le coût de RIFE. Il prend toujours ses graphes au flot à demi-échelle "
+        "(_s05) : mesuré, ils valent le flot entier ou le dépassent pour moitié moins de calcul, et 720 "
+        "lignes de travail tiennent en ×2 sur une 4070 Ti. Ses deux moteurs se construisent la première fois "
+        "(plusieurs minutes).");
+    const bool quality_present =
+        union_model ? choices.gmfss_union_quality_available : choices.gmfss_quality_available;
+    ImGui::BeginDisabled(!quality_present);
+    if (ImGui::BeginCombo("GMFSS", d.gmfss_quality && quality_present ? "Qualité" : "Performance")) {
+      if (ImGui::Selectable("Performance", !d.gmfss_quality)) d.gmfss_quality = false;
+      if (ImGui::Selectable("Qualité", d.gmfss_quality)) d.gmfss_quality = true;
+      ImGui::EndCombo();
+    }
+    ImGui::EndDisabled();
+    note(
+        "Performance : le flot de GMFlow se calcule en FP16 (base 26 ms et union 37 ms par image "
+        "intermédiaire "
+        "à 720p sur une 4070 Ti). Qualité : GMFlow en FP32, un écart à l'original divisé par 4 environ, pour "
+        "+4 ms avec base et +20 ms avec union. Recharge la lecture.");
+    if (!quality_present) {
+      note(
+          std::format("Mode qualité grisé : {} manque dans {} (export_gmfss.py --scale 0.5 --precision "
+                      "flownet32).",
+                      gmfss_files(union_model ? GmfssVariant::Union : GmfssVariant::Base, true, true).pair,
+                      choices.rife_folder));
+    }
     if (union_model) {
       note(
           "Union mêle à GMFSS l'image d'un RIFE intégré au réseau : moins de défauts sur les mouvements "

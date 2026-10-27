@@ -65,6 +65,25 @@ Les graphes GMFSS Fortuna (base, union, avec demi-flot) et le demi-flot de DRBA 
 workflow `Exporter les modèles d'interpolation` (Actions), qui peut les joindre à la release
 `models-interp-1` ; `tools/release/fetch-models.sh` les ajoute alors aux paquets.
 
+## GMFSS : performance ou qualité, toujours au flot à demi-échelle
+
+Mesuré sur la 4070 Ti (TensorRT 11.3, 1280×768, graphes « paire » et « fusion » ensemble) : le flot à
+demi-échelle (`_s05`) vaut le flot entier ou le dépasse, pour moitié moins de calcul. Le flot entier n'est
+donc plus exporté et le lecteur ne le prend plus qu'en repli, à toutes les hauteurs de travail.
+
+| Mode | Base | Union | Écart à l'original (pire pixel / moyenne / 99,9 %, sur 1) |
+|---|---|---|---|
+| Performance (GMFlow FP16, défaut) | 25,5 ms | 36,7 ms | base 0,0239 / 0,0004 / 0,0059 |
+| Qualité (GMFlow FP32, paire `_s05q`) | 29,4 ms | 56,5 ms | base 0,0056 / 0,0002 / 0,0013 |
+| Plein flot FP16 (ancien défaut) | 46,7 ms | 61,3 ms | base 0,0055 / 0,0003 / 0,0023 |
+
+Le réglage est dans l'onglet d'interpolation (`gmfss_quality` de `play.toml`, section `interpolation`) ; le
+mode qualité demande `gmfss_fortuna_{base,union}_s05q_pair.onnx` (export_gmfss.py `--scale 0.5 --precision
+flownet32`), sa fusion étant celle de `_s05`. Sans cette paire, le mode performance reste.
+Le contrôle de l'export juge la moyenne et le 99,9 % de l'écart à l'original, pas le pire pixel d'une petite
+image : à 256×256 il valait 0,097 sur un poste et 0,127 en CI même avec tout en FP32 (les sorties du graphe
+sont arrondies en FP16).
+
 ## Réglages de départ pour la 4070 Ti
 
 | Réglage | Valeur |

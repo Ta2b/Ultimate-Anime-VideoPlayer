@@ -111,6 +111,9 @@ struct PlaySettings {
   // Garder les poses (DRBA, kernels/spec/poses.h) : un personnage animé en deux garde son rythme
   // pendant que le fond s'interpole ; en direct.
   bool keep_poses = false;
+  // GMFSS : false, performance (GMFlow en FP16) ; true, qualité (GMFlow en FP32, la paire _s05q). Toujours
+  // au flot à demi-échelle. Recharge la chaîne.
+  bool gmfss_quality = false;
   // Le warp avant ou après SPAN (SpanOrder) ; Auto par défaut. Recharge la chaîne.
   SpanOrder span_order = SpanOrder::Auto;
   // Smooth Motion du pilote NVIDIA (RTX 40 et 50, pilote ≥ 580) : sa couche Vulkan double les

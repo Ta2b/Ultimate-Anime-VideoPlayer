@@ -52,16 +52,18 @@ struct SettingsChoices {
   bool rife_available = false;           // une interpolation possible : RIFE, GMFSS, DistilDRBA, Apple (Mac)
   bool gmfss_available = false;          // graphes de GMFSS trouvés (gmfss_model.h)
   bool gmfss_union_available = false;    // ceux de GMFSS Union
-  bool distil_drba_available = false;    // le graphe de DistilDRBA
-  bool rife_loaded = false;              // moteur RIFE chargé : ×N en direct
-  std::vector<std::string> rife_models;  // fichiers RIFE du dossier du modèle par défaut
-  std::string default_rife_model;        // celui qu'un nom vide désigne
-  std::string rife_folder;               // le dossier des modèles RIFE (et des graphes de GMFSS)
-  bool nvidia = false;                   // GPU NVIDIA : RTX HDR et Smooth Motion ne sont offerts qu'à lui
-  bool true_hdr_available = false;       // SDK Maxine présent et moteur TensorRT en service
-  bool true_hdr_backend = true;          // le moteur TensorRT, seul à ouvrir TrueHDR, est celui du lecteur
-  bool hdr_output = true;                // l'écran reçoit du PQ (sinon ni HDR natif ni grade)
-  int auto_peak = 0;                     // pic automatique de RTX HDR, en nits
+  bool gmfss_quality_available = false;  // la paire à GMFlow FP32 (_s05q) de GMFSS base
+  bool gmfss_union_quality_available = false;  // celle de GMFSS Union
+  bool distil_drba_available = false;          // le graphe de DistilDRBA
+  bool rife_loaded = false;                    // moteur RIFE chargé : ×N en direct
+  std::vector<std::string> rife_models;        // fichiers RIFE du dossier du modèle par défaut
+  std::string default_rife_model;              // celui qu'un nom vide désigne
+  std::string rife_folder;                     // le dossier des modèles RIFE (et des graphes de GMFSS)
+  bool nvidia = false;              // GPU NVIDIA : RTX HDR et Smooth Motion ne sont offerts qu'à lui
+  bool true_hdr_available = false;  // SDK Maxine présent et moteur TensorRT en service
+  bool true_hdr_backend = true;     // le moteur TensorRT, seul à ouvrir TrueHDR, est celui du lecteur
+  bool hdr_output = true;           // l'écran reçoit du PQ (sinon ni HDR natif ni grade)
+  int auto_peak = 0;                // pic automatique de RTX HDR, en nits
   std::vector<EngineBadge> engines;
   std::string chosen_engines;              // « Vulkan, TensorRT, NVIDIA Maxine (RTX HDR) » (settings.toml)
   std::vector<core::EngineId> switchable;  // moteurs de SPAN et RIFE installés (engine_switch.h)

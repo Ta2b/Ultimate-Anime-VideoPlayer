@@ -213,8 +213,8 @@ std::expected<std::optional<ChainEngines>, Refusal> prepare_chain(Player& p, con
                     : c.work;
   // GMFSS Fortuna à la place de RIFE, à la taille de travail ; RIFE reprend si ses graphes manquent.
   if (want_gmfss) {
-    auto loaded =
-        prepare_gmfss(p, init, *c.backend, c.gmfss_places, c.gmfss_variant, c.work.width, c.work.height);
+    auto loaded = prepare_gmfss(p, init, *c.backend, c.gmfss_places, c.gmfss_variant, c.work.width,
+                                c.work.height, settings.gmfss_quality);
     if (!loaded) {
       log->warn("{} ; {}", loaded.error().detail, c.rife_model ? "RIFE à la place" : "sans interpolation");
       p.ui.controls().notify(c.rife_model ? "GMFSS indisponible : RIFE" : "GMFSS indisponible",

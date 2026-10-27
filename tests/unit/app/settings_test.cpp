@@ -47,6 +47,7 @@ TEST_CASE("play.toml relit à l'identique ce qu'il a écrit", "[app][settings]")
   s.motion_engine = MotionEngine::DistilDrba;
   s.rife_model = "rife_v4.22_lite.onnx";
   s.keep_poses = true;
+  s.gmfss_quality = true;
   s.span_order = SpanOrder::Before;
   s.grade_values.expand = 0.3;
   s.audio_languages = {"fre", "jpn"};
@@ -99,6 +100,7 @@ TEST_CASE("Mode HDR : moteur RTX HDR, HDR adaptatif ou SDR, et les fichiers d'av
 TEST_CASE("Warp et SPAN : Auto passe après SPAN au-dessus de 1080p ; les fichiers d'avant",
           "[app][settings]") {
   CHECK(PlaySettings{}.span_order == SpanOrder::Auto);
+  CHECK_FALSE(PlaySettings{}.gmfss_quality);  // performance par défaut
   CHECK_FALSE(warp_after_span(SpanOrder::Auto, 1080));
   CHECK(warp_after_span(SpanOrder::Auto, 1440));
   CHECK(warp_after_span(SpanOrder::Auto, 2160));
@@ -323,6 +325,26 @@ TEST_CASE("Écrire puis relire play.toml ; absent : les défauts", "[app][settin
   CHECK_FALSE(save_settings(path, bad));
   CHECK(load_settings(path)->rife_factor == 2);  // l'ancien fichier reste
   std::filesystem::remove_all(dir);
+}
+
+TEST_CASE("GMFSS : passer de performance à qualité recharge la chaîne, seulement pour GMFSS",
+          "[app][settings]") {
+  PlaySettings running;
+  running.rife_factor = 2;
+  running.motion_engine = MotionEngine::Gmfss;
+  PlaySettings wanted = running;
+  wanted.gmfss_quality = true;
+  const Change change = change_between(running, wanted, true);
+  CHECK(change.cost == ChangeCost::Reopen);
+  CHECK(change.reason.find("qualité") != std::string::npos);
+  // Le sens inverse aussi.
+  running.gmfss_quality = true;
+  wanted.gmfss_quality = false;
+  CHECK(change_between(running, wanted, true).cost == ChangeCost::Reopen);
+  // Un autre moteur du mouvement ne recharge rien pour ce réglage.
+  running.motion_engine = MotionEngine::Rife;
+  wanted.motion_engine = MotionEngine::Rife;
+  CHECK(change_between(running, wanted, true).cost != ChangeCost::Reopen);
 }
 
 }  // namespace

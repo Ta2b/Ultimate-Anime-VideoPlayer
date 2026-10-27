@@ -215,6 +215,10 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
           .gmfss_available = c.backend_name == "tensorrt" && find_gmfss(c.gmfss_places).has_value(),
           .gmfss_union_available =
               c.backend_name == "tensorrt" && find_gmfss(c.gmfss_places, GmfssVariant::Union).has_value(),
+          .gmfss_quality_available =
+              c.backend_name == "tensorrt" && gmfss_quality_available(c.gmfss_places, GmfssVariant::Base),
+          .gmfss_union_quality_available =
+              c.backend_name == "tensorrt" && gmfss_quality_available(c.gmfss_places, GmfssVariant::Union),
           .distil_drba_available = c.drba_found,
           .rife_loaded = rife_loaded,
           .rife_models = c.rife_choice ? c.rife_choice->available : std::vector<std::string>{},
