@@ -409,11 +409,12 @@ SettingsPanel::Result SettingsPanel::draw(const PlaySettings& running, const Set
       ImGui::Spacing();
       ImGui::Separator();
       ImGui::PushStyleColor(ImGuiCol_Text, kWarn);
-      ImGui::TextWrapped("À appliquer : %s.", pending.reason.c_str());
+      ImGui::TextWrapped("À appliquer : %s. Fermer le panneau abandonne ces changements.",
+                         pending.reason.c_str());
       ImGui::PopStyleColor();
-      if (ImGui::Button("Appliquer")) result.reopen = draft_;
+      if (ImGui::Button("Appliquer (rouvre la vidéo)")) result.reopen = draft_;
       ImGui::SameLine();
-      if (ImGui::Button("Annuler")) draft_ = live;
+      if (ImGui::Button("Abandonner ces changements")) draft_ = live;
     }
   }
   ImGui::End();
