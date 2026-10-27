@@ -216,7 +216,7 @@ std::expected<std::optional<std::filesystem::path>, Refusal> run_home(const Home
     h.ui.set_profiles(view_of(st.profiles));
   };
 
-  const core::KeyMap keys = core::KeyMap::defaults();
+  const core::KeyMap& keys = configured_keys();
   const std::int64_t opened = host_now_us();
   std::vector<Input> actions;
   std::optional<std::filesystem::path> chosen;

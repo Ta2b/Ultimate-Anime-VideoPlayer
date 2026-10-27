@@ -117,6 +117,7 @@ std::expected<void, Refusal> play(const PlayOptions& options, const PlayerPaths&
                                                            .fps = fps_of(given->frame_rate)}
                                         : kHomeSource};
   if (auto loaded = load_profiles(profiles.user_path)) {
+    apply_user_keys(loaded->user_text);
     profiles.data = std::move(*loaded);
   } else {
     log->warn("{} ; profils de base", loaded.error().detail);

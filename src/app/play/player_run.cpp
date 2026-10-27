@@ -247,7 +247,7 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
     stats.open(*options.stats);
     stats << "host_us\tpts_us\tfresh\trender_us\tinterval_us\tdropped\twhy\tmissing\tlag_us\n";
   }
-  const core::KeyMap keys = core::KeyMap::defaults();
+  const core::KeyMap& keys = configured_keys();
   std::optional<Refusal> failure;
   if (p.began_us == 0) p.began_us = host_now_us();
   std::vector<Input> actions;

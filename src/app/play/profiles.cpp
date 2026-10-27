@@ -5,6 +5,7 @@
 #include <utility>
 
 #include "core/cadence.h"
+#include "core/log.h"
 #include "core/user_overlay.h"
 
 namespace ajp::app::play {
@@ -230,6 +231,28 @@ std::string profile_summary(const core::Profile& profile, const core::SourceInfo
   if (s.true_hdr) text += " · RTX HDR";
   if (s.hdr_native) text += " · HDR adaptatif";
   return text;
+}
+
+namespace {
+core::KeyMap& key_slot() {
+  static core::KeyMap keys = core::KeyMap::defaults();
+  return keys;
+}
+}  // namespace
+
+void apply_user_keys(std::string_view user_toml) {
+  auto parsed = core::parse_keys(user_toml);
+  if (!parsed) {
+    log_channel("app")->warn("user.toml [keys] : {} {} ; raccourcis par défaut", name(parsed.error().code),
+                             parsed.error().detail);
+    key_slot() = core::KeyMap::defaults();
+    return;
+  }
+  key_slot() = std::move(*parsed);
+}
+
+const core::KeyMap& configured_keys() {
+  return key_slot();
 }
 
 std::expected<Profiles, Refusal> load_profiles(const std::filesystem::path& user_toml) {

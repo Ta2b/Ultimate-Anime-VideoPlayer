@@ -14,6 +14,7 @@
 #include "app/play/engine_build.h"
 #include "app/play/gmfss_model.h"
 #include "app/play/input.h"
+#include "app/play/profiles.h"
 #include "core/log.h"
 #include "kernels/spec/distil_drba.h"
 #include "kernels/spec/gmfss.h"
@@ -35,7 +36,7 @@ constexpr std::int32_t kBuildFrameMs = 100;
 std::expected<std::optional<gpu::Artifact>, Refusal> wait_engine(EngineBuild& build, PlaceboScreen& screen,
                                                                  PlayerUi& ui, const EngineLabel& engine,
                                                                  bool& details, SnapshotPlan& snapshot) {
-  const core::KeyMap keys = core::KeyMap::defaults();
+  const core::KeyMap& keys = configured_keys();
   const std::int64_t started = host_now_us();
   BuildProgress progress(engine.expected_s, started);
   std::vector<Input> actions;
