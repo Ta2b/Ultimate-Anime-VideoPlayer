@@ -11,7 +11,9 @@ PyPI, que l'on extrait sans l'installer (son __init__ importe TensorRT et Vapour
 Le softmax splatting (softsplat.py, noyau CuPy) n'a pas d'export ONNX : le réseau est coupé
 autour de lui. Le graphe « paire » tourne une fois par paire (FeatureNet, GMFlow dans les deux
 sens, MetricNet) ; le lecteur fait les six splats à chaque instant, puis le graphe « fusion »
-(GridNet). Ici le splat est réécrit en PyTorch pour vérifier la coupe : le réseau coupé doit
+(GridNet). Au niveau 1, la paire sort les 64 caractéristiques (feature{k}_1) et l'image réduite de moitié
+(half{k}) séparées, sans Concat (version 2 du format, métadonnée « ajp.gmfss.export » : un graphe
+d'une version antérieure est jugé périmé par le lecteur). Ici le splat est réécrit en PyTorch pour vérifier la coupe : le réseau coupé doit
 rendre exactement ce que rend GMFSS.forward, à la taille de l'export et à une autre taille.
 """
 
@@ -41,6 +43,8 @@ from gmfss_graph import (  # noqa: E402
     load_gmfss,
     local_correlation_softmax,
     normalize_coords,
+    EXPORT_KEY,
+    EXPORT_VERSION,
     pair_axes,
     pair_names,
     shift_window_attn_mask,
@@ -118,6 +122,10 @@ def settle_dims(path, model_type):
     entry = model.metadata_props.add()
     entry.key = "ajp.gmfss"
     entry.value = f"vsgmfss_fortuna 1.0.0 {model_type}, kernels/spec/gmfss.h"
+    # Le format du graphe : le lecteur juge périmé (et n'utilise pas) un graphe d'une autre version.
+    version = model.metadata_props.add()
+    version.key = EXPORT_KEY
+    version.value = str(EXPORT_VERSION)
     onnx.save(model, str(path))
 
 

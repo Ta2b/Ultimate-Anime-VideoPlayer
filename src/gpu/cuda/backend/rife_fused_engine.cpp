@@ -195,8 +195,8 @@ std::expected<std::unique_ptr<RifeFusedEngine>, Refusal> RifeFusedEngine::load(
     if (cudaError_t e = cudaStreamSynchronize(scratch.stream); e != cudaSuccess)
       return failed(e, "exécution");
   }
-  // Une capture refusée pendant l'essai laisse la chaîne tourner sans graphe : ce n'est pas un refus. Les graphes de
-  // l'essai, sur des adresses qui disparaissent, ne servent plus.
+  // Une capture refusée pendant l'essai laisse la chaîne tourner sans graphe : ce n'est pas un refus. Les
+  // graphes de l'essai, sur des adresses qui disparaissent, ne servent plus.
   engine->drop_graphs();
   engine->capture_failures_ = 0;
   engine->notice_.clear();

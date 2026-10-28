@@ -14,6 +14,11 @@ set(AJP_RIFE_MODEL_DIR "$ENV{HOME}/ajp/models/rife" CACHE PATH "Dossier des RIFE
 set(AJP_RIFE_IMAGE "" CACHE FILEPATH "Image PPM d'anime pour le test caché [.rife_fused]")
 add_executable(ajp_backend_tensorrt_tests backend_fixture.cpp backend_motion_test.cpp backend_test.cpp export_test.cpp gmfss_test.cpp
   rife_fused_test.cpp span_fp8_test.cpp)
+# Test caché [.gmfss_split] : la paire GMFSS d'avant (67 canaux), celle d'après (sans Concat) et la fusion, aux
+# tailles fixées (1280x768) ; vides, le test se SKIP.
+set(AJP_GMFSS_SPLIT_OLD_PAIR "" CACHE FILEPATH "Paire GMFSS d'avant la version 2 des graphes, 1280x768")
+set(AJP_GMFSS_SPLIT_NEW_PAIR "" CACHE FILEPATH "Paire GMFSS de la version 2 des graphes, 1280x768")
+set(AJP_GMFSS_SPLIT_FUSION "" CACHE FILEPATH "Fusion GMFSS, 1280x768")
 target_link_libraries(ajp_backend_tensorrt_tests PRIVATE
   ajp::gpu ajp::gpu_span_fp8 ajp::kernels ajp::prepare ajp_backend_tensorrt_kernels ajp::dep::cudart ${CMAKE_DL_LIBS} Catch2::Catch2WithMain)
 target_compile_definitions(ajp_backend_tensorrt_tests PRIVATE
@@ -24,7 +29,10 @@ target_compile_definitions(ajp_backend_tensorrt_tests PRIVATE
   AJP_SPAN_FP8_MODEL="${AJP_SPAN_FP8_MODEL}"
   AJP_SPAN_FP8_IMAGE="${AJP_SPAN_FP8_IMAGE}"
   AJP_RIFE_MODEL_DIR="${AJP_RIFE_MODEL_DIR}"
-  AJP_RIFE_IMAGE="${AJP_RIFE_IMAGE}")
+  AJP_RIFE_IMAGE="${AJP_RIFE_IMAGE}"
+  AJP_GMFSS_SPLIT_OLD_PAIR="${AJP_GMFSS_SPLIT_OLD_PAIR}"
+  AJP_GMFSS_SPLIT_NEW_PAIR="${AJP_GMFSS_SPLIT_NEW_PAIR}"
+  AJP_GMFSS_SPLIT_FUSION="${AJP_GMFSS_SPLIT_FUSION}")
 add_dependencies(ajp_backend_tensorrt_tests ajp_backend_tensorrt)
 ajp_set_warnings(ajp_backend_tensorrt_tests)
 catch_discover_tests(ajp_backend_tensorrt_tests TEST_PREFIX "backend_tensorrt: " DISCOVERY_MODE PRE_TEST)
