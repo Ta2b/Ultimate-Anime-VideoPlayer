@@ -292,9 +292,19 @@ EffectiveListening effective_listening(const PlaySettings& settings, const std::
   for (const auto& [name, own] : settings.device_profile) {
     if (name == device_name) profile = own;
   }
+  std::string_view hrir = settings.hrir_path;
+  for (const auto& [name, own] : settings.device_hrir) {
+    if (name == device_name) hrir = own;
+  }
   return EffectiveListening{.listen = listen,
                             .faithful = settings.audio_faithful,
-                            .tuning = tuning_of(profile, settings.audio_custom, listen)};
+                            .tuning = tuning_of(profile, settings.audio_custom, listen),
+                            .hrir_path = std::string(hrir)};
+}
+
+std::expected<std::shared_ptr<const audio::Hrir>, Refusal> load_listening_hrir(const std::string& path) {
+  if (path.empty()) return std::shared_ptr<const audio::Hrir>();
+  return audio::load_hrir(std::filesystem::path(path));
 }
 
 audio::MixTuning resolved_tuning(const PlaySettings& settings, int listen) {
@@ -453,6 +463,8 @@ PlaySettings live_part(const PlaySettings& running, const PlaySettings& wanted, 
   s.audio_custom = wanted.audio_custom;
   s.device_listening = wanted.device_listening;
   s.device_profile = wanted.device_profile;
+  s.hrir_path = wanted.hrir_path;
+  s.device_hrir = wanted.device_hrir;
   s.display_sync = wanted.display_sync;
   s.video_latency_ms = wanted.video_latency_ms;
   s.volume = wanted.volume;

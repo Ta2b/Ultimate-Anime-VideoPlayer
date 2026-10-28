@@ -57,7 +57,8 @@ AudioPlayer::AudioPlayer(std::unique_ptr<AudioOutput> output, const PlayerConfig
                        .tuning = config.mix.tuning,
                        .faithful = config.mix.faithful,
                        .sink_channels = output_->format().channels,
-                       .sample_rate = output_->format().sample_rate}) {}
+                       .sample_rate = output_->format().sample_rate,
+                       .hrir = config.mix.hrir}) {}
 
 AudioPlayer::~AudioPlayer() = default;
 
@@ -127,6 +128,7 @@ void AudioPlayer::handle(const Command& command) {
     mix.listen = static_cast<Listen>(std::min<std::uint8_t>(listening->listen, 2));
     mix.faithful = listening->faithful;
     if (listening->tuned) mix.tuning = tuning_from_wire(listening->tuning);
+    if (listening->hrir_set) mix.hrir = listening->hrir;  // absent : le modèle paramétrique
     mixer_ = Mixer(mix);
     // Les canaux voulus du décodeur ont changé : il est rouvert, ce qui était décodé est refait au prochain
     // paquet.

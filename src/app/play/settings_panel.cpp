@@ -386,6 +386,40 @@ bool sound_tab(PlaySettings& d, const SettingsChoices& choices) {
       }
     }
   }
+  if (panel::advanced() && listen == 0) {
+    // Réponses impulsionnelles à la HeSuVi : remplacent le modèle paramétrique au casque. Propres à
+    // l'appareil si celui-ci a son profil propre.
+    std::string* path = &d.hrir_path;
+    if (own) {
+      auto found = std::ranges::find(d.device_hrir, device_name, &std::pair<std::string, std::string>::first);
+      if (found == d.device_hrir.end()) found = d.device_hrir.insert(found, {device_name, d.hrir_path});
+      path = &found->second;
+    }
+    static std::array<char, 512> field{};
+    static std::string shown;
+    if (!ImGui::IsAnyItemActive() && shown != *path) {  // suit l'appareil et les retours en arrière
+      std::snprintf(field.data(), field.size(), "%s", path->c_str());
+      shown = *path;
+    }
+    if (ImGui::InputText("Réponse impulsionnelle (HeSuVi, .wav)", field.data(), field.size())) {
+      *path = field.data();
+      shown = *path;
+    }
+    ImGui::SameLine();
+    if (ImGui::Button("Aucune##hrir")) {
+      path->clear();
+      field[0] = '\0';
+      shown.clear();
+    }
+    panel::tip(
+        "Un fichier WAV de réponses (14 canaux HeSuVi, 16 canaux 7.1 ou 2 canaux HRIR) remplace le modèle de "
+        "tête du casque, pour le stéréo comme pour le 5.1 et le 7.1. Vide : le modèle d'origine. Latence "
+        "ajoutée : environ 11 ms.");
+    note(
+        "Le lecteur ne livre aucune réponse : elles ont chacune leur licence, lisez celle du fichier que "
+        "vous "
+        "choisissez.");
+  }
   if (panel::advanced()) {
     ImGui::Checkbox("Fidèle (aucun traitement)", &d.audio_faithful);
     panel::tip(
@@ -397,6 +431,7 @@ bool sound_tab(PlaySettings& d, const SettingsChoices& choices) {
     } else {
       std::erase_if(d.device_listening, [&](const auto& entry) { return entry.first == device_name; });
       std::erase_if(d.device_profile, [&](const auto& entry) { return entry.first == device_name; });
+      std::erase_if(d.device_hrir, [&](const auto& entry) { return entry.first == device_name; });
     }
   }
   if (panel::advanced()) panel::tip("Un autre appareil reprend le profil global, sans rien demander.");

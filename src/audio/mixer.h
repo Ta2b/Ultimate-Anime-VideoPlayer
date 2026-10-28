@@ -11,7 +11,9 @@
 //
 // Aucune HRTF mesurée n'est livrée (licences, poids) : le binaural est un modèle paramétrique de la tête
 // (retard interaural de Woodworth, ombre en passe-bas), un seul profil. Une source ou un appareil mono n'est
-// jamais spatialisé.
+// jamais spatialisé. Si l'utilisateur fournit un fichier de réponses impulsionnelles (audio/hrir.h, format
+// HeSuVi), MixConfig::hrir le porte et la convolution REMPLACE, au casque, le crossfeed et le binaural
+// paramétrique (latence : un bloc de 512 trames).
 #pragma once
 
 #include <array>
@@ -22,6 +24,7 @@
 #include <string_view>
 #include <vector>
 
+#include "audio/hrir.h"
 #include "audio/pcm.h"
 
 namespace ajp::audio {
@@ -44,7 +47,7 @@ struct MixTuning {
   float downmix_scale = 0.6F;          // enceintes : gain du mixage stéréo (0,4 à 0,9)
   float distance = 0.0F;  // enceintes virtuelles plus loin : niveau direct baissé (jusqu'à -2 dB), pièce plus
                           // présente (0 à 1)
-  float room = 0.0F;          // réverbération légère d'une pièce (0 à 1 ; 0 : aucune, aucun coût)
+  float room = 0.0F;      // réverbération légère d'une pièce (0 à 1 ; 0 : aucune, aucun coût)
   float eq_bass_db = 0.0F;    // égaliseur : graves (étagère à 120 Hz), -8 à +8 dB
   float eq_voice_db = 0.0F;   // médiums, les voix (cloche à 2,5 kHz), -8 à +8 dB
   float eq_treble_db = 0.0F;  // aigus (étagère à 8 kHz), -8 à +8 dB
@@ -80,6 +83,7 @@ struct MixConfig {
   bool faithful = false;  // aucun traitement
   int sink_channels = 2;  // canaux que reçoit l'appareil
   int sample_rate = 48'000;
+  std::shared_ptr<const Hrir> hrir;  // casque : réponses de l'utilisateur, à leur taux ; absent : le modèle
 };
 
 struct MixEar {
@@ -118,11 +122,14 @@ class Mixer {
   void binaural(const PcmBlock& in, PcmBlock& out);
   void crossfeed(PcmBlock& block);
   PcmBlock process_core(PcmBlock block);
+  PcmBlock convolve(const PcmBlock& in);
 
   MixConfig config_;
   int binaural_channels_ = 0;
   std::vector<std::array<MixPath, 2>> paths_;  // par canal source, [oreille gauche, droite]
   std::array<MixPath, 2> feed_;                // crossfeed : L vers R, R vers L
+  std::shared_ptr<const Hrir> hrir_;           // les réponses au taux de sortie, normalisées
+  std::shared_ptr<HrirConvolver> convolver_;   // par nombre de canaux source
   std::shared_ptr<struct MixPost>
       post_;  // égaliseur, pièce et compression (stéréo) ; absent si rien n'est demandé
 };

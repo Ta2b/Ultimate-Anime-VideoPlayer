@@ -472,3 +472,21 @@ TEST_CASE("un appareil garde son profil de virtualisation, les autres le global"
     CHECK(got[i] == want[i]);
   }
 }
+
+TEST_CASE("les réponses impulsionnelles : chemin global et propre à un appareil", "[settings][audio]") {
+  ajp::app::play::PlaySettings s;
+  CHECK(s.hrir_path.empty());  // défaut : aucune
+  CHECK(ajp::app::play::effective_listening(s, "X").hrir_path.empty());
+  s.hrir_path = "/home/moi/hesuvi/a.wav";
+  s.device_hrir = {{"Casque BT", "/home/moi/hesuvi/b.wav"}};
+  CHECK(ajp::app::play::effective_listening(s, "Casque BT").hrir_path == "/home/moi/hesuvi/b.wav");
+  CHECK(ajp::app::play::effective_listening(s, "Autre").hrir_path == "/home/moi/hesuvi/a.wav");
+  const auto read = ajp::app::play::parse_settings(ajp::app::play::format_settings(s));
+  REQUIRE(read);
+  CHECK(read->hrir_path == s.hrir_path);
+  CHECK(read->device_hrir == s.device_hrir);
+  CHECK_FALSE(ajp::app::play::parse_settings("version = 1\n[audio.device_hrir]\nX = 3\n"));
+  // Un chemin vide : pas de fichier, pas de refus.
+  CHECK(*ajp::app::play::load_listening_hrir("") == nullptr);
+  CHECK_FALSE(ajp::app::play::load_listening_hrir("/nonexistent/ajp/a.wav"));
+}

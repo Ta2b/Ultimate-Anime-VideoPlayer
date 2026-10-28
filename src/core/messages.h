@@ -8,6 +8,10 @@
 
 namespace ajp {
 
+namespace audio {
+struct Hrir;  // réponses impulsionnelles de l'utilisateur (audio/hrir.h)
+}
+
 // Le consommateur rend une place : le producteur peut réessayer try_push.
 struct Credit {
   std::uint32_t count = 1;
@@ -78,6 +82,8 @@ struct SetListening {
   bool faithful = false;
   bool tuned = false;  // tuning porte les réglages fins (audio::MixTuning, dans l'ordre de to_array)
   std::array<float, 16> tuning{};  // audio::to_array : les 15 réglages fins, le reste à 0
+  bool hrir_set = false;  // hrir remplace les réponses en vigueur (vide : retour au binaural paramétrique)
+  std::shared_ptr<const audio::Hrir> hrir;  // fichier chargé par l'appelant, partagé en lecture seule
 };
 struct Quit {};
 }  // namespace cmd

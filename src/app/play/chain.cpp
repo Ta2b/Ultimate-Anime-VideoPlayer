@@ -184,11 +184,24 @@ void apply_live(Chain& to, const PlaySettings& wanted, std::int64_t now_us) {
     const std::string name = device ? device->name : std::string();
     const EffectiveListening now = effective_listening(wanted, name);
     const EffectiveListening was = effective_listening(r, name);
-    if (now != was)
-      to.session.command(cmd::SetListening{.listen = static_cast<std::uint8_t>(now.listen),
-                                           .faithful = now.faithful,
-                                           .tuned = true,
-                                           .tuning = audio::to_wire(now.tuning)});
+    if (now != was) {
+      cmd::SetListening listening{.listen = static_cast<std::uint8_t>(now.listen),
+                                  .faithful = now.faithful,
+                                  .tuned = true,
+                                  .tuning = audio::to_wire(now.tuning)};
+      if (now.hrir_path != was.hrir_path) {
+        // Le fichier se lit ici, hors du thread audio ; illisible : on le dit et le modèle paramétrique
+        // reste.
+        listening.hrir_set = true;
+        if (auto loaded = load_listening_hrir(now.hrir_path)) {
+          listening.hrir = std::move(*loaded);
+        } else {
+          log_channel("app")->warn("{}", loaded.error().detail);
+          controls.notify("Réponse impulsionnelle illisible : modèle d'origine", now_us);
+        }
+      }
+      to.session.command(std::move(listening));
+    }
   }
   if (wanted.display_sync != r.display_sync) to.session.set_display_sync(wanted.display_sync);
   if (wanted.video_latency_ms != r.video_latency_ms)
