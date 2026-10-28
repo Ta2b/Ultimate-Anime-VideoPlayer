@@ -318,6 +318,7 @@ bool sound_tab(PlaySettings& d, const SettingsChoices& choices) {
       {"cinema", "Home cinéma", "Multicanal, surround envoyé tel quel."},
   }};
   for (const Choice& choice : kListening) {
+    if (&choice != kListening.data()) ImGui::SameLine();  // trois choix courts : une seule ligne
     const bool cinema = std::string_view(choice.key) == "cinema";
     ImGui::BeginDisabled(cinema && !multichannel);
     if (ImGui::RadioButton(choice.label, *key == choice.key)) *key = choice.key;
@@ -579,7 +580,7 @@ constexpr std::array<PageInfo, 14> kPages{{
     {"Image IA", "Agrandissement", false},
     {"Image IA", "Fluidité", false},
     {"HDR et couleurs", "Conversion HDR", false},
-    {"HDR et couleurs", "Réglages", false},
+    {"HDR et couleurs", "Couleurs", false},
     {"Audio", "Sortie", false},
     {"Export et moteurs", "Fichier", false},
     {"Export et moteurs", "Moteurs installés", false},
@@ -654,6 +655,8 @@ SettingsPanel::Result SettingsPanel::draw(const PlaySettings& running, const Set
         }
       }
     }
+    // Moins de vide à gauche des pages : l'arbre est étroit.
+    ImGui::PushStyleVar(ImGuiStyleVar_IndentSpacing, 10.0F * scale);
     const char* category = "";
     bool category_open = false;
     for (std::size_t i = 0; i < kPages.size(); ++i) {
@@ -662,13 +665,19 @@ SettingsPanel::Result SettingsPanel::draw(const PlaySettings& running, const Set
       if (std::string_view(page.category) != category) {
         if (category_open) ImGui::TreePop();
         category = page.category;
-        ImGui::SetNextItemOpen(true, ImGuiCond_Once);
+        // La catégorie de la page affichée reste ouverte ; les autres se replient d'abord (l'arbre
+        // tient alors dans la hauteur du panneau) et restent ouvertes une fois ouvertes.
+        if (std::string_view(kPages[static_cast<std::size_t>(page_)].category) == category)
+          ImGui::SetNextItemOpen(true);
+        else
+          ImGui::SetNextItemOpen(false, ImGuiCond_Once);
         category_open = ImGui::TreeNodeEx(category, ImGuiTreeNodeFlags_SpanAvailWidth);
       }
       if (category_open && ImGui::Selectable(page.name, static_cast<int>(i) == page_))
         page_ = static_cast<int>(i);
     }
     if (category_open) ImGui::TreePop();
+    ImGui::PopStyleVar();
     ImGui::EndChild();
     ImGui::SameLine();
     ImGui::BeginChild("##page", ImVec2(0, -footer));
@@ -690,7 +699,7 @@ SettingsPanel::Result SettingsPanel::draw(const PlaySettings& running, const Set
       } else if (name == "Conversion HDR") {
         hdr_tab(draft_, choices);
         if (advanced_) oled_sections(draft_, choices);
-      } else if (name == "Réglages") {
+      } else if (name == "Couleurs") {
         grade_tab(draft_, choices);
       } else if (name == "Sortie") {
         delay_held = sound_tab(draft_, choices);
