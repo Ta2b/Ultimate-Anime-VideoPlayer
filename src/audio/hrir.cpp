@@ -14,7 +14,8 @@
 namespace ajp::audio {
 namespace {
 
-constexpr std::uintmax_t kMaxFileBytes = 16U * 1024U * 1024U;  // 16 voies de 32 768 float = 2 Mio
+constexpr std::uintmax_t kMaxFileBytes =
+    std::uintmax_t{16} * 1024U * 1024U;  // 16 voies de 32 768 float = 2 Mio
 
 std::uint32_t le32(const std::byte* p) {
   return std::to_integer<std::uint32_t>(p[0]) | (std::to_integer<std::uint32_t>(p[1]) << 8U) |
