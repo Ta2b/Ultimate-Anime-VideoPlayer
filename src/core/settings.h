@@ -7,7 +7,6 @@
 //   open_with_registered = true
 //   update_mode = "notify"      # notify, auto, never
 //   update_channel = "stable"   # stable, preview
-//   listening = "speakers"      # headphones, speakers, cinema ; absent : pas encore dit
 //   [engines]
 //   chosen = ["vulkan", "tensorrt"]
 //   installed = ["vulkan", "tensorrt"]
@@ -53,7 +52,6 @@ struct Settings {
   bool open_with_registered = false;     // l'inscription « Ouvrir avec » a été faite une fois : pas de réinscription
   std::string update_mode = "notify";    // « notify » (Me prévenir), « auto », « never » (docs/ux-parametres.md, 4.5)
   std::string update_channel = "stable"; // « stable » ou « preview »
-  std::string listening;                 // « Comment écoutez-vous ? » : « headphones », « speakers », « cinema » ; vide : non dit
   std::vector<EngineId> chosen_engines{EngineId::Vulkan};     // cochés dans l'écran « Moteurs »
   std::vector<EngineId> installed_engines{EngineId::Vulkan};  // présents et vérifiés
   std::array<std::optional<EngineId>, kUsageCount> preferred{EngineId::Vulkan, EngineId::Vulkan,

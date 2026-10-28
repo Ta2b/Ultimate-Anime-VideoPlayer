@@ -274,6 +274,21 @@ std::string resolution_text(int height) {
   return std::format("{}p", height);
 }
 
+std::optional<int> listening_index(std::string_view key) {
+  if (key == "headphones") return 0;
+  if (key == "speakers") return 1;
+  if (key == "cinema") return 2;
+  return std::nullopt;
+}
+
+EffectiveListening effective_listening(const PlaySettings& settings, const std::string& device_name) {
+  std::string_view key = settings.listening;
+  for (const auto& [name, own] : settings.device_listening) {
+    if (name == device_name) key = own;
+  }
+  return EffectiveListening{.listen = listening_index(key).value_or(1), .faithful = settings.audio_faithful};
+}
+
 std::expected<PlaySettings, Refusal> validate(const PlaySettings& s) {
   if (!valid_factor(factor_of(s))) {
     return refuse(RefusalCode::FieldOutOfRange,
@@ -408,6 +423,9 @@ PlaySettings live_part(const PlaySettings& running, const PlaySettings& wanted, 
   s.autoplay_next = wanted.autoplay_next;
   s.default_player_dismissed = wanted.default_player_dismissed;
   s.audio_delay_ms = wanted.audio_delay_ms;
+  s.listening = wanted.listening;
+  s.audio_faithful = wanted.audio_faithful;
+  s.device_listening = wanted.device_listening;
   s.display_sync = wanted.display_sync;
   s.video_latency_ms = wanted.video_latency_ms;
   s.volume = wanted.volume;
@@ -431,6 +449,7 @@ Change change_between(const PlaySettings& running, const PlaySettings& wanted, b
   if (running.upscale != wanted.upscale || running.model != wanted.model ||
       running.work_height != wanted.work_height)
     reopen.emplace_back("le moteur SPAN est rechargé (construit la première fois pour cette taille)");
+  if (running.audio_device != wanted.audio_device) reopen.emplace_back("l'appareil de sortie change");
   if (running.true_hdr != wanted.true_hdr)
     reopen.emplace_back(wanted.true_hdr ? "RTX HDR s'allume" : "RTX HDR s'éteint");
   if (wanted.rife_factor >= 2 && running.rife_factor < 2 && !rife_loaded)

@@ -17,6 +17,7 @@
 
 #include "app/play/auto_bench.h"
 #include "app/play/backend_library.h"
+#include "audio/devices.h"
 #include "app/play/build_progress.h"
 #include "app/play/chain.h"
 #include "app/play/chain_setup.h"
@@ -153,8 +154,17 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
       .file = options.file,
       .decoder = decoder_options(c.backend_name, p.screen.device(), p.screen.shared_devices()),
       .languages = {.presets = settings.language_presets},
+      .audio_device = settings.audio_device,
+      .mix = {},
       .audio_track = p.audio_track,
       .subtitle_track = p.subtitle_track};
+  {
+    // L'écoute de cet appareil : son profil propre, sinon le global (settings.h : effective_listening).
+    const auto device = audio::resolve_device(audio::playback_devices(), settings.audio_device);
+    const EffectiveListening listening = effective_listening(settings, device ? device->name : std::string());
+    config.mix.listen = static_cast<audio::Listen>(listening.listen);
+    config.mix.faithful = listening.faithful;
+  }
   PlaceboScreen& out = p.screen;
   auto pipeline = Pipeline::open(
       config, [&](VideoStageInit stage) -> std::expected<std::unique_ptr<VideoStage>, Refusal> {
@@ -208,6 +218,9 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
       measured && measured->gpu == machine.name && measured->driver == machine.driver
           ? std::format("Dernière évaluation : {}, niveau {}", measured->date, tier_label(measured->level))
           : std::string();
+  std::vector<SettingsChoices::AudioOut> audio_outputs;
+  for (const audio::AudioDevice& device : audio::playback_devices())
+    audio_outputs.push_back({.name = device.name, .channels = device.channels, .is_default = device.is_default});
   const bool default_player_is_ajp =
       is_default_player({.executable = p.paths.executable, .home = p.paths.home, .data = p.paths.data});
   p.ui.set_tracks((*pipeline)->tracks());
@@ -261,6 +274,7 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
           .machine_tier = static_cast<int>(machine_tier),
           .display_height = display_height(out.window()),
           .gpu_name = gpu_facts(p.screen).name,
+          .audio_outputs = audio_outputs,
           .default_player_is_ajp = default_player_is_ajp,
           .bench_text = bench_text,
           .place = {.executable = p.paths.executable, .home = p.paths.home, .data = p.paths.data}});

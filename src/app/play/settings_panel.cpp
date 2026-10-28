@@ -240,7 +240,74 @@ void languages_tab(PlaySettings& d) {
 }
 
 // Vrai pendant qu'on tient le curseur du délai audio.
-bool sound_tab(PlaySettings& d) {
+bool sound_tab(PlaySettings& d, const SettingsChoices& choices) {
+  // Appareil : celui du système (suivi quand il change) ou un autre de la liste.
+  section("Appareil");
+  const SettingsChoices::AudioOut* chosen = nullptr;
+  const SettingsChoices::AudioOut* system_default = nullptr;
+  for (const SettingsChoices::AudioOut& out : choices.audio_outputs) {
+    if (out.is_default) system_default = &out;
+    if (!d.audio_device.empty() && out.name == d.audio_device) chosen = &out;
+  }
+  const SettingsChoices::AudioOut* active = chosen != nullptr ? chosen : system_default;
+  bool follow = d.audio_device.empty() || chosen == nullptr;
+  if (ImGui::Checkbox("Suivre l'appareil par défaut du système", &follow)) {
+    if (follow) {
+      d.audio_device.clear();
+    } else if (active != nullptr) {
+      d.audio_device = active->name;
+    }
+  }
+  ImGui::BeginDisabled(follow);
+  if (ImGui::BeginCombo("Appareil de sortie", chosen != nullptr ? chosen->name.c_str() : (system_default != nullptr ? system_default->name.c_str() : "Aucun"))) {
+    for (const SettingsChoices::AudioOut& out : choices.audio_outputs) {
+      if (ImGui::Selectable(out.name.c_str(), chosen == &out)) d.audio_device = out.name;
+    }
+    ImGui::EndCombo();
+  }
+  ImGui::EndDisabled();
+  if (active != nullptr && active->channels > 0) note(std::format("{} canaux sur cet appareil.", active->channels));
+  panel::tip("Changer d'appareil rouvre la vidéo au même endroit. Le format du son se détecte seul, piste par piste.");
+
+  // Écoute : le rendu pour le casque, les enceintes ou le home cinéma. Aucune détection : c'est votre choix.
+  section("Écoute");
+  const bool multichannel = active != nullptr && active->channels > 2;
+  const std::string device_name = active != nullptr ? active->name : std::string();
+  bool own = false;
+  for (const auto& [name, key] : d.device_listening) own = own || name == device_name;
+  std::string* key = &d.listening;
+  if (own) {
+    for (auto& [name, value] : d.device_listening)
+      if (name == device_name) key = &value;
+  }
+  struct Choice {
+    const char* key;
+    const char* label;
+    const char* detail;
+  };
+  constexpr std::array<Choice, 3> kListening{{
+      {"headphones", "Casque", "Crossfeed en stéréo, binaural en surround."},
+      {"speakers", "Enceintes", "Rendu fidèle ; le surround est mixé en stéréo, centre rehaussé."},
+      {"cinema", "Home cinéma", "Multicanal, surround envoyé tel quel."},
+  }};
+  for (const Choice& choice : kListening) {
+    const bool cinema = std::string_view(choice.key) == "cinema";
+    ImGui::BeginDisabled(cinema && !multichannel);
+    if (ImGui::RadioButton(choice.label, *key == choice.key)) *key = choice.key;
+    ImGui::EndDisabled();
+    panel::tip(cinema && !multichannel ? "Grisé : cet appareil n'a que 2 canaux." : choice.detail);
+  }
+  ImGui::Checkbox("Fidèle (aucun traitement)", &d.audio_faithful);
+  panel::tip("Coupe tout traitement, pour comparer : le son brut de la piste, mixé simplement pour l'appareil.");
+  if (!device_name.empty() && ImGui::Checkbox("Profil propre à cet appareil", &own)) {
+    if (own) {
+      d.device_listening.emplace_back(device_name, d.listening);
+    } else {
+      std::erase_if(d.device_listening, [&](const auto& entry) { return entry.first == device_name; });
+    }
+  }
+  panel::tip("Un autre appareil reprend le profil global, sans rien demander.");
+
   section("Synchronisation");
   ImGui::SliderInt("Délai audio (ms)", &d.audio_delay_ms, -1000, 1000);
   const bool held = ImGui::IsItemActive();
@@ -436,7 +503,7 @@ SettingsPanel::Result SettingsPanel::draw(const PlaySettings& running, const Set
       case 3: fluidity_tab(draft_, choices); break;
       case 4: hdr_tab(draft_, choices); break;
       case 5: grade_tab(draft_, choices); break;
-      case 6: delay_held = sound_tab(draft_); break;
+      case 6: delay_held = sound_tab(draft_, choices); break;
       case 7: languages_tab(draft_); break;
       case 8: subtitles_tab(draft_); break;
       case 9: export_tab(*export_, running, choices, actions); break;

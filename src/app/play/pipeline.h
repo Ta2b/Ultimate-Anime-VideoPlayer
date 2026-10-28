@@ -43,6 +43,8 @@ struct PipelineConfig {
   media::DecoderOptions decoder;
   media::LanguagePriorities languages{.audio = {"jpn", "ja"}, .subtitles = {"fre", "fr", "eng", "en"}};
   bool audio = true;      // false : piste audio ignorée, horloge hôte
+  std::string audio_device;  // appareil de sortie choisi (audio/devices.h) ; vide : celui du système
+  audio::MixConfig mix;      // l'écoute (audio/mixer.h) ; sink_channels vient de l'appareil
   bool subtitles = true;  // false : aucune piste de sous-titres
   // Pistes choisies avant une réouverture de la chaîne : elles remplacent le choix par langue si
   // elles existent. subtitle_track : rien = choix par langue ; nullopt dedans = aucune.

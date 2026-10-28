@@ -140,7 +140,6 @@ std::expected<void, Refusal> read_rest(const toml::table& root, Settings& settin
   };
   if (auto r = choice("update_mode", settings.update_mode, {"notify", "auto", "never"}); !r) return r;
   if (auto r = choice("update_channel", settings.update_channel, {"stable", "preview"}); !r) return r;
-  if (auto r = choice("listening", settings.listening, {"headphones", "speakers", "cinema"}); !r) return r;
 
   auto languages = fields::table(root, "languages", "settings");
   if (!languages) return std::unexpected(languages.error());
@@ -242,11 +241,6 @@ std::expected<std::string, Refusal> format_settings(const Settings& settings,
   root->insert_or_assign("open_with_registered", settings.open_with_registered);
   root->insert_or_assign("update_mode", settings.update_mode);
   root->insert_or_assign("update_channel", settings.update_channel);
-  if (settings.listening.empty()) {
-    root->erase("listening");
-  } else {
-    root->insert_or_assign("listening", settings.listening);
-  }
   toml::table& engines_table = fields::child(*root, "engines");
   engines_table.insert_or_assign("chosen", names_of(settings.chosen_engines));
   engines_table.insert_or_assign("installed", names_of(settings.installed_engines));

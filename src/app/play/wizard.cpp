@@ -168,9 +168,6 @@ core::Settings wizard_settings(const Wizard& wizard, core::Settings settings) {
   };
   settings.first_run_done = true;
   settings.first_run_step = kWizardSteps;
-  // Passé ou ignoré : Enceintes en rendu fidèle (la valeur vide veut dire « pas dit », traitée ainsi).
-  if (wizard.listening != Listening::Unsaid && !skipped(WizardStep::Audio))
-    settings.listening = std::string(key(wizard.listening));
   if (!skipped(WizardStep::Updates)) {
     settings.update_mode = wizard.update_mode;
     settings.update_channel = wizard.update_channel;
@@ -188,6 +185,9 @@ PlaySettings wizard_play_settings(const Wizard& wizard, PlaySettings settings) {
   } else {
     settings.preset = Preset::Auto;  // le premier lancement choisit Auto
   }
+  // Passé ou ignoré : Enceintes en rendu fidèle (le défaut).
+  if (wizard.listening != Listening::Unsaid && !skipped(WizardStep::Audio))
+    settings.listening = std::string(key(wizard.listening));
   if (!skipped(WizardStep::Languages)) {
     if (settings.language_presets.empty()) settings.language_presets.resize(1);
     settings.language_presets[0].audio = wizard.audio_language;

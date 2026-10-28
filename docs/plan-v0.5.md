@@ -24,7 +24,7 @@ Pull requests : une par étape ; quand une étape dépend d'une autre, la base e
 | Temps mesurés | hors de l'interface (dans la documentation) | Tatoub |
 | Poses DRBA | désactivées par défaut jusqu'à une mesure A/B | Tatoub |
 | Son spatial | pas de détection casque ou enceintes ; « Comment écoutez-vous ? » au premier lancement | Tatoub |
-| Son spatial : avfilter ou code maison, nombre de profils HRTF | à trancher en chantier E, en le notant ici | Claude |
+| Son spatial : avfilter ou code maison, nombre de profils HRTF | **code maison** (`audio/mixer.h`), **un seul profil** : aucune HRTF mesurée livrée (licences, poids), modèle paramétrique de la tête (retard de Woodworth + ombre en passe-bas) ; crossfeed à 700 Hz, downmix à centre +2 dB ; mesure d'oreille à faire par Tatoub | Claude |
 | Clé de signature des mises à jour | si elle manque, ce qui n'en dépend pas avance et le reste est noté | Claude |
 
 ## Chantiers, dans l'ordre
@@ -52,11 +52,11 @@ Pull requests : une par étape ; quand une étape dépend d'une autre, la base e
 - [ ] Recherche dans les réglages (par page d'abord)
 
 ### E. Audio et son spatial
-- [ ] Liste et choix de l'appareil de sortie, événements de changement du défaut
-- [ ] Détecteur de formats (source par piste, sortie par appareil) et conversion automatique
-- [ ] Profils Casque / Enceintes / Home cinéma, crossfeed, downmix soigné, profil par appareil, Fidèle, touche A/B
-- [ ] Binaural
-- [ ] Écran audio de l'assistant et page Audio des réglages
+- [x] Liste et choix de l'appareil de sortie (`audio/devices.h`) ; le défaut du système est suivi par SDL (flux sur l'appareil par défaut) : PR `claude/audio`
+- [x] Format de la source par piste et de la sortie par appareil, conversion automatique (le décodeur rend les canaux voulus par le mixeur)
+- [x] Profils Casque / Enceintes / Home cinéma, crossfeed, downmix soigné, profil par appareil, Fidèle (case + commande `SetListening`) ; la touche A/B reste à faire (nouvelle action de touche)
+- [x] Binaural
+- [x] Écran audio de l'assistant et page Audio des réglages (Audio > Sortie : Appareil, Écoute, Synchronisation)
 
 ### D. Mise à jour automatique signée
 - [ ] Vérification en arrière-plan et réglages (Me prévenir / Automatique / Jamais, canal, fréquence)
@@ -103,3 +103,8 @@ Pull requests : une par étape ; quand une étape dépend d'une autre, la base e
   Me prévenir), listening ; `play.toml` gagne [default_player] dismissed. Écran Audio : le choix d'écoute est gardé, la liste
   des appareils vient avec l'étape audio ; l'écran HDR n'apparaît que sur écran HDR ; « Évaluer ma machine » se lance
   depuis Général > Configuration (il faut une vidéo). Pas fait : RTX HDR pas à pas (4b), bouton « Relancer l'assistant ».
+- **2026-10-28** : audio en PR. Décisions : mixeur maison entre le décodeur et la file de sortie (pas d'avfilter : les blocs sont
+  déjà en float entrelacé et la latence reste nulle) ; appareil stéréo reçoit de la stéréo, appareil multicanal garde les canaux de
+  la piste ; changer d'appareil rouvre la vidéo, changer d'écoute se fait en direct. Réglages `[audio]` de play.toml :
+  device, listening, faithful, devices.<nom>. Pas fait : la touche A/B, des événements d'ajout/retrait d'appareil (le défaut
+  est suivi par SDL), et l'écoute à l'oreille du binaural (aucun casque ici).

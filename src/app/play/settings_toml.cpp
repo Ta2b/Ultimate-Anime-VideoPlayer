@@ -225,6 +225,21 @@ std::expected<PlaySettings, Refusal> parse_settings(std::string_view toml_text) 
   if (const toml::table* audio = section(root, "audio")) {
     reads.push_back(read(*audio, "audio", "delay_ms", s.audio_delay_ms));
     reads.push_back(read(*audio, "audio", "volume", s.volume));
+    reads.push_back(read(*audio, "audio", "device", s.audio_device));
+    reads.push_back(read(*audio, "audio", "listening", s.listening));
+    reads.push_back(read(*audio, "audio", "faithful", s.audio_faithful));
+    if (!listening_index(s.listening))
+      reads.emplace_back(refuse(RefusalCode::FieldOutOfRange, std::format("audio.listening : « {} »", s.listening)));
+    if (const toml::table* devices = audio->get_as<toml::table>("devices")) {
+      for (const auto& [name, node] : *devices) {
+        const auto own = node.value_exact<std::string>();
+        if (!own || !listening_index(*own)) {
+          reads.emplace_back(refuse(RefusalCode::FieldOutOfRange, std::format("audio.devices.{}", std::string(name.str()))));
+          continue;
+        }
+        s.device_listening.emplace_back(std::string(name.str()), *own);
+      }
+    }
     reads.push_back(read_legacy_languages(*audio, "audio", legacy_audio));
   }
   if (const toml::table* sync = section(root, "sync")) {
@@ -355,8 +370,19 @@ std::string format_settings(const PlaySettings& s) {
                                  {"peak", s.true_hdr_peak},
                                  {"debanding", s.true_hdr_debanding}});
   // Le volume au centième : 0.85 et non 0.8500000238418579.
-  root.insert("audio", toml::table{{"delay_ms", s.audio_delay_ms},
-                                   {"volume", std::round(static_cast<double>(s.volume) * 100.0) / 100.0}});
+  {
+    toml::table audio{{"delay_ms", s.audio_delay_ms},
+                      {"volume", std::round(static_cast<double>(s.volume) * 100.0) / 100.0},
+                      {"device", s.audio_device},
+                      {"listening", s.listening},
+                      {"faithful", s.audio_faithful}};
+    if (!s.device_listening.empty()) {
+      toml::table devices;
+      for (const auto& [name, own] : s.device_listening) devices.insert_or_assign(name, own);
+      audio.insert("devices", std::move(devices));
+    }
+    root.insert("audio", std::move(audio));
+  }
   {
     const media::LanguagePreset first =
         !s.language_presets.empty() ? s.language_presets[0] : media::LanguagePreset{};
