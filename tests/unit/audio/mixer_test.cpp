@@ -78,7 +78,7 @@ TEST_CASE("le binaural retarde et adoucit l'oreille éloignée", "[mixer]") {
 TEST_CASE("le crossfeed amène un peu du canal opposé, retardé", "[mixer]") {
   Mixer mixer({.listen = Listen::Headphones});
   const PcmBlock out = mixer.process(impulse(2, 0));  // impulsion à gauche seulement
-  CHECK(out.samples[1] == Approx(0.0F));               // pas encore : le retard
+  CHECK(out.samples[1] == Approx(0.0F));              // pas encore : le retard
   float later = 0.0F;
   for (std::size_t f = 1; f < 100; ++f) later = std::max(later, std::fabs(out.samples[f * 2 + 1]));
   CHECK(later > 0.01F);

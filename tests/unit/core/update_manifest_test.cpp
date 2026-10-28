@@ -37,8 +37,10 @@ TEST_CASE("manifeste : refus nets", "[update]") {
   CHECK_FALSE(parse_update_manifest("version = ["));
   CHECK_FALSE(parse_update_manifest(with("0.5.0\"\nchannel", "cinq\"\nchannel")));
   CHECK_FALSE(parse_update_manifest(with("stable", "nightly")));
-  CHECK_FALSE(parse_update_manifest(with("https://github.com/Ta2b/ajp-releases/releases/download", "http://x/releases/download")));
-  CHECK_FALSE(parse_update_manifest(with("0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef", "xyz")));
+  CHECK_FALSE(parse_update_manifest(
+      with("https://github.com/Ta2b/ajp-releases/releases/download", "http://x/releases/download")));
+  CHECK_FALSE(
+      parse_update_manifest(with("0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef", "xyz")));
   CHECK_FALSE(parse_update_manifest(with("size = 123456", "size = 0")));
 }
 

@@ -1,6 +1,4 @@
 #include "app/play/auto_bench.h"
-#include "app/play/auto_bench_run.h"
-#include "app/play/options.h"
 
 #include <algorithm>
 #include <filesystem>
@@ -9,22 +7,29 @@
 
 #include <catch2/catch_test_macros.hpp>
 
+#include "app/play/auto_bench_run.h"
+#include "app/play/options.h"
+
 using namespace ajp;
 using namespace ajp::app::play;
 
 namespace {
 
 BenchRun run(Tier level, std::int64_t lost = 0, std::int64_t presents = 2000, std::int64_t lag_us = 3000) {
-  return BenchRun{.level = level, .presents = presents, .dropped = lost / 2, .missing = lost - lost / 2,
-                  .lag_p95_us = lag_us, .period_us = 6060};
+  return BenchRun{.level = level,
+                  .presents = presents,
+                  .dropped = lost / 2,
+                  .missing = lost - lost / 2,
+                  .lag_p95_us = lag_us,
+                  .period_us = 6060};
 }
 
 }  // namespace
 
 TEST_CASE("un essai tient quand peu d'images sont perdues et le retard est court", "[auto_bench]") {
   CHECK(holds(run(Tier::Fast)));
-  CHECK(holds(run(Tier::Fast, 40)));          // 2 %
-  CHECK_FALSE(holds(run(Tier::Fast, 41)));    // juste au-dessus
+  CHECK(holds(run(Tier::Fast, 40)));        // 2 %
+  CHECK_FALSE(holds(run(Tier::Fast, 41)));  // juste au-dessus
   CHECK_FALSE(holds(run(Tier::Fast, 0, 2000, 6060 * 2 + 1)));
   CHECK(holds(run(Tier::Fast, 0, 2000, 6060 * 2)));
 }
@@ -94,14 +99,21 @@ TEST_CASE("la mesure remplace l'estimation pour la même carte seulement", "[aut
   CHECK(effective_tier(gpu, std::nullopt) == Tier::Fast);  // l'estimation
   CHECK(effective_tier(gpu, BenchResult{.gpu = gpu.name, .level = Tier::Ultra}) == Tier::Ultra);
   // Une autre carte (changement de matériel) : la mesure ne vaut plus.
-  CHECK(effective_tier(gpu, BenchResult{.gpu = "NVIDIA GeForce GTX 1060", .level = Tier::Economy}) == Tier::Fast);
+  CHECK(effective_tier(gpu, BenchResult{.gpu = "NVIDIA GeForce GTX 1060", .level = Tier::Economy}) ==
+        Tier::Fast);
 }
 
 TEST_CASE("la mesure est refaite quand le pilote change", "[auto_bench]") {
-  const GpuFacts gpu{.name = "NVIDIA GeForce RTX 4070 Ti", .driver = "2400", .vendor = GpuVendor::Nvidia, .tensor_cores = true};
-  CHECK(effective_tier(gpu, BenchResult{.gpu = gpu.name, .driver = "2400", .level = Tier::Ultra}) == Tier::Ultra);
-  CHECK(effective_tier(gpu, BenchResult{.gpu = gpu.name, .driver = "2300", .level = Tier::Ultra}) == Tier::Fast);
-  const auto read = parse_bench(format_bench(BenchResult{.gpu = "g", .driver = "2400", .level = Tier::Light}));
+  const GpuFacts gpu{.name = "NVIDIA GeForce RTX 4070 Ti",
+                     .driver = "2400",
+                     .vendor = GpuVendor::Nvidia,
+                     .tensor_cores = true};
+  CHECK(effective_tier(gpu, BenchResult{.gpu = gpu.name, .driver = "2400", .level = Tier::Ultra}) ==
+        Tier::Ultra);
+  CHECK(effective_tier(gpu, BenchResult{.gpu = gpu.name, .driver = "2300", .level = Tier::Ultra}) ==
+        Tier::Fast);
+  const auto read =
+      parse_bench(format_bench(BenchResult{.gpu = "g", .driver = "2400", .level = Tier::Light}));
   REQUIRE(read);
   CHECK(read->driver == "2400");
 }
@@ -172,8 +184,8 @@ TEST_CASE("le rapport nomme chaque essai et le niveau gardé", "[auto_bench]") {
 }
 
 TEST_CASE("ajp compare : options, ligne de commande d'une variante, rapport", "[auto_bench]") {
-  const std::vector<std::string_view> args{"a.mkv", "--a=--rife=3  --work-height=540", "--b", "--rife=4",
-                                           "--b-settings=poses.toml", "--seconds=8"};
+  const std::vector<std::string_view> args{"a.mkv",    "--a=--rife=3  --work-height=540", "--b",
+                                           "--rife=4", "--b-settings=poses.toml",         "--seconds=8"};
   const auto options = parse_compare_options(args);
   REQUIRE(options);
   CHECK(options->a == std::vector<std::string>{"--rife=3", "--work-height=540"});

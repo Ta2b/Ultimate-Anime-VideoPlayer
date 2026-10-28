@@ -1,5 +1,6 @@
-// Le manifeste d'une mise à jour du lecteur (docs/ux-parametres.md, 4.5) : un petit fichier TOML publié avec la
-// release, signé en Ed25519 (manifest.toml.sig, en hexadécimal) ; le lecteur ne croit rien qui n'est pas signé.
+// Le manifeste d'une mise à jour du lecteur (docs/ux-parametres.md, 4.5) : un petit fichier TOML publié avec
+// la release, signé en Ed25519 (manifest.toml.sig, en hexadécimal) ; le lecteur ne croit rien qui n'est pas
+// signé.
 //
 //   version = "0.5.0"
 //   channel = "stable"          # ou "preview"
@@ -39,8 +40,8 @@ struct UpdateManifest {
   std::optional<UpdateArtifact> macos_arm64;
 };
 
-// Refus pour un TOML mal formé, une version illisible, un canal inconnu, un sha256 qui n'est pas hexadécimal sur
-// 64 chiffres, une adresse qui n'est pas en https.
+// Refus pour un TOML mal formé, une version illisible, un canal inconnu, un sha256 qui n'est pas hexadécimal
+// sur 64 chiffres, une adresse qui n'est pas en https.
 std::expected<UpdateManifest, Refusal> parse_update_manifest(std::string_view toml_text);
 
 // Le fichier pour ce système ; rien si la release n'en livre pas.

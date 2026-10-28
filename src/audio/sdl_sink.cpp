@@ -90,7 +90,8 @@ std::expected<void, Refusal> SdlSink::open(const OutputRequest& request) {
   // L'appareil choisi s'il existe encore, sinon le défaut du système (suivi par SDL quand il change).
   SDL_AudioDeviceID device_id = SDL_AUDIO_DEVICE_DEFAULT_PLAYBACK;
   if (!request.device.empty()) {
-    if (const auto found = resolve_device(playback_devices(), request.device); found && found->name == request.device)
+    if (const auto found = resolve_device(playback_devices(), request.device);
+        found && found->name == request.device)
       device_id = found->id;
   }
   SDL_AudioSpec preferred{};

@@ -1,4 +1,5 @@
 #include "app/play/gpu_tier.h"
+
 #include <algorithm>
 
 #include <catch2/catch_test_macros.hpp>
@@ -10,7 +11,8 @@ namespace {
 
 constexpr std::uint64_t kGiB = std::uint64_t{1} << 30U;
 
-TierEstimate of(std::string name, GpuVendor vendor, std::uint64_t vram_gib = 8, bool tensor = false, bool wmma = false) {
+TierEstimate of(std::string name, GpuVendor vendor, std::uint64_t vram_gib = 8, bool tensor = false,
+                bool wmma = false) {
   return estimate_tier(GpuFacts{.name = std::move(name),
                                 .vendor = vendor,
                                 .vram_bytes = vram_gib * kGiB,
@@ -65,8 +67,9 @@ TEST_CASE("une règle plus précise passe avant une plus générale", "[gpu_tier
   REQUIRE(table);
   const GpuFacts gpu{.name = "NVIDIA GeForce RTX 4070", .vendor = GpuVendor::Nvidia};
   CHECK(estimate_tier(*table, gpu).tier == Tier::Fast);
-  CHECK(estimate_tier(*table, GpuFacts{.name = "NVIDIA GeForce RTX 4060", .vendor = GpuVendor::Nvidia}).tier ==
-        Tier::Normal);
+  CHECK(
+      estimate_tier(*table, GpuFacts{.name = "NVIDIA GeForce RTX 4060", .vendor = GpuVendor::Nvidia}).tier ==
+      Tier::Normal);
 }
 
 TEST_CASE("un gpu_tiers.toml invalide est refusé", "[gpu_tier]") {

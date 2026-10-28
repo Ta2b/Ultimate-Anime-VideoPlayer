@@ -1,6 +1,5 @@
 // Réglages du menu des paramètres : plages, play.toml aller-retour, ligne de commande, et ce
 // qu'un changement demande (direct ou réouverture de la chaîne).
-#include "app/play/live_settings.h"
 #include "app/play/settings.h"
 
 #include <algorithm>
@@ -12,6 +11,8 @@
 #include <vector>
 
 #include <catch2/catch_test_macros.hpp>
+
+#include "app/play/live_settings.h"
 
 namespace ajp::app::play {
 namespace {
@@ -392,10 +393,24 @@ TEST_CASE("audio : appareil, écoute et profils par appareil font l'aller-retour
   CHECK(effective_listening(*read, "Autre").listen == 1);
   CHECK(effective_listening(*read, "Autre").faithful);
   CHECK_FALSE(parse_settings("[audio]\nlistening = \"stade\"\n"));
-  CHECK(change_between(PlaySettings{}, [] { PlaySettings x; x.audio_device = "A"; return x; }(), false).cost ==
-        ChangeCost::Reopen);
-  CHECK(change_between(PlaySettings{}, [] { PlaySettings x; x.listening = "headphones"; return x; }(), false).cost ==
-        ChangeCost::Live);
+  CHECK(change_between(
+            PlaySettings{},
+            [] {
+              PlaySettings x;
+              x.audio_device = "A";
+              return x;
+            }(),
+            false)
+            .cost == ChangeCost::Reopen);
+  CHECK(change_between(
+            PlaySettings{},
+            [] {
+              PlaySettings x;
+              x.listening = "headphones";
+              return x;
+            }(),
+            false)
+            .cost == ChangeCost::Live);
 }
 
 TEST_CASE("Hermite : un filtre de réduction de plus, cubique B = C = 0", "[app][settings]") {
