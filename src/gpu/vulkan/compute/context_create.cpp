@@ -264,6 +264,13 @@ Done VkContext::create_device(const CreateOptions& options) {
     extensions.push_back(VK_EXT_SHADER_ATOMIC_FLOAT_EXTENSION_NAME);
     enabled_extensions.emplace_back(VK_EXT_SHADER_ATOMIC_FLOAT_EXTENSION_NAME);
   }
+  // Les matrices coopératives FP8 (RDNA 4), avec leurs tuiles : noyau net_conv_coopmat_fp8.glsl.
+  const bool float8 = matrix && available.float8_matrix && has_extension(present, kShaderFloat8ExtensionName);
+  if (float8 &&
+      std::ranges::find(options.extensions, kShaderFloat8ExtensionName) == options.extensions.end()) {
+    extensions.push_back(kShaderFloat8ExtensionName);
+    enabled_extensions.emplace_back(kShaderFloat8ExtensionName);
+  }
   // Le budget mémoire du pilote (device_limits) : l'extension n'a ni feature ni structure.
   if (has_extension(present, VK_EXT_MEMORY_BUDGET_EXTENSION_NAME) &&
       std::ranges::find(options.extensions, VK_EXT_MEMORY_BUDGET_EXTENSION_NAME) ==
@@ -274,9 +281,13 @@ Done VkContext::create_device(const CreateOptions& options) {
   VkPhysicalDeviceShaderAtomicFloatFeaturesEXT atomic_features{
       .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_ATOMIC_FLOAT_FEATURES_EXT,
       .shaderBufferFloat32AtomicAdd = VK_TRUE};
+  ShaderFloat8Features float8_features{.pNext = atomic ? static_cast<void*>(&atomic_features) : nullptr,
+                                       .shaderFloat8 = VK_TRUE,
+                                       .shaderFloat8CooperativeMatrix = VK_TRUE};
   VkPhysicalDeviceCooperativeMatrixFeaturesKHR matrix_features{
       .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_COOPERATIVE_MATRIX_FEATURES_KHR,
-      .pNext = atomic ? &atomic_features : nullptr,
+      .pNext = float8 ? static_cast<void*>(&float8_features)
+                      : (atomic ? static_cast<void*>(&atomic_features) : nullptr),
       .cooperativeMatrix = VK_TRUE};
   void* const extension_chain = matrix   ? static_cast<void*>(&matrix_features)
                                 : atomic ? static_cast<void*>(&atomic_features)

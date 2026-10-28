@@ -136,6 +136,7 @@ std::expected<PassStats, Refusal> optimize(Graph& graph, const OptimizeOptions& 
   if (options.transpose_conv_channels > 0)
     stats.transposes = transposes_as_convs(graph, options.transpose_conv_channels);
   stats.bias = fuse_conv_bias(graph);
+  stats.quants = fuse_fp8_quant(graph);
   stats.residuals = fuse_residuals(graph);
   stats.activations = fuse_activations(graph);
   stats.gates = fuse_gates(graph);
@@ -144,13 +145,14 @@ std::expected<PassStats, Refusal> optimize(Graph& graph, const OptimizeOptions& 
   stats.nhwc = assign_layout(graph);
   if (auto ok = validate(graph); !ok) return std::unexpected(ok.error());
   make_logger()->debug(
-      "passes : {} pliés, {} morts, {} sans effet, {} réarrangements, {} biais, {} résiduels, "
+      "passes : {} pliés, {} morts, {} sans effet, {} réarrangements, {} biais, {} arrondis FP8, {} "
+      "résiduels, "
       "{} activations, {} portes, {} DepthToSpace fondus, {} grilles repliées, {} ConvTranspose en Conv, {} "
       "tenseurs NHWC16 ; "
       "{} nœuds restants",
-      stats.folded, stats.dead, stats.identities, stats.pixel_shuffles, stats.bias, stats.residuals,
-      stats.activations, stats.gates, stats.spaces, stats.grid_transposes, stats.transposes, stats.nhwc,
-      graph.nodes.size());
+      stats.folded, stats.dead, stats.identities, stats.pixel_shuffles, stats.bias, stats.quants,
+      stats.residuals, stats.activations, stats.gates, stats.spaces, stats.grid_transposes, stats.transposes,
+      stats.nhwc, graph.nodes.size());
   return stats;
 }
 

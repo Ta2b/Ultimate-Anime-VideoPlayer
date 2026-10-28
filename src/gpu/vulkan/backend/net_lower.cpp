@@ -44,6 +44,8 @@ std::uint32_t activation_code(ir::OpKind op) {
       return 6;
     case ir::OpKind::Reciprocal:
       return 7;
+    case ir::OpKind::FakeQuantE4M3:
+      return 8;
     default:
       return 0;
   }
@@ -162,6 +164,7 @@ std::expected<void, Refusal> Lowerer::node(std::size_t index, const KernelChoice
     case ir::OpKind::Tanh:
     case ir::OpKind::Clip:
     case ir::OpKind::Reciprocal:
+    case ir::OpKind::FakeQuantE4M3:
     case ir::OpKind::Cast:
     case ir::OpKind::Identity:
     case ir::OpKind::Reshape:
@@ -241,6 +244,12 @@ std::expected<void, Refusal> Lowerer::unary(std::size_t index) {
         return refuse_node(RefusalCode::ShapeInvalid, n, "bornes non constantes");
       (k == 1 ? lo : hi) = (*bound)[0];
     }
+  }
+  if (n.op == ir::OpKind::FakeQuantE4M3) {
+    auto scale = const_floats(graph_, n, 1);
+    if (!scale || scale->size() != 1 || !((*scale)[0] > 0.0F))
+      return refuse_node(RefusalCode::ShapeInvalid, n, "échelle non constante");
+    alpha = (*scale)[0];
   }
   const std::array tensors{*x, *y};
   auto name = shader("net_unary", tensors);

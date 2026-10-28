@@ -6,6 +6,7 @@
 #include <format>
 #include <utility>
 
+#include "gpu/ir/fp8.h"
 #include "gpu/ir/graph.h"
 #include "gpu/ir/op_impl.h"
 #include "gpu/ir/op_util.h"
@@ -231,8 +232,14 @@ Inferred infer_conv(const Node& node, std::span<const Operand> in) {
 Evaluated eval_conv(const Node& node, std::span<const Value* const> in, std::span<const OutputInfo> outs) {
   auto attrs = attrs_of<ConvAttrs>(node);
   if (!attrs) return std::unexpected(attrs.error());
-  const Value& x = *in[kConvX];
+  const Value& raw = *in[kConvX];  // la porte de SPAN relit x tel quel
   const Value& w = *in[kConvW];
+  Value rounded;
+  if ((*attrs)->in_quant > 0.0F) {
+    rounded = raw;
+    for (float& v : rounded.f) v = round_to_e4m3(v / (*attrs)->in_quant) * (*attrs)->in_quant;
+  }
+  const Value& x = (*attrs)->in_quant > 0.0F ? rounded : raw;
   auto win = conv_window(node, **attrs, x.dims, w.dims);
   if (!win) return std::unexpected(win.error());
 
@@ -263,6 +270,9 @@ Evaluated eval_conv(const Node& node, std::span<const Value* const> in, std::spa
     }
   }
   if (in.size() > kConvB && in[kConvB] != nullptr) add_per_channel(out, *in[kConvB]);
+  if ((*attrs)->out_quant > 0.0F) {
+    for (float& v : out.f) v = round_to_e4m3(v / (*attrs)->out_quant) * (*attrs)->out_quant;
+  }
 
   // Épilogue : résiduel, puis activation, puis porte, élément par élément (la porte garde la
   // forme de x : même indice), puis le DepthToSpace fondu.
@@ -273,7 +283,7 @@ Evaluated eval_conv(const Node& node, std::span<const Value* const> in, std::spa
     const std::size_t channel = (k / plane_size) % static_cast<std::size_t>(od[1]);
     const float slope = e.act == Activation::PRelu ? in[kConvSlope]->f[channel] : 0.0F;
     out.f[k] = epilogue(e, value, slope);
-    if (e.gate) out.f[k] *= x.f[k] + in[kConvResidual]->f[k];
+    if (e.gate) out.f[k] *= raw.f[k] + in[kConvResidual]->f[k];
   }
   if (e.space != 0) {
     return std::vector<Value>{

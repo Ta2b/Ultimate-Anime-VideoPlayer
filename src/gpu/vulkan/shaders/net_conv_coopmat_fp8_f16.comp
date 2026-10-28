@@ -1,0 +1,5 @@
+#version 450
+// Conv par matrices coopératives FP8 E4M3 (net_conv_coopmat_fp8.glsl).
+#extension GL_GOOGLE_include_directive : require
+#define AJP_NET_F16
+#include "net_conv_coopmat_fp8.glsl"

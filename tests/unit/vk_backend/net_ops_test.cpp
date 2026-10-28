@@ -87,6 +87,11 @@ TEST_CASE("Réseau : opérations élément par élément et diffusion", "[vk_bac
   check_op({.op = "Relu", .x = {1, 3, 7, 9}});
   check_op({.op = "Sigmoid", .x = {1, 4, 5, 6}});
   check_op({.op = "Tanh", .x = {2, 3, 4, 5}});
+  // Paire Q/DQ FP8 fusionnée : arrondi E4M3 à l'échelle posée (des valeurs de test dépassant 448 × s
+  // saturent).
+  check_op({.op = "FakeQuantE4M3", .x = {1, 3, 7, 9}, .extra_inputs = {"s"}, .setup = [](ModelBuilder& m) {
+              m.initializer(tensor_f32("s", {}, std::vector<float>{0.004F}));
+            }});
   check_op({.op = "LeakyRelu", .x = {1, 3, 5, 5}, .attrs = {}});
   check_op({.op = "Clip", .x = {1, 3, 6, 6}, .extra_inputs = {"lo", "hi"}, .setup = [](ModelBuilder& m) {
               m.initializer(tensor_f32("lo", {}, std::vector<float>{-0.25F}));

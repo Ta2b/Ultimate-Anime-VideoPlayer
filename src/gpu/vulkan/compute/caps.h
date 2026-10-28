@@ -15,6 +15,19 @@
 
 namespace ajp::gpu::vk {
 
+// VK_EXT_shader_float8, absente des en-têtes Vulkan plus anciens : nom, type de structure et
+// structure des fonctions (deux champs d'après la spécification ; des champs de réserve la
+// protègent d'un pilote qui en écrirait davantage).
+inline constexpr const char* kShaderFloat8ExtensionName = "VK_EXT_shader_float8";
+inline constexpr auto kStructureTypeShaderFloat8Features = static_cast<VkStructureType>(1000567000);
+struct ShaderFloat8Features {
+  VkStructureType sType = kStructureTypeShaderFloat8Features;
+  void* pNext = nullptr;
+  VkBool32 shaderFloat8 = VK_FALSE;
+  VkBool32 shaderFloat8CooperativeMatrix = VK_FALSE;
+  VkBool32 reserved[6] = {};
+};
+
 // Fonctions facultatives du calcul : disponibles sur l'appareil, ou activées sur le VkDevice.
 struct Features {
   bool timeline_semaphore = false;    // obligatoire : soumission et attente par valeur
@@ -29,6 +42,7 @@ struct Features {
   bool vulkan_memory_model_device_scope = false;
   bool cooperative_matrix = false;  // VK_KHR_cooperative_matrix (unités matricielles)
   bool float_atomic_add = false;    // VK_EXT_shader_atomic_float : softmax splatting de GMFSS
+  bool float8_matrix = false;       // VK_EXT_shader_float8 : matrices coopératives FP8 (RDNA 4)
 };
 
 // Adresse PCI d'un appareil (VK_EXT_pci_bus_info).

@@ -10,7 +10,8 @@
 // Variante « _f16 » : tenseurs float16 permis, calcul en float. Variante « _f16p » (AJP_CONV_PACKED,
 // fp16 de calcul) : poids float16, produits en f16vec4 sommés par paquets de 16 canaux, puis
 // ajoutés en float. Une entrée float16 en Nhwc16 sans groupes (VEC) se lit par uvec4, huit
-// canaux d'un pixel par lecture. Référence : gpu/ir/op_window.cpp (eval_conv).
+// canaux d'un pixel par lecture. IN_Q et OUT_Q : arrondi FP8 E4M3 de l'entrée et du résultat
+// (ConvAttrs::in_quant et out_quant). Référence : gpu/ir/op_window.cpp (eval_conv).
 #include "net_tensor.glsl"
 #include "net_activation.glsl"
 #ifdef AJP_CONV_PACKED
@@ -53,6 +54,13 @@ layout(constant_id = 30) const uint QUADS = 1;
 layout(constant_id = 32) const uint PIX = 1;  // 31 : la taille du groupe de travail
 layout(constant_id = 33) const uint SPACE = 0;      // DepthToSpace fondu : blocs de SPACE × SPACE
 layout(constant_id = 34) const uint SPACE_CRD = 0;  // 1 : ordre CRD, 0 : DCR
+layout(constant_id = 35) const float IN_Q = 0.0;    // > 0 : x arrondi à la grille E4M3 de cette échelle
+layout(constant_id = 36) const float OUT_Q = 0.0;   // > 0 : résultat arrondi de même, après le biais
+
+// L'entrée de la Conv telle que la lit le FP8 (ConvAttrs::in_quant) ; la porte relit x brut.
+float quant_in(float v) {
+  return IN_Q > 0.0 ? round_e4m3(v / IN_Q) * IN_Q : v;
+}
 
 const uint CING = CIN / GROUPS;
 const uint COUTG = COUT / GROUPS;
@@ -135,6 +143,7 @@ void main() {
               vec4 w1 = weights.w[row + (ci + 1u) * QUADS + q];
               for (uint p = 0u; p < PIX; ++p) {
                 vec2 xv = unpackHalf2x16(packed[p][h]);
+                if (IN_Q > 0.0) xv = vec2(quant_in(xv.x), quant_in(xv.y));
                 acc[p * QUADS + q] += xv.x * w0;
                 acc[p * QUADS + q] += xv.y * w1;
               }
@@ -148,7 +157,7 @@ void main() {
         for (uint ci = full * 8u; ci < CING; ++ci) {
           float xv[PIX];
           for (uint p = 0u; p < PIX; ++p)
-            xv[p] = inside[p] ? AJP_LOAD(src, TX, t_index(xd, n, ci, uint(iy), uint(ix[p]))) : 0.0;
+            xv[p] = inside[p] ? quant_in(AJP_LOAD(src, TX, t_index(xd, n, ci, uint(iy), uint(ix[p])))) : 0.0;
           for (uint q = 0u; q < QUADS; ++q) {
             vec4 wv = vec4(weights.w[row + ci * QUADS + q]);
             for (uint p = 0u; p < PIX; ++p) acc[p * QUADS + q] += xv[p] * wv;
@@ -165,7 +174,7 @@ void main() {
         for (uint ci = c0; ci < c1; ++ci) {
           float16_t xv[PIX];
           for (uint p = 0u; p < PIX; ++p) {
-            xv[p] = inside[p] ? float16_t(AJP_LOAD(src, TX, t_index(xd, n, g * CING + ci, uint(iy), uint(ix[p]))))
+            xv[p] = inside[p] ? float16_t(quant_in(AJP_LOAD(src, TX, t_index(xd, n, g * CING + ci, uint(iy), uint(ix[p])))))
                               : float16_t(0.0);
           }
           for (uint q = 0u; q < QUADS; ++q) {
@@ -179,7 +188,7 @@ void main() {
       for (uint ci = 0u; ci < CING; ++ci) {
         float xv[PIX];
         for (uint p = 0u; p < PIX; ++p)
-          xv[p] = inside[p] ? AJP_LOAD(src, TX, t_index(xd, n, g * CING + ci, uint(iy), uint(ix[p]))) : 0.0;
+          xv[p] = inside[p] ? quant_in(AJP_LOAD(src, TX, t_index(xd, n, g * CING + ci, uint(iy), uint(ix[p])))) : 0.0;
         for (uint q = 0u; q < QUADS; ++q) {
           vec4 wv = weights.w[row + ci * QUADS + q];
           for (uint p = 0u; p < PIX; ++p) acc[p * QUADS + q] += xv[p] * wv;
@@ -198,6 +207,7 @@ void main() {
         if (o >= COUTG) continue;
         uint co = g * COUTG + o;
         float v = acc[p * QUADS + q][k] + bias.v[co];
+        if (OUT_Q > 0.0) v = round_e4m3(v / OUT_Q) * OUT_Q;
         if (RESIDUAL == 1u) v += AJP_LOAD(res, TR, t_index(rd, n, co, oy, ox));
         v = net_activate(ACT, v, ALPHA, LO, HI, ACT == kActPrelu ? slope.v[co] : 0.0);
         // Porte de SPAN : sortie de la forme de x, lue au même élément.

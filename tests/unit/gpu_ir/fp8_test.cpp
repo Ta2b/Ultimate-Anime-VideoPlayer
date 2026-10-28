@@ -9,7 +9,9 @@
 
 #include <catch2/catch_test_macros.hpp>
 
+#include "gpu/ir/fp8_weights.h"
 #include "gpu/ir/passes.h"
+#include "kernels/ref/half.h"
 #include "test_util.h"
 
 using ajp::RefusalCode;
@@ -144,4 +146,100 @@ TEST_CASE("fp8 : des poids quantifiés par canal se plient avec l'échelle de le
     const float s = scale[k / 2];
     CHECK(graph.tensors[id].value.f[k] == round_to_e4m3(w[k] / s) * s);
   }
+}
+
+namespace {
+
+// QDQ(x) sous le nom out, de l'échelle scalaire scale_name (zéros FP8 posés à part).
+void quant_dequant(ModelBuilder& m, std::string_view in, std::string_view scale, std::string_view zero_q,
+                   std::string_view zero_d, std::string_view mid, std::string_view out) {
+  m.node("QuantizeLinear", {in, scale, zero_q}, {mid});
+  m.node("DequantizeLinear", {mid, scale, zero_d}, {out});
+}
+
+ModelBuilder two_convs() {
+  ModelBuilder m(19);
+  m.input("x", {1, 4, 6, 6});
+  m.weight("s1", {}, {0.02F}).weight("s2", {}, {0.05F});
+  for (const char* z : {"z1", "z2", "z3", "z4"}) m.initializer(fp8_zero(z));
+  m.weight("w1", {4, 4, 3, 3}, sequence(4 * 4 * 3 * 3, -0.5F, 0.5F));
+  m.weight("b1", {4}, {0.1F, -0.2F, 0.05F, 0.0F});
+  m.weight("w2", {4, 4, 1, 1}, sequence(16, -1.0F, 1.0F, 5));
+  quant_dequant(m, "x", "s1", "z1", "z2", "xq", "xd");
+  m.node("Conv", {"xd", "w1", "b1"}, {"t1"}, {attr_ints("pads", {1, 1, 1, 1})});
+  quant_dequant(m, "t1", "s2", "z3", "z4", "t1q", "t1d");
+  m.node("Conv", {"t1d", "w2"}, {"t2"});
+  m.node("Add", {"t2", "t1d"}, {"sum"});
+  m.node("Relu", {"sum"}, {"y"});
+  m.output("y");
+  return m;
+}
+
+const ConvAttrs& conv_attrs(const Graph& graph, std::size_t which) {
+  std::size_t seen = 0;
+  for (const Node& node : graph.nodes) {
+    if (node.op != OpKind::Conv) continue;
+    if (seen++ == which) return std::get<ConvAttrs>(node.attrs);
+  }
+  FAIL("Conv absente");
+  return std::get<ConvAttrs>(graph.nodes[0].attrs);
+}
+
+}  // namespace
+
+TEST_CASE("fp8 : les FakeQuantE4M3 entrent dans les Conv et le résultat ne change pas", "[gpu_ir][fp8]") {
+  const Graph before = build(two_convs());
+  REQUIRE(count_ops(before, OpKind::FakeQuantE4M3) == 2);
+  Graph after = before;
+  const PassStats stats = *optimize(after);
+  CHECK(stats.quants == 2);
+  CHECK(count_ops(after, OpKind::FakeQuantE4M3) == 0);
+  // Premier FakeQuant : seul lecteur de xd, la première Conv arrondit son entrée. Second : lu par
+  // la Conv et l'Add, donc la première Conv arrondit sa sortie, après son biais.
+  CHECK(conv_attrs(after, 0).in_quant == 0.02F);
+  CHECK(conv_attrs(after, 0).out_quant == 0.05F);
+  CHECK(conv_attrs(after, 1).in_quant == 0.0F);
+  CHECK(conv_attrs(after, 1).epilogue.residual);
+  CHECK(conv_attrs(after, 1).epilogue.act == Activation::Relu);
+
+  const std::vector<NamedValue> inputs{{"x", random_floats({1, 4, 6, 6}, 3, -3.0F, 3.0F)}};
+  const Value ref = execute1(before, inputs);
+  const Value fused = execute1(after, inputs);
+  CHECK(max_abs_diff(ref.f, fused.f) == 0.0F);
+}
+
+TEST_CASE("fp8 : les octets et les échelles des poids se retrouvent", "[gpu_ir][fp8]") {
+  const Dims dims{3, 2, 3, 3};
+  const std::vector<float> raw = sequence(count_of(dims), -2.0F, 2.0F, 9);
+  const auto quantize = [&](const std::vector<float>& scales, bool half) {
+    Value w = floats(dims, raw);
+    const std::size_t per = raw.size() / 3;
+    for (std::size_t k = 0; k < raw.size(); ++k) {
+      const float s = scales[k / per];
+      w.f[k] = round_to_e4m3(raw[k] / s) * s;
+      if (half) w.f[k] = ajp::kernels::ref::round_to_half(w.f[k]);
+    }
+    // Le plus grand poids de chaque canal ou du tenseur sur 448 : amax / 448 = l'échelle.
+    return w;
+  };
+  // Échelle par canal choisie comme amax / 448 : retrouvée exactement, en float comme en float16.
+  std::vector<float> scales;
+  for (std::size_t c = 0; c < 3; ++c) {
+    float amax = 0.0F;
+    for (std::size_t k = 0; k < raw.size() / 3; ++k)
+      amax = std::max(amax, std::fabs(raw[(c * (raw.size() / 3)) + k]));
+    scales.push_back(amax / 448.0F);
+  }
+  for (const bool half : {false, true}) {
+    const Value w = quantize(scales, half);
+    const auto found = recover_fp8_weights(w);
+    REQUIRE(found);
+    for (std::size_t k = 0; k < w.f.size(); ++k) {
+      const float rebuilt = e4m3_to_float(found->bytes[k]) * found->scale[k / (w.f.size() / 3)];
+      CHECK(std::fabs(rebuilt - w.f[k]) <= std::ldexp(std::fabs(w.f[k]), -10));
+    }
+  }
+  // Des poids quelconques (hors grille) ne sont pas retrouvés.
+  CHECK_FALSE(recover_fp8_weights(floats(dims, raw)));
+  CHECK_FALSE(recover_fp8_weights(floats({4}, {1.0F, 2.0F, 3.0F, 4.0F})));
 }

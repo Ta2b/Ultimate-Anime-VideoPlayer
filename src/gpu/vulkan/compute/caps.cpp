@@ -53,6 +53,11 @@ void read_link(const VkBaseInStructure& link, Features& f) {
       f.cooperative_matrix = f.cooperative_matrix || yes(matrix.cooperativeMatrix);
       break;
     }
+    case kStructureTypeShaderFloat8Features: {
+      const auto& f8 = reinterpret_cast<const ShaderFloat8Features&>(link);
+      f.float8_matrix = f.float8_matrix || (yes(f8.shaderFloat8) && yes(f8.shaderFloat8CooperativeMatrix));
+      break;
+    }
     case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_ATOMIC_FLOAT_FEATURES_EXT: {
       const auto& atomic = reinterpret_cast<const VkPhysicalDeviceShaderAtomicFloatFeaturesEXT&>(link);
       f.float_atomic_add = f.float_atomic_add || yes(atomic.shaderBufferFloat32AtomicAdd);
@@ -176,6 +181,8 @@ Features available_features(const InstanceFunctions& fn, VkPhysicalDevice device
   VkPhysicalDeviceShaderAtomicFloatFeaturesEXT atomic{
       .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_ATOMIC_FLOAT_FEATURES_EXT, .pNext = v12.pNext};
   if (has_extension(extensions, VK_EXT_SHADER_ATOMIC_FLOAT_EXTENSION_NAME)) v12.pNext = &atomic;
+  ShaderFloat8Features float8{.pNext = v12.pNext};
+  if (has_extension(extensions, kShaderFloat8ExtensionName)) v12.pNext = &float8;
   VkPhysicalDeviceFeatures2 all{.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2, .pNext = &v11};
   fn.vkGetPhysicalDeviceFeatures2(device, &all);
   return features_from_chain(&all);
