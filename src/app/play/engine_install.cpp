@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cctype>
 #include <chrono>
+#include <cmath>
 #include <cstdio>
 #include <format>
 #include <fstream>
@@ -233,7 +234,7 @@ std::string format_size(std::uint64_t bytes) {
   constexpr double kMiB = 1048576.0;
   const double mib = static_cast<double>(bytes) / kMiB;
   if (mib >= 1024.0) return std::format("{:.1f} Go", mib / 1024.0);
-  return std::format("{} Mo", static_cast<std::uint64_t>(mib + 0.5));
+  return std::format("{} Mo", static_cast<std::uint64_t>(std::lround(mib)));
 }
 
 std::uint64_t free_bytes(const std::filesystem::path& where) {
