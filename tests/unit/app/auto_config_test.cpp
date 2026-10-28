@@ -131,6 +131,13 @@ TEST_CASE("play.toml garde le préréglage et la priorité", "[auto_config][sett
   CHECK_FALSE(parse_settings("version = 1\n[auto]\npreset = \"turbo\"\n"));
 }
 
+TEST_CASE("l'interpolation est en Auto par défaut et après le benchmark", "[auto_config]") {
+  CHECK(PlaySettings{}.rife_auto);
+  const PlaySettings measured = applied(Preset::Auto, Tier::Fast, 1440, 144.0);
+  CHECK(measured.rife_auto);
+  CHECK_FALSE(applied(Preset::Auto, Tier::Economy, 1080, 60.0).rife_auto);  // Économe : rien à interpoler
+}
+
 TEST_CASE("un réglage de chaîne fait à la main se voit, pas un réglage de lecture", "[auto_config]") {
   const ajp::app::play::PlaySettings base;
   ajp::app::play::PlaySettings moved = base;

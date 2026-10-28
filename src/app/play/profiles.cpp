@@ -167,6 +167,9 @@ PlaySettings apply_profile(const core::Profile& profile, const core::SourceInfo&
         }
         settings.rife_factor = factor.num;
         settings.rife_factor_den = factor.den;
+        // Auto pour tout facteur entier (le multiplicateur du profil en est le plafond d'origine) ; une
+        // moitié (×1,5) n'a pas de mode auto.
+        settings.rife_auto = factor.den == 1;
         break;
       }
       case core::StepKind::Upscale:
