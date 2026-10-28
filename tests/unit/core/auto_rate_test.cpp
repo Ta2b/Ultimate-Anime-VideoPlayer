@@ -17,9 +17,27 @@ TEST_CASE("auto : descend vite, remonte lentement", "[core][auto_rate]") {
   AutoRate rate(4);
   CHECK(rate.step() == 2);
   CHECK(rate.pair(true) == 1);
-  CHECK(rate.pair(true) == 1);  // plancher
+  CHECK(rate.pair(true) == 1);  // plancher (retard ignoré : temps de grâce)
+  for (std::uint32_t i = 0; i < AutoRate::kGracePairs - 1; ++i) rate.pair(false);
   for (std::uint32_t i = 0; i + 1 < AutoRate::kRisePairs; ++i) CHECK(rate.pair(false) == 1);
   CHECK(rate.pair(false) == 2);
+}
+
+TEST_CASE("auto : les retards d'une file déjà faite ne font pas chuter en cascade", "[core][auto_rate]") {
+  AutoRate rate(6);
+  rate.set_ceiling(6);
+  for (int i = 0; i < 100; ++i) rate.pair(false);
+  const int before = rate.step();
+  CHECK(rate.pair(true) == before - 1);
+  for (std::uint32_t i = 0; i < AutoRate::kGracePairs; ++i) CHECK(rate.pair(true) == before - 1);
+  CHECK(rate.pair(true) == before - 2);  // la grâce finie, un vrai retard descend
+}
+
+TEST_CASE("auto : un saut (seek) ignore les premières paires", "[core][auto_rate]") {
+  AutoRate rate(4);
+  rate.settle();
+  for (std::uint32_t i = 0; i < AutoRate::kGracePairs; ++i) CHECK(rate.pair(true) == 2);
+  CHECK(rate.pair(true) == 1);
 }
 
 TEST_CASE("auto : un palier qui échoue est re-tenté plus tard", "[core][auto_rate]") {

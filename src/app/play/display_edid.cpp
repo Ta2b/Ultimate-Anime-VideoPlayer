@@ -279,9 +279,7 @@ std::optional<std::uint64_t> drm_property(int fd, std::uint32_t object, std::uin
   return std::nullopt;
 }
 
-// Le VRR d'une sortie (« card1-DP-1 ») : vrr_capable du connecteur ET VRR_ENABLED du CRTC que son
-// encodeur alimente, lus en lecture seule sur le nœud DRM (le même état que celui posé par le
-// compositeur).
+// Le VRR d'une sortie (« card1-DP-1 ») : vrr_capable du connecteur, lu en lecture seule sur le nœud DRM.
 std::optional<bool> drm_vrr(const std::filesystem::path& dir) {
   const std::string name = dir.filename().string();
   const std::size_t dash = name.find('-');
@@ -290,22 +288,13 @@ std::optional<bool> drm_vrr(const std::filesystem::path& dir) {
   if (connector_text.empty()) return std::nullopt;
   const std::uint32_t connector_id =
       static_cast<std::uint32_t>(std::strtoul(connector_text.c_str(), nullptr, 10));
-  const int fd = open(("/dev/dri/" + name.substr(0, dash)).c_str(), O_RDWR | O_CLOEXEC);
+  const int fd = open(("/dev/dri/" + name.substr(0, dash)).c_str(), O_RDONLY | O_CLOEXEC);
   if (fd < 0) return std::nullopt;
+  // Capable suffit : KDE (adaptive sync « Automatique », le défaut) n'arme VRR_ENABLED qu'en plein
+  // écran, jamais au lancement en fenêtre. Seul un VRR coupé à la main passerait à côté.
   std::optional<bool> result;
   const auto capable = drm_property(fd, connector_id, DRM_MODE_OBJECT_CONNECTOR, "vrr_capable");
-  if (capable) {
-    result = false;
-    drm_mode_get_connector connector{};
-    connector.connector_id = connector_id;
-    drm_mode_get_encoder encoder{};
-    if (*capable != 0 && ioctl(fd, DRM_IOCTL_MODE_GETCONNECTOR, &connector) >= 0 &&
-        connector.encoder_id != 0) {
-      encoder.encoder_id = connector.encoder_id;
-      if (ioctl(fd, DRM_IOCTL_MODE_GETENCODER, &encoder) >= 0 && encoder.crtc_id != 0)
-        result = drm_property(fd, encoder.crtc_id, DRM_MODE_OBJECT_CRTC, "VRR_ENABLED").value_or(0) != 0;
-    }
-  }
+  if (capable) result = *capable != 0;
   close(fd);
   return result;
 }

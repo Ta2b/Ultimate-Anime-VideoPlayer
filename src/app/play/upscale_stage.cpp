@@ -280,7 +280,6 @@ std::expected<std::uint32_t, Refusal> UpscaleStage::outputs(const DecodedFrame& 
       if (middles > 0 && late == middles) wanted = 1;
     }
   }
-  if (interpolates() && setup_.live) setup_.live->auto_pair(late > 0);
   PairFacts facts{.factor = wanted,
                   .same_epoch = previous_ && previous_->epoch == frame.epoch,
                   .gap_us = previous_ && previous_->pts_us != kNoPts && frame.pts_us != kNoPts
@@ -317,6 +316,14 @@ std::expected<std::uint32_t, Refusal> UpscaleStage::outputs(const DecodedFrame& 
   intermediates_ = 0;
   instants_[0] = Instant{.t = 1.0F, .pts_us = frame.pts_us};
   const bool runs = on_grid && rife_runs(facts);
+  // Mode auto : seules les paires qui ont chargé le GPU disent s'il tient ; à ×1 rien ne tourne, le
+  // temps seul compte. Coupe de scène ou dessin tenu : aucun signal.
+  if (interpolates() && setup_.live) {
+    if (!facts.same_epoch)
+      setup_.live->auto_settle();
+    else if (runs || factor.num <= factor.den)
+      setup_.live->auto_pair(late > 0);
+  }
   // Coupe ou dessin tenu : les instants de la paire manquent à dessein, pas faute de temps.
   uninterpolated_ =
       on_grid && !runs && facts.factor > 1 && facts.scores &&

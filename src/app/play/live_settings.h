@@ -89,6 +89,11 @@ class LiveSettings {
     const std::scoped_lock lock(mutex_);
     if (auto_on_) auto_.pair(late);
   }
+  // Seek, saut d'époque : la mesure du mode auto repart après quelques paires.
+  void auto_settle() {
+    const std::scoped_lock lock(mutex_);
+    if (auto_on_) auto_.settle();
+  }
   // Le facteur à appliquer maintenant : le palier auto, ou le facteur réglé.
   Factor factor_now() const {
     const std::scoped_lock lock(mutex_);

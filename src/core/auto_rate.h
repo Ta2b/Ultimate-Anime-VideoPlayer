@@ -20,6 +20,9 @@ class AutoRate {
   // Paires propres avant de tenter un palier de plus (3 s à 24 i/s), doublé à chaque échec récent.
   static constexpr std::uint32_t kRisePairs = 72;
   static constexpr int kMaxBackoff = 4;
+  // Paires ignorées après une descente ou un saut : celles déjà en file ont été faites
+  // au palier d'avant et reviendraient en retard à tort (descente en cascade).
+  static constexpr std::uint32_t kGracePairs = 6;
 
   // `ceiling` : le palier le plus haut permis (1 à kAutoMaxStep). Le départ est ×2 (ou le plafond).
   explicit AutoRate(int ceiling = kAutoMaxStep);
@@ -32,10 +35,13 @@ class AutoRate {
   // L'issue d'une paire : en retard (des instants sautés pour rattraper l'horloge) ou à l'heure.
   // Rend le palier à utiliser pour la paire suivante.
   int pair(bool late);
+  // Seek, pause, reprise : la mesure repart après kGracePairs paires.
+  void settle() { grace_ = kGracePairs; }
 
  private:
   int ceiling_;
   int step_;
+  std::uint32_t grace_ = 0;  // paires à ignorer encore
   std::uint32_t clean_ = 0;  // paires à l'heure depuis le dernier changement
   int backoff_ = 0;          // échecs récents de montée
   bool probing_ = false;     // le palier courant vient d'être tenté
