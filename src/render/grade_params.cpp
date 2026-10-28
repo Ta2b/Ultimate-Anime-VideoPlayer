@@ -189,7 +189,8 @@ std::expected<GradeDecision, Refusal> decide_grade(const GradeSettings& s, const
   p.expand = s.expand;
   p.emulate = 0.0;
   p.sdr_white = grade_limits::kSdrWhiteNits;
-  const bool look = native_sdr && s.truehdr_look;  // l'aspect adaptatif : la route native seule, pas le mode SDR
+  const bool look =
+      native_sdr && s.truehdr_look;  // l'aspect adaptatif : la route native seule, pas le mode SDR
   if (look) {
     apply_truehdr_look(s, peak, p);
     p.adapt = 1.0;  // le HDR adaptatif : la route native de tous les GPU suit la scène
