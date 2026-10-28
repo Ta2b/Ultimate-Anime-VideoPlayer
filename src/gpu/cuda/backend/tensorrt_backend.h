@@ -39,6 +39,7 @@ class TrtLog;
 class SharedActivations;
 class SpanFp8Engine;
 class RifeFusedEngine;
+class DrbaFusedEngine;
 
 class TensorRtBackend final : public Backend, public KernelOps {
  public:
@@ -182,7 +183,14 @@ class TensorRtBackend final : public Backend, public KernelOps {
   std::expected<std::unique_ptr<Engine>, Refusal> load_rife_fused(const Artifact& artifact);
   std::expected<void, Refusal> enqueue_rife_fused(RifeFusedEngine& engine, std::span<const Tensor> inputs,
                                                   std::span<Tensor> outputs);
-  // Les réglages de trtexec de cet appareil (build, build_rife_fused).
+  // DistilDRBA fusionné (tensorrt_drba_fused.cpp) : un manifeste « .drbafused » à la place de l'ONNX, quatre
+  // moteurs construits par trtexec, chargés ensemble.
+  std::expected<Artifact, Refusal> build_drba_fused(const ModelSpec& model, const ShapeSet& shapes,
+                                                    Progress& progress);
+  std::expected<std::unique_ptr<Engine>, Refusal> load_drba_fused(const Artifact& artifact);
+  std::expected<void, Refusal> enqueue_drba_fused(DrbaFusedEngine& engine, std::span<const Tensor> inputs,
+                                                  std::span<Tensor> outputs);
+  // Les réglages de trtexec de cet appareil (build, build_rife_fused, build_drba_fused).
   prepare::TrtexecConfig trtexec_config() const;
   // La voie lane le temps d'une portée : RTX HDR reste sur la file de son ouverture.
   class LaneScope {

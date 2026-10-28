@@ -1,0 +1,48 @@
+# DistilDRBA v2 lite 1088x1920 (28/10/2026) : tout ce qui n'est pas convolution en noyaux CUDA FP16 fusionnés + 4 petits moteurs TensorRT.
+# RTX 4070 Ti, TensorRT 11.3, graphe CUDA, médiane de 200 itérations après 200 de chauffe, VRAIES données (paires de s9, décalage 20 px, tau 0,5).
+
+## Découpe (plie.py, decoupe.py, ref_bornes.py)
+Graphe plié (Shape/Gather/Constant/Range/Reciprocal évalués) : 1060 -> 369 noeuds.
+Moteurs : enc (lot de 3 images au quart : 3x3x272x480 -> 3x16x272x480),
+  bloc 0 (X0 58x68x120 -> Y0 52x34x60), bloc 1 (X1 109x136x240 -> Y1 52x68x120), bloc 2 (X2 109x272x480 -> Y2 52x136x240).
+Colle : tout le reste (réductions 2x2 des images et des encodages, côté de la paire par le Clip de tau, DepthToSpace, Resize x2 / x4, flot, grilles, GridSample,
+  Concat, sigmoïde, mélange). L'entrée et la sortie de l'encodeur sont adressées DANS X2 (plans 0-8 et 9-56) : aucune copie de ces 57 canaux.
+Enchaînement des morceaux ORT CPU sans optimisation contre le réseau entier : sorties de blocs et sortie IDENTIQUES bit à bit quand les frontières sont celles du
+  réseau entier ; l'encodeur isolé diffère d'un ulp fp16 sur 11 % des valeurs (ORT garde des valeurs FP32 non arrondies à l'intérieur d'un graphe) et la
+  chaîne ORT complète tombe à 66,8 dB du réseau entier ORT : c'est le plancher de bruit du réseau (la grille de warp est FP16, un ulp = 0,5 pixel à 1920).
+
+## Moteurs seuls (trtexec, graphe CUDA, ms, médiane)
+enc 0.106 | bloc0 0.085 | bloc1 0.125 | bloc2 0.379 | somme 0.695 (borne basse si la colle était gratuite)
+réseau entier TensorRT FP16 : 2.10 ms (modèle du lecteur, plié : 2.10).
+
+## Noyaux (vraies données, ms, 20 répétitions par graphe)
+pre (images 1/4, 1/8, 1/16, temps)    0.0196
+post (encodages 1/2 et 1/4)           0.0176
+colle 1 (-> X1)                       0.0089
+colle 2 (-> X2)                       0.0212
+fin (sortie)                          0.0849   écrit 12,5 Mo et lit ~25 Mo : borne mémoire 0,075 ms
+somme noyaux                          0.152
+somme moteurs + noyaux isolés         0.842 ; chaîne en un graphe CUDA 0.918
+
+## Vérification noyau par noyau contre ORT CPU (entrées = tenseurs de référence du même passage)
+pre : exact (0 différence sur 1,5 M valeurs) ; post : 1 ulp (ORT ne calcule pas le Resize FP32 sur la valeur arrondie) ;
+colle 1 : masque/attributs/flot exacts, warps 79,7 dB ; colle 2 : 72,1 dB ; fin : 64,4 dB. Une émulation numpy indépendante de la fin donne les mêmes écarts que le noyau
+(le reste vient d'ORT : sorties de Resize arrondies en FP16 puis Mul en FP32 sans cet arrondi).
+
+## ABAB (même séance, 3 tours, ms médians) : A = chaîne fusionnée, B = réseau entier trtexec, B' = idem par le banc
+tour 1 : A 0.9155  B 2.098  B' 2.108
+tour 2 : A 0.9175  B 2.099  B' 2.110
+tour 3 : A 0.9185  B 2.099  B' 2.112
+=> 0.917 ms contre 2.099 ms : -56,3 % (seuil -30 %).
+
+## Qualité de l'image interpolée contre ORT CPU FP16 du réseau entier (pic 1,0 ; SSIM fenêtre 7x7 uniforme, float64), sortie `out`
+cas           chaîne fusionnée          TensorRT FP16 entier        chaîne contre TensorRT entier
+s5_6          67.08 dB 0.999957         68.69 dB 0.999970           67.16 dB
+s5_20         64.93 dB 0.999928         65.33 dB 0.999941           65.80 dB
+s9_6          60.39 dB 0.999898         61.32 dB 0.999934           61.20 dB
+s9_20         57.94 dB 0.999859         59.16 dB 0.999909           58.54 dB
+s14_6         63.05 dB 0.999914         63.52 dB 0.999941           63.04 dB
+s14_20        60.68 dB 0.999875         60.88 dB 0.999902           61.01 dB
+s9_20 tau1.25 59.58 dB 0.999895         59.39 dB 0.999919           58.72 dB
+(référence ORT sans optimisation ; contre ORT avec ses optimisations par défaut : à 0,2 dB près)
+=> >= 57,9 dB (seuil 50 dB), à moins de 1,3 dB du TensorRT FP16 entier lui-même ; l'écart est dominé par la grille FP16 du réseau (voir plus haut).
