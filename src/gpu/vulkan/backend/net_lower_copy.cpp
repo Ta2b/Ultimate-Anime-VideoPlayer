@@ -45,6 +45,12 @@ std::expected<void, Refusal> Lowerer::concat(std::size_t index) {
     const auto bytes = slab_offset(*y->tensor, logical, start);
     start += x->tensor->dims[logical];
     if (bytes && aliased(aliases_, id, n.outputs[0], *bytes)) continue;
+    // Entrée Nhwc16 écrite en place par sa Conv, dans sa tranche de canaux.
+    if (*axis == 1 &&
+        channel_slab_of(aliases_, id, n.outputs[0],
+                        static_cast<std::uint64_t>(c.out_offset[1]) * ir::element_size(x->tensor->type))) {
+      continue;
+    }
     const std::array tensors{*x, *y};
     auto name = shader("net_copy", tensors);
     if (!name) return std::unexpected(name.error());
