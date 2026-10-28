@@ -204,32 +204,24 @@ std::expected<std::optional<ChainEngines>, Refusal> prepare_chain_once(Player& p
       c.backend_name != "tensorrt" && rebar.rfind("inactif", 0) == 0)
     log->warn("Resizable BAR inactif : activer Above 4G Decoding et Resizable BAR dans le BIOS");
 
-  // La variante de SPAN du cran (precision.h) quand tools/span/quantize_span.py en a laissé une qui passe
-  // ses garde-fous (span_int8.h) : Performance prend le FP8 (moteur qui l'accélère), puis l'INT8 ; Équilibre
-  // l'INT8, sinon le FP16 tel que livré ; Qualité le FP32. Le SPAN choisi sinon, et aussi si TensorRT refuse
-  // la variante.
+  // La variante de SPAN du cran (precision.h) quand tools/span/quantize_span.py ou derive_span_fp8.py en ont
+  // laissé une qui passe ses garde-fous (span_int8.h) : Performance prend le SPAN entier en noyaux CUTLASS
+  // FP8 (moteur qui l'annonce : RTX 40), puis le FP8 par Q/DQ (moteur qui l'accélère), puis l'INT8 ;
+  // Équilibre l'INT8, sinon le FP16 tel que livré ; Qualité le FP32. Chaque variante refusée au chargement
+  // (autre GPU, taille que les noyaux ne prennent pas, erreur CUDA, TensorRT qui la refuse) laisse la place à
+  // la suivante, et la dernière au SPAN choisi, en FP16 sous TensorRT.
   if (c.model) {
     const std::filesystem::path variants = p.paths.engines.parent_path() / "modeles";
     const gpu::BackendCaps caps = c.backend->capabilities();
     const PrecisionTier tier = settings.span_precision;
     std::vector<SpanVariantKind> wanted;
+    if (tier == PrecisionTier::Performance && caps.span_fp8_cutlass)
+      wanted.push_back(SpanVariantKind::Fp8Cutlass);
     if (tier == PrecisionTier::Performance && caps.fp8) wanted.push_back(SpanVariantKind::Fp8);
     if (tier != PrecisionTier::Quality && caps.int8) wanted.push_back(SpanVariantKind::Int8);
     if (tier == PrecisionTier::Quality) wanted.push_back(SpanVariantKind::Fp32);
     if (tier == PrecisionTier::Performance && !caps.fp8)
       log->info("SPAN Performance (FP8) : ce moteur ne le calcule pas, variante INT8 ou FP16");
-    for (const SpanVariantKind kind : wanted) {
-      SpanInt8Lookup found = find_span_variant(kind, c.model->path, variants);
-      if (!found.note.empty()) log->info("SPAN {} : {}", variant_text(kind), found.note);
-      if (found.variant) {
-        c.span_int8 = std::move(found.variant);
-        break;
-      }
-    }
-    if (!c.span_int8 && tier != PrecisionTier::Balanced)
-      log->info("SPAN {} : aucune variante, FP16 à la place", label(tier));
-  }
-  if (c.model) {
     const auto prepare_span = [&] {
       return prepare_engine(
           p, init, *c.backend, c.span_int8 ? c.span_int8->onnx : c.model->path,
@@ -240,15 +232,26 @@ std::expected<std::optional<ChainEngines>, Refusal> prepare_chain_once(Player& p
                       .height = c.work.height},
           gpu::Lane::Upscale);
     };
-    auto loaded = prepare_span();
-    if (!loaded && c.span_int8) {
-      log->warn("SPAN {} refusé ({}) : SPAN FP16", variant_text(c.span_int8->kind), loaded.error().detail);
-      c.span_int8.reset();
+    using Prepared = decltype(prepare_span());
+    std::optional<Prepared> loaded;
+    for (const SpanVariantKind kind : wanted) {
+      SpanInt8Lookup found = find_span_variant(kind, c.model->path, variants);
+      if (!found.note.empty()) log->info("SPAN {} : {}", variant_text(kind), found.note);
+      if (!found.variant) continue;
+      c.span_int8 = std::move(found.variant);
       loaded = prepare_span();
+      if (*loaded) break;
+      log->warn("SPAN {} refusé ({}) : variante suivante ou SPAN FP16", variant_text(kind),
+                loaded->error().detail);
+      c.span_int8.reset();
+      loaded.reset();
     }
-    if (!loaded) return std::unexpected(std::move(loaded.error()));
-    if (!*loaded) return std::nullopt;
-    c.engine = std::move(**loaded);
+    if (!c.span_int8 && tier != PrecisionTier::Balanced)
+      log->info("SPAN {} : aucune variante, FP16 à la place", label(tier));
+    if (!loaded) loaded = prepare_span();
+    if (!*loaded) return std::unexpected(std::move(loaded->error()));
+    if (!**loaded) return std::nullopt;
+    c.engine = std::move(***loaded);
   }
   // Au-delà de 720 lignes de travail (la 4K sans réduction), RIFE estime le mouvement sur une copie
   // réduite à 720p et le warp déforme les images de travail : la variante mouvement seulement.

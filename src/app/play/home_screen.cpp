@@ -138,7 +138,8 @@ SettingsChoices home_choices(const HomeScreen& h, const HomeState& st, const Pla
       .gmfss_union_available = gmfss && find_gmfss(places, GmfssVariant::Union).has_value(),
       .gmfss_tiers = gmfss ? gmfss_tiers(places, GmfssVariant::Base, fp8_engine) : TierSupport{},
       .gmfss_union_tiers = gmfss ? gmfss_tiers(places, GmfssVariant::Union, fp8_engine) : TierSupport{},
-      .span_tiers = model ? span_tiers(model->path, h.paths.engines.parent_path() / "modeles", fp8_engine)
+      .span_tiers = model ? span_tiers(model->path, h.paths.engines.parent_path() / "modeles", fp8_engine,
+                                       fp8_engine)  // les noyaux CUTLASS se présument comme le FP8
                           : TierSupport{},
       .rife_tiers = rife ? sibling_tiers(rife->path, fp8_engine) : TierSupport{},
       .drba_tiers = drba_file ? sibling_tiers(drba_file->path, fp8_engine) : TierSupport{},
