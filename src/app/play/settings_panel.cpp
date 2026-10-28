@@ -89,6 +89,7 @@ void hdr_tab(PlaySettings& d, const SettingsChoices& choices) {
       "sur les scènes claires et les grands aplats blancs, ombres plus douces la nuit, éclats isolés vers le "
       "pic.",
       choices.nvidia ? ", sur RTX HDR comme sur le HDR adaptatif" : ""));
+  panel::end_group();  // le dernier encadré s'ouvre dans la zone grisée : il se ferme avant d'en sortir
   ImGui::EndDisabled();
 }
 
@@ -248,6 +249,7 @@ void languages_tab(PlaySettings& d) {
     section(rank == 0 ? "Préférence 1" : "Préférence 2, si la 1re n'est pas disponible");
     language_combo("Langue de l'audio", "Selon le fichier", d.language_presets[rank].audio);
     language_combo("Langue des sous-titres", "Aucun", d.language_presets[rank].subtitles);
+    panel::end_group();  // l'encadré de la section ouvre sa propre fenêtre fille : il se ferme avant le PopID
     ImGui::PopID();
   }
   note(
