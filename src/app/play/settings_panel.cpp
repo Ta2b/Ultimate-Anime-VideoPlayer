@@ -166,7 +166,10 @@ void grade_tab(PlaySettings& d, const SettingsChoices& choices) {
                "lumières), "
                "pour profiter du lecteur sans écran HDR. Le préréglage Éclatant l'accentue.");
   }
-  if (!panel::advanced()) return;
+}
+
+// Avancé > Rendu : ce qui touche l'affichage final et l'écran OLED, sorti de Couleurs (réglages rares).
+void render_page(PlaySettings& d, const SettingsChoices& choices) {
   section("Composition finale");
   if (ImGui::BeginCombo("Filtre vers la fenêtre", std::string(label(d.final_scaler)).c_str())) {
     for (int i = 0; i < kFinalScalerCount; ++i) {
@@ -506,10 +509,12 @@ struct PageInfo {
   bool advanced;  // seulement avec la case « Réglages avancés »
 };
 // L'arbre : l'ordre est celui de l'écran. Les catégories se déduisent du changement de `category`.
-constexpr std::array<PageInfo, 15> kPages{{
+constexpr std::array<PageInfo, 16> kPages{{
     {"Général", "Configuration", false},
     {"Général", "Lecteur par défaut", false},  // masquée quand « Ne plus me le demander » est coché
     {"Général", "Mises à jour", false},
+    {"Général", "Statistiques", false},
+    {"Général", "Réinitialiser", false},
     {"Image IA", "Agrandissement", false},
     {"Image IA", "Fluidité", false},
     {"HDR", "Conversion", false},
@@ -519,8 +524,7 @@ constexpr std::array<PageInfo, 15> kPages{{
     {"Langues et sous-titres", "Sous-titres", false},
     {"Export", "Fichier", false},
     {"Moteurs", "Installés", false},
-    {"Avancé", "Affichage", true},
-    {"Avancé", "Réinitialiser", true},
+    {"Avancé", "Rendu", true},
     {"Avancé", "Lecteur par défaut", true},
 }};
 
@@ -536,6 +540,15 @@ SettingsPanel::~SettingsPanel() = default;
 SettingsPanel::Result SettingsPanel::draw(const PlaySettings& running, const SettingsChoices& choices,
                                           float scale, std::vector<Input>& actions) {
   Result result;
+  if (!prompt_done_ && choices.offer_default_player && !running.default_player_dismissed &&
+      default_player_prompt(choices.place, prompt_note_, prompt_dismissed_, scale)) {
+    prompt_done_ = true;
+    if (prompt_dismissed_) {
+      PlaySettings quiet = running;
+      quiet.default_player_dismissed = true;
+      result.live = quiet;
+    }
+  }
   if (!open_) return result;
   // Réglages changés ailleurs (Tab, volume) : le panneau les reprend, sans perdre ce qui attend.
   if (running != seen_) {
@@ -613,8 +626,10 @@ SettingsPanel::Result SettingsPanel::draw(const PlaySettings& running, const Set
         export_tab(*export_, running, choices, actions);
       } else if (name == "Installés") {
         engines_tab(choices, engine_draft_, actions, draft_.engines_dir);
-      } else if (name == "Affichage") {
+      } else if (name == "Statistiques") {
         stats_tab(draft_);
+      } else if (name == "Rendu") {
+        render_page(draft_, choices);
       } else if (name == "Réinitialiser") {
         reset_page(actions, choices.profiles);
       }

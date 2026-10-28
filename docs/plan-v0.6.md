@@ -26,7 +26,7 @@ que sur un accord clair de Tatoub dans le fil. Détail des décisions et journal
 
 1. Audio : profils faits (#64) ; reste distance des enceintes virtuelles, pièce/réverbération légère, égaliseur, compression de dynamique « nuit », profils nommés enregistrables par appareil.
 2. Réglages avancés : audit fait (#61) ; reste la page avancée « Rendu », l'OLED coché automatiquement à la détection, Réinitialiser hors des avancés, debug hors d'Avancé, les avancés prolongent les onglets existants.
-3. Pop-up de démarrage « lecteur par défaut » avec « ne plus demander » + réglage discret ; composition finale et soin OLED hors de Couleurs.
+3. FAIT (lot interface 1) : pop-up de démarrage « lecteur par défaut » (une fois par lancement, « Ne plus demander »), réglage discret Général > Lecteur par défaut ; composition finale, noir et soins OLED sortis de Couleurs vers Avancé > Rendu ; Statistiques et Réinitialiser hors d'Avancé (Général) ; pastille « Le plus lent » ; OLED automatique déjà en place (noir Auto, soins par détection) ; « Ouvrir avec » inscrit par l'assistant. Reste : style Showtime des commandes, molette/barre de défilement, libellés.
 4. HDR : fait (#68) — RTX HDR non installé : repli ; options HDR grisées sur écran SDR ; le mode SDR APPLIQUE le grade pour imiter le rendu HDR (voulu par Tatoub) ; à confirmer chez lui.
 5. Benchmark autonome et silencieux : clip de 5 à 15 s généré ou choisi sans ouvrir de vidéo, aucune image, barre de progression seule, étapes « Chargement de tous les moteurs nécessaires au bench » puis « Benchmark en cours », explore moteurs, multiplicateurs et résolutions, multiplicateur Auto à la fin.
 6. Poses DRBA par défaut après A/B performance ET qualité.

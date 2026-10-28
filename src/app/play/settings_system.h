@@ -47,4 +47,10 @@ void updates_page(PlaySettings& d, const PlayerPlace& place, UpdateNote& note);
 // dit.
 void default_player_page(const PlayerPlace& place, SystemNote& last, bool& dismissed, bool already_default);
 
+// La fenêtre de proposition au démarrage (une fois par lancement, tant que AJP n'est pas le lecteur par
+// défaut et que « Ne plus demander » n'est pas coché) : « Définir par défaut », « Plus tard », « Ne plus
+// demander ». Dessinée au centre du cadre ImGui en cours ; rend vrai quand elle se ferme, dismissed dit si «
+// Ne plus demander » est coché.
+bool default_player_prompt(const PlayerPlace& place, SystemNote& last, bool& dismissed, float scale);
+
 }  // namespace ajp::app::play

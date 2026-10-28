@@ -90,6 +90,7 @@ struct SettingsChoices {
   std::string engines_dir_default;      // où s'installent les moteurs par défaut
   std::string engines_dir_free;         // la place libre à l'endroit choisi, « 2,1 Go »
   bool default_player_is_ajp = false;   // AJP est déjà le lecteur des vidéos (xdg-mime, Linux)
+  bool offer_default_player = false;  // proposer de le devenir (fenêtre de démarrage, une fois par lancement)
   std::string bench_text;  // « Dernière évaluation : 2026-10-28, niveau Rapide » ; vide : jamais faite
   PlayerPlace place;       // l'exécutable et le dossier de l'utilisateur (onglet Système)
 };
@@ -123,6 +124,9 @@ class SettingsPanel {
 
  private:
   bool open_ = false;
+  bool prompt_dismissed_ = false;  // « Ne plus me le demander » coché dans cette fenêtre
+  bool prompt_done_ = false;       // la fenêtre « lecteur par défaut » a déjà été montrée à ce lancement
+  SystemNote prompt_note_;         // sa dernière action
   PlaySettings draft_;     // ce que montre le panneau ; diffère de running pour ce qui attend « Appliquer »
   PlaySettings seen_;      // running au tour précédent
   int page_ = 0;           // la page de l'arbre affichée (settings_panel.cpp : kPages)
