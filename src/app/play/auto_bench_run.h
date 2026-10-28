@@ -23,8 +23,12 @@ struct BenchPlan {
   std::filesystem::path executable;  // ajp lui-même
   std::filesystem::path video;       // la courte séquence jouée à chaque niveau
   std::filesystem::path work_dir;    // où poser les dossiers jetables des essais
+  std::filesystem::path
+      data;  // les données de l'utilisateur : son settings.toml (moteurs choisis) passe aux essais, sans
+             // quoi chaque essai rouvrirait l'assistant ; vide : « déjà vu » seulement
   int seconds = kBenchSeconds;
   bool fullscreen = true;  // l'écran réel, comme la lecture
+  bool silent = true;      // fenêtre cachée : rien ne s'affiche pendant l'évaluation (--hidden)
   std::chrono::seconds build_allowance{
       180};  // marge sur la durée de l'essai : ouverture, construction de moteur
 };

@@ -169,9 +169,10 @@ std::expected<void, Refusal> play(const PlayOptions& options, const PlayerPaths&
   const std::string title = given ? std::format("ajp — {}", options.file.filename().string()) : "ajp";
   auto screen =
       PlaceboScreen::open(ScreenOptions{.title = title,
-                                        .width = options.window_width,
-                                        .height = options.window_height,
-                                        .fullscreen = options.fullscreen,
+                                        .width = options.hidden ? 16 : options.window_width,
+                                        .height = options.hidden ? 9 : options.window_height,
+                                        .fullscreen = options.fullscreen && !options.hidden,
+                                        .hidden = options.hidden,
                                         .hdr = !options.sdr,
                                         .smooth_motion = saved->smooth_motion && saved->rife_factor >= 2,
                                         .allow_software = options.software_gpu});

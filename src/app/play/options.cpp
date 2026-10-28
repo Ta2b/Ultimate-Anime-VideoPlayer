@@ -114,6 +114,8 @@ std::expected<PlayOptions, Refusal> parse_play_options(std::span<const std::stri
       options.given.emplace_back(arg);
     } else if (arg == "--fullscreen") {
       options.fullscreen = true;
+    } else if (arg == "--hidden") {
+      options.hidden = true;
     } else if (arg == "--truehdr") {
       options.true_hdr = true;
       options.given.emplace_back(arg);
@@ -274,6 +276,8 @@ std::expected<BenchOptions, Refusal> parse_bench_options(std::span<const std::st
       options.help = true;
     } else if (arg == "--windowed") {
       options.fullscreen = false;
+    } else if (arg == "--visible") {
+      options.silent = false;
     } else if (auto report = valued(args, i, "--report"); !report) {
       return std::unexpected(std::move(report.error()));
     } else if (*report) {
@@ -290,10 +294,7 @@ std::expected<BenchOptions, Refusal> parse_bench_options(std::span<const std::st
       return refuse(RefusalCode::OptionUnknown, std::format("option inconnue : {}", arg));
     }
   }
-  if (options.file.empty() && !options.help)
-    return refuse(RefusalCode::FieldMissing,
-                  "ajp bench : la vidéo à jouer manque (une séquence de 15 s suffit)");
-  return options;
+  return options;  // sans fichier : la séquence de test du lecteur (media/bench_clip.h)
 }
 
 std::expected<CompareOptions, Refusal> parse_compare_options(std::span<const std::string_view> args) {
@@ -366,10 +367,13 @@ std::string compare_usage() {
 }
 
 std::string bench_usage() {
-  return "ajp bench <fichier> [options]   évalue la machine : joue le fichier à chaque niveau, son coupé\n"
+  return "ajp bench [fichier] [options]   évalue la machine à chaque niveau, son coupé, fenêtre cachée ; "
+         "sans fichier, "
+         "la séquence de test du lecteur\n"
          "  --seconds=S      durée d'un essai (5 à 120, défaut 12)\n"
          "  --report=FICHIER le rapport, en plus de la sortie standard\n"
          "  --windowed       joue dans une fenêtre au lieu du plein écran\n"
+         "  --visible        montre la fenêtre des essais (cachée par défaut)\n"
          "Le résultat est gardé dans bench.toml (carte, pilote, niveau, date) et remplace l'estimation de la "
          "carte.\n";
 }

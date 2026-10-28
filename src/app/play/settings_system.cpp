@@ -231,7 +231,9 @@ bool bench_page(const PlayerPlace& place, const std::filesystem::path& video, Be
 #else
   section("Évaluer ma machine");
   ImGui::TextWrapped(
-      "Joue 12 secondes de la vidéo avec chaque niveau de chaîne, son coupé, et garde le plus haut qui tient "
+      "Joue 12 secondes d'une séquence de test (la vôtre si une vidéo est ouverte) avec chaque niveau de "
+      "chaîne, "
+      "sans rien afficher ni émettre de son, et garde le plus haut qui tient "
       "pour votre carte et votre pilote. Un PC chaud ou occupé donne un résultat plus bas : relancez-le au "
       "besoin.");
   if (bench.pending && bench.pending->wait_for(std::chrono::seconds(0)) == std::future_status::ready) {
@@ -240,14 +242,15 @@ bool bench_page(const PlayerPlace& place, const std::filesystem::path& video, Be
   }
   const bool measuring = bench.pending != nullptr;
   bool started = false;
-  ImGui::BeginDisabled(measuring || video.empty() || place.executable.empty());
+  ImGui::BeginDisabled(measuring || place.executable.empty());
   if (ImGui::Button("Évaluer ma machine")) {
     bench.pending = std::make_shared<std::future<std::expected<std::string, Refusal> > >(
         std::async(std::launch::async, [place, video] -> std::expected<std::string, Refusal> {
           std::error_code error;
           const auto work = std::filesystem::temp_directory_path(error) / "ajp-bench";
           std::filesystem::create_directories(work, error);
-          const BenchPlan plan{.executable = place.executable, .video = video, .work_dir = work};
+          const BenchPlan plan{
+              .executable = place.executable, .video = video, .work_dir = work, .data = place.data};
           auto report = evaluate_machine(plan, place.data, std::stop_token{});
           std::filesystem::remove_all(work, error);
           return report;
@@ -257,9 +260,10 @@ bool bench_page(const PlayerPlace& place, const std::filesystem::path& video, Be
     started = true;
   }
   ImGui::EndDisabled();
-  if (video.empty()) note("Ouvrez d'abord une vidéo : l'évaluation la joue.");
+  if (video.empty())
+    note("Aucune vidéo à ouvrir : le lecteur joue sa propre séquence de test, sans rien afficher.");
   if (measuring) {
-    note("Évaluation en cours (environ une minute)… la lecture est en pause.");
+    note("Chargement des moteurs puis benchmark en cours (environ une minute)…");
   } else if (bench.refused) {
     ImGui::PushStyleColor(ImGuiCol_Text, kWarn);
     ImGui::TextWrapped("%s", bench.text.c_str());

@@ -2,9 +2,11 @@
 
 #include <algorithm>
 #include <format>
+#include <fstream>
 #include <system_error>
 
 #include "core/log.h"
+#include "media/bench_clip.h"
 #include "prepare/process.h"
 #include "prepare/utf8.h"
 
@@ -24,10 +26,18 @@ std::optional<BenchReading> play_one(const BenchPlan& plan, const std::optional<
   std::filesystem::remove_all(dir, error);
   std::filesystem::create_directories(dir, error);
   const std::filesystem::path out = dir / "mesures.toml";
-  if (variant != nullptr && !variant->settings.empty()) {
-    std::filesystem::create_directories(dir / "reglages", error);
-    std::filesystem::copy_file(variant->settings, dir / "reglages" / "play.toml", error);
+  // Le dossier de réglages jetable de l'essai : les moteurs choisis par l'utilisateur et l'assistant déjà vu
+  // (sinon chaque essai rouvrirait l'écran de bienvenue et n'avancerait pas), puis le play.toml de la
+  // variante.
+  std::filesystem::create_directories(dir / "reglages", error);
+  if (!plan.data.empty() && std::filesystem::exists(plan.data / "settings.toml", error)) {
+    std::filesystem::copy_file(plan.data / "settings.toml", dir / "reglages" / "settings.toml", error);
+  } else {
+    std::ofstream(dir / "reglages" / "settings.toml")
+        << "version = 1\nfirst_run_done = true\nfirst_run_step = 8\n";
   }
+  if (variant != nullptr && !variant->settings.empty())
+    std::filesystem::copy_file(variant->settings, dir / "reglages" / "play.toml", error);
   prepare::ProcessSpec spec{.program = plan.executable,
                             .args = variant != nullptr
                                         ? variant_child_args(plan, *variant, dir / "reglages", out)
@@ -67,6 +77,7 @@ std::vector<std::string> bench_child_args(const BenchPlan& plan, const std::opti
       std::format("--bench-out={}", prepare::utf8_path(out_file)),
       std::format("--bench-level={}", level ? std::to_string(static_cast<int>(*level)) : "auto")};
   if (plan.fullscreen) args.emplace_back("--fullscreen");
+  if (plan.silent) args.emplace_back("--hidden");
   return args;
 }
 
@@ -81,6 +92,7 @@ std::vector<std::string> variant_child_args(const BenchPlan& plan, const Variant
                                 std::format("--data-dir={}", prepare::utf8_path(data_dir)),
                                 std::format("--bench-out={}", prepare::utf8_path(out_file))};
   if (plan.fullscreen) args.emplace_back("--fullscreen");
+  if (plan.silent) args.emplace_back("--hidden");
   args.insert(args.end(), variant.args.begin(), variant.args.end());
   return args;
 }
@@ -184,7 +196,23 @@ std::expected<BenchOutcome, Refusal> run_bench(const BenchPlan& plan, const std:
 std::expected<std::string, Refusal> evaluate_machine(
     const BenchPlan& plan, const std::filesystem::path& data_dir, const std::stop_token& stop,
     const std::function<void(const std::string&)>& progress) {
-  auto outcome = run_bench(plan, stop, progress);
+  // Sans vidéo, le lecteur écrit lui-même la séquence de l'évaluation, une fois pour toutes
+  // (media/bench_clip.h).
+  BenchPlan own = plan;
+  const auto say = [&](const std::string& text) {
+    if (progress) progress(text);
+  };
+  say("Chargement de tous les moteurs nécessaires au bench");
+  if (own.video.empty()) {
+    own.video = data_dir / "bench-clip-v2.mkv";
+    std::error_code error;
+    if (!std::filesystem::is_regular_file(own.video, error)) {
+      if (auto written = media::write_bench_clip(own.video); !written)
+        return std::unexpected(std::move(written.error()));
+    }
+  }
+  say("Benchmark en cours");
+  auto outcome = run_bench(own, stop, progress);
   if (!outcome) return std::unexpected(std::move(outcome.error()));
   BenchResult result = outcome->result;
   result.date = std::format("{:%F}", std::chrono::floor<std::chrono::days>(std::chrono::system_clock::now()));
