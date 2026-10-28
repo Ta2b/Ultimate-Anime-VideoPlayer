@@ -260,7 +260,8 @@ std::expected<std::string, Refusal> register_player(const PlayerPlace& place) {
   // .AppImage lui-même (variable APPIMAGE posée par son lanceur).
   std::filesystem::path launcher = place.executable;
   // NOLINTNEXTLINE(concurrency-mt-unsafe)
-  if (const char* image = std::getenv("APPIMAGE"); image != nullptr && *image != '\0') launcher = image;
+  const char* image = std::getenv("APPIMAGE");  // env: lanceur
+  if (image != nullptr && *image != '\0') launcher = image;
   auto text = desktop_entry(launcher);
   if (!text) return std::unexpected(std::move(text.error()));
   const std::filesystem::path file = desktop_file(place);
