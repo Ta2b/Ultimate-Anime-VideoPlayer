@@ -35,3 +35,31 @@ compilée dans `AJP_UPDATE_PUBKEY` (`src/app/CMakeLists.txt`).
   dans `AJP_UPDATE_PUBKEY`. Les lecteurs déjà installés avec l'ancienne clé ne reconnaîtront plus les manifestes : il faut
   une release manuelle.
 - Sauvegarder la clé privée (gestionnaire de mots de passe de Tatoub, disque chiffré) : sans elle, plus de mise à jour.
+
+## Canal « Préversions » et passage en release normale
+
+Le lecteur lit son manifeste à deux adresses (`src/app/play/updater.cpp`, `manifest_url`) :
+
+| Canal (Général > Mises à jour) | Adresse | Champ `channel` du manifeste |
+|---|---|---|
+| Stable (défaut) | `https://github.com/<dépôt>/releases/latest/download/manifest.toml` | `stable` |
+| Préversions | `https://github.com/<dépôt>/releases/download/preview/manifest.toml` | `preview` |
+
+GitHub appelle « latest » la dernière release **qui n'est pas une pré-version** : tant que la dernière version est une pré-version
+(c'est le cas de la 0.5.0), l'adresse « Stable » ne trouve rien (404 : « aucune mise à jour »). Deux façons de les servir :
+
+1. **Canal Préversions** : une release `preview` du dépôt des releases porte le manifeste du canal `preview` (même version, mêmes
+   archives, `channel = "preview"`, signé à part : le champ est signé avec le reste). Un utilisateur qui choisit « Préversions » reçoit alors la 0.5.0.
+   ```bash
+   sed 's/^channel = "stable"$/channel = "preview"/' manifest.toml > preview/manifest.toml
+   openssl pkeyutl -sign -inkey ~/.config/ajp-release/update-ed25519.pem -rawin -in preview/manifest.toml -out sig.bin
+   xxd -p -c 256 sig.bin > preview/manifest.toml.sig
+   gh release create preview -R Ta2b/ajp-releases --prerelease --title "Canal préversions (manifeste des mises à jour)" \
+     --notes "Manifeste signé du canal Préversions." preview/manifest.toml preview/manifest.toml.sig
+   # les fois suivantes : gh release upload preview -R Ta2b/ajp-releases --clobber preview/manifest.toml preview/manifest.toml.sig
+   ```
+2. **Release normale** (quand la version est validée) : retirer la marque « pré-version » de la release
+   (`gh release edit v0.5.0 -R Ta2b/ajp-releases --prerelease=false --latest`) ; son `manifest.toml` (canal `stable`) est alors celui de
+   « latest » et le canal Stable fonctionne.
+
+Le canal du manifeste est vérifié par le lecteur : un manifeste `stable` servi à l'adresse `preview` (ou l'inverse) est refusé.
