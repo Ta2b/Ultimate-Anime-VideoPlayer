@@ -1,0 +1,27 @@
+# RIFE v4.25 768x1280 (28/10/2026) : convs 3x3 FP8 CUTLASS contre TensorRT FP16 (ms par couche, profil du moteur).
+# PSNR = noyau contre référence fp32 GPU sur valeurs déquantifiées (200 dB sur blk2 conv0.1 = NaN du test, Cin 48 non géré).
+# En fin de fichier : répartition du profil TensorRT FP16 ; ms et % comptés deux fois (ligne Total incluse), seuls les % comptent : total réel 7,78 ms.
+blk0 res 192->192 @24x40          24x40->24x40  C 192->192  grille   8x3  CUTLASS 0.0177 ms  TRT 0.0116 ms  PSNR 82.7 dB
+blk1 res 128->128 @24x40           24x40->24x40  C 128->128  grille   8x2  CUTLASS 0.0143 ms  TRT 0.0088 ms  PSNR 83.5 dB
+blk2 res  96-> 96 @48x80           48x80->48x80  C  96-> 96  grille  30x3  CUTLASS 0.0119 ms  TRT 0.0118 ms  PSNR 84.2 dB
+blk3 res  64-> 64 @96x160          96x160->96x160  C  64-> 64  grille 120x1  CUTLASS 0.0172 ms  TRT 0.0142 ms  PSNR 83.8 dB
+blk4 res  32-> 32 @192x320         192x320->192x320  C  32-> 32  grille 480x1  CUTLASS 0.0252 ms  TRT 0.0212 ms  PSNR 83.9 dB
+blk0 conv0.1  96->192 s2 @48x80    48x80->24x40  C  96->192  grille   8x6  CUTLASS 0.0072 ms  TRT 0.0116 ms  PSNR 88.7 dB
+blk1 conv0.1  64->128 s2 @48x80    48x80->24x40  C  64->128  grille   8x4  CUTLASS 0.0052 ms  TRT 0.0084 ms  PSNR 87.9 dB
+blk2 conv0.1  48-> 96 s2 @96x160   96x160->48x80  C  48-> 96  grille  30x2  CUTLASS 0.0079 ms  TRT 0.0114 ms  PSNR 200.0 dB
+blk3 conv0.1  32-> 64 s2 @192x320  192x320->96x160  C  32-> 64  grille 120x2  CUTLASS 0.0158 ms  TRT 0.0109 ms  PSNR 88.3 dB
+blk4 conv0.1  16-> 32 s2 @384x640 (Cin 32) 384x640->192x320  C  32-> 32  grille 480x1  CUTLASS 0.0231 ms  TRT 0.0199 ms  PSNR 88.7 dB
+blk0 conv0.0  32-> 96 s2 @96x160 (Cin 32) 96x160->48x80  C  32-> 96  grille  30x3  CUTLASS 0.0074 ms  TRT 0.0082 ms  PSNR 87.5 dB
+blk3 conv0.0  32-> 32 s2 @384x640 (Cin 32) 384x640->192x320  C  32-> 32  grille 480x1  CUTLASS 0.0232 ms  TRT 0.0263 ms  PSNR 88.7 dB
+blk4 conv0.0  28-> 16 s2 @768x1280 (Cin 32) 768x1280->384x640  C  32-> 32  grille 1920x1  CUTLASS 0.1153 ms  TRT 0.2161 ms  PSNR 88.9 dB
+
+somme pondérée (nombre de couches) : CUTLASS 0.896 ms, TensorRT FP16 0.854 ms
+total 15.5605 150
+elementaire/copies/cast/transpose/d2s     10.447 ms  67.1%
+warp (GridSample+cast16)                   2.838 ms  18.2%
+conv autres (strided, encode)              0.798 ms   5.1%
+conv residuelle 3x3 (+pwn)                 0.542 ms   3.5%
+Resize                                     0.523 ms   3.4%
+ConvTranspose                              0.412 ms   2.6%
+7.780 Total
+0.480 __myl_MoveGridMove_myl41_0
