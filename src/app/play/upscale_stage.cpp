@@ -58,7 +58,7 @@ UpscaleStage::~UpscaleStage() {
   }
   if (interpolates()) {
     log_channel("gpu")->info("RIFE {} : {} paires, {} interpolées, {} coupes de scène, {} dessins tenus",
-                             factor_text(setup_.live ? setup_.live->rife_factor() : setup_.rife_factor),
+                             factor_text(setup_.live ? setup_.live->factor_now() : setup_.rife_factor),
                              pairs_, interpolated_, cuts_, held_);
   }
   if (!scores_wait_us_.empty()) {
@@ -236,7 +236,7 @@ std::expected<std::uint32_t, Refusal> UpscaleStage::outputs(const DecodedFrame& 
       return std::unexpected(std::move(ok.error()));
   }
   Factor factor = interpolates() ? setup_.rife_factor : Factor{};
-  if (interpolates() && setup_.live) factor = setup_.live->rife_factor();
+  if (interpolates() && setup_.live) factor = setup_.live->factor_now();
   // La grille de sortie de la paire (core/cadence.h), refaite quand le facteur change : la paire
   // suivante repart alors de cette image.
   std::optional<core::CadenceStep> step;
@@ -280,6 +280,7 @@ std::expected<std::uint32_t, Refusal> UpscaleStage::outputs(const DecodedFrame& 
       if (middles > 0 && late == middles) wanted = 1;
     }
   }
+  if (interpolates() && setup_.live) setup_.live->auto_pair(late > 0);
   PairFacts facts{.factor = wanted,
                   .same_epoch = previous_ && previous_->epoch == frame.epoch,
                   .gap_us = previous_ && previous_->pts_us != kNoPts && frame.pts_us != kNoPts

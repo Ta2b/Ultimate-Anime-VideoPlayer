@@ -142,8 +142,13 @@ std::expected<std::optional<GmfssEngines>, Refusal> prepare_gmfss(Player& p, con
                                                                   gpu::Backend& backend,
                                                                   std::span<const std::filesystem::path> dirs,
                                                                   GmfssVariant variant, int work_width,
-                                                                  int work_height) {
-  const std::optional<GmfssModels> found = find_gmfss(dirs, variant, drba_half_flow(work_height));
+                                                                  int work_height, bool quality) {
+  // Le flot à demi-échelle toujours : mesuré, il vaut le flot entier en qualité (GMFlow FP32) ou le
+  // dépasse, pour moitié moins de calcul ; le flot entier ne reste qu'en repli.
+  const std::optional<GmfssModels> found = find_gmfss(dirs, variant, true, quality);
+  if (found && quality && !found->quality)
+    log_channel("app")->info("GMFSS qualité : la paire {} manque, mode performance à la place",
+                             gmfss_files(variant, true, true).pair);
   if (!found) {
     std::string tried;
     for (const std::filesystem::path& dir : dirs)

@@ -34,12 +34,24 @@ inline constexpr std::string_view kGmfssHalfFusionFile = "gmfss_fortuna_base_s05
 inline constexpr std::string_view kGmfssUnionHalfPairFile = "gmfss_fortuna_union_s05_pair.onnx";
 inline constexpr std::string_view kGmfssUnionHalfFusionFile = "gmfss_fortuna_union_s05_fusion.onnx";
 inline constexpr int kGmfssHalfAlign = 128;
+// Mode qualité : la paire d'un flot à demi-échelle dont GMFlow est calculé en FP32 (export_gmfss.py
+// --scale 0.5 --precision flownet32). Son graphe « fusion » est celui du mode performance : seul le
+// flot change, la fusion n'est pas écrite deux fois. Mesuré sur une 4070 Ti à 1280x768 : l'écart au
+// GMFSS d'origine est divisé par 4, pour +4 ms par paire avec base et +20 ms avec union.
+inline constexpr std::string_view kGmfssHalfQualityPairFile = "gmfss_fortuna_base_s05q_pair.onnx";
+inline constexpr std::string_view kGmfssUnionHalfQualityPairFile = "gmfss_fortuna_union_s05q_pair.onnx";
 
 struct GmfssFiles {
   std::string_view pair;
   std::string_view fusion;
 };
-constexpr GmfssFiles gmfss_files(GmfssVariant variant, bool half_flow = false) {
+// quality : la paire du mode qualité (flot à demi-échelle seulement), avec la fusion du mode performance.
+constexpr GmfssFiles gmfss_files(GmfssVariant variant, bool half_flow = false, bool quality = false) {
+  if (half_flow && quality) {
+    return variant == GmfssVariant::Union
+               ? GmfssFiles{kGmfssUnionHalfQualityPairFile, kGmfssUnionHalfFusionFile}
+               : GmfssFiles{kGmfssHalfQualityPairFile, kGmfssHalfFusionFile};
+  }
   if (half_flow) {
     return variant == GmfssVariant::Union ? GmfssFiles{kGmfssUnionHalfPairFile, kGmfssUnionHalfFusionFile}
                                           : GmfssFiles{kGmfssHalfPairFile, kGmfssHalfFusionFile};
@@ -51,14 +63,21 @@ constexpr GmfssFiles gmfss_files(GmfssVariant variant, bool half_flow = false) {
 struct GmfssModels {
   std::filesystem::path pair;
   std::filesystem::path fusion;
-  int align = 64;  // multiple des plans remplis : 128 pour le flot à l'échelle 0,5
+  int align = 64;        // multiple des plans remplis : 128 pour le flot à l'échelle 0,5
+  bool quality = false;  // la paire du mode qualité (GMFlow en FP32)
 };
 
-// Les deux graphes de variant du premier de ces dossiers qui les a tous les deux, ceux du flot à
-// l'échelle 0,5 d'abord si prefer_half (la règle de DistilDRBA : drba_half_flow), les autres
-// d'abord sinon ; l'autre jeu sert de repli.
+// Les deux graphes de variant du premier de ces dossiers qui les a tous les deux. Le flot à demi-échelle
+// passe toujours avant le flot entier (prefer_half) : à qualité égale ou meilleure il coûte moitié moins
+// (mesuré sur une 4070 Ti, 1280x768) ; le flot entier ne sert que de repli quand les graphes _s05
+// manquent. quality demande d'abord la paire à GMFlow FP32 du flot à demi-échelle ; sans elle, la paire
+// FP16 prend sa place (GmfssModels::quality dit laquelle est rendue).
 std::optional<GmfssModels> find_gmfss(std::span<const std::filesystem::path> dirs,
-                                      GmfssVariant variant = GmfssVariant::Base, bool prefer_half = true);
+                                      GmfssVariant variant = GmfssVariant::Base, bool prefer_half = true,
+                                      bool quality = false);
+
+// Le mode qualité est-il installé : la paire s05q et la fusion s05 de variant dans un même dossier.
+bool gmfss_quality_available(std::span<const std::filesystem::path> dirs, GmfssVariant variant);
 
 // Les dimensions nommées des deux graphes pour des plans remplis de padded_width × padded_height
 // (multiples de 64) : « H », « W », puis « H/2 » à « W/8 ».

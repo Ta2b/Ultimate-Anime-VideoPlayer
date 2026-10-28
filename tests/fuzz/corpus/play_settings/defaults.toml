@@ -37,6 +37,7 @@ work_height = 720
 
 [interpolation]
 engine = 'rife'
+gmfss_quality = false
 keep_poses = false
 model = ''
 rife = 3

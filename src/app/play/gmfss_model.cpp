@@ -9,20 +9,35 @@
 namespace ajp::app::play {
 
 std::optional<GmfssModels> find_gmfss(std::span<const std::filesystem::path> dirs, GmfssVariant variant,
-                                      bool prefer_half) {
+                                      bool prefer_half, bool quality) {
   std::error_code error;
-  for (const bool half_flow : {prefer_half, !prefer_half}) {
-    const GmfssFiles files = gmfss_files(variant, half_flow);
+  // Les essais dans l'ordre : la paire de qualité (demi-échelle), puis les graphes du flot à demi-échelle
+  // et du flot entier, dans l'ordre que prefer_half donne.
+  struct Attempt {
+    bool half_flow;
+    bool quality;
+  };
+  std::vector<Attempt> attempts;
+  if (quality) attempts.push_back({true, true});
+  for (const bool half_flow : {prefer_half, !prefer_half}) attempts.push_back({half_flow, false});
+  for (const auto& [half_flow, wants_quality] : attempts) {
+    const GmfssFiles files = gmfss_files(variant, half_flow, wants_quality);
     for (const std::filesystem::path& dir : dirs) {
       GmfssModels found{.pair = dir / files.pair,
                         .fusion = dir / files.fusion,
-                        .align = half_flow ? kGmfssHalfAlign : kernels::kRifeAlign};
+                        .align = half_flow ? kGmfssHalfAlign : kernels::kRifeAlign,
+                        .quality = wants_quality};
       if (std::filesystem::is_regular_file(found.pair, error) &&
           std::filesystem::is_regular_file(found.fusion, error))
         return found;
     }
   }
   return std::nullopt;
+}
+
+bool gmfss_quality_available(std::span<const std::filesystem::path> dirs, GmfssVariant variant) {
+  const std::optional<GmfssModels> found = find_gmfss(dirs, variant, true, true);
+  return found && found->quality;
 }
 
 std::vector<prepare::NamedDim> gmfss_dims(int padded_width, int padded_height) {

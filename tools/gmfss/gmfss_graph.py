@@ -28,14 +28,14 @@ def soft_splat(source, flow, metric, strMode="soft"):  # noqa: N803, nom de soft
     scale = metric.exp()
     values = torch.cat([source * scale, scale], 1)
     b, c, h, w = values.shape
-    tx = torch.arange(w, dtype=torch.float32).view(1, 1, w) + flow[:, 0]
-    ty = torch.arange(h, dtype=torch.float32).view(1, h, 1) + flow[:, 1]
+    tx = torch.arange(w, dtype=torch.float32, device=flow.device).view(1, 1, w) + flow[:, 0]
+    ty = torch.arange(h, dtype=torch.float32, device=flow.device).view(1, h, 1) + flow[:, 1]
     finite = torch.isfinite(tx) & torch.isfinite(ty)
     tx = torch.where(finite, tx, torch.zeros_like(tx))
     ty = torch.where(finite, ty, torch.zeros_like(ty))
     x0 = torch.floor(tx)
     y0 = torch.floor(ty)
-    out = torch.zeros(b, c, h * w)
+    out = torch.zeros(b, c, h * w, device=flow.device)
     for dx, dy in ((0, 0), (1, 0), (0, 1), (1, 1)):
         cx = x0 + dx
         cy = y0 + dy
@@ -244,8 +244,8 @@ def shift_window_attn_mask(input_resolution, window_size_h, window_size_w, shift
     from vsgmfss_fortuna.gmflow.utils import split_feature
 
     h, w = input_resolution
-    ys = torch.arange(h)
-    xs = torch.arange(w)
+    ys = torch.arange(h, device=device)
+    xs = torch.arange(w, device=device)
     region_y = (ys >= h - window_size_h).long() + (ys >= h - shift_size_h).long()
     region_x = (xs >= w - window_size_w).long() + (xs >= w - shift_size_w).long()
     img_mask = (region_y.view(h, 1) * 3 + region_x.view(1, w)).float().view(1, h, w, 1)

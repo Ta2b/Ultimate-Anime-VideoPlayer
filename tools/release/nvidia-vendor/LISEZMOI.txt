@@ -1,0 +1,21 @@
+Fichiers de NVIDIA tirés de leurs roues (lien direct), pas republiés par nos releases.
+
+tensorrt-linux-x64.lock / tensorrt-windows-x64.lock : entrées [[vendor_file]] de TensorRT 11.3.0.99
+(roue tensorrt-cu13-libs) et de NVRTC 13.4.92 (roue nvidia-cuda-nvrtc), lues sur pypi.nvidia.com sans
+compte. package-linux.sh et package-windows.ps1 les ajoutent à engines.lock ; le lecteur tire pour
+chaque GPU libnvinfer, libnvinfer_plugin (trtexec la charge au démarrage), libnvonnxparser, NVRTC, la
+ressource ptx et celle de son architecture (smNN) par une plage HTTP, et vérifie le SHA-256.
+
+Régénérer (une version de TensorRT ou de NVRTC qui change) :
+  python3 tools/release/vendor-index.py --engine tensorrt --platform linux --url <roue> \
+    --include 'libnvinfer\.so\.\d+$' --include 'libnvinfer_plugin\.so\.\d+$' \
+    --include 'libnvonnxparser\.so\.\d+$' --include 'libnvinfer_builder_resource_(?P<arch>sm\d+)\.so' \
+    --include 'libnvinfer_builder_resource_ptx\.so'
+  (NVRTC : libnvrtc\.so\.\d+$ et libnvrtc-builtins\.so ; Windows : ^nvinfer_\d+\.dll$,
+   ^nvinfer_plugin_\d+\.dll$, ^nvonnxparser_\d+\.dll$, ^nvinfer_builder_resource_(?P<arch>sm\d+)_\d+\.dll$,
+   ^nvinfer_builder_resource_ptx_\d+\.dll$, ^nvrtc64_\d+_\d+\.dll$, ^nvrtc-builtins64_\d+\.dll$)
+
+Vérifier avec le vrai lecteur, réseau, ~0,74 Go pour une carte sm89 (caché) :
+  cd build/<préréglage> && ./tests/unit/app/ajp_app_tests "[.vendor]"
+  (AJP_VENDOR_OUT=dossier garde les fichiers tirés.)
+Il n'y a pas de trtexec dans ces roues : il vient de notre paquet.

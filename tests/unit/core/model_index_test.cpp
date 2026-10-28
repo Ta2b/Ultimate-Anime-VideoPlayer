@@ -265,6 +265,40 @@ TEST_CASE("Index des moteurs : une entrée inconnue est écartée seule à la le
   CHECK_FALSE(read_engine_index("version = 9\n"));
 }
 
+TEST_CASE("Fichiers tiers d'un moteur : lus avec leur architecture, choisis pour un GPU", "[model_index]") {
+  const std::string head = "version = 1\n";
+  const auto file = [&](const std::string& name, const std::string& extra) {
+    return "[[vendor_file]]\nid = \"tensorrt\"\nplatform = \"linux\"\nurl = "
+           "\"https://pypi.example/x.whl\"\nname = \"" +
+           name + "\"\ndata_offset = 1000\npacked_size = 40\nsize = 100\nmethod = \"deflate\"\nsha256 = \"" +
+           kSha + "\"\n" + extra;
+  };
+  const std::string lock = head + file("libnvinfer.so.11", "") +
+                           file("libnvinfer_builder_resource_sm89_11.3.0.so", "arch = \"sm89\"\n") +
+                           file("libnvinfer_builder_resource_sm120_11.3.0.so", "arch = \"sm120\"\n");
+  auto index = read_engine_index(lock);
+  REQUIRE(index);
+  CHECK(index->skipped.empty());
+  REQUIRE(index->vendor_files.size() == 3);
+  CHECK(index->vendor_files[0].deflated);
+  CHECK(index->vendor_files[0].data_offset == 1000);
+  const auto ada = vendor_files_for(index->vendor_files, EngineId::TensorRt, Os::Linux, "sm89");
+  REQUIRE(ada.size() == 2);
+  CHECK(ada[0].name == "libnvinfer.so.11");
+  CHECK(ada[1].arch == "sm89");
+  CHECK(vendor_files_for(index->vendor_files, EngineId::TensorRt, Os::Linux, "").size() == 3);
+  CHECK(vendor_files_for(index->vendor_files, EngineId::TensorRt, Os::Windows, "sm89").empty());
+  // Un doublon de nom, un nom ou une méthode invalides sont écartés seuls.
+  const std::string bad = head + file("libnvinfer.so.11", "") + file("libnvinfer.so.11", "") +
+                          file("../evil", "") +
+                          file("ok.so", "").replace(file("ok.so", "").find("deflate"), 7, "zip");
+  auto partial = read_engine_index(bad);
+  REQUIRE(partial);
+  CHECK(partial->vendor_files.size() == 1);
+  CHECK(partial->skipped.size() == 3);
+  CHECK(read_engine_index(head)->vendor_files.empty());
+}
+
 TEST_CASE("Noms des moteurs et des OS : stables et réciproques", "[model_index]") {
   for (const EngineId id : {EngineId::Vulkan, EngineId::TensorRt, EngineId::RtxVideoSdk, EngineId::MaxineVfx,
                             EngineId::MiGraphX, EngineId::OpenVino, EngineId::DirectMl, EngineId::Metal}) {

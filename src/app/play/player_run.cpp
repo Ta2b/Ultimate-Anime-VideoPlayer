@@ -108,6 +108,16 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
     p.ui.controls().notify("Source déjà HDR : RTX HDR inutile", host_now_us());
     settings.true_hdr = false;
   }
+  // TrueHDR s'ouvre par le moteur TensorRT (open_true_hdr n'existe que là) : sous Vulkan, la route
+  // native prend sa place sans essayer, et le panneau ne propose plus RTX HDR (true_hdr_available).
+  if (settings.true_hdr && c.backend_name != "tensorrt") {
+    log->info("RTX HDR : le moteur {} ne l'ouvre pas (TensorRT requis) ; HDR adaptatif à la place",
+              c.backend_name);
+    p.ui.controls().notify("RTX HDR demande le moteur TensorRT : HDR adaptatif", host_now_us());
+    settings.true_hdr = false;
+    settings.hdr_native = true;
+  }
+  bool rtx_hdr_failed = false;  // TrueHDR a refusé de s'ouvrir : le panneau ne le propose plus
   if (settings.true_hdr) {
     show_loading(p.screen, p.ui, "Préparation de RTX HDR");
     auto opened = open_rtx_hdr(p.options.true_hdr_sdk, p.paths, settings, auto_peak, p.screen,
@@ -120,6 +130,7 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
       p.ui.controls().notify("RTX HDR indisponible : HDR adaptatif", host_now_us());
       settings.true_hdr = false;
       settings.hdr_native = true;
+      rtx_hdr_failed = true;
       p.screen.set_source_color(source);
     }
   } else {
@@ -139,7 +150,7 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
   PipelineConfig config{
       .file = options.file,
       .decoder = decoder_options(c.backend_name, p.screen.device(), p.screen.shared_devices()),
-      .languages = {.audio = settings.audio_languages, .subtitles = settings.subtitle_languages},
+      .languages = {.presets = settings.language_presets},
       .audio_track = p.audio_track,
       .subtitle_track = p.subtitle_track};
   PlaceboScreen& out = p.screen;
@@ -197,6 +208,7 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
           .display_hz = display_period_us(out.window()) > 0
                             ? 1e6 / static_cast<double>(display_period_us(out.window()))
                             : 0.0,
+          .display_vrr = p.display && p.display->vrr.value_or(false),
           .rife_available =
               c.rife_model.has_value() || c.gmfss_found || c.drba_found || offered(MotionEngine::Apple),
           // Seul TensorRT sait importer les graphes de GMFSS (MatMul, Softmax, LayerNorm) : le
@@ -204,13 +216,19 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
           .gmfss_available = c.backend_name == "tensorrt" && find_gmfss(c.gmfss_places).has_value(),
           .gmfss_union_available =
               c.backend_name == "tensorrt" && find_gmfss(c.gmfss_places, GmfssVariant::Union).has_value(),
+          .gmfss_quality_available =
+              c.backend_name == "tensorrt" && gmfss_quality_available(c.gmfss_places, GmfssVariant::Base),
+          .gmfss_union_quality_available =
+              c.backend_name == "tensorrt" && gmfss_quality_available(c.gmfss_places, GmfssVariant::Union),
           .distil_drba_available = c.drba_found,
           .rife_loaded = rife_loaded,
           .rife_models = c.rife_choice ? c.rife_choice->available : std::vector<std::string>{},
           .default_rife_model = c.rife_choice ? c.rife_choice->default_name : std::string(),
           .rife_folder = c.gmfss_places.front().string(),
           .nvidia = vendor_from_pci(p.screen.device_facts().pci_vendor) == GpuVendor::Nvidia,
-          .true_hdr_available = maxine_available(p.options, p.paths) || settings.true_hdr,
+          .true_hdr_available = c.backend_name == "tensorrt" && !rtx_hdr_failed &&
+                                (maxine_available(p.options, p.paths) || settings.true_hdr),
+          .true_hdr_backend = c.backend_name == "tensorrt",
           .hdr_output = p.screen.hdr_output(),
           .auto_peak = auto_peak,
           .engines = engine_badges(p.paths.engines,
@@ -302,6 +320,12 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
   std::int64_t saved_at = host_now_us();
   std::int64_t display_polled_at = saved_at;
   p.ui.controls().show_deferred(host_now_us());
+  // Le mode auto : son plafond suit la fréquence de l'écran.
+  const auto apply_auto = [&] {
+    const bool on = chain.running.rife_auto && chain.rife_loaded && chain.running.rife_factor >= 2;
+    chain.live.set_auto(on, core::auto_ceiling(display_refresh_hz(out.window()), fps_of(video.frame_rate)));
+  };
+  apply_auto();
   while (!session.finished() && !chain.reopen) {
     for (;
          p.next_key < p.options.keys.size() && host_now_us() - p.began_us >= p.options.keys[p.next_key].first;
@@ -328,6 +352,7 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
     if (host_now_us() - display_polled_at >= 500'000) {
       display_polled_at = host_now_us();
       session.set_display(display_period_us(out.window()), display_refresh_hz(out.window()));
+      apply_auto();
     }
     (*pipeline)->pump();
     while (auto message = try_take((*pipeline)->inbox())) session.handle(std::move(*message));

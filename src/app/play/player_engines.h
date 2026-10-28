@@ -131,6 +131,6 @@ std::expected<std::optional<GmfssEngines>, Refusal> prepare_gmfss(Player& p, con
                                                                   gpu::Backend& backend,
                                                                   std::span<const std::filesystem::path> dirs,
                                                                   GmfssVariant variant, int work_width,
-                                                                  int work_height);
+                                                                  int work_height, bool quality = false);
 
 }  // namespace ajp::app::play

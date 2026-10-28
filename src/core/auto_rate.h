@@ -1,0 +1,44 @@
+// Interpolation en mode auto : le multiplicateur ×k (k entier, de ×1 à ×6) suit ce que le GPU tient.
+// Il descend vite quand une paire arrive en retard sur l'horloge, remonte lentement quand les
+// paires passent, et un palier qui vient d'échouer se re-tente de plus en plus tard (hystérésis :
+// pas d'oscillation entre k et k+1). Pur : le lecteur lui donne l'issue de chaque paire.
+#pragma once
+
+#include <cstdint>
+
+namespace ajp::core {
+
+inline constexpr int kAutoMaxStep = 6;  // ×6 de 23,976 : 143,86 i/s, sous un écran de 165 Hz
+
+// Le plus grand palier dont la cadence tient sous la fréquence de l'écran (à 1 % près) pour une source
+// de `source_fps` i/s ; 1 si l'écran est inconnu. Sans VRR, les paliers qui ne tiennent pas un nombre
+// entier de rafraîchissements font du judder : le menu l'avertit, il ne les interdit pas.
+int auto_ceiling(double display_hz, double source_fps);
+
+class AutoRate {
+ public:
+  // Paires propres avant de tenter un palier de plus (3 s à 24 i/s), doublé à chaque échec récent.
+  static constexpr std::uint32_t kRisePairs = 72;
+  static constexpr int kMaxBackoff = 4;
+
+  // `ceiling` : le palier le plus haut permis (1 à kAutoMaxStep). Le départ est ×2 (ou le plafond).
+  explicit AutoRate(int ceiling = kAutoMaxStep);
+
+  int step() const { return step_; }
+  int ceiling() const { return ceiling_; }
+  // Plafond changé (écran déplacé, réglage) : le palier courant le suit.
+  void set_ceiling(int ceiling);
+
+  // L'issue d'une paire : en retard (des instants sautés pour rattraper l'horloge) ou à l'heure.
+  // Rend le palier à utiliser pour la paire suivante.
+  int pair(bool late);
+
+ private:
+  int ceiling_;
+  int step_;
+  std::uint32_t clean_ = 0;  // paires à l'heure depuis le dernier changement
+  int backoff_ = 0;          // échecs récents de montée
+  bool probing_ = false;     // le palier courant vient d'être tenté
+};
+
+}  // namespace ajp::core

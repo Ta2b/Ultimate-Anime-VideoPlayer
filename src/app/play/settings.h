@@ -22,6 +22,7 @@
 #include "app/play/options.h"
 #include "core/profile.h"
 #include "core/types.h"
+#include "media/selection.h"
 #include "render/grade_params.h"
 
 namespace ajp::app::play {
@@ -106,11 +107,17 @@ struct PlaySettings {
   Downscale downscale = Downscale::Area;
   int rife_factor = kDefaultRifeFactor;  // 0 : aucune interpolation
   int rife_factor_den = 1;               // 2 : ×rife_factor / 2 (×1,5 : 3 et 2)
+  // Mode auto : le multiplicateur ×k (entier, jusqu'à rife_factor) suit ce que le GPU tient
+  // (core/auto_rate.h) ; en direct.
+  bool rife_auto = false;
   MotionEngine motion_engine = MotionEngine::Rife;
   std::string rife_model;  // fichier ONNX de RIFE (nom seul) ; vide : le défaut de la carte
   // Garder les poses (DRBA, kernels/spec/poses.h) : un personnage animé en deux garde son rythme
   // pendant que le fond s'interpole ; en direct.
   bool keep_poses = false;
+  // GMFSS : false, performance (GMFlow en FP16) ; true, qualité (GMFlow en FP32, la paire _s05q). Toujours
+  // au flot à demi-échelle. Recharge la chaîne.
+  bool gmfss_quality = false;
   // Le warp avant ou après SPAN (SpanOrder) ; Auto par défaut. Recharge la chaîne.
   SpanOrder span_order = SpanOrder::Auto;
   // Smooth Motion du pilote NVIDIA (RTX 40 et 50, pilote ≥ 580) : sa couche Vulkan double les
@@ -145,8 +152,10 @@ struct PlaySettings {
   // Langues voulues à l'ouverture d'un fichier, de la plus voulue à la moins voulue (balises
   // ISO 639 : « jpn », « fre ») ; vide : les drapeaux du fichier. Une piste sans balise suit son
   // titre (« VOSTFR », « Japanese »). Valent au prochain fichier ; la barre change la piste en cours.
-  std::vector<std::string> audio_languages{"jpn"};
-  std::vector<std::string> subtitle_languages{"fre", "eng"};
+  // Audio et sous-titres voulus ensemble, du préréglage préféré au suivant : le premier dont l'audio
+  // et les sous-titres existent dans le fichier est pris (media/selection.h). Audio vide : « selon le
+  // fichier » ; sous-titres vides : aucun.
+  std::vector<media::LanguagePreset> language_presets{{"jpn", "fre"}, {"fre", ""}};
   // Grade HDR sur la sortie PQ (render/grade_params.h), sur les deux routes ; en direct. Hors
   // « Personnalisé », grade_values suit le préréglage (gamut_p3 excepté, propre à l'écran).
   bool grade = true;
@@ -175,7 +184,7 @@ inline constexpr core::Range<int> kAudioDelayMs{-5000, 5000};
 inline constexpr core::Range<int> kVideoLatencyMs{0, 250};
 inline constexpr core::Range<float> kVolume{0.0F, 1.5F};
 inline constexpr core::Range<float> kSubtitleScale{0.5F, 2.0F};
-inline constexpr std::size_t kMaxLanguages = 4;  // par liste
+inline constexpr std::size_t kLanguagePresets = 2;  // préréglages de langue
 inline constexpr core::Range<int> kTrueHdrContrast{0, 200};
 inline constexpr core::Range<int> kTrueHdrSaturation{0, 200};
 inline constexpr core::Range<int> kTrueHdrGray{10, 100};

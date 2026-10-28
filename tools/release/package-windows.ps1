@@ -87,22 +87,34 @@ if (Test-Path $TrtModule) {
   Remove-Item -Recurse -Force $dir -ErrorAction SilentlyContinue
   New-Item -ItemType Directory -Force -Path $dir | Out-Null
   Copy-Item $TrtModule $dir
-  # TensorRT et ses ressources du constructeur, depuis le dossier lib de AJP_TENSORRT_ROOT.
   $cache = Get-Content "$Build/CMakeCache.txt"
   $trtRoot = ($cache | Select-String '^AJP_TENSORRT_ROOT:[A-Z]*=(.*)$').Matches[0].Groups[1].Value
-  foreach ($pattern in "nvinfer*.dll", "nvonnxparser*.dll") {
-    Copy-Item "$trtRoot/lib/$pattern" $dir -ErrorAction SilentlyContinue
-    Copy-Item "$trtRoot/bin/$pattern" $dir -ErrorAction SilentlyContinue
+  $nvinferHere = Get-ChildItem "$trtRoot/lib/nvinfer_*.dll", "$trtRoot/bin/nvinfer_*.dll" -ErrorAction SilentlyContinue |
+    Where-Object { $_.Name -match '^nvinfer_(\d+)\.dll$' } | Select-Object -First 1
+  $trtVersion = if ($nvinferHere) { $Matches[1] } else { $Version }
+  $vendor = "$Root/tools/release/nvidia-vendor/tensorrt-windows-x64.lock"
+  if (-not $env:AJP_NVIDIA_BUNDLE -and (Test-Path $vendor)) {
+    # Lien direct : le paquet ne porte que le module ; les bibliothèques de NVIDIA et trtexec se
+    # tirent des archives de NVIDIA elles-mêmes, après l'acceptation de sa licence à l'écran
+    # (entrées [[vendor_file]], tools/release/vendor-index.py).
+    Add-Engine "tensorrt" $trtVersion "https://docs.nvidia.com/deeplearning/tensorrt/latest/reference/sla.html" $dir
+    Add-Content -Path $Lock -Value (@("") + (Get-Content $vendor)) -Encoding utf8NoBOM
+  } else {
+    # TensorRT et ses ressources du constructeur, depuis le dossier lib de AJP_TENSORRT_ROOT.
+    foreach ($pattern in "nvinfer*.dll", "nvonnxparser*.dll") {
+      Copy-Item "$trtRoot/lib/$pattern" $dir -ErrorAction SilentlyContinue
+      Copy-Item "$trtRoot/bin/$pattern" $dir -ErrorAction SilentlyContinue
+    }
+    Copy-Item "$trtRoot/bin/trtexec.exe" $dir -ErrorAction SilentlyContinue
+    # Le runtime CUDA lié au backend (cudart64_*.dll), du kit CUDA.
+    if ($env:CUDA_PATH) {
+      Copy-Item "$env:CUDA_PATH/bin/cudart64_*.dll" $dir -ErrorAction SilentlyContinue
+      Copy-Item "$env:CUDA_PATH/bin/x64/cudart64_*.dll" $dir -ErrorAction SilentlyContinue
+    }
+    $nvinfer = Get-ChildItem "$dir/nvinfer_*.dll" | Where-Object { $_.Name -match '^nvinfer_(\d+)\.dll$' } | Select-Object -First 1
+    $trtVersion = if ($nvinfer) { $Matches[1] } else { $Version }
+    Add-Engine "tensorrt" $trtVersion "https://docs.nvidia.com/deeplearning/tensorrt/latest/reference/sla.html" $dir
   }
-  Copy-Item "$trtRoot/bin/trtexec.exe" $dir -ErrorAction SilentlyContinue
-  # Le runtime CUDA lié au backend (cudart64_*.dll), du kit CUDA.
-  if ($env:CUDA_PATH) {
-    Copy-Item "$env:CUDA_PATH/bin/cudart64_*.dll" $dir -ErrorAction SilentlyContinue
-    Copy-Item "$env:CUDA_PATH/bin/x64/cudart64_*.dll" $dir -ErrorAction SilentlyContinue
-  }
-  $nvinfer = Get-ChildItem "$dir/nvinfer_*.dll" | Where-Object { $_.Name -match '^nvinfer_(\d+)\.dll$' } | Select-Object -First 1
-  $trtVersion = if ($nvinfer) { $Matches[1] } else { $Version }
-  Add-Engine "tensorrt" $trtVersion "https://docs.nvidia.com/deeplearning/tensorrt/latest/reference/sla.html" $dir
 }
 
 $OvModule = "$Build/src/gpu/openvino/ajp_backend_openvino.dll"

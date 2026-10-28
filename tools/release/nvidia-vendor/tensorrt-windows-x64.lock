@@ -1,0 +1,153 @@
+# TensorRT 11.3.0.99 et NVRTC 13.4.92, Windows x64 (pypi.nvidia.com)
+# Lu dans les roues par tools/release/vendor-index.py (lecture seule par plages HTTP) ; à fusionner dans engines.lock
+# à côté de l'[[engine]] tensorrt de la plateforme. Voir tools/release/nvidia-vendor/LISEZMOI.txt.
+
+[[vendor_file]]
+id = "tensorrt"
+platform = "windows"
+url = "https://pypi.nvidia.com/tensorrt-cu13-libs/tensorrt_cu13_libs-11.3.0.99-py3-none-win_amd64.whl"
+name = "nvinfer_11.dll"
+data_offset = 1192715114
+packed_size = 201906837
+size = 401707120
+method = "deflate"
+sha256 = "f8af3a6d0ebffe3a2e1d7a3f68a23d49ee1087085f30e15107c15242285e3580"
+
+[[vendor_file]]
+id = "tensorrt"
+platform = "windows"
+url = "https://pypi.nvidia.com/tensorrt-cu13-libs/tensorrt_cu13_libs-11.3.0.99-py3-none-win_amd64.whl"
+name = "nvinfer_builder_resource_ptx_11.dll"
+data_offset = 861648948
+packed_size = 216642415
+size = 242572912
+method = "deflate"
+sha256 = "4e92b6a8d0bfd07bde60cb609adc2837f24efeaa8cd724de71ecc5a63a6308e9"
+
+[[vendor_file]]
+id = "tensorrt"
+platform = "windows"
+url = "https://pypi.nvidia.com/tensorrt-cu13-libs/tensorrt_cu13_libs-11.3.0.99-py3-none-win_amd64.whl"
+name = "nvinfer_builder_resource_sm100_11.dll"
+data_offset = 166552458
+packed_size = 262634616
+size = 290767472
+method = "deflate"
+sha256 = "6e8f207b081f044e4844fbc8395cfe99fb93f7719a1c1a9c5261f6dde53eefe4"
+arch = "sm100"
+
+[[vendor_file]]
+id = "tensorrt"
+platform = "windows"
+url = "https://pypi.nvidia.com/tensorrt-cu13-libs/tensorrt_cu13_libs-11.3.0.99-py3-none-win_amd64.whl"
+name = "nvinfer_builder_resource_sm120_11.dll"
+data_offset = 1394622032
+packed_size = 241326491
+size = 269391472
+method = "deflate"
+sha256 = "909611e02f177c5c39ef699095dda5ed03a9d03314a51ff1e9911b1e35f06073"
+arch = "sm120"
+
+[[vendor_file]]
+id = "tensorrt"
+platform = "windows"
+url = "https://pypi.nvidia.com/tensorrt-cu13-libs/tensorrt_cu13_libs-11.3.0.99-py3-none-win_amd64.whl"
+name = "nvinfer_builder_resource_sm75_11.dll"
+data_offset = 1078291443
+packed_size = 95683416
+size = 118526064
+method = "deflate"
+sha256 = "b17e959ade52993c14d010c714be5bf62e26600a1114810796eab6d03cb69bbe"
+arch = "sm75"
+
+[[vendor_file]]
+id = "tensorrt"
+platform = "windows"
+url = "https://pypi.nvidia.com/tensorrt-cu13-libs/tensorrt_cu13_libs-11.3.0.99-py3-none-win_amd64.whl"
+name = "nvinfer_builder_resource_sm80_11.dll"
+data_offset = 16746
+packed_size = 165612033
+size = 190690928
+method = "deflate"
+sha256 = "41ec7df0278e4bbe71ac5928c8dbbf30aa59d75b52405c8e10f5ea9f75d90a16"
+arch = "sm80"
+
+[[vendor_file]]
+id = "tensorrt"
+platform = "windows"
+url = "https://pypi.nvidia.com/tensorrt-cu13-libs/tensorrt_cu13_libs-11.3.0.99-py3-none-win_amd64.whl"
+name = "nvinfer_builder_resource_sm86_11.dll"
+data_offset = 1635948603
+packed_size = 155086062
+size = 180006512
+method = "deflate"
+sha256 = "2a69783206fdb836d72a6126bd8622f893c5373ec5e53a41856b04481c72dcfc"
+arch = "sm86"
+
+[[vendor_file]]
+id = "tensorrt"
+platform = "windows"
+url = "https://pypi.nvidia.com/tensorrt-cu13-libs/tensorrt_cu13_libs-11.3.0.99-py3-none-win_amd64.whl"
+name = "nvinfer_builder_resource_sm89_11.dll"
+data_offset = 1791035449
+packed_size = 163842574
+size = 189048432
+method = "deflate"
+sha256 = "efbbaa176606668f0402c8acc6fffe61e6cbba7ce685155509c0d17766401d73"
+arch = "sm89"
+
+[[vendor_file]]
+id = "tensorrt"
+platform = "windows"
+url = "https://pypi.nvidia.com/tensorrt-cu13-libs/tensorrt_cu13_libs-11.3.0.99-py3-none-win_amd64.whl"
+name = "nvinfer_builder_resource_sm90_11.dll"
+data_offset = 429187154
+packed_size = 432461715
+size = 461991536
+method = "deflate"
+sha256 = "44dfec28b21009d23618a41ffb20fb88e55b15b8e263b11f293961bd9a01d79d"
+arch = "sm90"
+
+[[vendor_file]]
+id = "tensorrt"
+platform = "windows"
+url = "https://pypi.nvidia.com/tensorrt-cu13-libs/tensorrt_cu13_libs-11.3.0.99-py3-none-win_amd64.whl"
+name = "nvonnxparser_11.dll"
+data_offset = 165628842
+packed_size = 923535
+size = 2290288
+method = "deflate"
+sha256 = "150c082c091da388502b15adf6301025f20552008cc82da1d58646f47115e029"
+
+[[vendor_file]]
+id = "tensorrt"
+platform = "windows"
+url = "https://pypi.nvidia.com/nvidia-cuda-nvrtc/nvidia_cuda_nvrtc-13.4.92-py3-none-win_amd64.whl"
+name = "nvrtc-builtins64_134.dll"
+data_offset = 77
+packed_size = 3303137
+size = 7243376
+method = "deflate"
+sha256 = "73768e90526e8a43d5eb356f0ffad198468e8c15e95d45a84c6c4b12fb9aa02f"
+
+[[vendor_file]]
+id = "tensorrt"
+platform = "windows"
+url = "https://pypi.nvidia.com/nvidia-cuda-nvrtc/nvidia_cuda_nvrtc-13.4.92-py3-none-win_amd64.whl"
+name = "nvrtc64_130_0.dll"
+data_offset = 3303284
+packed_size = 43639054
+size = 106038896
+method = "deflate"
+sha256 = "c92027e5eae58b6f272cafb438bf59b55deb02bd326b183956e84e0a180dbd14"
+
+[[vendor_file]]
+id = "tensorrt"
+platform = "windows"
+url = "https://pypi.nvidia.com/tensorrt-cu13-libs/tensorrt_cu13_libs-11.3.0.99-py3-none-win_amd64.whl"
+name = "nvinfer_plugin_11.dll"
+data_offset = 1173974924
+packed_size = 18740132
+size = 45631600
+method = "deflate"
+sha256 = "2fbe3bb8329e0de581a7b72c63d7afbbc915a643d93ecbf14af16cc21af08e2b"

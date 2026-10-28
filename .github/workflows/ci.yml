@@ -78,8 +78,8 @@ jobs:
   # ASan et UBSan la couche est coupée pour la durée : les deux autres tâches la font déjà parler.
   # Les préréglages de test portent LSAN_OPTIONS, TSAN_OPTIONS et, sous ASan, le chargeur Vulkan
   # qui garde pilotes et couches chargés jusqu'à la sortie (tools/ci/lsan.supp dit pourquoi).
-  # clang-tidy n'analyse que les fichiers que cette configuration compile (clang-tidy-src.sh) : la
-  # tâche analysée construit aussi le backend OpenVINO (roue PyPI), que rien d'autre ne passait au
+  # clang-tidy n'analyse que les fichiers que cette configuration compile (clang-tidy-src.sh) : sa
+  # tâche, à part pour ne pas allonger celle des tests (15 min sur tout src/), construit aussi le backend OpenVINO (roue PyPI), que rien d'autre ne passait au
   # crible avant la release. Elle tourne sur chaque pull request, comme les autres.
   player:
     name: Lecteur Linux (${{ matrix.name }})
@@ -89,9 +89,10 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - { name: lavapipe, preset: linux-prefix, tidy: true, validation: require }
-          - { name: asan-ubsan, preset: linux-prefix-asan, tidy: false, validation: "off" }
-          - { name: tsan, preset: linux-prefix-tsan-player, tidy: false, validation: require }
+          - { name: lavapipe, preset: linux-prefix, tidy: false, tests: true, validation: require }
+          - { name: clang-tidy, preset: linux-prefix, tidy: true, tests: false, validation: require }
+          - { name: asan-ubsan, preset: linux-prefix-asan, tidy: false, tests: true, validation: "off" }
+          - { name: tsan, preset: linux-prefix-tsan-player, tidy: false, tests: true, validation: require }
     env:
       CC: gcc-13
       CXX: g++-13
@@ -130,6 +131,7 @@ jobs:
       - run: cmake --build --preset ${{ matrix.preset }}
       - run: ccache -s
       - name: Tests (Vulkan logiciel sous Xvfb)
+        if: matrix.tests
         run: xvfb-run -a ctest --preset ${{ matrix.preset }} -j 3
       # Une pull request n'analyse que les fichiers qu'elle change (tout src/ si un en-tête ou un
       # CMakeLists.txt change) ; main, la nuit et les lancements à la demande analysent tout.

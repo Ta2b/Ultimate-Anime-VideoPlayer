@@ -47,10 +47,11 @@ TEST_CASE("play.toml relit à l'identique ce qu'il a écrit", "[app][settings]")
   s.motion_engine = MotionEngine::DistilDrba;
   s.rife_model = "rife_v4.22_lite.onnx";
   s.keep_poses = true;
+  s.gmfss_quality = true;
+  s.rife_auto = true;
   s.span_order = SpanOrder::Before;
   s.grade_values.expand = 0.3;
-  s.audio_languages = {"fre", "jpn"};
-  s.subtitle_languages = {};
+  s.language_presets = {{"eng", ""}, {"", "fre"}};
   const auto back = parse_settings(format_settings(s));
   REQUIRE(back);
   CHECK(*back == s);
@@ -99,6 +100,7 @@ TEST_CASE("Mode HDR : moteur RTX HDR, HDR adaptatif ou SDR, et les fichiers d'av
 TEST_CASE("Warp et SPAN : Auto passe après SPAN au-dessus de 1080p ; les fichiers d'avant",
           "[app][settings]") {
   CHECK(PlaySettings{}.span_order == SpanOrder::Auto);
+  CHECK_FALSE(PlaySettings{}.gmfss_quality);  // performance par défaut
   CHECK_FALSE(warp_after_span(SpanOrder::Auto, 1080));
   CHECK(warp_after_span(SpanOrder::Auto, 1440));
   CHECK(warp_after_span(SpanOrder::Auto, 2160));
@@ -172,12 +174,18 @@ TEST_CASE("Hors plage, type faux ou TOML invalide : refus nommé", "[app][settin
   REQUIRE_FALSE(path);
   CHECK(parse_settings("[subtitles]\nscale = 3.0\n").error().detail.find("subtitles.scale") !=
         std::string::npos);
-  const auto languages = parse_settings("[audio]\nlanguages = [\"eng\", \"en-US\"]\n");
+  // L'ancien format (deux listes) devient deux préférences.
+  const auto languages =
+      parse_settings("[audio]\nlanguages = [\"eng\", \"jpn\"]\n[subtitles]\nlanguages = [\"fre\"]\n");
   REQUIRE(languages);
-  CHECK(languages->audio_languages == std::vector<std::string>{"eng", "en-US"});
-  CHECK(languages->subtitle_languages == PlaySettings{}.subtitle_languages);
+  CHECK(languages->language_presets == std::vector<ajp::media::LanguagePreset>{{"eng", "fre"}, {"jpn", ""}});
+  const auto written =
+      parse_settings("[languages]\naudio_1 = \"jpn\"\nsubtitles_1 = \"fre\"\naudio_2 = \"fre\"\n");
+  REQUIRE(written);
+  CHECK(written->language_presets == PlaySettings{}.language_presets);
+  CHECK(parse_settings("[languages]\naudio_1 = 3\n").error().code == RefusalCode::FieldType);
+  CHECK(parse_settings("[languages]\naudio_1 = \"fr/../x\"\n").error().code == RefusalCode::FieldOutOfRange);
   CHECK(parse_settings("[subtitles]\nlanguages = \"fre\"\n").error().code == RefusalCode::FieldType);
-  CHECK(parse_settings("[audio]\nlanguages = [\"fr/../x\"]\n").error().code == RefusalCode::FieldOutOfRange);
   const auto broken = parse_settings("[image\n");
   REQUIRE_FALSE(broken);
   CHECK(broken.error().code == RefusalCode::ProfileUnreadable);
@@ -323,6 +331,26 @@ TEST_CASE("Écrire puis relire play.toml ; absent : les défauts", "[app][settin
   CHECK_FALSE(save_settings(path, bad));
   CHECK(load_settings(path)->rife_factor == 2);  // l'ancien fichier reste
   std::filesystem::remove_all(dir);
+}
+
+TEST_CASE("GMFSS : passer de performance à qualité recharge la chaîne, seulement pour GMFSS",
+          "[app][settings]") {
+  PlaySettings running;
+  running.rife_factor = 2;
+  running.motion_engine = MotionEngine::Gmfss;
+  PlaySettings wanted = running;
+  wanted.gmfss_quality = true;
+  const Change change = change_between(running, wanted, true);
+  CHECK(change.cost == ChangeCost::Reopen);
+  CHECK(change.reason.find("qualité") != std::string::npos);
+  // Le sens inverse aussi.
+  running.gmfss_quality = true;
+  wanted.gmfss_quality = false;
+  CHECK(change_between(running, wanted, true).cost == ChangeCost::Reopen);
+  // Un autre moteur du mouvement ne recharge rien pour ce réglage.
+  running.motion_engine = MotionEngine::Rife;
+  wanted.motion_engine = MotionEngine::Rife;
+  CHECK(change_between(running, wanted, true).cost != ChangeCost::Reopen);
 }
 
 }  // namespace

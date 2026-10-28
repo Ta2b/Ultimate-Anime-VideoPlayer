@@ -183,15 +183,27 @@ if [ -f "$TRT_MODULE" ] && [ -n "${AJP_PACKAGE_NVIDIA:-}" ]; then
   TRTEXEC="$(sed -n 's/^AJP_TRTEXEC:[A-Z]*=//p' "$BUILD/CMakeCache.txt")"
   [ -n "$TRTEXEC" ] && [ -x "$TRTEXEC" ] && cp "$TRTEXEC" "$dir/trtexec"
   copy_deps "$dir" "$dir"/*
-  # Les ressources du constructeur, ouvertes par libnvinfer selon l'architecture du GPU, et les
-  # bibliothèques que trtexec ouvre lui-même (dlopen, invisibles pour ldd) : greffons et lecteur ONNX.
-  copy_beside "$dir" "$dir/ajp_backend_tensorrt.so" libnvinfer 'libnvinfer_builder_resource*' \
-    'libnvinfer_plugin.so.[0-9]*' 'libnvonnxparser.so.[0-9]*'
-  for f in "$dir"/*; do [ -e "$STAGE/lib/$(basename "$f")" ] && [ "$f" != "$dir/ajp_backend_tensorrt.so" ] && rm "$f"; done
-  check_portable "$dir" "$STAGE/lib"
   TRT_VERSION="$(basename "$(ls "$dir"/libnvinfer.so.* | sort | tail -1)" | sed 's/^libnvinfer\.so\.//')"
-  engine_package tensorrt "${TRT_VERSION:-$VERSION}" \
-    "https://docs.nvidia.com/deeplearning/tensorrt/latest/reference/sla.html" "$dir"
+  VENDOR="$ROOT/tools/release/nvidia-vendor/tensorrt-linux-x64.lock"
+  if [ -z "${AJP_NVIDIA_BUNDLE:-}" ] && [ -f "$VENDOR" ]; then
+    # Lien direct : le paquet ne porte que ce qui est à nous (module, trtexec). Les bibliothèques de
+    # NVIDIA n'y entrent pas : le lecteur les tire des archives de NVIDIA elles-mêmes, après
+    # l'acceptation de sa licence à l'écran (entrées [[vendor_file]], tools/release/vendor-index.py).
+    rm -f "$dir"/libnvinfer* "$dir"/libnvonnxparser* "$dir"/libnvrtc* "$dir"/libcu*
+    engine_package tensorrt "${TRT_VERSION:-$VERSION}" \
+      "https://docs.nvidia.com/deeplearning/tensorrt/latest/reference/sla.html" "$dir"
+    { echo; cat "$VENDOR"; } >> "$LOCK"
+  else
+    # Les ressources du constructeur, ouvertes par libnvinfer selon l'architecture du GPU, et les
+    # bibliothèques que trtexec ouvre lui-même (dlopen, invisibles pour ldd) : greffons et lecteur ONNX.
+    copy_beside "$dir" "$dir/ajp_backend_tensorrt.so" libnvinfer 'libnvinfer_builder_resource*' \
+      'libnvinfer_plugin.so.[0-9]*' 'libnvonnxparser.so.[0-9]*'
+    for f in "$dir"/*; do [ -e "$STAGE/lib/$(basename "$f")" ] && [ "$f" != "$dir/ajp_backend_tensorrt.so" ] && rm "$f"; done
+    check_portable "$dir" "$STAGE/lib"
+    TRT_VERSION="$(basename "$(ls "$dir"/libnvinfer.so.* | sort | tail -1)" | sed 's/^libnvinfer\.so\.//')"
+    engine_package tensorrt "${TRT_VERSION:-$VERSION}" \
+      "https://docs.nvidia.com/deeplearning/tensorrt/latest/reference/sla.html" "$dir"
+  fi
 fi
 
 MX_MODULE="$BUILD/src/gpu/migraphx/ajp_backend_migraphx.so"

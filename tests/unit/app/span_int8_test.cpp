@@ -5,11 +5,13 @@
 #include <filesystem>
 #include <format>
 #include <fstream>
+#include <functional>
 #include <string>
 #include <string_view>
 #include <system_error>
 
 #include <catch2/catch_test_macros.hpp>
+#include <catch2/interfaces/catch_interfaces_capture.hpp>
 
 #include "prepare/sha256.h"
 
@@ -19,7 +21,11 @@ namespace {
 namespace fs = std::filesystem;
 
 struct Folder {
-  Folder() : root(fs::temp_directory_path() / "ajp-span-int8-test") {
+  // Un dossier par cas de test : ctest lance les cas en parallèle, chacun dans son processus.
+  Folder()
+      : root(fs::temp_directory_path() /
+             std::format("ajp-span-int8-test-{:x}",
+                         std::hash<std::string>{}(Catch::getResultCapture().getCurrentTestName()))) {
     fs::remove_all(root);
     fs::create_directories(root / "modeles");
     span = root / "2x_AnimeJaNai_HD_V3.1_Sharp1_Performance.onnx";

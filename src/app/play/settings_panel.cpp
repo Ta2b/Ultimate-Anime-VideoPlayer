@@ -45,7 +45,11 @@ void hdr_tab(PlaySettings& d, const SettingsChoices& choices) {
     }
     ImGui::EndCombo();
   }
-  if (choices.nvidia && !choices.true_hdr_available)
+  if (choices.nvidia && !choices.true_hdr_backend)
+    note(
+        "RTX HDR demande le moteur TensorRT (écran des moteurs) : sous Vulkan, le HDR adaptatif le "
+        "remplace.");
+  else if (choices.nvidia && !choices.true_hdr_available)
     note("RTX HDR : le SDK Maxine VideoFX n'est pas installé (écran des moteurs).");
   if (!choices.hdr_output) note("L'écran ne reçoit pas de HDR10 : la sortie reste SDR.");
   section(choices.nvidia ? "Réglages du mode HDR (RTX HDR et HDR adaptatif)" : "Réglages du HDR adaptatif");
@@ -202,40 +206,40 @@ std::string language_label(std::string_view tag) {
   return name.empty() ? std::string(tag) : name;  // une balise écrite à la main dans play.toml
 }
 
-// Les deux premiers rangs d'une liste de langues : la voulue, puis celle d'après si elle manque ;
-// « Selon le fichier » coupe la liste à ce rang.
-void language_rows(const char* first, std::vector<std::string>& list) {
-  for (std::size_t rank = 0; rank < 2; ++rank) {
+// Une langue au choix : `none_label` pour la valeur vide (audio : « Selon le fichier », sous-titres :
+// « Aucun »), sinon une des langues du menu.
+void language_combo(const char* label, const char* none_label, std::string& tag) {
+  const std::string current = tag.empty() ? none_label : language_label(tag);
+  if (!ImGui::BeginCombo(label, current.c_str())) return;
+  if (ImGui::Selectable(none_label, tag.empty())) tag.clear();
+  for (const Language& language : menu_languages()) {
+    if (ImGui::Selectable(std::string(language.name).c_str(), same_language(tag, language.code)))
+      tag = std::string(language.code);
+  }
+  ImGui::EndCombo();
+}
+
+// Deux préférences par ordre : l'audio et les sous-titres voulus ensemble ; la 2e sert quand la 1re
+// n'est pas entière dans le fichier.
+void languages_tab(PlaySettings& d) {
+  d.language_presets.resize(limits::kLanguagePresets);
+  for (std::size_t rank = 0; rank < d.language_presets.size(); ++rank) {
     ImGui::PushID(static_cast<int>(rank));
-    const std::string current = rank < list.size() ? language_label(list[rank]) : "Selon le fichier";
-    ImGui::BeginDisabled(rank > list.size());
-    if (ImGui::BeginCombo(rank == 0 ? first : "Sinon", current.c_str())) {
-      if (ImGui::Selectable("Selon le fichier", rank >= list.size()))
-        list.resize(std::min(rank, list.size()));
-      for (const Language& language : menu_languages()) {
-        const bool selected = rank < list.size() && same_language(list[rank], language.code);
-        if (!ImGui::Selectable(std::string(language.name).c_str(), selected)) continue;
-        if (rank < list.size()) {
-          list[rank] = std::string(language.code);
-        } else {
-          list.emplace_back(language.code);
-        }
-      }
-      ImGui::EndCombo();
-    }
-    ImGui::EndDisabled();
+    section(rank == 0 ? "Préférence 1" : "Préférence 2, si la 1re n'est pas disponible");
+    language_combo("Langue de l'audio", "Selon le fichier", d.language_presets[rank].audio);
+    language_combo("Langue des sous-titres", "Aucun", d.language_presets[rank].subtitles);
     ImGui::PopID();
   }
+  note(
+      "À l'ouverture d'un fichier : la première préférence dont l'audio ET les sous-titres existent est "
+      "prise telle quelle ; « Aucun » ne montre aucun sous-titre. Sinon, la deuxième ; sinon la meilleure "
+      "langue de chaque liste, puis les pistes par défaut du fichier. Une piste sans langue est reconnue "
+      "par son titre (VF, VOSTFR, Japanese…). Vaut au prochain fichier ; les pistes en cours se changent "
+      "dans la barre.");
 }
 
 // Vrai pendant qu'on tient le curseur du délai audio.
 bool sound_tab(PlaySettings& d) {
-  section("Langue");
-  language_rows("Langue de l'audio", d.audio_languages);
-  note(
-      "À l'ouverture d'un fichier : la piste dans cette langue, sinon dans la suivante, sinon celle que le "
-      "fichier marque par défaut. Une piste sans langue est reconnue par son titre (VF, Japanese…). "
-      "Vaut au prochain fichier ; la piste en cours se change dans la barre.");
   section("Synchronisation");
   ImGui::SliderInt("Délai audio (ms)", &d.audio_delay_ms, -1000, 1000);
   const bool held = ImGui::IsItemActive();
@@ -266,13 +270,6 @@ bool sound_tab(PlaySettings& d) {
 }
 
 void subtitles_tab(PlaySettings& d) {
-  section("Langue");
-  language_rows("Langue des sous-titres", d.subtitle_languages);
-  note(
-      "À l'ouverture d'un fichier : les sous-titres complets dans cette langue, sinon dans la suivante, "
-      "sinon "
-      "les panneaux forcés dans la langue de l'audio, sinon la piste par défaut du fichier. Une piste sans "
-      "langue est reconnue par son titre (VOSTFR, English…). Vaut au prochain fichier.");
   section("Taille");
   int percent = static_cast<int>(std::lround(d.subtitle_scale * 100.0F));
   if (ImGui::SliderInt("Taille (%)", &percent, static_cast<int>(limits::kSubtitleScale.lo * 100.0F),
@@ -387,6 +384,10 @@ SettingsPanel::Result SettingsPanel::draw(const PlaySettings& running, const Set
       }
       if (ImGui::BeginTabItem("Grade")) {
         grade_tab(draft_, choices);
+        ImGui::EndTabItem();
+      }
+      if (ImGui::BeginTabItem("Langues")) {
+        languages_tab(draft_);
         ImGui::EndTabItem();
       }
       if (ImGui::BeginTabItem("Sous-titres")) {
