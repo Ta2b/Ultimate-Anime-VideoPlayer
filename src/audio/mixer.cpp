@@ -48,7 +48,174 @@ float run(MixPath& path, float input) {
   return path.gain * path.ear.low;
 }
 
-const std::array<MixPreset, 6> kPresets{{
+struct Biquad {
+  float b0 = 1.0F, b1 = 0.0F, b2 = 0.0F, a1 = 0.0F, a2 = 0.0F;
+  std::array<float, 2> z1{}, z2{};  // un état par canal
+  float run(int channel, float x) {
+    const auto c = static_cast<std::size_t>(channel);
+    const float y = b0 * x + z1[c];
+    z1[c] = b1 * x - a1 * y + z2[c];
+    z2[c] = b2 * x - a2 * y;
+    return y;
+  }
+};
+
+// Les formules de l'« Audio EQ Cookbook » de Robert Bristow-Johnson : étagère grave, étagère aiguë et cloche.
+Biquad shelf(bool high, float freq, float gain_db, int rate) {
+  const float a = std::pow(10.0F, gain_db / 40.0F);
+  const float w = 2.0F * kPi * freq / static_cast<float>(rate);
+  const float cw = std::cos(w);
+  const float alpha = std::sin(w) / 2.0F * std::sqrt(2.0F);  // pente 1
+  const float sq = 2.0F * std::sqrt(a) * alpha;
+  float b0, b1, b2, a0, a1, a2;
+  if (!high) {
+    b0 = a * ((a + 1) - (a - 1) * cw + sq);
+    b1 = 2 * a * ((a - 1) - (a + 1) * cw);
+    b2 = a * ((a + 1) - (a - 1) * cw - sq);
+    a0 = (a + 1) + (a - 1) * cw + sq;
+    a1 = -2 * ((a - 1) + (a + 1) * cw);
+    a2 = (a + 1) + (a - 1) * cw - sq;
+  } else {
+    b0 = a * ((a + 1) + (a - 1) * cw + sq);
+    b1 = -2 * a * ((a - 1) + (a + 1) * cw);
+    b2 = a * ((a + 1) + (a - 1) * cw - sq);
+    a0 = (a + 1) - (a - 1) * cw + sq;
+    a1 = 2 * ((a - 1) - (a + 1) * cw);
+    a2 = (a + 1) - (a - 1) * cw - sq;
+  }
+  return Biquad{b0 / a0, b1 / a0, b2 / a0, a1 / a0, a2 / a0, {}, {}};
+}
+
+Biquad peaking(float freq, float gain_db, float q, int rate) {
+  const float a = std::pow(10.0F, gain_db / 40.0F);
+  const float w = 2.0F * kPi * freq / static_cast<float>(rate);
+  const float alpha = std::sin(w) / (2.0F * q);
+  const float cw = std::cos(w);
+  const float a0 = 1 + alpha / a;
+  return Biquad{
+      (1 + alpha * a) / a0, -2 * cw / a0, (1 - alpha * a) / a0, -2 * cw / a0, (1 - alpha / a) / a0, {}, {}};
+}
+
+}  // namespace
+
+// Ce qui suit le mixage, en stéréo : égaliseur, pièce légère, compression « nuit ». Rien n'existe (ni coût)
+// tant que le profil n'en demande pas.
+struct MixPost {
+  struct Comb {
+    std::vector<float> line;
+    std::size_t at = 0;
+    float low = 0.0F;
+  };
+  struct Allpass {
+    std::vector<float> line;
+    std::size_t at = 0;
+  };
+  explicit MixPost(const MixTuning& t, int sample_rate)
+      : tune(t),
+        rate(sample_rate),
+        eq_on(t.eq_bass_db != 0.0F || t.eq_voice_db != 0.0F || t.eq_treble_db != 0.0F),
+        wet(std::clamp(t.room * 0.4F + t.distance * 0.2F, 0.0F, 0.5F)),
+        night_on(t.night > 0.0F) {
+    if (eq_on) {
+      bass = shelf(false, 120.0F, t.eq_bass_db, rate);
+      voice = peaking(2500.0F, t.eq_voice_db, 0.9F, rate);
+      treble = shelf(true, 8000.0F, t.eq_treble_db, rate);
+    }
+    if (wet > 0.0F) {
+      constexpr std::array<float, 4> kMs{29.7F, 37.1F, 41.1F, 43.7F};
+      for (int ear = 0; ear < 2; ++ear) {
+        for (std::size_t i = 0; i < kMs.size(); ++i) {
+          const float ms = kMs[i] + 1.2F * static_cast<float>(ear);  // les deux oreilles décorrélées
+          combs[static_cast<std::size_t>(ear)][i].line.assign(
+              static_cast<std::size_t>(ms * 0.001F * static_cast<float>(rate)) + 1, 0.0F);
+        }
+        for (std::size_t i = 0; i < 2; ++i)
+          allpass[static_cast<std::size_t>(ear)][i].line.assign(
+              static_cast<std::size_t>((i == 0 ? 5.0F : 1.7F) * 0.001F * static_cast<float>(rate)) + 1, 0.0F);
+      }
+    }
+    release = std::exp(-1.0F / (0.25F * static_cast<float>(rate)));
+    attack = std::exp(-1.0F / (0.01F * static_cast<float>(rate)));
+  }
+  bool needed() const { return eq_on || wet > 0.0F || night_on; }
+
+  void process(PcmBlock& block) {
+    const auto frames = static_cast<std::size_t>(block.frames());
+    for (std::size_t f = 0; f < frames; ++f) {
+      float l = block.samples[f * 2];
+      float r = block.samples[f * 2 + 1];
+      if (eq_on) {
+        l = treble.run(0, voice.run(0, bass.run(0, l)));
+        r = treble.run(1, voice.run(1, bass.run(1, r)));
+      }
+      if (wet > 0.0F) {
+        const float in = 0.5F * (l + r) * 0.25F;
+        std::array<float, 2> tail{};
+        for (std::size_t ear = 0; ear < 2; ++ear) {
+          float sum = 0.0F;
+          for (Comb& comb : combs[ear]) {
+            const float out = comb.line[comb.at];
+            comb.low += 0.35F * (out - comb.low);  // amorti : les aigus meurent plus vite
+            comb.line[comb.at] = in + 0.74F * comb.low;
+            comb.at = (comb.at + 1) % comb.line.size();
+            sum += out;
+          }
+          for (Allpass& ap : allpass[ear]) {
+            const float buffered = ap.line[ap.at];
+            const float x = sum;
+            sum = -x + buffered;
+            ap.line[ap.at] = x + 0.5F * buffered;
+            ap.at = (ap.at + 1) % ap.line.size();
+          }
+          tail[ear] = sum;
+        }
+        l += wet * tail[0];
+        r += wet * tail[1];
+      }
+      if (night_on) {
+        // Compression liée des deux canaux : seuil -26 dBFS, rapport jusqu'à 6:1, gain de rattrapage à
+        // moitié.
+        const float level = std::max(std::fabs(l), std::fabs(r));
+        env = level > env ? attack * env + (1.0F - attack) * level : release * env + (1.0F - release) * level;
+        const float ratio = 1.0F + 5.0F * tune.night;
+        const float threshold_db = -26.0F;
+        const float env_db = 20.0F * std::log10(std::max(env, 1e-6F));
+        const float over = env_db - threshold_db;
+        const float reduction_db = over > 0.0F ? over * (1.0F - 1.0F / ratio) : 0.0F;
+        const float makeup_db = -threshold_db * (1.0F - 1.0F / ratio) * 0.5F;
+        const float gain = std::pow(10.0F, (makeup_db - reduction_db) / 20.0F);
+        l *= gain;
+        r *= gain;
+      }
+      block.samples[f * 2] = soft_limit(l);
+      block.samples[f * 2 + 1] = soft_limit(r);
+    }
+  }
+  void reset() {
+    bass.z1 = bass.z2 = voice.z1 = voice.z2 = treble.z1 = treble.z2 = {};
+    for (auto& bank : combs)
+      for (Comb& c : bank) std::ranges::fill(c.line, 0.0F);
+    for (auto& bank : allpass)
+      for (Allpass& a : bank) std::ranges::fill(a.line, 0.0F);
+    env = 0.0F;
+  }
+
+  MixTuning tune;
+  int rate;
+  bool eq_on;
+  float wet;
+  bool night_on;
+  Biquad bass, voice, treble;
+  std::array<std::array<Comb, 4>, 2> combs;
+  std::array<std::array<Allpass, 2>, 2> allpass;
+  float env = 0.0F;
+  float attack = 0.0F;
+  float release = 0.0F;
+};
+
+namespace {
+
+const std::array<MixPreset, 8> kPresets{{
     {"natural", "Naturel", "Le réglage d'origine, équilibré.", true, true, MixTuning{}},
     {"soft", "Doux", "Casque : séparation presque intacte, juste de quoi adoucir les écoutes longues.", true,
      false,
@@ -67,8 +234,26 @@ const std::array<MixPreset, 6> kPresets{{
      MixTuning{.crossfeed_gain = 0.28F, .head_radius_m = 0.10F, .head_shadow = 0.5F, .surround_gain = 1.2F}},
     {"voices", "Voix claires", "Enceintes : centre rehaussé, arrière et basses discrets.", false, true,
      MixTuning{.surround_gain = 0.85F, .center_lift = 1.6F, .lfe_gain = 0.2F}},
-    {"night", "Nuit", "Enceintes : voix devant, arrière et basses très réduits.", false, true,
-     MixTuning{.surround_gain = 0.7F, .center_lift = 1.5F, .lfe_gain = 0.12F, .downmix_scale = 0.55F}},
+    {"night", "Nuit",
+     "Enceintes : voix devant, arrière et basses très réduits, dynamique comprimée (explosions réduites, "
+     "murmures relevés).",
+     false, true,
+     MixTuning{.surround_gain = 0.7F,
+               .center_lift = 1.5F,
+               .lfe_gain = 0.12F,
+               .downmix_scale = 0.55F,
+               .night = 0.7F}},
+    {"room", "Salon", "Casque : enceintes dans une pièce, un peu plus loin, avec une réverbération légère.",
+     true, false,
+     MixTuning{.crossfeed_gain = 0.4F,
+               .crossfeed_cutoff_hz = 700.0F,
+               .crossfeed_delay_ms = 0.3F,
+               .head_shadow = 0.4F,
+               .distance = 0.5F,
+               .room = 0.35F}},
+    {"anime", "Voix d'anime",
+     "Voix plus nettes et aigus plus clairs, graves allégés : dialogues d'anime sans fatigue.", true, true,
+     MixTuning{.eq_bass_db = -1.5F, .eq_voice_db = 3.0F, .eq_treble_db = 1.5F}},
 }};
 
 }  // namespace
@@ -87,7 +272,26 @@ MixTuning tuning_from(const std::array<float, kMixTuningFields>& f) {
                            .surround_gain = f[5],
                            .center_lift = f[6],
                            .lfe_gain = f[7],
-                           .downmix_scale = f[8]});
+                           .downmix_scale = f[8],
+                           .distance = f[9],
+                           .room = f[10],
+                           .eq_bass_db = f[11],
+                           .eq_voice_db = f[12],
+                           .eq_treble_db = f[13],
+                           .night = f[14]});
+}
+
+std::array<float, 16> to_wire(const MixTuning& t) {
+  std::array<float, 16> wire{};
+  const auto fields = to_array(t);
+  std::ranges::copy(fields, wire.begin());
+  return wire;
+}
+
+MixTuning tuning_from_wire(const std::array<float, 16>& wire) {
+  std::array<float, kMixTuningFields> fields{};
+  std::copy_n(wire.begin(), fields.size(), fields.begin());
+  return tuning_from(fields);
 }
 
 MixTuning clamped(MixTuning t) {
@@ -100,6 +304,12 @@ MixTuning clamped(MixTuning t) {
   t.center_lift = std::clamp(t.center_lift, 1.0F, 2.0F);
   t.lfe_gain = std::clamp(t.lfe_gain, 0.0F, 0.6F);
   t.downmix_scale = std::clamp(t.downmix_scale, 0.4F, 0.9F);
+  t.distance = std::clamp(t.distance, 0.0F, 1.0F);
+  t.room = std::clamp(t.room, 0.0F, 1.0F);
+  t.eq_bass_db = std::clamp(t.eq_bass_db, -8.0F, 8.0F);
+  t.eq_voice_db = std::clamp(t.eq_voice_db, -8.0F, 8.0F);
+  t.eq_treble_db = std::clamp(t.eq_treble_db, -8.0F, 8.0F);
+  t.night = std::clamp(t.night, 0.0F, 1.0F);
   return t;
 }
 
@@ -115,6 +325,10 @@ const MixPreset* find_preset(std::string_view key) {
 Mixer::Mixer(MixConfig config) : config_(config) {
   config_.tuning = clamped(config_.tuning);
   const MixTuning& tune = config_.tuning;
+  if (config_.sink_channels == 2) {
+    auto post = std::make_shared<MixPost>(tune, config_.sample_rate);
+    if (post->needed()) post_ = std::move(post);
+  }
   const int delay = std::clamp(static_cast<int>(std::lround(tune.crossfeed_delay_ms * 0.001F *
                                                             static_cast<float>(config_.sample_rate))),
                                0, kMixDelayMax - 1);
@@ -135,6 +349,7 @@ void Mixer::reset() {
   for (auto& pair : paths_)
     for (MixPath& path : pair) path.ear = MixEar{};
   for (MixPath& path : feed_) path.ear = MixEar{};
+  if (post_) post_->reset();
 }
 
 void Mixer::set_faithful(bool faithful) {
@@ -169,7 +384,8 @@ void Mixer::build_binaural(int channels) {
                               0, kMixDelayMax - 1);
       // Les arrières et les côtés (|azimut| > 60°) prennent le niveau « surround » ; l'avant reste à 1.
       const float level = std::fabs(speaker.azimuth_deg) > 60.0F ? tune.surround_gain : 1.0F;
-      path.gain = (far ? 1.0F - tune.head_shadow * shadow : 1.0F) * 0.5F * level;
+      path.gain =
+          (far ? 1.0F - tune.head_shadow * shadow : 1.0F) * 0.5F * level * (1.0F - 0.2F * tune.distance);
       path.alpha = far ? one_pole(6000.0F - 4500.0F * shadow, config_.sample_rate) : 1.0F;
     }
   }
@@ -235,6 +451,12 @@ void Mixer::crossfeed(PcmBlock& block) {
 
 PcmBlock Mixer::process(PcmBlock block) {
   if (config_.faithful || config_.sink_channels != 2) return block;
+  PcmBlock out = process_core(std::move(block));
+  if (post_ && out.channels == 2 && config_.listen != Listen::Cinema) post_->process(out);
+  return out;
+}
+
+PcmBlock Mixer::process_core(PcmBlock block) {
   if (block.channels == 6 || block.channels == 8) {
     if (config_.listen == Listen::Cinema) return block;
     if (config_.listen == Listen::Headphones) {

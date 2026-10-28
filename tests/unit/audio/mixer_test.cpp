@@ -110,7 +110,7 @@ TEST_CASE("les profils : Naturel est le mixage d'origine, les autres le changent
   };
   CHECK(leak("strong") > leak("natural"));
   CHECK(leak("natural") > leak("soft"));
-  // Aux enceintes, « Nuit » baisse l'arrière par rapport à Naturel.
+  // Aux enceintes, « Voix claires » baisse l'arrière par rapport à Naturel.
   const auto rear = [](const char* key) {
     Mixer mixer(MixConfig{.listen = Listen::Speakers, .tuning = ajp::audio::find_preset(key)->tuning});
     PcmBlock block{.pts_us = 0, .channels = 6};
@@ -118,7 +118,7 @@ TEST_CASE("les profils : Naturel est le mixage d'origine, les autres le changent
     for (std::size_t f = 0; f < 64; ++f) block.samples[f * 6 + 4] = 0.5F;  // arrière gauche
     return mixer.process(std::move(block)).samples[40 * 2];
   };
-  CHECK(rear("night") < rear("natural"));
+  CHECK(rear("voices") < rear("natural"));
 }
 
 TEST_CASE("les réglages hors plage sont ramenés, le tableau fait l'aller-retour", "[mixer][profils]") {
@@ -131,4 +131,92 @@ TEST_CASE("les réglages hors plage sont ramenés, le tableau fait l'aller-retou
   const auto round_trip =
       ajp::audio::tuning_from(ajp::audio::to_array(ajp::audio::find_preset("wide")->tuning));
   CHECK(round_trip == ajp::audio::find_preset("wide")->tuning);
+}
+
+namespace {
+
+PcmBlock stereo_sine(float hz, float amplitude, int frames = 48'000) {
+  PcmBlock block{.pts_us = 0, .channels = 2};
+  block.samples.resize(static_cast<std::size_t>(frames) * 2);
+  for (int f = 0; f < frames; ++f) {
+    const float v = amplitude * std::sin(6.2831853F * hz * static_cast<float>(f) / 48'000.0F);
+    block.samples[static_cast<std::size_t>(f) * 2] = v;
+    block.samples[static_cast<std::size_t>(f) * 2 + 1] = v;
+  }
+  return block;
+}
+
+// L'énergie efficace du dernier quart du bloc (le régime établi).
+float steady_rms(const PcmBlock& block) {
+  const std::size_t begin = block.samples.size() * 3 / 4;
+  double sum = 0.0;
+  for (std::size_t i = begin; i < block.samples.size(); ++i)
+    sum += static_cast<double>(block.samples[i]) * block.samples[i];
+  return static_cast<float>(std::sqrt(sum / static_cast<double>(block.samples.size() - begin)));
+}
+
+float through(const ajp::audio::MixTuning& tuning, float hz, float amplitude) {
+  Mixer mixer(MixConfig{.listen = Listen::Speakers, .tuning = tuning});
+  return steady_rms(mixer.process(stereo_sine(hz, amplitude)));
+}
+
+}  // namespace
+
+TEST_CASE("l'égaliseur relève les graves, les voix et les aigus à leur fréquence", "[mixer][profils][eq]") {
+  const float flat = through({}, 60.0F, 0.2F);
+  ajp::audio::MixTuning bass;
+  bass.eq_bass_db = 6.0F;
+  CHECK(through(bass, 60.0F, 0.2F) / flat == Approx(2.0F).margin(0.25F));  // +6 dB ~ x2
+  ajp::audio::MixTuning voice;
+  voice.eq_voice_db = 6.0F;
+  CHECK(through(voice, 2500.0F, 0.2F) / through({}, 2500.0F, 0.2F) == Approx(2.0F).margin(0.25F));
+  CHECK(through(voice, 100.0F, 0.2F) / through({}, 100.0F, 0.2F) ==
+        Approx(1.0F).margin(0.1F));  // hors bande : intact
+  ajp::audio::MixTuning treble;
+  treble.eq_treble_db = -6.0F;
+  CHECK(through(treble, 12'000.0F, 0.2F) / through({}, 12'000.0F, 0.2F) == Approx(0.5F).margin(0.12F));
+}
+
+TEST_CASE("la compression nuit rapproche les fortes et les faibles dynamiques", "[mixer][profils][nuit]") {
+  ajp::audio::MixTuning night;
+  night.night = 1.0F;
+  const float loud_in = 0.8F;
+  const float quiet_in = 0.02F;
+  const float ratio_in = loud_in / quiet_in;
+  const float ratio_out = through(night, 1000.0F, loud_in) / through(night, 1000.0F, quiet_in);
+  CHECK(ratio_out < ratio_in * 0.5F);  // la dynamique est réduite de moitié au moins
+  CHECK(through(night, 1000.0F, quiet_in) > through({}, 1000.0F, quiet_in));  // le murmure est relevé
+  CHECK(through(night, 1000.0F, loud_in) < 1.0F);                             // jamais d'écrêtage
+}
+
+TEST_CASE("la pièce ajoute une queue de réverbération, sans pièce rien ne dure", "[mixer][profils][room]") {
+  const auto tail_energy = [](const ajp::audio::MixTuning& tuning) {
+    Mixer mixer(MixConfig{.listen = Listen::Speakers, .tuning = tuning});
+    PcmBlock block{.pts_us = 0, .channels = 2};
+    block.samples.assign(2 * 24'000, 0.0F);
+    block.samples[0] = 0.9F;
+    block.samples[1] = 0.9F;
+    const PcmBlock out = mixer.process(std::move(block));
+    double sum = 0.0;
+    for (std::size_t i = 2 * 4800; i < out.samples.size(); ++i)
+      sum += static_cast<double>(out.samples[i]) * out.samples[i];  // après 100 ms
+    return sum;
+  };
+  ajp::audio::MixTuning room;
+  room.room = 1.0F;
+  CHECK(tail_energy(room) > 1e-6);
+  CHECK(tail_energy({}) == 0.0);
+}
+
+TEST_CASE("les nouveaux profils existent et le tableau des réglages fait l'aller-retour",
+          "[mixer][profils]") {
+  for (const char* key : {"room", "anime", "night"}) CHECK(ajp::audio::find_preset(key) != nullptr);
+  CHECK(ajp::audio::find_preset("anime")->tuning.eq_voice_db > 0.0F);
+  const auto tuning = ajp::audio::find_preset("room")->tuning;
+  const auto back = ajp::audio::to_array(ajp::audio::tuning_from_wire(ajp::audio::to_wire(tuning)));
+  const auto original = ajp::audio::to_array(tuning);
+  for (std::size_t i = 0; i < back.size(); ++i) {
+    INFO("champ " << i);
+    CHECK(back[i] == original[i]);
+  }
 }

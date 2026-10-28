@@ -444,3 +444,31 @@ TEST_CASE("play.toml garde le profil audio et ses réglages personnalisés", "[s
   CHECK(ajp::app::play::resolved_tuning(s, 0) == ajp::audio::MixTuning{});
   CHECK(ajp::app::play::resolved_tuning(s, 1) == ajp::audio::find_preset("night")->tuning);
 }
+
+TEST_CASE("un appareil garde son profil de virtualisation, les autres le global", "[settings][audio]") {
+  ajp::app::play::PlaySettings s;
+  s.listening = "headphones";
+  s.audio_profile = "soft";
+  s.device_listening = {{"Casque BT", "headphones"}};
+  s.device_profile = {{"Casque BT", "room"}};
+  CHECK(ajp::app::play::effective_listening(s, "Casque BT").tuning ==
+        ajp::audio::find_preset("room")->tuning);
+  CHECK(ajp::app::play::effective_listening(s, "Autre").tuning == ajp::audio::find_preset("soft")->tuning);
+  const auto read = ajp::app::play::parse_settings(ajp::app::play::format_settings(s));
+  REQUIRE(read);
+  CHECK(read->device_profile == s.device_profile);
+  CHECK_FALSE(ajp::app::play::parse_settings("version = 1\n[audio.device_profiles]\nX = \"zzz\"\n"));
+  // Les nouveaux réglages (égaliseur, nuit) font l'aller-retour de play.toml.
+  s.audio_profile = "custom";
+  s.audio_custom.eq_voice_db = 4.5F;
+  s.audio_custom.night = 0.6F;
+  s.audio_custom.room = 0.25F;
+  const auto again = ajp::app::play::parse_settings(ajp::app::play::format_settings(s));
+  REQUIRE(again);
+  const auto got = ajp::audio::to_array(again->audio_custom);
+  const auto want = ajp::audio::to_array(s.audio_custom);
+  for (std::size_t i = 0; i < got.size(); ++i) {
+    INFO("champ " << i);
+    CHECK(got[i] == want[i]);
+  }
+}
