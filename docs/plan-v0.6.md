@@ -10,7 +10,7 @@ que sur un accord clair de Tatoub dans le fil. Détail des décisions et journal
 - [ ] Interpolation Auto par défaut pour tous les profils, y compris après le benchmark
 - [ ] « Garder les poses DRBA » activé par défaut, **si** la mesure A/B montre un gain de performance ET de qualité (sinon, chiffres au coordinateur)
 - [ ] Profils « legacy » retirés de toutes les listes de sélection (réglages, assistant, benchmark), sans casser l'import d'un ancien play.toml
-- [ ] HDR : RTX HDR actif par défaut sans être installé ; options HDR sélectionnables sur un écran SDR ; mode SDR qui n'applique pas le grade ; HDR adaptatif sur écran SDR
+- [x] HDR : écran SDR sans route HDR (ni RTX HDR ni adaptatif), options grisées, mode SDR sans grade (RTX HDR non installé : repli sur le HDR adaptatif, déjà en place) ; à confirmer chez Tatoub
 - [ ] Interface : lecteur par défaut en fenêtre au démarrage (« ne plus demander ») et réglage discret (Général > Mises à jour), composition finale et soin OLED hors de Couleurs, **audit complet « Réglages avancés »** (tableau dans `ux-parametres.md`, les réglages rares restent dans leur onglet), OLED auto si écran OLED détecté, Réinitialiser et debug hors des réglages avancés
 - [ ] Benchmark autonome et silencieux (clip sévère embarqué 5 à 15 s, barre de progression, étapes « Chargement de tous les moteurs nécessaires au bench » puis « Benchmark en cours », recherche des modèles et résolutions, multiplicateur en Auto, plus d'écran de démarrage à chaque essai)
 - [ ] Moteurs : espace disque vérifié avant l'installation (plus de boucle de téléchargement), dossier d'installation des moteurs au choix avec un défaut
@@ -21,3 +21,15 @@ que sur un accord clair de Tatoub dans le fil. Détail des décisions et journal
 ## Journal
 - **2026-10-28** : v0.6 ouverte. Mesures du contrôleur Auto sur la tête 00f00ee : RIFE ×4, DistilDRBA ×5, GMFSS ×2 tenus en fin de run (`docs/reports/mesures-auto-4070ti-2026-10-28.md`).
 - [x] Paquet TensorRT découplé des étiquettes : empreinte de ses entrées (`trt-fingerprint.sh`), release fixe `trt-<empreinte>` (`trt-package.sh`), Release Linux la lit sans relance ; plus de reconstruction ni de seconde passe par release (demande de Tatoub, 0.5.1)
+
+## Liste vivante du détail demandé par Tatoub (28/10, à n'oublier aucun avant la 0.6)
+
+1. Audio : profils faits (#64) ; reste distance des enceintes virtuelles, pièce/réverbération légère, égaliseur, compression de dynamique « nuit », profils nommés enregistrables par appareil.
+2. Réglages avancés : audit fait (#61) ; reste la page avancée « Rendu », l'OLED coché automatiquement à la détection, Réinitialiser hors des avancés, debug hors d'Avancé, les avancés prolongent les onglets existants.
+3. Pop-up de démarrage « lecteur par défaut » avec « ne plus demander » + réglage discret ; composition finale et soin OLED hors de Couleurs.
+4. HDR : RTX HDR actif par défaut même non installé (corriger), options HDR grisées sur écran SDR, mode SDR sans grade, HDR adaptatif suspect sur SDR.
+5. Benchmark autonome et silencieux : clip de 5 à 15 s généré ou choisi sans ouvrir de vidéo, aucune image, barre de progression seule, étapes « Chargement de tous les moteurs nécessaires au bench » puis « Benchmark en cours », explore moteurs, multiplicateurs et résolutions, multiplicateur Auto à la fin.
+6. Poses DRBA par défaut après A/B performance ET qualité.
+7. Design Showtime, AppImage, installeur .exe + zip portable, .dmg.
+8. Confirmer sur Fedora GNOME : fenêtre fantôme à la fermeture, japonais.
+9. Audio : convolution par réponse impulsionnelle à la HeSuVi (import WAV HRIR 14 canaux / stéréo / 7.1, FFT par blocs, rééchantillonnage, gain de sécurité, par appareil) ; aucune réponse tierce sans licence vérifiée ; par défaut le binaural paramétrique ; préréglage égaliseur/centre voix « anime ».

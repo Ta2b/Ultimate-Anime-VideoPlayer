@@ -31,6 +31,8 @@ using panel::section;
 constexpr std::array<const char*, 3> kRoutes{"RTX HDR (NVIDIA)", "HDR adaptatif (tous GPU)", "SDR"};
 
 void hdr_tab(PlaySettings& d, const SettingsChoices& choices) {
+  // Un écran SDR n'a pas de HDR à convertir : les options restent visibles mais grisées.
+  ImGui::BeginDisabled(!choices.hdr_output);
   section("Sortie");
   const int route = d.true_hdr ? 0 : (d.hdr_native ? 1 : 2);
   if (ImGui::BeginCombo("Moteur HDR", kRoutes[static_cast<std::size_t>(route)])) {
@@ -51,7 +53,7 @@ void hdr_tab(PlaySettings& d, const SettingsChoices& choices) {
         "remplace.");
   else if (choices.nvidia && !choices.true_hdr_available)
     note("RTX HDR : le SDK Maxine VideoFX n'est pas installé (écran des moteurs).");
-  if (!choices.hdr_output) note("L'écran ne reçoit pas de HDR10 : la sortie reste SDR.");
+  if (!choices.hdr_output) note("Écran SDR : le HDR est indisponible, l'image reste en SDR (sans grade).");
   section(choices.nvidia ? "Réglages du mode HDR (RTX HDR et HDR adaptatif)" : "Réglages du HDR adaptatif");
   bool automatic = d.true_hdr_peak == 0;
   if (ImGui::Checkbox(std::format("Pic automatique ({} nits)", choices.auto_peak).c_str(), &automatic))
@@ -84,6 +86,7 @@ void hdr_tab(PlaySettings& d, const SettingsChoices& choices) {
       "sur les scènes claires et les grands aplats blancs, ombres plus douces la nuit, éclats isolés vers le "
       "pic.",
       choices.nvidia ? ", sur RTX HDR comme sur le HDR adaptatif" : ""));
+  ImGui::EndDisabled();
 }
 
 // Un curseur sur un réglage du grade (double) ; true s'il a bougé. La valeur revient arrondie au
@@ -119,6 +122,12 @@ void look_section(PlaySettings& d) {
 }
 
 void grade_tab(PlaySettings& d, const SettingsChoices& choices) {
+  // Contraste, saturation et grade suivent une route HDR : en mode SDR (ou sur un écran SDR) ils ne
+  // s'appliquent pas, et se grisent.
+  const bool hdr_route = choices.hdr_output && (d.true_hdr || d.hdr_native);
+  if (!hdr_route)
+    note("Mode SDR : le grade ne s'applique pas (choisir RTX HDR ou le HDR adaptatif, onglet HDR).");
+  ImGui::BeginDisabled(!hdr_route);
   look_section(d);
   section("Grade");
   ImGui::Checkbox("Grader la sortie (HDR10 et SDR)", &d.grade);
@@ -147,17 +156,12 @@ void grade_tab(PlaySettings& d, const SettingsChoices& choices) {
     ImGui::Checkbox("Gamut Display P3 de l'écran", &g.gamut_p3);
   }
   ImGui::EndDisabled();
-  if (!choices.hdr_output) {
-    note(
-        "Sortie SDR : couleurs, noirs, garde-fou, contraste et saturation du mode HDR s'appliquent ; "
-        "éclats, aplats lumineux et couleurs étendues demandent une sortie HDR10.");
-  } else if (d.true_hdr) {
+  if (d.true_hdr) {
     note("Route RTX HDR : TrueHDR, puis le grade sur la sortie PQ.");
   } else if (d.hdr_native) {
     note("HDR adaptatif : libplacebo en PQ, aspect TrueHDR émulé selon la scène, puis le grade.");
-  } else {
-    note("Sortie HDR10 sans moteur HDR : pas de grade (moteur à choisir dans l'onglet HDR).");
   }
+  ImGui::EndDisabled();
   if (!panel::advanced()) return;
   section("Composition finale");
   if (ImGui::BeginCombo("Filtre vers la fenêtre", std::string(label(d.final_scaler)).c_str())) {
