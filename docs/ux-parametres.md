@@ -110,6 +110,8 @@ Général
   ├ Lecteur par défaut       bouton « Faire de ce lecteur le lecteur par défaut », Ouvrir avec  (voir 4.4)
   └ Mises à jour             Automatique / Me prévenir / Jamais, canal, fréquence, version (voir 4.5)
 Image IA
+  ├ Configuration            préréglage (Auto, Économe, Rapide, Normal, Qualité, Ultra, Personnalisé), priorité
+  │                          (Fluidité / Équilibre / Image), « Évaluer ma machine », carte et écran détectés (voir 4.7)
   ├ Agrandissement           résolution de travail, SPAN (case, modèle)
   ├ Fluidité                 multiplicateur, moteur d'interpolation, mode GMFSS
   └ Avancé                   filtre de réduction (Hermite…), modèle RIFE, poses DRBA, ordre du traitement, Smooth Motion
@@ -136,11 +138,13 @@ Avancé
   └ Réinitialiser            retour au profil d'origine, réglages d'usine
 ```
 
-- **9 catégories**, 2 à 3 sous-catégories chacune. Les langues, l'export et les moteurs ont leur catégorie
+- **9 catégories**, 2 à 4 sous-catégories chacune. Les langues, l'export et les moteurs ont leur catégorie
   (demande du 28/10) ; rien n'est caché dans un onglet fourre-tout.
 - **Profils** : l'écran disparaît pour l'instant (demande du 28/10). Les 9 profils et le profil de démarrage
   restent dans `play.toml` et dans le code ; « retour au profil d'origine » passe dans Avancé > Réinitialiser.
-- **Image IA** regroupe agrandissement et interpolation : une seule chaîne (la résolution de travail décide ce que
+- **Image IA** s'ouvre sur *Configuration* (le mode automatique, 4.7) : par défaut les pages Agrandissement et Fluidité
+  y sont **en lecture** (valeurs choisies par l'automatique, grisées avec « Auto »), et se débloquent en
+  *Personnalisé*. Elle regroupe agrandissement et interpolation : une seule chaîne (la résolution de travail décide ce que
   l'interpolation peut tenir), avec le résumé vivant de la chaîne en haut de la catégorie.
 - **HDR et Couleurs séparés** : HDR configure la conversion et l'écran ; Couleurs ne contient que l'image. Le
   filtre de réduction et la mise à l'échelle n'y sont plus.
@@ -211,6 +215,15 @@ Général (le coordinateur) ou avec les sous-titres (moi) : question 2.
 Aucun de ces éléments n'est irréaliste ; seul le **filtrage fin de la recherche** (ligne par ligne) l'est sans
 registre. Ce serait une étape 6, après le reste.
 
+### 4.3 ter Parcours du premier lancement (tout ensemble)
+1. L'inscription « Ouvrir avec » se fait toute seule (4.4).
+2. AJP détecte la carte, l'écran et choisit une tranche (4.7) : le préréglage est **Auto**.
+3. Un seul écran d'accueil : résumé « RTX 4070 Ti · 4K 165 Hz → 720p → SPAN ×2 → DistilDRBA lite », bouton
+   **« Évaluer ma machine (15 s) »** (ou *Plus tard*), choix de la **mise à jour** (4.5) et, sur Windows,
+   « Faire de ce lecteur le lecteur par défaut ».
+4. Tout se retrouve ensuite dans les réglages : Général (lecteur par défaut, mises à jour), Image IA > Configuration
+   (préréglage, benchmark).
+
 ### 4.4 Lecteur par défaut et « Ouvrir avec »
 - **Premier lancement** : AJP s'inscrit tout seul dans « Ouvrir avec », **sans confirmation** (l'inscription
   ajoute une entrée, ne prend la place d'aucun autre lecteur) : `register_player()` existe déjà
@@ -266,7 +279,7 @@ Mécanique :
 | Seuil (pas de code) | Seuil du noir |
 | Effacer la barre en pause (anti-marquage) | Masquer la barre en pause (protège l'OLED) |
 
-### 4.7 Configuration automatique (idée du 28/10)
+### 4.7 Configuration automatique (idée du 28/10, intégrée à la refonte)
 
 **But** : l'utilisateur ne règle rien. AJP reconnaît la machine, choisit la chaîne, et tout reste modifiable en
 détail (mode *Personnalisé*, case *Réglages avancés*). Elle remplace l'onglet Profils retiré : les profils
@@ -321,8 +334,12 @@ l'effet.
   la puissance publique des cartes et sur les coûts mesurés de chaque moteur : ce sont des **estimations**. C'est
   la raison du benchmark ci-dessous, et de laisser la tranche modifiable.
 
-#### Benchmark facultatif
-- Bouton **« Évaluer ma machine »** (Image IA, et proposé au premier lancement) : joue 10 à 15 s d'une courte
+#### Benchmark : proposé au début, refaisable à tout moment
+- **Au premier lancement** (écran d'accueil, `first_run`) : l'automatique choisit d'abord une tranche par le
+  classement (instantané, rien ne bloque), puis **propose** « Évaluer ma machine (15 s) » ou « Plus tard ». Rien à
+  confirmer pour l'« Ouvrir avec » (4.4), mais l'évaluation est proposée car elle fait jouer la machine.
+- **Toujours refaisable** : Image IA > Configuration > **« Évaluer ma machine »**, avec la date et le résultat
+  du dernier passage. Bouton **« Évaluer ma machine »** : joue 10 à 15 s d'une courte
   séquence avec chaque chaîne candidate (son coupé), relève le temps par image (mêmes statistiques que `--stats`)
   et garde **la plus lourde qui tient avec marge** (par exemple 80 % du budget d'une image à la cadence de
   l'écran). Résultat mémorisé par carte, pilote et version du moteur ; refait si l'un change.
@@ -330,7 +347,7 @@ l'effet.
   plus bas, à relancer.
 
 #### Préréglages (remplacent l'onglet Profils)
-*Auto* (par défaut), *Économe*, *Rapide*, *Normal*, *Qualité*, *Ultra*, *Personnalisé*. Modifier un réglage
+Liste en tête de Image IA > Configuration : *Auto* (par défaut), *Économe*, *Rapide*, *Normal*, *Qualité*, *Ultra*, *Personnalisé*. Modifier un réglage
 passe en *Personnalisé*, à partir des valeurs courantes. Plus de préréglages ne servent à rien tant qu'on n'a
 pas de cas d'usage précis : *Sans interpolation* et *HDR* se règlent par catégorie, pas par profil.
 
@@ -363,19 +380,26 @@ résolution) ; jamais en pleine lecture. Un utilisateur en *Personnalisé* n'est
 ## 6. Étapes proposées
 
 1. **Textes et composants** (organisation inchangée) : 720p, vocabulaire, `badge()`, infobulles, retrait des
-   paragraphes.
-2. **Mécanique** : arbre à gauche, groupes encadrés, barre de défilement, largeurs, dernière page mémorisée.
-3. **Réorganisation** : arbre de 9 catégories à la place des onglets, groupes et lignes multiples, Profils retiré, déplacement des réglages, bouton lecteur par défaut,
-   inscription « Ouvrir avec » au premier lancement. Aucune clé de `play.toml` ne change (sauf `last_page`,
-   `open_with_registered`, `ask_default_player`), donc aucune migration.
-4. **Mise à jour automatique** : vérification + réglages d'abord (sans installation), puis téléchargement signé
-   et application au lancement, test sur Linux puis Windows. C'est un chantier à part (signature, clé, format du
-   manifeste) : ne pas le mélanger à l'étape 3.
-5. **Recherche** : registre des réglages, filtre par page puis par ligne (4.3 bis).
-6. **Configuration automatique** (4.7) : d'abord le fichier de classement et la règle de choix (testables sans
-   interface), puis le sélecteur de préréglage, puis le benchmark. À ta demande, elle peut passer avant la refonte.
-7. **Passe de relecture** : infobulles relues d'un trait ; essai à 100 %, 150 % et 200 % d'échelle, sur 4K et
+   paragraphes. Visible tout de suite, risque faible.
+2. **Configuration automatique, partie données** (4.7) : `data/gpu_tiers.toml`, détection de la tranche, règle de
+   choix (carte, écran, vidéo, priorité). Testable sans interface, par tests unitaires sur des noms de cartes
+   réels (Vulkan, RADV, Intel, Apple).
+3. **Mécanique du menu** : arbre à gauche, groupes encadrés et lignes multiples, barre de défilement, largeurs,
+   dernière page mémorisée.
+4. **Réorganisation** : 9 catégories, Profils retiré, *Image IA > Configuration* (préréglages, priorité),
+   déplacement des réglages, bouton lecteur par défaut, « Ouvrir avec » au premier lancement, case « Réglages
+   avancés ». Clés nouvelles seulement : `last_page`, `advanced_shown`, `open_with_registered`,
+   `ask_default_player`, `preset`, `priority`. Aucune migration des clés existantes.
+5. **Benchmark** : « Évaluer ma machine » (proposé au premier lancement, refaisable dans les réglages), résultat
+   mémorisé par carte, pilote et version du moteur.
+6. **Mise à jour automatique** : vérification et réglages d'abord (sans installation), puis téléchargement signé et
+   application au lancement, essai Linux puis Windows. Chantier à part (signature, clé, manifeste).
+7. **Recherche** : registre des réglages, filtre par page puis par ligne (4.3 bis).
+8. **Passe de relecture** : infobulles relues d'un trait ; essai à 100 %, 150 % et 200 % d'échelle, sur 4K et
    1366×768.
+
+Chaque étape se teste localement (build, tests, snapshots du menu avant/après) puis un seul envoi à la fin, comme
+d'habitude. Les étapes 2 et 3 sont indépendantes ; la 4 dépend des deux.
 
 Vérifications : tests existants de `settings_test` et du panneau, instantané du menu avant/après (`--snapshot`)
 par onglet, contrôle que chaque réglage de l'annexe A reste atteignable.
@@ -387,7 +411,8 @@ par onglet, contrôle que chaque réglage de l'annexe A reste atteignable.
 4. Les temps mesurés : jamais dans l'interface, oui dans `docs/nvidia-linux.md` ?
 5. Mises à jour : défaut **Automatique** (installe au prochain lancement) ou **Me prévenir** ?
 6. Pour GMFSS et le mode auto de la 0.4 : qu'est-ce que tu veux améliorer en priorité ?
-7. Configuration automatique (4.7) : les 5 tranches et les préréglages te conviennent ? Le benchmark : proposé au premier lancement ou seulement sur bouton ? Veux-tu que je commence par elle, avant la refonte du menu ?
+7. Configuration automatique (4.7) : les 5 tranches et les préréglages te conviennent ? (Benchmark : décidé, proposé au début et refaisable dans les réglages.)
+8. L'ordre des étapes (section 6) te convient ? Je propose de commencer par 1 (textes) puis 2 (données de l'automatique).
 
 ## Annexe A : arbre actuel, réglage par réglage
 
