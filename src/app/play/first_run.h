@@ -12,6 +12,7 @@
 #include <array>
 #include <cstdint>
 #include <filesystem>
+#include <functional>
 #include <span>
 #include <string>
 #include <string_view>
@@ -105,6 +106,8 @@ struct FirstRunView {
   // L'assistant du premier lancement (wizard.h) ; vide au rouvrir depuis l'onglet Moteurs (revisit).
   Wizard wizard;
   WizardFacts facts;
+  // 4b : relit les points de RTX HDR (moteur, SDK) d'après l'état du poste et les cases cochées ; posé par l'écran.
+  std::function<std::vector<RtxCheck>(const FirstRunView&)> check_rtx;
   std::string tier_line;     // « Niveau estimé : Rapide »
   std::string display_line;  // « Écran 3840×2160 · 165 Hz »
 };

@@ -98,9 +98,11 @@ std::expected<bool, Refusal> run_engine_screen(const EngineScreen& s, core::Sett
   log->info("{} : {}", revisit ? "écran des moteurs" : "bienvenue", gpu_line(gpu));
   FirstRunView view =
       first_run_view(gpu, engines_here(s.options, s.paths, s.catalog), std::move(choice), engines);
-  view.revisit = revisit;
-  // L'assistant du premier lancement (ou de --first-run) ; rouvert depuis l'onglet Moteurs, l'ancien écran.
-  if (!revisit) {
+  // L'assistant du premier lancement (ou de --first-run, ou relancé depuis les paramètres) ; rouvert depuis
+  // l'onglet Moteurs, l'ancien écran des seuls moteurs.
+  const bool wizard_mode = !revisit || s.restart_wizard;
+  view.revisit = revisit && !wizard_mode;
+  if (wizard_mode) {
     const TierEstimate estimate = estimate_tier(gpu);
     view.facts = WizardFacts{.engine_choice = std::ranges::any_of(view.engines,
                                                                    [](const EngineRow& row) {
@@ -108,8 +110,28 @@ std::expected<bool, Refusal> run_engine_screen(const EngineScreen& s, core::Sett
                                                                             row.usable;
                                                                    }),
                              .hdr_display = s.screen.hdr_output(),
-                             .multichannel_output = false};
-    view.wizard = begin_wizard(view.facts, s.options.first_run ? 0 : engines.first_run_step);
+                             .multichannel_output = false,
+                             .rtx_guided = core::kHostOs == core::Os::Linux && gpu.tensor_cores};
+    view.check_rtx = [&s, gpu](const FirstRunView& now) {
+      const auto ticked = [&](core::EngineId id) {
+        return std::ranges::any_of(now.engines, [&](const EngineRow& row) { return row.offer.id == id && row.chosen; });
+      };
+      std::vector<RtxCheck> out;
+      out.push_back({.name = "Carte NVIDIA RTX",
+                     .done = gpu.tensor_cores,
+                     .todo = "RTX HDR demande une carte RTX (cœurs Tensor)."});
+      const bool trt_here = tensorrt_backend_present(s.paths);
+      out.push_back({.name = trt_here ? "Moteur TensorRT" : "Moteur TensorRT (installé à « Terminer »)",
+                     .done = trt_here || ticked(core::EngineId::TensorRt),
+                     .todo = "Cochez TensorRT à l'écran Moteur : il s'installe à « Terminer »."});
+      const bool maxine_here = maxine_available(s.options, s.paths);
+      out.push_back({.name = maxine_here ? "SDK Maxine VideoFX" : "SDK Maxine VideoFX (installé à « Terminer »)",
+                     .done = maxine_here || ticked(core::EngineId::MaxineVfx),
+                     .todo = "Cochez NVIDIA Maxine à l'écran Moteur (licence NVIDIA), ou posez le SDK dans /usr/local/VideoFX "
+                             "et relancez avec --truehdr-sdk."});
+      return out;
+    };
+    view.wizard = begin_wizard(view.facts, s.options.first_run || s.restart_wizard ? 0 : engines.first_run_step);
     view.tier_line = std::format("Niveau estimé : {}", tier_label(estimate.tier));
     const int height = display_height(s.screen.window());
     const double hz = display_refresh_hz(s.screen.window());
@@ -120,7 +142,7 @@ std::expected<bool, Refusal> run_engine_screen(const EngineScreen& s, core::Sett
   if (!chosen_view) return std::unexpected(std::move(chosen_view.error()));
   if (!*chosen_view) {
     // Fermé en route : l'assistant reprendra après le dernier écran vu.
-    if (!revisit && furthest > engines.first_run_step) {
+    if (wizard_mode && !revisit && furthest > engines.first_run_step) {
       engines.first_run_step = furthest;
       if (auto written = core::save_settings(s.engines_path, engines); !written)
         log->warn("{}", written.error().detail);
@@ -139,7 +161,7 @@ std::expected<bool, Refusal> run_engine_screen(const EngineScreen& s, core::Sett
   const std::optional<core::EngineId> kept = before.preferred[usage(core::Usage::Upscale)];
   if (revisit && kept && chosen(engines, *kept) && !network_added(before, engines))
     engines = using_engine(std::move(engines), *kept);
-  if (!revisit) {
+  if (wizard_mode) {
     const Wizard& wizard = (*chosen_view)->wizard;
     engines = wizard_settings(wizard, std::move(engines));
     const std::filesystem::path play_path = s.engines_path.parent_path() / "play.toml";
@@ -200,12 +222,14 @@ std::expected<std::shared_ptr<BackendLibrary>, Refusal> open_backend(const Engin
 
 std::expected<bool, Refusal> handle_engine_change(Player& p, const EngineChange& request) {
   const auto log = log_channel("app");
+  const auto* open = std::get_if<OpenEngineScreen>(&request);
   const EngineScreen screen{.screen = p.screen,
                             .ui = p.ui,
                             .options = p.options,
                             .paths = p.paths,
                             .catalog = p.catalog,
-                            .engines_path = p.settings_path.parent_path() / "settings.toml"};
+                            .engines_path = p.settings_path.parent_path() / "settings.toml",
+                            .restart_wizard = open != nullptr && open->wizard};
   const auto* use = std::get_if<UseEngine>(&request);
   if (use != nullptr) {
     p.engines = using_engine(std::move(p.engines), use->id);

@@ -311,18 +311,18 @@ bool sound_tab(PlaySettings& d, const SettingsChoices& choices) {
   section("Synchronisation");
   ImGui::SliderInt("Délai audio (ms)", &d.audio_delay_ms, -1000, 1000);
   const bool held = ImGui::IsItemActive();
-  if (ImGui::Button("Remettre à 0")) d.audio_delay_ms = 0;
-  note(
+  panel::tip(
       "Positif : le son est retardé. Ctrl + clic sur le curseur pour saisir une valeur (jusqu'à ±10 000 "
       "ms).");
+  if (ImGui::Button("Remettre à 0")) d.audio_delay_ms = 0;
   d.audio_delay_ms = std::clamp(d.audio_delay_ms, limits::kAudioDelayMs.lo, limits::kAudioDelayMs.hi);
   ImGui::Checkbox("Lire l'épisode suivant à la fin", &d.autoplay_next);
-  note(
+  panel::tip(
       "À la fin d'une vidéo ouverte par un fichier, lit la suivante du même dossier (ordre naturel des "
       "noms : ep2 avant ep10). N : épisode suivant, Maj + N : précédent, O : passer le générique "
       "(chapitre Opening ou Ending, sinon 85 s).");
   ImGui::Checkbox("Caler la lecture sur l'écran", &d.display_sync);
-  note(
+  panel::tip(
       "Sur un écran à fréquence fixe, la lecture accélère ou ralentit d'au plus 0,125 % pour que chaque "
       "image tienne un nombre entier de rafraîchissements : plus aucune image doublée par dérive (une toutes "
       "les 17 s à 60 Hz sinon). Le son suit, sans changement audible. Sans calage possible (VRR, cadence "
@@ -367,7 +367,7 @@ void stats_tab(PlaySettings& d) {
 }
 
 // Général > Configuration : le préréglage, la priorité, la machine, « Évaluer ma machine ».
-bool config_page(PlaySettings& d, const SettingsChoices& choices, BenchNote& bench) {
+bool config_page(PlaySettings& d, const SettingsChoices& choices, BenchNote& bench, std::vector<Input>& actions) {
   section("Configuration automatique");
   if (ImGui::BeginCombo("Préréglage", std::string(label(d.preset)).c_str())) {
     for (int i = 0; i < kPresetCount; ++i) {
@@ -403,7 +403,12 @@ bool config_page(PlaySettings& d, const SettingsChoices& choices, BenchNote& ben
                    choices.display_hz > 0.0 ? std::format(" · écran {:.0f} Hz", choices.display_hz) : std::string()));
   note(choices.bench_text.empty() ? std::string("Jamais évaluée : le niveau est une estimation d'après la carte.")
                                   : choices.bench_text);
-  return bench_page(choices.place, choices.source_file, bench);
+  const bool started = bench_page(choices.place, choices.source_file, bench);
+
+  section("Assistant");
+  if (ImGui::Button("Relancer l'assistant")) actions.emplace_back(OpenEngineScreen{.wizard = true});
+  panel::tip("Les huit écrans de bienvenue : moteurs, image, HDR, audio, langues, mises à jour. Rien ne change avant « Terminer ».");
+  return started;
 }
 
 // Avancé > Réinitialiser.
@@ -465,12 +470,15 @@ SettingsPanel::Result SettingsPanel::draw(const PlaySettings& running, const Set
                            ImGuiCond_Always);
   bool keep = true;
   constexpr ImGuiWindowFlags kFlags = ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoMove |
-                                      ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoSavedSettings;
+                                      ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoSavedSettings |
+                                      ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse;
   if (ImGui::Begin("Paramètres", &keep, kFlags)) {
     ImGui::PushItemWidth(-width * 0.42F);
     bool delay_held = false;
     const PlaySettings before = draft_;
-    const float footer = pending_shown_ ? 84.0F * scale : 34.0F * scale;
+    // Sous les deux colonnes : la case « Réglages avancés » (et le bandeau « Appliquer » quand il est là).
+    const float footer = (pending_shown_ ? 84.0F * scale : 0.0F) + ImGui::GetFrameHeightWithSpacing() +
+                         2.0F * ImGui::GetStyle().ItemSpacing.y;
     const float tree_width = std::min(200.0F * scale, width * 0.3F);
     if ((!advanced_ && kPages[static_cast<std::size_t>(page_)].advanced) || (page_ == 1 && draft_.default_player_dismissed))
       page_ = 0;
@@ -497,7 +505,7 @@ SettingsPanel::Result SettingsPanel::draw(const PlaySettings& running, const Set
     {
       const std::string_view name = kPages[static_cast<std::size_t>(page_)].name;
       if (name == "Configuration") {
-        if (config_page(draft_, choices, bench_)) actions.emplace_back(Command{cmd::Pause{}});
+        if (config_page(draft_, choices, bench_, actions)) actions.emplace_back(Command{cmd::Pause{}});
       } else if (name == "Lecteur par défaut") {
         default_player_page(choices.place, system_, draft_.default_player_dismissed, choices.default_player_is_ajp);
       } else if (name == "Mises à jour") {

@@ -84,8 +84,10 @@ inline void tip(const std::string& text) {
 // rapide, violet fin, ambre lourd, rouge expérimental.
 inline void badge(const char* text, ImVec4 color) {
   ImGui::SameLine();
-  const ImVec2 at = ImGui::GetCursorScreenPos();
+  ImVec2 at = ImGui::GetCursorScreenPos();
   const ImVec2 size = ImGui::CalcTextSize(text);
+  // Centrée sur la hauteur d'un champ (case, liste) : la pastille suit le milieu du libellé, pas le haut de la ligne.
+  at.y += std::max(0.0F, (ImGui::GetFrameHeight() - (size.y + 2.0F)) * 0.5F);
   const float pad = 5.0F;
   ImDrawList* draw = ImGui::GetWindowDrawList();
   ImVec4 fill = color;

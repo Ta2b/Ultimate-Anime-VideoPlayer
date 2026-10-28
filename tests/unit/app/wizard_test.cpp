@@ -83,3 +83,20 @@ TEST_CASE("le résumé dit ce qui est choisi, sauté, et où le changer", "[wiza
   CHECK(listening_from_key("headphones") == Listening::Headphones);
   CHECK(listening_from_key("n'importe quoi") == Listening::Unsaid);
 }
+
+TEST_CASE("RTX HDR pas à pas : prêt seulement quand tout est fait, sinon HDR adaptatif en attendant", "[wizard]") {
+  Wizard wizard = begin_wizard({.engine_choice = true, .hdr_display = true, .rtx_guided = true}, 0);
+  wizard.hdr = HdrChoice::RtxHdr;
+  wizard.rtx_checks = {{.name = "Moteur TensorRT", .done = true}, {.name = "SDK Maxine", .done = false, .todo = "À importer"}};
+  CHECK_FALSE(rtx_ready(wizard.rtx_checks));
+  PlaySettings waiting = wizard_play_settings(wizard, {});
+  CHECK_FALSE(waiting.true_hdr);
+  CHECK(waiting.hdr_native);
+  CHECK(wizard_summary(wizard)[1].contains("pas prêt"));
+  wizard.rtx_checks[1].done = true;
+  CHECK(rtx_ready(wizard.rtx_checks));
+  PlaySettings ready = wizard_play_settings(wizard, {});
+  CHECK(ready.true_hdr);
+  CHECK_FALSE(ready.hdr_native);
+  CHECK_FALSE(rtx_ready({}));
+}

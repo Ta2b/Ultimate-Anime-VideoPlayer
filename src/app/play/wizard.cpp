@@ -89,6 +89,10 @@ std::string_view label(HdrChoice choice) {
   return {};
 }
 
+bool rtx_ready(const std::vector<RtxCheck>& checks) {
+  return !checks.empty() && std::ranges::all_of(checks, &RtxCheck::done);
+}
+
 Wizard begin_wizard(const WizardFacts& facts, int last_step_seen) {
   Wizard wizard;
   wizard.steps = wizard_steps(facts);
@@ -143,7 +147,10 @@ std::vector<std::string> wizard_summary(const Wizard& wizard) {
   }
   if (has(WizardStep::Hdr)) {
     out.push_back(skipped(WizardStep::Hdr) ? "HDR : sauté, automatique (HDR)"
-                                           : std::format("HDR : {} (HDR > Conversion)", label(wizard.hdr)));
+                                           : wizard.hdr == HdrChoice::RtxHdr && !wizard.rtx_checks.empty() &&
+                                                     !rtx_ready(wizard.rtx_checks)
+                                                 ? std::string("HDR : RTX HDR choisi mais pas prêt (HDR > Conversion) : en attendant, l'écran reste en HDR adaptatif")
+                                                 : std::format("HDR : {} (HDR > Conversion)", label(wizard.hdr)));
   }
   if (has(WizardStep::Audio)) {
     out.push_back(wizard.listening == Listening::Unsaid || skipped(WizardStep::Audio)
@@ -195,8 +202,9 @@ PlaySettings wizard_play_settings(const Wizard& wizard, PlaySettings settings) {
       case HdrChoice::Auto:
         break;
       case HdrChoice::RtxHdr:
-        settings.true_hdr = true;
-        settings.hdr_native = false;
+        // Pas prêt (4b non terminé) : le HDR adaptatif en attendant, RTX HDR se choisit ensuite dans HDR > Conversion.
+        settings.true_hdr = wizard.rtx_checks.empty() || rtx_ready(wizard.rtx_checks);
+        settings.hdr_native = !settings.true_hdr;
         break;
       case HdrChoice::Adaptive:
         settings.true_hdr = false;

@@ -31,6 +31,27 @@ constexpr std::array<HeightChoice, 5> kHeights{{
     {480, "480p"},
 }};
 
+std::string motion_description(MotionEngine engine) {
+  switch (engine) {
+    case MotionEngine::Rife:
+      return "RIFE : le moteur de base, rapide, bon partout.";
+    case MotionEngine::Gmfss:
+      return "GMFSS Fortuna : réseau fait pour l'animation, les images intermédiaires les plus propres, pour plusieurs "
+             "fois le coût de RIFE. Il prend ses graphes au flot à demi-échelle (_s05), qui valent le flot entier pour "
+             "moitié moins de calcul. Construit la première fois (plusieurs minutes). Expérimental.";
+    case MotionEngine::GmfssUnion:
+      return "GMFSS Union : GMFSS mêlé à l'image d'un RIFE intégré au réseau, moins de défauts sur les mouvements "
+             "rapides, pour un peu plus de calcul. Construit la première fois (plusieurs minutes).";
+    case MotionEngine::DistilDrba:
+      return "DistilDRBA : un RIFE à trois images entraîné à imiter DRBA ; le réseau garde lui-même les poses d'un "
+             "personnage animé en deux, pour à peu près le coût de RIFE 4.22 lite. Une image de retard.";
+    case MotionEngine::Apple:
+      return "Apple : le flot optique de macOS (VideoToolbox, macOS 15.4 ou plus), sur le Neural Engine et le GPU, sans "
+             "modèle à télécharger. Sous le backend Core ML seulement ; ailleurs RIFE prend la place.";
+  }
+  return {};
+}
+
 }  // namespace
 
 void image_tab(PlaySettings& d, const SettingsChoices& choices) {
@@ -148,7 +169,7 @@ void fluidity_tab(PlaySettings& d, const SettingsChoices& choices, bool exportin
     ImGui::EndCombo();
   }
   if (d.rife_auto && now.num > now.den) {
-    note(
+    panel::tip(
         "Auto choisit seul le multiplicateur de ×1 à ×6 (24 à 144 i/s pour 23,976) : il baisse dès que le "
         "GPU prend du retard, remonte après quelques secondes sans retard, et réessaie de plus en plus "
         "tard un palier qui vient d'échouer. Lecture seulement ; l'export garde un multiplicateur fixe.");
@@ -181,6 +202,7 @@ void fluidity_tab(PlaySettings& d, const SettingsChoices& choices, bool exportin
     if (!offered(engine) && d.motion_engine != engine) continue;
     if (ImGui::RadioButton(std::string(label(engine)).c_str(), d.motion_engine == engine))
       d.motion_engine = engine;
+    panel::tip(motion_description(engine));
     if (const auto mark = badge_of(engine)) {
       const bool heavy = *mark == Badge::Heaviest;
       panel::badge(std::string(badge_text(*mark)).c_str(),
@@ -214,12 +236,6 @@ void fluidity_tab(PlaySettings& d, const SettingsChoices& choices, bool exportin
   }
   if (is_gmfss(d.motion_engine)) {
     const bool union_model = d.motion_engine == MotionEngine::GmfssUnion;
-    note(
-        "Expérimental. GMFSS Fortuna (réseau fait pour l'animation) donne les images intermédiaires les plus "
-        "propres, pour plusieurs fois le coût de RIFE. Il prend toujours ses graphes au flot à demi-échelle "
-        "(_s05) : mesuré, ils valent le flot entier ou le dépassent pour moitié moins de calcul, et 720p "
-        "de travail tiennent en ×2 sur une 4070 Ti. Ses deux moteurs se construisent la première fois "
-        "(plusieurs minutes).");
     const bool quality_present =
         union_model ? choices.gmfss_union_quality_available : choices.gmfss_quality_available;
     ImGui::BeginDisabled(!quality_present);
@@ -229,7 +245,7 @@ void fluidity_tab(PlaySettings& d, const SettingsChoices& choices, bool exportin
       ImGui::EndCombo();
     }
     ImGui::EndDisabled();
-    note(
+    panel::tip(
         "Performance : le flot de GMFlow se calcule en FP16 (base 24 ms et union 23 ms par image "
         "intermédiaire "
         "à 720p sur une 4070 Ti). Qualité : GMFlow en FP32, un écart à l'original divisé par 4 environ, pour "
@@ -255,10 +271,6 @@ void fluidity_tab(PlaySettings& d, const SettingsChoices& choices, bool exportin
     }
   }
   if (d.motion_engine == MotionEngine::DistilDrba) {
-    note(
-        "DistilDRBA : un RIFE à trois images entraîné à imiter DRBA. Le réseau garde lui-même les poses d'un "
-        "personnage animé en deux pendant que le fond s'interpole, pour à peu près le coût de RIFE 4.22 "
-        "lite par image créée. Il lit l'image d'après la paire : une image de retard.");
     if (!choices.distil_drba_available) {
       note(
           std::format("Graphe introuvable : {}, à exporter dans {} (tools/drba/export_distil_drba.py) ; RIFE "
@@ -267,11 +279,6 @@ void fluidity_tab(PlaySettings& d, const SettingsChoices& choices, bool exportin
     }
   }
   if (d.motion_engine == MotionEngine::Apple) {
-    note(
-        "L'interpolation d'Apple : le réseau de flot optique de macOS (VideoToolbox, macOS 15.4 ou plus), "
-        "sur le Neural Engine et le GPU de la puce, sans modèle à télécharger. Sous le backend Core ML "
-        "seulement ; ailleurs, ou sur un Mac qui ne l'offre pas, RIFE prend la place. Essayée la première "
-        "fois pour cette taille.");
   }
   if (exporting) {
     // Les limites de la lecture en direct ne valent pas à l'export.
@@ -287,7 +294,7 @@ void fluidity_tab(PlaySettings& d, const SettingsChoices& choices, bool exportin
   ImGui::BeginDisabled(d.motion_engine != MotionEngine::Rife);
   ImGui::Checkbox("Garder les poses (DRBA) avec RIFE", &d.keep_poses);
   ImGui::EndDisabled();
-  note(
+  panel::tip(
       "Un personnage animé en deux sur un fond qui défile garde son rythme (il tient sa pose puis change "
       "d'un coup) pendant que le fond s'interpole, au lieu de se déformer entre deux dessins. Avec RIFE 4.25 "
       "ou 4.22 lite, une seule passe par paire. En direct. DistilDRBA le fait de lui-même.");
@@ -300,7 +307,7 @@ void fluidity_tab(PlaySettings& d, const SettingsChoices& choices, bool exportin
     ImGui::EndCombo();
   }
   ImGui::EndDisabled();
-  note(
+  panel::tip(
       "Après SPAN : SPAN agrandit chaque image source une seule fois, puis RIFE déforme les images "
       "agrandies : en ×3, une passe de SPAN au lieu de trois. Avec GMFSS, les images agrandies sont "
       "splattées par son flot et corrigées du résidu de sa fusion : le détail de SPAN reste. Avant SPAN, "

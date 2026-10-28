@@ -66,6 +66,7 @@ std::optional<Input> input_of(const SDL_Event& event, const core::KeyMap& keys) 
   if (plain && event.key.key == SDLK_ESCAPE) return LeaveFullscreen{};
   if (plain && event.key.key == SDLK_M) return ToggleMute{};
   if (plain && event.key.key == SDLK_J) return CycleSubtitles{};
+  if (plain && event.key.key == SDLK_B) return ToggleFaithful{};
   if (plain && event.key.key == SDLK_A) return CycleAudio{};
   if (plain && event.key.key == SDLK_P) return ToggleSettings{};
   if (plain && event.key.key == SDLK_N) {
