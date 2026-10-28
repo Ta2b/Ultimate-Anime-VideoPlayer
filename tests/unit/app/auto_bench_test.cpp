@@ -170,3 +170,28 @@ TEST_CASE("le rapport nomme chaque essai et le niveau gardé", "[auto_bench]") {
   CHECK(report.contains("ne tient pas"));
   CHECK(report.contains("Niveau gardé : Rapide"));
 }
+
+TEST_CASE("ajp compare : options, ligne de commande d'une variante, rapport", "[auto_bench]") {
+  const std::vector<std::string_view> args{"a.mkv", "--a=--rife=3  --work-height=540", "--b", "--rife=4",
+                                           "--b-settings=poses.toml", "--seconds=8"};
+  const auto options = parse_compare_options(args);
+  REQUIRE(options);
+  CHECK(options->a == std::vector<std::string>{"--rife=3", "--work-height=540"});
+  CHECK(options->b == std::vector<std::string>{"--rife=4"});
+  CHECK(options->b_settings == std::filesystem::path("poses.toml"));
+  CHECK(options->seconds == 8);
+  CHECK_FALSE(parse_compare_options(std::vector<std::string_view>{}));
+
+  const BenchPlan plan{.executable = "/x/ajp", .video = "/v/a.mkv", .seconds = 8};
+  const auto child = variant_child_args(plan, Variant{.name = "A", .args = options->a}, "/d", "/o");
+  CHECK(std::ranges::find(child, "--rife=3") != child.end());
+  CHECK(std::ranges::find(child, "--mute") != child.end());
+  CHECK(std::ranges::find(child, "--bench-level=1") == child.end());
+
+  CompareOutcome outcome{.a = Variant{.name = "A"}, .b = Variant{.name = "B"}};
+  outcome.reading_a = BenchReading{.gpu = "g", .run = run(Tier::Normal), .interval_p95_us = 20000};
+  outcome.reading_b = BenchReading{.gpu = "g", .run = run(Tier::Normal, 600), .interval_p95_us = 30000};
+  CHECK(format_compare_report(outcome).contains("Seule « A » tient"));
+  outcome.reading_b.run = run(Tier::Normal);
+  CHECK(format_compare_report(outcome).contains("« A » est plus légère de 10.0 ms"));
+}
