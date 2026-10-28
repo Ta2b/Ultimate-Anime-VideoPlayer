@@ -179,4 +179,26 @@ TEST_CASE("DistilDRBA : demi-flot préféré en 4K, l'un sert de repli à l'autr
 }
 
 }  // namespace
+TEST_CASE("Modèle SPAN : le menu n'a que le catalogue HD V3.1, un modèle hérité retombe sur le défaut",
+          "[app][model_choice]") {
+  const FakeHome fake("span");
+  const std::filesystem::path onnx = fake.home / ".local/share/AnimeJaNai-HDR-linux/animejanai/onnx";
+  std::filesystem::create_directories(onnx);
+  for (const std::string_view name : kSpanCatalogue) std::ofstream(onnx / std::string(name)) << "x";
+  const std::string legacy = "2x_AnimeJaNai_SD_V1beta34_Compact_1x3xHxW_dyn-HW_strong_fp16_op21_dynamo.onnx";
+  std::ofstream(onnx / legacy) << "x";
+  PlaySettings settings;
+  const auto plain = choose_model(PlayOptions{}, fake.home, settings);
+  REQUIRE(plain);
+  CHECK(plain->available.size() == 4);
+  CHECK(std::ranges::find(plain->available, legacy) == plain->available.end());
+  settings.model = legacy;  // un ancien play.toml : le défaut, sans refus
+  const auto fallback = choose_model(PlayOptions{}, fake.home, settings);
+  REQUIRE(fallback);
+  CHECK(fallback->path.filename().string() == fallback->default_name);
+  CHECK(fallback->default_name != legacy);
+  settings.model = std::string(kSpanCatalogue[0]);
+  CHECK(choose_model(PlayOptions{}, fake.home, settings)->path.filename().string() == kSpanCatalogue[0]);
+}
+
 }  // namespace ajp::app::play
