@@ -100,7 +100,8 @@ TEST_CASE("mises à jour : appliquer puis revenir en arrière", "[updater]") {
 }
 #endif
 
-TEST_CASE("un AppImage ne se met pas à jour lui-même : le lecteur renvoie vers la page des releases", "[updater][appimage]") {
+TEST_CASE("un AppImage ne se met pas à jour lui-même : le lecteur renvoie vers la page des releases",
+          "[updater][appimage]") {
   const ajp::app::play::UpdatePaths paths{.data = "/tmp", .install = "/tmp", .executable = "/tmp/ajp"};
   setenv("AJP_PACKAGED", "appimage", 1);
   const std::string reason = ajp::app::play::update_managed_reason(paths);
