@@ -23,9 +23,7 @@ void default_player_page(const PlayerPlace& place, SystemNote& last, bool& dismi
       "Les vidéos (mkv, mp4, webm, avi, mov…) s'ouvrent dans AJP depuis le gestionnaire de fichiers.");
   if (already_default) note("AJP est déjà le lecteur par défaut des vidéos.");
   ImGui::Checkbox("Ne plus me le demander", &dismissed);
-  panel::tip(
-      "Le bouton « Faire de ce lecteur le lecteur par défaut » quitte Général et reste tout en bas "
-      "d'Avancé.");
+  panel::tip("Une fois coché, cette page disparaît de Général et ne revient qu'avec « Réglages avancés ».");
 #ifdef __APPLE__
   static_cast<void>(last);
   note(register_player(place).value_or(std::string()));

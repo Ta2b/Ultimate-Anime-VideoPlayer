@@ -168,8 +168,9 @@ void grade_tab(PlaySettings& d, const SettingsChoices& choices) {
   }
 }
 
-// Avancé > Rendu : ce qui touche l'affichage final et l'écran OLED, sorti de Couleurs (réglages rares).
-void render_page(PlaySettings& d, const SettingsChoices& choices) {
+// Composition finale (Image IA > Agrandissement, réglages avancés) : le filtre vers la fenêtre et le
+// débandage.
+void composition_section(PlaySettings& d) {
   section("Composition finale");
   if (ImGui::BeginCombo("Filtre vers la fenêtre", std::string(label(d.final_scaler)).c_str())) {
     for (int i = 0; i < kFinalScalerCount; ++i) {
@@ -184,6 +185,10 @@ void render_page(PlaySettings& d, const SettingsChoices& choices) {
       "Le filtre étire la sortie de la chaîne (par exemple 1440p) vers la fenêtre ou l'écran 4K ; EWA "
       "Lanczos est le plus fin, plus lourd pour le GPU. Le débandage adoucit les marches des aplats et "
       "des dégradés, courants en anime, sans toucher aux contours. Aucun effet sur l'export.");
+}
+
+// Noir absolu et soins OLED (HDR > Conversion, réglages avancés).
+void oled_sections(PlaySettings& d, const SettingsChoices& choices) {
   section("Noir absolu OLED");
   if (ImGui::BeginCombo("Noir absolu", std::string(label(d.oled_black)).c_str())) {
     for (int i = 0; i < kOledBlackCount; ++i) {
@@ -493,7 +498,7 @@ bool config_page(PlaySettings& d, const SettingsChoices& choices, BenchNote& ben
   return started;
 }
 
-// Avancé > Réinitialiser.
+// Général > Réinitialiser.
 void reset_page(std::vector<Input>& actions, const ProfilesView& view) {
   section("Profil d'origine");
   note(
@@ -509,7 +514,7 @@ struct PageInfo {
   bool advanced;  // seulement avec la case « Réglages avancés »
 };
 // L'arbre : l'ordre est celui de l'écran. Les catégories se déduisent du changement de `category`.
-constexpr std::array<PageInfo, 16> kPages{{
+constexpr std::array<PageInfo, 14> kPages{{
     {"Général", "Configuration", false},
     {"Général", "Lecteur par défaut", false},  // masquée quand « Ne plus me le demander » est coché
     {"Général", "Mises à jour", false},
@@ -524,8 +529,6 @@ constexpr std::array<PageInfo, 16> kPages{{
     {"Langues et sous-titres", "Sous-titres", false},
     {"Export", "Fichier", false},
     {"Moteurs", "Installés", false},
-    {"Avancé", "Rendu", true},
-    {"Avancé", "Lecteur par défaut", true},
 }};
 
 }  // namespace
@@ -576,7 +579,7 @@ SettingsPanel::Result SettingsPanel::draw(const PlaySettings& running, const Set
                          2.0F * ImGui::GetStyle().ItemSpacing.y;
     const float tree_width = std::min(200.0F * scale, width * 0.3F);
     if ((!advanced_ && kPages[static_cast<std::size_t>(page_)].advanced) ||
-        (page_ == 1 && draft_.default_player_dismissed))
+        (page_ == 1 && draft_.default_player_dismissed && !advanced_))
       page_ = 0;
     ImGui::BeginChild("##arbre", ImVec2(tree_width, -footer), ImGuiChildFlags_Borders);
     const char* category = "";
@@ -584,7 +587,8 @@ SettingsPanel::Result SettingsPanel::draw(const PlaySettings& running, const Set
     for (std::size_t i = 0; i < kPages.size(); ++i) {
       const PageInfo& page = kPages[i];
       if (page.advanced && !advanced_) continue;
-      if (i == 1 && draft_.default_player_dismissed) continue;  // le bouton quitte Général
+      if (i == 1 && draft_.default_player_dismissed && !advanced_)
+        continue;  // masqué ; revient avec les réglages avancés
       if (std::string_view(page.category) != category) {
         if (category_open) ImGui::TreePop();
         category = page.category;
@@ -610,10 +614,12 @@ SettingsPanel::Result SettingsPanel::draw(const PlaySettings& running, const Set
         updates_page(draft_, choices.place, updates_);
       } else if (name == "Agrandissement") {
         image_tab(draft_, choices);
+        if (advanced_) composition_section(draft_);
       } else if (name == "Fluidité") {
         fluidity_tab(draft_, choices);
       } else if (name == "Conversion") {
         hdr_tab(draft_, choices);
+        if (advanced_) oled_sections(draft_, choices);
       } else if (name == "Réglages") {
         grade_tab(draft_, choices);
       } else if (name == "Sortie") {
@@ -628,8 +634,6 @@ SettingsPanel::Result SettingsPanel::draw(const PlaySettings& running, const Set
         engines_tab(choices, engine_draft_, actions, draft_.engines_dir);
       } else if (name == "Statistiques") {
         stats_tab(draft_);
-      } else if (name == "Rendu") {
-        render_page(draft_, choices);
       } else if (name == "Réinitialiser") {
         reset_page(actions, choices.profiles);
       }
