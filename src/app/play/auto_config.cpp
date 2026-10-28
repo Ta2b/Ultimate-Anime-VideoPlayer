@@ -130,7 +130,7 @@ PlaySettings apply_preset(const PlaySettings& settings, const Machine& machine,
   out.rife_auto = factor >= 2;
   out.rife_factor = factor >= 2 ? factor : 0;
   out.rife_factor_den = 1;
-  out.keep_poses = false;  // les poses ne sont pas encore mesurées : à l'utilisateur (docs 4.7)
+  out.keep_poses = true;  // mesuré A/B (4070 Ti, ×3) : tient mieux, qualité équivalente
   out.gmfss_quality = false;
   out.rife_model.clear();
   switch (*level) {

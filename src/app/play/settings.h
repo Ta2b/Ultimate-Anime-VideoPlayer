@@ -140,7 +140,7 @@ struct PlaySettings {
   std::string rife_model;  // fichier ONNX de RIFE (nom seul) ; vide : le défaut de la carte
   // Garder les poses (DRBA, kernels/spec/poses.h) : un personnage animé en deux garde son rythme
   // pendant que le fond s'interpole ; en direct.
-  bool keep_poses = false;
+  bool keep_poses = true;
   // GMFSS : false, performance (GMFlow en FP16) ; true, qualité (GMFlow en FP32, la paire _s05q). Toujours
   // au flot à demi-échelle. Recharge la chaîne.
   bool gmfss_quality = false;
