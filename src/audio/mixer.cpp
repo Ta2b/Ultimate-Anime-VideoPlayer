@@ -329,6 +329,8 @@ Mixer::Mixer(MixConfig config) : config_(config) {
     auto post = std::make_shared<MixPost>(tune, config_.sample_rate);
     if (post->needed()) post_ = std::move(post);
   }
+  if (config_.hrir && !config_.hrir->empty() && config_.sink_channels == 2)
+    hrir_ = std::make_shared<const Hrir>(prepared(*config_.hrir, config_.sample_rate));
   const int delay = std::clamp(static_cast<int>(std::lround(tune.crossfeed_delay_ms * 0.001F *
                                                             static_cast<float>(config_.sample_rate))),
                                0, kMixDelayMax - 1);
@@ -350,6 +352,7 @@ void Mixer::reset() {
     for (MixPath& path : pair) path.ear = MixEar{};
   for (MixPath& path : feed_) path.ear = MixEar{};
   if (post_) post_->reset();
+  if (convolver_) convolver_->reset();
 }
 
 void Mixer::set_faithful(bool faithful) {
@@ -436,6 +439,14 @@ void Mixer::binaural(const PcmBlock& in, PcmBlock& out) {
   }
 }
 
+PcmBlock Mixer::convolve(const PcmBlock& in) {
+  if (!convolver_ || convolver_->source_channels() != in.channels)
+    convolver_ = std::make_shared<HrirConvolver>(*hrir_, in.channels, config_.tuning.lfe_gain);
+  PcmBlock out{.pts_us = in.pts_us, .channels = 2};
+  convolver_->process(in.samples, out.samples);
+  return out;
+}
+
 void Mixer::crossfeed(PcmBlock& block) {
   const auto frames = static_cast<std::size_t>(block.frames());
   const float kNormalize = 1.0F / (1.0F + config_.tuning.crossfeed_gain);
@@ -457,6 +468,9 @@ PcmBlock Mixer::process(PcmBlock block) {
 }
 
 PcmBlock Mixer::process_core(PcmBlock block) {
+  const bool convolved = hrir_ && config_.listen == Listen::Headphones &&
+                         (block.channels == 2 || block.channels == 6 || block.channels == 8);
+  if (convolved) return convolve(block);
   if (block.channels == 6 || block.channels == 8) {
     if (config_.listen == Listen::Cinema) return block;
     if (config_.listen == Listen::Headphones) {

@@ -269,6 +269,18 @@ std::expected<PlaySettings, Refusal> parse_settings(std::string_view toml_text) 
         s.device_profile.emplace_back(std::string(name.str()), *key);
       }
     }
+    reads.push_back(read(*audio, "audio", "hrir_path", s.hrir_path));
+    if (const toml::table* hrirs = audio->get_as<toml::table>("device_hrir")) {
+      for (const auto& [name, node] : *hrirs) {
+        const auto path = node.value_exact<std::string>();
+        if (!path) {
+          reads.emplace_back(
+              refuse(RefusalCode::FieldType, std::format("audio.device_hrir.{}", std::string(name.str()))));
+          continue;
+        }
+        s.device_hrir.emplace_back(std::string(name.str()), *path);
+      }
+    }
     reads.push_back(read_legacy_languages(*audio, "audio", legacy_audio));
   }
   if (const toml::table* sync = section(root, "sync")) {
@@ -453,6 +465,12 @@ std::string format_settings(const PlaySettings& s) {
       toml::table profiles;
       for (const auto& [name, key] : s.device_profile) profiles.insert_or_assign(name, key);
       audio.insert("device_profiles", std::move(profiles));
+    }
+    if (!s.hrir_path.empty()) audio.insert_or_assign("hrir_path", s.hrir_path);
+    if (!s.device_hrir.empty()) {
+      toml::table hrirs;
+      for (const auto& [name, path] : s.device_hrir) hrirs.insert_or_assign(name, path);
+      audio.insert("device_hrir", std::move(hrirs));
     }
     root.insert("audio", std::move(audio));
   }
