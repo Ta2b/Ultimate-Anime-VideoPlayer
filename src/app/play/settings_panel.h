@@ -111,6 +111,7 @@ class SettingsPanel {
   std::optional<core::EngineId> engine_draft_;  // moteur coché dans l'onglet Moteurs, pas appliqué
   std::unique_ptr<ExportDraft> export_;         // l'onglet Export, gardé d'une ouverture à l'autre
   SystemNote system_;                           // l'onglet Système : sa dernière action
+  BenchNote bench_;                             // « Évaluer ma machine » : l'essai en cours ou son rapport
 };
 
 }  // namespace ajp::app::play

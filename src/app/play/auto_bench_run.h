@@ -1,0 +1,57 @@
+// « ajp bench » et le bouton « Évaluer ma machine » : le lancement des essais de auto_bench.h. Chaque essai est un
+// processus enfant court, « ajp play » avec son coupé, un dossier de réglages jetable (--data-dir : ni play.toml ni
+// user.toml ni journal de l'utilisateur n'y sont touchés) et le niveau forcé (--bench-level) ; il écrit ses
+// mesures dans un fichier (--bench-out) que le parent relit. Un enfant qui plante ou qui dépasse son délai est un
+// niveau qui ne tient pas : le parent ne tombe jamais avec lui.
+#pragma once
+
+#include <chrono>
+#include <expected>
+#include <filesystem>
+#include <functional>
+#include <stop_token>
+#include <string>
+#include <vector>
+
+#include "app/play/auto_bench.h"
+
+namespace ajp::app::play {
+
+inline constexpr int kBenchSeconds = 12;  // durée d'un essai (docs/ux-parametres.md : 10 à 15 s)
+
+struct BenchPlan {
+  std::filesystem::path executable;  // ajp lui-même
+  std::filesystem::path video;       // la courte séquence jouée à chaque niveau
+  std::filesystem::path work_dir;    // où poser les dossiers jetables des essais
+  int seconds = kBenchSeconds;
+  bool fullscreen = true;            // l'écran réel, comme la lecture
+  std::chrono::seconds build_allowance{180};  // marge sur la durée de l'essai : ouverture, construction de moteur
+};
+
+// La ligne de commande de l'enfant d'un niveau (level absent : « auto », le niveau estimé de la machine).
+std::vector<std::string> bench_child_args(const BenchPlan& plan, const std::optional<Tier>& level,
+                                          const std::filesystem::path& data_dir,
+                                          const std::filesystem::path& out_file);
+
+struct BenchOutcome {
+  std::vector<BenchRun> runs;  // dans l'ordre joué
+  Tier estimated = Tier::Normal;
+  BenchResult result;          // la carte, le pilote, le niveau gardé ; la date est à poser par l'appelant
+};
+
+// Joue les essais : l'estimé d'abord, puis next_level jusqu'à fin. progress est appelé avant chaque essai.
+// Refus : Cancelled sur demande d'arrêt, DecodeFailed si le premier essai ne rend rien (la machine n'a pas pu
+// jouer du tout).
+std::expected<BenchOutcome, Refusal> run_bench(const BenchPlan& plan, const std::stop_token& stop,
+                                               const std::function<void(const std::string&)>& progress = {});
+
+// « Évaluer ma machine » de bout en bout : run_bench, puis le niveau gardé dans data_dir/bench.toml (daté du
+// jour). Rend le rapport lisible, avec une ligne en plus si bench.toml n'a pas pu s'écrire.
+std::expected<std::string, Refusal> evaluate_machine(const BenchPlan& plan, const std::filesystem::path& data_dir,
+                                                     const std::stop_token& stop,
+                                                     const std::function<void(const std::string&)>& progress = {});
+
+// Le rapport lisible : une ligne par essai (niveau, images perdues, retard, tient ou non), le niveau gardé.
+std::string format_bench_report(const BenchOutcome& outcome);
+
+}  // namespace ajp::app::play

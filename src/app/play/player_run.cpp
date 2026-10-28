@@ -15,6 +15,7 @@
 #include <SDL3/SDL_timer.h>
 #include <SDL3/SDL_video.h>
 
+#include "app/play/auto_bench.h"
 #include "app/play/backend_library.h"
 #include "app/play/build_progress.h"
 #include "app/play/chain.h"
@@ -182,6 +183,7 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
   p.screen.set_finish(settings.final_scaler, settings.deband);
   session_config.output = output_text(out, settings, peak_nits);
   session_config.display_period_us = display_period_us(out.window());
+  const std::int64_t bench_period_us = session_config.display_period_us;
   session_config.display_hz = display_refresh_hz(out.window());
   session_config.display_sync = settings.display_sync;
   session_config.swapchain_depth = kSwapchainDepth;
@@ -407,9 +409,23 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
   remember();
   p.quit = session.quit_asked();
   log_summary(session);
+  if (p.options.bench_out && p.options.bench_level) {
+    const GpuFacts gpu = gpu_facts(p.screen);
+    const FrameStats& seen = session.stats();
+    const BenchReading reading{.gpu = gpu.name,
+                               .driver = gpu.driver,
+                               .run = {.level = static_cast<Tier>(*p.options.bench_level),
+                                       .presents = seen.presents,
+                                       .dropped = seen.dropped,
+                                       .missing = seen.missing,
+                                       .lag_p95_us = seen.lag.percentile(95),
+                                       .period_us = bench_period_us}};
+    if (auto written = save_reading(*p.options.bench_out, reading); !written)
+      log->warn("{}", written.error().detail);
+  }
   for (const std::string& refusal : session.refusals()) log->warn("{}", refusal);
   // Fin de la vidéo, sans demande de quitter : l'épisode suivant du dossier, si le réglage le veut.
-  if (!chain.reopen && !failure && !session.quit_asked() && chain.running.autoplay_next &&
+  if (!chain.reopen && !failure && !session.quit_asked() && !p.options.bench_out && chain.running.autoplay_next &&
       !p.options.file.empty()) {
     if (const auto next = sibling_episode(p.options.file, 1)) {
       log->info("épisode suivant : {}", prepare::utf8_path(*next));

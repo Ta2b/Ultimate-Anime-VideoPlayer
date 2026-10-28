@@ -43,9 +43,24 @@ std::optional<Tier> next_level(const std::vector<BenchRun>& runs, Tier estimated
 // Le plus haut niveau qui tient ; Économe si aucun ne tient.
 Tier best_level(const std::vector<BenchRun>& runs);
 
-// Le résultat gardé : pour cette carte, ce niveau, à cette date.
+// Ce qu'un essai (un « ajp play --bench-out ») rend à celui qui le lance : la carte et le pilote qui ont joué,
+// et les mesures. Le niveau de la mesure est celui que l'essai a vraiment joué (le niveau estimé, pour un
+// essai demandé « auto »).
+struct BenchReading {
+  std::string gpu;
+  std::string driver;
+  BenchRun run;
+};
+
+std::string format_reading(const BenchReading& reading);
+std::expected<BenchReading, Refusal> parse_reading(std::string_view toml);
+std::expected<BenchReading, Refusal> load_reading(const std::filesystem::path& file);
+std::expected<void, Refusal> save_reading(const std::filesystem::path& file, const BenchReading& reading);
+
+// Le résultat gardé : pour cette carte et ce pilote, ce niveau, à cette date.
 struct BenchResult {
   std::string gpu;
+  std::string driver;  // vide : pilote inconnu ; une mesure n'est reprise que pour le même pilote
   Tier level = Tier::Normal;
   std::string date;  // AAAA-MM-JJ, donnée par l'appelant
 };
@@ -55,7 +70,7 @@ std::expected<BenchResult, Refusal> parse_bench(std::string_view toml);
 std::expected<BenchResult, Refusal> load_bench(const std::filesystem::path& file);  // absent ou illisible : refus FileUnreadable
 std::expected<void, Refusal> save_bench(const std::filesystem::path& file, const BenchResult& result);
 
-// La tranche à appliquer : la mesure si elle est de cette carte, sinon l'estimation.
+// La tranche à appliquer : la mesure si elle est de cette carte et de ce pilote, sinon l'estimation.
 Tier effective_tier(const GpuFacts& gpu, const std::optional<BenchResult>& measured);
 
 }  // namespace ajp::app::play

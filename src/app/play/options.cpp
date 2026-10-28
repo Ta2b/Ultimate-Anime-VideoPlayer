@@ -117,6 +117,9 @@ std::expected<PlayOptions, Refusal> parse_play_options(std::span<const std::stri
     } else if (arg == "--truehdr") {
       options.true_hdr = true;
       options.given.emplace_back(arg);
+    } else if (arg == "--mute") {
+      options.mute = true;
+      options.given.emplace_back(arg);
     } else if (arg == "--first-run") {
       options.first_run = true;
     } else if (arg == "--rife-image") {
@@ -141,7 +144,7 @@ std::expected<PlayOptions, Refusal> parse_play_options(std::span<const std::stri
            {"--model", "--window", "--start", "--seconds", "--fullscreen-after", "--stats", "--snapshot-at",
             "--snapshot-frames", "--snapshot", "--keys", "--work-height", "--rife-model", "--rife",
             "--truehdr-sdk", "--truehdr-peak", "--truehdr-contrast", "--truehdr-saturation",
-            "--truehdr-gray"}) {
+            "--truehdr-gray", "--data-dir", "--bench-level", "--bench-out"}) {
         auto value = valued(args, i, name);
         if (!value) return std::unexpected(std::move(value.error()));
         if (!*value) continue;
@@ -152,6 +155,15 @@ std::expected<PlayOptions, Refusal> parse_play_options(std::span<const std::stri
           options.model = std::filesystem::path(text);
         } else if (name == "--window") {
           applied = window(text, options);
+        } else if (name == "--data-dir") {
+          options.data_dir = std::filesystem::path(text);
+        } else if (name == "--bench-out") {
+          options.bench_out = std::filesystem::path(text);
+        } else if (name == "--bench-level") {
+          const auto level = text == "auto" ? std::optional<int>(-1) : number<int>(text);
+          if (!level || *level < -1 || *level >= 5)
+            return refuse(RefusalCode::FieldOutOfRange, std::format("--bench-level : « {} » n'est ni auto ni 0 à 4", text));
+          options.bench_level = *level;
         } else if (name == "--stats") {
           options.stats = std::filesystem::path(text);
         } else if (name == "--keys") {
@@ -232,6 +244,46 @@ WorkSize work_size(int width, int height, int work_height) {
   return {std::max(2, scaled + (scaled % 2)), work_height};
 }
 
+std::expected<BenchOptions, Refusal> parse_bench_options(std::span<const std::string_view> args) {
+  BenchOptions options;
+  for (std::size_t i = 0; i < args.size(); ++i) {
+    const std::string_view arg = args[i];
+    if (!arg.starts_with("--")) {
+      if (!options.file.empty())
+        return refuse(RefusalCode::OptionUnknown, std::format("un seul fichier à la fois : « {} » en trop", arg));
+      options.file = std::filesystem::path(arg);
+    } else if (arg == "--help") {
+      options.help = true;
+    } else if (arg == "--windowed") {
+      options.fullscreen = false;
+    } else if (auto report = valued(args, i, "--report"); !report) {
+      return std::unexpected(std::move(report.error()));
+    } else if (*report) {
+      options.report = std::filesystem::path(**report);
+    } else if (auto length = valued(args, i, "--seconds"); !length) {
+      return std::unexpected(std::move(length.error()));
+    } else if (*length) {
+      const auto value = number<int>(**length);
+      if (!value || *value < 5 || *value > 120)
+        return refuse(RefusalCode::FieldOutOfRange, std::format("--seconds : « {} » n'est pas une durée de 5 à 120 s", **length));
+      options.seconds = *value;
+    } else {
+      return refuse(RefusalCode::OptionUnknown, std::format("option inconnue : {}", arg));
+    }
+  }
+  if (options.file.empty() && !options.help)
+    return refuse(RefusalCode::FieldMissing, "ajp bench : la vidéo à jouer manque (une séquence de 15 s suffit)");
+  return options;
+}
+
+std::string bench_usage() {
+  return "ajp bench <fichier> [options]   évalue la machine : joue le fichier à chaque niveau, son coupé\n"
+         "  --seconds=S      durée d'un essai (5 à 120, défaut 12)\n"
+         "  --report=FICHIER le rapport, en plus de la sortie standard\n"
+         "  --windowed       joue dans une fenêtre au lieu du plein écran\n"
+         "Le résultat est gardé dans bench.toml (carte, pilote, niveau, date) et remplace l'estimation de la carte.\n";
+}
+
 std::string play_usage() {
   return std::format(
       "ajp play [fichier] [options]   (sans fichier : écran d'accueil, Ouvrir une vidéo)\n"
@@ -252,6 +304,9 @@ std::string play_usage() {
       "  --one-lane             une seule file de calcul : plus lent, mais le profil GPU donne le\n"
       "                         coût propre de chaque moteur\n"
       "  --software-gpu         accepte un Vulkan logiciel (lavapipe), pour les essais sans GPU\n"
+      "  --mute                 son coupé pour cette lecture\n"
+      "  --data-dir=DOSSIER     réglages, profils et journal dans ce dossier (moteurs et modèles partagés)\n"
+      "  --bench-level=N        joue la chaîne du niveau 0 à 4 (ou auto) ; --bench-out=FICHIER y écrit les mesures\n"
       "  --first-run            écran de bienvenue (moteurs, profil de démarrage), même déjà vu\n"
       "  --keys=S:touche,…      touches pressées d'office (essais), ex. 3:Right,5:Space ;\n"
       "                         export ou export=FICHIER.mkv (ou .mp4, .mov) lance l'export de\n"

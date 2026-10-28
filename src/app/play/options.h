@@ -7,7 +7,8 @@
 //                      [--work-height=N] [--rife=N] [--rife-model=FICHIER.onnx]
 //                      [--truehdr] [--truehdr-sdk=DOSSIER] [--truehdr-peak=NITS]
 //                      [--truehdr-contrast=N] [--truehdr-saturation=N] [--truehdr-gray=N]
-//                      [--first-run]
+//                      [--first-run] [--mute] [--data-dir=DOSSIER] [--bench-level=auto|0..4] [--bench-out=FICHIER]
+//   ajp bench <fichier> [--seconds=S] [--report=FICHIER] [--windowed]
 //   ajp --register | --unregister
 //
 // Le modèle par défaut est celui du lecteur actuel du propriétaire (AnimeJaNai, slot par
@@ -113,6 +114,16 @@ struct PlayOptions {
   bool resume = true;
   // --first-run : l'écran de bienvenue (moteurs, profil de démarrage) même s'il a déjà été vu.
   bool first_run = false;
+  // --mute : volume à 0 pour cette lecture (les essais du benchmark), sans toucher à play.toml.
+  bool mute = false;
+  // --data-dir=DOSSIER : play.toml, user.toml, bench.toml, resume.tsv et ajp.log y vivent au lieu du dossier de
+  // données ; les moteurs construits et les modèles restent partagés. Les essais du benchmark l'emploient pour ne
+  // rien changer chez l'utilisateur.
+  std::optional<std::filesystem::path> data_dir;
+  // --bench-level : joue la chaîne du niveau 0 (Économe) à 4 (Ultra), ou « auto » (-1) : le niveau estimé de la
+  // machine. Avec --bench-out, les mesures de la lecture y sont écrites à la fin (auto_bench.h : BenchReading).
+  std::optional<int> bench_level;
+  std::optional<std::filesystem::path> bench_out;
   Registration registration = Registration::None;
   // Options données sur la ligne de commande (« --rife », « --truehdr »…) : elles remplacent les
   // réglages de play.toml pour cette lecture.
@@ -134,6 +145,18 @@ WorkSize work_size(int width, int height, int work_height);
 std::expected<PlayOptions, Refusal> parse_play_options(std::span<const std::string_view> args);
 
 std::string play_usage();
+
+// « ajp bench <fichier> » : évalue la machine (auto_bench_run.h) en jouant ce fichier à chaque niveau.
+struct BenchOptions {
+  std::filesystem::path file;
+  int seconds = 12;
+  std::optional<std::filesystem::path> report;  // --report : le rapport lisible, en plus de la sortie standard
+  bool fullscreen = true;                       // --windowed le retire
+  bool help = false;
+};
+// Arguments qui suivent « bench ». Sans fichier, une option inconnue ou une durée hors de 5 à 120 s : refus.
+std::expected<BenchOptions, Refusal> parse_bench_options(std::span<const std::string_view> args);
+std::string bench_usage();
 
 // Où chercher le modèle par défaut, dans l'ordre : l'installation d'AnimeJaNai, le profil par
 // défaut du dépôt mpv-AnimeJaNai-HDR, puis les modèles livrés avec le lecteur (bundled/onnx, si

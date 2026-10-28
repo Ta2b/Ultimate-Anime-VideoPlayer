@@ -104,7 +104,7 @@ std::expected<void, Refusal> play(const PlayOptions& options, const PlayerPaths&
     if (!video) return std::unexpected(std::move(video.error()));
     given = std::move(*video);
   }
-  const std::filesystem::path settings_path = paths.engines.parent_path() / "play.toml";
+  const std::filesystem::path settings_path = (paths.settings.empty() ? paths.engines.parent_path() : paths.settings) / "play.toml";
   std::vector<std::string> startup_notes;  // fichiers mis de côté, dits à l'accueil
   auto saved = load_settings(settings_path);
   if (!saved) {
@@ -257,8 +257,16 @@ std::expected<void, Refusal> play(const PlayOptions& options, const PlayerPaths&
     if (auto bench = load_bench(settings_path.parent_path() / "bench.toml")) measured_tier = std::move(*bench);
     // Le préréglage (Auto, Rapide…) refait la chaîne pour cette carte, cet écran et cette vidéo ;
     // Personnalisé laisse les réglages tels quels.
+    Tier tier = effective_tier(gpu_facts(**screen), measured_tier);
+    if (file_options.bench_level) {
+      // Un essai du benchmark : la chaîne du niveau demandé (ou de l'estimé), sans priorité ni profil.
+      if (*file_options.bench_level >= 0) tier = static_cast<Tier>(*file_options.bench_level);
+      file_options.bench_level = static_cast<int>(tier);
+      from_profile.preset = Preset::Auto;
+      from_profile.priority = Priority::Balance;
+    }
     from_profile = apply_preset(from_profile,
-                                Machine{.tier = effective_tier(gpu_facts(**screen), measured_tier),
+                                Machine{.tier = tier,
                                         .display_height = display_height((*screen)->window()),
                                         .display_hz = display_refresh_hz((*screen)->window())},
                                 profiles.source);

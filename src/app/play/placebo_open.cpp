@@ -408,6 +408,7 @@ PlaceboScreen::DeviceFacts PlaceboScreen::device_facts() const {
     properties_of(vk->phys_device, &properties);
     facts.name = properties.deviceName;
     facts.pci_vendor = properties.vendorID;
+    facts.driver = std::to_string(properties.driverVersion);
   }
   const auto memory = reinterpret_cast<PFN_vkGetPhysicalDeviceMemoryProperties>(
       vk->get_proc_addr(vk->instance, "vkGetPhysicalDeviceMemoryProperties"));

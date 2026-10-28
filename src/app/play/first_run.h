@@ -28,6 +28,7 @@ namespace ajp::app::play {
 // Le GPU de rendu, tel que l'écran l'a ouvert.
 struct GpuFacts {
   std::string name;  // « NVIDIA GeForce RTX 4070 Ti »
+  std::string driver;  // version du pilote (VkPhysicalDeviceProperties::driverVersion, en décimal) ; vide : inconnue
   GpuVendor vendor = GpuVendor::Other;
   std::uint64_t vram_bytes = 0;
   std::uint64_t host_visible_vram_bytes = 0;  // tas VRAM visible de l'hôte : toute la VRAM avec Resizable BAR

@@ -67,6 +67,7 @@ class PlaceboScreen final : public Screen {
   struct DeviceFacts {
     std::string name;              // VkPhysicalDeviceProperties::deviceName
     std::uint32_t pci_vendor = 0;  // vendorID
+    std::string driver;            // driverVersion, en décimal
     std::uint64_t vram_bytes = 0;
     // Le plus grand tas visible de l'hôte parmi ceux de la VRAM : ~256 Mio sans Resizable BAR,
     // la VRAM entière avec ; 0 si aucun type DEVICE_LOCAL | HOST_VISIBLE.

@@ -59,6 +59,7 @@ std::string format_bench(const BenchResult& result) {
   toml::table root;
   root.insert("version", std::int64_t{1});
   root.insert("gpu", result.gpu);
+  root.insert("driver", result.driver);
   root.insert("level", static_cast<std::int64_t>(result.level));
   root.insert("date", result.date);
   std::ostringstream out;
@@ -72,6 +73,7 @@ std::expected<BenchResult, Refusal> parse_bench(std::string_view text) {
   const toml::table& root = parsed.table();
   BenchResult result;
   result.gpu = root["gpu"].value_or(std::string());
+  result.driver = root["driver"].value_or(std::string());
   result.date = root["date"].value_or(std::string());
   const std::int64_t level = root["level"].value_or(std::int64_t{-1});
   if (result.gpu.empty()) return refuse(RefusalCode::FieldOutOfRange, "bench.toml : gpu manque");
@@ -92,8 +94,53 @@ std::expected<void, Refusal> save_bench(const std::filesystem::path& file, const
   return core::write_text_atomically(file, format_bench(result));
 }
 
+std::string format_reading(const BenchReading& reading) {
+  toml::table root;
+  root.insert("gpu", reading.gpu);
+  root.insert("driver", reading.driver);
+  root.insert("level", static_cast<std::int64_t>(reading.run.level));
+  root.insert("presents", reading.run.presents);
+  root.insert("dropped", reading.run.dropped);
+  root.insert("missing", reading.run.missing);
+  root.insert("lag_p95_us", reading.run.lag_p95_us);
+  root.insert("period_us", reading.run.period_us);
+  std::ostringstream out;
+  out << root << '\n';
+  return out.str();
+}
+
+std::expected<BenchReading, Refusal> parse_reading(std::string_view text) {
+  toml::parse_result parsed = toml::parse(text);
+  if (!parsed) return refuse(RefusalCode::ProfileUnreadable, std::format("essai : {}", parsed.error().description()));
+  const toml::table& root = parsed.table();
+  BenchReading reading;
+  reading.gpu = root["gpu"].value_or(std::string());
+  reading.driver = root["driver"].value_or(std::string());
+  const std::int64_t level = root["level"].value_or(std::int64_t{-1});
+  if (level < 0 || level >= kTierCount) return refuse(RefusalCode::FieldOutOfRange, "essai : level hors de 0 à 4");
+  reading.run.level = static_cast<Tier>(level);
+  reading.run.presents = root["presents"].value_or(std::int64_t{0});
+  reading.run.dropped = root["dropped"].value_or(std::int64_t{0});
+  reading.run.missing = root["missing"].value_or(std::int64_t{0});
+  reading.run.lag_p95_us = root["lag_p95_us"].value_or(std::int64_t{0});
+  reading.run.period_us = root["period_us"].value_or(std::int64_t{0});
+  return reading;
+}
+
+std::expected<BenchReading, Refusal> load_reading(const std::filesystem::path& file) {
+  std::ifstream in(file, std::ios::binary);
+  if (!in) return refuse(RefusalCode::FileUnreadable, file.string());
+  std::ostringstream text;
+  text << in.rdbuf();
+  return parse_reading(text.str());
+}
+
+std::expected<void, Refusal> save_reading(const std::filesystem::path& file, const BenchReading& reading) {
+  return core::write_text_atomically(file, format_reading(reading));
+}
+
 Tier effective_tier(const GpuFacts& gpu, const std::optional<BenchResult>& measured) {
-  if (measured && measured->gpu == gpu.name) return measured->level;
+  if (measured && measured->gpu == gpu.name && measured->driver == gpu.driver) return measured->level;
   return estimate_tier(gpu).tier;
 }
 

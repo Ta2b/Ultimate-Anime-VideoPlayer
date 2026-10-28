@@ -147,6 +147,7 @@ GpuFacts gpu_facts(const PlaceboScreen& screen) {
   const GpuVendor vendor = vendor_from_pci(facts.pci_vendor);
   return GpuFacts{
       .name = facts.name,
+      .driver = facts.driver,
       .vendor = vendor,
       .vram_bytes = facts.vram_bytes,
       .host_visible_vram_bytes = facts.host_visible_vram_bytes,

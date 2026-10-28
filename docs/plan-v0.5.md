@@ -33,7 +33,7 @@ Pull requests : une par étape ; quand une étape dépend d'une autre, la base e
 - [x] (a) Classement des cartes en tranches, `data/gpu_tiers.toml` : PR #22
 - [x] (b) Préréglages, priorité, application de la chaîne : PR #23 (base : #22)
 - [x] (c1) Décision du benchmark et `bench.toml` : PR #24 (base : #23)
-- [ ] (c2) `ajp bench` : lancement des essais (processus enfants isolés, son coupé), rapport `--report`
+- [x] (c2) `ajp bench` : lancement des essais (processus enfants isolés, son coupé), rapport `--report`, pilote dans la clé de mesure : PR de la branche `claude/bench-run`
 - [ ] Bouton « Évaluer ma machine » (arrive avec C)
 - [ ] Comparateur A/B (poses DRBA, DistilDRBA contre RIFE) : mesure puis décision
 - [ ] Bascule automatique en Personnalisé quand un réglage de chaîne est modifié à la main (avec C)
@@ -80,3 +80,9 @@ Pull requests : une par étape ; quand une étape dépend d'une autre, la base e
 
 - **2026-10-28** : plan créé. A(a), A(b), A(c1) en PR (#22, #23, #24). Plan des réglages unifié (PR #21),
   assistant de premier démarrage, audio et son spatial intégrés au plan de conception.
+- **2026-10-28** : A(c2) en PR. `ajp bench <vidéo>` joue chaque niveau dans un processus enfant (`ajp play --mute
+  --no-resume --data-dir=<jetable> --bench-level=N --bench-out=<mesures>`), le premier essai au niveau estimé puis
+  `next_level` jusqu'au plus haut qui tient. `--data-dir` isole réglages, profils, `bench.toml` et journal ;
+  **les moteurs construits et les modèles restent partagés** (sinon chaque essai reconstruirait ses moteurs :
+  des minutes). La mesure de `bench.toml` porte maintenant la carte **et le pilote** ; un pilote qui change la
+  rend caduque. Le bouton « Évaluer ma machine » arrive avec le nouveau cadre (étape C) et appellera `run_bench`.
