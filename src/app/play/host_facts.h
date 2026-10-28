@@ -36,6 +36,7 @@ bool maxine_available(const PlayOptions& options, const PlayerPaths& paths);
 // Un backend TensorRT est installé : seul lui ouvre RTX HDR.
 bool tensorrt_backend_present(const PlayerPaths& paths);
 // Les backends présents ou téléchargeables (catalog), le SDK Maxine importé ou à importer.
-EnginesHere engines_here(const PlayOptions& options, const PlayerPaths& paths, const EngineCatalog& catalog);
+EnginesHere engines_here(const PlayOptions& options, const PlayerPaths& paths, const EngineCatalog& catalog,
+                         std::string_view gpu_name);
 
 }  // namespace ajp::app::play
