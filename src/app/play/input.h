@@ -62,17 +62,18 @@ struct UseEngine {
 // B : bascule A/B du son, traité (casque, enceintes…) contre fidèle (aucun traitement).
 struct ToggleFaithful {};
 struct OpenEngineScreen {
-  bool wizard = false;  // Général > Configuration > « Relancer l'assistant » : les huit écrans, pas seulement les moteurs
+  bool wizard = false;  // Général > Configuration > « Relancer l'assistant » : les huit écrans, pas seulement
+                        // les moteurs
 };
 using EngineChange = std::variant<UseEngine, OpenEngineScreen>;
 // Onglet Export : la lecture se ferme, l'export se fait (export_run.h), puis la lecture reprend.
 struct StartExport {
   ExportJob job;
 };
-using Input =
-    std::variant<Command, ToggleFullscreen, LeaveFullscreen, ToggleMute, VolumeStep, SelectAudio,
-                 SelectSubtitles, CycleAudio, CycleSubtitles, StepChapter, StepEpisode, SkipCredits,
-                 ToggleSettings, ApplySettings, EditProfile, UseEngine, OpenEngineScreen, StartExport, ToggleFaithful>;
+using Input = std::variant<Command, ToggleFullscreen, LeaveFullscreen, ToggleMute, VolumeStep, SelectAudio,
+                           SelectSubtitles, CycleAudio, CycleSubtitles, StepChapter, StepEpisode, SkipCredits,
+                           ToggleSettings, ApplySettings, EditProfile, UseEngine, OpenEngineScreen,
+                           StartExport, ToggleFaithful>;
 
 // L'action d'un événement SDL, ou rien. Fermer la fenêtre vaut cmd::Quit.
 std::optional<Input> input_of(const SDL_Event& event, const core::KeyMap& keys);

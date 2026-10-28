@@ -7,7 +7,8 @@
 //                      [--work-height=N] [--rife=N] [--rife-model=FICHIER.onnx]
 //                      [--truehdr] [--truehdr-sdk=DOSSIER] [--truehdr-peak=NITS]
 //                      [--truehdr-contrast=N] [--truehdr-saturation=N] [--truehdr-gray=N]
-//                      [--first-run] [--mute] [--data-dir=DOSSIER] [--bench-level=auto|0..4] [--bench-out=FICHIER]
+//                      [--first-run] [--mute] [--data-dir=DOSSIER] [--bench-level=auto|0..4]
+//                      [--bench-out=FICHIER]
 //   ajp bench <fichier> [--seconds=S] [--report=FICHIER] [--windowed]
 //   ajp --register | --unregister
 //
@@ -116,12 +117,13 @@ struct PlayOptions {
   bool first_run = false;
   // --mute : volume à 0 pour cette lecture (les essais du benchmark), sans toucher à play.toml.
   bool mute = false;
-  // --data-dir=DOSSIER : play.toml, user.toml, bench.toml, resume.tsv et ajp.log y vivent au lieu du dossier de
-  // données ; les moteurs construits et les modèles restent partagés. Les essais du benchmark l'emploient pour ne
-  // rien changer chez l'utilisateur.
+  // --data-dir=DOSSIER : play.toml, user.toml, bench.toml, resume.tsv et ajp.log y vivent au lieu du dossier
+  // de données ; les moteurs construits et les modèles restent partagés. Les essais du benchmark l'emploient
+  // pour ne rien changer chez l'utilisateur.
   std::optional<std::filesystem::path> data_dir;
-  // --bench-level : joue la chaîne du niveau 0 (Économe) à 4 (Ultra), ou « auto » (-1) : le niveau estimé de la
-  // machine. Avec --bench-out, les mesures de la lecture y sont écrites à la fin (auto_bench.h : BenchReading).
+  // --bench-level : joue la chaîne du niveau 0 (Économe) à 4 (Ultra), ou « auto » (-1) : le niveau estimé de
+  // la machine. Avec --bench-out, les mesures de la lecture y sont écrites à la fin (auto_bench.h :
+  // BenchReading).
   std::optional<int> bench_level;
   std::optional<std::filesystem::path> bench_out;
   Registration registration = Registration::None;
@@ -150,8 +152,9 @@ std::string play_usage();
 struct BenchOptions {
   std::filesystem::path file;
   int seconds = 12;
-  std::optional<std::filesystem::path> report;  // --report : le rapport lisible, en plus de la sortie standard
-  bool fullscreen = true;                       // --windowed le retire
+  std::optional<std::filesystem::path>
+      report;              // --report : le rapport lisible, en plus de la sortie standard
+  bool fullscreen = true;  // --windowed le retire
   bool help = false;
 };
 // Arguments qui suivent « bench ». Sans fichier, une option inconnue ou une durée hors de 5 à 120 s : refus.

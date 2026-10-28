@@ -1,17 +1,16 @@
 #include "app/play/player.h"
-#include "app/play/updater.h"
 
 #include <algorithm>
 #include <array>
 #include <chrono>
 #include <filesystem>
-#include <stop_token>
-#include <thread>
 #include <format>
 #include <fstream>
 #include <optional>
+#include <stop_token>
 #include <string_view>
 #include <system_error>
+#include <thread>
 #include <utility>
 #include <variant>
 
@@ -48,6 +47,7 @@
 #include "app/play/scripted_input.h"
 #include "app/play/session.h"
 #include "app/play/ui.h"
+#include "app/play/updater.h"
 #include "app/play/upscale_stage.h"
 #include "core/clock.h"
 #include "core/log.h"
@@ -110,8 +110,10 @@ std::expected<void, Refusal> play(const PlayOptions& options, const PlayerPaths&
   // Vérification des mises à jour, en arrière-plan et hors lecture : le fil s'arrête avec le lecteur.
   std::jthread update_check;
   const std::filesystem::path update_file = paths.data / "update.toml";
-  const UpdatePaths update_paths{.data = paths.data, .install = paths.executable.parent_path(), .executable = paths.executable};
-  const std::filesystem::path settings_path = (paths.settings.empty() ? paths.engines.parent_path() : paths.settings) / "play.toml";
+  const UpdatePaths update_paths{
+      .data = paths.data, .install = paths.executable.parent_path(), .executable = paths.executable};
+  const std::filesystem::path settings_path =
+      (paths.settings.empty() ? paths.engines.parent_path() : paths.settings) / "play.toml";
   std::vector<std::string> startup_notes;  // fichiers mis de côté, dits à l'accueil
   auto saved = load_settings(settings_path);
   if (!saved) {
@@ -120,19 +122,22 @@ std::expected<void, Refusal> play(const PlayOptions& options, const PlayerPaths&
     saved = PlaySettings{};
   }
   if (!options.bench_out && !options.data_dir) {
-    const std::int64_t now = std::chrono::duration_cast<std::chrono::seconds>(std::chrono::system_clock::now().time_since_epoch()).count();
+    const std::int64_t now =
+        std::chrono::duration_cast<std::chrono::seconds>(std::chrono::system_clock::now().time_since_epoch())
+            .count();
     const UpdateState seen = load_update_state(update_file);
     if (update_due(seen, saved->update_mode, saved->update_frequency, now)) {
-      update_check = std::jthread([=, mode = saved->update_mode, channel = saved->update_channel](const std::stop_token& stop) {
-        UpdateState state = load_update_state(update_file);
-        const auto message = run_update_check(update_paths, mode, channel, state, stop);
-        static_cast<void>(save_update_state(update_file, state));
-        if (message) {
-          log_channel("app")->info("mise à jour : {}", *message);
-        } else {
-          log_channel("app")->info("mise à jour : {}", message.error().detail);
-        }
-      });
+      update_check = std::jthread(
+          [=, mode = saved->update_mode, channel = saved->update_channel](const std::stop_token& stop) {
+            UpdateState state = load_update_state(update_file);
+            const auto message = run_update_check(update_paths, mode, channel, state, stop);
+            static_cast<void>(save_update_state(update_file, state));
+            if (message) {
+              log_channel("app")->info("mise à jour : {}", *message);
+            } else {
+              log_channel("app")->info("mise à jour : {}", message.error().detail);
+            }
+          });
     }
   }
   // Le profil de démarrage fixe la chaîne ; les options données la remplacent pour cette lecture.
@@ -277,7 +282,8 @@ std::expected<void, Refusal> play(const PlayOptions& options, const PlayerPaths&
     }
     // La tranche mesurée par « Évaluer ma machine » (bench.toml), si elle est de cette carte.
     std::optional<BenchResult> measured_tier;
-    if (auto bench = load_bench(settings_path.parent_path() / "bench.toml")) measured_tier = std::move(*bench);
+    if (auto bench = load_bench(settings_path.parent_path() / "bench.toml"))
+      measured_tier = std::move(*bench);
     // Le préréglage (Auto, Rapide…) refait la chaîne pour cette carte, cet écran et cette vidéo ;
     // Personnalisé laisse les réglages tels quels.
     Tier tier = effective_tier(gpu_facts(**screen), measured_tier);
@@ -322,12 +328,14 @@ std::expected<void, Refusal> play(const PlayOptions& options, const PlayerPaths&
                   .engines = std::move(*engines),
                   .display = read_display(display_name((*screen)->window()))};
     {
-      // « Me prévenir » : une version plus récente vue par la dernière vérification, annoncée une fois par lancement.
+      // « Me prévenir » : une version plus récente vue par la dernière vérification, annoncée une fois par
+      // lancement.
       static bool announced = false;
       const UpdateState update = load_update_state(update_file);
       if (!announced && saved->update_mode == "notify" && !update.latest_version.empty()) {
         announced = true;
-        player.notice = std::format("Mise à jour {} disponible (Paramètres > Général > Mises à jour)", update.latest_version);
+        player.notice = std::format("Mise à jour {} disponible (Paramètres > Général > Mises à jour)",
+                                    update.latest_version);
       }
     }
     if (player.display) {

@@ -77,18 +77,19 @@ struct SettingsChoices {
   std::string black_status;                     // seuils du vrai noir en cours
   ProfilesView profiles;
   // Général > Configuration (auto_config.h) : la machine telle que le préréglage Auto la voit.
-  int machine_tier = 2;              // la tranche (gpu_tier.h : Tier, 0 à 4), estimée ou mesurée par « Évaluer ma machine »
-  int display_height = 0;            // hauteur de l'écran en pixels ; 0 : inconnue
-  std::string gpu_name;              // la carte
+  int machine_tier =
+      2;  // la tranche (gpu_tier.h : Tier, 0 à 4), estimée ou mesurée par « Évaluer ma machine »
+  int display_height = 0;  // hauteur de l'écran en pixels ; 0 : inconnue
+  std::string gpu_name;    // la carte
   struct AudioOut {
     std::string name;
     int channels = 0;
     bool is_default = false;
   };
   std::vector<AudioOut> audio_outputs;  // les appareils de sortie du système (audio/devices.h)
-  bool default_player_is_ajp = false; // AJP est déjà le lecteur des vidéos (xdg-mime, Linux)
-  std::string bench_text;            // « Dernière évaluation : 2026-10-28, niveau Rapide » ; vide : jamais faite
-  PlayerPlace place;  // l'exécutable et le dossier de l'utilisateur (onglet Système)
+  bool default_player_is_ajp = false;   // AJP est déjà le lecteur des vidéos (xdg-mime, Linux)
+  std::string bench_text;  // « Dernière évaluation : 2026-10-28, niveau Rapide » ; vide : jamais faite
+  PlayerPlace place;       // l'exécutable et le dossier de l'utilisateur (onglet Système)
 };
 
 // Une liste de langues (settings_panel.cpp), partagée avec l'assistant de premier démarrage.
@@ -120,16 +121,16 @@ class SettingsPanel {
 
  private:
   bool open_ = false;
-  PlaySettings draft_;  // ce que montre le panneau ; diffère de running pour ce qui attend « Appliquer »
-  PlaySettings seen_;   // running au tour précédent
-  int page_ = 0;                                // la page de l'arbre affichée (settings_panel.cpp : kPages)
-  bool advanced_ = false;                       // la case « Réglages avancés » : montre la catégorie Avancé
+  PlaySettings draft_;     // ce que montre le panneau ; diffère de running pour ce qui attend « Appliquer »
+  PlaySettings seen_;      // running au tour précédent
+  int page_ = 0;           // la page de l'arbre affichée (settings_panel.cpp : kPages)
+  bool advanced_ = false;  // la case « Réglages avancés » : montre la catégorie Avancé
   bool pending_shown_ = false;                  // le bandeau « Appliquer » était montré au tour précédent
   std::optional<core::EngineId> engine_draft_;  // moteur coché dans l'onglet Moteurs, pas appliqué
   std::unique_ptr<ExportDraft> export_;         // l'onglet Export, gardé d'une ouverture à l'autre
   SystemNote system_;                           // l'onglet Système : sa dernière action
-  UpdateNote updates_;                          // Général > Mises à jour : la vérification en cours ou son résultat
-  BenchNote bench_;                             // « Évaluer ma machine » : l'essai en cours ou son rapport
+  UpdateNote updates_;  // Général > Mises à jour : la vérification en cours ou son résultat
+  BenchNote bench_;     // « Évaluer ma machine » : l'essai en cours ou son rapport
 };
 
 }  // namespace ajp::app::play

@@ -32,7 +32,8 @@ struct EngineScreen {
   const PlayerPaths& paths;
   const EngineCatalog& catalog;
   std::filesystem::path engines_path;  // settings.toml
-  bool restart_wizard = false;         // rouvert depuis les paramètres : l'assistant en entier, depuis le premier écran
+  bool restart_wizard =
+      false;  // rouvert depuis les paramètres : l'assistant en entier, depuis le premier écran
 };
 
 // L'écran jusqu'à « Commencer », puis les téléchargements, settings.toml et user.toml. revisit :

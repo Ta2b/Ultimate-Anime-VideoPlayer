@@ -1,6 +1,7 @@
 // L'assistant de premier démarrage (docs/ux-parametres.md, 4.8) : huit écrans guidés, tous sautables, dont
-// certains n'ont pas lieu selon la machine. Ici la logique, sans dessin : quels écrans, dans quel ordre, ce qui
-// a été choisi ou sauté, le résumé final et ce qui s'applique à « Terminer ». Le dessin est dans first_run.cpp.
+// certains n'ont pas lieu selon la machine. Ici la logique, sans dessin : quels écrans, dans quel ordre, ce
+// qui a été choisi ou sauté, le résumé final et ce qui s'applique à « Terminer ». Le dessin est dans
+// first_run.cpp.
 #pragma once
 
 #include <cstdint>
@@ -15,14 +16,14 @@ namespace ajp::app::play {
 
 // Dans l'ordre de l'assistant ; la valeur est celle de first_run_step (1 à 8).
 enum class WizardStep : std::uint8_t {
-  Welcome = 1,   // carte, tranche, écran
-  Engines,       // moteurs à installer
-  Chain,         // préréglage, priorité, évaluation
-  Hdr,           // RTX HDR / HDR adaptatif / SDR
-  Audio,         // appareil, « Comment écoutez-vous ? »
-  Languages,     // audio et sous-titres préférés
-  Updates,       // Me prévenir / Automatique / Jamais
-  Summary,       // ce qui a été choisi, Terminer
+  Welcome = 1,  // carte, tranche, écran
+  Engines,      // moteurs à installer
+  Chain,        // préréglage, priorité, évaluation
+  Hdr,          // RTX HDR / HDR adaptatif / SDR
+  Audio,        // appareil, « Comment écoutez-vous ? »
+  Languages,    // audio et sous-titres préférés
+  Updates,      // Me prévenir / Automatique / Jamais
+  Summary,      // ce qui a été choisi, Terminer
 };
 inline constexpr int kWizardSteps = 8;
 
@@ -30,8 +31,8 @@ std::string_view title(WizardStep step);  // « Bienvenue », « Moteur », « I
 
 // Ce que la machine permet : les écrans sans objet sont sautés.
 struct WizardFacts {
-  bool engine_choice = true;   // un moteur autre que Vulkan est possible (sinon pas d'écran Moteur)
-  bool hdr_display = false;    // l'écran reçoit du HDR (sinon pas d'écran HDR)
+  bool engine_choice = true;     // un moteur autre que Vulkan est possible (sinon pas d'écran Moteur)
+  bool hdr_display = false;      // l'écran reçoit du HDR (sinon pas d'écran HDR)
   bool updates_managed = false;  // paquet de distribution, Flatpak : mis à jour ailleurs (écran grisé, gardé)
   bool multichannel_output = false;  // l'appareil a plus de 2 canaux : Home cinéma possible
   bool rtx_guided = false;           // Linux et carte NVIDIA RTX : RTX HDR se prépare pas à pas (4b)
@@ -70,8 +71,9 @@ struct Wizard {
   std::string update_channel = "stable";
   std::string audio_language = "jpn";  // première préférence de langue de l'audio ; vide : selon le fichier
   std::string subtitle_language = "fre";  // et des sous-titres ; vide : aucun
-  std::vector<RtxCheck> rtx_checks;      // relus par « Vérifier de nouveau » (4b) ; vide : pas de guide (Windows, hors NVIDIA)
-  int seen = 0;                          // le plus loin atteint (rang de WizardStep), pour reprendre en route
+  std::vector<RtxCheck>
+      rtx_checks;  // relus par « Vérifier de nouveau » (4b) ; vide : pas de guide (Windows, hors NVIDIA)
+  int seen = 0;    // le plus loin atteint (rang de WizardStep), pour reprendre en route
 };
 
 // Reprend à l'écran noté dans first_run_step (le suivant du dernier vu), sans dépasser le résumé.
@@ -89,7 +91,8 @@ std::string progress_text(const Wizard& wizard);
 // Le résumé final : une ligne par choix fait ou sauté, avec où le changer.
 std::vector<std::string> wizard_summary(const Wizard& wizard);
 
-// Ce que « Terminer » écrit : l'écoute (Unsaid : Enceintes en rendu fidèle), les mises à jour, le dernier écran vu.
+// Ce que « Terminer » écrit : l'écoute (Unsaid : Enceintes en rendu fidèle), les mises à jour, le dernier
+// écran vu.
 core::Settings wizard_settings(const Wizard& wizard, core::Settings settings);
 // Les réglages de lecture : préréglage, priorité, HDR choisis. Un écran sauté n'écrase rien.
 PlaySettings wizard_play_settings(const Wizard& wizard, PlaySettings settings);

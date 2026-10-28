@@ -11,8 +11,8 @@
 
 #include <imgui.h>
 
-#include "app/play/engine_switch.h"
 #include "app/play/auto_config.h"
+#include "app/play/engine_switch.h"
 #include "app/play/panel_style.h"
 
 namespace ajp::app::play {
@@ -468,8 +468,10 @@ void radio_note(const char* label, const char* detail, bool selected, bool& pick
   ImGui::BeginDisabled(!enabled);
   if (ImGui::RadioButton(label, selected)) pick = true;
   ImGui::EndDisabled();
-  if (!enabled) panel::tip(detail);
-  else note(detail);
+  if (!enabled)
+    panel::tip(detail);
+  else
+    note(detail);
 }
 
 // Le contenu d'un écran de l'assistant.
@@ -480,21 +482,26 @@ void draw_wizard_step(FirstRunView& view, Wizard& wizard) {
       ImGui::TextWrapped("%s", view.gpu.c_str());
       note(view.tier_line);
       if (!view.display_line.empty()) note(view.display_line);
-      note("Le lecteur choisit seul la chaîne pour cette machine ; tout se retrouve ensuite dans les paramètres (p). "
-           "Il s'ajoute aussi à « Ouvrir avec » du système à la fin de l'assistant.");
+      note(
+          "Le lecteur choisit seul la chaîne pour cette machine ; tout se retrouve ensuite dans les "
+          "paramètres (p). "
+          "Il s'ajoute aussi à « Ouvrir avec » du système à la fin de l'assistant.");
       break;
     case WizardStep::Engines:
       section("Moteurs");
       for (EngineRow& row : view.engines) engine_row(row);
-      note("Vulkan sert tous les GPU ; les moteurs cochés à télécharger s'installent après « Terminer », vérifiés par "
-           "leur empreinte, et Vulkan prend le relais de celui qui échoue.");
+      note(
+          "Vulkan sert tous les GPU ; les moteurs cochés à télécharger s'installent après « Terminer », "
+          "vérifiés par "
+          "leur empreinte, et Vulkan prend le relais de celui qui échoue.");
       break;
     case WizardStep::Chain: {
       section("Image et fluidité");
       if (ImGui::BeginCombo("Préréglage", std::string(label(wizard.preset)).c_str())) {
         for (int i = 0; i < kPresetCount; ++i) {
           const auto preset = static_cast<Preset>(i);
-          if (ImGui::Selectable(std::string(label(preset)).c_str(), preset == wizard.preset)) wizard.preset = preset;
+          if (ImGui::Selectable(std::string(label(preset)).c_str(), preset == wizard.preset))
+            wizard.preset = preset;
         }
         ImGui::EndCombo();
       }
@@ -507,8 +514,10 @@ void draw_wizard_step(FirstRunView& view, Wizard& wizard) {
         }
         ImGui::EndCombo();
       }
-      note("« Évaluer ma machine » (15 s) se lance depuis Général > Configuration, avec une vidéo ouverte : le niveau "
-           "estimé suffit pour commencer.");
+      note(
+          "« Évaluer ma machine » (15 s) se lance depuis Général > Configuration, avec une vidéo ouverte : "
+          "le niveau "
+          "estimé suffit pour commencer.");
       break;
     }
     case WizardStep::Hdr: {
@@ -518,10 +527,12 @@ void draw_wizard_step(FirstRunView& view, Wizard& wizard) {
       radio_note("Automatique", "Le lecteur choisit selon la machine.", wizard.hdr == HdrChoice::Auto, pick);
       if (pick) wizard.hdr = HdrChoice::Auto;
       pick = false;
-      radio_note("RTX HDR", "Cartes NVIDIA RTX avec le moteur TensorRT et le SDK Maxine.", wizard.hdr == HdrChoice::RtxHdr, pick);
+      radio_note("RTX HDR", "Cartes NVIDIA RTX avec le moteur TensorRT et le SDK Maxine.",
+                 wizard.hdr == HdrChoice::RtxHdr, pick);
       if (pick) wizard.hdr = HdrChoice::RtxHdr;
       pick = false;
-      radio_note("HDR adaptatif", "Tous les GPU : l'aspect HDR est émulé selon la scène.", wizard.hdr == HdrChoice::Adaptive, pick);
+      radio_note("HDR adaptatif", "Tous les GPU : l'aspect HDR est émulé selon la scène.",
+                 wizard.hdr == HdrChoice::Adaptive, pick);
       if (pick) wizard.hdr = HdrChoice::Adaptive;
       pick = false;
       radio_note("SDR", "Pas de conversion HDR.", wizard.hdr == HdrChoice::Sdr, pick);
@@ -531,8 +542,9 @@ void draw_wizard_step(FirstRunView& view, Wizard& wizard) {
         if (wizard.rtx_checks.empty()) wizard.rtx_checks = view.check_rtx(view);
         section("RTX HDR, pas à pas");
         for (const RtxCheck& check : wizard.rtx_checks) {
-          ImGui::TextColored(check.done ? ImVec4{0.45F, 0.82F, 0.52F, 1.0F} : ImVec4{1.0F, 0.78F, 0.42F, 1.0F}, "%s",
-                             check.done ? "fait" : "à faire");
+          ImGui::TextColored(
+              check.done ? ImVec4{0.45F, 0.82F, 0.52F, 1.0F} : ImVec4{1.0F, 0.78F, 0.42F, 1.0F}, "%s",
+              check.done ? "fait" : "à faire");
           ImGui::SameLine();
           ImGui::TextUnformatted(check.name.c_str());
           if (!check.done) note(check.todo);
@@ -544,7 +556,9 @@ void draw_wizard_step(FirstRunView& view, Wizard& wizard) {
           wizard.rtx_checks.clear();
         }
         if (!rtx_ready(wizard.rtx_checks))
-          note("Tant que tout n'est pas fait, l'écran reste en HDR adaptatif ; RTX HDR se choisit ensuite dans HDR > Conversion.");
+          note(
+              "Tant que tout n'est pas fait, l'écran reste en HDR adaptatif ; RTX HDR se choisit ensuite "
+              "dans HDR > Conversion.");
       }
       break;
     }
@@ -556,13 +570,16 @@ void draw_wizard_step(FirstRunView& view, Wizard& wizard) {
         const bool cinema = each == Listening::Cinema;
         radio_note(std::string(label(each)).c_str(),
                    each == Listening::Headphones ? "Casque : crossfeed en stéréo, binaural en surround."
-                   : cinema ? (view.facts.multichannel_output ? "Multicanal, surround direct."
-                                                              : "Grisé : l'appareil de sortie n'a que 2 canaux.")
-                            : "Enceintes : rendu fidèle, mixage soigné.",
+                   : cinema
+                       ? (view.facts.multichannel_output ? "Multicanal, surround direct."
+                                                         : "Grisé : l'appareil de sortie n'a que 2 canaux.")
+                       : "Enceintes : rendu fidèle, mixage soigné.",
                    wizard.listening == each, pick, !cinema || view.facts.multichannel_output);
         if (pick) wizard.listening = each;
       }
-      note("Passer : Enceintes en rendu fidèle. Le rendu lui-même vient avec la couche audio ; ce choix est gardé.");
+      note(
+          "Passer : Enceintes en rendu fidèle. Le rendu lui-même vient avec la couche audio ; ce choix est "
+          "gardé.");
       break;
     }
     case WizardStep::Languages:
@@ -573,10 +590,12 @@ void draw_wizard_step(FirstRunView& view, Wizard& wizard) {
     case WizardStep::Updates: {
       section("Mises à jour");
       bool pick = false;
-      radio_note("Me prévenir", "Une notification ; vous lancez la mise à jour vous-même.", wizard.update_mode == "notify", pick);
+      radio_note("Me prévenir", "Une notification ; vous lancez la mise à jour vous-même.",
+                 wizard.update_mode == "notify", pick);
       if (pick) wizard.update_mode = "notify";
       pick = false;
-      radio_note("Automatique", "Téléchargée, installée au prochain lancement.", wizard.update_mode == "auto", pick);
+      radio_note("Automatique", "Téléchargée, installée au prochain lancement.", wizard.update_mode == "auto",
+                 pick);
       if (pick) wizard.update_mode = "auto";
       pick = false;
       radio_note("Jamais", "Aucune vérification.", wizard.update_mode == "never", pick);
@@ -603,7 +622,8 @@ void draw_wizard(FirstRunView& view, float scale) {
   Wizard& wizard = view.wizard;
   if (ImGui::Begin("Bienvenue", nullptr, kFlags)) {
     note(progress_text(wizard));
-    ImGui::ProgressBar(static_cast<float>(wizard.at + 1) / static_cast<float>(wizard.steps.size()), {-1.0F, 6.0F * scale}, "");
+    ImGui::ProgressBar(static_cast<float>(wizard.at + 1) / static_cast<float>(wizard.steps.size()),
+                       {-1.0F, 6.0F * scale}, "");
     const float footer = ImGui::GetFrameHeight() * 1.6F + ImGui::GetStyle().ItemSpacing.y * 3.0F;
     ImGui::BeginChild("##ecran", {0.0F, -footer});
     draw_wizard_step(view, wizard);

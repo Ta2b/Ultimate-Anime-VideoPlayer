@@ -343,7 +343,8 @@ std::expected<std::string, Refusal> choose_as_default(const PlayerPlace& place) 
 }
 
 bool default_handler_is_ajp(std::string_view query_output) {
-  while (!query_output.empty() && (query_output.back() == '\n' || query_output.back() == '\r' || query_output.back() == ' '))
+  while (!query_output.empty() &&
+         (query_output.back() == '\n' || query_output.back() == '\r' || query_output.back() == ' '))
     query_output.remove_suffix(1);
   return query_output == kDesktopId;
 }

@@ -23,7 +23,9 @@ void default_player_page(const PlayerPlace& place, SystemNote& last, bool& dismi
       "Les vidéos (mkv, mp4, webm, avi, mov…) s'ouvrent dans AJP depuis le gestionnaire de fichiers.");
   if (already_default) note("AJP est déjà le lecteur par défaut des vidéos.");
   ImGui::Checkbox("Ne plus me le demander", &dismissed);
-  panel::tip("Le bouton « Faire de ce lecteur le lecteur par défaut » quitte Général et reste tout en bas d'Avancé.");
+  panel::tip(
+      "Le bouton « Faire de ce lecteur le lecteur par défaut » quitte Général et reste tout en bas "
+      "d'Avancé.");
 #ifdef __APPLE__
   static_cast<void>(last);
   note(register_player(place).value_or(std::string()));
@@ -59,7 +61,8 @@ void default_player_page(const PlayerPlace& place, SystemNote& last, bool& dismi
 }
 
 void updates_page(PlaySettings& d, const PlayerPlace& place, UpdateNote& result) {
-  const UpdatePaths paths{.data = place.data, .install = place.executable.parent_path(), .executable = place.executable};
+  const UpdatePaths paths{
+      .data = place.data, .install = place.executable.parent_path(), .executable = place.executable};
   const std::filesystem::path state_file = place.data / "update.toml";
   if (result.pending && result.pending->wait_for(std::chrono::seconds(0)) == std::future_status::ready) {
     const std::expected<std::string, Refusal> done = result.pending->get();
@@ -74,9 +77,10 @@ void updates_page(PlaySettings& d, const PlayerPlace& place, UpdateNote& result)
     const char* label;
     const char* detail;
   };
-  constexpr std::array<Mode, 3> kModes{{{"notify", "Me prévenir", "Une notification ; vous lancez la mise à jour vous-même."},
-                                        {"auto", "Automatique", "Téléchargée, vérifiée, installée au prochain lancement."},
-                                        {"never", "Jamais", "Aucune vérification."}}};
+  constexpr std::array<Mode, 3> kModes{
+      {{"notify", "Me prévenir", "Une notification ; vous lancez la mise à jour vous-même."},
+       {"auto", "Automatique", "Téléchargée, vérifiée, installée au prochain lancement."},
+       {"never", "Jamais", "Aucune vérification."}}};
   ImGui::BeginDisabled(!managed.empty());
   for (const Mode& mode : kModes) {
     if (ImGui::RadioButton(mode.label, d.update_mode == mode.key)) d.update_mode = mode.key;
@@ -94,16 +98,21 @@ void updates_page(PlaySettings& d, const PlayerPlace& place, UpdateNote& result)
     if (ImGui::Selectable("Préversions", d.update_channel == "preview")) d.update_channel = "preview";
     ImGui::EndCombo();
   }
-  const char* frequency = d.update_frequency == "launch" ? "À chaque lancement" : d.update_frequency == "weekly" ? "Chaque semaine" : "Chaque jour";
+  const char* frequency = d.update_frequency == "launch"   ? "À chaque lancement"
+                          : d.update_frequency == "weekly" ? "Chaque semaine"
+                                                           : "Chaque jour";
   if (ImGui::BeginCombo("Fréquence", frequency)) {
-    if (ImGui::Selectable("À chaque lancement", d.update_frequency == "launch")) d.update_frequency = "launch";
+    if (ImGui::Selectable("À chaque lancement", d.update_frequency == "launch"))
+      d.update_frequency = "launch";
     if (ImGui::Selectable("Chaque jour", d.update_frequency == "daily")) d.update_frequency = "daily";
     if (ImGui::Selectable("Chaque semaine", d.update_frequency == "weekly")) d.update_frequency = "weekly";
     ImGui::EndCombo();
   }
   ImGui::EndDisabled();
   note(std::format("Version installée : {}", installed_version()));
-  if (!state.latest_version.empty()) note(std::format("Disponible : {}{}", state.latest_version, state.staged_version.empty() ? "" : " (préparée)"));
+  if (!state.latest_version.empty())
+    note(std::format("Disponible : {}{}", state.latest_version,
+                     state.staged_version.empty() ? "" : " (préparée)"));
   if (state.last_check_unix > 0) {
     const std::time_t at = static_cast<std::time_t>(state.last_check_unix);
     std::tm local{};
@@ -121,7 +130,9 @@ void updates_page(PlaySettings& d, const PlayerPlace& place, UpdateNote& result)
   ImGui::BeginDisabled(busy);
   if (ImGui::Button("Vérifier maintenant")) {
     result.pending = std::make_shared<std::future<std::expected<std::string, Refusal> > >(std::async(
-        std::launch::async, [paths, state_file, mode = d.update_mode, channel = d.update_channel]() -> std::expected<std::string, Refusal> {
+        std::launch::async,
+        [paths, state_file, mode = d.update_mode,
+         channel = d.update_channel]() -> std::expected<std::string, Refusal> {
           UpdateState current = load_update_state(state_file);
           auto message = run_update_check(paths, mode == "never" ? "notify" : mode, channel, current, {});
           (void)save_update_state(state_file, current);
@@ -133,8 +144,8 @@ void updates_page(PlaySettings& d, const PlayerPlace& place, UpdateNote& result)
   ImGui::SameLine();
   ImGui::BeginDisabled(state.previous_version.empty());
   if (ImGui::Button("Revenir à la version précédente")) {
-    result.pending = std::make_shared<std::future<std::expected<std::string, Refusal> > >(std::async(
-        std::launch::async, [paths, state_file]() -> std::expected<std::string, Refusal> {
+    result.pending = std::make_shared<std::future<std::expected<std::string, Refusal> > >(
+        std::async(std::launch::async, [paths, state_file]() -> std::expected<std::string, Refusal> {
           UpdateState current = load_update_state(state_file);
           auto message = roll_back_update(paths, current);
           if (message) (void)save_update_state(state_file, current);
@@ -167,7 +178,8 @@ bool bench_page(const PlayerPlace& place, const std::filesystem::path& video, Be
   section("Évaluer ma machine");
   ImGui::TextWrapped(
       "Joue 12 secondes de la vidéo avec chaque niveau de chaîne, son coupé, et garde le plus haut qui tient "
-      "pour votre carte et votre pilote. Un PC chaud ou occupé donne un résultat plus bas : relancez-le au besoin.");
+      "pour votre carte et votre pilote. Un PC chaud ou occupé donne un résultat plus bas : relancez-le au "
+      "besoin.");
   if (bench.pending && bench.pending->wait_for(std::chrono::seconds(0)) == std::future_status::ready) {
     const std::expected<std::string, Refusal> done = bench.pending->get();
     bench = done ? BenchNote{.text = *done} : BenchNote{.text = done.error().detail, .refused = true};
@@ -176,8 +188,8 @@ bool bench_page(const PlayerPlace& place, const std::filesystem::path& video, Be
   bool started = false;
   ImGui::BeginDisabled(measuring || video.empty() || place.executable.empty());
   if (ImGui::Button("Évaluer ma machine")) {
-    bench.pending = std::make_shared<std::future<std::expected<std::string, Refusal> > >(std::async(
-        std::launch::async, [place, video]() -> std::expected<std::string, Refusal> {
+    bench.pending = std::make_shared<std::future<std::expected<std::string, Refusal> > >(
+        std::async(std::launch::async, [place, video]() -> std::expected<std::string, Refusal> {
           std::error_code error;
           const auto work = std::filesystem::temp_directory_path(error) / "ajp-bench";
           std::filesystem::create_directories(work, error);

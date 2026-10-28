@@ -10,9 +10,9 @@ namespace ajp::app::play::panel {
 inline constexpr ImVec4 kAccent{0.42F, 0.66F, 1.0F, 1.0F};
 inline constexpr ImVec4 kNote{0.66F, 0.68F, 0.74F, 1.0F};
 inline constexpr ImVec4 kWarn{1.0F, 0.78F, 0.42F, 1.0F};
-inline constexpr ImVec4 kGood{0.45F, 0.82F, 0.52F, 1.0F};          // pastille Recommandé
-inline constexpr ImVec4 kFine{0.72F, 0.58F, 1.0F, 1.0F};           // pastille Le plus fin
-inline constexpr ImVec4 kExperimental{1.0F, 0.5F, 0.5F, 1.0F};     // pastille Expérimental
+inline constexpr ImVec4 kGood{0.45F, 0.82F, 0.52F, 1.0F};       // pastille Recommandé
+inline constexpr ImVec4 kFine{0.72F, 0.58F, 1.0F, 1.0F};        // pastille Le plus fin
+inline constexpr ImVec4 kExperimental{1.0F, 0.5F, 0.5F, 1.0F};  // pastille Expérimental
 
 inline void note(const char* text) {
   ImGui::PushStyleColor(ImGuiCol_Text, kNote);
@@ -23,8 +23,8 @@ inline void note(const std::string& text) {
   note(text.c_str());
 }
 
-// Dans une page des réglages (begin_page … end_page), chaque section est un encadré titré ; ailleurs, un titre
-// et un filet.
+// Dans une page des réglages (begin_page … end_page), chaque section est un encadré titré ; ailleurs, un
+// titre et un filet.
 inline bool& page_open() {
   static bool open = false;
   return open;
@@ -80,19 +80,21 @@ inline void tip(const std::string& text) {
   tip(text.c_str());
 }
 
-// Une pastille : le texte sur un rectangle arrondi teinté, sur la ligne du dernier élément. Vert recommandé, bleu
-// rapide, violet fin, ambre lourd, rouge expérimental.
+// Une pastille : le texte sur un rectangle arrondi teinté, sur la ligne du dernier élément. Vert recommandé,
+// bleu rapide, violet fin, ambre lourd, rouge expérimental.
 inline void badge(const char* text, ImVec4 color) {
   ImGui::SameLine();
   ImVec2 at = ImGui::GetCursorScreenPos();
   const ImVec2 size = ImGui::CalcTextSize(text);
-  // Centrée sur la hauteur d'un champ (case, liste) : la pastille suit le milieu du libellé, pas le haut de la ligne.
+  // Centrée sur la hauteur d'un champ (case, liste) : la pastille suit le milieu du libellé, pas le haut de
+  // la ligne.
   at.y += std::max(0.0F, (ImGui::GetFrameHeight() - (size.y + 2.0F)) * 0.5F);
   const float pad = 5.0F;
   ImDrawList* draw = ImGui::GetWindowDrawList();
   ImVec4 fill = color;
   fill.w = 0.28F;
-  draw->AddRectFilled(at, ImVec2(at.x + size.x + 2 * pad, at.y + size.y + 2), ImGui::ColorConvertFloat4ToU32(fill), 4.0F);
+  draw->AddRectFilled(at, ImVec2(at.x + size.x + 2 * pad, at.y + size.y + 2),
+                      ImGui::ColorConvertFloat4ToU32(fill), 4.0F);
   draw->AddText(ImVec2(at.x + pad, at.y + 1), ImGui::ColorConvertFloat4ToU32(color), text);
   ImGui::Dummy(ImVec2(size.x + 2 * pad, size.y + 2));
 }

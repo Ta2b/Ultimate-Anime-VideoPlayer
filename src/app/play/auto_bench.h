@@ -22,15 +22,15 @@ namespace ajp::app::play {
 // Ce qu'un essai a mesuré (les chiffres de FrameStats, frame_stats.h, sur toute la durée de l'essai).
 struct BenchRun {
   Tier level = Tier::Normal;
-  std::int64_t presents = 0;       // présentations de l'écran pendant l'essai
-  std::int64_t dropped = 0;        // images arrivées trop tard, jamais montrées
-  std::int64_t missing = 0;        // images manquées (GPU en retard), hors celles volontaires
-  std::int64_t lag_p95_us = 0;     // retard de présentation, 95e centile
-  std::int64_t period_us = 0;      // période de l'écran ; 0 : inconnue (60 Hz)
+  std::int64_t presents = 0;    // présentations de l'écran pendant l'essai
+  std::int64_t dropped = 0;     // images arrivées trop tard, jamais montrées
+  std::int64_t missing = 0;     // images manquées (GPU en retard), hors celles volontaires
+  std::int64_t lag_p95_us = 0;  // retard de présentation, 95e centile
+  std::int64_t period_us = 0;   // période de l'écran ; 0 : inconnue (60 Hz)
 };
 
-inline constexpr double kMaxLossRate = 0.02;  // images perdues ou manquées, par présentation
-inline constexpr int kMaxLagPeriods = 2;      // retard p95 toléré, en périodes de l'écran
+inline constexpr double kMaxLossRate = 0.02;       // images perdues ou manquées, par présentation
+inline constexpr int kMaxLagPeriods = 2;           // retard p95 toléré, en périodes de l'écran
 inline constexpr std::int64_t kMinPresents = 120;  // sous ce nombre, l'essai ne dit rien
 
 // La machine tient-elle ce niveau ? Un essai trop court ne tient pas.
@@ -43,16 +43,16 @@ std::optional<Tier> next_level(const std::vector<BenchRun>& runs, Tier estimated
 // Le plus haut niveau qui tient ; Économe si aucun ne tient.
 Tier best_level(const std::vector<BenchRun>& runs);
 
-// Ce qu'un essai (un « ajp play --bench-out ») rend à celui qui le lance : la carte et le pilote qui ont joué,
-// et les mesures. Le niveau de la mesure est celui que l'essai a vraiment joué (le niveau estimé, pour un
-// essai demandé « auto »).
+// Ce qu'un essai (un « ajp play --bench-out ») rend à celui qui le lance : la carte et le pilote qui ont
+// joué, et les mesures. Le niveau de la mesure est celui que l'essai a vraiment joué (le niveau estimé, pour
+// un essai demandé « auto »).
 struct BenchReading {
   std::string gpu;
   std::string driver;
   BenchRun run;
   std::int64_t interval_median_us = 0;  // temps par image (écart entre deux images neuves), médiane
   std::int64_t interval_p95_us = 0;
-  std::int64_t render_median_us = 0;    // composition et soumission, médiane
+  std::int64_t render_median_us = 0;  // composition et soumission, médiane
 };
 
 std::string format_reading(const BenchReading& reading);
@@ -70,7 +70,8 @@ struct BenchResult {
 
 std::string format_bench(const BenchResult& result);
 std::expected<BenchResult, Refusal> parse_bench(std::string_view toml);
-std::expected<BenchResult, Refusal> load_bench(const std::filesystem::path& file);  // absent ou illisible : refus FileUnreadable
+std::expected<BenchResult, Refusal> load_bench(
+    const std::filesystem::path& file);  // absent ou illisible : refus FileUnreadable
 std::expected<void, Refusal> save_bench(const std::filesystem::path& file, const BenchResult& result);
 
 // La tranche à appliquer : la mesure si elle est de cette carte et de ce pilote, sinon l'estimation.

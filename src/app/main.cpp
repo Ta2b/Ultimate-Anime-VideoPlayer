@@ -24,8 +24,8 @@ extern "C" {
 #include <filesystem>
 #include <format>
 #include <fstream>
-#include <stop_token>
 #include <memory>
+#include <stop_token>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -36,8 +36,8 @@ extern "C" {
 #include "app/play/player.h"
 #include "app/play/settings.h"
 #include "app/play/updater.h"
-#include "core/update_manifest.h"
 #include "core/log.h"
+#include "core/update_manifest.h"
 #include "prepare/utf8.h"
 
 #ifdef _WIN32
@@ -95,8 +95,8 @@ int fail(const ajp::Refusal& refusal) {
   return 1;
 }
 
-// Relance le lecteur avec les mêmes arguments, après une mise à jour : il remplace ce processus (POSIX) ou démarre à
-// sa place (Windows, où un exécutable en service ne s'écrase pas : l'ancien est renommé .old).
+// Relance le lecteur avec les mêmes arguments, après une mise à jour : il remplace ce processus (POSIX) ou
+// démarre à sa place (Windows, où un exécutable en service ne s'écrase pas : l'ancien est renommé .old).
 int relaunch(const std::filesystem::path& executable, int argc, char** argv) {
 #ifdef _WIN32
   std::vector<std::string> arguments;
@@ -254,11 +254,14 @@ int main(int argc, char** argv) {
     ajp::app::play::UpdateState state = ajp::app::play::load_update_state(data / "update.toml");
     const auto saved = ajp::app::play::load_settings(data / "play.toml");
     if (!state.staged_version.empty() && saved && saved->update_mode == "auto" &&
-        ajp::core::compare_versions(state.staged_version, ajp::app::play::installed_version()).value_or(0) > 0 &&
+        ajp::core::compare_versions(state.staged_version, ajp::app::play::installed_version()).value_or(0) >
+            0 &&
         ajp::app::play::update_managed_reason(update).empty()) {
       const auto applied = ajp::app::play::apply_staged_update(update, state);
       state.last_error = applied ? std::string() : applied.error().detail;
-      if (!applied) state.staged_version.clear();  // une archive qui ne s'applique pas ne se réessaie pas à chaque lancement
+      if (!applied)
+        state.staged_version
+            .clear();  // une archive qui ne s'applique pas ne se réessaie pas à chaque lancement
       static_cast<void>(ajp::app::play::save_update_state(data / "update.toml", state));
       if (applied) {
         std::fprintf(stderr, "ajp : %s\n", applied->c_str());
@@ -271,14 +274,16 @@ int main(int argc, char** argv) {
   // Finder ou l'Explorateur, le lecteur n'a pas de terminal, et c'est le fichier à joindre à un
   // rapport. Sans fichier (dossier en lecture seule, chemin hors de la page de code), stderr seul.
   std::vector<spdlog::sink_ptr> sinks{std::make_shared<spdlog::sinks::stderr_color_sink_mt>()};
-  // --data-dir : réglages, profils et journal ailleurs (les essais du benchmark) ; moteurs et modèles restent.
+  // --data-dir : réglages, profils et journal ailleurs (les essais du benchmark) ; moteurs et modèles
+  // restent.
   std::filesystem::path settings_dir = data;
   if (options->data_dir) {
     settings_dir = *options->data_dir;
     std::error_code made;
     std::filesystem::create_directories(settings_dir, made);
   }
-  const std::filesystem::path log_file = settings_dir.empty() ? std::filesystem::path() : settings_dir / "ajp.log";
+  const std::filesystem::path log_file =
+      settings_dir.empty() ? std::filesystem::path() : settings_dir / "ajp.log";
   if (!log_file.empty()) {
     try {
       sinks.push_back(std::make_shared<spdlog::sinks::basic_file_sink_mt>(log_file.string(), true));

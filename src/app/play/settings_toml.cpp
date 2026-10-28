@@ -138,7 +138,8 @@ std::expected<PlaySettings, Refusal> parse_settings(std::string_view toml_text) 
     if (const auto found = priority_from_key(priority)) {
       s.priority = *found;
     } else {
-      reads.emplace_back(refuse(RefusalCode::FieldOutOfRange, std::format("auto.priority : « {} »", priority)));
+      reads.emplace_back(
+          refuse(RefusalCode::FieldOutOfRange, std::format("auto.priority : « {} »", priority)));
     }
   }
   if (const toml::table* image = section(root, "image")) {
@@ -230,12 +231,14 @@ std::expected<PlaySettings, Refusal> parse_settings(std::string_view toml_text) 
     reads.push_back(read(*audio, "audio", "listening", s.listening));
     reads.push_back(read(*audio, "audio", "faithful", s.audio_faithful));
     if (!listening_index(s.listening))
-      reads.emplace_back(refuse(RefusalCode::FieldOutOfRange, std::format("audio.listening : « {} »", s.listening)));
+      reads.emplace_back(
+          refuse(RefusalCode::FieldOutOfRange, std::format("audio.listening : « {} »", s.listening)));
     if (const toml::table* devices = audio->get_as<toml::table>("devices")) {
       for (const auto& [name, node] : *devices) {
         const auto own = node.value_exact<std::string>();
         if (!own || !listening_index(*own)) {
-          reads.emplace_back(refuse(RefusalCode::FieldOutOfRange, std::format("audio.devices.{}", std::string(name.str()))));
+          reads.emplace_back(
+              refuse(RefusalCode::FieldOutOfRange, std::format("audio.devices.{}", std::string(name.str()))));
           continue;
         }
         s.device_listening.emplace_back(std::string(name.str()), *own);
@@ -270,11 +273,14 @@ std::expected<PlaySettings, Refusal> parse_settings(std::string_view toml_text) 
       return std::ranges::find(allowed, value) != allowed.end();
     };
     if (!one_of(s.update_mode, {"notify", "auto", "never"}))
-      reads.emplace_back(refuse(RefusalCode::FieldOutOfRange, std::format("updates.mode : « {} »", s.update_mode)));
+      reads.emplace_back(
+          refuse(RefusalCode::FieldOutOfRange, std::format("updates.mode : « {} »", s.update_mode)));
     if (!one_of(s.update_channel, {"stable", "preview"}))
-      reads.emplace_back(refuse(RefusalCode::FieldOutOfRange, std::format("updates.channel : « {} »", s.update_channel)));
+      reads.emplace_back(
+          refuse(RefusalCode::FieldOutOfRange, std::format("updates.channel : « {} »", s.update_channel)));
     if (!one_of(s.update_frequency, {"launch", "daily", "weekly"}))
-      reads.emplace_back(refuse(RefusalCode::FieldOutOfRange, std::format("updates.frequency : « {} »", s.update_frequency)));
+      reads.emplace_back(refuse(RefusalCode::FieldOutOfRange,
+                                std::format("updates.frequency : « {} »", s.update_frequency)));
   }
   if (const toml::table* player = section(root, "default_player"))
     reads.push_back(read(*player, "default_player", "dismissed", s.default_player_dismissed));
@@ -360,7 +366,8 @@ std::expected<PlaySettings, Refusal> parse_settings(std::string_view toml_text) 
 std::string format_settings(const PlaySettings& s) {
   toml::table root;
   root.insert("version", kSettingsVersion);
-  root.insert("auto", toml::table{{"preset", std::string(key(s.preset))}, {"priority", std::string(key(s.priority))}});
+  root.insert("auto", toml::table{{"preset", std::string(key(s.preset))},
+                                  {"priority", std::string(key(s.priority))}});
   root.insert("image", toml::table{{"upscale", s.upscale},
                                    {"model", s.model},
                                    {"work_height", s.work_height},
@@ -412,7 +419,9 @@ std::string format_settings(const PlaySettings& s) {
   root.insert("picture", toml::table{{"deband", s.deband}, {"scaler", std::string(name(s.final_scaler))}});
   root.insert("playlist", toml::table{{"autoplay_next", s.autoplay_next}});
   root.insert("default_player", toml::table{{"dismissed", s.default_player_dismissed}});
-  root.insert("updates", toml::table{{"mode", s.update_mode}, {"channel", s.update_channel}, {"frequency", s.update_frequency}});
+  root.insert(
+      "updates",
+      toml::table{{"mode", s.update_mode}, {"channel", s.update_channel}, {"frequency", s.update_frequency}});
   root.insert("subtitles",
               toml::table{{"scale", std::round(static_cast<double>(s.subtitle_scale) * 100.0) / 100.0}});
   // Les réglages du grade au centième, comme le menu les montre.

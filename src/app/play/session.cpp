@@ -69,75 +69,75 @@ void Session::handle(MainInbox::Message&& message) {
 
 void Session::command(const Command& command) {
   std::visit(
-      Overloaded{[this](const cmd::Play&) {
-                   if (!paused_) return;
-                   paused_ = false;
-                   if (!prerolling_ && current_) stages_.play(epoch_, current_->pts_us);
-                 },
-                 [this](const cmd::Pause&) {
-                   if (paused_) return;
-                   paused_ = true;
-                   stages_.pause();
-                 },
-                 [this](const cmd::TogglePause&) {
-                   if (paused_) {
-                     this->command(cmd::Play{});
-                   } else {
-                     this->command(cmd::Pause{});
-                   }
-                 },
-                 [this](const cmd::Seek& seek) { seek_to(seek.target_us, seek.exact); },
-                 [this](const cmd::SeekRelative& seek) {
-                   std::int64_t base = 0;
-                   if (pending_seek_us_) {
-                     base = *pending_seek_us_;
-                   } else if (current_ && current_->pts_us != kNoPts) {
-                     base = current_->pts_us;
-                   }
-                   seek_to(base + seek.delta_us, seek.exact);
-                 },
-                 [this](const cmd::StepFrame& step) {
-                   // Image par image : en pause, un seek exact d'une image de la source. Le seek
-                   // part de la position visée, donc des pressions rapprochées avancent d'autant.
-                   if (!paused_) this->command(cmd::Pause{});
-                   std::int64_t base = 0;
-                   if (pending_seek_us_) {
-                     base = *pending_seek_us_;
-                   } else if (current_ && current_->pts_us != kNoPts) {
-                     base = current_->pts_us;
-                   }
-                   std::int64_t period = config_.extra != nullptr ? config_.extra->source_period_us() : 0;
-                   if (period <= 0) period = kAssumedFramePeriodUs;
-                   seek_to(std::max<std::int64_t>(base + step.direction * period, 0), true);
-                 },
-                 [this](const cmd::Quit&) {
-                   finished_ = true;
-                   quit_ = true;
-                 },
-                 [this](const cmd::SetVolume& volume) {
-                   if (!stages_.audio(volume)) {
-                     on_refusal({.stage = "main",
-                                 .refusal = {RefusalCode::PacketBacklog, "volume : boîte audio pleine"}});
-                   }
-                 },
-                 [this](const cmd::SetListening& listening) {
-                   if (!stages_.audio(listening)) {
-                     on_refusal({.stage = "main",
-                                 .refusal = {RefusalCode::PacketBacklog, "écoute : boîte audio pleine"}});
-                   }
-                 },
-                 [this](const cmd::SetAudioDelay& delay) {
-                   if (!stages_.audio(delay)) {
-                     on_refusal(
-                         {.stage = "main",
+      Overloaded{
+          [this](const cmd::Play&) {
+            if (!paused_) return;
+            paused_ = false;
+            if (!prerolling_ && current_) stages_.play(epoch_, current_->pts_us);
+          },
+          [this](const cmd::Pause&) {
+            if (paused_) return;
+            paused_ = true;
+            stages_.pause();
+          },
+          [this](const cmd::TogglePause&) {
+            if (paused_) {
+              this->command(cmd::Play{});
+            } else {
+              this->command(cmd::Pause{});
+            }
+          },
+          [this](const cmd::Seek& seek) { seek_to(seek.target_us, seek.exact); },
+          [this](const cmd::SeekRelative& seek) {
+            std::int64_t base = 0;
+            if (pending_seek_us_) {
+              base = *pending_seek_us_;
+            } else if (current_ && current_->pts_us != kNoPts) {
+              base = current_->pts_us;
+            }
+            seek_to(base + seek.delta_us, seek.exact);
+          },
+          [this](const cmd::StepFrame& step) {
+            // Image par image : en pause, un seek exact d'une image de la source. Le seek
+            // part de la position visée, donc des pressions rapprochées avancent d'autant.
+            if (!paused_) this->command(cmd::Pause{});
+            std::int64_t base = 0;
+            if (pending_seek_us_) {
+              base = *pending_seek_us_;
+            } else if (current_ && current_->pts_us != kNoPts) {
+              base = current_->pts_us;
+            }
+            std::int64_t period = config_.extra != nullptr ? config_.extra->source_period_us() : 0;
+            if (period <= 0) period = kAssumedFramePeriodUs;
+            seek_to(std::max<std::int64_t>(base + step.direction * period, 0), true);
+          },
+          [this](const cmd::Quit&) {
+            finished_ = true;
+            quit_ = true;
+          },
+          [this](const cmd::SetVolume& volume) {
+            if (!stages_.audio(volume)) {
+              on_refusal(
+                  {.stage = "main", .refusal = {RefusalCode::PacketBacklog, "volume : boîte audio pleine"}});
+            }
+          },
+          [this](const cmd::SetListening& listening) {
+            if (!stages_.audio(listening)) {
+              on_refusal(
+                  {.stage = "main", .refusal = {RefusalCode::PacketBacklog, "écoute : boîte audio pleine"}});
+            }
+          },
+          [this](const cmd::SetAudioDelay& delay) {
+            if (!stages_.audio(delay)) {
+              on_refusal({.stage = "main",
                           .refusal = {RefusalCode::PacketBacklog, "délai audio : boîte audio pleine"}});
-                   }
-                 },
-                 [this](const cmd::ToggleOsd&) {
-                   show_stats_.all = !show_stats_.all;
-                   osd_at_us_.reset();  // relu au tour suivant
-                 },
-                 [](const auto&) {}},  // le reste ne concerne pas la tranche verticale
+            }
+          },
+          [this](const cmd::ToggleOsd&) {
+            show_stats_.all = !show_stats_.all;
+            osd_at_us_.reset();  // relu au tour suivant
+          },
+          [](const auto&) {}},  // le reste ne concerne pas la tranche verticale
       command);
 }
 
