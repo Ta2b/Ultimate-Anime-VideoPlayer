@@ -30,6 +30,9 @@ void icon_subtitles(const Pen& pen, ImVec2 c, float size, bool on);
 // Piste audio : une note de musique.
 void icon_audio_track(const Pen& pen, ImVec2 c, float size);
 void icon_gear(const Pen& pen, ImVec2 c, float size);
+// Saut de 10 s (style Showtime) : un arc fléché ouvert vers le haut, « 10 » au centre ; direction −1 :
+// arrière, +1 : avant.
+void icon_skip(const Pen& pen, ImVec2 c, float size, int direction);
 // Chapitre précédent (direction −1) ou suivant (+1) : un triangle contre une barre.
 void icon_chapter(const Pen& pen, ImVec2 c, float size, int direction);
 
