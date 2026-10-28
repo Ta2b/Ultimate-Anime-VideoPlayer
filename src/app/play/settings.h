@@ -72,7 +72,7 @@ std::string_view label(MotionEngine engine);  // « RIFE », pour le menu
 // Les repères des listes (docs/ux-parametres.md, 3) : une pastille à côté du choix, le détail en infobulle.
 enum class Badge : std::uint8_t { Recommended, Fastest, Finest, Heaviest, Experimental };
 std::string_view badge_text(
-    Badge badge);  // « Recommandé », « Le plus rapide », « Le plus fin », « Le plus lourd », « Expérimental »
+    Badge badge);  // « Recommandé », « Le plus rapide », « Le plus fin », « Le plus lent », « Expérimental »
 std::optional<Badge> badge_of(MotionEngine engine);
 std::optional<Badge> badge_of(Downscale filter);
 // « 720p » ; la hauteur d'image en français courant, jamais « lignes ».

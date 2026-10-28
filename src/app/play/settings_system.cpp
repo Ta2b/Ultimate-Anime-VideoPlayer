@@ -60,6 +60,59 @@ void default_player_page(const PlayerPlace& place, SystemNote& last, bool& dismi
 #endif
 }
 
+bool default_player_prompt(const PlayerPlace& place, SystemNote& last, bool& dismissed, float scale) {
+#ifdef __APPLE__
+  static_cast<void>(place);
+  static_cast<void>(last);
+  static_cast<void>(dismissed);
+  static_cast<void>(scale);
+  return true;  // macOS : l'inscription se fait à l'installation
+#else
+  if (last.pending && last.pending->wait_for(std::chrono::seconds(0)) == std::future_status::ready) {
+    const std::expected<std::string, Refusal> done = last.pending->get();
+    last = done ? SystemNote{.text = *done} : SystemNote{.text = done.error().detail, .refused = true};
+  }
+  const ImGuiIO& io = ImGui::GetIO();
+  ImGui::SetNextWindowPos({io.DisplaySize.x * 0.5F, io.DisplaySize.y * 0.5F}, ImGuiCond_Always, {0.5F, 0.5F});
+  ImGui::SetNextWindowSize({std::min(460.0F * scale, io.DisplaySize.x - 40.0F * scale), 0.0F},
+                           ImGuiCond_Always);
+  bool closed = false;
+  constexpr ImGuiWindowFlags kFlags = ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoMove |
+                                      ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoSavedSettings |
+                                      ImGuiWindowFlags_AlwaysAutoResize;
+  if (ImGui::Begin("Lecteur par défaut", nullptr, kFlags)) {
+    ImGui::TextWrapped(
+        "Ouvrir vos vidéos (mkv, mp4, webm…) directement dans AJP depuis le gestionnaire de fichiers ?");
+    ImGui::Spacing();
+    const bool busy = last.pending != nullptr;
+    const bool done = !last.text.empty() && !last.refused;
+    ImGui::BeginDisabled(busy || done);
+    if (ImGui::Button("Définir AJP comme lecteur par défaut")) {
+      last.pending = std::make_shared<std::future<std::expected<std::string, Refusal> > >(
+          std::async(std::launch::async, &choose_as_default, place));
+      last.text.clear();
+      last.refused = false;
+    }
+    ImGui::EndDisabled();
+    ImGui::SameLine();
+    if (ImGui::Button(done ? "Fermer" : "Plus tard")) closed = true;
+    ImGui::Checkbox("Ne plus me le demander", &dismissed);
+    if (busy) {
+      note("En cours…");
+    } else if (last.refused) {
+      ImGui::PushStyleColor(ImGuiCol_Text, kWarn);
+      ImGui::TextWrapped("%s", last.text.c_str());
+      ImGui::PopStyleColor();
+    } else if (!last.text.empty()) {
+      note(last.text);
+    }
+    note("Réglage modifiable plus tard : Général > Lecteur par défaut.");
+  }
+  ImGui::End();
+  return closed;
+#endif
+}
+
 void updates_page(PlaySettings& d, const PlayerPlace& place, UpdateNote& result) {
   const UpdatePaths paths{
       .data = place.data, .install = place.executable.parent_path(), .executable = place.executable};

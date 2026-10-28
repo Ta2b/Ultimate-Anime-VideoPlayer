@@ -235,7 +235,7 @@ std::string_view badge_text(Badge badge) {
     case Badge::Finest:
       return "Le plus fin";
     case Badge::Heaviest:
-      return "Le plus lourd";
+      return "Le plus lent";
     case Badge::Experimental:
       return "Expérimental";
   }
