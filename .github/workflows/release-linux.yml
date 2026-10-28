@@ -115,6 +115,11 @@ jobs:
             fi
           fi
           tools/release/package-linux.sh "$RUNNER_TEMP/package"
+      # Le même lecteur en un seul fichier (tools/release/appimage.sh) : à rendre exécutable et à lancer.
+      - name: AppImage
+        run: |
+          tools/release/appimage.sh "$RUNNER_TEMP/package/ajp-linux-x64.tar.gz" "$RUNNER_TEMP/package/ajp-linux-x86_64.AppImage"
+          (cd "$RUNNER_TEMP/package" && sha256sum ajp-linux-x86_64.AppImage >> SHA256SUMS)
       # Le quota de stockage des artefacts du compte peut être plein : le paquet est construit quand même.
       - name: Artefact
         if: env.AJP_TAG == ''
@@ -125,6 +130,7 @@ jobs:
           name: ajp-linux-x64
           path: |
             ${{ runner.temp }}/package/ajp-linux-x64.tar.gz
+            ${{ runner.temp }}/package/ajp-linux-x86_64.AppImage
             ${{ runner.temp }}/package/engines.lock
             ${{ runner.temp }}/package/SHA256SUMS
           compression-level: 0
@@ -138,7 +144,7 @@ jobs:
         run: |
           notes="tools/release/notes/$AJP_TAG.md"
           [ -f "$notes" ] || notes=/dev/null
-          assets=("$RUNNER_TEMP"/package/ajp-*.tar.gz "$RUNNER_TEMP/package/engines.lock" "$RUNNER_TEMP/package/SHA256SUMS")
+          assets=("$RUNNER_TEMP"/package/ajp-*.tar.gz "$RUNNER_TEMP/package/ajp-linux-x86_64.AppImage" "$RUNNER_TEMP/package/engines.lock" "$RUNNER_TEMP/package/SHA256SUMS")
           # Les constructions Windows et macOS de la même étiquette peuvent créer la release au même
           # moment : un refus de création ne compte que si la release n'existe toujours pas.
           gh release view "$AJP_TAG" -R "$AJP_RELEASE_REPO" >/dev/null 2>&1 \
