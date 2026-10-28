@@ -161,8 +161,8 @@ std::vector<std::string> wizard_summary(const Wizard& wizard) {
                       : std::format("Audio : {} (Audio > Sortie)", label(wizard.listening)));
   }
   if (has(WizardStep::Languages))
-    out.push_back(skipped(WizardStep::Languages) ? "Langues : sauté (Langues et sous-titres)"
-                                                 : "Langues : choisies (Langues et sous-titres)");
+    out.push_back(skipped(WizardStep::Languages) ? "Langues : sauté (Général > Langues)"
+                                                 : "Langues : choisies (Général > Langues)");
   if (has(WizardStep::Updates)) {
     const std::string_view mode = wizard.update_mode == "auto"    ? "automatiques"
                                   : wizard.update_mode == "never" ? "jamais"
