@@ -429,3 +429,42 @@ TEST_CASE("Fichiers tiers : les index de NVIDIA se téléchargent et se vérifie
   }
   WARN(std::format("total transféré : {} Mo", downloaded >> 20));
 }
+
+// Le paquet TensorRT construit par package-linux.sh, installé par install_package : l'archive locale
+// (file://) pour notre module, les fichiers de NVIDIA tirés pour de bon de pypi.nvidia.com. Caché :
+// AJP_PACKAGE_DIR = le dossier de sortie du script (engines.lock et archives).
+TEST_CASE("Paquet TensorRT du script : installation réelle en lien direct", "[.package][app][install]") {
+  const char* given = std::getenv("AJP_PACKAGE_DIR");
+  if (given == nullptr) SKIP("AJP_PACKAGE_DIR non défini");
+  const fs::path dir(given);
+  Fixture f("paquet-reel");
+  const auto index = core::read_engine_index(read_all(dir / "engines.lock"));
+  REQUIRE(index);
+  const core::EnginePackage* found =
+      core::find_package(index->packages, core::EngineId::TensorRt, f.catalog.layout.os);
+  REQUIRE(found != nullptr);
+  core::EnginePackage package = *found;
+  package.url = "file://" + (dir / "ajp-engine-tensorrt-linux-x64.tar.gz").generic_string();
+  f.catalog.packages = {package};
+  f.catalog.vendor_files = index->vendor_files;
+  InstallProgress progress = f.progress();
+  progress.cuda_arch = "sm89";
+  WARN(std::format("à télécharger pour sm89 : {} Mo", download_bytes(f.catalog, package, "sm89") >> 20));
+  const auto installed_library = install_package(f.catalog, package, progress);
+  REQUIRE(installed_library);
+  const fs::path target = core::engine_dir(f.catalog.layout, package);
+  std::string listing;
+  for (const auto& entry : fs::directory_iterator(target))
+    listing += std::format("{} ({} Mo) ; ", entry.path().filename().string(), fs::file_size(entry) >> 20);
+  WARN("dossier installé : " + target.string());
+  WARN(listing);
+  CHECK(fs::exists(target / "ajp_backend_tensorrt.so"));
+  CHECK(fs::exists(target / "libnvinfer.so.11"));
+  CHECK(fs::exists(target / "libnvinfer_plugin.so.11"));
+  CHECK(fs::exists(target / "libnvonnxparser.so.11"));
+  CHECK(fs::exists(target / "libnvinfer_builder_resource_sm89.so.11.3.0"));
+  CHECK_FALSE(fs::exists(target / "libnvinfer_builder_resource_sm120.so.11.3.0"));
+  CHECK(fs::exists(target / "libnvrtc.so.13"));
+  CHECK(fs::exists(target / "trtexec"));
+  if (const char* keep = std::getenv("AJP_PACKAGE_KEEP")) fs::copy(target, keep, fs::copy_options::recursive);
+}

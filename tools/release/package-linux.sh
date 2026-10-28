@@ -287,11 +287,13 @@ if [ -n "${AJP_ENGINES_LOCK:-}" ]; then
     http://*|https://*) other="$OUT/engines-autre.lock"; curl -fsSL "$AJP_ENGINES_LOCK" -o "$other" ;;
   esac
   have="$(sed -n 's/^id = "\(.*\)"$/\1/p' "$LOCK" | tr '\n' ' ')"
-  # Les blocs [[engine]] de l'autre dont l'id manque ici ; ses autres tables ne se reprennent pas.
+  # Les blocs [[engine]] de l'autre dont l'id manque ici, et les blocs [[vendor_file]] des mêmes moteurs
+  # (les fichiers de NVIDIA que le lecteur tire de chez NVIDIA pour TensorRT : sans eux le moteur
+  # s'installerait sans bibliothèques) ; ses autres tables ne se reprennent pas.
   awk -v have="$have" '
     BEGIN { n = split(have, ids, " "); for (i = 1; i <= n; i++) skip[ids[i]] = 1 }
     function flush() { if (block != "" && !(id in skip)) printf "\n%s", block; block = ""; id = "" }
-    /^\[\[engine\]\]$/ { flush(); block = $0 "\n"; inside = 1; next }
+    /^\[\[(engine|vendor_file)\]\]$/ { flush(); block = $0 "\n"; inside = 1; next }
     /^\[/ { flush(); inside = 0; next }
     inside && /^id = / { id = $3; gsub(/"/, "", id) }
     inside && NF { block = block $0 "\n" }
