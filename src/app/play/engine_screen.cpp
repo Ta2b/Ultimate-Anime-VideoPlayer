@@ -97,7 +97,7 @@ std::expected<bool, Refusal> run_engine_screen(const EngineScreen& s, core::Sett
   if (!engines.first_run_done) choice.start = start_profile_for(gpu);
   log->info("{} : {}", revisit ? "écran des moteurs" : "bienvenue", gpu_line(gpu));
   FirstRunView view =
-      first_run_view(gpu, engines_here(s.options, s.paths, s.catalog), std::move(choice), engines);
+      first_run_view(gpu, engines_here(s.options, s.paths, s.catalog, gpu.name), std::move(choice), engines);
   // L'assistant du premier lancement (ou de --first-run, ou relancé depuis les paramètres) ; rouvert depuis
   // l'onglet Moteurs, l'ancien écran des seuls moteurs.
   const bool wizard_mode = !revisit || s.restart_wizard;

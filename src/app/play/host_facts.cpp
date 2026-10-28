@@ -102,10 +102,12 @@ bool tensorrt_backend_present(const PlayerPaths& paths) {
 
 // Ce qui est sur ce poste pour l'écran de bienvenue : les backends TensorRT, MIGraphX et OpenVINO,
 // le SDK Maxine importé ou à importer.
-EnginesHere engines_here(const PlayOptions& options, const PlayerPaths& paths, const EngineCatalog& catalog) {
+EnginesHere engines_here(const PlayOptions& options, const PlayerPaths& paths, const EngineCatalog& catalog,
+                         std::string_view gpu_name) {
   EnginesHere here;
   // L'architecture du GPU ne se lit (nvidia-smi) que s'il y a des fichiers tiers à choisir.
-  const std::string arch = catalog.vendor_files.empty() ? std::string() : detect_cuda_arch();
+  const std::string arch =
+      catalog.vendor_files.empty() ? std::string() : effective_cuda_arch(detect_cuda_arch(), gpu_name);
   for (const core::EnginePackage& package : catalog.packages) {
     here.downloads.push_back(EngineDownload{
         .id = package.engine,

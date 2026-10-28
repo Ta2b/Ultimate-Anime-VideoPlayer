@@ -38,19 +38,23 @@ using Job = std::function<std::expected<void, Refusal>(const InstallProgress&)>;
 std::optional<std::expected<void, Refusal>> run_install(PlaceboScreen& screen, PlayerUi& ui,
                                                         const std::string& label, Job job) {
   auto shared = std::make_shared<Shared>();
+  // L'architecture du GPU (nvidia-smi, sinon le nom de la carte) : sans elle, les fichiers de toutes les
+  // architectures étaient tirés (2 Go au lieu de 740 Mo pour TensorRT sm89).
+  const std::string arch = effective_cuda_arch(detect_cuda_arch(), screen.device_facts().name);
   auto worker =
       start_thread("install", ThreadReport([shared](const Refusal& refusal) {
                      const std::scoped_lock lock(shared->mutex);
                      if (!shared->result) shared->result = std::unexpected(refusal);
                    }),
-                   [shared, job = std::move(job)](const std::stop_token& stop, const ThreadReport&) {
+                   [shared, arch, job = std::move(job)](const std::stop_token& stop, const ThreadReport&) {
                      auto done = job({.report =
                                           [shared](float fraction, const std::string& stage) {
                                             const std::scoped_lock lock(shared->mutex);
                                             shared->fraction = fraction;
                                             shared->stage = stage;
                                           },
-                                      .stop = stop});
+                                      .stop = stop,
+                                      .cuda_arch = arch});
                      const std::scoped_lock lock(shared->mutex);
                      shared->result = std::move(done);
                    });
@@ -145,7 +149,8 @@ std::expected<bool, Refusal> update_stale_engines(PlaceboScreen& screen, PlayerU
     }
     // Pas de place : rien n'est tenté (ni boucle à chaque lancement), l'utilisateur est prévenu.
     if (const auto fits =
-            check_space(install_space(catalog, package, detect_cuda_arch(),
+            check_space(install_space(catalog, package,
+                                      effective_cuda_arch(detect_cuda_arch(), screen.device_facts().name),
                                       directory_bytes(core::engine_dir(catalog.layout, package))),
                         free_bytes(catalog.layout.engines), catalog.layout.engines);
         !fits) {
