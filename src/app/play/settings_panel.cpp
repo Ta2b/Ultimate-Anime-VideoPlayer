@@ -570,17 +570,17 @@ constexpr std::array<PageInfo, 14> kPages{{
     {"Général", "Configuration", false},
     {"Général", "Lecteur par défaut", false},  // masquée quand « Ne plus me le demander » est coché
     {"Général", "Mises à jour", false},
+    {"Général", "Langues", false},
+    {"Général", "Sous-titres", false},
     {"Général", "Statistiques", false},
     {"Général", "Réinitialiser", false},
     {"Image IA", "Agrandissement", false},
     {"Image IA", "Fluidité", false},
-    {"HDR", "Conversion", false},
-    {"Couleurs", "Réglages", false},
+    {"HDR et couleurs", "Conversion HDR", false},
+    {"HDR et couleurs", "Réglages", false},
     {"Audio", "Sortie", false},
-    {"Langues et sous-titres", "Langues", false},
-    {"Langues et sous-titres", "Sous-titres", false},
-    {"Export", "Fichier", false},
-    {"Moteurs", "Installés", false},
+    {"Export et moteurs", "Fichier", false},
+    {"Export et moteurs", "Moteurs installés", false},
 }};
 
 }  // namespace
@@ -633,14 +633,27 @@ SettingsPanel::Result SettingsPanel::draw(const PlaySettings& running, const Set
     if ((!advanced_ && kPages[static_cast<std::size_t>(page_)].advanced) ||
         (page_ == 1 && draft_.default_player_dismissed && !advanced_))
       page_ = 0;
+    // Une page masquée : réglage avancé sans la case, ou « Lecteur par défaut » une fois refusé.
+    const auto visible = [&](std::size_t i) {
+      if (kPages[i].advanced && !advanced_) return false;
+      return !(i == 1 && draft_.default_player_dismissed && !advanced_);
+    };
     ImGui::BeginChild("##arbre", ImVec2(tree_width, -footer), ImGuiChildFlags_Borders);
+    // La molette sur l'arbre passe d'une page à la suivante ou à la précédente.
+    if (ImGui::IsWindowHovered() && io.MouseWheel != 0.0F) {
+      const int step = io.MouseWheel < 0.0F ? 1 : -1;
+      for (int next = page_ + step; next >= 0 && next < static_cast<int>(kPages.size()); next += step) {
+        if (visible(static_cast<std::size_t>(next))) {
+          page_ = next;
+          break;
+        }
+      }
+    }
     const char* category = "";
     bool category_open = false;
     for (std::size_t i = 0; i < kPages.size(); ++i) {
       const PageInfo& page = kPages[i];
-      if (page.advanced && !advanced_) continue;
-      if (i == 1 && draft_.default_player_dismissed && !advanced_)
-        continue;  // masqué ; revient avec les réglages avancés
+      if (!visible(i)) continue;
       if (std::string_view(page.category) != category) {
         if (category_open) ImGui::TreePop();
         category = page.category;
@@ -669,7 +682,7 @@ SettingsPanel::Result SettingsPanel::draw(const PlaySettings& running, const Set
         if (advanced_) composition_section(draft_);
       } else if (name == "Fluidité") {
         fluidity_tab(draft_, choices);
-      } else if (name == "Conversion") {
+      } else if (name == "Conversion HDR") {
         hdr_tab(draft_, choices);
         if (advanced_) oled_sections(draft_, choices);
       } else if (name == "Réglages") {
@@ -682,7 +695,7 @@ SettingsPanel::Result SettingsPanel::draw(const PlaySettings& running, const Set
         subtitles_tab(draft_);
       } else if (name == "Fichier") {
         export_tab(*export_, running, choices, actions);
-      } else if (name == "Installés") {
+      } else if (name == "Moteurs installés") {
         engines_tab(choices, engine_draft_, actions, draft_.engines_dir);
       } else if (name == "Statistiques") {
         stats_tab(draft_);
