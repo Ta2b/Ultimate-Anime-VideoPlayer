@@ -99,6 +99,9 @@ Il se construit sur un poste NVIDIA et se joint à la release avant l'étiquette
 index dans l'`engines.lock` de la release :
 
 ```
+# Depuis la 0.5, le paquet se construit dans le conteneur de préflight (image reconstruite d'abord, contrôle de portabilité intact) :
+#   tools/release/preflight/nvidia-package.sh <worktree à l'étiquette> v0.3.0 <sortie>
+# À la main, sur un poste dont les bibliothèques sont celles d'Ubuntu 24.04 :
 AJP_WITH_CUDA=ON AJP_TENSORRT_ROOT=$HOME/ajp-sdk/tensorrt AJP_PACKAGE_NVIDIA=1 AJP_DEPS_PREFIX=... \
 AJP_RELEASE_REPO=<dépôt des releases> AJP_RELEASE_TAG=v0.3.0 tools/release/package-linux.sh <dossier>
 tools/release/attach-nvidia-linux.sh <dossier> v0.3.0               # contrôle seulement
