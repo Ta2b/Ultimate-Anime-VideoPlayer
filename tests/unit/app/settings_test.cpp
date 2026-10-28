@@ -10,6 +10,7 @@
 #include <string_view>
 #include <vector>
 
+#include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 
 #include "app/play/live_settings.h"
@@ -424,4 +425,22 @@ TEST_CASE("Hermite : un filtre de réduction de plus, cubique B = C = 0", "[app]
   PlaySettings s;
   s.downscale = Downscale::Hermite;
   CHECK(parse_settings(format_settings(s))->downscale == Downscale::Hermite);
+}
+
+TEST_CASE("play.toml garde le profil audio et ses réglages personnalisés", "[settings][audio]") {
+  ajp::app::play::PlaySettings s;
+  s.audio_profile = "custom";
+  s.audio_custom.crossfeed_gain = 0.45F;
+  s.audio_custom.center_lift = 1.7F;
+  const auto read = ajp::app::play::parse_settings(ajp::app::play::format_settings(s));
+  REQUIRE(read);
+  CHECK(read->audio_profile == "custom");
+  CHECK(read->audio_custom.crossfeed_gain == Catch::Approx(0.45F));
+  CHECK(read->audio_custom.center_lift == Catch::Approx(1.7F));
+  CHECK(ajp::app::play::parse_settings("version = 1\n")->audio_profile == "natural");
+  CHECK_FALSE(ajp::app::play::parse_settings("version = 1\n[audio]\nprofile = \"zzz\"\n"));
+  // Un profil qui ne va pas à l'écoute retombe sur Naturel.
+  s.audio_profile = "night";
+  CHECK(ajp::app::play::resolved_tuning(s, 0) == ajp::audio::MixTuning{});
+  CHECK(ajp::app::play::resolved_tuning(s, 1) == ajp::audio::find_preset("night")->tuning);
 }

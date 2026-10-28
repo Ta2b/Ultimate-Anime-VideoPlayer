@@ -22,6 +22,7 @@
 
 #include "app/play/final_scaler.h"
 #include "app/play/options.h"
+#include "audio/mixer.h"
 #include "core/profile.h"
 #include "core/types.h"
 #include "media/selection.h"
@@ -184,6 +185,8 @@ struct PlaySettings {
   std::string audio_device;
   std::string listening = "speakers";
   bool audio_faithful = false;
+  std::string audio_profile = "natural";  // clé de audio::mix_presets, ou « custom »
+  audio::MixTuning audio_custom;          // les réglages du profil « custom »
   std::vector<std::pair<std::string, std::string>> device_listening;
   // Synchro sur l'écran (SessionConfig::display_sync), en direct ; délai d'affichage de la vidéo
   // en ms, 0 : estimé (SessionConfig::video_latency_us).
@@ -252,7 +255,12 @@ std::string format_settings(const PlaySettings& settings);
 struct EffectiveListening {
   int listen = 1;
   bool faithful = false;
+  audio::MixTuning tuning;  // le profil de virtualisation (preset ou personnalisé)
+  bool operator==(const EffectiveListening&) const = default;
 };
+// Le mixage voulu : le profil choisi (clé de audio::mix_presets, « custom » : audio_custom), borné ; un
+// profil qui ne va pas à l'écoute en cours (Voix claires au casque) retombe sur « Naturel ».
+audio::MixTuning resolved_tuning(const PlaySettings& settings, int listen);
 EffectiveListening effective_listening(const PlaySettings& settings, const std::string& device_name);
 // « headphones » → 0, « speakers » → 1, « cinema » → 2 ; rien d'autre.
 std::optional<int> listening_index(std::string_view key);
