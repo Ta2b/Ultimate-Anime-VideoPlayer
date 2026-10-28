@@ -97,10 +97,10 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
   // La sortie est HDR10 : l'écran en reçoit, et --sdr ne l'a pas coupée. Sinon (sortie SDR),
   // TrueHDR ferait du HDR que libplacebo ramènerait aussitôt en SDR ; le grade SDR prend sa place.
   const bool hdr_out = !p.options.sdr && content_peak_nits(p.screen.window()).has_value();
-  // Un écran SDR n'a pas de HDR à offrir : ni RTX HDR ni HDR adaptatif (le panneau les grise), l'image reste
-  // en SDR, sans grade (le grade suit une route HDR, chain_hdr.cpp).
+  // Un écran SDR n'a pas de HDR à offrir : ni RTX HDR ni HDR adaptatif (le panneau les grise) ; l'image reste
+  // en SDR, et le grade (contraste, saturation, préréglage) s'y applique.
   if (!hdr_out && (settings.true_hdr || settings.hdr_native)) {
-    log->info("sortie SDR : ni RTX HDR ni HDR adaptatif, image SDR sans grade");
+    log->info("sortie SDR : ni RTX HDR ni HDR adaptatif, image SDR gradée");
     settings.true_hdr = false;
     settings.hdr_native = false;
   }
