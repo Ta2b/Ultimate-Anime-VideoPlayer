@@ -100,7 +100,18 @@ struct StatsSettings {
   friend bool operator==(const StatsSettings&, const StatsSettings&) = default;
 };
 
+// Le préréglage de la chaîne (auto_config.h) : Auto prend la tranche de la machine, Personnalisé laisse les
+// réglages faits à la main. Priorité : ce que l'automatique préfère quand la machine ne tient pas tout.
+enum class Preset : std::uint8_t { Auto, Economy, Fast, Normal, Quality, Ultra, Custom };
+inline constexpr int kPresetCount = 7;
+enum class Priority : std::uint8_t { Fluidity, Balance, Image };
+inline constexpr int kPriorityCount = 3;
+
 struct PlaySettings {
+  // Auto-configuration : Personnalisé par défaut, les réglages d'avant ne bougent pas ; le premier
+  // lancement choisit Auto. Hors Personnalisé, la chaîne est refaite à chaque vidéo.
+  Preset preset = Preset::Custom;
+  Priority priority = Priority::Balance;
   bool upscale = true;
   std::string model;  // fichier ONNX de SPAN (nom seul) ; vide : celui du lecteur actuel
   int work_height = 720;

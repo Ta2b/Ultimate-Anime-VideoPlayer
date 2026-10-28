@@ -16,6 +16,7 @@
 #include <SDL3/SDL_timer.h>
 #include <SDL3/SDL_video.h>
 
+#include "app/play/auto_config.h"
 #include "app/play/backend_library.h"
 #include "app/play/build_progress.h"
 #include "app/play/chain.h"
@@ -250,6 +251,13 @@ std::expected<void, Refusal> play(const PlayOptions& options, const PlayerPaths&
       for (const std::string& line : notes) log->warn("profil {} : {}", profiles.active, line);
       log->info("profil {} « {} »", profiles.active, start->name);
     }
+    // Le préréglage (Auto, Rapide…) refait la chaîne pour cette carte, cet écran et cette vidéo ;
+    // Personnalisé laisse les réglages tels quels.
+    from_profile = apply_preset(from_profile,
+                                Machine{.tier = estimate_tier(gpu_facts(**screen)).tier,
+                                        .display_height = display_height((*screen)->window()),
+                                        .display_hz = display_refresh_hz((*screen)->window())},
+                                profiles.source);
     PlaySettings settings = settings_for(from_profile, file_options);
     if (auto valid = validate(settings); !valid) return std::unexpected(std::move(valid.error()));
     static_cast<void>((*ui)->controls().set_volume(settings.volume));

@@ -12,6 +12,7 @@
 #include <utility>
 #include <vector>
 
+#include "app/play/auto_config.h"
 #include "app/play/settings.h"
 #include "core/user_overlay.h"
 
@@ -123,6 +124,22 @@ std::expected<PlaySettings, Refusal> parse_settings(std::string_view toml_text) 
   std::vector<std::string> legacy_audio;
   std::vector<std::string> legacy_subtitles;
   std::vector<std::expected<void, Refusal>> reads;
+  if (const toml::table* automatic = section(root, "auto")) {
+    std::string preset(key(s.preset));
+    std::string priority(key(s.priority));
+    reads.push_back(read(*automatic, "auto", "preset", preset));
+    reads.push_back(read(*automatic, "auto", "priority", priority));
+    if (const auto found = preset_from_key(preset)) {
+      s.preset = *found;
+    } else {
+      reads.emplace_back(refuse(RefusalCode::FieldOutOfRange, std::format("auto.preset : « {} »", preset)));
+    }
+    if (const auto found = priority_from_key(priority)) {
+      s.priority = *found;
+    } else {
+      reads.emplace_back(refuse(RefusalCode::FieldOutOfRange, std::format("auto.priority : « {} »", priority)));
+    }
+  }
   if (const toml::table* image = section(root, "image")) {
     std::string downscale(name(s.downscale));
     reads.push_back(read(*image, "image", "upscale", s.upscale));
@@ -311,6 +328,7 @@ std::expected<PlaySettings, Refusal> parse_settings(std::string_view toml_text) 
 std::string format_settings(const PlaySettings& s) {
   toml::table root;
   root.insert("version", kSettingsVersion);
+  root.insert("auto", toml::table{{"preset", std::string(key(s.preset))}, {"priority", std::string(key(s.priority))}});
   root.insert("image", toml::table{{"upscale", s.upscale},
                                    {"model", s.model},
                                    {"work_height", s.work_height},

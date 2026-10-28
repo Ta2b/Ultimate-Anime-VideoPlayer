@@ -23,6 +23,8 @@ std::int64_t display_period_us(SDL_Window* window);
 // Le même rafraîchissement, exact quand SDL le donne en fraction (59,94 Hz = 60000/1001) ; 0 si
 // inconnu.
 double display_refresh_hz(SDL_Window* window);
+// La hauteur en pixels du mode de l'écran de la fenêtre ; 0 si inconnue.
+int display_height(SDL_Window* window);
 // Crête vue par le contenu : la marge HDR de SDL3 × 203 nits ; rien si l'écran n'est pas en HDR.
 std::optional<double> content_peak_nits(SDL_Window* window);
 // Le nom de l'écran de la fenêtre selon SDL, pour choisir son EDID.
