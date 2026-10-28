@@ -91,7 +91,28 @@ Le contrôle de l'export juge la moyenne et le 99,9 % de l'écart à l'original,
 image : à 256×256 il valait 0,097 sur un poste et 0,127 en CI même avec tout en FP32 (les sorties du graphe
 sont arrondies en FP16).
 
-## Joindre le moteur TensorRT à une release (poste NVIDIA)
+## Paquet TensorRT indépendant de l'étiquette (depuis la 0.6)
+
+Le paquet TensorRT (notre module et trtexec) ne change presque jamais d'une release à l'autre ; le joindre à chaque étiquette,
+puis relancer Release Linux pour que son index entre dans l'`engines.lock`, coûtait plus de 30 minutes par release (v0.5.1).
+Il est donc versionné par **l'empreinte de ses entrées** (`tools/release/trt-fingerprint.sh` : le code que le module lie,
+les définitions CMake, la recette des dépendances et de l'image, l'empaquetage, l'index NVIDIA ; pas `src/app`, `src/audio`,
+`src/render`, la documentation ni les tests ; pas non plus le `CMakeLists.txt` racine, dont la VERSION change à chaque release) et
+vit dans la release fixe `trt-<empreinte>` du dépôt des releases.
+
+```
+tools/release/trt-package.sh --check   # dit si le paquet de l'empreinte courante existe (code 0) ou manque (code 3)
+tools/release/trt-package.sh           # le construit (préflight Docker) et le joint à trt-<empreinte>, une seule fois
+```
+
+`release-linux.yml` lit `engines-nvidia.lock` dans `trt-<empreinte>` pour n'importe quelle étiquette : si le paquet existe, la
+release se fait en une passe, sans rien à relancer ; s'il manque, le workflow avertit et dit la commande à lancer sur le poste NVIDIA
+(puis relancer le workflow). L'image Docker de préflight garde ses couches : seule une modification de `versions.env` ou de
+`tools/deps/linux-from-source.sh` la reconstruit (c'est ce qui a coûté ~30 minutes à la 0.5.1), et ces deux fichiers font
+justement partie de l'empreinte : le paquet et l'image changent ensemble, jamais l'un sans l'autre. L'ancienne méthode (paquet
+joint à l'étiquette elle-même) reste lue en second.
+
+## Joindre le moteur TensorRT à une étiquette (ancienne méthode, poste NVIDIA)
 
 Le paquet TensorRT d'une release ne porte que notre module et trtexec ; libnvinfer, le lecteur ONNX, NVRTC
 et les ressources du constructeur de la carte se tirent de chez NVIDIA (`tools/release/nvidia-vendor/`).

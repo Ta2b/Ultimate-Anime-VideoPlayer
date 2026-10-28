@@ -103,10 +103,15 @@ jobs:
         run: |
           if [ -n "$AJP_TAG" ]; then
             export AJP_RELEASE_TAG="$AJP_TAG"
-            if gh release download "$AJP_TAG" -R "$AJP_RELEASE_REPO" -p engines-nvidia.lock -D "$RUNNER_TEMP"; then
+            # Le paquet TensorRT est indépendant de l'étiquette : il vit dans la release « trt-<empreinte de ses
+            # entrées> » (tools/release/trt-package.sh), construit une fois sur le poste NVIDIA. Un paquet joint
+            # à l'étiquette elle-même (ancienne méthode) reste lu en second.
+            fp="$(tools/release/trt-fingerprint.sh)"
+            if gh release download "trt-$fp" -R "$AJP_RELEASE_REPO" -p engines-nvidia.lock -D "$RUNNER_TEMP" \
+               || gh release download "$AJP_TAG" -R "$AJP_RELEASE_REPO" -p engines-nvidia.lock -D "$RUNNER_TEMP"; then
               export AJP_ENGINES_LOCK="$RUNNER_TEMP/engines-nvidia.lock"
             else
-              echo "::notice::pas d'engines-nvidia.lock dans la release $AJP_TAG : voulu, TensorRT et RTX HDR se construisent sur la machine NVIDIA (docs/nvidia-linux.md)"
+              echo "::warning::pas de paquet TensorRT pour l'empreinte $fp : sur le poste NVIDIA, tools/release/trt-package.sh, puis relancer ce workflow (docs/nvidia-linux.md)"
             fi
           fi
           tools/release/package-linux.sh "$RUNNER_TEMP/package"
