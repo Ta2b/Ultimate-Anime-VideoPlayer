@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cmath>
 #include <numbers>
+#include <utility>
 
 namespace ajp::audio {
 namespace {
@@ -322,7 +323,7 @@ const MixPreset* find_preset(std::string_view key) {
   return found == kPresets.end() ? nullptr : &*found;
 }
 
-Mixer::Mixer(MixConfig config) : config_(config) {
+Mixer::Mixer(MixConfig config) : config_(std::move(config)) {
   config_.tuning = clamped(config_.tuning);
   const MixTuning& tune = config_.tuning;
   if (config_.sink_channels == 2) {

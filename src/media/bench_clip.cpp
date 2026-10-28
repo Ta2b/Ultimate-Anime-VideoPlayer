@@ -49,8 +49,9 @@ void draw_frame(AVFrame& frame, int width, int height, int index, int fps) {
       const int column = ((x + pan) / (width / 6)) % 4;
       Rgb color = palette(scene, column);
       const float shade = 0.82F + 0.18F * static_cast<float>(y) / static_cast<float>(height);
-      color = {static_cast<std::uint8_t>(color.r * shade), static_cast<std::uint8_t>(color.g * shade),
-               static_cast<std::uint8_t>(color.b * shade)};
+      color = {static_cast<std::uint8_t>(static_cast<float>(color.r) * shade),
+               static_cast<std::uint8_t>(static_cast<float>(color.g) * shade),
+               static_cast<std::uint8_t>(static_cast<float>(color.b) * shade)};
       // Hachures fines (cheveux, herbe) : de la haute fréquence au contour franc.
       if (((x + y * 2 + pan / 3) % 14) < 2 && (y / band) % 2 == 0) color = palette(scene, 5);
       put(frame, x, y, color);
