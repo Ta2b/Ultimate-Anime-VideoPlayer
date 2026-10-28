@@ -65,4 +65,7 @@ if [ -z "$publish" ]; then
 fi
 gh release view "$tag" -R "$repo" >/dev/null 2>&1 || gh release create "$tag" -R "$repo" --prerelease --title "$tag" --notes "$tag"
 gh release upload "$tag" -R "$repo" --clobber "$archive" "$out"
-echo "Joint à $repo $tag. Pousser maintenant l'étiquette : git tag $tag && git push origin $tag"
+case "$tag" in
+  trt-*) echo "Joint à $repo $tag : release fixe, lue par Release Linux pour toutes les étiquettes (pas d'étiquette à pousser)." ;;
+  *)     echo "Joint à $repo $tag. Pousser maintenant l'étiquette : git tag $tag && git push origin $tag" ;;
+esac

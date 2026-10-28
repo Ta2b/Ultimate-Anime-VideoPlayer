@@ -30,8 +30,12 @@ STAGE=rocm
 
 [ -x "$TRT/bin/trtexec" ] || { echo "$TRT/bin/trtexec absent (AJP_TRT_ROOT)" >&2; exit 1; }
 [ -d "$CUDA" ] || { echo "$CUDA absent (CUDA_DIR)" >&2; exit 1; }
-[ "$(git -C "$REPO" rev-parse HEAD)" = "$(git -C "$REPO" rev-list -n1 "$TAG")" ] \
-  || { echo "$REPO n'est pas à l'étiquette $TAG : le SHA-256 de l'archive en dépend" >&2; exit 1; }
+# Une étiquette du lecteur : le dépôt doit être à son commit (le SHA-256 de l'archive en dépend). Une release « trt-<empreinte> »
+# (tools/release/trt-package.sh, AJP_ALLOW_UNTAGGED=1) n'est pas une étiquette git : le dépôt propre suffit.
+if [ -z "${AJP_ALLOW_UNTAGGED:-}" ]; then
+  [ "$(git -C "$REPO" rev-parse HEAD)" = "$(git -C "$REPO" rev-list -n1 "$TAG")" ] \
+    || { echo "$REPO n'est pas à l'étiquette $TAG : le SHA-256 de l'archive en dépend" >&2; exit 1; }
+fi
 [ -z "$(git -C "$REPO" status --porcelain --untracked-files=no)" ] || { echo "$REPO a des changements locaux" >&2; exit 1; }
 
 # L'image, depuis les fichiers du dépôt à l'étiquette (le contexte de run.sh).
