@@ -84,8 +84,18 @@ pendant que d'autres tâches chargeaient le GPU, gonflait ces temps de 20 à 50 
 identique mesurait 14,0 ms au lieu de 7,8. Mesurer GMFSS demande un GPU libre. L'écart à l'original est
 mesuré sur GPU avec PyTorch, indépendant de ces temps.
 
-Le réglage est dans l'onglet d'interpolation (`gmfss_quality` de `play.toml`, section `interpolation`) ; le
-mode qualité demande `gmfss_fortuna_{base,union}_s05q_pair.onnx` (export_gmfss.py `--scale 0.5 --precision
+Le réglage est dans l'onglet d'interpolation (`gmfss_precision` de `play.toml`, section `interpolation` :
+`performance`, `balanced` ou `quality`). Les trois crans de précision sont Performance (FP8), Équilibre (FP16,
+l'ancien « Performance » de GMFSS) et Qualité (FP32) ; les fichiers d'avant qui portent `gmfss_quality = true`
+se lisent comme Qualité. Le cran Performance demande `gmfss_fortuna_{base,union}_s05fp8_pair.onnx` (GMFlow
+quantifié en FP8, nœuds Q/DQ) et une RTX 40 ou plus récente ; sans eux ou si TensorRT les refuse, l'Équilibre
+reste. Les mêmes crans existent pour SPAN (`image.span_precision`, variantes `-fp8-` et `-fp32-` écrites par
+`tools/span/quantize_span.py --precision`), RIFE et DistilDRBA (`interpolation.motion_precision`, graphes
+`_fp8.onnx` et `_fp32.onnx` à côté du modèle). Mesure à retenir : un SPAN Balanced aux Q/DQ posés à la main
+tourne 15 % plus lentement en FP8 (19,90 ms) qu'en FP16 (17,34 ms) sur une 4070 Ti ; le script de
+quantification refuse donc d'écrire une variante FP8 qui ne va pas au moins 5 % plus vite.
+
+Le mode qualité demande `gmfss_fortuna_{base,union}_s05q_pair.onnx` (export_gmfss.py `--scale 0.5 --precision
 flownet32`), sa fusion étant celle de `_s05`. Sans cette paire, le mode performance reste.
 Le contrôle de l'export juge la moyenne et le 99,9 % de l'écart à l'original, pas le pire pixel d'une petite
 image : à 256×256 il valait 0,097 sur un poste et 0,127 en CI même avec tout en FP32 (les sorties du graphe

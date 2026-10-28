@@ -23,6 +23,7 @@
 #include "app/play/chain_stats.h"
 #include "app/play/default_player.h"
 #include "app/play/display_edid.h"
+#include "app/play/drba_model.h"
 #include "app/play/engine_build.h"
 #include "app/play/engine_install.h"
 #include "app/play/engine_screen.h"
@@ -43,6 +44,7 @@
 #include "app/play/resume.h"
 #include "app/play/scripted_input.h"
 #include "app/play/session.h"
+#include "app/play/span_int8.h"
 #include "app/play/ui.h"
 #include "app/play/upscale_stage.h"
 #include "audio/devices.h"
@@ -233,6 +235,8 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
         {.name = device.name, .channels = device.channels, .is_default = device.is_default});
   const bool default_player_is_ajp =
       is_default_player({.executable = p.paths.executable, .home = p.paths.home, .data = p.paths.data});
+  const bool fp8_engine = c.backend && c.backend->capabilities().fp8;
+  const std::optional<DrbaModel> drba_file = find_distil_drba(c.gmfss_places);
   p.ui.set_tracks((*pipeline)->tracks());
   p.ui.set_settings(
       settings,
@@ -255,10 +259,17 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
           .gmfss_available = c.backend_name == "tensorrt" && find_gmfss(c.gmfss_places).has_value(),
           .gmfss_union_available =
               c.backend_name == "tensorrt" && find_gmfss(c.gmfss_places, GmfssVariant::Union).has_value(),
-          .gmfss_quality_available =
-              c.backend_name == "tensorrt" && gmfss_quality_available(c.gmfss_places, GmfssVariant::Base),
-          .gmfss_union_quality_available =
-              c.backend_name == "tensorrt" && gmfss_quality_available(c.gmfss_places, GmfssVariant::Union),
+          .gmfss_tiers = c.backend_name == "tensorrt"
+                             ? gmfss_tiers(c.gmfss_places, GmfssVariant::Base, fp8_engine)
+                             : TierSupport{},
+          .gmfss_union_tiers = c.backend_name == "tensorrt"
+                                   ? gmfss_tiers(c.gmfss_places, GmfssVariant::Union, fp8_engine)
+                                   : TierSupport{},
+          .span_tiers = c.model
+                            ? span_tiers(c.model->path, p.paths.engines.parent_path() / "modeles", fp8_engine)
+                            : TierSupport{},
+          .rife_tiers = c.rife_choice ? sibling_tiers(c.rife_choice->path, fp8_engine) : TierSupport{},
+          .drba_tiers = drba_file ? sibling_tiers(drba_file->path, fp8_engine) : TierSupport{},
           .distil_drba_available = c.drba_found,
           .rife_loaded = rife_loaded,
           .rife_models = c.rife_choice ? c.rife_choice->available : std::vector<std::string>{},

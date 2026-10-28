@@ -19,6 +19,7 @@
 #include "app/play/drba_model.h"
 #include "app/play/engine_install.h"
 #include "app/play/gmfss_model.h"
+#include "app/play/model_choice.h"
 #include "app/play/placebo_screen.h"
 #include "app/play/player.h"
 #include "app/play/settings.h"
@@ -117,7 +118,8 @@ struct GmfssEngines {
 // et du backend. align : le multiple des plans remplis du graphe trouvé (64, ou 128 au demi-flot).
 std::expected<std::optional<std::unique_ptr<gpu::Engine>>, Refusal> prepare_distil_drba(
     Player& p, const gpu::BackendInit& init, gpu::Backend& backend,
-    std::span<const std::filesystem::path> dirs, int work_width, int work_height, int& align);
+    std::span<const std::filesystem::path> dirs, int work_width, int work_height, int& align,
+    PrecisionTier tier = PrecisionTier::Balanced);
 
 // L'interpolation d'Apple pour des images de travail work_width × work_height, chargée comme RIFE
 // image (plans v2, remplis au multiple de 64) : son modèle (apple_model.h), essayé à la
@@ -127,10 +129,9 @@ std::expected<std::optional<std::unique_ptr<gpu::Engine>>, Refusal> prepare_dist
 std::expected<std::optional<std::unique_ptr<gpu::Engine>>, Refusal> prepare_apple(
     Player& p, const gpu::BackendInit& init, gpu::Backend& backend, int work_width, int work_height);
 
-std::expected<std::optional<GmfssEngines>, Refusal> prepare_gmfss(Player& p, const gpu::BackendInit& init,
-                                                                  gpu::Backend& backend,
-                                                                  std::span<const std::filesystem::path> dirs,
-                                                                  GmfssVariant variant, int work_width,
-                                                                  int work_height, bool quality = false);
+std::expected<std::optional<GmfssEngines>, Refusal> prepare_gmfss(
+    Player& p, const gpu::BackendInit& init, gpu::Backend& backend,
+    std::span<const std::filesystem::path> dirs, GmfssVariant variant, int work_width, int work_height,
+    PrecisionTier tier = PrecisionTier::Balanced);
 
 }  // namespace ajp::app::play

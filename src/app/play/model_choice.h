@@ -13,6 +13,7 @@
 
 #include "app/play/first_run.h"
 #include "app/play/options.h"
+#include "app/play/precision.h"
 #include "app/play/settings.h"
 #include "core/types.h"
 
@@ -59,6 +60,11 @@ std::span<const std::string_view> rife_preference(const GpuFacts& gpu);
 std::expected<ModelChoice, Refusal> choose_rife_model(
     const PlayOptions& options, const std::filesystem::path& home, const PlaySettings& settings,
     std::span<const std::string_view> preference = kRifeForRtx, const std::filesystem::path& bundled = {});
+// Le graphe du cran tier à côté de model : « rife_v4.25_fp8.onnx » (Performance), « rife_v4.25_fp32.onnx »
+// (Qualité). model lui-même pour Équilibre ou si le fichier du cran manque.
+std::filesystem::path tier_variant(const std::filesystem::path& model, PrecisionTier tier);
+// Les crans dont le graphe est à côté de model ; fp8_engine : le moteur calcule le FP8.
+TierSupport sibling_tiers(const std::filesystem::path& model, bool fp8_engine);
 struct RifeEntry {
   std::string file;
   bool present = false;  // dans le dossier du modèle par défaut

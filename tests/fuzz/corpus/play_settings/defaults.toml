@@ -32,14 +32,16 @@ saturation = 100
 [image]
 downscale = 'area'
 model = '2x_AnimeJaNai_HD_V3.1Sharp1_Performance_SPANF3_b5f48_unshuffle_fp16.onnx'
+span_precision = 'balanced'
 upscale = true
 work_height = 720
 
 [interpolation]
 engine = 'rife'
-gmfss_quality = false
+gmfss_precision = 'balanced'
 keep_poses = false
 model = ''
+motion_precision = 'balanced'
 rife = 3
 smooth_motion = false
 span_order = 'auto'

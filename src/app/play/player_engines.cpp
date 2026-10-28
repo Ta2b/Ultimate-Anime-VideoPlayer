@@ -142,13 +142,18 @@ std::expected<std::optional<GmfssEngines>, Refusal> prepare_gmfss(Player& p, con
                                                                   gpu::Backend& backend,
                                                                   std::span<const std::filesystem::path> dirs,
                                                                   GmfssVariant variant, int work_width,
-                                                                  int work_height, bool quality) {
+                                                                  int work_height, PrecisionTier tier) {
   // Le flot à demi-échelle toujours : mesuré, il vaut le flot entier en qualité (GMFlow FP32) ou le
   // dépasse, pour moitié moins de calcul ; le flot entier ne reste qu'en repli.
-  const std::optional<GmfssModels> found = find_gmfss(dirs, variant, true, quality);
-  if (found && quality && !found->quality)
-    log_channel("app")->info("GMFSS qualité : la paire {} manque, mode performance à la place",
-                             gmfss_files(variant, true, true).pair);
+  // FP8 : seulement sur un moteur qui l'accélère (TensorRT, RTX 40 et après).
+  if (tier == PrecisionTier::Performance && !backend.capabilities().fp8) {
+    log_channel("app")->info("GMFSS Performance (FP8) : ce moteur ne le calcule pas, Équilibre à la place");
+    tier = PrecisionTier::Balanced;
+  }
+  const std::optional<GmfssModels> found = find_gmfss(dirs, variant, true, tier);
+  if (found && tier != PrecisionTier::Balanced && found->tier != tier)
+    log_channel("app")->info("GMFSS {} : la paire {} manque, Équilibre à la place", label(tier),
+                             gmfss_files(variant, true, tier).pair);
   if (!found) {
     std::string tried;
     for (const std::filesystem::path& dir : dirs)
@@ -190,8 +195,22 @@ std::expected<std::optional<GmfssEngines>, Refusal> prepare_gmfss(Player& p, con
 
 std::expected<std::optional<std::unique_ptr<gpu::Engine>>, Refusal> prepare_distil_drba(
     Player& p, const gpu::BackendInit& init, gpu::Backend& backend,
-    std::span<const std::filesystem::path> dirs, int work_width, int work_height, int& align) {
-  const std::optional<DrbaModel> found = find_distil_drba(dirs, drba_half_flow(work_height));
+    std::span<const std::filesystem::path> dirs, int work_width, int work_height, int& align,
+    PrecisionTier tier) {
+  std::optional<DrbaModel> found = find_distil_drba(dirs, drba_half_flow(work_height));
+  if (found && tier != PrecisionTier::Balanced) {
+    if (tier == PrecisionTier::Performance && !backend.capabilities().fp8) {
+      log_channel("app")->info(
+          "DistilDRBA Performance (FP8) : ce moteur ne le calcule pas, Équilibre à la place");
+    } else if (const std::filesystem::path variant = tier_variant(found->path, tier);
+               variant != found->path) {
+      log_channel("app")->info("DistilDRBA {} : {}", label(tier), variant.filename().string());
+      found->path = variant;
+    } else {
+      log_channel("app")->info("DistilDRBA {} : {} manque, Équilibre à la place", label(tier),
+                               variant.filename().string());
+    }
+  }
   if (!found) {
     std::string tried;
     for (const std::filesystem::path& dir : dirs)

@@ -120,5 +120,55 @@ TEST_CASE("SPAN INT8 : le nom d'origine se lit dans celui de la variante", "[app
   CHECK_FALSE(span_int8_source("-int8-0123456789abcdef.onnx"));
 }
 
+// Une variante d'un autre cran (FP8, FP32) : même dossier, même reçu, infixe et format à elle.
+void write_variant(const Folder& f, std::string_view infix, std::string_view format, double psnr_mean,
+                   double psnr_worst, double ssim) {
+  const std::string stem =
+      "2x_AnimeJaNai_HD_V3.1_Sharp1_Performance" + std::string(infix) + f.sha.substr(0, 16);
+  Folder::write(f.dir() / (stem + ".onnx"), "graphe quantifié");
+  Folder::write(
+      f.dir() / (stem + ".toml"),
+      std::format("format = \"{}\"\nsource_sha256 = \"{}\"\nmodel_sha256 = \"{}\"\npsnr_mean_db = {:.4f}\n"
+                  "psnr_worst_db = {:.4f}\nssim_worst = {:.4f}\npassed = true\n",
+                  format, f.sha, prepare::sha256_file(f.dir() / (stem + ".onnx")).value(), psnr_mean,
+                  psnr_worst, ssim));
+}
+
+TEST_CASE("SPAN FP8 et FP32 : garde-fous propres à chaque cran", "[app][int8]") {
+  const Folder f;
+  CHECK_FALSE(find_span_variant(SpanVariantKind::Fp8, f.span, f.dir()).variant);
+  // Le FP8 passe des seuils plus lâches que l'INT8 : 33 dB suffit, 24 dB non.
+  write_variant(f, "-fp8-", "ajp-span-fp8-v1", 33.0, 29.0, 0.96);
+  const SpanInt8Lookup fast = find_span_variant(SpanVariantKind::Fp8, f.span, f.dir());
+  REQUIRE(fast.variant);
+  CHECK(fast.variant->kind == SpanVariantKind::Fp8);
+  CHECK(fast.variant->onnx.filename().string().find("-fp8-") != std::string::npos);
+  // Le même score ne passe pas pour l'INT8 : son reçu n'existe pas, et ses seuils sont à 42 dB.
+  write_variant(f, "-fp8-", "ajp-span-fp8-v1", 24.0, 20.0, 0.80);
+  CHECK_FALSE(find_span_variant(SpanVariantKind::Fp8, f.span, f.dir()).variant);
+  // Un reçu FP8 n'est pas lu comme un reçu FP32 ni INT8 (autre infixe, autre format).
+  CHECK_FALSE(find_span_variant(SpanVariantKind::Fp32, f.span, f.dir()).variant);
+  write_variant(f, "-fp32-", "ajp-span-fp32-v1", 60.0, 55.0, 0.9999);
+  const SpanInt8Lookup quality = find_span_variant(SpanVariantKind::Fp32, f.span, f.dir());
+  REQUIRE(quality.variant);
+  CHECK(quality.variant->kind == SpanVariantKind::Fp32);
+  // Les crans d'un dossier : le FP8 demande un moteur qui le calcule.
+  write_variant(f, "-fp8-", "ajp-span-fp8-v1", 33.0, 29.0, 0.96);
+  CHECK(span_tiers(f.span, f.dir(), true) == TierSupport{.performance = true, .quality = true});
+  CHECK(span_tiers(f.span, f.dir(), false) == TierSupport{.performance = false, .quality = true});
+  CHECK(variant_text(SpanVariantKind::Fp8) == "FP8");
+}
+
+TEST_CASE("SPAN FP8 et FP32 : le nom d'origine se lit dans celui de la variante", "[app][int8]") {
+  SpanVariantKind kind = SpanVariantKind::Int8;
+  CHECK(span_int8_source("modele-fp8-0123456789abcdef.onnx", &kind) == "modele.onnx");
+  CHECK(kind == SpanVariantKind::Fp8);
+  CHECK(span_int8_source("modele-fp32-0123456789abcdef.onnx", &kind) == "modele.onnx");
+  CHECK(kind == SpanVariantKind::Fp32);
+  CHECK(span_int8_source("modele-int8-0123456789abcdef.onnx", &kind) == "modele.onnx");
+  CHECK(kind == SpanVariantKind::Int8);
+  CHECK_FALSE(span_int8_source("modele-fp16-0123456789abcdef.onnx"));
+}
+
 }  // namespace
 }  // namespace ajp::app::play

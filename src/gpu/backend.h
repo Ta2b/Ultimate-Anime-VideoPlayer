@@ -75,6 +75,7 @@ struct BackendCaps {
   bool needs_host_sync = false;  // wait() attend côté hôte ; compté dans host_waits
   bool fp16 = false;
   bool int8 = false;
+  bool fp8 = false;  // graphes Q/DQ FP8 (E4M3) calculés par les unités matricielles : Ada (sm 8.9) et après
   bool matrix_units = false;                // unités matricielles utilisées
   std::vector<PixelFormat> import_formats;  // formats acceptés par import()
   // Voies qui se recouvrent vraiment sur l'appareil (gpu/lanes.h) ; 1 : use_lane ne change rien.

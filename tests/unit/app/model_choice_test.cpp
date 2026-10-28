@@ -115,24 +115,39 @@ TEST_CASE("GMFSS : les deux graphes du premier dossier qui les a, ses dimensions
   // Le flot à demi-échelle passe devant partout : le flot entier ne sert que de repli.
   CHECK(find_gmfss(dirs, GmfssVariant::Base, true)->pair == other / kGmfssHalfPairFile);
   CHECK(find_gmfss(dirs, GmfssVariant::Base, false)->pair == other / kGmfssPairFile);
-  // Le mode qualité : sa paire (s05q) avec la fusion s05 du mode performance, dans un même dossier ;
-  // sans elle, le mode performance reste.
-  CHECK_FALSE(gmfss_quality_available(dirs, GmfssVariant::Base));
-  const auto without = find_gmfss(dirs, GmfssVariant::Base, true, true);
+  // Les crans Qualité (FP32, s05q) et Performance (FP8, s05fp8) : leur paire avec la fusion s05 d'Équilibre,
+  // dans un même dossier ; sans elle, l'Équilibre (FP16) reste.
+  CHECK_FALSE(gmfss_tier_available(dirs, GmfssVariant::Base, PrecisionTier::Quality));
+  const auto without = find_gmfss(dirs, GmfssVariant::Base, true, PrecisionTier::Quality);
   REQUIRE(without);
-  CHECK_FALSE(without->quality);
+  CHECK(without->tier == PrecisionTier::Balanced);
   CHECK(without->pair == other / kGmfssHalfPairFile);
   std::ofstream(other / kGmfssHalfQualityPairFile) << "x";
-  CHECK(gmfss_quality_available(dirs, GmfssVariant::Base));
-  const auto quality = find_gmfss(dirs, GmfssVariant::Base, true, true);
+  CHECK(gmfss_tier_available(dirs, GmfssVariant::Base, PrecisionTier::Quality));
+  const auto quality = find_gmfss(dirs, GmfssVariant::Base, true, PrecisionTier::Quality);
   REQUIRE(quality);
-  CHECK(quality->quality);
+  CHECK(quality->tier == PrecisionTier::Quality);
   CHECK(quality->pair == other / kGmfssHalfQualityPairFile);
   CHECK(quality->fusion == other / kGmfssHalfFusionFile);  // la fusion n'est pas écrite deux fois
   CHECK(quality->align == kGmfssHalfAlign);
-  CHECK_FALSE(find_gmfss(dirs, GmfssVariant::Base, true, false)->quality);
-  // Union a sa propre paire de qualité : celle de base ne lui sert pas.
-  CHECK_FALSE(gmfss_quality_available(dirs, GmfssVariant::Union));
+  CHECK(find_gmfss(dirs, GmfssVariant::Base, true, PrecisionTier::Balanced)->tier == PrecisionTier::Balanced);
+  CHECK_FALSE(gmfss_tier_available(dirs, GmfssVariant::Base, PrecisionTier::Performance));
+  CHECK(find_gmfss(dirs, GmfssVariant::Base, true, PrecisionTier::Performance)->tier ==
+        PrecisionTier::Balanced);
+  std::ofstream(other / kGmfssHalfFp8PairFile) << "x";
+  const auto fast = find_gmfss(dirs, GmfssVariant::Base, true, PrecisionTier::Performance);
+  REQUIRE(fast);
+  CHECK(fast->tier == PrecisionTier::Performance);
+  CHECK(fast->pair == other / kGmfssHalfFp8PairFile);
+  CHECK(fast->fusion == other / kGmfssHalfFusionFile);
+  // Les crans d'un dossier : le FP8 demande un moteur qui le calcule, le FP32 non.
+  CHECK(gmfss_tiers(dirs, GmfssVariant::Base, true) == TierSupport{.performance = true, .quality = true});
+  CHECK(gmfss_tiers(dirs, GmfssVariant::Base, false) == TierSupport{.performance = false, .quality = true});
+  // Union a ses propres paires : celles de base ne lui servent pas.
+  CHECK_FALSE(gmfss_tier_available(dirs, GmfssVariant::Union, PrecisionTier::Quality));
+  CHECK_FALSE(gmfss_tier_available(dirs, GmfssVariant::Union, PrecisionTier::Performance));
+  CHECK(gmfss_files(GmfssVariant::Union, true, PrecisionTier::Performance).pair ==
+        kGmfssUnionHalfFp8PairFile);
   const auto dims = gmfss_dims(1280, 768);
   REQUIRE(dims.size() == 8);
   CHECK(dims[0].name == "H");

@@ -51,7 +51,9 @@ TEST_CASE("play.toml relit à l'identique ce qu'il a écrit", "[app][settings]")
   s.motion_engine = MotionEngine::DistilDrba;
   s.rife_model = "rife_v4.22_lite.onnx";
   s.keep_poses = true;
-  s.gmfss_quality = true;
+  s.gmfss_precision = PrecisionTier::Quality;
+  s.span_precision = PrecisionTier::Performance;
+  s.motion_precision = PrecisionTier::Quality;
   s.rife_auto = true;
   s.span_order = SpanOrder::Before;
   s.grade_values.expand = 0.3;
@@ -104,7 +106,9 @@ TEST_CASE("Mode HDR : moteur RTX HDR, HDR adaptatif ou SDR, et les fichiers d'av
 TEST_CASE("Warp et SPAN : Auto passe après SPAN au-dessus de 1080p ; les fichiers d'avant",
           "[app][settings]") {
   CHECK(PlaySettings{}.span_order == SpanOrder::Auto);
-  CHECK_FALSE(PlaySettings{}.gmfss_quality);  // performance par défaut
+  CHECK(PlaySettings{}.gmfss_precision == PrecisionTier::Balanced);  // l'ancien Performance, FP16
+  CHECK(PlaySettings{}.span_precision == PrecisionTier::Balanced);
+  CHECK(PlaySettings{}.motion_precision == PrecisionTier::Balanced);
   CHECK_FALSE(warp_after_span(SpanOrder::Auto, 1080));
   CHECK(warp_after_span(SpanOrder::Auto, 1440));
   CHECK(warp_after_span(SpanOrder::Auto, 2160));
@@ -337,24 +341,92 @@ TEST_CASE("Écrire puis relire play.toml ; absent : les défauts", "[app][settin
   std::filesystem::remove_all(dir);
 }
 
-TEST_CASE("GMFSS : passer de performance à qualité recharge la chaîne, seulement pour GMFSS",
+TEST_CASE("GMFSS : changer de cran de précision recharge la chaîne, seulement pour GMFSS",
           "[app][settings]") {
   PlaySettings running;
   running.rife_factor = 2;
   running.motion_engine = MotionEngine::Gmfss;
   PlaySettings wanted = running;
-  wanted.gmfss_quality = true;
+  wanted.gmfss_precision = PrecisionTier::Quality;
   const Change change = change_between(running, wanted, true);
   CHECK(change.cost == ChangeCost::Reopen);
-  CHECK(change.reason.find("qualité") != std::string::npos);
-  // Le sens inverse aussi.
-  running.gmfss_quality = true;
-  wanted.gmfss_quality = false;
+  CHECK(change.reason.find("Qualité") != std::string::npos);
+  CHECK(change.reason.find("FP32") != std::string::npos);
+  // Le nouveau cran Performance (FP8), et le sens inverse.
+  wanted.gmfss_precision = PrecisionTier::Performance;
+  const Change fast = change_between(running, wanted, true);
+  CHECK(fast.cost == ChangeCost::Reopen);
+  CHECK(fast.reason.find("FP8") != std::string::npos);
+  running.gmfss_precision = PrecisionTier::Quality;
+  wanted.gmfss_precision = PrecisionTier::Balanced;
   CHECK(change_between(running, wanted, true).cost == ChangeCost::Reopen);
   // Un autre moteur du mouvement ne recharge rien pour ce réglage.
   running.motion_engine = MotionEngine::Rife;
   wanted.motion_engine = MotionEngine::Rife;
   CHECK(change_between(running, wanted, true).cost != ChangeCost::Reopen);
+}
+
+TEST_CASE("SPAN, RIFE et DistilDRBA : le cran de précision recharge la chaîne", "[app][settings]") {
+  PlaySettings running;
+  running.rife_factor = 2;
+  PlaySettings wanted = running;
+  wanted.span_precision = PrecisionTier::Performance;
+  const Change span = change_between(running, wanted, true);
+  CHECK(span.cost == ChangeCost::Reopen);
+  CHECK(span.reason.find("SPAN") != std::string::npos);
+  CHECK(span.reason.find("FP8") != std::string::npos);
+  // Sans SPAN, rien à recharger.
+  running.upscale = false;
+  wanted.upscale = false;
+  CHECK(change_between(running, wanted, true).cost != ChangeCost::Reopen);
+  // RIFE.
+  running = PlaySettings{};
+  running.rife_factor = 2;
+  wanted = running;
+  wanted.motion_precision = PrecisionTier::Quality;
+  const Change motion = change_between(running, wanted, true);
+  CHECK(motion.cost == ChangeCost::Reopen);
+  CHECK(motion.reason.find("FP32") != std::string::npos);
+  // Sans interpolation, rien à recharger.
+  running.rife_factor = 0;
+  wanted.rife_factor = 0;
+  CHECK(change_between(running, wanted, true).cost != ChangeCost::Reopen);
+}
+
+TEST_CASE("crans de précision : play.toml, y compris l'ancien gmfss_quality", "[app][settings]") {
+  PlaySettings s;
+  s.span_precision = PrecisionTier::Performance;
+  s.motion_precision = PrecisionTier::Quality;
+  s.gmfss_precision = PrecisionTier::Performance;
+  const auto back = parse_settings(format_settings(s));
+  REQUIRE(back);
+  CHECK(back->span_precision == PrecisionTier::Performance);
+  CHECK(back->motion_precision == PrecisionTier::Quality);
+  CHECK(back->gmfss_precision == PrecisionTier::Performance);
+  // Les fichiers d'avant : gmfss_quality vrai donne Qualité, faux laisse l'Équilibre (l'ancien Performance).
+  const auto quality = parse_settings("version = 1\n[interpolation]\ngmfss_quality = true\n");
+  REQUIRE(quality);
+  CHECK(quality->gmfss_precision == PrecisionTier::Quality);
+  const auto legacy_off = parse_settings("version = 1\n[interpolation]\ngmfss_quality = false\n");
+  REQUIRE(legacy_off);
+  CHECK(legacy_off->gmfss_precision == PrecisionTier::Balanced);
+  // Un cran inconnu est refusé, sans changer les autres réglages.
+  CHECK_FALSE(parse_settings("version = 1\n[image]\nspan_precision = \"fp4\"\n"));
+  CHECK_FALSE(parse_settings("version = 1\n[interpolation]\nmotion_precision = 3\n"));
+}
+
+TEST_CASE("TierSupport : Équilibre toujours, les autres selon les graphes", "[app][settings]") {
+  const TierSupport none;
+  CHECK(none.has(PrecisionTier::Balanced));
+  CHECK_FALSE(none.has(PrecisionTier::Performance));
+  CHECK(none.effective(PrecisionTier::Quality) == PrecisionTier::Balanced);
+  const TierSupport fp8{.performance = true};
+  CHECK(fp8.effective(PrecisionTier::Performance) == PrecisionTier::Performance);
+  CHECK(fp8.effective(PrecisionTier::Quality) == PrecisionTier::Balanced);
+  CHECK(precision_text(PrecisionTier::Performance) == "FP8");
+  CHECK(precision_text(PrecisionTier::Balanced) == "FP16");
+  CHECK(precision_text(PrecisionTier::Quality) == "FP32");
+  CHECK(label(PrecisionTier::Balanced) == "Équilibre");
 }
 
 }  // namespace

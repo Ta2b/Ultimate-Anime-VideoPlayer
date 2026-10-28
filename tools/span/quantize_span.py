@@ -1,6 +1,14 @@
 #!/usr/bin/env python3
-"""SPAN en INT8 pour TensorRT (étude 4, 6.3) : nœuds Q/DQ posés par NVIDIA Model Optimizer,
-calibration « entropy » sur des images d'anime, garde-fous PSNR et SSIM contre le modèle d'origine.
+"""SPAN en INT8, FP8 ou FP32 pour TensorRT (étude 4, 6.3) : nœuds Q/DQ posés par NVIDIA Model Optimizer,
+calibration « entropy » (INT8) ou « max » (FP8) sur des images d'anime, garde-fous PSNR et SSIM contre le
+modèle d'origine.
+
+--precision choisit la variante : int8 (par défaut), fp8 (E4M3, le cran Performance du lecteur, RTX 40 et
+après) ou fp32 (le cran Qualité : calcul en FP32, E/S en FP16, sans quantification). Un SPAN en FP8 n'est écrit
+que s'il va plus vite que le FP16 : une mesure faite à la main (RTX 4070 Ti, TensorRT 11.3, SPAN Balanced HD
+V3.1, 1088×1920) donne 19,90 ms en FP8 contre 17,34 ms en FP16 quand les Q/DQ ne sont pas fusionnés. Le
+script chronomètre donc les deux avec trtexec (--trtexec) et exige --min-speedup ; --skip-speed-check écrit
+la variante sans mesure.
 
 TensorRT 11 est fortement typé : l'INT8 vient des nœuds QuantizeLinear/DequantizeLinear du graphe,
 le reste en FP16, entrée et sortie comprises (le lecteur refuse d'autres E/S). Le lecteur prend la
@@ -48,7 +56,12 @@ IMAGE_SUFFIXES = {".png", ".jpg", ".jpeg", ".bmp", ".webp"}
 HDR_SUFFIXES = {".exr", ".hdr", ".jxr", ".avif", ".heic", ".heif", ".tif", ".tiff"}
 NVIDIA_OUTPUTS = re.compile(r"rtx[ _.-]?(hdr|vsr|video)|true[ _.-]?hdr|nvidia[ _.-]?(hdr|vsr)", re.IGNORECASE)
 F32, F16 = TensorProto.FLOAT, TensorProto.FLOAT16
-RECEIPT_FORMAT = "ajp-span-int8-v1"
+# Par précision : le format du reçu, l'infixe du fichier et les seuils que le lecteur exige (span_int8.cpp).
+PRECISIONS = {
+    "int8": {"format": "ajp-span-int8-v1", "infix": "int8", "psnr": 42.0, "worst": 38.0, "ssim": 0.985, "mode": "int8"},
+    "fp8": {"format": "ajp-span-fp8-v1", "infix": "fp8", "psnr": 30.0, "worst": 26.0, "ssim": 0.93, "mode": "fp8"},
+    "fp32": {"format": "ajp-span-fp32-v1", "infix": "fp32", "psnr": 42.0, "worst": 38.0, "ssim": 0.985, "mode": None},
+}
 
 
 def fail(message: str) -> None:
@@ -182,7 +195,7 @@ def fp16_io(model: onnx.ModelProto) -> onnx.ModelProto:
     return model
 
 
-def quantize_modelopt(source32: Path, output: Path, data: np.ndarray, input_name: str, method: str, eps: list[str]) -> str:
+def quantize_modelopt(source32: Path, output: Path, data: np.ndarray, input_name: str, method: str, eps: list[str], mode: str = "int8") -> str:
     try:
         import modelopt
         from modelopt.onnx.quantization import quantize
@@ -191,7 +204,7 @@ def quantize_modelopt(source32: Path, output: Path, data: np.ndarray, input_name
     size = data.shape[2]
     wanted = {
         "onnx_path": str(source32),
-        "quantize_mode": "int8",
+        "quantize_mode": mode,
         "calibration_data": {input_name: data},
         "calibration_method": method,
         "calibration_shapes": f"{input_name}:1x3x{size}x{size}",
@@ -202,6 +215,21 @@ def quantize_modelopt(source32: Path, output: Path, data: np.ndarray, input_name
     accepted = inspect.signature(quantize).parameters
     quantize(**{k: v for k, v in wanted.items() if k in accepted})
     return f"modelopt {getattr(modelopt, '__version__', '?')}"
+
+
+def trtexec_ms(trtexec: str, model: Path, height: int, width: int) -> float:
+    """Médiane du temps de calcul GPU d'une image (ms), mesurée par trtexec (TensorRT 11 : réseau fortement
+    typé, ni --fp16 ni --fp8). Le modèle a une entrée « input » en 1×3×hauteur×largeur."""
+    import subprocess
+
+    shape = f"input:1x3x{height}x{width}"
+    command = [trtexec, f"--onnx={model}", f"--minShapes={shape}", f"--optShapes={shape}", f"--maxShapes={shape}",
+               "--warmUp=500", "--iterations=200", "--useCudaGraph", "--noDataTransfers"]
+    out = subprocess.run(command, capture_output=True, text=True, timeout=1800)
+    match = re.search(r"GPU Compute Time:.*?median = ([0-9.]+) ms", out.stdout)
+    if out.returncode != 0 or not match:
+        fail(f"trtexec a échoué sur {model.name} :\n{out.stdout[-800:]}{out.stderr[-400:]}")
+    return float(match.group(1))
 
 
 def session(path: Path, providers: list[str]):
@@ -262,7 +290,7 @@ def toml_text(value) -> str:
 
 def write_receipt(path: Path, fields: dict) -> None:
     lines = [
-        "# tools/span/quantize_span.py : SPAN INT8 dérivé des poids d'AnimeJaNai, à ne pas publier.",
+        "# tools/span/quantize_span.py : SPAN dérivé des poids d'AnimeJaNai, à ne pas publier.",
         *(f"{key} = {toml_text(value)}" for key, value in fields.items()),
     ]
     path.write_text("\n".join(lines) + "\n", encoding="utf-8")
@@ -273,22 +301,33 @@ def main() -> int:
     parser.add_argument("model", type=Path, help="le SPAN FP16 (ou FP32) d'AnimeJaNai")
     parser.add_argument("--corpus", type=Path, required=True, help="dossier d'images SDR 8 bits d'anime")
     parser.add_argument("--out", type=Path, required=True, help="le dossier « modeles » des données du lecteur")
-    parser.add_argument("--method", choices=("entropy", "max"), default="entropy")
+    parser.add_argument("--precision", choices=tuple(PRECISIONS), default="int8", help="int8 (défaut), fp8 ou fp32")
+    parser.add_argument("--method", choices=("entropy", "max"), default=None, help="entropy pour l'INT8, max pour le FP8")
+    parser.add_argument("--trtexec", default="trtexec", help="trtexec (TensorRT 11) pour la mesure de vitesse du FP8")
+    parser.add_argument("--speed-shape", default="1088x1920", help="hauteur x largeur de la mesure de vitesse")
+    parser.add_argument("--min-speedup", type=float, default=1.05, help="gain exigé du FP8 sur le FP16 (1,05)")
+    parser.add_argument("--skip-speed-check", action="store_true", help="écrire le FP8 sans le chronométrer")
     parser.add_argument("--crop", type=int, default=256, help="côté des découpes de calibration (256)")
     parser.add_argument("--crops", type=int, default=256, help="nombre de découpes de calibration (256)")
     parser.add_argument("--valid-size", default="960x540", help="taille des images de validation (960x540)")
     parser.add_argument("--eps", default="cuda:0,cpu", help="fournisseurs ONNX Runtime de la calibration")
-    parser.add_argument("--min-psnr", type=float, default=MIN_PSNR_MEAN_DB)
-    parser.add_argument("--min-worst-psnr", type=float, default=MIN_PSNR_WORST_DB)
-    parser.add_argument("--min-ssim", type=float, default=MIN_SSIM_WORST)
+    parser.add_argument("--min-psnr", type=float, default=None)
+    parser.add_argument("--min-worst-psnr", type=float, default=None)
+    parser.add_argument("--min-ssim", type=float, default=None)
     args = parser.parse_args()
+    precision = PRECISIONS[args.precision]
+    # Les seuils par défaut sont ceux que le lecteur exige de ce cran (span_int8.cpp).
+    args.min_psnr = precision["psnr"] if args.min_psnr is None else args.min_psnr
+    args.min_worst_psnr = precision["worst"] if args.min_worst_psnr is None else args.min_worst_psnr
+    args.min_ssim = precision["ssim"] if args.min_ssim is None else args.min_ssim
+    args.method = args.method or ("max" if args.precision == "fp8" else "entropy")
 
     source = args.model.resolve()
     if not source.is_file():
         fail(f"{source} introuvable")
     calibration, validation, manifest = corpus(args.corpus)
     source_sha = sha256_file(source)
-    stem = f"{source.stem}-int8-{source_sha[:16]}"
+    stem = f"{source.stem}-{precision['infix']}-{source_sha[:16]}"
     args.out.mkdir(parents=True, exist_ok=True)
     target, receipt = args.out / f"{stem}.onnx", args.out / f"{stem}.toml"
     width, height = (int(v) for v in args.valid_size.lower().split("x"))
@@ -304,12 +343,17 @@ def main() -> int:
         onnx.save(to_float32(model), str(source32))
         quantized = Path(work) / "int8.onnx"
         providers = [e.strip() for e in args.eps.split(",") if e.strip()]
-        tool = quantize_modelopt(source32, quantized, data, input_name, args.method, providers)
-        result = fp16_io(onnx.load(str(quantized)))
+        if precision["mode"] is None:  # fp32 : le calcul en FP32, E/S en FP16, aucun Q/DQ
+            tool = "fp32 (to_float32 + fp16_io)"
+            result = fp16_io(onnx.load(str(source32)))
+            nodes = 0
+        else:
+            tool = quantize_modelopt(source32, quantized, data, input_name, args.method, providers, precision["mode"])
+            result = fp16_io(onnx.load(str(quantized)))
+            nodes = sum(1 for n in result.graph.node if n.op_type in ("QuantizeLinear", "DequantizeLinear"))
+            if nodes == 0:
+                fail("Model Optimizer n'a posé aucun nœud Q/DQ")
         onnx.checker.check_model(result)
-        nodes = sum(1 for n in result.graph.node if n.op_type in ("QuantizeLinear", "DequantizeLinear"))
-        if nodes == 0:
-            fail("Model Optimizer n'a posé aucun nœud Q/DQ")
         onnx.save(result, str(quantized))
 
         ort = ["CUDAExecutionProvider", "CPUExecutionProvider"]
@@ -324,6 +368,16 @@ def main() -> int:
         psnr_worst = min(s[0] for s in scores)
         ssim_worst = min(s[1] for s in scores)
         passed = psnr_mean >= args.min_psnr and psnr_worst >= args.min_worst_psnr and ssim_worst >= args.min_ssim
+        speedup = 0.0
+        if passed and args.precision == "fp8" and not args.skip_speed_check:
+            speed_h, speed_w = (int(v) for v in args.speed_shape.lower().split("x"))
+            half_ms = trtexec_ms(args.trtexec, source, speed_h, speed_w)
+            fp8_ms = trtexec_ms(args.trtexec, quantized, speed_h, speed_w)
+            speedup = half_ms / fp8_ms
+            print(f"  trtexec {speed_h}x{speed_w} : FP16 {half_ms:.2f} ms, FP8 {fp8_ms:.2f} ms (×{speedup:.2f})")
+            if speedup < args.min_speedup:
+                print(f"  FP8 pas assez rapide (×{speedup:.2f}, il faut ×{args.min_speedup:.2f}) : non écrit")
+                passed = False
         if passed:
             target.write_bytes(quantized.read_bytes())
         elif target.exists():
@@ -332,11 +386,13 @@ def main() -> int:
     write_receipt(
         receipt,
         {
-            "format": RECEIPT_FORMAT,
+            "format": precision["format"],
             "source": source.name,
             "source_sha256": source_sha,
             "model_sha256": sha256_file(target) if passed else "",
             "quantizer": tool,
+            "precision": args.precision,
+            "speedup": speedup,
             "method": args.method,
             "qdq_nodes": nodes,
             "calibration_images": len(calibration),

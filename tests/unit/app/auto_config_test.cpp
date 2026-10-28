@@ -64,8 +64,11 @@ TEST_CASE("la priorité décale d'un cran", "[auto_config]") {
   const int balance = applied(Preset::Auto, Tier::Normal, 1440, 144.0).rife_factor;
   CHECK(applied(Preset::Auto, Tier::Normal, 1440, 144.0, k1080p24, Priority::Fluidity).rife_factor >=
         balance);
-  CHECK(applied(Preset::Auto, Tier::Ultra, 2160, 165.0, k1080p24, Priority::Image).gmfss_quality);
-  CHECK_FALSE(applied(Preset::Auto, Tier::Ultra, 2160, 165.0).gmfss_quality);
+  CHECK(applied(Preset::Auto, Tier::Ultra, 2160, 165.0, k1080p24, Priority::Image).gmfss_precision ==
+        PrecisionTier::Quality);
+  CHECK(applied(Preset::Auto, Tier::Ultra, 2160, 165.0).gmfss_precision == PrecisionTier::Balanced);
+  // L'automatique ne choisit jamais le FP8 : il se demande.
+  CHECK(applied(Preset::Auto, Tier::Normal, 1440, 144.0).span_precision == PrecisionTier::Balanced);
 }
 
 TEST_CASE("le multiplicateur suit l'écran, une source rapide n'est pas interpolée", "[auto_config]") {

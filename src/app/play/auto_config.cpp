@@ -131,7 +131,9 @@ PlaySettings apply_preset(const PlaySettings& settings, const Machine& machine,
   out.rife_factor = factor >= 2 ? factor : 0;
   out.rife_factor_den = 1;
   out.keep_poses = true;  // mesuré A/B (4070 Ti, ×3) : tient mieux, qualité équivalente
-  out.gmfss_quality = false;
+  out.gmfss_precision = PrecisionTier::Balanced;
+  out.span_precision = PrecisionTier::Balanced;
+  out.motion_precision = PrecisionTier::Balanced;
   out.rife_model.clear();
   switch (*level) {
     case Tier::Economy:
@@ -148,7 +150,8 @@ PlaySettings apply_preset(const PlaySettings& settings, const Machine& machine,
       break;
     case Tier::Ultra:
       out.motion_engine = MotionEngine::GmfssUnion;
-      out.gmfss_quality = settings.priority == Priority::Image;
+      out.gmfss_precision =
+          settings.priority == Priority::Image ? PrecisionTier::Quality : PrecisionTier::Balanced;
       break;
   }
   return out;
@@ -158,8 +161,9 @@ bool preset_chain_differs(const PlaySettings& a, const PlaySettings& b) {
   return a.upscale != b.upscale || a.work_height != b.work_height || a.downscale != b.downscale ||
          a.model != b.model || a.span_order != b.span_order || a.rife_auto != b.rife_auto ||
          a.rife_factor != b.rife_factor || a.rife_factor_den != b.rife_factor_den ||
-         a.keep_poses != b.keep_poses || a.gmfss_quality != b.gmfss_quality || a.rife_model != b.rife_model ||
-         a.motion_engine != b.motion_engine;
+         a.keep_poses != b.keep_poses || a.gmfss_precision != b.gmfss_precision ||
+         a.span_precision != b.span_precision || a.motion_precision != b.motion_precision ||
+         a.rife_model != b.rife_model || a.motion_engine != b.motion_engine;
 }
 
 }  // namespace ajp::app::play
