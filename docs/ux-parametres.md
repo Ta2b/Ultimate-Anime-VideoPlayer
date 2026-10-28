@@ -633,14 +633,14 @@ n'est pas une fonction principale du lecteur : il n'apparaît que la case « Ré
 
 | Page | Visible d'office | Réglages avancés |
 |---|---|---|
-| Agrandissement | SPAN ×2, modèle, résolution de travail | algorithme de réduction |
+| Agrandissement | SPAN ×2, modèle, résolution de travail | algorithme de réduction, composition finale (filtre vers la fenêtre, débandage) |
 | Fluidité | multiplicateur (dont Auto), moteur d'interpolation | modèle RIFE, GMFSS Performance/Qualité, garder les poses (DRBA), Warp et SPAN, Smooth Motion |
-| HDR (Conversion) | moteur HDR, pic (automatique ou en nits) | gris moyen, débandage RTX HDR, valeurs par défaut |
-| Couleurs | contraste, saturation, grader la sortie et préréglage | les 6 curseurs du grade et le gamut P3, composition finale (filtre, débandage), noir absolu OLED, soins OLED |
+| HDR (Conversion) | moteur HDR, pic (automatique ou en nits) | gris moyen, débandage RTX HDR, valeurs par défaut, noir absolu OLED, soins OLED |
+| Couleurs | contraste, saturation, grader la sortie et préréglage | les 6 curseurs du grade et le gamut P3 |
 | Audio (Sortie) | appareil, écoute (casque, enceintes, home cinéma), épisode suivant | mode fidèle, profil propre à l'appareil, délai audio, latence de l'écran, calage sur l'écran |
 | Langues, Sous-titres | tout | — |
 | Général, Moteurs, Export | tout | — |
-| Avancé | (page déjà avancée) | affichage des statistiques, réinitialisation, lecteur par défaut |
+| Général | configuration, mises à jour, lecteur par défaut, statistiques, réinitialisation | (page lecteur par défaut revient avec les avancés si « Ne plus demander ») |
 
 Mis en œuvre par `panel::advanced()` (`panel_style.h`), posé à chaque image par le panneau. À venir : déplacer composition finale et soins OLED
 de Couleurs vers une page avancée « Rendu », OLED en automatique.
@@ -657,3 +657,5 @@ La capture montre la fenêtre de Showtime (lecteur vidéo de GNOME) ; l'interfac
 - **Couleurs** : blanc sur voiles sombres translucides, un seul accent ; aucune bordure marquée.
 
 À faire : reprendre ces proportions dans `controls_draw.cpp`, avec captures avant/après en fenêtre et en plein écran (voir l'item « interface » du plan v0.6).
+
+Règle de Tatoub (28/10, 09:42) : les réglages avancés étendent ou complètent les onglets existants (masqués par défaut), ils ne créent pas de catégorie « Avancé » : l'arbre n'en a plus.
