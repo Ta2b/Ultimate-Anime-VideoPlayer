@@ -144,7 +144,7 @@ PlaySettings apply_preset(const PlaySettings& settings, const Machine& machine,
       break;
     case Tier::Normal:
       out.motion_engine = MotionEngine::Rife;
-      out.rife_model = "rife_v4.25_lite.onnx";
+      out.rife_model = "rife_v4.22_lite.onnx";
       break;
     case Tier::Fast:
       out.motion_engine = MotionEngine::DistilDrba;
