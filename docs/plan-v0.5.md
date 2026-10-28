@@ -25,7 +25,7 @@ Pull requests : une par étape ; quand une étape dépend d'une autre, la base e
 | Poses DRBA | désactivées par défaut jusqu'à une mesure A/B | Tatoub |
 | Son spatial | pas de détection casque ou enceintes ; « Comment écoutez-vous ? » au premier lancement | Tatoub |
 | Son spatial : avfilter ou code maison, nombre de profils HRTF | **code maison** (`audio/mixer.h`), **un seul profil** : aucune HRTF mesurée livrée (licences, poids), modèle paramétrique de la tête (retard de Woodworth + ombre en passe-bas) ; crossfeed à 700 Hz, downmix à centre +2 dB ; mesure d'oreille à faire par Tatoub | Claude |
-| Clé de signature des mises à jour | si elle manque, ce qui n'en dépend pas avance et le reste est noté | Claude |
+| Clé de signature des mises à jour | paire Ed25519 générée sur le PC de Tatoub (privée dans `~/.config/ajp-release/`, jamais dans le dépôt) ; **les releases se signent localement sur ce PC** tant qu'aucun secret CI n'existe : `docs/signature-des-releases.md` | Claude |
 
 ## Chantiers, dans l'ordre
 
@@ -115,3 +115,5 @@ Pull requests : une par étape ; quand une étape dépend d'une autre, la base e
   Vérification Ed25519 écrite à la main (`ed25519.cpp`, constantes recalculées, SHA-512 de libavutil) et recoupée avec une
   signature OpenSSL et le vecteur 1 de la RFC 8032. macOS : manuel (le .app ne s'écrase pas) ; Flatpak ou dossier en lecture
   seule : réglage grisé « mis à jour par votre gestionnaire de paquets ». Le défaut reste « Me prévenir ».
+- **2026-10-28** : clé de signature créée (le coordinateur a demandé de contourner l'absence de Tatoub). La clé publique est la valeur par
+  défaut de `AJP_UPDATE_PUBKEY` ; la privée reste sur le PC de Tatoub. Procédure : `docs/signature-des-releases.md`.

@@ -38,8 +38,9 @@ if(TARGET ajp::dep::fontconfig)
 endif()
 
 # La version, le dépôt des releases et la clé publique des mises à jour (updater.h) ; la clé se donne à la configuration
-# (-DAJP_UPDATE_PUBKEY=<64 chiffres hexadécimaux>) et reste vide sans la clé de signature.
-set(AJP_UPDATE_PUBKEY "" CACHE STRING "Clé publique Ed25519 (hexadécimal) des mises à jour")
+# (-DAJP_UPDATE_PUBKEY=<64 chiffres hexadécimaux> pour une autre clé). La clé privée correspondante vit hors du dépôt,
+# sur le PC de Tatoub (docs/signature-des-releases.md).
+set(AJP_UPDATE_PUBKEY "c50eeb3e63c327a087487cd3f485e66fbbf8ef2340a0b90d7ec99d4c2d3f0d58" CACHE STRING "Clé publique Ed25519 (hexadécimal) des mises à jour")
 set(AJP_RELEASE_REPO "Ta2b/ajp-releases" CACHE STRING "Dépôt GitHub des releases")
 target_compile_definitions(ajp_app PRIVATE AJP_VERSION="${PROJECT_VERSION}" AJP_RELEASE_REPO="${AJP_RELEASE_REPO}"
                            AJP_UPDATE_PUBKEY="${AJP_UPDATE_PUBKEY}")
