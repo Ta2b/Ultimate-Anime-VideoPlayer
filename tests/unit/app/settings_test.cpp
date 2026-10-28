@@ -355,3 +355,15 @@ TEST_CASE("GMFSS : passer de performance à qualité recharge la chaîne, seulem
 
 }  // namespace
 }  // namespace ajp::app::play
+
+TEST_CASE("repères des listes et résolution en français courant", "[settings]") {
+  using namespace ajp::app::play;
+  CHECK(resolution_text(720) == "720p");
+  CHECK(badge_text(Badge::Finest) == "Le plus fin");
+  CHECK(badge_of(MotionEngine::Gmfss) == Badge::Finest);
+  CHECK(badge_of(MotionEngine::GmfssUnion) == Badge::Heaviest);
+  CHECK(badge_of(MotionEngine::Rife) == Badge::Recommended);
+  CHECK(badge_of(Downscale::Mitchell) == Badge::Recommended);
+  CHECK_FALSE(badge_of(Downscale::Area));
+  CHECK(label(MotionEngine::Gmfss) == "GMFSS Fortuna");
+}

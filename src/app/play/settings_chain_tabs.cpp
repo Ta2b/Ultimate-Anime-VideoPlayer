@@ -25,10 +25,10 @@ struct HeightChoice {
 };
 constexpr std::array<HeightChoice, 5> kHeights{{
     {0, "Source (sans réduction)"},
-    {900, "900 lignes"},
-    {720, "720 lignes (recommandé)"},
-    {540, "540 lignes"},
-    {480, "480 lignes"},
+    {900, "900p"},
+    {720, "720p"},
+    {540, "540p"},
+    {480, "480p"},
 }};
 
 }  // namespace
@@ -48,46 +48,49 @@ void image_tab(PlaySettings& d, const SettingsChoices& choices) {
     ImGui::EndCombo();
   }
   ImGui::EndDisabled();
-  note("Performance : le plus rapide. Balanced : plus fin, plus lent. Sharp1 : contours plus nets.");
+  panel::tip("Performance : le plus rapide. Balanced : plus fin, plus lent. Sharp1 : contours plus nets.");
 
   section("Réduction avant l'agrandissement");
   // La source sans réduction, avec sa hauteur quand on la connaît : « 1080 lignes », pas « 4K », que
   // la sortie n'atteint qu'agrandie par SPAN.
   const auto label_of = [&](const HeightChoice& choice) {
     if (choice.lines == 0 && choices.source_height > 0)
-      return std::format("Source, sans réduction ({} lignes)", choices.source_height);
+      return std::format("Source, sans réduction ({})", resolution_text(choices.source_height));
     return std::string(choice.label);
   };
   const auto height = std::ranges::find(kHeights, d.work_height, &HeightChoice::lines);
   const std::string height_label =
-      height != kHeights.end() ? label_of(*height) : std::format("{} lignes", d.work_height);
-  if (ImGui::BeginCombo("Hauteur de travail", height_label.c_str())) {
+      height != kHeights.end() ? label_of(*height) : resolution_text(d.work_height);
+  if (ImGui::BeginCombo("Résolution de travail", height_label.c_str())) {
     for (const HeightChoice& choice : kHeights) {
       if (ImGui::Selectable(label_of(choice).c_str(), choice.lines == d.work_height))
         d.work_height = choice.lines;
     }
     ImGui::EndCombo();
   }
+  panel::tip("Taille à laquelle la vidéo est ramenée avant SPAN. SPAN la double : 720p donne une sortie en 1440p.");
+  if (d.work_height == 720) panel::badge(std::string(badge_text(Badge::Recommended)).c_str(), panel::kGood);
   const bool reduces = d.work_height > 0 && d.work_height < choices.source_height;
   if (choices.source_height > 0) {
     const int work = reduces ? d.work_height : choices.source_height;
     note(d.upscale
-             ? std::format("Sortie : {} lignes, le double de la hauteur de travail (SPAN ×2).", work * 2)
-             : std::format("Sans agrandissement, la sortie garde la hauteur de travail : {} lignes.", work));
+             ? std::format("Sortie : {}, le double de la résolution de travail (SPAN ×2).", resolution_text(work * 2))
+             : std::format("Sans agrandissement, la sortie garde la résolution de travail : {}.", resolution_text(work)));
   }
   if (reduces) {
     if (ImGui::BeginCombo("Algorithme", std::string(label(d.downscale)).c_str())) {
       for (int i = 0; i < kDownscaleCount; ++i) {
         const auto filter = static_cast<Downscale>(i);
-        if (ImGui::Selectable(std::string(label(filter)).c_str(), filter == d.downscale))
-          d.downscale = filter;
+        std::string text(label(filter));
+        if (const auto mark = badge_of(filter)) text += " · " + std::string(badge_text(*mark));
+        if (ImGui::Selectable(text.c_str(), filter == d.downscale)) d.downscale = filter;
       }
       ImGui::BeginDisabled();
       ImGui::Selectable("SSimDownscaler (à venir)", false);
       ImGui::EndDisabled();
       ImGui::EndCombo();
     }
-    note(
+    panel::tip(
         "Area : moyenne exacte. Spline36 : celui d'AnimeJaNai, net. Catmull-Rom et Mitchell gardent du "
         "détail ; Bilinear et Bicubic adoucissent. Changement en direct.");
   } else {
@@ -178,6 +181,11 @@ void fluidity_tab(PlaySettings& d, const SettingsChoices& choices, bool exportin
     if (!offered(engine) && d.motion_engine != engine) continue;
     if (ImGui::RadioButton(std::string(label(engine)).c_str(), d.motion_engine == engine))
       d.motion_engine = engine;
+    if (const auto mark = badge_of(engine)) {
+      const bool heavy = *mark == Badge::Heaviest;
+      panel::badge(std::string(badge_text(*mark)).c_str(),
+                   *mark == Badge::Recommended ? panel::kGood : heavy ? panel::kWarn : *mark == Badge::Finest ? panel::kFine : panel::kExperimental);
+    }
   }
   if (!choices.rife_models.empty()) {
     ImGui::BeginDisabled(d.motion_engine != MotionEngine::Rife);
@@ -209,8 +217,8 @@ void fluidity_tab(PlaySettings& d, const SettingsChoices& choices, bool exportin
     note(
         "Expérimental. GMFSS Fortuna (réseau fait pour l'animation) donne les images intermédiaires les plus "
         "propres, pour plusieurs fois le coût de RIFE. Il prend toujours ses graphes au flot à demi-échelle "
-        "(_s05) : mesuré, ils valent le flot entier ou le dépassent pour moitié moins de calcul, et 720 "
-        "lignes de travail tiennent en ×2 sur une 4070 Ti. Ses deux moteurs se construisent la première fois "
+        "(_s05) : mesuré, ils valent le flot entier ou le dépassent pour moitié moins de calcul, et 720p "
+        "de travail tiennent en ×2 sur une 4070 Ti. Ses deux moteurs se construisent la première fois "
         "(plusieurs minutes).");
     const bool quality_present =
         union_model ? choices.gmfss_union_quality_available : choices.gmfss_quality_available;
@@ -270,10 +278,10 @@ void fluidity_tab(PlaySettings& d, const SettingsChoices& choices, bool exportin
   } else if (four_k && now.num >= 3 * now.den) {
     note(
         "Sortie 4K (source sans réduction agrandie par SPAN) : ×3 et plus demandent un GPU haut de gamme ; "
-        "SPAN 1080p → 2160p est la passe la plus lourde (11 ms par image sur une RTX 4070 Ti). Une hauteur "
-        "de travail de 720 lignes allège tout.");
+        "SPAN 1080p → 2160p est la passe la plus lourde (11 ms par image sur une RTX 4070 Ti). Une résolution "
+        "de travail de 720p allège tout.");
   } else if (four_k) {
-    note("Sortie 4K : RIFE estime le mouvement sur une copie en 720 lignes, plus légère.");
+    note("Sortie 4K : RIFE estime le mouvement sur une copie en 720p, plus légère.");
   }
   note("Les coupes de scène et les dessins tenus ne sont pas interpolés.");
   ImGui::BeginDisabled(d.motion_engine != MotionEngine::Rife);
@@ -305,7 +313,8 @@ void fluidity_tab(PlaySettings& d, const SettingsChoices& choices, bool exportin
   const bool without_rife = d.rife_factor < 2;
   if (without_rife) d.smooth_motion = false;
   ImGui::BeginDisabled(without_rife);
-  ImGui::Checkbox("Doubler les images après RIFE", &d.smooth_motion);
+  ImGui::Checkbox("Doubler les images (pilote NVIDIA)", &d.smooth_motion);
+  panel::badge(std::string(badge_text(Badge::Experimental)).c_str(), panel::kExperimental);
   ImGui::EndDisabled();
   note(
       "Expérimental. La couche du pilote NVIDIA (RTX 40 et 50) génère une image entre deux images "

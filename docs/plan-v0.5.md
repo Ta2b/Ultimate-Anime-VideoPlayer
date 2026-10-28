@@ -39,8 +39,8 @@ Pull requests : une par étape ; quand une étape dépend d'une autre, la base e
 - [ ] Bascule automatique en Personnalisé quand un réglage de chaîne est modifié à la main (avec C)
 
 ### B. Textes, pastilles, infobulles
-- [ ] 720p au lieu de « 720 lignes », vocabulaire courant
-- [ ] `badge()` et pastilles, infobulles à la place des paragraphes
+- [x] 720p au lieu de « 720 lignes », vocabulaire courant (PR `claude/textes-pastilles`)
+- [~] `badge()` et pastilles faits (IA : résolution, réduction, moteurs, Smooth Motion) ; infobulles à la place des paragraphes : onglet Image fait, Fluidité et le reste suivent avec le cadre en arbre
 - [ ] Hermite en réduction (voir F)
 
 ### C. Nouveau cadre des réglages et assistant
@@ -90,3 +90,6 @@ Pull requests : une par étape ; quand une étape dépend d'une autre, la base e
   (le pire des deux passages de chacun, pour qu'un PC qui chauffe ne favorise personne) et met côte à côte pertes,
   retard p95, temps par image et composition. Aucun chiffre n'a été pris : le binaire construit ici est Debug sans
   CUDA. **Décision en attendant : poses désactivées par défaut** (déjà le cas).
+- **2026-10-28** : B en PR. `panel::badge` / `panel::tip`, `Badge` et `badge_of` testés, « 720p », « Résolution de travail »,
+  libellés de moteurs raccourcis (pastille à la place des parenthèses). Les paragraphes de Fluidité, HDR, Grade… passent en
+  infobulles dans l'étape suivante, quand chaque ligne est refaite pour l'arbre.

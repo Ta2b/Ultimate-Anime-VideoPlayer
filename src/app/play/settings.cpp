@@ -128,11 +128,11 @@ std::string_view label(MotionEngine engine) {
     case MotionEngine::Rife:
       return "RIFE";
     case MotionEngine::Gmfss:
-      return "GMFSS Fortuna (le plus fin, le plus lourd)";
+      return "GMFSS Fortuna";
     case MotionEngine::GmfssUnion:
-      return "GMFSS Fortuna Union (GMFSS mêlé à RIFE)";
+      return "GMFSS Fortuna Union";
     case MotionEngine::DistilDrba:
-      return "DistilDRBA (poses gardées par le réseau)";
+      return "DistilDRBA";
     case MotionEngine::Apple:
       return "Apple (VideoToolbox, macOS 15.4)";
   }
@@ -223,6 +223,55 @@ std::string_view name(Downscale filter) {
 
 std::string_view label(Downscale filter) {
   return kDownscales[static_cast<std::size_t>(filter)].label;
+}
+
+std::string_view badge_text(Badge badge) {
+  switch (badge) {
+    case Badge::Recommended:
+      return "Recommandé";
+    case Badge::Fastest:
+      return "Le plus rapide";
+    case Badge::Finest:
+      return "Le plus fin";
+    case Badge::Heaviest:
+      return "Le plus lourd";
+    case Badge::Experimental:
+      return "Expérimental";
+  }
+  return {};
+}
+
+std::optional<Badge> badge_of(MotionEngine engine) {
+  switch (engine) {
+    case MotionEngine::Rife:
+      return Badge::Recommended;
+    case MotionEngine::Gmfss:
+      return Badge::Finest;
+    case MotionEngine::GmfssUnion:
+      return Badge::Heaviest;
+    case MotionEngine::DistilDrba:
+      return Badge::Experimental;
+    case MotionEngine::Apple:
+      return std::nullopt;
+  }
+  return std::nullopt;
+}
+
+std::optional<Badge> badge_of(Downscale filter) {
+  switch (filter) {
+    case Downscale::Mitchell:
+      return Badge::Recommended;
+    case Downscale::Bilinear:
+      return Badge::Fastest;
+    case Downscale::Spline36:
+      return Badge::Finest;
+    default:
+      return std::nullopt;
+  }
+}
+
+std::string resolution_text(int height) {
+  return std::format("{}p", height);
 }
 
 std::expected<PlaySettings, Refusal> validate(const PlaySettings& s) {
