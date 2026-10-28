@@ -4,8 +4,7 @@ name: CI
 # construction et de tests tournent sur main, sur chaque pull request, chaque nuit et à la
 # demande (workflow_dispatch sur n'importe quelle branche) : une branche de travail ne les lance
 # pas à chaque poussée (cloud.yml y construit le lecteur sous lavapipe quand le code change). La
-# construction Windows, plus chère, tourne la nuit, à la demande et sur les pull requests vers
-# main. Versions et paquets : tools/release/versions.env.
+# construction Windows, plus chère, tourne la nuit et à la demande. Versions et paquets : tools/release/versions.env.
 on:
   push:
     branches: [main, "cloud/**", "release/**"]
@@ -85,14 +84,13 @@ jobs:
     name: Lecteur Linux (${{ matrix.name }})
     if: github.event_name != 'push' || github.ref == 'refs/heads/main'
     runs-on: ubuntu-24.04
+    # Vitesse : une poussée dans main ne passe que lavapipe ; une pull request ajoute clang-tidy
+    # (sur ses fichiers) ; asan-ubsan et tsan, plus longs, tournent la nuit, à la demande et avant
+    # une vraie release (lancement à la main).
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - { name: lavapipe, preset: linux-prefix, tidy: false, tests: true, validation: require }
-          - { name: clang-tidy, preset: linux-prefix, tidy: true, tests: false, validation: require }
-          - { name: asan-ubsan, preset: linux-prefix-asan, tidy: false, tests: true, validation: "off" }
-          - { name: tsan, preset: linux-prefix-tsan-player, tidy: false, tests: true, validation: require }
+        include: ${{ fromJSON(github.event_name == 'push' && '[{"name":"lavapipe","preset":"linux-prefix","tidy":false,"tests":true,"validation":"require"}]' || github.event_name == 'pull_request' && '[{"name":"lavapipe","preset":"linux-prefix","tidy":false,"tests":true,"validation":"require"},{"name":"clang-tidy","preset":"linux-prefix","tidy":true,"tests":false,"validation":"require"}]' || '[{"name":"lavapipe","preset":"linux-prefix","tidy":false,"tests":true,"validation":"require"},{"name":"clang-tidy","preset":"linux-prefix","tidy":true,"tests":false,"validation":"require"},{"name":"asan-ubsan","preset":"linux-prefix-asan","tidy":false,"tests":true,"validation":"off"},{"name":"tsan","preset":"linux-prefix-tsan-player","tidy":false,"tests":true,"validation":"require"}]') }}
     env:
       CC: gcc-13
       CXX: g++-13
@@ -149,8 +147,7 @@ jobs:
   windows:
     name: Windows (MSVC)
     if: >-
-      github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' ||
-      (github.event_name == 'pull_request' && github.base_ref == 'main')
+      github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
     runs-on: windows-2025
     env:
       SCCACHE_GHA_ENABLED: "true"
