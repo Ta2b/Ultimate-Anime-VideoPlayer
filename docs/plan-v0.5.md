@@ -64,7 +64,7 @@ Pull requests : une par étape ; quand une étape dépend d'une autre, la base e
 - [ ] Essais Linux puis Windows de bout en bout : demandent une release signée (clé absente, voir journal) ; Windows renomme les fichiers en service en `.old`, non essayé
 
 ### F. Moteur
-- [ ] Hermite en réduction (`DownscaleFilter::Hermite`)
+- [x] Hermite en réduction (`DownscaleFilter::Hermite`, cubique B = C = 0, clé `hermite`) : PR `claude/moteur`. Pas de pastille *Anime* (la liste des cinq pastilles est décidée) : l'infobulle le dit. Le filtre n'est pas défaut : la comparaison PSNR/regard contre Spline36 et Mitchell se fait avec `ajp compare` sur la machine
 - [ ] GMFSS Union : optimisations
 - [ ] DistilDRBA : warps hors du graphe
 - [ ] Mode Auto : suivi par le fil d'audit (ne pas toucher `auto_rate`, `upscale_stage`, `live_settings` sans coordination)

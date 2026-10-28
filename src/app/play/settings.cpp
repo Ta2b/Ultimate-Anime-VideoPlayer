@@ -33,6 +33,7 @@ constexpr std::array<DownscaleName, kDownscaleCount> kDownscales{{
     {Downscale::Bicubic, "bicubic", "Bicubic"},
     {Downscale::Mitchell, "mitchell", "Mitchell"},
     {Downscale::CatmullRom, "catmull-rom", "Catmull-Rom"},
+    {Downscale::Hermite, "hermite", "Hermite"},
 }};
 
 template <class T>

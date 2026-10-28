@@ -19,7 +19,7 @@ enum class Policy : std::uint8_t { Quality, Fast, Refine };
 enum class Pacing : std::uint8_t { Source, Smooth, KeepPoses };
 enum class StepKind : std::uint8_t { Downscale, Upscale, Interpolate };
 // Filtres de la réduction : Area et Spline36 (ceux d'AnimeJaNai), puis ceux du menu du lecteur.
-enum class DownscaleFilter : std::uint8_t { Area, Spline36, Bilinear, Bicubic, Mitchell, CatmullRom };
+enum class DownscaleFilter : std::uint8_t { Area, Spline36, Bilinear, Bicubic, Mitchell, CatmullRom, Hermite };
 enum class HdrMode : std::uint8_t { Off, Native, TrueHdr };
 
 using ModelId = std::string;
