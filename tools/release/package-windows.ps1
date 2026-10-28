@@ -97,6 +97,9 @@ if (Test-Path $TrtModule) {
     # Lien direct : le paquet ne porte que le module ; les bibliothèques de NVIDIA et trtexec se
     # tirent des archives de NVIDIA elles-mêmes, après l'acceptation de sa licence à l'écran
     # (entrées [[vendor_file]], tools/release/vendor-index.py).
+    # trtexec.exe est à nous dans l'archive (comme trtexec sous Linux) : le moteur construit ses réseaux avec lui.
+    $trtexec = if ($env:AJP_TRTEXEC) { $env:AJP_TRTEXEC } else { "$trtRoot/bin/trtexec.exe" }
+    if (Test-Path $trtexec) { Copy-Item $trtexec $dir } else { Write-Warning "trtexec.exe introuvable ($trtexec) : le moteur ne pourra pas construire ses réseaux" }
     Add-Engine "tensorrt" $trtVersion "https://docs.nvidia.com/deeplearning/tensorrt/latest/reference/sla.html" $dir
     Add-Content -Path $Lock -Value (@("") + (Get-Content $vendor)) -Encoding utf8NoBOM
   } else {
@@ -162,6 +165,25 @@ if (-not $env:AJP_WITHOUT_MODELS) {
   & $bash $script $models
   if ($LASTEXITCODE -ne 0) { throw "modèles" }
 }
+
+# AJP_ENGINES_LOCK=<fichier ou lien de l'engines.lock d'un poste NVIDIA> reprend ses moteurs (et leurs fichiers
+# [[vendor_file]]) dont l'id manque ici, comme package-linux.sh : le poste Windows NVIDIA joint les siens à la release
+# avant l'étiquette (tools/release/attach-nvidia-windows.ps1), la CI les fusionne dans l'index qu'elle joint.
+if ($env:AJP_ENGINES_LOCK) {
+  $other = $env:AJP_ENGINES_LOCK
+  if ($other -match '^https?://') {
+    $other = Join-Path $Out "engines-autre.lock"
+    Invoke-WebRequest -Uri $env:AJP_ENGINES_LOCK -OutFile $other -UseBasicParsing
+  }
+  $have = [regex]::Matches((Get-Content $Lock -Raw), '(?m)^id = "(.*)"$') | ForEach-Object { $_.Groups[1].Value }
+  $blocks = (Get-Content $other -Raw) -split '(?m)^(?=\[\[(?:engine|vendor_file)\]\]$)' | Where-Object { $_ -match '^\[\[(engine|vendor_file)\]\]' }
+  foreach ($block in $blocks) {
+    $id = [regex]::Match($block, '(?m)^id = "(.*)"$').Groups[1].Value
+    if ($id -and -not ($have -contains $id)) { Add-Content -Path $Lock -Value ("", $block.TrimEnd()) -Encoding utf8NoBOM }
+  }
+  Write-Host ("moteurs d'engines.lock : " + (([regex]::Matches((Get-Content $Lock -Raw), '(?m)^id = "(.*)"$') | ForEach-Object { $_.Groups[1].Value } | Sort-Object -Unique) -join " "))
+}
+Copy-Item $Lock (Join-Path $Out "engines.lock") -Force
 
 Compress-Archive -Path $Stage -DestinationPath (Join-Path $Out "ajp-windows-x64.zip") -Force
 Get-ChildItem $Out -File | Where-Object { $_.Name -like "ajp-*" -and $_.Extension -ne ".txt" } | ForEach-Object {

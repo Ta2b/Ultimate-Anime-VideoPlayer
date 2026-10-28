@@ -86,6 +86,14 @@ jobs:
           if ("${{ inputs.tensorrt }}" -eq "true") { $env:AJP_WITH_CUDA = "ON" }
           $env:AJP_RELEASE_REPO = "${{ vars.AJP_RELEASE_REPO || github.repository }}"
           if ($env:TAG) { $env:AJP_RELEASE_TAG = $env:TAG }
+          # TensorRT se construit sur un poste Windows NVIDIA et se joint à la release AVANT l'étiquette avec son index
+          # engines-nvidia.lock (tools/release/attach-nvidia-windows.ps1) : repris ici s'il existe.
+          if ($env:TAG) {
+            $env:GH_TOKEN = "${{ secrets.AJP_RELEASE_TOKEN || github.token }}"
+            gh release download $env:TAG -R $env:AJP_RELEASE_REPO -p engines-nvidia.lock -D $env:RUNNER_TEMP 2>$null
+            if ($LASTEXITCODE -eq 0) { $env:AJP_ENGINES_LOCK = "$env:RUNNER_TEMP/engines-nvidia.lock" }
+            else { Write-Host "::notice::pas d'engines-nvidia.lock dans la release $env:TAG : voulu, TensorRT se construit sur le poste NVIDIA" }
+          }
           pwsh tools/release/package-windows.ps1 "$env:RUNNER_TEMP/package"
       # Les tests sans GPU du build même du paquet (préréglage de test windows-release) : un échec
       # arrête tout avant l'artefact et la release.
