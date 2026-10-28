@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <array>
 #include <chrono>
+#include <cstdlib>
 #include <format>
 #include <fstream>
 #include <stop_token>
@@ -255,7 +256,12 @@ std::expected<std::string, Refusal> register_player(const PlayerPlace& place) {
 #else
   if (place.home.empty() && place.data.empty())
     return refuse(RefusalCode::FieldMissing, "lecteur par défaut : dossier personnel inconnu");
-  auto text = desktop_entry(place.executable);
+  // Dans un AppImage l'exécutable est monté à un endroit provisoire : la fiche pointe sur le fichier
+  // .AppImage lui-même (variable APPIMAGE posée par son lanceur).
+  std::filesystem::path launcher = place.executable;
+  // NOLINTNEXTLINE(concurrency-mt-unsafe)
+  if (const char* image = std::getenv("APPIMAGE"); image != nullptr && *image != '\0') launcher = image;
+  auto text = desktop_entry(launcher);
   if (!text) return std::unexpected(std::move(text.error()));
   const std::filesystem::path file = desktop_file(place);
   std::error_code error;

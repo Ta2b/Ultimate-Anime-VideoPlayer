@@ -95,6 +95,17 @@ jobs:
             else { Write-Host "::notice::pas d'engines-nvidia.lock dans la release $env:TAG : voulu, TensorRT se construit sur le poste NVIDIA" }
           }
           pwsh tools/release/package-windows.ps1 "$env:RUNNER_TEMP/package"
+      # L'installeur (Inno Setup, installation pour l'utilisateur seul) à côté du zip portable.
+      - name: Installeur
+        shell: pwsh
+        run: |
+          choco install innosetup -y --no-progress | Out-Null
+          $version = [regex]::Match((Get-Content CMakeLists.txt -Raw), '(?m)^  VERSION ([0-9.]+)$').Groups[1].Value
+          $out = "$env:RUNNER_TEMP/package"
+          & "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" "/DSource=$out\ajp" "/DVersion=$version" "/DOutput=$out" tools/release/windows/ajp.iss
+          if ($LASTEXITCODE -ne 0) { throw "installeur" }
+          $setup = Get-Item "$out/ajp-windows-x64-setup.exe"
+          Add-Content -Path "$out/SHA256SUMS-windows.txt" -Value "$((Get-FileHash $setup -Algorithm SHA256).Hash.ToLower())  $($setup.Name)"
       # Les tests sans GPU du build même du paquet (préréglage de test windows-release) : un échec
       # arrête tout avant l'artefact et la release.
       # CTest liste les tests de chaque exécutable, même ceux que le filtre écarte : celui du backend
