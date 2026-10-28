@@ -14,7 +14,11 @@
 #include <SDL3/SDL_events.h>
 #include <SDL3/SDL_timer.h>
 
+#include "app/play/default_player.h"
 #include "app/play/engine_downloads.h"
+#include "app/play/gpu_tier.h"
+#include "app/play/settings.h"
+#include "app/play/wizard.h"
 #include "app/play/engine_switch.h"
 #include "app/play/first_run.h"
 #include "app/play/host_facts.h"
@@ -38,7 +42,8 @@ constexpr std::size_t usage(core::Usage u) {
 // (--keys) qui tombent pendant l'écran y sont pressées, comptées depuis son ouverture.
 std::expected<std::optional<FirstRunView>, Refusal> welcome(PlaceboScreen& screen, PlayerUi& ui,
                                                             FirstRunView view, const PlayOptions& options,
-                                                            std::size_t& next_key, SnapshotPlan& snapshot) {
+                                                            std::size_t& next_key, SnapshotPlan& snapshot,
+                                                            int& furthest) {
   const core::KeyMap& keys = configured_keys();
   const std::int64_t started = host_now_us();
   std::vector<Input> actions;
@@ -53,7 +58,10 @@ std::expected<std::optional<FirstRunView>, Refusal> welcome(PlaceboScreen& scree
     }
     for (const Input& input : actions) {
       if (const auto* command = std::get_if<Command>(&input)) {
-        if (std::holds_alternative<cmd::Quit>(*command)) return std::nullopt;
+        if (std::holds_alternative<cmd::Quit>(*command)) {
+          furthest = view.wizard.seen;
+          return std::nullopt;
+        }
       } else if (std::holds_alternative<ToggleFullscreen>(input)) {
         screen.set_fullscreen(!screen.fullscreen());
       } else if (std::holds_alternative<LeaveFullscreen>(input)) {
@@ -91,9 +99,34 @@ std::expected<bool, Refusal> run_engine_screen(const EngineScreen& s, core::Sett
   FirstRunView view =
       first_run_view(gpu, engines_here(s.options, s.paths, s.catalog), std::move(choice), engines);
   view.revisit = revisit;
-  auto chosen_view = welcome(s.screen, s.ui, std::move(view), s.options, next_key, snapshot);
+  // L'assistant du premier lancement (ou de --first-run) ; rouvert depuis l'onglet Moteurs, l'ancien écran.
+  if (!revisit) {
+    const TierEstimate estimate = estimate_tier(gpu);
+    view.facts = WizardFacts{.engine_choice = std::ranges::any_of(view.engines,
+                                                                   [](const EngineRow& row) {
+                                                                     return row.offer.id != core::EngineId::Vulkan &&
+                                                                            row.usable;
+                                                                   }),
+                             .hdr_display = s.screen.hdr_output(),
+                             .multichannel_output = false};
+    view.wizard = begin_wizard(view.facts, s.options.first_run ? 0 : engines.first_run_step);
+    view.tier_line = std::format("Niveau estimé : {}", tier_label(estimate.tier));
+    const int height = display_height(s.screen.window());
+    const double hz = display_refresh_hz(s.screen.window());
+    if (height > 0) view.display_line = std::format("Écran {}p · {:.0f} Hz", height, hz);
+  }
+  int furthest = engines.first_run_step;
+  auto chosen_view = welcome(s.screen, s.ui, std::move(view), s.options, next_key, snapshot, furthest);
   if (!chosen_view) return std::unexpected(std::move(chosen_view.error()));
-  if (!*chosen_view) return false;
+  if (!*chosen_view) {
+    // Fermé en route : l'assistant reprendra après le dernier écran vu.
+    if (!revisit && furthest > engines.first_run_step) {
+      engines.first_run_step = furthest;
+      if (auto written = core::save_settings(s.engines_path, engines); !written)
+        log->warn("{}", written.error().detail);
+    }
+    return false;
+  }
   if ((*chosen_view)->cancelled) return true;
   const core::Settings before = engines;
   engines = settings_after(**chosen_view, engines);
@@ -106,6 +139,27 @@ std::expected<bool, Refusal> run_engine_screen(const EngineScreen& s, core::Sett
   const std::optional<core::EngineId> kept = before.preferred[usage(core::Usage::Upscale)];
   if (revisit && kept && chosen(engines, *kept) && !network_added(before, engines))
     engines = using_engine(std::move(engines), *kept);
+  if (!revisit) {
+    const Wizard& wizard = (*chosen_view)->wizard;
+    engines = wizard_settings(wizard, std::move(engines));
+    const std::filesystem::path play_path = s.engines_path.parent_path() / "play.toml";
+    auto play = load_settings(play_path);
+    PlaySettings chosen_play;
+    if (play) chosen_play = std::move(*play);
+    chosen_play = wizard_play_settings(wizard, std::move(chosen_play));
+    if (auto written = save_settings(play_path, chosen_play); !written) log->warn("{}", written.error().detail);
+    // « Ouvrir avec » : une fois, sans confirmation (elle ajoute une entrée, ne prend la place de personne).
+    if (!engines.open_with_registered) {
+      const PlayerPlace place{.executable = s.paths.executable, .home = s.paths.home, .data = s.paths.data};
+      if (auto registered = register_player(place)) {
+        engines.open_with_registered = true;
+        log->info("Ouvrir avec : {}", *registered);
+      } else {
+        log->warn("Ouvrir avec : {}", registered.error().detail);
+      }
+    }
+    for (const std::string& line : wizard_summary(wizard)) log->info("assistant : {}", line);
+  }
   if (auto written = core::save_settings(s.engines_path, engines); !written)
     log->warn("{}", written.error().detail);
   const std::array<core::UserEdit, 1> start{core::edit::StartProfile{.slot = (*chosen_view)->profiles.start}};

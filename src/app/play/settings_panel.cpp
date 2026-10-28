@@ -353,9 +353,9 @@ struct PageInfo {
   bool advanced;  // seulement avec la case « Réglages avancés »
 };
 // L'arbre : l'ordre est celui de l'écran. Les catégories se déduisent du changement de `category`.
-constexpr std::array<PageInfo, 13> kPages{{
+constexpr std::array<PageInfo, 14> kPages{{
     {"Général", "Configuration", false},
-    {"Général", "Lecteur par défaut", false},
+    {"Général", "Lecteur par défaut", false},  // masquée quand « Ne plus me le demander » est coché
     {"Image IA", "Agrandissement", false},
     {"Image IA", "Fluidité", false},
     {"HDR", "Conversion", false},
@@ -367,9 +367,14 @@ constexpr std::array<PageInfo, 13> kPages{{
     {"Moteurs", "Installés", false},
     {"Avancé", "Affichage", true},
     {"Avancé", "Réinitialiser", true},
+    {"Avancé", "Lecteur par défaut", true},
 }};
 
 }  // namespace
+
+void language_choice(const char* label, const char* none_label, std::string& tag) {
+  language_combo(label, none_label, tag);
+}
 
 SettingsPanel::SettingsPanel() : export_(std::make_unique<ExportDraft>()) {}
 SettingsPanel::~SettingsPanel() = default;
@@ -399,13 +404,15 @@ SettingsPanel::Result SettingsPanel::draw(const PlaySettings& running, const Set
     const PlaySettings before = draft_;
     const float footer = pending_shown_ ? 84.0F * scale : 34.0F * scale;
     const float tree_width = std::min(200.0F * scale, width * 0.3F);
-    if (!advanced_ && kPages[static_cast<std::size_t>(page_)].advanced) page_ = 0;
+    if ((!advanced_ && kPages[static_cast<std::size_t>(page_)].advanced) || (page_ == 1 && draft_.default_player_dismissed))
+      page_ = 0;
     ImGui::BeginChild("##arbre", ImVec2(tree_width, -footer), ImGuiChildFlags_Borders);
     const char* category = "";
     bool category_open = false;
     for (std::size_t i = 0; i < kPages.size(); ++i) {
       const PageInfo& page = kPages[i];
       if (page.advanced && !advanced_) continue;
+      if (i == 1 && draft_.default_player_dismissed) continue;  // le bouton quitte Général
       if (std::string_view(page.category) != category) {
         if (category_open) ImGui::TreePop();
         category = page.category;
@@ -423,7 +430,8 @@ SettingsPanel::Result SettingsPanel::draw(const PlaySettings& running, const Set
       case 0:
         if (config_page(draft_, choices, bench_)) actions.emplace_back(Command{cmd::Pause{}});
         break;
-      case 1: default_player_page(choices.place, system_); break;
+      case 1:
+      case 13: default_player_page(choices.place, system_, draft_.default_player_dismissed, choices.default_player_is_ajp); break;
       case 2: image_tab(draft_, choices); break;
       case 3: fluidity_tab(draft_, choices); break;
       case 4: hdr_tab(draft_, choices); break;

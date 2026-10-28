@@ -13,10 +13,13 @@ using panel::kWarn;
 using panel::note;
 using panel::section;
 
-void default_player_page(const PlayerPlace& place, SystemNote& last) {
+void default_player_page(const PlayerPlace& place, SystemNote& last, bool& dismissed, bool already_default) {
   section("Lecteur par défaut");
   ImGui::TextWrapped(
       "Les vidéos (mkv, mp4, webm, avi, mov…) s'ouvrent dans AJP depuis le gestionnaire de fichiers.");
+  if (already_default) note("AJP est déjà le lecteur par défaut des vidéos.");
+  ImGui::Checkbox("Ne plus me le demander", &dismissed);
+  panel::tip("Le bouton « Faire de ce lecteur le lecteur par défaut » quitte Général et reste tout en bas d'Avancé.");
 #ifdef __APPLE__
   static_cast<void>(last);
   note(register_player(place).value_or(std::string()));
@@ -33,7 +36,7 @@ void default_player_page(const PlayerPlace& place, SystemNote& last) {
     last.refused = false;
   };
   ImGui::BeginDisabled(busy);
-  if (ImGui::Button("Définir par défaut")) start(&choose_as_default);
+  if (ImGui::Button("Faire de ce lecteur le lecteur par défaut")) start(&choose_as_default);
   ImGui::SameLine();
   if (ImGui::Button("Ajouter à « Ouvrir avec »")) start(&register_player);
   ImGui::SameLine();

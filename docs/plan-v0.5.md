@@ -46,9 +46,9 @@ Pull requests : une par étape ; quand une étape dépend d'une autre, la base e
 ### C. Nouveau cadre des réglages et assistant
 - [x] Arbre à gauche, page à droite, encadrés titrés (PR `claude/cadre-arbre`) ; lignes multiples et barre de défilement fine restent à faire
 - [x] Catégories, case « Réglages avancés », Profils retiré ; dernière page mémorisée le temps de la session seulement (pas encore dans `play.toml`)
-- [ ] Assistant de premier démarrage (8 écrans), relançable depuis Général et par `--first-run`
-- [ ] « Ouvrir avec » au premier lancement, sans confirmation ; bouton « Faire de ce lecteur le lecteur par défaut »
-  avec « Ne plus me le demander » (réapparaît en bas d'Avancé)
+- [x] Assistant de premier démarrage (8 écrans, `wizard.h`), relançable par `--first-run` ; le bouton « Relancer l'assistant » de Général reste à faire (PR `claude/assistant`)
+- [x] « Ouvrir avec » au premier lancement, sans confirmation ; bouton « Faire de ce lecteur le lecteur par défaut »
+  avec « Ne plus me le demander » (réapparaît en bas d'Avancé), détection xdg-mime sous Linux
 - [ ] Recherche dans les réglages (par page d'abord)
 
 ### E. Audio et son spatial
@@ -98,3 +98,8 @@ Pull requests : une par étape ; quand une étape dépend d'une autre, la base e
   de l'image restent modifiables avec un préréglage, et le premier réglage fait à la main bascule en Personnalisé
   (plutôt que des pages grisées). Choisir un préréglage écrit sa chaîne tout de suite (à appliquer par « Appliquer »).
   Pas encore : Mises à jour (étape 7), recherche, repli de l'arbre en liste sur petit écran, lignes multiples.
+- **2026-10-28** : assistant en PR. `wizard.h/.cpp` (écrans selon la machine, passer, reprise par `first_run_step`, résumé,
+  réglages écrits à « Terminer »). `settings.toml` gagne first_run_step, open_with_registered, update_mode/channel (défaut
+  Me prévenir), listening ; `play.toml` gagne [default_player] dismissed. Écran Audio : le choix d'écoute est gardé, la liste
+  des appareils vient avec l'étape audio ; l'écran HDR n'apparaît que sur écran HDR ; « Évaluer ma machine » se lance
+  depuis Général > Configuration (il faut une vidéo). Pas fait : RTX HDR pas à pas (4b), bouton « Relancer l'assistant ».

@@ -3,6 +3,11 @@
 //
 //   version = 1
 //   first_run_done = true
+//   first_run_step = 8
+//   open_with_registered = true
+//   update_mode = "notify"      # notify, auto, never
+//   update_channel = "stable"   # stable, preview
+//   listening = "speakers"      # headphones, speakers, cinema ; absent : pas encore dit
 //   [engines]
 //   chosen = ["vulkan", "tensorrt"]
 //   installed = ["vulkan", "tensorrt"]
@@ -44,6 +49,11 @@ inline constexpr std::size_t kMaxLanguages = 8;
 
 struct Settings {
   bool first_run_done = false;
+  int first_run_step = 0;                // le dernier écran de l'assistant vu (0 : aucun), pour reprendre en route
+  bool open_with_registered = false;     // l'inscription « Ouvrir avec » a été faite une fois : pas de réinscription
+  std::string update_mode = "notify";    // « notify » (Me prévenir), « auto », « never » (docs/ux-parametres.md, 4.5)
+  std::string update_channel = "stable"; // « stable » ou « preview »
+  std::string listening;                 // « Comment écoutez-vous ? » : « headphones », « speakers », « cinema » ; vide : non dit
   std::vector<EngineId> chosen_engines{EngineId::Vulkan};     // cochés dans l'écran « Moteurs »
   std::vector<EngineId> installed_engines{EngineId::Vulkan};  // présents et vérifiés
   std::array<std::optional<EngineId>, kUsageCount> preferred{EngineId::Vulkan, EngineId::Vulkan,

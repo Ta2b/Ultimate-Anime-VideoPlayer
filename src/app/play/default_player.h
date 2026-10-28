@@ -75,6 +75,11 @@ std::expected<std::string, Refusal> unregister_player(const PlayerPlace& place);
 // sinon ouvre la page du système qui le fait (Windows) ou dit comment faire (macOS).
 std::expected<std::string, Refusal> choose_as_default(const PlayerPlace& place);
 
+// La sortie de « xdg-mime query default video/x-matroska » désigne-t-elle ce lecteur ?
+bool default_handler_is_ajp(std::string_view query_output);
+// Ce lecteur est-il déjà celui des vidéos ? Linux : xdg-mime ; ailleurs on ne sait pas (faux).
+bool is_default_player(const PlayerPlace& place);
+
 // Windows : lancé depuis l'Explorateur (double clic, « Ouvrir avec »), le lecteur ferme la console
 // que Windows a ouverte pour lui seul ; lancé d'un terminal, il la garde et l'écrit en UTF-8. Rien
 // ailleurs.

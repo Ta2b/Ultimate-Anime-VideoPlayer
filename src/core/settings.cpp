@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <format>
+#include <initializer_list>
 #include <utility>
 
 #include "core/model_index.h"
@@ -121,6 +122,25 @@ std::expected<void, Refusal> read_rest(const toml::table& root, Settings& settin
   auto first_run = fields::optional<bool>(root, "first_run_done", "settings");
   if (!first_run) return std::unexpected(first_run.error());
   settings.first_run_done = first_run->value_or(false);
+  auto step = fields::optional<std::int64_t>(root, "first_run_step", "settings");
+  if (!step) return std::unexpected(step.error());
+  settings.first_run_step = static_cast<int>(std::clamp<std::int64_t>(step->value_or(0), 0, 8));
+  auto registered = fields::optional<bool>(root, "open_with_registered", "settings");
+  if (!registered) return std::unexpected(registered.error());
+  settings.open_with_registered = registered->value_or(false);
+  const auto choice = [&](const char* key, std::string& into, std::initializer_list<std::string_view> allowed)
+      -> std::expected<void, Refusal> {
+    auto value = fields::optional<std::string>(root, key, "settings");
+    if (!value) return std::unexpected(value.error());
+    if (!*value) return {};
+    if (std::ranges::find(allowed, std::string_view(**value)) == allowed.end())
+      return std::unexpected(Refusal{RefusalCode::FieldOutOfRange, std::format("settings.{} : « {} » inconnu", key, **value)});
+    into = **value;
+    return {};
+  };
+  if (auto r = choice("update_mode", settings.update_mode, {"notify", "auto", "never"}); !r) return r;
+  if (auto r = choice("update_channel", settings.update_channel, {"stable", "preview"}); !r) return r;
+  if (auto r = choice("listening", settings.listening, {"headphones", "speakers", "cinema"}); !r) return r;
 
   auto languages = fields::table(root, "languages", "settings");
   if (!languages) return std::unexpected(languages.error());
@@ -218,6 +238,15 @@ std::expected<std::string, Refusal> format_settings(const Settings& settings,
 
   root->insert_or_assign("version", kSettingsVersion);
   root->insert_or_assign("first_run_done", settings.first_run_done);
+  root->insert_or_assign("first_run_step", settings.first_run_step);
+  root->insert_or_assign("open_with_registered", settings.open_with_registered);
+  root->insert_or_assign("update_mode", settings.update_mode);
+  root->insert_or_assign("update_channel", settings.update_channel);
+  if (settings.listening.empty()) {
+    root->erase("listening");
+  } else {
+    root->insert_or_assign("listening", settings.listening);
+  }
   toml::table& engines_table = fields::child(*root, "engines");
   engines_table.insert_or_assign("chosen", names_of(settings.chosen_engines));
   engines_table.insert_or_assign("installed", names_of(settings.installed_engines));

@@ -342,6 +342,31 @@ std::expected<std::string, Refusal> choose_as_default(const PlayerPlace& place) 
 #endif
 }
 
+bool default_handler_is_ajp(std::string_view query_output) {
+  while (!query_output.empty() && (query_output.back() == '\n' || query_output.back() == '\r' || query_output.back() == ' '))
+    query_output.remove_suffix(1);
+  return query_output == kDesktopId;
+}
+
+bool is_default_player(const PlayerPlace& place) {
+  static_cast<void>(place);
+#if defined(_WIN32) || defined(__APPLE__)
+  return false;  // Windows ne le dit qu'au registre de l'utilisateur (UserChoice) : la case suffit
+#else
+  for (const char* tool : {"/usr/bin/xdg-mime", "/usr/local/bin/xdg-mime", "/bin/xdg-mime"}) {
+    std::error_code error;
+    if (!std::filesystem::exists(tool, error)) continue;
+    const prepare::ProcessSpec spec{.program = tool,
+                                    .args = {"query", "default", "video/x-matroska"},
+                                    .timeout = std::chrono::seconds(10)};
+    std::string out;
+    auto run = prepare::run_process(spec, [&](std::string_view line) { out = line; }, std::stop_token());
+    return run && run->kind == prepare::ExitKind::Exited && run->code == 0 && default_handler_is_ajp(out);
+  }
+  return false;
+#endif
+}
+
 void leave_lone_console() {
 #ifdef _WIN32
   std::array<DWORD, 2> processes{};

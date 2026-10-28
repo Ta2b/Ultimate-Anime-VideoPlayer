@@ -78,9 +78,13 @@ struct SettingsChoices {
   int machine_tier = 2;              // la tranche (gpu_tier.h : Tier, 0 à 4), estimée ou mesurée par « Évaluer ma machine »
   int display_height = 0;            // hauteur de l'écran en pixels ; 0 : inconnue
   std::string gpu_name;              // la carte
+  bool default_player_is_ajp = false; // AJP est déjà le lecteur des vidéos (xdg-mime, Linux)
   std::string bench_text;            // « Dernière évaluation : 2026-10-28, niveau Rapide » ; vide : jamais faite
   PlayerPlace place;  // l'exécutable et le dossier de l'utilisateur (onglet Système)
 };
+
+// Une liste de langues (settings_panel.cpp), partagée avec l'assistant de premier démarrage.
+void language_choice(const char* label, const char* none_label, std::string& tag);
 
 class SettingsPanel {
  public:

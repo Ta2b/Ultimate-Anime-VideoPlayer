@@ -34,6 +34,7 @@ struct BenchNote {
 bool bench_page(const PlayerPlace& place, const std::filesystem::path& video, BenchNote& bench);
 
 // Le lecteur par défaut et « Ouvrir avec » (Général > Lecteur par défaut).
-void default_player_page(const PlayerPlace& place, SystemNote& last);
+// Avec « Ne plus me le demander » (dismissed) et, quand le lecteur est déjà celui des vidéos, un mot qui le dit.
+void default_player_page(const PlayerPlace& place, SystemNote& last, bool& dismissed, bool already_default);
 
 }  // namespace ajp::app::play

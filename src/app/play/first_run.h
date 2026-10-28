@@ -19,6 +19,7 @@
 
 #include "app/play/settings.h"
 #include "app/play/settings_panel.h"
+#include "app/play/wizard.h"
 #include "core/engines.h"
 #include "core/gpu_device.h"
 #include "core/settings.h"
@@ -101,6 +102,11 @@ struct FirstRunView {
   bool done = false;       // « Commencer »
   bool revisit = false;    // rouvert depuis l'onglet Moteurs : la lecture reprend ensuite
   bool cancelled = false;  // « Annuler » (revisit seulement) : rien ne change
+  // L'assistant du premier lancement (wizard.h) ; vide au rouvrir depuis l'onglet Moteurs (revisit).
+  Wizard wizard;
+  WizardFacts facts;
+  std::string tier_line;     // « Niveau estimé : Rapide »
+  std::string display_line;  // « Écran 3840×2160 · 165 Hz »
 };
 
 // Les lignes de recommend_engines pour ce GPU, cochées selon la présélection au premier lancement,
