@@ -16,6 +16,7 @@
 #include <SDL3/SDL_timer.h>
 #include <SDL3/SDL_video.h>
 
+#include "app/play/auto_bench.h"
 #include "app/play/auto_config.h"
 #include "app/play/backend_library.h"
 #include "app/play/build_progress.h"
@@ -251,10 +252,13 @@ std::expected<void, Refusal> play(const PlayOptions& options, const PlayerPaths&
       for (const std::string& line : notes) log->warn("profil {} : {}", profiles.active, line);
       log->info("profil {} « {} »", profiles.active, start->name);
     }
+    // La tranche mesurée par « Évaluer ma machine » (bench.toml), si elle est de cette carte.
+    std::optional<BenchResult> measured_tier;
+    if (auto bench = load_bench(settings_path.parent_path() / "bench.toml")) measured_tier = std::move(*bench);
     // Le préréglage (Auto, Rapide…) refait la chaîne pour cette carte, cet écran et cette vidéo ;
     // Personnalisé laisse les réglages tels quels.
     from_profile = apply_preset(from_profile,
-                                Machine{.tier = estimate_tier(gpu_facts(**screen)).tier,
+                                Machine{.tier = effective_tier(gpu_facts(**screen), measured_tier),
                                         .display_height = display_height((*screen)->window()),
                                         .display_hz = display_refresh_hz((*screen)->window())},
                                 profiles.source);
