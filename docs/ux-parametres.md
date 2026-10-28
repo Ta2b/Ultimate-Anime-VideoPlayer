@@ -625,3 +625,22 @@ par onglet, contrôle que chaque réglage de l'annexe A reste atteignable.
     · note (9 c.) : En cours…
     · note (2 c.) : %s
 ```
+
+## Audit « Réglages avancés » (v0.6)
+
+Règle posée par Tatoub (28/10) : un réglage que presque personne ne touche (synchro audio, algorithmes, ordre du traitement…)
+n'est pas une fonction principale du lecteur : il n'apparaît que la case « Réglages avancés » cochée. Le défaut reste inchangé.
+
+| Page | Visible d'office | Réglages avancés |
+|---|---|---|
+| Agrandissement | SPAN ×2, modèle, résolution de travail | algorithme de réduction |
+| Fluidité | multiplicateur (dont Auto), moteur d'interpolation | modèle RIFE, GMFSS Performance/Qualité, garder les poses (DRBA), Warp et SPAN, Smooth Motion |
+| HDR (Conversion) | moteur HDR, pic (automatique ou en nits) | gris moyen, débandage RTX HDR, valeurs par défaut |
+| Couleurs | contraste, saturation, grader la sortie et préréglage | les 6 curseurs du grade et le gamut P3, composition finale (filtre, débandage), noir absolu OLED, soins OLED |
+| Audio (Sortie) | appareil, écoute (casque, enceintes, home cinéma), épisode suivant | mode fidèle, profil propre à l'appareil, délai audio, latence de l'écran, calage sur l'écran |
+| Langues, Sous-titres | tout | — |
+| Général, Moteurs, Export | tout | — |
+| Avancé | (page déjà avancée) | affichage des statistiques, réinitialisation, lecteur par défaut |
+
+Mis en œuvre par `panel::advanced()` (`panel_style.h`), posé à chaque image par le panneau. À venir : déplacer composition finale et soins OLED
+de Couleurs vers une page avancée « Rendu », OLED en automatique.
