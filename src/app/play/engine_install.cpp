@@ -1,6 +1,7 @@
 #include "app/play/engine_install.h"
 
 #include <algorithm>
+#include <cctype>
 #include <chrono>
 #include <cstdio>
 #include <format>
@@ -17,6 +18,7 @@
 
 #include "app/play/engine_tools.h"
 #include "core/inflate.h"
+#include "core/log.h"
 
 namespace ajp::app::play {
 namespace {
@@ -169,6 +171,31 @@ std::optional<std::string> missing_prerequisite(core::EngineId engine) {
   }
 }
 
+std::string cuda_arch_from_name(std::string_view gpu_name) {
+  std::string name(gpu_name);
+  std::ranges::transform(name, name.begin(),
+                         [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+  const auto has = [&](std::string_view part) { return name.find(part) != std::string::npos; };
+  const auto series = [&](char digit) {  // « rtx 4050 » : la série à deux chiffres, ici 40
+    const std::size_t at = name.find("rtx ");
+    return at != std::string::npos && at + 5 < name.size() && name[at + 4] == digit && name[at + 5] >= '0' &&
+           name[at + 5] <= '9';
+  };
+  if (has("h100") || has("h200")) return "sm90";
+  if (has("a100")) return "sm80";
+  if (has("blackwell") || series('5')) return "sm120";
+  if (has("l40") || series('4')) return "sm89";
+  if (series('3') || has("rtx a")) return "sm86";
+  if (series('2') || has("gtx 16") || has("titan rtx")) return "sm75";
+  return {};
+}
+
+std::string effective_cuda_arch(std::string_view detected, std::string_view gpu_name) {
+  if (!detected.empty()) return std::string(detected);
+  if (std::string by_name = cuda_arch_from_name(gpu_name); !by_name.empty()) return by_name;
+  return "ptx";  // inconnue : jamais « toutes les architectures » (2 Go tirés, 3,3 Go écrits)
+}
+
 std::string detect_cuda_arch() {
   const auto smi = system_tool("nvidia-smi");
   if (!smi) return {};
@@ -282,11 +309,11 @@ std::expected<void, Refusal> fetch_vendor_file(const core::VendorFile& file,
   const std::uint64_t last = file.data_offset + file.packed_size - 1;
   auto fetched = run_tool(
       {.program = *curl,
-       .args = {"--fail", "--location", "--retry", "3", "--progress-bar", "--range",
+       .args = {"--fail", "--location", "--retry", "1", "--retry-delay", "2", "--progress-bar", "--range",
                 std::format("{}-{}", file.data_offset, last), "--output", packed.string(), file.url},
        .timeout = std::chrono::hours(2)},
       [&](std::string_view line) {
-        if (const auto f = curl_percent(line); f && progress.report) progress.report(*f * 0.7F, file.name);
+        if (const auto f = curl_percent(line); f && progress.report) progress.report(*f * 0.85F, file.name);
       },
       progress.stop, std::format("téléchargement de {}", file.name));
   if (!fetched) {
@@ -299,6 +326,7 @@ std::expected<void, Refusal> fetch_vendor_file(const core::VendorFile& file,
     return refuse(RefusalCode::HashMismatch, std::format("{} : {} octets reçus, {} attendus", file.name,
                                                          error ? 0 : got, file.packed_size));
   }
+  if (progress.report) progress.report(0.9F, file.name);  // tiré : la décompression commence
   std::filesystem::path partial = dest;
   partial += ".partiel";
   std::ifstream in(packed, std::ios::binary);
@@ -373,28 +401,49 @@ std::expected<void, Refusal> fetch_vendor_file(const core::VendorFile& file,
     discard();
     return refuse(RefusalCode::FileUnwritable, std::format("{} : {}", dest.string(), error.message()));
   }
+  if (progress.report) progress.report(1.0F, file.name);
   return {};
 }
 
-std::expected<std::filesystem::path, Refusal> install_package(const EngineCatalog& catalog,
-                                                              const core::EnginePackage& package,
-                                                              const InstallProgress& progress) {
+namespace {
+
+// Les étapes de l'installation ; `step` dit où elle en est, pour le journal si elle échoue. Une seule
+// progression globale (octets tirés, archive et fichiers tiers) au lieu d'une barre par fichier.
+std::expected<std::filesystem::path, Refusal> install_steps(const EngineCatalog& catalog,
+                                                            const core::EnginePackage& package,
+                                                            const InstallProgress& progress,
+                                                            std::string& step) {
   const auto curl = system_tool("curl");
   const auto tar = system_tool("tar");
   if (!curl || !tar)
     return refuse(RefusalCode::LibraryUnavailable, "curl ou tar introuvables sur ce système");
   const std::string name(core::engine_name(package.engine));
+  const std::vector<core::VendorFile> vendor =
+      core::vendor_files_for(catalog.vendor_files, package.engine, catalog.layout.os, progress.cuda_arch);
+  double total_bytes = static_cast<double>(package.size);
+  for (const core::VendorFile& file : vendor) total_bytes += static_cast<double>(file.packed_size);
+  double done_bytes = 0.0;
+  float shown = 0.0F;
+  // Un pourcentage qui ne recule jamais : octets tirés sur octets à tirer.
+  const auto overall = [&](double local_bytes, const std::string& stage) {
+    shown = std::max(shown, static_cast<float>(std::min(0.99, (done_bytes + local_bytes) / total_bytes)));
+    if (progress.report) progress.report(shown, stage);
+  };
   const auto report = [&](float fraction, const std::string& stage) {
     if (progress.report) progress.report(fraction, stage);
   };
   std::error_code error;
+  step = "vérification de la place";
   // La place d'abord : un refus net, sans téléchargement, plutôt qu'un disque qui se remplit puis une
   // installation recommencée.
   const std::filesystem::path target_dir = core::engine_dir(catalog.layout, package);
-  if (const auto fits =
-          check_space(install_space(catalog, package, progress.cuda_arch, directory_bytes(target_dir)),
-                      free_bytes(catalog.layout.engines), catalog.layout.engines);
-      !fits)
+  const InstallSpace space = install_space(catalog, package, progress.cuda_arch, directory_bytes(target_dir));
+  log_channel("app")->info(
+      "installation de {} : architecture {}, à tirer {}, installé {}, pic {}, libre {} ({})", name,
+      progress.cuda_arch.empty() ? "inconnue (tous les fichiers)" : progress.cuda_arch,
+      format_size(space.download), format_size(space.installed), format_size(space.peak),
+      format_size(free_bytes(catalog.layout.engines)), catalog.layout.engines.string());
+  if (const auto fits = check_space(space, free_bytes(catalog.layout.engines), catalog.layout.engines); !fits)
     return std::unexpected(fits.error());
   const std::filesystem::path part = core::download_path(catalog.layout, package.sha256);
   std::filesystem::create_directories(part.parent_path(), error);
@@ -409,18 +458,22 @@ std::expected<std::filesystem::path, Refusal> install_package(const EngineCatalo
   if (!resumed) {
     if (std::filesystem::file_size(part, error) >= package.size && !error)
       std::filesystem::remove(part, error);
-    report(0.0F, std::format("téléchargement de {} ({} Mo)", name, package.size >> 20));
+    step = "téléchargement de l'archive du moteur";
+    overall(0.0, std::format("téléchargement de {} ({})", name, format_size(package.size)));
     auto fetched = run_tool(
         {.program = *curl,
-         .args = {"--fail", "--location", "--retry", "3", "--continue-at", "-", "--progress-bar", "--output",
-                  part.string(), package.url},
+         .args = {"--fail", "--location", "--retry", "1", "--retry-delay", "2", "--continue-at", "-",
+                  "--progress-bar", "--output", part.string(), package.url},
          .timeout = std::chrono::hours(4)},
         [&](std::string_view line) {
-          if (const auto f = curl_percent(line)) report(*f * 0.9F, std::format("téléchargement de {}", name));
+          if (const auto f = curl_percent(line))
+            overall(static_cast<double>(*f) * static_cast<double>(package.size),
+                    std::format("téléchargement de {}", name));
         },
         progress.stop, std::format("téléchargement de {}", name));
     if (!fetched) return std::unexpected(fetched.error());
-    report(0.9F, std::format("vérification de {}", name));
+    step = "vérification de l'archive";
+    overall(static_cast<double>(package.size), std::format("vérification de {}", name));
     if (auto ok = core::verify_file(part, package.size, package.sha256, progress.stop); !ok) {
       std::filesystem::remove(part, error);  // un fichier faux ne se reprend pas
       return std::unexpected(ok.error());
@@ -435,7 +488,9 @@ std::expected<std::filesystem::path, Refusal> install_package(const EngineCatalo
   std::filesystem::create_directories(staging, error);
   if (error)
     return refuse(RefusalCode::FileUnwritable, std::format("{} : {}", staging.string(), error.message()));
-  report(0.93F, std::format("installation de {}", name));
+  step = "extraction de l'archive";
+  done_bytes = static_cast<double>(package.size);
+  overall(0.0, std::format("extraction de {}", name));
   if (auto ok = run_tool({.program = *tar,
                           .args = {"-xzf", part.string(), "-C", staging.string()},
                           .timeout = std::chrono::minutes(30)},
@@ -456,17 +511,25 @@ std::expected<std::filesystem::path, Refusal> install_package(const EngineCatalo
   }
   // Les fichiers que NVIDIA publie, tirés de ses archives et joints au module : ce qui est à nous
   // vient de notre release, le reste du lien direct (core::VendorFile).
-  const std::vector<core::VendorFile> vendor =
-      core::vendor_files_for(catalog.vendor_files, package.engine, catalog.layout.os, progress.cuda_arch);
   for (std::size_t i = 0; i < vendor.size(); ++i) {
-    report(0.93F + 0.06F * static_cast<float>(i) / static_cast<float>(vendor.size()),
-           std::format("téléchargement de {} ({}/{})", vendor[i].name, i + 1, vendor.size()));
-    if (auto ok = fetch_vendor_file(vendor[i], staging / vendor[i].name, catalog.layout.downloads, progress);
-        !ok) {
+    const core::VendorFile& file = vendor[i];
+    step = std::format("fichier {} ({}/{})", file.name, i + 1, vendor.size());
+    const std::string label = std::format("{} ({}/{})", file.name, i + 1, vendor.size());
+    overall(0.0, "téléchargement de " + label);
+    log_channel("app")->info("installation de {} : {} ({} tirés, {} écrits)", name, step,
+                             format_size(file.packed_size), format_size(file.size));
+    InstallProgress local = progress;
+    local.report = [&, label](float fraction, const std::string&) {
+      overall(static_cast<double>(fraction) * static_cast<double>(file.packed_size),
+              (fraction >= 0.9F ? "décompression de " : "téléchargement de ") + label);
+    };
+    if (auto ok = fetch_vendor_file(file, staging / file.name, catalog.layout.downloads, local); !ok) {
       std::filesystem::remove_all(staging, error);
       return std::unexpected(ok.error());
     }
+    done_bytes += static_cast<double>(file.packed_size);
   }
+  step = "remplacement de la version installée";
   {
     std::ofstream note(staging / std::string(kPackageNote), std::ios::trunc);
     note << "sha256=" << package.sha256 << "\nlicence=" << package.license << '\n';
@@ -502,6 +565,38 @@ std::expected<std::filesystem::path, Refusal> install_package(const EngineCatalo
   error.clear();
   report(1.0F, std::format("{} installé", name));
   return module ? core::backend_library(catalog.layout, package) : target;
+}
+
+}  // namespace
+
+std::expected<std::filesystem::path, Refusal> install_package(const EngineCatalog& catalog,
+                                                              const core::EnginePackage& package,
+                                                              const InstallProgress& progress) {
+  const auto log = log_channel("app");
+  const std::string name(core::engine_name(package.engine));
+  // Les restes d'un essai raté ou interrompu partent avant tout nouvel essai : ils ne s'accumulent pas.
+  std::error_code error;
+  for (const char* suffix : {".partiel", ".ancien"}) {
+    std::filesystem::path leftover = core::engine_dir(catalog.layout, package);
+    leftover += suffix;
+    if (std::filesystem::exists(leftover, error)) {
+      log->info("installation de {} : reste d'un essai précédent retiré ({})", name, leftover.string());
+      std::filesystem::remove_all(leftover, error);
+    }
+  }
+  std::string step = "démarrage";
+  const auto started = std::chrono::steady_clock::now();
+  auto result = install_steps(catalog, package, progress, step);
+  const auto seconds =
+      std::chrono::duration_cast<std::chrono::seconds>(std::chrono::steady_clock::now() - started).count();
+  if (result) {
+    log->info("installation de {} : terminée en {} s", name, seconds);
+  } else {
+    log->warn("installation de {} : échec à l'étape « {} » après {} s : {} {} (libre : {})", name, step,
+              seconds, ajp::name(result.error().code), result.error().detail,
+              format_size(free_bytes(catalog.layout.engines)));
+  }
+  return result;
 }
 
 }  // namespace ajp::app::play

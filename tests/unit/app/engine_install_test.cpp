@@ -540,3 +540,15 @@ TEST_CASE("Dossier d'installation des moteurs : le catalogue installe là, les m
   CHECK(catalog.layout.models == plain.layout.models);
   CHECK(plain.layout.engines.string().starts_with(data.string()));
 }
+
+TEST_CASE("Architecture : lue, sinon déduite du nom, sinon ptx — jamais toutes", "[app][install]") {
+  CHECK(ajp::app::play::cuda_arch_from_name("NVIDIA GeForce RTX 4050 Laptop GPU") == "sm89");
+  CHECK(ajp::app::play::cuda_arch_from_name("NVIDIA GeForce RTX 4070 Ti") == "sm89");
+  CHECK(ajp::app::play::cuda_arch_from_name("NVIDIA GeForce RTX 3060") == "sm86");
+  CHECK(ajp::app::play::cuda_arch_from_name("NVIDIA GeForce RTX 2070") == "sm75");
+  CHECK(ajp::app::play::cuda_arch_from_name("NVIDIA GeForce RTX 5080") == "sm120");
+  CHECK(ajp::app::play::cuda_arch_from_name("AMD Radeon RX 7900").empty());
+  CHECK(ajp::app::play::effective_cuda_arch("sm90", "RTX 4050") == "sm90");
+  CHECK(ajp::app::play::effective_cuda_arch("", "NVIDIA GeForce RTX 4050 Laptop GPU") == "sm89");
+  CHECK(ajp::app::play::effective_cuda_arch("", "inconnue") == "ptx");
+}

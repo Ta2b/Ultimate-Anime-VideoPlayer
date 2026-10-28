@@ -97,6 +97,13 @@ struct InstallProgress {
 
 // « sm89 » pour une carte de capacité 8.9, lu par nvidia-smi ; vide s'il manque ou se tait.
 std::string detect_cuda_arch();
+// L'architecture déduite du nom de la carte (« NVIDIA GeForce RTX 4050 Laptop GPU » : sm89) ; vide si
+// inconnue.
+std::string cuda_arch_from_name(std::string_view gpu_name);
+// Celle qu'on installe : lue par nvidia-smi, sinon d'après le nom, sinon « ptx » (aucun fichier propre à une
+// architecture). Jamais vide : une architecture inconnue ne fait plus tirer celles de toutes les cartes
+// (0.5.0 : 2 Go tirés, 3,3 écrits).
+std::string effective_cuda_arch(std::string_view detected, std::string_view gpu_name);
 
 // Les octets que l'installation transfère : le paquet, plus les fichiers tiers de l'architecture
 // du GPU (`arch`, vide : toutes). Ce que l'écran des moteurs annonce avant le téléchargement.
