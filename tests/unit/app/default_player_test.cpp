@@ -158,3 +158,11 @@ TEST_CASE("Lecteur par défaut : dans les données de l'utilisateur ($XDG_DATA_H
 
 }  // namespace
 }  // namespace ajp::app::play
+
+TEST_CASE("xdg-mime query default : reconnaît le .desktop d'AJP", "[default_player]") {
+  using namespace ajp::app::play;
+  CHECK(default_handler_is_ajp("io.github.ta2b.ajp.desktop\n"));
+  CHECK(default_handler_is_ajp("io.github.ta2b.ajp.desktop"));
+  CHECK_FALSE(default_handler_is_ajp("mpv.desktop\n"));
+  CHECK_FALSE(default_handler_is_ajp(""));
+}

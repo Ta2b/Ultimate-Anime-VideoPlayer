@@ -162,6 +162,7 @@ struct PlaySettings {
   // À la fin de la vidéo, lire la suivante du dossier (ordre naturel des noms) ; vaut au prochain
   // fichier. Sans effet depuis l'accueil, qui ramène à la liste.
   bool autoplay_next = false;
+  bool default_player_dismissed = false;  // « Ne plus me le demander » : le bouton quitte Général, reste en bas d'Avancé
   int audio_delay_ms = 0;
   // Synchro sur l'écran (SessionConfig::display_sync), en direct ; délai d'affichage de la vidéo
   // en ms, 0 : estimé (SessionConfig::video_latency_us).

@@ -21,6 +21,7 @@
 #include "app/play/chain.h"
 #include "app/play/chain_setup.h"
 #include "app/play/chain_stats.h"
+#include "app/play/default_player.h"
 #include "app/play/display_edid.h"
 #include "app/play/engine_build.h"
 #include "app/play/engine_install.h"
@@ -207,6 +208,8 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
       measured && measured->gpu == machine.name && measured->driver == machine.driver
           ? std::format("Dernière évaluation : {}, niveau {}", measured->date, tier_label(measured->level))
           : std::string();
+  const bool default_player_is_ajp =
+      is_default_player({.executable = p.paths.executable, .home = p.paths.home, .data = p.paths.data});
   p.ui.set_tracks((*pipeline)->tracks());
   p.ui.set_settings(
       settings,
@@ -258,6 +261,7 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
           .machine_tier = static_cast<int>(machine_tier),
           .display_height = display_height(out.window()),
           .gpu_name = gpu_facts(p.screen).name,
+          .default_player_is_ajp = default_player_is_ajp,
           .bench_text = bench_text,
           .place = {.executable = p.paths.executable, .home = p.paths.home, .data = p.paths.data}});
   p.profiles.source =

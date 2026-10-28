@@ -12,6 +12,8 @@
 #include <imgui.h>
 
 #include "app/play/engine_switch.h"
+#include "app/play/auto_config.h"
+#include "app/play/panel_style.h"
 
 namespace ajp::app::play {
 namespace {
@@ -460,7 +462,161 @@ std::string_view reason_label(core::Reason reason) {
   return "?";
 }
 
+namespace {
+
+void radio_note(const char* label, const char* detail, bool selected, bool& pick, bool enabled = true) {
+  ImGui::BeginDisabled(!enabled);
+  if (ImGui::RadioButton(label, selected)) pick = true;
+  ImGui::EndDisabled();
+  if (!enabled) panel::tip(detail);
+  else note(detail);
+}
+
+// Le contenu d'un écran de l'assistant.
+void draw_wizard_step(FirstRunView& view, Wizard& wizard) {
+  switch (current(wizard)) {
+    case WizardStep::Welcome:
+      section("Bienvenue");
+      ImGui::TextWrapped("%s", view.gpu.c_str());
+      note(view.tier_line);
+      if (!view.display_line.empty()) note(view.display_line);
+      note("Le lecteur choisit seul la chaîne pour cette machine ; tout se retrouve ensuite dans les paramètres (p). "
+           "Il s'ajoute aussi à « Ouvrir avec » du système à la fin de l'assistant.");
+      break;
+    case WizardStep::Engines:
+      section("Moteurs");
+      for (EngineRow& row : view.engines) engine_row(row);
+      note("Vulkan sert tous les GPU ; les moteurs cochés à télécharger s'installent après « Terminer », vérifiés par "
+           "leur empreinte, et Vulkan prend le relais de celui qui échoue.");
+      break;
+    case WizardStep::Chain: {
+      section("Image et fluidité");
+      if (ImGui::BeginCombo("Préréglage", std::string(label(wizard.preset)).c_str())) {
+        for (int i = 0; i < kPresetCount; ++i) {
+          const auto preset = static_cast<Preset>(i);
+          if (ImGui::Selectable(std::string(label(preset)).c_str(), preset == wizard.preset)) wizard.preset = preset;
+        }
+        ImGui::EndCombo();
+      }
+      panel::tip("Auto choisit la chaîne selon votre carte, votre écran et la vidéo.");
+      if (ImGui::BeginCombo("Priorité", std::string(label(wizard.priority)).c_str())) {
+        for (int i = 0; i < kPriorityCount; ++i) {
+          const auto priority = static_cast<Priority>(i);
+          if (ImGui::Selectable(std::string(label(priority)).c_str(), priority == wizard.priority))
+            wizard.priority = priority;
+        }
+        ImGui::EndCombo();
+      }
+      note("« Évaluer ma machine » (15 s) se lance depuis Général > Configuration, avec une vidéo ouverte : le niveau "
+           "estimé suffit pour commencer.");
+      break;
+    }
+    case WizardStep::Hdr: {
+      section("HDR");
+      note("Votre écran reçoit du HDR.");
+      bool pick = false;
+      radio_note("Automatique", "Le lecteur choisit selon la machine.", wizard.hdr == HdrChoice::Auto, pick);
+      if (pick) wizard.hdr = HdrChoice::Auto;
+      pick = false;
+      radio_note("RTX HDR", "Cartes NVIDIA RTX avec le moteur TensorRT et le SDK Maxine.", wizard.hdr == HdrChoice::RtxHdr, pick);
+      if (pick) wizard.hdr = HdrChoice::RtxHdr;
+      pick = false;
+      radio_note("HDR adaptatif", "Tous les GPU : l'aspect HDR est émulé selon la scène.", wizard.hdr == HdrChoice::Adaptive, pick);
+      if (pick) wizard.hdr = HdrChoice::Adaptive;
+      pick = false;
+      radio_note("SDR", "Pas de conversion HDR.", wizard.hdr == HdrChoice::Sdr, pick);
+      if (pick) wizard.hdr = HdrChoice::Sdr;
+      break;
+    }
+    case WizardStep::Audio: {
+      section("Comment écoutez-vous ?");
+      note("Le format du son se détecte seul. Aucune détection du casque ou des enceintes : dites-le ici.");
+      for (const Listening each : {Listening::Headphones, Listening::Speakers, Listening::Cinema}) {
+        bool pick = false;
+        const bool cinema = each == Listening::Cinema;
+        radio_note(std::string(label(each)).c_str(),
+                   each == Listening::Headphones ? "Casque : crossfeed en stéréo, binaural en surround."
+                   : cinema ? (view.facts.multichannel_output ? "Multicanal, surround direct."
+                                                              : "Grisé : l'appareil de sortie n'a que 2 canaux.")
+                            : "Enceintes : rendu fidèle, mixage soigné.",
+                   wizard.listening == each, pick, !cinema || view.facts.multichannel_output);
+        if (pick) wizard.listening = each;
+      }
+      note("Passer : Enceintes en rendu fidèle. Le rendu lui-même vient avec la couche audio ; ce choix est gardé.");
+      break;
+    }
+    case WizardStep::Languages:
+      section("Langues");
+      language_choice("Langue de l'audio", "Selon le fichier", wizard.audio_language);
+      language_choice("Langue des sous-titres", "Aucun", wizard.subtitle_language);
+      break;
+    case WizardStep::Updates: {
+      section("Mises à jour");
+      bool pick = false;
+      radio_note("Me prévenir", "Une notification ; vous lancez la mise à jour vous-même.", wizard.update_mode == "notify", pick);
+      if (pick) wizard.update_mode = "notify";
+      pick = false;
+      radio_note("Automatique", "Téléchargée, installée au prochain lancement.", wizard.update_mode == "auto", pick);
+      if (pick) wizard.update_mode = "auto";
+      pick = false;
+      radio_note("Jamais", "Aucune vérification.", wizard.update_mode == "never", pick);
+      if (pick) wizard.update_mode = "never";
+      break;
+    }
+    case WizardStep::Summary:
+      section("Résumé");
+      for (const std::string& line : wizard_summary(wizard)) ImGui::BulletText("%s", line.c_str());
+      note("Tout se change ensuite dans les paramètres (p). Pour le refaire : ajp --first-run.");
+      break;
+  }
+}
+
+void draw_wizard(FirstRunView& view, float scale) {
+  const ImGuiIO& io = ImGui::GetIO();
+  const float pad = 24.0F * scale;
+  const ImVec2 size{std::min(860.0F * scale, io.DisplaySize.x - 2.0F * pad),
+                    std::min(640.0F * scale, io.DisplaySize.y - 2.0F * pad)};
+  ImGui::SetNextWindowPos({io.DisplaySize.x * 0.5F, io.DisplaySize.y * 0.5F}, ImGuiCond_Always, {0.5F, 0.5F});
+  ImGui::SetNextWindowSize(size, ImGuiCond_Always);
+  constexpr ImGuiWindowFlags kFlags = ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoMove |
+                                      ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoSavedSettings;
+  Wizard& wizard = view.wizard;
+  if (ImGui::Begin("Bienvenue", nullptr, kFlags)) {
+    note(progress_text(wizard));
+    ImGui::ProgressBar(static_cast<float>(wizard.at + 1) / static_cast<float>(wizard.steps.size()), {-1.0F, 6.0F * scale}, "");
+    const float footer = ImGui::GetFrameHeight() * 1.6F + ImGui::GetStyle().ItemSpacing.y * 3.0F;
+    ImGui::BeginChild("##ecran", {0.0F, -footer});
+    draw_wizard_step(view, wizard);
+    ImGui::EndChild();
+    ImGui::Separator();
+    const float tall = ImGui::GetFrameHeight() * 1.4F;
+    ImGui::BeginDisabled(is_first(wizard));
+    if (ImGui::Button("Précédent", {0.0F, tall})) previous(wizard);
+    ImGui::EndDisabled();
+    ImGui::SameLine();
+    if (!is_last(wizard)) {
+      if (ImGui::Button("Passer", {0.0F, tall})) skip(wizard);
+      ImGui::SameLine();
+    }
+    ImGui::PushStyleColor(ImGuiCol_Button, kAccent);
+    ImGui::PushStyleColor(ImGuiCol_Text, ImVec4{0.05F, 0.07F, 0.12F, 1.0F});
+    if (is_last(wizard)) {
+      if (ImGui::Button("Terminer", {0.0F, tall})) view.done = true;
+    } else if (ImGui::Button("Suivant", {0.0F, tall})) {
+      next(wizard);
+    }
+    ImGui::PopStyleColor(2);
+  }
+  ImGui::End();
+}
+
+}  // namespace
+
 void draw_first_run(FirstRunView& view, float scale) {
+  if (!view.revisit && !view.wizard.steps.empty()) {
+    draw_wizard(view, scale);
+    return;
+  }
   static constexpr const char* kFooter =
       "Vulkan sert tous les GPU ; les moteurs cochés à télécharger s'installent après « Commencer », "
       "vérifiés par leur empreinte, et Vulkan prend le relais de celui qui échoue.";
