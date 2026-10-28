@@ -129,3 +129,4 @@ Pull requests : une par étape ; quand une étape dépend d'une autre, la base e
   Couleurs, Mises à jour.
 - **2026-10-28** : préparation de la release : version 0.5.0 (CMake, vcpkg), notes v0.5.0, liste Windows/macOS. L'étiquette n'est PAS posée :
   règle de Tatoub, rien n'est publié ni étiqueté sans permission explicite.
+- **2026-10-28** : mesures du mode Auto et des moteurs sur la 4070 Ti : `docs/reports/mesures-auto-4070ti-2026-10-28.md`.
