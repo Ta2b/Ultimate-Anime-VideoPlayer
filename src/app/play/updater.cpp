@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <chrono>
+#include <cstdlib>
 #include <fstream>
 #include <sstream>
 #include <system_error>
@@ -252,6 +253,11 @@ std::string update_managed_reason(const UpdatePaths& paths) {
 #ifdef __APPLE__
   return "sur macOS, la nouvelle version se télécharge sur la page des releases";
 #endif
+  // L'AppImage (AJP_PACKAGED, posée par son lanceur) est un fichier en lecture seule : on le remplace par le
+  // nouveau. NOLINTNEXTLINE(concurrency-mt-unsafe)
+  if (const char* packaged = std::getenv("AJP_PACKAGED");
+      packaged != nullptr && std::string_view(packaged) == "appimage")
+    return "AppImage : la nouvelle version se télécharge sur la page des releases (le fichier se remplace)";
   std::error_code error;
   if (fs::exists("/.flatpak-info", error)) return "mis à jour par votre gestionnaire de paquets (Flatpak)";
   const fs::path probe = paths.install / ".ajp-write-test";
