@@ -104,6 +104,9 @@ fi
 if ! done_marker imgui "$(ref_of imgui)"; then
   mkdir -p "$PREFIX/share/imgui"
   cp -r "$WORK/imgui/"*.h "$WORK/imgui/"*.cpp "$WORK/imgui/backends" "$PREFIX/share/imgui/"
+  # Le chargeur FreeType : stb_truetype ne lit pas les polices OpenType à contours CFF2 (Noto Sans CJK variable de Fedora).
+  mkdir -p "$PREFIX/share/imgui/misc/freetype"
+  cp "$WORK/imgui/misc/freetype/"imgui_freetype.* "$PREFIX/share/imgui/misc/freetype/"
   mark imgui "$(ref_of imgui)"
 fi
 

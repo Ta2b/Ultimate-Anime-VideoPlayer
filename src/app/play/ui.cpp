@@ -29,6 +29,9 @@
 #include "app/play/placebo_imgui.h"
 #include "app/play/placebo_screen.h"
 #include "core/log.h"
+#ifdef AJP_WITH_FREETYPE
+#include "imgui_freetype.h"
+#endif
 #include "core/thread.h"
 
 namespace ajp::app::play {
@@ -155,7 +158,9 @@ std::vector<FontFile> search_fonts() {
 bool add_font(ImFontAtlas& fonts, FontFile& file, bool merge) {
   ImFontConfig config;
   config.MergeMode = merge;
-  config.FontNo = static_cast<ImU32>(std::max(file.index, 0));
+  // fontconfig range dans l'index d'une police variable le numéro de l'instance nommée (bits 16 et plus) :
+  // seule la face compte.
+  config.FontNo = static_cast<ImU32>(std::max(file.index, 0)) & 0xFFFFU;
   config.FontDataOwnedByAtlas = false;  // file.data vit dans PlayerUi
   return fonts.AddFontFromMemoryTTF(file.data.data(), static_cast<int>(file.data.size()), kFontSize,
                                     &config) != nullptr;
@@ -165,13 +170,25 @@ bool add_font(ImFontAtlas& fonts, FontFile& file, bool merge) {
 // à la taille demandée.
 void load_fonts(ImFontAtlas& atlas, std::vector<FontFile>& fonts) {
   const auto log = log_channel("app");
+#ifdef AJP_WITH_FREETYPE
+  // FreeType lit les polices que stb_truetype ne lit pas : OpenType CFF2 et variables (Noto Sans CJK de
+  // Fedora).
+  atlas.SetFontLoader(ImGuiFreeType::GetFontLoader());
+#endif
   if (fonts.empty() || !add_font(atlas, fonts.front(), false)) {
     atlas.AddFontDefaultVector();
     log->info("interface : police vectorielle d'ImGui");
     return;
   }
   log->info("interface : police {}", fonts.front().path);
-  for (std::size_t i = 1; i < fonts.size(); ++i) add_font(atlas, fonts[i], true);
+  for (std::size_t i = 1; i < fonts.size(); ++i) {
+    if (add_font(atlas, fonts[i], true)) {
+      log->info("interface : police de repli {} chargée", fonts[i].path);
+    } else {
+      log->warn("interface : police de repli {} refusée par le chargeur de polices (format non lu)",
+                fonts[i].path);
+    }
+  }
 }
 
 // Thème sombre et sobre, accent bleu clair (celui de la barre de progression).
