@@ -24,8 +24,19 @@ struct ModelChoice {
   std::string default_name;            // celui qu'un nom vide désigne
 };
 
-// SPAN : --model, sinon settings.model, sinon le modèle par défaut ; le menu propose les 2x_*.onnx.
-// bundled : les modèles livrés avec le lecteur (default_model_candidates), cherchés en dernier.
+// Les modèles SPAN que le menu propose (v0.6 : plus de modèle « legacy » du dossier d'AnimeJaNai, comme le
+// Compact SD 1.x de l'ancien lecteur) : AnimeJaNai HD V3.1, Performance ou Balanced, avec ou sans Sharp1.
+// --model lit encore tout autre fichier, pour les essais ; un réglage de play.toml qui nomme un autre modèle
+// retombe sur le défaut.
+inline constexpr std::array<std::string_view, 4> kSpanCatalogue{
+    "2x_AnimeJaNai_HD_V3.1_Balanced_SPANF3_b8f64_unshuffle_fp16.onnx",
+    "2x_AnimeJaNai_HD_V3.1_Performance_SPANF3_b5f48_unshuffle_fp16.onnx",
+    "2x_AnimeJaNai_HD_V3.1Sharp1_Balanced_SPANF3_b8f64_unshuffle_fp16.onnx",
+    "2x_AnimeJaNai_HD_V3.1Sharp1_Performance_SPANF3_b5f48_unshuffle_fp16.onnx"};
+
+// SPAN : --model, sinon settings.model s'il est au catalogue, sinon le modèle par défaut ; le menu propose le
+// catalogue présent dans le dossier. bundled : les modèles livrés avec le lecteur (default_model_candidates),
+// cherchés en dernier.
 std::expected<ModelChoice, Refusal> choose_model(const PlayOptions& options,
                                                  const std::filesystem::path& home,
                                                  const PlaySettings& settings,
