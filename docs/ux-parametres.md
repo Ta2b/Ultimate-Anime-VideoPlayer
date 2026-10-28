@@ -281,7 +281,7 @@ moteur lancée explicitement). État mémorisé dans `settings.toml` : `first_ru
 | 3 | **Image et fluidité** | préréglage (Auto par défaut), priorité **Fluidité / Équilibre / Image**, résumé de la chaîne choisie, « Évaluer ma machine (15 s) » ou « Plus tard » | toujours |
 | 4 | **HDR** | détection de l'écran (HDR actif ? crête ?) ; choix **RTX HDR / HDR adaptatif / SDR** selon ce qui est possible ; si l'écran n'est pas HDR, l'écran est sauté ou propose SDR seul | HDR : écran HDR détecté ou choix manuel ; RTX HDR : NVIDIA seulement |
 | 4b | **RTX HDR pas à pas** (Linux) | n'apparaît que si RTX HDR est choisi : vérifie le moteur TensorRT (`tensorrt_backend_present`), le SDK Maxine / VideoFX (`maxine_available`, importé ou à importer), le pilote ; chaque point en « fait / à faire » avec le geste exact à faire ; « Vérifier de nouveau » ; repli sur HDR adaptatif si l'utilisateur renonce | Linux et NVIDIA ; sous Windows RTX HDR est automatique |
-| 5 | **Audio** | **appareil de sortie** (liste des sorties du système, celle par défaut présélectionnée) ; **format** selon l'appareil (mono, stéréo, 5.1, 7.1 : seuls les formats que l'appareil annonce) ; puis **« Comment écoutez-vous ? »** Casque / Enceintes / Home cinéma. Home cinéma est grisé quand l'appareil n'a que 2 canaux ; ignoré : Enceintes en rendu fidèle. **Aucune détection** casque ou enceinte (rarement possible) : c'est un choix de l'utilisateur | toujours |
+| 5 | **Audio** | **appareil de sortie** (liste des sorties du système, celle par défaut présélectionnée) ; **format** : détecté, affiché (« 5.1 · 6 canaux »), jamais demandé ; puis **« Comment écoutez-vous ? »** Casque / Enceintes / Home cinéma (4.9). Home cinéma grisé avec l'explication si l'appareil n'a que 2 canaux ; ignoré : Enceintes en rendu fidèle. **Aucune détection** casque ou enceinte | toujours |
 | 6 | **Langues** | audio et sous-titres préférés (une liste de préréglages, « Aucun »), taille des sous-titres | toujours |
 | 7 | **Mises à jour** | Me prévenir / Automatique / Jamais (défaut : Me prévenir, à confirmer), canal Stable | toujours (grisé pour Flatpak ou paquet de distribution, 4.5) |
 | 8 | **Résumé** | ce qui a été choisi, ce qui a été sauté, où le changer (« Réglages > Général > Configuration » etc.), « Terminer » | toujours |
@@ -291,14 +291,42 @@ RTX HDR direct, page « Applications par défaut »), macOS (Core ML, pas de mot
 Une carte sans moteur supplémentaire possible n'a pas d'écran 2 ; un écran SDR n'a pas d'écran 4.
 
 **Réserves, dites ici pour ne rien promettre à tort** :
-- L'écran 5 dépend de ce que la couche audio sait déjà faire. Je n'ai pas vérifié que le lecteur propose le choix de
-  l'appareil de sortie ni plusieurs formats d'un même appareil (le code audio gère jusqu'à 8 canaux) : c'est un
-  **prérequis à vérifier** avant d'en faire un écran. « Casque / Enceintes / Home cinéma » vient du fil de la
-  spatialisation du stéréo (`/mnt/project-files/analyses/spatialisation-son-stereo.md`, « Complément 3 ») : ce
-  fichier n'est pas lisible sur ce PC, je me base sur le résumé du coordinateur ; le **rendu** (ce que fait chaque
-  choix) reste à y définir, l'assistant ne fait que **poser le réglage**.
+- L'écran 5 demande un **petit travail de la couche audio**, vérifié dans le code (4.9) : le lecteur ouvre
+  aujourd'hui toujours l'appareil par défaut, sans liste d'appareils ni relecture quand le défaut change. Le
+  multicanal (jusqu'à 8 canaux) et le remixage de base existent déjà. Le **rendu** (crossfeed, binaural, downmix
+  soigné) est défini dans `docs/audio-spatialisation.md` ; l'assistant ne fait que **poser le réglage**.
 - L'écran 4b s'appuie sur les vérifications du code existant (Maxine, TensorRT) ; la liste exacte des points à
   contrôler et leurs gestes se fixera en lisant `maxine_install` et `vendor_hdr` au moment de l'écrire, pas avant.
+
+### 4.9 Audio : appareil, format et « Comment écoutez-vous ? »
+
+Décision de Tatoub (résumé dans `docs/audio-spatialisation.md`) : **pas de détection casque ou enceintes**.
+
+**Automatique, sans question** : format de la source par piste (mono, stéréo, 5.1, 7.1, passthrough) et format de la
+sortie = canaux de l'appareil par défaut, relus quand il change. Le lecteur choisit seul la conversion (mono → stéréo,
+2.0 → mono, 5.1 ou 7.1 → stéréo avec centre rehaussé, 5.1 ↔ 7.1, direct si identiques, contournement du passthrough).
+
+**Une seule question, au premier lancement** (écran 5 de l'assistant) : Casque (crossfeed en 2.0, binaural en
+surround), Enceintes (rendu fidèle, downmix soigné), Home cinéma (multicanal, surround direct). Passer = Enceintes en
+rendu fidèle.
+
+**Dans les réglages** (catégorie *Audio*, sous-catégorie *Sortie*) :
+- groupe **Appareil** : liste des sorties, « Suivre l'appareil par défaut du système » (case) ;
+- groupe **Écoute** : Casque / Enceintes / Home cinéma (Home cinéma grisé si l'appareil n'a que 2 canaux, avec
+  infobulle), **Fidèle** (aucun traitement), « Profil de cet appareil » (global ou propre à l'appareil, mémorisé par
+  identifiant ; un appareil inconnu reprend le global sans question) ;
+- groupe **Synchronisation** : délai audio, caler la lecture sur l'écran, latence de l'écran (existants, en Avancé) ;
+- la touche A/B (traité / fidèle) reste. Source ou appareil mono : aucune spatialisation, les choix sont grisés.
+
+**Ce qui existe et ce qui manque** (code relu) : existent le multicanal jusqu'à 8 canaux et le remixage libswresample
+sur l'appareil par défaut. Manquent : liste des appareils et choix d'un autre, relecture au changement du défaut,
+profils par appareil, crossfeed, binaural, downmix à centre rehaussé. **Périmètre v1** (recommandation de
+l'analyse) : option et non pilier ; casque d'abord (crossfeed + binaural) ; enceintes = downmix soigné ; **reporter**
+l'upmix 5.1 « intelligent » et les traitements dédiés aux voix (risque de dégrader les voix).
+
+Étapes : (1) couche audio : lister et choisir l'appareil, événements de changement ; (2) détecteur de formats et
+conversion automatique ; (3) profils Casque / Enceintes / Home cinéma (crossfeed, downmix) ; (4) binaural ;
+(5) écran de l'assistant et page Audio. Ni (3) ni (4) ne passent avant (1) et (2).
 
 ### 4.6 Textes à corriger tout de suite (liste non exhaustive)
 | Aujourd'hui | Proposé |
@@ -421,8 +449,8 @@ résolution) ; jamais en pleine lecture. Un utilisateur en *Personnalisé* n'est
    appliqué à chaque ouverture de vidéo ; Personnalisé jamais écrasé.
 3. **(c) Benchmark** : « Évaluer ma machine », résultat mémorisé par carte, pilote et version du moteur.
 4. **(c bis) Assistant de premier démarrage** (4.8) : écrans 1 à 3 d'abord (détection, moteur, image et
-   fluidité, benchmark), puis HDR et RTX HDR guidé, audio (après vérification du prérequis), langues, mises à
-   jour, résumé ; « Relancer l'assistant » dans Général.
+   fluidité, benchmark), puis HDR et RTX HDR guidé, audio (après le petit travail de la couche audio, 4.9),
+   langues, mises à jour, résumé ; « Relancer l'assistant » dans Général.
 5. **(d) Textes, pastilles, infobulles** : 720p, vocabulaire, `badge()`, retrait des paragraphes.
 6. **(e) Nouveau cadre en arbre** : arbre à gauche, groupes encadrés et lignes multiples, 9 catégories, Profils
    retiré, case « Réglages avancés », bouton lecteur par défaut. Les clés nouvelles : `last_page`,
@@ -448,7 +476,7 @@ par onglet, contrôle que chaque réglage de l'annexe A reste atteignable.
 6. Pour GMFSS et le mode auto de la 0.4 : qu'est-ce que tu veux améliorer en priorité ?
 7. Configuration automatique (4.7) : les 5 tranches et les préréglages te conviennent ? (Benchmark : décidé, proposé au début et refaisable dans les réglages.)
 8. L'ordre des étapes (section 6) te convient ?
-9. Assistant de premier démarrage (4.8) : les 8 écrans te conviennent ? L'étape audio dépend du choix de l'appareil de sortie, que je dois vérifier dans le lecteur.
+9. Assistant de premier démarrage (4.8) : les 8 écrans te conviennent ? L'écran audio demande d'abord un petit travail de la couche audio (liste des appareils, relecture du défaut) : vérifié dans le code, voir 4.9.
 
 ## Annexe A : arbre actuel, réglage par réglage
 
