@@ -1,0 +1,34 @@
+TensorRT 11.3 FP16, trtexec --useCudaGraph --warmUp=800 --iterations=300 --noDataTransfers, moteurs
+construits une fois (niveau 5) puis rechargés, ABAB, 3 tours, ms (minimum / médiane).
+Réécritures ONNX par tools/bench/fp8/gmfss/reecrit_prelu.py ; écart contre la sortie d'origine sur entrées
+réelles (compare_onnx.py, ONNX Runtime CPU) : 0 pour le PRelu seul, PSNR 84,8 dB (max 4,9e-4) avec DepthToSpace.
+
+== fusion 1280x768 ==
+variante                               tour 1           tour 2           tour 3
+d'origine (331 noeuds)                 10,136 / 10,282  10,179 / 10,299  10,149 / 10,305
+PRelu (PReLU en un noeud)              10,547 / 10,731  10,579 / 10,738  10,570 / 10,749
+d'origine (2e série)                   10,194 / 10,303  10,203 / 10,312  10,202 / 10,320
+DepthToSpace seul (PixelShuffle)       10,189 / 10,307  10,197 / 10,318  10,187 / 10,325
+DepthToSpace + PRelu                   10,633 / 10,799  10,643 / 10,806  10,631 / 10,807
+=> réécrire le PReLU en un noeud PRelu COÛTE +4 % (TensorRT ne le fusionne pas mieux que Relu/Neg/Mul/Sub),
+   DepthToSpace ne change rien : TensorRT garde la fusion en Myelin dans les deux cas.
+
+Coupes de la fusion (niveau 3, après DepthToSpace) pour savoir ce que ferait le chemin « classique » :
+  jusqu'à Add_17 (sans la queue conv_before_upsample/upsample/conv_last/Clip) : 8,11 ms, convolutions
+    « Conv + PWN(...) » fusionnées par TensorRT hors Myelin ;
+  jusqu'à la sortie du DepthToSpace (avec conv 64->256) : 9,51 ms ;
+  jusqu'à conv_last (sans Clip) : 10,23 ms et retour de Myelin.
+=> même sans Myelin, le gain n'est que de l'ordre de 5 à 9 % : les convolutions avec épilogue à deux sorties
+   coûtent plus cher que les convolutions seules.
+
+== paire demi-flot s05 1280x768 ==
+d'origine                              8,631 / 8,792    8,623 / 8,800    8,654 / 8,807
+PRelu (16 PReLU réécrits)              8,541 / 8,689    8,511 / 8,676    8,542 / 8,685
+=> -1,3 %, négligeable.
+
+== temps du graphe complet (trtexec, niveau 5, sans profil) ==
+fusion 1280x768                        10,56 ms (profil par couche : somme 18,15 ms, voir resultats_profil_fusion.txt)
+paire demi-flot s05 1280x768           8,58 ms
+paire pleine, ancien export 1280x768   41,44 ms (médiane ; 45,4 ms mesurés ailleurs)
+paire union pleine, export récent      29,25 ms
+paire s05q (qualité)                   15,32 ms

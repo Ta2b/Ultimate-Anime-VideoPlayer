@@ -1,0 +1,49 @@
+Temps total des couches : 47.245 ms (802 couches, 777 avec temps > 0)
+
+| catégorie | temps (ms) | part | couches | octets lus+écrits (Mo) | borne mémoire (ms) |
+|---|---:|---:|---:|---:|---:|
+| élémentaires | 20.457 | 43.3 % | 156 | 4139 | 8.212 |
+| convolutions | 14.346 | 30.4 % | 127 | 3543 | 7.030 |
+| attention/MatMul/softmax | 5.863 | 12.4 % | 118 | 3164 | 6.277 |
+| copies/Transpose/Reshape/Concat/Slice | 4.280 | 9.1 % | 284 | 3242 | 6.433 |
+| convolutions + épilogue fusionné | 1.658 | 3.5 % | 52 | 570 | 1.131 |
+| autres (kgen) | 0.486 | 1.0 % | 26 | 540 | 1.071 |
+| reformatage/copies | 0.078 | 0.2 % | 2 | 24 | 0.047 |
+| Resize | 0.077 | 0.2 % | 12 | 22 | 0.043 |
+| synchro | 0.000 | 0.0 % | 0 | 0 | 0.000 |
+
+| module | temps (ms) | part |
+|---|---:|---:|
+| flownet/transformer | 30.581 | 64.7 % |
+| feat_ext | 4.973 | 10.5 % |
+| flownet/backbone | 3.467 | 7.3 % |
+| flownet | 1.823 | 3.9 % |
+| metricnet | 1.537 | 3.3 % |
+| Concat | 1.416 | 3.0 % |
+| flownet/feature_flow_attn | 1.160 | 2.5 % |
+| flownet/MatMul | 0.861 | 1.8 % |
+| myelin | 0.450 | 1.0 % |
+| Mul | 0.313 | 0.7 % |
+| flownet/upsampler | 0.201 | 0.4 % |
+| flownet/Slice | 0.130 | 0.3 % |
+| Resize | 0.071 | 0.2 % |
+| flownet/Pad | 0.059 | 0.1 % |
+
+Top 15 noyaux :
+| # | ms | part | catégorie | noyau | noeuds ONNX (premiers) | forme entrée -> sortie | Mo | borne ms | tactique |
+|---:|---:|---:|---|---|---|---|---:|---:|---|
+| 1 | 7.230 | 15.3 % | élémentaires | `__myl_AddSqrtDivMulCastMulAddReshAddTranSlicReshTranCastGridCastTranSl` | yers.5/cross_attn_ffn/norm2_3/LayerNormalization, net/transformer/layers.5/cross_attn_ffn_3/Add_17, flownet/transformer_3/Slice_13 ... | 1x15360x81x2 -> 1x128x96x160 | 360 | 0.714 | __myl_AddSqrtDivMulCastMulAddReshAddTranSlicReshTr |
+| 2 | 7.226 | 15.3 % | élémentaires | `__myl_AddSqrtDivMulCastMulAddReshAddTranSlicReshTranCastGridCastTranSl` | yers.5/cross_attn_ffn/norm2_1/LayerNormalization, net/transformer/layers.5/cross_attn_ffn_1/Add_17, flownet/transformer_1/Slice_13 ... | 1x15360x81x2 -> 1x128x96x160 | 360 | 0.714 | __myl_AddSqrtDivMulCastMulAddReshAddTranSlicReshTr |
+| 3 | 0.764 | 1.6 % | élémentaires | `__myl_NegReluMulReluSub_myl18_30` | feat_ext/block2/block2.0/Neg, feat_ext/block2/block2.0/Relu_1, feat_ext/block2/block2.0/Mul ... | 1x64x384x640 -> 1x64x384x640 | 94 | 0.187 | __myl_NegReluMulReluSub_0x994209b8900bb7f160c63738 |
+| 4 | 0.701 | 1.5 % | copies/Transpose/Reshape/Concat/Slice | `__myl_Conc_myl18_29` | Concat | 1x3x384x640 -> 1x67x384x640 | 66 | 0.131 | __myl_Conc_0x3a4632914450c6b3bc5b7b11912ade76 |
+| 5 | 0.656 | 1.4 % | attention/MatMul/softmax | `/flownet_1/MatMul_2_myl7_273` | flownet_1/MatMul_2 | 15360x1x128 -> 15360x1x81 | 325 | 0.645 | sm50_xmma_cublas_gemvx_f16f16_f32_f32_nn_n_int32_u |
+| 6 | 0.645 | 1.4 % | attention/MatMul/softmax | `/flownet/MatMul_2_myl7_136` | flownet/MatMul_2 | 15360x1x128 -> 15360x1x81 | 325 | 0.645 | sm50_xmma_cublas_gemvx_f16f16_f32_f32_nn_n_int32_u |
+| 7 | 0.583 | 1.2 % | élémentaires | `__myl_NegReluMulReluSub_myl18_14` | feat_ext/block2/block2.0_1/Neg, feat_ext/block2/block2.0_1/Relu_1, feat_ext/block2/block2.0_1/Mul ... | 1x64x384x640 -> 1x64x384x640 | 94 | 0.187 | __myl_NegReluMulReluSub_0x994209b8900bb7f160c63738 |
+| 8 | 0.555 | 1.2 % | convolutions + épilogue fusionné | `__myl_CorrNegReluMulReluSub_myl18_15` | feat_ext/block2/block2.2_1/Neg, feat_ext/block2/block2.2_1/Relu_1, feat_ext/block2/block2.2_1/Mul ... | 1x64x384x640 -> 1x128x192x320 | 47 | 0.094 | sm75_xmma_fprop_implicit_gemm_f16f16_f16f16_f16_nh |
+| 9 | 0.501 | 1.1 % | copies/Transpose/Reshape/Concat/Slice | `__myl_Conc_myl18_13` | Concat_4 | 1x3x384x640 -> 1x67x384x640 | 66 | 0.131 | __myl_Conc_0x3a4632914450c6b3bc5b7b11912ade76 |
+| 10 | 0.403 | 0.9 % | convolutions | `/feat_ext/block1/block1.3/Conv_myl18_26` | feat_ext/block1/block1.3/Conv | 1x64x384x640 -> 1x64x384x640 | 63 | 0.125 | sm75_xmma_fprop_implicit_gemm_f16f16_f16f16_f16_nh |
+| 11 | 0.349 | 0.7 % | élémentaires | `__myl_ReshCastDivCastMulCastReshMaxrSubExpSumCastDivCastMulCastCastMul` | flownet_1/Div_14, flownet/Div_16, flownet/Reshape_18 ... | 1x48x80x48x80 -> 1x3840x3840 | 118 | 0.234 | __myl_ReshCastDivCastMulCastReshMaxrSubExpSumCastD |
+| 12 | 0.297 | 0.6 % | convolutions | `/feat_ext/block1/block1.3_1/Conv_myl18_10` | feat_ext/block1/block1.3_1/Conv | 1x64x384x640 -> 1x64x384x640 | 63 | 0.125 | sm75_xmma_fprop_implicit_gemm_f16f16_f16f16_f16_nh |
+| 13 | 0.278 | 0.6 % | convolutions | `/feat_ext/block2/block2.3/Conv_myl18_32` | feat_ext/block2/block2.3/Conv | 1x128x192x320 -> 1x128x192x320 | 31 | 0.062 | sm75_xmma_fprop_implicit_gemm_f16f16_f16f16_f16_nh |
+| 14 | 0.259 | 0.5 % | convolutions | `/metricnet/metric_net1/metric_net1.1/Conv_myl7_307` | metricnet/metric_net1/metric_net1.1/Conv, metricnet/Add_12 | 1x64x384x640 -> 1x64x384x640 | 94 | 0.187 | sm75_xmma_fprop_implicit_gemm_f16f16_f16f16_f16_nh |
+| 15 | 0.248 | 0.5 % | convolutions + épilogue fusionné | `__myl_CorrNegReluMulReluSub_myl18_31` | feat_ext/block2/block2.2/Neg, feat_ext/block2/block2.2/Relu_1, feat_ext/block2/block2.2/Mul ... | 1x64x384x640 -> 1x128x192x320 | 47 | 0.094 | sm75_xmma_fprop_implicit_gemm_f16f16_f16f16_f16_nh |

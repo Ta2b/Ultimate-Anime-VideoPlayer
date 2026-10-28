@@ -1,0 +1,28 @@
+Bloc residual_model_05 du réseau « fusion » de GMFSS (64 canaux, 384x640), entrées réelles :
+deux recadrages 1280x768 de /tmp/claude-1000/poses-A/s5.ppm (décalage 8,4 px) -> graphe paire (ORT CPU)
+-> splats (tools/gmfss/gmfss_graph.py) -> fusion ; référence = ONNX Runtime CPU sur ces mêmes tenseurs.
+Machine : RTX 4070 Ti, mesures sous ajp-gpu, graphe CUDA, 300 itérations (médiane).
+
+== FP16 (bloc_fusion.cu : noyau 1 = conv + biais + PReLU, noyau 2 = conv + biais + saut) ==
+config                        correction (PSNR vs ORT CPU)   bloc fusionné  TFLOPS  non fusionné (conv + noyau PReLU + conv)
+128x64x32 w64x32 s4 acc f32   86,2 dB                         0,5125 ms      70,7    0,6195 ms
+128x64x32 w64x32 s4 acc f16   85,5 dB                         0,4188 ms      86,5    0,5201 ms
+128x64x32 w64x64 s3 acc f32   86,2 dB                         0,6513 ms      55,6    0,7564 ms
+128x64x32 w64x64 s3 acc f16   85,5 dB                         0,4892 ms      74,1    0,5949 ms
+256x64x32 w64x64 s3 acc f16   85,5 dB                         0,4792 ms      75,6    0,5847 ms
+détail (acc f16, 128x64x32 w64x32 s4) : noyau 1 fusionné 0,1831 ms, conv 1 seule 0,1864 ms, noyau 2 0,2304 ms.
+=> le PReLU fusionné dans l'épilogue est gratuit ; le saut résiduel coûte 0,044 ms (lecture de 31 Mo).
+
+== FP8 E4M3 (bloc_fp8.cu : activations et poids E4M3, acc f32, saut et sortie du bloc en FP16) ==
+fp8 128x64x64 w64x32 s3       63,4 dB (max 0,0155)           0,3580 ms      101,2   (noyau 1 0,1229, noyau 2 0,2160)
+fp8 128x64x64 w32x64 s3       63,4 dB                        0,3441 ms      105,3   (noyau 1 0,1208, noyau 2 0,2237)
+fp8 64x64x64 w32x32 s5        63,4 dB                        0,3697 ms      98,0
+fp8 256x64x64 w64x32 s3       63,4 dB                        0,4250 ms      85,3
+
+== TensorRT 11.3 FP16 sur le même bloc ==
+Sous-graphe ONNX isolé (bloc.onnx, entrées NCHW FP16, chemin « classique », niveau 5) :
+  GPU Compute Time médian 0,815 ms au total ; par couche : conv .1 + PReLU fusionné 0,190 ms (sm80_xmma),
+  conv .3 + Add fusionné 0,237 ms (sm75_xmma), plus 3 copies de reformatage NCHW<->NHWC de 0,124-0,144 ms
+  (hors bloc : le graphe complet les évite). Convolutions seules : 0,427 ms.
+En situation dans le graphe complet (Myelin, profil mis à l'échelle 10,56/18,15) : conv .1 + épilogue 0,147 ms,
+  conv .3 0,137 ms, noyau élémentaire Add + PReLU suivants 0,202 ms : 0,486 ms.

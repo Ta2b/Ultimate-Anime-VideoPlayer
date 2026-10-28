@@ -1,0 +1,50 @@
+Temps total des couches : 16.984 ms (765 couches, 682 avec temps > 0)
+
+| catégorie | temps (ms) | part | couches | octets lus+écrits (Mo) | borne mémoire (ms) |
+|---|---:|---:|---:|---:|---:|
+| attention/MatMul/softmax | 5.364 | 31.6 % | 144 | 2361 | 4.685 |
+| élémentaires | 5.292 | 31.2 % | 236 | 4314 | 8.560 |
+| convolutions + épilogue fusionné | 2.780 | 16.4 % | 12 | 786 | 1.561 |
+| convolutions | 1.363 | 8.0 % | 25 | 343 | 0.681 |
+| copies/Transpose/Reshape/Concat/Slice | 1.249 | 7.4 % | 144 | 1291 | 2.561 |
+| reformatage/copies | 0.534 | 3.1 % | 23 | 637 | 1.264 |
+| autres (kgen) | 0.339 | 2.0 % | 83 | 335 | 0.664 |
+| Resize | 0.063 | 0.4 % | 15 | 28 | 0.055 |
+| autres (Constant) | 0.000 | 0.0 % | 0 | 0 | 0.000 |
+| synchro | 0.000 | 0.0 % | 0 | 0 | 0.000 |
+
+| module | temps (ms) | part |
+|---|---:|---:|
+| flownet/transformer | 8.633 | 50.8 % |
+| feat_ext | 1.895 | 11.2 % |
+| metricnet | 1.588 | 9.4 % |
+| flownet/backbone | 1.055 | 6.2 % |
+| flownet/Unsqueeze | 1.008 | 5.9 % |
+| flownet/Mul | 0.973 | 5.7 % |
+| Reformatting CopyNode for Output Tensor 0 to  | 0.375 | 2.2 % |
+| flownet/feature_flow_attn | 0.370 | 2.2 % |
+| flownet/ReduceSum | 0.335 | 2.0 % |
+| flownet/upsampler | 0.156 | 0.9 % |
+| Reformatting CopyNode for Input Tensor 0 to PWN(PWN(PWN(PWN( | 0.072 | 0.4 % |
+| flownet/MatMul | 0.068 | 0.4 % |
+| Resize | 0.060 | 0.4 % |
+| Concat | 0.046 | 0.3 % |
+
+Top 15 noyaux :
+| # | ms | part | catégorie | noyau | noeuds ONNX (premiers) | forme entrée -> sortie | Mo | borne ms | tactique |
+|---:|---:|---:|---|---|---|---|---:|---:|---|
+| 1 | 1.003 | 5.9 % | élémentaires | `__myl_ReshReshAddCastAddCastReplReplConcReplReplConcSlicSlicSlicSlicSl` | flownet/Unsqueeze_222, flownet/Add_32, flownet/Pad ... | 48 -> 3x48 | 362 | 0.718 | __myl_ReshReshAddCastAddCastReplReplConcReplReplCo |
+| 2 | 0.434 | 2.6 % | convolutions + épilogue fusionné | `/metricnet/metric_net1/metric_net1.1/Conv + /metricnet/Add_12 + PWN(PW` | metricnet/metric_net1/metric_net1.1/Conv, metricnet/Add_12, metricnet/metric_net2/metric_net2.0/Neg ... | 1x64x384x640 -> 1x64x384x640 | 126 | 0.250 | sm75_xmma_fprop_implicit_gemm_f16f16_f16f16_f16_nh |
+| 3 | 0.432 | 2.5 % | convolutions + épilogue fusionné | `/metricnet/metric_net2/metric_net2.1/Conv + /metricnet/Add_13 + PWN(PW` | metricnet/metric_net2/metric_net2.1/Conv, metricnet/Add_13, metricnet/metric_net3/metric_net3.0/Neg ... | 1x64x384x640 -> 1x64x384x640 | 126 | 0.250 | sm75_xmma_fprop_implicit_gemm_f16f16_f16f16_f16_nh |
+| 4 | 0.382 | 2.2 % | convolutions + épilogue fusionné | `/feat_ext/block1/block1.3_1/Conv + PWN(PWN(PWN(PWN(/feat_ext/block2/bl` | feat_ext/block1/block1.3_1/Conv, feat_ext/block2/block2.0_1/Neg, feat_ext/block2/block2.0_1/Relu_1 ... | 1x64x384x640 -> 1x64x384x640 | 94 | 0.187 | sm75_xmma_fprop_implicit_gemm_f16f16_f16f16_f16_nh |
+| 5 | 0.381 | 2.2 % | convolutions + épilogue fusionné | `/feat_ext/block1/block1.3/Conv + PWN(PWN(PWN(PWN(/feat_ext/block2/bloc` | feat_ext/block1/block1.3/Conv, feat_ext/block2/block2.0/Neg, feat_ext/block2/block2.0/Relu_1 ... | 1x64x384x640 -> 1x64x384x640 | 94 | 0.187 | sm75_xmma_fprop_implicit_gemm_f16f16_f16f16_f16_nh |
+| 6 | 0.300 | 1.8 % | attention/MatMul/softmax | `/flownet/transformer/layers.2/cross_attn_ffn/mlp/mlp.0_1/MatMul_myl66_` | ormer/layers.2/cross_attn_ffn/mlp/mlp.0_1/MatMul | 15360x256 -> 15360x1024 | 79 | 0.156 | sm80_xmma_gemm_f32f32_f32f32_f32_nn_n_tilesize128x |
+| 7 | 0.299 | 1.8 % | attention/MatMul/softmax | `/flownet/transformer/layers.4/cross_attn_ffn/mlp/mlp.0_1/MatMul_myl66_` | ormer/layers.4/cross_attn_ffn/mlp/mlp.0_1/MatMul | 15360x256 -> 15360x1024 | 79 | 0.156 | sm80_xmma_gemm_f32f32_f32f32_f32_nn_n_tilesize128x |
+| 8 | 0.299 | 1.8 % | attention/MatMul/softmax | `/flownet/transformer/layers.1/cross_attn_ffn/mlp/mlp.0_1/MatMul_myl66_` | ormer/layers.1/cross_attn_ffn/mlp/mlp.0_1/MatMul | 15360x256 -> 15360x1024 | 79 | 0.156 | sm80_xmma_gemm_f32f32_f32f32_f32_nn_n_tilesize128x |
+| 9 | 0.298 | 1.8 % | attention/MatMul/softmax | `/flownet/transformer/layers.5/cross_attn_ffn/mlp/mlp.0_1/MatMul_myl66_` | ormer/layers.5/cross_attn_ffn/mlp/mlp.0_1/MatMul | 15360x256 -> 15360x1024 | 79 | 0.156 | sm80_xmma_gemm_f32f32_f32f32_f32_nn_n_tilesize128x |
+| 10 | 0.298 | 1.8 % | attention/MatMul/softmax | `/flownet/transformer/layers.3/cross_attn_ffn/mlp/mlp.0_1/MatMul_myl66_` | ormer/layers.3/cross_attn_ffn/mlp/mlp.0_1/MatMul | 15360x256 -> 15360x1024 | 79 | 0.156 | sm80_xmma_gemm_f32f32_f32f32_f32_nn_n_tilesize128x |
+| 11 | 0.295 | 1.7 % | attention/MatMul/softmax | `/flownet/transformer/layers.0/cross_attn_ffn/mlp/mlp.0_1/MatMul_myl66_` | ormer/layers.0/cross_attn_ffn/mlp/mlp.0_1/MatMul | 15360x256 -> 15360x1024 | 79 | 0.156 | sm80_xmma_gemm_f32f32_f32f32_f32_nn_n_tilesize128x |
+| 12 | 0.294 | 1.7 % | élémentaires | `__myl_DivErfAddMulMul_myl66_33` | former/layers.0/cross_attn_ffn/mlp/mlp.1_1/Mul_1, nsformer/layers.0/cross_attn_ffn/mlp/mlp.1_1/Mul, nsformer/layers.0/cross_attn_ffn/mlp/mlp.1_1/Add ... | 15360x1024 -> 15360x1024 | 189 | 0.374 | __myl_DivErfAddMulMul_0x46b4cbd199236bfa66943065db |
+| 13 | 0.269 | 1.6 % | élémentaires | `__myl_DivErfAddMulMul_myl66_62` | former/layers.1/cross_attn_ffn/mlp/mlp.1_1/Mul_1, nsformer/layers.1/cross_attn_ffn/mlp/mlp.1_1/Mul, nsformer/layers.1/cross_attn_ffn/mlp/mlp.1_1/Add ... | 15360x1024 -> 15360x1024 | 189 | 0.374 | __myl_DivErfAddMulMul_0x46b4cbd199236bfa66943065db |
+| 14 | 0.268 | 1.6 % | élémentaires | `__myl_DivErfAddMulMul_myl66_120` | former/layers.3/cross_attn_ffn/mlp/mlp.1_1/Mul_1, nsformer/layers.3/cross_attn_ffn/mlp/mlp.1_1/Mul, nsformer/layers.3/cross_attn_ffn/mlp/mlp.1_1/Add ... | 15360x1024 -> 15360x1024 | 189 | 0.374 | __myl_DivErfAddMulMul_0x46b4cbd199236bfa66943065db |
+| 15 | 0.267 | 1.6 % | élémentaires | `__myl_DivErfAddMulMul_myl66_149` | former/layers.4/cross_attn_ffn/mlp/mlp.1_1/Mul_1, nsformer/layers.4/cross_attn_ffn/mlp/mlp.1_1/Mul, nsformer/layers.4/cross_attn_ffn/mlp/mlp.1_1/Add ... | 15360x1024 -> 15360x1024 | 189 | 0.374 | __myl_DivErfAddMulMul_0x46b4cbd199236bfa66943065db |

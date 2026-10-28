@@ -1,0 +1,37 @@
+Temps total des couches : 18.145 ms (118 couches, 81 avec temps > 0)
+
+| catégorie | temps (ms) | part | couches | octets lus+écrits (Mo) | borne mémoire (ms) |
+|---|---:|---:|---:|---:|---:|
+| convolutions | 9.057 | 49.9 % | 40 | 1889 | 3.749 |
+| élémentaires | 6.497 | 35.8 % | 33 | 1744 | 3.460 |
+| convolutions + épilogue fusionné | 1.938 | 10.7 % | 5 | 346 | 0.687 |
+| copies/Transpose/Reshape/Concat/Slice | 0.653 | 3.6 % | 3 | 277 | 0.550 |
+| synchro | 0.000 | 0.0 % | 0 | 0 | 0.000 |
+
+| module | temps (ms) | part |
+|---|---:|---:|
+| fusionnet | 16.194 | 89.2 % |
+| Concat | 1.382 | 7.6 % |
+| Slice | 0.560 | 3.1 % |
+| myelin | 0.008 | 0.0 % |
+| exit^bb^signal^3_myl0 | 0.000 | 0.0 % |
+| exit^bb^wait^3_myl0 | 0.000 | 0.0 % |
+
+Top 15 noyaux :
+| # | ms | part | catégorie | noyau | noeuds ONNX (premiers) | forme entrée -> sortie | Mo | borne ms | tactique |
+|---:|---:|---:|---|---|---|---|---:|---:|---|
+| 1 | 0.892 | 4.9 % | convolutions | `/fusionnet/residual_model_head2/residual_model_head2.1/Conv_myl0_19` | residual_model_head2/residual_model_head2.1/Conv | 1x256x192x320 -> 1x128x192x320 | 47 | 0.094 | sm75_xmma_fprop_implicit_gemm_f16f16_f16f16_f16_nh |
+| 2 | 0.782 | 4.3 % | élémentaires | `__myl_NegReluMulReluSub_myl0_7` | et/residual_model_head/residual_model_head.2/Neg, residual_model_head/residual_model_head.2/Relu_1, et/residual_model_head/residual_model_head.2/Mul ... | 1x64x384x640 -> 1x64x384x640 | 94 | 0.187 | __myl_NegReluMulReluSub_0x994209b8900bb7f160c63738 |
+| 3 | 0.765 | 4.2 % | élémentaires | `__myl_ConcNegReluReluMulSub_myl0_18` | Concat_2, residual_model_head2/residual_model_head2.0/Relu, /residual_model_head2/residual_model_head2.0/Sub ... | 1x128x192x320 -> 1x256x192x320 | 63 | 0.125 | __myl_ConcNegReluReluMulSub_0x9f3cf4412bf2c9e2fa13 |
+| 4 | 0.697 | 3.8 % | convolutions | `/fusionnet/residual_model_head3/residual_model_head3.1/Conv_myl0_33` | residual_model_head3/residual_model_head3.1/Conv | 1x384x96x160 -> 1x192x96x160 | 18 | 0.035 | sm75_xmma_fprop_implicit_gemm_f16f16_f16f16_f16_nh |
+| 5 | 0.630 | 3.5 % | copies/Transpose/Reshape/Concat/Slice | `__myl_TranReshTran_myl6_19` | /residual_model_tail/upsample/upsample.1/Reshape, esidual_model_tail/upsample/upsample.1/Transpose | 1x256x384x640 -> 1x64x384x2x640x2 | 252 | 0.499 | __myl_TranReshTran_0xc59655354f45a5a6e37f16e948473 |
+| 6 | 0.618 | 3.4 % | élémentaires | `__myl_ConcNegReluReluMulSub_myl0_32` | Concat_3, residual_model_head3/residual_model_head3.0/Relu, /residual_model_head3/residual_model_head3.0/Sub ... | 1x192x96x160 -> 1x384x96x160 | 24 | 0.047 | __myl_ConcNegReluReluMulSub_0xda335b4210aaec72b8b4 |
+| 7 | 0.600 | 3.3 % | convolutions + épilogue fusionné | `__myl_CorrNegReluMulReluSub_myl0_10` | /residual_model_head1/residual_model_head1.2/Neg, sidual_model_head1/residual_model_head1.2/Relu_1, /residual_model_head1/residual_model_head1.2/Mul ... | 1x128x384x640 -> 1x64x384x640 | 94 | 0.187 | sm75_xmma_fprop_implicit_gemm_f16f16_f16f16_f16_nh |
+| 8 | 0.576 | 3.2 % | convolutions | `/fusionnet/residual_model_head2/residual_model_head2.3/Conv_myl0_25` | residual_model_head2/residual_model_head2.3/Conv, fusionnet/Add_2 | 1x128x192x320 -> 1x128x192x320 | 47 | 0.094 | sm75_xmma_fprop_implicit_gemm_f16f16_f16f16_f16_nh |
+| 9 | 0.560 | 3.1 % | élémentaires | `__myl_MoveMoveSlicSlicSlicSlicConcMoveNegReluMulReluSubConcNegReluMulR` | Slice_1, Slice_3, Concat_1 ... | 1x3x384x640 -> 1x12x384x640 | 138 | 0.273 | __myl_MoveMoveSlicSlicSlicSlicConcMoveNegReluMulRe |
+| 10 | 0.530 | 2.9 % | convolutions | `/fusionnet/residual_model_tail/upsample/upsample.0/Conv_myl6_18` | net/residual_model_tail/upsample/upsample.0/Conv | 1x64x384x640 -> 1x256x384x640 | 157 | 0.312 | sm75_xmma_fprop_implicit_gemm_f16f16_f16f16_f16_nh |
+| 11 | 0.517 | 2.9 % | convolutions + épilogue fusionné | `__myl_CorrNegReluMulReluSub_myl6_4` | ionnet/residual_model_04/residual_model_04.2/Neg, net/residual_model_04/residual_model_04.2/Relu_1, ionnet/residual_model_04/residual_model_04.2/Mul ... | 1x64x384x640 -> 1x64x384x640 | 63 | 0.125 | sm75_xmma_fprop_implicit_gemm_f16f16_f16f16_f16_nh |
+| 12 | 0.480 | 2.6 % | élémentaires | `__myl_MoveNegReluMulReluSub_myl6_6` | onnet/upsample_model_04/upsample_model_04.2/Relu, ionnet/upsample_model_04/upsample_model_04.2/Sub, ionnet/upsample_model_04/upsample_model_04.2/Mul ... | 1x64x384x640 -> 1x64x384x640 | 63 | 0.125 | __myl_MoveNegReluMulReluSub_0xc6c9715a1a1b60723f29 |
+| 13 | 0.405 | 2.2 % | convolutions | `/fusionnet/downsample_model_20/downsample_model_20.1/Conv_myl0_29` | t/downsample_model_20/downsample_model_20.1/Conv | 1x128x192x320 -> 1x192x96x160 | 22 | 0.043 | sm75_xmma_fprop_implicit_gemm_f16f16_f16f16_f16_nh |
+| 14 | 0.390 | 2.2 % | convolutions | `/fusionnet/residual_model_tail/conv_last/Conv_myl6_20` | fusionnet/residual_model_tail/conv_last/Conv, Clip | 1x64x768x1280 -> 1x4x768x1280 | 134 | 0.265 | sm80_xmma_fprop_implicit_gemm_indexed_wo_smem_f16f |
+| 15 | 0.361 | 2.0 % | élémentaires | `__myl_NegReluMulReluSub_myl0_49` | t/downsample_model_11/downsample_model_11.0/Relu, et/downsample_model_11/downsample_model_11.0/Mul, et/downsample_model_11/downsample_model_11.0/Sub ... | 1x64x384x640 -> 1x64x384x640 | 157 | 0.312 | __myl_NegReluMulReluSub_0x2207900ff692d3c316373167 |
