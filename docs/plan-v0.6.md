@@ -8,15 +8,16 @@ que sur un accord clair de Tatoub dans le fil. Détail des décisions et journal
 - [x] Catalogue RIFE réduit à 4.25 et 4.22 lite (#48) ; menu SPAN réduit au catalogue AnimeJaNai HD V3.1 (#55) : plus de profil « legacy » dans les listes
 - [x] Fenêtre fantôme à la fermeture (Fedora, Wayland, GNOME) : correctif défendable par la lecture du code (#49) ; **à confirmer sur le Fedora GNOME**
 - [x] Interpolation Auto par défaut pour tous les profils (#53)
-- [ ] « Garder les poses DRBA » par défaut : **performance mesurée** (poses actives : tient, retard 0,0 ms, composition 1,2 ms ; inactives : ne tient pas, 15,1 ms, 6,0 ms ; 4070 Ti, Re:Zero 18, ×3) ; qualité : comparaison d'images en cours, puis décision
+- [ ] « Garder les poses DRBA » par défaut : **performance mesurée** (poses actives : tient, retard 0,0 ms, composition 1,2 ms ; inactives : ne tient pas, 15,1 ms, 6,0 ms ; 4070 Ti, Re:Zero 18, ×3) ; qualité : comparaison d'images en cours, puis décision  — **MAJ 15:15 : fait par défaut (#84)** ; qualité : captures équivalentes (aucun fantôme), pas de mesure objective
 - [x] HDR : écran SDR sans conversion HDR (options grisées, note), mode SDR gradé pour imiter le rendu HDR, RTX HDR non installé : repli sur l'adaptatif (#68, #69) ; **à confirmer chez Tatoub**
-- [x] Interface : style Showtime (commandes rondes au centre, titre en gras), fenêtre « lecteur par défaut » au démarrage, réglages avancés dans les onglets existants sans catégorie Avancé, Statistiques et Réinitialiser dans Général (#71, #72) ; reste le menu : molette, barre de défilement, libellés, disposition horizontale
-- [ ] Benchmark autonome et silencieux : séquence de test écrite par le lecteur, fenêtre minuscule, étapes annoncées (#75) ; **reste** l'exploration des moteurs, multiplicateurs et résolutions, Auto en dernier
+- [x] Interface : style Showtime (commandes rondes au centre, titre en gras), fenêtre « lecteur par défaut » au démarrage, réglages avancés dans les onglets existants sans catégorie Avancé, Statistiques et Réinitialiser dans Général (#71, #72) ; reste le menu : molette, barre de défilement, libellés, disposition horizontale  — **MAJ 15:15 : molette sur l'arbre et 5 catégories (#87), barre de défilement fine (#89)** ; restent libellés français, disposition horizontale
+- [ ] Benchmark autonome et silencieux : séquence de test écrite par le lecteur, fenêtre minuscule, étapes annoncées (#75) ; **reste** l'exploration des moteurs, multiplicateurs et résolutions, Auto en dernier  — **MAJ 15:15 : #75 fusionnée ; l'exploration reste à faire**
 - [x] Moteurs : espace disque vérifié avant l'installation, dossier d'installation au choix (#54) ; installation TensorRT corrigée : architecture du GPU, progression unique, un seul essai (#60) ; paquet TensorRT découplé des étiquettes (#67)
-- [x] Audio : profils de virtualisation (#64), distance, pièce, égaliseur, nuit, profil par appareil (#80), **à écouter** ; [ ] convolution HRIR à la HeSuVi (#82, en revue)
+- [x] Audio : profils de virtualisation (#64), distance, pièce, égaliseur, nuit, profil par appareil (#80), **à écouter** ; [ ] convolution HRIR à la HeSuVi (#82, en revue)  — **MAJ 15:15 : #82 fusionnée** (non écoutée)
 - [x] Empaquetage : AppImage (#74, essai local #77), installeur .exe Inno Setup + zip portable (#74, **à valider par la prochaine release Windows**), .dmg (#79)
 - [x] Police : repli CJK vérifié (#59), chargeur FreeType pour le CFF2 de Fedora (#70) ; **à confirmer chez Tatoub**
 - [x] CI allégée (#73) ; dépôt des releases séparé **gardé** (décision de Tatoub, 28/10)
+- [ ] Précision et accélération GPU (section « Précision et accélération GPU » plus bas) : crans Performance FP8 / Équilibre FP16 / Qualité FP32 (#88 en revue), tuiles FP8 Vulkan (#90), import Q/DQ FP8 dans gpu_ir (#91), coopmat RDNA 4 (#86) ; mesures du 28/10 faites (FP8 plus lent sur SPAN, −6 % sur RIFE, mixte qualité 53,7 dB), plugin SPAN fusionné, SPAN mixte a/b, ModelOpt, CUTLASS, GMFSS/DistilDRBA FP8 et NHWC en cours de mesure ; pas de QAT (décision)
 - [ ] Release v0.6 : version 0.6.0, notes `tools/release/notes/v0.6.0.md` (brouillon #81), liste des essais Windows/macOS ; étiquette seulement sur le message direct de Tatoub
 
 ## Journal
@@ -30,12 +31,12 @@ que sur un accord clair de Tatoub dans le fil. Détail des décisions et journal
 3. Pop-up « lecteur par défaut » et réglage discret : FAIT (#71) ; composition finale et soins OLED hors de Couleurs : FAIT (#72, dans Agrandissement et HDR avec les avancés).
 4. HDR : FAIT (#68, #69) ; à confirmer chez Tatoub.
 5. Benchmark autonome et silencieux : EN PARTIE (#75) ; reste l'exploration des moteurs, multiplicateurs et résolutions.
-6. Poses DRBA par défaut : EN COURS : performance mesurée (favorable), qualité à comparer.
+6. Poses DRBA par défaut : EN COURS : performance mesurée (favorable), qualité à comparer.  **MAJ 15:15 : FAIT (#84).**
 7. Design Showtime FAIT (#71) ; AppImage FAIT (#74, #77) ; installeur .exe + zip portable FAIT (#74), à valider par la release Windows ; .dmg FAIT (#79).
 8. Fedora GNOME : fenêtre fantôme (#49) et japonais (#59, #70) : À CONFIRMER chez Tatoub.
-9. Convolution HRIR à la HeSuVi : EN REVUE (#82) ; préréglage « Voix d'anime » FAIT (#80).
+9. Convolution HRIR à la HeSuVi : EN REVUE (#82) ; préréglage « Voix d'anime » FAIT (#80).  **MAJ 15:15 : #82 fusionnée.**
 10. Auto en VRR, demi-paliers ×0,5 : À FAIRE (trancher, mesurer, répondre).
-11. Menu : molette, barre de défilement, moins de catégories, disposition horizontale, libellés français : À FAIRE (pastille « Le plus lent » FAITE).
+11. Menu : molette, barre de défilement, moins de catégories, disposition horizontale, libellés français : À FAIRE (pastille « Le plus lent » FAITE).  **MAJ 15:15 : molette (#87), 5 catégories (#87), barre fine (#89) faites ; restent disposition horizontale et libellés.**
 12. Arbre : EN PARTIE (#72) ; à revoir : place de Langues, Export, Moteurs, Couleurs sans réglages sans rapport.
 13. « Ouvrir avec » enregistré au premier lancement : FAIT (assistant).
 14. Config auto (tranche du GPU et résolution de l'écran, réduire puis agrandir, SPAN Sharp1 Performance, modèle par tranche) : FAIT (#53, tests `[auto_config]`).
@@ -78,3 +79,9 @@ que sur un accord clair de Tatoub dans le fil. Détail des décisions et journal
 7. **AMD** (fil séparé, aucune carte sur le PC de test) : Vulkan `VK_KHR_cooperative_matrix` FP8 (`GL_EXT_float_e4m3`, compile avec glslang 16.6) et MIGraphX ; fusion de l'épilogue du noyau de convolution (biais, activation, Add de saut) puis du bloc c1-c2-c3 ; RDNA4 d'abord pour le FP8 matériel.
 8. **Pipeline** (mesurer avant de toucher) : recouvrements décodage/réseau/rendu, copies, mémoire épinglée ; CUDA graphs, mémoire épinglée et files séparées existent déjà.
 
+## Suivi du 28/10, 15:20 (ajouts, rien retiré)
+- FAIT depuis la dernière mise à jour : #82 HRIR, #84 poses par défaut, #85 règle getenv (AppImage), #86 coopmat RDNA 4, #87 menu (molette, 5 catégories), #89 barre fine, #92 section précision.
+- En revue : #88 (crans de précision), #90 (tuiles FP8 Vulkan), #91 (Q/DQ FP8 dans gpu_ir).
+- Release v0.5.1 publiée (Linux + Windows, pré-release, manifeste preview) ; Tatoub confirme TensorRT fonctionnel sur son Fedora.
+- CUTLASS (BSD-3) cloné et ModelOpt 0.47.0 (Apache-2.0) installé hors du dépôt sur le PC de test (accord direct de Tatoub, 15:11) ; décision du coordinateur : pas de QAT ni de poids PyTorch à télécharger.
+- Reste avant la v0.6 : mesures GPU en file (plugin SPAN, SPAN mixte a/b, ModelOpt FP8, prototype CUTLASS, GMFSS et DistilDRBA FP8, E/S NHWC), reconstruction du paquet TensorRT (empreinte #67/#70), test de lecture complet sur main, libellés et disposition horizontale du menu, assistant guidé du moteur, Auto en VRR (demi-paliers), archive TensorRT Windows, notes et version 0.6.0 ; étiquette seulement sur le message direct de Tatoub.
