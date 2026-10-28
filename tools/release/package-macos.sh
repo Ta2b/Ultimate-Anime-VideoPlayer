@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Paquet macOS du lecteur : AJP.app (le lecteur, les backends Vulkan et Core ML, leurs
 # bibliothèques, ONNX Runtime, MoltenVK et les modèles), signé ad hoc, dans ajp-macos-arm64.zip
-# et sa somme SHA-256.
+# et ajp-macos-arm64.dmg (image disque), chacun avec sa somme SHA-256.
 #
 #   AJP_DEPS_PREFIX=<prefixe> tools/release/package-macos.sh [dossier-de-sortie]
 #
@@ -120,4 +120,12 @@ PLIST
 codesign --force --deep --sign - "$APP"
 (cd "$OUT" && rm -f ajp-macos-arm64.zip && ditto -c -k --keepParent AJP.app ajp-macos-arm64.zip \
   && shasum -a 256 ajp-macos-arm64.zip > ajp-macos-arm64.zip.sha256)
-echo "Paquet : $OUT/ajp-macos-arm64.zip"
+# Image disque : AJP.app et un raccourci vers Applications, à glisser (signature ad hoc, comme le zip).
+DMG_STAGE="$(mktemp -d)"
+cp -R "$APP" "$DMG_STAGE/"
+ln -s /Applications "$DMG_STAGE/Applications"
+(cd "$OUT" && rm -f ajp-macos-arm64.dmg \
+  && hdiutil create -volname "Ultimate Anime VideoPlayer" -srcfolder "$DMG_STAGE" -ov -format UDZO ajp-macos-arm64.dmg \
+  && shasum -a 256 ajp-macos-arm64.dmg > ajp-macos-arm64.dmg.sha256)
+rm -rf "$DMG_STAGE"
+echo "Paquet : $OUT/ajp-macos-arm64.zip et ajp-macos-arm64.dmg"
