@@ -165,8 +165,10 @@ std::expected<std::vector<KernelChoice>, Refusal> candidates(const ir::Graph& gr
     // groupe, plutôt que lue par chaque sous-groupe dans le tampon des poids.
     const std::uint64_t pixels =
         static_cast<std::uint64_t>(result[2]) * static_cast<std::uint64_t>(result[3]);
-    for (const std::uint32_t subgroups : {4U, 2U, 8U}) {
-      for (const std::uint32_t tm : {2U, 1U, 4U}) {
+    // 16 sous-groupes et tm 8 en fin de liste : la mémoire partagée plus grande des RDNA 4 les
+    // permet ; l'autotuner les écarte (taille, sortie discordante) quand l'appareil ne les tient pas.
+    for (const std::uint32_t subgroups : {4U, 2U, 8U, 16U}) {
+      for (const std::uint32_t tm : {2U, 1U, 4U, 8U}) {
         // Les groupes du dispatch (net_lower_conv.cpp, conv coopmat) tiennent dans la limite en x.
         const std::uint64_t block = static_cast<std::uint64_t>(subgroups) * tm * 16;
         if ((pixels + block - 1) / block > target.max_workgroup_count_x) continue;

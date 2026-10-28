@@ -31,8 +31,8 @@ namespace {
 
 // 2 : Conv directe à plusieurs pixels (PIX) ; 3 : taille de sous-groupe exigée ; 4 : coopmat à
 // 8 sous-groupes, en wave32 sur AMD, sorties vérifiées contre le noyau direct ; 5 : Conv 3 × 3
-// par Winograd.
-constexpr std::string_view kCandidateSet = "c5";
+// par Winograd ; 6 : coopmat à 16 sous-groupes et tm 8 (mémoire partagée des RDNA 4).
+constexpr std::string_view kCandidateSet = "c6";
 
 // Hachage incrémental d'entiers, FNV-1a sur leurs huit octets.
 class Signature {
