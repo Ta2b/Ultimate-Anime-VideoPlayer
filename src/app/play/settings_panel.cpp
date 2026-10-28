@@ -11,6 +11,7 @@
 
 #include <imgui.h>
 
+#include "app/play/auto_config.h"
 #include "app/play/panel_style.h"
 #include "app/play/settings_chain_tabs.h"
 #include "app/play/settings_engines.h"
@@ -298,35 +299,75 @@ void stats_tab(PlaySettings& d) {
   ImGui::EndDisabled();
 }
 
-void profiles_tab(const ProfilesView& view, std::array<char, 64>& rename, std::vector<Input>& actions) {
-  section("Profils (Ctrl+1 à Ctrl+9)");
-  for (int slot = 1; slot <= 9; ++slot) {
-    const std::optional<ProfileRow>& row = view.rows[static_cast<std::size_t>(slot - 1)];
-    if (!row) continue;
-    ImGui::PushID(slot);
-    const bool active = slot == view.active;
-    if (ImGui::Selectable(std::format("{}  {}{}", slot, row->name, active ? "  ·  actif" : "").c_str(),
-                          active))
-      actions.emplace_back(Command{cmd::SelectProfile{.slot = slot}});
-    ImGui::PushStyleColor(ImGuiCol_Text, kNote);
-    ImGui::TextUnformatted(("     " + row->summary).c_str());
-    ImGui::PopStyleColor();
-    ImGui::PopID();
+// Général > Configuration : le préréglage, la priorité, la machine, « Évaluer ma machine ».
+bool config_page(PlaySettings& d, const SettingsChoices& choices, BenchNote& bench) {
+  section("Configuration automatique");
+  if (ImGui::BeginCombo("Préréglage", std::string(label(d.preset)).c_str())) {
+    for (int i = 0; i < kPresetCount; ++i) {
+      const auto preset = static_cast<Preset>(i);
+      if (ImGui::Selectable(std::string(label(preset)).c_str(), preset == d.preset)) {
+        d.preset = preset;
+        // La chaîne du préréglage s'écrit tout de suite (Personnalisé : rien ne bouge).
+        d = apply_preset(d,
+                         Machine{.tier = static_cast<Tier>(choices.machine_tier),
+                                 .display_height = choices.display_height,
+                                 .display_hz = choices.display_hz},
+                         core::SourceInfo{.width = choices.source_width,
+                                          .height = choices.source_height,
+                                          .fps = choices.source_fps});
+      }
+    }
+    ImGui::EndCombo();
   }
-  note("Changer d'avis dans les autres onglets modifie le profil actif ; il est gardé dans user.toml.");
+  panel::tip("Auto choisit la chaîne selon votre carte, votre écran et la vidéo. Régler un réglage de l'image ou de "
+             "la fluidité à la main passe en Personnalisé, sans rien perdre.");
+  if (ImGui::BeginCombo("Priorité", std::string(label(d.priority)).c_str())) {
+    for (int i = 0; i < kPriorityCount; ++i) {
+      const auto priority = static_cast<Priority>(i);
+      if (ImGui::Selectable(std::string(label(priority)).c_str(), priority == d.priority)) d.priority = priority;
+    }
+    ImGui::EndCombo();
+  }
+  panel::tip("Ce que l'automatique préfère quand la machine ne tient pas tout : plus d'images (Fluidité) ou une image plus fine (Image).");
 
-  section("Profil actif");
-  ImGui::InputText("Nom", rename.data(), rename.size());
-  ImGui::SameLine();
-  if (ImGui::Button("Renommer") && rename[0] != '\0')
-    actions.emplace_back(
-        EditProfile{.edit = core::edit::ProfileName{.slot = view.active, .name = rename.data()}});
-  bool start = view.start == view.active;
-  if (ImGui::Checkbox("Profil de démarrage", &start) && start)
-    actions.emplace_back(EditProfile{.edit = core::edit::StartProfile{.slot = view.active}});
+  section("Cette machine");
+  ImGui::TextWrapped("%s", choices.gpu_name.empty() ? "Carte graphique inconnue" : choices.gpu_name.c_str());
+  note(std::format("Niveau : {}{}", tier_label(static_cast<Tier>(choices.machine_tier)),
+                   choices.display_hz > 0.0 ? std::format(" · écran {:.0f} Hz", choices.display_hz) : std::string()));
+  note(choices.bench_text.empty() ? std::string("Jamais évaluée : le niveau est une estimation d'après la carte.")
+                                  : choices.bench_text);
+  return bench_page(choices.place, choices.source_file, bench);
+}
+
+// Avancé > Réinitialiser.
+void reset_page(std::vector<Input>& actions, const ProfilesView& view) {
+  section("Profil d'origine");
+  note("Les profils (Ctrl+1 à Ctrl+9) restent dans user.toml ; cette page remet le profil actif à ses valeurs d'origine.");
   if (ImGui::Button("Revenir au profil d'origine"))
     actions.emplace_back(EditProfile{.edit = core::edit::ResetProfile{.slot = view.active}});
 }
+
+struct PageInfo {
+  const char* category;
+  const char* name;
+  bool advanced;  // seulement avec la case « Réglages avancés »
+};
+// L'arbre : l'ordre est celui de l'écran. Les catégories se déduisent du changement de `category`.
+constexpr std::array<PageInfo, 13> kPages{{
+    {"Général", "Configuration", false},
+    {"Général", "Lecteur par défaut", false},
+    {"Image IA", "Agrandissement", false},
+    {"Image IA", "Fluidité", false},
+    {"HDR", "Conversion", false},
+    {"Couleurs", "Réglages", false},
+    {"Audio", "Sortie", false},
+    {"Langues et sous-titres", "Langues", false},
+    {"Langues et sous-titres", "Sous-titres", false},
+    {"Export", "Fichier", false},
+    {"Moteurs", "Installés", false},
+    {"Avancé", "Affichage", true},
+    {"Avancé", "Réinitialiser", true},
+}};
 
 }  // namespace
 
@@ -355,67 +396,53 @@ SettingsPanel::Result SettingsPanel::draw(const PlaySettings& running, const Set
   if (ImGui::Begin("Paramètres", &keep, kFlags)) {
     ImGui::PushItemWidth(-width * 0.42F);
     bool delay_held = false;
-    if (ImGui::BeginTabBar("##sections")) {
-      if (ImGui::BeginTabItem("Profils")) {
-        // Le champ reçoit le nom du profil actif quand le profil ou son nom change (autre profil,
-        // retour au profil d'origine), pas quand il est vide : on peut l'effacer puis taper.
-        const std::optional<ProfileRow>& current =
-            choices.profiles.rows[static_cast<std::size_t>(choices.profiles.active - 1)];
-        const std::string name = current ? current->name : std::string();
-        if (choices.profiles.active != shown_profile_ || name != shown_name_) {
-          copy_text(rename_, name);
-          shown_profile_ = choices.profiles.active;
-          shown_name_ = name;
-        }
-        profiles_tab(choices.profiles, rename_, actions);
-        ImGui::EndTabItem();
+    const PlaySettings before = draft_;
+    const float footer = pending_shown_ ? 84.0F * scale : 34.0F * scale;
+    const float tree_width = std::min(200.0F * scale, width * 0.3F);
+    if (!advanced_ && kPages[static_cast<std::size_t>(page_)].advanced) page_ = 0;
+    ImGui::BeginChild("##arbre", ImVec2(tree_width, -footer), ImGuiChildFlags_Borders);
+    const char* category = "";
+    bool category_open = false;
+    for (std::size_t i = 0; i < kPages.size(); ++i) {
+      const PageInfo& page = kPages[i];
+      if (page.advanced && !advanced_) continue;
+      if (std::string_view(page.category) != category) {
+        if (category_open) ImGui::TreePop();
+        category = page.category;
+        ImGui::SetNextItemOpen(true, ImGuiCond_Once);
+        category_open = ImGui::TreeNodeEx(category, ImGuiTreeNodeFlags_SpanAvailWidth);
       }
-      if (ImGui::BeginTabItem("Image")) {
-        image_tab(draft_, choices);
-        ImGui::EndTabItem();
-      }
-      if (ImGui::BeginTabItem("Fluidité")) {
-        fluidity_tab(draft_, choices);
-        ImGui::EndTabItem();
-      }
-      if (ImGui::BeginTabItem("HDR")) {
-        hdr_tab(draft_, choices);
-        ImGui::EndTabItem();
-      }
-      if (ImGui::BeginTabItem("Grade")) {
-        grade_tab(draft_, choices);
-        ImGui::EndTabItem();
-      }
-      if (ImGui::BeginTabItem("Langues")) {
-        languages_tab(draft_);
-        ImGui::EndTabItem();
-      }
-      if (ImGui::BeginTabItem("Sous-titres")) {
-        subtitles_tab(draft_);
-        ImGui::EndTabItem();
-      }
-      if (ImGui::BeginTabItem("Son")) {
-        delay_held = sound_tab(draft_);
-        ImGui::EndTabItem();
-      }
-      if (ImGui::BeginTabItem("Stats")) {
-        stats_tab(draft_);
-        ImGui::EndTabItem();
-      }
-      if (ImGui::BeginTabItem("Moteurs")) {
-        engines_tab(choices, engine_draft_, actions);
-        ImGui::EndTabItem();
-      }
-      if (ImGui::BeginTabItem("Export")) {
-        export_tab(*export_, running, choices, actions);
-        ImGui::EndTabItem();
-      }
-      if (ImGui::BeginTabItem("Système")) {
-        if (system_tab(choices.place, choices.source_file, system_, bench_)) actions.emplace_back(Command{cmd::Pause{}});
-        ImGui::EndTabItem();
-      }
-      ImGui::EndTabBar();
+      if (category_open && ImGui::Selectable(page.name, static_cast<int>(i) == page_)) page_ = static_cast<int>(i);
     }
+    if (category_open) ImGui::TreePop();
+    ImGui::EndChild();
+    ImGui::SameLine();
+    ImGui::BeginChild("##page", ImVec2(0, -footer));
+    panel::begin_page();
+    switch (page_) {
+      case 0:
+        if (config_page(draft_, choices, bench_)) actions.emplace_back(Command{cmd::Pause{}});
+        break;
+      case 1: default_player_page(choices.place, system_); break;
+      case 2: image_tab(draft_, choices); break;
+      case 3: fluidity_tab(draft_, choices); break;
+      case 4: hdr_tab(draft_, choices); break;
+      case 5: grade_tab(draft_, choices); break;
+      case 6: delay_held = sound_tab(draft_); break;
+      case 7: languages_tab(draft_); break;
+      case 8: subtitles_tab(draft_); break;
+      case 9: export_tab(*export_, running, choices, actions); break;
+      case 10: engines_tab(choices, engine_draft_, actions); break;
+      case 11: stats_tab(draft_); break;
+      case 12: reset_page(actions, choices.profiles); break;
+      default: break;
+    }
+    panel::end_page();
+    ImGui::EndChild();
+    ImGui::Checkbox("Réglages avancés", &advanced_);
+    // Un réglage de la chaîne fait à la main : le préréglage devient Personnalisé (les valeurs restent).
+    if (draft_.preset != Preset::Custom && draft_.preset == before.preset && preset_chain_differs(before, draft_))
+      draft_.preset = Preset::Custom;
     ImGui::PopItemWidth();
 
     // La part directe s'applique tout de suite ; le reste attend « Appliquer ».
@@ -425,6 +452,7 @@ SettingsPanel::Result SettingsPanel::draw(const PlaySettings& running, const Set
     if (delay_held) live.audio_delay_ms = running.audio_delay_ms;
     if (live != running) result.live = live;
     const Change pending = change_between(live, draft_, choices.rife_loaded);
+    pending_shown_ = pending.cost == ChangeCost::Reopen;
     if (pending.cost == ChangeCost::Reopen) {
       ImGui::Spacing();
       ImGui::Separator();

@@ -31,6 +31,9 @@ struct BenchNote {
 };
 
 // Rend vrai quand l'évaluation vient d'être lancée : l'appelant met alors la lecture en pause.
-bool system_tab(const PlayerPlace& place, const std::filesystem::path& video, SystemNote& last, BenchNote& bench);
+bool bench_page(const PlayerPlace& place, const std::filesystem::path& video, BenchNote& bench);
+
+// Le lecteur par défaut et « Ouvrir avec » (Général > Lecteur par défaut).
+void default_player_page(const PlayerPlace& place, SystemNote& last);
 
 }  // namespace ajp::app::play

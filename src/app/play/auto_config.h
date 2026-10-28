@@ -37,4 +37,8 @@ std::optional<Tier> chain_level(Preset preset, Tier detected);
 // Custom : inchangé. Idempotente.
 PlaySettings apply_preset(const PlaySettings& settings, const Machine& machine, const core::SourceInfo& source);
 
+// La chaîne (celle que apply_preset écrit) diffère-t-elle entre a et b ? Un réglage de chaîne fait à la main
+// pendant qu'un préréglage est choisi bascule les réglages en Personnalisé.
+bool preset_chain_differs(const PlaySettings& a, const PlaySettings& b);
+
 }  // namespace ajp::app::play

@@ -74,6 +74,11 @@ struct SettingsChoices {
   std::filesystem::path source_file;            // le fichier lu : l'export se propose à côté
   std::string black_status;                     // seuils du vrai noir en cours
   ProfilesView profiles;
+  // Général > Configuration (auto_config.h) : la machine telle que le préréglage Auto la voit.
+  int machine_tier = 2;              // la tranche (gpu_tier.h : Tier, 0 à 4), estimée ou mesurée par « Évaluer ma machine »
+  int display_height = 0;            // hauteur de l'écran en pixels ; 0 : inconnue
+  std::string gpu_name;              // la carte
+  std::string bench_text;            // « Dernière évaluation : 2026-10-28, niveau Rapide » ; vide : jamais faite
   PlayerPlace place;  // l'exécutable et le dossier de l'utilisateur (onglet Système)
 };
 
@@ -105,9 +110,9 @@ class SettingsPanel {
   bool open_ = false;
   PlaySettings draft_;  // ce que montre le panneau ; diffère de running pour ce qui attend « Appliquer »
   PlaySettings seen_;   // running au tour précédent
-  std::array<char, 64> rename_{};               // nouveau nom du profil actif, en cours de saisie
-  int shown_profile_ = 0;                       // profil dont rename_ porte le nom
-  std::string shown_name_;                      // son nom quand rename_ l'a reçu
+  int page_ = 0;                                // la page de l'arbre affichée (settings_panel.cpp : kPages)
+  bool advanced_ = false;                       // la case « Réglages avancés » : montre la catégorie Avancé
+  bool pending_shown_ = false;                  // le bandeau « Appliquer » était montré au tour précédent
   std::optional<core::EngineId> engine_draft_;  // moteur coché dans l'onglet Moteurs, pas appliqué
   std::unique_ptr<ExportDraft> export_;         // l'onglet Export, gardé d'une ouverture à l'autre
   SystemNote system_;                           // l'onglet Système : sa dernière action

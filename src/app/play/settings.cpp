@@ -380,6 +380,8 @@ PlayOptions options_for(const PlayOptions& options, const PlaySettings& s) {
 
 PlaySettings live_part(const PlaySettings& running, const PlaySettings& wanted, bool rife_loaded) {
   PlaySettings s = running;
+  s.preset = wanted.preset;
+  s.priority = wanted.priority;
   s.downscale = wanted.downscale;
   s.rife_auto = wanted.rife_auto;
   if (rife_loaded || wanted.rife_factor < 2) {
