@@ -41,7 +41,7 @@ struct ScreenOptions {
   bool fullscreen = false;
   bool hidden = false;  // fenêtre minuscule sans bordure ni focus : l'évaluation de la machine ne montre rien
                         // (--hidden)
-  bool hdr = true;  // HDR10 (PQ, BT.2020) si l'écran l'offre, SDR sinon
+  bool hdr = true;      // HDR10 (PQ, BT.2020) si l'écran l'offre, SDR sinon
   // Smooth Motion du pilote NVIDIA : sa couche implicite VK_LAYER_NV_present s'active par
   // NVPRESENT_ENABLE_SMOOTH_MOTION=1, posé avant la création de l'instance Vulkan.
   bool smooth_motion = false;

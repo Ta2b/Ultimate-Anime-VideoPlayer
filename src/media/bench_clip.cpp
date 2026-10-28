@@ -17,8 +17,8 @@ struct Rgb {
 
 // Une teinte de la scène numéro `scene` : couleurs plates, comme un aplat d'animation.
 Rgb palette(int scene, int index) {
-  constexpr Rgb kColors[]{{232, 92, 120}, {80, 150, 230}, {250, 210, 90}, {96, 200, 140},
-                          {150, 100, 220}, {245, 245, 240}, {30, 34, 52}, {255, 140, 60}};
+  constexpr Rgb kColors[]{{232, 92, 120},  {80, 150, 230},  {250, 210, 90}, {96, 200, 140},
+                          {150, 100, 220}, {245, 245, 240}, {30, 34, 52},   {255, 140, 60}};
   return kColors[static_cast<std::size_t>((scene * 3 + index) % 8)];
 }
 
@@ -27,20 +27,21 @@ void put(AVFrame& frame, int x, int y, Rgb c) {
   const float r = c.r;
   const float g = c.g;
   const float b = c.b;
-  const auto luma = static_cast<std::uint8_t>(std::clamp(16.0F + 0.1826F * r + 0.6142F * g + 0.0620F * b, 16.0F, 235.0F));
+  const auto luma =
+      static_cast<std::uint8_t>(std::clamp(16.0F + 0.1826F * r + 0.6142F * g + 0.0620F * b, 16.0F, 235.0F));
   frame.data[0][y * frame.linesize[0] + x] = luma;
   if (((x | y) & 1) == 0) {
-    frame.data[1][(y / 2) * frame.linesize[1] + x / 2] =
-        static_cast<std::uint8_t>(std::clamp(128.0F - 0.1006F * r - 0.3386F * g + 0.4392F * b, 16.0F, 240.0F));
-    frame.data[2][(y / 2) * frame.linesize[2] + x / 2] =
-        static_cast<std::uint8_t>(std::clamp(128.0F + 0.4392F * r - 0.3989F * g - 0.0403F * b, 16.0F, 240.0F));
+    frame.data[1][(y / 2) * frame.linesize[1] + x / 2] = static_cast<std::uint8_t>(
+        std::clamp(128.0F - 0.1006F * r - 0.3386F * g + 0.4392F * b, 16.0F, 240.0F));
+    frame.data[2][(y / 2) * frame.linesize[2] + x / 2] = static_cast<std::uint8_t>(
+        std::clamp(128.0F + 0.4392F * r - 0.3989F * g - 0.0403F * b, 16.0F, 240.0F));
   }
 }
 
 void draw_frame(AVFrame& frame, int width, int height, int index, int fps) {
-  const int scene = index / (fps * 2);      // une coupe toutes les deux secondes
-  const int t = index % (fps * 2);         // l'instant dans la scène (sur deux secondes)
-  const int pan = (index * 12) % 4096;     // le fond défile : 12 px par image (un travelling vif)
+  const int scene = index / (fps * 2);  // une coupe toutes les deux secondes
+  const int t = index % (fps * 2);      // l'instant dans la scène (sur deux secondes)
+  const int pan = (index * 12) % 4096;  // le fond défile : 12 px par image (un travelling vif)
   const int band = std::max(1, height / 9);
   for (int y = 0; y < height; ++y) {
     for (int x = 0; x < width; ++x) {
@@ -72,8 +73,10 @@ void draw_frame(AVFrame& frame, int width, int height, int index, int fps) {
         const float dx = (static_cast<float>(x) - cx) / rx;
         const float dy = (static_cast<float>(y) - cy) / ry;
         const float d = dx * dx + dy * dy;
-        if (d <= 1.0F) put(frame, x, y, palette(scene + who + 1, 1 + who));
-        else if (d <= 1.12F) put(frame, x, y, {20, 20, 28});
+        if (d <= 1.0F)
+          put(frame, x, y, palette(scene + who + 1, 1 + who));
+        else if (d <= 1.12F)
+          put(frame, x, y, {20, 20, 28});
       }
     }
   }
@@ -86,7 +89,8 @@ std::expected<void, Refusal> write_bench_clip(const std::filesystem::path& file,
   if (codec == nullptr) return refuse(RefusalCode::LibraryUnavailable, "encodeur MPEG-4 absent de FFmpeg");
   AVFormatContext* raw = nullptr;
   const std::string path = file.string();
-  if (const int err = avformat_alloc_output_context2(&raw, nullptr, "matroska", path.c_str()); err < 0 || raw == nullptr)
+  if (const int err = avformat_alloc_output_context2(&raw, nullptr, "matroska", path.c_str());
+      err < 0 || raw == nullptr)
     return refuse_av(RefusalCode::LibraryUnavailable, "conteneur matroska", err);
   struct OutputFree {
     void operator()(AVFormatContext* c) const {
@@ -156,7 +160,8 @@ std::expected<void, Refusal> write_bench_clip(const std::filesystem::path& file,
   }
   avcodec_send_frame(encoder.get(), nullptr);
   if (auto ok = drain(); !ok) return ok;
-  if (const int err = av_write_trailer(out.get()); err < 0) return refuse_av(RefusalCode::FileUnwritable, "fin", err);
+  if (const int err = av_write_trailer(out.get()); err < 0)
+    return refuse_av(RefusalCode::FileUnwritable, "fin", err);
   return {};
 }
 

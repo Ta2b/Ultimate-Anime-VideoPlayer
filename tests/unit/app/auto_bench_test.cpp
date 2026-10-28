@@ -164,7 +164,8 @@ TEST_CASE("ajp bench : options et refus", "[auto_bench]") {
   CHECK(options->seconds == 20);
   CHECK(options->report == std::filesystem::path("r.txt"));
   CHECK_FALSE(options->fullscreen);
-  CHECK(parse_bench_options(std::vector<std::string_view>{}));  // sans fichier : la séquence de test du lecteur
+  CHECK(
+      parse_bench_options(std::vector<std::string_view>{}));  // sans fichier : la séquence de test du lecteur
   CHECK_FALSE(parse_bench_options(std::vector<std::string_view>{"a.mkv", "--seconds=2"}));
   CHECK_FALSE(parse_bench_options(std::vector<std::string_view>{"a.mkv", "--nope"}));
   CHECK_FALSE(parse_bench_options(std::vector<std::string_view>{"a.mkv", "b.mkv"}));
