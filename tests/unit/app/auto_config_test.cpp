@@ -129,3 +129,16 @@ TEST_CASE("play.toml garde le préréglage et la priorité", "[auto_config][sett
   CHECK(old->preset == Preset::Custom);
   CHECK_FALSE(parse_settings("version = 1\n[auto]\npreset = \"turbo\"\n"));
 }
+
+TEST_CASE("un réglage de chaîne fait à la main se voit, pas un réglage de lecture", "[auto_config]") {
+  const ajp::app::play::PlaySettings base;
+  ajp::app::play::PlaySettings moved = base;
+  CHECK_FALSE(ajp::app::play::preset_chain_differs(base, moved));
+  moved.volume = 0.5F;
+  CHECK_FALSE(ajp::app::play::preset_chain_differs(base, moved));
+  moved.work_height = base.work_height == 540 ? 720 : 540;
+  CHECK(ajp::app::play::preset_chain_differs(base, moved));
+  moved = base;
+  moved.keep_poses = !base.keep_poses;
+  CHECK(ajp::app::play::preset_chain_differs(base, moved));
+}

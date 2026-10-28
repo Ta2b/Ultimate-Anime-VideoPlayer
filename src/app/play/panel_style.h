@@ -23,7 +23,42 @@ inline void note(const std::string& text) {
   note(text.c_str());
 }
 
+// Dans une page des réglages (begin_page … end_page), chaque section est un encadré titré ; ailleurs, un titre
+// et un filet.
+inline bool& page_open() {
+  static bool open = false;
+  return open;
+}
+inline bool& group_open() {
+  static bool open = false;
+  return open;
+}
+inline void end_group() {
+  if (group_open()) ImGui::EndChild();
+  group_open() = false;
+}
+inline void begin_page() {
+  page_open() = true;
+  group_open() = false;
+}
+inline void end_page() {
+  end_group();
+  page_open() = false;
+}
+
 inline void section(const char* title) {
+  if (page_open()) {
+    end_group();
+    ImGui::Spacing();
+    ImGui::PushStyleColor(ImGuiCol_Text, kAccent);
+    ImGui::TextUnformatted(title);
+    ImGui::PopStyleColor();
+    ImGui::PushStyleVar(ImGuiStyleVar_ChildRounding, 6.0F);
+    ImGui::BeginChild(title, ImVec2(0, 0), ImGuiChildFlags_Borders | ImGuiChildFlags_AutoResizeY);
+    ImGui::PopStyleVar();
+    group_open() = true;
+    return;
+  }
   ImGui::Spacing();
   ImGui::PushStyleColor(ImGuiCol_Text, kAccent);
   ImGui::TextUnformatted(title);

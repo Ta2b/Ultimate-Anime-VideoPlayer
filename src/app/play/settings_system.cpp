@@ -13,16 +13,13 @@ using panel::kWarn;
 using panel::note;
 using panel::section;
 
-bool system_tab(const PlayerPlace& place, const std::filesystem::path& video, SystemNote& last, BenchNote& bench) {
+void default_player_page(const PlayerPlace& place, SystemNote& last) {
   section("Lecteur par défaut");
   ImGui::TextWrapped(
       "Les vidéos (mkv, mp4, webm, avi, mov…) s'ouvrent dans AJP depuis le gestionnaire de fichiers.");
 #ifdef __APPLE__
   static_cast<void>(last);
   note(register_player(place).value_or(std::string()));
-  static_cast<void>(video);
-  static_cast<void>(bench);
-  return false;
 #else
   if (last.pending && last.pending->wait_for(std::chrono::seconds(0)) == std::future_status::ready) {
     const std::expected<std::string, Refusal> done = last.pending->get();
@@ -51,7 +48,16 @@ bool system_tab(const PlayerPlace& place, const std::filesystem::path& video, Sy
   } else if (!last.text.empty()) {
     note(last.text);
   }
+#endif
+}
 
+bool bench_page(const PlayerPlace& place, const std::filesystem::path& video, BenchNote& bench) {
+#ifdef __APPLE__
+  static_cast<void>(place);
+  static_cast<void>(video);
+  static_cast<void>(bench);
+  return false;
+#else
   section("Évaluer ma machine");
   ImGui::TextWrapped(
       "Joue 12 secondes de la vidéo avec chaque niveau de chaîne, son coupé, et garde le plus haut qui tient "

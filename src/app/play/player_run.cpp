@@ -197,6 +197,16 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
   log->info("{}", session_config.output);
   Session session(std::move(session_config), (*pipeline)->stages(), out, (*pipeline)->clock());
   if (start_paused) session.command(cmd::Pause{});
+  // La tranche de la machine pour Général > Configuration : la mesure de « Évaluer ma machine » si elle est de
+  // cette carte et de ce pilote, sinon l'estimation.
+  std::optional<BenchResult> measured;
+  if (auto bench = load_bench(p.settings_path.parent_path() / "bench.toml")) measured = std::move(*bench);
+  const GpuFacts machine = gpu_facts(p.screen);
+  const Tier machine_tier = effective_tier(machine, measured);
+  const std::string bench_text =
+      measured && measured->gpu == machine.name && measured->driver == machine.driver
+          ? std::format("Dernière évaluation : {}, niveau {}", measured->date, tier_label(measured->level))
+          : std::string();
   p.ui.set_tracks((*pipeline)->tracks());
   p.ui.set_settings(
       settings,
@@ -245,6 +255,10 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
           .engine_note = fallback_note(p.engines, p.library->path()),
           .display_text = p.display ? describe(*p.display) : std::string("EDID illisible : OLED inconnu"),
           .source_file = p.options.file,
+          .machine_tier = static_cast<int>(machine_tier),
+          .display_height = display_height(out.window()),
+          .gpu_name = gpu_facts(p.screen).name,
+          .bench_text = bench_text,
           .place = {.executable = p.paths.executable, .home = p.paths.home, .data = p.paths.data}});
   p.profiles.source =
       core::SourceInfo{.width = video.width, .height = video.height, .fps = fps_of(video.frame_rate)};

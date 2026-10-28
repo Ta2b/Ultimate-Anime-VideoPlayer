@@ -34,9 +34,9 @@ Pull requests : une par étape ; quand une étape dépend d'une autre, la base e
 - [x] (b) Préréglages, priorité, application de la chaîne : PR #23 (base : #22)
 - [x] (c1) Décision du benchmark et `bench.toml` : PR #24 (base : #23)
 - [x] (c2) `ajp bench` : lancement des essais (processus enfants isolés, son coupé), rapport `--report`, pilote dans la clé de mesure : PR de la branche `claude/bench-run`
-- [ ] Bouton « Évaluer ma machine » (arrive avec C)
+- [x] Bouton « Évaluer ma machine » (Général > Configuration)
 - [x] Comparateur A/B : outil `ajp compare` (PR `claude/ab-compare`). La mesure poses DRBA / DistilDRBA contre RIFE se lance avec la version CUDA en Release (`ajp compare VIDÉO --a-settings=… --b-settings=…`) ; en attendant, les poses restent désactivées par défaut
-- [ ] Bascule automatique en Personnalisé quand un réglage de chaîne est modifié à la main (avec C)
+- [x] Bascule automatique en Personnalisé quand un réglage de chaîne est modifié à la main (`preset_chain_differs`)
 
 ### B. Textes, pastilles, infobulles
 - [x] 720p au lieu de « 720 lignes », vocabulaire courant (PR `claude/textes-pastilles`)
@@ -44,8 +44,8 @@ Pull requests : une par étape ; quand une étape dépend d'une autre, la base e
 - [ ] Hermite en réduction (voir F)
 
 ### C. Nouveau cadre des réglages et assistant
-- [ ] Arbre à gauche, page à droite, encadrés titrés, lignes multiples, barre de défilement fine
-- [ ] 9 catégories, case « Réglages avancés », Profils retiré, dernière page mémorisée
+- [x] Arbre à gauche, page à droite, encadrés titrés (PR `claude/cadre-arbre`) ; lignes multiples et barre de défilement fine restent à faire
+- [x] Catégories, case « Réglages avancés », Profils retiré ; dernière page mémorisée le temps de la session seulement (pas encore dans `play.toml`)
 - [ ] Assistant de premier démarrage (8 écrans), relançable depuis Général et par `--first-run`
 - [ ] « Ouvrir avec » au premier lancement, sans confirmation ; bouton « Faire de ce lecteur le lecteur par défaut »
   avec « Ne plus me le demander » (réapparaît en bas d'Avancé)
@@ -93,3 +93,8 @@ Pull requests : une par étape ; quand une étape dépend d'une autre, la base e
 - **2026-10-28** : B en PR. `panel::badge` / `panel::tip`, `Badge` et `badge_of` testés, « 720p », « Résolution de travail »,
   libellés de moteurs raccourcis (pastille à la place des parenthèses). Les paragraphes de Fluidité, HDR, Grade… passent en
   infobulles dans l'étape suivante, quand chaque ligne est refaite pour l'arbre.
+- **2026-10-28** : C(cadre) en PR. Arbre : Général (Configuration, Lecteur par défaut), Image IA, HDR, Couleurs, Audio,
+  Langues et sous-titres, Export, Moteurs, Avancé (Affichage, Réinitialiser, derrière la case). **Décision** : les pages
+  de l'image restent modifiables avec un préréglage, et le premier réglage fait à la main bascule en Personnalisé
+  (plutôt que des pages grisées). Choisir un préréglage écrit sa chaîne tout de suite (à appliquer par « Appliquer »).
+  Pas encore : Mises à jour (étape 7), recherche, repli de l'arbre en liste sur petit écran, lignes multiples.

@@ -141,4 +141,12 @@ PlaySettings apply_preset(const PlaySettings& settings, const Machine& machine, 
   return out;
 }
 
+bool preset_chain_differs(const PlaySettings& a, const PlaySettings& b) {
+  return a.upscale != b.upscale || a.work_height != b.work_height || a.downscale != b.downscale ||
+         a.model != b.model || a.span_order != b.span_order || a.rife_auto != b.rife_auto ||
+         a.rife_factor != b.rife_factor || a.rife_factor_den != b.rife_factor_den ||
+         a.keep_poses != b.keep_poses || a.gmfss_quality != b.gmfss_quality ||
+         a.rife_model != b.rife_model || a.motion_engine != b.motion_engine;
+}
+
 }  // namespace ajp::app::play
