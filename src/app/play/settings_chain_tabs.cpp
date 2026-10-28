@@ -207,8 +207,7 @@ void fluidity_tab(PlaySettings& d, const SettingsChoices& choices, bool exportin
   }
   ImGui::EndDisabled();
   if (!choices.rife_available)
-    note(
-        "Ni modèle RIFE (rife_v4.25.onnx, rife_v4.26.onnx, rife_v4.22_lite.onnx…) ni graphes GMFSS trouvés.");
+    note("Ni modèle RIFE (rife_v4.25.onnx, rife_v4.22_lite.onnx) ni graphes GMFSS trouvés.");
   section("Moteur de l'interpolation");
   for (int i = 0; i < kMotionEngineCount; ++i) {
     const auto engine = static_cast<MotionEngine>(i);

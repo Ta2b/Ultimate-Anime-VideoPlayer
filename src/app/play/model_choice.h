@@ -30,23 +30,17 @@ std::expected<ModelChoice, Refusal> choose_model(const PlayOptions& options,
                                                  const std::filesystem::path& home,
                                                  const PlaySettings& settings,
                                                  const std::filesystem::path& bundled = {});
-// Les versions de RIFE que le menu propose toujours, de la plus conseillée pour l'animation à la
-// plus légère (4.25 coûte 7,1 ms par passe à 720p sur une 4070 Ti, 4.26 7,8 ms). Les exports ONNX de
-// vs-mlrt à 11 plans d'entrée, convertis en FP16 à îlots FP32 (tools/rife/convert_rife_fp16.py), sous
-// ces noms. 4.26 garde les déformations les plus faibles ; 4.26 heavy est la plus lourde.
-// --rife-model lit encore tout autre fichier, pour les essais.
-inline constexpr std::array<std::string_view, 6> kRifeCatalogue{"rife_v4.25.onnx", "rife_v4.25_lite.onnx",
-                                                                "rife_v4.22.onnx", "rife_v4.22_lite.onnx",
-                                                                "rife_v4.26.onnx", "rife_v4.26_heavy.onnx"};
+// Les deux versions de RIFE que le menu propose, de la plus fine à la plus légère : 4.25 (7,1 ms par passe à
+// 720p sur une 4070 Ti) et 4.22 lite, plus légère (retours de Tatoub, v0.5.1 : « catalogue réduit à 4.22 lite
+// et 4.25 »). Les exports ONNX de vs-mlrt à 11 plans d'entrée, convertis en FP16 à îlots FP32
+// (tools/rife/convert_rife_fp16.py), sous ces noms. --rife-model lit encore tout autre fichier, pour les
+// essais.
+inline constexpr std::array<std::string_view, 2> kRifeCatalogue{"rife_v4.25.onnx", "rife_v4.22_lite.onnx"};
 
-// Le modèle par défaut, le premier présent dans cet ordre : 4.25 sur une RTX ; 4.22 lite, plus
-// légère, sur les autres cartes (AMD, Intel, GTX).
-inline constexpr std::array<std::string_view, 6> kRifeForRtx{"rife_v4.25.onnx",      "rife_v4.26.onnx",
-                                                             "rife_v4.25_lite.onnx", "rife_v4.22.onnx",
-                                                             "rife_v4.22_lite.onnx", "rife_v4.26_heavy.onnx"};
-inline constexpr std::array<std::string_view, 6> kRifeForOthers{
-    "rife_v4.26.onnx", "rife_v4.22_lite.onnx", "rife_v4.25_lite.onnx",
-    "rife_v4.25.onnx", "rife_v4.22.onnx",      "rife_v4.26_heavy.onnx"};
+// Le modèle par défaut, le premier présent dans cet ordre : 4.25 sur une RTX ; 4.22 lite, plus légère, sur
+// les autres cartes (AMD, Intel, GTX).
+inline constexpr std::array<std::string_view, 2> kRifeForRtx{"rife_v4.25.onnx", "rife_v4.22_lite.onnx"};
+inline constexpr std::array<std::string_view, 2> kRifeForOthers{"rife_v4.22_lite.onnx", "rife_v4.25.onnx"};
 std::span<const std::string_view> rife_preference(const GpuFacts& gpu);
 
 // RIFE : --rife-model, sinon settings.rife_model s'il est au catalogue, sinon le premier de

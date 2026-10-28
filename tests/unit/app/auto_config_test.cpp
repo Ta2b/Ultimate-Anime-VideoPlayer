@@ -42,7 +42,7 @@ TEST_CASE("Auto suit la tranche de la machine", "[auto_config]") {
   CHECK(fast.work_height == 720);
   const PlaySettings normal = applied(Preset::Auto, Tier::Normal, 1440, 144.0);
   CHECK(normal.motion_engine == MotionEngine::Rife);
-  CHECK(normal.rife_model == "rife_v4.25_lite.onnx");
+  CHECK(normal.rife_model == "rife_v4.22_lite.onnx");
   const PlaySettings light = applied(Preset::Auto, Tier::Light, 1080, 60.0);
   CHECK(light.rife_model == "rife_v4.22_lite.onnx");
 }

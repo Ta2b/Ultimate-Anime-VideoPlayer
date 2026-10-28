@@ -48,8 +48,9 @@ TEST_CASE("Modèle RIFE : le défaut, le choix du menu, la liste du dossier", "[
                                                      "rife_v4.26.onnx", "rife_v4.26_heavy.onnx"});
   settings.rife_model = "rife_v4.22_lite.onnx";
   CHECK(choose_rife_model(PlayOptions{}, fake.home, settings)->path == fake.rife / "rife_v4.22_lite.onnx");
-  settings.rife_model = "rife_v4.26_heavy.onnx";  // au catalogue et présent
-  CHECK(choose_rife_model(PlayOptions{}, fake.home, settings)->path == fake.rife / "rife_v4.26_heavy.onnx");
+  settings.rife_model =
+      "rife_v4.26_heavy.onnx";  // présent mais hors du catalogue réduit (v0.5.1) : le défaut
+  CHECK(choose_rife_model(PlayOptions{}, fake.home, settings)->path == fake.rife / "rife_v4.25.onnx");
   settings.rife_model = "rife_v4.13.onnx";  // hors catalogue, bien que présent : le défaut
   CHECK(choose_rife_model(PlayOptions{}, fake.home, settings)->path == fake.rife / "rife_v4.25.onnx");
   settings.rife_model = "rife_v9.onnx";  // absent : le défaut
@@ -65,29 +66,24 @@ TEST_CASE("Modèle RIFE introuvable : refus qui cite les chemins essayés", "[ap
   CHECK(refused.error().detail.find("rife_v4.25.onnx") != std::string::npos);
 }
 
-TEST_CASE("Modèle RIFE par défaut : 4.25 sur une RTX, 4.26 ailleurs, sinon le suivant présent",
+TEST_CASE("Modèle RIFE par défaut : 4.25 sur une RTX, 4.22 lite ailleurs, sinon le suivant présent",
           "[app][model_choice]") {
   const FakeHome fake("preference");
   const GpuFacts rtx{.vendor = GpuVendor::Nvidia, .vram_bytes = 12ULL << 30U, .tensor_cores = true};
   const GpuFacts amd{.vendor = GpuVendor::Amd, .vram_bytes = 16ULL << 30U};
-  // Le dossier n'a pas 4.25 : la RTX prend 4.26, la suivante présente.
+  // Le dossier n'a pas 4.25 : la RTX prend la 4.22 lite, la suivante présente.
   CHECK(choose_rife_model(PlayOptions{}, fake.home, PlaySettings{}, rife_preference(rtx))->default_name ==
-        "rife_v4.26.onnx");
+        "rife_v4.22_lite.onnx");
   CHECK(choose_rife_model(PlayOptions{}, fake.home, PlaySettings{}, rife_preference(amd))->default_name ==
-        "rife_v4.26.onnx");
+        "rife_v4.22_lite.onnx");
   std::ofstream(fake.rife / "rife_v4.25.onnx") << "x";
   CHECK(choose_rife_model(PlayOptions{}, fake.home, PlaySettings{}, rife_preference(rtx))->default_name ==
         "rife_v4.25.onnx");
 }
 
-TEST_CASE("Menu RIFE : tout le catalogue, présent ou non", "[app][model_choice]") {
+TEST_CASE("Menu RIFE : les deux modèles du catalogue, présents ou non", "[app][model_choice]") {
   const auto menu = rife_menu({"rife_v4.22_lite.onnx", "rife_v4.26.onnx", "rife_v4.26_heavy.onnx"});
-  CHECK(menu == std::vector<RifeEntry>{{"rife_v4.25.onnx", false},
-                                       {"rife_v4.25_lite.onnx", false},
-                                       {"rife_v4.22.onnx", false},
-                                       {"rife_v4.22_lite.onnx", true},
-                                       {"rife_v4.26.onnx", true},
-                                       {"rife_v4.26_heavy.onnx", true}});
+  CHECK(menu == std::vector<RifeEntry>{{"rife_v4.25.onnx", false}, {"rife_v4.22_lite.onnx", true}});
 }
 
 TEST_CASE("GMFSS : les deux graphes du premier dossier qui les a, ses dimensions", "[app][model_choice]") {
