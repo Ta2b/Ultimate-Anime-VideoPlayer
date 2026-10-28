@@ -1,0 +1,80 @@
+# Classement approximatif des cartes graphiques (et des iGPU) par tranche de performance, de 2015 à
+# aujourd'hui. Il sert à choisir les réglages automatiques (docs/ux-parametres.md, 4.7) : ce sont des
+# ESTIMATIONS, corrigées par « Évaluer ma machine ».
+#
+# Tranches : 0 Économe, 1 Léger, 2 Normal, 3 Rapide, 4 Ultra.
+# La première règle dont le fabricant correspond et dont TOUTES les chaînes de `contains` se trouvent dans
+# le nom (minuscules, sans « (tm) » ni « (r) ») gagne : du plus précis au plus général. Une carte inconnue
+# tombe sur l'estimation par fabricant, VRAM et unités matricielles (gpu_tier.cpp).
+# `integrated = true` : iGPU (mémoire partagée avec le processeur).
+version = 1
+
+rules = [
+  # NVIDIA
+  { vendor = "nvidia", contains = ["rtx 5090"], tier = 4 },
+  { vendor = "nvidia", contains = ["rtx 5080"], tier = 4 },
+  { vendor = "nvidia", contains = ["rtx 4090"], tier = 4 },
+  { vendor = "nvidia", contains = ["rtx 4080"], tier = 4 },
+  { vendor = "nvidia", contains = ["rtx 5070"], tier = 3 },
+  { vendor = "nvidia", contains = ["rtx 4070"], tier = 3 },
+  { vendor = "nvidia", contains = ["rtx 3090"], tier = 3 },
+  { vendor = "nvidia", contains = ["rtx 3080"], tier = 3 },
+  { vendor = "nvidia", contains = ["rtx 3070"], tier = 3 },
+  { vendor = "nvidia", contains = ["rtx 2080"], tier = 3 },
+  { vendor = "nvidia", contains = ["titan rtx"], tier = 3 },
+  { vendor = "nvidia", contains = ["rtx a"], tier = 3 },
+  { vendor = "nvidia", contains = ["rtx 50"], tier = 2 },
+  { vendor = "nvidia", contains = ["rtx 40"], tier = 2 },
+  { vendor = "nvidia", contains = ["rtx 30"], tier = 2 },
+  { vendor = "nvidia", contains = ["rtx 20"], tier = 2 },
+  { vendor = "nvidia", contains = ["quadro rtx"], tier = 2 },
+  { vendor = "nvidia", contains = ["titan"], tier = 2 },
+  { vendor = "nvidia", contains = ["gtx 1080"], tier = 2 },
+  { vendor = "nvidia", contains = ["gtx 1070"], tier = 2 },
+  { vendor = "nvidia", contains = ["gtx 16"], tier = 1 },
+  { vendor = "nvidia", contains = ["gtx 10"], tier = 1 },
+  { vendor = "nvidia", contains = ["gtx 9"], tier = 1 },
+  { vendor = "nvidia", contains = ["gt 10"], tier = 0 },
+  { vendor = "nvidia", contains = ["mx"], tier = 0 },
+  # AMD
+  { vendor = "amd", contains = ["rx 9070"], tier = 4 },
+  { vendor = "amd", contains = ["rx 9060"], tier = 3 },
+  { vendor = "amd", contains = ["rx 7900"], tier = 4 },
+  { vendor = "amd", contains = ["navi31"], tier = 4 },
+  { vendor = "amd", contains = ["rx 7800"], tier = 3 },
+  { vendor = "amd", contains = ["rx 7700"], tier = 3 },
+  { vendor = "amd", contains = ["rx 7600"], tier = 2 },
+  { vendor = "amd", contains = ["rx 69"], tier = 3 },
+  { vendor = "amd", contains = ["rx 68"], tier = 3 },
+  { vendor = "amd", contains = ["rx 67"], tier = 2 },
+  { vendor = "amd", contains = ["rx 66"], tier = 2 },
+  { vendor = "amd", contains = ["rx 65"], tier = 1 },
+  { vendor = "amd", contains = ["rx 64"], tier = 1 },
+  { vendor = "amd", contains = ["rx 5700"], tier = 2 },
+  { vendor = "amd", contains = ["rx 5"], tier = 1 },
+  { vendor = "amd", contains = ["vega"], tier = 1 },
+  { vendor = "amd", contains = ["rx 4"], tier = 1 },
+  { vendor = "amd", contains = ["r9"], tier = 1 },
+  { vendor = "amd", contains = ["8060s"], tier = 3, integrated = true },
+  { vendor = "amd", contains = ["gfx1151"], tier = 3, integrated = true },
+  { vendor = "amd", contains = ["radeon 8"], tier = 1, integrated = true },
+  { vendor = "amd", contains = ["radeon 7"], tier = 1, integrated = true },
+  { vendor = "amd", contains = ["gfx1103"], tier = 1, integrated = true },
+  { vendor = "amd", contains = ["radeon graphics"], tier = 0, integrated = true },
+  # Intel
+  { vendor = "intel", contains = ["arc", "b5"], tier = 2 },
+  { vendor = "intel", contains = ["arc", "a7"], tier = 2 },
+  { vendor = "intel", contains = ["arc", "a5"], tier = 2 },
+  { vendor = "intel", contains = ["arc", "a3"], tier = 1 },
+  { vendor = "intel", contains = ["arc", "140"], tier = 1, integrated = true },
+  { vendor = "intel", contains = ["arc", "graphics"], tier = 1, integrated = true },
+  { vendor = "intel", contains = ["iris xe"], tier = 1, integrated = true },
+  { vendor = "intel", contains = ["uhd"], tier = 0, integrated = true },
+  { vendor = "intel", contains = ["hd graphics"], tier = 0, integrated = true },
+  { vendor = "intel", contains = ["iris"], tier = 0, integrated = true },
+  # Apple (puces M, mémoire unifiée)
+  { vendor = "apple", contains = ["ultra"], tier = 4, integrated = true },
+  { vendor = "apple", contains = ["max"], tier = 3, integrated = true },
+  { vendor = "apple", contains = ["pro"], tier = 3, integrated = true },
+  { vendor = "apple", contains = ["apple m"], tier = 2, integrated = true },
+]
