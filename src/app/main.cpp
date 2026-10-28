@@ -14,6 +14,11 @@ extern "C" {
 }
 
 #include <chrono>
+#ifdef _WIN32
+#include <process.h>
+#else
+#include <unistd.h>
+#endif
 #include <cstdio>
 #include <exception>
 #include <filesystem>
@@ -29,6 +34,9 @@ extern "C" {
 #include "app/play/default_player.h"
 #include "app/play/options.h"
 #include "app/play/player.h"
+#include "app/play/settings.h"
+#include "app/play/updater.h"
+#include "core/update_manifest.h"
 #include "core/log.h"
 #include "prepare/utf8.h"
 
@@ -85,6 +93,25 @@ std::vector<std::filesystem::path> module_dirs(const std::filesystem::path& base
 int fail(const ajp::Refusal& refusal) {
   std::fprintf(stderr, "ajp : %s %s\n", std::string(ajp::name(refusal.code)).c_str(), refusal.detail.c_str());
   return 1;
+}
+
+// Relance le lecteur avec les mêmes arguments, après une mise à jour : il remplace ce processus (POSIX) ou démarre à
+// sa place (Windows, où un exécutable en service ne s'écrase pas : l'ancien est renommé .old).
+int relaunch(const std::filesystem::path& executable, int argc, char** argv) {
+#ifdef _WIN32
+  std::vector<std::string> arguments;
+  for (int i = 1; i < argc; ++i) arguments.emplace_back(argv[i]);
+  std::vector<const char*> pointers{executable.string().c_str()};
+  for (const std::string& argument : arguments) pointers.push_back(argument.c_str());
+  pointers.push_back(nullptr);
+  return _spawnv(_P_NOWAIT, executable.string().c_str(), pointers.data()) == -1 ? 1 : 0;
+#else
+  std::vector<char*> arguments{const_cast<char*>(executable.c_str())};
+  for (int i = 1; i < argc; ++i) arguments.push_back(argv[i]);
+  arguments.push_back(nullptr);
+  execv(executable.c_str(), arguments.data());
+  return 1;  // execv ne revient que sur un échec
+#endif
 }
 
 // « ajp compare <fichier> --a=… --b=… » : deux chaînes côte à côte (auto_bench_run.h).
@@ -220,6 +247,25 @@ int main(int argc, char** argv) {
     if (!done) return fail(done.error());
     std::fprintf(stdout, "%s\n", done->c_str());
     return 0;
+  }
+  // Une mise à jour préparée (mode Automatique) s'applique ici, avant tout, puis le lecteur se relance.
+  if (!options->data_dir && !options->bench_out) {
+    const ajp::app::play::UpdatePaths update{.data = data, .install = base, .executable = place.executable};
+    ajp::app::play::UpdateState state = ajp::app::play::load_update_state(data / "update.toml");
+    const auto saved = ajp::app::play::load_settings(data / "play.toml");
+    if (!state.staged_version.empty() && saved && saved->update_mode == "auto" &&
+        ajp::core::compare_versions(state.staged_version, ajp::app::play::installed_version()).value_or(0) > 0 &&
+        ajp::app::play::update_managed_reason(update).empty()) {
+      const auto applied = ajp::app::play::apply_staged_update(update, state);
+      state.last_error = applied ? std::string() : applied.error().detail;
+      if (!applied) state.staged_version.clear();  // une archive qui ne s'applique pas ne se réessaie pas à chaque lancement
+      static_cast<void>(ajp::app::play::save_update_state(data / "update.toml", state));
+      if (applied) {
+        std::fprintf(stderr, "ajp : %s\n", applied->c_str());
+        return relaunch(place.executable, argc, argv);
+      }
+      std::fprintf(stderr, "ajp : mise à jour impossible : %s\n", applied.error().detail.c_str());
+    }
   }
   // Le journal va aussi dans <données>/ajp.log, recommencé à chaque lancement : ouvert depuis le
   // Finder ou l'Explorateur, le lecteur n'a pas de terminal, et c'est le fichier à joindre à un

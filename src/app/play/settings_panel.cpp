@@ -420,9 +420,10 @@ struct PageInfo {
   bool advanced;  // seulement avec la case « Réglages avancés »
 };
 // L'arbre : l'ordre est celui de l'écran. Les catégories se déduisent du changement de `category`.
-constexpr std::array<PageInfo, 14> kPages{{
+constexpr std::array<PageInfo, 15> kPages{{
     {"Général", "Configuration", false},
     {"Général", "Lecteur par défaut", false},  // masquée quand « Ne plus me le demander » est coché
+    {"Général", "Mises à jour", false},
     {"Image IA", "Agrandissement", false},
     {"Image IA", "Fluidité", false},
     {"HDR", "Conversion", false},
@@ -493,24 +494,37 @@ SettingsPanel::Result SettingsPanel::draw(const PlaySettings& running, const Set
     ImGui::SameLine();
     ImGui::BeginChild("##page", ImVec2(0, -footer));
     panel::begin_page();
-    switch (page_) {
-      case 0:
+    {
+      const std::string_view name = kPages[static_cast<std::size_t>(page_)].name;
+      if (name == "Configuration") {
         if (config_page(draft_, choices, bench_)) actions.emplace_back(Command{cmd::Pause{}});
-        break;
-      case 1:
-      case 13: default_player_page(choices.place, system_, draft_.default_player_dismissed, choices.default_player_is_ajp); break;
-      case 2: image_tab(draft_, choices); break;
-      case 3: fluidity_tab(draft_, choices); break;
-      case 4: hdr_tab(draft_, choices); break;
-      case 5: grade_tab(draft_, choices); break;
-      case 6: delay_held = sound_tab(draft_, choices); break;
-      case 7: languages_tab(draft_); break;
-      case 8: subtitles_tab(draft_); break;
-      case 9: export_tab(*export_, running, choices, actions); break;
-      case 10: engines_tab(choices, engine_draft_, actions); break;
-      case 11: stats_tab(draft_); break;
-      case 12: reset_page(actions, choices.profiles); break;
-      default: break;
+      } else if (name == "Lecteur par défaut") {
+        default_player_page(choices.place, system_, draft_.default_player_dismissed, choices.default_player_is_ajp);
+      } else if (name == "Mises à jour") {
+        updates_page(draft_, choices.place, updates_);
+      } else if (name == "Agrandissement") {
+        image_tab(draft_, choices);
+      } else if (name == "Fluidité") {
+        fluidity_tab(draft_, choices);
+      } else if (name == "Conversion") {
+        hdr_tab(draft_, choices);
+      } else if (name == "Réglages") {
+        grade_tab(draft_, choices);
+      } else if (name == "Sortie") {
+        delay_held = sound_tab(draft_, choices);
+      } else if (name == "Langues") {
+        languages_tab(draft_);
+      } else if (name == "Sous-titres") {
+        subtitles_tab(draft_);
+      } else if (name == "Fichier") {
+        export_tab(*export_, running, choices, actions);
+      } else if (name == "Installés") {
+        engines_tab(choices, engine_draft_, actions);
+      } else if (name == "Affichage") {
+        stats_tab(draft_);
+      } else if (name == "Réinitialiser") {
+        reset_page(actions, choices.profiles);
+      }
     }
     panel::end_page();
     ImGui::EndChild();

@@ -1,11 +1,15 @@
 #include "app/play/settings_system.h"
 
+#include <array>
+#include <ctime>
 #include <expected>
+#include <format>
 
 #include <imgui.h>
 
 #include "app/play/auto_bench_run.h"
 #include "app/play/panel_style.h"
+#include "app/play/updater.h"
 
 namespace ajp::app::play {
 
@@ -52,6 +56,105 @@ void default_player_page(const PlayerPlace& place, SystemNote& last, bool& dismi
     note(last.text);
   }
 #endif
+}
+
+void updates_page(PlaySettings& d, const PlayerPlace& place, UpdateNote& result) {
+  const UpdatePaths paths{.data = place.data, .install = place.executable.parent_path(), .executable = place.executable};
+  const std::filesystem::path state_file = place.data / "update.toml";
+  if (result.pending && result.pending->wait_for(std::chrono::seconds(0)) == std::future_status::ready) {
+    const std::expected<std::string, Refusal> done = result.pending->get();
+    result = done ? UpdateNote{.text = *done} : UpdateNote{.text = done.error().detail, .refused = true};
+  }
+  const UpdateState state = load_update_state(state_file);
+  const std::string managed = update_managed_reason(paths);
+
+  section("Mises à jour");
+  struct Mode {
+    const char* key;
+    const char* label;
+    const char* detail;
+  };
+  constexpr std::array<Mode, 3> kModes{{{"notify", "Me prévenir", "Une notification ; vous lancez la mise à jour vous-même."},
+                                        {"auto", "Automatique", "Téléchargée, vérifiée, installée au prochain lancement."},
+                                        {"never", "Jamais", "Aucune vérification."}}};
+  ImGui::BeginDisabled(!managed.empty());
+  for (const Mode& mode : kModes) {
+    if (ImGui::RadioButton(mode.label, d.update_mode == mode.key)) d.update_mode = mode.key;
+    panel::tip(mode.detail);
+  }
+  ImGui::EndDisabled();
+  if (!managed.empty()) note(managed);
+  if (std::string_view(update_public_key()).empty())
+    note("Ce paquet n'a pas de clé de signature : les mises à jour ne peuvent pas être vérifiées.");
+
+  section("Détail");
+  ImGui::BeginDisabled(!managed.empty());
+  if (ImGui::BeginCombo("Canal", d.update_channel == "preview" ? "Préversions" : "Stable")) {
+    if (ImGui::Selectable("Stable", d.update_channel == "stable")) d.update_channel = "stable";
+    if (ImGui::Selectable("Préversions", d.update_channel == "preview")) d.update_channel = "preview";
+    ImGui::EndCombo();
+  }
+  const char* frequency = d.update_frequency == "launch" ? "À chaque lancement" : d.update_frequency == "weekly" ? "Chaque semaine" : "Chaque jour";
+  if (ImGui::BeginCombo("Fréquence", frequency)) {
+    if (ImGui::Selectable("À chaque lancement", d.update_frequency == "launch")) d.update_frequency = "launch";
+    if (ImGui::Selectable("Chaque jour", d.update_frequency == "daily")) d.update_frequency = "daily";
+    if (ImGui::Selectable("Chaque semaine", d.update_frequency == "weekly")) d.update_frequency = "weekly";
+    ImGui::EndCombo();
+  }
+  ImGui::EndDisabled();
+  note(std::format("Version installée : {}", installed_version()));
+  if (!state.latest_version.empty()) note(std::format("Disponible : {}{}", state.latest_version, state.staged_version.empty() ? "" : " (préparée)"));
+  if (state.last_check_unix > 0) {
+    const std::time_t at = static_cast<std::time_t>(state.last_check_unix);
+    std::tm local{};
+#ifdef _WIN32
+    localtime_s(&local, &at);
+#else
+    localtime_r(&at, &local);
+#endif
+    std::array<char, 32> text{};
+    std::strftime(text.data(), text.size(), "%Y-%m-%d %H:%M", &local);
+    note(std::format("Dernière vérification : {}", text.data()));
+  }
+
+  const bool busy = result.pending != nullptr;
+  ImGui::BeginDisabled(busy);
+  if (ImGui::Button("Vérifier maintenant")) {
+    result.pending = std::make_shared<std::future<std::expected<std::string, Refusal> > >(std::async(
+        std::launch::async, [paths, state_file, mode = d.update_mode, channel = d.update_channel]() -> std::expected<std::string, Refusal> {
+          UpdateState current = load_update_state(state_file);
+          auto message = run_update_check(paths, mode == "never" ? "notify" : mode, channel, current, {});
+          (void)save_update_state(state_file, current);
+          return message;
+        }));
+    result.text.clear();
+    result.refused = false;
+  }
+  ImGui::SameLine();
+  ImGui::BeginDisabled(state.previous_version.empty());
+  if (ImGui::Button("Revenir à la version précédente")) {
+    result.pending = std::make_shared<std::future<std::expected<std::string, Refusal> > >(std::async(
+        std::launch::async, [paths, state_file]() -> std::expected<std::string, Refusal> {
+          UpdateState current = load_update_state(state_file);
+          auto message = roll_back_update(paths, current);
+          if (message) (void)save_update_state(state_file, current);
+          return message ? std::expected<std::string, Refusal>(*message + " : relancez le lecteur") : message;
+        }));
+    result.text.clear();
+    result.refused = false;
+  }
+  ImGui::EndDisabled();
+  ImGui::EndDisabled();
+  if (busy) {
+    note("En cours…");
+  } else if (result.refused) {
+    ImGui::PushStyleColor(ImGuiCol_Text, kWarn);
+    ImGui::TextWrapped("%s", result.text.c_str());
+    ImGui::PopStyleColor();
+  } else if (!result.text.empty()) {
+    note(result.text);
+  }
+  if (!state.last_error.empty() && result.text.empty()) note("Dernière erreur : " + state.last_error);
 }
 
 bool bench_page(const PlayerPlace& place, const std::filesystem::path& video, BenchNote& bench) {
