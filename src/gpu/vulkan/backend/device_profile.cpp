@@ -104,7 +104,7 @@ DeviceProfile profile_device(const VkContext& context) {
                                .matrix_units = offered,
                                .matrix_first = profile.matrix_hardware && profile.matrix_allowed,
                                .matrix_f16_acc = offered && tiles.f16_sums,
-                               .matrix_f8 = offered && tiles.f8_e4m3,
+                               .matrix_f8 = offered && tiles.f8_e4m3 && f.float8_matrix,
                                .subgroup_size = caps.subgroup_size,
                                .subgroup_min = f.subgroup_size_control ? caps.min_subgroup_size : 0,
                                .subgroup_max = f.subgroup_size_control ? caps.max_subgroup_size : 0,
