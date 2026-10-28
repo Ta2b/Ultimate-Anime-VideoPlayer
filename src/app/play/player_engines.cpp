@@ -19,6 +19,7 @@
 #include "kernels/spec/distil_drba.h"
 #include "kernels/spec/gmfss.h"
 #include "kernels/spec/rife.h"
+#include "prepare/drba_split.h"
 #include "prepare/rife_split.h"
 #include "prepare/sha256.h"
 
@@ -214,7 +215,7 @@ std::expected<std::optional<GmfssEngines>, Refusal> prepare_gmfss(Player& p, con
 std::expected<std::optional<std::unique_ptr<gpu::Engine>>, Refusal> prepare_distil_drba(
     Player& p, const gpu::BackendInit& init, gpu::Backend& backend,
     std::span<const std::filesystem::path> dirs, int work_width, int work_height, int& align,
-    PrecisionTier tier) {
+    PrecisionTier tier, DrbaFusedUse* fused) {
   std::optional<DrbaModel> found = find_distil_drba(dirs, drba_half_flow(work_height));
   if (found && tier != PrecisionTier::Balanced) {
     if (tier == PrecisionTier::Performance && !backend.capabilities().fp8) {
@@ -238,17 +239,38 @@ std::expected<std::optional<std::unique_ptr<gpu::Engine>>, Refusal> prepare_dist
   }
   align = found->align;
   const kernels::RifeGeometry g = kernels::rife_geometry(work_width, work_height, found->align);
+  const gpu::Shape shape{.dims = {1, kernels::kDistilDrbaInputPlanes, g.padded_height, g.padded_width}};
+  const EngineLabel label{.name = "DistilDRBA",
+                          .model = found->path.stem().string(),
+                          .width = g.padded_width,
+                          .height = g.padded_height};
+  // Le graphe coupé d'abord : un refus de la découpe, de la construction ou du chargement garde l'entier.
+  if (fused != nullptr) {
+    auto manifest = prepare::derive_drba_fused(found->path, p.paths.engines.parent_path() / "modeles",
+                                               g.padded_height, g.padded_width);
+    if (!manifest) {
+      fused->declined = manifest.error().detail;
+    } else {
+      auto engine = prepare_engine(p, init, backend, *manifest, shape,
+                                   EngineLabel{.name = "DistilDRBA fusionné",
+                                               .model = label.model,
+                                               .width = g.padded_width,
+                                               .height = g.padded_height},
+                                   gpu::Lane::Interpolate);
+      if (!engine) {
+        fused->declined = engine.error().detail;
+      } else if (!*engine) {
+        return std::nullopt;  // fenêtre fermée pendant la construction
+      } else {
+        fused->used = true;
+        return engine;
+      }
+    }
+  }
   auto fixed = static_distil_drba(found->path, g.padded_width, g.padded_height,
                                   p.paths.engines.parent_path() / "modeles");
   if (!fixed) return std::unexpected(std::move(fixed.error()));
-  return prepare_engine(
-      p, init, backend, *fixed,
-      gpu::Shape{.dims = {1, kernels::kDistilDrbaInputPlanes, g.padded_height, g.padded_width}},
-      EngineLabel{.name = "DistilDRBA",
-                  .model = found->path.stem().string(),
-                  .width = g.padded_width,
-                  .height = g.padded_height},
-      gpu::Lane::Interpolate);
+  return prepare_engine(p, init, backend, *fixed, shape, label, gpu::Lane::Interpolate);
 }
 
 std::expected<std::optional<std::unique_ptr<gpu::Engine>>, Refusal> prepare_apple(

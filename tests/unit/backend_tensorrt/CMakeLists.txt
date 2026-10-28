@@ -12,7 +12,11 @@ set(AJP_SPAN_FP8_IMAGE "" CACHE FILEPATH "Image PPM d'anime pour le test caché 
 # caché [.rife_fused] ; AJP_RIFE_IMAGE : une image d'anime en PPM pour sa paire (sinon un dessin synthétique).
 set(AJP_RIFE_MODEL_DIR "$ENV{HOME}/ajp/models/rife" CACHE PATH "Dossier des RIFE ONNX du lecteur (test caché [.rife_fused])")
 set(AJP_RIFE_IMAGE "" CACHE FILEPATH "Image PPM d'anime pour le test caché [.rife_fused]")
-add_executable(ajp_backend_tensorrt_tests backend_fixture.cpp backend_motion_test.cpp backend_test.cpp export_test.cpp gmfss_test.cpp
+# AJP_DRBA_MODEL_DIR : le dossier des DistilDRBA du lecteur (distil_drba_v2_lite.onnx, distil_drba_v2_lite_s05.onnx), lus en
+# place par le test caché [.drba_fused] ; AJP_DRBA_IMAGE : une image d'anime en PPM pour ses trois images (sinon un dessin).
+set(AJP_DRBA_MODEL_DIR "$ENV{HOME}/ajp/models/rife" CACHE PATH "Dossier des DistilDRBA ONNX du lecteur (test caché [.drba_fused])")
+set(AJP_DRBA_IMAGE "" CACHE FILEPATH "Image PPM d'anime pour le test caché [.drba_fused]")
+add_executable(ajp_backend_tensorrt_tests backend_fixture.cpp backend_motion_test.cpp backend_test.cpp drba_fused_test.cpp export_test.cpp gmfss_test.cpp
   rife_fused_test.cpp span_fp8_test.cpp)
 target_link_libraries(ajp_backend_tensorrt_tests PRIVATE
   ajp::gpu ajp::gpu_span_fp8 ajp::kernels ajp::prepare ajp_backend_tensorrt_kernels ajp::dep::cudart ${CMAKE_DL_LIBS} Catch2::Catch2WithMain)
@@ -24,7 +28,9 @@ target_compile_definitions(ajp_backend_tensorrt_tests PRIVATE
   AJP_SPAN_FP8_MODEL="${AJP_SPAN_FP8_MODEL}"
   AJP_SPAN_FP8_IMAGE="${AJP_SPAN_FP8_IMAGE}"
   AJP_RIFE_MODEL_DIR="${AJP_RIFE_MODEL_DIR}"
-  AJP_RIFE_IMAGE="${AJP_RIFE_IMAGE}")
+  AJP_RIFE_IMAGE="${AJP_RIFE_IMAGE}"
+  AJP_DRBA_MODEL_DIR="${AJP_DRBA_MODEL_DIR}"
+  AJP_DRBA_IMAGE="${AJP_DRBA_IMAGE}")
 add_dependencies(ajp_backend_tensorrt_tests ajp_backend_tensorrt)
 ajp_set_warnings(ajp_backend_tensorrt_tests)
 catch_discover_tests(ajp_backend_tensorrt_tests TEST_PREFIX "backend_tensorrt: " DISCOVERY_MODE PRE_TEST)

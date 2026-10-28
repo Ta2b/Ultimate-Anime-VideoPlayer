@@ -122,6 +122,16 @@ struct GmfssEngines {
   std::unique_ptr<gpu::Engine> fusion;
   int align = 64;  // multiple des plans remplis des deux graphes (gmfss_model.h)
 };
+// DistilDRBA fusionné (kernels/spec/drba_fused.h) : si fused n'est pas nul, prepare_distil_drba essaie
+// d'abord le graphe coupé en quatre petits moteurs (dérivés dans le dossier des modèles, un manifeste «
+// .drbafused » les nomme, leurs quatre moteurs construits puis chargés en un seul, qui s'enfile comme le
+// moteur entier) ; tout refus (structure non reconnue, taille que les noyaux ne prennent pas, construction,
+// chargement, essai de la chaîne) est noté dans fused->declined et garde le DistilDRBA entier. fused->used :
+// le moteur rendu est le fusionné.
+struct DrbaFusedUse {
+  bool used = false;
+  std::string declined;
+};
 // DistilDRBA pour des images de travail work_width × work_height : son graphe, trouvé dans le
 // premier de dirs qui l'a, fixé à la taille remplie de RIFE, construit puis chargé. Rien si
 // l'utilisateur ferme la fenêtre. Refus : FieldMissing (graphe absent), et ceux de la dérivation
@@ -129,7 +139,7 @@ struct GmfssEngines {
 std::expected<std::optional<std::unique_ptr<gpu::Engine>>, Refusal> prepare_distil_drba(
     Player& p, const gpu::BackendInit& init, gpu::Backend& backend,
     std::span<const std::filesystem::path> dirs, int work_width, int work_height, int& align,
-    PrecisionTier tier = PrecisionTier::Balanced);
+    PrecisionTier tier = PrecisionTier::Balanced, DrbaFusedUse* fused = nullptr);
 
 // L'interpolation d'Apple pour des images de travail work_width × work_height, chargée comme RIFE
 // image (plans v2, remplis au multiple de 64) : son modèle (apple_model.h), essayé à la

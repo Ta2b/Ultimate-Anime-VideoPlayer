@@ -91,6 +91,7 @@ struct ChainEngines {
   std::unique_ptr<gpu::Engine> rife;  // RIFE image, ou l'interpolation d'Apple (apple)
   std::unique_ptr<gpu::Engine> rife_motion;
   bool rife_fused = false;  // rife ou rife_motion est RIFE fusionné (six moteurs et noyaux de colle)
+  bool drba_fused = false;  // drba est DistilDRBA fusionné (quatre moteurs et noyaux de colle)
   bool apple = false;
 
   bool use_gmfss() const { return gmfss.pair != nullptr; }

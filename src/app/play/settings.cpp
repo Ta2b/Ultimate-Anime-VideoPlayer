@@ -503,6 +503,12 @@ Change change_between(const PlaySettings& running, const PlaySettings& wanted, b
     reopen.emplace_back(wanted.rife_fused
                             ? "RIFE fusionné (six moteurs, construits la première fois pour cette taille)"
                             : "RIFE entier à la place du RIFE fusionné");
+  if (wanted.rife_factor >= 2 && wanted.motion_engine == MotionEngine::DistilDrba &&
+      running.drba_fused != wanted.drba_fused)
+    reopen.emplace_back(
+        wanted.drba_fused
+            ? "DistilDRBA fusionné (quatre moteurs, construits la première fois pour cette taille)"
+            : "DistilDRBA entier à la place du DistilDRBA fusionné");
   if (wanted.rife_factor >= 2 && wanted.motion_engine == MotionEngine::Rife &&
       running.rife_model != wanted.rife_model)
     reopen.emplace_back("le modèle RIFE est chargé (construit la première fois pour cette taille)");
