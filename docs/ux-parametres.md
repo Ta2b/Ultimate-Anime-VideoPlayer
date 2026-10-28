@@ -266,6 +266,87 @@ Mécanique :
 | Seuil (pas de code) | Seuil du noir |
 | Effacer la barre en pause (anti-marquage) | Masquer la barre en pause (protège l'OLED) |
 
+### 4.7 Configuration automatique (idée du 28/10)
+
+**But** : l'utilisateur ne règle rien. AJP reconnaît la machine, choisit la chaîne, et tout reste modifiable en
+détail (mode *Personnalisé*, case *Réglages avancés*). Elle remplace l'onglet Profils retiré : les profils
+reviennent comme **préréglages** d'une seule ligne en tête de la catégorie *Image IA*.
+
+**Ce qu'AJP sait déjà** (pas à inventer) : `GpuFacts` (nom, fabricant, VRAM, VRAM visible, cœurs Tensor, WMMA),
+`apple_model`, `display_edid`, `host_facts`, `ChainEngines` et le mode Auto du multiplicateur (`rife_auto`), le
+catalogue RIFE (4.22 lite, 4.25 lite…), les 9 profils actuels, les statistiques d'image par étage (`--stats`).
+
+#### Entrées
+- **Carte** : fabricant, génération, gamme, VRAM, iGPU ou dédiée, cœurs matriciels. Ce sont des **règles par
+  famille** et non un classement carte par carte (voir « Le fichier de classement »).
+- **Écran** : résolution et fréquence (EDID, VRR), HDR ou non.
+- **Vidéo en cours** : résolution et cadence de la source. L'automatique se recalcule **par vidéo** : une source
+  60 i/s n'est pas interpolée ; une source 480p n'est pas réduite.
+- **Priorité** (réglage de l'utilisateur) : *Fluidité* (cadence d'abord), *Équilibre*, *Image* (résolution et
+  finesse d'abord).
+
+#### Tranches (à confirmer par mesure, pas figées)
+| Tranche | Exemples | Agrandissement | Interpolation (multiplicateur : toujours Auto) |
+|---|---|---|---|
+| **0 · Économe** | iGPU anciens, cartes d'avant 2016 | aucun : on ne réduit pas, on n'agrandit pas | aucune, ou RIFE 4.22 lite ×2 si la mesure le permet |
+| **1 · Léger** | iGPU récents, GTX 10/16, RX 400 à 5000 | SPAN, travail 540p → 1080p | RIFE 4.22 lite |
+| **2 · Normal** | RTX 2060 à 3060, RX 6600 à 7600, Arc, Apple M | SPAN, 720p → 1440p ou écran | RIFE 4.25 lite |
+| **3 · Rapide** | RTX 3070 à 4070, RX 7800 | SPAN, 720p → 1440p | DistilDRBA lite |
+| **4 · Ultra** | RTX 4080 et plus, RX 7900 | SPAN, 720p → 1440p ou 2160p | GMFSS Union (mode Performance) |
+
+Valeurs communes : modèle SPAN **Sharp (performance)** partout (ta remarque : pas de différence nette avec
+Balanced, et Sharp convient mieux à l'anime), filtre de réduction **Mitchell** (ou **Hermite** une fois ajouté),
+**Bilinear/Area** en tranche 0 si le coût compte, DistilDRBA **poses** activées si la mesure confirme (voir
+« Points à vérifier »).
+
+#### Résolution : réduire avant d'agrandir
+Ton constat (720p → 2K, et 540p → 1080p plus net que le 1080p natif d'un anime) devient une règle :
+la **résolution de travail** est choisie d'après **l'écran** et la **tranche** : écran 1080p et carte moyenne →
+travail 540p, SPAN ×2 vers 1080p ; écran 1440p ou 4K → travail 720p, SPAN ×2 vers 1440p, puis mise à
+l'échelle finale. Tranche 0 sur un écran 1080p : on ne touche à rien. *Priorité Image* monte d'un cran la
+résolution de travail, *Fluidité* la baisse d'un cran. C'est ton observation, pas encore une mesure : avant de
+la fixer en défaut, je l'essaie sur 3 ou 4 épisodes avec des instantanés (`--snapshot`) pour t'en montrer
+l'effet.
+
+#### Le fichier de classement
+- Un fichier de données, `data/gpu_tiers.toml`, **versionné avec le lecteur** et rafraîchi par la mise à jour
+  automatique (4.5) sans changer de version du lecteur.
+- **Des règles par famille, pas 1 000 lignes** : par exemple `pattern = "RTX 40"`, `base = 3`, ajustée par la
+  gamme (`Ti`, `Super`, `XT`, `X`, nombre) ; `Arc A`, `RX 7000`, `Radeon 7x0M`, `Apple M1…M4` (+ Pro / Max /
+  Ultra), `Iris Xe`, `UHD`. Une centaine de règles couvrent 2015 à aujourd'hui avec moins d'erreurs que
+  des milliers de lignes écrites à la main.
+- **Carte inconnue** (nouvelle génération, nom étrange) : on retombe sur une estimation par fabricant, VRAM et
+  cœurs matriciels, puis le benchmark corrige.
+- **Honnêteté sur les chiffres** : je n'ai mesuré que sur la RTX 4070 Ti. Les autres tranches s'appuient sur
+  la puissance publique des cartes et sur les coûts mesurés de chaque moteur : ce sont des **estimations**. C'est
+  la raison du benchmark ci-dessous, et de laisser la tranche modifiable.
+
+#### Benchmark facultatif
+- Bouton **« Évaluer ma machine »** (Image IA, et proposé au premier lancement) : joue 10 à 15 s d'une courte
+  séquence avec chaque chaîne candidate (son coupé), relève le temps par image (mêmes statistiques que `--stats`)
+  et garde **la plus lourde qui tient avec marge** (par exemple 80 % du budget d'une image à la cadence de
+  l'écran). Résultat mémorisé par carte, pilote et version du moteur ; refait si l'un change.
+- Hors ligne, aucune donnée envoyée. Prévenu : un PC chaud ou occupé (jeu en arrière-plan) donne un résultat
+  plus bas, à relancer.
+
+#### Préréglages (remplacent l'onglet Profils)
+*Auto* (par défaut), *Économe*, *Rapide*, *Normal*, *Qualité*, *Ultra*, *Personnalisé*. Modifier un réglage
+passe en *Personnalisé*, à partir des valeurs courantes. Plus de préréglages ne servent à rien tant qu'on n'a
+pas de cas d'usage précis : *Sans interpolation* et *HDR* se règlent par catégorie, pas par profil.
+
+#### Quand l'automatique se recalcule
+Au premier lancement ; à chaque changement de carte, d'écran ou de pilote ; à chaque nouvelle vidéo (cadence et
+résolution) ; jamais en pleine lecture. Un utilisateur en *Personnalisé* n'est jamais écrasé.
+
+#### Points à vérifier avant de les fixer
+1. DistilDRBA lite contre RIFE 4.22 et 4.25 : le rendu « meilleur » est ton impression, je la teste (coût
+   mesuré, instantanés côte à côte) avant d'en faire le défaut de la tranche 3.
+2. DRBA **poses** : activée par défaut seulement si le coût et la fidélité le justifient ; je mesure.
+3. Le coût de Mitchell / Hermite sur iGPU ancien : probablement négligeable devant l'IA, à confirmer.
+4. GMFSS Union (et pas base) : d'accord, les mesures vont dans ce sens (même coût, meilleurs résultats).
+5. Une tranche trop optimiste = saccades : le benchmark et la baisse automatique de la tranche (le mode Auto
+   fait déjà descendre le multiplicateur) servent de filet.
+
 ## 5. Les autres points de la 0.4
 
 - **Hermite en réduction** : le filtre de réduction a 6 choix (Area, Spline36, Bilinear, Bicubic, Mitchell,
@@ -291,7 +372,9 @@ Mécanique :
    et application au lancement, test sur Linux puis Windows. C'est un chantier à part (signature, clé, format du
    manifeste) : ne pas le mélanger à l'étape 3.
 5. **Recherche** : registre des réglages, filtre par page puis par ligne (4.3 bis).
-6. **Passe de relecture** : infobulles relues d'un trait ; essai à 100 %, 150 % et 200 % d'échelle, sur 4K et
+6. **Configuration automatique** (4.7) : d'abord le fichier de classement et la règle de choix (testables sans
+   interface), puis le sélecteur de préréglage, puis le benchmark. À ta demande, elle peut passer avant la refonte.
+7. **Passe de relecture** : infobulles relues d'un trait ; essai à 100 %, 150 % et 200 % d'échelle, sur 4K et
    1366×768.
 
 Vérifications : tests existants de `settings_test` et du panneau, instantané du menu avant/après (`--snapshot`)
@@ -304,6 +387,7 @@ par onglet, contrôle que chaque réglage de l'annexe A reste atteignable.
 4. Les temps mesurés : jamais dans l'interface, oui dans `docs/nvidia-linux.md` ?
 5. Mises à jour : défaut **Automatique** (installe au prochain lancement) ou **Me prévenir** ?
 6. Pour GMFSS et le mode auto de la 0.4 : qu'est-ce que tu veux améliorer en priorité ?
+7. Configuration automatique (4.7) : les 5 tranches et les préréglages te conviennent ? Le benchmark : proposé au premier lancement ou seulement sur bouton ? Veux-tu que je commence par elle, avant la refonte du menu ?
 
 ## Annexe A : arbre actuel, réglage par réglage
 
