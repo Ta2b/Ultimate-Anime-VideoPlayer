@@ -62,3 +62,31 @@ TEST_CASE("auto : jamais au-delà du plafond", "[core][auto_rate]") {
   rate.set_ceiling(2);
   CHECK(rate.step() == 2);
 }
+
+TEST_CASE("auto : un palier qui échoue au back-off maximal devient un plafond appris", "[core][auto_rate]") {
+  AutoRate rate(3);
+  const auto climb_to_3 = [&] {
+    while (rate.step() < 3) rate.pair(false);
+  };
+  const auto fail = [&] {
+    for (std::uint32_t i = 0; i <= AutoRate::kGracePairs && rate.step() == 3; ++i) rate.pair(true);
+  };
+  for (int round = 0; round < AutoRate::kMaxBackoff + 1; ++round) {
+    climb_to_3();
+    fail();
+    CHECK(rate.step() == 2);
+  }
+  CHECK(rate.learned_cap() == 2);
+  std::uint32_t pairs = 0;
+  while (rate.step() < 3 && pairs < AutoRate::kCapPairs + 100) {
+    rate.pair(false);
+    ++pairs;
+  }
+  CHECK(pairs >= AutoRate::kCapPairs - AutoRate::kGracePairs);  // re-tenté après 5 min seulement
+}
+
+TEST_CASE("auto : une cadence source absurde garde ×1", "[core][auto_rate]") {
+  CHECK(auto_ceiling(165.0, 1000.0) == 1);
+  CHECK(auto_ceiling(165.0, 2.0) == 1);
+  CHECK(auto_ceiling(165.0, 25.0) == 6);
+}

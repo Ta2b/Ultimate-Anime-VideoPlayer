@@ -360,6 +360,19 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
     chain.live.set_auto(on, core::auto_ceiling(display_refresh_hz(out.window()), fps_of(video.frame_rate)));
   };
   apply_auto();
+  // Le palier du mode auto : un message à l'écran et une ligne de journal à chaque changement.
+  int auto_shown = 0;
+  const auto show_auto = [&] {
+    const Factor now = chain.live.factor_now();
+    const int step = chain.running.rife_auto && now.den == 1 ? now.num : 0;
+    if (step == auto_shown) return;
+    if (step > 0) {
+      log->info("auto : ×{} (plafond {}, plafond appris {})", step, chain.live.auto_ceiling(),
+                chain.live.auto_cap());
+      if (auto_shown > 0) p.ui.controls().notify(std::format("Auto ×{}", step), host_now_us());
+    }
+    auto_shown = step;
+  };
   while (!session.finished() && !chain.reopen) {
     for (;
          p.next_key < p.options.keys.size() && host_now_us() - p.began_us >= p.options.keys[p.next_key].first;
@@ -387,6 +400,7 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
       display_polled_at = host_now_us();
       session.set_display(display_period_us(out.window()), display_refresh_hz(out.window()));
       apply_auto();
+      show_auto();
     }
     (*pipeline)->pump();
     while (auto message = try_take((*pipeline)->inbox())) session.handle(std::move(*message));

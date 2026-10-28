@@ -20,6 +20,9 @@ class AutoRate {
   // Paires propres avant de tenter un palier de plus (3 s à 24 i/s), doublé à chaque échec récent.
   static constexpr std::uint32_t kRisePairs = 72;
   static constexpr int kMaxBackoff = 4;
+  // Un palier qui échoue encore au back-off maximal devient le plafond appris : on ne le retente plus
+  // qu'après 5 min (7200 paires à 24 i/s), au lieu d'un à-coup toutes les 48 s.
+  static constexpr std::uint32_t kCapPairs = 7200;
   // Paires ignorées après une descente ou un saut : celles déjà en file ont été faites
   // au palier d'avant et reviendraient en retard à tort (descente en cascade).
   static constexpr std::uint32_t kGracePairs = 6;
@@ -28,6 +31,7 @@ class AutoRate {
   explicit AutoRate(int ceiling = kAutoMaxStep);
 
   int step() const { return step_; }
+  int learned_cap() const { return cap_; }  // 0 : aucun
   int ceiling() const { return ceiling_; }
   // Plafond changé (écran déplacé, réglage) : le palier courant le suit.
   void set_ceiling(int ceiling);
@@ -43,6 +47,7 @@ class AutoRate {
   int step_;
   std::uint32_t grace_ = 0;  // paires à ignorer encore
   std::uint32_t clean_ = 0;  // paires à l'heure depuis le dernier changement
+  int cap_ = 0;              // plafond appris sur ce contenu ; 0 : aucun
   int backoff_ = 0;          // échecs récents de montée
   bool probing_ = false;     // le palier courant vient d'être tenté
 };

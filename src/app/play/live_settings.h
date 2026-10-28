@@ -91,6 +91,14 @@ class LiveSettings {
     const std::scoped_lock lock(mutex_);
     if (auto_on_) auto_.pair(late);
   }
+  int auto_ceiling() const {
+    const std::scoped_lock lock(mutex_);
+    return auto_.ceiling();
+  }
+  int auto_cap() const {
+    const std::scoped_lock lock(mutex_);
+    return auto_.learned_cap();
+  }
   // Seek, saut d'époque : la mesure du mode auto repart après quelques paires.
   void auto_settle() {
     const std::scoped_lock lock(mutex_);
