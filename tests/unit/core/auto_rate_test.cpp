@@ -103,3 +103,15 @@ TEST_CASE("auto : une cadence source absurde garde ×1", "[core][auto_rate]") {
   CHECK(auto_ceiling(165.0, 2.0) == 1);
   CHECK(auto_ceiling(165.0, 25.0) == 6);
 }
+
+TEST_CASE("auto : les images manquées font descendre sans retard de paire", "[core][auto_rate]") {
+  CHECK(ajp::core::auto_overloaded(707, 7900));       // DistilDRBA ×6
+  CHECK(ajp::core::auto_overloaded(104, 7096));       // RIFE ×5 : 1,4 %
+  CHECK_FALSE(ajp::core::auto_overloaded(29, 5731));  // RIFE ×4 : 0,5 %
+  CHECK_FALSE(ajp::core::auto_overloaded(5, 100));    // trop peu pour conclure
+  AutoRate rate(6);
+  for (int i = 0; i < 100; ++i) rate.pair(false);
+  const int before = rate.step();
+  CHECK(rate.overloaded() == before - 1);
+  CHECK(rate.overloaded() == before - 1);  // la grâce après une descente
+}

@@ -364,6 +364,10 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
   apply_auto();
   // Le palier du mode auto : un message à l'écran et une ligne de journal à chaque changement.
   bool vrr_fullscreen = false;
+  int auto_window_step = 0;
+  std::int64_t auto_window_us = 0;
+  std::int64_t auto_window_missing = 0;
+  std::int64_t auto_window_new = 0;
   int auto_shown = 0;
   const auto show_auto = [&] {
     const Factor now = chain.live.factor_now();
@@ -403,6 +407,23 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
       display_polled_at = host_now_us();
       session.set_display(display_period_us(out.window()), display_refresh_hz(out.window()));
       apply_auto();
+      // Le GPU ne suit pas sans qu'une paire soit « en retard » : les images manquées à l'écran sur
+      // 4 s pleines de ce palier font descendre (la fenêtre repart à chaque changement de palier).
+      const FrameStats& shown = session.stats();
+      if (auto_shown > 0 && auto_shown == auto_window_step && host_now_us() - auto_window_us >= 4'000'000) {
+        if (core::auto_overloaded(shown.missing - auto_window_missing, shown.new_frames - auto_window_new)) {
+          log->info("auto : {} images manquées sur {} s, le GPU ne suit pas ×{}",
+                    shown.missing - auto_window_missing, 4, auto_shown);
+          chain.live.auto_overloaded();
+        }
+        auto_window_step = 0;
+      }
+      if (auto_window_step == 0 || auto_window_step != auto_shown) {
+        auto_window_step = auto_shown;
+        auto_window_us = host_now_us();
+        auto_window_missing = shown.missing;
+        auto_window_new = shown.new_frames;
+      }
       show_auto();
       // KDE arme le VRR en plein écran seulement : on le relit quand la fenêtre change d'état.
       const bool fullscreen = (SDL_GetWindowFlags(out.window()) & SDL_WINDOW_FULLSCREEN) != 0;

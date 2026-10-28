@@ -28,6 +28,30 @@ void AutoRate::set_ceiling(int ceiling) {
   }
 }
 
+void AutoRate::descend() {
+  if (step_ > 1) {
+    if (probing_) {
+      // Une tentative qui échoue : on la re-tentera plus tard ; la deuxième fait du palier d'en dessous
+      // le plafond appris.
+      if (++fails_[static_cast<std::size_t>(step_)] >= kFailsToCap) {
+        cap_ = step_ - 1;
+        fails_[static_cast<std::size_t>(step_)] = 0;
+      }
+      backoff_ = std::min(backoff_ + 1, kMaxBackoff);
+    }
+    --step_;
+    grace_ = kGracePairs;
+  }
+  probing_ = false;
+  clean_ = 0;
+  lates_ = 0;
+}
+
+int AutoRate::overloaded() {
+  if (grace_ == 0) descend();
+  return step_;
+}
+
 int AutoRate::pair(bool late) {
   if (grace_ > 0) {
     --grace_;
@@ -37,21 +61,7 @@ int AutoRate::pair(bool late) {
   if (late) {
     clean_ = 0;
     if (std::popcount(lates_) < kLateTolerance) return step_;  // un retard isolé : le palier reste
-    if (step_ > 1) {
-      if (probing_) {
-        // Une tentative qui échoue : on la re-tentera plus tard ; la deuxième fait du palier d'en dessous
-        // le plafond appris.
-        if (++fails_[static_cast<std::size_t>(step_)] >= kFailsToCap) {
-          cap_ = step_ - 1;
-          fails_[static_cast<std::size_t>(step_)] = 0;
-        }
-        backoff_ = std::min(backoff_ + 1, kMaxBackoff);
-      }
-      --step_;
-      grace_ = kGracePairs;
-    }
-    probing_ = false;
-    lates_ = 0;
+    descend();
     return step_;
   }
   ++clean_;

@@ -16,6 +16,14 @@ inline constexpr int kAutoMaxStep = 6;  // ×6 de 23,976 : 143,86 i/s, sous un �
 // entier de rafraîchissements font du judder : le menu l'avertit, il ne les interdit pas.
 int auto_ceiling(double display_hz, double source_fps);
 
+// Images manquées à l'écran sur une fenêtre (missing) pour shown images neuves : le GPU ne suit pas
+// même quand aucune paire n'est « en retard » (mesuré sur 4070 Ti : DistilDRBA ×6 a 707 manquées pour
+// 1 retard, le coût par image créée vient de SPAN et de RTX HDR). Au moins 6 manquées et plus de 1,2 %
+// des images attendues : RIFE ×5 (1,4 %, 354 manquées en Auto) passe, ×4 (0,5 %) ne passe pas.
+inline bool auto_overloaded(std::int64_t missing, std::int64_t shown) {
+  return missing >= 6 && missing * 1000 > (missing + shown) * 12;
+}
+
 class AutoRate {
  public:
   // Paires propres avant de tenter un palier de plus (3 s à 24 i/s), doublé à chaque échec récent.
@@ -48,10 +56,14 @@ class AutoRate {
   // L'issue d'une paire : en retard (des instants sautés pour rattraper l'horloge) ou à l'heure.
   // Rend le palier à utiliser pour la paire suivante.
   int pair(bool late);
+  // Le GPU ne suit pas (auto_overloaded) : même descente que deux retards rapprochés.
+  int overloaded();
   // Seek, pause, reprise : la mesure repart après kGracePairs paires.
   void settle() { grace_ = kGracePairs; }
 
  private:
+  void descend();
+
   int ceiling_;
   int step_;
   std::uint32_t grace_ = 0;  // paires à ignorer encore
