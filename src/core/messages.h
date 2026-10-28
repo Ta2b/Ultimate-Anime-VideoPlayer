@@ -1,6 +1,7 @@
 // Messages échangés entre threads par leurs boîtes Inbox. Fait partie de core_types.
 #pragma once
 
+#include <array>
 #include <cstdint>
 #include <memory>
 #include <variant>
@@ -75,6 +76,8 @@ struct SetVolume {
 struct SetListening {
   std::uint8_t listen = 1;
   bool faithful = false;
+  bool tuned = false;  // tuning porte les réglages fins (audio::MixTuning, dans l'ordre de to_array)
+  std::array<float, 9> tuning{};
 };
 struct Quit {};
 }  // namespace cmd

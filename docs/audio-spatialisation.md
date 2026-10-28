@@ -44,3 +44,23 @@ reprend le résumé transmis par le coordinateur, à recouper avec l'original). 
   appareils (`SDL_GetAudioPlaybackDevices`), ouvrir celui choisi, réagir aux événements d'appareil
   (`SDL_EVENT_AUDIO_DEVICE_ADDED/REMOVED`, changement du défaut), lire les canaux d'un appareil
   (`SDL_GetAudioDeviceFormat`).
+
+## Profils de virtualisation (v0.6)
+
+Sous « Écoute », un menu **Profil** (casque ou enceintes) choisit un réglage nommé ; **Réglages avancés** ajoute le profil
+**Personnalisé** et ses curseurs (enregistrés dans `play.toml` : `[audio] profile`, `[audio.custom]`). Les valeurs hors plage sont
+ramenées dans leur plage ; un profil qui ne va pas à l'écoute en cours (Voix claires au casque) retombe sur Naturel. Naturel = le mixage
+d'avant les profils.
+
+| Profil | Écoute | Effet |
+|---|---|---|
+| Naturel | casque, enceintes | crossfeed 0,32 à 700 Hz, tête de 8,75 cm, centre +2 dB |
+| Doux | casque | crossfeed 0,20 à 800 Hz, ombre de tête 0,25 |
+| Enceintes virtuelles | casque | crossfeed 0,50 à 650 Hz, retard 0,3 ms, ombre 0,45, arrière +10 % |
+| Large | casque | tête de 10 cm, ombre 0,50, arrière +20 % (5.1 et 7.1) |
+| Voix claires | enceintes | centre ×1,6, arrière 0,85, basses 0,2 |
+| Nuit | enceintes | centre ×1,5, arrière 0,7, basses 0,12, gain 0,55 |
+
+Réglages du mode Personnalisé : crossfeed (niveau, adoucissement, retard), taille et ombre de la tête, niveau des arrières et
+côtés, niveau du centre, gain du mixage stéréo, basses (LFE). Les tests (`[mixer][profils]`) vérifient les sens des écarts (fort > naturel
+> doux ; Nuit réduit l'arrière) ; l'écoute subjective reste à faire par Tatoub.

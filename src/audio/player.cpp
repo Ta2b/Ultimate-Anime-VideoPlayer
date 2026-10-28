@@ -54,6 +54,7 @@ AudioPlayer::AudioPlayer(std::unique_ptr<AudioOutput> output, const PlayerConfig
       clock_(std::make_shared<AudioClock>()),
       regulator_(config.drift),
       mixer_(MixConfig{.listen = config.mix.listen,
+                       .tuning = config.mix.tuning,
                        .faithful = config.mix.faithful,
                        .sink_channels = output_->format().channels,
                        .sample_rate = output_->format().sample_rate}) {}
@@ -125,6 +126,7 @@ void AudioPlayer::handle(const Command& command) {
     MixConfig mix = mixer_.config();
     mix.listen = static_cast<Listen>(std::min<std::uint8_t>(listening->listen, 2));
     mix.faithful = listening->faithful;
+    if (listening->tuned) mix.tuning = tuning_from(listening->tuning);
     mixer_ = Mixer(mix);
     // Les canaux voulus du décodeur ont changé : il est rouvert, ce qui était décodé est refait au prochain
     // paquet.

@@ -164,6 +164,7 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
     const EffectiveListening listening = effective_listening(settings, device ? device->name : std::string());
     config.mix.listen = static_cast<audio::Listen>(listening.listen);
     config.mix.faithful = listening.faithful;
+    config.mix.tuning = listening.tuning;
   }
   PlaceboScreen& out = p.screen;
   auto pipeline = Pipeline::open(

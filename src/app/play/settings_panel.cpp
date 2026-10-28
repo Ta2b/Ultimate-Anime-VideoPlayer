@@ -306,6 +306,54 @@ bool sound_tab(PlaySettings& d, const SettingsChoices& choices) {
     ImGui::EndDisabled();
     panel::tip(cinema && !multichannel ? "Grisé : cet appareil n'a que 2 canaux." : choice.detail);
   }
+  const int listen = listening_index(*key).value_or(1);
+  if (listen != 2) {
+    // Le profil de virtualisation : un choix nommé ; en avancé, chaque réglage à la main (Personnalisé).
+    const audio::MixPreset* shown = audio::find_preset(d.audio_profile);
+    const bool custom = d.audio_profile == "custom";
+    if (shown == nullptr || (listen == 0 && !shown->headphones) || (listen == 1 && !shown->speakers))
+      shown = audio::find_preset("natural");
+    if (ImGui::BeginCombo("Profil", custom ? "Personnalisé" : std::string(shown->label).c_str())) {
+      for (const audio::MixPreset& preset : audio::mix_presets()) {
+        if ((listen == 0 && !preset.headphones) || (listen == 1 && !preset.speakers)) continue;
+        if (ImGui::Selectable(std::string(preset.label).c_str(), !custom && &preset == shown)) {
+          d.audio_profile = std::string(preset.key);
+          d.audio_custom = preset.tuning;  // « Personnalisé » part de ce profil
+        }
+        panel::tip(std::string(preset.detail).c_str());
+      }
+      if (panel::advanced() && ImGui::Selectable("Personnalisé", custom)) d.audio_profile = "custom";
+      ImGui::EndCombo();
+    }
+    if (!custom) panel::tip(std::string(shown->detail).c_str());
+    if (panel::advanced()) {
+      audio::MixTuning t = custom ? d.audio_custom : audio::MixTuning(resolved_tuning(d, listen));
+      bool moved = false;
+      const auto slider = [&](const char* label, float& value, float lo, float hi, const char* format) {
+        moved |= ImGui::SliderFloat(label, &value, lo, hi, format, ImGuiSliderFlags_AlwaysClamp);
+      };
+      if (listen == 0) {
+        slider("Crossfeed (stéréo)", t.crossfeed_gain, 0.0F, 0.7F, "%.2f");
+        slider("Crossfeed : adoucissement (Hz)", t.crossfeed_cutoff_hz, 300.0F, 1500.0F, "%.0f");
+        slider("Crossfeed : retard (ms)", t.crossfeed_delay_ms, 0.0F, 0.6F, "%.2f");
+        slider("Taille de la tête (m)", t.head_radius_m, 0.07F, 0.11F, "%.3f");
+        slider("Ombre de la tête", t.head_shadow, 0.0F, 0.7F, "%.2f");
+      } else {
+        slider("Niveau du centre (voix)", t.center_lift, 1.0F, 2.0F, "%.2f");
+        slider("Gain du mixage stéréo", t.downmix_scale, 0.4F, 0.9F, "%.2f");
+      }
+      slider("Niveau des arrières et côtés", t.surround_gain, 0.5F, 1.6F, "%.2f");
+      slider("Niveau des basses (LFE)", t.lfe_gain, 0.0F, 0.6F, "%.2f");
+      if (moved) {
+        d.audio_custom = audio::clamped(t);
+        d.audio_profile = "custom";
+      }
+      if (custom && ImGui::Button("Revenir à Naturel")) {
+        d.audio_profile = "natural";
+        d.audio_custom = audio::MixTuning{};
+      }
+    }
+  }
   if (panel::advanced()) {
     ImGui::Checkbox("Fidèle (aucun traitement)", &d.audio_faithful);
     panel::tip(

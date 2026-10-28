@@ -230,6 +230,19 @@ std::expected<PlaySettings, Refusal> parse_settings(std::string_view toml_text) 
     reads.push_back(read(*audio, "audio", "device", s.audio_device));
     reads.push_back(read(*audio, "audio", "listening", s.listening));
     reads.push_back(read(*audio, "audio", "faithful", s.audio_faithful));
+    reads.push_back(read(*audio, "audio", "profile", s.audio_profile));
+    if (s.audio_profile != "custom" && ::ajp::audio::find_preset(s.audio_profile) == nullptr)
+      reads.emplace_back(
+          refuse(RefusalCode::FieldOutOfRange, std::format("audio.profile : « {} »", s.audio_profile)));
+    if (const toml::table* custom = audio->get_as<toml::table>("custom")) {
+      std::array<float, ::ajp::audio::kMixTuningFields> fields = ::ajp::audio::to_array(s.audio_custom);
+      constexpr std::array<const char*, ::ajp::audio::kMixTuningFields> kNames{
+          "crossfeed_gain", "crossfeed_cutoff_hz", "crossfeed_delay_ms", "head_radius_m", "head_shadow",
+          "surround_gain",  "center_lift",         "lfe_gain",           "downmix_scale"};
+      for (std::size_t i = 0; i < fields.size(); ++i)
+        reads.push_back(read(*custom, "audio.custom", kNames[i], fields[i]));
+      s.audio_custom = ::ajp::audio::tuning_from(fields);
+    }
     if (!listening_index(s.listening))
       reads.emplace_back(
           refuse(RefusalCode::FieldOutOfRange, std::format("audio.listening : « {} »", s.listening)));
@@ -395,11 +408,20 @@ std::string format_settings(const PlaySettings& s) {
                                  {"debanding", s.true_hdr_debanding}});
   // Le volume au centième : 0.85 et non 0.8500000238418579.
   {
-    toml::table audio{{"delay_ms", s.audio_delay_ms},
-                      {"volume", std::round(static_cast<double>(s.volume) * 100.0) / 100.0},
-                      {"device", s.audio_device},
-                      {"listening", s.listening},
-                      {"faithful", s.audio_faithful}};
+    toml::table audio{
+        {"delay_ms", s.audio_delay_ms}, {"volume", std::round(static_cast<double>(s.volume) * 100.0) / 100.0},
+        {"device", s.audio_device},     {"listening", s.listening},
+        {"faithful", s.audio_faithful}, {"profile", s.audio_profile}};
+    {
+      const auto fields = ::ajp::audio::to_array(s.audio_custom);
+      const auto r4 = [](float v) { return std::round(static_cast<double>(v) * 10000.0) / 10000.0; };
+      toml::table custom{{"crossfeed_gain", r4(fields[0])},     {"crossfeed_cutoff_hz", r4(fields[1])},
+                         {"crossfeed_delay_ms", r4(fields[2])}, {"head_radius_m", r4(fields[3])},
+                         {"head_shadow", r4(fields[4])},        {"surround_gain", r4(fields[5])},
+                         {"center_lift", r4(fields[6])},        {"lfe_gain", r4(fields[7])},
+                         {"downmix_scale", r4(fields[8])}};
+      audio.insert_or_assign("custom", std::move(custom));
+    }
     if (!s.device_listening.empty()) {
       toml::table devices;
       for (const auto& [name, own] : s.device_listening) devices.insert_or_assign(name, own);

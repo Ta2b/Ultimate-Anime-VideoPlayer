@@ -184,9 +184,11 @@ void apply_live(Chain& to, const PlaySettings& wanted, std::int64_t now_us) {
     const std::string name = device ? device->name : std::string();
     const EffectiveListening now = effective_listening(wanted, name);
     const EffectiveListening was = effective_listening(r, name);
-    if (now.listen != was.listen || now.faithful != was.faithful)
-      to.session.command(
-          cmd::SetListening{.listen = static_cast<std::uint8_t>(now.listen), .faithful = now.faithful});
+    if (now != was)
+      to.session.command(cmd::SetListening{.listen = static_cast<std::uint8_t>(now.listen),
+                                           .faithful = now.faithful,
+                                           .tuned = true,
+                                           .tuning = audio::to_array(now.tuning)});
   }
   if (wanted.display_sync != r.display_sync) to.session.set_display_sync(wanted.display_sync);
   if (wanted.video_latency_ms != r.video_latency_ms)

@@ -287,7 +287,17 @@ EffectiveListening effective_listening(const PlaySettings& settings, const std::
   for (const auto& [name, own] : settings.device_listening) {
     if (name == device_name) key = own;
   }
-  return EffectiveListening{.listen = listening_index(key).value_or(1), .faithful = settings.audio_faithful};
+  const int listen = listening_index(key).value_or(1);
+  return EffectiveListening{
+      .listen = listen, .faithful = settings.audio_faithful, .tuning = resolved_tuning(settings, listen)};
+}
+
+audio::MixTuning resolved_tuning(const PlaySettings& settings, int listen) {
+  if (settings.audio_profile == "custom") return audio::clamped(settings.audio_custom);
+  const audio::MixPreset* preset = audio::find_preset(settings.audio_profile);
+  if (preset == nullptr || (listen == 0 && !preset->headphones) || (listen == 1 && !preset->speakers))
+    return audio::MixTuning{};
+  return preset->tuning;
 }
 
 std::expected<PlaySettings, Refusal> validate(const PlaySettings& s) {
@@ -430,6 +440,8 @@ PlaySettings live_part(const PlaySettings& running, const PlaySettings& wanted, 
   s.audio_delay_ms = wanted.audio_delay_ms;
   s.listening = wanted.listening;
   s.audio_faithful = wanted.audio_faithful;
+  s.audio_profile = wanted.audio_profile;
+  s.audio_custom = wanted.audio_custom;
   s.device_listening = wanted.device_listening;
   s.display_sync = wanted.display_sync;
   s.video_latency_ms = wanted.video_latency_ms;

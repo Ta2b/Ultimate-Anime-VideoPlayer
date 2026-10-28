@@ -95,3 +95,40 @@ TEST_CASE("le limiteur garde la sortie sous 1", "[mixer]") {
   const PcmBlock out = mixer.process(loud);
   for (const float sample : out.samples) CHECK(std::fabs(sample) < 1.0F);
 }
+
+TEST_CASE("les profils : Naturel est le mixage d'origine, les autres le changent", "[mixer][profils]") {
+  CHECK(ajp::audio::MixTuning{} == ajp::audio::find_preset("natural")->tuning);
+  CHECK(ajp::audio::find_preset("inconnu") == nullptr);
+  // Au casque, un crossfeed fort amène plus du canal opposé qu'un doux.
+  const auto leak = [](const char* key) {
+    Mixer mixer(MixConfig{.listen = Listen::Headphones, .tuning = ajp::audio::find_preset(key)->tuning});
+    PcmBlock block{.pts_us = 0, .channels = 2};
+    block.samples.assign(512, 0.0F);
+    for (std::size_t f = 0; f < 256; ++f) block.samples[f * 2] = 0.5F;  // gauche seule
+    const PcmBlock out = mixer.process(std::move(block));
+    return out.samples[200 * 2 + 1];
+  };
+  CHECK(leak("strong") > leak("natural"));
+  CHECK(leak("natural") > leak("soft"));
+  // Aux enceintes, « Nuit » baisse l'arrière par rapport à Naturel.
+  const auto rear = [](const char* key) {
+    Mixer mixer(MixConfig{.listen = Listen::Speakers, .tuning = ajp::audio::find_preset(key)->tuning});
+    PcmBlock block{.pts_us = 0, .channels = 6};
+    block.samples.assign(6 * 64, 0.0F);
+    for (std::size_t f = 0; f < 64; ++f) block.samples[f * 6 + 4] = 0.5F;  // arrière gauche
+    return mixer.process(std::move(block)).samples[40 * 2];
+  };
+  CHECK(rear("night") < rear("natural"));
+}
+
+TEST_CASE("les réglages hors plage sont ramenés, le tableau fait l'aller-retour", "[mixer][profils]") {
+  ajp::audio::MixTuning wild;
+  wild.crossfeed_gain = 9.0F;
+  wild.lfe_gain = -1.0F;
+  const ajp::audio::MixTuning tame = ajp::audio::clamped(wild);
+  CHECK(tame.crossfeed_gain == Approx(0.7F));
+  CHECK(tame.lfe_gain == Approx(0.0F));
+  const auto round_trip =
+      ajp::audio::tuning_from(ajp::audio::to_array(ajp::audio::find_preset("wide")->tuning));
+  CHECK(round_trip == ajp::audio::find_preset("wide")->tuning);
+}
