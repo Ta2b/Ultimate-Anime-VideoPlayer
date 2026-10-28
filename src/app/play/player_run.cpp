@@ -266,7 +266,8 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
                                    ? gmfss_tiers(c.gmfss_places, GmfssVariant::Union, fp8_engine)
                                    : TierSupport{},
           .span_tiers = c.model
-                            ? span_tiers(c.model->path, p.paths.engines.parent_path() / "modeles", fp8_engine)
+                            ? span_tiers(c.model->path, p.paths.engines.parent_path() / "modeles", fp8_engine,
+                                         c.backend && c.backend->capabilities().span_fp8_cutlass)
                             : TierSupport{},
           .rife_tiers = c.rife_choice ? sibling_tiers(c.rife_choice->path, fp8_engine) : TierSupport{},
           .drba_tiers = drba_file ? sibling_tiers(drba_file->path, fp8_engine) : TierSupport{},

@@ -36,6 +36,7 @@ namespace ajp::gpu::cuda {
 
 class TrtLog;
 class SharedActivations;
+class SpanFp8Engine;
 
 class TensorRtBackend final : public Backend, public KernelOps {
  public:
@@ -166,6 +167,12 @@ class TensorRtBackend final : public Backend, public KernelOps {
   // La zone d'activation de la voie courante : l'agrandissement a la sienne, l'interpolation et
   // la mesure l'autre ; une seule sous une voie.
   const std::shared_ptr<SharedActivations>& arena();
+  // Le SPAN entier en FP8 (noyaux CUTLASS, tensorrt_span_fp8.cpp) : un paquet « .span8 » à la place de
+  // l'ONNX.
+  std::expected<Artifact, Refusal> build_span_fp8(const ModelSpec& model, const ShapeSet& shapes);
+  std::expected<std::unique_ptr<Engine>, Refusal> load_span_fp8(const Artifact& artifact);
+  std::expected<void, Refusal> enqueue_span_fp8(SpanFp8Engine& engine, std::span<const Tensor> inputs,
+                                                std::span<Tensor> outputs);
   // La voie lane le temps d'une portée : RTX HDR reste sur la file de son ouverture.
   class LaneScope {
    public:
