@@ -1,5 +1,7 @@
 #include "app/play/settings_engines.h"
 
+#include <array>
+#include <cstdio>
 #include <format>
 #include <string>
 
@@ -17,7 +19,7 @@ using panel::note;
 using panel::section;
 
 void engines_tab(const SettingsChoices& choices, std::optional<core::EngineId>& draft,
-                 std::vector<Input>& actions) {
+                 std::vector<Input>& actions, std::string& engines_dir) {
   section("Moteur de SPAN et RIFE");
   const std::optional<core::EngineId> in_use = choices.engine_in_use;
   if (in_use) ImGui::TextUnformatted(std::format("En service : {}", engine_label(*in_use)).c_str());
@@ -44,6 +46,27 @@ void engines_tab(const SettingsChoices& choices, std::optional<core::EngineId>& 
       if (ImGui::Button("Annuler##moteur")) draft.reset();
     }
   }
+
+  section("Dossier d'installation");
+  // Un moteur téléchargé (TensorRT : 1,3 Go installés pour une RTX 4070 Ti) et ses téléchargements
+  // s'installent ici ; l'espace libre se vérifie AVANT chaque téléchargement. Vide : le dossier des données
+  // du lecteur.
+  static std::array<char, 512> folder{};
+  static bool folder_read = false;
+  if (!folder_read) {
+    std::snprintf(folder.data(), folder.size(), "%s", engines_dir.c_str());
+    folder_read = true;
+  }
+  if (ImGui::InputText("Dossier##moteurs", folder.data(), folder.size())) engines_dir = folder.data();
+  ImGui::SameLine();
+  if (ImGui::Button("Par défaut##moteurs")) {
+    engines_dir.clear();
+    folder[0] = '\0';
+  }
+  note(
+      std::format("Par défaut : {}. Libre à cet endroit : {}. Vaut au prochain lancement ; les moteurs déjà "
+                  "installés ne sont pas déplacés.",
+                  choices.engines_dir_default, choices.engines_dir_free));
 
   section("Moteurs installés");
   ImGui::TextWrapped("%s", choices.chosen_engines.c_str());

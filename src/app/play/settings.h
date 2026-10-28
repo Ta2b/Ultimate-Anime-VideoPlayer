@@ -131,8 +131,9 @@ struct PlaySettings {
   int rife_factor = kDefaultRifeFactor;  // 0 : aucune interpolation
   int rife_factor_den = 1;               // 2 : ×rife_factor / 2 (×1,5 : 3 et 2)
   // Mode auto : le multiplicateur ×k (entier, jusqu'à rife_factor) suit ce que le GPU tient
-  // (core/auto_rate.h) ; en direct.
-  bool rife_auto = false;
+  // (core/auto_rate.h) ; en direct. Par défaut (v0.6) : l'interpolation est en Auto, pour tous les profils et
+  // après le benchmark ; un multiplicateur choisi à la main (liste du menu) la coupe.
+  bool rife_auto = true;
   MotionEngine motion_engine = MotionEngine::Rife;
   std::string rife_model;  // fichier ONNX de RIFE (nom seul) ; vide : le défaut de la carte
   // Garder les poses (DRBA, kernels/spec/poses.h) : un personnage animé en deux garde son rythme
@@ -169,6 +170,10 @@ struct PlaySettings {
   std::string update_mode = "notify";
   std::string update_channel = "stable";
   std::string update_frequency = "daily";
+  // Le dossier où s'installent les moteurs téléchargés (TensorRT, OpenVINO…) et leurs téléchargements ; vide
+  // : le dossier des données de l'utilisateur. Vaut au prochain lancement ; les moteurs déjà installés ne
+  // sont pas déplacés.
+  std::string engines_dir;
   bool autoplay_next = false;
   bool default_player_dismissed =
       false;  // « Ne plus me le demander » : le bouton quitte Général, reste en bas d'Avancé

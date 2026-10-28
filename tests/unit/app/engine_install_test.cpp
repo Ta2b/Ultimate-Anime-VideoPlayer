@@ -11,6 +11,7 @@
 #include <format>
 #include <fstream>
 #include <iterator>
+#include <limits>
 #include <string>
 #include <tuple>
 #include <vector>
@@ -468,4 +469,74 @@ TEST_CASE("Paquet TensorRT du script : installation réelle en lien direct", "[.
   CHECK(fs::exists(target / "trtexec"));
   if (const std::string keep = env_text("AJP_PACKAGE_KEEP"); !keep.empty())
     fs::copy(target, keep, fs::copy_options::recursive);
+}
+
+TEST_CASE("Espace : le pic compte le décompressé et l'ancienne version, pas seulement le téléchargement",
+          "[app][install][space]") {
+  EngineCatalog catalog;
+  catalog.layout = core::install_layout(host_os(), "/d");
+  const auto vendor = [&](std::string name, std::uint64_t packed, std::uint64_t size, std::string arch = "") {
+    core::VendorFile file;
+    file.engine = core::EngineId::TensorRt;
+    file.platform = host_os();
+    file.name = std::move(name);
+    file.packed_size = packed;
+    file.size = size;
+    file.arch = std::move(arch);
+    catalog.vendor_files.push_back(std::move(file));
+  };
+  constexpr std::uint64_t kMo = 1U << 20;
+  // Les chiffres de TensorRT 11.3 pour une carte sm89 : 739 Mo tirés, 1250 Mo une fois décompressés.
+  vendor("libnvinfer.so.11", 306 * kMo, 663 * kMo);
+  vendor("builder_resource_ptx", 206 * kMo, 230 * kMo);
+  vendor("builder_resource_sm89", 157 * kMo, 180 * kMo, "sm89");
+  vendor("builder_resource_sm120", 230 * kMo, 257 * kMo, "sm120");  // pas pour cette carte
+  core::EnginePackage package;
+  package.engine = core::EngineId::TensorRt;
+  package.size = 2 * kMo;
+
+  const InstallSpace fresh = install_space(catalog, package, "sm89");
+  CHECK(fresh.download == (2 + 306 + 206 + 157) * kMo);  // sm120 ignoré
+  CHECK(fresh.installed >= (663 + 230 + 180) * kMo);     // le décompressé, pas le téléchargé
+  CHECK(fresh.peak > fresh.installed);                   // le fichier en cours de copie s'ajoute
+  CHECK(fresh.peak > fresh.download * 15 / 10);          // bien plus que ce que l'écran annonçait
+  // Une version déjà installée est gardée jusqu'à la fin : elle compte.
+  const InstallSpace again = install_space(catalog, package, "sm89", fresh.installed);
+  CHECK(again.peak > 2 * fresh.installed);
+}
+
+TEST_CASE("Espace : refus net avec les chiffres, avant tout téléchargement", "[app][install][space]") {
+  const InstallSpace space{.download = 742ULL << 20, .installed = 1250ULL << 20, .peak = 1400ULL << 20};
+  CHECK(check_space(space, 2ULL << 30, "/d"));  // 2 Go : assez
+  const auto refused = check_space(space, 300ULL << 20, "/d");
+  REQUIRE_FALSE(refused);
+  CHECK(refused.error().code == RefusalCode::InsufficientSpace);
+  CHECK(refused.error().detail.contains("1.4 Go"));
+  CHECK(refused.error().detail.contains("300 Mo"));
+  CHECK(refused.error().detail.contains("742 Mo"));
+  CHECK(format_size(742ULL << 20) == "742 Mo");
+  CHECK(format_size(1536ULL << 20) == "1.5 Go");
+}
+
+TEST_CASE("Installation : sans place, rien n'est tiré et le moteur reste absent", "[app][install][space]") {
+  Fixture f("sans-place");
+  core::EnginePackage package = f.openvino_package();
+  package.size = std::numeric_limits<std::uint64_t>::max() / 16;  // un paquet qu'aucun disque ne tient
+  InstallProgress progress = f.progress();
+  const auto installed = install_package(f.catalog, package, progress);
+  REQUIRE_FALSE(installed);
+  CHECK(installed.error().code == RefusalCode::InsufficientSpace);
+  CHECK_FALSE(fs::exists(core::engine_dir(f.catalog.layout, package)));
+}
+
+TEST_CASE("Dossier d'installation des moteurs : le catalogue installe là, les modèles restent",
+          "[app][install][space]") {
+  const fs::path data = fs::temp_directory_path() / "ajp-catalogue-data";
+  const fs::path moved = fs::temp_directory_path() / "ajp-catalogue-moteurs";
+  const EngineCatalog catalog = load_catalog(data / "absent.lock", data, moved);
+  const EngineCatalog plain = load_catalog(data / "absent.lock", data);
+  CHECK(catalog.layout.engines.string().starts_with(moved.string()));
+  CHECK(catalog.layout.downloads.string().starts_with(moved.string()));
+  CHECK(catalog.layout.models == plain.layout.models);
+  CHECK(plain.layout.engines.string().starts_with(data.string()));
 }

@@ -87,6 +87,8 @@ struct SettingsChoices {
     bool is_default = false;
   };
   std::vector<AudioOut> audio_outputs;  // les appareils de sortie du système (audio/devices.h)
+  std::string engines_dir_default;      // où s'installent les moteurs par défaut
+  std::string engines_dir_free;         // la place libre à l'endroit choisi, « 2,1 Go »
   bool default_player_is_ajp = false;   // AJP est déjà le lecteur des vidéos (xdg-mime, Linux)
   std::string bench_text;  // « Dernière évaluation : 2026-10-28, niveau Rapide » ; vide : jamais faite
   PlayerPlace place;       // l'exécutable et le dossier de l'utilisateur (onglet Système)

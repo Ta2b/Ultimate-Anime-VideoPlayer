@@ -55,6 +55,7 @@
 #include "media/demuxer.h"
 #include "media/selection.h"
 #include "prepare/sha256.h"
+#include "prepare/utf8.h"
 #include "vendor_hdr/sdk_store.h"
 #include "vendor_hdr/true_hdr.h"
 
@@ -204,7 +205,9 @@ std::expected<void, Refusal> play(const PlayOptions& options, const PlayerPaths&
     engines = core::Settings{};
   }
   // Les moteurs téléchargeables de cette version (engines.lock livré avec le lecteur).
-  const EngineCatalog catalog = load_catalog(paths.engine_index, paths.engines.parent_path());
+  const EngineCatalog catalog = load_catalog(
+      paths.engine_index, paths.engines.parent_path(),
+      saved->engines_dir.empty() ? std::filesystem::path() : prepare::path_from_utf8(saved->engines_dir));
   if (!catalog.problem.empty()) log->info("{}", catalog.problem);
   const EngineScreen engine_screen{.screen = **screen,
                                    .ui = **ui,

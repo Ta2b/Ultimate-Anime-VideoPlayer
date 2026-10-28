@@ -12,6 +12,7 @@
 #include <imgui.h>
 
 #include "app/play/auto_config.h"
+#include "app/play/engine_install.h"
 #include "app/play/engine_switch.h"
 #include "app/play/panel_style.h"
 
@@ -136,10 +137,22 @@ void downloadable_row(EngineRow& row, const EnginesHere& here) {
     row.usable = true;
     row.status = "installé" + missing;
   } else if (download != nullptr) {
-    row.usable = true;
-    row.download = true;
     row.license = download->license;
-    row.status = std::format("à télécharger ({} Mo){}", (download->bytes + (1U << 20) - 1) >> 20, missing);
+    const bool fits = download->needed == 0 || download->available >= download->needed;
+    row.usable = fits;
+    row.download = fits;
+    // Avant tout téléchargement : ce qui sera tiré, la place que l'installation demande en tout, et celle qui
+    // reste.
+    row.status = download->needed == 0
+                     ? std::format("à télécharger ({}){}", format_size(download->bytes), missing)
+                     : std::format("à télécharger ({}) · demande {} d'espace, {} libres{}",
+                                   format_size(download->bytes), format_size(download->needed),
+                                   format_size(download->available), missing);
+    if (!fits)
+      row.status = std::format("espace disque insuffisant : il faut {} (dont {} à télécharger), il reste {}",
+                               format_size(download->needed), format_size(download->bytes),
+                               format_size(download->available)) +
+                   missing;
   } else {
     row.status =
         row.offer.id == core::EngineId::TensorRt && here.os == core::Os::Linux

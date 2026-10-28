@@ -143,6 +143,16 @@ std::expected<bool, Refusal> update_stale_engines(PlaceboScreen& screen, PlayerU
       ui.controls().defer(std::format("{} : nouvelle licence à accepter (Moteurs)", label));
       continue;
     }
+    // Pas de place : rien n'est tenté (ni boucle à chaque lancement), l'utilisateur est prévenu.
+    if (const auto fits =
+            check_space(install_space(catalog, package, detect_cuda_arch(),
+                                      directory_bytes(core::engine_dir(catalog.layout, package))),
+                        free_bytes(catalog.layout.engines), catalog.layout.engines);
+        !fits) {
+      log->warn("{} non mis à jour : {}", label, fits.error().detail);
+      ui.controls().defer(std::format("{} : {}", label, fits.error().detail));
+      continue;
+    }
     log->info("{} : module d'une version précédente du lecteur, réinstallation", label);
     auto outcome =
         run_install(screen, ui, std::format("Mise à jour de {}", label),

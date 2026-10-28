@@ -42,7 +42,13 @@ std::expected<ModelChoice, Refusal> choose_model(const PlayOptions& options,
   if (!options.was_given("--model")) defaults.model.reset();
   auto found = find_model(defaults, default_model_candidates(home, bundled));
   if (!found) return std::unexpected(std::move(found.error()));
-  return choose_in(*found, "2x_", settings.model, options.was_given("--model"));
+  // Le catalogue réduit : un modèle hors catalogue (hérité) ne se choisit plus et n'entre pas au menu ;
+  // --model reste libre.
+  const std::string chosen = std::ranges::contains(kSpanCatalogue, settings.model) ? settings.model : "";
+  ModelChoice choice = choose_in(*found, "2x_", chosen, options.was_given("--model"));
+  std::erase_if(choice.available,
+                [](const std::string& name) { return !std::ranges::contains(kSpanCatalogue, name); });
+  return choice;
 }
 
 std::expected<ModelChoice, Refusal> choose_rife_model(const PlayOptions& options,
