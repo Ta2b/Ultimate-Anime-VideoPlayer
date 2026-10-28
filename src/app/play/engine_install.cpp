@@ -232,14 +232,13 @@ std::expected<void, Refusal> fetch_vendor_file(const core::VendorFile& file,
   }
   std::filesystem::path partial = dest;
   partial += ".partiel";
-  std::FILE* in = std::fopen(packed.string().c_str(), "rb");
-  std::FILE* out = std::fopen(partial.string().c_str(), "wb");
+  std::ifstream in(packed, std::ios::binary);
+  std::ofstream out(partial, std::ios::binary | std::ios::trunc);
   const auto close = [&] {
-    if (in != nullptr) std::fclose(in);
-    if (out != nullptr) std::fclose(out);
-    in = out = nullptr;
+    in.close();
+    out.close();
   };
-  if (in == nullptr || out == nullptr) {
+  if (!in || !out) {
     close();
     cleanup();
     return refuse(RefusalCode::FileUnwritable, partial.string());
@@ -249,7 +248,8 @@ std::expected<void, Refusal> fetch_vendor_file(const core::VendorFile& file,
   bool write_failed = false;
   const auto sink = [&](std::span<const std::uint8_t> bytes) {
     if (progress.stop.stop_requested()) return false;
-    if (std::fwrite(bytes.data(), 1, bytes.size(), out) != bytes.size()) {
+    out.write(reinterpret_cast<const char*>(bytes.data()), static_cast<std::streamsize>(bytes.size()));
+    if (!out) {
       write_failed = true;
       return false;
     }
@@ -260,16 +260,20 @@ std::expected<void, Refusal> fetch_vendor_file(const core::VendorFile& file,
   std::expected<void, Refusal> result;
   if (file.deflated) {
     auto inflated = core::inflate_raw(
-        [&](std::span<std::uint8_t> buffer) { return std::fread(buffer.data(), 1, buffer.size(), in); },
+        [&](std::span<std::uint8_t> buffer) {
+          in.read(reinterpret_cast<char*>(buffer.data()), static_cast<std::streamsize>(buffer.size()));
+          return static_cast<std::size_t>(in.gcount());
+        },
         sink);
     if (!inflated) result = std::unexpected(inflated.error());
   } else {
     std::array<std::uint8_t, 1U << 16> buffer{};
-    while (const std::size_t n = std::fread(buffer.data(), 1, buffer.size(), in)) {
-      if (!sink(std::span<const std::uint8_t>(buffer).first(n))) break;
+    while (in.read(reinterpret_cast<char*>(buffer.data()), static_cast<std::streamsize>(buffer.size())) ||
+           in.gcount() > 0) {
+      if (!sink(std::span<const std::uint8_t>(buffer).first(static_cast<std::size_t>(in.gcount())))) break;
     }
   }
-  const bool flushed = std::fflush(out) == 0;
+  const bool flushed = static_cast<bool>(out.flush());
   close();
   cleanup();
   const auto discard = [&] {

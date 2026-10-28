@@ -29,6 +29,21 @@ namespace fs = std::filesystem;
 
 namespace {
 
+// Une variable d'environnement, vide si absente (getenv est refusé par MSVC sous /WX).
+std::string env_text(const char* name) {
+#ifdef _WIN32
+  char* value = nullptr;
+  std::size_t length = 0;
+  if (_dupenv_s(&value, &length, name) != 0 || value == nullptr) return {};
+  std::string text(value);
+  std::free(value);
+  return text;
+#else
+  const char* value = std::getenv(name);
+  return value != nullptr ? std::string(value) : std::string();
+#endif
+}
+
 std::string read_all(const fs::path& file) {
   std::ifstream in(file, std::ios::binary);
   return {std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>()};
@@ -380,8 +395,8 @@ TEST_CASE("Installation : la clé NGC vide ou mal collée est refusée avant tou
 // plage, décompressé, et son SHA-256 est comparé à l'index.
 TEST_CASE("Fichiers tiers : les index de NVIDIA se téléchargent et se vérifient", "[.vendor][app][install]") {
   // Lancé depuis le dossier de construction (build/<préréglage>) ; AJP_VENDOR_DIR en prend un autre.
-  const char* custom = std::getenv("AJP_VENDOR_DIR");
-  const fs::path dir = custom != nullptr ? fs::path(custom) : fs::path("../../tools/release/nvidia-vendor");
+  const std::string custom = env_text("AJP_VENDOR_DIR");
+  const fs::path dir = !custom.empty() ? fs::path(custom) : fs::path("../../tools/release/nvidia-vendor");
   REQUIRE(fs::exists(dir / "tensorrt-linux-x64.lock"));
   Fixture f("vendor-reel");
   std::uint64_t downloaded = 0;
@@ -398,8 +413,8 @@ TEST_CASE("Fichiers tiers : les index de NVIDIA se téléchargent et se vérifie
     INFO(std::format("{} : {} fichiers, {} Mo à télécharger", lock, files.size(), packed >> 20));
     if (os != host_os()) continue;  // le téléchargement réel : ceux de cet OS seulement
     // AJP_VENDOR_OUT : garder les fichiers tirés (pour essayer le moteur depuis un dossier composé ainsi).
-    const char* keep = std::getenv("AJP_VENDOR_OUT");
-    const fs::path out = keep != nullptr ? fs::path(keep) : f.root / "tiers";
+    const std::string keep = env_text("AJP_VENDOR_OUT");
+    const fs::path out = !keep.empty() ? fs::path(keep) : f.root / "tiers";
     fs::create_directories(out);
     for (const auto& file : files) {
       const auto start = std::chrono::steady_clock::now();
