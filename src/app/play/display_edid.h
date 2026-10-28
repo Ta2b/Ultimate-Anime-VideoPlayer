@@ -33,8 +33,8 @@ struct DisplayFacts {
   std::optional<bool> displayid_oled;        // bloc 0x21 lu : AMOLED ou non
   bool oled = false;
   // Fréquence variable (VRR) utilisable : propriété DRM vrr_capable sous Linux (le compositeur
-  // l'arme à son gré, KDE en plein écran) ; capacité du système à présenter sans attendre le vsync sous Windows).
-  // Rien : inconnu.
+  // l'arme à son gré, KDE en plein écran) ; capacité du système à présenter sans attendre le vsync
+  // sous Windows. Rien : inconnu.
   std::optional<bool> vrr;
   OledSource source = OledSource::Unknown;
 };
