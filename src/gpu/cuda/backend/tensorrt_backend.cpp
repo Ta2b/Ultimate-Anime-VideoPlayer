@@ -9,11 +9,13 @@
 #include <utility>
 
 #include "gpu/cuda/backend/cuda_status.h"
+#include "gpu/cuda/backend/rife_fused_engine.h"
 #include "gpu/cuda/backend/span_fp8_engine.h"
 #include "gpu/cuda/backend/tensorrt_true_hdr.h"
 #include "gpu/cuda/backend/trt_engine.h"
 #include "prepare/builder.h"
 #include "prepare/identity.h"
+#include "prepare/rife_split.h"
 
 namespace ajp::gpu::cuda {
 
@@ -240,6 +242,7 @@ BackendCaps TensorRtBackend::capabilities() const {
       .int8 = true,  // graphes Q/DQ (SPAN INT8, span_int8.h) : Turing et après
       .fp8 = properties_.major > 8 || (properties_.major == 8 && properties_.minor >= 9),  // Ada et après
       .span_fp8_cutlass = SpanFp8Net::supported_device(properties_.major, properties_.minor),
+      .rife_fused = true,
       .matrix_units = true,
       .import_formats = {PixelFormat::Nv12, PixelFormat::P010, PixelFormat::P016},
       .lanes = lanes_,
@@ -251,11 +254,8 @@ DeviceMatch TensorRtBackend::match(const DeviceUuid& render_device) const {
   return render_device == uuid_ ? DeviceMatch::Same : DeviceMatch::Different;
 }
 
-std::expected<Artifact, Refusal> TensorRtBackend::build(const ModelSpec& model, const ShapeSet& shapes,
-                                                        Progress& progress) {
-  // Une variante du SPAN en paquet de poids FP8 : pas de trtexec, les noyaux CUTLASS la lisent telle quelle.
-  if (is_span_fp8_package(model.onnx_path)) return build_span_fp8(model, shapes);
-  const prepare::TrtexecConfig config{
+prepare::TrtexecConfig TensorRtBackend::trtexec_config() const {
+  return prepare::TrtexecConfig{
       .trtexec = trtexec_,
       .cache_dir = cache_dir_,
       .runtime =
@@ -271,6 +271,14 @@ std::expected<Artifact, Refusal> TensorRtBackend::build(const ModelSpec& model, 
                  .sm_minor = properties_.minor,
                  .uuid = uuid_},
   };
+}
+
+std::expected<Artifact, Refusal> TensorRtBackend::build(const ModelSpec& model, const ShapeSet& shapes,
+                                                        Progress& progress) {
+  // Une variante du SPAN en paquet de poids FP8 : pas de trtexec, les noyaux CUTLASS la lisent telle quelle.
+  if (is_span_fp8_package(model.onnx_path)) return build_span_fp8(model, shapes);
+  // RIFE coupé en six morceaux : six constructions, un seul artefact.
+  if (prepare::is_rife_fused_manifest(model.onnx_path)) return build_rife_fused(model, shapes, progress);
   // Un moteur publié doit se désérialiser ici : sinon le constructeur le refait.
   const prepare::EngineCheck check =
       [this](const std::filesystem::path& engine) -> std::expected<void, Refusal> {
@@ -279,12 +287,13 @@ std::expected<Artifact, Refusal> TensorRtBackend::build(const ModelSpec& model, 
     if (!loaded) return std::unexpected(std::move(loaded.error()));
     return {};
   };
-  return prepare::TrtexecBuilder(config, check).build(model, shapes, progress);
+  return prepare::TrtexecBuilder(trtexec_config(), check).build(model, shapes, progress);
 }
 
 std::expected<std::unique_ptr<Engine>, Refusal> TensorRtBackend::load(const Artifact& artifact) {
   if (auto ok = bind(); !ok) return std::unexpected(ok.error());
   if (span_fp8_artifact_shape(artifact.cache_key)) return load_span_fp8(artifact);
+  if (rife_fused_artifact_key_parse(artifact.cache_key)) return load_rife_fused(artifact);
   // Les activations dans la zone de la voie choisie avant le chargement (use_lane) ; un moteur
   // lancé sur l'autre voie y passe à son lancement.
   auto engine = TrtEngine::load(*runtime_, artifact.path, arena());
@@ -328,6 +337,8 @@ std::expected<void, Refusal> TensorRtBackend::enqueue(Engine& engine, std::span<
                                                       std::span<Tensor> outputs) {
   auto* trt = dynamic_cast<TrtEngine*>(&engine);
   if (trt == nullptr) {
+    if (auto* rife = dynamic_cast<RifeFusedEngine*>(&engine))
+      return enqueue_rife_fused(*rife, inputs, outputs);
     auto* fused = dynamic_cast<SpanFp8Engine*>(&engine);
     if (fused == nullptr) return refuse(RefusalCode::DeviceMismatch, "enqueue : moteur d'un autre backend");
     return enqueue_span_fp8(*fused, inputs, outputs);

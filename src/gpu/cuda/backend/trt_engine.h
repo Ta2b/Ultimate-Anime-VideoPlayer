@@ -84,6 +84,16 @@ class TrtEngine final : public Engine {
   std::expected<void, Refusal> enqueue(cudaStream_t stream, const std::shared_ptr<SharedActivations>& arena,
                                        std::span<const Tensor> inputs, std::span<const Tensor> outputs);
 
+  // Comme enqueue, mais sans graphe CUDA propre : adresses posées, puis enqueueV3 sur stream. Pour un
+  // appelant qui capture lui-même une chaîne de moteurs et de noyaux dans un seul graphe (RifeFusedEngine) :
+  // le premier lancement d'une série d'adresses se fait hors capture, comme pour enqueue.
+  std::expected<void, Refusal> enqueue_plain(cudaStream_t stream,
+                                             const std::shared_ptr<SharedActivations>& arena,
+                                             std::span<const Tensor> inputs, std::span<const Tensor> outputs);
+
+  // La mémoire d'activation que ce moteur demande à sa zone.
+  std::int64_t activation_bytes() const;
+
   // Le mot du moteur pour le journal du backend (graphes CUDA coupés après kCaptureAttempts
   // captures refusées), une fois ; vide sinon.
   std::string take_notice() { return std::exchange(notice_, std::string()); }
@@ -120,6 +130,9 @@ class TrtEngine final : public Engine {
   std::shared_ptr<SharedActivations> shared_;
   std::uint64_t shared_generation_ = 0;  // zone posée sur le contexte ; 0 : aucune
   void drop_graphs();
+  // La zone commune posée, les adresses des tenseurs et les files auxiliaires donnés au contexte.
+  std::expected<void, Refusal> place(const std::shared_ptr<SharedActivations>& arena,
+                                     std::span<const Tensor> inputs, std::span<const Tensor> outputs);
   std::expected<void, Refusal> launch(cudaStream_t stream, Graph* graph);
 };
 
