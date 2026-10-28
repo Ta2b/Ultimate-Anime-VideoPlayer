@@ -1,6 +1,11 @@
 #include "app/play/auto_bench.h"
+#include "app/play/auto_bench_run.h"
+#include "app/play/options.h"
 
+#include <algorithm>
 #include <filesystem>
+#include <string_view>
+#include <vector>
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -90,4 +95,78 @@ TEST_CASE("la mesure remplace l'estimation pour la même carte seulement", "[aut
   CHECK(effective_tier(gpu, BenchResult{.gpu = gpu.name, .level = Tier::Ultra}) == Tier::Ultra);
   // Une autre carte (changement de matériel) : la mesure ne vaut plus.
   CHECK(effective_tier(gpu, BenchResult{.gpu = "NVIDIA GeForce GTX 1060", .level = Tier::Economy}) == Tier::Fast);
+}
+
+TEST_CASE("la mesure est refaite quand le pilote change", "[auto_bench]") {
+  const GpuFacts gpu{.name = "NVIDIA GeForce RTX 4070 Ti", .driver = "2400", .vendor = GpuVendor::Nvidia, .tensor_cores = true};
+  CHECK(effective_tier(gpu, BenchResult{.gpu = gpu.name, .driver = "2400", .level = Tier::Ultra}) == Tier::Ultra);
+  CHECK(effective_tier(gpu, BenchResult{.gpu = gpu.name, .driver = "2300", .level = Tier::Ultra}) == Tier::Fast);
+  const auto read = parse_bench(format_bench(BenchResult{.gpu = "g", .driver = "2400", .level = Tier::Light}));
+  REQUIRE(read);
+  CHECK(read->driver == "2400");
+}
+
+TEST_CASE("la lecture d'un essai : aller-retour et refus", "[auto_bench]") {
+  const BenchReading reading{.gpu = "g", .driver = "7", .run = run(Tier::Fast, 10)};
+  const auto read = parse_reading(format_reading(reading));
+  REQUIRE(read);
+  CHECK(read->gpu == "g");
+  CHECK(read->driver == "7");
+  CHECK(read->run.level == Tier::Fast);
+  CHECK(read->run.presents == 2000);
+  CHECK(read->run.dropped + read->run.missing == 10);
+  CHECK(read->run.lag_p95_us == 3000);
+  CHECK(read->run.period_us == 6060);
+  CHECK_FALSE(parse_reading("level = 12"));
+  CHECK_FALSE(parse_reading("gpu = ["));
+}
+
+TEST_CASE("la ligne de commande d'un essai : son coupé, dossier jetable, niveau", "[auto_bench]") {
+  const BenchPlan plan{.executable = "/x/ajp", .video = "/v/a.mkv", .work_dir = "/tmp/w", .seconds = 9};
+  const auto args = bench_child_args(plan, Tier::Light, "/tmp/w/d", "/tmp/w/o.toml");
+  const auto has = [&](std::string_view arg) { return std::ranges::find(args, arg) != args.end(); };
+  CHECK(args.front() == "play");
+  CHECK(has("--mute"));
+  CHECK(has("--seconds=9"));
+  CHECK(has("--no-resume"));
+  CHECK(has("--fullscreen"));
+  CHECK(has("--bench-level=1"));
+  CHECK(has("--data-dir=/tmp/w/d"));
+  CHECK(has("--bench-out=/tmp/w/o.toml"));
+  const auto automatic = bench_child_args(plan, std::nullopt, "/d", "/o");
+  CHECK(std::ranges::find(automatic, "--bench-level=auto") != automatic.end());
+  // Ce que l'enfant reçoit se lit.
+  std::vector<std::string_view> views(args.begin() + 1, args.end());
+  const auto parsed = parse_play_options(views);
+  REQUIRE(parsed);
+  CHECK(parsed->mute);
+  CHECK(parsed->bench_level == 1);
+  CHECK(parsed->data_dir == std::filesystem::path("/tmp/w/d"));
+  CHECK(parsed->bench_out == std::filesystem::path("/tmp/w/o.toml"));
+}
+
+TEST_CASE("ajp bench : options et refus", "[auto_bench]") {
+  const std::vector<std::string_view> good{"a.mkv", "--seconds=20", "--report=r.txt", "--windowed"};
+  const auto options = parse_bench_options(good);
+  REQUIRE(options);
+  CHECK(options->seconds == 20);
+  CHECK(options->report == std::filesystem::path("r.txt"));
+  CHECK_FALSE(options->fullscreen);
+  CHECK_FALSE(parse_bench_options(std::vector<std::string_view>{}));
+  CHECK_FALSE(parse_bench_options(std::vector<std::string_view>{"a.mkv", "--seconds=2"}));
+  CHECK_FALSE(parse_bench_options(std::vector<std::string_view>{"a.mkv", "--nope"}));
+  CHECK_FALSE(parse_bench_options(std::vector<std::string_view>{"a.mkv", "b.mkv"}));
+  const std::vector<std::string_view> bad_level{"--bench-level=9", "a.mkv"};
+  CHECK_FALSE(parse_play_options(bad_level));
+}
+
+TEST_CASE("le rapport nomme chaque essai et le niveau gardé", "[auto_bench]") {
+  BenchOutcome outcome;
+  outcome.estimated = Tier::Fast;
+  outcome.runs = {run(Tier::Fast), run(Tier::Ultra, 600)};
+  outcome.result = BenchResult{.gpu = "g", .driver = "", .level = Tier::Fast};
+  const std::string report = format_bench_report(outcome);
+  CHECK(report.contains("tient"));
+  CHECK(report.contains("ne tient pas"));
+  CHECK(report.contains("Niveau gardé : Rapide"));
 }

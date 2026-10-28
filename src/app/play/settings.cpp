@@ -276,6 +276,7 @@ std::expected<PlaySettings, Refusal> validate(const PlaySettings& s) {
 
 PlaySettings settings_for(const PlaySettings& saved, const PlayOptions& options) {
   PlaySettings s = saved;
+  if (options.mute) s.volume = 0.0F;
   if (options.was_given("--no-upscale")) s.upscale = false;
   if (options.was_given("--model") && options.model) s.model = options.model->filename().string();
   if (options.was_given("--work-height")) s.work_height = options.work_height;
@@ -297,6 +298,7 @@ PlaySettings settings_to_save(const PlaySettings& running, const PlaySettings& f
   const auto keep = [&](std::string_view option, auto member) {
     if (options.was_given(option) && running.*member == started.*member) out.*member = from_file.*member;
   };
+  keep("--mute", &PlaySettings::volume);
   keep("--no-upscale", &PlaySettings::upscale);
   keep("--model", &PlaySettings::model);
   keep("--work-height", &PlaySettings::work_height);

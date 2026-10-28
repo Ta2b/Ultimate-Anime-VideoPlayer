@@ -411,7 +411,7 @@ SettingsPanel::Result SettingsPanel::draw(const PlaySettings& running, const Set
         ImGui::EndTabItem();
       }
       if (ImGui::BeginTabItem("Système")) {
-        system_tab(choices.place, system_);
+        if (system_tab(choices.place, choices.source_file, system_, bench_)) actions.emplace_back(Command{cmd::Pause{}});
         ImGui::EndTabItem();
       }
       ImGui::EndTabBar();

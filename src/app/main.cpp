@@ -17,11 +17,15 @@ extern "C" {
 #include <cstdio>
 #include <exception>
 #include <filesystem>
+#include <format>
+#include <fstream>
+#include <stop_token>
 #include <memory>
 #include <string>
 #include <string_view>
 #include <vector>
 
+#include "app/play/auto_bench_run.h"
 #include "app/play/default_player.h"
 #include "app/play/options.h"
 #include "app/play/player.h"
@@ -83,6 +87,44 @@ int fail(const ajp::Refusal& refusal) {
   return 1;
 }
 
+// « ajp bench <fichier> » : les essais sont des processus « ajp play » ; celui-ci n'ouvre ni fenêtre ni SDL.
+int run_bench_command(const std::vector<std::string_view>& args) {
+  namespace play = ajp::app::play;
+  const auto options = play::parse_bench_options(args);
+  if (!options) {
+    std::fputs(play::bench_usage().c_str(), stderr);
+    return fail(options.error());
+  }
+  if (options->help) {
+    std::fputs(play::bench_usage().c_str(), stdout);
+    return 0;
+  }
+  const auto base = sdl_path(SDL_GetBasePath());
+  char* pref = SDL_GetPrefPath("ajp", "ajp");
+  const auto data = sdl_path(pref);
+  SDL_free(pref);
+  std::error_code error;
+  const auto work = std::filesystem::temp_directory_path(error) / "ajp-bench";
+  std::filesystem::create_directories(work, error);
+  const play::BenchPlan plan{.executable = base / std::string(kExecutable),
+                             .video = options->file,
+                             .work_dir = work,
+                             .seconds = options->seconds,
+                             .fullscreen = options->fullscreen};
+  const auto report = play::evaluate_machine(plan, data, std::stop_token{}, [](const std::string& step) {
+    std::fprintf(stdout, "%s\n", step.c_str());
+    std::fflush(stdout);
+  });
+  std::filesystem::remove_all(work, error);
+  if (!report) return fail(report.error());
+  std::fputs(report->c_str(), stdout);
+  if (options->report) {
+    std::ofstream out(*options->report, std::ios::binary);
+    out << *report;
+  }
+  return 0;
+}
+
 }  // namespace
 
 int main(int argc, char** argv) {
@@ -109,6 +151,10 @@ int main(int argc, char** argv) {
 #endif
   ajp::app::play::leave_lone_console();
   std::vector<std::string_view> args(argv + 1, argv + argc);
+  if (!args.empty() && args.front() == "bench") {
+    args.erase(args.begin());
+    return run_bench_command(args);
+  }
   if (!args.empty() && args.front() == "play") args.erase(args.begin());
   const auto options = ajp::app::play::parse_play_options(args);
   if (!options) {
@@ -138,7 +184,14 @@ int main(int argc, char** argv) {
   // Finder ou l'Explorateur, le lecteur n'a pas de terminal, et c'est le fichier à joindre à un
   // rapport. Sans fichier (dossier en lecture seule, chemin hors de la page de code), stderr seul.
   std::vector<spdlog::sink_ptr> sinks{std::make_shared<spdlog::sinks::stderr_color_sink_mt>()};
-  const std::filesystem::path log_file = data.empty() ? std::filesystem::path() : data / "ajp.log";
+  // --data-dir : réglages, profils et journal ailleurs (les essais du benchmark) ; moteurs et modèles restent.
+  std::filesystem::path settings_dir = data;
+  if (options->data_dir) {
+    settings_dir = *options->data_dir;
+    std::error_code made;
+    std::filesystem::create_directories(settings_dir, made);
+  }
+  const std::filesystem::path log_file = settings_dir.empty() ? std::filesystem::path() : settings_dir / "ajp.log";
   if (!log_file.empty()) {
     try {
       sinks.push_back(std::make_shared<spdlog::sinks::basic_file_sink_mt>(log_file.string(), true));
@@ -161,6 +214,7 @@ int main(int argc, char** argv) {
       .data = place.data,
       .executable = place.executable,
       .engines = data / "engines",
+      .settings = settings_dir,
       .engine_index = base / "engines.lock",
       .models = base / "models",
   };

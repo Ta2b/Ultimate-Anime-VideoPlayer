@@ -3,6 +3,7 @@
 #pragma once
 
 #include <chrono>
+#include <filesystem>
 #include <expected>
 #include <future>
 #include <memory>
@@ -21,6 +22,15 @@ struct SystemNote {
   std::shared_ptr<std::future<std::expected<std::string, Refusal>>> pending;
 };
 
-void system_tab(const PlayerPlace& place, SystemNote& last);
+// Le bouton « Évaluer ma machine » : bench_note porte son essai (auto_bench_run.h) ; video est la vidéo lue (vide :
+// l'écran d'accueil, rien à jouer) ; pause demande la mise en pause de la lecture avant l'essai.
+struct BenchNote {
+  std::string text;
+  bool refused = false;
+  std::shared_ptr<std::future<std::expected<std::string, Refusal>>> pending;
+};
+
+// Rend vrai quand l'évaluation vient d'être lancée : l'appelant met alors la lecture en pause.
+bool system_tab(const PlayerPlace& place, const std::filesystem::path& video, SystemNote& last, BenchNote& bench);
 
 }  // namespace ajp::app::play
