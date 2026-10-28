@@ -28,8 +28,8 @@ std::string read(const fs::path& file) {
 
 TEST_CASE("mises à jour : quand vérifier", "[updater]") {
   UpdateState state;
-  CHECK(update_due(state, "notify", "daily", 1000));            // jamais vérifié
-  CHECK_FALSE(update_due(state, "never", "launch", 1000));      // Jamais
+  CHECK(update_due(state, "notify", "daily", 1000));        // jamais vérifié
+  CHECK_FALSE(update_due(state, "never", "launch", 1000));  // Jamais
   state.last_check_unix = 1000;
   CHECK_FALSE(update_due(state, "notify", "daily", 1000 + 3600));
   CHECK(update_due(state, "notify", "daily", 1000 + 86400));
@@ -40,8 +40,13 @@ TEST_CASE("mises à jour : quand vérifier", "[updater]") {
 }
 
 TEST_CASE("mises à jour : l'état fait l'aller-retour", "[updater]") {
-  UpdateState state{.last_check_unix = 1700000000, .latest_version = "0.6.0", .notes_url = "https://x/y",
-                    .staged_version = "0.6.0", .staged_file = "/d/a.tar.gz", .previous_version = "0.5.0", .last_error = "non"};
+  UpdateState state{.last_check_unix = 1700000000,
+                    .latest_version = "0.6.0",
+                    .notes_url = "https://x/y",
+                    .staged_version = "0.6.0",
+                    .staged_file = "/d/a.tar.gz",
+                    .previous_version = "0.5.0",
+                    .last_error = "non"};
   const auto read_back = parse_update_state(format_update_state(state));
   REQUIRE(read_back);
   CHECK(*read_back == state);
@@ -67,7 +72,8 @@ TEST_CASE("mises à jour : appliquer puis revenir en arrière", "[updater]") {
   write(root / "src" / "ajp-linux-x64" / "lib" / "b.so", "lib en plus");
   const fs::path archive = data / "updates" / "0.6.0" / "ajp-linux-x64.tar.gz";
   fs::create_directories(archive.parent_path());
-  const std::string command = "tar -czf '" + archive.string() + "' -C '" + (root / "src").string() + "' ajp-linux-x64";
+  const std::string command =
+      "tar -czf '" + archive.string() + "' -C '" + (root / "src").string() + "' ajp-linux-x64";
   REQUIRE(std::system(command.c_str()) == 0);
 
   const UpdatePaths paths{.data = data, .install = install, .executable = install / "ajp"};

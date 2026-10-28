@@ -70,7 +70,8 @@ struct SetAudioDelay {
 struct SetVolume {
   float gain = 1.0F;  // 0 à 2
 };
-// « Comment écoutez-vous ? » (audio/mixer.h) : 0 casque, 1 enceintes, 2 home cinéma ; faithful : aucun traitement.
+// « Comment écoutez-vous ? » (audio/mixer.h) : 0 casque, 1 enceintes, 2 home cinéma ; faithful : aucun
+// traitement.
 struct SetListening {
   std::uint8_t listen = 1;
   bool faithful = false;

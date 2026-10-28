@@ -23,8 +23,8 @@
 
 #include "audio/clock.h"
 #include "audio/decoder.h"
-#include "audio/mixer.h"
 #include "audio/drift.h"
+#include "audio/mixer.h"
 #include "audio/output.h"
 #include "audio/packet.h"
 #include "audio/pcm.h"
@@ -109,8 +109,8 @@ class AudioPlayer {
   std::optional<AudioDecoder> decoder_;
   Mixer mixer_;                      // entre le décodeur et la sortie (casque, enceintes…)
   std::optional<AudioTrack> track_;  // la piste ouverte, pour rouvrir le décodeur quand l'écoute change
-  std::deque<AudioPacket> held_;  // reçus, pas encore décodés : la file du périphérique est pleine
-  std::deque<PcmBlock> ready_;    // décodés, pas encore poussés
+  std::deque<AudioPacket> held_;     // reçus, pas encore décodés : la file du périphérique est pleine
+  std::deque<PcmBlock> ready_;       // décodés, pas encore poussés
   std::optional<std::int64_t> trim_before_us_;
   std::optional<std::int64_t> last_follow_us_;
   std::uint32_t epoch_ = 0;

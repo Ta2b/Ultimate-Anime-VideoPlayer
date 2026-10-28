@@ -22,9 +22,16 @@ struct Speaker {
   float azimuth_deg;
   bool lfe;
 };
-constexpr std::array<Speaker, 6> k51{{{-30, false}, {30, false}, {0, false}, {0, true}, {-110, false}, {110, false}}};
-constexpr std::array<Speaker, 8> k71{
-    {{-30, false}, {30, false}, {0, false}, {0, true}, {-150, false}, {150, false}, {-90, false}, {90, false}}};
+constexpr std::array<Speaker, 6> k51{
+    {{-30, false}, {30, false}, {0, false}, {0, true}, {-110, false}, {110, false}}};
+constexpr std::array<Speaker, 8> k71{{{-30, false},
+                                      {30, false},
+                                      {0, false},
+                                      {0, true},
+                                      {-150, false},
+                                      {150, false},
+                                      {-90, false},
+                                      {90, false}}};
 
 float one_pole(float cutoff_hz, int rate) {
   return 1.0F - std::exp(-2.0F * kPi * cutoff_hz / static_cast<float>(rate));
@@ -51,8 +58,9 @@ float run(MixPath& path, float input) {
 }  // namespace
 
 Mixer::Mixer(MixConfig config) : config_(config) {
-  const int delay = std::clamp(static_cast<int>(std::lround(kCrossfeedDelayMs * 0.001F * static_cast<float>(config_.sample_rate))), 0,
-                               kMixDelayMax - 1);
+  const int delay = std::clamp(
+      static_cast<int>(std::lround(kCrossfeedDelayMs * 0.001F * static_cast<float>(config_.sample_rate))), 0,
+      kMixDelayMax - 1);
   for (MixPath& path : feed_) {
     path.delay = delay;
     path.gain = kCrossfeedGain;
@@ -61,8 +69,8 @@ Mixer::Mixer(MixConfig config) : config_(config) {
 }
 
 int Mixer::decoder_channels(int source_channels) const {
-  const bool processed = !config_.faithful && config_.listen != Listen::Cinema && config_.sink_channels == 2 &&
-                         (source_channels == 6 || source_channels == 8);
+  const bool processed = !config_.faithful && config_.listen != Listen::Cinema &&
+                         config_.sink_channels == 2 && (source_channels == 6 || source_channels == 8);
   return processed ? source_channels : config_.sink_channels;
 }
 
@@ -95,11 +103,12 @@ void Mixer::build_binaural(int channels) {
       const bool far = (ear == 0 && side > 0.0F) || (ear == 1 && side < 0.0F);
       const float shadow = far ? std::fabs(side) : 0.0F;
       // Woodworth : retard de l'oreille éloignée seulement.
-      const float itd_s = far ? kHeadRadiusM / kSoundSpeed * (std::fabs(theta) <= kPi / 2 ? std::fabs(theta) + std::fabs(side)
-                                                                                           : kPi - std::fabs(theta) + std::fabs(side))
+      const float itd_s = far ? kHeadRadiusM / kSoundSpeed *
+                                    (std::fabs(theta) <= kPi / 2 ? std::fabs(theta) + std::fabs(side)
+                                                                 : kPi - std::fabs(theta) + std::fabs(side))
                               : 0.0F;
-      path.delay = std::clamp(static_cast<int>(std::lround(itd_s * static_cast<float>(config_.sample_rate))), 0,
-                              kMixDelayMax - 1);
+      path.delay = std::clamp(static_cast<int>(std::lround(itd_s * static_cast<float>(config_.sample_rate))),
+                              0, kMixDelayMax - 1);
       path.gain = (far ? 1.0F - 0.35F * shadow : 1.0F) * 0.5F;
       path.alpha = far ? one_pole(6000.0F - 4500.0F * shadow, config_.sample_rate) : 1.0F;
     }

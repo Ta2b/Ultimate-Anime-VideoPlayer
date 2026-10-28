@@ -126,7 +126,8 @@ void AudioPlayer::handle(const Command& command) {
     mix.listen = static_cast<Listen>(std::min<std::uint8_t>(listening->listen, 2));
     mix.faithful = listening->faithful;
     mixer_ = Mixer(mix);
-    // Les canaux voulus du décodeur ont changé : il est rouvert, ce qui était décodé est refait au prochain paquet.
+    // Les canaux voulus du décodeur ont changé : il est rouvert, ce qui était décodé est refait au prochain
+    // paquet.
     if (track_ && mixer_.decoder_channels(track_->codec.channels) != before) {
       open_decoder(*track_);
       ready_.clear();

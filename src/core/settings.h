@@ -46,8 +46,9 @@ inline constexpr std::size_t kMaxLanguages = 8;
 
 struct Settings {
   bool first_run_done = false;
-  int first_run_step = 0;                // le dernier écran de l'assistant vu (0 : aucun), pour reprendre en route
-  bool open_with_registered = false;     // l'inscription « Ouvrir avec » a été faite une fois : pas de réinscription
+  int first_run_step = 0;  // le dernier écran de l'assistant vu (0 : aucun), pour reprendre en route
+  bool open_with_registered =
+      false;  // l'inscription « Ouvrir avec » a été faite une fois : pas de réinscription
   std::vector<EngineId> chosen_engines{EngineId::Vulkan};     // cochés dans l'écran « Moteurs »
   std::vector<EngineId> installed_engines{EngineId::Vulkan};  // présents et vérifiés
   std::array<std::optional<EngineId>, kUsageCount> preferred{EngineId::Vulkan, EngineId::Vulkan,
