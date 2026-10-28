@@ -2,8 +2,9 @@
 
 État du code à `0b60fda` (v0.3.0). Source de l'inventaire : `src/app/play/settings_panel.cpp`,
 `settings_chain_tabs.cpp`, `settings_engines.cpp`, `settings_export.cpp`, `settings_system.cpp`
-(extraction automatique des widgets ImGui, puis relecture). Rien n'est encore modifié : ce document est le
-plan, à valider avant de toucher au code.
+(extraction automatique des widgets ImGui, puis relecture). Ce document est le plan unifié (arbre, encadrés en ligne,
+configuration automatique, lecteur par défaut, mise à jour). L'implémentation avance par petites PR :
+(a) détection et tranche, (b) préréglages, (c) benchmark, (d) textes et pastilles, (e) cadre en arbre.
 
 ## 1. Ce qu'il y a aujourd'hui
 
@@ -106,12 +107,13 @@ flèches, plus de défilement horizontal à gérer, et le problème de molette n
 
 ```
 Général
+  ├ Configuration            sélecteur de préréglage EN TÊTE (Auto, Économe, Rapide, Normal, Qualité, Ultra,
+  │                          Personnalisé), priorité (Fluidité / Équilibre / Image), « Évaluer ma machine »
+  │                          (dernier résultat et date), carte et écran détectés (voir 4.7)
   ├ Lecture                  volume, épisode suivant, reprendre là où on s'est arrêté
   ├ Lecteur par défaut       bouton « Faire de ce lecteur le lecteur par défaut », Ouvrir avec  (voir 4.4)
   └ Mises à jour             Automatique / Me prévenir / Jamais, canal, fréquence, version (voir 4.5)
 Image IA
-  ├ Configuration            préréglage (Auto, Économe, Rapide, Normal, Qualité, Ultra, Personnalisé), priorité
-  │                          (Fluidité / Équilibre / Image), « Évaluer ma machine », carte et écran détectés (voir 4.7)
   ├ Agrandissement           résolution de travail, SPAN (case, modèle)
   ├ Fluidité                 multiplicateur, moteur d'interpolation, mode GMFSS
   └ Avancé                   filtre de réduction (Hermite…), modèle RIFE, poses DRBA, ordre du traitement, Smooth Motion
@@ -142,8 +144,8 @@ Avancé
   (demande du 28/10) ; rien n'est caché dans un onglet fourre-tout.
 - **Profils** : l'écran disparaît pour l'instant (demande du 28/10). Les 9 profils et le profil de démarrage
   restent dans `play.toml` et dans le code ; « retour au profil d'origine » passe dans Avancé > Réinitialiser.
-- **Image IA** s'ouvre sur *Configuration* (le mode automatique, 4.7) : par défaut les pages Agrandissement et Fluidité
-  y sont **en lecture** (valeurs choisies par l'automatique, grisées avec « Auto »), et se débloquent en
+- **Image IA** : par défaut (préréglage choisi dans *Général > Configuration*, 4.7) les pages Agrandissement et Fluidité
+  sont **en lecture** (valeurs choisies par l'automatique, grisées avec « Auto »), et se débloquent en
   *Personnalisé*. Elle regroupe agrandissement et interpolation : une seule chaîne (la résolution de travail décide ce que
   l'interpolation peut tenir), avec le résumé vivant de la chaîne en haut de la catégorie.
 - **HDR et Couleurs séparés** : HDR configure la conversion et l'écran ; Couleurs ne contient que l'image. Le
@@ -221,7 +223,7 @@ registre. Ce serait une étape 6, après le reste.
 3. Un seul écran d'accueil : résumé « RTX 4070 Ti · 4K 165 Hz → 720p → SPAN ×2 → DistilDRBA lite », bouton
    **« Évaluer ma machine (15 s) »** (ou *Plus tard*), choix de la **mise à jour** (4.5) et, sur Windows,
    « Faire de ce lecteur le lecteur par défaut ».
-4. Tout se retrouve ensuite dans les réglages : Général (lecteur par défaut, mises à jour), Image IA > Configuration
+4. Tout se retrouve ensuite dans les réglages : Général (lecteur par défaut, mises à jour), Général > Configuration
    (préréglage, benchmark).
 
 ### 4.4 Lecteur par défaut et « Ouvrir avec »
@@ -260,8 +262,8 @@ Mécanique :
    (AppImage : AppImageUpdate à voir plus tard).
 5. **Moteurs et modèles** : déjà versionnés par leur index (`engines.lock`) ; la mise à jour du lecteur ne les
    retélécharge que si le hachage change.
-6. Défaut proposé : **Automatique**, avec un message à la première fois (Sparkle fait pareil : demande au 2e
-   lancement). Question 5 plus bas.
+6. Défaut proposé : **Me prévenir** (à confirmer, question 5), choisi sur l'écran du premier lancement (Sparkle
+   demande aussi une fois).
 
 ### 4.6 Textes à corriger tout de suite (liste non exhaustive)
 | Aujourd'hui | Proposé |
@@ -338,7 +340,7 @@ l'effet.
 - **Au premier lancement** (écran d'accueil, `first_run`) : l'automatique choisit d'abord une tranche par le
   classement (instantané, rien ne bloque), puis **propose** « Évaluer ma machine (15 s) » ou « Plus tard ». Rien à
   confirmer pour l'« Ouvrir avec » (4.4), mais l'évaluation est proposée car elle fait jouer la machine.
-- **Toujours refaisable** : Image IA > Configuration > **« Évaluer ma machine »**, avec la date et le résultat
+- **Toujours refaisable** : Général > Configuration > **« Évaluer ma machine »**, avec la date et le résultat
   du dernier passage. Bouton **« Évaluer ma machine »** : joue 10 à 15 s d'une courte
   séquence avec chaque chaîne candidate (son coupé), relève le temps par image (mêmes statistiques que `--stats`)
   et garde **la plus lourde qui tient avec marge** (par exemple 80 % du budget d'une image à la cadence de
@@ -347,7 +349,7 @@ l'effet.
   plus bas, à relancer.
 
 #### Préréglages (remplacent l'onglet Profils)
-Liste en tête de Image IA > Configuration : *Auto* (par défaut), *Économe*, *Rapide*, *Normal*, *Qualité*, *Ultra*, *Personnalisé*. Modifier un réglage
+Liste en tête de Général > Configuration : *Auto* (par défaut), *Économe*, *Rapide*, *Normal*, *Qualité*, *Ultra*, *Personnalisé*. Modifier un réglage
 passe en *Personnalisé*, à partir des valeurs courantes. Plus de préréglages ne servent à rien tant qu'on n'a
 pas de cas d'usage précis : *Sans interpolation* et *HDR* se règlent par catégorie, pas par profil.
 
@@ -386,7 +388,7 @@ résolution) ; jamais en pleine lecture. Un utilisateur en *Personnalisé* n'est
    réels (Vulkan, RADV, Intel, Apple).
 3. **Mécanique du menu** : arbre à gauche, groupes encadrés et lignes multiples, barre de défilement, largeurs,
    dernière page mémorisée.
-4. **Réorganisation** : 9 catégories, Profils retiré, *Image IA > Configuration* (préréglages, priorité),
+4. **Réorganisation** : 9 catégories, Profils retiré, *Général > Configuration* (préréglages, priorité),
    déplacement des réglages, bouton lecteur par défaut, « Ouvrir avec » au premier lancement, case « Réglages
    avancés ». Clés nouvelles seulement : `last_page`, `advanced_shown`, `open_with_registered`,
    `ask_default_player`, `preset`, `priority`. Aucune migration des clés existantes.
@@ -409,7 +411,7 @@ par onglet, contrôle que chaque réglage de l'annexe A reste atteignable.
 2. HDR et Couleurs séparés (mon arbre, ta demande) ou fusionnés (coordinateur) ? Langues dans Général ou avec les sous-titres ? Case globale « Réglages avancés » (4.2 bis) : ok ?
 3. Pastilles *Recommandé / Le plus rapide / Le plus fin / Le plus lourd / Expérimental* : la liste te convient ?
 4. Les temps mesurés : jamais dans l'interface, oui dans `docs/nvidia-linux.md` ?
-5. Mises à jour : défaut **Automatique** (installe au prochain lancement) ou **Me prévenir** ?
+5. Mises à jour : défaut **Me prévenir** (avis du coordinateur, à confirmer) ou **Automatique** (installe au prochain lancement) ?
 6. Pour GMFSS et le mode auto de la 0.4 : qu'est-ce que tu veux améliorer en priorité ?
 7. Configuration automatique (4.7) : les 5 tranches et les préréglages te conviennent ? (Benchmark : décidé, proposé au début et refaisable dans les réglages.)
 8. L'ordre des étapes (section 6) te convient ? Je propose de commencer par 1 (textes) puis 2 (données de l'automatique).
