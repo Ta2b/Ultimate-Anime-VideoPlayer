@@ -135,7 +135,8 @@ void updates_page(PlaySettings& d, const PlayerPlace& place, UpdateNote& result)
          channel = d.update_channel]() -> std::expected<std::string, Refusal> {
           UpdateState current = load_update_state(state_file);
           auto message = run_update_check(paths, mode == "never" ? "notify" : mode, channel, current, {});
-          (void)save_update_state(state_file, current);
+          if (const auto kept = save_update_state(state_file, current); !kept && message)
+            return std::unexpected(kept.error());
           return message;
         }));
     result.text.clear();
@@ -148,8 +149,10 @@ void updates_page(PlaySettings& d, const PlayerPlace& place, UpdateNote& result)
         std::async(std::launch::async, [paths, state_file]() -> std::expected<std::string, Refusal> {
           UpdateState current = load_update_state(state_file);
           auto message = roll_back_update(paths, current);
-          if (message) (void)save_update_state(state_file, current);
-          return message ? std::expected<std::string, Refusal>(*message + " : relancez le lecteur") : message;
+          if (!message) return message;
+          if (const auto kept = save_update_state(state_file, current); !kept)
+            return std::unexpected(kept.error());
+          return *message + " : relancez le lecteur";
         }));
     result.text.clear();
     result.refused = false;

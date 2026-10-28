@@ -119,6 +119,8 @@ std::expected<CompareOutcome, Refusal> run_compare(const BenchPlan& plan, const 
     std::optional<BenchReading>& slot = got[&variant == &a ? 0 : 1];
     slot = slot ? worse(*slot, *reading) : std::move(*reading);
   }
+  if (!got[0] || !got[1])
+    return refuse(RefusalCode::DecodeFailed, "comparaison : une variante n'a rien rendu");
   return CompareOutcome{.a = a, .b = b, .reading_a = *got[0], .reading_b = *got[1]};
 }
 
