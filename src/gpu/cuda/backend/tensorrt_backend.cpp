@@ -9,6 +9,7 @@
 #include <utility>
 
 #include "gpu/cuda/backend/cuda_status.h"
+#include "gpu/cuda/backend/span_fp8_engine.h"
 #include "gpu/cuda/backend/tensorrt_true_hdr.h"
 #include "gpu/cuda/backend/trt_engine.h"
 #include "prepare/builder.h"
@@ -238,6 +239,7 @@ BackendCaps TensorRtBackend::capabilities() const {
       .fp16 = true,
       .int8 = true,  // graphes Q/DQ (SPAN INT8, span_int8.h) : Turing et après
       .fp8 = properties_.major > 8 || (properties_.major == 8 && properties_.minor >= 9),  // Ada et après
+      .span_fp8_cutlass = SpanFp8Net::supported_device(properties_.major, properties_.minor),
       .matrix_units = true,
       .import_formats = {PixelFormat::Nv12, PixelFormat::P010, PixelFormat::P016},
       .lanes = lanes_,
@@ -251,6 +253,8 @@ DeviceMatch TensorRtBackend::match(const DeviceUuid& render_device) const {
 
 std::expected<Artifact, Refusal> TensorRtBackend::build(const ModelSpec& model, const ShapeSet& shapes,
                                                         Progress& progress) {
+  // Une variante du SPAN en paquet de poids FP8 : pas de trtexec, les noyaux CUTLASS la lisent telle quelle.
+  if (is_span_fp8_package(model.onnx_path)) return build_span_fp8(model, shapes);
   const prepare::TrtexecConfig config{
       .trtexec = trtexec_,
       .cache_dir = cache_dir_,
@@ -280,6 +284,7 @@ std::expected<Artifact, Refusal> TensorRtBackend::build(const ModelSpec& model, 
 
 std::expected<std::unique_ptr<Engine>, Refusal> TensorRtBackend::load(const Artifact& artifact) {
   if (auto ok = bind(); !ok) return std::unexpected(ok.error());
+  if (span_fp8_artifact_shape(artifact.cache_key)) return load_span_fp8(artifact);
   // Les activations dans la zone de la voie choisie avant le chargement (use_lane) ; un moteur
   // lancé sur l'autre voie y passe à son lancement.
   auto engine = TrtEngine::load(*runtime_, artifact.path, arena());
@@ -322,7 +327,11 @@ GpuTiming& TensorRtBackend::stage(std::string_view name) {
 std::expected<void, Refusal> TensorRtBackend::enqueue(Engine& engine, std::span<const Tensor> inputs,
                                                       std::span<Tensor> outputs) {
   auto* trt = dynamic_cast<TrtEngine*>(&engine);
-  if (trt == nullptr) return refuse(RefusalCode::DeviceMismatch, "enqueue : moteur d'un autre backend");
+  if (trt == nullptr) {
+    auto* fused = dynamic_cast<SpanFp8Engine*>(&engine);
+    if (fused == nullptr) return refuse(RefusalCode::DeviceMismatch, "enqueue : moteur d'un autre backend");
+    return enqueue_span_fp8(*fused, inputs, outputs);
+  }
   if (auto ok = bind(); !ok) return ok;
   // Le moteur lit ses entrées, écrit ses sorties, sa zone d'activation et son contexte.
   const std::shared_ptr<SharedActivations>& zone = arena();
