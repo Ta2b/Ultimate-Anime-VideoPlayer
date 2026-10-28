@@ -22,9 +22,10 @@ std::optional<std::size_t> normalized_axis(std::int64_t axis, std::size_t rank) 
 
 class Planner {
  public:
-  Planner(const ir::Graph& graph, std::uint64_t alignment)
+  Planner(const ir::Graph& graph, std::uint64_t alignment, bool concat_in_place)
       : graph_(graph),
         alignment_(std::max<std::uint64_t>(alignment, 4)),
+        concat_in_place_(concat_in_place),
         aliases_(graph.tensors.size()),
         last_(graph.tensors.size(), 0),
         io_(graph.tensors.size(), false) {
@@ -35,6 +36,16 @@ class Planner {
     }
     for (const ir::TensorId id : graph.inputs) io_[id] = true;
     for (const ir::TensorId id : graph.outputs) io_[id] = true;
+    producer_.assign(graph.tensors.size(), nullptr);
+    readers_.assign(graph.tensors.size(), 0);
+    for (const ir::Node& node : graph.nodes) {
+      for (const ir::TensorId id : node.outputs) {
+        if (id != ir::kNoTensor) producer_[id] = &node;
+      }
+      for (const ir::TensorId id : node.inputs) {
+        if (id != ir::kNoTensor) ++readers_[id];
+      }
+    }
   }
 
   std::vector<ir::Alias> run() {
@@ -99,10 +110,44 @@ class Planner {
     link(out, in, offset, always);
   }
 
+  // Entrées Conv d'un Concat sur les canaux Nhwc16 : la Conv écrit dans la sortie du Concat, au pas
+  // de pixel de celle-ci, à son décalage de canaux. L'enfant n'est lu que par le Concat, dont les
+  // décalages sont des multiples de 16 canaux (tuiles entières, vues alignées) ; les canaux de
+  // bourrage d'un enfant, non multiple de 16, tomberaient dans l'entrée suivante : seul le dernier
+  // enfant peut en avoir.
+  void concat_channels(const ir::Node& node, std::size_t axis) {
+    const ir::TensorId out = node.outputs[0];
+    const ir::Tensor& y = graph_.tensors[out];
+    if (axis != 1 || y.dims.size() != 4 || y.layout != ir::Layout::Nhwc16 || !y.known) return;
+    std::int64_t start = 0;
+    for (std::size_t k = 0; k < node.inputs.size(); ++k) {
+      const ir::TensorId in = node.inputs[k];
+      const ir::Tensor& x = graph_.tensors[in];
+      const std::int64_t channels = x.dims[1];
+      const std::int64_t offset = start;
+      start += channels;
+      if (offset % 16 != 0 || (channels % 16 != 0 && k + 1 != node.inputs.size())) continue;
+      const std::uint64_t bytes = static_cast<std::uint64_t>(offset) * ir::element_size(y.type);
+      const ir::Node* maker = producer_[in];
+      if (maker == nullptr || maker->op != ir::OpKind::Conv || readers_[in] != 1 ||
+          std::ranges::count(node.inputs, in) != 1 || x.kind != ir::TensorKind::Activation || io_[in] ||
+          aliases_[in].parent != ir::kNoTensor || x.layout != ir::Layout::Nhwc16 || x.type != y.type ||
+          !x.known || bytes % alignment_ != 0 || x.dims[0] != y.dims[0] || x.dims[2] != y.dims[2] ||
+          x.dims[3] != y.dims[3] || root(out) == in) {
+        continue;
+      }
+      aliases_[in] = {.parent = out, .offset = bytes, .channel_slab = true};
+      last_[root(out)] = std::max(last_[root(out)], last_[in]);
+    }
+  }
+
   void concat(const ir::Node& node) {
     const ir::TensorId out = node.outputs[0];
     const ir::Tensor& y = graph_.tensors[out];
     const auto* attrs = std::get_if<ir::AxisAttrs>(&node.attrs);
+    if (attrs != nullptr && concat_in_place_) {
+      if (const auto axis = normalized_axis(attrs->axis, y.dims.size())) concat_channels(node, *axis);
+    }
     if (attrs == nullptr || !plain(y)) return;
     const auto axis = normalized_axis(attrs->axis, y.dims.size());
     if (!axis) return;
@@ -152,8 +197,11 @@ class Planner {
 
   const ir::Graph& graph_;
   std::uint64_t alignment_;
+  bool concat_in_place_;
   std::vector<ir::Alias> aliases_;
-  std::vector<std::size_t> last_;  // dernière lecture, de la famille pour une racine
+  std::vector<const ir::Node*> producer_;  // le nœud qui écrit chaque tenseur
+  std::vector<std::size_t> readers_;       // nombre de lectures par tenseur
+  std::vector<std::size_t> last_;          // dernière lecture, de la famille pour une racine
   std::vector<bool> io_;
 };
 
@@ -170,8 +218,8 @@ std::optional<std::uint64_t> slab_offset(const ir::Tensor& whole, std::size_t ax
   return static_cast<std::uint64_t>(start) * inner;
 }
 
-std::vector<ir::Alias> plan_aliases(const ir::Graph& graph, std::uint64_t alignment) {
-  return Planner(graph, alignment).run();
+std::vector<ir::Alias> plan_aliases(const ir::Graph& graph, std::uint64_t alignment, bool concat_in_place) {
+  return Planner(graph, alignment, concat_in_place).run();
 }
 
 }  // namespace ajp::gpu::vk::net

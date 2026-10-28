@@ -135,7 +135,9 @@ std::expected<BufferView, Refusal> NetEngine::resolve(const Binding& binding,
   }
   auto base = root_view(root, inputs, outputs);
   if (!base || root == id) return base;
-  const VkDeviceSize bytes = ir::storage_bytes(graph_.tensors[id]);
+  // Une tranche de canaux Nhwc16 s'étend sur les pixels du parent : sa vue va jusqu'au bout de la racine.
+  const bool slab = program_.aliases[id].channel_slab && offset < base->size;
+  const VkDeviceSize bytes = slab ? base->size - offset : ir::storage_bytes(graph_.tensors[id]);
   if (offset + bytes > base->size) {
     return mismatch(std::format("{} : {} o à {} dépassent les {} o de {}", graph_.tensors[id].name, bytes,
                                 offset, base->size, graph_.tensors[root].name));

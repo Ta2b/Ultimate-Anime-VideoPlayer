@@ -76,7 +76,10 @@ struct Target {
   std::uint32_t max_shared_memory = 16384;
   std::uint32_t max_workgroup_invocations = 128;
   std::uint32_t max_workgroup_count_x = 65535;  // maxComputeWorkGroupCount[0] : groupes d'un dispatch en x
-  std::uint32_t storage_alignment = 256;        // minStorageBufferOffsetAlignment : décalage d'une vue liée
+  // Les entrées d'un Concat sur les canaux Nhwc16 écrites par leur Conv directement dans leur tranche
+  // (net_alias.h) ; faux : chaque entrée est copiée.
+  bool concat_in_place = true;
+  std::uint32_t storage_alignment = 256;  // minStorageBufferOffsetAlignment : décalage d'une vue liée
 };
 
 }  // namespace ajp::gpu::vk::net
