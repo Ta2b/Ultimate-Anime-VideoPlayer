@@ -23,7 +23,7 @@ TEST_CASE("l'assistant avance, recule, passe et reprend en route", "[wizard]") {
   next(wizard);
   CHECK(current(wizard) == WizardStep::Engines);
   next(wizard);
-  skip(wizard);  // Image et fluidité passée
+  skip(wizard);                                 // Image et fluidité passée
   CHECK(current(wizard) == WizardStep::Audio);  // HDR n'a pas lieu
   CHECK(progress_text(wizard) == "Étape 4 sur 7 : Audio");
   CHECK(wizard.skipped == std::vector<WizardStep>{WizardStep::Chain});
@@ -84,10 +84,12 @@ TEST_CASE("le résumé dit ce qui est choisi, sauté, et où le changer", "[wiza
   CHECK(listening_from_key("n'importe quoi") == Listening::Unsaid);
 }
 
-TEST_CASE("RTX HDR pas à pas : prêt seulement quand tout est fait, sinon HDR adaptatif en attendant", "[wizard]") {
+TEST_CASE("RTX HDR pas à pas : prêt seulement quand tout est fait, sinon HDR adaptatif en attendant",
+          "[wizard]") {
   Wizard wizard = begin_wizard({.engine_choice = true, .hdr_display = true, .rtx_guided = true}, 0);
   wizard.hdr = HdrChoice::RtxHdr;
-  wizard.rtx_checks = {{.name = "Moteur TensorRT", .done = true}, {.name = "SDK Maxine", .done = false, .todo = "À importer"}};
+  wizard.rtx_checks = {{.name = "Moteur TensorRT", .done = true},
+                       {.name = "SDK Maxine", .done = false, .todo = "À importer"}};
   CHECK_FALSE(rtx_ready(wizard.rtx_checks));
   PlaySettings waiting = wizard_play_settings(wizard, {});
   CHECK_FALSE(waiting.true_hdr);

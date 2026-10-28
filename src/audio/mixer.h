@@ -1,15 +1,17 @@
-// « Comment écoutez-vous ? » (docs/audio-spatialisation.md) : le mixage entre ce que décode le lecteur et ce que
-// l'appareil de sortie reçoit.
+// « Comment écoutez-vous ? » (docs/audio-spatialisation.md) : le mixage entre ce que décode le lecteur et ce
+// que l'appareil de sortie reçoit.
 //
-//   Casque    : crossfeed pour une source stéréo (le canal opposé, adouci et retardé, comme à l'enceinte), binaural
-//               pour une source 5.1 ou 7.1 (chaque haut-parleur placé autour de la tête : retard et ombre de la tête).
+//   Casque    : crossfeed pour une source stéréo (le canal opposé, adouci et retardé, comme à l'enceinte),
+//   binaural
+//               pour une source 5.1 ou 7.1 (chaque haut-parleur placé autour de la tête : retard et ombre de
+//               la tête).
 //   Enceintes : rendu fidèle ; une source 5.1 ou 7.1 est mixée en stéréo avec le centre rehaussé (les voix).
-//   Home cinéma : le multicanal passe tel quel vers l'appareil (libswresample adapte si les canaux diffèrent).
-//   Fidèle    : aucun traitement, quel que soit le profil (la bascule A/B).
+//   Home cinéma : le multicanal passe tel quel vers l'appareil (libswresample adapte si les canaux
+//   diffèrent). Fidèle    : aucun traitement, quel que soit le profil (la bascule A/B).
 //
 // Aucune HRTF mesurée n'est livrée (licences, poids) : le binaural est un modèle paramétrique de la tête
-// (retard interaural de Woodworth, ombre en passe-bas), un seul profil. Une source ou un appareil mono n'est jamais
-// spatialisé.
+// (retard interaural de Woodworth, ombre en passe-bas), un seul profil. Une source ou un appareil mono n'est
+// jamais spatialisé.
 #pragma once
 
 #include <array>
@@ -27,8 +29,8 @@ enum class Listen : std::uint8_t { Headphones, Speakers, Cinema };
 
 struct MixConfig {
   Listen listen = Listen::Speakers;
-  bool faithful = false;   // aucun traitement
-  int sink_channels = 2;   // canaux que reçoit l'appareil
+  bool faithful = false;  // aucun traitement
+  int sink_channels = 2;  // canaux que reçoit l'appareil
   int sample_rate = 48'000;
 };
 
@@ -48,9 +50,9 @@ class Mixer {
  public:
   explicit Mixer(MixConfig config);
 
-  // Les canaux que le décodeur doit rendre pour une source de source_channels canaux : ceux de la source quand le
-  // mixeur les traite lui-même (5.1 ou 7.1 vers un appareil stéréo, hors fidèle et hors Home cinéma), sinon ceux
-  // de l'appareil.
+  // Les canaux que le décodeur doit rendre pour une source de source_channels canaux : ceux de la source
+  // quand le mixeur les traite lui-même (5.1 ou 7.1 vers un appareil stéréo, hors fidèle et hors Home
+  // cinéma), sinon ceux de l'appareil.
   int decoder_channels(int source_channels) const;
 
   // Un bloc aux canaux de decoder_channels, rendu aux canaux de l'appareil.
