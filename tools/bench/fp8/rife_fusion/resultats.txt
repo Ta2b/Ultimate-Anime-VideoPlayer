@@ -1,0 +1,43 @@
+# RIFE v4.25 768x1280 (28/10/2026) : colle pleine résolution en noyaux CUDA FP16 fusionnés + 6 petits moteurs TensorRT.
+# RTX 4070 Ti, TensorRT 11.3, graphe CUDA, médiane de 200 itérations après 200 de chauffe, VRAIES données (paire s9 décalée de 20 px ;
+# avec des zéros le warp est trivial et trtexec en entrées aléatoires est plus lent : 6,06 / 8,14 ms au lieu de 6,46 ms).
+
+## Découpe (decoupe.py, ref_bornes.py)
+Moteurs : encode (2x3x768x1280 -> 2x4x768x1280), bloc b (entrée Xb -> sortie 52 canaux ConvTranspose Yb, avant DepthToSpace).
+  X0 15x96x160, X1 28x96x160, X2 28x192x320, X3 28x384x640, X4 28x768x1280 ; Y0,Y1 52x48x80, Y2 52x96x160, Y3 52x192x320, Y4 52x384x640.
+Colle : tout le reste (Split/Reshape/Concat, DepthToSpace, Resize x8/x8/x4/x2, flot, grille, Transpose, Cast, GridSample, Resize d'entrée, Sigmoid, mélange).
+Enchaînement des morceaux ORT CPU contre le réseau entier ORT CPU : 30571 éléments sur 2949120 diffèrent, au plus 1 ulp fp16 (9,8e-4),
+PSNR 91,3 dB (fusions ORT différentes selon le découpage : pas de bit-exactitude possible, mais l'enchaînement est correct).
+
+## Moteurs seuls (trtexec, graphe CUDA, ms)
+encode 0.485 | bloc0 0.098 | bloc1 0.069 | bloc2 0.109 | bloc3 0.183 | bloc4 0.721 | somme 1.665 (borne basse si la colle était gratuite)
+réseau entier TensorRT FP16 : 6.46 ms (vraies données, trtexec --loadInputs) ; 8.14 ms en entrées aléatoires de trtexec.
+
+## Noyaux (vraies données, ms, 20 répétitions par graphe)
+entree (X0)            0.0038
+colle 0 (-> X1, d=8)   0.0177
+colle 1 (-> X2, d=4)   0.0362
+colle 2 (-> X3, d=2)   0.1422
+colle 3 (-> X4, d=1)   0.2477   écrit 55 Mo : borne mémoire 0,11 ms
+fin (sortie)           0.0282
+somme noyaux          0.476
+Le Resize d'entrée du bloc suivant étant une moyenne 2x2 exacte, flot et warp ne sont évalués que sur 4/64, 4/16, tous les pixels.
+
+## Vérification noyau par noyau contre ORT CPU (entrées = tenseurs de référence, PSNR sur le pic du tenseur)
+entree 200 dB | colle0 123 dB | colle1 90 dB | colle2 89 dB | colle3 86 dB (pic 3,5) | fin 77 dB (pic 1) ; écarts max : 1 ulp fp16.
+
+## ABAB (même séance, 3 tours, ms médians) : A = chaîne fusionnée, B = réseau entier trtexec, B' = idem par le banc
+tour 1 : A 2.202  B 6.455  B' 6.459
+tour 2 : A 2.201  B 6.459  B' 6.456
+tour 3 : A 2.206  B 6.457  B' 6.460
+=> 2.20 ms contre 6.46 ms : -66 % (seuil -25 %).
+
+## Qualité de l'image interpolée t = 0,5 contre ORT CPU FP16 du réseau entier (pic 1,0 ; SSIM fenêtre 7x7 uniforme, float64)
+cas      chaîne fusionnée         TensorRT FP16 entier
+s5_6     76.62 dB  0.999982       77.60 dB  0.999986
+s5_20    74.25 dB  0.999979       74.75 dB  0.999983
+s9_6     73.08 dB  0.999957       74.04 dB  0.999966
+s9_20    71.18 dB  0.999944       71.90 dB  0.999955
+s14_6    73.32 dB  0.999966       74.37 dB  0.999975
+s14_20   70.24 dB  0.999955       70.74 dB  0.999964
+=> >= 70 dB (seuil 50 dB), à moins de 1 dB du TensorRT FP16 entier lui-même.
