@@ -184,6 +184,12 @@ l'ONNX de RIFE dans `build()` (six constructions trtexec, un `Artifact` dont la 
 backend, capturés dans un seul graphe CUDA). `enqueue()` le prend comme le moteur entier ; la reconnaissance du
 modèle et chaque refus se jugent côté lecteur (`chain_setup.cpp`), qui garde le RIFE entier en repli.
 
+Même chose pour DistilDRBA (`BackendCaps::drba_fused`, `docs/drba-fusionne.md`) : un manifeste `.drbafused`
+(`prepare/drba_split.h`) nomme quatre ONNX (l'encodeur en lot de trois images et les trois blocs), `build()` en fait quatre
+moteurs, `load()` un `DrbaFusedEngine` qui enchaîne les quatre contextes et les noyaux `drba_fused_kernels.cu` dans un seul
+graphe CUDA, avec les deux entrées `pair01` et `pair12` du moteur entier ; le repli sur celui-ci se juge dans
+`prepare_distil_drba` (`player_engines.cpp`).
+
 Durées de vie : chaque `Engine` et `TensorBuffer` meurt avant le `Backend` qui l'a
 créé, donc avant `ajp_backend_destroy` et le déchargement de la bibliothèque, où
 vit leur code. Une opération qui lit une `DecodedFrame` en garde une copie de

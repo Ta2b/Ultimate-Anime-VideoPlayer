@@ -47,7 +47,9 @@ namespace ajp::gpu {
 // 11 : BackendCaps::span_fp8_cutlass (le SPAN entier en FP8 par noyaux CUTLASS, docs/span-fp8-cutlass.md).
 // 12 : BackendCaps::rife_fused (RIFE fusionné : six moteurs TensorRT et noyaux de colle CUDA, manifeste «
 // .rifefused »).
-inline constexpr int kBackendAbi = 12;
+// 13 : BackendCaps::drba_fused (DistilDRBA fusionné : quatre moteurs TensorRT et noyaux CUDA, manifeste «
+// .drbafused »).
+inline constexpr int kBackendAbi = 13;
 
 using DeviceUuid = ajp::DeviceUuid;
 
@@ -85,6 +87,9 @@ struct BackendCaps {
   // RIFE coupé en six moteurs TensorRT et noyaux de colle (manifeste « .rifefused » à la place de l'ONNX,
   // kernels/spec/rife_fused.h).
   bool rife_fused = false;
+  // DistilDRBA coupé en quatre moteurs TensorRT et noyaux de colle (manifeste « .drbafused » à la place de
+  // l'ONNX, kernels/spec/drba_fused.h).
+  bool drba_fused = false;
   bool matrix_units = false;                // unités matricielles utilisées
   std::vector<PixelFormat> import_formats;  // formats acceptés par import()
   // Voies qui se recouvrent vraiment sur l'appareil (gpu/lanes.h) ; 1 : use_lane ne change rien.
