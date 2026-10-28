@@ -70,8 +70,8 @@ struct EngineDownload {
   std::uint64_t needed = 0;     // la place que l'installation demande au disque (engine_install.h :
                                 // InstallSpace::peak) ; 0 : inconnue
   std::uint64_t available = 0;  // la place libre là où le moteur s'installe
-  std::string license;  // à accepter avant le téléchargement, vide si aucune
-  std::string missing;  // prérequis du système absent (missing_prerequisite), vide sinon
+  std::string license;          // à accepter avant le téléchargement, vide si aucune
+  std::string missing;          // prérequis du système absent (missing_prerequisite), vide sinon
 };
 
 // Ce qui est déjà sur ce poste.
