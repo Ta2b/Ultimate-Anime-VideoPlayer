@@ -238,7 +238,8 @@ std::expected<PlaySettings, Refusal> parse_settings(std::string_view toml_text) 
       std::array<float, ::ajp::audio::kMixTuningFields> fields = ::ajp::audio::to_array(s.audio_custom);
       constexpr std::array<const char*, ::ajp::audio::kMixTuningFields> kNames{
           "crossfeed_gain", "crossfeed_cutoff_hz", "crossfeed_delay_ms", "head_radius_m", "head_shadow",
-          "surround_gain",  "center_lift",         "lfe_gain",           "downmix_scale"};
+          "surround_gain",  "center_lift",         "lfe_gain",           "downmix_scale", "distance",
+          "room",           "eq_bass_db",          "eq_voice_db",        "eq_treble_db",  "night"};
       for (std::size_t i = 0; i < fields.size(); ++i)
         reads.push_back(read(*custom, "audio.custom", kNames[i], fields[i]));
       s.audio_custom = ::ajp::audio::tuning_from(fields);
@@ -255,6 +256,17 @@ std::expected<PlaySettings, Refusal> parse_settings(std::string_view toml_text) 
           continue;
         }
         s.device_listening.emplace_back(std::string(name.str()), *own);
+      }
+    }
+    if (const toml::table* profiles = audio->get_as<toml::table>("device_profiles")) {
+      for (const auto& [name, node] : *profiles) {
+        const auto key = node.value_exact<std::string>();
+        if (!key || (*key != "custom" && ::ajp::audio::find_preset(*key) == nullptr)) {
+          reads.emplace_back(refuse(RefusalCode::FieldOutOfRange,
+                                    std::format("audio.device_profiles.{}", std::string(name.str()))));
+          continue;
+        }
+        s.device_profile.emplace_back(std::string(name.str()), *key);
       }
     }
     reads.push_back(read_legacy_languages(*audio, "audio", legacy_audio));
@@ -415,17 +427,32 @@ std::string format_settings(const PlaySettings& s) {
     {
       const auto fields = ::ajp::audio::to_array(s.audio_custom);
       const auto r4 = [](float v) { return std::round(static_cast<double>(v) * 10000.0) / 10000.0; };
-      toml::table custom{{"crossfeed_gain", r4(fields[0])},     {"crossfeed_cutoff_hz", r4(fields[1])},
-                         {"crossfeed_delay_ms", r4(fields[2])}, {"head_radius_m", r4(fields[3])},
-                         {"head_shadow", r4(fields[4])},        {"surround_gain", r4(fields[5])},
-                         {"center_lift", r4(fields[6])},        {"lfe_gain", r4(fields[7])},
-                         {"downmix_scale", r4(fields[8])}};
+      toml::table custom{{"crossfeed_gain", r4(fields[0])},
+                         {"crossfeed_cutoff_hz", r4(fields[1])},
+                         {"crossfeed_delay_ms", r4(fields[2])},
+                         {"head_radius_m", r4(fields[3])},
+                         {"head_shadow", r4(fields[4])},
+                         {"surround_gain", r4(fields[5])},
+                         {"center_lift", r4(fields[6])},
+                         {"lfe_gain", r4(fields[7])},
+                         {"downmix_scale", r4(fields[8])},
+                         {"distance", r4(fields[9])},
+                         {"room", r4(fields[10])},
+                         {"eq_bass_db", r4(fields[11])},
+                         {"eq_voice_db", r4(fields[12])},
+                         {"eq_treble_db", r4(fields[13])},
+                         {"night", r4(fields[14])}};
       audio.insert_or_assign("custom", std::move(custom));
     }
     if (!s.device_listening.empty()) {
       toml::table devices;
       for (const auto& [name, own] : s.device_listening) devices.insert_or_assign(name, own);
       audio.insert("devices", std::move(devices));
+    }
+    if (!s.device_profile.empty()) {
+      toml::table profiles;
+      for (const auto& [name, key] : s.device_profile) profiles.insert_or_assign(name, key);
+      audio.insert("device_profiles", std::move(profiles));
     }
     root.insert("audio", std::move(audio));
   }

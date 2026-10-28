@@ -324,26 +324,36 @@ bool sound_tab(PlaySettings& d, const SettingsChoices& choices) {
   }
   const int listen = listening_index(*key).value_or(1);
   if (listen != 2) {
-    // Le profil de virtualisation : un choix nommé ; en avancé, chaque réglage à la main (Personnalisé).
-    const audio::MixPreset* shown = audio::find_preset(d.audio_profile);
-    const bool custom = d.audio_profile == "custom";
+    // Le profil de virtualisation : un choix nommé ; en avancé, chaque réglage à la main (Personnalisé). Un
+    // appareil qui a son profil propre garde aussi son choix de profil (device_profile) ; sinon c'est le
+    // profil global.
+    std::string* profile = &d.audio_profile;
+    if (own) {
+      auto found =
+          std::ranges::find(d.device_profile, device_name, &std::pair<std::string, std::string>::first);
+      if (found == d.device_profile.end())
+        found = d.device_profile.insert(found, {device_name, d.audio_profile});
+      profile = &found->second;
+    }
+    const audio::MixPreset* shown = audio::find_preset(*profile);
+    const bool custom = *profile == "custom";
     if (shown == nullptr || (listen == 0 && !shown->headphones) || (listen == 1 && !shown->speakers))
       shown = audio::find_preset("natural");
     if (ImGui::BeginCombo("Profil", custom ? "Personnalisé" : std::string(shown->label).c_str())) {
       for (const audio::MixPreset& preset : audio::mix_presets()) {
         if ((listen == 0 && !preset.headphones) || (listen == 1 && !preset.speakers)) continue;
         if (ImGui::Selectable(std::string(preset.label).c_str(), !custom && &preset == shown)) {
-          d.audio_profile = std::string(preset.key);
+          *profile = std::string(preset.key);
           d.audio_custom = preset.tuning;  // « Personnalisé » part de ce profil
         }
         panel::tip(std::string(preset.detail).c_str());
       }
-      if (panel::advanced() && ImGui::Selectable("Personnalisé", custom)) d.audio_profile = "custom";
+      if (panel::advanced() && ImGui::Selectable("Personnalisé", custom)) *profile = "custom";
       ImGui::EndCombo();
     }
     if (!custom) panel::tip(std::string(shown->detail).c_str());
     if (panel::advanced()) {
-      audio::MixTuning t = custom ? d.audio_custom : audio::MixTuning(resolved_tuning(d, listen));
+      audio::MixTuning t = custom ? d.audio_custom : tuning_of(*profile, d.audio_custom, listen);
       bool moved = false;
       const auto slider = [&](const char* label, float& value, float lo, float hi, const char* format) {
         moved |= ImGui::SliderFloat(label, &value, lo, hi, format, ImGuiSliderFlags_AlwaysClamp);
@@ -360,12 +370,18 @@ bool sound_tab(PlaySettings& d, const SettingsChoices& choices) {
       }
       slider("Niveau des arrières et côtés", t.surround_gain, 0.5F, 1.6F, "%.2f");
       slider("Niveau des basses (LFE)", t.lfe_gain, 0.0F, 0.6F, "%.2f");
+      slider("Distance des enceintes virtuelles", t.distance, 0.0F, 1.0F, "%.2f");
+      slider("Pièce (réverbération légère)", t.room, 0.0F, 1.0F, "%.2f");
+      slider("Égaliseur : graves (dB)", t.eq_bass_db, -8.0F, 8.0F, "%.1f");
+      slider("Égaliseur : voix (dB)", t.eq_voice_db, -8.0F, 8.0F, "%.1f");
+      slider("Égaliseur : aigus (dB)", t.eq_treble_db, -8.0F, 8.0F, "%.1f");
+      slider("Nuit : compression de la dynamique", t.night, 0.0F, 1.0F, "%.2f");
       if (moved) {
         d.audio_custom = audio::clamped(t);
-        d.audio_profile = "custom";
+        *profile = "custom";
       }
       if (custom && ImGui::Button("Revenir à Naturel")) {
-        d.audio_profile = "natural";
+        *profile = "natural";
         d.audio_custom = audio::MixTuning{};
       }
     }
@@ -380,6 +396,7 @@ bool sound_tab(PlaySettings& d, const SettingsChoices& choices) {
       d.device_listening.emplace_back(device_name, d.listening);
     } else {
       std::erase_if(d.device_listening, [&](const auto& entry) { return entry.first == device_name; });
+      std::erase_if(d.device_profile, [&](const auto& entry) { return entry.first == device_name; });
     }
   }
   if (panel::advanced()) panel::tip("Un autre appareil reprend le profil global, sans rien demander.");

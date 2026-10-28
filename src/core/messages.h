@@ -77,7 +77,7 @@ struct SetListening {
   std::uint8_t listen = 1;
   bool faithful = false;
   bool tuned = false;  // tuning porte les réglages fins (audio::MixTuning, dans l'ordre de to_array)
-  std::array<float, 9> tuning{};
+  std::array<float, 16> tuning{};  // audio::to_array : les 15 réglages fins, le reste à 0
 };
 struct Quit {};
 }  // namespace cmd

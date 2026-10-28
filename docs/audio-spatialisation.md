@@ -64,3 +64,18 @@ d'avant les profils.
 Réglages du mode Personnalisé : crossfeed (niveau, adoucissement, retard), taille et ombre de la tête, niveau des arrières et
 côtés, niveau du centre, gain du mixage stéréo, basses (LFE). Les tests (`[mixer][profils]`) vérifient les sens des écarts (fort > naturel
 > doux ; Nuit réduit l'arrière) ; l'écoute subjective reste à faire par Tatoub.
+
+## Profils, suite (v0.6) : distance, pièce, égaliseur, nuit, appareils
+
+Réglages ajoutés au mixage (`audio::MixTuning`, tous à zéro par défaut : rien ne change ni ne coûte tant qu'on n'y touche pas) :
+
+| Réglage | Effet |
+|---|---|
+| Distance (0 à 1) | enceintes virtuelles plus loin : niveau direct jusqu'à −2 dB, pièce plus présente |
+| Pièce (0 à 1) | réverbération légère : 4 filtres en peigne amortis et 2 passe-tout par oreille, oreilles décorrélées |
+| Égaliseur graves / voix / aigus | étagère 120 Hz, cloche 2,5 kHz, étagère 8 kHz, ±8 dB (formules de l'Audio EQ Cookbook) |
+| Nuit (0 à 1) | compresseur lié des deux canaux : seuil −26 dBFS, rapport jusqu'à 6:1, attaque 10 ms, relâchement 250 ms, rattrapage à moitié ; jamais d'écrêtage (limiteur doux) |
+
+Nouveaux profils : **Salon** (casque : distance et pièce), **Voix d'anime** (graves −1,5 dB, voix +3 dB, aigus +1,5 dB ; casque et enceintes) ; **Nuit** compresse la dynamique. Un appareil qui a son profil propre garde aussi son choix de
+profil (`[audio.device_profiles]` de play.toml). Tests : `[mixer][profils]` (égaliseur à la fréquence visée, compression, queue de réverbération, aller-retour).
+À écouter par Tatoub : les valeurs sont des points de départ.

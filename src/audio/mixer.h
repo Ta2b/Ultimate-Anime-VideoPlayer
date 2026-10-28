@@ -17,6 +17,7 @@
 #include <array>
 #include <cstddef>
 #include <cstdint>
+#include <memory>
 #include <span>
 #include <string_view>
 #include <vector>
@@ -41,12 +42,23 @@ struct MixTuning {
   float center_lift = 1.26F;           // enceintes : niveau du centre, les voix (1 à 2)
   float lfe_gain = 0.3F;               // niveau des basses (0 à 0,6)
   float downmix_scale = 0.6F;          // enceintes : gain du mixage stéréo (0,4 à 0,9)
+  float distance = 0.0F;  // enceintes virtuelles plus loin : niveau direct baissé (jusqu'à -2 dB), pièce plus
+                          // présente (0 à 1)
+  float room = 0.0F;          // réverbération légère d'une pièce (0 à 1 ; 0 : aucune, aucun coût)
+  float eq_bass_db = 0.0F;    // égaliseur : graves (étagère à 120 Hz), -8 à +8 dB
+  float eq_voice_db = 0.0F;   // médiums, les voix (cloche à 2,5 kHz), -8 à +8 dB
+  float eq_treble_db = 0.0F;  // aigus (étagère à 8 kHz), -8 à +8 dB
+  float night = 0.0F;  // compression de dynamique « nuit » : explosions réduites, murmures relevés (0 à 1)
   bool operator==(const MixTuning&) const = default;
 };
-inline constexpr std::size_t kMixTuningFields = 9;
+inline constexpr std::size_t kMixTuningFields = 15;
 // Le tuple des 9 réglages, dans l'ordre des champs ci-dessus (le message cmd::SetListening porte ce tableau).
 std::array<float, kMixTuningFields> to_array(const MixTuning& tuning);
 MixTuning tuning_from(const std::array<float, kMixTuningFields>& fields);
+// Les mêmes réglages dans le tableau du message cmd::SetListening (16 cases, les non utilisées à 0), et
+// retour.
+std::array<float, 16> to_wire(const MixTuning& tuning);
+MixTuning tuning_from_wire(const std::array<float, 16>& wire);
 // Les valeurs ramenées dans leurs plages.
 MixTuning clamped(MixTuning tuning);
 
@@ -105,11 +117,14 @@ class Mixer {
   PcmBlock downmix(const PcmBlock& in) const;
   void binaural(const PcmBlock& in, PcmBlock& out);
   void crossfeed(PcmBlock& block);
+  PcmBlock process_core(PcmBlock block);
 
   MixConfig config_;
   int binaural_channels_ = 0;
   std::vector<std::array<MixPath, 2>> paths_;  // par canal source, [oreille gauche, droite]
   std::array<MixPath, 2> feed_;                // crossfeed : L vers R, R vers L
+  std::shared_ptr<struct MixPost>
+      post_;  // égaliseur, pièce et compression (stéréo) ; absent si rien n'est demandé
 };
 
 }  // namespace ajp::audio

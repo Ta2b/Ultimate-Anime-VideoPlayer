@@ -288,13 +288,22 @@ EffectiveListening effective_listening(const PlaySettings& settings, const std::
     if (name == device_name) key = own;
   }
   const int listen = listening_index(key).value_or(1);
-  return EffectiveListening{
-      .listen = listen, .faithful = settings.audio_faithful, .tuning = resolved_tuning(settings, listen)};
+  std::string_view profile = settings.audio_profile;
+  for (const auto& [name, own] : settings.device_profile) {
+    if (name == device_name) profile = own;
+  }
+  return EffectiveListening{.listen = listen,
+                            .faithful = settings.audio_faithful,
+                            .tuning = tuning_of(profile, settings.audio_custom, listen)};
 }
 
 audio::MixTuning resolved_tuning(const PlaySettings& settings, int listen) {
-  if (settings.audio_profile == "custom") return audio::clamped(settings.audio_custom);
-  const audio::MixPreset* preset = audio::find_preset(settings.audio_profile);
+  return tuning_of(settings.audio_profile, settings.audio_custom, listen);
+}
+
+audio::MixTuning tuning_of(std::string_view profile, const audio::MixTuning& custom_values, int listen) {
+  if (profile == "custom") return audio::clamped(custom_values);
+  const audio::MixPreset* preset = audio::find_preset(profile);
   if (preset == nullptr || (listen == 0 && !preset->headphones) || (listen == 1 && !preset->speakers))
     return audio::MixTuning{};
   return preset->tuning;
@@ -443,6 +452,7 @@ PlaySettings live_part(const PlaySettings& running, const PlaySettings& wanted, 
   s.audio_profile = wanted.audio_profile;
   s.audio_custom = wanted.audio_custom;
   s.device_listening = wanted.device_listening;
+  s.device_profile = wanted.device_profile;
   s.display_sync = wanted.display_sync;
   s.video_latency_ms = wanted.video_latency_ms;
   s.volume = wanted.volume;

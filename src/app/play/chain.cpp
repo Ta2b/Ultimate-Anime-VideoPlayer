@@ -188,7 +188,7 @@ void apply_live(Chain& to, const PlaySettings& wanted, std::int64_t now_us) {
       to.session.command(cmd::SetListening{.listen = static_cast<std::uint8_t>(now.listen),
                                            .faithful = now.faithful,
                                            .tuned = true,
-                                           .tuning = audio::to_array(now.tuning)});
+                                           .tuning = audio::to_wire(now.tuning)});
   }
   if (wanted.display_sync != r.display_sync) to.session.set_display_sync(wanted.display_sync);
   if (wanted.video_latency_ms != r.video_latency_ms)
