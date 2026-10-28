@@ -638,6 +638,9 @@ SettingsPanel::Result SettingsPanel::draw(const PlaySettings& running, const Set
       if (kPages[i].advanced && !advanced_) return false;
       return !(i == 1 && draft_.default_player_dismissed && !advanced_);
     };
+    // Barre de défilement fine, collée au bord extérieur des deux zones.
+    ImGui::PushStyleVar(ImGuiStyleVar_ScrollbarSize, 8.0F * scale);
+    ImGui::PushStyleVar(ImGuiStyleVar_ScrollbarRounding, 4.0F * scale);
     ImGui::BeginChild("##arbre", ImVec2(tree_width, -footer), ImGuiChildFlags_Borders);
     // La molette sur l'arbre passe d'une page à la suivante ou à la précédente.
     if (ImGui::IsWindowHovered() && io.MouseWheel != 0.0F) {
@@ -705,6 +708,7 @@ SettingsPanel::Result SettingsPanel::draw(const PlaySettings& running, const Set
     }
     panel::end_page();
     ImGui::EndChild();
+    ImGui::PopStyleVar(2);
     ImGui::Checkbox("Réglages avancés", &advanced_);
     // Un réglage de la chaîne fait à la main : le préréglage devient Personnalisé (les valeurs restent).
     if (draft_.preset != Preset::Custom && draft_.preset == before.preset &&
