@@ -43,3 +43,38 @@ que sur un accord clair de Tatoub dans le fil. Détail des décisions et journal
 16. Poses DRBA : contradiction du tableau de décisions (« désactivées ») : à corriger après la décision (point 6).
 17. .dmg FAIT (#79) ; archive TensorRT Windows manquante : À FAIRE (même schéma que Linux, #67) ; build macOS corrigé (#66).
 18. Police japonaise en 0.5.1 : CORRIGÉE (#70), à confirmer chez Tatoub.
+
+## Précision et accélération GPU : graphes spécialisés par cran (demande de Tatoub, 28/10)
+
+**But.** Profiter au maximum des accélérations spécialisées des cartes récentes NVIDIA (Ada, Blackwell) et AMD (RDNA3, RDNA4) : trois crans de précision pour l'agrandissement (SPAN) et l'interpolation (RIFE, DistilDRBA, GMFSS) :
+**Performance FP8 (E4M3)**, **Équilibre FP16**, **Qualité FP32**. Chaque cran a SON graphe, exporté pour lui (pas un graphe FP16 converti à la volée), avec la fusion complète que TensorRT fait déjà en FP16
+(par exemple conv 1×1 d'attention + Tanh + Add + Mul en une couche) étendue au FP8 : flux complet en E4M3, échelles statiques, activations qui restent en FP8 d'une couche à l'autre.
+**Règle de décision :** une piste n'entre dans le lecteur que si elle gagne **au moins 8 % en ABAB** (quatre tours alternés, même séance, `--useCudaGraph`, 300 itérations) **et** garde la qualité (PSNR/SSIM contre l'existant sur de vraies images d'anime) ; sinon elle reste dans `tools/bench/fp8/`.
+
+### Mesures du 28/10 (RTX 4070 Ti, TensorRT 11.3.0.99, SPAN Balanced HD V3.1, 1088×1920)
+| Variante | ms (médiane GPU) | Remarque |
+|---|---|---|
+| FP16 (référence) | 15,4 à 15,9 | varie d'une séance à l'autre : comparer dans la même séance |
+| FP8 Q/DQ partout, poids par tenseur | 18,3 à 19,0 | +17 % plus lent : passes Q/DQ/Cast séparées (8 à 10 ms) |
+| FP8 Q aussi sur la sortie de la conv d'attention | 18,1 à 18,2 | −4 % contre le FP8 de base |
+| FP8 mixte (c1/c2/c3 seuls) | 17,6 à 18,8 | plus lent que le FP16 ; qualité 53,7 dB / SSIM 0,998 contre FP16 |
+| SPAN sans attention, FP16 / FP8 | 12,65–13,38 / 13,54–13,60 | les convs FP8 gagnent 27 % (8,60 contre 11,86 ms) mais 6,2 ms de passes Add/Q restent |
+| Motif « Conv → Q → DQ → Add(saut) → Q » (chaîne résiduelle 544×960) | −17 % contre FP16 | le motif qui fusionne |
+| Microbanc convolutions 3×3, 8 couches | 64 canaux −24 %, 128 −14 %, 256 −13 %, 48 canaux +5 % | le FP8 n'aide que ≥ 64 canaux |
+| RIFE v4.25 768×1280, FP16 / FP8 | 8,90–8,98 / 8,33–8,47 | −6 % ; PSNR 34 à 57 dB contre FP16 |
+| GMFSS 1280×768 (FP16) | pair 45,4 ; demi-flot 8,6 ; fusion 11,2 | FP8 non essayé (entrées multiples) |
+| Tiling TensorRT 1 et 3 (FP16) | 15,80 / 15,61 contre 15,37 | aucun gain |
+
+**Causes.** Les convolutions sont limitées par le calcul (~91 TFLOPS en FP16, près du plafond) : TensorRT les fait déjà à ~90 % du pic ; l'attention et les jonctions sont limitées par la mémoire (504 Go/s). En FP8, TensorRT ne fond pas la re-quantification dans les noyaux d'attention (couches 41 → 58, passes `TanhAddMulMulCast` ~0,7 ms × 8 et `MulCast` seuls ~4 ms).
+**Pièges.** TensorRT 11 n'a plus `--fp16/--fp8` (réseau fortement typé) ; une calibration avec une entrée mal formée donne des échelles dégénérées et des vitesses FAUSSES (vérifier toujours le PSNR) ; ONNX Runtime CPU refuse un Transpose en FP8.
+
+### Chantiers (ordre)
+1. **Plugin TensorRT fusionné SPAN (FP8)** : noyau « Add(saut) + Tanh/Mul + requantification E4M3 », un bloc d'abord, plafond 2 h de prototype (branche `claude/fp8-kernels`, agent isolé). Gain attendu −10 à −15 %.
+2. **Graphes spécialisés sans noyau maison** : placement des Q/DQ (motif qadd), précision mixte (première, dernière conv et attention en FP16), calibration sur images d'anime réelles (percentile ou entropie), échelle par canal des poids si le noyau la fond, **ModelOpt** (`--quantize_mode fp8`, `--autotune`) comparé à nos graphes manuels.
+3. **Équilibre FP16 et Qualité FP32 spécialisés** : suppression des Reformat/Cast/unshuffle superflus (E/S NHWC `hwc8`), canaux multiples de 32, activations plus fusionnables (hard-tanh ou polynôme à la place de Tanh), précision mixte (îlots FP32 seulement où nécessaire), tactiques par réseau, `maxAuxStreams` sur RIFE ; mesure ABAB et PSNR contre l'existant.
+4. **Prototype CUTLASS** : conv 3×3 64→64 FP16 puis FP8 sm89 avec épilogue biais + Add(saut) + Tanh/Mul, comparée à TensorRT ; seule voie vers −15 à −25 % ; demande l'accord de Tatoub pour la dépendance (BSD-3, header-only) : l'accord a été donné pour le prototype, pas pour l'intégration.
+5. **Interpolation** : RIFE (convs larges, déjà −6 % en FP8 TensorRT seul, −20 % non confirmé : la mesure initiale était fausse), DistilDRBA et GMFSS fusion (surtout élémentaire : 89 à 96 % du trafic convertible) avec le même convertisseur ; GMFSS pair garde warp/softmax/corrélation en FP16.
+6. **QAT** (affinage quantification-aware par distillation FP16 → FP8, +5 à 10 dB typiques) : seulement si les poids PyTorch d'origine sont disponibles (non trouvés sur le PC de test).
+7. **AMD** (fil séparé, aucune carte sur le PC de test) : Vulkan `VK_KHR_cooperative_matrix` FP8 (`GL_EXT_float_e4m3`, compile avec glslang 16.6) et MIGraphX ; fusion de l'épilogue du noyau de convolution (biais, activation, Add de saut) puis du bloc c1-c2-c3 ; RDNA4 d'abord pour le FP8 matériel.
+8. **Pipeline** (mesurer avant de toucher) : recouvrements décodage/réseau/rendu, copies, mémoire épinglée ; CUDA graphs, mémoire épinglée et files séparées existent déjà.
+
