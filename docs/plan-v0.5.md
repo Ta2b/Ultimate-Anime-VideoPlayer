@@ -35,7 +35,7 @@ Pull requests : une par étape ; quand une étape dépend d'une autre, la base e
 - [x] (c1) Décision du benchmark et `bench.toml` : PR #24 (base : #23)
 - [x] (c2) `ajp bench` : lancement des essais (processus enfants isolés, son coupé), rapport `--report`, pilote dans la clé de mesure : PR de la branche `claude/bench-run`
 - [ ] Bouton « Évaluer ma machine » (arrive avec C)
-- [ ] Comparateur A/B (poses DRBA, DistilDRBA contre RIFE) : mesure puis décision
+- [x] Comparateur A/B : outil `ajp compare` (PR `claude/ab-compare`). La mesure poses DRBA / DistilDRBA contre RIFE se lance avec la version CUDA en Release (`ajp compare VIDÉO --a-settings=… --b-settings=…`) ; en attendant, les poses restent désactivées par défaut
 - [ ] Bascule automatique en Personnalisé quand un réglage de chaîne est modifié à la main (avec C)
 
 ### B. Textes, pastilles, infobulles
@@ -86,3 +86,7 @@ Pull requests : une par étape ; quand une étape dépend d'une autre, la base e
   **les moteurs construits et les modèles restent partagés** (sinon chaque essai reconstruirait ses moteurs :
   des minutes). La mesure de `bench.toml` porte maintenant la carte **et le pilote** ; un pilote qui change la
   rend caduque. Le bouton « Évaluer ma machine » arrive avec le nouveau cadre (étape C) et appellera `run_bench`.
+- **2026-10-28** : A/B en PR. `ajp compare <vidéo> --a="OPTIONS" --b="OPTIONS" [--a-settings=play.toml]` joue A, B, B, A
+  (le pire des deux passages de chacun, pour qu'un PC qui chauffe ne favorise personne) et met côte à côte pertes,
+  retard p95, temps par image et composition. Aucun chiffre n'a été pris : le binaire construit ici est Debug sans
+  CUDA. **Décision en attendant : poses désactivées par défaut** (déjà le cas).

@@ -87,6 +87,43 @@ int fail(const ajp::Refusal& refusal) {
   return 1;
 }
 
+// « ajp compare <fichier> --a=… --b=… » : deux chaînes côte à côte (auto_bench_run.h).
+int run_compare_command(const std::vector<std::string_view>& args) {
+  namespace play = ajp::app::play;
+  const auto options = play::parse_compare_options(args);
+  if (!options) {
+    std::fputs(play::compare_usage().c_str(), stderr);
+    return fail(options.error());
+  }
+  if (options->help) {
+    std::fputs(play::compare_usage().c_str(), stdout);
+    return 0;
+  }
+  std::error_code error;
+  const auto work = std::filesystem::temp_directory_path(error) / "ajp-compare";
+  std::filesystem::create_directories(work, error);
+  const play::BenchPlan plan{.executable = sdl_path(SDL_GetBasePath()) / std::string(kExecutable),
+                             .video = options->file,
+                             .work_dir = work,
+                             .seconds = options->seconds,
+                             .fullscreen = options->fullscreen};
+  const play::Variant a{.name = "A", .args = options->a, .settings = options->a_settings};
+  const play::Variant b{.name = "B", .args = options->b, .settings = options->b_settings};
+  const auto outcome = play::run_compare(plan, a, b, std::stop_token{}, [](const std::string& step) {
+    std::fprintf(stdout, "%s\n", step.c_str());
+    std::fflush(stdout);
+  });
+  std::filesystem::remove_all(work, error);
+  if (!outcome) return fail(outcome.error());
+  const std::string report = play::format_compare_report(*outcome);
+  std::fputs(report.c_str(), stdout);
+  if (options->report) {
+    std::ofstream out(*options->report, std::ios::binary);
+    out << report;
+  }
+  return 0;
+}
+
 // « ajp bench <fichier> » : les essais sont des processus « ajp play » ; celui-ci n'ouvre ni fenêtre ni SDL.
 int run_bench_command(const std::vector<std::string_view>& args) {
   namespace play = ajp::app::play;
@@ -154,6 +191,10 @@ int main(int argc, char** argv) {
   if (!args.empty() && args.front() == "bench") {
     args.erase(args.begin());
     return run_bench_command(args);
+  }
+  if (!args.empty() && args.front() == "compare") {
+    args.erase(args.begin());
+    return run_compare_command(args);
   }
   if (!args.empty() && args.front() == "play") args.erase(args.begin());
   const auto options = ajp::app::play::parse_play_options(args);

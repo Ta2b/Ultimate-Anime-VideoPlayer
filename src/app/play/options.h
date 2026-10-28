@@ -158,6 +158,22 @@ struct BenchOptions {
 std::expected<BenchOptions, Refusal> parse_bench_options(std::span<const std::string_view> args);
 std::string bench_usage();
 
+// « ajp compare <fichier> --a="OPTIONS" --b="OPTIONS" » : deux variantes de la chaîne côte à côte
+// (auto_bench_run.h : Variant). Les options sont celles de « ajp play », séparées par des espaces.
+struct CompareOptions {
+  std::filesystem::path file;
+  int seconds = 12;
+  std::vector<std::string> a;
+  std::vector<std::string> b;
+  std::filesystem::path a_settings;  // --a-settings=play.toml de départ de A (poses DRBA, moteur…)
+  std::filesystem::path b_settings;
+  std::optional<std::filesystem::path> report;
+  bool fullscreen = true;
+  bool help = false;
+};
+std::expected<CompareOptions, Refusal> parse_compare_options(std::span<const std::string_view> args);
+std::string compare_usage();
+
 // Où chercher le modèle par défaut, dans l'ordre : l'installation d'AnimeJaNai, le profil par
 // défaut du dépôt mpv-AnimeJaNai-HDR, puis les modèles livrés avec le lecteur (bundled/onnx, si
 // bundled n'est pas vide). home vient de SDL (SDL_GetUserFolder).

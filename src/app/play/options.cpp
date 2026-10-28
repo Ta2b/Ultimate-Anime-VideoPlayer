@@ -276,6 +276,68 @@ std::expected<BenchOptions, Refusal> parse_bench_options(std::span<const std::st
   return options;
 }
 
+std::expected<CompareOptions, Refusal> parse_compare_options(std::span<const std::string_view> args) {
+  CompareOptions options;
+  const auto words = [](std::string_view text) {
+    std::vector<std::string> out;
+    while (!text.empty()) {
+      const auto space = text.find(' ');
+      if (space != 0) out.emplace_back(text.substr(0, space));
+      text = space == std::string_view::npos ? std::string_view{} : text.substr(space + 1);
+    }
+    return out;
+  };
+  for (std::size_t i = 0; i < args.size(); ++i) {
+    const std::string_view arg = args[i];
+    if (!arg.starts_with("--")) {
+      if (!options.file.empty())
+        return refuse(RefusalCode::OptionUnknown, std::format("un seul fichier à la fois : « {} » en trop", arg));
+      options.file = std::filesystem::path(arg);
+      continue;
+    }
+    if (arg == "--help") {
+      options.help = true;
+      continue;
+    }
+    if (arg == "--windowed") {
+      options.fullscreen = false;
+      continue;
+    }
+    bool known = false;
+    for (const std::string_view name : {"--a-settings", "--b-settings", "--a", "--b", "--report", "--seconds"}) {
+      auto value = valued(args, i, name);
+      if (!value) return std::unexpected(std::move(value.error()));
+      if (!*value) continue;
+      known = true;
+      const std::string_view text = **value;
+      if (name == "--a") options.a = words(text);
+      if (name == "--b") options.b = words(text);
+      if (name == "--a-settings") options.a_settings = std::filesystem::path(text);
+      if (name == "--b-settings") options.b_settings = std::filesystem::path(text);
+      if (name == "--report") options.report = std::filesystem::path(text);
+      if (name == "--seconds") {
+        const auto value_s = number<int>(text);
+        if (!value_s || *value_s < 5 || *value_s > 120)
+          return refuse(RefusalCode::FieldOutOfRange, std::format("--seconds : « {} » n'est pas une durée de 5 à 120 s", text));
+        options.seconds = *value_s;
+      }
+      break;
+    }
+    if (!known) return refuse(RefusalCode::OptionUnknown, std::format("option inconnue : {}", arg));
+  }
+  if (!options.help && options.file.empty())
+    return refuse(RefusalCode::FieldMissing, "ajp compare : la vidéo à jouer manque");
+  return options;
+}
+
+std::string compare_usage() {
+  return "ajp compare <fichier> --a=\"OPTIONS\" --b=\"OPTIONS\" [options]   deux chaînes côte à côte, son coupé\n"
+         "  --a, --b            options de « ajp play » de chaque variante, ex. --a=\"--rife=3\" --b=\"--rife=4\"\n"
+         "  --a-settings=FICHIER, --b-settings=FICHIER   play.toml de départ (poses DRBA, moteur d'interpolation…)\n"
+         "  --seconds=S         durée d'un essai (5 à 120, défaut 12) ; A, B, B, A : le pire des deux passages\n"
+         "  --report=FICHIER    le rapport, en plus de la sortie standard ; --windowed : dans une fenêtre\n";
+}
+
 std::string bench_usage() {
   return "ajp bench <fichier> [options]   évalue la machine : joue le fichier à chaque niveau, son coupé\n"
          "  --seconds=S      durée d'un essai (5 à 120, défaut 12)\n"

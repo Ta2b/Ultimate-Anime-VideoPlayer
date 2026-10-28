@@ -33,6 +33,36 @@ std::vector<std::string> bench_child_args(const BenchPlan& plan, const std::opti
                                           const std::filesystem::path& data_dir,
                                           const std::filesystem::path& out_file);
 
+// Le comparateur A/B (« ajp compare ») : deux variantes de la chaîne, jouées sur la même vidéo dans les mêmes
+// conditions, et leurs mesures côte à côte. Une variante, ce sont des options de « ajp play » (--rife=3,
+// --work-height=540…) et, pour ce qu'aucune option ne règle (les poses DRBA, le moteur d'interpolation), un
+// play.toml de départ copié dans son dossier jetable.
+struct Variant {
+  std::string name;
+  std::vector<std::string> args;
+  std::filesystem::path settings;  // vide : les réglages par défaut du lecteur
+};
+
+std::vector<std::string> variant_child_args(const BenchPlan& plan, const Variant& variant,
+                                            const std::filesystem::path& data_dir,
+                                            const std::filesystem::path& out_file);
+
+struct CompareOutcome {
+  Variant a;
+  Variant b;
+  BenchReading reading_a;
+  BenchReading reading_b;
+};
+
+// Joue A puis B (puis A et B une seconde fois dans l'ordre inverse : un PC qui chauffe ne favorise personne) ; la
+// mesure gardée de chacun est la plus mauvaise des deux passages. Refus comme run_bench.
+std::expected<CompareOutcome, Refusal> run_compare(const BenchPlan& plan, const Variant& a, const Variant& b,
+                                                   const std::stop_token& stop,
+                                                   const std::function<void(const std::string&)>& progress = {});
+
+// Le rapport côte à côte : images perdues, retard p95, temps par image, composition, qui tient, et le plus léger.
+std::string format_compare_report(const CompareOutcome& outcome);
+
 struct BenchOutcome {
   std::vector<BenchRun> runs;  // dans l'ordre joué
   Tier estimated = Tier::Normal;

@@ -50,6 +50,9 @@ struct BenchReading {
   std::string gpu;
   std::string driver;
   BenchRun run;
+  std::int64_t interval_median_us = 0;  // temps par image (écart entre deux images neuves), médiane
+  std::int64_t interval_p95_us = 0;
+  std::int64_t render_median_us = 0;    // composition et soumission, médiane
 };
 
 std::string format_reading(const BenchReading& reading);

@@ -104,6 +104,9 @@ std::string format_reading(const BenchReading& reading) {
   root.insert("missing", reading.run.missing);
   root.insert("lag_p95_us", reading.run.lag_p95_us);
   root.insert("period_us", reading.run.period_us);
+  root.insert("interval_median_us", reading.interval_median_us);
+  root.insert("interval_p95_us", reading.interval_p95_us);
+  root.insert("render_median_us", reading.render_median_us);
   std::ostringstream out;
   out << root << '\n';
   return out.str();
@@ -124,6 +127,9 @@ std::expected<BenchReading, Refusal> parse_reading(std::string_view text) {
   reading.run.missing = root["missing"].value_or(std::int64_t{0});
   reading.run.lag_p95_us = root["lag_p95_us"].value_or(std::int64_t{0});
   reading.run.period_us = root["period_us"].value_or(std::int64_t{0});
+  reading.interval_median_us = root["interval_median_us"].value_or(std::int64_t{0});
+  reading.interval_p95_us = root["interval_p95_us"].value_or(std::int64_t{0});
+  reading.render_median_us = root["render_median_us"].value_or(std::int64_t{0});
   return reading;
 }
 
