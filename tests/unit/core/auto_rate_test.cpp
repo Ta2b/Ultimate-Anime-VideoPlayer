@@ -115,3 +115,12 @@ TEST_CASE("auto : les images manquées font descendre sans retard de paire", "[c
   CHECK(rate.overloaded() == before - 1);
   CHECK(rate.overloaded() == before - 1);  // la grâce après une descente
 }
+
+TEST_CASE("auto : une tentative qui échoue sur des images manquées pose le plafond tout de suite",
+          "[core][auto_rate]") {
+  AutoRate rate(4);
+  while (rate.step() < 3) rate.pair(false);  // tentative de ×3
+  CHECK(rate.learned_cap() == 0);
+  CHECK(rate.overloaded() == 2);
+  CHECK(rate.learned_cap() == 2);
+}
