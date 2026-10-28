@@ -169,6 +169,10 @@ struct PlaySettings {
   std::string update_mode = "notify";
   std::string update_channel = "stable";
   std::string update_frequency = "daily";
+  // Le dossier où s'installent les moteurs téléchargés (TensorRT, OpenVINO…) et leurs téléchargements ; vide
+  // : le dossier des données de l'utilisateur. Vaut au prochain lancement ; les moteurs déjà installés ne
+  // sont pas déplacés.
+  std::string engines_dir;
   bool autoplay_next = false;
   bool default_player_dismissed =
       false;  // « Ne plus me le demander » : le bouton quitte Général, reste en bas d'Avancé

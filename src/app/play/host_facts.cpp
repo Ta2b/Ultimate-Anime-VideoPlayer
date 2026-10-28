@@ -107,11 +107,16 @@ EnginesHere engines_here(const PlayOptions& options, const PlayerPaths& paths, c
   // L'architecture du GPU ne se lit (nvidia-smi) que s'il y a des fichiers tiers à choisir.
   const std::string arch = catalog.vendor_files.empty() ? std::string() : detect_cuda_arch();
   for (const core::EnginePackage& package : catalog.packages) {
-    here.downloads.push_back(EngineDownload{.id = package.engine,
-                                            .installed = installed(catalog, package),
-                                            .bytes = download_bytes(catalog, package, arch),
-                                            .license = package.license,
-                                            .missing = missing_prerequisite(package.engine).value_or("")});
+    here.downloads.push_back(EngineDownload{
+        .id = package.engine,
+        .installed = installed(catalog, package),
+        .bytes = download_bytes(catalog, package, arch),
+        .needed =
+            install_space(catalog, package, arch, directory_bytes(core::engine_dir(catalog.layout, package)))
+                .peak,
+        .available = free_bytes(catalog.layout.engines),
+        .license = package.license,
+        .missing = missing_prerequisite(package.engine).value_or("")});
   }
   std::error_code error;
   for (const std::filesystem::path& backend : paths.backends) {

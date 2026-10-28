@@ -265,6 +265,8 @@ std::expected<PlaySettings, Refusal> parse_settings(std::string_view toml_text) 
       reads.emplace_back(
           refuse(RefusalCode::FieldOutOfRange, std::format("picture.scaler : « {} »", scaler)));
   }
+  if (const toml::table* engines = section(root, "engines"))
+    reads.push_back(read(*engines, "engines", "install_dir", s.engines_dir));
   if (const toml::table* updates = section(root, "updates")) {
     reads.push_back(read(*updates, "updates", "mode", s.update_mode));
     reads.push_back(read(*updates, "updates", "channel", s.update_channel));
@@ -419,6 +421,7 @@ std::string format_settings(const PlaySettings& s) {
   root.insert("picture", toml::table{{"deband", s.deband}, {"scaler", std::string(name(s.final_scaler))}});
   root.insert("playlist", toml::table{{"autoplay_next", s.autoplay_next}});
   root.insert("default_player", toml::table{{"dismissed", s.default_player_dismissed}});
+  if (!s.engines_dir.empty()) root.insert("engines", toml::table{{"install_dir", s.engines_dir}});
   root.insert(
       "updates",
       toml::table{{"mode", s.update_mode}, {"channel", s.update_channel}, {"frequency", s.update_frequency}});

@@ -547,7 +547,7 @@ SettingsPanel::Result SettingsPanel::draw(const PlaySettings& running, const Set
       } else if (name == "Fichier") {
         export_tab(*export_, running, choices, actions);
       } else if (name == "Installés") {
-        engines_tab(choices, engine_draft_, actions);
+        engines_tab(choices, engine_draft_, actions, draft_.engines_dir);
       } else if (name == "Affichage") {
         stats_tab(draft_);
       } else if (name == "Réinitialiser") {
