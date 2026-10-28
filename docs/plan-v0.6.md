@@ -42,3 +42,5 @@ que sur un accord clair de Tatoub dans le fil. Détail des décisions et journal
 16. Poses DRBA : contradiction entre le tableau de décisions (« désactivées ») et la v0.6 (« activées par défaut ») : trancher après A/B performance ET qualité, corriger le document.
 17. .dmg macOS à faire ; archive TensorRT Windows manquante (même schéma que Linux, #67) ; build macOS corrigé (#66).
 18. Police japonaise toujours absente en 0.5.1 : enquête en cours (police CJK .ttc en CFF sous stb_truetype ? atlas dynamique ?).
+
+Décision de Tatoub (28/10, 13:06) : on GARDE le dépôt séparé Ta2b/ajp-releases ; le chantier CI/releases/dépôt ne fusionne pas les releases dans le dépôt du code.
