@@ -155,7 +155,7 @@ vers TensorRT n'y changerait rien, et rien de ce qui est dans le chemin chaud n'
 ## Ce qui est connu et pas fait
 
 - **sm 12.0 (Blackwell, RTX 50)** : non pris. Le module est compilé pour 89 seulement (`CUDA_ARCHITECTURES
-  89-real` de la bibliothèque des noyaux) ; un portage demande de mesurer les mêmes `mma` E4M3 et les tuiles, sur
+  89` de la bibliothèque des noyaux) ; un portage demande de mesurer les mêmes `mma` E4M3 et les tuiles, sur
   une carte que je n'ai pas. Le repli est automatique.
 - **Tailles dynamiques** : le moteur est à une taille fixe, comme les moteurs TensorRT du lecteur (un changement
   de taille de travail recharge la chaîne). Les noyaux n'ont pas de garde de bord : multiple de 128 exigé.

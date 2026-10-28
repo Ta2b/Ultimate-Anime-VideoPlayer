@@ -8,7 +8,7 @@ Un seul cœur possède le profil, la politique et l'ordonnancement. Il résout u
 Un dossier de `src/` = un module = une cible CMake `ajp::<nom>`, déclarée par
 `ajp_add_module` avec ses dépendances. Le graphe est acyclique : `app` dépend de
 tout, rien ne dépend de `app`. `kernels` est une feuille ; `media`, `subs`,
-`audio`, `vendor_hdr`, `present` et `gpu_ir` ne dépendent publiquement que de
+`audio`, `vendor_hdr`, `present`, `gpu_ir` et `gpu_span_fp8` ne dépendent publiquement que de
 `core_types`.
 
 | Module | Responsabilité | Thread |
@@ -19,6 +19,7 @@ tout, rien ne dépend de `app`. `kernels` est une feuille ; `media`, `subs`,
 | `media` | Démultiplexage, décodage matériel, horodatage | source |
 | `gpu` | Exécution du `Plan`, ring de sortie, backends chargés à l'exécution (`backend.h`, `kernel_ops.h`) | gpu |
 | `gpu_ir` | Représentation interne des réseaux ONNX, commune aux moteurs Vulkan et Metal | gpu, preparer |
+| `gpu_span_fp8` | Paquet de poids du SPAN entier en FP8 (noyaux CUTLASS du backend TensorRT, `docs/span-fp8-cutlass.md`) | gpu, preparer |
 | `prepare` | Construction des moteurs, reçus de qualification | preparer |
 | `vendor_hdr` | Interface `TrueHdr` : RTX Video SDK, Maxine VFX ; ordre des bloqueurs | appelé par gpu |
 | `audio` | Décodage audio, sortie SDL3, horloge | audio |
@@ -45,6 +46,7 @@ subs ────── core_types · privé : libass, core_log
 audio ───── core_types · privé : FFmpeg, SDL3, core_log
 vendor_hdr ─ core_types · privé : toml++, core_log, dl
 gpu_ir ──── core_types · privé : kernels, core_log
+gpu_span_fp8 core_types
 gpu ─────── core, kernels, vendor_hdr
 prepare ─── core, gpu · privé : toml++, core_log
 render ──── core, subs
