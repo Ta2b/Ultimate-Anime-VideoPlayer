@@ -122,3 +122,26 @@ TEST_CASE("fp8 : un zéro FP8 en int32_data se décode comme en raw_data", "[gpu
   REQUIRE(model->graph.initializers.size() == 1);
   CHECK(model->graph.initializers[0].floats == std::vector<float>{1.0F, 448.0F});
 }
+
+TEST_CASE("fp8 : des poids quantifiés par canal se plient avec l'échelle de leur canal", "[gpu_ir][fp8]") {
+  ModelBuilder m(19);
+  m.input("x", {1, 2, 4, 4});
+  const std::vector<float> w = sequence(3 * 2 * 1 * 1, -2.0F, 2.0F);
+  const std::vector<float> scale = {0.01F, 0.1F, 0.002F};
+  m.weight("w", {3, 2, 1, 1}, w).weight("s", {3}, scale);
+  m.initializer(tensor_header("z1", kFp8Type, std::vector<std::int64_t>{3}).bytes(9, std::string(3, '\0')));
+  m.initializer(tensor_header("z2", kFp8Type, std::vector<std::int64_t>{3}).bytes(9, std::string(3, '\0')));
+  m.node("QuantizeLinear", {"w", "s", "z1"}, {"wq"}, {attr_int("axis", 0)});
+  m.node("DequantizeLinear", {"wq", "s", "z2"}, {"wd"}, {attr_int("axis", 0)});
+  m.node("Conv", {"x", "wd"}, {"y"});
+  m.output("y");
+  const Graph graph = build(m);
+  CHECK(count_ops(graph, OpKind::FakeQuantE4M3) == 0);
+  const TensorId id = find_tensor(graph, "wd").value_or(kNoTensor);
+  REQUIRE(id != kNoTensor);
+  REQUIRE(graph.tensors[id].kind == TensorKind::Constant);
+  for (std::size_t k = 0; k < w.size(); ++k) {
+    const float s = scale[k / 2];
+    CHECK(graph.tensors[id].value.f[k] == round_to_e4m3(w[k] / s) * s);
+  }
+}
