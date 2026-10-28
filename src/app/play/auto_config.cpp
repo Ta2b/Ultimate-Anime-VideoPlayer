@@ -139,9 +139,6 @@ PlaySettings apply_preset(const PlaySettings& settings, const Machine& machine,
       out.rife_auto = false;
       break;
     case Tier::Light:
-      out.motion_engine = MotionEngine::Rife;
-      out.rife_model = "rife_v4.22_lite.onnx";
-      break;
     case Tier::Normal:
       out.motion_engine = MotionEngine::Rife;
       out.rife_model = "rife_v4.22_lite.onnx";
