@@ -152,6 +152,9 @@ std::expected<GradeDecision, Refusal> decide_grade(const GradeSettings& s, const
   // Le blanc papier reste sous le pic, pour laisser de la marge aux éclats.
   const double paper = std::floor(std::min(s.paper_white, 0.75 * peak) + 0.5);
   const bool native_sdr = context.route == core::HdrMode::Native && !context.source_hdr;
+  // Le mode SDR sur une sortie HDR10 : l'image SDR est gradée dans le conteneur PQ comme la route native sans
+  // l'aspect TrueHDR (blanc papier, éclats limités), au lieu de rester sans grade (retour de Tatoub).
+  const bool plain_sdr = context.route == core::HdrMode::Off && !context.source_hdr;
   GradeDecision decision;
   decision.source_white_nits = native_sdr && s.truehdr_look ? grade_limits::kSdrWhiteNits : paper;
 
@@ -165,7 +168,7 @@ std::expected<GradeDecision, Refusal> decide_grade(const GradeSettings& s, const
   }
   if (context.source_hdr) {
     decision.mode = s.grade_native_hdr ? GradeMode::NativeHdr : GradeMode::Neutral;
-  } else if (native_sdr) {
+  } else if (native_sdr || plain_sdr) {
     decision.mode = GradeMode::Native;
   } else if (context.route == core::HdrMode::TrueHdr) {
     decision.mode = GradeMode::TrueHdr;
@@ -186,7 +189,7 @@ std::expected<GradeDecision, Refusal> decide_grade(const GradeSettings& s, const
   p.expand = s.expand;
   p.emulate = 0.0;
   p.sdr_white = grade_limits::kSdrWhiteNits;
-  const bool look = decision.mode == GradeMode::Native && s.truehdr_look;
+  const bool look = native_sdr && s.truehdr_look;  // l'aspect adaptatif : la route native seule, pas le mode SDR
   if (look) {
     apply_truehdr_look(s, peak, p);
     p.adapt = 1.0;  // le HDR adaptatif : la route native de tous les GPU suit la scène

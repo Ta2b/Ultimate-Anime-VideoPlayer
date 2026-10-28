@@ -53,7 +53,10 @@ void hdr_tab(PlaySettings& d, const SettingsChoices& choices) {
         "remplace.");
   else if (choices.nvidia && !choices.true_hdr_available)
     note("RTX HDR : le SDK Maxine VideoFX n'est pas installé (écran des moteurs).");
-  if (!choices.hdr_output) note("Écran SDR : le HDR est indisponible, l'image reste en SDR (sans grade).");
+  if (!choices.hdr_output)
+    note(
+        "Écran SDR : le HDR est indisponible ; l'image reste en SDR et le grade (onglet Couleurs) imite le "
+        "rendu HDR.");
   section(choices.nvidia ? "Réglages du mode HDR (RTX HDR et HDR adaptatif)" : "Réglages du HDR adaptatif");
   bool automatic = d.true_hdr_peak == 0;
   if (ImGui::Checkbox(std::format("Pic automatique ({} nits)", choices.auto_peak).c_str(), &automatic))
@@ -122,12 +125,8 @@ void look_section(PlaySettings& d) {
 }
 
 void grade_tab(PlaySettings& d, const SettingsChoices& choices) {
-  // Contraste, saturation et grade suivent une route HDR : en mode SDR (ou sur un écran SDR) ils ne
-  // s'appliquent pas, et se grisent.
-  const bool hdr_route = choices.hdr_output && (d.true_hdr || d.hdr_native);
-  if (!hdr_route)
-    note("Mode SDR : le grade ne s'applique pas (choisir RTX HDR ou le HDR adaptatif, onglet HDR).");
-  ImGui::BeginDisabled(!hdr_route);
+  // Le grade s'applique sur toutes les routes, le mode SDR compris : il imite le rendu HDR (contraste,
+  // couleurs riches, hautes lumières) pour ceux qui n'ont pas d'écran HDR. L'onglet reste actif.
   look_section(d);
   section("Grade");
   ImGui::Checkbox("Grader la sortie (HDR10 et SDR)", &d.grade);
@@ -160,8 +159,13 @@ void grade_tab(PlaySettings& d, const SettingsChoices& choices) {
     note("Route RTX HDR : TrueHDR, puis le grade sur la sortie PQ.");
   } else if (d.hdr_native) {
     note("HDR adaptatif : libplacebo en PQ, aspect TrueHDR émulé selon la scène, puis le grade.");
+  } else {
+    note(choices.hdr_output
+             ? "Mode SDR : le grade imite le rendu HDR sur l'image SDR, dans le conteneur HDR10 de l'écran."
+             : "Mode SDR : le grade imite le rendu HDR dans la gamme SDR (contraste, couleurs riches, hautes "
+               "lumières), "
+               "pour profiter du lecteur sans écran HDR. Le préréglage Éclatant l'accentue.");
   }
-  ImGui::EndDisabled();
   if (!panel::advanced()) return;
   section("Composition finale");
   if (ImGui::BeginCombo("Filtre vers la fenêtre", std::string(label(d.final_scaler)).c_str())) {
