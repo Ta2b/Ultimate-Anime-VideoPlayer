@@ -21,13 +21,19 @@ void AutoRate::set_ceiling(int ceiling) {
   if (step_ > ceiling_) {
     step_ = ceiling_;
     clean_ = 0;
+    grace_ = kGracePairs;
   }
 }
 
 int AutoRate::pair(bool late) {
+  if (grace_ > 0) {
+    --grace_;
+    return step_;
+  }
   if (late) {
     if (step_ > 1) {
       --step_;
+      grace_ = kGracePairs;
       // Un palier tenté qui échoue : on le re-tentera plus tard.
       if (probing_) backoff_ = std::min(backoff_ + 1, kMaxBackoff);
     }
