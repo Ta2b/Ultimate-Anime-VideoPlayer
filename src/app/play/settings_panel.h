@@ -131,13 +131,13 @@ class SettingsPanel {
  private:
   bool open_ = false;
   bool prompt_dismissed_ = false;  // « Ne plus me le demander » coché dans cette fenêtre
-  bool prompt_done_ = false;  // la fenêtre « lecteur par défaut » a déjà été montrée à ce lancement
-  SystemNote prompt_note_;    // sa dernière action
-  PlaySettings draft_;  // ce que montre le panneau ; diffère de running pour ce qui attend « Appliquer »
-  PlaySettings seen_;   // running au tour précédent
-  int page_ = 0;        // la page de l'arbre affichée (settings_panel.cpp : kPages)
-  bool advanced_ = false;       // la case « Réglages avancés » : montre la catégorie Avancé
-  bool pending_shown_ = false;  // le bandeau « Appliquer » était montré au tour précédent
+  bool prompt_done_ = false;       // la fenêtre « lecteur par défaut » a déjà été montrée à ce lancement
+  SystemNote prompt_note_;         // sa dernière action
+  PlaySettings draft_;     // ce que montre le panneau ; diffère de running pour ce qui attend « Appliquer »
+  PlaySettings seen_;      // running au tour précédent
+  int page_ = 0;           // la page de l'arbre affichée (settings_panel.cpp : kPages)
+  bool advanced_ = false;  // la case « Réglages avancés » : montre la catégorie Avancé
+  bool pending_shown_ = false;                  // le bandeau « Appliquer » était montré au tour précédent
   std::optional<core::EngineId> engine_draft_;  // moteur coché dans l'onglet Moteurs, pas appliqué
   std::unique_ptr<ExportDraft> export_;         // l'onglet Export, gardé d'une ouverture à l'autre
   SystemNote system_;                           // l'onglet Système : sa dernière action
