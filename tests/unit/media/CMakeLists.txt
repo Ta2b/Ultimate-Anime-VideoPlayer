@@ -2,7 +2,7 @@
 # aucun fichier binaire n'entre dans le dépôt.
 ajp_add_unit_tests(media
   SOURCES
-    clip_writer.cpp clips.cpp color_test.cpp decoder_test.cpp demuxer_test.cpp frame_data_test.cpp
+    bench_clip_test.cpp clip_writer.cpp clips.cpp color_test.cpp decoder_test.cpp demuxer_test.cpp frame_data_test.cpp
     gpu_decode_test.cpp hw_test.cpp language_test.cpp packet_reserve_test.cpp packet_test.cpp seek_test.cpp
     selection_test.cpp source_test.cpp track_language_test.cpp
   DEPS ajp::dep::ffmpeg ajp::dep::vulkan)

@@ -129,9 +129,13 @@ int run_compare_command(const std::vector<std::string_view>& args) {
   std::error_code error;
   const auto work = std::filesystem::temp_directory_path(error) / "ajp-compare";
   std::filesystem::create_directories(work, error);
+  char* compare_pref = SDL_GetPrefPath("ajp", "ajp");
+  const auto compare_data = sdl_path(compare_pref);
+  SDL_free(compare_pref);
   const play::BenchPlan plan{.executable = sdl_path(SDL_GetBasePath()) / std::string(kExecutable),
                              .video = options->file,
                              .work_dir = work,
+                             .data = compare_data,
                              .seconds = options->seconds,
                              .fullscreen = options->fullscreen};
   const play::Variant a{.name = "A", .args = options->a, .settings = options->a_settings};
@@ -173,8 +177,10 @@ int run_bench_command(const std::vector<std::string_view>& args) {
   const play::BenchPlan plan{.executable = base / std::string(kExecutable),
                              .video = options->file,
                              .work_dir = work,
+                             .data = data,
                              .seconds = options->seconds,
-                             .fullscreen = options->fullscreen};
+                             .fullscreen = options->fullscreen,
+                             .silent = options->silent};
   const auto report = play::evaluate_machine(plan, data, std::stop_token{}, [](const std::string& step) {
     std::fprintf(stdout, "%s\n", step.c_str());
     std::fflush(stdout);

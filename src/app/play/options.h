@@ -75,6 +75,7 @@ struct PlayOptions {
   int window_width = 1280;                     // --window=LxH
   int window_height = 720;
   bool fullscreen = false;                        // --fullscreen : plein écran dès l'ouverture
+  bool hidden = false;  // --hidden : fenêtre cachée (essais silencieux du benchmark)
   std::int64_t start_us = 0;                      // --start=S : position de départ
   std::int64_t stop_after_us = 0;                 // --seconds=S : quitte après S s de lecture ; 0 jamais
   std::int64_t fullscreen_after_us = 0;           // --fullscreen-after=S : bascule après S s ; 0 jamais
@@ -155,9 +156,10 @@ struct BenchOptions {
   std::optional<std::filesystem::path>
       report;              // --report : le rapport lisible, en plus de la sortie standard
   bool fullscreen = true;  // --windowed le retire
+  bool silent = true;      // --visible montre la fenêtre des essais
   bool help = false;
 };
-// Arguments qui suivent « bench ». Sans fichier, une option inconnue ou une durée hors de 5 à 120 s : refus.
+// Arguments qui suivent « bench ». Une option inconnue ou une durée hors de 5 à 120 s : refus.
 std::expected<BenchOptions, Refusal> parse_bench_options(std::span<const std::string_view> args);
 std::string bench_usage();
 

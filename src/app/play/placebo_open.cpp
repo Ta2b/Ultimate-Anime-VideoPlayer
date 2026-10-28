@@ -282,6 +282,10 @@ std::expected<std::unique_ptr<PlaceboScreen>, Refusal> PlaceboScreen::open(const
 #endif
   SDL_WindowFlags flags = SDL_WINDOW_VULKAN | SDL_WINDOW_RESIZABLE | SDL_WINDOW_HIGH_PIXEL_DENSITY;
   if (options.fullscreen) flags |= SDL_WINDOW_FULLSCREEN;
+  // Essais silencieux : une fenêtre minuscule, sans bordure ni focus. Une fenêtre cachée (SDL_WINDOW_HIDDEN)
+  // ne reçoit plus d'appels de rafraîchissement du compositeur : ses présentations tombent à ~20 par seconde,
+  // ce qui fausse toute mesure.
+  if (options.hidden) flags |= SDL_WINDOW_BORDERLESS | SDL_WINDOW_NOT_FOCUSABLE | SDL_WINDOW_UTILITY;
   impl->window = SDL_CreateWindow(options.title.c_str(), options.width, options.height, flags);
   if (impl->window == nullptr) {
     return refuse(RefusalCode::LibraryUnavailable, std::format("SDL_CreateWindow : {}", SDL_GetError()));
