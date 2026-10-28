@@ -40,8 +40,8 @@ Pull requests : une par étape ; quand une étape dépend d'une autre, la base e
 
 ### B. Textes, pastilles, infobulles
 - [x] 720p au lieu de « 720 lignes », vocabulaire courant (PR `claude/textes-pastilles`)
-- [~] `badge()` et pastilles faits (IA : résolution, réduction, moteurs, Smooth Motion) ; infobulles à la place des paragraphes : onglet Image fait, Fluidité et le reste suivent avec le cadre en arbre
-- [ ] Hermite en réduction (voir F)
+- [x] `badge()` et pastilles (IA : résolution, réduction, moteurs, Smooth Motion) ; infobulles : Image, Fluidité (descriptions des moteurs sur leurs boutons) et Audio. **Restent en paragraphes** : les notes d'état de HDR, Couleurs, Export et Moteurs (grisés, avertissements, valeurs mesurées), conservées volontairement
+- [x] Hermite en réduction (fait en F)
 
 ### C. Nouveau cadre des réglages et assistant
 - [x] Arbre à gauche, page à droite, encadrés titrés (PR `claude/cadre-arbre`) ; lignes multiples et barre de défilement fine restent à faire
@@ -49,7 +49,7 @@ Pull requests : une par étape ; quand une étape dépend d'une autre, la base e
 - [x] Assistant de premier démarrage (8 écrans, `wizard.h`), relançable par `--first-run` ; bouton « Relancer l'assistant » dans Général > Configuration (PR `claude/restes`)
 - [x] « Ouvrir avec » au premier lancement, sans confirmation ; bouton « Faire de ce lecteur le lecteur par défaut »
   avec « Ne plus me le demander » (réapparaît en bas d'Avancé), détection xdg-mime sous Linux
-- [ ] Recherche dans les réglages (par page d'abord)
+- [ ] Recherche dans les réglages (par page d'abord) : **non faite**, prévue après la 0.5 (avec le repli de l'arbre en liste sur petit écran, les lignes multiples et la mémoire de la dernière page entre sessions)
 
 ### E. Audio et son spatial
 - [x] Liste et choix de l'appareil de sortie (`audio/devices.h`) ; le défaut du système est suivi par SDL (flux sur l'appareil par défaut) : PR `claude/audio`
@@ -61,21 +61,23 @@ Pull requests : une par étape ; quand une étape dépend d'une autre, la base e
 ### D. Mise à jour automatique signée
 - [x] Vérification en arrière-plan et réglages (Me prévenir / Automatique / Jamais, canal, fréquence) : Général > Mises à jour (PR `claude/maj`)
 - [x] Manifeste signé (Ed25519, `tools/release/sign-manifest.sh`), téléchargement vérifié (taille + SHA-256), application au prochain lancement, retour arrière (testés sur archive locale)
-- [ ] Essais Linux puis Windows de bout en bout : demandent une release signée (clé absente, voir journal) ; Windows renomme les fichiers en service en `.old`, non essayé
+- [ ] Essais Linux puis Windows de bout en bout : la clé existe (`docs/signature-des-releases.md`) mais aucune release signée n'a encore été installée par le lecteur ; Windows renomme les fichiers en service en `.old`, non essayé
 
 ### F. Moteur
 - [x] Hermite en réduction (`DownscaleFilter::Hermite`, cubique B = C = 0, clé `hermite`) : PR `claude/moteur`. Pas de pastille *Anime* (la liste des cinq pastilles est décidée) : l'infobulle le dit. Le filtre n'est pas défaut : la comparaison PSNR/regard contre Spline36 et Mitchell se fait avec `ajp compare` sur la machine
 - [x] GMFSS Union : mesuré (`docs/reports/gmfss-distil-mesures-2026-10-28.md`) : aucun calcul indépendant du temps à déplacer, options TensorRT sans gain ; pas de changement
 - [x] DistilDRBA : mesuré : 0,86 ms par passe à 720p (warps ≈ 30 % de 11,7 ms seulement à 2160p) ; pas de changement, décision motivée dans le rapport
-- [ ] Mode Auto : suivi par le fil d'audit (ne pas toucher `auto_rate`, `upscale_stage`, `live_settings` sans coordination)
+- [x] Mode Auto : suivi par le fil d'audit (PR #38, fusionnée dans main avant l'étiquette) ; mesures sur la 4070 Ti : `docs/reports/mesures-auto-4070ti-2026-10-28.md`
 
 ### G. TensorRT sous Windows
 - [x] `trtexec.exe` dans l'archive du moteur, fusion de `engines-nvidia.lock` dans `release-windows.yml`, `tools/release/attach-nvidia-windows.ps1`, `docs/nvidia-windows.md` (PR `claude/trt-windows`)
 - [ ] Essai sur un poste Windows NVIDIA (liste dans `docs/nvidia-windows.md`) : aucune machine Windows ici
 
 ### Release
-- [~] Tests locaux complets (fait : app 266, audio, core), version CMake 0.5.0, notes `tools/release/notes/v0.5.0.md`, liste à tester `docs/tests-v0.5-windows-macos.md` ; étiquette v0.5.0 **seulement sur autorisation explicite** (règle de
-  Tatoub : rien n'est publié ni étiqueté sans permission ; si elle n'est pas donnée, la release reste prête)
+- [x] Tests locaux complets (app 266, audio 69, core 176 verts), version CMake et vcpkg 0.5.0, notes `tools/release/notes/v0.5.0.md`, liste à tester `docs/tests-v0.5-windows-macos.md`.
+- [x] **Étiquette `v0.5.0` posée le 28 octobre 2026 à 08:48 sur main (52a7907), sur l'instruction écrite de Tatoub dans le fil du projet (« pose l'étiquette v0.5.0 », 08:47)**. Les trois workflows de release (Linux, Windows, macOS) tournent sur l'étiquette.
+- [ ] Après les workflows : signer le manifeste (`docs/signature-des-releases.md`, sur le PC de Tatoub), le joindre à la release, vérifier les assets (aucun fichier NVIDIA, pré-version, notes de la version).
+- [ ] Essais Windows et macOS de `docs/tests-v0.5-windows-macos.md`, écoute du binaural, essais de mise à jour de bout en bout (Linux puis Windows) : à faire par Tatoub, aucune machine Windows ni Mac ici.
 
 ## Journal
 
@@ -130,3 +132,5 @@ Pull requests : une par étape ; quand une étape dépend d'une autre, la base e
 - **2026-10-28** : préparation de la release : version 0.5.0 (CMake, vcpkg), notes v0.5.0, liste Windows/macOS. L'étiquette n'est PAS posée :
   règle de Tatoub, rien n'est publié ni étiqueté sans permission explicite.
 - **2026-10-28** : mesures du mode Auto et des moteurs sur la 4070 Ti : `docs/reports/mesures-auto-4070ti-2026-10-28.md`.
+- **2026-10-28 (soir)** : #37 (version, notes, liste Windows/macOS), #38 (mode Auto), #40 (GMFSS/DistilDRBA : décision), #42 (clang-tidy), #43 (mesures) fusionnées. Étiquette `v0.5.0` posée à 08:48 sur
+  l'instruction de Tatoub. Mesures GMFSS Union (lot, recouvrement au trtexec) demandées par l'audit : en cours, hors v0.5.
