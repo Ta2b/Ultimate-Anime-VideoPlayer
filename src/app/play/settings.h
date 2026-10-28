@@ -14,6 +14,7 @@
 #include <cstdint>
 #include <expected>
 #include <filesystem>
+#include <optional>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -64,6 +65,14 @@ constexpr bool offered(MotionEngine engine) {
 }
 std::string_view name(MotionEngine engine);   // « rife », la clé de play.toml
 std::string_view label(MotionEngine engine);  // « RIFE », pour le menu
+
+// Les repères des listes (docs/ux-parametres.md, 3) : une pastille à côté du choix, le détail en infobulle.
+enum class Badge : std::uint8_t { Recommended, Fastest, Finest, Heaviest, Experimental };
+std::string_view badge_text(Badge badge);  // « Recommandé », « Le plus rapide », « Le plus fin », « Le plus lourd », « Expérimental »
+std::optional<Badge> badge_of(MotionEngine engine);
+std::optional<Badge> badge_of(Downscale filter);
+// « 720p » ; la hauteur d'image en français courant, jamais « lignes ».
+std::string resolution_text(int height);
 
 // Le warp de l'interpolation par rapport à SPAN (variante mouvement de RIFE ou GMFSS, avec SPAN).
 // Avant : SPAN agrandit chaque sortie, intermédiaires compris (×3 : trois passes par image source),
