@@ -150,12 +150,24 @@ TEST_CASE("sortie SDR : couleurs, noirs et contraste au blanc de l'écran, sans 
   CHECK(decide_grade(settings, context)->mode == GradeMode::Neutral);
 }
 
+TEST_CASE("le mode SDR sur une sortie HDR10 est gradé comme la route native sans l'aspect TrueHDR") {
+  GradeSettings settings;
+  const auto off = decide_grade(settings, pq_context(core::HdrMode::Off));
+  REQUIRE(off);
+  CHECK(off->mode == GradeMode::Native);
+  settings.truehdr_look = true;
+  CHECK(decide_grade(settings, pq_context(core::HdrMode::Off))->params.adapt == 0.0);  // pas l'adaptatif
+  // Une source HDR en mode SDR reste neutre.
+  auto hdr_source = pq_context(core::HdrMode::Off);
+  hdr_source.source_hdr = true;
+  CHECK(decide_grade(settings, hdr_source)->mode == GradeMode::Neutral);
+}
+
 TEST_CASE("le grade reste neutre hors de ses conditions") {
   GradeSettings settings;
   auto context = pq_context(core::HdrMode::Native);
   context.enabled = false;
   CHECK(decide_grade(settings, context)->mode == GradeMode::Neutral);
-  CHECK(decide_grade(settings, pq_context(core::HdrMode::Off))->mode == GradeMode::Neutral);
   settings.grade = false;
   CHECK(decide_grade(settings, pq_context(core::HdrMode::Native))->mode == GradeMode::Neutral);
 }
