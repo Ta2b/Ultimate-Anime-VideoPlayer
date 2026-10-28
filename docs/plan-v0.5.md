@@ -70,7 +70,8 @@ Pull requests : une par étape ; quand une étape dépend d'une autre, la base e
 - [ ] Mode Auto : suivi par le fil d'audit (ne pas toucher `auto_rate`, `upscale_stage`, `live_settings` sans coordination)
 
 ### G. TensorRT sous Windows
-- [ ] `trtexec.exe` dans l'index, condition du workflow `release-windows.yml`, essai sur un poste Windows
+- [x] `trtexec.exe` dans l'archive du moteur, fusion de `engines-nvidia.lock` dans `release-windows.yml`, `tools/release/attach-nvidia-windows.ps1`, `docs/nvidia-windows.md` (PR `claude/trt-windows`)
+- [ ] Essai sur un poste Windows NVIDIA (liste dans `docs/nvidia-windows.md`) : aucune machine Windows ici
 
 ### Release
 - [ ] Tests locaux complets, notes de version, étiquette v0.5.0 **seulement sur autorisation explicite** (règle de
@@ -117,3 +118,6 @@ Pull requests : une par étape ; quand une étape dépend d'une autre, la base e
   seule : réglage grisé « mis à jour par votre gestionnaire de paquets ». Le défaut reste « Me prévenir ».
 - **2026-10-28** : clé de signature créée (le coordinateur a demandé de contourner l'absence de Tatoub). La clé publique est la valeur par
   défaut de `AJP_UPDATE_PUBKEY` ; la privée reste sur le PC de Tatoub. Procédure : `docs/signature-des-releases.md`.
+- **2026-10-28** : G (TensorRT Windows) en PR : parité avec Linux (archive = module + trtexec.exe, bibliothèques NVIDIA en lien direct,
+  index `engines-nvidia.lock` joint avant l'étiquette). Les scripts PowerShell n'ont pas pu être exécutés ici (pas de pwsh) : l'essai est
+  à faire sur le poste Windows.
