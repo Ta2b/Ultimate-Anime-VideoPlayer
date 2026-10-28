@@ -60,7 +60,8 @@ class AutoRate {
   int backoff_ = 0;          // échecs récents de montée
   bool probing_ = false;     // le palier courant vient d'être tenté
   std::uint64_t lates_ = 0;  // les retards des kLateWindow dernières paires, un bit chacune
-  std::array<int, kAutoMaxStep + 2> fails_{};  // tentatives échouées par palier
+  // Tentatives échouées par palier.
+  std::array<int, kAutoMaxStep + 2> fails_{};
 };
 
 }  // namespace ajp::core
