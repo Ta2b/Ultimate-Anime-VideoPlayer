@@ -73,10 +73,11 @@ m'en sers pas pour décider.
 | Firefox (mises à jour) | Trois choix : **installer automatiquement / vérifier mais me laisser choisir / ne jamais vérifier** | Le modèle de choix à trois positions pour l'auto-update |
 | Sparkle (macOS) | Vérification automatique (demandée au 2e lancement si non réglée), installation automatique (désactivée par défaut), signatures EdDSA | Demander une fois, signer les mises à jour |
 | AppImage / Flatpak | AppImageUpdate (delta zsync) ; Flatpak et les gestionnaires de paquets mettent à jour eux-mêmes | Ne pas se mettre à jour soi-même quand un gestionnaire s'en charge |
-| IINA, MPC-HC/BE, PotPlayer | *non vérifié* (pages onglets : Général, Vidéo, Audio, Sous-titres, Raccourcis, Avancé, d'après ma connaissance, sans source relue ici) | — |
+| PotPlayer | **Vu sur ta capture** : arbre de catégories et sous-catégories à gauche, pages en groupes encadrés titrés, plusieurs champs sur une même ligne (résolution largeur × hauteur + cadence) | Retenu : arbre + groupes + lignes multiples. Profondeur limitée à 2 niveaux chez nous |
+| IINA, MPC-HC/BE | *non vérifié* (pas de source exploitable trouvée) | — |
 
 Conclusions qui tiennent sur les lecteurs vérifiés :
-1. **Peu de rubriques au premier niveau** (5 à 7) et une rubrique « Général » en tête.
+1. **Peu de rubriques au premier niveau** (7 à 9, dans un arbre et non en onglets) et une rubrique « Général » en tête.
 2. **Simple d'abord, complet derrière** : bascule ou niveaux, jamais les deux à plat.
 3. **Les réglages d'une même chose restent ensemble** (langues, mises à jour, sous-titres), et la **couleur**
    ne contient que de la couleur : filtre de réduction et mise à l'échelle sont de la *vidéo*.
@@ -96,35 +97,119 @@ Conclusions qui tiennent sur les lecteurs vérifiés :
    RIFE, GMFSS restent des noms propres, expliqués au survol.
 6. **Aucune mesure dans les textes** (« plus lourd », pas « +9,8 ms ») ; les temps vont dans la documentation.
 
-### 4.2 Arborescence cible : 7 onglets, plus de défilement horizontal
+### 4.2 Arborescence cible : un arbre de catégories à gauche, des groupes à droite
 
-| Onglet | Contient (visible) | Avancé (replié) |
-|---|---|---|
-| **Général** | **bouton « Faire de ce lecteur le lecteur par défaut »** (en haut, voir 4.4) ; volume, épisode suivant automatique, taille des sous-titres, langue audio et sous-titres préférées ; **Mises à jour** : Automatique / Me prévenir / Jamais (voir 4.5) | délai audio, caler la lecture sur l'écran, latence de l'écran, masquer la barre en pause |
-| **IA** (amélioration) | résumé de la chaîne ; **Agrandissement** : résolution de travail (480p à 1080p, Source), SPAN (case, modèle) ; **Fluidité** : multiplicateur (Auto, ×1 à ×6), moteur d'interpolation, mode GMFSS (Performance / Qualité) | filtre de réduction (Area, Spline36, **Hermite**…), modèle RIFE, poses DRBA, ordre du traitement (warp avant/après SPAN), Smooth Motion, RIFE sur copie 720p en 4K |
-| **HDR** | moteur HDR (RTX HDR / adaptatif / aucun), pic de luminance, débandage | gris moyen, débandage RTX HDR détaillé, noir absolu OLED (Auto / Oui / Non), soins OLED |
-| **Couleurs** | grade (case), préréglage (Naturel / Éclatant), 2 à 3 curseurs essentiels (luminosité, contraste, saturation), gamut P3 | les autres curseurs du grade (gain R/V/B, gamma…), seuil du noir. **Sortis** : filtre de réduction (→ IA), débandage (→ HDR), cadence fixe et filtre vers la fenêtre (→ Avancé) |
-| **Audio et sous-titres** | préférences de langue (2 listes, « Aucun »), sous-titres : taille, piste ; audio : délai | — |
-| **Export** | taille, codec, qualité, fichier, bouton Exporter | agrandissement et interpolation de l'export |
-| **Avancé** | moteurs (installer, choisir, reconstruire), statistiques à l'écran (Tab), cadence fixe (VRR), filtre vers la fenêtre, dossier des modèles, **Mises à jour : canal, fréquence, vérifier maintenant, version installée**, **Lecteur par défaut** (si l'utilisateur a refusé, voir 4.4), « Retirer de Ouvrir avec » | — |
+Retour du 28/10 (capture des réglages de PotPlayer) : l'arbre y est profond, mais on s'y retrouve mieux que dans
+12 onglets. AJP a bien moins de réglages : **une colonne d'arbre (catégories et sous-catégories) à gauche, le
+contenu à droite**, comme PotPlayer, VLC (vue « Toutes ») ou Kodi. La barre d'onglets disparaît donc : plus de
+flèches, plus de défilement horizontal à gérer, et le problème de molette n'existe plus.
 
-- **Onglet Profils supprimé pour l'instant** (demande du 28/10). Les 9 profils et le profil de démarrage restent
-  dans `play.toml` et dans le code : seul l'écran disparaît. Le retour au profil d'origine redevient une ligne
-  « Réinitialiser les réglages » dans Avancé.
-- **Fusion Agrandissement + Interpolation** : oui, onglet **IA** (une seule chaîne ; la résolution de travail
-  décide ce que l'interpolation peut tenir). **HDR et Couleurs séparés** (demande du 28/10) : HDR configure la
-  conversion et l'écran ; Couleurs ne contient que l'image.
+```
+Général
+  ├ Lecture                  volume, épisode suivant, reprendre là où on s'est arrêté
+  ├ Lecteur par défaut       bouton « Faire de ce lecteur le lecteur par défaut », Ouvrir avec  (voir 4.4)
+  └ Mises à jour             Automatique / Me prévenir / Jamais, canal, fréquence, version (voir 4.5)
+Image IA
+  ├ Agrandissement           résolution de travail, SPAN (case, modèle)
+  ├ Fluidité                 multiplicateur, moteur d'interpolation, mode GMFSS
+  └ Avancé                   filtre de réduction (Hermite…), modèle RIFE, poses DRBA, ordre du traitement, Smooth Motion
+HDR
+  ├ Conversion               moteur HDR, pic de luminance, débandage
+  └ Écran                    noir absolu OLED, soins OLED, gris moyen
+Couleurs
+  ├ Réglages                 grade (case), préréglage, luminosité, contraste, saturation
+  └ Avancé                   gain R/V/B, gamma, gamut P3, seuil du noir
+Audio
+  └ Sortie                   délai audio, caler la lecture sur l'écran, latence de l'écran
+Langues et sous-titres
+  ├ Langues préférées        audio, sous-titres (« Aucun »)
+  └ Sous-titres              taille, piste
+Export
+  ├ Fichier                  taille, codec, qualité, destination, bouton Exporter
+  └ Traitement               agrandissement et interpolation de l'export
+Moteurs
+  ├ Installés                moteurs et modèles, installer, reconstruire
+  └ Choix                    moteur de SPAN, de RIFE
+Avancé
+  ├ Affichage                statistiques à l'écran (Tab), cadence fixe (VRR), filtre vers la fenêtre, masquer la barre en pause
+  ├ Lecteur par défaut       (réapparaît ici si l'utilisateur a refusé, voir 4.4), « Retirer de Ouvrir avec »
+  └ Réinitialiser            retour au profil d'origine, réglages d'usine
+```
+
+- **9 catégories**, 2 à 3 sous-catégories chacune. Les langues, l'export et les moteurs ont leur catégorie
+  (demande du 28/10) ; rien n'est caché dans un onglet fourre-tout.
+- **Profils** : l'écran disparaît pour l'instant (demande du 28/10). Les 9 profils et le profil de démarrage
+  restent dans `play.toml` et dans le code ; « retour au profil d'origine » passe dans Avancé > Réinitialiser.
+- **Image IA** regroupe agrandissement et interpolation : une seule chaîne (la résolution de travail décide ce que
+  l'interpolation peut tenir), avec le résumé vivant de la chaîne en haut de la catégorie.
+- **HDR et Couleurs séparés** : HDR configure la conversion et l'écran ; Couleurs ne contient que l'image. Le
+  filtre de réduction et la mise à l'échelle n'y sont plus.
+- **Recherche** (idée mpv.net, à faire si le temps le permet) : un champ en haut de l'arbre qui filtre les
+  réglages par nom.
+
+**Disposition d'une page (ce que PotPlayer fait bien)** : des **groupes encadrés avec un titre** (« Agrandissement »,
+« Fluidité »…), et dans un groupe, **plusieurs réglages sur une même ligne quand ils vont ensemble** : résolution
+de travail + filtre, pic de luminance + gris moyen, taille de l'export largeur × hauteur, audio + sous-titres côte
+à côte, curseurs de couleur en deux colonnes. Règle : on met côte à côte ce qui se lit comme une phrase ou une
+paire (largeur × hauteur, avant / après), jamais deux réglages sans rapport pour remplir la place. Une ligne
+verticale unique reste la norme pour le reste.
 
 ### 4.3 Mécanique de l'interface (à corriger dans le code)
-- **Barre d'onglets** : `ImGuiTabBarFlags_FittingPolicyResizeDown`, 7 onglets de ~100 px dans 760 px : plus de
-  flèches. Si un jour il y en a plus, la molette défile la barre (`ImGui::SetScrollX` sur la barre).
-- **Barre de défilement du contenu** : fine (8 px), arrondie, translucide, au bord extérieur du panneau avec une
-  marge de 6 px (ne mord pas sur les réglages), visible au survol ou pendant le défilement.
-- **Largeur des champs** : 55 % libellé, 45 % valeur.
-- **Infobulles** : `ImGui::SetItemTooltip`, délai de survol ; les `note()` actuelles y sont déplacées, raccourcies.
+- **Fenêtre** : plus large (environ 980 px à 100 %, 220 px d'arbre + contenu) et bornée à l'écran, minimum 640 px ;
+  sur 1366×768 l'arbre se replie en une liste déroulante en haut. Plus de `BeginTabBar("##sections")`.
+- **Arbre** : `ImGui::BeginChild` à gauche, `TreeNodeEx` pour les catégories (ouvertes par défaut sur la
+  catégorie courante), `Selectable` pour les sous-catégories ; navigation au clavier (haut/bas, gauche/droite),
+  dernière page mémorisée (`[ui] last_page`).
+- **Groupes** : `BeginChild(..., ImGuiChildFlags_Borders)` avec le titre par-dessus la bordure, dans
+  `panel_style.h` (`group("Agrandissement")`) ; lignes multiples avec `BeginTable` à 2 ou 3 colonnes sans bordure.
+- **Barre de défilement du contenu** : fine (8 px), arrondie, translucide, au bord extérieur avec 6 px de marge
+  (ne mord pas sur les réglages), visible au survol ou au défilement.
+- **Largeur des champs** : 45 % libellé à gauche, valeur à droite, alignés d'un groupe à l'autre.
+- **Infobulles** : `ImGui::SetItemTooltip` avec délai ; les `note()` actuelles y sont déplacées, raccourcies.
 - **Pastilles** : `badge("Recommandé")` dans `panel_style.h` ; vert recommandé, bleu rapide, ambre lourd, violet
   expérimental.
-- **Avancé replié** : `CollapsingHeader`, état dans `play.toml` (`[ui] advanced_open`).
+- **Avancé** : les réglages avancés ont leur sous-catégorie « Avancé » dans l'arbre (au lieu d'un repli dans la
+  page), ce qui évite un état de repli à mémoriser.
+
+### 4.2 bis Variante du coordinateur et choix du niveau « avancé »
+
+Le coordinateur propose 8 catégories au plus : **Général** (Comportement, Langues, Mises à jour, Système),
+**Lecture** (Audio, Sous-titres, Affichage), **Image et IA** (Agrandissement, Interpolation, Rendu), **HDR et
+couleurs**, **Export**, **Moteurs**, avec une case **« Réglages avancés »** au pied de l'arbre et la **recherche**
+en haut. (Je n'ai pas pu relire son fichier, `/mnt/project-files/ux/…` n'existe pas sur ce PC : je ne m'appuie que
+sur ce résumé.) Différences avec l'arbre ci-dessus, à trancher avec toi :
+
+| Point | Mon arbre (4.2) | Variante coordinateur |
+|---|---|---|
+| HDR / Couleurs | deux catégories (ta demande du 28/10 : « un onglet HDR, un onglet couleurs ») | une seule catégorie « HDR et couleurs » |
+| Langues | avec les sous-titres, catégorie propre | dans Général |
+| Audio, sous-titres, affichage | « Audio », « Langues et sous-titres », « Avancé > Affichage » | une catégorie « Lecture » |
+| Avancé | sous-catégorie « Avancé » par catégorie | **une case globale** « Réglages avancés » : coché, chaque page affiche en plus son groupe « Avancé » |
+
+Je recommande de **garder HDR et Couleurs séparés** (tu l'as demandé) et d'**adopter la case globale
+« Réglages avancés »** : c'est le niveau Basique/Avancé de Kodi, plus simple qu'une sous-catégorie par page et
+ça désencombre l'arbre pour l'utilisateur courant (les sous-catégories « Avancé » disparaissent, leurs
+réglages passent dans un groupe « Avancé » de la page, visible seulement case cochée). Reste : Langues dans
+Général (le coordinateur) ou avec les sous-titres (moi) : question 2.
+
+### 4.3 bis Ce qui est réaliste avec Dear ImGui, et ce qui ne l'est pas
+
+| Élément | Verdict |
+|---|---|
+| Arbre à gauche, page à droite | **Faisable** : deux `BeginChild` côte à côte, `TreeNodeEx` / `Selectable`. Largeur d'arbre fixe |
+| Encadrés titrés | **Faisable** : `BeginChild` avec `ImGuiChildFlags_Borders`, titre dessiné par-dessus la bordure (`ImDrawList`). La hauteur doit être donnée : `ImGuiChildFlags_AutoResizeY` la calcule |
+| Réglages en ligne, plusieurs colonnes | **Faisable** avec `BeginTable` (2 à 3 colonnes, sans bordure). Pas d'alignement automatique entre encadrés : on fixe les largeurs de libellé |
+| Pastilles | **Faisable** : texte coloré sur un rectangle arrondi (`ImDrawList::AddRectFilled`) |
+| Infobulles | **Faisable** : `ImGui::SetItemTooltip`. Un survol sur un champ **désactivé** a besoin de `ImGuiHoveredFlags_AllowWhenDisabled` |
+| Recherche | **Faisable mais à cadrer** : il faut un **registre des réglages** (nom, catégorie, mots-clés) pour filtrer et sauter à la page. Les réglages sont aujourd'hui dessinés en dur dans des fonctions : le registre est un vrai chantier. Version 1 : filtrer les pages de l'arbre par mot-clé, sans filtrer les lignes |
+| État mémorisé | **Faisable** : dernière page et « Réglages avancés » dans `play.toml` ; ImGui n'a pas de mémoire d'arbre persistante, donc on l'écrit nous-mêmes |
+| Navigation au clavier / manette | Partielle : ImGui navigue au clavier (`ImGuiConfigFlags_NavEnableKeyboard`), mais l'ordre sur un arbre + page demande des tests |
+| Accessibilité (lecteur d'écran) | **Non** : ImGui ne l'expose pas ; hors périmètre |
+| Défilement horizontal de la molette | Sans objet : plus de barre d'onglets |
+| Redimensionnement | Fenêtre fixe (`NoResize`) conservée ; sous 900 px de large l'arbre devient une liste déroulante en haut |
+
+Aucun de ces éléments n'est irréaliste ; seul le **filtrage fin de la recherche** (ligne par ligne) l'est sans
+registre. Ce serait une étape 6, après le reste.
 
 ### 4.4 Lecteur par défaut et « Ouvrir avec »
 - **Premier lancement** : AJP s'inscrit tout seul dans « Ouvrir avec », **sans confirmation** (l'inscription
@@ -198,26 +283,26 @@ Mécanique :
 
 1. **Textes et composants** (organisation inchangée) : 720p, vocabulaire, `badge()`, infobulles, retrait des
    paragraphes.
-2. **Mécanique** : barre d'onglets, barre de défilement, largeurs, « Avancé » replié avec mémoire.
-3. **Réorganisation** : 7 onglets, Profils retiré, déplacement des réglages, bouton lecteur par défaut,
-   inscription « Ouvrir avec » au premier lancement. Aucune clé de `play.toml` ne change (sauf `advanced_open`,
+2. **Mécanique** : arbre à gauche, groupes encadrés, barre de défilement, largeurs, dernière page mémorisée.
+3. **Réorganisation** : arbre de 9 catégories à la place des onglets, groupes et lignes multiples, Profils retiré, déplacement des réglages, bouton lecteur par défaut,
+   inscription « Ouvrir avec » au premier lancement. Aucune clé de `play.toml` ne change (sauf `last_page`,
    `open_with_registered`, `ask_default_player`), donc aucune migration.
 4. **Mise à jour automatique** : vérification + réglages d'abord (sans installation), puis téléchargement signé
    et application au lancement, test sur Linux puis Windows. C'est un chantier à part (signature, clé, format du
    manifeste) : ne pas le mélanger à l'étape 3.
-5. **Passe de relecture** : infobulles relues d'un trait ; essai à 100 %, 150 % et 200 % d'échelle, sur 4K et
+5. **Recherche** : registre des réglages, filtre par page puis par ligne (4.3 bis).
+6. **Passe de relecture** : infobulles relues d'un trait ; essai à 100 %, 150 % et 200 % d'échelle, sur 4K et
    1366×768.
 
 Vérifications : tests existants de `settings_test` et du panneau, instantané du menu avant/après (`--snapshot`)
 par onglet, contrôle que chaque réglage de l'annexe A reste atteignable.
 
 ## 7. Questions pour toi
-1. Les 7 onglets (Général, IA, HDR, Couleurs, Audio et sous-titres, Export, Avancé) te conviennent ?
-2. Les réglages de langue : dans Général (les deux préférences) et le détail dans « Audio et sous-titres » : ok ?
+1. L'arbre à gauche (9 catégories, 2 à 3 sous-catégories) à la place des onglets : c'est bien ce que tu veux ?
+2. HDR et Couleurs séparés (mon arbre, ta demande) ou fusionnés (coordinateur) ? Langues dans Général ou avec les sous-titres ? Case globale « Réglages avancés » (4.2 bis) : ok ?
 3. Pastilles *Recommandé / Le plus rapide / Le plus fin / Le plus lourd / Expérimental* : la liste te convient ?
 4. Les temps mesurés : jamais dans l'interface, oui dans `docs/nvidia-linux.md` ?
-5. Mises à jour : défaut **Automatique** (installe au prochain lancement) ou **Me prévenir** ? Canal
-   Préversions proposé seulement dans Avancé.
+5. Mises à jour : défaut **Automatique** (installe au prochain lancement) ou **Me prévenir** ?
 6. Pour GMFSS et le mode auto de la 0.4 : qu'est-ce que tu veux améliorer en priorité ?
 
 ## Annexe A : arbre actuel, réglage par réglage
