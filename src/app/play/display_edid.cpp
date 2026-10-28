@@ -250,6 +250,7 @@ std::vector<DisplayFacts> connected_displays() {
     DisplayFacts facts = parse_edid(edid);
     facts.connector = std::format("monitor{}", i);
     facts.vrr = windows_vrr();
+    facts.vrr_armed = facts.vrr;
     found.push_back(std::move(facts));
   }
   SetupDiDestroyDeviceInfoList(set);
@@ -298,6 +299,32 @@ std::optional<bool> drm_vrr(const std::filesystem::path& dir) {
   close(fd);
   return result;
 }
+// VRR_ENABLED du CRTC que l'encodeur de la sortie alimente : ce que le compositeur a armé en ce moment.
+std::optional<bool> drm_vrr_armed(const std::filesystem::path& dir) {
+  const std::string name = dir.filename().string();
+  const std::size_t dash = name.find('-');
+  if (dash == std::string::npos) return std::nullopt;
+  const std::string connector_text = trimmed(dir / "connector_id");
+  if (connector_text.empty()) return std::nullopt;
+  const std::uint32_t connector_id =
+      static_cast<std::uint32_t>(std::strtoul(connector_text.c_str(), nullptr, 10));
+  const int fd = open(("/dev/dri/" + name.substr(0, dash)).c_str(), O_RDONLY | O_CLOEXEC);
+  if (fd < 0) return std::nullopt;
+  std::optional<bool> result;
+  drm_mode_get_connector connector{};
+  connector.connector_id = connector_id;
+  if (ioctl(fd, DRM_IOCTL_MODE_GETCONNECTOR, &connector) >= 0) {
+    result = false;
+    if (connector.encoder_id != 0) {
+      drm_mode_get_encoder encoder{};
+      encoder.encoder_id = connector.encoder_id;
+      if (ioctl(fd, DRM_IOCTL_MODE_GETENCODER, &encoder) >= 0 && encoder.crtc_id != 0)
+        result = drm_property(fd, encoder.crtc_id, DRM_MODE_OBJECT_CRTC, "VRR_ENABLED").value_or(0) != 0;
+    }
+  }
+  close(fd);
+  return result;
+}
 #endif
 
 // Les sorties branchées de DRM et leur EDID (/sys/class/drm/<sortie>/edid). Sur macOS, rien :
@@ -314,6 +341,7 @@ std::vector<DisplayFacts> connected_displays() {
     facts.connector = dir.filename().string();
 #if defined(__linux__)
     facts.vrr = drm_vrr(dir);
+    facts.vrr_armed = drm_vrr_armed(dir);
 #endif
     found.push_back(std::move(facts));
   }

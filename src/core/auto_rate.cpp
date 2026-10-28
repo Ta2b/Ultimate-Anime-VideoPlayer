@@ -1,11 +1,13 @@
 #include "core/auto_rate.h"
 
 #include <algorithm>
+#include <bit>
 
 namespace ajp::core {
 
 int auto_ceiling(double display_hz, double source_fps) {
-  if (display_hz <= 0.0 || source_fps <= 0.0) return 1;
+  // Hors de [5, 240] i/s : une cadence fausse (VFR, base de temps) ; l'interpolation reste à ×1.
+  if (display_hz <= 0.0 || source_fps < 5.0 || source_fps > 240.0) return 1;
   int best = 1;
   for (int step = 2; step <= kAutoMaxStep; ++step) {
     if (source_fps * step <= display_hz * 1.01) best = step;
@@ -18,6 +20,7 @@ AutoRate::AutoRate(int ceiling)
 
 void AutoRate::set_ceiling(int ceiling) {
   ceiling_ = std::clamp(ceiling, 1, kAutoMaxStep);
+  if (cap_ > ceiling_) cap_ = 0;
   if (step_ > ceiling_) {
     step_ = ceiling_;
     clean_ = 0;
@@ -25,27 +28,50 @@ void AutoRate::set_ceiling(int ceiling) {
   }
 }
 
+void AutoRate::descend() {
+  if (step_ > 1) {
+    if (probing_) {
+      // Une tentative qui échoue : on la re-tentera plus tard ; la deuxième fait du palier d'en dessous
+      // le plafond appris.
+      if (++fails_[static_cast<std::size_t>(step_)] >= kFailsToCap) {
+        cap_ = step_ - 1;
+        fails_[static_cast<std::size_t>(step_)] = 0;
+      }
+      backoff_ = std::min(backoff_ + 1, kMaxBackoff);
+    }
+    --step_;
+    grace_ = kGracePairs;
+  }
+  probing_ = false;
+  clean_ = 0;
+  lates_ = 0;
+}
+
+int AutoRate::overloaded() {
+  if (grace_ == 0) descend();
+  return step_;
+}
+
 int AutoRate::pair(bool late) {
   if (grace_ > 0) {
     --grace_;
     return step_;
   }
+  lates_ = (lates_ << 1U) | (late ? 1U : 0U);  // kLateWindow = 64 : tout le mot
   if (late) {
-    if (step_ > 1) {
-      --step_;
-      grace_ = kGracePairs;
-      // Un palier tenté qui échoue : on le re-tentera plus tard.
-      if (probing_) backoff_ = std::min(backoff_ + 1, kMaxBackoff);
-    }
-    probing_ = false;
     clean_ = 0;
+    if (std::popcount(lates_) < kLateTolerance) return step_;  // un retard isolé : le palier reste
+    descend();
     return step_;
   }
   ++clean_;
-  const std::uint32_t needed = kRisePairs << backoff_;
+  const bool at_cap = cap_ > 0 && step_ >= cap_;
+  const std::uint32_t needed = at_cap ? kCapPairs : kRisePairs << backoff_;
   if (probing_ && clean_ >= kRisePairs * 2) {  // le palier tenté tient : l'hystérésis se relâche
     probing_ = false;
     backoff_ = std::max(backoff_ - 1, 0);
+    fails_[static_cast<std::size_t>(step_)] = 0;
+    if (cap_ > 0 && step_ > cap_) cap_ = 0;  // le palier au-dessus du plafond tient : il n'y en a plus
   }
   if (clean_ >= needed && step_ < ceiling_) {
     ++step_;

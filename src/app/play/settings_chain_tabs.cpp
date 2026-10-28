@@ -181,11 +181,16 @@ void fluidity_tab(PlaySettings& d, const SettingsChoices& choices, bool exportin
         "Auto choisit seul le multiplicateur de ×1 à ×6 (24 à 144 i/s pour 23,976) : il baisse dès que le "
         "GPU prend du retard, remonte après quelques secondes sans retard, et réessaie de plus en plus "
         "tard un palier qui vient d'échouer. Lecture seulement ; l'export garde un multiplicateur fixe.");
-    if (!choices.display_vrr)
+    if (!choices.display_vrr) {
       note(
-          "VRR désactivé ou indisponible : à fréquence fixe, un multiplicateur qui ne tombe pas sur un "
-          "nombre entier de rafraîchissements (×k de 23,976 sur 165 Hz) fait vibrer le mouvement "
-          "(judder). Active G-Sync / FreeSync / Adaptive Sync pour l'éviter.");
+          "VRR indisponible : à fréquence fixe, un multiplicateur qui ne tombe pas sur un nombre entier de "
+          "rafraîchissements (×k de 23,976 sur 165 Hz) fait vibrer le mouvement (judder). Active G-Sync / "
+          "FreeSync / Adaptive Sync pour l'éviter.");
+    } else if (choices.window_fullscreen && !choices.display_vrr_armed) {
+      note(
+          "VRR présent mais coupé par le système : active la synchronisation adaptative (KDE : Affichage et "
+          "écran > Synchronisation adaptative), sinon le mouvement vibre à fréquence fixe.");
+    }
   }
   if (choices.source_fps > 0.0 && choices.display_hz > 0.0)
     note(std::format("Grisés : au-delà de l'écran ({:.0f} Hz pour {:.3f} i/s).", choices.display_hz,
