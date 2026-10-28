@@ -73,9 +73,16 @@ donc plus exporté et le lecteur ne le prend plus qu'en repli, à toutes les hau
 
 | Mode | Base | Union | Écart à l'original (pire pixel / moyenne / 99,9 %, sur 1) |
 |---|---|---|---|
-| Performance (GMFlow FP16, défaut) | 25,5 ms | 36,7 ms | base 0,0239 / 0,0004 / 0,0059 |
-| Qualité (GMFlow FP32, paire `_s05q`) | 29,4 ms | 56,5 ms | base 0,0056 / 0,0002 / 0,0013 |
-| Plein flot FP16 (ancien défaut) | 46,7 ms | 61,3 ms | base 0,0055 / 0,0003 / 0,0023 |
+| Performance (GMFlow FP16, défaut) | 24,1 ms | 23,3 ms | base 0,0239 / 0,0004 / 0,0059 |
+| Qualité (GMFlow FP32, paire `_s05q`) | 30,9 ms | 33,1 ms | base 0,0056 / 0,0002 / 0,0013 |
+| Plein flot FP16 (ancien défaut) | 47,1 ms | 46,1 ms | base 0,0055 / 0,0003 / 0,0023 |
+
+Temps mesurés sur un GPU au calme, sans option de profil (graphe « paire » + graphe « fusion ») : paire
+7,8 ms (base) et 8,1 ms (union) en performance, 14,6 et 17,9 ms en qualité, 30,8 et 30,9 ms en plein
+flot ; fusion 16,3 ms (base) et 15,2 ms (union), la même dans les trois modes. Un premier relevé, fait
+pendant que d'autres tâches chargeaient le GPU, gonflait ces temps de 20 à 50 % : un graphe « paire »
+identique mesurait 14,0 ms au lieu de 7,8. Mesurer GMFSS demande un GPU libre. L'écart à l'original est
+mesuré sur GPU avec PyTorch, indépendant de ces temps.
 
 Le réglage est dans l'onglet d'interpolation (`gmfss_quality` de `play.toml`, section `interpolation`) ; le
 mode qualité demande `gmfss_fortuna_{base,union}_s05q_pair.onnx` (export_gmfss.py `--scale 0.5 --precision
