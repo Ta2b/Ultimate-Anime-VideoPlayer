@@ -85,6 +85,8 @@ enum class OpKind : std::uint8_t {
   AveragePool,
   Reciprocal,
   Range,  // plié : ses bornes viennent des formes, connues avant la construction
+  // Paire Q/DQ FP8 E4M3 fusionnée à l'import (onnx_fp8.h) : x → arrondi(x / échelle) × échelle.
+  FakeQuantE4M3,
 };
 
 enum class AutoPad : std::uint8_t { NotSet, SameUpper, SameLower, Valid };

@@ -35,6 +35,7 @@ bool accepts_nhwc(const Graph& graph, const Node& node, TensorId id) {
     case OpKind::Tanh:
     case OpKind::Clip:
     case OpKind::Reciprocal:
+    case OpKind::FakeQuantE4M3:
     case OpKind::Cast:
     case OpKind::Identity:
     case OpKind::Concat:

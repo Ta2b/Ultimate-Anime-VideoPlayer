@@ -10,6 +10,7 @@
 #include <optional>
 #include <utility>
 
+#include "gpu/ir/fp8.h"
 #include "gpu/ir/onnx_model.h"
 #include "gpu/ir/protobuf.h"
 #include "kernels/ref/half.h"
@@ -82,6 +83,8 @@ std::size_t element_size(std::int32_t data_type) {
       return 8;
     case kFloat16:
       return 2;
+    case kFloat8E4M3Fn:
+      return 1;
     default:
       return 0;
   }
@@ -93,7 +96,7 @@ std::expected<void, Refusal> decode_raw(Tensor& tensor, Bytes raw, std::size_t c
     return proto::malformed(
         std::format("tenseur {} : {} octets bruts pour {} éléments", tensor.name, raw.size(), count));
   }
-  if (tensor.data_type == kFloat || tensor.data_type == kFloat16) {
+  if (tensor.data_type == kFloat || tensor.data_type == kFloat16 || tensor.data_type == kFloat8E4M3Fn) {
     tensor.floats.reserve(count);
   } else {
     tensor.ints.reserve(count);
@@ -109,6 +112,9 @@ std::expected<void, Refusal> decode_raw(Tensor& tensor, Bytes raw, std::size_t c
         tensor.floats.push_back(kernels::ref::half_to_float(static_cast<std::uint16_t>(lo | (hi << 8U))));
         break;
       }
+      case kFloat8E4M3Fn:
+        tensor.floats.push_back(e4m3_to_float(std::to_integer<std::uint8_t>(raw[i])));
+        break;
       case kInt32:
         tensor.ints.push_back(static_cast<std::int32_t>(le32(raw, 4 * i)));
         break;
@@ -116,6 +122,18 @@ std::expected<void, Refusal> decode_raw(Tensor& tensor, Bytes raw, std::size_t c
         tensor.ints.push_back(static_cast<std::int64_t>(le64(raw, 8 * i)));
         break;
     }
+  }
+  return {};
+}
+
+// FLOAT8E4M3FN en int32_data : un octet par élément, dans les 8 bits de poids faible.
+std::expected<void, Refusal> decode_e4m3_words(Tensor& tensor, const std::vector<std::int64_t>& words) {
+  for (const std::int64_t word : words) {
+    if (word < 0 || word > 0xFF) {
+      return proto::malformed(
+          std::format("tenseur {} : motif FLOAT8E4M3FN {} hors de 8 bits", tensor.name, word));
+    }
+    tensor.floats.push_back(e4m3_to_float(static_cast<std::uint8_t>(word)));
   }
   return {};
 }
@@ -175,7 +193,7 @@ std::expected<Tensor, Refusal> finish_tensor(RawTensor raw) {
     case kInt64:
       placed = !has_floats && !has_int32;
       break;
-    default:  // kFloat16, kInt32
+    default:  // kFloat16, kFloat8E4M3Fn, kInt32
       placed = !has_floats && !has_int64;
       break;
   }
@@ -184,6 +202,8 @@ std::expected<Tensor, Refusal> finish_tensor(RawTensor raw) {
 
   if (tensor.data_type == kFloat16) {
     if (auto ok = decode_half_words(tensor, raw.int32_data); !ok) return std::unexpected(ok.error());
+  } else if (tensor.data_type == kFloat8E4M3Fn) {
+    if (auto ok = decode_e4m3_words(tensor, raw.int32_data); !ok) return std::unexpected(ok.error());
   } else if (tensor.data_type == kInt32) {
     tensor.ints = std::move(raw.int32_data);
   }

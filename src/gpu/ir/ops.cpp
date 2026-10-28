@@ -15,7 +15,7 @@ using namespace detail;
 constexpr std::size_t kMany = 4096;  // Concat, Split : borne de l'arité variable
 
 // Une ligne par OpKind, dans l'ordre de l'énumération (vérifié par op_info).
-constexpr std::array<OpInfo, 33> kOps{{
+constexpr std::array<OpInfo, 34> kOps{{
     {OpKind::Conv, "Conv", 2, 3, 5, 1, 1, infer_conv, eval_conv},
     {OpKind::ConvTranspose, "ConvTranspose", 2, 3, 3, 1, 1, infer_conv_transpose, eval_conv_transpose},
     {OpKind::Add, "Add", 2, 2, 2, 1, 1, infer_binary, eval_binary},
@@ -49,6 +49,7 @@ constexpr std::array<OpInfo, 33> kOps{{
     {OpKind::AveragePool, "AveragePool", 1, 1, 1, 1, 1, infer_average_pool, eval_average_pool},
     {OpKind::Reciprocal, "Reciprocal", 1, 1, 1, 1, 1, infer_unary, eval_unary},
     {OpKind::Range, "Range", 3, 3, 3, 1, 1, infer_range, eval_range},
+    {OpKind::FakeQuantE4M3, "FakeQuantE4M3", 2, 2, 2, 1, 1, infer_fake_quant, eval_fake_quant},
 }};
 
 constexpr bool table_in_order() {

@@ -9,6 +9,7 @@
 
 #include "gpu/ir/graph.h"
 #include "gpu/ir/import_attrs.h"
+#include "gpu/ir/onnx_fp8.h"
 #include "gpu/ir/ops.h"
 
 namespace ajp::gpu::ir {
@@ -164,11 +165,22 @@ std::expected<std::vector<Node>, Refusal> sort_nodes(const Graph& graph, std::ve
 std::expected<Graph, Refusal> import_model(const onnx::Model& model) {
   auto opset = default_opset(model);
   if (!opset) return std::unexpected(opset.error());
-  const onnx::Graph& source = model.graph;
+  // Les paires Q/DQ FP8 deviennent des FakeQuantE4M3 sur une copie du graphe, jamais sur l'original.
+  onnx::Graph fused;
+  const bool quantized = std::ranges::any_of(
+      model.graph.nodes, [](const onnx::Node& n) { return n.op_type == "QuantizeLinear"; });
+  if (quantized) {
+    fused = model.graph;
+    onnx::fuse_fp8_quant_pairs(fused);
+  }
+  const onnx::Graph& source = quantized ? fused : model.graph;
   Builder b;
   b.graph.opset = *opset;
 
   for (const onnx::Tensor& tensor : source.initializers) {
+    // Un zéro FP8 resté après la fusion appartient à un Q/DQ non fusionné : le nœud est refusé
+    // sous son nom d'opérateur, plus parlant que le type du zéro.
+    if (tensor.data_type == onnx::kFloat8E4M3Fn) continue;
     if (auto ok = declare_constant(b, tensor.name, detail::tensor_value(tensor)); !ok)
       return std::unexpected(ok.error());
   }
