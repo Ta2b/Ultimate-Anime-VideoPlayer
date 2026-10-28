@@ -1,0 +1,2 @@
+&&&& RUNNING trtexec --onnx=/m/rife.onnx --shapes=img0:1x3x736x1280,img1:1x3x736x1280 --fp16
+[I] Engine built in 12.5 sec.

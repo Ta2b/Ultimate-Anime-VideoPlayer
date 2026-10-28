@@ -1,0 +1,51 @@
+#version 450
+// Ingestion depuis les plans d'une image décodée (planes.glsl) : comme ingest_combine, la luma
+// lue dans le plan 0 et, en 4:2:0, la chroma rééchantillonnée par ingest_chroma_h_planes.
+// Contrat : kernels/spec/color.h ; référence : kernels/ref/color.cpp (yuv_to_rgb).
+#extension GL_GOOGLE_include_directive : require
+#include "tensor.glsl"
+#include "ajp_kernels_spec.glsl"
+#include "common.glsl"
+#include "yuv.glsl"
+#include "planes.glsl"
+
+layout(local_size_x = 16, local_size_y = 16) in;
+
+// Cb puis Cr, plans float w × h en codes du conteneur (ingest_chroma_h_planes, resample_v).
+layout(std430, binding = 0) readonly buffer Chroma { float v[]; } chroma;
+layout(std430, binding = 1) writeonly buffer Rgb { AJP_TENSOR v[]; } rgb;
+layout(binding = 2) uniform sampler2D luma_plane;
+layout(binding = 3) uniform sampler2D chroma_plane;  // lié, jamais lu en 4:2:0
+
+layout(push_constant) uniform Push {
+  uint y_offset;  // dispositions d'ingest_combine, sans objet ici
+  uint y_pitch;
+  uint cb_offset;
+  uint cb_pitch;
+  uint cr_offset;
+  uint cr_pitch;
+  uint width;
+  uint height;
+} pc;
+
+void main() {
+  uint x = gl_GlobalInvocationID.x;
+  uint y = gl_GlobalInvocationID.y;
+  if (x >= pc.width || y >= pc.height) return;
+  uint plane = pc.width * pc.height;
+  uint i = y * pc.width + x;
+  float luma = float(luma_code(luma_plane, x, y));
+  float u;
+  float v;
+  if (AJP_SUBSAMPLED) {
+    u = chroma.v[i];
+    v = chroma.v[plane + i];
+  } else {
+    u = float(chroma_code_at(chroma_plane, chroma_sample_index(x, false), y));
+    v = float(chroma_code_at(chroma_plane, chroma_sample_index(x, true), y));
+  }
+  vec3 p = yuv_to_rgb(luma, u, v);
+  rgb.v[i] = AJP_TENSOR(p.r);
+  rgb.v[plane + i] = AJP_TENSOR(p.g);
+  rgb.v[2u * plane + i] = AJP_TENSOR(p.b);
+}

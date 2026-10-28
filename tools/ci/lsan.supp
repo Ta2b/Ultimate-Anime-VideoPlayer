@@ -1,0 +1,28 @@
+# Suppressions de LeakSanitizer : des fuites de bibliothèques tierces seulement, chacune
+# justifiée. Lu par les préréglages de test ASan (CMakePresets.json, LSAN_OPTIONS).
+#
+# Ces préréglages posent aussi VK_LOADER_DISABLE_DYNAMIC_LIBRARY_UNLOADING=1 : le chargeur Vulkan
+# décharge sinon pilote et couches à la destruction de la dernière VkInstance, et leurs globaux
+# encore alloués deviennent des fuites « <unknown module> » qu'aucune ligne ne peut nommer. Cas
+# vu en CI : sur un CPU AMD Zen (les runners GitHub), Mesa alloue une fois par processus le masque
+# d'affinité de son cache L3 (128 octets, util_cpu_caps.L3_affinity_mask, src/util/u_cpu_detect.c,
+# jamais libéré) ; lavapipe déchargé, 111 tests échouaient, sur un CPU Intel aucun. Gardés
+# chargés, ces globaux restent atteignables et leurs vraies fuites gardent un nom de module.
+#
+# libdbus : SDL3 ouvre D-Bus dès SDL_InitSubSystem (SDL_DBus_Init) ; le tampon de lecture
+# de la connexion reste à libdbus jusqu'à la fin du processus, même après SDL_Quit avec
+# SDL_HINT_SHUTDOWN_DBUS_ON_QUIT (essayé dans les tests audio : la fuite demeure).
+leak:libdbus-1.so
+#
+# Pilote NVIDIA : libcuda (cuInit, NVDEC, NVENC) et l'ICD Vulkan gardent des allocations
+# internes jusqu'à la fin du processus. media ne décharge jamais libcuda après cuInit
+# (media/cuda_driver.h) : elle reste nommée à la sortie et sa ligne s'applique ; celles de
+# l'ICD aussi, que le chargeur Vulkan garde maintenant (ci-dessus). Quand FFmpeg décharge
+# libnvidia-encode ou libnvcuvid, leurs fuites deviennent « <unknown module> », qu'aucune ligne
+# ne couvre : sur une RTX, les tests NVDEC et [vulkan] de media tournent sous ASan avec
+# detect_leaks=0 (commandes en tête de tests/unit/media/gpu_decode_test.cpp), et leurs fuites se
+# vérifient sur lavapipe (la CI). Les [vulkan] pourraient s'en passer : à valider sur le PC.
+leak:libcuda.so
+leak:libnvidia-glcore.so
+leak:libnvidia-glsi.so
+leak:libnvidia-gpucomp.so

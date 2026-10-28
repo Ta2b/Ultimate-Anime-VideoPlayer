@@ -1,0 +1,15 @@
+version = 1
+first_run_done = true
+
+[engines]
+chosen = ["vulkan", "tensorrt"]
+installed = ["vulkan", "tensorrt"]
+preferred = { upscale = "tensorrt", interpolate = "tensorrt" }
+
+[languages]
+audio = ["ja", "en"]
+subtitles = ["fr", "pt-BR", "en"]
+
+[playback]
+resume_position = true
+audio_delay_ms = -120

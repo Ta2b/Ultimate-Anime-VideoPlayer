@@ -1,0 +1,57 @@
+#version 450
+// Coupe de scène depuis les plans de luma de deux images décodées (planes.glsl) : comme
+// scene_diff, Σ |a − b| × scene_norm(format) réduite par groupe de travail.
+// Contrat : kernels/spec/detect.h ; référence : kernels/ref/detect.cpp (scene_diff_sum).
+#extension GL_GOOGLE_include_directive : require
+#include "ajp_kernels_spec.glsl"
+#include "common.glsl"
+#include "yuv.glsl"
+#include "planes.glsl"
+
+layout(local_size_x = 16, local_size_y = 16) in;
+
+const uint AJP_GROUP_SIZE = 256u;
+
+layout(std430, binding = 0) writeonly buffer Partials { float sum[]; } partials;
+layout(binding = 1) uniform sampler2D luma_a;
+layout(binding = 2) uniform sampler2D luma_b;
+
+layout(push_constant) uniform Push {
+  uint a_offset;  // dispositions de scene_diff, sans objet ici
+  uint a_pitch;
+  uint b_offset;
+  uint b_pitch;
+  uint width;
+  uint height;
+} pc;
+
+shared float partial[AJP_GROUP_SIZE];
+
+float scene_norm() {
+  if (AJP_FORMAT == AJP_FORMAT_NV12) return AJP_SCENE_NORM_NV12;
+  if (AJP_FORMAT == AJP_FORMAT_P010) return AJP_SCENE_NORM_P010;
+  if (AJP_FORMAT == AJP_FORMAT_P016) return AJP_SCENE_NORM_P016;
+  if (AJP_FORMAT == AJP_FORMAT_YUV420P) return AJP_SCENE_NORM_YUV420P;
+  if (AJP_FORMAT == AJP_FORMAT_YUV420P10) return AJP_SCENE_NORM_YUV420P10;
+  return AJP_SCENE_NORM_YUV444P16;
+}
+
+void main() {
+  uint x = gl_GlobalInvocationID.x;
+  uint y = gl_GlobalInvocationID.y;
+  uint tid = gl_LocalInvocationIndex;
+  float d = 0.0;
+  if (x < pc.width && y < pc.height) {
+    float va = float(luma_code(luma_a, x, y));
+    float vb = float(luma_code(luma_b, x, y));
+    precise float term = abs(va - vb) * scene_norm();
+    d = term;
+  }
+  partial[tid] = d;
+  barrier();
+  for (uint n = AJP_GROUP_SIZE / 2u; n > 0u; n >>= 1u) {
+    if (tid < n) partial[tid] += partial[tid + n];
+    barrier();
+  }
+  if (tid == 0u) partials.sum[gl_WorkGroupID.y * gl_NumWorkGroups.x + gl_WorkGroupID.x] = partial[0];
+}

@@ -1,0 +1,102 @@
+#version 450
+// Softmax splatting de GMFSS, première passe : chaque pixel source ajoute sa valeur × e^(s z) ×
+// poids bilinéaire aux quatre pixels autour de sa destination, et le poids seul au dernier plan,
+// par additions atomiques en float. L'axe z découpe les plans en groupes de pc.group ; le
+// groupe 0 ajoute aussi le poids. Les sommes sont remises à zéro avant (kernels_slice.cpp).
+// Le mouvement se lit sur sa propre grille (spec MotionGrid) : tel quel si direct, sinon
+// bilinéaire borné à son plan, le flot multiplié par l'échelle.
+// Référence : kernels/ref/gmfss.cpp (soft_splat_at) ; même calcul que gmfss_kernels.cu.
+#extension GL_GOOGLE_include_directive : require
+#include "tensor.glsl"
+#include "ajp_kernels_spec.glsl"
+#include "common.glsl"
+#extension GL_EXT_shader_atomic_float : require
+
+layout(local_size_x = 16, local_size_y = 16) in;
+
+layout(std430, binding = 0) readonly buffer Source { AJP_TENSOR v[]; } source;
+layout(std430, binding = 1) readonly buffer Motion { AJP_TENSOR v[]; } motion;  // fx, fy, z
+layout(std430, binding = 2) buffer Sums { float v[]; } sums;  // channels + 1 plans
+// L'instant s, mot de paramètre réécrit d'une exécution à l'autre sans réenregistrer.
+layout(std430, binding = 3) readonly buffer Params { float s; } params;
+
+layout(push_constant) uniform Push {
+  uint width;
+  uint height;
+  uint channels;
+  uint group;
+  uint motion_width;
+  uint motion_height;
+  float motion_scale;
+  float motion_x;
+  float motion_y;
+  uint direct;
+} pc;
+
+// Plan c du mouvement lu en (u, v), bilinéaire borné au plan (centres des pixels aux entiers).
+float motion_at(uint c, float u, float v) {
+  uint w = pc.motion_width;
+  uint h = pc.motion_height;
+  u = bounded(u, 0.0, float(w - 1u));
+  v = bounded(v, 0.0, float(h - 1u));
+  uint x0 = uint(u);
+  uint y0 = uint(v);
+  uint x1 = min(x0 + 1u, w - 1u);
+  uint y1 = min(y0 + 1u, h - 1u);
+  float fx = u - float(x0);
+  float fy = v - float(y0);
+  uint base = c * w * h;
+  precise float top = float(motion.v[base + y0 * w + x0]) * (1.0 - fx) + float(motion.v[base + y0 * w + x1]) * fx;
+  precise float bottom =
+      float(motion.v[base + y1 * w + x0]) * (1.0 - fx) + float(motion.v[base + y1 * w + x1]) * fx;
+  precise float value = top * (1.0 - fy) + bottom * fy;
+  return value;
+}
+
+void main() {
+  uint x = gl_GlobalInvocationID.x;
+  uint y = gl_GlobalInvocationID.y;
+  if (x >= pc.width || y >= pc.height) return;
+  uint plane = pc.width * pc.height;
+  uint i = y * pc.width + x;
+  float fx;
+  float fy;
+  float z;
+  if (pc.direct != 0u) {
+    fx = float(motion.v[i]);
+    fy = float(motion.v[plane + i]);
+    z = float(motion.v[2u * plane + i]);
+  } else {
+    precise float u = (float(x) + 0.5) / pc.motion_scale - 0.5 + pc.motion_x;
+    precise float v = (float(y) + 0.5) / pc.motion_scale - 0.5 + pc.motion_y;
+    fx = pc.motion_scale * motion_at(0u, u, v);
+    fy = pc.motion_scale * motion_at(1u, u, v);
+    z = motion_at(2u, u, v);
+  }
+  precise float tx = float(x) + params.s * fx;
+  precise float ty = float(y) + params.s * fy;
+  // Une destination hors de ]−1, taille[ n'a aucun coin dans le plan ; NaN et infinis échouent
+  // aussi la comparaison.
+  if (!(tx > -1.0 && tx < float(pc.width) && ty > -1.0 && ty < float(pc.height))) return;
+  // z est borné comme la sortie tanh × 10 du modèle l'annonce : exp(s z) ne déborde pas, un graphe
+  // hors contrat donne un poids fini (NaN : le bas de l'intervalle, comme fmaxf).
+  float scale = exp(params.s * bounded(z, -AJP_GMFSS_METRIC_LIMIT, AJP_GMFSS_METRIC_LIMIT));
+  int x0 = int(floor(tx));
+  int y0 = int(floor(ty));
+  precise float east = tx - float(x0);
+  precise float west = float(x0 + 1) - tx;
+  precise float south = ty - float(y0);
+  precise float north = float(y0 + 1) - ty;
+  ivec2 corners[4] = ivec2[4](ivec2(x0, y0), ivec2(x0 + 1, y0), ivec2(x0, y0 + 1), ivec2(x0 + 1, y0 + 1));
+  float share[4] = float[4](west * north, east * north, west * south, east * south);
+  uint first = gl_WorkGroupID.z * pc.group;
+  uint last = min(pc.channels, first + pc.group);
+  for (int k = 0; k < 4; ++k) {
+    ivec2 c = corners[k];
+    if (c.x < 0 || c.x >= int(pc.width) || c.y < 0 || c.y >= int(pc.height)) continue;
+    uint j = uint(c.y) * pc.width + uint(c.x);
+    float weight = scale * share[k];
+    for (uint p = first; p < last; ++p) atomicAdd(sums.v[p * plane + j], float(source.v[p * plane + i]) * weight);
+    if (gl_WorkGroupID.z == 0u) atomicAdd(sums.v[pc.channels * plane + j], weight);
+  }
+}

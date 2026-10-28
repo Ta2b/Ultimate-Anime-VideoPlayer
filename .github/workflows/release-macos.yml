@@ -1,0 +1,86 @@
+name: Release macOS
+
+# Lancé à la main (ou par une étiquette v*) : les minutes macOS coûtent dix fois celles de Linux.
+# Une poussée sur la branche release/macos construit le même paquet sans release : il reste en
+# artefact de l'exécution, et les dépendances construites remplissent le cache.
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Étiquette de la release où joindre le paquet (vide : artefact seulement)"
+        required: false
+  push:
+    tags: ["v*"]
+    branches: ["release/macos"]
+
+permissions:
+  contents: write
+
+# Une seule construction par branche ou étiquette : la plus récente remplace la précédente.
+concurrency:
+  group: release-macos-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # À côté de l'espace de travail, en chemin absolu : actions/cache refuse les chemins qui
+  # contiennent « .. », et le cache des dépendances n'était jamais enregistré.
+  AJP_DEPS_PREFIX: ${{ github.workspace }}-deps
+
+jobs:
+  package:
+    name: AJP.app (Apple Silicon)
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      # Restauration et sauvegarde séparées : les dépendances déjà construites (marquées .built-*)
+      # restent en cache même quand la construction échoue plus loin.
+      - id: deps-cache
+        uses: actions/cache/restore@v4
+        with:
+          path: ${{ env.AJP_DEPS_PREFIX }}
+          key: deps-macos-arm64-${{ hashFiles('tools/deps/macos-from-source.sh') }}-${{ github.run_id }}
+          restore-keys: |
+            deps-macos-arm64-${{ hashFiles('tools/deps/macos-from-source.sh') }}-
+            deps-macos-arm64-
+      - run: tools/deps/macos-from-source.sh "$AJP_DEPS_PREFIX" "$RUNNER_TEMP/deps-src"
+      - uses: actions/cache/save@v4
+        if: always()
+        with:
+          path: ${{ env.AJP_DEPS_PREFIX }}
+          key: ${{ steps.deps-cache.outputs.cache-primary-key }}
+      - run: tools/release/package-macos.sh "$RUNNER_TEMP/package"
+      # spirv-val ne voit pas ce que seul Metal refuse : chaque shader passe par SPIRV-Cross et le
+      # compilateur Metal, comme MoltenVK le fera à la création du pipeline.
+      - name: Shaders en Metal
+        run: tools/ci/check-msl.sh build/macos-release
+      # Les tests sans GPU du build même du paquet (préréglage de test macos-release) : un échec
+      # arrête tout avant l'artefact et la release.
+      - name: Tests sans GPU
+        run: ctest --preset macos-release
+      # Le quota de stockage des artefacts du compte peut être plein : le paquet est construit quand même.
+      - uses: actions/upload-artifact@v4
+        continue-on-error: true
+        with:
+          retention-days: 3
+          name: ajp-macos-arm64
+          path: |
+            ${{ runner.temp }}/package/ajp-macos-arm64.zip
+            ${{ runner.temp }}/package/ajp-macos-arm64.zip.sha256
+      - name: Joindre à la release
+        if: github.ref_type == 'tag' || inputs.tag != ''
+        env:
+          # Un dépôt public à part peut porter les releases (le lecteur télécharge ses moteurs sans
+          # compte) : variable AJP_RELEASE_REPO et secret AJP_RELEASE_TOKEN qui peut y écrire.
+          GH_TOKEN: ${{ secrets.AJP_RELEASE_TOKEN || github.token }}
+          AJP_RELEASE_REPO: ${{ vars.AJP_RELEASE_REPO || github.repository }}
+          TAG: ${{ github.ref_type == 'tag' && github.ref_name || inputs.tag }}
+        # La construction Windows de la même étiquette peut créer la release au même moment : un
+        # refus de création ne compte que si la release n'existe toujours pas.
+        run: |
+          notes="tools/release/notes/$TAG.md"
+          [ -f "$notes" ] || notes=/dev/null
+          gh release view "$TAG" -R "$AJP_RELEASE_REPO" >/dev/null 2>&1 \
+            || gh release create "$TAG" -R "$AJP_RELEASE_REPO" --prerelease --title "$TAG" --notes-file "$notes" \
+            || gh release view "$TAG" -R "$AJP_RELEASE_REPO" >/dev/null
+          gh release upload "$TAG" -R "$AJP_RELEASE_REPO" "$RUNNER_TEMP/package/ajp-macos-arm64.zip" \
+            "$RUNNER_TEMP/package/ajp-macos-arm64.zip.sha256" --clobber

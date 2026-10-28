@@ -1,0 +1,5 @@
+#version 450
+// Conv par matrices coopératives (net_conv_coopmat.glsl).
+#extension GL_GOOGLE_include_directive : require
+#define AJP_NET_F16
+#include "net_conv_coopmat.glsl"

@@ -1,0 +1,201 @@
+//!HOOK OUTPUT
+//!BIND HOOKED
+//!SAVE AJG_LOCAL
+//!WIDTH HOOKED.w 8 /
+//!HEIGHT HOOKED.h 8 /
+//!COMPONENTS 1
+//!DESC AnimeJaNai HDR grade - luminance locale 1/8
+
+// Moyenne 8x8 de la luminance, stockee en PQ (domaine perceptuel uniforme).
+// 16 lectures bilineaires couvrent exactement le bloc 8x8.
+float ajg_pq_y(vec3 e) {
+    float y;
+    if (sdr_out > 0.5) {
+        // Luminance BT.709 du SDR, en nits / 10000 comme le PQ.
+        y = dot(pow(clamp(e, 0.0, 1.0), vec3(sdr_gamma)), vec3(0.2126, 0.7152, 0.0722)) * peak / 10000.0;
+    } else {
+        vec3 p = pow(clamp(e, 0.0, 1.0), vec3(1.0 / 78.84375));
+        vec3 n = pow(max(p - 0.8359375, 0.0) / max(18.8515625 - 18.6875 * p, 1e-6), vec3(6.27739463));
+        y = dot(n, vec3(0.2627, 0.6780, 0.0593));
+    }
+    float q = pow(y, 0.1593017578125);
+    return pow((0.8359375 + 18.8515625 * q) / (1.0 + 18.6875 * q), 78.84375);
+}
+vec4 hook() {
+    float acc = 0.0;
+    for (int j = 0; j < 4; j++)
+    for (int i = 0; i < 4; i++) {
+        vec2 o = vec2(float(i) * 2.0 - 3.0, float(j) * 2.0 - 3.0) * HOOKED_pt;
+        acc += ajg_pq_y(HOOKED_tex(HOOKED_pos + o).rgb);
+    }
+    return vec4(acc / 16.0, 0.0, 0.0, 1.0);
+}
+
+//!HOOK OUTPUT
+//!BIND AJG_LOCAL
+//!SAVE AJG_AREA0
+//!WIDTH AJG_LOCAL.w 4 /
+//!HEIGHT AJG_LOCAL.h 4 /
+//!COMPONENTS 1
+//!DESC AnimeJaNai HDR grade - luminance de zone 1/32
+
+vec4 hook() {
+    float acc = 0.0;
+    for (int j = 0; j < 2; j++)
+    for (int i = 0; i < 2; i++)
+        acc += AJG_LOCAL_tex(AJG_LOCAL_pos + vec2(float(i) * 2.0 - 1.0, float(j) * 2.0 - 1.0) * AJG_LOCAL_pt).x;
+    return vec4(acc * 0.25, 0.0, 0.0, 1.0);
+}
+
+//!HOOK OUTPUT
+//!BIND AJG_AREA0
+//!SAVE AJG_AREAH
+//!COMPONENTS 1
+//!DESC AnimeJaNai HDR grade - flou de zone horizontal
+
+// Gaussienne sigma = 3 texels (environ 2,5 % de la largeur de l'image).
+vec4 hook() {
+    const float w[8] = float[8](0.1346, 0.1273, 0.1078, 0.0816, 0.0553, 0.0336, 0.0182, 0.0088);
+    float acc = AJG_AREA0_tex(AJG_AREA0_pos).x * w[0];
+    for (int i = 1; i < 8; i++) {
+        vec2 o = vec2(float(i) * AJG_AREA0_pt.x, 0.0);
+        acc += (AJG_AREA0_tex(AJG_AREA0_pos + o).x + AJG_AREA0_tex(AJG_AREA0_pos - o).x) * w[i];
+    }
+    return vec4(acc, 0.0, 0.0, 1.0);
+}
+
+//!HOOK OUTPUT
+//!BIND AJG_AREAH
+//!SAVE AJG_AREA
+//!COMPONENTS 1
+//!DESC AnimeJaNai HDR grade - flou de zone vertical
+
+vec4 hook() {
+    const float w[8] = float[8](0.1346, 0.1273, 0.1078, 0.0816, 0.0553, 0.0336, 0.0182, 0.0088);
+    float acc = AJG_AREAH_tex(AJG_AREAH_pos).x * w[0];
+    for (int i = 1; i < 8; i++) {
+        vec2 o = vec2(0.0, float(i) * AJG_AREAH_pt.y);
+        acc += (AJG_AREAH_tex(AJG_AREAH_pos + o).x + AJG_AREAH_tex(AJG_AREAH_pos - o).x) * w[i];
+    }
+    return vec4(acc, 0.0, 0.0, 1.0);
+}
+
+//!BUFFER AJG_STATE
+//!VAR float apl
+//!VAR float prev_pq
+//!VAR float prev_nits
+//!VAR float cut
+//!VAR float ready
+//!VAR float bright
+//!VAR int width
+//!VAR int height
+//!VAR float history[32768]
+//!STORAGE
+
+//!HOOK OUTPUT
+//!BIND AJG_AREA
+//!SAVE AJG_MEAN8
+//!WIDTH 8
+//!HEIGHT 8
+//!COMPONENTS 3
+//!DESC AnimeJaNai HDR grade - moyenne de scene 8x8
+
+// Moyenne de la carte de zone par 1/64 d'image : PQ et lumiere lineaire (nits / 10000), et la
+// part des zones claires (au-dessus de 70 % du blanc SDR : ciel, murs blancs, neige).
+// 16 x 16 lectures bilineaires reparties sur la zone couverte par chaque texel.
+float stats_linear(float e) {
+    float p = pow(clamp(e, 0.0, 1.0), 1.0 / 78.84375);
+    return pow(max(p - 0.8359375, 0.0) / max(18.8515625 - 18.6875 * p, 1e-6), 6.27739463);
+}
+vec4 hook() {
+    vec3 acc = vec3(0.0);
+    float bright = 0.7 * sdr_white / 10000.0;
+    for (int j = 0; j < 16; j++)
+    for (int i = 0; i < 16; i++) {
+        vec2 o = ((vec2(float(i), float(j)) + 0.5) / 16.0 - 0.5) / 8.0;
+        float v = AJG_AREA_tex(AJG_AREA_pos + o).x;
+        float lin = stats_linear(v);
+        acc += vec3(v, lin, lin > bright ? 1.0 : 0.0);
+    }
+    return vec4(acc / 256.0, 1.0);
+}
+
+//!HOOK OUTPUT
+//!BIND AJG_MEAN8
+//!SAVE AJG_MEAN
+//!WIDTH 1
+//!HEIGHT 1
+//!COMPONENTS 3
+//!DESC AnimeJaNai HDR grade - moyenne de scene
+
+vec4 hook() {
+    vec3 acc = vec3(0.0);
+    for (int j = 0; j < 8; j++)
+    for (int i = 0; i < 8; i++)
+        acc += AJG_MEAN8_tex((vec2(float(i), float(j)) + 0.5) / 8.0).xyz;
+    return vec4(acc / 64.0, 1.0);
+}
+
+//!HOOK OUTPUT
+//!BIND AJG_AREA
+//!BIND AJG_MEAN
+//!BIND AJG_STATE
+//!SAVE AJG_STATS
+//!WIDTH 1
+//!HEIGHT 1
+//!COMPUTE 1 1
+//!DESC AnimeJaNai HDR grade - statistiques de scene
+
+// Detection des changements de plan et APL lisse dans le temps. Les moyennes viennent
+// des deux passes precedentes : une reduction en boucle dans cette passe de calcul
+// coutait 3 ms par image en D3D11.
+void hook() {
+    ivec2 size = ivec2(AJG_AREA_size);
+    vec3 mean = AJG_MEAN_tex(vec2(0.5)).xyz;
+    float mean_pq = mean.x;
+    float mean_nits = 10000.0 * mean.y;
+    // Changement de plan, premiere image ou nouvelle taille : pas d'historique.
+    bool reset = ready < 0.5 || width != size.x || height != size.y
+              || abs(mean_pq - prev_pq) > 0.06;
+    // Mêmes moyennes qu'à la passe précédente : la même image représentée (pause, interface, OSD,
+    // cadence de l'écran), pas une nouvelle image vidéo. Le lissage n'avance qu'avec la vidéo.
+    bool again = !reset && mean_pq == prev_pq && mean_nits == prev_nits;
+    cut = reset ? 1.0 : 0.0;
+    if (!again) {
+        apl = reset ? mean_nits : mix(apl, mean_nits, 0.1);
+        bright = reset ? mean.z : mix(bright, mean.z, 0.1);
+    }
+    prev_pq = mean_pq;
+    prev_nits = mean_nits;
+    width = size.x;
+    height = size.y;
+    ready = 1.0;
+    // x : APL lisse (nits), y : changement de plan, z : moyenne de l'image, w : part claire lissee.
+    imageStore(out_image, ivec2(0, 0), vec4(apl, cut, mean_nits, bright));
+}
+
+//!HOOK OUTPUT
+//!BIND AJG_AREA
+//!BIND AJG_STATS
+//!BIND AJG_STATE
+//!SAVE AJG_AREAT
+//!WIDTH AJG_AREA.w
+//!HEIGHT AJG_AREA.h
+//!COMPUTE 16 16
+//!DESC AnimeJaNai HDR grade - lissage temporel de la zone
+
+void hook() {
+    ivec2 p = ivec2(gl_GlobalInvocationID.xy);
+    ivec2 size = ivec2(AJG_AREA_size);
+    if (p.x >= size.x || p.y >= size.y) return;
+    float value = texelFetch(AJG_AREA_raw, p, 0).x;
+    int idx = p.y * size.x + p.x;
+    if (idx < 32768) {
+        // ~0,1 s de constante de temps a 48 i/s ; aucune trainee apres une coupure.
+        if (texelFetch(AJG_STATS_raw, ivec2(0, 0), 0).y < 0.5)
+            value = mix(history[idx], value, 0.3);
+        history[idx] = value;
+    }
+    imageStore(out_image, p, vec4(value, 0.0, 0.0, 1.0));
+}
+

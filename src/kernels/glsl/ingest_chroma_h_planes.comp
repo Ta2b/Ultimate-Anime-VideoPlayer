@@ -1,0 +1,46 @@
+#version 450
+// Ingestion 4:2:0 depuis les plans d'une image décodée (planes.glsl), passe horizontale de la
+// chroma : comme ingest_chroma_h, les codes bruts de Cb et de Cr lus dans le plan 1.
+// Contrat : kernels/spec/resample.h ; référence : kernels/ref/color.cpp (yuv_to_rgb).
+#extension GL_GOOGLE_include_directive : require
+#include "ajp_kernels_spec.glsl"
+#include "common.glsl"
+#include "yuv.glsl"
+#include "planes.glsl"
+
+layout(local_size_x = 16, local_size_y = 16) in;
+
+layout(std430, binding = 0) readonly buffer Starts { int start[]; } starts;
+layout(std430, binding = 1) readonly buffer Weights { float w[]; } weights;
+layout(std430, binding = 2) writeonly buffer Chroma { float v[]; } chroma;
+layout(binding = 3) uniform sampler2D chroma_plane;
+
+layout(push_constant) uniform Push {
+  uint cb_offset;  // dispositions d'ingest_chroma_h, sans objet ici
+  uint cb_pitch;
+  uint cr_offset;
+  uint cr_pitch;
+  uint src_width;  // colonnes de chroma
+  uint rows;       // lignes de chroma
+  uint dst_width;  // colonnes de sortie
+  uint taps;
+} pc;
+
+void main() {
+  uint x = gl_GlobalInvocationID.x;
+  uint y = gl_GlobalInvocationID.y;
+  if (x >= pc.dst_width || y >= pc.rows) return;
+  int first = starts.start[x];
+  uint row = x * pc.taps;
+  precise float u = 0.0;
+  precise float v = 0.0;
+  for (uint j = 0u; j < pc.taps; ++j) {
+    uint sx = uint(mirror_index(first + int(j), int(pc.src_width)));
+    float wj = weights.w[row + j];
+    u += wj * float(chroma_code_at(chroma_plane, chroma_sample_index(sx, false), y));
+    v += wj * float(chroma_code_at(chroma_plane, chroma_sample_index(sx, true), y));
+  }
+  uint i = y * pc.dst_width + x;
+  chroma.v[i] = u;
+  chroma.v[pc.dst_width * pc.rows + i] = v;
+}

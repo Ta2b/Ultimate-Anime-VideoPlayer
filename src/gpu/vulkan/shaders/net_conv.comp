@@ -1,0 +1,4 @@
+#version 450
+// Conv directe (net_conv.glsl), float ; « _f16 » : tenseurs float16 permis.
+#extension GL_GOOGLE_include_directive : require
+#include "net_conv.glsl"

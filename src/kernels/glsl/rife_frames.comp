@@ -1,0 +1,38 @@
+#version 450
+// Plans 0 à 5 de l'entrée de RIFE depuis deux images RGB déjà ingérées (gpu/kernel_ops.h,
+// rife_input) : a puis b dans la fenêtre de rife_geometry, le noir de studio de la chaîne
+// autour. Les plans 6 à 10 viennent de rife_constants.comp.
+// Référence : kernels/ref/rife.cpp (rife_input) ; même calcul que rife_kernels.cu (rife_input).
+#extension GL_GOOGLE_include_directive : require
+#include "tensor.glsl"
+
+layout(local_size_x = 16, local_size_y = 16) in;
+
+layout(std430, binding = 0) readonly buffer ImageA { AJP_TENSOR v[]; } a;
+layout(std430, binding = 1) readonly buffer ImageB { AJP_TENSOR v[]; } b;
+layout(std430, binding = 2) writeonly buffer Input { AJP_TENSOR v[]; } input_planes;
+
+layout(push_constant) uniform Push {
+  uint width;  // fenêtre de l'image
+  uint height;
+  uint padded_width;  // pw, ph
+  uint padded_height;
+  uint left;
+  uint top;
+  float black;  // noir de studio en RGB
+} pc;
+
+void main() {
+  uint x = gl_GlobalInvocationID.x;
+  uint y = gl_GlobalInvocationID.y;
+  if (x >= pc.padded_width || y >= pc.padded_height) return;
+  uint plane = pc.padded_width * pc.padded_height;
+  uint i = y * pc.padded_width + x;
+  bool inside = x >= pc.left && y >= pc.top && x - pc.left < pc.width && y - pc.top < pc.height;
+  uint source_plane = pc.width * pc.height;
+  uint j = inside ? (y - pc.top) * pc.width + (x - pc.left) : 0u;
+  for (uint c = 0u; c < 3u; ++c) {
+    input_planes.v[c * plane + i] = inside ? a.v[c * source_plane + j] : AJP_TENSOR(pc.black);
+    input_planes.v[(3u + c) * plane + i] = inside ? b.v[c * source_plane + j] : AJP_TENSOR(pc.black);
+  }
+}

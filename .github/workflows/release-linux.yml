@@ -1,0 +1,142 @@
+name: Release Linux
+
+# Une étiquette v* (poussée, ou créée avec une release depuis GitHub) : le lecteur Linux
+# (Vulkan) construit ici et joint à la release de l'étiquette, créée en préversion avec les notes de
+# tools/release/notes/<étiquette>.md si elle n'existe pas encore. Les builds Windows et macOS
+# partent de la même étiquette et se joignent à la même release. Une poussée sur la branche
+# release/linux construit le même paquet sans release : il reste en artefact de l'exécution.
+# Rien ne s'empaquette sans les règles (rules.yml). Les tests unitaires ne tournent plus ici : ils
+# se lancent sur le poste (tools/release/preflight/run.sh fait la même construction et les mêmes
+# tests dans un conteneur Ubuntu 24.04 local, avec toutes les erreurs d'un coup) et par ci.yml.
+# Versions et paquets : tools/release/versions.env.
+# À la main : le paquet de la branche choisie, joint à la release de l'étiquette donnée (un
+# correctif du lecteur dans une release déjà publiée), ou en artefact sans étiquette.
+on:
+  push:
+    tags: ["v*"]
+    branches: ["release/linux"]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Étiquette de la release où joindre le paquet (vide : artefact seulement)"
+        required: false
+
+permissions:
+  contents: write
+
+# Une seule construction par branche ou étiquette : la plus récente remplace la précédente.
+concurrency:
+  group: release-linux-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # L'étiquette de la release visée : celle poussée, ou celle donnée à la main ; vide sinon.
+  AJP_TAG: ${{ (github.event_name == 'push' && github.ref_type == 'tag') && github.ref_name || inputs.tag || '' }}
+  # À côté de l'espace de travail, en chemin absolu : actions/cache refuse les chemins qui
+  # contiennent « .. », et le cache des dépendances n'était jamais enregistré.
+  AJP_DEPS_PREFIX: ${{ github.workspace }}-deps
+  CC: gcc-13
+  CXX: g++-13
+
+jobs:
+  rules:
+    uses: ./.github/workflows/rules.yml
+
+  package:
+    name: Lecteur Linux (x64)
+    needs: [rules]
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Paquets système
+        run: |
+          source tools/release/versions.env
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq $APT_BUILD $APT_PLAYER $APT_PACKAGE
+          pip install --user "meson==$MESON_VERSION"
+      # Restauration et sauvegarde séparées : les dépendances construites restent en cache même
+      # quand une étape suivante échoue (quota d'artefacts atteint, paquet refusé…).
+      - id: deps-cache
+        uses: actions/cache/restore@v4
+        with:
+          path: ${{ env.AJP_DEPS_PREFIX }}
+          key: deps-player-gcc-13-${{ hashFiles('tools/deps/linux-from-source.sh') }}-${{ github.run_id }}
+          restore-keys: |
+            deps-player-gcc-13-${{ hashFiles('tools/deps/linux-from-source.sh') }}
+            deps-player-gcc-13-
+      - run: tools/deps/linux-from-source.sh "$AJP_DEPS_PREFIX" "$RUNNER_TEMP/deps-src"
+      - uses: actions/cache/save@v4
+        if: always()
+        with:
+          path: ${{ env.AJP_DEPS_PREFIX }}
+          key: ${{ steps.deps-cache.outputs.cache-primary-key }}
+      # Moteurs facultatifs, empaquetés à côté du lecteur et listés dans engines.lock : OpenVINO
+      # (GPU Intel) par sa roue PyPI, qui porte ses en-têtes et sa configuration CMake ; MIGraphX
+      # (GPU AMD) par le dépôt ROCm d'AMD (tools/release/rocm-apt.sh). ROCm reste un prérequis du
+      # système chez l'utilisateur : seul le module du backend est livré, lié au runtime HIP de
+      # ROCm 7 (libamdhip64.so.7), qui ne se charge pas sur un ROCm 6. TensorRT se construit
+      # ailleurs (licence NVIDIA).
+      - name: Place sur le disque
+        run: sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
+      - name: OpenVINO
+        run: |
+          source tools/release/versions.env
+          pip install --user "openvino==$OPENVINO_VERSION"
+          echo "OpenVINO_DIR=$(python3 -c 'from openvino.utils import get_cmake_path; print(get_cmake_path())')" >> "$GITHUB_ENV"
+      - name: ROCm et MIGraphX
+        run: |
+          tools/release/rocm-apt.sh
+          # Les en-têtes et bibliothèques de l'API C de MIGraphX et du runtime HIP suffisent
+          # (src/gpu/migraphx/CMakeLists.txt les cherche sans les fichiers de config de ROCm).
+          sudo apt-get install -y -qq --no-install-recommends migraphx-dev hip-dev
+          echo "CMAKE_PREFIX_PATH=/opt/rocm" >> "$GITHUB_ENV"
+      # TensorRT et RTX HDR ne sont pas publiés (licence NVIDIA) : ils se construisent sur la machine
+      # NVIDIA (docs/nvidia-linux.md). Un poste qui voudrait quand même les joindre à une release le
+      # fait avant l'étiquette, avec leur index engines-nvidia.lock, que cette étape reprend s'il existe.
+      - name: Paquet
+        env:
+          AJP_WITH_OPENVINO: "ON"
+          AJP_WITH_MIGRAPHX: "ON"
+          AJP_RELEASE_REPO: ${{ vars.AJP_RELEASE_REPO || github.repository }}
+          GH_TOKEN: ${{ secrets.AJP_RELEASE_TOKEN || github.token }}
+        run: |
+          if [ -n "$AJP_TAG" ]; then
+            export AJP_RELEASE_TAG="$AJP_TAG"
+            if gh release download "$AJP_TAG" -R "$AJP_RELEASE_REPO" -p engines-nvidia.lock -D "$RUNNER_TEMP"; then
+              export AJP_ENGINES_LOCK="$RUNNER_TEMP/engines-nvidia.lock"
+            else
+              echo "::notice::pas d'engines-nvidia.lock dans la release $AJP_TAG : voulu, TensorRT et RTX HDR se construisent sur la machine NVIDIA (docs/nvidia-linux.md)"
+            fi
+          fi
+          tools/release/package-linux.sh "$RUNNER_TEMP/package"
+      # Le quota de stockage des artefacts du compte peut être plein : le paquet est construit quand même.
+      - name: Artefact
+        if: env.AJP_TAG == ''
+        continue-on-error: true
+        uses: actions/upload-artifact@v4
+        with:
+          retention-days: 3
+          name: ajp-linux-x64
+          path: |
+            ${{ runner.temp }}/package/ajp-linux-x64.tar.gz
+            ${{ runner.temp }}/package/engines.lock
+            ${{ runner.temp }}/package/SHA256SUMS
+          compression-level: 0
+      - name: Préversion
+        if: env.AJP_TAG != ''
+        env:
+          # Un dépôt public à part peut porter les releases (le lecteur télécharge ses moteurs sans
+          # compte) : variable AJP_RELEASE_REPO et secret AJP_RELEASE_TOKEN qui peut y écrire.
+          GH_TOKEN: ${{ secrets.AJP_RELEASE_TOKEN || github.token }}
+          AJP_RELEASE_REPO: ${{ vars.AJP_RELEASE_REPO || github.repository }}
+        run: |
+          notes="tools/release/notes/$AJP_TAG.md"
+          [ -f "$notes" ] || notes=/dev/null
+          assets=("$RUNNER_TEMP"/package/ajp-*.tar.gz "$RUNNER_TEMP/package/engines.lock" "$RUNNER_TEMP/package/SHA256SUMS")
+          # Les constructions Windows et macOS de la même étiquette peuvent créer la release au même
+          # moment : un refus de création ne compte que si la release n'existe toujours pas.
+          gh release view "$AJP_TAG" -R "$AJP_RELEASE_REPO" >/dev/null 2>&1 \
+            || gh release create "$AJP_TAG" -R "$AJP_RELEASE_REPO" --prerelease --title "$AJP_TAG" \
+              --notes-file "$notes" \
+            || gh release view "$AJP_TAG" -R "$AJP_RELEASE_REPO" >/dev/null
+          gh release upload "$AJP_TAG" -R "$AJP_RELEASE_REPO" --clobber "${assets[@]}"

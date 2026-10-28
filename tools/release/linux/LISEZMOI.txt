@@ -1,0 +1,38 @@
+Ultimate Anime VideoPlayer pour Linux x86-64 (préversion)
+=========================================================
+
+Contenu
+  ajp                       le lecteur
+  ajp_backend_vulkan.so     le moteur Vulkan, pour tout GPU (AMD, Intel, NVIDIA)
+  lib/                      FFmpeg, libplacebo, SDL3, libass et leurs dépendances
+  engines.lock              l'index des moteurs facultatifs téléchargeables
+  models/onnx/              SPAN AnimeJaNai HD V3.1 (Sharp1 et normal, Performance et Balanced)
+  models/rife/              RIFE 4.25 et 4.22 lite, DistilDRBA v2 lite (fp16)
+  models/LICENCES.txt       licences des modèles (AnimeJaNai : CC BY-NC-SA 4.0 ; RIFE, DistilDRBA : MIT)
+
+Paquets du système (non livrés)
+  Une distribution à glibc 2.38 ou plus : Ubuntu 24.04, Debian 13, Fedora 39, Arch et plus récentes.
+  libstdc++, glib, fontconfig et freetype viennent du système, comme pour ses pilotes.
+  Ubuntu, Debian : libvulkan1 mesa-vulkan-drivers libva2 libva-drm2 libva-x11-2
+                   intel-media-va-driver
+                   (intel-media-va-driver-non-free pour l'encodage, inutile ici)
+  Fedora         : vulkan-loader mesa-vulkan-drivers libva intel-media-driver
+  Arch           : vulkan-icd-loader vulkan-radeon libva intel-media-driver
+  Pilote AMD ouvert (RADV, Mesa 24 ou plus) conseillé ; pilote NVIDIA propriétaire pour NVIDIA.
+
+Modèles
+  Livrés dans models/ : rien à installer. Une installation d'AnimeJaNai
+  (~/.local/share/AnimeJaNai-HDR-linux/animejanai/onnx/ et rife/) passe devant s'il y en a une.
+  Un autre fichier : --model=FICHIER.onnx et --rife-model=FICHIER.onnx.
+
+Lancer
+  ./ajp play "épisode.mkv" --fullscreen
+  ./ajp play "épisode.mkv" --stats        coût par image, pour choisir un profil
+  Le premier lancement montre l'écran de bienvenue (moteurs et profil de départ). Le moteur
+  Vulkan mesure chaque couche une fois au premier passage d'un modèle : les premières
+  secondes sont plus lentes, ensuite c'est en cache.
+
+GPU de 4 Go (RX 6500, RX 6500M, RX 6400)
+  Commencer par le profil 7 « Léger 1080p », puis essayer 720p si --stats laisse de la marge.
+  Brancher l'écran sur la carte graphique. Avec un iGPU Intel activé, la vidéo est décodée
+  par lui (VA-API), ce qui laisse la carte graphique à SPAN et RIFE.

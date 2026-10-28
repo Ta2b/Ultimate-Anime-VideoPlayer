@@ -1,0 +1,466 @@
+{
+  "version": 6,
+  "cmakeMinimumRequired": {
+    "major": 3,
+    "minor": 28,
+    "patch": 0
+  },
+  "configurePresets": [
+    {
+      "name": "base",
+      "hidden": true,
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build/${presetName}",
+      "toolchainFile": "$env{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake",
+      "cacheVariables": {
+        "VCPKG_OVERLAY_PORTS": "${sourceDir}/ports",
+        "VCPKG_MANIFEST_FEATURES": "tests;player",
+        "AJP_WARNINGS_AS_ERRORS": "ON"
+      }
+    },
+    {
+      "name": "prefix",
+      "hidden": true,
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build/${presetName}",
+      "cacheVariables": {
+        "CMAKE_PREFIX_PATH": "$env{AJP_DEPS_PREFIX}",
+        "CMAKE_INSTALL_RPATH": "$env{AJP_DEPS_PREFIX}/lib",
+        "CMAKE_BUILD_RPATH": "$env{AJP_DEPS_PREFIX}/lib",
+        "AJP_TRANSITIVE_RPATH": "ON",
+        "AJP_WARNINGS_AS_ERRORS": "ON"
+      },
+      "environment": {
+        "PKG_CONFIG_PATH": "$env{AJP_DEPS_PREFIX}/lib/pkgconfig:$env{AJP_DEPS_PREFIX}/share/pkgconfig:$penv{PKG_CONFIG_PATH}"
+      }
+    },
+    {
+      "name": "debug",
+      "displayName": "Debug, tests CPU",
+      "inherits": "base",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug"
+      }
+    },
+    {
+      "name": "core",
+      "displayName": "Cœur seul via vcpkg (sans lecteur)",
+      "inherits": "base",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "AJP_BUILD_PLAYER": "OFF",
+        "VCPKG_MANIFEST_FEATURES": "tests"
+      }
+    },
+    {
+      "name": "release",
+      "displayName": "Release",
+      "inherits": "base",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "AJP_BUILD_TESTS": "OFF"
+      }
+    },
+    {
+      "name": "asan",
+      "displayName": "Debug sous ASan et UBSan",
+      "inherits": "debug",
+      "cacheVariables": {
+        "CMAKE_CXX_FLAGS": "-fsanitize=address,undefined -fno-omit-frame-pointer -fno-sanitize-recover=all"
+      }
+    },
+    {
+      "name": "tsan",
+      "displayName": "Debug sous TSan (Inbox)",
+      "inherits": "debug",
+      "cacheVariables": {
+        "CMAKE_CXX_FLAGS": "-fsanitize=thread"
+      }
+    },
+    {
+      "name": "windows-rtx",
+      "displayName": "Windows, backend TensorRT (PC de référence)",
+      "inherits": "base",
+      "condition": {
+        "type": "equals",
+        "lhs": "${hostSystemName}",
+        "rhs": "Windows"
+      },
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "AJP_WITH_CUDA": "ON"
+      }
+    },
+    {
+      "name": "windows-ci",
+      "displayName": "Windows, construction MSVC et tests sans GPU (CI), vcpkg",
+      "inherits": "base",
+      "condition": {
+        "type": "equals",
+        "lhs": "${hostSystemName}",
+        "rhs": "Windows"
+      },
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release"
+      }
+    },
+    {
+      "name": "windows-release",
+      "displayName": "Windows, lecteur universel (Vulkan ; TensorRT si AJP_WITH_CUDA), vcpkg",
+      "inherits": "base",
+      "condition": {
+        "type": "equals",
+        "lhs": "${hostSystemName}",
+        "rhs": "Windows"
+      },
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "AJP_WARNINGS_AS_ERRORS": "OFF"
+      }
+    },
+    {
+      "name": "linux-prefix",
+      "displayName": "Linux, dépendances du préfixe AJP_DEPS_PREFIX",
+      "inherits": "prefix",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug"
+      }
+    },
+    {
+      "name": "linux-prefix-cuda",
+      "displayName": "Linux préfixe, noyaux CUDA pour la seule RTX locale (sm_89)",
+      "inherits": "linux-prefix",
+      "cacheVariables": {
+        "AJP_WITH_CUDA": "ON",
+        "AJP_CUDA_ARCHITECTURES": "89-real"
+      }
+    },
+    {
+      "name": "linux-prefix-cuda-release",
+      "displayName": "Linux préfixe, CUDA sm_89, optimisé avec symboles (le lecteur de tous les jours)",
+      "inherits": "linux-prefix-cuda",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "RelWithDebInfo"
+      }
+    },
+    {
+      "name": "linux-prefix-cuda-machine",
+      "displayName": "Linux préfixe, CUDA sm_89, -O3, LTO et x86-64-v3 (le lecteur de la machine NVIDIA, sans effet sur les noyaux GPU)",
+      "inherits": "linux-prefix-cuda",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "RelWithDebInfo",
+        "CMAKE_CXX_FLAGS_RELWITHDEBINFO": "-O3 -g -DNDEBUG",
+        "CMAKE_CXX_FLAGS": "-march=x86-64-v3",
+        "CMAKE_INTERPROCEDURAL_OPTIMIZATION": "ON"
+      }
+    },
+    {
+      "name": "linux-prefix-core",
+      "displayName": "Linux, cœur seul (sans lecteur)",
+      "inherits": "prefix",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "AJP_BUILD_PLAYER": "OFF"
+      }
+    },
+    {
+      "name": "linux-prefix-asan",
+      "displayName": "Linux préfixe, ASan et UBSan",
+      "inherits": "linux-prefix",
+      "cacheVariables": {
+        "CMAKE_CXX_FLAGS": "-fsanitize=address,undefined -fno-omit-frame-pointer -fno-sanitize-recover=all"
+      }
+    },
+    {
+      "name": "linux-prefix-tsan",
+      "displayName": "Linux préfixe, TSan",
+      "inherits": "linux-prefix-core",
+      "cacheVariables": {
+        "CMAKE_CXX_FLAGS": "-fsanitize=thread"
+      }
+    },
+    {
+      "name": "linux-prefix-tsan-player",
+      "displayName": "Linux préfixe, lecteur complet sous TSan",
+      "inherits": "linux-prefix",
+      "cacheVariables": {
+        "CMAKE_CXX_FLAGS": "-fsanitize=thread"
+      }
+    },
+    {
+      "name": "linux-prefix-asan-core",
+      "displayName": "Linux préfixe, cœur sous ASan et UBSan",
+      "inherits": "linux-prefix-core",
+      "cacheVariables": {
+        "CMAKE_CXX_FLAGS": "-fsanitize=address,undefined -fno-omit-frame-pointer -fno-sanitize-recover=all"
+      }
+    },
+    {
+      "name": "linux-release",
+      "displayName": "Linux, version livrée (préfixe)",
+      "inherits": "prefix",
+      "binaryDir": "${sourceDir}/build/linux-release",
+      "condition": {
+        "type": "equals",
+        "lhs": "${hostSystemName}",
+        "rhs": "Linux"
+      },
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "AJP_BUILD_TESTS": "OFF",
+        "AJP_WARNINGS_AS_ERRORS": "OFF"
+      }
+    },
+    {
+      "name": "macos-release",
+      "displayName": "macOS (Apple Silicon), Vulkan par MoltenVK, préfixe AJP_DEPS_PREFIX et Homebrew",
+      "inherits": "prefix",
+      "condition": {
+        "type": "equals",
+        "lhs": "${hostSystemName}",
+        "rhs": "Darwin"
+      },
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "AJP_WARNINGS_AS_ERRORS": "OFF",
+        "CMAKE_OSX_DEPLOYMENT_TARGET": "14.0",
+        "CMAKE_OSX_ARCHITECTURES": "arm64",
+        "AJP_WITH_COREML": "ON",
+        "AJP_ORT_ROOT": "$env{AJP_DEPS_PREFIX}/onnxruntime",
+        "CMAKE_PREFIX_PATH": "$env{AJP_DEPS_PREFIX};/opt/homebrew"
+      },
+      "environment": {
+        "PKG_CONFIG_PATH": "$env{AJP_DEPS_PREFIX}/lib/pkgconfig:$env{AJP_DEPS_PREFIX}/share/pkgconfig:/opt/homebrew/lib/pkgconfig:$penv{PKG_CONFIG_PATH}"
+      }
+    }
+  ],
+  "buildPresets": [
+    {
+      "name": "debug",
+      "configurePreset": "debug"
+    },
+    {
+      "name": "release",
+      "configurePreset": "release"
+    },
+    {
+      "name": "asan",
+      "configurePreset": "asan"
+    },
+    {
+      "name": "tsan",
+      "configurePreset": "tsan"
+    },
+    {
+      "name": "windows-rtx",
+      "configurePreset": "windows-rtx"
+    },
+    {
+      "name": "linux-prefix",
+      "configurePreset": "linux-prefix"
+    },
+    {
+      "name": "linux-prefix-cuda",
+      "configurePreset": "linux-prefix-cuda"
+    },
+    {
+      "name": "linux-prefix-cuda-release",
+      "configurePreset": "linux-prefix-cuda-release"
+    },
+    {
+      "name": "linux-prefix-cuda-machine",
+      "configurePreset": "linux-prefix-cuda-machine"
+    },
+    {
+      "name": "linux-prefix-core",
+      "configurePreset": "linux-prefix-core"
+    },
+    {
+      "name": "linux-prefix-asan",
+      "configurePreset": "linux-prefix-asan"
+    },
+    {
+      "name": "linux-prefix-tsan",
+      "configurePreset": "linux-prefix-tsan"
+    },
+    {
+      "name": "linux-prefix-tsan-player",
+      "configurePreset": "linux-prefix-tsan-player"
+    },
+    {
+      "name": "core",
+      "configurePreset": "core"
+    },
+    {
+      "name": "linux-prefix-asan-core",
+      "configurePreset": "linux-prefix-asan-core"
+    },
+    {
+      "name": "linux-release",
+      "configurePreset": "linux-release",
+      "nativeToolOptions": ["-k", "0"]
+    },
+    {
+      "name": "macos-release",
+      "configurePreset": "macos-release",
+      "nativeToolOptions": ["-k", "0"]
+    },
+    {
+      "name": "windows-release",
+      "configurePreset": "windows-release",
+      "nativeToolOptions": ["-k", "0"]
+    },
+    {
+      "name": "windows-ci",
+      "configurePreset": "windows-ci"
+    }
+  ],
+  "testPresets": [
+    {
+      "name": "debug",
+      "configurePreset": "debug",
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "asan",
+      "configurePreset": "asan",
+      "output": {
+        "outputOnFailure": true
+      },
+      "environment": {
+        "LSAN_OPTIONS": "suppressions=${sourceDir}/tools/ci/lsan.supp",
+        "VK_LOADER_DISABLE_DYNAMIC_LIBRARY_UNLOADING": "1"
+      }
+    },
+    {
+      "name": "tsan",
+      "configurePreset": "tsan",
+      "output": {
+        "outputOnFailure": true
+      },
+      "filter": {
+        "include": {
+          "name": "Inbox"
+        }
+      }
+    },
+    {
+      "name": "linux-prefix",
+      "configurePreset": "linux-prefix",
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "linux-prefix-cuda",
+      "configurePreset": "linux-prefix-cuda",
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "linux-prefix-core",
+      "configurePreset": "linux-prefix-core",
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "linux-prefix-asan",
+      "configurePreset": "linux-prefix-asan",
+      "output": {
+        "outputOnFailure": true
+      },
+      "environment": {
+        "LSAN_OPTIONS": "suppressions=${sourceDir}/tools/ci/lsan.supp",
+        "VK_LOADER_DISABLE_DYNAMIC_LIBRARY_UNLOADING": "1"
+      }
+    },
+    {
+      "name": "linux-prefix-tsan",
+      "configurePreset": "linux-prefix-tsan",
+      "output": {
+        "outputOnFailure": true
+      },
+      "filter": {
+        "include": {
+          "name": "Inbox"
+        }
+      }
+    },
+    {
+      "name": "linux-prefix-tsan-player",
+      "configurePreset": "linux-prefix-tsan-player",
+      "output": {
+        "outputOnFailure": true
+      },
+      "environment": {
+        "TSAN_OPTIONS": "halt_on_error=1 second_deadlock_stack=1 ignore_noninstrumented_modules=1"
+      }
+    },
+    {
+      "name": "core",
+      "configurePreset": "core",
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "linux-prefix-asan-core",
+      "configurePreset": "linux-prefix-asan-core",
+      "output": {
+        "outputOnFailure": true
+      },
+      "environment": {
+        "LSAN_OPTIONS": "suppressions=${sourceDir}/tools/ci/lsan.supp"
+      }
+    },
+    {
+      "name": "windows-ci",
+      "configurePreset": "windows-ci",
+      "output": {
+        "outputOnFailure": true
+      },
+      "filter": {
+        "include": {
+          "name": "^(core|core_log|media|prepare|subs|app): "
+        }
+      },
+      "execution": {
+        "noTestsAction": "error"
+      }
+    },
+    {
+      "name": "windows-release",
+      "configurePreset": "windows-release",
+      "output": {
+        "outputOnFailure": true
+      },
+      "filter": {
+        "include": {
+          "name": "^(core|core_log|media|prepare|subs|app): "
+        }
+      },
+      "execution": {
+        "noTestsAction": "error"
+      }
+    },
+    {
+      "name": "macos-release",
+      "configurePreset": "macos-release",
+      "output": {
+        "outputOnFailure": true
+      },
+      "filter": {
+        "include": {
+          "name": "^(core|core_log|media|prepare|subs|app|coreml_rt): "
+        }
+      },
+      "execution": {
+        "noTestsAction": "error"
+      }
+    }
+  ]
+}

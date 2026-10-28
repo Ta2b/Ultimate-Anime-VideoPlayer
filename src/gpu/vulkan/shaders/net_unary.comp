@@ -1,0 +1,40 @@
+#version 450
+// Opération élément par élément d'une entrée : copie (Identity, Cast, Reshape), Relu,
+// LeakyRelu, Sigmoid, Tanh, Clip, Reciprocal. Mêmes dimensions logiques en entrée et en sortie, sauf en
+// mode plat (deux tenseurs Nchw de même nombre d'éléments : Reshape), où l'indice linéaire est
+// celui des deux. Référence : gpu/ir/op_elementwise.cpp (eval_unary).
+#extension GL_GOOGLE_include_directive : require
+#include "net_tensor.glsl"
+#include "net_activation.glsl"
+
+layout(local_size_x = 256) in;
+
+layout(constant_id = 0) const uint TX = 0;
+layout(constant_id = 1) const uint TY = 0;
+layout(constant_id = 2) const uint ACT = 0;
+
+AJP_NET_BUFFER(0, src, readonly)
+AJP_NET_BUFFER(1, dst, writeonly)
+
+layout(push_constant) uniform Push {
+  TDesc x;
+  TDesc y;
+  float alpha;
+  float lo;
+  float hi;
+  uint flat_copy;
+} pc;
+
+void main() {
+  uint i = linear_invocation();
+  if (i >= t_count(pc.y)) return;
+  uint from = i;
+  uint to = i;
+  if (pc.flat_copy == 0u) {
+    uvec4 o = t_coords(pc.y, i);
+    from = t_index(pc.x, o.x, o.y, o.z, o.w);
+    to = t_index(pc.y, o.x, o.y, o.z, o.w);
+  }
+  float v = net_activate(ACT, AJP_LOAD(src, TX, from), pc.alpha, pc.lo, pc.hi, 0.0);
+  AJP_STORE(dst, TY, to, v)
+}

@@ -1,0 +1,6 @@
+#version 450
+// Conv par matrices coopératives (net_conv_coopmat.glsl), sommes en float16.
+#extension GL_GOOGLE_include_directive : require
+#define AJP_NET_F16
+#define AJP_COOPMAT_ACC16
+#include "net_conv_coopmat.glsl"
