@@ -66,13 +66,14 @@ constexpr std::array<std::pair<std::string_view, Policy>, 3> kPolicies{
     {{"quality", Policy::Quality}, {"fast", Policy::Fast}, {"refine", Policy::Refine}}};
 constexpr std::array<std::pair<std::string_view, Pacing>, 3> kPacings{
     {{"source", Pacing::Source}, {"smooth", Pacing::Smooth}, {"keep_poses", Pacing::KeepPoses}}};
-constexpr std::array<std::pair<std::string_view, DownscaleFilter>, 6> kFilters{{
+constexpr std::array<std::pair<std::string_view, DownscaleFilter>, 7> kFilters{{
     {"area", DownscaleFilter::Area},
     {"spline36", DownscaleFilter::Spline36},
     {"bilinear", DownscaleFilter::Bilinear},
     {"bicubic", DownscaleFilter::Bicubic},
     {"mitchell", DownscaleFilter::Mitchell},
     {"catmull-rom", DownscaleFilter::CatmullRom},
+    {"hermite", DownscaleFilter::Hermite},
 }};
 constexpr std::array<std::pair<std::string_view, HdrMode>, 3> kHdrModes{
     {{"off", HdrMode::Off}, {"native", HdrMode::Native}, {"truehdr", HdrMode::TrueHdr}}};

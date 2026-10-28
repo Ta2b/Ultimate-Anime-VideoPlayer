@@ -32,7 +32,7 @@ namespace ajp::app::play {
 // Filtre de la réduction avant SPAN (fusionnée à l'ingestion, en codes de la source) : celui des
 // profils (core/profile.h), mêmes noms dans play.toml et user.toml.
 using Downscale = core::DownscaleFilter;
-inline constexpr int kDownscaleCount = 6;
+inline constexpr int kDownscaleCount = 7;
 std::string_view name(Downscale filter);  // « area », la clé de play.toml
 // Libellé lisible d'un modèle AnimeJaNai : « HD V3.1 Sharp1 Performance ».
 std::string model_label(const std::string& file);

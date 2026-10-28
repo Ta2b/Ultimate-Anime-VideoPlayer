@@ -91,8 +91,8 @@ void image_tab(PlaySettings& d, const SettingsChoices& choices) {
       ImGui::EndCombo();
     }
     panel::tip(
-        "Area : moyenne exacte. Spline36 : celui d'AnimeJaNai, net. Catmull-Rom et Mitchell gardent du "
-        "détail ; Bilinear et Bicubic adoucissent. Changement en direct.");
+        "Area : moyenne exacte. Spline36 : celui d'AnimeJaNai, net. Hermite : net et sans halo, pensé pour l'animation. "
+        "Catmull-Rom et Mitchell gardent du détail ; Bilinear et Bicubic adoucissent. Changement en direct.");
   } else {
     note("Pas de réduction : la source entre telle quelle dans SPAN.");
   }

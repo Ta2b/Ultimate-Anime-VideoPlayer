@@ -1,5 +1,6 @@
 // Réglages du menu des paramètres : plages, play.toml aller-retour, ligne de commande, et ce
 // qu'un changement demande (direct ou réouverture de la chaîne).
+#include "app/play/live_settings.h"
 #include "app/play/settings.h"
 
 #include <algorithm>
@@ -395,4 +396,17 @@ TEST_CASE("audio : appareil, écoute et profils par appareil font l'aller-retour
         ChangeCost::Reopen);
   CHECK(change_between(PlaySettings{}, [] { PlaySettings x; x.listening = "headphones"; return x; }(), false).cost ==
         ChangeCost::Live);
+}
+
+TEST_CASE("Hermite : un filtre de réduction de plus, cubique B = C = 0", "[app][settings]") {
+  using namespace ajp::app::play;
+  CHECK(name(Downscale::Hermite) == "hermite");
+  CHECK(label(Downscale::Hermite) == "Hermite");
+  const ajp::gpu::Reduction reduction = reduction_of(Downscale::Hermite);
+  CHECK(reduction.kind == ajp::gpu::ReduceKind::Cubic);
+  CHECK(reduction.b == 0.0F);
+  CHECK(reduction.c == 0.0F);
+  PlaySettings s;
+  s.downscale = Downscale::Hermite;
+  CHECK(parse_settings(format_settings(s))->downscale == Downscale::Hermite);
 }
