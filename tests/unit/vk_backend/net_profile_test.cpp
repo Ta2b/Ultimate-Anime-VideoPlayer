@@ -18,6 +18,7 @@
 
 #include "gpu/ir/graph.h"
 #include "gpu/ir/import.h"
+#include "gpu/ir/ops.h"
 #include "gpu/ir/passes.h"
 #include "gpu/ir/shape.h"
 #include "gpu/vulkan/backend/net_build.h"
@@ -156,6 +157,22 @@ TEST_CASE("Profil des dispatchs : RIFE v4.25 en 1x11x768x1280", "[.rife_profil]"
   std::cout << std::format("{:<40} {:>9} {:>12} {:>12}\n", "total", program.dispatches.size(),
                            megabytes(read), megabytes(written));
 
+  std::cout << "\n-- copies restantes (net_copy_f16) : nœud, opérateur, entrées -> sorties --\n";
+  for (const net::Dispatch& d : program.dispatches) {
+    if (d.shader != "net_copy_f16") continue;
+    const ir::Node& node = graph.nodes[d.node];
+    std::string in;
+    for (const ir::TensorId t : node.inputs) {
+      if (t == ir::kNoTensor || graph.tensors[t].kind != ir::TensorKind::Activation) continue;
+      in += std::format("{}{} ", ir::format_dims(graph.tensors[t].dims),
+                        graph.tensors[t].layout == ir::Layout::Nchw ? "" : "*");
+    }
+    std::string out;
+    for (const ir::TensorId t : node.outputs)
+      out += std::format("{}{} ", ir::format_dims(graph.tensors[t].dims),
+                         graph.tensors[t].layout == ir::Layout::Nchw ? "" : "*");
+    std::cout << std::format("{:>4} {:<10} {} -> {}\n", d.node, ir::name(node.op), in, out);
+  }
   auto engine = require_value(net::NetEngine::create(
       *rig.context, *rig.memory, *rig.pipelines, std::move(graph), std::move(program),
       {.profile_dispatches = true, .log = [](std::string_view text) { std::cout << text << '\n'; }}));
