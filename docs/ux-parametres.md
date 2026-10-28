@@ -265,6 +265,41 @@ Mécanique :
 6. Défaut proposé : **Me prévenir** (à confirmer, question 5), choisi sur l'écran du premier lancement (Sparkle
    demande aussi une fois).
 
+### 4.8 Assistant de premier démarrage (« first-run wizard »)
+
+Il fait évoluer l'écran de bienvenue actuel (`first_run.cpp` : GPU vu par Vulkan, moteurs proposés avec badges,
+profil de démarrage ; `--first-run` le remontre). Plusieurs **écrans guidés, tous sautables** (« Plus tard »),
+**refaisables depuis Général** (bouton « Relancer l'assistant ») et par `ajp --first-run`. Barre de progression,
+« Précédent / Suivant / Passer », résumé final. Rien ne s'applique avant « Terminer » (sauf une installation de
+moteur lancée explicitement). État mémorisé dans `settings.toml` : `first_run_done` (existe) et
+`first_run_step` (le dernier écran vu, pour reprendre si on ferme en route).
+
+| # | Écran | Contenu | Condition d'affichage |
+|---|---|---|---|
+| 1 | **Bienvenue et détection** | carte, tranche (4.7), VRAM, Resizable BAR, écran (résolution, fréquence, VRR, HDR) ; lecteur par défaut et « Ouvrir avec » sont faits sans question (4.4), l'écran le dit | toujours |
+| 2 | **Moteur** | Vulkan (toujours), TensorRT (NVIDIA), MIGraphX (AMD), OpenVINO (Intel), Core ML (Apple), Windows ML : ce que chacun apporte (une ligne + infobulle), ce qui est déjà installé, **recommandé** présélectionné, installation avec progression (téléchargement direct, `engine_install`) | toujours ; les moteurs absents de l'OS ne sont pas listés |
+| 3 | **Image et fluidité** | préréglage (Auto par défaut), priorité **Fluidité / Équilibre / Image**, résumé de la chaîne choisie, « Évaluer ma machine (15 s) » ou « Plus tard » | toujours |
+| 4 | **HDR** | détection de l'écran (HDR actif ? crête ?) ; choix **RTX HDR / HDR adaptatif / SDR** selon ce qui est possible ; si l'écran n'est pas HDR, l'écran est sauté ou propose SDR seul | HDR : écran HDR détecté ou choix manuel ; RTX HDR : NVIDIA seulement |
+| 4b | **RTX HDR pas à pas** (Linux) | n'apparaît que si RTX HDR est choisi : vérifie le moteur TensorRT (`tensorrt_backend_present`), le SDK Maxine / VideoFX (`maxine_available`, importé ou à importer), le pilote ; chaque point en « fait / à faire » avec le geste exact à faire ; « Vérifier de nouveau » ; repli sur HDR adaptatif si l'utilisateur renonce | Linux et NVIDIA ; sous Windows RTX HDR est automatique |
+| 5 | **Audio** | **appareil de sortie** (liste des sorties du système, celle par défaut présélectionnée) ; **format** selon l'appareil (mono, stéréo, 5.1, 7.1 : seuls les formats que l'appareil annonce) ; puis **« Comment écoutez-vous ? »** Casque / Enceintes / Home cinéma. Home cinéma est grisé quand l'appareil n'a que 2 canaux ; ignoré : Enceintes en rendu fidèle. **Aucune détection** casque ou enceinte (rarement possible) : c'est un choix de l'utilisateur | toujours |
+| 6 | **Langues** | audio et sous-titres préférés (une liste de préréglages, « Aucun »), taille des sous-titres | toujours |
+| 7 | **Mises à jour** | Me prévenir / Automatique / Jamais (défaut : Me prévenir, à confirmer), canal Stable | toujours (grisé pour Flatpak ou paquet de distribution, 4.5) |
+| 8 | **Résumé** | ce qui a été choisi, ce qui a été sauté, où le changer (« Réglages > Général > Configuration » etc.), « Terminer » | toujours |
+
+Conditions par système : Linux (moteurs Vulkan et TensorRT, RTX HDR guidé, `.desktop`), Windows (Windows ML,
+RTX HDR direct, page « Applications par défaut »), macOS (Core ML, pas de moteur à choisir : l'écran 2 saute).
+Une carte sans moteur supplémentaire possible n'a pas d'écran 2 ; un écran SDR n'a pas d'écran 4.
+
+**Réserves, dites ici pour ne rien promettre à tort** :
+- L'écran 5 dépend de ce que la couche audio sait déjà faire. Je n'ai pas vérifié que le lecteur propose le choix de
+  l'appareil de sortie ni plusieurs formats d'un même appareil (le code audio gère jusqu'à 8 canaux) : c'est un
+  **prérequis à vérifier** avant d'en faire un écran. « Casque / Enceintes / Home cinéma » vient du fil de la
+  spatialisation du stéréo (`/mnt/project-files/analyses/spatialisation-son-stereo.md`, « Complément 3 ») : ce
+  fichier n'est pas lisible sur ce PC, je me base sur le résumé du coordinateur ; le **rendu** (ce que fait chaque
+  choix) reste à y définir, l'assistant ne fait que **poser le réglage**.
+- L'écran 4b s'appuie sur les vérifications du code existant (Maxine, TensorRT) ; la liste exacte des points à
+  contrôler et leurs gestes se fixera en lisant `maxine_install` et `vendor_hdr` au moment de l'écrire, pas avant.
+
 ### 4.6 Textes à corriger tout de suite (liste non exhaustive)
 | Aujourd'hui | Proposé |
 |---|---|
@@ -379,25 +414,23 @@ résolution) ; jamais en pleine lecture. Un utilisateur en *Personnalisé* n'est
 - **Mode auto, amélioration** : à reprendre avec le coordinateur (qui l'a écrit) : réglages, repli, retour sur
   « plus de ×4 demande un écran rapide ».
 
-## 6. Étapes proposées
+## 6. Étapes proposées (ordre de l'implémentation, une PR par étape)
 
-1. **Textes et composants** (organisation inchangée) : 720p, vocabulaire, `badge()`, infobulles, retrait des
-   paragraphes. Visible tout de suite, risque faible.
-2. **Configuration automatique, partie données** (4.7) : `data/gpu_tiers.toml`, détection de la tranche, règle de
-   choix (carte, écran, vidéo, priorité). Testable sans interface, par tests unitaires sur des noms de cartes
-   réels (Vulkan, RADV, Intel, Apple).
-3. **Mécanique du menu** : arbre à gauche, groupes encadrés et lignes multiples, barre de défilement, largeurs,
-   dernière page mémorisée.
-4. **Réorganisation** : 9 catégories, Profils retiré, *Général > Configuration* (préréglages, priorité),
-   déplacement des réglages, bouton lecteur par défaut, « Ouvrir avec » au premier lancement, case « Réglages
-   avancés ». Clés nouvelles seulement : `last_page`, `advanced_shown`, `open_with_registered`,
-   `ask_default_player`, `preset`, `priority`. Aucune migration des clés existantes.
-5. **Benchmark** : « Évaluer ma machine » (proposé au premier lancement, refaisable dans les réglages), résultat
-   mémorisé par carte, pilote et version du moteur.
-6. **Mise à jour automatique** : vérification et réglages d'abord (sans installation), puis téléchargement signé et
-   application au lancement, essai Linux puis Windows. Chantier à part (signature, clé, manifeste).
-7. **Recherche** : registre des réglages, filtre par page puis par ligne (4.3 bis).
-8. **Passe de relecture** : infobulles relues d'un trait ; essai à 100 %, 150 % et 200 % d'échelle, sur 4K et
+1. **(a) Classement des cartes** (4.7) : `data/gpu_tiers.toml`, tranche détectée, sans effet. *PR #22.*
+2. **(b) Préréglages et application** : `Preset` / `Priority`, `apply_preset`, clés `[auto]` de `play.toml`,
+   appliqué à chaque ouverture de vidéo ; Personnalisé jamais écrasé.
+3. **(c) Benchmark** : « Évaluer ma machine », résultat mémorisé par carte, pilote et version du moteur.
+4. **(c bis) Assistant de premier démarrage** (4.8) : écrans 1 à 3 d'abord (détection, moteur, image et
+   fluidité, benchmark), puis HDR et RTX HDR guidé, audio (après vérification du prérequis), langues, mises à
+   jour, résumé ; « Relancer l'assistant » dans Général.
+5. **(d) Textes, pastilles, infobulles** : 720p, vocabulaire, `badge()`, retrait des paragraphes.
+6. **(e) Nouveau cadre en arbre** : arbre à gauche, groupes encadrés et lignes multiples, 9 catégories, Profils
+   retiré, case « Réglages avancés », bouton lecteur par défaut. Les clés nouvelles : `last_page`,
+   `advanced_shown`, `open_with_registered`, `ask_default_player`, `first_run_step`.
+7. **Mise à jour automatique** : vérification et réglages d'abord (sans installation), puis téléchargement signé
+   et application au lancement, essai Linux puis Windows. Chantier à part (signature, clé, manifeste).
+8. **Recherche** : registre des réglages, filtre par page puis par ligne (4.3 bis).
+9. **Passe de relecture** : infobulles relues d'un trait ; essai à 100 %, 150 % et 200 % d'échelle, sur 4K et
    1366×768.
 
 Chaque étape se teste localement (build, tests, snapshots du menu avant/après) puis un seul envoi à la fin, comme
@@ -414,7 +447,8 @@ par onglet, contrôle que chaque réglage de l'annexe A reste atteignable.
 5. Mises à jour : défaut **Me prévenir** (avis du coordinateur, à confirmer) ou **Automatique** (installe au prochain lancement) ?
 6. Pour GMFSS et le mode auto de la 0.4 : qu'est-ce que tu veux améliorer en priorité ?
 7. Configuration automatique (4.7) : les 5 tranches et les préréglages te conviennent ? (Benchmark : décidé, proposé au début et refaisable dans les réglages.)
-8. L'ordre des étapes (section 6) te convient ? Je propose de commencer par 1 (textes) puis 2 (données de l'automatique).
+8. L'ordre des étapes (section 6) te convient ?
+9. Assistant de premier démarrage (4.8) : les 8 écrans te conviennent ? L'étape audio dépend du choix de l'appareil de sortie, que je dois vérifier dans le lecteur.
 
 ## Annexe A : arbre actuel, réglage par réglage
 
