@@ -77,4 +77,18 @@ std::vector<RifeEntry> rife_menu(const std::vector<std::string>& available) {
   return menu;
 }
 
+std::filesystem::path tier_variant(const std::filesystem::path& model, PrecisionTier tier) {
+  if (tier == PrecisionTier::Balanced) return model;
+  std::filesystem::path variant = model;
+  variant.replace_filename(model.stem().string() + (tier == PrecisionTier::Performance ? "_fp8" : "_fp32") +
+                           model.extension().string());
+  std::error_code error;
+  return std::filesystem::is_regular_file(variant, error) ? variant : model;
+}
+
+TierSupport sibling_tiers(const std::filesystem::path& model, bool fp8_engine) {
+  return TierSupport{.performance = fp8_engine && tier_variant(model, PrecisionTier::Performance) != model,
+                     .quality = tier_variant(model, PrecisionTier::Quality) != model};
+}
+
 }  // namespace ajp::app::play

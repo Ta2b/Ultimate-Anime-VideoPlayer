@@ -429,6 +429,7 @@ PlaySettings live_part(const PlaySettings& running, const PlaySettings& wanted, 
   s.priority = wanted.priority;
   s.downscale = wanted.downscale;
   s.rife_auto = wanted.rife_auto;
+  if (!wanted.upscale) s.span_precision = wanted.span_precision;  // sans SPAN, rien à recharger
   if (rife_loaded || wanted.rife_factor < 2) {
     s.rife_factor = wanted.rife_factor;
     s.rife_factor_den = wanted.rife_factor_den;
@@ -437,7 +438,8 @@ PlaySettings live_part(const PlaySettings& running, const PlaySettings& wanted, 
     s.motion_engine = wanted.motion_engine;
     s.rife_model = wanted.rife_model;
     s.span_order = wanted.span_order;
-    s.gmfss_quality = wanted.gmfss_quality;
+    s.gmfss_precision = wanted.gmfss_precision;
+    s.motion_precision = wanted.motion_precision;
   }
   // Le modèle RIFE ne sert pas à un autre moteur du mouvement : le changer ne recharge rien.
   if (running.motion_engine == wanted.motion_engine && wanted.motion_engine != MotionEngine::Rife)
@@ -484,7 +486,7 @@ PlaySettings live_part(const PlaySettings& running, const PlaySettings& wanted, 
 }
 
 Change change_between(const PlaySettings& running, const PlaySettings& wanted, bool rife_loaded) {
-  std::vector<std::string_view> reopen;
+  std::vector<std::string> reopen;
   if (running.upscale != wanted.upscale || running.model != wanted.model ||
       running.work_height != wanted.work_height)
     reopen.emplace_back("le moteur SPAN est rechargé (construit la première fois pour cette taille)");
@@ -504,17 +506,25 @@ Change change_between(const PlaySettings& running, const PlaySettings& wanted, b
                         : wanted.span_order == SpanOrder::After ? "le warp passe après SPAN"
                                                                 : "le warp passe selon la sortie");
   }
+  if (wanted.upscale && running.span_precision != wanted.span_precision) {
+    reopen.emplace_back(std::format("SPAN passe en {} (construit la première fois pour cette taille)",
+                                    precision_text(wanted.span_precision)));
+  }
+  if (wanted.rife_factor >= 2 && !is_gmfss(wanted.motion_engine) &&
+      running.motion_engine == wanted.motion_engine && running.motion_precision != wanted.motion_precision) {
+    reopen.emplace_back(std::format("{} passe en {} (construit la première fois pour cette taille)",
+                                    label(wanted.motion_engine), precision_text(wanted.motion_precision)));
+  }
   if (wanted.rife_factor >= 2 && is_gmfss(wanted.motion_engine) &&
-      running.motion_engine == wanted.motion_engine && running.gmfss_quality != wanted.gmfss_quality) {
+      running.motion_engine == wanted.motion_engine && running.gmfss_precision != wanted.gmfss_precision) {
     reopen.emplace_back(
-        wanted.gmfss_quality
-            ? "GMFSS passe en qualité (GMFlow en FP32, construit la première fois pour cette taille)"
-            : "GMFSS passe en performance (GMFlow en FP16)");
+        std::format("GMFSS passe en {} (GMFlow en {}, construit la première fois pour cette "
+                    "taille)",
+                    label(wanted.gmfss_precision), precision_text(wanted.gmfss_precision)));
   }
   if (!reopen.empty()) {
     std::string reason;
-    for (const std::string_view part : reopen)
-      reason += std::format("{}{}", reason.empty() ? "" : " ; ", part);
+    for (const std::string& part : reopen) reason += std::format("{}{}", reason.empty() ? "" : " ; ", part);
     return Change{.cost = ChangeCost::Reopen, .reason = reason + " ; la lecture reprend au même endroit"};
   }
   if (running == wanted) return {};

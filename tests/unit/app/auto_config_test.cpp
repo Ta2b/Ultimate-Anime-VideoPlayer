@@ -51,8 +51,8 @@ TEST_CASE("la résolution de travail suit l'écran et la tranche", "[auto_config
   CHECK(applied(Preset::Auto, Tier::Normal, 1080, 60.0).work_height == 540);  // 540p -> 1080p
   CHECK(applied(Preset::Auto, Tier::Normal, 1440, 60.0).work_height == 720);  // 720p -> 1440p
   CHECK(applied(Preset::Auto, Tier::Fast, 2160, 60.0).work_height == 720);    // plafond de la tranche
-  CHECK(applied(Preset::Auto, Tier::Light, 2160, 60.0).work_height == 540);   // la carte légère reste à 540p
-  CHECK(applied(Preset::Auto, Tier::Normal, 0, 0.0).work_height == 540);      // écran inconnu : 1080p
+  CHECK(applied(Preset::Auto, Tier::Light, 2160, 60.0).work_height == 540);  // la carte légère reste à 540p
+  CHECK(applied(Preset::Auto, Tier::Normal, 0, 0.0).work_height == 540);     // écran inconnu : 1080p
   // Jamais plus que la source.
   const core::SourceInfo sd{.width = 640, .height = 480, .fps = 23.976};
   CHECK(applied(Preset::Auto, Tier::Ultra, 2160, 60.0, sd).work_height == 480);
@@ -64,8 +64,11 @@ TEST_CASE("la priorité décale d'un cran", "[auto_config]") {
   const int balance = applied(Preset::Auto, Tier::Normal, 1440, 144.0).rife_factor;
   CHECK(applied(Preset::Auto, Tier::Normal, 1440, 144.0, k1080p24, Priority::Fluidity).rife_factor >=
         balance);
-  CHECK(applied(Preset::Auto, Tier::Ultra, 2160, 165.0, k1080p24, Priority::Image).gmfss_quality);
-  CHECK_FALSE(applied(Preset::Auto, Tier::Ultra, 2160, 165.0).gmfss_quality);
+  CHECK(applied(Preset::Auto, Tier::Ultra, 2160, 165.0, k1080p24, Priority::Image).gmfss_precision ==
+        PrecisionTier::Quality);
+  CHECK(applied(Preset::Auto, Tier::Ultra, 2160, 165.0).gmfss_precision == PrecisionTier::Balanced);
+  // L'automatique ne choisit jamais le FP8 : il se demande.
+  CHECK(applied(Preset::Auto, Tier::Normal, 1440, 144.0).span_precision == PrecisionTier::Balanced);
 }
 
 TEST_CASE("le multiplicateur suit l'écran, une source rapide n'est pas interpolée", "[auto_config]") {

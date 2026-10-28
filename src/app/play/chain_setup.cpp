@@ -82,8 +82,8 @@ std::string ChainEngines::motion_label(const PlaySettings& settings) const {
 std::string ChainEngines::span_label() const {
   if (!model) return std::format("sans agrandissement · {}", reduce);
   return std::format("SPAN ×{} · {}{} · {} · {} → {}x{}", factor, model->path.stem().string(),
-                     span_int8 ? " INT8" : "", backend_name, reduce, work.width * factor,
-                     work.height * factor);
+                     span_int8 ? std::format(" {}", variant_text(span_int8->kind)) : std::string(),
+                     backend_name, reduce, work.width * factor, work.height * factor);
 }
 
 UpscaleSetup ChainEngines::upscale(const PlaySettings& settings, std::shared_ptr<LiveSettings> live,
@@ -116,7 +116,32 @@ UpscaleSetup ChainEngines::upscale(const PlaySettings& settings, std::shared_ptr
                       .slots = std::move(slots)};
 }
 
+namespace {
+
+std::expected<std::optional<ChainEngines>, Refusal> prepare_chain_once(Player& p,
+                                                                       const PlaySettings& settings);
+
+}  // namespace
+
 std::expected<std::optional<ChainEngines>, Refusal> prepare_chain(Player& p, const PlaySettings& settings) {
+  auto chain = prepare_chain_once(p, settings);
+  if (chain || (settings.span_precision == PrecisionTier::Balanced &&
+                settings.motion_precision == PrecisionTier::Balanced &&
+                settings.gmfss_precision == PrecisionTier::Balanced))
+    return chain;
+  // Un graphe FP8 ou FP32 que le moteur refuse : la chaîne repart au cran Équilibre (FP16), celui de
+  // toujours.
+  log_channel("app")->warn("chaîne refusée aux crans de précision choisis ({}) : Équilibre (FP16)",
+                           chain.error().detail);
+  PlaySettings balanced = settings;
+  balanced.span_precision = balanced.motion_precision = balanced.gmfss_precision = PrecisionTier::Balanced;
+  return prepare_chain_once(p, balanced);
+}
+
+namespace {
+
+std::expected<std::optional<ChainEngines>, Refusal> prepare_chain_once(Player& p,
+                                                                       const PlaySettings& settings) {
   const auto log = log_channel("app");
   const media::TrackInfo& video = p.video;
   ChainEngines c;
@@ -179,26 +204,45 @@ std::expected<std::optional<ChainEngines>, Refusal> prepare_chain(Player& p, con
       c.backend_name != "tensorrt" && rebar.rfind("inactif", 0) == 0)
     log->warn("Resizable BAR inactif : activer Above 4G Decoding et Resizable BAR dans le BIOS");
 
-  // SPAN INT8 sous TensorRT quand tools/span/quantize_span.py en a laissé une variante qui passe ses
-  // garde-fous (span_int8.h) ; le SPAN choisi sinon, et aussi si TensorRT refuse la variante.
-  if (c.model && c.backend->capabilities().int8) {
-    SpanInt8Lookup int8 = find_span_int8(c.model->path, p.paths.engines.parent_path() / "modeles");
-    if (!int8.note.empty()) log->info("SPAN INT8 : {}", int8.note);
-    c.span_int8 = std::move(int8.variant);
+  // La variante de SPAN du cran (precision.h) quand tools/span/quantize_span.py en a laissé une qui passe
+  // ses garde-fous (span_int8.h) : Performance prend le FP8 (moteur qui l'accélère), puis l'INT8 ; Équilibre
+  // l'INT8, sinon le FP16 tel que livré ; Qualité le FP32. Le SPAN choisi sinon, et aussi si TensorRT refuse
+  // la variante.
+  if (c.model) {
+    const std::filesystem::path variants = p.paths.engines.parent_path() / "modeles";
+    const gpu::BackendCaps caps = c.backend->capabilities();
+    const PrecisionTier tier = settings.span_precision;
+    std::vector<SpanVariantKind> wanted;
+    if (tier == PrecisionTier::Performance && caps.fp8) wanted.push_back(SpanVariantKind::Fp8);
+    if (tier != PrecisionTier::Quality && caps.int8) wanted.push_back(SpanVariantKind::Int8);
+    if (tier == PrecisionTier::Quality) wanted.push_back(SpanVariantKind::Fp32);
+    if (tier == PrecisionTier::Performance && !caps.fp8)
+      log->info("SPAN Performance (FP8) : ce moteur ne le calcule pas, variante INT8 ou FP16");
+    for (const SpanVariantKind kind : wanted) {
+      SpanInt8Lookup found = find_span_variant(kind, c.model->path, variants);
+      if (!found.note.empty()) log->info("SPAN {} : {}", variant_text(kind), found.note);
+      if (found.variant) {
+        c.span_int8 = std::move(found.variant);
+        break;
+      }
+    }
+    if (!c.span_int8 && tier != PrecisionTier::Balanced)
+      log->info("SPAN {} : aucune variante, FP16 à la place", label(tier));
   }
   if (c.model) {
     const auto prepare_span = [&] {
-      return prepare_engine(p, init, *c.backend, c.span_int8 ? c.span_int8->onnx : c.model->path,
-                            gpu::Shape{.dims = {1, 3, c.work.height, c.work.width}},
-                            EngineLabel{.name = c.span_int8 ? "SPAN INT8" : "SPAN",
-                                        .model = c.model->path.stem().string(),
-                                        .width = c.work.width,
-                                        .height = c.work.height},
-                            gpu::Lane::Upscale);
+      return prepare_engine(
+          p, init, *c.backend, c.span_int8 ? c.span_int8->onnx : c.model->path,
+          gpu::Shape{.dims = {1, 3, c.work.height, c.work.width}},
+          EngineLabel{.name = c.span_int8 ? std::format("SPAN {}", variant_text(c.span_int8->kind)) : "SPAN",
+                      .model = c.model->path.stem().string(),
+                      .width = c.work.width,
+                      .height = c.work.height},
+          gpu::Lane::Upscale);
     };
     auto loaded = prepare_span();
     if (!loaded && c.span_int8) {
-      log->warn("SPAN INT8 refusé ({}) : SPAN FP16", loaded.error().detail);
+      log->warn("SPAN {} refusé ({}) : SPAN FP16", variant_text(c.span_int8->kind), loaded.error().detail);
       c.span_int8.reset();
       loaded = prepare_span();
     }
@@ -214,7 +258,7 @@ std::expected<std::optional<ChainEngines>, Refusal> prepare_chain(Player& p, con
   // GMFSS Fortuna à la place de RIFE, à la taille de travail ; RIFE reprend si ses graphes manquent.
   if (want_gmfss) {
     auto loaded = prepare_gmfss(p, init, *c.backend, c.gmfss_places, c.gmfss_variant, c.work.width,
-                                c.work.height, settings.gmfss_quality);
+                                c.work.height, settings.gmfss_precision);
     if (!loaded) {
       log->warn("{} ; {}", loaded.error().detail, c.rife_model ? "RIFE à la place" : "sans interpolation");
       p.ui.controls().notify(c.rife_model ? "GMFSS indisponible : RIFE" : "GMFSS indisponible",
@@ -227,8 +271,8 @@ std::expected<std::optional<ChainEngines>, Refusal> prepare_chain(Player& p, con
   }
   // DistilDRBA à la place de RIFE, à la taille de travail ; RIFE reprend si son graphe manque.
   if (want_drba) {
-    auto loaded =
-        prepare_distil_drba(p, init, *c.backend, c.gmfss_places, c.work.width, c.work.height, c.drba_align);
+    auto loaded = prepare_distil_drba(p, init, *c.backend, c.gmfss_places, c.work.width, c.work.height,
+                                      c.drba_align, settings.motion_precision);
     if (!loaded) {
       log->warn("{} ; {}", loaded.error().detail, c.rife_model ? "RIFE à la place" : "sans interpolation");
       p.ui.controls().notify(c.rife_model ? "DistilDRBA indisponible : RIFE" : "DistilDRBA indisponible",
@@ -237,6 +281,21 @@ std::expected<std::optional<ChainEngines>, Refusal> prepare_chain(Player& p, con
       return std::nullopt;
     } else {
       c.drba = std::move(**loaded);
+    }
+  }
+  // RIFE au cran de précision demandé : le graphe « _fp8 » ou « _fp32 » à côté du modèle quand il y est (FP8
+  // sur un moteur qui l'accélère seulement) ; le modèle tel que livré sinon.
+  if (c.rife_model && settings.motion_engine == MotionEngine::Rife &&
+      settings.motion_precision != PrecisionTier::Balanced) {
+    const PrecisionTier tier = settings.motion_precision;
+    if (tier == PrecisionTier::Performance && !c.backend->capabilities().fp8) {
+      log->info("RIFE Performance (FP8) : ce moteur ne le calcule pas, Équilibre à la place");
+    } else if (const std::filesystem::path variant = tier_variant(*c.rife_model, tier);
+               variant != *c.rife_model) {
+      log->info("RIFE {} : {}", label(tier), variant.filename().string());
+      c.rife_model = variant;
+    } else {
+      log->info("RIFE {} : aucun graphe {}, Équilibre à la place", label(tier), precision_text(tier));
     }
   }
   // L'interpolation d'Apple à la place de RIFE image, à la taille de travail ; RIFE reprend sous un
@@ -305,5 +364,7 @@ std::expected<std::optional<ChainEngines>, Refusal> prepare_chain(Player& p, con
   }
   return std::optional<ChainEngines>(std::move(c));
 }
+
+}  // namespace
 
 }  // namespace ajp::app::play

@@ -12,6 +12,7 @@
 #include <string_view>
 #include <vector>
 
+#include "app/play/precision.h"
 #include "core/types.h"
 #include "prepare/onnx_dims.h"
 
@@ -41,43 +42,60 @@ inline constexpr int kGmfssHalfAlign = 128;
 inline constexpr std::string_view kGmfssHalfQualityPairFile = "gmfss_fortuna_base_s05q_pair.onnx";
 inline constexpr std::string_view kGmfssUnionHalfQualityPairFile = "gmfss_fortuna_union_s05q_pair.onnx";
 
+// Cran Performance : la paire d'un flot à demi-échelle dont GMFlow est quantifié en FP8 (E4M3, nœuds
+// Q/DQ), avec la fusion FP16 du cran Équilibre. Calcul en FP8 sur les cartes qui l'accélèrent (RTX 40
+// et après) ; absente ou refusée par le moteur, la paire FP16 prend sa place.
+inline constexpr std::string_view kGmfssHalfFp8PairFile = "gmfss_fortuna_base_s05fp8_pair.onnx";
+inline constexpr std::string_view kGmfssUnionHalfFp8PairFile = "gmfss_fortuna_union_s05fp8_pair.onnx";
+
 struct GmfssFiles {
   std::string_view pair;
   std::string_view fusion;
 };
-// quality : la paire du mode qualité (flot à demi-échelle seulement), avec la fusion du mode performance.
-constexpr GmfssFiles gmfss_files(GmfssVariant variant, bool half_flow = false, bool quality = false) {
-  if (half_flow && quality) {
-    return variant == GmfssVariant::Union
-               ? GmfssFiles{kGmfssUnionHalfQualityPairFile, kGmfssUnionHalfFusionFile}
-               : GmfssFiles{kGmfssHalfQualityPairFile, kGmfssHalfFusionFile};
+// tier : la paire du cran Performance (FP8) ou Qualité (FP32), flot à demi-échelle seulement, avec la
+// fusion du cran Équilibre ; Équilibre (FP16) est la paire de base.
+constexpr GmfssFiles gmfss_files(GmfssVariant variant, bool half_flow = false,
+                                 PrecisionTier tier = PrecisionTier::Balanced) {
+  const bool union_model = variant == GmfssVariant::Union;
+  if (half_flow && tier == PrecisionTier::Quality) {
+    return union_model ? GmfssFiles{kGmfssUnionHalfQualityPairFile, kGmfssUnionHalfFusionFile}
+                       : GmfssFiles{kGmfssHalfQualityPairFile, kGmfssHalfFusionFile};
+  }
+  if (half_flow && tier == PrecisionTier::Performance) {
+    return union_model ? GmfssFiles{kGmfssUnionHalfFp8PairFile, kGmfssUnionHalfFusionFile}
+                       : GmfssFiles{kGmfssHalfFp8PairFile, kGmfssHalfFusionFile};
   }
   if (half_flow) {
-    return variant == GmfssVariant::Union ? GmfssFiles{kGmfssUnionHalfPairFile, kGmfssUnionHalfFusionFile}
-                                          : GmfssFiles{kGmfssHalfPairFile, kGmfssHalfFusionFile};
+    return union_model ? GmfssFiles{kGmfssUnionHalfPairFile, kGmfssUnionHalfFusionFile}
+                       : GmfssFiles{kGmfssHalfPairFile, kGmfssHalfFusionFile};
   }
-  return variant == GmfssVariant::Union ? GmfssFiles{kGmfssUnionPairFile, kGmfssUnionFusionFile}
-                                        : GmfssFiles{kGmfssPairFile, kGmfssFusionFile};
+  return union_model ? GmfssFiles{kGmfssUnionPairFile, kGmfssUnionFusionFile}
+                     : GmfssFiles{kGmfssPairFile, kGmfssFusionFile};
 }
 
 struct GmfssModels {
   std::filesystem::path pair;
   std::filesystem::path fusion;
-  int align = 64;        // multiple des plans remplis : 128 pour le flot à l'échelle 0,5
-  bool quality = false;  // la paire du mode qualité (GMFlow en FP32)
+  int align = 64;  // multiple des plans remplis : 128 pour le flot à l'échelle 0,5
+  PrecisionTier tier = PrecisionTier::Balanced;  // le cran de la paire rendue (FP8, FP16, FP32)
 };
 
 // Les deux graphes de variant du premier de ces dossiers qui les a tous les deux. Le flot à demi-échelle
 // passe toujours avant le flot entier (prefer_half) : à qualité égale ou meilleure il coûte moitié moins
 // (mesuré sur une 4070 Ti, 1280x768) ; le flot entier ne sert que de repli quand les graphes _s05
-// manquent. quality demande d'abord la paire à GMFlow FP32 du flot à demi-échelle ; sans elle, la paire
-// FP16 prend sa place (GmfssModels::quality dit laquelle est rendue).
+// manquent. tier demande d'abord la paire FP8 (Performance) ou FP32 (Qualité) du flot à demi-échelle ;
+// sans elle, la paire FP16 prend sa place (GmfssModels::tier dit laquelle est rendue).
 std::optional<GmfssModels> find_gmfss(std::span<const std::filesystem::path> dirs,
                                       GmfssVariant variant = GmfssVariant::Base, bool prefer_half = true,
-                                      bool quality = false);
+                                      PrecisionTier tier = PrecisionTier::Balanced);
 
-// Le mode qualité est-il installé : la paire s05q et la fusion s05 de variant dans un même dossier.
-bool gmfss_quality_available(std::span<const std::filesystem::path> dirs, GmfssVariant variant);
+// Le cran tier (Performance ou Qualité) est-il installé : sa paire et la fusion s05 de variant dans un même
+// dossier. Équilibre l'est dès que les graphes s05 le sont.
+bool gmfss_tier_available(std::span<const std::filesystem::path> dirs, GmfssVariant variant,
+                          PrecisionTier tier);
+
+// Les crans installés de variant ; fp8_engine : le moteur calcule le FP8.
+TierSupport gmfss_tiers(std::span<const std::filesystem::path> dirs, GmfssVariant variant, bool fp8_engine);
 
 // Les dimensions nommées des deux graphes pour des plans remplis de padded_width × padded_height
 // (multiples de 64) : « H », « W », puis « H/2 » à « W/8 ».

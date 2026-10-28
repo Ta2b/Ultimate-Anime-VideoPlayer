@@ -66,6 +66,20 @@ std::expected<void, Refusal> read(const toml::table& table, std::string_view sec
   return refuse(RefusalCode::FieldType, std::format("{}.{}", section, key));
 }
 
+// Un cran de précision (precision.h) : sa clé, ou FieldOutOfRange pour un autre texte.
+std::expected<void, Refusal> read_precision(const toml::table& table, std::string_view section,
+                                            std::string_view key, PrecisionTier& out) {
+  std::string text(name(out));
+  if (auto ok = read(table, section, key, text); !ok) return ok;
+  for (int i = 0; i < kPrecisionTierCount; ++i) {
+    if (name(static_cast<PrecisionTier>(i)) == text) {
+      out = static_cast<PrecisionTier>(i);
+      return {};
+    }
+  }
+  return refuse(RefusalCode::FieldOutOfRange, std::format("{}.{} : « {} »", section, key, text));
+}
+
 // L'ancienne liste de langues : un tableau de balises (« ["fre", "eng"] ») ; FieldType sinon.
 std::expected<void, Refusal> read_legacy_languages(const toml::table& table, std::string_view section,
                                                    std::vector<std::string>& out) {
@@ -148,6 +162,7 @@ std::expected<PlaySettings, Refusal> parse_settings(std::string_view toml_text) 
     reads.push_back(read(*image, "image", "model", s.model));
     reads.push_back(read(*image, "image", "work_height", s.work_height));
     reads.push_back(read(*image, "image", "downscale", downscale));
+    reads.push_back(read_precision(*image, "image", "span_precision", s.span_precision));
     bool known = false;
     for (int i = 0; i < kDownscaleCount; ++i) {
       const auto filter = static_cast<Downscale>(i);
@@ -165,7 +180,12 @@ std::expected<PlaySettings, Refusal> parse_settings(std::string_view toml_text) 
     reads.push_back(read(*interpolation, "interpolation", "smooth_motion", s.smooth_motion));
     reads.push_back(read(*interpolation, "interpolation", "model", s.rife_model));
     reads.push_back(read(*interpolation, "interpolation", "keep_poses", s.keep_poses));
-    reads.push_back(read(*interpolation, "interpolation", "gmfss_quality", s.gmfss_quality));
+    // gmfss_quality (faux : l'ancien Performance, devenu Équilibre ; vrai : Qualité), puis les crans.
+    bool legacy_quality = false;
+    reads.push_back(read(*interpolation, "interpolation", "gmfss_quality", legacy_quality));
+    if (legacy_quality) s.gmfss_precision = PrecisionTier::Quality;
+    reads.push_back(read_precision(*interpolation, "interpolation", "gmfss_precision", s.gmfss_precision));
+    reads.push_back(read_precision(*interpolation, "interpolation", "motion_precision", s.motion_precision));
     reads.push_back(read(*interpolation, "interpolation", "auto", s.rife_auto));
     // span_order ; les fichiers d'avant portent warp_after_span, qui ne compte que s'il est vrai (faux
     // était le défaut, écrit partout : il laisse Auto).
@@ -410,11 +430,13 @@ std::string format_settings(const PlaySettings& s) {
   root.insert("image", toml::table{{"upscale", s.upscale},
                                    {"model", s.model},
                                    {"work_height", s.work_height},
-                                   {"downscale", std::string(name(s.downscale))}});
+                                   {"downscale", std::string(name(s.downscale))},
+                                   {"span_precision", std::string(name(s.span_precision))}});
   toml::table interpolation{{"engine", std::string(name(s.motion_engine))},
                             {"model", s.rife_model},
                             {"keep_poses", s.keep_poses},
-                            {"gmfss_quality", s.gmfss_quality},
+                            {"gmfss_precision", std::string(name(s.gmfss_precision))},
+                            {"motion_precision", std::string(name(s.motion_precision))},
                             {"auto", s.rife_auto},
                             {"span_order", std::string(name(s.span_order))},
                             {"smooth_motion", s.smooth_motion}};

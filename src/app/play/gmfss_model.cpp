@@ -9,24 +9,25 @@
 namespace ajp::app::play {
 
 std::optional<GmfssModels> find_gmfss(std::span<const std::filesystem::path> dirs, GmfssVariant variant,
-                                      bool prefer_half, bool quality) {
+                                      bool prefer_half, PrecisionTier tier) {
   std::error_code error;
-  // Les essais dans l'ordre : la paire de qualité (demi-échelle), puis les graphes du flot à demi-échelle
-  // et du flot entier, dans l'ordre que prefer_half donne.
+  // Les essais dans l'ordre : la paire du cran demandé (demi-échelle), puis les graphes du flot à
+  // demi-échelle et du flot entier, dans l'ordre que prefer_half donne.
   struct Attempt {
     bool half_flow;
-    bool quality;
+    PrecisionTier tier;
   };
   std::vector<Attempt> attempts;
-  if (quality) attempts.push_back({true, true});
-  for (const bool half_flow : {prefer_half, !prefer_half}) attempts.push_back({half_flow, false});
-  for (const auto& [half_flow, wants_quality] : attempts) {
-    const GmfssFiles files = gmfss_files(variant, half_flow, wants_quality);
+  if (tier != PrecisionTier::Balanced) attempts.push_back({true, tier});
+  for (const bool half_flow : {prefer_half, !prefer_half})
+    attempts.push_back({half_flow, PrecisionTier::Balanced});
+  for (const auto& [half_flow, attempt_tier] : attempts) {
+    const GmfssFiles files = gmfss_files(variant, half_flow, attempt_tier);
     for (const std::filesystem::path& dir : dirs) {
       GmfssModels found{.pair = dir / files.pair,
                         .fusion = dir / files.fusion,
                         .align = half_flow ? kGmfssHalfAlign : kernels::kRifeAlign,
-                        .quality = wants_quality};
+                        .tier = attempt_tier};
       if (std::filesystem::is_regular_file(found.pair, error) &&
           std::filesystem::is_regular_file(found.fusion, error))
         return found;
@@ -35,9 +36,16 @@ std::optional<GmfssModels> find_gmfss(std::span<const std::filesystem::path> dir
   return std::nullopt;
 }
 
-bool gmfss_quality_available(std::span<const std::filesystem::path> dirs, GmfssVariant variant) {
-  const std::optional<GmfssModels> found = find_gmfss(dirs, variant, true, true);
-  return found && found->quality;
+bool gmfss_tier_available(std::span<const std::filesystem::path> dirs, GmfssVariant variant,
+                          PrecisionTier tier) {
+  const std::optional<GmfssModels> found = find_gmfss(dirs, variant, true, tier);
+  return found && found->tier == tier;
+}
+
+TierSupport gmfss_tiers(std::span<const std::filesystem::path> dirs, GmfssVariant variant, bool fp8_engine) {
+  return TierSupport{
+      .performance = fp8_engine && gmfss_tier_available(dirs, variant, PrecisionTier::Performance),
+      .quality = gmfss_tier_available(dirs, variant, PrecisionTier::Quality)};
 }
 
 std::vector<prepare::NamedDim> gmfss_dims(int padded_width, int padded_height) {

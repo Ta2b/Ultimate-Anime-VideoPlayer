@@ -32,6 +32,7 @@
 #include "app/play/model_choice.h"
 #include "app/play/profiles.h"
 #include "app/play/scripted_input.h"
+#include "app/play/span_int8.h"
 #include "core/clock.h"
 #include "core/engines.h"
 #include "core/keys.h"
@@ -117,7 +118,11 @@ SettingsChoices home_choices(const HomeScreen& h, const HomeState& st, const Pla
   // Sans vidéo ouverte, on ne sait pas quel moteur sera pris : GMFSS ne tourne que sous TensorRT,
   // donc sur une carte NVIDIA.
   const bool gmfss = find_gmfss(places).has_value() && gpu_facts(h.screen).vendor == GpuVendor::Nvidia;
-  const bool drba = find_distil_drba(places).has_value();
+  const std::optional<DrbaModel> drba_file = find_distil_drba(places);
+  const bool drba = drba_file.has_value();
+  // Sans moteur chargé, le FP8 se présume sur une RTX (le moteur TensorRT le calcule dès Ada) ; la chaîne
+  // retombe sur l'Équilibre au chargement si la carte ne le calcule pas.
+  const bool fp8_engine = gpu_facts(h.screen).vendor == GpuVendor::Nvidia && gpu_facts(h.screen).tensor_cores;
   const std::int64_t period = display_period_us(h.screen.window());
   const std::optional<DisplayFacts> display = read_display(display_name(h.screen.window()));
   return SettingsChoices{
@@ -131,8 +136,12 @@ SettingsChoices home_choices(const HomeScreen& h, const HomeState& st, const Pla
       .rife_available = rife.has_value() || gmfss || drba || offered(MotionEngine::Apple),
       .gmfss_available = gmfss,
       .gmfss_union_available = gmfss && find_gmfss(places, GmfssVariant::Union).has_value(),
-      .gmfss_quality_available = gmfss && gmfss_quality_available(places, GmfssVariant::Base),
-      .gmfss_union_quality_available = gmfss && gmfss_quality_available(places, GmfssVariant::Union),
+      .gmfss_tiers = gmfss ? gmfss_tiers(places, GmfssVariant::Base, fp8_engine) : TierSupport{},
+      .gmfss_union_tiers = gmfss ? gmfss_tiers(places, GmfssVariant::Union, fp8_engine) : TierSupport{},
+      .span_tiers = model ? span_tiers(model->path, h.paths.engines.parent_path() / "modeles", fp8_engine)
+                          : TierSupport{},
+      .rife_tiers = rife ? sibling_tiers(rife->path, fp8_engine) : TierSupport{},
+      .drba_tiers = drba_file ? sibling_tiers(drba_file->path, fp8_engine) : TierSupport{},
       .distil_drba_available = drba,
       .rife_loaded = false,
       .rife_models = rife ? rife->available : std::vector<std::string>{},

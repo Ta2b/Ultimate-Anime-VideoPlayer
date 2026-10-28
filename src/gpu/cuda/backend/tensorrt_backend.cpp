@@ -237,6 +237,7 @@ BackendCaps TensorRtBackend::capabilities() const {
       .needs_host_sync = false,
       .fp16 = true,
       .int8 = true,  // graphes Q/DQ (SPAN INT8, span_int8.h) : Turing et après
+      .fp8 = properties_.major > 8 || (properties_.major == 8 && properties_.minor >= 9),  // Ada et après
       .matrix_units = true,
       .import_formats = {PixelFormat::Nv12, PixelFormat::P010, PixelFormat::P016},
       .lanes = lanes_,

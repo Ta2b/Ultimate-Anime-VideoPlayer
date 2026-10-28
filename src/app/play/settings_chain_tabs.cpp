@@ -31,6 +31,30 @@ constexpr std::array<HeightChoice, 5> kHeights{{
     {480, "480p"},
 }};
 
+// Le sélecteur de cran de précision : « Performance · FP8 », « Équilibre · FP16 », « Qualité · FP32 ». Un
+// cran que le poste ne rend pas est grisé ; choisi quand même (play.toml), la chaîne prend l'Équilibre.
+bool precision_combo(const char* title, PrecisionTier& tier, const TierSupport& support) {
+  const auto text = [](PrecisionTier t) { return std::format("{} · {}", label(t), precision_text(t)); };
+  std::string shown = text(tier);
+  if (!support.has(tier)) shown += " · indisponible, Équilibre";
+  bool changed = false;
+  if (ImGui::BeginCombo(title, shown.c_str())) {
+    for (int i = 0; i < kPrecisionTierCount; ++i) {
+      const auto candidate = static_cast<PrecisionTier>(i);
+      const bool present = support.has(candidate);
+      std::string entry = text(candidate);
+      if (!present) entry += " · absent";
+      if (ImGui::Selectable(entry.c_str(), candidate == tier, present ? 0 : ImGuiSelectableFlags_Disabled) &&
+          candidate != tier) {
+        tier = candidate;
+        changed = true;
+      }
+    }
+    ImGui::EndCombo();
+  }
+  return changed;
+}
+
 std::string motion_description(MotionEngine engine) {
   switch (engine) {
     case MotionEngine::Rife:
@@ -73,8 +97,15 @@ void image_tab(PlaySettings& d, const SettingsChoices& choices) {
     }
     ImGui::EndCombo();
   }
+  precision_combo("Précision de SPAN", d.span_precision, choices.span_tiers);
   ImGui::EndDisabled();
   panel::tip("Performance : le plus rapide. Balanced : plus fin, plus lent. Sharp1 : contours plus nets.");
+  panel::tip(
+      "Précision de SPAN. Performance : calcul en FP8 sur les RTX 40 et après, le plus rapide, avec une "
+      "perte "
+      "de détail à juger à l'œil. Équilibre : FP16, le réseau tel que livré. Qualité : FP32. Un cran sans "
+      "variante installée (tools/span/quantize_span.py --precision fp8 ou fp32) est grisé ; la lecture "
+      "reprend en FP16 s'il est refusé. Recharge la lecture.");
 
   section("Réduction avant l'agrandissement");
   // La source sans réduction, avec sa hauteur quand on la connaît : « 1080 lignes », pas « 4K », que
@@ -240,6 +271,16 @@ void fluidity_tab(PlaySettings& d, const SettingsChoices& choices, bool exportin
       ImGui::EndCombo();
     }
     ImGui::EndDisabled();
+    if (d.motion_engine == MotionEngine::Rife) {
+      precision_combo("Précision de RIFE", d.motion_precision, choices.rife_tiers);
+      panel::tip(
+          "Performance : le graphe « _fp8 » à côté du modèle (RTX 40 et après), le plus rapide, avec une "
+          "perte "
+          "à juger à l'œil. Équilibre : FP16 à îlots FP32, le modèle tel que livré. Qualité : le graphe "
+          "« _fp32 ». Un cran sans graphe est grisé ; la lecture reprend en FP16 s'il est refusé. Recharge "
+          "la "
+          "lecture.");
+    }
     for (const RifeEntry& entry : rife_menu(choices.rife_models)) {
       if (!entry.present) missing += std::format("{}{}", missing.empty() ? "" : ", ", entry.file);
     }
@@ -250,26 +291,29 @@ void fluidity_tab(PlaySettings& d, const SettingsChoices& choices, bool exportin
   }
   if (is_gmfss(d.motion_engine) && panel::advanced()) {
     const bool union_model = d.motion_engine == MotionEngine::GmfssUnion;
-    const bool quality_present =
-        union_model ? choices.gmfss_union_quality_available : choices.gmfss_quality_available;
-    ImGui::BeginDisabled(!quality_present);
-    if (ImGui::BeginCombo("GMFSS", d.gmfss_quality && quality_present ? "Qualité" : "Performance")) {
-      if (ImGui::Selectable("Performance", !d.gmfss_quality)) d.gmfss_quality = false;
-      if (ImGui::Selectable("Qualité", d.gmfss_quality)) d.gmfss_quality = true;
-      ImGui::EndCombo();
-    }
-    ImGui::EndDisabled();
+    const TierSupport& tiers = union_model ? choices.gmfss_union_tiers : choices.gmfss_tiers;
+    precision_combo("GMFSS", d.gmfss_precision, tiers);
     panel::tip(
-        "Performance : le flot de GMFlow se calcule en FP16 (base 24 ms et union 23 ms par image "
-        "intermédiaire "
-        "à 720p sur une 4070 Ti). Qualité : GMFlow en FP32, un écart à l'original divisé par 4 environ, pour "
-        "+7 ms avec base et +10 ms avec union. Recharge la lecture.");
-    if (!quality_present) {
+        "Précision de GMFlow, le flot de GMFSS. Performance : FP8, le plus rapide sur RTX 40 et après, avec "
+        "une perte de précision du flot à juger à l'œil. Équilibre : FP16 (base 24 ms et union 23 ms par "
+        "image intermédiaire à 720p sur une 4070 Ti). Qualité : FP32, un écart à l'original divisé par 4 "
+        "environ, pour +7 ms avec base et +10 ms avec union. Recharge la lecture.");
+    if (!tiers.performance) {
       note(
-          std::format("Mode qualité grisé : {} manque dans {} (export_gmfss.py --scale 0.5 --precision "
-                      "flownet32).",
-                      gmfss_files(union_model ? GmfssVariant::Union : GmfssVariant::Base, true, true).pair,
+          std::format("Performance (FP8) grisé : {} manque dans {}, ou ce moteur ne calcule pas le FP8 "
+                      "(export_gmfss.py --scale 0.5, puis quantification FP8).",
+                      gmfss_files(union_model ? GmfssVariant::Union : GmfssVariant::Base, true,
+                                  PrecisionTier::Performance)
+                          .pair,
                       choices.rife_folder));
+    }
+    if (!tiers.quality) {
+      note(std::format(
+          "Qualité (FP32) grisé : {} manque dans {} (export_gmfss.py --scale 0.5 --precision "
+          "flownet32).",
+          gmfss_files(union_model ? GmfssVariant::Union : GmfssVariant::Base, true, PrecisionTier::Quality)
+              .pair,
+          choices.rife_folder));
     }
     if (union_model) {
       note(
@@ -285,6 +329,10 @@ void fluidity_tab(PlaySettings& d, const SettingsChoices& choices, bool exportin
     }
   }
   if (d.motion_engine == MotionEngine::DistilDrba) {
+    precision_combo("Précision de DistilDRBA", d.motion_precision, choices.drba_tiers);
+    panel::tip(
+        "Performance : le graphe « distil_drba_v2_lite_fp8.onnx » à côté de l'original (RTX 40 et après). "
+        "Qualité : « _fp32 ». Équilibre : FP16, le réseau tel que livré. Recharge la lecture.");
     if (!choices.distil_drba_available) {
       note(
           std::format("Graphe introuvable : {}, à exporter dans {} (tools/drba/export_distil_drba.py) ; RIFE "

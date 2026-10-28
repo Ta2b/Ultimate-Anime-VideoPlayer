@@ -23,6 +23,7 @@
 
 #include "app/play/final_scaler.h"
 #include "app/play/options.h"
+#include "app/play/precision.h"
 #include "audio/mixer.h"
 #include "core/profile.h"
 #include "core/types.h"
@@ -141,9 +142,15 @@ struct PlaySettings {
   // Garder les poses (DRBA, kernels/spec/poses.h) : un personnage animé en deux garde son rythme
   // pendant que le fond s'interpole ; en direct.
   bool keep_poses = true;
-  // GMFSS : false, performance (GMFlow en FP16) ; true, qualité (GMFlow en FP32, la paire _s05q). Toujours
-  // au flot à demi-échelle. Recharge la chaîne.
-  bool gmfss_quality = false;
+  // Les crans de précision (precision.h). SPAN : Performance prend la variante FP8 du modèle, Qualité sa
+  // variante FP32 (span_int8.h), Équilibre le FP16 tel que livré. Recharge la chaîne.
+  PrecisionTier span_precision = PrecisionTier::Balanced;
+  // RIFE et DistilDRBA : Performance charge le graphe « _fp8 » à côté du modèle (rife_v4.25_fp8.onnx),
+  // Qualité le « _fp32 ». Recharge la chaîne.
+  PrecisionTier motion_precision = PrecisionTier::Balanced;
+  // GMFSS : Performance, la paire de GMFlow en FP8 (_s05fp8) ; Équilibre, GMFlow en FP16 (l'ancien
+  // « Performance ») ; Qualité, GMFlow en FP32 (_s05q). Toujours au flot à demi-échelle. Recharge la chaîne.
+  PrecisionTier gmfss_precision = PrecisionTier::Balanced;
   // Le warp avant ou après SPAN (SpanOrder) ; Auto par défaut. Recharge la chaîne.
   SpanOrder span_order = SpanOrder::Auto;
   // Smooth Motion du pilote NVIDIA (RTX 40 et 50, pilote ≥ 580) : sa couche Vulkan double les

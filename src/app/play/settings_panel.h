@@ -13,6 +13,7 @@
 
 #include "app/play/default_player.h"
 #include "app/play/input.h"
+#include "app/play/precision.h"
 #include "app/play/settings.h"
 #include "app/play/settings_system.h"
 #include "core/engines.h"
@@ -42,31 +43,36 @@ struct ProfilesView {
 
 // Ce que le panneau propose, fixé par le lecteur.
 struct SettingsChoices {
-  std::vector<std::string> models;       // fichiers SPAN du dossier des modèles
-  std::string default_model;             // celui qu'un nom vide désigne
-  int source_width = 0;                  // la vidéo lue (onglet Export)
-  int source_height = 0;                 // la réduction n'a de sens que sous cette hauteur
-  double source_fps = 0.0;               // images par seconde de la source ; 0 : inconnues
-  media::Rational source_rate;           // la même, exacte (nom et fréquence de l'export)
-  double display_hz = 0.0;               // fréquence de l'écran ; 0 : inconnue
-  bool display_vrr = false;              // l'écran sait le VRR (vrr_capable)
-  bool display_vrr_armed = false;        // le système l'a armé en ce moment
-  bool window_fullscreen = false;        // KDE n'arme le VRR qu'en plein écran
-  bool rife_available = false;           // une interpolation possible : RIFE, GMFSS, DistilDRBA, Apple (Mac)
-  bool gmfss_available = false;          // graphes de GMFSS trouvés (gmfss_model.h)
-  bool gmfss_union_available = false;    // ceux de GMFSS Union
-  bool gmfss_quality_available = false;  // la paire à GMFlow FP32 (_s05q) de GMFSS base
-  bool gmfss_union_quality_available = false;  // celle de GMFSS Union
-  bool distil_drba_available = false;          // le graphe de DistilDRBA
-  bool rife_loaded = false;                    // moteur RIFE chargé : ×N en direct
-  std::vector<std::string> rife_models;        // fichiers RIFE du dossier du modèle par défaut
-  std::string default_rife_model;              // celui qu'un nom vide désigne
-  std::string rife_folder;                     // le dossier des modèles RIFE (et des graphes de GMFSS)
-  bool nvidia = false;              // GPU NVIDIA : RTX HDR et Smooth Motion ne sont offerts qu'à lui
-  bool true_hdr_available = false;  // SDK Maxine présent et moteur TensorRT en service
-  bool true_hdr_backend = true;     // le moteur TensorRT, seul à ouvrir TrueHDR, est celui du lecteur
-  bool hdr_output = true;           // l'écran reçoit du PQ (sinon ni HDR natif ni grade)
-  int auto_peak = 0;                // pic automatique de RTX HDR, en nits
+  std::vector<std::string> models;     // fichiers SPAN du dossier des modèles
+  std::string default_model;           // celui qu'un nom vide désigne
+  int source_width = 0;                // la vidéo lue (onglet Export)
+  int source_height = 0;               // la réduction n'a de sens que sous cette hauteur
+  double source_fps = 0.0;             // images par seconde de la source ; 0 : inconnues
+  media::Rational source_rate;         // la même, exacte (nom et fréquence de l'export)
+  double display_hz = 0.0;             // fréquence de l'écran ; 0 : inconnue
+  bool display_vrr = false;            // l'écran sait le VRR (vrr_capable)
+  bool display_vrr_armed = false;      // le système l'a armé en ce moment
+  bool window_fullscreen = false;      // KDE n'arme le VRR qu'en plein écran
+  bool rife_available = false;         // une interpolation possible : RIFE, GMFSS, DistilDRBA, Apple (Mac)
+  bool gmfss_available = false;        // graphes de GMFSS trouvés (gmfss_model.h)
+  bool gmfss_union_available = false;  // ceux de GMFSS Union
+  // Les crans de précision (precision.h) que le poste rend : Équilibre toujours ; Performance (FP8) et
+  // Qualité (FP32) selon les graphes installés. GMFSS : les paires _s05fp8 et _s05q de base et d'union.
+  TierSupport gmfss_tiers;
+  TierSupport gmfss_union_tiers;
+  TierSupport span_tiers;                // pour le modèle SPAN en cours (span_int8.h)
+  TierSupport rife_tiers;                // les graphes « _fp8 » et « _fp32 » du modèle RIFE en cours
+  TierSupport drba_tiers;                // ceux de DistilDRBA
+  bool distil_drba_available = false;    // le graphe de DistilDRBA
+  bool rife_loaded = false;              // moteur RIFE chargé : ×N en direct
+  std::vector<std::string> rife_models;  // fichiers RIFE du dossier du modèle par défaut
+  std::string default_rife_model;        // celui qu'un nom vide désigne
+  std::string rife_folder;               // le dossier des modèles RIFE (et des graphes de GMFSS)
+  bool nvidia = false;                   // GPU NVIDIA : RTX HDR et Smooth Motion ne sont offerts qu'à lui
+  bool true_hdr_available = false;       // SDK Maxine présent et moteur TensorRT en service
+  bool true_hdr_backend = true;          // le moteur TensorRT, seul à ouvrir TrueHDR, est celui du lecteur
+  bool hdr_output = true;                // l'écran reçoit du PQ (sinon ni HDR natif ni grade)
+  int auto_peak = 0;                     // pic automatique de RTX HDR, en nits
   std::vector<EngineBadge> engines;
   std::string chosen_engines;              // « Vulkan, TensorRT, NVIDIA Maxine (RTX HDR) » (settings.toml)
   std::vector<core::EngineId> switchable;  // moteurs de SPAN et RIFE installés (engine_switch.h)
@@ -125,13 +131,13 @@ class SettingsPanel {
  private:
   bool open_ = false;
   bool prompt_dismissed_ = false;  // « Ne plus me le demander » coché dans cette fenêtre
-  bool prompt_done_ = false;       // la fenêtre « lecteur par défaut » a déjà été montrée à ce lancement
-  SystemNote prompt_note_;         // sa dernière action
-  PlaySettings draft_;     // ce que montre le panneau ; diffère de running pour ce qui attend « Appliquer »
-  PlaySettings seen_;      // running au tour précédent
-  int page_ = 0;           // la page de l'arbre affichée (settings_panel.cpp : kPages)
-  bool advanced_ = false;  // la case « Réglages avancés » : montre la catégorie Avancé
-  bool pending_shown_ = false;                  // le bandeau « Appliquer » était montré au tour précédent
+  bool prompt_done_ = false;  // la fenêtre « lecteur par défaut » a déjà été montrée à ce lancement
+  SystemNote prompt_note_;    // sa dernière action
+  PlaySettings draft_;  // ce que montre le panneau ; diffère de running pour ce qui attend « Appliquer »
+  PlaySettings seen_;   // running au tour précédent
+  int page_ = 0;        // la page de l'arbre affichée (settings_panel.cpp : kPages)
+  bool advanced_ = false;       // la case « Réglages avancés » : montre la catégorie Avancé
+  bool pending_shown_ = false;  // le bandeau « Appliquer » était montré au tour précédent
   std::optional<core::EngineId> engine_draft_;  // moteur coché dans l'onglet Moteurs, pas appliqué
   std::unique_ptr<ExportDraft> export_;         // l'onglet Export, gardé d'une ouverture à l'autre
   SystemNote system_;                           // l'onglet Système : sa dernière action
