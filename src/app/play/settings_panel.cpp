@@ -22,7 +22,6 @@
 namespace ajp::app::play {
 namespace {
 
-using panel::kNote;
 using panel::kWarn;
 using panel::note;
 using panel::section;

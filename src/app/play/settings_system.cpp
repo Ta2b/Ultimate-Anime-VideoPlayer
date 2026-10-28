@@ -132,10 +132,11 @@ void updates_page(PlaySettings& d, const PlayerPlace& place, UpdateNote& result)
     result.pending = std::make_shared<std::future<std::expected<std::string, Refusal> > >(std::async(
         std::launch::async,
         [paths, state_file, mode = d.update_mode,
-         channel = d.update_channel]() -> std::expected<std::string, Refusal> {
+         channel = d.update_channel] -> std::expected<std::string, Refusal> {
           UpdateState current = load_update_state(state_file);
           auto message = run_update_check(paths, mode == "never" ? "notify" : mode, channel, current, {});
-          (void)save_update_state(state_file, current);
+          if (const auto kept = save_update_state(state_file, current); !kept && message)
+            return std::unexpected(kept.error());
           return message;
         }));
     result.text.clear();
@@ -145,11 +146,13 @@ void updates_page(PlaySettings& d, const PlayerPlace& place, UpdateNote& result)
   ImGui::BeginDisabled(state.previous_version.empty());
   if (ImGui::Button("Revenir à la version précédente")) {
     result.pending = std::make_shared<std::future<std::expected<std::string, Refusal> > >(
-        std::async(std::launch::async, [paths, state_file]() -> std::expected<std::string, Refusal> {
+        std::async(std::launch::async, [paths, state_file] -> std::expected<std::string, Refusal> {
           UpdateState current = load_update_state(state_file);
           auto message = roll_back_update(paths, current);
-          if (message) (void)save_update_state(state_file, current);
-          return message ? std::expected<std::string, Refusal>(*message + " : relancez le lecteur") : message;
+          if (!message) return message;
+          if (const auto kept = save_update_state(state_file, current); !kept)
+            return std::unexpected(kept.error());
+          return *message + " : relancez le lecteur";
         }));
     result.text.clear();
     result.refused = false;
@@ -189,7 +192,7 @@ bool bench_page(const PlayerPlace& place, const std::filesystem::path& video, Be
   ImGui::BeginDisabled(measuring || video.empty() || place.executable.empty());
   if (ImGui::Button("Évaluer ma machine")) {
     bench.pending = std::make_shared<std::future<std::expected<std::string, Refusal> > >(
-        std::async(std::launch::async, [place, video]() -> std::expected<std::string, Refusal> {
+        std::async(std::launch::async, [place, video] -> std::expected<std::string, Refusal> {
           std::error_code error;
           const auto work = std::filesystem::temp_directory_path(error) / "ajp-bench";
           std::filesystem::create_directories(work, error);

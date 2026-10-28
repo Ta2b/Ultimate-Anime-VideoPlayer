@@ -239,7 +239,7 @@ std::expected<fs::path, Refusal> download_update(const UpdatePaths& paths,
   std::error_code error;
   const fs::path dir = updates_dir(paths) / manifest.version;
   fs::create_directories(dir, error);
-  const fs::path file = dir / name;
+  fs::path file = dir / name;
   if (auto got = fetch(artifact->url, file, 1800, stop); !got) return std::unexpected(got.error());
   if (auto ok = core::verify_file(file, artifact->size, artifact->sha256, stop); !ok) {
     fs::remove(file, error);
@@ -324,7 +324,9 @@ std::expected<std::string, Refusal> apply_staged_update(const UpdatePaths& paths
   }
   if (auto done = replace_tree(root, paths.install); !done) {
     // Une copie ratée à moitié : l'installation d'avant revient.
-    (void)replace_tree(previous, paths.install);
+    if (const auto restored = replace_tree(previous, paths.install); !restored)
+      log_channel("app")->warn("mise à jour : l'ancienne version n'a pas pu être remise : {}",
+                               restored.error().detail);
     fs::remove_all(extract, error);
     return std::unexpected(done.error());
   }

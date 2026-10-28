@@ -180,7 +180,7 @@ std::expected<PlayOptions, Refusal> parse_play_options(std::span<const std::stri
           if (!level || *level < -1 || *level >= 5)
             return refuse(RefusalCode::FieldOutOfRange,
                           std::format("--bench-level : « {} » n'est ni auto ni 0 à 4", text));
-          options.bench_level = *level;
+          options.bench_level = level;
         } else if (name == "--stats") {
           options.stats = std::filesystem::path(text);
         } else if (name == "--keys") {

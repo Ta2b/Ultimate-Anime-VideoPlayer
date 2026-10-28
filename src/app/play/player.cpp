@@ -131,7 +131,8 @@ std::expected<void, Refusal> play(const PlayOptions& options, const PlayerPaths&
           [=, mode = saved->update_mode, channel = saved->update_channel](const std::stop_token& stop) {
             UpdateState state = load_update_state(update_file);
             const auto message = run_update_check(update_paths, mode, channel, state, stop);
-            static_cast<void>(save_update_state(update_file, state));
+            if (const auto kept = save_update_state(update_file, state); !kept)
+              log_channel("app")->warn("update.toml : {}", kept.error().detail);
             if (message) {
               log_channel("app")->info("mise à jour : {}", *message);
             } else {

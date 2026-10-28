@@ -18,7 +18,8 @@ void car25519(gf& o) {
   for (int i = 0; i < 16; ++i) {
     o[static_cast<std::size_t>(i)] += i64{1} << 16;
     const i64 c = o[static_cast<std::size_t>(i)] >> 16;
-    o[static_cast<std::size_t>((i + 1) * (i < 15 ? 1 : 0))] += c - 1 + 37 * (c - 1) * (i == 15 ? 1 : 0);
+    const std::size_t next = i < 15 ? static_cast<std::size_t>(i) + 1 : 0;
+    o[next] += c - 1 + (i == 15 ? 37 * (c - 1) : 0);
     o[static_cast<std::size_t>(i)] -= c << 16;
   }
 }
