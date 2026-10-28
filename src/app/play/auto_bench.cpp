@@ -69,7 +69,9 @@ std::string format_bench(const BenchResult& result) {
 
 std::expected<BenchResult, Refusal> parse_bench(std::string_view text) {
   toml::parse_result parsed = toml::parse(text);
-  if (!parsed) return refuse(RefusalCode::ProfileUnreadable, std::format("bench.toml : {}", parsed.error().description()));
+  if (!parsed)
+    return refuse(RefusalCode::ProfileUnreadable,
+                  std::format("bench.toml : {}", parsed.error().description()));
   const toml::table& root = parsed.table();
   BenchResult result;
   result.gpu = root["gpu"].value_or(std::string());
@@ -77,7 +79,8 @@ std::expected<BenchResult, Refusal> parse_bench(std::string_view text) {
   result.date = root["date"].value_or(std::string());
   const std::int64_t level = root["level"].value_or(std::int64_t{-1});
   if (result.gpu.empty()) return refuse(RefusalCode::FieldOutOfRange, "bench.toml : gpu manque");
-  if (level < 0 || level >= kTierCount) return refuse(RefusalCode::FieldOutOfRange, "bench.toml : level hors de 0 à 4");
+  if (level < 0 || level >= kTierCount)
+    return refuse(RefusalCode::FieldOutOfRange, "bench.toml : level hors de 0 à 4");
   result.level = static_cast<Tier>(level);
   return result;
 }
@@ -114,13 +117,15 @@ std::string format_reading(const BenchReading& reading) {
 
 std::expected<BenchReading, Refusal> parse_reading(std::string_view text) {
   toml::parse_result parsed = toml::parse(text);
-  if (!parsed) return refuse(RefusalCode::ProfileUnreadable, std::format("essai : {}", parsed.error().description()));
+  if (!parsed)
+    return refuse(RefusalCode::ProfileUnreadable, std::format("essai : {}", parsed.error().description()));
   const toml::table& root = parsed.table();
   BenchReading reading;
   reading.gpu = root["gpu"].value_or(std::string());
   reading.driver = root["driver"].value_or(std::string());
   const std::int64_t level = root["level"].value_or(std::int64_t{-1});
-  if (level < 0 || level >= kTierCount) return refuse(RefusalCode::FieldOutOfRange, "essai : level hors de 0 à 4");
+  if (level < 0 || level >= kTierCount)
+    return refuse(RefusalCode::FieldOutOfRange, "essai : level hors de 0 à 4");
   reading.run.level = static_cast<Tier>(level);
   reading.run.presents = root["presents"].value_or(std::int64_t{0});
   reading.run.dropped = root["dropped"].value_or(std::int64_t{0});

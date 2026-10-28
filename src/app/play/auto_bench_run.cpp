@@ -16,8 +16,9 @@ std::unexpected<Refusal> refuse(RefusalCode code, std::string detail) {
 }
 
 // Un essai : l'enfant joue, rend sa lecture ; une lecture absente est un essai vide (ne tient pas).
-std::optional<BenchReading> play_one(const BenchPlan& plan, const std::optional<Tier>& level, const Variant* variant,
-                                     int index, const std::stop_token& stop, bool& cancelled) {
+std::optional<BenchReading> play_one(const BenchPlan& plan, const std::optional<Tier>& level,
+                                     const Variant* variant, int index, const std::stop_token& stop,
+                                     bool& cancelled) {
   const std::filesystem::path dir = plan.work_dir / std::format("essai-{}", index);
   std::error_code error;
   std::filesystem::remove_all(dir, error);
@@ -28,11 +29,13 @@ std::optional<BenchReading> play_one(const BenchPlan& plan, const std::optional<
     std::filesystem::copy_file(variant->settings, dir / "reglages" / "play.toml", error);
   }
   prepare::ProcessSpec spec{.program = plan.executable,
-                            .args = variant != nullptr ? variant_child_args(plan, *variant, dir / "reglages", out)
-                                                       : bench_child_args(plan, level, dir / "reglages", out),
+                            .args = variant != nullptr
+                                        ? variant_child_args(plan, *variant, dir / "reglages", out)
+                                        : bench_child_args(plan, level, dir / "reglages", out),
                             .timeout = std::chrono::seconds(plan.seconds) + plan.build_allowance};
   const auto log = log_channel("app");
-  const auto exit = prepare::run_process(spec, [&](std::string_view line) { log->info("essai : {}", line); }, stop);
+  const auto exit =
+      prepare::run_process(spec, [&](std::string_view line) { log->info("essai : {}", line); }, stop);
   std::optional<BenchReading> reading;
   if (!exit) {
     log->warn("essai : {}", exit.error().detail);
@@ -54,14 +57,15 @@ std::optional<BenchReading> play_one(const BenchPlan& plan, const std::optional<
 std::vector<std::string> bench_child_args(const BenchPlan& plan, const std::optional<Tier>& level,
                                           const std::filesystem::path& data_dir,
                                           const std::filesystem::path& out_file) {
-  std::vector<std::string> args{"play",
-                                prepare::utf8_path(plan.video),
-                                std::format("--seconds={}", plan.seconds),
-                                "--mute",
-                                "--no-resume",
-                                std::format("--data-dir={}", prepare::utf8_path(data_dir)),
-                                std::format("--bench-out={}", prepare::utf8_path(out_file)),
-                                std::format("--bench-level={}", level ? std::to_string(static_cast<int>(*level)) : "auto")};
+  std::vector<std::string> args{
+      "play",
+      prepare::utf8_path(plan.video),
+      std::format("--seconds={}", plan.seconds),
+      "--mute",
+      "--no-resume",
+      std::format("--data-dir={}", prepare::utf8_path(data_dir)),
+      std::format("--bench-out={}", prepare::utf8_path(out_file)),
+      std::format("--bench-level={}", level ? std::to_string(static_cast<int>(*level)) : "auto")};
   if (plan.fullscreen) args.emplace_back("--fullscreen");
   return args;
 }
@@ -109,7 +113,9 @@ std::expected<CompareOutcome, Refusal> run_compare(const BenchPlan& plan, const 
     bool cancelled = false;
     auto reading = play_one(plan, std::nullopt, &variant, index, stop, cancelled);
     if (cancelled) return refuse(RefusalCode::Cancelled, "comparaison annulée");
-    if (!reading) return refuse(RefusalCode::DecodeFailed, std::format("la variante « {} » n'a rien rendu", variant.name));
+    if (!reading)
+      return refuse(RefusalCode::DecodeFailed,
+                    std::format("la variante « {} » n'a rien rendu", variant.name));
     std::optional<BenchReading>& slot = got[&variant == &a ? 0 : 1];
     slot = slot ? worse(*slot, *reading) : std::move(*reading);
   }
@@ -121,12 +127,12 @@ std::string format_compare_report(const CompareOutcome& outcome) {
     const double lost = r.run.presents > 0 ? 100.0 * static_cast<double>(r.run.dropped + r.run.missing) /
                                                  static_cast<double>(r.run.presents)
                                            : 100.0;
-    return std::format("  {:<24} {:>5.1f} % perdues, retard p95 {:>6.1f} ms, image {:>6.1f} ms (p95 {:>6.1f}), "
-                       "composition {:>5.1f} ms : {}\n",
-                       variant.name, lost, static_cast<double>(r.run.lag_p95_us) / 1000.0,
-                       static_cast<double>(r.interval_median_us) / 1000.0,
-                       static_cast<double>(r.interval_p95_us) / 1000.0,
-                       static_cast<double>(r.render_median_us) / 1000.0, holds(r.run) ? "tient" : "ne tient pas");
+    return std::format(
+        "  {:<24} {:>5.1f} % perdues, retard p95 {:>6.1f} ms, image {:>6.1f} ms (p95 {:>6.1f}), "
+        "composition {:>5.1f} ms : {}\n",
+        variant.name, lost, static_cast<double>(r.run.lag_p95_us) / 1000.0,
+        static_cast<double>(r.interval_median_us) / 1000.0, static_cast<double>(r.interval_p95_us) / 1000.0,
+        static_cast<double>(r.render_median_us) / 1000.0, holds(r.run) ? "tient" : "ne tient pas");
   };
   std::string out = std::format("Carte : {}\n", outcome.reading_a.gpu) + line(outcome.a, outcome.reading_a) +
                     line(outcome.b, outcome.reading_b);
@@ -150,12 +156,15 @@ std::expected<BenchOutcome, Refusal> run_bench(const BenchPlan& plan, const std:
   std::string driver;
   std::optional<Tier> level;  // absent : « auto », le premier essai
   for (int index = 0; index <= kTierCount; ++index) {
-    if (progress) progress(level ? std::format("Essai : niveau {}", tier_label(*level)) : "Essai : niveau estimé");
+    if (progress)
+      progress(level ? std::format("Essai : niveau {}", tier_label(*level)) : "Essai : niveau estimé");
     bool cancelled = false;
     const auto reading = play_one(plan, level, nullptr, index, stop, cancelled);
     if (cancelled) return refuse(RefusalCode::Cancelled, "évaluation annulée");
     if (!level) {
-      if (!reading) return refuse(RefusalCode::DecodeFailed, "le premier essai n'a rien rendu : la machine n'a pas pu jouer");
+      if (!reading)
+        return refuse(RefusalCode::DecodeFailed,
+                      "le premier essai n'a rien rendu : la machine n'a pas pu jouer");
       outcome.estimated = reading->run.level;
       gpu = reading->gpu;
       driver = reading->driver;
@@ -168,9 +177,9 @@ std::expected<BenchOutcome, Refusal> run_bench(const BenchPlan& plan, const std:
   return outcome;
 }
 
-std::expected<std::string, Refusal> evaluate_machine(const BenchPlan& plan, const std::filesystem::path& data_dir,
-                                                     const std::stop_token& stop,
-                                                     const std::function<void(const std::string&)>& progress) {
+std::expected<std::string, Refusal> evaluate_machine(
+    const BenchPlan& plan, const std::filesystem::path& data_dir, const std::stop_token& stop,
+    const std::function<void(const std::string&)>& progress) {
   auto outcome = run_bench(plan, stop, progress);
   if (!outcome) return std::unexpected(std::move(outcome.error()));
   BenchResult result = outcome->result;
@@ -186,12 +195,12 @@ std::string format_bench_report(const BenchOutcome& outcome) {
                                 outcome.result.driver.empty() ? "inconnu" : outcome.result.driver,
                                 tier_label(outcome.estimated));
   for (const BenchRun& run : outcome.runs) {
-    const double lost = run.presents > 0
-                            ? 100.0 * static_cast<double>(run.dropped + run.missing) / static_cast<double>(run.presents)
-                            : 100.0;
+    const double lost = run.presents > 0 ? 100.0 * static_cast<double>(run.dropped + run.missing) /
+                                               static_cast<double>(run.presents)
+                                         : 100.0;
     out += std::format("  {:<8} {:>5} présentations, {:>5.1f} % perdues, retard p95 {:>6.1f} ms : {}\n",
-                       tier_label(run.level), run.presents, lost, static_cast<double>(run.lag_p95_us) / 1000.0,
-                       holds(run) ? "tient" : "ne tient pas");
+                       tier_label(run.level), run.presents, lost,
+                       static_cast<double>(run.lag_p95_us) / 1000.0, holds(run) ? "tient" : "ne tient pas");
   }
   out += std::format("Niveau gardé : {}\n", tier_label(outcome.result.level));
   return out;

@@ -178,13 +178,15 @@ void apply_live(Chain& to, const PlaySettings& wanted, std::int64_t now_us) {
   if (wanted.audio_delay_ms != r.audio_delay_ms)
     to.session.command(cmd::SetAudioDelay{.delay_us = std::int64_t{wanted.audio_delay_ms} * 1000});
   {
-    // L'écoute (casque, enceintes, home cinéma, fidèle) se change en direct ; l'appareil, lui, rouvre la vidéo.
+    // L'écoute (casque, enceintes, home cinéma, fidèle) se change en direct ; l'appareil, lui, rouvre la
+    // vidéo.
     const auto device = audio::resolve_device(audio::playback_devices(), wanted.audio_device);
     const std::string name = device ? device->name : std::string();
     const EffectiveListening now = effective_listening(wanted, name);
     const EffectiveListening was = effective_listening(r, name);
     if (now.listen != was.listen || now.faithful != was.faithful)
-      to.session.command(cmd::SetListening{.listen = static_cast<std::uint8_t>(now.listen), .faithful = now.faithful});
+      to.session.command(
+          cmd::SetListening{.listen = static_cast<std::uint8_t>(now.listen), .faithful = now.faithful});
   }
   if (wanted.display_sync != r.display_sync) to.session.set_display_sync(wanted.display_sync);
   if (wanted.video_latency_ms != r.video_latency_ms)

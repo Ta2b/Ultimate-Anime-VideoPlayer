@@ -51,6 +51,8 @@ struct TierEstimate {
 // La tranche de la carte : une règle de la table, sinon une estimation par fabricant, VRAM, unités
 // matricielles (cœurs Tensor, WMMA). Le nom est normalisé (minuscules, sans « (tm) » ni « (r) »).
 TierEstimate estimate_tier(const TierTable& table, const GpuFacts& gpu);
-inline TierEstimate estimate_tier(const GpuFacts& gpu) { return estimate_tier(builtin_tier_table(), gpu); }
+inline TierEstimate estimate_tier(const GpuFacts& gpu) {
+  return estimate_tier(builtin_tier_table(), gpu);
+}
 
 }  // namespace ajp::app::play

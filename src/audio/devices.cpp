@@ -27,8 +27,8 @@ std::vector<AudioDevice> playback_devices() {
     out.push_back(std::move(device));
   }
   SDL_free(ids);
-  // Le défaut : SDL ne le nomme pas dans la liste ; le format du défaut le désigne quand l'appareil est unique à
-  // l'avoir, sinon le premier.
+  // Le défaut : SDL ne le nomme pas dans la liste ; le format du défaut le désigne quand l'appareil est
+  // unique à l'avoir, sinon le premier.
   SDL_AudioSpec spec{};
   int frames = 0;
   if (SDL_GetAudioDeviceFormat(SDL_AUDIO_DEVICE_DEFAULT_PLAYBACK, &spec, &frames) && !out.empty()) {

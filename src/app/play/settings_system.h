@@ -3,8 +3,8 @@
 #pragma once
 
 #include <chrono>
-#include <filesystem>
 #include <expected>
+#include <filesystem>
 #include <future>
 #include <memory>
 #include <string>
@@ -23,8 +23,8 @@ struct SystemNote {
   std::shared_ptr<std::future<std::expected<std::string, Refusal>>> pending;
 };
 
-// Le bouton « Évaluer ma machine » : bench_note porte son essai (auto_bench_run.h) ; video est la vidéo lue (vide :
-// l'écran d'accueil, rien à jouer) ; pause demande la mise en pause de la lecture avant l'essai.
+// Le bouton « Évaluer ma machine » : bench_note porte son essai (auto_bench_run.h) ; video est la vidéo lue
+// (vide : l'écran d'accueil, rien à jouer) ; pause demande la mise en pause de la lecture avant l'essai.
 struct BenchNote {
   std::string text;
   bool refused = false;
@@ -43,7 +43,8 @@ struct UpdateNote {
 void updates_page(PlaySettings& d, const PlayerPlace& place, UpdateNote& note);
 
 // Le lecteur par défaut et « Ouvrir avec » (Général > Lecteur par défaut).
-// Avec « Ne plus me le demander » (dismissed) et, quand le lecteur est déjà celui des vidéos, un mot qui le dit.
+// Avec « Ne plus me le demander » (dismissed) et, quand le lecteur est déjà celui des vidéos, un mot qui le
+// dit.
 void default_player_page(const PlayerPlace& place, SystemNote& last, bool& dismissed, bool already_default);
 
 }  // namespace ajp::app::play

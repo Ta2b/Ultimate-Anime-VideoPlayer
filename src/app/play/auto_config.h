@@ -15,10 +15,12 @@
 
 namespace ajp::app::play {
 
-std::string_view key(Preset preset);  // « auto », « economy », « fast », « normal », « quality », « ultra », « custom »
-std::string_view label(Preset preset);  // « Auto », « Économe », « Rapide », « Normal », « Qualité », « Ultra », « Personnalisé »
+std::string_view key(
+    Preset preset);  // « auto », « economy », « fast », « normal », « quality », « ultra », « custom »
+std::string_view label(Preset preset);  // « Auto », « Économe », « Rapide », « Normal », « Qualité », « Ultra
+                                        // », « Personnalisé »
 std::optional<Preset> preset_from_key(std::string_view text);
-std::string_view key(Priority priority);  // « fluidity », « balance », « image »
+std::string_view key(Priority priority);    // « fluidity », « balance », « image »
 std::string_view label(Priority priority);  // « Fluidité », « Équilibre », « Image »
 std::optional<Priority> priority_from_key(std::string_view text);
 
@@ -35,7 +37,8 @@ std::optional<Tier> chain_level(Preset preset, Tier detected);
 
 // settings avec la chaîne du préréglage pour cette machine et cette source ; settings.preset ==
 // Custom : inchangé. Idempotente.
-PlaySettings apply_preset(const PlaySettings& settings, const Machine& machine, const core::SourceInfo& source);
+PlaySettings apply_preset(const PlaySettings& settings, const Machine& machine,
+                          const core::SourceInfo& source);
 
 // La chaîne (celle que apply_preset écrit) diffère-t-elle entre a et b ? Un réglage de chaîne fait à la main
 // pendant qu'un préréglage est choisi bascule les réglages en Personnalisé.

@@ -259,15 +259,21 @@ bool sound_tab(PlaySettings& d, const SettingsChoices& choices) {
     }
   }
   ImGui::BeginDisabled(follow);
-  if (ImGui::BeginCombo("Appareil de sortie", chosen != nullptr ? chosen->name.c_str() : (system_default != nullptr ? system_default->name.c_str() : "Aucun"))) {
+  if (ImGui::BeginCombo("Appareil de sortie",
+                        chosen != nullptr
+                            ? chosen->name.c_str()
+                            : (system_default != nullptr ? system_default->name.c_str() : "Aucun"))) {
     for (const SettingsChoices::AudioOut& out : choices.audio_outputs) {
       if (ImGui::Selectable(out.name.c_str(), chosen == &out)) d.audio_device = out.name;
     }
     ImGui::EndCombo();
   }
   ImGui::EndDisabled();
-  if (active != nullptr && active->channels > 0) note(std::format("{} canaux sur cet appareil.", active->channels));
-  panel::tip("Changer d'appareil rouvre la vidéo au même endroit. Le format du son se détecte seul, piste par piste.");
+  if (active != nullptr && active->channels > 0)
+    note(std::format("{} canaux sur cet appareil.", active->channels));
+  panel::tip(
+      "Changer d'appareil rouvre la vidéo au même endroit. Le format du son se détecte seul, piste par "
+      "piste.");
 
   // Écoute : le rendu pour le casque, les enceintes ou le home cinéma. Aucune détection : c'est votre choix.
   section("Écoute");
@@ -298,7 +304,8 @@ bool sound_tab(PlaySettings& d, const SettingsChoices& choices) {
     panel::tip(cinema && !multichannel ? "Grisé : cet appareil n'a que 2 canaux." : choice.detail);
   }
   ImGui::Checkbox("Fidèle (aucun traitement)", &d.audio_faithful);
-  panel::tip("Coupe tout traitement, pour comparer : le son brut de la piste, mixé simplement pour l'appareil.");
+  panel::tip(
+      "Coupe tout traitement, pour comparer : le son brut de la piste, mixé simplement pour l'appareil.");
   if (!device_name.empty() && ImGui::Checkbox("Profil propre à cet appareil", &own)) {
     if (own) {
       d.device_listening.emplace_back(device_name, d.listening);
@@ -367,7 +374,8 @@ void stats_tab(PlaySettings& d) {
 }
 
 // Général > Configuration : le préréglage, la priorité, la machine, « Évaluer ma machine ».
-bool config_page(PlaySettings& d, const SettingsChoices& choices, BenchNote& bench, std::vector<Input>& actions) {
+bool config_page(PlaySettings& d, const SettingsChoices& choices, BenchNote& bench,
+                 std::vector<Input>& actions) {
   section("Configuration automatique");
   if (ImGui::BeginCombo("Préréglage", std::string(label(d.preset)).c_str())) {
     for (int i = 0; i < kPresetCount; ++i) {
@@ -375,46 +383,56 @@ bool config_page(PlaySettings& d, const SettingsChoices& choices, BenchNote& ben
       if (ImGui::Selectable(std::string(label(preset)).c_str(), preset == d.preset)) {
         d.preset = preset;
         // La chaîne du préréglage s'écrit tout de suite (Personnalisé : rien ne bouge).
-        d = apply_preset(d,
-                         Machine{.tier = static_cast<Tier>(choices.machine_tier),
-                                 .display_height = choices.display_height,
-                                 .display_hz = choices.display_hz},
-                         core::SourceInfo{.width = choices.source_width,
-                                          .height = choices.source_height,
-                                          .fps = choices.source_fps});
+        d = apply_preset(
+            d,
+            Machine{.tier = static_cast<Tier>(choices.machine_tier),
+                    .display_height = choices.display_height,
+                    .display_hz = choices.display_hz},
+            core::SourceInfo{
+                .width = choices.source_width, .height = choices.source_height, .fps = choices.source_fps});
       }
     }
     ImGui::EndCombo();
   }
-  panel::tip("Auto choisit la chaîne selon votre carte, votre écran et la vidéo. Régler un réglage de l'image ou de "
-             "la fluidité à la main passe en Personnalisé, sans rien perdre.");
+  panel::tip(
+      "Auto choisit la chaîne selon votre carte, votre écran et la vidéo. Régler un réglage de l'image ou de "
+      "la fluidité à la main passe en Personnalisé, sans rien perdre.");
   if (ImGui::BeginCombo("Priorité", std::string(label(d.priority)).c_str())) {
     for (int i = 0; i < kPriorityCount; ++i) {
       const auto priority = static_cast<Priority>(i);
-      if (ImGui::Selectable(std::string(label(priority)).c_str(), priority == d.priority)) d.priority = priority;
+      if (ImGui::Selectable(std::string(label(priority)).c_str(), priority == d.priority))
+        d.priority = priority;
     }
     ImGui::EndCombo();
   }
-  panel::tip("Ce que l'automatique préfère quand la machine ne tient pas tout : plus d'images (Fluidité) ou une image plus fine (Image).");
+  panel::tip(
+      "Ce que l'automatique préfère quand la machine ne tient pas tout : plus d'images (Fluidité) ou une "
+      "image plus fine (Image).");
 
   section("Cette machine");
   ImGui::TextWrapped("%s", choices.gpu_name.empty() ? "Carte graphique inconnue" : choices.gpu_name.c_str());
-  note(std::format("Niveau : {}{}", tier_label(static_cast<Tier>(choices.machine_tier)),
-                   choices.display_hz > 0.0 ? std::format(" · écran {:.0f} Hz", choices.display_hz) : std::string()));
-  note(choices.bench_text.empty() ? std::string("Jamais évaluée : le niveau est une estimation d'après la carte.")
-                                  : choices.bench_text);
+  note(std::format(
+      "Niveau : {}{}", tier_label(static_cast<Tier>(choices.machine_tier)),
+      choices.display_hz > 0.0 ? std::format(" · écran {:.0f} Hz", choices.display_hz) : std::string()));
+  note(choices.bench_text.empty()
+           ? std::string("Jamais évaluée : le niveau est une estimation d'après la carte.")
+           : choices.bench_text);
   const bool started = bench_page(choices.place, choices.source_file, bench);
 
   section("Assistant");
   if (ImGui::Button("Relancer l'assistant")) actions.emplace_back(OpenEngineScreen{.wizard = true});
-  panel::tip("Les huit écrans de bienvenue : moteurs, image, HDR, audio, langues, mises à jour. Rien ne change avant « Terminer ».");
+  panel::tip(
+      "Les huit écrans de bienvenue : moteurs, image, HDR, audio, langues, mises à jour. Rien ne change "
+      "avant « Terminer ».");
   return started;
 }
 
 // Avancé > Réinitialiser.
 void reset_page(std::vector<Input>& actions, const ProfilesView& view) {
   section("Profil d'origine");
-  note("Les profils (Ctrl+1 à Ctrl+9) restent dans user.toml ; cette page remet le profil actif à ses valeurs d'origine.");
+  note(
+      "Les profils (Ctrl+1 à Ctrl+9) restent dans user.toml ; cette page remet le profil actif à ses valeurs "
+      "d'origine.");
   if (ImGui::Button("Revenir au profil d'origine"))
     actions.emplace_back(EditProfile{.edit = core::edit::ResetProfile{.slot = view.active}});
 }
@@ -480,7 +498,8 @@ SettingsPanel::Result SettingsPanel::draw(const PlaySettings& running, const Set
     const float footer = (pending_shown_ ? 84.0F * scale : 0.0F) + ImGui::GetFrameHeightWithSpacing() +
                          2.0F * ImGui::GetStyle().ItemSpacing.y;
     const float tree_width = std::min(200.0F * scale, width * 0.3F);
-    if ((!advanced_ && kPages[static_cast<std::size_t>(page_)].advanced) || (page_ == 1 && draft_.default_player_dismissed))
+    if ((!advanced_ && kPages[static_cast<std::size_t>(page_)].advanced) ||
+        (page_ == 1 && draft_.default_player_dismissed))
       page_ = 0;
     ImGui::BeginChild("##arbre", ImVec2(tree_width, -footer), ImGuiChildFlags_Borders);
     const char* category = "";
@@ -495,7 +514,8 @@ SettingsPanel::Result SettingsPanel::draw(const PlaySettings& running, const Set
         ImGui::SetNextItemOpen(true, ImGuiCond_Once);
         category_open = ImGui::TreeNodeEx(category, ImGuiTreeNodeFlags_SpanAvailWidth);
       }
-      if (category_open && ImGui::Selectable(page.name, static_cast<int>(i) == page_)) page_ = static_cast<int>(i);
+      if (category_open && ImGui::Selectable(page.name, static_cast<int>(i) == page_))
+        page_ = static_cast<int>(i);
     }
     if (category_open) ImGui::TreePop();
     ImGui::EndChild();
@@ -507,7 +527,8 @@ SettingsPanel::Result SettingsPanel::draw(const PlaySettings& running, const Set
       if (name == "Configuration") {
         if (config_page(draft_, choices, bench_, actions)) actions.emplace_back(Command{cmd::Pause{}});
       } else if (name == "Lecteur par défaut") {
-        default_player_page(choices.place, system_, draft_.default_player_dismissed, choices.default_player_is_ajp);
+        default_player_page(choices.place, system_, draft_.default_player_dismissed,
+                            choices.default_player_is_ajp);
       } else if (name == "Mises à jour") {
         updates_page(draft_, choices.place, updates_);
       } else if (name == "Agrandissement") {
@@ -538,7 +559,8 @@ SettingsPanel::Result SettingsPanel::draw(const PlaySettings& running, const Set
     ImGui::EndChild();
     ImGui::Checkbox("Réglages avancés", &advanced_);
     // Un réglage de la chaîne fait à la main : le préréglage devient Personnalisé (les valeurs restent).
-    if (draft_.preset != Preset::Custom && draft_.preset == before.preset && preset_chain_differs(before, draft_))
+    if (draft_.preset != Preset::Custom && draft_.preset == before.preset &&
+        preset_chain_differs(before, draft_))
       draft_.preset = Preset::Custom;
     ImGui::PopItemWidth();
 

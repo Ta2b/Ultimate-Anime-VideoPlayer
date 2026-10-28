@@ -22,7 +22,8 @@ struct PlayerPaths {
   std::filesystem::path data;        // ses données (default_player.h : PlayerPlace::data)
   std::filesystem::path executable;  // le lecteur lui-même, que l'inscription comme lecteur par défaut nomme
   std::filesystem::path engines;     // moteurs construits (SDL_GetPrefPath)
-  std::filesystem::path settings;    // play.toml, user.toml, bench.toml… ; vide : le parent de engines (--data-dir)
+  std::filesystem::path
+      settings;  // play.toml, user.toml, bench.toml… ; vide : le parent de engines (--data-dir)
   std::vector<std::filesystem::path>
       backends;                        // ajp_backend_tensorrt.so, ajp_backend_vulkan.so…, par préférence
   std::filesystem::path engine_index;  // engines.lock livré avec le lecteur (engine_install.h)
