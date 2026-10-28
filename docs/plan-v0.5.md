@@ -74,7 +74,7 @@ Pull requests : une par étape ; quand une étape dépend d'une autre, la base e
 - [ ] Essai sur un poste Windows NVIDIA (liste dans `docs/nvidia-windows.md`) : aucune machine Windows ici
 
 ### Release
-- [ ] Tests locaux complets, notes de version, étiquette v0.5.0 **seulement sur autorisation explicite** (règle de
+- [~] Tests locaux complets (fait : app 266, audio, core), version CMake 0.5.0, notes `tools/release/notes/v0.5.0.md`, liste à tester `docs/tests-v0.5-windows-macos.md` ; étiquette v0.5.0 **seulement sur autorisation explicite** (règle de
   Tatoub : rien n'est publié ni étiqueté sans permission ; si elle n'est pas donnée, la release reste prête)
 
 ## Journal
@@ -127,3 +127,5 @@ Pull requests : une par étape ; quand une étape dépend d'une autre, la base e
   avec `--snapshot` sur la 4070 Ti : assistant (écran 1) et menu (Configuration, Fluidité, Audio) ; corrigé : double barre de
   défilement (la fenêtre n'en a plus, les deux colonnes défilent seules). Pas encore vus : les écrans 2 à 8 de l'assistant, HDR et
   Couleurs, Mises à jour.
+- **2026-10-28** : préparation de la release : version 0.5.0 (CMake, vcpkg), notes v0.5.0, liste Windows/macOS. L'étiquette n'est PAS posée :
+  règle de Tatoub, rien n'est publié ni étiqueté sans permission explicite.
