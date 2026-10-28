@@ -44,7 +44,8 @@ namespace ajp::gpu {
 // 8 : KernelOps::soft_splat_fill (les splats d'un instant et le remplissage de l'instant ensemble).
 // 9 : KernelOps::warp_blend_ring, warp_blend_poses_ring, gmfss_compose_ring ; BackendCaps::ring_targets.
 // 10 : KernelOps::write_yuv (export par puits CUDA) ; BackendCaps::yuv_targets.
-inline constexpr int kBackendAbi = 10;
+// 11 : BackendCaps::span_fp8_cutlass (le SPAN entier en FP8 par noyaux CUTLASS, docs/span-fp8-cutlass.md).
+inline constexpr int kBackendAbi = 11;
 
 using DeviceUuid = ajp::DeviceUuid;
 
@@ -76,6 +77,9 @@ struct BackendCaps {
   bool fp16 = false;
   bool int8 = false;
   bool fp8 = false;  // graphes Q/DQ FP8 (E4M3) calculés par les unités matricielles : Ada (sm 8.9) et après
+  // Le SPAN entier en FP8 par noyaux CUTLASS (paquet « .span8 » à la place de l'ONNX) : sm 8.9 seulement,
+  // dans un backend construit avec CUTLASS.
+  bool span_fp8_cutlass = false;
   bool matrix_units = false;                // unités matricielles utilisées
   std::vector<PixelFormat> import_formats;  // formats acceptés par import()
   // Voies qui se recouvrent vraiment sur l'appareil (gpu/lanes.h) ; 1 : use_lane ne change rien.
