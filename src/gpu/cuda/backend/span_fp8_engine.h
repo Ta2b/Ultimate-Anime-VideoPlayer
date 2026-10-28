@@ -19,6 +19,7 @@
 #include "gpu/backend.h"
 #include "gpu/cuda/backend/span_fp8_net.h"
 #include "gpu/cuda/backend/trt_engine.h"
+#include "gpu/span_fp8/package.h"
 
 namespace ajp::gpu::cuda {
 
@@ -29,6 +30,8 @@ std::string span_fp8_artifact_key(std::uint32_t crc, int height, int width);
 std::optional<Shape> span_fp8_artifact_shape(std::string_view key);
 // Le fichier d'un paquet, entier. Refus FileUnreadable.
 std::expected<std::vector<std::byte>, Refusal> read_span_fp8_package(const std::filesystem::path& path);
+// Les pointeurs d'un paquet, pour SpanFp8Net::create et SpanFp8Reference::create : valables autant que lui.
+SpanFp8Weights span_fp8_view(const span_fp8::Package& package);
 // L'extension d'un paquet : « .span8 ».
 bool is_span_fp8_package(const std::filesystem::path& path);
 

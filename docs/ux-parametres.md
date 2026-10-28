@@ -114,7 +114,8 @@ Général
   ├ Lecteur par défaut       bouton « Faire de ce lecteur le lecteur par défaut », Ouvrir avec  (voir 4.4)
   └ Mises à jour             Automatique / Me prévenir / Jamais, canal, fréquence, version (voir 4.5)
 Image IA
-  ├ Agrandissement           résolution de travail, SPAN (case, modèle)
+  ├ Agrandissement           résolution de travail, SPAN (case, modèle) ; en Réglages avancés : « Préparer le
+  │                          mode Performance (SPAN FP8) » et « Préparer en tâche de fond » (docs/span-fp8-cutlass.md)
   ├ Fluidité                 multiplicateur, moteur d'interpolation, mode GMFSS
   └ Avancé                   filtre de réduction (Hermite…), modèle RIFE, poses DRBA, ordre du traitement, Smooth Motion
 HDR

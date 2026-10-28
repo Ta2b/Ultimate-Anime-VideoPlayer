@@ -2,6 +2,7 @@
 // third_party/cutlass absent) : l'appareil n'est jamais pris en charge, le backend ne l'annonce pas
 // (BackendCaps::span_fp8_cutlass) et la chaîne reste sur TensorRT.
 #include "gpu/cuda/backend/span_fp8_net.h"
+#include "gpu/cuda/backend/span_fp8_ref.h"
 
 namespace ajp::gpu::cuda {
 
@@ -29,6 +30,30 @@ void SpanFp8Net::bind(void* /*workspace*/) {}
 
 bool SpanFp8Net::launch(cudaStream_t /*stream*/, const void* /*input*/, void* /*output*/,
                         std::string& error) {
+  error = "noyaux absents";
+  return false;
+}
+
+struct SpanFp8Reference::Impl {};
+
+SpanFp8Reference::SpanFp8Reference(std::unique_ptr<Impl> impl) : impl_(std::move(impl)) {}
+SpanFp8Reference::~SpanFp8Reference() = default;
+
+std::unique_ptr<SpanFp8Reference> SpanFp8Reference::create(const SpanFp8Weights& /*weights*/, int /*height*/,
+                                                           int /*width*/, SpanFp8Status& status,
+                                                           std::string& error) {
+  status = SpanFp8Status::Failed;
+  error = "ce backend est construit sans les noyaux CUTLASS";
+  return nullptr;
+}
+
+bool SpanFp8Reference::run(cudaStream_t /*stream*/, const void* /*input*/, void* /*output*/, bool /*track*/,
+                           std::string& error) {
+  error = "noyaux absents";
+  return false;
+}
+
+bool SpanFp8Reference::peaks(float (& /*out*/)[kPeaks], std::string& error) {
   error = "noyaux absents";
   return false;
 }

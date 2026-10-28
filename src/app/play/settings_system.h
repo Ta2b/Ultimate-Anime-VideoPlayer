@@ -7,10 +7,12 @@
 #include <filesystem>
 #include <future>
 #include <memory>
+#include <stop_token>
 #include <string>
 
 #include "app/play/default_player.h"
 #include "app/play/settings.h"
+#include "app/play/span_derive.h"
 
 namespace ajp::app::play {
 
@@ -29,7 +31,27 @@ struct BenchNote {
   std::string text;
   bool refused = false;
   std::shared_ptr<std::future<std::expected<std::string, Refusal>>> pending;
+  bool finished = false;  // l'évaluation vient de finir avec un niveau gardé : la page le dit, une fois
 };
+
+// Image IA > Agrandissement (réglages avancés) : « Préparer le mode Performance (SPAN FP8) » (span_derive.h),
+// une tâche de fond avec sa progression et son résultat, sur le modèle de « Évaluer ma machine ».
+struct PrepareNote {
+  std::string text;
+  bool refused = false;
+  std::shared_ptr<std::future<std::expected<std::string, Refusal>>> pending;
+  std::shared_ptr<SpanDeriveProgress> progress;
+  std::shared_ptr<std::stop_source> stop;  // le panneau l'arrête en disparaissant (settings_panel.cpp)
+};
+
+// Lance la préparation ; faux si une autre est en cours ou si elle n'est pas offerte.
+bool start_span_prepare(const SpanPrepare& prepare, PrepareNote& note);
+// La section du bouton, de sa progression, de son résultat et de la case « Préparer en tâche de fond ».
+void span_prepare_section(PlaySettings& d, const SpanPrepare& prepare, PrepareNote& note);
+// Après « Évaluer ma machine » (bench.finished) : lance la préparation quand la case est cochée, qu'une vidéo
+// est ouverte, que rien n'est déjà prêt et que le niveau gardé dans data/bench.toml est Rapide ou plus.
+bool prepare_after_bench(const PlaySettings& d, const SpanPrepare& prepare, const std::filesystem::path& data,
+                         PrepareNote& note);
 
 // Rend vrai quand l'évaluation vient d'être lancée : l'appelant met alors la lecture en pause.
 bool bench_page(const PlayerPlace& place, const std::filesystem::path& video, BenchNote& bench);

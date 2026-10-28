@@ -2,10 +2,12 @@
 // les noyaux mêmes du lecteur. C'est l'outil de tools/span/derive_span_fp8.py pour juger la qualité (PSNR et
 // SSIM de la sortie contre le modèle d'origine) et mesurer le temps ; il ne sert à rien d'autre.
 //
-//   ajp_span_fp8_run PAQUET HAUTEUR LARGEUR ENTREE.f32 SORTIE.f32 [--bench N]
+//   ajp_span_fp8_run PAQUET HAUTEUR LARGEUR ENTREE.f32 SORTIE.f32 [--bench N] [--reference]
 //
 // ENTREE : 3×H×W float32 (NCHW, valeurs de 0 à 1) ; SORTIE : 3×2H×2W float32. --bench N : N lancements
-// chronométrés dans un graphe CUDA, la médiane sur la sortie standard. À lancer sous le verrou GPU
+// chronométrés dans un graphe CUDA, la médiane sur la sortie standard. --reference : le SPAN en FP16 de la
+// dérivation native (span_fp8_ref.h) à la place des noyaux FP8, et les 25 maxima relevés sur l'image, un par
+// ligne, sur la sortie standard (pour les comparer à ONNX Runtime). À lancer sous le verrou GPU
 // (~/ajp-tools/bin/ajp-gpu).
 #include <algorithm>
 #include <charconv>
@@ -20,6 +22,7 @@
 #include <vector>
 
 #include "gpu/cuda/backend/span_fp8_net.h"
+#include "gpu/cuda/backend/span_fp8_ref.h"
 #include "gpu/span_fp8/package.h"
 
 namespace {
@@ -57,9 +60,18 @@ int main(int argc, char* const* argv) {
   if (argc < 6)
     return fail("usage : ajp_span_fp8_run PAQUET HAUTEUR LARGEUR ENTREE.f32 SORTIE.f32 [--bench N]");
   int height = 0, width = 0, bench = 0;
+  bool reference_mode = false;
   if (!number(argv[2], height) || !number(argv[3], width)) return fail("hauteur ou largeur illisible");
-  if (argc >= 8 && std::string_view(argv[6]) == "--bench" && !number(argv[7], bench))
-    return fail("--bench N illisible");
+  for (int i = 6; i < argc; ++i) {
+    const std::string_view option(argv[i]);
+    if (option == "--reference") {
+      reference_mode = true;
+    } else if (option == "--bench" && i + 1 < argc && number(argv[i + 1], bench)) {
+      ++i;
+    } else {
+      return fail("option inconnue ou illisible : " + std::string(option));
+    }
+  }
   if (const std::string why = ajp::gpu::span_fp8::size_refusal(height, width); !why.empty()) return fail(why);
 
   std::vector<std::byte> bytes;
@@ -86,8 +98,15 @@ int main(int argc, char* const* argv) {
   weights.pixel = view(package->pixel);
   ajp::gpu::cuda::SpanFp8Status status = ajp::gpu::cuda::SpanFp8Status::Ok;
   std::string why;
-  const std::unique_ptr<SpanFp8Net> net = SpanFp8Net::create(weights, height, width, status, why);
-  if (!net) return fail(why);
+  std::unique_ptr<ajp::gpu::cuda::SpanFp8Reference> reference;
+  std::unique_ptr<SpanFp8Net> net;
+  if (reference_mode) {
+    reference = ajp::gpu::cuda::SpanFp8Reference::create(weights, height, width, status, why);
+    if (!reference) return fail(why);
+  } else {
+    net = SpanFp8Net::create(weights, height, width, status, why);
+    if (!net) return fail(why);
+  }
 
   const std::size_t pixels =
       std::size_t{3} * static_cast<std::size_t>(height) * static_cast<std::size_t>(width);
@@ -102,14 +121,21 @@ int main(int argc, char* const* argv) {
   }
 
   void *workspace = nullptr, *input = nullptr, *output = nullptr;
-  CU(cudaMalloc(&workspace, static_cast<std::size_t>(net->workspace_bytes())));
+  CU(cudaMalloc(&workspace, net ? static_cast<std::size_t>(net->workspace_bytes()) : 1U));
   CU(cudaMalloc(&input, pixels * 2));
   CU(cudaMalloc(&output, pixels * 8));
   CU(cudaMemcpy(input, in_half.data(), pixels * 2, cudaMemcpyHostToDevice));
-  net->bind(workspace);
   cudaStream_t stream = nullptr;
   CU(cudaStreamCreate(&stream));
-  if (!net->launch(stream, input, output, why)) return fail(why);
+  if (reference) {
+    if (!reference->run(stream, input, output, true, why)) return fail(why);
+    float peaks[ajp::gpu::cuda::SpanFp8Reference::kPeaks];
+    if (!reference->peaks(peaks, why)) return fail(why);
+    for (const float peak : peaks) std::printf("pic %.6f\n", static_cast<double>(peak));
+  } else {
+    net->bind(workspace);
+    if (!net->launch(stream, input, output, why)) return fail(why);
+  }
   CU(cudaStreamSynchronize(stream));
 
   std::vector<__half> out_half(pixels * 4);
@@ -121,7 +147,7 @@ int main(int argc, char* const* argv) {
              static_cast<std::streamsize>(out.size() * sizeof(float)));
   if (!file) return fail("sortie non écrite");
 
-  if (bench > 0) {
+  if (bench > 0 && net) {
     cudaGraph_t graph = nullptr;
     cudaGraphExec_t exec = nullptr;
     CU(cudaStreamBeginCapture(stream, cudaStreamCaptureModeGlobal));

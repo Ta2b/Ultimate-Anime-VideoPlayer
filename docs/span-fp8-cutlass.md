@@ -152,6 +152,34 @@ par TensorRT. Chacune refusée passe à la suivante.
 Dernier point : une erreur CUDA persistante (Xid) tue le contexte quel que soit le moteur ; une bascule à chaud
 vers TensorRT n'y changerait rien, et rien de ce qui est dans le chemin chaud n'alloue ni ne synchronise.
 
+## Dérivation native, dans le lecteur
+
+Réglages avancés > Image IA > Agrandissement : **« Préparer le mode Performance (SPAN FP8) »** (`src/app/play/span_derive.h`).
+Visible quand le moteur annonce `span_fp8_cutlass` (sm 8.9) et qu'une vidéo est ouverte ; sinon une note dit pourquoi.
+Tâche de fond (`std::async`, barre de progression, bouton Annuler), comme « Évaluer ma machine ». La case
+« Préparer en tâche de fond » (éteinte par défaut, `[span_prepare] background` de `play.toml`) lance la même tâche à la fin de
+« Évaluer ma machine » quand une vidéo est ouverte, que rien n'est déjà prêt et que le niveau gardé est Rapide ou plus.
+
+| Étape | Où | Définition |
+|---|---|---|
+| Poids et graphe | `gpu/span_fp8/onnx_weights.{h,cpp}` | lecture ONNX en C++ ; refuse le b5f48 (48 canaux), les 8 blocs, les noms des 25 tenseurs, le dégroupage (Transpose 0,1,3,5,2,4) et DepthToSpace(4, CRD) |
+| Images | `media/stills.{h,cpp}` | 24 instants de 8 % à 92 % de la durée, décodage logiciel, découpe centrale ≤ 1920×1088 alignée sur 128×4, RGB 8 bits ; noires et aplats écartés, les 12 plus contrastées gardées ; HDR (PQ, HLG, BT.2020) refusé ; rien n'est conservé |
+| Calibration | `Backend::derive_span_fp8` (`tensorrt_span_derive.cpp`, `span_fp8_ref.cu`) | 8 images : le SPAN en FP16 par les mêmes convolutions CUTLASS (accumulation FP32) relève le maximum de \|valeur\| des 25 tenseurs ; échelle = maximum / 448, comme l'outil Python |
+| Validation | idem | 4 images mises de côté (une sur trois) : sortie du réseau FP8 contre la même référence FP16, PSNR et SSIM de `quantize_span.py` (`gpu/span_fp8/metrics.cpp`) ; garde-fous du reçu : 42 dB moyen, 38 dB pire, SSIM pire 0,985 |
+| Écriture | `commit_derivation` | `.span8` et `.toml` sous `.part`, renommés ensuite, l'ancien restauré si un renommage échoue ; garde-fous manqués : reçu `passed = false` seul, paquet d'avant retiré ; échec technique : rien n'est écrit |
+
+Choix de la référence : le SPAN FP16 des noyaux CUTLASS, pas TensorRT (un moteur TensorRT coûte une minute de construction et ses
+tenseurs intermédiaires sont fondus). Elle colle à ONNX Runtime FP32 : maxima à 0,13 % près et 78,8 dB sur une image 1920×1088
+(`ajp_span_fp8_run --reference`). Le gain sur TensorRT FP16 n'est pas exigé à la dérivation (le reçu porte `speedup = 0`) ; le test
+caché `[.span_derive]` le vérifie. Le reçu a les clés de l'outil Python, plus `reference` et `derived_by` ; un paquet de l'un se
+lit chez l'autre (tests `[.span_compat]` : poids identiques octet pour octet, reçu Python accepté par `find_span_variant`).
+Interface de backend : `kBackendAbi` passe à 12 (`derive_span_fp8`), les backends installés se réinstallent.
+
+Mesures (RTX 4070 Ti, build Debug) : douze images 1080p de la vidéo d'essai, dérivation de 36 s (essentiellement le SSIM en Debug),
+PSNR moyen 51,5 dB, pire 50,7 dB, SSIM 0,9969, réseau FP8 9,23 ms. Test `[.span_derive]` (12 découpes 1920×1088 de PPM) : 49,5 dB,
+SSIM 0,997 ; réseau FP8 9,35 ms contre 17,3 ms pour TensorRT FP16 (−46 %). Lecture `ajp play --stats`, 24 i/s, ABAB 3 tours, médiane
+« moteur » : 14,60 / 14,54 / 14,58 ms avec le paquet natif contre 15,55 / 15,55 / 15,52 ms en FP16 (−6 %, même effet d'horloges que ci-dessus).
+
 ## Ce qui est connu et pas fait
 
 - **sm 12.0 (Blackwell, RTX 50)** : non pris. Le module est compilé pour 89 seulement (`CUDA_ARCHITECTURES

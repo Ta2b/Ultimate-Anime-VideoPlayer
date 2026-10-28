@@ -44,6 +44,7 @@
 #include "app/play/resume.h"
 #include "app/play/scripted_input.h"
 #include "app/play/session.h"
+#include "app/play/span_derive.h"
 #include "app/play/span_int8.h"
 #include "app/play/ui.h"
 #include "app/play/upscale_stage.h"
@@ -303,7 +304,16 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
           .default_player_is_ajp = default_player_is_ajp,
           .offer_default_player = !default_player_is_ajp && !settings.default_player_dismissed,
           .bench_text = bench_text,
-          .place = {.executable = p.paths.executable, .home = p.paths.home, .data = p.paths.data}});
+          .place = {.executable = p.paths.executable, .home = p.paths.home, .data = p.paths.data},
+          .span_prepare =
+              c.model
+                  ? make_span_prepare(p.library,
+                                      gpu::BackendInit{.render = &p.screen.device(),
+                                                       .cache_dir = p.paths.engines,
+                                                       .log = backend_log()},
+                                      c.backend && c.backend->capabilities().span_fp8_cutlass, c.model->path,
+                                      p.paths.engines.parent_path() / "modeles", p.options.file)
+                  : SpanPrepare{}});
   p.profiles.source =
       core::SourceInfo{.width = video.width, .height = video.height, .fps = fps_of(video.frame_rate)};
   if (c.model) p.profiles.default_model = c.model->default_name;

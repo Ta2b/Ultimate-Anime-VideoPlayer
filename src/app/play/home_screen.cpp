@@ -160,7 +160,8 @@ SettingsChoices home_choices(const HomeScreen& h, const HomeState& st, const Pla
       .engine_in_use = st.engines.preferred[usage(core::Usage::Upscale)],
       .display_text = display ? describe(*display) : std::string("EDID illisible : OLED inconnu"),
       .source_file = {},
-      .place = {.executable = h.paths.executable, .home = h.paths.home, .data = h.paths.data}};
+      .place = {.executable = h.paths.executable, .home = h.paths.home, .data = h.paths.data},
+      .span_prepare = {.note = "Ouvrez une vidéo : le lecteur y tire les images de la préparation."}};
 }
 
 // Les réglages que la lecture prendra : play.toml, la chaîne du profil actif pour la source type,

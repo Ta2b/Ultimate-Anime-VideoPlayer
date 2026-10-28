@@ -99,6 +99,8 @@ struct SettingsChoices {
   bool offer_default_player = false;  // proposer de le devenir (fenêtre de démarrage, une fois par lancement)
   std::string bench_text;  // « Dernière évaluation : 2026-10-28, niveau Rapide » ; vide : jamais faite
   PlayerPlace place;       // l'exécutable et le dossier de l'utilisateur (onglet Système)
+  // Image IA > Agrandissement (réglages avancés) : préparer le mode Performance de SPAN (span_derive.h).
+  SpanPrepare span_prepare;
 };
 
 // Une liste de langues (settings_panel.cpp), partagée avec l'assistant de premier démarrage.
@@ -141,8 +143,9 @@ class SettingsPanel {
   std::optional<core::EngineId> engine_draft_;  // moteur coché dans l'onglet Moteurs, pas appliqué
   std::unique_ptr<ExportDraft> export_;         // l'onglet Export, gardé d'une ouverture à l'autre
   SystemNote system_;                           // l'onglet Système : sa dernière action
-  UpdateNote updates_;  // Général > Mises à jour : la vérification en cours ou son résultat
-  BenchNote bench_;     // « Évaluer ma machine » : l'essai en cours ou son rapport
+  UpdateNote updates_;   // Général > Mises à jour : la vérification en cours ou son résultat
+  BenchNote bench_;      // « Évaluer ma machine » : l'essai en cours ou son rapport
+  PrepareNote prepare_;  // « Préparer le mode Performance » : la tâche en cours ou son résultat
 };
 
 }  // namespace ajp::app::play

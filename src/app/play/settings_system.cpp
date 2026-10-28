@@ -7,6 +7,7 @@
 
 #include <imgui.h>
 
+#include "app/play/auto_bench.h"
 #include "app/play/auto_bench_run.h"
 #include "app/play/panel_style.h"
 #include "app/play/updater.h"
@@ -222,6 +223,88 @@ void updates_page(PlaySettings& d, const PlayerPlace& place, UpdateNote& result)
   if (!state.last_error.empty() && result.text.empty()) note("Dernière erreur : " + state.last_error);
 }
 
+bool start_span_prepare(const SpanPrepare& prepare, PrepareNote& state) {
+  if (!prepare.offered || !prepare.run || state.pending) return false;
+  auto progress = std::make_shared<SpanDeriveProgress>();
+  auto stop = std::make_shared<std::stop_source>();
+  state.progress = progress;
+  state.stop = stop;
+  state.pending = std::make_shared<std::future<std::expected<std::string, Refusal> > >(std::async(
+      std::launch::async, [run = prepare.run, progress, stop] -> std::expected<std::string, Refusal> {
+        try {
+          return run(*progress, stop->get_token());
+        } catch (const std::exception& error) {  // un thread qui lève ne doit pas emporter le lecteur
+          return std::unexpected(Refusal{RefusalCode::ThreadFailed, error.what()});
+        }
+      }));
+  state.text.clear();
+  state.refused = false;
+  return true;
+}
+
+void span_prepare_section(PlaySettings& d, const SpanPrepare& prepare, PrepareNote& state) {
+  section("Mode Performance de SPAN (FP8)");
+  ImGui::TextWrapped(
+      "Prépare le calcul de SPAN en FP8 par noyaux CUTLASS, que le cran « Performance » de la précision de "
+      "SPAN "
+      "sert à la place de TensorRT FP16. Le lecteur tire douze images de la vidéo ouverte, calibre sur huit, "
+      "vérifie sur quatre mises de côté (PSNR et SSIM contre le SPAN en FP16), puis écrit un paquet dans le "
+      "dossier des modèles. Aucune image n'est gardée. Une minute environ, en tâche de fond ; la lecture "
+      "reste "
+      "sur TensorRT FP16 tant que le résultat n'est pas bon.");
+  if (state.pending && state.pending->wait_for(std::chrono::seconds(0)) == std::future_status::ready) {
+    const std::expected<std::string, Refusal> done = state.pending->get();
+    state.pending.reset();
+    state.progress.reset();
+    state.stop.reset();
+    state.text = done ? *done : done.error().detail;
+    state.refused = !done;
+  }
+  const bool busy = state.pending != nullptr;
+  if (!prepare.offered) {
+    note(prepare.note);
+    ImGui::BeginDisabled(true);
+    ImGui::Button("Préparer le mode Performance (SPAN FP8)");
+    ImGui::EndDisabled();
+  } else {
+    ImGui::BeginDisabled(busy);
+    if (ImGui::Button("Préparer le mode Performance (SPAN FP8)")) start_span_prepare(prepare, state);
+    ImGui::EndDisabled();
+    if (busy) {
+      ImGui::SameLine();
+      if (ImGui::Button("Annuler##span_prepare") && state.stop) state.stop->request_stop();
+    }
+    note(prepare.note);
+  }
+  if (busy && state.progress) {
+    const auto [fraction, stage] = state.progress->get();
+    ImGui::ProgressBar(fraction, ImVec2(-1.0F, 0.0F), stage.c_str());
+  } else if (state.refused) {
+    ImGui::PushStyleColor(ImGuiCol_Text, kWarn);
+    ImGui::TextWrapped("%s", state.text.c_str());
+    ImGui::PopStyleColor();
+  } else if (!state.text.empty()) {
+    note(state.text);
+  }
+  ImGui::BeginDisabled(!prepare.offered);
+  ImGui::Checkbox("Préparer en tâche de fond", &d.span_prepare_background);
+  ImGui::EndDisabled();
+  panel::tip(
+      "Après « Évaluer ma machine », sur une vidéo ouverte, quand le niveau gardé est Rapide ou plus, "
+      "prépare le "
+      "mode Performance sans rien demander. Désactivé par défaut : la préparation prend la mémoire vidéo et "
+      "une "
+      "partie du GPU pendant la lecture.");
+}
+
+bool prepare_after_bench(const PlaySettings& d, const SpanPrepare& prepare, const std::filesystem::path& data,
+                         PrepareNote& state) {
+  if (!d.span_prepare_background || !prepare.offered || prepare.ready || state.pending) return false;
+  const auto kept = load_bench(data / "bench.toml");
+  if (!kept || kept->level < Tier::Fast) return false;
+  return start_span_prepare(prepare, state);
+}
+
 bool bench_page(const PlayerPlace& place, const std::filesystem::path& video, BenchNote& bench) {
 #ifdef __APPLE__
   static_cast<void>(place);
@@ -236,9 +319,11 @@ bool bench_page(const PlayerPlace& place, const std::filesystem::path& video, Be
       "sans rien afficher ni émettre de son, et garde le plus haut qui tient "
       "pour votre carte et votre pilote. Un PC chaud ou occupé donne un résultat plus bas : relancez-le au "
       "besoin.");
+  bench.finished = false;
   if (bench.pending && bench.pending->wait_for(std::chrono::seconds(0)) == std::future_status::ready) {
     const std::expected<std::string, Refusal> done = bench.pending->get();
-    bench = done ? BenchNote{.text = *done} : BenchNote{.text = done.error().detail, .refused = true};
+    bench = done ? BenchNote{.text = *done, .finished = true}
+                 : BenchNote{.text = done.error().detail, .refused = true};
   }
   const bool measuring = bench.pending != nullptr;
   bool started = false;
