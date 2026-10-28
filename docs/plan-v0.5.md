@@ -65,8 +65,8 @@ Pull requests : une par étape ; quand une étape dépend d'une autre, la base e
 
 ### F. Moteur
 - [x] Hermite en réduction (`DownscaleFilter::Hermite`, cubique B = C = 0, clé `hermite`) : PR `claude/moteur`. Pas de pastille *Anime* (la liste des cinq pastilles est décidée) : l'infobulle le dit. Le filtre n'est pas défaut : la comparaison PSNR/regard contre Spline36 et Mitchell se fait avec `ajp compare` sur la machine
-- [ ] GMFSS Union : optimisations
-- [ ] DistilDRBA : warps hors du graphe
+- [x] GMFSS Union : mesuré (`docs/reports/gmfss-distil-mesures-2026-10-28.md`) : aucun calcul indépendant du temps à déplacer, options TensorRT sans gain ; pas de changement
+- [x] DistilDRBA : mesuré : 0,86 ms par passe à 720p (warps ≈ 30 % de 11,7 ms seulement à 2160p) ; pas de changement, décision motivée dans le rapport
 - [ ] Mode Auto : suivi par le fil d'audit (ne pas toucher `auto_rate`, `upscale_stage`, `live_settings` sans coordination)
 
 ### G. TensorRT sous Windows
