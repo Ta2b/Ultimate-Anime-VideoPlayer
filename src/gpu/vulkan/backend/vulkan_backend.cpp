@@ -328,8 +328,13 @@ std::expected<std::unique_ptr<Engine>, Refusal> VulkanBackend::load(const Artifa
     if (auto ok = net::write_file(artifact.path, net::serialize(*data)); !ok)
       log(BackendLogLevel::Warn, ok.error().detail);
   }
-  auto engine =
-      net::NetEngine::create(*context_, *memory_, *pipelines_, std::move(data->graph), std::move(*program));
+  net::NetEngineOptions engine_options{.profile_dispatches = options_.profile_dispatches};
+  // Le journal est copié, pas le backend : le moteur écrit son tableau à sa destruction.
+  if (options_.profile_dispatches && log_) {
+    engine_options.log = [log = log_](std::string_view text) { log(BackendLogLevel::Info, text); };
+  }
+  auto engine = net::NetEngine::create(*context_, *memory_, *pipelines_, std::move(data->graph),
+                                       std::move(*program), std::move(engine_options));
   if (!engine) return std::unexpected(engine.error());
   return std::make_unique<VulkanEngine>(std::move(*engine));
 }

@@ -24,6 +24,7 @@ ajp_add_unit_tests(vk_backend
     net_conv_test.cpp
     net_measure_test.cpp
     net_ops_test.cpp
+    net_profile_test.cpp
     net_rig.cpp
     net_runtime_test.cpp
     runtime_queue_test.cpp

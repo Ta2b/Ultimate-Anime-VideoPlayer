@@ -89,7 +89,7 @@ struct FlagSpec {
   Apply apply;
 };
 
-constexpr std::array<FlagSpec, 10> kFlags{{
+constexpr std::array<FlagSpec, 11> kFlags{{
     {"log-level", "trace|debug|info|warn|error|off", "niveau du journal (info)",
      [](DebugFlags& f, std::string_view v) -> Result {
        const auto level = find_value(v, kLogLevels);
@@ -120,6 +120,11 @@ constexpr std::array<FlagSpec, 10> kFlags{{
     {"dump-plan", "", "écrit chaque Plan résolu au journal",
      [](DebugFlags& f, std::string_view) -> Result {
        f.dump_plan = true;
+       return {};
+     }},
+    {"profile-dispatches", "", "temps GPU et nombre de dispatchs par shader des réseaux Vulkan, au journal",
+     [](DebugFlags& f, std::string_view) -> Result {
+       f.profile_dispatches = true;
        return {};
      }},
     {"engine", "NOM", "impose ce moteur : vulkan, tensorrt, migraphx, openvino, directml, metal",

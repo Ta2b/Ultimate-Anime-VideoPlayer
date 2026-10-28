@@ -22,6 +22,7 @@
 #include "gpu/vulkan/backend/net_build.h"
 #include "gpu/vulkan/backend/net_lower.h"
 #include "gpu/vulkan/backend/net_measure.h"
+#include "gpu/vulkan/backend/net_query.h"
 #include "gpu/vulkan/compute/buffer.h"
 #include "gpu/vulkan/compute/recording.h"
 #include "kernels/ref/half.h"
@@ -59,73 +60,6 @@ class Signature {
 
  private:
   std::uint64_t hash_ = 0xCBF29CE484222325ULL;
-};
-
-// Fonctions des requêtes d'horodatage, hors des tables du socle.
-struct QueryFunctions {
-  PFN_vkCreateQueryPool create = nullptr;
-  PFN_vkDestroyQueryPool destroy = nullptr;
-  PFN_vkCmdResetQueryPool reset = nullptr;
-  PFN_vkCmdWriteTimestamp write = nullptr;
-  PFN_vkGetQueryPoolResults results = nullptr;
-};
-
-QueryFunctions query_functions(const VkContext& context) {
-  const auto get = [&](const char* name) {
-    return context.instance_functions().vkGetDeviceProcAddr(context.device(), name);
-  };
-  return {.create = reinterpret_cast<PFN_vkCreateQueryPool>(get("vkCreateQueryPool")),
-          .destroy = reinterpret_cast<PFN_vkDestroyQueryPool>(get("vkDestroyQueryPool")),
-          .reset = reinterpret_cast<PFN_vkCmdResetQueryPool>(get("vkCmdResetQueryPool")),
-          .write = reinterpret_cast<PFN_vkCmdWriteTimestamp>(get("vkCmdWriteTimestamp")),
-          .results = reinterpret_cast<PFN_vkGetQueryPoolResults>(get("vkGetQueryPoolResults"))};
-}
-
-// Période d'horodatage de la file compute en nanosecondes ; 0 sans horodatage.
-double timestamp_period(const VkContext& context) {
-  const InstanceFunctions& fn = context.instance_functions();
-  VkPhysicalDeviceProperties properties{};
-  fn.vkGetPhysicalDeviceProperties(context.physical_device(), &properties);
-  std::uint32_t count = 0;
-  fn.vkGetPhysicalDeviceQueueFamilyProperties(context.physical_device(), &count, nullptr);
-  std::vector<VkQueueFamilyProperties> families(count);
-  fn.vkGetPhysicalDeviceQueueFamilyProperties(context.physical_device(), &count, families.data());
-  if (context.queue_family() >= count || families[context.queue_family()].timestampValidBits == 0) return 0.0;
-  const QueryFunctions q = query_functions(context);
-  if (q.create == nullptr || q.destroy == nullptr || q.reset == nullptr || q.write == nullptr ||
-      q.results == nullptr) {
-    return 0.0;
-  }
-  return static_cast<double>(properties.limits.timestampPeriod);
-}
-
-// Pool de count requêtes, détruit avec l'objet.
-class QueryPool {
- public:
-  QueryPool(const VkContext& context, QueryFunctions fn, std::uint32_t count)
-      : context_(context), fn_(fn), count_(count) {}
-  QueryPool(const QueryPool&) = delete;
-  QueryPool& operator=(const QueryPool&) = delete;
-  QueryPool(QueryPool&&) = delete;
-  QueryPool& operator=(QueryPool&&) = delete;
-  ~QueryPool() {
-    if (pool_ != VK_NULL_HANDLE) fn_.destroy(context_.device(), pool_, nullptr);
-  }
-  Done create() {
-    const VkQueryPoolCreateInfo info{.sType = VK_STRUCTURE_TYPE_QUERY_POOL_CREATE_INFO,
-                                     .queryType = VK_QUERY_TYPE_TIMESTAMP,
-                                     .queryCount = count_};
-    return check(fn_.create(context_.device(), &info, nullptr, &pool_), "vkCreateQueryPool");
-  }
-  VkQueryPool handle() const { return pool_; }
-  std::uint32_t count() const { return count_; }
-  const QueryFunctions& fn() const { return fn_; }
-
- private:
-  const VkContext& context_;
-  QueryFunctions fn_;
-  std::uint32_t count_;
-  VkQueryPool pool_ = VK_NULL_HANDLE;
 };
 
 double deviation(const std::vector<double>& values) {
