@@ -1,0 +1,6 @@
+s=img0:1x3300] [b99] # /x/trtexec --onnx=/m/S--optShapes=input:1x3x720x1280 --skipInference
+[I] ...
+[10/19/2026-20:57:42] [I] Engine built in Inference
+[I] ...
+[10/19/2026-20:57:42] [I] En60.2205 sec.
+&&&& PASSED

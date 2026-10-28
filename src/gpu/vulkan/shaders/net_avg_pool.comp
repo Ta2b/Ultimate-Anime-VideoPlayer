@@ -1,0 +1,44 @@
+#version 450
+// AveragePool 2D : moyenne de la fenêtre dans l'entrée ; les marges comptent si
+// count_include_pad. Référence : gpu/ir/op_window.cpp (eval_average_pool).
+#extension GL_GOOGLE_include_directive : require
+#include "net_tensor.glsl"
+
+layout(local_size_x = 256) in;
+
+layout(constant_id = 0) const uint TX = 0;
+layout(constant_id = 1) const uint TY = 0;
+
+AJP_NET_BUFFER(0, src, readonly)
+AJP_NET_BUFFER(1, dst, writeonly)
+
+layout(push_constant) uniform Push {
+  TDesc x;
+  TDesc y;
+  uint kernel_h;
+  uint kernel_w;
+  uint stride_h;
+  uint stride_w;
+  uint pad_top;
+  uint pad_left;
+  uint include_pad;
+} pc;
+
+void main() {
+  uint i = linear_invocation();
+  if (i >= t_count(pc.y)) return;
+  uvec4 o = t_coords(pc.y, i);
+  float sum = 0.0;
+  uint count = 0u;
+  for (uint kh = 0u; kh < pc.kernel_h; ++kh) {
+    int ih = int(o.z * pc.stride_h + kh) - int(pc.pad_top);
+    for (uint kw = 0u; kw < pc.kernel_w; ++kw) {
+      int iw = int(o.w * pc.stride_w + kw) - int(pc.pad_left);
+      if (ih < 0 || ih >= int(pc.x.h) || iw < 0 || iw >= int(pc.x.w)) continue;
+      sum += AJP_LOAD(src, TX, t_index(pc.x, o.x, o.y, uint(ih), uint(iw)));
+      ++count;
+    }
+  }
+  uint divisor = pc.include_pad == 1u ? pc.kernel_h * pc.kernel_w : count;
+  AJP_STORE(dst, TY, t_index(pc.y, o.x, o.y, o.z, o.w), divisor > 0u ? sum / float(divisor) : 0.0)
+}

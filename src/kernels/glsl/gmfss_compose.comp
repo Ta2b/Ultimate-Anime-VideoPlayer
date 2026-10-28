@@ -1,0 +1,107 @@
+#version 450
+// Composition après SPAN de GMFSS (spec gmfss_compose) : l'image intermédiaire agrandie vaut
+// H + F − L, H le mélange des sources agrandies splattées (RGB et couverture), L le même mélange
+// des sources à la taille de travail lu bilinéaire, F la sortie de la fusion dans sa fenêtre lue
+// de même ; bornée à [0, 1]. Référence : kernels/ref/gmfss.cpp ; même calcul que gmfss_kernels.cu.
+#extension GL_GOOGLE_include_directive : require
+#include "tensor.glsl"
+#include "ajp_kernels_spec.glsl"
+#include "common.glsl"
+
+layout(local_size_x = 16, local_size_y = 16) in;
+
+layout(std430, binding = 0) readonly buffer HighA { AJP_TENSOR v[]; } high_a;  // 4 plans, taille de sortie
+layout(std430, binding = 1) readonly buffer HighB { AJP_TENSOR v[]; } high_b;
+layout(std430, binding = 2) readonly buffer LowA { AJP_TENSOR v[]; } low_a;  // 4 plans, taille de travail
+layout(std430, binding = 3) readonly buffer LowB { AJP_TENSOR v[]; } low_b;
+layout(std430, binding = 4) readonly buffer Fusion { AJP_TENSOR v[]; } fusion;  // 3 plans remplis
+layout(std430, binding = 5) writeonly buffer Out { AJP_TENSOR v[]; } dst;      // 3 plans, taille de sortie
+// L'instant, mot de paramètre réécrit d'une exécution à l'autre sans réenregistrer.
+layout(std430, binding = 6) readonly buffer Params { float t; } params;
+
+layout(push_constant) uniform Push {
+  uint width;
+  uint height;
+  uint low_width;
+  uint low_height;
+  uint scale;
+  uint fusion_width;
+  uint fusion_height;
+  uint window_x;
+  uint window_y;
+} pc;
+
+// Les quatre voisins d'une lecture bilinéaire bornée à une fenêtre w × h en (x0w, y0w) d'un plan
+// de stride colonnes, et ses fractions (comme warp_blend.comp).
+struct Taps {
+  uint i00;
+  uint i10;
+  uint i01;
+  uint i11;
+  float fx;
+  float fy;
+};
+
+Taps taps_in(uint stride, uint x0w, uint y0w, uint w, uint h, float x, float y) {
+  x = bounded(x, 0.0, float(w - 1u));
+  y = bounded(y, 0.0, float(h - 1u));
+  uint x0 = uint(x);
+  uint y0 = uint(y);
+  uint x1 = min(x0 + 1u, w - 1u);
+  uint y1 = min(y0 + 1u, h - 1u);
+  uint r0 = (y0w + y0) * stride + x0w;
+  uint r1 = (y0w + y1) * stride + x0w;
+  return Taps(r0 + x0, r0 + x1, r1 + x0, r1 + x1, x - float(x0), y - float(y0));
+}
+
+float bilinear(float p00, float p10, float p01, float p11, Taps t) {
+  precise float top = p00 * (1.0 - t.fx) + p10 * t.fx;
+  precise float bottom = p01 * (1.0 - t.fx) + p11 * t.fx;
+  precise float value = top * (1.0 - t.fy) + bottom * t.fy;
+  return value;
+}
+
+float low_at_a(uint base, Taps t) {
+  return bilinear(float(low_a.v[base + t.i00]), float(low_a.v[base + t.i10]), float(low_a.v[base + t.i01]),
+                  float(low_a.v[base + t.i11]), t);
+}
+
+float low_at_b(uint base, Taps t) {
+  return bilinear(float(low_b.v[base + t.i00]), float(low_b.v[base + t.i10]), float(low_b.v[base + t.i01]),
+                  float(low_b.v[base + t.i11]), t);
+}
+
+float mix_sides(float p0, float c0, float p1, float c1) {
+  precise float w0 = (1.0 - params.t) * c0;
+  precise float w1 = params.t * c1;
+  precise float value = (w0 * p0 + w1 * p1) / (w0 + w1 + AJP_GMFSS_NORMALIZE_EPSILON);
+  return value;
+}
+
+void main() {
+  uint x = gl_GlobalInvocationID.x;
+  uint y = gl_GlobalInvocationID.y;
+  if (x >= pc.width || y >= pc.height) return;
+  uint plane = pc.width * pc.height;
+  uint low_plane = pc.low_width * pc.low_height;
+  uint fusion_plane = pc.fusion_width * pc.fusion_height;
+  uint i = y * pc.width + x;
+  precise float xw = (float(x) + 0.5) / float(pc.scale) - 0.5;
+  precise float yw = (float(y) + 0.5) / float(pc.scale) - 0.5;
+  Taps low = taps_in(pc.low_width, 0u, 0u, pc.low_width, pc.low_height, xw, yw);
+  Taps fused = taps_in(pc.fusion_width, pc.window_x, pc.window_y, pc.low_width, pc.low_height, xw, yw);
+  float ca = float(high_a.v[3u * plane + i]);
+  float cb = float(high_b.v[3u * plane + i]);
+  float la = low_at_a(3u * low_plane, low);
+  float lb = low_at_b(3u * low_plane, low);
+  for (uint c = 0u; c < 3u; ++c) {
+    uint k = c * plane + i;
+    float high = mix_sides(float(high_a.v[k]), ca, float(high_b.v[k]), cb);
+    float lo = mix_sides(low_at_a(c * low_plane, low), la, low_at_b(c * low_plane, low), lb);
+    uint base = c * fusion_plane;
+    float f = bilinear(float(fusion.v[base + fused.i00]), float(fusion.v[base + fused.i10]),
+                       float(fusion.v[base + fused.i01]), float(fusion.v[base + fused.i11]), fused);
+    precise float value = high + f - lo;
+    dst.v[k] = AJP_TENSOR(bounded(value, 0.0, 1.0));
+  }
+}

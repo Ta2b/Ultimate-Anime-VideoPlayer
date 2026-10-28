@@ -1,0 +1,213 @@
+name: CI
+
+# Chaque poussée sur main, cloud/** et release/** passe les règles (rules.yml). Les matrices de
+# construction et de tests tournent sur main, sur chaque pull request, chaque nuit et à la
+# demande (workflow_dispatch sur n'importe quelle branche) : une branche de travail ne les lance
+# pas à chaque poussée (cloud.yml y construit le lecteur sous lavapipe quand le code change). La
+# construction Windows, plus chère, tourne la nuit, à la demande et sur les pull requests vers
+# main. Versions et paquets : tools/release/versions.env.
+on:
+  push:
+    branches: [main, "cloud/**", "release/**"]
+  pull_request:
+  schedule:
+    - cron: "17 3 * * *"
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}-${{ github.event_name }}
+  cancel-in-progress: true
+
+env:
+  # À côté de l'espace de travail, en chemin absolu : actions/cache refuse les chemins qui
+  # contiennent « .. », et le cache des dépendances n'était jamais enregistré.
+  AJP_DEPS_PREFIX: ${{ github.workspace }}-deps
+  APT_COMPILERS: clang-20 clang-tidy-20 clang-format-20
+  CCACHE_DIR: ${{ github.workspace }}-ccache
+  CCACHE_BASEDIR: ${{ github.workspace }}
+  CCACHE_MAXSIZE: 600M
+  CMAKE_C_COMPILER_LAUNCHER: ccache
+  CMAKE_CXX_COMPILER_LAUNCHER: ccache
+
+jobs:
+  rules:
+    uses: ./.github/workflows/rules.yml
+
+  core:
+    name: Cœur (${{ matrix.name }})
+    if: github.event_name != 'push' || github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { name: gcc-13, cc: gcc-13, cxx: g++-13, preset: linux-prefix-core }
+          - { name: clang-20, cc: clang-20, cxx: clang++-20, preset: linux-prefix-core }
+          - { name: asan-ubsan, cc: gcc-13, cxx: g++-13, preset: linux-prefix-asan-core }
+          - { name: tsan, cc: gcc-13, cxx: g++-13, preset: linux-prefix-tsan }
+    env:
+      CC: ${{ matrix.cc }}
+      CXX: ${{ matrix.cxx }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Paquets système
+        run: |
+          source tools/release/versions.env
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq --no-install-recommends $APT_BUILD $APT_COMPILERS ccache
+      # Un script de dépendances modifié restaure le préfixe précédent : ses marqueurs signés ne
+      # font rebâtir que les dépendances dont la version ou les options ont changé.
+      - uses: actions/cache@v4
+        with:
+          path: ${{ env.AJP_DEPS_PREFIX }}
+          key: deps-core-${{ matrix.cc }}-${{ hashFiles('tools/deps/linux-from-source.sh') }}
+          restore-keys: deps-core-${{ matrix.cc }}-
+      - uses: actions/cache@v4
+        with:
+          path: ${{ env.CCACHE_DIR }}
+          key: ccache-core-${{ matrix.name }}-${{ github.sha }}
+          restore-keys: ccache-core-${{ matrix.name }}-
+      - run: tools/deps/linux-from-source.sh --core "$AJP_DEPS_PREFIX" "$RUNNER_TEMP/deps-src"
+      - run: cmake --preset ${{ matrix.preset }}
+      - run: cmake --build --preset ${{ matrix.preset }}
+      - run: ctest --preset ${{ matrix.preset }}
+
+  # Tous les modules, lecteur compris, sous Xvfb avec Vulkan logiciel (lavapipe) et la couche de
+  # validation exigée (AJP_TEST_VULKAN_VALIDATION, tests/support/vulkan_validation.h : chaque
+  # erreur de la couche fait échouer l'exécutable) : une fois tel quel, une fois sous TSan. Sous
+  # ASan et UBSan la couche est coupée pour la durée : les deux autres tâches la font déjà parler.
+  # Les préréglages de test portent LSAN_OPTIONS, TSAN_OPTIONS et, sous ASan, le chargeur Vulkan
+  # qui garde pilotes et couches chargés jusqu'à la sortie (tools/ci/lsan.supp dit pourquoi).
+  # clang-tidy n'analyse que les fichiers que cette configuration compile (clang-tidy-src.sh) : sa
+  # tâche, à part pour ne pas allonger celle des tests (15 min sur tout src/), construit aussi le backend OpenVINO (roue PyPI), que rien d'autre ne passait au
+  # crible avant la release. Elle tourne sur chaque pull request, comme les autres.
+  player:
+    name: Lecteur Linux (${{ matrix.name }})
+    if: github.event_name != 'push' || github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { name: lavapipe, preset: linux-prefix, tidy: false, tests: true, validation: require }
+          - { name: clang-tidy, preset: linux-prefix, tidy: true, tests: false, validation: require }
+          - { name: asan-ubsan, preset: linux-prefix-asan, tidy: false, tests: true, validation: "off" }
+          - { name: tsan, preset: linux-prefix-tsan-player, tidy: false, tests: true, validation: require }
+    env:
+      CC: gcc-13
+      CXX: g++-13
+      AJP_TEST_VULKAN_VALIDATION: ${{ matrix.validation }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # clang-tidy ne regarde, sur une pull request, que les fichiers qu'elle change.
+          fetch-depth: ${{ matrix.tidy && 0 || 1 }}
+      # clang et clang-tidy (plusieurs centaines de Mo avec LLVM) ne servent qu'à la tâche
+      # analysée ; clang-format reste à rules.yml. ccache : la construction repart du cache.
+      - name: Paquets système
+        run: |
+          source tools/release/versions.env
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq $APT_BUILD $APT_PLAYER $APT_TESTS ccache ${{ matrix.tidy && 'clang-20 clang-tidy-20' || '' }}
+          pip install --user "meson==$MESON_VERSION"
+      - uses: actions/cache@v4
+        with:
+          path: ${{ env.AJP_DEPS_PREFIX }}
+          key: deps-player-gcc-13-${{ hashFiles('tools/deps/linux-from-source.sh') }}
+          restore-keys: deps-player-gcc-13-
+      - uses: actions/cache@v4
+        with:
+          path: ${{ env.CCACHE_DIR }}
+          key: ccache-player-${{ matrix.name }}-${{ github.sha }}
+          restore-keys: ccache-player-${{ matrix.name }}-
+      - run: tools/deps/linux-from-source.sh "$AJP_DEPS_PREFIX" "$RUNNER_TEMP/deps-src"
+      - name: OpenVINO
+        if: matrix.tidy
+        run: |
+          source tools/release/versions.env
+          pip install --user "openvino==$OPENVINO_VERSION"
+          echo "OpenVINO_DIR=$(python3 -c 'from openvino.utils import get_cmake_path; print(get_cmake_path())')" >> "$GITHUB_ENV"
+      - run: cmake --preset ${{ matrix.preset }} ${{ matrix.tidy && '-DAJP_WITH_OPENVINO=ON' || '' }}
+      - run: cmake --build --preset ${{ matrix.preset }}
+      - run: ccache -s
+      - name: Tests (Vulkan logiciel sous Xvfb)
+        if: matrix.tests
+        run: xvfb-run -a ctest --preset ${{ matrix.preset }} -j 3
+      # Une pull request n'analyse que les fichiers qu'elle change (tout src/ si un en-tête ou un
+      # CMakeLists.txt change) ; main, la nuit et les lancements à la demande analysent tout.
+      - name: clang-tidy sur src/
+        if: matrix.tidy
+        env:
+          AJP_TIDY_BASE: ${{ github.event_name == 'pull_request' && format('origin/{0}', github.base_ref) || '' }}
+        run: tools/ci/clang-tidy-src.sh build/linux-prefix
+
+  # MSVC et vcpkg, sans GPU : la construction avec /WX (une rupture de MSVC ou d'un port paraît ici
+  # et non au moment de livrer), puis les tests des modules qui n'ouvrent pas d'appareil
+  # (préréglage de test windows-ci). Mêmes chemins courts, triplet et cache de ports que
+  # release-windows.yml ; restauration et sauvegarde séparées, pour garder les ports compilés
+  # même quand la construction échoue plus loin.
+  windows:
+    name: Windows (MSVC)
+    if: >-
+      github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'pull_request' && github.base_ref == 'main')
+    runs-on: windows-2025
+    env:
+      SCCACHE_GHA_ENABLED: "true"
+      AJP_VCPKG: C:\v
+      AJP_VCPKG_BUILDTREES: C:\vb
+      VCPKG_BINARY_SOURCES: "clear;files,C:\\vc,readwrite"
+      AJP_VCPKG_TRIPLET: x64-windows-release
+    steps:
+      - uses: actions/checkout@v4
+      - id: vcpkg-cache
+        uses: actions/cache/restore@v4
+        with:
+          path: C:\vc
+          key: vcpkg-windows-x64-ci-${{ hashFiles('vcpkg.json', 'ports/**') }}-${{ github.run_id }}
+          restore-keys: |
+            vcpkg-windows-x64-ci-${{ hashFiles('vcpkg.json', 'ports/**') }}-
+            vcpkg-windows-x64-ci-
+            vcpkg-windows-x64-release-
+      - name: vcpkg à la référence du manifeste
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path C:\vc | Out-Null
+          $baseline = (Get-Content vcpkg.json | ConvertFrom-Json).'builtin-baseline'
+          git clone -q https://github.com/microsoft/vcpkg $env:AJP_VCPKG
+          git -C $env:AJP_VCPKG checkout -q $baseline
+          & "$env:AJP_VCPKG/bootstrap-vcpkg.bat" -disableMetrics
+      - uses: ilammy/msvc-dev-cmd@v1
+      # sccache (cache GitHub) pour cl.exe : /Z7 (CMAKE_MSVC_DEBUG_INFORMATION_FORMAT=Embedded) met
+      # les informations de débogage dans les objets, seule forme que sccache sait mettre en cache.
+      - uses: mozilla-actions/sccache-action@v0.0.9
+      # Le paquet NuGet de Windows ML : MIGraphX de Windows ML se construit avec /WX comme le reste.
+      - name: Windows ML
+        shell: pwsh
+        run: pwsh tools/deps/windows-winml.ps1 "$env:RUNNER_TEMP/winml"
+      - name: Configuration
+        shell: pwsh
+        # msvc-dev-cmd pose le vcpkg de Visual Studio : le nôtre, à la référence du manifeste.
+        run: |
+          $env:VCPKG_ROOT = $env:AJP_VCPKG
+          cmake --preset windows-ci "-DVCPKG_INSTALL_OPTIONS=--x-buildtrees-root=$env:AJP_VCPKG_BUILDTREES" `
+            "-DVCPKG_TARGET_TRIPLET=$env:AJP_VCPKG_TRIPLET" "-DVCPKG_HOST_TRIPLET=$env:AJP_VCPKG_TRIPLET" `
+            -DAJP_WITH_WINML=ON "-DAJP_WINML_ROOT=$env:AJP_WINML_ROOT" `
+            -DCMAKE_C_COMPILER_LAUNCHER=sccache -DCMAKE_CXX_COMPILER_LAUNCHER=sccache `
+            -DCMAKE_MSVC_DEBUG_INFORMATION_FORMAT=Embedded
+          if ($LASTEXITCODE -ne 0) { throw "configuration" }
+      - name: Construction
+        shell: pwsh
+        run: |
+          cmake --build --preset windows-ci -- -k 0  # toutes les erreurs de MSVC en une passe
+          if ($LASTEXITCODE -ne 0) { throw "construction" }
+      - name: Tests sans GPU
+        shell: pwsh
+        run: |
+          ctest --preset windows-ci
+          if ($LASTEXITCODE -ne 0) { throw "tests" }
+      - uses: actions/cache/save@v4
+        if: always()
+        with:
+          path: C:\vc
+          key: ${{ steps.vcpkg-cache.outputs.cache-primary-key }}

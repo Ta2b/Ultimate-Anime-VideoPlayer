@@ -1,4 +1,4 @@
-# Exporte les graphes ONNX de GMFSS Fortuna (base et union, flot entier et demi-flot) et de
+# Exporte les graphes ONNX de GMFSS Fortuna (base et union, flot à demi-échelle : paires performance et qualité) et de
 # DistilDRBA (flot entier et demi-flot) avec les scripts du dépôt, et les range en artefact. Avec
 # « publier », les joint aussi à la release models-interp-1 du dépôt de releases, d'où
 # tools/release/fetch-models.sh les prend pour les paquets.
@@ -35,15 +35,20 @@ jobs:
         run: |
           pip install torch --index-url https://download.pytorch.org/whl/cpu
           pip install onnx onnxruntime numpy
-      - name: GMFSS Fortuna (base et union, flot entier et demi-flot)
+      # Toujours le flot à demi-échelle : mesuré (RTX 4070 Ti, 1280x768), il vaut le flot entier ou le
+      # dépasse pour moitié moins de calcul, donc le flot entier n'est plus exporté. Deux paires :
+      # _s05 (GMFlow en FP16, mode performance, avec sa fusion) et _s05q (GMFlow en FP32, mode qualité,
+      # la paire seule : sa fusion est celle de _s05). Le contrôle de qualité de chaque export juge la
+      # moyenne et le p99,9 % de l'écart à l'original, pas le pire pixel d'une petite image.
+      - name: "GMFSS Fortuna (base et union, demi-flot : performance et qualité)"
         run: |
           pip download --no-deps "$GMFSS_WHEEL" -d "$RUNNER_TEMP/gmfss"
           python -m zipfile -e "$RUNNER_TEMP"/gmfss/*.whl "$RUNNER_TEMP/gmfss/roue"
           for model in base union; do
             python -I tools/gmfss/export_gmfss.py "$RUNNER_TEMP/gmfss/roue/vsgmfss_fortuna" \
-              --out out --model "$model" --width 256 --height 192
-            python -I tools/gmfss/export_gmfss.py "$RUNNER_TEMP/gmfss/roue/vsgmfss_fortuna" \
               --out out --model "$model" --scale 0.5 --width 256 --height 256
+            python -I tools/gmfss/export_gmfss.py "$RUNNER_TEMP/gmfss/roue/vsgmfss_fortuna" \
+              --out out --model "$model" --scale 0.5 --width 256 --height 256 --precision flownet32
           done
       - name: DistilDRBA v2 lite (flot entier et demi-flot)
         run: |

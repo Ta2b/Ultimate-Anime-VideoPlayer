@@ -1,0 +1,150 @@
+#version 450
+// Fonctions de transfert (PQ, HLG, sRGB, BT.1886) et primaires BT.709 ↔ BT.2020, appliquées à
+// chaque pixel d'un tenseur RGB planaire. L'opération est une constante de spécialisation ; les
+// paramètres d'écran (HLG, BT.1886) viennent de l'hôte, validés et précalculés.
+// Contrat : kernels/spec/transfer.h ; référence : kernels/ref/transfer.cpp.
+#extension GL_GOOGLE_include_directive : require
+#include "tensor.glsl"
+#include "ajp_kernels_spec.glsl"
+#include "common.glsl"
+
+layout(local_size_x = 16, local_size_y = 16) in;
+
+// Numéros de vk_compute TransferOp (gpu/vulkan/compute/kernel_types.h).
+const uint AJP_OP_PQ_EOTF = 0u;
+const uint AJP_OP_PQ_INVERSE_EOTF = 1u;
+const uint AJP_OP_HLG_OETF = 2u;
+const uint AJP_OP_HLG_INVERSE_OETF = 3u;
+const uint AJP_OP_HLG_OOTF = 4u;
+const uint AJP_OP_SRGB_EOTF = 5u;
+const uint AJP_OP_SRGB_INVERSE_EOTF = 6u;
+const uint AJP_OP_BT1886_EOTF = 7u;
+const uint AJP_OP_BT1886_INVERSE_EOTF = 8u;
+const uint AJP_OP_BT709_TO_BT2020 = 9u;
+const uint AJP_OP_BT2020_TO_BT709 = 10u;
+
+layout(constant_id = 0) const uint AJP_TRANSFER_OP = AJP_OP_PQ_EOTF;
+
+layout(std430, binding = 0) readonly buffer Source { AJP_TENSOR v[]; } src;
+layout(std430, binding = 1) writeonly buffer Destination { AJP_TENSOR v[]; } dst;
+
+layout(push_constant) uniform Push {
+  uint width;
+  uint height;
+  float hlg_peak;  // Lw, cd/m²
+  float hlg_gamma;  // 1,2 + 0,42 log10(Lw / 1000)
+  float bt1886_a;
+  float bt1886_b;
+  float bt1886_black;  // Lb
+  float bt1886_white;  // Lw
+} pc;
+
+float pq_eotf(float signal) {
+  precise float p = pow(bounded(signal, 0.0, 1.0), 1.0 / AJP_PQ_M2);
+  precise float y = pow(max(p - AJP_PQ_C1, 0.0) / (AJP_PQ_C2 - AJP_PQ_C3 * p), 1.0 / AJP_PQ_M1);
+  return y * AJP_PQ_PEAK_NITS;
+}
+
+float pq_inverse_eotf(float nits) {
+  precise float ym = pow(bounded(nits, 0.0, AJP_PQ_PEAK_NITS) / AJP_PQ_PEAK_NITS, AJP_PQ_M1);
+  precise float e = pow((AJP_PQ_C1 + AJP_PQ_C2 * ym) / (1.0 + AJP_PQ_C3 * ym), AJP_PQ_M2);
+  return e;
+}
+
+float hlg_oetf(float scene) {
+  float e = bounded(scene, 0.0, 1.0);
+  if (e <= AJP_HLG_KNEE) return sqrt(3.0 * e);
+  precise float signal = AJP_HLG_A * log(12.0 * e - AJP_HLG_B) + AJP_HLG_C;
+  return signal;
+}
+
+float hlg_inverse_oetf(float signal) {
+  float v = bounded(signal, 0.0, 1.0);
+  if (v <= 0.5) {
+    precise float low = v * v / 3.0;
+    return low;
+  }
+  precise float high = (exp((v - AJP_HLG_C) / AJP_HLG_A) + AJP_HLG_B) / 12.0;
+  return high;
+}
+
+// Gain Lw Ys^(γ − 1), Ys luma BT.2020 de la scène ; une scène sans lumière s'affiche noire.
+vec3 hlg_ootf(vec3 scene) {
+  precise float ys = AJP_KR_BT2020 * scene.r + (1.0 - AJP_KR_BT2020 - AJP_KB_BT2020) * scene.g +
+                     AJP_KB_BT2020 * scene.b;
+  precise float gain = ys > 0.0 ? pc.hlg_peak * pow(ys, pc.hlg_gamma - 1.0) : 0.0;
+  return vec3(gain * scene.r, gain * scene.g, gain * scene.b);
+}
+
+float srgb_eotf(float signal) {
+  float v = bounded(signal, 0.0, 1.0);
+  if (v <= AJP_SRGB_ENCODED_KNEE) return v / AJP_SRGB_SLOPE;
+  precise float light = pow((v + AJP_SRGB_OFFSET) / (1.0 + AJP_SRGB_OFFSET), AJP_SRGB_GAMMA);
+  return light;
+}
+
+float srgb_inverse_eotf(float light) {
+  float l = bounded(light, 0.0, 1.0);
+  if (l <= AJP_SRGB_LINEAR_KNEE) return l * AJP_SRGB_SLOPE;
+  precise float signal = (1.0 + AJP_SRGB_OFFSET) * pow(l, 1.0 / AJP_SRGB_GAMMA) - AJP_SRGB_OFFSET;
+  return signal;
+}
+
+float bt1886_eotf(float signal) {
+  precise float light = pc.bt1886_a * pow(max(bounded(signal, 0.0, 1.0) + pc.bt1886_b, 0.0), AJP_BT1886_GAMMA);
+  return light;
+}
+
+float bt1886_inverse_eotf(float light) {
+  float l = bounded(light, pc.bt1886_black, pc.bt1886_white);
+  precise float signal = pow(l / pc.bt1886_a, 1.0 / AJP_BT1886_GAMMA) - pc.bt1886_b;
+  return signal;
+}
+
+// Produit matrice × RGB linéaire dans l'ordre de la référence ; m[colonne][ligne].
+vec3 convert(mat3 m, vec3 c) {
+  precise float r = m[0][0] * c.r + m[1][0] * c.g + m[2][0] * c.b;
+  precise float g = m[0][1] * c.r + m[1][1] * c.g + m[2][1] * c.b;
+  precise float b = m[0][2] * c.r + m[1][2] * c.g + m[2][2] * c.b;
+  return vec3(r, g, b);
+}
+
+vec3 apply(vec3 c) {
+  switch (AJP_TRANSFER_OP) {
+    case AJP_OP_PQ_EOTF:
+      return vec3(pq_eotf(c.r), pq_eotf(c.g), pq_eotf(c.b));
+    case AJP_OP_PQ_INVERSE_EOTF:
+      return vec3(pq_inverse_eotf(c.r), pq_inverse_eotf(c.g), pq_inverse_eotf(c.b));
+    case AJP_OP_HLG_OETF:
+      return vec3(hlg_oetf(c.r), hlg_oetf(c.g), hlg_oetf(c.b));
+    case AJP_OP_HLG_INVERSE_OETF:
+      return vec3(hlg_inverse_oetf(c.r), hlg_inverse_oetf(c.g), hlg_inverse_oetf(c.b));
+    case AJP_OP_HLG_OOTF:
+      return hlg_ootf(c);
+    case AJP_OP_SRGB_EOTF:
+      return vec3(srgb_eotf(c.r), srgb_eotf(c.g), srgb_eotf(c.b));
+    case AJP_OP_SRGB_INVERSE_EOTF:
+      return vec3(srgb_inverse_eotf(c.r), srgb_inverse_eotf(c.g), srgb_inverse_eotf(c.b));
+    case AJP_OP_BT1886_EOTF:
+      return vec3(bt1886_eotf(c.r), bt1886_eotf(c.g), bt1886_eotf(c.b));
+    case AJP_OP_BT1886_INVERSE_EOTF:
+      return vec3(bt1886_inverse_eotf(c.r), bt1886_inverse_eotf(c.g), bt1886_inverse_eotf(c.b));
+    case AJP_OP_BT709_TO_BT2020:
+      return convert(AJP_BT709_TO_BT2020, c);
+    default:
+      return convert(AJP_BT2020_TO_BT709, c);
+  }
+}
+
+void main() {
+  uint x = gl_GlobalInvocationID.x;
+  uint y = gl_GlobalInvocationID.y;
+  if (x >= pc.width || y >= pc.height) return;
+  uint plane = pc.width * pc.height;
+  uint i = y * pc.width + x;
+  vec3 c = vec3(float(src.v[i]), float(src.v[plane + i]), float(src.v[2u * plane + i]));
+  vec3 out_color = apply(c);
+  dst.v[i] = AJP_TENSOR(out_color.r);
+  dst.v[plane + i] = AJP_TENSOR(out_color.g);
+  dst.v[2u * plane + i] = AJP_TENSOR(out_color.b);
+}

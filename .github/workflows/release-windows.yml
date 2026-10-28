@@ -1,0 +1,141 @@
+name: Release Windows
+
+# Lancé à la main (ou par une étiquette v*) : le lecteur universel et son backend Vulkan, les
+# moteurs OpenVINO (GPU Intel et NPU) et MIGraphX de Windows ML (AMD RDNA 3 et après, à l'essai),
+# et TensorRT quand l'entrée tensorrt le demande : la CI télécharge alors le kit CUDA et TensorRT,
+# sous leurs licences NVIDIA, que le propriétaire du dépôt accepte en cochant l'entrée.
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Étiquette de la release où joindre le paquet (vide : artefact seulement)"
+        required: false
+      tensorrt:
+        description: "Construire TensorRT : j'accepte les licences du kit CUDA et de TensorRT de NVIDIA"
+        type: boolean
+        default: false
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  package:
+    name: Lecteur Windows (x64)
+    runs-on: windows-2025
+    env:
+      # Chemins courts : les sources de spirv-tools dépassent sinon les 260 caractères de MSVC.
+      AJP_VCPKG: C:\v
+      AJP_VCPKG_BUILDTREES: C:\vb
+      VCPKG_BINARY_SOURCES: "clear;files,C:\\vc,readwrite"
+      AJP_VCPKG_TRIPLET: x64-windows-release
+    steps:
+      - uses: actions/checkout@v4
+      # Restauration et sauvegarde séparées : les ports déjà compilés restent en cache même quand
+      # la construction échoue plus loin.
+      - id: vcpkg-cache
+        uses: actions/cache/restore@v4
+        with:
+          path: C:\vc
+          key: vcpkg-windows-x64-release-${{ hashFiles('vcpkg.json', 'ports/**') }}-${{ github.run_id }}
+          restore-keys: |
+            vcpkg-windows-x64-release-${{ hashFiles('vcpkg.json', 'ports/**') }}-
+            vcpkg-windows-x64-release-
+      - name: vcpkg à la référence du manifeste
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path C:\vc | Out-Null
+          $baseline = (Get-Content vcpkg.json | ConvertFrom-Json).'builtin-baseline'
+          git clone -q https://github.com/microsoft/vcpkg $env:AJP_VCPKG
+          git -C $env:AJP_VCPKG checkout -q $baseline
+          & "$env:AJP_VCPKG/bootstrap-vcpkg.bat" -disableMetrics
+      - uses: ilammy/msvc-dev-cmd@v1
+      # OpenVINO par sa roue PyPI, qui porte ses en-têtes, ses bibliothèques et sa configuration
+      # CMake, à la version de tools/release/versions.env (la même que sous Linux).
+      - name: OpenVINO
+        shell: pwsh
+        run: |
+          $line = Select-String -Path tools/release/versions.env -Pattern '^OPENVINO_VERSION=(\S+)'
+          if (-not $line) { throw "OPENVINO_VERSION absent de tools/release/versions.env" }
+          $version = $line.Matches[0].Groups[1].Value
+          python -m pip install -q "openvino==$version"
+          if ($LASTEXITCODE -ne 0) { throw "pip openvino $version" }
+          $dir = python -c "from openvino.utils import get_cmake_path; print(get_cmake_path())"
+          "OpenVINO_DIR=$dir" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+      # Windows ML par son paquet NuGet, à la version et à l'empreinte de versions.env.
+      - name: Windows ML
+        shell: pwsh
+        run: pwsh tools/deps/windows-winml.ps1 "$env:RUNNER_TEMP/winml"
+      # Seulement sur l'entrée tensorrt (licences NVIDIA acceptées par le propriétaire du dépôt).
+      - name: CUDA et TensorRT
+        if: inputs.tensorrt
+        shell: pwsh
+        run: pwsh tools/deps/windows-tensorrt.ps1 "$env:RUNNER_TEMP/nvidia"
+      - name: Paquet
+        shell: pwsh
+        env:
+          # Les liens d'engines.lock visent la release de cette étiquette : sans elle, le script
+          # prend v<version du projet>, une release qui n'existe pas.
+          TAG: ${{ github.event_name == 'push' && github.ref_name || inputs.tag }}
+        # msvc-dev-cmd pose le vcpkg de Visual Studio : le nôtre, à la référence du manifeste.
+        run: |
+          $env:VCPKG_ROOT = $env:AJP_VCPKG
+          $env:AJP_WITH_OPENVINO = "ON"
+          $env:AJP_WITH_WINML = "ON"
+          if ("${{ inputs.tensorrt }}" -eq "true") { $env:AJP_WITH_CUDA = "ON" }
+          $env:AJP_RELEASE_REPO = "${{ vars.AJP_RELEASE_REPO || github.repository }}"
+          if ($env:TAG) { $env:AJP_RELEASE_TAG = $env:TAG }
+          pwsh tools/release/package-windows.ps1 "$env:RUNNER_TEMP/package"
+      # Les tests sans GPU du build même du paquet (préréglage de test windows-release) : un échec
+      # arrête tout avant l'artefact et la release.
+      # CTest liste les tests de chaque exécutable, même ceux que le filtre écarte : celui du backend
+      # Vulkan, lié à openvino.dll de la roue, doit se charger (sinon 0xc0000135 avant tout test).
+      - name: Tests sans GPU
+        shell: pwsh
+        run: |
+          $env:PATH = (Join-Path (Split-Path $env:OpenVINO_DIR -Parent) "libs") + ";" + $env:PATH
+          ctest --preset windows-release
+          if ($LASTEXITCODE -ne 0) { throw "tests" }
+      - uses: actions/cache/save@v4
+        if: always()
+        with:
+          path: C:\vc
+          key: ${{ steps.vcpkg-cache.outputs.cache-primary-key }}
+      # Le quota de stockage des artefacts du compte peut être plein : le paquet est construit quand même.
+      - uses: actions/upload-artifact@v4
+        continue-on-error: true
+        with:
+          retention-days: 3
+          name: ajp-windows-x64
+          path: |
+            ${{ runner.temp }}/package/ajp-*
+            ${{ runner.temp }}/package/SHA256SUMS-windows.txt
+      - name: Joindre à la release
+        # Jamais avec TensorRT : un paquet qui embarque des composants NVIDIA reste un artefact.
+        if: (github.event_name == 'push' || inputs.tag != '') && !inputs.tensorrt
+        shell: pwsh
+        env:
+          # Un dépôt public à part peut porter les releases (le lecteur télécharge ses moteurs sans
+          # compte) : variable AJP_RELEASE_REPO et secret AJP_RELEASE_TOKEN qui peut y écrire.
+          GH_TOKEN: ${{ secrets.AJP_RELEASE_TOKEN || github.token }}
+          AJP_RELEASE_REPO: ${{ vars.AJP_RELEASE_REPO || github.repository }}
+          TAG: ${{ github.event_name == 'push' && github.ref_name || inputs.tag }}
+        # La construction macOS de la même étiquette peut créer la release au même moment : un
+        # refus de création ne compte que si la release n'existe toujours pas.
+        run: |
+          gh release view $env:TAG -R $env:AJP_RELEASE_REPO *> $null
+          if ($LASTEXITCODE -ne 0) {
+            $notes = "tools/release/notes/$env:TAG.md"
+            if (Test-Path $notes) {
+              gh release create $env:TAG -R $env:AJP_RELEASE_REPO --prerelease --title $env:TAG --notes-file $notes
+            } else {
+              gh release create $env:TAG -R $env:AJP_RELEASE_REPO --prerelease --title $env:TAG --notes $env:TAG
+            }
+            if ($LASTEXITCODE -ne 0) {
+              gh release view $env:TAG -R $env:AJP_RELEASE_REPO *> $null
+              if ($LASTEXITCODE -ne 0) { throw "release $env:TAG" }
+            }
+          }
+          $assets = @(Get-ChildItem "$env:RUNNER_TEMP/package" -File | Where-Object { $_.Name -like "ajp-*" -or $_.Name -eq "SHA256SUMS-windows.txt" } | ForEach-Object { $_.FullName })
+          gh release upload $env:TAG -R $env:AJP_RELEASE_REPO @assets --clobber

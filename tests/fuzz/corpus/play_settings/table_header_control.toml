@@ -1,0 +1,19 @@
+version = 1
+
+[image]
+upscale = false
+work_height = 1080
+
+[interpolation]
+engine = "gmfss"
+rife = 2
+
+[r = 1080
+
+[interpolation]
+engine = "gmfss"
+rife = 2
+
+[grade]
+preset = "naturel"
+vibrance = 0.25

@@ -1,0 +1,64 @@
+{
+  "$schema": "https://raw.githubusercontent.com/microsoft/vcpkg-tool/main/docs/vcpkg.schema.json",
+  "name": "ajp",
+  "version-semver": "0.2.0",
+  "builtin-baseline": "bf19794383e8fb95eba5aa553235bc8ec2271688",
+  "dependencies": [
+    "tomlplusplus",
+    {
+      "name": "spdlog",
+      "default-features": false
+    }
+  ],
+  "features": {
+    "tests": {
+      "description": "Tests unitaires",
+      "dependencies": [
+        "catch2"
+      ]
+    },
+    "player": {
+      "description": "Le lecteur complet : médias, rendu, interface",
+      "dependencies": [
+        {
+          "name": "ffmpeg",
+          "default-features": false,
+          "features": [
+            "avcodec",
+            "avformat",
+            "swresample",
+            "swscale",
+            "dav1d",
+            "nvcodec",
+            "vulkan"
+          ]
+        },
+        {
+          "name": "sdl3",
+          "features": [
+            "vulkan"
+          ]
+        },
+        "libplacebo",
+        "libass",
+        {
+          "name": "imgui",
+          "features": [
+            "sdl3-binding",
+            "vulkan-binding"
+          ]
+        },
+        "vulkan-headers",
+        "nanobench",
+        {
+          "name": "shaderc",
+          "host": true
+        }
+      ]
+    }
+  },
+  "default-features": [
+    "tests"
+  ],
+  "description": "Lecteur vidéo anime : upscaling, interpolation et HDR en temps réel"
+}

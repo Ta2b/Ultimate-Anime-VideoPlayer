@@ -1,0 +1,148 @@
+// Chemins matériels qui peuvent tourner ici : refus nommés sans pilote CUDA,
+// appareil Vulkan sur lavapipe, appareil partagé par un autre module.
+#include <catch2/catch_test_macros.hpp>
+
+extern "C" {
+#include <libavutil/hwcontext.h>
+#include <libavutil/hwcontext_vulkan.h>
+}
+
+#include "media/cuda_driver.h"
+#include "media/hw_device.h"
+
+using namespace ajp::media;
+using ajp::RefusalCode;
+
+namespace {
+
+// HEVC a un hwaccel Vulkan dans cette construction de FFmpeg.
+constexpr AVCodecID kVulkanCodec = AV_CODEC_ID_HEVC;
+
+class SharedDevice final : public HwDeviceSource {
+ public:
+  SharedDevice(HwApi api, AVBufferRef* device) : api_(api), device_(device) {}
+  AVBufferRef* device(HwApi api) const override { return api == api_ ? av_buffer_ref(device_) : nullptr; }
+
+ private:
+  HwApi api_;
+  AVBufferRef* device_;
+};
+
+}  // namespace
+
+TEST_CASE("hw : sans pilote CUDA, le chargement est un refus nommé", "[media][hw]") {
+  auto driver = CudaDriver::load();
+  if (driver) SKIP("pilote CUDA présent : chemin de refus non exercé");
+  CHECK(driver.error().code == RefusalCode::HwDecodeUnavailable);
+  CHECK_FALSE(driver.error().detail.empty());
+}
+
+TEST_CASE("hw : CUDA exige l'UUID du rendu", "[media][hw]") {
+  auto device = open_hw_device(AV_CODEC_ID_HEVC, HwApi::Cuda, DecoderOptions{});
+  REQUIRE_FALSE(device);
+  CHECK(device.error().code == RefusalCode::HwDecodeUnavailable);
+#if defined(__APPLE__)
+  // FFmpeg n'a pas NVDEC sous macOS : l'API est écartée avant l'appareil, comme dans le cas suivant.
+  CHECK(device.error().detail.find("aucun décodeur") != std::string::npos);
+#else
+  CHECK(device.error().detail.find("UUID") != std::string::npos);
+#endif
+}
+
+TEST_CASE("hw : une API sans décodeur pour ce codec est écartée avant tout appareil", "[media][hw]") {
+  auto device = open_hw_device(AV_CODEC_ID_FFV1, HwApi::Vaapi, DecoderOptions{});
+  REQUIRE_FALSE(device);
+  CHECK(device.error().code == RefusalCode::HwDecodeUnavailable);
+  CHECK(device.error().detail.starts_with("vaapi"));
+  auto software = open_hw_device(AV_CODEC_ID_HEVC, HwApi::Software, DecoderOptions{});
+  REQUIRE_FALSE(software);
+}
+
+TEST_CASE("hw : appareil Vulkan choisi par l'UUID du rendu (lavapipe)", "[media][hw][vulkan]") {
+  auto any = open_hw_device(kVulkanCodec, HwApi::Vulkan, DecoderOptions{});
+  if (!any) SKIP("aucun appareil Vulkan : " << any.error().detail);
+  REQUIRE(any->device);
+  CHECK(any->format == AV_PIX_FMT_VULKAN);
+  const std::optional<DeviceUuid> uuid = vulkan_device_uuid(*any->device);
+  REQUIRE(uuid.has_value());
+
+  auto same = open_hw_device(kVulkanCodec, HwApi::Vulkan, {.render_device = uuid});
+  REQUIRE(same.has_value());
+  CHECK(vulkan_device_uuid(*same->device) == uuid);
+
+  DeviceUuid other = *uuid;
+  other[0] = static_cast<std::uint8_t>(other[0] ^ 0xFFU);
+  auto mismatch = open_hw_device(kVulkanCodec, HwApi::Vulkan, {.render_device = other});
+  REQUIRE_FALSE(mismatch);
+  CHECK(mismatch.error().code == RefusalCode::HwDecodeUnavailable);
+  CHECK(mismatch.error().detail.find("UUID") != std::string::npos);
+}
+
+TEST_CASE("hw : un appareil Vulkan partagé est repris tel quel, d'un autre type il est refusé",
+          "[media][hw][vulkan]") {
+  auto created = open_hw_device(kVulkanCodec, HwApi::Vulkan, DecoderOptions{});
+  if (!created) SKIP("aucun appareil Vulkan : " << created.error().detail);
+
+  const SharedDevice shared(HwApi::Vulkan, created->device.get());
+  auto reused = open_hw_device(kVulkanCodec, HwApi::Vulkan, {.devices = &shared});
+  REQUIRE(reused.has_value());
+  CHECK(reused->device->data == created->device->data);
+  CHECK_FALSE(reused->stream);
+
+  const SharedDevice wrong(HwApi::Cuda, created->device.get());  // un Vulkan présenté comme CUDA
+  auto refused = open_hw_device(kVulkanCodec, HwApi::Cuda, {.devices = &wrong});
+  REQUIRE_FALSE(refused);
+  CHECK(refused.error().detail.find("autre type") != std::string::npos);
+}
+
+TEST_CASE("hw : Vulkan Video exige une file de l'appareil qui décode le codec", "[media][hw]") {
+  // Un appareil partagé dont seules les files sont posées : la vérification ne lit qu'elles.
+  BufferPtr device(av_hwdevice_ctx_alloc(AV_HWDEVICE_TYPE_VULKAN));
+  if (!device) SKIP("FFmpeg sans Vulkan");
+  auto& ctx = *reinterpret_cast<AVHWDeviceContext*>(device->data);
+  auto& vk = *static_cast<AVVulkanDeviceContext*>(ctx.hwctx);
+  vk.nb_qf = 1;
+  vk.qf[0] = AVVulkanDeviceQueueFamily{
+      .idx = 0, .num = 1, .flags = VK_QUEUE_COMPUTE_BIT, .video_caps = VK_VIDEO_CODEC_OPERATION_NONE_KHR};
+  auto none = vulkan_decode_queue(*device, AV_CODEC_ID_HEVC);
+  REQUIRE_FALSE(none);
+  CHECK(none.error().code == RefusalCode::HwDecodeUnavailable);
+  CHECK(none.error().detail == "vulkan : aucune file de l'appareil ne décode hevc");
+  CHECK(vulkan_decode_queue(*device, AV_CODEC_ID_FFV1).has_value());  // compute shaders
+
+  vk.nb_qf = 2;
+  vk.qf[1] = AVVulkanDeviceQueueFamily{.idx = 3,
+                                       .num = 1,
+                                       .flags = VK_QUEUE_VIDEO_DECODE_BIT_KHR,
+                                       .video_caps = VK_VIDEO_CODEC_OPERATION_DECODE_H264_BIT_KHR};
+  CHECK(vulkan_decode_queue(*device, AV_CODEC_ID_H264).has_value());
+  CHECK_FALSE(vulkan_decode_queue(*device, AV_CODEC_ID_HEVC).has_value());
+}
+
+TEST_CASE("hw : Vulkan ne décode par défaut que les codecs Vulkan Video", "[media][hw]") {
+  CHECK(is_vulkan_video_codec(AV_CODEC_ID_H264));
+  CHECK(is_vulkan_video_codec(AV_CODEC_ID_HEVC));
+  CHECK(is_vulkan_video_codec(AV_CODEC_ID_AV1));
+  CHECK(is_vulkan_video_codec(AV_CODEC_ID_VP9));
+  CHECK_FALSE(is_vulkan_video_codec(AV_CODEC_ID_FFV1));
+  CHECK_FALSE(is_vulkan_video_codec(AV_CODEC_ID_PRORES));
+  CHECK_FALSE(is_vulkan_video_codec(AV_CODEC_ID_MPEG4));
+  // Refus avant tout appareil, avec ou sans ffv1_vulkan dans cette construction.
+  for (const AVCodecID codec : {AV_CODEC_ID_FFV1, AV_CODEC_ID_PRORES, AV_CODEC_ID_DPX}) {
+    auto refused = open_hw_device(codec, HwApi::Vulkan, DecoderOptions{});
+    REQUIRE_FALSE(refused);
+    CHECK(refused.error().code == RefusalCode::HwDecodeUnavailable);
+    CHECK(refused.error().detail.starts_with("vulkan"));
+    CHECK(refused.error().detail.find("vulkan_compute") != std::string::npos);
+  }
+  // Sur option, la recherche continue : un codec sans hwaccel Vulkan reste refusé autrement.
+  auto mpeg4 = open_hw_device(AV_CODEC_ID_MPEG4, HwApi::Vulkan, {.vulkan_compute = true});
+  REQUIRE_FALSE(mpeg4);
+  CHECK(mpeg4.error().detail.find("aucun décodeur") != std::string::npos);
+}
+
+TEST_CASE("hw : noms des API", "[media][hw]") {
+  CHECK(name(HwApi::Cuda) == "cuda");
+  CHECK(name(HwApi::D3d11va) == "d3d11va");
+  CHECK(name(HwApi::Software) == "logiciel");
+}

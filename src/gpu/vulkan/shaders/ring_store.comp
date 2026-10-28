@@ -1,0 +1,36 @@
+#version 450
+// Écriture d'un slot du ring : le tenseur RGB planaire vers l'image RGBA16 UNORM du slot, alpha
+// opaque. Les codes sont ceux de kernels/ref/color.cpp (to_rgba16) : tronque(v × 65535 + 0,5)
+// sur v borné à [0, 1], NaN donnant 0. L'image se lie par sa vue UNORM (render ne la crée pas à
+// format mutable) : chaque code s'écrit code / 65535, que la conversion vers unorm16 du matériel,
+// au plus proche, rend exactement.
+#extension GL_GOOGLE_include_directive : require
+#include "net_tensor.glsl"
+
+layout(local_size_x = 16, local_size_y = 16) in;
+
+layout(constant_id = 0) const uint TX = 0;
+
+AJP_NET_BUFFER(0, src, readonly)
+layout(binding = 1, rgba16) uniform writeonly image2D slot;
+
+layout(push_constant) uniform Push {
+  uint width;
+  uint height;
+} pc;
+
+float code(float v) {
+  float unit = v > 0.0 ? (v < 1.0 ? v : 1.0) : 0.0;
+  precise float biased = unit * 65535.0 + 0.5;
+  return float(uint(biased)) / 65535.0;
+}
+
+void main() {
+  uvec2 p = gl_GlobalInvocationID.xy;
+  if (p.x >= pc.width || p.y >= pc.height) return;
+  uint plane = pc.width * pc.height;
+  uint i = p.y * pc.width + p.x;
+  vec4 v = vec4(code(AJP_LOAD(src, TX, i)), code(AJP_LOAD(src, TX, plane + i)),
+                code(AJP_LOAD(src, TX, 2u * plane + i)), 1.0);
+  imageStore(slot, ivec2(p), v);
+}

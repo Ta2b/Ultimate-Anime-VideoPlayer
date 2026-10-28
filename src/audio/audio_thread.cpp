@@ -1,0 +1,92 @@
+#include "audio/audio_thread.h"
+
+#include <exception>
+#include <format>
+#include <variant>
+
+#include <spdlog/spdlog.h>
+
+#include "audio/log.h"
+#include "audio/refuse.h"
+
+namespace ajp::audio {
+namespace {
+
+constexpr std::size_t kMaxPacketBound = 4096;
+
+// Paquets, pistes, fins de flux, commandes, Flush, mesures, choix du maître.
+// Une seule mesure attend : la suivante, refusée, n'apporterait rien de plus.
+AudioInbox::Bounds bounds(std::size_t max_packets) {
+  return {max_packets, 2, 2, 32, 4, 1, 2};
+}
+
+}  // namespace
+
+std::expected<std::unique_ptr<AudioThread>, Refusal> AudioThread::start(std::unique_ptr<AudioOutput> output,
+                                                                        AudioThreadOptions options) {
+  if (!output) return refuse(RefusalCode::AudioDeviceUnavailable, "aucune sortie audio");
+  if (options.max_packets < 1 || options.max_packets > kMaxPacketBound) {
+    return refuse(RefusalCode::FieldOutOfRange, std::format("audio.max_packets = {}, attendu de 1 à {}",
+                                                            options.max_packets, kMaxPacketBound));
+  }
+  if (auto config = checked(options.player); !config) return std::unexpected(config.error());
+  // Le thread démarre une fois l'objet construit : un refus du système détruit l'objet
+  // sans qu'aucun thread ne l'ait vu.
+  std::unique_ptr<AudioThread> audio(new AudioThread(std::move(output), std::move(options)));
+  AudioThread* self = audio.get();
+  auto thread =
+      start_thread("audio", audio->report_,
+                   [self](const std::stop_token& stop, const ThreadReport& /*report*/) { self->run(stop); });
+  if (!thread) return std::unexpected(std::move(thread.error()));
+  audio->thread_ = std::move(*thread);
+  return audio;
+}
+
+AudioThread::AudioThread(std::unique_ptr<AudioOutput> output, AudioThreadOptions options)
+    : max_packets_(options.max_packets),
+      credit_(std::move(options.credit)),
+      inbox_(bounds(options.max_packets)),
+      report_([log = make_logger(), refused = options.refused](const Refusal& refusal) {
+        log->error("{} : {}", name(refusal.code), refusal.detail);
+        if (refused) refused(refusal);
+      }) {
+  // Thread du périphérique : poser la mesure, rien d'autre. Si une mesure
+  // attend déjà, celle-ci est de trop et se perd sans dommage.
+  output->on_demand([this](const DeviceReading& reading) { inbox_.try_push(DeviceReading{reading}); });
+  player_ = std::make_unique<AudioPlayer>(
+      std::move(output), options.player,
+      PlayerEvents{.packet_released = [this] { release_packet(); }, .refused = std::move(options.refused)});
+  clock_ = player_->clock();
+}
+
+AudioThread::~AudioThread() = default;
+
+bool AudioThread::push_packet(AudioPacket&& packet) {
+  if (in_flight_.fetch_add(1) >= max_packets_ || !inbox_.try_push(std::move(packet))) {
+    in_flight_.fetch_sub(1);
+    return false;
+  }
+  return true;
+}
+
+void AudioThread::run(const std::stop_token& stop) {
+  const std::shared_ptr<spdlog::logger> log = make_logger();
+  while (auto message = inbox_.wait(stop)) {
+    // Aucune exception ne quitte la boucle : le message fautif est perdu, le thread continue.
+    try {
+      std::visit([this](auto&& m) { player_->handle(std::forward<decltype(m)>(m)); }, std::move(*message));
+    } catch (const std::exception& error) {
+      log->error("message perdu ({})", error.what());
+    } catch (...) {
+      log->error("message perdu (exception inconnue)");
+    }
+  }
+}
+
+// Thread audio. La borne était peut-être atteinte : le producteur attend
+// peut-être un crédit. Un crédit de trop ne coûte qu'un essai.
+void AudioThread::release_packet() {
+  if (in_flight_.fetch_sub(1) >= max_packets_ && credit_) credit_(Credit{});
+}
+
+}  // namespace ajp::audio

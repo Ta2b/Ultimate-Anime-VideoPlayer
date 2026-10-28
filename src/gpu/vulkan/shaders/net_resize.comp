@@ -1,0 +1,77 @@
+#version 450
+// Resize de H et W, nearest ou linéaire, modes de coordonnées half_pixel, pytorch_half_pixel,
+// align_corners et asymmetric. Les formules et leur ordre sont ceux de l'interpréteur
+// (gpu/ir/op_sample.cpp : original_coordinate, nearest_index, linear_taps) ; « precise »
+// interdit les FMA qui déplaceraient un arrondi.
+#extension GL_GOOGLE_include_directive : require
+#include "net_tensor.glsl"
+
+layout(local_size_x = 256) in;
+
+layout(constant_id = 0) const uint TX = 0;
+layout(constant_id = 1) const uint TY = 0;
+layout(constant_id = 2) const uint LINEAR = 0;
+layout(constant_id = 3) const uint COORD = 0;    // 0 half_pixel, 1 pytorch, 2 align_corners, 3 asymmetric
+layout(constant_id = 4) const uint NEAREST = 0;  // 0 round_prefer_floor, 1 round_prefer_ceil, 2 floor, 3 ceil
+
+AJP_NET_BUFFER(0, src, readonly)
+AJP_NET_BUFFER(1, dst, writeonly)
+
+layout(push_constant) uniform Push {
+  TDesc x;
+  TDesc y;
+  float scale_h;
+  float scale_w;
+} pc;
+
+float original(uint o, float scale, uint size_in, uint size_out) {
+  precise float x = float(o);
+  if (COORD == 0u) return (x + 0.5) / scale - 0.5;
+  if (COORD == 1u) return size_out > 1u ? (x + 0.5) / scale - 0.5 : 0.0;
+  if (COORD == 2u) return size_out == 1u ? 0.0 : x * float(size_in - 1u) / float(size_out - 1u);
+  return x / scale;
+}
+
+uint nearest(float x, uint size_in) {
+  float r;
+  if (NEAREST == 0u) {
+    r = x - floor(x) == 0.5 ? floor(x) : round(x);
+  } else if (NEAREST == 1u) {
+    r = x - floor(x) == 0.5 ? ceil(x) : round(x);
+  } else if (NEAREST == 2u) {
+    r = floor(x);
+  } else {
+    r = ceil(x);
+  }
+  r = clamp(r, -1.0, float(size_in));
+  return uint(clamp(int(r), 0, int(size_in) - 1));
+}
+
+void main() {
+  uint i = linear_invocation();
+  if (i >= t_count(pc.y)) return;
+  uvec4 o = t_coords(pc.y, i);
+  precise float fy = original(o.z, pc.scale_h, pc.x.h, pc.y.h);
+  precise float fx = original(o.w, pc.scale_w, pc.x.w, pc.y.w);
+  float v;
+  if (LINEAR == 0u) {
+    v = AJP_LOAD(src, TX, t_index(pc.x, o.x, o.y, nearest(fy, pc.x.h), nearest(fx, pc.x.w)));
+  } else {
+    precise float cy = clamp(fy, 0.0, float(pc.x.h - 1u));
+    precise float cx = clamp(fx, 0.0, float(pc.x.w - 1u));
+    uint y0 = uint(cy);
+    uint x0 = uint(cx);
+    uint y1 = min(y0 + 1u, pc.x.h - 1u);
+    uint x1 = min(x0 + 1u, pc.x.w - 1u);
+    precise float ty = cy - float(y0);
+    precise float tx = cx - float(x0);
+    float a = AJP_LOAD(src, TX, t_index(pc.x, o.x, o.y, y0, x0));
+    float b = AJP_LOAD(src, TX, t_index(pc.x, o.x, o.y, y0, x1));
+    float c = AJP_LOAD(src, TX, t_index(pc.x, o.x, o.y, y1, x0));
+    float d = AJP_LOAD(src, TX, t_index(pc.x, o.x, o.y, y1, x1));
+    precise float top = (1.0 - tx) * a + tx * b;
+    precise float bottom = (1.0 - tx) * c + tx * d;
+    v = (1.0 - ty) * top + ty * bottom;
+  }
+  AJP_STORE(dst, TY, t_index(pc.y, o.x, o.y, o.z, o.w), v)
+}

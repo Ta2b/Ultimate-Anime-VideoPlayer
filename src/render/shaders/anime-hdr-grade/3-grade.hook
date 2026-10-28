@@ -1,0 +1,251 @@
+//!HOOK OUTPUT
+//!BIND HOOKED
+//!BIND AJG_LOCAL
+//!BIND AJG_AREAT
+//!BIND AJG_STATS
+//!DESC AnimeJaNai HDR grade - noirs, eclats, vibrance
+
+const mat3 BT2020_TO_P3 = mat3( 1.3435783, -0.0652975,  0.0028218,
+                               -0.2821797,  1.0757879, -0.0195985,
+                               -0.0613986, -0.0104905,  1.0167767);
+const mat3 P3_TO_BT2020 = mat3( 0.7538330,  0.0457438, -0.0012103,
+                                0.1985974,  0.9417772,  0.0176017,
+                                0.0475696,  0.0124789,  0.9836086);
+const mat3 BT2020_TO_709 = mat3( 1.6604910, -0.1245505, -0.0181508,
+                                -0.5876411,  1.1328999, -0.1005789,
+                                -0.0728499, -0.0083494,  1.1187297);
+const mat3 BT709_TO_2020 = mat3( 0.6274040,  0.0690970,  0.0163916,
+                                 0.3292820,  0.9195400,  0.0880132,
+                                 0.0433136,  0.0113612,  0.8955950);
+// ICtCp (ITU-R BT.2100), matrices en colonnes GLSL.
+const mat3 RGB_TO_LMS = mat3(1688.0, 683.0, 99.0,
+                             2146.0, 2951.0, 309.0,
+                             262.0, 462.0, 3688.0) / 4096.0;
+const mat3 LMS_TO_RGB = mat3( 3.4366067, -0.7913296, -0.0259499,
+                             -2.5064521,  1.9836005, -0.0989137,
+                              0.0698454, -0.1922709,  1.1248636);
+const mat3 LMS_TO_ICTCP = mat3(2048.0, 6610.0, 17933.0,
+                               2048.0, -13613.0, -17390.0,
+                               0.0, 7003.0, -543.0) / 4096.0;
+const mat3 ICTCP_TO_LMS = mat3(1.0, 1.0, 1.0,
+                               0.0086090, -0.0086090, 0.5600313,
+                               0.1110296, -0.1110296, -0.3206272);
+
+vec3 pq_to_nits(vec3 e) {
+    vec3 p = pow(clamp(e, 0.0, 1.0), vec3(1.0 / 78.84375));
+    return 10000.0 * pow(max(p - 0.8359375, 0.0) / max(18.8515625 - 18.6875 * p, 1e-6),
+                         vec3(6.27739463));
+}
+vec3 nits_to_pq(vec3 n) {
+    vec3 q = pow(clamp(n / 10000.0, 0.0, 1.0), vec3(0.1593017578125));
+    return pow((0.8359375 + 18.8515625 * q) / (1.0 + 18.6875 * q), vec3(78.84375));
+}
+float max3(vec3 v) { return max(v.r, max(v.g, v.b)); }
+
+// L'image de la cible en lumiere lineaire BT.2020 (nits), et retour : PQ, ou SDR BT.709.
+vec3 ajg_decode(vec3 e) {
+    if (sdr_out > 0.5) return BT709_TO_2020 * (pow(clamp(e, 0.0, 1.0), vec3(sdr_gamma)) * peak);
+    return pq_to_nits(e);
+}
+vec3 ajg_encode(vec3 n) {
+    if (sdr_out > 0.5) return pow(clamp(BT2020_TO_709 * n / peak, 0.0, 1.0), vec3(1.0 / sdr_gamma));
+    return nits_to_pq(n);
+}
+// Le gamut ou le traitement se borne : BT.709 en SDR, P3 (gamut_p3), sinon le conteneur BT.2020.
+vec3 to_target(vec3 bt2020) {
+    if (sdr_out > 0.5) return BT2020_TO_709 * bt2020;
+    return gamut_p3 > 0.5 ? BT2020_TO_P3 * bt2020 : bt2020;
+}
+vec3 from_target(vec3 c) {
+    if (sdr_out > 0.5) return BT709_TO_2020 * c;
+    return gamut_p3 > 0.5 ? P3_TO_BT2020 * c : c;
+}
+vec3 target_luma() {
+    if (sdr_out > 0.5) return vec3(0.2126, 0.7152, 0.0722);
+    return gamut_p3 > 0.5 ? vec3(0.2289746, 0.6917385, 0.0792869) : vec3(0.2627, 0.6780, 0.0593);
+}
+
+// Pied des noirs sur le maximum RGB : pente 1 au genou, pente (1 - shadows) au noir.
+// Seuls les pixels vraiment sombres sont touches, meme s'ils sont satures (bleu nuit).
+float shadow_ratio(float m) {
+    if (m >= shadow_knee) return 1.0;
+    float u = 1.0 - m / shadow_knee;
+    return 1.0 - shadows * u * u;
+}
+
+vec3 to_ictcp(vec3 bt2020_nits) {
+    return LMS_TO_ICTCP * nits_to_pq(RGB_TO_LMS * max(bt2020_nits, 0.0));
+}
+
+// Tons chair (anime clair a mate, ombres et rougeurs comprises) : teinte ICtCp
+// d'environ 105 a 135 degres avec un chroma faible. Les orange, rouges et jaunes
+// vifs ont un chroma bien plus eleve et ne sont pas concernes.
+float skin_mask(vec3 ictcp) {
+    float chroma = length(ictcp.yz);
+    float hue = degrees(atan(ictcp.z, ictcp.y));
+    return smoothstep(88.0, 102.0, hue) * (1.0 - smoothstep(140.0, 154.0, hue))
+         * smoothstep(0.008, 0.018, chroma) * (1.0 - smoothstep(0.095, 0.13, chroma));
+}
+
+// Courbe des eclats sur la luminance Y (nits), monotone pour un isolement donne.
+// Y plutot que max RGB : un vert ou un jaune sature n'est pas pris pour du blanc.
+float highlight_ratio(float y, float isolation, float skin, float abl_scale) {
+    float gain = mix(mix(area_gain, spec_gain, isolation), area_gain, skin);
+    gain = 1.0 + (gain - 1.0) * abl_scale;
+    float out_y = y * (1.0 + smoothstep(0.5 * paper, paper, y) * (gain - 1.0));
+    // Epaule : [genou, entree max x gain] -> [genou, pic], pente 1 au genou.
+    // Sans gain (aplat en mode RTX), la courbe reste l'identite jusqu'au pic.
+    float top = in_max * (1.0 + smoothstep(0.5 * paper, paper, in_max) * (gain - 1.0));
+    float knee = 0.65 * peak;
+    if (top > peak && out_y > knee) {
+        float z = (out_y - knee) / (peak - knee);
+        float zm = (top - knee) / (peak - knee);
+        out_y = knee + (peak - knee) * z * (1.0 + z / (zm * zm)) / (1.0 + z);
+    }
+    return out_y / y;
+}
+
+// Aspect RTX TrueHDR pour le SDR converti par MPV. Courbes mesurees sur le SDK RTX Video
+// (mires grises et colorees) sur toute la plage des curseurs : contraste et saturation 0 a 200,
+// gris moyen 10 a 100, pic 400 a 1000 nits. TrueHDR s'y comporte comme une courbe globale.
+//   base      : em_base * s^2 * exp(ln(peak / em_base) * s^em_pow), s = signal SDR (0..1),
+//               em_base = 4 x gris moyen ; le blanc SDR arrive au pic ;
+//   contraste : puissance autour du pivot (em_lo dessous, em_hi dessus, sans depasser le pic) ;
+//   saturation: ecart a la luminance multiplie par em_sat.
+// Ecart mesure avec TrueHDR au gris moyen 50 : +/- 6 % sur les gris, +/- 7 % sur les couleurs
+// courantes, jusqu'a +20 % sur les primaires pures.
+vec3 truehdr_look(vec3 nits) {
+    const vec3 luma = vec3(0.2627, 0.6780, 0.0593);
+    // HDR adaptatif : le haut de la courbe et le contraste des ombres suivent la scene lissee.
+    float top = peak;
+    float lo = em_lo;
+    if (adapt > 0.5) {
+        vec4 scene = AJG_STATS_tex(vec2(0.5));
+        float key = clamp(scene.x / sdr_white, 0.0, 1.0);  // APL lisse, en part du blanc SDR
+        float bright = clamp(scene.w, 0.0, 1.0);           // part lissee des grands aplats clairs
+        // Scene claire ou grands aplats clairs : moins d'expansion (eblouissement, limiteur OLED).
+        // Les eclats isoles gardent leur montee vers le pic (gains d'isolement plus bas).
+        float g = mix(1.0, 0.55, smoothstep(0.30, 0.70, key)) * mix(1.0, 0.75, smoothstep(0.05, 0.30, bright));
+        top = max(peak * g, min(peak, 1.5 * em_base));
+        // Scene de nuit : la moitie du contraste sous le pivot, les ombres restent lisibles.
+        lo = mix(1.0 + 0.5 * (em_lo - 1.0), em_lo, smoothstep(0.04, 0.15, key));
+    }
+    vec3 x = max(nits, 0.0) / sdr_white;
+    float Y = dot(x, luma);
+    float idx = clamp(Y + 0.15 * (max(x.r, max(x.g, x.b)) - Y), 0.0, 1.0);
+    if (idx < 1e-6) return vec3(0.0);
+    float s2 = pow(idx, 2.0 / 2.4);
+    vec3 c = x * (em_base * s2 / idx * exp(log(max(top / em_base, 1.0)) * pow(s2, 0.5 * em_pow)));
+    float Yn = max(dot(c, luma), 1e-6);
+    float P = 0.2575 * em_base;
+    float Y2;
+    if (Yn < P) {
+        Y2 = P * pow(Yn / P, lo);
+    } else {
+        float span = log(top / P);
+        float u = min(log(Yn / P) / span, 1.0);
+        Y2 = P * exp(u * (em_hi - (em_hi - 1.0) * u) * span);
+    }
+    c *= Y2 / Yn;
+    return max(vec3(Y2) + em_sat * (c - vec3(Y2)), 0.0);
+}
+
+// Plus grand t dans [0, 1] tel que a + (b - a) * t reste dans [0, peak].
+float gamut_room(vec3 a, vec3 b) {
+    vec3 d = b - a;
+    float t = 1.0;
+    for (int i = 0; i < 3; i++) {
+        if (d[i] < -1e-6) t = min(t, max(a[i], 0.0) / -d[i]);
+        else if (d[i] > 1e-6) t = min(t, max(peak - a[i], 0.0) / d[i]);
+    }
+    return t;
+}
+
+vec4 hook() {
+    vec4 px = HOOKED_tex(HOOKED_pos);
+    vec3 lin = ajg_decode(px.rgb);
+    // L'isolement se mesure sur l'image d'origine, comme les cartes de zone.
+    float y_src = dot(lin, vec3(0.2627, 0.6780, 0.0593));
+    if (emulate > 0.5) lin = truehdr_look(lin);
+    bool p3 = gamut_p3 > 0.5;
+    vec3 c = to_target(lin);
+    if (emulate > 0.5) c = max(c, 0.0);
+
+    // Isolement : la zone de ~8 px est-elle nettement plus lumineuse que son
+    // voisinage (~2,5 % de l'image) ? Mesure en PQ = ecart perceptuel, sur des
+    // moyennes : stable d'une image a l'autre. Seul un pixel tres au-dessus de
+    // sa zone (etincelle de 1 a 4 px, > 0,08 PQ) compte individuellement.
+    float m = max3(c);
+    float y = dot(c, target_luma());
+    float y_pq = nits_to_pq(vec3(max(y_src, 0.0))).x;
+    float local_pq = max(AJG_LOCAL_tex(AJG_LOCAL_pos).x, y_pq - 0.08);
+    float isolation = smoothstep(0.05, 0.25, local_pq - AJG_AREAT_tex(AJG_AREAT_pos).x);
+    // Limiteur OLED : APL lisse de abl_lo a abl_hi (80 a 250 nits : plein ecran d'un QD-OLED en
+    // Peak 1000 ; sinon tires de la moyenne d'image de l'EDID).
+    float abl_scale = 1.0 - abl * smoothstep(abl_lo, abl_hi, AJG_STATS_tex(vec2(0.5)).x);
+    vec3 ictcp_in = to_ictcp(lin);
+    float skin = skin_mask(ictcp_in);
+    // Couleurs etendues : une couleur BT.709 saturee est relue avec les primaires P3, que le
+    // QD-OLED affiche ; le blanc et les gris (meme point blanc D65) ne bougent pas, la peau et les
+    // ombres sont epargnees, et la limite douce garde la couleur dans [0, pic].
+    if (expand > 0.0) {
+        vec3 c709 = BT2020_TO_709 * lin;
+        float hi = max3(c709);
+        if (hi > 1e-4) {
+            float sat = 1.0 - clamp(min(c709.r, min(c709.g, c709.b)) / hi, 0.0, 1.0);
+            float w = expand * smoothstep(0.15, 0.60, sat) * (1.0 - skin)
+                    * smoothstep(0.12, 0.30, ictcp_in.x);
+            if (w > 0.0) {
+                vec3 wide = P3_TO_BT2020 * max(c709, 0.0);
+                vec3 base = p3 ? BT2020_TO_P3 * lin : lin;
+                vec3 target = p3 ? BT2020_TO_P3 * wide : wide;
+                c = base + (target - base) * (w * gamut_room(base, target));
+                if (emulate > 0.5) c = max(c, 0.0);
+                lin = p3 ? P3_TO_BT2020 * c : c;
+                ictcp_in = to_ictcp(lin);
+                m = max3(c);
+                y = dot(c, p3 ? vec3(0.2289746, 0.6917385, 0.0792869) : vec3(0.2627, 0.6780, 0.0593));
+            }
+        }
+    }
+    float r = 1.0;
+    if (m > 1e-4 && y > 1e-4) {
+        r = shadow_ratio(m);
+        r *= highlight_ratio(y * r, isolation, skin, abl_scale);
+        // Garde-fou : une couleur saturee tres lumineuse atteint le pic par un seul canal bien
+        // avant sa luminance ; au lieu d'un plateau (degrade perdu, aplat ecrete), son canal le
+        // plus fort suit une epaule douce depuis 70 % du pic. Le blanc et les gris (canaux
+        // egaux) ne sont pas touches : leurs eclats suivent deja l'epaule de highlight_ratio.
+        if (guard > 0.0) {
+            float sat = 1.0 - min(c.r, min(c.g, c.b)) / m;
+            float w = guard * smoothstep(0.25, 0.75, sat);
+            float knee = 0.7 * peak;
+            float mo = m * r;
+            if (w > 0.0 && mo > knee) {
+                float z = (mo - knee) / (peak - knee);
+                r *= mix(1.0, (knee + (peak - knee) * z / (1.0 + z)) / mo, w);
+            }
+        }
+        // Aucun canal au-dessus du pic, meme pour une couleur saturee tres lumineuse.
+        r = min(r, peak / m);
+        c *= r;
+    }
+
+    if (vibrance > 0.0) {
+        // Tons moyens (r = 1, la majorite des pixels) : ICtCp deja calcule.
+        vec3 ictcp = abs(r - 1.0) < 1e-5 ? ictcp_in : to_ictcp(from_target(c));
+        float chroma = length(ictcp.yz);
+        // Couleurs moyennes renforcees ; peau exclue, primaires (~0,3) menagees ;
+        // ombres protegees pour ne pas colorer le bruit et les traits.
+        float weight = smoothstep(0.0, 0.06, chroma) * (1.0 - smoothstep(0.10, 0.40, chroma))
+                     * smoothstep(0.12, 0.30, ictcp.x) * (1.0 - skin);
+        ictcp.yz *= 1.0 + vibrance * weight;
+        vec3 vivid = to_target(LMS_TO_RGB * pq_to_nits(ICTCP_TO_LMS * ictcp));
+        // Limite douce : le renforcement ralentit avant le bord du gamut ou le pic.
+        float room = gamut_room(c, vivid);
+        c = mix(c, vivid, room / pow(1.0 + pow(room, 4.0), 0.25));
+    }
+
+    px.rgb = ajg_encode(from_target(c));
+    return px;
+}

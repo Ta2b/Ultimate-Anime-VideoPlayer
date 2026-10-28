@@ -1,0 +1,14 @@
+RTX HDR pour AJP : paquet de logiciels NVIDIA
+=============================================
+
+Ce paquet contient des parties du NVIDIA Maxine Video Effects SDK (la fonction TrueHDR et les
+bibliothèques CUDA, NPP et cuDNN qu'elle charge), sans aucune modification. Ce sont des logiciels
+propriétaires de NVIDIA, livrés avec le lecteur AJP comme partie de ce produit, sous l'accord de
+licence logicielle de NVIDIA et ses conditions pour les produits d'IA : voir les fichiers PDF du
+dossier share/ et https://www.nvidia.com/en-us/agreements/enterprise-software/nvidia-software-license-agreement/
+
+Ils ne relèvent pas de la licence libre du lecteur AJP, et rien dans ce paquet ne peut être placé
+sous une licence libre. Ils ne servent qu'à RTX HDR dans AJP, sur un GPU NVIDIA RTX.
+
+Le lecteur télécharge ce paquet après que vous avez accepté la licence de NVIDIA à l'écran de
+bienvenue, puis l'importe dans son magasin de SDK. Il n'y a rien d'autre à faire.
