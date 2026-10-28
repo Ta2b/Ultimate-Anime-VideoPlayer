@@ -55,22 +55,22 @@ bool read_conv(Reader& in, Conv& conv, std::size_t weights, std::size_t bias) {
 }
 
 void put_u32(std::vector<std::byte>& out, std::uint32_t value) {
-  for (int i = 0; i < 4; ++i) out.push_back(static_cast<std::byte>((value >> (8 * i)) & 0xFFU));
+  for (unsigned i = 0; i < 4U; ++i) out.push_back(static_cast<std::byte>((value >> (8U * i)) & 0xFFU));
 }
 
 void put_u64(std::vector<std::byte>& out, std::uint64_t value) {
-  for (int i = 0; i < 8; ++i) out.push_back(static_cast<std::byte>((value >> (8 * i)) & 0xFFU));
+  for (unsigned i = 0; i < 8U; ++i) out.push_back(static_cast<std::byte>((value >> (8U * i)) & 0xFFU));
 }
 
 std::uint32_t get_u32(const std::byte* at) {
   std::uint32_t value = 0;
-  for (int i = 0; i < 4; ++i) value |= static_cast<std::uint32_t>(at[i]) << (8 * i);
+  for (unsigned i = 0; i < 4U; ++i) value |= static_cast<std::uint32_t>(at[i]) << (8U * i);
   return value;
 }
 
 std::uint64_t get_u64(const std::byte* at) {
   std::uint64_t value = 0;
-  for (int i = 0; i < 8; ++i) value |= static_cast<std::uint64_t>(at[i]) << (8 * i);
+  for (unsigned i = 0; i < 8U; ++i) value |= static_cast<std::uint64_t>(at[i]) << (8U * i);
   return value;
 }
 

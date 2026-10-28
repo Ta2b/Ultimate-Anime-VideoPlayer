@@ -129,7 +129,8 @@ bool is_span_fp8_package(const std::filesystem::path& path) {
 SpanFp8Engine::~SpanFp8Engine() = default;
 
 std::expected<std::unique_ptr<SpanFp8Engine>, Refusal> SpanFp8Engine::load(
-    const std::filesystem::path& package, int height, int width, std::shared_ptr<SharedActivations> shared) {
+    const std::filesystem::path& package, int height, int width,
+    const std::shared_ptr<SharedActivations>& shared) {
   auto bytes = read_span_fp8_package(package);
   if (!bytes) return std::unexpected(std::move(bytes.error()));
   auto parsed = span_fp8::parse(*bytes);

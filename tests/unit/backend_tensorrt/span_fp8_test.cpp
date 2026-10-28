@@ -3,7 +3,9 @@
 // contre celle du SPAN d'origine en FP16 par TensorRT.
 //
 // Le test caché demande un paquet dérivé par tools/span/derive_span_fp8.py et son modèle d'origine, passés à
-// CMake (AJP_SPAN_FP8_PACKAGE, AJP_SPAN_FP8_MODEL, jamais copiés dans le dépôt) ; sans eux, il se SKIP :
+// CMake (AJP_SPAN_FP8_PACKAGE, AJP_SPAN_FP8_MODEL, jamais copiés dans le dépôt) ; sans eux, il se SKIP. Une
+// image d'anime en PPM (AJP_SPAN_FP8_IMAGE, hauteur et largeur que les noyaux prennent) remplace le dessin
+// synthétique et donne le PSNR et le SSIM de la sortie contre TensorRT FP16 :
 //   cmake -DAJP_SPAN_FP8_PACKAGE=.../xxx-fp8c-....span8 -DAJP_SPAN_FP8_MODEL=.../xxx.onnx ...
 //   ajp-gpu ajp_backend_tensorrt_tests "[.span_fp8]"
 #include <algorithm>
@@ -73,6 +75,55 @@ std::vector<float> drawing(int h, int w) {
   return plane;
 }
 
+// Image PPM binaire (P6, 255) en plans RGB de 0 à 1 ; vide si illisible.
+std::vector<float> read_ppm(const fs::path& path, int& h, int& w) {
+  std::ifstream file(path, std::ios::binary);
+  std::string magic;
+  int maxval = 0;
+  file >> magic >> w >> h >> maxval;
+  if (!file || magic != "P6" || maxval != 255 || w <= 0 || h <= 0) return {};
+  file.get();
+  std::vector<unsigned char> raw(static_cast<std::size_t>(3 * h * w));
+  file.read(reinterpret_cast<char*>(raw.data()), static_cast<std::streamsize>(raw.size()));
+  if (!file) return {};
+  std::vector<float> planes(raw.size());
+  for (int y = 0; y < h; ++y)
+    for (int x = 0; x < w; ++x)
+      for (int c = 0; c < 3; ++c)
+        planes[static_cast<std::size_t>((c * h + y) * w + x)] =
+            static_cast<float>(raw[static_cast<std::size_t>((y * w + x) * 3 + c)]) / 255.F;
+  return planes;
+}
+
+// SSIM de la luminance BT.709 par blocs de 8x8 sans recouvrement, moyenné (assez pour un garde-fou de test ;
+// l'outil Python mesure le SSIM à fenêtre gaussienne du reçu).
+double block_ssim(const std::vector<float>& a, const std::vector<float>& b, int h, int w) {
+  const auto luma = [&](const std::vector<float>& v, int y, int x) {
+    const auto at = [&](int c) {
+      return static_cast<double>(std::clamp(v[static_cast<std::size_t>((c * h + y) * w + x)], 0.F, 1.F));
+    };
+    return 0.2126 * at(0) + 0.7152 * at(1) + 0.0722 * at(2);
+  };
+  constexpr double c1 = 0.01 * 0.01, c2 = 0.03 * 0.03;
+  double total = 0.0;
+  int blocks = 0;
+  for (int by = 0; by + 8 <= h; by += 8) {
+    for (int bx = 0; bx + 8 <= w; bx += 8) {
+      double ma = 0, mb = 0, saa = 0, sbb = 0, sab = 0;
+      for (int y = 0; y < 8; ++y)
+        for (int x = 0; x < 8; ++x) {
+          const double va = luma(a, by + y, bx + x), vb = luma(b, by + y, bx + x);
+          ma += va, mb += vb, saa += va * va, sbb += vb * vb, sab += va * vb;
+        }
+      ma /= 64, mb /= 64;
+      const double vara = saa / 64 - ma * ma, varb = sbb / 64 - mb * mb, cov = sab / 64 - ma * mb;
+      total += ((2 * ma * mb + c1) * (2 * cov + c2)) / ((ma * ma + mb * mb + c1) * (vara + varb + c2));
+      ++blocks;
+    }
+  }
+  return blocks == 0 ? 1.0 : total / blocks;
+}
+
 double psnr(const std::vector<float>& a, const std::vector<float>& b) {
   double mse = 0.0;
   for (std::size_t i = 0; i < a.size(); ++i) {
@@ -133,7 +184,15 @@ TEST_CASE("Backend TensorRT : le SPAN FP8 CUTLASS contre le SPAN FP16 de TensorR
   Loaded loaded;
   REQUIRE(loaded.backend != nullptr);
   if (!loaded.backend->capabilities().span_fp8_cutlass) SKIP("appareil sans les noyaux FP8 CUTLASS (sm 8.9)");
-  constexpr int h = 384, w = 640;
+  int h = 384, w = 640;
+  std::vector<float> picture;
+  if (const fs::path image(AJP_SPAN_FP8_IMAGE); !image.empty() && fs::is_regular_file(image)) {
+    picture = read_ppm(image, h, w);
+    if (picture.empty()) SKIP("AJP_SPAN_FP8_IMAGE : PPM P6 de 255 illisible");
+  } else {
+    picture = drawing(h, w);
+  }
+  if (!gpu::span_fp8::size_supported(h, w)) SKIP("taille de l'image que les noyaux ne prennent pas");
   gpu::Progress progress;
   const gpu::Shape in_shape{.dims = {1, 3, h, w}}, out_shape{.dims = {1, 3, 2 * h, 2 * w}};
 
@@ -155,7 +214,7 @@ TEST_CASE("Backend TensorRT : le SPAN FP8 CUTLASS contre le SPAN FP16 de TensorR
   REQUIRE(input);
   REQUIRE(out16);
   REQUIRE(out8);
-  upload((*input)->tensor(), drawing(h, w));
+  upload((*input)->tensor(), picture);
   const std::array inputs{(*input)->tensor()};
   std::array reference_out{(*out16)->tensor()};
   std::array candidate_out{(*out8)->tensor()};
@@ -167,8 +226,12 @@ TEST_CASE("Backend TensorRT : le SPAN FP8 CUTLASS contre le SPAN FP16 de TensorR
   const std::vector<float> got = download((*out8)->tensor());
   REQUIRE(got.size() == expected.size());
   const double score = psnr(expected, got);
-  INFO("PSNR contre TensorRT FP16 : " << score << " dB");
-  CHECK(score >= 38.0);  // le pire cas toléré par le reçu (span_int8.h)
+  const double similarity = block_ssim(expected, got, 2 * h, 2 * w);
+  UNSCOPED_INFO("sortie " << 2 * w << "x" << 2 * h << " contre TensorRT FP16 : PSNR " << score
+                          << " dB, SSIM par blocs " << similarity);
+  WARN("PSNR " << score << " dB, SSIM par blocs " << similarity << " contre TensorRT FP16");
+  CHECK(score >= 38.0);        // le pire cas toléré par le reçu (span_int8.h)
+  CHECK(similarity >= 0.985);  // idem
 }
 
 }  // namespace ajp::test

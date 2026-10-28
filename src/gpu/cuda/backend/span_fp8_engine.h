@@ -39,7 +39,8 @@ class SpanFp8Engine final : public Engine {
   // lecture). Refus : fichier ou paquet illisible, taille ou appareil que les noyaux ne prennent pas,
   // mémoire.
   static std::expected<std::unique_ptr<SpanFp8Engine>, Refusal> load(
-      const std::filesystem::path& package, int height, int width, std::shared_ptr<SharedActivations> shared);
+      const std::filesystem::path& package, int height, int width,
+      const std::shared_ptr<SharedActivations>& shared);
   ~SpanFp8Engine() override;
   SpanFp8Engine(const SpanFp8Engine&) = delete;
   SpanFp8Engine& operator=(const SpanFp8Engine&) = delete;

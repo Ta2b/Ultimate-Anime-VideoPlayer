@@ -30,7 +30,7 @@ std::expected<Artifact, Refusal> TensorRtBackend::build_span_fp8(const ModelSpec
   }
   const std::int64_t height = shape.dims[2], width = shape.dims[3];
   constexpr std::int64_t kMaxSide =
-      1 << 15;  // size_refusal juge la taille ; ce plafond évite le rétrécissement
+      32768;  // size_refusal juge la taille ; ce plafond évite le rétrécissement
   if (height <= 0 || width <= 0 || height > kMaxSide || width > kMaxSide)
     return refuse(RefusalCode::ShapeInvalid,
                   std::format("SPAN FP8 : taille {}x{} hors de portée", width, height));

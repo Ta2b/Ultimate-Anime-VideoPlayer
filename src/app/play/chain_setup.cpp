@@ -247,7 +247,7 @@ std::expected<std::optional<ChainEngines>, Refusal> prepare_chain_once(Player& p
       loaded.reset();
     }
     if (!c.span_int8 && tier != PrecisionTier::Balanced)
-      log->info("SPAN {} : aucune variante, FP16 à la place", label(tier));
+      log->info("SPAN {} : aucune variante utilisable, FP16 à la place", label(tier));
     if (!loaded) loaded = prepare_span();
     if (!*loaded) return std::unexpected(std::move(loaded->error()));
     if (!**loaded) return std::nullopt;

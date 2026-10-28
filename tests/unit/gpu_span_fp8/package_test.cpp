@@ -26,8 +26,8 @@ TEST_CASE("un paquet écrit se relit à l'identique", "[span_fp8]") {
   CHECK(back->scales == original.scales);
   CHECK(back->first.weights == original.first.weights);
   CHECK(back->blocks[7].attention.bias == original.blocks[7].attention.bias);
-  CHECK(back->blocks[0].conv[2].weights.size() == 64U * 9U * 64U);
-  CHECK(back->concat.weights.size() == 64U * 256U);
+  CHECK(back->blocks[0].conv[2].weights.size() == std::size_t{64} * 9 * 64);
+  CHECK(back->concat.weights.size() == std::size_t{64} * 256);
   CHECK(back->pixel.weights == original.pixel.weights);
   CHECK(back->pixel.bias.size() == 48U);
 }

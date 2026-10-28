@@ -33,7 +33,7 @@ inline constexpr int kUnshuffledPadded = 16;  // conv_1 lit 16 canaux, les 4 der
 inline constexpr int kConcatChannels = 4 * kChannels;
 inline constexpr int kPixelChannels = 48;  // 3 plans × 4 × 4, avant DepthToSpace
 inline constexpr int kScaleCount = 1 + 3 * kBlocks;
-inline constexpr std::size_t kMaxPackageBytes = std::size_t{64} << 20;  // le vrai pèse environ 3 Mo
+inline constexpr std::size_t kMaxPackageBytes = std::size_t{64} << 20U;  // le vrai pèse environ 2 Mo
 
 // Une convolution : poids FP16 (motif binaire IEEE 754 demi-précision) et biais f32.
 struct Conv {
