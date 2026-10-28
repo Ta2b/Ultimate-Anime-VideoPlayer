@@ -3,6 +3,7 @@
 // et ce que l'appareil sait faire (device_facts). Présentation dans placebo_screen.cpp.
 #include <algorithm>
 #include <array>
+#include <chrono>
 #include <cmath>
 #include <filesystem>
 #include <format>
@@ -11,6 +12,7 @@
 #include <utility>
 #include <vector>
 
+#include <SDL3/SDL_events.h>
 #include <SDL3/SDL_filesystem.h>
 #include <SDL3/SDL_video.h>
 #include <SDL3/SDL_vulkan.h>
@@ -224,6 +226,16 @@ constexpr std::array<const char*, 15> kOptionalExtensions{
 }  // namespace
 
 PlaceboScreen::Impl::~Impl() {
+  // La fermeture : la fenêtre est d'abord cachée et le compositeur attendu (SDL_SyncWindow), avant le
+  // démontage du GPU, qui peut durer (pilote NVIDIA, moteurs TensorRT). Sous Wayland, une fenêtre que le
+  // processus garde encore pendant ce démontage reste affichée avec son dernier tampon (contours, ombre des
+  // décorations côté client) ; cachée d'abord, elle disparaît tout de suite. Le temps du démontage est au
+  // journal.
+  const auto closing_since = std::chrono::steady_clock::now();
+  if (window != nullptr) {
+    SDL_HideWindow(window);
+    SDL_SyncWindow(window);
+  }
   if (vk != nullptr) pl_gpu_finish(vk->gpu);
   share.reset();  // avant l'appareil qu'il prête
   if (!grade_gpu_us.empty()) {
@@ -248,6 +260,11 @@ PlaceboScreen::Impl::~Impl() {
   pl_vk_inst_destroy(&inst);
   pl_log_destroy(&log);
   if (window != nullptr) SDL_DestroyWindow(window);
+  // La destruction de la surface part au compositeur avant que le processus ne rende la main à SDL_Quit.
+  SDL_PumpEvents();
+  channel->info("fermeture : {} ms", std::chrono::duration_cast<std::chrono::milliseconds>(
+                                         std::chrono::steady_clock::now() - closing_since)
+                                         .count());
 }
 
 std::expected<std::unique_ptr<PlaceboScreen>, Refusal> PlaceboScreen::open(const ScreenOptions& options) {
