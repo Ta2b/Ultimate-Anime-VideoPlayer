@@ -29,7 +29,9 @@ struct GpuSample {
   unsigned gpu_percent = 0;
   unsigned pcie_generation = 0;
   unsigned pcie_width = 0;
-  std::uint64_t throttle = 0;  // masque des raisons d'écrêtage d'NVML
+  unsigned vram_used_mib = 0;
+  unsigned vram_total_mib = 0;  // 0 : inconnue
+  std::uint64_t throttle = 0;   // masque des raisons d'écrêtage d'NVML
 };
 
 // L'UUID d'un appareil Vulkan tel que NVML le nomme : « GPU-xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx ».
@@ -54,6 +56,9 @@ struct DpmClocks {
   unsigned max_mhz = 0;
 };
 DpmClocks parse_amdgpu_dpm(std::string_view text);
+
+// La génération PCIe d'un current_link_speed de sysfs (« 16.0 GT/s PCIe » : 4) ; 0 si le texte ne se lit pas.
+unsigned parse_pcie_generation(std::string_view text);
 
 // Le pilote NVIDIA « 580.82.07 » est-il plus ancien que major.minor.patch ? Faux si la version ne se
 // lit pas (pilote Mesa, texte libre) : on ne s'alarme pas sans la connaître.

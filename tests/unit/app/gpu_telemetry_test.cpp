@@ -69,3 +69,21 @@ TEST_CASE("amdgpu : pp_dpm_sclk donne l'horloge étoilée et la plus haute", "[a
 }
 
 }  // namespace ajp::app::play
+
+namespace ajp::app::play {
+
+TEST_CASE("amdgpu : génération PCIe de current_link_speed", "[app][telemetry]") {
+  CHECK(parse_pcie_generation("16.0 GT/s PCIe\n") == 4);
+  CHECK(parse_pcie_generation("32.0 GT/s PCIe") == 5);
+  CHECK(parse_pcie_generation("2.5 GT/s PCIe") == 1);
+  CHECK(parse_pcie_generation("Unknown") == 0);
+  CHECK(parse_pcie_generation("") == 0);
+}
+
+TEST_CASE("Ligne de l'OSD avec la mémoire vidéo", "[app][telemetry]") {
+  const GpuSample s{
+      .sm_mhz = 2900, .sm_max_mhz = 2900, .gpu_percent = 50, .vram_used_mib = 7373, .vram_total_mib = 16384};
+  CHECK(telemetry_line(s) == "GPU 2900 / 2900 MHz · 0 °C · 50 % · VRAM 7.2 / 16.0 Go");
+}
+
+}  // namespace ajp::app::play
