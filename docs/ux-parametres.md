@@ -644,3 +644,16 @@ n'est pas une fonction principale du lecteur : il n'apparaît que la case « Ré
 
 Mis en œuvre par `panel::advanced()` (`panel_style.h`), posé à chaque image par le panneau. À venir : déplacer composition finale et soins OLED
 de Couleurs vers une page avancée « Rendu », OLED en automatique.
+
+## Référence visuelle : GNOME Showtime (capture de Tatoub, 28/10)
+
+La capture montre la fenêtre de Showtime (lecteur vidéo de GNOME) ; l'interface du lecteur s'en inspire pour la 0.6.
+
+- **Fenêtre** : coins arrondis (~14 px), pas de barre de titre séparée : la vidéo occupe toute la fenêtre, les commandes sont superposées.
+- **Haut** : à gauche, un bouton « plein écran » (flèches en diagonale) ; à droite, menu (trois traits), réduire, agrandir, fermer, en icônes blanches sans fond, sur un dégradé sombre très doux.
+- **Centre** : trois commandes rondes sans cadre : retour de 10 s (flèche circulaire avec « 10 »), lecture/pause plus grande, avance de 10 s.
+- **Bas** : le titre du fichier en gras blanc, aligné à gauche (les titres japonais exigent la police CJK, #59) ; à droite le volume et un engrenage (réglages) ; en dessous, une barre de lecture fine avec une poignée ronde blanche, le temps écoulé à gauche et la durée à droite en petits caractères gras ; le tout sur un dégradé sombre du bas.
+- **Comportement** : l'interface disparaît à l'inactivité (curseur compris en plein écran) et revient au mouvement ; fond de pause jamais opaque.
+- **Couleurs** : blanc sur voiles sombres translucides, un seul accent ; aucune bordure marquée.
+
+À faire : reprendre ces proportions dans `controls_draw.cpp`, avec captures avant/après en fenêtre et en plein écran (voir l'item « interface » du plan v0.6).
