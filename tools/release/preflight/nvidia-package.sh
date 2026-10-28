@@ -15,8 +15,8 @@
 # Debian et Ubuntu) refuse alors le paquet. Ce contrôle n'est jamais contourné ici.
 set -euo pipefail
 
-REPO="${1:?dépôt à l'étiquette (worktree)}"
-TAG="${2:?étiquette, par exemple v0.5.0}"
+REPO="${1:?dépôt a la version etiquetee (worktree)}"
+TAG="${2:?etiquette, par exemple v0.5.0}"
 OUT="$(mkdir -p "${3:?dossier de sortie}" && cd "$3" && pwd)"
 REPO="$(cd "$REPO" && pwd)"
 HERE="$(cd "$(dirname "$0")" && pwd)"
