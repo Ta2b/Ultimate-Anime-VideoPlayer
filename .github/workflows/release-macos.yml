@@ -68,6 +68,8 @@ jobs:
           path: |
             ${{ runner.temp }}/package/ajp-macos-arm64.zip
             ${{ runner.temp }}/package/ajp-macos-arm64.zip.sha256
+            ${{ runner.temp }}/package/ajp-macos-arm64.dmg
+            ${{ runner.temp }}/package/ajp-macos-arm64.dmg.sha256
       - name: Joindre à la release
         if: github.ref_type == 'tag' || inputs.tag != ''
         env:
@@ -85,4 +87,5 @@ jobs:
             || gh release create "$TAG" -R "$AJP_RELEASE_REPO" --prerelease --title "$TAG" --notes-file "$notes" \
             || gh release view "$TAG" -R "$AJP_RELEASE_REPO" >/dev/null
           gh release upload "$TAG" -R "$AJP_RELEASE_REPO" "$RUNNER_TEMP/package/ajp-macos-arm64.zip" \
-            "$RUNNER_TEMP/package/ajp-macos-arm64.zip.sha256" --clobber
+            "$RUNNER_TEMP/package/ajp-macos-arm64.zip.sha256" "$RUNNER_TEMP/package/ajp-macos-arm64.dmg" \
+            "$RUNNER_TEMP/package/ajp-macos-arm64.dmg.sha256" --clobber
