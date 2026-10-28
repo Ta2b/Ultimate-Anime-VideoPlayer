@@ -297,13 +297,16 @@ int verifier(const std::string& cas) {
   televerser(t.in12, lire_fichier(cas + "/in12.bin"));
   const auto enc_in = lire_fichier(cas + "/enc_in.bin");
   const auto enc_out = lire_fichier(cas + "/enc_out.bin");
-  const auto x0 = lire_fichier(cas + "/x0.bin"), x1 = lire_fichier(cas + "/x1.bin"), x2 = lire_fichier(cas + "/x2.bin");
-  const auto y0 = lire_fichier(cas + "/y0.bin"), y1 = lire_fichier(cas + "/y1.bin"), y2 = lire_fichier(cas + "/y2.bin");
+  const auto x0 = lire_fichier(cas + "/x0.bin"), x1 = lire_fichier(cas + "/x1.bin"),
+             x2 = lire_fichier(cas + "/x2.bin");
+  const auto y0 = lire_fichier(cas + "/y0.bin"), y1 = lire_fichier(cas + "/y1.bin"),
+             y2 = lire_fichier(cas + "/y2.bin");
   const auto complet = lire_fichier(cas + "/complet.bin");
-  auto affiche = [&](const char* nom, const __half* gpu, const std::vector<char>& ref, std::size_t debut, std::size_t n) {
+  auto affiche = [&](const char* nom, const __half* gpu, const std::vector<char>& ref, std::size_t debut,
+                     std::size_t n) {
     const Ecart e = comparer(gpu, ref, debut, n);
-    std::printf("%-34s PSNR %7.2f dB (pic %.3g)  max|diff| %.4g  différents %zu / %zu\n", nom, e.psnr, e.pic, e.maxabs,
-                e.differents, n);
+    std::printf("%-34s PSNR %7.2f dB (pic %.3g)  max|diff| %.4g  différents %zu / %zu\n", nom, e.psnr, e.pic,
+                e.maxabs, e.differents, n);
   };
   // pre
   lancer_pre(t, s);
@@ -348,7 +351,8 @@ int verifier(const std::string& cas) {
   return 0;
 }
 
-int executer(const std::string& dossier, const std::string& in01, const std::string& in12, const std::string& out) {
+int executer(const std::string& dossier, const std::string& in01, const std::string& in12,
+             const std::string& out) {
   Journal j;
   std::unique_ptr<nvinfer1::IRuntime> rt(nvinfer1::createInferRuntime(j));
   Chaine c = charger_chaine(*rt, dossier);
@@ -415,7 +419,8 @@ int plein(const std::string& moteur, const std::string& in01, const std::string&
   return 0;
 }
 
-int mesurer(const std::string& dossier, const std::string& in01, const std::string& in12, bool seulement_chaine) {
+int mesurer(const std::string& dossier, const std::string& in01, const std::string& in12,
+            bool seulement_chaine) {
   Journal j;
   std::unique_ptr<nvinfer1::IRuntime> rt(nvinfer1::createInferRuntime(j));
   Chaine c = charger_chaine(*rt, dossier);
@@ -454,8 +459,8 @@ int mesurer(const std::string& dossier, const std::string& in01, const std::stri
   somme_noyaux += temps("noyau colle 2", [&] { lancer_colle(c.t, 2, s); });
   somme_moteurs += temps("moteur bloc 2", [&] { c.bloc[2].ctx->enqueueV3(s); });
   somme_noyaux += temps("noyau fin", [&] { lancer_fin(c.t, s); });
-  std::printf("somme moteurs %.4f ms ; somme noyaux %.4f ms ; total isolé %.4f ms\n", somme_moteurs, somme_noyaux,
-              somme_moteurs + somme_noyaux);
+  std::printf("somme moteurs %.4f ms ; somme noyaux %.4f ms ; total isolé %.4f ms\n", somme_moteurs,
+              somme_noyaux, somme_moteurs + somme_noyaux);
   cudaGraphExec_t g = capturer(s, [&] { enfiler(c, s); });
   double mn;
   const double med = mediane(g, s, 200, 200, &mn);
@@ -467,8 +472,10 @@ int info(const std::string& moteur) {
   Journal j;
   std::unique_ptr<nvinfer1::IRuntime> rt(nvinfer1::createInferRuntime(j));
   Moteur m = charger(*rt, moteur);
-  for (std::size_t i = 0; i < m.entrees.size(); ++i) std::printf("entrée %s : %zu octets\n", m.entrees[i].c_str(), m.octets_entrees[i]);
-  for (std::size_t i = 0; i < m.sorties.size(); ++i) std::printf("sortie %s : %zu octets\n", m.sorties[i].c_str(), m.octets_sorties[i]);
+  for (std::size_t i = 0; i < m.entrees.size(); ++i)
+    std::printf("entrée %s : %zu octets\n", m.entrees[i].c_str(), m.octets_entrees[i]);
+  for (std::size_t i = 0; i < m.sorties.size(); ++i)
+    std::printf("sortie %s : %zu octets\n", m.sorties[i].c_str(), m.octets_sorties[i]);
   return 0;
 }
 

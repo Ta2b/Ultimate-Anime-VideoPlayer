@@ -1,4 +1,5 @@
-// Prototype : noyaux FP16 maison pour tout ce que DistilDRBA v2 lite (échelles 16, 8, 4) fait hors convolution.
+// Prototype : noyaux FP16 maison pour tout ce que DistilDRBA v2 lite (échelles 16, 8, 4) fait hors
+// convolution.
 //
 // Les convolutions restent dans quatre moteurs TensorRT : l'encodeur (lot de 3 images au quart de la
 // résolution) et les blocs 0, 1, 2 (entrée = Concat, sortie = 52 canaux de ConvTranspose avant DepthToSpace).
@@ -251,8 +252,8 @@ __global__ void __launch_bounds__(256) noyau_post(ParamsPost p) {
 // Noyau colle : complète l'entrée Xk (k = 1, 2) : canaux 57-94 (warps), 96-104 (masque, attributs), 105-108
 // (flot) à partir de la sortie du bloc précédent (agrandie ×2). Les canaux 0-56 et 95 sont déjà là.
 struct ParamsColle {
-  int h, w;           // résolution de Xk
-  SourceZ z;          // DepthToSpace de la sortie du bloc précédent (zh = h/2)
+  int h, w;   // résolution de Xk
+  SourceZ z;  // DepthToSpace de la sortie du bloc précédent (zh = h/2)
   const __half* pair01;
   std::size_t plan_pleine;  // H × W de pair01 (lecture de tau)
   __half* x;
@@ -299,8 +300,8 @@ __global__ void __launch_bounds__(128) noyau_colle(ParamsColle p) {
 }
 
 // ---------------------------------------------------------------------------------------------------------
-// Noyau fin : sortie du bloc 2 agrandie ×4 (flot × 4, masque), warps pleine résolution de img1 et de l'image du
-// côté choisi, sigmoïde, mélange.
+// Noyau fin : sortie du bloc 2 agrandie ×4 (flot × 4, masque), warps pleine résolution de img1 et de l'image
+// du côté choisi, sigmoïde, mélange.
 struct ParamsFin {
   int h, w;
   SourceZ z;
