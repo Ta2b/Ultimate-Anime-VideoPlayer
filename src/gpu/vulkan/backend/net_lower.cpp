@@ -429,7 +429,8 @@ std::expected<Program, Refusal> lower(const ir::Graph& graph, std::span<const Ke
         Refusal{RefusalCode::InputMismatch,
                 std::format("{} choix pour {} nœuds", choices.size(), graph.nodes.size())});
   }
-  Lowerer lowerer(graph, target, plan_aliases(graph, target.storage_alignment, target.concat_in_place));
+  Lowerer lowerer(graph, target,
+                  plan_aliases(graph, target.storage_alignment, target.concat_in_place, target.split_views));
   for (std::size_t k = 0; k < graph.nodes.size(); ++k) {
     if (auto ok = lowerer.node(k, choices[k]); !ok) return std::unexpected(ok.error());
   }

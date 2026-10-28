@@ -17,8 +17,9 @@ namespace ajp::gpu::vk::net {
 
 // Un alias par tenseur du graphe ; alignment : alignement des vues de tampon de l'appareil.
 // concat_in_place : les entrées Conv d'un Concat sur les canaux Nhwc16 se rangent dans la sortie.
+// split_views : les sorties d'un Split sur les canaux Nhwc16 sont des vues de son entrée.
 std::vector<ir::Alias> plan_aliases(const ir::Graph& graph, std::uint64_t alignment,
-                                    bool concat_in_place = true);
+                                    bool concat_in_place = true, bool split_views = true);
 
 // Octets depuis le début de whole jusqu'à l'élément start de l'axe axis, si la tranche qui y
 // commence est contiguë (tous les axes avant axis valent 1) et whole rangé en Nchw.
