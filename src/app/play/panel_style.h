@@ -14,6 +14,12 @@ inline constexpr ImVec4 kGood{0.45F, 0.82F, 0.52F, 1.0F};       // pastille Reco
 inline constexpr ImVec4 kFine{0.72F, 0.58F, 1.0F, 1.0F};        // pastille Le plus fin
 inline constexpr ImVec4 kExperimental{1.0F, 0.5F, 0.5F, 1.0F};  // pastille Expérimental
 
+// La case « Réglages avancés » : les réglages que presque personne ne touche ne s'affichent que cochée.
+inline bool& advanced() {
+  static bool shown = false;
+  return shown;
+}
+
 inline void note(const char* text) {
   ImGui::PushStyleColor(ImGuiCol_Text, kNote);
   ImGui::TextWrapped("%s", text);

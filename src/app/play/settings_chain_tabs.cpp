@@ -105,7 +105,7 @@ void image_tab(PlaySettings& d, const SettingsChoices& choices) {
                    : std::format("Sans agrandissement, la sortie garde la résolution de travail : {}.",
                                  resolution_text(work)));
   }
-  if (reduces) {
+  if (reduces && panel::advanced()) {
     if (ImGui::BeginCombo("Algorithme", std::string(label(d.downscale)).c_str())) {
       for (int i = 0; i < kDownscaleCount; ++i) {
         const auto filter = static_cast<Downscale>(i);
@@ -122,7 +122,7 @@ void image_tab(PlaySettings& d, const SettingsChoices& choices) {
         "Area : moyenne exacte. Spline36 : celui d'AnimeJaNai, net. Hermite : net et sans halo, pensé pour "
         "l'animation. "
         "Catmull-Rom et Mitchell gardent du détail ; Bilinear et Bicubic adoucissent. Changement en direct.");
-  } else {
+  } else if (!reduces) {
     note("Pas de réduction : la source entre telle quelle dans SPAN.");
   }
 }
@@ -223,7 +223,7 @@ void fluidity_tab(PlaySettings& d, const SettingsChoices& choices, bool exportin
                                                                                     : panel::kExperimental);
     }
   }
-  if (!choices.rife_models.empty()) {
+  if (!choices.rife_models.empty() && panel::advanced()) {
     ImGui::BeginDisabled(d.motion_engine != MotionEngine::Rife);
     const std::string current = d.rife_model.empty() ? choices.default_rife_model : d.rife_model;
     std::string missing;
@@ -248,7 +248,7 @@ void fluidity_tab(PlaySettings& d, const SettingsChoices& choices, bool exportin
                        choices.rife_folder, missing));
     }
   }
-  if (is_gmfss(d.motion_engine)) {
+  if (is_gmfss(d.motion_engine) && panel::advanced()) {
     const bool union_model = d.motion_engine == MotionEngine::GmfssUnion;
     const bool quality_present =
         union_model ? choices.gmfss_union_quality_available : choices.gmfss_quality_available;
@@ -306,6 +306,7 @@ void fluidity_tab(PlaySettings& d, const SettingsChoices& choices, bool exportin
     note("Sortie 4K : RIFE estime le mouvement sur une copie en 720p, plus légère.");
   }
   note("Les coupes de scène et les dessins tenus ne sont pas interpolés.");
+  if (!panel::advanced()) return;  // poses, ordre du traitement et Smooth Motion : réglages avancés
   ImGui::BeginDisabled(d.motion_engine != MotionEngine::Rife);
   ImGui::Checkbox("Garder les poses (DRBA) avec RIFE", &d.keep_poses);
   ImGui::EndDisabled();
