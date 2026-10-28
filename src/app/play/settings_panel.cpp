@@ -64,14 +64,15 @@ void hdr_tab(PlaySettings& d, const SettingsChoices& choices) {
       !automatic)
     d.true_hdr_peak = peak;
   ImGui::EndDisabled();
-  ImGui::SliderInt("Gris moyen", &d.true_hdr_gray, limits::kTrueHdrGray.lo, limits::kTrueHdrGray.hi, "%d",
-                   ImGuiSliderFlags_AlwaysClamp);
-  if (choices.nvidia) {
+  if (panel::advanced())
+    ImGui::SliderInt("Gris moyen", &d.true_hdr_gray, limits::kTrueHdrGray.lo, limits::kTrueHdrGray.hi, "%d",
+                     ImGuiSliderFlags_AlwaysClamp);
+  if (choices.nvidia && panel::advanced()) {
     ImGui::BeginDisabled(!d.true_hdr);
     ImGui::Checkbox("Débandage (RTX HDR)", &d.true_hdr_debanding);
     ImGui::EndDisabled();
   }
-  if (ImGui::Button("Valeurs par défaut")) {
+  if (panel::advanced() && ImGui::Button("Valeurs par défaut")) {
     const PlaySettings defaults;
     d.true_hdr_peak = defaults.true_hdr_peak;
     d.true_hdr_gray = defaults.true_hdr_gray;
@@ -135,14 +136,16 @@ void grade_tab(PlaySettings& d, const SettingsChoices& choices) {
   render::GradeSettings& g = d.grade_values;
   using namespace render::grade_limits;
   bool moved = false;
-  moved |= grade_slider("Éclats", g.highlights_rtx, kHighlights);
-  moved |= grade_slider("Aplats lumineux", g.area_rtx, kAreaRtx);
-  moved |= grade_slider("Couleurs", g.vibrance_rtx, kVibrance);
-  moved |= grade_slider("Couleurs étendues (large gamut)", g.expand, kExpand);
-  moved |= grade_slider("Noirs profonds", g.shadows, kShadows);
-  moved |= grade_slider("Garde-fou couleurs saturées", g.guard, kGuard);
-  if (moved) d.grade_preset = render::GradePreset::Custom;
-  ImGui::Checkbox("Gamut Display P3 de l'écran", &g.gamut_p3);
+  if (panel::advanced()) {
+    moved |= grade_slider("Éclats", g.highlights_rtx, kHighlights);
+    moved |= grade_slider("Aplats lumineux", g.area_rtx, kAreaRtx);
+    moved |= grade_slider("Couleurs", g.vibrance_rtx, kVibrance);
+    moved |= grade_slider("Couleurs étendues (large gamut)", g.expand, kExpand);
+    moved |= grade_slider("Noirs profonds", g.shadows, kShadows);
+    moved |= grade_slider("Garde-fou couleurs saturées", g.guard, kGuard);
+    if (moved) d.grade_preset = render::GradePreset::Custom;
+    ImGui::Checkbox("Gamut Display P3 de l'écran", &g.gamut_p3);
+  }
   ImGui::EndDisabled();
   if (!choices.hdr_output) {
     note(
@@ -155,6 +158,7 @@ void grade_tab(PlaySettings& d, const SettingsChoices& choices) {
   } else {
     note("Sortie HDR10 sans moteur HDR : pas de grade (moteur à choisir dans l'onglet HDR).");
   }
+  if (!panel::advanced()) return;
   section("Composition finale");
   if (ImGui::BeginCombo("Filtre vers la fenêtre", std::string(label(d.final_scaler)).c_str())) {
     for (int i = 0; i < kFinalScalerCount; ++i) {
@@ -302,18 +306,27 @@ bool sound_tab(PlaySettings& d, const SettingsChoices& choices) {
     ImGui::EndDisabled();
     panel::tip(cinema && !multichannel ? "Grisé : cet appareil n'a que 2 canaux." : choice.detail);
   }
-  ImGui::Checkbox("Fidèle (aucun traitement)", &d.audio_faithful);
-  panel::tip(
-      "Coupe tout traitement, pour comparer : le son brut de la piste, mixé simplement pour l'appareil.");
-  if (!device_name.empty() && ImGui::Checkbox("Profil propre à cet appareil", &own)) {
+  if (panel::advanced()) {
+    ImGui::Checkbox("Fidèle (aucun traitement)", &d.audio_faithful);
+    panel::tip(
+        "Coupe tout traitement, pour comparer : le son brut de la piste, mixé simplement pour l'appareil.");
+  }
+  if (panel::advanced() && !device_name.empty() && ImGui::Checkbox("Profil propre à cet appareil", &own)) {
     if (own) {
       d.device_listening.emplace_back(device_name, d.listening);
     } else {
       std::erase_if(d.device_listening, [&](const auto& entry) { return entry.first == device_name; });
     }
   }
-  panel::tip("Un autre appareil reprend le profil global, sans rien demander.");
+  if (panel::advanced()) panel::tip("Un autre appareil reprend le profil global, sans rien demander.");
 
+  section("Lecture");
+  ImGui::Checkbox("Lire l'épisode suivant à la fin", &d.autoplay_next);
+  panel::tip(
+      "À la fin d'une vidéo ouverte par un fichier, lit la suivante du même dossier (ordre naturel des "
+      "noms : ep2 avant ep10). N : épisode suivant, Maj + N : précédent, O : passer le générique "
+      "(chapitre Opening ou Ending, sinon 85 s).");
+  if (!panel::advanced()) return false;
   section("Synchronisation");
   ImGui::SliderInt("Délai audio (ms)", &d.audio_delay_ms, -1000, 1000);
   const bool held = ImGui::IsItemActive();
@@ -322,11 +335,6 @@ bool sound_tab(PlaySettings& d, const SettingsChoices& choices) {
       "ms).");
   if (ImGui::Button("Remettre à 0")) d.audio_delay_ms = 0;
   d.audio_delay_ms = std::clamp(d.audio_delay_ms, limits::kAudioDelayMs.lo, limits::kAudioDelayMs.hi);
-  ImGui::Checkbox("Lire l'épisode suivant à la fin", &d.autoplay_next);
-  panel::tip(
-      "À la fin d'une vidéo ouverte par un fichier, lit la suivante du même dossier (ordre naturel des "
-      "noms : ep2 avant ep10). N : épisode suivant, Maj + N : précédent, O : passer le générique "
-      "(chapitre Opening ou Ending, sinon 85 s).");
   ImGui::Checkbox("Caler la lecture sur l'écran", &d.display_sync);
   panel::tip(
       "Sur un écran à fréquence fixe, la lecture accélère ou ralentit d'au plus 0,125 % pour que chaque "
@@ -491,6 +499,7 @@ SettingsPanel::Result SettingsPanel::draw(const PlaySettings& running, const Set
                                       ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse;
   if (ImGui::Begin("Paramètres", &keep, kFlags)) {
     ImGui::PushItemWidth(-width * 0.42F);
+    panel::advanced() = advanced_;
     bool delay_held = false;
     const PlaySettings before = draft_;
     // Sous les deux colonnes : la case « Réglages avancés » (et le bandeau « Appliquer » quand il est là).
