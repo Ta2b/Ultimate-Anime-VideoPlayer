@@ -8,7 +8,7 @@ trtexec=${TRTEXEC:-$(command -v trtexec || ls ~/ajp-sdk/*/bin/trtexec 2>/dev/nul
 python3 make_fp8_qdq.py "$onnx" span_fp8_qdq.onnx
 shape="--minShapes=input:1x3x${h}x${w} --optShapes=input:1x3x${h}x${w} --maxShapes=input:1x3x${h}x${w}"
 for v in fp16 fp8; do
-  f=$onnx; flags="--fp16"; [ $v = fp8 ] && { f=span_fp8_qdq.onnx; flags="--fp16 --fp8"; }
+  f=$onnx; flags=""; [ $v = fp8 ] && f=span_fp8_qdq.onnx  # TensorRT 11 : fortement typé, ni --fp16 ni --fp8
   echo "== $v"; "$trtexec" --onnx="$f" $flags $shape --warmUp=500 --iterations=200 --useCudaGraph --noDataTransfers 2>&1 \
     | grep -E "GPU Compute Time.*median|Throughput|FP8|error|Error" | tee "result_$v.txt"
 done
