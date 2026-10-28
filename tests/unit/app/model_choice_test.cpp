@@ -1,5 +1,6 @@
 #include "app/play/model_choice.h"
 
+#include <algorithm>
 #include <array>
 #include <cstddef>
 #include <filesystem>
