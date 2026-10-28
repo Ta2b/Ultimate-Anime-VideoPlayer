@@ -4,41 +4,42 @@ Les retours de Tatoub du 28 octobre (après la v0.5.0, publiée en pré-version)
 préparation de la release v0.6**, pas avant. Même règle qu'en v0.5 : une PR par étape, base main, clang-format avant chaque PR ; l'étiquette n'est posée
 que sur un accord clair de Tatoub dans le fil. Détail des décisions et journal : ce fichier ; l'historique de la 0.5 : `plan-v0.5.md`.
 
-## Étapes, dans l'ordre
-- [x] Catalogue RIFE réduit à 4.25 et 4.22 lite (PR #48)
-- [x] Fenêtre fantôme à la fermeture (Fedora, Wayland, GNOME) : correctif défendable par la lecture du code (PR #49) ; **à confirmer sur le Fedora GNOME**
-- [ ] Interpolation Auto par défaut pour tous les profils, y compris après le benchmark
-- [ ] « Garder les poses DRBA » activé par défaut, **si** la mesure A/B montre un gain de performance ET de qualité (sinon, chiffres au coordinateur)
-- [ ] Profils « legacy » retirés de toutes les listes de sélection (réglages, assistant, benchmark), sans casser l'import d'un ancien play.toml
-- [x] HDR : écran SDR sans route HDR (options grisées avec note), mode SDR GRADÉ pour imiter le rendu HDR (onglet Couleurs actif ; sur sortie HDR10, l'image SDR est gradée comme la route native sans l'aspect adaptatif), RTX HDR non installé : repli sur le HDR adaptatif ; à confirmer chez Tatoub
-- [ ] Interface : lecteur par défaut en fenêtre au démarrage (« ne plus demander ») et réglage discret (Général > Mises à jour), composition finale et soin OLED hors de Couleurs, **audit complet « Réglages avancés »** (tableau dans `ux-parametres.md`, les réglages rares restent dans leur onglet), OLED auto si écran OLED détecté, Réinitialiser et debug hors des réglages avancés
-- [x] (fait, à confirmer chez Tatoub ; exploration des multiplicateurs/résolutions : reste) Benchmark autonome et silencieux (clip sévère embarqué 5 à 15 s, barre de progression, étapes « Chargement de tous les moteurs nécessaires au bench » puis « Benchmark en cours », recherche des modèles et résolutions, multiplicateur en Auto, plus d'écran de démarrage à chaque essai)
-- [ ] Moteurs : espace disque vérifié avant l'installation (plus de boucle de téléchargement), dossier d'installation des moteurs au choix avec un défaut
-- [ ] Audio : plusieurs profils de virtualisation nommés (Naturel, Binaural, Scène large, Cinéma), réglages par profil derrière « Réglages avancés » (largeur de scène, distance et angle, crossfeed, réverbération légère, centre, graves, égaliseur 3 bandes, compression « nuit », normalisation), profils personnalisés enregistrables, profil par appareil
-- [ ] Empaquetage : AppImage (Linux), installateur .exe avec version portable zip (Windows), .dmg noté pour plus tard (macOS)
-- [ ] Release v0.6 : version 0.6.0, notes `tools/release/notes/v0.6.0.md`, liste des essais Windows/macOS
+## Étapes, dans l'ordre (état au 28/10, 15:20)
+- [x] Catalogue RIFE réduit à 4.25 et 4.22 lite (#48) ; menu SPAN réduit au catalogue AnimeJaNai HD V3.1 (#55) : plus de profil « legacy » dans les listes
+- [x] Fenêtre fantôme à la fermeture (Fedora, Wayland, GNOME) : correctif défendable par la lecture du code (#49) ; **à confirmer sur le Fedora GNOME**
+- [x] Interpolation Auto par défaut pour tous les profils (#53)
+- [ ] « Garder les poses DRBA » par défaut : **performance mesurée** (poses actives : tient, retard 0,0 ms, composition 1,2 ms ; inactives : ne tient pas, 15,1 ms, 6,0 ms ; 4070 Ti, Re:Zero 18, ×3) ; qualité : comparaison d'images en cours, puis décision
+- [x] HDR : écran SDR sans conversion HDR (options grisées, note), mode SDR gradé pour imiter le rendu HDR, RTX HDR non installé : repli sur l'adaptatif (#68, #69) ; **à confirmer chez Tatoub**
+- [x] Interface : style Showtime (commandes rondes au centre, titre en gras), fenêtre « lecteur par défaut » au démarrage, réglages avancés dans les onglets existants sans catégorie Avancé, Statistiques et Réinitialiser dans Général (#71, #72) ; reste le menu : molette, barre de défilement, libellés, disposition horizontale
+- [ ] Benchmark autonome et silencieux : séquence de test écrite par le lecteur, fenêtre minuscule, étapes annoncées (#75) ; **reste** l'exploration des moteurs, multiplicateurs et résolutions, Auto en dernier
+- [x] Moteurs : espace disque vérifié avant l'installation, dossier d'installation au choix (#54) ; installation TensorRT corrigée : architecture du GPU, progression unique, un seul essai (#60) ; paquet TensorRT découplé des étiquettes (#67)
+- [x] Audio : profils de virtualisation (#64), distance, pièce, égaliseur, nuit, profil par appareil (#80), **à écouter** ; [ ] convolution HRIR à la HeSuVi (#82, en revue)
+- [x] Empaquetage : AppImage (#74, essai local #77), installeur .exe Inno Setup + zip portable (#74, **à valider par la prochaine release Windows**), .dmg (#79)
+- [x] Police : repli CJK vérifié (#59), chargeur FreeType pour le CFF2 de Fedora (#70) ; **à confirmer chez Tatoub**
+- [x] CI allégée (#73) ; dépôt des releases séparé **gardé** (décision de Tatoub, 28/10)
+- [ ] Release v0.6 : version 0.6.0, notes `tools/release/notes/v0.6.0.md` (brouillon #81), liste des essais Windows/macOS ; étiquette seulement sur le message direct de Tatoub
 
 ## Journal
 - **2026-10-28** : v0.6 ouverte. Mesures du contrôleur Auto sur la tête 00f00ee : RIFE ×4, DistilDRBA ×5, GMFSS ×2 tenus en fin de run (`docs/reports/mesures-auto-4070ti-2026-10-28.md`).
 - [x] Paquet TensorRT découplé des étiquettes : empreinte de ses entrées (`trt-fingerprint.sh`), release fixe `trt-<empreinte>` (`trt-package.sh`), Release Linux la lit sans relance ; plus de reconstruction ni de seconde passe par release (demande de Tatoub, 0.5.1)
 
-## Liste vivante du détail demandé par Tatoub (28/10, à n'oublier aucun avant la 0.6)
+## Liste vivante du détail demandé par Tatoub (28/10) : état
 
-1. Audio : profils faits (#64) ; reste distance des enceintes virtuelles, pièce/réverbération légère, égaliseur, compression de dynamique « nuit », profils nommés enregistrables par appareil.
-2. Réglages avancés : audit fait (#61) ; reste la page avancée « Rendu », l'OLED coché automatiquement à la détection, Réinitialiser hors des avancés, debug hors d'Avancé, les avancés prolongent les onglets existants.
-3. FAIT (lot interface 1) : pop-up de démarrage « lecteur par défaut » (une fois par lancement, « Ne plus demander »), réglage discret Général > Lecteur par défaut ; composition finale, noir et soins OLED sortis de Couleurs vers Avancé > Rendu ; Statistiques et Réinitialiser hors d'Avancé (Général) ; pastille « Le plus lent » ; OLED automatique déjà en place (noir Auto, soins par détection) ; « Ouvrir avec » inscrit par l'assistant. Reste : style Showtime des commandes, molette/barre de défilement, libellés.
-4. HDR : fait (#68) — RTX HDR non installé : repli ; options HDR grisées sur écran SDR ; le mode SDR APPLIQUE le grade pour imiter le rendu HDR (voulu par Tatoub) ; à confirmer chez lui.
-5. FAIT en partie : séquence de test écrite par le lecteur (media/bench_clip.h), fenêtre minuscule sans bordure ni focus (une fenêtre cachée ralentit les présentations à ~20/s, mesure faussée), étapes « Chargement de tous les moteurs… » puis « Benchmark en cours », plus d'assistant rouvert par les essais (settings.toml copié). Reste l'exploration des moteurs, multiplicateurs et résolutions, Auto en dernier. Benchmark autonome et silencieux : clip de 5 à 15 s généré ou choisi sans ouvrir de vidéo, aucune image, barre de progression seule, étapes « Chargement de tous les moteurs nécessaires au bench » puis « Benchmark en cours », explore moteurs, multiplicateurs et résolutions, multiplicateur Auto à la fin.
-6. Poses DRBA par défaut après A/B performance ET qualité.
-7. Design Showtime, AppImage, installeur .exe + zip portable, .dmg.
-8. Confirmer sur Fedora GNOME : fenêtre fantôme à la fermeture, japonais.
-9. Audio : convolution par réponse impulsionnelle à la HeSuVi (import WAV HRIR 14 canaux / stéréo / 7.1, FFT par blocs, rééchantillonnage, gain de sécurité, par appareil) ; aucune réponse tierce sans licence vérifiée ; par défaut le binaural paramétrique ; préréglage égaliseur/centre voix « anime ».
-10. Auto en VRR : question ouverte des demi-paliers ×0,5 (cadence demi-entière) : trancher, mesurer, répondre à Tatoub.
-11. Menu : la molette défile les onglets et catégories ; placement de la barre de défilement ; moins de catégories ; réglages en disposition horizontale quand ça tient ; tous les libellés français corrigés (1080p, etc.) ; pastille « Le plus lent ».
-12. Arbre : place explicite de Langues, Export, Moteurs ; Général simple ; IA ; Couleurs sans Lanczos ni réglages sans rapport.
-13. « Ouvrir avec » enregistré au premier lancement sans confirmation.
-14. Config auto : tranche du GPU + résolution de l'écran, réduire puis agrandir (540p→1080p, 720p→1440p), SPAN Sharp1 Performance par défaut, modèle d'interpolation par tranche.
-15. Assistant : choix guidé du moteur.
-16. Poses DRBA : contradiction entre le tableau de décisions (« désactivées ») et la v0.6 (« activées par défaut ») : trancher après A/B performance ET qualité, corriger le document.
-17. .dmg macOS à faire ; archive TensorRT Windows manquante (même schéma que Linux, #67) ; build macOS corrigé (#66).
-18. Police japonaise toujours absente en 0.5.1 : enquête en cours (police CJK .ttc en CFF sous stb_truetype ? atlas dynamique ?).
+1. Audio : FAIT (#64, #80) : profils, distance, pièce, égaliseur, nuit, profil par appareil ; à écouter.
+2. Réglages avancés : FAIT (#61, #72) : dans les onglets existants, OLED automatique, Réinitialiser et Statistiques hors des avancés.
+3. Pop-up « lecteur par défaut » et réglage discret : FAIT (#71) ; composition finale et soins OLED hors de Couleurs : FAIT (#72, dans Agrandissement et HDR avec les avancés).
+4. HDR : FAIT (#68, #69) ; à confirmer chez Tatoub.
+5. Benchmark autonome et silencieux : EN PARTIE (#75) ; reste l'exploration des moteurs, multiplicateurs et résolutions.
+6. Poses DRBA par défaut : EN COURS : performance mesurée (favorable), qualité à comparer.
+7. Design Showtime FAIT (#71) ; AppImage FAIT (#74, #77) ; installeur .exe + zip portable FAIT (#74), à valider par la release Windows ; .dmg FAIT (#79).
+8. Fedora GNOME : fenêtre fantôme (#49) et japonais (#59, #70) : À CONFIRMER chez Tatoub.
+9. Convolution HRIR à la HeSuVi : EN REVUE (#82) ; préréglage « Voix d'anime » FAIT (#80).
+10. Auto en VRR, demi-paliers ×0,5 : À FAIRE (trancher, mesurer, répondre).
+11. Menu : molette, barre de défilement, moins de catégories, disposition horizontale, libellés français : À FAIRE (pastille « Le plus lent » FAITE).
+12. Arbre : EN PARTIE (#72) ; à revoir : place de Langues, Export, Moteurs, Couleurs sans réglages sans rapport.
+13. « Ouvrir avec » enregistré au premier lancement : FAIT (assistant).
+14. Config auto (tranche du GPU et résolution de l'écran, réduire puis agrandir, SPAN Sharp1 Performance, modèle par tranche) : FAIT (#53, tests `[auto_config]`).
+15. Assistant : choix guidé du moteur : À FAIRE.
+16. Poses DRBA : contradiction du tableau de décisions (« désactivées ») : à corriger après la décision (point 6).
+17. .dmg FAIT (#79) ; archive TensorRT Windows manquante : À FAIRE (même schéma que Linux, #67) ; build macOS corrigé (#66).
+18. Police japonaise en 0.5.1 : CORRIGÉE (#70), à confirmer chez Tatoub.
