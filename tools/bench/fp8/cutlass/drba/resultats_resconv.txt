@@ -1,0 +1,8 @@
+# DistilDRBA v2 lite 1920x1088 : ResConv FP8 CUTLASS (epilogue fusionne) contre TensorRT FP16
+# 8 ResConv enchainees, graphe CUDA, RTX 4070 Ti. TensorRT : trtexec --useCudaGraph (GPU Compute Time, moyenne).
+# Reference TensorRT : C=192 (17x30) 64,5 us ; C=128 (34x60) 84,1 us ; C=96 (68x120) 164,7 us.
+# FP8 : meilleure config par taille (min sur 5 x 1000 lancements), exactitude vs reference fp32 : PSNR 88 dB.
+C=192 32x64x64 w32x32 s4   67,0 us  (+4 %)
+C=128 64x64x64 w32x32 s4   90,5 us  (+8 %)
+C=96  64x96x64 w32x48 s4  188,3 us  (+14 %)
+# Reseau entier TensorRT FP16 : 2,10 ms (graphe CUDA). Profil : voir resultats_profil_trt.txt.

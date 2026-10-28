@@ -1,0 +1,10 @@
+total du profil 2.446 ms (la latence réelle en graphe CUDA est 2,10 ms)
+casts                                                      0.620 ms  25.4 %
+warp (GridSample)                                          0.541 ms  22.1 %
+Resize                                                     0.362 ms  14.8 %
+ResConv fusionnées (conv + beta + saut + LeakyRelu)        0.356 ms  14.5 %
+autres convs (tête, conv0, lastconv, encodeur)             0.324 ms  13.3 %
+reformatage                                                0.189 ms   7.7 %
+DepthToSpace                                               0.031 ms   1.3 %
+autres (Slice, Mul...)                                     0.024 ms   1.0 %
+élémentaires fusionnés (myl)                               0.000 ms   0.0 %
