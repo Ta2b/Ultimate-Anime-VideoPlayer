@@ -297,7 +297,8 @@ class UpscaleStage final : public RingStage {
   std::unique_ptr<gpu::TensorBuffer> flow_;
   std::unique_ptr<gpu::TensorBuffer> mask_;
   // GMFSS : l'entrée de la paire, chaque tenseur nommé de ses graphes (sorties de la paire,
-  // sources splattées), et les six splats d'une image intermédiaire.
+  // sources splattées), et les splats d'une image intermédiaire : six, huit avec un export de version 2
+  // des graphes, dont le niveau 1 se splatte en deux tranches (image, caractéristiques ; gmfss_model.h).
   struct GmfssSplat {
     int side = 0;
     gpu::Tensor source;

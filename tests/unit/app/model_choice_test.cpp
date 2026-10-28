@@ -156,6 +156,107 @@ TEST_CASE("GMFSS : les deux graphes du premier dossier qui les a, ses dimensions
   CHECK(dims[7].value == 160);
 }
 
+// Un ONNX minimal de paire GMFSS écrit à la main : un graphe dont les nœuds produisent les tenseurs
+// donnés, et la métadonnée « ajp.gmfss.export » si version n'est pas vide.
+std::vector<std::byte> tiny_pair(std::string_view version, const std::vector<std::string>& tensors) {
+  using Bytes = std::vector<std::byte>;
+  const auto varint = [](Bytes& out, std::uint64_t v) {
+    while (v >= 0x80U) {
+      out.push_back(static_cast<std::byte>((v & 0x7fU) | 0x80U));
+      v >>= 7U;
+    }
+    out.push_back(static_cast<std::byte>(v));
+  };
+  const auto delimited = [&](Bytes& out, std::uint32_t number, const Bytes& payload) {
+    varint(out, (std::uint64_t{number} << 3U) | 2U);
+    varint(out, payload.size());
+    out.insert(out.end(), payload.begin(), payload.end());
+  };
+  const auto text = [](std::string_view s) {
+    return Bytes(reinterpret_cast<const std::byte*>(s.data()),
+                 reinterpret_cast<const std::byte*>(s.data()) + s.size());
+  };
+  Bytes graph;
+  for (const std::string& tensor : tensors) {
+    Bytes node;
+    delimited(node, 1, text("frames"));
+    delimited(node, 2, text(tensor));
+    delimited(node, 4, text("Identity"));
+    delimited(graph, 1, node);
+  }
+  delimited(graph, 2, text("pair"));
+  Bytes model;
+  varint(model, (1U << 3U) | 0U);
+  varint(model, 9);
+  delimited(model, 7, graph);
+  if (!version.empty()) {
+    Bytes entry;
+    delimited(entry, 1, text(kGmfssExportKey));
+    delimited(entry, 2, text(version));
+    delimited(model, 14, entry);
+  }
+  return model;
+}
+
+void put(const std::filesystem::path& file, const std::vector<std::byte>& bytes) {
+  std::ofstream(file, std::ios::binary)
+      .write(reinterpret_cast<const char*>(bytes.data()), static_cast<std::streamsize>(bytes.size()));
+}
+
+TEST_CASE("GMFSS : un graphe d'un export périmé n'est jamais utilisé, un ancien reste lu",
+          "[app][model_choice][gmfss]") {
+  const FakeHome fake("gmfss_stale");
+  const std::filesystem::path other = fake.home / "autre";
+  std::filesystem::create_directories(other);
+  const std::vector<std::string> modern{"/flownet/GridSample_output_0", "/Concat_output_0", "feature0_1"};
+  const std::vector<std::string> old_window{"/flownet/GridSample_output_0",
+                                            "/flownet_1/GridSample_1_output_0", "/Concat_output_0"};
+  const std::string current = std::to_string(kGmfssExportVersion);
+
+  // Version courante : lue sans parcourir le graphe.
+  put(fake.rife / kGmfssHalfPairFile, tiny_pair(current, modern));
+  std::ofstream(fake.rife / kGmfssHalfFusionFile) << "x";
+  CHECK(gmfss_graph_state(fake.rife / kGmfssHalfPairFile).state == GmfssExport::Current);
+  CHECK(find_gmfss(std::array{fake.rife})->pair == fake.rife / kGmfssHalfPairFile);
+
+  // Sans métadonnée et sans GridSample de fenêtre : un export ancien (source{k}_1 en 67 canaux), lisible.
+  put(fake.rife / kGmfssHalfPairFile, tiny_pair("", modern));
+  const GmfssGraphState legacy = gmfss_graph_state(fake.rife / kGmfssHalfPairFile);
+  CHECK(legacy.state == GmfssExport::Legacy);
+  CHECK(legacy.version == 1);
+  CHECK_FALSE(legacy.reason.empty());
+  CHECK(find_gmfss(std::array{fake.rife}).has_value());
+
+  // Sans métadonnée avec le GridSample de la fenêtre locale de GMFlow (159 millions de valeurs) : périmé,
+  // jamais utilisé, même en dernier recours : plus rien n'est trouvé.
+  put(fake.rife / kGmfssHalfPairFile, tiny_pair("", old_window));
+  CHECK(gmfss_graph_state(fake.rife / kGmfssHalfPairFile).state == GmfssExport::Stale);
+  CHECK_FALSE(find_gmfss(std::array{fake.rife}));
+  // Le dossier suivant a un export courant : il passe devant le périmé.
+  put(other / kGmfssHalfPairFile, tiny_pair(current, modern));
+  std::ofstream(other / kGmfssHalfFusionFile) << "x";
+  CHECK(find_gmfss(std::array{fake.rife, other})->pair == other / kGmfssHalfPairFile);
+  // Le flot entier périmé ne remplace pas non plus le demi-flot : seul le graphe courant de l'autre dossier.
+  put(fake.rife / kGmfssPairFile, tiny_pair("", old_window));
+  std::ofstream(fake.rife / kGmfssFusionFile) << "x";
+  CHECK_FALSE(find_gmfss(std::array{fake.rife}, GmfssVariant::Base, false));
+
+  // Un export plus récent que le lecteur n'est pas lu non plus (son contrat est inconnu).
+  put(other / kGmfssHalfPairFile, tiny_pair(std::to_string(kGmfssExportVersion + 1), modern));
+  const GmfssGraphState newer = gmfss_graph_state(other / kGmfssHalfPairFile);
+  CHECK(newer.state == GmfssExport::Stale);
+  CHECK(newer.version == kGmfssExportVersion + 1);
+  CHECK_FALSE(find_gmfss(std::array{other}));
+  put(other / kGmfssHalfPairFile, tiny_pair("deux", modern));
+  CHECK(gmfss_graph_state(other / kGmfssHalfPairFile).state == GmfssExport::Stale);
+
+  // Un fichier illisible n'est pas jugé périmé (les tests ci-dessus l'écrivent « x ») : la construction
+  // du moteur le refusera avec sa raison.
+  std::ofstream(other / kGmfssHalfPairFile) << "x";
+  CHECK(gmfss_graph_state(other / kGmfssHalfPairFile).state == GmfssExport::Current);
+  CHECK(find_gmfss(std::array{other}).has_value());
+}
+
 TEST_CASE("Modèle dérivé : nommé par l'empreinte de la source, fait une seule fois", "[app][model_choice]") {
   const FakeHome fake("derived");
   int calls = 0;

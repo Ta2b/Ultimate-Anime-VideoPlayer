@@ -65,6 +65,18 @@ Les graphes GMFSS Fortuna (base, union, avec demi-flot) et le demi-flot de DRBA 
 workflow `Exporter les modèles d'interpolation` (Actions), qui peut les joindre à la release
 `models-interp-1` ; `tools/release/fetch-models.sh` les ajoute alors aux paquets.
 
+**Version de l'export.** Chaque graphe GMFSS porte la métadonnée ONNX `ajp.gmfss.export` (entier,
+`EXPORT_VERSION` de `tools/gmfss/gmfss_graph.py`, `kGmfssExportVersion` de `gmfss_model.h`). Version 2 : la paire
+sort les 64 caractéristiques du niveau 1 (`feature{k}_1`) et l'image réduite (`half{k}`) séparées, sans le Concat
+3 + 64 canaux de la version 1 (`source{k}_1`) ; le lecteur splatte les deux dans les tranches de `warped{k}_1`
+(0,7 ms de moins par paire à 1280×768, résultat inchangé). Un graphe sans métadonnée (version 1) reste lu tel
+quel, avec une ligne au journal (« graphe GMFSS d'un export ancien »), sauf si la fenêtre locale de GMFlow y passe
+encore par un `GridSample` de 159 millions de valeurs (`/flownet*/GridSample_1`, exports d'avant la lecture par
+décalages entiers, 2 × 7,2 ms par paire à 1280×768) ou si l'export est plus récent que le lecteur : il est alors
+périmé, jamais utilisé, et le journal dit « graphe GMFSS périmé, ré-export ». Le lecteur ne lance pas l'export
+(Python et torch) ni ne télécharge : le remplacement se fait en ré-exportant ou en reprenant la release des modèles
+d'interpolation.
+
 ## GMFSS : performance ou qualité, toujours au flot à demi-échelle
 
 Mesuré sur la 4070 Ti (TensorRT 11.3, 1280×768, graphes « paire » et « fusion » ensemble) : le flot à

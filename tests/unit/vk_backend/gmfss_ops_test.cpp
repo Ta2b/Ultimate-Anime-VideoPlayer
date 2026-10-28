@@ -338,3 +338,61 @@ TEST_CASE("KernelOps : le flot du niveau 1 pousse l'image de travail et l'agrand
     CHECK(uneven.error().code == RefusalCode::ShapeInvalid);
   }
 }
+
+TEST_CASE("KernelOps : le niveau 1 en deux splats, chacun dans sa tranche de warped",
+          "[vk_backend][kernels][gmfss]") {
+  // Export de version 2 : l'image (3 plans) et les caractéristiques (ici 5, 64 dans GMFSS) arrivent en deux
+  // tenseurs ; chaque splat écrit sa tranche de la sortie à 3 + 5 plans, comme le splat de leur
+  // concaténation. 32 × 16 : la tranche des caractéristiques commence à un multiple de 256 octets.
+  TempDir dir("soft_splat_slices");
+  auto backend = make_backend(dir.path());
+  KernelOps& ops = *backend->kernels();
+  constexpr int w = 32;
+  constexpr int h = 16;
+  constexpr int image_planes = 3;
+  constexpr int feature_planes = 5;
+  constexpr int channels = image_planes + feature_planes;
+  for (const TensorType type : types_of(*backend)) {
+    CAPTURE(static_cast<int>(type));
+    const std::vector<k::PlaneF> image = synthetic_planes(w, h, image_planes, 101, type, 0.0F, 1.0F);
+    const std::vector<k::PlaneF> features = synthetic_planes(w, h, feature_planes, 111, type, -2.0F, 2.0F);
+    const std::vector<k::PlaneF> flow = synthetic_planes(w, h, 2, 121, type, -5.0F, 5.0F);
+    const std::vector<k::PlaneF> metric =
+        synthetic_planes(w, h, 1, 131, type, -k::kGmfssMetricLimit, k::kGmfssMetricLimit);
+    const k::ref::SplatMotion motion{{flow[0], flow[1], metric[0]}};
+    auto t_image = rgb_tensor(*backend, w, h, type, image_planes);
+    auto t_features = rgb_tensor(*backend, w, h, type, feature_planes);
+    auto t_motion = rgb_tensor(*backend, w, h, type, k::kGmfssMotionChannels);
+    auto whole = rgb_tensor(*backend, w, h, type, channels);
+    write_tensor(*backend, t_image->tensor(), planes_bytes(image, type));
+    write_tensor(*backend, t_features->tensor(), planes_bytes(features, type));
+    write_tensor(*backend, t_motion->tensor(), planes_bytes(motion.planes, type));
+    const auto slice = [&](int first, int count) {
+      Tensor part = whole->tensor();
+      part.shape.dims[1] = count;
+      part.offset += static_cast<std::uint64_t>(first) * w * h * element_of(type);
+      return part;
+    };
+    std::vector<k::PlaneF> joined = image;
+    joined.insert(joined.end(), features.begin(), features.end());
+    for (const float s : {0.3F, 1.0F}) {
+      CAPTURE(s);
+      const std::array jobs{KernelOps::SplatJob{.source = t_image->tensor(),
+                                                .motion = t_motion->tensor(),
+                                                .s = s,
+                                                .out = slice(0, image_planes)},
+                            KernelOps::SplatJob{.source = t_features->tensor(),
+                                                .motion = t_motion->tensor(),
+                                                .s = s,
+                                                .out = slice(image_planes, feature_planes)}};
+      const auto done = ops.soft_splat_all(jobs);
+      if (!done && done.error().code == RefusalCode::FeatureUnavailable) SKIP(done.error().detail);
+      REQUIRE(done);
+      const auto want = k::ref::soft_splat(joined, motion, s);
+      REQUIRE(want);
+      const std::size_t bytes = element_of(type) * static_cast<std::size_t>(w * h * channels);
+      const auto got = planes_from(read_tensor(*backend, whole->tensor(), bytes), w, h, channels, type);
+      CHECK(max_diff(got, *want) <= (type == TensorType::F16 ? k::tolerance::kRgbF16 : 1e-5F));
+    }
+  }
+}

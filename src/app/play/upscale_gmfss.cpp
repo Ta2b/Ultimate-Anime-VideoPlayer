@@ -23,6 +23,17 @@ std::unexpected<Refusal> refuse(RefusalCode code, std::string detail) {
   return std::unexpected(Refusal{code, std::move(detail)});
 }
 
+// Les plans [first, first + count) d'un tenseur F16 1 × c × h × w : les plans se suivent en mémoire, la
+// tranche est le même tampon décalé de first plans. Les splats du niveau 1 y écrivent l'image (plans 0 à 2)
+// et les caractéristiques (plans 3 à 66) de warped{k}_1 sans que la paire les ait concaténées.
+gpu::Tensor channel_slice(const gpu::Tensor& whole, std::int64_t first, std::int64_t count) {
+  gpu::Tensor slice = whole;
+  const std::int64_t plane = whole.shape.dims[2] * whole.shape.dims[3];
+  slice.shape.dims[1] = count;
+  slice.offset += static_cast<std::uint64_t>(first * plane) * sizeof(std::uint16_t);
+  return slice;
+}
+
 }  // namespace
 
 std::expected<void, Refusal> UpscaleStage::allocate_gmfss() {
@@ -46,12 +57,20 @@ std::expected<void, Refusal> UpscaleStage::allocate_gmfss() {
   auto out = alloc(3, 1);
   if (!out) return std::unexpected(std::move(out.error()));
   rife_out_ = std::move(*out);
+  // Version 2 des graphes (gmfss_model.h) : la paire sort les 64 caractéristiques du niveau 1 en
+  // feature{k}_1 et l'image en half{k}, sans le Concat ; un export ancien sort source{k}_1, 67 canaux.
+  const bool split = std::ranges::contains(setup_.gmfss_pair->output_names(), std::string_view("feature0_1"));
+  constexpr int kImagePlanes = 3;
   for (int side = 0; side < 2; ++side) {
-    if (auto ok = add(std::format("half{}", side), 3, 2); !ok) return ok;
+    if (auto ok = add(std::format("half{}", side), kImagePlanes, 2); !ok) return ok;
     for (int level = 1; level <= kernels::kGmfssLevels; ++level) {
       const int channels = kernels::gmfss_source_channels(level);
       const int scale = 1 << level;
-      if (auto ok = add(std::format("source{}_{}", side, level), channels, scale); !ok) return ok;
+      if (level == 1 && split) {
+        if (auto ok = add(std::format("feature{}_1", side), channels - kImagePlanes, scale); !ok) return ok;
+      } else {
+        if (auto ok = add(std::format("source{}_{}", side, level), channels, scale); !ok) return ok;
+      }
       if (auto ok = add(std::format("motion{}_{}", side, level), kernels::kGmfssMotionChannels, scale); !ok)
         return ok;
       if (auto ok = add(std::format("warped{}_{}", side, level), channels, scale); !ok) return ok;
@@ -89,10 +108,27 @@ std::expected<void, Refusal> UpscaleStage::allocate_gmfss() {
   }
   for (int side = 0; side < 2; ++side) {
     for (int level = 1; level <= kernels::kGmfssLevels; ++level) {
+      const gpu::Tensor& motion = *tensor(std::format("motion{}_{}", side, level));
+      const gpu::Tensor& warped = *tensor(std::format("warped{}_{}", side, level));
+      if (level == 1 && split) {
+        // Deux splats du même mouvement, chacun dans sa tranche de warped{k}_1 (l'image d'abord) : le
+        // résultat est celui du splat des 67 canaux, chaque plan étant normalisé par le poids de son pixel.
+        const gpu::Tensor& image = *tensor(std::format("half{}", side));
+        const gpu::Tensor& features = *tensor(std::format("feature{}_1", side));
+        gmfss_.splats.push_back({.side = side,
+                                 .source = image,
+                                 .motion = motion,
+                                 .warped = channel_slice(warped, 0, kImagePlanes)});
+        gmfss_.splats.push_back({.side = side,
+                                 .source = features,
+                                 .motion = motion,
+                                 .warped = channel_slice(warped, kImagePlanes, features.shape.dims[1])});
+        continue;
+      }
       gmfss_.splats.push_back({.side = side,
                                .source = *tensor(std::format("source{}_{}", side, level)),
-                               .motion = *tensor(std::format("motion{}_{}", side, level)),
-                               .warped = *tensor(std::format("warped{}_{}", side, level))});
+                               .motion = motion,
+                               .warped = warped});
     }
     gmfss_.level1[static_cast<std::size_t>(side)] = *tensor(std::format("motion{}_1", side));
   }
