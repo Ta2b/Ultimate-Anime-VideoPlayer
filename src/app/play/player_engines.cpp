@@ -19,6 +19,7 @@
 #include "kernels/spec/distil_drba.h"
 #include "kernels/spec/gmfss.h"
 #include "kernels/spec/rife.h"
+#include "prepare/rife_split.h"
 #include "prepare/sha256.h"
 
 namespace ajp::app::play {
@@ -136,6 +137,23 @@ std::expected<std::optional<std::unique_ptr<gpu::Engine>>, Refusal> prepare_engi
   backend.use_lane(gpu::Lane::Upscale);
   if (!loaded) return std::unexpected(std::move(loaded.error()));
   return std::optional(std::move(*loaded));
+}
+
+std::expected<std::optional<std::unique_ptr<gpu::Engine>>, Refusal> prepare_rife_fused(
+    Player& p, const gpu::BackendInit& init, gpu::Backend& backend, const std::filesystem::path& rife_onnx,
+    const std::filesystem::path& models_dir, const kernels::RifeGeometry& geometry, bool motion) {
+  auto manifest =
+      prepare::derive_rife_fused(rife_onnx, models_dir, geometry.padded_height, geometry.padded_width,
+                                 motion ? prepare::RifeFusedOutput::Motion : prepare::RifeFusedOutput::Image);
+  if (!manifest) return std::unexpected(std::move(manifest.error()));
+  return prepare_engine(
+      p, init, backend, *manifest,
+      gpu::Shape{.dims = {1, kernels::kRifeInputChannels, geometry.padded_height, geometry.padded_width}},
+      EngineLabel{.name = "RIFE fusionné",
+                  .model = rife_onnx.stem().string(),
+                  .width = geometry.padded_width,
+                  .height = geometry.padded_height},
+      gpu::Lane::Interpolate);
 }
 
 std::expected<std::optional<GmfssEngines>, Refusal> prepare_gmfss(Player& p, const gpu::BackendInit& init,

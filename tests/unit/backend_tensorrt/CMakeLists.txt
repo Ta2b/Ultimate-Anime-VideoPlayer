@@ -8,15 +8,19 @@ set(AJP_SPAN_MODEL "$ENV{HOME}/.local/share/AnimeJaNai-HDR-linux/animejanai/onnx
 set(AJP_SPAN_FP8_PACKAGE "" CACHE FILEPATH "Paquet .span8 du SPAN FP8 (test caché [.span_fp8])")
 set(AJP_SPAN_FP8_MODEL "" CACHE FILEPATH "SPAN d'origine du paquet (test caché [.span_fp8])")
 set(AJP_SPAN_FP8_IMAGE "" CACHE FILEPATH "Image PPM d'anime pour le test caché [.span_fp8] (sinon un dessin synthétique)")
+# AJP_RIFE_MODEL_DIR : le dossier des RIFE du lecteur (rife_v4.25.onnx, rife_v4.22_lite.onnx), lus en place par le test
+# caché [.rife_fused] ; AJP_RIFE_IMAGE : une image d'anime en PPM pour sa paire (sinon un dessin synthétique).
+set(AJP_RIFE_MODEL_DIR "$ENV{HOME}/ajp/models/rife" CACHE PATH "Dossier des RIFE ONNX du lecteur (test caché [.rife_fused])")
+set(AJP_RIFE_IMAGE "" CACHE FILEPATH "Image PPM d'anime pour le test caché [.rife_fused]")
 add_executable(ajp_backend_tensorrt_tests backend_fixture.cpp backend_motion_test.cpp backend_test.cpp export_test.cpp gmfss_test.cpp
-  span_fp8_test.cpp)
+  rife_fused_test.cpp span_fp8_test.cpp)
 # Test caché [.gmfss_split] : la paire GMFSS d'avant (67 canaux), celle d'après (sans Concat) et la fusion, aux
 # tailles fixées (1280x768) ; vides, le test se SKIP.
 set(AJP_GMFSS_SPLIT_OLD_PAIR "" CACHE FILEPATH "Paire GMFSS d'avant la version 2 des graphes, 1280x768")
 set(AJP_GMFSS_SPLIT_NEW_PAIR "" CACHE FILEPATH "Paire GMFSS de la version 2 des graphes, 1280x768")
 set(AJP_GMFSS_SPLIT_FUSION "" CACHE FILEPATH "Fusion GMFSS, 1280x768")
 target_link_libraries(ajp_backend_tensorrt_tests PRIVATE
-  ajp::gpu ajp::gpu_span_fp8 ajp::kernels ajp::prepare ajp::dep::cudart ${CMAKE_DL_LIBS} Catch2::Catch2WithMain)
+  ajp::gpu ajp::gpu_span_fp8 ajp::kernels ajp::prepare ajp_backend_tensorrt_kernels ajp::dep::cudart ${CMAKE_DL_LIBS} Catch2::Catch2WithMain)
 target_compile_definitions(ajp_backend_tensorrt_tests PRIVATE
   AJP_BACKEND_TENSORRT="$<TARGET_FILE:ajp_backend_tensorrt>"
   AJP_TEST_CACHE_DIR="${CMAKE_CURRENT_BINARY_DIR}/engines"
@@ -24,6 +28,8 @@ target_compile_definitions(ajp_backend_tensorrt_tests PRIVATE
   AJP_SPAN_FP8_PACKAGE="${AJP_SPAN_FP8_PACKAGE}"
   AJP_SPAN_FP8_MODEL="${AJP_SPAN_FP8_MODEL}"
   AJP_SPAN_FP8_IMAGE="${AJP_SPAN_FP8_IMAGE}"
+  AJP_RIFE_MODEL_DIR="${AJP_RIFE_MODEL_DIR}"
+  AJP_RIFE_IMAGE="${AJP_RIFE_IMAGE}"
   AJP_GMFSS_SPLIT_OLD_PAIR="${AJP_GMFSS_SPLIT_OLD_PAIR}"
   AJP_GMFSS_SPLIT_NEW_PAIR="${AJP_GMFSS_SPLIT_NEW_PAIR}"
   AJP_GMFSS_SPLIT_FUSION="${AJP_GMFSS_SPLIT_FUSION}")

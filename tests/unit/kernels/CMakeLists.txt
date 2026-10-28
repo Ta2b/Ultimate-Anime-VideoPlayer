@@ -9,6 +9,7 @@ ajp_add_unit_tests(kernels
     half_test.cpp
     parity_test.cpp
     resample_test.cpp
+    rife_fused_test.cpp
     rife_test.cpp
     tolerance_test.cpp
     transfer_test.cpp

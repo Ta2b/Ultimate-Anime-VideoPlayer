@@ -11,6 +11,7 @@ ajp_add_module(kernels
     ref/resample.cpp
     ref/gmfss.cpp
     ref/rife.cpp
+    ref/rife_fused.cpp
     ref/transfer.cpp
     ref/warp.cpp)
 

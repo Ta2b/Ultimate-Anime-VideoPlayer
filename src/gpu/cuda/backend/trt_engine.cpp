@@ -107,6 +107,10 @@ TrtEngine::~TrtEngine() {
   for (cudaStream_t aux : aux_streams_) cudaStreamDestroy(aux);
 }
 
+std::int64_t TrtEngine::activation_bytes() const {
+  return static_cast<std::int64_t>(engine_->getDeviceMemorySizeV2());
+}
+
 void TrtEngine::drop_graphs() {
   for (const Graph& graph : graphs_) {
     if (graph.exec != nullptr) cudaGraphExecDestroy(graph.exec);
@@ -181,10 +185,9 @@ std::expected<std::unique_ptr<TrtEngine>, Refusal> TrtEngine::load(
   return engine;
 }
 
-std::expected<void, Refusal> TrtEngine::enqueue(cudaStream_t stream,
-                                                const std::shared_ptr<SharedActivations>& arena,
-                                                std::span<const Tensor> inputs,
-                                                std::span<const Tensor> outputs) {
+std::expected<void, Refusal> TrtEngine::place(const std::shared_ptr<SharedActivations>& arena,
+                                              std::span<const Tensor> inputs,
+                                              std::span<const Tensor> outputs) {
   if (inputs.size() != inputs_.size() || outputs.size() != outputs_.size()) {
     return refuse(RefusalCode::ShapeInvalid, "nombre d'entrées ou de sorties différent du moteur");
   }
@@ -223,6 +226,24 @@ std::expected<void, Refusal> TrtEngine::enqueue(cudaStream_t stream,
   // Pour le prochain enqueueV3 seulement, d'après TensorRT : reposées à chaque lancement.
   if (!aux_streams_.empty())
     context_->setAuxStreams(aux_streams_.data(), static_cast<std::int32_t>(aux_streams_.size()));
+  return {};
+}
+
+std::expected<void, Refusal> TrtEngine::enqueue_plain(cudaStream_t stream,
+                                                      const std::shared_ptr<SharedActivations>& arena,
+                                                      std::span<const Tensor> inputs,
+                                                      std::span<const Tensor> outputs) {
+  if (auto ok = place(arena, inputs, outputs); !ok) return ok;
+  if (!context_->enqueueV3(stream))
+    return refuse(RefusalCode::VendorCallFailed, "IExecutionContext::enqueueV3 a échoué");
+  return {};
+}
+
+std::expected<void, Refusal> TrtEngine::enqueue(cudaStream_t stream,
+                                                const std::shared_ptr<SharedActivations>& arena,
+                                                std::span<const Tensor> inputs,
+                                                std::span<const Tensor> outputs) {
+  if (auto ok = place(arena, inputs, outputs); !ok) return ok;
   if (graphs_off_) return launch(stream, nullptr);
   std::vector<std::uintptr_t> addresses;
   addresses.reserve(inputs.size() + outputs.size());
