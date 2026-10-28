@@ -38,8 +38,10 @@ constexpr float kFontSize = 17.0F;        // pixels à l'échelle 1, multipliés
 constexpr int kMaxFontBytes = 256 << 20;  // ImGui prend la taille en int
 
 // Le fichier de police que fontconfig choisit pour pattern (« sans-serif », « sans-serif:lang=ja ») ;
-// seulement TrueType ou OpenType, ce que lit ImGui.
-std::optional<FontFile> system_font(const char* pattern) {
+// seulement TrueType ou OpenType, ce que lit ImGui. need_cjk : la police doit avoir de quoi écrire le
+// japonais (あ et 日) ; fontconfig rend sinon la plus proche, parfois une police latine sans aucun
+// idéogramme.
+std::optional<FontFile> system_font(const char* pattern, bool need_cjk = false) {
 #if AJP_WITH_FONTCONFIG
   if (FcInit() == FcFalse) return std::nullopt;
   FcPattern* wanted = FcNameParse(reinterpret_cast<const FcChar8*>(pattern));
@@ -53,11 +55,15 @@ std::optional<FontFile> system_font(const char* pattern) {
   int index = 0;
   if (match != nullptr && FcPatternGetString(match, FC_FILE, 0, &file) == FcResultMatch) {
     FcPatternGetInteger(match, FC_INDEX, 0, &index);
+    FcCharSet* charset = nullptr;
+    const bool covers = !need_cjk || (FcPatternGetCharSet(match, FC_CHARSET, 0, &charset) == FcResultMatch &&
+                                      FcCharSetHasChar(charset, 0x3042) != FcFalse &&
+                                      FcCharSetHasChar(charset, 0x65E5) != FcFalse);
     std::string path(reinterpret_cast<const char*>(file));
     std::string ext = std::filesystem::path(path).extension().string();
     std::ranges::transform(ext, ext.begin(),
                            [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
-    if (ext == ".ttf" || ext == ".otf" || ext == ".ttc" || ext == ".otc")
+    if (covers && (ext == ".ttf" || ext == ".otf" || ext == ".ttc" || ext == ".otc"))
       found = FontFile{.path = std::move(path), .index = index};
   }
   if (match != nullptr) FcPatternDestroy(match);
@@ -65,6 +71,7 @@ std::optional<FontFile> system_font(const char* pattern) {
   return found;
 #else
   static_cast<void>(pattern);
+  static_cast<void>(need_cjk);
   return std::nullopt;
 #endif
 }
@@ -126,10 +133,21 @@ std::vector<FontFile> search_fonts() {
   std::optional<FontFile> main = system_font("sans-serif");
   if (!main || !read_font(std::filesystem::path(main->path), *main)) return fonts;
   fonts.push_back(std::move(*main));
-  std::optional<FontFile> japanese = system_font("sans-serif:lang=ja");
-  if (japanese && japanese->path != fonts.front().path &&
-      read_font(std::filesystem::path(japanese->path), *japanese))
-    fonts.push_back(std::move(*japanese));
+  // Titres japonais (et chinois, coréens) : la police CJK que fontconfig donne pour la langue, sinon les
+  // familles courantes des distributions (Fedora : google-noto-sans-cjk-fonts ; Debian : fonts-noto-cjk ;
+  // Arch : noto-fonts-cjk).
+  for (const char* pattern : {"sans-serif:lang=ja", "Noto Sans CJK JP", "Noto Sans JP", "Source Han Sans",
+                              "IPAexGothic", "TakaoGothic", "VL Gothic", "WenQuanYi Zen Hei",
+                              "Droid Sans Fallback", "sans-serif:lang=zh-cn", "sans-serif:lang=ko"}) {
+    std::optional<FontFile> cjk = system_font(pattern, true);
+    if (!cjk || cjk->path == fonts.front().path || !read_font(std::filesystem::path(cjk->path), *cjk))
+      continue;
+    log_channel("app")->info("interface : police CJK {} ({})", cjk->path, pattern);
+    fonts.push_back(std::move(*cjk));
+    return fonts;
+  }
+  log_channel("app")->warn(
+      "interface : aucune police CJK trouvée, les titres japonais s'afficheront en carrés (Noto Sans CJK)");
   return fonts;
 }
 #endif
