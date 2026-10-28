@@ -34,6 +34,7 @@ TEST_CASE("Un profil fixe la chaîne, le reste des réglages ne bouge pas", "[ap
   mine.subtitle_scale = 1.3F;
   std::vector<std::string> notes;
   const PlaySettings quality = apply_profile(*base->profiles[0], k1080p, mine, notes);
+  CHECK(quality.rife_auto);  // v0.6 : l'interpolation d'un profil est en Auto
   CHECK(quality.work_height == 720);
   CHECK(quality.downscale == Downscale::Area);
   CHECK(quality.rife_factor == 3);
@@ -80,6 +81,7 @@ TEST_CASE("Les réglages en cours se relisent comme un profil", "[app][profiles]
   const core::Profile half{.name = "Demi", .hdr = hdr_of(s), .rules = rules_of(s, usual)};
   const PlaySettings slow = apply_profile(half, k1080p, PlaySettings{}, notes);
   CHECK(factor_of(slow) == Factor{.num = 3, .den = 2});
+  CHECK_FALSE(slow.rife_auto);  // une moitié (×1,5) n'a pas de mode auto
   CHECK(profile_summary(half, k1080p).find("RIFE ×1,5") != std::string::npos);
 }
 
