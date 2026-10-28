@@ -1,0 +1,18 @@
+s5.ppm @(320,176) : référence ORT CPU faite
+s9.ppm @(0,0) : référence ORT CPU faite
+s14.ppm @(640,352) : référence ORT CPU faite
+échelles E4M3 (x, relu1, relu2, sortie) : [0.00185421 0.00182786 0.00396173 0.00542146]
+
+recadrage  tenseur                       PSNR dB    SSIM
+bloc SPAN complet (3 noyaux CUTLASS) 544x960 : médiane 0.8909 ms, min 0.8847 ms, 134.5 TFLOPS 
+s5.ppm     sortie du bloc (64x544x960)     56.41  0.9975
+s5.ppm     sortie de c1 (après Relu)       49.80  0.9958
+s5.ppm     IMAGE finale 2x (3 canaux)      65.93  0.9999
+ 
+s9.ppm     sortie du bloc (64x544x960)     55.68  0.9984
+s9.ppm     sortie de c1 (après Relu)       54.48  0.9977
+s9.ppm     IMAGE finale 2x (3 canaux)      60.03  0.9999
+ 
+s14.ppm    sortie du bloc (64x544x960)     54.21  0.9972
+s14.ppm    sortie de c1 (après Relu)       54.52  0.9979
+s14.ppm    IMAGE finale 2x (3 canaux)      61.79  0.9999

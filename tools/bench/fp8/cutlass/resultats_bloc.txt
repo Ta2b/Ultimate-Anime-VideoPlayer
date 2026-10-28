@@ -1,0 +1,15 @@
+== Petit tenseur 1x64x64x64 : correction ==
+  conv seule 128x64x64 w32x64 s3     noyau: max 0.105 PSNR 67.6 dB | vs fp32 d'origine: max 0.182 PSNR 40.9 dB
+  bloc    128x64x64 w32x64 s3        noyau: max 0.205 PSNR 64.0 dB | vs fp32 d'origine: max 0.226 PSNR 39.1 dB
+  conv seule 128x64x64 w32x64 s4     noyau: max 0.105 PSNR 67.6 dB | vs fp32 d'origine: max 0.182 PSNR 40.9 dB
+  bloc    128x64x64 w32x64 s4        noyau: max 0.205 PSNR 64.0 dB | vs fp32 d'origine: max 0.226 PSNR 39.1 dB
+  conv seule 64x64x64 w16x64 s4      noyau: max 0.105 PSNR 67.6 dB | vs fp32 d'origine: max 0.182 PSNR 40.9 dB
+  bloc    64x64x64 w16x64 s4         noyau: max 0.205 PSNR 64.0 dB | vs fp32 d'origine: max 0.226 PSNR 39.1 dB
+== Grand tenseur 1x64x544x960 ==
+config                              ms méd.    ms min   TFLOPS | noyau max / PSNR       | vs fp32 max / PSNR    
+conv seule 128x64x64 w32x64 s3        0.2766    0.2744    139.2 |      0.31 /   69.9 dB |     0.261 /   44.0 dB
+bloc    128x64x64 w32x64 s3           0.3123    0.3082    137.0 |     0.321 /   66.6 dB |     0.395 /   42.1 dB
+conv seule 128x64x64 w32x64 s4        0.3441    0.3410    111.9 |      0.31 /   69.9 dB |     0.261 /   44.0 dB
+bloc    128x64x64 w32x64 s4           0.4178    0.4157    102.4 |     0.321 /   66.6 dB |     0.395 /   42.1 dB
+conv seule 64x64x64 w16x64 s4         0.2939    0.2889    131.0 |      0.31 /   69.9 dB |     0.261 /   44.0 dB
+bloc    64x64x64 w16x64 s4            0.3697    0.3666    115.7 |     0.321 /   66.6 dB |     0.395 /   42.1 dB
