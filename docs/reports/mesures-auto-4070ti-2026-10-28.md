@@ -66,6 +66,18 @@ Lecture :
 - **DistilDRBA** : l'Auto monte à ×6 et y reste **alors que 707 images sont manquées** (retard p95 3,8 ms) : le contrôleur est aveugle à ces manques,
   parce que les paires ne sont pas en retard (1 seule) ; ce sont les images créées en aval (SPAN et RTX HDR, ×6) qui manquent à la présentation.
 
+### Tête 00f00ee (le contrôleur écoute aussi les images manquées à l'écran : fenêtres de 4 s)
+| moteur | changements | secondes par palier | dernière ligne du journal | paires en retard / sautés | sautées / manquées | retard p95 |
+|---|---|---|---|---|---|---|
+| RIFE | 13 | ×2 4 · ×3 3 · ×4 25 · ×5 24 · ×6 6 | `auto : ×4 (plafond 6, plafond appris 5)` | 7 / 9 | 104 / **163** | 0,5 ms |
+| GMFSS base | 5 | ×2 60 · ×3 2 | `auto : ×2 (plafond 6, plafond appris 2)` | 6 / 6 | 3 / 23 | 0,0 ms |
+| GMFSS Union | 5 | ×2 60 · ×3 2 | `auto : ×2 (plafond 6, plafond appris 2)` | 5 / 5 | 5 / 24 | 2,6 ms |
+| DistilDRBA | 8 | ×2 4 · ×3 4 · ×4 3 · ×5 43 · ×6 8 | `auto : ×5 (plafond 6, plafond appris 5)` | 0 / 0 | 185 / **229** | 0,0 ms |
+
+Attendu (RIFE ×4, DistilDRBA ×5, GMFSS ×2) : **atteint** pour les trois en fin de run. Reste : le plafond appris n'arrive qu'après ~35 s pour RIFE (le run
+monte d'abord à ×6, redescend à ×5, retente ×6 puis ×5), et le palier tenu ×5 (RIFE 24 s, DistilDRBA 43 s) laisse encore 163 et 229 images manquées sur 60 s,
+contre 29 pour ×4 en multiplicateur fixe : ×5 est tenu avec des à-coups. Images manquées par rapport à la tête 0f90469 : RIFE 354 → 163, DistilDRBA 707 → 229.
+
 ## 3. VRR
 - **Plein écran, 26 lancements** : `VRR : capable · armé` à chaque fois (jamais « non capable » ni « coupé »).
 - **Fenêtré** (1280×720) : **aucune ligne « VRR : … »** n'est écrite (elle l'est à l'ouverture du plein écran) ; seule la ligne d'écran
