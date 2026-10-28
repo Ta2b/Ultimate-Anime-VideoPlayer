@@ -36,6 +36,9 @@ struct DisplayFacts {
   // l'arme à son gré, KDE en plein écran) ; capacité du système à présenter sans attendre le vsync
   // sous Windows. Rien : inconnu.
   std::optional<bool> vrr;
+  // VRR armé maintenant par le compositeur (VRR_ENABLED du CRTC sous Linux). Rien : inconnu ou, sous
+  // Windows, identique à vrr.
+  std::optional<bool> vrr_armed;
   OledSource source = OledSource::Unknown;
 };
 

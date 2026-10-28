@@ -49,7 +49,9 @@ struct SettingsChoices {
   double source_fps = 0.0;               // images par seconde de la source ; 0 : inconnues
   media::Rational source_rate;           // la même, exacte (nom et fréquence de l'export)
   double display_hz = 0.0;               // fréquence de l'écran ; 0 : inconnue
-  bool display_vrr = false;              // fréquence variable (VRR) active sur l'écran, d'après le système
+  bool display_vrr = false;              // l'écran sait le VRR (vrr_capable)
+  bool display_vrr_armed = false;        // le système l'a armé en ce moment
+  bool window_fullscreen = false;        // KDE n'arme le VRR qu'en plein écran
   bool rife_available = false;           // une interpolation possible : RIFE, GMFSS, DistilDRBA, Apple (Mac)
   bool gmfss_available = false;          // graphes de GMFSS trouvés (gmfss_model.h)
   bool gmfss_union_available = false;    // ceux de GMFSS Union

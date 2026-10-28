@@ -82,6 +82,12 @@ class PlayerUi {
   void set_tracks(TrackMenu tracks);
   // Les réglages en cours et ce que le menu des paramètres propose.
   void set_settings(const PlaySettings& running, SettingsChoices choices);
+  // L'état du VRR relu en cours de lecture (plein écran) : l'avertissement du mode auto le suit.
+  void set_display_vrr(bool capable, bool armed, bool fullscreen) {
+    choices_.display_vrr = capable;
+    choices_.display_vrr_armed = armed;
+    choices_.window_fullscreen = fullscreen;
+  }
   void set_running(const PlaySettings& running);
   void set_profiles(ProfilesView profiles);
   void set_black_status(std::string status);  // ligne du vrai noir dans l'onglet Grade

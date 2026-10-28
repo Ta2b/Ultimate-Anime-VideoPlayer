@@ -237,6 +237,7 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
                             ? 1e6 / static_cast<double>(display_period_us(out.window()))
                             : 0.0,
           .display_vrr = p.display && p.display->vrr.value_or(false),
+          .display_vrr_armed = p.display && p.display->vrr_armed.value_or(false),
           .rife_available =
               c.rife_model.has_value() || c.gmfss_found || c.drba_found || offered(MotionEngine::Apple),
           // Seul TensorRT sait importer les graphes de GMFSS (MatMul, Softmax, LayerNorm) : le
@@ -361,6 +362,7 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
   };
   apply_auto();
   // Le palier du mode auto : un message à l'écran et une ligne de journal à chaque changement.
+  bool vrr_fullscreen = false;
   int auto_shown = 0;
   const auto show_auto = [&] {
     const Factor now = chain.live.factor_now();
@@ -401,6 +403,16 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
       session.set_display(display_period_us(out.window()), display_refresh_hz(out.window()));
       apply_auto();
       show_auto();
+      // KDE arme le VRR en plein écran seulement : on le relit quand la fenêtre change d'état.
+      const bool fullscreen = (SDL_GetWindowFlags(out.window()) & SDL_WINDOW_FULLSCREEN) != 0;
+      if (fullscreen != vrr_fullscreen) {
+        vrr_fullscreen = fullscreen;
+        if (const auto display = read_display(display_name(out.window()))) {
+          p.ui.set_display_vrr(display->vrr.value_or(false), display->vrr_armed.value_or(false), fullscreen);
+          log->info("VRR : {} · {}", display->vrr.value_or(false) ? "capable" : "non capable",
+                    display->vrr_armed.value_or(false) ? "armé" : "non armé");
+        }
+      }
     }
     (*pipeline)->pump();
     while (auto message = try_take((*pipeline)->inbox())) session.handle(std::move(*message));
