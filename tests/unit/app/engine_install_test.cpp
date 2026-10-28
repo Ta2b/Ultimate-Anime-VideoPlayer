@@ -434,8 +434,8 @@ TEST_CASE("Fichiers tiers : les index de NVIDIA se téléchargent et se vérifie
 // (file://) pour notre module, les fichiers de NVIDIA tirés pour de bon de pypi.nvidia.com. Caché :
 // AJP_PACKAGE_DIR = le dossier de sortie du script (engines.lock et archives).
 TEST_CASE("Paquet TensorRT du script : installation réelle en lien direct", "[.package][app][install]") {
-  const char* given = std::getenv("AJP_PACKAGE_DIR");
-  if (given == nullptr) SKIP("AJP_PACKAGE_DIR non défini");
+  const std::string given = env_text("AJP_PACKAGE_DIR");
+  if (given.empty()) SKIP("AJP_PACKAGE_DIR non défini");
   const fs::path dir(given);
   Fixture f("paquet-reel");
   const auto index = core::read_engine_index(read_all(dir / "engines.lock"));
@@ -466,5 +466,6 @@ TEST_CASE("Paquet TensorRT du script : installation réelle en lien direct", "[.
   CHECK_FALSE(fs::exists(target / "libnvinfer_builder_resource_sm120.so.11.3.0"));
   CHECK(fs::exists(target / "libnvrtc.so.13"));
   CHECK(fs::exists(target / "trtexec"));
-  if (const char* keep = std::getenv("AJP_PACKAGE_KEEP")) fs::copy(target, keep, fs::copy_options::recursive);
+  if (const std::string keep = env_text("AJP_PACKAGE_KEEP"); !keep.empty())
+    fs::copy(target, keep, fs::copy_options::recursive);
 }
