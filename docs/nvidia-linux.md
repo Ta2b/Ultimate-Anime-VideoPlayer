@@ -91,6 +91,27 @@ Le contrôle de l'export juge la moyenne et le 99,9 % de l'écart à l'original,
 image : à 256×256 il valait 0,097 sur un poste et 0,127 en CI même avec tout en FP32 (les sorties du graphe
 sont arrondies en FP16).
 
+## Joindre le moteur TensorRT à une release (poste NVIDIA)
+
+Le paquet TensorRT d'une release ne porte que notre module et trtexec ; libnvinfer, le lecteur ONNX, NVRTC
+et les ressources du constructeur de la carte se tirent de chez NVIDIA (`tools/release/nvidia-vendor/`).
+Il se construit sur un poste NVIDIA et se joint à la release avant l'étiquette ; la CI fusionne ensuite son
+index dans l'`engines.lock` de la release :
+
+```
+AJP_WITH_CUDA=ON AJP_TENSORRT_ROOT=$HOME/ajp-sdk/tensorrt AJP_PACKAGE_NVIDIA=1 AJP_DEPS_PREFIX=... \
+AJP_RELEASE_REPO=<dépôt des releases> AJP_RELEASE_TAG=v0.3.0 tools/release/package-linux.sh <dossier>
+tools/release/attach-nvidia-linux.sh <dossier> v0.3.0               # contrôle seulement
+tools/release/attach-nvidia-linux.sh <dossier> v0.3.0 --publish     # crée la release si besoin et joint
+git tag v0.3.0 && git push origin v0.3.0                            # la CI fusionne et joint le reste
+```
+
+Le script refuse une archive qui contient des fichiers NVIDIA, un index qui ne nomme pas cette archive à cette
+étiquette et dans ce dépôt (hachage et taille compris), ou sans `[[vendor_file]]`. Le paquet ne doit pas
+changer entre la construction et l'étiquette : son SHA-256 est dans l'index. Le test caché
+`ajp_app_tests "[.package]"` (`AJP_PACKAGE_DIR=<dossier>`) installe le paquet avec le vrai code du lecteur,
+fichiers de NVIDIA tirés pour de bon (~0,74 Go pour une carte sm89).
+
 ## Réglages de départ pour la 4070 Ti
 
 | Réglage | Valeur |
