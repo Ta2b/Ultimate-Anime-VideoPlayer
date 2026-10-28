@@ -56,6 +56,8 @@ jobs:
       # Les tests sans GPU du build même du paquet (préréglage de test macos-release) : un échec
       # arrête tout avant l'artefact et la release.
       - name: Tests sans GPU
+        # Une étiquette avec un tiret (v0.6.0-pre.1) est une préversion : construite et publiée sans tests.
+        if: ${{ !contains(github.ref_name, '-') }}
         run: ctest --preset macos-release
       # Le quota de stockage des artefacts du compte peut être plein : le paquet est construit quand même.
       - uses: actions/upload-artifact@v4

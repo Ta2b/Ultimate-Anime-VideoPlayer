@@ -100,6 +100,8 @@ jobs:
       # CTest liste les tests de chaque exécutable, même ceux que le filtre écarte : celui du backend
       # Vulkan, lié à openvino.dll de la roue, doit se charger (sinon 0xc0000135 avant tout test).
       - name: Tests sans GPU
+        # Une étiquette avec un tiret (v0.6.0-pre.1) est une préversion : construite et publiée sans tests.
+        if: ${{ !contains(github.ref_name, '-') }}
         shell: pwsh
         run: |
           $env:PATH = (Join-Path (Split-Path $env:OpenVINO_DIR -Parent) "libs") + ";" + $env:PATH
