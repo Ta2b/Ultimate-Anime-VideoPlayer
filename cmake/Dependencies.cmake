@@ -99,6 +99,16 @@ else()
     "${AJP_IMGUI_DIR}/backends/imgui_impl_sdl3.cpp")
   target_include_directories(ajp_imgui SYSTEM PUBLIC "${AJP_IMGUI_DIR}" "${AJP_IMGUI_DIR}/backends")
   target_link_libraries(ajp_imgui PUBLIC SDL3::SDL3)
+  # FreeType pour les polices : stb_truetype ne lit ni le CFF2 (Noto Sans CJK variable, installé par défaut sous Fedora) ni
+  # les polices variables ; sans ce chargeur le japonais n'apparaît pas. Facultatif : sans FreeType ou sans les sources du
+  # chargeur, ImGui garde stb_truetype.
+  pkg_check_modules(AJP_FREETYPE QUIET IMPORTED_TARGET freetype2)
+  if(AJP_FREETYPE_FOUND AND EXISTS "${AJP_IMGUI_DIR}/misc/freetype/imgui_freetype.cpp")
+    target_sources(ajp_imgui PRIVATE "${AJP_IMGUI_DIR}/misc/freetype/imgui_freetype.cpp")
+    target_include_directories(ajp_imgui SYSTEM PUBLIC "${AJP_IMGUI_DIR}/misc/freetype")
+    target_link_libraries(ajp_imgui PUBLIC PkgConfig::AJP_FREETYPE)
+    target_compile_definitions(ajp_imgui PUBLIC AJP_WITH_FREETYPE=1)
+  endif()
   ajp_alias_dep(imgui ajp_imgui)
 endif()
 
