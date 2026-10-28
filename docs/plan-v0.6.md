@@ -85,3 +85,18 @@ que sur un accord clair de Tatoub dans le fil. Détail des décisions et journal
 - Release v0.5.1 publiée (Linux + Windows, pré-release, manifeste preview) ; Tatoub confirme TensorRT fonctionnel sur son Fedora.
 - CUTLASS (BSD-3) cloné et ModelOpt 0.47.0 (Apache-2.0) installé hors du dépôt sur le PC de test (accord direct de Tatoub, 15:11) ; décision du coordinateur : pas de QAT ni de poids PyTorch à télécharger.
 - Reste avant la v0.6 : mesures GPU en file (plugin SPAN, SPAN mixte a/b, ModelOpt FP8, prototype CUTLASS, GMFSS et DistilDRBA FP8, E/S NHWC), reconstruction du paquet TensorRT (empreinte #67/#70), test de lecture complet sur main, libellés et disposition horizontale du menu, assistant guidé du moteur, Auto en VRR (demi-paliers), archive TensorRT Windows, notes et version 0.6.0 ; étiquette seulement sur le message direct de Tatoub.
+
+### Mesures complémentaires du 28/10 (après-midi, mêmes conditions : 4070 Ti, TensorRT 11.3, ABAB, vraie calibration)
+| Variante SPAN Balanced 1088×1920 | FP16 de la séance | variante | écart |
+|---|---|---|---|
+| FP8 mixte (a) : convs c1/c2/c3 seules | 14,2 à 15,9 ms | 17,3 à 18,5 ms | +13 à +25 % (plus lent) ; qualité PSNR 53,7 dB, SSIM 0,998 |
+| FP8 mixte (b) : (a) + Q sur la sortie de c3 | idem | 17,97 à 20,06 ms | +13 à +30 % |
+| ModelOpt 0.47.0 `--quantize_mode fp8` (calibration max, 1 image) | 15,66 à 15,82 ms | 16,57 à 17,21 ms | +6 à +10 % ; PSNR 46,9 dB (pire 40,4), SSIM 0,981 |
+| Plugin TensorRT fusionné « Add+Tanh/Mul+Q » (agent, blocs 2 à 7) | 16,28 à 16,42 ms | 20,60 à 20,63 ms | +25 % : le plugin coupe les fusions Myelin voisines (1,3 à 1,8 ms de reformatages et copies par bloc) ; noyau seul 0,31 ms contre 0,43 |
+| FP16 : `--tilingOptimizationLevel` 1 / 3, `--persistentCacheRatio` 0,5 | 15,4 à 15,8 ms | 14,7 à 16,3 ms | aucun gain stable |
+| RIFE FP16 : `--maxAuxStreams` 4 / 0 | 8,4 à 10,0 ms | 7,8 / 8,1 ms | ≈ −3 à −5 % pour 4 files (mesure à reconfirmer) |
+
+**Vulkan, profil par dispatch (PR #100), RIFE v4.25 768×1280 FP16, noyaux par défaut** : 135 dispatches, 14,25 ms ; conv coopmat 53 dispatches 8,23 ms (57,7 %) ; `net_copy_f16` 37 dispatches 2,40 ms (16,8 %, 68 % des octets écrits) ; grid_sample 1,02 ms ; binary 1,00 ms ; resize 0,85 ms.
+
+**Bilan.** Aucune variante FP8 sous TensorRT 11.3 ne bat le FP16 sur SPAN (meilleure : ModelOpt, +6 %) ; RIFE gagne −6 % seulement. « Performance FP8 » reste désactivé par défaut pour SPAN tant qu'aucun gain n'est mesuré. Reste ouvert : prototype CUTLASS (convolution maison à épilogue fusionné, hors TensorRT), GMFSS/DistilDRBA FP8, E/S NHWC.
+
