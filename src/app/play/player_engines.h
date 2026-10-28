@@ -103,6 +103,16 @@ std::expected<std::optional<std::unique_ptr<gpu::Engine>>, Refusal> prepare_engi
     Player& p, const gpu::BackendInit& init, gpu::Backend& backend, const std::filesystem::path& onnx,
     const gpu::Shape& shape, EngineLabel label, gpu::Lane lane);
 
+// RIFE fusionné (kernels/spec/rife_fused.h) pour le modèle rife_onnx à la taille remplie de geometry : le
+// modèle coupé en six morceaux (dérivés dans models_dir, un manifeste « .rifefused » les nomme), leurs six
+// moteurs construits puis chargés en un seul, qui s'enfile comme le moteur RIFE entier. motion : la variante
+// mouvement (flot et masque en sorties) au lieu de l'image. Rien si l'utilisateur ferme la fenêtre. Refus :
+// la découpe (structure non reconnue, taille que les noyaux ne prennent pas), la construction, le chargement
+// ou l'essai de la chaîne ; l'appelant garde alors le RIFE entier.
+std::expected<std::optional<std::unique_ptr<gpu::Engine>>, Refusal> prepare_rife_fused(
+    Player& p, const gpu::BackendInit& init, gpu::Backend& backend, const std::filesystem::path& rife_onnx,
+    const std::filesystem::path& models_dir, const kernels::RifeGeometry& geometry, bool motion);
+
 // GMFSS Fortuna pour des images de travail work_width × work_height : ses deux graphes, trouvés dans
 // le premier de dirs qui les a, fixés à la taille remplie de RIFE (dérivés dans le dossier de
 // données), construits puis chargés. Rien si l'utilisateur ferme la fenêtre. Refus : FieldMissing

@@ -499,6 +499,11 @@ Change change_between(const PlaySettings& running, const PlaySettings& wanted, b
   if (wanted.rife_factor >= 2 && running.motion_engine != wanted.motion_engine)
     reopen.emplace_back("le moteur du mouvement change");
   if (wanted.rife_factor >= 2 && wanted.motion_engine == MotionEngine::Rife &&
+      running.rife_fused != wanted.rife_fused)
+    reopen.emplace_back(wanted.rife_fused
+                            ? "RIFE fusionné (six moteurs, construits la première fois pour cette taille)"
+                            : "RIFE entier à la place du RIFE fusionné");
+  if (wanted.rife_factor >= 2 && wanted.motion_engine == MotionEngine::Rife &&
       running.rife_model != wanted.rife_model)
     reopen.emplace_back("le modèle RIFE est chargé (construit la première fois pour cette taille)");
   if (wanted.rife_factor >= 2 && running.span_order != wanted.span_order) {

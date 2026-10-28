@@ -362,6 +362,19 @@ void fluidity_tab(PlaySettings& d, const SettingsChoices& choices, bool exportin
       "Un personnage animé en deux sur un fond qui défile garde son rythme (il tient sa pose puis change "
       "d'un coup) pendant que le fond s'interpole, au lieu de se déformer entre deux dessins. Avec RIFE 4.25 "
       "ou 4.22 lite, une seule passe par paire. En direct. DistilDRBA le fait de lui-même.");
+  ImGui::BeginDisabled(d.motion_engine != MotionEngine::Rife);
+  ImGui::Checkbox("RIFE fusionné", &d.rife_fused);
+  ImGui::EndDisabled();
+  panel::tip(
+      "Coupe RIFE 4.25 ou 4.22 lite en six petits moteurs TensorRT (les convolutions à basse résolution) "
+      "reliés par "
+      "des noyaux CUDA pour tout ce qui travaille en pleine résolution : une passe de RIFE prend un tiers du "
+      "temps "
+      "(2,2 ms au lieu de 6,5 ms à 768×1280 sur une RTX 4070 Ti), avec la même image à moins d'un dB près. "
+      "Sous "
+      "TensorRT seulement ; le RIFE entier reprend si le modèle ne se coupe pas ou si un moteur échoue. "
+      "Recharge la "
+      "lecture ; la première fois, six petits moteurs se construisent pour cette taille.");
   ImGui::BeginDisabled(d.motion_engine != MotionEngine::Rife && !is_gmfss(d.motion_engine));
   if (ImGui::BeginCombo("Warp et SPAN", std::string(label(d.span_order)).c_str())) {
     for (int i = 0; i < kSpanOrderCount; ++i) {
