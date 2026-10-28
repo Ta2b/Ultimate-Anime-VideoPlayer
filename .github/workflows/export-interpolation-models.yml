@@ -40,7 +40,7 @@ jobs:
       # _s05 (GMFlow en FP16, mode performance, avec sa fusion) et _s05q (GMFlow en FP32, mode qualité,
       # la paire seule : sa fusion est celle de _s05). Le contrôle de qualité de chaque export juge la
       # moyenne et le p99,9 % de l'écart à l'original, pas le pire pixel d'une petite image.
-      - name: GMFSS Fortuna (base et union, demi-flot : performance et qualité)
+      - name: "GMFSS Fortuna (base et union, demi-flot, performance et qualité)"
         run: |
           pip download --no-deps "$GMFSS_WHEEL" -d "$RUNNER_TEMP/gmfss"
           python -m zipfile -e "$RUNNER_TEMP"/gmfss/*.whl "$RUNNER_TEMP/gmfss/roue"
