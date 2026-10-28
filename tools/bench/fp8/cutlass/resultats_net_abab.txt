@@ -1,0 +1,21 @@
+== tour 1 : A = CUTLASS (acc f32)
+TOTAL graphe CUDA (SPAN entier, 1x3x1088x1920) : médiane 9.328 ms, min 9.242 ms
+== tour 1 : A' = CUTLASS (hors blocs acc f16)
+TOTAL graphe CUDA (SPAN entier, 1x3x1088x1920) : médiane 9.071 ms, min 8.989 ms
+== tour 1 : B = TensorRT FP16
+[10/28/2026-17:56:58] [I] GPU Compute Time: min = 14.0729 ms, max = 14.7537 ms, mean = 14.269 ms, median = 14.2422 ms, 
+[10/28/2026-17:56:58] [I] Total GPU Compute Time: 4.29498 s
+== tour 2 : A = CUTLASS (acc f32)
+TOTAL graphe CUDA (SPAN entier, 1x3x1088x1920) : médiane 9.344 ms, min 9.249 ms
+== tour 2 : A' = CUTLASS (hors blocs acc f16)
+TOTAL graphe CUDA (SPAN entier, 1x3x1088x1920) : médiane 9.087 ms, min 9.019 ms
+== tour 2 : B = TensorRT FP16
+[10/28/2026-17:57:15] [I] GPU Compute Time: min = 14.1548 ms, max = 14.6863 ms, mean = 14.2872 ms, median = 14.2542 ms, 
+[10/28/2026-17:57:15] [I] Total GPU Compute Time: 4.30045 s
+== tour 3 : A = CUTLASS (acc f32)
+TOTAL graphe CUDA (SPAN entier, 1x3x1088x1920) : médiane 9.349 ms, min 9.283 ms
+== tour 3 : A' = CUTLASS (hors blocs acc f16)
+TOTAL graphe CUDA (SPAN entier, 1x3x1088x1920) : médiane 9.099 ms, min 9.016 ms
+== tour 3 : B = TensorRT FP16
+[10/28/2026-17:57:32] [I] GPU Compute Time: min = 14.1067 ms, max = 14.6367 ms, mean = 14.2844 ms, median = 14.2458 ms, 
+[10/28/2026-17:57:32] [I] Total GPU Compute Time: 4.29959 s

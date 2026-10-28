@@ -1,0 +1,22 @@
+
+calibration    image     PSNR dB     SSIM
+TOTAL graphe CUDA (SPAN entier, 1x3x1088x1920) : médiane 9.283 ms, min 9.188 ms
+noyau                nb   ms/lanc.   ms total       %
+dégroupage           1     0.0637     0.0637    0.7%
+conv_1                1     0.5499     0.5499    5.9%
+bloc c1               8     0.2810     2.2483   24.2%
+bloc c2               8     0.2711     2.1690   23.3%
+bloc fin              8     0.3433     2.7461   29.5%
+conv_cat 1x1          1     0.7352     0.7352    7.9%
+to_pixel 3x3          1     0.5908     0.5908    6.3%
+DepthToSpace          1     0.2048     0.2048    2.2%
+somme des noyaux (hors graphe) : 9.308 ms
+
+max            s5.ppm      51.11  0.99672
+max            s9.ppm      48.94  0.99594
+max            s14.ppm     49.42  0.99596
+p9999          s5.ppm      50.93  0.99666
+p9999          s9.ppm      46.51  0.99576
+p9999          s14.ppm     48.73  0.99578
+moyenne max      PSNR 49.82 dB (min 48.94)  SSIM 0.99620
+moyenne p9999    PSNR 48.72 dB (min 46.51)  SSIM 0.99607

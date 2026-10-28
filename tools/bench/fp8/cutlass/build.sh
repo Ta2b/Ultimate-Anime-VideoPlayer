@@ -7,4 +7,4 @@ CUDA="${CUDA:-/opt/cuda}"
 exec nice "$CUDA/bin/nvcc" -std=c++17 -O3 -arch=sm_89 --expt-relaxed-constexpr \
   -I"$CUTLASS/include" -I"$CUTLASS/tools/util/include" \
   -Xcudafe --diag_suppress=177 -Xcudafe --diag_suppress=550 \
-  "$1" -o "$2"
+  "$1" -o "$2" $3
