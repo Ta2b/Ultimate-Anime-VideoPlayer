@@ -18,6 +18,17 @@ from torch import nn
 LEVELS = (1, 2, 3)
 SIDES = (0, 1)
 
+# Version du format des graphes, écrite dans la métadonnée « ajp.gmfss.export » de chacun et lue par le
+# lecteur (app/play/gmfss_model.h : kGmfssExportVersion) ; à monter avec lui quand un changement de
+# l'export change le contrat, le résultat ou le coût.
+#   1 (métadonnée absente) : les exports d'avant, source{k}_1 en un tenseur de 67 canaux (un Concat
+#       3 + 64 canaux par côté dans la paire, 1,2 ms profilé à 1280x768) ; certains lisaient encore la
+#       fenêtre locale de GMFlow par un GridSample de 159 millions de valeurs (avant a12132d).
+#   2 : feature{k}_1 (64 canaux) et half{k} (RGB, 3 canaux) sortent séparés, sans Concat : le lecteur
+#       splatte les deux dans les tranches de warped{k}_1 (67 canaux, RGB d'abord).
+EXPORT_VERSION = 2
+EXPORT_KEY = "ajp.gmfss.export"
+
 
 def soft_splat(source, flow, metric, strMode="soft"):  # noqa: N803, nom de softsplat.py
     """softsplat « soft » de softsplat.py, en PyTorch : addition bilinéaire vers l'avant pondérée
@@ -90,7 +101,8 @@ def bidirectional_reuse(gmfss, img0, img1):
 
 
 class Pair(nn.Module):
-    """Une fois par paire : ce que chaque côté splatte, son mouvement aux trois niveaux, et les
+    """Une fois par paire : ce que chaque côté splatte (au niveau 1 les 64 caractéristiques, l'image
+    réduite de moitié étant l'une des deux sorties half{k}), son mouvement aux trois niveaux, et les
     deux images réduites de moitié. Le flot de chaque niveau est déjà réduit (× 0,5, × 0,25) :
     l'instant ne fait plus que le multiplier, l'interpolation bilinéaire étant linéaire."""
 
@@ -107,7 +119,9 @@ class Pair(nn.Module):
             for level in LEVELS:
                 scale = 0.5 ** (level - 1)
                 if level == 1:
-                    source, level_flow, level_metric = torch.cat([half, feat[0]], 1), flow, metric
+                    # Les caractéristiques seules : l'image réduite sort déjà (half{k}), le lecteur
+                    # splatte les deux sans que la paire les concatène.
+                    source, level_flow, level_metric = feat[0], flow, metric
                 else:
                     source = feat[level - 1]
                     level_flow = F.interpolate(flow, scale_factor=scale, mode="bilinear") * scale
@@ -116,11 +130,17 @@ class Pair(nn.Module):
         return (*outputs, half0, half1)
 
 
+def source_name(side, level):
+    """La sortie de la paire que le côté splatte au niveau : feature{k}_1 (64 caractéristiques, l'image
+    est half{k}) au niveau 1, source{k}_{l} aux autres."""
+    return f"feature{side}_1" if level == 1 else f"source{side}_{level}"
+
+
 def pair_names():
     names = []
     for side in SIDES:
         for level in LEVELS:
-            names += [f"source{side}_{level}", f"motion{side}_{level}"]
+            names += [source_name(side, level), f"motion{side}_{level}"]
     return names + ["half0", "half1"]
 
 
@@ -170,7 +190,10 @@ def splat_all(pair_outputs, t):
         s = t if side == 0 else 1.0 - t
         for level in LEVELS:
             motion = named[f"motion{side}_{level}"]
-            warped.append(soft_splat(named[f"source{side}_{level}"], motion[:, 0:2] * s, motion[:, 2:3] * s))
+            source = named[source_name(side, level)]
+            if level == 1:  # l'image d'abord, puis les caractéristiques : 67 canaux comme warped{k}_1
+                source = torch.cat([named[f"half{side}"], source], 1)
+            warped.append(soft_splat(source, motion[:, 0:2] * s, motion[:, 2:3] * s))
     return named["half0"], named["half1"], warped
 
 
@@ -184,7 +207,7 @@ def pair_axes():
     axes = {"frames": dims(0), "half0": dims(1), "half1": dims(1)}
     for side in SIDES:
         for level in LEVELS:
-            axes[f"source{side}_{level}"] = dims(level)
+            axes[source_name(side, level)] = dims(level)
             axes[f"motion{side}_{level}"] = dims(level)
     return axes
 
