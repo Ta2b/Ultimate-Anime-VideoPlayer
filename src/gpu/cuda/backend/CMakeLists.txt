@@ -28,7 +28,7 @@ else()
 endif()
 option(AJP_WITH_SPAN_FP8 "Construire les noyaux CUTLASS du SPAN entier en FP8 (sm 8.9)" ${ajp_span_fp8_default})
 if(AJP_WITH_SPAN_FP8)
-  add_library(ajp_backend_span_fp8_kernels STATIC span_fp8_net.cu)
+  add_library(ajp_backend_span_fp8_kernels STATIC span_fp8_net.cu span_fp8_ref.cu)
   target_include_directories(ajp_backend_span_fp8_kernels PRIVATE "${PROJECT_SOURCE_DIR}/src")
   # SYSTEM : les avertissements de CUTLASS ne sont pas les nôtres.
   target_include_directories(ajp_backend_span_fp8_kernels SYSTEM PRIVATE "${AJP_CUTLASS_INCLUDE}")
@@ -53,7 +53,7 @@ endif()
 
 add_library(ajp_backend_tensorrt MODULE
   entry.cpp gpu_timing.cpp host_upload.cpp ring_slot.cpp span_fp8_engine.cpp tensorrt_backend.cpp tensorrt_export.cpp
-  tensorrt_gmfss.cpp tensorrt_kernels.cpp tensorrt_lanes.cpp tensorrt_rife.cpp tensorrt_span_fp8.cpp
+  tensorrt_gmfss.cpp tensorrt_kernels.cpp tensorrt_lanes.cpp tensorrt_rife.cpp tensorrt_span_derive.cpp tensorrt_span_fp8.cpp
   tensorrt_textures.cpp tensorrt_warp.cpp tensorrt_true_hdr.cpp trt_engine.cpp)
 target_include_directories(ajp_backend_tensorrt PRIVATE "${PROJECT_SOURCE_DIR}/src")
 target_link_libraries(ajp_backend_tensorrt PRIVATE

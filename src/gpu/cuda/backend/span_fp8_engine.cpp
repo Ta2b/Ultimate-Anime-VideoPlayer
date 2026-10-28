@@ -70,8 +70,10 @@ std::expected<void, Refusal> smoke_test(SpanFp8Net& net, int height, int width) 
   return {};
 }
 
+}  // namespace
+
 // Les pointeurs du paquet, pour create().
-SpanFp8Weights view_of(const span_fp8::Package& package) {
+SpanFp8Weights span_fp8_view(const span_fp8::Package& package) {
   const auto view = [](const span_fp8::Conv& conv) {
     return SpanFp8ConvView{.weights = conv.weights.data(), .bias = conv.bias.data()};
   };
@@ -86,8 +88,6 @@ SpanFp8Weights view_of(const span_fp8::Package& package) {
   weights.pixel = view(package.pixel);
   return weights;
 }
-
-}  // namespace
 
 std::expected<std::vector<std::byte>, Refusal> read_span_fp8_package(const std::filesystem::path& path) {
   std::error_code error;
@@ -140,7 +140,7 @@ std::expected<std::unique_ptr<SpanFp8Engine>, Refusal> SpanFp8Engine::load(
     return refuse(RefusalCode::FormatUnsupported, "SPAN FP8 : " + why);
   SpanFp8Status status = SpanFp8Status::Ok;
   std::string why;
-  std::unique_ptr<SpanFp8Net> net = SpanFp8Net::create(view_of(*parsed), height, width, status, why);
+  std::unique_ptr<SpanFp8Net> net = SpanFp8Net::create(span_fp8_view(*parsed), height, width, status, why);
   if (!net)
     return refuse(status == SpanFp8Status::OutOfMemory ? RefusalCode::GpuMemoryExhausted
                                                        : RefusalCode::VendorCallFailed,

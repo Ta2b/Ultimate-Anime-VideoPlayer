@@ -69,6 +69,11 @@ inline SpanInt8Lookup find_span_int8(const std::filesystem::path& span, const st
 TierSupport span_tiers(const std::filesystem::path& span, const std::filesystem::path& dir, bool fp8_engine,
                        bool cutlass_engine = false);
 
+// Le fichier de la variante de span qui a ce SHA-256 (celui du modèle) : dir/<nom>-<infixe><16
+// chiffres>.<extension>, « .onnx » ou « .span8 ». Son reçu est le même nom en « .toml ».
+std::filesystem::path span_variant_path(SpanVariantKind kind, const std::filesystem::path& span,
+                                        const std::filesystem::path& dir, std::string_view sha256);
+
 // « INT8 », « FP8 », « FP32 », « FP8 CUTLASS » : pour les libellés de la chaîne.
 std::string_view variant_text(SpanVariantKind kind);
 

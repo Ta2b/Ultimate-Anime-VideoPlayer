@@ -593,7 +593,9 @@ void language_choice(const char* label, const char* none_label, std::string& tag
 }
 
 SettingsPanel::SettingsPanel() : export_(std::make_unique<ExportDraft>()) {}
-SettingsPanel::~SettingsPanel() = default;
+SettingsPanel::~SettingsPanel() {
+  if (prepare_.stop) prepare_.stop->request_stop();  // la tâche dépend du lecteur qui ouvre ce panneau
+}
 
 SettingsPanel::Result SettingsPanel::draw(const PlaySettings& running, const SettingsChoices& choices,
                                           float scale, std::vector<Input>& actions) {
@@ -686,6 +688,10 @@ SettingsPanel::Result SettingsPanel::draw(const PlaySettings& running, const Set
       const std::string_view name = kPages[static_cast<std::size_t>(page_)].name;
       if (name == "Configuration") {
         if (config_page(draft_, choices, bench_, actions)) actions.emplace_back(Command{cmd::Pause{}});
+        if (bench_.finished) {
+          bench_.finished = false;
+          prepare_after_bench(draft_, choices.span_prepare, choices.place.data, prepare_);
+        }
       } else if (name == "Lecteur par défaut") {
         default_player_page(choices.place, system_, draft_.default_player_dismissed,
                             choices.default_player_is_ajp);
@@ -693,7 +699,10 @@ SettingsPanel::Result SettingsPanel::draw(const PlaySettings& running, const Set
         updates_page(draft_, choices.place, updates_);
       } else if (name == "Agrandissement") {
         image_tab(draft_, choices);
-        if (advanced_) composition_section(draft_);
+        if (advanced_) {
+          span_prepare_section(draft_, choices.span_prepare, prepare_);
+          composition_section(draft_);
+        }
       } else if (name == "Fluidité") {
         fluidity_tab(draft_, choices);
       } else if (name == "Conversion HDR") {

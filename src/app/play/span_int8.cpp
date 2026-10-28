@@ -64,6 +64,16 @@ TierSupport span_tiers(const std::filesystem::path& span, const std::filesystem:
       .quality = find_span_variant(SpanVariantKind::Fp32, span, dir).variant.has_value()};
 }
 
+std::filesystem::path span_variant_path(SpanVariantKind kind, const std::filesystem::path& span,
+                                        const std::filesystem::path& dir, std::string_view sha256) {
+  const KindFacts limits = facts(kind);
+  // Par path et non par string : un nom Unicode ne passe pas par la page de code sous Windows.
+  std::filesystem::path path = dir / span.stem();
+  path += std::format("{}{}", limits.infix, sha256.substr(0, kShortSha));
+  path += limits.extension;
+  return path;
+}
+
 std::string_view variant_text(SpanVariantKind kind) {
   switch (kind) {
     case SpanVariantKind::Int8:
@@ -83,13 +93,9 @@ SpanInt8Lookup find_span_variant(SpanVariantKind kind, const std::filesystem::pa
   const KindFacts limits = facts(kind);
   auto sha = prepare::sha256_file_known(span);
   if (!sha) return refused(sha.error().detail);
-  // Par path et non par string : un nom Unicode ne passe pas par la page de code sous Windows.
-  std::filesystem::path stem = dir / span.stem();
-  stem += std::format("{}{}", limits.infix, sha->substr(0, kShortSha));
-  std::filesystem::path receipt_path = stem;
-  receipt_path += ".toml";
-  std::filesystem::path onnx = stem;
-  onnx += limits.extension;
+  const std::filesystem::path onnx = span_variant_path(kind, span, dir, *sha);
+  std::filesystem::path receipt_path = onnx;
+  receipt_path.replace_extension(".toml");
   std::error_code error;
   if (!std::filesystem::exists(receipt_path, error)) return {};
 

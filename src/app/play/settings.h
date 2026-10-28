@@ -186,6 +186,11 @@ struct PlaySettings {
   bool autoplay_next = false;
   bool default_player_dismissed =
       false;  // « Ne plus me le demander » : le bouton quitte Général, reste en bas d'Avancé
+  // « Préparer en tâche de fond » (Image IA > Agrandissement) : après « Évaluer ma machine », sur une vidéo
+  // ouverte, quand le niveau gardé est Rapide ou plus, dérive le paquet du mode Performance de SPAN
+  // (span_derive.h). Éteint par défaut : la préparation prend de la mémoire vidéo et du GPU pendant la
+  // lecture.
+  bool span_prepare_background = false;
   int audio_delay_ms = 0;
   // Audio (audio/mixer.h, docs/audio-spatialisation.md) : l'appareil de sortie (vide : celui du système,
   // suivi quand il change), « Comment écoutez-vous ? » (headphones, speakers, cinema), le mode Fidèle (aucun

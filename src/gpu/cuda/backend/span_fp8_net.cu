@@ -13,6 +13,7 @@
 #include <vector>
 
 #include "gpu/cuda/backend/span_fp8_kernels.cuh"
+#include "gpu/cuda/backend/span_fp8_layout.cuh"
 #include "gpu/cuda/backend/span_fp8_net.h"
 
 namespace ajp::gpu::cuda {
@@ -38,43 +39,6 @@ constexpr int kConcat = 4 * kChannels;
 constexpr int kPixel = 48;
 constexpr int kScaleCount = SpanFp8Weights::kScales;
 
-// Mémoire d'appareil possédée.
-class Device {
- public:
-  Device() = default;
-  Device(const Device&) = delete;
-  Device& operator=(const Device&) = delete;
-  Device(Device&& other) noexcept : ptr_(std::exchange(other.ptr_, nullptr)) {}
-  Device& operator=(Device&& other) noexcept {
-    if (this != &other) {
-      reset();
-      ptr_ = std::exchange(other.ptr_, nullptr);
-    }
-    return *this;
-  }
-  ~Device() { reset(); }
-  void reset() {
-    if (ptr_ != nullptr) cudaFree(ptr_);
-    ptr_ = nullptr;
-  }
-  cudaError_t upload(const void* host, std::size_t bytes) {
-    reset();
-    cudaError_t error = cudaMalloc(&ptr_, bytes);
-    if (error != cudaSuccess) {
-      ptr_ = nullptr;
-      return error;
-    }
-    return cudaMemcpy(ptr_, host, bytes, cudaMemcpyHostToDevice);
-  }
-  template <class T>
-  const T* as() const {
-    return static_cast<const T*>(ptr_);
-  }
-
- private:
-  void* ptr_ = nullptr;
-};
-
 // Poids FP8 d'un bloc : échelle par tenseur « maximum / 448 », arrondi au plus proche, saturé.
 float quantize_fp8(const std::uint16_t* half_bits, std::size_t count, std::vector<std::uint8_t>& out) {
   std::vector<float> values(count);
@@ -90,47 +54,6 @@ float quantize_fp8(const std::uint16_t* half_bits, std::size_t count, std::vecto
   for (std::size_t i = 0; i < values.size(); ++i)
     out[i] = static_cast<std::uint8_t>(__nv_cvt_float_to_fp8(values[i] / scale, __NV_SATFINITE, __NV_E4M3));
   return scale;
-}
-
-// Dégroupage : NCHW FP16 3×H×W -> NHWC 16 canaux à demi-résolution (canal = c·4 + a·2 + b ; 12 à 15 nuls).
-__global__ void unshuffle_kernel(const __half* in, __half* out, int height, int width) {
-  const int w = width / 2;
-  const int idx = static_cast<int>(blockIdx.x * blockDim.x + threadIdx.x);
-  if (idx >= (height / 2) * w) return;
-  const int y = idx / w, x = idx % w;
-  __half v[16];
-#pragma unroll
-  for (int c = 0; c < 3; ++c)
-#pragma unroll
-    for (int a = 0; a < 2; ++a)
-#pragma unroll
-      for (int b = 0; b < 2; ++b)
-        v[c * 4 + a * 2 + b] =
-            in[(static_cast<size_t>(c) * static_cast<size_t>(height) + static_cast<size_t>(2 * y + a)) *
-                   static_cast<size_t>(width) +
-               static_cast<size_t>(2 * x + b)];
-#pragma unroll
-  for (int i = 12; i < 16; ++i) v[i] = __float2half(0.F);
-  uint4* o = reinterpret_cast<uint4*>(out + static_cast<size_t>(idx) * 16);
-  o[0] = *reinterpret_cast<uint4*>(&v[0]);
-  o[1] = *reinterpret_cast<uint4*>(&v[8]);
-}
-
-// DepthToSpace(4, mode CRD du modèle) : NHWC 48 canaux -> NCHW 3×4h×4w ; canal d'entrée = c·16 + bh·4 + bw.
-__global__ void depth_to_space_kernel(const __half* in, __half* out, int h, int w) {
-  const int idx = static_cast<int>(blockIdx.x * blockDim.x + threadIdx.x);  // (pixel, bh, c)
-  if (idx >= h * w * 12) return;
-  const int c = idx % 3, bh = (idx / 3) % 4, pix = idx / 12;
-  const int y = pix / w, x = pix % w;
-  const __half* p = in + static_cast<size_t>(pix) * 48 + static_cast<size_t>(c * 16 + bh * 4);
-  __half o[4];
-#pragma unroll
-  for (int bw = 0; bw < 4; ++bw) o[bw] = p[bw];
-  *reinterpret_cast<uint2*>(
-      out +
-      (static_cast<size_t>(c) * static_cast<size_t>(4 * h) + static_cast<size_t>(4 * y + bh)) *
-          static_cast<size_t>(4 * w) +
-      static_cast<size_t>(4 * x)) = *reinterpret_cast<uint2*>(o);
 }
 
 constexpr std::int64_t kAlign = 256;
