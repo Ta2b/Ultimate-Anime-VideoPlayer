@@ -14,6 +14,7 @@
 #include <SDL3/SDL_init.h>
 #include <SDL3/SDL_log.h>
 
+#include "audio/devices.h"
 #include "audio/refuse.h"
 #include "audio/sink.h"
 #include "core/clock.h"
@@ -86,8 +87,14 @@ void SDLCALL on_device_request(void* sink, SDL_AudioStream* /*stream*/, int /*ad
 
 std::expected<void, Refusal> SdlSink::open(const OutputRequest& request) {
   if (!subsystem_.ready()) return refuse_sdl("SDL_InitSubSystem(SDL_INIT_AUDIO)");
+  // L'appareil choisi s'il existe encore, sinon le défaut du système (suivi par SDL quand il change).
+  SDL_AudioDeviceID device_id = SDL_AUDIO_DEVICE_DEFAULT_PLAYBACK;
+  if (!request.device.empty()) {
+    if (const auto found = resolve_device(playback_devices(), request.device); found && found->name == request.device)
+      device_id = found->id;
+  }
   SDL_AudioSpec preferred{};
-  if (!SDL_GetAudioDeviceFormat(SDL_AUDIO_DEVICE_DEFAULT_PLAYBACK, &preferred, nullptr)) {
+  if (!SDL_GetAudioDeviceFormat(device_id, &preferred, nullptr)) {
     return refuse_sdl("SDL_GetAudioDeviceFormat");
   }
   const auto format = checked({.sample_rate = request.sample_rate != 0 ? request.sample_rate : preferred.freq,
@@ -96,7 +103,7 @@ std::expected<void, Refusal> SdlSink::open(const OutputRequest& request) {
   const SDL_AudioSpec spec{
       .format = SDL_AUDIO_F32, .channels = format->channels, .freq = format->sample_rate};
   // Le périphérique s'ouvre en pause ; SDL convertit vers son format réel si besoin.
-  stream_ = SDL_OpenAudioDeviceStream(SDL_AUDIO_DEVICE_DEFAULT_PLAYBACK, &spec, nullptr, nullptr);
+  stream_ = SDL_OpenAudioDeviceStream(device_id, &spec, nullptr, nullptr);
   if (stream_ == nullptr) return refuse_sdl("SDL_OpenAudioDeviceStream");
   format_ = *format;
   return {};

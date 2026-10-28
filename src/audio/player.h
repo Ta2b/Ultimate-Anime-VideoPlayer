@@ -23,6 +23,7 @@
 
 #include "audio/clock.h"
 #include "audio/decoder.h"
+#include "audio/mixer.h"
 #include "audio/drift.h"
 #include "audio/output.h"
 #include "audio/packet.h"
@@ -46,6 +47,7 @@ struct PlayerConfig {
   std::int64_t queue_target_us = 200'000;  // audio gardé d'avance dans la file du périphérique
   std::int64_t resync_us = 50'000;         // écart à l'écran au-delà duquel on recale franchement
   DriftGains drift;
+  MixConfig mix;  // l'écoute (mixer.h) ; sink_channels et sample_rate sont ceux de la sortie
 };
 
 // La configuration telle quelle si elle est dans ses bornes, un refus sinon.
@@ -82,6 +84,8 @@ class AudioPlayer {
   void start_epoch(std::uint32_t epoch);
   void pump();
   void decode_next();
+  void open_decoder(const AudioTrack& track);
+  void queue(std::vector<PcmBlock>&& blocks);
   void finish_stream();
   bool push(PcmBlock& block);
   bool align(PcmBlock& block);
@@ -103,6 +107,8 @@ class AudioPlayer {
   std::shared_ptr<const MasterClock> master_;  // nul : l'audio est maître
   DriftRegulator regulator_;
   std::optional<AudioDecoder> decoder_;
+  Mixer mixer_;                      // entre le décodeur et la sortie (casque, enceintes…)
+  std::optional<AudioTrack> track_;  // la piste ouverte, pour rouvrir le décodeur quand l'écoute change
   std::deque<AudioPacket> held_;  // reçus, pas encore décodés : la file du périphérique est pleine
   std::deque<PcmBlock> ready_;    // décodés, pas encore poussés
   std::optional<std::int64_t> trim_before_us_;

@@ -70,12 +70,17 @@ struct SetAudioDelay {
 struct SetVolume {
   float gain = 1.0F;  // 0 à 2
 };
+// « Comment écoutez-vous ? » (audio/mixer.h) : 0 casque, 1 enceintes, 2 home cinéma ; faithful : aucun traitement.
+struct SetListening {
+  std::uint8_t listen = 1;
+  bool faithful = false;
+};
 struct Quit {};
 }  // namespace cmd
 
 using Command =
     std::variant<cmd::Play, cmd::Pause, cmd::TogglePause, cmd::Seek, cmd::SeekRelative, cmd::StepFrame,
                  cmd::SelectProfile, cmd::ProcessingOff, cmd::ToggleGrade, cmd::ToggleInterpolation,
-                 cmd::ToggleOsd, cmd::SetAudioDelay, cmd::SetVolume, cmd::Quit>;
+                 cmd::ToggleOsd, cmd::SetAudioDelay, cmd::SetVolume, cmd::SetListening, cmd::Quit>;
 
 }  // namespace ajp

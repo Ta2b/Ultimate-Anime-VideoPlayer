@@ -120,6 +120,12 @@ void Session::command(const Command& command) {
                                  .refusal = {RefusalCode::PacketBacklog, "volume : boîte audio pleine"}});
                    }
                  },
+                 [this](const cmd::SetListening& listening) {
+                   if (!stages_.audio(listening)) {
+                     on_refusal({.stage = "main",
+                                 .refusal = {RefusalCode::PacketBacklog, "écoute : boîte audio pleine"}});
+                   }
+                 },
                  [this](const cmd::SetAudioDelay& delay) {
                    if (!stages_.audio(delay)) {
                      on_refusal(

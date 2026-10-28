@@ -52,7 +52,11 @@ AudioPlayer::AudioPlayer(std::unique_ptr<AudioOutput> output, const PlayerConfig
       events_(std::move(events)),
       log_(make_logger()),
       clock_(std::make_shared<AudioClock>()),
-      regulator_(config.drift) {}
+      regulator_(config.drift),
+      mixer_(MixConfig{.listen = config.mix.listen,
+                       .faithful = config.mix.faithful,
+                       .sink_channels = output_->format().channels,
+                       .sample_rate = output_->format().sample_rate}) {}
 
 AudioPlayer::~AudioPlayer() = default;
 
@@ -68,17 +72,30 @@ void AudioPlayer::handle(AudioPacket&& packet) {
 }
 
 void AudioPlayer::handle(const AudioTrack& track) {
-  auto decoder = AudioDecoder::open(track.codec, output_->format());
+  track_ = track;
+  open_decoder(track);
+  pump();
+}
+
+// Le décodeur rend les canaux que le mixeur veut de cette piste (mixer.h : decoder_channels).
+void AudioPlayer::open_decoder(const AudioTrack& track) {
+  const PcmFormat wanted{.sample_rate = output_->format().sample_rate,
+                         .channels = mixer_.decoder_channels(track.codec.channels)};
+  auto decoder = AudioDecoder::open(track.codec, wanted);
   if (!decoder) {
     decoder_.reset();
     report(decoder.error());
     return;
   }
   decoder_ = std::move(*decoder);
-  log_->info("piste « {} » ({} Hz, {} canaux) vers {} Hz, {} canaux", track.codec.codec,
-             track.codec.sample_rate, track.codec.channels, output_->format().sample_rate,
-             output_->format().channels);
-  pump();
+  log_->info("piste « {} » ({} Hz, {} canaux) vers {} Hz, {} canaux, écoute {}{}", track.codec.codec,
+             track.codec.sample_rate, track.codec.channels, wanted.sample_rate, wanted.channels,
+             static_cast<int>(mixer_.config().listen), mixer_.faithful() ? " fidèle" : "");
+}
+
+// Les blocs décodés passent par le mixeur avant la file de sortie.
+void AudioPlayer::queue(std::vector<PcmBlock>&& blocks) {
+  for (PcmBlock& block : blocks) ready_.push_back(mixer_.process(std::move(block)));
 }
 
 void AudioPlayer::handle(const EndOfStream& end) {
@@ -103,6 +120,19 @@ void AudioPlayer::handle(const Command& command) {
     set_delay(delay->delay_us);
   } else if (const auto* volume = std::get_if<cmd::SetVolume>(&command)) {
     if (auto set = output_->set_volume(volume->gain); !set) report(set.error());
+  } else if (const auto* listening = std::get_if<cmd::SetListening>(&command)) {
+    const int before = track_ ? mixer_.decoder_channels(track_->codec.channels) : 0;
+    MixConfig mix = mixer_.config();
+    mix.listen = static_cast<Listen>(std::min<std::uint8_t>(listening->listen, 2));
+    mix.faithful = listening->faithful;
+    mixer_ = Mixer(mix);
+    // Les canaux voulus du décodeur ont changé : il est rouvert, ce qui était décodé est refait au prochain paquet.
+    if (track_ && mixer_.decoder_channels(track_->codec.channels) != before) {
+      open_decoder(*track_);
+      ready_.clear();
+      output_->clear();
+      aligning_ = master_ != nullptr;
+    }
   }
   // Les autres commandes ne concernent pas l'audio ; le seek arrive par Flush.
 }
@@ -139,6 +169,7 @@ void AudioPlayer::start_epoch(std::uint32_t epoch) {
   held_.clear();
   ready_.clear();
   if (decoder_) decoder_->flush();
+  mixer_.reset();
   output_->clear();
   trim_before_us_.reset();
   end_pending_ = false;
@@ -170,7 +201,7 @@ void AudioPlayer::decode_next() {
   held_.pop_front();
   if (decoder_) {
     if (auto blocks = decoder_->decode(packet)) {
-      std::ranges::move(*blocks, std::back_inserter(ready_));
+      queue(std::move(*blocks));
     } else {
       log_->warn("{} : {}", name(blocks.error().code), blocks.error().detail);  // paquet perdu, on continue
     }
@@ -183,7 +214,7 @@ void AudioPlayer::finish_stream() {
   ended_ = true;
   if (!decoder_) return;
   if (auto blocks = decoder_->drain()) {
-    std::ranges::move(*blocks, std::back_inserter(ready_));
+    queue(std::move(*blocks));
   } else {
     log_->warn("{} : {}", name(blocks.error().code), blocks.error().detail);
   }

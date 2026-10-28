@@ -211,7 +211,6 @@ TEST_CASE("Réglages : assistant, inscription, mises à jour et écoute font l'a
   settings.open_with_registered = true;
   settings.update_mode = "auto";
   settings.update_channel = "preview";
-  settings.listening = "headphones";
   const auto text = format_settings(settings);
   REQUIRE(text);
   const auto read = parse_settings(*text);
@@ -219,5 +218,4 @@ TEST_CASE("Réglages : assistant, inscription, mises à jour et écoute font l'a
   CHECK(*read == settings);
   CHECK(Settings{}.update_mode == "notify");  // le défaut décidé : Me prévenir
   CHECK_FALSE(parse_settings("update_mode = \"parfois\""));
-  CHECK_FALSE(parse_settings("listening = \"haut-parleur\""));
 }

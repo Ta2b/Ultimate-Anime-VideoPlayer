@@ -8,6 +8,7 @@
 #include <functional>
 #include <memory>
 #include <span>
+#include <string>
 
 #include "audio/pcm.h"
 #include "core/types.h"
@@ -24,6 +25,7 @@ struct DeviceReading {
 struct OutputRequest {
   int sample_rate = 0;
   int channels = 0;
+  std::string device;  // nom de l'appareil de sortie (devices.h) ; vide ou disparu : celui du système
 };
 
 class AudioSink {

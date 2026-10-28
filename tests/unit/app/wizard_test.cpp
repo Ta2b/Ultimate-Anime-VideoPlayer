@@ -48,11 +48,11 @@ TEST_CASE("Terminer écrit les choix et laisse intact ce qui est sauté", "[wiza
   const ajp::core::Settings written = wizard_settings(wizard, {});
   CHECK(written.first_run_done);
   CHECK(written.first_run_step == kWizardSteps);
-  CHECK(written.listening == "headphones");
   CHECK(written.update_mode == "auto");
 
   PlaySettings play;
   play = wizard_play_settings(wizard, play);
+  CHECK(play.listening == "headphones");
   CHECK(play.preset == Preset::Quality);
   CHECK(play.priority == Priority::Image);
   CHECK(play.hdr_native);
@@ -61,11 +61,11 @@ TEST_CASE("Terminer écrit les choix et laisse intact ce qui est sauté", "[wiza
   // Écrans passés : Enceintes (rien d'écrit), Me prévenir (défaut), HDR inchangé, préréglage Auto.
   wizard.skipped = {WizardStep::Audio, WizardStep::Updates, WizardStep::Hdr, WizardStep::Chain};
   const ajp::core::Settings kept = wizard_settings(wizard, {});
-  CHECK(kept.listening.empty());
   CHECK(kept.update_mode == "notify");
   PlaySettings other;
   other.true_hdr = true;
   other = wizard_play_settings(wizard, other);
+  CHECK(other.listening == "speakers");  // passé : Enceintes en rendu fidèle
   CHECK(other.true_hdr);
   CHECK(other.preset == Preset::Auto);
 }

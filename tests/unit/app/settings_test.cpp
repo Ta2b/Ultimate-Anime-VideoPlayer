@@ -2,6 +2,7 @@
 // qu'un changement demande (direct ou réouverture de la chaîne).
 #include "app/play/settings.h"
 
+#include <algorithm>
 #include <array>
 #include <filesystem>
 #include <format>
@@ -366,4 +367,32 @@ TEST_CASE("repères des listes et résolution en français courant", "[settings]
   CHECK(badge_of(Downscale::Mitchell) == Badge::Recommended);
   CHECK_FALSE(badge_of(Downscale::Area));
   CHECK(label(MotionEngine::Gmfss) == "GMFSS Fortuna");
+}
+
+TEST_CASE("audio : appareil, écoute et profils par appareil font l'aller-retour", "[settings]") {
+  using namespace ajp::app::play;
+  PlaySettings s;
+  s.audio_device = "Casque USB";
+  s.listening = "speakers";
+  s.audio_faithful = true;
+  s.device_listening = {{"Casque USB", "headphones"}, {"Barre de son", "cinema"}};
+  const auto read = parse_settings(format_settings(s));
+  REQUIRE(read);
+  CHECK(read->audio_device == "Casque USB");
+  CHECK(read->audio_faithful);
+  auto sorted = [](auto list) {
+    std::ranges::sort(list);
+    return list;
+  };
+  CHECK(sorted(read->device_listening) == sorted(s.device_listening));  // la table TOML trie ses clés
+  // Le profil propre prime, un appareil inconnu reprend le global.
+  CHECK(effective_listening(*read, "Casque USB").listen == 0);
+  CHECK(effective_listening(*read, "Barre de son").listen == 2);
+  CHECK(effective_listening(*read, "Autre").listen == 1);
+  CHECK(effective_listening(*read, "Autre").faithful);
+  CHECK_FALSE(parse_settings("[audio]\nlistening = \"stade\"\n"));
+  CHECK(change_between(PlaySettings{}, [] { PlaySettings x; x.audio_device = "A"; return x; }(), false).cost ==
+        ChangeCost::Reopen);
+  CHECK(change_between(PlaySettings{}, [] { PlaySettings x; x.listening = "headphones"; return x; }(), false).cost ==
+        ChangeCost::Live);
 }
