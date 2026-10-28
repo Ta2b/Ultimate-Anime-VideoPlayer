@@ -262,7 +262,8 @@ int main(int argc, char** argv) {
       if (!applied)
         state.staged_version
             .clear();  // une archive qui ne s'applique pas ne se réessaie pas à chaque lancement
-      static_cast<void>(ajp::app::play::save_update_state(data / "update.toml", state));
+      if (const auto kept = ajp::app::play::save_update_state(data / "update.toml", state); !kept)
+        std::fprintf(stderr, "ajp : update.toml : %s\n", kept.error().detail.c_str());
       if (applied) {
         std::fprintf(stderr, "ajp : %s\n", applied->c_str());
         return relaunch(place.executable, argc, argv);
