@@ -46,7 +46,7 @@ Pull requests : une par étape ; quand une étape dépend d'une autre, la base e
 ### C. Nouveau cadre des réglages et assistant
 - [x] Arbre à gauche, page à droite, encadrés titrés (PR `claude/cadre-arbre`) ; lignes multiples et barre de défilement fine restent à faire
 - [x] Catégories, case « Réglages avancés », Profils retiré ; dernière page mémorisée le temps de la session seulement (pas encore dans `play.toml`)
-- [x] Assistant de premier démarrage (8 écrans, `wizard.h`), relançable par `--first-run` ; le bouton « Relancer l'assistant » de Général reste à faire (PR `claude/assistant`)
+- [x] Assistant de premier démarrage (8 écrans, `wizard.h`), relançable par `--first-run` ; bouton « Relancer l'assistant » dans Général > Configuration (PR `claude/restes`)
 - [x] « Ouvrir avec » au premier lancement, sans confirmation ; bouton « Faire de ce lecteur le lecteur par défaut »
   avec « Ne plus me le demander » (réapparaît en bas d'Avancé), détection xdg-mime sous Linux
 - [ ] Recherche dans les réglages (par page d'abord)
@@ -54,7 +54,7 @@ Pull requests : une par étape ; quand une étape dépend d'une autre, la base e
 ### E. Audio et son spatial
 - [x] Liste et choix de l'appareil de sortie (`audio/devices.h`) ; le défaut du système est suivi par SDL (flux sur l'appareil par défaut) : PR `claude/audio`
 - [x] Format de la source par piste et de la sortie par appareil, conversion automatique (le décodeur rend les canaux voulus par le mixeur)
-- [x] Profils Casque / Enceintes / Home cinéma, crossfeed, downmix soigné, profil par appareil, Fidèle (case + commande `SetListening`) ; la touche A/B reste à faire (nouvelle action de touche)
+- [x] Profils Casque / Enceintes / Home cinéma, crossfeed, downmix soigné, profil par appareil, Fidèle (case + commande `SetListening`) ; touche **B** : bascule A/B traité / fidèle (PR `claude/restes`)
 - [x] Binaural
 - [x] Écran audio de l'assistant et page Audio des réglages (Audio > Sortie : Appareil, Écoute, Synchronisation)
 
@@ -121,3 +121,9 @@ Pull requests : une par étape ; quand une étape dépend d'une autre, la base e
 - **2026-10-28** : G (TensorRT Windows) en PR : parité avec Linux (archive = module + trtexec.exe, bibliothèques NVIDIA en lien direct,
   index `engines-nvidia.lock` joint avant l'étiquette). Les scripts PowerShell n'ont pas pu être exécutés ici (pas de pwsh) : l'essai est
   à faire sur le poste Windows.
+- **2026-10-28** : restes en PR `claude/restes` : bouton « Relancer l'assistant », touche B (A/B audio), RTX HDR pas à pas (écran 4b :
+  moteur TensorRT, SDK Maxine, carte ; « Vérifier de nouveau », « Renoncer : HDR adaptatif », HDR adaptatif en attendant),
+  infobulles de Fluidité et d'Audio (descriptions des moteurs sur leurs boutons), pastilles centrées. **Vérification visuelle** faite
+  avec `--snapshot` sur la 4070 Ti : assistant (écran 1) et menu (Configuration, Fluidité, Audio) ; corrigé : double barre de
+  défilement (la fenêtre n'en a plus, les deux colonnes défilent seules). Pas encore vus : les écrans 2 à 8 de l'assistant, HDR et
+  Couleurs, Mises à jour.

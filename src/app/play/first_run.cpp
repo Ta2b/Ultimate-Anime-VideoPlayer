@@ -526,6 +526,26 @@ void draw_wizard_step(FirstRunView& view, Wizard& wizard) {
       pick = false;
       radio_note("SDR", "Pas de conversion HDR.", wizard.hdr == HdrChoice::Sdr, pick);
       if (pick) wizard.hdr = HdrChoice::Sdr;
+      if (view.facts.rtx_guided && wizard.hdr == HdrChoice::RtxHdr && view.check_rtx) {
+        // 4b : RTX HDR pas à pas.
+        if (wizard.rtx_checks.empty()) wizard.rtx_checks = view.check_rtx(view);
+        section("RTX HDR, pas à pas");
+        for (const RtxCheck& check : wizard.rtx_checks) {
+          ImGui::TextColored(check.done ? ImVec4{0.45F, 0.82F, 0.52F, 1.0F} : ImVec4{1.0F, 0.78F, 0.42F, 1.0F}, "%s",
+                             check.done ? "fait" : "à faire");
+          ImGui::SameLine();
+          ImGui::TextUnformatted(check.name.c_str());
+          if (!check.done) note(check.todo);
+        }
+        if (ImGui::Button("Vérifier de nouveau")) wizard.rtx_checks = view.check_rtx(view);
+        ImGui::SameLine();
+        if (ImGui::Button("Renoncer : HDR adaptatif")) {
+          wizard.hdr = HdrChoice::Adaptive;
+          wizard.rtx_checks.clear();
+        }
+        if (!rtx_ready(wizard.rtx_checks))
+          note("Tant que tout n'est pas fait, l'écran reste en HDR adaptatif ; RTX HDR se choisit ensuite dans HDR > Conversion.");
+      }
       break;
     }
     case WizardStep::Audio: {

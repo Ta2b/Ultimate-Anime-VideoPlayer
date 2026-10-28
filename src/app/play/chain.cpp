@@ -329,6 +329,14 @@ void apply(const Input& input, Chain& to, std::int64_t now_us) {
             session.command(Command{controls.step_volume(step.delta)});
             volume_changed();
           },
+          [&](const ToggleFaithful&) {
+            PlaySettings wanted = to.running;
+            wanted.audio_faithful = !wanted.audio_faithful;
+            apply_live(to, wanted, now_us);
+            to.running.audio_faithful = wanted.audio_faithful;
+            to.dirty = true;
+            controls.notify(wanted.audio_faithful ? "Son fidèle (sans traitement)" : "Son traité", now_us);
+          },
           [&](const SelectAudio& select) { switch_audio(to, select.track, now_us); },
           [&](const SelectSubtitles& select) { switch_subtitles(to, select.track, now_us); },
           [&](const CycleAudio&) {
