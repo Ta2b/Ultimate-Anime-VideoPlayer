@@ -103,6 +103,16 @@ std::expected<std::optional<std::unique_ptr<gpu::Engine>>, Refusal> prepare_engi
     Player& p, const gpu::BackendInit& init, gpu::Backend& backend, const std::filesystem::path& onnx,
     const gpu::Shape& shape, EngineLabel label, gpu::Lane lane);
 
+// RIFE fusionné (kernels/spec/rife_fused.h) pour le modèle rife_onnx à la taille remplie de geometry : le
+// modèle coupé en six morceaux (dérivés dans models_dir, un manifeste « .rifefused » les nomme), leurs six
+// moteurs construits puis chargés en un seul, qui s'enfile comme le moteur RIFE entier. motion : la variante
+// mouvement (flot et masque en sorties) au lieu de l'image. Rien si l'utilisateur ferme la fenêtre. Refus :
+// la découpe (structure non reconnue, taille que les noyaux ne prennent pas), la construction, le chargement
+// ou l'essai de la chaîne ; l'appelant garde alors le RIFE entier.
+std::expected<std::optional<std::unique_ptr<gpu::Engine>>, Refusal> prepare_rife_fused(
+    Player& p, const gpu::BackendInit& init, gpu::Backend& backend, const std::filesystem::path& rife_onnx,
+    const std::filesystem::path& models_dir, const kernels::RifeGeometry& geometry, bool motion);
+
 // GMFSS Fortuna pour des images de travail work_width × work_height : ses deux graphes, trouvés dans
 // le premier de dirs qui les a, fixés à la taille remplie de RIFE (dérivés dans le dossier de
 // données), construits puis chargés. Rien si l'utilisateur ferme la fenêtre. Refus : FieldMissing
@@ -112,6 +122,16 @@ struct GmfssEngines {
   std::unique_ptr<gpu::Engine> fusion;
   int align = 64;  // multiple des plans remplis des deux graphes (gmfss_model.h)
 };
+// DistilDRBA fusionné (kernels/spec/drba_fused.h) : si fused n'est pas nul, prepare_distil_drba essaie
+// d'abord le graphe coupé en quatre petits moteurs (dérivés dans le dossier des modèles, un manifeste «
+// .drbafused » les nomme, leurs quatre moteurs construits puis chargés en un seul, qui s'enfile comme le
+// moteur entier) ; tout refus (structure non reconnue, taille que les noyaux ne prennent pas, construction,
+// chargement, essai de la chaîne) est noté dans fused->declined et garde le DistilDRBA entier. fused->used :
+// le moteur rendu est le fusionné.
+struct DrbaFusedUse {
+  bool used = false;
+  std::string declined;
+};
 // DistilDRBA pour des images de travail work_width × work_height : son graphe, trouvé dans le
 // premier de dirs qui l'a, fixé à la taille remplie de RIFE, construit puis chargé. Rien si
 // l'utilisateur ferme la fenêtre. Refus : FieldMissing (graphe absent), et ceux de la dérivation
@@ -119,7 +139,7 @@ struct GmfssEngines {
 std::expected<std::optional<std::unique_ptr<gpu::Engine>>, Refusal> prepare_distil_drba(
     Player& p, const gpu::BackendInit& init, gpu::Backend& backend,
     std::span<const std::filesystem::path> dirs, int work_width, int work_height, int& align,
-    PrecisionTier tier = PrecisionTier::Balanced);
+    PrecisionTier tier = PrecisionTier::Balanced, DrbaFusedUse* fused = nullptr);
 
 // L'interpolation d'Apple pour des images de travail work_width × work_height, chargée comme RIFE
 // image (plans v2, remplis au multiple de 64) : son modèle (apple_model.h), essayé à la

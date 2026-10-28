@@ -7,7 +7,10 @@
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
+#include <filesystem>
+#include <format>
 #include <memory>
+#include <string>
 #include <utility>
 #include <vector>
 
@@ -18,6 +21,7 @@
 #include "kernels/spec/gmfss.h"
 #include "kernels/spec/tolerance.h"
 #include "kernels/spec/warp.h"
+#include "prepare/sha256.h"
 
 namespace {
 
@@ -330,4 +334,251 @@ TEST_CASE("Backend TensorRT : composition par objets texture, deux pixels par fi
   float worst = 0.0F;
   for (std::size_t i = 0; i < got.size(); ++i) worst = std::max(worst, std::fabs(got[i] - expected[i]));
   CHECK(worst <= k::tolerance::kWarpFiltered);
+}
+
+TEST_CASE("Backend TensorRT : le niveau 1 en deux splats, chacun dans sa tranche de warped",
+          "[backend_tensorrt][cuda][gmfss]") {
+  if (!has_cuda()) SKIP("pas de GPU NVIDIA");
+  Loaded loaded;
+  REQUIRE(loaded.backend != nullptr);
+  gpu::KernelOps& ops = *loaded.backend->kernels();
+  // Export de version 2 : l'image (3 plans) et les caractéristiques (ici 5, 64 dans GMFSS) arrivent en deux
+  // tenseurs ; chaque splat écrit sa tranche de la sortie à 3 + 5 plans, comme le splat de leur
+  // concaténation. 32 × 16 : la tranche des caractéristiques commence à 3 072 octets, multiple de 256.
+  constexpr int w = 32;
+  constexpr int h = 16;
+  constexpr int image_planes = 3;
+  constexpr int feature_planes = 5;
+  const auto alloc = [&](int channels) {
+    auto tensor = loaded.backend->alloc_tensor(gpu::TensorType::F16, {.dims = {1, channels, h, w}});
+    REQUIRE(tensor);
+    return std::move(*tensor);
+  };
+  const std::vector<k::PlaneF> image = planes_of(w, h, image_planes, 31, 0.0F, 1.0F);
+  const std::vector<k::PlaneF> features = planes_of(w, h, feature_planes, 32, -2.0F, 2.0F);
+  const std::vector<k::PlaneF> flow = planes_of(w, h, 2, 33, -5.0F, 5.0F);
+  const std::vector<k::PlaneF> metric = planes_of(w, h, 1, 34, -k::kGmfssMetricLimit, k::kGmfssMetricLimit);
+  const k::ref::SplatMotion motion{{flow[0], flow[1], metric[0]}};
+  auto t_image = alloc(image_planes);
+  auto t_features = alloc(feature_planes);
+  auto t_motion = alloc(k::kGmfssMotionChannels);
+  auto whole = alloc(image_planes + feature_planes);
+  upload(t_image->tensor(), flat(image));
+  upload(t_features->tensor(), flat(features));
+  upload(t_motion->tensor(), flat(std::vector<k::PlaneF>(motion.planes.begin(), motion.planes.end())));
+  const auto slice = [&](int first, int count) {
+    gpu::Tensor part = whole->tensor();
+    part.shape.dims[1] = count;
+    part.offset += static_cast<std::uint64_t>(first) * w * h * sizeof(std::uint16_t);
+    return part;
+  };
+  std::vector<k::PlaneF> joined = image;
+  joined.insert(joined.end(), features.begin(), features.end());
+  for (const float s : {0.3F, 1.0F}) {
+    CAPTURE(s);
+    const std::array jobs{
+        gpu::KernelOps::SplatJob{
+            .source = t_image->tensor(), .motion = t_motion->tensor(), .s = s, .out = slice(0, image_planes)},
+        gpu::KernelOps::SplatJob{.source = t_features->tensor(),
+                                 .motion = t_motion->tensor(),
+                                 .s = s,
+                                 .out = slice(image_planes, feature_planes)}};
+    REQUIRE(ops.fill(whole->tensor(), 7.0F));  // une tranche non écrite resterait à 7
+    REQUIRE(ops.soft_splat_all(jobs));
+    const auto want = k::ref::soft_splat(joined, motion, s);
+    REQUIRE(want);
+    const std::vector<float> got = download(whole->tensor());
+    const std::vector<float> expected = flat(*want);
+    REQUIRE(got.size() == expected.size());
+    float worst = 0.0F;
+    for (std::size_t i = 0; i < got.size(); ++i) worst = std::max(worst, std::fabs(got[i] - expected[i]));
+    CHECK(worst <= k::tolerance::kRgbF16);
+  }
+}
+
+// Caché : `ajp_backend_tensorrt_tests "[.gmfss_split]"`, sous `ajp-gpu`. Les trois graphes (pair d'avant en
+// 67 canaux, pair d'après sans Concat, fusion), aux tailles fixées, sont ceux des variables CMake
+// AJP_GMFSS_SPLIT_{OLD_PAIR,NEW_PAIR,FUSION} (tests/unit/backend_tensorrt/CMakeLists.txt) ; l'un absent,
+// SKIP.
+TEST_CASE("Backend TensorRT : la fusion rend la même image avec la paire sans Concat",
+          "[.gmfss_split][backend_tensorrt][cuda][gmfss]") {
+  if (!has_cuda()) SKIP("pas de GPU NVIDIA");
+  const std::array<std::filesystem::path, 3> files{AJP_GMFSS_SPLIT_OLD_PAIR, AJP_GMFSS_SPLIT_NEW_PAIR,
+                                                   AJP_GMFSS_SPLIT_FUSION};
+  for (const std::filesystem::path& file : files) {
+    if (!std::filesystem::is_regular_file(file)) SKIP("graphe GMFSS absent : '" + file.string() + "'");
+  }
+  Loaded loaded;
+  REQUIRE(loaded.backend != nullptr);
+  gpu::KernelOps& ops = *loaded.backend->kernels();
+  constexpr int width = 1280;
+  constexpr int height = 768;
+  const auto engine = [&](const std::filesystem::path& file, const gpu::Shape& shape) {
+    gpu::Progress progress;
+    const auto sha256 = prepare::sha256_file(file);
+    REQUIRE(sha256);
+    const gpu::ModelSpec spec{.id = file.stem().string(), .onnx_path = file, .sha256 = *sha256};
+    auto artifact = loaded.backend->build(spec, {.min = shape, .opt = shape, .max = shape}, progress);
+    REQUIRE(artifact);
+    auto loaded_engine = loaded.backend->load(*artifact);
+    REQUIRE(loaded_engine);
+    return std::move(*loaded_engine);
+  };
+  const auto old_pair = engine(files[0], {.dims = {1, k::kGmfssFramePlanes, height, width}});
+  const auto new_pair = engine(files[1], {.dims = {1, k::kGmfssFramePlanes, height, width}});
+  const auto fusion = engine(files[2], {.dims = {1, 3, height / 2, width / 2}});
+
+  // Deux images lisses décalées l'une de l'autre : un vrai mouvement.
+  auto frames = loaded.backend->alloc_tensor(gpu::TensorType::F16, {.dims = {1, 6, height, width}});
+  REQUIRE(frames);
+  constexpr std::size_t kRows = height;
+  constexpr std::size_t kColumns = width;
+  std::vector<float> pixels(std::size_t{6} * kRows * kColumns);
+  for (int c = 0; c < 6; ++c) {
+    for (int y = 0; y < height; ++y) {
+      for (int x = 0; x < width; ++x) {
+        const float dx = c < 3 ? 0.0F : 5.0F;
+        const float dy = c < 3 ? 0.0F : 3.0F;
+        const float u =
+            0.5F +
+            0.25F * std::sin(0.021F * (static_cast<float>(x) + dx) + 0.7F * static_cast<float>(c % 3)) +
+            0.25F * std::cos(0.017F * (static_cast<float>(y) + dy));
+        pixels[(static_cast<std::size_t>(c) * kRows + static_cast<std::size_t>(y)) * kColumns +
+               static_cast<std::size_t>(x)] = u;
+      }
+    }
+  }
+  upload((*frames)->tensor(), pixels);
+
+  // Les tenseurs d'un graphe selon le nom de ses sorties ; les mêmes noms à l'ancienne et à la nouvelle
+  // paire.
+  std::vector<std::pair<std::string, std::unique_ptr<gpu::TensorBuffer>>> tensors;
+  const auto shape_of = [&](const std::string& name) {
+    int level = 0;
+    int channels = 0;
+    if (name.starts_with("half")) {
+      level = 1;
+      channels = 3;
+    } else {
+      level = name.back() - '0';
+      channels = name.starts_with("motion")    ? k::kGmfssMotionChannels
+                 : name.starts_with("feature") ? 64
+                                               : k::gmfss_source_channels(level);
+    }
+    return gpu::Shape{.dims = {1, channels, height >> level, width >> level}};
+  };
+  const auto tensor = [&](const std::string& name, gpu::Shape shape) -> const gpu::Tensor& {
+    for (const auto& [known, buffer] : tensors) {
+      if (known == name) return buffer->tensor();
+    }
+    auto buffer = loaded.backend->alloc_tensor(gpu::TensorType::F16, shape);
+    REQUIRE(buffer);
+    tensors.emplace_back(name, std::move(*buffer));
+    return tensors.back().second->tensor();
+  };
+  // Exécute une paire, ses six ou huit splats puis la fusion : l'image de sortie.
+  const auto render = [&](gpu::Engine& pair, const std::string& tag) {
+    std::vector<gpu::Tensor> outputs;
+    for (const std::string& name : pair.output_names()) outputs.push_back(tensor(tag + name, shape_of(name)));
+    const std::array inputs{(*frames)->tensor()};
+    REQUIRE(loaded.backend->enqueue(pair, inputs, outputs));
+    const bool split = std::ranges::contains(pair.output_names(), std::string("feature0_1"));
+    std::vector<gpu::KernelOps::SplatJob> jobs;
+    for (int side = 0; side < 2; ++side) {
+      for (int level = 1; level <= k::kGmfssLevels; ++level) {
+        const gpu::Shape warped_shape{
+            .dims = {1, k::gmfss_source_channels(level), height >> level, width >> level}};
+        const gpu::Tensor& warped = tensor(std::format("{}warped{}_{}", tag, side, level), warped_shape);
+        const gpu::Tensor& motion =
+            tensor(std::format("{}motion{}_{}", tag, side, level), shape_of("motion0_1"));
+        const float s = k::gmfss_side_time(side, 0.5F);
+        if (level == 1 && split) {
+          const std::int64_t plane = static_cast<std::int64_t>(height / 2) * (width / 2);
+          gpu::Tensor image_part = warped;
+          image_part.shape.dims[1] = 3;
+          gpu::Tensor feature_part = warped;
+          feature_part.shape.dims[1] = 64;
+          feature_part.offset += static_cast<std::uint64_t>(3 * plane) * 2;
+          jobs.push_back({.source = tensor(std::format("{}half{}", tag, side), shape_of("half0")),
+                          .motion = motion,
+                          .s = s,
+                          .out = image_part});
+          jobs.push_back({.source = tensor(std::format("{}feature{}_1", tag, side), shape_of("feature0_1")),
+                          .motion = motion,
+                          .s = s,
+                          .out = feature_part});
+        } else {
+          jobs.push_back(
+              {.source = tensor(std::format("{}source{}_{}", tag, side, level), shape_of("source0_2")),
+               .motion = motion,
+               .s = s,
+               .out = warped});
+        }
+      }
+    }
+    REQUIRE(ops.soft_splat_all(jobs));
+    std::vector<gpu::Tensor> inputs_of_fusion;
+    for (const std::string& name : fusion->input_names()) {
+      inputs_of_fusion.push_back(
+          name.starts_with("half")
+              ? tensor(tag + name, shape_of(name))
+              : tensor(tag + name,
+                       gpu::Shape{.dims = {1, k::gmfss_source_channels(name.back() - '0'),
+                                           height >> (name.back() - '0'), width >> (name.back() - '0')}}));
+    }
+    auto image = loaded.backend->alloc_tensor(gpu::TensorType::F16, {.dims = {1, 3, height, width}});
+    REQUIRE(image);
+    std::array results{(*image)->tensor()};
+    REQUIRE(loaded.backend->enqueue(*fusion, inputs_of_fusion, results));
+    return download((*image)->tensor());
+  };
+  // Les tenseurs des noms de sortie de l'ancienne paire sont ceux de la nouvelle à une exception près : les
+  // noms portent chacun leur préfixe (« old/ », « new/ », « again/ »).
+  const std::vector<float> before = render(*old_pair, "old/");
+  const std::vector<float> before_again =
+      render(*old_pair, "old2/");  // le bruit de l'ordre des additions atomiques
+  const std::vector<float> after = render(*new_pair, "new/");
+  const std::vector<float> after_again = render(*new_pair, "new2/");
+  REQUIRE(before.size() == after.size());
+  const auto compare = [](const std::vector<float>& a, const std::vector<float>& b) {
+    REQUIRE(a.size() == b.size());
+    double squares = 0.0;
+    float worst = 0.0F;
+    for (std::size_t i = 0; i < a.size(); ++i) {
+      worst = std::max(worst, std::fabs(a[i] - b[i]));
+      squares += static_cast<double>(a[i] - b[i]) * static_cast<double>(a[i] - b[i]);
+    }
+    const double mse = squares / static_cast<double>(a.size());
+    return std::pair{worst, mse > 0.0 ? 10.0 * std::log10(1.0 / mse) : 200.0};
+  };
+  // La paire elle-même : les sorties communes (mouvement, images réduites, niveaux 2 et 3) et les 64
+  // caractéristiques de feature{k}_1 contre les plans 3 à 66 de source{k}_1 sont celles de l'ancien graphe.
+  float pair_worst = 0.0F;
+  for (int side = 0; side < 2; ++side) {
+    for (const std::string& name :
+         {std::format("motion{}_1", side), std::format("motion{}_2", side), std::format("motion{}_3", side),
+          std::format("half{}", side), std::format("source{}_2", side), std::format("source{}_3", side)}) {
+      const std::vector<float> a = download(tensor("old/" + name, shape_of(name)));
+      const std::vector<float> b = download(tensor("new/" + name, shape_of(name)));
+      pair_worst = std::max(pair_worst, compare(a, b).first);
+    }
+    const std::vector<float> whole =
+        download(tensor(std::format("old/source{}_1", side), shape_of("source0_1")));
+    const std::vector<float> features =
+        download(tensor(std::format("new/feature{}_1", side), shape_of("feature0_1")));
+    const std::vector<float> tail(whole.end() - static_cast<std::ptrdiff_t>(features.size()), whole.end());
+    pair_worst = std::max(pair_worst, compare(tail, features).first);
+  }
+  const auto [old_worst, old_psnr] = compare(before, before_again);
+  const auto [new_worst, new_psnr] = compare(after, after_again);
+  const auto [worst, psnr] = compare(before, after);
+  INFO("sorties de la paire, avant contre après : pire écart " << pair_worst);
+  INFO("avant contre avant : pire pixel " << old_worst << ", PSNR " << old_psnr << " dB");
+  INFO("après contre après : pire pixel " << new_worst << ", PSNR " << new_psnr << " dB");
+  INFO("avant contre après : pire pixel " << worst << ", PSNR " << psnr << " dB");
+  // La paire rend les mêmes tenseurs ; ensuite seul l'ordre des additions atomiques du splat bouge l'image
+  // (le bruit entre deux exécutions du même graphe, 70 dB), à 1 ulp du FP16 près (2^-10 à 1,0).
+  CHECK(pair_worst <= 1.0F / 1024.0F);
+  CHECK(worst <= std::max(old_worst, new_worst) + 1.0F / 1024.0F);
+  CHECK(psnr >= std::min(old_psnr, new_psnr) - 3.0);
 }

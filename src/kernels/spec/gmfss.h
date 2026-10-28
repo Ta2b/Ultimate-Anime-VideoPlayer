@@ -22,7 +22,12 @@ namespace ajp::kernels {
 //   sorties, pour le côté k (0 : depuis a, 1 : depuis b) et le niveau l (1, 2, 3, soit 1/2,
 //   1/4 et 1/8 de ph × pw) :
 //     « source{k}_{l} » : ce qui est splatté, C_l plans (niveau 1 : l'image réduite de moitié
-//                         puis les caractéristiques, 3 + 64 ; niveau 2 : 128 ; niveau 3 : 192),
+//                         puis les caractéristiques, 3 + 64 ; niveau 2 : 128 ; niveau 3 : 192) ; au
+//                         niveau 1 des exports de version 2 (app/play/gmfss_model.h), pas de tenseur
+//                         de 67 plans : « feature{k}_1 » (les 64 caractéristiques) et « half{k} » (les
+//                         3 plans de l'image) se splattent chacun dans sa tranche de « warped{k}_1 »,
+//                         l'image d'abord, ce qui rend le même résultat (chaque plan est normalisé par
+//                         le poids de son seul pixel),
 //     « motion{k}_{l} » : 3 plans, le flot fx, fy en pixels du niveau et la métrique z,
 //                         tous pour t = 1 (flot de a vers b au côté 0, de b vers a au côté 1) ;
 //     « half{k} » : l'image réduite de moitié (bilinéaire), 3 plans.

@@ -9,6 +9,7 @@
 #include <filesystem>
 #include <optional>
 #include <span>
+#include <string>
 #include <string_view>
 #include <vector>
 
@@ -73,6 +74,34 @@ constexpr GmfssFiles gmfss_files(GmfssVariant variant, bool half_flow = false,
                      : GmfssFiles{kGmfssPairFile, kGmfssFusionFile};
 }
 
+// Version du format des graphes, écrite par tools/gmfss/gmfss_graph.py (EXPORT_VERSION) dans la métadonnée
+// « ajp.gmfss.export » de l'ONNX. 2 : la paire sort feature{k}_1 (64 canaux) et half{k} (RGB) séparés, sans
+// le Concat 3 + 64 canaux de source{k}_1 de la version 1 (0,7 ms de moins par paire à 1280x768).
+inline constexpr int kGmfssExportVersion = 2;
+inline constexpr std::string_view kGmfssExportKey = "ajp.gmfss.export";
+
+// Ce que le lecteur fait d'un graphe selon son export :
+//  - Current : de la version courante ;
+//  - Legacy : d'une version antérieure dont la lecture reste exacte (source{k}_1 en 67 canaux), lue telle
+//    quelle en attendant le ré-export ;
+//  - Stale : périmé, jamais utilisé : le résultat ou le coût de sa conversion est connu pour avoir changé
+//    (la fenêtre locale de GMFlow lue par un GridSample de 159 millions de valeurs, 2 x 7,2 ms par paire à
+//    1280x768, avant l'export par décalages entiers), ou d'un export plus récent que le lecteur.
+// Le lecteur ne lance pas export_gmfss.py (Python, torch) : un graphe périmé se remplace en ré-exportant
+// (tools/gmfss/export_gmfss.py) ou en téléchargeant la release des modèles d'interpolation.
+enum class GmfssExport : std::uint8_t { Current, Legacy, Stale };
+
+struct GmfssGraphState {
+  GmfssExport state = GmfssExport::Current;
+  int version = kGmfssExportVersion;  // 1 : sans métadonnée
+  std::string reason;                 // Legacy et Stale : pourquoi, pour le journal
+};
+
+// L'état de la paire file, lu dans sa métadonnée « ajp.gmfss.export » (sans charger le graphe) ; sans elle,
+// le graphe est lu une fois pour y chercher le GridSample de GMFlow (le résultat est gardé tant que le
+// fichier ne change pas). Un fichier illisible n'est pas jugé ici : Current, la construction le refusera.
+GmfssGraphState gmfss_graph_state(const std::filesystem::path& file);
+
 struct GmfssModels {
   std::filesystem::path pair;
   std::filesystem::path fusion;
@@ -80,7 +109,9 @@ struct GmfssModels {
   PrecisionTier tier = PrecisionTier::Balanced;  // le cran de la paire rendue (FP8, FP16, FP32)
 };
 
-// Les deux graphes de variant du premier de ces dossiers qui les a tous les deux. Le flot à demi-échelle
+// Une paire périmée (GmfssExport::Stale) est journalisée (« graphe GMFSS périmé, ré-export ») puis écartée :
+// le dossier ou l'essai suivant est cherché. Les deux graphes de variant du premier de ces dossiers qui les a
+// tous les deux. Le flot à demi-échelle
 // passe toujours avant le flot entier (prefer_half) : à qualité égale ou meilleure il coûte moitié moins
 // (mesuré sur une 4070 Ti, 1280x768) ; le flot entier ne sert que de repli quand les graphes _s05
 // manquent. tier demande d'abord la paire FP8 (Performance) ou FP32 (Qualité) du flot à demi-échelle ;

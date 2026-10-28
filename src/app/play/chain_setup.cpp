@@ -5,11 +5,13 @@
 #include <span>
 #include <utility>
 
+#include "app/play/drba_fused_choice.h"
 #include "app/play/drba_model.h"
 #include "app/play/first_run.h"
 #include "app/play/gpu_telemetry.h"
 #include "app/play/host_facts.h"
 #include "app/play/motion_model.h"
+#include "app/play/rife_fused_choice.h"
 #include "core/clock.h"
 #include "core/log.h"
 
@@ -72,10 +74,12 @@ std::string ChainEngines::motion_label(const PlaySettings& settings) const {
   if (use_gmfss())
     return std::format("GMFSS Fortuna{} {} · ", gmfss_variant == GmfssVariant::Union ? " Union" : "",
                        factor_text(factor_of(settings)));
-  if (use_drba()) return std::format("DistilDRBA {} · ", factor_text(factor_of(settings)));
+  if (use_drba())
+    return std::format("DistilDRBA {}{} · ", factor_text(factor_of(settings)), drba_fused ? " fusionné" : "");
   if (use_apple()) return std::format("Apple {} · VideoToolbox · ", factor_text(factor_of(settings)));
   if ((rife || rife_motion) && rife_model)
-    return std::format("RIFE {} · {} · ", factor_text(factor_of(settings)), rife_model->stem().string());
+    return std::format("RIFE {} · {}{} · ", factor_text(factor_of(settings)), rife_model->stem().string(),
+                       rife_fused ? " fusionné" : "");
   return {};
 }
 
@@ -274,8 +278,23 @@ std::expected<std::optional<ChainEngines>, Refusal> prepare_chain_once(Player& p
   }
   // DistilDRBA à la place de RIFE, à la taille de travail ; RIFE reprend si son graphe manque.
   if (want_drba) {
+    // DistilDRBA fusionné (kernels/spec/drba_fused.h) : quatre petits moteurs et des noyaux de colle à la
+    // place du moteur entier, quand le backend le sait, que le réglage le veut et que le cran est Équilibre ;
+    // tout échec garde le moteur entier.
+    DrbaFusedUse fused;
+    fused.declined = drba_fused_declined(settings, c.backend->capabilities().drba_fused);
+    if (settings.drba_fused && !fused.declined.empty())
+      log->info("DistilDRBA fusionné non utilisé : {}", fused.declined);
+    const bool try_fused = fused.declined.empty();
     auto loaded = prepare_distil_drba(p, init, *c.backend, c.gmfss_places, c.work.width, c.work.height,
-                                      c.drba_align, settings.motion_precision);
+                                      c.drba_align, settings.motion_precision, try_fused ? &fused : nullptr);
+    if (loaded && *loaded) {
+      c.drba_fused = fused.used;
+      if (fused.used)
+        log->info("DistilDRBA fusionné : quatre moteurs et noyaux de colle");
+      else if (try_fused)
+        log->warn("DistilDRBA fusionné indisponible ({}) : DistilDRBA entier", fused.declined);
+    }
     if (!loaded) {
       log->warn("{} ; {}", loaded.error().detail, c.rife_model ? "RIFE à la place" : "sans interpolation");
       p.ui.controls().notify(c.rife_model ? "DistilDRBA indisponible : RIFE" : "DistilDRBA indisponible",
@@ -328,13 +347,41 @@ std::expected<std::optional<ChainEngines>, Refusal> prepare_chain_once(Player& p
     if (!planes) return std::unexpected(std::move(planes.error()));
     c.rife_planes = *planes;
   }
+  // RIFE fusionné (kernels/spec/rife_fused.h) : six petits moteurs et des noyaux de colle à la place du
+  // moteur entier, quand le backend le sait, que le réglage le veut, que le cran est Équilibre (le modèle tel
+  // que livré) et que le modèle se coupe ; tout échec garde le RIFE entier, tel qu'il est chargé plus bas.
+  const std::filesystem::path models_dir = p.paths.engines.parent_path() / "modeles";
+  const std::string fused_declined =
+      use_rife ? rife_fused_declined(settings, c.backend->capabilities().rife_fused, c.rife_planes)
+               : "pas de RIFE";
+  const bool fused_wanted = fused_declined.empty();
+  if (use_rife && settings.rife_fused && !fused_wanted)
+    log->info("RIFE fusionné non utilisé : {}", fused_declined);
+  // Rien (fenêtre fermée pendant la construction) : « arrêt » ; un refus : journal et RIFE entier.
+  enum class Fused : std::uint8_t { Loaded, Declined, Closed };
+  const auto try_fused = [&](const kernels::RifeGeometry& g, bool motion,
+                             std::unique_ptr<gpu::Engine>& into) {
+    if (!fused_wanted) return Fused::Declined;
+    auto fused = prepare_rife_fused(p, init, *c.backend, *c.rife_model, models_dir, g, motion);
+    if (!fused) {
+      log->warn("RIFE fusionné indisponible ({}) : RIFE entier", fused.error().detail);
+      return Fused::Declined;
+    }
+    if (!*fused) return Fused::Closed;
+    into = std::move(**fused);
+    c.rife_fused = true;
+    log->info("RIFE fusionné : six moteurs et noyaux de colle, {}", motion ? "flot et masque" : "image");
+    return Fused::Loaded;
+  };
   // RIFE par son mouvement : une passe au milieu de la paire la sert toute quand le mouvement est
   // faible ; sans variante dérivable, RIFE image comme avant.
   if (use_rife && !p.options.rife_image) {
-    auto derived = motion_model(*c.rife_model, p.paths.engines.parent_path() / "modeles");
+    auto derived = motion_model(*c.rife_model, models_dir);
     if (!derived) {
       log->warn("RIFE mouvement indisponible ({}) : RIFE image", derived.error().detail);
-    } else {
+    } else if (const Fused tried = try_fused(c.geometry, true, c.rife_motion); tried == Fused::Closed) {
+      return std::nullopt;
+    } else if (tried == Fused::Declined) {
       const kernels::RifeGeometry& g = c.geometry;
       auto loaded = prepare_engine(p, init, *c.backend, *derived,
                                    gpu::Shape{.dims = {1, c.rife_planes, g.padded_height, g.padded_width}},
@@ -349,6 +396,10 @@ std::expected<std::optional<ChainEngines>, Refusal> prepare_chain_once(Player& p
     }
   }
   if (use_rife && !c.rife_motion) {
+    const kernels::RifeGeometry& g = c.image_geometry;
+    if (try_fused(g, false, c.rife) == Fused::Closed) return std::nullopt;
+  }
+  if (use_rife && !c.rife_motion && !c.rife) {
     const kernels::RifeGeometry& g = c.image_geometry;
     auto loaded = prepare_engine(p, init, *c.backend, *c.rife_model,
                                  gpu::Shape{.dims = {1, c.rife_planes, g.padded_height, g.padded_width}},

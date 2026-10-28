@@ -142,6 +142,17 @@ struct PlaySettings {
   // Garder les poses (DRBA, kernels/spec/poses.h) : un personnage animé en deux garde son rythme
   // pendant que le fond s'interpole ; en direct.
   bool keep_poses = true;
+  // RIFE fusionné (kernels/spec/rife_fused.h) : le réseau coupé en six petits moteurs TensorRT reliés par des
+  // noyaux CUDA, à la place du moteur RIFE entier (2,2 ms au lieu de 6,5 ms par passe à 768×1280 sur une RTX
+  // 4070 Ti) ; seulement sous TensorRT et pour un RIFE dont la structure est reconnue (4.25, 4.22 lite), le
+  // RIFE entier reprenant sinon, ou si un des six moteurs échoue. Recharge la chaîne.
+  bool rife_fused = true;
+  // DistilDRBA fusionné (kernels/spec/drba_fused.h) : le réseau coupé en quatre petits moteurs TensorRT
+  // reliés par des noyaux CUDA, à la place du moteur DistilDRBA entier (0,92 ms au lieu de 2,10 ms par passe
+  // à 1088×1920 sur une RTX 4070 Ti) ; seulement sous TensorRT, au cran Équilibre et pour un DistilDRBA v2
+  // lite dont la structure est reconnue, le moteur entier reprenant sinon, ou si un des quatre moteurs
+  // échoue. Recharge la chaîne.
+  bool drba_fused = true;
   // Les crans de précision (precision.h). SPAN : Performance prend la variante FP8 du modèle, Qualité sa
   // variante FP32 (span_int8.h), Équilibre le FP16 tel que livré. Recharge la chaîne.
   PrecisionTier span_precision = PrecisionTier::Balanced;
