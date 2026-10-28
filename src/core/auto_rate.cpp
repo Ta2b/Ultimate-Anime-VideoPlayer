@@ -28,12 +28,13 @@ void AutoRate::set_ceiling(int ceiling) {
   }
 }
 
-void AutoRate::descend() {
+void AutoRate::descend(bool strong) {
   if (step_ > 1) {
     if (probing_) {
       // Une tentative qui échoue : on la re-tentera plus tard ; la deuxième fait du palier d'en dessous
       // le plafond appris.
-      if (++fails_[static_cast<std::size_t>(step_)] >= kFailsToCap) {
+      fails_[static_cast<std::size_t>(step_)] += strong ? kFailsToCap : 1;
+      if (fails_[static_cast<std::size_t>(step_)] >= kFailsToCap) {
         cap_ = step_ - 1;
         fails_[static_cast<std::size_t>(step_)] = 0;
       }
@@ -48,7 +49,7 @@ void AutoRate::descend() {
 }
 
 int AutoRate::overloaded() {
-  if (grace_ == 0) descend();
+  if (grace_ == 0) descend(true);
   return step_;
 }
 

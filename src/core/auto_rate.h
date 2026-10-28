@@ -56,13 +56,14 @@ class AutoRate {
   // L'issue d'une paire : en retard (des instants sautés pour rattraper l'horloge) ou à l'heure.
   // Rend le palier à utiliser pour la paire suivante.
   int pair(bool late);
-  // Le GPU ne suit pas (auto_overloaded) : même descente que deux retards rapprochés.
+  // Le GPU ne suit pas (auto_overloaded, mesuré sur 4 s pleines) : preuve assez forte pour qu'une
+  // tentative de palier qui échoue ainsi pose tout de suite le plafond appris.
   int overloaded();
   // Seek, pause, reprise : la mesure repart après kGracePairs paires.
   void settle() { grace_ = kGracePairs; }
 
  private:
-  void descend();
+  void descend(bool strong = false);
 
   int ceiling_;
   int step_;

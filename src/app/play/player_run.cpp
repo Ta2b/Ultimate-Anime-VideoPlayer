@@ -371,6 +371,9 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
   apply_auto();
   // Le palier du mode auto : un message à l'écran et une ligne de journal à chaque changement.
   bool vrr_fullscreen = false;
+  if (p.display)
+    log->info("VRR : {} · {}", p.display->vrr.value_or(false) ? "capable" : "non capable",
+              p.display->vrr_armed.value_or(false) ? "armé" : "non armé");
   int auto_window_step = 0;
   std::int64_t auto_window_us = 0;
   std::int64_t auto_window_missing = 0;
