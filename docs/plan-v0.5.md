@@ -71,7 +71,7 @@ Pull requests : une par étape ; quand une étape dépend d'une autre, la base e
 
 ### G. TensorRT sous Windows
 - [x] `trtexec.exe` dans l'archive du moteur, fusion de `engines-nvidia.lock` dans `release-windows.yml`, `tools/release/attach-nvidia-windows.ps1`, `docs/nvidia-windows.md` (PR `claude/trt-windows`)
-- [ ] Essai sur un poste Windows NVIDIA (liste dans `docs/nvidia-windows.md`) : aucune machine Windows ici
+- [ ] Essai sur un poste Windows NVIDIA (liste dans `docs/nvidia-windows.md`) : aucune machine Windows ici. **La 0.5.0 Windows est livrée sans archive TensorRT : à attacher depuis un poste Windows NVIDIA** (`attach-nvidia-windows.ps1`), puis relancer Release Windows sur l'étiquette
 
 ### Release
 - [x] Tests locaux complets (app 266, audio 69, core 176 verts), version CMake et vcpkg 0.5.0, notes `tools/release/notes/v0.5.0.md`, liste à tester `docs/tests-v0.5-windows-macos.md`.
@@ -134,3 +134,4 @@ Pull requests : une par étape ; quand une étape dépend d'une autre, la base e
 - **2026-10-28** : mesures du mode Auto et des moteurs sur la 4070 Ti : `docs/reports/mesures-auto-4070ti-2026-10-28.md`.
 - **2026-10-28 (soir)** : #37 (version, notes, liste Windows/macOS), #38 (mode Auto), #40 (GMFSS/DistilDRBA : décision), #42 (clang-tidy), #43 (mesures) fusionnées. Étiquette `v0.5.0` posée à 08:48 sur
   l'instruction de Tatoub. Mesures GMFSS Union (lot, recouvrement au trtexec) demandées par l'audit : en cours, hors v0.5.
+- **2026-10-28 (matin)** : v0.5.0 étiquetée, Linux et macOS publiés ; **le paquet TensorRT Linux avait été oublié** (l'index de la release n'avait pas `tensorrt`) : construit dans le conteneur de préflight au commit de l'étiquette, joint avec `engines-nvidia.lock`, Release Linux relancée (`--ref v0.5.0`). L'image de préflight datait d'avant `--disable-bzlib` : `tools/release/preflight/nvidia-package.sh` (PR #45) la reconstruit.
