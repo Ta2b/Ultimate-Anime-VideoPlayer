@@ -35,9 +35,10 @@ TEST_CASE("DebugFlags : sans option, les valeurs par défaut", "[debug_flags]") 
 }
 
 TEST_CASE("DebugFlags : chaque option remplit son champ", "[debug_flags]") {
-  auto line = parse({"--log-level=trace", "--vulkan-validation", "--no-cuda-graphs", "--trace-pairs",
-                     "--no-exact-reuse", "--dump-plan", "--engine=tensorrt", "--ring-format=yuv444p16",
-                     "--display=2560x1440@59.94:hdr", "--max-frames=240", "episode.mkv"});
+  auto line =
+      parse({"--log-level=trace", "--vulkan-validation", "--no-cuda-graphs", "--trace-pairs",
+             "--no-exact-reuse", "--dump-plan", "--profile-dispatches", "--engine=tensorrt",
+             "--ring-format=yuv444p16", "--display=2560x1440@59.94:hdr", "--max-frames=240", "episode.mkv"});
   REQUIRE(line);
   const DebugFlags& flags = line->debug;
   CHECK(flags.log_level == LogLevel::Trace);
@@ -46,6 +47,7 @@ TEST_CASE("DebugFlags : chaque option remplit son champ", "[debug_flags]") {
   CHECK(flags.trace_pairs);
   CHECK(flags.no_exact_reuse);
   CHECK(flags.dump_plan);
+  CHECK(flags.profile_dispatches);
   CHECK(flags.force_engine == EngineId::TensorRt);
   CHECK(flags.ring_format == RingFormat::Yuv444p16);
   REQUIRE(flags.display);
@@ -107,9 +109,9 @@ TEST_CASE("DebugFlags : argv saute le nom du programme ; l'aide liste chaque opt
   CHECK(line->inputs == std::vector<std::string>{"film.mkv"});
 
   const std::string help = command_line_help();
-  for (const char* option :
-       {"--log-level=", "--vulkan-validation", "--no-cuda-graphs", "--trace-pairs", "--no-exact-reuse",
-        "--dump-plan", "--engine=", "--ring-format=", "--display=", "--max-frames=", "--help"}) {
+  for (const char* option : {"--log-level=", "--vulkan-validation", "--no-cuda-graphs", "--trace-pairs",
+                             "--no-exact-reuse", "--dump-plan", "--profile-dispatches",
+                             "--engine=", "--ring-format=", "--display=", "--max-frames=", "--help"}) {
     INFO(option);
     CHECK(help.find(option) != std::string::npos);
   }
