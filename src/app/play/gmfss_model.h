@@ -37,7 +37,7 @@ inline constexpr int kGmfssHalfAlign = 128;
 // Mode qualité : la paire d'un flot à demi-échelle dont GMFlow est calculé en FP32 (export_gmfss.py
 // --scale 0.5 --precision flownet32). Son graphe « fusion » est celui du mode performance : seul le
 // flot change, la fusion n'est pas écrite deux fois. Mesuré sur une 4070 Ti à 1280x768 : l'écart au
-// GMFSS d'origine est divisé par 4, pour +4 ms par paire avec base et +20 ms avec union.
+// GMFSS d'origine est divisé par 4, pour +7 ms par paire avec base et +10 ms avec union.
 inline constexpr std::string_view kGmfssHalfQualityPairFile = "gmfss_fortuna_base_s05q_pair.onnx";
 inline constexpr std::string_view kGmfssUnionHalfQualityPairFile = "gmfss_fortuna_union_s05q_pair.onnx";
 

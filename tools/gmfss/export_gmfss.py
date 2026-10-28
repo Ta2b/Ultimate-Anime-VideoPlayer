@@ -204,12 +204,12 @@ def prepare(gmfss, precision):
 def fp32_flownet(gmfss):
     """GMFlow reste en FP32 dans le modèle FP16 : ses deux images entrent et son flot sort en FP16
     (conversions du graphe), mais le flot est calculé en FP32. Mesuré (RTX 4070 Ti, TensorRT 11.3,
-    1280x768, graphe « paire » une fois par paire) : en demi-flot de base il coûte 17,9 ms au lieu de
-    14,0 (+28 %) et ramène l'écart de l'image finale à un quart (pire pixel 5,6e-3 au lieu de 2,4e-2,
-    p99,9 % 1,3e-3 au lieu de 5,9e-3) ; pour union il coûte 38 ms au lieu de 18 (×2), et en plein flot
-    91 ms au lieu de 35 pour base (×2,6) : à ne retenir que pour base en demi-flot. Les mises en
-    correspondance ou la propagation seules en FP32 n'améliorent rien : l'erreur vient du backbone et
-    du transformeur. Ni la métrique ni les sources n'y sont pour rien."""
+    1280x768, GPU au calme, graphe « paire » une fois par paire) : en demi-flot il coûte 14,6 ms au lieu de
+    7,8 pour base (+6,7 ms) et 17,9 au lieu de 8,1 pour union (+9,8 ms), et plus du double en plein flot ;
+    il ramène l'écart de l'image finale à un quart (pire pixel 5,6e-3 au lieu de 2,4e-2, p99,9 % 1,3e-3 au
+    lieu de 5,9e-3 pour base) : c'est le mode « qualité », le demi-flot FP16 restant le mode « performance ».
+    Les mises en correspondance ou la propagation seules en FP32 n'améliorent rien : l'erreur vient du
+    backbone et du transformeur. Ni la métrique ni les sources n'y sont pour rien."""
     flownet = gmfss.flownet.float()
     inner = flownet.forward
 

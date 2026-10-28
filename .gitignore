@@ -9,3 +9,7 @@ compile_commands.json
 *.spv.inc
 /models/
 /goldens/
+
+# Python : caches de bytecode des scripts de tools/
+__pycache__/
+*.pyc

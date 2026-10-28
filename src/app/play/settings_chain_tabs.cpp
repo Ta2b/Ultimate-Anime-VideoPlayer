@@ -222,10 +222,10 @@ void fluidity_tab(PlaySettings& d, const SettingsChoices& choices, bool exportin
     }
     ImGui::EndDisabled();
     note(
-        "Performance : le flot de GMFlow se calcule en FP16 (base 26 ms et union 37 ms par image "
+        "Performance : le flot de GMFlow se calcule en FP16 (base 24 ms et union 23 ms par image "
         "intermédiaire "
         "à 720p sur une 4070 Ti). Qualité : GMFlow en FP32, un écart à l'original divisé par 4 environ, pour "
-        "+4 ms avec base et +20 ms avec union. Recharge la lecture.");
+        "+7 ms avec base et +10 ms avec union. Recharge la lecture.");
     if (!quality_present) {
       note(
           std::format("Mode qualité grisé : {} manque dans {} (export_gmfss.py --scale 0.5 --precision "
