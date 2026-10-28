@@ -7,6 +7,7 @@
 #include <fstream>
 #include <initializer_list>
 #include <iterator>
+#include <limits>
 #include <string_view>
 #include <system_error>
 
@@ -69,8 +70,14 @@ core::Os host_os() {
   return core::kHostOs;
 }
 
-EngineCatalog load_catalog(const std::filesystem::path& index, const std::filesystem::path& data_dir) {
+EngineCatalog load_catalog(const std::filesystem::path& index, const std::filesystem::path& data_dir,
+                           const std::filesystem::path& engines_dir) {
   EngineCatalog catalog{.layout = core::install_layout(host_os(), data_dir)};
+  if (!engines_dir.empty()) {
+    const core::InstallLayout moved = core::install_layout(host_os(), engines_dir);
+    catalog.layout.engines = moved.engines;
+    catalog.layout.downloads = moved.downloads;
+  }
   std::ifstream in(index, std::ios::binary);
   if (!in) {
     catalog.problem = std::format("{} absent : seuls les moteurs livrés sont proposés", index.string());
@@ -193,6 +200,68 @@ std::uint64_t download_bytes(const EngineCatalog& catalog, const core::EnginePac
        core::vendor_files_for(catalog.vendor_files, package.engine, catalog.layout.os, arch))
     total += file.packed_size;
   return total;
+}
+
+std::string format_size(std::uint64_t bytes) {
+  constexpr double kMiB = 1048576.0;
+  const double mib = static_cast<double>(bytes) / kMiB;
+  if (mib >= 1024.0) return std::format("{:.1f} Go", mib / 1024.0);
+  return std::format("{} Mo", static_cast<std::uint64_t>(mib + 0.5));
+}
+
+std::uint64_t free_bytes(const std::filesystem::path& where) {
+  std::error_code error;
+  std::filesystem::path probe = where;
+  while (!probe.empty() && !std::filesystem::exists(probe, error)) {
+    const std::filesystem::path parent = probe.parent_path();
+    if (parent == probe) break;
+    probe = parent;
+  }
+  const std::filesystem::space_info info = std::filesystem::space(probe, error);
+  return error ? std::numeric_limits<std::uint64_t>::max()
+               : static_cast<std::uint64_t>(info.available);  // inconnu : on essaie
+}
+
+std::uint64_t directory_bytes(const std::filesystem::path& dir) {
+  std::error_code error;
+  std::uint64_t total = 0;
+  for (const std::filesystem::directory_entry& entry : std::filesystem::recursive_directory_iterator(
+           dir, std::filesystem::directory_options::skip_permission_denied, error)) {
+    std::error_code each;
+    if (entry.is_regular_file(each)) total += static_cast<std::uint64_t>(entry.file_size(each));
+  }
+  return total;
+}
+
+InstallSpace install_space(const EngineCatalog& catalog, const core::EnginePackage& package,
+                           std::string_view arch, std::uint64_t existing) {
+  InstallSpace space;
+  space.download = package.size;
+  // L'archive du moteur, puis son extraction (module et outils ; l'estimation vaut 3 fois l'archive).
+  std::uint64_t staged = package.size * 3;
+  std::uint64_t highest = package.size + staged;
+  for (const core::VendorFile& file :
+       core::vendor_files_for(catalog.vendor_files, package.engine, catalog.layout.os, arch)) {
+    space.download += file.packed_size;
+    // Chaque fichier tiers : son téléchargement et sa copie décompressée coexistent avec ce qui est déjà
+    // posé.
+    highest = std::max(highest, package.size + staged + file.packed_size + file.size);
+    staged += file.size;
+  }
+  space.installed = staged;
+  const std::uint64_t peak = std::max(highest, package.size + staged) + existing;
+  space.peak = peak + peak / 20;  // 5 % de marge
+  return space;
+}
+
+std::expected<void, Refusal> check_space(const InstallSpace& space, std::uint64_t available,
+                                         const std::filesystem::path& where) {
+  if (available >= space.peak) return {};
+  return refuse(RefusalCode::InsufficientSpace,
+                std::format("espace disque insuffisant : l'installation demande {} (dont {} à télécharger, "
+                            "{} une fois installé), il reste {} sur {}",
+                            format_size(space.peak), format_size(space.download),
+                            format_size(space.installed), format_size(available), where.string()));
 }
 
 std::expected<void, Refusal> fetch_vendor_file(const core::VendorFile& file,
@@ -319,6 +388,14 @@ std::expected<std::filesystem::path, Refusal> install_package(const EngineCatalo
     if (progress.report) progress.report(fraction, stage);
   };
   std::error_code error;
+  // La place d'abord : un refus net, sans téléchargement, plutôt qu'un disque qui se remplit puis une
+  // installation recommencée.
+  const std::filesystem::path target_dir = core::engine_dir(catalog.layout, package);
+  if (const auto fits =
+          check_space(install_space(catalog, package, progress.cuda_arch, directory_bytes(target_dir)),
+                      free_bytes(catalog.layout.engines), catalog.layout.engines);
+      !fits)
+    return std::unexpected(fits.error());
   const std::filesystem::path part = core::download_path(catalog.layout, package.sha256);
   std::filesystem::create_directories(part.parent_path(), error);
   if (error)
@@ -367,6 +444,8 @@ std::expected<std::filesystem::path, Refusal> install_package(const EngineCatalo
     std::filesystem::remove_all(staging, error);
     return std::unexpected(ok.error());
   }
+  // L'archive du moteur n'est plus utile une fois extraite : sa place revient avant les gros téléchargements.
+  std::filesystem::remove(part, error);
   // RTX HDR n'a pas de module : son paquet s'importe ensuite dans le magasin des SDK.
   const bool module = package.engine != core::EngineId::MaxineVfx;
   const std::filesystem::path library = staging / core::backend_library(catalog.layout, package).filename();
@@ -421,7 +500,6 @@ std::expected<std::filesystem::path, Refusal> install_package(const EngineCatalo
   }
   if (replaced) std::filesystem::remove_all(aside, error);
   error.clear();
-  std::filesystem::remove(part, error);
   report(1.0F, std::format("{} installé", name));
   return module ? core::backend_library(catalog.layout, package) : target;
 }

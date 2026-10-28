@@ -34,9 +34,36 @@ struct EngineCatalog {
 };
 
 // L'index index lu pour cet OS, installé sous data_dir ; vide (problem dit pourquoi) s'il manque.
-EngineCatalog load_catalog(const std::filesystem::path& index, const std::filesystem::path& data_dir);
+// engines_dir (réglage « Dossier d'installation des moteurs ») : les moteurs et leurs téléchargements y vont
+// au lieu de data_dir ; les modèles restent sous data_dir.
+EngineCatalog load_catalog(const std::filesystem::path& index, const std::filesystem::path& data_dir,
+                           const std::filesystem::path& engines_dir = {});
 
 const core::EnginePackage* package_for(const EngineCatalog& catalog, core::EngineId engine);
+
+// Ce qu'une installation demande au disque, pour l'afficher AVANT de télécharger et refuser proprement si la
+// place manque. Les téléchargements ne sont qu'une partie : les fichiers de NVIDIA se décompressent (nvinfer
+// : 306 Mo tirés, 663 Mo écrits), et l'ancienne version reste en place jusqu'à ce que la nouvelle soit
+// entière.
+struct InstallSpace {
+  std::uint64_t download = 0;   // octets tirés : l'archive du moteur et les fichiers tiers de la carte
+  std::uint64_t installed = 0;  // octets du dossier final
+  std::uint64_t peak = 0;       // le plus haut, temporaires comprises, avec l'ancienne version et une marge
+};
+// arch : l'architecture du GPU (« sm89 ») pour les fichiers tiers ; existing : octets déjà installés dans le
+// dossier de ce moteur (gardés jusqu'à la fin). Le pic suit l'ordre d'installation : fichiers tiers un à un,
+// chacun avec son téléchargement et sa copie.
+InstallSpace install_space(const EngineCatalog& catalog, const core::EnginePackage& package,
+                           std::string_view arch, std::uint64_t existing = 0);
+// Refus InsufficientSpace, avec les chiffres, si available est sous space.peak.
+std::expected<void, Refusal> check_space(const InstallSpace& space, std::uint64_t available,
+                                         const std::filesystem::path& where);
+// « 1,3 Go », « 742 Mo ».
+std::string format_size(std::uint64_t bytes);
+// L'espace libre là où le moteur s'installe (le dossier qui existe le plus près de layout.engines).
+std::uint64_t free_bytes(const std::filesystem::path& where);
+// Octets d'un dossier, récursivement ; 0 s'il manque.
+std::uint64_t directory_bytes(const std::filesystem::path& dir);
 bool installed(const EngineCatalog& catalog, const core::EnginePackage& package);
 
 // Le paquet extrait dans le dossier de version du moteur, d'après kPackageNote qu'install_package

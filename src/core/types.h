@@ -24,31 +24,33 @@ enum class RefusalCode : std::uint8_t {
   FieldOutOfRange,    // valeur hors de sa plage constexpr
   TooManySteps,       // plus de 16 étapes dans une règle
   FactorProductTooLarge,
-  StepOrder,              // ordre d'étapes sans ordonnancement connu
-  PacingForbidden,        // Quality impose le rythme Source
-  ModelUnavailable,       // modèle absent des capacités
-  HdrUnavailable,         // route HDR impossible sur ce système ou cet écran
-  SourceUnknown,          // source jamais reçue, ou sortie de la fenêtre gardée
-  LookaheadMissing,       // les sources suivantes nécessaires ne sont pas encore classées
-  SequenceOrder,          // hors séquence : source avant le début, après la fin ou reprise, époque qui recule
-  FileUnreadable,         // fichier hors profil absent, illisible ou TOML invalide
-  FileUnwritable,         // écriture ou renommage impossible
-  FormatVersion,          // version inconnue de settings.toml, d'un index ou d'un INI
-  ImportUnsupported,      // réglage INI sans équivalent en v5
-  KeyUnknown,             // nom de touche ou d'action inconnu
-  KeyConflict,            // deux actions sur le même raccourci
-  OptionUnknown,          // option de ligne de commande inconnue
-  HashMismatch,           // taille ou SHA-256 différents de l'index
-  MediaUnreadable,        // fichier absent ou conteneur illisible
-  TrackUnavailable,       // piste absente, ou d'un autre type que demandé
-  HwDecodeUnavailable,    // une API de décodage matériel ne convient pas (codec, appareil, pilote)
-  DecoderUnavailable,     // aucun essai de décodage n'a abouti
-  DecodeFailed,           // erreur de lecture ou de décodage en cours de flux
-  FormatUnsupported,      // format de pixel ou couleur hors du vocabulaire de core/frame.h, ou refusé par un
-                          // noyau
-  SeekFailed,             // cible hors du fichier ou seek refusé par le conteneur
-  AudioCodecUnavailable,  // aucun décodeur FFmpeg pour ce flux audio
-  AudioDecodeFailed,      // paquet ou conversion audio refusés par FFmpeg
+  StepOrder,          // ordre d'étapes sans ordonnancement connu
+  PacingForbidden,    // Quality impose le rythme Source
+  ModelUnavailable,   // modèle absent des capacités
+  HdrUnavailable,     // route HDR impossible sur ce système ou cet écran
+  SourceUnknown,      // source jamais reçue, ou sortie de la fenêtre gardée
+  LookaheadMissing,   // les sources suivantes nécessaires ne sont pas encore classées
+  SequenceOrder,      // hors séquence : source avant le début, après la fin ou reprise, époque qui recule
+  FileUnreadable,     // fichier hors profil absent, illisible ou TOML invalide
+  FileUnwritable,     // écriture ou renommage impossible
+  InsufficientSpace,  // pas assez de place libre pour installer un moteur (dit combien il faut et combien il
+                      // reste)
+  FormatVersion,      // version inconnue de settings.toml, d'un index ou d'un INI
+  ImportUnsupported,  // réglage INI sans équivalent en v5
+  KeyUnknown,         // nom de touche ou d'action inconnu
+  KeyConflict,        // deux actions sur le même raccourci
+  OptionUnknown,      // option de ligne de commande inconnue
+  HashMismatch,       // taille ou SHA-256 différents de l'index
+  MediaUnreadable,    // fichier absent ou conteneur illisible
+  TrackUnavailable,   // piste absente, ou d'un autre type que demandé
+  HwDecodeUnavailable,     // une API de décodage matériel ne convient pas (codec, appareil, pilote)
+  DecoderUnavailable,      // aucun essai de décodage n'a abouti
+  DecodeFailed,            // erreur de lecture ou de décodage en cours de flux
+  FormatUnsupported,       // format de pixel ou couleur hors du vocabulaire de core/frame.h, ou refusé par un
+                           // noyau
+  SeekFailed,              // cible hors du fichier ou seek refusé par le conteneur
+  AudioCodecUnavailable,   // aucun décodeur FFmpeg pour ce flux audio
+  AudioDecodeFailed,       // paquet ou conversion audio refusés par FFmpeg
   AudioDeviceUnavailable,  // périphérique ou file SDL3 impossibles à ouvrir
   SubtitleUnreadable,      // fichier de sous-titres absent, illisible ou trop gros
   SubtitleFormat,          // script ASS ou SRT mal formé, extension inconnue
@@ -135,6 +137,8 @@ constexpr std::string_view name(RefusalCode code) {
       return "FileUnreadable";
     case RefusalCode::FileUnwritable:
       return "FileUnwritable";
+    case RefusalCode::InsufficientSpace:
+      return "InsufficientSpace";
     case RefusalCode::FormatVersion:
       return "FormatVersion";
     case RefusalCode::ImportUnsupported:

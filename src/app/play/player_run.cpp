@@ -277,6 +277,8 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
           .display_height = display_height(out.window()),
           .gpu_name = gpu_facts(p.screen).name,
           .audio_outputs = audio_outputs,
+          .engines_dir_default = prepare::utf8_path(p.paths.engines.parent_path() / "backends"),
+          .engines_dir_free = format_size(free_bytes(p.catalog.layout.engines)),
           .default_player_is_ajp = default_player_is_ajp,
           .bench_text = bench_text,
           .place = {.executable = p.paths.executable, .home = p.paths.home, .data = p.paths.data}});
