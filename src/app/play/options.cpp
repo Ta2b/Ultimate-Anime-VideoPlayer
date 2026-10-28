@@ -140,11 +140,27 @@ std::expected<PlayOptions, Refusal> parse_play_options(std::span<const std::stri
     } else {
       std::expected<void, Refusal> applied;
       bool known = false;
-      for (const std::string_view name :
-           {"--model", "--window", "--start", "--seconds", "--fullscreen-after", "--stats", "--snapshot-at",
-            "--snapshot-frames", "--snapshot", "--keys", "--work-height", "--rife-model", "--rife",
-            "--truehdr-sdk", "--truehdr-peak", "--truehdr-contrast", "--truehdr-saturation",
-            "--truehdr-gray", "--data-dir", "--bench-level", "--bench-out"}) {
+      for (const std::string_view name : {"--model",
+                                          "--window",
+                                          "--start",
+                                          "--seconds",
+                                          "--fullscreen-after",
+                                          "--stats",
+                                          "--snapshot-at",
+                                          "--snapshot-frames",
+                                          "--snapshot",
+                                          "--keys",
+                                          "--work-height",
+                                          "--rife-model",
+                                          "--rife",
+                                          "--truehdr-sdk",
+                                          "--truehdr-peak",
+                                          "--truehdr-contrast",
+                                          "--truehdr-saturation",
+                                          "--truehdr-gray",
+                                          "--data-dir",
+                                          "--bench-level",
+                                          "--bench-out"}) {
         auto value = valued(args, i, name);
         if (!value) return std::unexpected(std::move(value.error()));
         if (!*value) continue;
@@ -162,7 +178,8 @@ std::expected<PlayOptions, Refusal> parse_play_options(std::span<const std::stri
         } else if (name == "--bench-level") {
           const auto level = text == "auto" ? std::optional<int>(-1) : number<int>(text);
           if (!level || *level < -1 || *level >= 5)
-            return refuse(RefusalCode::FieldOutOfRange, std::format("--bench-level : « {} » n'est ni auto ni 0 à 4", text));
+            return refuse(RefusalCode::FieldOutOfRange,
+                          std::format("--bench-level : « {} » n'est ni auto ni 0 à 4", text));
           options.bench_level = *level;
         } else if (name == "--stats") {
           options.stats = std::filesystem::path(text);
@@ -250,7 +267,8 @@ std::expected<BenchOptions, Refusal> parse_bench_options(std::span<const std::st
     const std::string_view arg = args[i];
     if (!arg.starts_with("--")) {
       if (!options.file.empty())
-        return refuse(RefusalCode::OptionUnknown, std::format("un seul fichier à la fois : « {} » en trop", arg));
+        return refuse(RefusalCode::OptionUnknown,
+                      std::format("un seul fichier à la fois : « {} » en trop", arg));
       options.file = std::filesystem::path(arg);
     } else if (arg == "--help") {
       options.help = true;
@@ -265,14 +283,16 @@ std::expected<BenchOptions, Refusal> parse_bench_options(std::span<const std::st
     } else if (*length) {
       const auto value = number<int>(**length);
       if (!value || *value < 5 || *value > 120)
-        return refuse(RefusalCode::FieldOutOfRange, std::format("--seconds : « {} » n'est pas une durée de 5 à 120 s", **length));
+        return refuse(RefusalCode::FieldOutOfRange,
+                      std::format("--seconds : « {} » n'est pas une durée de 5 à 120 s", **length));
       options.seconds = *value;
     } else {
       return refuse(RefusalCode::OptionUnknown, std::format("option inconnue : {}", arg));
     }
   }
   if (options.file.empty() && !options.help)
-    return refuse(RefusalCode::FieldMissing, "ajp bench : la vidéo à jouer manque (une séquence de 15 s suffit)");
+    return refuse(RefusalCode::FieldMissing,
+                  "ajp bench : la vidéo à jouer manque (une séquence de 15 s suffit)");
   return options;
 }
 
@@ -291,7 +311,8 @@ std::expected<CompareOptions, Refusal> parse_compare_options(std::span<const std
     const std::string_view arg = args[i];
     if (!arg.starts_with("--")) {
       if (!options.file.empty())
-        return refuse(RefusalCode::OptionUnknown, std::format("un seul fichier à la fois : « {} » en trop", arg));
+        return refuse(RefusalCode::OptionUnknown,
+                      std::format("un seul fichier à la fois : « {} » en trop", arg));
       options.file = std::filesystem::path(arg);
       continue;
     }
@@ -304,7 +325,8 @@ std::expected<CompareOptions, Refusal> parse_compare_options(std::span<const std
       continue;
     }
     bool known = false;
-    for (const std::string_view name : {"--a-settings", "--b-settings", "--a", "--b", "--report", "--seconds"}) {
+    for (const std::string_view name :
+         {"--a-settings", "--b-settings", "--a", "--b", "--report", "--seconds"}) {
       auto value = valued(args, i, name);
       if (!value) return std::unexpected(std::move(value.error()));
       if (!*value) continue;
@@ -318,7 +340,8 @@ std::expected<CompareOptions, Refusal> parse_compare_options(std::span<const std
       if (name == "--seconds") {
         const auto value_s = number<int>(text);
         if (!value_s || *value_s < 5 || *value_s > 120)
-          return refuse(RefusalCode::FieldOutOfRange, std::format("--seconds : « {} » n'est pas une durée de 5 à 120 s", text));
+          return refuse(RefusalCode::FieldOutOfRange,
+                        std::format("--seconds : « {} » n'est pas une durée de 5 à 120 s", text));
         options.seconds = *value_s;
       }
       break;
@@ -331,10 +354,14 @@ std::expected<CompareOptions, Refusal> parse_compare_options(std::span<const std
 }
 
 std::string compare_usage() {
-  return "ajp compare <fichier> --a=\"OPTIONS\" --b=\"OPTIONS\" [options]   deux chaînes côte à côte, son coupé\n"
-         "  --a, --b            options de « ajp play » de chaque variante, ex. --a=\"--rife=3\" --b=\"--rife=4\"\n"
-         "  --a-settings=FICHIER, --b-settings=FICHIER   play.toml de départ (poses DRBA, moteur d'interpolation…)\n"
-         "  --seconds=S         durée d'un essai (5 à 120, défaut 12) ; A, B, B, A : le pire des deux passages\n"
+  return "ajp compare <fichier> --a=\"OPTIONS\" --b=\"OPTIONS\" [options]   deux chaînes côte à côte, son "
+         "coupé\n"
+         "  --a, --b            options de « ajp play » de chaque variante, ex. --a=\"--rife=3\" "
+         "--b=\"--rife=4\"\n"
+         "  --a-settings=FICHIER, --b-settings=FICHIER   play.toml de départ (poses DRBA, moteur "
+         "d'interpolation…)\n"
+         "  --seconds=S         durée d'un essai (5 à 120, défaut 12) ; A, B, B, A : le pire des deux "
+         "passages\n"
          "  --report=FICHIER    le rapport, en plus de la sortie standard ; --windowed : dans une fenêtre\n";
 }
 
@@ -343,7 +370,8 @@ std::string bench_usage() {
          "  --seconds=S      durée d'un essai (5 à 120, défaut 12)\n"
          "  --report=FICHIER le rapport, en plus de la sortie standard\n"
          "  --windowed       joue dans une fenêtre au lieu du plein écran\n"
-         "Le résultat est gardé dans bench.toml (carte, pilote, niveau, date) et remplace l'estimation de la carte.\n";
+         "Le résultat est gardé dans bench.toml (carte, pilote, niveau, date) et remplace l'estimation de la "
+         "carte.\n";
 }
 
 std::string play_usage() {
@@ -368,7 +396,8 @@ std::string play_usage() {
       "  --software-gpu         accepte un Vulkan logiciel (lavapipe), pour les essais sans GPU\n"
       "  --mute                 son coupé pour cette lecture\n"
       "  --data-dir=DOSSIER     réglages, profils et journal dans ce dossier (moteurs et modèles partagés)\n"
-      "  --bench-level=N        joue la chaîne du niveau 0 à 4 (ou auto) ; --bench-out=FICHIER y écrit les mesures\n"
+      "  --bench-level=N        joue la chaîne du niveau 0 à 4 (ou auto) ; --bench-out=FICHIER y écrit les "
+      "mesures\n"
       "  --first-run            écran de bienvenue (moteurs, profil de démarrage), même déjà vu\n"
       "  --keys=S:touche,…      touches pressées d'office (essais), ex. 3:Right,5:Space ;\n"
       "                         export ou export=FICHIER.mkv (ou .mp4, .mov) lance l'export de\n"

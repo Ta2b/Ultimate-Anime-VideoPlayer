@@ -123,7 +123,8 @@ int parity(const gf& a) {
   return d[0] & 1;
 }
 
-// Les constantes de la courbe, calculées : d = -121665 / 121666, 2d, sqrt(-1) = 2^((p-1)/4), la base (4/5, x pair).
+// Les constantes de la courbe, calculées : d = -121665 / 121666, 2d, sqrt(-1) = 2^((p-1)/4), la base (4/5, x
+// pair).
 struct Curve {
   gf d;
   gf d2;
@@ -238,7 +239,8 @@ void mod_l(std::uint8_t* r, std::array<i64, 64>& x) {
     i64 carry = 0;
     int j = i - 32;
     for (; j < i - 12; ++j) {
-      x[static_cast<std::size_t>(j)] += carry - 16 * x[static_cast<std::size_t>(i)] * kL[static_cast<std::size_t>(j - (i - 32))];
+      x[static_cast<std::size_t>(j)] +=
+          carry - 16 * x[static_cast<std::size_t>(i)] * kL[static_cast<std::size_t>(j - (i - 32))];
       carry = (x[static_cast<std::size_t>(j)] + 128) >> 8;
       x[static_cast<std::size_t>(j)] -= carry * 256;
     }
@@ -302,7 +304,7 @@ bool ed25519_verify(std::span<const std::uint8_t, 32> public_key, std::span<cons
   if (!unpack_negated(negated_a, public_key.data(), c)) return false;
   std::array<std::uint8_t, 64> h = sha512({signature.first<32>(), public_key, message});
   reduce_64(h.data());
-  Point p = scalarmult(negated_a, h.data(), c);  // h * (-A)
+  Point p = scalarmult(negated_a, h.data(), c);          // h * (-A)
   const Point q = scalarbase(signature.data() + 32, c);  // S * B
   add(p, q, c);
   std::array<std::uint8_t, 32> computed{};
@@ -323,7 +325,8 @@ std::optional<std::vector<std::uint8_t>> from_hex(std::string_view hex) {
   return out;
 }
 
-bool ed25519_verify_hex(std::string_view public_key_hex, std::string_view message, std::string_view signature_hex) {
+bool ed25519_verify_hex(std::string_view public_key_hex, std::string_view message,
+                        std::string_view signature_hex) {
   const auto key = from_hex(public_key_hex);
   const auto sig = from_hex(signature_hex);
   if (!key || !sig || key->size() != 32 || sig->size() != 64) return false;

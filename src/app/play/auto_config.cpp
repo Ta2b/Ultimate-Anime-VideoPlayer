@@ -48,16 +48,24 @@ constexpr std::array<int, kTierCount> kFactorCap{0, 2, 3, 4, 4};
 
 }  // namespace
 
-std::string_view key(Preset preset) { return kPresets[static_cast<std::size_t>(preset)].key; }
-std::string_view label(Preset preset) { return kPresets[static_cast<std::size_t>(preset)].label; }
+std::string_view key(Preset preset) {
+  return kPresets[static_cast<std::size_t>(preset)].key;
+}
+std::string_view label(Preset preset) {
+  return kPresets[static_cast<std::size_t>(preset)].label;
+}
 std::optional<Preset> preset_from_key(std::string_view text) {
   for (const PresetName& entry : kPresets) {
     if (entry.key == text) return entry.preset;
   }
   return std::nullopt;
 }
-std::string_view key(Priority priority) { return kPriorities[static_cast<std::size_t>(priority)].key; }
-std::string_view label(Priority priority) { return kPriorities[static_cast<std::size_t>(priority)].label; }
+std::string_view key(Priority priority) {
+  return kPriorities[static_cast<std::size_t>(priority)].key;
+}
+std::string_view label(Priority priority) {
+  return kPriorities[static_cast<std::size_t>(priority)].label;
+}
 std::optional<Priority> priority_from_key(std::string_view text) {
   for (const PriorityName& entry : kPriorities) {
     if (entry.key == text) return entry.priority;
@@ -67,18 +75,26 @@ std::optional<Priority> priority_from_key(std::string_view text) {
 
 std::optional<Tier> chain_level(Preset preset, Tier detected) {
   switch (preset) {
-    case Preset::Auto: return detected;
-    case Preset::Economy: return Tier::Economy;
-    case Preset::Fast: return Tier::Light;
-    case Preset::Normal: return Tier::Normal;
-    case Preset::Quality: return Tier::Fast;
-    case Preset::Ultra: return Tier::Ultra;
-    case Preset::Custom: return std::nullopt;
+    case Preset::Auto:
+      return detected;
+    case Preset::Economy:
+      return Tier::Economy;
+    case Preset::Fast:
+      return Tier::Light;
+    case Preset::Normal:
+      return Tier::Normal;
+    case Preset::Quality:
+      return Tier::Fast;
+    case Preset::Ultra:
+      return Tier::Ultra;
+    case Preset::Custom:
+      return std::nullopt;
   }
   return std::nullopt;
 }
 
-PlaySettings apply_preset(const PlaySettings& settings, const Machine& machine, const core::SourceInfo& source) {
+PlaySettings apply_preset(const PlaySettings& settings, const Machine& machine,
+                          const core::SourceInfo& source) {
   const std::optional<Tier> level = chain_level(settings.preset, machine.tier);
   if (!level) return settings;
   const auto at = static_cast<std::size_t>(*level);
@@ -145,8 +161,8 @@ bool preset_chain_differs(const PlaySettings& a, const PlaySettings& b) {
   return a.upscale != b.upscale || a.work_height != b.work_height || a.downscale != b.downscale ||
          a.model != b.model || a.span_order != b.span_order || a.rife_auto != b.rife_auto ||
          a.rife_factor != b.rife_factor || a.rife_factor_den != b.rife_factor_den ||
-         a.keep_poses != b.keep_poses || a.gmfss_quality != b.gmfss_quality ||
-         a.rife_model != b.rife_model || a.motion_engine != b.motion_engine;
+         a.keep_poses != b.keep_poses || a.gmfss_quality != b.gmfss_quality || a.rife_model != b.rife_model ||
+         a.motion_engine != b.motion_engine;
 }
 
 }  // namespace ajp::app::play

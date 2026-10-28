@@ -16,14 +16,14 @@
 
 #include "app/play/default_player.h"
 #include "app/play/engine_downloads.h"
-#include "app/play/gpu_tier.h"
-#include "app/play/settings.h"
-#include "app/play/wizard.h"
 #include "app/play/engine_switch.h"
 #include "app/play/first_run.h"
+#include "app/play/gpu_tier.h"
 #include "app/play/host_facts.h"
 #include "app/play/profiles.h"
 #include "app/play/scripted_input.h"
+#include "app/play/settings.h"
+#include "app/play/wizard.h"
 #include "core/clock.h"
 #include "core/keys.h"
 #include "core/log.h"
@@ -104,17 +104,17 @@ std::expected<bool, Refusal> run_engine_screen(const EngineScreen& s, core::Sett
   view.revisit = revisit && !wizard_mode;
   if (wizard_mode) {
     const TierEstimate estimate = estimate_tier(gpu);
-    view.facts = WizardFacts{.engine_choice = std::ranges::any_of(view.engines,
-                                                                   [](const EngineRow& row) {
-                                                                     return row.offer.id != core::EngineId::Vulkan &&
-                                                                            row.usable;
-                                                                   }),
-                             .hdr_display = s.screen.hdr_output(),
-                             .multichannel_output = false,
-                             .rtx_guided = core::kHostOs == core::Os::Linux && gpu.tensor_cores};
+    view.facts = WizardFacts{
+        .engine_choice = std::ranges::any_of(
+            view.engines,
+            [](const EngineRow& row) { return row.offer.id != core::EngineId::Vulkan && row.usable; }),
+        .hdr_display = s.screen.hdr_output(),
+        .multichannel_output = false,
+        .rtx_guided = core::kHostOs == core::Os::Linux && gpu.tensor_cores};
     view.check_rtx = [&s, gpu](const FirstRunView& now) {
       const auto ticked = [&](core::EngineId id) {
-        return std::ranges::any_of(now.engines, [&](const EngineRow& row) { return row.offer.id == id && row.chosen; });
+        return std::ranges::any_of(now.engines,
+                                   [&](const EngineRow& row) { return row.offer.id == id && row.chosen; });
       };
       std::vector<RtxCheck> out;
       out.push_back({.name = "Carte NVIDIA RTX",
@@ -125,13 +125,16 @@ std::expected<bool, Refusal> run_engine_screen(const EngineScreen& s, core::Sett
                      .done = trt_here || ticked(core::EngineId::TensorRt),
                      .todo = "Cochez TensorRT à l'écran Moteur : il s'installe à « Terminer »."});
       const bool maxine_here = maxine_available(s.options, s.paths);
-      out.push_back({.name = maxine_here ? "SDK Maxine VideoFX" : "SDK Maxine VideoFX (installé à « Terminer »)",
-                     .done = maxine_here || ticked(core::EngineId::MaxineVfx),
-                     .todo = "Cochez NVIDIA Maxine à l'écran Moteur (licence NVIDIA), ou posez le SDK dans /usr/local/VideoFX "
-                             "et relancez avec --truehdr-sdk."});
+      out.push_back(
+          {.name = maxine_here ? "SDK Maxine VideoFX" : "SDK Maxine VideoFX (installé à « Terminer »)",
+           .done = maxine_here || ticked(core::EngineId::MaxineVfx),
+           .todo = "Cochez NVIDIA Maxine à l'écran Moteur (licence NVIDIA), ou posez le SDK dans "
+                   "/usr/local/VideoFX "
+                   "et relancez avec --truehdr-sdk."});
       return out;
     };
-    view.wizard = begin_wizard(view.facts, s.options.first_run || s.restart_wizard ? 0 : engines.first_run_step);
+    view.wizard =
+        begin_wizard(view.facts, s.options.first_run || s.restart_wizard ? 0 : engines.first_run_step);
     view.tier_line = std::format("Niveau estimé : {}", tier_label(estimate.tier));
     const int height = display_height(s.screen.window());
     const double hz = display_refresh_hz(s.screen.window());
@@ -169,7 +172,8 @@ std::expected<bool, Refusal> run_engine_screen(const EngineScreen& s, core::Sett
     PlaySettings chosen_play;
     if (play) chosen_play = std::move(*play);
     chosen_play = wizard_play_settings(wizard, std::move(chosen_play));
-    if (auto written = save_settings(play_path, chosen_play); !written) log->warn("{}", written.error().detail);
+    if (auto written = save_settings(play_path, chosen_play); !written)
+      log->warn("{}", written.error().detail);
     // « Ouvrir avec » : une fois, sans confirmation (elle ajoute une entrée, ne prend la place de personne).
     if (!engines.open_with_registered) {
       const PlayerPlace place{.executable = s.paths.executable, .home = s.paths.home, .data = s.paths.data};

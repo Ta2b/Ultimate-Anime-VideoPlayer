@@ -79,15 +79,16 @@ std::expected<std::unique_ptr<Pipeline>, Refusal> Pipeline::open(const PipelineC
       // périphérique choisit (0) et le décodeur remixe vers lui.
       const bool rate_ok = track.sample_rate >= audio::limits::kMinSampleRate &&
                            track.sample_rate <= audio::limits::kMaxSampleRate;
-      // Un appareil stéréo reçoit de la stéréo (le mixeur s'occupe du surround : casque, enceintes) ; un appareil
-      // multicanal garde les canaux de la piste, SDL les adapte.
+      // Un appareil stéréo reçoit de la stéréo (le mixeur s'occupe du surround : casque, enceintes) ; un
+      // appareil multicanal garde les canaux de la piste, SDL les adapte.
       const std::optional<audio::AudioDevice> device =
           audio::resolve_device(audio::playback_devices(), config.audio_device);
       const bool stereo_device = !device || device->channels <= 2;
       const int sink_channels = stereo_device ? std::clamp(track.channels, 0, 2)
                                               : std::clamp(track.channels, 0, audio::limits::kMaxChannels);
-      auto output = audio::AudioOutput::open_sdl(
-          {.sample_rate = rate_ok ? track.sample_rate : 0, .channels = sink_channels, .device = config.audio_device});
+      auto output = audio::AudioOutput::open_sdl({.sample_rate = rate_ok ? track.sample_rate : 0,
+                                                  .channels = sink_channels,
+                                                  .device = config.audio_device});
       if (!output) {
         audio_failure = std::move(output.error());
       } else {

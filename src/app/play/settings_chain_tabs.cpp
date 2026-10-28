@@ -36,17 +36,22 @@ std::string motion_description(MotionEngine engine) {
     case MotionEngine::Rife:
       return "RIFE : le moteur de base, rapide, bon partout.";
     case MotionEngine::Gmfss:
-      return "GMFSS Fortuna : réseau fait pour l'animation, les images intermédiaires les plus propres, pour plusieurs "
-             "fois le coût de RIFE. Il prend ses graphes au flot à demi-échelle (_s05), qui valent le flot entier pour "
+      return "GMFSS Fortuna : réseau fait pour l'animation, les images intermédiaires les plus propres, pour "
+             "plusieurs "
+             "fois le coût de RIFE. Il prend ses graphes au flot à demi-échelle (_s05), qui valent le flot "
+             "entier pour "
              "moitié moins de calcul. Construit la première fois (plusieurs minutes). Expérimental.";
     case MotionEngine::GmfssUnion:
-      return "GMFSS Union : GMFSS mêlé à l'image d'un RIFE intégré au réseau, moins de défauts sur les mouvements "
+      return "GMFSS Union : GMFSS mêlé à l'image d'un RIFE intégré au réseau, moins de défauts sur les "
+             "mouvements "
              "rapides, pour un peu plus de calcul. Construit la première fois (plusieurs minutes).";
     case MotionEngine::DistilDrba:
-      return "DistilDRBA : un RIFE à trois images entraîné à imiter DRBA ; le réseau garde lui-même les poses d'un "
+      return "DistilDRBA : un RIFE à trois images entraîné à imiter DRBA ; le réseau garde lui-même les "
+             "poses d'un "
              "personnage animé en deux, pour à peu près le coût de RIFE 4.22 lite. Une image de retard.";
     case MotionEngine::Apple:
-      return "Apple : le flot optique de macOS (VideoToolbox, macOS 15.4 ou plus), sur le Neural Engine et le GPU, sans "
+      return "Apple : le flot optique de macOS (VideoToolbox, macOS 15.4 ou plus), sur le Neural Engine et "
+             "le GPU, sans "
              "modèle à télécharger. Sous le backend Core ML seulement ; ailleurs RIFE prend la place.";
   }
   return {};
@@ -89,14 +94,16 @@ void image_tab(PlaySettings& d, const SettingsChoices& choices) {
     }
     ImGui::EndCombo();
   }
-  panel::tip("Taille à laquelle la vidéo est ramenée avant SPAN. SPAN la double : 720p donne une sortie en 1440p.");
+  panel::tip(
+      "Taille à laquelle la vidéo est ramenée avant SPAN. SPAN la double : 720p donne une sortie en 1440p.");
   if (d.work_height == 720) panel::badge(std::string(badge_text(Badge::Recommended)).c_str(), panel::kGood);
   const bool reduces = d.work_height > 0 && d.work_height < choices.source_height;
   if (choices.source_height > 0) {
     const int work = reduces ? d.work_height : choices.source_height;
-    note(d.upscale
-             ? std::format("Sortie : {}, le double de la résolution de travail (SPAN ×2).", resolution_text(work * 2))
-             : std::format("Sans agrandissement, la sortie garde la résolution de travail : {}.", resolution_text(work)));
+    note(d.upscale ? std::format("Sortie : {}, le double de la résolution de travail (SPAN ×2).",
+                                 resolution_text(work * 2))
+                   : std::format("Sans agrandissement, la sortie garde la résolution de travail : {}.",
+                                 resolution_text(work)));
   }
   if (reduces) {
     if (ImGui::BeginCombo("Algorithme", std::string(label(d.downscale)).c_str())) {
@@ -112,7 +119,8 @@ void image_tab(PlaySettings& d, const SettingsChoices& choices) {
       ImGui::EndCombo();
     }
     panel::tip(
-        "Area : moyenne exacte. Spline36 : celui d'AnimeJaNai, net. Hermite : net et sans halo, pensé pour l'animation. "
+        "Area : moyenne exacte. Spline36 : celui d'AnimeJaNai, net. Hermite : net et sans halo, pensé pour "
+        "l'animation. "
         "Catmull-Rom et Mitchell gardent du détail ; Bilinear et Bicubic adoucissent. Changement en direct.");
   } else {
     note("Pas de réduction : la source entre telle quelle dans SPAN.");
@@ -205,8 +213,10 @@ void fluidity_tab(PlaySettings& d, const SettingsChoices& choices, bool exportin
     panel::tip(motion_description(engine));
     if (const auto mark = badge_of(engine)) {
       const bool heavy = *mark == Badge::Heaviest;
-      panel::badge(std::string(badge_text(*mark)).c_str(),
-                   *mark == Badge::Recommended ? panel::kGood : heavy ? panel::kWarn : *mark == Badge::Finest ? panel::kFine : panel::kExperimental);
+      panel::badge(std::string(badge_text(*mark)).c_str(), *mark == Badge::Recommended ? panel::kGood
+                                                           : heavy                     ? panel::kWarn
+                                                           : *mark == Badge::Finest    ? panel::kFine
+                                                                                    : panel::kExperimental);
     }
   }
   if (!choices.rife_models.empty()) {
@@ -285,7 +295,8 @@ void fluidity_tab(PlaySettings& d, const SettingsChoices& choices, bool exportin
   } else if (four_k && now.num >= 3 * now.den) {
     note(
         "Sortie 4K (source sans réduction agrandie par SPAN) : ×3 et plus demandent un GPU haut de gamme ; "
-        "SPAN 1080p → 2160p est la passe la plus lourde (11 ms par image sur une RTX 4070 Ti). Une résolution "
+        "SPAN 1080p → 2160p est la passe la plus lourde (11 ms par image sur une RTX 4070 Ti). Une "
+        "résolution "
         "de travail de 720p allège tout.");
   } else if (four_k) {
     note("Sortie 4K : RIFE estime le mouvement sur une copie en 720p, plus légère.");

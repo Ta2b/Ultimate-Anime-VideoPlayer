@@ -40,7 +40,6 @@ std::string_view label(Downscale filter);  // « Area », pour le menu
 // Libellé lisible d'un modèle RIFE : « rife_v4.22_lite.onnx » devient « RIFE 4.22 lite ».
 std::string rife_label(const std::string& file);
 
-
 // Les valeurs du grade pour ce préréglage ; current pour « Personnalisé » et pour gamut_p3.
 render::GradeSettings with_preset(render::GradePreset preset, const render::GradeSettings& current);
 
@@ -71,7 +70,8 @@ std::string_view label(MotionEngine engine);  // « RIFE », pour le menu
 
 // Les repères des listes (docs/ux-parametres.md, 3) : une pastille à côté du choix, le détail en infobulle.
 enum class Badge : std::uint8_t { Recommended, Fastest, Finest, Heaviest, Experimental };
-std::string_view badge_text(Badge badge);  // « Recommandé », « Le plus rapide », « Le plus fin », « Le plus lourd », « Expérimental »
+std::string_view badge_text(
+    Badge badge);  // « Recommandé », « Le plus rapide », « Le plus fin », « Le plus lourd », « Expérimental »
 std::optional<Badge> badge_of(MotionEngine engine);
 std::optional<Badge> badge_of(Downscale filter);
 // « 720p » ; la hauteur d'image en français courant, jamais « lignes ».
@@ -164,16 +164,17 @@ struct PlaySettings {
   bool deband = false;
   // À la fin de la vidéo, lire la suivante du dossier (ordre naturel des noms) ; vaut au prochain
   // fichier. Sans effet depuis l'accueil, qui ramène à la liste.
-  // Mises à jour du lecteur (docs/ux-parametres.md, 4.5) : « notify » (Me prévenir, le défaut décidé), « auto »,
-  // « never » ; le canal « stable » ou « preview » ; la fréquence « launch », « daily », « weekly ».
+  // Mises à jour du lecteur (docs/ux-parametres.md, 4.5) : « notify » (Me prévenir, le défaut décidé), « auto
+  // », « never » ; le canal « stable » ou « preview » ; la fréquence « launch », « daily », « weekly ».
   std::string update_mode = "notify";
   std::string update_channel = "stable";
   std::string update_frequency = "daily";
   bool autoplay_next = false;
-  bool default_player_dismissed = false;  // « Ne plus me le demander » : le bouton quitte Général, reste en bas d'Avancé
+  bool default_player_dismissed =
+      false;  // « Ne plus me le demander » : le bouton quitte Général, reste en bas d'Avancé
   int audio_delay_ms = 0;
-  // Audio (audio/mixer.h, docs/audio-spatialisation.md) : l'appareil de sortie (vide : celui du système, suivi
-  // quand il change), « Comment écoutez-vous ? » (headphones, speakers, cinema), le mode Fidèle (aucun
+  // Audio (audio/mixer.h, docs/audio-spatialisation.md) : l'appareil de sortie (vide : celui du système,
+  // suivi quand il change), « Comment écoutez-vous ? » (headphones, speakers, cinema), le mode Fidèle (aucun
   // traitement), et les profils propres à un appareil (nom de l'appareil vers écoute).
   std::string audio_device;
   std::string listening = "speakers";
@@ -241,8 +242,8 @@ std::expected<PlaySettings, Refusal> validate(const PlaySettings& settings);
 std::expected<PlaySettings, Refusal> parse_settings(std::string_view toml_text);
 std::string format_settings(const PlaySettings& settings);
 
-// L'écoute en vigueur pour cet appareil : son profil propre s'il en a un, sinon le global (un appareil inconnu
-// reprend le global sans rien demander). listen : 0 casque, 1 enceintes, 2 home cinéma.
+// L'écoute en vigueur pour cet appareil : son profil propre s'il en a un, sinon le global (un appareil
+// inconnu reprend le global sans rien demander). listen : 0 casque, 1 enceintes, 2 home cinéma.
 struct EffectiveListening {
   int listen = 1;
   bool faithful = false;

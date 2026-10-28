@@ -30,7 +30,8 @@ namespace ajp::app::play {
 // Le GPU de rendu, tel que l'écran l'a ouvert.
 struct GpuFacts {
   std::string name;  // « NVIDIA GeForce RTX 4070 Ti »
-  std::string driver;  // version du pilote (VkPhysicalDeviceProperties::driverVersion, en décimal) ; vide : inconnue
+  std::string
+      driver;  // version du pilote (VkPhysicalDeviceProperties::driverVersion, en décimal) ; vide : inconnue
   GpuVendor vendor = GpuVendor::Other;
   std::uint64_t vram_bytes = 0;
   std::uint64_t host_visible_vram_bytes = 0;  // tas VRAM visible de l'hôte : toute la VRAM avec Resizable BAR
@@ -106,7 +107,8 @@ struct FirstRunView {
   // L'assistant du premier lancement (wizard.h) ; vide au rouvrir depuis l'onglet Moteurs (revisit).
   Wizard wizard;
   WizardFacts facts;
-  // 4b : relit les points de RTX HDR (moteur, SDK) d'après l'état du poste et les cases cochées ; posé par l'écran.
+  // 4b : relit les points de RTX HDR (moteur, SDK) d'après l'état du poste et les cases cochées ; posé par
+  // l'écran.
   std::function<std::vector<RtxCheck>(const FirstRunView&)> check_rtx;
   std::string tier_line;     // « Niveau estimé : Rapide »
   std::string display_line;  // « Écran 3840×2160 · 165 Hz »

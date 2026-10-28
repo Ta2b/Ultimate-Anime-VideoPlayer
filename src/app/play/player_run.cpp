@@ -17,7 +17,6 @@
 
 #include "app/play/auto_bench.h"
 #include "app/play/backend_library.h"
-#include "audio/devices.h"
 #include "app/play/build_progress.h"
 #include "app/play/chain.h"
 #include "app/play/chain_setup.h"
@@ -46,6 +45,7 @@
 #include "app/play/session.h"
 #include "app/play/ui.h"
 #include "app/play/upscale_stage.h"
+#include "audio/devices.h"
 #include "core/clock.h"
 #include "core/log.h"
 #include "core/settings.h"
@@ -208,8 +208,8 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
   log->info("{}", session_config.output);
   Session session(std::move(session_config), (*pipeline)->stages(), out, (*pipeline)->clock());
   if (start_paused) session.command(cmd::Pause{});
-  // La tranche de la machine pour Général > Configuration : la mesure de « Évaluer ma machine » si elle est de
-  // cette carte et de ce pilote, sinon l'estimation.
+  // La tranche de la machine pour Général > Configuration : la mesure de « Évaluer ma machine » si elle est
+  // de cette carte et de ce pilote, sinon l'estimation.
   std::optional<BenchResult> measured;
   if (auto bench = load_bench(p.settings_path.parent_path() / "bench.toml")) measured = std::move(*bench);
   const GpuFacts machine = gpu_facts(p.screen);
@@ -220,7 +220,8 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
           : std::string();
   std::vector<SettingsChoices::AudioOut> audio_outputs;
   for (const audio::AudioDevice& device : audio::playback_devices())
-    audio_outputs.push_back({.name = device.name, .channels = device.channels, .is_default = device.is_default});
+    audio_outputs.push_back(
+        {.name = device.name, .channels = device.channels, .is_default = device.is_default});
   const bool default_player_is_ajp =
       is_default_player({.executable = p.paths.executable, .home = p.paths.home, .data = p.paths.data});
   p.ui.set_tracks((*pipeline)->tracks());
@@ -460,8 +461,8 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
   }
   for (const std::string& refusal : session.refusals()) log->warn("{}", refusal);
   // Fin de la vidéo, sans demande de quitter : l'épisode suivant du dossier, si le réglage le veut.
-  if (!chain.reopen && !failure && !session.quit_asked() && !p.options.bench_out && chain.running.autoplay_next &&
-      !p.options.file.empty()) {
+  if (!chain.reopen && !failure && !session.quit_asked() && !p.options.bench_out &&
+      chain.running.autoplay_next && !p.options.file.empty()) {
     if (const auto next = sibling_episode(p.options.file, 1)) {
       log->info("épisode suivant : {}", prepare::utf8_path(*next));
       chain.next_file = *next;
