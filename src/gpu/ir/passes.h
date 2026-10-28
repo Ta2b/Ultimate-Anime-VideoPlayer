@@ -39,6 +39,11 @@ int fuse_residuals(Graph& graph);
 // Conv suivie de Relu, LeakyRelu, PRelu, Sigmoid, Tanh ou Clip : l'activation entre dans l'épilogue.
 int fuse_activations(Graph& graph);
 
+// FakeQuantE4M3 à échelle constante que la Conv voisine absorbe : lecteur unique d'une Conv
+// (ConvAttrs::in_quant), sinon sortie d'une Conv sans résiduel ni activation (out_quant). Avant
+// fuse_residuals : le résiduel et l'activation qui suivent le nœud se fondent ensuite après.
+int fuse_fp8_quant(Graph& graph);
+
 // Porte des blocs de SPAN, Mul(Add(x, r), Conv(x)) où la Conv garde la forme de x : le Mul et
 // l'Add entrent dans l'épilogue de la Conv (Epilogue::gate). Après fuse_activations : l'activation
 // de la Conv (Tanh dans SPAN) y est déjà. Deux dispatchs et deux tenseurs en moins par bloc.
@@ -75,6 +80,7 @@ struct PassStats {
   int identities = 0;
   int pixel_shuffles = 0;
   int bias = 0;
+  int quants = 0;
   int residuals = 0;
   int activations = 0;
   int gates = 0;

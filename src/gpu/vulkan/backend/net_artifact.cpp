@@ -177,7 +177,8 @@ template <class Ar, class S>
 void attr_fields(Ar& ar, S& a) {
   using A = std::remove_const_t<S>;
   if constexpr (std::is_same_v<A, ir::ConvAttrs>) {
-    ar(a.kernel), ar(a.strides), ar(a.dilations), ar(a.pads), ar(a.auto_pad), ar(a.group), ar(a.epilogue);
+    ar(a.kernel), ar(a.strides), ar(a.dilations), ar(a.pads), ar(a.auto_pad), ar(a.group), ar(a.epilogue),
+        ar(a.in_quant), ar(a.out_quant);
   } else if constexpr (std::is_same_v<A, ir::ConvTransposeAttrs>) {
     ar(a.kernel), ar(a.strides), ar(a.dilations), ar(a.pads), ar(a.output_padding), ar(a.output_shape);
     ar(a.auto_pad), ar(a.group);
@@ -315,7 +316,7 @@ bool enums_valid(const ArtifactData& a) {
     }
   }
   for (const ir::Node& n : a.graph.nodes) {
-    if (n.op > ir::OpKind::AveragePool) return false;
+    if (n.op > ir::OpKind::FakeQuantE4M3) return false;
   }
   for (const Dispatch& d : a.dispatches) {
     for (const Binding& b : d.bindings) {

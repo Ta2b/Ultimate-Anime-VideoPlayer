@@ -4,6 +4,7 @@
 #include <format>
 #include <limits>
 
+#include "gpu/ir/fp8.h"
 #include "gpu/ir/graph.h"
 #include "gpu/ir/op_impl.h"
 #include "gpu/ir/op_util.h"
@@ -242,6 +243,26 @@ Evaluated eval_unary(const Node& node, std::span<const Value* const> in, std::sp
   if (!hi) return std::unexpected(hi.error());
   Value out = make_output(outs[0]);
   for (std::size_t k = 0; k < x.f.size(); ++k) out.f[k] = activate(node, x.f[k], *lo, *hi);
+  return std::vector<Value>{std::move(out)};
+}
+
+Inferred infer_fake_quant(const Node& node, std::span<const Operand> in) {
+  const Operand& x = in[0];
+  if (auto ok = expect_float(node, x, "l'entrée"); !ok) return std::unexpected(ok.error());
+  const Operand& scale = in[1];
+  if (scale.dims == nullptr || element_count(*scale.dims) != 1 || scale.type == DataType::I64) {
+    return graph_error(node, "l'échelle est un scalaire flottant");
+  }
+  return std::vector<OutputInfo>{{.type = x.type, .dims = *x.dims}};
+}
+
+Evaluated eval_fake_quant(const Node& node, std::span<const Value* const> in,
+                          std::span<const OutputInfo> outs) {
+  const Value& x = *in[0];
+  const float scale = in[1]->f[0];
+  if (!(scale > 0.0F) || !std::isfinite(scale)) return graph_error(node, "l'échelle est positive et finie");
+  Value out = make_output(outs[0]);
+  for (std::size_t k = 0; k < x.f.size(); ++k) out.f[k] = round_to_e4m3(x.f[k] / scale) * scale;
   return std::vector<Value>{std::move(out)};
 }
 

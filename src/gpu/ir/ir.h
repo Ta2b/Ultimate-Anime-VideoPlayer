@@ -85,6 +85,8 @@ enum class OpKind : std::uint8_t {
   AveragePool,
   Reciprocal,
   Range,  // plié : ses bornes viennent des formes, connues avant la construction
+  // Paire Q/DQ FP8 E4M3 fusionnée à l'import (onnx_fp8.h) : x → arrondi(x / échelle) × échelle.
+  FakeQuantE4M3,
 };
 
 enum class AutoPad : std::uint8_t { NotSet, SameUpper, SameLower, Valid };
@@ -144,6 +146,11 @@ struct ConvAttrs {
   AutoPad auto_pad = AutoPad::NotSet;
   std::int64_t group = 1;
   Epilogue epilogue;
+  // FP8 E4M3 (FakeQuantE4M3 fusionnés par fuse_fp8_quant) : in_quant > 0 lit x arrondi à la grille
+  // de cette échelle (la porte de SPAN garde le x brut) ; out_quant > 0 arrondit de même le
+  // résultat, après le biais et avant résiduel, activation et porte.
+  float in_quant = 0.0F;
+  float out_quant = 0.0F;
 };
 
 struct ConvTransposeAttrs {

@@ -13,8 +13,9 @@ namespace ajp::gpu::ir::detail {
   Evaluated eval_##fn(const Node&, std::span<const Value* const>, std::span<const OutputInfo>)
 
 // op_elementwise.cpp
-AJP_IR_OP(binary);  // Add, Sub, Mul, Div, Mod, PRelu
-AJP_IR_OP(unary);   // Relu, LeakyRelu, Sigmoid, Tanh, Clip, Reciprocal, Identity, Cast
+AJP_IR_OP(binary);      // Add, Sub, Mul, Div, Mod, PRelu
+AJP_IR_OP(unary);       // Relu, LeakyRelu, Sigmoid, Tanh, Clip, Reciprocal, Identity, Cast
+AJP_IR_OP(fake_quant);  // FakeQuantE4M3
 
 // op_window.cpp
 AJP_IR_OP(conv);

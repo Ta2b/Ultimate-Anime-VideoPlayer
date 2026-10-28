@@ -7,6 +7,8 @@
 #include <optional>
 #include <variant>
 
+#include "ajp_vk_backend_spirv.h"
+#include "gpu/ir/fp8_weights.h"
 #include "gpu/ir/graph.h"
 #include "gpu/ir/ops.h"
 #include "gpu/vulkan/backend/net_lower.h"
@@ -28,7 +30,9 @@ namespace {
 constexpr std::string_view kDirect = "direct";
 constexpr std::string_view kPacked = "direct_f16p";
 constexpr std::string_view kMatrix = "coopmat";
-constexpr std::string_view kMatrixAcc16 = "coopmat_acc16";     // sommes en float16
+constexpr std::string_view kMatrixAcc16 = "coopmat_acc16";  // sommes en float16
+constexpr std::string_view kMatrixFp8 = "coopmat_fp8";      // produits E4M3 × E4M3, sommes en float
+constexpr std::string_view kMatrixFp8Shader = "net_conv_coopmat_fp8_f16";
 constexpr std::string_view kWinograd = "winograd";             // F(2×2, 3×3)
 constexpr std::string_view kWinogradPacked = "winograd_f16p";  // F(2×2, 3×3) en fp16 empaqueté
 constexpr std::uint32_t kMaxGroups = 65535;
@@ -105,9 +109,17 @@ std::array<std::uint32_t, 2> space_constants(const ir::Epilogue& e) {
   return {static_cast<std::uint32_t>(e.space), e.space_mode == ir::BlockMode::Crd ? 1U : 0U};
 }
 
+// Une Conv qui arrondit son entrée ou sa sortie à la grille FP8 E4M3 (ConvAttrs::in_quant et
+// out_quant) : seul le noyau direct en float sait le faire pour l'instant.
+bool quantized(const ir::Node& node) {
+  const auto* attrs = std::get_if<ir::ConvAttrs>(&node.attrs);
+  return attrs != nullptr && (attrs->in_quant > 0.0F || attrs->out_quant > 0.0F);
+}
+
 // La variante coopmat convient-elle à ce nœud ? Entrée float16 en Nhwc16, groupe unique.
 bool matrix_eligible(const ir::Graph& graph, const ir::Node& node, const Target& target) {
-  if (!target.matrix_units || target.subgroup_size == 0 || groups_of(node) != 1) return false;
+  if (!target.matrix_units || target.subgroup_size == 0 || groups_of(node) != 1 || quantized(node))
+    return false;
   const ir::Tensor& x = graph.tensors[node.inputs[ir::kConvX]];
   const ir::Tensor& y = graph.tensors[node.outputs[0]];
   if (!x.known || !y.known || y.dims.size() != 4) return false;
@@ -117,10 +129,27 @@ bool matrix_eligible(const ir::Graph& graph, const ir::Node& node, const Target&
          constant_input(graph, node, ir::kConvW) != nullptr;
 }
 
+// La variante coopmat FP8 (net_conv_coopmat_fp8.glsl) convient-elle à ce nœud ? Les conditions de la
+// variante float16, plus : tuiles E4M3 annoncées par le pilote, shader compilé (glslang assez
+// récent), entrée arrondie par la Conv (in_quant) et poids rangés sur une grille E4M3.
+bool fp8_eligible(const ir::Graph& graph, const ir::Node& node, const Target& target) {
+  const auto* attrs = std::get_if<ir::ConvAttrs>(&node.attrs);
+  if (!target.matrix_f8 || attrs == nullptr || !(attrs->in_quant > 0.0F) || groups_of(node) != 1)
+    return false;
+  if (spirv::words(kMatrixFp8Shader).empty()) return false;
+  const ir::Tensor& x = graph.tensors[node.inputs[ir::kConvX]];
+  const ir::Tensor& y = graph.tensors[node.outputs[0]];
+  const ir::Tensor* w = constant_input(graph, node, ir::kConvW);
+  if (!x.known || !y.known || y.dims.size() != 4 || w == nullptr) return false;
+  const ir::Dims result = result_dims(node, y.dims);
+  return target.subgroup_size != 0 && x.type == ir::DataType::F16 && x.layout == ir::Layout::Nhwc16 &&
+         matrix_tiles(static_cast<std::uint32_t>(result[1])) <= 16 && ir::recover_fp8_weights(w->value);
+}
+
 // Winograd F(2×2, 3×3) (net_conv_wino.glsl) : Conv 3 × 3 de pas 1 sans dilatation ni groupes,
 // entrée float16 en Nhwc16 (lue deux canaux par uint), poids constants.
 bool winograd_eligible(const ir::Graph& graph, const ir::Node& node, const Target& target) {
-  if (node.op != ir::OpKind::Conv || !target.f16_storage || groups_of(node) != 1 ||
+  if (node.op != ir::OpKind::Conv || !target.f16_storage || groups_of(node) != 1 || quantized(node) ||
       constant_input(graph, node, ir::kConvW) == nullptr) {
     return false;
   }
@@ -185,7 +214,7 @@ std::expected<std::vector<KernelChoice>, Refusal> candidates(const ir::Graph& gr
     }
   }
   if (target.matrix_first) std::swap(out, matrix);
-  const bool packed = conv && target.f16_math && target.f16_storage &&
+  const bool packed = conv && !quantized(node) && target.f16_math && target.f16_storage &&
                       graph.tensors[node.inputs[0]].type == ir::DataType::F16 && y.type == ir::DataType::F16;
   for (const std::uint32_t q : {quads, 1U, 2U, 4U}) {
     if (q > quads && q != quads) continue;
@@ -244,6 +273,26 @@ std::expected<std::vector<KernelChoice>, Refusal> candidates(const ir::Graph& gr
     }
   }
   if (!target.matrix_first) out.insert(out.end(), matrix.begin(), matrix.end());
+  // FP8 : derrière le noyau direct, qui reste le choix par défaut et la référence de l'autotuner
+  // (sortie comparée avant de retenir la variante).
+  if (conv && fp8_eligible(graph, node, target)) {
+    const std::uint32_t tiles = matrix_tiles(static_cast<std::uint32_t>(result[1]));
+    const std::uint64_t pixels =
+        static_cast<std::uint64_t>(result[2]) * static_cast<std::uint64_t>(result[3]);
+    for (const std::uint32_t subgroups : {4U, 2U, 8U}) {
+      for (const std::uint32_t tm : {2U, 1U, 4U}) {
+        const std::uint64_t block = static_cast<std::uint64_t>(subgroups) * tm * 16;
+        if ((pixels + block - 1) / block > target.max_workgroup_count_x) continue;
+        if (tm * tiles > 16 || subgroups * matrix_subgroup(target) > target.max_workgroup_invocations ||
+            detail::matrix_shared_bytes(subgroups, tm, 16, 0) > target.max_shared_memory) {
+          continue;
+        }
+        out.push_back({.variant = std::string(kMatrixFp8), .tuning = {tm, subgroups}});
+        if (tm == 2 && detail::matrix_shared_bytes(subgroups, tm, 16, tiles * 16) <= target.max_shared_memory)
+          out.push_back({.variant = std::string(kMatrixFp8), .tuning = {tm, subgroups, 1}});
+      }
+    }
+  }
   return out;
 }
 
@@ -315,6 +364,8 @@ std::expected<void, Refusal> Lowerer::conv(std::size_t index, const KernelChoice
   if (sg != 0 && (sg < target_.subgroup_min || sg > target_.subgroup_max || wg % sg != 0)) {
     return refuse_node(RefusalCode::FeatureUnavailable, n, "taille de sous-groupe hors de l'appareil");
   }
+  if ((packed || winograd) && quantized(n))
+    return refuse_node(RefusalCode::FeatureUnavailable, n, "arrondi FP8 : noyau direct en float seulement");
   if (packed && !(target_.f16_math && target_.f16_storage)) {
     return refuse_node(RefusalCode::FeatureUnavailable, n, "fp16 de calcul absent");
   }
@@ -375,6 +426,8 @@ std::expected<void, Refusal> Lowerer::conv(std::size_t index, const KernelChoice
   constants.push_back(wg);
   constants.push_back(pix);
   for (const std::uint32_t c : space_constants(attrs->epilogue)) constants.push_back(c);
+  constants.push_back(std::bit_cast<std::uint32_t>(attrs->in_quant));
+  constants.push_back(std::bit_cast<std::uint32_t>(attrs->out_quant));
   const Binding w{
       .kind = BindingKind::Blob,
       .index = add_blob(
@@ -393,12 +446,14 @@ std::expected<void, Refusal> Lowerer::conv(std::size_t index, const KernelChoice
 std::expected<void, Refusal> Lowerer::conv_matrix(std::size_t index, const KernelChoice& choice) {
   const ir::Node& n = graph_.nodes[index];
   const bool acc16 = choice.variant == kMatrixAcc16;
-  if ((!acc16 && choice.variant != kMatrix) || (choice.tuning.size() != 2 && choice.tuning.size() != 3))
+  const bool fp8 = choice.variant == kMatrixFp8;
+  if ((!acc16 && !fp8 && choice.variant != kMatrix) ||
+      (choice.tuning.size() != 2 && choice.tuning.size() != 3))
     return refuse_node(RefusalCode::InputMismatch, n, "réglage coopmat incomplet");
   if (acc16 && !target_.matrix_f16_acc) {
     return refuse_node(RefusalCode::FeatureUnavailable, n, "tuiles à sommes float16 absentes du pilote");
   }
-  if (!matrix_eligible(graph_, n, target_)) {
+  if (fp8 ? !fp8_eligible(graph_, n, target_) : !matrix_eligible(graph_, n, target_)) {
     return refuse_node(RefusalCode::FeatureUnavailable, n,
                        "matrices coopératives indisponibles pour ce nœud");
   }
@@ -458,13 +513,28 @@ std::expected<void, Refusal> Lowerer::conv_matrix(std::size_t index, const Kerne
   for (const std::uint32_t c : space_constants(attrs->epilogue)) constants.push_back(c);
   constants.push_back(shared_b);
   const ir::Tensor* weights = constant_input(graph_, n, ir::kConvW);
-  const Binding w{.kind = BindingKind::Blob,
-                  .index = add_blob(matrix_weights(*weights, x->desc.cp, tiles * 16))};
-  const Binding b{.kind = BindingKind::Blob,
-                  .index = add_blob(channel_floats(constant_input(graph_, n, ir::kConvB), yc.c))};
+  Binding w;
+  Binding b;
+  if (fp8) {
+    // Octets E4M3 et échelles retrouvés des poids ; l'entrée arrondie vaut q × in_quant.
+    const auto recovered = ir::recover_fp8_weights(weights->value);
+    constants.push_back(std::bit_cast<std::uint32_t>(attrs->in_quant));
+    constants.push_back(std::bit_cast<std::uint32_t>(attrs->out_quant));
+    w = {.kind = BindingKind::Blob,
+         .index = add_blob(matrix_weights_fp8(weights->dims, recovered->bytes, x->desc.cp, tiles * 16))};
+    b = {.kind = BindingKind::Blob,
+         .index = add_blob(fp8_bias_and_scales(constant_input(graph_, n, ir::kConvB), recovered->scale,
+                                               attrs->in_quant, tiles * 16))};
+  } else {
+    w = {.kind = BindingKind::Blob, .index = add_blob(matrix_weights(*weights, x->desc.cp, tiles * 16))};
+    b = {.kind = BindingKind::Blob,
+         .index = add_blob(channel_floats(constant_input(graph_, n, ir::kConvB), yc.c))};
+  }
   if (x->desc.n > kMaxGroups) return refuse_node(RefusalCode::ShapeInvalid, n, "trop d'images");
-  emit(index, acc16 ? "net_conv_coopmat_acc16" : "net_conv_coopmat_f16", std::move(constants),
-       {x->binding, w, b, slope, residual, y->binding}, {}, {div_up(pixels, bm), 1, x->desc.n});
+  emit(index,
+       fp8 ? std::string(kMatrixFp8Shader) : (acc16 ? "net_conv_coopmat_acc16" : "net_conv_coopmat_f16"),
+       std::move(constants), {x->binding, w, b, slope, residual, y->binding}, {},
+       {div_up(pixels, bm), 1, x->desc.n});
   if (sgs != target_.subgroup_size) program_.dispatches.back().subgroup = sgs;
   return {};
 }

@@ -106,6 +106,25 @@ std::vector<std::byte> matrix_weights(const ir::Tensor& w, std::uint32_t cin_pad
   return out.take();
 }
 
+std::vector<std::byte> matrix_weights_fp8(const ir::Dims& d, const std::vector<std::uint8_t>& e4m3,
+                                          std::uint32_t cin_padded, std::uint32_t cout_padded) {
+  const std::size_t rows = static_cast<std::size_t>(d[2] * d[3]) * cin_padded;
+  std::vector<std::byte> out(rows * cout_padded, std::byte{0});
+  for (std::int64_t ky = 0; ky < d[2]; ++ky) {
+    for (std::int64_t kx = 0; kx < d[3]; ++kx) {
+      for (std::int64_t ci = 0; ci < d[1]; ++ci) {
+        const std::size_t row =
+            (static_cast<std::size_t>((ky * d[3]) + kx) * cin_padded) + static_cast<std::size_t>(ci);
+        for (std::int64_t co = 0; co < d[0]; ++co) {
+          out[(row * cout_padded) + static_cast<std::size_t>(co)] =
+              static_cast<std::byte>(e4m3[at(d, co, ci, ky, kx)]);
+        }
+      }
+    }
+  }
+  return out;
+}
+
 std::vector<std::byte> winograd_weights(const ir::Tensor& w, std::uint32_t lanes, BlobType type) {
   const ir::Dims& d = w.dims;  // [cout][cin][3][3]
   const std::int64_t blocks = (d[0] + lanes - 1) / lanes;
@@ -150,6 +169,20 @@ std::vector<std::byte> constant_blob(const ir::Tensor& constant) {
   Packer out(constant.value.f.size(), type);
   for (std::size_t k = 0; k < constant.value.f.size(); ++k) out.put(k, constant.value.f[k]);
   return out.take();
+}
+
+std::vector<std::byte> fp8_bias_and_scales(const ir::Tensor* bias, const std::vector<float>& channel_scale,
+                                           float in_scale, std::uint32_t count) {
+  std::vector<float> values(static_cast<std::size_t>(count) * 2, 0.0F);
+  if (bias != nullptr) {
+    for (std::size_t c = 0; c < bias->value.f.size() && c < count; ++c) values[c] = bias->value.f[c];
+  }
+  for (std::size_t c = 0; c < channel_scale.size() && c < count; ++c) {
+    values[count + c] = in_scale * channel_scale[c];
+  }
+  std::vector<std::byte> out(values.size() * sizeof(float));
+  std::memcpy(out.data(), values.data(), out.size());
+  return out;
 }
 
 }  // namespace ajp::gpu::vk::net

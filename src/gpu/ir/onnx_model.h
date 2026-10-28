@@ -20,6 +20,7 @@ inline constexpr std::int32_t kFloat = 1;
 inline constexpr std::int32_t kInt32 = 6;
 inline constexpr std::int32_t kInt64 = 7;
 inline constexpr std::int32_t kFloat16 = 10;
+inline constexpr std::int32_t kFloat8E4M3Fn = 17;  // zéros des Q/DQ FP8 : décodés en flottants exacts
 
 // Un TensorProto décodé. Les flottants (FLOAT, FLOAT16) vont dans floats, les
 // entiers (INT64, INT32) dans ints ; la conversion depuis FLOAT16 est exacte.

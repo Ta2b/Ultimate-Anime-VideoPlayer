@@ -52,10 +52,34 @@ set(net_shaders
   "${shaders}/net_resize.comp"
   "${shaders}/net_unary.comp"
   "${shaders}/ring_store.comp")
+# Le noyau à matrices coopératives FP8 exige GL_EXT_float_e4m3 (glslang 15.2 ou plus récent) : il
+# n'entre dans la construction que si le compilateur le connaît ; sans lui, la variante n'est pas
+# proposée (net_lower_conv.cpp, fp8_eligible).
+set(fp8_probe "${CMAKE_CURRENT_BINARY_DIR}/fp8_probe.comp")
+file(WRITE "${fp8_probe}" "#version 450
+#extension GL_EXT_float_e4m3 : require
+#extension GL_KHR_cooperative_matrix : require
+#extension GL_KHR_memory_scope_semantics : require
+layout(local_size_x = 32) in;
+layout(std430, binding = 0) buffer B { uvec4 v[]; } b;
+void main() {
+  coopmat<floate4m3_t, gl_ScopeSubgroup, 16, 16, gl_MatrixUseA> a;
+  coopMatLoad(a, b.v, 0, 1, gl_CooperativeMatrixLayoutRowMajor);
+}
+")
+execute_process(COMMAND "${AJP_GLSLC}" --target-env=${AJP_SPIRV_TARGET_ENV} -o "${CMAKE_CURRENT_BINARY_DIR}/fp8_probe.spv"
+                "${fp8_probe}" RESULT_VARIABLE fp8_probe_result OUTPUT_QUIET ERROR_QUIET)
+set(fp8_shaders "")
+if(fp8_probe_result EQUAL 0)
+  set(fp8_shaders "${shaders}/net_conv_coopmat_fp8_f16.comp")
+else()
+  message(STATUS "glslc sans GL_EXT_float_e4m3 : noyau Vulkan FP8 non construit")
+endif()
 ajp_add_spirv(ajp_vk_backend
   NAMESPACE ajp::gpu::vk::net::spirv
   SHADERS
     ${net_shaders}
+    ${fp8_shaders}
     "${shaders}/net_conv_f16p.comp"
     "${shaders}/net_conv_coopmat_f16.comp"
     "${shaders}/net_conv_coopmat_acc16.comp"

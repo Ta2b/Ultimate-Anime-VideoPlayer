@@ -212,6 +212,35 @@ TEST_CASE("Réseau : graphe façon SPAN de bout en bout", "[vk_backend][net][gra
   check_all_variants(rig, graph, inputs, kFp16);
 }
 
+// Paires Q/DQ FP8 fusionnées dans les Conv (in_quant, out_quant) : le noyau direct en float arrondit
+// comme l'interpréteur, avec résiduel et activation fondus après l'arrondi de sortie.
+TEST_CASE("Réseau : Conv à entrée et sortie arrondies en FP8 E4M3", "[vk_backend][net][conv][fp8]") {
+  NetRig rig = make_net_rig();
+  ModelBuilder m;
+  m.input("x", {1, 6, 10, 12});
+  add_weight(m, "w1", {8, 6, 3, 3}, false, 71, 0.3F);
+  add_weight(m, "b1", {8}, false, 72);
+  add_weight(m, "w2", {8, 8, 1, 1}, false, 73, 0.3F);
+  m.initializer(ir::test::tensor_f32("s1", {}, std::vector<float>{0.02F}));
+  m.initializer(ir::test::tensor_f32("s2", {}, std::vector<float>{0.05F}));
+  m.node("FakeQuantE4M3", {"x", "s1"}, {"xq"});
+  m.node("Conv", {"xq", "w1", "b1"}, {"t1"}, {attr_ints("pads", {1, 1, 1, 1})});
+  m.node("FakeQuantE4M3", {"t1", "s2"}, {"t1q"});
+  m.node("Conv", {"t1q", "w2"}, {"t2"});
+  m.node("Add", {"t2", "t1q"}, {"sum"});
+  m.node("Relu", {"sum"}, {"y"});
+  m.output("y");
+  const ir::Graph graph = build(m);
+  std::size_t quantized = 0;
+  for (const ir::Node& node : graph.nodes) {
+    const auto* attrs = std::get_if<ir::ConvAttrs>(&node.attrs);
+    if (attrs != nullptr && (attrs->in_quant > 0.0F || attrs->out_quant > 0.0F)) ++quantized;
+  }
+  REQUIRE(quantized == 1);
+  const std::vector<ir::NamedValue> inputs{{"x", test_values(ir::DataType::F32, {1, 6, 10, 12}, 74)}};
+  check_all_variants(rig, graph, inputs, kFp32);
+}
+
 TEST_CASE("Réseau : graphe façon RIFE de bout en bout", "[vk_backend][net][graph]") {
   NetRig rig = make_net_rig();
   const ir::Graph graph = build(rife_like());
