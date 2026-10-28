@@ -27,8 +27,10 @@ class AutoRate {
   static constexpr std::uint32_t kCapPairs = 7200;
   static constexpr int kFailsToCap = 2;
   // Retards tolérés dans les kLateWindow dernières paires avant de descendre : un retard isolé laisse
-  // le palier (un instant sauté à 1 % des paires), deux rapprochés le font descendre.
-  static constexpr int kLateWindow = 32;
+  // le palier, deux rapprochés le font descendre. Choix de fluidité (mesuré sur 4070 Ti : RIFE ×5 a
+  // 0,9 % de paires en retard et 104 images manquées en 60 s contre 29 à ×4) : à ce taux la fenêtre
+  // de 64 paires attrape le palier, qui devient plafond appris, et ×4 reste.
+  static constexpr int kLateWindow = 64;
   static constexpr int kLateTolerance = 2;
   // Paires ignorées après une descente ou un saut : celles déjà en file ont été faites
   // au palier d'avant et reviendraient en retard à tort (descente en cascade).
@@ -57,7 +59,7 @@ class AutoRate {
   int cap_ = 0;              // plafond appris sur ce contenu ; 0 : aucun
   int backoff_ = 0;          // échecs récents de montée
   bool probing_ = false;     // le palier courant vient d'être tenté
-  std::uint32_t lates_ = 0;  // les retards des kLateWindow dernières paires, un bit chacune
+  std::uint64_t lates_ = 0;  // les retards des kLateWindow dernières paires, un bit chacune
   std::array<int, kAutoMaxStep + 2> fails_{};  // tentatives échouées par palier
 };
 

@@ -33,7 +33,7 @@ int AutoRate::pair(bool late) {
     --grace_;
     return step_;
   }
-  lates_ = ((lates_ << 1U) | (late ? 1U : 0U)) & (~0U >> (32 - kLateWindow));
+  lates_ = (lates_ << 1U) | (late ? 1U : 0U);  // kLateWindow = 64 : tout le mot
   if (late) {
     clean_ = 0;
     if (std::popcount(lates_) < kLateTolerance) return step_;  // un retard isolé : le palier reste
