@@ -14,10 +14,18 @@ namespace {
 struct MatrixTiles {
   bool f32_sums = false;
   bool f16_sums = false;
-  std::string shapes;  // toutes celles du pilote, pour le journal
+  bool f8_e4m3 = false;  // FP8 E4M3 × E4M3 → float32 (VK_EXT_shader_float8) : RDNA 4, Blackwell
+  std::string shapes;    // toutes celles du pilote, pour le journal
 };
 
+// VK_COMPONENT_TYPE_FLOAT8_E4M3_EXT / _E5M2_EXT (VK_EXT_shader_float8), absents des en-têtes
+// plus anciens : valeurs de l'extension.
+constexpr auto kComponentFloat8E4M3 = static_cast<VkComponentTypeKHR>(1000491002);
+constexpr auto kComponentFloat8E5M2 = static_cast<VkComponentTypeKHR>(1000491003);
+
 std::string_view component(VkComponentTypeKHR type) {
+  if (type == kComponentFloat8E4M3) return "e4m3";
+  if (type == kComponentFloat8E5M2) return "e5m2";
   switch (type) {
     case VK_COMPONENT_TYPE_FLOAT16_KHR:
       return "f16";
@@ -54,6 +62,11 @@ MatrixTiles matrix_tiles(const VkContext& context) {
              p.scope == VK_SCOPE_SUBGROUP_KHR;
     });
   };
+  const bool f8 = std::ranges::any_of(properties, [](const VkCooperativeMatrixPropertiesKHR& p) {
+    return p.MSize == 16 && p.NSize == 16 && p.KSize == 16 && p.AType == kComponentFloat8E4M3 &&
+           p.BType == kComponentFloat8E4M3 && p.CType == VK_COMPONENT_TYPE_FLOAT32_KHR &&
+           p.ResultType == VK_COMPONENT_TYPE_FLOAT32_KHR && p.scope == VK_SCOPE_SUBGROUP_KHR;
+  });
   // « 8×16×16 f16→f32 » : Intel Arc et Xe2 annoncent M = 8, que net_conv_coopmat.glsl ne sait pas
   // tuiler ; le journal le dit plutôt que de supposer 16 × 16 × 16.
   std::string shapes;
@@ -65,6 +78,7 @@ MatrixTiles matrix_tiles(const VkContext& context) {
   }
   return {.f32_sums = tile(VK_COMPONENT_TYPE_FLOAT32_KHR),
           .f16_sums = tile(VK_COMPONENT_TYPE_FLOAT16_KHR),
+          .f8_e4m3 = f8,
           .shapes = std::move(shapes)};
 }
 
@@ -90,6 +104,7 @@ DeviceProfile profile_device(const VkContext& context) {
                                .matrix_units = offered,
                                .matrix_first = profile.matrix_hardware && profile.matrix_allowed,
                                .matrix_f16_acc = offered && tiles.f16_sums,
+                               .matrix_f8 = offered && tiles.f8_e4m3,
                                .subgroup_size = caps.subgroup_size,
                                .subgroup_min = f.subgroup_size_control ? caps.min_subgroup_size : 0,
                                .subgroup_max = f.subgroup_size_control ? caps.max_subgroup_size : 0,

@@ -65,6 +65,9 @@ struct Target {
   // Tuiles 16 × 16 × 16 à sommes float16 aussi annoncées (variante coopmat_acc16, deux fois plus
   // rapide sur GeForce, retenue seulement si sa sortie concorde).
   bool matrix_f16_acc = false;
+  // Tuiles 16 × 16 × 16 FP8 E4M3 à sommes float32 annoncées par le pilote. Aucun noyau ne les
+  // emploie encore : le champ n'est lu que pour le journal et la préparation de la variante FP8.
+  bool matrix_f8 = false;
   std::uint32_t subgroup_size = 0;
   // Tailles de sous-groupe qu'un dispatch peut exiger ; 0 : aucune (le pilote choisit).
   std::uint32_t subgroup_min = 0;
