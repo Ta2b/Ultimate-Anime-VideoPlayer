@@ -4,6 +4,7 @@
 // pas d'oscillation entre k et k+1). Pur : le lecteur lui donne l'issue de chaque paire.
 #pragma once
 
+#include <array>
 #include <cstdint>
 
 namespace ajp::core {
@@ -20,9 +21,15 @@ class AutoRate {
   // Paires propres avant de tenter un palier de plus (3 s à 24 i/s), doublé à chaque échec récent.
   static constexpr std::uint32_t kRisePairs = 72;
   static constexpr int kMaxBackoff = 4;
-  // Un palier qui échoue encore au back-off maximal devient le plafond appris : on ne le retente plus
-  // qu'après 5 min (7200 paires à 24 i/s), au lieu d'un à-coup toutes les 48 s.
+  // Un palier dont la tentative échoue deux fois devient un plafond appris : on ne le retente plus
+  // qu'après 5 min (7200 paires à 24 i/s), au lieu d'un à-coup toutes les 4 à 48 s (mesuré sur 4070 Ti :
+  // GMFSS retentait ×3 à 4, 6, 14 et 29 s, RIFE oscillait ×6 ↔ ×4 quatorze fois en 60 s).
   static constexpr std::uint32_t kCapPairs = 7200;
+  static constexpr int kFailsToCap = 2;
+  // Retards tolérés dans les kLateWindow dernières paires avant de descendre : un retard isolé laisse
+  // le palier (un instant sauté à 1 % des paires), deux rapprochés le font descendre.
+  static constexpr int kLateWindow = 32;
+  static constexpr int kLateTolerance = 2;
   // Paires ignorées après une descente ou un saut : celles déjà en file ont été faites
   // au palier d'avant et reviendraient en retard à tort (descente en cascade).
   static constexpr std::uint32_t kGracePairs = 6;
@@ -50,6 +57,8 @@ class AutoRate {
   int cap_ = 0;              // plafond appris sur ce contenu ; 0 : aucun
   int backoff_ = 0;          // échecs récents de montée
   bool probing_ = false;     // le palier courant vient d'être tenté
+  std::uint32_t lates_ = 0;  // les retards des kLateWindow dernières paires, un bit chacune
+  std::array<int, kAutoMaxStep + 2> fails_{};  // tentatives échouées par palier
 };
 
 }  // namespace ajp::core

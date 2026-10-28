@@ -13,31 +13,47 @@ TEST_CASE("auto : le plafond suit l'écran", "[core][auto_rate]") {
   CHECK(auto_ceiling(0.0, 24.0) == 1);
 }
 
+namespace {
+// Deux retards rapprochés : ce qu'il faut pour descendre (un seul est toléré).
+int two_lates(AutoRate& rate) {
+  rate.pair(true);
+  return rate.pair(true);
+}
+}  // namespace
+
 TEST_CASE("auto : descend vite, remonte lentement", "[core][auto_rate]") {
   AutoRate rate(4);
   CHECK(rate.step() == 2);
-  CHECK(rate.pair(true) == 1);
-  CHECK(rate.pair(true) == 1);  // plancher (retard ignoré : temps de grâce)
-  for (std::uint32_t i = 0; i < AutoRate::kGracePairs - 1; ++i) rate.pair(false);
+  CHECK(rate.pair(true) == 2);  // un retard isolé : le palier reste
+  CHECK(rate.pair(true) == 1);  // le deuxième le fait descendre
+  CHECK(two_lates(rate) == 1);  // plancher (retards ignorés : temps de grâce)
+  for (std::uint32_t i = 0; i < AutoRate::kGracePairs - 2; ++i) rate.pair(false);
   for (std::uint32_t i = 0; i + 1 < AutoRate::kRisePairs; ++i) CHECK(rate.pair(false) == 1);
   CHECK(rate.pair(false) == 2);
 }
 
+TEST_CASE("auto : un retard isolé ne fait pas descendre", "[core][auto_rate]") {
+  AutoRate rate(4);
+  for (int i = 0; i < 200; ++i) {
+    for (int k = 0; k < AutoRate::kLateWindow; ++k) rate.pair(false);
+    CHECK(rate.pair(true) >= 2);
+  }
+}
+
 TEST_CASE("auto : les retards d'une file déjà faite ne font pas chuter en cascade", "[core][auto_rate]") {
   AutoRate rate(6);
-  rate.set_ceiling(6);
   for (int i = 0; i < 100; ++i) rate.pair(false);
   const int before = rate.step();
-  CHECK(rate.pair(true) == before - 1);
+  CHECK(two_lates(rate) == before - 1);
   for (std::uint32_t i = 0; i < AutoRate::kGracePairs; ++i) CHECK(rate.pair(true) == before - 1);
-  CHECK(rate.pair(true) == before - 2);  // la grâce finie, un vrai retard descend
+  CHECK(two_lates(rate) == before - 2);  // la grâce finie, de vrais retards descendent
 }
 
 TEST_CASE("auto : un saut (seek) ignore les premières paires", "[core][auto_rate]") {
   AutoRate rate(4);
   rate.settle();
   for (std::uint32_t i = 0; i < AutoRate::kGracePairs; ++i) CHECK(rate.pair(true) == 2);
-  CHECK(rate.pair(true) == 1);
+  CHECK(two_lates(rate) == 1);
 }
 
 TEST_CASE("auto : un palier qui échoue est re-tenté plus tard", "[core][auto_rate]") {
@@ -51,7 +67,7 @@ TEST_CASE("auto : un palier qui échoue est re-tenté plus tard", "[core][auto_r
     return pairs;
   };
   const std::uint32_t first = climb(3);
-  CHECK(rate.pair(true) == 2);  // le palier tenté échoue
+  CHECK(two_lates(rate) == 2);  // le palier tenté échoue
   CHECK(climb(3) > first);      // la reprise demande plus de paires propres
 }
 
@@ -63,19 +79,16 @@ TEST_CASE("auto : jamais au-delà du plafond", "[core][auto_rate]") {
   CHECK(rate.step() == 2);
 }
 
-TEST_CASE("auto : un palier qui échoue au back-off maximal devient un plafond appris", "[core][auto_rate]") {
+TEST_CASE("auto : un palier qui échoue deux fois devient un plafond appris", "[core][auto_rate]") {
   AutoRate rate(3);
   const auto climb_to_3 = [&] {
     while (rate.step() < 3) rate.pair(false);
   };
-  const auto fail = [&] {
-    for (std::uint32_t i = 0; i <= AutoRate::kGracePairs && rate.step() == 3; ++i) rate.pair(true);
-  };
-  for (int round = 0; round < AutoRate::kMaxBackoff + 1; ++round) {
-    climb_to_3();
-    fail();
-    CHECK(rate.step() == 2);
-  }
+  climb_to_3();
+  CHECK(two_lates(rate) == 2);
+  CHECK(rate.learned_cap() == 0);
+  climb_to_3();
+  CHECK(two_lates(rate) == 2);
   CHECK(rate.learned_cap() == 2);
   std::uint32_t pairs = 0;
   while (rate.step() < 3 && pairs < AutoRate::kCapPairs + 100) {

@@ -1,6 +1,7 @@
 #include "core/auto_rate.h"
 
 #include <algorithm>
+#include <bit>
 
 namespace ajp::core {
 
@@ -32,18 +33,25 @@ int AutoRate::pair(bool late) {
     --grace_;
     return step_;
   }
+  lates_ = ((lates_ << 1U) | (late ? 1U : 0U)) & (~0U >> (32 - kLateWindow));
   if (late) {
+    clean_ = 0;
+    if (std::popcount(lates_) < kLateTolerance) return step_;  // un retard isolé : le palier reste
     if (step_ > 1) {
-      --step_;
-      grace_ = kGracePairs;
-      // Un palier tenté qui échoue : on le re-tentera plus tard.
       if (probing_) {
-        if (backoff_ == kMaxBackoff) cap_ = step_;
+        // Une tentative qui échoue : on la re-tentera plus tard ; la deuxième fait du palier d'en dessous
+        // le plafond appris.
+        if (++fails_[static_cast<std::size_t>(step_)] >= kFailsToCap) {
+          cap_ = step_ - 1;
+          fails_[static_cast<std::size_t>(step_)] = 0;
+        }
         backoff_ = std::min(backoff_ + 1, kMaxBackoff);
       }
+      --step_;
+      grace_ = kGracePairs;
     }
     probing_ = false;
-    clean_ = 0;
+    lates_ = 0;
     return step_;
   }
   ++clean_;
@@ -52,6 +60,7 @@ int AutoRate::pair(bool late) {
   if (probing_ && clean_ >= kRisePairs * 2) {  // le palier tenté tient : l'hystérésis se relâche
     probing_ = false;
     backoff_ = std::max(backoff_ - 1, 0);
+    fails_[static_cast<std::size_t>(step_)] = 0;
     if (cap_ > 0 && step_ > cap_) cap_ = 0;  // le palier au-dessus du plafond tient : il n'y en a plus
   }
   if (clean_ >= needed && step_ < ceiling_) {
