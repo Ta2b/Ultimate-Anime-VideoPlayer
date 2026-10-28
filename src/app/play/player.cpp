@@ -1,9 +1,12 @@
 #include "app/play/player.h"
+#include "app/play/updater.h"
 
 #include <algorithm>
 #include <array>
 #include <chrono>
 #include <filesystem>
+#include <stop_token>
+#include <thread>
 #include <format>
 #include <fstream>
 #include <optional>
@@ -104,6 +107,10 @@ std::expected<void, Refusal> play(const PlayOptions& options, const PlayerPaths&
     if (!video) return std::unexpected(std::move(video.error()));
     given = std::move(*video);
   }
+  // Vérification des mises à jour, en arrière-plan et hors lecture : le fil s'arrête avec le lecteur.
+  std::jthread update_check;
+  const std::filesystem::path update_file = paths.data / "update.toml";
+  const UpdatePaths update_paths{.data = paths.data, .install = paths.executable.parent_path(), .executable = paths.executable};
   const std::filesystem::path settings_path = (paths.settings.empty() ? paths.engines.parent_path() : paths.settings) / "play.toml";
   std::vector<std::string> startup_notes;  // fichiers mis de côté, dits à l'accueil
   auto saved = load_settings(settings_path);
@@ -111,6 +118,22 @@ std::expected<void, Refusal> play(const PlayOptions& options, const PlayerPaths&
     log->warn("{} ; réglages par défaut", saved.error().detail);
     startup_notes.push_back(set_aside(settings_path, saved.error()));
     saved = PlaySettings{};
+  }
+  if (!options.bench_out && !options.data_dir) {
+    const std::int64_t now = std::chrono::duration_cast<std::chrono::seconds>(std::chrono::system_clock::now().time_since_epoch()).count();
+    const UpdateState seen = load_update_state(update_file);
+    if (update_due(seen, saved->update_mode, saved->update_frequency, now)) {
+      update_check = std::jthread([=, mode = saved->update_mode, channel = saved->update_channel](const std::stop_token& stop) {
+        UpdateState state = load_update_state(update_file);
+        const auto message = run_update_check(update_paths, mode, channel, state, stop);
+        static_cast<void>(save_update_state(update_file, state));
+        if (message) {
+          log_channel("app")->info("mise à jour : {}", *message);
+        } else {
+          log_channel("app")->info("mise à jour : {}", message.error().detail);
+        }
+      });
+    }
   }
   // Le profil de démarrage fixe la chaîne ; les options données la remplacent pour cette lecture.
   ProfileState profiles{.user_path = settings_path.parent_path() / "user.toml",
@@ -298,6 +321,15 @@ std::expected<void, Refusal> play(const PlayOptions& options, const PlayerPaths&
                   .profiles = std::move(profiles),
                   .engines = std::move(*engines),
                   .display = read_display(display_name((*screen)->window()))};
+    {
+      // « Me prévenir » : une version plus récente vue par la dernière vérification, annoncée une fois par lancement.
+      static bool announced = false;
+      const UpdateState update = load_update_state(update_file);
+      if (!announced && saved->update_mode == "notify" && !update.latest_version.empty()) {
+        announced = true;
+        player.notice = std::format("Mise à jour {} disponible (Paramètres > Général > Mises à jour)", update.latest_version);
+      }
+    }
     if (player.display) {
       log->info("écran {} : {}", player.display->connector, describe(*player.display));
     } else {

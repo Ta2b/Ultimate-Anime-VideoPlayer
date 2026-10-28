@@ -164,6 +164,11 @@ struct PlaySettings {
   bool deband = false;
   // À la fin de la vidéo, lire la suivante du dossier (ordre naturel des noms) ; vaut au prochain
   // fichier. Sans effet depuis l'accueil, qui ramène à la liste.
+  // Mises à jour du lecteur (docs/ux-parametres.md, 4.5) : « notify » (Me prévenir, le défaut décidé), « auto »,
+  // « never » ; le canal « stable » ou « preview » ; la fréquence « launch », « daily », « weekly ».
+  std::string update_mode = "notify";
+  std::string update_channel = "stable";
+  std::string update_frequency = "daily";
   bool autoplay_next = false;
   bool default_player_dismissed = false;  // « Ne plus me le demander » : le bouton quitte Général, reste en bas d'Avancé
   int audio_delay_ms = 0;

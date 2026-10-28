@@ -10,6 +10,7 @@
 #include <string>
 
 #include "app/play/default_player.h"
+#include "app/play/settings.h"
 
 namespace ajp::app::play {
 
@@ -32,6 +33,14 @@ struct BenchNote {
 
 // Rend vrai quand l'évaluation vient d'être lancée : l'appelant met alors la lecture en pause.
 bool bench_page(const PlayerPlace& place, const std::filesystem::path& video, BenchNote& bench);
+
+// Général > Mises à jour : le mode, le canal, la fréquence, « Vérifier maintenant », le retour arrière.
+struct UpdateNote {
+  std::string text;
+  bool refused = false;
+  std::shared_ptr<std::future<std::expected<std::string, Refusal>>> pending;
+};
+void updates_page(PlaySettings& d, const PlayerPlace& place, UpdateNote& note);
 
 // Le lecteur par défaut et « Ouvrir avec » (Général > Lecteur par défaut).
 // Avec « Ne plus me le demander » (dismissed) et, quand le lecteur est déjà celui des vidéos, un mot qui le dit.

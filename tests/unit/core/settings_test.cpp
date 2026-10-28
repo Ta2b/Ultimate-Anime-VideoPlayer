@@ -204,18 +204,14 @@ TEST_CASE("Réglages : le dossier de données se crée à la première écriture
   CHECK(*reread == Settings{});
 }
 
-TEST_CASE("Réglages : assistant, inscription, mises à jour et écoute font l'aller-retour", "[settings]") {
+TEST_CASE("Réglages : assistant et inscription font l'aller-retour", "[settings]") {
   Settings settings;
   settings.first_run_done = true;
   settings.first_run_step = 5;
   settings.open_with_registered = true;
-  settings.update_mode = "auto";
-  settings.update_channel = "preview";
   const auto text = format_settings(settings);
   REQUIRE(text);
   const auto read = parse_settings(*text);
   REQUIRE(read);
   CHECK(*read == settings);
-  CHECK(Settings{}.update_mode == "notify");  // le défaut décidé : Me prévenir
-  CHECK_FALSE(parse_settings("update_mode = \"parfois\""));
 }

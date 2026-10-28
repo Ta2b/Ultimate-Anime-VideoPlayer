@@ -59,9 +59,9 @@ Pull requests : une par étape ; quand une étape dépend d'une autre, la base e
 - [x] Écran audio de l'assistant et page Audio des réglages (Audio > Sortie : Appareil, Écoute, Synchronisation)
 
 ### D. Mise à jour automatique signée
-- [ ] Vérification en arrière-plan et réglages (Me prévenir / Automatique / Jamais, canal, fréquence)
-- [ ] Manifeste signé (Ed25519), téléchargement, application au prochain lancement, retour arrière
-- [ ] Essais Linux puis Windows
+- [x] Vérification en arrière-plan et réglages (Me prévenir / Automatique / Jamais, canal, fréquence) : Général > Mises à jour (PR `claude/maj`)
+- [x] Manifeste signé (Ed25519, `tools/release/sign-manifest.sh`), téléchargement vérifié (taille + SHA-256), application au prochain lancement, retour arrière (testés sur archive locale)
+- [ ] Essais Linux puis Windows de bout en bout : demandent une release signée (clé absente, voir journal) ; Windows renomme les fichiers en service en `.old`, non essayé
 
 ### F. Moteur
 - [ ] Hermite en réduction (`DownscaleFilter::Hermite`)
@@ -108,3 +108,10 @@ Pull requests : une par étape ; quand une étape dépend d'une autre, la base e
   la piste ; changer d'appareil rouvre la vidéo, changer d'écoute se fait en direct. Réglages `[audio]` de play.toml :
   device, listening, faithful, devices.<nom>. Pas fait : la touche A/B, des événements d'ajout/retrait d'appareil (le défaut
   est suivi par SDL), et l'écoute à l'oreille du binaural (aucun casque ici).
+- **2026-10-28** : mise à jour signée en PR. **La clé de signature n'existe pas** : `-DAJP_UPDATE_PUBKEY=<hex>` est vide, donc
+  le lecteur dit « pas de clé de signature » et ne croit aucun manifeste (le reste est prêt). Pour l'activer, Tatoub (ou le
+  coordinateur) crée la clé avec les deux commandes openssl du début de `tools/release/sign-manifest.sh`, compile avec la
+  clé publique et signe chaque release avec `AJP_UPDATE_KEY`. Dépôt par défaut : `Ta2b/ajp-releases` (`AJP_RELEASE_REPO`).
+  Vérification Ed25519 écrite à la main (`ed25519.cpp`, constantes recalculées, SHA-512 de libavutil) et recoupée avec une
+  signature OpenSSL et le vecteur 1 de la RFC 8032. macOS : manuel (le .app ne s'écrase pas) ; Flatpak ou dossier en lecture
+  seule : réglage grisé « mis à jour par votre gestionnaire de paquets ». Le défaut reste « Me prévenir ».
