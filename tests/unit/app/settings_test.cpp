@@ -620,3 +620,24 @@ TEST_CASE("play.toml garde le plafond du mode auto et refuse un plafond absurde"
   wanted.auto_cap = 60;
   CHECK(live_part(running, wanted, true).auto_cap == 60);
 }
+
+TEST_CASE("play.toml garde le mode d'Auto (recommande par défaut) et refuse une valeur inconnue",
+          "[settings][auto][libre]") {
+  using namespace ajp::app::play;
+  PlaySettings s;
+  CHECK_FALSE(s.auto_free);  // le défaut reste Auto (recommandé)
+  CHECK_FALSE(parse_settings("version = 1\n")->auto_free);
+  s.auto_free = true;
+  const std::string text = format_settings(s);
+  CHECK(text.find("auto_mode") != std::string::npos);
+  const auto read = parse_settings(text);
+  REQUIRE(read);
+  CHECK(read->auto_free);
+  CHECK_FALSE(parse_settings(format_settings(PlaySettings{}))->auto_free);
+  CHECK_FALSE(parse_settings("version = 1\n[interpolation]\nauto_mode = \"fou\"\n").has_value());
+  // Le mode se change en direct, sans rouvrir la lecture.
+  PlaySettings running;
+  PlaySettings wanted;
+  wanted.auto_free = true;
+  CHECK(live_part(running, wanted, true).auto_free);
+}

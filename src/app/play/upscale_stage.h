@@ -32,6 +32,7 @@
 #include "app/play/pipeline.h"
 #include "app/play/ring_stage.h"
 #include "core/cadence.h"
+#include "core/free_grid.h"
 #include "core/ring.h"
 #include "gpu/backend.h"
 #include "gpu/kernel_ops.h"
@@ -279,6 +280,8 @@ class UpscaleStage final : public RingStage {
   std::uint32_t intermediates_ = 0;  // celles qui sont interpolées
   bool uninterpolated_ = false;      // la paire courante, laissée sans interpolation à dessein
   std::optional<core::CadenceAccumulator> cadence_;
+  core::FreeGrid free_grid_;  // Auto libre : la grille des instants à la place de cadence_
+  core::FreeInputs free_inputs(std::uint32_t epoch) const;
   Factor cadence_factor_;
   vendor_hdr::InputPreparation prepared_;  // couleur de l'image en cours, pour RTX HDR
   // Tampons passés d'une voie à l'autre (entrée de RIFE, image intermédiaire) : deux quand le

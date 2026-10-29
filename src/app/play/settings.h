@@ -143,6 +143,10 @@ struct PlaySettings {
   bool rife_auto = true;
   // Plafond de la cadence de sortie du mode auto, en i/s (60, 120…) ; 0 : celle de l'écran, le maximum.
   int auto_cap = 0;
+  // Mode d'Auto : « recommande » (le défaut : paliers, core/auto_rate.h) ou « libre » (expérimental, écran
+  // VRR armé seulement : aucun palier, chaque image est calculée à l'instant exact où elle sera vue,
+  // core/free_grid.h). En direct ; replie sur « recommande » si l'écran ne le permet pas.
+  bool auto_free = false;
   MotionEngine motion_engine = MotionEngine::Rife;
   std::string rife_model;  // fichier ONNX de RIFE (nom seul) ; vide : le défaut de la carte
   // Garder les poses (DRBA, kernels/spec/poses.h) : un personnage animé en deux garde son rythme
