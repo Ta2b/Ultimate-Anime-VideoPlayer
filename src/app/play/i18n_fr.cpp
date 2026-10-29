@@ -123,7 +123,7 @@ std::span<const Entry> french_player() {
 std::span<const Entry> french_entries() {
   static const std::vector<Entry> all = [] {
     std::vector<Entry> merged;
-    for (const auto part : {french_player(), french_settings(), french_image()})
+    for (const auto part : {french_player(), french_settings(), french_image(), french_sound()})
       merged.insert(merged.end(), part.begin(), part.end());
     return merged;
   }();
