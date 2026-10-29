@@ -30,6 +30,12 @@ struct FreeInputs {
   std::int64_t step_us = 0;     // temps de service × marge ; 0 : inconnu (deux images par paire)
   // Le nombre maximal d'instants de la paire que le moteur accepte (1 à kMaxInstantsPerPair).
   std::size_t max_instants = kMaxInstantsPerPair;
+  // Écran à fréquence fixe (sans VRR) : les instants tombent sur la grille des vsyncs, vsync_origin_us + k ×
+  // vsync_period_us (temps de contenu, le pts où une image doit être pour paraître à un vsync). Une image ne
+  // paraît ainsi jamais entre deux vsyncs : l'écart minimal devient la période, et un GPU trop lent laisse
+  // l'image tenue un vsync de plus. 0 : VRR, aucune grille.
+  std::int64_t vsync_period_us = 0;
+  std::int64_t vsync_origin_us = 0;
 };
 
 class FreeGrid {

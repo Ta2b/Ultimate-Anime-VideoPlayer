@@ -17,6 +17,7 @@
 #include "app/play/settings.h"
 #include "core/auto_rate.h"
 #include "core/free_rate.h"
+#include "core/vsync_phase.h"
 #include "gpu/kernel_ops.h"
 #include "vendor_hdr/true_hdr.h"
 
@@ -212,6 +213,35 @@ class LiveSettings {
     const std::scoped_lock lock(mutex_);
     return {free_.step_us(now_us), free_.min_gap_us()};
   }
+  // Auto libre sans VRR : les instants tombent sur les vsyncs (core/free_grid.h). `period_us` : la période de
+  // l'écran (0 : VRR, aucune grille) ; main donne chaque présentation neuve (vsync_note) et le délai entre le
+  // vsync de présentation et l'affichage de l'image (Session::visible_delay_us).
+  void set_vsync(std::int64_t period_us, std::int64_t visible_delay_us) {
+    const std::scoped_lock lock(mutex_);
+    vsync_.set_period(period_us);
+    vsync_delay_us_ = visible_delay_us;
+  }
+  std::int64_t vsync_period_us() const {
+    const std::scoped_lock lock(mutex_);
+    return free_on_ ? vsync_.period_us() : 0;
+  }
+  void vsync_note(std::int64_t present_us) {
+    const std::scoped_lock lock(mutex_);
+    if (free_on_) vsync_.note(present_us);
+  }
+  // gpu : la période de l'écran et un instant hôte où l'image choisie au vsync le plus proche de `host_us`
+  // est celle dont le pts tombe pile sur la grille (période 0 : pas de grille ou phase inconnue).
+  struct VsyncGrid {
+    std::int64_t period_us = 0;
+    std::int64_t anchor_host_us = 0;
+  };
+  VsyncGrid vsync_grid(std::int64_t host_us) const {
+    const std::scoped_lock lock(mutex_);
+    if (!free_on_ || vsync_.period_us() <= 0 || !vsync_.known()) return {};
+    // Choisie une demi-période après son pts, affichée au vsync d'après : pts = vsync + délai + période / 2.
+    return {.period_us = vsync_.period_us(),
+            .anchor_host_us = vsync_.near(host_us) + vsync_delay_us_ + vsync_.period_us() / 2};
+  }
   bool free_should_fall_back(std::int64_t now_us) const {
     const std::scoped_lock lock(mutex_);
     return free_on_ && free_.should_fall_back(now_us);
@@ -295,6 +325,8 @@ class LiveSettings {
   bool auto_on_ = false;
   core::AutoRate auto_;
   bool free_on_ = false;
+  core::VsyncPhase vsync_;
+  std::int64_t vsync_delay_us_ = 0;
   core::FreeRate free_;
   std::int64_t frame_done_us_ = 0;
   struct Expected {

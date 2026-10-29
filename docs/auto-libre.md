@@ -154,3 +154,62 @@ démarrage et le repli se déclenchait à 1,5 s ; `settle` ne fait désormais qu
   plus irréguliers (une paire a 1 instant, la suivante 2). Il reste disponible et marqué expérimental.
 - Au plus 10 instants par paire (ring) : 120 i/s minimum de plafond pour une source de 12 i/s.
 - Les instants à moins d'un quart de pas d'une source tombent sur elle : jusqu'à ~4 ms de décalage.
+
+## 5. Sans VRR : l'Auto libre calé sur les vsyncs
+
+Les jeux en cadence libre ne sont pas réservés aux écrans VRR ; l'Auto libre non plus. Sans VRR (écran à
+fréquence fixe, ou VRR coupé), le mode reste le même (aucun palier ni multiplicateur) mais les instants de la
+grille tombent **sur les vsyncs de l'écran** : une image n'est jamais calculée pour un instant entre deux
+vsyncs, donc rien ne vibre. C'est le comportement d'un jeu en vsync : un GPU plus lent laisse l'image
+précédente tenue un vsync de plus. Ce n'est pas optimal (sur un écran VRR l'image part quand elle est prête),
+mais c'est utilisable partout. VRR armé : le comportement décrit plus haut ne change pas.
+
+- **Grille** (`FreeInputs::vsync_period_us`, `vsync_origin_us`, `core/free_grid.cpp`) : l'instant idéal
+  (`base`, comme avant : horloge prédite, dernier instant + écart minimal, échéance) est monté au vsync suivant
+  (`pts ≡ origine mod période`). L'idéal avance du pas de service sans être arrondi : la cadence moyenne reste
+  celle du GPU (par exemple 45 i/s sur 165 Hz donne des écarts de 2 et 3 vsyncs), seule la position de chaque
+  image est quantifiée. Il n'y a pas de rattachement à la source droite hors grille. L'écart minimal vaut la
+  période de l'écran (ou du plafond `auto_cap`, s'il est plus lent) ; une image tardive est abandonnée avant
+  calcul comme avant, la grille repart au vsync d'après.
+- **Phase** (`core/vsync_phase.*`) : la position des présentations neuves modulo la période, lissée en
+  cercle (8 % par présentation), recalée à chaque présentation : elle suit l'écart entre l'horloge de
+  contenu (audio) et celle de l'écran sans accumuler. L'origine de la grille est le vsync le plus proche
+  plus le délai d'affichage de la sélection (`Session::visible_delay_us`) plus une demi-période : l'image
+  choisie une demi-période avant son pts s'affiche alors pile au vsync suivant, au milieu de la marge de la
+  boucle (pas de bascule d'un vsync à l'autre à cause de la gigue).
+- **Statistiques / repli** : une image « manquée » se compte contre le pas arrondi au vsync au-dessus ; le
+  repli sur Auto (≥ 3 % de pertes sur 3 s) est identique.
+- **Menu** : « Auto libre » n'est plus grisé sans VRR ; l'infobulle dit « sans VRR, la cadence est calée sur
+  le rafraîchissement de l'écran ». Option du banc `--no-vrr` : traite l'écran comme fixe même si le VRR est
+  armé.
+
+### Tests
+
+Purs (`tests/unit/core/free_test.cpp`) : instants multiples de la période (à la phase près), pts croissants, au
+moins un vsync entre deux images, GPU à 25 i/s sur 60 Hz (22 à 26 i/s, jamais entre deux vsyncs), image tenue
+quand la paire est passée, suivi de phase avec gigue, et dix minutes simulées avec une horloge qui dérive de
+±0,1 % : toutes les images restent à moins d'1 ms de leur vsync.
+
+### Vérification réelle (75 s, `--no-vrr`, 165 Hz traité comme fixe, 720p, plein écran, même scène)
+
+| | Auto (`--no-vrr`, paliers entiers) | Auto libre sur vsyncs |
+| --- | --- | --- |
+| cadence moyenne | 38,0 i/s | **66,8 i/s** |
+| sautées / manquées | 4 / 40 | 5 / 0 |
+| pertes | 1,47 % | **0,10 %** |
+| écart entre images neuves σ / p95 | 11,0 / 44,7 ms | 7,5 / 25,4 ms |
+| changements de palier | 16 | aucun |
+
+Les écarts d'affichage sont des multiples de la période de l'écran (1, 2, 3 vsyncs : 827, 1643 et 1053 des
+4 906 images ; au-delà de 4 vsyncs, moins de 3 %). Limite de cet essai : l'écran de la machine est en réalité
+un VRR, `--no-vrr` ne change que ce que le lecteur en suppose ; la phase mesurée sur un VRR a plus de gigue
+qu'avec un vrai écran fixe (les présentations d'un VRR ne sont pas alignées sur une horloge), donc un écran
+60 Hz fixe devrait faire au moins aussi bien. À vérifier sur le portable de Tatoub (RTX 4050, GNOME, écran
+fixe).
+
+### Limites
+
+- Sur un écran 60 Hz, la période est de 16,7 ms : un GPU qui tient 45 i/s donne des écarts de 1 et 2 vsyncs
+  en alternance (cadence moyenne exacte mais rythme inégal) ; c'est le prix du vsync, un VRR n'a pas ce défaut.
+- Un compositeur qui ne présente pas à chaque vsync (fenêtre non plein écran, composition en tampon) décale la
+  phase mesurée : le mode reste valide mais l'image peut changer de vsync de temps en temps.

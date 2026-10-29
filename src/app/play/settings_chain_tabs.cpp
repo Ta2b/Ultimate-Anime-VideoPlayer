@@ -31,20 +31,20 @@ constexpr std::array<HeightChoice, 5> kHeights{{
     {480, "480p"},
 }};
 
-// Le sélecteur de cran de précision : « Performance · FP8 », « Équilibre · FP16 », « Qualité · FP32 ». Un
-// cran que le poste ne rend pas est grisé ; choisi quand même (play.toml), la chaîne prend l'Équilibre.
+// Le sélecteur de cran de précision : « Performance · FP8 », « Équilibre · FP16 », « Qualité · FP32 ». Il ne
+// montre que les crans que ce poste rend pour ce réseau (Équilibre l'est toujours) et rien du tout quand
+// Équilibre est le seul : un cran qui n'est pas une option n'apparaît pas, grisé ni « absent ». Un cran
+// choisi dans play.toml puis devenu indisponible se lit « Équilibre » : la chaîne le prend.
 bool precision_combo(const char* title, PrecisionTier& tier, const TierSupport& support) {
+  if (!support.performance && !support.quality) return false;
   const auto text = [](PrecisionTier t) { return std::format("{} · {}", label(t), precision_text(t)); };
-  std::string shown = text(tier);
-  if (!support.has(tier)) shown += " · indisponible, Équilibre";
+  const std::string shown = text(support.effective(tier));
   bool changed = false;
   if (ImGui::BeginCombo(title, shown.c_str())) {
     for (int i = 0; i < kPrecisionTierCount; ++i) {
       const auto candidate = static_cast<PrecisionTier>(i);
-      const bool present = support.has(candidate);
-      std::string entry = text(candidate);
-      if (!present) entry += " · absent";
-      if (ImGui::Selectable(entry.c_str(), candidate == tier, present ? 0 : ImGuiSelectableFlags_Disabled) &&
+      if (!support.has(candidate)) continue;
+      if (ImGui::Selectable(text(candidate).c_str(), candidate == support.effective(tier)) &&
           candidate != tier) {
         tier = candidate;
         changed = true;
@@ -101,11 +101,17 @@ void image_tab(PlaySettings& d, const SettingsChoices& choices) {
   ImGui::EndDisabled();
   panel::tip("Performance : le plus rapide. Balanced : plus fin, plus lent. Sharp1 : contours plus nets.");
   panel::tip(
-      "Précision de SPAN. Performance : calcul en FP8 sur les RTX 40 et après, le plus rapide, avec une "
-      "perte "
-      "de détail à juger à l'œil. Équilibre : FP16, le réseau tel que livré. Qualité : FP32. Un cran sans "
-      "variante installée (tools/span/quantize_span.py --precision fp8 ou fp32) est grisé ; la lecture "
-      "reprend en FP16 s'il est refusé. Recharge la lecture.");
+      "Précision de SPAN. Équilibre : FP16, le réseau tel que livré. Performance : le plus rapide (calcul en "
+      "FP8 sur les RTX 40 et après), fabriqué sur votre PC par le bouton « Préparer le mode Performance » "
+      "des "
+      "réglages avancés ; il n'apparaît dans la liste qu'une fois prêt. Qualité : FP32, si sa variante est "
+      "installée. Recharge la lecture.");
+  if (panel::advanced() && !choices.span_tiers.performance) {
+    panel::note(
+        "Performance (FP8) : fabriqué sur votre PC (bouton « Préparer le mode Performance » plus bas), pour "
+        "les "
+        "RTX 40 et après.");
+  }
 
   section("Réduction avant l'agrandissement");
   // La source sans réduction, avec sa hauteur quand on la connaît : « 1080 lignes », pas « 4K », que
@@ -226,28 +232,29 @@ void fluidity_tab(PlaySettings& d, const SettingsChoices& choices, bool exportin
         "i/s pour ménager le GPU. Il baisse toujours de lui-même quand une scène est lourde.");
   }
   if (d.rife_auto && now.num > now.den && !exporting) {
-    // Auto libre : réservé à un écran VRR armé (la cadence n'y est liée à rien) ; il reste choisi, grisé, si
-    // le VRR se coupe : la lecture repasse alors sur Auto toute seule.
+    // Auto libre : sur un écran VRR armé, chaque image part dès qu'elle est prête ; sans VRR, les instants
+    // sont calés sur les vsyncs de l'écran (comme un jeu en vsync). Dans les deux cas la lecture repasse sur
+    // Auto si trop d'images sont perdues.
     const bool vrr_armed = choices.display_vrr && choices.display_vrr_armed;
     const char* const shown = d.auto_free ? "Auto libre (expérimental)" : "Auto (recommandé)";
     if (ImGui::BeginCombo("Mode d'Auto", shown)) {
       if (ImGui::Selectable("Auto (recommandé)", !d.auto_free)) d.auto_free = false;
-      ImGui::BeginDisabled(!vrr_armed);
       if (ImGui::Selectable("Auto libre (expérimental)", d.auto_free)) d.auto_free = true;
-      ImGui::EndDisabled();
-      panel::tip(vrr_armed ? "Aucun palier : chaque image est calculée à l'instant exact où elle sera vue."
-                           : "Réservé à un écran VRR armé (G-Sync / FreeSync / Adaptive Sync actif, plein "
-                             "écran sous KDE) : ici l'écran n'en a pas, ou le système l'a coupé.");
+      panel::tip(vrr_armed
+                     ? "Aucun palier : chaque image est calculée à l'instant exact où elle sera vue."
+                     : "Sans VRR, la cadence est calée sur le rafraîchissement de l'écran : chaque image "
+                       "est calculée pour un vsync exact, et une image trop tardive laisse la précédente "
+                       "un vsync de plus (comme un jeu en vsync).");
       ImGui::EndCombo();
     }
     panel::tip(
         "Auto (recommandé) : paliers de multiplicateur qui suivent ce que le GPU tient. Auto libre "
-        "(expérimental, écran VRR armé) : aucun palier ni multiplicateur, comme un moteur de jeu. Le lecteur "
-        "calcule chaque image à l'instant exact de la vidéo où elle sera affichée, dès que le GPU est libre, "
-        "sans dépasser l'écran ni le plafond : le débit est ce que le GPU tient, la vitesse de la vidéo "
-        "reste "
-        "constante. Si trop d'images sont perdues (3 % sur 3 s), la lecture repasse sur Auto avec un "
-        "message.");
+        "(expérimental) : aucun palier ni multiplicateur, comme un moteur de jeu. Le lecteur calcule chaque "
+        "image à l'instant exact de la vidéo où elle sera affichée, dès que le GPU est libre, sans dépasser "
+        "l'écran ni le plafond : le débit est ce que le GPU tient, la vitesse de la vidéo reste constante. "
+        "Sur un écran VRR armé, l'image part quand elle est prête ; sans VRR, la cadence est calée sur le "
+        "rafraîchissement de l'écran (un vsync par image au mieux). Si trop d'images sont perdues (3 % sur "
+        "3 s), la lecture repasse sur Auto avec un message.");
   }
   if (d.rife_auto && now.num > now.den) {
     panel::tip(
@@ -308,11 +315,16 @@ void fluidity_tab(PlaySettings& d, const SettingsChoices& choices, bool exportin
       d.motion_engine = engine;
     panel::tip(motion_description(engine));
     if (const auto mark = badge_of(engine)) {
-      const bool heavy = *mark == Badge::Heaviest;
-      panel::badge(std::string(badge_text(*mark)).c_str(), *mark == Badge::Recommended ? panel::kGood
-                                                           : heavy                     ? panel::kWarn
-                                                           : *mark == Badge::Finest    ? panel::kFine
-                                                                                    : panel::kExperimental);
+      // Une chaîne de « ? : » se met en page autrement d'une version de clang-format à l'autre : un if.
+      ImVec4 color = panel::kExperimental;
+      if (*mark == Badge::Recommended) {
+        color = panel::kGood;
+      } else if (*mark == Badge::Heaviest) {
+        color = panel::kWarn;
+      } else if (*mark == Badge::Finest) {
+        color = panel::kFine;
+      }
+      panel::badge(std::string(badge_text(*mark)).c_str(), color);
     }
   }
   if (!choices.rife_models.empty() && panel::advanced()) {
@@ -322,36 +334,16 @@ void fluidity_tab(PlaySettings& d, const SettingsChoices& choices, bool exportin
     if (ImGui::BeginCombo("Modèle RIFE", rife_label(current).c_str())) {
       for (const RifeEntry& entry : rife_menu(choices.rife_models)) {
         const bool chosen = entry.file == current;
+        if (!entry.present) continue;  // un modèle absent n'est pas une option
         std::string text = rife_label(entry.file);
-        if (!entry.present) text += " · absent";
         if (entry.file == choices.default_rife_model) text += " · conseillé pour cette carte";
-        if (ImGui::Selectable(text.c_str(), chosen, entry.present ? 0 : ImGuiSelectableFlags_Disabled))
+        if (ImGui::Selectable(text.c_str(), chosen))
           d.rife_model = entry.file == choices.default_rife_model ? std::string() : entry.file;
         if (chosen) ImGui::SetItemDefaultFocus();
       }
       ImGui::EndCombo();
     }
     ImGui::EndDisabled();
-    if (d.motion_engine == MotionEngine::Rife) {
-      precision_combo("Précision de RIFE", d.motion_precision, choices.rife_tiers);
-      panel::tip(
-          "Performance : le graphe « _fp8 » à côté du modèle (RTX 40 et après). Mesuré sur une 4070 Ti, il "
-          "ne "
-          "tient pas ses promesses : le RIFE entier en FP8 est 5 % plus rapide (4.25) ou 27 % plus lent "
-          "(4.22 lite) que le FP16, avec 28 à 30 dB au pire cas, et il coupe RIFE fusionné, 3 fois plus "
-          "rapide "
-          "au cran Équilibre : aucun graphe FP8 de RIFE n'est livré (docs/fp8-interpolation.md). Équilibre : "
-          "FP16 à îlots FP32, le modèle tel que livré. Qualité : le graphe « _fp32 ». Un cran sans graphe "
-          "est "
-          "grisé ; la lecture reprend en FP16 s'il est refusé. Recharge la lecture.");
-    }
-    for (const RifeEntry& entry : rife_menu(choices.rife_models)) {
-      if (!entry.present) missing += std::format("{}{}", missing.empty() ? "" : ", ", entry.file);
-    }
-    if (!missing.empty() && d.motion_engine == MotionEngine::Rife) {
-      note(std::format("Absents de {} : {} (exports ONNX de vs-mlrt convertis en FP16, docs/handoff-pc.md).",
-                       choices.rife_folder, missing));
-    }
   }
   if (is_gmfss(d.motion_engine) && panel::advanced()) {
     const bool union_model = d.motion_engine == MotionEngine::GmfssUnion;
@@ -359,26 +351,15 @@ void fluidity_tab(PlaySettings& d, const SettingsChoices& choices, bool exportin
     precision_combo("GMFSS", d.gmfss_precision, tiers);
     panel::tip(
         "Précision de GMFSS. Performance : la paire en FP8 hors du squelette de GMFlow (15 convolutions sur "
-        "37), par défaut : −15 % sur la paire, 47 dB au pire cas, RTX 40 et après ; sans le graphe, FP16. "
-        "Équilibre : FP16 (base 24 ms et union 23 ms par "
-        "image intermédiaire à 720p sur une 4070 Ti). Qualité : FP32, un écart à l'original divisé par 4 "
-        "environ, pour +7 ms avec base et +10 ms avec union. Recharge la lecture.");
+        "37), −15 % sur la paire, 47 dB au pire cas, RTX 40 et après. Équilibre : FP16. Qualité : FP32, un "
+        "écart à l'original divisé par 4 environ, pour +7 ms avec base et +10 ms avec union. Recharge la "
+        "lecture.");
     if (!tiers.performance) {
-      note(
-          std::format("Performance (FP8) grisé : {} manque dans {}, ou ce moteur ne calcule pas le FP8 "
-                      "(tools/fp8/build_interp_fp8.sh).",
-                      gmfss_files(union_model ? GmfssVariant::Union : GmfssVariant::Base, true,
-                                  PrecisionTier::Performance)
-                          .pair,
-                      choices.rife_folder));
-    }
-    if (!tiers.quality) {
-      note(std::format(
-          "Qualité (FP32) grisé : {} manque dans {} (export_gmfss.py --scale 0.5 --precision "
-          "flownet32).",
-          gmfss_files(union_model ? GmfssVariant::Union : GmfssVariant::Base, true, PrecisionTier::Quality)
-              .pair,
-          choices.rife_folder));
+      note(std::format("Cran Performance (FP8) : ajouter {} (release des modèles) dans {}.",
+                       gmfss_files(union_model ? GmfssVariant::Union : GmfssVariant::Base, true,
+                                   PrecisionTier::Performance)
+                           .pair,
+                       choices.rife_folder));
     }
     if (union_model) {
       note(
@@ -394,15 +375,6 @@ void fluidity_tab(PlaySettings& d, const SettingsChoices& choices, bool exportin
     }
   }
   if (d.motion_engine == MotionEngine::DistilDrba) {
-    precision_combo("Précision de DistilDRBA", d.motion_precision, choices.drba_tiers);
-    panel::tip(
-        "Performance : le graphe « distil_drba_v2_lite_fp8.onnx » à côté de l'original (RTX 40 et après). "
-        "Mesuré sur une 4070 Ti : 11 % plus rapide que le DistilDRBA entier en FP16, qualité tenue (49 dB au "
-        "pire cas), mais il coupe DistilDRBA fusionné, 2 fois plus rapide au cran Équilibre : à garder pour "
-        "un "
-        "poste sans le fusionné (docs/fp8-interpolation.md). Qualité : « _fp32 ». Équilibre : FP16, le "
-        "réseau "
-        "tel que livré. Recharge la lecture.");
     if (!choices.distil_drba_available) {
       note(
           std::format("Graphe introuvable : {}, à exporter dans {} (tools/drba/export_distil_drba.py) ; RIFE "

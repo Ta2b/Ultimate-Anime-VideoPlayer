@@ -97,7 +97,13 @@ std::int64_t ChainStats::source_period_us() const {
 }
 
 std::int64_t ChainStats::output_period_us() const {
-  if (live_.free_active()) return live_.free_info(host_now_us()).step_us;
+  if (live_.free_active()) {
+    const std::int64_t step = live_.free_info(host_now_us()).step_us;
+    // Sur un écran fixe, un écart entre deux images est un nombre entier de vsyncs : jusqu'au vsync au-dessus
+    // du pas, ce n'est pas une image manquée.
+    const std::int64_t vsync = live_.vsync_period_us();
+    return vsync > 0 && step > 0 ? (step + vsync - 1) / vsync * vsync : step;
+  }
   const double rate = output_fps();
   return rate > 0.0 ? static_cast<std::int64_t>(std::llround(1e6 / rate)) : 0;
 }
