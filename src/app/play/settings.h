@@ -311,6 +311,11 @@ std::expected<PlaySettings, Refusal> validate(const PlaySettings& settings);
 // faux (FieldType) ou une valeur hors plage (FieldOutOfRange) est refusé, TOML invalide
 // (ProfileUnreadable) aussi.
 std::expected<PlaySettings, Refusal> parse_settings(std::string_view toml_text);
+// Comme parse_settings, mais une valeur fautive n'invalide que sa clé : elle est écartée (le défaut la
+// remplace), dite dans `dropped` (« section.clé : raison »), et le reste du fichier reste en vigueur. TOML
+// invalide : refusé.
+std::expected<PlaySettings, Refusal> parse_settings_lenient(std::string_view toml_text,
+                                                            std::vector<std::string>* dropped = nullptr);
 std::string format_settings(const PlaySettings& settings);
 
 // L'écoute en vigueur pour cet appareil : son profil propre s'il en a un, sinon le global (un appareil

@@ -190,19 +190,19 @@ TEST_CASE("free rate : la contre-pression élargit tout de suite et ne se relâc
   CHECK(rate.pressure(t0 + 30'000) <= FreeRate::kPressureMax);
 }
 
-TEST_CASE("free rate : repli à 3 % d'images perdues sur 3 s", "[free]") {
+TEST_CASE("free rate : repli à 5 % d'images perdues sur 5 s", "[free]") {
   FreeRate rate;
   const std::int64_t t0 = 10'000'000;
-  for (int i = 0; i < 12; ++i) rate.produced(10, t0 + i * 250'000);  // 120 images en 3 s
-  rate.missed(t0 + 2'000'000, 2);
-  CHECK_FALSE(rate.should_fall_back(t0 + 2'750'000));  // trop peu de pertes
-  rate.missed(t0 + 2'100'000, 5);
-  CHECK(rate.should_fall_back(t0 + 2'750'000));        // 7 / 120 : plus de 3 %
-  CHECK_FALSE(rate.should_fall_back(t0 + 9'000'000));  // les pertes sont sorties de la fenêtre
+  for (int i = 0; i < 20; ++i) rate.produced(10, t0 + i * 250'000);  // 200 images en 5 s
+  rate.missed(t0 + 2'000'000, 4);
+  CHECK_FALSE(rate.should_fall_back(t0 + 4'750'000));  // trop peu de pertes
+  rate.missed(t0 + 2'100'000, 8);
+  CHECK(rate.should_fall_back(t0 + 4'750'000));         // 12 / 200 : plus de 5 %
+  CHECK_FALSE(rate.should_fall_back(t0 + 15'000'000));  // les pertes sont sorties de la fenêtre
   FreeRate fine;
-  for (int i = 0; i < 12; ++i) fine.produced(100, t0 + i * 250'000);
-  fine.missed(t0 + 2'000'000, 7);
-  CHECK_FALSE(fine.should_fall_back(t0 + 2'750'000));  // 7 / 1200 : moins de 3 %
+  for (int i = 0; i < 20; ++i) fine.produced(100, t0 + i * 250'000);
+  fine.missed(t0 + 2'000'000, 12);
+  CHECK_FALSE(fine.should_fall_back(t0 + 4'750'000));  // 12 / 2000 : moins de 5 %
 }
 
 TEST_CASE("free : dix minutes simulées, GPU de 67 à 55 puis 120 i/s, sans dérive ni retard", "[free]") {

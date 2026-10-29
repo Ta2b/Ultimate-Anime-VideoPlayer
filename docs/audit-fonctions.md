@@ -182,3 +182,11 @@ Relu seulement, jamais exécuté :
 `src/app/play/player.cpp` (ouverture), `src/media/av_util.cpp` (messages), `src/app/play/options.cpp` (aide
 seulement). Aucun fichier de l'UI (`settings_panel*`, `settings_chain_tabs`, `first_run`, `controls*`) ni du
 benchmark (`settings_system`, `player_run`) n'a été modifié.
+
+
+## Corrigé ensuite (29/10)
+
+- **Fenêtre « Lecteur par défaut » sous Windows** : après un « Définir » réussi, le choix est gardé (`default_player.dismissed`) : la fenêtre ne revient plus à chaque lancement (Windows ne dit pas si AJP est déjà le lecteur par défaut).
+- **Valeur invalide dans `play.toml`** : seule la clé fautive est écartée (le défaut la remplace, le journal dit laquelle) ; le reste du fichier reste en vigueur. Un TOML illisible reste refusé et mis de côté (`parse_settings_lenient`, test).
+- **Fichier glissé qui ne s'ouvre pas** : le lecteur revient à l'accueil avec la raison au lieu de quitter, même lancé avec un fichier.
+- **Repli du mode Rapide** : 5 % d'images perdues (au moins 10) sur 5 s, après 5 s de démarrage (avant : 3 %, 6, 3 s, 3 s), pour ne plus replier sur le démarrage ou une scène lourde passagère d'un écran VRR.

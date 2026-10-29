@@ -653,3 +653,22 @@ TEST_CASE("mode Rapide : instants par paire acceptés par chaque moteur", "[sett
   }
   CHECK(free_instants_limit(MotionEngine::Apple) == 0);  // pas de tau arbitraire : Auto
 }
+
+TEST_CASE("une valeur fautive n'invalide que sa clé", "[settings][lenient]") {
+  using namespace ajp::app::play;
+  const std::string text =
+      "version = 1\n[image]\nupscale = false\nwork_height = 99999\n[audio]\nvolume = "
+      "0.5\n[sync]\nvideo_latency_ms = "
+      "\"oups\"\n";
+  CHECK_FALSE(parse_settings(text).has_value());  // le mode strict refuse tout le fichier
+  std::vector<std::string> dropped;
+  const auto lenient = parse_settings_lenient(text, &dropped);
+  if (!lenient) UNSCOPED_INFO(lenient.error().detail);
+  REQUIRE(lenient.has_value());
+  CHECK_FALSE(lenient->upscale);  // les autres clés restent en vigueur
+  CHECK(lenient->volume == 0.5F);
+  CHECK(lenient->work_height == PlaySettings{}.work_height);  // la clé fautive retombe au défaut
+  CHECK(lenient->video_latency_ms == PlaySettings{}.video_latency_ms);
+  CHECK(dropped.size() == 2);
+  CHECK_FALSE(parse_settings_lenient("[image\nbroken").has_value());  // un TOML illisible reste refusé
+}

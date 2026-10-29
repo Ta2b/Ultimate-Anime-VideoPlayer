@@ -15,6 +15,7 @@
 
 #include "app/play/auto_config.h"
 #include "app/play/settings.h"
+#include "core/log.h"
 #include "core/user_overlay.h"
 
 #ifndef TOML_EXCEPTIONS
@@ -127,6 +128,12 @@ const toml::table* section(const toml::table& root, std::string_view name) {
 
 }  // namespace
 
+namespace {
+
+std::expected<PlaySettings, Refusal> settings_from_table(const toml::table& root);
+
+}  // namespace
+
 std::expected<PlaySettings, Refusal> parse_settings(std::string_view toml_text) {
   toml::parse_result parsed = toml::parse(toml_text);
   if (!parsed) {
@@ -134,7 +141,12 @@ std::expected<PlaySettings, Refusal> parse_settings(std::string_view toml_text) 
                   std::format("play.toml ligne {} : {}", parsed.error().source().begin.line,
                               parsed.error().description()));
   }
-  const toml::table& root = parsed.table();
+  return settings_from_table(parsed.table());
+}
+
+namespace {
+
+std::expected<PlaySettings, Refusal> settings_from_table(const toml::table& root) {
   PlaySettings s;
   std::vector<std::string> legacy_audio;
   std::vector<std::string> legacy_subtitles;
@@ -486,6 +498,8 @@ std::expected<PlaySettings, Refusal> parse_settings(std::string_view toml_text) 
   return validate(s);
 }
 
+}  // namespace
+
 std::string format_settings(const PlaySettings& s) {
   toml::table root;
   root.insert("version", kSettingsVersion);
@@ -638,6 +652,36 @@ std::string format_settings(const PlaySettings& s) {
   return out.str();
 }
 
+std::expected<PlaySettings, Refusal> parse_settings_lenient(std::string_view toml_text,
+                                                            std::vector<std::string>* dropped) {
+  toml::parse_result parsed = toml::parse(toml_text);
+  if (!parsed) {
+    return refuse(RefusalCode::ProfileUnreadable,
+                  std::format("play.toml ligne {} : {}", parsed.error().source().begin.line,
+                              parsed.error().description()));
+  }
+  toml::table root = std::move(parsed).table();
+  // Une valeur fautive est écartée seule (le défaut la remplace) : le reste du fichier reste en vigueur.
+  constexpr int kMaxDropped = 64;
+  for (int attempt = 0; attempt <= kMaxDropped; ++attempt) {
+    auto settings = settings_from_table(root);
+    if (settings) return settings;
+    const std::string& detail = settings.error().detail;
+    const std::size_t dot = detail.find('.');
+    if (dot == std::string::npos || dot == 0) return settings;
+    const std::size_t found = detail.find_first_of(" :", dot);
+    const std::size_t end = found == std::string::npos ? detail.size() : found;
+    if (end <= dot + 1) return settings;
+    const std::string section_name = detail.substr(0, dot);
+    const std::string key_name = detail.substr(dot + 1, end - dot - 1);
+    toml::node* node = root.get(section_name);
+    toml::table* table = node != nullptr ? node->as_table() : nullptr;
+    if (table == nullptr || !table->erase(key_name)) return settings;
+    if (dropped != nullptr) dropped->push_back(detail);
+  }
+  return settings_from_table(root);
+}
+
 std::expected<PlaySettings, Refusal> load_settings(const std::filesystem::path& path) {
   std::error_code error;
   if (!std::filesystem::exists(path, error)) return PlaySettings{};
@@ -645,7 +689,10 @@ std::expected<PlaySettings, Refusal> load_settings(const std::filesystem::path& 
   if (!file) return refuse(RefusalCode::FileUnreadable, path.string());
   std::ostringstream text;
   text << file.rdbuf();
-  auto settings = parse_settings(text.str());
+  std::vector<std::string> dropped;
+  auto settings = parse_settings_lenient(text.str(), &dropped);
+  for (const std::string& why : dropped)
+    log_channel("app")->warn("{} : valeur écartée, défaut gardé ({})", path.string(), why);
   if (!settings)
     return refuse(settings.error().code, std::format("{} : {}", path.string(), settings.error().detail));
   return settings;

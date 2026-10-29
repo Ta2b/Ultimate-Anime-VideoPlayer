@@ -72,6 +72,11 @@ bool default_player_prompt(const PlayerPlace& place, SystemNote& last, bool& dis
   if (last.pending && last.pending->wait_for(std::chrono::seconds(0)) == std::future_status::ready) {
     const std::expected<std::string, Refusal> done = last.pending->get();
     last = done ? SystemNote{.text = *done} : SystemNote{.text = done.error().detail, .refused = true};
+#ifdef _WIN32
+    // Windows ne dit pas si AJP est déjà le lecteur par défaut (is_default_player) : après un « Définir »
+    // réussi, la fenêtre ne revient pas au prochain lancement.
+    if (done) dismissed = true;
+#endif
   }
   const ImGuiIO& io = ImGui::GetIO();
   // Une petite fenêtre qu'on peut déplacer, au milieu de la fenêtre du lecteur au départ, indépendante du
