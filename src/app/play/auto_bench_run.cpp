@@ -2,7 +2,6 @@
 
 #include <algorithm>
 #include <cctype>
-#include <cstdlib>
 #include <format>
 #include <fstream>
 #include <system_error>
@@ -57,9 +56,13 @@ bool hide_is_reliable(std::string_view session_type, std::string_view current_de
 }
 
 bool hide_is_reliable_here() {
-  const char* session = std::getenv("XDG_SESSION_TYPE");
-  const char* desktop = std::getenv("XDG_CURRENT_DESKTOP");
-  return hide_is_reliable(session != nullptr ? session : "", desktop != nullptr ? desktop : "");
+  // Le bureau ne se lit pas dans l'environnement (règle « aucune bascule cachée ») : sous Linux, où GNOME
+  // Wayland ne se distingue pas des autres, l'essai prend la petite fenêtre visible, sûre partout.
+#if defined(__linux__)
+  return false;
+#else
+  return true;
+#endif
 }
 
 std::vector<std::string> bench_child_args(const BenchPlan& plan, const std::optional<Tier>& level,

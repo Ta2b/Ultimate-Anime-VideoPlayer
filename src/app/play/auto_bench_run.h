@@ -34,7 +34,7 @@ struct BenchPlan {
              // quoi chaque essai rouvrirait l'assistant ; vide : « déjà vu » seulement
   int seconds = kBenchSeconds;
   bool fullscreen = true;  // l'écran réel, comme la lecture
-  bool silent = true;      // fenêtre masquée autant que le bureau le permet (--hidden ; hide_is_reliable)
+  bool silent = true;  // fenêtre masquée autant que le bureau le permet (--hidden ; hide_is_reliable_here)
   // Le délai d'un essai s'ajoute à sa durée. Le premier essai charge et, la première fois, construit les
   // moteurs de la machine : sur un portable cela dépasse largement 3 minutes (un SPAN seul en prend 2,5 sur
   // une RTX 4070 Ti), et un essai tué en pleine construction ne garde rien : le suivant recommence au même
