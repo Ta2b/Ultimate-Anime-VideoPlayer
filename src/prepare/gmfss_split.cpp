@@ -187,6 +187,7 @@ std::expected<GmfssPieces, Refusal> split_gmfss(std::span<const std::byte> pair,
     const SplitTensor in{
         .name = std::string(kGmfssFeatureInput), .elem_type = kFloat16, .dims = {1, 3, height, width}};
     std::vector<SplitTensor> outs;
+    outs.reserve(kGmfssFeatureOutputs.size());
     for (const std::string_view name : kGmfssFeatureOutputs)
       outs.push_back({.name = std::string(name), .elem_type = kFloat16});
     auto cut = extract_subgraph(pair, std::span(&in, 1), outs, "gmfss_features");
