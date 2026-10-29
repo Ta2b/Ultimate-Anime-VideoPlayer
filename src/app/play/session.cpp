@@ -292,6 +292,7 @@ void Session::measure_latency(std::int64_t host_now) {
   std::erase_if(unmeasured_, [&](const RingFrame& frame) {
     if (!screen_.ready(frame)) return false;
     config_.latency->observe(host_now - frame.submitted_us);
+    if (config_.on_written) config_.on_written(frame, host_now);
     return true;
   });
 }

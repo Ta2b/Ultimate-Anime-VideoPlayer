@@ -44,11 +44,33 @@ std::vector<EngineBadge> engine_badges(const std::filesystem::path& cache_dir,
   return badges;
 }
 
+std::string auto_factor_text(int centi) {
+  if (centi % 100 == 0) return std::format("{}", centi / 100);
+  if (centi % 10 == 0) return std::format("{},{}", centi / 100, centi % 100 / 10);
+  return std::format("{},{:02}", centi / 100, centi % 100);
+}
+
+std::string auto_status_text(const core::AutoInfo& info, double source_fps) {
+  const int g = std::max(info.granularity, 1);
+  const int centi = info.step * 100 / g;
+  std::string text = std::format("Auto ×{} ({:.0f} i/s) · plafond écran ×{}", auto_factor_text(centi),
+                                 source_fps * centi / 100.0, auto_factor_text(info.ceiling * 100 / g));
+  if (info.predicted > 0) text += std::format(" · prédit ×{}", auto_factor_text(info.predicted * 100 / g));
+  if (info.cap > 0) text += std::format(" · plafond appris ×{}", auto_factor_text(info.cap * 100 / g));
+  if (info.load_pct >= 0) text += std::format(" · limite GPU {} %", info.load_pct);
+  if (info.heavy) text += " · scène lourde";
+  text += std::format(" · dernier changement : {}", core::auto_reason_text(info.reason));
+  return text;
+}
+
 std::optional<std::string> ChainStats::rife() const {
   if (!interpolates_) return std::nullopt;
   const RifeCounts c = live_.counts();
-  return std::format("{} {} : {} paires, {} interpolées, {} dessins tenus, {} coupes, {} en retard", engine_,
-                     factor_text(live_.factor_now()), c.pairs, c.interpolated, c.held, c.cuts, c.late);
+  std::string line =
+      std::format("{} {} : {} paires, {} interpolées, {} dessins tenus, {} coupes, {} en retard", engine_,
+                  factor_text(live_.factor_now()), c.pairs, c.interpolated, c.held, c.cuts, c.late);
+  if (live_.auto_active()) line += " · " + auto_status_text(live_.auto_info(host_now_us()), source_fps_);
+  return line;
 }
 
 double ChainStats::output_fps() const {

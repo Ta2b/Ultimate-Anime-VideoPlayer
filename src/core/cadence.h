@@ -84,6 +84,11 @@ class CadenceAccumulator {
 
   Ratio factor() const { return {num_, den_}; }
 
+  // Change le facteur sans casser la grille : le dernier point émis reste où il est et le suivant tombe un
+  // pas du nouveau facteur plus loin (même phase dans la paire, pas de saut de rythme ni de paire sans
+  // intermédiaire). Pour le mode auto, dont le facteur bouge par petits pas. Refuse comme create().
+  std::expected<void, Refusal> retarget(Ratio factor);
+
   // La source suivante, dans l'ordre de présentation.
   CadenceStep push(const SourceStamp& source);
 
