@@ -53,6 +53,8 @@ struct BenchReading {
   std::int64_t interval_median_us = 0;  // temps par image (écart entre deux images neuves), médiane
   std::int64_t interval_p95_us = 0;
   std::int64_t render_median_us = 0;  // composition et soumission, médiane
+  int work_height = 0;                // la hauteur de travail de la chaîne jouée ; 0 : inconnue
+  std::string rife_model;  // le modèle RIFE joué (« rife_v4.25.onnx ») ; vide : inconnu ou autre moteur
 };
 
 std::string format_reading(const BenchReading& reading);
@@ -66,7 +68,17 @@ struct BenchResult {
   std::string driver;  // vide : pilote inconnu ; une mesure n'est reprise que pour le même pilote
   Tier level = Tier::Normal;
   std::string date;  // AAAA-MM-JJ, donnée par l'appelant
+  // Ce que l'exploration a trouvé de mieux que la chaîne du niveau, sur cette machine (auto_config.h) ; 0 ou
+  // vide : la chaîne du niveau telle quelle.
+  int work_height = 0;
+  std::string rife_model;
 };
+
+// Les essais d'exploration après le niveau : le prochain palier de hauteur de travail au-dessus de celle qui
+// vient de tenir (nullopt : le plus haut est atteint ou la source n'est pas plus haute), et le modèle RIFE
+// au-dessus du modèle léger. Purs : le lancement est dans auto_bench_run.h.
+std::optional<int> next_work_height(int tenue, int source_height);
+std::optional<std::string> next_rife_model(const std::string& tenu);
 
 std::string format_bench(const BenchResult& result);
 std::expected<BenchResult, Refusal> parse_bench(std::string_view toml);

@@ -451,32 +451,87 @@ SettingsPanel::Result SettingsPanel::draw(const PlaySettings& running, const Set
         }
       }
     }
-    // Moins de vide à gauche des pages : l'arbre est étroit.
-    ImGui::PushStyleVar(ImGuiStyleVar_IndentSpacing, 16.0F * scale);
-    const char* category = "";
-    bool category_open = false;
-    for (std::size_t i = 0; i < kPages.size(); ++i) {
-      const PageInfo& page = kPages[i];
-      if (!visible(i)) continue;
-      if (std::string_view(page.category) != category) {
-        if (category_open) ImGui::TreePop();
-        category = page.category;
-        // La catégorie de la page affichée s'ouvre quand la page change (clic, molette) mais se
-        // referme à la main ; les autres se replient d'abord (l'arbre tient alors dans la hauteur du
-        // panneau) et gardent ensuite l'état choisi.
-        if (std::string_view(kPages[static_cast<std::size_t>(page_)].category) == category) {
-          ImGui::SetNextItemOpen(true, page_ != shown_page_ ? ImGuiCond_Always : ImGuiCond_Once);
-        } else {
-          ImGui::SetNextItemOpen(false, ImGuiCond_Once);
+    // L'arbre, dessiné à la main : une bande par catégorie (chevron, titre en couleur d'accent), les pages en
+    // retrait dessous, la page choisie marquée d'une barre d'accent et d'un fond.
+    {
+      ImDrawList* draw = ImGui::GetWindowDrawList();
+      const ImGuiStyle& style = ImGui::GetStyle();
+      const float row_height = ImGui::GetFontSize() + 12.0F * scale;
+      const float head_height = ImGui::GetFontSize() + 14.0F * scale;
+      const float indent = 26.0F * scale;
+      const ImU32 accent = ImGui::ColorConvertFloat4ToU32(panel::kAccent);
+      ImVec4 soft = panel::kAccent;
+      soft.w = 0.20F;
+      ImVec4 band = style.Colors[ImGuiCol_Header];
+      band.w = 0.14F;
+      ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, {style.ItemSpacing.x, 2.0F * scale});
+      std::string_view category;
+      int category_index = -1;
+      bool category_open = false;
+      for (std::size_t i = 0; i < kPages.size(); ++i) {
+        const PageInfo& page = kPages[i];
+        if (!visible(i)) continue;
+        if (std::string_view(page.category) != category) {
+          category = page.category;
+          ++category_index;
+          const auto slot = static_cast<std::size_t>(category_index);
+          // La catégorie de la page affichée s'ouvre quand la page change (clic, molette) ; les autres
+          // restent repliées au départ et gardent ensuite l'état choisi à la main.
+          if (!category_init_) category_open_[slot] = std::string_view(kPages[0].category) == category;
+          if (page_ != shown_page_ &&
+              std::string_view(kPages[static_cast<std::size_t>(page_)].category) == category)
+            category_open_[slot] = true;
+          if (category_index > 0) ImGui::Dummy({0.0F, 6.0F * scale});
+          const ImVec2 at = ImGui::GetCursorScreenPos();
+          const float row_width = ImGui::GetContentRegionAvail().x;
+          ImGui::PushID(category_index);
+          if (ImGui::InvisibleButton("##categorie", {row_width, head_height}))
+            category_open_[slot] = !category_open_[slot];
+          ImGui::PopID();
+          const bool hovered = ImGui::IsItemHovered();
+          ImVec4 fill = band;
+          if (hovered) fill.w = 0.30F;
+          draw->AddRectFilled(at, {at.x + row_width, at.y + head_height},
+                              ImGui::ColorConvertFloat4ToU32(fill), 5.0F * scale);
+          // Le chevron : un triangle plein, à droite quand c'est replié, vers le bas quand c'est ouvert.
+          const float cx = at.x + 12.0F * scale;
+          const float cy = at.y + head_height * 0.5F;
+          const float r = 4.0F * scale;
+          if (category_open_[slot])
+            draw->AddTriangleFilled({cx - r, cy - r * 0.6F}, {cx + r, cy - r * 0.6F}, {cx, cy + r * 0.9F},
+                                    accent);
+          else
+            draw->AddTriangleFilled({cx - r * 0.6F, cy - r}, {cx - r * 0.6F, cy + r}, {cx + r * 0.9F, cy},
+                                    accent);
+          draw->AddText({at.x + 26.0F * scale, at.y + (head_height - ImGui::GetFontSize()) * 0.5F}, accent,
+                        page.category);
+          category_open = category_open_[slot];
         }
-        category_open = ImGui::TreeNodeEx(category, ImGuiTreeNodeFlags_SpanAvailWidth);
+        if (!category_open) continue;
+        const ImVec2 at = ImGui::GetCursorScreenPos();
+        const float row_width = ImGui::GetContentRegionAvail().x;
+        ImGui::PushID(static_cast<int>(i));
+        const bool picked = ImGui::InvisibleButton("##page", {row_width, row_height});
+        ImGui::PopID();
+        if (picked) page_ = static_cast<int>(i);
+        const bool selected = static_cast<int>(i) == page_;
+        if (selected) {
+          draw->AddRectFilled({at.x + indent - 8.0F * scale, at.y}, {at.x + row_width, at.y + row_height},
+                              ImGui::ColorConvertFloat4ToU32(soft), 5.0F * scale);
+          draw->AddRectFilled({at.x + indent - 8.0F * scale, at.y + 4.0F * scale},
+                              {at.x + indent - 5.0F * scale, at.y + row_height - 4.0F * scale}, accent,
+                              2.0F * scale);
+        } else if (ImGui::IsItemHovered()) {
+          draw->AddRectFilled({at.x + indent - 8.0F * scale, at.y}, {at.x + row_width, at.y + row_height},
+                              ImGui::ColorConvertFloat4ToU32(band), 5.0F * scale);
+        }
+        draw->AddText({at.x + indent, at.y + (row_height - ImGui::GetFontSize()) * 0.5F},
+                      ImGui::GetColorU32(selected ? ImGuiCol_Text : ImGuiCol_TextDisabled), page.name);
       }
-      if (category_open && ImGui::Selectable(page.name, static_cast<int>(i) == page_))
-        page_ = static_cast<int>(i);
+      ImGui::PopStyleVar();
+      category_init_ = true;
     }
-    if (category_open) ImGui::TreePop();
     shown_page_ = page_;
-    ImGui::PopStyleVar();
     ImGui::EndChild();
     ImGui::SameLine();
     ImGui::BeginChild("##page", ImVec2(0, -footer));

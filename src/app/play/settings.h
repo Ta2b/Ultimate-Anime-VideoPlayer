@@ -153,6 +153,15 @@ struct PlaySettings {
   // lite dont la structure est reconnue, le moteur entier reprenant sinon, ou si un des quatre moteurs
   // échoue. Recharge la chaîne.
   bool drba_fused = true;
+  // GMFSS fusionné (prepare/gmfss_split.h) : la paire de GMFSS coupée en deux moteurs TensorRT, les
+  // caractéristiques d'une image (FeatureNet) et le flot ; les caractéristiques d'une image servent à deux
+  // paires de suite et ne sont calculées qu'une fois (un FeatureNet de moins par paire). Seulement sous
+  // TensorRT, au cran Équilibre et pour une paire dont la structure est reconnue (export version 2), la paire
+  // entière reprenant sinon, ou si un moteur échoue. Recharge la chaîne. Éteint par défaut : le gain mesuré
+  // (docs/gmfss-fusionne.md : un FeatureNet de moins par paire, −6 à −9 % du temps GMFSS d'une paire, −15 %
+  // pour la paire seule au banc) n'atteint pas le seuil de 15 % qui fait un défaut ; la qualité est la même
+  // (73 dB et plus contre la paire entière).
+  bool gmfss_fused = false;
   // Les crans de précision (precision.h). SPAN : Performance prend la variante FP8 du modèle, Qualité sa
   // variante FP32 (span_int8.h), Équilibre le FP16 tel que livré. Recharge la chaîne.
   PrecisionTier span_precision = PrecisionTier::Balanced;

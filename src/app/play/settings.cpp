@@ -392,6 +392,7 @@ PlaySettings settings_for(const PlaySettings& saved, const PlayOptions& options)
   if (options.was_given("--rife")) {
     s.rife_factor = options.rife_factor;
     s.rife_factor_den = options.rife_factor_den;
+    s.rife_auto = false;  // un multiplicateur donné à la main coupe le mode auto, comme dans le menu
   }
   if (options.was_given("--truehdr")) s.true_hdr = true;
   if (options.was_given("--truehdr-contrast")) s.true_hdr_contrast = options.true_hdr_contrast;
@@ -528,6 +529,10 @@ Change change_between(const PlaySettings& running, const PlaySettings& wanted, b
         wanted.drba_fused
             ? "DistilDRBA fusionné (quatre moteurs, construits la première fois pour cette taille)"
             : "DistilDRBA entier à la place du DistilDRBA fusionné");
+  if (wanted.rife_factor >= 2 && is_gmfss(wanted.motion_engine) && running.gmfss_fused != wanted.gmfss_fused)
+    reopen.emplace_back(wanted.gmfss_fused ? "GMFSS fusionné (deux moteurs à la place de la paire, "
+                                             "construits la première fois pour cette taille)"
+                                           : "la paire GMFSS entière à la place de GMFSS fusionné");
   if (wanted.rife_factor >= 2 && wanted.motion_engine == MotionEngine::Rife &&
       running.rife_model != wanted.rife_model)
     reopen.emplace_back("le modèle RIFE est chargé (construit la première fois pour cette taille)");

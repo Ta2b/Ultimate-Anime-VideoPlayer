@@ -182,6 +182,7 @@ std::expected<PlaySettings, Refusal> parse_settings(std::string_view toml_text) 
     reads.push_back(read(*interpolation, "interpolation", "keep_poses", s.keep_poses));
     reads.push_back(read(*interpolation, "interpolation", "rife_fused", s.rife_fused));
     reads.push_back(read(*interpolation, "interpolation", "drba_fused", s.drba_fused));
+    reads.push_back(read(*interpolation, "interpolation", "gmfss_fused", s.gmfss_fused));
     // gmfss_quality (faux : l'ancien Performance, devenu Équilibre ; vrai : Qualité), puis les crans.
     bool legacy_quality = false;
     reads.push_back(read(*interpolation, "interpolation", "gmfss_quality", legacy_quality));
@@ -481,6 +482,7 @@ std::string format_settings(const PlaySettings& s) {
                             {"keep_poses", s.keep_poses},
                             {"rife_fused", s.rife_fused},
                             {"drba_fused", s.drba_fused},
+                            {"gmfss_fused", s.gmfss_fused},
                             {"gmfss_precision", std::string(name(s.gmfss_precision))},
                             {"motion_precision", std::string(name(s.motion_precision))},
                             {"auto", s.rife_auto},
