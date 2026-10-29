@@ -100,6 +100,8 @@ TEST_CASE("mises à jour : appliquer puis revenir en arrière", "[updater]") {
 }
 #endif
 
+#ifndef __APPLE__  // sous macOS, update_managed_reason répond d'abord « page des releases » : pas d'AppImage
+                   // là
 TEST_CASE("un AppImage ne se met pas à jour lui-même : le lecteur renvoie vers la page des releases",
           "[updater][appimage]") {
   const ajp::app::play::UpdatePaths paths{.data = "/tmp", .install = "/tmp", .executable = "/tmp/ajp"};
@@ -109,3 +111,4 @@ TEST_CASE("un AppImage ne se met pas à jour lui-même : le lecteur renvoie vers
   CHECK(reason.starts_with("AppImage"));
   CHECK_FALSE(ajp::app::play::update_managed_reason(paths).starts_with("AppImage"));
 }
+#endif
