@@ -409,3 +409,17 @@ TEST_CASE("auto : en régime, au pas fin, au plus un changement par cinq seconde
     }
   }
 }
+
+TEST_CASE("auto : le coût d'une paire ne compte pas son attente derrière la paire d'avant",
+          "[core][auto_rate][mesure]") {
+  using ajp::core::service_cost_us;
+  // GPU libre : soumise à 1000, finie à 13 000, mesures attendues 500 : 12,5 ms.
+  CHECK(service_cost_us(1'000, 0, 13'000, 500) == 12'500);
+  // File pleine : soumise à 2000, mais la paire d'avant ne finit qu'à 40 000 ; la nôtre finit à 52 000 :
+  // son service est de 12 ms, pas de 50.
+  CHECK(service_cost_us(2'000, 40'000, 52'000, 0) == 12'000);
+  // La paire d'avant a fini avant la soumission : le service part de la soumission.
+  CHECK(service_cost_us(30'000, 10'000, 43'000, 0) == 13'000);
+  // Jamais négatif (horloges de deux files qui se croisent).
+  CHECK(service_cost_us(5'000, 60'000, 50'000, 700) == 700);
+}

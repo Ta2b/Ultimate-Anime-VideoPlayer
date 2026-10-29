@@ -136,7 +136,9 @@ class LiveSettings {
       if (e.id != right || e.images == 0) continue;
       if (e.first_us == 0 || submitted_us < e.first_us) e.first_us = submitted_us;
       if (left == right) {
-        auto_.cost(e.images, done_us - e.first_us + e.lead_us, done_us);
+        auto_.cost(e.images, core::service_cost_us(e.first_us, previous_done_us_, done_us, e.lead_us),
+                   done_us);
+        previous_done_us_ = done_us;
         e = Expected{};
       }
       return;
@@ -251,6 +253,8 @@ class LiveSettings {
   };
   std::array<Expected, 16> ledger_{};
   std::size_t ledger_next_ = 0;
+  std::int64_t previous_done_us_ =
+      0;  // la fin de la dernière paire mesurée : le début du service de la suivante
 };
 
 }  // namespace ajp::app::play

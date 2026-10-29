@@ -51,6 +51,17 @@ inline bool auto_overloaded(std::int64_t missing, std::int64_t shown) {
   return missing >= 6 && missing * 1000 > (missing + shown) * 12;
 }
 
+// Le coût de SERVICE d'une paire : de l'instant où le GPU a pu la commencer (le plus tardif de sa première
+// soumission et de la fin de la paire d'avant : derrière elle, la paire attend sa file, ce qui n'est pas son
+// coût) à sa fin vue, plus l'attente de ses mesures avant soumission. Sans cela, un palier trop haut qui
+// remplit la file gonfle le coût mesuré et fait descendre trop bas (mesuré sur 4070 Ti : ×1 pour un GPU à
+// 45 % quelques secondes plus tard).
+inline std::int64_t service_cost_us(std::int64_t first_submitted_us, std::int64_t previous_done_us,
+                                    std::int64_t done_us, std::int64_t lead_us) {
+  const std::int64_t start = std::max(first_submitted_us, previous_done_us);
+  return std::max<std::int64_t>(done_us - start, 0) + lead_us;
+}
+
 // Pourquoi le palier a bougé en dernier.
 enum class AutoReason : std::uint8_t {
   Start,      // départ
