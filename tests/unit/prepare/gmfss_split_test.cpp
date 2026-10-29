@@ -279,7 +279,8 @@ TEST_CASE("La dérivation écrit les deux morceaux une fois, puis les relit", "[
   const auto again = derive_gmfss_fused(source, folder, 128, 256);
   REQUIRE(again);
   CHECK(again->flow == files->flow);
-  CHECK(fs::last_write_time(files->flow) == stamp);
+  // Entre parenthèses : Catch ne cherche pas à écrire les durées (libc++ : __int128, ambigu).
+  CHECK((fs::last_write_time(files->flow) == stamp));
   // Un morceau perdu : la dérivation le refait.
   fs::remove(files->features);
   REQUIRE(derive_gmfss_fused(source, folder, 128, 256));

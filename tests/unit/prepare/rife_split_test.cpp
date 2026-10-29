@@ -424,7 +424,8 @@ TEST_CASE("La dérivation écrit six morceaux et leur manifeste une fois, puis l
   const auto again = derive_rife_fused(source, folder, 128, 256, RifeFusedOutput::Image);
   REQUIRE(again);
   CHECK(*again == *manifest);
-  CHECK(fs::last_write_time(folder / parsed->pieces[1]) == stamp);
+  // Entre parenthèses : Catch ne cherche pas à écrire les durées (libc++ : __int128, ambigu).
+  CHECK((fs::last_write_time(folder / parsed->pieces[1]) == stamp));
   // Un morceau perdu : la dérivation le refait au lieu de rendre un manifeste qui ment.
   fs::remove(folder / parsed->pieces[2]);
   REQUIRE(derive_rife_fused(source, folder, 128, 256, RifeFusedOutput::Image));
