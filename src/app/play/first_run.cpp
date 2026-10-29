@@ -590,9 +590,7 @@ void draw_wizard_step(FirstRunView& view, Wizard& wizard) {
                    wizard.listening == each, pick, !cinema || view.facts.multichannel_output);
         if (pick) wizard.listening = each;
       }
-      note(
-          "Passer : Enceintes en rendu fidèle. Le rendu lui-même vient avec la couche audio ; ce choix est "
-          "gardé.");
+      note("Passer : Enceintes, en rendu fidèle. Le choix se change ensuite dans Audio > Sortie.");
       break;
     }
     case WizardStep::Languages:
@@ -635,8 +633,10 @@ void draw_wizard(FirstRunView& view, float scale) {
   Wizard& wizard = view.wizard;
   if (ImGui::Begin("Bienvenue", nullptr, kFlags)) {
     note(progress_text(wizard));
+    ImGui::PushStyleColor(ImGuiCol_PlotHistogram, kAccent);  // la couleur d'accent, pas le jaune par défaut
     ImGui::ProgressBar(static_cast<float>(wizard.at + 1) / static_cast<float>(wizard.steps.size()),
                        {-1.0F, 6.0F * scale}, "");
+    ImGui::PopStyleColor();
     const float footer = ImGui::GetFrameHeight() * 1.6F + ImGui::GetStyle().ItemSpacing.y * 3.0F;
     ImGui::BeginChild("##ecran", {0.0F, -footer});
     draw_wizard_step(view, wizard);

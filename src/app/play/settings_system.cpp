@@ -216,6 +216,7 @@ void updates_page(PlaySettings& d, const PlayerPlace& place, UpdateNote& result)
     result.text.clear();
     result.refused = false;
   }
+  if (state.previous_version.empty()) panel::tip("Grisé : aucune mise à jour n'a encore été installée.");
   ImGui::EndDisabled();
   ImGui::EndDisabled();
   if (busy) {

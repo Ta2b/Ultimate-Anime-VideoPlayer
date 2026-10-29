@@ -278,12 +278,14 @@ void fluidity_tab(PlaySettings& d, const SettingsChoices& choices, bool exportin
         "suit.");
   } else if (now.num > 4 * now.den) {
     note(
-        "Au-delà de ×4, chaque paire demande une passe RIFE par image créée : il faut un écran assez "
-        "rapide (×8 en 24 i/s donne 192 Hz) et un GPU qui suit, sinon des images sont sautées.");
+        "Au-delà de ×4, chaque paire demande une passe RIFE par image créée : il faut un écran rapide et un "
+        "GPU qui suit, sinon des images sont sautées.");
   }
   ImGui::EndDisabled();
   if (!choices.rife_available)
-    note("Ni modèle RIFE (rife_v4.25.onnx, rife_v4.22_lite.onnx) ni graphes GMFSS trouvés.");
+    note(
+        "Aucun modèle d'interpolation trouvé : placez un modèle RIFE ou les graphes GMFSS dans le dossier "
+        "des modèles.");
   section("Moteur de l'interpolation");
   // Les moteurs se rangent sur une ligne tant qu'ils y tiennent (pastille comprise), sinon à la ligne.
   const float row_left = ImGui::GetCursorScreenPos().x;
@@ -358,18 +360,14 @@ void fluidity_tab(PlaySettings& d, const SettingsChoices& choices, bool exportin
     }
     if (!(union_model ? choices.gmfss_union_available : choices.gmfss_available)) {
       const GmfssFiles files = gmfss_files(union_model ? GmfssVariant::Union : GmfssVariant::Base, true);
-      note(
-          std::format("Graphes introuvables : {} et {}, à exporter dans {} (tools/gmfss/export_gmfss.py{} "
-                      "--scale 0.5 --width 256 --height 256) ; RIFE prend la place.",
-                      files.pair, files.fusion, choices.rife_folder, union_model ? " --model union" : ""));
+      note(std::format("Modèles GMFSS introuvables dans {} ({} et {}) ; RIFE prend la place.",
+                       choices.rife_folder, files.pair, files.fusion));
     }
   }
   if (d.motion_engine == MotionEngine::DistilDrba) {
     if (!choices.distil_drba_available) {
-      note(
-          std::format("Graphe introuvable : {}, à exporter dans {} (tools/drba/export_distil_drba.py) ; RIFE "
-                      "prend la place.",
-                      kDistilDrbaFile, choices.rife_folder));
+      note(std::format("Modèle DistilDRBA introuvable dans {} ({}) ; RIFE prend la place.",
+                       choices.rife_folder, kDistilDrbaFile));
     }
   }
   if (d.motion_engine == MotionEngine::Apple) {
@@ -458,9 +456,9 @@ void fluidity_tab(PlaySettings& d, const SettingsChoices& choices, bool exportin
   panel::badge(std::string(badge_text(Badge::Experimental)).c_str(), panel::kExperimental);
   ImGui::EndDisabled();
   note(
-      "Expérimental. La couche du pilote NVIDIA (RTX 40 et 50) génère une image entre deux images "
-      "présentées : RIFE ×3 puis Smooth Motion donnent environ 144 images par seconde. Vaut au prochain "
-      "lancement. Sans RIFE, la lecture peut caler : gardez RIFE à ×2 ou plus.");
+      "La couche du pilote NVIDIA (RTX 40 et 50) génère une image entre deux images présentées : RIFE ×3 "
+      "puis "
+      "Smooth Motion donnent environ 144 images par seconde. Vaut au prochain lancement.");
   if (without_rife) note("Grisé : activez RIFE à ×2 ou plus, sans quoi la lecture cale.");
 }
 
