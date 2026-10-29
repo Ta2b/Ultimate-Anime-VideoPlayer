@@ -19,7 +19,6 @@
 
 namespace ajp::app::play {
 
-using panel::kWarn;
 using panel::note;
 using panel::section;
 
