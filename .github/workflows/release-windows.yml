@@ -100,7 +100,8 @@ jobs:
         shell: pwsh
         run: |
           choco install innosetup -y --no-progress | Out-Null
-          $version = [regex]::Match((Get-Content CMakeLists.txt -Raw), '(?m)^  VERSION ([0-9.]+)$').Groups[1].Value
+          $version = [regex]::Match((Get-Content CMakeLists.txt -Raw), '(?m)^  VERSION ([0-9.]+)\r?$').Groups[1].Value
+          if (-not $version) { throw "version introuvable dans CMakeLists.txt" }
           $out = "$env:RUNNER_TEMP/package"
           & "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" "/DSource=$out\ajp" "/DAppVer=$version" "/DOutput=$out" tools/release/windows/ajp.iss
           if ($LASTEXITCODE -ne 0) { throw "installeur" }
