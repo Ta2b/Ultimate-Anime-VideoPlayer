@@ -13,6 +13,8 @@
 #include <utility>
 #include <vector>
 
+#include "app/play/model_choice.h"
+
 namespace ajp::app::play {
 namespace {
 
@@ -73,6 +75,7 @@ bool is_noise(std::string_view token) {
 }  // namespace
 
 std::string model_label(const std::string& file) {
+  if (file == kSpanSdModel) return "AniSD AC · SD, vieux animes";
   std::string_view name = file;
   if (name.ends_with(".onnx")) name.remove_suffix(5);
   if (name.starts_with("2x_")) name.remove_prefix(3);

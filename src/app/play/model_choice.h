@@ -25,15 +25,32 @@ struct ModelChoice {
   std::string default_name;            // celui qu'un nom vide désigne
 };
 
+// Le SPAN des vieux animes en SD : AniSD AC (Sirosky, Upscale-Hub, CC BY-NC 4.0), un SPAN à 48 canaux et 6
+// blocs entraîné sur des DVD abîmés (compression, dotcrawl, bruit), converti en FP16 par
+// tools/span/convert_anisd_fp16.py (docs/modele-sd.md). Ce n'est pas un modèle d'AnimeJaNai : AnimeJaNai ne
+// publie en SD que des Compact, que le lecteur ne lance pas.
+inline constexpr std::string_view kSpanSdModel = "2x_AniSD_AC_G6i2b_SPAN_190K_fp16.onnx";
+// En dessous de cette hauteur (lignes) la source est du SD, DVD compris (576 lignes en PAL) : la config
+// automatique y conseille kSpanSdModel.
+inline constexpr int kSdMaxHeight = 576;
+
 // Les modèles SPAN que le menu propose (v0.6 : plus de modèle « legacy » du dossier d'AnimeJaNai, comme le
-// Compact SD 1.x de l'ancien lecteur) : AnimeJaNai HD V3.1, Performance ou Balanced, avec ou sans Sharp1.
-// --model lit encore tout autre fichier, pour les essais ; un réglage de play.toml qui nomme un autre modèle
-// retombe sur le défaut.
-inline constexpr std::array<std::string_view, 4> kSpanCatalogue{
+// Compact SD 1.x de l'ancien lecteur) : AnimeJaNai HD V3.1, Performance ou Balanced, avec ou sans Sharp1, et
+// AniSD AC pour le SD. --model lit encore tout autre fichier, pour les essais ; un réglage de play.toml qui
+// nomme un autre modèle retombe sur le défaut.
+inline constexpr std::array<std::string_view, 5> kSpanCatalogue{
     "2x_AnimeJaNai_HD_V3.1_Balanced_SPANF3_b8f64_unshuffle_fp16.onnx",
     "2x_AnimeJaNai_HD_V3.1_Performance_SPANF3_b5f48_unshuffle_fp16.onnx",
     "2x_AnimeJaNai_HD_V3.1Sharp1_Balanced_SPANF3_b8f64_unshuffle_fp16.onnx",
-    "2x_AnimeJaNai_HD_V3.1Sharp1_Performance_SPANF3_b5f48_unshuffle_fp16.onnx"};
+    "2x_AnimeJaNai_HD_V3.1Sharp1_Performance_SPANF3_b5f48_unshuffle_fp16.onnx", kSpanSdModel};
+
+// Le modèle que la config automatique conseille pour une source de cette hauteur : kSpanSdModel en SD, « »
+// (le modèle par défaut, HD) sinon ou si la hauteur est inconnue. Absent du dossier, le choix retombe sur le
+// modèle HD (choose_model).
+std::string_view recommended_span_model(int source_height);
+// Les noyaux FP8 CUTLASS (cran Performance, « Préparer le mode Performance ») ne prennent que le SPAN b8f64 à
+// 64 canaux d'AnimeJaNai ; AniSD (48 canaux, 6 blocs, entrée à 3 canaux sans dégroupage) n'a pas ce cran.
+bool span_fp8_supported(std::string_view model_file);
 
 // SPAN : --model, sinon settings.model s'il est au catalogue, sinon le modèle par défaut ; le menu propose le
 // catalogue présent dans le dossier. bundled : les modèles livrés avec le lecteur (default_model_candidates),

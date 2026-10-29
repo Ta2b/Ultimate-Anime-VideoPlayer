@@ -8,6 +8,7 @@ Source de chaque fichier : `tools/release/fetch-models.sh` (SHA-256 vérifiés).
 | Modèle | Auteur | Licence | Remarque |
 |---|---|---|---|
 | AnimeJaNai HD V3.1 (SPAN), dossier `onnx/` | the-database | **CC BY-NC-SA 4.0** | Attribution, usage non commercial, partage à l'identique des dérivés (dont les poids quantifiés par `tools/span/quantize_span.py`). https://github.com/the-database/mpv-upscale-2x_animejanai |
+| AniSD AC (SPAN, `2x_AniSD_AC_G6i2b_SPAN_190K`), dossier `onnx/` | Sirosky (Upscale-Hub) | **CC BY-NC 4.0** | Attribution, usage non commercial. Converti en FP16 par `tools/span/convert_anisd_fp16.py` (poids inchangés à l'arrondi FP16 près). Source, empreintes : `docs/modele-sd.md`. https://github.com/Sirosky/Upscale-Hub |
 | RIFE 4.25 et 4.22 lite, dossier `rife/` | hzwer (Practical-RIFE) | MIT, © 2021 hzwer | Conversions ONNX fp16 de vs-mlrt, reprises de la release `models-rife-fp16-1` de `the-database/animejanai-inference`. |
 | DistilDRBA v2 lite, dossier `rife/` | neko (routineLife1) | MIT, © 2025 neko | Converti en ONNX fp16 par `tools/drba/export_distil_drba.py`. Le dépôt DRBA d'origine est aussi sous MIT. |
 

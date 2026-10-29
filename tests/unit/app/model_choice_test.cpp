@@ -15,6 +15,7 @@
 #include "app/play/derived_model.h"
 #include "app/play/drba_model.h"
 #include "app/play/gmfss_model.h"
+#include "app/play/span_int8.h"
 
 namespace ajp::app::play {
 namespace {
@@ -296,8 +297,9 @@ TEST_CASE("DistilDRBA : demi-flot préféré en 4K, l'un sert de repli à l'autr
 }
 
 }  // namespace
-TEST_CASE("Modèle SPAN : le menu n'a que le catalogue HD V3.1, un modèle hérité retombe sur le défaut",
-          "[app][model_choice]") {
+TEST_CASE(
+    "Modèle SPAN : le menu n'a que le catalogue (HD V3.1 et AniSD), un modèle hérité retombe sur le défaut",
+    "[app][model_choice]") {
   const FakeHome fake("span");
   const std::filesystem::path onnx = fake.home / ".local/share/AnimeJaNai-HDR-linux/animejanai/onnx";
   std::filesystem::create_directories(onnx);
@@ -307,7 +309,11 @@ TEST_CASE("Modèle SPAN : le menu n'a que le catalogue HD V3.1, un modèle héri
   PlaySettings settings;
   const auto plain = choose_model(PlayOptions{}, fake.home, settings);
   REQUIRE(plain);
-  CHECK(plain->available.size() == 4);
+  CHECK(plain->available.size() == 5);
+  CHECK(std::ranges::contains(plain->available, std::string(kSpanSdModel)));
+  // Le défaut reste un modèle HD : AniSD ne passe devant que si on le choisit (ou si la config auto le
+  // conseille).
+  CHECK(plain->default_name.contains("AnimeJaNai_HD"));
   CHECK(std::ranges::find(plain->available, legacy) == plain->available.end());
   settings.model = legacy;  // un ancien play.toml : le défaut, sans refus
   const auto fallback = choose_model(PlayOptions{}, fake.home, settings);
@@ -316,6 +322,47 @@ TEST_CASE("Modèle SPAN : le menu n'a que le catalogue HD V3.1, un modèle héri
   CHECK(fallback->default_name != legacy);
   settings.model = std::string(kSpanCatalogue[0]);
   CHECK(choose_model(PlayOptions{}, fake.home, settings)->path.filename().string() == kSpanCatalogue[0]);
+}
+
+TEST_CASE("Modèle SD : conseillé en dessous de 577 lignes, choisi au menu, repli sur le HD s'il manque",
+          "[app][model_choice]") {
+  CHECK(recommended_span_model(480) == kSpanSdModel);
+  CHECK(recommended_span_model(576) == kSpanSdModel);
+  CHECK(recommended_span_model(577).empty());
+  CHECK(recommended_span_model(720).empty());
+  CHECK(recommended_span_model(1080).empty());
+  CHECK(recommended_span_model(0).empty());  // hauteur inconnue : le modèle HD
+  CHECK(kSpanSdModel == "2x_AniSD_AC_G6i2b_SPAN_190K_fp16.onnx");
+  CHECK(model_label(std::string(kSpanSdModel)) == "AniSD AC · SD, vieux animes");
+
+  const FakeHome fake("span-sd");
+  const std::filesystem::path onnx = fake.home / ".local/share/AnimeJaNai-HDR-linux/animejanai/onnx";
+  std::filesystem::create_directories(onnx);
+  std::ofstream(onnx / std::string(kSpanCatalogue[3])) << "x";  // HD seul : AniSD manque
+  PlaySettings settings;
+  settings.model = std::string(kSpanSdModel);
+  const auto missing = choose_model(PlayOptions{}, fake.home, settings);
+  REQUIRE(missing);
+  CHECK(missing->path.filename().string() == kSpanCatalogue[3]);  // repli sur le modèle HD
+  CHECK(missing->available == std::vector<std::string>{std::string(kSpanCatalogue[3])});
+  std::ofstream(onnx / std::string(kSpanSdModel)) << "x";
+  const auto present = choose_model(PlayOptions{}, fake.home, settings);
+  REQUIRE(present);
+  CHECK(present->path.filename().string() == kSpanSdModel);
+  CHECK(present->default_name == kSpanCatalogue[3]);  // le défaut ne change pas
+}
+
+TEST_CASE("Modèle SD : pas de cran Performance (FP8), qui demande le b8f64 d'AnimeJaNai",
+          "[app][model_choice]") {
+  CHECK_FALSE(span_fp8_supported(kSpanSdModel));
+  CHECK_FALSE(span_fp8_supported(kSpanCatalogue[1]));  // b5f48
+  CHECK(span_fp8_supported(kSpanCatalogue[0]));        // b8f64
+  const FakeHome fake("span-sd-tiers");
+  std::ofstream(fake.home / std::string(kSpanSdModel)) << "x";
+  const TierSupport tiers =
+      span_tiers(fake.home / std::string(kSpanSdModel), fake.home / "modeles", true, true);
+  CHECK_FALSE(tiers.performance);
+  CHECK_FALSE(tiers.quality);
 }
 
 TEST_CASE("Crans de précision de RIFE et DistilDRBA : le graphe à côté du modèle, repli sur l'original",

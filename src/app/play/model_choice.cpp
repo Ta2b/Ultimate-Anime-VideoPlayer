@@ -63,6 +63,14 @@ std::expected<ModelChoice, Refusal> choose_rife_model(const PlayOptions& options
   return choose_in(*found, "rife_v", chosen, options.was_given("--rife-model"));
 }
 
+std::string_view recommended_span_model(int source_height) {
+  return source_height > 0 && source_height <= kSdMaxHeight ? kSpanSdModel : std::string_view();
+}
+
+bool span_fp8_supported(std::string_view model_file) {
+  return !model_file.contains("b5f48") && !model_file.contains("AniSD");
+}
+
 std::span<const std::string_view> rife_preference(const GpuFacts& gpu) {
   if ((gpu.vendor == GpuVendor::Nvidia && gpu.tensor_cores) || (gpu.vendor == GpuVendor::Amd && gpu.wmma))
     return kRifeForRtx;

@@ -99,7 +99,10 @@ void image_tab(PlaySettings& d, const SettingsChoices& choices) {
   }
   precision_combo("Précision de SPAN", d.span_precision, choices.span_tiers);
   ImGui::EndDisabled();
-  panel::tip("Performance : le plus rapide. Balanced : plus fin, plus lent. Sharp1 : contours plus nets.");
+  panel::tip(
+      "Performance : le plus rapide. Balanced : plus fin, plus lent. Sharp1 : contours plus nets. AniSD AC : "
+      "pour les vieux animes en SD (DVD, 480p ou 576p), il nettoie la compression, le dotcrawl et le bruit ; "
+      "conseillé quand la source a 576 lignes ou moins, sans cran Performance (FP8).");
   panel::tip(
       "Précision de SPAN. Performance : calcul en FP8 sur les RTX 40 et après, le plus rapide, avec une "
       "perte "

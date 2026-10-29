@@ -5,6 +5,7 @@
 #include <fstream>
 #include <system_error>
 
+#include "app/play/model_choice.h"
 #include "app/play/span_int8.h"
 #include "gpu/span_fp8/onnx_weights.h"
 #include "gpu/span_fp8/package.h"
@@ -263,11 +264,15 @@ SpanPrepare make_span_prepare(const std::shared_ptr<BackendLibrary>& library, co
     prepare.note = "Aucun modèle SPAN en service : rien à préparer.";
     return prepare;
   }
-  // Le modèle « Performance » b5f48 a 48 canaux et 5 blocs : les noyaux prennent le b8f64 seulement.
-  if (model.filename().string().contains("b5f48")) {
+  // Le modèle « Performance » b5f48 a 48 canaux et 5 blocs, AniSD 48 canaux et 6 blocs : les noyaux prennent
+  // le b8f64 seulement.
+  if (!span_fp8_supported(model.filename().string())) {
     prepare.note =
-        "Ce modèle SPAN (b5f48, 48 canaux) n'est pas pris par les noyaux FP8 : choisissez un modèle "
-        "Balanced.";
+        model.filename().string().contains("AniSD")
+            ? "Ce modèle SPAN (AniSD, 48 canaux) n'est pas pris par les noyaux FP8 : il n'a pas de "
+              "cran Performance."
+            : "Ce modèle SPAN (b5f48, 48 canaux) n'est pas pris par les noyaux FP8 : choisissez un "
+              "modèle Balanced.";
     return prepare;
   }
   if (const SpanInt8Lookup found = find_span_variant(SpanVariantKind::Fp8Cutlass, model, models_dir);

@@ -114,7 +114,9 @@ Général
   ├ Lecteur par défaut       bouton « Faire de ce lecteur le lecteur par défaut », Ouvrir avec  (voir 4.4)
   └ Mises à jour             Automatique / Me prévenir / Jamais, canal, fréquence, version (voir 4.5)
 Image IA
-  ├ Agrandissement           résolution de travail, SPAN (case, modèle) ; en Réglages avancés : « Préparer le
+  ├ Agrandissement           résolution de travail, SPAN (case, modèle : AnimeJaNai HD V3.1 ou « AniSD AC · SD,
+  │                          vieux animes », conseillé et pris par la config auto pour une source de 576 lignes
+  │                          ou moins, sans cran Performance ; docs/modele-sd.md) ; en Réglages avancés : « Préparer le
   │                          mode Performance (SPAN FP8) » et « Préparer en tâche de fond » (docs/span-fp8-cutlass.md)
   ├ Fluidité                 multiplicateur, moteur d'interpolation, mode GMFSS
   └ Avancé                   filtre de réduction (Hermite…), modèle RIFE, poses DRBA, ordre du traitement, Smooth Motion
@@ -373,7 +375,8 @@ catalogue RIFE (4.22 lite, 4.25 lite…), les 9 profils actuels, les statistique
 | **3 · Rapide** | RTX 3070 à 4070, RX 7800 | SPAN, 720p → 1440p | DistilDRBA lite |
 | **4 · Ultra** | RTX 4080 et plus, RX 7900 | SPAN, 720p → 1440p ou 2160p | GMFSS Union (mode Performance) |
 
-Valeurs communes : modèle SPAN **Sharp (performance)** partout (ta remarque : pas de différence nette avec
+Valeurs communes : modèle SPAN **Sharp (performance)** partout, sauf pour une source de 576 lignes ou moins, où la
+config auto prend **AniSD AC** (docs/modele-sd.md ; absent du dossier, le modèle Sharp reste) (ta remarque : pas de différence nette avec
 Balanced, et Sharp convient mieux à l'anime), filtre de réduction **Mitchell** (ou **Hermite** une fois ajouté),
 **Bilinear/Area** en tranche 0 si le coût compte, DistilDRBA **poses** activées si la mesure confirme (voir
 « Points à vérifier »).

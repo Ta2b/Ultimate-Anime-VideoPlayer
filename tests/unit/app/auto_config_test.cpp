@@ -2,6 +2,8 @@
 
 #include <catch2/catch_test_macros.hpp>
 
+#include "app/play/model_choice.h"
+
 using namespace ajp;
 using namespace ajp::app::play;
 
@@ -175,4 +177,24 @@ TEST_CASE("auto : ce que l'exploration a trouvé relève la chaîne du niveau, s
   // Un préréglage choisi à la main n'est pas touché par l'exploration.
   settings.preset = Preset::Normal;
   CHECK(apply_preset(settings, machine, source).work_height == plain.work_height);
+}
+
+TEST_CASE("une source en SD prend AniSD AC, une source HD le modèle du lecteur", "[auto_config]") {
+  const core::SourceInfo dvd{.width = 720, .height = 480, .fps = 23.976};
+  const core::SourceInfo pal{.width = 720, .height = 576, .fps = 25.0};
+  const core::SourceInfo hd720{.width = 1280, .height = 720, .fps = 23.976};
+  const core::SourceInfo unknown{.width = 0, .height = 0, .fps = 0.0};
+  for (const Preset preset : {Preset::Auto, Preset::Fast, Preset::Normal, Preset::Quality, Preset::Ultra}) {
+    CHECK(applied(preset, Tier::Normal, 1080, 60.0, dvd).model == kSpanSdModel);
+    CHECK(applied(preset, Tier::Normal, 1080, 60.0, pal).model == kSpanSdModel);
+    CHECK(applied(preset, Tier::Normal, 1080, 60.0, hd720).model.empty());
+    CHECK(applied(preset, Tier::Normal, 1080, 60.0, k1080p24).model.empty());
+    CHECK(applied(preset, Tier::Normal, 1080, 60.0, unknown).model.empty());
+  }
+  // Personnalisé : le choix de l'utilisateur reste.
+  PlaySettings custom = with(Preset::Custom);
+  custom.model = "x.onnx";
+  CHECK(apply_preset(custom, Machine{Tier::Normal, 1080, 60.0}, dvd).model == "x.onnx");
+  // Le SD n'a pas de cran Performance : la précision de SPAN reste Équilibre.
+  CHECK(applied(Preset::Auto, Tier::Ultra, 1080, 60.0, dvd).span_precision == PrecisionTier::Balanced);
 }

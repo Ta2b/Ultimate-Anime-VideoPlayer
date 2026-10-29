@@ -4,6 +4,8 @@
 #include <array>
 #include <cmath>
 
+#include "app/play/model_choice.h"
+
 namespace ajp::app::play {
 namespace {
 
@@ -120,7 +122,9 @@ PlaySettings apply_preset(const PlaySettings& settings, const Machine& machine,
   out.upscale = *level != Tier::Economy;
   out.work_height = *level == Tier::Economy ? kWorkHeights.back() : work;
   out.downscale = Downscale::Mitchell;
-  out.model.clear();  // SPAN Sharp (performance), le modèle du lecteur
+  // Le SPAN Sharp (performance) du lecteur ; en SD (576 lignes ou moins), AniSD AC, fait pour les vieux
+  // DVD : absent du dossier, la lecture retombe sur le modèle HD.
+  out.model = std::string(recommended_span_model(source.height));
   out.span_order = SpanOrder::Auto;
 
   // Interpolation : multiplicateur en Auto ; une source déjà à la cadence de l'écran n'est pas interpolée.
