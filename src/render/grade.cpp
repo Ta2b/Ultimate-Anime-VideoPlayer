@@ -42,6 +42,9 @@ constexpr std::array kGradeParams = {
     ParamBinding{"em_sat", &GradeParams::em_sat},
     ParamBinding{"sdr_out", &GradeParams::sdr_out},
     ParamBinding{"sdr_gamma", &GradeParams::sdr_gamma},
+    ParamBinding{"punch", &GradeParams::punch},
+    ParamBinding{"chroma", &GradeParams::chroma},
+    ParamBinding{"pivot", &GradeParams::pivot},
 };
 
 constexpr std::array kBlackParams = {

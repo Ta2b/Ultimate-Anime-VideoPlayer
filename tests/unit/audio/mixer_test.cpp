@@ -105,10 +105,11 @@ TEST_CASE("les profils : Naturel est le mixage d'origine, les autres le changent
   const auto leak = [](const char* key) {
     Mixer mixer(MixConfig{.listen = Listen::Headphones, .tuning = ajp::audio::find_preset(key)->tuning});
     PcmBlock block{.pts_us = 0, .channels = 2};
-    block.samples.assign(512, 0.0F);
-    for (std::size_t f = 0; f < 256; ++f) block.samples[f * 2] = 0.5F;  // gauche seule
+    block.samples.assign(4096, 0.0F);
+    for (std::size_t f = 0; f < 2048; ++f) block.samples[f * 2] = 0.5F;  // gauche seule
     const PcmBlock out = mixer.process(std::move(block));
-    return out.samples[200 * 2 + 1];
+    // Les enceintes virtuelles convoluent par blocs de 512 trames : on mesure bien après le premier bloc.
+    return out.samples[1500 * 2 + 1];
   };
   CHECK(leak("strong") > leak("natural"));
   CHECK(leak("natural") > leak("soft"));
@@ -282,4 +283,19 @@ TEST_CASE("tableau : gain en dB de chaque profil sur une piste stéréo", "[.pro
                   db(8000.0F, 0.1F), db(1000.0F, 0.01F));
     }
   }
+}
+
+TEST_CASE(
+    "les réglages d'écoute passent entiers par le message (égaliseur, pièce, nuit, enceintes virtuelles)",
+    "[mixer][profils]") {
+  for (const auto& preset : ajp::audio::mix_presets()) {
+    const auto& tuning = preset.tuning;
+    CHECK(ajp::audio::tuning_from_wire(ajp::audio::to_wire(tuning)) == ajp::audio::clamped(tuning));
+  }
+  ajp::audio::MixTuning custom;
+  custom.eq_bass_db = 9.0F;
+  custom.room = 0.6F;
+  custom.night = 0.4F;
+  custom.virtual_speakers = 0.8F;
+  CHECK(ajp::audio::tuning_from_wire(ajp::audio::to_wire(custom)) == custom);
 }

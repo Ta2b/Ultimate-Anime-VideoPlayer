@@ -251,6 +251,9 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
                                .tensorrt_present = tensorrt_backend_present(p.paths),
                                .capability = c.backend && c.backend->capabilities().span_fp8_cutlass};
   const std::string fp8_reason = span_fp8_unavailable_reason(fp8_facts);
+  log_channel("app")->info("SPAN Performance (FP8) : {} (moteur {}, capacite CUTLASS {})",
+                           fp8_reason.empty() ? "disponible" : fp8_reason, c.backend_name,
+                           fp8_facts.capability);
   const SpanPrepare span_prepare =
       c.model ? make_span_prepare(
                     p.library,
@@ -567,6 +570,12 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
       }
       free_missing_seen = shown.missing;
       free_dropped_seen = shown.dropped;
+      if (chain.hdr_refresh_us != 0 && host_now_us() >= chain.hdr_refresh_us) {
+        chain.hdr_refresh_us = 0;
+        if (session.view().paused)
+          session.command(
+              cmd::Seek{.target_us = std::max<std::int64_t>(session.view().position_us, 0), .exact = true});
+      }
       chain.live.auto_tick(host_now_us(), !session.view().paused);
       show_auto();
       // KDE arme le VRR en plein écran seulement : on le relit quand la fenêtre change d'état.

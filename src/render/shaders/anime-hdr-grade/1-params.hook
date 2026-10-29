@@ -199,3 +199,24 @@
 //!MAXIMUM 1.0
 0.0
 
+
+//!PARAM punch
+//!DESC Fin du grade : contraste en courbe de puissance autour du pivot (0 = identite, negatif = adouci)
+//!TYPE float
+//!MINIMUM -1.0
+//!MAXIMUM 4.0
+0.0
+
+//!PARAM chroma
+//!DESC Fin du grade : facteur de saturation (1 = identite), mene vers le gamut sans le depasser
+//!TYPE float
+//!MINIMUM 0.0
+//!MAXIMUM 4.0
+1.0
+
+//!PARAM pivot
+//!DESC Fin du grade : luminance (nits) ou le contraste ne change rien
+//!TYPE float
+//!MINIMUM 10.0
+//!MAXIMUM 400.0
+80.0

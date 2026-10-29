@@ -5,6 +5,8 @@
 #include <numbers>
 #include <utility>
 
+#include "audio/hrir_synth.h"
+
 namespace ajp::audio {
 namespace {
 
@@ -216,55 +218,97 @@ struct MixPost {
 
 namespace {
 
-const std::array<MixPreset, 8> kPresets{{
+const std::array<MixPreset, 10> kPresets{{
     {"natural", "Natural", "The balanced default.", true, true, MixTuning{}},
-    {"soft", "Soft", "Headphones: nearly intact separation, just softer for long listening.", true, false,
+    {"soft", "Soft", "Headphones: a light virtual room, nearly intact separation.", true, false,
      MixTuning{.crossfeed_gain = 0.2F,
                .crossfeed_cutoff_hz = 800.0F,
                .crossfeed_delay_ms = 0.2F,
-               .head_shadow = 0.25F}},
-    {"strong", "Virtual speakers", "Headphones: like speakers in front of you, far from the head.", true,
+               .head_shadow = 0.25F,
+               .room = 0.15F,
+               .virtual_speakers = 0.35F}},
+    {"strong", "Virtual speakers",
+     "Headphones: two speakers in front of you in a room, like HeSuVi: the sound leaves your head.", true,
      false,
      MixTuning{.crossfeed_gain = 0.5F,
                .crossfeed_cutoff_hz = 650.0F,
                .crossfeed_delay_ms = 0.3F,
                .head_shadow = 0.45F,
-               .surround_gain = 1.1F}},
-    {"wide", "Wide", "Headphones: a bigger head, stronger rear (5.1 and 7.1).", true, false,
-     MixTuning{.crossfeed_gain = 0.28F, .head_radius_m = 0.10F, .head_shadow = 0.5F, .surround_gain = 1.2F}},
+               .surround_gain = 1.1F,
+               .room = 0.35F,
+               .virtual_speakers = 1.0F}},
+    {"wide", "Wide", "Headphones: speakers wide apart, a large room, stronger rear (5.1 and 7.1).", true,
+     false,
+     MixTuning{.crossfeed_gain = 0.28F,
+               .head_radius_m = 0.11F,
+               .head_shadow = 0.5F,
+               .surround_gain = 1.2F,
+               .room = 0.55F,
+               .virtual_speakers = 1.0F}},
     {"voices", "Clear voices",
-     "Speakers: lifted center and quieter rear and bass; in stereo, louder voices and lighter bass.", false,
-     true,
+     "Speakers: lifted center and quieter rear and bass; in stereo, much louder voices and lighter bass.",
+     false, true,
      MixTuning{.surround_gain = 0.85F,
-               .center_lift = 1.6F,
+               .center_lift = 1.7F,
                .lfe_gain = 0.2F,
-               .eq_bass_db = -2.0F,
-               .eq_voice_db = 3.5F}},
+               .eq_bass_db = -3.0F,
+               .eq_voice_db = 5.5F,
+               .eq_treble_db = 1.0F}},
     {"night", "Night",
      "Speakers: compressed dynamics (softer explosions, louder whispers) and voices forward.", false, true,
      MixTuning{.surround_gain = 0.7F,
                .center_lift = 1.5F,
                .lfe_gain = 0.12F,
                .downmix_scale = 0.55F,
-               .eq_bass_db = -3.0F,
-               .eq_voice_db = 2.0F,
-               .night = 0.7F}},
-    {"room", "Living room", "Headphones: speakers in a room, a bit farther, with light reverb.", true, false,
+               .eq_bass_db = -4.0F,
+               .eq_voice_db = 3.0F,
+               .night = 0.8F}},
+    {"room", "Living room", "Headphones: speakers in a room, a bit farther, with a lot of reverb.", true,
+     false,
      MixTuning{.crossfeed_gain = 0.4F,
                .crossfeed_cutoff_hz = 700.0F,
                .crossfeed_delay_ms = 0.3F,
                .head_shadow = 0.4F,
-               .distance = 0.5F,
-               .room = 0.35F}},
+               .distance = 0.6F,
+               .room = 0.7F,
+               .virtual_speakers = 1.0F}},
     {"anime", "Anime voices", "Crisper voices, clearer treble, lighter bass: tireless anime dialogue.", true,
-     true, MixTuning{.eq_bass_db = -1.5F, .eq_voice_db = 3.0F, .eq_treble_db = 1.5F}},
+     true, MixTuning{.eq_bass_db = -2.0F, .eq_voice_db = 4.5F, .eq_treble_db = 2.5F}},
+    {"bass", "Bass boost", "Deep, strong bass and a little more treble, for action and music.", true, true,
+     MixTuning{.eq_bass_db = 8.0F, .eq_voice_db = -0.5F, .eq_treble_db = 2.0F}},
+    {"cinema", "Anime cinema",
+     "Headphones: speakers in a room, clear voices, deep bass: the whole anime treatment.", true, false,
+     MixTuning{.crossfeed_gain = 0.5F,
+               .crossfeed_cutoff_hz = 650.0F,
+               .crossfeed_delay_ms = 0.3F,
+               .head_shadow = 0.45F,
+               .surround_gain = 1.1F,
+               .room = 0.4F,
+               .eq_bass_db = 5.0F,
+               .eq_voice_db = 3.5F,
+               .eq_treble_db = 2.0F,
+               .virtual_speakers = 1.0F}},
 }};
 
 }  // namespace
 
 std::array<float, kMixTuningFields> to_array(const MixTuning& t) {
-  return {t.crossfeed_gain, t.crossfeed_cutoff_hz, t.crossfeed_delay_ms, t.head_radius_m, t.head_shadow,
-          t.surround_gain,  t.center_lift,         t.lfe_gain,           t.downmix_scale};
+  return {t.crossfeed_gain,
+          t.crossfeed_cutoff_hz,
+          t.crossfeed_delay_ms,
+          t.head_radius_m,
+          t.head_shadow,
+          t.surround_gain,
+          t.center_lift,
+          t.lfe_gain,
+          t.downmix_scale,
+          t.distance,
+          t.room,
+          t.eq_bass_db,
+          t.eq_voice_db,
+          t.eq_treble_db,
+          t.night,
+          t.virtual_speakers};
 }
 
 MixTuning tuning_from(const std::array<float, kMixTuningFields>& f) {
@@ -282,7 +326,8 @@ MixTuning tuning_from(const std::array<float, kMixTuningFields>& f) {
                            .eq_bass_db = f[11],
                            .eq_voice_db = f[12],
                            .eq_treble_db = f[13],
-                           .night = f[14]});
+                           .night = f[14],
+                           .virtual_speakers = f[15]});
 }
 
 std::array<float, 16> to_wire(const MixTuning& t) {
@@ -310,10 +355,11 @@ MixTuning clamped(MixTuning t) {
   t.downmix_scale = std::clamp(t.downmix_scale, 0.4F, 0.9F);
   t.distance = std::clamp(t.distance, 0.0F, 1.0F);
   t.room = std::clamp(t.room, 0.0F, 1.0F);
-  t.eq_bass_db = std::clamp(t.eq_bass_db, -8.0F, 8.0F);
-  t.eq_voice_db = std::clamp(t.eq_voice_db, -8.0F, 8.0F);
-  t.eq_treble_db = std::clamp(t.eq_treble_db, -8.0F, 8.0F);
+  t.eq_bass_db = std::clamp(t.eq_bass_db, -12.0F, 12.0F);
+  t.eq_voice_db = std::clamp(t.eq_voice_db, -12.0F, 12.0F);
+  t.eq_treble_db = std::clamp(t.eq_treble_db, -12.0F, 12.0F);
   t.night = std::clamp(t.night, 0.0F, 1.0F);
+  t.virtual_speakers = std::clamp(t.virtual_speakers, 0.0F, 1.0F);
   return t;
 }
 
@@ -336,8 +382,16 @@ Mixer::Mixer(MixConfig config) : config_(std::move(config)) {
       anime_ = std::make_unique<AnimeSound>(config_.anime, config_.sample_rate,
                                             config_.listen == Listen::Headphones);
   }
-  if (config_.hrir && !config_.hrir->empty() && config_.sink_channels == 2)
+  if (config_.hrir && !config_.hrir->empty() && config_.sink_channels == 2) {
     hrir_ = std::make_shared<const Hrir>(prepared(*config_.hrir, config_.sample_rate));
+  } else if (tune.virtual_speakers > 0.0F && config_.listen == Listen::Headphones &&
+             config_.sink_channels == 2) {
+    // Casque, sans fichier de l'utilisateur : des enceintes virtuelles par réponses de tête synthétiques.
+    hrir_ = std::make_shared<const Hrir>(synthetic_hrir({.amount = tune.virtual_speakers,
+                                                         .room = std::max(tune.room, 0.25F),
+                                                         .head_radius_m = tune.head_radius_m,
+                                                         .sample_rate = config_.sample_rate}));
+  }
   const int delay = std::clamp(static_cast<int>(std::lround(tune.crossfeed_delay_ms * 0.001F *
                                                             static_cast<float>(config_.sample_rate))),
                                0, kMixDelayMax - 1);

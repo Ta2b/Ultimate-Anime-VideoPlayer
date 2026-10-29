@@ -18,6 +18,9 @@
 namespace ajp::app::play {
 namespace {
 
+constexpr std::int64_t kHdrRefreshDelayUs =
+    120'000;  // après le dernier changement d'un réglage de RTX HDR, en pause
+
 template <class... F>
 struct Overloaded : F... {
   using F::operator()...;
@@ -162,6 +165,9 @@ void apply_live(Chain& to, const PlaySettings& wanted, std::int64_t now_us) {
         after.contrast, after.saturation, after.middle_gray, after.peak_nits,
         after.debanding ? "oui" : "non");
     to.live.set_true_hdr(after);
+    // RTX HDR ne traite que les images neuves : en pause, la position tenue est relue après le dernier
+    // changement (le curseur qu'on fait glisser n'en lance qu'une).
+    if (to.session.view().paused) to.hdr_refresh_us = now_us + kHdrRefreshDelayUs;
     if (after.peak_nits != before.peak_nits) {
       to.screen.set_source_color(pq_color(after.peak_nits));
       to.peak_nits = after.peak_nits;

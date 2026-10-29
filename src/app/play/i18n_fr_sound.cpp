@@ -126,6 +126,23 @@ constexpr std::array kSoundPage{
           "Plus large, voix +3 dB, plus de graves, compresseur plus ferme, sonie à -18 LUFS."},
     Entry{"estimated", "estimée"},
     Entry{"{} channels on this device.", "{} canaux sur cet appareil."},
+    Entry{"Headphones: a light virtual room, nearly intact separation.",
+          "Casque : une légère pièce virtuelle, séparation presque intacte."},
+    Entry{"Headphones: two speakers in front of you in a room, like HeSuVi: the sound leaves your head.",
+          "Casque : deux enceintes devant vous dans une pièce, à la HeSuVi : le son sort de votre tête."},
+    Entry{"Headphones: speakers wide apart, a large room, stronger rear (5.1 and 7.1).",
+          "Casque : enceintes très écartées, grande pièce, arrière plus présent (5.1 et 7.1)."},
+    Entry{
+        "Speakers: lifted center and quieter rear and bass; in stereo, much louder voices and lighter bass.",
+        "Enceintes : centre rehaussé, arrière et basses discrets ; en stéréo, voix bien plus fortes et "
+        "graves allégés."},
+    Entry{"Headphones: speakers in a room, a bit farther, with a lot of reverb.",
+          "Casque : enceintes dans une pièce, un peu plus loin, avec beaucoup de réverbération."},
+    Entry{"Deep, strong bass and a little more treble, for action and music.",
+          "Des basses profondes et fortes, un peu plus d'aigus : pour l'action et la musique."},
+    Entry{"Anime cinema", "Cinéma anime"},
+    Entry{"Headphones: speakers in a room, clear voices, deep bass: the whole anime treatment.",
+          "Casque : enceintes dans une pièce, voix claires, basses profondes : le traitement anime complet."},
 };
 
 }  // namespace

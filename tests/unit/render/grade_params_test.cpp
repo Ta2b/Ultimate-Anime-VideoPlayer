@@ -110,7 +110,7 @@ TEST_CASE("route TrueHDR : les éclats montent à partir de la moitié du pic") 
   CHECK(decision->params.in_max == 800.0);
   CHECK(decision->params.emulate == 0.0);
   CHECK(decision->params.adapt == 0.0);  // RTX HDR : TrueHDR seul, le grade ne module rien
-  CHECK(decision->params.spec_gain == Approx(2.2));
+  CHECK(decision->params.spec_gain == Approx(3.4));
 }
 
 TEST_CASE("sortie SDR : couleurs, noirs et contraste au blanc de l'écran, sans marge d'éclats") {
@@ -230,7 +230,7 @@ TEST_CASE("couleurs étendues : passées au hook, nulles par défaut, poussées 
   REQUIRE(natural);
   REQUIRE(vivid);
   CHECK(natural->params.expand == 0.0);
-  CHECK(vivid->params.expand == 0.5);
+  CHECK(vivid->params.expand == 0.7);
   GradeSettings bad;
   bad.expand = 1.2;
   CHECK_FALSE(check_grade_settings(bad));
@@ -284,10 +284,10 @@ TEST_CASE("Éclatant sur TrueHDR : aplats et éclats montent, le garde-fou passe
   REQUIRE(vivid);
   CHECK(natural->params.area_gain == 1.0);
   CHECK(natural->params.guard == 0.0);
-  CHECK(vivid->params.area_gain == Approx(1.175));
-  CHECK(vivid->params.spec_gain == Approx(1.96));
+  CHECK(vivid->params.area_gain == Approx(1.4));
+  CHECK(vivid->params.spec_gain == Approx(3.12));
   CHECK(vivid->params.guard == 0.8);
-  CHECK(vivid->params.vibrance == 0.45);
+  CHECK(vivid->params.vibrance == 0.6);
   GradeSettings bad;
   bad.guard = 1.5;
   CHECK_FALSE(decide_grade(bad, pq_context(core::HdrMode::TrueHdr)));
@@ -326,3 +326,29 @@ TEST_CASE("vrai noir : seuils tirés de la rampe mesurée") {
 }
 
 }  // namespace ajp::render
+
+TEST_CASE("le contraste et la saturation au-delà de 200 passent au grade, l'identité en deçà",
+          "[grade][punch]") {
+  using namespace ajp::render;
+  GradeSettings s = grade_preset(GradePreset::Naturel);
+  const GradeContext context{.route = ajp::core::HdrMode::TrueHdr, .output_pq = true, .peak_nits = 1000.0};
+  auto at_rest = decide_grade(s, context);
+  REQUIRE(at_rest);
+  CHECK(at_rest->params.punch == 0.0);
+  CHECK(at_rest->params.chroma == 1.0);
+  s.contrast = 200.0;
+  s.saturation = 200.0;
+  auto old_max = decide_grade(s, context);
+  CHECK(old_max->params.punch == 0.0);  // le maximum d'avant : RTX HDR seul
+  CHECK(old_max->params.chroma == 1.0);
+  s.contrast = 400.0;
+  s.saturation = 400.0;
+  auto new_max = decide_grade(s, context);
+  REQUIRE(new_max);
+  CHECK(new_max->params.punch == Approx(1.0));
+  CHECK(new_max->params.chroma == Approx(2.2));
+  // Éclatant ajoute son propre punch dès le départ.
+  auto vivid = decide_grade(grade_preset(GradePreset::Eclatant), context);
+  CHECK(vivid->params.punch == Approx(0.30));
+  CHECK(vivid->params.chroma == Approx(1.12));
+}
