@@ -149,12 +149,12 @@ std::vector<std::string> wizard_summary(const Wizard& wizard) {
   }
   if (has(WizardStep::Hdr)) {
     out.push_back(
-        skipped(WizardStep::Hdr) ? "HDR : sauté, automatique (HDR et couleurs > Conversion HDR)"
+        skipped(WizardStep::Hdr) ? "HDR : sauté, automatique (HDR et couleurs > HDR)"
         : wizard.hdr == HdrChoice::RtxHdr && !wizard.rtx_checks.empty() && !rtx_ready(wizard.rtx_checks)
             ? std::string(
-                  "HDR : RTX HDR choisi mais pas prêt (HDR et couleurs > Conversion HDR) : en attendant, "
+                  "HDR : RTX HDR choisi mais pas prêt (HDR et couleurs > HDR) : en attendant, "
                   "l'écran reste en HDR adaptatif")
-            : std::format("HDR : {} (HDR et couleurs > Conversion HDR)", label(wizard.hdr)));
+            : std::format("HDR : {} (HDR et couleurs > HDR)", label(wizard.hdr)));
   }
   if (has(WizardStep::Audio)) {
     out.push_back(wizard.listening == Listening::Unsaid || skipped(WizardStep::Audio)

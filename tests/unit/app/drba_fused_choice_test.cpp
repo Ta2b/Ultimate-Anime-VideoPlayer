@@ -61,7 +61,7 @@ TEST_CASE("DistilDRBA fusionné : le réglage voyage dans play.toml et recharge 
   wanted.drba_fused = false;
   const Change change = change_between(running, wanted, true);
   CHECK(change.cost == ChangeCost::Reopen);
-  CHECK(change.reason.find("DistilDRBA entier") != std::string::npos);
+  CHECK(change.reason.find("whole DistilDRBA") != std::string::npos);
   // Avec RIFE, le réglage DistilDRBA ne coûte rien.
   running.motion_engine = MotionEngine::Rife;
   wanted.motion_engine = MotionEngine::Rife;

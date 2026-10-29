@@ -8,6 +8,7 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include "app/play/french_text.h"
+#include "app/play/i18n.h"
 #include "app/play/settings_panel.h"
 #include "app/play/wizard.h"
 
@@ -27,8 +28,8 @@ TEST_CASE("l'arbre des réglages tient en cinq catégories et douze pages", "[se
     previous = page.category;
   }
   CHECK(categories.size() <= 5);
-  CHECK(std::string_view(pages.front().category) == "Général");
-  CHECK(std::string_view(pages.front().name) == "Configuration");
+  CHECK(std::string_view(pages.front().category) == "General");
+  CHECK(std::string_view(pages.front().name) == "Setup");
 }
 
 TEST_CASE("l'arbre des réglages garde les pages que les autres écrans citent", "[settings][pages]") {
@@ -39,16 +40,17 @@ TEST_CASE("l'arbre des réglages garde les pages que les autres écrans citent",
     });
   };
   // Les langues et les sous-titres, le lecteur par défaut et les mises à jour vivent ensemble.
-  CHECK(has("Général", "Lecture"));
-  CHECK(has("Général", "Application"));
-  CHECK_FALSE(has("Général", "Langues"));
-  CHECK_FALSE(has("Général", "Sous-titres"));
-  CHECK_FALSE(has("Général", "Lecteur par défaut"));
-  CHECK_FALSE(has("Général", "Mises à jour"));
+  CHECK(has("General", "Playback"));
+  CHECK(has("General", "Application"));
+  CHECK_FALSE(has("General", "Languages"));
+  CHECK_FALSE(has("General", "Subtitles"));
+  CHECK_FALSE(has("General", "Default player"));
+  CHECK_FALSE(has("General", "Updates"));
 }
 
 TEST_CASE("le résumé de l'assistant renvoie à des pages qui existent", "[settings][pages][wizard]") {
   const auto pages = settings_pages();
+  i18n::set_language(i18n::Language::French);  // le résumé de l'assistant est encore en français
   Wizard wizard = begin_wizard({.engine_choice = true, .hdr_display = true}, 0);
   const auto lines = wizard_summary(wizard);
   REQUIRE(lines.size() >= 5);
@@ -63,9 +65,11 @@ TEST_CASE("le résumé de l'assistant renvoie à des pages qui existent", "[sett
     const std::string category = path.substr(0, arrow);
     const std::string name = path.substr(arrow + 3);
     INFO(line);
-    CHECK(std::ranges::any_of(
-        pages, [&](const SettingsPage& page) { return category == page.category && name == page.name; }));
+    CHECK(std::ranges::any_of(pages, [&](const SettingsPage& page) {
+      return category == i18n::tr(page.category) && name == i18n::tr(page.name);
+    }));
   }
+  i18n::set_language(i18n::Language::English);
 }
 
 TEST_CASE("les notes gardent les guillemets et la ponctuation haute avec leur mot", "[settings][typo]") {

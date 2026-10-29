@@ -1,6 +1,7 @@
-#include <array>
+#include "app/play/i18n_fr.h"
 
-#include "app/play/i18n.h"
+#include <array>
+#include <vector>
 
 namespace ajp::app::play::i18n {
 namespace {
@@ -115,8 +116,18 @@ constexpr std::array kPlayer{
 
 }  // namespace
 
-std::span<const Entry> french_entries() {
+std::span<const Entry> french_player() {
   return kPlayer;
+}
+
+std::span<const Entry> french_entries() {
+  static const std::vector<Entry> all = [] {
+    std::vector<Entry> merged;
+    for (const auto part : {french_player(), french_settings()})
+      merged.insert(merged.end(), part.begin(), part.end());
+    return merged;
+  }();
+  return all;
 }
 
 }  // namespace ajp::app::play::i18n

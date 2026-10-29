@@ -77,12 +77,16 @@ TEST_CASE("i18n: l'anglais est la langue par défaut et le français vient de la
 TEST_CASE("i18n: chaque texte passé à tr() ou tr_format() a son français", "[i18n]") {
   std::set<std::string_view> known;
   for (const i18n::Entry& entry : i18n::french_entries()) known.insert(entry.english);
-  const std::regex call(R"re(tr(?:_format)?\(\s*"((?:\\.|[^"\\])*)")re");
+  const std::regex call(R"re(tr(?:_format)?\(\s*((?:"(?:\\.|[^"\\])*"\s*)+))re");
+  const std::regex piece(R"re("((?:\\.|[^"\\])*)")re");
   std::set<std::string> missing;
   for (const auto& file : interface_sources()) {
     const std::string text = read_file(file);
     for (std::sregex_iterator it(text.begin(), text.end(), call), end; it != end; ++it) {
-      const std::string key = unescape((*it)[1].str());
+      const std::string joined = (*it)[1].str();
+      std::string key;
+      for (std::sregex_iterator part(joined.begin(), joined.end(), piece), last; part != last; ++part)
+        key += unescape((*part)[1].str());
       if (!known.contains(key)) missing.insert(file.filename().string() + " : " + key);
     }
   }
@@ -93,7 +97,7 @@ TEST_CASE("i18n: chaque texte passé à tr() ou tr_format() a son français", "[
 // Les fichiers dont les textes visibles sont tous passés par tr() : aucune phrase française en dur ne s'y
 // glisse (un littéral avec une lettre accentuée ou « « », hors journaux, commentaires et lignes « i18n-ok »).
 TEST_CASE("i18n: aucune chaîne française en dur dans les fichiers traduits", "[i18n]") {
-  const std::set<std::string> translated{"controls_draw.cpp", "tracks.cpp"};
+  const std::set<std::string> translated{"controls_draw.cpp", "tracks.cpp", "settings_panel.cpp"};
   const std::string accents = "(?:à|â|ç|é|è|ê|ë|î|ï|ô|û|ù|ü|œ|À|É|È|Ê|«|»)";
   const std::string body = "(?:\\\\.|[^\"\\\\])*";
   const std::regex literal("\"" + body + accents + body + "\"");

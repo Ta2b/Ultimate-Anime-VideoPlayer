@@ -174,7 +174,7 @@ void apply_live(Chain& to, const PlaySettings& wanted, std::int64_t now_us) {
     to.black_dirty = true;
     to.session.set_output(output_text(to.screen, wanted, to.peak_nits));
     if (wanted.grade_preset != r.grade_preset || wanted.grade != r.grade) {
-      controls.notify(wanted.grade ? i18n::tr_format("Grade: {}", render::preset_label(wanted.grade_preset))
+      controls.notify(wanted.grade ? i18n::tr_format("Grade: {}", grade_label(wanted.grade_preset))
                                    : std::string(i18n::tr("Grade off")),
                       now_us);
     }

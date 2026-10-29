@@ -4,6 +4,8 @@
 #include <array>
 #include <cmath>
 
+#include "app/play/i18n.h"
+
 namespace ajp::app::play {
 namespace {
 
@@ -14,12 +16,12 @@ struct PresetName {
 };
 constexpr std::array<PresetName, kPresetCount> kPresets{{
     {Preset::Auto, "auto", "Auto"},
-    {Preset::Economy, "economy", "Économe"},
-    {Preset::Fast, "fast", "Rapide"},
+    {Preset::Economy, "economy", "Economy"},
+    {Preset::Fast, "fast", "Fast"},
     {Preset::Normal, "normal", "Normal"},
-    {Preset::Quality, "quality", "Qualité"},
+    {Preset::Quality, "quality", "Quality"},
     {Preset::Ultra, "ultra", "Ultra"},
-    {Preset::Custom, "custom", "Personnalisé"},
+    {Preset::Custom, "custom", "Custom"},
 }};
 
 struct PriorityName {
@@ -28,8 +30,8 @@ struct PriorityName {
   std::string_view label;
 };
 constexpr std::array<PriorityName, kPriorityCount> kPriorities{{
-    {Priority::Fluidity, "fluidity", "Fluidité"},
-    {Priority::Balance, "balance", "Équilibre"},
+    {Priority::Fluidity, "fluidity", "Smoothness"},
+    {Priority::Balance, "balance", "Balance"},
     {Priority::Image, "image", "Image"},
 }};
 
@@ -52,7 +54,7 @@ std::string_view key(Preset preset) {
   return kPresets[static_cast<std::size_t>(preset)].key;
 }
 std::string_view label(Preset preset) {
-  return kPresets[static_cast<std::size_t>(preset)].label;
+  return i18n::tr(kPresets[static_cast<std::size_t>(preset)].label.data());
 }
 std::optional<Preset> preset_from_key(std::string_view text) {
   for (const PresetName& entry : kPresets) {
@@ -64,7 +66,7 @@ std::string_view key(Priority priority) {
   return kPriorities[static_cast<std::size_t>(priority)].key;
 }
 std::string_view label(Priority priority) {
-  return kPriorities[static_cast<std::size_t>(priority)].label;
+  return i18n::tr(kPriorities[static_cast<std::size_t>(priority)].label.data());
 }
 std::optional<Priority> priority_from_key(std::string_view text) {
   for (const PriorityName& entry : kPriorities) {

@@ -571,7 +571,7 @@ void draw_wizard_step(FirstRunView& view, Wizard& wizard) {
         if (!rtx_ready(wizard.rtx_checks))
           note(
               "Tant que tout n'est pas fait, l'écran reste en HDR adaptatif ; RTX HDR se choisit ensuite "
-              "dans HDR et couleurs > Conversion HDR.");
+              "dans HDR et couleurs > HDR.");
       }
       break;
     }

@@ -266,7 +266,7 @@ TEST_CASE("Ce qu'un changement demande : direct ou réouverture, dit avant d'app
   // Le moteur du mouvement se recharge s'il interpole ; sans interpolation, il attend.
   PlaySettings flow = on;
   flow.motion_engine = MotionEngine::DistilDrba;
-  CHECK(change_between(on, flow, true).reason.find("mouvement") != std::string::npos);
+  CHECK(change_between(on, flow, true).reason.find("interpolation engine") != std::string::npos);
   PlaySettings flow_off = off;
   flow_off.motion_engine = MotionEngine::DistilDrba;
   CHECK(change_between(off, flow_off, true).cost == ChangeCost::Live);
@@ -274,7 +274,7 @@ TEST_CASE("Ce qu'un changement demande : direct ou réouverture, dit avant d'app
   CHECK(live_part(on, flow, true).motion_engine == MotionEngine::Rife);
   PlaySettings heavy = on;
   heavy.rife_model = "rife_v4.26_heavy.onnx";
-  CHECK(change_between(on, heavy, true).reason.find("modèle RIFE") != std::string::npos);
+  CHECK(change_between(on, heavy, true).reason.find("RIFE model") != std::string::npos);
   // Avec GMFSS, le modèle RIFE ne sert pas : le changer ne recharge rien.
   PlaySettings gmfss = on;
   gmfss.motion_engine = MotionEngine::Gmfss;
@@ -285,7 +285,7 @@ TEST_CASE("Ce qu'un changement demande : direct ou réouverture, dit avant d'app
   // L'ordre du warp et de SPAN recharge la chaîne qui interpole, et attend sans interpolation.
   PlaySettings before = on;
   before.span_order = SpanOrder::Before;
-  CHECK(change_between(on, before, true).reason.find("avant SPAN") != std::string::npos);
+  CHECK(change_between(on, before, true).reason.find("before SPAN") != std::string::npos);
   PlaySettings before_off = off;
   before_off.span_order = SpanOrder::Before;
   CHECK(change_between(off, before_off, true).cost == ChangeCost::Live);
@@ -437,7 +437,7 @@ TEST_CASE("TierSupport : Équilibre toujours, les autres selon les graphes", "[a
 TEST_CASE("repères des listes et résolution en français courant", "[settings]") {
   using namespace ajp::app::play;
   CHECK(resolution_text(720) == "720p");
-  CHECK(badge_text(Badge::Finest) == "Le plus fin");
+  CHECK(badge_text(Badge::Finest) == "Finest");
   CHECK(badge_of(MotionEngine::Gmfss) == Badge::Finest);
   CHECK(badge_of(MotionEngine::GmfssUnion) == Badge::Heaviest);
   CHECK(badge_of(MotionEngine::Rife) == Badge::Recommended);

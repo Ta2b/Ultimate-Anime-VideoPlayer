@@ -30,18 +30,19 @@ using panel::section;
 
 // Le moteur du mode HDR : RTX HDR (TrueHDR, NVIDIA), HDR adaptatif (tous GPU : libplacebo, puis
 // l'aspect TrueHDR émulé qui suit la scène), ou SDR.
-constexpr std::array<const char*, 3> kRoutes{"RTX HDR (NVIDIA)", "HDR adaptatif (tous GPU)", "SDR"};
+constexpr std::array<const char*, 3> kRoutes{"RTX HDR (NVIDIA)", "Adaptive HDR (any GPU)",
+                                             "SDR"};  // clés i18n
 
 void hdr_tab(PlaySettings& d, const SettingsChoices& choices) {
   // Un écran SDR n'a pas de HDR à convertir : les options restent visibles mais grisées.
   ImGui::BeginDisabled(!choices.hdr_output);
-  section("Sortie");
+  section(i18n::tr("Output"));
   const int route = d.true_hdr ? 0 : (d.hdr_native ? 1 : 2);
-  if (ImGui::BeginCombo("Moteur HDR", kRoutes[static_cast<std::size_t>(route)])) {
+  if (ImGui::BeginCombo(i18n::tr("HDR method"), i18n::tr(kRoutes[static_cast<std::size_t>(route)]))) {
     for (int i = 0; i < static_cast<int>(kRoutes.size()); ++i) {
       if (i == 0 && !choices.nvidia) continue;  // TrueHDR ne tourne que sur un GPU NVIDIA
       ImGui::BeginDisabled(i == 0 && !choices.true_hdr_available);
-      if (ImGui::Selectable(kRoutes[static_cast<std::size_t>(i)], i == route)) {
+      if (ImGui::Selectable(i18n::tr(kRoutes[static_cast<std::size_t>(i)]), i == route)) {
         d.true_hdr = i == 0;
         d.hdr_native = i == 1;
       }
@@ -50,45 +51,38 @@ void hdr_tab(PlaySettings& d, const SettingsChoices& choices) {
     ImGui::EndCombo();
   }
   if (choices.nvidia && !choices.true_hdr_backend)
-    note(
-        "RTX HDR demande le moteur TensorRT (écran des moteurs) : sous Vulkan, le HDR adaptatif le "
-        "remplace.");
+    note(i18n::tr("RTX HDR needs the TensorRT engine; Adaptive HDR is used instead."));
   else if (choices.nvidia && !choices.true_hdr_available)
-    note("RTX HDR : le SDK Maxine VideoFX n'est pas installé (écran des moteurs).");
+    note(i18n::tr("RTX HDR: the Maxine VideoFX SDK is not installed (see Engines)."));
   if (!choices.hdr_output)
-    note(
-        "Écran SDR : le HDR est indisponible ; l'image reste en SDR et le grade (page Couleurs) imite le "
-        "rendu HDR.");
-  section(choices.nvidia ? "Réglages du mode HDR (RTX HDR et HDR adaptatif)" : "Réglages du HDR adaptatif");
+    note(i18n::tr("SDR display: HDR is unavailable. The Color page's grade imitates the HDR look."));
+  section(choices.nvidia ? i18n::tr("HDR settings") : i18n::tr("Adaptive HDR settings"));
   bool automatic = d.true_hdr_peak == 0;
-  if (ImGui::Checkbox(std::format("Pic automatique ({} nits)", choices.auto_peak).c_str(), &automatic))
+  if (ImGui::Checkbox(i18n::tr_format("Auto peak ({} nits)", choices.auto_peak).c_str(), &automatic))
     d.true_hdr_peak =
         automatic ? 0 : std::clamp(choices.auto_peak, limits::kTrueHdrPeak.lo, limits::kTrueHdrPeak.hi);
   ImGui::BeginDisabled(automatic);
   int peak = automatic ? choices.auto_peak : d.true_hdr_peak;
-  if (ImGui::SliderInt("Pic (nits)", &peak, limits::kTrueHdrPeak.lo, limits::kTrueHdrPeak.hi, "%d",
+  if (ImGui::SliderInt(i18n::tr("Peak (nits)"), &peak, limits::kTrueHdrPeak.lo, limits::kTrueHdrPeak.hi, "%d",
                        ImGuiSliderFlags_AlwaysClamp) &&
       !automatic)
     d.true_hdr_peak = peak;
   ImGui::EndDisabled();
   if (panel::advanced())
-    ImGui::SliderInt("Gris moyen", &d.true_hdr_gray, limits::kTrueHdrGray.lo, limits::kTrueHdrGray.hi, "%d",
-                     ImGuiSliderFlags_AlwaysClamp);
+    ImGui::SliderInt(i18n::tr("Mid gray"), &d.true_hdr_gray, limits::kTrueHdrGray.lo, limits::kTrueHdrGray.hi,
+                     "%d", ImGuiSliderFlags_AlwaysClamp);
   if (choices.nvidia && panel::advanced()) {
     ImGui::BeginDisabled(!d.true_hdr);
-    ImGui::Checkbox("Débandage (RTX HDR)", &d.true_hdr_debanding);
+    ImGui::Checkbox(i18n::tr("Debanding (RTX HDR)"), &d.true_hdr_debanding);
     ImGui::EndDisabled();
   }
-  if (panel::advanced() && ImGui::Button("Valeurs par défaut")) {
+  if (panel::advanced() && ImGui::Button(i18n::tr("Defaults"))) {
     const PlaySettings defaults;
     d.true_hdr_peak = defaults.true_hdr_peak;
     d.true_hdr_gray = defaults.true_hdr_gray;
     d.true_hdr_debanding = defaults.true_hdr_debanding;
   }
-  note(
-      "Appliqués en direct. Contraste et saturation sont dans la page Couleurs. Gris moyen : luminosité des "
-      "tons moyens. Le HDR adaptatif suit la scène : moins d'expansion sur les scènes claires, ombres plus "
-      "douces la nuit.");
+  note(i18n::tr("Applied live. Adaptive HDR follows the scene: less expansion on bright scenes."));
   panel::end_group();  // le dernier encadré s'ouvre dans la zone grisée : il se ferme avant d'en sortir
   ImGui::EndDisabled();
 }
@@ -109,75 +103,70 @@ bool grade_slider(const char* label, double& value, core::Range<double> range) {
 // Contraste et saturation : ceux de TrueHDR, que le HDR adaptatif émule, et que la sortie SDR
 // gradée reprend autour du gris moyen (render::sdr_params) ; un seul réglage pour les trois.
 void look_section(PlaySettings& d) {
-  section("Contraste et saturation (HDR et SDR)");
-  ImGui::SliderInt("Contraste", &d.true_hdr_contrast, limits::kTrueHdrContrast.lo,
+  section(i18n::tr("Contrast and saturation"));
+  ImGui::SliderInt(i18n::tr("Contrast"), &d.true_hdr_contrast, limits::kTrueHdrContrast.lo,
                    limits::kTrueHdrContrast.hi, "%d %%", ImGuiSliderFlags_AlwaysClamp);
-  ImGui::SliderInt("Saturation", &d.true_hdr_saturation, limits::kTrueHdrSaturation.lo,
+  ImGui::SliderInt(i18n::tr("Saturation"), &d.true_hdr_saturation, limits::kTrueHdrSaturation.lo,
                    limits::kTrueHdrSaturation.hi, "%d %%", ImGuiSliderFlags_AlwaysClamp);
-  if (ImGui::Button("Contraste et saturation par défaut")) {
+  if (ImGui::Button(i18n::tr("Reset contrast and saturation"))) {
     const PlaySettings defaults;
     d.true_hdr_contrast = defaults.true_hdr_contrast;
     d.true_hdr_saturation = defaults.true_hdr_saturation;
   }
-  note(
-      "En direct, pour RTX HDR, le HDR adaptatif et la sortie SDR (autour du gris moyen de la page "
-      "Conversion HDR, sans les éclats au-dessus du blanc).");
-  if (!d.grade && !d.true_hdr) note("Hors RTX HDR, ils demandent « Grader la sortie » ci-dessous.");
+  note(i18n::tr("Live, for RTX HDR, Adaptive HDR and SDR output."));
+  if (!d.grade && !d.true_hdr) note(i18n::tr("Without RTX HDR, turn on \"Color grading\" below."));
 }
 
 void grade_tab(PlaySettings& d, const SettingsChoices& choices) {
   // Le grade s'applique sur toutes les routes, le mode SDR compris : il imite le rendu HDR (contraste,
   // couleurs riches, hautes lumières) pour ceux qui n'ont pas d'écran HDR. L'onglet reste actif.
   look_section(d);
-  section("Grade");
-  ImGui::Checkbox("Grader la sortie (HDR10 et SDR)", &d.grade);
+  section(i18n::tr("Color grading"));
+  ImGui::Checkbox(i18n::tr("Color grading"), &d.grade);
   ImGui::BeginDisabled(!d.grade);
-  if (ImGui::BeginCombo("Préréglage", std::string(render::preset_label(d.grade_preset)).c_str())) {
+  if (ImGui::BeginCombo(i18n::tr("Preset"), grade_label(d.grade_preset))) {
     for (int i = 0; i < render::kGradePresetCount; ++i) {
       const auto preset = static_cast<render::GradePreset>(i);
-      if (ImGui::Selectable(std::string(render::preset_label(preset)).c_str(), preset == d.grade_preset)) {
+      if (ImGui::Selectable(grade_label(preset), preset == d.grade_preset)) {
         d.grade_preset = preset;
         d.grade_values = with_preset(preset, d.grade_values);
       }
     }
     ImGui::EndCombo();
   }
-  panel::tip(
-      "Éclatant : éclats et aplats lumineux, couleurs et noirs poussés, teinte gardée ; le garde-fou adoucit "
-      "les couleurs saturées près du pic au lieu de les écrêter. Naturel : le grade d'origine du lecteur. "
-      "Tout s'applique en direct.");
+  panel::tip(i18n::tr("Vivid pushes highlights, colors and blacks; Natural is the default look. Live."));
   render::GradeSettings& g = d.grade_values;
   using namespace render::grade_limits;
   bool moved = false;
   if (panel::advanced()) {
-    moved |= grade_slider("Éclats", g.highlights_rtx, kHighlights);
-    moved |= grade_slider("Aplats lumineux", g.area_rtx, kAreaRtx);
-    moved |= grade_slider("Couleurs", g.vibrance_rtx, kVibrance);
-    moved |= grade_slider("Couleurs étendues", g.expand, kExpand);
-    moved |= grade_slider("Noirs profonds", g.shadows, kShadows);
-    moved |= grade_slider("Garde-fou des couleurs", g.guard, kGuard);
+    moved |= grade_slider(i18n::tr("Highlights"), g.highlights_rtx, kHighlights);
+    moved |= grade_slider(i18n::tr("Bright areas"), g.area_rtx, kAreaRtx);
+    moved |= grade_slider(i18n::tr("Colors"), g.vibrance_rtx, kVibrance);
+    moved |= grade_slider(i18n::tr("Wide colors"), g.expand, kExpand);
+    moved |= grade_slider(i18n::tr("Deep blacks"), g.shadows, kShadows);
+    moved |= grade_slider(i18n::tr("Color limiter"), g.guard, kGuard);
     if (moved) d.grade_preset = render::GradePreset::Custom;
-    ImGui::Checkbox("Gamut Display P3 de l'écran", &g.gamut_p3);
+    ImGui::Checkbox(i18n::tr("Display P3 gamut"), &g.gamut_p3);
   }
   ImGui::EndDisabled();
   if (d.true_hdr) {
-    note("Route RTX HDR : TrueHDR, puis le grade sur la sortie PQ.");
+    note(i18n::tr("RTX HDR path: TrueHDR, then the grade on the PQ output."));
   } else if (d.hdr_native) {
-    note("HDR adaptatif : libplacebo en PQ, aspect TrueHDR émulé selon la scène, puis le grade.");
+    note(i18n::tr("Adaptive HDR path: libplacebo in PQ with a scene-based TrueHDR look, then the grade."));
   } else {
-    note(choices.hdr_output
-             ? "Mode SDR : le grade imite le rendu HDR sur l'image SDR, dans le conteneur HDR10 de l'écran."
-             : "Mode SDR : le grade imite le rendu HDR dans la gamme SDR (contraste, couleurs riches, hautes "
-               "lumières), "
-               "pour profiter du lecteur sans écran HDR. Le préréglage Éclatant l'accentue.");
+    note(
+        choices.hdr_output
+            ? i18n::tr("SDR mode: the grade imitates the HDR look in the display's HDR10 container.")
+            : i18n::tr(
+                  "SDR mode: the grade imitates the HDR look without an HDR display. Vivid strengthens it."));
   }
 }
 
 // Composition finale (Image IA > Agrandissement, réglages avancés) : le filtre vers la fenêtre et le
 // débandage.
 void composition_section(PlaySettings& d) {
-  section("Composition finale");
-  if (ImGui::BeginCombo("Filtre vers la fenêtre", std::string(label(d.final_scaler)).c_str())) {
+  section(i18n::tr("Final scaling"));
+  if (ImGui::BeginCombo(i18n::tr("Scaler"), std::string(label(d.final_scaler)).c_str())) {
     for (int i = 0; i < kFinalScalerCount; ++i) {
       const auto scaler = static_cast<FinalScaler>(i);
       if (ImGui::Selectable(std::string(label(scaler)).c_str(), scaler == d.final_scaler))
@@ -185,17 +174,16 @@ void composition_section(PlaySettings& d) {
     }
     ImGui::EndCombo();
   }
-  ImGui::Checkbox("Débander les aplats et dégradés", &d.deband);
+  ImGui::Checkbox(i18n::tr("Debanding"), &d.deband);
   note(
-      "Le filtre étire la sortie de la chaîne (par exemple 1440p) vers la fenêtre ou l'écran 4K ; EWA "
-      "Lanczos est le plus fin, plus lourd pour le GPU. Le débandage adoucit les marches des aplats et "
-      "des dégradés, courants en anime, sans toucher aux contours. Aucun effet sur l'export.");
+      i18n::tr("The scaler stretches the output to the window; EWA Lanczos is sharpest but heaviest. No "
+               "effect on export."));
 }
 
-// Noir absolu et soins OLED (HDR et couleurs > Conversion HDR, réglages avancés).
+// Noir absolu et soins OLED (HDR et couleurs > HDR, réglages avancés).
 void oled_sections(PlaySettings& d, const SettingsChoices& choices) {
-  section("Noir absolu OLED");
-  if (ImGui::BeginCombo("Noir absolu", std::string(label(d.oled_black)).c_str())) {
+  section(i18n::tr("OLED black"));
+  if (ImGui::BeginCombo(i18n::tr("True black"), std::string(label(d.oled_black)).c_str())) {
     for (int i = 0; i < kOledBlackCount; ++i) {
       const auto mode = static_cast<OledBlack>(i);
       if (ImGui::Selectable(std::string(label(mode)).c_str(), mode == d.oled_black)) d.oled_black = mode;
@@ -203,21 +191,15 @@ void oled_sections(PlaySettings& d, const SettingsChoices& choices) {
     ImGui::EndCombo();
   }
   ImGui::BeginDisabled(d.oled_black == OledBlack::Off);
-  grade_slider("Seuil (pas de code)", d.oled_black_steps, render::grade_limits::kBlackSteps);
+  grade_slider(i18n::tr("Threshold (code steps)"), d.oled_black_steps, render::grade_limits::kBlackSteps);
   ImGui::EndDisabled();
-  note(("Écran : " + choices.display_text).c_str());
-  section("Soins OLED");
-  ImGui::Checkbox("Effacer la barre en pause (anti-marquage)", &d.oled_care);
-  ImGui::Checkbox("Cadence fixe (VRR sans scintillement)", &d.steady_cadence);
-  note(
-      "Anti-marquage : la barre s'efface aussi en pause après 20 s sans activité. Cadence fixe : l'image est "
-      "représentée à chaque rafraîchissement, pour que le VRR garde une fréquence constante (une fréquence "
-      "qui varie fait scintiller les scènes sombres d'un OLED) ; coûte une composition par "
-      "rafraîchissement.");
+  note((i18n::tr("Display: ") + choices.display_text).c_str());
+  section(i18n::tr("OLED care"));
+  ImGui::Checkbox(i18n::tr("Hide the bar when paused (burn-in)"), &d.oled_care);
+  ImGui::Checkbox(i18n::tr("Steady frame rate (VRR flicker)"), &d.steady_cadence);
+  note(i18n::tr("Steady frame rate keeps VRR at a constant refresh so dark scenes do not flicker on OLED."));
   if (!choices.black_status.empty()) note(choices.black_status.c_str());
-  note(
-      "Les quasi-noirs deviennent un vrai noir (0) ; le pied rejoint l'image au seuil, compté en pas de code "
-      "au-dessus du noir de la source. Calé en direct sur une rampe de 32 marches.");
+  note(i18n::tr("Near-blacks become true black (0), up to the threshold. Live."));
 }
 
 std::string language_label(std::string_view tag) {
@@ -244,54 +226,47 @@ void languages_tab(PlaySettings& d) {
   d.language_presets.resize(limits::kLanguagePresets);
   for (std::size_t rank = 0; rank < d.language_presets.size(); ++rank) {
     ImGui::PushID(static_cast<int>(rank));
-    section(rank == 0 ? "Langues préférées" : "Sinon, si la première n'est pas disponible");
-    language_combo("Langue de l'audio", "Selon le fichier", d.language_presets[rank].audio);
-    language_combo("Langue des sous-titres", "Aucun", d.language_presets[rank].subtitles);
+    section(rank == 0 ? i18n::tr("Preferred languages") : i18n::tr("Fallback"));
+    language_combo(i18n::tr("Audio language"), i18n::tr("From the file"), d.language_presets[rank].audio);
+    language_combo(i18n::tr("Subtitle language"), i18n::tr("None"), d.language_presets[rank].subtitles);
     panel::end_group();  // l'encadré de la section ouvre sa propre fenêtre fille : il se ferme avant le PopID
     ImGui::PopID();
   }
-  note(
-      "À l'ouverture d'un fichier, la première préférence dont l'audio et les sous-titres existent est prise "
-      "telle quelle (« Aucun » : pas de sous-titres) ; sinon la deuxième ; sinon la meilleure langue de "
-      "chaque liste. Vaut au prochain fichier ; les pistes en cours se changent dans la barre.");
+  note(i18n::tr(
+      "The first preference whose tracks exist is used when a file opens. Applies to the next file."));
 }
 
 void subtitles_tab(PlaySettings& d) {
-  section("Taille des sous-titres");
+  section(i18n::tr("Subtitle size"));
   int percent = static_cast<int>(std::lround(d.subtitle_scale * 100.0F));
-  if (ImGui::SliderInt("Taille", &percent, static_cast<int>(limits::kSubtitleScale.lo * 100.0F),
+  if (ImGui::SliderInt(i18n::tr("Size"), &percent, static_cast<int>(limits::kSubtitleScale.lo * 100.0F),
                        static_cast<int>(limits::kSubtitleScale.hi * 100.0F), "%d %%",
                        ImGuiSliderFlags_AlwaysClamp)) {
     d.subtitle_scale = static_cast<float>(percent) / 100.0F;
   }
-  if (ImGui::Button("Taille d'origine")) d.subtitle_scale = 1.0F;
-  panel::tip(
-      "Agrandit ou réduit toutes les polices, panneaux compris (comme la taille de mpv). Changement en "
-      "direct ; la piste se choisit dans la barre (j).");
+  if (ImGui::Button(i18n::tr("Reset size"))) d.subtitle_scale = 1.0F;
+  panel::tip(i18n::tr("Scales all text, panels included. Live."));
 }
 
 // L'épisode suivant : lu tout seul à la fin du fichier ouvert.
 void episodes_section(PlaySettings& d) {
-  section("Épisodes");
-  ImGui::Checkbox("Lire l'épisode suivant à la fin", &d.autoplay_next);
-  panel::tip(
-      "À la fin d'une vidéo ouverte par un fichier, lit la suivante du même dossier (ordre naturel des "
-      "noms : ep2 avant ep10). N : épisode suivant, Maj + N : précédent, O : passer le générique "
-      "(chapitre Opening ou Ending, sinon 85 s).");
+  section(i18n::tr("Episodes"));
+  ImGui::Checkbox(i18n::tr("Autoplay next episode"), &d.autoplay_next);
+  panel::tip(i18n::tr("Plays the next file in the folder. N: next, Shift+N: previous, O: skip credits."));
 }
 
 void stats_tab(PlaySettings& d) {
-  section("Statistiques à l'écran");
-  ImGui::Checkbox("Toutes les statistiques (Tab)", &d.stats.all);
+  section(i18n::tr("On-screen statistics"));
+  ImGui::Checkbox(i18n::tr("All statistics (Tab)"), &d.stats.all);
   ImGui::Spacing();
   ImGui::BeginDisabled(d.stats.all);
-  ImGui::Checkbox("Chaîne (modèles, tailles, moteur)", &d.stats.chain);
-  ImGui::Checkbox("Images (temps par image, sautées)", &d.stats.frames);
-  ImGui::Checkbox("Interpolation (créées, tenues, coupes)", &d.stats.rife);
-  ImGui::Checkbox("Pistes", &d.stats.tracks);
-  ImGui::Checkbox("Sortie HDR", &d.stats.output);
-  ImGui::Checkbox("Position exacte", &d.stats.position);
-  ImGui::Checkbox("Mémoire vidéo", &d.stats.memory);
+  ImGui::Checkbox(i18n::tr("Pipeline"), &d.stats.chain);
+  ImGui::Checkbox(i18n::tr("Frames"), &d.stats.frames);
+  ImGui::Checkbox(i18n::tr("Interpolation"), &d.stats.rife);
+  ImGui::Checkbox(i18n::tr("Tracks"), &d.stats.tracks);
+  ImGui::Checkbox(i18n::tr("HDR output"), &d.stats.output);
+  ImGui::Checkbox(i18n::tr("Exact position"), &d.stats.position);
+  ImGui::Checkbox(i18n::tr("Video memory"), &d.stats.memory);
   ImGui::EndDisabled();
 }
 
@@ -309,15 +284,16 @@ BenchEvent config_page(PlaySettings& d, const SettingsChoices& choices, BenchNot
   const BenchEvent event = bench_page(choices.place, choices.source_file, context, bench, d);
   if (event == BenchEvent::Started) actions.emplace_back(Command{cmd::Pause{}});
 
-  section("Cette machine");
-  ImGui::TextWrapped("%s", choices.gpu_name.empty() ? "Carte graphique inconnue" : choices.gpu_name.c_str());
-  if (choices.display_hz > 0.0) note(std::format("Écran {:.0f} Hz", choices.display_hz));
+  section(i18n::tr("This machine"));
+  ImGui::TextWrapped("%s",
+                     choices.gpu_name.empty() ? i18n::tr("Unknown graphics card") : choices.gpu_name.c_str());
+  if (choices.display_hz > 0.0) note(i18n::tr_format("Display {:.0f} Hz", choices.display_hz));
   note(choices.bench_text.empty()
-           ? std::string("Pas encore optimisée : les réglages sont une estimation d'après la carte.")
+           ? std::string(i18n::tr("Not optimized yet: settings are an estimate from the card."))
            : choices.bench_text);
 
-  section("Configuration automatique");
-  if (ImGui::BeginCombo("Préréglage", std::string(label(d.preset)).c_str())) {
+  section(i18n::tr("Automatic setup"));
+  if (ImGui::BeginCombo(i18n::tr("Preset"), std::string(label(d.preset)).c_str())) {
     for (int i = 0; i < kPresetCount; ++i) {
       const auto preset = static_cast<Preset>(i);
       if (ImGui::Selectable(std::string(label(preset)).c_str(), preset == d.preset)) {
@@ -334,10 +310,9 @@ BenchEvent config_page(PlaySettings& d, const SettingsChoices& choices, BenchNot
     }
     ImGui::EndCombo();
   }
-  panel::tip(
-      "Auto choisit la chaîne selon votre carte, votre écran et la vidéo. Régler un réglage de l'image ou de "
-      "la fluidité à la main passe en Personnalisé, sans rien perdre.");
-  if (ImGui::BeginCombo("Priorité", std::string(label(d.priority)).c_str())) {
+  panel::tip(i18n::tr(
+      "Auto picks the settings for your card, display and video. Changing one by hand switches to Custom."));
+  if (ImGui::BeginCombo(i18n::tr("Priority"), std::string(label(d.priority)).c_str())) {
     for (int i = 0; i < kPriorityCount; ++i) {
       const auto priority = static_cast<Priority>(i);
       if (ImGui::Selectable(std::string(label(priority)).c_str(), priority == d.priority))
@@ -345,25 +320,19 @@ BenchEvent config_page(PlaySettings& d, const SettingsChoices& choices, BenchNot
     }
     ImGui::EndCombo();
   }
-  panel::tip(
-      "Ce que l'automatique préfère quand la machine ne tient pas tout : plus d'images (Fluidité) ou une "
-      "image plus fine (Image).");
+  panel::tip(i18n::tr("What Auto favors when the machine cannot do everything."));
 
-  section("Assistant");
-  if (ImGui::Button("Relancer l'assistant")) actions.emplace_back(OpenEngineScreen{.wizard = true});
-  panel::tip(
-      "Les écrans de bienvenue (ceux sans objet sont sautés) : moteurs, image, HDR, audio, langues, mises à "
-      "jour. Rien ne change "
-      "avant « Terminer ».");
+  section(i18n::tr("Setup wizard"));
+  if (ImGui::Button(i18n::tr("Run the wizard again"))) actions.emplace_back(OpenEngineScreen{.wizard = true});
+  panel::tip(i18n::tr("Nothing changes until \"Finish\"."));
   return event;
 }
 
 // Général > Réinitialiser.
 void reset_page(std::vector<Input>& actions, const ProfilesView& view) {
-  section("Profil d'origine");
-  note(
-      "Remet le profil actif (Ctrl+1 à Ctrl+9) à ses valeurs d'origine ; les autres profils ne bougent pas.");
-  if (ImGui::Button("Revenir au profil d'origine"))
+  section(i18n::tr("Profile defaults"));
+  note(i18n::tr("Resets the active profile (Ctrl+1 to Ctrl+9); other profiles are untouched."));
+  if (ImGui::Button(i18n::tr("Reset profile")))
     actions.emplace_back(EditProfile{.edit = core::edit::ResetProfile{.slot = view.active}});
 }
 
@@ -371,18 +340,18 @@ void reset_page(std::vector<Input>& actions, const ProfilesView& view) {
 
 // L'arbre : l'ordre est celui de l'écran. Les catégories se déduisent du changement de `category`.
 constexpr std::array<SettingsPage, 12> kPages{{
-    {"Général", "Configuration", false},
-    {"Général", "Lecture", false},      // langues préférées, sous-titres, épisode suivant
-    {"Général", "Application", false},  // lecteur par défaut et mises à jour
-    {"Général", "Statistiques", false},
-    {"Général", "Réinitialiser", false},
-    {"Image IA", "Agrandissement", false},
-    {"Image IA", "Fluidité", false},
-    {"HDR et couleurs", "Conversion HDR", false},
-    {"HDR et couleurs", "Couleurs", false},
-    {"Audio", "Sortie", false},
-    {"Export et moteurs", "Export", false},
-    {"Export et moteurs", "Moteurs", false},
+    {"General", "Setup", false},
+    {"General", "Playback", false},     // langues préférées, sous-titres, épisode suivant
+    {"General", "Application", false},  // lecteur par défaut et mises à jour
+    {"General", "Statistics", false},
+    {"General", "Reset", false},
+    {"AI image", "Upscaling", false},
+    {"AI image", "Smoothness", false},
+    {"HDR and color", "HDR", false},
+    {"HDR and color", "Colors", false},
+    {"Audio", "Output", false},
+    {"Export and engines", "Export", false},
+    {"Export and engines", "Engines", false},
 }};
 
 std::span<const SettingsPage> settings_pages() {
@@ -429,7 +398,7 @@ SettingsPanel::Result SettingsPanel::draw(const PlaySettings& running, const Set
   constexpr ImGuiWindowFlags kFlags = ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoMove |
                                       ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoSavedSettings |
                                       ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse;
-  if (ImGui::Begin("Paramètres", &keep, kFlags)) {
+  if (ImGui::Begin((std::string(i18n::tr("Settings")) + "###settings").c_str(), &keep, kFlags)) {
     ImGui::PushItemWidth(-width * 0.42F);
     panel::advanced() = advanced_;
     bool delay_held = false;
@@ -513,7 +482,7 @@ SettingsPanel::Result SettingsPanel::draw(const PlaySettings& running, const Set
             draw->AddTriangleFilled({cx - r * 0.6F, cy - r}, {cx - r * 0.6F, cy + r}, {cx + r * 0.9F, cy},
                                     accent);
           draw->AddText({at.x + 26.0F * scale, at.y + (head_height - ImGui::GetFontSize()) * 0.5F}, accent,
-                        page.category);
+                        i18n::tr(page.category));
           category_open = category_open_[slot];
         }
         if (!category_open) continue;
@@ -535,7 +504,8 @@ SettingsPanel::Result SettingsPanel::draw(const PlaySettings& running, const Set
                               ImGui::ColorConvertFloat4ToU32(band), 5.0F * scale);
         }
         draw->AddText({at.x + indent, at.y + (row_height - ImGui::GetFontSize()) * 0.5F},
-                      ImGui::GetColorU32(selected ? ImGuiCol_Text : ImGuiCol_TextDisabled), page.name);
+                      ImGui::GetColorU32(selected ? ImGuiCol_Text : ImGuiCol_TextDisabled),
+                      i18n::tr(page.name));
       }
       ImGui::PopStyleVar();
     }
@@ -546,50 +516,50 @@ SettingsPanel::Result SettingsPanel::draw(const PlaySettings& running, const Set
     panel::begin_page();
     {
       const std::string_view name = kPages[static_cast<std::size_t>(page_)].name;
-      if (name == "Configuration") {
+      if (name == "Setup") {
         // L'optimisation (ou son annulation) s'applique tout de suite, sans « Appliquer » : c'est ce qu'on a
         // demandé.
         const BenchEvent event = config_page(draft_, choices, bench_, actions);
         if ((event == BenchEvent::Applied || event == BenchEvent::Undone) && draft_ != running)
           result.reopen = draft_;
-      } else if (name == "Application") {
+      } else if (name == i18n::tr("Application")) {
         language_section(draft_);
         default_player_page(choices.place, system_, draft_.default_player_dismissed,
                             choices.default_player_is_ajp);
         updates_page(draft_, choices.place, updates_);
-      } else if (name == "Agrandissement") {
+      } else if (name == "Upscaling") {
         image_tab(draft_, choices);
         if (advanced_) {
           span_prepare_section(choices.span_prepare, choices.span_job ? *choices.span_job : prepare_);
           composition_section(draft_);
         }
-      } else if (name == "Fluidité") {
+      } else if (name == "Smoothness") {
         fluidity_tab(draft_, choices);
-      } else if (name == "Conversion HDR") {
+      } else if (name == "HDR") {
         hdr_tab(draft_, choices);
         if (advanced_) oled_sections(draft_, choices);
-      } else if (name == "Couleurs") {
+      } else if (name == "Colors") {
         grade_tab(draft_, choices);
-      } else if (name == "Sortie") {
+      } else if (name == "Output") {
         delay_held = sound_tab(draft_, choices);
-      } else if (name == "Lecture") {
+      } else if (name == "Playback") {
         languages_tab(draft_);
         subtitles_tab(draft_);
         episodes_section(draft_);
-      } else if (name == "Export") {
+      } else if (name == i18n::tr("Export")) {
         export_tab(*export_, running, choices, actions);
-      } else if (name == "Moteurs") {
+      } else if (name == "Engines") {
         engines_tab(choices, engine_draft_, actions, draft_.engines_dir);
-      } else if (name == "Statistiques") {
+      } else if (name == "Statistics") {
         stats_tab(draft_);
-      } else if (name == "Réinitialiser") {
+      } else if (name == "Reset") {
         reset_page(actions, choices.profiles);
       }
     }
     panel::end_page();
     ImGui::EndChild();
     ImGui::PopStyleVar(2);
-    ImGui::Checkbox("Réglages avancés", &advanced_);
+    ImGui::Checkbox(i18n::tr("Advanced settings"), &advanced_);
     // Un réglage de la chaîne fait à la main : le préréglage devient Personnalisé (les valeurs restent).
     if (draft_.preset != Preset::Custom && draft_.preset == before.preset &&
         preset_chain_differs(before, draft_))
@@ -608,12 +578,13 @@ SettingsPanel::Result SettingsPanel::draw(const PlaySettings& running, const Set
       ImGui::Spacing();
       ImGui::Separator();
       ImGui::PushStyleColor(ImGuiCol_Text, kWarn);
-      ImGui::TextWrapped("À appliquer : %s. Fermer le panneau abandonne ces changements.",
-                         pending.reason.c_str());
+      ImGui::TextWrapped(
+          "%s",
+          i18n::tr_format("To apply: {}. Closing the panel discards these changes.", pending.reason).c_str());
       ImGui::PopStyleColor();
-      if (ImGui::Button("Appliquer (rouvre la vidéo)")) result.reopen = draft_;
+      if (ImGui::Button(i18n::tr("Apply (reopens the video)"))) result.reopen = draft_;
       ImGui::SameLine();
-      if (ImGui::Button("Abandonner ces changements")) draft_ = live;
+      if (ImGui::Button(i18n::tr("Discard changes"))) draft_ = live;
     }
   }
   ImGui::End();

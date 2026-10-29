@@ -83,7 +83,7 @@ enum class GradePreset : std::uint8_t { Eclatant, Naturel, Custom };
 inline constexpr int kGradePresetCount = 3;
 GradeSettings grade_preset(GradePreset preset, GradeSettings custom = {});
 std::string_view preset_key(GradePreset preset);    // « eclatant », la clé de play.toml
-std::string_view preset_label(GradePreset preset);  // « Éclatant », pour le menu
+std::string_view preset_label(GradePreset preset);  // « Vivid » : clé de traduction du menu (app/play/i18n.h)
 
 // FieldOutOfRange en nommant le champ (« grade.paper_white ») ; abl_hi doit dépasser abl_lo.
 std::expected<void, Refusal> check_grade_settings(const GradeSettings& settings);

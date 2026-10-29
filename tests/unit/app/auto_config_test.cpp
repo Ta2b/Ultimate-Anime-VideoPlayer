@@ -119,7 +119,7 @@ TEST_CASE("noms des préréglages et des priorités", "[auto_config]") {
     CHECK(priority_from_key(key(priority)) == priority);
   }
   CHECK_FALSE(preset_from_key("turbo"));
-  CHECK(label(Preset::Custom) == "Personnalisé");
+  CHECK(label(Preset::Custom) == "Custom");
 }
 
 TEST_CASE("play.toml garde le préréglage et la priorité", "[auto_config][settings]") {

@@ -105,13 +105,13 @@ std::string_view preset_key(GradePreset preset) {
 std::string_view preset_label(GradePreset preset) {
   switch (preset) {
     case GradePreset::Eclatant:
-      return "Éclatant";
+      return "Vivid";
     case GradePreset::Naturel:
-      return "Naturel";
+      return "Natural";
     case GradePreset::Custom:
-      return "Personnalisé";
+      return "Custom";
   }
-  return "Personnalisé";
+  return "Custom";
 }
 
 std::expected<void, Refusal> check_grade_settings(const GradeSettings& s) {

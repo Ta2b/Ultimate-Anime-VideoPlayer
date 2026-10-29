@@ -57,7 +57,7 @@ TEST_CASE("RIFE fusionné : le réglage voyage dans play.toml et recharge la lec
   wanted.rife_fused = false;
   const Change change = change_between(running, wanted, true);
   CHECK(change.cost == ChangeCost::Reopen);
-  CHECK(change.reason.find("RIFE entier") != std::string::npos);
+  CHECK(change.reason.find("whole RIFE") != std::string::npos);
   wanted.rife_factor = 0;
   running.rife_factor = 0;
   CHECK(change_between(running, wanted, false).cost != ChangeCost::Reopen);
