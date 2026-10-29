@@ -21,6 +21,7 @@ que sur un accord clair de Tatoub dans le fil. Détail des décisions et journal
 - [ ] Release v0.6 : version 0.6.0, notes `tools/release/notes/v0.6.0.md` (brouillon #81), liste des essais Windows/macOS ; étiquette seulement sur le message direct de Tatoub
 
 ## Journal
+- **2026-10-29** : #104 à #115 fusionnées ou prêtes (voir la liste vivante, points 19 à 24). Paquet TensorRT Linux construit (trt-7b7b65cbe8d6, à refaire depuis la main finale). Restent avant l'étiquette : menus (captures), vérification du pop-up, pas d'étiquette sans « go » du coordinateur.
 - **2026-10-28** : v0.6 ouverte. Mesures du contrôleur Auto sur la tête 00f00ee : RIFE ×4, DistilDRBA ×5, GMFSS ×2 tenus en fin de run (`docs/reports/mesures-auto-4070ti-2026-10-28.md`).
 - [x] Paquet TensorRT découplé des étiquettes : empreinte de ses entrées (`trt-fingerprint.sh`), release fixe `trt-<empreinte>` (`trt-package.sh`), Release Linux la lit sans relance ; plus de reconstruction ni de seconde passe par release (demande de Tatoub, 0.5.1)
 
@@ -30,19 +31,19 @@ que sur un accord clair de Tatoub dans le fil. Détail des décisions et journal
 2. Réglages avancés : FAIT (#61, #72) : dans les onglets existants, OLED automatique, Réinitialiser et Statistiques hors des avancés.
 3. Pop-up « lecteur par défaut » et réglage discret : FAIT (#71) ; composition finale et soins OLED hors de Couleurs : FAIT (#72, dans Agrandissement et HDR avec les avancés).
 4. HDR : FAIT (#68, #69) ; à confirmer chez Tatoub.
-5. Benchmark autonome et silencieux : EN PARTIE (#75) ; reste l'exploration des moteurs, multiplicateurs et résolutions.
+5. Benchmark autonome et silencieux : EN PARTIE (#75) ; reste l'exploration des moteurs, multiplicateurs et résolutions.  **MAJ 29/10 : exploration (moteurs, multiplicateurs, résolutions) toujours À FAIRE.**
 6. Poses DRBA par défaut : EN COURS : performance mesurée (favorable), qualité à comparer.  **MAJ 15:15 : FAIT (#84).**
 7. Design Showtime FAIT (#71) ; AppImage FAIT (#74, #77) ; installeur .exe + zip portable FAIT (#74), à valider par la release Windows ; .dmg FAIT (#79).
 8. Fedora GNOME : fenêtre fantôme (#49) et japonais (#59, #70) : À CONFIRMER chez Tatoub.
 9. Convolution HRIR à la HeSuVi : EN REVUE (#82) ; préréglage « Voix d'anime » FAIT (#80).  **MAJ 15:15 : #82 fusionnée.**
-10. Auto en VRR, demi-paliers ×0,5 : À FAIRE (trancher, mesurer, répondre).
-11. Menu : molette, barre de défilement, moins de catégories, disposition horizontale, libellés français : À FAIRE (pastille « Le plus lent » FAITE).  **MAJ 15:15 : molette (#87), 5 catégories (#87), barre fine (#89) faites ; restent disposition horizontale et libellés.**
+10. Auto en VRR, demi-paliers ×0,5 : À FAIRE (trancher, mesurer, répondre).  **MAJ 29/10 : FAIT (#113)** : demi-paliers ×1,5, ×2,5… sur un écran VRR armé, paliers entiers sinon ; tests chiffrés ; mesure en lecture réelle à refaire machine libre.
+11. Menu : molette, barre de défilement, moins de catégories, disposition horizontale, libellés français : À FAIRE (pastille « Le plus lent » FAITE).  **MAJ 15:15 : molette (#87), 5 catégories (#87), barre fine (#89) faites ; restent disposition horizontale et libellés.**  **MAJ 29/10 : arbre à gauche, retrait des pages, catégorie repliable (#109) ; en cours (branche menus-libelles) : rangée des moteurs de mouvement, note VRR courte, nom du GPU sur l’accueil, captures 1920×1080.**
 12. Arbre : EN PARTIE (#72) ; à revoir : place de Langues, Export, Moteurs, Couleurs sans réglages sans rapport.
 13. « Ouvrir avec » enregistré au premier lancement : FAIT (assistant).
 14. Config auto (tranche du GPU et résolution de l'écran, réduire puis agrandir, SPAN Sharp1 Performance, modèle par tranche) : FAIT (#53, tests `[auto_config]`).
-15. Assistant : choix guidé du moteur : À FAIRE.
+15. Assistant : choix guidé du moteur : À FAIRE.  **MAJ 29/10 : vérifié dans first_run.cpp : FAIT, les huit écrans sautables (moteur recommandé par GPU, RTX HDR pas à pas, « Relancer l’assistant ») couvrent la spécification (ux-parametres.md 4.8).**
 16. Poses DRBA : contradiction du tableau de décisions (« désactivées ») : à corriger après la décision (point 6).
-17. .dmg FAIT (#79) ; archive TensorRT Windows manquante : À FAIRE (même schéma que Linux, #67) ; build macOS corrigé (#66).
+17. .dmg FAIT (#79) ; archive TensorRT Windows manquante : À FAIRE (même schéma que Linux, #67) ; build macOS corrigé (#66).  **MAJ 29/10 : archive TensorRT Windows toujours manquante (limite connue : demande une machine Windows, le SDK TensorRT-RTX et attach-nvidia-windows.ps1) ; l’archive Linux est faite : release fixe trt-7b7b65cbe8d6, à refaire depuis la main finale (ABI 15).**
 18. Police japonaise en 0.5.1 : CORRIGÉE (#70), à confirmer chez Tatoub.
 
 ## Précision et accélération GPU : graphes spécialisés par cran (demande de Tatoub, 28/10)
@@ -102,3 +103,11 @@ que sur un accord clair de Tatoub dans le fil. Détail des décisions et journal
 
 
 - Son anime (audio) : module dédié aux pistes stéréo sur sortie stéréo (spatialisation milieu/côtés, voix, graves harmoniques, sonie BS.1770, compresseur, limiteur vrai-crête), niveaux Naturel / Anime / Anime fort, par appareil, bouton Comparer ; mesures et limites dans `docs/audio-anime.md`, rendu à valider à l'oreille par Tatoub.
+
+
+19. Profils audio audibles sur du stéréo : FAIT (#110) : Voix claires et Nuit ont un égaliseur, note dans le panneau, test chiffré ; cause : en « Enceintes » les profils surround n’agissaient pas sur une piste stéréo.
+20. « Son anime » stéréo : FAIT (#114) : spatialisation (enceintes et casque), voix, sonie EBU R128, limiteur vrai-crête, graves, trois niveaux, par appareil, comparaison ; mesuré hors ligne, **à écouter** (voir `audio-anime.md`).
+21. Pop-up « lecteur par défaut » : petite fenêtre déplaçable, indépendante du panneau : FAIT (#111) ; **à vérifier à l’écran panneau fermé**.
+22. Fusion pleine résolution (TensorRT FP16 + noyaux maison) : RIFE FAIT (#104, 1,21 ms contre 3,76 ms par paire), DistilDRBA FAIT (#107, 0,37 ms contre 0,74 ms), GMFSS livré **éteint** (gain −6 à −9 % sur la chaîne, −15 % au mieux sur la paire ; pas de FP8 GMFSS) : voir `rife-fusionne.md`, `drba-fusionne.md`, `gmfss-fusionne.md`.
+23. SPAN FP8 par noyaux CUTLASS (cran Performance) : FAIT (#103 : 9,1–9,3 ms contre 14,25 ms, 50–52 dB) et paquet `.span8` dérivé par le lecteur (#106) ; FP8 RIFE/DistilDRBA sous TensorRT : non retenu (−6 % ou négatif).
+24. Tour de lecture en 720p (4070 Ti, ×2,5, facteur fixe, verrou GPU) : RIFE et DistilDRBA fusionnés tiennent ≈ 56 i/s sans repli ; GMFSS ne tient pas ×2,5 à 720p (41 i/s). Les essais antérieurs (540p, Auto actif, chevauchements, stream en fond) sont écartés.
