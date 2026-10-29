@@ -125,4 +125,21 @@ TEST_CASE("i18n: aucune chaîne française en dur dans les fichiers traduits", "
   CHECK(found.empty());
 }
 
+// Un texte traduit n'est jamais le format d'un appel ImGui à la printf (gcc -Wformat-security : « chaîne non
+// littérale ») : « ImGui::TextWrapped("%s", i18n::tr(...)) », jamais « ImGui::TextWrapped(i18n::tr(...)) ».
+TEST_CASE("i18n: aucun texte ImGui à la printf ne reçoit une chaîne non littérale", "[i18n]") {
+  const std::regex call(
+      R"re(ImGui::(?:TextWrapped|Text|TextDisabled|BulletText|SetTooltip|SetItemTooltip)\(\s*([^"\s]))re");
+  std::vector<std::string> found;
+  for (const auto& file : interface_sources()) {
+    const std::string text = read_file(file);
+    for (std::sregex_iterator it(text.begin(), text.end(), call), end; it != end; ++it) {
+      const auto line = std::count(text.begin(), text.begin() + it->position(), '\n') + 1;
+      found.push_back(file.filename().string() + ":" + std::to_string(line));
+    }
+  }
+  for (const std::string& where : found) UNSCOPED_INFO(where);
+  CHECK(found.empty());
+}
+
 }  // namespace ajp::app::play
