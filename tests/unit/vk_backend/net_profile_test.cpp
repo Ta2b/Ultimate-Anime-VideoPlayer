@@ -18,6 +18,7 @@
 
 #include "gpu/ir/graph.h"
 #include "gpu/ir/import.h"
+#include "gpu/ir/ops.h"
 #include "gpu/ir/passes.h"
 #include "gpu/ir/shape.h"
 #include "gpu/vulkan/backend/net_build.h"
@@ -156,6 +157,30 @@ TEST_CASE("Profil des dispatchs : RIFE v4.25 en 1x11x768x1280", "[.rife_profil]"
   std::cout << std::format("{:<40} {:>9} {:>12} {:>12}\n", "total", program.dispatches.size(),
                            megabytes(read), megabytes(written));
 
+  std::cout << "\n-- copies restantes (net_copy_f16) : nœud, opérateur, tenseurs, producteur, alias --\n";
+  std::vector<std::uint32_t> listed;
+  for (const net::Dispatch& d : program.dispatches) {
+    if (d.shader != "net_copy_f16" || std::ranges::count(listed, d.node) != 0) continue;
+    listed.push_back(d.node);
+    const ir::Node& node = graph.nodes[d.node];
+    const auto describe = [&](ir::TensorId t) {
+      const ir::Tensor& tensor = graph.tensors[t];
+      std::string maker = "entrée";
+      for (const ir::Node& other : graph.nodes) {
+        if (std::ranges::count(other.outputs, t) != 0) maker = std::string(ir::name(other.op));
+      }
+      const bool in_place = t < program.aliases.size() && program.aliases[t].parent != ir::kNoTensor;
+      return std::format("{}{}<{}{}> ", ir::format_dims(tensor.dims),
+                         tensor.layout == ir::Layout::Nchw ? "" : "*", maker, in_place ? ",alias" : "");
+    };
+    std::string line;
+    for (const ir::TensorId t : node.inputs) {
+      if (t != ir::kNoTensor && graph.tensors[t].kind == ir::TensorKind::Activation) line += describe(t);
+    }
+    line += "-> ";
+    for (const ir::TensorId t : node.outputs) line += describe(t);
+    std::cout << std::format("{:>4} {:<8} {}\n", d.node, ir::name(node.op), line);
+  }
   auto engine = require_value(net::NetEngine::create(
       *rig.context, *rig.memory, *rig.pipelines, std::move(graph), std::move(program),
       {.profile_dispatches = true, .log = [](std::string_view text) { std::cout << text << '\n'; }}));

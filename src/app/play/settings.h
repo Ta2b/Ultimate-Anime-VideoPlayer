@@ -122,6 +122,10 @@ inline constexpr int kPresetCount = 7;
 enum class Priority : std::uint8_t { Fluidity, Balance, Image };
 inline constexpr int kPriorityCount = 3;
 
+// Les bornes de auto_cap (i/s) : de quoi couper à 24 i/s ou laisser 480 i/s ; 0 prend l'écran.
+inline constexpr int kAutoCapMin = 24;
+inline constexpr int kAutoCapMax = 480;
+
 struct PlaySettings {
   // Auto-configuration : Personnalisé par défaut, les réglages d'avant ne bougent pas ; le premier
   // lancement choisit Auto. Hors Personnalisé, la chaîne est refaite à chaque vidéo.
@@ -137,6 +141,8 @@ struct PlaySettings {
   // (core/auto_rate.h) ; en direct. Par défaut (v0.6) : l'interpolation est en Auto, pour tous les profils et
   // après le benchmark ; un multiplicateur choisi à la main (liste du menu) la coupe.
   bool rife_auto = true;
+  // Plafond de la cadence de sortie du mode auto, en i/s (60, 120…) ; 0 : celle de l'écran, le maximum.
+  int auto_cap = 0;
   MotionEngine motion_engine = MotionEngine::Rife;
   std::string rife_model;  // fichier ONNX de RIFE (nom seul) ; vide : le défaut de la carte
   // Garder les poses (DRBA, kernels/spec/poses.h) : un personnage animé en deux garde son rythme
@@ -153,6 +159,15 @@ struct PlaySettings {
   // lite dont la structure est reconnue, le moteur entier reprenant sinon, ou si un des quatre moteurs
   // échoue. Recharge la chaîne.
   bool drba_fused = true;
+  // GMFSS fusionné (prepare/gmfss_split.h) : la paire de GMFSS coupée en deux moteurs TensorRT, les
+  // caractéristiques d'une image (FeatureNet) et le flot ; les caractéristiques d'une image servent à deux
+  // paires de suite et ne sont calculées qu'une fois (un FeatureNet de moins par paire). Seulement sous
+  // TensorRT, au cran Équilibre et pour une paire dont la structure est reconnue (export version 2), la paire
+  // entière reprenant sinon, ou si un moteur échoue. Recharge la chaîne. Éteint par défaut : le gain mesuré
+  // (docs/gmfss-fusionne.md : un FeatureNet de moins par paire, −6 à −9 % du temps GMFSS d'une paire, −15 %
+  // pour la paire seule au banc) n'atteint pas le seuil de 15 % qui fait un défaut ; la qualité est la même
+  // (73 dB et plus contre la paire entière).
+  bool gmfss_fused = false;
   // Les crans de précision (precision.h). SPAN : Performance prend la variante FP8 du modèle, Qualité sa
   // variante FP32 (span_int8.h), Équilibre le FP16 tel que livré. Recharge la chaîne.
   PrecisionTier span_precision = PrecisionTier::Balanced;

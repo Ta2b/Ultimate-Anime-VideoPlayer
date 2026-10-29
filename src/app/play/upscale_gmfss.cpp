@@ -15,6 +15,7 @@
 #include "app/play/upscale_stage.h"
 #include "kernels/spec/gmfss.h"
 #include "kernels/spec/rife.h"
+#include "prepare/gmfss_split.h"
 
 namespace ajp::app::play {
 namespace {
@@ -59,7 +60,10 @@ std::expected<void, Refusal> UpscaleStage::allocate_gmfss() {
   rife_out_ = std::move(*out);
   // Version 2 des graphes (gmfss_model.h) : la paire sort les 64 caractéristiques du niveau 1 en
   // feature{k}_1 et l'image en half{k}, sans le Concat ; un export ancien sort source{k}_1, 67 canaux.
-  const bool split = std::ranges::contains(setup_.gmfss_pair->output_names(), std::string_view("feature0_1"));
+  // GMFSS fusionné : la paire ne sort plus les caractéristiques, un autre moteur les calcule (graphes de la
+  // version 2 par construction, prepare/gmfss_split.h).
+  const bool split = gmfss_fused() ||
+                     std::ranges::contains(setup_.gmfss_pair->output_names(), std::string_view("feature0_1"));
   constexpr int kImagePlanes = 3;
   for (int side = 0; side < 2; ++side) {
     if (auto ok = add(std::format("half{}", side), kImagePlanes, 2); !ok) return ok;
@@ -106,31 +110,66 @@ std::expected<void, Refusal> UpscaleStage::allocate_gmfss() {
     return refuse(RefusalCode::GraphInvalid,
                   "GMFSS : une entrée à la paire, une sortie à la fusion attendues");
   }
-  for (int side = 0; side < 2; ++side) {
-    for (int level = 1; level <= kernels::kGmfssLevels; ++level) {
-      const gpu::Tensor& motion = *tensor(std::format("motion{}_{}", side, level));
-      const gpu::Tensor& warped = *tensor(std::format("warped{}_{}", side, level));
-      if (level == 1 && split) {
-        // Deux splats du même mouvement, chacun dans sa tranche de warped{k}_1 (l'image d'abord) : le
-        // résultat est celui du splat des 67 canaux, chaque plan étant normalisé par le poids de son pixel.
-        const gpu::Tensor& image = *tensor(std::format("half{}", side));
-        const gpu::Tensor& features = *tensor(std::format("feature{}_1", side));
-        gmfss_.splats.push_back({.side = side,
-                                 .source = image,
-                                 .motion = motion,
-                                 .warped = channel_slice(warped, 0, kImagePlanes)});
-        gmfss_.splats.push_back({.side = side,
-                                 .source = features,
-                                 .motion = motion,
-                                 .warped = channel_slice(warped, kImagePlanes, features.shape.dims[1])});
-        continue;
+  // Les splats d'une paire : le côté pousse sa source avec son mouvement. flip : les caractéristiques du côté
+  // a sont dans la tranche 1 et celles du côté b dans la tranche 0 (GMFSS fusionné, paire de l'autre parité)
+  // ; l'image réduite de moitié reste celle du côté, elle sort du flot.
+  const auto make_splats = [&](bool flip, std::vector<GmfssSplat>& into) {
+    for (int side = 0; side < 2; ++side) {
+      const int holder = flip ? side ^ 1 : side;
+      for (int level = 1; level <= kernels::kGmfssLevels; ++level) {
+        const gpu::Tensor& motion = *tensor(std::format("motion{}_{}", side, level));
+        const gpu::Tensor& warped = *tensor(std::format("warped{}_{}", side, level));
+        if (level == 1 && split) {
+          // Deux splats du même mouvement, chacun dans sa tranche de warped{k}_1 (l'image d'abord) : le
+          // résultat est celui du splat des 67 canaux, chaque plan étant normalisé par le poids de son pixel.
+          const gpu::Tensor& image = *tensor(std::format("half{}", side));
+          const gpu::Tensor& features = *tensor(std::format("feature{}_1", holder));
+          into.push_back({.side = side,
+                          .source = image,
+                          .motion = motion,
+                          .warped = channel_slice(warped, 0, kImagePlanes)});
+          into.push_back({.side = side,
+                          .source = features,
+                          .motion = motion,
+                          .warped = channel_slice(warped, kImagePlanes, features.shape.dims[1])});
+          continue;
+        }
+        into.push_back({.side = side,
+                        .source = *tensor(std::format("source{}_{}", holder, level)),
+                        .motion = motion,
+                        .warped = warped});
       }
-      gmfss_.splats.push_back({.side = side,
-                               .source = *tensor(std::format("source{}_{}", side, level)),
-                               .motion = motion,
-                               .warped = warped});
     }
+  };
+  make_splats(false, gmfss_.splats);
+  if (gmfss_fused()) make_splats(true, gmfss_.swapped_splats);
+  for (int side = 0; side < 2; ++side)
     gmfss_.level1[static_cast<std::size_t>(side)] = *tensor(std::format("motion{}_1", side));
+  if (gmfss_fused()) {
+    // Les sorties du moteur des caractéristiques, par tranche : feature{k}_1, source{k}_2, source{k}_3 dans
+    // l'ordre de ses output_names().
+    if (setup_.gmfss_features->input_names().size() != 1 ||
+        setup_.gmfss_features->output_names().size() != prepare::kGmfssFeatureOutputs.size()) {
+      return refuse(RefusalCode::GraphInvalid,
+                    "GMFSS : une entrée et trois sorties aux caractéristiques attendues");
+    }
+    for (std::size_t slot = 0; slot < 2; ++slot) {
+      for (const std::string& name : setup_.gmfss_features->output_names()) {
+        const auto known = std::ranges::find(prepare::kGmfssFeatureOutputs, std::string_view(name));
+        if (known == prepare::kGmfssFeatureOutputs.end()) {
+          return refuse(
+              RefusalCode::GraphInvalid,
+              std::format("GMFSS : tenseur « {} » inconnu dans le graphe des caractéristiques", name));
+        }
+        const auto level = known - prepare::kGmfssFeatureOutputs.begin();
+        const std::string wanted =
+            level == 0 ? std::format("feature{}_1", slot) : std::format("source{}_{}", slot, level + 1);
+        const gpu::Tensor* found = tensor(wanted);
+        if (found == nullptr)
+          return refuse(RefusalCode::GraphInvalid, std::format("GMFSS : « {} » manque", wanted));
+        gmfss_.feature_outputs[slot].push_back(*found);
+      }
+    }
   }
   if (!warps_spanned()) return {};
   // Le flot du niveau 1 est à la moitié des plans remplis : l'image de travail en lit deux pixels
@@ -153,6 +192,16 @@ std::expected<void, Refusal> UpscaleStage::allocate_gmfss() {
   return {};
 }
 
+std::expected<void, Refusal> UpscaleStage::gmfss_features_of(std::size_t slot, std::int64_t first_plane,
+                                                             const GmfssFrameKey& key) {
+  if (gmfss_.features_of.reuse(slot, key)) return {};
+  const std::array inputs{channel_slice(gmfss_.frames->tensor(), first_plane, 3)};
+  if (auto ok = setup_.backend->enqueue(*setup_.gmfss_features, inputs, gmfss_.feature_outputs[slot]); !ok)
+    return ok;
+  gmfss_.features_of.fill(slot, key);
+  return {};
+}
+
 std::expected<void, Refusal> UpscaleStage::run_gmfss(std::uint32_t output,
                                                      std::span<const gpu::KernelOps::SplatJob> extra) {
   gpu::KernelOps& ops = *setup_.backend->kernels();
@@ -162,13 +211,23 @@ std::expected<void, Refusal> UpscaleStage::run_gmfss(std::uint32_t output,
         !ok) {
       return ok;
     }
+    if (gmfss_fused()) {
+      // L'image a est dans le tampon d'image d'indice current_ ^ 1 et b dans current_ : leurs
+      // caractéristiques vont dans la tranche du même indice, celles de a y sont déjà si la paire d'avant
+      // était (précédente, a).
+      if (auto ok = gmfss_features_of(current_ ^ 1U, 0, gmfss_.a); !ok) return ok;
+      if (auto ok = gmfss_features_of(current_, 3, gmfss_.b); !ok) return ok;
+    }
     const std::array inputs{gmfss_.frames->tensor()};
     if (auto ok = setup_.backend->enqueue(*setup_.gmfss_pair, inputs, gmfss_.pair_outputs); !ok) return ok;
     ++gmfss_pairs_;
   }
   const float t = instants_[output].t;
   gmfss_.jobs.clear();
-  for (const GmfssSplat& splat : gmfss_.splats) {
+  // Les splats sont écrits pour le côté a dans la tranche 0 ; l'autre parité lit les tranches échangées.
+  const std::vector<GmfssSplat>& splats =
+      gmfss_fused() && (current_ ^ 1U) == 1U ? gmfss_.swapped_splats : gmfss_.splats;
+  for (const GmfssSplat& splat : splats) {
     gmfss_.jobs.push_back({.source = splat.source,
                            .motion = splat.motion,
                            .s = kernels::gmfss_side_time(splat.side, t),

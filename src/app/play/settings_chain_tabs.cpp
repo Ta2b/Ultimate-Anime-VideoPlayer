@@ -189,11 +189,12 @@ void fluidity_tab(PlaySettings& d, const SettingsChoices& choices, bool exportin
                1.01 * choices.display_hz;
   };
   const Factor now = factor_of(d);
-  const std::string factor_shown = d.rife_auto && now.num > now.den ? std::string("Auto") : factor_label(now);
+  const std::string factor_shown =
+      d.rife_auto && now.num > now.den ? std::string("Auto (recommandé)") : factor_label(now);
   if (ImGui::BeginCombo("Multiplicateur", factor_shown.c_str())) {
-    if (!exporting && ImGui::Selectable("Auto", d.rife_auto && now.num > now.den)) {
+    if (!exporting && ImGui::Selectable("Auto (recommandé)", d.rife_auto && now.num > now.den)) {
       d.rife_auto = true;
-      if (now.num <= now.den) d.rife_factor = 6;  // le plafond du mode auto
+      if (now.num <= now.den) d.rife_factor = 8;  // le plafond du mode auto
       d.rife_factor_den = 1;
     }
     for (const Factor factor : kFactors) {
@@ -207,21 +208,41 @@ void fluidity_tab(PlaySettings& d, const SettingsChoices& choices, bool exportin
     }
     ImGui::EndCombo();
   }
+  if (d.rife_auto && now.num > now.den && !exporting) {
+    // Le plafond de la cadence : le maximum de l'écran par défaut, ou une valeur plus basse pour ménager le
+    // GPU.
+    const auto cap_label = [](int cap) {
+      return cap == 0 ? std::string("Maximum (écran)") : std::format("{} i/s", cap);
+    };
+    if (ImGui::BeginCombo("Plafond d'Auto", cap_label(d.auto_cap).c_str())) {
+      for (const int cap : {0, 120, 60}) {
+        if (ImGui::Selectable(cap_label(cap).c_str(), d.auto_cap == cap)) d.auto_cap = cap;
+      }
+      ImGui::EndCombo();
+    }
+    panel::tip(
+        "La cadence de sortie la plus haute que le mode Auto vise : le maximum de l'écran par défaut, ou 120 "
+        "/ 60 "
+        "i/s pour ménager le GPU. Il baisse toujours de lui-même quand une scène est lourde.");
+  }
   if (d.rife_auto && now.num > now.den) {
     panel::tip(
-        "Auto choisit seul le multiplicateur de ×1 à ×6 (24 à 144 i/s pour 23,976) : il baisse dès que le "
-        "GPU prend du retard, remonte après quelques secondes sans retard, et réessaie de plus en plus "
-        "tard un palier qui vient d'échouer. Sur un écran VRR armé, il avance par demi-paliers (×2,5, "
-        "×3,5…), "
-        "la cadence n'étant plus liée au rafraîchissement ; sinon par paliers entiers. Lecture seulement ; "
+        "Auto (recommandé) pousse la fluidité au maximum que l'écran permet et que le GPU tient (de ×1 à ×6) "
+        ": "
+        "il mesure le coût de chaque paire, prédit le palier tenable avec 15 % de marge, descend en moins "
+        "d'une seconde quand une scène est lourde et remonte dès qu'elle s'allège. Sur un écran VRR armé, "
+        "la cadence est continue (au fps près, par petits pas lissés) ; sinon par paliers entiers. "
+        "Il retient le dernier palier tenu par vidéo. Lecture seulement ; "
         "l'export garde un multiplicateur fixe.");
     if (!choices.display_vrr) {
-      note(
+      note("Sans VRR, le mouvement peut vibrer à fréquence fixe.");
+      panel::tip(
           "VRR indisponible : à fréquence fixe, un multiplicateur qui ne tombe pas sur un nombre entier de "
           "rafraîchissements (×k de 23,976 sur 165 Hz) fait vibrer le mouvement (judder). Active G-Sync / "
           "FreeSync / Adaptive Sync pour l'éviter.");
     } else if (choices.window_fullscreen && !choices.display_vrr_armed) {
-      note(
+      note("VRR coupé par le système : le mouvement peut vibrer.");
+      panel::tip(
           "VRR présent mais coupé par le système : active la synchronisation adaptative (KDE : Affichage et "
           "écran > Synchronisation adaptative), sinon le mouvement vibre à fréquence fixe.");
     }
@@ -243,9 +264,22 @@ void fluidity_tab(PlaySettings& d, const SettingsChoices& choices, bool exportin
   if (!choices.rife_available)
     note("Ni modèle RIFE (rife_v4.25.onnx, rife_v4.22_lite.onnx) ni graphes GMFSS trouvés.");
   section("Moteur de l'interpolation");
+  // Les moteurs se rangent sur une ligne tant qu'ils y tiennent (pastille comprise), sinon à la ligne.
+  const float row_left = ImGui::GetCursorScreenPos().x;
+  const float row_right = row_left + ImGui::GetContentRegionAvail().x;
+  bool first_engine = true;
   for (int i = 0; i < kMotionEngineCount; ++i) {
     const auto engine = static_cast<MotionEngine>(i);
     if (!offered(engine) && d.motion_engine != engine) continue;
+    if (!first_engine) {
+      const ImGuiStyle& style = ImGui::GetStyle();
+      const std::string name(label(engine));
+      float need = ImGui::GetFrameHeight() + style.ItemInnerSpacing.x + ImGui::CalcTextSize(name.c_str()).x;
+      if (const auto mark = badge_of(engine))
+        need += style.ItemSpacing.x + ImGui::CalcTextSize(std::string(badge_text(*mark)).c_str()).x + 12.0F;
+      if (ImGui::GetItemRectMax().x + style.ItemSpacing.x * 2.0F + need <= row_right) ImGui::SameLine();
+    }
+    first_engine = false;
     if (ImGui::RadioButton(std::string(label(engine)).c_str(), d.motion_engine == engine))
       d.motion_engine = engine;
     panel::tip(motion_description(engine));
@@ -401,6 +435,17 @@ void fluidity_tab(PlaySettings& d, const SettingsChoices& choices, bool exportin
       "le modèle ne se coupe pas ou si un moteur échoue. Recharge la lecture ; la première fois, quatre "
       "petits "
       "moteurs se construisent pour cette taille.");
+  ImGui::BeginDisabled(!is_gmfss(d.motion_engine));
+  ImGui::Checkbox("GMFSS fusionné", &d.gmfss_fused);
+  ImGui::EndDisabled();
+  panel::tip(
+      "Coupe la paire de GMFSS en deux moteurs TensorRT : les caractéristiques d'une image et le flot. Les "
+      "caractéristiques d'une image servent à deux paires de suite : elles ne sont calculées qu'une fois, un "
+      "FeatureNet de moins par paire (docs/gmfss-fusionne.md). Sous TensorRT seulement, au cran Équilibre ; "
+      "la "
+      "paire entière reprend si le graphe ne se coupe pas ou si un moteur échoue. Recharge la lecture ; la "
+      "première "
+      "fois, deux moteurs se construisent pour cette taille.");
   ImGui::BeginDisabled(d.motion_engine != MotionEngine::Rife && !is_gmfss(d.motion_engine));
   if (ImGui::BeginCombo("Warp et SPAN", std::string(label(d.span_order)).c_str())) {
     for (int i = 0; i < kSpanOrderCount; ++i) {

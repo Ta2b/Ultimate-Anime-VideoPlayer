@@ -23,7 +23,7 @@ namespace ajp::gpu::vk::net {
 
 // Version de l'abaissement : change à chaque changement des shaders, des constantes ou du
 // rangement des poids ; un artefact d'une autre version est refusé au chargement.
-inline constexpr std::uint32_t kLoweringVersion = 6;
+inline constexpr std::uint32_t kLoweringVersion = 7;
 
 // Variantes candidates d'un nœud, la première étant celle par défaut ; une seule pour les
 // opérations sans réglage. Refus OperatorUnknown : opérateur sans noyau Vulkan.

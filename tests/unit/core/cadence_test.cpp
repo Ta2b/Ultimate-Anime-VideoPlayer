@@ -1,5 +1,6 @@
 #include "core/cadence.h"
 
+#include <array>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
@@ -348,4 +349,60 @@ TEST_CASE("cadence : même suite que la boucle du fork, pts invalides et reculs 
     }
     CHECK(same);
   }
+}
+
+// Le mode auto change le facteur par petits pas : la grille garde sa phase (aucun saut de rythme) et ne
+// dérive pas, même après des dizaines de minutes de changements.
+TEST_CASE("cadence : retarget garde les instants équidistants, monotones et sans dérive", "[cadence][auto]") {
+  constexpr std::int64_t kSourcePeriod = 41'708;  // 23,976 i/s
+  const std::int64_t kSeconds = 600;
+  auto accumulator = make(Ratio{.num = 67, .den = 24});
+  const std::array<std::int64_t, 3> steps{67, 55, 120};  // 67 → 55 → 120 i/s environ
+  std::int64_t current = steps[0];
+  std::vector<std::int64_t> pts;
+  std::vector<std::int64_t> step_at;  // le pas en vigueur pour chaque instant
+  std::int64_t source_pts = 0;
+  std::uint32_t id = 1;
+  int retargets = 0;
+  double ideal = 0.0;
+  for (std::int64_t n = 0; source_pts < kSeconds * 1'000'000; ++n) {
+    if (n > 0 && n % 120 == 0) {  // toutes les 5 s environ
+      current = steps[static_cast<std::size_t>((n / 120) % 3)];
+      REQUIRE(accumulator.retarget(Ratio{.num = current, .den = 24}));
+      ++retargets;
+    }
+    const CadenceStep step = accumulator.push({.id = SourceId{id++}, .pts_us = source_pts, .epoch = 0});
+    ideal += step.event == GridEvent::Pair ? static_cast<double>(current) / 24.0 : 1.0;
+    for (const OutputInstant& at : step.instants()) {
+      REQUIRE(at.pts_us);
+      pts.push_back(*at.pts_us);
+      step_at.push_back(current);
+    }
+    source_pts += kSourcePeriod;
+  }
+  REQUIRE(retargets > 100);
+  for (std::size_t i = 1; i < pts.size(); ++i) {
+    REQUIRE(pts[i] > pts[i - 1]);  // pts strictement croissants
+    const double gap = static_cast<double>(pts[i] - pts[i - 1]) / static_cast<double>(kSourcePeriod);
+    // Équidistants à un pas de grille près (1 / num de période) ; à un changement, l'écart reste entre
+    // l'ancien et le nouveau pas, jamais un trou.
+    const double now_gap = 24.0 / static_cast<double>(step_at[i]);
+    const double before_gap = 24.0 / static_cast<double>(step_at[i - 1]);
+    const double tolerance = 1.5 / static_cast<double>(std::min(step_at[i], step_at[i - 1])) + 1e-3;
+    CHECK(gap >= std::min(now_gap, before_gap) - tolerance);
+    CHECK(gap <= std::max(now_gap, before_gap) + tolerance);
+    if (step_at[i] == step_at[i - 1]) CHECK(std::abs(gap - now_gap) <= tolerance);
+  }
+  // Aucune dérive : le nombre d'instants suit l'intégrale de la cadence, à un instant par changement près.
+  CHECK(std::abs(static_cast<double>(pts.size()) - ideal) <= static_cast<double>(retargets) + 2.0);
+  // Et le dernier instant tombe sur la fin de la lecture : la vitesse du contenu n'a pas bougé.
+  CHECK(pts.back() <= source_pts);
+  CHECK(pts.back() >= source_pts - 2 * kSourcePeriod);
+}
+
+TEST_CASE("cadence : retarget refuse un facteur invalide et ne change rien", "[cadence][auto]") {
+  auto accumulator = make(Ratio{.num = 3, .den = 2});
+  CHECK_FALSE(accumulator.retarget(Ratio{.num = 1, .den = 1}));
+  CHECK(accumulator.factor().num == 3);
+  CHECK(accumulator.retarget(Ratio{.num = 3, .den = 2}));
 }

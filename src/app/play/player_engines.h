@@ -118,9 +118,18 @@ std::expected<std::optional<std::unique_ptr<gpu::Engine>>, Refusal> prepare_rife
 // données), construits puis chargés. Rien si l'utilisateur ferme la fenêtre. Refus : FieldMissing
 // (graphes absents, avec leurs noms et les dossiers essayés), et ceux de la dérivation et du backend.
 struct GmfssEngines {
-  std::unique_ptr<gpu::Engine> pair;
+  std::unique_ptr<gpu::Engine> pair;      // la paire entière, ou le flot seul si features est là
+  std::unique_ptr<gpu::Engine> features;  // GMFSS fusionné : FeatureNet d'une image (prepare/gmfss_split.h)
   std::unique_ptr<gpu::Engine> fusion;
   int align = 64;  // multiple des plans remplis des deux graphes (gmfss_model.h)
+};
+// GMFSS fusionné (prepare/gmfss_split.h) : si fused n'est pas nul, prepare_gmfss essaie d'abord la paire
+// coupée en deux moteurs (les caractéristiques d'une image, le flot) ; tout refus (structure non reconnue,
+// taille, construction, chargement, essai des moteurs) est noté dans fused->declined et garde la paire
+// entière. fused->used : les moteurs rendus sont ceux de la paire coupée.
+struct GmfssFusedUse {
+  bool used = false;
+  std::string declined;
 };
 // DistilDRBA fusionné (kernels/spec/drba_fused.h) : si fused n'est pas nul, prepare_distil_drba essaie
 // d'abord le graphe coupé en quatre petits moteurs (dérivés dans le dossier des modèles, un manifeste «
@@ -152,6 +161,6 @@ std::expected<std::optional<std::unique_ptr<gpu::Engine>>, Refusal> prepare_appl
 std::expected<std::optional<GmfssEngines>, Refusal> prepare_gmfss(
     Player& p, const gpu::BackendInit& init, gpu::Backend& backend,
     std::span<const std::filesystem::path> dirs, GmfssVariant variant, int work_width, int work_height,
-    PrecisionTier tier = PrecisionTier::Balanced);
+    PrecisionTier tier = PrecisionTier::Balanced, GmfssFusedUse* fused = nullptr);
 
 }  // namespace ajp::app::play

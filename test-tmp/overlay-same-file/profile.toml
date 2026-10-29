@@ -1,0 +1,22 @@
+
+version = 5
+start_profile = 1
+
+[[profile]]
+slot = 1
+name = "Qualité"
+hdr = "native"
+
+[[profile.rule]]
+max_pixels = 2073600
+steps = [{ kind = "upscale", model = "2x_HD", factor = 2 }]
+
+[[profile]]
+slot = 2
+name = "Rapide"
+
+[[profile.rule]]
+steps = [{ kind = "interpolate", model = "rife-4.26", factor = 2, policy = "fast" }]
+
+[keys]
+toggle_osd = "F1"

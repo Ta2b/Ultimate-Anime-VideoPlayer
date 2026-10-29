@@ -190,6 +190,11 @@ moteurs, `load()` un `DrbaFusedEngine` qui enchaîne les quatre contextes et les
 graphe CUDA, avec les deux entrées `pair01` et `pair12` du moteur entier ; le repli sur celui-ci se juge dans
 `prepare_distil_drba` (`player_engines.cpp`).
 
+GMFSS fusionné (`BackendCaps::gmfss_fused`, `docs/gmfss-fusionne.md`) n'a pas de moteur propre : `prepare/gmfss_split.h` coupe la
+paire en deux ONNX (les caractéristiques d'une image, le flot), deux moteurs ordinaires que l'étage gpu enfile avec des tenseurs
+décalés et dont il garde les caractéristiques d'une paire à la suivante (`gmfss_features.h`) ; repli sur la paire entière
+dans `prepare_gmfss` (`player_engines.cpp`).
+
 Durées de vie : chaque `Engine` et `TensorBuffer` meurt avant le `Backend` qui l'a
 créé, donc avant `ajp_backend_destroy` et le déchargement de la bibliothèque, où
 vit leur code. Une opération qui lit une `DecodedFrame` en garde une copie de
@@ -280,6 +285,21 @@ sont des paquets facultatifs : l'écran « Moteurs » du premier lancement les
 présélectionne selon le GPU détecté (`core/engines.h`), avec des badges
 (Recommandé, NVIDIA uniquement, Compatibilité…). On y revient depuis les
 paramètres. Un moteur n'est retiré que s'il n'a plus d'intérêt nulle part.
+
+## Moteur de réseaux Vulkan : copies
+
+`vk_backend` abaisse chaque graphe ONNX en dispatchs GLSL (`--profile-dispatches` donne le temps
+GPU par shader). Les copies se réduisent en trois temps :
+- tenseurs sans copie (`net_alias.h`) : entrées d'un Concat écrites en place par leur producteur,
+  sorties de Split et de Slice lues dans leur source, Reshape renommés ;
+- `net_hoist.h`, un Resize qui réduit remonté devant le Concat, le Reshape (lot et canaux) et le
+  Split (lot > 1) qui le précèdent : Resize traite chaque canal à part, le résultat est identique
+  bit à bit et les copies se font à la taille réduite ; seuls les Concat à lecteur unique dont une
+  entrée devrait être copiée, et les Resize qui réduisent, sont réécrits ;
+- RIFE v4.25 en [1,11,768,1280], RTX 4070 Ti : copies 37 dispatchs / 2,2 ms → 25 / 0,9 ms, total
+  13,2 → 11,9 ms (`ajp_vk_backend_tests "[.rife_profil]"`, médiane de 20 exécutions).
+Restent : le Concat des deux premières entrées de GridSample (lot 2), le dernier Concat de 28
+canaux lu en pleine taille, et le Split Nhwc16 → Nchw de la sortie du flot.
 
 ## Construction sous Linux
 
