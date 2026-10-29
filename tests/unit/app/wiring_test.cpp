@@ -11,6 +11,19 @@
 namespace ajp::app::play {
 namespace {
 
+TEST_CASE("Qui mène : l'audio, sauf vitesse de calage, audio perdu ou son en avance de plus de 60 ms",
+          "[app][clock]") {
+  CHECK_FALSE(host_must_lead(1.0, false, 0));
+  CHECK_FALSE(host_must_lead(1.0, false, 150'000));  // son en retard : l'audio mène
+  CHECK_FALSE(host_must_lead(1.0, false, -59'000));
+  CHECK(host_must_lead(1.0, false,
+                       -60'000));  // le son avant l'image demande plus d'images que la file n'en tient
+  CHECK(host_must_lead(1.0, false, -300'000));
+  CHECK(host_must_lead(1.0, false, -5'000'000));
+  CHECK(host_must_lead(0.999, false, 0));
+  CHECK(host_must_lead(1.0, true, 0));
+}
+
 TEST_CASE("Horloge hôte : la vitesse vaut tout de suite en marche, au départ sinon", "[app][clock]") {
   HostClock clock;
   clock.set_rate(1.001, 0);  // pas encore partie : gardée pour le départ

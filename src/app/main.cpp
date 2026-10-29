@@ -99,12 +99,34 @@ int fail(const ajp::Refusal& refusal) {
 // démarre à sa place (Windows, où un exécutable en service ne s'écrase pas : l'ancien est renommé .old).
 int relaunch(const std::filesystem::path& executable, int argc, char** argv) {
 #ifdef _WIN32
-  std::vector<std::string> arguments;
-  for (int i = 1; i < argc; ++i) arguments.emplace_back(argv[i]);
-  std::vector<const char*> pointers{executable.string().c_str()};
+  // _spawnv ne met aucun argument entre guillemets : un chemin à espaces (« C:\Mes vidéos\a.mkv »)
+  // arriverait coupé en deux. Chaque argument est cité à la façon de CommandLineToArgvW, et l'exécutable
+  // est gardé dans une chaîne qui vit jusqu'au lancement (c_str() d'un temporaire pendrait).
+  const auto quoted = [](const std::string& argument) {
+    if (!argument.empty() && argument.find_first_of(" \t\"") == std::string::npos) return argument;
+    std::string out = "\"";
+    std::size_t backslashes = 0;
+    for (const char c : argument) {
+      if (c == '\\') {
+        ++backslashes;
+        out += c;
+        continue;
+      }
+      if (c == '"') out.append(backslashes + 1, '\\');
+      out += c;
+      backslashes = 0;
+    }
+    out.append(backslashes, '\\');  // avant le guillemet fermant
+    out += '"';
+    return out;
+  };
+  const std::string program = executable.string();
+  std::vector<std::string> arguments{quoted(program)};
+  for (int i = 1; i < argc; ++i) arguments.push_back(quoted(argv[i]));
+  std::vector<const char*> pointers;
   for (const std::string& argument : arguments) pointers.push_back(argument.c_str());
   pointers.push_back(nullptr);
-  return _spawnv(_P_NOWAIT, executable.string().c_str(), pointers.data()) == -1 ? 1 : 0;
+  return _spawnv(_P_NOWAIT, program.c_str(), pointers.data()) == -1 ? 1 : 0;
 #else
   std::vector<char*> arguments{const_cast<char*>(executable.c_str())};
   for (int i = 1; i < argc; ++i) arguments.push_back(argv[i]);
@@ -305,9 +327,14 @@ int main(int argc, char** argv) {
     ajp::log_channel("app")->info("journal : {}", log_file.string());
   }
   av_log_set_level(AV_LOG_ERROR);  // FFmpeg écrit sur stderr ; ses avertissements de sonde sont du bruit
-  if (!SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO)) {
+  if (!SDL_Init(SDL_INIT_VIDEO)) {
     return fail({ajp::RefusalCode::LibraryUnavailable, std::string("SDL_Init : ") + SDL_GetError()});
   }
+  // L'audio est facultatif : sans serveur ni carte son (machine virtuelle, session sans PipeWire), la vidéo
+  // joue sur l'horloge hôte (le sink audio retente l'initialisation et dit son refus) au lieu de ne pas
+  // démarrer.
+  if (!SDL_InitSubSystem(SDL_INIT_AUDIO))
+    ajp::log_channel("app")->warn("audio indisponible, lecture sans son : {}", SDL_GetError());
   ajp::app::play::PlayerPaths paths{
       .home = place.home,
       .data = place.data,

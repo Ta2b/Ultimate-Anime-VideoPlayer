@@ -103,10 +103,20 @@ std::expected<void, Refusal> play(const PlayOptions& options, const PlayerPaths&
   FontSearch fonts = FontSearch::start();  // pendant la lecture des réglages et l'ouverture de l'écran
   // Le fichier donné est lu avant d'ouvrir la fenêtre : un fichier illisible n'en ouvre aucune.
   std::optional<media::TrackInfo> given;
+  std::string unreadable;  // le fichier donné ne se lit pas : dit à l'accueil, qui s'ouvre à sa place
   if (!options.file.empty()) {
     auto video = probe_video(options.file);
-    if (!video) return std::unexpected(std::move(video.error()));
-    given = std::move(*video);
+    if (video) {
+      given = std::move(*video);
+    } else if (options.hidden || options.bench_out || options.snapshot || !options.keys.empty()) {
+      return std::unexpected(std::move(video.error()));  // un essai scripté : le code de sortie le dit
+    } else {
+      // Lancé depuis le gestionnaire de fichiers (« Ouvrir avec »), sans terminal : un refus silencieux
+      // ne dirait rien. L'accueil s'ouvre avec la raison.
+      log_channel("app")->warn("{}", video.error().detail);
+      unreadable =
+          std::format("« {} » ne se lit pas : {}", options.file.filename().string(), video.error().detail);
+    }
   }
   // Vérification des mises à jour, en arrière-plan et hors lecture : le fil s'arrête avec le lecteur.
   std::jthread update_check;
@@ -229,8 +239,8 @@ std::expected<void, Refusal> play(const PlayOptions& options, const PlayerPaths&
   // Lancé sans fichier, l'accueil choisit la vidéo, et il revient à la fin de chacune. Une vidéo
   // glissée sur la fenêtre pendant la lecture prend la place de celle en cours.
   const bool from_home = !given;
-  std::filesystem::path file = options.file;
-  std::string problem;  // la vidéo choisie ne se lit pas : dit à l'accueil
+  std::filesystem::path file = unreadable.empty() ? options.file : std::filesystem::path();
+  std::string problem = unreadable;  // la vidéo choisie ne se lit pas : dit à l'accueil
   for (const std::string& note : startup_notes) {
     if (note.empty()) continue;
     problem += problem.empty() ? note : " · " + note;
