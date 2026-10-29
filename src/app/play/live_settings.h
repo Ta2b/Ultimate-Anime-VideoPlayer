@@ -82,39 +82,87 @@ class LiveSettings {
 
   // Mode auto : le multiplicateur ×k suit ce que le GPU tient (core/auto_rate.h). Quand il est
   // actif, factor_now() remplace rife_factor(). `ceiling` : le palier le plus haut que l'écran permet.
-  // `granularity` : 2 sur un écran VRR armé (des demi-paliers, ×2,5), 1 sinon ; `ceiling` se compte alors en
-  // moitiés (core::auto_ceiling).
+  // `granularity` : core::kFineGranularity sur un écran VRR armé (cadence au fps près), 1 sinon ; `ceiling`
+  // se compte alors en 1 / granularity (core::auto_ceiling).
   void set_auto(bool on, int ceiling, int granularity = 1) {
     const std::scoped_lock lock(mutex_);
     auto_on_ = on;
     auto_.set_ceiling(ceiling, granularity);
   }
+  bool auto_active() const {
+    const std::scoped_lock lock(mutex_);
+    return auto_on_;
+  }
   int auto_granularity() const {
     const std::scoped_lock lock(mutex_);
     return auto_.granularity();
-  }
-  // gpu : l'issue de la paire qui vient d'être traitée.
-  void auto_pair(bool late) {
-    const std::scoped_lock lock(mutex_);
-    if (auto_on_) auto_.pair(late);
   }
   int auto_ceiling() const {
     const std::scoped_lock lock(mutex_);
     return auto_.ceiling();
   }
-  int auto_cap() const {
+  // gpu : une paire préparée.
+  void auto_pair(const core::PairOutcome& outcome) {
     const std::scoped_lock lock(mutex_);
-    return auto_.learned_cap();
+    if (auto_on_) auto_.pair(outcome);
   }
-  // Images manquées à l'écran sans paire en retard (core::auto_overloaded) : le palier descend.
-  void auto_overloaded() {
+  // gpu : une paire sans verdict (coupe de scène, dessin tenu) ; le moteur vit.
+  void auto_alive(std::int64_t now_us) {
     const std::scoped_lock lock(mutex_);
-    if (auto_on_) auto_.overloaded();
+    if (auto_on_) auto_.alive(now_us);
   }
-  // Seek, saut d'époque : la mesure du mode auto repart après quelques paires.
-  void auto_settle() {
+  void auto_cut(std::int64_t now_us) {
     const std::scoped_lock lock(mutex_);
-    if (auto_on_) auto_.settle();
+    if (auto_on_) auto_.scene_cut(now_us);
+  }
+  // Seek, saut d'époque, (re)chargement : la mesure du mode auto repart.
+  void auto_settle(std::int64_t now_us) {
+    const std::scoped_lock lock(mutex_);
+    if (auto_on_) auto_.settle(now_us);
+  }
+  // gpu : la paire de l'image `id` crée `images` images ; `lead_us` : l'attente de ses mesures avant
+  // soumission. main la retrouve par auto_written pour en tirer le coût de service.
+  void auto_expect(std::uint32_t id, int images, std::int64_t lead_us) {
+    const std::scoped_lock lock(mutex_);
+    if (!auto_on_) return;
+    ledger_[ledger_next_++ % ledger_.size()] = Expected{.id = id, .images = images, .lead_us = lead_us};
+  }
+  // main : une image de sortie vue écrite. La dernière d'une paire (left == right) clôt sa mesure.
+  void auto_written(std::uint32_t left, std::uint32_t right, std::int64_t submitted_us,
+                    std::int64_t done_us) {
+    const std::scoped_lock lock(mutex_);
+    if (!auto_on_) return;
+    for (Expected& e : ledger_) {
+      if (e.id != right || e.images == 0) continue;
+      if (e.first_us == 0 || submitted_us < e.first_us) e.first_us = submitted_us;
+      if (left == right) {
+        auto_.cost(e.images, done_us - e.first_us + e.lead_us, done_us);
+        e = Expected{};
+      }
+      return;
+    }
+  }
+  // main : images manquées à l'écran depuis le dernier appel ; watchdog (playing : lecture en cours).
+  void auto_missed(std::int64_t now_us, std::int64_t delta) {
+    const std::scoped_lock lock(mutex_);
+    if (auto_on_) auto_.missed(now_us, delta);
+  }
+  void auto_tick(std::int64_t now_us, bool playing) {
+    const std::scoped_lock lock(mutex_);
+    if (auto_on_) auto_.tick(now_us, playing);
+  }
+  // Départ au dernier palier tenu (en centièmes de multiplicateur).
+  void auto_seed(int centi, std::int64_t now_us) {
+    const std::scoped_lock lock(mutex_);
+    auto_.seed(centi, now_us);
+  }
+  core::AutoInfo auto_info(std::int64_t now_us) const {
+    const std::scoped_lock lock(mutex_);
+    return auto_.info(now_us);
+  }
+  int auto_centi() const {
+    const std::scoped_lock lock(mutex_);
+    return auto_.centi();
   }
   // Le facteur à appliquer maintenant : le palier auto, ou le facteur réglé.
   Factor factor_now() const {
@@ -195,6 +243,14 @@ class LiveSettings {
   FrameLatency latency_;
   bool auto_on_ = false;
   core::AutoRate auto_;
+  struct Expected {
+    std::uint32_t id = 0;
+    int images = 0;  // 0 : case libre
+    std::int64_t lead_us = 0;
+    std::int64_t first_us = 0;
+  };
+  std::array<Expected, 16> ledger_{};
+  std::size_t ledger_next_ = 0;
 };
 
 }  // namespace ajp::app::play

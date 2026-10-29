@@ -189,9 +189,10 @@ void fluidity_tab(PlaySettings& d, const SettingsChoices& choices, bool exportin
                1.01 * choices.display_hz;
   };
   const Factor now = factor_of(d);
-  const std::string factor_shown = d.rife_auto && now.num > now.den ? std::string("Auto") : factor_label(now);
+  const std::string factor_shown =
+      d.rife_auto && now.num > now.den ? std::string("Auto (recommandé)") : factor_label(now);
   if (ImGui::BeginCombo("Multiplicateur", factor_shown.c_str())) {
-    if (!exporting && ImGui::Selectable("Auto", d.rife_auto && now.num > now.den)) {
+    if (!exporting && ImGui::Selectable("Auto (recommandé)", d.rife_auto && now.num > now.den)) {
       d.rife_auto = true;
       if (now.num <= now.den) d.rife_factor = 6;  // le plafond du mode auto
       d.rife_factor_den = 1;
@@ -209,11 +210,12 @@ void fluidity_tab(PlaySettings& d, const SettingsChoices& choices, bool exportin
   }
   if (d.rife_auto && now.num > now.den) {
     panel::tip(
-        "Auto choisit seul le multiplicateur de ×1 à ×6 (24 à 144 i/s pour 23,976) : il baisse dès que le "
-        "GPU prend du retard, remonte après quelques secondes sans retard, et réessaie de plus en plus "
-        "tard un palier qui vient d'échouer. Sur un écran VRR armé, il avance par demi-paliers (×2,5, "
-        "×3,5…), "
-        "la cadence n'étant plus liée au rafraîchissement ; sinon par paliers entiers. Lecture seulement ; "
+        "Auto (recommandé) pousse la fluidité au maximum que l'écran permet et que le GPU tient (de ×1 à ×6) "
+        ": "
+        "il mesure le coût de chaque paire, prédit le palier tenable avec 15 % de marge, descend en moins "
+        "d'une seconde quand une scène est lourde et remonte dès qu'elle s'allège. Sur un écran VRR armé, "
+        "la cadence est continue (au fps près, par petits pas lissés) ; sinon par paliers entiers. "
+        "Il retient le dernier palier tenu par vidéo. Lecture seulement ; "
         "l'export garde un multiplicateur fixe.");
     if (!choices.display_vrr) {
       note("Sans VRR, le mouvement peut vibrer à fréquence fixe.");

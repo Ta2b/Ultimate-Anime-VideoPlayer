@@ -5,6 +5,8 @@
 // tests/unit/core/cadence_test.cpp.
 #include "core/cadence.h"
 
+#include <algorithm>
+#include <cmath>
 #include <format>
 #include <numeric>
 #include <string>
@@ -46,6 +48,30 @@ std::expected<CadenceAccumulator, Refusal> CadenceAccumulator::create(Ratio fact
   }
   const Ratio r = reduced(factor);
   return CadenceAccumulator(r.num, r.den);
+}
+
+std::expected<void, Refusal> CadenceAccumulator::retarget(Ratio factor) {
+  auto made = create(factor);
+  if (!made) return std::unexpected(std::move(made.error()));
+  // Même facteur (à l'échelle près) : rien à faire.
+  if (made->num_ * den_ == made->den_ * num_) return {};
+  // La grille se compte en 1 / num de période : à un facteur réduit (5/1), le pas serait d'un cinquième de
+  // période et la phase arrondie de loin. Les termes sont mis à l'échelle (même facteur, grille plus fine).
+  constexpr std::int64_t kScale = 64;
+  const std::int64_t new_num = made->num_ * kScale;
+  const std::int64_t new_den = made->den_ * kScale;
+  // Positions en périodes source depuis le début de la paire suivante : le dernier point émis est à
+  // (acc - den) / num (<= 0), le suivant un pas du nouveau facteur plus loin, arrondi à 1 / new_num.
+  const double last = (static_cast<double>(acc_) - static_cast<double>(den_)) / static_cast<double>(num_);
+  std::int64_t next = std::llround((last + static_cast<double>(new_den) / static_cast<double>(new_num)) *
+                                   static_cast<double>(new_num));
+  // Déjà due avant la paire : juste après son début (l'écart reste entre l'ancien et le nouveau pas, jamais
+  // un trou).
+  if (next <= 0) next = 1;
+  num_ = new_num;
+  den_ = new_den;
+  acc_ = std::min(next, new_den);
+  return {};
 }
 
 CadenceStep CadenceAccumulator::origin(const SourceStamp& source, GridEvent event) {
