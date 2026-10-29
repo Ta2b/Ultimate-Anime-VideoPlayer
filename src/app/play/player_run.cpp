@@ -558,7 +558,9 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
                                        .period_us = bench_period_us},
                                .interval_median_us = seen.frame_interval.median(),
                                .interval_p95_us = seen.frame_interval.percentile(95),
-                               .render_median_us = seen.render.median()};
+                               .render_median_us = seen.render.median(),
+                               .work_height = chain.running.work_height,
+                               .rife_model = chain.running.rife_model};
     if (auto written = save_reading(*p.options.bench_out, reading); !written)
       log->warn("{}", written.error().detail);
   }

@@ -1,6 +1,7 @@
 #include "app/play/auto_bench.h"
 
 #include <algorithm>
+#include <array>
 #include <format>
 #include <fstream>
 #include <sstream>
@@ -29,6 +30,21 @@ bool holds(const BenchRun& run) {
   const double lost = static_cast<double>(run.dropped + run.missing) / static_cast<double>(run.presents);
   const std::int64_t period = run.period_us > 0 ? run.period_us : kDefaultPeriodUs;
   return lost <= kMaxLossRate && run.lag_p95_us <= kMaxLagPeriods * period;
+}
+
+std::optional<int> next_work_height(int tenue, int source_height) {
+  constexpr std::array<int, 5> kHeights{480, 540, 720, 900, 1080};
+  for (const int height : kHeights) {
+    if (height <= tenue) continue;
+    if (source_height > 0 && height > source_height) return std::nullopt;  // jamais plus haut que la source
+    return height;
+  }
+  return std::nullopt;
+}
+
+std::optional<std::string> next_rife_model(const std::string& tenu) {
+  if (tenu == "rife_v4.22_lite.onnx") return std::string("rife_v4.25.onnx");
+  return std::nullopt;
 }
 
 std::optional<Tier> next_level(const std::vector<BenchRun>& runs, Tier estimated) {
@@ -62,6 +78,8 @@ std::string format_bench(const BenchResult& result) {
   root.insert("driver", result.driver);
   root.insert("level", static_cast<std::int64_t>(result.level));
   root.insert("date", result.date);
+  if (result.work_height > 0) root.insert("work_height", static_cast<std::int64_t>(result.work_height));
+  if (!result.rife_model.empty()) root.insert("rife_model", result.rife_model);
   std::ostringstream out;
   out << root << '\n';
   return out.str();
@@ -82,6 +100,11 @@ std::expected<BenchResult, Refusal> parse_bench(std::string_view text) {
   if (level < 0 || level >= kTierCount)
     return refuse(RefusalCode::FieldOutOfRange, "bench.toml : level hors de 0 à 4");
   result.level = static_cast<Tier>(level);
+  const std::int64_t height = root["work_height"].value_or(std::int64_t{0});
+  if (height < 0 || height > 4320)
+    return refuse(RefusalCode::FieldOutOfRange, "bench.toml : work_height hors plage");
+  result.work_height = static_cast<int>(height);
+  result.rife_model = root["rife_model"].value_or(std::string());
   return result;
 }
 
@@ -110,6 +133,8 @@ std::string format_reading(const BenchReading& reading) {
   root.insert("interval_median_us", reading.interval_median_us);
   root.insert("interval_p95_us", reading.interval_p95_us);
   root.insert("render_median_us", reading.render_median_us);
+  root.insert("work_height", static_cast<std::int64_t>(reading.work_height));
+  root.insert("rife_model", reading.rife_model);
   std::ostringstream out;
   out << root << '\n';
   return out.str();
@@ -135,6 +160,8 @@ std::expected<BenchReading, Refusal> parse_reading(std::string_view text) {
   reading.interval_median_us = root["interval_median_us"].value_or(std::int64_t{0});
   reading.interval_p95_us = root["interval_p95_us"].value_or(std::int64_t{0});
   reading.render_median_us = root["render_median_us"].value_or(std::int64_t{0});
+  reading.work_height = static_cast<int>(root["work_height"].value_or(std::int64_t{0}));
+  reading.rife_model = root["rife_model"].value_or(std::string());
   return reading;
 }
 
