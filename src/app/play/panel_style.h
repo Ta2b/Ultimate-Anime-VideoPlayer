@@ -40,7 +40,10 @@ inline bool& group_open() {
   return open;
 }
 inline void end_group() {
-  if (group_open()) ImGui::EndChild();
+  if (group_open()) {
+    ImGui::PopItemWidth();
+    ImGui::EndChild();
+  }
   group_open() = false;
 }
 inline void begin_page() {
@@ -62,6 +65,9 @@ inline void section(const char* title) {
     ImGui::PushStyleVar(ImGuiStyleVar_ChildRounding, 6.0F);
     ImGui::BeginChild(title, ImVec2(0, 0), ImGuiChildFlags_Borders | ImGuiChildFlags_AutoResizeY);
     ImGui::PopStyleVar();
+    // Un encadré est une fenêtre fille : la largeur des champs repart de son défaut. Les libellés (à droite
+    // du champ) gardent 44 % de la largeur, assez pour les plus longs sans les couper.
+    ImGui::PushItemWidth(-ImGui::GetContentRegionAvail().x * 0.44F);
     group_open() = true;
     return;
   }

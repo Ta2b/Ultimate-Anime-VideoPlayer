@@ -77,7 +77,10 @@ void engines_tab(const SettingsChoices& choices, std::optional<core::EngineId>& 
     std::snprintf(folder.data(), folder.size(), "%s", engines_dir.c_str());
     folder_read = true;
   }
-  if (ImGui::InputTextWithHint("Dossier##moteurs", "Dossier par défaut", folder.data(), folder.size()))
+  const ImGuiStyle& style = ImGui::GetStyle();
+  ImGui::SetNextItemWidth(
+      -(ImGui::CalcTextSize("Par défaut").x + 2.0F * style.FramePadding.x + style.ItemSpacing.x));
+  if (ImGui::InputTextWithHint("##moteurs", "Dossier par défaut", folder.data(), folder.size()))
     engines_dir = folder.data();
   ImGui::SameLine();
   if (ImGui::Button("Par défaut##moteurs")) {

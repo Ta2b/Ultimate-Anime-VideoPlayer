@@ -150,7 +150,7 @@ void updates_page(PlaySettings& d, const PlayerPlace& place, UpdateNote& result)
   if (std::string_view(update_public_key()).empty())
     note("Ce paquet n'a pas de clé de signature : les mises à jour ne peuvent pas être vérifiées.");
 
-  section("Détail");
+  section("Canal et fréquence");
   ImGui::BeginDisabled(!managed.empty());
   if (ImGui::BeginCombo("Canal", d.update_channel == "preview" ? "Préversions" : "Stable")) {
     if (ImGui::Selectable("Stable", d.update_channel == "stable")) d.update_channel = "stable";

@@ -131,7 +131,7 @@ bool sound_tab(PlaySettings& d, const SettingsChoices& choices) {
       };
       if (listen == 0) {
         slider("Crossfeed (stéréo)", t.crossfeed_gain, 0.0F, 0.7F, "%.2f");
-        slider("Crossfeed : adoucissement (Hz)", t.crossfeed_cutoff_hz, 300.0F, 1500.0F, "%.0f");
+        slider("Crossfeed : filtre (Hz)", t.crossfeed_cutoff_hz, 300.0F, 1500.0F, "%.0f");
         slider("Crossfeed : retard (ms)", t.crossfeed_delay_ms, 0.0F, 0.6F, "%.2f");
         slider("Taille de la tête (m)", t.head_radius_m, 0.07F, 0.11F, "%.3f");
         slider("Ombre de la tête", t.head_shadow, 0.0F, 0.7F, "%.2f");
@@ -139,14 +139,14 @@ bool sound_tab(PlaySettings& d, const SettingsChoices& choices) {
         slider("Niveau du centre (voix)", t.center_lift, 1.0F, 2.0F, "%.2f");
         slider("Gain du mixage stéréo", t.downmix_scale, 0.4F, 0.9F, "%.2f");
       }
-      slider("Niveau des arrières et côtés", t.surround_gain, 0.5F, 1.6F, "%.2f");
+      slider("Niveau des arrières", t.surround_gain, 0.5F, 1.6F, "%.2f");
       slider("Niveau des basses (LFE)", t.lfe_gain, 0.0F, 0.6F, "%.2f");
-      slider("Distance des enceintes virtuelles", t.distance, 0.0F, 1.0F, "%.2f");
-      slider("Pièce (réverbération légère)", t.room, 0.0F, 1.0F, "%.2f");
+      slider("Distance des enceintes", t.distance, 0.0F, 1.0F, "%.2f");
+      slider("Pièce (réverbération)", t.room, 0.0F, 1.0F, "%.2f");
       slider("Égaliseur : graves (dB)", t.eq_bass_db, -8.0F, 8.0F, "%.1f");
       slider("Égaliseur : voix (dB)", t.eq_voice_db, -8.0F, 8.0F, "%.1f");
       slider("Égaliseur : aigus (dB)", t.eq_treble_db, -8.0F, 8.0F, "%.1f");
-      slider("Nuit : compression de la dynamique", t.night, 0.0F, 1.0F, "%.2f");
+      slider("Nuit : compression", t.night, 0.0F, 1.0F, "%.2f");
       if (moved) {
         d.audio_custom = audio::clamped(t);
         *profile = "custom";
@@ -213,12 +213,12 @@ bool sound_tab(PlaySettings& d, const SettingsChoices& choices) {
       const auto slider = [&](const char* label, float& value, float lo, float hi, const char* format) {
         moved |= ImGui::SliderFloat(label, &value, lo, hi, format, ImGuiSliderFlags_AlwaysClamp);
       };
-      slider("Spatialisation (largeur, voix devant)", t.width, 0.0F, 1.0F, "%.2f");
+      slider("Spatialisation", t.width, 0.0F, 1.0F, "%.2f");
       slider("Ambiance décorrélée", t.ambience, 0.0F, 1.0F, "%.2f");
       slider("Voix : centre porté (dB)", t.voice_db, 0.0F, 4.0F, "%.1f");
       slider("Voix : présence 3 kHz (dB)", t.presence_db, 0.0F, 4.0F, "%.1f");
       slider("Voix en avant", t.voice_forward, 0.0F, 1.0F, "%.2f");
-      slider("Renfort des graves (harmoniques)", t.bass, 0.0F, 1.0F, "%.2f");
+      slider("Renfort des graves", t.bass, 0.0F, 1.0F, "%.2f");
       moved |= ImGui::Checkbox("Normalisation de sonie (EBU R128)", &t.loudness);
       ImGui::BeginDisabled(!t.loudness);
       slider("Sonie visée (LUFS)", t.target_lufs, -23.0F, -16.0F, "%.0f");
@@ -248,7 +248,7 @@ bool sound_tab(PlaySettings& d, const SettingsChoices& choices) {
       std::snprintf(field.data(), field.size(), "%s", path->c_str());
       shown = *path;
     }
-    if (ImGui::InputText("Réponse impulsionnelle (HeSuVi, .wav)", field.data(), field.size())) {
+    if (ImGui::InputText("Réponse HeSuVi (.wav)", field.data(), field.size())) {
       *path = field.data();
       shown = *path;
     }
