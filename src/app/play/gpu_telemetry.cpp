@@ -10,6 +10,7 @@
 #include <sstream>
 #include <utility>
 
+#include "core/charconv.h"
 #include "vendor_hdr/dynamic_library.h"
 
 namespace ajp::app::play {
@@ -93,7 +94,7 @@ DpmClocks parse_amdgpu_dpm(std::string_view text) {
 
 unsigned parse_pcie_generation(std::string_view text) {
   double gts = 0.0;
-  const auto [end, error] = std::from_chars(text.data(), text.data() + text.size(), gts);
+  const auto [end, error] = core::from_chars(text.data(), text.data() + text.size(), gts);
   if (error != std::errc{} || end == text.data()) return 0;
   // Débits par voie : 2,5 / 5 / 8 / 16 / 32 / 64 GT/s pour les générations 1 à 6.
   constexpr std::array<double, 6> kRates{2.5, 5.0, 8.0, 16.0, 32.0, 64.0};
