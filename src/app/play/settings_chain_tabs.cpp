@@ -38,7 +38,7 @@ constexpr std::array<HeightChoice, 5> kHeights{{
 bool precision_combo(const char* title, PrecisionTier& tier, const TierSupport& support) {
   if (!support.performance && !support.quality) return false;
   const auto text = [](PrecisionTier t) {
-    return std::format("{} · {}", i18n::tr(label(t).data()), precision_text(t));
+    return std::format("{} · {}", i18n::tr_view(label(t)), precision_text(t));
   };
   const std::string shown = text(support.effective(tier));
   bool changed = false;
