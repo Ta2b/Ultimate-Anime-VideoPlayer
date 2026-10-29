@@ -400,17 +400,40 @@ l'effet.
   la puissance publique des cartes et sur les coûts mesurés de chaque moteur : ce sont des **estimations**. C'est
   la raison du benchmark ci-dessous, et de laisser la tranche modifiable.
 
-#### Benchmark : proposé au début, refaisable à tout moment
-- **Au premier lancement** (écran d'accueil, `first_run`) : l'automatique choisit d'abord une tranche par le
-  classement (instantané, rien ne bloque), puis **propose** « Évaluer ma machine (15 s) » ou « Plus tard ». Rien à
-  confirmer pour l'« Ouvrir avec » (4.4), mais l'évaluation est proposée car elle fait jouer la machine.
-- **Toujours refaisable** : Général > Configuration > **« Évaluer ma machine »**, avec la date et le résultat
-  du dernier passage. Bouton **« Évaluer ma machine »** : joue 10 à 15 s d'une courte
-  séquence avec chaque chaîne candidate (son coupé), relève le temps par image (mêmes statistiques que `--stats`)
-  et garde **la plus lourde qui tient avec marge** (par exemple 80 % du budget d'une image à la cadence de
-  l'écran). Résultat mémorisé par carte, pilote et version du moteur ; refait si l'un change.
-- Hors ligne, aucune donnée envoyée. Prévenu : un PC chaud ou occupé (jeu en arrière-plan) donne un résultat
-  plus bas, à relancer.
+#### Optimiser pour ma machine (ex-« Évaluer ma machine ») : un bouton, une phrase
+- **Un seul bouton**, en tête de Général > Configuration : **« Optimiser pour ma machine »**. Le lecteur joue
+  quelques secondes de vidéo (10 s par essai, fenêtre masquée et son coupé) avec ses réglages recommandés, du plus
+  léger au plus lourd, garde ceux que le PC tient sans saccade et **les applique tout de suite** (préréglage Auto
+  sur la mesure ; la chaîne se rouvre à la même position). Aucun mot « tranche » ni « niveau » à l'écran.
+- **Pendant l'essai** : une ligne d'étape lisible (« Étape 2 sur 4 : test des réglages « Rapide » »), une barre
+  de progression globale, un bouton **Annuler** ; l'interface ne gèle jamais (les essais sont des processus
+  enfants, la barre avance même en pause). Les quatre étapes : 1 préparation des moteurs et première mesure ;
+  2 test des réglages ; 3 recherche d'une image plus fine (hauteur de travail, modèle RIFE) ; 4 préparation du
+  mode Performance de SPAN (FP8) quand la carte et le moteur le permettent et qu'une vidéo est ouverte.
+- **Durée** : environ une minute quand les moteurs sont déjà construits. La toute première fois, le premier essai
+  construit les moteurs (un SPAN seul prend 2 min 30 sur une RTX 4070 Ti, plus sur un portable) : il a un délai de
+  20 minutes, annulable, avec une note qui le dit ; les essais d'après ont 4 minutes (au-delà, les réglages sont
+  « non testés »), la recherche fine 25 s (elle ne construit rien, et elle est remise à la fois suivante si les
+  moteurs viennent d'être construits).
+- **Résultat en une phrase** : « Votre PC tient : agrandissement ×2 depuis 720p, interpolation jusqu'à ×3, RIFE.
+  Performance FP8 pour SPAN : prête / non — <pourquoi et que faire> ». Le rapport technique (essais, pertes,
+  retard p95) va au journal et à `ajp bench`, jamais dans l'interface.
+- **Annuler ces réglages** : restaure le préréglage et la priorité d'avant et remet `bench.toml` comme il était
+  (ou le retire).
+- **Un essai qui échoue est toujours expliqué** : « L'essai des réglages « Rapide » n'a rien rendu : <dernière
+  ligne d'erreur de l'enfant> — le lecteur de l'essai s'est arrêté (code 3) » ; le journal garde le code de sortie
+  et les 12 dernières lignes de l'enfant. Un délai dépassé le dit (construction d'un moteur).
+- **Fenêtre des essais** : minuscule (16×9) et sans bordure, sauf sous GNOME / Wayland où le masquage n'est pas
+  fiable (le compositeur ne rend plus la main à la fenêtre) : elle y reste visible, petite (320×180), sans plein
+  écran.
+- **Mode Performance de SPAN (FP8)** : le cran « Performance » de « Précision de SPAN » est offert dès que le moteur
+  TensorRT annonce les noyaux CUTLASS (RTX 40, Ada 8.9, portables compris). Choisi, le lecteur fabrique seul le
+  paquet de la vidéo (~40 s, « Préparation du mode Performance… n % » à l'écran, lecture en FP16 pendant ce
+  temps), rouvre la chaîne à la fin, ou dit en une phrase pourquoi c'est impossible (moteur TensorRT non installé,
+  carte non Ada, refus des garde-fous avec les dB). « Refaire la préparation sur cette vidéo » reste en réglages
+  avancés.
+- Au premier lancement, l'assistant (écran 3) renvoie à ce bouton, qui demande des moteurs installés.
+- Hors ligne, aucune donnée envoyée. Un PC chaud ou occupé donne un résultat plus bas : relancez.
 
 #### Préréglages (remplacent l'onglet Profils)
 Liste en tête de Général > Configuration : *Auto* (par défaut), *Économe*, *Rapide*, *Normal*, *Qualité*, *Ultra*, *Personnalisé*. Modifier un réglage

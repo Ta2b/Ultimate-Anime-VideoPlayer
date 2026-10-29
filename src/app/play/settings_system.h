@@ -3,6 +3,7 @@
 #pragma once
 
 #include <chrono>
+#include <cstdint>
 #include <expected>
 #include <filesystem>
 #include <future>
@@ -25,36 +26,68 @@ struct SystemNote {
   std::shared_ptr<std::future<std::expected<std::string, Refusal>>> pending;
 };
 
-// Le bouton « Évaluer ma machine » : bench_note porte son essai (auto_bench_run.h) ; video est la vidéo lue
-// (vide : l'écran d'accueil, rien à jouer) ; pause demande la mise en pause de la lecture avant l'essai.
+struct BenchState;  // l'essai en cours et de quoi le défaire (settings_system.cpp ; auto_bench.h le décrit)
+
+// Le bouton « Optimiser pour ma machine » : l'essai en cours (étapes, progression, annulation), son résultat
+// en une phrase, et de quoi défaire les réglages posés.
 struct BenchNote {
-  std::string text;
+  std::string text;  // le résultat en une phrase, ou ce qui a manqué
   bool refused = false;
-  std::shared_ptr<std::future<std::expected<std::string, Refusal>>> pending;
-  bool finished = false;  // l'évaluation vient de finir avec un niveau gardé : la page le dit, une fois
+  std::shared_ptr<BenchState> state;
+  ~BenchNote();
+  BenchNote();
+  BenchNote(const BenchNote&) = delete;
+  BenchNote& operator=(const BenchNote&) = delete;
+  // Arrête l'essai en cours (le panneau qui disparaît).
+  void stop();
 };
 
-// Image IA > Agrandissement (réglages avancés) : « Préparer le mode Performance (SPAN FP8) » (span_derive.h),
-// une tâche de fond avec sa progression et son résultat, sur le modèle de « Évaluer ma machine ».
+// Ce que la page sait de la machine et de la vidéo ouverte.
+struct BenchContext {
+  int display_height = 1080;
+  double display_hz = 60.0;
+  int source_height = 1080;
+  double source_fps = 23.976;
+  SpanPrepare span;        // la préparation du mode Performance (étape 4) : offerte avec une vidéo ouverte
+  std::string fp8_reason;  // pourquoi le mode Performance est impossible ici (vide : possible)
+  // Le dossier des réglages (celui de play.toml : bench.toml, settings.toml et la séquence de test y sont).
+  // PlayerPlace::data est la racine des données de l'utilisateur, un ou deux niveaux plus haut : y écrire le
+  // résultat le rendait introuvable (« jamais évaluée ») et les essais perdaient les moteurs choisis.
+  std::filesystem::path data_dir;
+};
+
+enum class BenchEvent : std::uint8_t {
+  None,
+  Started,  // l'optimisation vient de partir : l'appelant met la lecture en pause
+  Applied,  // elle a fini : le brouillon porte les réglages recommandés, à appliquer
+  Undone,   // « Annuler ces réglages » : le brouillon est revenu à l'état d'avant
+};
+
+// Image IA > Agrandissement (réglages avancés) : « Refaire la préparation sur cette vidéo » (span_derive.h),
+// la tâche partagée avec la boucle du lecteur (span_auto.h) avec sa progression et son résultat.
 struct PrepareNote {
   std::string text;
   bool refused = false;
+  bool completed = false;  // la tâche vient de finir : la boucle du lecteur le lit une fois (span_auto.h)
   std::shared_ptr<std::future<std::expected<std::string, Refusal>>> pending;
   std::shared_ptr<SpanDeriveProgress> progress;
-  std::shared_ptr<std::stop_source> stop;  // le panneau l'arrête en disparaissant (settings_panel.cpp)
+  std::shared_ptr<std::stop_source> stop;  // le lecteur l'arrête en se fermant
 };
 
 // Lance la préparation ; faux si une autre est en cours ou si elle n'est pas offerte.
 bool start_span_prepare(const SpanPrepare& prepare, PrepareNote& note);
-// La section du bouton, de sa progression, de son résultat et de la case « Préparer en tâche de fond ».
-void span_prepare_section(PlaySettings& d, const SpanPrepare& prepare, PrepareNote& note);
-// Après « Évaluer ma machine » (bench.finished) : lance la préparation quand la case est cochée, qu'une vidéo
-// est ouverte, que rien n'est déjà prêt et que le niveau gardé dans data/bench.toml est Rapide ou plus.
-bool prepare_after_bench(const PlaySettings& d, const SpanPrepare& prepare, const std::filesystem::path& data,
-                         PrepareNote& note);
+// La section de la préparation : son état, sa progression, son résultat et « Refaire la préparation sur cette
+// vidéo ». Discrète : réglages avancés seulement.
+void span_prepare_section(const SpanPrepare& prepare, PrepareNote& note);
 
-// Rend vrai quand l'évaluation vient d'être lancée : l'appelant met alors la lecture en pause.
-bool bench_page(const PlayerPlace& place, const std::filesystem::path& video, BenchNote& bench);
+// La page « Optimiser pour ma machine » : un bouton, l'étape en cours, une barre, Annuler, le résultat. draft
+// : les réglages du panneau, que l'optimisation règle (préréglage Auto sur la mesure) ou que « Annuler ces
+// réglages » rétablit (avec le bench.toml d'avant). Une optimisation tourne : le panneau demande des images
+// même en pause, pour que l'étape et la barre avancent.
+bool bench_running(const BenchNote& bench);
+
+BenchEvent bench_page(const PlayerPlace& place, const std::filesystem::path& video,
+                      const BenchContext& context, BenchNote& bench, PlaySettings& draft);
 
 // Général > Mises à jour : le mode, le canal, la fréquence, « Vérifier maintenant », le retour arrière.
 struct UpdateNote {

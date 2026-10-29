@@ -187,10 +187,10 @@ int run_bench_command(const std::vector<std::string_view>& args) {
   });
   std::filesystem::remove_all(work, error);
   if (!report) return fail(report.error());
-  std::fputs(report->c_str(), stdout);
+  std::fputs(report->report.c_str(), stdout);
   if (options->report) {
     std::ofstream out(*options->report, std::ios::binary);
-    out << *report;
+    out << report->report;
   }
   return 0;
 }

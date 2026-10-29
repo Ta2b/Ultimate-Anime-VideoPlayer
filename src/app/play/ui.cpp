@@ -474,6 +474,11 @@ UiFrame PlayerUi::frame(std::int64_t now_us, const ControlsView& view, std::vect
   }
   // ImGui place certains éléments (onglets, fenêtre qui s'ouvre) une image après les avoir reçus :
   // après une entrée, deux images de plus, même en pause sans autre événement.
+  // Une tâche du panneau (l'optimisation) fait avancer sa barre : une image tous les 100 ms, même en pause.
+  if (panel_.busy() && now_us - last_busy_frame_us_ >= 100'000) {
+    last_busy_frame_us_ = now_us;
+    input_pending_ = true;
+  }
   if (input_pending_) last_input_us_ = now_us;
   const bool tooltip_due = hover_waiting_ && now_us - last_input_us_ < kTooltipWindowUs;
   if (!controls_.needs_frame(now_us, view, input_pending_ || settle_ > 0 || tooltip_due))
