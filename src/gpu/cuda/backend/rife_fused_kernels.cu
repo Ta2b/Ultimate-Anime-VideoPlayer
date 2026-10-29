@@ -119,7 +119,14 @@ __global__ void __launch_bounds__(256) fused_entry(FusedEntryParams p) {
 }
 
 // Colle d'un bloc : l'entrée (28 canaux) du bloc suivant.
-__global__ void __launch_bounds__(128, 4) fused_glue(FusedGlueParams p) {
+// Quatre blocs par SM (128 registres) suffisent à sm_75 à sm_89 ; sm_120 en demande davantage et déborde
+// sinon (ptxas --warn-on-spills est une erreur de la compilation de livraison).
+#if defined(__CUDA_ARCH__) && __CUDA_ARCH__ >= 1200
+#define AJP_GLUE_MIN_BLOCKS 2
+#else
+#define AJP_GLUE_MIN_BLOCKS 4
+#endif
+__global__ void __launch_bounds__(128, AJP_GLUE_MIN_BLOCKS) fused_glue(FusedGlueParams p) {
   const int ox = static_cast<int>(blockIdx.x * blockDim.x + threadIdx.x);
   const int oy = static_cast<int>(blockIdx.y * blockDim.y + threadIdx.y);
   if (ox >= p.out_width || oy >= p.out_height) return;
