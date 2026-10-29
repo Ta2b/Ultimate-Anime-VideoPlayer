@@ -558,9 +558,9 @@ Change change_between(const PlaySettings& running, const PlaySettings& wanted, b
   }
   if (wanted.rife_factor >= 2 && is_gmfss(wanted.motion_engine) &&
       running.motion_engine == wanted.motion_engine && running.gmfss_precision != wanted.gmfss_precision) {
-    reopen.emplace_back(
-        i18n::tr_format("GMFSS switches to {} (GMFlow in {}, built the first time for this size)",
-                        label(wanted.gmfss_precision), precision_text(wanted.gmfss_precision)));
+    reopen.emplace_back(i18n::tr_format(
+        "GMFSS switches to {} (GMFlow in {}, built the first time for this size)",
+        i18n::tr_view(label(wanted.gmfss_precision)), precision_text(wanted.gmfss_precision)));
   }
   if (!reopen.empty()) {
     std::string reason;
