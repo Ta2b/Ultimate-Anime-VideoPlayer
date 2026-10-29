@@ -646,7 +646,10 @@ SettingsPanel::Result SettingsPanel::draw(const PlaySettings& running, const Set
     // Barre de défilement fine, collée au bord extérieur des deux zones.
     ImGui::PushStyleVar(ImGuiStyleVar_ScrollbarSize, 8.0F * scale);
     ImGui::PushStyleVar(ImGuiStyleVar_ScrollbarRounding, 4.0F * scale);
+    // Arbre collé à gauche : peu de marge intérieure.
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(4.0F * scale, 4.0F * scale));
     ImGui::BeginChild("##arbre", ImVec2(tree_width, -footer), ImGuiChildFlags_Borders);
+    ImGui::PopStyleVar();
     // La molette sur l'arbre passe d'une page à la suivante ou à la précédente.
     if (ImGui::IsWindowHovered() && io.MouseWheel != 0.0F) {
       const int step = io.MouseWheel < 0.0F ? 1 : -1;
@@ -658,7 +661,7 @@ SettingsPanel::Result SettingsPanel::draw(const PlaySettings& running, const Set
       }
     }
     // Moins de vide à gauche des pages : l'arbre est étroit.
-    ImGui::PushStyleVar(ImGuiStyleVar_IndentSpacing, 10.0F * scale);
+    ImGui::PushStyleVar(ImGuiStyleVar_IndentSpacing, 16.0F * scale);
     const char* category = "";
     bool category_open = false;
     for (std::size_t i = 0; i < kPages.size(); ++i) {
@@ -667,18 +670,21 @@ SettingsPanel::Result SettingsPanel::draw(const PlaySettings& running, const Set
       if (std::string_view(page.category) != category) {
         if (category_open) ImGui::TreePop();
         category = page.category;
-        // La catégorie de la page affichée reste ouverte ; les autres se replient d'abord (l'arbre
-        // tient alors dans la hauteur du panneau) et restent ouvertes une fois ouvertes.
-        if (std::string_view(kPages[static_cast<std::size_t>(page_)].category) == category)
-          ImGui::SetNextItemOpen(true);
-        else
+        // La catégorie de la page affichée s'ouvre quand la page change (clic, molette) mais se
+        // referme à la main ; les autres se replient d'abord (l'arbre tient alors dans la hauteur du
+        // panneau) et gardent ensuite l'état choisi.
+        if (std::string_view(kPages[static_cast<std::size_t>(page_)].category) == category) {
+          ImGui::SetNextItemOpen(true, page_ != shown_page_ ? ImGuiCond_Always : ImGuiCond_Once);
+        } else {
           ImGui::SetNextItemOpen(false, ImGuiCond_Once);
+        }
         category_open = ImGui::TreeNodeEx(category, ImGuiTreeNodeFlags_SpanAvailWidth);
       }
       if (category_open && ImGui::Selectable(page.name, static_cast<int>(i) == page_))
         page_ = static_cast<int>(i);
     }
     if (category_open) ImGui::TreePop();
+    shown_page_ = page_;
     ImGui::PopStyleVar();
     ImGui::EndChild();
     ImGui::SameLine();
