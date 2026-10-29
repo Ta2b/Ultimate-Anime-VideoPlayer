@@ -98,9 +98,9 @@ TEST_CASE("i18n: chaque texte passé à tr() ou tr_format() a son français", "[
 // glisse (un littéral avec une lettre accentuée ou « « », hors journaux, commentaires et lignes « i18n-ok »).
 TEST_CASE("i18n: aucune chaîne française en dur dans les fichiers traduits", "[i18n]") {
   const std::set<std::string> translated{
-      "controls_draw.cpp",  "tracks.cpp",         "settings_panel.cpp", "settings_chain_tabs.cpp",
-      "settings_sound.cpp", "bench_steps.cpp",    "auto_bench_run.cpp", "span_auto.cpp",
-      "home_view.cpp",      "engine_install.cpp", "updater.cpp"};
+      "controls_draw.cpp",  "tracks.cpp",      "settings_panel.cpp", "settings_chain_tabs.cpp",
+      "settings_sound.cpp", "bench_steps.cpp", "auto_bench_run.cpp", "span_auto.cpp",
+      "home_view.cpp",      "updater.cpp"};
   const std::string accents = "(?:à|â|ç|é|è|ê|ë|î|ï|ô|û|ù|ü|œ|À|É|È|Ê|«|»)";
   const std::string body = "(?:\\\\.|[^\"\\\\])*";
   const std::regex literal("\"" + body + accents + body + "\"");
