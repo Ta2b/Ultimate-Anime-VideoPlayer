@@ -226,7 +226,7 @@ void AutoRate::changed(AutoReason reason, std::int64_t now_us) {
   reason_ = reason;
   ++changes_;
   last_change_us_ = now_us;
-  hold_until_us_ = now_us + (fine() ? kFineHoldUs : kHoldUs);
+  hold_until_us_ = now_us + kHoldUs;
   clean_ = 0;
   late_at_.fill(kNever);
   miss_.fill({kNever, 0});
@@ -264,9 +264,8 @@ void AutoRate::descend(AutoReason reason, std::int64_t now_us, int steps) {
 }
 
 void AutoRate::try_rise(std::int64_t now_us) {
-  const std::int64_t min_gap = fine() ? kFineGapUs : kMinRiseGapUs;
-  if (step_ >= ceiling_ || pairs_ < kMinPairs || clean_ < (fine() ? kFineRisePairs : kRisePairs) ||
-      now_us < hold_until_us_ || now_us - last_change_us_ < min_gap || missed_in_window(now_us) > 0)
+  if (step_ >= ceiling_ || pairs_ < kMinPairs || clean_ < kRisePairs || now_us < hold_until_us_ ||
+      now_us - last_change_us_ < kMinRiseGapUs || missed_in_window(now_us) > 0)
     return;
   const int predicted = predicted_step(now_us);
   int target = step_;
@@ -278,25 +277,19 @@ void AutoRate::try_rise(std::int64_t now_us) {
       if (t >= 0.0 && t < 0.9 * static_cast<double>(period_us_)) target = hint_;
     }
   } else {  // aucune mesure de coût : comme avant, lentement, et plus lentement sous un plafond appris
-    // Au pas fin, sans mesure fraîche (la cadence est tombée à ×1 : aucune image créée, donc aucun coût
-    // relevé), on sonde vite : un cinquième du palier toutes les 6 paires propres, sans plafond appris.
-    const std::uint32_t needed =
-        fine() ? kFineRisePairs * 2 : (cap_strength(now_us) >= 0.25 ? kBlindRisePairs * 4 : kBlindRisePairs);
-    if (clean_ >= needed) target = step_ + (fine() ? std::max(2, step_ / 5) : 1);
+    const std::uint32_t needed = cap_strength(now_us) >= 0.25 ? kBlindRisePairs * 4 : kBlindRisePairs;
+    if (clean_ >= needed) target = step_ + 1;
   }
   int gain = target - step_;
   if (fine()) {
-    // Pas de bande morte : un pas de cadence (~1 i/s) suffit. La montée rejoint la cible par un lissage
-    // léger proportionnel au temps écoulé depuis le dernier changement ; jamais plus que l'écart.
-    const double seconds = static_cast<double>(now_us - last_change_us_) / 1e6;
-    const double alpha = std::clamp(seconds / kFineSmoothS, 0.1, 1.0);
-    gain = std::min(gain, std::max(1, static_cast<int>(std::lround(static_cast<double>(gain) * alpha))));
-    // Pas de saut brutal dans l'inconnu : la montée gagne au plus 40 % du palier par seconde (la prédiction
-    // vient de mesures de moins en moins fraîches quand la cadence a beaucoup baissé).
-    const double slope_seconds = std::min(seconds, 1.0);
-    gain = std::min(
-        gain,
-        std::max(1, static_cast<int>(std::lround(static_cast<double>(step_) * kFineSlope * slope_seconds))));
+    // Bande morte de 6 % ; en régime un changement toutes les 5 s au plus, de la moitié de l'écart (1 à 12 %
+    // du palier) ; loin sous le palier prédit (scène allégée) : les deux tiers de l'écart, jusqu'à 40 %, dès
+    // la seconde suivante.
+    if (gain < std::max(1, static_cast<int>(step_ * kDeadBand))) return;
+    const bool far = static_cast<double>(gain) >= kFarRatio * static_cast<double>(step_);
+    if (!far && now_us - last_change_us_ < kSteadyGapUs) return;
+    gain = far ? std::clamp(gain * 2 / 3, 1, std::max(1, step_ * 40 / 100))
+               : std::clamp((gain + 1) / 2, 1, std::max(1, step_ * 12 / 100));
   } else {
     gain = std::min(gain, 1);
   }
@@ -330,7 +323,7 @@ int AutoRate::pair(const PairOutcome& outcome) {
     if (cap_ > 0 && step_ > cap_) cap_ = 0;
   }
   // Le coût mesuré dépasse la période de la source : ce palier ne se tient pas, même sans retard encore.
-  if (period_us_ > 0 && step_ > granularity_ && (!fine() || now - last_change_us_ >= kFineGapUs)) {
+  if (period_us_ > 0 && step_ > granularity_ && (!fine() || now - last_change_us_ >= kMinRiseGapUs)) {
     const double t = model_us(step_, now) * penalty(step_, now);
     if (t > static_cast<double>(period_us_)) {
       const int predicted = predicted_step(now);

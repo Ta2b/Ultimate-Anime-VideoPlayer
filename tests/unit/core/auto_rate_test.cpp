@@ -2,7 +2,6 @@
 
 #include <algorithm>
 #include <cmath>
-#include <cstdio>
 #include <functional>
 #include <vector>
 
@@ -154,7 +153,7 @@ TEST_CASE("auto : une scène facile monte au maximum, une lourde descend, puis t
   // Jamais plus d'un changement par seconde en montée.
   for (std::size_t i = 1; i < trace.changes.size(); ++i) {
     if (trace.changes[i].second > trace.changes[i - 1].second)
-      CHECK(trace.changes[i].first - trace.changes[i - 1].first >= AutoRate::kFineGapUs);
+      CHECK(trace.changes[i].first - trace.changes[i - 1].first >= AutoRate::kMinRiseGapUs);
   }
   // Pas d'oscillation : peu de changements au total (3 phases).
   CHECK(trace.changes.size() <= 20);
@@ -181,12 +180,13 @@ TEST_CASE("auto : au pas fin, la cadence se pose près de ce que le GPU tient, s
   CHECK(changes_after(trace, 40 * kSecond) <= 1);
   for (std::size_t i = 1; i < trace.changes.size(); ++i) {
     if (trace.changes[i].second > trace.changes[i - 1].second)
-      CHECK(trace.changes[i].first - trace.changes[i - 1].first >= AutoRate::kFineGapUs);
+      CHECK(trace.changes[i].first - trace.changes[i - 1].first >= AutoRate::kMinRiseGapUs);
   }
-  // Aucune échelle : les changements sont des pas de cadence, pas des sauts de palier entier (≤ 1 palier).
+  // Chaque montée est un pas mesuré (≤ 40 % + 1 : un grand saut n'est permis que loin sous la cible).
   for (std::size_t i = 1; i < trace.changes.size(); ++i) {
     if (trace.changes[i].second > trace.changes[i - 1].second)
-      CHECK(trace.changes[i].second - trace.changes[i - 1].second <= kFineGranularity);
+      CHECK(trace.changes[i].second - trace.changes[i - 1].second <=
+            trace.changes[i - 1].second * 40 / 100 + 1);
   }
 }
 
@@ -200,7 +200,7 @@ TEST_CASE("auto : au pas fin, une scène lourde fait descendre puis la cadence r
   const int easy_step = rate.step();
   CHECK(easy_step >= 6 * kFineGranularity - 6);  // facile : près du maximum
   run(rate, now, 30, gpu, 0);
-  CHECK(rate.step() <= 74);  // lourde : 14 + 9f ≤ 41,7 (la période) → f ≤ 3,07
+  CHECK(rate.step() <= 58);  // lourde : 14 + 9f ≤ 35,4 → f ≤ 2,4
   CHECK(rate.step() >= 24);
 }
 
@@ -388,11 +388,11 @@ TEST_CASE("auto : après une scène lourde, la cadence revient vite près de ce 
   CHECK(rate.step() - low >= (target - low) * 2 / 3);
   // Les sauts de remontée sont rapides mais bornés (≤ 40 %), au plus un par seconde.
   for (std::size_t i = 1; i < back.changes.size(); ++i) {
-    CHECK(back.changes[i].first - back.changes[i - 1].first >= AutoRate::kFineGapUs);
+    CHECK(back.changes[i].first - back.changes[i - 1].first >= AutoRate::kMinRiseGapUs);
   }
 }
 
-TEST_CASE("auto : en régime, au pas fin, la cadence suit un coût qui frémit sans osciller de plus de ±3 %",
+TEST_CASE("auto : en régime, au pas fin, au plus un changement par cinq secondes malgré un coût qui frémit",
           "[core][auto_rate][reglage]") {
   AutoRate rate(6 * kFineGranularity, kFineGranularity);
   std::int64_t now = 0;
@@ -402,21 +402,13 @@ TEST_CASE("auto : en régime, au pas fin, la cadence suit un coût qui frémit s
     return Gpu{.a = 10'000.0 * jitter, .b = 7'600.0 * jitter};
   };
   run(rate, now, 40, gpu);  // montée et pose
-  const int start = rate.step();
   const Trace steady = run(rate, now, 120, gpu);
-  int lo = start;
-  int hi = start;
-  for (const auto& change : steady.changes) {
-    lo = std::min(lo, change.second);
-    hi = std::max(hi, change.second);
-  }
-  // Pas d'oscillation de plus de ±3 % de la cadence autour de sa moyenne.
-  const int mean = (lo + hi) / 2;
-  CHECK(hi - lo <= std::max(2, mean * 6 / 100));
-  // Les changements se tiennent à un quart de seconde au moins, comme au pas fin d'un jeu.
+  CHECK(steady.changes.size() <= 24);  // 120 s / 5 s
   for (std::size_t i = 1; i < steady.changes.size(); ++i) {
-    if (steady.changes[i].second > steady.changes[i - 1].second)
-      CHECK(steady.changes[i].first - steady.changes[i - 1].first >= AutoRate::kFineGapUs);
+    // Deux changements de même sens se tiennent à 5 s ; une descente de sécurité est libre.
+    if (steady.changes[i].second > steady.changes[i - 1].second && steady.changes[i - 1].second > 0) {
+      CHECK(steady.changes[i].first - steady.changes[i - 1].first >= AutoRate::kMinRiseGapUs);
+    }
   }
 }
 

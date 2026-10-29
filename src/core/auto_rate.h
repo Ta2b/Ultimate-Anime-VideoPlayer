@@ -123,16 +123,12 @@ class AutoRate {
   static constexpr std::int64_t kHalfLifeUs = 6'000'000;  // poids, plafond et pénalités s'estompent
   static constexpr std::int64_t kProbeUs = 2'000'000;     // un palier tenté est « tenu » après ce temps
   static constexpr int kMaxImages = kAutoMaxStep + 1;
-  static constexpr double kDeadBand = 0.02;  // au pas fin : pas de montée sous 2 % d'écart
-  // Au pas fin (VRR armé), comme un jeu : aucune échelle, la cadence suit le coût prédit en continu. Un
-  // changement dès 0,1 s ; la montée rejoint la cible par un lissage léger (constante de 0,25 s : pas de saut
-  // brutal, juste de quoi ne pas suivre le bruit d'une image) ; la descente est immédiate.
-  static constexpr std::int64_t kFineGapUs = 100'000;
-  static constexpr std::int64_t kFineHoldUs = 150'000;  // mesures ignorées après un changement, au pas fin
-  static constexpr std::uint32_t kFineRisePairs = 3;    // paires propres avant de monter, au pas fin
-  static constexpr double kFineSmoothS = 0.25;          // constante de temps du lissage de la montée
-  static constexpr double kFineSlope = 0.40;  // part du palier gagnée par seconde au plus, en montée
-  static constexpr double kFarRatio = 0.5;    // l'écart au palier prédit qui compte pour « loin »
+  static constexpr double kDeadBand = 0.06;  // au pas fin : pas de montée sous 6 % d'écart
+  // Au pas fin, en régime (écart modeste au palier prédit) un changement toutes les 5 s au plus : le temps de
+  // trame d'un écran VRR OLED reste constant entre deux changements. Loin sous le palier prédit (scène
+  // allégée), la remontée est rapide : un saut jusqu'à 40 % du palier, une seconde d'écart.
+  static constexpr std::int64_t kSteadyGapUs = 5'000'000;
+  static constexpr double kFarRatio = 0.5;  // l'écart au palier prédit qui compte pour « loin »
 
   // `ceiling` : le palier le plus haut permis (granularity à kAutoMaxStep × granularity). Le départ est ×2
   // (ou le plafond). Les paliers se comptent en 1 / granularity (1 ou 2, voir auto_ceiling).
