@@ -23,16 +23,16 @@ constexpr std::string_view name(PrecisionTier tier) {  // la clé de play.toml
   return "balanced";
 }
 
-constexpr std::string_view label(PrecisionTier tier) {  // pour le menu
+constexpr std::string_view label(PrecisionTier tier) {  // clé de traduction du menu (i18n::tr)
   switch (tier) {
     case PrecisionTier::Performance:
       return "Performance";
     case PrecisionTier::Balanced:
-      return "Équilibre";
+      return "Balance";
     case PrecisionTier::Quality:
-      return "Qualité";
+      return "Quality";
   }
-  return "Équilibre";
+  return "Balance";
 }
 
 // La précision de calcul du cran : « FP8 », « FP16 », « FP32 ».

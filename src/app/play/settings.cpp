@@ -560,7 +560,7 @@ Change change_between(const PlaySettings& running, const PlaySettings& wanted, b
       running.motion_engine == wanted.motion_engine && running.gmfss_precision != wanted.gmfss_precision) {
     reopen.emplace_back(
         i18n::tr_format("GMFSS switches to {} (GMFlow in {}, built the first time for this size)",
-                        label(wanted.gmfss_precision), precision_text(wanted.gmfss_precision)));
+                        i18n::tr(label(wanted.gmfss_precision).data()), precision_text(wanted.gmfss_precision)));
   }
   if (!reopen.empty()) {
     std::string reason;
