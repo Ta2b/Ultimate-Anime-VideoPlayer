@@ -41,7 +41,9 @@ n'est ajoutée : ce sont des textes, des largeurs, un regroupement de pages et d
 | 15 | Textes trop techniques ou chiffrés : « 11 ms par image sur une RTX 4070 Ti », chemins de scripts d'export, « même gain sur R, V et B », « maximum local 8x8 », note de la page Réinitialiser qui cite `user.toml` | Fluidité, HDR, Réinitialiser | raccourcis |
 | 16 | Infobulle de précision de SPAN affichée aussi sur le modèle quand la liste des précisions est absente | Agrandissement | corrigé |
 | 17 | Temps de la barre (position / durée · chapitre) pouvant passer sous les boutons de droite avec un titre de chapitre long | barre de lecture | corrigé : le titre est coupé par « … » avant les boutons |
-| 18 | Les deux modes d'Auto s'appelaient « Auto (recommandé) » et « Auto libre (expérimental) » | Fluidité, OSD, journaux, docs | renommés : **Stable** et **Rapide (expérimental)** ; clé `play.toml` inchangée |
+| 18 | Écran des moteurs rouvert depuis les paramètres : titre « Bienvenue » et pied de page qui parle du bouton « Commencer » alors que le bouton s'appelle « Continuer la lecture » | écran des moteurs | corrigé |
+| 19 | Séparateur décimal : « VRAM 4.5 / 12.0 Go » et « pression ×1.05 » dans l'OSD avec un point, le reste de l'OSD avec une virgule | OSD | corrigé |
+| 20 | Les deux modes d'Auto s'appelaient « Auto (recommandé) » et « Auto libre (expérimental) » | Fluidité, OSD, journaux, docs | renommés : **Stable** et **Rapide (expérimental)** ; clé `play.toml` inchangée |
 
 ## 3. Structure
 
@@ -185,19 +187,19 @@ Page d'un autre chantier (benchmark simple) : non modifiée, non auditée ici.
 | Contrôle | Effet attendu | Vérifié |
 |---|---|---|
 | Un moteur par case (si deux ou plus installés), Utiliser ce moteur, Annuler | rouvre la lecture avec ce moteur | oui (code, `engine_switch_test`) |
-| Installer d'autres moteurs… | ouvre l'écran des moteurs sans relancer | oui (script, voir § 5) |
+| Installer d'autres moteurs… | ouvre l'écran des moteurs sans relancer (journal : « moteurs : écran des moteurs rouvert ») | oui (script) |
 | Dossier, Par défaut | `settings.engines_dir` ; vaut au prochain lancement | oui (code) |
 
 ### Barre de lecture
 
 | Contrôle | Effet attendu | Vérifié |
 |---|---|---|
-| Chapitre précédent / suivant (Page bas / haut) | saute au chapitre | oui (script) |
-| Lecture / Pause | bascule (espace) | oui (script) |
-| Muet, curseur de volume | `ToggleMute`, volume | oui (script) |
-| Barre de progression | saut ; bulle du temps et du chapitre | oui (script) |
-| Sous-titres, Piste audio | menus des pistes ; « Désactivés » | oui (script, voir § 5) |
-| Paramètres | ouvre le panneau | oui (script) |
+| Chapitre précédent / suivant (Page bas / haut) | saute au chapitre | oui (script, position vérifiée à l'écran) |
+| Lecture / Pause | bascule (espace) ; journal « action : pause » puis « action : lecture » | oui (script) |
+| Muet, curseur de volume | `ToggleMute`, volume ; l'icône et le curseur suivent | oui (script, vérifié à l'écran) |
+| Barre de progression | saut ; bulle du temps et du chapitre ; journal « action : seek 00:11:50 » | oui (script) |
+| Sous-titres, Piste audio | menus des pistes ; « Désactivés » ; la piste choisie est surlignée | oui (script : les deux menus s'ouvrent) |
+| Paramètres | ouvre puis ferme le panneau | oui (script) |
 | Plein écran | bascule (f) | oui (code, `controls_test`) |
 
 ## 5. Tailles et échelles
@@ -218,5 +220,6 @@ Voir les captures « après ». Résumé des constats :
   modifié.
 - Beaucoup de commentaires du code parlent encore d'« onglets » (`settings_sound.h`, `engine_screen.h`…) : sans effet
   à l'écran, à reprendre dans un nettoyage de commentaires.
-- `--seconds` ne termine pas une exécution tant que la lecture est en pause : les scripts de capture doivent borner
-  l'exécution (`timeout`).
+- `--seconds` ne termine pas une exécution qui attend l'utilisateur (`--first-run`, écran des moteurs rouvert) : les
+  scripts de capture bornent l'exécution par `timeout`. Une exécution de test avec des clics sur la barre n'a pas
+  rendu la main une fois (cause non trouvée, non reproduite en la relançant avec les mêmes touches) : à surveiller.
