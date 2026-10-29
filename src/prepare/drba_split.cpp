@@ -101,13 +101,13 @@ DrbaExpectedWiring drba_expected_wiring(int tail) {
   DrbaExpectedWiring wiring;
   const double t = static_cast<double>(tail);
   const auto node = [&](std::string name, std::string op, std::vector<std::string> inputs) {
-    DrbaExpectedNode n{.name = name, .op = std::move(op), .inputs = std::move(inputs)};
+    DrbaExpectedNode n{.name = std::move(name), .op = std::move(op), .inputs = std::move(inputs)};
     wiring.nodes.push_back(std::move(n));
   };
   const auto constant = [&](std::string name, std::size_t input, std::vector<double> values) {
     wiring.constants.push_back({.node = std::move(name), .input = input, .values = std::move(values)});
   };
-  const auto slice = [&](std::string name, std::string data, double begin, double end) {
+  const auto slice = [&](const std::string& name, std::string data, double begin, double end) {
     node(name, "Slice", {std::move(data)});
     constant(name, 1, {begin});
     constant(name, 2, {end});
