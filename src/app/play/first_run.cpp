@@ -670,9 +670,12 @@ void draw_first_run(FirstRunView& view, float scale) {
     draw_wizard(view, scale);
     return;
   }
-  static constexpr const char* kFooter =
-      "Vulkan sert tous les GPU ; les moteurs cochés à télécharger s'installent après « Commencer », "
-      "vérifiés par leur empreinte, et Vulkan prend le relais de celui qui échoue.";
+  // Le bouton qui lance les téléchargements porte le nom du bouton de cet écran.
+  const std::string footer_text = std::format(
+      "Vulkan sert tous les GPU ; les moteurs cochés à télécharger s'installent après « {} », vérifiés par "
+      "leur empreinte, et Vulkan prend le relais de celui qui échoue.",
+      view.revisit ? "Continuer la lecture" : "Commencer");
+  const char* const kFooter = footer_text.c_str();
   const ImGuiIO& io = ImGui::GetIO();
   const float pad = 24.0F * scale;
   const ImVec2 size{std::min(1080.0F * scale, io.DisplaySize.x - 2.0F * pad),
@@ -681,7 +684,7 @@ void draw_first_run(FirstRunView& view, float scale) {
   ImGui::SetNextWindowSize(size, ImGuiCond_Always);
   constexpr ImGuiWindowFlags kFlags = ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoMove |
                                       ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoSavedSettings;
-  if (ImGui::Begin("Bienvenue", nullptr, kFlags)) {
+  if (ImGui::Begin(view.revisit ? "Moteurs" : "Bienvenue", nullptr, kFlags)) {
     ImGui::TextUnformatted(view.gpu.c_str());
     note(view.revisit
              ? "Les moteurs cochés à télécharger s'installent, puis la lecture reprend au même endroit."
