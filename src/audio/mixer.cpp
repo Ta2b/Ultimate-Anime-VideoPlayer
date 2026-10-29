@@ -338,6 +338,9 @@ Mixer::Mixer(MixConfig config) : config_(std::move(config)) {
   if (config_.sink_channels == 2) {
     auto post = std::make_shared<MixPost>(tune, config_.sample_rate);
     if (post->needed()) post_ = std::move(post);
+    if (config_.anime.enabled && config_.listen != Listen::Cinema)
+      anime_ = std::make_unique<AnimeSound>(config_.anime, config_.sample_rate,
+                                            config_.listen == Listen::Headphones);
   }
   if (config_.hrir && !config_.hrir->empty() && config_.sink_channels == 2)
     hrir_ = std::make_shared<const Hrir>(prepared(*config_.hrir, config_.sample_rate));
@@ -351,6 +354,10 @@ Mixer::Mixer(MixConfig config) : config_(std::move(config)) {
   }
 }
 
+Mixer::Mixer(Mixer&&) noexcept = default;
+Mixer& Mixer::operator=(Mixer&&) noexcept = default;
+Mixer::~Mixer() = default;
+
 int Mixer::decoder_channels(int source_channels) const {
   const bool processed = !config_.faithful && config_.listen != Listen::Cinema &&
                          config_.sink_channels == 2 && (source_channels == 6 || source_channels == 8);
@@ -362,6 +369,7 @@ void Mixer::reset() {
     for (MixPath& path : pair) path.ear = MixEar{};
   for (MixPath& path : feed_) path.ear = MixEar{};
   if (post_) post_->reset();
+  if (anime_) anime_->reset();
   if (convolver_) convolver_->reset();
 }
 
@@ -472,8 +480,13 @@ void Mixer::crossfeed(PcmBlock& block) {
 
 PcmBlock Mixer::process(PcmBlock block) {
   if (config_.faithful || config_.sink_channels != 2) return block;
-  PcmBlock out = process_core(std::move(block));
+  // « Son anime » : une source stéréo vers une sortie stéréo. Spatialisation et voix avant le rendu (le
+  // casque passe par six enceintes virtuelles), égaliseur et pièce du profil après, puis graves, sonie,
+  // compresseur et limiteur vrai-crête en dernier.
+  const bool anime = anime_ && source_channels_ == 2 && block.channels == 2;
+  PcmBlock out = anime ? process_core(anime_->stage(std::move(block))) : process_core(std::move(block));
   if (post_ && out.channels == 2 && config_.listen != Listen::Cinema) post_->process(out);
+  if (anime && out.channels == 2) anime_->finish(out);
   return out;
 }
 

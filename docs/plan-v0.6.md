@@ -100,3 +100,5 @@ que sur un accord clair de Tatoub dans le fil. Détail des décisions et journal
 
 **Bilan.** Aucune variante FP8 sous TensorRT 11.3 ne bat le FP16 sur SPAN (meilleure : ModelOpt, +6 %) ; RIFE gagne −6 % seulement. « Performance FP8 » reste désactivé par défaut pour SPAN tant qu'aucun gain n'est mesuré. Reste ouvert : prototype CUTLASS (convolution maison à épilogue fusionné, hors TensorRT), GMFSS/DistilDRBA FP8, E/S NHWC.
 
+
+- Son anime (audio) : module dédié aux pistes stéréo sur sortie stéréo (spatialisation milieu/côtés, voix, graves harmoniques, sonie BS.1770, compresseur, limiteur vrai-crête), niveaux Naturel / Anime / Anime fort, par appareil, bouton Comparer ; mesures et limites dans `docs/audio-anime.md`, rendu à valider à l'oreille par Tatoub.
