@@ -30,7 +30,11 @@ using gpu::span_fp8::Package;
 
 // Un dossier « modeles » et un faux SPAN dedans (le reçu s'attache au SHA-256 du fichier).
 struct Folder {
-  Folder() : root(fs::temp_directory_path() / "ajp-span-derive-test") {
+  // Un dossier par essai : ctest lance les cas en parallèle, un nom fixe ferait se marcher dessus.
+  Folder()
+      : root(fs::temp_directory_path() /
+             std::format("ajp-span-derive-test-{}",
+                         std::chrono::steady_clock::now().time_since_epoch().count())) {
     fs::remove_all(root);
     fs::create_directories(models());
     model = root / "2x_AnimeJaNai_HD_V3.1_Balanced_SPANF3_b8f64_unshuffle_fp16.onnx";
