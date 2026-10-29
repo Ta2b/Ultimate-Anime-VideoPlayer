@@ -37,6 +37,7 @@
 #include "app/play/model_choice.h"
 #include "app/play/profiles.h"
 #include "app/play/scripted_input.h"
+#include "app/play/span_auto.h"
 #include "app/play/span_int8.h"
 #include "audio/devices.h"
 #include "core/clock.h"
@@ -129,6 +130,15 @@ SettingsChoices home_choices(const HomeScreen& h, const HomeState& st, const Pla
   // Sans moteur chargé, le FP8 se présume sur une RTX (le moteur TensorRT le calcule dès Ada) ; la chaîne
   // retombe sur l'Équilibre au chargement si la carte ne le calcule pas.
   const bool fp8_engine = gpu_facts(h.screen).vendor == GpuVendor::Nvidia && gpu_facts(h.screen).tensor_cores;
+  // Le mode Performance de SPAN (noyaux CUTLASS) : une RTX 40 (Ada, 8.9, portable compris : le nom de la
+  // carte le dit, « RTX 4050 Laptop GPU » comme « RTX 4070 Ti ») et le module TensorRT ; le moteur le
+  // confirme à l'ouverture d'une vidéo.
+  const SpanFp8Facts fp8_facts{.backend_name = tensorrt_backend_present(h.paths) ? "tensorrt" : "vulkan",
+                               .gpu_name = gpu_facts(h.screen).name,
+                               .tensorrt_present = tensorrt_backend_present(h.paths),
+                               .capability = gpu_facts(h.screen).vendor == GpuVendor::Nvidia &&
+                                             cuda_arch_from_name(gpu_facts(h.screen).name) == "sm89" &&
+                                             tensorrt_backend_present(h.paths)};
   const std::int64_t period = display_period_us(h.screen.window());
   const std::optional<DisplayFacts> display = read_display(display_name(h.screen.window()));
   // Général > Configuration sans vidéo ouverte : la carte, sa tranche (mesurée ou estimée), l'écran, les
@@ -138,7 +148,7 @@ SettingsChoices home_choices(const HomeScreen& h, const HomeState& st, const Pla
   const GpuFacts machine = gpu_facts(h.screen);
   const std::string bench_text =
       measured && measured->gpu == machine.name && measured->driver == machine.driver
-          ? std::format("Dernière évaluation : {}, niveau {}", measured->date, tier_label(measured->level))
+          ? std::format("Dernière optimisation : {}", measured->date)
           : std::string();
   std::vector<SettingsChoices::AudioOut> audio_outputs;
   for (const audio::AudioDevice& device : audio::playback_devices())
@@ -159,9 +169,10 @@ SettingsChoices home_choices(const HomeScreen& h, const HomeState& st, const Pla
       .gmfss_union_available = gmfss && find_gmfss(places, GmfssVariant::Union).has_value(),
       .gmfss_tiers = gmfss ? gmfss_tiers(places, GmfssVariant::Base, fp8_engine) : TierSupport{},
       .gmfss_union_tiers = gmfss ? gmfss_tiers(places, GmfssVariant::Union, fp8_engine) : TierSupport{},
-      .span_tiers = model ? span_tiers(model->path, h.paths.engines.parent_path() / "modeles", fp8_engine,
-                                       fp8_engine)  // les noyaux CUTLASS se présument comme le FP8
-                          : TierSupport{},
+      .span_tiers = model
+                        ? span_tiers(model->path, h.paths.engines.parent_path() / "modeles", fp8_engine,
+                                     fp8_facts.capability)  // les noyaux CUTLASS se présument sur une RTX 40
+                        : TierSupport{},
       .rife_tiers = rife ? sibling_tiers(rife->path, fp8_engine) : TierSupport{},
       .drba_tiers = drba_file ? sibling_tiers(drba_file->path, fp8_engine) : TierSupport{},
       .distil_drba_available = drba,
@@ -190,7 +201,9 @@ SettingsChoices home_choices(const HomeScreen& h, const HomeState& st, const Pla
       .default_player_is_ajp = default_player_is_ajp,
       .bench_text = bench_text,
       .place = {.executable = h.paths.executable, .home = h.paths.home, .data = h.paths.data},
-      .span_prepare = {.note = "Ouvrez une vidéo : le lecteur y tire les images de la préparation."}};
+      .span_prepare = {.note = "Ouvrez une vidéo : le lecteur prépare le mode Performance sur ses images."},
+      .fp8_reason = span_fp8_unavailable_reason(fp8_facts),
+      .settings_dir = h.settings_path.parent_path()};
 }
 
 // Les réglages que la lecture prendra : play.toml, la chaîne du profil actif pour la source type,

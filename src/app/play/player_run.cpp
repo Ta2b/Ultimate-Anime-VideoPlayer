@@ -44,6 +44,7 @@
 #include "app/play/resume.h"
 #include "app/play/scripted_input.h"
 #include "app/play/session.h"
+#include "app/play/span_auto.h"
 #include "app/play/span_derive.h"
 #include "app/play/span_int8.h"
 #include "app/play/ui.h"
@@ -234,7 +235,7 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
   const Tier machine_tier = effective_tier(machine, measured);
   const std::string bench_text =
       measured && measured->gpu == machine.name && measured->driver == machine.driver
-          ? std::format("Dernière évaluation : {}, niveau {}", measured->date, tier_label(measured->level))
+          ? std::format("Dernière optimisation : {}", measured->date)
           : std::string();
   std::vector<SettingsChoices::AudioOut> audio_outputs;
   for (const audio::AudioDevice& device : audio::playback_devices())
@@ -243,6 +244,20 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
   const bool default_player_is_ajp =
       is_default_player({.executable = p.paths.executable, .home = p.paths.home, .data = p.paths.data});
   const bool fp8_engine = c.backend && c.backend->capabilities().fp8;
+  // Le mode Performance de SPAN : ce que le moteur annonce, et sinon pourquoi (moteur absent ou autre carte).
+  const SpanFp8Facts fp8_facts{.backend_name = c.backend_name,
+                               .gpu_name = gpu_facts(p.screen).name,
+                               .tensorrt_present = tensorrt_backend_present(p.paths),
+                               .capability = c.backend && c.backend->capabilities().span_fp8_cutlass};
+  const std::string fp8_reason = span_fp8_unavailable_reason(fp8_facts);
+  const SpanPrepare span_prepare =
+      c.model ? make_span_prepare(
+                    p.library,
+                    gpu::BackendInit{
+                        .render = &p.screen.device(), .cache_dir = p.paths.engines, .log = backend_log()},
+                    fp8_facts.capability, c.model->path, p.paths.engines.parent_path() / "modeles",
+                    p.options.file, fp8_reason)
+              : SpanPrepare{};
   const std::optional<DrbaModel> drba_file = find_distil_drba(c.gmfss_places);
   p.ui.set_tracks((*pipeline)->tracks());
   p.ui.set_settings(
@@ -311,15 +326,10 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
           .offer_default_player = !default_player_is_ajp && !settings.default_player_dismissed,
           .bench_text = bench_text,
           .place = {.executable = p.paths.executable, .home = p.paths.home, .data = p.paths.data},
-          .span_prepare =
-              c.model
-                  ? make_span_prepare(p.library,
-                                      gpu::BackendInit{.render = &p.screen.device(),
-                                                       .cache_dir = p.paths.engines,
-                                                       .log = backend_log()},
-                                      c.backend && c.backend->capabilities().span_fp8_cutlass, c.model->path,
-                                      p.paths.engines.parent_path() / "modeles", p.options.file)
-                  : SpanPrepare{}});
+          .span_prepare = span_prepare,
+          .fp8_reason = fp8_reason,
+          .span_job = p.span_job.note,
+          .settings_dir = p.settings_path.parent_path()});
   p.profiles.source =
       core::SourceInfo{.width = video.width, .height = video.height, .fps = fps_of(video.frame_rate)};
   if (c.model) p.profiles.default_model = c.model->default_name;
@@ -519,6 +529,15 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
     // L'écran de la fenêtre peut changer (déplacement, mode d'affichage) : on relit sa cadence.
     if (host_now_us() - display_polled_at >= 500'000) {
       display_polled_at = host_now_us();
+      // Le mode Performance de SPAN se prépare tout seul au cran Performance (span_auto.h) : la lecture reste
+      // en FP16 pendant ce temps, puis la chaîne se rouvre pour prendre le paquet.
+      if (!p.options.file.empty() && c.model) {
+        const SpanAutoTick span =
+            tick_span_auto(chain.running.span_precision, span_prepare, p.span_job,
+                           prepare::utf8_path(c.model->path) + "|" + prepare::utf8_path(p.options.file));
+        if (span.notify) p.ui.controls().notify(*span.notify, host_now_us());
+        if (span.reopen) chain.reopen = chain.running;
+      }
       session.set_display(display_period_us(out.window()), display_refresh_hz(out.window()));
       apply_auto();
       // Le mode auto écoute les images manquées à l'écran (sans paire en retard, le GPU peut ne pas suivre)

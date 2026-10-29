@@ -9,7 +9,9 @@
 
 #include "app/play/auto_bench.h"
 #include "app/play/auto_bench_run.h"
+#include "app/play/auto_config.h"
 #include "app/play/panel_style.h"
+#include "app/play/span_auto.h"
 #include "app/play/updater.h"
 
 namespace ajp::app::play {
@@ -35,7 +37,7 @@ void default_player_page(const PlayerPlace& place, SystemNote& last, bool& dismi
   }
   const bool busy = last.pending != nullptr;
   const auto start = [&](std::expected<std::string, Refusal> (*action)(const PlayerPlace&)) {
-    last.pending = std::make_shared<std::future<std::expected<std::string, Refusal> > >(
+    last.pending = std::make_shared<std::future<std::expected<std::string, Refusal>>>(
         std::async(std::launch::async, action, place));
     last.text.clear();
     last.refused = false;
@@ -94,7 +96,7 @@ bool default_player_prompt(const PlayerPlace& place, SystemNote& last, bool& dis
     const bool done = !last.text.empty() && !last.refused;
     ImGui::BeginDisabled(busy || done);
     if (ImGui::Button("Définir AJP comme lecteur par défaut")) {
-      last.pending = std::make_shared<std::future<std::expected<std::string, Refusal> > >(
+      last.pending = std::make_shared<std::future<std::expected<std::string, Refusal>>>(
           std::async(std::launch::async, &choose_as_default, place));
       last.text.clear();
       last.refused = false;
@@ -188,7 +190,7 @@ void updates_page(PlaySettings& d, const PlayerPlace& place, UpdateNote& result)
   const bool busy = result.pending != nullptr;
   ImGui::BeginDisabled(busy);
   if (ImGui::Button("Vérifier maintenant")) {
-    result.pending = std::make_shared<std::future<std::expected<std::string, Refusal> > >(std::async(
+    result.pending = std::make_shared<std::future<std::expected<std::string, Refusal>>>(std::async(
         std::launch::async,
         [paths, state_file, mode = d.update_mode,
          channel = d.update_channel] -> std::expected<std::string, Refusal> {
@@ -204,7 +206,7 @@ void updates_page(PlaySettings& d, const PlayerPlace& place, UpdateNote& result)
   ImGui::SameLine();
   ImGui::BeginDisabled(state.previous_version.empty());
   if (ImGui::Button("Revenir à la version précédente")) {
-    result.pending = std::make_shared<std::future<std::expected<std::string, Refusal> > >(
+    result.pending = std::make_shared<std::future<std::expected<std::string, Refusal>>>(
         std::async(std::launch::async, [paths, state_file] -> std::expected<std::string, Refusal> {
           UpdateState current = load_update_state(state_file);
           auto message = roll_back_update(paths, current);
@@ -236,7 +238,7 @@ bool start_span_prepare(const SpanPrepare& prepare, PrepareNote& state) {
   auto stop = std::make_shared<std::stop_source>();
   state.progress = progress;
   state.stop = stop;
-  state.pending = std::make_shared<std::future<std::expected<std::string, Refusal> > >(std::async(
+  state.pending = std::make_shared<std::future<std::expected<std::string, Refusal>>>(std::async(
       std::launch::async, [run = prepare.run, progress, stop] -> std::expected<std::string, Refusal> {
         try {
           return run(*progress, stop->get_token());
@@ -246,42 +248,28 @@ bool start_span_prepare(const SpanPrepare& prepare, PrepareNote& state) {
       }));
   state.text.clear();
   state.refused = false;
+  state.completed = false;
   return true;
 }
 
-void span_prepare_section(PlaySettings& d, const SpanPrepare& prepare, PrepareNote& state) {
+void span_prepare_section(const SpanPrepare& prepare, PrepareNote& state) {
   section("Mode Performance de SPAN (FP8)");
   ImGui::TextWrapped(
-      "Prépare le calcul de SPAN en FP8 par noyaux CUTLASS, que le cran « Performance » de la précision de "
-      "SPAN "
-      "sert à la place de TensorRT FP16. Le lecteur tire douze images de la vidéo ouverte, calibre sur huit, "
-      "vérifie sur quatre mises de côté (PSNR et SSIM contre le SPAN en FP16), puis écrit un paquet dans le "
-      "dossier des modèles. Aucune image n'est gardée. Une minute environ, en tâche de fond ; la lecture "
-      "reste "
-      "sur TensorRT FP16 tant que le résultat n'est pas bon.");
-  if (state.pending && state.pending->wait_for(std::chrono::seconds(0)) == std::future_status::ready) {
-    const std::expected<std::string, Refusal> done = state.pending->get();
-    state.pending.reset();
-    state.progress.reset();
-    state.stop.reset();
-    state.text = done ? *done : done.error().detail;
-    state.refused = !done;
-  }
+      "Quand le cran « Performance » de la précision de SPAN est choisi, le lecteur prépare tout seul ce "
+      "mode pour "
+      "la vidéo ouverte (une minute environ, la lecture reste en FP16 pendant ce temps). Cette page sert à "
+      "le refaire à la main.");
+  poll_prepare(state);
   const bool busy = state.pending != nullptr;
-  if (!prepare.offered) {
-    note(prepare.note);
-    ImGui::BeginDisabled(true);
-    ImGui::Button("Préparer le mode Performance (SPAN FP8)");
-    ImGui::EndDisabled();
-  } else {
+  note(prepare.note);
+  if (prepare.offered) {
     ImGui::BeginDisabled(busy);
-    if (ImGui::Button("Préparer le mode Performance (SPAN FP8)")) start_span_prepare(prepare, state);
+    if (ImGui::Button("Refaire la préparation sur cette vidéo")) start_span_prepare(prepare, state);
     ImGui::EndDisabled();
     if (busy) {
       ImGui::SameLine();
       if (ImGui::Button("Annuler##span_prepare") && state.stop) state.stop->request_stop();
     }
-    note(prepare.note);
   }
   if (busy && state.progress) {
     const auto [fraction, stage] = state.progress->get();
@@ -293,77 +281,183 @@ void span_prepare_section(PlaySettings& d, const SpanPrepare& prepare, PrepareNo
   } else if (!state.text.empty()) {
     note(state.text);
   }
-  ImGui::BeginDisabled(!prepare.offered);
-  ImGui::Checkbox("Préparer en tâche de fond", &d.span_prepare_background);
-  ImGui::EndDisabled();
-  panel::tip(
-      "Après « Évaluer ma machine », sur une vidéo ouverte, quand le niveau gardé est Rapide ou plus, "
-      "prépare le "
-      "mode Performance sans rien demander. Désactivé par défaut : la préparation prend la mémoire vidéo et "
-      "une "
-      "partie du GPU pendant la lecture.");
 }
 
-bool prepare_after_bench(const PlaySettings& d, const SpanPrepare& prepare, const std::filesystem::path& data,
-                         PrepareNote& state) {
-  if (!d.span_prepare_background || !prepare.offered || prepare.ready || state.pending) return false;
-  const auto kept = load_bench(data / "bench.toml");
-  if (!kept || kept->level < Tier::Fast) return false;
-  return start_span_prepare(prepare, state);
+struct BenchDone {
+  BenchResult result;
+  std::string sentence;  // « Votre PC tient : … » (bench_steps.h : result_sentence)
+};
+
+struct BenchState {
+  std::shared_ptr<std::future<std::expected<BenchDone, Refusal>>> pending;
+  std::shared_ptr<BenchProgress> progress = std::make_shared<BenchProgress>();
+  std::shared_ptr<SpanDeriveProgress> span_progress = std::make_shared<SpanDeriveProgress>();
+  std::shared_ptr<std::stop_source> stop = std::make_shared<std::stop_source>();
+  BenchUndo undo;  // valable après une optimisation réussie : « Annuler ces réglages »
+  std::optional<BenchResult> result;
+};
+
+BenchNote::BenchNote() = default;
+BenchNote::~BenchNote() {
+  stop();
+}
+void BenchNote::stop() {
+  if (state && state->stop) state->stop->request_stop();
 }
 
-bool bench_page(const PlayerPlace& place, const std::filesystem::path& video, BenchNote& bench) {
+bool bench_running(const BenchNote& bench) {
+  return bench.state && bench.state->pending != nullptr;
+}
+
+namespace {
+
+ChainContext chain_of(const BenchContext& context) {
+  return ChainContext{.display_height = context.display_height,
+                      .display_hz = context.display_hz,
+                      .source_height = context.source_height,
+                      .source_fps = context.source_fps};
+}
+
+// L'étape 4 : le mode Performance de SPAN. Rien à faire quand la carte ou le moteur ne le permettent pas (une
+// phrase le dit), quand il est déjà prêt, ou quand aucune vidéo n'est ouverte ; sinon le lecteur le prépare
+// sur la vidéo, ce qui prend une minute environ.
+std::expected<SpanFp8Verdict, Refusal> span_step(const BenchContext& context, Tier level,
+                                                 BenchProgress& shown, SpanDeriveProgress& span_progress,
+                                                 const std::stop_token& stop) {
+  using State = SpanFp8Verdict::State;
+  if (!context.fp8_reason.empty()) return SpanFp8Verdict{State::Unavailable, context.fp8_reason};
+  if (context.span.ready) return SpanFp8Verdict{State::Ready, {}};
+  if (level < Tier::Light || !context.span.offered || !context.span.run || context.span.refused)
+    return SpanFp8Verdict{};
+  shown.set(BenchStep::Span, "préparation du mode Performance de SPAN (FP8)", 0.0F);
+  auto done = context.span.run(span_progress, stop);
+  if (done) return SpanFp8Verdict{State::Ready, {}};
+  if (done.error().code == RefusalCode::Cancelled) return std::unexpected(std::move(done.error()));
+  return SpanFp8Verdict{State::Unavailable, done.error().detail};
+}
+
+}  // namespace
+
+BenchEvent bench_page(const PlayerPlace& place, const std::filesystem::path& video,
+                      const BenchContext& context, BenchNote& bench, PlaySettings& draft) {
 #ifdef __APPLE__
   static_cast<void>(place);
   static_cast<void>(video);
+  static_cast<void>(context);
   static_cast<void>(bench);
-  return false;
+  static_cast<void>(draft);
+  return BenchEvent::None;
 #else
-  section("Évaluer ma machine");
+  BenchEvent event = BenchEvent::None;
+  if (!bench.state) bench.state = std::make_shared<BenchState>();
+  BenchState& state = *bench.state;
+  section("Optimiser pour ma machine");
   ImGui::TextWrapped(
-      "Joue 12 secondes d'une séquence de test (la vôtre si une vidéo est ouverte) avec chaque niveau de "
-      "chaîne, "
-      "sans rien afficher ni émettre de son, et garde le plus haut qui tient "
-      "pour votre carte et votre pilote. Un PC chaud ou occupé donne un résultat plus bas : relancez-le au "
-      "besoin.");
-  bench.finished = false;
-  if (bench.pending && bench.pending->wait_for(std::chrono::seconds(0)) == std::future_status::ready) {
-    const std::expected<std::string, Refusal> done = bench.pending->get();
-    bench = done ? BenchNote{.text = *done, .finished = true}
-                 : BenchNote{.text = done.error().detail, .refused = true};
+      "Le lecteur essaie quelques secondes de vidéo avec ses réglages recommandés, du plus léger au plus "
+      "lourd, "
+      "garde ceux que votre PC tient sans saccade, et les applique. Cela dure environ une minute (plusieurs "
+      "minutes la toute première fois, le temps de préparer les moteurs).");
+  // Le résultat arrive : les réglages recommandés sont posés dans le brouillon, une fois.
+  if (state.pending && state.pending->wait_for(std::chrono::seconds(0)) == std::future_status::ready) {
+    std::expected<BenchDone, Refusal> done = state.pending->get();
+    state.pending.reset();
+    if (done) {
+      bench.text = done->sentence;
+      bench.refused = false;
+      state.result = done->result;
+      PlaySettings next = draft;
+      next.preset = Preset::Auto;
+      draft = apply_preset(next,
+                           Machine{.tier = done->result.level,
+                                   .display_height = context.display_height,
+                                   .display_hz = context.display_hz,
+                                   .explored_work_height = done->result.work_height,
+                                   .explored_rife_model = done->result.rife_model},
+                           core::SourceInfo{.width = context.source_height * 16 / 9,
+                                            .height = context.source_height,
+                                            .fps = context.source_fps});
+      event = BenchEvent::Applied;
+    } else if (done.error().code == RefusalCode::Cancelled) {
+      bench.text = "Optimisation annulée : rien n'a changé.";
+      bench.refused = false;
+      state.undo = BenchUndo{};
+    } else {
+      bench.text = done.error().detail;
+      bench.refused = true;
+      state.undo = BenchUndo{};
+    }
   }
-  const bool measuring = bench.pending != nullptr;
-  bool started = false;
+  const bool measuring = state.pending != nullptr;
   ImGui::BeginDisabled(measuring || place.executable.empty());
-  if (ImGui::Button("Évaluer ma machine")) {
-    bench.pending = std::make_shared<std::future<std::expected<std::string, Refusal> > >(
-        std::async(std::launch::async, [place, video] -> std::expected<std::string, Refusal> {
-          std::error_code error;
-          const auto work = std::filesystem::temp_directory_path(error) / "ajp-bench";
-          std::filesystem::create_directories(work, error);
-          const BenchPlan plan{
-              .executable = place.executable, .video = video, .work_dir = work, .data = place.data};
-          auto report = evaluate_machine(plan, place.data, std::stop_token{});
-          std::filesystem::remove_all(work, error);
-          return report;
+  if (ImGui::Button("Optimiser pour ma machine")) {
+    state.undo = capture_undo(context.data_dir / "bench.toml", draft);
+    state.progress = std::make_shared<BenchProgress>();
+    state.span_progress = std::make_shared<SpanDeriveProgress>();
+    state.stop = std::make_shared<std::stop_source>();
+    state.pending = std::make_shared<std::future<std::expected<BenchDone, Refusal>>>(std::async(
+        std::launch::async,
+        [place, video, context, progress = state.progress, span_progress = state.span_progress,
+         stop = state.stop]() -> std::expected<BenchDone, Refusal> {
+          try {
+            std::error_code error;
+            const auto work = std::filesystem::temp_directory_path(error) / "ajp-bench";
+            std::filesystem::create_directories(work, error);
+            const BenchPlan plan{.executable = place.executable,
+                                 .video = video,
+                                 .work_dir = work,
+                                 .data = context.data_dir,
+                                 .shown = progress.get()};
+            auto evaluation = evaluate_machine(plan, context.data_dir, stop->get_token());
+            std::filesystem::remove_all(work, error);
+            if (!evaluation) return std::unexpected(std::move(evaluation.error()));
+            auto verdict =
+                span_step(context, evaluation->result.level, *progress, *span_progress, stop->get_token());
+            if (!verdict) return std::unexpected(std::move(verdict.error()));
+            return BenchDone{.result = evaluation->result,
+                             .sentence = result_sentence(evaluation->result, chain_of(context), *verdict)};
+          } catch (const std::exception& error) {  // un thread qui lève ne doit pas emporter le lecteur
+            return std::unexpected(Refusal{RefusalCode::ThreadFailed, error.what()});
+          }
         }));
     bench.text.clear();
     bench.refused = false;
-    started = true;
+    state.result.reset();
+    event = BenchEvent::Started;
   }
   ImGui::EndDisabled();
-  if (video.empty())
-    note("Aucune vidéo à ouvrir : le lecteur joue sa propre séquence de test, sans rien afficher.");
-  if (measuring) {
-    note("Chargement des moteurs puis benchmark en cours (environ une minute)…");
+  if (state.pending) {
+    ImGui::SameLine();
+    if (ImGui::Button("Annuler##bench")) state.stop->request_stop();
+    const BenchProgress::View view = state.progress->get();
+    float fraction = view.fraction;
+    if (view.step == BenchStep::Span)
+      fraction = overall_fraction(BenchStep::Span, state.span_progress->get().first);
+    ImGui::TextWrapped("%s", step_line(view.step, view.what).c_str());
+    ImGui::ProgressBar(fraction, ImVec2(-1.0F, 0.0F));
+    if (!view.note.empty()) note(view.note);
   } else if (bench.refused) {
     ImGui::PushStyleColor(ImGuiCol_Text, kWarn);
     ImGui::TextWrapped("%s", bench.text.c_str());
     ImGui::PopStyleColor();
   } else if (!bench.text.empty()) {
-    note(bench.text + "À appliquer à la prochaine vidéo ouverte.");
+    ImGui::TextWrapped("%s", bench.text.c_str());
+    if (state.undo.valid && state.result) {
+      if (ImGui::Button("Annuler ces réglages")) {
+        if (const auto restored = restore_bench_file(state.undo, context.data_dir / "bench.toml");
+            !restored) {
+          bench.text = restored.error().detail;
+          bench.refused = true;
+        } else {
+          draft = state.undo.settings;
+          state.undo = BenchUndo{};
+          state.result.reset();
+          bench.text = "Réglages d'avant rétablis.";
+          event = BenchEvent::Undone;
+        }
+      }
+    }
   }
-  return started;
+  return event;
 #endif
 }
 

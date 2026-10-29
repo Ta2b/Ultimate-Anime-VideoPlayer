@@ -290,9 +290,27 @@ void stats_tab(PlaySettings& d) {
   ImGui::EndDisabled();
 }
 
-// Général > Configuration : le préréglage, la priorité, la machine, « Évaluer ma machine ».
-bool config_page(PlaySettings& d, const SettingsChoices& choices, BenchNote& bench,
-                 std::vector<Input>& actions) {
+// Général > Configuration : « Optimiser pour ma machine » d'abord (un bouton, le reste suit), puis le
+// préréglage, la priorité et ce que le lecteur sait de la machine.
+BenchEvent config_page(PlaySettings& d, const SettingsChoices& choices, BenchNote& bench,
+                       std::vector<Input>& actions) {
+  const BenchContext context{.display_height = choices.display_height > 0 ? choices.display_height : 1080,
+                             .display_hz = choices.display_hz > 0.0 ? choices.display_hz : 60.0,
+                             .source_height = choices.source_height > 0 ? choices.source_height : 1080,
+                             .source_fps = choices.source_fps > 0.0 ? choices.source_fps : 23.976,
+                             .span = choices.span_prepare,
+                             .fp8_reason = choices.fp8_reason,
+                             .data_dir = choices.settings_dir};
+  const BenchEvent event = bench_page(choices.place, choices.source_file, context, bench, d);
+  if (event == BenchEvent::Started) actions.emplace_back(Command{cmd::Pause{}});
+
+  section("Cette machine");
+  ImGui::TextWrapped("%s", choices.gpu_name.empty() ? "Carte graphique inconnue" : choices.gpu_name.c_str());
+  if (choices.display_hz > 0.0) note(std::format("Écran {:.0f} Hz", choices.display_hz));
+  note(choices.bench_text.empty()
+           ? std::string("Pas encore optimisée : les réglages sont une estimation d'après la carte.")
+           : choices.bench_text);
+
   section("Configuration automatique");
   if (ImGui::BeginCombo("Préréglage", std::string(label(d.preset)).c_str())) {
     for (int i = 0; i < kPresetCount; ++i) {
@@ -326,22 +344,12 @@ bool config_page(PlaySettings& d, const SettingsChoices& choices, BenchNote& ben
       "Ce que l'automatique préfère quand la machine ne tient pas tout : plus d'images (Fluidité) ou une "
       "image plus fine (Image).");
 
-  section("Cette machine");
-  ImGui::TextWrapped("%s", choices.gpu_name.empty() ? "Carte graphique inconnue" : choices.gpu_name.c_str());
-  note(std::format(
-      "Niveau : {}{}", tier_label(static_cast<Tier>(choices.machine_tier)),
-      choices.display_hz > 0.0 ? std::format(" · écran {:.0f} Hz", choices.display_hz) : std::string()));
-  note(choices.bench_text.empty()
-           ? std::string("Jamais évaluée : le niveau est une estimation d'après la carte.")
-           : choices.bench_text);
-  const bool started = bench_page(choices.place, choices.source_file, bench);
-
   section("Assistant");
   if (ImGui::Button("Relancer l'assistant")) actions.emplace_back(OpenEngineScreen{.wizard = true});
   panel::tip(
       "Les huit écrans de bienvenue : moteurs, image, HDR, audio, langues, mises à jour. Rien ne change "
       "avant « Terminer ».");
-  return started;
+  return event;
 }
 
 // Général > Réinitialiser.
@@ -386,6 +394,7 @@ void language_choice(const char* label, const char* none_label, std::string& tag
 SettingsPanel::SettingsPanel() : export_(std::make_unique<ExportDraft>()) {}
 SettingsPanel::~SettingsPanel() {
   if (prepare_.stop) prepare_.stop->request_stop();  // la tâche dépend du lecteur qui ouvre ce panneau
+  bench_.stop();
 }
 
 SettingsPanel::Result SettingsPanel::draw(const PlaySettings& running, const SettingsChoices& choices,
@@ -539,11 +548,11 @@ SettingsPanel::Result SettingsPanel::draw(const PlaySettings& running, const Set
     {
       const std::string_view name = kPages[static_cast<std::size_t>(page_)].name;
       if (name == "Configuration") {
-        if (config_page(draft_, choices, bench_, actions)) actions.emplace_back(Command{cmd::Pause{}});
-        if (bench_.finished) {
-          bench_.finished = false;
-          prepare_after_bench(draft_, choices.span_prepare, choices.place.data, prepare_);
-        }
+        // L'optimisation (ou son annulation) s'applique tout de suite, sans « Appliquer » : c'est ce qu'on a
+        // demandé.
+        const BenchEvent event = config_page(draft_, choices, bench_, actions);
+        if ((event == BenchEvent::Applied || event == BenchEvent::Undone) && draft_ != running)
+          result.reopen = draft_;
       } else if (name == "Lecteur par défaut") {
         default_player_page(choices.place, system_, draft_.default_player_dismissed,
                             choices.default_player_is_ajp);
@@ -552,7 +561,7 @@ SettingsPanel::Result SettingsPanel::draw(const PlaySettings& running, const Set
       } else if (name == "Agrandissement") {
         image_tab(draft_, choices);
         if (advanced_) {
-          span_prepare_section(draft_, choices.span_prepare, prepare_);
+          span_prepare_section(choices.span_prepare, choices.span_job ? *choices.span_job : prepare_);
           composition_section(draft_);
         }
       } else if (name == "Fluidité") {

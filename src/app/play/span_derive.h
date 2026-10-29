@@ -117,8 +117,10 @@ struct SpanPrepare {
   bool offered = false;  // le moteur calcule le SPAN FP8 CUTLASS (BackendCaps::span_fp8_cutlass) et une vidéo
                          // est ouverte
   bool ready = false;    // un paquet dérivé passe déjà ses garde-fous : rien à refaire
-  std::string note;      // sa situation : prêt (avec ses mesures), refusé (pourquoi), pas encore préparé, ou
-                         // pourquoi la préparation n'est pas offerte
+  bool refused =
+      false;         // un reçu de cette vidéo l'a déjà refusé (garde-fous) : l'automatique ne le refait pas
+  std::string note;  // sa situation : prêt (avec ses mesures), refusé (pourquoi), pas encore préparé, ou
+                     // pourquoi la préparation n'est pas offerte
   // La tâche : à lancer sur un autre fil que celui de la présentation. Rend le message de réussite, ou un
   // refus dont le détail dit pourquoi (les garde-fous échoués en font partie).
   std::function<std::expected<std::string, Refusal>(SpanDeriveProgress&, const std::stop_token&)> run;
@@ -126,9 +128,12 @@ struct SpanPrepare {
 
 // La préparation de ce SPAN sur cette vidéo. library et init : le backend en service (la tâche s'en ouvre une
 // instance à elle, comme la construction d'un moteur) ; supported : BackendCaps::span_fp8_cutlass ; video :
-// le fichier ouvert (vide : l'écran d'accueil, rien à préparer).
+// le fichier ouvert (vide : l'écran d'accueil, rien à préparer). unavailable : pourquoi le moteur ne le
+// calcule pas (span_auto.h : span_fp8_unavailable_reason), pour la phrase qui l'explique quand supported est
+// faux.
 SpanPrepare make_span_prepare(const std::shared_ptr<BackendLibrary>& library, const gpu::BackendInit& init,
                               bool supported, const std::filesystem::path& model,
-                              const std::filesystem::path& models_dir, const std::filesystem::path& video);
+                              const std::filesystem::path& models_dir, const std::filesystem::path& video,
+                              const std::string& unavailable = {});
 
 }  // namespace ajp::app::play

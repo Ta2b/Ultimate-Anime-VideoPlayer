@@ -203,7 +203,11 @@ TEST_CASE("des garde-fous manqués écrivent le reçu refusé et retirent le paq
   const SpanInt8Lookup found = find_span_variant(SpanVariantKind::Fp8Cutlass, folder.model, folder.models());
   CHECK_FALSE(found.variant);
   CHECK(found.note.find("sous les garde-fous") != std::string::npos);
-  CHECK_FALSE(span_tiers(folder.model, folder.models(), false, true).performance);
+  // Le cran reste offert (la lecture retombe sur FP16) ; la préparation automatique ne se relance pas dessus.
+  CHECK(span_tiers(folder.model, folder.models(), false, true).performance);
+  CHECK(make_span_prepare(nullptr, gpu::BackendInit{}, true, folder.model, folder.models(),
+                          folder.root / "v.mkv")
+            .refused);
 }
 
 TEST_CASE("un échec technique n'écrit rien et laisse l'état d'avant", "[app][span_derive]") {
@@ -395,9 +399,8 @@ TEST_CASE("la préparation de bout en bout, par le vrai backend, sur une vraie v
   CHECK(span_tiers(model, out, false, true).performance);
 }
 
-TEST_CASE("la préparation de fond ne part qu'aux conditions de la case", "[app][span_derive]") {
-  const Folder folder;
-  PlaySettings settings;
+TEST_CASE("la préparation à la main ne part qu'une fois à la fois, et seulement si elle est offerte",
+          "[app][span_derive]") {
   PrepareNote note;
   int started = 0;
   SpanPrepare prepare;
@@ -407,35 +410,16 @@ TEST_CASE("la préparation de fond ne part qu'aux conditions de la case", "[app]
     ++started;
     return std::string("fait");
   };
-  const auto save_level = [&](Tier level) {
-    REQUIRE(save_bench(folder.root / "bench.toml",
-                       BenchResult{.gpu = "RTX", .driver = "1", .level = level, .date = "2026-10-28"}));
-  };
-
-  save_level(Tier::Fast);
-  CHECK_FALSE(prepare_after_bench(settings, prepare, folder.root, note));  // case décochée (défaut)
-  settings.span_prepare_background = true;
-  save_level(Tier::Normal);
-  CHECK_FALSE(prepare_after_bench(settings, prepare, folder.root, note));  // niveau sous Rapide
-  save_level(Tier::Fast);
   SpanPrepare not_offered = prepare;
   not_offered.offered = false;
-  CHECK_FALSE(prepare_after_bench(settings, not_offered, folder.root, note));  // pas de vidéo ou de moteur
-  SpanPrepare ready = prepare;
-  ready.ready = true;
-  CHECK_FALSE(prepare_after_bench(settings, ready, folder.root, note));               // déjà prêt
-  CHECK_FALSE(prepare_after_bench(settings, prepare, folder.root / "absent", note));  // pas de niveau gardé
+  CHECK_FALSE(start_span_prepare(not_offered, note));  // pas de vidéo ou de moteur
   CHECK(started == 0);
 
-  REQUIRE(prepare_after_bench(settings, prepare, folder.root, note));
+  REQUIRE(start_span_prepare(prepare, note));
   REQUIRE(note.pending);
   CHECK_FALSE(start_span_prepare(prepare, note));  // une seule à la fois
   CHECK(note.pending->get().value() == "fait");
   CHECK(started == 1);
-  save_level(Tier::Ultra);
-  note = PrepareNote{};
-  CHECK(prepare_after_bench(settings, prepare, folder.root, note));
-  note.pending->wait();
 }
 
 }  // namespace ajp::app::play
