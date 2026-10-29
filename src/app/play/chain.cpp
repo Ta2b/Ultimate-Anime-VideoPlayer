@@ -188,7 +188,9 @@ void apply_live(Chain& to, const PlaySettings& wanted, std::int64_t now_us) {
       cmd::SetListening listening{.listen = static_cast<std::uint8_t>(now.listen),
                                   .faithful = now.faithful,
                                   .tuned = true,
-                                  .tuning = audio::to_wire(now.tuning)};
+                                  .tuning = audio::to_wire(now.tuning),
+                                  .anime_set = true,
+                                  .anime = audio::to_wire(now.anime)};
       if (now.hrir_path != was.hrir_path) {
         // Le fichier se lit ici, hors du thread audio ; illisible : on le dit et le modèle paramétrique
         // reste.

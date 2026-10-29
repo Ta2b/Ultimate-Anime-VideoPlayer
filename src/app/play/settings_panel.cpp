@@ -395,6 +395,82 @@ bool sound_tab(PlaySettings& d, const SettingsChoices& choices) {
       }
     }
   }
+  if (listen != 2) {
+    // « Son anime » (docs/audio-anime.md) : le traitement dédié aux pistes stéréo sur une sortie stéréo.
+    // Propre à l'appareil comme le profil de virtualisation.
+    section("Son anime");
+    std::string* level = &d.anime_sound;
+    if (own) {
+      auto found =
+          std::ranges::find(d.device_anime, device_name, &std::pair<std::string, std::string>::first);
+      if (found == d.device_anime.end()) found = d.device_anime.insert(found, {device_name, d.anime_sound});
+      level = &found->second;
+    }
+    const bool custom = *level == "custom";
+    const audio::AnimeLevel* shown = audio::find_anime_level(*level);
+    if (shown == nullptr) shown = audio::find_anime_level("natural");
+    if (ImGui::BeginCombo("Niveau", custom ? "Personnalisé" : std::string(shown->label).c_str())) {
+      for (const audio::AnimeLevel& choice : audio::anime_levels()) {
+        if (ImGui::Selectable(std::string(choice.label).c_str(), !custom && &choice == shown)) {
+          *level = std::string(choice.key);
+          if (choice.tuning.enabled) d.anime_custom = choice.tuning;  // « Personnalisé » part de ce niveau
+        }
+        panel::tip(std::string(choice.detail).c_str());
+      }
+      if (panel::advanced() && ImGui::Selectable("Personnalisé", custom)) {
+        *level = "custom";
+        if (!d.anime_custom.enabled) d.anime_custom = audio::find_anime_level("anime")->tuning;
+      }
+      ImGui::EndCombo();
+    }
+    if (!custom) panel::tip(std::string(shown->detail).c_str());
+    // Comparer : tant que le bouton est tenu, le niveau passe à Naturel ; relâché, il revient.
+    static std::string held_level;
+    ImGui::Button("Comparer (maintenir : Naturel)");
+    if (ImGui::IsItemActive()) {
+      if (held_level.empty() && *level != "natural") {
+        held_level = *level;
+        *level = "natural";
+      }
+    } else if (!held_level.empty()) {
+      *level = held_level;
+      held_level.clear();
+    }
+    panel::tip(
+        "Tenez le bouton pour entendre la piste sans le Son anime, relâchez pour le retrouver. Le volume "
+        "diffère un peu : la normalisation de sonie rapproche aussi les scènes fortes et faibles.");
+    const bool applies = active == nullptr || active->channels <= 2;
+    note(applies
+             ? "Actif pour une piste stéréo sur une sortie stéréo. Une piste mono, 5.1 ou 7.1, le mode Home "
+               "cinéma et le mode Fidèle gardent leur chemin habituel (aucune dégradation)."
+             : "Cet appareil a plus de 2 canaux : le Son anime ne s'applique qu'à une sortie stéréo.");
+    if (panel::advanced()) {
+      audio::AnimeTuning t = custom ? d.anime_custom : anime_tuning_of(*level, d.anime_custom);
+      if (!t.enabled && !custom) t = d.anime_custom;  // Naturel : les curseurs montrent le dernier niveau
+      bool moved = false;
+      const auto slider = [&](const char* label, float& value, float lo, float hi, const char* format) {
+        moved |= ImGui::SliderFloat(label, &value, lo, hi, format, ImGuiSliderFlags_AlwaysClamp);
+      };
+      slider("Spatialisation (largeur, voix devant)", t.width, 0.0F, 1.0F, "%.2f");
+      slider("Ambiance décorrélée", t.ambience, 0.0F, 1.0F, "%.2f");
+      slider("Voix : centre porté (dB)", t.voice_db, 0.0F, 4.0F, "%.1f");
+      slider("Voix : présence 3 kHz (dB)", t.presence_db, 0.0F, 4.0F, "%.1f");
+      slider("Voix en avant", t.voice_forward, 0.0F, 1.0F, "%.2f");
+      slider("Renfort des graves (harmoniques)", t.bass, 0.0F, 1.0F, "%.2f");
+      moved |= ImGui::Checkbox("Normalisation de sonie (EBU R128)", &t.loudness);
+      ImGui::BeginDisabled(!t.loudness);
+      slider("Sonie visée (LUFS)", t.target_lufs, -23.0F, -16.0F, "%.0f");
+      ImGui::EndDisabled();
+      slider("Compresseur doux", t.compress, 0.0F, 1.0F, "%.2f");
+      slider("Plafond du limiteur (dBTP)", t.ceiling_db, -3.0F, -0.5F, "%.1f");
+      if (moved) {
+        t.enabled = true;
+        d.anime_custom = audio::clamped(t);
+        d.anime_custom.enabled = true;
+        *level = "custom";
+      }
+    }
+  }
   if (panel::advanced() && listen == 0) {
     // Réponses impulsionnelles à la HeSuVi : remplacent le modèle paramétrique au casque. Propres à
     // l'appareil si celui-ci a son profil propre.
@@ -440,6 +516,7 @@ bool sound_tab(PlaySettings& d, const SettingsChoices& choices) {
     } else {
       std::erase_if(d.device_listening, [&](const auto& entry) { return entry.first == device_name; });
       std::erase_if(d.device_profile, [&](const auto& entry) { return entry.first == device_name; });
+      std::erase_if(d.device_anime, [&](const auto& entry) { return entry.first == device_name; });
       std::erase_if(d.device_hrir, [&](const auto& entry) { return entry.first == device_name; });
     }
   }

@@ -171,6 +171,7 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
     config.mix.listen = static_cast<audio::Listen>(listening.listen);
     config.mix.faithful = listening.faithful;
     config.mix.tuning = listening.tuning;
+    config.mix.anime = listening.anime;
     if (auto loaded = load_listening_hrir(listening.hrir_path)) {
       config.mix.hrir = std::move(*loaded);
     } else {
