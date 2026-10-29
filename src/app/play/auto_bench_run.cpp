@@ -251,11 +251,12 @@ std::expected<BenchOutcome, Refusal> run_bench(const BenchPlan& plan, const std:
   std::chrono::milliseconds first_elapsed{};
   for (; index <= kTierCount; ++index) {
     const bool first = outcome.runs.empty();
+    const Tier current = level.value_or(outcome.estimated);  // le niveau joué (le premier essai : l'estimé)
     if (first) {
       say(BenchStep::Prepare, "préparation des moteurs et première mesure", 0.1F,
           "Si c'est la première fois sur ce PC, la construction des moteurs peut prendre plusieurs minutes.");
     } else {
-      say(BenchStep::Levels, std::format("test des réglages « {} »", tier_label(*level)),
+      say(BenchStep::Levels, std::format("test des réglages « {} »", tier_label(current)),
           std::min(0.9F, static_cast<float>(outcome.runs.size() - 1) / 3.0F));
     }
     // Tant qu'aucun niveau n'a tenu, le résultat dépend de cet essai : il a le temps qu'il lui faut. Après,
@@ -274,13 +275,13 @@ std::expected<BenchOutcome, Refusal> run_bench(const BenchPlan& plan, const std:
       outcome.notes.push_back(std::format(
           "Les réglages « {} » n'ont pas été testés : leurs moteurs sont longs à construire. Relancez "
           "l'optimisation pour continuer.",
-          tier_label(*level)));
+          tier_label(current)));
       log->warn("{}", outcome.notes.back());
       break;
     }
     if (!trial.reading) outcome.notes.push_back(trial.why);
     outcome.runs.push_back(trial.reading ? trial.reading->run
-                                         : BenchRun{.level = *level});  // vide : ne tient pas
+                                         : BenchRun{.level = current});  // vide : ne tient pas
     readings.push_back(trial.reading);
     if (holds(outcome.runs.back())) any_held = true;
     level = next_level(outcome.runs, outcome.estimated);
