@@ -26,7 +26,8 @@
 
 namespace ajp::core {
 
-inline constexpr int kAutoMaxStep = 6;  // ×6 de 23,976 : 143,86 i/s, sous un écran de 165 Hz
+inline constexpr int kAutoMaxStep =
+    8;  // ×8 : de quoi suivre un écran de 165 Hz jusqu'au bout (×6,88 pour 23,976)
 // Granularité « au fps près » d'un écran VRR armé : un palier = 1/24 de multiplicateur (~1 i/s pour une
 // source de 24 i/s). Le facteur passe par Factor{palier, 24} ; l'écran ne vibre pas, la cadence n'étant
 // plus liée au rafraîchissement.

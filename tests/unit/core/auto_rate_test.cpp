@@ -88,9 +88,11 @@ TEST_CASE("auto : le plafond suit l'écran", "[core][auto_rate]") {
 }
 
 TEST_CASE("auto : les demi-paliers et le pas fin suivent l'écran", "[core][auto_rate]") {
-  CHECK(auto_ceiling(165.0, 23.976, 2) == 12);  // ×6 reste le maximum
-  CHECK(auto_ceiling(120.0, 23.976, 2) == 10);  // ×5 : 119,88 tient, ×5,5 non
-  CHECK(auto_ceiling(100.0, 23.976, 2) == 8);   // ×4,5 : 107,9 ne tient pas
+  CHECK(auto_ceiling(165.0, 23.976, 2) == 13);                  // ×6,88 : tout l'écran, plus de plafond à ×6
+  CHECK(auto_ceiling(165.0, 23.976, kFineGranularity) == 166);  // 165 i/s au fps près
+  CHECK(auto_ceiling(240.0, 23.976, 1) == 8);                   // ×8 : la limite des facteurs du lecteur
+  CHECK(auto_ceiling(120.0, 23.976, 2) == 10);                  // ×5 : 119,88 tient, ×5,5 non
+  CHECK(auto_ceiling(100.0, 23.976, 2) == 8);                   // ×4,5 : 107,9 ne tient pas
   CHECK(auto_ceiling(110.0, 24.0, 2) == 9);
   CHECK(auto_ceiling(0.0, 24.0, 2) == 2);
   CHECK(auto_ceiling(100.0, 24.0, kFineGranularity) == 101);  // ×4,2 : 100,8 i/s, à 1 % près
