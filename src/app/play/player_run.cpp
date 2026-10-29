@@ -398,13 +398,36 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
   p.ui.controls().show_deferred(host_now_us());
   // Le mode auto : son plafond suit la fréquence de l'écran.
   bool vrr_armed = p.display && p.display->vrr.value_or(false) && p.display->vrr_armed.value_or(false);
+  std::string free_note;  // pourquoi Auto libre ne tourne pas alors qu'il est choisi (vide : il tourne ou
+                          // n'est pas voulu)
   const auto apply_auto = [&] {
     const bool on = chain.running.rife_auto && chain.rife_loaded && chain.running.rife_factor >= 2;
     // Au fps près (1/24 de multiplicateur) sur un écran VRR armé : la cadence n'y est plus liée au
     // rafraîchissement. À fréquence fixe, des paliers entiers (les autres feraient vibrer).
     const int granularity = vrr_armed ? core::kFineGranularity : 1;
     const double limit_hz = core::auto_limit_hz(display_refresh_hz(out.window()), chain.running.auto_cap);
-    chain.live.set_auto(on, core::auto_ceiling(limit_hz, fps_of(video.frame_rate), granularity), granularity);
+    // Auto libre (core/free_grid.h) : écran VRR armé, RIFE, fréquence de l'écran connue ; sinon Auto.
+    std::string why;
+    if (on && chain.running.auto_free) {
+      if (!vrr_armed)
+        why = "écran non VRR ou VRR coupé";
+      else if (free_instants_limit(chain.running.motion_engine) == 0)
+        why = std::format("{} ne calcule pas à un instant libre", label(chain.running.motion_engine));
+      else if (limit_hz <= 0.0)
+        why = "fréquence de l'écran inconnue";
+    }
+    const bool free = on && chain.running.auto_free && why.empty();
+    if (why != free_note) {
+      free_note = why;
+      if (!why.empty()) {
+        log->warn("Auto libre indisponible ({}) : retour à Auto (recommandé)", why);
+        p.ui.controls().notify("Auto libre indisponible : " + why, host_now_us());
+      }
+    }
+    chain.live.set_auto(on && !free, core::auto_ceiling(limit_hz, fps_of(video.frame_rate), granularity),
+                        granularity);
+    // Écart minimal entre deux images : la période de l'écran ou du plafond, à 1 % près (jamais plus vite).
+    chain.live.set_free(free, limit_hz > 0.0 ? std::llround(1e6 / (limit_hz * 0.99)) : 0, host_now_us());
   };
   apply_auto();
   // Le dernier palier tenu pour cette vidéo, ce moteur, cette hauteur de travail et ce GPU : le départ.
@@ -434,13 +457,21 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
   int auto_notified = 0;
   std::int64_t auto_changed_us = 0;
   std::int64_t auto_missing_seen = 0;
+  std::int64_t free_dropped_seen = 0;
+  std::int64_t free_missing_seen = 0;
+  std::int64_t free_logged_us = 0;
   const double auto_source_fps = fps_of(video.frame_rate);
   // Un changement de palier : une ligne de journal avec sa raison. Le message à l'écran n'est dit qu'une fois
   // le palier tenu 3 s (pas de clignotement), et le palier tenu 6 s est retenu pour la prochaine lecture.
   const auto show_auto = [&] {
     const Factor now = chain.live.factor_now();
-    const int centi = chain.running.rife_auto && now.den >= 1 ? now.num * 100 / now.den : 0;
+    const bool free = chain.live.free_active();
+    const int centi = chain.running.rife_auto && !free && now.den >= 1 ? now.num * 100 / now.den : 0;
     const std::int64_t at = host_now_us();
+    if (free && at - free_logged_us >= 5'000'000) {  // Auto libre : une ligne de journal toutes les 5 s
+      free_logged_us = at;
+      log->info("{}", free_status_text(chain.live.free_info(at)));
+    }
     if (centi != auto_shown) {
       if (centi > 0) {
         log->info("auto : {}", auto_status_text(chain.live.auto_info(at), auto_source_fps));
@@ -495,6 +526,23 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
       const FrameStats& shown = session.stats();
       chain.live.auto_missed(host_now_us(), shown.missing - auto_missing_seen);
       auto_missing_seen = shown.missing;
+      if (chain.live.free_active()) {
+        // Images perdues : sautées à la présentation (arrivées trop tard) ou manquées (trous dans les pts).
+        const std::int64_t lost =
+            std::max(shown.missing - free_missing_seen, shown.dropped - free_dropped_seen);
+        chain.live.free_missed(host_now_us(), lost);
+        if (chain.live.free_should_fall_back(host_now_us())) {
+          log->warn("Auto libre : trop d'images perdues ({}) : retour à Auto (recommandé)",
+                    free_status_text(chain.live.free_info(host_now_us())));
+          chain.running.auto_free = false;
+          p.ui.set_running(chain.running);
+          p.ui.controls().notify("Auto libre : trop d'images perdues, retour à Auto (recommandé)",
+                                 host_now_us());
+          apply_auto();
+        }
+      }
+      free_missing_seen = shown.missing;
+      free_dropped_seen = shown.dropped;
       chain.live.auto_tick(host_now_us(), !session.view().paused);
       show_auto();
       // KDE arme le VRR en plein écran seulement : on le relit quand la fenêtre change d'état.

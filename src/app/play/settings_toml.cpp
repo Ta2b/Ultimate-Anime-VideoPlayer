@@ -194,6 +194,15 @@ std::expected<PlaySettings, Refusal> parse_settings(std::string_view toml_text) 
     reads.push_back(read_precision(*interpolation, "interpolation", "motion_precision", s.motion_precision));
     reads.push_back(read(*interpolation, "interpolation", "auto", s.rife_auto));
     reads.push_back(read(*interpolation, "interpolation", "auto_cap", s.auto_cap));
+    std::string auto_mode = s.auto_free ? "libre" : "recommande";
+    reads.push_back(read(*interpolation, "interpolation", "auto_mode", auto_mode));
+    if (auto_mode == "libre" || auto_mode == "recommande") {
+      s.auto_free = auto_mode == "libre";
+    } else {
+      reads.emplace_back(
+          refuse(RefusalCode::FieldOutOfRange,
+                 std::format("interpolation.auto_mode : « {} » (recommande ou libre)", auto_mode)));
+    }
     // span_order ; les fichiers d'avant portent warp_after_span, qui ne compte que s'il est vrai (faux
     // était le défaut, écrit partout : il laisse Auto).
     bool legacy_after = false;
@@ -491,6 +500,7 @@ std::string format_settings(const PlaySettings& s) {
                             {"motion_precision", std::string(name(s.motion_precision))},
                             {"auto", s.rife_auto},
                             {"auto_cap", s.auto_cap},
+                            {"auto_mode", std::string(s.auto_free ? "libre" : "recommande")},
                             {"span_order", std::string(name(s.span_order))},
                             {"smooth_motion", s.smooth_motion}};
   if (s.rife_factor_den == 2) {

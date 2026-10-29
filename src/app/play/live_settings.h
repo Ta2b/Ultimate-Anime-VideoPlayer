@@ -16,6 +16,7 @@
 #include "app/play/frame_latency.h"
 #include "app/play/settings.h"
 #include "core/auto_rate.h"
+#include "core/free_rate.h"
 #include "gpu/kernel_ops.h"
 #include "vendor_hdr/true_hdr.h"
 
@@ -119,25 +120,37 @@ class LiveSettings {
   void auto_settle(std::int64_t now_us) {
     const std::scoped_lock lock(mutex_);
     if (auto_on_) auto_.settle(now_us);
+    if (free_on_) free_.settle(now_us);
   }
   // gpu : la paire de l'image `id` crée `images` images ; `lead_us` : l'attente de ses mesures avant
   // soumission. main la retrouve par auto_written pour en tirer le coût de service.
   void auto_expect(std::uint32_t id, int images, std::int64_t lead_us) {
     const std::scoped_lock lock(mutex_);
-    if (!auto_on_) return;
+    if (!auto_on_ && !free_on_) return;
     ledger_[ledger_next_++ % ledger_.size()] = Expected{.id = id, .images = images, .lead_us = lead_us};
   }
   // main : une image de sortie vue écrite. La dernière d'une paire (left == right) clôt sa mesure.
   void auto_written(std::uint32_t left, std::uint32_t right, std::int64_t submitted_us,
                     std::int64_t done_us) {
     const std::scoped_lock lock(mutex_);
-    if (!auto_on_) return;
+    if (!auto_on_ && !free_on_) return;
+    // Le temps propre de cette image : de sa soumission (ou de la fin de la précédente, si le GPU était
+    // pris) à sa fin vue. L'attente d'un slot du ring avant la soumission n'y compte pas.
+    const std::int64_t service = std::max<std::int64_t>(done_us - std::max(submitted_us, frame_done_us_), 0);
+    frame_done_us_ = done_us;
     for (Expected& e : ledger_) {
       if (e.id != right || e.images == 0) continue;
       if (e.first_us == 0 || submitted_us < e.first_us) e.first_us = submitted_us;
-      if (left == right) {
-        auto_.cost(e.images, core::service_cost_us(e.first_us, previous_done_us_, done_us, e.lead_us),
-                   done_us);
+      e.busy_us += service;
+      // Auto : la source clôt la paire. Auto libre : la dernière image de la paire, qui n'est pas forcément
+      // la source.
+      const bool last = free_on_ ? ++e.seen >= e.images : left == right;
+      if (last) {
+        if (auto_on_) {
+          auto_.cost(e.images, core::service_cost_us(e.first_us, previous_done_us_, done_us, e.lead_us),
+                     done_us);
+        }
+        if (free_on_) free_.cost(e.images, e.busy_us + e.lead_us, done_us);
         previous_done_us_ = done_us;
         e = Expected{};
       }
@@ -170,6 +183,42 @@ class LiveSettings {
   Factor factor_now() const {
     const std::scoped_lock lock(mutex_);
     return auto_on_ ? Factor{.num = auto_.step(), .den = auto_.granularity()} : rife_factor();
+  }
+
+  // Auto libre (core/free_rate.h, core/free_grid.h) : à la place du mode auto, jamais avec lui. `min_gap_us`
+  // : l'écart minimal entre deux images (période de l'écran ou du plafond), en temps réel.
+  void set_free(bool on, std::int64_t min_gap_us, std::int64_t now_us) {
+    const std::scoped_lock lock(mutex_);
+    if (on && !free_on_) free_.reset(now_us);
+    free_on_ = on;
+    free_.set_min_gap(min_gap_us);
+  }
+  bool free_active() const {
+    const std::scoped_lock lock(mutex_);
+    return free_on_;
+  }
+  // gpu : les images planifiées par la paire préparée.
+  void free_produced(int images, std::int64_t now_us) {
+    const std::scoped_lock lock(mutex_);
+    if (free_on_) free_.produced(images, now_us);
+  }
+  // main : images sautées ou manquées à l'écran depuis le dernier appel.
+  void free_missed(std::int64_t now_us, std::int64_t lost) {
+    const std::scoped_lock lock(mutex_);
+    if (free_on_) free_.missed(now_us, lost);
+  }
+  // gpu : l'écart de service de la prochaine paire, en temps réel (0 : pas de mesure), et l'écart minimal.
+  std::pair<std::int64_t, std::int64_t> free_step(std::int64_t now_us) const {
+    const std::scoped_lock lock(mutex_);
+    return {free_.step_us(now_us), free_.min_gap_us()};
+  }
+  bool free_should_fall_back(std::int64_t now_us) const {
+    const std::scoped_lock lock(mutex_);
+    return free_on_ && free_.should_fall_back(now_us);
+  }
+  core::FreeInfo free_info(std::int64_t now_us) const {
+    const std::scoped_lock lock(mutex_);
+    return free_.info(now_us);
   }
 
   // Garder les poses (kernels/spec/poses.h), lu par gpu au début de chaque paire.
@@ -245,11 +294,16 @@ class LiveSettings {
   FrameLatency latency_;
   bool auto_on_ = false;
   core::AutoRate auto_;
+  bool free_on_ = false;
+  core::FreeRate free_;
+  std::int64_t frame_done_us_ = 0;
   struct Expected {
     std::uint32_t id = 0;
     int images = 0;  // 0 : case libre
     std::int64_t lead_us = 0;
     std::int64_t first_us = 0;
+    int seen = 0;              // images vues écrites (Auto libre)
+    std::int64_t busy_us = 0;  // temps propre de ses images, sans l'attente d'un slot
   };
   std::array<Expected, 16> ledger_{};
   std::size_t ledger_next_ = 0;

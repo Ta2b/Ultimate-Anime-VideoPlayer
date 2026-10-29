@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <array>
 #include <chrono>
+#include <cmath>
 #include <format>
 #include <utility>
 
@@ -249,8 +250,14 @@ std::expected<std::uint32_t, Refusal> UpscaleStage::outputs(const DecodedFrame& 
   // La grille de sortie de la paire (core/cadence.h), refaite quand le facteur change : la paire
   // suivante repart alors de cette image.
   std::optional<core::CadenceStep> step;
-  if (factor.num > factor.den && (valid_factor(factor) || (setup_.live != nullptr && factor.den <= 64 &&
-                                                           factor.num <= core::kAutoMaxStep * factor.den))) {
+  // Auto libre : pas de facteur, la grille de la paire vient de l'horloge prédite et du temps de service.
+  const bool free_mode = interpolates() && setup_.live && setup_.live->free_active();
+  if (free_mode) {
+    cadence_.reset();
+    step = free_grid_.push(core::stamp_of(frame), free_inputs(frame.epoch));
+  } else if (factor.num > factor.den &&
+             (valid_factor(factor) || (setup_.live != nullptr && factor.den <= 64 &&
+                                       factor.num <= core::kAutoMaxStep * factor.den))) {
     if (!cadence_) {
       auto made = core::CadenceAccumulator::create({.num = factor.num, .den = factor.den});
       if (!made) return std::unexpected(std::move(made.error()));
@@ -266,17 +273,19 @@ std::expected<std::uint32_t, Refusal> UpscaleStage::outputs(const DecodedFrame& 
   } else {
     cadence_.reset();
   }
+  if (!free_mode) free_grid_.reset();
   const bool on_grid = step && step->event == core::GridEvent::Pair && !step->instants().empty() &&
                        !step->instants().front().is_source();
   // ×N demandé, arrondi au-dessus (×1,5 compte pour ×2) ; 1 : pas d'interpolation.
   std::uint32_t wanted = on_grid ? static_cast<std::uint32_t>((factor.num + factor.den - 1) / factor.den) : 1;
+  if (free_mode) wanted = on_grid ? 2U : 1U;
   // En retard sur l'horloge maître (GPU débordé : 4K ×3, scène lourde) : les instants
   // intermédiaires de tête qui seront passés quand ils seront prêts (une période de sortie plus
   // loin, ou après le retard mesuré des images) sont sautés, les suivants faits ; l'image seule
   // s'il n'en reste aucun.
   std::size_t late = 0;
   double play_rate = 1.0;
-  if (on_grid && setup_.clock != nullptr && previous_ && previous_->epoch == frame.epoch) {
+  if (!free_mode && on_grid && setup_.clock != nullptr && previous_ && previous_->epoch == frame.epoch) {
     const ClockSnapshot now = setup_.clock->snapshot();
     if (now.valid && now.epoch == frame.epoch && now.rate > 0.0) {
       play_rate = now.rate;
@@ -364,6 +373,7 @@ std::expected<std::uint32_t, Refusal> UpscaleStage::outputs(const DecodedFrame& 
       on_grid && !runs && facts.factor > 1 && facts.scores &&
       (kernels::is_scene_cut(facts.scores->scene_score) || kernels::is_held(facts.scores->worst_block));
   if (on_grid && !runs && cadence_) cadence_->resync();
+  if (on_grid && !runs && free_mode) free_grid_.resync();
   if (runs && step) {
     outputs_ = 0;
     std::size_t skipped = 0;
@@ -383,6 +393,10 @@ std::expected<std::uint32_t, Refusal> UpscaleStage::outputs(const DecodedFrame& 
     if (setup_.live) setup_.live->count_interpolated();
   }
   if (auto_measured) setup_.live->auto_expect(frame.id.value, static_cast<int>(outputs_), lead_us);
+  if (free_mode && facts.same_epoch) {
+    setup_.live->auto_expect(frame.id.value, static_cast<int>(outputs_), lead_us);
+    setup_.live->free_produced(static_cast<int>(outputs_), host_now_us());
+  }
   // Garder les poses : la paire précédente compte si elle précède vraiment celle-ci ; une paire
   // tenue (dessin identique) n'a pas bougé. Le mouvement de cette paire va dans l'autre tampon.
   before_ = facts.same_epoch ? now_ : PairMotion::Unknown;
@@ -415,6 +429,26 @@ std::expected<std::uint32_t, Refusal> UpscaleStage::outputs(const DecodedFrame& 
   return outputs_;
 }
 
+// Ce que la grille libre sait de l'instant : l'horloge maître prédite à la fin du calcul (retard vidéo mesuré
+// compris), l'écart minimal de l'écran et le temps de service mesuré, en temps de contenu.
+core::FreeInputs UpscaleStage::free_inputs(std::uint32_t epoch) const {
+  core::FreeInputs inputs;
+  const std::int64_t at = host_now_us();
+  const auto [step_real, gap_real] = setup_.live->free_step(at);
+  double rate = 1.0;
+  const ClockSnapshot now = setup_.clock != nullptr ? setup_.clock->snapshot() : ClockSnapshot{};
+  const bool running = now.valid && now.epoch == epoch && now.rate > 0.0;
+  if (running) rate = now.rate;
+  const auto media = [rate](std::int64_t real_us) {
+    return static_cast<std::int64_t>(std::llround(static_cast<double>(real_us) * rate));
+  };
+  inputs.min_gap_us = std::max<std::int64_t>(media(gap_real), 1);
+  inputs.step_us = media(step_real);
+  inputs.max_instants = free_instants_limit(engine_kind());
+  if (running) inputs.ready_us = ready_media_us(now, at, inputs.min_gap_us, latency_us());
+  return inputs;
+}
+
 bool UpscaleStage::passed(const DecodedFrame& frame, const DecodedFrame& next) {
   if (setup_.clock == nullptr || frame.pts_us == kNoPts || next.pts_us == kNoPts) return false;
   const ClockSnapshot now = setup_.clock->snapshot();
@@ -425,6 +459,7 @@ bool UpscaleStage::passed(const DecodedFrame& frame, const DecodedFrame& next) {
   // cadence, ni fenêtre de DistilDRBA ne passent par-dessus l'image sautée.
   previous_.reset();
   cadence_.reset();
+  free_grid_.reset();
   drba_.continuous = false;
   ++skipped_;
   if (setup_.live) setup_.live->count_skipped();

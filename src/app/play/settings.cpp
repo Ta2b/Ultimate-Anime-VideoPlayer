@@ -450,6 +450,7 @@ PlaySettings live_part(const PlaySettings& running, const PlaySettings& wanted, 
   s.downscale = wanted.downscale;
   s.rife_auto = wanted.rife_auto;
   s.auto_cap = wanted.auto_cap;
+  s.auto_free = wanted.auto_free;
   if (!wanted.upscale) s.span_precision = wanted.span_precision;  // sans SPAN, rien à recharger
   if (rife_loaded || wanted.rife_factor < 2) {
     s.rife_factor = wanted.rife_factor;

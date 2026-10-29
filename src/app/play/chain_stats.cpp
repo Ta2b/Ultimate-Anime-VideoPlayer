@@ -63,18 +63,30 @@ std::string auto_status_text(const core::AutoInfo& info, double source_fps) {
   return text;
 }
 
+std::string free_status_text(const core::FreeInfo& info) {
+  std::string text = std::format("Auto libre · {:.0f} i/s", info.fps);
+  if (info.load_pct >= 0) text += std::format(" · limite GPU {} %", info.load_pct);
+  if (info.step_us > 0) text += " · écart service " + format_ms(info.step_us);
+  if (info.pressure > 1.02) text += std::format(" · pression ×{:.2f}", info.pressure);
+  if (info.lost > 0) text += std::format(" · {} perdues", info.lost);
+  return text;
+}
+
 std::optional<std::string> ChainStats::rife() const {
   if (!interpolates_) return std::nullopt;
   const RifeCounts c = live_.counts();
   std::string line =
       std::format("{} {} : {} paires, {} interpolées, {} dessins tenus, {} coupes, {} en retard", engine_,
-                  factor_text(live_.factor_now()), c.pairs, c.interpolated, c.held, c.cuts, c.late);
+                  live_.free_active() ? std::string("libre") : factor_text(live_.factor_now()), c.pairs,
+                  c.interpolated, c.held, c.cuts, c.late);
   if (live_.auto_active()) line += " · " + auto_status_text(live_.auto_info(host_now_us()), source_fps_);
+  if (live_.free_active()) line += " · " + free_status_text(live_.free_info(host_now_us()));
   return line;
 }
 
 double ChainStats::output_fps() const {
   if (source_fps_ <= 0.0) return 0.0;
+  if (live_.free_active()) return 0.0;  // aucune cadence : l'écart des images est celui du temps de service
   const Factor factor = live_.factor_now();  // rien, 0 ou 1 : pas d'interpolation
   return interpolates_ && factor.den > 0 && factor.num > factor.den ? source_fps_ * factor.num / factor.den
                                                                     : source_fps_;
@@ -85,6 +97,7 @@ std::int64_t ChainStats::source_period_us() const {
 }
 
 std::int64_t ChainStats::output_period_us() const {
+  if (live_.free_active()) return live_.free_info(host_now_us()).step_us;
   const double rate = output_fps();
   return rate > 0.0 ? static_cast<std::int64_t>(std::llround(1e6 / rate)) : 0;
 }

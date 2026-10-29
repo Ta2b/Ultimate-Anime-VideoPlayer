@@ -130,6 +130,11 @@ void apply_live(Chain& to, const PlaySettings& wanted, std::int64_t now_us) {
   if (wanted.rife_auto != r.rife_auto) {
     if (wanted.rife_auto) controls.notify("Interpolation auto", now_us);
   }
+  if (wanted.auto_free != r.auto_free) {
+    log_channel("app")->info("mode d'Auto en direct : {}",
+                             wanted.auto_free ? "libre (expérimental)" : "recommandé");
+    controls.notify(wanted.auto_free ? "Auto libre (expérimental)" : "Auto (recommandé)", now_us);
+  }
   if (to.header_text && (factor_of(wanted) != factor_of(r) || wanted.downscale != r.downscale ||
                          wanted.hdr_native != r.hdr_native)) {
     to.session.set_header({to.header_text(wanted)});
