@@ -12,6 +12,7 @@
 #include <imgui.h>
 
 #include "app/play/auto_config.h"
+#include "app/play/i18n.h"
 #include "app/play/panel_style.h"
 #include "app/play/settings_chain_tabs.h"
 #include "app/play/settings_engines.h"
@@ -231,7 +232,7 @@ void language_combo(const char* label, const char* none_label, std::string& tag)
   if (!ImGui::BeginCombo(label, current.c_str())) return;
   if (ImGui::Selectable(none_label, tag.empty())) tag.clear();
   for (const Language& language : menu_languages()) {
-    if (ImGui::Selectable(std::string(language.name).c_str(), same_language(tag, language.code)))
+    if (ImGui::Selectable(i18n::tr(language.name), same_language(tag, language.code)))
       tag = std::string(language.code);
   }
   ImGui::EndCombo();
@@ -552,6 +553,7 @@ SettingsPanel::Result SettingsPanel::draw(const PlaySettings& running, const Set
         if ((event == BenchEvent::Applied || event == BenchEvent::Undone) && draft_ != running)
           result.reopen = draft_;
       } else if (name == "Application") {
+        language_section(draft_);
         default_player_page(choices.place, system_, draft_.default_player_dismissed,
                             choices.default_player_is_ajp);
         updates_page(draft_, choices.place, updates_);

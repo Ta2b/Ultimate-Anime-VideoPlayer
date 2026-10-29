@@ -95,6 +95,8 @@ struct UpdateNote {
   bool refused = false;
   std::shared_ptr<std::future<std::expected<std::string, Refusal>>> pending;
 };
+// La langue de l'interface : anglais ou français, prise en direct.
+void language_section(PlaySettings& d);
 void updates_page(PlaySettings& d, const PlayerPlace& place, UpdateNote& note);
 
 // Le lecteur par défaut et « Ouvrir avec » (Général > Application).

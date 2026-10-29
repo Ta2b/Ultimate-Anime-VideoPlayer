@@ -6,6 +6,8 @@
 #include <string_view>
 #include <vector>
 
+#include "app/play/i18n.h"
+
 namespace ajp::app::play {
 
 std::optional<std::size_t> chapter_at(std::span<const ChapterMark> chapters, std::int64_t position_us) {
@@ -66,7 +68,7 @@ std::optional<std::int64_t> credits_skip_target(std::span<const ChapterMark> cha
 }
 
 std::string chapter_label(std::span<const ChapterMark> chapters, std::size_t index) {
-  std::string label = std::format("Chapitre {}/{}", index + 1, chapters.size());
+  std::string label = i18n::tr_format("Chapter {}/{}", index + 1, chapters.size());
   if (index < chapters.size() && !chapters[index].title.empty()) label += " · " + chapters[index].title;
   return label;
 }

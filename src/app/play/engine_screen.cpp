@@ -20,6 +20,7 @@
 #include "app/play/first_run.h"
 #include "app/play/gpu_tier.h"
 #include "app/play/host_facts.h"
+#include "app/play/i18n.h"
 #include "app/play/profiles.h"
 #include "app/play/scripted_input.h"
 #include "app/play/settings.h"
@@ -250,7 +251,7 @@ std::expected<bool, Refusal> handle_engine_change(Player& p, const EngineChange&
   auto library = open_backend(p.catalog, p.paths, p.engines, probe);
   if (!library) {
     log->warn("moteurs : {} ; {} reste en service", library.error().detail, p.library->path().string());
-    p.notice = "Moteur inchangé : aucun autre ne s'ouvre (journal)";
+    p.notice = i18n::tr("Engine unchanged: no other one opens (see log)");
     return true;
   }
   p.library = std::move(*library);
@@ -258,9 +259,9 @@ std::expected<bool, Refusal> handle_engine_change(Player& p, const EngineChange&
   const std::optional<core::EngineId> now = engine_of_library(p.library->path());
   const std::string name = now ? std::string(engine_label(*now)) : p.library->path().filename().string();
   if (use != nullptr && now != use->id) {
-    p.notice = std::format("{} ne s'ouvre pas sur ce GPU : {} reste en service", engine_label(use->id), name);
+    p.notice = i18n::tr_format("{} does not open on this GPU: {} stays active", engine_label(use->id), name);
   } else {
-    p.notice = std::format("Moteur : {}", name);
+    p.notice = i18n::tr_format("Engine: {}", name);
   }
   return true;
 }

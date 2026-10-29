@@ -212,6 +212,8 @@ struct PlaySettings {
   std::string update_mode = "notify";
   std::string update_channel = "stable";
   std::string update_frequency = "daily";
+  // Langue de l'interface : « en » (le défaut, sans détection) ou « fr » ; prise en direct (app/play/i18n.h).
+  std::string language = "en";
   // Le dossier où s'installent les moteurs téléchargés (TensorRT, OpenVINO…) et leurs téléchargements ; vide
   // : le dossier des données de l'utilisateur. Vaut au prochain lancement ; les moteurs déjà installés ne
   // sont pas déplacés.

@@ -11,6 +11,7 @@
 #include "app/play/gmfss_fused_choice.h"
 #include "app/play/gpu_telemetry.h"
 #include "app/play/host_facts.h"
+#include "app/play/i18n.h"
 #include "app/play/motion_model.h"
 #include "app/play/rife_fused_choice.h"
 #include "core/clock.h"
@@ -285,8 +286,9 @@ std::expected<std::optional<ChainEngines>, Refusal> prepare_chain_once(Player& p
     }
     if (!loaded) {
       log->warn("{} ; {}", loaded.error().detail, c.rife_model ? "RIFE à la place" : "sans interpolation");
-      p.ui.controls().notify(c.rife_model ? "GMFSS indisponible : RIFE" : "GMFSS indisponible",
-                             host_now_us());
+      p.ui.controls().notify(
+          c.rife_model ? i18n::tr("GMFSS unavailable: using RIFE") : i18n::tr("GMFSS unavailable"),
+          host_now_us());
     } else if (!*loaded) {
       return std::nullopt;
     } else {
@@ -314,8 +316,9 @@ std::expected<std::optional<ChainEngines>, Refusal> prepare_chain_once(Player& p
     }
     if (!loaded) {
       log->warn("{} ; {}", loaded.error().detail, c.rife_model ? "RIFE à la place" : "sans interpolation");
-      p.ui.controls().notify(c.rife_model ? "DistilDRBA indisponible : RIFE" : "DistilDRBA indisponible",
-                             host_now_us());
+      p.ui.controls().notify(
+          c.rife_model ? i18n::tr("DistilDRBA unavailable: using RIFE") : i18n::tr("DistilDRBA unavailable"),
+          host_now_us());
     } else if (!*loaded) {
       return std::nullopt;
     } else {
@@ -343,9 +346,9 @@ std::expected<std::optional<ChainEngines>, Refusal> prepare_chain_once(Player& p
     auto loaded = prepare_apple(p, init, *c.backend, c.work.width, c.work.height);
     if (!loaded) {
       log->warn("{} ; {}", loaded.error().detail, c.rife_model ? "RIFE à la place" : "sans interpolation");
-      p.ui.controls().notify(
-          c.rife_model ? "Interpolation d'Apple indisponible : RIFE" : "Interpolation d'Apple indisponible",
-          host_now_us());
+      p.ui.controls().notify(c.rife_model ? i18n::tr("Apple interpolation unavailable: using RIFE")
+                                          : i18n::tr("Apple interpolation unavailable"),
+                             host_now_us());
     } else if (!*loaded) {
       return std::nullopt;
     } else {

@@ -15,6 +15,8 @@
 #include <SDL3/SDL_keycode.h>
 #include <SDL3/SDL_timer.h>
 
+#include "app/play/i18n.h"
+
 extern "C" {
 #include <libavutil/frame.h>
 }
@@ -79,7 +81,7 @@ ExportOutcome run_export(Player& p, const ExportJob& job) {
   const auto stopped = [&](const Refusal& refusal) {
     log->warn("export : {} {}", name(refusal.code), refusal.detail);
     return ExportOutcome{.end = ExportEnd::Failed,
-                         .notice = std::format("Export arrêté : {}", refusal.detail)};
+                         .notice = i18n::tr_format("Export stopped: {}", refusal.detail)};
   };
   std::error_code unknown;
   if (job.output.empty() || std::filesystem::equivalent(job.output, p.options.file, unknown))
@@ -337,18 +339,16 @@ ExportOutcome run_export(Player& p, const ExportJob& job) {
   if (interrupted == ExportEnd::Quit) return {.end = ExportEnd::Quit};
   if (interrupted == ExportEnd::Cancelled) {
     log->info("export annulé après {} images", converted);
-    return {.end = ExportEnd::Cancelled, .notice = "Export annulé"};
+    return {.end = ExportEnd::Cancelled, .notice = i18n::tr("Export cancelled")};
   }
   if (failure) return stopped(*failure);
   log->info("export terminé : {} images, {} octets, {:.1f} s", written.frames, written.bytes, elapsed);
   std::string notice =
-      std::format("Export terminé : {} ({} images, {:.0f} Mo, {})", prepare::utf8_path(job.output.filename()),
-                  written.frames, static_cast<double>(written.bytes) / 1e6, seconds_text(elapsed));
+      i18n::tr_format("Export done: {} ({} frames, {:.0f} MB, {})", prepare::utf8_path(job.output.filename()),
+                      written.frames, static_cast<double>(written.bytes) / 1e6, seconds_text(elapsed));
   if (!truncated.empty())
-    notice += std::format(
-        " — attention : l'audio et les sous-titres s'arrêtent avant la fin, la source "
-        "n'a pas pu être relue ({})",
-        truncated);
+    notice += i18n::tr_format(
+        " — warning: audio and subtitles stop early, the source could not be read again ({})", truncated);
   return {.end = ExportEnd::Done, .notice = std::move(notice)};
 }
 

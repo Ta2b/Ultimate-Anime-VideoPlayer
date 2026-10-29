@@ -6,6 +6,7 @@
 #include <format>
 #include <utility>
 
+#include "app/play/i18n.h"
 #include "media/language.h"
 
 namespace ajp::app::play {
@@ -14,26 +15,26 @@ namespace {
 // La seule table des noms de langue : une ligne par langue, les autres formes (« ja », « fra »,
 // « zho ») s'y ramènent par media::canonical_language.
 constexpr std::array<Language, 20> kLanguages{{
-    {.code = "jpn", .name = "Japonais", .menu = true},
-    {.code = "fre", .name = "Français", .menu = true},
-    {.code = "eng", .name = "Anglais", .menu = true},
-    {.code = "ger", .name = "Allemand", .menu = true},
-    {.code = "spa", .name = "Espagnol", .menu = true},
-    {.code = "ita", .name = "Italien", .menu = true},
-    {.code = "por", .name = "Portugais", .menu = true},
-    {.code = "rus", .name = "Russe", .menu = true},
-    {.code = "chi", .name = "Chinois", .menu = true},
-    {.code = "kor", .name = "Coréen", .menu = true},
-    {.code = "ara", .name = "Arabe", .menu = true},
-    {.code = "pol", .name = "Polonais"},
-    {.code = "dut", .name = "Néerlandais"},
-    {.code = "tur", .name = "Turc"},
-    {.code = "ind", .name = "Indonésien"},
-    {.code = "tha", .name = "Thaï"},
-    {.code = "vie", .name = "Vietnamien"},
-    {.code = "may", .name = "Malais"},
+    {.code = "jpn", .name = "Japanese", .menu = true},
+    {.code = "fre", .name = "French", .menu = true},
+    {.code = "eng", .name = "English", .menu = true},
+    {.code = "ger", .name = "German", .menu = true},
+    {.code = "spa", .name = "Spanish", .menu = true},
+    {.code = "ita", .name = "Italian", .menu = true},
+    {.code = "por", .name = "Portuguese", .menu = true},
+    {.code = "rus", .name = "Russian", .menu = true},
+    {.code = "chi", .name = "Chinese", .menu = true},
+    {.code = "kor", .name = "Korean", .menu = true},
+    {.code = "ara", .name = "Arabic", .menu = true},
+    {.code = "pol", .name = "Polish"},
+    {.code = "dut", .name = "Dutch"},
+    {.code = "tur", .name = "Turkish"},
+    {.code = "ind", .name = "Indonesian"},
+    {.code = "tha", .name = "Thai"},
+    {.code = "vie", .name = "Vietnamese"},
+    {.code = "may", .name = "Malay"},
     {.code = "hin", .name = "Hindi"},
-    {.code = "ukr", .name = "Ukrainien"},
+    {.code = "ukr", .name = "Ukrainian"},
 }};
 
 constexpr auto kMenuLanguages = [] {
@@ -61,7 +62,7 @@ std::string language_name(std::string_view tag) {
   if (code.empty() || code == "und" || code == "mul" || code == "zxx") return {};
   const std::string_view canonical = media::canonical_language(code);
   for (const Language& language : kLanguages) {
-    if (language.code == canonical) return std::string(language.name);
+    if (language.code == canonical) return i18n::tr(language.name);
   }
   return std::string(tag);
 }
@@ -81,10 +82,10 @@ std::string track_label(const media::TrackInfo& track) {
   if (!track.title.empty() && !repeats)
     label = label.empty() ? track.title : std::format("{} · {}", label, track.title);
   if (!track.title.empty() && repeats) label = track.title;
-  if (label.empty()) label = std::format("Piste {}", track.index);
+  if (label.empty()) label = i18n::tr_format("Track {}", track.index);
   if (track.kind == media::TrackKind::Subtitle && track.codec != "ass" && track.codec != "ssa")
     label += std::format(" ({})", track.codec == "subrip" ? std::string("SRT") : track.codec);
-  if (track.forced) label += " · forcés";
+  if (track.forced) label += i18n::tr(" · forced");
   return label;
 }
 
