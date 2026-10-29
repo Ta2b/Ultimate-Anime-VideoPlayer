@@ -10,6 +10,7 @@
 #include <system_error>
 #include <utility>
 
+#include "app/play/i18n.h"
 #include "prepare/process.h"
 #include "prepare/utf8.h"
 
@@ -103,7 +104,7 @@ std::expected<void, Refusal> write_registry(std::span<const RegistryValue> value
                         data.c_str(), static_cast<DWORD>((data.size() + 1) * sizeof(wchar_t)));
     if (status != ERROR_SUCCESS)
       return refuse(RefusalCode::FileUnwritable,
-                    std::format("registre : HKCU\\{} (erreur {})", value.key, status));
+                    i18n::tr_format("registry: HKCU\\{} (error {})", value.key, status));
   }
   SHChangeNotify(SHCNE_ASSOCCHANGED, SHCNF_IDLIST, nullptr, nullptr);
   return {};
@@ -119,7 +120,7 @@ std::expected<void, Refusal> erase_registry(std::string_view executable) {
     const LSTATUS status = RegDeleteTreeW(HKEY_CURRENT_USER, wide(tree).c_str());  // la clé et ses sous-clés
     if (!removed(status))
       return refuse(RefusalCode::FileUnwritable,
-                    std::format("registre : HKCU\\{} (erreur {})", tree, status));
+                    i18n::tr_format("registry: HKCU\\{} (error {})", tree, status));
   }
   RegDeleteKeyW(HKEY_CURRENT_USER, L"Software\\AJP");  // seulement vide : rien d'autre n'y est à nous
   for (const RegistryValue& value : registry_shared_values()) {
@@ -127,7 +128,7 @@ std::expected<void, Refusal> erase_registry(std::string_view executable) {
         RegDeleteKeyValueW(HKEY_CURRENT_USER, wide(value.key).c_str(), wide(value.name).c_str());
     if (!removed(status))
       return refuse(RefusalCode::FileUnwritable,
-                    std::format("registre : HKCU\\{} : {} (erreur {})", value.key, value.name, status));
+                    i18n::tr_format("registry: HKCU\\{} : {} (error {})", value.key, value.name, status));
   }
   SHChangeNotify(SHCNE_ASSOCCHANGED, SHCNF_IDLIST, nullptr, nullptr);
   return {};
@@ -252,11 +253,11 @@ std::expected<std::string, Refusal> register_player(const PlayerPlace& place) {
 #elif defined(__APPLE__)
   static_cast<void>(place);
   return std::string(
-      "AJP.app déclare déjà les vidéos qu'il ouvre. Pour en faire le lecteur par défaut : clic droit sur "
-      "une vidéo > Lire les informations > Ouvrir avec : AJP > Tout modifier.");
+      i18n::tr("AJP.app already declares the videos it opens. To make it the default: right-click a video > "
+               "Get Info > Open with: AJP > Change All."));
 #else
   if (place.home.empty() && place.data.empty())
-    return refuse(RefusalCode::FieldMissing, "lecteur par défaut : dossier personnel inconnu");
+    return refuse(RefusalCode::FieldMissing, i18n::tr("default player: home folder unknown"));
   // Dans un AppImage l'exécutable est monté à un endroit provisoire : la fiche pointe sur le fichier
   // .AppImage lui-même (variable APPIMAGE posée par son lanceur).
   std::filesystem::path launcher = place.executable;
@@ -293,14 +294,13 @@ std::expected<std::string, Refusal> unregister_player(const PlayerPlace& place) 
 #if defined(_WIN32)
   if (auto erased = erase_registry(prepare::utf8_path(place.executable)); !erased)
     return std::unexpected(std::move(erased.error()));
-  return std::string("AJP ne figure plus dans « Ouvrir avec ».");
+  return std::string(i18n::tr("AJP is no longer in \"Open with\"."));
 #elif defined(__APPLE__)
   static_cast<void>(place);
-  return std::string(
-      "Sous macOS, l'inscription suit AJP.app : la retirer, c'est mettre l'app à la corbeille.");
+  return std::string(i18n::tr("On macOS the registration follows AJP.app: remove it by trashing the app."));
 #else
   if (place.home.empty() && place.data.empty())
-    return refuse(RefusalCode::FieldMissing, "lecteur par défaut : dossier personnel inconnu");
+    return refuse(RefusalCode::FieldMissing, i18n::tr("default player: home folder unknown"));
   const std::filesystem::path file = desktop_file(place);
   std::error_code error;
   if (!std::filesystem::remove(file, error)) {
@@ -308,10 +308,10 @@ std::expected<std::string, Refusal> unregister_player(const PlayerPlace& place) 
       return refuse(RefusalCode::FileUnwritable,
                     std::format("{} : {}", prepare::utf8_path(file), error.message()));
     }
-    return std::string("AJP n'était pas inscrit : rien à retirer.");
+    return std::string(i18n::tr("AJP was not registered: nothing to remove."));
   }
   refresh_desktop_database(file.parent_path());
-  return std::string("AJP ne figure plus dans « Ouvrir avec ».");
+  return std::string(i18n::tr("AJP is no longer in \"Open with\"."));
 #endif
 }
 
@@ -323,9 +323,8 @@ std::expected<std::string, Refusal> choose_as_default(const PlayerPlace& place) 
   // ouvre la liste des applications par défaut.
   if (!SDL_OpenURL(std::format("ms-settings:defaultapps?registeredAppUser={}", kRegisteredName).c_str()))
     return registered;
-  return std::format(
-      "Paramètres ouverts sur {} : « Définir par défaut » en haut de la page, ou un type à la fois.",
-      kAppName);
+  return i18n::tr_format(
+      "Settings opened on {}: \"Set default\" at the top of the page, or one type at a time.", kAppName);
 #elif defined(__APPLE__)
   return registered;
 #else
@@ -343,11 +342,11 @@ std::expected<std::string, Refusal> choose_as_default(const PlayerPlace& place) 
       return refuse(RefusalCode::FileUnwritable, std::format("xdg-mime : {}{}{}", prepare::describe(*run),
                                                              last.empty() ? "" : " : ", last));
     }
-    return std::string("AJP est maintenant le lecteur des vidéos (mkv, mp4, webm, avi, mov…).");
+    return std::string(i18n::tr("AJP is now the video player (mkv, mp4, webm, avi, mov…)."));
   }
   return refuse(RefusalCode::LibraryUnavailable,
-                "xdg-mime introuvable (paquet xdg-utils) : clic droit sur une vidéo > Ouvrir avec > AJP, "
-                "en cochant « toujours »");
+                i18n::tr("xdg-mime not found (xdg-utils package): right-click a video > Open with > AJP and "
+                         "tick \"always\""));
 #endif
 }
 
