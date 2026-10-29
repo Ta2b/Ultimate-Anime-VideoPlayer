@@ -497,7 +497,7 @@ UiFrame PlayerUi::frame(std::int64_t now_us, const ControlsView& view, std::vect
   }
   clicks_.clear();
   bool drawn = draw_controls(controls_, view, look_, now_us, actions);
-  if (panel_.is_open()) {
+  if (panel_.wants_draw(running_, choices_)) {
     const SettingsPanel::Result result = panel_.draw(running_, choices_, look_.scale, actions);
     if (result.live) actions.emplace_back(ApplySettings{.settings = *result.live});
     if (result.reopen) actions.emplace_back(ApplySettings{.settings = *result.reopen, .reopen = true});
@@ -547,7 +547,7 @@ const ImDrawData* PlayerUi::home(std::int64_t now_us, HomeView& view, std::vecto
   begin_frame(now_us);
   clicks_.clear();
   draw_home(view, look_.scale, panel_.is_open());
-  if (panel_.is_open()) {
+  if (panel_.wants_draw(running_, choices_)) {
     const SettingsPanel::Result result = panel_.draw(running_, choices_, look_.scale, actions);
     if (result.live) actions.emplace_back(ApplySettings{.settings = *result.live});
     if (result.reopen) actions.emplace_back(ApplySettings{.settings = *result.reopen, .reopen = true});
