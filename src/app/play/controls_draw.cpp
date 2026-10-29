@@ -286,7 +286,9 @@ bool draw_controls(Controls& controls, const ControlsView& view, const UiLook& l
         chapter && !view.chapters[*chapter].title.empty())
       clock += " · " + view.chapters[*chapter].title;
     // Le temps et le chapitre s'arrêtent avant les boutons de droite : un titre de chapitre long est coupé.
-    const int right_buttons = 2 + (look.tracks.audio.empty() ? 0 : 1) + (look.tracks.subtitles.empty() ? 0 : 1);
+    int right_buttons = 2;
+    if (!look.tracks.audio.empty()) ++right_buttons;
+    if (!look.tracks.subtitles.empty()) ++right_buttons;
     const float clock_x = vx0 + vw + 18.0F * s;
     const float clock_room = width - pad - row * static_cast<float>(right_buttons) - 8.0F * s - clock_x;
     clock = ellipsize(std::move(clock), std::max(clock_room, 0.0F));
