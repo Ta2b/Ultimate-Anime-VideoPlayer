@@ -410,8 +410,13 @@ TEST_CASE("La dérivation écrit six morceaux et leur manifeste une fois, puis l
   REQUIRE(manifest);
   CHECK(manifest->extension() == ".rifefused");
   CHECK(manifest->filename().string().find("fusion1-128x256") != std::string::npos);
-  std::ifstream text(*manifest);
-  const std::string content{std::istreambuf_iterator<char>(text), std::istreambuf_iterator<char>()};
+  // Lu puis refermé : sous Windows, un fichier resté ouvert ne se remplace pas (la dérivation réécrit le
+  // manifeste).
+  std::string content;
+  {
+    std::ifstream text(*manifest);
+    content.assign(std::istreambuf_iterator<char>(text), std::istreambuf_iterator<char>());
+  }
   const auto parsed = parse_manifest(content);
   REQUIRE(parsed);
   REQUIRE(parsed->pieces.size() == 5);

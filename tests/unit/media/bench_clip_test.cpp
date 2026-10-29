@@ -16,10 +16,14 @@ TEST_CASE("la séquence de l'évaluation s'écrit et se rouvre", "[media][bench_
   INFO((written ? std::string() : written.error().detail));
   REQUIRE(written.has_value());
   CHECK(std::filesystem::file_size(file) > 10'000);
-  auto demuxer = Demuxer::open(file);
-  REQUIRE(demuxer.has_value());
-  bool video = false;
-  for (const TrackInfo& track : demuxer->tracks()) video = video || track.kind == TrackKind::Video;
-  CHECK(video);
-  std::filesystem::remove(file);
+  {
+    // Le demuxeur se referme avant la suppression : sous Windows, un fichier ouvert ne se supprime pas.
+    auto demuxer = Demuxer::open(file);
+    REQUIRE(demuxer.has_value());
+    bool video = false;
+    for (const TrackInfo& track : demuxer->tracks()) video = video || track.kind == TrackKind::Video;
+    CHECK(video);
+  }
+  std::error_code ignored;
+  std::filesystem::remove(file, ignored);
 }

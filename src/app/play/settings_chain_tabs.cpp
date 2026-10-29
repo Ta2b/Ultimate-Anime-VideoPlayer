@@ -324,7 +324,6 @@ void fluidity_tab(PlaySettings& d, const SettingsChoices& choices, bool exportin
   if (!choices.rife_models.empty() && panel::advanced()) {
     ImGui::BeginDisabled(d.motion_engine != MotionEngine::Rife);
     const std::string current = d.rife_model.empty() ? choices.default_rife_model : d.rife_model;
-    std::string missing;
     if (ImGui::BeginCombo("Modèle RIFE", rife_label(current).c_str())) {
       for (const RifeEntry& entry : rife_menu(choices.rife_models)) {
         const bool chosen = entry.file == current;
@@ -366,13 +365,9 @@ void fluidity_tab(PlaySettings& d, const SettingsChoices& choices, bool exportin
                        choices.rife_folder, files.pair, files.fusion));
     }
   }
-  if (d.motion_engine == MotionEngine::DistilDrba) {
-    if (!choices.distil_drba_available) {
-      note(std::format("Modèle DistilDRBA introuvable dans {} ({}) ; RIFE prend la place.",
-                       choices.rife_folder, kDistilDrbaFile));
-    }
-  }
-  if (d.motion_engine == MotionEngine::Apple) {
+  if (d.motion_engine == MotionEngine::DistilDrba && !choices.distil_drba_available) {
+    note(std::format("Modèle DistilDRBA introuvable dans {} ({}) ; RIFE prend la place.", choices.rife_folder,
+                     kDistilDrbaFile));
   }
   if (exporting) {
     // Les limites de la lecture en direct ne valent pas à l'export.
