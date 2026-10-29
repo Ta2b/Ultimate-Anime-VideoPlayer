@@ -153,7 +153,8 @@ TEST_CASE("auto : en demi-paliers, le palier monte et descend d'une moitié", "[
   CHECK(rate.step() <= 9);
 }
 
-TEST_CASE("auto : quand le VRR se coupe, les demi-paliers repassent à des paliers entiers", "[core][auto_rate]") {
+TEST_CASE("auto : quand le VRR se coupe, les demi-paliers repassent à des paliers entiers",
+          "[core][auto_rate]") {
   AutoRate rate(9, 2);
   for (int i = 0; i < 3000; ++i) rate.pair(false);
   CHECK(rate.step() == 9);

@@ -396,8 +396,9 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
     const bool on = chain.running.rife_auto && chain.rife_loaded && chain.running.rife_factor >= 2;
     // Les demi-paliers (×2,5) ne valent que sur un écran VRR armé : à fréquence fixe, ils feraient vibrer.
     const int granularity = vrr_armed ? 2 : 1;
-    chain.live.set_auto(on, core::auto_ceiling(display_refresh_hz(out.window()), fps_of(video.frame_rate), granularity),
-                        granularity);
+    chain.live.set_auto(
+        on, core::auto_ceiling(display_refresh_hz(out.window()), fps_of(video.frame_rate), granularity),
+        granularity);
   };
   apply_auto();
   // Le palier du mode auto : un message à l'écran et une ligne de journal à chaque changement.
@@ -420,7 +421,8 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
         return halves % 2 == 0 ? std::format("{}", halves / 2) : std::format("{},5", halves / 2);
       };
       const int g = chain.live.auto_granularity();
-      log->info("auto : ×{} (plafond ×{}, plafond appris {})", text(step), text(chain.live.auto_ceiling() * 2 / g),
+      log->info("auto : ×{} (plafond ×{}, plafond appris {})", text(step),
+                text(chain.live.auto_ceiling() * 2 / g),
                 chain.live.auto_cap() > 0 ? "×" + text(chain.live.auto_cap() * 2 / g) : std::string("aucun"));
       if (auto_shown > 0) p.ui.controls().notify(std::format("Auto ×{}", text(step)), host_now_us());
     }
@@ -458,8 +460,10 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
       const FrameStats& shown = session.stats();
       if (auto_shown > 0 && auto_shown == auto_window_step && host_now_us() - auto_window_us >= 4'000'000) {
         if (core::auto_overloaded(shown.missing - auto_window_missing, shown.new_frames - auto_window_new)) {
-          log->info("auto : {} images manquées sur {} s, le GPU ne suit pas ×{}",
-                    shown.missing - auto_window_missing, 4, auto_shown % 2 == 0 ? std::format("{}", auto_shown / 2) : std::format("{},5", auto_shown / 2));
+          log->info(
+              "auto : {} images manquées sur {} s, le GPU ne suit pas ×{}",
+              shown.missing - auto_window_missing, 4,
+              auto_shown % 2 == 0 ? std::format("{}", auto_shown / 2) : std::format("{},5", auto_shown / 2));
           chain.live.auto_overloaded();
         }
         auto_window_step = 0;

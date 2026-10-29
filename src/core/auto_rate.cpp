@@ -8,7 +8,7 @@ namespace ajp::core {
 int auto_ceiling(double display_hz, double source_fps, int granularity) {
   granularity = std::clamp(granularity, 1, 2);
   // Hors de [5, 240] i/s : une cadence fausse (VFR, base de temps) ; l'interpolation reste à ×1.
-  if (display_hz <= 0.0 || source_fps < 5.0 || source_fps > 240.0) return 1;
+  if (display_hz <= 0.0 || source_fps < 5.0 || source_fps > 240.0) return granularity;
   int best = granularity;
   for (int step = 2 * granularity; step <= kAutoMaxStep * granularity; ++step) {
     if (source_fps * step / granularity <= display_hz * 1.01) best = step;
