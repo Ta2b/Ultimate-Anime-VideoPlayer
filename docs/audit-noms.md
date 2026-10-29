@@ -447,7 +447,127 @@ Tableau : texte français d'avant → anglais (par défaut) / français d'après
 | Le lecteur essaie quelques secondes de vidéo avec ses réglages recommandés, du plus léger au plus lourd, garde ceux que votre PC tient sans saccade, et les applique. Cela dure environ une minute (plusieurs minutes la toute première fois, le temps de préparer les moteurs). | The player tries a few seconds of video with its recommended settings, lightest to heaviest, keeps what your PC holds without stutter and applies it. About a minute (several the first time). |
 | To apply: playback reopens at the same spot with {}; its engines are built the first time for each model and size. | To apply: playback reopens at the same spot with {}; its engines are built the first time for each model and size. |
 
+## Étape C1 : assistant de premier lancement et écran des moteurs
+
+| Avant (français) | Après (anglais) | Après (français) |
+|---|---|---|
+| J'accepte sa licence | I accept its licence | J'accepte sa licence |
+| Lire la licence | Read the licence | Lire la licence |
+| Clé d'API NGC | NGC API key | Clé d'API NGC |
+| Obtenir une clé | Get a key | Obtenir une clé |
+| installé | installed | installé |
+| à télécharger ({}){} | to download ({}){} | à télécharger ({}){} |
+| à télécharger ({}) · demande {} d'espace, {} libres{} | to download ({}) · needs {} of space, {} free{} | à télécharger ({}) · demande {} d'espace, {} libres{} |
+| pas encore publié pour cette version | not published for this version yet | pas encore publié pour cette version |
+| GPU inconnu | Unknown GPU | GPU inconnu |
+|  · cœurs Tensor |  · Tensor cores |  · cœurs Tensor |
+|  · unités matricielles (WMMA) |  · matrix units (WMMA) |  · unités matricielles (WMMA) |
+| livré avec le lecteur | bundled with the player | livré avec le lecteur |
+| absent de ce paquet | not in this package | absent de ce paquet |
+| à télécharger ({} Mo), paquet fermé sous licence NVIDIA | to download ({} MB), closed NVIDIA-licensed package | à télécharger ({} Mo), paquet fermé sous licence NVIDIA |
+| pas encore installable dans cette version | cannot be installed in this version yet | pas encore installable dans cette version |
+| ni TensorRT ni Vulkan choisis : ni SPAN ni RIFE | neither TensorRT nor Vulkan chosen: no SPAN or RIFE | ni TensorRT ni Vulkan choisis : ni SPAN ni RIFE |
+| Recommandé | Recommended | Recommandé |
+| Compatibilité | Compatibility | Compatibilité |
+| Toujours présent | Always available | Toujours présent |
+| Le plus rapide pour ce GPU | Fastest for this GPU | Le plus rapide pour ce GPU |
+| RTX HDR sur ce GPU | RTX HDR on this GPU | RTX HDR sur ce GPU |
+| À comparer avec Vulkan | Compare with Vulkan | À comparer avec Vulkan |
+| Ne convient pas à ce GPU | Does not suit this GPU | Ne convient pas à ce GPU |
+| Bienvenue | Welcome | Bienvenue |
+| Moteurs | Engines | Moteurs |
+| Image et fluidité | Picture and smoothness | Image et fluidité |
+| Préréglage | Preset | Préréglage |
+| Priorité | Priority | Priorité |
+| Votre écran reçoit du HDR. | Your display receives HDR. | Votre écran reçoit du HDR. |
+| Automatique | Automatic | Automatique |
+| Le lecteur choisit selon la machine. | The player chooses for the machine. | Le lecteur choisit selon la machine. |
+| Cartes NVIDIA RTX avec le moteur TensorRT et le SDK Maxine. | NVIDIA RTX cards with the TensorRT engine and the Maxine SDK. | Cartes NVIDIA RTX avec le moteur TensorRT et le SDK Maxine. |
+| HDR adaptatif | Adaptive HDR | HDR adaptatif |
+| Tous les GPU : l'aspect HDR est émulé selon la scène. | Any GPU: the HDR look is emulated per scene. | Tous les GPU : l'aspect HDR est émulé selon la scène. |
+| Pas de conversion HDR. | No HDR conversion. | Pas de conversion HDR. |
+| RTX HDR, pas à pas | RTX HDR, step by step | RTX HDR, pas à pas |
+| à faire | to do | à faire |
+| Vérifier de nouveau | Check again | Vérifier de nouveau |
+| Renoncer : HDR adaptatif | Give up: adaptive HDR | Renoncer : HDR adaptatif |
+| Comment écoutez-vous ? | How do you listen? | Comment écoutez-vous ? |
+| Casque : crossfeed en stéréo, binaural en surround. | Headphones: crossfeed in stereo, binaural in surround. | Casque : crossfeed en stéréo, binaural en surround. |
+| Multicanal, surround direct. | Multichannel, direct surround. | Multicanal, surround direct. |
+| Grisé : l'appareil de sortie n'a que 2 canaux. | Greyed out: the output device only has 2 channels. | Grisé : l'appareil de sortie n'a que 2 canaux. |
+| Enceintes : rendu fidèle, mixage soigné. | Speakers: faithful sound, careful mix. | Enceintes : rendu fidèle, mixage soigné. |
+| Langues | Languages | Langues |
+| Langue de l'audio | Audio language | Langue audio |
+| Selon le fichier | From the file | Selon le fichier |
+| Langue des sous-titres | Subtitle language | Langue des sous-titres |
+| Aucun | None | Aucun |
+| Mises à jour | Updates | Mises à jour |
+| Me prévenir | Notify me | Me prévenir |
+| Une notification ; vous lancez la mise à jour vous-même. | A notification; you start the update yourself. | Une notification ; vous lancez la mise à jour vous-même. |
+| Téléchargée, installée au prochain lancement. | Downloaded, installed at next launch. | Téléchargée, installée au prochain lancement. |
+| Jamais | Never | Jamais |
+| Aucune vérification. | No checks. | Aucune vérification. |
+| Résumé | Summary | Résumé |
+| Précédent | Back | Précédent |
+| Passer | Skip | Passer |
+| Terminer | Finish | Terminer |
+| Suivant | Next | Suivant |
+| Continuer la lecture | Resume playback | Continuer la lecture |
+| Commencer | Start | Commencer |
+| Profil de démarrage | Startup profile | Profil de démarrage |
+| Annuler | Cancel | Annuler |
+| Moteur | Engine | Moteur |
+| Pas encore dit | Not said yet | Pas encore dit |
+| Casque | Headphones | Casque |
+| Enceintes | Speakers | Enceintes |
+| Home cinéma | Home theater | Home cinéma |
+| Étape {} sur {} : {} | Step {} of {}: {} | Étape {} sur {} : {} |
+| HDR : sauté, automatique (HDR et couleurs > HDR) | HDR: skipped, automatic (HDR and color > HDR) | HDR : sauté, automatique (HDR et couleurs > HDR) |
+| HDR : {} (HDR et couleurs > HDR) | HDR: {} (HDR and color > HDR) | HDR : {} (HDR et couleurs > HDR) |
+| Audio : enceintes en rendu fidèle (Audio > Sortie) | Audio: speakers, faithful sound (Audio > Output) | Audio : enceintes en rendu fidèle (Audio > Sortie) |
+| Audio : {} (Audio > Sortie) | Audio: {} (Audio > Output) | Audio : {} (Audio > Sortie) |
+| Langues : sauté (Général > Lecture) | Languages: skipped (General > Playback) | Langues : sauté (Général > Lecture) |
+| Langues : choisies (Général > Lecture) | Languages: chosen (General > Playback) | Langues : choisies (Général > Lecture) |
+| me prévenir | notify me | me prévenir |
+| Mises à jour : {} (Général > Application) | Updates: {} (General > Application) | Mises à jour : {} (Général > Application) |
+| Carte NVIDIA RTX | NVIDIA RTX card | Carte NVIDIA RTX |
+| RTX HDR demande une carte RTX (cœurs Tensor). | RTX HDR needs an RTX card (Tensor cores). | RTX HDR demande une carte RTX (cœurs Tensor). |
+| Moteur TensorRT | TensorRT engine | Moteur TensorRT |
+| Moteur TensorRT (installé à « Terminer ») | TensorRT engine (installed at "Finish") | Moteur TensorRT (installé à « Terminer ») |
+| SDK Maxine VideoFX | Maxine VideoFX SDK | SDK Maxine VideoFX |
+| SDK Maxine VideoFX (installé à « Terminer ») | Maxine VideoFX SDK (installed at "Finish") | SDK Maxine VideoFX (installé à « Terminer ») |
+| Niveau estimé : {} | Estimated level: {} | Niveau estimé : {} |
+| Écran {}p · {:.0f} Hz | Display {}p · {:.0f} Hz | Écran {}p · {:.0f} Hz |
+| Chargement du moteur | Loading the engine | Chargement du moteur |
+| automatiques | automatic | automatiques |
+| jamais | never | jamais |
+
+### Infobulles et notes raccourcies
+
+| Avant (français) | Après (anglais) |
+|---|---|
+| espace disque insuffisant : il faut {} (dont {} à télécharger), il reste {} | not enough disk space: {} needed ({} to download), {} left |
+| non publié (licence NVIDIA) : à construire sur cette machine, voir docs/nvidia-linux.md | not published (NVIDIA licence): build it on this machine, see docs/nvidia-linux.md |
+| à installer depuis NVIDIA NGC (clé d'API d'un compte NVIDIA gratuit) | to install from NVIDIA NGC (API key of a free NVIDIA account) |
+| NVIDIA Maxine non choisi : HDR adaptatif (tous GPU) au lieu de RTX HDR | NVIDIA Maxine not chosen: adaptive HDR instead of RTX HDR |
+| Le lecteur choisit seul la chaîne pour cette machine ; tout se retrouve ensuite dans les paramètres (p). Il s'ajoute aussi à « Ouvrir avec » du système à la fin de l'assistant. | The player picks the settings for this machine; everything is in Settings (p) afterwards. |
+| Vulkan sert tous les GPU ; les moteurs cochés à télécharger s'installent après « Terminer », vérifiés par leur empreinte, et Vulkan prend le relais de celui qui échoue. | Vulkan works on every GPU. Checked engines install after "Finish", verified by hash; Vulkan takes over if one fails. |
+| Vulkan sert tous les GPU ; les moteurs cochés à télécharger s'installent après « {} », vérifiés par leur empreinte, et Vulkan prend le relais de celui qui échoue. | Vulkan works on every GPU. Checked engines install after "{}", verified by hash; Vulkan takes over if one fails. |
+| Auto choisit la chaîne selon votre carte, votre écran et la vidéo. | Auto picks the settings for your card, display and video. |
+| Une fois les moteurs installés, le bouton « Optimiser pour ma machine » (Paramètres > Général > Configuration, environ une minute) règle tout seul ces choix pour votre PC. En attendant, une estimation d'après la carte suffit pour commencer. | Once the engines are installed, "Optimize for this machine" (Settings > General > Setup) tunes this for your PC in about a minute. |
+| Tant que tout n'est pas fait, l'écran reste en HDR adaptatif ; RTX HDR se choisit ensuite dans HDR et couleurs > HDR. | Until everything is done the display uses adaptive HDR; pick RTX HDR later in HDR and color > HDR. |
+| Le format du son se détecte seul. Aucune détection du casque ou des enceintes : dites-le ici. | The sound format is detected. Headphones or speakers are not: tell us here. |
+| Passer : Enceintes, en rendu fidèle. Le choix se change ensuite dans Audio > Sortie. | Skip: Speakers, faithful sound. Change it later in Audio > Output. |
+| Tout se change ensuite dans les paramètres (p). Pour le refaire : ajp --first-run. | Everything can be changed later in Settings (p). To redo this: ajp --first-run. |
+| Les moteurs cochés à télécharger s'installent, puis la lecture reprend au même endroit. | Checked engines install, then playback resumes at the same spot. |
+| Le lecteur a choisi pour ce GPU ; tout se change ensuite dans les paramètres (p). | The player chose for this GPU; change anything later in Settings (p). |
+| Image et fluidité : sauté, préréglage Auto (Général > Configuration) | Picture and smoothness: skipped, Auto preset (General > Setup) |
+| Image et fluidité : {}, priorité {} (Général > Configuration) | Picture and smoothness: {}, priority {} (General > Setup) |
+| HDR : RTX HDR choisi mais pas prêt (HDR et couleurs > HDR) : en attendant, l'écran reste en HDR adaptatif | HDR: RTX HDR chosen but not ready (HDR and color > HDR); meanwhile adaptive HDR is used |
+| Cochez TensorRT à l'écran Moteur : il s'installe à « Terminer ». | Check TensorRT on the Engine screen: it installs at "Finish". |
+| Cochez NVIDIA Maxine à l'écran Moteur (licence NVIDIA), ou posez le SDK dans /usr/local/VideoFX et relancez avec --truehdr-sdk. | Check NVIDIA Maxine on the Engine screen (NVIDIA licence), or put the SDK in /usr/local/VideoFX and relaunch with --truehdr-sdk. |
+| {} est choisi mais ne s'ouvre pas sur ce GPU (journal) : {} le remplace. | {} is chosen but does not open on this GPU (see log): {} replaces it. |
+
 ## À venir
 
-C : assistant, écran des moteurs,
-lecteur par défaut, mises à jour, messages d'erreur visibles.
+C2 : lecteur par défaut (messages), mises à jour (messages), benchmark (étapes et résultats), statistiques à l'écran, messages d'erreur visibles. Les journaux
+développeur et `--help` restent en français.

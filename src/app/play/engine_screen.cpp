@@ -118,28 +118,28 @@ std::expected<bool, Refusal> run_engine_screen(const EngineScreen& s, core::Sett
                                    [&](const EngineRow& row) { return row.offer.id == id && row.chosen; });
       };
       std::vector<RtxCheck> out;
-      out.push_back({.name = "Carte NVIDIA RTX",
+      out.push_back({.name = i18n::tr("NVIDIA RTX card"),
                      .done = gpu.tensor_cores,
-                     .todo = "RTX HDR demande une carte RTX (cœurs Tensor)."});
+                     .todo = i18n::tr("RTX HDR needs an RTX card (Tensor cores).")});
       const bool trt_here = tensorrt_backend_present(s.paths);
-      out.push_back({.name = trt_here ? "Moteur TensorRT" : "Moteur TensorRT (installé à « Terminer »)",
+      out.push_back({.name = trt_here ? i18n::tr("TensorRT engine")
+                                      : i18n::tr("TensorRT engine (installed at \"Finish\")"),
                      .done = trt_here || ticked(core::EngineId::TensorRt),
-                     .todo = "Cochez TensorRT à l'écran Moteur : il s'installe à « Terminer »."});
+                     .todo = i18n::tr("Check TensorRT on the Engine screen: it installs at \"Finish\".")});
       const bool maxine_here = maxine_available(s.options, s.paths);
-      out.push_back(
-          {.name = maxine_here ? "SDK Maxine VideoFX" : "SDK Maxine VideoFX (installé à « Terminer »)",
-           .done = maxine_here || ticked(core::EngineId::MaxineVfx),
-           .todo = "Cochez NVIDIA Maxine à l'écran Moteur (licence NVIDIA), ou posez le SDK dans "
-                   "/usr/local/VideoFX "
-                   "et relancez avec --truehdr-sdk."});
+      out.push_back({.name = maxine_here ? i18n::tr("Maxine VideoFX SDK")
+                                         : i18n::tr("Maxine VideoFX SDK (installed at \"Finish\")"),
+                     .done = maxine_here || ticked(core::EngineId::MaxineVfx),
+                     .todo = i18n::tr("Check NVIDIA Maxine on the Engine screen (NVIDIA licence), or put the "
+                                      "SDK in /usr/local/VideoFX and relaunch with --truehdr-sdk.")});
       return out;
     };
     view.wizard =
         begin_wizard(view.facts, s.options.first_run || s.restart_wizard ? 0 : engines.first_run_step);
-    view.tier_line = std::format("Niveau estimé : {}", tier_label(estimate.tier));
+    view.tier_line = i18n::tr_format("Estimated level: {}", tier_label(estimate.tier));
     const int height = display_height(s.screen.window());
     const double hz = display_refresh_hz(s.screen.window());
-    if (height > 0) view.display_line = std::format("Écran {}p · {:.0f} Hz", height, hz);
+    if (height > 0) view.display_line = i18n::tr_format("Display {}p · {:.0f} Hz", height, hz);
   }
   int furthest = engines.first_run_step;
   auto chosen_view = welcome(s.screen, s.ui, std::move(view), s.options, next_key, snapshot, furthest);
@@ -245,7 +245,7 @@ std::expected<bool, Refusal> handle_engine_change(Player& p, const EngineChange&
     if (!shown) return std::unexpected(std::move(shown.error()));
     if (!*shown) return false;
   }
-  show_loading(p.screen, p.ui, "Chargement du moteur");
+  show_loading(p.screen, p.ui, i18n::tr("Loading the engine"));
   const gpu::BackendInit probe{
       .render = &p.screen.device(), .cache_dir = p.paths.engines, .log = backend_log()};
   auto library = open_backend(p.catalog, p.paths, p.engines, probe);
@@ -270,8 +270,8 @@ std::string fallback_note(const core::Settings& engines, const std::filesystem::
   const std::optional<core::EngineId> preferred = engines.preferred[usage(core::Usage::Upscale)];
   const std::optional<core::EngineId> in_use = engine_of_library(library);
   if (!preferred || !in_use || preferred == in_use) return {};
-  return std::format("{} est choisi mais ne s'ouvre pas sur ce GPU (journal) : {} le remplace.",
-                     engine_label(*preferred), engine_label(*in_use));
+  return i18n::tr_format("{} is chosen but does not open on this GPU (see log): {} replaces it.",
+                         engine_label(*preferred), engine_label(*in_use));
 }
 
 }  // namespace ajp::app::play

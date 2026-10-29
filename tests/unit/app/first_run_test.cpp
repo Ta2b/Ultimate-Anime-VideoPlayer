@@ -7,6 +7,7 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include "core/settings.h"
+#include "french_ui.h"
 
 using namespace ajp;
 using namespace ajp::app::play;
@@ -31,6 +32,7 @@ const EngineRow* row_of(FirstRunView&& view, core::EngineId id) = delete;
 }  // namespace
 
 TEST_CASE("Resizable BAR : actif si le tas visible approche la VRAM, inactif à 256 Mo", "[app][first_run]") {
+  ajp::app::play::FrenchUi french;
   GpuFacts gpu = kRtx;
   CHECK(rebar_text(gpu).empty());  // le pilote n'expose aucun tas visible
   gpu.host_visible_vram_bytes = 12ULL << 30U;
@@ -43,6 +45,7 @@ TEST_CASE("Resizable BAR : actif si le tas visible approche la VRAM, inactif à 
 }
 
 TEST_CASE("Une RTX de 12 Go : TensorRT et Maxine cochés, profil 1", "[app][first_run]") {
+  ajp::app::play::FrenchUi french;
   CHECK(gpu_line(kRtx) == "NVIDIA GeForce RTX 4070 Ti · 12 Go · cœurs Tensor");
   CHECK(start_profile_for(kRtx) == 1);
   const FirstRunView view = first_run_view(kRtx, kHere, ProfilesView{});
@@ -64,6 +67,7 @@ TEST_CASE("Une RTX de 12 Go : TensorRT et Maxine cochés, profil 1", "[app][firs
 }
 
 TEST_CASE("Sous Windows, RTX HDR passe par le RTX Video SDK, sans offre DirectML", "[app][first_run]") {
+  ajp::app::play::FrenchUi french;
   EnginesHere here = kHere;
   here.os = core::Os::Windows;
   const FirstRunView view = first_run_view(kRtx, here, ProfilesView{});
@@ -76,6 +80,7 @@ TEST_CASE("Sous Windows, RTX HDR passe par le RTX Video SDK, sans offre DirectML
 }
 
 TEST_CASE("Sur Mac, Core ML est livré et coché, sans moteur NVIDIA ni AMD", "[app][first_run]") {
+  ajp::app::play::FrenchUi french;
   const GpuFacts m2{.name = "Apple M2", .vendor = GpuVendor::Apple, .vram_bytes = 16 * kGiB};
   const FirstRunView view =
       first_run_view(m2, EnginesHere{.os = core::Os::MacOs, .coreml = true}, ProfilesView{});
@@ -96,6 +101,7 @@ TEST_CASE("Sur Mac, Core ML est livré et coché, sans moteur NVIDIA ni AMD", "[
 }
 
 TEST_CASE("Profil conseillé selon le GPU", "[app][first_run]") {
+  ajp::app::play::FrenchUi french;
   GpuFacts small = kRtx;
   small.vram_bytes = 8 * kGiB;
   CHECK(start_profile_for(small) == 7);
@@ -121,6 +127,7 @@ TEST_CASE("Profil conseillé selon le GPU", "[app][first_run]") {
 }
 
 TEST_CASE("Unités matricielles AMD : RDNA3 et RDNA4 seulement", "[app][first_run]") {
+  ajp::app::play::FrenchUi french;
   CHECK(amd_matrix_cores("AMD Radeon RX 9070 XT"));
   CHECK(amd_matrix_cores("AMD Radeon RX 9070 XT (RADV GFX1201)"));
   CHECK(amd_matrix_cores("AMD Radeon RX 7900 XTX (RADV NAVI31)"));
@@ -130,6 +137,7 @@ TEST_CASE("Unités matricielles AMD : RDNA3 et RDNA4 seulement", "[app][first_ru
 }
 
 TEST_CASE("MIGraphX proposé aux seuls GPU que ROCm sert", "[app][first_run]") {
+  ajp::app::play::FrenchUi french;
   CHECK(rocm_listed("AMD Radeon RX 9070 XT (RADV GFX1201)"));
   CHECK(rocm_listed("AMD Radeon RX 7900 XTX (RADV NAVI31)"));
   CHECK(rocm_listed("AMD Radeon RX 6800 XT"));
@@ -154,6 +162,7 @@ TEST_CASE("MIGraphX proposé aux seuls GPU que ROCm sert", "[app][first_run]") {
 }
 
 TEST_CASE("MIGraphX de Windows ML proposé à l'essai aux AMD RDNA 3 et après", "[app][first_run]") {
+  ajp::app::play::FrenchUi french;
   CHECK(winml_listed("AMD Radeon(TM) 860M Graphics"));
   CHECK(winml_listed("AMD Radeon 780M Graphics"));
   CHECK(winml_listed("AMD Radeon(TM) 8060S Graphics"));
@@ -183,6 +192,7 @@ TEST_CASE("MIGraphX de Windows ML proposé à l'essai aux AMD RDNA 3 et après",
 }
 
 TEST_CASE("Commencer écrit des moteurs valides pour settings.toml", "[app][first_run]") {
+  ajp::app::play::FrenchUi french;
   FirstRunView view = first_run_view(kRtx, kHere, ProfilesView{});
   const core::Settings all = settings_after(view, core::Settings{});
   CHECK(all.first_run_done);
@@ -209,6 +219,7 @@ TEST_CASE("Commencer écrit des moteurs valides pour settings.toml", "[app][firs
 }
 
 TEST_CASE("Sans moteur d'inférence ni Maxine, la chaîne garde l'image source et le dit", "[app][first_run]") {
+  ajp::app::play::FrenchUi french;
   PlaySettings s;
   s.upscale = true;
   s.rife_factor = 3;
@@ -245,6 +256,7 @@ TEST_CASE("Sans moteur d'inférence ni Maxine, la chaîne garde l'image source e
 }
 
 TEST_CASE("TensorRT n'est essayé que s'il a été choisi", "[app][first_run]") {
+  ajp::app::play::FrenchUi french;
   const std::array<std::filesystem::path, 2> candidates{"base/ajp_backend_tensorrt.so",
                                                         "base/ajp_backend_vulkan.so"};
   core::Settings vulkan_only;
@@ -259,6 +271,7 @@ TEST_CASE("TensorRT n'est essayé que s'il a été choisi", "[app][first_run]") 
 }
 
 TEST_CASE("MIGraphX et OpenVINO ne sont essayés que choisis", "[app][first_run]") {
+  ajp::app::play::FrenchUi french;
   const std::array<std::filesystem::path, 3> candidates{
       "base/ajp_backend_migraphx.so", "base/ajp_backend_openvino.so", "base/ajp_backend_vulkan.so"};
   core::Settings settings;
@@ -276,6 +289,7 @@ TEST_CASE("MIGraphX et OpenVINO ne sont essayés que choisis", "[app][first_run]
 }
 
 TEST_CASE("Moteur à télécharger : licence acceptée avant tout choix", "[app][first_run]") {
+  ajp::app::play::FrenchUi french;
   EnginesHere here{.os = core::Os::Linux};
   here.downloads.push_back(EngineDownload{
       .id = core::EngineId::TensorRt, .bytes = 900ULL << 20, .license = "https://example.org/sla"});
@@ -306,6 +320,7 @@ TEST_CASE("Moteur à télécharger : licence acceptée avant tout choix", "[app]
 }
 
 TEST_CASE("RTX HDR par notre paquet fermé : licence NVIDIA, ni clé ni NGC", "[app][first_run]") {
+  ajp::app::play::FrenchUi french;
   EnginesHere here{.os = core::Os::Linux,
                    .tensorrt = true,
                    .maxine_status = "SDK absent (/usr/local/VideoFX)",
