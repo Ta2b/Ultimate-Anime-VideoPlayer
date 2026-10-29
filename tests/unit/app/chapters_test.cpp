@@ -48,8 +48,8 @@ TEST_CASE("chapitres : précédent revient au début du chapitre, puis au chapit
 }
 
 TEST_CASE("chapitres : libellé avec ou sans titre", "[app][chapters]") {
-  CHECK(chapter_label(kChapters, 1) == "Chapitre 2/4 · Opening");
-  CHECK(chapter_label(kChapters, 2) == "Chapitre 3/4");
+  CHECK(chapter_label(kChapters, 1) == "Chapter 2/4 · Opening");
+  CHECK(chapter_label(kChapters, 2) == "Chapter 3/4");
 }
 
 TEST_CASE("chapitres : les génériques se reconnaissent à leur titre", "[app][chapters]") {

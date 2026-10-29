@@ -30,7 +30,7 @@ TEST_CASE("Sous-titres externes : le nom de la vidéo, suivi de rien ou d'un poi
   REQUIRE(found.size() == 3);
   CHECK(found[0].path.filename() == "Episode 01.ASS");
   CHECK(found[1].path.filename() == "Episode 01.fr.srt");
-  CHECK(found[1].label.find("Français") != std::string::npos);
+  CHECK(found[1].label.find("French") != std::string::npos);
   CHECK(found[2].path.filename() == "Episode 01.srt");
 
   CHECK(find_external_subtitles(dir / "Absent.mkv").empty());

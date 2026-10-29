@@ -11,6 +11,7 @@
 #include <imgui.h>
 
 #include "app/play/controls_icons.h"
+#include "app/play/i18n.h"
 
 namespace ajp::app::play {
 namespace {
@@ -231,12 +232,12 @@ bool draw_controls(Controls& controls, const ControlsView& view, const UiLook& l
     if (chaptered) {
       if (round_button(pen, "##chapter_back", {x, cy}, row))
         actions.emplace_back(StepChapter{.direction = -1});
-      tooltip("Chapitre précédent (Page bas)");
+      tooltip(i18n::tr("Previous chapter (Page Down)"));
       icon_chapter(pen, {x, cy}, icon * 0.9F, -1);
       x += row;
     }
     if (round_button(pen, "##play", {x, cy}, row)) actions.emplace_back(Command{cmd::TogglePause{}});
-    tooltip(view.paused ? "Lecture (espace)" : "Pause (espace)");
+    tooltip(view.paused ? i18n::tr("Play (Space)") : i18n::tr("Pause (Space)"));
     if (view.paused) {
       icon_play(pen, {x, cy}, icon);
     } else {
@@ -246,12 +247,12 @@ bool draw_controls(Controls& controls, const ControlsView& view, const UiLook& l
     if (chaptered) {
       if (round_button(pen, "##chapter_next", {x, cy}, row))
         actions.emplace_back(StepChapter{.direction = 1});
-      tooltip("Chapitre suivant (Page haut)");
+      tooltip(i18n::tr("Next chapter (Page Up)"));
       icon_chapter(pen, {x, cy}, icon * 0.9F, 1);
       x += row;
     }
     if (round_button(pen, "##mute", {x, cy}, row)) actions.emplace_back(ToggleMute{});
-    tooltip(controls.muted() ? "Rétablir le son (m)" : "Couper le son (m)");
+    tooltip(controls.muted() ? i18n::tr("Unmute (m)") : i18n::tr("Mute (m)"));
     icon_volume(pen, {x, cy}, icon, controls.volume(), controls.muted());
 
     const float vx0 = x + row * 0.5F + 2.0F * s;
@@ -275,7 +276,7 @@ bool draw_controls(Controls& controls, const ControlsView& view, const UiLook& l
     pen.list->AddCircleFilled({vx0 + vw * level, cy}, (volume_lit ? 7.0F : 5.5F) * s, white(opacity));
     if (volume_lit) {
       const std::string percent = controls.muted()
-                                      ? std::string("Muet")
+                                      ? std::string(i18n::tr("Muted"))
                                       : std::format("{} %", std::lround(controls.volume() * 100.0F));
       bubble(pen, vx0 + vw * level, cy - 12.0F * s, percent, x0, x1);
     }
@@ -297,28 +298,28 @@ bool draw_controls(Controls& controls, const ControlsView& view, const UiLook& l
 
     float rx = width - pad - row * 0.5F;
     if (round_button(pen, "##fullscreen", {rx, cy}, row)) actions.emplace_back(ToggleFullscreen{});
-    tooltip(view.fullscreen ? "Quitter le plein écran (f, Échap)" : "Plein écran (f)");
+    tooltip(view.fullscreen ? i18n::tr("Exit fullscreen (f, Esc)") : i18n::tr("Fullscreen (f)"));
     icon_fullscreen(pen, {rx, cy}, icon, view.fullscreen);
     rx -= row;
     if (round_button(pen, "##settings", {rx, cy}, row)) actions.emplace_back(ToggleSettings{});
-    tooltip("Paramètres (p)");
+    tooltip(i18n::tr("Settings (p)"));
     icon_gear(pen, {rx, cy}, icon);
     const TrackMenu& tracks = look.tracks;
     if (!tracks.audio.empty()) {
       rx -= row;
       if (round_button(pen, "##audio", {rx, cy}, row)) ImGui::OpenPopup("##audio_menu");
-      tooltip("Piste audio (a)");
+      tooltip(i18n::tr("Audio track (a)"));
       icon_audio_track(pen, {rx, cy}, icon);
-      track_popup("##audio_menu", "Piste audio", tracks.audio, tracks.audio_selected, nullptr,
+      track_popup("##audio_menu", i18n::tr("Audio"), tracks.audio, tracks.audio_selected, nullptr,
                   rx + row * 0.5F, height - panel - 4.0F * s, s, actions, false);
     }
     if (!tracks.subtitles.empty()) {
       rx -= row;
       if (round_button(pen, "##subtitles", {rx, cy}, row)) ImGui::OpenPopup("##subtitles_menu");
-      tooltip("Sous-titres (j)");
+      tooltip(i18n::tr("Subtitles (j)"));
       icon_subtitles(pen, {rx, cy}, icon, tracks.subtitle_selected.has_value());
-      track_popup("##subtitles_menu", "Sous-titres", tracks.subtitles, tracks.subtitle_selected, "Désactivés",
-                  rx + row * 0.5F, height - panel - 4.0F * s, s, actions, true);
+      track_popup("##subtitles_menu", i18n::tr("Subtitles"), tracks.subtitles, tracks.subtitle_selected,
+                  i18n::tr("Off"), rx + row * 0.5F, height - panel - 4.0F * s, s, actions, true);
     }
 
     held = look.keep_visible || ImGui::IsWindowHovered(ImGuiHoveredFlags_AllowWhenBlockedByActiveItem) ||

@@ -481,6 +481,7 @@ PlaySettings live_part(const PlaySettings& running, const PlaySettings& wanted, 
   s.update_mode = wanted.update_mode;
   s.update_channel = wanted.update_channel;
   s.update_frequency = wanted.update_frequency;
+  s.language = wanted.language;
   s.audio_delay_ms = wanted.audio_delay_ms;
   s.listening = wanted.listening;
   s.audio_faithful = wanted.audio_faithful;

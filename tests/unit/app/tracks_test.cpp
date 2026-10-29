@@ -3,6 +3,8 @@
 
 #include <catch2/catch_test_macros.hpp>
 
+#include "app/play/i18n.h"
+
 namespace ajp::app::play {
 namespace {
 
@@ -17,21 +19,21 @@ media::TrackInfo track(int index, media::TrackKind kind, std::string codec, std:
   return info;
 }
 
-TEST_CASE("Les langues du conteneur ont leur nom français", "[app][tracks]") {
-  CHECK(language_name("jpn") == "Japonais");
-  CHECK(language_name("fre") == "Français");
-  CHECK(language_name("fra") == "Français");
-  CHECK(language_name("en-US") == "Anglais");
-  CHECK(language_name("ES") == "Espagnol");
+TEST_CASE("Les langues du conteneur ont leur nom, en anglais par défaut", "[app][tracks]") {
+  CHECK(language_name("jpn") == "Japanese");
+  CHECK(language_name("fre") == "French");
+  CHECK(language_name("fra") == "French");
+  CHECK(language_name("en-US") == "English");
+  CHECK(language_name("ES") == "Spanish");
   CHECK(language_name("und").empty());
   CHECK(language_name("").empty());
   CHECK(language_name("tlh") == "tlh");  // inconnue : telle quelle
   // Toutes les formes ISO 639 d'une langue : une seule ligne de la table.
-  CHECK(language_name("uk") == "Ukrainien");
-  CHECK(language_name("ukr") == "Ukrainien");
-  CHECK(language_name("zho") == "Chinois");
-  CHECK(language_name("nld") == "Néerlandais");
-  CHECK(language_name("pt_BR") == "Portugais");
+  CHECK(language_name("uk") == "Ukrainian");
+  CHECK(language_name("ukr") == "Ukrainian");
+  CHECK(language_name("zho") == "Chinese");
+  CHECK(language_name("nld") == "Dutch");
+  CHECK(language_name("pt_BR") == "Portuguese");
 }
 
 TEST_CASE("Les menus des langues préférées proposent les langues marquées, dans l'ordre", "[app][tracks]") {
@@ -52,21 +54,20 @@ TEST_CASE("Les menus des langues préférées proposent les langues marquées, d
 
 TEST_CASE("Le libellé d'une piste dit sa langue et son titre", "[app][tracks]") {
   using media::TrackKind;
-  CHECK(track_label(track(2, TrackKind::Subtitle, "ass", "fre", "CR_French")) == "Français · CR_French");
-  CHECK(track_label(track(1, TrackKind::Audio, "aac", "jpn", "")) == "Japonais");
+  CHECK(track_label(track(2, TrackKind::Subtitle, "ass", "fre", "CR_French")) == "CR_French");
+  CHECK(track_label(track(1, TrackKind::Audio, "aac", "jpn", "")) == "Japanese");
   CHECK(track_label(track(3, TrackKind::Subtitle, "ass", "", "Signs")) == "Signs");
-  CHECK(track_label(track(4, TrackKind::Subtitle, "subrip", "eng", "")) == "Anglais (SRT)");
-  CHECK(track_label(track(5, TrackKind::Audio, "flac", "", "")) == "Piste 5");
-  CHECK(track_label(track(6, TrackKind::Audio, "aac", "fre", "Français 5.1")) ==
-        "Français 5.1");  // pas répété
+  CHECK(track_label(track(4, TrackKind::Subtitle, "subrip", "eng", "")) == "English (SRT)");
+  CHECK(track_label(track(5, TrackKind::Audio, "flac", "", "")) == "Track 5");
+  CHECK(track_label(track(6, TrackKind::Audio, "aac", "fre", "French 5.1")) == "French 5.1");  // pas répété
   auto forced = track(7, TrackKind::Subtitle, "ass", "fre", "");
   forced.forced = true;
-  CHECK(track_label(forced) == "Français · forcés");
+  CHECK(track_label(forced) == "French · forced");
 }
 
 TEST_CASE("j fait le tour des sous-titres puis aucun ; a fait le tour de l'audio", "[app][tracks]") {
-  TrackMenu menu{.audio = {{.index = 1, .label = "Japonais"}, {.index = 2, .label = "Anglais"}},
-                 .subtitles = {{.index = 3, .label = "Français"}, {.index = 4, .label = "Anglais"}},
+  TrackMenu menu{.audio = {{.index = 1, .label = "Japanese"}, {.index = 2, .label = "English"}},
+                 .subtitles = {{.index = 3, .label = "French"}, {.index = 4, .label = "English"}},
                  .audio_selected = 1,
                  .subtitle_selected = 3};
   CHECK(next_subtitle(menu) == 4);
@@ -79,6 +80,16 @@ TEST_CASE("j fait le tour des sous-titres puis aucun ; a fait le tour de l'audio
   CHECK(next_audio(menu) == 1);
   CHECK_FALSE(next_audio(TrackMenu{}));
   CHECK_FALSE(next_subtitle(TrackMenu{}));
+}
+
+TEST_CASE("Les noms de langue et les libellés suivent la langue de l'interface", "[app][tracks]") {
+  using media::TrackKind;
+  i18n::set_language(i18n::Language::French);
+  CHECK(language_name("jpn") == "Japonais");
+  CHECK(language_name("fra") == "Français");
+  CHECK(track_label(track(4, TrackKind::Subtitle, "subrip", "eng", "")) == "Anglais (SRT)");
+  i18n::set_language(i18n::Language::English);
+  CHECK(language_name("jpn") == "Japanese");
 }
 
 }  // namespace

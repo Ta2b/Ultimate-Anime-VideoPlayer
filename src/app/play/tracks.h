@@ -27,7 +27,7 @@ struct TrackMenu {
 // Une langue que l'interface nomme. code : ISO 639-2/B, la forme de media::canonical_language.
 struct Language {
   std::string_view code;
-  std::string_view name;
+  const char* name;   // clé anglaise de i18n::tr
   bool menu = false;  // proposée aux menus des langues préférées (onglets Son et Sous-titres)
 };
 

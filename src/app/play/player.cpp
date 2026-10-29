@@ -36,6 +36,7 @@
 #include "app/play/gmfss_model.h"
 #include "app/play/home_screen.h"
 #include "app/play/host_facts.h"
+#include "app/play/i18n.h"
 #include "app/play/input.h"
 #include "app/play/model_choice.h"
 #include "app/play/pipeline.h"
@@ -127,6 +128,7 @@ std::expected<void, Refusal> play(const PlayOptions& options, const PlayerPaths&
       (paths.settings.empty() ? paths.engines.parent_path() : paths.settings) / "play.toml";
   std::vector<std::string> startup_notes;  // fichiers mis de côté, dits à l'accueil
   auto saved = load_settings(settings_path);
+  if (saved) i18n::set_language(i18n::language_from_code(saved->language));
   if (!saved) {
     log->warn("{} ; réglages par défaut", saved.error().detail);
     startup_notes.push_back(set_aside(settings_path, saved.error()));
@@ -279,7 +281,10 @@ std::expected<void, Refusal> play(const PlayOptions& options, const PlayerPaths&
       video = std::move(*probed);
       problem.clear();
       // Réglages relus : l'accueil ou la vidéo précédente les ont peut-être changés.
-      if (auto reread = load_settings(settings_path)) saved = std::move(*reread);
+      if (auto reread = load_settings(settings_path)) {
+        saved = std::move(*reread);
+        i18n::set_language(i18n::language_from_code(saved->language));
+      }
       SDL_SetWindowTitle((*screen)->window(), std::format("ajp — {}", file.filename().string()).c_str());
       (*ui)->set_title(file.filename().string());
     }
@@ -357,8 +362,8 @@ std::expected<void, Refusal> play(const PlayOptions& options, const PlayerPaths&
       const UpdateState update = load_update_state(update_file);
       if (!announced && saved->update_mode == "notify" && !update.latest_version.empty()) {
         announced = true;
-        player.notice = std::format("Mise à jour {} disponible (Paramètres > Général > Application)",
-                                    update.latest_version);
+        player.notice =
+            i18n::tr_format("Update {} available (Settings > General > Application)", update.latest_version);
       }
     }
     if (player.display) {
@@ -447,7 +452,10 @@ std::expected<void, Refusal> play(const PlayOptions& options, const PlayerPaths&
     } else {
       return {};
     }
-    if (auto reread = load_settings(settings_path)) saved = std::move(*reread);
+    if (auto reread = load_settings(settings_path)) {
+      saved = std::move(*reread);
+      i18n::set_language(i18n::language_from_code(saved->language));
+    }
   }
 }
 

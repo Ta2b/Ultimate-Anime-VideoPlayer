@@ -378,6 +378,12 @@ std::expected<PlaySettings, Refusal> parse_settings(std::string_view toml_text) 
       reads.emplace_back(
           refuse(RefusalCode::FieldOutOfRange, std::format("picture.scaler : « {} »", scaler)));
   }
+  if (const toml::table* interface = section(root, "interface")) {
+    reads.push_back(read(*interface, "interface", "language", s.language));
+    if (s.language != "en" && s.language != "fr")
+      reads.emplace_back(
+          refuse(RefusalCode::FieldOutOfRange, std::format("interface.language : « {} »", s.language)));
+  }
   if (const toml::table* engines = section(root, "engines"))
     reads.push_back(read(*engines, "engines", "install_dir", s.engines_dir));
   if (const toml::table* updates = section(root, "updates")) {
@@ -593,6 +599,7 @@ std::string format_settings(const PlaySettings& s) {
   root.insert("sync", toml::table{{"display", s.display_sync}, {"video_latency_ms", s.video_latency_ms}});
   root.insert("picture", toml::table{{"deband", s.deband}, {"scaler", std::string(name(s.final_scaler))}});
   root.insert("playlist", toml::table{{"autoplay_next", s.autoplay_next}});
+  root.insert("interface", toml::table{{"language", s.language}});
   root.insert("default_player", toml::table{{"dismissed", s.default_player_dismissed}});
   root.insert("span_prepare", toml::table{{"background", s.span_prepare_background}});
   if (!s.engines_dir.empty()) root.insert("engines", toml::table{{"install_dir", s.engines_dir}});

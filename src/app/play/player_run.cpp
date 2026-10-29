@@ -35,6 +35,7 @@
 #include "app/play/gpu_telemetry.h"
 #include "app/play/home_screen.h"
 #include "app/play/host_facts.h"
+#include "app/play/i18n.h"
 #include "app/play/input.h"
 #include "app/play/model_choice.h"
 #include "app/play/pipeline.h"
@@ -117,7 +118,7 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
   const bool source_hdr = source.transfer == Transfer::Pq || source.transfer == Transfer::Hlg;
   if (settings.true_hdr && source_hdr) {
     log->info("RTX HDR : la source est déjà HDR, TrueHDR n'est pas ouvert");
-    p.ui.controls().notify("Source déjà HDR : RTX HDR inutile", host_now_us());
+    p.ui.controls().notify(i18n::tr("Source is already HDR: RTX HDR not needed"), host_now_us());
     settings.true_hdr = false;
   }
   // TrueHDR s'ouvre par le moteur TensorRT (open_true_hdr n'existe que là) : sous Vulkan, la route
@@ -125,7 +126,7 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
   if (settings.true_hdr && c.backend_name != "tensorrt") {
     log->info("RTX HDR : le moteur {} ne l'ouvre pas (TensorRT requis) ; HDR adaptatif à la place",
               c.backend_name);
-    p.ui.controls().notify("RTX HDR demande le moteur TensorRT : HDR adaptatif", host_now_us());
+    p.ui.controls().notify(i18n::tr("RTX HDR needs TensorRT: using adaptive HDR"), host_now_us());
     settings.true_hdr = false;
     settings.hdr_native = true;
   }
@@ -139,7 +140,7 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
     } else {
       // Le plan : TrueHDR qui échoue laisse la place à la route native, et l'écran le dit.
       log->warn("{} ; HDR adaptatif à la place", opened.error().detail);
-      p.ui.controls().notify("RTX HDR indisponible : HDR adaptatif", host_now_us());
+      p.ui.controls().notify(i18n::tr("RTX HDR unavailable: using adaptive HDR"), host_now_us());
       settings.true_hdr = false;
       settings.hdr_native = true;
       rtx_hdr_failed = true;
@@ -379,8 +380,8 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
     p.unsaved.reset();
   }
   if (p.resumed) {
-    p.ui.controls().notify(std::format("Reprise à {}", format_clock(start_us, session.view().duration_us)),
-                           host_now_us());
+    p.ui.controls().notify(
+        i18n::tr_format("Resumed at {}", format_clock(start_us, session.view().duration_us)), host_now_us());
     p.resumed = false;
   }
   if (!p.notice.empty()) {
@@ -430,7 +431,7 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
       free_note = why;
       if (!why.empty()) {
         log->warn("Mode Rapide indisponible ({}) : retour au mode Stable", why);
-        p.ui.controls().notify("Mode Rapide indisponible : " + why, host_now_us());
+        p.ui.controls().notify(i18n::tr_format("Fast mode unavailable: {}", why), host_now_us());
       }
     }
     chain.live.set_auto(on && !free, core::auto_ceiling(limit_hz, fps_of(video.frame_rate), granularity),
@@ -498,9 +499,9 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
     if (centi <= 0) return;
     if (centi != auto_notified && at - auto_changed_us >= 3'000'000) {
       if (auto_notified > 0)
-        p.ui.controls().notify(
-            std::format("Auto ×{} ({:.0f} i/s)", auto_factor_text(centi), auto_source_fps * centi / 100.0),
-            at);
+        p.ui.controls().notify(i18n::tr_format("Auto ×{} ({:.0f} fps)", auto_factor_text(centi),
+                                               auto_source_fps * centi / 100.0),
+                               at);
       auto_notified = centi;
     }
     if (centi != auto_stored && at - auto_changed_us >= 6'000'000 && !auto_memory_path.empty()) {
@@ -560,7 +561,7 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
                     free_status_text(chain.live.free_info(host_now_us())));
           chain.running.auto_free = false;
           p.ui.set_running(chain.running);
-          p.ui.controls().notify("Mode Rapide : trop d'images perdues, retour au mode Stable", host_now_us());
+          p.ui.controls().notify(i18n::tr("Fast mode: too many frames lost, back to Stable"), host_now_us());
           apply_auto();
         }
       }

@@ -10,6 +10,7 @@
 #include "app/play/auto_bench.h"
 #include "app/play/auto_bench_run.h"
 #include "app/play/auto_config.h"
+#include "app/play/i18n.h"
 #include "app/play/panel_style.h"
 #include "app/play/span_auto.h"
 #include "app/play/updater.h"
@@ -119,6 +120,17 @@ bool default_player_prompt(const PlayerPlace& place, SystemNote& last, bool& dis
   ImGui::End();
   return closed;
 #endif
+}
+
+void language_section(PlaySettings& d) {
+  section(i18n::tr("Language"));
+  const char* shown = d.language == "fr" ? "Français" : "English";  // i18n-ok : noms des langues
+  if (ImGui::BeginCombo(i18n::tr("Interface language"), shown)) {
+    if (ImGui::Selectable("English", d.language == "en")) d.language = "en";   // i18n-ok
+    if (ImGui::Selectable("Français", d.language == "fr")) d.language = "fr";  // i18n-ok
+    ImGui::EndCombo();
+  }
+  i18n::set_language(i18n::language_from_code(d.language));
 }
 
 void updates_page(PlaySettings& d, const PlayerPlace& place, UpdateNote& result) {

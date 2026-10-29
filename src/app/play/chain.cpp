@@ -8,6 +8,7 @@
 
 #include "app/play/chapters.h"
 #include "app/play/episodes.h"
+#include "app/play/i18n.h"
 #include "audio/devices.h"
 #include "core/clock.h"
 #include "core/log.h"
@@ -23,13 +24,13 @@ struct Overloaded : F... {
 };
 
 std::string volume_text(const Controls& controls) {
-  if (controls.muted()) return "Son coupé";
-  return std::format("Volume {} %", std::lround(controls.volume() * 100.0F));
+  if (controls.muted()) return i18n::tr("Muted");
+  return i18n::tr_format("Volume {} %", std::lround(controls.volume() * 100.0F));
 }
 
 std::string label_of(const std::vector<TrackEntry>& entries, int track) {
   const auto found = std::ranges::find(entries, track, &TrackEntry::index);
-  return found != entries.end() ? found->label : std::format("piste {}", track);
+  return found != entries.end() ? found->label : i18n::tr_format("track {}", track);
 }
 
 }  // namespace
@@ -86,12 +87,12 @@ void switch_audio(Chain& to, int track, std::int64_t now_us) {
   });
   if (!switched) {
     log_channel("app")->warn("piste audio {} : {}", track, switched.error().detail);
-    to.ui.controls().notify("Piste audio refusée", now_us);
+    to.ui.controls().notify(i18n::tr("Audio track refused"), now_us);
     return;
   }
   to.ui.set_tracks(to.pipeline.tracks());
   to.session.set_tracks(to.pipeline.describe());
-  to.ui.controls().notify(std::format("Audio : {}", label_of(to.pipeline.tracks().audio, track)), now_us);
+  to.ui.controls().notify(i18n::tr_format("Audio: {}", label_of(to.pipeline.tracks().audio, track)), now_us);
 }
 
 // Sous-titres : subs prend la nouvelle piste, un seek à la position courante relit ses paquets.
@@ -100,7 +101,7 @@ void switch_subtitles(Chain& to, std::optional<int> track, std::int64_t now_us) 
   auto switched = to.pipeline.select_subtitles(track);
   if (!switched) {
     log_channel("app")->warn("sous-titres : {}", switched.error().detail);
-    to.ui.controls().notify("Piste de sous-titres refusée", now_us);
+    to.ui.controls().notify(i18n::tr("Subtitle track refused"), now_us);
     return;
   }
   to.session.set_subtitles(track.has_value());
@@ -111,8 +112,8 @@ void switch_subtitles(Chain& to, std::optional<int> track, std::int64_t now_us) 
   to.ui.set_tracks(to.pipeline.tracks());
   to.session.set_tracks(to.pipeline.describe());
   to.ui.controls().notify(
-      track ? std::format("Sous-titres : {}", label_of(to.pipeline.tracks().subtitles, *track))
-            : std::string("Sous-titres désactivés"),
+      track ? i18n::tr_format("Subtitles: {}", label_of(to.pipeline.tracks().subtitles, *track))
+            : std::string(i18n::tr("Subtitles off")),
       now_us);
 }
 
@@ -120,20 +121,23 @@ void switch_subtitles(Chain& to, std::optional<int> track, std::int64_t now_us) 
 void apply_live(Chain& to, const PlaySettings& wanted, std::int64_t now_us) {
   PlaySettings& r = to.running;
   Controls& controls = to.ui.controls();
+  i18n::set_language(i18n::language_from_code(wanted.language));
   if (factor_of(wanted) != factor_of(r)) {
     log_channel("app")->info("interpolation en direct : {}", factor_text(factor_of(wanted)));
     to.live.set_rife_factor(factor_of(wanted));
-    controls.notify(wanted.rife_factor >= 2 ? std::format("Interpolation {}", factor_text(factor_of(wanted)))
-                                            : std::string("Interpolation désactivée"),
+    controls.notify(wanted.rife_factor >= 2
+                        ? i18n::tr_format("Interpolation {}", factor_text(factor_of(wanted)))
+                        : std::string(i18n::tr("Interpolation off")),
                     now_us);
   }
   if (wanted.rife_auto != r.rife_auto) {
-    if (wanted.rife_auto) controls.notify("Interpolation auto", now_us);
+    if (wanted.rife_auto) controls.notify(i18n::tr("Interpolation: Auto"), now_us);
   }
   if (wanted.auto_free != r.auto_free) {
     log_channel("app")->info("mode d'Auto en direct : {}",
                              wanted.auto_free ? "rapide (expérimental)" : "stable");
-    controls.notify(wanted.auto_free ? "Auto : Rapide (expérimental)" : "Auto : Stable", now_us);
+    controls.notify(wanted.auto_free ? i18n::tr("Auto: Fast (experimental)") : i18n::tr("Auto: Stable"),
+                    now_us);
   }
   if (to.header_text && (factor_of(wanted) != factor_of(r) || wanted.downscale != r.downscale ||
                          wanted.hdr_native != r.hdr_native)) {
@@ -141,13 +145,14 @@ void apply_live(Chain& to, const PlaySettings& wanted, std::int64_t now_us) {
   }
   if (wanted.keep_poses != r.keep_poses) {
     to.live.set_keep_poses(wanted.keep_poses);
-    controls.notify(
-        wanted.keep_poses ? std::string("Poses gardées (DRBA)") : std::string("Poses : warp simple"), now_us);
+    controls.notify(wanted.keep_poses ? std::string(i18n::tr("Keep poses: on"))
+                                      : std::string(i18n::tr("Keep poses: off")),
+                    now_us);
   }
   if (wanted.downscale != r.downscale) {
     log_channel("app")->info("réduction en direct : {}", label(wanted.downscale));
     to.live.set_reduction(reduction_of(wanted.downscale));
-    controls.notify(std::format("Réduction : {}", label(wanted.downscale)), now_us);
+    controls.notify(i18n::tr_format("Downscale: {}", label(wanted.downscale)), now_us);
   }
   const vendor_hdr::TrueHdrParams before = true_hdr_params(r, to.auto_peak);
   const vendor_hdr::TrueHdrParams after = true_hdr_params(wanted, to.auto_peak);
@@ -169,16 +174,16 @@ void apply_live(Chain& to, const PlaySettings& wanted, std::int64_t now_us) {
     to.black_dirty = true;
     to.session.set_output(output_text(to.screen, wanted, to.peak_nits));
     if (wanted.grade_preset != r.grade_preset || wanted.grade != r.grade) {
-      controls.notify(wanted.grade ? std::format("Grade : {}", render::preset_label(wanted.grade_preset))
-                                   : std::string("Grade désactivé"),
+      controls.notify(wanted.grade ? i18n::tr_format("Grade: {}", render::preset_label(wanted.grade_preset))
+                                   : std::string(i18n::tr("Grade off")),
                       now_us);
     }
   }
   if (wanted.final_scaler != r.final_scaler || wanted.deband != r.deband) {
     to.screen.set_finish(wanted.final_scaler, wanted.deband);
-    controls.notify(
-        std::format("Image : {}, débandage {}", label(wanted.final_scaler), wanted.deband ? "oui" : "non"),
-        now_us);
+    controls.notify(i18n::tr_format("Scaler: {}, deband {}", label(wanted.final_scaler),
+                                    wanted.deband ? i18n::tr("on") : i18n::tr("off")),
+                    now_us);
   }
   if (wanted.audio_delay_ms != r.audio_delay_ms)
     to.session.command(cmd::SetAudioDelay{.delay_us = std::int64_t{wanted.audio_delay_ms} * 1000});
@@ -204,7 +209,7 @@ void apply_live(Chain& to, const PlaySettings& wanted, std::int64_t now_us) {
           listening.hrir = std::move(*loaded);
         } else {
           log_channel("app")->warn("{}", loaded.error().detail);
-          controls.notify("Réponse impulsionnelle illisible : modèle d'origine", now_us);
+          controls.notify(i18n::tr("Impulse response unreadable: using the default"), now_us);
         }
       }
       to.session.command(std::move(listening));
@@ -215,8 +220,8 @@ void apply_live(Chain& to, const PlaySettings& wanted, std::int64_t now_us) {
     to.session.set_video_latency(std::int64_t{wanted.video_latency_ms} * 1000);
   if (wanted.stats != r.stats) to.session.set_stats(wanted.stats);
   if (wanted.smooth_motion != r.smooth_motion) {
-    controls.notify(wanted.smooth_motion ? std::string("Smooth Motion : au prochain lancement")
-                                         : std::string("Smooth Motion coupé au prochain lancement"),
+    controls.notify(wanted.smooth_motion ? std::string(i18n::tr("Smooth Motion: on at next launch"))
+                                         : std::string(i18n::tr("Smooth Motion: off at next launch")),
                     now_us);
   }
   if (wanted.oled_care != r.oled_care || wanted.steady_cadence != r.steady_cadence ||
@@ -224,7 +229,8 @@ void apply_live(Chain& to, const PlaySettings& wanted, std::int64_t now_us) {
     apply_oled_care(to, wanted);
   if (wanted.subtitle_scale != r.subtitle_scale) {
     to.session.set_subtitle_scale(wanted.subtitle_scale);
-    controls.notify(std::format("Sous-titres : {} %", std::lround(wanted.subtitle_scale * 100.0F)), now_us);
+    controls.notify(i18n::tr_format("Subtitle size: {} %", std::lround(wanted.subtitle_scale * 100.0F)),
+                    now_us);
   }
   r = wanted;
   r.volume = controls.volume();
@@ -236,7 +242,7 @@ void apply_live(Chain& to, const PlaySettings& wanted, std::int64_t now_us) {
 void switch_profile(Chain& to, int slot, std::int64_t now_us) {
   const auto& profile = to.profiles.data.file.profiles[static_cast<std::size_t>(std::clamp(slot, 1, 9) - 1)];
   if (!profile) {
-    to.ui.controls().notify(std::format("Profil {} : vide", slot), now_us);
+    to.ui.controls().notify(i18n::tr_format("Profile {}: empty", slot), now_us);
     return;
   }
   std::vector<std::string> notes;
@@ -245,7 +251,7 @@ void switch_profile(Chain& to, int slot, std::int64_t now_us) {
   log_channel("app")->info("profil {} « {} »", slot, profile->name);
   to.profiles.active = slot;
   to.ui.set_profiles(view_of(to.profiles));
-  to.ui.controls().notify(std::format("Profil {} · {}", slot, profile->name), now_us);
+  to.ui.controls().notify(i18n::tr_format("Profile {} · {}", slot, profile->name), now_us);
   const Change change = change_between(to.running, wanted, to.rife_loaded);
   if (change.cost == ChangeCost::Reopen) {
     to.reopen = wanted;
@@ -333,8 +339,9 @@ void apply(const Input& input, Chain& to, std::int64_t now_us) {
               to.running.stats.all = session.stats_settings().all;
               to.ui.set_running(to.running);
               to.dirty = true;
-              controls.notify(to.running.stats.all ? "Statistiques affichées" : "Statistiques masquées",
-                              now_us);
+              controls.notify(
+                  to.running.stats.all ? i18n::tr("Statistics shown") : i18n::tr("Statistics hidden"),
+                  now_us);
             }
           },
           [&](const ToggleFullscreen&) { session.toggle_fullscreen(); },
@@ -359,7 +366,8 @@ void apply(const Input& input, Chain& to, std::int64_t now_us) {
             apply_live(to, wanted, now_us);
             to.running.audio_faithful = wanted.audio_faithful;
             to.dirty = true;
-            controls.notify(wanted.audio_faithful ? "Son fidèle (sans traitement)" : "Son traité", now_us);
+            controls.notify(
+                wanted.audio_faithful ? i18n::tr("Sound: original") : i18n::tr("Sound: processed"), now_us);
           },
           [&](const SelectAudio& select) { switch_audio(to, select.track, now_us); },
           [&](const SelectSubtitles& select) { switch_subtitles(to, select.track, now_us); },
@@ -370,8 +378,8 @@ void apply(const Input& input, Chain& to, std::int64_t now_us) {
           [&](const StepEpisode& step) {
             const auto neighbour = sibling_episode(to.file, step.direction);
             if (!neighbour) {
-              controls.notify(step.direction > 0 ? "Pas d'épisode suivant dans ce dossier"
-                                                 : "Pas d'épisode précédent dans ce dossier",
+              controls.notify(step.direction > 0 ? i18n::tr("No next episode in this folder")
+                                                 : i18n::tr("No previous episode in this folder"),
                               now_us);
               return;
             }
@@ -385,10 +393,10 @@ void apply(const Input& input, Chain& to, std::int64_t now_us) {
             std::int64_t target = 0;
             if (const auto credits = credits_skip_target(view.chapters, view.position_us, view.duration_us)) {
               target = *credits;
-              controls.notify("Générique passé", now_us);
+              controls.notify(i18n::tr("Credits skipped"), now_us);
             } else {
               target = view.position_us + kSkipFallbackUs;
-              controls.notify("Saut de 85 s", now_us);
+              controls.notify(i18n::tr("Skipped 85 s"), now_us);
             }
             if (view.duration_us > 0) target = std::min(target, view.duration_us);
             session.command(Command{cmd::Seek{.target_us = target}});
@@ -435,7 +443,7 @@ void apply(const Input& input, Chain& to, std::int64_t now_us) {
             auto edited = edit_profiles(to.profiles.user_path, to.profiles.data, edits);
             if (!edited) {
               log_channel("app")->warn("user.toml : {}", edited.error().detail);
-              to.ui.controls().notify("Profil : modification refusée", now_us);
+              to.ui.controls().notify(i18n::tr("Profile change refused"), now_us);
               return;
             }
             to.profiles.data = std::move(*edited);
