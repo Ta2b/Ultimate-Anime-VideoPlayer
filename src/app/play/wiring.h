@@ -99,6 +99,20 @@ struct StageLinks {
   LeadClock* lead = nullptr;  // avec audio : qui mène, l'audio ou l'horloge hôte
 };
 
+// Un délai audio négatif fait entendre le son avant l'image : pour que l'image voulue soit montrée,
+// la source doit lire |délai| de son plus loin que l'image, donc garder autant d'images décodées en
+// attente. Passé ce délai, la file d'images (huit au plus) est pleine avant que l'audio n'ait son
+// avance : l'horloge audio s'arrête faute de son, l'image attend l'horloge et la source attend
+// l'image (blocage de 1,5 s à chaque départ et chaque seek, puis « audio absent »). Au-delà de ce
+// délai l'horloge hôte mène d'emblée, l'audio s'y cale avec son avance.
+inline constexpr std::int64_t kEarlyAudioUs = 60'000;
+
+// Qui mène : l'horloge hôte (vitesse de calage autre que 1, audio perdu, ou son en avance de plus de
+// kEarlyAudioUs) ou l'audio.
+constexpr bool host_must_lead(double speed, bool audio_lost, std::int64_t audio_delay_us) {
+  return speed != 1.0 || audio_lost || audio_delay_us <= -kEarlyAudioUs;
+}
+
 class ThreadStages final : public Stages {
  public:
   explicit ThreadStages(StageLinks links) : links_(std::move(links)) {}
@@ -118,9 +132,10 @@ class ThreadStages final : public Stages {
  private:
   StageLinks links_;
   std::uint32_t flushed_epoch_ = 0;
-  bool playing_ = false;     // play depuis la dernière pause : l'horloge hôte reprise court
-  double speed_ = 1.0;       // dernière vitesse acceptée par set_speed
-  bool audio_lost_ = false;  // l'horloge hôte mène faute d'audio, jusqu'au prochain Flush
+  bool playing_ = false;             // play depuis la dernière pause : l'horloge hôte reprise court
+  double speed_ = 1.0;               // dernière vitesse acceptée par set_speed
+  bool audio_lost_ = false;          // l'horloge hôte mène faute d'audio, jusqu'au prochain Flush
+  std::int64_t audio_delay_us_ = 0;  // dernier délai audio demandé (host_must_lead)
 };
 
 }  // namespace ajp::app::play

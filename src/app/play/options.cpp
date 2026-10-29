@@ -417,7 +417,12 @@ std::string play_usage() {
       "  --truehdr-contrast=N, --truehdr-saturation=N (0 à 200, 100), --truehdr-gray=N (10 à 100, 50)\n"
       "ajp --register           inscrit le lecteur auprès du système (« Ouvrir avec », lecteur par\n"
       "                         défaut) ; --unregister retire cette inscription\n"
-      "Touches : espace pause, flèches seek 5 s, f plein écran, q quitter.\n",
+      "Touches : espace pause, ← → seek 5 s, ↑ ↓ volume, m muet, f plein écran (Échap en sort), q quitter,\n"
+      "  a piste audio suivante, j sous-titres suivants, n / Maj+n épisode suivant / précédent,\n"
+      "  Page↑ / Page↓ chapitre suivant / précédent, o passer le générique, . et , image par image, b son "
+      "fidèle,\n"
+      "  p paramètres, Tab statistiques, Ctrl+1 à 9 profils, Ctrl+0 sans traitement, Ctrl+G grade, Ctrl+I\n"
+      "  interpolation.\n",
       kDefaultModelFile, kDefaultRifeFactor, kDefaultRifeFile);
 }
 

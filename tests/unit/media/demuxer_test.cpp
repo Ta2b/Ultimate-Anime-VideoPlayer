@@ -282,4 +282,6 @@ TEST_CASE("Demuxer : un fichier absent ou illisible est refusé", "[media][demux
   REQUIRE_FALSE(missing);
   CHECK(missing.error().code == RefusalCode::MediaUnreadable);
   CHECK(missing.error().detail.find("clip.mkv") != std::string::npos);
+  // Le refus se lit en français : « introuvable », pas seulement le texte de FFmpeg.
+  CHECK(missing.error().detail.find("introuvable") != std::string::npos);
 }
