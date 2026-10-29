@@ -16,11 +16,21 @@
 namespace ajp::gpu::vk::net {
 
 // Un alias par tenseur du graphe ; alignment : alignement des vues de tampon de l'appareil.
-std::vector<ir::Alias> plan_aliases(const ir::Graph& graph, std::uint64_t alignment);
+// concat_in_place : les entrées Conv d'un Concat sur les canaux Nhwc16 se rangent dans la sortie.
+// split_views : les sorties d'un Split sur les canaux Nhwc16 sont des vues de son entrée.
+std::vector<ir::Alias> plan_aliases(const ir::Graph& graph, std::uint64_t alignment,
+                                    bool concat_in_place = true, bool split_views = true);
 
 // Octets depuis le début de whole jusqu'à l'élément start de l'axe axis, si la tranche qui y
 // commence est contiguë (tous les axes avant axis valent 1) et whole rangé en Nchw.
 std::optional<std::uint64_t> slab_offset(const ir::Tensor& whole, std::size_t axis, std::int64_t start);
+
+// Le tenseur child est-il une tranche de canaux de parent à ce décalage (octets) ?
+inline bool channel_slab_of(const std::vector<ir::Alias>& aliases, ir::TensorId child, ir::TensorId parent,
+                            std::uint64_t offset) {
+  return child < aliases.size() && aliases[child].channel_slab && aliases[child].parent == parent &&
+         aliases[child].offset == offset;
+}
 
 // Le tenseur child est-il rangé dans parent à ce décalage ?
 inline bool aliased(const std::vector<ir::Alias>& aliases, ir::TensorId child, ir::TensorId parent,

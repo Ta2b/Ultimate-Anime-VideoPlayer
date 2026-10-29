@@ -30,32 +30,6 @@ ImU32 accent(float a) {
   return rgba(kAccent.x, kAccent.y, kAccent.z, a);
 }
 
-void icon_skip(const Pen& pen, ImVec2 c, float size, int direction) {
-  const float r = size * 0.42F;
-  const float dir = direction < 0 ? -1.0F : 1.0F;
-  const float thick = std::max(1.5F, size * 0.075F * pen.scale);
-  // Un arc de 300° ouvert en haut, côté de la flèche.
-  const float start = -1.5708F + dir * 0.52F;
-  const float span = dir * 5.24F;
-  const ImU32 color = white(pen.opacity);
-  pen.list->PathClear();
-  pen.list->PathArcTo(c, r, start, start + span, 24);
-  pen.list->PathStroke(color, ImDrawFlags_None, thick);
-  const float tip = start;  // la pointe, au bord ouvert
-  const ImVec2 p{c.x + std::cos(tip) * r, c.y + std::sin(tip) * r};
-  const float t = -dir;  // tangente, sens de la rotation inverse
-  const ImVec2 along{-std::sin(tip) * t, std::cos(tip) * t};
-  const float head = size * 0.2F;
-  pen.list->AddTriangleFilled({p.x + along.x * head, p.y + along.y * head},
-                              {p.x - along.x * head * 0.2F + std::cos(tip) * head * 0.7F,
-                               p.y - along.y * head * 0.2F + std::sin(tip) * head * 0.7F},
-                              {p.x - along.x * head * 0.2F - std::cos(tip) * head * 0.7F,
-                               p.y - along.y * head * 0.2F - std::sin(tip) * head * 0.7F},
-                              color);
-  const ImVec2 text = ImGui::CalcTextSize("10");
-  pen.list->AddText({c.x - text.x * 0.5F, c.y - text.y * 0.5F}, color, "10");
-}
-
 void icon_play(const Pen& pen, ImVec2 c, float size) {
   const float h = size * 0.5F;
   pen.list->AddTriangleFilled(at(c, -h * 0.62F, -h * 0.78F), at(c, -h * 0.62F, h * 0.78F),

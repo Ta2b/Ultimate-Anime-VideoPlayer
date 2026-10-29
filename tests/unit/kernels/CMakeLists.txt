@@ -6,9 +6,11 @@ ajp_add_unit_tests(kernels
     distil_drba_test.cpp
     glsl_test.cpp
     gmfss_test.cpp
+    drba_fused_test.cpp
     half_test.cpp
     parity_test.cpp
     resample_test.cpp
+    rife_fused_test.cpp
     rife_test.cpp
     tolerance_test.cpp
     transfer_test.cpp

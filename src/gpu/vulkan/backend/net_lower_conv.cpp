@@ -518,6 +518,7 @@ std::expected<void, Refusal> Lowerer::conv_matrix(std::size_t index, const Kerne
   if (fp8) {
     // Octets E4M3 et échelles retrouvés des poids ; l'entrée arrondie vaut q × in_quant.
     const auto recovered = ir::recover_fp8_weights(weights->value);
+    if (!recovered) return refuse_node(RefusalCode::ShapeInvalid, n, "poids FP8 non retrouvés");
     constants.push_back(std::bit_cast<std::uint32_t>(attrs->in_quant));
     constants.push_back(std::bit_cast<std::uint32_t>(attrs->out_quant));
     w = {.kind = BindingKind::Blob,

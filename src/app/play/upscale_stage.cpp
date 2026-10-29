@@ -8,6 +8,7 @@
 
 #include "app/play/options.h"
 #include "app/play/rife_plan.h"
+#include "core/auto_rate.h"
 #include "core/clock.h"
 #include "core/log.h"
 #include "kernels/spec/detect.h"
@@ -40,6 +41,11 @@ UpscaleStage::~UpscaleStage() {
         rife_runs_, single_pairs_, multi_pairs_, direct_pairs_);
   }
   if (gmfss()) log_channel("gpu")->info("GMFSS : {} paires", gmfss_pairs_);
+  if (gmfss_fused()) {
+    log_channel("gpu")->info(
+        "GMFSS fusionné : caractéristiques de {} images calculées, {} reprises de la paire d'avant",
+        gmfss_.features_of.computed(), gmfss_.features_of.reused());
+  }
   if (spans_reused_ > 0)
     log_channel("gpu")->info("SPAN : {} passes évitées sur des dessins tenus", spans_reused_);
   if (drba()) {
@@ -88,6 +94,9 @@ std::expected<std::unique_ptr<VideoStage>, Refusal> UpscaleStage::start(VideoSta
   }
   if ((setup.gmfss_pair == nullptr) != (setup.gmfss_fusion == nullptr))
     return refuse(RefusalCode::FieldMissing, "étage gpu : GMFSS demande ses deux moteurs");
+  if (setup.gmfss_features != nullptr && setup.gmfss_pair == nullptr)
+    return refuse(RefusalCode::FieldMissing,
+                  "étage gpu : les caractéristiques de GMFSS sans ses deux moteurs");
   const int estimators = (setup.rife != nullptr ? 1 : 0) + (setup.rife_motion != nullptr ? 1 : 0) +
                          (setup.gmfss_pair != nullptr ? 1 : 0) + (setup.distil_drba != nullptr ? 1 : 0);
   if (estimators > 1) {
@@ -240,11 +249,17 @@ std::expected<std::uint32_t, Refusal> UpscaleStage::outputs(const DecodedFrame& 
   // La grille de sortie de la paire (core/cadence.h), refaite quand le facteur change : la paire
   // suivante repart alors de cette image.
   std::optional<core::CadenceStep> step;
-  if (factor.num > factor.den && valid_factor(factor)) {
-    if (!cadence_ || cadence_factor_ != factor) {
+  if (factor.num > factor.den && (valid_factor(factor) || (setup_.live != nullptr && factor.den <= 64 &&
+                                                           factor.num <= core::kAutoMaxStep * factor.den))) {
+    if (!cadence_) {
       auto made = core::CadenceAccumulator::create({.num = factor.num, .den = factor.den});
       if (!made) return std::unexpected(std::move(made.error()));
       cadence_.emplace(*made);
+      cadence_factor_ = factor;
+    } else if (cadence_factor_ != factor) {
+      // Le mode auto bouge le facteur par petits pas : la grille garde sa phase (aucun saut de rythme).
+      if (auto moved = cadence_->retarget({.num = factor.num, .den = factor.den}); !moved)
+        return std::unexpected(std::move(moved.error()));
       cadence_factor_ = factor;
     }
     step = cadence_->push(core::stamp_of(frame));
@@ -260,9 +275,11 @@ std::expected<std::uint32_t, Refusal> UpscaleStage::outputs(const DecodedFrame& 
   // loin, ou après le retard mesuré des images) sont sautés, les suivants faits ; l'image seule
   // s'il n'en reste aucun.
   std::size_t late = 0;
+  double play_rate = 1.0;
   if (on_grid && setup_.clock != nullptr && previous_ && previous_->epoch == frame.epoch) {
     const ClockSnapshot now = setup_.clock->snapshot();
     if (now.valid && now.epoch == frame.epoch && now.rate > 0.0) {
+      play_rate = now.rate;
       const std::int64_t period =
           std::max<std::int64_t>(frame.pts_us - previous_->pts_us, 0) * factor.den / factor.num;
       const std::int64_t ready = ready_media_us(now, host_now_us(), period, latency_us());
@@ -286,6 +303,7 @@ std::expected<std::uint32_t, Refusal> UpscaleStage::outputs(const DecodedFrame& 
                                 ? frame.pts_us - previous_->pts_us
                                 : 0};
   if (!facts.same_epoch) forget_motion();  // début ou saut : le mouvement d'avant ne dit plus rien
+  std::int64_t lead_us = 0;                // attente des mesures de la paire, avant sa soumission
   if (facts.factor > 1 && facts.same_epoch) {
     const auto asked = std::chrono::steady_clock::now();
     auto scores = drba() ? drba_scores(frame) : pair_scores();
@@ -298,6 +316,7 @@ std::expected<std::uint32_t, Refusal> UpscaleStage::outputs(const DecodedFrame& 
     } else {
       scores_wait_us_[scores_wait_next_++ % kScoresWaitKept] = waited;
     }
+    lead_us = waited;
     if (!scores) return std::unexpected(std::move(scores.error()));
     facts.scores = *scores;
     ++pairs_;
@@ -305,7 +324,10 @@ std::expected<std::uint32_t, Refusal> UpscaleStage::outputs(const DecodedFrame& 
     if (kernels::is_scene_cut(scores->scene_score)) {
       forget_motion();
       ++cuts_;
-      if (setup_.live) setup_.live->count_cut();
+      if (setup_.live) {
+        setup_.live->count_cut();
+        setup_.live->auto_cut(host_now_us());
+      }
     } else if (kernels::is_held(scores->worst_block)) {
       ++held_;
       if (setup_.live) setup_.live->count_held();
@@ -317,12 +339,25 @@ std::expected<std::uint32_t, Refusal> UpscaleStage::outputs(const DecodedFrame& 
   instants_[0] = Instant{.t = 1.0F, .pts_us = frame.pts_us};
   const bool runs = on_grid && rife_runs(facts);
   // Mode auto : seules les paires qui ont chargé le GPU disent s'il tient ; à ×1 rien ne tourne, le
-  // temps seul compte. Coupe de scène ou dessin tenu : aucun signal.
+  // temps seul compte. Coupe de scène ou dessin tenu : aucun verdict, mais le moteur vit.
+  const bool auto_measured =
+      interpolates() && setup_.live && facts.same_epoch && (runs || factor.num <= factor.den);
   if (interpolates() && setup_.live) {
-    if (!facts.same_epoch)
-      setup_.live->auto_settle();
-    else if (runs || factor.num <= factor.den)
-      setup_.live->auto_pair(late > 0);
+    const std::int64_t at_us = host_now_us();
+    if (!facts.same_epoch) {
+      setup_.live->auto_settle(at_us);
+    } else if (auto_measured) {
+      const std::int64_t gap = facts.gap_us;
+      setup_.live->auto_pair(
+          {.now_us = at_us,
+           .made_step = factor.num,
+           .late = static_cast<int>(late),
+           .period_us = gap >= 8'000 && gap <= 200'000
+                            ? static_cast<std::int64_t>(static_cast<double>(gap) / play_rate)
+                            : 0});
+    } else {
+      setup_.live->auto_alive(at_us);
+    }
   }
   // Coupe ou dessin tenu : les instants de la paire manquent à dessein, pas faute de temps.
   uninterpolated_ =
@@ -347,6 +382,7 @@ std::expected<std::uint32_t, Refusal> UpscaleStage::outputs(const DecodedFrame& 
     ++interpolated_;
     if (setup_.live) setup_.live->count_interpolated();
   }
+  if (auto_measured) setup_.live->auto_expect(frame.id.value, static_cast<int>(outputs_), lead_us);
   // Garder les poses : la paire précédente compte si elle précède vraiment celle-ci ; une paire
   // tenue (dessin identique) n'a pas bougé. Le mouvement de cette paire va dans l'autre tampon.
   before_ = facts.same_epoch ? now_ : PairMotion::Unknown;
@@ -422,6 +458,9 @@ std::expected<RingStage::Output, Refusal> UpscaleStage::produce(const DecodedFra
   // Image intermédiaire, entre la précédente et celle-ci (rife_runs demande la précédente).
   if (!previous_) return refuse(RefusalCode::SequenceOrder, "RIFE : pas d'image précédente");
   const Output made{.pts_us = instant.pts_us, .left = previous_->id, .right = frame.id};
+  gmfss_.a = GmfssFrameKey{.id = previous_->id,
+                           .epoch = previous_->epoch};  // GMFSS fusionné : les images de la paire
+  gmfss_.b = GmfssFrameKey{.id = frame.id, .epoch = frame.epoch};
   use_lane(gpu::Lane::Interpolate);
   next_middle();  // l'autre tampon : SPAN ou l'écriture du ring lit peut-être encore le précédent
   const gpu::RingTarget ring{.slot = &setup_.slots[slot], .sync = sync};

@@ -66,8 +66,9 @@ TEST_CASE("la priorité décale d'un cran", "[auto_config]") {
         balance);
   CHECK(applied(Preset::Auto, Tier::Ultra, 2160, 165.0, k1080p24, Priority::Image).gmfss_precision ==
         PrecisionTier::Quality);
-  CHECK(applied(Preset::Auto, Tier::Ultra, 2160, 165.0).gmfss_precision == PrecisionTier::Balanced);
-  // L'automatique ne choisit jamais le FP8 : il se demande.
+  // GMFSS est le seul réseau dont le FP8 passe les gardes (−15 % sur la paire, PSNR 47 dB au pire cas) : par
+  // défaut, sans graphe ou sans moteur FP8 la lecture reste en FP16. SPAN et RIFE ne le choisissent jamais.
+  CHECK(applied(Preset::Auto, Tier::Ultra, 2160, 165.0).gmfss_precision == PrecisionTier::Performance);
   CHECK(applied(Preset::Auto, Tier::Normal, 1440, 144.0).span_precision == PrecisionTier::Balanced);
 }
 
@@ -152,4 +153,26 @@ TEST_CASE("un réglage de chaîne fait à la main se voit, pas un réglage de le
   moved = base;
   moved.keep_poses = !base.keep_poses;
   CHECK(ajp::app::play::preset_chain_differs(base, moved));
+}
+
+TEST_CASE("auto : ce que l'exploration a trouvé relève la chaîne du niveau, seulement en Auto",
+          "[auto_config][exploration]") {
+  using namespace ajp::app::play;
+  const core::SourceInfo source{.width = 1920, .height = 1080, .fps = 24.0};
+  Machine machine{.tier = Tier::Normal, .display_height = 1080, .display_hz = 165.0};
+  PlaySettings settings;
+  settings.preset = Preset::Auto;
+  const PlaySettings plain = apply_preset(settings, machine, source);
+  machine.explored_work_height = 900;
+  machine.explored_rife_model = "rife_v4.25.onnx";
+  const PlaySettings explored = apply_preset(settings, machine, source);
+  CHECK(explored.work_height == 900);
+  CHECK(explored.work_height > plain.work_height);
+  CHECK(explored.rife_model == "rife_v4.25.onnx");
+  // La source ne monte pas plus haut qu'elle-même.
+  const core::SourceInfo small{.width = 1280, .height = 720, .fps = 24.0};
+  CHECK(apply_preset(settings, machine, small).work_height <= 720);
+  // Un préréglage choisi à la main n'est pas touché par l'exploration.
+  settings.preset = Preset::Normal;
+  CHECK(apply_preset(settings, machine, source).work_height == plain.work_height);
 }

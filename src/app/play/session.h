@@ -14,6 +14,7 @@
 
 #include <cstdint>
 #include <expected>
+#include <functional>
 #include <optional>
 #include <string>
 #include <vector>
@@ -61,6 +62,8 @@ class StatsSource {
 };
 
 struct SessionConfig {
+  // Une image de sortie vue écrite par le GPU (host_now) : le mode auto en tire le coût de la paire.
+  std::function<void(const RingFrame&, std::int64_t)> on_written;
   std::int64_t start_us = 0;             // > 0 : seek exact à l'ouverture
   std::int64_t duration_us = 0;          // 0 : inconnue ; borne les seeks relatifs
   std::vector<ChapterMark> chapters;     // du fichier, dans l'ordre

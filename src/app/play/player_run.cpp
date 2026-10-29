@@ -44,10 +44,13 @@
 #include "app/play/resume.h"
 #include "app/play/scripted_input.h"
 #include "app/play/session.h"
+#include "app/play/span_derive.h"
 #include "app/play/span_int8.h"
 #include "app/play/ui.h"
 #include "app/play/upscale_stage.h"
 #include "audio/devices.h"
+#include "core/auto_memory.h"
+#include "core/auto_rate.h"
 #include "core/clock.h"
 #include "core/log.h"
 #include "core/settings.h"
@@ -170,6 +173,7 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
     config.mix.listen = static_cast<audio::Listen>(listening.listen);
     config.mix.faithful = listening.faithful;
     config.mix.tuning = listening.tuning;
+    config.mix.anime = listening.anime;
     if (auto loaded = load_listening_hrir(listening.hrir_path)) {
       config.mix.hrir = std::move(*loaded);
     } else {
@@ -214,6 +218,9 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
   session_config.subtitle_scale = settings.subtitle_scale;
   session_config.extra = &chain_stats;
   session_config.latency = &live->latency();
+  session_config.on_written = [live](const RingFrame& frame, std::int64_t done_us) {
+    live->auto_written(frame.left.value, frame.right.value, frame.submitted_us, done_us);
+  };
   log->info("{}", label_text);
   for (const std::string& line : session_config.tracks) log->info("{}", line);
   log->info("{}", session_config.output);
@@ -266,7 +273,8 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
                                    ? gmfss_tiers(c.gmfss_places, GmfssVariant::Union, fp8_engine)
                                    : TierSupport{},
           .span_tiers = c.model
-                            ? span_tiers(c.model->path, p.paths.engines.parent_path() / "modeles", fp8_engine)
+                            ? span_tiers(c.model->path, p.paths.engines.parent_path() / "modeles", fp8_engine,
+                                         c.backend && c.backend->capabilities().span_fp8_cutlass)
                             : TierSupport{},
           .rife_tiers = c.rife_choice ? sibling_tiers(c.rife_choice->path, fp8_engine) : TierSupport{},
           .drba_tiers = drba_file ? sibling_tiers(drba_file->path, fp8_engine) : TierSupport{},
@@ -302,7 +310,16 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
           .default_player_is_ajp = default_player_is_ajp,
           .offer_default_player = !default_player_is_ajp && !settings.default_player_dismissed,
           .bench_text = bench_text,
-          .place = {.executable = p.paths.executable, .home = p.paths.home, .data = p.paths.data}});
+          .place = {.executable = p.paths.executable, .home = p.paths.home, .data = p.paths.data},
+          .span_prepare =
+              c.model
+                  ? make_span_prepare(p.library,
+                                      gpu::BackendInit{.render = &p.screen.device(),
+                                                       .cache_dir = p.paths.engines,
+                                                       .log = backend_log()},
+                                      c.backend && c.backend->capabilities().span_fp8_cutlass, c.model->path,
+                                      p.paths.engines.parent_path() / "modeles", p.options.file)
+                  : SpanPrepare{}});
   p.profiles.source =
       core::SourceInfo{.width = video.width, .height = video.height, .fps = fps_of(video.frame_rate)};
   if (c.model) p.profiles.default_model = c.model->default_name;
@@ -380,31 +397,71 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
   std::int64_t display_polled_at = saved_at;
   p.ui.controls().show_deferred(host_now_us());
   // Le mode auto : son plafond suit la fréquence de l'écran.
+  bool vrr_armed = p.display && p.display->vrr.value_or(false) && p.display->vrr_armed.value_or(false);
   const auto apply_auto = [&] {
     const bool on = chain.running.rife_auto && chain.rife_loaded && chain.running.rife_factor >= 2;
-    chain.live.set_auto(on, core::auto_ceiling(display_refresh_hz(out.window()), fps_of(video.frame_rate)));
+    // Au fps près (1/24 de multiplicateur) sur un écran VRR armé : la cadence n'y est plus liée au
+    // rafraîchissement. À fréquence fixe, des paliers entiers (les autres feraient vibrer).
+    const int granularity = vrr_armed ? core::kFineGranularity : 1;
+    const double limit_hz = core::auto_limit_hz(display_refresh_hz(out.window()), chain.running.auto_cap);
+    chain.live.set_auto(on, core::auto_ceiling(limit_hz, fps_of(video.frame_rate), granularity), granularity);
   };
   apply_auto();
+  // Le dernier palier tenu pour cette vidéo, ce moteur, cette hauteur de travail et ce GPU : le départ.
+  std::filesystem::path auto_memory_path;
+  std::string auto_memory_key;
+  if (!p.settings_path.empty() && !p.options.file.empty()) {
+    std::error_code size_error;
+    const std::uintmax_t file_size = std::filesystem::file_size(p.options.file, size_error);
+    auto_memory_path = p.settings_path.parent_path() / "auto_memory.toml";
+    auto_memory_key =
+        core::auto_memory_key(prepare::utf8_path(p.options.file), size_error ? 0 : file_size,
+                              std::string(c.motion_name()), settings.work_height, gpu_facts(p.screen).name);
+    if (chain.live.auto_active()) {
+      if (const auto remembered = core::load_auto_step(auto_memory_path, auto_memory_key)) {
+        chain.live.auto_seed(*remembered, host_now_us());
+        log->info("auto : départ mémorisé ×{}", auto_factor_text(*remembered));
+      }
+    }
+  }
+  int auto_stored = 0;
   // Le palier du mode auto : un message à l'écran et une ligne de journal à chaque changement.
   bool vrr_fullscreen = false;
   if (p.display)
     log->info("VRR : {} · {}", p.display->vrr.value_or(false) ? "capable" : "non capable",
               p.display->vrr_armed.value_or(false) ? "armé" : "non armé");
-  int auto_window_step = 0;
-  std::int64_t auto_window_us = 0;
-  std::int64_t auto_window_missing = 0;
-  std::int64_t auto_window_new = 0;
-  int auto_shown = 0;
+  int auto_shown = 0;  // centièmes de multiplicateur ; 0 : le mode auto est coupé
+  int auto_notified = 0;
+  std::int64_t auto_changed_us = 0;
+  std::int64_t auto_missing_seen = 0;
+  const double auto_source_fps = fps_of(video.frame_rate);
+  // Un changement de palier : une ligne de journal avec sa raison. Le message à l'écran n'est dit qu'une fois
+  // le palier tenu 3 s (pas de clignotement), et le palier tenu 6 s est retenu pour la prochaine lecture.
   const auto show_auto = [&] {
     const Factor now = chain.live.factor_now();
-    const int step = chain.running.rife_auto && now.den == 1 ? now.num : 0;
-    if (step == auto_shown) return;
-    if (step > 0) {
-      log->info("auto : ×{} (plafond {}, plafond appris {})", step, chain.live.auto_ceiling(),
-                chain.live.auto_cap());
-      if (auto_shown > 0) p.ui.controls().notify(std::format("Auto ×{}", step), host_now_us());
+    const int centi = chain.running.rife_auto && now.den >= 1 ? now.num * 100 / now.den : 0;
+    const std::int64_t at = host_now_us();
+    if (centi != auto_shown) {
+      if (centi > 0) {
+        log->info("auto : {}", auto_status_text(chain.live.auto_info(at), auto_source_fps));
+      }
+      auto_shown = centi;
+      auto_changed_us = at;
+      return;
     }
-    auto_shown = step;
+    if (centi <= 0) return;
+    if (centi != auto_notified && at - auto_changed_us >= 3'000'000) {
+      if (auto_notified > 0)
+        p.ui.controls().notify(
+            std::format("Auto ×{} ({:.0f} i/s)", auto_factor_text(centi), auto_source_fps * centi / 100.0),
+            at);
+      auto_notified = centi;
+    }
+    if (centi != auto_stored && at - auto_changed_us >= 6'000'000 && !auto_memory_path.empty()) {
+      if (auto kept = core::store_auto_step(auto_memory_path, auto_memory_key, centi); !kept)
+        log->warn("{}", kept.error().detail);
+      auto_stored = centi;  // même en cas d'échec : pas de réécriture à chaque tour
+    }
   };
   while (!session.finished() && !chain.reopen) {
     for (;
@@ -433,23 +490,12 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
       display_polled_at = host_now_us();
       session.set_display(display_period_us(out.window()), display_refresh_hz(out.window()));
       apply_auto();
-      // Le GPU ne suit pas sans qu'une paire soit « en retard » : les images manquées à l'écran sur
-      // 4 s pleines de ce palier font descendre (la fenêtre repart à chaque changement de palier).
+      // Le mode auto écoute les images manquées à l'écran (sans paire en retard, le GPU peut ne pas suivre)
+      // et le chien de garde veille sur le moteur d'interpolation.
       const FrameStats& shown = session.stats();
-      if (auto_shown > 0 && auto_shown == auto_window_step && host_now_us() - auto_window_us >= 4'000'000) {
-        if (core::auto_overloaded(shown.missing - auto_window_missing, shown.new_frames - auto_window_new)) {
-          log->info("auto : {} images manquées sur {} s, le GPU ne suit pas ×{}",
-                    shown.missing - auto_window_missing, 4, auto_shown);
-          chain.live.auto_overloaded();
-        }
-        auto_window_step = 0;
-      }
-      if (auto_window_step == 0 || auto_window_step != auto_shown) {
-        auto_window_step = auto_shown;
-        auto_window_us = host_now_us();
-        auto_window_missing = shown.missing;
-        auto_window_new = shown.new_frames;
-      }
+      chain.live.auto_missed(host_now_us(), shown.missing - auto_missing_seen);
+      auto_missing_seen = shown.missing;
+      chain.live.auto_tick(host_now_us(), !session.view().paused);
       show_auto();
       // KDE arme le VRR en plein écran seulement : on le relit quand la fenêtre change d'état.
       const bool fullscreen = (SDL_GetWindowFlags(out.window()) & SDL_WINDOW_FULLSCREEN) != 0;
@@ -457,6 +503,11 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
         vrr_fullscreen = fullscreen;
         if (const auto display = read_display(display_name(out.window()))) {
           p.ui.set_display_vrr(display->vrr.value_or(false), display->vrr_armed.value_or(false), fullscreen);
+          const bool armed = display->vrr.value_or(false) && display->vrr_armed.value_or(false);
+          if (armed != vrr_armed) {
+            vrr_armed = armed;
+            apply_auto();  // les demi-paliers suivent le VRR
+          }
           log->info("VRR : {} · {}", display->vrr.value_or(false) ? "capable" : "non capable",
                     display->vrr_armed.value_or(false) ? "armé" : "non armé");
         }
@@ -528,7 +579,9 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
                                        .period_us = bench_period_us},
                                .interval_median_us = seen.frame_interval.median(),
                                .interval_p95_us = seen.frame_interval.percentile(95),
-                               .render_median_us = seen.render.median()};
+                               .render_median_us = seen.render.median(),
+                               .work_height = chain.running.work_height,
+                               .rife_model = chain.running.rife_model};
     if (auto written = save_reading(*p.options.bench_out, reading); !written)
       log->warn("{}", written.error().detail);
   }

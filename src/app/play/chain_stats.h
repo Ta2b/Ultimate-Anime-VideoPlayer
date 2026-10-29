@@ -15,6 +15,7 @@
 #include "app/play/options.h"
 #include "app/play/session.h"
 #include "app/play/settings_panel.h"
+#include "core/auto_rate.h"
 #include "gpu/kernel_ops.h"
 #include "kernels/spec/rife.h"
 
@@ -25,6 +26,12 @@ std::vector<EngineBadge> engine_badges(const std::filesystem::path& cache_dir,
                                        const std::filesystem::path& span, WorkSize span_size,
                                        const std::optional<std::filesystem::path>& rife,
                                        const kernels::RifeGeometry& rife_size);
+
+// Le multiplicateur en centièmes (250) écrit à la française : « 2,5 », « 3,75 », « 4 ».
+std::string auto_factor_text(int centi);
+// Le palier du mode Auto et sa raison : « Auto ×3,5 (84 i/s) · plafond écran ×6 · prédit ×4 · limite GPU 78 %
+// · scène lourde · dernier changement : scène allégée ».
+std::string auto_status_text(const core::AutoInfo& info, double source_fps);
 
 // Mesures de la chaîne pour l'OSD. interpolation : rien sans interpolation ; sinon son moteur,
 // « RIFE » ou « flux optique », en tête de la ligne des compteurs. source_fps : images par

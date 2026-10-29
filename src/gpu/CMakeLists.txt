@@ -3,6 +3,8 @@
 # chargée à l'exécution, installée seulement si l'utilisateur la choisit.
 # ir/ est la représentation interne commune aux moteurs Vulkan et Metal.
 add_subdirectory(ir)
+# Paquet de poids du SPAN entier en FP8 (C++ pur) ; ses noyaux CUTLASS sont dans cuda/backend.
+add_subdirectory(span_fp8)
 if(AJP_WITH_CUDA)
   add_subdirectory(cuda)
 endif()

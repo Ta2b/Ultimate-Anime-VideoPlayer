@@ -299,11 +299,19 @@ std::expected<void, Refusal> play(const PlayOptions& options, const PlayerPaths&
       from_profile.preset = Preset::Auto;
       from_profile.priority = Priority::Balance;
     }
-    from_profile = apply_preset(from_profile,
-                                Machine{.tier = tier,
-                                        .display_height = display_height((*screen)->window()),
-                                        .display_hz = display_refresh_hz((*screen)->window())},
-                                profiles.source);
+    // L'exploration du benchmark (bench.toml) ne vaut que pour cette carte et ce pilote, et pas pour un
+    // essai.
+    const GpuFacts here = gpu_facts(**screen);
+    const bool explored = measured_tier && !file_options.bench_level && measured_tier->gpu == here.name &&
+                          measured_tier->driver == here.driver;
+    from_profile =
+        apply_preset(from_profile,
+                     Machine{.tier = tier,
+                             .display_height = display_height((*screen)->window()),
+                             .display_hz = display_refresh_hz((*screen)->window()),
+                             .explored_work_height = explored ? measured_tier->work_height : 0,
+                             .explored_rife_model = explored ? measured_tier->rife_model : std::string()},
+                     profiles.source);
     PlaySettings settings = settings_for(from_profile, file_options);
     if (auto valid = validate(settings); !valid) return std::unexpected(std::move(valid.error()));
     static_cast<void>((*ui)->controls().set_volume(settings.volume));

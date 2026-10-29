@@ -103,6 +103,12 @@ std::expected<Lowerer::Bound, Refusal> Lowerer::bind(ir::TensorId id) {
     if (found == constants_.end()) found = constants_.emplace(id, add_blob(constant_blob(t))).first;
     binding = {.kind = BindingKind::Blob, .index = found->second};
   }
+  // Une tranche de canaux de son parent (net_alias.h) : rangée au pas de pixel du parent.
+  if (id < aliases_.size() && aliases_[id].channel_slab) {
+    auto parent = desc_of(graph_, aliases_[id].parent);
+    if (!parent) return std::unexpected(parent.error());
+    desc->cp = parent->cp;
+  }
   return Bound{.binding = binding, .desc = *desc, .type = type_code(graph_, id), .tensor = &t};
 }
 
@@ -423,7 +429,8 @@ std::expected<Program, Refusal> lower(const ir::Graph& graph, std::span<const Ke
         Refusal{RefusalCode::InputMismatch,
                 std::format("{} choix pour {} nœuds", choices.size(), graph.nodes.size())});
   }
-  Lowerer lowerer(graph, target, plan_aliases(graph, target.storage_alignment));
+  Lowerer lowerer(graph, target,
+                  plan_aliases(graph, target.storage_alignment, target.concat_in_place, target.split_views));
   for (std::size_t k = 0; k < graph.nodes.size(); ++k) {
     if (auto ok = lowerer.node(k, choices[k]); !ok) return std::unexpected(ok.error());
   }

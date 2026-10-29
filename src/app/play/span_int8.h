@@ -10,6 +10,13 @@
 // du FP8 ne refusent que les sorties détruites ; la perte qu'il garde se juge à l'œil, c'est le choix du
 // cran Performance.
 //
+// Quatrième variante, « -fp8c- » (Performance, TensorRT seulement, RTX 40) : le SPAN entier en FP8 par les
+// noyaux CUTLASS du backend (docs/span-fp8-cutlass.md), un paquet de poids « .span8 » et non un ONNX, dérivé
+// par tools/span/derive_span_fp8.py. Reçu aux seuils de l'INT8 (le FP8 par Q/DQ ci-dessus a des seuils
+// lâches). La chaîne la prend avant « -fp8- » quand le backend l'annonce (BackendCaps::span_fp8_cutlass) et,
+// si son chargement est refusé (autre GPU, taille que les noyaux ne prennent pas, erreur CUDA), passe à la
+// variante suivante puis au FP16.
+//
 // La chaîne la prend à la place du SPAN choisi sous un backend qui sait l'INT8 (TensorRT) quand le
 // reçu est celui de ce modèle et de ce fichier, et passe les garde-fous ci-dessous, mesurés contre
 // le modèle d'origine sur les images de validation. Les mêmes valeurs par défaut que le script ;
@@ -34,7 +41,7 @@ inline constexpr double kFp8MinPsnrMeanDb = 30.0;
 inline constexpr double kFp8MinPsnrWorstDb = 26.0;
 inline constexpr double kFp8MinSsimWorst = 0.93;
 
-enum class SpanVariantKind : std::uint8_t { Int8, Fp8, Fp32 };
+enum class SpanVariantKind : std::uint8_t { Int8, Fp8, Fp32, Fp8Cutlass };
 
 struct SpanInt8 {  // une variante quantifiée ou recalculée du SPAN, quel que soit son kind
   SpanVariantKind kind = SpanVariantKind::Int8;
@@ -57,13 +64,21 @@ inline SpanInt8Lookup find_span_int8(const std::filesystem::path& span, const st
 }
 
 // Les crans de SPAN dont la variante est dans dir et passe ses garde-fous ; fp8_engine : le moteur calcule
-// le FP8.
-TierSupport span_tiers(const std::filesystem::path& span, const std::filesystem::path& dir, bool fp8_engine);
+// le FP8 ; cutlass_engine : il sait aussi le SPAN entier en noyaux CUTLASS (Performance par le paquet «
+// .span8 »).
+TierSupport span_tiers(const std::filesystem::path& span, const std::filesystem::path& dir, bool fp8_engine,
+                       bool cutlass_engine = false);
 
-// « INT8 », « FP8 », « FP32 » : pour les libellés de la chaîne.
+// Le fichier de la variante de span qui a ce SHA-256 (celui du modèle) : dir/<nom>-<infixe><16
+// chiffres>.<extension>, « .onnx » ou « .span8 ». Son reçu est le même nom en « .toml ».
+std::filesystem::path span_variant_path(SpanVariantKind kind, const std::filesystem::path& span,
+                                        const std::filesystem::path& dir, std::string_view sha256);
+
+// « INT8 », « FP8 », « FP32 », « FP8 CUTLASS » : pour les libellés de la chaîne.
 std::string_view variant_text(SpanVariantKind kind);
 
-// « 2x_…_Performance.onnx » pour « 2x_…_Performance-int8-0123456789abcdef.onnx » (ou -fp8-, -fp32-) ; rien
+// « 2x_…_Performance.onnx » pour « 2x_…_Performance-int8-0123456789abcdef.onnx » (ou -fp8-, -fp32-, et
+// -fp8c- en « .span8 ») ; rien
 // pour un autre nom. Les badges du cache nomment ainsi le modèle d'origine. kind rend laquelle des trois.
 std::optional<std::string> span_int8_source(const std::string& file, SpanVariantKind* kind = nullptr);
 

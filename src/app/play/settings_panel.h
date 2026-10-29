@@ -99,6 +99,8 @@ struct SettingsChoices {
   bool offer_default_player = false;  // proposer de le devenir (fenêtre de démarrage, une fois par lancement)
   std::string bench_text;  // « Dernière évaluation : 2026-10-28, niveau Rapide » ; vide : jamais faite
   PlayerPlace place;       // l'exécutable et le dossier de l'utilisateur (onglet Système)
+  // Image IA > Agrandissement (réglages avancés) : préparer le mode Performance de SPAN (span_derive.h).
+  SpanPrepare span_prepare;
 };
 
 // Une liste de langues (settings_panel.cpp), partagée avec l'assistant de premier démarrage.
@@ -119,6 +121,11 @@ class SettingsPanel {
   }
   void close() { open_ = false; }
   bool is_open() const { return open_; }
+  // Il y a quelque chose à dessiner : le panneau ouvert, ou la fenêtre « lecteur par défaut », qui ne dépend
+  // pas de lui.
+  bool wants_draw(const PlaySettings& running, const SettingsChoices& choices) const {
+    return open_ || (!prompt_done_ && choices.offer_default_player && !running.default_player_dismissed);
+  }
 
   struct Result {
     std::optional<PlaySettings> live;    // à appliquer tout de suite
@@ -133,16 +140,20 @@ class SettingsPanel {
   bool prompt_dismissed_ = false;  // « Ne plus me le demander » coché dans cette fenêtre
   bool prompt_done_ = false;       // la fenêtre « lecteur par défaut » a déjà été montrée à ce lancement
   SystemNote prompt_note_;         // sa dernière action
-  PlaySettings draft_;     // ce que montre le panneau ; diffère de running pour ce qui attend « Appliquer »
-  PlaySettings seen_;      // running au tour précédent
-  int page_ = 0;           // la page de l'arbre affichée (settings_panel.cpp : kPages)
-  bool advanced_ = false;  // la case « Réglages avancés » : montre la catégorie Avancé
-  bool pending_shown_ = false;                  // le bandeau « Appliquer » était montré au tour précédent
+  PlaySettings draft_;  // ce que montre le panneau ; diffère de running pour ce qui attend « Appliquer »
+  PlaySettings seen_;   // running au tour précédent
+  int page_ = 0;        // la page de l'arbre affichée (settings_panel.cpp : kPages)
+  std::array<bool, 8> category_open_{};  // les catégories ouvertes de l'arbre
+  bool category_init_ = false;           // l'état de départ des catégories est posé
+  int shown_page_ = -1;         // la page de l'image précédente : sa catégorie s'ouvre quand elle change
+  bool advanced_ = false;       // la case « Réglages avancés » : montre la catégorie Avancé
+  bool pending_shown_ = false;  // le bandeau « Appliquer » était montré au tour précédent
   std::optional<core::EngineId> engine_draft_;  // moteur coché dans l'onglet Moteurs, pas appliqué
   std::unique_ptr<ExportDraft> export_;         // l'onglet Export, gardé d'une ouverture à l'autre
   SystemNote system_;                           // l'onglet Système : sa dernière action
-  UpdateNote updates_;  // Général > Mises à jour : la vérification en cours ou son résultat
-  BenchNote bench_;     // « Évaluer ma machine » : l'essai en cours ou son rapport
+  UpdateNote updates_;   // Général > Mises à jour : la vérification en cours ou son résultat
+  BenchNote bench_;      // « Évaluer ma machine » : l'essai en cours ou son rapport
+  PrepareNote prepare_;  // « Préparer le mode Performance » : la tâche en cours ou son résultat
 };
 
 }  // namespace ajp::app::play

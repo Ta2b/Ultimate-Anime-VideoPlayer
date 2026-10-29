@@ -292,6 +292,10 @@ EffectiveListening effective_listening(const PlaySettings& settings, const std::
   for (const auto& [name, own] : settings.device_profile) {
     if (name == device_name) profile = own;
   }
+  std::string_view anime = settings.anime_sound;
+  for (const auto& [name, own] : settings.device_anime) {
+    if (name == device_name) anime = own;
+  }
   std::string_view hrir = settings.hrir_path;
   for (const auto& [name, own] : settings.device_hrir) {
     if (name == device_name) hrir = own;
@@ -299,12 +303,23 @@ EffectiveListening effective_listening(const PlaySettings& settings, const std::
   return EffectiveListening{.listen = listen,
                             .faithful = settings.audio_faithful,
                             .tuning = tuning_of(profile, settings.audio_custom, listen),
+                            .anime = anime_tuning_of(anime, settings.anime_custom),
                             .hrir_path = std::string(hrir)};
 }
 
 std::expected<std::shared_ptr<const audio::Hrir>, Refusal> load_listening_hrir(const std::string& path) {
   if (path.empty()) return std::shared_ptr<const audio::Hrir>();
   return audio::load_hrir(std::filesystem::path(path));
+}
+
+audio::AnimeTuning anime_tuning_of(std::string_view level, const audio::AnimeTuning& custom_values) {
+  if (level == "custom") {
+    audio::AnimeTuning t = audio::clamped(custom_values);
+    t.enabled = true;
+    return t;
+  }
+  const audio::AnimeLevel* found = audio::find_anime_level(level);
+  return found != nullptr ? found->tuning : audio::AnimeTuning{};
 }
 
 audio::MixTuning resolved_tuning(const PlaySettings& settings, int listen) {
@@ -338,6 +353,10 @@ std::expected<PlaySettings, Refusal> validate(const PlaySettings& s) {
   for (const auto& checked : checks) {
     if (!checked) return std::unexpected(checked.error());
   }
+  if (s.auto_cap != 0 && (s.auto_cap < kAutoCapMin || s.auto_cap > kAutoCapMax))
+    return refuse(RefusalCode::FieldOutOfRange,
+                  std::format("interpolation.auto_cap : {} hors de {} à {} (0 : l'écran)", s.auto_cap,
+                              kAutoCapMin, kAutoCapMax));
   if (s.language_presets.size() > limits::kLanguagePresets)
     return refuse(RefusalCode::FieldOutOfRange,
                   std::format("languages.presets : {} préréglages, {} au plus", s.language_presets.size(),
@@ -377,6 +396,7 @@ PlaySettings settings_for(const PlaySettings& saved, const PlayOptions& options)
   if (options.was_given("--rife")) {
     s.rife_factor = options.rife_factor;
     s.rife_factor_den = options.rife_factor_den;
+    s.rife_auto = false;  // un multiplicateur donné à la main coupe le mode auto, comme dans le menu
   }
   if (options.was_given("--truehdr")) s.true_hdr = true;
   if (options.was_given("--truehdr-contrast")) s.true_hdr_contrast = options.true_hdr_contrast;
@@ -429,6 +449,7 @@ PlaySettings live_part(const PlaySettings& running, const PlaySettings& wanted, 
   s.priority = wanted.priority;
   s.downscale = wanted.downscale;
   s.rife_auto = wanted.rife_auto;
+  s.auto_cap = wanted.auto_cap;
   if (!wanted.upscale) s.span_precision = wanted.span_precision;  // sans SPAN, rien à recharger
   if (rife_loaded || wanted.rife_factor < 2) {
     s.rife_factor = wanted.rife_factor;
@@ -454,6 +475,7 @@ PlaySettings live_part(const PlaySettings& running, const PlaySettings& wanted, 
   s.deband = wanted.deband;
   s.autoplay_next = wanted.autoplay_next;
   s.default_player_dismissed = wanted.default_player_dismissed;
+  s.span_prepare_background = wanted.span_prepare_background;
   s.engines_dir = wanted.engines_dir;
   s.update_mode = wanted.update_mode;
   s.update_channel = wanted.update_channel;
@@ -465,6 +487,9 @@ PlaySettings live_part(const PlaySettings& running, const PlaySettings& wanted, 
   s.audio_custom = wanted.audio_custom;
   s.device_listening = wanted.device_listening;
   s.device_profile = wanted.device_profile;
+  s.anime_sound = wanted.anime_sound;
+  s.anime_custom = wanted.anime_custom;
+  s.device_anime = wanted.device_anime;
   s.hrir_path = wanted.hrir_path;
   s.device_hrir = wanted.device_hrir;
   s.display_sync = wanted.display_sync;
@@ -498,6 +523,21 @@ Change change_between(const PlaySettings& running, const PlaySettings& wanted, b
         "le moteur d'interpolation est chargé (construit la première fois pour cette taille)");
   if (wanted.rife_factor >= 2 && running.motion_engine != wanted.motion_engine)
     reopen.emplace_back("le moteur du mouvement change");
+  if (wanted.rife_factor >= 2 && wanted.motion_engine == MotionEngine::Rife &&
+      running.rife_fused != wanted.rife_fused)
+    reopen.emplace_back(wanted.rife_fused
+                            ? "RIFE fusionné (six moteurs, construits la première fois pour cette taille)"
+                            : "RIFE entier à la place du RIFE fusionné");
+  if (wanted.rife_factor >= 2 && wanted.motion_engine == MotionEngine::DistilDrba &&
+      running.drba_fused != wanted.drba_fused)
+    reopen.emplace_back(
+        wanted.drba_fused
+            ? "DistilDRBA fusionné (quatre moteurs, construits la première fois pour cette taille)"
+            : "DistilDRBA entier à la place du DistilDRBA fusionné");
+  if (wanted.rife_factor >= 2 && is_gmfss(wanted.motion_engine) && running.gmfss_fused != wanted.gmfss_fused)
+    reopen.emplace_back(wanted.gmfss_fused ? "GMFSS fusionné (deux moteurs à la place de la paire, "
+                                             "construits la première fois pour cette taille)"
+                                           : "la paire GMFSS entière à la place de GMFSS fusionné");
   if (wanted.rife_factor >= 2 && wanted.motion_engine == MotionEngine::Rife &&
       running.rife_model != wanted.rife_model)
     reopen.emplace_back("le modèle RIFE est chargé (construit la première fois pour cette taille)");

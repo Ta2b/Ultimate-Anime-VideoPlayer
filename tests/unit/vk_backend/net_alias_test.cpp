@@ -18,11 +18,13 @@
 #include "gpu/ir/shape.h"
 #include "gpu/vulkan/backend/net_lower.h"
 #include "net_rig.h"
+#include "test_models.h"
 
 using namespace ajp::gpu;
 using namespace ajp::gpu::vk::test;
 using ir::test::attr_float;
 using ir::test::attr_int;
+using ir::test::attr_ints;
 using ir::test::attr_string;
 using ir::test::ModelBuilder;
 
@@ -62,7 +64,8 @@ std::size_t copy_dispatches(const ir::Graph& graph, const vk::net::Target& targe
   const vk::net::Program program = require_value(vk::net::lower(graph, choices, target));
   return static_cast<std::size_t>(std::ranges::count_if(program.dispatches, [&](const vk::net::Dispatch& d) {
     const ir::OpKind op = graph.nodes[d.node].op;
-    return op == ir::OpKind::Concat || op == ir::OpKind::Split || op == ir::OpKind::Reshape;
+    return op == ir::OpKind::Concat || op == ir::OpKind::Split || op == ir::OpKind::Slice ||
+           op == ir::OpKind::Reshape;
   }));
 }
 
@@ -85,7 +88,129 @@ void check_copies(NetRig& rig, ir::DataType type, bool concat_out) {
   rig.target.storage_alignment = kept;
 }
 
+// x → trois Conv 3 × 3 (16, 16 et 8 canaux, Relu fondu dans la première) → Concat sur les canaux
+// → Conv 1 × 1 : les trois entrées sont en Nhwc16, lues par le seul Concat, leurs décalages (0, 16, 32)
+// sont des multiples de 16 canaux.
+ModelBuilder conv_concat(bool half) {
+  ModelBuilder m;
+  const std::int32_t type = half ? ir::onnx::kFloat16 : ir::onnx::kFloat;
+  m.input("x", {1, 5, 13, 17}, type);
+  const auto same = attr_ints("pads", {1, 1, 1, 1});
+  std::int64_t out = 16;
+  for (const char* name : {"a", "b", "c"}) {
+    if (name[0] == 'c') out = 8;
+    const std::string w = std::string("w") + name;
+    const std::string b = std::string("b") + name;
+    add_weight(m, w, {out, 5, 3, 3}, half, 41 + static_cast<std::size_t>(name[0]));
+    add_weight(m, b, {out}, half, 61 + static_cast<std::size_t>(name[0]));
+    m.node("Conv", {"x", w, b}, {std::string("c") + name}, {same});
+  }
+  m.node("Relu", {"ca"}, {"ra"});
+  m.node("Concat", {"ra", "cb", "cc"}, {"cat"}, {attr_int("axis", 1)});
+  add_weight(m, "wo", {8, 40, 1, 1}, half, 77);
+  add_weight(m, "bo", {8}, half, 78);
+  m.node("Conv", {"cat", "wo", "bo"}, {"y"}).output("y", type);
+  return m;
+}
+
+// x → Conv (5 vers 32 canaux) → Split (16, 16) → Relu et Conv 1 × 1 sur la première tranche, Sigmoid
+// sur la seconde : les deux sorties du Split sont lues dans leur entrée, au pas de pixel de celle-ci.
+ModelBuilder split_views(bool half) {
+  ModelBuilder m;
+  const std::int32_t type = half ? ir::onnx::kFloat16 : ir::onnx::kFloat;
+  m.input("x", {1, 5, 13, 17}, type);
+  add_weight(m, "w", {32, 5, 3, 3}, half, 31);
+  add_weight(m, "b", {32}, half, 32);
+  m.node("Conv", {"x", "w", "b"}, {"c"}, {attr_ints("pads", {1, 1, 1, 1})});
+  m.ints("split", {16, 16}).ints("starts", {0, 16, 0, 0}).ints("ends", {1, 32, 13, 17});
+  m.node("Slice", {"c", "starts", "ends"}, {"sl"});
+  m.node("Tanh", {"sl"}, {"r3"});
+  m.output("r3", type);
+  m.node("Split", {"c", "split"}, {"s1", "s2"}, {attr_int("axis", 1)});
+  add_weight(m, "wo", {16, 16, 1, 1}, half, 33);
+  add_weight(m, "bo", {16}, half, 34);
+  m.node("Conv", {"s1", "wo", "bo"}, {"y1"}).node("Relu", {"y1"}, {"r1"});
+  m.node("Sigmoid", {"s2"}, {"r2"});
+  m.output("r1", type).output("r2", type);
+  return m;
+}
+
+// Concat de sorties de Sigmoid, d'Add, de Resize et de Conv : chaque producteur écrit dans sa tranche.
+ModelBuilder producers_concat(bool half) {
+  ModelBuilder m;
+  const std::int32_t type = half ? ir::onnx::kFloat16 : ir::onnx::kFloat;
+  m.input("x", {1, 5, 13, 17}, type);
+  const auto same = attr_ints("pads", {1, 1, 1, 1});
+  for (const char* name : {"p", "q", "r", "t"}) {
+    const std::string w = std::string("w") + name;
+    const std::string b = std::string("b") + name;
+    add_weight(m, w, {16, 5, 3, 3}, half, 81 + static_cast<std::size_t>(name[0]));
+    add_weight(m, b, {16}, half, 91 + static_cast<std::size_t>(name[0]));
+    m.node("Conv", {"x", w, b}, {name}, {same});
+  }
+  m.node("Sigmoid", {"p"}, {"sp"});
+  m.node("Add", {"p", "q"}, {"sum"});
+  m.node("Relu", {"r"}, {"rr"}).node("Tanh", {"rr"}, {"tr"});
+  m.node("Concat", {"sp", "sum", "tr", "t"}, {"cat"}, {attr_int("axis", 1)});
+  add_weight(m, "wo", {8, 64, 1, 1}, half, 97);
+  add_weight(m, "bo", {8}, half, 98);
+  m.node("Conv", {"cat", "wo", "bo"}, {"y"}).output("y", type);
+  return m;
+}
+
 }  // namespace
+
+TEST_CASE("Réseau : Concat des Conv Nhwc16 écrites dans leur tranche de canaux", "[vk_backend][net][alias]") {
+  NetRig rig = make_net_rig();
+  const ir::Graph graph = build(conv_concat(false));
+  const auto id = [&](std::string_view name) {
+    return static_cast<ir::TensorId>(std::ranges::find(graph.tensors, name, &ir::Tensor::name) -
+                                     graph.tensors.begin());
+  };
+  const std::vector<ir::Alias> aliases = vk::net::plan_aliases(graph, 16);
+  const std::uint64_t channel = 4;
+  CHECK(vk::net::channel_slab_of(aliases, id("ra"), id("cat"), 0));
+  CHECK(vk::net::channel_slab_of(aliases, id("cb"), id("cat"), 16 * channel));
+  CHECK(vk::net::channel_slab_of(aliases, id("cc"), id("cat"), 32 * channel));
+  // Réglage de repli : sans lui, ou avec un alignement que le décalage ne tient pas, rien n'est rangé.
+  for (const ir::Alias& a : vk::net::plan_aliases(graph, 16, false)) CHECK(a.parent == ir::kNoTensor);
+  CHECK(vk::net::plan_aliases(graph, 1U << 20)[id("cb")].parent == ir::kNoTensor);
+
+  rig.target.storage_alignment = 16;
+  const auto concat_dispatches = [&](bool in_place) {
+    rig.target.concat_in_place = in_place;
+    return copy_dispatches(graph, rig.target);
+  };
+  CHECK(concat_dispatches(true) == 0);
+  CHECK(concat_dispatches(false) == 3);
+
+  const std::vector<ir::NamedValue> inputs{{"x", test_values(ir::DataType::F32, {1, 5, 13, 17}, 9)}};
+  rig.target.concat_in_place = true;
+  const std::vector<ir::Value> in_place = run_on_device(rig, graph, inputs);
+  rig.target.concat_in_place = false;
+  const std::vector<ir::Value> copied = run_on_device(rig, graph, inputs);
+  REQUIRE(in_place.size() == copied.size());
+  // Mêmes noyaux, mêmes valeurs : seule la destination change, le résultat est identique bit à bit.
+  for (std::size_t k = 0; k < in_place.size(); ++k) CHECK(in_place[k].f == copied[k].f);
+  rig.target.concat_in_place = true;
+  check_graph(rig, graph, inputs, kFp32);
+  // Chaque variante de chaque Conv (directe, Winograd, matrices coopératives) écrit dans sa tranche.
+  const std::vector<vk::net::KernelChoice> defaults =
+      require_value(vk::net::default_choices(graph, rig.target));
+  for (std::size_t k = 0; k < graph.nodes.size(); ++k) {
+    const auto options = require_value(vk::net::candidates(graph, k, rig.target));
+    for (std::size_t c = 1; c < options.size(); ++c) {
+      std::vector<vk::net::KernelChoice> choices = defaults;
+      choices[k] = options[c];
+      INFO("nœud " << k << " : " << options[c].variant);
+      check_graph(rig, graph, inputs, kFp32, choices);
+    }
+  }
+  require_f16(rig);
+  const ir::Graph half = build(conv_concat(true));
+  const std::vector<ir::NamedValue> half_inputs{{"x", test_values(ir::DataType::F16, {1, 5, 13, 17}, 9)}};
+  check_graph(rig, half, half_inputs, kFp16);
+}
 
 TEST_CASE("Réseau : Concat, Split et Reshape sans copie", "[vk_backend][net][alias]") {
   NetRig rig = make_net_rig();
@@ -140,4 +265,86 @@ TEST_CASE("Réseau : Cast autour d'un Resize retirés", "[vk_backend][net][alias
   const std::vector<ir::Value> got = run_on_device(rig, after, inputs);
   REQUIRE(got.size() == 1);
   require_close(got[0], want[0], kFp16, "y");
+}
+
+namespace {
+
+// Le graphe avec et sans le réglage, sortie identique bit à bit, puis chaque variante contre l'interpréteur.
+void check_in_place(NetRig& rig, const ir::Graph& graph, const std::vector<ir::NamedValue>& inputs,
+                    bool vary_concat, bool vary_split) {
+  rig.target.storage_alignment = 16;
+  rig.target.concat_in_place = vary_concat;
+  rig.target.split_views = vary_split;
+  const std::vector<ir::Value> in_place = run_on_device(rig, graph, inputs);
+  check_graph(rig, graph, inputs, kFp32);
+  rig.target.concat_in_place = false;
+  rig.target.split_views = false;
+  const std::vector<ir::Value> copied = run_on_device(rig, graph, inputs);
+  REQUIRE(in_place.size() == copied.size());
+  for (std::size_t k = 0; k < in_place.size(); ++k) CHECK(in_place[k].f == copied[k].f);
+  rig.target.concat_in_place = vary_concat;
+  rig.target.split_views = vary_split;
+  const std::vector<vk::net::KernelChoice> defaults =
+      require_value(vk::net::default_choices(graph, rig.target));
+  for (std::size_t k = 0; k < graph.nodes.size(); ++k) {
+    const auto options = require_value(vk::net::candidates(graph, k, rig.target));
+    for (std::size_t c = 1; c < options.size(); ++c) {
+      std::vector<vk::net::KernelChoice> choices = defaults;
+      choices[k] = options[c];
+      INFO("nœud " << k << " : " << options[c].variant);
+      check_graph(rig, graph, inputs, kFp32, choices);
+    }
+  }
+  rig.target.concat_in_place = true;
+  rig.target.split_views = true;
+}
+
+}  // namespace
+
+TEST_CASE("Réseau : Split Nhwc16 lu dans son entrée, sans copie", "[vk_backend][net][alias]") {
+  NetRig rig = make_net_rig();
+  const ir::Graph graph = build(split_views(false));
+  const auto id = [&](std::string_view name) {
+    return static_cast<ir::TensorId>(std::ranges::find(graph.tensors, name, &ir::Tensor::name) -
+                                     graph.tensors.begin());
+  };
+  const std::vector<ir::Alias> aliases = vk::net::plan_aliases(graph, 16);
+  CHECK(vk::net::channel_slab_of(aliases, id("s1"), id("c"), 0));
+  CHECK(vk::net::channel_slab_of(aliases, id("s2"), id("c"), 16 * 4));
+  CHECK(vk::net::channel_slab_of(aliases, id("sl"), id("c"), 16 * 4));
+  for (const ir::Alias& a : vk::net::plan_aliases(graph, 16, true, false)) CHECK(a.parent == ir::kNoTensor);
+  rig.target.storage_alignment = 16;
+  CHECK(copy_dispatches(graph, rig.target) == 0);
+  rig.target.split_views = false;
+  CHECK(copy_dispatches(graph, rig.target) == 3);
+  rig.target.split_views = true;
+  const std::vector<ir::NamedValue> inputs{{"x", test_values(ir::DataType::F32, {1, 5, 13, 17}, 12)}};
+  check_in_place(rig, graph, inputs, true, true);
+  require_f16(rig);
+  const ir::Graph half = build(split_views(true));
+  const std::vector<ir::NamedValue> half_inputs{{"x", test_values(ir::DataType::F16, {1, 5, 13, 17}, 12)}};
+  check_graph(rig, half, half_inputs, kFp16);
+}
+
+TEST_CASE("Réseau : Concat de sorties Sigmoid, Add, Tanh et Conv écrites dans leur tranche",
+          "[vk_backend][net][alias]") {
+  NetRig rig = make_net_rig();
+  const ir::Graph graph = build(producers_concat(false));
+  const auto id = [&](std::string_view name) {
+    return static_cast<ir::TensorId>(std::ranges::find(graph.tensors, name, &ir::Tensor::name) -
+                                     graph.tensors.begin());
+  };
+  const std::vector<ir::Alias> aliases = vk::net::plan_aliases(graph, 16);
+  CHECK(vk::net::channel_slab_of(aliases, id("sp"), id("cat"), 0));
+  CHECK(vk::net::channel_slab_of(aliases, id("sum"), id("cat"), 16 * 4));
+  CHECK(vk::net::channel_slab_of(aliases, id("tr"), id("cat"), 32 * 4));
+  CHECK(vk::net::channel_slab_of(aliases, id("t"), id("cat"), 48 * 4));
+  rig.target.storage_alignment = 16;
+  CHECK(copy_dispatches(graph, rig.target) == 0);
+  const std::vector<ir::NamedValue> inputs{{"x", test_values(ir::DataType::F32, {1, 5, 13, 17}, 13)}};
+  check_in_place(rig, graph, inputs, true, true);
+  require_f16(rig);
+  const ir::Graph half = build(producers_concat(true));
+  const std::vector<ir::NamedValue> half_inputs{{"x", test_values(ir::DataType::F16, {1, 5, 13, 17}, 13)}};
+  check_graph(rig, half, half_inputs, kFp16);
 }

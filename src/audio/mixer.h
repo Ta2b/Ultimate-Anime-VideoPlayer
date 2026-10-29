@@ -24,6 +24,7 @@
 #include <string_view>
 #include <vector>
 
+#include "audio/anime_sound.h"
 #include "audio/hrir.h"
 #include "audio/pcm.h"
 
@@ -80,6 +81,7 @@ const MixPreset* find_preset(std::string_view key);
 struct MixConfig {
   Listen listen = Listen::Speakers;
   MixTuning tuning;
+  AnimeTuning anime;  // « Son anime » (anime_sound.h) : stéréo vers stéréo seulement ; enabled faux : absent
   bool faithful = false;  // aucun traitement
   int sink_channels = 2;  // canaux que reçoit l'appareil
   int sample_rate = 48'000;
@@ -101,6 +103,9 @@ struct MixPath {  // un haut-parleur vers une oreille
 class Mixer {
  public:
   explicit Mixer(MixConfig config);
+  Mixer(Mixer&&) noexcept;
+  Mixer& operator=(Mixer&&) noexcept;
+  ~Mixer();
 
   // Les canaux que le décodeur doit rendre pour une source de source_channels canaux : ceux de la source
   // quand le mixeur les traite lui-même (5.1 ou 7.1 vers un appareil stéréo, hors fidèle et hors Home
@@ -112,6 +117,9 @@ class Mixer {
 
   // Oublie l'état des filtres (seek).
   void reset();
+  // Les canaux de la piste en cours : le « Son anime » ne traite qu'une source stéréo (mono, 5.1 et 7.1
+  // gardent leur chemin ; un mono déjà doublé en stéréo par le décodeur n'est pas spatialisé).
+  void note_source(int channels) { source_channels_ = channels; }
   void set_faithful(bool faithful);
   bool faithful() const { return config_.faithful; }
   const MixConfig& config() const { return config_; }
@@ -125,6 +133,8 @@ class Mixer {
   PcmBlock convolve(const PcmBlock& in);
 
   MixConfig config_;
+  int source_channels_ = 2;
+  std::unique_ptr<AnimeSound> anime_;  // absent hors stéréo vers stéréo ou en Naturel
   int binaural_channels_ = 0;
   std::vector<std::array<MixPath, 2>> paths_;  // par canal source, [oreille gauche, droite]
   std::array<MixPath, 2> feed_;                // crossfeed : L vers R, R vers L

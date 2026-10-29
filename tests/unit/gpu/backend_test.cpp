@@ -16,7 +16,7 @@ using ajp::Refusal;
 using ajp::RefusalCode;
 using namespace ajp::gpu;
 
-static_assert(kBackendAbi == 10);
+static_assert(kBackendAbi == 15);
 // Aucune exception ne traverse les points d'entrée : sous MSVC, une exception sortie d'une
 // fonction extern "C" est un comportement indéfini chez l'appelant.
 static_assert(std::is_nothrow_invocable_r_v<int, BackendAbiFn>);

@@ -16,6 +16,7 @@
 #include "app/play/settings_chain_tabs.h"
 #include "app/play/settings_engines.h"
 #include "app/play/settings_export.h"
+#include "app/play/settings_sound.h"
 #include "app/play/text_fit.h"
 #include "app/play/tracks.h"
 
@@ -89,6 +90,7 @@ void hdr_tab(PlaySettings& d, const SettingsChoices& choices) {
       "sur les scènes claires et les grands aplats blancs, ombres plus douces la nuit, éclats isolés vers le "
       "pic.",
       choices.nvidia ? ", sur RTX HDR comme sur le HDR adaptatif" : ""));
+  panel::end_group();  // le dernier encadré s'ouvre dans la zone grisée : il se ferme avant d'en sortir
   ImGui::EndDisabled();
 }
 
@@ -248,6 +250,7 @@ void languages_tab(PlaySettings& d) {
     section(rank == 0 ? "Préférence 1" : "Préférence 2, si la 1re n'est pas disponible");
     language_combo("Langue de l'audio", "Selon le fichier", d.language_presets[rank].audio);
     language_combo("Langue des sous-titres", "Aucun", d.language_presets[rank].subtitles);
+    panel::end_group();  // l'encadré de la section ouvre sa propre fenêtre fille : il se ferme avant le PopID
     ImGui::PopID();
   }
   note(
@@ -256,215 +259,6 @@ void languages_tab(PlaySettings& d) {
       "langue de chaque liste, puis les pistes par défaut du fichier. Une piste sans langue est reconnue "
       "par son titre (VF, VOSTFR, Japanese…). Vaut au prochain fichier ; les pistes en cours se changent "
       "dans la barre.");
-}
-
-// Vrai pendant qu'on tient le curseur du délai audio.
-bool sound_tab(PlaySettings& d, const SettingsChoices& choices) {
-  // Appareil : celui du système (suivi quand il change) ou un autre de la liste.
-  section("Appareil");
-  const SettingsChoices::AudioOut* chosen = nullptr;
-  const SettingsChoices::AudioOut* system_default = nullptr;
-  for (const SettingsChoices::AudioOut& out : choices.audio_outputs) {
-    if (out.is_default) system_default = &out;
-    if (!d.audio_device.empty() && out.name == d.audio_device) chosen = &out;
-  }
-  const SettingsChoices::AudioOut* active = chosen != nullptr ? chosen : system_default;
-  bool follow = d.audio_device.empty() || chosen == nullptr;
-  if (ImGui::Checkbox("Suivre l'appareil par défaut du système", &follow)) {
-    if (follow) {
-      d.audio_device.clear();
-    } else if (active != nullptr) {
-      d.audio_device = active->name;
-    }
-  }
-  ImGui::BeginDisabled(follow);
-  if (ImGui::BeginCombo("Appareil de sortie",
-                        chosen != nullptr
-                            ? chosen->name.c_str()
-                            : (system_default != nullptr ? system_default->name.c_str() : "Aucun"))) {
-    for (const SettingsChoices::AudioOut& out : choices.audio_outputs) {
-      if (ImGui::Selectable(out.name.c_str(), chosen == &out)) d.audio_device = out.name;
-    }
-    ImGui::EndCombo();
-  }
-  ImGui::EndDisabled();
-  if (active != nullptr && active->channels > 0)
-    note(std::format("{} canaux sur cet appareil.", active->channels));
-  panel::tip(
-      "Changer d'appareil rouvre la vidéo au même endroit. Le format du son se détecte seul, piste par "
-      "piste.");
-
-  // Écoute : le rendu pour le casque, les enceintes ou le home cinéma. Aucune détection : c'est votre choix.
-  section("Écoute");
-  const bool multichannel = active != nullptr && active->channels > 2;
-  const std::string device_name = active != nullptr ? active->name : std::string();
-  bool own = false;
-  for (const auto& [name, key] : d.device_listening) own = own || name == device_name;
-  std::string* key = &d.listening;
-  if (own) {
-    for (auto& [name, value] : d.device_listening)
-      if (name == device_name) key = &value;
-  }
-  struct Choice {
-    const char* key;
-    const char* label;
-    const char* detail;
-  };
-  constexpr std::array<Choice, 3> kListening{{
-      {"headphones", "Casque", "Crossfeed en stéréo, binaural en surround."},
-      {"speakers", "Enceintes", "Rendu fidèle ; le surround est mixé en stéréo, centre rehaussé."},
-      {"cinema", "Home cinéma", "Multicanal, surround envoyé tel quel."},
-  }};
-  for (const Choice& choice : kListening) {
-    const bool cinema = std::string_view(choice.key) == "cinema";
-    ImGui::BeginDisabled(cinema && !multichannel);
-    if (ImGui::RadioButton(choice.label, *key == choice.key)) *key = choice.key;
-    ImGui::EndDisabled();
-    panel::tip(cinema && !multichannel ? "Grisé : cet appareil n'a que 2 canaux." : choice.detail);
-  }
-  const int listen = listening_index(*key).value_or(1);
-  if (listen != 2) {
-    // Le profil de virtualisation : un choix nommé ; en avancé, chaque réglage à la main (Personnalisé). Un
-    // appareil qui a son profil propre garde aussi son choix de profil (device_profile) ; sinon c'est le
-    // profil global.
-    std::string* profile = &d.audio_profile;
-    if (own) {
-      auto found =
-          std::ranges::find(d.device_profile, device_name, &std::pair<std::string, std::string>::first);
-      if (found == d.device_profile.end())
-        found = d.device_profile.insert(found, {device_name, d.audio_profile});
-      profile = &found->second;
-    }
-    const audio::MixPreset* shown = audio::find_preset(*profile);
-    const bool custom = *profile == "custom";
-    if (shown == nullptr || (listen == 0 && !shown->headphones) || (listen == 1 && !shown->speakers))
-      shown = audio::find_preset("natural");
-    if (ImGui::BeginCombo("Profil", custom ? "Personnalisé" : std::string(shown->label).c_str())) {
-      for (const audio::MixPreset& preset : audio::mix_presets()) {
-        if ((listen == 0 && !preset.headphones) || (listen == 1 && !preset.speakers)) continue;
-        if (ImGui::Selectable(std::string(preset.label).c_str(), !custom && &preset == shown)) {
-          *profile = std::string(preset.key);
-          d.audio_custom = preset.tuning;  // « Personnalisé » part de ce profil
-        }
-        panel::tip(std::string(preset.detail).c_str());
-      }
-      if (panel::advanced() && ImGui::Selectable("Personnalisé", custom)) *profile = "custom";
-      ImGui::EndCombo();
-    }
-    if (!custom) panel::tip(std::string(shown->detail).c_str());
-    if (panel::advanced()) {
-      audio::MixTuning t = custom ? d.audio_custom : tuning_of(*profile, d.audio_custom, listen);
-      bool moved = false;
-      const auto slider = [&](const char* label, float& value, float lo, float hi, const char* format) {
-        moved |= ImGui::SliderFloat(label, &value, lo, hi, format, ImGuiSliderFlags_AlwaysClamp);
-      };
-      if (listen == 0) {
-        slider("Crossfeed (stéréo)", t.crossfeed_gain, 0.0F, 0.7F, "%.2f");
-        slider("Crossfeed : adoucissement (Hz)", t.crossfeed_cutoff_hz, 300.0F, 1500.0F, "%.0f");
-        slider("Crossfeed : retard (ms)", t.crossfeed_delay_ms, 0.0F, 0.6F, "%.2f");
-        slider("Taille de la tête (m)", t.head_radius_m, 0.07F, 0.11F, "%.3f");
-        slider("Ombre de la tête", t.head_shadow, 0.0F, 0.7F, "%.2f");
-      } else {
-        slider("Niveau du centre (voix)", t.center_lift, 1.0F, 2.0F, "%.2f");
-        slider("Gain du mixage stéréo", t.downmix_scale, 0.4F, 0.9F, "%.2f");
-      }
-      slider("Niveau des arrières et côtés", t.surround_gain, 0.5F, 1.6F, "%.2f");
-      slider("Niveau des basses (LFE)", t.lfe_gain, 0.0F, 0.6F, "%.2f");
-      slider("Distance des enceintes virtuelles", t.distance, 0.0F, 1.0F, "%.2f");
-      slider("Pièce (réverbération légère)", t.room, 0.0F, 1.0F, "%.2f");
-      slider("Égaliseur : graves (dB)", t.eq_bass_db, -8.0F, 8.0F, "%.1f");
-      slider("Égaliseur : voix (dB)", t.eq_voice_db, -8.0F, 8.0F, "%.1f");
-      slider("Égaliseur : aigus (dB)", t.eq_treble_db, -8.0F, 8.0F, "%.1f");
-      slider("Nuit : compression de la dynamique", t.night, 0.0F, 1.0F, "%.2f");
-      if (moved) {
-        d.audio_custom = audio::clamped(t);
-        *profile = "custom";
-      }
-      if (custom && ImGui::Button("Revenir à Naturel")) {
-        *profile = "natural";
-        d.audio_custom = audio::MixTuning{};
-      }
-    }
-  }
-  if (panel::advanced() && listen == 0) {
-    // Réponses impulsionnelles à la HeSuVi : remplacent le modèle paramétrique au casque. Propres à
-    // l'appareil si celui-ci a son profil propre.
-    std::string* path = &d.hrir_path;
-    if (own) {
-      auto found = std::ranges::find(d.device_hrir, device_name, &std::pair<std::string, std::string>::first);
-      if (found == d.device_hrir.end()) found = d.device_hrir.insert(found, {device_name, d.hrir_path});
-      path = &found->second;
-    }
-    static std::array<char, 512> field{};
-    static std::string shown;
-    if (!ImGui::IsAnyItemActive() && shown != *path) {  // suit l'appareil et les retours en arrière
-      std::snprintf(field.data(), field.size(), "%s", path->c_str());
-      shown = *path;
-    }
-    if (ImGui::InputText("Réponse impulsionnelle (HeSuVi, .wav)", field.data(), field.size())) {
-      *path = field.data();
-      shown = *path;
-    }
-    ImGui::SameLine();
-    if (ImGui::Button("Aucune##hrir")) {
-      path->clear();
-      field[0] = '\0';
-      shown.clear();
-    }
-    panel::tip(
-        "Un fichier WAV de réponses (14 canaux HeSuVi, 16 canaux 7.1 ou 2 canaux HRIR) remplace le modèle de "
-        "tête du casque, pour le stéréo comme pour le 5.1 et le 7.1. Vide : le modèle d'origine. Latence "
-        "ajoutée : environ 11 ms.");
-    note(
-        "Le lecteur ne livre aucune réponse : elles ont chacune leur licence, lisez celle du fichier que "
-        "vous "
-        "choisissez.");
-  }
-  if (panel::advanced()) {
-    ImGui::Checkbox("Fidèle (aucun traitement)", &d.audio_faithful);
-    panel::tip(
-        "Coupe tout traitement, pour comparer : le son brut de la piste, mixé simplement pour l'appareil.");
-  }
-  if (panel::advanced() && !device_name.empty() && ImGui::Checkbox("Profil propre à cet appareil", &own)) {
-    if (own) {
-      d.device_listening.emplace_back(device_name, d.listening);
-    } else {
-      std::erase_if(d.device_listening, [&](const auto& entry) { return entry.first == device_name; });
-      std::erase_if(d.device_profile, [&](const auto& entry) { return entry.first == device_name; });
-      std::erase_if(d.device_hrir, [&](const auto& entry) { return entry.first == device_name; });
-    }
-  }
-  if (panel::advanced()) panel::tip("Un autre appareil reprend le profil global, sans rien demander.");
-
-  section("Lecture");
-  ImGui::Checkbox("Lire l'épisode suivant à la fin", &d.autoplay_next);
-  panel::tip(
-      "À la fin d'une vidéo ouverte par un fichier, lit la suivante du même dossier (ordre naturel des "
-      "noms : ep2 avant ep10). N : épisode suivant, Maj + N : précédent, O : passer le générique "
-      "(chapitre Opening ou Ending, sinon 85 s).");
-  if (!panel::advanced()) return false;
-  section("Synchronisation");
-  ImGui::SliderInt("Délai audio (ms)", &d.audio_delay_ms, -1000, 1000);
-  const bool held = ImGui::IsItemActive();
-  panel::tip(
-      "Positif : le son est retardé. Ctrl + clic sur le curseur pour saisir une valeur (jusqu'à ±10 000 "
-      "ms).");
-  if (ImGui::Button("Remettre à 0")) d.audio_delay_ms = 0;
-  d.audio_delay_ms = std::clamp(d.audio_delay_ms, limits::kAudioDelayMs.lo, limits::kAudioDelayMs.hi);
-  ImGui::Checkbox("Caler la lecture sur l'écran", &d.display_sync);
-  panel::tip(
-      "Sur un écran à fréquence fixe, la lecture accélère ou ralentit d'au plus 0,125 % pour que chaque "
-      "image tienne un nombre entier de rafraîchissements : plus aucune image doublée par dérive (une toutes "
-      "les 17 s à 60 Hz sinon). Le son suit, sans changement audible. Sans calage possible (VRR, cadence "
-      "trop loin), le son reste maître.");
-  ImGui::SliderInt("Latence de l'écran (ms)", &d.video_latency_ms, limits::kVideoLatencyMs.lo,
-                   limits::kVideoLatencyMs.hi, d.video_latency_ms == 0 ? "estimée" : "%d ms",
-                   ImGuiSliderFlags_AlwaysClamp);
-  note(
-      "Le temps entre le choix d'une image et son apparition : estimé d'après le rendu et la file de "
-      "l'écran, ou imposé ici si l'image paraît en avance ou en retard sur le son.");
-  d.video_latency_ms = std::clamp(d.video_latency_ms, limits::kVideoLatencyMs.lo, limits::kVideoLatencyMs.hi);
-  return held;
 }
 
 void subtitles_tab(PlaySettings& d) {
@@ -577,7 +371,7 @@ constexpr std::array<PageInfo, 14> kPages{{
     {"Image IA", "Agrandissement", false},
     {"Image IA", "Fluidité", false},
     {"HDR et couleurs", "Conversion HDR", false},
-    {"HDR et couleurs", "Réglages", false},
+    {"HDR et couleurs", "Couleurs", false},
     {"Audio", "Sortie", false},
     {"Export et moteurs", "Fichier", false},
     {"Export et moteurs", "Moteurs installés", false},
@@ -590,7 +384,9 @@ void language_choice(const char* label, const char* none_label, std::string& tag
 }
 
 SettingsPanel::SettingsPanel() : export_(std::make_unique<ExportDraft>()) {}
-SettingsPanel::~SettingsPanel() = default;
+SettingsPanel::~SettingsPanel() {
+  if (prepare_.stop) prepare_.stop->request_stop();  // la tâche dépend du lecteur qui ouvre ce panneau
+}
 
 SettingsPanel::Result SettingsPanel::draw(const PlaySettings& running, const SettingsChoices& choices,
                                           float scale, std::vector<Input>& actions) {
@@ -641,7 +437,10 @@ SettingsPanel::Result SettingsPanel::draw(const PlaySettings& running, const Set
     // Barre de défilement fine, collée au bord extérieur des deux zones.
     ImGui::PushStyleVar(ImGuiStyleVar_ScrollbarSize, 8.0F * scale);
     ImGui::PushStyleVar(ImGuiStyleVar_ScrollbarRounding, 4.0F * scale);
+    // Arbre collé à gauche : peu de marge intérieure.
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(4.0F * scale, 4.0F * scale));
     ImGui::BeginChild("##arbre", ImVec2(tree_width, -footer), ImGuiChildFlags_Borders);
+    ImGui::PopStyleVar();
     // La molette sur l'arbre passe d'une page à la suivante ou à la précédente.
     if (ImGui::IsWindowHovered() && io.MouseWheel != 0.0F) {
       const int step = io.MouseWheel < 0.0F ? 1 : -1;
@@ -652,21 +451,87 @@ SettingsPanel::Result SettingsPanel::draw(const PlaySettings& running, const Set
         }
       }
     }
-    const char* category = "";
-    bool category_open = false;
-    for (std::size_t i = 0; i < kPages.size(); ++i) {
-      const PageInfo& page = kPages[i];
-      if (!visible(i)) continue;
-      if (std::string_view(page.category) != category) {
-        if (category_open) ImGui::TreePop();
-        category = page.category;
-        ImGui::SetNextItemOpen(true, ImGuiCond_Once);
-        category_open = ImGui::TreeNodeEx(category, ImGuiTreeNodeFlags_SpanAvailWidth);
+    // L'arbre, dessiné à la main : une bande par catégorie (chevron, titre en couleur d'accent), les pages en
+    // retrait dessous, la page choisie marquée d'une barre d'accent et d'un fond.
+    {
+      ImDrawList* draw = ImGui::GetWindowDrawList();
+      const ImGuiStyle& style = ImGui::GetStyle();
+      const float row_height = ImGui::GetFontSize() + 12.0F * scale;
+      const float head_height = ImGui::GetFontSize() + 14.0F * scale;
+      const float indent = 26.0F * scale;
+      const ImU32 accent = ImGui::ColorConvertFloat4ToU32(panel::kAccent);
+      ImVec4 soft = panel::kAccent;
+      soft.w = 0.20F;
+      ImVec4 band = style.Colors[ImGuiCol_Header];
+      band.w = 0.14F;
+      ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, {style.ItemSpacing.x, 2.0F * scale});
+      std::string_view category;
+      int category_index = -1;
+      bool category_open = false;
+      for (std::size_t i = 0; i < kPages.size(); ++i) {
+        const PageInfo& page = kPages[i];
+        if (!visible(i)) continue;
+        if (std::string_view(page.category) != category) {
+          category = page.category;
+          ++category_index;
+          const auto slot = static_cast<std::size_t>(category_index);
+          // La catégorie de la page affichée s'ouvre quand la page change (clic, molette) ; les autres
+          // restent repliées au départ et gardent ensuite l'état choisi à la main.
+          if (!category_init_) category_open_[slot] = std::string_view(kPages[0].category) == category;
+          if (page_ != shown_page_ &&
+              std::string_view(kPages[static_cast<std::size_t>(page_)].category) == category)
+            category_open_[slot] = true;
+          if (category_index > 0) ImGui::Dummy({0.0F, 6.0F * scale});
+          const ImVec2 at = ImGui::GetCursorScreenPos();
+          const float row_width = ImGui::GetContentRegionAvail().x;
+          ImGui::PushID(category_index);
+          if (ImGui::InvisibleButton("##categorie", {row_width, head_height}))
+            category_open_[slot] = !category_open_[slot];
+          ImGui::PopID();
+          const bool hovered = ImGui::IsItemHovered();
+          ImVec4 fill = band;
+          if (hovered) fill.w = 0.30F;
+          draw->AddRectFilled(at, {at.x + row_width, at.y + head_height},
+                              ImGui::ColorConvertFloat4ToU32(fill), 5.0F * scale);
+          // Le chevron : un triangle plein, à droite quand c'est replié, vers le bas quand c'est ouvert.
+          const float cx = at.x + 12.0F * scale;
+          const float cy = at.y + head_height * 0.5F;
+          const float r = 4.0F * scale;
+          if (category_open_[slot])
+            draw->AddTriangleFilled({cx - r, cy - r * 0.6F}, {cx + r, cy - r * 0.6F}, {cx, cy + r * 0.9F},
+                                    accent);
+          else
+            draw->AddTriangleFilled({cx - r * 0.6F, cy - r}, {cx - r * 0.6F, cy + r}, {cx + r * 0.9F, cy},
+                                    accent);
+          draw->AddText({at.x + 26.0F * scale, at.y + (head_height - ImGui::GetFontSize()) * 0.5F}, accent,
+                        page.category);
+          category_open = category_open_[slot];
+        }
+        if (!category_open) continue;
+        const ImVec2 at = ImGui::GetCursorScreenPos();
+        const float row_width = ImGui::GetContentRegionAvail().x;
+        ImGui::PushID(static_cast<int>(i));
+        const bool picked = ImGui::InvisibleButton("##page", {row_width, row_height});
+        ImGui::PopID();
+        if (picked) page_ = static_cast<int>(i);
+        const bool selected = static_cast<int>(i) == page_;
+        if (selected) {
+          draw->AddRectFilled({at.x + indent - 8.0F * scale, at.y}, {at.x + row_width, at.y + row_height},
+                              ImGui::ColorConvertFloat4ToU32(soft), 5.0F * scale);
+          draw->AddRectFilled({at.x + indent - 8.0F * scale, at.y + 4.0F * scale},
+                              {at.x + indent - 5.0F * scale, at.y + row_height - 4.0F * scale}, accent,
+                              2.0F * scale);
+        } else if (ImGui::IsItemHovered()) {
+          draw->AddRectFilled({at.x + indent - 8.0F * scale, at.y}, {at.x + row_width, at.y + row_height},
+                              ImGui::ColorConvertFloat4ToU32(band), 5.0F * scale);
+        }
+        draw->AddText({at.x + indent, at.y + (row_height - ImGui::GetFontSize()) * 0.5F},
+                      ImGui::GetColorU32(selected ? ImGuiCol_Text : ImGuiCol_TextDisabled), page.name);
       }
-      if (category_open && ImGui::Selectable(page.name, static_cast<int>(i) == page_))
-        page_ = static_cast<int>(i);
+      ImGui::PopStyleVar();
+      category_init_ = true;
     }
-    if (category_open) ImGui::TreePop();
+    shown_page_ = page_;
     ImGui::EndChild();
     ImGui::SameLine();
     ImGui::BeginChild("##page", ImVec2(0, -footer));
@@ -675,6 +540,10 @@ SettingsPanel::Result SettingsPanel::draw(const PlaySettings& running, const Set
       const std::string_view name = kPages[static_cast<std::size_t>(page_)].name;
       if (name == "Configuration") {
         if (config_page(draft_, choices, bench_, actions)) actions.emplace_back(Command{cmd::Pause{}});
+        if (bench_.finished) {
+          bench_.finished = false;
+          prepare_after_bench(draft_, choices.span_prepare, choices.place.data, prepare_);
+        }
       } else if (name == "Lecteur par défaut") {
         default_player_page(choices.place, system_, draft_.default_player_dismissed,
                             choices.default_player_is_ajp);
@@ -682,13 +551,16 @@ SettingsPanel::Result SettingsPanel::draw(const PlaySettings& running, const Set
         updates_page(draft_, choices.place, updates_);
       } else if (name == "Agrandissement") {
         image_tab(draft_, choices);
-        if (advanced_) composition_section(draft_);
+        if (advanced_) {
+          span_prepare_section(draft_, choices.span_prepare, prepare_);
+          composition_section(draft_);
+        }
       } else if (name == "Fluidité") {
         fluidity_tab(draft_, choices);
       } else if (name == "Conversion HDR") {
         hdr_tab(draft_, choices);
         if (advanced_) oled_sections(draft_, choices);
-      } else if (name == "Réglages") {
+      } else if (name == "Couleurs") {
         grade_tab(draft_, choices);
       } else if (name == "Sortie") {
         delay_held = sound_tab(draft_, choices);

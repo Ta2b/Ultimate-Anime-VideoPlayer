@@ -13,6 +13,7 @@
 #include "gpu/ir/ops.h"
 #include "gpu/ir/passes.h"
 #include "gpu/ir/shape.h"
+#include "gpu/vulkan/backend/net_hoist.h"
 #include "gpu/vulkan/backend/net_lower.h"
 
 namespace ajp::gpu::vk::net {
@@ -80,6 +81,8 @@ std::expected<ir::Graph, Refusal> prepare_graph(const BuildRequest& request, con
   // Les noyaux lisent et écrivent chaque tenseur dans son type : les Cast qu'ils feraient
   // d'eux-mêmes disparaissent, ceux qu'un modèle FP16 garde autour de Resize par exemple.
   if (ir::fold_float_casts(*graph) > 0) (void)ir::eliminate_dead_code(*graph);
+  // Les réductions remontées devant les Concat et les Split qui les précèdent (net_hoist.h).
+  if (hoist_downscales(*graph) > 0) (void)ir::eliminate_dead_code(*graph);
   if (auto ok = check_interface(*graph); !ok) return std::unexpected(ok.error());
   return graph;
 }

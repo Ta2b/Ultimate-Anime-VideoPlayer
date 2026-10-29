@@ -73,6 +73,33 @@ TEST_CASE("Deux sources sur un pixel se mêlent par le softmax de leur métrique
   CHECK_THAT((*out)[0].at(1, 0), WithinAbs(0.0, 1e-6));
 }
 
+TEST_CASE("Le niveau 1 en deux sources (image, caractéristiques) rend le splat de leur concaténation",
+          "[kernels][gmfss]") {
+  // Export de version 2 : la paire sort l'image (3 plans) et les caractéristiques séparées ; chaque plan
+  // est normalisé par le poids de son seul pixel, donc deux splats du même mouvement dans les tranches de
+  // warped{k}_1 valent le splat des 67 plans (ici 3 + 4).
+  const std::vector<PlaneF> image{ramp(9, 5, 0.0F), ramp(9, 5, 0.25F), ramp(9, 5, 0.5F)};
+  const std::vector<PlaneF> features{ramp(9, 5, 1.0F), ramp(9, 5, -3.0F), ramp(9, 5, 7.5F), ramp(9, 5, 2.0F)};
+  std::vector<PlaneF> joined = image;
+  joined.insert(joined.end(), features.begin(), features.end());
+  ref::SplatMotion motion = uniform(9, 5, 1.5F, -0.75F, 0.5F);
+  motion.planes[2].at(3, 2) = -4.0F;
+  motion.planes[0].at(4, 1) = 2.25F;
+  for (const float s : {0.3F, 1.0F}) {
+    const auto whole = ref::soft_splat(joined, motion, s);
+    const auto first = ref::soft_splat(image, motion, s);
+    const auto second = ref::soft_splat(features, motion, s);
+    REQUIRE(whole);
+    REQUIRE(first);
+    REQUIRE(second);
+    REQUIRE(whole->size() == first->size() + second->size());
+    for (std::size_t c = 0; c < whole->size(); ++c) {
+      const PlaneF& part = c < first->size() ? (*first)[c] : (*second)[c - first->size()];
+      CHECK((*whole)[c].data == part.data);  // même ordre des additions : au bit près
+    }
+  }
+}
+
 TEST_CASE("Un demi-pixel partage la source entre deux voisins", "[kernels][gmfss]") {
   PlaneF value(4, 1, 0.0F);
   value.at(1, 0) = 8.0F;

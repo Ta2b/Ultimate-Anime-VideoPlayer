@@ -106,7 +106,7 @@ TEST_CASE("Mode HDR : moteur RTX HDR, HDR adaptatif ou SDR, et les fichiers d'av
 TEST_CASE("Warp et SPAN : Auto passe après SPAN au-dessus de 1080p ; les fichiers d'avant",
           "[app][settings]") {
   CHECK(PlaySettings{}.span_order == SpanOrder::Auto);
-  CHECK(PlaySettings{}.gmfss_precision == PrecisionTier::Balanced);  // l'ancien Performance, FP16
+  CHECK(PlaySettings{}.gmfss_precision == PrecisionTier::Performance);  // la paire FP8, mesurée −15 %
   CHECK(PlaySettings{}.span_precision == PrecisionTier::Balanced);
   CHECK(PlaySettings{}.motion_precision == PrecisionTier::Balanced);
   CHECK_FALSE(warp_after_span(SpanOrder::Auto, 1080));
@@ -346,6 +346,7 @@ TEST_CASE("GMFSS : changer de cran de précision recharge la chaîne, seulement 
   PlaySettings running;
   running.rife_factor = 2;
   running.motion_engine = MotionEngine::Gmfss;
+  running.gmfss_precision = PrecisionTier::Balanced;
   PlaySettings wanted = running;
   wanted.gmfss_precision = PrecisionTier::Quality;
   const Change change = change_between(running, wanted, true);
@@ -561,4 +562,62 @@ TEST_CASE("les réponses impulsionnelles : chemin global et propre à un apparei
   // Un chemin vide : pas de fichier, pas de refus.
   CHECK(*ajp::app::play::load_listening_hrir("") == nullptr);
   CHECK_FALSE(ajp::app::play::load_listening_hrir("/nonexistent/ajp/a.wav"));
+}
+
+TEST_CASE("play.toml garde le Son anime : niveau, réglages personnalisés, niveau par appareil",
+          "[settings][audio][anime]") {
+  using namespace ajp::app::play;
+  PlaySettings s;
+  // Défaut : « Anime » actif.
+  CHECK(s.anime_sound == "anime");
+  CHECK(effective_listening(s, "X").anime == ajp::audio::find_anime_level("anime")->tuning);
+  CHECK(parse_settings("version = 1\n")->anime_sound == "anime");
+  s.anime_sound = "custom";
+  s.anime_custom.voice_db = 3.5F;
+  s.anime_custom.target_lufs = -17.0F;
+  s.anime_custom.loudness = false;
+  s.anime_custom.voice_forward = 0.6F;
+  s.device_anime = {{"Casque BT", "strong"}, {"Enceintes", "natural"}};
+  const auto read = parse_settings(format_settings(s));
+  REQUIRE(read);
+  CHECK(read->anime_sound == "custom");
+  CHECK(read->anime_custom.voice_db == Catch::Approx(3.5F));
+  CHECK(read->anime_custom.target_lufs == Catch::Approx(-17.0F));
+  CHECK_FALSE(read->anime_custom.loudness);
+  CHECK(read->device_anime == s.device_anime);
+  CHECK(effective_listening(s, "Casque BT").anime == ajp::audio::find_anime_level("strong")->tuning);
+  CHECK_FALSE(effective_listening(s, "Enceintes").anime.enabled);
+  CHECK(effective_listening(s, "Autre").anime.voice_db == Catch::Approx(3.5F));
+  // Valeurs refusées en nommant la clé.
+  CHECK_FALSE(parse_settings("version = 1\n[audio.anime]\nlevel = \"zzz\"\n"));
+  CHECK_FALSE(parse_settings("version = 1\n[audio.anime.custom]\nvoice_db = 9.0\n"));
+  CHECK_FALSE(parse_settings("version = 1\n[audio.anime.custom]\ntarget_lufs = -30.0\n"));
+  CHECK_FALSE(parse_settings("version = 1\n[audio.device_anime]\nX = \"zzz\"\n"));
+  // Un changement de niveau est un changement de l'écoute, appliqué en direct.
+  PlaySettings other = PlaySettings{};
+  other.anime_sound = "strong";
+  CHECK_FALSE(effective_listening(other, "X") == effective_listening(PlaySettings{}, "X"));
+  CHECK(live_part(PlaySettings{}, other, false).anime_sound == "strong");
+}
+
+TEST_CASE("play.toml garde le plafond du mode auto et refuse un plafond absurde",
+          "[settings][auto][plafond]") {
+  using namespace ajp::app::play;
+  PlaySettings s;
+  CHECK(s.auto_cap == 0);  // maximum : l'écran
+  CHECK(parse_settings("version = 1\n")->auto_cap == 0);
+  s.auto_cap = 120;
+  const auto read = parse_settings(format_settings(s));
+  REQUIRE(read);
+  CHECK(read->auto_cap == 120);
+  CHECK(validate(s).has_value());
+  s.auto_cap = 5;
+  CHECK_FALSE(validate(s).has_value());
+  s.auto_cap = 100000;
+  CHECK_FALSE(validate(s).has_value());
+  // Un plafond posé dans le menu s'applique en direct, sans rouvrir la lecture.
+  PlaySettings running;
+  PlaySettings wanted;
+  wanted.auto_cap = 60;
+  CHECK(live_part(running, wanted, true).auto_cap == 60);
 }

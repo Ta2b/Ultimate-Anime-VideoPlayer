@@ -82,7 +82,9 @@ struct SetListening {
   bool faithful = false;
   bool tuned = false;  // tuning porte les réglages fins (audio::MixTuning, dans l'ordre de to_array)
   std::array<float, 16> tuning{};  // audio::to_array : les 15 réglages fins, le reste à 0
-  bool hrir_set = false;  // hrir remplace les réponses en vigueur (vide : retour au binaural paramétrique)
+  bool hrir_set = false;   // hrir remplace les réponses en vigueur (vide : retour au binaural paramétrique)
+  bool anime_set = false;  // anime porte le « Son anime » (audio::AnimeTuning, dans l'ordre de to_wire)
+  std::array<float, 16> anime{};
   std::shared_ptr<const audio::Hrir> hrir;  // fichier chargé par l'appelant, partagé en lecture seule
 };
 struct Quit {};

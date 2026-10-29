@@ -8,6 +8,7 @@
 // erreur revient en Refusal, et les points d'entrée extern "C" sont noexcept.
 #pragma once
 
+#include <array>
 #include <cstddef>
 #include <cstdint>
 #include <expected>
@@ -44,7 +45,15 @@ namespace ajp::gpu {
 // 8 : KernelOps::soft_splat_fill (les splats d'un instant et le remplissage de l'instant ensemble).
 // 9 : KernelOps::warp_blend_ring, warp_blend_poses_ring, gmfss_compose_ring ; BackendCaps::ring_targets.
 // 10 : KernelOps::write_yuv (export par puits CUDA) ; BackendCaps::yuv_targets.
-inline constexpr int kBackendAbi = 10;
+// 11 : BackendCaps::span_fp8_cutlass (le SPAN entier en FP8 par noyaux CUTLASS, docs/span-fp8-cutlass.md).
+// 12 : BackendCaps::rife_fused (RIFE fusionné : six moteurs TensorRT et noyaux de colle CUDA, manifeste «
+// .rifefused »).
+// 13 : BackendCaps::drba_fused (DistilDRBA fusionné : quatre moteurs TensorRT et noyaux CUDA, manifeste «
+// .drbafused »).
+// 14 : Backend::derive_span_fp8 (dérivation native du paquet « .span8 », docs/span-fp8-cutlass.md).
+// 15 : BackendCaps::gmfss_fused (GMFSS fusionné : la paire en deux moteurs, les caractéristiques d'une image
+// et le flot, avec des tenseurs d'entrée et de sortie décalés dans un tampon ; docs/gmfss-fusionne.md).
+inline constexpr int kBackendAbi = 15;
 
 using DeviceUuid = ajp::DeviceUuid;
 
@@ -76,6 +85,19 @@ struct BackendCaps {
   bool fp16 = false;
   bool int8 = false;
   bool fp8 = false;  // graphes Q/DQ FP8 (E4M3) calculés par les unités matricielles : Ada (sm 8.9) et après
+  // Le SPAN entier en FP8 par noyaux CUTLASS (paquet « .span8 » à la place de l'ONNX) : sm 8.9 seulement,
+  // dans un backend construit avec CUTLASS.
+  bool span_fp8_cutlass = false;
+  // RIFE coupé en six moteurs TensorRT et noyaux de colle (manifeste « .rifefused » à la place de l'ONNX,
+  // kernels/spec/rife_fused.h).
+  bool rife_fused = false;
+  // DistilDRBA coupé en quatre moteurs TensorRT et noyaux de colle (manifeste « .drbafused » à la place de
+  // l'ONNX, kernels/spec/drba_fused.h).
+  bool drba_fused = false;
+  // La paire de GMFSS coupée en deux moteurs (les caractéristiques d'une image, le flot ; ONNX dérivés par
+  // prepare/gmfss_split.h), enfilés avec des tenseurs à un décalage de plans dans leur tampon
+  // (kernels/spec/gmfss.h, GMFSS fusionné).
+  bool gmfss_fused = false;
   bool matrix_units = false;                // unités matricielles utilisées
   std::vector<PixelFormat> import_formats;  // formats acceptés par import()
   // Voies qui se recouvrent vraiment sur l'appareil (gpu/lanes.h) ; 1 : use_lane ne change rien.
@@ -113,6 +135,36 @@ struct Progress {
 struct Artifact {
   std::string cache_key;
   std::filesystem::path path;
+};
+
+// La dérivation native du paquet « .span8 » (Backend::derive_span_fp8, docs/span-fp8-cutlass.md).
+// Une image 8 bits : trois plans R, G, B de height × width octets, l'un après l'autre.
+struct SpanStill {
+  int width = 0;
+  int height = 0;
+  std::vector<std::uint8_t> rgb;
+};
+
+struct SpanFp8Request {
+  // Un paquet « .span8 » (gpu/span_fp8/package.h) dont seuls les poids comptent : ses échelles sont celles
+  // que la calibration remplace.
+  std::vector<std::byte> package;
+  std::vector<SpanStill> calibration;  // les maxima des tenseurs se relèvent sur elles
+  std::vector<SpanStill> validation;   // mises de côté : jugent la sortie FP8 contre la référence FP16
+};
+
+struct SpanFp8ImageScore {
+  double psnr_db = 0.0;
+  double ssim = 0.0;
+};
+
+struct SpanFp8Derivation {
+  std::array<float, 25> peaks{};  // maximum de |valeur| de chacun des 25 tenseurs quantifiés
+  std::array<float, 25>
+      scales{};  // les échelles E4M3 qu'on en tire (maximum / 448), celles qui ont été jugées
+  std::vector<SpanFp8ImageScore> scores;  // une par image de validation
+  double kernels_ms = 0.0;                // médiane du SPAN FP8 sur la taille des images
+  std::string reference;                  // d'où vient la sortie de référence, « cutlass-fp16 »
 };
 
 // Moteur chargé et prêt à recevoir enqueue(). Possédé par un Program. Son code vit dans la
@@ -168,6 +220,17 @@ class Backend {
   // moteur, enqueue() et les noyaux s'enfilent sur sa file. Les dépendances entre voies sont
   // l'affaire du backend ; signal() suit le travail de toutes. Un backend à une voie l'ignore.
   virtual void use_lane(Lane /*lane*/) {}
+  // Dérive le paquet « .span8 » du SPAN entier en FP8 (docs/span-fp8-cutlass.md) : relève sur les images de
+  // calibration le maximum de chaque tenseur quantifié par une référence FP16 (mêmes convolutions CUTLASS,
+  // sans quantification), en tire les échelles, puis juge le réseau FP8 contre cette référence sur les images
+  // de validation (PSNR, SSIM). Synchrone, sur un thread à lui ; progress.report rend la fraction faite, et
+  // progress.stop l'abandonne (Cancelled). Ne touche ni aux moteurs chargés ni aux fichiers. Refus : un
+  // backend qui ne le sait pas (FormatUnsupported), GPU autre que sm 8.9, taille d'image que les noyaux ne
+  // prennent pas, paquet illisible, mémoire (GpuMemoryExhausted), échec CUDA, maximum nul ou non fini.
+  virtual std::expected<SpanFp8Derivation, Refusal> derive_span_fp8(const SpanFp8Request& /*request*/,
+                                                                    Progress& /*progress*/) {
+    return std::unexpected(Refusal{RefusalCode::FormatUnsupported, "ce moteur ne dérive pas le SPAN FP8"});
+  }
 };
 
 // Empreinte binaire de la frontière : FNV-1a 64 bits sur une suite de nombres.
@@ -223,6 +286,8 @@ inline constexpr std::uint64_t kBackendLayout = layout_fingerprint({
                       std::expected<VulkanImageAccess, Refusal>>(),
     shape_fingerprint<IngestSpec, Motion, RingWrite, PairScores, std::optional<PairScores>, RingSlotDesc,
                       ExportedHandle, RingTarget, YuvTarget>(),
+    shape_fingerprint<SpanStill, SpanFp8Request, SpanFp8ImageScore, SpanFp8Derivation,
+                      std::expected<SpanFp8Derivation, Refusal>>(),
 });
 
 // Ce que le chargeur vérifie avant ajp_backend_create, avec ajp_backend_abi() et

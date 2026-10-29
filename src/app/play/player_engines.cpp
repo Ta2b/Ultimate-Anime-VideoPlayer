@@ -19,6 +19,9 @@
 #include "kernels/spec/distil_drba.h"
 #include "kernels/spec/gmfss.h"
 #include "kernels/spec/rife.h"
+#include "prepare/drba_split.h"
+#include "prepare/gmfss_split.h"
+#include "prepare/rife_split.h"
 #include "prepare/sha256.h"
 
 namespace ajp::app::play {
@@ -138,11 +141,129 @@ std::expected<std::optional<std::unique_ptr<gpu::Engine>>, Refusal> prepare_engi
   return std::optional(std::move(*loaded));
 }
 
+std::expected<std::optional<std::unique_ptr<gpu::Engine>>, Refusal> prepare_rife_fused(
+    Player& p, const gpu::BackendInit& init, gpu::Backend& backend, const std::filesystem::path& rife_onnx,
+    const std::filesystem::path& models_dir, const kernels::RifeGeometry& geometry, bool motion) {
+  auto manifest =
+      prepare::derive_rife_fused(rife_onnx, models_dir, geometry.padded_height, geometry.padded_width,
+                                 motion ? prepare::RifeFusedOutput::Motion : prepare::RifeFusedOutput::Image);
+  if (!manifest) return std::unexpected(std::move(manifest.error()));
+  return prepare_engine(
+      p, init, backend, *manifest,
+      gpu::Shape{.dims = {1, kernels::kRifeInputChannels, geometry.padded_height, geometry.padded_width}},
+      EngineLabel{.name = "RIFE fusionné",
+                  .model = rife_onnx.stem().string(),
+                  .width = geometry.padded_width,
+                  .height = geometry.padded_height},
+      gpu::Lane::Interpolate);
+}
+
+namespace {
+
+// GMFSS fusionné : la paire coupée en deux moteurs, les caractéristiques d'une image et le flot.
+struct GmfssPieces {
+  std::unique_ptr<gpu::Engine> features;
+  std::unique_ptr<gpu::Engine> flow;
+};
+
+// Un essai des deux moteurs coupés sur des tenseurs quelconques, aux formes de la lecture, trois fois (une
+// exécution à froid, une capture de graphe, un rejeu), l'entrée des caractéristiques à un décalage de plans
+// de « frames » comme l'étage la donne : un moteur ou un décalage que l'appareil refuse se voit ici, avant la
+// première image. Les erreurs de lancement sont rendues ; une erreur CUDA asynchrone n'est pas attendue ici.
+std::expected<void, Refusal> try_gmfss_pieces(gpu::Backend& backend, gpu::Engine& features, gpu::Engine& flow,
+                                              const kernels::RifeGeometry& g) {
+  const auto tensor = [&](int channels, int scale) {
+    return backend.alloc_tensor(
+        gpu::TensorType::F16,
+        gpu::Shape{.dims = {1, channels, g.padded_height / scale, g.padded_width / scale}});
+  };
+  auto frames = tensor(kernels::kGmfssFramePlanes, 1);
+  if (!frames) return std::unexpected(std::move(frames.error()));
+  std::vector<std::unique_ptr<gpu::TensorBuffer>> held;
+  const auto outputs_of = [&](gpu::Engine& engine) -> std::expected<std::vector<gpu::Tensor>, Refusal> {
+    std::vector<gpu::Tensor> tensors;
+    for (const std::string& name : engine.output_names()) {
+      int channels = 3;
+      int scale = 2;  // half{k}, motion{k}_1
+      if (const auto level = std::ranges::find(prepare::kGmfssFeatureOutputs, std::string_view(name));
+          level != prepare::kGmfssFeatureOutputs.end()) {
+        const int n = static_cast<int>(level - prepare::kGmfssFeatureOutputs.begin()) + 1;
+        channels = n == 1 ? kernels::gmfss_source_channels(1) - 3 : kernels::gmfss_source_channels(n);
+        scale = 1 << n;
+      } else if (name.starts_with("motion") && name.size() == 9) {
+        scale = 1 << (name.back() - '0');
+      } else if (!name.starts_with("half")) {
+        return std::unexpected(
+            Refusal{RefusalCode::GraphInvalid, "GMFSS fusionné : sortie « " + name + " » inconnue"});
+      }
+      auto made = tensor(channels, scale);
+      if (!made) return std::unexpected(std::move(made.error()));
+      tensors.push_back((*made)->tensor());
+      held.push_back(std::move(*made));
+    }
+    return tensors;
+  };
+  auto feature_outputs = outputs_of(features);
+  if (!feature_outputs) return std::unexpected(std::move(feature_outputs.error()));
+  auto flow_outputs = outputs_of(flow);
+  if (!flow_outputs) return std::unexpected(std::move(flow_outputs.error()));
+  gpu::Tensor second_image = (*frames)->tensor();  // les plans 3 à 5 : l'image b
+  second_image.shape.dims[1] = 3;
+  second_image.offset +=
+      static_cast<std::uint64_t>(3 * g.padded_height * g.padded_width) * sizeof(std::uint16_t);
+  for (int pass = 0; pass < 3; ++pass) {
+    const std::array whole{(*frames)->tensor()};
+    const std::array image{second_image};
+    if (auto ok = backend.enqueue(features, image, *feature_outputs); !ok) return ok;
+    if (auto ok = backend.enqueue(flow, whole, *flow_outputs); !ok) return ok;
+  }
+  return {};
+}
+
+// La paire de pair_onnx coupée en deux (prepare/gmfss_split.h), les deux moteurs construits, chargés et
+// essayés. Rien si l'utilisateur ferme la fenêtre.
+std::expected<std::optional<GmfssPieces>, Refusal> prepare_gmfss_pieces(
+    Player& p, const gpu::BackendInit& init, gpu::Backend& backend, const std::filesystem::path& pair_onnx,
+    const kernels::RifeGeometry& g, const std::filesystem::path& models_dir) {
+  auto files = prepare::derive_gmfss_fused(pair_onnx, models_dir, g.padded_height, g.padded_width);
+  if (!files) return std::unexpected(std::move(files.error()));
+  GmfssPieces pieces;
+  auto features = prepare_engine(p, init, backend, files->features,
+                                 gpu::Shape{.dims = {1, 3, g.padded_height, g.padded_width}},
+                                 EngineLabel{.name = "GMFSS (caractéristiques)",
+                                             .model = pair_onnx.stem().string(),
+                                             .width = g.padded_width,
+                                             .height = g.padded_height},
+                                 gpu::Lane::Interpolate);
+  if (!features) return std::unexpected(std::move(features.error()));
+  if (!*features) return std::nullopt;
+  pieces.features = std::move(**features);
+  auto flow =
+      prepare_engine(p, init, backend, files->flow,
+                     gpu::Shape{.dims = {1, kernels::kGmfssFramePlanes, g.padded_height, g.padded_width}},
+                     EngineLabel{.name = "GMFSS (flot)",
+                                 .model = pair_onnx.stem().string(),
+                                 .width = g.padded_width,
+                                 .height = g.padded_height},
+                     gpu::Lane::Interpolate);
+  if (!flow) return std::unexpected(std::move(flow.error()));
+  if (!*flow) return std::nullopt;
+  pieces.flow = std::move(**flow);
+  backend.use_lane(gpu::Lane::Interpolate);
+  auto tried = try_gmfss_pieces(backend, *pieces.features, *pieces.flow, g);
+  backend.use_lane(gpu::Lane::Upscale);
+  if (!tried) return std::unexpected(std::move(tried.error()));
+  return std::optional(std::move(pieces));
+}
+
+}  // namespace
+
 std::expected<std::optional<GmfssEngines>, Refusal> prepare_gmfss(Player& p, const gpu::BackendInit& init,
                                                                   gpu::Backend& backend,
                                                                   std::span<const std::filesystem::path> dirs,
                                                                   GmfssVariant variant, int work_width,
-                                                                  int work_height, PrecisionTier tier) {
+                                                                  int work_height, PrecisionTier tier,
+                                                                  GmfssFusedUse* fused) {
   // Le flot à demi-échelle toujours : mesuré, il vaut le flot entier en qualité (GMFlow FP32) ou le
   // dépasse, pour moitié moins de calcul ; le flot entier ne reste qu'en repli.
   // FP8 : seulement sur un moteur qui l'accélère (TensorRT, RTX 40 et après).
@@ -168,18 +289,35 @@ std::expected<std::optional<GmfssEngines>, Refusal> prepare_gmfss(Player& p, con
       static_gmfss(*found, g.padded_width, g.padded_height, p.paths.engines.parent_path() / "modeles");
   if (!fixed) return std::unexpected(std::move(fixed.error()));
   GmfssEngines engines{.align = found->align};
+  // La paire coupée en deux d'abord : un refus de la découpe, de la construction, du chargement ou de l'essai
+  // garde la paire entière.
+  if (fused != nullptr) {
+    auto pieces =
+        prepare_gmfss_pieces(p, init, backend, found->pair, g, p.paths.engines.parent_path() / "modeles");
+    if (!pieces) {
+      fused->declined = pieces.error().detail;
+    } else if (!*pieces) {
+      return std::nullopt;
+    } else {
+      engines.features = std::move((**pieces).features);
+      engines.pair = std::move((**pieces).flow);
+      fused->used = true;
+    }
+  }
   // Les entrées des graphes : « frames » à la paire, « half0 » (la première) à la fusion.
-  auto pair =
-      prepare_engine(p, init, backend, fixed->pair,
-                     gpu::Shape{.dims = {1, kernels::kGmfssFramePlanes, g.padded_height, g.padded_width}},
-                     EngineLabel{.name = "GMFSS (paire)",
-                                 .model = found->pair.stem().string(),
-                                 .width = g.padded_width,
-                                 .height = g.padded_height},
-                     gpu::Lane::Interpolate);
-  if (!pair) return std::unexpected(std::move(pair.error()));
-  if (!*pair) return std::nullopt;
-  engines.pair = std::move(**pair);
+  if (!engines.pair) {
+    auto pair =
+        prepare_engine(p, init, backend, fixed->pair,
+                       gpu::Shape{.dims = {1, kernels::kGmfssFramePlanes, g.padded_height, g.padded_width}},
+                       EngineLabel{.name = "GMFSS (paire)",
+                                   .model = found->pair.stem().string(),
+                                   .width = g.padded_width,
+                                   .height = g.padded_height},
+                       gpu::Lane::Interpolate);
+    if (!pair) return std::unexpected(std::move(pair.error()));
+    if (!*pair) return std::nullopt;
+    engines.pair = std::move(**pair);
+  }
   auto fusion = prepare_engine(p, init, backend, fixed->fusion,
                                gpu::Shape{.dims = {1, 3, g.padded_height / 2, g.padded_width / 2}},
                                EngineLabel{.name = "GMFSS (fusion)",
@@ -196,7 +334,7 @@ std::expected<std::optional<GmfssEngines>, Refusal> prepare_gmfss(Player& p, con
 std::expected<std::optional<std::unique_ptr<gpu::Engine>>, Refusal> prepare_distil_drba(
     Player& p, const gpu::BackendInit& init, gpu::Backend& backend,
     std::span<const std::filesystem::path> dirs, int work_width, int work_height, int& align,
-    PrecisionTier tier) {
+    PrecisionTier tier, DrbaFusedUse* fused) {
   std::optional<DrbaModel> found = find_distil_drba(dirs, drba_half_flow(work_height));
   if (found && tier != PrecisionTier::Balanced) {
     if (tier == PrecisionTier::Performance && !backend.capabilities().fp8) {
@@ -220,17 +358,38 @@ std::expected<std::optional<std::unique_ptr<gpu::Engine>>, Refusal> prepare_dist
   }
   align = found->align;
   const kernels::RifeGeometry g = kernels::rife_geometry(work_width, work_height, found->align);
+  const gpu::Shape shape{.dims = {1, kernels::kDistilDrbaInputPlanes, g.padded_height, g.padded_width}};
+  const EngineLabel label{.name = "DistilDRBA",
+                          .model = found->path.stem().string(),
+                          .width = g.padded_width,
+                          .height = g.padded_height};
+  // Le graphe coupé d'abord : un refus de la découpe, de la construction ou du chargement garde l'entier.
+  if (fused != nullptr) {
+    auto manifest = prepare::derive_drba_fused(found->path, p.paths.engines.parent_path() / "modeles",
+                                               g.padded_height, g.padded_width);
+    if (!manifest) {
+      fused->declined = manifest.error().detail;
+    } else {
+      auto engine = prepare_engine(p, init, backend, *manifest, shape,
+                                   EngineLabel{.name = "DistilDRBA fusionné",
+                                               .model = label.model,
+                                               .width = g.padded_width,
+                                               .height = g.padded_height},
+                                   gpu::Lane::Interpolate);
+      if (!engine) {
+        fused->declined = engine.error().detail;
+      } else if (!*engine) {
+        return std::nullopt;  // fenêtre fermée pendant la construction
+      } else {
+        fused->used = true;
+        return engine;
+      }
+    }
+  }
   auto fixed = static_distil_drba(found->path, g.padded_width, g.padded_height,
                                   p.paths.engines.parent_path() / "modeles");
   if (!fixed) return std::unexpected(std::move(fixed.error()));
-  return prepare_engine(
-      p, init, backend, *fixed,
-      gpu::Shape{.dims = {1, kernels::kDistilDrbaInputPlanes, g.padded_height, g.padded_width}},
-      EngineLabel{.name = "DistilDRBA",
-                  .model = found->path.stem().string(),
-                  .width = g.padded_width,
-                  .height = g.padded_height},
-      gpu::Lane::Interpolate);
+  return prepare_engine(p, init, backend, *fixed, shape, label, gpu::Lane::Interpolate);
 }
 
 std::expected<std::optional<std::unique_ptr<gpu::Engine>>, Refusal> prepare_apple(

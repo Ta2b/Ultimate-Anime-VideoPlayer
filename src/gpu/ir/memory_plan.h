@@ -32,6 +32,9 @@ struct Allocation {
 struct Alias {
   TensorId parent = kNoTensor;
   std::uint64_t offset = 0;  // octets depuis le début du parent
+  // Tranche de canaux d'un parent Nhwc16 (entrée d'un Concat sur les canaux écrite en place) : à
+  // offset, l'enfant se range avec le pas de pixel du parent, il ne tient pas à plat dans l'arène.
+  bool channel_slab = false;
 };
 
 struct MemoryPlan {

@@ -233,16 +233,25 @@ const std::array<MixPreset, 8> kPresets{{
                .surround_gain = 1.1F}},
     {"wide", "Large", "Casque : tête plus grande, arrière plus présent (5.1 et 7.1).", true, false,
      MixTuning{.crossfeed_gain = 0.28F, .head_radius_m = 0.10F, .head_shadow = 0.5F, .surround_gain = 1.2F}},
-    {"voices", "Voix claires", "Enceintes : centre rehaussé, arrière et basses discrets.", false, true,
-     MixTuning{.surround_gain = 0.85F, .center_lift = 1.6F, .lfe_gain = 0.2F}},
+    {"voices", "Voix claires",
+     "Enceintes : centre rehaussé, arrière et basses discrets en 5.1 et 7.1 ; en stéréo, voix relevées et "
+     "graves allégés à l'égaliseur.",
+     false, true,
+     MixTuning{.surround_gain = 0.85F,
+               .center_lift = 1.6F,
+               .lfe_gain = 0.2F,
+               .eq_bass_db = -2.0F,
+               .eq_voice_db = 3.5F}},
     {"night", "Nuit",
-     "Enceintes : voix devant, arrière et basses très réduits, dynamique comprimée (explosions réduites, "
-     "murmures relevés).",
+     "Enceintes : dynamique comprimée (explosions réduites, murmures relevés) et voix devant ; en 5.1 et "
+     "7.1, arrière et basses très réduits.",
      false, true,
      MixTuning{.surround_gain = 0.7F,
                .center_lift = 1.5F,
                .lfe_gain = 0.12F,
                .downmix_scale = 0.55F,
+               .eq_bass_db = -3.0F,
+               .eq_voice_db = 2.0F,
                .night = 0.7F}},
     {"room", "Salon", "Casque : enceintes dans une pièce, un peu plus loin, avec une réverbération légère.",
      true, false,
@@ -329,6 +338,9 @@ Mixer::Mixer(MixConfig config) : config_(std::move(config)) {
   if (config_.sink_channels == 2) {
     auto post = std::make_shared<MixPost>(tune, config_.sample_rate);
     if (post->needed()) post_ = std::move(post);
+    if (config_.anime.enabled && config_.listen != Listen::Cinema)
+      anime_ = std::make_unique<AnimeSound>(config_.anime, config_.sample_rate,
+                                            config_.listen == Listen::Headphones);
   }
   if (config_.hrir && !config_.hrir->empty() && config_.sink_channels == 2)
     hrir_ = std::make_shared<const Hrir>(prepared(*config_.hrir, config_.sample_rate));
@@ -342,6 +354,10 @@ Mixer::Mixer(MixConfig config) : config_(std::move(config)) {
   }
 }
 
+Mixer::Mixer(Mixer&&) noexcept = default;
+Mixer& Mixer::operator=(Mixer&&) noexcept = default;
+Mixer::~Mixer() = default;
+
 int Mixer::decoder_channels(int source_channels) const {
   const bool processed = !config_.faithful && config_.listen != Listen::Cinema &&
                          config_.sink_channels == 2 && (source_channels == 6 || source_channels == 8);
@@ -353,6 +369,7 @@ void Mixer::reset() {
     for (MixPath& path : pair) path.ear = MixEar{};
   for (MixPath& path : feed_) path.ear = MixEar{};
   if (post_) post_->reset();
+  if (anime_) anime_->reset();
   if (convolver_) convolver_->reset();
 }
 
@@ -463,8 +480,13 @@ void Mixer::crossfeed(PcmBlock& block) {
 
 PcmBlock Mixer::process(PcmBlock block) {
   if (config_.faithful || config_.sink_channels != 2) return block;
-  PcmBlock out = process_core(std::move(block));
+  // « Son anime » : une source stéréo vers une sortie stéréo. Spatialisation et voix avant le rendu (le
+  // casque passe par six enceintes virtuelles), égaliseur et pièce du profil après, puis graves, sonie,
+  // compresseur et limiteur vrai-crête en dernier.
+  const bool anime = anime_ && source_channels_ == 2 && block.channels == 2;
+  PcmBlock out = anime ? process_core(anime_->stage(std::move(block))) : process_core(std::move(block));
   if (post_ && out.channels == 2 && config_.listen != Listen::Cinema) post_->process(out);
+  if (anime && out.channels == 2) anime_->finish(out);
   return out;
 }
 

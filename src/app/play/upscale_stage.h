@@ -27,6 +27,7 @@
 #include <utility>
 #include <vector>
 
+#include "app/play/gmfss_features.h"
 #include "app/play/live_settings.h"
 #include "app/play/pipeline.h"
 #include "app/play/ring_stage.h"
@@ -61,6 +62,9 @@ struct UpscaleSetup {
   // deux ou aucun.
   gpu::Engine* gmfss_pair = nullptr;
   gpu::Engine* gmfss_fusion = nullptr;
+  // GMFSS fusionné (prepare/gmfss_split.h) : gmfss_pair est alors le flot seul, et ce moteur calcule les
+  // caractéristiques d'une image (FeatureNet), gardées pour la paire suivante ; nullptr : la paire entière.
+  gpu::Engine* gmfss_features = nullptr;
   int gmfss_align = 64;  // multiple des plans remplis de GMFSS : 128 pour le flot à l'échelle 0,5
   // DistilDRBA à la place de RIFE, aux plans remplis de rife_geometry(travail).
   gpu::Engine* distil_drba = nullptr;
@@ -143,6 +147,7 @@ class UpscaleStage final : public RingStage {
     return setup_.rife != nullptr || setup_.rife_motion != nullptr || gmfss() || drba();
   }
   bool gmfss() const { return setup_.gmfss_pair != nullptr; }
+  bool gmfss_fused() const { return setup_.gmfss_features != nullptr; }
   bool drba() const { return setup_.distil_drba != nullptr; }
   bool wants_next() const override { return drba(); }
   // DistilDRBA (upscale_drba.cpp) : ses tenseurs ; l'arrivée de l'image b à la place de son
@@ -207,6 +212,10 @@ class UpscaleStage final : public RingStage {
                                                          const gpu::Tensor& b, const Target& out);
   // Le graphe « paire » à la première image intermédiaire de la paire, puis les splats de l'instant
   // (les six de la fusion, et extra) et le graphe « fusion » dans rife_out_.
+  // GMFSS fusionné : les caractéristiques de l'image du plan first_plane de « frames » dans la tranche slot,
+  // sauf si elles y sont déjà (la même image).
+  std::expected<void, Refusal> gmfss_features_of(std::size_t slot, std::int64_t first_plane,
+                                                 const GmfssFrameKey& key);
   std::expected<void, Refusal> run_gmfss(std::uint32_t output,
                                          std::span<const gpu::KernelOps::SplatJob> extra);
   // Le mouvement est estimé à la taille de RIFE puis déformé au warp (variante mouvement), plutôt
@@ -297,7 +306,8 @@ class UpscaleStage final : public RingStage {
   std::unique_ptr<gpu::TensorBuffer> flow_;
   std::unique_ptr<gpu::TensorBuffer> mask_;
   // GMFSS : l'entrée de la paire, chaque tenseur nommé de ses graphes (sorties de la paire,
-  // sources splattées), et les six splats d'une image intermédiaire.
+  // sources splattées), et les splats d'une image intermédiaire : six, huit avec un export de version 2
+  // des graphes, dont le niveau 1 se splatte en deux tranches (image, caractéristiques ; gmfss_model.h).
   struct GmfssSplat {
     int side = 0;
     gpu::Tensor source;
@@ -310,6 +320,15 @@ class UpscaleStage final : public RingStage {
     std::vector<gpu::Tensor> pair_outputs;   // dans l'ordre de output_names() du moteur paire
     std::vector<gpu::Tensor> fusion_inputs;  // dans l'ordre de input_names() du moteur fusion
     std::vector<GmfssSplat> splats;
+    // GMFSS fusionné : les mêmes splats quand l'image a de la paire a ses caractéristiques dans la tranche 1
+    // (celle du côté b de la paire d'avant) et l'image b dans la tranche 0 ; splats sert l'autre parité.
+    std::vector<GmfssSplat> swapped_splats;
+    // Les caractéristiques de chaque image (tranche = indice du tampon d'image RGB qui la porte) : les
+    // sorties du moteur dans l'ordre de ses output_names(), et l'image dont elles sont (rien : pas valable).
+    std::array<std::vector<gpu::Tensor>, 2> feature_outputs;
+    GmfssFeatureSlots features_of;
+    GmfssFrameKey a;  // les images de la paire en cours (renseignées par produce)
+    GmfssFrameKey b;
     std::vector<gpu::KernelOps::SplatJob> jobs;  // les splats de l'instant, un seul passage
     std::optional<gpu::Tensor> time;             // union : l'instant de l'image intermédiaire, pour sa fusion
     // Déformation après SPAN : le flot du niveau 1 de chaque côté, sa grille (spec MotionGrid) pour

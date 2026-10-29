@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <array>
+#include <charconv>
 #include <cstdio>
 #include <filesystem>
 #include <format>
@@ -55,6 +56,9 @@ std::string telemetry_line(const GpuSample& s) {
     line += std::format(" · {} W", s.power_mw / 1000);
   line += std::format(" · {} °C · {} %", s.temperature_c, s.gpu_percent);
   if (s.pcie_generation > 0) line += std::format(" · PCIe {} x{}", s.pcie_generation, s.pcie_width);
+  if (s.vram_total_mib > 0)
+    line += std::format(" · VRAM {:.1f} / {:.1f} Go", static_cast<double>(s.vram_used_mib) / 1024.0,
+                        static_cast<double>(s.vram_total_mib) / 1024.0);
   if (const std::string why = throttle_text(s.throttle); !why.empty()) line += " · " + why;
   return line;
 }
@@ -85,6 +89,18 @@ DpmClocks parse_amdgpu_dpm(std::string_view text) {
     if (line.ends_with('*')) clocks.current_mhz = mhz;
   }
   return clocks;
+}
+
+unsigned parse_pcie_generation(std::string_view text) {
+  double gts = 0.0;
+  const auto [end, error] = std::from_chars(text.data(), text.data() + text.size(), gts);
+  if (error != std::errc{} || end == text.data()) return 0;
+  // Débits par voie : 2,5 / 5 / 8 / 16 / 32 / 64 GT/s pour les générations 1 à 6.
+  constexpr std::array<double, 6> kRates{2.5, 5.0, 8.0, 16.0, 32.0, 64.0};
+  for (std::size_t i = 0; i < kRates.size(); ++i) {
+    if (gts >= kRates[i] - 0.01 && gts <= kRates[i] + 0.01) return static_cast<unsigned>(i + 1);
+  }
+  return 0;
 }
 
 std::string telemetry_warning(const GpuSample& s) {
@@ -122,6 +138,13 @@ struct Utilization {
   unsigned memory;
 };
 
+struct NvmlMemory {
+  unsigned long long total;
+  unsigned long long free;
+  unsigned long long used;
+};
+
+constexpr std::uint64_t kMiB = 1024ULL * 1024ULL;
 constexpr int kClockSm = 1;
 constexpr int kClockMem = 2;
 constexpr std::int64_t kRefreshUs = 500'000;
@@ -175,6 +198,7 @@ struct GpuTelemetry::Impl {
   int (*pcie_generation)(Handle, unsigned*) = nullptr;
   int (*pcie_width)(Handle, unsigned*) = nullptr;
   int (*throttle)(Handle, unsigned long long*) = nullptr;
+  int (*memory)(Handle, NvmlMemory*) = nullptr;
   std::optional<GpuSample> last;
   std::int64_t last_us = 0;
 
@@ -240,6 +264,7 @@ std::unique_ptr<GpuTelemetry> GpuTelemetry::open(const GpuDevice& device) {
   bind(impl->pcie_generation, "nvmlDeviceGetCurrPcieLinkGeneration");
   bind(impl->pcie_width, "nvmlDeviceGetCurrPcieLinkWidth");
   bind(impl->throttle, "nvmlDeviceGetCurrentClocksThrottleReasons");
+  bind(impl->memory, "nvmlDeviceGetMemoryInfo");
   if (impl->clock == nullptr) return nullptr;
   return std::unique_ptr<GpuTelemetry>(new GpuTelemetry(std::move(impl)));
 }
@@ -263,6 +288,11 @@ std::optional<GpuSample> GpuTelemetry::sample(std::int64_t host_us) {
       s.power_limit_mw = static_cast<unsigned>(read_number(i.amd_hwmon / "power1_cap") / 1000);
       s.temperature_c = static_cast<unsigned>(read_number(i.amd_hwmon / "temp1_input") / 1000);
     }
+    s.vram_total_mib = static_cast<unsigned>(read_number(i.amd_card / "mem_info_vram_total") / kMiB);
+    s.vram_used_mib = static_cast<unsigned>(read_number(i.amd_card / "mem_info_vram_used") / kMiB);
+    s.pcie_generation = parse_pcie_generation(read_text(i.amd_card / "current_link_speed"));
+    if (s.pcie_generation > 0)
+      s.pcie_width = static_cast<unsigned>(read_number(i.amd_card / "current_link_width"));
     i.last = s;
     i.last_us = host_us;
     return s;
@@ -280,6 +310,13 @@ std::optional<GpuSample> GpuTelemetry::sample(std::int64_t host_us) {
   }
   if (i.pcie_generation != nullptr) i.pcie_generation(i.device, &s.pcie_generation);
   if (i.pcie_width != nullptr) i.pcie_width(i.device, &s.pcie_width);
+  if (i.memory != nullptr) {
+    NvmlMemory memory{};
+    if (i.memory(i.device, &memory) == 0) {
+      s.vram_total_mib = static_cast<unsigned>(memory.total / kMiB);
+      s.vram_used_mib = static_cast<unsigned>(memory.used / kMiB);
+    }
+  }
   if (i.throttle != nullptr) {
     unsigned long long mask = 0;
     if (i.throttle(i.device, &mask) == 0) s.throttle = mask;

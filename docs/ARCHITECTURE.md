@@ -8,7 +8,7 @@ Un seul cœur possède le profil, la politique et l'ordonnancement. Il résout u
 Un dossier de `src/` = un module = une cible CMake `ajp::<nom>`, déclarée par
 `ajp_add_module` avec ses dépendances. Le graphe est acyclique : `app` dépend de
 tout, rien ne dépend de `app`. `kernels` est une feuille ; `media`, `subs`,
-`audio`, `vendor_hdr`, `present` et `gpu_ir` ne dépendent publiquement que de
+`audio`, `vendor_hdr`, `present`, `gpu_ir` et `gpu_span_fp8` ne dépendent publiquement que de
 `core_types`.
 
 | Module | Responsabilité | Thread |
@@ -19,6 +19,7 @@ tout, rien ne dépend de `app`. `kernels` est une feuille ; `media`, `subs`,
 | `media` | Démultiplexage, décodage matériel, horodatage | source |
 | `gpu` | Exécution du `Plan`, ring de sortie, backends chargés à l'exécution (`backend.h`, `kernel_ops.h`) | gpu |
 | `gpu_ir` | Représentation interne des réseaux ONNX, commune aux moteurs Vulkan et Metal | gpu, preparer |
+| `gpu_span_fp8` | Paquet de poids du SPAN entier en FP8 (noyaux CUTLASS du backend TensorRT, `docs/span-fp8-cutlass.md`) | gpu, preparer |
 | `prepare` | Construction des moteurs, reçus de qualification | preparer |
 | `vendor_hdr` | Interface `TrueHdr` : RTX Video SDK, Maxine VFX ; ordre des bloqueurs | appelé par gpu |
 | `audio` | Décodage audio, sortie SDL3, horloge | audio |
@@ -45,6 +46,7 @@ subs ────── core_types · privé : libass, core_log
 audio ───── core_types · privé : FFmpeg, SDL3, core_log
 vendor_hdr ─ core_types · privé : toml++, core_log, dl
 gpu_ir ──── core_types · privé : kernels, core_log
+gpu_span_fp8 core_types
 gpu ─────── core, kernels, vendor_hdr
 prepare ─── core, gpu · privé : toml++, core_log
 render ──── core, subs
@@ -175,6 +177,24 @@ mesures de coupe et de pire bloc 32 × 32 relues sans attente pour la paire
 suivante. Un format ou une taille hors contrat est un refus nommé, avant toute
 soumission.
 
+Le backend TensorRT sait aussi charger RIFE « fusionné » (`BackendCaps::rife_fused`, `docs/rife-fusionne.md`) : un
+manifeste `.rifefused`, dérivé par `prepare/rife_split.h` à côté des six petits ONNX qu'il nomme, tient la place de
+l'ONNX de RIFE dans `build()` (six constructions trtexec, un `Artifact` dont la clé liste les six moteurs) et dans
+`load()` (un `Engine` qui enchaîne les six contextes et les noyaux de colle `rife_fused_kernels.cu` sur le flux du
+backend, capturés dans un seul graphe CUDA). `enqueue()` le prend comme le moteur entier ; la reconnaissance du
+modèle et chaque refus se jugent côté lecteur (`chain_setup.cpp`), qui garde le RIFE entier en repli.
+
+Même chose pour DistilDRBA (`BackendCaps::drba_fused`, `docs/drba-fusionne.md`) : un manifeste `.drbafused`
+(`prepare/drba_split.h`) nomme quatre ONNX (l'encodeur en lot de trois images et les trois blocs), `build()` en fait quatre
+moteurs, `load()` un `DrbaFusedEngine` qui enchaîne les quatre contextes et les noyaux `drba_fused_kernels.cu` dans un seul
+graphe CUDA, avec les deux entrées `pair01` et `pair12` du moteur entier ; le repli sur celui-ci se juge dans
+`prepare_distil_drba` (`player_engines.cpp`).
+
+GMFSS fusionné (`BackendCaps::gmfss_fused`, `docs/gmfss-fusionne.md`) n'a pas de moteur propre : `prepare/gmfss_split.h` coupe la
+paire en deux ONNX (les caractéristiques d'une image, le flot), deux moteurs ordinaires que l'étage gpu enfile avec des tenseurs
+décalés et dont il garde les caractéristiques d'une paire à la suivante (`gmfss_features.h`) ; repli sur la paire entière
+dans `prepare_gmfss` (`player_engines.cpp`).
+
 Durées de vie : chaque `Engine` et `TensorBuffer` meurt avant le `Backend` qui l'a
 créé, donc avant `ajp_backend_destroy` et le déchargement de la bibliothèque, où
 vit leur code. Une opération qui lit une `DecodedFrame` en garde une copie de
@@ -265,6 +285,21 @@ sont des paquets facultatifs : l'écran « Moteurs » du premier lancement les
 présélectionne selon le GPU détecté (`core/engines.h`), avec des badges
 (Recommandé, NVIDIA uniquement, Compatibilité…). On y revient depuis les
 paramètres. Un moteur n'est retiré que s'il n'a plus d'intérêt nulle part.
+
+## Moteur de réseaux Vulkan : copies
+
+`vk_backend` abaisse chaque graphe ONNX en dispatchs GLSL (`--profile-dispatches` donne le temps
+GPU par shader). Les copies se réduisent en trois temps :
+- tenseurs sans copie (`net_alias.h`) : entrées d'un Concat écrites en place par leur producteur,
+  sorties de Split et de Slice lues dans leur source, Reshape renommés ;
+- `net_hoist.h`, un Resize qui réduit remonté devant le Concat, le Reshape (lot et canaux) et le
+  Split (lot > 1) qui le précèdent : Resize traite chaque canal à part, le résultat est identique
+  bit à bit et les copies se font à la taille réduite ; seuls les Concat à lecteur unique dont une
+  entrée devrait être copiée, et les Resize qui réduisent, sont réécrits ;
+- RIFE v4.25 en [1,11,768,1280], RTX 4070 Ti : copies 37 dispatchs / 2,2 ms → 25 / 0,9 ms, total
+  13,2 → 11,9 ms (`ajp_vk_backend_tests "[.rife_profil]"`, médiane de 20 exécutions).
+Restent : le Concat des deux premières entrées de GridSample (lot 2), le dernier Concat de 28
+canaux lu en pleine taille, et le Split Nhwc16 → Nchw de la sortie du flot.
 
 ## Construction sous Linux
 

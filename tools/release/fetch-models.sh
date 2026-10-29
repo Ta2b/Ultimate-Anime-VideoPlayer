@@ -76,7 +76,10 @@ done
 
 # GMFSS Fortuna (base et union) et le demi-flot de DistilDRBA : exportés par le workflow
 # export-interpolation-models.yml, joints à la release models-interp-1 avec leur SHA256SUMS. Facultatifs :
-# tant que la release n'existe pas, les paquets partent sans eux (le lecteur les signale absents).
+# tant que la release n'existe pas, les paquets partent sans eux (le lecteur les signale absents). Tout ce que son
+# SHA256SUMS liste est pris : les paires GMFSS FP8 (gmfss_fortuna_{base,union}_s05fp8_pair.onnx, le cran Performance
+# de GMFSS, par défaut) y sont ajoutées par tools/release/publier-modeles-fp8.sh ; les graphes FP8 de DistilDRBA,
+# facultatifs (plus lents que le fusionné), sont dans SHA256SUMS.facultatif et ne sont jamais téléchargés ici.
 INTERP_URL="${AJP_INTERP_MODELS_URL:-https://github.com/Ta2b/ajp-releases/releases/download/models-interp-1}"
 if curl -fsSL -o "$CACHE/interp-SHA256SUMS" "$INTERP_URL/SHA256SUMS" 2>/dev/null; then
   while read -r sha name; do

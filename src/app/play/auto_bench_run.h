@@ -18,6 +18,8 @@
 namespace ajp::app::play {
 
 inline constexpr int kBenchSeconds = 12;  // durée d'un essai (docs/ux-parametres.md : 10 à 15 s)
+// La séquence du benchmark est en 1080p : l'exploration ne monte pas la hauteur de travail au-dessus.
+inline constexpr int kExplorationSourceHeight = 1080;
 
 struct BenchPlan {
   std::filesystem::path executable;  // ajp lui-même
@@ -34,9 +36,11 @@ struct BenchPlan {
 };
 
 // La ligne de commande de l'enfant d'un niveau (level absent : « auto », le niveau estimé de la machine).
+// extra : des options de plus (l'exploration : --work-height, --rife-model).
 std::vector<std::string> bench_child_args(const BenchPlan& plan, const std::optional<Tier>& level,
                                           const std::filesystem::path& data_dir,
-                                          const std::filesystem::path& out_file);
+                                          const std::filesystem::path& out_file,
+                                          const std::vector<std::string>& extra = {});
 
 // Le comparateur A/B (« ajp compare ») : deux variantes de la chaîne, jouées sur la même vidéo dans les mêmes
 // conditions, et leurs mesures côte à côte. Une variante, ce sont des options de « ajp play » (--rife=3,

@@ -114,7 +114,8 @@ Général
   ├ Lecteur par défaut       bouton « Faire de ce lecteur le lecteur par défaut », Ouvrir avec  (voir 4.4)
   └ Mises à jour             Automatique / Me prévenir / Jamais, canal, fréquence, version (voir 4.5)
 Image IA
-  ├ Agrandissement           résolution de travail, SPAN (case, modèle)
+  ├ Agrandissement           résolution de travail, SPAN (case, modèle) ; en Réglages avancés : « Préparer le
+  │                          mode Performance (SPAN FP8) » et « Préparer en tâche de fond » (docs/span-fp8-cutlass.md)
   ├ Fluidité                 multiplicateur, moteur d'interpolation, mode GMFSS
   └ Avancé                   filtre de réduction (Hermite…), modèle RIFE, poses DRBA, ordre du traitement, Smooth Motion
 HDR
@@ -522,6 +523,12 @@ par onglet, contrôle que chaque réglage de l'annexe A reste atteignable.
     · note (64 c.) : Les coupes de scène et les dessins tenus ne sont pas interpolés.
     - case : Garder les poses (DRBA) avec RIFE
     · note (283 c.) : Un personnage animé en deux sur un fond qui défile garde son rythme (il tient sa pose puis chan…
+    - case : RIFE fusionné (28/10 : six petits moteurs TensorRT et des noyaux CUDA à la place du RIFE entier, `docs/rife-fusionne.md`)
+    · note (493 c.) : Coupe RIFE 4.25 ou 4.22 lite en six petits moteurs TensorRT reliés par des noyaux CUDA : une passe prend un tiers du temps…
+    - case : DistilDRBA fusionné (28/10 : quatre petits moteurs TensorRT et des noyaux CUDA à la place du DistilDRBA entier, `docs/drba-fusionne.md`)
+    · note (559 c.) : Coupe DistilDRBA en quatre petits moteurs TensorRT (les convolutions à basse résolution) reliés par des noyaux CUD…
+    - case : GMFSS fusionné (29/10 : la paire en deux moteurs TensorRT, les caractéristiques d'une image gardées pour la paire suivante, `docs/gmfss-fusionne.md`)
+    · note (468 c.) : Coupe la paire de GMFSS en deux moteurs TensorRT : les caractéristiques d'une image et le flot. Les caractér…
     - liste : Warp et SPAN
     · note (402 c.) : Après SPAN : SPAN agrandit chaque image source une seule fois, puis RIFE déforme les images agr…
   [Smooth Motion (pilote NVIDIA)]

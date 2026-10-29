@@ -122,6 +122,10 @@ inline constexpr int kPresetCount = 7;
 enum class Priority : std::uint8_t { Fluidity, Balance, Image };
 inline constexpr int kPriorityCount = 3;
 
+// Les bornes de auto_cap (i/s) : de quoi couper à 24 i/s ou laisser 480 i/s ; 0 prend l'écran.
+inline constexpr int kAutoCapMin = 24;
+inline constexpr int kAutoCapMax = 480;
+
 struct PlaySettings {
   // Auto-configuration : Personnalisé par défaut, les réglages d'avant ne bougent pas ; le premier
   // lancement choisit Auto. Hors Personnalisé, la chaîne est refaite à chaque vidéo.
@@ -137,20 +141,45 @@ struct PlaySettings {
   // (core/auto_rate.h) ; en direct. Par défaut (v0.6) : l'interpolation est en Auto, pour tous les profils et
   // après le benchmark ; un multiplicateur choisi à la main (liste du menu) la coupe.
   bool rife_auto = true;
+  // Plafond de la cadence de sortie du mode auto, en i/s (60, 120…) ; 0 : celle de l'écran, le maximum.
+  int auto_cap = 0;
   MotionEngine motion_engine = MotionEngine::Rife;
   std::string rife_model;  // fichier ONNX de RIFE (nom seul) ; vide : le défaut de la carte
   // Garder les poses (DRBA, kernels/spec/poses.h) : un personnage animé en deux garde son rythme
   // pendant que le fond s'interpole ; en direct.
   bool keep_poses = true;
+  // RIFE fusionné (kernels/spec/rife_fused.h) : le réseau coupé en six petits moteurs TensorRT reliés par des
+  // noyaux CUDA, à la place du moteur RIFE entier (2,2 ms au lieu de 6,5 ms par passe à 768×1280 sur une RTX
+  // 4070 Ti) ; seulement sous TensorRT et pour un RIFE dont la structure est reconnue (4.25, 4.22 lite), le
+  // RIFE entier reprenant sinon, ou si un des six moteurs échoue. Recharge la chaîne.
+  bool rife_fused = true;
+  // DistilDRBA fusionné (kernels/spec/drba_fused.h) : le réseau coupé en quatre petits moteurs TensorRT
+  // reliés par des noyaux CUDA, à la place du moteur DistilDRBA entier (0,92 ms au lieu de 2,10 ms par passe
+  // à 1088×1920 sur une RTX 4070 Ti) ; seulement sous TensorRT, au cran Équilibre et pour un DistilDRBA v2
+  // lite dont la structure est reconnue, le moteur entier reprenant sinon, ou si un des quatre moteurs
+  // échoue. Recharge la chaîne.
+  bool drba_fused = true;
+  // GMFSS fusionné (prepare/gmfss_split.h) : la paire de GMFSS coupée en deux moteurs TensorRT, les
+  // caractéristiques d'une image (FeatureNet) et le flot ; les caractéristiques d'une image servent à deux
+  // paires de suite et ne sont calculées qu'une fois (un FeatureNet de moins par paire). Seulement sous
+  // TensorRT, au cran Équilibre et pour une paire dont la structure est reconnue (export version 2), la paire
+  // entière reprenant sinon, ou si un moteur échoue. Recharge la chaîne. Éteint par défaut : le gain mesuré
+  // (docs/gmfss-fusionne.md : un FeatureNet de moins par paire, −6 à −9 % du temps GMFSS d'une paire, −15 %
+  // pour la paire seule au banc) n'atteint pas le seuil de 15 % qui fait un défaut ; la qualité est la même
+  // (73 dB et plus contre la paire entière).
+  bool gmfss_fused = false;
   // Les crans de précision (precision.h). SPAN : Performance prend la variante FP8 du modèle, Qualité sa
   // variante FP32 (span_int8.h), Équilibre le FP16 tel que livré. Recharge la chaîne.
   PrecisionTier span_precision = PrecisionTier::Balanced;
   // RIFE et DistilDRBA : Performance charge le graphe « _fp8 » à côté du modèle (rife_v4.25_fp8.onnx),
   // Qualité le « _fp32 ». Recharge la chaîne.
   PrecisionTier motion_precision = PrecisionTier::Balanced;
-  // GMFSS : Performance, la paire de GMFlow en FP8 (_s05fp8) ; Équilibre, GMFlow en FP16 (l'ancien
-  // « Performance ») ; Qualité, GMFlow en FP32 (_s05q). Toujours au flot à demi-échelle. Recharge la chaîne.
-  PrecisionTier gmfss_precision = PrecisionTier::Balanced;
+  // GMFSS : Performance, la paire en FP8 hors du squelette de GMFlow (_s05fp8, 15 convolutions sur 37) ;
+  // Équilibre, FP16 (l'ancien « Performance ») ; Qualité, GMFlow en FP32 (_s05q). Toujours au flot à
+  // demi-échelle. Performance par défaut : mesuré −15 % sur la paire en ABAB, 47 dB au pire cas
+  // (docs/fp8-interpolation.md) ; sans le graphe ou sans moteur FP8, Équilibre (journal : raison). Recharge
+  // la chaîne.
+  PrecisionTier gmfss_precision = PrecisionTier::Performance;
   // Le warp avant ou après SPAN (SpanOrder) ; Auto par défaut. Recharge la chaîne.
   SpanOrder span_order = SpanOrder::Auto;
   // Smooth Motion du pilote NVIDIA (RTX 40 et 50, pilote ≥ 580) : sa couche Vulkan double les
@@ -186,6 +215,11 @@ struct PlaySettings {
   bool autoplay_next = false;
   bool default_player_dismissed =
       false;  // « Ne plus me le demander » : le bouton quitte Général, reste en bas d'Avancé
+  // « Préparer en tâche de fond » (Image IA > Agrandissement) : après « Évaluer ma machine », sur une vidéo
+  // ouverte, quand le niveau gardé est Rapide ou plus, dérive le paquet du mode Performance de SPAN
+  // (span_derive.h). Éteint par défaut : la préparation prend de la mémoire vidéo et du GPU pendant la
+  // lecture.
+  bool span_prepare_background = false;
   int audio_delay_ms = 0;
   // Audio (audio/mixer.h, docs/audio-spatialisation.md) : l'appareil de sortie (vide : celui du système,
   // suivi quand il change), « Comment écoutez-vous ? » (headphones, speakers, cinema), le mode Fidèle (aucun
@@ -198,6 +232,12 @@ struct PlaySettings {
   std::vector<std::pair<std::string, std::string>> device_listening;
   std::vector<std::pair<std::string, std::string>>
       device_profile;  // appareil -> profil de virtualisation (clé, ou « custom »)
+  // « Son anime » (audio/anime_sound.h, docs/audio-anime.md), pistes stéréo vers sortie stéréo : le niveau
+  // (clé de audio::anime_levels : natural, anime, strong ; ou « custom »), les réglages du niveau
+  // « custom », et le niveau propre à un appareil (appareil -> niveau).
+  std::string anime_sound = "anime";
+  audio::AnimeTuning anime_custom = audio::find_anime_level("anime")->tuning;
+  std::vector<std::pair<std::string, std::string>> device_anime;
   // Réponses impulsionnelles « HeSuVi » pour le casque (audio/hrir.h) : chemin d'un .wav (vide : aucune, le
   // modèle paramétrique), et celui propre à un appareil (appareil -> chemin).
   std::string hrir_path;
@@ -269,8 +309,9 @@ std::string format_settings(const PlaySettings& settings);
 struct EffectiveListening {
   int listen = 1;
   bool faithful = false;
-  audio::MixTuning tuning;  // le profil de virtualisation (preset ou personnalisé)
-  std::string hrir_path;    // les réponses impulsionnelles du casque ; vide : aucune
+  audio::MixTuning tuning;   // le profil de virtualisation (preset ou personnalisé)
+  audio::AnimeTuning anime;  // le « Son anime » de l'appareil (enabled faux : Naturel)
+  std::string hrir_path;     // les réponses impulsionnelles du casque ; vide : aucune
   bool operator==(const EffectiveListening&) const = default;
 };
 // Le mixage voulu : le profil choisi (clé de audio::mix_presets, « custom » : audio_custom), borné ; un
@@ -279,6 +320,9 @@ audio::MixTuning resolved_tuning(const PlaySettings& settings, int listen);
 // Le mixage d'une clé de profil (ou « custom » : custom_values) pour cette écoute ; Naturel si le profil ne
 // va pas à l'écoute.
 audio::MixTuning tuning_of(std::string_view profile, const audio::MixTuning& custom_values, int listen);
+// Les réglages du « Son anime » d'un niveau (clé de audio::anime_levels, ou « custom » : custom_values) ;
+// Naturel pour une clé inconnue.
+audio::AnimeTuning anime_tuning_of(std::string_view level, const audio::AnimeTuning& custom_values);
 EffectiveListening effective_listening(const PlaySettings& settings, const std::string& device_name);
 // Charge les réponses impulsionnelles d'un chemin (vide : aucune, sans refus). Un fichier illisible est
 // refusé : l'appelant le dit et retombe sur le binaural paramétrique.

@@ -180,13 +180,20 @@ std::expected<PlaySettings, Refusal> parse_settings(std::string_view toml_text) 
     reads.push_back(read(*interpolation, "interpolation", "smooth_motion", s.smooth_motion));
     reads.push_back(read(*interpolation, "interpolation", "model", s.rife_model));
     reads.push_back(read(*interpolation, "interpolation", "keep_poses", s.keep_poses));
+    reads.push_back(read(*interpolation, "interpolation", "rife_fused", s.rife_fused));
+    reads.push_back(read(*interpolation, "interpolation", "drba_fused", s.drba_fused));
+    reads.push_back(read(*interpolation, "interpolation", "gmfss_fused", s.gmfss_fused));
     // gmfss_quality (faux : l'ancien Performance, devenu Équilibre ; vrai : Qualité), puis les crans.
     bool legacy_quality = false;
     reads.push_back(read(*interpolation, "interpolation", "gmfss_quality", legacy_quality));
-    if (legacy_quality) s.gmfss_precision = PrecisionTier::Quality;
+    if (legacy_quality)
+      s.gmfss_precision = PrecisionTier::Quality;
+    else if (interpolation->contains("gmfss_quality"))
+      s.gmfss_precision = PrecisionTier::Balanced;  // faux : l'ancien Performance, FP16
     reads.push_back(read_precision(*interpolation, "interpolation", "gmfss_precision", s.gmfss_precision));
     reads.push_back(read_precision(*interpolation, "interpolation", "motion_precision", s.motion_precision));
     reads.push_back(read(*interpolation, "interpolation", "auto", s.rife_auto));
+    reads.push_back(read(*interpolation, "interpolation", "auto_cap", s.auto_cap));
     // span_order ; les fichiers d'avant portent warp_after_span, qui ne compte que s'il est vrai (faux
     // était le défaut, écrit partout : il laisse Auto).
     bool legacy_after = false;
@@ -289,6 +296,46 @@ std::expected<PlaySettings, Refusal> parse_settings(std::string_view toml_text) 
         s.device_profile.emplace_back(std::string(name.str()), *key);
       }
     }
+    // « Son anime » : [audio.anime] (niveau, réglages du niveau « custom ») et [audio.device_anime].
+    if (const toml::table* anime = audio->get_as<toml::table>("anime")) {
+      reads.push_back(read(*anime, "audio.anime", "level", s.anime_sound));
+      if (s.anime_sound != "custom" && ::ajp::audio::find_anime_level(s.anime_sound) == nullptr)
+        reads.emplace_back(
+            refuse(RefusalCode::FieldOutOfRange, std::format("audio.anime.level : « {} »", s.anime_sound)));
+      if (const toml::table* custom = anime->get_as<toml::table>("custom")) {
+        // Une valeur hors plage est refusée en nommant la clé, jamais corrigée en silence.
+        ::ajp::audio::AnimeTuning& c = s.anime_custom;
+        const auto ranged = [&](const char* key, float& value, float lo, float hi) {
+          reads.push_back(read(*custom, "audio.anime.custom", key, value));
+          if (!(value >= lo && value <= hi))
+            reads.emplace_back(
+                refuse(RefusalCode::FieldOutOfRange,
+                       std::format("audio.anime.custom.{} : {} hors de {} à {}", key, value, lo, hi)));
+        };
+        ranged("width", c.width, 0.0F, 1.0F);
+        ranged("ambience", c.ambience, 0.0F, 1.0F);
+        ranged("voice_db", c.voice_db, 0.0F, 4.0F);
+        ranged("presence_db", c.presence_db, 0.0F, 4.0F);
+        ranged("voice_forward", c.voice_forward, 0.0F, 1.0F);
+        ranged("bass", c.bass, 0.0F, 1.0F);
+        reads.push_back(read(*custom, "audio.anime.custom", "loudness", c.loudness));
+        ranged("target_lufs", c.target_lufs, -23.0F, -16.0F);
+        ranged("compress", c.compress, 0.0F, 1.0F);
+        ranged("ceiling_db", c.ceiling_db, -3.0F, -0.5F);
+        c.enabled = true;
+      }
+    }
+    if (const toml::table* devices = audio->get_as<toml::table>("device_anime")) {
+      for (const auto& [name, node] : *devices) {
+        const auto key = node.value_exact<std::string>();
+        if (!key || (*key != "custom" && ::ajp::audio::find_anime_level(*key) == nullptr)) {
+          reads.emplace_back(refuse(RefusalCode::FieldOutOfRange,
+                                    std::format("audio.device_anime.{}", std::string(name.str()))));
+          continue;
+        }
+        s.device_anime.emplace_back(std::string(name.str()), *key);
+      }
+    }
     reads.push_back(read(*audio, "audio", "hrir_path", s.hrir_path));
     if (const toml::table* hrirs = audio->get_as<toml::table>("device_hrir")) {
       for (const auto& [name, node] : *hrirs) {
@@ -341,6 +388,8 @@ std::expected<PlaySettings, Refusal> parse_settings(std::string_view toml_text) 
       reads.emplace_back(refuse(RefusalCode::FieldOutOfRange,
                                 std::format("updates.frequency : « {} »", s.update_frequency)));
   }
+  if (const toml::table* span = section(root, "span_prepare"))
+    reads.push_back(read(*span, "span_prepare", "background", s.span_prepare_background));
   if (const toml::table* player = section(root, "default_player"))
     reads.push_back(read(*player, "default_player", "dismissed", s.default_player_dismissed));
   if (const toml::table* playlist = section(root, "playlist"))
@@ -435,9 +484,13 @@ std::string format_settings(const PlaySettings& s) {
   toml::table interpolation{{"engine", std::string(name(s.motion_engine))},
                             {"model", s.rife_model},
                             {"keep_poses", s.keep_poses},
+                            {"rife_fused", s.rife_fused},
+                            {"drba_fused", s.drba_fused},
+                            {"gmfss_fused", s.gmfss_fused},
                             {"gmfss_precision", std::string(name(s.gmfss_precision))},
                             {"motion_precision", std::string(name(s.motion_precision))},
                             {"auto", s.rife_auto},
+                            {"auto_cap", s.auto_cap},
                             {"span_order", std::string(name(s.span_order))},
                             {"smooth_motion", s.smooth_motion}};
   if (s.rife_factor_den == 2) {
@@ -478,6 +531,27 @@ std::string format_settings(const PlaySettings& s) {
                          {"night", r4(fields[14])}};
       audio.insert_or_assign("custom", std::move(custom));
     }
+    {
+      const auto& c = s.anime_custom;
+      const auto r4 = [](float v) { return std::round(static_cast<double>(v) * 10000.0) / 10000.0; };
+      audio.insert_or_assign("anime",
+                             toml::table{{"level", s.anime_sound},
+                                         {"custom", toml::table{{"width", r4(c.width)},
+                                                                {"ambience", r4(c.ambience)},
+                                                                {"voice_db", r4(c.voice_db)},
+                                                                {"presence_db", r4(c.presence_db)},
+                                                                {"voice_forward", r4(c.voice_forward)},
+                                                                {"bass", r4(c.bass)},
+                                                                {"loudness", c.loudness},
+                                                                {"target_lufs", r4(c.target_lufs)},
+                                                                {"compress", r4(c.compress)},
+                                                                {"ceiling_db", r4(c.ceiling_db)}}}});
+    }
+    if (!s.device_anime.empty()) {
+      toml::table anime_devices;
+      for (const auto& [name, key] : s.device_anime) anime_devices.insert_or_assign(name, key);
+      audio.insert("device_anime", std::move(anime_devices));
+    }
     if (!s.device_listening.empty()) {
       toml::table devices;
       for (const auto& [name, own] : s.device_listening) devices.insert_or_assign(name, own);
@@ -510,6 +584,7 @@ std::string format_settings(const PlaySettings& s) {
   root.insert("picture", toml::table{{"deband", s.deband}, {"scaler", std::string(name(s.final_scaler))}});
   root.insert("playlist", toml::table{{"autoplay_next", s.autoplay_next}});
   root.insert("default_player", toml::table{{"dismissed", s.default_player_dismissed}});
+  root.insert("span_prepare", toml::table{{"background", s.span_prepare_background}});
   if (!s.engines_dir.empty()) root.insert("engines", toml::table{{"install_dir", s.engines_dir}});
   root.insert(
       "updates",

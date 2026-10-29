@@ -27,11 +27,34 @@ std::unexpected<Refusal> mismatch(std::string detail) {
 std::expected<std::unique_ptr<NetEngine>, Refusal> NetEngine::create(VkContext& context,
                                                                      MemoryAllocator& memory,
                                                                      PipelineCache& pipelines,
-                                                                     ir::Graph graph, Program program) {
+                                                                     ir::Graph graph, Program program,
+                                                                     NetEngineOptions options) {
   if (program.dispatches.empty()) return mismatch("programme sans dispatch");
-  std::unique_ptr<NetEngine> engine(new NetEngine(context, memory, std::move(graph), std::move(program)));
+  std::unique_ptr<NetEngine> engine(
+      new NetEngine(context, memory, std::move(graph), std::move(program), std::move(options)));
+  if (engine->options_.profile_dispatches) {
+    engine->timestamps_ = timestamp_support(context);
+    engine->profiling_ = engine->timestamps_.period_ns > 0.0;
+    if (!engine->profiling_ && engine->options_.log) {
+      engine->options_.log(
+          "profil des dispatchs : cet appareil n'a pas de requêtes d'horodatage sur la file de calcul "
+          "(timestampValidBits à 0 ou timestampComputeAndGraphics faux), rien n'est mesuré");
+    }
+  }
   if (auto ok = engine->prepare(pipelines); !ok) return std::unexpected(ok.error());
   return engine;
+}
+
+NetEngine::~NetEngine() {
+  if (!profiling_) return;
+  // Les dernières exécutions, attendues ; un échec de lecture n'empêche pas de journaliser le reste.
+  for (Cached& cached : recordings_) {
+    if (cached.stamps != nullptr && cached.recording->submitted() > cached.collected) {
+      if (auto ok = read_stamps(cached); !ok && options_.log)
+        options_.log(std::format("profil des dispatchs : lecture refusée ({})", ok.error().detail));
+    }
+  }
+  if (options_.log && !profile_runs_.empty()) options_.log(format_profile(profile_report()));
 }
 
 std::uint64_t NetEngine::input_bytes(std::size_t k) const {
@@ -135,7 +158,9 @@ std::expected<BufferView, Refusal> NetEngine::resolve(const Binding& binding,
   }
   auto base = root_view(root, inputs, outputs);
   if (!base || root == id) return base;
-  const VkDeviceSize bytes = ir::storage_bytes(graph_.tensors[id]);
+  // Une tranche de canaux Nhwc16 s'étend sur les pixels du parent : sa vue va jusqu'au bout de la racine.
+  const bool slab = program_.aliases[id].channel_slab && offset < base->size;
+  const VkDeviceSize bytes = slab ? base->size - offset : ir::storage_bytes(graph_.tensors[id]);
   if (offset + bytes > base->size) {
     return mismatch(std::format("{} : {} o à {} dépassent les {} o de {}", graph_.tensors[id].name, bytes,
                                 offset, base->size, graph_.tensors[root].name));
@@ -160,13 +185,27 @@ std::expected<BufferView, Refusal> NetEngine::root_view(ir::TensorId id, std::sp
 }
 
 std::expected<std::unique_ptr<Recording>, Refusal> NetEngine::record(std::span<const BufferView> inputs,
-                                                                     std::span<const BufferView> outputs) {
+                                                                     std::span<const BufferView> outputs,
+                                                                     QueryPool*& stamps) {
   std::uint32_t buffers = 0;
   for (const Dispatch& d : program_.dispatches) buffers += static_cast<std::uint32_t>(d.bindings.size());
   auto recorder = Recorder::begin(
       context_, memory_,
       {.sets = static_cast<std::uint32_t>(program_.dispatches.size()), .buffers = buffers, .images = 1});
   if (!recorder) return std::unexpected(recorder.error());
+  if (profiling_) {
+    const auto count = static_cast<std::uint32_t>(2 * program_.dispatches.size());
+    auto pool = std::make_unique<QueryPool>(context_, query_functions(context_), count);
+    if (auto ok = pool->create(); !ok) return std::unexpected(ok.error());
+    stamps = stamp_pools_.emplace_back(std::move(pool)).get();
+  }
+  // Une estampille de fin de pipeline à l'index donné ; la réinitialisation du pool, avant la première.
+  const auto stamp = [&](std::uint32_t index) -> Done {
+    return recorder->commands([&](VkCommandBuffer cb) {
+      if (index == 0) stamps->fn().reset(cb, stamps->handle(), 0, stamps->count());
+      stamps->fn().write(cb, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, stamps->handle(), index);
+    });
+  };
   std::vector<BufferView> views;
   for (std::size_t k = 0; k < program_.dispatches.size(); ++k) {
     const Dispatch& d = program_.dispatches[k];
@@ -177,11 +216,63 @@ std::expected<std::unique_ptr<Recording>, Refusal> NetEngine::record(std::span<c
       views.push_back(*view);
     }
     const std::span<const std::byte> push = std::as_bytes(std::span(d.push));
+    if (stamps != nullptr) {
+      if (auto ok = stamp(static_cast<std::uint32_t>(2 * k)); !ok) return std::unexpected(ok.error());
+    }
     if (auto ok = recorder->dispatch(*pipelines_[k], views, {}, push, d.groups); !ok) {
       return std::unexpected(ok.error());
     }
+    if (stamps != nullptr) {
+      if (auto ok = stamp(static_cast<std::uint32_t>((2 * k) + 1)); !ok) return std::unexpected(ok.error());
+    }
   }
   return recorder->finish();
+}
+
+std::expected<void, Refusal> NetEngine::read_stamps(Cached& cached) {
+  const Recording& recording = *cached.recording;
+  if (auto ok = context_.wait_on_host(recording.last_run()); !ok) return std::unexpected(ok.error());
+  const QueryPool& pool = *cached.stamps;
+  std::vector<std::uint64_t> ticks(pool.count());
+  if (auto ok =
+          check(pool.fn().results(context_.device(), pool.handle(), 0, pool.count(),
+                                  ticks.size() * sizeof(std::uint64_t), ticks.data(), sizeof(std::uint64_t),
+                                  VK_QUERY_RESULT_64_BIT | VK_QUERY_RESULT_WAIT_BIT),
+                "vkGetQueryPoolResults");
+      !ok) {
+    return std::unexpected(ok.error());
+  }
+  cached.collected = recording.submitted();
+  if (profile_runs_.size() >= kMaxProfileRuns) return {};
+  ProfileRun run;
+  run.dispatch_ms.reserve(program_.dispatches.size());
+  for (std::size_t k = 0; k < program_.dispatches.size(); ++k) {
+    run.dispatch_ms.push_back(ticks_to_ns(ticks[2 * k], ticks[(2 * k) + 1], timestamps_) / 1.0e6);
+  }
+  run.span_ms = ticks_to_ns(ticks.front(), ticks.back(), timestamps_) / 1.0e6;
+  profile_runs_.push_back(std::move(run));
+  return {};
+}
+
+std::expected<void, Refusal> NetEngine::collect_profile(const Recording& recording) {
+  if (!profiling_) return {};
+  for (Cached& cached : recordings_) {
+    if (cached.recording.get() != &recording || cached.stamps == nullptr) continue;
+    if (recording.submitted() <= cached.collected) return {};
+    return read_stamps(cached);
+  }
+  return {};
+}
+
+void NetEngine::collect_idle_profiles() {
+  for (Cached& cached : recordings_) {
+    if (cached.stamps != nullptr && cached.recording->submitted() > cached.collected &&
+        cached.recording->idle()) {
+      // Un échec de lecture perd cette exécution du rapport, pas l'exécution elle-même.
+      if (auto ok = read_stamps(cached); !ok && options_.log)
+        options_.log(std::format("profil des dispatchs : lecture refusée ({})", ok.error().detail));
+    }
+  }
 }
 
 void NetEngine::forget_destroyed() {
@@ -219,6 +310,7 @@ std::expected<Recording*, Refusal> NetEngine::recording(std::span<const BufferVi
     }
   }
   ++uses_;
+  if (profiling_) collect_idle_profiles();
   forget_destroyed();
   const auto matches = [&](const Cached& c) {
     return std::ranges::equal(c.views.begin(), c.views.begin() + static_cast<std::ptrdiff_t>(inputs.size()),
@@ -230,14 +322,18 @@ std::expected<Recording*, Refusal> NetEngine::recording(std::span<const BufferVi
     found->used = uses_;
     return found->recording.get();
   }
-  auto made = record(inputs, outputs);
+  QueryPool* stamps = nullptr;
+  auto made = record(inputs, outputs, stamps);
   if (!made) return std::unexpected(made.error());
   if (recordings_.size() >= kMaxRecordings) {
     const auto oldest = std::ranges::min_element(recordings_, {}, &Cached::used);
     retired_.retire(std::move(oldest->recording));
     recordings_.erase(oldest);
   }
-  Cached entry{.views = {inputs.begin(), inputs.end()}, .recording = std::move(*made), .used = uses_};
+  Cached entry{.views = {inputs.begin(), inputs.end()},
+               .recording = std::move(*made),
+               .used = uses_,
+               .stamps = stamps};
   entry.views.insert(entry.views.end(), outputs.begin(), outputs.end());
   recordings_.push_back(std::move(entry));
   return recordings_.back().recording.get();
