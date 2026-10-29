@@ -510,6 +510,10 @@ Change change_between(const PlaySettings& running, const PlaySettings& wanted, b
         wanted.drba_fused
             ? "DistilDRBA fusionné (quatre moteurs, construits la première fois pour cette taille)"
             : "DistilDRBA entier à la place du DistilDRBA fusionné");
+  if (wanted.rife_factor >= 2 && is_gmfss(wanted.motion_engine) && running.gmfss_fused != wanted.gmfss_fused)
+    reopen.emplace_back(wanted.gmfss_fused ? "GMFSS fusionné (deux moteurs à la place de la paire, "
+                                             "construits la première fois pour cette taille)"
+                                           : "la paire GMFSS entière à la place de GMFSS fusionné");
   if (wanted.rife_factor >= 2 && wanted.motion_engine == MotionEngine::Rife &&
       running.rife_model != wanted.rife_model)
     reopen.emplace_back("le modèle RIFE est chargé (construit la première fois pour cette taille)");

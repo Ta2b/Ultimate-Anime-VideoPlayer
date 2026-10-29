@@ -389,6 +389,17 @@ void fluidity_tab(PlaySettings& d, const SettingsChoices& choices, bool exportin
       "le modèle ne se coupe pas ou si un moteur échoue. Recharge la lecture ; la première fois, quatre "
       "petits "
       "moteurs se construisent pour cette taille.");
+  ImGui::BeginDisabled(!is_gmfss(d.motion_engine));
+  ImGui::Checkbox("GMFSS fusionné", &d.gmfss_fused);
+  ImGui::EndDisabled();
+  panel::tip(
+      "Coupe la paire de GMFSS en deux moteurs TensorRT : les caractéristiques d'une image et le flot. Les "
+      "caractéristiques d'une image servent à deux paires de suite : elles ne sont calculées qu'une fois, un "
+      "FeatureNet de moins par paire (docs/gmfss-fusionne.md). Sous TensorRT seulement, au cran Équilibre ; "
+      "la "
+      "paire entière reprend si le graphe ne se coupe pas ou si un moteur échoue. Recharge la lecture ; la "
+      "première "
+      "fois, deux moteurs se construisent pour cette taille.");
   ImGui::BeginDisabled(d.motion_engine != MotionEngine::Rife && !is_gmfss(d.motion_engine));
   if (ImGui::BeginCombo("Warp et SPAN", std::string(label(d.span_order)).c_str())) {
     for (int i = 0; i < kSpanOrderCount; ++i) {

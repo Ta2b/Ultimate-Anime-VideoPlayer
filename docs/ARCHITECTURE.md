@@ -190,6 +190,11 @@ moteurs, `load()` un `DrbaFusedEngine` qui enchaîne les quatre contextes et les
 graphe CUDA, avec les deux entrées `pair01` et `pair12` du moteur entier ; le repli sur celui-ci se juge dans
 `prepare_distil_drba` (`player_engines.cpp`).
 
+GMFSS fusionné (`BackendCaps::gmfss_fused`, `docs/gmfss-fusionne.md`) n'a pas de moteur propre : `prepare/gmfss_split.h` coupe la
+paire en deux ONNX (les caractéristiques d'une image, le flot), deux moteurs ordinaires que l'étage gpu enfile avec des tenseurs
+décalés et dont il garde les caractéristiques d'une paire à la suivante (`gmfss_features.h`) ; repli sur la paire entière
+dans `prepare_gmfss` (`player_engines.cpp`).
+
 Durées de vie : chaque `Engine` et `TensorBuffer` meurt avant le `Backend` qui l'a
 créé, donc avant `ajp_backend_destroy` et le déchargement de la bibliothèque, où
 vit leur code. Une opération qui lit une `DecodedFrame` en garde une copie de

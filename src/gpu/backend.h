@@ -51,7 +51,9 @@ namespace ajp::gpu {
 // 13 : BackendCaps::drba_fused (DistilDRBA fusionné : quatre moteurs TensorRT et noyaux CUDA, manifeste «
 // .drbafused »).
 // 14 : Backend::derive_span_fp8 (dérivation native du paquet « .span8 », docs/span-fp8-cutlass.md).
-inline constexpr int kBackendAbi = 14;
+// 15 : BackendCaps::gmfss_fused (GMFSS fusionné : la paire en deux moteurs, les caractéristiques d'une image
+// et le flot, avec des tenseurs d'entrée et de sortie décalés dans un tampon ; docs/gmfss-fusionne.md).
+inline constexpr int kBackendAbi = 15;
 
 using DeviceUuid = ajp::DeviceUuid;
 
@@ -92,6 +94,10 @@ struct BackendCaps {
   // DistilDRBA coupé en quatre moteurs TensorRT et noyaux de colle (manifeste « .drbafused » à la place de
   // l'ONNX, kernels/spec/drba_fused.h).
   bool drba_fused = false;
+  // La paire de GMFSS coupée en deux moteurs (les caractéristiques d'une image, le flot ; ONNX dérivés par
+  // prepare/gmfss_split.h), enfilés avec des tenseurs à un décalage de plans dans leur tampon
+  // (kernels/spec/gmfss.h, GMFSS fusionné).
+  bool gmfss_fused = false;
   bool matrix_units = false;                // unités matricielles utilisées
   std::vector<PixelFormat> import_formats;  // formats acceptés par import()
   // Voies qui se recouvrent vraiment sur l'appareil (gpu/lanes.h) ; 1 : use_lane ne change rien.
