@@ -65,7 +65,7 @@ struct UpdatePaths {
 struct CheckResult {
   std::optional<core::UpdateManifest>
       newer;            // plus récent que le lecteur, de ce canal, avec une archive pour ce système
-  std::string message;  // « à jour », « 0.6.0 disponible »…
+  std::string message;  // « à jour », « 0.7.0 disponible »…
 };
 
 // Télécharge et vérifie le manifeste. Refus : clé absente, réseau, signature fausse, manifeste illisible.
