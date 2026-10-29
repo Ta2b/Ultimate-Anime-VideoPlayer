@@ -32,7 +32,8 @@ std::optional<std::pair<float, float>> mouse_point(std::string_view text) {
 }
 
 // Touche pressée d'office (--keys) : un événement SDL de plus dans la file, comme le clavier.
-// « mouse=XxY » déplace la souris (la barre de lecture paraît), « click=XxY » y clique.
+// « mouse=XxY » déplace la souris (la barre de lecture paraît), « click=XxY » y clique, « wheel=N » tourne la
+// molette de N crans (négatif : vers le bas) là où est la souris (les pages du menu se parcourent ainsi).
 void press(const std::string& name, SDL_Window* window) {
   if (name.starts_with("drop=")) {           // un fichier glissé sur la fenêtre
     static std::deque<std::string> dropped;  // SDL garde le pointeur jusqu'à la lecture de l'événement
@@ -43,6 +44,23 @@ void press(const std::string& name, SDL_Window* window) {
     drop.drop.data = dropped.back().c_str();
     log_channel("app")->info("--keys : fichier glissé {}", dropped.back());
     SDL_PushEvent(&drop);
+    return;
+  }
+  if (name.starts_with("wheel=")) {
+    int notches = 0;
+    const std::string_view text = std::string_view(name).substr(6);
+    if (core::from_chars(text.data(), text.data() + text.size(), notches).ec != std::errc{}) return;
+    float x = 0.0F;
+    float y = 0.0F;
+    SDL_GetMouseState(&x, &y);
+    SDL_Event wheel{};
+    wheel.type = SDL_EVENT_MOUSE_WHEEL;
+    wheel.wheel.windowID = SDL_GetWindowID(window);
+    wheel.wheel.y = static_cast<float>(notches);
+    wheel.wheel.mouse_x = x;
+    wheel.wheel.mouse_y = y;
+    log_channel("app")->info("--keys : molette {}", notches);
+    SDL_PushEvent(&wheel);
     return;
   }
   if (const auto point = mouse_point(name)) {

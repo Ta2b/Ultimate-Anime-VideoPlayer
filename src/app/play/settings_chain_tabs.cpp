@@ -213,12 +213,14 @@ void fluidity_tab(PlaySettings& d, const SettingsChoices& choices, bool exportin
         "GPU prend du retard, remonte après quelques secondes sans retard, et réessaie de plus en plus "
         "tard un palier qui vient d'échouer. Lecture seulement ; l'export garde un multiplicateur fixe.");
     if (!choices.display_vrr) {
-      note(
+      note("Sans VRR, le mouvement peut vibrer à fréquence fixe.");
+      panel::tip(
           "VRR indisponible : à fréquence fixe, un multiplicateur qui ne tombe pas sur un nombre entier de "
           "rafraîchissements (×k de 23,976 sur 165 Hz) fait vibrer le mouvement (judder). Active G-Sync / "
           "FreeSync / Adaptive Sync pour l'éviter.");
     } else if (choices.window_fullscreen && !choices.display_vrr_armed) {
-      note(
+      note("VRR coupé par le système : le mouvement peut vibrer.");
+      panel::tip(
           "VRR présent mais coupé par le système : active la synchronisation adaptative (KDE : Affichage et "
           "écran > Synchronisation adaptative), sinon le mouvement vibre à fréquence fixe.");
     }
@@ -240,9 +242,22 @@ void fluidity_tab(PlaySettings& d, const SettingsChoices& choices, bool exportin
   if (!choices.rife_available)
     note("Ni modèle RIFE (rife_v4.25.onnx, rife_v4.22_lite.onnx) ni graphes GMFSS trouvés.");
   section("Moteur de l'interpolation");
+  // Les moteurs se rangent sur une ligne tant qu'ils y tiennent (pastille comprise), sinon à la ligne.
+  const float row_left = ImGui::GetCursorScreenPos().x;
+  const float row_right = row_left + ImGui::GetContentRegionAvail().x;
+  bool first_engine = true;
   for (int i = 0; i < kMotionEngineCount; ++i) {
     const auto engine = static_cast<MotionEngine>(i);
     if (!offered(engine) && d.motion_engine != engine) continue;
+    if (!first_engine) {
+      const ImGuiStyle& style = ImGui::GetStyle();
+      const std::string name(label(engine));
+      float need = ImGui::GetFrameHeight() + style.ItemInnerSpacing.x + ImGui::CalcTextSize(name.c_str()).x;
+      if (const auto mark = badge_of(engine))
+        need += style.ItemSpacing.x + ImGui::CalcTextSize(std::string(badge_text(*mark)).c_str()).x + 12.0F;
+      if (ImGui::GetItemRectMax().x + style.ItemSpacing.x * 2.0F + need <= row_right) ImGui::SameLine();
+    }
+    first_engine = false;
     if (ImGui::RadioButton(std::string(label(engine)).c_str(), d.motion_engine == engine))
       d.motion_engine = engine;
     panel::tip(motion_description(engine));
