@@ -106,6 +106,26 @@ TEST_CASE("AudioPlayer : l'horloge audio ne recule pas quand le périphérique t
   CHECK(last == 4'000'000 + 190'000);  // 20 × 10 ms joués, moins le tampon de 10 ms
 }
 
+TEST_CASE("AudioPlayer : un délai posé avant le premier paquet, négatif ou non, laisse l'horloge courir",
+          "[audio][player]") {
+  for (const std::int64_t delay_us : {std::int64_t{-300'000}, std::int64_t{300'000}}) {
+    CAPTURE(delay_us);
+    Rig rig;
+    rig.player->handle(Command{cmd::SetAudioDelay{.delay_us = delay_us}});  // comme au début d'une lecture
+    rig.feed(encode_sine({.seconds = 1.0}));
+    CHECK(rig.clock().valid);
+    CHECK(rig.clock().media_us == delay_us);
+    rig.player->handle(Command{cmd::Play{}});
+    const std::int64_t t0 = rig.now_us();
+    rig.player->handle(rig.fake->play(0, t0 + 30'000));  // démarrage du périphérique
+    for (std::int64_t k = 1; k <= 10; ++k) rig.player->handle(rig.fake->play(480, t0 + 30'000 + k * 10'000));
+    const ClockSnapshot now = rig.clock();
+    CHECK(now.valid);
+    CHECK(now.rate == 1.0);
+    CHECK(now.media_us == delay_us + 90'000);  // 10 × 10 ms joués, moins le tampon de 10 ms
+  }
+}
+
 TEST_CASE("AudioPlayer : la file reste à sa cible, les paquets attendent leur tour", "[audio][player]") {
   Rig rig({.queue_target_us = 50'000});
   const auto clip = encode_sine({.seconds = 1.0});

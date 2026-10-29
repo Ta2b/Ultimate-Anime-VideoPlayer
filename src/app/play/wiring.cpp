@@ -79,8 +79,8 @@ bool ThreadStages::flush(std::uint32_t epoch) {
   flushed_epoch_ = epoch;
   if (audio_lost_) {  // l'audio a une nouvelle chance à cette époque, sauf si l'écran mène
     audio_lost_ = false;
-    if (speed_ == 1.0 && links_.audio != nullptr && links_.lead != nullptr && links_.lead->host_leads() &&
-        links_.audio->post(audio::SyncTo{})) {
+    if (!host_must_lead(speed_, false, audio_delay_us_) && links_.audio != nullptr &&
+        links_.lead != nullptr && links_.lead->host_leads() && links_.audio->post(audio::SyncTo{})) {
       links_.host_clock->set_rate(1.0, host_now_us());
       links_.lead->lead_with_host(false);
     }
@@ -120,7 +120,7 @@ bool ThreadStages::pause() {
 // reprend la position de l'audio, à cette vitesse, puis l'audio la suit (audio::SyncTo).
 bool ThreadStages::set_speed(double speed) {
   const std::int64_t now = host_now_us();
-  const bool host_leads = speed != 1.0 || audio_lost_;
+  const bool host_leads = host_must_lead(speed, audio_lost_, audio_delay_us_);
   if (links_.audio == nullptr || links_.lead == nullptr || links_.lead->host_leads() == host_leads) {
     links_.host_clock->set_rate(speed, now);
     speed_ = speed;
@@ -156,6 +156,13 @@ bool ThreadStages::request_subtitles(const subs::RenderRequest& request) {
 }
 
 bool ThreadStages::audio(const Command& command) {
+  if (const auto* delay = std::get_if<cmd::SetAudioDelay>(&command)) {
+    const bool before = host_must_lead(speed_, audio_lost_, audio_delay_us_);
+    audio_delay_us_ = delay->delay_us;
+    // Le délai change qui doit mener : le passage se fait comme celui d'un changement de vitesse, avant que
+    // le délai n'arrive à l'audio (il se recale alors sur l'horloge qui mène).
+    if (host_must_lead(speed_, audio_lost_, audio_delay_us_) != before) set_speed(speed_);
+  }
   return links_.audio == nullptr || links_.audio->post(Command{command});
 }
 
