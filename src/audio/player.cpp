@@ -130,6 +130,10 @@ void AudioPlayer::handle(const Command& command) {
     if (listening->tuned) mix.tuning = tuning_from_wire(listening->tuning);
     if (listening->hrir_set) mix.hrir = listening->hrir;  // absent : le modèle paramétrique
     mixer_ = Mixer(mix);
+    log_->info(
+        "écoute {}{} : égaliseur graves {:+.1f} voix {:+.1f} aigus {:+.1f} dB, nuit {:.2f}, pièce {:.2f}",
+        static_cast<int>(mix.listen), mix.faithful ? " fidèle" : "", mix.tuning.eq_bass_db,
+        mix.tuning.eq_voice_db, mix.tuning.eq_treble_db, mix.tuning.night, mix.tuning.room);
     // Les canaux voulus du décodeur ont changé : il est rouvert, ce qui était décodé est refait au prochain
     // paquet.
     if (track_ && mixer_.decoder_channels(track_->codec.channels) != before) {

@@ -355,6 +355,12 @@ bool sound_tab(PlaySettings& d, const SettingsChoices& choices) {
       ImGui::EndCombo();
     }
     if (!custom) panel::tip(std::string(shown->detail).c_str());
+    if (!custom) {
+      panel::note(listen == 0
+                      ? "Le profil s'entend surtout en surround ; en stéréo, il règle le crossfeed."
+                      : "En stéréo, le profil agit par l'égaliseur et la compression ; centre, arrière et "
+                        "basses n'existent qu'en 5.1 et 7.1.");
+    }
     if (panel::advanced()) {
       audio::MixTuning t = custom ? d.audio_custom : tuning_of(*profile, d.audio_custom, listen);
       bool moved = false;
