@@ -8,6 +8,7 @@
 #include "app/play/drba_fused_choice.h"
 #include "app/play/drba_model.h"
 #include "app/play/first_run.h"
+#include "app/play/gmfss_fused_choice.h"
 #include "app/play/gpu_telemetry.h"
 #include "app/play/host_facts.h"
 #include "app/play/motion_model.h"
@@ -72,8 +73,8 @@ std::string_view ChainEngines::motion_name() const {
 
 std::string ChainEngines::motion_label(const PlaySettings& settings) const {
   if (use_gmfss())
-    return std::format("GMFSS Fortuna{} {} · ", gmfss_variant == GmfssVariant::Union ? " Union" : "",
-                       factor_text(factor_of(settings)));
+    return std::format("GMFSS Fortuna{} {}{} · ", gmfss_variant == GmfssVariant::Union ? " Union" : "",
+                       factor_text(factor_of(settings)), gmfss_fused ? " fusionné" : "");
   if (use_drba())
     return std::format("DistilDRBA {}{} · ", factor_text(factor_of(settings)), drba_fused ? " fusionné" : "");
   if (use_apple()) return std::format("Apple {} · VideoToolbox · ", factor_text(factor_of(settings)));
@@ -102,6 +103,7 @@ UpscaleSetup ChainEngines::upscale(const PlaySettings& settings, std::shared_ptr
                       .rife_align = rife_align,
                       .gmfss_pair = gmfss.pair.get(),
                       .gmfss_fusion = gmfss.fusion.get(),
+                      .gmfss_features = gmfss.features.get(),
                       .gmfss_align = gmfss.align,
                       .distil_drba = drba.get(),
                       .drba_align = drba_align,
@@ -264,8 +266,23 @@ std::expected<std::optional<ChainEngines>, Refusal> prepare_chain_once(Player& p
                     : c.work;
   // GMFSS Fortuna à la place de RIFE, à la taille de travail ; RIFE reprend si ses graphes manquent.
   if (want_gmfss) {
+    // GMFSS fusionné (prepare/gmfss_split.h) : la paire en deux moteurs, les caractéristiques d'une image
+    // gardées pour la paire suivante, quand le backend le sait, que le réglage le veut et que le cran est
+    // Équilibre ; tout échec garde la paire entière.
+    GmfssFusedUse fused;
+    fused.declined = gmfss_fused_declined(settings, c.backend->capabilities().gmfss_fused);
+    if (settings.gmfss_fused && !fused.declined.empty())
+      log->info("GMFSS fusionné non utilisé : {}", fused.declined);
+    const bool try_fused = fused.declined.empty();
     auto loaded = prepare_gmfss(p, init, *c.backend, c.gmfss_places, c.gmfss_variant, c.work.width,
-                                c.work.height, settings.gmfss_precision);
+                                c.work.height, settings.gmfss_precision, try_fused ? &fused : nullptr);
+    if (loaded && *loaded) {
+      c.gmfss_fused = fused.used;
+      if (fused.used)
+        log->info("GMFSS fusionné : caractéristiques et flot en deux moteurs");
+      else if (try_fused)
+        log->warn("GMFSS fusionné indisponible ({}) : paire entière", fused.declined);
+    }
     if (!loaded) {
       log->warn("{} ; {}", loaded.error().detail, c.rife_model ? "RIFE à la place" : "sans interpolation");
       p.ui.controls().notify(c.rife_model ? "GMFSS indisponible : RIFE" : "GMFSS indisponible",

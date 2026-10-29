@@ -7,6 +7,7 @@
 
 #include <cstdint>
 #include <optional>
+#include <string>
 #include <string_view>
 
 #include "app/play/gpu_tier.h"
@@ -29,6 +30,10 @@ struct Machine {
   Tier tier = Tier::Normal;
   int display_height = 0;
   double display_hz = 0.0;
+  // Ce que l'exploration du benchmark a trouvé de mieux que la chaîne du niveau (bench.toml) ; 0 ou vide : la
+  // chaîne du niveau telle quelle. Ne valent que pour le préréglage Auto.
+  int explored_work_height = 0;
+  std::string explored_rife_model;
 };
 
 // Le niveau de chaîne d'un préréglage : Auto prend la tranche de la machine ; Économe, Rapide, Normal,

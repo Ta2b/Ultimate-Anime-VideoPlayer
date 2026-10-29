@@ -111,6 +111,9 @@ PlaySettings apply_preset(const PlaySettings& settings, const Machine& machine,
   if (settings.priority == Priority::Image) step = std::min(step + 1, step_of(kWorkCap[at]) + 1);
   step = std::min(step, static_cast<int>(kWorkHeights.size()) - 1);
   work = kWorkHeights[static_cast<std::size_t>(step)];
+  if (settings.preset == Preset::Auto && machine.explored_work_height > 0)
+    work = std::max(work,
+                    machine.explored_work_height);  // l'exploration a trouvé que la machine tient plus haut
   if (source.height > 0) work = std::min(work, std::max(source.height, kWorkHeights.front()));
 
   // Tranche Économe : on ne réduit ni n'agrandit, la chaîne est la source telle quelle.
@@ -144,6 +147,8 @@ PlaySettings apply_preset(const PlaySettings& settings, const Machine& machine,
     case Tier::Normal:
       out.motion_engine = MotionEngine::Rife;
       out.rife_model = "rife_v4.22_lite.onnx";
+      if (settings.preset == Preset::Auto && !machine.explored_rife_model.empty())
+        out.rife_model = machine.explored_rife_model;  // le modèle plus fin tient aussi
       break;
     case Tier::Fast:
       out.motion_engine = MotionEngine::DistilDrba;
