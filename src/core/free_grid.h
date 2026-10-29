@@ -1,4 +1,4 @@
-// Grille « libre » des instants de sortie d'une paire de sources (mode Auto libre, docs/auto-libre.md).
+// Grille « libre » des instants de sortie d'une paire de sources (mode Rapide, docs/auto-libre.md).
 //
 // Pas de facteur, pas de grille uniforme : pour chaque paire (g, d), les instants t_k de (g.pts, d.pts] sont
 // choisis à partir de l'horloge prédite et du temps de service mesuré :

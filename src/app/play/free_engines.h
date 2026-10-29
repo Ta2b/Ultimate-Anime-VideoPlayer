@@ -1,4 +1,4 @@
-// Ce que chaque moteur d'interpolation accepte du mode Auto libre (docs/auto-libre.md) : le nombre
+// Ce que chaque moteur d'interpolation accepte du mode mode Rapide (docs/auto-libre.md) : le nombre
 // d'instants qu'une paire peut recevoir, chacun à un tau arbitraire de ]0, 1[.
 //
 // - RIFE (entier, fusionné, variante mouvement) : une entrée par instant, le tau est un plan de l'entrée (ou

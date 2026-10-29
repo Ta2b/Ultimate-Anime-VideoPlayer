@@ -1,4 +1,4 @@
-// Auto libre : la grille libre (core/free_grid.h) et la régulation par contre-pression (core/free_rate.h).
+// mode Rapide : la grille libre (core/free_grid.h) et la régulation par contre-pression (core/free_rate.h).
 #include <algorithm>
 #include <cmath>
 #include <cstdint>

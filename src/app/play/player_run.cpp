@@ -399,7 +399,7 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
   // Le mode auto : son plafond suit la fréquence de l'écran.
   bool vrr_armed = !p.options.no_vrr && p.display && p.display->vrr.value_or(false) &&
                    p.display->vrr_armed.value_or(false);
-  std::string free_note;  // pourquoi Auto libre ne tourne pas alors qu'il est choisi (vide : il tourne ou
+  std::string free_note;  // pourquoi le mode Rapide ne tourne pas alors qu'il est choisi (vide : il tourne ou
                           // n'est pas voulu)
   const auto apply_auto = [&] {
     const bool on = chain.running.rife_auto && chain.rife_loaded && chain.running.rife_factor >= 2;
@@ -407,7 +407,7 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
     // rafraîchissement. À fréquence fixe, des paliers entiers (les autres feraient vibrer).
     const int granularity = vrr_armed ? core::kFineGranularity : 1;
     const double limit_hz = core::auto_limit_hz(display_refresh_hz(out.window()), chain.running.auto_cap);
-    // Auto libre (core/free_grid.h) : écran VRR armé, RIFE, fréquence de l'écran connue ; sinon Auto.
+    // mode Rapide (core/free_grid.h) : écran VRR armé, RIFE, fréquence de l'écran connue ; sinon Auto.
     std::string why;
     if (on && chain.running.auto_free) {
       if (free_instants_limit(chain.running.motion_engine) == 0)
@@ -419,8 +419,8 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
     if (why != free_note) {
       free_note = why;
       if (!why.empty()) {
-        log->warn("Auto libre indisponible ({}) : retour à Auto (recommandé)", why);
-        p.ui.controls().notify("Auto libre indisponible : " + why, host_now_us());
+        log->warn("Mode Rapide indisponible ({}) : retour au mode Stable", why);
+        p.ui.controls().notify("Mode Rapide indisponible : " + why, host_now_us());
       }
     }
     chain.live.set_auto(on && !free, core::auto_ceiling(limit_hz, fps_of(video.frame_rate), granularity),
@@ -473,7 +473,7 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
     const bool free = chain.live.free_active();
     const int centi = chain.running.rife_auto && !free && now.den >= 1 ? now.num * 100 / now.den : 0;
     const std::int64_t at = host_now_us();
-    if (free && at - free_logged_us >= 5'000'000) {  // Auto libre : une ligne de journal toutes les 5 s
+    if (free && at - free_logged_us >= 5'000'000) {  // mode Rapide : une ligne de journal toutes les 5 s
       free_logged_us = at;
       log->info("{}", free_status_text(chain.live.free_info(at)));
     }
@@ -537,12 +537,11 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
             std::max(shown.missing - free_missing_seen, shown.dropped - free_dropped_seen);
         chain.live.free_missed(host_now_us(), lost);
         if (chain.live.free_should_fall_back(host_now_us())) {
-          log->warn("Auto libre : trop d'images perdues ({}) : retour à Auto (recommandé)",
+          log->warn("Mode Rapide : trop d'images perdues ({}) : retour au mode Stable",
                     free_status_text(chain.live.free_info(host_now_us())));
           chain.running.auto_free = false;
           p.ui.set_running(chain.running);
-          p.ui.controls().notify("Auto libre : trop d'images perdues, retour à Auto (recommandé)",
-                                 host_now_us());
+          p.ui.controls().notify("Mode Rapide : trop d'images perdues, retour au mode Stable", host_now_us());
           apply_auto();
         }
       }

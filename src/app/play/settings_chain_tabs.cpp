@@ -195,10 +195,9 @@ void fluidity_tab(PlaySettings& d, const SettingsChoices& choices, bool exportin
                1.01 * choices.display_hz;
   };
   const Factor now = factor_of(d);
-  const std::string factor_shown =
-      d.rife_auto && now.num > now.den ? std::string("Auto (recommandé)") : factor_label(now);
+  const std::string factor_shown = d.rife_auto && now.num > now.den ? std::string("Auto") : factor_label(now);
   if (ImGui::BeginCombo("Multiplicateur", factor_shown.c_str())) {
-    if (!exporting && ImGui::Selectable("Auto (recommandé)", d.rife_auto && now.num > now.den)) {
+    if (!exporting && ImGui::Selectable("Auto", d.rife_auto && now.num > now.den)) {
       d.rife_auto = true;
       if (now.num <= now.den) d.rife_factor = 8;  // le plafond du mode auto
       d.rife_factor_den = 1;
@@ -232,39 +231,29 @@ void fluidity_tab(PlaySettings& d, const SettingsChoices& choices, bool exportin
         "i/s pour ménager le GPU. Il baisse toujours de lui-même quand une scène est lourde.");
   }
   if (d.rife_auto && now.num > now.den && !exporting) {
-    // Auto libre : sur un écran VRR armé, chaque image part dès qu'elle est prête ; sans VRR, les instants
+    // Mode Rapide : sur un écran VRR armé, chaque image part dès qu'elle est prête ; sans VRR, les instants
     // sont calés sur les vsyncs de l'écran (comme un jeu en vsync). Dans les deux cas la lecture repasse sur
-    // Auto si trop d'images sont perdues.
+    // Stable si trop d'images sont perdues.
     const bool vrr_armed = choices.display_vrr && choices.display_vrr_armed;
-    const char* const shown = d.auto_free ? "Auto libre (expérimental)" : "Auto (recommandé)";
+    const char* const shown = d.auto_free ? "Rapide (expérimental)" : "Stable";
     if (ImGui::BeginCombo("Mode d'Auto", shown)) {
-      if (ImGui::Selectable("Auto (recommandé)", !d.auto_free)) d.auto_free = false;
-      if (ImGui::Selectable("Auto libre (expérimental)", d.auto_free)) d.auto_free = true;
-      panel::tip(vrr_armed
-                     ? "Aucun palier : chaque image est calculée à l'instant exact où elle sera vue."
-                     : "Sans VRR, la cadence est calée sur le rafraîchissement de l'écran : chaque image "
-                       "est calculée pour un vsync exact, et une image trop tardive laisse la précédente "
-                       "un vsync de plus (comme un jeu en vsync).");
+      if (ImGui::Selectable("Stable", !d.auto_free)) d.auto_free = false;
+      if (ImGui::Selectable("Rapide (expérimental)", d.auto_free)) d.auto_free = true;
+      panel::tip(vrr_armed ? "Aucun palier : chaque image est calculée à l'instant exact où elle sera vue."
+                           : "Sans VRR, la cadence est calée sur le rafraîchissement de l'écran : une image "
+                             "trop tardive laisse la précédente un vsync de plus.");
       ImGui::EndCombo();
     }
     panel::tip(
-        "Auto (recommandé) : paliers de multiplicateur qui suivent ce que le GPU tient. Auto libre "
-        "(expérimental) : aucun palier ni multiplicateur, comme un moteur de jeu. Le lecteur calcule chaque "
-        "image à l'instant exact de la vidéo où elle sera affichée, dès que le GPU est libre, sans dépasser "
-        "l'écran ni le plafond : le débit est ce que le GPU tient, la vitesse de la vidéo reste constante. "
-        "Sur un écran VRR armé, l'image part quand elle est prête ; sans VRR, la cadence est calée sur le "
-        "rafraîchissement de l'écran (un vsync par image au mieux). Si trop d'images sont perdues (3 % sur "
-        "3 s), la lecture repasse sur Auto avec un message.");
+        "Stable : paliers de multiplicateur qui suivent ce que le GPU tient (de ×1 à ×6), avec 15 % de marge "
+        "; "
+        "le palier baisse en moins d'une seconde quand une scène est lourde et remonte dès qu'elle s'allège. "
+        "Rapide (expérimental) : aucun palier, chaque image est calculée à l'instant exact où elle sera "
+        "affichée, dès que le GPU est libre, sans dépasser l'écran ni le plafond ; la vitesse de la vidéo "
+        "reste constante. Si trop d'images sont perdues (3 % sur 3 s), la lecture repasse sur Stable avec un "
+        "message. Lecture seulement : l'export garde un multiplicateur fixe.");
   }
   if (d.rife_auto && now.num > now.den) {
-    panel::tip(
-        "Auto (recommandé) pousse la fluidité au maximum que l'écran permet et que le GPU tient (de ×1 à ×6) "
-        ": "
-        "il mesure le coût de chaque paire, prédit le palier tenable avec 15 % de marge, descend en moins "
-        "d'une seconde quand une scène est lourde et remonte dès qu'elle s'allège. Sur un écran VRR armé, "
-        "la cadence est continue (au fps près, par petits pas lissés) ; sinon par paliers entiers. "
-        "Il retient le dernier palier tenu par vidéo. Lecture seulement ; "
-        "l'export garde un multiplicateur fixe.");
     if (!choices.display_vrr) {
       note("Sans VRR, le mouvement peut vibrer à fréquence fixe.");
       panel::tip(

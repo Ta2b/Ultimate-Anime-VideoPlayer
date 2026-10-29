@@ -281,7 +281,7 @@ class UpscaleStage final : public RingStage {
   std::uint32_t intermediates_ = 0;  // celles qui sont interpolées
   bool uninterpolated_ = false;      // la paire courante, laissée sans interpolation à dessein
   std::optional<core::CadenceAccumulator> cadence_;
-  core::FreeGrid free_grid_;  // Auto libre : la grille des instants à la place de cadence_
+  core::FreeGrid free_grid_;  // mode Rapide : la grille des instants à la place de cadence_
   core::FreeInputs free_inputs(std::uint32_t epoch) const;
   MotionEngine engine_kind() const {
     return gmfss() ? MotionEngine::Gmfss : drba() ? MotionEngine::DistilDrba : MotionEngine::Rife;

@@ -112,7 +112,7 @@ struct PlayOptions {
   // --one-lane : une seule file de calcul (UpscaleSetup::one_lane), pour profiler le coût propre
   // de chaque moteur.
   bool one_lane = false;
-  // --no-vrr : traite l'écran comme à fréquence fixe même si le VRR est armé (essai de l'Auto libre sur les
+  // --no-vrr : traite l'écran comme à fréquence fixe même si le VRR est armé (essai de le mode Rapide sur les
   // vsyncs).
   bool no_vrr = false;
   // --no-resume : ni reprise à la position retenue, ni mémoire de la position (resume.h).

@@ -391,7 +391,8 @@ SettingsPanel::~SettingsPanel() {
 SettingsPanel::Result SettingsPanel::draw(const PlaySettings& running, const SettingsChoices& choices,
                                           float scale, std::vector<Input>& actions) {
   Result result;
-  if (!prompt_done_ && choices.offer_default_player && !running.default_player_dismissed &&
+  // Le panneau ouvert passe d'abord : la petite fenêtre masquerait ses réglages et en prendrait la molette.
+  if (!open_ && !prompt_done_ && choices.offer_default_player && !running.default_player_dismissed &&
       default_player_prompt(choices.place, prompt_note_, prompt_dismissed_, scale)) {
     prompt_done_ = true;
     if (prompt_dismissed_) {
