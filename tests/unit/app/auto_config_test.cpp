@@ -66,8 +66,9 @@ TEST_CASE("la priorité décale d'un cran", "[auto_config]") {
         balance);
   CHECK(applied(Preset::Auto, Tier::Ultra, 2160, 165.0, k1080p24, Priority::Image).gmfss_precision ==
         PrecisionTier::Quality);
-  CHECK(applied(Preset::Auto, Tier::Ultra, 2160, 165.0).gmfss_precision == PrecisionTier::Balanced);
-  // L'automatique ne choisit jamais le FP8 : il se demande.
+  // GMFSS est le seul réseau dont le FP8 passe les gardes (−15 % sur la paire, PSNR 47 dB au pire cas) : par
+  // défaut, sans graphe ou sans moteur FP8 la lecture reste en FP16. SPAN et RIFE ne le choisissent jamais.
+  CHECK(applied(Preset::Auto, Tier::Ultra, 2160, 165.0).gmfss_precision == PrecisionTier::Performance);
   CHECK(applied(Preset::Auto, Tier::Normal, 1440, 144.0).span_precision == PrecisionTier::Balanced);
 }
 

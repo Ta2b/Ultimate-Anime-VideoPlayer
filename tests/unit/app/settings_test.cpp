@@ -106,7 +106,7 @@ TEST_CASE("Mode HDR : moteur RTX HDR, HDR adaptatif ou SDR, et les fichiers d'av
 TEST_CASE("Warp et SPAN : Auto passe après SPAN au-dessus de 1080p ; les fichiers d'avant",
           "[app][settings]") {
   CHECK(PlaySettings{}.span_order == SpanOrder::Auto);
-  CHECK(PlaySettings{}.gmfss_precision == PrecisionTier::Balanced);  // l'ancien Performance, FP16
+  CHECK(PlaySettings{}.gmfss_precision == PrecisionTier::Performance);  // la paire FP8, mesurée −15 %
   CHECK(PlaySettings{}.span_precision == PrecisionTier::Balanced);
   CHECK(PlaySettings{}.motion_precision == PrecisionTier::Balanced);
   CHECK_FALSE(warp_after_span(SpanOrder::Auto, 1080));
@@ -346,6 +346,7 @@ TEST_CASE("GMFSS : changer de cran de précision recharge la chaîne, seulement 
   PlaySettings running;
   running.rife_factor = 2;
   running.motion_engine = MotionEngine::Gmfss;
+  running.gmfss_precision = PrecisionTier::Balanced;
   PlaySettings wanted = running;
   wanted.gmfss_precision = PrecisionTier::Quality;
   const Change change = change_between(running, wanted, true);

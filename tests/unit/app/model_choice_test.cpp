@@ -318,4 +318,48 @@ TEST_CASE("Modèle SPAN : le menu n'a que le catalogue HD V3.1, un modèle héri
   CHECK(choose_model(PlayOptions{}, fake.home, settings)->path.filename().string() == kSpanCatalogue[0]);
 }
 
+TEST_CASE("Crans de précision de RIFE et DistilDRBA : le graphe à côté du modèle, repli sur l'original",
+          "[app][model_choice][fp8]") {
+  const FakeHome fake("siblings");
+  // Les noms attendus : RIFE 4.25, 4.22 lite, DistilDRBA v2 lite plein flot et _s05.
+  for (const std::string_view stem :
+       {"rife_v4.25", "rife_v4.22_lite", "distil_drba_v2_lite", "distil_drba_v2_lite_s05"}) {
+    const std::filesystem::path model = fake.rife / std::format("{}.onnx", stem);
+    std::ofstream(model) << "x";
+    // Équilibre : le modèle ; un cran sans graphe : le modèle aussi, et le cran n'est pas offert.
+    CHECK(tier_variant(model, PrecisionTier::Balanced) == model);
+    CHECK(tier_variant(model, PrecisionTier::Performance) == model);
+    CHECK(tier_variant(model, PrecisionTier::Quality) == model);
+    CHECK(sibling_tiers(model, true) == TierSupport{});
+    // Le graphe FP8 présent : offert sur un moteur qui calcule le FP8, et seulement sur lui.
+    const std::filesystem::path fp8 = fake.rife / std::format("{}_fp8.onnx", stem);
+    std::ofstream(fp8) << "x";
+    CHECK(tier_variant(model, PrecisionTier::Performance) == fp8);
+    CHECK(sibling_tiers(model, true) == TierSupport{.performance = true, .quality = false});
+    CHECK(sibling_tiers(model, false) == TierSupport{});
+    CHECK(TierSupport{.performance = true}.effective(PrecisionTier::Performance) ==
+          PrecisionTier::Performance);
+    CHECK(sibling_tiers(model, false).effective(PrecisionTier::Performance) == PrecisionTier::Balanced);
+    // Le FP32 est indépendant du FP8.
+    std::ofstream(fake.rife / std::format("{}_fp32.onnx", stem)) << "x";
+    CHECK(sibling_tiers(model, false) == TierSupport{.performance = false, .quality = true});
+    CHECK(sibling_tiers(model, true) == TierSupport{.performance = true, .quality = true});
+  }
+}
+
+TEST_CASE("GMFSS : le FP8 est la paire seule, la fusion reste celle du cran Équilibre",
+          "[app][model_choice][fp8]") {
+  for (const GmfssVariant variant : {GmfssVariant::Base, GmfssVariant::Union}) {
+    const GmfssFiles fp8 = gmfss_files(variant, true, PrecisionTier::Performance);
+    const GmfssFiles fp16 = gmfss_files(variant, true, PrecisionTier::Balanced);
+    CHECK(fp8.pair != fp16.pair);
+    CHECK(fp8.pair.contains("s05fp8_pair"));
+    CHECK(fp8.fusion == fp16.fusion);
+  }
+  CHECK(kGmfssHalfFp8PairFile == "gmfss_fortuna_base_s05fp8_pair.onnx");
+  CHECK(kGmfssUnionHalfFp8PairFile == "gmfss_fortuna_union_s05fp8_pair.onnx");
+  // Le flot entier n'a pas de FP8 : sans demi-flot, le cran est sans effet sur les fichiers.
+  CHECK(gmfss_files(GmfssVariant::Base, false, PrecisionTier::Performance).pair == kGmfssPairFile);
+}
+
 }  // namespace ajp::app::play

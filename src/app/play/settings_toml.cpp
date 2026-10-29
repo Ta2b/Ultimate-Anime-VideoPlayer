@@ -186,7 +186,10 @@ std::expected<PlaySettings, Refusal> parse_settings(std::string_view toml_text) 
     // gmfss_quality (faux : l'ancien Performance, devenu Équilibre ; vrai : Qualité), puis les crans.
     bool legacy_quality = false;
     reads.push_back(read(*interpolation, "interpolation", "gmfss_quality", legacy_quality));
-    if (legacy_quality) s.gmfss_precision = PrecisionTier::Quality;
+    if (legacy_quality)
+      s.gmfss_precision = PrecisionTier::Quality;
+    else if (interpolation->contains("gmfss_quality"))
+      s.gmfss_precision = PrecisionTier::Balanced;  // faux : l'ancien Performance, FP16
     reads.push_back(read_precision(*interpolation, "interpolation", "gmfss_precision", s.gmfss_precision));
     reads.push_back(read_precision(*interpolation, "interpolation", "motion_precision", s.motion_precision));
     reads.push_back(read(*interpolation, "interpolation", "auto", s.rife_auto));

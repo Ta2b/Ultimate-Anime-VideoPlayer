@@ -311,12 +311,15 @@ void fluidity_tab(PlaySettings& d, const SettingsChoices& choices, bool exportin
     if (d.motion_engine == MotionEngine::Rife) {
       precision_combo("Précision de RIFE", d.motion_precision, choices.rife_tiers);
       panel::tip(
-          "Performance : le graphe « _fp8 » à côté du modèle (RTX 40 et après), le plus rapide, avec une "
-          "perte "
-          "à juger à l'œil. Équilibre : FP16 à îlots FP32, le modèle tel que livré. Qualité : le graphe "
-          "« _fp32 ». Un cran sans graphe est grisé ; la lecture reprend en FP16 s'il est refusé. Recharge "
-          "la "
-          "lecture.");
+          "Performance : le graphe « _fp8 » à côté du modèle (RTX 40 et après). Mesuré sur une 4070 Ti, il "
+          "ne "
+          "tient pas ses promesses : le RIFE entier en FP8 est 5 % plus rapide (4.25) ou 27 % plus lent "
+          "(4.22 lite) que le FP16, avec 28 à 30 dB au pire cas, et il coupe RIFE fusionné, 3 fois plus "
+          "rapide "
+          "au cran Équilibre : aucun graphe FP8 de RIFE n'est livré (docs/fp8-interpolation.md). Équilibre : "
+          "FP16 à îlots FP32, le modèle tel que livré. Qualité : le graphe « _fp32 ». Un cran sans graphe "
+          "est "
+          "grisé ; la lecture reprend en FP16 s'il est refusé. Recharge la lecture.");
     }
     for (const RifeEntry& entry : rife_menu(choices.rife_models)) {
       if (!entry.present) missing += std::format("{}{}", missing.empty() ? "" : ", ", entry.file);
@@ -331,14 +334,15 @@ void fluidity_tab(PlaySettings& d, const SettingsChoices& choices, bool exportin
     const TierSupport& tiers = union_model ? choices.gmfss_union_tiers : choices.gmfss_tiers;
     precision_combo("GMFSS", d.gmfss_precision, tiers);
     panel::tip(
-        "Précision de GMFlow, le flot de GMFSS. Performance : FP8, le plus rapide sur RTX 40 et après, avec "
-        "une perte de précision du flot à juger à l'œil. Équilibre : FP16 (base 24 ms et union 23 ms par "
+        "Précision de GMFSS. Performance : la paire en FP8 hors du squelette de GMFlow (15 convolutions sur "
+        "37), par défaut : −15 % sur la paire, 47 dB au pire cas, RTX 40 et après ; sans le graphe, FP16. "
+        "Équilibre : FP16 (base 24 ms et union 23 ms par "
         "image intermédiaire à 720p sur une 4070 Ti). Qualité : FP32, un écart à l'original divisé par 4 "
         "environ, pour +7 ms avec base et +10 ms avec union. Recharge la lecture.");
     if (!tiers.performance) {
       note(
           std::format("Performance (FP8) grisé : {} manque dans {}, ou ce moteur ne calcule pas le FP8 "
-                      "(export_gmfss.py --scale 0.5, puis quantification FP8).",
+                      "(tools/fp8/build_interp_fp8.sh).",
                       gmfss_files(union_model ? GmfssVariant::Union : GmfssVariant::Base, true,
                                   PrecisionTier::Performance)
                           .pair,
@@ -369,7 +373,12 @@ void fluidity_tab(PlaySettings& d, const SettingsChoices& choices, bool exportin
     precision_combo("Précision de DistilDRBA", d.motion_precision, choices.drba_tiers);
     panel::tip(
         "Performance : le graphe « distil_drba_v2_lite_fp8.onnx » à côté de l'original (RTX 40 et après). "
-        "Qualité : « _fp32 ». Équilibre : FP16, le réseau tel que livré. Recharge la lecture.");
+        "Mesuré sur une 4070 Ti : 11 % plus rapide que le DistilDRBA entier en FP16, qualité tenue (49 dB au "
+        "pire cas), mais il coupe DistilDRBA fusionné, 2 fois plus rapide au cran Équilibre : à garder pour "
+        "un "
+        "poste sans le fusionné (docs/fp8-interpolation.md). Qualité : « _fp32 ». Équilibre : FP16, le "
+        "réseau "
+        "tel que livré. Recharge la lecture.");
     if (!choices.distil_drba_available) {
       note(
           std::format("Graphe introuvable : {}, à exporter dans {} (tools/drba/export_distil_drba.py) ; RIFE "
