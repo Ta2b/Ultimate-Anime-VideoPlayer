@@ -339,7 +339,115 @@ Tableau : texte français d'avant → anglais (par défaut) / français d'après
 | Stéréo élargie avec les voix devant, présence des dialogues, graves renforcés par harmoniques, sonie ramenée à -20 LUFS, compresseur doux et limiteur. | Wider stereo, voices forward, dialogue presence, bass boost, -20 LUFS loudness, soft compressor and limiter. |
 | Plus large, voix en avant (+3 dB), graves plus présents, compresseur plus ferme, sonie à -18 LUFS. | Wider, voices +3 dB, more bass, firmer compressor, -18 LUFS loudness. |
 
+## Étape B4 : Export, Moteurs, Application (lecteur par défaut, mises à jour, langue), Configuration (benchmark)
+
+| Avant (français) | Après (anglais) | Après (français) |
+|---|---|---|
+| Sortie de la chaîne · {}x{} | Playback output · {}x{} | Sortie de la lecture · {}x{} |
+| Choisissez le fichier exporté. | Choose the output file. | Choisissez le fichier exporté. |
+| FFV1 ne va pas dans un MOV : choisissez .mkv ou .mp4. | FFV1 does not fit in a MOV: use .mkv or .mp4. | FFV1 ne va pas dans un MOV : choisissez .mkv ou .mp4. |
+| Ce dossier n'existe pas. | This folder does not exist. | Ce dossier n'existe pas. |
+| Ce fichier est la vidéo lue. | This file is the video being played. | Ce fichier est la vidéo lue. |
+| Résolution | Resolution | Résolution |
+| Taille | Size | Taille |
+| Agrandissement | Upscaling | Agrandissement |
+| Reprendre les réglages de la lecture | Use the playback settings | Reprendre les réglages de la lecture |
+| Encodage | Encoding | Encodage |
+| Qualité | Quality | Qualité |
+| Cadence fixe | Constant frame rate | Cadence fixe |
+| Fichier | File | Fichier |
+| Nom proposé | Suggested name | Nom proposé |
+| Exporter | Export | Exporter |
+| Moteur en service | Active engine | Moteur actif |
+| Utiliser ce moteur | Use this engine | Utiliser ce moteur |
+| Annuler##moteur | Cancel##moteur | Annuler##moteur |
+| Moteurs installés | Installed engines | Moteurs installés |
+| Installer d'autres moteurs… | Install more engines… | Installer d'autres moteurs… |
+| Moteurs construits | Built engines | Moteurs construits |
+| Aucun moteur construit. | No engine built yet. | Aucun moteur construit. |
+| · chargé | · loaded | · chargé |
+| · en cache | · cached | · en cache |
+| Dossier d'installation | Install folder | Dossier d'installation |
+| Par défaut | Default | Par défaut |
+| Dossier par défaut | Default folder | Dossier par défaut |
+| Par défaut##moteurs | Default##moteurs | Par défaut##moteurs |
+| Lecteur par défaut | Default player | Lecteur par défaut |
+| AJP est déjà le lecteur par défaut des vidéos. | AJP is already the default video player. | AJP est déjà le lecteur par défaut des vidéos. |
+| Ne plus me le demander | Don't ask again | Ne plus me le demander |
+| Faire de ce lecteur le lecteur par défaut | Make this the default player | Faire de ce lecteur le lecteur par défaut |
+| Ajouter à « Ouvrir avec » | Add to "Open with" | Ajouter à « Ouvrir avec » |
+| Retirer de « Ouvrir avec » | Remove from "Open with" | Retirer de « Ouvrir avec » |
+| En cours… | Working… | En cours… |
+| Définir AJP comme lecteur par défaut | Set AJP as default player | Définir AJP comme lecteur par défaut |
+| Fermer | Close | Fermer |
+| Plus tard | Later | Plus tard |
+| Réglage modifiable plus tard : Général > Application. | You can change this later in General > Application. | Réglage modifiable plus tard : Général > Application. |
+| Mises à jour | Updates | Mises à jour |
+| Me prévenir | Notify me | Me prévenir |
+| Une notification ; vous lancez la mise à jour vous-même. | A notification; you start the update yourself. | Une notification ; vous lancez la mise à jour vous-même. |
+| Automatique | Automatic | Automatique |
+| Téléchargée, vérifiée, installée au prochain lancement. | Downloaded, verified, installed at next launch. | Téléchargée, vérifiée, installée au prochain lancement. |
+| Jamais | Never | Jamais |
+| Aucune vérification. | No checks. | Aucune vérification. |
+| Canal et fréquence | Channel and frequency | Canal et fréquence |
+| Canal | Channel | Canal |
+| Préversions | Previews | Préversions |
+| À chaque lancement | At every launch | À chaque lancement |
+| Chaque semaine | Weekly | Chaque semaine |
+| Chaque jour | Daily | Chaque jour |
+| Fréquence | Frequency | Fréquence |
+| Version installée : {} | Installed version: {} | Version installée : {} |
+| Disponible : {}{} | Available: {}{} | Disponible : {}{} |
+|  (préparée) |  (ready) |  (préparée) |
+| Dernière vérification : {} | Last check: {} | Dernière vérification : {} |
+| Vérifier maintenant | Check now | Vérifier maintenant |
+| Revenir à la version précédente | Roll back to the previous version | Revenir à la version précédente |
+|  : relancez le lecteur | : restart the player |  : relancez le lecteur |
+| Grisé : aucune mise à jour n'a encore été installée. | Greyed out: no update has been installed yet. | Grisé : aucune mise à jour n'a encore été installée. |
+| Dernière erreur :  | Last error:  | Dernière erreur :  |
+| Mode Performance de SPAN (FP8) | SPAN Performance mode (FP8) | Mode Performance de SPAN (FP8) |
+| Refaire la préparation sur cette vidéo | Prepare again for this video | Refaire la préparation pour cette vidéo |
+| Annuler##span_prepare | Cancel##span_prepare | Annuler##span_prepare |
+| préparation du mode Performance de SPAN (FP8) | SPAN Performance mode (FP8) preparation | préparation du mode Performance de SPAN (FP8) |
+| Optimiser pour ma machine | Optimize for this machine | Optimiser pour ma machine |
+| Optimisation annulée : rien n'a changé. | Optimization cancelled: nothing changed. | Optimisation annulée : rien n'a changé. |
+| Annuler##bench | Cancel##bench | Annuler##bench |
+| Annuler ces réglages | Undo these settings | Annuler ces réglages |
+| Réglages d'avant rétablis. | Previous settings restored. | Réglages d'avant rétablis. |
+
+### Infobulles et notes raccourcies
+
+| Avant (français) | Après (anglais) |
+|---|---|
+| HEVC 10 bits : lu presque partout, encodé par le GPU (NVENC, AMF, Quick Sync, VideoToolbox, VA-API). | HEVC 10-bit: plays almost everywhere, encoded by the GPU. |
+| AV1 10 bits : plus compact à qualité égale ; il faut un encodeur AV1 dans le GPU (RTX 40 et 50, Radeon RX 7000 et 9000, Intel Arc et Core Ultra). | AV1 10-bit: smaller at equal quality; needs a GPU AV1 encoder (RTX 40/50, Radeon RX 7000/9000, Intel Arc). |
+| H.264 8 bits : pour les lecteurs anciens ; les dégradés y sont moins fins. | H.264 8-bit: for older players; gradients are coarser. |
+| FFV1 sans perte du codec, en YUV 4:2:0 10 bits (la couleur est réduite avant l'encodage), encodé par le processeur : des fichiers très lourds, pour retravailler la vidéo. | FFV1 lossless, 4:2:0 10-bit, encoded by the CPU: very large files, for editing. |
+| Le fichier exporté est un MKV, un MP4 ou un MOV : son nom finit par .mkv, .mp4 ou .mov. | The output is an MKV, MP4 or MOV: its name ends in .mkv, .mp4 or .mov. |
+| Ouvrez une vidéo : l'export reprend sa chaîne et se propose à côté d'elle. | Open a video: the export uses its settings and is named next to it. |
+| Au-dessus de la sortie de la chaîne, libplacebo agrandit encore l'image (EWA Lanczos) : un fichier plus lourd, pas plus de détail. | Above the playback output, libplacebo scales further (EWA Lanczos): a bigger file, no more detail. |
+| Sous la sortie de la chaîne, libplacebo la réduit avec son meilleur filtre (EWA Lanczos). | Below the playback output, libplacebo scales down with its best filter (EWA Lanczos). |
+| Mêmes moteurs et mêmes réglages qu'à la lecture, sans aucune image sautée : au moins la qualité du direct. Ni RTX HDR, ni HDR adaptatif, ni grade : l'image de la chaîne telle quelle. | Same engines and settings as playback, with no skipped frame. No RTX HDR, adaptive HDR or grading: the chain's picture as is. |
+| Très haute vise une image identique à l'œil à la lecture ; Haute et Standard donnent des fichiers plus légers. | Very high aims for a picture identical to playback; High and Standard make smaller files. |
+| Aux coupes de scène et sur les dessins tenus, la chaîne n'interpole pas : l'image précédente est répétée à ces instants, et le fichier garde une cadence fixe que tout logiciel de montage lit. | At scene cuts and held drawings the previous frame repeats, so the file keeps a constant frame rate any editor reads. |
+| Les instants que la chaîne n'interpole pas (coupes de scène, dessins tenus) manquent : le fichier est à cadence variable, un peu plus léger, lu sans souci par les lecteurs. | Frames the chain does not interpolate are left out: variable frame rate, a bit smaller, fine in players. |
+| Ce fichier existe : il ne sera remplacé qu'à la fin d'un export réussi. | This file exists: it is replaced only when the export succeeds. |
+| L'audio, les sous-titres, les polices et les chapitres de la source sont copiés tels quels. La lecture s'arrête pendant l'export puis reprend au même endroit ; Échap annule l'export. | Audio, subtitles, fonts and chapters are copied as is. Playback stops during the export; Esc cancels. |
+| À cette fréquence, le MKV arrondit chaque image à la milliseconde (8, 8 puis 9 ms à 120 i/s) : un nom en .mp4 ou .mov garde les instants exacts, sans les sous-titres (ASS, SRT, PGS) ni les polices. | At this frame rate MKV rounds frames to the millisecond; .mp4 or .mov keeps exact times but drops subtitles and fonts. |
+| Le MP4 et le MOV gardent les instants exacts de chaque image. Les chapitres de la source sont copiés, l'audio s'il y va (AAC, AC-3, E-AC-3 ; FLAC, Opus et DTS en MP4 ; jamais TrueHD), mais ni les sous-titres (ASS, SRT, PGS) ni les polices. Pour tout garder, nommez le fichier en .mkv. La lecture s'arrête pendant l'export puis reprend au même endroit ; Échap annule l'export. | MP4 and MOV keep exact frame times, chapters and compatible audio, but no subtitles or fonts. Use .mkv to keep everything. Esc cancels. |
+| Un seul moteur installé : « Installer d'autres moteurs » propose ceux qui conviennent à ce GPU. | Only one engine is installed: "Install more engines" lists those that suit this GPU. |
+| Rouvre l'écran des moteurs sans relancer le lecteur ; la lecture reprend ensuite au même endroit. | Reopens the engines screen; playback resumes at the same spot. |
+| Un moteur est construit une fois par modèle et par taille, puis relu du cache. | An engine is built once per model and size, then read from the cache. |
+| Par défaut : {}. Libre à cet endroit : {}. Vaut au prochain lancement ; les moteurs déjà installés ne sont pas déplacés. | Default: {}. Free here: {}. Applies at next launch; installed engines are not moved. |
+| Les vidéos (mkv, mp4, webm, avi, mov…) s'ouvrent dans AJP depuis le gestionnaire de fichiers. | Videos (mkv, mp4, webm, avi, mov…) open in AJP from the file manager. |
+| Le lecteur ne propose plus de devenir le lecteur par défaut au lancement. | The player no longer offers to become the default at launch. |
+| Ouvrir vos vidéos (mkv, mp4, webm…) directement dans AJP depuis le gestionnaire de fichiers ? | Open your videos (mkv, mp4, webm…) directly in AJP from the file manager? |
+| Ce paquet n'a pas de clé de signature : les mises à jour ne peuvent pas être vérifiées. | This package has no signing key: updates cannot be verified. |
+| Quand le cran « Performance » de la précision de SPAN est choisi, le lecteur prépare tout seul ce mode pour la vidéo ouverte (une minute environ, la lecture reste en FP16 pendant ce temps). Cette page sert à le refaire à la main. | With SPAN's Performance precision, the player prepares this mode by itself for the open video (about a minute, FP16 meanwhile). Redo it by hand here. |
+| Le lecteur essaie quelques secondes de vidéo avec ses réglages recommandés, du plus léger au plus lourd, garde ceux que votre PC tient sans saccade, et les applique. Cela dure environ une minute (plusieurs minutes la toute première fois, le temps de préparer les moteurs). | The player tries a few seconds of video with its recommended settings, lightest to heaviest, keeps what your PC holds without stutter and applies it. About a minute (several the first time). |
+| To apply: playback reopens at the same spot with {}; its engines are built the first time for each model and size. | To apply: playback reopens at the same spot with {}; its engines are built the first time for each model and size. |
+
 ## À venir
 
-B4 : Export, Moteurs, Application, Configuration (benchmark). C : assistant, écran des moteurs,
+C : assistant, écran des moteurs,
 lecteur par défaut, mises à jour, messages d'erreur visibles.
