@@ -145,10 +145,11 @@ bool sound_tab(PlaySettings& d, const SettingsChoices& choices) {
       slider(i18n::tr("Bass level (LFE)"), t.lfe_gain, 0.0F, 0.6F, "%.2f");
       slider(i18n::tr("Speaker distance"), t.distance, 0.0F, 1.0F, "%.2f");
       slider(i18n::tr("Room (reverb)"), t.room, 0.0F, 1.0F, "%.2f");
-      slider(i18n::tr("Equalizer: bass (dB)"), t.eq_bass_db, -8.0F, 8.0F, "%.1f");
-      slider(i18n::tr("Equalizer: voices (dB)"), t.eq_voice_db, -8.0F, 8.0F, "%.1f");
-      slider(i18n::tr("Equalizer: treble (dB)"), t.eq_treble_db, -8.0F, 8.0F, "%.1f");
+      slider(i18n::tr("Equalizer: bass (dB)"), t.eq_bass_db, -12.0F, 12.0F, "%.1f");
+      slider(i18n::tr("Equalizer: voices (dB)"), t.eq_voice_db, -12.0F, 12.0F, "%.1f");
+      slider(i18n::tr("Equalizer: treble (dB)"), t.eq_treble_db, -12.0F, 12.0F, "%.1f");
       slider(i18n::tr("Night compression"), t.night, 0.0F, 1.0F, "%.2f");
+      if (listen == 0) slider(i18n::tr("Virtual speakers"), t.virtual_speakers, 0.0F, 1.0F, "%.2f");
       if (moved) {
         d.audio_custom = audio::clamped(t);
         *profile = "custom";

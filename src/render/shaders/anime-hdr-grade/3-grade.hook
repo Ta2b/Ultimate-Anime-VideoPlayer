@@ -246,6 +246,39 @@ vec4 hook() {
         c = mix(c, vivid, room / pow(1.0 + pow(room, 4.0), 0.25));
     }
 
+    // Fin du grade : contraste (courbe de puissance en luminance autour du pivot, teinte et rapports de canaux
+    // gardes) puis saturation (ecart a la luminance, attenue vers le pic pour que les hautes lumieres restent
+    // lumineuses plutot que de virer a la couleur pure). Les deux a identite exacte quand punch = 0 et chroma = 1.
+    if (punch != 0.0 || chroma != 1.0) {
+        float yt = dot(c, target_luma());
+        if (yt > 1e-4) {
+            if (punch != 0.0) {
+                float x = yt / pivot;
+                // Au-dessus du pivot l'exposant monte (hautes lumieres qui claquent), en dessous il monte moins
+                // (noirs plus profonds sans les ecraser) ; punch negatif : l'inverse, une courbe plus douce.
+                float expo = 1.0 + punch * (x >= 1.0 ? 0.55 : 0.40);
+                float shaped = pivot * pow(x, expo);
+                // Epaule douce vers le pic : pas d'ecretage dur.
+                float knee = 0.75 * peak;
+                if (shaped > knee) {
+                    float z = (shaped - knee) / (peak - knee);
+                    shaped = knee + (peak - knee) * z / (1.0 + z);
+                }
+                float ratio = shaped / yt;
+                c *= ratio;
+                yt *= ratio;
+            }
+            if (chroma != 1.0) {
+                float k = 1.0 + (chroma - 1.0) * (1.0 - 0.6 * smoothstep(0.35 * peak, peak, yt));
+                vec3 grey = vec3(yt);
+                vec3 target = grey + (c - grey) * k;
+                // Le gamut borne le gain : jamais de canal negatif ni au-dessus du pic.
+                c = grey + (target - grey) * gamut_room(grey, target);
+            }
+            c = clamp(c, 0.0, peak);
+        }
+    }
+
     px.rgb = ajg_encode(from_target(c));
     return px;
 }

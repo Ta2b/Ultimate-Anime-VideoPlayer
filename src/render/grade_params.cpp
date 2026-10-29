@@ -22,8 +22,8 @@ std::expected<void, Refusal> check(std::string_view field, double value, core::R
 // Émulation TrueHDR (lois ajustées sur le SDK RTX Video, hdr-grade.lua:113-127) : contraste en
 // puissance autour du pivot, saturation sur la chroma, gris moyen m placé vers m nits.
 void apply_truehdr_look(const GradeSettings& s, double peak, GradeParams& p) {
-  const double contrast = (s.contrast - 100.0) / 100.0;
-  const double saturation = (s.saturation - 100.0) / 100.0;
+  const double contrast = (std::min(s.contrast, grade_limits::kSdkContrastMax) - 100.0) / 100.0;
+  const double saturation = (std::min(s.saturation, grade_limits::kSdkContrastMax) - 100.0) / 100.0;
   const double middle = s.middle_gray;
   p.emulate = 1.0;
   p.em_base = std::clamp(4.0 * middle, 40.0, std::min(400.0, 0.5 * peak));
@@ -31,6 +31,14 @@ void apply_truehdr_look(const GradeSettings& s, double peak, GradeParams& p) {
   p.em_lo = 1.0 + (contrast >= 0.0 ? 0.38 : 0.35) * contrast;
   p.em_hi = 1.0 + (contrast >= 0.0 ? 0.28 : 0.26) * contrast;
   p.em_sat = 1.0 + 0.19 * saturation;
+}
+
+// La fin du grade : le contraste et la saturation que RTX HDR ne donne plus (au-delà de 200 sur les curseurs)
+// plus ceux du préréglage. Au repos (curseurs à 200 ou moins, préréglage sans punch), identité exacte.
+void apply_punch(const GradeSettings& s, GradeParams& p) {
+  p.punch = s.punch_base + std::max(0.0, s.contrast - grade_limits::kSdkContrastMax) / 200.0;
+  p.chroma = 1.0 + s.chroma_base + 1.2 * std::max(0.0, s.saturation - grade_limits::kSdkContrastMax) / 200.0;
+  p.pivot = 0.4 * grade_limits::kSdrWhiteNits;
 }
 
 // Sortie SDR : le blanc de la source est celui de l'écran, aucune marge pour des éclats. Restent les
@@ -63,6 +71,7 @@ GradeParams sdr_params(const GradeSettings& s) {
   }
   p.black_lo = s.true_black ? s.black_lo : 0.0;
   p.black_hi = s.true_black ? s.black_hi : 0.0;
+  apply_punch(s, p);
   return p;
 }
 
@@ -74,14 +83,16 @@ GradeSettings grade_preset(GradePreset preset, GradeSettings custom) {
       return GradeSettings{};
     case GradePreset::Eclatant: {
       GradeSettings s;
-      s.shadows = 0.40;
-      s.highlights = 0.90;
-      s.highlights_rtx = 0.80;
-      s.vibrance = 0.50;
-      s.vibrance_rtx = 0.45;
-      s.area_rtx = 0.35;
+      s.shadows = 0.50;
+      s.highlights = 0.95;
+      s.highlights_rtx = 0.90;
+      s.vibrance = 0.60;
+      s.vibrance_rtx = 0.60;
+      s.area_rtx = 0.50;
       s.guard = 0.80;
-      s.expand = 0.50;
+      s.expand = 0.70;
+      s.punch_base = 0.30;   // des noirs plus profonds, des hautes lumières qui claquent
+      s.chroma_base = 0.12;  // des couleurs plus riches, sans toucher aux gris
       return s;
     }
     case GradePreset::Custom:
@@ -208,8 +219,11 @@ std::expected<GradeDecision, Refusal> decide_grade(const GradeSettings& s, const
     // éclats isolés montent, à partir de la moitié du pic.
     p.paper = 0.5 * peak;
     p.in_max = peak;
-    p.area_gain = 1.0 + 0.5 * s.area_rtx;
-    p.spec_gain = std::max(p.area_gain, 1.0 + 1.2 * s.highlights_rtx);
+    p.area_gain = 1.0 + 0.8 * s.area_rtx;
+    // 1 + 1,2 h comme le lecteur actuel jusqu'à h = 0,25 (son réglage par défaut), puis plus raide : à h = 1
+    // les éclats montent à 3,4 fois leur niveau au lieu de 2,2.
+    p.spec_gain =
+        std::max(p.area_gain, 1.0 + 1.2 * s.highlights_rtx + 1.6 * std::max(0.0, s.highlights_rtx - 0.25));
     p.vibrance = s.vibrance_rtx;
   }
   // Dans les plages //!PARAM du hook.
@@ -218,6 +232,7 @@ std::expected<GradeDecision, Refusal> decide_grade(const GradeSettings& s, const
   // Sans vrai noir (écran non OLED, ou coupé), la dixième passe est sautée.
   p.black_lo = s.true_black ? s.black_lo : 0.0;
   p.black_hi = s.true_black ? s.black_hi : 0.0;
+  apply_punch(s, p);
   return decision;
 }
 

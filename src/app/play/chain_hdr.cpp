@@ -51,8 +51,9 @@ ColorInfo pq_color(int peak_nits) {
 }
 
 vendor_hdr::TrueHdrParams true_hdr_params(const PlaySettings& s, int auto_peak) {
-  return vendor_hdr::TrueHdrParams{.contrast = s.true_hdr_contrast,
-                                   .saturation = s.true_hdr_saturation,
+  const int sdk_max = static_cast<int>(render::grade_limits::kSdkContrastMax);
+  return vendor_hdr::TrueHdrParams{.contrast = std::min(s.true_hdr_contrast, sdk_max),
+                                   .saturation = std::min(s.true_hdr_saturation, sdk_max),
                                    .middle_gray = s.true_hdr_gray,
                                    .peak_nits = s.true_hdr_peak > 0 ? s.true_hdr_peak : auto_peak,
                                    .debanding = s.true_hdr_debanding};

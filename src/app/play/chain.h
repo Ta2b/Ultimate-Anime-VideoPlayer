@@ -71,6 +71,10 @@ struct Chain {
   std::optional<render::BlackThresholds> black;
   bool black_dirty = true;
   std::int64_t black_at_us = 0;
+  // Image en pause : RTX HDR (contraste, saturation, gris moyen, pic) ne repasse que sur une nouvelle image ;
+  // la réouverture exacte de la position tenue la lui donne, un peu après le dernier changement (0 : rien à
+  // faire).
+  std::int64_t hdr_refresh_us = 0;
   // L'en-tête « chaîne » de l'OSD pour ces réglages, recalculé quand le facteur, la réduction ou le
   // moteur HDR changent à chaud ; vide : l'en-tête reste celui de l'ouverture.
   std::function<std::string(const PlaySettings&)> header_text;

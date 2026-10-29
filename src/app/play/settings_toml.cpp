@@ -284,10 +284,22 @@ std::expected<PlaySettings, Refusal> settings_from_table(const toml::table& root
           refuse(RefusalCode::FieldOutOfRange, std::format("audio.profile : « {} »", s.audio_profile)));
     if (const toml::table* custom = audio->get_as<toml::table>("custom")) {
       std::array<float, ::ajp::audio::kMixTuningFields> fields = ::ajp::audio::to_array(s.audio_custom);
-      constexpr std::array<const char*, ::ajp::audio::kMixTuningFields> kNames{
-          "crossfeed_gain", "crossfeed_cutoff_hz", "crossfeed_delay_ms", "head_radius_m", "head_shadow",
-          "surround_gain",  "center_lift",         "lfe_gain",           "downmix_scale", "distance",
-          "room",           "eq_bass_db",          "eq_voice_db",        "eq_treble_db",  "night"};
+      constexpr std::array<const char*, ::ajp::audio::kMixTuningFields> kNames{"crossfeed_gain",
+                                                                               "crossfeed_cutoff_hz",
+                                                                               "crossfeed_delay_ms",
+                                                                               "head_radius_m",
+                                                                               "head_shadow",
+                                                                               "surround_gain",
+                                                                               "center_lift",
+                                                                               "lfe_gain",
+                                                                               "downmix_scale",
+                                                                               "distance",
+                                                                               "room",
+                                                                               "eq_bass_db",
+                                                                               "eq_voice_db",
+                                                                               "eq_treble_db",
+                                                                               "night",
+                                                                               "virtual_speakers"};
       for (std::size_t i = 0; i < fields.size(); ++i)
         reads.push_back(read(*custom, "audio.custom", kNames[i], fields[i]));
       s.audio_custom = ::ajp::audio::tuning_from(fields);
@@ -558,7 +570,8 @@ std::string format_settings(const PlaySettings& s) {
                          {"eq_bass_db", r4(fields[11])},
                          {"eq_voice_db", r4(fields[12])},
                          {"eq_treble_db", r4(fields[13])},
-                         {"night", r4(fields[14])}};
+                         {"night", r4(fields[14])},
+                         {"virtual_speakers", r4(fields[15])}};
       audio.insert_or_assign("custom", std::move(custom));
     }
     {

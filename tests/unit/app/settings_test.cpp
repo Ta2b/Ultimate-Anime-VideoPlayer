@@ -159,7 +159,7 @@ TEST_CASE("Une clé absente garde son défaut, une clé inconnue est ignorée", 
 }
 
 TEST_CASE("Hors plage, type faux ou TOML invalide : refus nommé", "[app][settings]") {
-  const auto out = parse_settings("[rtx_hdr]\ncontrast = 250\n");
+  const auto out = parse_settings("[rtx_hdr]\ncontrast = 450\n");
   REQUIRE_FALSE(out);
   CHECK(out.error().code == RefusalCode::FieldOutOfRange);
   CHECK(out.error().detail.find("hdr.contrast") != std::string::npos);

@@ -49,13 +49,15 @@ struct MixTuning {
   float distance = 0.0F;  // enceintes virtuelles plus loin : niveau direct baissé (jusqu'à -2 dB), pièce plus
                           // présente (0 à 1)
   float room = 0.0F;      // réverbération légère d'une pièce (0 à 1 ; 0 : aucune, aucun coût)
-  float eq_bass_db = 0.0F;    // égaliseur : graves (étagère à 120 Hz), -8 à +8 dB
-  float eq_voice_db = 0.0F;   // médiums, les voix (cloche à 2,5 kHz), -8 à +8 dB
-  float eq_treble_db = 0.0F;  // aigus (étagère à 8 kHz), -8 à +8 dB
+  float eq_bass_db = 0.0F;    // égaliseur : graves (étagère à 120 Hz), -12 à +12 dB
+  float eq_voice_db = 0.0F;   // médiums, les voix (cloche à 2,5 kHz), -12 à +12 dB
+  float eq_treble_db = 0.0F;  // aigus (étagère à 8 kHz), -12 à +12 dB
   float night = 0.0F;  // compression de dynamique « nuit » : explosions réduites, murmures relevés (0 à 1)
+  float virtual_speakers =
+      0.0F;  // casque : enceintes virtuelles par réponses de tête synthétiques (hrir_synth.h), 0 à 1
   bool operator==(const MixTuning&) const = default;
 };
-inline constexpr std::size_t kMixTuningFields = 15;
+inline constexpr std::size_t kMixTuningFields = 16;
 // Le tuple des 9 réglages, dans l'ordre des champs ci-dessus (le message cmd::SetListening porte ce tableau).
 std::array<float, kMixTuningFields> to_array(const MixTuning& tuning);
 MixTuning tuning_from(const std::array<float, kMixTuningFields>& fields);

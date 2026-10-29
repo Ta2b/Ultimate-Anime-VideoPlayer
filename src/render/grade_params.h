@@ -25,9 +25,12 @@ namespace grade_limits {
 inline constexpr core::Range<double> kPaperWhite{80.0, 400.0};
 inline constexpr core::Range<double> kShadows{0.0, 0.8};
 inline constexpr core::Range<double> kHighlights{0.0, 1.0};
-inline constexpr core::Range<double> kVibrance{0.0, 0.8};
-inline constexpr core::Range<double> kContrast{0.0, 200.0};
-inline constexpr core::Range<double> kSaturation{0.0, 200.0};
+inline constexpr core::Range<double> kVibrance{0.0, 1.2};
+// Au-delà de 200, le grade ajoute son propre contraste (punch) et sa propre saturation : RTX HDR s'arrête à
+// 200.
+inline constexpr core::Range<double> kContrast{0.0, 400.0};
+inline constexpr core::Range<double> kSaturation{0.0, 400.0};
+inline constexpr double kSdkContrastMax = 200.0;
 inline constexpr core::Range<double> kMiddleGray{10.0, 100.0};
 inline constexpr core::Range<double> kSubtitleWhite{80.0, 1000.0};
 inline constexpr core::Range<double> kBlackNits{0.0, 50.0};
@@ -55,8 +58,11 @@ struct GradeSettings {
   double highlights_rtx = 0.25;  // TrueHDR, son émulation, HDR natif
   double vibrance = 0.15;
   double vibrance_rtx = 0.10;
-  double contrast = 100.0;  // TrueHDR et son émulation, comme rtx_contrast
-  double saturation = 100.0;
+  double contrast =
+      100.0;  // TrueHDR et son émulation (jusqu'à 200), comme rtx_contrast ; au-delà, le punch du grade
+  double saturation = 100.0;  // idem : au-delà de 200, la saturation du grade
+  double punch_base = 0.0;    // préréglage : contraste en plus, en sortie du grade (0 : aucun)
+  double chroma_base = 0.0;   // préréglage : saturation en plus (0 : aucune)
   double middle_gray = 50.0;
   double subtitle_white = 200.0;  // nits, blanc des sous-titres en sortie HDR
   bool oled = false;              // dalle OLED : limiteur des scènes claires (abl)
@@ -135,6 +141,11 @@ struct GradeParams {
   // Sortie SDR : 1, l'image de la cible est en BT.709 au gamma sdr_gamma, son blanc à `peak` nits.
   double sdr_out = 0.0;
   double sdr_gamma = 2.2;
+  // Fin du grade (toutes routes) : contraste en courbe de puissance autour de `pivot` (nits), saturation en
+  // facteur. 0 et 1 : identité exacte.
+  double punch = 0.0;
+  double chroma = 1.0;
+  double pivot = 80.0;
   friend bool operator==(const GradeParams&, const GradeParams&) = default;
 };
 

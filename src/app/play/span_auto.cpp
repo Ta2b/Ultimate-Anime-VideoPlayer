@@ -91,6 +91,7 @@ SpanAutoTick tick_span_auto(PrecisionTier precision, const SpanPrepare& prepare,
   }
   if (should_start_span_auto(precision, prepare, false, key, job.attempted)) {
     job.attempted = std::string(key);
+    log_channel("app")->info("SPAN Performance : preparation lancee pour {}", key);
     if (start_span_prepare(prepare, note)) tick.notify = span_progress_text(0.0F);
   }
   return tick;

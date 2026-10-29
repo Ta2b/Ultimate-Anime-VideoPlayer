@@ -125,7 +125,7 @@ TEST_CASE("ajp play : RTX HDR et ses réglages, refus nommés hors plage", "[app
   CHECK(parse({"a.mkv", "--truehdr-peak=300"}).error().code == RefusalCode::FieldOutOfRange);
   CHECK(parse({"a.mkv", "--truehdr-peak=2001"}).error().code == RefusalCode::FieldOutOfRange);
   CHECK(parse({"a.mkv", "--truehdr-gray=5"}).error().code == RefusalCode::FieldOutOfRange);
-  CHECK(parse({"a.mkv", "--truehdr-contrast=201"}).error().code == RefusalCode::FieldOutOfRange);
+  CHECK(parse({"a.mkv", "--truehdr-contrast=401"}).error().code == RefusalCode::FieldOutOfRange);
 }
 
 TEST_CASE("Modèle : --model doit exister, sinon le premier candidat présent", "[app][options]") {
