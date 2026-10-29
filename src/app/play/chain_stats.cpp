@@ -64,10 +64,14 @@ std::string auto_status_text(const core::AutoInfo& info, double source_fps) {
 }
 
 std::string free_status_text(const core::FreeInfo& info) {
-  std::string text = std::format("Auto libre · {:.0f} i/s", info.fps);
+  std::string text = std::format("Rapide · {:.0f} i/s", info.fps);
   if (info.load_pct >= 0) text += std::format(" · limite GPU {} %", info.load_pct);
   if (info.step_us > 0) text += " · écart service " + format_ms(info.step_us);
-  if (info.pressure > 1.02) text += std::format(" · pression ×{:.2f}", info.pressure);
+  if (info.pressure > 1.02) {
+    std::string pressure = std::format("{:.2f}", info.pressure);
+    std::ranges::replace(pressure, '.', ',');
+    text += " · pression ×" + pressure;
+  }
   if (info.lost > 0) text += std::format(" · {} perdues", info.lost);
   return text;
 }

@@ -97,15 +97,17 @@ void image_tab(PlaySettings& d, const SettingsChoices& choices) {
     }
     ImGui::EndCombo();
   }
-  precision_combo("Précision de SPAN", d.span_precision, choices.span_tiers);
-  ImGui::EndDisabled();
   panel::tip("Performance : le plus rapide. Balanced : plus fin, plus lent. Sharp1 : contours plus nets.");
-  panel::tip(
-      "Précision de SPAN. Équilibre : FP16, le réseau tel que livré. Performance : le plus rapide (calcul en "
-      "FP8 sur les RTX 40 et après), fabriqué sur votre PC par le bouton « Préparer le mode Performance » "
-      "des "
-      "réglages avancés ; il n'apparaît dans la liste qu'une fois prêt. Qualité : FP32, si sa variante est "
-      "installée. Recharge la lecture.");
+  if (choices.span_tiers.performance || choices.span_tiers.quality) {
+    precision_combo("Précision de SPAN", d.span_precision, choices.span_tiers);
+    panel::tip(
+        "Équilibre : FP16, le réseau tel que livré. Performance : le plus rapide (calcul en FP8 sur les RTX "
+        "40 "
+        "et après), fabriqué sur votre PC par le bouton « Préparer le mode Performance » des réglages "
+        "avancés ; il n'apparaît dans la liste qu'une fois prêt. Qualité : FP32, si sa variante est "
+        "installée. Recharge la lecture.");
+  }
+  ImGui::EndDisabled();
   if (panel::advanced() && !choices.span_tiers.performance) {
     panel::note(
         "Performance (FP8) : fabriqué sur votre PC (bouton « Préparer le mode Performance » plus bas), pour "
@@ -113,7 +115,7 @@ void image_tab(PlaySettings& d, const SettingsChoices& choices) {
         "RTX 40 et après.");
   }
 
-  section("Réduction avant l'agrandissement");
+  section("Résolution");
   // La source sans réduction, avec sa hauteur quand on la connaît : « 1080 lignes », pas « 4K », que
   // la sortie n'atteint qu'agrandie par SPAN.
   const auto label_of = [&](const HeightChoice& choice) {
@@ -195,10 +197,9 @@ void fluidity_tab(PlaySettings& d, const SettingsChoices& choices, bool exportin
                1.01 * choices.display_hz;
   };
   const Factor now = factor_of(d);
-  const std::string factor_shown =
-      d.rife_auto && now.num > now.den ? std::string("Auto (recommandé)") : factor_label(now);
+  const std::string factor_shown = d.rife_auto && now.num > now.den ? std::string("Auto") : factor_label(now);
   if (ImGui::BeginCombo("Multiplicateur", factor_shown.c_str())) {
-    if (!exporting && ImGui::Selectable("Auto (recommandé)", d.rife_auto && now.num > now.den)) {
+    if (!exporting && ImGui::Selectable("Auto", d.rife_auto && now.num > now.den)) {
       d.rife_auto = true;
       if (now.num <= now.den) d.rife_factor = 8;  // le plafond du mode auto
       d.rife_factor_den = 1;
@@ -232,39 +233,34 @@ void fluidity_tab(PlaySettings& d, const SettingsChoices& choices, bool exportin
         "i/s pour ménager le GPU. Il baisse toujours de lui-même quand une scène est lourde.");
   }
   if (d.rife_auto && now.num > now.den && !exporting) {
-    // Auto libre : sur un écran VRR armé, chaque image part dès qu'elle est prête ; sans VRR, les instants
+    // Mode Rapide : sur un écran VRR armé, chaque image part dès qu'elle est prête ; sans VRR, les instants
     // sont calés sur les vsyncs de l'écran (comme un jeu en vsync). Dans les deux cas la lecture repasse sur
-    // Auto si trop d'images sont perdues.
+    // Stable si trop d'images sont perdues.
     const bool vrr_armed = choices.display_vrr && choices.display_vrr_armed;
-    const char* const shown = d.auto_free ? "Auto libre (expérimental)" : "Auto (recommandé)";
+    const char* const shown = d.auto_free ? "Rapide (expérimental)" : "Stable";
     if (ImGui::BeginCombo("Mode d'Auto", shown)) {
-      if (ImGui::Selectable("Auto (recommandé)", !d.auto_free)) d.auto_free = false;
-      if (ImGui::Selectable("Auto libre (expérimental)", d.auto_free)) d.auto_free = true;
-      panel::tip(vrr_armed
-                     ? "Aucun palier : chaque image est calculée à l'instant exact où elle sera vue."
-                     : "Sans VRR, la cadence est calée sur le rafraîchissement de l'écran : chaque image "
-                       "est calculée pour un vsync exact, et une image trop tardive laisse la précédente "
-                       "un vsync de plus (comme un jeu en vsync).");
+      if (ImGui::Selectable("Stable", !d.auto_free)) d.auto_free = false;
+      if (ImGui::Selectable("Rapide (expérimental)", d.auto_free)) d.auto_free = true;
+      if (vrr_armed) {
+        panel::tip("Aucun palier : chaque image est calculée à l'instant exact où elle sera vue.");
+      } else {
+        panel::tip(
+            "Sans VRR, la cadence est calée sur le rafraîchissement de l'écran : une image trop tardive "
+            "laisse "
+            "la précédente un vsync de plus.");
+      }
       ImGui::EndCombo();
     }
     panel::tip(
-        "Auto (recommandé) : paliers de multiplicateur qui suivent ce que le GPU tient. Auto libre "
-        "(expérimental) : aucun palier ni multiplicateur, comme un moteur de jeu. Le lecteur calcule chaque "
-        "image à l'instant exact de la vidéo où elle sera affichée, dès que le GPU est libre, sans dépasser "
-        "l'écran ni le plafond : le débit est ce que le GPU tient, la vitesse de la vidéo reste constante. "
-        "Sur un écran VRR armé, l'image part quand elle est prête ; sans VRR, la cadence est calée sur le "
-        "rafraîchissement de l'écran (un vsync par image au mieux). Si trop d'images sont perdues (3 % sur "
-        "3 s), la lecture repasse sur Auto avec un message.");
+        "Stable : paliers de multiplicateur qui suivent ce que le GPU tient (de ×1 à ×6), avec 15 % de marge "
+        "; "
+        "le palier baisse en moins d'une seconde quand une scène est lourde et remonte dès qu'elle s'allège. "
+        "Rapide (expérimental) : aucun palier, chaque image est calculée à l'instant exact où elle sera "
+        "affichée, dès que le GPU est libre, sans dépasser l'écran ni le plafond ; la vitesse de la vidéo "
+        "reste constante. Si trop d'images sont perdues (3 % sur 3 s), la lecture repasse sur Stable avec un "
+        "message. Lecture seulement : l'export garde un multiplicateur fixe.");
   }
   if (d.rife_auto && now.num > now.den) {
-    panel::tip(
-        "Auto (recommandé) pousse la fluidité au maximum que l'écran permet et que le GPU tient (de ×1 à ×6) "
-        ": "
-        "il mesure le coût de chaque paire, prédit le palier tenable avec 15 % de marge, descend en moins "
-        "d'une seconde quand une scène est lourde et remonte dès qu'elle s'allège. Sur un écran VRR armé, "
-        "la cadence est continue (au fps près, par petits pas lissés) ; sinon par paliers entiers. "
-        "Il retient le dernier palier tenu par vidéo. Lecture seulement ; "
-        "l'export garde un multiplicateur fixe.");
     if (!choices.display_vrr) {
       note("Sans VRR, le mouvement peut vibrer à fréquence fixe.");
       panel::tip(
@@ -278,22 +274,25 @@ void fluidity_tab(PlaySettings& d, const SettingsChoices& choices, bool exportin
           "écran > Synchronisation adaptative), sinon le mouvement vibre à fréquence fixe.");
     }
   }
-  if (choices.source_fps > 0.0 && choices.display_hz > 0.0)
-    note(std::format("Grisés : au-delà de l'écran ({:.0f} Hz pour {:.3f} i/s).", choices.display_hz,
-                     choices.source_fps)
-             .c_str());
+  if (choices.source_fps > 0.0 && choices.display_hz > 0.0) {
+    std::string fps = std::format("{:.3f}", choices.source_fps);
+    std::ranges::replace(fps, '.', ',');  // la virgule décimale du français : « 23,976 »
+    note(std::format("Grisé : au-delà de l'écran ({:.0f} Hz pour {} i/s).", choices.display_hz, fps));
+  }
   if (exporting && now.num > now.den) {
     note(
         "À l'export, aucune image n'est sautée : chaque image créée coûte une passe, le temps de l'export "
         "suit.");
   } else if (now.num > 4 * now.den) {
     note(
-        "Au-delà de ×4, chaque paire demande une passe RIFE par image créée : il faut un écran assez "
-        "rapide (×8 en 24 i/s donne 192 Hz) et un GPU qui suit, sinon des images sont sautées.");
+        "Au-delà de ×4, chaque paire demande une passe RIFE par image créée : il faut un écran rapide et un "
+        "GPU qui suit, sinon des images sont sautées.");
   }
   ImGui::EndDisabled();
   if (!choices.rife_available)
-    note("Ni modèle RIFE (rife_v4.25.onnx, rife_v4.22_lite.onnx) ni graphes GMFSS trouvés.");
+    note(
+        "Aucun modèle d'interpolation trouvé : placez un modèle RIFE ou les graphes GMFSS dans le dossier "
+        "des modèles.");
   section("Moteur de l'interpolation");
   // Les moteurs se rangent sur une ligne tant qu'ils y tiennent (pastille comprise), sinon à la ligne.
   const float row_left = ImGui::GetCursorScreenPos().x;
@@ -367,24 +366,20 @@ void fluidity_tab(PlaySettings& d, const SettingsChoices& choices, bool exportin
     }
     if (!(union_model ? choices.gmfss_union_available : choices.gmfss_available)) {
       const GmfssFiles files = gmfss_files(union_model ? GmfssVariant::Union : GmfssVariant::Base, true);
-      note(
-          std::format("Graphes introuvables : {} et {}, à exporter dans {} (tools/gmfss/export_gmfss.py{} "
-                      "--scale 0.5 --width 256 --height 256) ; RIFE prend la place.",
-                      files.pair, files.fusion, choices.rife_folder, union_model ? " --model union" : ""));
+      note(std::format("Modèles GMFSS introuvables dans {} ({} et {}) ; RIFE prend la place.",
+                       choices.rife_folder, files.pair, files.fusion));
     }
   }
   if (d.motion_engine == MotionEngine::DistilDrba && !choices.distil_drba_available) {
-    note(
-        std::format("Graphe introuvable : {}, à exporter dans {} (tools/drba/export_distil_drba.py) ; RIFE "
-                    "prend la place.",
-                    kDistilDrbaFile, choices.rife_folder));
+    note(std::format("Modèle DistilDRBA introuvable dans {} ({}) ; RIFE prend la place.", choices.rife_folder,
+                     kDistilDrbaFile));
   }
   if (exporting) {
     // Les limites de la lecture en direct ne valent pas à l'export.
   } else if (four_k && now.num >= 3 * now.den) {
     note(
         "Sortie 4K (source sans réduction agrandie par SPAN) : ×3 et plus demandent un GPU haut de gamme ; "
-        "SPAN 1080p → 2160p est la passe la plus lourde (11 ms par image sur une RTX 4070 Ti). Une "
+        "SPAN 1080p → 2160p est la passe la plus lourde. Une "
         "résolution "
         "de travail de 720p allège tout.");
   } else if (four_k) {
@@ -463,9 +458,9 @@ void fluidity_tab(PlaySettings& d, const SettingsChoices& choices, bool exportin
   panel::badge(std::string(badge_text(Badge::Experimental)).c_str(), panel::kExperimental);
   ImGui::EndDisabled();
   note(
-      "Expérimental. La couche du pilote NVIDIA (RTX 40 et 50) génère une image entre deux images "
-      "présentées : RIFE ×3 puis Smooth Motion donnent environ 144 images par seconde. Vaut au prochain "
-      "lancement. Sans RIFE, la lecture peut caler : gardez RIFE à ×2 ou plus.");
+      "La couche du pilote NVIDIA (RTX 40 et 50) génère une image entre deux images présentées : RIFE ×3 "
+      "puis "
+      "Smooth Motion donnent environ 144 images par seconde. Vaut au prochain lancement.");
   if (without_rife) note("Grisé : activez RIFE à ×2 ou plus, sans quoi la lecture cale.");
 }
 

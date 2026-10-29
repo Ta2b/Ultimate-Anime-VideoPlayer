@@ -26,7 +26,7 @@ void default_player_page(const PlayerPlace& place, SystemNote& last, bool& dismi
       "Les vidéos (mkv, mp4, webm, avi, mov…) s'ouvrent dans AJP depuis le gestionnaire de fichiers.");
   if (already_default) note("AJP est déjà le lecteur par défaut des vidéos.");
   ImGui::Checkbox("Ne plus me le demander", &dismissed);
-  panel::tip("Une fois coché, cette page disparaît de Général et ne revient qu'avec « Réglages avancés ».");
+  panel::tip("Le lecteur ne propose plus de devenir le lecteur par défaut au lancement.");
 #ifdef __APPLE__
   static_cast<void>(last);
   note(register_player(place).value_or(std::string()));
@@ -44,10 +44,10 @@ void default_player_page(const PlayerPlace& place, SystemNote& last, bool& dismi
   };
   ImGui::BeginDisabled(busy);
   if (ImGui::Button("Faire de ce lecteur le lecteur par défaut")) start(&choose_as_default);
-  ImGui::SameLine();
+  panel::same_line_if_fits("Ajouter à « Ouvrir avec »");
   if (ImGui::Button("Ajouter à « Ouvrir avec »")) start(&register_player);
-  ImGui::SameLine();
-  if (ImGui::Button("Retirer##inscription")) start(&unregister_player);
+  panel::same_line_if_fits("Retirer de « Ouvrir avec »");
+  if (ImGui::Button("Retirer de « Ouvrir avec »")) start(&unregister_player);
   ImGui::EndDisabled();
   if (busy) {
     note("En cours…");
@@ -114,7 +114,7 @@ bool default_player_prompt(const PlayerPlace& place, SystemNote& last, bool& dis
     } else if (!last.text.empty()) {
       note(last.text);
     }
-    note("Réglage modifiable plus tard : Général > Lecteur par défaut.");
+    note("Réglage modifiable plus tard : Général > Application.");
   }
   ImGui::End();
   return closed;
@@ -152,7 +152,7 @@ void updates_page(PlaySettings& d, const PlayerPlace& place, UpdateNote& result)
   if (std::string_view(update_public_key()).empty())
     note("Ce paquet n'a pas de clé de signature : les mises à jour ne peuvent pas être vérifiées.");
 
-  section("Détail");
+  section("Canal et fréquence");
   ImGui::BeginDisabled(!managed.empty());
   if (ImGui::BeginCombo("Canal", d.update_channel == "preview" ? "Préversions" : "Stable")) {
     if (ImGui::Selectable("Stable", d.update_channel == "stable")) d.update_channel = "stable";
@@ -218,6 +218,7 @@ void updates_page(PlaySettings& d, const PlayerPlace& place, UpdateNote& result)
     result.text.clear();
     result.refused = false;
   }
+  if (state.previous_version.empty()) panel::tip("Grisé : aucune mise à jour n'a encore été installée.");
   ImGui::EndDisabled();
   ImGui::EndDisabled();
   if (busy) {

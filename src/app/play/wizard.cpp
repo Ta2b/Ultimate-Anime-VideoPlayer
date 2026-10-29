@@ -148,12 +148,13 @@ std::vector<std::string> wizard_summary(const Wizard& wizard) {
                                     label(wizard.preset), label(wizard.priority)));
   }
   if (has(WizardStep::Hdr)) {
-    out.push_back(skipped(WizardStep::Hdr) ? "HDR : sauté, automatique (HDR)"
-                  : wizard.hdr == HdrChoice::RtxHdr && !wizard.rtx_checks.empty() &&
-                          !rtx_ready(wizard.rtx_checks)
-                      ? std::string("HDR : RTX HDR choisi mais pas prêt (HDR > Conversion) : en attendant, "
-                                    "l'écran reste en HDR adaptatif")
-                      : std::format("HDR : {} (HDR > Conversion)", label(wizard.hdr)));
+    out.push_back(
+        skipped(WizardStep::Hdr) ? "HDR : sauté, automatique (HDR et couleurs > Conversion HDR)"
+        : wizard.hdr == HdrChoice::RtxHdr && !wizard.rtx_checks.empty() && !rtx_ready(wizard.rtx_checks)
+            ? std::string(
+                  "HDR : RTX HDR choisi mais pas prêt (HDR et couleurs > Conversion HDR) : en attendant, "
+                  "l'écran reste en HDR adaptatif")
+            : std::format("HDR : {} (HDR et couleurs > Conversion HDR)", label(wizard.hdr)));
   }
   if (has(WizardStep::Audio)) {
     out.push_back(wizard.listening == Listening::Unsaid || skipped(WizardStep::Audio)
@@ -161,13 +162,13 @@ std::vector<std::string> wizard_summary(const Wizard& wizard) {
                       : std::format("Audio : {} (Audio > Sortie)", label(wizard.listening)));
   }
   if (has(WizardStep::Languages))
-    out.push_back(skipped(WizardStep::Languages) ? "Langues : sauté (Général > Langues)"
-                                                 : "Langues : choisies (Général > Langues)");
+    out.push_back(skipped(WizardStep::Languages) ? "Langues : sauté (Général > Lecture)"
+                                                 : "Langues : choisies (Général > Lecture)");
   if (has(WizardStep::Updates)) {
     const std::string_view mode = wizard.update_mode == "auto"    ? "automatiques"
                                   : wizard.update_mode == "never" ? "jamais"
                                                                   : "me prévenir";
-    out.push_back(std::format("Mises à jour : {} (Général > Mises à jour)", mode));
+    out.push_back(std::format("Mises à jour : {} (Général > Application)", mode));
   }
   return out;
 }

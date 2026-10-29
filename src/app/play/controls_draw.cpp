@@ -4,7 +4,9 @@
 #include <cmath>
 #include <format>
 #include <optional>
+#include <string>
 #include <string_view>
+#include <utility>
 
 #include <imgui.h>
 
@@ -83,6 +85,19 @@ void bubble(const Pen& pen, float x, float bottom, std::string_view text, float 
   const ImVec2 p0{x0, bottom - size.y - 2.0F * pad.y};
   list->AddRectFilled(p0, {x0 + width, bottom}, black(0.82F * pen.opacity), 6.0F * pen.scale);
   list->AddText({p0.x + pad.x, p0.y + pad.y}, white(pen.opacity), text.data(), text.data() + text.size());
+}
+
+// text coupé par « … » pour tenir dans max_width (un caractère UTF-8 entier à la fois).
+std::string ellipsize(std::string text, float max_width) {
+  if (ImGui::CalcTextSize(text.c_str()).x <= max_width) return text;
+  while (!text.empty()) {
+    std::size_t cut = text.size() - 1;
+    while (cut > 0 && (static_cast<unsigned char>(text[cut]) & 0xC0U) == 0x80U) --cut;  // octet de suite
+    text.resize(cut);
+    const std::string shown = text + "…";
+    if (ImGui::CalcTextSize(shown.c_str()).x <= max_width) return shown;
+  }
+  return {};
 }
 
 void draw_title(const Pen& pen, std::string_view title, float width) {
@@ -270,9 +285,15 @@ bool draw_controls(Controls& controls, const ControlsView& view, const UiLook& l
     if (const auto chapter = chapter_at(view.chapters, view.position_us);
         chapter && !view.chapters[*chapter].title.empty())
       clock += " · " + view.chapters[*chapter].title;
+    // Le temps et le chapitre s'arrêtent avant les boutons de droite : un titre de chapitre long est coupé.
+    int right_buttons = 2;
+    if (!look.tracks.audio.empty()) ++right_buttons;
+    if (!look.tracks.subtitles.empty()) ++right_buttons;
+    const float clock_x = vx0 + vw + 18.0F * s;
+    const float clock_room = width - pad - row * static_cast<float>(right_buttons) - 8.0F * s - clock_x;
+    clock = ellipsize(std::move(clock), std::max(clock_room, 0.0F));
     const ImVec2 clock_size = ImGui::CalcTextSize(clock.c_str());
-    pen.list->AddText({vx0 + vw + 18.0F * s, cy - clock_size.y * 0.5F}, white(0.95F * opacity),
-                      clock.c_str());
+    pen.list->AddText({clock_x, cy - clock_size.y * 0.5F}, white(0.95F * opacity), clock.c_str());
 
     float rx = width - pad - row * 0.5F;
     if (round_button(pen, "##fullscreen", {rx, cy}, row)) actions.emplace_back(ToggleFullscreen{});

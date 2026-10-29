@@ -250,7 +250,7 @@ std::expected<std::uint32_t, Refusal> UpscaleStage::outputs(const DecodedFrame& 
   // La grille de sortie de la paire (core/cadence.h), refaite quand le facteur change : la paire
   // suivante repart alors de cette image.
   std::optional<core::CadenceStep> step;
-  // Auto libre : pas de facteur, la grille de la paire vient de l'horloge prédite et du temps de service.
+  // mode Rapide : pas de facteur, la grille de la paire vient de l'horloge prédite et du temps de service.
   const bool free_mode = interpolates() && setup_.live && setup_.live->free_active();
   if (free_mode) {
     cadence_.reset();

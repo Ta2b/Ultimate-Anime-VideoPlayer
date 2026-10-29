@@ -453,6 +453,28 @@ résolution) ; jamais en pleine lecture. Un utilisateur en *Personnalisé* n'est
 5. Une tranche trop optimiste = saccades : le benchmark et la baisse automatique de la tranche (le mode Auto
    fait déjà descendre le multiplicateur) servent de filet.
 
+### 4.10 Arbre en vigueur après l'audit de l'interface (0.6.1)
+
+Cinq catégories, douze pages (`settings_pages()` dans `settings_panel.cpp`, testé dans `settings_pages_test.cpp`) :
+
+```
+Général            Configuration · Lecture · Application · Statistiques · Réinitialiser
+Image IA           Agrandissement · Fluidité
+HDR et couleurs    Conversion HDR · Couleurs
+Audio              Sortie
+Export et moteurs  Export · Moteurs
+```
+
+- **Lecture** réunit les anciennes pages Langues et Sous-titres, plus « Lire l'épisode suivant » (qui vivait dans
+  Audio > Sortie alors qu'il n'a rien à voir avec le son).
+- **Application** réunit « Lecteur par défaut » et « Mises à jour » : ce qui concerne le lecteur lui-même et le
+  système. « Ne plus me le demander » ne cache donc plus de page : la case règle seulement la fenêtre du lancement.
+- **Export** (ex-Fichier) et **Moteurs** (ex-Moteurs installés) portent le nom de ce qu'elles contiennent.
+- L'arbre replie les autres catégories quand on change de catégorie : douze pages ne tiennent pas dans un arbre
+  entièrement ouvert à 720 px de haut.
+- Les modes de la cadence Auto s'appellent **Stable** (défaut) et **Rapide (expérimental)** ; la clé `play.toml`
+  `interpolation.auto_mode` garde `"recommande"` et `"libre"`.
+
 ## 5. Les autres points de la 0.4
 
 - **Hermite en réduction** : le filtre de réduction a 6 choix (Area, Spline36, Bilinear, Bicubic, Mitchell,

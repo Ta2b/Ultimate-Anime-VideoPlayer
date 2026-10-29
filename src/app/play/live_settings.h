@@ -143,7 +143,7 @@ class LiveSettings {
       if (e.id != right || e.images == 0) continue;
       if (e.first_us == 0 || submitted_us < e.first_us) e.first_us = submitted_us;
       e.busy_us += service;
-      // Auto : la source clôt la paire. Auto libre : la dernière image de la paire, qui n'est pas forcément
+      // Auto : la source clôt la paire. mode Rapide : la dernière image de la paire, qui n'est pas forcément
       // la source.
       const bool last = free_on_ ? ++e.seen >= e.images : left == right;
       if (last) {
@@ -186,7 +186,7 @@ class LiveSettings {
     return auto_on_ ? Factor{.num = auto_.step(), .den = auto_.granularity()} : rife_factor();
   }
 
-  // Auto libre (core/free_rate.h, core/free_grid.h) : à la place du mode auto, jamais avec lui. `min_gap_us`
+  // mode Rapide (core/free_rate.h, core/free_grid.h) : à la place du mode auto, jamais avec lui. `min_gap_us`
   // : l'écart minimal entre deux images (période de l'écran ou du plafond), en temps réel.
   void set_free(bool on, std::int64_t min_gap_us, std::int64_t now_us) {
     const std::scoped_lock lock(mutex_);
@@ -213,9 +213,9 @@ class LiveSettings {
     const std::scoped_lock lock(mutex_);
     return {free_.step_us(now_us), free_.min_gap_us()};
   }
-  // Auto libre sans VRR : les instants tombent sur les vsyncs (core/free_grid.h). `period_us` : la période de
-  // l'écran (0 : VRR, aucune grille) ; main donne chaque présentation neuve (vsync_note) et le délai entre le
-  // vsync de présentation et l'affichage de l'image (Session::visible_delay_us).
+  // mode Rapide sans VRR : les instants tombent sur les vsyncs (core/free_grid.h). `period_us` : la période
+  // de l'écran (0 : VRR, aucune grille) ; main donne chaque présentation neuve (vsync_note) et le délai entre
+  // le vsync de présentation et l'affichage de l'image (Session::visible_delay_us).
   void set_vsync(std::int64_t period_us, std::int64_t visible_delay_us) {
     const std::scoped_lock lock(mutex_);
     vsync_.set_period(period_us);
@@ -334,7 +334,7 @@ class LiveSettings {
     int images = 0;  // 0 : case libre
     std::int64_t lead_us = 0;
     std::int64_t first_us = 0;
-    int seen = 0;              // images vues écrites (Auto libre)
+    int seen = 0;              // images vues écrites (mode Rapide)
     std::int64_t busy_us = 0;  // temps propre de ses images, sans l'attente d'un slot
   };
   std::array<Expected, 16> ledger_{};

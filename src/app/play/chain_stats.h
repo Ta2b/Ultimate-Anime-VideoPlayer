@@ -32,7 +32,7 @@ std::string auto_factor_text(int centi);
 // Le palier du mode Auto et sa raison : « Auto ×3,5 (84 i/s) · plafond écran ×6 · prédit ×4 · limite GPU 78 %
 // · scène lourde · dernier changement : scène allégée ».
 std::string auto_status_text(const core::AutoInfo& info, double source_fps);
-// Le mode Auto libre : « Auto libre · 87 i/s · limite GPU 78 % · écart service 11,4 ms ».
+// Le mode Rapide : « Rapide · 87 i/s · limite GPU 78 % · écart service 11,4 ms ».
 std::string free_status_text(const core::FreeInfo& info);
 
 // Mesures de la chaîne pour l'OSD. interpolation : rien sans interpolation ; sinon son moteur,

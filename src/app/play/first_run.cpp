@@ -571,7 +571,7 @@ void draw_wizard_step(FirstRunView& view, Wizard& wizard) {
         if (!rtx_ready(wizard.rtx_checks))
           note(
               "Tant que tout n'est pas fait, l'écran reste en HDR adaptatif ; RTX HDR se choisit ensuite "
-              "dans HDR > Conversion.");
+              "dans HDR et couleurs > Conversion HDR.");
       }
       break;
     }
@@ -590,9 +590,7 @@ void draw_wizard_step(FirstRunView& view, Wizard& wizard) {
                    wizard.listening == each, pick, !cinema || view.facts.multichannel_output);
         if (pick) wizard.listening = each;
       }
-      note(
-          "Passer : Enceintes en rendu fidèle. Le rendu lui-même vient avec la couche audio ; ce choix est "
-          "gardé.");
+      note("Passer : Enceintes, en rendu fidèle. Le choix se change ensuite dans Audio > Sortie.");
       break;
     }
     case WizardStep::Languages:
@@ -635,8 +633,10 @@ void draw_wizard(FirstRunView& view, float scale) {
   Wizard& wizard = view.wizard;
   if (ImGui::Begin("Bienvenue", nullptr, kFlags)) {
     note(progress_text(wizard));
+    ImGui::PushStyleColor(ImGuiCol_PlotHistogram, kAccent);  // la couleur d'accent, pas le jaune par défaut
     ImGui::ProgressBar(static_cast<float>(wizard.at + 1) / static_cast<float>(wizard.steps.size()),
                        {-1.0F, 6.0F * scale}, "");
+    ImGui::PopStyleColor();
     const float footer = ImGui::GetFrameHeight() * 1.6F + ImGui::GetStyle().ItemSpacing.y * 3.0F;
     ImGui::BeginChild("##ecran", {0.0F, -footer});
     draw_wizard_step(view, wizard);
@@ -670,9 +670,12 @@ void draw_first_run(FirstRunView& view, float scale) {
     draw_wizard(view, scale);
     return;
   }
-  static constexpr const char* kFooter =
-      "Vulkan sert tous les GPU ; les moteurs cochés à télécharger s'installent après « Commencer », "
-      "vérifiés par leur empreinte, et Vulkan prend le relais de celui qui échoue.";
+  // Le bouton qui lance les téléchargements porte le nom du bouton de cet écran.
+  const std::string footer_text = std::format(
+      "Vulkan sert tous les GPU ; les moteurs cochés à télécharger s'installent après « {} », vérifiés par "
+      "leur empreinte, et Vulkan prend le relais de celui qui échoue.",
+      view.revisit ? "Continuer la lecture" : "Commencer");
+  const char* const kFooter = footer_text.c_str();
   const ImGuiIO& io = ImGui::GetIO();
   const float pad = 24.0F * scale;
   const ImVec2 size{std::min(1080.0F * scale, io.DisplaySize.x - 2.0F * pad),
@@ -681,7 +684,7 @@ void draw_first_run(FirstRunView& view, float scale) {
   ImGui::SetNextWindowSize(size, ImGuiCond_Always);
   constexpr ImGuiWindowFlags kFlags = ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoMove |
                                       ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoSavedSettings;
-  if (ImGui::Begin("Bienvenue", nullptr, kFlags)) {
+  if (ImGui::Begin(view.revisit ? "Moteurs" : "Bienvenue", nullptr, kFlags)) {
     ImGui::TextUnformatted(view.gpu.c_str());
     note(view.revisit
              ? "Les moteurs cochés à télécharger s'installent, puis la lecture reprend au même endroit."

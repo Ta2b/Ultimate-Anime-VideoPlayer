@@ -83,7 +83,7 @@ TEST_CASE("amdgpu : génération PCIe de current_link_speed", "[app][telemetry]"
 TEST_CASE("Ligne de l'OSD avec la mémoire vidéo", "[app][telemetry]") {
   const GpuSample s{
       .sm_mhz = 2900, .sm_max_mhz = 2900, .gpu_percent = 50, .vram_used_mib = 7373, .vram_total_mib = 16384};
-  CHECK(telemetry_line(s) == "GPU 2900 / 2900 MHz · 0 °C · 50 % · VRAM 7.2 / 16.0 Go");
+  CHECK(telemetry_line(s) == "GPU 2900 / 2900 MHz · 0 °C · 50 % · VRAM 7,2 / 16,0 Go");
 }
 
 }  // namespace ajp::app::play

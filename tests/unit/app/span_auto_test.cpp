@@ -21,7 +21,7 @@ TEST_CASE("le mode Performance dit pourquoi il manque, et ce qu'il faut faire", 
   // Moteur TensorRT absent.
   const std::string absent = span_fp8_unavailable_reason({.backend_name = "vulkan", .gpu_name = "RTX 4050"});
   CHECK(absent.contains("moteur TensorRT non installé"));
-  CHECK(absent.contains("Paramètres > Moteurs installés"));
+  CHECK(absent.contains("Paramètres > Export et moteurs > Moteurs"));
   // Installé mais pas celui en service.
   const std::string other = span_fp8_unavailable_reason(
       {.backend_name = "vulkan", .gpu_name = "RTX 4050", .tensorrt_present = true});

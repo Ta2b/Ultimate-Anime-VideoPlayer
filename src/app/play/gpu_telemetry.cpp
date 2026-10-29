@@ -57,9 +57,12 @@ std::string telemetry_line(const GpuSample& s) {
     line += std::format(" · {} W", s.power_mw / 1000);
   line += std::format(" · {} °C · {} %", s.temperature_c, s.gpu_percent);
   if (s.pcie_generation > 0) line += std::format(" · PCIe {} x{}", s.pcie_generation, s.pcie_width);
-  if (s.vram_total_mib > 0)
-    line += std::format(" · VRAM {:.1f} / {:.1f} Go", static_cast<double>(s.vram_used_mib) / 1024.0,
-                        static_cast<double>(s.vram_total_mib) / 1024.0);
+  if (s.vram_total_mib > 0) {
+    std::string vram = std::format("{:.1f} / {:.1f} Go", static_cast<double>(s.vram_used_mib) / 1024.0,
+                                   static_cast<double>(s.vram_total_mib) / 1024.0);
+    std::ranges::replace(vram, '.', ',');  // la virgule décimale, comme le reste de l'OSD
+    line += " · VRAM " + vram;
+  }
   if (const std::string why = throttle_text(s.throttle); !why.empty()) line += " · " + why;
   return line;
 }

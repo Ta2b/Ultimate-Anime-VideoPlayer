@@ -1,5 +1,5 @@
-// Le menu des paramètres : un panneau à droite de l'écran, par onglets (Image, Fluidité, RTX HDR,
-// Son, Statistiques, Moteurs : settings_engines.h, Système : settings_system.h). Les réglages en direct
+// Le menu des paramètres : un panneau à droite de l'écran, un arbre de cinq catégories (Général, Image IA,
+// HDR et couleurs, Audio, Export et moteurs) et douze pages (settings_pages). Les réglages en direct
 // s'appliquent pendant qu'on les change ; ceux qui demandent de rouvrir la chaîne attendent « Appliquer »,
 // sous un encadré qui dit ce qui sera reconstruit ou rechargé (settings.h : change_between).
 #pragma once
@@ -8,6 +8,7 @@
 #include <filesystem>
 #include <memory>
 #include <optional>
+#include <span>
 #include <string>
 #include <vector>
 
@@ -108,6 +109,16 @@ struct SettingsChoices {
   std::filesystem::path settings_dir;  // le dossier de play.toml, bench.toml, settings.toml
 };
 
+// Une page de l'arbre des réglages (settings_panel.cpp) : sa catégorie, son nom, et si elle n'est montrée
+// qu'avec la case « Réglages avancés ».
+struct SettingsPage {
+  const char* category;
+  const char* name;
+  bool advanced;
+};
+// Toutes les pages, dans l'ordre de l'écran (les catégories se déduisent du changement de `category`).
+std::span<const SettingsPage> settings_pages();
+
 // Une liste de langues (settings_panel.cpp), partagée avec l'assistant de premier démarrage.
 void language_choice(const char* label, const char* none_label, std::string& tag);
 
@@ -151,14 +162,13 @@ class SettingsPanel {
   PlaySettings seen_;   // running au tour précédent
   int page_ = 0;        // la page de l'arbre affichée (settings_panel.cpp : kPages)
   std::array<bool, 8> category_open_{};  // les catégories ouvertes de l'arbre
-  bool category_init_ = false;           // l'état de départ des catégories est posé
   int shown_page_ = -1;         // la page de l'image précédente : sa catégorie s'ouvre quand elle change
   bool advanced_ = false;       // la case « Réglages avancés » : montre la catégorie Avancé
   bool pending_shown_ = false;  // le bandeau « Appliquer » était montré au tour précédent
   std::optional<core::EngineId> engine_draft_;  // moteur coché dans l'onglet Moteurs, pas appliqué
   std::unique_ptr<ExportDraft> export_;         // l'onglet Export, gardé d'une ouverture à l'autre
   SystemNote system_;                           // l'onglet Système : sa dernière action
-  UpdateNote updates_;   // Général > Mises à jour : la vérification en cours ou son résultat
+  UpdateNote updates_;   // Général > Application : la vérification en cours ou son résultat
   BenchNote bench_;      // « Évaluer ma machine » : l'essai en cours ou son rapport
   PrepareNote prepare_;  // « Préparer le mode Performance » : la tâche en cours ou son résultat
 };

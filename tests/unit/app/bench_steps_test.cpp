@@ -120,10 +120,10 @@ TEST_CASE("le résultat tient en une phrase : chaîne gardée et mode Performanc
   CHECK(ready.contains("Performance FP8 pour SPAN : prête"));
   CHECK(ready.find('\n') == std::string::npos);
 
-  const std::string no =
-      result_sentence(fast, context,
-                      {SpanFp8Verdict::State::Unavailable,
-                       "moteur TensorRT non installé : installez-le dans Paramètres > Moteurs installés"});
+  const std::string no = result_sentence(
+      fast, context,
+      {SpanFp8Verdict::State::Unavailable,
+       "moteur TensorRT non installé : installez-le dans Paramètres > Export et moteurs > Moteurs"});
   CHECK(no.contains("Performance FP8 pour SPAN : non — moteur TensorRT non installé"));
   CHECK_FALSE(result_sentence(fast, context, {}).contains("FP8"));  // inconnu : la phrase n'en parle pas
 

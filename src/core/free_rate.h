@@ -1,5 +1,5 @@
-// Mode « Auto libre » : le temps de service mesuré par image, la contre-pression et le repli. Pur : le
-// lecteur donne des instants (µs, horloge hôte) et des mesures, jamais d'horloge à lire ici.
+// Mode « Rapide » (Auto libre) : le temps de service mesuré par image, la contre-pression et le repli. Pur :
+// le lecteur donne des instants (µs, horloge hôte) et des mesures, jamais d'horloge à lire ici.
 //
 // Aucun palier, aucun multiplicateur, aucune cadence visée : le producteur sort une image dès que le GPU
 // peut la livrer à l'instant où elle sera vue (core/free_grid.h). Cette classe ne fixe que l'écart

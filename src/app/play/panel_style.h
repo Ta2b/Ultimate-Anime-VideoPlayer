@@ -2,10 +2,15 @@
 #pragma once
 
 #include <string>
+#include <string_view>
 
 #include <imgui.h>
 
+#include "app/play/french_text.h"
+
 namespace ajp::app::play::panel {
+
+using play::french_spaces;
 
 inline constexpr ImVec4 kAccent{0.42F, 0.66F, 1.0F, 1.0F};
 inline constexpr ImVec4 kNote{0.66F, 0.68F, 0.74F, 1.0F};
@@ -21,8 +26,9 @@ inline bool& advanced() {
 }
 
 inline void note(const char* text) {
+  const std::string shown = french_spaces(text);
   ImGui::PushStyleColor(ImGuiCol_Text, kNote);
-  ImGui::TextWrapped("%s", text);
+  ImGui::TextWrapped("%s", shown.c_str());
   ImGui::PopStyleColor();
 }
 inline void note(const std::string& text) {
@@ -40,7 +46,10 @@ inline bool& group_open() {
   return open;
 }
 inline void end_group() {
-  if (group_open()) ImGui::EndChild();
+  if (group_open()) {
+    ImGui::PopItemWidth();
+    ImGui::EndChild();
+  }
   group_open() = false;
 }
 inline void begin_page() {
@@ -62,6 +71,9 @@ inline void section(const char* title) {
     ImGui::PushStyleVar(ImGuiStyleVar_ChildRounding, 6.0F);
     ImGui::BeginChild(title, ImVec2(0, 0), ImGuiChildFlags_Borders | ImGuiChildFlags_AutoResizeY);
     ImGui::PopStyleVar();
+    // Un encadré est une fenêtre fille : la largeur des champs repart de son défaut. Les libellés (à droite
+    // du champ) gardent 44 % de la largeur, assez pour les plus longs sans les couper.
+    ImGui::PushItemWidth(-ImGui::GetContentRegionAvail().x * 0.44F);
     group_open() = true;
     return;
   }
@@ -72,12 +84,22 @@ inline void section(const char* title) {
   ImGui::Separator();
 }
 
+// Place le bouton `label` (à venir) sur la ligne du dernier élément s'il y tient, sinon à la ligne : une
+// rangée de boutons ne déborde pas du cadre quand la fenêtre est étroite ou l'échelle grande.
+inline void same_line_if_fits(const char* label) {
+  const ImGuiStyle& style = ImGui::GetStyle();
+  const float need = ImGui::CalcTextSize(label).x + 2.0F * style.FramePadding.x;
+  const float right = ImGui::GetCursorScreenPos().x + ImGui::GetContentRegionAvail().x;
+  if (ImGui::GetItemRectMax().x + style.ItemSpacing.x + need <= right) ImGui::SameLine();
+}
+
 // Une infobulle sur le dernier élément, après un court délai ; elle s'affiche aussi sur un élément grisé.
 inline void tip(const char* text) {
   if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled | ImGuiHoveredFlags_DelayNormal)) {
+    const std::string shown = french_spaces(text);
     ImGui::BeginTooltip();
     ImGui::PushTextWrapPos(ImGui::GetFontSize() * 30.0F);
-    ImGui::TextUnformatted(text);
+    ImGui::TextUnformatted(shown.c_str());
     ImGui::PopTextWrapPos();
     ImGui::EndTooltip();
   }

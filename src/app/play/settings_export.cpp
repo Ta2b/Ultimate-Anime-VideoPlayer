@@ -173,9 +173,13 @@ void export_tab(ExportDraft& draft, const PlaySettings& running, const SettingsC
     copy_path(draft.path, prepare::utf8_path(default_export_path(choices.source_file, size, rate)));
     draft.named_for = named;
   }
-  if (ImGui::InputText("Fichier", draft.path.data(), draft.path.size())) draft.path_edited = true;
+  // Un champ sur toute la largeur, son bouton à droite : le titre de l'encadré dit ce que c'est.
+  const ImGuiStyle& style = ImGui::GetStyle();
+  ImGui::SetNextItemWidth(
+      -(ImGui::CalcTextSize("Nom proposé").x + 2.0F * style.FramePadding.x + style.ItemSpacing.x));
+  if (ImGui::InputText("##fichier", draft.path.data(), draft.path.size())) draft.path_edited = true;
   ImGui::SameLine();
-  if (ImGui::SmallButton("Nom proposé")) {
+  if (ImGui::Button("Nom proposé")) {
     draft.path_edited = false;
     draft.named_for.clear();
   }

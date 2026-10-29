@@ -13,10 +13,10 @@ std::string span_fp8_unavailable_reason(const SpanFp8Facts& facts) {
       return std::format(
           "le moteur TensorRT est installé mais le lecteur utilise {} : choisissez TensorRT dans Paramètres "
           "> "
-          "Moteurs installés",
+          "Export et moteurs > Moteurs",
           facts.backend_name.empty() ? std::string("un autre moteur") : facts.backend_name);
     }
-    return "moteur TensorRT non installé : installez-le dans Paramètres > Moteurs installés";
+    return "moteur TensorRT non installé : installez-le dans Paramètres > Export et moteurs > Moteurs";
   }
   return std::format(
       "{} n'est pas une carte NVIDIA RTX 40 (Ada) ou le moteur a été construit sans ces noyaux",

@@ -1,4 +1,6 @@
-# Auto libre (expérimental)
+# Mode Rapide d'Auto (anciennement « Auto libre », expérimental)
+
+Noms affichés : « Stable » (le mode par défaut, anciennement « Auto (recommandé) ») et « Rapide (expérimental) » (anciennement « Auto libre »). Seuls les noms ont changé : la clé play.toml `interpolation.auto_mode` garde ses valeurs `"recommande"` (Stable) et `"libre"` (Rapide).
 
 Mode d'Auto supplémentaire, `interpolation.auto_mode = "libre"` dans play.toml (défaut `"recommande"`, la loi
 de `core/auto_rate.*` ne change pas). Cahier des charges de Tatoub : « pas de cadence ou palier à proprement
@@ -75,7 +77,7 @@ donne le temps de service par image `s`, moyenne qui **monte vite** (×0,6 par m
 3. **Les pertes à l'écran** : une image sautée (`dropped`, arrivée trop tard) ou manquée (trou dans les pts
    plus grand que le pas) **élargit tout de suite le pas** (×1,12 par image perdue, au plus ×2) ; la pression
    ne se relâche qu'après 1 s sans perte, puis lentement (3 s de constante de temps).
-4. **Repli** : 3 % d'images perdues (et au moins 6) sur 3 s → retour à Auto (recommandé), message à l'écran et
+4. **Repli** : 3 % d'images perdues (et au moins 6) sur 3 s → retour à Stable, message à l'écran et
    ligne de journal.
 
 ### Ce qui reste fixe
@@ -97,12 +99,12 @@ changent pas. Seul Apple (flux optique du système, instants imposés) reste en 
 
 - `interpolation.auto_mode` : `"recommande"` (défaut) ou `"libre"` ; toute autre valeur est refusée
   (`FieldOutOfRange`). En direct (`live_part`).
-- Liste « Mode d'Auto » sous le Multiplicateur (visible en mode Auto) ; « Auto libre (expérimental) » grisé
+- Liste « Mode d'Auto » sous le Multiplicateur (visible en mode Auto) ; « Rapide (expérimental) » grisé
   avec infobulle sans écran VRR armé.
 - Repli automatique sur Auto (`apply_auto`, `player_run.cpp`) : VRR absent ou coupé, moteur non RIFE,
   fréquence de l'écran inconnue ; ou trop d'images perdues. Les deux motifs écrivent une ligne de journal et un
   message.
-- Statistiques : « Auto libre · 87 i/s · limite GPU 78 % · écart service 11,4 ms » (OSD et journal toutes les
+- Statistiques : « Rapide · 87 i/s · limite GPU 78 % · écart service 11,4 ms » (OSD et journal toutes les
   5 s).
 
 ## 3. Vérification réelle
@@ -111,7 +113,7 @@ Re:Zero 4e saison ép. 18 à 960 s, 75 s, plein écran (QD-OLED 165 Hz VRR armé
 RTX HDR, hauteur de travail 720p, `[auto] preset = 'custom'`, données de test à part (`--data-dir`), sous
 verrou GPU. Banc : `/tmp/claude-1000/pbt/cmp3.py`. Auto = la loi actuelle (`origin/auto-mesure`, #123).
 
-| | Auto (recommandé) | Auto libre |
+| | Stable | Rapide |
 | --- | --- | --- |
 | cadence moyenne (images neuves) | 44,5 puis 42,2 i/s | **60,2 puis 61,0 i/s** |
 | cadence médiane | 46,7 / 43,6 | 65,5 / 65,8 |
@@ -122,7 +124,7 @@ verrou GPU. Banc : `/tmp/claude-1000/pbt/cmp3.py`. Auto = la loi actuelle (`orig
 | changements de palier | 6 / 8 | aucun (pas de palier) |
 | temps par image médian (présentation) | 20,7 / 21,9 ms | 15,6 / 15,2 ms |
 
-Statistiques en direct sur la scène lourde : « Auto libre · 59 i/s · limite GPU 87 % · écart service 16,2 ms ».
+Statistiques en direct sur la scène lourde : « Rapide · 59 i/s · limite GPU 87 % · écart service 16,2 ms ».
 Les « manquées » du mode libre se comptent contre le pas courant (pas de cadence nominale) ; les « sautées » sont
 les mêmes dans les deux modes. Critère de livraison (pertes < 1 %) tenu. Une première version, qui ne clôturait
 pas la mesure de service (la dernière image d'une paire n'est plus forcément la source), restait à ×2 fixe
@@ -137,7 +139,7 @@ pas la mesure de service (la dernière image d'une paire n'est plus forcément l
 | DistilDRBA ×3 fusionné | 40,7 i/s / 0,76 % (22 manquées, 10 changements) | **67,5 i/s / 0,04 %** (2 sautées, 0 manquée) | 7,7 / 25,3 ms (Auto 8,7 / 42,2) |
 | GMFSS | 24,0 i/s / 3,60 % (65 manquées, 18 changements) | 23,9 et 23,8 i/s / 0,99 % (15 sautées, 3 manquées) | 18,7 / 68 ms (Auto 9,7 / 58,9) |
 
-DRBA : « Auto libre · 66 i/s · limite GPU 79 % · écart service 13,1 ms ». GMFSS : « 22 i/s · limite GPU 91 %
+DRBA : « Rapide · 66 i/s · limite GPU 79 % · écart service 13,1 ms ». GMFSS : « 22 i/s · limite GPU 91 %
 · écart service 56 ms ». Un bug trouvé avec DRBA : `FreeRate::settle` (seek) raccourcissait le silence de
 démarrage et le repli se déclenchait à 1,5 s ; `settle` ne fait désormais que l'allonger.
 
@@ -155,9 +157,9 @@ démarrage et le repli se déclenchait à 1,5 s ; `settle` ne fait désormais qu
 - Au plus 10 instants par paire (ring) : 120 i/s minimum de plafond pour une source de 12 i/s.
 - Les instants à moins d'un quart de pas d'une source tombent sur elle : jusqu'à ~4 ms de décalage.
 
-## 5. Sans VRR : l'Auto libre calé sur les vsyncs
+## 5. Sans VRR : le mode Rapide calé sur les vsyncs
 
-Les jeux en cadence libre ne sont pas réservés aux écrans VRR ; l'Auto libre non plus. Sans VRR (écran à
+Les jeux en cadence libre ne sont pas réservés aux écrans VRR ; le mode Rapide non plus. Sans VRR (écran à
 fréquence fixe, ou VRR coupé), le mode reste le même (aucun palier ni multiplicateur) mais les instants de la
 grille tombent **sur les vsyncs de l'écran** : une image n'est jamais calculée pour un instant entre deux
 vsyncs, donc rien ne vibre. C'est le comportement d'un jeu en vsync : un GPU plus lent laisse l'image
@@ -179,7 +181,7 @@ mais c'est utilisable partout. VRR armé : le comportement décrit plus haut ne 
   boucle (pas de bascule d'un vsync à l'autre à cause de la gigue).
 - **Statistiques / repli** : une image « manquée » se compte contre le pas arrondi au vsync au-dessus ; le
   repli sur Auto (≥ 3 % de pertes sur 3 s) est identique.
-- **Menu** : « Auto libre » n'est plus grisé sans VRR ; l'infobulle dit « sans VRR, la cadence est calée sur
+- **Menu** : « Rapide » n'est plus grisé sans VRR ; l'infobulle dit « sans VRR, la cadence est calée sur
   le rafraîchissement de l'écran ». Option du banc `--no-vrr` : traite l'écran comme fixe même si le VRR est
   armé.
 
@@ -192,7 +194,7 @@ quand la paire est passée, suivi de phase avec gigue, et dix minutes simulées 
 
 ### Vérification réelle (75 s, `--no-vrr`, 165 Hz traité comme fixe, 720p, plein écran, même scène)
 
-| | Auto (`--no-vrr`, paliers entiers) | Auto libre sur vsyncs |
+| | Stable (`--no-vrr`, paliers entiers) | Rapide sur vsyncs |
 | --- | --- | --- |
 | cadence moyenne | 38,0 i/s | **66,8 i/s** |
 | sautées / manquées | 4 / 40 | 5 / 0 |

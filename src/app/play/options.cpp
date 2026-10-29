@@ -399,7 +399,7 @@ std::string play_usage() {
       "  --sdr                  sortie SDR même sur un écran HDR (essais du grade SDR)\n"
       "  --one-lane             une seule file de calcul : plus lent, mais le profil GPU donne le\n"
       "                         coût propre de chaque moteur\n"
-      "  --no-vrr               écran à fréquence fixe même si le VRR est armé (essai de l'Auto libre)\n"
+      "  --no-vrr               écran à fréquence fixe même si le VRR est armé (essai du mode Rapide)\n"
       "  --software-gpu         accepte un Vulkan logiciel (lavapipe), pour les essais sans GPU\n"
       "  --mute                 son coupé pour cette lecture\n"
       "  --data-dir=DOSSIER     réglages, profils et journal dans ce dossier (moteurs et modèles partagés)\n"

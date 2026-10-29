@@ -89,7 +89,7 @@ bool bench_running(const BenchNote& bench);
 BenchEvent bench_page(const PlayerPlace& place, const std::filesystem::path& video,
                       const BenchContext& context, BenchNote& bench, PlaySettings& draft);
 
-// Général > Mises à jour : le mode, le canal, la fréquence, « Vérifier maintenant », le retour arrière.
+// Général > Application : le mode, le canal, la fréquence, « Vérifier maintenant », le retour arrière.
 struct UpdateNote {
   std::string text;
   bool refused = false;
@@ -97,7 +97,7 @@ struct UpdateNote {
 };
 void updates_page(PlaySettings& d, const PlayerPlace& place, UpdateNote& note);
 
-// Le lecteur par défaut et « Ouvrir avec » (Général > Lecteur par défaut).
+// Le lecteur par défaut et « Ouvrir avec » (Général > Application).
 // Avec « Ne plus me le demander » (dismissed) et, quand le lecteur est déjà celui des vidéos, un mot qui le
 // dit.
 void default_player_page(const PlayerPlace& place, SystemNote& last, bool& dismissed, bool already_default);
