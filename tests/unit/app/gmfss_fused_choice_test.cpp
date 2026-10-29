@@ -13,7 +13,12 @@ TEST_CASE("GMFSS fusionné : essayé avec GMFSS, avec la raison de chaque renonc
   PlaySettings gmfss;
   gmfss.motion_engine = MotionEngine::Gmfss;
   gmfss.gmfss_fused = true;
+  gmfss.gmfss_precision =
+      PrecisionTier::Balanced;  // le défaut est Performance (FP8) : la découpe veut Équilibre
   CHECK(gmfss_fused_declined(gmfss, true).empty());
+  PlaySettings by_default = gmfss;
+  by_default.gmfss_precision = PlaySettings{}.gmfss_precision;
+  CHECK(gmfss_fused_declined(by_default, true) == "cran de précision hors Équilibre");  // FP8 par défaut
   PlaySettings off = gmfss;
   off.gmfss_fused = false;
   CHECK(gmfss_fused_declined(off, true) == "réglage éteint");
