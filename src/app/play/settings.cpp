@@ -155,13 +155,13 @@ std::string_view name(SpanOrder order) {
 std::string_view label(SpanOrder order) {
   switch (order) {
     case SpanOrder::Auto:
-      return "Auto (après SPAN au-dessus de 1080p)";
+      return i18n::tr("Auto (after SPAN above 1080p)");
     case SpanOrder::Before:
-      return "Avant SPAN (qualité maximale)";
+      return i18n::tr("Before SPAN (best quality)");
     case SpanOrder::After:
-      return "Après SPAN (le plus rapide)";
+      return i18n::tr("After SPAN (fastest)");
   }
-  return "Auto (après SPAN au-dessus de 1080p)";
+  return i18n::tr("Auto (after SPAN above 1080p)");
 }
 
 std::string_view name(FinalScaler scaler) {
@@ -179,13 +179,13 @@ std::string_view name(FinalScaler scaler) {
 std::string_view label(FinalScaler scaler) {
   switch (scaler) {
     case FinalScaler::Default:
-      return "Défaut de libplacebo";
+      return i18n::tr("libplacebo default");
     case FinalScaler::EwaLanczos:
-      return "EWA Lanczos (fin)";
+      return i18n::tr("EWA Lanczos");
     case FinalScaler::EwaLanczosSharp:
-      return "EWA Lanczos net";
+      return i18n::tr("EWA Lanczos sharp");
   }
-  return "Défaut de libplacebo";
+  return i18n::tr("libplacebo default");
 }
 
 std::string_view name(OledBlack mode) {
@@ -203,13 +203,13 @@ std::string_view name(OledBlack mode) {
 std::string_view label(OledBlack mode) {
   switch (mode) {
     case OledBlack::Auto:
-      return "Auto (selon l'écran)";
+      return i18n::tr("Auto (from the display)");
     case OledBlack::On:
-      return "Activé";
+      return i18n::tr("On");
     case OledBlack::Off:
-      return "Désactivé";
+      return i18n::tr("Off");
   }
-  return "Auto (selon l'écran)";
+  return i18n::tr("Auto (from the display)");
 }
 
 render::GradeSettings with_preset(render::GradePreset preset, const render::GradeSettings& current) {
@@ -229,15 +229,15 @@ std::string_view label(Downscale filter) {
 std::string_view badge_text(Badge badge) {
   switch (badge) {
     case Badge::Recommended:
-      return "Recommandé";
+      return i18n::tr("Recommended");
     case Badge::Fastest:
-      return "Le plus rapide";
+      return i18n::tr("Fastest");
     case Badge::Finest:
-      return "Le plus fin";
+      return i18n::tr("Finest");
     case Badge::Heaviest:
-      return "Le plus lent";
+      return i18n::tr("Slowest");
     case Badge::Experimental:
-      return "Expérimental";
+      return i18n::tr("Experimental");
   }
   return {};
 }
@@ -516,58 +516,57 @@ Change change_between(const PlaySettings& running, const PlaySettings& wanted, b
   std::vector<std::string> reopen;
   if (running.upscale != wanted.upscale || running.model != wanted.model ||
       running.work_height != wanted.work_height)
-    reopen.emplace_back("le moteur SPAN est rechargé (construit la première fois pour cette taille)");
-  if (running.audio_device != wanted.audio_device) reopen.emplace_back("l'appareil de sortie change");
+    reopen.emplace_back(i18n::tr("SPAN reloads (built the first time for this size)"));
+  if (running.audio_device != wanted.audio_device) reopen.emplace_back(i18n::tr("the output device changes"));
   if (running.true_hdr != wanted.true_hdr)
-    reopen.emplace_back(wanted.true_hdr ? "RTX HDR s'allume" : "RTX HDR s'éteint");
+    reopen.emplace_back(wanted.true_hdr ? i18n::tr("RTX HDR turns on") : i18n::tr("RTX HDR turns off"));
   if (wanted.rife_factor >= 2 && running.rife_factor < 2 && !rife_loaded)
-    reopen.emplace_back(
-        "le moteur d'interpolation est chargé (construit la première fois pour cette taille)");
+    reopen.emplace_back(i18n::tr("the interpolation engine loads (built the first time for this size)"));
   if (wanted.rife_factor >= 2 && running.motion_engine != wanted.motion_engine)
-    reopen.emplace_back("le moteur du mouvement change");
+    reopen.emplace_back(i18n::tr("the interpolation engine changes"));
   if (wanted.rife_factor >= 2 && wanted.motion_engine == MotionEngine::Rife &&
       running.rife_fused != wanted.rife_fused)
     reopen.emplace_back(wanted.rife_fused
-                            ? "RIFE fusionné (six moteurs, construits la première fois pour cette taille)"
-                            : "RIFE entier à la place du RIFE fusionné");
+                            ? i18n::tr("fused RIFE (six engines, built the first time for this size)")
+                            : i18n::tr("whole RIFE instead of fused RIFE"));
   if (wanted.rife_factor >= 2 && wanted.motion_engine == MotionEngine::DistilDrba &&
       running.drba_fused != wanted.drba_fused)
-    reopen.emplace_back(
-        wanted.drba_fused
-            ? "DistilDRBA fusionné (quatre moteurs, construits la première fois pour cette taille)"
-            : "DistilDRBA entier à la place du DistilDRBA fusionné");
+    reopen.emplace_back(wanted.drba_fused
+                            ? i18n::tr("fused DistilDRBA (four engines, built the first time for this size)")
+                            : i18n::tr("whole DistilDRBA instead of fused DistilDRBA"));
   if (wanted.rife_factor >= 2 && is_gmfss(wanted.motion_engine) && running.gmfss_fused != wanted.gmfss_fused)
-    reopen.emplace_back(wanted.gmfss_fused ? "GMFSS fusionné (deux moteurs à la place de la paire, "
-                                             "construits la première fois pour cette taille)"
-                                           : "la paire GMFSS entière à la place de GMFSS fusionné");
+    reopen.emplace_back(wanted.gmfss_fused
+                            ? i18n::tr("fused GMFSS (two engines, built the first time for this size)")
+                            : i18n::tr("whole GMFSS pair instead of fused GMFSS"));
   if (wanted.rife_factor >= 2 && wanted.motion_engine == MotionEngine::Rife &&
       running.rife_model != wanted.rife_model)
-    reopen.emplace_back("le modèle RIFE est chargé (construit la première fois pour cette taille)");
+    reopen.emplace_back(i18n::tr("the RIFE model loads (built the first time for this size)"));
   if (wanted.rife_factor >= 2 && running.span_order != wanted.span_order) {
-    reopen.emplace_back(wanted.span_order == SpanOrder::Before  ? "le warp passe avant SPAN"
-                        : wanted.span_order == SpanOrder::After ? "le warp passe après SPAN"
-                                                                : "le warp passe selon la sortie");
+    reopen.emplace_back(wanted.span_order == SpanOrder::Before  ? i18n::tr("warp runs before SPAN")
+                        : wanted.span_order == SpanOrder::After ? i18n::tr("warp runs after SPAN")
+                                                                : i18n::tr("warp order follows the output"));
   }
   if (wanted.upscale && running.span_precision != wanted.span_precision) {
-    reopen.emplace_back(std::format("SPAN passe en {} (construit la première fois pour cette taille)",
-                                    precision_text(wanted.span_precision)));
+    reopen.emplace_back(i18n::tr_format("SPAN switches to {} (built the first time for this size)",
+                                        precision_text(wanted.span_precision)));
   }
   if (wanted.rife_factor >= 2 && !is_gmfss(wanted.motion_engine) &&
       running.motion_engine == wanted.motion_engine && running.motion_precision != wanted.motion_precision) {
-    reopen.emplace_back(std::format("{} passe en {} (construit la première fois pour cette taille)",
-                                    label(wanted.motion_engine), precision_text(wanted.motion_precision)));
+    reopen.emplace_back(i18n::tr_format("{} switches to {} (built the first time for this size)",
+                                        label(wanted.motion_engine),
+                                        precision_text(wanted.motion_precision)));
   }
   if (wanted.rife_factor >= 2 && is_gmfss(wanted.motion_engine) &&
       running.motion_engine == wanted.motion_engine && running.gmfss_precision != wanted.gmfss_precision) {
     reopen.emplace_back(
-        std::format("GMFSS passe en {} (GMFlow en {}, construit la première fois pour cette "
-                    "taille)",
-                    label(wanted.gmfss_precision), precision_text(wanted.gmfss_precision)));
+        i18n::tr_format("GMFSS switches to {} (GMFlow in {}, built the first time for this size)",
+                        label(wanted.gmfss_precision), precision_text(wanted.gmfss_precision)));
   }
   if (!reopen.empty()) {
     std::string reason;
     for (const std::string& part : reopen) reason += std::format("{}{}", reason.empty() ? "" : " ; ", part);
-    return Change{.cost = ChangeCost::Reopen, .reason = reason + " ; la lecture reprend au même endroit"};
+    return Change{.cost = ChangeCost::Reopen,
+                  .reason = reason + i18n::tr(" ; playback resumes at the same spot")};
   }
   if (running == wanted) return {};
   return Change{.cost = ChangeCost::Live};

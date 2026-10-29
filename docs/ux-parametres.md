@@ -460,7 +460,7 @@ Cinq catégories, douze pages (`settings_pages()` dans `settings_panel.cpp`, tes
 ```
 Général            Configuration · Lecture · Application · Statistiques · Réinitialiser
 Image IA           Agrandissement · Fluidité
-HDR et couleurs    Conversion HDR · Couleurs
+HDR et couleurs    HDR · Couleurs
 Audio              Sortie
 Export et moteurs  Export · Moteurs
 ```

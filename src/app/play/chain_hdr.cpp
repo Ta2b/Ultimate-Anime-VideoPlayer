@@ -141,7 +141,7 @@ std::string output_text(const PlaceboScreen& screen, const PlaySettings& s, int 
   } else if (s.hdr_native && screen.hdr_output()) {
     text += " · HDR adaptatif";
   }
-  if (s.grade) text += std::format(" · grade {}", render::preset_label(s.grade_preset));
+  if (s.grade) text += std::format(" · grade {}", grade_label(s.grade_preset));
   return text;
 }
 

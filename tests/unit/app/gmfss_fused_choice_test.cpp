@@ -76,7 +76,7 @@ TEST_CASE("GMFSS fusionné : le réglage voyage dans play.toml et recharge la le
   wanted.gmfss_fused = false;
   const Change change = change_between(running, wanted, true);
   CHECK(change.cost == ChangeCost::Reopen);
-  CHECK(change.reason.find("paire GMFSS entière") != std::string::npos);
+  CHECK(change.reason.find("whole GMFSS pair") != std::string::npos);
   // Avec RIFE, le réglage GMFSS ne coûte rien.
   running.motion_engine = MotionEngine::Rife;
   wanted.motion_engine = MotionEngine::Rife;
