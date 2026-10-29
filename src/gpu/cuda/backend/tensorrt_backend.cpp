@@ -246,6 +246,7 @@ BackendCaps TensorRtBackend::capabilities() const {
       .span_fp8_cutlass = SpanFp8Net::supported_device(properties_.major, properties_.minor),
       .rife_fused = true,
       .drba_fused = true,
+      .gmfss_fused = true,
       .matrix_units = true,
       .import_formats = {PixelFormat::Nv12, PixelFormat::P010, PixelFormat::P016},
       .lanes = lanes_,

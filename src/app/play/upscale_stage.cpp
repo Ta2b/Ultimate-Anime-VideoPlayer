@@ -40,6 +40,11 @@ UpscaleStage::~UpscaleStage() {
         rife_runs_, single_pairs_, multi_pairs_, direct_pairs_);
   }
   if (gmfss()) log_channel("gpu")->info("GMFSS : {} paires", gmfss_pairs_);
+  if (gmfss_fused()) {
+    log_channel("gpu")->info(
+        "GMFSS fusionné : caractéristiques de {} images calculées, {} reprises de la paire d'avant",
+        gmfss_.features_of.computed(), gmfss_.features_of.reused());
+  }
   if (spans_reused_ > 0)
     log_channel("gpu")->info("SPAN : {} passes évitées sur des dessins tenus", spans_reused_);
   if (drba()) {
@@ -88,6 +93,9 @@ std::expected<std::unique_ptr<VideoStage>, Refusal> UpscaleStage::start(VideoSta
   }
   if ((setup.gmfss_pair == nullptr) != (setup.gmfss_fusion == nullptr))
     return refuse(RefusalCode::FieldMissing, "étage gpu : GMFSS demande ses deux moteurs");
+  if (setup.gmfss_features != nullptr && setup.gmfss_pair == nullptr)
+    return refuse(RefusalCode::FieldMissing,
+                  "étage gpu : les caractéristiques de GMFSS sans ses deux moteurs");
   const int estimators = (setup.rife != nullptr ? 1 : 0) + (setup.rife_motion != nullptr ? 1 : 0) +
                          (setup.gmfss_pair != nullptr ? 1 : 0) + (setup.distil_drba != nullptr ? 1 : 0);
   if (estimators > 1) {
@@ -422,6 +430,9 @@ std::expected<RingStage::Output, Refusal> UpscaleStage::produce(const DecodedFra
   // Image intermédiaire, entre la précédente et celle-ci (rife_runs demande la précédente).
   if (!previous_) return refuse(RefusalCode::SequenceOrder, "RIFE : pas d'image précédente");
   const Output made{.pts_us = instant.pts_us, .left = previous_->id, .right = frame.id};
+  gmfss_.a = GmfssFrameKey{.id = previous_->id,
+                           .epoch = previous_->epoch};  // GMFSS fusionné : les images de la paire
+  gmfss_.b = GmfssFrameKey{.id = frame.id, .epoch = frame.epoch};
   use_lane(gpu::Lane::Interpolate);
   next_middle();  // l'autre tampon : SPAN ou l'écriture du ring lit peut-être encore le précédent
   const gpu::RingTarget ring{.slot = &setup_.slots[slot], .sync = sync};

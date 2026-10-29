@@ -5,7 +5,7 @@ ajp_set_warnings(ajp_prepare_helper)
 
 ajp_add_unit_tests(prepare
   SOURCES
-    builder_test.cpp cache_test.cpp drba_split_test.cpp identity_test.cpp onnx_dims_test.cpp onnx_metadata_test.cpp onnx_outputs_test.cpp onnx_scan_test.cpp
+    builder_test.cpp cache_test.cpp drba_split_test.cpp gmfss_split_test.cpp identity_test.cpp onnx_dims_test.cpp onnx_metadata_test.cpp onnx_outputs_test.cpp onnx_scan_test.cpp
     preparer_test.cpp rife_split_test.cpp
     process_test.cpp receipt_test.cpp trtexec_command_test.cpp utf8_test.cpp)
 target_compile_definitions(ajp_prepare_tests PRIVATE AJP_PREPARE_HELPER="$<TARGET_FILE:ajp_prepare_helper>")
@@ -18,3 +18,7 @@ target_compile_definitions(ajp_prepare_tests PRIVATE AJP_RIFE_MODEL_DIR="${AJP_R
 # place pour le test de découpe ; absent, ce test se SKIP.
 set(AJP_DRBA_MODEL_DIR "$ENV{HOME}/ajp/models/rife" CACHE PATH "Dossier des DistilDRBA ONNX du lecteur (test de découpe)")
 target_compile_definitions(ajp_prepare_tests PRIVATE AJP_DRBA_MODEL_DIR="${AJP_DRBA_MODEL_DIR}")
+# AJP_GMFSS_MODEL_DIR : le dossier des modèles du lecteur (gmfss_fortuna_base_s05_pair.onnx), lus en place pour le test de
+# découpe de la paire ; absent, ce test se SKIP.
+set(AJP_GMFSS_MODEL_DIR "$ENV{HOME}/ajp/models/rife" CACHE PATH "Dossier des GMFSS ONNX du lecteur (test de découpe)")
+target_compile_definitions(ajp_prepare_tests PRIVATE AJP_GMFSS_MODEL_DIR="${AJP_GMFSS_MODEL_DIR}")
