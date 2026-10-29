@@ -7,6 +7,7 @@
 #include <system_error>
 #include <utility>
 
+#include "app/play/i18n.h"
 #include "prepare/sha256.h"
 #include "prepare/utf8.h"
 
@@ -107,12 +108,12 @@ SpanInt8Lookup find_span_variant(SpanVariantKind kind, const std::filesystem::pa
   std::ostringstream text;
   text << in.rdbuf();
   toml::parse_result parsed = toml::parse(text.str());
-  if (!parsed) return refused(std::format("{} illisible : {}", where, parsed.error().description()));
+  if (!parsed) return refused(i18n::tr_format("{} unreadable: {}", where, parsed.error().description()));
   const toml::table& receipt = parsed.table();
   if (receipt["format"].value_or(std::string_view()) != limits.receipt_format)
-    return refused(std::format("{} : format inconnu", where));
+    return refused(i18n::tr_format("{}: unknown format", where));
   if (receipt["source_sha256"].value_or(std::string_view()) != *sha)
-    return refused(std::format("{} : reçu d'un autre modèle", where));
+    return refused(i18n::tr_format("{}: receipt from another model", where));
   const SpanInt8 variant{.kind = kind,
                          .onnx = onnx,
                          .psnr_mean_db = receipt["psnr_mean_db"].value_or(0.0),
@@ -122,14 +123,14 @@ SpanInt8Lookup find_span_variant(SpanVariantKind kind, const std::filesystem::pa
                                          variant.psnr_mean_db, variant.psnr_worst_db, variant.ssim_worst);
   if (!receipt["passed"].value_or(false) || variant.psnr_mean_db < limits.min_psnr_mean ||
       variant.psnr_worst_db < limits.min_psnr_worst || variant.ssim_worst < limits.min_ssim_worst) {
-    return refused(std::format("{} : sous les garde-fous ({} ; il faut {:.0f} dB, {:.0f} dB et {:.3f})",
-                               where, scores, limits.min_psnr_mean, limits.min_psnr_worst,
-                               limits.min_ssim_worst));
+    return refused(
+        i18n::tr_format("{}: below the quality limits ({}; {:.0f} dB, {:.0f} dB and {:.3f} are required)",
+                        where, scores, limits.min_psnr_mean, limits.min_psnr_worst, limits.min_ssim_worst));
   }
   auto model_sha = prepare::sha256_file_known(variant.onnx);
   if (!model_sha) return refused(model_sha.error().detail);
   if (receipt["model_sha256"].value_or(std::string_view()) != *model_sha)
-    return refused(std::format("{} : modifié depuis son reçu", prepare::utf8_path(onnx.filename())));
+    return refused(i18n::tr_format("{}: changed since its receipt", prepare::utf8_path(onnx.filename())));
   return SpanInt8Lookup{.variant = variant,
                         .note = std::format("{} ({})", prepare::utf8_path(onnx.filename()), scores)};
 }

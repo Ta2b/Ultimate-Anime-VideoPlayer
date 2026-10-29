@@ -180,8 +180,10 @@ std::expected<std::string, Refusal> desktop_entry(const std::filesystem::path& e
       "Type=Application\n"
       "Version=1.5\n"
       "Name={}\n"
-      "GenericName=Lecteur vidéo\n"
-      "Comment=Anime agrandi et interpolé en temps réel\n"
+      "GenericName=Video Player\n"
+      "GenericName[fr]=Lecteur vidéo\n"
+      "Comment=Upscaled and interpolated anime in real time\n"
+      "Comment[fr]=Anime agrandi et interpolé en temps réel\n"
       "Icon=video-x-generic\n"
       "TryExec={}\n"
       "Exec={} %f\n"
@@ -214,7 +216,7 @@ std::vector<RegistryValue> registry_values(std::string_view executable) {
       {app, "FriendlyAppName", std::string(kAppName)},
       {app + "\\shell\\open\\command", "", command},
       {std::string(kCapabilities), "ApplicationName", std::string(kAppName)},
-      {std::string(kCapabilities), "ApplicationDescription", "Anime agrandi et interpolé en temps réel"},
+      {std::string(kCapabilities), "ApplicationDescription", "Upscaled and interpolated anime in real time"},
   };
   for (const std::string_view extension : kExtensions) {
     values.push_back({app + "\\SupportedTypes", std::string(extension), ""});

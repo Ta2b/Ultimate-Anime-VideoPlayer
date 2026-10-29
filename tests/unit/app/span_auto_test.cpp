@@ -140,7 +140,7 @@ TEST_CASE("un refus des garde-fous est dit avec ses dB, la lecture reste en FP16
   CHECK_FALSE(done.reopen);
   REQUIRE(done.notify);
   CHECK(done.notify->contains("lecture en FP16"));
-  CHECK(done.notify->contains("PSNR 20 dB"));
+  CHECK_FALSE(done.notify->contains("PSNR"));  // le détail technique est au journal, pas à l'écran
   tick_span_auto(PrecisionTier::Performance, prepare, job, "m|v");
   CHECK(runs == 1);
 }

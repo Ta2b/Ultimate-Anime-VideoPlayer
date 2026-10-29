@@ -5,6 +5,7 @@
 #include <format>
 
 #include "app/play/i18n.h"
+#include "core/log.h"
 
 namespace ajp::app::play {
 
@@ -34,7 +35,15 @@ void poll_prepare(PrepareNote& note) {
   note.pending.reset();
   note.progress.reset();
   note.stop.reset();
-  note.text = done ? *done : done.error().detail;
+  if (done) {
+    note.text = *done;
+  } else {
+    // Le détail technique va au journal ; l'écran dit une phrase, dans la langue de l'interface.
+    log_channel("app")->warn("SPAN Performance, preparation : {} {}",
+                             name(done.error().code),  // i18n-ok : journal
+                             done.error().detail);
+    note.text = i18n::tr("Performance mode could not be prepared on this machine; playback stays in FP16.");
+  }
   note.refused = !done;
   note.completed = true;
 }
@@ -51,7 +60,8 @@ std::string span_progress_text(float fraction) {
 }
 
 std::string span_failure_text(std::string_view detail) {
-  return i18n::tr_format("Performance mode unavailable, playing in FP16: {}", detail);
+  static_cast<void>(detail);  // le détail est au journal (poll_prepare)
+  return i18n::tr("Performance mode unavailable, playing in FP16.");
 }
 
 bool should_start_span_auto(PrecisionTier precision, const SpanPrepare& prepare, bool job_running,

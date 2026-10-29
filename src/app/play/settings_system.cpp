@@ -14,6 +14,8 @@
 #include "app/play/panel_style.h"
 #include "app/play/span_auto.h"
 #include "app/play/updater.h"
+#include "app/play/visible_error.h"
+#include "core/log.h"
 
 namespace ajp::app::play {
 
@@ -350,7 +352,8 @@ std::expected<SpanFp8Verdict, Refusal> span_step(const BenchContext& context, Ti
   auto done = context.span.run(span_progress, stop);
   if (done) return SpanFp8Verdict{State::Ready, {}};
   if (done.error().code == RefusalCode::Cancelled) return std::unexpected(std::move(done.error()));
-  return SpanFp8Verdict{State::Unavailable, done.error().detail};
+  log_channel("app")->warn("SPAN Performance : {} {}", name(done.error().code), done.error().detail);
+  return SpanFp8Verdict{State::Unavailable, visible_error(done.error())};
 }
 
 }  // namespace
@@ -400,7 +403,8 @@ BenchEvent bench_page(const PlayerPlace& place, const std::filesystem::path& vid
       bench.refused = false;
       state.undo = BenchUndo{};
     } else {
-      bench.text = done.error().detail;
+      log_channel("app")->warn("optimisation : {} {}", name(done.error().code), done.error().detail);
+      bench.text = visible_error(done.error());
       bench.refused = true;
       state.undo = BenchUndo{};
     }
@@ -463,7 +467,7 @@ BenchEvent bench_page(const PlayerPlace& place, const std::filesystem::path& vid
       if (ImGui::Button(i18n::tr("Undo these settings"))) {
         if (const auto restored = restore_bench_file(state.undo, context.data_dir / "bench.toml");
             !restored) {
-          bench.text = restored.error().detail;
+          bench.text = visible_error(restored.error());
           bench.refused = true;
         } else {
           draft = state.undo.settings;

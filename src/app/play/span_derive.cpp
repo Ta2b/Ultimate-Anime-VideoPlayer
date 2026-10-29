@@ -5,6 +5,7 @@
 #include <fstream>
 #include <system_error>
 
+#include "app/play/i18n.h"
 #include "app/play/span_int8.h"
 #include "gpu/span_fp8/onnx_weights.h"
 #include "gpu/span_fp8/package.h"
@@ -138,24 +139,37 @@ std::expected<void, Refusal> commit_derivation(const std::filesystem::path& pack
   return {};
 }
 
+namespace {
+
+// Les étapes que le backend nomme (en français, il ne connaît pas la langue de l'interface) : dites dans
+// celle-ci.
+std::string gpu_stage_text(const std::string& stage) {
+  if (stage == "référence FP16") return i18n::tr("FP16 reference");
+  if (stage == "mesure du temps") return i18n::tr("timing");
+  if (stage == "terminé") return i18n::tr("done");
+  return stage;  // « calibration » et « validation » sont les mêmes dans les deux langues
+}
+
+}  // namespace
+
 std::expected<SpanDeriveReport, Refusal> derive_span_fp8(const SpanDerivePlan& plan,
                                                          const SpanStillsSource& stills,
                                                          const SpanDeriver& deriver,
                                                          SpanDeriveProgress& progress,
                                                          const std::stop_token& stop) {
-  progress.set(0.0F, "lecture du modèle");
+  progress.set(0.0F, i18n::tr("reading the model"));
   auto weights = plan.load_weights ? plan.load_weights() : gpu::span_fp8::package_from_onnx_file(plan.model);
   if (!weights) return std::unexpected(std::move(weights.error()));
   auto source_sha = prepare::sha256_file(plan.model);
   if (!source_sha) return std::unexpected(std::move(source_sha.error()));
 
-  progress.set(0.02F, "images de la vidéo");
+  progress.set(0.02F, i18n::tr("video frames"));
   auto taken =
-      stills(stop, [&](float fraction) { progress.set(0.02F + 0.28F * fraction, "images de la vidéo"); });
+      stills(stop, [&](float fraction) { progress.set(0.02F + 0.28F * fraction, i18n::tr("video frames")); });
   if (!taken) return std::unexpected(std::move(taken.error()));
   const StillsSplit split = split_stills(taken->size());
   if (split.calibration.empty() || split.validation.empty())
-    return refuse(RefusalCode::DecodeFailed, "trop peu d'images exploitables dans la vidéo");
+    return refuse(RefusalCode::DecodeFailed, i18n::tr("too few usable frames in the video"));
 
   gpu::SpanFp8Request request;
   request.package = gpu::span_fp8::serialize(*weights);
@@ -171,11 +185,12 @@ std::expected<SpanDeriveReport, Refusal> derive_span_fp8(const SpanDerivePlan& p
   for (const std::size_t i : split.validation) request.validation.push_back(still_of((*taken)[i]));
   taken->clear();
 
-  progress.set(0.3F, "calibration");
-  gpu::Progress backend_progress{
-      .report = [&](float fraction,
-                    const std::string& stage) { progress.set(0.3F + 0.65F * fraction, stage); },
-      .stop = stop};
+  progress.set(0.3F, i18n::tr("calibration"));
+  gpu::Progress backend_progress{.report =
+                                     [&](float fraction, const std::string& stage) {
+                                       progress.set(0.3F + 0.65F * fraction, gpu_stage_text(stage));
+                                     },
+                                 .stop = stop};
   auto derived = deriver(request, backend_progress);
   if (!derived) return std::unexpected(std::move(derived.error()));
 
@@ -217,8 +232,8 @@ std::expected<SpanDeriveReport, Refusal> derive_span_fp8(const SpanDerivePlan& p
   receipt.verdict = report.verdict;
   receipt.reference = derived->reference;
   receipt.derived_by = "ajp (natif)";
-  progress.set(0.97F, "écriture");
-  if (stop.stop_requested()) return refuse(RefusalCode::Cancelled, "préparation interrompue");
+  progress.set(0.97F, i18n::tr("writing"));
+  if (stop.stop_requested()) return refuse(RefusalCode::Cancelled, i18n::tr("preparation interrupted"));
   const std::string text =
       gpu::span_fp8::receipt_text(receipt,
                                   "dérivation native du lecteur (app/play/span_derive.h) : SPAN dérivé des "
@@ -228,23 +243,22 @@ std::expected<SpanDeriveReport, Refusal> derive_span_fp8(const SpanDerivePlan& p
   if (!report.passed) report.package.clear();
 
   const std::string scores_text =
-      std::format("PSNR moyen {} dB, pire {} dB, pire SSIM {}", db(report.verdict.psnr_mean_db),
-                  db(report.verdict.psnr_worst_db), ratio(report.verdict.ssim_worst));
+      i18n::tr_format("mean PSNR {} dB, worst {} dB, worst SSIM {}", db(report.verdict.psnr_mean_db),
+                      db(report.verdict.psnr_worst_db), ratio(report.verdict.ssim_worst));
   if (report.passed) {
-    report.text = std::format(
-        "Mode Performance prêt : {} ({} images de calibration, {} de validation en {}, noyaux {} ms). Il "
-        "sert à "
-        "la prochaine ouverture d'une vidéo.",
+    report.text = i18n::tr_format(
+        "Performance mode ready: {} ({} calibration frames, {} validation frames at {}, kernels {} ms). It "
+        "is used the next time a video opens.",
         scores_text, report.calibration_images, report.validation_images, report.size,
         db(derived->kernels_ms));
   } else {
-    report.text = std::format(
-        "Mode Performance refusé : {} ; il faut {:.0f} dB, {:.0f} dB et {}. La lecture reste sur TensorRT "
+    report.text = i18n::tr_format(
+        "Performance mode rejected: {}; {:.0f} dB, {:.0f} dB and {} are required. Playback stays on TensorRT "
         "FP16.",
         scores_text, gpu::span_fp8::kMinPsnrMeanDb, gpu::span_fp8::kMinPsnrWorstDb,
         ratio(gpu::span_fp8::kMinSsimWorst));
   }
-  progress.set(1.0F, "terminé");
+  progress.set(1.0F, i18n::tr("done"));
   return report;
 }
 
@@ -254,35 +268,35 @@ SpanPrepare make_span_prepare(const std::shared_ptr<BackendLibrary>& library, co
                               const std::string& unavailable) {
   SpanPrepare prepare;
   if (!supported) {
-    prepare.note = "Le mode Performance (FP8) n'est pas disponible : " +
-                   (unavailable.empty() ? std::string("il demande une RTX 40 (Ada) avec le moteur TensorRT")
-                                        : unavailable) +
-                   ".";
+    prepare.note =
+        i18n::tr("Performance mode (FP8) is not available: ") +
+        (unavailable.empty() ? std::string(i18n::tr("it needs an RTX 40 (Ada) with the TensorRT engine"))
+                             : unavailable) +
+        ".";
     return prepare;
   }
   if (model.empty()) {
-    prepare.note = "Aucun modèle SPAN en service : rien à préparer.";
+    prepare.note = i18n::tr("No SPAN model in use: nothing to prepare.");
     return prepare;
   }
   // Le modèle « Performance » b5f48 a 48 canaux et 5 blocs : les noyaux prennent le b8f64 seulement.
   if (model.filename().string().contains("b5f48")) {
-    prepare.note =
-        "Ce modèle SPAN (b5f48, 48 canaux) n'est pas pris par les noyaux FP8 : choisissez un modèle "
-        "Balanced.";
+    prepare.note = i18n::tr(
+        "This SPAN model (b5f48, 48 channels) is not supported by the FP8 kernels: pick a Balanced model.");
     return prepare;
   }
   if (const SpanInt8Lookup found = find_span_variant(SpanVariantKind::Fp8Cutlass, model, models_dir);
       found.variant) {
     prepare.ready = true;
-    prepare.note = "Prêt : " + found.note;
+    prepare.note = i18n::tr("Ready: ") + found.note;
   } else if (!found.note.empty()) {
     prepare.refused = true;
-    prepare.note = "Refusé : " + found.note;
+    prepare.note = i18n::tr("Rejected: ") + found.note;
   } else {
-    prepare.note = "Pas encore préparé : la lecture reste sur TensorRT FP16 au cran Performance.";
+    prepare.note = i18n::tr("Not prepared yet: playback stays on TensorRT FP16 at the Performance level.");
   }
   if (video.empty()) {
-    prepare.note += " Ouvrez une vidéo pour préparer : le lecteur s'y calibre.";
+    prepare.note += i18n::tr(" Open a video to prepare: the player calibrates on it.");
     return prepare;
   }
   prepare.offered = true;

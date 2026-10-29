@@ -19,6 +19,7 @@
 #include "app/play/auto_bench.h"
 #include "app/play/settings_system.h"
 #include "app/play/span_int8.h"
+#include "french_ui.h"
 #include "gpu/span_fp8/package.h"
 #include "prepare/sha256.h"
 
@@ -122,6 +123,7 @@ struct FakeBackend {
 }  // namespace
 
 TEST_CASE("douze images : huit calibrent, quatre sont mises de côté", "[app][span_derive]") {
+  ajp::app::play::FrenchUi french;
   const StillsSplit twelve_split = split_stills(12);
   CHECK(twelve_split.calibration.size() == 8);
   CHECK(twelve_split.validation == std::vector<std::size_t>{2, 5, 8, 11});
@@ -133,6 +135,7 @@ TEST_CASE("douze images : huit calibrent, quatre sont mises de côté", "[app][s
 
 TEST_CASE("une dérivation qui passe écrit le paquet et son reçu, que le lecteur relit",
           "[app][span_derive]") {
+  ajp::app::play::FrenchUi french;
   const Folder folder;
   const FakeBackend backend;
   SpanDeriveProgress progress;
@@ -184,6 +187,7 @@ TEST_CASE("une dérivation qui passe écrit le paquet et son reçu, que le lecte
 
 TEST_CASE("des garde-fous manqués écrivent le reçu refusé et retirent le paquet d'avant",
           "[app][span_derive]") {
+  ajp::app::play::FrenchUi french;
   const Folder folder;
   SpanDeriveProgress progress;
   FakeBackend good;
@@ -211,6 +215,7 @@ TEST_CASE("des garde-fous manqués écrivent le reçu refusé et retirent le paq
 }
 
 TEST_CASE("un échec technique n'écrit rien et laisse l'état d'avant", "[app][span_derive]") {
+  ajp::app::play::FrenchUi french;
   const Folder folder;
   SpanDeriveProgress progress;
   FakeBackend good;
@@ -268,6 +273,7 @@ TEST_CASE("un échec technique n'écrit rien et laisse l'état d'avant", "[app][
 }
 
 TEST_CASE("une écriture qui échoue ne laisse aucun fichier à moitié écrit", "[app][span_derive]") {
+  ajp::app::play::FrenchUi french;
   const Folder folder;
   const std::vector<std::byte> bytes(64, std::byte{7});
   // Un état d'avant, entier.
@@ -303,6 +309,7 @@ TEST_CASE("une écriture qui échoue ne laisse aucun fichier à moitié écrit",
 
 TEST_CASE("la préparation n'est offerte qu'avec un moteur qui la calcule et une vidéo ouverte",
           "[app][span_derive]") {
+  ajp::app::play::FrenchUi french;
   const Folder folder;
   const fs::path video = folder.root / "episode.mkv";
   const gpu::BackendInit init;
@@ -340,6 +347,7 @@ TEST_CASE("la préparation n'est offerte qu'avec un moteur qui la calcule et une
 
 TEST_CASE("le paquet et le reçu de l'outil Python sont ceux que le lecteur prend",
           "[.span_compat][app][span_derive]") {
+  ajp::app::play::FrenchUi french;
   const fs::path model(AJP_SPAN_FP8_MODEL), package(AJP_SPAN_FP8_PYTHON_PACKAGE);
   if (!fs::is_regular_file(model) || !fs::is_regular_file(package))
     SKIP(
@@ -366,6 +374,7 @@ TEST_CASE("le paquet et le reçu de l'outil Python sont ceux que le lecteur pren
 
 TEST_CASE("la préparation de bout en bout, par le vrai backend, sur une vraie vidéo",
           "[.span_prepare][app][span_derive]") {
+  ajp::app::play::FrenchUi french;
   const fs::path backend_path(AJP_BACKEND_TENSORRT), model(AJP_SPAN_FP8_MODEL), video(AJP_SPAN_DERIVE_VIDEO);
   if (backend_path.empty() || !fs::is_regular_file(backend_path) || !fs::is_regular_file(model) ||
       !fs::is_regular_file(video))
@@ -401,6 +410,7 @@ TEST_CASE("la préparation de bout en bout, par le vrai backend, sur une vraie v
 
 TEST_CASE("la préparation à la main ne part qu'une fois à la fois, et seulement si elle est offerte",
           "[app][span_derive]") {
+  ajp::app::play::FrenchUi french;
   PrepareNote note;
   int started = 0;
   SpanPrepare prepare;

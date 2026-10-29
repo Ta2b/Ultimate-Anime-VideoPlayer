@@ -75,7 +75,7 @@ std::expected<int, Refusal> open_rtx_hdr(const std::filesystem::path& sdk_source
     if (!imported) return std::unexpected(std::move(imported.error()));
     sdk = *imported;
   }
-  if (!sdk.installed) return refuse(RefusalCode::HdrUnavailable, std::format("RTX HDR : {}", sdk.reason));
+  if (!sdk.installed) return refuse(RefusalCode::HdrUnavailable, i18n::tr_format("RTX HDR: {}", sdk.reason));
   auto params = vendor_hdr::validate(true_hdr_params(settings, auto_peak));
   if (!params) return std::unexpected(std::move(params.error()));
   if (auto ok = kernels.open_true_hdr(
@@ -138,11 +138,11 @@ render::GradeChoice grade_of(const PlaySettings& s, bool true_hdr_open, int peak
 std::string output_text(const PlaceboScreen& screen, const PlaySettings& s, int peak_nits) {
   std::string text = screen.output_description();
   if (peak_nits > 0) {
-    text += std::format(" · RTX HDR, pic {} nits", peak_nits);
+    text += i18n::tr_format(" · RTX HDR, peak {} nits", peak_nits);
   } else if (s.hdr_native && screen.hdr_output()) {
-    text += " · HDR adaptatif";
+    text += i18n::tr(" · adaptive HDR");
   }
-  if (s.grade) text += std::format(" · grade {}", grade_label(s.grade_preset));
+  if (s.grade) text += i18n::tr_format(" · grade {}", grade_label(s.grade_preset));
   return text;
 }
 
@@ -183,7 +183,7 @@ void refresh_black(Chain& to) {
   if (to.true_hdr_open) {
     if (to.truehdr_ramp.empty()) {
       set_grade(to, s);
-      to.ui.set_black_status("Vrai noir : rampe TrueHDR en cours de mesure…");
+      to.ui.set_black_status(i18n::tr("True black: measuring the TrueHDR ramp…"));
       return;
     }
     levels = to.truehdr_ramp;

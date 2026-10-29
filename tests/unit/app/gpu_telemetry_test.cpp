@@ -4,16 +4,20 @@
 
 #include <catch2/catch_test_macros.hpp>
 
+#include "french_ui.h"
+
 namespace ajp::app::play {
 namespace {
 
 TEST_CASE("UUID NVML : GPU- et cinq groupes d'octets", "[app][telemetry]") {
+  ajp::app::play::FrenchUi french;
   DeviceUuid uuid{};
   for (std::size_t i = 0; i < uuid.size(); ++i) uuid[i] = static_cast<std::uint8_t>(0x10 + i);
   CHECK(nvml_uuid_text(uuid) == "GPU-10111213-1415-1617-1819-1a1b1c1d1e1f");
 }
 
 TEST_CASE("Raisons d'écrêtage : puissance et chaleur comptent, le ralenti non", "[app][telemetry]") {
+  ajp::app::play::FrenchUi french;
   CHECK(throttle_text(0x1 | 0x2).empty());  // GpuIdle, ApplicationsClocksSetting
   CHECK(throttle_text(0x4) == "limite de puissance");
   CHECK(throttle_text(0x4 | 0x20) == "limite de puissance + chaleur");
@@ -21,6 +25,7 @@ TEST_CASE("Raisons d'écrêtage : puissance et chaleur comptent, le ralenti non"
 }
 
 TEST_CASE("Version du pilote : plus ancien que, et prudence si illisible", "[app][telemetry]") {
+  ajp::app::play::FrenchUi french;
   CHECK(nvidia_driver_older_than("535.104.05", 550));
   CHECK_FALSE(nvidia_driver_older_than("615.78.08", 550));
   CHECK(nvidia_driver_older_than("580.65.06", 580, 82, 7));
@@ -31,6 +36,7 @@ TEST_CASE("Version du pilote : plus ancien que, et prudence si illisible", "[app
 }
 
 TEST_CASE("Ligne de l'OSD et avertissement de sous-cadencement", "[app][telemetry]") {
+  ajp::app::play::FrenchUi french;
   GpuSample s{.sm_mhz = 2520,
               .sm_max_mhz = 3105,
               .mem_mhz = 10501,
@@ -57,6 +63,7 @@ TEST_CASE("Ligne de l'OSD et avertissement de sous-cadencement", "[app][telemetr
 namespace ajp::app::play {
 
 TEST_CASE("amdgpu : pp_dpm_sclk donne l'horloge étoilée et la plus haute", "[app][telemetry]") {
+  ajp::app::play::FrenchUi french;
   const DpmClocks clocks = parse_amdgpu_dpm("0: 500Mhz \n1: 1900Mhz \n2: 2900Mhz *\n");
   CHECK(clocks.current_mhz == 2900);
   CHECK(clocks.max_mhz == 2900);
@@ -73,6 +80,7 @@ TEST_CASE("amdgpu : pp_dpm_sclk donne l'horloge étoilée et la plus haute", "[a
 namespace ajp::app::play {
 
 TEST_CASE("amdgpu : génération PCIe de current_link_speed", "[app][telemetry]") {
+  ajp::app::play::FrenchUi french;
   CHECK(parse_pcie_generation("16.0 GT/s PCIe\n") == 4);
   CHECK(parse_pcie_generation("32.0 GT/s PCIe") == 5);
   CHECK(parse_pcie_generation("2.5 GT/s PCIe") == 1);
@@ -81,6 +89,7 @@ TEST_CASE("amdgpu : génération PCIe de current_link_speed", "[app][telemetry]"
 }
 
 TEST_CASE("Ligne de l'OSD avec la mémoire vidéo", "[app][telemetry]") {
+  ajp::app::play::FrenchUi french;
   const GpuSample s{
       .sm_mhz = 2900, .sm_max_mhz = 2900, .gpu_percent = 50, .vram_used_mib = 7373, .vram_total_mib = 16384};
   CHECK(telemetry_line(s) == "GPU 2900 / 2900 MHz · 0 °C · 50 % · VRAM 7,2 / 16,0 Go");

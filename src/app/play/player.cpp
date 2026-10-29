@@ -50,6 +50,7 @@
 #include "app/play/ui.h"
 #include "app/play/updater.h"
 #include "app/play/upscale_stage.h"
+#include "app/play/visible_error.h"
 #include "core/clock.h"
 #include "core/log.h"
 #include "core/settings.h"
@@ -83,8 +84,8 @@ std::string set_aside(const std::filesystem::path& path, const Refusal& why) {
     return {};
   }
   log_channel("app")->warn("{} mis de côté dans {}", path.string(), aside.string());
-  return std::format("{} était invalide : copie gardée sous {}", path.filename().string(),
-                     aside.filename().string());
+  return i18n::tr_format("{} was invalid: copy kept as {}", path.filename().string(),
+                         aside.filename().string());
 }
 
 // La piste vidéo que la source choisira, lue d'avance : sa taille fixe le moteur et le ring.
@@ -115,8 +116,8 @@ std::expected<void, Refusal> play(const PlayOptions& options, const PlayerPaths&
       // Lancé depuis le gestionnaire de fichiers (« Ouvrir avec »), sans terminal : un refus silencieux
       // ne dirait rien. L'accueil s'ouvre avec la raison.
       log_channel("app")->warn("{}", video.error().detail);
-      unreadable =
-          std::format("« {} » ne se lit pas : {}", options.file.filename().string(), video.error().detail);
+      unreadable = i18n::tr_format("\"{}\" cannot be read: {}", options.file.filename().string(),
+                                   visible_error(video.error()));
     }
   }
   // Vérification des mises à jour, en arrière-plan et hors lecture : le fil s'arrête avec le lecteur.
@@ -275,7 +276,8 @@ std::expected<void, Refusal> play(const PlayOptions& options, const PlayerPaths&
       auto probed = probe_video(file);
       if (!probed) {
         log->warn("{}", probed.error().detail);
-        problem = std::format("« {} » ne se lit pas : {}", file.filename().string(), probed.error().detail);
+        problem = i18n::tr_format("\"{}\" cannot be read: {}", file.filename().string(),
+                                  visible_error(probed.error()));
         file.clear();
         continue;
       }
@@ -436,7 +438,8 @@ std::expected<void, Refusal> play(const PlayOptions& options, const PlayerPaths&
       // Un fichier glissé qui ne s'ouvre pas ramène à l'accueil avec la raison : la lecture en cours n'est
       // pas une raison de quitter.
       if ((!from_home && !replaced) || player.quit) return result;
-      failed = i18n::tr_format("\"{}\" stopped: {}", file.filename().string(), result.error().detail);
+      log->error("{}", result.error().detail);
+      failed = i18n::tr_format("\"{}\" stopped: {}", file.filename().string(), visible_error(result.error()));
       log->error("{}", failed);
     }
     replaced = false;

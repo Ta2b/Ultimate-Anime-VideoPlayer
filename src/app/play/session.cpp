@@ -553,7 +553,7 @@ std::vector<std::string> Session::osd_lines() const {
         "frame {} (σ {}) · render {} · skipped {}{}", format_ms(stats_.frame_interval.median()),
         format_ms(static_cast<std::int64_t>(stats_.frame_interval.stddev())),
         format_ms(stats_.render.median()), stats_.dropped,
-        skipped > 0 ? std::format(" (+ {} avant calcul)", skipped) : std::string()));
+        skipped > 0 ? i18n::tr_format(" (+ {} before compute)", skipped) : std::string()));
     const std::int64_t period = pacing_period_us();
     std::string synced;
     if (speed_ != 1.0) {
@@ -580,7 +580,7 @@ std::vector<std::string> Session::osd_lines() const {
   if (show.all || show.position) {
     const std::int64_t position = current_ ? current_->pts_us : kNoPts;
     lines.push_back(std::format("{} / {}{}", format_position(position), format_position(config_.duration_us),
-                                paused_ ? " · pause" : ""));
+                                paused_ ? i18n::tr(" · paused") : ""));
   }
   // Les refus restent visibles, statistiques ou pas.
   lines.insert(lines.end(), refusals_.begin(), refusals_.end());

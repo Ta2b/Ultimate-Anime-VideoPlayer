@@ -13,6 +13,7 @@
 #include <catch2/interfaces/catch_interfaces_capture.hpp>
 
 #include "app/play/span_int8.h"
+#include "french_ui.h"
 #include "prepare/sha256.h"
 
 namespace ajp::app::play {
@@ -64,6 +65,7 @@ struct Folder {
 }  // namespace
 
 TEST_CASE("SPAN FP8 CUTLASS : le paquet d'un reçu qui passe les seuils de l'INT8", "[app][int8][fp8c]") {
+  ajp::app::play::FrenchUi french;
   const Folder f;
   CHECK_FALSE(find_span_variant(SpanVariantKind::Fp8Cutlass, f.span, f.dir()).variant);  // sans reçu : rien
   f.receipt(52.0, 49.3, 0.9967);
@@ -78,6 +80,7 @@ TEST_CASE("SPAN FP8 CUTLASS : le paquet d'un reçu qui passe les seuils de l'INT
 }
 
 TEST_CASE("SPAN FP8 CUTLASS : un score que le FP8 par Q/DQ accepterait ne suffit pas", "[app][int8][fp8c]") {
+  ajp::app::play::FrenchUi french;
   const Folder f;
   f.receipt(35.0, 30.0, 0.95);  // au-dessus des seuils lâches du FP8 (30, 26, 0,93), sous ceux de l'INT8
   const SpanInt8Lookup found = find_span_variant(SpanVariantKind::Fp8Cutlass, f.span, f.dir());
@@ -93,6 +96,7 @@ TEST_CASE("SPAN FP8 CUTLASS : un score que le FP8 par Q/DQ accepterait ne suffit
 
 TEST_CASE("SPAN FP8 CUTLASS : reçu d'un autre format, d'un autre modèle ou paquet modifié",
           "[app][int8][fp8c]") {
+  ajp::app::play::FrenchUi french;
   const Folder f;
   f.receipt(52.0, 49.0, 0.9967, "ajp-span-fp8-v1");  // le format du FP8 par Q/DQ
   const SpanInt8Lookup wrong = find_span_variant(SpanVariantKind::Fp8Cutlass, f.span, f.dir());
@@ -114,6 +118,7 @@ TEST_CASE("SPAN FP8 CUTLASS : reçu d'un autre format, d'un autre modèle ou paq
 
 TEST_CASE("SPAN FP8 CUTLASS : le cran Performance demande le moteur qui sait le paquet",
           "[app][int8][fp8c]") {
+  ajp::app::play::FrenchUi french;
   const Folder f;
   f.receipt(52.0, 49.0, 0.9967);
   CHECK(span_tiers(f.span, f.dir(), true, true).performance);
@@ -123,6 +128,7 @@ TEST_CASE("SPAN FP8 CUTLASS : le cran Performance demande le moteur qui sait le 
 }
 
 TEST_CASE("SPAN FP8 CUTLASS : le nom d'origine se lit dans celui du paquet", "[app][int8][fp8c]") {
+  ajp::app::play::FrenchUi french;
   SpanVariantKind kind = SpanVariantKind::Int8;
   CHECK(span_int8_source("modele-fp8c-0123456789abcdef.span8", &kind) == "modele.onnx");
   CHECK(kind == SpanVariantKind::Fp8Cutlass);

@@ -10,6 +10,8 @@
 #include <system_error>
 #include <vector>
 
+#include "app/play/i18n.h"
+
 #if defined(__linux__)
 #include <bit>
 #include <cstdint>
@@ -181,26 +183,26 @@ DisplayFacts parse_edid(std::span<const std::uint8_t> edid) {
 }
 
 std::string describe(const DisplayFacts& d) {
-  std::string text = d.name.empty() ? std::string("écran sans nom") : d.name;
-  if (d.pq) text += " · HDR10";
-  if (d.peak_nits) text += std::format(", pic {:.0f} nits", *d.peak_nits);
-  if (d.frame_average_nits) text += std::format(", moyenne {:.0f}", *d.frame_average_nits);
-  if (d.min_nits) text += std::format(", noir {:.5f} nit", *d.min_nits);
+  std::string text = d.name.empty() ? std::string(i18n::tr("unnamed display")) : d.name;
+  if (d.pq) text += i18n::tr(" · HDR10");
+  if (d.peak_nits) text += i18n::tr_format(", peak {:.0f} nits", *d.peak_nits);
+  if (d.frame_average_nits) text += i18n::tr_format(", average {:.0f}", *d.frame_average_nits);
+  if (d.min_nits) text += i18n::tr_format(", black {:.5f} nit", *d.min_nits);
   switch (d.source) {
     case OledSource::DisplayId:
-      text += d.oled ? " · OLED (DisplayID)" : " · pas OLED (DisplayID)";
+      text += d.oled ? i18n::tr(" · OLED (DisplayID)") : i18n::tr(" · not OLED (DisplayID)");
       break;
     case OledSource::KnownModel:
-      text += std::format(" · {} (modèle connu)", d.panel);
+      text += i18n::tr_format(" · {} (known model)", d.panel);
       break;
     case OledSource::Heuristic:
-      text += d.oled ? " · OLED probable (EDID)" : " · pas OLED (EDID)";
+      text += d.oled ? i18n::tr(" · probably OLED (EDID)") : i18n::tr(" · not OLED (EDID)");
       break;
     case OledSource::Unknown:
-      text += " · OLED : inconnu";
+      text += i18n::tr(" · OLED: unknown");
       break;
   }
-  if (d.vrr) text += *d.vrr ? " · VRR actif" : " · VRR inactif";
+  if (d.vrr) text += *d.vrr ? i18n::tr(" · VRR on") : i18n::tr(" · VRR off");
   return text;
 }
 

@@ -13,6 +13,7 @@
 #include "app/play/controls.h"
 #include "app/play/engine_build.h"
 #include "app/play/gmfss_model.h"
+#include "app/play/i18n.h"
 #include "app/play/input.h"
 #include "app/play/profiles.h"
 #include "core/log.h"
@@ -73,13 +74,13 @@ std::expected<std::optional<gpu::Artifact>, Refusal> wait_engine(EngineBuild& bu
       snapshot.maybe(screen, started);
       const auto seconds = [](double s) { return format_clock(static_cast<std::int64_t>(s * 1e6), 0); };
       const PrepareView view{
-          .label = std::format("Préparation du moteur {}", engine.name),
+          .label = i18n::tr_format("Preparing engine {}", engine.name),
           .fraction = progress.fraction(now),
           .details = {status.stage,
-                      std::format("écoulé {} · prévu ~{}", seconds(progress.elapsed_seconds(now)),
-                                  seconds(progress.expected_seconds())),
-                      std::format("{} · entrée {}x{} · {}", engine.model, engine.width, engine.height,
-                                  engine.backend)},
+                      i18n::tr_format("elapsed {} · expected ~{}", seconds(progress.elapsed_seconds(now)),
+                                      seconds(progress.expected_seconds())),
+                      i18n::tr_format("{} · input {}x{} · {}", engine.model, engine.width, engine.height,
+                                      engine.backend)},
           .show_details = details};
       auto shown = screen.show(ShowRequest{.ui = ui.preparation(now, view)});
       if (!shown) return std::unexpected(std::move(shown.error()));
@@ -151,7 +152,7 @@ std::expected<std::optional<std::unique_ptr<gpu::Engine>>, Refusal> prepare_rife
   return prepare_engine(
       p, init, backend, *manifest,
       gpu::Shape{.dims = {1, kernels::kRifeInputChannels, geometry.padded_height, geometry.padded_width}},
-      EngineLabel{.name = "RIFE fusionné",
+      EngineLabel{.name = i18n::tr("Fused RIFE"),
                   .model = rife_onnx.stem().string(),
                   .width = geometry.padded_width,
                   .height = geometry.padded_height},
@@ -230,7 +231,7 @@ std::expected<std::optional<GmfssPieces>, Refusal> prepare_gmfss_pieces(
   GmfssPieces pieces;
   auto features = prepare_engine(p, init, backend, files->features,
                                  gpu::Shape{.dims = {1, 3, g.padded_height, g.padded_width}},
-                                 EngineLabel{.name = "GMFSS (caractéristiques)",
+                                 EngineLabel{.name = i18n::tr("GMFSS (features)"),
                                              .model = pair_onnx.stem().string(),
                                              .width = g.padded_width,
                                              .height = g.padded_height},
@@ -241,7 +242,7 @@ std::expected<std::optional<GmfssPieces>, Refusal> prepare_gmfss_pieces(
   auto flow =
       prepare_engine(p, init, backend, files->flow,
                      gpu::Shape{.dims = {1, kernels::kGmfssFramePlanes, g.padded_height, g.padded_width}},
-                     EngineLabel{.name = "GMFSS (flot)",
+                     EngineLabel{.name = i18n::tr("GMFSS (flow)"),
                                  .model = pair_onnx.stem().string(),
                                  .width = g.padded_width,
                                  .height = g.padded_height},
@@ -281,8 +282,8 @@ std::expected<std::optional<GmfssEngines>, Refusal> prepare_gmfss(Player& p, con
       tried += std::format("{}{}", tried.empty() ? "" : ", ", dir.string());
     return std::unexpected(
         Refusal{RefusalCode::FieldMissing,
-                std::format("GMFSS : {} et {} introuvables ({})", gmfss_files(variant).pair,
-                            gmfss_files(variant).fusion, tried)});
+                i18n::tr_format("GMFSS: {} and {} not found ({})", gmfss_files(variant).pair,
+                                gmfss_files(variant).fusion, tried)});
   }
   const kernels::RifeGeometry g = kernels::rife_geometry(work_width, work_height, found->align);
   auto fixed =
@@ -309,7 +310,7 @@ std::expected<std::optional<GmfssEngines>, Refusal> prepare_gmfss(Player& p, con
     auto pair =
         prepare_engine(p, init, backend, fixed->pair,
                        gpu::Shape{.dims = {1, kernels::kGmfssFramePlanes, g.padded_height, g.padded_width}},
-                       EngineLabel{.name = "GMFSS (paire)",
+                       EngineLabel{.name = i18n::tr("GMFSS (pair)"),
                                    .model = found->pair.stem().string(),
                                    .width = g.padded_width,
                                    .height = g.padded_height},
@@ -320,7 +321,7 @@ std::expected<std::optional<GmfssEngines>, Refusal> prepare_gmfss(Player& p, con
   }
   auto fusion = prepare_engine(p, init, backend, fixed->fusion,
                                gpu::Shape{.dims = {1, 3, g.padded_height / 2, g.padded_width / 2}},
-                               EngineLabel{.name = "GMFSS (fusion)",
+                               EngineLabel{.name = i18n::tr("GMFSS (fusion)"),
                                            .model = found->fusion.stem().string(),
                                            .width = g.padded_width,
                                            .height = g.padded_height},
@@ -354,7 +355,7 @@ std::expected<std::optional<std::unique_ptr<gpu::Engine>>, Refusal> prepare_dist
     for (const std::filesystem::path& dir : dirs)
       tried += std::format("{}{}", tried.empty() ? "" : ", ", dir.string());
     return std::unexpected(Refusal{RefusalCode::FieldMissing,
-                                   std::format("DistilDRBA : {} introuvable ({})", kDistilDrbaFile, tried)});
+                                   i18n::tr_format("DistilDRBA: {} not found ({})", kDistilDrbaFile, tried)});
   }
   align = found->align;
   const kernels::RifeGeometry g = kernels::rife_geometry(work_width, work_height, found->align);
@@ -371,7 +372,7 @@ std::expected<std::optional<std::unique_ptr<gpu::Engine>>, Refusal> prepare_dist
       fused->declined = manifest.error().detail;
     } else {
       auto engine = prepare_engine(p, init, backend, *manifest, shape,
-                                   EngineLabel{.name = "DistilDRBA fusionné",
+                                   EngineLabel{.name = i18n::tr("Fused DistilDRBA"),
                                                .model = label.model,
                                                .width = g.padded_width,
                                                .height = g.padded_height},
@@ -398,7 +399,7 @@ std::expected<std::optional<std::unique_ptr<gpu::Engine>>, Refusal> prepare_appl
   if (backend_name != "coreml") {
     return std::unexpected(
         Refusal{RefusalCode::FeatureUnavailable,
-                std::format("interpolation d'Apple : backend Core ML seulement (ici {})", backend_name)});
+                i18n::tr_format("Apple interpolation: Core ML backend only (here {})", backend_name)});
   }
   auto model = apple_model(p.paths.engines.parent_path() / "modeles");
   if (!model) return std::unexpected(std::move(model.error()));

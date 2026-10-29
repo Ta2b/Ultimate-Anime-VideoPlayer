@@ -7,6 +7,7 @@
 #include <numeric>
 #include <system_error>
 
+#include "app/play/i18n.h"
 #include "prepare/utf8.h"
 
 namespace ajp::app::play {
@@ -79,7 +80,7 @@ std::string export_label(exporter::Codec codec, exporter::Quality quality) {
   if (codec == exporter::Codec::Lossless) return std::string(exporter::label(codec));
   std::string level(exporter::label(quality));  // « Très haute » → « très haute »
   level[0] = static_cast<char>(std::tolower(static_cast<unsigned char>(level[0])));
-  return std::format("{} · qualité {}", exporter::label(codec), level);
+  return i18n::tr_format("{} · quality {}", exporter::label(codec), level);
 }
 
 }  // namespace ajp::app::play

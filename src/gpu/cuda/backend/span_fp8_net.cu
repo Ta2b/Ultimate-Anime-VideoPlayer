@@ -267,6 +267,7 @@ bool SpanFp8Net::launch(cudaStream_t stream, const void* input, void* output, st
     error = std::string("mémoire partagée des noyaux refusée : ") + cudaGetErrorString(n.attribute);
     return false;
   }
+  static_cast<void>(cudaGetLastError());  // une erreur d'un appel d'avant n'est pas celle de ces lancements
   const int blocks = static_cast<int>((n.npix + 255) / 256);
   unshuffle_kernel<<<blocks, 256, 0, stream>>>(static_cast<const __half*>(input), n.unshuffled_ptr, n.height,
                                                n.width);
