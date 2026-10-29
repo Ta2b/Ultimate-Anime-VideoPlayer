@@ -138,6 +138,7 @@ class SettingsPanel {
   PlaySettings draft_;     // ce que montre le panneau ; diffère de running pour ce qui attend « Appliquer »
   PlaySettings seen_;      // running au tour précédent
   int page_ = 0;           // la page de l'arbre affichée (settings_panel.cpp : kPages)
+  int shown_page_ = -1;    // la page de l'image précédente : sa catégorie s'ouvre quand elle change
   bool advanced_ = false;  // la case « Réglages avancés » : montre la catégorie Avancé
   bool pending_shown_ = false;                  // le bandeau « Appliquer » était montré au tour précédent
   std::optional<core::EngineId> engine_draft_;  // moteur coché dans l'onglet Moteurs, pas appliqué
