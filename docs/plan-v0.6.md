@@ -21,6 +21,7 @@ que sur un accord clair de Tatoub dans le fil. Détail des décisions et journal
 - [ ] Release v0.6 : version 0.6.0, notes `tools/release/notes/v0.6.0.md` (brouillon #81), liste des essais Windows/macOS ; étiquette seulement sur le message direct de Tatoub
 
 ## Journal
+- **2026-10-30** : stratégie de Tatoub : plus de nouvelle fonction, préversions RC jusqu'à sa validation de la 1.0 ; 0.7.0-rc.1 préparée (version 0.7.0, notes `tools/release/notes/v0.7.0-rc.1.md`) ; l'empreinte du paquet TensorRT change (`0f05c5795964`), un nouveau paquet `trt-0f05c5795964` est à construire avant la release Linux.
 - **2026-10-29 (nuit)** : #133, #136 à #138 fusionnées ; **v0.6.0 publiée en finale** (trois OS verts, TensorRT dans `engines.lock`) ; audits UI et fonctionnel faits ; icône globe (#139) et langues EN/FR (#140) en revue ; canal preview à signer (points 28 à 30).
 - **2026-10-29 (soir)** : #118 à #131 et #134 fusionnées ; #133 (benchmark simple, SPAN FP8 automatique) ouverte ; v0.6.0 Linux publiée, échecs macOS et Windows corrigés ; plus de nouvelle fonctionnalité jusqu'à la 1.0 (audits en cours).
 - **2026-10-29** : #104 à #115 fusionnées ou prêtes (voir la liste vivante, points 19 à 24). Paquet TensorRT Linux construit (trt-7b7b65cbe8d6, à refaire depuis la main finale). Restent avant l'étiquette : menus (captures), vérification du pop-up, pas d'étiquette sans « go » du coordinateur.
