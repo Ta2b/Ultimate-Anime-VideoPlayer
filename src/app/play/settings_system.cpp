@@ -72,11 +72,17 @@ bool default_player_prompt(const PlayerPlace& place, SystemNote& last, bool& dis
     last = done ? SystemNote{.text = *done} : SystemNote{.text = done.error().detail, .refused = true};
   }
   const ImGuiIO& io = ImGui::GetIO();
-  // Une petite fenêtre qu'on peut déplacer, en bas à droite au départ, indépendante du panneau.
-  ImGui::SetNextWindowPos({io.DisplaySize.x - 24.0F * scale, io.DisplaySize.y - 140.0F * scale},
-                          ImGuiCond_FirstUseEver, {1.0F, 1.0F});
+  // Une petite fenêtre qu'on peut déplacer, au milieu de la fenêtre du lecteur au départ, indépendante du
+  // panneau.
+  ImGui::SetNextWindowPos({io.DisplaySize.x * 0.5F, io.DisplaySize.y * 0.5F}, ImGuiCond_Appearing,
+                          {0.5F, 0.5F});
   ImGui::SetNextWindowSize({std::min(420.0F * scale, io.DisplaySize.x - 40.0F * scale), 0.0F},
                            ImGuiCond_Always);
+  static bool brought_forward = false;  // au-dessus du panneau des réglages la première fois seulement
+  if (!brought_forward) {
+    ImGui::SetNextWindowFocus();
+    brought_forward = true;
+  }
   bool closed = false;
   constexpr ImGuiWindowFlags kFlags = ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoResize |
                                       ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_AlwaysAutoResize;

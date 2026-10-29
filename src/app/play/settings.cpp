@@ -392,6 +392,7 @@ PlaySettings settings_for(const PlaySettings& saved, const PlayOptions& options)
   if (options.was_given("--rife")) {
     s.rife_factor = options.rife_factor;
     s.rife_factor_den = options.rife_factor_den;
+    s.rife_auto = false;  // un multiplicateur donné à la main coupe le mode auto, comme dans le menu
   }
   if (options.was_given("--truehdr")) s.true_hdr = true;
   if (options.was_given("--truehdr-contrast")) s.true_hdr_contrast = options.true_hdr_contrast;

@@ -3,9 +3,11 @@
 #include <algorithm>
 #include <array>
 #include <cstdint>
+#include <format>
 #include <iterator>
 #include <memory>
 #include <mutex>
+#include <optional>
 #include <span>
 #include <string>
 #include <string_view>
@@ -19,10 +21,13 @@
 #include <SDL3/SDL_filesystem.h>
 #include <SDL3/SDL_video.h>
 
+#include "app/play/auto_bench.h"
 #include "app/play/chain_setup.h"
 #include "app/play/chain_stats.h"
+#include "app/play/default_player.h"
 #include "app/play/display_edid.h"
 #include "app/play/drba_model.h"
+#include "app/play/engine_install.h"
 #include "app/play/engine_screen.h"
 #include "app/play/engine_switch.h"
 #include "app/play/first_run.h"
@@ -33,6 +38,7 @@
 #include "app/play/profiles.h"
 #include "app/play/scripted_input.h"
 #include "app/play/span_int8.h"
+#include "audio/devices.h"
 #include "core/clock.h"
 #include "core/engines.h"
 #include "core/keys.h"
@@ -125,6 +131,21 @@ SettingsChoices home_choices(const HomeScreen& h, const HomeState& st, const Pla
   const bool fp8_engine = gpu_facts(h.screen).vendor == GpuVendor::Nvidia && gpu_facts(h.screen).tensor_cores;
   const std::int64_t period = display_period_us(h.screen.window());
   const std::optional<DisplayFacts> display = read_display(display_name(h.screen.window()));
+  // Général > Configuration sans vidéo ouverte : la carte, sa tranche (mesurée ou estimée), l'écran, les
+  // sorties son, comme en lecture.
+  std::optional<BenchResult> measured;
+  if (auto bench = load_bench(h.settings_path.parent_path() / "bench.toml")) measured = std::move(*bench);
+  const GpuFacts machine = gpu_facts(h.screen);
+  const std::string bench_text =
+      measured && measured->gpu == machine.name && measured->driver == machine.driver
+          ? std::format("Dernière évaluation : {}, niveau {}", measured->date, tier_label(measured->level))
+          : std::string();
+  std::vector<SettingsChoices::AudioOut> audio_outputs;
+  for (const audio::AudioDevice& device : audio::playback_devices())
+    audio_outputs.push_back(
+        {.name = device.name, .channels = device.channels, .is_default = device.is_default});
+  const bool default_player_is_ajp =
+      is_default_player({.executable = h.paths.executable, .home = h.paths.home, .data = h.paths.data});
   return SettingsChoices{
       .models = model ? model->available : std::vector<std::string>{},
       .default_model = model ? model->default_name : std::string(),
@@ -160,6 +181,14 @@ SettingsChoices home_choices(const HomeScreen& h, const HomeState& st, const Pla
       .engine_in_use = st.engines.preferred[usage(core::Usage::Upscale)],
       .display_text = display ? describe(*display) : std::string("EDID illisible : OLED inconnu"),
       .source_file = {},
+      .machine_tier = static_cast<int>(effective_tier(machine, measured)),
+      .display_height = display_height(h.screen.window()),
+      .gpu_name = machine.name,
+      .audio_outputs = audio_outputs,
+      .engines_dir_default = prepare::utf8_path(h.paths.engines.parent_path() / "backends"),
+      .engines_dir_free = format_size(free_bytes(h.catalog.layout.engines)),
+      .default_player_is_ajp = default_player_is_ajp,
+      .bench_text = bench_text,
       .place = {.executable = h.paths.executable, .home = h.paths.home, .data = h.paths.data},
       .span_prepare = {.note = "Ouvrez une vidéo : le lecteur y tire les images de la préparation."}};
 }
