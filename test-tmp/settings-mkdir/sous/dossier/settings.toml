@@ -1,0 +1,20 @@
+first_run_done = false
+first_run_step = 0
+open_with_registered = false
+version = 1
+
+[engines]
+chosen = [ "vulkan" ]
+installed = [ "vulkan" ]
+
+    [engines.preferred]
+    interpolate = "vulkan"
+    upscale = "vulkan"
+
+[languages]
+audio = []
+subtitles = []
+
+[playback]
+audio_delay_ms = 0
+resume_position = true

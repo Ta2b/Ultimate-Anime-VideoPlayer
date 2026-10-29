@@ -353,6 +353,10 @@ std::expected<PlaySettings, Refusal> validate(const PlaySettings& s) {
   for (const auto& checked : checks) {
     if (!checked) return std::unexpected(checked.error());
   }
+  if (s.auto_cap != 0 && (s.auto_cap < kAutoCapMin || s.auto_cap > kAutoCapMax))
+    return refuse(RefusalCode::FieldOutOfRange,
+                  std::format("interpolation.auto_cap : {} hors de {} à {} (0 : l'écran)", s.auto_cap,
+                              kAutoCapMin, kAutoCapMax));
   if (s.language_presets.size() > limits::kLanguagePresets)
     return refuse(RefusalCode::FieldOutOfRange,
                   std::format("languages.presets : {} préréglages, {} au plus", s.language_presets.size(),
@@ -445,6 +449,7 @@ PlaySettings live_part(const PlaySettings& running, const PlaySettings& wanted, 
   s.priority = wanted.priority;
   s.downscale = wanted.downscale;
   s.rife_auto = wanted.rife_auto;
+  s.auto_cap = wanted.auto_cap;
   if (!wanted.upscale) s.span_precision = wanted.span_precision;  // sans SPAN, rien à recharger
   if (rife_loaded || wanted.rife_factor < 2) {
     s.rife_factor = wanted.rife_factor;

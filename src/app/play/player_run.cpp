@@ -403,9 +403,8 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
     // Au fps près (1/24 de multiplicateur) sur un écran VRR armé : la cadence n'y est plus liée au
     // rafraîchissement. À fréquence fixe, des paliers entiers (les autres feraient vibrer).
     const int granularity = vrr_armed ? core::kFineGranularity : 1;
-    chain.live.set_auto(
-        on, core::auto_ceiling(display_refresh_hz(out.window()), fps_of(video.frame_rate), granularity),
-        granularity);
+    const double limit_hz = core::auto_limit_hz(display_refresh_hz(out.window()), chain.running.auto_cap);
+    chain.live.set_auto(on, core::auto_ceiling(limit_hz, fps_of(video.frame_rate), granularity), granularity);
   };
   apply_auto();
   // Le dernier palier tenu pour cette vidéo, ce moteur, cette hauteur de travail et ce GPU : le départ.

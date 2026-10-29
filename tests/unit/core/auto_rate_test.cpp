@@ -425,3 +425,14 @@ TEST_CASE("auto : le coût d'une paire ne compte pas son attente derrière la pa
   // Jamais négatif (horloges de deux files qui se croisent).
   CHECK(service_cost_us(5'000, 60'000, 50'000, 700) == 700);
 }
+
+TEST_CASE("auto : le plafond choisi borne la fréquence de l'écran", "[core][auto_rate][plafond]") {
+  using ajp::core::auto_limit_hz;
+  CHECK(auto_limit_hz(165.0, 0) == 165.0);                      // maximum : l'écran
+  CHECK(auto_limit_hz(165.0, 120) == 120.0);                    // plafond sous l'écran
+  CHECK(auto_limit_hz(60.0, 120) == 60.0);                      // jamais au-dessus de l'écran
+  CHECK(auto_limit_hz(0.0, 60) == 0.0);                         // écran inconnu : inchangé, ×1
+  CHECK(auto_ceiling(auto_limit_hz(165.0, 60), 23.976) == 2);   // ≤ 60 i/s : ×2 (47,95)
+  CHECK(auto_ceiling(auto_limit_hz(165.0, 120), 23.976) == 5);  // ≤ 120 i/s : ×5 (119,88)
+  CHECK(auto_ceiling(auto_limit_hz(165.0, 0), 23.976) == 6);
+}

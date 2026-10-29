@@ -598,3 +598,25 @@ TEST_CASE("play.toml garde le Son anime : niveau, réglages personnalisés, nive
   CHECK_FALSE(effective_listening(other, "X") == effective_listening(PlaySettings{}, "X"));
   CHECK(live_part(PlaySettings{}, other, false).anime_sound == "strong");
 }
+
+TEST_CASE("play.toml garde le plafond du mode auto et refuse un plafond absurde",
+          "[settings][auto][plafond]") {
+  using namespace ajp::app::play;
+  PlaySettings s;
+  CHECK(s.auto_cap == 0);  // maximum : l'écran
+  CHECK(parse_settings("version = 1\n")->auto_cap == 0);
+  s.auto_cap = 120;
+  const auto read = parse_settings(format_settings(s));
+  REQUIRE(read);
+  CHECK(read->auto_cap == 120);
+  CHECK(validate(s).has_value());
+  s.auto_cap = 5;
+  CHECK_FALSE(validate(s).has_value());
+  s.auto_cap = 100000;
+  CHECK_FALSE(validate(s).has_value());
+  // Un plafond posé dans le menu s'applique en direct, sans rouvrir la lecture.
+  PlaySettings running;
+  PlaySettings wanted;
+  wanted.auto_cap = 60;
+  CHECK(live_part(running, wanted, true).auto_cap == 60);
+}
