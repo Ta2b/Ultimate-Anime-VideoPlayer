@@ -165,3 +165,13 @@ TEST_CASE("auto : quand le VRR se coupe, les demi-paliers repassent à des palie
   CHECK(rate.granularity() == 2);
   CHECK(rate.step() == 8);  // ×4 en moitiés
 }
+
+TEST_CASE("auto : en demi-paliers, une surcharge descend d'une moitié jusqu'à ×1", "[core][auto_rate]") {
+  AutoRate rate(12, 2);
+  CHECK(rate.step() == 4);  // ×2
+  CHECK(rate.overloaded() == 3);
+  for (std::uint32_t i = 0; i < AutoRate::kGracePairs; ++i) rate.pair(false);
+  CHECK(rate.overloaded() == 2);  // ×1 : le plancher
+  for (std::uint32_t i = 0; i < AutoRate::kGracePairs; ++i) rate.pair(false);
+  CHECK(rate.overloaded() == 2);
+}
