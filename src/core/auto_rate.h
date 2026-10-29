@@ -27,7 +27,8 @@
 
 namespace ajp::core {
 
-inline constexpr int kAutoMaxStep = 6;  // ×6 de 23,976 : 143,86 i/s, sous un écran de 165 Hz
+inline constexpr int kAutoMaxStep =
+    8;  // ×8 : de quoi suivre un écran de 165 Hz jusqu'au bout (×6,88 pour 23,976)
 // Granularité « au fps près » d'un écran VRR armé : un palier = 1/24 de multiplicateur (~1 i/s pour une
 // source de 24 i/s). Le facteur passe par Factor{palier, 24} ; l'écran ne vibre pas, la cadence n'étant
 // plus liée au rafraîchissement.
@@ -57,6 +58,17 @@ inline double auto_limit_hz(double display_hz, int cap) {
 // des images attendues. Garde-fou lent ; la descente rapide passe par AutoRate::missed.
 inline bool auto_overloaded(std::int64_t missing, std::int64_t shown) {
   return missing >= 6 && missing * 1000 > (missing + shown) * 12;
+}
+
+// Le coût de SERVICE d'une paire : de l'instant où le GPU a pu la commencer (le plus tardif de sa première
+// soumission et de la fin de la paire d'avant : derrière elle, la paire attend sa file, ce qui n'est pas son
+// coût) à sa fin vue, plus l'attente de ses mesures avant soumission. Sans cela, un palier trop haut qui
+// remplit la file gonfle le coût mesuré et fait descendre trop bas (mesuré sur 4070 Ti : ×1 pour un GPU à
+// 45 % quelques secondes plus tard).
+inline std::int64_t service_cost_us(std::int64_t first_submitted_us, std::int64_t previous_done_us,
+                                    std::int64_t done_us, std::int64_t lead_us) {
+  const std::int64_t start = std::max(first_submitted_us, previous_done_us);
+  return std::max<std::int64_t>(done_us - start, 0) + lead_us;
 }
 
 // Pourquoi le palier a bougé en dernier.
@@ -111,7 +123,12 @@ class AutoRate {
   static constexpr std::int64_t kHalfLifeUs = 6'000'000;  // poids, plafond et pénalités s'estompent
   static constexpr std::int64_t kProbeUs = 2'000'000;     // un palier tenté est « tenu » après ce temps
   static constexpr int kMaxImages = kAutoMaxStep + 1;
-  static constexpr double kDeadBand = 0.03;  // au pas fin : pas de montée sous 3 % d'écart
+  static constexpr double kDeadBand = 0.06;  // au pas fin : pas de montée sous 6 % d'écart
+  // Au pas fin, en régime (écart modeste au palier prédit) un changement toutes les 5 s au plus : le temps de
+  // trame d'un écran VRR OLED reste constant entre deux changements. Loin sous le palier prédit (scène
+  // allégée), la remontée est rapide : un saut jusqu'à 40 % du palier, une seconde d'écart.
+  static constexpr std::int64_t kSteadyGapUs = 5'000'000;
+  static constexpr double kFarRatio = 0.5;  // l'écart au palier prédit qui compte pour « loin »
 
   // `ceiling` : le palier le plus haut permis (granularity à kAutoMaxStep × granularity). Le départ est ×2
   // (ou le plafond). Les paliers se comptent en 1 / granularity (1 ou 2, voir auto_ceiling).

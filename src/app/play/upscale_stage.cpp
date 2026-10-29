@@ -8,6 +8,7 @@
 
 #include "app/play/options.h"
 #include "app/play/rife_plan.h"
+#include "core/auto_rate.h"
 #include "core/clock.h"
 #include "core/log.h"
 #include "kernels/spec/detect.h"
@@ -249,7 +250,7 @@ std::expected<std::uint32_t, Refusal> UpscaleStage::outputs(const DecodedFrame& 
   // suivante repart alors de cette image.
   std::optional<core::CadenceStep> step;
   if (factor.num > factor.den && (valid_factor(factor) || (setup_.live != nullptr && factor.den <= 64 &&
-                                                           factor.num <= 6 * factor.den))) {
+                                                           factor.num <= core::kAutoMaxStep * factor.den))) {
     if (!cadence_) {
       auto made = core::CadenceAccumulator::create({.num = factor.num, .den = factor.den});
       if (!made) return std::unexpected(std::move(made.error()));

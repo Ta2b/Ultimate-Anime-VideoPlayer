@@ -194,7 +194,7 @@ void fluidity_tab(PlaySettings& d, const SettingsChoices& choices, bool exportin
   if (ImGui::BeginCombo("Multiplicateur", factor_shown.c_str())) {
     if (!exporting && ImGui::Selectable("Auto (recommandé)", d.rife_auto && now.num > now.den)) {
       d.rife_auto = true;
-      if (now.num <= now.den) d.rife_factor = 6;  // le plafond du mode auto
+      if (now.num <= now.den) d.rife_factor = 8;  // le plafond du mode auto
       d.rife_factor_den = 1;
     }
     for (const Factor factor : kFactors) {

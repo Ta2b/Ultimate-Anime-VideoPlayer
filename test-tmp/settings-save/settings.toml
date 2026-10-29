@@ -1,0 +1,26 @@
+first_run_done = true
+first_run_step = 0
+future_option = 42
+open_with_registered = false
+version = 1
+
+[engines]
+chosen = [ "vulkan", "tensorrt", "rtx_video_sdk" ]
+installed = [ "vulkan", "tensorrt", "rtx_video_sdk" ]
+
+    [engines.preferred]
+    interpolate = "vulkan"
+    truehdr = "rtx_video_sdk"
+    upscale = "tensorrt"
+
+[languages]
+audio = [ "ja", "en" ]
+subtitles = [ "fr", "pt-BR", "en" ]
+
+[playback]
+audio_delay_ms = -120
+resume_position = false
+speed = 1.25
+
+[ui]
+theme = "sombre"

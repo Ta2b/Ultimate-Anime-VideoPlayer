@@ -88,9 +88,11 @@ TEST_CASE("auto : le plafond suit l'écran", "[core][auto_rate]") {
 }
 
 TEST_CASE("auto : les demi-paliers et le pas fin suivent l'écran", "[core][auto_rate]") {
-  CHECK(auto_ceiling(165.0, 23.976, 2) == 12);  // ×6 reste le maximum
-  CHECK(auto_ceiling(120.0, 23.976, 2) == 10);  // ×5 : 119,88 tient, ×5,5 non
-  CHECK(auto_ceiling(100.0, 23.976, 2) == 8);   // ×4,5 : 107,9 ne tient pas
+  CHECK(auto_ceiling(165.0, 23.976, 2) == 13);                  // ×6,88 : tout l'écran, plus de plafond à ×6
+  CHECK(auto_ceiling(165.0, 23.976, kFineGranularity) == 166);  // 165 i/s au fps près
+  CHECK(auto_ceiling(240.0, 23.976, 1) == 8);                   // ×8 : la limite des facteurs du lecteur
+  CHECK(auto_ceiling(120.0, 23.976, 2) == 10);                  // ×5 : 119,88 tient, ×5,5 non
+  CHECK(auto_ceiling(100.0, 23.976, 2) == 8);                   // ×4,5 : 107,9 ne tient pas
   CHECK(auto_ceiling(110.0, 24.0, 2) == 9);
   CHECK(auto_ceiling(0.0, 24.0, 2) == 2);
   CHECK(auto_ceiling(100.0, 24.0, kFineGranularity) == 101);  // ×4,2 : 100,8 i/s, à 1 % près
@@ -180,11 +182,11 @@ TEST_CASE("auto : au pas fin, la cadence se pose près de ce que le GPU tient, s
     if (trace.changes[i].second > trace.changes[i - 1].second)
       CHECK(trace.changes[i].first - trace.changes[i - 1].first >= AutoRate::kMinRiseGapUs);
   }
-  // Chaque montée est un petit pas (≤ 12 % + 1).
+  // Chaque montée est un pas mesuré (≤ 40 % + 1 : un grand saut n'est permis que loin sous la cible).
   for (std::size_t i = 1; i < trace.changes.size(); ++i) {
     if (trace.changes[i].second > trace.changes[i - 1].second)
       CHECK(trace.changes[i].second - trace.changes[i - 1].second <=
-            trace.changes[i - 1].second * 12 / 100 + 1);
+            trace.changes[i - 1].second * 40 / 100 + 1);
   }
 }
 
@@ -366,6 +368,62 @@ TEST_CASE("auto : le coût mesuré au-dessus de la période fait descendre sans 
   }
   CHECK(rate.step() < 4);
   CHECK(rate.reason() == ajp::core::AutoReason::Predicted);
+}
+
+TEST_CASE("auto : après une scène lourde, la cadence revient vite près de ce que le GPU tient",
+          "[core][auto_rate][reglage]") {
+  AutoRate rate(6 * kFineGranularity, kFineGranularity);
+  std::int64_t now = 0;
+  const auto gpu = [](std::int64_t t) {
+    return t >= 30 * kSecond && t < 50 * kSecond ? Gpu{.a = 16'000, .b = 11'000}
+                                                 : Gpu{.a = 8'000, .b = 4'000};
+  };
+  run(rate, now, 30, gpu);
+  run(rate, now, 20, gpu);  // la scène lourde : le palier est tombé bas
+  const int low = rate.step();
+  CHECK(low <= 50);
+  // La scène s'allège à 50 s : en 6 s le palier doit avoir regagné au moins les deux tiers de l'écart.
+  const Trace back = run(rate, now, 6, gpu);
+  const int target = 6 * kFineGranularity;  // facile : le maximum de l'écran
+  CHECK(rate.step() - low >= (target - low) * 2 / 3);
+  // Les sauts de remontée sont rapides mais bornés (≤ 40 %), au plus un par seconde.
+  for (std::size_t i = 1; i < back.changes.size(); ++i) {
+    CHECK(back.changes[i].first - back.changes[i - 1].first >= AutoRate::kMinRiseGapUs);
+  }
+}
+
+TEST_CASE("auto : en régime, au pas fin, au plus un changement par cinq secondes malgré un coût qui frémit",
+          "[core][auto_rate][reglage]") {
+  AutoRate rate(6 * kFineGranularity, kFineGranularity);
+  std::int64_t now = 0;
+  // Un GPU qui frémit de ±3 % autour de ce qui tient ~×3,5 (période 41,7 ms).
+  const auto gpu = [](std::int64_t t) {
+    const double jitter = 1.0 + 0.03 * std::sin(static_cast<double>(t) / 700'000.0);
+    return Gpu{.a = 10'000.0 * jitter, .b = 7'600.0 * jitter};
+  };
+  run(rate, now, 40, gpu);  // montée et pose
+  const Trace steady = run(rate, now, 120, gpu);
+  CHECK(steady.changes.size() <= 24);  // 120 s / 5 s
+  for (std::size_t i = 1; i < steady.changes.size(); ++i) {
+    // Deux changements de même sens se tiennent à 5 s ; une descente de sécurité est libre.
+    if (steady.changes[i].second > steady.changes[i - 1].second && steady.changes[i - 1].second > 0) {
+      CHECK(steady.changes[i].first - steady.changes[i - 1].first >= AutoRate::kMinRiseGapUs);
+    }
+  }
+}
+
+TEST_CASE("auto : le coût d'une paire ne compte pas son attente derrière la paire d'avant",
+          "[core][auto_rate][mesure]") {
+  using ajp::core::service_cost_us;
+  // GPU libre : soumise à 1000, finie à 13 000, mesures attendues 500 : 12,5 ms.
+  CHECK(service_cost_us(1'000, 0, 13'000, 500) == 12'500);
+  // File pleine : soumise à 2000, mais la paire d'avant ne finit qu'à 40 000 ; la nôtre finit à 52 000 :
+  // son service est de 12 ms, pas de 50.
+  CHECK(service_cost_us(2'000, 40'000, 52'000, 0) == 12'000);
+  // La paire d'avant a fini avant la soumission : le service part de la soumission.
+  CHECK(service_cost_us(30'000, 10'000, 43'000, 0) == 13'000);
+  // Jamais négatif (horloges de deux files qui se croisent).
+  CHECK(service_cost_us(5'000, 60'000, 50'000, 700) == 700);
 }
 
 TEST_CASE("auto : le plafond choisi borne la fréquence de l'écran", "[core][auto_rate][plafond]") {
