@@ -5,21 +5,43 @@
 
 namespace ajp::core {
 
-int auto_ceiling(double display_hz, double source_fps) {
+int auto_ceiling(double display_hz, double source_fps, int granularity) {
+  granularity = std::clamp(granularity, 1, 2);
   // Hors de [5, 240] i/s : une cadence fausse (VFR, base de temps) ; l'interpolation reste à ×1.
   if (display_hz <= 0.0 || source_fps < 5.0 || source_fps > 240.0) return 1;
-  int best = 1;
-  for (int step = 2; step <= kAutoMaxStep; ++step) {
-    if (source_fps * step <= display_hz * 1.01) best = step;
+  int best = granularity;
+  for (int step = 2 * granularity; step <= kAutoMaxStep * granularity; ++step) {
+    if (source_fps * step / granularity <= display_hz * 1.01) best = step;
   }
   return best;
 }
 
-AutoRate::AutoRate(int ceiling)
-    : ceiling_(std::clamp(ceiling, 1, kAutoMaxStep)), step_(std::min(2, ceiling_)) {}
+AutoRate::AutoRate(int ceiling, int granularity)
+    : granularity_(std::clamp(granularity, 1, 2)),
+      ceiling_(std::clamp(ceiling, granularity_, kAutoMaxStep * granularity_)),
+      step_(std::min(2 * granularity_, ceiling_)) {}
+
+void AutoRate::set_ceiling(int ceiling, int granularity) {
+  granularity = std::clamp(granularity, 1, 2);
+  if (granularity != granularity_) {
+    // De demi-paliers à paliers entiers, l'arrondi est vers le bas : jamais un palier plus haut que celui
+    // qui tenait. Les échecs comptés ne se transportent pas d'une unité à l'autre.
+    const auto convert = [&](int value) {
+      return granularity > granularity_ ? value * 2 : std::max(value / 2, value > 0 ? 1 : 0);
+    };
+    step_ = std::max(convert(step_), granularity);
+    cap_ = convert(cap_);
+    fails_.fill(0);
+    granularity_ = granularity;
+    clean_ = 0;
+    probing_ = false;
+    grace_ = kGracePairs;
+  }
+  set_ceiling(ceiling);
+}
 
 void AutoRate::set_ceiling(int ceiling) {
-  ceiling_ = std::clamp(ceiling, 1, kAutoMaxStep);
+  ceiling_ = std::clamp(ceiling, granularity_, kAutoMaxStep * granularity_);
   if (cap_ > ceiling_) cap_ = 0;
   if (step_ > ceiling_) {
     step_ = ceiling_;
@@ -29,7 +51,7 @@ void AutoRate::set_ceiling(int ceiling) {
 }
 
 void AutoRate::descend(bool strong) {
-  if (step_ > 1) {
+  if (step_ > granularity_) {
     if (probing_) {
       // Une tentative qui échoue : on la re-tentera plus tard ; la deuxième fait du palier d'en dessous
       // le plafond appris.

@@ -211,7 +211,9 @@ void fluidity_tab(PlaySettings& d, const SettingsChoices& choices, bool exportin
     panel::tip(
         "Auto choisit seul le multiplicateur de ×1 à ×6 (24 à 144 i/s pour 23,976) : il baisse dès que le "
         "GPU prend du retard, remonte après quelques secondes sans retard, et réessaie de plus en plus "
-        "tard un palier qui vient d'échouer. Lecture seulement ; l'export garde un multiplicateur fixe.");
+        "tard un palier qui vient d'échouer. Sur un écran VRR armé, il avance par demi-paliers (×2,5, ×3,5…), "
+        "la cadence n'étant plus liée au rafraîchissement ; sinon par paliers entiers. Lecture seulement ; "
+        "l'export garde un multiplicateur fixe.");
     if (!choices.display_vrr) {
       note(
           "VRR indisponible : à fréquence fixe, un multiplicateur qui ne tombe pas sur un nombre entier de "

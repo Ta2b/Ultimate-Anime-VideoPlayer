@@ -124,3 +124,43 @@ TEST_CASE("auto : une tentative qui échoue sur des images manquées pose le pla
   CHECK(rate.overloaded() == 2);
   CHECK(rate.learned_cap() == 2);
 }
+
+TEST_CASE("auto : les demi-paliers n'existent que sur demande et suivent le plafond", "[core][auto_rate]") {
+  CHECK(auto_ceiling(165.0, 23.976, 1) == 6);
+  CHECK(auto_ceiling(165.0, 23.976, 2) == 12);  // ×6 reste le maximum
+  CHECK(auto_ceiling(120.0, 23.976, 1) == 5);
+  CHECK(auto_ceiling(120.0, 23.976, 2) == 10);  // ×5 : 119,88 tient, ×5,5 non
+  CHECK(auto_ceiling(100.0, 23.976, 1) == 4);   // 95,9
+  CHECK(auto_ceiling(100.0, 23.976, 2) == 8);   // ×4,5 : 107,9 ne tient pas
+  CHECK(auto_ceiling(100.0, 24.0, 2) == 8);
+  CHECK(auto_ceiling(110.0, 24.0, 2) == 9);  // ×4,5 : 108 tient sous 110 Hz
+  CHECK(auto_ceiling(0.0, 24.0, 2) == 2);    // écran inconnu : ×1, soit 2 moitiés
+}
+
+TEST_CASE("auto : en demi-paliers, le palier monte et descend d'une moitié", "[core][auto_rate]") {
+  AutoRate rate(9, 2);  // plafond ×4,5
+  CHECK(rate.granularity() == 2);
+  CHECK(rate.step() == 4);  // départ ×2
+  for (std::uint32_t i = 0; i < AutoRate::kGracePairs; ++i) rate.pair(false);
+  std::uint32_t pairs = 0;
+  while (rate.step() < 5 && pairs < 10 * AutoRate::kRisePairs) {
+    rate.pair(false);
+    ++pairs;
+  }
+  CHECK(rate.step() == 5);  // ×2,5
+  CHECK(two_lates(rate) == 4);
+  for (int i = 0; i < 4000; ++i) rate.pair(false);
+  CHECK(rate.step() <= 9);
+}
+
+TEST_CASE("auto : quand le VRR se coupe, les demi-paliers repassent à des paliers entiers", "[core][auto_rate]") {
+  AutoRate rate(9, 2);
+  for (int i = 0; i < 3000; ++i) rate.pair(false);
+  CHECK(rate.step() == 9);
+  rate.set_ceiling(4, 1);  // ×4 entier
+  CHECK(rate.granularity() == 1);
+  CHECK(rate.step() == 4);  // 9 moitiés = ×4,5 : arrondi vers le bas, sous le plafond
+  rate.set_ceiling(8, 2);   // le VRR revient
+  CHECK(rate.granularity() == 2);
+  CHECK(rate.step() == 8);  // ×4 en moitiés
+}

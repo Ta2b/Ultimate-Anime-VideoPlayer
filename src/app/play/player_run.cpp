@@ -391,9 +391,13 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
   std::int64_t display_polled_at = saved_at;
   p.ui.controls().show_deferred(host_now_us());
   // Le mode auto : son plafond suit la fréquence de l'écran.
+  bool vrr_armed = p.display && p.display->vrr.value_or(false) && p.display->vrr_armed.value_or(false);
   const auto apply_auto = [&] {
     const bool on = chain.running.rife_auto && chain.rife_loaded && chain.running.rife_factor >= 2;
-    chain.live.set_auto(on, core::auto_ceiling(display_refresh_hz(out.window()), fps_of(video.frame_rate)));
+    // Les demi-paliers (×2,5) ne valent que sur un écran VRR armé : à fréquence fixe, ils feraient vibrer.
+    const int granularity = vrr_armed ? 2 : 1;
+    chain.live.set_auto(on, core::auto_ceiling(display_refresh_hz(out.window()), fps_of(video.frame_rate), granularity),
+                        granularity);
   };
   apply_auto();
   // Le palier du mode auto : un message à l'écran et une ligne de journal à chaque changement.
@@ -408,12 +412,17 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
   int auto_shown = 0;
   const auto show_auto = [&] {
     const Factor now = chain.live.factor_now();
-    const int step = chain.running.rife_auto && now.den == 1 ? now.num : 0;
+    // Le palier en moitiés (1 = ×0,5…) : 2 pour ×1, 5 pour ×2,5 ; 0 : le mode auto est coupé.
+    const int step = chain.running.rife_auto && now.den >= 1 ? now.num * 2 / now.den : 0;
     if (step == auto_shown) return;
     if (step > 0) {
-      log->info("auto : ×{} (plafond {}, plafond appris {})", step, chain.live.auto_ceiling(),
-                chain.live.auto_cap());
-      if (auto_shown > 0) p.ui.controls().notify(std::format("Auto ×{}", step), host_now_us());
+      const auto text = [](int halves) {
+        return halves % 2 == 0 ? std::format("{}", halves / 2) : std::format("{},5", halves / 2);
+      };
+      const int g = chain.live.auto_granularity();
+      log->info("auto : ×{} (plafond ×{}, plafond appris {})", text(step), text(chain.live.auto_ceiling() * 2 / g),
+                chain.live.auto_cap() > 0 ? "×" + text(chain.live.auto_cap() * 2 / g) : std::string("aucun"));
+      if (auto_shown > 0) p.ui.controls().notify(std::format("Auto ×{}", text(step)), host_now_us());
     }
     auto_shown = step;
   };
@@ -450,7 +459,7 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
       if (auto_shown > 0 && auto_shown == auto_window_step && host_now_us() - auto_window_us >= 4'000'000) {
         if (core::auto_overloaded(shown.missing - auto_window_missing, shown.new_frames - auto_window_new)) {
           log->info("auto : {} images manquées sur {} s, le GPU ne suit pas ×{}",
-                    shown.missing - auto_window_missing, 4, auto_shown);
+                    shown.missing - auto_window_missing, 4, auto_shown % 2 == 0 ? std::format("{}", auto_shown / 2) : std::format("{},5", auto_shown / 2));
           chain.live.auto_overloaded();
         }
         auto_window_step = 0;
@@ -468,6 +477,11 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
         vrr_fullscreen = fullscreen;
         if (const auto display = read_display(display_name(out.window()))) {
           p.ui.set_display_vrr(display->vrr.value_or(false), display->vrr_armed.value_or(false), fullscreen);
+          const bool armed = display->vrr.value_or(false) && display->vrr_armed.value_or(false);
+          if (armed != vrr_armed) {
+            vrr_armed = armed;
+            apply_auto();  // les demi-paliers suivent le VRR
+          }
           log->info("VRR : {} · {}", display->vrr.value_or(false) ? "capable" : "non capable",
                     display->vrr_armed.value_or(false) ? "armé" : "non armé");
         }
