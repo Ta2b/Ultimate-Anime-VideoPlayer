@@ -89,7 +89,6 @@ constexpr std::array kWizardTexts{
     Entry{"Speakers: faithful sound, careful mix.", "Enceintes : rendu fidèle, mixage soigné."},
     Entry{"Start", "Commencer"},
     Entry{"Startup profile", "Profil de démarrage"},
-    Entry{"Step {} of {}: {}", "Étape {} sur {} : {}"},
     Entry{"Summary", "Résumé"},
     Entry{"TensorRT engine", "Moteur TensorRT"},
     Entry{"TensorRT engine (installed at \"Finish\")", "Moteur TensorRT (installé à « Terminer »)"},
