@@ -10,6 +10,7 @@
 #include <sstream>
 #include <utility>
 
+#include "core/charconv.h"
 #include "vendor_hdr/dynamic_library.h"
 
 namespace ajp::app::play {
