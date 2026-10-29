@@ -21,7 +21,6 @@ using icons::icon_fullscreen;
 using icons::icon_gear;
 using icons::icon_pause;
 using icons::icon_play;
-using icons::icon_skip;
 using icons::icon_subtitles;
 using icons::icon_volume;
 using icons::Pen;
@@ -89,13 +88,10 @@ void bubble(const Pen& pen, float x, float bottom, std::string_view text, float 
 void draw_title(const Pen& pen, std::string_view title, float width) {
   if (title.empty()) return;
   const float pad = 18.0F * pen.scale;
-  const float size = ImGui::GetFontSize() * 1.25F;
+  const float size = ImGui::GetFontSize() * 1.1F;
   pen.list->PushClipRect({pad, 0.0F}, {width - pad, size * 3.0F});
-  // Gras (style Showtime) : le texte repassé à un demi-pixel.
-  for (const float dx : {0.0F, 0.6F * pen.scale}) {
-    pen.list->AddText(ImGui::GetFont(), size, {pad + dx, pad}, white(0.97F * pen.opacity), title.data(),
-                      title.data() + title.size());
-  }
+  pen.list->AddText(ImGui::GetFont(), size, {pad, pad}, white(0.94F * pen.opacity), title.data(),
+                    title.data() + title.size());
   pen.list->PopClipRect();
 }
 
@@ -224,7 +220,14 @@ bool draw_controls(Controls& controls, const ControlsView& view, const UiLook& l
       icon_chapter(pen, {x, cy}, icon * 0.9F, -1);
       x += row;
     }
-    // La lecture/pause est au centre de l'image (commandes rondes) : pas de doublon dans la rangée.
+    if (round_button(pen, "##play", {x, cy}, row)) actions.emplace_back(Command{cmd::TogglePause{}});
+    tooltip(view.paused ? "Lecture (espace)" : "Pause (espace)");
+    if (view.paused) {
+      icon_play(pen, {x, cy}, icon);
+    } else {
+      icon_pause(pen, {x, cy}, icon);
+    }
+    x += row;
     if (chaptered) {
       if (round_button(pen, "##chapter_next", {x, cy}, row))
         actions.emplace_back(StepChapter{.direction = 1});
@@ -300,38 +303,6 @@ bool draw_controls(Controls& controls, const ControlsView& view, const UiLook& l
     held = look.keep_visible || ImGui::IsWindowHovered(ImGuiHoveredFlags_AllowWhenBlockedByActiveItem) ||
            bar_active || controls.dragging() || ImGui::IsPopupOpen("", ImGuiPopupFlags_AnyPopupId);
     ImGui::End();
-
-    // Commandes rondes au centre de l'image (style Showtime) : retour de 10 s, lecture/pause en grand, avance
-    // de 10 s.
-    {
-      const float big = 72.0F * s;
-      const float small = 48.0F * s;
-      const ImVec2 mid{width * 0.5F, (height - panel) * 0.5F};
-      ImGui::SetNextWindowPos({mid.x - 1.7F * big, mid.y - big * 0.6F});
-      ImGui::SetNextWindowSize({3.4F * big, big * 1.2F});
-      ImGui::Begin("##transport", nullptr, kPanel);
-      const Pen center{ImGui::GetWindowDrawList(), s, opacity};
-      const ImVec2 left{mid.x - 1.4F * big, mid.y};
-      const ImVec2 right{mid.x + 1.4F * big, mid.y};
-      if (round_button(center, "##back10", left, small))
-        actions.emplace_back(Command{cmd::SeekRelative{.delta_us = -10'000'000}});
-      tooltip("Reculer de 10 s (flèche gauche)");
-      icon_skip(center, left, small * 0.62F, -1);
-      if (round_button(center, "##forward10", right, small))
-        actions.emplace_back(Command{cmd::SeekRelative{.delta_us = 10'000'000}});
-      tooltip("Avancer de 10 s (flèche droite)");
-      icon_skip(center, right, small * 0.62F, 1);
-      center.list->AddCircleFilled(mid, big * 0.5F, black(0.38F * opacity));
-      if (round_button(center, "##play_big", mid, big)) actions.emplace_back(Command{cmd::TogglePause{}});
-      tooltip(view.paused ? "Lecture (espace)" : "Pause (espace)");
-      if (view.paused) {
-        icon_play(center, mid, big * 0.42F);
-      } else {
-        icon_pause(center, mid, big * 0.42F);
-      }
-      held = held || ImGui::IsWindowHovered(ImGuiHoveredFlags_AllowWhenBlockedByActiveItem);
-      ImGui::End();
-    }
     ImGui::PopStyleVar();
   }
   controls.set_held(held);
