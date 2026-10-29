@@ -282,9 +282,14 @@ void AutoRate::try_rise(std::int64_t now_us) {
   }
   int gain = target - step_;
   if (fine()) {
-    // Bande morte de 3 % ; au-delà, la moitié de l'écart, de 1 à 12 % du palier par changement.
+    // Bande morte de 6 % ; en régime un changement toutes les 5 s au plus, de la moitié de l'écart (1 à 12 %
+    // du palier) ; loin sous le palier prédit (scène allégée) : les deux tiers de l'écart, jusqu'à 40 %, dès
+    // la seconde suivante.
     if (gain < std::max(1, static_cast<int>(step_ * kDeadBand))) return;
-    gain = std::clamp((gain + 1) / 2, 1, std::max(1, step_ * 12 / 100));
+    const bool far = static_cast<double>(gain) >= kFarRatio * static_cast<double>(step_);
+    if (!far && now_us - last_change_us_ < kSteadyGapUs) return;
+    gain = far ? std::clamp(gain * 2 / 3, 1, std::max(1, step_ * 40 / 100))
+               : std::clamp((gain + 1) / 2, 1, std::max(1, step_ * 12 / 100));
   } else {
     gain = std::min(gain, 1);
   }
