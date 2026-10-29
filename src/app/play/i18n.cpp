@@ -12,10 +12,10 @@ std::atomic<Language>& current_language() {
   return current;
 }
 
-const std::unordered_map<std::string_view, const char*>& french_table() {
-  static const std::unordered_map<std::string_view, const char*> table = [] {
-    std::unordered_map<std::string_view, const char*> map;
-    for (const Entry& entry : french_entries()) map.emplace(entry.english, entry.french.data());
+const std::unordered_map<std::string_view, std::string_view>& french_table() {
+  static const std::unordered_map<std::string_view, std::string_view> table = [] {
+    std::unordered_map<std::string_view, std::string_view> map;
+    for (const Entry& entry : french_entries()) map.emplace(entry.english, entry.french);
     return map;
   }();
   return table;
@@ -40,6 +40,19 @@ std::string_view language_code(Language language) {
 }
 
 const char* tr(const char* key) {
+  if (language() == Language::English) return key;
+  const auto& table = french_table();
+  const auto found = table.find(key);
+  // Les textes français sont des littéraux : terminés par un zéro.
+  return found != table.end() ? found->second.data()
+                              : key;  // NOLINT(bugprone-suspicious-stringview-data-usage)
+}
+
+}  // namespace ajp::app::play::i18n
+
+namespace ajp::app::play::i18n {
+
+std::string_view tr_view(std::string_view key) {
   if (language() == Language::English) return key;
   const auto& table = french_table();
   const auto found = table.find(key);

@@ -21,6 +21,8 @@ std::string_view language_code(Language language);
 // de la table i18n_fr_*.cpp. Une clé absente de la table s'affiche telle quelle ; un test refuse toute clé
 // utilisée dans src/app sans entrée française.
 const char* tr(const char* key);
+// Le même, pour une clé qui est déjà un string_view de littéral (étiquettes de tables).
+std::string_view tr_view(std::string_view key);
 
 // Un texte à trous : la clé est le format anglais, le français le sien, mêmes {} dans le même ordre.
 template <typename... Args>

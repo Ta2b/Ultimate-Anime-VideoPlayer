@@ -40,11 +40,11 @@ inline constexpr int kDownscaleCount = 7;
 std::string_view name(Downscale filter);  // « area », la clé de play.toml
 // Libellé lisible d'un modèle AnimeJaNai : « HD V3.1 Sharp1 Performance ».
 std::string model_label(const std::string& file);
-std::string_view label(Downscale filter);
+std::string_view label(Downscale filter);  // « Area », pour le menu
 // Le préréglage du grade, dans la langue de l'interface.
-inline const char* grade_label(render::GradePreset preset) {
-  return i18n::tr(render::preset_label(preset).data());
-}  // « Area », pour le menu
+inline std::string_view grade_label(render::GradePreset preset) {
+  return i18n::tr_view(render::preset_label(preset));
+}
 // Libellé lisible d'un modèle RIFE : « rife_v4.22_lite.onnx » devient « RIFE 4.22 lite ».
 std::string rife_label(const std::string& file);
 

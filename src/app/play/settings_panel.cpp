@@ -124,10 +124,10 @@ void grade_tab(PlaySettings& d, const SettingsChoices& choices) {
   section(i18n::tr("Color grading"));
   ImGui::Checkbox(i18n::tr("Color grading"), &d.grade);
   ImGui::BeginDisabled(!d.grade);
-  if (ImGui::BeginCombo(i18n::tr("Preset"), grade_label(d.grade_preset))) {
+  if (ImGui::BeginCombo(i18n::tr("Preset"), std::string(grade_label(d.grade_preset)).c_str())) {
     for (int i = 0; i < render::kGradePresetCount; ++i) {
       const auto preset = static_cast<render::GradePreset>(i);
-      if (ImGui::Selectable(grade_label(preset), preset == d.grade_preset)) {
+      if (ImGui::Selectable(std::string(grade_label(preset)).c_str(), preset == d.grade_preset)) {
         d.grade_preset = preset;
         d.grade_values = with_preset(preset, d.grade_values);
       }
