@@ -14,7 +14,10 @@ inline constexpr int kAutoMaxStep = 6;  // ×6 de 23,976 : 143,86 i/s, sous un �
 // Le plus grand palier dont la cadence tient sous la fréquence de l'écran (à 1 % près) pour une source
 // de `source_fps` i/s ; 1 si l'écran est inconnu. Sans VRR, les paliers qui ne tiennent pas un nombre
 // entier de rafraîchissements font du judder : le menu l'avertit, il ne les interdit pas.
-int auto_ceiling(double display_hz, double source_fps);
+// `granularity` : 1, des paliers entiers ; 2, des demi-paliers (×1,5, ×2,5…), que seul un écran VRR armé
+// affiche sans vibrer (la cadence n'est plus liée au rafraîchissement). Les paliers se comptent alors en
+// moitiés : 5 est ×2,5 ; le facteur est palier / granularity.
+int auto_ceiling(double display_hz, double source_fps, int granularity = 1);
 
 // Images manquées à l'écran sur une fenêtre (missing) pour shown images neuves : le GPU ne suit pas
 // même quand aucune paire n'est « en retard » (mesuré sur 4070 Ti : DistilDRBA ×6 a 707 manquées pour
@@ -44,14 +47,20 @@ class AutoRate {
   // au palier d'avant et reviendraient en retard à tort (descente en cascade).
   static constexpr std::uint32_t kGracePairs = 6;
 
-  // `ceiling` : le palier le plus haut permis (1 à kAutoMaxStep). Le départ est ×2 (ou le plafond).
-  explicit AutoRate(int ceiling = kAutoMaxStep);
+  // `ceiling` : le palier le plus haut permis (granularity à kAutoMaxStep × granularity). Le départ est ×2
+  // (ou le plafond). Les paliers se comptent en 1 / granularity (1 ou 2, voir auto_ceiling).
+  explicit AutoRate(int ceiling = kAutoMaxStep, int granularity = 1);
 
   int step() const { return step_; }
+  int granularity() const { return granularity_; }
   int learned_cap() const { return cap_; }  // 0 : aucun
   int ceiling() const { return ceiling_; }
   // Plafond changé (écran déplacé, réglage) : le palier courant le suit.
   void set_ceiling(int ceiling);
+  // Plafond et granularité changés ensemble (le VRR s'arme ou se coupe) : le palier courant, le plafond
+  // appris et les échecs passent dans la nouvelle unité (ceiling en paliers de 1 / granularity), sans
+  // dépasser le plafond.
+  void set_ceiling(int ceiling, int granularity);
 
   // L'issue d'une paire : en retard (des instants sautés pour rattraper l'horloge) ou à l'heure.
   // Rend le palier à utiliser pour la paire suivante.
@@ -65,6 +74,7 @@ class AutoRate {
  private:
   void descend(bool strong = false);
 
+  int granularity_;
   int ceiling_;
   int step_;
   std::uint32_t grace_ = 0;  // paires à ignorer encore
@@ -74,7 +84,7 @@ class AutoRate {
   bool probing_ = false;     // le palier courant vient d'être tenté
   std::uint64_t lates_ = 0;  // les retards des kLateWindow dernières paires, un bit chacune
   // Tentatives échouées par palier.
-  std::array<int, kAutoMaxStep + 2> fails_{};
+  std::array<int, 2 * kAutoMaxStep + 2> fails_{};
 };
 
 }  // namespace ajp::core
