@@ -23,7 +23,7 @@ using panel::section;
 
 void default_player_page(const PlayerPlace& place, SystemNote& last, bool& dismissed, bool already_default) {
   section(i18n::tr("Default player"));
-  ImGui::TextWrapped(i18n::tr("Videos (mkv, mp4, webm, avi, mov…) open in AJP from the file manager."));
+  ImGui::TextWrapped("%s", i18n::tr("Videos (mkv, mp4, webm, avi, mov…) open in AJP from the file manager."));
   if (already_default) note(i18n::tr("AJP is already the default video player."));
   ImGui::Checkbox(i18n::tr("Don't ask again"), &dismissed);
   panel::tip(i18n::tr("The player no longer offers to become the default at launch."));
@@ -94,7 +94,8 @@ bool default_player_prompt(const PlayerPlace& place, SystemNote& last, bool& dis
   constexpr ImGuiWindowFlags kFlags = ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoResize |
                                       ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_AlwaysAutoResize;
   if (ImGui::Begin(i18n::tr("Default player"), nullptr, kFlags)) {
-    ImGui::TextWrapped(i18n::tr("Open your videos (mkv, mp4, webm…) directly in AJP from the file manager?"));
+    ImGui::TextWrapped("%s",
+                       i18n::tr("Open your videos (mkv, mp4, webm…) directly in AJP from the file manager?"));
     ImGui::Spacing();
     const bool busy = last.pending != nullptr;
     const bool done = !last.text.empty() && !last.refused;
@@ -272,6 +273,7 @@ bool start_span_prepare(const SpanPrepare& prepare, PrepareNote& state) {
 void span_prepare_section(const SpanPrepare& prepare, PrepareNote& state) {
   section(i18n::tr("SPAN Performance mode (FP8)"));
   ImGui::TextWrapped(
+      "%s",
       i18n::tr("With SPAN's Performance precision, the player prepares this mode by itself for the open "
                "video (about a minute, FP16 meanwhile). Redo it by hand here."));
   poll_prepare(state);
@@ -367,9 +369,12 @@ BenchEvent bench_page(const PlayerPlace& place, const std::filesystem::path& vid
   if (!bench.state) bench.state = std::make_shared<BenchState>();
   BenchState& state = *bench.state;
   section(i18n::tr("Optimize for this machine"));
-  ImGui::TextWrapped(i18n::tr(
-      "The player tries a few seconds of video with its recommended settings, lightest to heaviest, keeps "
-      "what your PC holds without stutter and applies it. About a minute (several the first time)."));
+  ImGui::TextWrapped(
+      "%s",
+      i18n::tr(
+          "The player tries a few seconds of video with its recommended settings, lightest to heaviest, "
+          "keeps "
+          "what your PC holds without stutter and applies it. About a minute (several the first time)."));
   // Le résultat arrive : les réglages recommandés sont posés dans le brouillon, une fois.
   if (state.pending && state.pending->wait_for(std::chrono::seconds(0)) == std::future_status::ready) {
     std::expected<BenchDone, Refusal> done = state.pending->get();
