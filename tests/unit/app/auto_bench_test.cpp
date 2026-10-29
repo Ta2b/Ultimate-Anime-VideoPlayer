@@ -208,3 +208,53 @@ TEST_CASE("ajp compare : options, ligne de commande d'une variante, rapport", "[
   outcome.reading_b.run = run(Tier::Normal);
   CHECK(format_compare_report(outcome).contains("« A » est plus légère de 10.0 ms"));
 }
+
+TEST_CASE("l'exploration monte la hauteur de travail palier par palier, jamais au-dessus de la source",
+          "[auto_bench][exploration]") {
+  CHECK(next_work_height(540, 1080) == 720);
+  CHECK(next_work_height(720, 1080) == 900);
+  CHECK(next_work_height(900, 1080) == 1080);
+  CHECK_FALSE(next_work_height(1080, 1080).has_value());
+  CHECK_FALSE(next_work_height(720, 720).has_value());  // une source en 720p ne monte pas
+  CHECK(next_work_height(540, 0) == 720);               // source inconnue : les paliers
+  CHECK(next_work_height(100, 1080) == 480);
+}
+
+TEST_CASE("l'exploration propose RIFE 4.25 au-dessus du modèle léger, rien d'autre",
+          "[auto_bench][exploration]") {
+  CHECK(next_rife_model("rife_v4.22_lite.onnx") == "rife_v4.25.onnx");
+  CHECK_FALSE(next_rife_model("rife_v4.25.onnx").has_value());
+  CHECK_FALSE(next_rife_model("").has_value());
+}
+
+TEST_CASE("bench.toml garde l'exploration et relit les anciens fichiers", "[auto_bench][exploration]") {
+  BenchResult result{.gpu = "NVIDIA GeForce RTX 4070 Ti",
+                     .driver = "615.78",
+                     .level = Tier::Fast,
+                     .date = "2026-10-29",
+                     .work_height = 900,
+                     .rife_model = "rife_v4.25.onnx"};
+  const auto back = parse_bench(format_bench(result));
+  REQUIRE(back);
+  CHECK(back->work_height == 900);
+  CHECK(back->rife_model == "rife_v4.25.onnx");
+  // Un bench.toml d'avant l'exploration : rien d'exploré.
+  const auto old =
+      parse_bench("version = 1\ngpu = \"x\"\ndriver = \"y\"\nlevel = 2\ndate = \"2026-10-28\"\n");
+  REQUIRE(old);
+  CHECK(old->work_height == 0);
+  CHECK(old->rife_model.empty());
+  CHECK_FALSE(parse_bench("gpu = \"x\"\nlevel = 2\nwork_height = 99999\n").has_value());
+}
+
+TEST_CASE("la lecture d'un essai garde la hauteur et le modèle joués", "[auto_bench][exploration]") {
+  BenchReading reading{.gpu = "g",
+                       .driver = "d",
+                       .run = run(Tier::Normal),
+                       .work_height = 720,
+                       .rife_model = "rife_v4.22_lite.onnx"};
+  const auto back = parse_reading(format_reading(reading));
+  REQUIRE(back);
+  CHECK(back->work_height == 720);
+  CHECK(back->rife_model == "rife_v4.22_lite.onnx");
+}

@@ -20,7 +20,7 @@ std::unexpected<Refusal> refuse(RefusalCode code, std::string detail) {
 // Un essai : l'enfant joue, rend sa lecture ; une lecture absente est un essai vide (ne tient pas).
 std::optional<BenchReading> play_one(const BenchPlan& plan, const std::optional<Tier>& level,
                                      const Variant* variant, int index, const std::stop_token& stop,
-                                     bool& cancelled) {
+                                     bool& cancelled, const std::vector<std::string>& extra = {}) {
   const std::filesystem::path dir = plan.work_dir / std::format("essai-{}", index);
   std::error_code error;
   std::filesystem::remove_all(dir, error);
@@ -41,7 +41,7 @@ std::optional<BenchReading> play_one(const BenchPlan& plan, const std::optional<
   prepare::ProcessSpec spec{.program = plan.executable,
                             .args = variant != nullptr
                                         ? variant_child_args(plan, *variant, dir / "reglages", out)
-                                        : bench_child_args(plan, level, dir / "reglages", out),
+                                        : bench_child_args(plan, level, dir / "reglages", out, extra),
                             .timeout = std::chrono::seconds(plan.seconds) + plan.build_allowance};
   const auto log = log_channel("app");
   const auto exit =
@@ -66,7 +66,8 @@ std::optional<BenchReading> play_one(const BenchPlan& plan, const std::optional<
 
 std::vector<std::string> bench_child_args(const BenchPlan& plan, const std::optional<Tier>& level,
                                           const std::filesystem::path& data_dir,
-                                          const std::filesystem::path& out_file) {
+                                          const std::filesystem::path& out_file,
+                                          const std::vector<std::string>& extra) {
   std::vector<std::string> args{
       "play",
       prepare::utf8_path(plan.video),
@@ -78,6 +79,7 @@ std::vector<std::string> bench_child_args(const BenchPlan& plan, const std::opti
       std::format("--bench-level={}", level ? std::to_string(static_cast<int>(*level)) : "auto")};
   if (plan.fullscreen) args.emplace_back("--fullscreen");
   if (plan.silent) args.emplace_back("--hidden");
+  args.insert(args.end(), extra.begin(), extra.end());
   return args;
 }
 
@@ -170,8 +172,10 @@ std::expected<BenchOutcome, Refusal> run_bench(const BenchPlan& plan, const std:
   BenchOutcome outcome;
   std::string gpu;
   std::string driver;
-  std::optional<Tier> level;  // absent : « auto », le premier essai
-  for (int index = 0; index <= kTierCount; ++index) {
+  std::optional<Tier> level;                          // absent : « auto », le premier essai
+  std::vector<std::optional<BenchReading>> readings;  // une par essai, comme outcome.runs
+  int index = 0;
+  for (; index <= kTierCount; ++index) {
     if (progress)
       progress(level ? std::format("Essai : niveau {}", tier_label(*level)) : "Essai : niveau estimé");
     bool cancelled = false;
@@ -186,10 +190,47 @@ std::expected<BenchOutcome, Refusal> run_bench(const BenchPlan& plan, const std:
       driver = reading->driver;
     }
     outcome.runs.push_back(reading ? reading->run : BenchRun{.level = *level});  // vide : ne tient pas
+    readings.push_back(reading);
     level = next_level(outcome.runs, outcome.estimated);
     if (!level) break;
   }
   outcome.result = BenchResult{.gpu = gpu, .driver = driver, .level = best_level(outcome.runs)};
+
+  // L'exploration, une fois le niveau connu : la hauteur de travail au-dessus de celle du niveau tant que la
+  // machine tient, puis le modèle RIFE au-dessus du modèle léger. Le multiplicateur reste au mode Auto, qui
+  // le règle en direct. Un essai qui ne rend rien ou ne tient pas arrête la piste.
+  std::optional<BenchReading> base;
+  for (std::size_t i = 0; i < readings.size(); ++i) {
+    if (readings[i] && outcome.runs[i].level == outcome.result.level && holds(outcome.runs[i]))
+      base = readings[i];
+  }
+  if (base && outcome.result.level != Tier::Economy && base->work_height > 0) {
+    int tried = 0;
+    const auto explore = [&](const std::string& what, const std::vector<std::string>& extra) {
+      if (progress) progress(std::format("Exploration : {}", what));
+      bool cancelled = false;
+      const auto reading =
+          play_one(plan, outcome.result.level, nullptr, ++index + tried++, stop, cancelled, extra);
+      if (cancelled) return std::optional<BenchReading>();
+      if (reading && holds(reading->run)) return std::optional<BenchReading>(reading);
+      return std::optional<BenchReading>();
+    };
+    int height = base->work_height;
+    while (const auto next = next_work_height(height, kExplorationSourceHeight)) {
+      if (stop.stop_requested()) return refuse(RefusalCode::Cancelled, "évaluation annulée");
+      const auto kept = explore(std::format("{}p", *next), {std::format("--work-height={}", *next)});
+      if (!kept) break;
+      height = *next;
+      outcome.result.work_height = height;
+    }
+    if (const auto better = next_rife_model(base->rife_model)) {
+      if (stop.stop_requested()) return refuse(RefusalCode::Cancelled, "évaluation annulée");
+      std::vector<std::string> extra{std::format("--rife-model={}", *better)};
+      if (outcome.result.work_height > 0)
+        extra.push_back(std::format("--work-height={}", outcome.result.work_height));
+      if (explore(*better, extra)) outcome.result.rife_model = *better;
+    }
+  }
   return outcome;
 }
 
@@ -235,6 +276,11 @@ std::string format_bench_report(const BenchOutcome& outcome) {
                        static_cast<double>(run.lag_p95_us) / 1000.0, holds(run) ? "tient" : "ne tient pas");
   }
   out += std::format("Niveau gardé : {}\n", tier_label(outcome.result.level));
+  if (outcome.result.work_height > 0)
+    out += std::format("Exploration : la machine tient une hauteur de travail de {}p.\n",
+                       outcome.result.work_height);
+  if (!outcome.result.rife_model.empty())
+    out += std::format("Exploration : la machine tient le modèle {}.\n", outcome.result.rife_model);
   return out;
 }
 
