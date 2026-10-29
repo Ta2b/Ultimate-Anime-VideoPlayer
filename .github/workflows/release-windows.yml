@@ -102,7 +102,7 @@ jobs:
           choco install innosetup -y --no-progress | Out-Null
           $version = [regex]::Match((Get-Content CMakeLists.txt -Raw), '(?m)^  VERSION ([0-9.]+)$').Groups[1].Value
           $out = "$env:RUNNER_TEMP/package"
-          & "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" "/DSource=$out\ajp" "/DVersion=$version" "/DOutput=$out" tools/release/windows/ajp.iss
+          & "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" "/DSource=$out\ajp" "/DAppVer=$version" "/DOutput=$out" tools/release/windows/ajp.iss
           if ($LASTEXITCODE -ne 0) { throw "installeur" }
           $setup = Get-Item "$out/ajp-windows-x64-setup.exe"
           Add-Content -Path "$out/SHA256SUMS-windows.txt" -Value "$((Get-FileHash $setup -Algorithm SHA256).Hash.ToLower())  $($setup.Name)"

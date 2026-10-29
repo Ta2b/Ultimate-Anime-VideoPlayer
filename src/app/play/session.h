@@ -148,6 +148,8 @@ class Session {
   void end();
 
   bool finished() const { return finished_; }
+  // Le délai entre la présentation d'une image et son affichage, tel que choisi pour la sélection des images.
+  std::int64_t visible_delay_us() const { return display_delay_us(display_period()); }
   // La fenêtre a changé d'écran : nouvelle période et nouvelle fréquence, la synchro les suit.
   void set_display(std::int64_t period_us, double hz);
   bool quit_asked() const { return quit_; }  // q ou fenêtre fermée, pas la fin du fichier

@@ -446,6 +446,13 @@ core::FreeInputs UpscaleStage::free_inputs(std::uint32_t epoch) const {
   inputs.step_us = media(step_real);
   inputs.max_instants = free_instants_limit(engine_kind());
   if (running) inputs.ready_us = ready_media_us(now, at, inputs.min_gap_us, latency_us());
+  if (running) {
+    // Écran à fréquence fixe : la grille des vsyncs en temps de contenu, calée sur la dernière phase mesurée.
+    if (const auto grid = setup_.live->vsync_grid(at); grid.period_us > 0) {
+      inputs.vsync_period_us = media(grid.period_us);
+      inputs.vsync_origin_us = now.media_at(grid.anchor_host_us);
+    }
+  }
   return inputs;
 }
 

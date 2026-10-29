@@ -1,13 +1,13 @@
 ; Installeur Windows (Inno Setup 6) : tools/release/package-windows.ps1 le prépare, release-windows.yml le lance.
-;   ISCC /DSource=<dossier ajp-windows-x64> /DVersion=0.6.0 /DOutput=<dossier> ajp.iss
+;   ISCC /DSource=<dossier ajp-windows-x64> /DAppVer=0.6.0 /DOutput=<dossier> ajp.iss
 ; Installation pour l'utilisateur seul (aucun droit d'administrateur) : le lecteur se met à jour lui-même
 ; dans son dossier, ce qu'un dossier de Program Files interdirait. « Ouvrir avec » et le lecteur par
 ; défaut restent le choix du lecteur au premier lancement ; le zip portable reste proposé à côté.
 #ifndef Source
   #error "Source : le dossier du lecteur (ajp.exe et ses DLL)"
 #endif
-#ifndef Version
-  #define Version "0.0.0"
+#ifndef AppVer
+  #define AppVer "0.0.0"
 #endif
 #ifndef Output
   #define Output "."
@@ -16,7 +16,7 @@
 [Setup]
 AppId={{6F1D2B7A-3C4E-4D5A-9B8E-1A2C3D4E5F60}
 AppName=Ultimate Anime VideoPlayer
-AppVersion={#Version}
+AppVersion={#AppVer}
 AppPublisher=Ta2b
 DefaultDirName={localappdata}\Programs\AJP
 DefaultGroupName=Ultimate Anime VideoPlayer
