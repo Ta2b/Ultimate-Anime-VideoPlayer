@@ -1,6 +1,8 @@
 #include "audio/mixer.h"
 
 #include <cmath>
+#include <cstdio>
+#include <string>
 
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
@@ -218,5 +220,66 @@ TEST_CASE("les nouveaux profils existent et le tableau des réglages fait l'alle
   for (std::size_t i = 0; i < back.size(); ++i) {
     INFO("champ " << i);
     CHECK(back[i] == original[i]);
+  }
+}
+
+TEST_CASE("aux enceintes, une piste stéréo change avec Voix claires, Nuit et Voix d'anime",
+          "[mixer][profils]") {
+  // Un son de voix (2,5 kHz, le centre de la cloche des voix) et un grave (80 Hz) en stéréo : chaque profil
+  // des enceintes doit en changer le niveau par rapport à Naturel, même sans surround.
+  const auto level = [](const char* key, float hz) {
+    Mixer mixer(MixConfig{.listen = Listen::Speakers, .tuning = ajp::audio::find_preset(key)->tuning});
+    PcmBlock block{.pts_us = 0, .channels = 2};
+    constexpr std::size_t kFrames = 9600;
+    block.samples.assign(kFrames * 2, 0.0F);
+    for (std::size_t f = 0; f < kFrames; ++f) {
+      const float v = 0.1F * std::sin(6.2831853F * hz * static_cast<float>(f) / 48000.0F);
+      block.samples[f * 2] = v;
+      block.samples[f * 2 + 1] = v;
+    }
+    const PcmBlock out = mixer.process(std::move(block));
+    float peak = 0.0F;
+    for (std::size_t f = kFrames / 2; f < kFrames; ++f) peak = std::max(peak, std::abs(out.samples[f * 2]));
+    return peak;
+  };
+  for (const char* key : {"voices", "night", "anime"}) {
+    INFO(key);
+    CHECK(level(key, 2500.0F) != Catch::Approx(level("natural", 2500.0F)).epsilon(0.03));
+  }
+  CHECK(level("voices", 80.0F) < level("natural", 80.0F));
+}
+
+TEST_CASE("tableau : gain en dB de chaque profil sur une piste stéréo", "[.profils_tableau]") {
+  // Un sinus stéréo à 80 Hz, 2,5 kHz et 8 kHz (niveau 0,1), puis une salve forte suivie d'un murmure (nuit).
+  const auto run = [](const char* key, Listen listen, float hz, float amp) {
+    Mixer mixer(MixConfig{.listen = listen, .tuning = ajp::audio::find_preset(key)->tuning});
+    PcmBlock block{.pts_us = 0, .channels = 2};
+    constexpr std::size_t kFrames = 24000;
+    block.samples.assign(kFrames * 2, 0.0F);
+    for (std::size_t f = 0; f < kFrames; ++f) {
+      const float v = amp * std::sin(6.2831853F * hz * static_cast<float>(f) / 48000.0F);
+      block.samples[f * 2] = v;
+      block.samples[f * 2 + 1] = 0.8F * v;
+    }
+    const PcmBlock out = mixer.process(std::move(block));
+    double sum = 0.0;
+    for (std::size_t f = kFrames / 2; f < kFrames; ++f)
+      sum += static_cast<double>(out.samples[f * 2]) * static_cast<double>(out.samples[f * 2]);
+    return std::sqrt(sum / static_cast<double>(kFrames / 2));
+  };
+  for (const Listen listen : {Listen::Speakers, Listen::Headphones}) {
+    std::printf("\n%s\n%-8s %8s %8s %8s %12s\n", listen == Listen::Speakers ? "ENCEINTES" : "CASQUE",
+                "profil", "80 Hz", "2,5 kHz", "8 kHz", "murmure 0,01");
+    for (const auto& preset : ajp::audio::mix_presets()) {
+      const std::string key(preset.key);
+      if ((listen == Listen::Speakers && !preset.speakers) ||
+          (listen == Listen::Headphones && !preset.headphones))
+        continue;
+      const auto db = [&](float hz, float amp) {
+        return 20.0 * std::log10(run(key.c_str(), listen, hz, amp) / run("natural", listen, hz, amp));
+      };
+      std::printf("%-8s %+8.2f %+8.2f %+8.2f %+12.2f\n", key.c_str(), db(80.0F, 0.1F), db(2500.0F, 0.1F),
+                  db(8000.0F, 0.1F), db(1000.0F, 0.01F));
+    }
   }
 }
