@@ -163,13 +163,12 @@ AnimeTuning clamped(AnimeTuning t) {
 
 namespace {
 const std::array<AnimeLevel, 3> kLevels{{
-    {"natural", "Naturel", "Aucun traitement du module : le son de la piste, comme avant.", AnimeTuning{}},
+    {"natural", "Naturel", "No processing: the track's sound as is.", AnimeTuning{}},
     {"anime", "Anime",
-     "Stéréo élargie avec les voix devant, présence des dialogues, graves renforcés par harmoniques, sonie "
-     "ramenée à -20 LUFS, compresseur doux et limiteur.",
+     "Wider stereo, voices forward, dialogue presence, bass boost, -20 LUFS loudness, soft compressor and "
+     "limiter.",
      AnimeTuning{.enabled = true}},
-    {"strong", "Anime fort",
-     "Plus large, voix en avant (+3 dB), graves plus présents, compresseur plus ferme, sonie à -18 LUFS.",
+    {"strong", "Strong anime", "Wider, voices +3 dB, more bass, firmer compressor, -18 LUFS loudness.",
      AnimeTuning{.enabled = true,
                  .width = 0.85F,
                  .ambience = 0.75F,

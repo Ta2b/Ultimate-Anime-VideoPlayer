@@ -242,7 +242,104 @@ Tableau : texte français d'avant → anglais (par défaut) / français d'après
 | La couche du pilote NVIDIA (RTX 40 et 50) génère une image entre deux images présentées : RIFE ×3 puis Smooth Motion donnent environ 144 images par seconde. Vaut au prochain lancement. | The NVIDIA driver (RTX 40 and 50) adds a frame between displayed frames. Applies at next launch. |
 | Grisé : activez RIFE à ×2 ou plus, sans quoi la lecture cale. | Greyed out: turn on RIFE at ×2 or more, or playback stalls. |
 
+## Étape B3 : Audio (sortie, profils, Son anime, synchronisation)
+
+| Avant (français) | Après (anglais) | Après (français) |
+|---|---|---|
+| Appareil | Device | Appareil |
+| Suivre l'appareil par défaut du système | Follow the system default device | Suivre l'appareil par défaut du système |
+| Appareil de sortie | Output device | Appareil de sortie |
+| Aucun | None | Aucun |
+| {} canaux sur cet appareil. | {} channels on this device. | {} canaux sur cet appareil. |
+| Écoute | Listening | Écoute |
+| Casque | Headphones | Casque |
+| Crossfeed en stéréo, binaural en surround. | Crossfeed for stereo, binaural for surround. | Crossfeed en stéréo, binaural en surround. |
+| Enceintes | Speakers | Enceintes |
+| Home cinéma | Home theater | Home cinéma |
+| Multicanal, surround envoyé tel quel. | Multichannel, surround sent as is. | Multicanal, surround envoyé tel quel. |
+| Grisé : cet appareil n'a que 2 canaux. | Greyed out: this device only has 2 channels. | Grisé : cet appareil n'a que 2 canaux. |
+| Profil | Profile | Profil |
+| Personnalisé | Custom | Personnalisé |
+| Crossfeed (stéréo) | Crossfeed | Crossfeed |
+| Crossfeed : filtre (Hz) | Crossfeed filter (Hz) | Filtre du crossfeed (Hz) |
+| Crossfeed : retard (ms) | Crossfeed delay (ms) | Retard du crossfeed (ms) |
+| Taille de la tête (m) | Head size (m) | Taille de la tête (m) |
+| Ombre de la tête | Head shadow | Ombre de la tête |
+| Niveau du centre (voix) | Center level (voices) | Niveau du centre (voix) |
+| Gain du mixage stéréo | Stereo mix gain | Gain du mixage stéréo |
+| Niveau des arrières | Rear level | Niveau des arrières |
+| Niveau des basses (LFE) | Bass level (LFE) | Niveau des basses (LFE) |
+| Distance des enceintes | Speaker distance | Distance des enceintes |
+| Pièce (réverbération) | Room (reverb) | Pièce (réverbération) |
+| Égaliseur : graves (dB) | Equalizer: bass (dB) | Égaliseur : graves (dB) |
+| Égaliseur : voix (dB) | Equalizer: voices (dB) | Égaliseur : voix (dB) |
+| Égaliseur : aigus (dB) | Equalizer: treble (dB) | Égaliseur : aigus (dB) |
+| Nuit : compression | Night compression | Compression de nuit |
+| Revenir à Naturel | Back to Natural | Revenir à Naturel |
+| Son anime | Anime sound | Son anime |
+| Niveau | Level | Niveau |
+| Comparer (maintenir : Naturel) | Compare (hold: Natural) | Comparer (maintenir : Naturel) |
+| Spatialisation | Spatialization | Spatialisation |
+| Ambiance décorrélée | Decorrelated ambience | Ambiance décorrélée |
+| Voix : centre porté (dB) | Voices: center boost (dB) | Voix : centre renforcé (dB) |
+| Voix : présence 3 kHz (dB) | Voices: 3 kHz presence (dB) | Voix : présence 3 kHz (dB) |
+| Voix en avant | Voices forward | Voix en avant |
+| Renfort des graves | Bass boost | Renfort des graves |
+| Normalisation de sonie (EBU R128) | Loudness normalization (EBU R128) | Normalisation de sonie (EBU R128) |
+| Sonie visée (LUFS) | Target loudness (LUFS) | Sonie visée (LUFS) |
+| Compresseur doux | Soft compressor | Compresseur doux |
+| Plafond du limiteur (dBTP) | Limiter ceiling (dBTP) | Plafond du limiteur (dBTP) |
+| Réponse HeSuVi (.wav) | HeSuVi response (.wav) | Réponse HeSuVi (.wav) |
+| Aucune##hrir | None##hrir | Aucune##hrir |
+| Fidèle (aucun traitement) | Original (no processing) | Fidèle (aucun traitement) |
+| Profil propre à cet appareil | Own profile for this device | Profil propre à cet appareil |
+| Synchronisation | Sync | Synchronisation |
+| Délai audio (ms) | Audio delay (ms) | Délai audio (ms) |
+| Remettre à 0 | Reset to 0 | Remettre à 0 |
+| Caler la lecture sur l'écran | Sync playback to the display | Caler la lecture sur l'écran |
+| Latence de l'écran (ms) | Display latency (ms) | Latence de l'écran (ms) |
+| estimée | estimated | estimée |
+| Naturel | Natural | Naturel |
+| Le réglage d'origine, équilibré. | The balanced default. | Le réglage d'origine, équilibré. |
+| Doux | Soft | Doux |
+| Enceintes virtuelles | Virtual speakers | Enceintes virtuelles |
+| Large | Wide | Large |
+| Voix claires | Clear voices | Voix claires |
+| Nuit | Night | Nuit |
+| Salon | Living room | Salon |
+| Voix d'anime | Anime voices | Voix d'anime |
+| Anime fort | Strong anime | Anime fort |
+
+### Infobulles et notes raccourcies
+
+| Avant (français) | Après (anglais) |
+|---|---|
+| Changer d'appareil rouvre la vidéo au même endroit. Le format du son se détecte seul, piste par piste. | Changing the device reopens the video at the same spot. |
+| Rendu fidèle ; le surround est mixé en stéréo, centre rehaussé. | Faithful sound; surround is mixed down to stereo with a lifted center. |
+| Le profil s'entend surtout en surround ; en stéréo, il règle le crossfeed. | The profile is mostly heard in surround; in stereo it sets the crossfeed. |
+| En stéréo, le profil agit par l'égaliseur et la compression ; centre, arrière et basses n'existent qu'en 5.1 et 7.1. | In stereo the profile works through the equalizer and compression; center, rear and bass exist in 5.1 and 7.1 only. |
+| Tenez le bouton pour entendre la piste sans le Son anime, relâchez pour le retrouver. Le volume diffère un peu : la normalisation de sonie rapproche aussi les scènes fortes et faibles. | Hold to hear the track without Anime sound. The volume differs a little. |
+| Actif pour une piste stéréo sur une sortie stéréo ; les pistes mono, 5.1 et 7.1, le mode Home cinéma et le mode Fidèle gardent leur chemin habituel. | Applies to a stereo track on a stereo output only. |
+| Cet appareil a plus de 2 canaux : le Son anime ne s'applique qu'à une sortie stéréo. | This device has more than 2 channels: Anime sound needs a stereo output. |
+| Un fichier WAV de réponses (14 canaux HeSuVi, 16 canaux 7.1 ou 2 canaux HRIR) remplace le modèle de tête du casque, pour le stéréo comme pour le 5.1 et le 7.1. Vide : le modèle d'origine. Latence ajoutée : environ 11 ms. | A WAV impulse response (HeSuVi 14 ch, 7.1 16 ch or 2 ch HRIR) replaces the headphone model. Empty: the default. Adds about 11 ms of latency. |
+| Le lecteur ne livre aucune réponse : elles ont chacune leur licence, lisez celle du fichier que vous choisissez. | No response is bundled: each has its own licence, read the one of the file you pick. |
+| Coupe tout traitement, pour comparer : le son brut de la piste, mixé simplement pour l'appareil. | Turns all processing off: the raw track, simply mixed for the device. |
+| Un autre appareil reprend le profil global, sans rien demander. | Another device uses the global profile. |
+| Positif : le son est retardé. Ctrl + clic sur le curseur pour saisir une valeur (jusqu'à ±10 000 ms). | Positive delays the sound. Ctrl+click the slider to type a value (up to ±10,000 ms). |
+| Sur un écran à fréquence fixe, la lecture accélère ou ralentit d'au plus 0,125 % pour que chaque image tienne un nombre entier de rafraîchissements : plus aucune image doublée par dérive (une toutes les 17 s à 60 Hz sinon). Le son suit, sans changement audible. Sans calage possible (VRR, cadence trop loin), le son reste maître. | On a fixed-rate display, playback speeds up or slows down by at most 0.125% so each frame fits whole refreshes: no more doubled frames. Sound follows, inaudibly. |
+| Le temps entre le choix d'une image et son apparition : estimé d'après le rendu et la file de l'écran, ou imposé ici si l'image paraît en avance ou en retard sur le son. | The time between choosing a frame and seeing it. Set it here if the picture seems early or late. |
+| Casque : séparation presque intacte, juste de quoi adoucir les écoutes longues. | Headphones: nearly intact separation, just softer for long listening. |
+| Casque : comme des enceintes devant soi, le plus loin de la tête. | Headphones: like speakers in front of you, far from the head. |
+| Casque : tête plus grande, arrière plus présent (5.1 et 7.1). | Headphones: a bigger head, stronger rear (5.1 and 7.1). |
+| Enceintes : centre rehaussé, arrière et basses discrets en 5.1 et 7.1 ; en stéréo, voix relevées et graves allégés à l'égaliseur. | Speakers: lifted center and quieter rear and bass; in stereo, louder voices and lighter bass. |
+| Enceintes : dynamique comprimée (explosions réduites, murmures relevés) et voix devant ; en 5.1 et 7.1, arrière et basses très réduits. | Speakers: compressed dynamics (softer explosions, louder whispers) and voices forward. |
+| Casque : enceintes dans une pièce, un peu plus loin, avec une réverbération légère. | Headphones: speakers in a room, a bit farther, with light reverb. |
+| Voix plus nettes et aigus plus clairs, graves allégés : dialogues d'anime sans fatigue. | Crisper voices, clearer treble, lighter bass: tireless anime dialogue. |
+| Aucun traitement du module : le son de la piste, comme avant. | No processing: the track's sound as is. |
+| Stéréo élargie avec les voix devant, présence des dialogues, graves renforcés par harmoniques, sonie ramenée à -20 LUFS, compresseur doux et limiteur. | Wider stereo, voices forward, dialogue presence, bass boost, -20 LUFS loudness, soft compressor and limiter. |
+| Plus large, voix en avant (+3 dB), graves plus présents, compresseur plus ferme, sonie à -18 LUFS. | Wider, voices +3 dB, more bass, firmer compressor, -18 LUFS loudness. |
+
 ## À venir
 
-B3 : Audio. B4 : Export, Moteurs, Application, Configuration (benchmark). C : assistant, écran des moteurs,
+B4 : Export, Moteurs, Application, Configuration (benchmark). C : assistant, écran des moteurs,
 lecteur par défaut, mises à jour, messages d'erreur visibles.
