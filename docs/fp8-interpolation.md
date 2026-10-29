@@ -1,5 +1,11 @@
 # FP8 pour RIFE, DistilDRBA et GMFSS : ce qui marche, ce qui ne marche pas
 
+> **Mise à jour du 30/10 (0.7.0-rc.1) : le FP8 de GMFSS est retiré.** Sur la 0.7.0-rc.1, Tatoub a vu « une très mauvaise image dans les gros
+> mouvements » avec la paire GMFSS en FP8 : les 46,9 dB mesurés l'étaient sur des paires de test qui ne couvraient pas assez de mouvement fort. Le
+> cran Performance n'est plus proposé pour GMFSS (menu) ni choisi par les préréglages ; GMFSS reste en FP16 (Équilibre) ou FP32 (Qualité). Les deux
+> graphes FP8 restent au catalogue (`models-interp-1`), sans être offerts ; un `play.toml` qui demande Performance lit Équilibre. Rouvrir ce chantier
+> demande une mesure sur des mouvements forts (voir le plan v0.6, point 25). Le texte ci-dessous est l'état d'avant ce retour.
+
 Demande de Tatoub (29/10) : « ajoute les modèles FP8 au lecteur pour RIFE, DistilDRBA et GMFSS ». Règle du projet : un
 graphe FP8 n'est activé par défaut que si le gain mesuré est réel (**au moins 8 % en ABAB** sur le moteur concerné) **et**
 que la qualité tient (PSNR moyen ≥ 42 dB, pire cas ≥ 38 dB, SSIM moyen ≥ 0,985 contre le FP16). Ce document dit ce que

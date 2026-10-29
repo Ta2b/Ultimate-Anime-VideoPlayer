@@ -9,6 +9,7 @@
 
 #include "app/play/export_depth.h"
 #include "app/play/scripted_input.h"
+#include "french_ui.h"
 #include "prepare/utf8.h"
 
 namespace ajp::app::play {
@@ -33,6 +34,7 @@ struct TempDir {
 }  // namespace
 
 TEST_CASE("Export : la chaîne sans RTX HDR, HDR adaptatif, grade ni Smooth Motion", "[app][export]") {
+  ajp::app::play::FrenchUi french;
   PlaySettings s;
   s.true_hdr = true;
   s.hdr_native = true;
@@ -50,6 +52,7 @@ TEST_CASE("Export : la chaîne sans RTX HDR, HDR adaptatif, grade ni Smooth Moti
 }
 
 TEST_CASE("Export : la sortie de la chaîne est la taille de travail, doublée par SPAN", "[app][export]") {
+  ajp::app::play::FrenchUi french;
   PlaySettings s;
   s.work_height = 720;
   CHECK(chain_output(s, 1920, 1080) == ExportSize{.width = 2560, .height = 1440});
@@ -61,6 +64,7 @@ TEST_CASE("Export : la sortie de la chaîne est la taille de travail, doublée p
 
 TEST_CASE("Export : taille encodée de la chaîne, de la source ou d'une hauteur fixe, paire",
           "[app][export]") {
+  ajp::app::play::FrenchUi french;
   const ExportSize chain{.width = 2560, .height = 1440};
   const ExportSize source{.width = 1920, .height = 1080};
   CHECK(export_size(chain, source, kExportChainHeight) == chain);
@@ -78,6 +82,7 @@ TEST_CASE("Export : taille encodée de la chaîne, de la source ou d'une hauteur
 }
 
 TEST_CASE("Export : fréquence de la source multipliée par l'interpolation, réduite", "[app][export]") {
+  ajp::app::play::FrenchUi french;
   const media::Rational ntsc{.num = 24'000, .den = 1'001};
   CHECK(export_rate(ntsc, Factor{.num = 3, .den = 1}) == media::Rational{.num = 72'000, .den = 1'001});
   CHECK(export_rate(ntsc, Factor{.num = 2, .den = 1}) == media::Rational{.num = 48'000, .den = 1'001});
@@ -93,6 +98,7 @@ TEST_CASE("Export : fréquence de la source multipliée par l'interpolation, ré
 }
 
 TEST_CASE("Export : nom proposé à côté de la source, numéroté s'il est pris", "[app][export]") {
+  ajp::app::play::FrenchUi french;
   const TempDir dir("name");
   const std::filesystem::path source = dir.path / prepare::path_from_utf8("Épisode 01.mkv");
   const ExportSize size{.width = 3840, .height = 2160};
@@ -110,6 +116,7 @@ TEST_CASE("Export : nom proposé à côté de la source, numéroté s'il est pri
 }
 
 TEST_CASE("Export : « export » de --keys lance l'export de la chaîne en cours sans clic", "[app][export]") {
+  ajp::app::play::FrenchUi french;
   const TempDir dir("keys");
   const std::filesystem::path source = dir.path / "clip.mkv";
   PlaySettings running;
@@ -138,6 +145,7 @@ TEST_CASE("Export : « export » de --keys lance l'export de la chaîne en cours
 }
 
 TEST_CASE("Export : libellé du codec et de la qualité", "[app][export]") {
+  ajp::app::play::FrenchUi french;
   CHECK(export_label(exporter::Codec::Hevc, exporter::Quality::VeryHigh) ==
         "HEVC 10 bits · qualité très haute");
   CHECK(export_label(exporter::Codec::Av1, exporter::Quality::Standard) == "AV1 10 bits · qualité standard");
@@ -146,6 +154,7 @@ TEST_CASE("Export : libellé du codec et de la qualité", "[app][export]") {
 }
 
 TEST_CASE("Export : profil débit avec plusieurs voies de calcul, profondeur d'avant sinon", "[app][export]") {
+  ajp::app::play::FrenchUi french;
   const ExportDepth one = export_depth(1);
   CHECK_FALSE(one.throughput);
   CHECK(one.ring_slots == 4);

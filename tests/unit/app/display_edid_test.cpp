@@ -7,6 +7,8 @@
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 
+#include "french_ui.h"
+
 using namespace ajp::app::play;
 using Catch::Approx;
 
@@ -62,6 +64,7 @@ std::vector<std::uint8_t> oled_edid() {
 }  // namespace
 
 TEST_CASE("EDID du QD-OLED de Tatoub : modèle connu, OLED", "[app][display]") {
+  ajp::app::play::FrenchUi french;
   const DisplayFacts d = parse_edid(kQdOledEdid);
   CHECK(d.name == "MAG 272U E16");
   CHECK(d.manufacturer == "CND");
@@ -81,6 +84,7 @@ TEST_CASE("EDID du QD-OLED de Tatoub : modèle connu, OLED", "[app][display]") {
 }
 
 TEST_CASE("Heuristique : noir code ≤ 2 et limiteur plein écran donnent OLED, sinon non", "[app][display]") {
+  ajp::app::play::FrenchUi french;
   std::array<std::uint8_t, 384> edid = kQdOledEdid;
   // Un autre modèle (nom et product id changés) avec les mêmes mesures : l'heuristique seule.
   edid[10] = 0x00;
@@ -98,6 +102,7 @@ TEST_CASE("Heuristique : noir code ≤ 2 et limiteur plein écran donnent OLED, 
 }
 
 TEST_CASE("DisplayID 2.0, bloc 0x21 : AMOLED est définitif", "[app][display]") {
+  ajp::app::play::FrenchUi french;
   const DisplayFacts d = parse_edid(oled_edid());
   REQUIRE(d.displayid_oled);
   CHECK(*d.displayid_oled);
@@ -108,5 +113,6 @@ TEST_CASE("DisplayID 2.0, bloc 0x21 : AMOLED est définitif", "[app][display]") 
 }
 
 TEST_CASE("EDID trop court : OLED inconnu", "[app][display]") {
+  ajp::app::play::FrenchUi french;
   CHECK(parse_edid(std::span<const std::uint8_t>(kQdOledEdid).first(64)).source == OledSource::Unknown);
 }

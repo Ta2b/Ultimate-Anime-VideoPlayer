@@ -8,6 +8,8 @@
 
 #include <SDL3/SDL_properties.h>
 
+#include "app/play/i18n.h"
+
 #if defined(_WIN32)
 #include <windows.h>
 #endif
@@ -132,12 +134,12 @@ EnginesHere engines_here(const PlayOptions& options, const PlayerPaths& paths, c
   vendor_hdr::SdkStore store(paths.engines.parent_path() / "sdk", vendor_hdr::SdkKind::MaxineVfx);
   if (store.status().installed) {
     here.maxine = true;
-    here.maxine_status = "importé";
+    here.maxine_status = i18n::tr("imported");
   } else if (std::filesystem::exists(options.true_hdr_sdk, error)) {
     here.maxine = true;
-    here.maxine_status = std::format("à importer depuis {} (une fois)", options.true_hdr_sdk.string());
+    here.maxine_status = i18n::tr_format("to import from {} (once)", options.true_hdr_sdk.string());
   } else {
-    here.maxine_status = std::format("SDK absent ({})", options.true_hdr_sdk.string());
+    here.maxine_status = i18n::tr_format("SDK missing ({})", options.true_hdr_sdk.string());
   }
   if (!here.maxine && catalog.maxine) here.maxine_license = catalog.maxine->license;
   return here;

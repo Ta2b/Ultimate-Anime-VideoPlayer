@@ -157,10 +157,10 @@ PlaySettings apply_preset(const PlaySettings& settings, const Machine& machine,
       break;
     case Tier::Ultra:
       out.motion_engine = MotionEngine::GmfssUnion;
-      // Performance (FP8) : la paire −15 % en ABAB, qualité tenue ; sans son graphe, la lecture reste en
-      // FP16.
+      // GMFSS reste en FP16 (Équilibre) : son FP8 dégrade l'image dans les gros mouvements ; Qualité (FP32) à
+      // la priorité Image.
       out.gmfss_precision =
-          settings.priority == Priority::Image ? PrecisionTier::Quality : PrecisionTier::Performance;
+          settings.priority == Priority::Image ? PrecisionTier::Quality : PrecisionTier::Balanced;
       break;
   }
   return out;

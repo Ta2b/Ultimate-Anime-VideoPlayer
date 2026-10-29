@@ -7,6 +7,7 @@
 #include <thread>
 #include <utility>
 
+#include "app/play/i18n.h"
 #include "audio/devices.h"
 #include "audio/output.h"
 #include "media/demuxer.h"
@@ -16,9 +17,9 @@ namespace ajp::app::play {
 namespace {
 
 std::string track_text(std::string_view kind, const media::TrackInfo& track) {
-  std::string text = std::format("{} {}", kind, track.codec);
+  std::string text = std::format("{} {}", i18n::tr(std::string(kind).c_str()), track.codec);
   if (!track.language.empty()) text += std::format(" {}", track.language);
-  if (!track.title.empty()) text += std::format(" « {} »", track.title);
+  if (!track.title.empty()) text += std::format(" \"{}\"", track.title);
   return text;
 }
 
@@ -43,7 +44,7 @@ std::expected<std::unique_ptr<Pipeline>, Refusal> Pipeline::open(const PipelineC
   }
   if (!choice.video) {
     return std::unexpected(
-        Refusal{RefusalCode::TrackUnavailable, std::format("{} : aucune piste vidéo", config.file.string())});
+        Refusal{RefusalCode::TrackUnavailable, std::format("{}: no video track", config.file.string())});
   }
   p->video_track_ = *demuxer->track(*choice.video);
   p->duration_us_ = demuxer->duration_us();
@@ -169,7 +170,7 @@ std::expected<std::unique_ptr<Pipeline>, Refusal> Pipeline::open(const PipelineC
         pushed = p->subs_inbox_->try_push(subs::AttachFont{font});
       }
       if (!pushed) {
-        p->mail_.report("subs", {RefusalCode::SubtitleBacklog, std::format("police {} écartée", font.name)},
+        p->mail_.report("subs", {RefusalCode::SubtitleBacklog, std::format("font {} dropped", font.name)},
                         false);
       }
     }
@@ -246,7 +247,7 @@ std::expected<void, Refusal> Pipeline::select_audio(int track, std::uint32_t fro
   if (!audio_->post(audio::AudioTrack{.codec = *codec})) {
     // Le décodeur n'a pas changé : le pont garde la piste d'avant, comme le menu.
     audio_bridge_->undo_select();
-    return std::unexpected(Refusal{RefusalCode::PacketBacklog, "piste audio : boîte audio pleine"});
+    return std::unexpected(Refusal{RefusalCode::PacketBacklog, "audio track: audio mailbox full"});
   }
   menu_.audio_selected = track;
   if (const media::TrackInfo* info = track_info(track)) audio_track_ = *info;
@@ -284,7 +285,7 @@ std::expected<void, Refusal> Pipeline::select_subtitles(std::optional<int> track
   auto select = subtitle_select(*track);
   if (!select) return std::unexpected(std::move(select.error()));
   if (!subs_inbox_->try_push(std::move(*select)))
-    return std::unexpected(Refusal{RefusalCode::SubtitleBacklog, "piste de sous-titres : boîte pleine"});
+    return std::unexpected(Refusal{RefusalCode::SubtitleBacklog, "subtitle track: mailbox full"});
   subs_bridge_->select(track);
   menu_.subtitle_selected = track;
   subtitle_track_ = *info;
@@ -317,10 +318,10 @@ SessionConfig Pipeline::session_config() const {
 
 std::vector<std::string> Pipeline::describe() const {
   std::vector<std::string> lines;
-  lines.push_back(std::format("{} {}x{} ({})", track_text("vidéo", video_track_), video_track_.width,
+  lines.push_back(std::format("{} {}x{} ({})", track_text("video", video_track_), video_track_.width,
                               video_track_.height, decoder_api_));
-  lines.push_back(audio_track_ ? track_text("audio", *audio_track_) : "audio : aucun, horloge hôte");
-  lines.push_back(subtitle_track_ ? track_text("sous-titres", *subtitle_track_) : "sous-titres : aucun");
+  lines.push_back(audio_track_ ? track_text("audio", *audio_track_) : i18n::tr("audio: none, host clock"));
+  lines.push_back(subtitle_track_ ? track_text("subtitles", *subtitle_track_) : i18n::tr("subtitles: none"));
   return lines;
 }
 

@@ -16,6 +16,7 @@
 #include <SDL3/SDL_timer.h>
 
 #include "app/play/i18n.h"
+#include "app/play/visible_error.h"
 
 extern "C" {
 #include <libavutil/frame.h>
@@ -81,7 +82,7 @@ ExportOutcome run_export(Player& p, const ExportJob& job) {
   const auto stopped = [&](const Refusal& refusal) {
     log->warn("export : {} {}", name(refusal.code), refusal.detail);
     return ExportOutcome{.end = ExportEnd::Failed,
-                         .notice = i18n::tr_format("Export stopped: {}", refusal.detail)};
+                         .notice = i18n::tr_format("Export stopped: {}", visible_error(refusal))};
   };
   std::error_code unknown;
   if (job.output.empty() || std::filesystem::equivalent(job.output, p.options.file, unknown))

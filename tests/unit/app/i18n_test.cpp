@@ -97,18 +97,63 @@ TEST_CASE("i18n: chaque texte passé à tr() ou tr_format() a son français", "[
 // Les fichiers dont les textes visibles sont tous passés par tr() : aucune phrase française en dur ne s'y
 // glisse (un littéral avec une lettre accentuée ou « « », hors journaux, commentaires et lignes « i18n-ok »).
 TEST_CASE("i18n: aucune chaîne française en dur dans les fichiers traduits", "[i18n]") {
-  const std::set<std::string> translated{
-      "controls_draw.cpp",  "tracks.cpp",          "settings_panel.cpp",   "settings_chain_tabs.cpp",
-      "settings_sound.cpp", "settings_export.cpp", "settings_engines.cpp", "settings_system.cpp",
-      "first_run.cpp",      "wizard.cpp",          "engine_screen.cpp",    "bench_steps.cpp",
-      "auto_bench_run.cpp", "span_auto.cpp",       "home_view.cpp",        "updater.cpp",
-      "chain_stats.cpp"};
+  // Les fichiers dont les littéraux français restent : textes de développeur (options de ligne de commande,
+  // erreurs internes de chargement, fichier .desktop, journaux), jamais affichés tels quels dans l'interface
+  // (voir visible_error.h).
+  const std::set<std::string> developer{"options.cpp",
+                                        "settings_toml.cpp",
+                                        "settings.cpp",
+                                        "auto_bench.cpp",
+                                        "backend_library.cpp",
+                                        "chain.cpp",
+                                        "chain_hdr.cpp",
+                                        "chain_setup.cpp",
+                                        "chapters.cpp",
+                                        "drba_fused_choice.cpp",
+                                        "gmfss_fused_choice.cpp",
+                                        "rife_fused_choice.cpp",
+                                        "engine_install.cpp",
+                                        "engine_tools.cpp",
+                                        "engine_build.h",
+                                        "export_run.cpp",
+                                        "export_sink.cpp",
+                                        "gmfss_model.cpp",
+                                        "gpu_tier.cpp",
+                                        "home_screen.cpp",
+                                        "main.cpp",
+                                        "model_choice.cpp",
+                                        "motion_model.cpp",
+                                        "placebo_export.cpp",
+                                        "placebo_export_vulkan.cpp",
+                                        "placebo_imgui.cpp",
+                                        "placebo_open.cpp",
+                                        "placebo_ring.cpp",
+                                        "placebo_screen.cpp",
+                                        "placebo_snapshot.cpp",
+                                        "player_engines.cpp",
+                                        "player_run.cpp",
+                                        "profiles.cpp",
+                                        "ring_stage.cpp",
+                                        "scripted_input.cpp",
+                                        "session.cpp",
+                                        "span_derive.cpp",
+                                        "span_derive.h",
+                                        "ui.cpp",
+                                        "upscale_drba.cpp",
+                                        "upscale_gmfss.cpp",
+                                        "upscale_stage.cpp",
+                                        "vulkan_share.cpp",
+                                        "default_player.cpp",
+                                        "player.cpp",
+                                        "maxine_install.cpp"};
   const std::string accents = "(?:à|â|ç|é|è|ê|ë|î|ï|ô|û|ù|ü|œ|À|É|È|Ê|«|»)";
   const std::string body = "(?:\\\\.|[^\"\\\\])*";
   const std::regex literal("\"" + body + accents + body + "\"");
   std::vector<std::string> found;
   for (const auto& file : interface_sources()) {
-    if (!translated.contains(file.filename().string())) continue;
+    const std::string name = file.filename().string();
+    if (developer.contains(name) || name.starts_with("i18n_fr"))
+      continue;  // les tables françaises sont le français
     std::istringstream lines(read_file(file));
     std::string line;
     int number = 0;

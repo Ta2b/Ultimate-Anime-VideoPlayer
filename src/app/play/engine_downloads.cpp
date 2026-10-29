@@ -15,6 +15,7 @@
 
 #include "app/play/backend_library.h"
 #include "app/play/controls_draw.h"
+#include "app/play/i18n.h"
 #include "app/play/maxine_install.h"
 #include "core/clock.h"
 #include "core/log.h"
@@ -109,17 +110,18 @@ std::expected<bool, Refusal> install_chosen(PlaceboScreen& screen, PlayerUi& ui,
     } else {
       continue;
     }
-    auto outcome = run_install(screen, ui, std::format("Installation de {}", engine_label(row.offer.id)),
-                               std::move(job));
+    auto outcome =
+        run_install(screen, ui, i18n::tr_format("Installing {}", engine_label(row.offer.id)), std::move(job));
     if (!outcome) return false;
     if (*outcome) {
       log->info("{} installé", engine_label(row.offer.id));
       continue;
     }
-    log->warn("{} non installé : {}", engine_label(row.offer.id), outcome->error().detail);
-    ui.controls().defer(std::format(
-        "{} non installé : {}", engine_label(row.offer.id),
-        row.offer.id == core::EngineId::MaxineVfx ? "HDR adaptatif à la place" : "Vulkan à la place"));
+    log->warn("{} not installed: {}", engine_label(row.offer.id), outcome->error().detail);
+    ui.controls().defer(i18n::tr_format("{} not installed: {}", engine_label(row.offer.id),
+                                        row.offer.id == core::EngineId::MaxineVfx
+                                            ? i18n::tr("adaptive HDR instead")
+                                            : i18n::tr("Vulkan instead")));
     engines = without_engine(std::move(engines), row.offer.id);
   }
   return true;
@@ -142,11 +144,9 @@ std::expected<bool, Refusal> update_stale_engines(PlaceboScreen& screen, PlayerU
     // l'écran des moteurs, licence acceptée, et c'est la même que celle du paquet de cette version.
     if (const auto previous = installed_package(catalog, package);
         previous && previous->license != package.license) {
-      log->warn(
-          "{} : module d'une version précédente, licence changée ({}) : Export et moteurs > Moteurs "
-          "installés",
-          label, package.license);
-      ui.controls().defer(std::format("{} : nouvelle licence à accepter (Moteurs)", label));
+      log->warn("{}: module from a previous version, licence changed ({}): Export and engines > Engines",
+                label, package.license);
+      ui.controls().defer(i18n::tr_format("{}: new licence to accept (Engines)", label));
       continue;
     }
     // Pas de place : rien n'est tenté (ni boucle à chaque lancement), l'utilisateur est prévenu.
@@ -162,7 +162,7 @@ std::expected<bool, Refusal> update_stale_engines(PlaceboScreen& screen, PlayerU
     }
     log->info("{} : module d'une version précédente du lecteur, réinstallation", label);
     auto outcome =
-        run_install(screen, ui, std::format("Mise à jour de {}", label),
+        run_install(screen, ui, i18n::tr_format("Updating {}", label),
                     [&catalog, package](const InstallProgress& progress) -> std::expected<void, Refusal> {
                       auto installed_library = install_package(catalog, package, progress);
                       if (!installed_library) return std::unexpected(installed_library.error());
@@ -173,7 +173,7 @@ std::expected<bool, Refusal> update_stale_engines(PlaceboScreen& screen, PlayerU
       log->info("{} mis à jour", label);
     } else {
       log->warn("{} non mis à jour : {}", label, outcome->error().detail);
-      ui.controls().defer(std::format("{} non mis à jour : Vulkan à la place", label));
+      ui.controls().defer(i18n::tr_format("{} not updated: Vulkan instead", label));
     }
   }
   return true;

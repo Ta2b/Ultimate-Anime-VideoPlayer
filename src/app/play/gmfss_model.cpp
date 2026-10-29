@@ -143,9 +143,11 @@ bool gmfss_tier_available(std::span<const std::filesystem::path> dirs, GmfssVari
 }
 
 TierSupport gmfss_tiers(std::span<const std::filesystem::path> dirs, GmfssVariant variant, bool fp8_engine) {
-  return TierSupport{
-      .performance = fp8_engine && gmfss_tier_available(dirs, variant, PrecisionTier::Performance),
-      .quality = gmfss_tier_available(dirs, variant, PrecisionTier::Quality)};
+  // Le cran Performance (FP8) de GMFSS n'est plus proposé : son image se dégrade dans les gros mouvements
+  // (retour de Tatoub sur la 0.7.0-rc.1). Les graphes FP8 restent au catalogue, sans être offerts ni choisis.
+  static_cast<void>(fp8_engine);
+  return TierSupport{.performance = false,
+                     .quality = gmfss_tier_available(dirs, variant, PrecisionTier::Quality)};
 }
 
 std::vector<prepare::NamedDim> gmfss_dims(int padded_width, int padded_height) {

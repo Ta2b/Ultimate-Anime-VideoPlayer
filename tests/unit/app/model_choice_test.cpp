@@ -141,7 +141,9 @@ TEST_CASE("GMFSS : les deux graphes du premier dossier qui les a, ses dimensions
   CHECK(fast->pair == other / kGmfssHalfFp8PairFile);
   CHECK(fast->fusion == other / kGmfssHalfFusionFile);
   // Les crans d'un dossier : le FP8 demande un moteur qui le calcule, le FP32 non.
-  CHECK(gmfss_tiers(dirs, GmfssVariant::Base, true) == TierSupport{.performance = true, .quality = true});
+  // Le cran FP8 de GMFSS n'est plus proposé (image dégradée dans les gros mouvements) : ses graphes restent
+  // trouvables.
+  CHECK(gmfss_tiers(dirs, GmfssVariant::Base, true) == TierSupport{.performance = false, .quality = true});
   CHECK(gmfss_tiers(dirs, GmfssVariant::Base, false) == TierSupport{.performance = false, .quality = true});
   // Union a ses propres paires : celles de base ne lui servent pas.
   CHECK_FALSE(gmfss_tier_available(dirs, GmfssVariant::Union, PrecisionTier::Quality));
@@ -242,10 +244,10 @@ TEST_CASE("GMFSS : un graphe d'un export périmé n'est jamais utilisé, un anci
   CHECK_FALSE(find_gmfss(std::array{fake.rife}, GmfssVariant::Base, false));
 
   // Un export plus récent que le lecteur n'est pas lu non plus (son contrat est inconnu).
-  put(other / kGmfssHalfPairFile, tiny_pair(std::to_string(kGmfssExportVersion + 1), modern));
+  put(other / kGmfssHalfPairFile, tiny_pair(std::to_string(kGmfssExportVersion + 10), modern));
   const GmfssGraphState newer = gmfss_graph_state(other / kGmfssHalfPairFile);
   CHECK(newer.state == GmfssExport::Stale);
-  CHECK(newer.version == kGmfssExportVersion + 1);
+  CHECK(newer.version == kGmfssExportVersion + 10);
   CHECK_FALSE(find_gmfss(std::array{other}));
   put(other / kGmfssHalfPairFile, tiny_pair("deux", modern));
   CHECK(gmfss_graph_state(other / kGmfssHalfPairFile).state == GmfssExport::Stale);

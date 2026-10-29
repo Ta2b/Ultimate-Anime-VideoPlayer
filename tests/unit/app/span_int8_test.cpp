@@ -13,6 +13,7 @@
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/interfaces/catch_interfaces_capture.hpp>
 
+#include "french_ui.h"
 #include "prepare/sha256.h"
 
 namespace ajp::app::play {
@@ -63,6 +64,7 @@ struct Folder {
 };
 
 TEST_CASE("SPAN INT8 : la variante d'un reçu qui passe les garde-fous", "[app][int8]") {
+  ajp::app::play::FrenchUi french;
   const Folder f;
   CHECK_FALSE(find_span_int8(f.span, f.dir()).variant);  // sans reçu : rien, et rien à dire
   CHECK(find_span_int8(f.span, f.dir()).note.empty());
@@ -77,6 +79,7 @@ TEST_CASE("SPAN INT8 : la variante d'un reçu qui passe les garde-fous", "[app][
 }
 
 TEST_CASE("SPAN INT8 : reçu refusé, le SPAN d'origine reste", "[app][int8]") {
+  ajp::app::play::FrenchUi french;
   const Folder f;
   SECTION("sous les garde-fous du lecteur, même marqué passé") {
     f.receipt(41.9, 40.0, 0.99);
@@ -112,6 +115,7 @@ TEST_CASE("SPAN INT8 : reçu refusé, le SPAN d'origine reste", "[app][int8]") {
 }
 
 TEST_CASE("SPAN INT8 : le nom d'origine se lit dans celui de la variante", "[app][int8]") {
+  ajp::app::play::FrenchUi french;
   CHECK(span_int8_source("2x_AnimeJaNai_HD_V3.1_Sharp1_Performance-int8-0123456789abcdef.onnx") ==
         "2x_AnimeJaNai_HD_V3.1_Sharp1_Performance.onnx");
   CHECK_FALSE(span_int8_source("2x_AnimeJaNai_HD_V3.1_Sharp1_Performance.onnx"));
@@ -135,6 +139,7 @@ void write_variant(const Folder& f, std::string_view infix, std::string_view for
 }
 
 TEST_CASE("SPAN FP8 et FP32 : garde-fous propres à chaque cran", "[app][int8]") {
+  ajp::app::play::FrenchUi french;
   const Folder f;
   CHECK_FALSE(find_span_variant(SpanVariantKind::Fp8, f.span, f.dir()).variant);
   // Le FP8 passe des seuils plus lâches que l'INT8 : 33 dB suffit, 24 dB non.
@@ -160,6 +165,7 @@ TEST_CASE("SPAN FP8 et FP32 : garde-fous propres à chaque cran", "[app][int8]")
 }
 
 TEST_CASE("SPAN FP8 et FP32 : le nom d'origine se lit dans celui de la variante", "[app][int8]") {
+  ajp::app::play::FrenchUi french;
   SpanVariantKind kind = SpanVariantKind::Int8;
   CHECK(span_int8_source("modele-fp8-0123456789abcdef.onnx", &kind) == "modele.onnx");
   CHECK(kind == SpanVariantKind::Fp8);

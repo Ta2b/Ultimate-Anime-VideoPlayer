@@ -15,6 +15,33 @@
 #include "core/clock.h"
 
 namespace ajp::app::play {
+namespace {
+
+// La dernière raison d'un changement de palier, dans la langue de l'interface (core/auto_rate.h :
+// AutoReason).
+std::string_view auto_reason_label(core::AutoReason reason) {
+  switch (reason) {
+    case core::AutoReason::Start:
+      return i18n::tr("start");
+    case core::AutoReason::Memory:
+      return i18n::tr("remembered start");
+    case core::AutoReason::Rise:
+      return i18n::tr("lighter scene");
+    case core::AutoReason::Late:
+      return i18n::tr("late pairs");
+    case core::AutoReason::Missed:
+      return i18n::tr("missed frames");
+    case core::AutoReason::Predicted:
+      return i18n::tr("cost above the period");
+    case core::AutoReason::Watchdog:
+      return i18n::tr("no pair left");
+    case core::AutoReason::Ceiling:
+      return i18n::tr("display limit");
+  }
+  return {};
+}
+
+}  // namespace
 
 std::vector<EngineBadge> engine_badges(const std::filesystem::path& cache_dir,
                                        const std::filesystem::path& span, WorkSize span_size,
@@ -58,23 +85,23 @@ std::string auto_status_text(const core::AutoInfo& info, double source_fps) {
                                      source_fps * centi / 100.0, auto_factor_text(info.ceiling * 100 / g));
   if (info.predicted > 0)
     text += i18n::tr_format(" · predicted ×{}", auto_factor_text(info.predicted * 100 / g));
-  if (info.cap > 0) text += std::format(" · plafond appris ×{}", auto_factor_text(info.cap * 100 / g));
-  if (info.load_pct >= 0) text += std::format(" · limite GPU {} %", info.load_pct);
+  if (info.cap > 0) text += i18n::tr_format(" · learned limit ×{}", auto_factor_text(info.cap * 100 / g));
+  if (info.load_pct >= 0) text += i18n::tr_format(" · GPU limit {} %", info.load_pct);
   if (info.heavy) text += i18n::tr(" · heavy scene");
-  text += std::format(" · dernier changement : {}", core::auto_reason_text(info.reason));
+  text += i18n::tr_format(" · last change: {}", auto_reason_label(info.reason));
   return text;
 }
 
 std::string free_status_text(const core::FreeInfo& info) {
-  std::string text = std::format("Rapide · {:.0f} i/s", info.fps);
-  if (info.load_pct >= 0) text += std::format(" · limite GPU {} %", info.load_pct);
+  std::string text = i18n::tr_format("Fast · {:.0f} fps", info.fps);
+  if (info.load_pct >= 0) text += i18n::tr_format(" · GPU limit {} %", info.load_pct);
   if (info.step_us > 0) text += i18n::tr(" · service gap ") + format_ms(info.step_us);
   if (info.pressure > 1.02) {
     std::string pressure = std::format("{:.2f}", info.pressure);
     std::ranges::replace(pressure, '.', ',');
-    text += " · pression ×" + pressure;
+    text += i18n::tr(" · pressure ×") + pressure;
   }
-  if (info.lost > 0) text += std::format(" · {} perdues", info.lost);
+  if (info.lost > 0) text += i18n::tr_format(" · {} lost", info.lost);
   return text;
 }
 

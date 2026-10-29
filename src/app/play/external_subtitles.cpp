@@ -6,6 +6,7 @@
 #include <string_view>
 #include <system_error>
 
+#include "app/play/i18n.h"
 #include "app/play/tracks.h"
 
 namespace ajp::app::play {
@@ -54,9 +55,9 @@ std::vector<ExternalSubtitle> find_external_subtitles(const std::filesystem::pat
       continue;  // « Épisode 010.srt » n'est pas celui de « Épisode 01 »
     const std::string language = language_of(rest);
     found.push_back({.path = path,
-                     .label = language.empty()
-                                  ? std::format("Externe · {}", path.filename().string())
-                                  : std::format("Externe · {} · {}", language, path.filename().string())});
+                     .label = language.empty() ? i18n::tr_format("External · {}", path.filename().string())
+                                               : i18n::tr_format("External · {} · {}", language,
+                                                                 path.filename().string())});
   }
   std::ranges::sort(found, {}, [](const ExternalSubtitle& s) { return s.path.filename().string(); });
   if (found.size() > kMaxExternalSubtitles) found.resize(kMaxExternalSubtitles);

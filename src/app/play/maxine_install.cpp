@@ -9,6 +9,7 @@
 #include <vector>
 
 #include "app/play/engine_tools.h"
+#include "app/play/i18n.h"
 #include "vendor_hdr/sdk_store.h"
 
 namespace ajp::app::play {
@@ -93,9 +94,9 @@ std::expected<void, Refusal> install_maxine(const EngineCatalog& catalog, const 
   const auto tar = system_tool("tar");
   const auto bash = system_tool("bash");
   if (!curl || !tar || !bash)
-    return refuse(RefusalCode::LibraryUnavailable, "curl, tar ou bash introuvables");
+    return refuse(RefusalCode::LibraryUnavailable, i18n::tr("curl, tar or bash not found"));
   if (api_key.empty() || api_key.find_first_of("\n\r ") != std::string::npos)
-    return refuse(RefusalCode::FieldOutOfRange, "clé d'API NGC vide ou mal collée");
+    return refuse(RefusalCode::FieldOutOfRange, i18n::tr("NGC API key empty or badly pasted"));
   const auto report = [&](float fraction, const std::string& stage) {
     if (progress.report) progress.report(fraction, stage);
   };
@@ -108,7 +109,7 @@ std::expected<void, Refusal> install_maxine(const EngineCatalog& catalog, const 
                   std::format("{} : {}", scratch.dir().string(), error.message()));
 
   // 1. Le jeton NGC, par la clé de l'utilisateur ($oauthtoken est le nom d'utilisateur fixe de NGC).
-  report(0.0F, "connexion à NVIDIA NGC");
+  report(0.0F, i18n::tr("connecting to NVIDIA NGC"));
   auto netrc = scratch.secret(
       "netrc", std::format("machine authn.nvidia.com login $oauthtoken password {}\n", api_key));
   if (!netrc) return std::unexpected(netrc.error());
@@ -121,12 +122,12 @@ std::expected<void, Refusal> install_maxine(const EngineCatalog& catalog, const 
                                          "group/ngc:{}/{}",
                                          source.org, source.org, source.team)},
                     .timeout = std::chrono::minutes(2)},
-                   {}, progress.stop, "jeton NGC (clé refusée ?)");
+                   {}, progress.stop, i18n::tr("NGC token (key rejected?)"));
       !ok) {
     return std::unexpected(ok.error());
   }
   const std::optional<std::string> token = token_of(response);
-  if (!token) return refuse(RefusalCode::DecodeFailed, "NGC n'a pas rendu de jeton : clé d'API refusée");
+  if (!token) return refuse(RefusalCode::DecodeFailed, i18n::tr("NGC returned no token: API key rejected"));
   auto header = scratch.secret("header", std::format("Authorization: Bearer {}\n", *token));
   if (!header) return std::unexpected(header.error());
 
@@ -141,25 +142,27 @@ std::expected<void, Refusal> install_maxine(const EngineCatalog& catalog, const 
                         source.org, source.team, source.resource, source.version, source.file)},
            .timeout = std::chrono::hours(2)},
           [&](std::string_view line) {
-            if (const auto f = curl_percent(line)) report(0.05F + *f * 0.5F, "téléchargement du SDK Maxine");
+            if (const auto f = curl_percent(line))
+              report(0.05F + *f * 0.5F, i18n::tr("downloading the Maxine SDK"));
           },
-          progress.stop, "téléchargement du SDK Maxine");
+          progress.stop, i18n::tr("downloading the Maxine SDK"));
       !ok) {
     return std::unexpected(ok.error());
   }
 
   // 3. Extraction (xz ou gzip, que tar reconnaît seul), puis la fonction TrueHDR par le script du SDK.
-  report(0.55F, "extraction du SDK Maxine");
+  report(0.55F, i18n::tr("extracting the Maxine SDK"));
   if (auto ok = run_tool({.program = *tar,
                           .args = {"-xf", archive.string(), "-C", (scratch.dir() / "sdk").string()},
                           .timeout = std::chrono::minutes(30)},
-                         {}, progress.stop, "extraction du SDK Maxine");
+                         {}, progress.stop, i18n::tr("extracting the Maxine SDK"));
       !ok) {
     return std::unexpected(ok.error());
   }
   std::filesystem::remove(archive, error);
   const std::optional<std::filesystem::path> root = sdk_root(scratch.dir() / "sdk");
-  if (!root) return refuse(RefusalCode::SdkRejected, "archive Maxine sans features/install_feature.sh");
+  if (!root)
+    return refuse(RefusalCode::SdkRejected, i18n::tr("Maxine archive without features/install_feature.sh"));
   report(0.6F, "installation de TrueHDR (NGC)");
   if (auto ok = run_tool({.program = *bash,
                           .args = {"./install_feature.sh", "--feature", source.feature, "--ngc-org",
@@ -173,12 +176,12 @@ std::expected<void, Refusal> install_maxine(const EngineCatalog& catalog, const 
   }
 
   // 4. L'import vérifié : fichiers exigés, architecture, version, ABI.
-  report(0.9F, "vérification et import du SDK Maxine");
+  report(0.9F, i18n::tr("verifying and importing the Maxine SDK"));
   vendor_hdr::SdkStore store(sdk_dir, vendor_hdr::SdkKind::MaxineVfx);
   auto imported = store.import(*root, progress.stop);
   if (!imported) return std::unexpected(imported.error());
   if (!imported->installed) return refuse(RefusalCode::SdkRejected, imported->reason);
-  report(1.0F, "RTX HDR installé");
+  report(1.0F, i18n::tr("RTX HDR installed"));
   return {};
 }
 
@@ -194,14 +197,14 @@ std::expected<void, Refusal> install_maxine_package(const EngineCatalog& catalog
       .stop = progress.stop};
   auto extracted = install_package(catalog, package, transfer);
   if (!extracted) return std::unexpected(extracted.error());
-  report(0.9F, "vérification et import de RTX HDR");
+  report(0.9F, i18n::tr("verifying and importing RTX HDR"));
   vendor_hdr::SdkStore store(sdk_dir, vendor_hdr::SdkKind::MaxineVfx);
   auto imported = store.import(*extracted, progress.stop);
   std::error_code error;
   std::filesystem::remove_all(*extracted, error);  // la copie du magasin suffit
   if (!imported) return std::unexpected(imported.error());
   if (!imported->installed) return refuse(RefusalCode::SdkRejected, imported->reason);
-  report(1.0F, "RTX HDR installé");
+  report(1.0F, i18n::tr("RTX HDR installed"));
   return {};
 }
 

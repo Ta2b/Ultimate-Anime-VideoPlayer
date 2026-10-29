@@ -10,6 +10,7 @@
 #include <sstream>
 #include <utility>
 
+#include "app/play/i18n.h"
 #include "core/charconv.h"
 #include "vendor_hdr/dynamic_library.h"
 
@@ -41,10 +42,10 @@ std::string throttle_text(std::uint64_t mask) {
     if (!text.empty()) text += " + ";
     text += what;
   };
-  add(kSoftwarePowerCap, "limite de puissance");
-  add(kHardwareSlowdown, "ralentissement matériel");
+  add(kSoftwarePowerCap, i18n::tr("power limit"));
+  add(kHardwareSlowdown, i18n::tr("hardware slowdown"));
   add(kSoftwareThermal | kHardwareThermal, "chaleur");
-  add(kPowerBrake, "frein de puissance");
+  add(kPowerBrake, i18n::tr("power brake"));
   return text;
 }
 
@@ -109,8 +110,8 @@ unsigned parse_pcie_generation(std::string_view text) {
 
 std::string telemetry_warning(const GpuSample& s) {
   if (s.sm_max_mhz > 0 && s.gpu_percent > 80 && s.sm_mhz * 10 < s.sm_max_mhz * 7)
-    return std::format("horloges basses sous charge ({} sur {} MHz) : mode « performances maximales » ?",
-                       s.sm_mhz, s.sm_max_mhz);
+    return i18n::tr_format("low clocks under load ({} of {} MHz): \"maximum performance\" mode?", s.sm_mhz,
+                           s.sm_max_mhz);
   return {};
 }
 

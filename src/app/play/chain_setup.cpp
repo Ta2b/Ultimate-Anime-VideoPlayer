@@ -276,8 +276,11 @@ std::expected<std::optional<ChainEngines>, Refusal> prepare_chain_once(Player& p
     if (settings.gmfss_fused && !fused.declined.empty())
       log->info("GMFSS fusionné non utilisé : {}", fused.declined);
     const bool try_fused = fused.declined.empty();
-    auto loaded = prepare_gmfss(p, init, *c.backend, c.gmfss_places, c.gmfss_variant, c.work.width,
-                                c.work.height, settings.gmfss_precision, try_fused ? &fused : nullptr);
+    auto loaded =
+        prepare_gmfss(p, init, *c.backend, c.gmfss_places, c.gmfss_variant, c.work.width, c.work.height,
+                      settings.gmfss_precision == PrecisionTier::Performance ? PrecisionTier::Balanced
+                                                                             : settings.gmfss_precision,
+                      try_fused ? &fused : nullptr);
     if (loaded && *loaded) {
       c.gmfss_fused = fused.used;
       if (fused.used)

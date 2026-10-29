@@ -243,6 +243,9 @@ bool SpanFp8Reference::run(cudaStream_t stream, const void* input, void* output,
     error = std::string("mémoire partagée des noyaux refusée : ") + cudaGetErrorString(n.attribute);
     return false;
   }
+  // Une erreur non collante laissée par un appel d'avant (une sonde de TensorRT, un attribut refusé par ce
+  // pilote) ne doit pas passer pour un échec de ces lancements : on la vide avant le premier.
+  static_cast<void>(cudaGetLastError());
   int* peaks = static_cast<int*>(n.peak_device.get());
   const std::int64_t count = n.npix * kChannels;
   const auto observe = [&](int index, const __half* tensor) {
