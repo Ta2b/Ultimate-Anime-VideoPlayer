@@ -34,13 +34,14 @@ class FreeRate {
   static constexpr double kPressureMax = 2.0;
   static constexpr std::int64_t kCalmUs = 1'000'000;     // sans perte avant que la pression se relâche
   static constexpr std::int64_t kReleaseUs = 3'000'000;  // constante de temps du relâchement
-  static constexpr std::int64_t kFallbackWindowUs = 3'000'000;
+  static constexpr std::int64_t kFallbackWindowUs = 5'000'000;
   static constexpr std::int64_t kSettleUs = 1'200'000;  // après seek ou reprise : mesures ignorées
-  static constexpr std::int64_t kStartUs = 3'000'000;   // après l'activation du mode
+  static constexpr std::int64_t kStartUs =
+      5'000'000;  // après l'activation du mode (démarrage, moteurs qui chauffent)
   static constexpr std::int64_t kMaxSampleUs = 300'000;
   static constexpr std::int64_t kBucketUs = 250'000;
-  static constexpr int kFallbackMinLost = 6;
-  static constexpr int kFallbackPerMille = 30;  // 3 %
+  static constexpr int kFallbackMinLost = 10;
+  static constexpr int kFallbackPerMille = 50;  // 5 %
 
   // L'écart minimal entre deux images (période de l'écran ou du plafond), en µs de temps réel.
   void set_min_gap(std::int64_t us) { min_gap_us_ = us; }

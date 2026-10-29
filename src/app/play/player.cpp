@@ -248,6 +248,7 @@ std::expected<void, Refusal> play(const PlayOptions& options, const PlayerPaths&
     problem += problem.empty() ? note : " · " + note;
   }
   std::shared_ptr<BackendLibrary> library;  // ouverte à la première vidéo, gardée pour les suivantes
+  bool replaced = false;  // le fichier vient d'être glissé sur la fenêtre (ou est l'épisode voisin)
   const HomeScreen home{.screen = **screen,
                         .ui = **ui,
                         .options = options,
@@ -432,10 +433,13 @@ std::expected<void, Refusal> play(const PlayOptions& options, const PlayerPaths&
     // lecteur ; lancé sur un fichier, l'échec reste celui du programme (code de sortie, message).
     std::string failed;
     if (!result) {
-      if (!from_home || player.quit) return result;
-      failed = std::format("« {} » s'est arrêtée : {}", file.filename().string(), result.error().detail);
+      // Un fichier glissé qui ne s'ouvre pas ramène à l'accueil avec la raison : la lecture en cours n'est
+      // pas une raison de quitter.
+      if ((!from_home && !replaced) || player.quit) return result;
+      failed = i18n::tr_format("\"{}\" stopped: {}", file.filename().string(), result.error().detail);
       log->error("{}", failed);
     }
+    replaced = false;
     // Ce que la lecture a changé suit dans la vidéo suivante ou l'accueil.
     library = std::move(player.library);
     snapshot = std::move(player.snapshot);
@@ -447,6 +451,7 @@ std::expected<void, Refusal> play(const PlayOptions& options, const PlayerPaths&
       file.clear();
     } else if (next_file) {
       file = std::move(*next_file);
+      replaced = true;
     } else if (from_home && !player.quit) {
       file.clear();  // fin de la vidéo : retour à l'accueil
     } else {
