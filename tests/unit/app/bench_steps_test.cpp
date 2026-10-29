@@ -13,6 +13,7 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include "app/play/auto_bench_run.h"
+#include "french_ui.h"
 
 using namespace ajp;
 using namespace ajp::app::play;
@@ -38,6 +39,7 @@ std::string slurp(const fs::path& file) {
 }  // namespace
 
 TEST_CASE("les étapes se lisent « Étape n sur 4 » et la barre globale ne recule jamais", "[bench_steps]") {
+  ajp::app::play::FrenchUi french;
   CHECK(step_line(BenchStep::Levels, "test des réglages « Rapide »") ==
         "Étape 2 sur 4 : test des réglages « Rapide »");
   float last = -1.0F;
@@ -54,6 +56,7 @@ TEST_CASE("les étapes se lisent « Étape n sur 4 » et la barre globale ne rec
 }
 
 TEST_CASE("l'avancement partagé rend l'étape, la phrase et la note posées", "[bench_steps]") {
+  ajp::app::play::FrenchUi french;
   BenchProgress progress;
   progress.set(BenchStep::Levels, "test des réglages « Normal »", 0.5F, "patience");
   auto view = progress.get();
@@ -66,6 +69,7 @@ TEST_CASE("l'avancement partagé rend l'étape, la phrase et la note posées", "
 }
 
 TEST_CASE("la dernière ligne d'erreur de l'enfant perd son horodatage et son canal", "[bench_steps]") {
+  ajp::app::play::FrenchUi french;
   CHECK(strip_log_prefix("[2026-10-29 12:53:57.048] [app] [error] refus : GPU saturé") ==
         "refus : GPU saturé");
   CHECK(strip_log_prefix(
@@ -88,6 +92,7 @@ TEST_CASE("la dernière ligne d'erreur de l'enfant perd son horodatage et son ca
 }
 
 TEST_CASE("un essai qui n'a rien rendu est toujours expliqué en une phrase", "[bench_steps]") {
+  ajp::app::play::FrenchUi french;
   using prepare::ExitKind;
   const auto exit = [](ExitKind kind, std::int64_t code) {
     return prepare::ProcessExit{.kind = kind, .code = code, .elapsed = std::chrono::seconds(3)};
@@ -110,6 +115,7 @@ TEST_CASE("un essai qui n'a rien rendu est toujours expliqué en une phrase", "[
 }
 
 TEST_CASE("le résultat tient en une phrase : chaîne gardée et mode Performance", "[bench_steps]") {
+  ajp::app::play::FrenchUi french;
   const BenchResult fast{.gpu = "g", .driver = "d", .level = Tier::Normal};
   const ChainContext context{
       .display_height = 1440, .display_hz = 72.0, .source_height = 1080, .source_fps = 24.0};
@@ -138,6 +144,7 @@ TEST_CASE("le résultat tient en une phrase : chaîne gardée et mode Performanc
 }
 
 TEST_CASE("défaire l'optimisation remet bench.toml comme il était, ou le retire", "[bench_steps]") {
+  ajp::app::play::FrenchUi french;
   const fs::path dir = scratch("undo");
   const fs::path file = dir / "bench.toml";
   PlaySettings before;
@@ -168,6 +175,7 @@ TEST_CASE("défaire l'optimisation remet bench.toml comme il était, ou le retir
 }
 
 TEST_CASE("la fenêtre des essais reste visible sous GNOME / Wayland, masquée ailleurs", "[bench_steps]") {
+  ajp::app::play::FrenchUi french;
   CHECK_FALSE(hide_is_reliable("wayland", "GNOME"));
   CHECK_FALSE(hide_is_reliable("wayland", "ubuntu:GNOME"));
   CHECK_FALSE(hide_is_reliable("Wayland", "gnome"));
@@ -227,6 +235,7 @@ struct FakePlayer {
 
 TEST_CASE("l'évaluation monte jusqu'au dernier niveau qui tient et explique l'essai qui échoue",
           "[bench_steps]") {
+  ajp::app::play::FrenchUi french;
   const FakePlayer fake(2);
   BenchProgress shown;
   const BenchPlan plan{
@@ -247,6 +256,7 @@ TEST_CASE("l'évaluation monte jusqu'au dernier niveau qui tient et explique l'e
 }
 
 TEST_CASE("un premier essai qui échoue donne un refus qui cite la dernière ligne d'erreur", "[bench_steps]") {
+  ajp::app::play::FrenchUi french;
   const FakePlayer fake(0, true);
   const BenchPlan plan{.executable = fake.exe, .video = "/v/a.mkv", .work_dir = fake.dir / "w"};
   const auto outcome = run_bench(plan, std::stop_token{});
@@ -256,6 +266,7 @@ TEST_CASE("un premier essai qui échoue donne un refus qui cite la dernière lig
 }
 
 TEST_CASE("annuler arrête l'évaluation vite, sans attendre l'essai en cours", "[bench_steps]") {
+  ajp::app::play::FrenchUi french;
   const FakePlayer fake(4, false, true);
   const BenchPlan plan{.executable = fake.exe, .video = "/v/a.mkv", .work_dir = fake.dir / "w"};
   std::stop_source stop;

@@ -8,6 +8,7 @@
 #include <sstream>
 
 #include "app/play/auto_config.h"
+#include "app/play/i18n.h"
 
 namespace ajp::app::play {
 namespace {
@@ -28,7 +29,9 @@ std::string lower(std::string_view text) {
 
 bool looks_like_error(std::string_view line) {
   const std::string text = lower(line);
-  for (const std::string_view word : {"[error]", "[critical]", "erreur", "refus", "échec", "failed", "error"})
+  // « échec » s'écrit en échappement : ce mot est lu dans le journal, pas affiché.
+  for (const std::string_view word :
+       {"[error]", "[critical]", "erreur", "refus", "\u00e9chec", "failed", "error"})
     if (text.contains(word)) return true;
   return false;
 }
@@ -36,7 +39,7 @@ bool looks_like_error(std::string_view line) {
 }  // namespace
 
 std::string step_line(BenchStep step, std::string_view what) {
-  return std::format("Étape {} sur {} : {}", static_cast<int>(step), kBenchSteps, what);
+  return i18n::tr_format("Step {} of {}: {}", static_cast<int>(step), kBenchSteps, what);
 }
 
 float overall_fraction(BenchStep step, float within) {
@@ -119,29 +122,27 @@ std::string explain_trial(std::string_view what, const prepare::ProcessExit& exi
     case prepare::ExitKind::Cancelled:
       return {};
     case prepare::ExitKind::TimedOut:
-      why = std::format(
-          "il a dépassé {} s sans finir, sans doute en construisant un moteur de calcul (c'est long la "
-          "première "
-          "fois)",
+      why = i18n::tr_format(
+          "it ran over {} s without finishing, probably building an engine (slow the first time)",
           limit.count());
       break;
     case prepare::ExitKind::Crashed:
-      why = std::format("le lecteur de l'essai s'est arrêté brutalement ({})", prepare::describe(exit));
+      why = i18n::tr_format("the test player stopped abruptly ({})", prepare::describe(exit));
       break;
     case prepare::ExitKind::Exited:
       if (exit.code == 0) return {};
-      why = std::format("le lecteur de l'essai s'est arrêté ({})", prepare::describe(exit));
+      why = i18n::tr_format("the test player stopped ({})", prepare::describe(exit));
       break;
   }
   // Un délai dépassé n'a pas de ligne d'erreur : la dernière ligne n'est qu'un message de progression.
   if (!problem.empty() && exit.kind != prepare::ExitKind::TimedOut)
     why = std::format("{} — {}", problem, why);
-  return std::format("L'essai {} n'a rien rendu : {}", what, why);
+  return i18n::tr_format("Test {} produced nothing: {}", what, why);
 }
 
 std::string explain_no_reading(std::string_view what, std::string_view detail) {
-  return std::format("L'essai {} n'a rien rendu : il s'est terminé sans mesures lisibles{}{}", what,
-                     detail.empty() ? "" : " — ", detail);
+  return i18n::tr_format("Test {} produced nothing: it ended without readable measurements{}{}", what,
+                         detail.empty() ? "" : " — ", detail);
 }
 
 std::string result_sentence(const BenchResult& result, const ChainContext& context,
@@ -160,24 +161,23 @@ std::string result_sentence(const BenchResult& result, const ChainContext& conte
                                                            .fps = context.source_fps});
   std::vector<std::string> parts;
   if (chain.upscale)
-    parts.push_back(std::format("agrandissement ×2 depuis {}p", chain.work_height));
+    parts.push_back(i18n::tr_format("×2 upscaling from {}p", chain.work_height));
   else
-    parts.push_back("image d'origine sans agrandissement");
+    parts.push_back(i18n::tr("original picture, no upscaling"));
   if (chain.rife_factor >= 2)
     parts.push_back(
-        std::format("interpolation jusqu'à ×{}, {}", chain.rife_factor, label(chain.motion_engine)));
+        i18n::tr_format("interpolation up to ×{}, {}", chain.rife_factor, label(chain.motion_engine)));
   else
-    parts.push_back("sans interpolation");
+    parts.push_back(i18n::tr("no interpolation"));
   std::string joined;
   for (const std::string& part : parts) joined += (joined.empty() ? "" : ", ") + part;
-  std::string out = std::format("Votre PC tient : {}.", joined);
+  std::string out = i18n::tr_format("Your PC holds: {}.", joined);
   switch (fp8.state) {
     case SpanFp8Verdict::State::Ready:
-      out += " Performance FP8 pour SPAN : prête.";
+      out += i18n::tr(" SPAN Performance FP8: ready.");
       break;
     case SpanFp8Verdict::State::Unavailable:
-      out +=
-          std::format(" Performance FP8 pour SPAN : non{}{}.", fp8.reason.empty() ? "" : " — ", fp8.reason);
+      out += i18n::tr_format(" SPAN Performance FP8: no{}{}.", fp8.reason.empty() ? "" : " — ", fp8.reason);
       break;
     case SpanFp8Verdict::State::Unknown:
       break;
@@ -202,13 +202,13 @@ std::expected<void, Refusal> restore_bench_file(const BenchUndo& undo,
   std::error_code error;
   if (!undo.bench_toml) {
     std::filesystem::remove(bench_file, error);
-    if (error) return refuse(RefusalCode::IoFailed, "bench.toml : " + error.message());
+    if (error) return refuse(RefusalCode::IoFailed, i18n::tr("bench.toml: ") + error.message());
     return {};
   }
   std::ofstream out(bench_file, std::ios::binary | std::ios::trunc);
   out << *undo.bench_toml;
   out.close();
-  if (!out) return refuse(RefusalCode::IoFailed, "bench.toml : écriture impossible");
+  if (!out) return refuse(RefusalCode::IoFailed, i18n::tr("bench.toml: cannot write"));
   return {};
 }
 

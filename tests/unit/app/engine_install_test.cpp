@@ -22,6 +22,7 @@
 #include "app/play/engine_tools.h"
 #include "app/play/maxine_install.h"
 #include "core/model_index.h"
+#include "french_ui.h"
 #include "vendor_hdr/sdk_store.h"
 
 using namespace ajp;
@@ -166,6 +167,7 @@ constexpr std::string_view kPlain = "abcabcabcabcabcabc";
 }  // namespace
 
 TEST_CASE("Fichier tiers : la plage d'une roue, décompressée et vérifiée", "[app][install]") {
+  ajp::app::play::FrenchUi french;
   Fixture f("tiers");
   Wheel wheel(f, kDeflated, true);
   wheel.file.name = "libtiers.so.1";
@@ -204,6 +206,7 @@ TEST_CASE("Fichier tiers : la plage d'une roue, décompressée et vérifiée", "
 
 TEST_CASE("Installation : les fichiers tiers de l'architecture du GPU rejoignent le module",
           "[app][install]") {
+  ajp::app::play::FrenchUi french;
   Fixture f("tiers-installation");
   const core::EnginePackage package = f.openvino_package();
   Wheel wheel(f, kPlain, false);
@@ -239,6 +242,7 @@ TEST_CASE("Installation : les fichiers tiers de l'architecture du GPU rejoignent
 }
 
 TEST_CASE("Installation : un paquet complet depuis une archive locale", "[app][install]") {
+  ajp::app::play::FrenchUi french;
   Fixture f("complet");
   const core::EnginePackage package = f.openvino_package();
   // Une version déjà extraite, à moitié, est remplacée entière.
@@ -262,6 +266,7 @@ TEST_CASE("Installation : un paquet complet depuis une archive locale", "[app][i
 
 TEST_CASE("Installation : le paquet installé et sa licence restent notés à côté du moteur",
           "[app][install]") {
+  ajp::app::play::FrenchUi french;
   Fixture f("note");
   core::EnginePackage package = f.openvino_package();
   CHECK_FALSE(installed_package(f.catalog, package));
@@ -272,6 +277,7 @@ TEST_CASE("Installation : le paquet installé et sa licence restent notés à c�
 }
 
 TEST_CASE("Installation : un SHA-256 faux refuse le paquet et jette le fichier", "[app][install]") {
+  ajp::app::play::FrenchUi french;
   Fixture f("sha");
   core::EnginePackage package = f.openvino_package();
   package.sha256 = std::string(64, 'a');
@@ -283,6 +289,7 @@ TEST_CASE("Installation : un SHA-256 faux refuse le paquet et jette le fichier",
 }
 
 TEST_CASE("Installation : une taille fausse refuse le paquet", "[app][install]") {
+  ajp::app::play::FrenchUi french;
   Fixture f("taille");
   core::EnginePackage package = f.openvino_package();
   package.size += 1;
@@ -291,6 +298,7 @@ TEST_CASE("Installation : une taille fausse refuse le paquet", "[app][install]")
 }
 
 TEST_CASE("Installation : une archive sans la bibliothèque du backend est refusée", "[app][install]") {
+  ajp::app::play::FrenchUi french;
   Fixture f("sans-bibliotheque");
   const core::EnginePackage package = f.openvino_package(false);
   const auto result = install_package(f.catalog, package, f.progress());
@@ -303,6 +311,7 @@ TEST_CASE("Installation : une archive sans la bibliothèque du backend est refus
 }
 
 TEST_CASE("Installation : un .part interrompu reprend où il en était", "[app][install]") {
+  ajp::app::play::FrenchUi french;
   Fixture f("reprise");
   const core::EnginePackage package = f.openvino_package();
   const std::string archive = read_all(f.root / "openvino.tar.gz");
@@ -319,6 +328,7 @@ TEST_CASE("Installation : un .part interrompu reprend où il en était", "[app][
 }
 
 TEST_CASE("Installation : un .part complet mais faux repart de zéro", "[app][install]") {
+  ajp::app::play::FrenchUi french;
   Fixture f("part-faux");
   const core::EnginePackage package = f.openvino_package();
   write_all(core::download_path(f.catalog.layout, package.sha256), std::string(package.size + 7, 'x'));
@@ -328,6 +338,7 @@ TEST_CASE("Installation : un .part complet mais faux repart de zéro", "[app][in
 }
 
 TEST_CASE("Installation : un .part déjà complet et juste s'installe sans transfert", "[app][install]") {
+  ajp::app::play::FrenchUi french;
   Fixture f("part-juste");
   const core::EnginePackage package = f.openvino_package();
   write_all(core::download_path(f.catalog.layout, package.sha256), read_all(f.root / "openvino.tar.gz"));
@@ -339,6 +350,7 @@ TEST_CASE("Installation : un .part déjà complet et juste s'installe sans trans
 }
 
 TEST_CASE("Installation : une archive inaccessible est un refus de transfert", "[app][install]") {
+  ajp::app::play::FrenchUi french;
   Fixture f("inaccessible");
   core::EnginePackage package = f.openvino_package();
   package.url = "file://" + (f.root / "absent.bin").generic_string();
@@ -347,6 +359,7 @@ TEST_CASE("Installation : une archive inaccessible est un refus de transfert", "
 }
 
 TEST_CASE("Installation : le paquet RTX HDR s'importe dans le magasin des SDK", "[app][install]") {
+  ajp::app::play::FrenchUi french;
   Fixture f("maxine");
   const fs::path source = f.root / "VideoFX";
   vendor_hdr::test::make_maxine_sdk(source);
@@ -368,6 +381,7 @@ TEST_CASE("Installation : le paquet RTX HDR s'importe dans le magasin des SDK", 
 }
 
 TEST_CASE("Installation : un paquet RTX HDR incomplet est refusé par le magasin", "[app][install]") {
+  ajp::app::play::FrenchUi french;
   Fixture f("maxine-incomplet");
   const fs::path source = f.root / "VideoFX";
   vendor_hdr::test::make_maxine_sdk(source, {.feature = false});
@@ -382,6 +396,7 @@ TEST_CASE("Installation : un paquet RTX HDR incomplet est refusé par le magasin
 }
 
 TEST_CASE("Installation : la clé NGC vide ou mal collée est refusée avant tout transfert", "[app][install]") {
+  ajp::app::play::FrenchUi french;
   Fixture f("ngc");
   const core::NgcSdkSource source{};
   for (const std::string key : {"", "clé avec espace", "clé\navec retour"}) {
@@ -395,6 +410,7 @@ TEST_CASE("Installation : la clé NGC vide ou mal collée est refusée avant tou
 // sm89) : caché, à lancer à la main (« [.vendor] »). Chaque fichier de la carte est tiré par sa
 // plage, décompressé, et son SHA-256 est comparé à l'index.
 TEST_CASE("Fichiers tiers : les index de NVIDIA se téléchargent et se vérifient", "[.vendor][app][install]") {
+  ajp::app::play::FrenchUi french;
   // Lancé depuis le dossier de construction (build/<préréglage>) ; AJP_VENDOR_DIR en prend un autre.
   const std::string custom = env_text("AJP_VENDOR_DIR");
   const fs::path dir = !custom.empty() ? fs::path(custom) : fs::path("../../tools/release/nvidia-vendor");
@@ -435,6 +451,7 @@ TEST_CASE("Fichiers tiers : les index de NVIDIA se téléchargent et se vérifie
 // (file://) pour notre module, les fichiers de NVIDIA tirés pour de bon de pypi.nvidia.com. Caché :
 // AJP_PACKAGE_DIR = le dossier de sortie du script (engines.lock et archives).
 TEST_CASE("Paquet TensorRT du script : installation réelle en lien direct", "[.package][app][install]") {
+  ajp::app::play::FrenchUi french;
   const std::string given = env_text("AJP_PACKAGE_DIR");
   if (given.empty()) SKIP("AJP_PACKAGE_DIR non défini");
   const fs::path dir(given);
@@ -473,6 +490,7 @@ TEST_CASE("Paquet TensorRT du script : installation réelle en lien direct", "[.
 
 TEST_CASE("Espace : le pic compte le décompressé et l'ancienne version, pas seulement le téléchargement",
           "[app][install][space]") {
+  ajp::app::play::FrenchUi french;
   EngineCatalog catalog;
   catalog.layout = core::install_layout(host_os(), "/d");
   const auto vendor = [&](std::string name, std::uint64_t packed, std::uint64_t size, std::string arch = "") {
@@ -506,6 +524,7 @@ TEST_CASE("Espace : le pic compte le décompressé et l'ancienne version, pas se
 }
 
 TEST_CASE("Espace : refus net avec les chiffres, avant tout téléchargement", "[app][install][space]") {
+  ajp::app::play::FrenchUi french;
   const InstallSpace space{.download = 742ULL << 20, .installed = 1250ULL << 20, .peak = 1400ULL << 20};
   CHECK(check_space(space, 2ULL << 30, "/d"));  // 2 Go : assez
   const auto refused = check_space(space, 300ULL << 20, "/d");
@@ -519,6 +538,7 @@ TEST_CASE("Espace : refus net avec les chiffres, avant tout téléchargement", "
 }
 
 TEST_CASE("Installation : sans place, rien n'est tiré et le moteur reste absent", "[app][install][space]") {
+  ajp::app::play::FrenchUi french;
   Fixture f("sans-place");
   core::EnginePackage package = f.openvino_package();
   package.size = std::numeric_limits<std::uint64_t>::max() / 16;  // un paquet qu'aucun disque ne tient
@@ -531,6 +551,7 @@ TEST_CASE("Installation : sans place, rien n'est tiré et le moteur reste absent
 
 TEST_CASE("Dossier d'installation des moteurs : le catalogue installe là, les modèles restent",
           "[app][install][space]") {
+  ajp::app::play::FrenchUi french;
   const fs::path data = fs::temp_directory_path() / "ajp-catalogue-data";
   const fs::path moved = fs::temp_directory_path() / "ajp-catalogue-moteurs";
   const EngineCatalog catalog = load_catalog(data / "absent.lock", data, moved);
@@ -542,6 +563,7 @@ TEST_CASE("Dossier d'installation des moteurs : le catalogue installe là, les m
 }
 
 TEST_CASE("Architecture : lue, sinon déduite du nom, sinon ptx — jamais toutes", "[app][install]") {
+  ajp::app::play::FrenchUi french;
   CHECK(ajp::app::play::cuda_arch_from_name("NVIDIA GeForce RTX 4050 Laptop GPU") == "sm89");
   CHECK(ajp::app::play::cuda_arch_from_name("NVIDIA GeForce RTX 4070 Ti") == "sm89");
   CHECK(ajp::app::play::cuda_arch_from_name("NVIDIA GeForce RTX 3060") == "sm86");

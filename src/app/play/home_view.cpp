@@ -4,6 +4,7 @@
 
 #include <imgui.h>
 
+#include "app/play/i18n.h"
 #include "app/play/panel_style.h"
 
 namespace ajp::app::play {
@@ -30,18 +31,18 @@ void draw_home(HomeView& view, float scale, bool settings_open) {
     ImGui::TextUnformatted("ajp");
     ImGui::PopFont();
     note(
-        "Upscale, interpolation et HDR pour les animes : la chaîne suit le profil de démarrage et les "
-        "paramètres, réglables ici avant la lecture.");
+        i18n::tr("Upscaling, interpolation and HDR for anime: set the startup profile and settings here "
+                 "before playback."));
     ImGui::Spacing();
     const float tall = ImGui::GetFrameHeight() * 1.6F;
     ImGui::BeginDisabled(view.dialog_open);
     ImGui::PushStyleColor(ImGuiCol_Button, kAccent);
     ImGui::PushStyleColor(ImGuiCol_Text, ImVec4{0.05F, 0.07F, 0.12F, 1.0F});
-    if (ImGui::Button("Ouvrir une vidéo", {-1.0F, tall})) view.open_file = true;
+    if (ImGui::Button(i18n::tr("Open a video"), {-1.0F, tall})) view.open_file = true;
     ImGui::PopStyleColor(2);
     ImGui::EndDisabled();
-    note(view.dialog_open ? "Choisissez la vidéo dans la fenêtre ouverte."
-                          : "ou glissez un fichier sur cette fenêtre.");
+    note(view.dialog_open ? i18n::tr("Pick the video in the open window.")
+                          : i18n::tr("or drop a file on this window."));
     if (!view.problem.empty()) {
       ImGui::Spacing();
       ImGui::PushStyleColor(ImGuiCol_Text, kWarn);
@@ -49,9 +50,9 @@ void draw_home(HomeView& view, float scale, bool settings_open) {
       ImGui::PopStyleColor();
     }
     ImGui::Spacing();
-    if (!settings_open && ImGui::Button("Paramètres (p)")) view.show_settings = true;
+    if (!settings_open && ImGui::Button(i18n::tr("Settings (p)"))) view.show_settings = true;
     if (!settings_open) ImGui::SameLine();
-    note("q : quitter");
+    note(i18n::tr("q: quit"));
   }
   ImGui::End();
 }
