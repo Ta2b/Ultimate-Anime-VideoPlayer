@@ -77,7 +77,8 @@ std::optional<std::string> ChainStats::rife() const {
   const RifeCounts c = live_.counts();
   std::string line =
       std::format("{} {} : {} paires, {} interpolées, {} dessins tenus, {} coupes, {} en retard", engine_,
-                  factor_text(live_.factor_now()), c.pairs, c.interpolated, c.held, c.cuts, c.late);
+                  live_.free_active() ? std::string("libre") : factor_text(live_.factor_now()), c.pairs,
+                  c.interpolated, c.held, c.cuts, c.late);
   if (live_.auto_active()) line += " · " + auto_status_text(live_.auto_info(host_now_us()), source_fps_);
   if (live_.free_active()) line += " · " + free_status_text(live_.free_info(host_now_us()));
   return line;

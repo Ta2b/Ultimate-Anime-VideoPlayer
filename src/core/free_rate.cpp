@@ -58,7 +58,7 @@ void FreeRate::reset(std::int64_t now_us) {
   const std::int64_t gap = min_gap_us_;
   *this = FreeRate{};
   min_gap_us_ = gap;
-  settled_until_us_ = now_us + kSettleUs;
+  settled_until_us_ = now_us + kStartUs;  // le démarrage perd toujours quelques images : pas de repli dessus
 }
 
 double FreeRate::pressure(std::int64_t now_us) const {

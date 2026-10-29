@@ -142,7 +142,10 @@ class LiveSettings {
       if (e.id != right || e.images == 0) continue;
       if (e.first_us == 0 || submitted_us < e.first_us) e.first_us = submitted_us;
       e.busy_us += service;
-      if (left == right) {
+      // Auto : la source clôt la paire. Auto libre : la dernière image de la paire, qui n'est pas forcément
+      // la source.
+      const bool last = free_on_ ? ++e.seen >= e.images : left == right;
+      if (last) {
         if (auto_on_) {
           auto_.cost(e.images, core::service_cost_us(e.first_us, previous_done_us_, done_us, e.lead_us),
                      done_us);
@@ -299,6 +302,7 @@ class LiveSettings {
     int images = 0;  // 0 : case libre
     std::int64_t lead_us = 0;
     std::int64_t first_us = 0;
+    int seen = 0;              // images vues écrites (Auto libre)
     std::int64_t busy_us = 0;  // temps propre de ses images, sans l'attente d'un slot
   };
   std::array<Expected, 16> ledger_{};
