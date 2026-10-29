@@ -18,6 +18,7 @@
 //   avant que les paires reviennent.
 #pragma once
 
+#include <algorithm>
 #include <array>
 #include <cstdint>
 #include <optional>
@@ -42,6 +43,13 @@ int auto_granularity(int wanted);
 // liée au rafraîchissement). Les paliers se comptent alors en moitiés : 5 est ×2,5 ; le facteur est palier /
 // granularity.
 int auto_ceiling(double display_hz, double source_fps, int granularity = 1);
+
+// La fréquence que le plafond du mode auto prend pour l'écran : la plus basse du plafond choisi (cap > 0, en
+// i/s) et de l'écran ; écran inconnu (<= 0) : inchangé, l'interpolation reste à ×1.
+inline double auto_limit_hz(double display_hz, int cap) {
+  if (display_hz <= 0.0 || cap <= 0) return display_hz;
+  return std::min(display_hz, static_cast<double>(cap));
+}
 
 // Images manquées à l'écran sur une fenêtre (missing) pour shown images neuves : le GPU ne suit pas
 // même quand aucune paire n'est « en retard » (mesuré sur 4070 Ti : DistilDRBA ×6 a 707 manquées pour

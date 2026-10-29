@@ -208,6 +208,23 @@ void fluidity_tab(PlaySettings& d, const SettingsChoices& choices, bool exportin
     }
     ImGui::EndCombo();
   }
+  if (d.rife_auto && now.num > now.den && !exporting) {
+    // Le plafond de la cadence : le maximum de l'écran par défaut, ou une valeur plus basse pour ménager le
+    // GPU.
+    const auto cap_label = [](int cap) {
+      return cap == 0 ? std::string("Maximum (écran)") : std::format("{} i/s", cap);
+    };
+    if (ImGui::BeginCombo("Plafond d'Auto", cap_label(d.auto_cap).c_str())) {
+      for (const int cap : {0, 120, 60}) {
+        if (ImGui::Selectable(cap_label(cap).c_str(), d.auto_cap == cap)) d.auto_cap = cap;
+      }
+      ImGui::EndCombo();
+    }
+    panel::tip(
+        "La cadence de sortie la plus haute que le mode Auto vise : le maximum de l'écran par défaut, ou 120 "
+        "/ 60 "
+        "i/s pour ménager le GPU. Il baisse toujours de lui-même quand une scène est lourde.");
+  }
   if (d.rife_auto && now.num > now.den) {
     panel::tip(
         "Auto (recommandé) pousse la fluidité au maximum que l'écran permet et que le GPU tient (de ×1 à ×6) "

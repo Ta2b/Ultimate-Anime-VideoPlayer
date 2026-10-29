@@ -122,6 +122,10 @@ inline constexpr int kPresetCount = 7;
 enum class Priority : std::uint8_t { Fluidity, Balance, Image };
 inline constexpr int kPriorityCount = 3;
 
+// Les bornes de auto_cap (i/s) : de quoi couper à 24 i/s ou laisser 480 i/s ; 0 prend l'écran.
+inline constexpr int kAutoCapMin = 24;
+inline constexpr int kAutoCapMax = 480;
+
 struct PlaySettings {
   // Auto-configuration : Personnalisé par défaut, les réglages d'avant ne bougent pas ; le premier
   // lancement choisit Auto. Hors Personnalisé, la chaîne est refaite à chaque vidéo.
@@ -137,6 +141,8 @@ struct PlaySettings {
   // (core/auto_rate.h) ; en direct. Par défaut (v0.6) : l'interpolation est en Auto, pour tous les profils et
   // après le benchmark ; un multiplicateur choisi à la main (liste du menu) la coupe.
   bool rife_auto = true;
+  // Plafond de la cadence de sortie du mode auto, en i/s (60, 120…) ; 0 : celle de l'écran, le maximum.
+  int auto_cap = 0;
   MotionEngine motion_engine = MotionEngine::Rife;
   std::string rife_model;  // fichier ONNX de RIFE (nom seul) ; vide : le défaut de la carte
   // Garder les poses (DRBA, kernels/spec/poses.h) : un personnage animé en deux garde son rythme
