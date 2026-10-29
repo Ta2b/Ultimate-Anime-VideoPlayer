@@ -10,21 +10,21 @@ namespace ajp::app::play {
 std::string_view title(WizardStep step) {
   switch (step) {
     case WizardStep::Welcome:
-      return "Bienvenue";
+      return i18n::tr("Welcome");
     case WizardStep::Engines:
-      return "Moteur";
+      return i18n::tr("Engine");
     case WizardStep::Chain:
-      return "Image et fluidité";
+      return i18n::tr("Picture and smoothness");
     case WizardStep::Hdr:
-      return "HDR";
+      return i18n::tr("HDR");
     case WizardStep::Audio:
-      return "Audio";
+      return i18n::tr("Audio");
     case WizardStep::Languages:
-      return "Langues";
+      return i18n::tr("Languages");
     case WizardStep::Updates:
-      return "Mises à jour";
+      return i18n::tr("Updates");
     case WizardStep::Summary:
-      return "Résumé";
+      return i18n::tr("Summary");
   }
   return {};
 }
@@ -57,13 +57,13 @@ std::string_view key(Listening listening) {
 std::string_view label(Listening listening) {
   switch (listening) {
     case Listening::Unsaid:
-      return "Pas encore dit";
+      return i18n::tr("Not said yet");
     case Listening::Headphones:
-      return "Casque";
+      return i18n::tr("Headphones");
     case Listening::Speakers:
-      return "Enceintes";
+      return i18n::tr("Speakers");
     case Listening::Cinema:
-      return "Home cinéma";
+      return i18n::tr("Home theater");
   }
   return {};
 }
@@ -78,11 +78,11 @@ Listening listening_from_key(std::string_view text) {
 std::string_view label(HdrChoice choice) {
   switch (choice) {
     case HdrChoice::Auto:
-      return "Automatique";
+      return i18n::tr("Automatic");
     case HdrChoice::RtxHdr:
       return "RTX HDR";
     case HdrChoice::Adaptive:
-      return "HDR adaptatif";
+      return i18n::tr("Adaptive HDR");
     case HdrChoice::Sdr:
       return "SDR";
   }
@@ -130,7 +130,7 @@ void skip(Wizard& wizard) {
 }
 
 std::string progress_text(const Wizard& wizard) {
-  return std::format("Étape {} sur {} : {}", wizard.at + 1, wizard.steps.size(), title(current(wizard)));
+  return i18n::tr_format("Step {} of {}: {}", wizard.at + 1, wizard.steps.size(), title(current(wizard)));
 }
 
 std::vector<std::string> wizard_summary(const Wizard& wizard) {
@@ -143,35 +143,34 @@ std::vector<std::string> wizard_summary(const Wizard& wizard) {
   std::vector<std::string> out;
   if (has(WizardStep::Chain)) {
     out.push_back(skipped(WizardStep::Chain)
-                      ? "Image et fluidité : sauté, préréglage Auto (Général > Configuration)"
-                      : std::format("Image et fluidité : {}, priorité {} (Général > Configuration)",
-                                    label(wizard.preset), label(wizard.priority)));
+                      ? i18n::tr("Picture and smoothness: skipped, Auto preset (General > Setup)")
+                      : i18n::tr_format("Picture and smoothness: {}, priority {} (General > Setup)",
+                                        label(wizard.preset), label(wizard.priority)));
   }
   if (has(WizardStep::Hdr)) {
     if (skipped(WizardStep::Hdr)) {
-      out.push_back("HDR : sauté, automatique (HDR et couleurs > HDR)");
+      out.push_back(i18n::tr("HDR: skipped, automatic (HDR and color > HDR)"));
     } else if (wizard.hdr == HdrChoice::RtxHdr && !wizard.rtx_checks.empty() &&
                !rtx_ready(wizard.rtx_checks)) {
-      out.push_back(
-          "HDR : RTX HDR choisi mais pas prêt (HDR et couleurs > HDR) : en attendant, "
-          "l'écran reste en HDR adaptatif");
+      out.push_back(i18n::tr(
+          "HDR: RTX HDR chosen but not ready (HDR and color > HDR); meanwhile adaptive HDR is used"));
     } else {
-      out.push_back(std::format("HDR : {} (HDR et couleurs > HDR)", label(wizard.hdr)));
+      out.push_back(i18n::tr_format("HDR: {} (HDR and color > HDR)", label(wizard.hdr)));
     }
   }
   if (has(WizardStep::Audio)) {
     out.push_back(wizard.listening == Listening::Unsaid || skipped(WizardStep::Audio)
-                      ? "Audio : enceintes en rendu fidèle (Audio > Sortie)"
-                      : std::format("Audio : {} (Audio > Sortie)", label(wizard.listening)));
+                      ? i18n::tr("Audio: speakers, faithful sound (Audio > Output)")
+                      : i18n::tr_format("Audio: {} (Audio > Output)", label(wizard.listening)));
   }
   if (has(WizardStep::Languages))
-    out.push_back(skipped(WizardStep::Languages) ? "Langues : sauté (Général > Lecture)"
-                                                 : "Langues : choisies (Général > Lecture)");
+    out.push_back(skipped(WizardStep::Languages) ? i18n::tr("Languages: skipped (General > Playback)")
+                                                 : i18n::tr("Languages: chosen (General > Playback)"));
   if (has(WizardStep::Updates)) {
-    const std::string_view mode = wizard.update_mode == "auto"    ? "automatiques"
-                                  : wizard.update_mode == "never" ? "jamais"
-                                                                  : "me prévenir";
-    out.push_back(std::format("Mises à jour : {} (Général > Application)", mode));
+    std::string_view mode = i18n::tr("notify me");
+    if (wizard.update_mode == "auto") mode = i18n::tr("automatic");
+    if (wizard.update_mode == "never") mode = i18n::tr("never");
+    out.push_back(i18n::tr_format("Updates: {} (General > Application)", mode));
   }
   return out;
 }

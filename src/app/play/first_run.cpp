@@ -93,15 +93,15 @@ void engine_row(EngineRow& row) {
   // La licence d'un moteur coché à télécharger : lue et acceptée par l'utilisateur, sinon le
   // moteur reste hors du choix.
   if (row.download && row.chosen && !row.license.empty()) {
-    ImGui::Checkbox("J'accepte sa licence", &row.license_accepted);
+    ImGui::Checkbox(i18n::tr("I accept its licence"), &row.license_accepted);
     ImGui::SameLine();
-    ImGui::TextLinkOpenURL("Lire la licence", row.license.c_str());
+    ImGui::TextLinkOpenURL(i18n::tr("Read the licence"), row.license.c_str());
   }
   if (row.download && row.chosen && row.needs_key) {
     ImGui::SetNextItemWidth(ImGui::GetFontSize() * 22.0F);
-    ImGui::InputText("Clé d'API NGC", row.key.data(), row.key.size(), ImGuiInputTextFlags_Password);
+    ImGui::InputText(i18n::tr("NGC API key"), row.key.data(), row.key.size(), ImGuiInputTextFlags_Password);
     ImGui::SameLine();
-    ImGui::TextLinkOpenURL("Obtenir une clé", "https://org.ngc.nvidia.com/setup/api-keys");
+    ImGui::TextLinkOpenURL(i18n::tr("Get a key"), "https://org.ngc.nvidia.com/setup/api-keys");
   }
   ImGui::Unindent(ImGui::GetFrameHeightWithSpacing());
   ImGui::Spacing();
@@ -135,7 +135,7 @@ void downloadable_row(EngineRow& row, const EnginesHere& here) {
       download != nullptr && !download->missing.empty() ? std::format(" · {}", download->missing) : "";
   if (built || (download != nullptr && download->installed)) {
     row.usable = true;
-    row.status = "installé" + missing;
+    row.status = i18n::tr("installed") + missing;
   } else if (download != nullptr) {
     row.license = download->license;
     const bool fits = download->needed == 0 || download->available >= download->needed;
@@ -143,21 +143,21 @@ void downloadable_row(EngineRow& row, const EnginesHere& here) {
     row.download = fits;
     // Avant tout téléchargement : ce qui sera tiré, la place que l'installation demande en tout, et celle qui
     // reste.
-    row.status = download->needed == 0
-                     ? std::format("à télécharger ({}){}", format_size(download->bytes), missing)
-                     : std::format("à télécharger ({}) · demande {} d'espace, {} libres{}",
-                                   format_size(download->bytes), format_size(download->needed),
-                                   format_size(download->available), missing);
+    row.status =
+        download->needed == 0
+            ? i18n::tr_format("to download ({}){}", format_size(download->bytes), missing)
+            : i18n::tr_format("to download ({}) · needs {} of space, {} free{}", format_size(download->bytes),
+                              format_size(download->needed), format_size(download->available), missing);
     if (!fits)
-      row.status = std::format("espace disque insuffisant : il faut {} (dont {} à télécharger), il reste {}",
-                               format_size(download->needed), format_size(download->bytes),
-                               format_size(download->available)) +
+      row.status = i18n::tr_format("not enough disk space: {} needed ({} to download), {} left",
+                                   format_size(download->needed), format_size(download->bytes),
+                                   format_size(download->available)) +
                    missing;
   } else {
     row.status =
         row.offer.id == core::EngineId::TensorRt && here.os == core::Os::Linux
-            ? "non publié (licence NVIDIA) : à construire sur cette machine, voir docs/nvidia-linux.md"
-            : "pas encore publié pour cette version";
+            ? i18n::tr("not published (NVIDIA licence): build it on this machine, see docs/nvidia-linux.md")
+            : i18n::tr("not published for this version yet");
   }
 }
 
@@ -289,14 +289,14 @@ std::string rebar_text(const GpuFacts& gpu) {
 }
 
 std::string gpu_line(const GpuFacts& gpu) {
-  std::string line = gpu.name.empty() ? std::string("GPU inconnu") : gpu.name;
+  std::string line = gpu.name.empty() ? std::string(i18n::tr("Unknown GPU")) : gpu.name;
   if (gpu.vram_bytes > 0) {
     line += std::format(" · {} Go", static_cast<int>(std::lround(static_cast<double>(gpu.vram_bytes) /
                                                                  static_cast<double>(kGiB))));
   }
   if (const std::string rebar = rebar_text(gpu); !rebar.empty()) line += " · Resizable BAR " + rebar;
-  if (gpu.tensor_cores) line += " · cœurs Tensor";
-  if (gpu.wmma) line += " · unités matricielles (WMMA)";
+  if (gpu.tensor_cores) line += i18n::tr(" · Tensor cores");
+  if (gpu.wmma) line += i18n::tr(" · matrix units (WMMA)");
   return line;
 }
 
@@ -318,7 +318,7 @@ FirstRunView first_run_view(const GpuFacts& gpu, const EnginesHere& here, Profil
     switch (offer.id) {
       case core::EngineId::Vulkan:
         row.usable = true;
-        row.status = "livré avec le lecteur";
+        row.status = i18n::tr("bundled with the player");
         break;
       case core::EngineId::TensorRt:
       case core::EngineId::MiGraphX:
@@ -327,7 +327,7 @@ FirstRunView first_run_view(const GpuFacts& gpu, const EnginesHere& here, Profil
         break;
       case core::EngineId::Metal:  // Core ML, dans AJP.app
         row.usable = here.coreml;
-        row.status = here.coreml ? "livré avec le lecteur" : "absent de ce paquet";
+        row.status = here.coreml ? i18n::tr("bundled with the player") : i18n::tr("not in this package");
         break;
       case core::EngineId::MaxineVfx: {
         row.usable = here.maxine || !here.maxine_license.empty();
@@ -340,20 +340,20 @@ FirstRunView first_run_view(const GpuFacts& gpu, const EnginesHere& here, Profil
           row.usable = true;
           row.download = true;
           row.license = package->license;
-          row.status = std::format("à télécharger ({} Mo), paquet fermé sous licence NVIDIA",
-                                   (package->bytes + (1U << 20) - 1) >> 20);
+          row.status = i18n::tr_format("to download ({} MB), closed NVIDIA-licensed package",
+                                       (package->bytes + (1U << 20) - 1) >> 20);
         } else if (!here.maxine && !here.maxine_license.empty()) {
           // Le SDK ne se redistribue pas : le lecteur le télécharge depuis NGC avec la clé de
           // l'utilisateur, une fois sa licence acceptée.
           row.download = true;
           row.needs_key = true;
           row.license = here.maxine_license;
-          row.status = "à installer depuis NVIDIA NGC (clé d'API d'un compte NVIDIA gratuit)";
+          row.status = i18n::tr("to install from NVIDIA NGC (API key of a free NVIDIA account)");
         }
         break;
       }
       default:
-        row.status = "pas encore installable dans cette version";
+        row.status = i18n::tr("cannot be installed in this version yet");
         break;
     }
     const bool wanted = current.first_run_done ? chosen(current, offer.id) : offer.preselected;
@@ -398,12 +398,12 @@ PlaySettings within_engines(PlaySettings settings, const core::Settings& engines
     settings.upscale = false;
     settings.rife_factor = 0;
     settings.rife_factor_den = 1;
-    notes.emplace_back("ni TensorRT ni Vulkan choisis : ni SPAN ni RIFE");
+    notes.emplace_back(i18n::tr("neither TensorRT nor Vulkan chosen: no SPAN or RIFE"));
   }
   if (!chosen(engines, core::EngineId::MaxineVfx) && settings.true_hdr) {
     settings.true_hdr = false;
     settings.hdr_native = true;
-    notes.emplace_back("NVIDIA Maxine non choisi : HDR adaptatif (tous GPU) au lieu de RTX HDR");
+    notes.emplace_back(i18n::tr("NVIDIA Maxine not chosen: adaptive HDR instead of RTX HDR"));
   }
   return settings;
 }
@@ -440,9 +440,9 @@ std::string_view engine_label(core::EngineId id) {
 std::string_view badge_label(core::Badge badge) {
   switch (badge) {
     case core::Badge::Recommended:
-      return "Recommandé";
+      return i18n::tr("Recommended");
     case core::Badge::Compatibility:
-      return "Compatibilité";
+      return i18n::tr("Compatibility");
     case core::Badge::NvidiaOnly:
       return "NVIDIA";
     case core::Badge::AmdOnly:
@@ -462,15 +462,15 @@ std::string_view badge_label(core::Badge badge) {
 std::string_view reason_label(core::Reason reason) {
   switch (reason) {
     case core::Reason::AlwaysIncluded:
-      return "Toujours présent";
+      return i18n::tr("Always available");
     case core::Reason::FastestForThisGpu:
-      return "Le plus rapide pour ce GPU";
+      return i18n::tr("Fastest for this GPU");
     case core::Reason::RtxHdrForThisGpu:
-      return "RTX HDR sur ce GPU";
+      return i18n::tr("RTX HDR on this GPU");
     case core::Reason::CompareWithVulkan:
-      return "À comparer avec Vulkan";
+      return i18n::tr("Compare with Vulkan");
     case core::Reason::NoMatchingGpu:
-      return "Ne convient pas à ce GPU";
+      return i18n::tr("Does not suit this GPU");
   }
   return "?";
 }
@@ -491,26 +491,23 @@ void radio_note(const char* label, const char* detail, bool selected, bool& pick
 void draw_wizard_step(FirstRunView& view, Wizard& wizard) {
   switch (current(wizard)) {
     case WizardStep::Welcome:
-      section("Bienvenue");
+      section(i18n::tr("Welcome"));
       ImGui::TextWrapped("%s", view.gpu.c_str());
       note(view.tier_line);
       if (!view.display_line.empty()) note(view.display_line);
-      note(
-          "Le lecteur choisit seul la chaîne pour cette machine ; tout se retrouve ensuite dans les "
-          "paramètres (p). "
-          "Il s'ajoute aussi à « Ouvrir avec » du système à la fin de l'assistant.");
+      note(i18n::tr(
+          "The player picks the settings for this machine; everything is in Settings (p) afterwards."));
       break;
     case WizardStep::Engines:
-      section("Moteurs");
+      section(i18n::tr("Engines"));
       for (EngineRow& row : view.engines) engine_row(row);
       note(
-          "Vulkan sert tous les GPU ; les moteurs cochés à télécharger s'installent après « Terminer », "
-          "vérifiés par "
-          "leur empreinte, et Vulkan prend le relais de celui qui échoue.");
+          i18n::tr("Vulkan works on every GPU. Checked engines install after \"Finish\", verified by hash; "
+                   "Vulkan takes over if one fails."));
       break;
     case WizardStep::Chain: {
-      section("Image et fluidité");
-      if (ImGui::BeginCombo("Préréglage", std::string(label(wizard.preset)).c_str())) {
+      section(i18n::tr("Picture and smoothness"));
+      if (ImGui::BeginCombo(i18n::tr("Preset"), std::string(label(wizard.preset)).c_str())) {
         for (int i = 0; i < kPresetCount; ++i) {
           const auto preset = static_cast<Preset>(i);
           if (ImGui::Selectable(std::string(label(preset)).c_str(), preset == wizard.preset))
@@ -518,8 +515,8 @@ void draw_wizard_step(FirstRunView& view, Wizard& wizard) {
         }
         ImGui::EndCombo();
       }
-      panel::tip("Auto choisit la chaîne selon votre carte, votre écran et la vidéo.");
-      if (ImGui::BeginCombo("Priorité", std::string(label(wizard.priority)).c_str())) {
+      panel::tip(i18n::tr("Auto picks the settings for your card, display and video."));
+      if (ImGui::BeginCombo(i18n::tr("Priority"), std::string(label(wizard.priority)).c_str())) {
         for (int i = 0; i < kPriorityCount; ++i) {
           const auto priority = static_cast<Priority>(i);
           if (ImGui::Selectable(std::string(label(priority)).c_str(), priority == wizard.priority))
@@ -528,95 +525,96 @@ void draw_wizard_step(FirstRunView& view, Wizard& wizard) {
         ImGui::EndCombo();
       }
       note(
-          "Une fois les moteurs installés, le bouton « Optimiser pour ma machine » (Paramètres > Général > "
-          "Configuration, environ une minute) règle tout seul ces choix pour votre PC. En attendant, une "
-          "estimation d'après la carte suffit pour commencer.");
+          i18n::tr("Once the engines are installed, \"Optimize for this machine\" (Settings > General > "
+                   "Setup) tunes this for your PC in about a minute."));
       break;
     }
     case WizardStep::Hdr: {
-      section("HDR");
-      note("Votre écran reçoit du HDR.");
+      section(i18n::tr("HDR"));
+      note(i18n::tr("Your display receives HDR."));
       bool pick = false;
-      radio_note("Automatique", "Le lecteur choisit selon la machine.", wizard.hdr == HdrChoice::Auto, pick);
+      radio_note(i18n::tr("Automatic"), i18n::tr("The player chooses for the machine."),
+                 wizard.hdr == HdrChoice::Auto, pick);
       if (pick) wizard.hdr = HdrChoice::Auto;
       pick = false;
-      radio_note("RTX HDR", "Cartes NVIDIA RTX avec le moteur TensorRT et le SDK Maxine.",
+      radio_note("RTX HDR", i18n::tr("NVIDIA RTX cards with the TensorRT engine and the Maxine SDK."),
                  wizard.hdr == HdrChoice::RtxHdr, pick);
       if (pick) wizard.hdr = HdrChoice::RtxHdr;
       pick = false;
-      radio_note("HDR adaptatif", "Tous les GPU : l'aspect HDR est émulé selon la scène.",
+      radio_note(i18n::tr("Adaptive HDR"), i18n::tr("Any GPU: the HDR look is emulated per scene."),
                  wizard.hdr == HdrChoice::Adaptive, pick);
       if (pick) wizard.hdr = HdrChoice::Adaptive;
       pick = false;
-      radio_note("SDR", "Pas de conversion HDR.", wizard.hdr == HdrChoice::Sdr, pick);
+      radio_note("SDR", i18n::tr("No HDR conversion."), wizard.hdr == HdrChoice::Sdr, pick);
       if (pick) wizard.hdr = HdrChoice::Sdr;
       if (view.facts.rtx_guided && wizard.hdr == HdrChoice::RtxHdr && view.check_rtx) {
         // 4b : RTX HDR pas à pas.
         if (wizard.rtx_checks.empty()) wizard.rtx_checks = view.check_rtx(view);
-        section("RTX HDR, pas à pas");
+        section(i18n::tr("RTX HDR, step by step"));
         for (const RtxCheck& check : wizard.rtx_checks) {
           ImGui::TextColored(
               check.done ? ImVec4{0.45F, 0.82F, 0.52F, 1.0F} : ImVec4{1.0F, 0.78F, 0.42F, 1.0F}, "%s",
-              check.done ? "fait" : "à faire");
+              check.done ? "fait" : i18n::tr("to do"));
           ImGui::SameLine();
           ImGui::TextUnformatted(check.name.c_str());
           if (!check.done) note(check.todo);
         }
-        if (ImGui::Button("Vérifier de nouveau")) wizard.rtx_checks = view.check_rtx(view);
+        if (ImGui::Button(i18n::tr("Check again"))) wizard.rtx_checks = view.check_rtx(view);
         ImGui::SameLine();
-        if (ImGui::Button("Renoncer : HDR adaptatif")) {
+        if (ImGui::Button(i18n::tr("Give up: adaptive HDR"))) {
           wizard.hdr = HdrChoice::Adaptive;
           wizard.rtx_checks.clear();
         }
         if (!rtx_ready(wizard.rtx_checks))
           note(
-              "Tant que tout n'est pas fait, l'écran reste en HDR adaptatif ; RTX HDR se choisit ensuite "
-              "dans HDR et couleurs > HDR.");
+              i18n::tr("Until everything is done the display uses adaptive HDR; pick RTX HDR later in HDR "
+                       "and color > HDR."));
       }
       break;
     }
     case WizardStep::Audio: {
-      section("Comment écoutez-vous ?");
-      note("Le format du son se détecte seul. Aucune détection du casque ou des enceintes : dites-le ici.");
+      section(i18n::tr("How do you listen?"));
+      note(i18n::tr("The sound format is detected. Headphones or speakers are not: tell us here."));
       for (const Listening each : {Listening::Headphones, Listening::Speakers, Listening::Cinema}) {
         bool pick = false;
         const bool cinema = each == Listening::Cinema;
         radio_note(std::string(label(each)).c_str(),
-                   each == Listening::Headphones ? "Casque : crossfeed en stéréo, binaural en surround."
-                   : cinema
-                       ? (view.facts.multichannel_output ? "Multicanal, surround direct."
-                                                         : "Grisé : l'appareil de sortie n'a que 2 canaux.")
-                       : "Enceintes : rendu fidèle, mixage soigné.",
+                   each == Listening::Headphones
+                       ? i18n::tr("Headphones: crossfeed in stereo, binaural in surround.")
+                   : cinema ? (view.facts.multichannel_output
+                                   ? i18n::tr("Multichannel, direct surround.")
+                                   : i18n::tr("Greyed out: the output device only has 2 channels."))
+                            : i18n::tr("Speakers: faithful sound, careful mix."),
                    wizard.listening == each, pick, !cinema || view.facts.multichannel_output);
         if (pick) wizard.listening = each;
       }
-      note("Passer : Enceintes, en rendu fidèle. Le choix se change ensuite dans Audio > Sortie.");
+      note(i18n::tr("Skip: Speakers, faithful sound. Change it later in Audio > Output."));
       break;
     }
     case WizardStep::Languages:
-      section("Langues");
-      language_choice("Langue de l'audio", "Selon le fichier", wizard.audio_language);
-      language_choice("Langue des sous-titres", "Aucun", wizard.subtitle_language);
+      section(i18n::tr("Languages"));
+      language_choice(i18n::tr("Audio language"), i18n::tr("From the file"), wizard.audio_language);
+      language_choice(i18n::tr("Subtitle language"), i18n::tr("None"), wizard.subtitle_language);
       break;
     case WizardStep::Updates: {
-      section("Mises à jour");
+      section(i18n::tr("Updates"));
       bool pick = false;
-      radio_note("Me prévenir", "Une notification ; vous lancez la mise à jour vous-même.",
+      radio_note(i18n::tr("Notify me"), i18n::tr("A notification; you start the update yourself."),
                  wizard.update_mode == "notify", pick);
       if (pick) wizard.update_mode = "notify";
       pick = false;
-      radio_note("Automatique", "Téléchargée, installée au prochain lancement.", wizard.update_mode == "auto",
-                 pick);
+      radio_note(i18n::tr("Automatic"), i18n::tr("Downloaded, installed at next launch."),
+                 wizard.update_mode == "auto", pick);
       if (pick) wizard.update_mode = "auto";
       pick = false;
-      radio_note("Jamais", "Aucune vérification.", wizard.update_mode == "never", pick);
+      radio_note(i18n::tr("Never"), i18n::tr("No checks."), wizard.update_mode == "never", pick);
       if (pick) wizard.update_mode = "never";
       break;
     }
     case WizardStep::Summary:
-      section("Résumé");
+      section(i18n::tr("Summary"));
       for (const std::string& line : wizard_summary(wizard)) ImGui::BulletText("%s", line.c_str());
-      note("Tout se change ensuite dans les paramètres (p). Pour le refaire : ajp --first-run.");
+      note(i18n::tr("Everything can be changed later in Settings (p). To redo this: ajp --first-run."));
       break;
   }
 }
@@ -631,7 +629,7 @@ void draw_wizard(FirstRunView& view, float scale) {
   constexpr ImGuiWindowFlags kFlags = ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoMove |
                                       ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoSavedSettings;
   Wizard& wizard = view.wizard;
-  if (ImGui::Begin("Bienvenue", nullptr, kFlags)) {
+  if (ImGui::Begin(i18n::tr("Welcome"), nullptr, kFlags)) {
     note(progress_text(wizard));
     ImGui::PushStyleColor(ImGuiCol_PlotHistogram, kAccent);  // la couleur d'accent, pas le jaune par défaut
     ImGui::ProgressBar(static_cast<float>(wizard.at + 1) / static_cast<float>(wizard.steps.size()),
@@ -644,18 +642,18 @@ void draw_wizard(FirstRunView& view, float scale) {
     ImGui::Separator();
     const float tall = ImGui::GetFrameHeight() * 1.4F;
     ImGui::BeginDisabled(is_first(wizard));
-    if (ImGui::Button("Précédent", {0.0F, tall})) previous(wizard);
+    if (ImGui::Button(i18n::tr("Back"), {0.0F, tall})) previous(wizard);
     ImGui::EndDisabled();
     ImGui::SameLine();
     if (!is_last(wizard)) {
-      if (ImGui::Button("Passer", {0.0F, tall})) skip(wizard);
+      if (ImGui::Button(i18n::tr("Skip"), {0.0F, tall})) skip(wizard);
       ImGui::SameLine();
     }
     ImGui::PushStyleColor(ImGuiCol_Button, kAccent);
     ImGui::PushStyleColor(ImGuiCol_Text, ImVec4{0.05F, 0.07F, 0.12F, 1.0F});
     if (is_last(wizard)) {
-      if (ImGui::Button("Terminer", {0.0F, tall})) view.done = true;
-    } else if (ImGui::Button("Suivant", {0.0F, tall})) {
+      if (ImGui::Button(i18n::tr("Finish"), {0.0F, tall})) view.done = true;
+    } else if (ImGui::Button(i18n::tr("Next"), {0.0F, tall})) {
       next(wizard);
     }
     ImGui::PopStyleColor(2);
@@ -671,10 +669,10 @@ void draw_first_run(FirstRunView& view, float scale) {
     return;
   }
   // Le bouton qui lance les téléchargements porte le nom du bouton de cet écran.
-  const std::string footer_text = std::format(
-      "Vulkan sert tous les GPU ; les moteurs cochés à télécharger s'installent après « {} », vérifiés par "
-      "leur empreinte, et Vulkan prend le relais de celui qui échoue.",
-      view.revisit ? "Continuer la lecture" : "Commencer");
+  const std::string footer_text = i18n::tr_format(
+      "Vulkan works on every GPU. Checked engines install after \"{}\", verified by hash; Vulkan takes over "
+      "if one fails.",
+      view.revisit ? i18n::tr("Resume playback") : i18n::tr("Start"));
   const char* const kFooter = footer_text.c_str();
   const ImGuiIO& io = ImGui::GetIO();
   const float pad = 24.0F * scale;
@@ -684,37 +682,36 @@ void draw_first_run(FirstRunView& view, float scale) {
   ImGui::SetNextWindowSize(size, ImGuiCond_Always);
   constexpr ImGuiWindowFlags kFlags = ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoMove |
                                       ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoSavedSettings;
-  if (ImGui::Begin(view.revisit ? "Moteurs" : "Bienvenue", nullptr, kFlags)) {
+  if (ImGui::Begin(view.revisit ? i18n::tr("Engines") : i18n::tr("Welcome"), nullptr, kFlags)) {
     ImGui::TextUnformatted(view.gpu.c_str());
-    note(view.revisit
-             ? "Les moteurs cochés à télécharger s'installent, puis la lecture reprend au même endroit."
-             : "Le lecteur a choisi pour ce GPU ; tout se change ensuite dans les paramètres (p).");
+    note(view.revisit ? i18n::tr("Checked engines install, then playback resumes at the same spot.")
+                      : i18n::tr("The player chose for this GPU; change anything later in Settings (p)."));
     const ImGuiStyle& style = ImGui::GetStyle();
     const ImVec2 room = ImGui::GetContentRegionAvail();
     const float footer = ImGui::CalcTextSize(kFooter, nullptr, false, room.x).y +
                          ImGui::GetFrameHeight() * 1.4F + style.ItemSpacing.y * 4.0F;
     const float body = std::max(room.y - footer, ImGui::GetFrameHeight() * 4.0F);
     ImGui::BeginChild("##moteurs", {(room.x - style.ItemSpacing.x) * 0.5F, body});
-    section("Moteurs");
+    section(i18n::tr("Engines"));
     for (EngineRow& row : view.engines) engine_row(row);
     ImGui::EndChild();
     ImGui::SameLine();
     ImGui::BeginChild("##profils", {0.0F, body});
-    section("Profil de démarrage");
+    section(i18n::tr("Startup profile"));
     profile_choice(view.profiles);
     ImGui::EndChild();
     ImGui::Separator();
     note(kFooter);
     ImGui::PushStyleColor(ImGuiCol_Button, kAccent);
     ImGui::PushStyleColor(ImGuiCol_Text, ImVec4{0.05F, 0.07F, 0.12F, 1.0F});
-    const char* start = view.revisit ? "Continuer la lecture" : "Commencer";
+    const char* start = view.revisit ? i18n::tr("Resume playback") : i18n::tr("Start");
     const float tall = ImGui::GetFrameHeight() * 1.4F;
     if (ImGui::Button(start, {ImGui::CalcTextSize(start).x + style.FramePadding.x * 6.0F, tall}))
       view.done = true;
     ImGui::PopStyleColor(2);
     if (view.revisit) {
       ImGui::SameLine();
-      if (ImGui::Button("Annuler", {0.0F, tall})) view.cancelled = true;
+      if (ImGui::Button(i18n::tr("Cancel"), {0.0F, tall})) view.cancelled = true;
     }
   }
   ImGui::End();

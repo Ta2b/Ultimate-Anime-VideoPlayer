@@ -11,6 +11,7 @@ std::span<const Entry> french_player();    // barre de lecture, pistes, notifica
 std::span<const Entry> french_settings();  // pages de réglages
 std::span<const Entry> french_image();     // Image IA : agrandissement et fluidité
 std::span<const Entry> french_system();    // Export, moteurs, application, mises à jour, configuration
+std::span<const Entry> french_wizard();    // assistant de premier lancement, écran des moteurs
 std::span<const Entry> french_sound();     // Audio : sortie, profils, son anime, synchronisation
 
 }  // namespace ajp::app::play::i18n
