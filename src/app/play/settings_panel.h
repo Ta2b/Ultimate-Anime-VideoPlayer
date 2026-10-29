@@ -100,8 +100,13 @@ struct SettingsChoices {
   bool offer_default_player = false;  // proposer de le devenir (fenêtre de démarrage, une fois par lancement)
   std::string bench_text;  // « Dernière évaluation : 2026-10-28, niveau Rapide » ; vide : jamais faite
   PlayerPlace place;       // l'exécutable et le dossier de l'utilisateur (onglet Système)
-  // Image IA > Agrandissement (réglages avancés) : préparer le mode Performance de SPAN (span_derive.h).
+  // Le mode Performance de SPAN (span_derive.h) : ce que la vidéo ouverte permet, pourquoi il est impossible
+  // ici (vide : possible) et la tâche que la boucle du lecteur partage avec le panneau (span_auto.h ; vide :
+  // celle du panneau seul).
   SpanPrepare span_prepare;
+  std::string fp8_reason;
+  std::shared_ptr<PrepareNote> span_job;
+  std::filesystem::path settings_dir;  // le dossier de play.toml, bench.toml, settings.toml
 };
 
 // Une page de l'arbre des réglages (settings_panel.cpp) : sa catégorie, son nom, et si elle n'est montrée
@@ -132,6 +137,8 @@ class SettingsPanel {
   }
   void close() { open_ = false; }
   bool is_open() const { return open_; }
+  // Une tâche tourne dans le panneau (optimisation, préparation) : des images régulières, même en pause.
+  bool busy() const { return open_ && (bench_running(bench_) || prepare_.pending != nullptr); }
   // Il y a quelque chose à dessiner : le panneau ouvert, ou la fenêtre « lecteur par défaut », qui ne dépend
   // pas de lui.
   bool wants_draw(const PlaySettings& running, const SettingsChoices& choices) const {
@@ -161,7 +168,7 @@ class SettingsPanel {
   std::optional<core::EngineId> engine_draft_;  // moteur coché dans l'onglet Moteurs, pas appliqué
   std::unique_ptr<ExportDraft> export_;         // l'onglet Export, gardé d'une ouverture à l'autre
   SystemNote system_;                           // l'onglet Système : sa dernière action
-  UpdateNote updates_;   // Général > Mises à jour : la vérification en cours ou son résultat
+  UpdateNote updates_;   // Général > Application : la vérification en cours ou son résultat
   BenchNote bench_;      // « Évaluer ma machine » : l'essai en cours ou son rapport
   PrepareNote prepare_;  // « Préparer le mode Performance » : la tâche en cours ou son résultat
 };

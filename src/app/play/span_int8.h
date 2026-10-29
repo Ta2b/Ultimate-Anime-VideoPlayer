@@ -64,8 +64,9 @@ inline SpanInt8Lookup find_span_int8(const std::filesystem::path& span, const st
 }
 
 // Les crans de SPAN dont la variante est dans dir et passe ses garde-fous ; fp8_engine : le moteur calcule
-// le FP8 ; cutlass_engine : il sait aussi le SPAN entier en noyaux CUTLASS (Performance par le paquet «
-// .span8 »).
+// le FP8 ; cutlass_engine : il sait aussi le SPAN entier en noyaux CUTLASS : le cran Performance est alors
+// offert même sans paquet (le lecteur le prépare, span_auto.h), sauf pour le modèle b5f48 (Performance par le
+// paquet « .span8 »).
 TierSupport span_tiers(const std::filesystem::path& span, const std::filesystem::path& dir, bool fp8_engine,
                        bool cutlass_engine = false);
 

@@ -1,6 +1,7 @@
 #include "app/play/auto_bench_run.h"
 
 #include <algorithm>
+#include <cctype>
 #include <format>
 #include <fstream>
 #include <system_error>
@@ -17,10 +18,94 @@ std::unexpected<Refusal> refuse(RefusalCode code, std::string detail) {
   return std::unexpected(Refusal{code, std::move(detail)});
 }
 
-// Un essai : l'enfant joue, rend sa lecture ; une lecture absente est un essai vide (ne tient pas).
-std::optional<BenchReading> play_one(const BenchPlan& plan, const std::optional<Tier>& level,
-                                     const Variant* variant, int index, const std::stop_token& stop,
-                                     bool& cancelled, const std::vector<std::string>& extra = {}) {
+std::string lowered(std::string_view text) {
+  std::string out(text);
+  std::ranges::transform(out, out.begin(),
+                         [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+  return out;
+}
+
+// Ce qu'un essai a donné : sa lecture, ou pourquoi il n'en a pas donné.
+struct Trial {
+  std::optional<BenchReading> reading;
+  bool cancelled = false;
+  bool timed_out = false;
+  std::chrono::milliseconds elapsed{};
+  std::string why;  // une phrase pour l'utilisateur quand il n'y a pas de lecture
+};
+
+bool mentions_build(std::string_view line) {
+  const std::string text = lowered(line);
+  return text.contains("construction") || text.contains("construit") || text.contains("engine built");
+}
+
+// Les options de fenêtre d'un essai : masquée quand le bureau le permet, sinon petite et visible, jamais en
+// plein écran (une fenêtre plein écran qui apparaît à chaque essai serait pire que le masquage manqué).
+void window_args(const BenchPlan& plan, std::vector<std::string>& args) {
+  if (plan.silent) {
+    args.emplace_back(hide_is_reliable_here() ? "--hidden" : "--window=320x180");
+    return;
+  }
+  if (plan.fullscreen) args.emplace_back("--fullscreen");
+}
+
+}  // namespace
+
+bool hide_is_reliable(std::string_view session_type, std::string_view current_desktop) {
+  return !(lowered(session_type) == "wayland" && lowered(current_desktop).contains("gnome"));
+}
+
+bool hide_is_reliable_here() {
+  // Le bureau ne se lit pas dans l'environnement (règle « aucune bascule cachée ») : sous Linux, où GNOME
+  // Wayland ne se distingue pas des autres, l'essai prend la petite fenêtre visible, sûre partout.
+#if defined(__linux__)
+  return false;
+#else
+  return true;
+#endif
+}
+
+std::vector<std::string> bench_child_args(const BenchPlan& plan, const std::optional<Tier>& level,
+                                          const std::filesystem::path& data_dir,
+                                          const std::filesystem::path& out_file,
+                                          const std::vector<std::string>& extra) {
+  std::vector<std::string> args{
+      "play",
+      prepare::utf8_path(plan.video),
+      std::format("--seconds={}", plan.seconds),
+      "--mute",
+      "--no-resume",
+      std::format("--data-dir={}", prepare::utf8_path(data_dir)),
+      std::format("--bench-out={}", prepare::utf8_path(out_file)),
+      std::format("--bench-level={}", level ? std::to_string(static_cast<int>(*level)) : "auto")};
+  window_args(plan, args);
+  args.insert(args.end(), extra.begin(), extra.end());
+  return args;
+}
+
+std::vector<std::string> variant_child_args(const BenchPlan& plan, const Variant& variant,
+                                            const std::filesystem::path& data_dir,
+                                            const std::filesystem::path& out_file) {
+  std::vector<std::string> args{"play",
+                                prepare::utf8_path(plan.video),
+                                std::format("--seconds={}", plan.seconds),
+                                "--mute",
+                                "--no-resume",
+                                std::format("--data-dir={}", prepare::utf8_path(data_dir)),
+                                std::format("--bench-out={}", prepare::utf8_path(out_file))};
+  window_args(plan, args);
+  args.insert(args.end(), variant.args.begin(), variant.args.end());
+  return args;
+}
+
+namespace {
+
+// Un essai : l'enfant joue, rend sa lecture ; une lecture absente est un essai vide (ne tient pas), dit en
+// une phrase (what : « des réglages « Rapide » »). allowance : le délai de plus que la durée de l'essai.
+Trial play_one(const BenchPlan& plan, const std::optional<Tier>& level, const Variant* variant, int index,
+               const std::stop_token& stop, std::chrono::seconds allowance, const std::string& what,
+               const std::vector<std::string>& extra = {}) {
+  Trial trial;
   const std::filesystem::path dir = plan.work_dir / std::format("essai-{}", index);
   std::error_code error;
   std::filesystem::remove_all(dir, error);
@@ -38,68 +123,52 @@ std::optional<BenchReading> play_one(const BenchPlan& plan, const std::optional<
   }
   if (variant != nullptr && !variant->settings.empty())
     std::filesystem::copy_file(variant->settings, dir / "reglages" / "play.toml", error);
+  const std::chrono::seconds limit = std::chrono::seconds(plan.seconds) + allowance;
   prepare::ProcessSpec spec{.program = plan.executable,
                             .args = variant != nullptr
                                         ? variant_child_args(plan, *variant, dir / "reglages", out)
                                         : bench_child_args(plan, level, dir / "reglages", out, extra),
-                            .timeout = std::chrono::seconds(plan.seconds) + plan.build_allowance};
+                            .timeout = limit};
   const auto log = log_channel("app");
-  const auto exit =
-      prepare::run_process(spec, [&](std::string_view line) { log->info("essai : {}", line); }, stop);
-  std::optional<BenchReading> reading;
+  ChildTail tail;
+  const auto exit = prepare::run_process(
+      spec,
+      [&](std::string_view line) {
+        tail.add(line);
+        log->info("essai : {}", line);
+        if (plan.shown != nullptr && mentions_build(line))
+          plan.shown->set_note(
+              "Construction d'un moteur de calcul : la première fois seulement, sans doute plusieurs minutes "
+              "sur un portable.");
+      },
+      stop);
   if (!exit) {
-    log->warn("essai : {}", exit.error().detail);
-  } else if (exit->kind == prepare::ExitKind::Cancelled) {
-    cancelled = true;
-  } else if (exit->kind != prepare::ExitKind::Exited || exit->code != 0) {
-    log->warn("essai : {}", prepare::describe(*exit));
-  } else if (auto read = load_reading(out)) {
-    reading = std::move(*read);
+    trial.why = std::format("L'essai {} n'a pas pu démarrer : {}", what, exit.error().detail);
   } else {
-    log->warn("essai : {}", read.error().detail);
+    trial.elapsed = exit->elapsed;
+    if (exit->kind == prepare::ExitKind::Cancelled) {
+      trial.cancelled = true;
+    } else if (exit->kind != prepare::ExitKind::Exited || exit->code != 0) {
+      trial.timed_out = exit->kind == prepare::ExitKind::TimedOut;
+      trial.why = explain_trial(what, *exit, tail.problem(), limit);
+      // Le code de sortie et les dernières lignes de l'enfant : de quoi conclure sans refaire l'essai.
+      log->warn("essai {} : {} ; dernières lignes de l'enfant :\n{}", what, prepare::describe(*exit),
+                tail.text());
+    } else if (auto read = load_reading(out)) {
+      trial.reading = std::move(*read);
+    } else {
+      trial.why = explain_no_reading(what, tail.problem());
+      log->warn("essai {} : {} ; dernières lignes de l'enfant :\n{}", what, read.error().detail, tail.text());
+    }
   }
+  if (!trial.why.empty()) log->warn("{}", trial.why);
   std::filesystem::remove_all(dir, error);
-  return reading;
+  return trial;
 }
 
-}  // namespace
-
-std::vector<std::string> bench_child_args(const BenchPlan& plan, const std::optional<Tier>& level,
-                                          const std::filesystem::path& data_dir,
-                                          const std::filesystem::path& out_file,
-                                          const std::vector<std::string>& extra) {
-  std::vector<std::string> args{
-      "play",
-      prepare::utf8_path(plan.video),
-      std::format("--seconds={}", plan.seconds),
-      "--mute",
-      "--no-resume",
-      std::format("--data-dir={}", prepare::utf8_path(data_dir)),
-      std::format("--bench-out={}", prepare::utf8_path(out_file)),
-      std::format("--bench-level={}", level ? std::to_string(static_cast<int>(*level)) : "auto")};
-  if (plan.fullscreen) args.emplace_back("--fullscreen");
-  if (plan.silent) args.emplace_back("--hidden");
-  args.insert(args.end(), extra.begin(), extra.end());
-  return args;
+std::string level_what(const std::optional<Tier>& level) {
+  return level ? std::format("des réglages « {} »", tier_label(*level)) : std::string("de préparation");
 }
-
-std::vector<std::string> variant_child_args(const BenchPlan& plan, const Variant& variant,
-                                            const std::filesystem::path& data_dir,
-                                            const std::filesystem::path& out_file) {
-  std::vector<std::string> args{"play",
-                                prepare::utf8_path(plan.video),
-                                std::format("--seconds={}", plan.seconds),
-                                "--mute",
-                                "--no-resume",
-                                std::format("--data-dir={}", prepare::utf8_path(data_dir)),
-                                std::format("--bench-out={}", prepare::utf8_path(out_file))};
-  if (plan.fullscreen) args.emplace_back("--fullscreen");
-  if (plan.silent) args.emplace_back("--hidden");
-  args.insert(args.end(), variant.args.begin(), variant.args.end());
-  return args;
-}
-
-namespace {
 
 // Le pire de deux passages : plus de pertes, plus de retard, plus long.
 BenchReading worse(const BenchReading& x, const BenchReading& y) {
@@ -124,14 +193,15 @@ std::expected<CompareOutcome, Refusal> run_compare(const BenchPlan& plan, const 
   for (int index = 0; index < 4; ++index) {
     const Variant& variant = *order[index];
     if (progress) progress(std::format("Essai {}/4 : {}", index + 1, variant.name));
-    bool cancelled = false;
-    auto reading = play_one(plan, std::nullopt, &variant, index, stop, cancelled);
-    if (cancelled) return refuse(RefusalCode::Cancelled, "comparaison annulée");
-    if (!reading)
-      return refuse(RefusalCode::DecodeFailed,
-                    std::format("la variante « {} » n'a rien rendu", variant.name));
+    Trial trial = play_one(plan, std::nullopt, &variant, index, stop, plan.first_allowance,
+                           std::format("de la variante « {} »", variant.name));
+    if (trial.cancelled) return refuse(RefusalCode::Cancelled, "comparaison annulée");
+    if (!trial.reading)
+      return refuse(
+          RefusalCode::DecodeFailed,
+          trial.why.empty() ? std::format("la variante « {} » n'a rien rendu", variant.name) : trial.why);
     std::optional<BenchReading>& slot = got[&variant == &a ? 0 : 1];
-    slot = slot ? worse(*slot, *reading) : std::move(*reading);
+    slot = slot ? worse(*slot, *trial.reading) : std::move(trial.reading);
   }
   const std::optional<BenchReading>& first = got[0];
   const std::optional<BenchReading>& second = got[1];
@@ -169,28 +239,54 @@ std::string format_compare_report(const CompareOutcome& outcome) {
 
 std::expected<BenchOutcome, Refusal> run_bench(const BenchPlan& plan, const std::stop_token& stop,
                                                const std::function<void(const std::string&)>& progress) {
+  const auto say = [&](BenchStep step, const std::string& what, float within, const std::string& note = {}) {
+    if (plan.shown != nullptr) plan.shown->set(step, what, within, note);
+    if (progress) progress(step_line(step, what));
+  };
+  const auto log = log_channel("app");
   BenchOutcome outcome;
   std::string gpu;
   std::string driver;
   std::optional<Tier> level;                          // absent : « auto », le premier essai
   std::vector<std::optional<BenchReading>> readings;  // une par essai, comme outcome.runs
   int index = 0;
+  bool any_held = false;
+  std::chrono::milliseconds first_elapsed{};
   for (; index <= kTierCount; ++index) {
-    if (progress)
-      progress(level ? std::format("Essai : niveau {}", tier_label(*level)) : "Essai : niveau estimé");
-    bool cancelled = false;
-    const auto reading = play_one(plan, level, nullptr, index, stop, cancelled);
-    if (cancelled) return refuse(RefusalCode::Cancelled, "évaluation annulée");
-    if (!level) {
-      if (!reading)
-        return refuse(RefusalCode::DecodeFailed,
-                      "le premier essai n'a rien rendu : la machine n'a pas pu jouer");
-      outcome.estimated = reading->run.level;
-      gpu = reading->gpu;
-      driver = reading->driver;
+    const bool first = outcome.runs.empty();
+    const Tier current = level.value_or(outcome.estimated);  // le niveau joué (le premier essai : l'estimé)
+    if (first) {
+      say(BenchStep::Prepare, "préparation des moteurs et première mesure", 0.1F,
+          "Si c'est la première fois sur ce PC, la construction des moteurs peut prendre plusieurs minutes.");
+    } else {
+      say(BenchStep::Levels, std::format("test des réglages « {} »", tier_label(current)),
+          std::min(0.9F, static_cast<float>(outcome.runs.size() - 1) / 3.0F));
     }
-    outcome.runs.push_back(reading ? reading->run : BenchRun{.level = *level});  // vide : ne tient pas
-    readings.push_back(reading);
+    // Tant qu'aucun niveau n'a tenu, le résultat dépend de cet essai : il a le temps qu'il lui faut. Après,
+    // un niveau dont les moteurs sont trop longs à construire est dit non testé.
+    const std::chrono::seconds allowance = any_held ? plan.build_allowance : plan.first_allowance;
+    Trial trial = play_one(plan, level, nullptr, index, stop, allowance, level_what(level));
+    if (trial.cancelled) return refuse(RefusalCode::Cancelled, "évaluation annulée");
+    if (first) {
+      if (!trial.reading) return refuse(RefusalCode::DecodeFailed, trial.why);
+      outcome.estimated = trial.reading->run.level;
+      gpu = trial.reading->gpu;
+      driver = trial.reading->driver;
+      first_elapsed = trial.elapsed;
+    }
+    if (!first && !trial.reading && trial.timed_out && any_held) {
+      outcome.notes.push_back(std::format(
+          "Les réglages « {} » n'ont pas été testés : leurs moteurs sont longs à construire. Relancez "
+          "l'optimisation pour continuer.",
+          tier_label(current)));
+      log->warn("{}", outcome.notes.back());
+      break;
+    }
+    if (!trial.reading) outcome.notes.push_back(trial.why);
+    outcome.runs.push_back(trial.reading ? trial.reading->run
+                                         : BenchRun{.level = current});  // vide : ne tient pas
+    readings.push_back(trial.reading);
+    if (holds(outcome.runs.back())) any_held = true;
     level = next_level(outcome.runs, outcome.estimated);
     if (!level) break;
   }
@@ -198,69 +294,83 @@ std::expected<BenchOutcome, Refusal> run_bench(const BenchPlan& plan, const std:
 
   // L'exploration, une fois le niveau connu : la hauteur de travail au-dessus de celle du niveau tant que la
   // machine tient, puis le modèle RIFE au-dessus du modèle léger. Le multiplicateur reste au mode Auto, qui
-  // le règle en direct. Un essai qui ne rend rien ou ne tient pas arrête la piste.
+  // le règle en direct. Un essai qui ne rend rien ou ne tient pas arrête la piste. Elle ne construit pas de
+  // moteur : si les moteurs viennent d'être construits (le premier essai a été long), elle est remise à la
+  // prochaine optimisation, où ils sont en cache.
   std::optional<BenchReading> base;
   for (std::size_t i = 0; i < readings.size(); ++i) {
     if (readings[i] && outcome.runs[i].level == outcome.result.level && holds(outcome.runs[i]))
       base = readings[i];
   }
   if (base && outcome.result.level != Tier::Economy && base->work_height > 0) {
-    int tried = 0;
-    const auto explore = [&](const std::string& what, const std::vector<std::string>& extra) {
-      if (progress) progress(std::format("Exploration : {}", what));
+    if (first_elapsed > std::chrono::seconds(plan.seconds) + std::chrono::seconds(90)) {
+      outcome.notes.push_back(
+          "La recherche d'une image plus fine est remise à la prochaine optimisation : les moteurs viennent "
+          "d'être construits.");
+      log->info("{}", outcome.notes.back());
+    } else {
       bool cancelled = false;
-      const auto reading =
-          play_one(plan, outcome.result.level, nullptr, ++index + tried++, stop, cancelled, extra);
-      if (cancelled) return std::optional<BenchReading>();
-      if (reading && holds(reading->run)) return std::optional<BenchReading>(reading);
-      return std::optional<BenchReading>();
-    };
-    int height = base->work_height;
-    while (const auto next = next_work_height(height, kExplorationSourceHeight)) {
-      if (stop.stop_requested()) return refuse(RefusalCode::Cancelled, "évaluation annulée");
-      const auto kept = explore(std::format("{}p", *next), {std::format("--work-height={}", *next)});
-      if (!kept) break;
-      height = *next;
-      outcome.result.work_height = height;
-    }
-    if (const auto better = next_rife_model(base->rife_model)) {
-      if (stop.stop_requested()) return refuse(RefusalCode::Cancelled, "évaluation annulée");
-      std::vector<std::string> extra{std::format("--rife-model={}", *better)};
-      if (outcome.result.work_height > 0)
-        extra.push_back(std::format("--work-height={}", outcome.result.work_height));
-      if (explore(*better, extra)) outcome.result.rife_model = *better;
+      int tried = 0;
+      const auto explore = [&](const std::string& what, const std::vector<std::string>& extra) {
+        say(BenchStep::Explore, std::format("recherche d'une image plus fine ({})", what),
+            std::min(0.9F, static_cast<float>(tried) / 3.0F));
+        Trial trial = play_one(plan, outcome.result.level, nullptr, ++index + tried++, stop,
+                               plan.explore_allowance, std::format("de recherche ({})", what), extra);
+        if (trial.cancelled) {
+          cancelled = true;
+          return false;
+        }
+        return trial.reading && holds(trial.reading->run);
+      };
+      int height = base->work_height;
+      while (const auto next = next_work_height(height, kExplorationSourceHeight)) {
+        if (!explore(std::format("{}p", *next), {std::format("--work-height={}", *next)})) break;
+        height = *next;
+        outcome.result.work_height = height;
+      }
+      if (!cancelled) {
+        if (const auto better = next_rife_model(base->rife_model)) {
+          std::vector<std::string> extra{std::format("--rife-model={}", *better)};
+          if (outcome.result.work_height > 0)
+            extra.push_back(std::format("--work-height={}", outcome.result.work_height));
+          if (explore(*better, extra)) outcome.result.rife_model = *better;
+        }
+      }
+      if (cancelled || stop.stop_requested()) return refuse(RefusalCode::Cancelled, "évaluation annulée");
     }
   }
   return outcome;
 }
 
-std::expected<std::string, Refusal> evaluate_machine(
-    const BenchPlan& plan, const std::filesystem::path& data_dir, const std::stop_token& stop,
-    const std::function<void(const std::string&)>& progress) {
+std::expected<Evaluation, Refusal> evaluate_machine(const BenchPlan& plan,
+                                                    const std::filesystem::path& data_dir,
+                                                    const std::stop_token& stop,
+                                                    const std::function<void(const std::string&)>& progress) {
   // Sans vidéo, le lecteur écrit lui-même la séquence de l'évaluation, une fois pour toutes
   // (media/bench_clip.h).
   BenchPlan own = plan;
-  const auto say = [&](const std::string& text) {
-    if (progress) progress(text);
-  };
-  say("Chargement de tous les moteurs nécessaires au bench");
   if (own.video.empty()) {
     own.video = data_dir / "bench-clip-v2.mkv";
     std::error_code error;
     if (!std::filesystem::is_regular_file(own.video, error)) {
+      if (plan.shown != nullptr) plan.shown->set(BenchStep::Prepare, "écriture de la séquence de test", 0.0F);
       if (auto written = media::write_bench_clip(own.video); !written)
         return std::unexpected(std::move(written.error()));
     }
   }
-  say("Benchmark en cours");
   auto outcome = run_bench(own, stop, progress);
   if (!outcome) return std::unexpected(std::move(outcome.error()));
-  BenchResult result = outcome->result;
-  result.date = std::format("{:%F}", std::chrono::floor<std::chrono::days>(std::chrono::system_clock::now()));
-  std::string report = format_bench_report(*outcome);
-  if (const auto saved = save_bench(data_dir / "bench.toml", result); !saved)
-    report += "bench.toml : " + saved.error().detail + "\n";
-  return report;
+  Evaluation done;
+  done.result = outcome->result;
+  done.result.date =
+      std::format("{:%F}", std::chrono::floor<std::chrono::days>(std::chrono::system_clock::now()));
+  done.report = format_bench_report(*outcome);
+  if (const auto saved = save_bench(data_dir / "bench.toml", done.result); !saved)
+    done.report += "bench.toml : " + saved.error().detail + "\n";
+  for (const std::string& note : outcome->notes) done.report += note + "\n";
+  done.outcome = std::move(*outcome);
+  log_channel("app")->info("évaluation de la machine :\n{}", done.report);
+  return done;
 }
 
 std::string format_bench_report(const BenchOutcome& outcome) {

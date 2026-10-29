@@ -347,7 +347,7 @@ std::expected<void, Refusal> play(const PlayOptions& options, const PlayerPaths&
       const UpdateState update = load_update_state(update_file);
       if (!announced && saved->update_mode == "notify" && !update.latest_version.empty()) {
         announced = true;
-        player.notice = std::format("Mise à jour {} disponible (Paramètres > Général > Mises à jour)",
+        player.notice = std::format("Mise à jour {} disponible (Paramètres > Général > Application)",
                                     update.latest_version);
       }
     }

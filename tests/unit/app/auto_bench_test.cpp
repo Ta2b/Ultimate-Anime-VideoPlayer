@@ -141,7 +141,12 @@ TEST_CASE("la ligne de commande d'un essai : son coupé, dossier jetable, niveau
   CHECK(has("--mute"));
   CHECK(has("--seconds=9"));
   CHECK(has("--no-resume"));
-  CHECK(has("--fullscreen"));
+  CHECK((has("--hidden") || has("--window=320x180")));  // masquée, ou petite et visible sous GNOME / Wayland
+  CHECK_FALSE(has("--fullscreen"));
+  const BenchPlan visible{.executable = "/x/ajp", .video = "/v/a.mkv", .silent = false};
+  const auto shown = bench_child_args(visible, Tier::Light, "/d", "/o");
+  CHECK(std::ranges::find(shown, "--fullscreen") != shown.end());
+  CHECK(std::ranges::find(shown, "--hidden") == shown.end());
   CHECK(has("--bench-level=1"));
   CHECK(has("--data-dir=/tmp/w/d"));
   CHECK(has("--bench-out=/tmp/w/o.toml"));

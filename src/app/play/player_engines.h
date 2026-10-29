@@ -23,6 +23,7 @@
 #include "app/play/placebo_screen.h"
 #include "app/play/player.h"
 #include "app/play/settings.h"
+#include "app/play/span_auto.h"
 #include "app/play/ui.h"
 #include "core/clock.h"
 #include "core/settings.h"
@@ -87,6 +88,9 @@ struct Player {
   // Réglages d'une réouverture demandée : écrits dans play.toml une fois la chaîne ouverte, pas avant
   // (une chaîne qui ne s'ouvre pas ne doit pas devenir celle du prochain lancement).
   std::optional<PlaySettings> unsaved;
+  // La préparation automatique du mode Performance de SPAN (span_auto.h) : elle survit aux réouvertures de la
+  // chaîne et s'arrête avec le lecteur.
+  SpanJob span_job;
 };
 
 // Les messages des backends, sur le canal « backend » du journal.

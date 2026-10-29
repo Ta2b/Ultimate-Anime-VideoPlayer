@@ -241,9 +241,14 @@ void fluidity_tab(PlaySettings& d, const SettingsChoices& choices, bool exportin
     if (ImGui::BeginCombo("Mode d'Auto", shown)) {
       if (ImGui::Selectable("Stable", !d.auto_free)) d.auto_free = false;
       if (ImGui::Selectable("Rapide (expérimental)", d.auto_free)) d.auto_free = true;
-      panel::tip(vrr_armed ? "Aucun palier : chaque image est calculée à l'instant exact où elle sera vue."
-                           : "Sans VRR, la cadence est calée sur le rafraîchissement de l'écran : une image "
-                             "trop tardive laisse la précédente un vsync de plus.");
+      if (vrr_armed) {
+        panel::tip("Aucun palier : chaque image est calculée à l'instant exact où elle sera vue.");
+      } else {
+        panel::tip(
+            "Sans VRR, la cadence est calée sur le rafraîchissement de l'écran : une image trop tardive "
+            "laisse "
+            "la précédente un vsync de plus.");
+      }
       ImGui::EndCombo();
     }
     panel::tip(

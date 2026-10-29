@@ -202,10 +202,14 @@ bool sound_tab(PlaySettings& d, const SettingsChoices& choices) {
         "Tenez le bouton pour entendre la piste sans le Son anime, relâchez pour le retrouver. Le volume "
         "diffère un peu : la normalisation de sonie rapproche aussi les scènes fortes et faibles.");
     const bool applies = active == nullptr || active->channels <= 2;
-    note(applies ? "Actif pour une piste stéréo sur une sortie stéréo ; les pistes mono, 5.1 et 7.1, le mode "
-                   "Home cinéma "
-                   "et le mode Fidèle gardent leur chemin habituel."
-                 : "Cet appareil a plus de 2 canaux : le Son anime ne s'applique qu'à une sortie stéréo.");
+    if (applies) {
+      note(
+          "Actif pour une piste stéréo sur une sortie stéréo ; les pistes mono, 5.1 et 7.1, le mode Home "
+          "cinéma "
+          "et le mode Fidèle gardent leur chemin habituel.");
+    } else {
+      note("Cet appareil a plus de 2 canaux : le Son anime ne s'applique qu'à une sortie stéréo.");
+    }
     if (panel::advanced()) {
       audio::AnimeTuning t = custom ? d.anime_custom : anime_tuning_of(*level, d.anime_custom);
       if (!t.enabled && !custom) t = d.anime_custom;  // Naturel : les curseurs montrent le dernier niveau

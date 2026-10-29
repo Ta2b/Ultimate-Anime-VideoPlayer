@@ -250,13 +250,14 @@ std::expected<SpanDeriveReport, Refusal> derive_span_fp8(const SpanDerivePlan& p
 
 SpanPrepare make_span_prepare(const std::shared_ptr<BackendLibrary>& library, const gpu::BackendInit& init,
                               bool supported, const std::filesystem::path& model,
-                              const std::filesystem::path& models_dir, const std::filesystem::path& video) {
+                              const std::filesystem::path& models_dir, const std::filesystem::path& video,
+                              const std::string& unavailable) {
   SpanPrepare prepare;
   if (!supported) {
-    prepare.note =
-        "Le mode Performance par noyaux FP8 demande une RTX 40 (Ada) avec le moteur TensorRT : ce moteur ou "
-        "cette "
-        "carte ne le calcule pas.";
+    prepare.note = "Le mode Performance (FP8) n'est pas disponible : " +
+                   (unavailable.empty() ? std::string("il demande une RTX 40 (Ada) avec le moteur TensorRT")
+                                        : unavailable) +
+                   ".";
     return prepare;
   }
   if (model.empty()) {
@@ -275,6 +276,7 @@ SpanPrepare make_span_prepare(const std::shared_ptr<BackendLibrary>& library, co
     prepare.ready = true;
     prepare.note = "Prêt : " + found.note;
   } else if (!found.note.empty()) {
+    prepare.refused = true;
     prepare.note = "Refusé : " + found.note;
   } else {
     prepare.note = "Pas encore préparé : la lecture reste sur TensorRT FP16 au cran Performance.";

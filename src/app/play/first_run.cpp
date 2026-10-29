@@ -528,9 +528,9 @@ void draw_wizard_step(FirstRunView& view, Wizard& wizard) {
         ImGui::EndCombo();
       }
       note(
-          "« Évaluer ma machine » (15 s) se lance depuis Général > Configuration, avec une vidéo ouverte : "
-          "le niveau "
-          "estimé suffit pour commencer.");
+          "Une fois les moteurs installés, le bouton « Optimiser pour ma machine » (Paramètres > Général > "
+          "Configuration, environ une minute) règle tout seul ces choix pour votre PC. En attendant, une "
+          "estimation d'après la carte suffit pour commencer.");
       break;
     }
     case WizardStep::Hdr: {

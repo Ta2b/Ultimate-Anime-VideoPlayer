@@ -123,6 +123,7 @@ class PlayerUi {
   static constexpr std::int64_t kTooltipWindowUs = 300'000;
   bool hover_waiting_ = false;
   std::int64_t last_input_us_ = 0;
+  std::int64_t last_busy_frame_us_ = 0;  // la dernière image demandée par une tâche du panneau
   struct Click {
     int button = 0;
     int count = 1;
