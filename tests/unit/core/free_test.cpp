@@ -9,6 +9,7 @@
 
 #include "core/free_grid.h"
 #include "core/free_rate.h"
+#include "core/vsync_phase.h"
 
 using namespace ajp::core;
 
@@ -267,4 +268,135 @@ TEST_CASE("free : dix minutes simulées, GPU de 67 à 55 puis 120 i/s, sans dér
   CHECK(fps2 > 80.0);
   CHECK(fps2 < 121.0);
   CHECK(late * 100 < images);  // moins de 1 % d'images terminées après leur instant
+}
+
+// ---- Écran à fréquence fixe (sans VRR) : les instants tombent sur les vsyncs ----
+
+namespace {
+
+constexpr std::int64_t kVsync = 16'667;  // 60 Hz
+
+std::int64_t off_grid(std::int64_t pts, std::int64_t origin, std::int64_t period) {
+  const std::int64_t r = ((pts - origin) % period + period) % period;
+  return std::min(r, period - r);
+}
+
+}  // namespace
+
+TEST_CASE("free grid vsync : instants multiples de la période d'écran à la phase près", "[free][vsync]") {
+  FreeGrid grid;
+  grid.push(stamp(1, 0), {});
+  const std::int64_t origin = 4'321;
+  const FreeInputs inputs{
+      .min_gap_us = kVsync, .step_us = 12'000, .vsync_period_us = kVsync, .vsync_origin_us = origin};
+  std::int64_t previous = 0;
+  for (std::uint32_t k = 1; k <= 60; ++k) {
+    const CadenceStep step = grid.push(stamp(k + 1, k * kSourcePeriod), inputs);
+    for (const OutputInstant& at : step.instants()) {
+      const std::int64_t pts = *at.pts_us;
+      CHECK(pts > previous);
+      CHECK(pts - previous >= kVsync - kVsync / 8);  // au moins un vsync entre deux images
+      CHECK(pts <= k * kSourcePeriod);
+      if (!at.is_source()) CHECK(off_grid(pts, origin, kVsync) == 0);
+      previous = pts;
+    }
+  }
+}
+
+TEST_CASE("free grid vsync : un GPU plus lent laisse l'image tenue des vsyncs de plus", "[free][vsync]") {
+  FreeGrid grid;
+  grid.push(stamp(1, 0), {});
+  // Un pas de 40 ms (GPU à 25 i/s) sur un écran de 60 Hz : une image tous les 40 ms en moyenne, jamais entre
+  // deux vsyncs.
+  const FreeInputs inputs{
+      .min_gap_us = kVsync, .step_us = 40'000, .vsync_period_us = kVsync, .vsync_origin_us = 0};
+  std::int64_t count = 0;
+  std::int64_t last = 0;
+  for (std::uint32_t k = 1; k <= 240; ++k) {
+    for (const OutputInstant& at : grid.push(stamp(k + 1, k * kSourcePeriod), inputs).instants()) {
+      if (!at.is_source()) CHECK(off_grid(*at.pts_us, 0, kVsync) == 0);
+      ++count;
+      last = *at.pts_us;
+    }
+  }
+  const double fps = static_cast<double>(count) * 1e6 / static_cast<double>(last);
+  CHECK(fps > 22.0);
+  CHECK(fps < 26.0);
+  // Une paire déjà passée (horloge prédite) : la source seule, l'image précédente reste tenue.
+  const CadenceStep late =
+      grid.push(stamp(300, 241 * kSourcePeriod), FreeInputs{.ready_us = 241 * kSourcePeriod + 1,
+                                                            .min_gap_us = kVsync,
+                                                            .step_us = 12'000,
+                                                            .vsync_period_us = kVsync});
+  REQUIRE(late.instants().size() == 1);
+  CHECK(late.instants()[0].is_source());
+}
+
+TEST_CASE("vsync phase : suit la phase des présentations et rend le vsync le plus proche", "[free][vsync]") {
+  VsyncPhase phase;
+  CHECK(phase.near(1'000'000) == 1'000'000);  // inconnue
+  phase.set_period(kVsync);
+  const std::int64_t offset = 5'000;
+  for (int k = 0; k < 200; ++k) phase.note(offset + k * kVsync + (k % 3 - 1) * 300);  // gigue de ±0,3 ms
+  REQUIRE(phase.known());
+  const std::int64_t near = phase.near(100 * kVsync + 7'000);
+  CHECK(off_grid(near, offset, kVsync) <= 300);
+  CHECK(std::abs(near - (100 * kVsync + 7'000)) <= kVsync / 2 + 300);
+}
+
+TEST_CASE("free vsync : dix minutes simulées, horloge qui dérive de ±0,1 %, sans dérive de phase",
+          "[free][vsync]") {
+  for (const double drift : {+0.001, -0.001}) {
+    // Le temps de contenu avance de (1 + drift) par µs d'hôte (horloge audio contre horloge de l'écran) ; les
+    // vsyncs réels sont à 3 ms + k × période (hôte), vus avec une gigue de ±0,2 ms.
+    const auto media_at = [drift](std::int64_t host) {
+      return static_cast<std::int64_t>(std::llround(static_cast<double>(host) * (1.0 + drift)));
+    };
+    const std::int64_t delay = 20'000;
+    const std::int64_t true_origin = 3'000;
+    FreeGrid grid;
+    VsyncPhase phase;
+    phase.set_period(kVsync);
+    std::int64_t vsync_index = 0;  // les vsyncs notés jusqu'ici
+    std::int64_t previous = -1;
+    std::int64_t worst = 0;
+    std::int64_t images = 0;
+    std::int64_t pts = 0;
+    grid.push(stamp(0, 0), {});
+    for (std::uint32_t id = 1; pts < 600'000'000; ++id) {
+      pts += kSourcePeriod;
+      // La paire est préparée 150 ms avant son pts (hôte).
+      const auto host_now = static_cast<std::int64_t>(static_cast<double>(pts) / (1.0 + drift)) - 150'000;
+      while (true_origin + (vsync_index + 1) * kVsync <= host_now) {
+        ++vsync_index;
+        phase.note(true_origin + vsync_index * kVsync + (vsync_index % 3 - 1) * 200);
+      }
+      if (!phase.known()) {
+        grid.push(stamp(id, pts), {});
+        continue;
+      }
+      const std::int64_t anchor = phase.near(host_now) + delay + kVsync / 2;
+      const FreeInputs inputs{
+          .ready_us = media_at(host_now) + 15'000,
+          .min_gap_us = kVsync,
+          .step_us = 22'000,
+          .vsync_period_us = static_cast<std::int64_t>(std::llround(kVsync * (1.0 + drift))),
+          .vsync_origin_us = media_at(anchor)};
+      for (const OutputInstant& at : grid.push(stamp(id, pts), inputs).instants()) {
+        const std::int64_t value = *at.pts_us;
+        REQUIRE(value > previous);
+        previous = value;
+        ++images;
+        if (at.is_source()) continue;
+        // Le vsync réel de cette image : son pts ramené à l'hôte, moins le délai et une demi-période.
+        const double host =
+            static_cast<double>(value) / (1.0 + drift) - static_cast<double>(delay + kVsync / 2);
+        const double r =
+            std::fmod(host - static_cast<double>(true_origin) + 1e12, static_cast<double>(kVsync));
+        worst = std::max(worst, static_cast<std::int64_t>(std::min(r, static_cast<double>(kVsync) - r)));
+      }
+    }
+    CHECK(images > 20'000);
+    CHECK(worst < 1'000);  // jamais à plus d'1 ms de son vsync pendant dix minutes
+  }
 }

@@ -397,7 +397,8 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
   std::int64_t display_polled_at = saved_at;
   p.ui.controls().show_deferred(host_now_us());
   // Le mode auto : son plafond suit la fréquence de l'écran.
-  bool vrr_armed = p.display && p.display->vrr.value_or(false) && p.display->vrr_armed.value_or(false);
+  bool vrr_armed = !p.options.no_vrr && p.display && p.display->vrr.value_or(false) &&
+                   p.display->vrr_armed.value_or(false);
   std::string free_note;  // pourquoi Auto libre ne tourne pas alors qu'il est choisi (vide : il tourne ou
                           // n'est pas voulu)
   const auto apply_auto = [&] {
@@ -409,11 +410,9 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
     // Auto libre (core/free_grid.h) : écran VRR armé, RIFE, fréquence de l'écran connue ; sinon Auto.
     std::string why;
     if (on && chain.running.auto_free) {
-      if (!vrr_armed)
-        why = "écran non VRR ou VRR coupé";
-      else if (free_instants_limit(chain.running.motion_engine) == 0)
+      if (free_instants_limit(chain.running.motion_engine) == 0)
         why = std::format("{} ne calcule pas à un instant libre", label(chain.running.motion_engine));
-      else if (limit_hz <= 0.0)
+      else if (limit_hz <= 0.0 || (!vrr_armed && display_period_us(out.window()) <= 0))
         why = "fréquence de l'écran inconnue";
     }
     const bool free = on && chain.running.auto_free && why.empty();
@@ -427,7 +426,13 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
     chain.live.set_auto(on && !free, core::auto_ceiling(limit_hz, fps_of(video.frame_rate), granularity),
                         granularity);
     // Écart minimal entre deux images : la période de l'écran ou du plafond, à 1 % près (jamais plus vite).
-    chain.live.set_free(free, limit_hz > 0.0 ? std::llround(1e6 / (limit_hz * 0.99)) : 0, host_now_us());
+    // Écran à fréquence fixe (sans VRR, ou VRR coupé) : les instants tombent sur les vsyncs, l'écart minimal
+    // est la période de l'écran (ou du plafond, s'il est plus lent).
+    const std::int64_t refresh_us = display_period_us(out.window());
+    const bool vsync = free && !vrr_armed;
+    chain.live.set_free(free, limit_hz > 0.0 ? std::llround(1e6 / (vsync ? limit_hz : limit_hz * 0.99)) : 0,
+                        host_now_us());
+    chain.live.set_vsync(vsync ? refresh_us : 0, session.visible_delay_us());
   };
   apply_auto();
   // Le dernier palier tenu pour cette vidéo, ce moteur, cette hauteur de travail et ce GPU : le départ.
@@ -551,7 +556,8 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
         vrr_fullscreen = fullscreen;
         if (const auto display = read_display(display_name(out.window()))) {
           p.ui.set_display_vrr(display->vrr.value_or(false), display->vrr_armed.value_or(false), fullscreen);
-          const bool armed = display->vrr.value_or(false) && display->vrr_armed.value_or(false);
+          const bool armed =
+              !p.options.no_vrr && display->vrr.value_or(false) && display->vrr_armed.value_or(false);
           if (armed != vrr_armed) {
             vrr_armed = armed;
             apply_auto();  // les demi-paliers suivent le VRR
@@ -592,6 +598,7 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
       failure = std::move(record.error());
       break;
     }
+    if (*record && (*record)->fresh) chain.live.vsync_note((*record)->host_us);
     if (*record && stats.is_open()) write_record(stats, **record);
     // Rien de présenté (rien n'a changé, ou fenêtre cachée) : la FIFO n'impose pas le rythme. En
     // lecture, la boucle reprend dans 1 ms pour ne pas manquer l'image suivante ; en pause, elle

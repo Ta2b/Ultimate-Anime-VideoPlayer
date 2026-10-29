@@ -226,28 +226,29 @@ void fluidity_tab(PlaySettings& d, const SettingsChoices& choices, bool exportin
         "i/s pour ménager le GPU. Il baisse toujours de lui-même quand une scène est lourde.");
   }
   if (d.rife_auto && now.num > now.den && !exporting) {
-    // Auto libre : réservé à un écran VRR armé (la cadence n'y est liée à rien) ; il reste choisi, grisé, si
-    // le VRR se coupe : la lecture repasse alors sur Auto toute seule.
+    // Auto libre : sur un écran VRR armé, chaque image part dès qu'elle est prête ; sans VRR, les instants
+    // sont calés sur les vsyncs de l'écran (comme un jeu en vsync). Dans les deux cas la lecture repasse sur
+    // Auto si trop d'images sont perdues.
     const bool vrr_armed = choices.display_vrr && choices.display_vrr_armed;
     const char* const shown = d.auto_free ? "Auto libre (expérimental)" : "Auto (recommandé)";
     if (ImGui::BeginCombo("Mode d'Auto", shown)) {
       if (ImGui::Selectable("Auto (recommandé)", !d.auto_free)) d.auto_free = false;
-      ImGui::BeginDisabled(!vrr_armed);
       if (ImGui::Selectable("Auto libre (expérimental)", d.auto_free)) d.auto_free = true;
-      ImGui::EndDisabled();
-      panel::tip(vrr_armed ? "Aucun palier : chaque image est calculée à l'instant exact où elle sera vue."
-                           : "Réservé à un écran VRR armé (G-Sync / FreeSync / Adaptive Sync actif, plein "
-                             "écran sous KDE) : ici l'écran n'en a pas, ou le système l'a coupé.");
+      panel::tip(vrr_armed
+                     ? "Aucun palier : chaque image est calculée à l'instant exact où elle sera vue."
+                     : "Sans VRR, la cadence est calée sur le rafraîchissement de l'écran : chaque image "
+                       "est calculée pour un vsync exact, et une image trop tardive laisse la précédente "
+                       "un vsync de plus (comme un jeu en vsync).");
       ImGui::EndCombo();
     }
     panel::tip(
         "Auto (recommandé) : paliers de multiplicateur qui suivent ce que le GPU tient. Auto libre "
-        "(expérimental, écran VRR armé) : aucun palier ni multiplicateur, comme un moteur de jeu. Le lecteur "
-        "calcule chaque image à l'instant exact de la vidéo où elle sera affichée, dès que le GPU est libre, "
-        "sans dépasser l'écran ni le plafond : le débit est ce que le GPU tient, la vitesse de la vidéo "
-        "reste "
-        "constante. Si trop d'images sont perdues (3 % sur 3 s), la lecture repasse sur Auto avec un "
-        "message.");
+        "(expérimental) : aucun palier ni multiplicateur, comme un moteur de jeu. Le lecteur calcule chaque "
+        "image à l'instant exact de la vidéo où elle sera affichée, dès que le GPU est libre, sans dépasser "
+        "l'écran ni le plafond : le débit est ce que le GPU tient, la vitesse de la vidéo reste constante. "
+        "Sur un écran VRR armé, l'image part quand elle est prête ; sans VRR, la cadence est calée sur le "
+        "rafraîchissement de l'écran (un vsync par image au mieux). Si trop d'images sont perdues (3 % sur "
+        "3 s), la lecture repasse sur Auto avec un message.");
   }
   if (d.rife_auto && now.num > now.den) {
     panel::tip(
@@ -311,7 +312,7 @@ void fluidity_tab(PlaySettings& d, const SettingsChoices& choices, bool exportin
       const bool heavy = *mark == Badge::Heaviest;
       panel::badge(std::string(badge_text(*mark)).c_str(), *mark == Badge::Recommended ? panel::kGood
                                                            : heavy                     ? panel::kWarn
-                                                           : *mark == Badge::Finest    ? panel::kFine
+                                                           : *mark == Badge::Finest ? panel::kFine
                                                                                     : panel::kExperimental);
     }
   }
