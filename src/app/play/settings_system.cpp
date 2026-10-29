@@ -22,12 +22,11 @@ using panel::note;
 using panel::section;
 
 void default_player_page(const PlayerPlace& place, SystemNote& last, bool& dismissed, bool already_default) {
-  section("Lecteur par défaut");
-  ImGui::TextWrapped(
-      "Les vidéos (mkv, mp4, webm, avi, mov…) s'ouvrent dans AJP depuis le gestionnaire de fichiers.");
-  if (already_default) note("AJP est déjà le lecteur par défaut des vidéos.");
-  ImGui::Checkbox("Ne plus me le demander", &dismissed);
-  panel::tip("Le lecteur ne propose plus de devenir le lecteur par défaut au lancement.");
+  section(i18n::tr("Default player"));
+  ImGui::TextWrapped(i18n::tr("Videos (mkv, mp4, webm, avi, mov…) open in AJP from the file manager."));
+  if (already_default) note(i18n::tr("AJP is already the default video player."));
+  ImGui::Checkbox(i18n::tr("Don't ask again"), &dismissed);
+  panel::tip(i18n::tr("The player no longer offers to become the default at launch."));
 #ifdef __APPLE__
   static_cast<void>(last);
   note(register_player(place).value_or(std::string()));
@@ -44,14 +43,14 @@ void default_player_page(const PlayerPlace& place, SystemNote& last, bool& dismi
     last.refused = false;
   };
   ImGui::BeginDisabled(busy);
-  if (ImGui::Button("Faire de ce lecteur le lecteur par défaut")) start(&choose_as_default);
-  panel::same_line_if_fits("Ajouter à « Ouvrir avec »");
-  if (ImGui::Button("Ajouter à « Ouvrir avec »")) start(&register_player);
-  panel::same_line_if_fits("Retirer de « Ouvrir avec »");
-  if (ImGui::Button("Retirer de « Ouvrir avec »")) start(&unregister_player);
+  if (ImGui::Button(i18n::tr("Make this the default player"))) start(&choose_as_default);
+  panel::same_line_if_fits(i18n::tr("Add to \"Open with\""));
+  if (ImGui::Button(i18n::tr("Add to \"Open with\""))) start(&register_player);
+  panel::same_line_if_fits(i18n::tr("Remove from \"Open with\""));
+  if (ImGui::Button(i18n::tr("Remove from \"Open with\""))) start(&unregister_player);
   ImGui::EndDisabled();
   if (busy) {
-    note("En cours…");
+    note(i18n::tr("Working…"));
   } else if (last.refused) {
     ImGui::PushStyleColor(ImGuiCol_Text, kWarn);
     ImGui::TextWrapped("%s", last.text.c_str());
@@ -89,14 +88,13 @@ bool default_player_prompt(const PlayerPlace& place, SystemNote& last, bool& dis
   bool closed = false;
   constexpr ImGuiWindowFlags kFlags = ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoResize |
                                       ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_AlwaysAutoResize;
-  if (ImGui::Begin("Lecteur par défaut", nullptr, kFlags)) {
-    ImGui::TextWrapped(
-        "Ouvrir vos vidéos (mkv, mp4, webm…) directement dans AJP depuis le gestionnaire de fichiers ?");
+  if (ImGui::Begin(i18n::tr("Default player"), nullptr, kFlags)) {
+    ImGui::TextWrapped(i18n::tr("Open your videos (mkv, mp4, webm…) directly in AJP from the file manager?"));
     ImGui::Spacing();
     const bool busy = last.pending != nullptr;
     const bool done = !last.text.empty() && !last.refused;
     ImGui::BeginDisabled(busy || done);
-    if (ImGui::Button("Définir AJP comme lecteur par défaut")) {
+    if (ImGui::Button(i18n::tr("Set AJP as default player"))) {
       last.pending = std::make_shared<std::future<std::expected<std::string, Refusal>>>(
           std::async(std::launch::async, &choose_as_default, place));
       last.text.clear();
@@ -104,10 +102,10 @@ bool default_player_prompt(const PlayerPlace& place, SystemNote& last, bool& dis
     }
     ImGui::EndDisabled();
     ImGui::SameLine();
-    if (ImGui::Button(done ? "Fermer" : "Plus tard")) closed = true;
-    ImGui::Checkbox("Ne plus me le demander", &dismissed);
+    if (ImGui::Button(done ? i18n::tr("Close") : i18n::tr("Later"))) closed = true;
+    ImGui::Checkbox(i18n::tr("Don't ask again"), &dismissed);
     if (busy) {
-      note("En cours…");
+      note(i18n::tr("Working…"));
     } else if (last.refused) {
       ImGui::PushStyleColor(ImGuiCol_Text, kWarn);
       ImGui::TextWrapped("%s", last.text.c_str());
@@ -115,7 +113,7 @@ bool default_player_prompt(const PlayerPlace& place, SystemNote& last, bool& dis
     } else if (!last.text.empty()) {
       note(last.text);
     }
-    note("Réglage modifiable plus tard : Général > Application.");
+    note(i18n::tr("You can change this later in General > Application."));
   }
   ImGui::End();
   return closed;
@@ -144,48 +142,49 @@ void updates_page(PlaySettings& d, const PlayerPlace& place, UpdateNote& result)
   const UpdateState state = load_update_state(state_file);
   const std::string managed = update_managed_reason(paths);
 
-  section("Mises à jour");
+  section(i18n::tr("Updates"));
   struct Mode {
     const char* key;
     const char* label;
     const char* detail;
   };
   constexpr std::array<Mode, 3> kModes{
-      {{"notify", "Me prévenir", "Une notification ; vous lancez la mise à jour vous-même."},
-       {"auto", "Automatique", "Téléchargée, vérifiée, installée au prochain lancement."},
-       {"never", "Jamais", "Aucune vérification."}}};
+      {{"notify", "Notify me", "A notification; you start the update yourself."},
+       {"auto", "Automatic", "Downloaded, verified, installed at next launch."},
+       {"never", "Never", "No checks."}}};
   ImGui::BeginDisabled(!managed.empty());
   for (const Mode& mode : kModes) {
-    if (ImGui::RadioButton(mode.label, d.update_mode == mode.key)) d.update_mode = mode.key;
-    panel::tip(mode.detail);
+    if (ImGui::RadioButton(i18n::tr(mode.label), d.update_mode == mode.key)) d.update_mode = mode.key;
+    panel::tip(i18n::tr(mode.detail));
   }
   ImGui::EndDisabled();
   if (!managed.empty()) note(managed);
   if (std::string_view(update_public_key()).empty())
-    note("Ce paquet n'a pas de clé de signature : les mises à jour ne peuvent pas être vérifiées.");
+    note(i18n::tr("This package has no signing key: updates cannot be verified."));
 
-  section("Canal et fréquence");
+  section(i18n::tr("Channel and frequency"));
   ImGui::BeginDisabled(!managed.empty());
-  if (ImGui::BeginCombo("Canal", d.update_channel == "preview" ? "Préversions" : "Stable")) {
+  if (ImGui::BeginCombo(i18n::tr("Channel"),
+                        d.update_channel == "preview" ? i18n::tr("Previews") : "Stable")) {
     if (ImGui::Selectable("Stable", d.update_channel == "stable")) d.update_channel = "stable";
-    if (ImGui::Selectable("Préversions", d.update_channel == "preview")) d.update_channel = "preview";
+    if (ImGui::Selectable(i18n::tr("Previews"), d.update_channel == "preview")) d.update_channel = "preview";
     ImGui::EndCombo();
   }
-  const char* frequency = d.update_frequency == "launch"   ? "À chaque lancement"
-                          : d.update_frequency == "weekly" ? "Chaque semaine"
-                                                           : "Chaque jour";
-  if (ImGui::BeginCombo("Fréquence", frequency)) {
-    if (ImGui::Selectable("À chaque lancement", d.update_frequency == "launch"))
+  const char* frequency = d.update_frequency == "launch"   ? i18n::tr("At every launch")
+                          : d.update_frequency == "weekly" ? i18n::tr("Weekly")
+                                                           : i18n::tr("Daily");
+  if (ImGui::BeginCombo(i18n::tr("Frequency"), frequency)) {
+    if (ImGui::Selectable(i18n::tr("At every launch"), d.update_frequency == "launch"))
       d.update_frequency = "launch";
-    if (ImGui::Selectable("Chaque jour", d.update_frequency == "daily")) d.update_frequency = "daily";
-    if (ImGui::Selectable("Chaque semaine", d.update_frequency == "weekly")) d.update_frequency = "weekly";
+    if (ImGui::Selectable(i18n::tr("Daily"), d.update_frequency == "daily")) d.update_frequency = "daily";
+    if (ImGui::Selectable(i18n::tr("Weekly"), d.update_frequency == "weekly")) d.update_frequency = "weekly";
     ImGui::EndCombo();
   }
   ImGui::EndDisabled();
-  note(std::format("Version installée : {}", installed_version()));
+  note(i18n::tr_format("Installed version: {}", installed_version()));
   if (!state.latest_version.empty())
-    note(std::format("Disponible : {}{}", state.latest_version,
-                     state.staged_version.empty() ? "" : " (préparée)"));
+    note(i18n::tr_format("Available: {}{}", state.latest_version,
+                         state.staged_version.empty() ? "" : i18n::tr(" (ready)")));
   if (state.last_check_unix > 0) {
     const std::time_t at = static_cast<std::time_t>(state.last_check_unix);
     std::tm local{};
@@ -196,12 +195,12 @@ void updates_page(PlaySettings& d, const PlayerPlace& place, UpdateNote& result)
 #endif
     std::array<char, 32> text{};
     std::strftime(text.data(), text.size(), "%Y-%m-%d %H:%M", &local);
-    note(std::format("Dernière vérification : {}", text.data()));
+    note(i18n::tr_format("Last check: {}", text.data()));
   }
 
   const bool busy = result.pending != nullptr;
   ImGui::BeginDisabled(busy);
-  if (ImGui::Button("Vérifier maintenant")) {
+  if (ImGui::Button(i18n::tr("Check now"))) {
     result.pending = std::make_shared<std::future<std::expected<std::string, Refusal>>>(std::async(
         std::launch::async,
         [paths, state_file, mode = d.update_mode,
@@ -217,7 +216,7 @@ void updates_page(PlaySettings& d, const PlayerPlace& place, UpdateNote& result)
   }
   ImGui::SameLine();
   ImGui::BeginDisabled(state.previous_version.empty());
-  if (ImGui::Button("Revenir à la version précédente")) {
+  if (ImGui::Button(i18n::tr("Roll back to the previous version"))) {
     result.pending = std::make_shared<std::future<std::expected<std::string, Refusal>>>(
         std::async(std::launch::async, [paths, state_file] -> std::expected<std::string, Refusal> {
           UpdateState current = load_update_state(state_file);
@@ -225,16 +224,16 @@ void updates_page(PlaySettings& d, const PlayerPlace& place, UpdateNote& result)
           if (!message) return message;
           if (const auto kept = save_update_state(state_file, current); !kept)
             return std::unexpected(kept.error());
-          return *message + " : relancez le lecteur";
+          return *message + i18n::tr(": restart the player");
         }));
     result.text.clear();
     result.refused = false;
   }
-  if (state.previous_version.empty()) panel::tip("Grisé : aucune mise à jour n'a encore été installée.");
+  if (state.previous_version.empty()) panel::tip(i18n::tr("Greyed out: no update has been installed yet."));
   ImGui::EndDisabled();
   ImGui::EndDisabled();
   if (busy) {
-    note("En cours…");
+    note(i18n::tr("Working…"));
   } else if (result.refused) {
     ImGui::PushStyleColor(ImGuiCol_Text, kWarn);
     ImGui::TextWrapped("%s", result.text.c_str());
@@ -242,7 +241,7 @@ void updates_page(PlaySettings& d, const PlayerPlace& place, UpdateNote& result)
   } else if (!result.text.empty()) {
     note(result.text);
   }
-  if (!state.last_error.empty() && result.text.empty()) note("Dernière erreur : " + state.last_error);
+  if (!state.last_error.empty() && result.text.empty()) note(i18n::tr("Last error: ") + state.last_error);
 }
 
 bool start_span_prepare(const SpanPrepare& prepare, PrepareNote& state) {
@@ -266,22 +265,20 @@ bool start_span_prepare(const SpanPrepare& prepare, PrepareNote& state) {
 }
 
 void span_prepare_section(const SpanPrepare& prepare, PrepareNote& state) {
-  section("Mode Performance de SPAN (FP8)");
+  section(i18n::tr("SPAN Performance mode (FP8)"));
   ImGui::TextWrapped(
-      "Quand le cran « Performance » de la précision de SPAN est choisi, le lecteur prépare tout seul ce "
-      "mode pour "
-      "la vidéo ouverte (une minute environ, la lecture reste en FP16 pendant ce temps). Cette page sert à "
-      "le refaire à la main.");
+      i18n::tr("With SPAN's Performance precision, the player prepares this mode by itself for the open "
+               "video (about a minute, FP16 meanwhile). Redo it by hand here."));
   poll_prepare(state);
   const bool busy = state.pending != nullptr;
   note(prepare.note);
   if (prepare.offered) {
     ImGui::BeginDisabled(busy);
-    if (ImGui::Button("Refaire la préparation sur cette vidéo")) start_span_prepare(prepare, state);
+    if (ImGui::Button(i18n::tr("Prepare again for this video"))) start_span_prepare(prepare, state);
     ImGui::EndDisabled();
     if (busy) {
       ImGui::SameLine();
-      if (ImGui::Button("Annuler##span_prepare") && state.stop) state.stop->request_stop();
+      if (ImGui::Button(i18n::tr("Cancel##span_prepare")) && state.stop) state.stop->request_stop();
     }
   }
   if (busy && state.progress) {
@@ -342,7 +339,7 @@ std::expected<SpanFp8Verdict, Refusal> span_step(const BenchContext& context, Ti
   if (context.span.ready) return SpanFp8Verdict{State::Ready, {}};
   if (level < Tier::Light || !context.span.offered || !context.span.run || context.span.refused)
     return SpanFp8Verdict{};
-  shown.set(BenchStep::Span, "préparation du mode Performance de SPAN (FP8)", 0.0F);
+  shown.set(BenchStep::Span, i18n::tr("SPAN Performance mode (FP8) preparation"), 0.0F);
   auto done = context.span.run(span_progress, stop);
   if (done) return SpanFp8Verdict{State::Ready, {}};
   if (done.error().code == RefusalCode::Cancelled) return std::unexpected(std::move(done.error()));
@@ -364,12 +361,10 @@ BenchEvent bench_page(const PlayerPlace& place, const std::filesystem::path& vid
   BenchEvent event = BenchEvent::None;
   if (!bench.state) bench.state = std::make_shared<BenchState>();
   BenchState& state = *bench.state;
-  section("Optimiser pour ma machine");
-  ImGui::TextWrapped(
-      "Le lecteur essaie quelques secondes de vidéo avec ses réglages recommandés, du plus léger au plus "
-      "lourd, "
-      "garde ceux que votre PC tient sans saccade, et les applique. Cela dure environ une minute (plusieurs "
-      "minutes la toute première fois, le temps de préparer les moteurs).");
+  section(i18n::tr("Optimize for this machine"));
+  ImGui::TextWrapped(i18n::tr(
+      "The player tries a few seconds of video with its recommended settings, lightest to heaviest, keeps "
+      "what your PC holds without stutter and applies it. About a minute (several the first time)."));
   // Le résultat arrive : les réglages recommandés sont posés dans le brouillon, une fois.
   if (state.pending && state.pending->wait_for(std::chrono::seconds(0)) == std::future_status::ready) {
     std::expected<BenchDone, Refusal> done = state.pending->get();
@@ -391,7 +386,7 @@ BenchEvent bench_page(const PlayerPlace& place, const std::filesystem::path& vid
                                             .fps = context.source_fps});
       event = BenchEvent::Applied;
     } else if (done.error().code == RefusalCode::Cancelled) {
-      bench.text = "Optimisation annulée : rien n'a changé.";
+      bench.text = i18n::tr("Optimization cancelled: nothing changed.");
       bench.refused = false;
       state.undo = BenchUndo{};
     } else {
@@ -402,7 +397,7 @@ BenchEvent bench_page(const PlayerPlace& place, const std::filesystem::path& vid
   }
   const bool measuring = state.pending != nullptr;
   ImGui::BeginDisabled(measuring || place.executable.empty());
-  if (ImGui::Button("Optimiser pour ma machine")) {
+  if (ImGui::Button(i18n::tr("Optimize for this machine"))) {
     state.undo = capture_undo(context.data_dir / "bench.toml", draft);
     state.progress = std::make_shared<BenchProgress>();
     state.span_progress = std::make_shared<SpanDeriveProgress>();
@@ -440,7 +435,7 @@ BenchEvent bench_page(const PlayerPlace& place, const std::filesystem::path& vid
   ImGui::EndDisabled();
   if (state.pending) {
     ImGui::SameLine();
-    if (ImGui::Button("Annuler##bench")) state.stop->request_stop();
+    if (ImGui::Button(i18n::tr("Cancel##bench"))) state.stop->request_stop();
     const BenchProgress::View view = state.progress->get();
     float fraction = view.fraction;
     if (view.step == BenchStep::Span)
@@ -455,7 +450,7 @@ BenchEvent bench_page(const PlayerPlace& place, const std::filesystem::path& vid
   } else if (!bench.text.empty()) {
     ImGui::TextWrapped("%s", bench.text.c_str());
     if (state.undo.valid && state.result) {
-      if (ImGui::Button("Annuler ces réglages")) {
+      if (ImGui::Button(i18n::tr("Undo these settings"))) {
         if (const auto restored = restore_bench_file(state.undo, context.data_dir / "bench.toml");
             !restored) {
           bench.text = restored.error().detail;
@@ -464,7 +459,7 @@ BenchEvent bench_page(const PlayerPlace& place, const std::filesystem::path& vid
           draft = state.undo.settings;
           state.undo = BenchUndo{};
           state.result.reset();
-          bench.text = "Réglages d'avant rétablis.";
+          bench.text = i18n::tr("Previous settings restored.");
           event = BenchEvent::Undone;
         }
       }
