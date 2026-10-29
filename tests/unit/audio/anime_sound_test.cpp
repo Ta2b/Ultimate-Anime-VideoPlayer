@@ -367,12 +367,14 @@ TEST_CASE("aucun écrêtage, y compris en vrai-crête", "[anime][limiteur]") {
     AnimeTuning t = find_anime_level("anime")->tuning;
     t.loudness = false;
     t.ceiling_db = -1.0F;
+    t.compress = 0.0F;  // le limiteur seul
     const Stereo out = render(headphones ? phones(t) : speakers(t), in);
     const Stereo settled(out.begin() + 4800 * 2, out.end());
     const double tp = true_peak_db(settled, kRate);
     INFO((headphones ? "casque" : "enceintes") << " crête échantillons " << peak_abs(out) << " vraie " << tp);
     CHECK(peak_abs(out) <= 1.0);
     CHECK(tp <= -1.0 + 0.3);  // le plafond de -1 dBTP, à la précision de l'interpolation près
+    CHECK(tp >= -1.0 - 0.7);  // sans sur-limiter
   }
   // Une musique forte, par blocs de tailles variées.
   const Stereo loud = anime_mix(6.0, 1.2, 0.8);
@@ -710,4 +712,55 @@ TEST_CASE("tableau : réponse d'un sinus centré (dB) par mode", "[.anime_repons
   row("casque neutre", phones(neutral));
   row("casque anime", phones(anime));
   row("casque naturel", MixConfig{.listen = Listen::Headphones, .sample_rate = kRate});
+}
+
+TEST_CASE("tableau : mono, vrai-crête, latence, corrélation", "[.anime_mesures]") {
+  const Stereo in = anime_mix(6.0);
+  const double reference = rms_db(mono_sum(render(speakers(AnimeTuning{}), in)), kRate);
+  for (const char* key : {"anime", "strong"}) {
+    for (const bool headphones : {false, true}) {
+      AnimeTuning t = dry(find_anime_level(key)->tuning);
+      const Stereo out = render(headphones ? phones(t) : speakers(t), in);
+      std::printf("mono %-7s %-9s somme G+D : %+.2f dB vs Naturel\n", key,
+                  headphones ? "casque" : "enceintes", rms_db(mono_sum(out), kRate) - reference);
+    }
+  }
+  Stereo hot(kRate * 3 * 2);
+  for (std::size_t f = 0; f < hot.size() / 2; ++f)
+    hot[f * 2] = hot[f * 2 + 1] = static_cast<float>(
+        1.4 * std::sin(kTwoPi * 12000.0 * static_cast<double>(f) / kRate + std::numbers::pi / 4));
+  for (const bool headphones : {false, true}) {
+    AnimeTuning t = find_anime_level("anime")->tuning;
+    t.loudness = false;
+    t.compress = 0.0F;
+    const Stereo out = render(headphones ? phones(t) : speakers(t), hot);
+    std::printf("écrêtage %-9s : crête échantillons %.4f, vraie %.2f dBTP\n",
+                headphones ? "casque" : "enceintes", peak_abs(out),
+                true_peak_db(Stereo(out.begin() + 9600, out.end()), kRate));
+  }
+  Stereo pulse(kRate * 2, 0.0F);
+  pulse[4000] = pulse[4001] = 0.5F;
+  for (const bool headphones : {false, true}) {
+    const Stereo out = render(
+        headphones ? phones(find_anime_level("anime")->tuning) : speakers(find_anime_level("anime")->tuning),
+        pulse);
+    const double top = peak_abs(out);
+    std::size_t first = 0;
+    for (std::size_t f = 0; f < out.size() / 2; ++f) {
+      if (std::fabs(out[f * 2]) > 0.3 * top) {
+        first = f;
+        break;
+      }
+    }
+    std::printf("latence %-9s : %.2f ms\n", headphones ? "casque" : "enceintes",
+                1000.0 * static_cast<double>(first - 2000) / kRate);
+  }
+  const Stereo music = synth_music(8.0, 0.2);
+  std::printf("corrélation musique : naturel %.3f", correlation(music, kRate));
+  for (const bool headphones : {false, true}) {
+    AnimeTuning t = dry(find_anime_level("anime")->tuning);
+    std::printf(" | %s %.3f", headphones ? "casque" : "enceintes",
+                correlation(render(headphones ? phones(t) : speakers(t), music), kRate));
+  }
+  std::printf("\n");
 }
