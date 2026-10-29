@@ -313,7 +313,9 @@ TEST_CASE("free grid vsync : un GPU plus lent laisse l'image tenue des vsyncs de
   std::int64_t count = 0;
   std::int64_t last = 0;
   for (std::uint32_t k = 1; k <= 240; ++k) {
-    for (const OutputInstant& at : grid.push(stamp(k + 1, k * kSourcePeriod), inputs).instants()) {
+    const CadenceStep step =
+        grid.push(stamp(k + 1, k * kSourcePeriod), inputs);  // gcc-13 : pas de référence sur un temporaire
+    for (const OutputInstant& at : step.instants()) {
       if (!at.is_source()) CHECK(off_grid(*at.pts_us, 0, kVsync) == 0);
       ++count;
       last = *at.pts_us;
@@ -382,7 +384,8 @@ TEST_CASE("free vsync : dix minutes simulées, horloge qui dérive de ±0,1 %, s
           .step_us = 22'000,
           .vsync_period_us = static_cast<std::int64_t>(std::llround(kVsync * (1.0 + drift))),
           .vsync_origin_us = media_at(anchor)};
-      for (const OutputInstant& at : grid.push(stamp(id, pts), inputs).instants()) {
+      const CadenceStep step = grid.push(stamp(id, pts), inputs);
+      for (const OutputInstant& at : step.instants()) {
         const std::int64_t value = *at.pts_us;
         REQUIRE(value > previous);
         previous = value;

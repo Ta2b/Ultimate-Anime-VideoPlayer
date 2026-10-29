@@ -309,11 +309,16 @@ void fluidity_tab(PlaySettings& d, const SettingsChoices& choices, bool exportin
       d.motion_engine = engine;
     panel::tip(motion_description(engine));
     if (const auto mark = badge_of(engine)) {
-      const bool heavy = *mark == Badge::Heaviest;
-      panel::badge(std::string(badge_text(*mark)).c_str(), *mark == Badge::Recommended ? panel::kGood
-                                                           : heavy                     ? panel::kWarn
-                                                           : *mark == Badge::Finest ? panel::kFine
-                                                                                    : panel::kExperimental);
+      // Une chaîne de « ? : » se met en page autrement d'une version de clang-format à l'autre : un if.
+      ImVec4 color = panel::kExperimental;
+      if (*mark == Badge::Recommended) {
+        color = panel::kGood;
+      } else if (*mark == Badge::Heaviest) {
+        color = panel::kWarn;
+      } else if (*mark == Badge::Finest) {
+        color = panel::kFine;
+      }
+      panel::badge(std::string(badge_text(*mark)).c_str(), color);
     }
   }
   if (!choices.rife_models.empty() && panel::advanced()) {
