@@ -104,14 +104,25 @@ void icon_subtitles(const Pen& pen, ImVec2 c, float size, bool on) {
   }
 }
 
+// Un globe (langues de la piste audio) : cercle, méridien central et deux parallèles, au trait des autres
+// icônes.
 void icon_audio_track(const Pen& pen, ImVec2 c, float size) {
-  const float h = size * 0.5F;
+  const float r = size * 0.4F;
   const ImU32 color = white(pen.opacity);
-  const float stroke = std::max(1.5F, size * 0.09F);
-  pen.list->AddCircleFilled(at(c, -h * 0.32F, h * 0.5F), h * 0.3F, color);
-  pen.list->AddLine(at(c, -h * 0.05F, h * 0.5F), at(c, -h * 0.05F, -h * 0.75F), color, stroke);
-  pen.list->AddQuadFilled(at(c, -h * 0.05F - stroke * 0.5F, -h * 0.8F), at(c, h * 0.55F, -h * 0.45F),
-                          at(c, h * 0.55F, -h * 0.15F), at(c, -h * 0.05F - stroke * 0.5F, -h * 0.5F), color);
+  const float stroke = std::max(1.5F, size * 0.08F);
+  pen.list->AddCircle(c, r, color, 0, stroke);
+  pen.list->AddLine(at(c, -r, 0.0F), at(c, r, 0.0F), color, stroke);
+  for (const float lat : {-0.5F, 0.5F}) {
+    const float half = std::sqrt(1.0F - lat * lat) * r;
+    pen.list->AddLine(at(c, -half, lat * r), at(c, half, lat * r), color, stroke);
+  }
+  constexpr int kSteps = 16;
+  std::array<ImVec2, kSteps + 1> meridian{};
+  for (int i = 0; i <= kSteps; ++i) {
+    const float t = static_cast<float>(i) / kSteps * 2.0F * std::numbers::pi_v<float>;
+    meridian[static_cast<std::size_t>(i)] = at(c, std::cos(t) * r * 0.45F, std::sin(t) * r);
+  }
+  pen.list->AddPolyline(meridian.data(), kSteps + 1, color, ImDrawFlags_None, stroke);
 }
 
 void icon_gear(const Pen& pen, ImVec2 c, float size) {
