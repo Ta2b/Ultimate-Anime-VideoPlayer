@@ -159,9 +159,12 @@ struct PlaySettings {
   // RIFE et DistilDRBA : Performance charge le graphe « _fp8 » à côté du modèle (rife_v4.25_fp8.onnx),
   // Qualité le « _fp32 ». Recharge la chaîne.
   PrecisionTier motion_precision = PrecisionTier::Balanced;
-  // GMFSS : Performance, la paire de GMFlow en FP8 (_s05fp8) ; Équilibre, GMFlow en FP16 (l'ancien
-  // « Performance ») ; Qualité, GMFlow en FP32 (_s05q). Toujours au flot à demi-échelle. Recharge la chaîne.
-  PrecisionTier gmfss_precision = PrecisionTier::Balanced;
+  // GMFSS : Performance, la paire en FP8 hors du squelette de GMFlow (_s05fp8, 15 convolutions sur 37) ;
+  // Équilibre, FP16 (l'ancien « Performance ») ; Qualité, GMFlow en FP32 (_s05q). Toujours au flot à
+  // demi-échelle. Performance par défaut : mesuré −15 % sur la paire en ABAB, 47 dB au pire cas
+  // (docs/fp8-interpolation.md) ; sans le graphe ou sans moteur FP8, Équilibre (journal : raison). Recharge
+  // la chaîne.
+  PrecisionTier gmfss_precision = PrecisionTier::Performance;
   // Le warp avant ou après SPAN (SpanOrder) ; Auto par défaut. Recharge la chaîne.
   SpanOrder span_order = SpanOrder::Auto;
   // Smooth Motion du pilote NVIDIA (RTX 40 et 50, pilote ≥ 580) : sa couche Vulkan double les
