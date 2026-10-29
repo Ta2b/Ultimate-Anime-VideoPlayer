@@ -223,6 +223,12 @@ struct PlaySettings {
   std::vector<std::pair<std::string, std::string>> device_listening;
   std::vector<std::pair<std::string, std::string>>
       device_profile;  // appareil -> profil de virtualisation (clé, ou « custom »)
+  // « Son anime » (audio/anime_sound.h, docs/audio-anime.md), pistes stéréo vers sortie stéréo : le niveau
+  // (clé de audio::anime_levels : natural, anime, strong ; ou « custom »), les réglages du niveau
+  // « custom », et le niveau propre à un appareil (appareil -> niveau).
+  std::string anime_sound = "anime";
+  audio::AnimeTuning anime_custom = audio::find_anime_level("anime")->tuning;
+  std::vector<std::pair<std::string, std::string>> device_anime;
   // Réponses impulsionnelles « HeSuVi » pour le casque (audio/hrir.h) : chemin d'un .wav (vide : aucune, le
   // modèle paramétrique), et celui propre à un appareil (appareil -> chemin).
   std::string hrir_path;
@@ -294,8 +300,9 @@ std::string format_settings(const PlaySettings& settings);
 struct EffectiveListening {
   int listen = 1;
   bool faithful = false;
-  audio::MixTuning tuning;  // le profil de virtualisation (preset ou personnalisé)
-  std::string hrir_path;    // les réponses impulsionnelles du casque ; vide : aucune
+  audio::MixTuning tuning;   // le profil de virtualisation (preset ou personnalisé)
+  audio::AnimeTuning anime;  // le « Son anime » de l'appareil (enabled faux : Naturel)
+  std::string hrir_path;     // les réponses impulsionnelles du casque ; vide : aucune
   bool operator==(const EffectiveListening&) const = default;
 };
 // Le mixage voulu : le profil choisi (clé de audio::mix_presets, « custom » : audio_custom), borné ; un
@@ -304,6 +311,9 @@ audio::MixTuning resolved_tuning(const PlaySettings& settings, int listen);
 // Le mixage d'une clé de profil (ou « custom » : custom_values) pour cette écoute ; Naturel si le profil ne
 // va pas à l'écoute.
 audio::MixTuning tuning_of(std::string_view profile, const audio::MixTuning& custom_values, int listen);
+// Les réglages du « Son anime » d'un niveau (clé de audio::anime_levels, ou « custom » : custom_values) ;
+// Naturel pour une clé inconnue.
+audio::AnimeTuning anime_tuning_of(std::string_view level, const audio::AnimeTuning& custom_values);
 EffectiveListening effective_listening(const PlaySettings& settings, const std::string& device_name);
 // Charge les réponses impulsionnelles d'un chemin (vide : aucune, sans refus). Un fichier illisible est
 // refusé : l'appelant le dit et retombe sur le binaural paramétrique.

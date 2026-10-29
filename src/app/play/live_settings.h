@@ -82,10 +82,16 @@ class LiveSettings {
 
   // Mode auto : le multiplicateur ×k suit ce que le GPU tient (core/auto_rate.h). Quand il est
   // actif, factor_now() remplace rife_factor(). `ceiling` : le palier le plus haut que l'écran permet.
-  void set_auto(bool on, int ceiling) {
+  // `granularity` : 2 sur un écran VRR armé (des demi-paliers, ×2,5), 1 sinon ; `ceiling` se compte alors en
+  // moitiés (core::auto_ceiling).
+  void set_auto(bool on, int ceiling, int granularity = 1) {
     const std::scoped_lock lock(mutex_);
     auto_on_ = on;
-    auto_.set_ceiling(ceiling);
+    auto_.set_ceiling(ceiling, granularity);
+  }
+  int auto_granularity() const {
+    const std::scoped_lock lock(mutex_);
+    return auto_.granularity();
   }
   // gpu : l'issue de la paire qui vient d'être traitée.
   void auto_pair(bool late) {
@@ -113,7 +119,7 @@ class LiveSettings {
   // Le facteur à appliquer maintenant : le palier auto, ou le facteur réglé.
   Factor factor_now() const {
     const std::scoped_lock lock(mutex_);
-    return auto_on_ ? Factor{.num = auto_.step(), .den = 1} : rife_factor();
+    return auto_on_ ? Factor{.num = auto_.step(), .den = auto_.granularity()} : rife_factor();
   }
 
   // Garder les poses (kernels/spec/poses.h), lu par gpu au début de chaque paire.

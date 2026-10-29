@@ -121,6 +121,11 @@ class SettingsPanel {
   }
   void close() { open_ = false; }
   bool is_open() const { return open_; }
+  // Il y a quelque chose à dessiner : le panneau ouvert, ou la fenêtre « lecteur par défaut », qui ne dépend
+  // pas de lui.
+  bool wants_draw(const PlaySettings& running, const SettingsChoices& choices) const {
+    return open_ || (!prompt_done_ && choices.offer_default_player && !running.default_player_dismissed);
+  }
 
   struct Result {
     std::optional<PlaySettings> live;    // à appliquer tout de suite
@@ -138,6 +143,7 @@ class SettingsPanel {
   PlaySettings draft_;     // ce que montre le panneau ; diffère de running pour ce qui attend « Appliquer »
   PlaySettings seen_;      // running au tour précédent
   int page_ = 0;           // la page de l'arbre affichée (settings_panel.cpp : kPages)
+  int shown_page_ = -1;    // la page de l'image précédente : sa catégorie s'ouvre quand elle change
   bool advanced_ = false;  // la case « Réglages avancés » : montre la catégorie Avancé
   bool pending_shown_ = false;                  // le bandeau « Appliquer » était montré au tour précédent
   std::optional<core::EngineId> engine_draft_;  // moteur coché dans l'onglet Moteurs, pas appliqué
