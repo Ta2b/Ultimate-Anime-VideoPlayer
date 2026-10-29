@@ -51,7 +51,7 @@ void FreeRate::missed(std::int64_t now_us, std::int64_t lost) {
 }
 
 void FreeRate::settle(std::int64_t now_us) {
-  settled_until_us_ = now_us + kSettleUs;
+  settled_until_us_ = std::max(settled_until_us_, now_us + kSettleUs);
 }
 
 void FreeRate::reset(std::int64_t now_us) {

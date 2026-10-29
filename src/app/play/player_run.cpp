@@ -411,8 +411,8 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
     if (on && chain.running.auto_free) {
       if (!vrr_armed)
         why = "écran non VRR ou VRR coupé";
-      else if (chain.running.motion_engine != MotionEngine::Rife)
-        why = "moteur d'interpolation non pris en charge";
+      else if (free_instants_limit(chain.running.motion_engine) == 0)
+        why = std::format("{} ne calcule pas à un instant libre", label(chain.running.motion_engine));
       else if (limit_hz <= 0.0)
         why = "fréquence de l'écran inconnue";
     }

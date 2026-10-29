@@ -32,10 +32,10 @@ CadenceStep FreeGrid::push(const SourceStamp& source, const FreeInputs& inputs) 
   const std::int64_t gap = d - g;
   const std::int64_t min_gap = std::max<std::int64_t>(inputs.min_gap_us, 1);
   // Sans mesure, deux instants par paire ; jamais plus de kMaxInstantsPerPair dans une paire.
+  const std::size_t limit = std::clamp<std::size_t>(inputs.max_instants, 1, kMaxInstantsPerPair);
   const std::int64_t wanted = inputs.step_us > 0 ? inputs.step_us : gap / 2;
-  const std::int64_t step = std::max({wanted, min_gap,
-                                      (gap + static_cast<std::int64_t>(kMaxInstantsPerPair) - 1) /
-                                          static_cast<std::int64_t>(kMaxInstantsPerPair)});
+  const std::int64_t step = std::max(
+      {wanted, min_gap, (gap + static_cast<std::int64_t>(limit) - 1) / static_cast<std::int64_t>(limit)});
 
   // Jamais avant l'horloge prédite (l'image serait passée en paraissant), jamais plus près que l'écart
   // minimal du dernier instant émis, jamais avant la paire : les instants d'avant sont abandonnés sans
@@ -47,7 +47,7 @@ CadenceStep FreeGrid::push(const SourceStamp& source, const FreeInputs& inputs) 
   // Un instant à moins d'un quart de pas de la source droite lui est ramené : l'image est la source elle-même
   // (aucune passe d'interpolation), décalée de quelques millisecondes au plus.
   const std::int64_t snap = step / 4;
-  while (emitted < kMaxInstantsPerPair && t <= d) {
+  while (emitted < limit && t <= d) {
     const bool on_source = d - t < snap;
     const std::int64_t at = on_source ? d : t;
     out.add({.t = on_source ? Ratio{1, 1} : Ratio{at - g, gap}, .pts_us = at});

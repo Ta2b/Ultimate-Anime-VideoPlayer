@@ -28,6 +28,8 @@ struct FreeInputs {
   std::int64_t ready_us = INT64_MIN;
   std::int64_t min_gap_us = 1;  // écart minimal entre deux images (période de l'écran ou du plafond)
   std::int64_t step_us = 0;     // temps de service × marge ; 0 : inconnu (deux images par paire)
+  // Le nombre maximal d'instants de la paire que le moteur accepte (1 à kMaxInstantsPerPair).
+  std::size_t max_instants = kMaxInstantsPerPair;
 };
 
 class FreeGrid {

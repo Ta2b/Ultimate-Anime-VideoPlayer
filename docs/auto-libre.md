@@ -81,8 +81,17 @@ donne le temps de service par image `s`, moyenne qui **monte vite** (×0,6 par m
 ### Ce qui reste fixe
 
 La paire source `(g, d)` : `d` est décodée en avance et `g` est la précédente ; le décodeur et le ring ne
-changent pas. DRBA (qui lit l'image d'après la paire) et GMFSS / mouvement non-RIFE ne sont pas pris en
-charge par le mode libre (repli sur Auto avec message) : seul RIFE a été vérifié instant par instant.
+changent pas. Seul Apple (flux optique du système, instants imposés) reste en repli sur Auto, avec message
+(`free_instants_limit`, `app/play/free_engines.h`).
+
+### Moteurs
+
+| Moteur | tau arbitraire ? | Instants par paire | Remarque |
+| --- | --- | --- | --- |
+| RIFE (entier, fusionné, mouvement) | oui (plan de l'entrée, ou facteur du warp) | 10 (ring) | vérifié |
+| DistilDRBA (fusionné ou entier) | oui : `drba_call(t)` accepte tout t de ]0, 1[ (fenêtre centrée sur a avant 0,5, sur b après), une passe du graphe par instant sur 3 images | 10 (ring) | lit l'image d'après la paire : la grille ne la touche pas |
+| GMFSS (entier ou fusionné, base ou union) | oui : `gmfss_side_time(côté, t)` pour les splats, graphe « fusion » par instant ; le graphe « paire » (ou flow + FeatureNet repris entre paires) tourne une fois par paire | 10 (ring) | gros coût fixe par paire : le temps de service par image est élevé avec peu d'instants |
+| Apple | non | 0 | Auto |
 
 ## 2. Intégration
 
@@ -120,6 +129,18 @@ pas la mesure de service (la dernière image d'une paire n'est plus forcément l
 (45 i/s) ; une deuxième se repliait dès la première seconde sur les pertes du démarrage (le repli est muet les
 3 premières secondes).
 
+### Par moteur (75 s, même scène, 720p, libre contre Auto)
+
+| Moteur | Auto : cadence / pertes | Libre : cadence / pertes | Écart σ / p95 libre |
+| --- | --- | --- | --- |
+| RIFE | 44,5 et 42,2 i/s / 0,57 et 0,63 % | 60,2 et 61,0 i/s / 0,18 et 0,09 % | 7,9 / 28 ms |
+| DistilDRBA ×3 fusionné | 40,7 i/s / 0,76 % (22 manquées, 10 changements) | **67,5 i/s / 0,04 %** (2 sautées, 0 manquée) | 7,7 / 25,3 ms (Auto 8,7 / 42,2) |
+| GMFSS | 24,0 i/s / 3,60 % (65 manquées, 18 changements) | 23,9 et 23,8 i/s / 0,99 % (15 sautées, 3 manquées) | 18,7 / 68 ms (Auto 9,7 / 58,9) |
+
+DRBA : « Auto libre · 66 i/s · limite GPU 79 % · écart service 13,1 ms ». GMFSS : « 22 i/s · limite GPU 91 %
+· écart service 56 ms ». Un bug trouvé avec DRBA : `FreeRate::settle` (seek) raccourcissait le silence de
+démarrage et le repli se déclenchait à 1,5 s ; `settle` ne fait désormais que l'allonger.
+
 ## 4. Ce qui sépare de l'idéal
 
 - Le temps de service par image reste une **estimation** (moyenne glissante, marge 10 %, pression) : la
@@ -128,6 +149,8 @@ pas la mesure de service (la dernière image d'une paire n'est plus forcément l
 - Le planificateur décide les instants d'une paire quand sa source droite arrive (à l'ingestion), pas un par
   un au moment de la soumission : le ring a un nombre de sorties fixé par source (`RingStage`). Un vrai « une
   image à la fois » demanderait un étage producteur qui ne connaît pas à l'avance le nombre de sorties.
-- DRBA et GMFSS (qui lisent l'image d'après ou un flot de paire) ne sont pas vérifiés : repli sur Auto.
+- GMFSS : à 720p sur cette scène lourde (1440p, RTX HDR), le GPU ne tient que ~24 i/s, soit la cadence de la
+  source : le mode libre n'apporte pas d'images en plus (23,9 i/s contre 24,0), avec des écarts d'affichage
+  plus irréguliers (une paire a 1 instant, la suivante 2). Il reste disponible et marqué expérimental.
 - Au plus 10 instants par paire (ring) : 120 i/s minimum de plafond pour une source de 12 i/s.
 - Les instants à moins d'un quart de pas d'une source tombent sur elle : jusqu'à ~4 ms de décalage.

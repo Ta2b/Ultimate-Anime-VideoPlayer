@@ -444,6 +444,7 @@ core::FreeInputs UpscaleStage::free_inputs(std::uint32_t epoch) const {
   };
   inputs.min_gap_us = std::max<std::int64_t>(media(gap_real), 1);
   inputs.step_us = media(step_real);
+  inputs.max_instants = free_instants_limit(engine_kind());
   if (running) inputs.ready_us = ready_media_us(now, at, inputs.min_gap_us, latency_us());
   return inputs;
 }

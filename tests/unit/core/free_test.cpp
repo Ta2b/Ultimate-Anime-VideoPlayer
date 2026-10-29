@@ -94,6 +94,25 @@ TEST_CASE("free grid : sans mesure, deux instants par paire ; au plus dix", "[fr
   CHECK(many.instants().size() <= kMaxInstantsPerPair);
 }
 
+TEST_CASE("free grid : le moteur borne les instants par paire et le tau reste dans ]0, 1[", "[free]") {
+  for (const std::size_t limit : {std::size_t{1}, std::size_t{2}, std::size_t{3}, std::size_t{6}}) {
+    FreeGrid grid;
+    grid.push(stamp(1, 0), {});
+    for (std::uint32_t k = 1; k <= 30; ++k) {
+      const FreeInputs inputs{.min_gap_us = 1'000, .step_us = 2'000, .max_instants = limit};
+      const CadenceStep step = grid.push(stamp(k + 1, k * kSourcePeriod), inputs);
+      CHECK(step.instants().size() <= limit);
+      CHECK(step.instants().size() >= 1);
+      for (const OutputInstant& at : step.instants()) {
+        const double tau = static_cast<double>(at.t.num) / static_cast<double>(at.t.den);
+        CHECK(tau > 0.0);
+        CHECK(tau <= 1.0);
+        if (!at.is_source()) CHECK(tau < 1.0);
+      }
+    }
+  }
+}
+
 TEST_CASE("free grid : la phase se reporte d'une paire à l'autre", "[free]") {
   FreeGrid grid;
   grid.push(stamp(1, 0), {});

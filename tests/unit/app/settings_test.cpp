@@ -13,6 +13,7 @@
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 
+#include "app/play/free_engines.h"
 #include "app/play/live_settings.h"
 
 namespace ajp::app::play {
@@ -640,4 +641,14 @@ TEST_CASE("play.toml garde le mode d'Auto (recommande par défaut) et refuse une
   PlaySettings wanted;
   wanted.auto_free = true;
   CHECK(live_part(running, wanted, true).auto_free);
+}
+
+TEST_CASE("Auto libre : instants par paire acceptés par chaque moteur", "[settings][auto][libre]") {
+  using namespace ajp::app::play;
+  for (const MotionEngine engine :
+       {MotionEngine::Rife, MotionEngine::Gmfss, MotionEngine::GmfssUnion, MotionEngine::DistilDrba}) {
+    CHECK(free_instants_limit(engine) >= 2);
+    CHECK(free_instants_limit(engine) <= ajp::core::kMaxInstantsPerPair);  // la borne du ring
+  }
+  CHECK(free_instants_limit(MotionEngine::Apple) == 0);  // pas de tau arbitraire : Auto
 }
