@@ -1,3 +1,5 @@
+#include "app/play/i18n.h"
+
 #include <algorithm>
 #include <filesystem>
 #include <fstream>
@@ -10,8 +12,6 @@
 #include <vector>
 
 #include <catch2/catch_test_macros.hpp>
-
-#include "app/play/i18n.h"
 
 namespace ajp::app::play {
 namespace {
@@ -94,7 +94,9 @@ TEST_CASE("i18n: chaque texte passé à tr() ou tr_format() a son français", "[
 // glisse (un littéral avec une lettre accentuée ou « « », hors journaux, commentaires et lignes « i18n-ok »).
 TEST_CASE("i18n: aucune chaîne française en dur dans les fichiers traduits", "[i18n]") {
   const std::set<std::string> translated{"controls_draw.cpp", "tracks.cpp"};
-  const std::regex literal(R"re("(?:\\.|[^"\\])*(?:à|â|ç|é|è|ê|ë|î|ï|ô|û|ù|ü|œ|À|É|È|Ê|«|»)(?:\\.|[^"\\])*")re");
+  const std::string accents = "(?:à|â|ç|é|è|ê|ë|î|ï|ô|û|ù|ü|œ|À|É|È|Ê|«|»)";
+  const std::string body = "(?:\\\\.|[^\"\\\\])*";
+  const std::regex literal("\"" + body + accents + body + "\"");
   std::vector<std::string> found;
   for (const auto& file : interface_sources()) {
     if (!translated.contains(file.filename().string())) continue;
@@ -103,10 +105,11 @@ TEST_CASE("i18n: aucune chaîne française en dur dans les fichiers traduits", "
     int number = 0;
     while (std::getline(lines, line)) {
       ++number;
-      if (line.contains("i18n-ok") || line.contains("log->") || line.contains("log_channel")) continue;
+      if (line.contains("i18n-ok") || line.contains("log->")) continue;
       const auto comment = line.find("//");
       const std::string code = comment == std::string::npos ? line : line.substr(0, comment);
-      if (std::regex_search(code, literal)) found.push_back(file.filename().string() + ":" + std::to_string(number));
+      if (!std::regex_search(code, literal)) continue;
+      found.push_back(file.filename().string() + ":" + std::to_string(number));
     }
   }
   for (const std::string& where : found) UNSCOPED_INFO(where);

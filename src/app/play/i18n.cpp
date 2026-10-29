@@ -7,7 +7,10 @@
 namespace ajp::app::play::i18n {
 namespace {
 
-std::atomic<Language> g_language{Language::English};
+std::atomic<Language>& current_language() {
+  static std::atomic<Language> current{Language::English};
+  return current;
+}
 
 const std::unordered_map<std::string_view, const char*>& french_table() {
   static const std::unordered_map<std::string_view, const char*> table = [] {
@@ -21,11 +24,11 @@ const std::unordered_map<std::string_view, const char*>& french_table() {
 }  // namespace
 
 Language language() {
-  return g_language.load(std::memory_order_relaxed);
+  return current_language().load(std::memory_order_relaxed);
 }
 
 void set_language(Language language) {
-  g_language.store(language, std::memory_order_relaxed);
+  current_language().store(language, std::memory_order_relaxed);
 }
 
 Language language_from_code(std::string_view code) {
