@@ -207,7 +207,7 @@ std::vector<RegistryValue> registry_values(std::string_view executable) {
   const std::string prog = std::format("{}{}", kClasses, kProgId);
   const std::string app = std::format("{}Applications\\{}", kClasses, file_name(executable));
   std::vector<RegistryValue> values{
-      {prog, "", std::format("Vidéo ({})", kAppName)},
+      {prog, "", i18n::tr_format("Video ({})", kAppName)},
       {prog + "\\DefaultIcon", "", std::format("\"{}\",0", executable)},
       {prog + "\\shell\\open", "FriendlyAppName", std::string(kAppName)},
       {prog + "\\shell\\open\\command", "", command},
@@ -245,10 +245,9 @@ std::expected<std::string, Refusal> register_player(const PlayerPlace& place) {
 #if defined(_WIN32)
   if (auto written = write_registry(registry_values(prepare::utf8_path(place.executable))); !written)
     return std::unexpected(std::move(written.error()));
-  return std::format(
-      "AJP figure dans « Ouvrir avec ». Pour en faire le lecteur des vidéos : « Faire de ce lecteur le "
-      "lecteur par défaut » "
-      "dans Paramètres > Général > Application, ou Paramètres > Applications > Applications par défaut > {}.",
+  return i18n::tr_format(
+      "AJP is in \"Open with\". To make it the default: \"Make this the default player\" in Settings > "
+      "General > Application, or Settings > Apps > Default apps > {}.",
       kAppName);
 #elif defined(__APPLE__)
   static_cast<void>(place);
@@ -282,10 +281,9 @@ std::expected<std::string, Refusal> register_player(const PlayerPlace& place) {
                   std::format("{} : {}", prepare::utf8_path(file), error.message()));
   }
   refresh_desktop_database(file.parent_path());
-  return std::format(
-      "AJP figure dans « Ouvrir avec » ({}). Pour en faire le lecteur des vidéos : « Faire de ce lecteur le "
-      "lecteur par défaut » "
-      "dans Paramètres > Général > Application, ou xdg-mime default {}{}",
+  return i18n::tr_format(
+      "AJP is in \"Open with\" ({}). To make it the default: \"Make this the default player\" in Settings > "
+      "General > Application, or xdg-mime default {}{}",
       prepare::utf8_path(file), kDesktopId, mime_list());
 #endif
 }

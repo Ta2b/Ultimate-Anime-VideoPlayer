@@ -4,6 +4,8 @@
 
 #include <catch2/catch_test_macros.hpp>
 
+#include "french_ui.h"
+
 using namespace ajp;
 using namespace ajp::app::play;
 
@@ -23,6 +25,7 @@ TierEstimate of(std::string name, GpuVendor vendor, std::uint64_t vram_gib = 8, 
 }  // namespace
 
 TEST_CASE("la table embarquée se lit et couvre les quatre fabricants", "[gpu_tier]") {
+  ajp::app::play::FrenchUi french;
   const TierTable& table = builtin_tier_table();
   REQUIRE(table.rules.size() > 50);
   for (const GpuVendor vendor : {GpuVendor::Nvidia, GpuVendor::Amd, GpuVendor::Intel, GpuVendor::Apple}) {
@@ -31,6 +34,7 @@ TEST_CASE("la table embarquée se lit et couvre les quatre fabricants", "[gpu_ti
 }
 
 TEST_CASE("des cartes connues tombent dans la tranche attendue", "[gpu_tier]") {
+  ajp::app::play::FrenchUi french;
   CHECK(of("NVIDIA GeForce RTX 4090", GpuVendor::Nvidia, 24, true).tier == Tier::Ultra);
   CHECK(of("NVIDIA GeForce RTX 4070 Ti", GpuVendor::Nvidia, 12, true).tier == Tier::Fast);
   CHECK(of("NVIDIA GeForce RTX 3060", GpuVendor::Nvidia, 12, true).tier == Tier::Normal);
@@ -46,12 +50,14 @@ TEST_CASE("des cartes connues tombent dans la tranche attendue", "[gpu_tier]") {
 }
 
 TEST_CASE("les iGPU sont signalés", "[gpu_tier]") {
+  ajp::app::play::FrenchUi french;
   CHECK(of("AMD Radeon Graphics (RADV GFX1103_R1)", GpuVendor::Amd, 1).integrated);
   CHECK(of("Intel(R) Iris(R) Xe Graphics", GpuVendor::Intel, 1).integrated);
   CHECK_FALSE(of("NVIDIA GeForce RTX 4070 Ti", GpuVendor::Nvidia, 12, true).integrated);
 }
 
 TEST_CASE("une carte inconnue reçoit une estimation par ses faits", "[gpu_tier]") {
+  ajp::app::play::FrenchUi french;
   const TierEstimate rtx = of("NVIDIA GeForce RTX 9999", GpuVendor::Nvidia, 32, true);
   CHECK_FALSE(rtx.matched);
   CHECK(rtx.tier == Tier::Fast);
@@ -61,6 +67,7 @@ TEST_CASE("une carte inconnue reçoit une estimation par ses faits", "[gpu_tier]
 }
 
 TEST_CASE("une règle plus précise passe avant une plus générale", "[gpu_tier]") {
+  ajp::app::play::FrenchUi french;
   const auto table = parse_tier_table(R"(rules = [
     { vendor = "nvidia", contains = ["rtx 4070"], tier = 3 },
     { vendor = "nvidia", contains = ["rtx 40"], tier = 2 } ])");
@@ -73,6 +80,7 @@ TEST_CASE("une règle plus précise passe avant une plus générale", "[gpu_tier
 }
 
 TEST_CASE("un gpu_tiers.toml invalide est refusé", "[gpu_tier]") {
+  ajp::app::play::FrenchUi french;
   CHECK_FALSE(parse_tier_table("rules = ["));
   CHECK_FALSE(parse_tier_table("version = 1"));
   CHECK_FALSE(parse_tier_table(R"(rules = [ { vendor = "matrox", contains = ["x"], tier = 1 } ])"));
@@ -81,6 +89,7 @@ TEST_CASE("un gpu_tiers.toml invalide est refusé", "[gpu_tier]") {
 }
 
 TEST_CASE("les noms de tranche", "[gpu_tier]") {
+  ajp::app::play::FrenchUi french;
   CHECK(tier_label(Tier::Economy) == "Économe");
   CHECK(tier_label(Tier::Ultra) == "Ultra");
 }

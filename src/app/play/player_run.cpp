@@ -132,7 +132,7 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
   }
   bool rtx_hdr_failed = false;  // TrueHDR a refusé de s'ouvrir : le panneau ne le propose plus
   if (settings.true_hdr) {
-    show_loading(p.screen, p.ui, "Préparation de RTX HDR");
+    show_loading(p.screen, p.ui, i18n::tr("Preparing RTX HDR"));
     auto opened = open_rtx_hdr(p.options.true_hdr_sdk, p.paths, settings, auto_peak, p.screen,
                                *c.backend->kernels(), work.width * factor, work.height * factor, source);
     if (opened) {
@@ -236,7 +236,7 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
   const Tier machine_tier = effective_tier(machine, measured);
   const std::string bench_text =
       measured && measured->gpu == machine.name && measured->driver == machine.driver
-          ? std::format("Dernière optimisation : {}", measured->date)
+          ? i18n::tr_format("Last optimization: {}", measured->date)
           : std::string();
   std::vector<SettingsChoices::AudioOut> audio_outputs;
   for (const audio::AudioDevice& device : audio::playback_devices())
@@ -422,9 +422,9 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
     std::string why;
     if (on && chain.running.auto_free) {
       if (free_instants_limit(chain.running.motion_engine) == 0)
-        why = std::format("{} ne calcule pas à un instant libre", label(chain.running.motion_engine));
+        why = i18n::tr_format("{} cannot compute at a free instant", label(chain.running.motion_engine));
       else if (limit_hz <= 0.0 || (!vrr_armed && display_period_us(out.window()) <= 0))
-        why = "fréquence de l'écran inconnue";
+        why = i18n::tr("display refresh rate unknown");
     }
     const bool free = on && chain.running.auto_free && why.empty();
     if (why != free_note) {

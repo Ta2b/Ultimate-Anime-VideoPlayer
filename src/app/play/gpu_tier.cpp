@@ -5,6 +5,8 @@
 #include <cstddef>
 #include <utility>
 
+#include "app/play/i18n.h"
+
 #ifndef TOML_EXCEPTIONS
 #define TOML_EXCEPTIONS 0
 #endif
@@ -44,9 +46,9 @@ std::optional<GpuVendor> vendor_of(std::string_view key) {
 std::string_view tier_label(Tier tier) {
   switch (tier) {
     case Tier::Economy:
-      return "Économe";
+      return i18n::tr("Economy");
     case Tier::Light:
-      return "Léger";
+      return i18n::tr("Light");
     case Tier::Normal:
       return "Normal";
     case Tier::Fast:

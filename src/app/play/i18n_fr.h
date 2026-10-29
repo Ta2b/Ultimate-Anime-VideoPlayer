@@ -12,6 +12,7 @@ std::span<const Entry> french_settings();  // pages de réglages
 std::span<const Entry> french_image();     // Image IA : agrandissement et fluidité
 std::span<const Entry> french_system();    // Export, moteurs, application, mises à jour, configuration
 std::span<const Entry> french_wizard();    // assistant de premier lancement, écran des moteurs
+std::span<const Entry> french_stats();     // statistiques à l'écran, export, accueil
 std::span<const Entry> french_sound();     // Audio : sortie, profils, son anime, synchronisation
 std::span<const Entry>
 french_messages();  // lecteur par défaut, mises à jour, benchmark, installation des moteurs

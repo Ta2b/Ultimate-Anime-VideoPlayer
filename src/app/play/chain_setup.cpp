@@ -75,18 +75,19 @@ std::string_view ChainEngines::motion_name() const {
 std::string ChainEngines::motion_label(const PlaySettings& settings) const {
   if (use_gmfss())
     return std::format("GMFSS Fortuna{} {}{} · ", gmfss_variant == GmfssVariant::Union ? " Union" : "",
-                       factor_text(factor_of(settings)), gmfss_fused ? " fusionné" : "");
+                       factor_text(factor_of(settings)), gmfss_fused ? i18n::tr(" fused") : "");
   if (use_drba())
-    return std::format("DistilDRBA {}{} · ", factor_text(factor_of(settings)), drba_fused ? " fusionné" : "");
+    return std::format("DistilDRBA {}{} · ", factor_text(factor_of(settings)),
+                       drba_fused ? i18n::tr(" fused") : "");
   if (use_apple()) return std::format("Apple {} · VideoToolbox · ", factor_text(factor_of(settings)));
   if ((rife || rife_motion) && rife_model)
     return std::format("RIFE {} · {}{} · ", factor_text(factor_of(settings)), rife_model->stem().string(),
-                       rife_fused ? " fusionné" : "");
+                       rife_fused ? i18n::tr(" fused") : "");
   return {};
 }
 
 std::string ChainEngines::span_label() const {
-  if (!model) return std::format("sans agrandissement · {}", reduce);
+  if (!model) return i18n::tr_format("no upscaling · {}", reduce);
   return std::format("SPAN ×{} · {}{} · {} · {} → {}x{}", factor, model->path.stem().string(),
                      span_int8 ? std::format(" {}", variant_text(span_int8->kind)) : std::string(),
                      backend_name, reduce, work.width * factor, work.height * factor);
@@ -373,7 +374,7 @@ std::expected<std::optional<ChainEngines>, Refusal> prepare_chain_once(Player& p
   const std::filesystem::path models_dir = p.paths.engines.parent_path() / "modeles";
   const std::string fused_declined =
       use_rife ? rife_fused_declined(settings, c.backend->capabilities().rife_fused, c.rife_planes)
-               : "pas de RIFE";
+               : i18n::tr("no RIFE");
   const bool fused_wanted = fused_declined.empty();
   if (use_rife && settings.rife_fused && !fused_wanted)
     log->info("RIFE fusionné non utilisé : {}", fused_declined);

@@ -101,7 +101,8 @@ TEST_CASE("i18n: aucune chaîne française en dur dans les fichiers traduits", "
       "controls_draw.cpp",  "tracks.cpp",          "settings_panel.cpp",   "settings_chain_tabs.cpp",
       "settings_sound.cpp", "settings_export.cpp", "settings_engines.cpp", "settings_system.cpp",
       "first_run.cpp",      "wizard.cpp",          "engine_screen.cpp",    "bench_steps.cpp",
-      "auto_bench_run.cpp", "span_auto.cpp",       "home_view.cpp",        "updater.cpp"};
+      "auto_bench_run.cpp", "span_auto.cpp",       "home_view.cpp",        "updater.cpp",
+      "chain_stats.cpp"};
   const std::string accents = "(?:à|â|ç|é|è|ê|ë|î|ï|ô|û|ù|ü|œ|À|É|È|Ê|«|»)";
   const std::string body = "(?:\\\\.|[^\"\\\\])*";
   const std::regex literal("\"" + body + accents + body + "\"");

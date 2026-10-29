@@ -567,7 +567,180 @@ Tableau : texte français d'avant → anglais (par défaut) / français d'après
 | Cochez NVIDIA Maxine à l'écran Moteur (licence NVIDIA), ou posez le SDK dans /usr/local/VideoFX et relancez avec --truehdr-sdk. | Check NVIDIA Maxine on the Engine screen (NVIDIA licence), or put the SDK in /usr/local/VideoFX and relaunch with --truehdr-sdk. |
 | {} est choisi mais ne s'ouvre pas sur ce GPU (journal) : {} le remplace. | {} is chosen but does not open on this GPU (see log): {} replaces it. |
 
-## À venir
+## Étape C2 : messages (lecteur par défaut, mises à jour, benchmark, SPAN Performance, accueil, installation des moteurs)
 
-C2 : lecteur par défaut (messages), mises à jour (messages), benchmark (étapes et résultats), statistiques à l'écran, messages d'erreur visibles. Les journaux
-développeur et `--help` restent en français.
+| Avant (français) | Après (anglais) | Après (français) |
+|---|---|---|
+| registre : HKCU\{} (erreur {}) | registry: HKCU\{} (error {}) | registre : HKCU\{} (erreur {}) |
+| registre : HKCU\{} : {} (erreur {}) | registry: HKCU\{} : {} (error {}) | registre : HKCU\{} : {} (erreur {}) |
+| lecteur par défaut : dossier personnel inconnu | default player: home folder unknown | lecteur par défaut : dossier personnel inconnu |
+| AJP ne figure plus dans « Ouvrir avec ». | AJP is no longer in "Open with". | AJP ne figure plus dans « Ouvrir avec ». |
+| AJP n'était pas inscrit : rien à retirer. | AJP was not registered: nothing to remove. | AJP n'était pas inscrit : rien à retirer. |
+| curl introuvable : impossible de vérifier les mises à jour | curl not found: cannot check for updates | curl introuvable : impossible de vérifier les mises à jour |
+| la signature du manifeste est fausse : mise à jour ignorée | the manifest signature is wrong: update ignored | la signature du manifeste est fausse : mise à jour ignorée |
+| le manifeste est du canal « {} », pas « {} » | the manifest is for channel "{}", not "{}" | le manifeste est du canal « {} », pas « {} » |
+| {} est disponible | {} is available | {} est disponible |
+| Le lecteur est à jour | The player is up to date | Le lecteur est à jour |
+| cette release n'a pas d'archive pour ce système | this release has no archive for this system | cette release n'a pas d'archive pour ce système |
+| nom d'archive illisible dans le manifeste | unreadable archive name in the manifest | nom d'archive illisible dans le manifeste |
+| mis à jour par votre gestionnaire de paquets (Flatpak) | updated by your package manager (Flatpak) | mis à jour par votre gestionnaire de paquets (Flatpak) |
+|  (déjà préparée) |  (already prepared) |  (déjà préparée) |
+|  : préparée, installée au prochain lancement | : prepared, installed at next launch |  : préparée, installée au prochain lancement |
+| tar introuvable | tar not found | tar introuvable |
+| aucune mise à jour préparée | no update prepared | aucune mise à jour préparée |
+| l'archive préparée a disparu | the prepared archive is gone | l'archive préparée a disparu |
+| Mis à jour vers {} | Updated to {} | Mis à jour vers {} |
+| aucune version précédente gardée | no previous version kept | aucune version précédente gardée |
+| Version précédente remise{} | Previous version restored{} | Version précédente remise{} |
+| échec | failed | échec |
+| Étape {} sur {} : {} | Step {} of {}: {} | Étape {} sur {} : {} |
+| le lecteur de l'essai s'est arrêté brutalement ({}) | the test player stopped abruptly ({}) | le lecteur de l'essai s'est arrêté brutalement ({}) |
+| le lecteur de l'essai s'est arrêté ({}) | the test player stopped ({}) | le lecteur de l'essai s'est arrêté ({}) |
+| L'essai {} n'a rien rendu : {} | Test {} produced nothing: {} | L'essai {} n'a rien rendu : {} |
+| agrandissement ×2 depuis {}p | ×2 upscaling from {}p | agrandissement ×2 depuis {}p |
+| image d'origine sans agrandissement | original picture, no upscaling | image d'origine sans agrandissement |
+| interpolation jusqu'à ×{}, {} | interpolation up to ×{}, {} | interpolation jusqu'à ×{}, {} |
+| sans interpolation | no interpolation | sans interpolation |
+| Votre PC tient : {}. | Your PC holds: {}. | Votre PC tient : {}. |
+|  Performance FP8 pour SPAN : prête. |  SPAN Performance FP8: ready. |  Performance FP8 pour SPAN : prête. |
+|  Performance FP8 pour SPAN : non{}{}. |  SPAN Performance FP8: no{}{}. |  Performance FP8 pour SPAN : non{}{}. |
+| bench.toml :  | bench.toml:  | bench.toml :  |
+| bench.toml : écriture impossible | bench.toml: cannot write | bench.toml : écriture impossible |
+| L'essai {} n'a pas pu démarrer : {} | Test {} could not start: {} | L'essai {} n'a pas pu démarrer : {} |
+| des réglages « {} » | of the "{}" settings | des réglages « {} » |
+| de préparation | of preparation | de préparation |
+| Essai {}/4 : {} | Test {}/4: {} | Essai {}/4 : {} |
+| de la variante « {} » | of the "{}" variant | de la variante « {} » |
+| comparaison annulée | comparison cancelled | comparaison annulée |
+| la variante « {} » n'a rien rendu | the "{}" variant produced nothing | la variante « {} » n'a rien rendu |
+| comparaison : une variante n'a rien rendu | comparison: a variant produced nothing | comparaison : une variante n'a rien rendu |
+| ne tient pas | does not hold | ne tient pas |
+| Carte : {}  | Card: {}  | Carte : {}  |
+| Seule « {} » tient.  | Only "{}" holds.  | Seule « {} » tient.  |
+| Au p95, « {} » est plus légère de {:.1f} ms par image.  | At p95, "{}" is lighter by {:.1f} ms per frame.  | Au p95, « {} » est plus légère de {:.1f} ms par image.  |
+| préparation des moteurs et première mesure | preparing engines and first measurement | préparation des moteurs et première mesure |
+| test des réglages « {} » | testing the "{}" settings | test des réglages « {} » |
+| évaluation annulée | evaluation cancelled | évaluation annulée |
+| recherche d'une image plus fine ({}) | searching for a finer picture ({}) | recherche d'une image plus fine ({}) |
+| de recherche ({}) | of search ({}) | de recherche ({}) |
+| écriture de la séquence de test | writing the test sequence | écriture de la séquence de test |
+| Carte : {} (pilote {}) Niveau estimé : {}  | Card: {} (driver {}) Estimated level: {}  | Carte : {} (pilote {}) Niveau estimé : {}  |
+| Niveau gardé : {}  | Level kept: {}  | Niveau gardé : {}  |
+| Exploration : la machine tient le modèle {}.  | Exploration: the machine holds the {} model.  | Exploration : la machine tient le modèle {}.  |
+| un autre moteur | another engine | un autre moteur |
+| cette carte | this card | cette carte |
+| Préparation du mode Performance… {} % | Preparing Performance mode… {} % | Préparation du mode Performance… {} % |
+| Mode Performance impossible, lecture en FP16 : {} | Performance mode unavailable, playing in FP16: {} | Mode Performance impossible, lecture en FP16 : {} |
+| Mode Performance prêt : la lecture le prend maintenant | Performance mode ready: playback uses it now | Mode Performance prêt : la lecture l'utilise maintenant |
+| Ouvrir une vidéo | Open a video | Ouvrir une vidéo |
+| Choisissez la vidéo dans la fenêtre ouverte. | Pick the video in the open window. | Choisissez la vidéo dans la fenêtre ouverte. |
+| ou glissez un fichier sur cette fenêtre. | or drop a file on this window. | ou glissez un fichier sur cette fenêtre. |
+| Paramètres (p) | Settings (p) | Paramètres (p) |
+| q : quitter | q: quit | q : quitter |
+| {} absent : seuls les moteurs livrés sont proposés | {} missing: only bundled engines are offered | {} absent : seuls les moteurs livrés sont proposés |
+| écarté, {} | discarded, {} | écarté, {} |
+| curl introuvable sur ce système | curl not found on this system | curl introuvable sur ce système |
+|  : taille nulle | : zero size |  : taille nulle |
+| téléchargement de {} | downloading {} | téléchargement de {} |
+| {} : {} octets reçus, {} attendus | {}: {} bytes received, {} expected | {} : {} octets reçus, {} attendus |
+| curl ou tar introuvables sur ce système | curl or tar not found on this system | curl ou tar introuvables sur ce système |
+| vérification de la place | checking free space | vérification de la place |
+| inconnue (tous les fichiers) | unknown (all files) | inconnue (tous les fichiers) |
+| téléchargement de l'archive du moteur | downloading the engine archive | téléchargement de l'archive du moteur |
+| téléchargement de {} ({}) | downloading {} ({}) | téléchargement de {} ({}) |
+| vérification de l'archive | verifying the archive | vérification de l'archive |
+| vérification de {} | verifying {} | vérification de {} |
+| extraction de l'archive | extracting the archive | extraction de l'archive |
+| extraction de {} | extracting {} | extraction de {} |
+| paquet {} sans {} | package {} without {} | paquet {} sans {} |
+| fichier {} ({}/{}) | file {} ({}/{}) | fichier {} ({}/{}) |
+| remplacement de la version installée | replacing the installed version | remplacement de la version installée |
+| {} : note du paquet | {}: package note | {} : note du paquet |
+| {} installé | {} installed | {} installé |
+| démarrage | starting | démarrage |
+| téléchargement | download | téléchargement |
+| downloading {} | downloading {} | téléchargement de {} |
+| decompressing {} | decompressing {} | décompression de {} |
+
+### Messages longs raccourcis
+
+| Avant (français) | Après (anglais) |
+|---|---|
+| AJP figure dans « Ouvrir avec ». Pour en faire le lecteur des vidéos : « Faire de ce lecteur le lecteur par défaut » dans Paramètres > Général > Application, ou Paramètres > Applications > Applications par défaut. | AJP is in "Open with". To make it the default: "Make this the default player" in Settings > General > Application, or Settings > Apps > Default apps. |
+| AJP.app déclare déjà les vidéos qu'il ouvre. Pour en faire le lecteur par défaut : clic droit sur une vidéo > Lire les informations > Ouvrir avec : AJP > Tout modifier. | AJP.app already declares the videos it opens. To make it the default: right-click a video > Get Info > Open with: AJP > Change All. |
+| Sous macOS, l'inscription suit AJP.app : la retirer, c'est mettre l'app à la corbeille. | On macOS the registration follows AJP.app: remove it by trashing the app. |
+| Paramètres ouverts sur {} : « Définir par défaut » en haut de la page, ou un type à la fois. | Settings opened on {}: "Set default" at the top of the page, or one type at a time. |
+| AJP est maintenant le lecteur des vidéos (mkv, mp4, webm, avi, mov…). | AJP is now the video player (mkv, mp4, webm, avi, mov…). |
+| xdg-mime introuvable (paquet xdg-utils) : clic droit sur une vidéo > Ouvrir avec > AJP, en cochant « toujours » | xdg-mime not found (xdg-utils package): right-click a video > Open with > AJP and tick "always" |
+| ce paquet n'a pas de clé de signature : les mises à jour ne peuvent pas être vérifiées | this package has no signing key: updates cannot be verified |
+| sur macOS, la nouvelle version se télécharge sur la page des releases | on macOS, download the new version from the releases page |
+| AppImage : la nouvelle version se télécharge sur la page des releases (le fichier se remplace) | AppImage: download the new version from the releases page (replace the file) |
+| installé là où le lecteur ne peut pas s'écrire : mis à jour par votre gestionnaire de paquets | installed where the player cannot write: updated by your package manager |
+| il a dépassé {} s sans finir, sans doute en construisant un moteur de calcul (c'est long la première fois) | it ran over {} s without finishing, probably building an engine (slow the first time) |
+| L'essai {} n'a rien rendu : il s'est terminé sans mesures lisibles{}{} | Test {} produced nothing: it ended without readable measurements{}{} |
+| Construction d'un moteur de calcul : la première fois seulement, sans doute plusieurs minutes sur un portable. | Building a compute engine: first time only, probably several minutes on a laptop. |
+|   {:<24} {:>5.1f} % perdues, retard p95 {:>6.1f} ms, image {:>6.1f} ms (p95 {:>6.1f}), composition {:>5.1f} ms : {}  |   {:<24} {:>5.1f} % lost, p95 delay {:>6.1f} ms, frame {:>6.1f} ms (p95 {:>6.1f}), compositing {:>5.1f} ms: {}  |
+| Si c'est la première fois sur ce PC, la construction des moteurs peut prendre plusieurs minutes. | If this is the first time on this PC, building the engines can take several minutes. |
+| Les réglages « {} » n'ont pas été testés : leurs moteurs sont longs à construire. Relancez l'optimisation pour continuer. | The "{}" settings were not tested: their engines take long to build. Run the optimization again to continue. |
+| La recherche d'une image plus fine est remise à la prochaine optimisation : les moteurs viennent d'être construits. | The search for a finer picture is left to the next optimization: the engines were just built. |
+|   {:<8} {:>5} présentations, {:>5.1f} % perdues, retard p95 {:>6.1f} ms : {}  |   {:<8} {:>5} presentations, {:>5.1f} % lost, p95 delay {:>6.1f} ms: {}  |
+| Exploration : la machine tient une hauteur de travail de {}p.  | Exploration: the machine holds a working height of {}p.  |
+| le moteur TensorRT est installé mais le lecteur utilise {} : choisissez TensorRT dans Paramètres > Export et moteurs > Moteurs | TensorRT is installed but the player uses {}: pick TensorRT in Settings > Export and engines > Engines |
+| moteur TensorRT non installé : installez-le dans Paramètres > Export et moteurs > Moteurs | TensorRT is not installed: install it in Settings > Export and engines > Engines |
+| {} n'est pas une carte NVIDIA RTX 40 (Ada) ou le moteur a été construit sans ces noyaux | {} is not an NVIDIA RTX 40 (Ada) card, or the engine was built without these kernels |
+| Upscale, interpolation et HDR pour les animes : la chaîne suit le profil de démarrage et les paramètres, réglables ici avant la lecture. | Upscaling, interpolation and HDR for anime: set the startup profile and settings here before playback. |
+| Windows 11 24H2 requis (build {} installé) : mettre Windows à jour par Windows Update | Windows 11 24H2 required (build {} installed): update Windows through Windows Update |
+| ROCm absent : installer « migraphx » depuis le dépôt ROCm 7 d'AMD (sudo apt install migraphx) | ROCm missing: install "migraphx" from AMD's ROCm 7 repository (sudo apt install migraphx) |
+| ROCm 7 requis (ROCm 6 installé) : passer au dépôt ROCm 7 d'AMD, puis sudo apt install migraphx | ROCm 7 required (ROCm 6 installed): switch to AMD's ROCm 7 repository, then sudo apt install migraphx |
+| pilote compute Intel absent (sudo apt install intel-opencl-icd libze-intel-gpu1) | Intel compute driver missing (sudo apt install intel-opencl-icd libze-intel-gpu1) |
+| espace disque insuffisant : l'installation demande {} (dont {} à télécharger, {} une fois installé), il reste {} sur {} | not enough disk space: the install needs {} ({} to download, {} once installed), {} left on {} |
+
+## Étape C3 : statistiques à l'écran, export, barre de progression, accueil
+
+| Avant (français) | Après (anglais) | Après (français) |
+|---|---|---|
+| entrée {}x{} · construit en {:.0f} s | input {}x{} · built in {:.0f} s | entrée {}x{} · construit en {:.0f} s |
+| Auto ×{} ({:.0f} i/s) · plafond écran ×{} | Auto ×{} ({:.0f} fps) · display limit ×{} | Auto ×{} ({:.0f} i/s) · plafond écran ×{} |
+|  · prédit ×{} |  · predicted ×{} |  · prédit ×{} |
+|  · scène lourde |  · heavy scene |  · scène lourde |
+|  · écart service  |  · service gap  |  · écart service  |
+| mémoire vidéo {:.0f} / {:.0f} Mio | video memory {:.0f} / {:.0f} MiB | mémoire vidéo {:.0f} / {:.0f} Mio |
+| Vrai noir : coupé. | True black: off. | Vrai noir : coupé. |
+| Vrai noir : la rampe ne monte pas, rien n'est changé. | True black: the ramp does not rise, nothing changed. | Vrai noir : la rampe ne monte pas, rien n'est changé. |
+| audio absent : l'horloge de l'écran mène | audio missing: the display clock leads | audio absent : l'horloge de l'écran mène |
+| image {} (σ {}) · rendu {} · sautées {}{} | frame {} (σ {}) · render {} · skipped {}{} | image {} (σ {}) · rendu {} · sautées {}{} |
+|  · calée sur l'écran {:+.3f} % |  · locked to the display {:+.3f} % |  · calée sur l'écran {:+.3f} % |
+| fluidité {}{} im/s · manquées {}{} · retard p95 {}{} | smoothness {}{} fps · missed {}{} · p95 delay {}{} | fluidité {}{} im/s · manquées {}{} · retard p95 {}{} |
+|  (+ {} coupes et dessins tenus) |  (+ {} cuts and held drawings) |  (+ {} coupes et dessins tenus) |
+| Vidéos | Videos | Vidéos |
+| Tous les fichiers | All files | Tous les fichiers |
+| Dernière optimisation : {} | Last optimization: {} | Dernière optimisation : {} |
+| Préparation de RTX HDR | Preparing RTX HDR | Préparation de RTX HDR |
+| {} ne calcule pas à un instant libre | {} cannot compute at a free instant | {} ne calcule pas à un instant libre |
+| fréquence de l'écran inconnue | display refresh rate unknown | fréquence de l'écran inconnue |
+| Export en cours · Échap pour annuler | Exporting · Esc to cancel | Export en cours · Échap pour annuler |
+| {} images · {:.1f} i/s · écoulé {} · reste ~{} | {} frames · {:.1f} fps · elapsed {} · left ~{} | {} images · {:.1f} i/s · écoulé {} · reste ~{} |
+| {}x{} à {} i/s · {} | {}x{} at {} fps · {} | {}x{} à {} i/s · {} |
+| Vidéo ({}) | Video ({}) | Vidéo ({}) |
+|  fusionné |  fused |  fusionné |
+| sans agrandissement · {} | no upscaling · {} | sans agrandissement · {} |
+| pas de RIFE | no RIFE | pas de RIFE |
+| Léger | Light | Léger |
+| Économe | Economy | Économe |
+
+### Messages longs raccourcis
+
+| Avant (français) | Après (anglais) |
+|---|---|
+| {} {} : {} paires, {} interpolées, {} dessins tenus, {} coupes, {} en retard | {} {}: {} pairs, {} interpolated, {} held drawings, {} cuts, {} late |
+| Vrai noir : sans effet ici (grade coupé, ou sortie HDR sans route). | True black: no effect here (grading off, or HDR output without a path). |
+| Vrai noir : 0 sous {:.4f} nit, pied jusqu'à {:.4f} nit (noir de la source à {:.4f} nit avant). | True black: 0 below {:.4f} nit, toe up to {:.4f} nit (source black was {:.4f} nit). |
+| Ouvrez une vidéo : le lecteur prépare le mode Performance sur ses images. | Open a video: the player prepares Performance mode on its frames. |
+| AJP figure dans « Ouvrir avec ». Pour en faire le lecteur des vidéos : « Faire de ce lecteur le lecteur par défaut » dans Paramètres > Général > Application, ou Paramètres > Applications > Applications par défaut > {}. | AJP is in "Open with". To make it the default: "Make this the default player" in Settings > General > Application, or Settings > Apps > Default apps > {}. |
+| AJP figure dans « Ouvrir avec » ({}). Pour en faire le lecteur des vidéos : « Faire de ce lecteur le lecteur par défaut » dans Paramètres > Général > Application, ou xdg-mime default {}{} | AJP is in "Open with" ({}). To make it the default: "Make this the default player" in Settings > General > Application, or xdg-mime default {}{} |
+
+## Ce qui reste en français
+
+Les journaux développeur, l'aide `--help`, les messages d'erreur internes (refus de chargement de modèle, de graphe, de fichier de réglages) et les
+textes des paquets de moteurs ne sont pas traduits : ils s'adressent aux développeurs et aux rapports de bogue. Tout texte de menu, d'infobulle,
+de notification, d'assistant, de statistique à l'écran et de message de lecteur par défaut ou de mise à jour passe par `tr()`.

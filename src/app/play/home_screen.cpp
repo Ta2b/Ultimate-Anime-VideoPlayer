@@ -33,6 +33,7 @@
 #include "app/play/first_run.h"
 #include "app/play/gmfss_model.h"
 #include "app/play/host_facts.h"
+#include "app/play/i18n.h"
 #include "app/play/input.h"
 #include "app/play/model_choice.h"
 #include "app/play/profiles.h"
@@ -63,10 +64,18 @@ constexpr std::size_t usage(core::Usage u) {
 }
 
 // Les filtres de la boîte « Ouvrir une vidéo » : SDL les lit jusqu'à la réponse, d'où le static.
-constexpr std::array<SDL_DialogFileFilter, 2> kVideoFilters{{
-    {.name = "Vidéos", .pattern = "mkv;mp4;m4v;mov;avi;webm;ts;m2ts;mts;wmv;flv;ogv;mpg;mpeg"},
-    {.name = "Tous les fichiers", .pattern = "*"},
+constexpr const char* kVideoPattern = "mkv;mp4;m4v;mov;avi;webm;ts;m2ts;mts;wmv;flv;ogv;mpg;mpeg";
+constexpr std::array<SDL_DialogFileFilter, 2> kVideoFiltersEn{{
+    {.name = "Videos", .pattern = kVideoPattern},
+    {.name = "All files", .pattern = "*"},
 }};
+constexpr std::array<SDL_DialogFileFilter, 2> kVideoFiltersFr{{
+    {.name = "Vidéos", .pattern = kVideoPattern},   // i18n-ok : le filtre de la boîte suit la langue
+    {.name = "Tous les fichiers", .pattern = "*"},  // i18n-ok
+}};
+const std::array<SDL_DialogFileFilter, 2>& video_filters() {
+  return i18n::language() == i18n::Language::French ? kVideoFiltersFr : kVideoFiltersEn;
+}
 
 // La réponse de la boîte, rendue par SDL sur un autre thread selon le système. Partagée avec le
 // rappel : l'accueil peut se fermer avant elle.
@@ -91,7 +100,7 @@ class FilePick {
     const char* videos = SDL_GetUserFolder(SDL_FOLDER_VIDEOS);
     pick->start_in_ = videos != nullptr ? videos : "";
     SDL_ShowOpenFileDialog(&FilePick::answered, new std::shared_ptr<FilePick>(pick), window,
-                           kVideoFilters.data(), static_cast<int>(kVideoFilters.size()),
+                           video_filters().data(), static_cast<int>(video_filters().size()),
                            pick->start_in_.empty() ? nullptr : pick->start_in_.c_str(), false);
   }
 
@@ -148,7 +157,7 @@ SettingsChoices home_choices(const HomeScreen& h, const HomeState& st, const Pla
   const GpuFacts machine = gpu_facts(h.screen);
   const std::string bench_text =
       measured && measured->gpu == machine.name && measured->driver == machine.driver
-          ? std::format("Dernière optimisation : {}", measured->date)
+          ? i18n::tr_format("Last optimization: {}", measured->date)
           : std::string();
   std::vector<SettingsChoices::AudioOut> audio_outputs;
   for (const audio::AudioDevice& device : audio::playback_devices())
@@ -201,7 +210,7 @@ SettingsChoices home_choices(const HomeScreen& h, const HomeState& st, const Pla
       .default_player_is_ajp = default_player_is_ajp,
       .bench_text = bench_text,
       .place = {.executable = h.paths.executable, .home = h.paths.home, .data = h.paths.data},
-      .span_prepare = {.note = "Ouvrez une vidéo : le lecteur prépare le mode Performance sur ses images."},
+      .span_prepare = {.note = i18n::tr("Open a video: the player prepares Performance mode on its frames.")},
       .fp8_reason = span_fp8_unavailable_reason(fp8_facts),
       .settings_dir = h.settings_path.parent_path()};
 }
