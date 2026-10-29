@@ -121,6 +121,11 @@ class SettingsPanel {
   }
   void close() { open_ = false; }
   bool is_open() const { return open_; }
+  // Il y a quelque chose à dessiner : le panneau ouvert, ou la fenêtre « lecteur par défaut », qui ne dépend
+  // pas de lui.
+  bool wants_draw(const PlaySettings& running, const SettingsChoices& choices) const {
+    return open_ || (!prompt_done_ && choices.offer_default_player && !running.default_player_dismissed);
+  }
 
   struct Result {
     std::optional<PlaySettings> live;    // à appliquer tout de suite
