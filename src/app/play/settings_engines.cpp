@@ -20,9 +20,9 @@ using panel::section;
 
 void engines_tab(const SettingsChoices& choices, std::optional<core::EngineId>& draft,
                  std::vector<Input>& actions, std::string& engines_dir) {
-  section("Moteur de SPAN et RIFE");
+  section("Moteur en service");
   const std::optional<core::EngineId> in_use = choices.engine_in_use;
-  if (in_use) ImGui::TextUnformatted(std::format("En service : {}", engine_label(*in_use)).c_str());
+  if (in_use) ImGui::TextUnformatted(std::string(engine_label(*in_use)).c_str());
   if (!choices.engine_note.empty()) note(choices.engine_note);
   if (choices.switchable.size() < 2) {
     note("Un seul moteur installé : « Installer d'autres moteurs » propose ceux qui conviennent à ce GPU.");
@@ -47,6 +47,26 @@ void engines_tab(const SettingsChoices& choices, std::optional<core::EngineId>& 
     }
   }
 
+  section("Moteurs installés");
+  ImGui::TextWrapped("%s", choices.chosen_engines.c_str());
+  if (ImGui::Button("Installer d'autres moteurs…")) actions.emplace_back(OpenEngineScreen{});
+  note("Rouvre l'écran des moteurs sans relancer le lecteur ; la lecture reprend ensuite au même endroit.");
+
+  section("Moteurs construits");
+  if (choices.engines.empty()) note("Aucun moteur construit.");
+  for (const EngineBadge& engine : choices.engines) {
+    ImGui::TextWrapped("%s", engine.name.c_str());  // un nom long passe à la ligne, il ne déborde pas
+    ImGui::SameLine();
+    ImGui::PushStyleColor(ImGuiCol_Text, engine.loaded ? kAccent : kNote);
+    ImGui::TextUnformatted(engine.loaded ? "· chargé" : "· en cache");
+    ImGui::PopStyleColor();
+    ImGui::PushStyleColor(ImGuiCol_Text, kNote);
+    ImGui::TextWrapped("%s", engine.detail.c_str());
+    ImGui::PopStyleColor();
+    ImGui::Spacing();
+  }
+  note("Un moteur est construit une fois par modèle et par taille, puis relu du cache.");
+
   section("Dossier d'installation");
   // Un moteur téléchargé (TensorRT : 1,3 Go installés pour une RTX 4070 Ti) et ses téléchargements
   // s'installent ici ; l'espace libre se vérifie AVANT chaque téléchargement. Vide : le dossier des données
@@ -57,7 +77,8 @@ void engines_tab(const SettingsChoices& choices, std::optional<core::EngineId>& 
     std::snprintf(folder.data(), folder.size(), "%s", engines_dir.c_str());
     folder_read = true;
   }
-  if (ImGui::InputText("Dossier##moteurs", folder.data(), folder.size())) engines_dir = folder.data();
+  if (ImGui::InputTextWithHint("Dossier##moteurs", "Dossier par défaut", folder.data(), folder.size()))
+    engines_dir = folder.data();
   ImGui::SameLine();
   if (ImGui::Button("Par défaut##moteurs")) {
     engines_dir.clear();
@@ -67,26 +88,6 @@ void engines_tab(const SettingsChoices& choices, std::optional<core::EngineId>& 
       std::format("Par défaut : {}. Libre à cet endroit : {}. Vaut au prochain lancement ; les moteurs déjà "
                   "installés ne sont pas déplacés.",
                   choices.engines_dir_default, choices.engines_dir_free));
-
-  section("Moteurs installés");
-  ImGui::TextWrapped("%s", choices.chosen_engines.c_str());
-  if (ImGui::Button("Installer d'autres moteurs…")) actions.emplace_back(OpenEngineScreen{});
-  note("Rouvre l'écran des moteurs sans relancer le lecteur ; la lecture reprend ensuite au même endroit.");
-
-  section("Moteurs construits");
-  if (choices.engines.empty()) note("Aucun moteur construit.");
-  for (const EngineBadge& engine : choices.engines) {
-    ImGui::TextUnformatted(engine.name.c_str());
-    ImGui::SameLine();
-    ImGui::PushStyleColor(ImGuiCol_Text, engine.loaded ? kAccent : kNote);
-    ImGui::TextUnformatted(engine.loaded ? "· chargé" : "· en cache");
-    ImGui::PopStyleColor();
-    ImGui::PushStyleColor(ImGuiCol_Text, kNote);
-    ImGui::TextUnformatted(engine.detail.c_str());
-    ImGui::PopStyleColor();
-    ImGui::Spacing();
-  }
-  note("Un moteur est construit une fois par modèle et par taille, puis relu du cache.");
 }
 
 }  // namespace ajp::app::play

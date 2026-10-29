@@ -97,15 +97,17 @@ void image_tab(PlaySettings& d, const SettingsChoices& choices) {
     }
     ImGui::EndCombo();
   }
-  precision_combo("Précision de SPAN", d.span_precision, choices.span_tiers);
-  ImGui::EndDisabled();
   panel::tip("Performance : le plus rapide. Balanced : plus fin, plus lent. Sharp1 : contours plus nets.");
-  panel::tip(
-      "Précision de SPAN. Équilibre : FP16, le réseau tel que livré. Performance : le plus rapide (calcul en "
-      "FP8 sur les RTX 40 et après), fabriqué sur votre PC par le bouton « Préparer le mode Performance » "
-      "des "
-      "réglages avancés ; il n'apparaît dans la liste qu'une fois prêt. Qualité : FP32, si sa variante est "
-      "installée. Recharge la lecture.");
+  if (choices.span_tiers.performance || choices.span_tiers.quality) {
+    precision_combo("Précision de SPAN", d.span_precision, choices.span_tiers);
+    panel::tip(
+        "Équilibre : FP16, le réseau tel que livré. Performance : le plus rapide (calcul en FP8 sur les RTX "
+        "40 "
+        "et après), fabriqué sur votre PC par le bouton « Préparer le mode Performance » des réglages "
+        "avancés ; il n'apparaît dans la liste qu'une fois prêt. Qualité : FP32, si sa variante est "
+        "installée. Recharge la lecture.");
+  }
+  ImGui::EndDisabled();
   if (panel::advanced() && !choices.span_tiers.performance) {
     panel::note(
         "Performance (FP8) : fabriqué sur votre PC (bouton « Préparer le mode Performance » plus bas), pour "
@@ -113,7 +115,7 @@ void image_tab(PlaySettings& d, const SettingsChoices& choices) {
         "RTX 40 et après.");
   }
 
-  section("Réduction avant l'agrandissement");
+  section("Résolution");
   // La source sans réduction, avec sa hauteur quand on la connaît : « 1080 lignes », pas « 4K », que
   // la sortie n'atteint qu'agrandie par SPAN.
   const auto label_of = [&](const HeightChoice& choice) {
@@ -268,9 +270,8 @@ void fluidity_tab(PlaySettings& d, const SettingsChoices& choices, bool exportin
     }
   }
   if (choices.source_fps > 0.0 && choices.display_hz > 0.0)
-    note(std::format("Grisés : au-delà de l'écran ({:.0f} Hz pour {:.3f} i/s).", choices.display_hz,
-                     choices.source_fps)
-             .c_str());
+    note(std::format("Grisé : au-delà de l'écran ({:.0f} Hz pour {:.3f} i/s).", choices.display_hz,
+                     choices.source_fps));
   if (exporting && now.num > now.den) {
     note(
         "À l'export, aucune image n'est sautée : chaque image créée coûte une passe, le temps de l'export "
@@ -378,7 +379,7 @@ void fluidity_tab(PlaySettings& d, const SettingsChoices& choices, bool exportin
   } else if (four_k && now.num >= 3 * now.den) {
     note(
         "Sortie 4K (source sans réduction agrandie par SPAN) : ×3 et plus demandent un GPU haut de gamme ; "
-        "SPAN 1080p → 2160p est la passe la plus lourde (11 ms par image sur une RTX 4070 Ti). Une "
+        "SPAN 1080p → 2160p est la passe la plus lourde. Une "
         "résolution "
         "de travail de 720p allège tout.");
   } else if (four_k) {

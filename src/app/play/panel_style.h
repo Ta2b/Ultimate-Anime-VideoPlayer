@@ -72,6 +72,15 @@ inline void section(const char* title) {
   ImGui::Separator();
 }
 
+// Place le bouton `label` (à venir) sur la ligne du dernier élément s'il y tient, sinon à la ligne : une
+// rangée de boutons ne déborde pas du cadre quand la fenêtre est étroite ou l'échelle grande.
+inline void same_line_if_fits(const char* label) {
+  const ImGuiStyle& style = ImGui::GetStyle();
+  const float need = ImGui::CalcTextSize(label).x + 2.0F * style.FramePadding.x;
+  const float right = ImGui::GetCursorScreenPos().x + ImGui::GetContentRegionAvail().x;
+  if (ImGui::GetItemRectMax().x + style.ItemSpacing.x + need <= right) ImGui::SameLine();
+}
+
 // Une infobulle sur le dernier élément, après un court délai ; elle s'affiche aussi sur un élément grisé.
 inline void tip(const char* text) {
   if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled | ImGuiHoveredFlags_DelayNormal)) {

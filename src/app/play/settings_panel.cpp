@@ -56,7 +56,7 @@ void hdr_tab(PlaySettings& d, const SettingsChoices& choices) {
     note("RTX HDR : le SDK Maxine VideoFX n'est pas installé (écran des moteurs).");
   if (!choices.hdr_output)
     note(
-        "Écran SDR : le HDR est indisponible ; l'image reste en SDR et le grade (onglet Couleurs) imite le "
+        "Écran SDR : le HDR est indisponible ; l'image reste en SDR et le grade (page Couleurs) imite le "
         "rendu HDR.");
   section(choices.nvidia ? "Réglages du mode HDR (RTX HDR et HDR adaptatif)" : "Réglages du HDR adaptatif");
   bool automatic = d.true_hdr_peak == 0;
@@ -84,12 +84,10 @@ void hdr_tab(PlaySettings& d, const SettingsChoices& choices) {
     d.true_hdr_gray = defaults.true_hdr_gray;
     d.true_hdr_debanding = defaults.true_hdr_debanding;
   }
-  note(std::format(
-      "Réglages appliqués en direct{}. Contraste et saturation sont dans l'onglet Grade, communs au HDR et "
-      "au SDR. Gris moyen : luminosité des tons moyens. Le HDR adaptatif suit la scène : moins d'expansion "
-      "sur les scènes claires et les grands aplats blancs, ombres plus douces la nuit, éclats isolés vers le "
-      "pic.",
-      choices.nvidia ? ", sur RTX HDR comme sur le HDR adaptatif" : ""));
+  note(
+      "Appliqués en direct. Contraste et saturation sont dans la page Couleurs. Gris moyen : luminosité des "
+      "tons moyens. Le HDR adaptatif suit la scène : moins d'expansion sur les scènes claires, ombres plus "
+      "douces la nuit.");
   panel::end_group();  // le dernier encadré s'ouvre dans la zone grisée : il se ferme avant d'en sortir
   ImGui::EndDisabled();
 }
@@ -112,17 +110,17 @@ bool grade_slider(const char* label, double& value, core::Range<double> range) {
 void look_section(PlaySettings& d) {
   section("Contraste et saturation (HDR et SDR)");
   ImGui::SliderInt("Contraste", &d.true_hdr_contrast, limits::kTrueHdrContrast.lo,
-                   limits::kTrueHdrContrast.hi, "%d", ImGuiSliderFlags_AlwaysClamp);
+                   limits::kTrueHdrContrast.hi, "%d %%", ImGuiSliderFlags_AlwaysClamp);
   ImGui::SliderInt("Saturation", &d.true_hdr_saturation, limits::kTrueHdrSaturation.lo,
-                   limits::kTrueHdrSaturation.hi, "%d", ImGuiSliderFlags_AlwaysClamp);
+                   limits::kTrueHdrSaturation.hi, "%d %%", ImGuiSliderFlags_AlwaysClamp);
   if (ImGui::Button("Contraste et saturation par défaut")) {
     const PlaySettings defaults;
     d.true_hdr_contrast = defaults.true_hdr_contrast;
     d.true_hdr_saturation = defaults.true_hdr_saturation;
   }
   note(
-      "En direct, sur RTX HDR, le HDR adaptatif et la sortie SDR : en SDR, la même courbe que TrueHDR "
-      "autour du gris moyen (onglet HDR), sans les éclats au-dessus du blanc.");
+      "En direct, pour RTX HDR, le HDR adaptatif et la sortie SDR (autour du gris moyen de la page "
+      "Conversion HDR, sans les éclats au-dessus du blanc).");
   if (!d.grade && !d.true_hdr) note("Hors RTX HDR, ils demandent « Grader la sortie » ci-dessous.");
 }
 
@@ -143,6 +141,10 @@ void grade_tab(PlaySettings& d, const SettingsChoices& choices) {
     }
     ImGui::EndCombo();
   }
+  panel::tip(
+      "Éclatant : éclats et aplats lumineux, couleurs et noirs poussés, teinte gardée ; le garde-fou adoucit "
+      "les couleurs saturées près du pic au lieu de les écrêter. Naturel : le grade d'origine du lecteur. "
+      "Tout s'applique en direct.");
   render::GradeSettings& g = d.grade_values;
   using namespace render::grade_limits;
   bool moved = false;
@@ -189,7 +191,7 @@ void composition_section(PlaySettings& d) {
       "des dégradés, courants en anime, sans toucher aux contours. Aucun effet sur l'export.");
 }
 
-// Noir absolu et soins OLED (HDR > Conversion, réglages avancés).
+// Noir absolu et soins OLED (HDR et couleurs > Conversion HDR, réglages avancés).
 void oled_sections(PlaySettings& d, const SettingsChoices& choices) {
   section("Noir absolu OLED");
   if (ImGui::BeginCombo("Noir absolu", std::string(label(d.oled_black)).c_str())) {
@@ -207,20 +209,14 @@ void oled_sections(PlaySettings& d, const SettingsChoices& choices) {
   ImGui::Checkbox("Effacer la barre en pause (anti-marquage)", &d.oled_care);
   ImGui::Checkbox("Cadence fixe (VRR sans scintillement)", &d.steady_cadence);
   note(
-      "Anti-marquage : sur un écran OLED, la barre s'efface aussi en pause après 20 s sans activité. "
-      "Cadence fixe : l'image est représentée à chaque rafraîchissement de l'écran, pour que le VRR reste à "
-      "fréquence constante ; une fréquence qui varie fait scintiller les scènes sombres d'un OLED. Coûte une "
-      "composition par rafraîchissement.");
+      "Anti-marquage : la barre s'efface aussi en pause après 20 s sans activité. Cadence fixe : l'image est "
+      "représentée à chaque rafraîchissement, pour que le VRR garde une fréquence constante (une fréquence "
+      "qui varie fait scintiller les scènes sombres d'un OLED) ; coûte une composition par "
+      "rafraîchissement.");
   if (!choices.black_status.empty()) note(choices.black_status.c_str());
   note(
       "Les quasi-noirs deviennent un vrai noir (0) ; le pied rejoint l'image au seuil, compté en pas de code "
-      "au-dessus du noir de la source. Calé en direct sur une rampe de 32 marches passée par RTX HDR et le "
-      "grade ; même gain sur R, V et B, et le maximum local 8x8 évite le scintillement.");
-  ImGui::Spacing();
-  note(
-      "Éclatant : éclats et aplats lumineux, couleurs et noirs poussés, teinte gardée (même gain sur R, "
-      "V et B) ; le garde-fou adoucit les couleurs saturées près du pic au lieu de les écrêter. "
-      "Naturel : le grade du lecteur actuel. Tout s'applique en direct.");
+      "au-dessus du noir de la source. Calé en direct sur une rampe de 32 marches.");
 }
 
 std::string language_label(std::string_view tag) {
@@ -247,32 +243,40 @@ void languages_tab(PlaySettings& d) {
   d.language_presets.resize(limits::kLanguagePresets);
   for (std::size_t rank = 0; rank < d.language_presets.size(); ++rank) {
     ImGui::PushID(static_cast<int>(rank));
-    section(rank == 0 ? "Préférence 1" : "Préférence 2, si la 1re n'est pas disponible");
+    section(rank == 0 ? "Langues préférées" : "Sinon, si la première n'est pas disponible");
     language_combo("Langue de l'audio", "Selon le fichier", d.language_presets[rank].audio);
     language_combo("Langue des sous-titres", "Aucun", d.language_presets[rank].subtitles);
     panel::end_group();  // l'encadré de la section ouvre sa propre fenêtre fille : il se ferme avant le PopID
     ImGui::PopID();
   }
   note(
-      "À l'ouverture d'un fichier : la première préférence dont l'audio ET les sous-titres existent est "
-      "prise telle quelle ; « Aucun » ne montre aucun sous-titre. Sinon, la deuxième ; sinon la meilleure "
-      "langue de chaque liste, puis les pistes par défaut du fichier. Une piste sans langue est reconnue "
-      "par son titre (VF, VOSTFR, Japanese…). Vaut au prochain fichier ; les pistes en cours se changent "
-      "dans la barre.");
+      "À l'ouverture d'un fichier, la première préférence dont l'audio et les sous-titres existent est prise "
+      "telle quelle (« Aucun » : pas de sous-titres) ; sinon la deuxième ; sinon la meilleure langue de "
+      "chaque liste. Vaut au prochain fichier ; les pistes en cours se changent dans la barre.");
 }
 
 void subtitles_tab(PlaySettings& d) {
-  section("Taille");
+  section("Taille des sous-titres");
   int percent = static_cast<int>(std::lround(d.subtitle_scale * 100.0F));
-  if (ImGui::SliderInt("Taille (%)", &percent, static_cast<int>(limits::kSubtitleScale.lo * 100.0F),
-                       static_cast<int>(limits::kSubtitleScale.hi * 100.0F), "%d",
+  if (ImGui::SliderInt("Taille", &percent, static_cast<int>(limits::kSubtitleScale.lo * 100.0F),
+                       static_cast<int>(limits::kSubtitleScale.hi * 100.0F), "%d %%",
                        ImGuiSliderFlags_AlwaysClamp)) {
     d.subtitle_scale = static_cast<float>(percent) / 100.0F;
   }
   if (ImGui::Button("Taille d'origine")) d.subtitle_scale = 1.0F;
-  note(
+  panel::tip(
       "Agrandit ou réduit toutes les polices, panneaux compris (comme la taille de mpv). Changement en "
       "direct ; la piste se choisit dans la barre (j).");
+}
+
+// L'épisode suivant : lu tout seul à la fin du fichier ouvert.
+void episodes_section(PlaySettings& d) {
+  section("Épisodes");
+  ImGui::Checkbox("Lire l'épisode suivant à la fin", &d.autoplay_next);
+  panel::tip(
+      "À la fin d'une vidéo ouverte par un fichier, lit la suivante du même dossier (ordre naturel des "
+      "noms : ep2 avant ep10). N : épisode suivant, Maj + N : précédent, O : passer le générique "
+      "(chapitre Opening ou Ending, sinon 85 s).");
 }
 
 void stats_tab(PlaySettings& d) {
@@ -282,7 +286,7 @@ void stats_tab(PlaySettings& d) {
   ImGui::BeginDisabled(d.stats.all);
   ImGui::Checkbox("Chaîne (modèles, tailles, moteur)", &d.stats.chain);
   ImGui::Checkbox("Images (temps par image, sautées)", &d.stats.frames);
-  ImGui::Checkbox("RIFE (interpolées, tenues, coupes)", &d.stats.rife);
+  ImGui::Checkbox("Interpolation (créées, tenues, coupes)", &d.stats.rife);
   ImGui::Checkbox("Pistes", &d.stats.tracks);
   ImGui::Checkbox("Sortie HDR", &d.stats.output);
   ImGui::Checkbox("Position exacte", &d.stats.position);
@@ -348,24 +352,18 @@ bool config_page(PlaySettings& d, const SettingsChoices& choices, BenchNote& ben
 void reset_page(std::vector<Input>& actions, const ProfilesView& view) {
   section("Profil d'origine");
   note(
-      "Les profils (Ctrl+1 à Ctrl+9) restent dans user.toml ; cette page remet le profil actif à ses valeurs "
-      "d'origine.");
+      "Remet le profil actif (Ctrl+1 à Ctrl+9) à ses valeurs d'origine ; les autres profils ne bougent pas.");
   if (ImGui::Button("Revenir au profil d'origine"))
     actions.emplace_back(EditProfile{.edit = core::edit::ResetProfile{.slot = view.active}});
 }
 
-struct PageInfo {
-  const char* category;
-  const char* name;
-  bool advanced;  // seulement avec la case « Réglages avancés »
-};
+}  // namespace
+
 // L'arbre : l'ordre est celui de l'écran. Les catégories se déduisent du changement de `category`.
-constexpr std::array<PageInfo, 14> kPages{{
+constexpr std::array<SettingsPage, 12> kPages{{
     {"Général", "Configuration", false},
-    {"Général", "Lecteur par défaut", false},  // masquée quand « Ne plus me le demander » est coché
-    {"Général", "Mises à jour", false},
-    {"Général", "Langues", false},
-    {"Général", "Sous-titres", false},
+    {"Général", "Lecture", false},      // langues préférées, sous-titres, épisode suivant
+    {"Général", "Application", false},  // lecteur par défaut et mises à jour
     {"Général", "Statistiques", false},
     {"Général", "Réinitialiser", false},
     {"Image IA", "Agrandissement", false},
@@ -373,11 +371,13 @@ constexpr std::array<PageInfo, 14> kPages{{
     {"HDR et couleurs", "Conversion HDR", false},
     {"HDR et couleurs", "Couleurs", false},
     {"Audio", "Sortie", false},
-    {"Export et moteurs", "Fichier", false},
-    {"Export et moteurs", "Moteurs installés", false},
+    {"Export et moteurs", "Export", false},
+    {"Export et moteurs", "Moteurs", false},
 }};
 
-}  // namespace
+std::span<const SettingsPage> settings_pages() {
+  return kPages;
+}
 
 void language_choice(const char* label, const char* none_label, std::string& tag) {
   language_combo(label, none_label, tag);
@@ -427,14 +427,9 @@ SettingsPanel::Result SettingsPanel::draw(const PlaySettings& running, const Set
     const float footer = (pending_shown_ ? 84.0F * scale : 0.0F) + ImGui::GetFrameHeightWithSpacing() +
                          2.0F * ImGui::GetStyle().ItemSpacing.y;
     const float tree_width = std::min(200.0F * scale, width * 0.3F);
-    if ((!advanced_ && kPages[static_cast<std::size_t>(page_)].advanced) ||
-        (page_ == 1 && draft_.default_player_dismissed && !advanced_))
-      page_ = 0;
-    // Une page masquée : réglage avancé sans la case, ou « Lecteur par défaut » une fois refusé.
-    const auto visible = [&](std::size_t i) {
-      if (kPages[i].advanced && !advanced_) return false;
-      return !(i == 1 && draft_.default_player_dismissed && !advanced_);
-    };
+    if (!advanced_ && kPages[static_cast<std::size_t>(page_)].advanced) page_ = 0;
+    // Une page masquée : un réglage avancé sans la case « Réglages avancés ».
+    const auto visible = [&](std::size_t i) { return advanced_ || !kPages[i].advanced; };
     // Barre de défilement fine, collée au bord extérieur des deux zones.
     ImGui::PushStyleVar(ImGuiStyleVar_ScrollbarSize, 8.0F * scale);
     ImGui::PushStyleVar(ImGuiStyleVar_ScrollbarRounding, 4.0F * scale);
@@ -467,21 +462,23 @@ SettingsPanel::Result SettingsPanel::draw(const PlaySettings& running, const Set
       band.w = 0.14F;
       ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, {style.ItemSpacing.x, 2.0F * scale});
       std::string_view category;
+      const std::string_view page_category = kPages[static_cast<std::size_t>(page_)].category;
+      std::string_view shown_category;
+      if (shown_page_ >= 0) shown_category = kPages[static_cast<std::size_t>(shown_page_)].category;
       int category_index = -1;
       bool category_open = false;
       for (std::size_t i = 0; i < kPages.size(); ++i) {
-        const PageInfo& page = kPages[i];
+        const SettingsPage& page = kPages[i];
         if (!visible(i)) continue;
         if (std::string_view(page.category) != category) {
           category = page.category;
           ++category_index;
           const auto slot = static_cast<std::size_t>(category_index);
-          // La catégorie de la page affichée s'ouvre quand la page change (clic, molette) ; les autres
-          // restent repliées au départ et gardent ensuite l'état choisi à la main.
-          if (!category_init_) category_open_[slot] = std::string_view(kPages[0].category) == category;
-          if (page_ != shown_page_ &&
-              std::string_view(kPages[static_cast<std::size_t>(page_)].category) == category)
-            category_open_[slot] = true;
+          // Quand la page change de catégorie (clic, molette), la catégorie de la page s'ouvre et les autres
+          // se replient : l'arbre tient dans une fenêtre basse. Ensuite chaque catégorie garde l'état choisi
+          // à la main.
+          if (page_ != shown_page_ && shown_category != page_category)
+            category_open_[slot] = category == page_category;
           if (category_index > 0) ImGui::Dummy({0.0F, 6.0F * scale});
           const ImVec2 at = ImGui::GetCursorScreenPos();
           const float row_width = ImGui::GetContentRegionAvail().x;
@@ -530,7 +527,6 @@ SettingsPanel::Result SettingsPanel::draw(const PlaySettings& running, const Set
                       ImGui::GetColorU32(selected ? ImGuiCol_Text : ImGuiCol_TextDisabled), page.name);
       }
       ImGui::PopStyleVar();
-      category_init_ = true;
     }
     shown_page_ = page_;
     ImGui::EndChild();
@@ -545,10 +541,9 @@ SettingsPanel::Result SettingsPanel::draw(const PlaySettings& running, const Set
           bench_.finished = false;
           prepare_after_bench(draft_, choices.span_prepare, choices.place.data, prepare_);
         }
-      } else if (name == "Lecteur par défaut") {
+      } else if (name == "Application") {
         default_player_page(choices.place, system_, draft_.default_player_dismissed,
                             choices.default_player_is_ajp);
-      } else if (name == "Mises à jour") {
         updates_page(draft_, choices.place, updates_);
       } else if (name == "Agrandissement") {
         image_tab(draft_, choices);
@@ -565,13 +560,13 @@ SettingsPanel::Result SettingsPanel::draw(const PlaySettings& running, const Set
         grade_tab(draft_, choices);
       } else if (name == "Sortie") {
         delay_held = sound_tab(draft_, choices);
-      } else if (name == "Langues") {
+      } else if (name == "Lecture") {
         languages_tab(draft_);
-      } else if (name == "Sous-titres") {
         subtitles_tab(draft_);
-      } else if (name == "Fichier") {
+        episodes_section(draft_);
+      } else if (name == "Export") {
         export_tab(*export_, running, choices, actions);
-      } else if (name == "Moteurs installés") {
+      } else if (name == "Moteurs") {
         engines_tab(choices, engine_draft_, actions, draft_.engines_dir);
       } else if (name == "Statistiques") {
         stats_tab(draft_);

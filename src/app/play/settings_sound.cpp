@@ -284,12 +284,6 @@ bool sound_tab(PlaySettings& d, const SettingsChoices& choices) {
   }
   if (panel::advanced()) panel::tip("Un autre appareil reprend le profil global, sans rien demander.");
 
-  section("Lecture");
-  ImGui::Checkbox("Lire l'épisode suivant à la fin", &d.autoplay_next);
-  panel::tip(
-      "À la fin d'une vidéo ouverte par un fichier, lit la suivante du même dossier (ordre naturel des "
-      "noms : ep2 avant ep10). N : épisode suivant, Maj + N : précédent, O : passer le générique "
-      "(chapitre Opening ou Ending, sinon 85 s).");
   if (!panel::advanced()) return false;
   section("Synchronisation");
   ImGui::SliderInt("Délai audio (ms)", &d.audio_delay_ms, -1000, 1000);
