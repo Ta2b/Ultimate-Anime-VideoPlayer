@@ -6,6 +6,7 @@
 #include <utility>
 #include <variant>
 
+#include "app/play/i18n.h"
 #include "core/frame.h"
 #include "core/pacing.h"
 
@@ -365,7 +366,7 @@ void Session::watch_clock(const ClockSnapshot& now, std::int64_t host_now) {
   if (!stages_.audio_lost(epoch_, current_->pts_us)) return;
   audio_stall_grace_us_ = kAudioStallRepeatUs;  // l'audio a déjà manqué : la prochaine fois, plus vite
   on_refusal({.stage = "main",
-              .refusal = {RefusalCode::DeviceUnavailable, "audio absent : l'horloge de l'écran mène"},
+              .refusal = {RefusalCode::DeviceUnavailable, i18n::tr("audio missing: the display clock leads")},
               .fatal = false});
 }
 
@@ -548,22 +549,22 @@ std::vector<std::string> Session::osd_lines() const {
   if ((show.all || show.output) && !config_.output.empty()) lines.push_back(config_.output);
   if (show.all || show.frames) {
     const std::uint64_t skipped = config_.extra != nullptr ? config_.extra->skipped() : 0;
-    lines.push_back(std::format("image {} (σ {}) · rendu {} · sautées {}{}",
-                                format_ms(stats_.frame_interval.median()),
-                                format_ms(static_cast<std::int64_t>(stats_.frame_interval.stddev())),
-                                format_ms(stats_.render.median()), stats_.dropped,
-                                skipped > 0 ? std::format(" (+ {} avant calcul)", skipped) : std::string()));
+    lines.push_back(i18n::tr_format(
+        "frame {} (σ {}) · render {} · skipped {}{}", format_ms(stats_.frame_interval.median()),
+        format_ms(static_cast<std::int64_t>(stats_.frame_interval.stddev())),
+        format_ms(stats_.render.median()), stats_.dropped,
+        skipped > 0 ? std::format(" (+ {} avant calcul)", skipped) : std::string()));
     const std::int64_t period = pacing_period_us();
     std::string synced;
     if (speed_ != 1.0) {
-      synced = std::format(" · calée sur l'écran {:+.3f} %", (speed_ - 1.0) * 100.0);
+      synced = i18n::tr_format(" · locked to the display {:+.3f} %", (speed_ - 1.0) * 100.0);
       std::ranges::replace(synced, '.', ',');
     }
-    lines.push_back(std::format(
-        "fluidité {}{} im/s · manquées {}{} · retard p95 {}{}", format_fps(stats_.shown_fps),
+    lines.push_back(i18n::tr_format(
+        "smoothness {}{} fps · missed {}{} · p95 delay {}{}", format_fps(stats_.shown_fps),
         period > 0 ? std::format(" / {}", format_fps(1e6 / static_cast<double>(period))) : std::string(),
         stats_.missing,
-        stats_.uninterpolated > 0 ? std::format(" (+ {} coupes et dessins tenus)", stats_.uninterpolated)
+        stats_.uninterpolated > 0 ? i18n::tr_format(" (+ {} cuts and held drawings)", stats_.uninterpolated)
                                   : std::string(),
         format_ms(stats_.lag.percentile(95)), synced));
   }

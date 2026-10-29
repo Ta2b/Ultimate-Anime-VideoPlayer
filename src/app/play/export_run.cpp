@@ -296,13 +296,13 @@ ExportOutcome run_export(Player& p, const ExportJob& job) {
       const std::string left =
           fraction > 0.01F ? seconds_text(elapsed * (1.0 - fraction) / fraction) : std::string("…");
       const PrepareView view{
-          .label = "Export en cours · Échap pour annuler",
+          .label = i18n::tr("Exporting · Esc to cancel"),
           .fraction = duration_us > 0 ? std::optional(fraction) : std::nullopt,
-          .details = {std::format("{} images · {:.1f} i/s · écoulé {} · reste ~{}", converted,
-                                  elapsed > 0.0 ? static_cast<double>(converted) / elapsed : 0.0,
-                                  seconds_text(elapsed), left),
-                      std::format("{}x{} à {} i/s · {}", size.width, size.height, rate_text(rate),
-                                  (*writer)->encoder()),
+          .details = {i18n::tr_format("{} frames · {:.1f} fps · elapsed {} · left ~{}", converted,
+                                      elapsed > 0.0 ? static_cast<double>(converted) / elapsed : 0.0,
+                                      seconds_text(elapsed), left),
+                      i18n::tr_format("{}x{} at {} fps · {}", size.width, size.height, rate_text(rate),
+                                      (*writer)->encoder()),
                       chain_text,
                       std::format("{} · {:.0f} Mo", prepare::utf8_path(job.output),
                                   static_cast<double>((*writer)->progress().bytes) / 1e6)},

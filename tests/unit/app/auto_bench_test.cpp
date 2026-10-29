@@ -9,6 +9,7 @@
 
 #include "app/play/auto_bench_run.h"
 #include "app/play/options.h"
+#include "french_ui.h"
 
 using namespace ajp;
 using namespace ajp::app::play;
@@ -27,6 +28,7 @@ BenchRun run(Tier level, std::int64_t lost = 0, std::int64_t presents = 2000, st
 }  // namespace
 
 TEST_CASE("un essai tient quand peu d'images sont perdues et le retard est court", "[auto_bench]") {
+  ajp::app::play::FrenchUi french;
   CHECK(holds(run(Tier::Fast)));
   CHECK(holds(run(Tier::Fast, 40)));        // 2 %
   CHECK_FALSE(holds(run(Tier::Fast, 41)));  // juste au-dessus
@@ -35,10 +37,12 @@ TEST_CASE("un essai tient quand peu d'images sont perdues et le retard est court
 }
 
 TEST_CASE("un essai trop court ne tient pas", "[auto_bench]") {
+  ajp::app::play::FrenchUi french;
   CHECK_FALSE(holds(run(Tier::Light, 0, 50)));
 }
 
 TEST_CASE("la recherche monte tant que ça tient puis s'arrête", "[auto_bench]") {
+  ajp::app::play::FrenchUi french;
   std::vector<BenchRun> runs;
   CHECK(next_level(runs, Tier::Normal) == Tier::Normal);
   runs.push_back(run(Tier::Normal));
@@ -51,6 +55,7 @@ TEST_CASE("la recherche monte tant que ça tient puis s'arrête", "[auto_bench]"
 }
 
 TEST_CASE("la recherche descend quand le niveau estimé ne tient pas", "[auto_bench]") {
+  ajp::app::play::FrenchUi french;
   std::vector<BenchRun> runs{run(Tier::Fast, 500)};
   CHECK(next_level(runs, Tier::Fast) == Tier::Normal);
   runs.push_back(run(Tier::Normal, 500));
@@ -61,6 +66,7 @@ TEST_CASE("la recherche descend quand le niveau estimé ne tient pas", "[auto_be
 }
 
 TEST_CASE("rien ne tient : Économe, et la recherche s'arrête en bas", "[auto_bench]") {
+  ajp::app::play::FrenchUi french;
   const std::vector<BenchRun> runs{run(Tier::Light, 500)};
   CHECK(next_level(runs, Tier::Light) == Tier::Economy);
   std::vector<BenchRun> all = runs;
@@ -70,11 +76,13 @@ TEST_CASE("rien ne tient : Économe, et la recherche s'arrête en bas", "[auto_b
 }
 
 TEST_CASE("la recherche s'arrête en haut", "[auto_bench]") {
+  ajp::app::play::FrenchUi french;
   CHECK_FALSE(next_level({run(Tier::Ultra)}, Tier::Ultra));
   CHECK(best_level({run(Tier::Ultra)}) == Tier::Ultra);
 }
 
 TEST_CASE("bench.toml : aller-retour, refus, fichier absent", "[auto_bench]") {
+  ajp::app::play::FrenchUi french;
   const BenchResult result{.gpu = "NVIDIA GeForce RTX 4070 Ti", .level = Tier::Ultra, .date = "2026-10-28"};
   const auto read = parse_bench(format_bench(result));
   REQUIRE(read);
@@ -95,6 +103,7 @@ TEST_CASE("bench.toml : aller-retour, refus, fichier absent", "[auto_bench]") {
 }
 
 TEST_CASE("la mesure remplace l'estimation pour la même carte seulement", "[auto_bench]") {
+  ajp::app::play::FrenchUi french;
   const GpuFacts gpu{.name = "NVIDIA GeForce RTX 4070 Ti", .vendor = GpuVendor::Nvidia, .tensor_cores = true};
   CHECK(effective_tier(gpu, std::nullopt) == Tier::Fast);  // l'estimation
   CHECK(effective_tier(gpu, BenchResult{.gpu = gpu.name, .level = Tier::Ultra}) == Tier::Ultra);
@@ -104,6 +113,7 @@ TEST_CASE("la mesure remplace l'estimation pour la même carte seulement", "[aut
 }
 
 TEST_CASE("la mesure est refaite quand le pilote change", "[auto_bench]") {
+  ajp::app::play::FrenchUi french;
   const GpuFacts gpu{.name = "NVIDIA GeForce RTX 4070 Ti",
                      .driver = "2400",
                      .vendor = GpuVendor::Nvidia,
@@ -119,6 +129,7 @@ TEST_CASE("la mesure est refaite quand le pilote change", "[auto_bench]") {
 }
 
 TEST_CASE("la lecture d'un essai : aller-retour et refus", "[auto_bench]") {
+  ajp::app::play::FrenchUi french;
   const BenchReading reading{.gpu = "g", .driver = "7", .run = run(Tier::Fast, 10)};
   const auto read = parse_reading(format_reading(reading));
   REQUIRE(read);
@@ -134,6 +145,7 @@ TEST_CASE("la lecture d'un essai : aller-retour et refus", "[auto_bench]") {
 }
 
 TEST_CASE("la ligne de commande d'un essai : son coupé, dossier jetable, niveau", "[auto_bench]") {
+  ajp::app::play::FrenchUi french;
   const BenchPlan plan{.executable = "/x/ajp", .video = "/v/a.mkv", .work_dir = "/tmp/w", .seconds = 9};
   const auto args = bench_child_args(plan, Tier::Light, "/tmp/w/d", "/tmp/w/o.toml");
   const auto has = [&](std::string_view arg) { return std::ranges::find(args, arg) != args.end(); };
@@ -163,6 +175,7 @@ TEST_CASE("la ligne de commande d'un essai : son coupé, dossier jetable, niveau
 }
 
 TEST_CASE("ajp bench : options et refus", "[auto_bench]") {
+  ajp::app::play::FrenchUi french;
   const std::vector<std::string_view> good{"a.mkv", "--seconds=20", "--report=r.txt", "--windowed"};
   const auto options = parse_bench_options(good);
   REQUIRE(options);
@@ -179,6 +192,7 @@ TEST_CASE("ajp bench : options et refus", "[auto_bench]") {
 }
 
 TEST_CASE("le rapport nomme chaque essai et le niveau gardé", "[auto_bench]") {
+  ajp::app::play::FrenchUi french;
   BenchOutcome outcome;
   outcome.estimated = Tier::Fast;
   outcome.runs = {run(Tier::Fast), run(Tier::Ultra, 600)};
@@ -190,6 +204,7 @@ TEST_CASE("le rapport nomme chaque essai et le niveau gardé", "[auto_bench]") {
 }
 
 TEST_CASE("ajp compare : options, ligne de commande d'une variante, rapport", "[auto_bench]") {
+  ajp::app::play::FrenchUi french;
   const std::vector<std::string_view> args{"a.mkv",    "--a=--rife=3  --work-height=540", "--b",
                                            "--rife=4", "--b-settings=poses.toml",         "--seconds=8"};
   const auto options = parse_compare_options(args);
@@ -216,6 +231,7 @@ TEST_CASE("ajp compare : options, ligne de commande d'une variante, rapport", "[
 
 TEST_CASE("l'exploration monte la hauteur de travail palier par palier, jamais au-dessus de la source",
           "[auto_bench][exploration]") {
+  ajp::app::play::FrenchUi french;
   CHECK(next_work_height(540, 1080) == 720);
   CHECK(next_work_height(720, 1080) == 900);
   CHECK(next_work_height(900, 1080) == 1080);
@@ -227,12 +243,14 @@ TEST_CASE("l'exploration monte la hauteur de travail palier par palier, jamais a
 
 TEST_CASE("l'exploration propose RIFE 4.25 au-dessus du modèle léger, rien d'autre",
           "[auto_bench][exploration]") {
+  ajp::app::play::FrenchUi french;
   CHECK(next_rife_model("rife_v4.22_lite.onnx") == "rife_v4.25.onnx");
   CHECK_FALSE(next_rife_model("rife_v4.25.onnx").has_value());
   CHECK_FALSE(next_rife_model("").has_value());
 }
 
 TEST_CASE("bench.toml garde l'exploration et relit les anciens fichiers", "[auto_bench][exploration]") {
+  ajp::app::play::FrenchUi french;
   BenchResult result{.gpu = "NVIDIA GeForce RTX 4070 Ti",
                      .driver = "615.78",
                      .level = Tier::Fast,
@@ -253,6 +271,7 @@ TEST_CASE("bench.toml garde l'exploration et relit les anciens fichiers", "[auto
 }
 
 TEST_CASE("la lecture d'un essai garde la hauteur et le modèle joués", "[auto_bench][exploration]") {
+  ajp::app::play::FrenchUi french;
   BenchReading reading{.gpu = "g",
                        .driver = "d",
                        .run = run(Tier::Normal),

@@ -13,6 +13,8 @@
 #include <string_view>
 #include <system_error>
 
+#include "app/play/i18n.h"
+
 #ifdef _WIN32
 #include <windows.h>
 #endif
@@ -63,8 +65,8 @@ std::optional<std::string> windows_prerequisite(core::EngineId engine) {
   if (engine != core::EngineId::MiGraphX) return std::nullopt;  // les pilotes fournissent le reste
   const unsigned long build = windows_build();
   if (build == 0 || build >= kWinmlBuild) return std::nullopt;
-  return std::format("Windows 11 24H2 requis (build {} installé) : mettre Windows à jour par Windows Update",
-                     build);
+  return i18n::tr_format(
+      "Windows 11 24H2 required (build {} installed): update Windows through Windows Update", build);
 }
 
 }  // namespace
@@ -83,7 +85,7 @@ EngineCatalog load_catalog(const std::filesystem::path& index, const std::filesy
   }
   std::ifstream in(index, std::ios::binary);
   if (!in) {
-    catalog.problem = std::format("{} absent : seuls les moteurs livrés sont proposés", index.string());
+    catalog.problem = i18n::tr_format("{} missing: only bundled engines are offered", index.string());
     return catalog;
   }
   const std::string text{std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>()};
@@ -102,7 +104,8 @@ EngineCatalog load_catalog(const std::filesystem::path& index, const std::filesy
   const auto add_problem = [&](const std::string& what) {
     catalog.problem += std::format("{}{} : {}", catalog.problem.empty() ? "" : " ; ", index.string(), what);
   };
-  for (const Refusal& skipped : parsed->skipped) add_problem(std::format("écarté, {}", skipped.detail));
+  for (const Refusal& skipped : parsed->skipped)
+    add_problem(i18n::tr_format("discarded, {}", skipped.detail));
   if (catalog.layout.os == core::Os::Linux) {
     if (auto maxine = core::parse_maxine_source(text)) {
       catalog.maxine = std::move(*maxine);
@@ -154,11 +157,12 @@ std::optional<std::string> missing_prerequisite(core::EngineId engine) {
     case core::EngineId::MiGraphX:
       // Le module est lié au runtime HIP de ROCm 7 (libamdhip64.so.7) : un ROCm 6 ne le charge pas.
       if (!any_exists({"/opt/rocm/lib/libmigraphx_c.so.3", "/opt/rocm/lib/libmigraphx_c.so"}))
-        return "ROCm absent : installer « migraphx » depuis le dépôt ROCm 7 d'AMD (sudo apt install "
-               "migraphx)";
+        return i18n::tr(
+            "ROCm missing: install \"migraphx\" from AMD's ROCm 7 repository (sudo apt install migraphx)");
       if (!any_exists({"/opt/rocm/lib/libamdhip64.so.7"}))
-        return "ROCm 7 requis (ROCm 6 installé) : passer au dépôt ROCm 7 d'AMD, puis sudo apt install "
-               "migraphx";
+        return i18n::tr(
+            "ROCm 7 required (ROCm 6 installed): switch to AMD's ROCm 7 repository, then sudo apt install "
+            "migraphx");
       return std::nullopt;
     case core::EngineId::OpenVino:
       if (any_exists({"/usr/lib/x86_64-linux-gnu/libze_intel_gpu.so.1",
@@ -166,7 +170,7 @@ std::optional<std::string> missing_prerequisite(core::EngineId engine) {
                       "/usr/lib64/libze_intel_gpu.so.1", "/usr/lib/libze_intel_gpu.so.1"})) {
         return std::nullopt;
       }
-      return "pilote compute Intel absent (sudo apt install intel-opencl-icd libze-intel-gpu1)";
+      return i18n::tr("Intel compute driver missing (sudo apt install intel-opencl-icd libze-intel-gpu1)");
     default:
       return std::nullopt;
   }
@@ -285,11 +289,12 @@ InstallSpace install_space(const EngineCatalog& catalog, const core::EnginePacka
 std::expected<void, Refusal> check_space(const InstallSpace& space, std::uint64_t available,
                                          const std::filesystem::path& where) {
   if (available >= space.peak) return {};
-  return refuse(RefusalCode::InsufficientSpace,
-                std::format("espace disque insuffisant : l'installation demande {} (dont {} à télécharger, "
-                            "{} une fois installé), il reste {} sur {}",
-                            format_size(space.peak), format_size(space.download),
-                            format_size(space.installed), format_size(available), where.string()));
+  return refuse(
+      RefusalCode::InsufficientSpace,
+      i18n::tr_format(
+          "not enough disk space: the install needs {} ({} to download, {} once installed), {} left on {}",
+          format_size(space.peak), format_size(space.download), format_size(space.installed),
+          format_size(available), where.string()));
 }
 
 std::expected<void, Refusal> fetch_vendor_file(const core::VendorFile& file,
@@ -297,7 +302,7 @@ std::expected<void, Refusal> fetch_vendor_file(const core::VendorFile& file,
                                                const std::filesystem::path& scratch,
                                                const InstallProgress& progress) {
   const auto curl = system_tool("curl");
-  if (!curl) return refuse(RefusalCode::LibraryUnavailable, "curl introuvable sur ce système");
+  if (!curl) return refuse(RefusalCode::LibraryUnavailable, i18n::tr("curl not found on this system"));
   std::error_code error;
   std::filesystem::create_directories(scratch, error);
   const std::filesystem::path packed = scratch / (file.name + ".part");
@@ -306,7 +311,7 @@ std::expected<void, Refusal> fetch_vendor_file(const core::VendorFile& file,
     std::error_code ignored;
     std::filesystem::remove(packed, ignored);
   };
-  if (file.packed_size == 0) return refuse(RefusalCode::FieldOutOfRange, file.name + " : taille nulle");
+  if (file.packed_size == 0) return refuse(RefusalCode::FieldOutOfRange, file.name + i18n::tr(": zero size"));
   const std::uint64_t last = file.data_offset + file.packed_size - 1;
   auto fetched = run_tool(
       {.program = *curl,
@@ -316,7 +321,7 @@ std::expected<void, Refusal> fetch_vendor_file(const core::VendorFile& file,
       [&](std::string_view line) {
         if (const auto f = curl_percent(line); f && progress.report) progress.report(*f * 0.85F, file.name);
       },
-      progress.stop, std::format("téléchargement de {}", file.name));
+      progress.stop, i18n::tr_format("downloading {}", file.name));
   if (!fetched) {
     cleanup();
     return std::unexpected(fetched.error());
@@ -324,8 +329,8 @@ std::expected<void, Refusal> fetch_vendor_file(const core::VendorFile& file,
   const std::uintmax_t got = std::filesystem::file_size(packed, error);
   if (error || got != file.packed_size) {
     cleanup();
-    return refuse(RefusalCode::HashMismatch, std::format("{} : {} octets reçus, {} attendus", file.name,
-                                                         error ? 0 : got, file.packed_size));
+    return refuse(RefusalCode::HashMismatch, i18n::tr_format("{}: {} bytes received, {} expected", file.name,
+                                                             error ? 0 : got, file.packed_size));
   }
   if (progress.report) progress.report(0.9F, file.name);  // tiré : la décompression commence
   std::filesystem::path partial = dest;
@@ -417,7 +422,7 @@ std::expected<std::filesystem::path, Refusal> install_steps(const EngineCatalog&
   const auto curl = system_tool("curl");
   const auto tar = system_tool("tar");
   if (!curl || !tar)
-    return refuse(RefusalCode::LibraryUnavailable, "curl ou tar introuvables sur ce système");
+    return refuse(RefusalCode::LibraryUnavailable, i18n::tr("curl or tar not found on this system"));
   const std::string name(core::engine_name(package.engine));
   const std::vector<core::VendorFile> vendor =
       core::vendor_files_for(catalog.vendor_files, package.engine, catalog.layout.os, progress.cuda_arch);
@@ -434,14 +439,15 @@ std::expected<std::filesystem::path, Refusal> install_steps(const EngineCatalog&
     if (progress.report) progress.report(fraction, stage);
   };
   std::error_code error;
-  step = "vérification de la place";
+  step = i18n::tr("checking free space");
   // La place d'abord : un refus net, sans téléchargement, plutôt qu'un disque qui se remplit puis une
   // installation recommencée.
   const std::filesystem::path target_dir = core::engine_dir(catalog.layout, package);
   const InstallSpace space = install_space(catalog, package, progress.cuda_arch, directory_bytes(target_dir));
   log_channel("app")->info(
-      "installation de {} : architecture {}, à tirer {}, installé {}, pic {}, libre {} ({})", name,
-      progress.cuda_arch.empty() ? "inconnue (tous les fichiers)" : progress.cuda_arch,
+      "installation de {} : architecture {}, à tirer {}, installé {}, pic {}, libre {} ({})",
+      name,  // i18n-ok : journal
+      progress.cuda_arch.empty() ? i18n::tr("unknown (all files)") : progress.cuda_arch,
       format_size(space.download), format_size(space.installed), format_size(space.peak),
       format_size(free_bytes(catalog.layout.engines)), catalog.layout.engines.string());
   if (const auto fits = check_space(space, free_bytes(catalog.layout.engines), catalog.layout.engines); !fits)
@@ -459,8 +465,8 @@ std::expected<std::filesystem::path, Refusal> install_steps(const EngineCatalog&
   if (!resumed) {
     if (std::filesystem::file_size(part, error) >= package.size && !error)
       std::filesystem::remove(part, error);
-    step = "téléchargement de l'archive du moteur";
-    overall(0.0, std::format("téléchargement de {} ({})", name, format_size(package.size)));
+    step = i18n::tr("downloading the engine archive");
+    overall(0.0, i18n::tr_format("downloading {} ({})", name, format_size(package.size)));
     auto fetched = run_tool(
         {.program = *curl,
          .args = {"--fail", "--location", "--retry", "1", "--retry-delay", "2", "--continue-at", "-",
@@ -469,12 +475,12 @@ std::expected<std::filesystem::path, Refusal> install_steps(const EngineCatalog&
         [&](std::string_view line) {
           if (const auto f = curl_percent(line))
             overall(static_cast<double>(*f) * static_cast<double>(package.size),
-                    std::format("téléchargement de {}", name));
+                    i18n::tr_format("downloading {}", name));
         },
-        progress.stop, std::format("téléchargement de {}", name));
+        progress.stop, i18n::tr_format("downloading {}", name));
     if (!fetched) return std::unexpected(fetched.error());
-    step = "vérification de l'archive";
-    overall(static_cast<double>(package.size), std::format("vérification de {}", name));
+    step = i18n::tr("verifying the archive");
+    overall(static_cast<double>(package.size), i18n::tr_format("verifying {}", name));
     if (auto ok = core::verify_file(part, package.size, package.sha256, progress.stop); !ok) {
       std::filesystem::remove(part, error);  // un fichier faux ne se reprend pas
       return std::unexpected(ok.error());
@@ -489,13 +495,13 @@ std::expected<std::filesystem::path, Refusal> install_steps(const EngineCatalog&
   std::filesystem::create_directories(staging, error);
   if (error)
     return refuse(RefusalCode::FileUnwritable, std::format("{} : {}", staging.string(), error.message()));
-  step = "extraction de l'archive";
+  step = i18n::tr("extracting the archive");
   done_bytes = static_cast<double>(package.size);
-  overall(0.0, std::format("extraction de {}", name));
+  overall(0.0, i18n::tr_format("extracting {}", name));
   if (auto ok = run_tool({.program = *tar,
                           .args = {"-xzf", part.string(), "-C", staging.string()},
                           .timeout = std::chrono::minutes(30)},
-                         {}, progress.stop, std::format("extraction de {}", name));
+                         {}, progress.stop, i18n::tr_format("extracting {}", name));
       !ok) {
     std::filesystem::remove_all(staging, error);
     return std::unexpected(ok.error());
@@ -508,21 +514,23 @@ std::expected<std::filesystem::path, Refusal> install_steps(const EngineCatalog&
   if (module && !std::filesystem::is_regular_file(library, error)) {
     std::filesystem::remove_all(staging, error);
     return refuse(RefusalCode::HashMismatch,
-                  std::format("paquet {} sans {}", name, library.filename().string()));
+                  i18n::tr_format("package {} without {}", name, library.filename().string()));
   }
   // Les fichiers que NVIDIA publie, tirés de ses archives et joints au module : ce qui est à nous
   // vient de notre release, le reste du lien direct (core::VendorFile).
   for (std::size_t i = 0; i < vendor.size(); ++i) {
     const core::VendorFile& file = vendor[i];
-    step = std::format("fichier {} ({}/{})", file.name, i + 1, vendor.size());
+    step = i18n::tr_format("file {} ({}/{})", file.name, i + 1, vendor.size());
     const std::string label = std::format("{} ({}/{})", file.name, i + 1, vendor.size());
-    overall(0.0, "téléchargement de " + label);
-    log_channel("app")->info("installation de {} : {} ({} tirés, {} écrits)", name, step,
+    overall(0.0, i18n::tr_format("downloading {}", label));
+    log_channel("app")->info("installation de {} : {} ({} tirés, {} écrits)", name,
+                             step,  // i18n-ok : journal
                              format_size(file.packed_size), format_size(file.size));
     InstallProgress local = progress;
     local.report = [&, label](float fraction, const std::string&) {
       overall(static_cast<double>(fraction) * static_cast<double>(file.packed_size),
-              (fraction >= 0.9F ? "décompression de " : "téléchargement de ") + label);
+              fraction >= 0.9F ? i18n::tr_format("decompressing {}", label)
+                               : i18n::tr_format("downloading {}", label));
     };
     if (auto ok = fetch_vendor_file(file, staging / file.name, catalog.layout.downloads, local); !ok) {
       std::filesystem::remove_all(staging, error);
@@ -530,13 +538,13 @@ std::expected<std::filesystem::path, Refusal> install_steps(const EngineCatalog&
     }
     done_bytes += static_cast<double>(file.packed_size);
   }
-  step = "remplacement de la version installée";
+  step = i18n::tr("replacing the installed version");
   {
     std::ofstream note(staging / std::string(kPackageNote), std::ios::trunc);
     note << "sha256=" << package.sha256 << "\nlicence=" << package.license << '\n';
     if (!note.flush()) {
       std::filesystem::remove_all(staging, error);
-      return refuse(RefusalCode::FileUnwritable, std::format("{} : note du paquet", staging.string()));
+      return refuse(RefusalCode::FileUnwritable, i18n::tr_format("{}: package note", staging.string()));
     }
   }
   // L'ancien dossier est mis de côté avant d'être remplacé, puis effacé : si l'un de ses fichiers est
@@ -564,7 +572,7 @@ std::expected<std::filesystem::path, Refusal> install_steps(const EngineCatalog&
   }
   if (replaced) std::filesystem::remove_all(aside, error);
   error.clear();
-  report(1.0F, std::format("{} installé", name));
+  report(1.0F, i18n::tr_format("{} installed", name));
   return module ? core::backend_library(catalog.layout, package) : target;
 }
 
@@ -585,7 +593,7 @@ std::expected<std::filesystem::path, Refusal> install_package(const EngineCatalo
       std::filesystem::remove_all(leftover, error);
     }
   }
-  std::string step = "démarrage";
+  std::string step = i18n::tr("starting");
   const auto started = std::chrono::steady_clock::now();
   auto result = install_steps(catalog, package, progress, step);
   const auto seconds =

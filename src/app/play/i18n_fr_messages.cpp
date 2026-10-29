@@ -1,0 +1,187 @@
+#include <array>
+
+#include "app/play/i18n_fr.h"
+
+namespace ajp::app::play::i18n {
+namespace {
+
+// Messages : (clé anglaise, français).
+constexpr std::array kMessages{
+    Entry{"  {:<24} {:>5.1f} % lost, p95 delay {:>6.1f} ms, frame {:>6.1f} ms (p95 {:>6.1f}), compositing "
+          "{:>5.1f} ms: {}\n",
+          "  {:<24} {:>5.1f} % perdues, retard p95 {:>6.1f} ms, image {:>6.1f} ms (p95 {:>6.1f}), "
+          "composition {:>5.1f} ms : {}\n"},
+    Entry{"  {:<8} {:>5} presentations, {:>5.1f} % lost, p95 delay {:>6.1f} ms: {}\n",
+          "  {:<8} {:>5} présentations, {:>5.1f} % perdues, retard p95 {:>6.1f} ms : {}\n"},
+    Entry{" (already prepared)", " (déjà préparée)"},
+    Entry{" SPAN Performance FP8: no{}{}.", " Performance FP8 pour SPAN : non{}{}."},
+    Entry{" SPAN Performance FP8: ready.", " Performance FP8 pour SPAN : prête."},
+    Entry{": prepared, installed at next launch", " : préparée, installée au prochain lancement"},
+    Entry{": zero size", " : taille nulle"},
+    Entry{"AJP is in \"Open with\". To make it the default: \"Make this the default player\" in Settings > "
+          "General > Application, or Settings > Apps > Default apps.",
+          "AJP figure dans « Ouvrir avec ». Pour en faire le lecteur par défaut : « Faire de ce lecteur le "
+          "lecteur par défaut » dans Paramètres > Général > Application, ou Paramètres > Applications > "
+          "Applications par défaut."},
+    Entry{"AJP is no longer in \"Open with\".", "AJP ne figure plus dans « Ouvrir avec »."},
+    Entry{"AJP is now the video player (mkv, mp4, webm, avi, mov…).",
+          "AJP est maintenant le lecteur des vidéos (mkv, mp4, webm, avi, mov…)."},
+    Entry{"AJP was not registered: nothing to remove.", "AJP n'était pas inscrit : rien à retirer."},
+    Entry{"AJP.app already declares the videos it opens. To make it the default: right-click a video > Get "
+          "Info > Open with: AJP > Change All.",
+          "AJP.app déclare déjà les vidéos qu'il ouvre. Pour en faire le lecteur par défaut : clic droit sur "
+          "une vidéo > Lire les informations > Ouvrir avec : AJP > Tout modifier."},
+    Entry{"AppImage: download the new version from the releases page (replace the file)",
+          "AppImage : la nouvelle version se télécharge sur la page des releases (le fichier se remplace)"},
+    Entry{"At p95, \"{}\" is lighter by {:.1f} ms per frame.\n",
+          "Au p95, « {} » est plus légère de {:.1f} ms par image.\n"},
+    Entry{"Building a compute engine: first time only, probably several minutes on a laptop.",
+          "Construction d'un moteur : la première fois seulement, sans doute plusieurs minutes sur un "
+          "portable."},
+    Entry{"Card: {}\n", "Carte : {}\n"},
+    Entry{"Card: {} (driver {})\nEstimated level: {}\n", "Carte : {} (pilote {})\nNiveau estimé : {}\n"},
+    Entry{"Exploration: the machine holds a working height of {}p.\n",
+          "Exploration : la machine tient une hauteur de travail de {}p.\n"},
+    Entry{"Exploration: the machine holds the {} model.\n", "Exploration : la machine tient le modèle {}.\n"},
+    Entry{"If this is the first time on this PC, building the engines can take several minutes.",
+          "Si c'est la première fois sur ce PC, la construction des moteurs peut prendre plusieurs minutes."},
+    Entry{"Intel compute driver missing (sudo apt install intel-opencl-icd libze-intel-gpu1)",
+          "pilote compute Intel absent (sudo apt install intel-opencl-icd libze-intel-gpu1)"},
+    Entry{"Level kept: {}\n", "Niveau gardé : {}\n"},
+    Entry{"On macOS the registration follows AJP.app: remove it by trashing the app.",
+          "Sous macOS, l'inscription suit AJP.app : pour la retirer, mettez l'app à la corbeille."},
+    Entry{"Only \"{}\" holds.\n", "Seule « {} » tient.\n"},
+    Entry{"Open a video", "Ouvrir une vidéo"},
+    Entry{"Performance mode ready: playback uses it now",
+          "Mode Performance prêt : la lecture l'utilise maintenant"},
+    Entry{"Performance mode unavailable, playing in FP16: {}",
+          "Mode Performance impossible, lecture en FP16 : {}"},
+    Entry{"Pick the video in the open window.", "Choisissez la vidéo dans la fenêtre ouverte."},
+    Entry{"Preparing Performance mode… {} %", "Préparation du mode Performance… {} %"},
+    Entry{"Previous version restored{}", "Version précédente remise{}"},
+    Entry{"ROCm 7 required (ROCm 6 installed): switch to AMD's ROCm 7 repository, then sudo apt install "
+          "migraphx",
+          "ROCm 7 requis (ROCm 6 installé) : passer au dépôt ROCm 7 d'AMD, puis sudo apt install migraphx"},
+    Entry{"ROCm missing: install \"migraphx\" from AMD's ROCm 7 repository (sudo apt install migraphx)",
+          "ROCm absent : installer « migraphx » depuis le dépôt ROCm 7 d'AMD (sudo apt install migraphx)"},
+    Entry{"Settings opened on {}: \"Set default\" at the top of the page, or one type at a time.",
+          "Paramètres ouverts sur {} : « Définir par défaut » en haut de la page, ou un type à la fois."},
+    Entry{"Step {} of {}: {}", "Étape {} sur {} : {}"},
+    Entry{"TensorRT is installed but the player uses {}: pick TensorRT in Settings > Export and engines > "
+          "Engines",
+          "le moteur TensorRT est installé mais le lecteur utilise {} : choisissez TensorRT dans Paramètres "
+          "> Export et moteurs > Moteurs"},
+    Entry{"TensorRT is not installed: install it in Settings > Export and engines > Engines",
+          "moteur TensorRT non installé : installez-le dans Paramètres > Export et moteurs > Moteurs"},
+    Entry{"Test {} could not start: {}", "L'essai {} n'a pas pu démarrer : {}"},
+    Entry{"Test {} produced nothing: it ended without readable measurements{}{}",
+          "L'essai {} n'a rien rendu : il s'est terminé sans mesures lisibles{}{}"},
+    Entry{"Test {} produced nothing: {}", "L'essai {} n'a rien rendu : {}"},
+    Entry{"Test {}/4: {}", "Essai {}/4 : {}"},
+    Entry{"The \"{}\" settings were not tested: their engines take long to build. Run the optimization again "
+          "to continue.",
+          "Les réglages « {} » n'ont pas été testés : leurs moteurs sont longs à construire. Relancez "
+          "l'optimisation pour continuer."},
+    Entry{"The player is up to date", "Le lecteur est à jour"},
+    Entry{"The search for a finer picture is left to the next optimization: the engines were just built.",
+          "La recherche d'une image plus fine est remise à la prochaine optimisation : les moteurs viennent "
+          "d'être construits."},
+    Entry{"Updated to {}", "Mis à jour vers {}"},
+    Entry{"Upscaling, interpolation and HDR for anime: set the startup profile and settings here before "
+          "playback.",
+          "Upscale, interpolation et HDR pour les animes : réglez le profil de démarrage et les paramètres "
+          "ici avant la lecture."},
+    Entry{"Windows 11 24H2 required (build {} installed): update Windows through Windows Update",
+          "Windows 11 24H2 requis (build {} installé) : mettre Windows à jour par Windows Update"},
+    Entry{"Your PC holds: {}.", "Votre PC tient : {}."},
+    Entry{"another engine", "un autre moteur"},
+    Entry{"bench.toml: ", "bench.toml : "},
+    Entry{"bench.toml: cannot write", "bench.toml : écriture impossible"},
+    Entry{"checking free space", "vérification de la place"},
+    Entry{"comparison cancelled", "comparaison annulée"},
+    Entry{"comparison: a variant produced nothing", "comparaison : une variante n'a rien rendu"},
+    Entry{"curl not found on this system", "curl introuvable sur ce système"},
+    Entry{"curl not found: cannot check for updates",
+          "curl introuvable : impossible de vérifier les mises à jour"},
+    Entry{"curl or tar not found on this system", "curl ou tar introuvables sur ce système"},
+    Entry{"decompressing {}", "décompression de {}"},
+    Entry{"default player: home folder unknown", "lecteur par défaut : dossier personnel inconnu"},
+    Entry{"discarded, {}", "écarté, {}"},
+    Entry{"does not hold", "ne tient pas"},
+    Entry{"download", "téléchargement"},
+    Entry{"downloading the engine archive", "téléchargement de l'archive du moteur"},
+    Entry{"downloading {}", "téléchargement de {}"},
+    Entry{"downloading {} ({})", "téléchargement de {} ({})"},
+    Entry{"evaluation cancelled", "évaluation annulée"},
+    Entry{"extracting the archive", "extraction de l'archive"},
+    Entry{"extracting {}", "extraction de {}"},
+    Entry{"failed", "échec"},
+    Entry{"file {} ({}/{})", "fichier {} ({}/{})"},
+    Entry{"installed where the player cannot write: updated by your package manager",
+          "installé là où le lecteur ne peut pas écrire : mis à jour par votre gestionnaire de paquets"},
+    Entry{"interpolation up to ×{}, {}", "interpolation jusqu'à ×{}, {}"},
+    Entry{"it ran over {} s without finishing, probably building an engine (slow the first time)",
+          "il a dépassé {} s sans finir, sans doute en construisant un moteur (long la première fois)"},
+    Entry{"no interpolation", "sans interpolation"},
+    Entry{"no previous version kept", "aucune version précédente gardée"},
+    Entry{"no update prepared", "aucune mise à jour préparée"},
+    Entry{"not enough disk space: the install needs {} ({} to download, {} once installed), {} left on {}",
+          "espace disque insuffisant : l'installation demande {} (dont {} à télécharger, {} une fois "
+          "installé), il reste {} sur {}"},
+    Entry{"of preparation", "de préparation"},
+    Entry{"of search ({})", "de recherche ({})"},
+    Entry{"of the \"{}\" settings", "des réglages « {} »"},
+    Entry{"of the \"{}\" variant", "de la variante « {} »"},
+    Entry{"on macOS, download the new version from the releases page",
+          "sur macOS, la nouvelle version se télécharge sur la page des releases"},
+    Entry{"or drop a file on this window.", "ou glissez un fichier sur cette fenêtre."},
+    Entry{"original picture, no upscaling", "image d'origine sans agrandissement"},
+    Entry{"package {} without {}", "paquet {} sans {}"},
+    Entry{"preparing engines and first measurement", "préparation des moteurs et première mesure"},
+    Entry{"q: quit", "q : quitter"},
+    Entry{"registry: HKCU\\{} (error {})", "registre : HKCU\\{} (erreur {})"},
+    Entry{"registry: HKCU\\{} : {} (error {})", "registre : HKCU\\{} : {} (erreur {})"},
+    Entry{"replacing the installed version", "remplacement de la version installée"},
+    Entry{"searching for a finer picture ({})", "recherche d'une image plus fine ({})"},
+    Entry{"starting", "démarrage"},
+    Entry{"tar not found", "tar introuvable"},
+    Entry{"testing the \"{}\" settings", "test des réglages « {} »"},
+    Entry{"the \"{}\" variant produced nothing", "la variante « {} » n'a rien rendu"},
+    Entry{"the manifest is for channel \"{}\", not \"{}\"", "le manifeste est du canal « {} », pas « {} »"},
+    Entry{"the manifest signature is wrong: update ignored",
+          "la signature du manifeste est fausse : mise à jour ignorée"},
+    Entry{"the prepared archive is gone", "l'archive préparée a disparu"},
+    Entry{"the test player stopped ({})", "le lecteur de l'essai s'est arrêté ({})"},
+    Entry{"the test player stopped abruptly ({})", "le lecteur de l'essai s'est arrêté brutalement ({})"},
+    Entry{"this card", "cette carte"},
+    Entry{"this package has no signing key: updates cannot be verified",
+          "ce paquet n'a pas de clé de signature : les mises à jour ne peuvent pas être vérifiées"},
+    Entry{"this release has no archive for this system", "cette release n'a pas d'archive pour ce système"},
+    Entry{"unknown (all files)", "inconnue (tous les fichiers)"},
+    Entry{"unreadable archive name in the manifest", "nom d'archive illisible dans le manifeste"},
+    Entry{"updated by your package manager (Flatpak)",
+          "mis à jour par votre gestionnaire de paquets (Flatpak)"},
+    Entry{"verifying the archive", "vérification de l'archive"},
+    Entry{"verifying {}", "vérification de {}"},
+    Entry{"writing the test sequence", "écriture de la séquence de test"},
+    Entry{"xdg-mime not found (xdg-utils package): right-click a video > Open with > AJP and tick \"always\"",
+          "xdg-mime introuvable (paquet xdg-utils) : clic droit sur une vidéo > Ouvrir avec > AJP, en "
+          "cochant « toujours »"},
+    Entry{"{} installed", "{} installé"},
+    Entry{"{} is available", "{} est disponible"},
+    Entry{"{} is not an NVIDIA RTX 40 (Ada) card, or the engine was built without these kernels",
+          "{} n'est pas une carte NVIDIA RTX 40 (Ada) ou le moteur a été construit sans ces noyaux"},
+    Entry{"{} missing: only bundled engines are offered",
+          "{} absent : seuls les moteurs livrés sont proposés"},
+    Entry{"{}: package note", "{} : note du paquet"},
+    Entry{"{}: {} bytes received, {} expected", "{} : {} octets reçus, {} attendus"},
+    Entry{"×2 upscaling from {}p", "agrandissement ×2 depuis {}p"},
+};
+
+}  // namespace
+
+std::span<const Entry> french_messages() {
+  return kMessages;
+}
+
+}  // namespace ajp::app::play::i18n

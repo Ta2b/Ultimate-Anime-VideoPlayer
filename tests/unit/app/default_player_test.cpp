@@ -10,6 +10,8 @@
 
 #include <catch2/catch_test_macros.hpp>
 
+#include "french_ui.h"
+
 namespace ajp::app::play {
 namespace {
 
@@ -29,6 +31,7 @@ bool has(const std::vector<RegistryValue>& values, std::string_view key, std::st
 }
 
 TEST_CASE("Lecteur par défaut : le .desktop nomme le lecteur et les types vidéo", "[app][default_player]") {
+  ajp::app::play::FrenchUi french;
   const auto entry = desktop_entry("/opt/ajp-linux-x64/ajp");
   REQUIRE(entry);
   CHECK(entry->starts_with("[Desktop Entry]\n"));
@@ -43,6 +46,7 @@ TEST_CASE("Lecteur par défaut : le .desktop nomme le lecteur et les types vidé
 }
 
 TEST_CASE("Lecteur par défaut : Exec échappe le chemin selon la spécification XDG", "[app][default_player]") {
+  ajp::app::play::FrenchUi french;
   // Entre guillemets, « " », « ` », « $ » et « \ » prennent une barre oblique inverse et « % » se
   // double ; la règle des chaînes double ensuite chaque barre oblique inverse.
   const auto entry = desktop_entry("/home/t/Mes vidéos/a\"b`c$d\\e%f/ajp");
@@ -52,6 +56,7 @@ TEST_CASE("Lecteur par défaut : Exec échappe le chemin selon la spécification
 }
 
 TEST_CASE("Lecteur par défaut : un chemin qu'une ligne ne porte pas est refusé", "[app][default_player]") {
+  ajp::app::play::FrenchUi french;
   std::vector<std::string_view> paths{"/opt/a\nb/ajp", "/opt/a\tb/ajp", ""};
 #ifndef _WIN32
   // Un chemin POSIX est fait d'octets, pas forcément d'UTF-8 ; sous Windows il est en UTF-16, et
@@ -67,6 +72,7 @@ TEST_CASE("Lecteur par défaut : un chemin qu'une ligne ne porte pas est refusé
 
 TEST_CASE("Lecteur par défaut : les clés du registre de l'utilisateur sous Windows",
           "[app][default_player]") {
+  ajp::app::play::FrenchUi french;
   constexpr std::string_view exe = R"(C:\Program Files\AJP\ajp.exe)";
   const std::vector<RegistryValue> values = registry_values(exe);
   const std::string command = R"("C:\Program Files\AJP\ajp.exe" "%1")";
@@ -85,6 +91,7 @@ TEST_CASE("Lecteur par défaut : les clés du registre de l'utilisateur sous Win
 }
 
 TEST_CASE("Lecteur par défaut : le retrait couvre tout ce que l'inscription écrit", "[app][default_player]") {
+  ajp::app::play::FrenchUi french;
   constexpr std::string_view exe = R"(D:\ajp-windows-x64\ajp.exe)";
   const std::vector<std::string> trees = registry_trees(exe);
   const std::vector<RegistryValue> shared = registry_shared_values();
@@ -102,6 +109,7 @@ TEST_CASE("Lecteur par défaut : le retrait couvre tout ce que l'inscription éc
 #if !defined(_WIN32) && !defined(__APPLE__)
 TEST_CASE("Lecteur par défaut : inscrit puis retiré dans le dossier de l'utilisateur",
           "[app][default_player]") {
+  ajp::app::play::FrenchUi french;
   const fs::path home = fs::temp_directory_path() / "ajp-default-player-test";
   std::error_code error;
   fs::remove_all(home, error);
@@ -133,6 +141,7 @@ TEST_CASE("Lecteur par défaut : inscrit puis retiré dans le dossier de l'utili
 
 TEST_CASE("Lecteur par défaut : dans les données de l'utilisateur ($XDG_DATA_HOME)",
           "[app][default_player]") {
+  ajp::app::play::FrenchUi french;
   const fs::path root = fs::temp_directory_path() / "ajp-default-player-data-test";
   std::error_code error;
   fs::remove_all(root, error);
@@ -160,6 +169,7 @@ TEST_CASE("Lecteur par défaut : dans les données de l'utilisateur ($XDG_DATA_H
 }  // namespace ajp::app::play
 
 TEST_CASE("xdg-mime query default : reconnaît le .desktop d'AJP", "[default_player]") {
+  ajp::app::play::FrenchUi french;
   using namespace ajp::app::play;
   CHECK(default_handler_is_ajp("io.github.ta2b.ajp.desktop\n"));
   CHECK(default_handler_is_ajp("io.github.ta2b.ajp.desktop"));

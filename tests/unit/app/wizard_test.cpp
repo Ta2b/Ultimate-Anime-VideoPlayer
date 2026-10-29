@@ -2,9 +2,12 @@
 
 #include <catch2/catch_test_macros.hpp>
 
+#include "french_ui.h"
+
 using namespace ajp::app::play;
 
 TEST_CASE("l'assistant saute les écrans sans objet", "[wizard]") {
+  ajp::app::play::FrenchUi french;
   CHECK(wizard_steps({.engine_choice = true, .hdr_display = true}).size() == 8);
   const auto plain = wizard_steps({.engine_choice = false, .hdr_display = false});
   REQUIRE(plain.size() == 6);
@@ -14,6 +17,7 @@ TEST_CASE("l'assistant saute les écrans sans objet", "[wizard]") {
 }
 
 TEST_CASE("l'assistant avance, recule, passe et reprend en route", "[wizard]") {
+  ajp::app::play::FrenchUi french;
   const WizardFacts facts{.engine_choice = true, .hdr_display = false};
   Wizard wizard = begin_wizard(facts, 0);
   CHECK(current(wizard) == WizardStep::Welcome);
@@ -37,6 +41,7 @@ TEST_CASE("l'assistant avance, recule, passe et reprend en route", "[wizard]") {
 }
 
 TEST_CASE("Terminer écrit les choix et laisse intact ce qui est sauté", "[wizard]") {
+  ajp::app::play::FrenchUi french;
   const WizardFacts facts{.engine_choice = true, .hdr_display = true};
   Wizard wizard = begin_wizard(facts, 0);
   wizard.preset = Preset::Quality;
@@ -71,6 +76,7 @@ TEST_CASE("Terminer écrit les choix et laisse intact ce qui est sauté", "[wiza
 }
 
 TEST_CASE("le résumé dit ce qui est choisi, sauté, et où le changer", "[wizard]") {
+  ajp::app::play::FrenchUi french;
   Wizard wizard = begin_wizard({.engine_choice = true, .hdr_display = false}, 0);
   wizard.skipped = {WizardStep::Languages};
   wizard.listening = Listening::Cinema;
@@ -86,6 +92,7 @@ TEST_CASE("le résumé dit ce qui est choisi, sauté, et où le changer", "[wiza
 
 TEST_CASE("RTX HDR pas à pas : prêt seulement quand tout est fait, sinon HDR adaptatif en attendant",
           "[wizard]") {
+  ajp::app::play::FrenchUi french;
   Wizard wizard = begin_wizard({.engine_choice = true, .hdr_display = true, .rtx_guided = true}, 0);
   wizard.hdr = HdrChoice::RtxHdr;
   wizard.rtx_checks = {{.name = "Moteur TensorRT", .done = true},

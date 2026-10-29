@@ -20,12 +20,12 @@ using panel::section;
 
 void engines_tab(const SettingsChoices& choices, std::optional<core::EngineId>& draft,
                  std::vector<Input>& actions, std::string& engines_dir) {
-  section("Moteur en service");
+  section(i18n::tr("Active engine"));
   const std::optional<core::EngineId> in_use = choices.engine_in_use;
   if (in_use) ImGui::TextUnformatted(std::string(engine_label(*in_use)).c_str());
   if (!choices.engine_note.empty()) note(choices.engine_note);
   if (choices.switchable.size() < 2) {
-    note("Un seul moteur installé : « Installer d'autres moteurs » propose ceux qui conviennent à ce GPU.");
+    note(i18n::tr("Only one engine is installed: \"Install more engines\" lists those that suit this GPU."));
   } else {
     const core::EngineId shown = draft.value_or(in_use.value_or(core::EngineId::Vulkan));
     for (const core::EngineId id : choices.switchable) {
@@ -34,40 +34,41 @@ void engines_tab(const SettingsChoices& choices, std::optional<core::EngineId>& 
     if (draft && draft != in_use) {
       ImGui::PushStyleColor(ImGuiCol_Text, kWarn);
       ImGui::TextWrapped(
-          "À appliquer : la lecture se rouvre au même endroit avec %s ; ses moteurs se "
-          "construisent la première fois pour chaque modèle et chaque taille.",
-          std::string(engine_label(*draft)).c_str());
+          "%s", i18n::tr_format(i18n::tr("To apply: playback reopens at the same spot with {}; its engines "
+                                         "are built the first time for each model and size."),
+                                engine_label(*draft))
+                    .c_str());
       ImGui::PopStyleColor();
-      if (ImGui::Button("Utiliser ce moteur")) {
+      if (ImGui::Button(i18n::tr("Use this engine"))) {
         actions.emplace_back(UseEngine{.id = *draft});
         draft.reset();
       }
       ImGui::SameLine();
-      if (ImGui::Button("Annuler##moteur")) draft.reset();
+      if (ImGui::Button(i18n::tr("Cancel##moteur"))) draft.reset();
     }
   }
 
-  section("Moteurs installés");
+  section(i18n::tr("Installed engines"));
   ImGui::TextWrapped("%s", choices.chosen_engines.c_str());
-  if (ImGui::Button("Installer d'autres moteurs…")) actions.emplace_back(OpenEngineScreen{});
-  note("Rouvre l'écran des moteurs sans relancer le lecteur ; la lecture reprend ensuite au même endroit.");
+  if (ImGui::Button(i18n::tr("Install more engines…"))) actions.emplace_back(OpenEngineScreen{});
+  note(i18n::tr("Reopens the engines screen; playback resumes at the same spot."));
 
-  section("Moteurs construits");
-  if (choices.engines.empty()) note("Aucun moteur construit.");
+  section(i18n::tr("Built engines"));
+  if (choices.engines.empty()) note(i18n::tr("No engine built yet."));
   for (const EngineBadge& engine : choices.engines) {
     ImGui::TextWrapped("%s", engine.name.c_str());  // un nom long passe à la ligne, il ne déborde pas
     ImGui::SameLine();
     ImGui::PushStyleColor(ImGuiCol_Text, engine.loaded ? kAccent : kNote);
-    ImGui::TextUnformatted(engine.loaded ? "· chargé" : "· en cache");
+    ImGui::TextUnformatted(engine.loaded ? i18n::tr("· loaded") : i18n::tr("· cached"));
     ImGui::PopStyleColor();
     ImGui::PushStyleColor(ImGuiCol_Text, kNote);
     ImGui::TextWrapped("%s", engine.detail.c_str());
     ImGui::PopStyleColor();
     ImGui::Spacing();
   }
-  note("Un moteur est construit une fois par modèle et par taille, puis relu du cache.");
+  note(i18n::tr("An engine is built once per model and size, then read from the cache."));
 
-  section("Dossier d'installation");
+  section(i18n::tr("Install folder"));
   // Un moteur téléchargé (TensorRT : 1,3 Go installés pour une RTX 4070 Ti) et ses téléchargements
   // s'installent ici ; l'espace libre se vérifie AVANT chaque téléchargement. Vide : le dossier des données
   // du lecteur.
@@ -79,18 +80,16 @@ void engines_tab(const SettingsChoices& choices, std::optional<core::EngineId>& 
   }
   const ImGuiStyle& style = ImGui::GetStyle();
   ImGui::SetNextItemWidth(
-      -(ImGui::CalcTextSize("Par défaut").x + 2.0F * style.FramePadding.x + style.ItemSpacing.x));
-  if (ImGui::InputTextWithHint("##moteurs", "Dossier par défaut", folder.data(), folder.size()))
+      -(ImGui::CalcTextSize(i18n::tr("Default")).x + 2.0F * style.FramePadding.x + style.ItemSpacing.x));
+  if (ImGui::InputTextWithHint("##moteurs", i18n::tr("Default folder"), folder.data(), folder.size()))
     engines_dir = folder.data();
   ImGui::SameLine();
-  if (ImGui::Button("Par défaut##moteurs")) {
+  if (ImGui::Button(i18n::tr("Default##moteurs"))) {
     engines_dir.clear();
     folder[0] = '\0';
   }
-  note(
-      std::format("Par défaut : {}. Libre à cet endroit : {}. Vaut au prochain lancement ; les moteurs déjà "
-                  "installés ne sont pas déplacés.",
-                  choices.engines_dir_default, choices.engines_dir_free));
+  note(i18n::tr_format("Default: {}. Free here: {}. Applies at next launch; installed engines are not moved.",
+                       choices.engines_dir_default, choices.engines_dir_free));
 }
 
 }  // namespace ajp::app::play

@@ -9,6 +9,7 @@
 
 #include "app/play/ed25519.h"
 #include "app/play/engine_tools.h"
+#include "app/play/i18n.h"
 #include "core/log.h"
 #include "core/model_index.h"
 #include "core/user_overlay.h"
@@ -57,13 +58,12 @@ std::expected<void, Refusal> fetch(std::string_view url, const fs::path& file, i
                                    const std::stop_token& stop) {
   const auto curl = system_tool("curl");
   if (!curl)
-    return refuse(RefusalCode::LibraryUnavailable,
-                  "curl introuvable : impossible de vérifier les mises à jour");
+    return refuse(RefusalCode::LibraryUnavailable, i18n::tr("curl not found: cannot check for updates"));
   prepare::ProcessSpec spec{.program = *curl,
                             .args = {"-fsSL", "--proto", "=https", "--max-time", std::to_string(max_seconds),
                                      "-o", prepare::utf8_path(file), std::string(url)},
                             .timeout = std::chrono::seconds(max_seconds + 10)};
-  return run_tool(spec, {}, stop, "téléchargement");
+  return run_tool(spec, {}, stop, i18n::tr("download"));
 }
 
 // Copie récursive qui remplace les fichiers même en service : le fichier est retiré (ou, sous Windows,
@@ -191,7 +191,7 @@ std::expected<CheckResult, Refusal> check_for_update(std::string_view channel, c
   const std::string_view key = update_public_key();
   if (key.empty())
     return refuse(RefusalCode::LibraryUnavailable,
-                  "ce paquet n'a pas de clé de signature : les mises à jour ne peuvent pas être vérifiées");
+                  i18n::tr("this package has no signing key: updates cannot be verified"));
   std::error_code error;
   const fs::path dir =
       fs::temp_directory_path(error) /
@@ -211,19 +211,20 @@ std::expected<CheckResult, Refusal> check_for_update(std::string_view channel, c
   const std::string manifest_text = read_all(dir / "manifest.toml");
   const std::string signature = trimmed(read_all(dir / "manifest.toml.sig"));
   if (!ed25519_verify_hex(key, manifest_text, signature))
-    return refuse(RefusalCode::HashMismatch, "la signature du manifeste est fausse : mise à jour ignorée");
+    return refuse(RefusalCode::HashMismatch, i18n::tr("the manifest signature is wrong: update ignored"));
   auto manifest = core::parse_update_manifest(manifest_text);
   if (!manifest) return std::unexpected(manifest.error());
   if (manifest->channel != channel)
-    return refuse(RefusalCode::FieldOutOfRange,
-                  std::format("le manifeste est du canal « {} », pas « {} »", manifest->channel, channel));
+    return refuse(
+        RefusalCode::FieldOutOfRange,
+        i18n::tr_format("the manifest is for channel \"{}\", not \"{}\"", manifest->channel, channel));
   CheckResult result;
   const auto order = core::compare_versions(manifest->version, installed_version());
   if (order && *order > 0 && core::artifact_for(*manifest, core::kHostOs) != nullptr) {
-    result.message = std::format("{} est disponible", manifest->version);
+    result.message = i18n::tr_format("{} is available", manifest->version);
     result.newer = std::move(*manifest);
   } else {
-    result.message = "Le lecteur est à jour";
+    result.message = i18n::tr("The player is up to date");
   }
   return result;
 }
@@ -233,10 +234,10 @@ std::expected<fs::path, Refusal> download_update(const UpdatePaths& paths,
                                                  const std::stop_token& stop) {
   const core::UpdateArtifact* artifact = core::artifact_for(manifest, core::kHostOs);
   if (artifact == nullptr)
-    return refuse(RefusalCode::TrackUnavailable, "cette release n'a pas d'archive pour ce système");
+    return refuse(RefusalCode::TrackUnavailable, i18n::tr("this release has no archive for this system"));
   const std::string name = artifact->url.substr(artifact->url.rfind('/') + 1);
   if (name.empty() || name.find("..") != std::string::npos)
-    return refuse(RefusalCode::FieldOutOfRange, "nom d'archive illisible dans le manifeste");
+    return refuse(RefusalCode::FieldOutOfRange, i18n::tr("unreadable archive name in the manifest"));
   std::error_code error;
   const fs::path dir = updates_dir(paths) / manifest.version;
   fs::create_directories(dir, error);
@@ -251,20 +252,19 @@ std::expected<fs::path, Refusal> download_update(const UpdatePaths& paths,
 
 std::string update_managed_reason(const UpdatePaths& paths) {
 #ifdef __APPLE__
-  return "sur macOS, la nouvelle version se télécharge sur la page des releases";
+  return i18n::tr("on macOS, download the new version from the releases page");
 #endif
   // L'AppImage (AJP_PACKAGED, posée par son lanceur) est un fichier en lecture seule : on le remplace par le
   // nouveau. NOLINTNEXTLINE(concurrency-mt-unsafe)
   const char* packaged = std::getenv("AJP_PACKAGED");  // env: lanceur
   if (packaged != nullptr && std::string_view(packaged) == "appimage")
-    return "AppImage : la nouvelle version se télécharge sur la page des releases (le fichier se remplace)";
+    return i18n::tr("AppImage: download the new version from the releases page (replace the file)");
   std::error_code error;
-  if (fs::exists("/.flatpak-info", error)) return "mis à jour par votre gestionnaire de paquets (Flatpak)";
+  if (fs::exists("/.flatpak-info", error)) return i18n::tr("updated by your package manager (Flatpak)");
   const fs::path probe = paths.install / ".ajp-write-test";
   {
     std::ofstream out(probe, std::ios::binary);
-    if (!out)
-      return "installé là où le lecteur ne peut pas s'écrire : mis à jour par votre gestionnaire de paquets";
+    if (!out) return i18n::tr("installed where the player cannot write: updated by your package manager");
   }
   fs::remove(probe, error);
   return {};
@@ -289,7 +289,8 @@ std::expected<std::string, Refusal> run_update_check(const UpdatePaths& paths, s
   state.latest_version = checked->newer->version;
   state.notes_url = checked->newer->notes_url;
   if (mode != "auto" || !update_managed_reason(paths).empty()) return checked->message;
-  if (state.staged_version == checked->newer->version) return checked->message + " (déjà préparée)";
+  if (state.staged_version == checked->newer->version)
+    return checked->message + i18n::tr(" (already prepared)");
   auto file = download_update(paths, *checked->newer, stop);
   if (!file) {
     state.last_error = file.error().detail;
@@ -297,12 +298,12 @@ std::expected<std::string, Refusal> run_update_check(const UpdatePaths& paths, s
   }
   state.staged_version = checked->newer->version;
   state.staged_file = file->string();
-  return checked->message + " : préparée, installée au prochain lancement";
+  return checked->message + i18n::tr(": prepared, installed at next launch");
 }
 
 std::expected<void, Refusal> extract_archive(const fs::path& archive, const fs::path& into) {
   const auto tar = system_tool("tar");
-  if (!tar) return refuse(RefusalCode::LibraryUnavailable, "tar introuvable");
+  if (!tar) return refuse(RefusalCode::LibraryUnavailable, i18n::tr("tar not found"));
   std::error_code error;
   fs::create_directories(into, error);
   prepare::ProcessSpec spec{.program = *tar,
@@ -313,10 +314,11 @@ std::expected<void, Refusal> extract_archive(const fs::path& archive, const fs::
 
 std::expected<std::string, Refusal> apply_staged_update(const UpdatePaths& paths, UpdateState& state) {
   if (state.staged_file.empty() || state.staged_version.empty())
-    return refuse(RefusalCode::TrackUnavailable, "aucune mise à jour préparée");
+    return refuse(RefusalCode::TrackUnavailable, i18n::tr("no update prepared"));
   std::error_code error;
   const fs::path archive = state.staged_file;
-  if (!fs::exists(archive, error)) return refuse(RefusalCode::FileUnreadable, "l'archive préparée a disparu");
+  if (!fs::exists(archive, error))
+    return refuse(RefusalCode::FileUnreadable, i18n::tr("the prepared archive is gone"));
   const fs::path extract = updates_dir(paths) / "extract";
   const fs::path previous = updates_dir(paths) / "previous";
   fs::remove_all(extract, error);
@@ -331,8 +333,9 @@ std::expected<std::string, Refusal> apply_staged_update(const UpdatePaths& paths
   if (auto done = replace_tree(root, paths.install); !done) {
     // Une copie ratée à moitié : l'installation d'avant revient.
     if (const auto restored = replace_tree(previous, paths.install); !restored)
-      log_channel("app")->warn("mise à jour : l'ancienne version n'a pas pu être remise : {}",
-                               restored.error().detail);
+      log_channel("app")->warn(
+          "mise à jour : l'ancienne version n'a pas pu être remise : {}",  // i18n-ok : journal
+          restored.error().detail);
     fs::remove_all(extract, error);
     return std::unexpected(done.error());
   }
@@ -342,20 +345,20 @@ std::expected<std::string, Refusal> apply_staged_update(const UpdatePaths& paths
   state.staged_version.clear();
   state.latest_version.clear();
   fs::remove(archive, error);
-  return std::format("Mis à jour vers {}", version);
+  return i18n::tr_format("Updated to {}", version);
 }
 
 std::expected<std::string, Refusal> roll_back_update(const UpdatePaths& paths, UpdateState& state) {
   const fs::path previous = updates_dir(paths) / "previous";
   std::error_code error;
   if (!fs::exists(previous, error))
-    return refuse(RefusalCode::TrackUnavailable, "aucune version précédente gardée");
+    return refuse(RefusalCode::TrackUnavailable, i18n::tr("no previous version kept"));
   if (auto done = replace_tree(previous, paths.install); !done) return std::unexpected(done.error());
   const std::string back = state.previous_version;
   fs::remove_all(previous, error);
   state.previous_version.clear();
   state.latest_version.clear();
-  return std::format("Version précédente remise{}", back.empty() ? "" : " : " + back);
+  return i18n::tr_format("Previous version restored{}", back.empty() ? "" : " : " + back);
 }
 
 }  // namespace ajp::app::play

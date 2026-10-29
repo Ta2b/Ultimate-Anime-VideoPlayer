@@ -9,6 +9,7 @@
 #include <utility>
 
 #include "app/play/build_progress.h"
+#include "app/play/i18n.h"
 #include "app/play/settings.h"
 #include "app/play/span_int8.h"
 #include "core/clock.h"
@@ -37,7 +38,7 @@ std::vector<EngineBadge> engine_badges(const std::filesystem::path& cache_dir,
         .name = is_rife ? std::format("RIFE · {}", past.onnx.stem().string())
                 : int8  ? std::format("SPAN · {} · {}", model_label(*int8), variant_text(variant_kind))
                         : std::format("SPAN · {}", model_label(file)),
-        .detail = std::format("entrée {}x{} · construit en {:.0f} s", past.width, past.height, past.seconds),
+        .detail = i18n::tr_format("input {}x{} · built in {:.0f} s", past.width, past.height, past.seconds),
         .loaded = loaded});
   }
   std::ranges::stable_partition(badges, &EngineBadge::loaded);
@@ -53,12 +54,13 @@ std::string auto_factor_text(int centi) {
 std::string auto_status_text(const core::AutoInfo& info, double source_fps) {
   const int g = std::max(info.granularity, 1);
   const int centi = info.step * 100 / g;
-  std::string text = std::format("Auto ×{} ({:.0f} i/s) · plafond écran ×{}", auto_factor_text(centi),
-                                 source_fps * centi / 100.0, auto_factor_text(info.ceiling * 100 / g));
-  if (info.predicted > 0) text += std::format(" · prédit ×{}", auto_factor_text(info.predicted * 100 / g));
+  std::string text = i18n::tr_format("Auto ×{} ({:.0f} fps) · display limit ×{}", auto_factor_text(centi),
+                                     source_fps * centi / 100.0, auto_factor_text(info.ceiling * 100 / g));
+  if (info.predicted > 0)
+    text += i18n::tr_format(" · predicted ×{}", auto_factor_text(info.predicted * 100 / g));
   if (info.cap > 0) text += std::format(" · plafond appris ×{}", auto_factor_text(info.cap * 100 / g));
   if (info.load_pct >= 0) text += std::format(" · limite GPU {} %", info.load_pct);
-  if (info.heavy) text += " · scène lourde";
+  if (info.heavy) text += i18n::tr(" · heavy scene");
   text += std::format(" · dernier changement : {}", core::auto_reason_text(info.reason));
   return text;
 }
@@ -66,7 +68,7 @@ std::string auto_status_text(const core::AutoInfo& info, double source_fps) {
 std::string free_status_text(const core::FreeInfo& info) {
   std::string text = std::format("Rapide · {:.0f} i/s", info.fps);
   if (info.load_pct >= 0) text += std::format(" · limite GPU {} %", info.load_pct);
-  if (info.step_us > 0) text += " · écart service " + format_ms(info.step_us);
+  if (info.step_us > 0) text += i18n::tr(" · service gap ") + format_ms(info.step_us);
   if (info.pressure > 1.02) {
     std::string pressure = std::format("{:.2f}", info.pressure);
     std::ranges::replace(pressure, '.', ',');
@@ -80,9 +82,9 @@ std::optional<std::string> ChainStats::rife() const {
   if (!interpolates_) return std::nullopt;
   const RifeCounts c = live_.counts();
   std::string line =
-      std::format("{} {} : {} paires, {} interpolées, {} dessins tenus, {} coupes, {} en retard", engine_,
-                  live_.free_active() ? std::string("libre") : factor_text(live_.factor_now()), c.pairs,
-                  c.interpolated, c.held, c.cuts, c.late);
+      i18n::tr_format("{} {}: {} pairs, {} interpolated, {} held drawings, {} cuts, {} late", engine_,
+                      live_.free_active() ? std::string("libre") : factor_text(live_.factor_now()), c.pairs,
+                      c.interpolated, c.held, c.cuts, c.late);
   if (live_.auto_active()) line += " · " + auto_status_text(live_.auto_info(host_now_us()), source_fps_);
   if (live_.free_active()) line += " · " + free_status_text(live_.free_info(host_now_us()));
   return line;
@@ -125,8 +127,8 @@ std::optional<std::string> ChainStats::read_memory() const {
   const auto memory = kernels_.device_memory();
   if (!memory) return std::nullopt;
   constexpr double kMiB = 1024.0 * 1024.0;
-  return std::format("mémoire vidéo {:.0f} / {:.0f} Mio", static_cast<double>(memory->used) / kMiB,
-                     static_cast<double>(memory->total) / kMiB);
+  return i18n::tr_format("video memory {:.0f} / {:.0f} MiB", static_cast<double>(memory->used) / kMiB,
+                         static_cast<double>(memory->total) / kMiB);
 }
 
 void ChainStats::start_sampler() const {

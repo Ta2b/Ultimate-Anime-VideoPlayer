@@ -6,6 +6,7 @@
 #include <utility>
 
 #include "app/play/chain.h"
+#include "app/play/i18n.h"
 #include "core/clock.h"
 #include "core/log.h"
 #include "vendor_hdr/sdk_store.h"
@@ -172,9 +173,10 @@ void refresh_black(Chain& to) {
   to.black.reset();
   if (!wanted) {
     set_grade(to, s);
-    to.ui.set_black_status(black_wanted(s, to.display)
-                               ? "Vrai noir : sans effet ici (grade coupé, ou sortie HDR sans route)."
-                               : "Vrai noir : coupé.");
+    to.ui.set_black_status(
+        black_wanted(s, to.display)
+            ? i18n::tr("True black: no effect here (grading off, or HDR output without a path).")
+            : i18n::tr("True black: off."));
     return;
   }
   std::vector<float> levels;
@@ -199,7 +201,7 @@ void refresh_black(Chain& to) {
   to.black = render::black_thresholds(*nits, s.oled_black_steps);
   set_grade(to, s);
   if (!to.black) {
-    to.ui.set_black_status("Vrai noir : la rampe ne monte pas, rien n'est changé.");
+    to.ui.set_black_status(i18n::tr("True black: the ramp does not rise, nothing changed."));
     return;
   }
   log_channel("app")->info(
@@ -207,9 +209,8 @@ void refresh_black(Chain& to) {
       "jusqu'à {:.4f} nit",
       (*nits)[0], (*nits)[1], (*nits)[2], to.black->lo, to.black->hi);
   to.ui.set_black_status(
-      std::format("Vrai noir : 0 sous {:.4f} nit, pied jusqu'à {:.4f} nit (noir de la source "
-                  "à {:.4f} nit avant).",
-                  to.black->lo, to.black->hi, (*nits)[0]));
+      i18n::tr_format("True black: 0 below {:.4f} nit, toe up to {:.4f} nit (source black was {:.4f} nit).",
+                      to.black->lo, to.black->hi, (*nits)[0]));
 }
 
 }  // namespace ajp::app::play

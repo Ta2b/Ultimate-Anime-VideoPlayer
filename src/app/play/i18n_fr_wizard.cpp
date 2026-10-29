@@ -1,0 +1,151 @@
+#include <array>
+
+#include "app/play/i18n_fr.h"
+
+namespace ajp::app::play::i18n {
+namespace {
+
+// Assistant et écran des moteurs : (clé anglaise, français).
+constexpr std::array kWizardTexts{
+    Entry{" · Tensor cores", " · cœurs Tensor"},
+    Entry{" · matrix units (WMMA)", " · unités matricielles (WMMA)"},
+    Entry{"Adaptive HDR", "HDR adaptatif"},
+    Entry{"Always available", "Toujours présent"},
+    Entry{"Any GPU: the HDR look is emulated per scene.",
+          "Tous les GPU : l'aspect HDR est émulé selon la scène."},
+    Entry{"Audio: speakers, faithful sound (Audio > Output)",
+          "Audio : enceintes en rendu fidèle (Audio > Sortie)"},
+    Entry{"Audio: {} (Audio > Output)", "Audio : {} (Audio > Sortie)"},
+    Entry{"Auto picks the settings for your card, display and video.",
+          "Auto choisit les réglages selon votre carte, votre écran et la vidéo."},
+    Entry{"Back", "Précédent"},
+    Entry{"Cancel", "Annuler"},
+    Entry{"Check NVIDIA Maxine on the Engine screen (NVIDIA licence), or put the SDK in /usr/local/VideoFX "
+          "and relaunch with --truehdr-sdk.",
+          "Cochez NVIDIA Maxine à l'écran Moteur (licence NVIDIA), ou posez le SDK dans /usr/local/VideoFX "
+          "et relancez avec --truehdr-sdk."},
+    Entry{"Check TensorRT on the Engine screen: it installs at \"Finish\".",
+          "Cochez TensorRT à l'écran Moteur : il s'installe à « Terminer »."},
+    Entry{"Check again", "Vérifier de nouveau"},
+    Entry{"Checked engines install, then playback resumes at the same spot.",
+          "Les moteurs cochés s'installent, puis la lecture reprend au même endroit."},
+    Entry{"Compare with Vulkan", "À comparer avec Vulkan"},
+    Entry{"Compatibility", "Compatibilité"},
+    Entry{"Display {}p · {:.0f} Hz", "Écran {}p · {:.0f} Hz"},
+    Entry{"Does not suit this GPU", "Ne convient pas à ce GPU"},
+    Entry{"Downloaded, installed at next launch.", "Téléchargée, installée au prochain lancement."},
+    Entry{"Engine", "Moteur"},
+    Entry{"Estimated level: {}", "Niveau estimé : {}"},
+    Entry{"Everything can be changed later in Settings (p). To redo this: ajp --first-run.",
+          "Tout se change ensuite dans les paramètres (p). Pour le refaire : ajp --first-run."},
+    Entry{"Fastest for this GPU", "Le plus rapide pour ce GPU"},
+    Entry{"Finish", "Terminer"},
+    Entry{"Get a key", "Obtenir une clé"},
+    Entry{"Give up: adaptive HDR", "Renoncer : HDR adaptatif"},
+    Entry{"Greyed out: the output device only has 2 channels.",
+          "Grisé : l'appareil de sortie n'a que 2 canaux."},
+    Entry{"HDR: RTX HDR chosen but not ready (HDR and color > HDR); meanwhile adaptive HDR is used",
+          "HDR : RTX HDR choisi mais pas prêt (HDR et couleurs > HDR) : en attendant, HDR adaptatif"},
+    Entry{"HDR: skipped, automatic (HDR and color > HDR)",
+          "HDR : sauté, automatique (HDR et couleurs > HDR)"},
+    Entry{"HDR: {} (HDR and color > HDR)", "HDR : {} (HDR et couleurs > HDR)"},
+    Entry{"Headphones: crossfeed in stereo, binaural in surround.",
+          "Casque : crossfeed en stéréo, binaural en surround."},
+    Entry{"How do you listen?", "Comment écoutez-vous ?"},
+    Entry{"I accept its licence", "J'accepte sa licence"},
+    Entry{"Languages", "Langues"},
+    Entry{"Languages: chosen (General > Playback)", "Langues : choisies (Général > Lecture)"},
+    Entry{"Languages: skipped (General > Playback)", "Langues : sauté (Général > Lecture)"},
+    Entry{"Loading the engine", "Chargement du moteur"},
+    Entry{"Maxine VideoFX SDK", "SDK Maxine VideoFX"},
+    Entry{"Maxine VideoFX SDK (installed at \"Finish\")", "SDK Maxine VideoFX (installé à « Terminer »)"},
+    Entry{"Multichannel, direct surround.", "Multicanal, surround direct."},
+    Entry{"NGC API key", "Clé d'API NGC"},
+    Entry{"NVIDIA Maxine not chosen: adaptive HDR instead of RTX HDR",
+          "NVIDIA Maxine non choisi : HDR adaptatif au lieu de RTX HDR"},
+    Entry{"NVIDIA RTX card", "Carte NVIDIA RTX"},
+    Entry{"NVIDIA RTX cards with the TensorRT engine and the Maxine SDK.",
+          "Cartes NVIDIA RTX avec le moteur TensorRT et le SDK Maxine."},
+    Entry{"Next", "Suivant"},
+    Entry{"No HDR conversion.", "Pas de conversion HDR."},
+    Entry{"Not said yet", "Pas encore dit"},
+    Entry{"Once the engines are installed, \"Optimize for this machine\" (Settings > General > Setup) tunes "
+          "this for your PC in about a minute.",
+          "Une fois les moteurs installés, « Optimiser pour ma machine » (Paramètres > Général > "
+          "Configuration) règle cela pour votre PC en une minute environ."},
+    Entry{"Picture and smoothness", "Image et fluidité"},
+    Entry{"Picture and smoothness: skipped, Auto preset (General > Setup)",
+          "Image et fluidité : sauté, préréglage Auto (Général > Configuration)"},
+    Entry{"Picture and smoothness: {}, priority {} (General > Setup)",
+          "Image et fluidité : {}, priorité {} (Général > Configuration)"},
+    Entry{"RTX HDR needs an RTX card (Tensor cores).", "RTX HDR demande une carte RTX (cœurs Tensor)."},
+    Entry{"RTX HDR on this GPU", "RTX HDR sur ce GPU"},
+    Entry{"RTX HDR, step by step", "RTX HDR, pas à pas"},
+    Entry{"Read the licence", "Lire la licence"},
+    Entry{"Resume playback", "Continuer la lecture"},
+    Entry{"Skip", "Passer"},
+    Entry{"Skip: Speakers, faithful sound. Change it later in Audio > Output.",
+          "Passer : Enceintes, rendu fidèle. À changer ensuite dans Audio > Sortie."},
+    Entry{"Speakers: faithful sound, careful mix.", "Enceintes : rendu fidèle, mixage soigné."},
+    Entry{"Start", "Commencer"},
+    Entry{"Startup profile", "Profil de démarrage"},
+    Entry{"Summary", "Résumé"},
+    Entry{"TensorRT engine", "Moteur TensorRT"},
+    Entry{"TensorRT engine (installed at \"Finish\")", "Moteur TensorRT (installé à « Terminer »)"},
+    Entry{"The player chooses for the machine.", "Le lecteur choisit selon la machine."},
+    Entry{"The player chose for this GPU; change anything later in Settings (p).",
+          "Le lecteur a choisi pour ce GPU ; tout se change ensuite dans les paramètres (p)."},
+    Entry{"The player picks the settings for this machine; everything is in Settings (p) afterwards.",
+          "Le lecteur choisit seul les réglages pour cette machine ; tout se retrouve ensuite dans les "
+          "paramètres (p)."},
+    Entry{"The sound format is detected. Headphones or speakers are not: tell us here.",
+          "Le format du son se détecte seul, pas le casque ou les enceintes : dites-le ici."},
+    Entry{"Unknown GPU", "GPU inconnu"},
+    Entry{
+        "Until everything is done the display uses adaptive HDR; pick RTX HDR later in HDR and color > HDR.",
+        "Tant que tout n'est pas fait, l'écran reste en HDR adaptatif ; RTX HDR se choisit ensuite dans HDR "
+        "et couleurs > HDR."},
+    Entry{"Updates: {} (General > Application)", "Mises à jour : {} (Général > Application)"},
+    Entry{"Vulkan works on every GPU. Checked engines install after \"Finish\", verified by hash; Vulkan "
+          "takes over if one fails.",
+          "Vulkan sert tous les GPU. Les moteurs cochés s'installent après « Terminer », vérifiés par "
+          "empreinte ; Vulkan prend le relais si l'un échoue."},
+    Entry{"Vulkan works on every GPU. Checked engines install after \"{}\", verified by hash; Vulkan takes "
+          "over if one fails.",
+          "Vulkan sert tous les GPU. Les moteurs cochés s'installent après « {} », vérifiés par empreinte ; "
+          "Vulkan prend le relais si l'un échoue."},
+    Entry{"Welcome", "Bienvenue"},
+    Entry{"Your display receives HDR.", "Votre écran reçoit du HDR."},
+    Entry{"automatic", "automatiques"},
+    Entry{"bundled with the player", "livré avec le lecteur"},
+    Entry{"cannot be installed in this version yet", "pas encore installable dans cette version"},
+    Entry{"installed", "installé"},
+    Entry{"neither TensorRT nor Vulkan chosen: no SPAN or RIFE",
+          "ni TensorRT ni Vulkan choisis : ni SPAN ni RIFE"},
+    Entry{"never", "jamais"},
+    Entry{"not enough disk space: {} needed ({} to download), {} left",
+          "espace disque insuffisant : il faut {} (dont {} à télécharger), il reste {}"},
+    Entry{"not in this package", "absent de ce paquet"},
+    Entry{"not published (NVIDIA licence): build it on this machine, see docs/nvidia-linux.md",
+          "non publié (licence NVIDIA) : à construire sur cette machine, voir docs/nvidia-linux.md"},
+    Entry{"not published for this version yet", "pas encore publié pour cette version"},
+    Entry{"notify me", "me prévenir"},
+    Entry{"to do", "à faire"},
+    Entry{"to download ({} MB), closed NVIDIA-licensed package",
+          "à télécharger ({} Mo), paquet fermé sous licence NVIDIA"},
+    Entry{"to download ({}) · needs {} of space, {} free{}",
+          "à télécharger ({}) · demande {} d'espace, {} libres{}"},
+    Entry{"to download ({}){}", "à télécharger ({}){}"},
+    Entry{"to install from NVIDIA NGC (API key of a free NVIDIA account)",
+          "à installer depuis NVIDIA NGC (clé d'API d'un compte NVIDIA gratuit)"},
+    Entry{"{} is chosen but does not open on this GPU (see log): {} replaces it.",
+          "{} est choisi mais ne s'ouvre pas sur ce GPU (journal) : {} le remplace."},
+};
+
+}  // namespace
+
+std::span<const Entry> french_wizard() {
+  return kWizardTexts;
+}
+
+}  // namespace ajp::app::play::i18n

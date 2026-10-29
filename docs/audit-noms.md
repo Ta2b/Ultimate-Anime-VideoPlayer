@@ -339,7 +339,408 @@ Tableau : texte français d'avant → anglais (par défaut) / français d'après
 | Stéréo élargie avec les voix devant, présence des dialogues, graves renforcés par harmoniques, sonie ramenée à -20 LUFS, compresseur doux et limiteur. | Wider stereo, voices forward, dialogue presence, bass boost, -20 LUFS loudness, soft compressor and limiter. |
 | Plus large, voix en avant (+3 dB), graves plus présents, compresseur plus ferme, sonie à -18 LUFS. | Wider, voices +3 dB, more bass, firmer compressor, -18 LUFS loudness. |
 
-## À venir
+## Étape B4 : Export, Moteurs, Application (lecteur par défaut, mises à jour, langue), Configuration (benchmark)
 
-B4 : Export, Moteurs, Application, Configuration (benchmark). C : assistant, écran des moteurs,
-lecteur par défaut, mises à jour, messages d'erreur visibles.
+| Avant (français) | Après (anglais) | Après (français) |
+|---|---|---|
+| Sortie de la chaîne · {}x{} | Playback output · {}x{} | Sortie de la lecture · {}x{} |
+| Choisissez le fichier exporté. | Choose the output file. | Choisissez le fichier exporté. |
+| FFV1 ne va pas dans un MOV : choisissez .mkv ou .mp4. | FFV1 does not fit in a MOV: use .mkv or .mp4. | FFV1 ne va pas dans un MOV : choisissez .mkv ou .mp4. |
+| Ce dossier n'existe pas. | This folder does not exist. | Ce dossier n'existe pas. |
+| Ce fichier est la vidéo lue. | This file is the video being played. | Ce fichier est la vidéo lue. |
+| Résolution | Resolution | Résolution |
+| Taille | Size | Taille |
+| Agrandissement | Upscaling | Agrandissement |
+| Reprendre les réglages de la lecture | Use the playback settings | Reprendre les réglages de la lecture |
+| Encodage | Encoding | Encodage |
+| Qualité | Quality | Qualité |
+| Cadence fixe | Constant frame rate | Cadence fixe |
+| Fichier | File | Fichier |
+| Nom proposé | Suggested name | Nom proposé |
+| Exporter | Export | Exporter |
+| Moteur en service | Active engine | Moteur actif |
+| Utiliser ce moteur | Use this engine | Utiliser ce moteur |
+| Annuler##moteur | Cancel##moteur | Annuler##moteur |
+| Moteurs installés | Installed engines | Moteurs installés |
+| Installer d'autres moteurs… | Install more engines… | Installer d'autres moteurs… |
+| Moteurs construits | Built engines | Moteurs construits |
+| Aucun moteur construit. | No engine built yet. | Aucun moteur construit. |
+| · chargé | · loaded | · chargé |
+| · en cache | · cached | · en cache |
+| Dossier d'installation | Install folder | Dossier d'installation |
+| Par défaut | Default | Par défaut |
+| Dossier par défaut | Default folder | Dossier par défaut |
+| Par défaut##moteurs | Default##moteurs | Par défaut##moteurs |
+| Lecteur par défaut | Default player | Lecteur par défaut |
+| AJP est déjà le lecteur par défaut des vidéos. | AJP is already the default video player. | AJP est déjà le lecteur par défaut des vidéos. |
+| Ne plus me le demander | Don't ask again | Ne plus me le demander |
+| Faire de ce lecteur le lecteur par défaut | Make this the default player | Faire de ce lecteur le lecteur par défaut |
+| Ajouter à « Ouvrir avec » | Add to "Open with" | Ajouter à « Ouvrir avec » |
+| Retirer de « Ouvrir avec » | Remove from "Open with" | Retirer de « Ouvrir avec » |
+| En cours… | Working… | En cours… |
+| Définir AJP comme lecteur par défaut | Set AJP as default player | Définir AJP comme lecteur par défaut |
+| Fermer | Close | Fermer |
+| Plus tard | Later | Plus tard |
+| Réglage modifiable plus tard : Général > Application. | You can change this later in General > Application. | Réglage modifiable plus tard : Général > Application. |
+| Mises à jour | Updates | Mises à jour |
+| Me prévenir | Notify me | Me prévenir |
+| Une notification ; vous lancez la mise à jour vous-même. | A notification; you start the update yourself. | Une notification ; vous lancez la mise à jour vous-même. |
+| Automatique | Automatic | Automatique |
+| Téléchargée, vérifiée, installée au prochain lancement. | Downloaded, verified, installed at next launch. | Téléchargée, vérifiée, installée au prochain lancement. |
+| Jamais | Never | Jamais |
+| Aucune vérification. | No checks. | Aucune vérification. |
+| Canal et fréquence | Channel and frequency | Canal et fréquence |
+| Canal | Channel | Canal |
+| Préversions | Previews | Préversions |
+| À chaque lancement | At every launch | À chaque lancement |
+| Chaque semaine | Weekly | Chaque semaine |
+| Chaque jour | Daily | Chaque jour |
+| Fréquence | Frequency | Fréquence |
+| Version installée : {} | Installed version: {} | Version installée : {} |
+| Disponible : {}{} | Available: {}{} | Disponible : {}{} |
+|  (préparée) |  (ready) |  (préparée) |
+| Dernière vérification : {} | Last check: {} | Dernière vérification : {} |
+| Vérifier maintenant | Check now | Vérifier maintenant |
+| Revenir à la version précédente | Roll back to the previous version | Revenir à la version précédente |
+|  : relancez le lecteur | : restart the player |  : relancez le lecteur |
+| Grisé : aucune mise à jour n'a encore été installée. | Greyed out: no update has been installed yet. | Grisé : aucune mise à jour n'a encore été installée. |
+| Dernière erreur :  | Last error:  | Dernière erreur :  |
+| Mode Performance de SPAN (FP8) | SPAN Performance mode (FP8) | Mode Performance de SPAN (FP8) |
+| Refaire la préparation sur cette vidéo | Prepare again for this video | Refaire la préparation pour cette vidéo |
+| Annuler##span_prepare | Cancel##span_prepare | Annuler##span_prepare |
+| préparation du mode Performance de SPAN (FP8) | SPAN Performance mode (FP8) preparation | préparation du mode Performance de SPAN (FP8) |
+| Optimiser pour ma machine | Optimize for this machine | Optimiser pour ma machine |
+| Optimisation annulée : rien n'a changé. | Optimization cancelled: nothing changed. | Optimisation annulée : rien n'a changé. |
+| Annuler##bench | Cancel##bench | Annuler##bench |
+| Annuler ces réglages | Undo these settings | Annuler ces réglages |
+| Réglages d'avant rétablis. | Previous settings restored. | Réglages d'avant rétablis. |
+
+### Infobulles et notes raccourcies
+
+| Avant (français) | Après (anglais) |
+|---|---|
+| HEVC 10 bits : lu presque partout, encodé par le GPU (NVENC, AMF, Quick Sync, VideoToolbox, VA-API). | HEVC 10-bit: plays almost everywhere, encoded by the GPU. |
+| AV1 10 bits : plus compact à qualité égale ; il faut un encodeur AV1 dans le GPU (RTX 40 et 50, Radeon RX 7000 et 9000, Intel Arc et Core Ultra). | AV1 10-bit: smaller at equal quality; needs a GPU AV1 encoder (RTX 40/50, Radeon RX 7000/9000, Intel Arc). |
+| H.264 8 bits : pour les lecteurs anciens ; les dégradés y sont moins fins. | H.264 8-bit: for older players; gradients are coarser. |
+| FFV1 sans perte du codec, en YUV 4:2:0 10 bits (la couleur est réduite avant l'encodage), encodé par le processeur : des fichiers très lourds, pour retravailler la vidéo. | FFV1 lossless, 4:2:0 10-bit, encoded by the CPU: very large files, for editing. |
+| Le fichier exporté est un MKV, un MP4 ou un MOV : son nom finit par .mkv, .mp4 ou .mov. | The output is an MKV, MP4 or MOV: its name ends in .mkv, .mp4 or .mov. |
+| Ouvrez une vidéo : l'export reprend sa chaîne et se propose à côté d'elle. | Open a video: the export uses its settings and is named next to it. |
+| Au-dessus de la sortie de la chaîne, libplacebo agrandit encore l'image (EWA Lanczos) : un fichier plus lourd, pas plus de détail. | Above the playback output, libplacebo scales further (EWA Lanczos): a bigger file, no more detail. |
+| Sous la sortie de la chaîne, libplacebo la réduit avec son meilleur filtre (EWA Lanczos). | Below the playback output, libplacebo scales down with its best filter (EWA Lanczos). |
+| Mêmes moteurs et mêmes réglages qu'à la lecture, sans aucune image sautée : au moins la qualité du direct. Ni RTX HDR, ni HDR adaptatif, ni grade : l'image de la chaîne telle quelle. | Same engines and settings as playback, with no skipped frame. No RTX HDR, adaptive HDR or grading: the chain's picture as is. |
+| Très haute vise une image identique à l'œil à la lecture ; Haute et Standard donnent des fichiers plus légers. | Very high aims for a picture identical to playback; High and Standard make smaller files. |
+| Aux coupes de scène et sur les dessins tenus, la chaîne n'interpole pas : l'image précédente est répétée à ces instants, et le fichier garde une cadence fixe que tout logiciel de montage lit. | At scene cuts and held drawings the previous frame repeats, so the file keeps a constant frame rate any editor reads. |
+| Les instants que la chaîne n'interpole pas (coupes de scène, dessins tenus) manquent : le fichier est à cadence variable, un peu plus léger, lu sans souci par les lecteurs. | Frames the chain does not interpolate are left out: variable frame rate, a bit smaller, fine in players. |
+| Ce fichier existe : il ne sera remplacé qu'à la fin d'un export réussi. | This file exists: it is replaced only when the export succeeds. |
+| L'audio, les sous-titres, les polices et les chapitres de la source sont copiés tels quels. La lecture s'arrête pendant l'export puis reprend au même endroit ; Échap annule l'export. | Audio, subtitles, fonts and chapters are copied as is. Playback stops during the export; Esc cancels. |
+| À cette fréquence, le MKV arrondit chaque image à la milliseconde (8, 8 puis 9 ms à 120 i/s) : un nom en .mp4 ou .mov garde les instants exacts, sans les sous-titres (ASS, SRT, PGS) ni les polices. | At this frame rate MKV rounds frames to the millisecond; .mp4 or .mov keeps exact times but drops subtitles and fonts. |
+| Le MP4 et le MOV gardent les instants exacts de chaque image. Les chapitres de la source sont copiés, l'audio s'il y va (AAC, AC-3, E-AC-3 ; FLAC, Opus et DTS en MP4 ; jamais TrueHD), mais ni les sous-titres (ASS, SRT, PGS) ni les polices. Pour tout garder, nommez le fichier en .mkv. La lecture s'arrête pendant l'export puis reprend au même endroit ; Échap annule l'export. | MP4 and MOV keep exact frame times, chapters and compatible audio, but no subtitles or fonts. Use .mkv to keep everything. Esc cancels. |
+| Un seul moteur installé : « Installer d'autres moteurs » propose ceux qui conviennent à ce GPU. | Only one engine is installed: "Install more engines" lists those that suit this GPU. |
+| Rouvre l'écran des moteurs sans relancer le lecteur ; la lecture reprend ensuite au même endroit. | Reopens the engines screen; playback resumes at the same spot. |
+| Un moteur est construit une fois par modèle et par taille, puis relu du cache. | An engine is built once per model and size, then read from the cache. |
+| Par défaut : {}. Libre à cet endroit : {}. Vaut au prochain lancement ; les moteurs déjà installés ne sont pas déplacés. | Default: {}. Free here: {}. Applies at next launch; installed engines are not moved. |
+| Les vidéos (mkv, mp4, webm, avi, mov…) s'ouvrent dans AJP depuis le gestionnaire de fichiers. | Videos (mkv, mp4, webm, avi, mov…) open in AJP from the file manager. |
+| Le lecteur ne propose plus de devenir le lecteur par défaut au lancement. | The player no longer offers to become the default at launch. |
+| Ouvrir vos vidéos (mkv, mp4, webm…) directement dans AJP depuis le gestionnaire de fichiers ? | Open your videos (mkv, mp4, webm…) directly in AJP from the file manager? |
+| Ce paquet n'a pas de clé de signature : les mises à jour ne peuvent pas être vérifiées. | This package has no signing key: updates cannot be verified. |
+| Quand le cran « Performance » de la précision de SPAN est choisi, le lecteur prépare tout seul ce mode pour la vidéo ouverte (une minute environ, la lecture reste en FP16 pendant ce temps). Cette page sert à le refaire à la main. | With SPAN's Performance precision, the player prepares this mode by itself for the open video (about a minute, FP16 meanwhile). Redo it by hand here. |
+| Le lecteur essaie quelques secondes de vidéo avec ses réglages recommandés, du plus léger au plus lourd, garde ceux que votre PC tient sans saccade, et les applique. Cela dure environ une minute (plusieurs minutes la toute première fois, le temps de préparer les moteurs). | The player tries a few seconds of video with its recommended settings, lightest to heaviest, keeps what your PC holds without stutter and applies it. About a minute (several the first time). |
+| To apply: playback reopens at the same spot with {}; its engines are built the first time for each model and size. | To apply: playback reopens at the same spot with {}; its engines are built the first time for each model and size. |
+
+## Étape C1 : assistant de premier lancement et écran des moteurs
+
+| Avant (français) | Après (anglais) | Après (français) |
+|---|---|---|
+| J'accepte sa licence | I accept its licence | J'accepte sa licence |
+| Lire la licence | Read the licence | Lire la licence |
+| Clé d'API NGC | NGC API key | Clé d'API NGC |
+| Obtenir une clé | Get a key | Obtenir une clé |
+| installé | installed | installé |
+| à télécharger ({}){} | to download ({}){} | à télécharger ({}){} |
+| à télécharger ({}) · demande {} d'espace, {} libres{} | to download ({}) · needs {} of space, {} free{} | à télécharger ({}) · demande {} d'espace, {} libres{} |
+| pas encore publié pour cette version | not published for this version yet | pas encore publié pour cette version |
+| GPU inconnu | Unknown GPU | GPU inconnu |
+|  · cœurs Tensor |  · Tensor cores |  · cœurs Tensor |
+|  · unités matricielles (WMMA) |  · matrix units (WMMA) |  · unités matricielles (WMMA) |
+| livré avec le lecteur | bundled with the player | livré avec le lecteur |
+| absent de ce paquet | not in this package | absent de ce paquet |
+| à télécharger ({} Mo), paquet fermé sous licence NVIDIA | to download ({} MB), closed NVIDIA-licensed package | à télécharger ({} Mo), paquet fermé sous licence NVIDIA |
+| pas encore installable dans cette version | cannot be installed in this version yet | pas encore installable dans cette version |
+| ni TensorRT ni Vulkan choisis : ni SPAN ni RIFE | neither TensorRT nor Vulkan chosen: no SPAN or RIFE | ni TensorRT ni Vulkan choisis : ni SPAN ni RIFE |
+| Recommandé | Recommended | Recommandé |
+| Compatibilité | Compatibility | Compatibilité |
+| Toujours présent | Always available | Toujours présent |
+| Le plus rapide pour ce GPU | Fastest for this GPU | Le plus rapide pour ce GPU |
+| RTX HDR sur ce GPU | RTX HDR on this GPU | RTX HDR sur ce GPU |
+| À comparer avec Vulkan | Compare with Vulkan | À comparer avec Vulkan |
+| Ne convient pas à ce GPU | Does not suit this GPU | Ne convient pas à ce GPU |
+| Bienvenue | Welcome | Bienvenue |
+| Moteurs | Engines | Moteurs |
+| Image et fluidité | Picture and smoothness | Image et fluidité |
+| Préréglage | Preset | Préréglage |
+| Priorité | Priority | Priorité |
+| Votre écran reçoit du HDR. | Your display receives HDR. | Votre écran reçoit du HDR. |
+| Automatique | Automatic | Automatique |
+| Le lecteur choisit selon la machine. | The player chooses for the machine. | Le lecteur choisit selon la machine. |
+| Cartes NVIDIA RTX avec le moteur TensorRT et le SDK Maxine. | NVIDIA RTX cards with the TensorRT engine and the Maxine SDK. | Cartes NVIDIA RTX avec le moteur TensorRT et le SDK Maxine. |
+| HDR adaptatif | Adaptive HDR | HDR adaptatif |
+| Tous les GPU : l'aspect HDR est émulé selon la scène. | Any GPU: the HDR look is emulated per scene. | Tous les GPU : l'aspect HDR est émulé selon la scène. |
+| Pas de conversion HDR. | No HDR conversion. | Pas de conversion HDR. |
+| RTX HDR, pas à pas | RTX HDR, step by step | RTX HDR, pas à pas |
+| à faire | to do | à faire |
+| Vérifier de nouveau | Check again | Vérifier de nouveau |
+| Renoncer : HDR adaptatif | Give up: adaptive HDR | Renoncer : HDR adaptatif |
+| Comment écoutez-vous ? | How do you listen? | Comment écoutez-vous ? |
+| Casque : crossfeed en stéréo, binaural en surround. | Headphones: crossfeed in stereo, binaural in surround. | Casque : crossfeed en stéréo, binaural en surround. |
+| Multicanal, surround direct. | Multichannel, direct surround. | Multicanal, surround direct. |
+| Grisé : l'appareil de sortie n'a que 2 canaux. | Greyed out: the output device only has 2 channels. | Grisé : l'appareil de sortie n'a que 2 canaux. |
+| Enceintes : rendu fidèle, mixage soigné. | Speakers: faithful sound, careful mix. | Enceintes : rendu fidèle, mixage soigné. |
+| Langues | Languages | Langues |
+| Langue de l'audio | Audio language | Langue audio |
+| Selon le fichier | From the file | Selon le fichier |
+| Langue des sous-titres | Subtitle language | Langue des sous-titres |
+| Aucun | None | Aucun |
+| Mises à jour | Updates | Mises à jour |
+| Me prévenir | Notify me | Me prévenir |
+| Une notification ; vous lancez la mise à jour vous-même. | A notification; you start the update yourself. | Une notification ; vous lancez la mise à jour vous-même. |
+| Téléchargée, installée au prochain lancement. | Downloaded, installed at next launch. | Téléchargée, installée au prochain lancement. |
+| Jamais | Never | Jamais |
+| Aucune vérification. | No checks. | Aucune vérification. |
+| Résumé | Summary | Résumé |
+| Précédent | Back | Précédent |
+| Passer | Skip | Passer |
+| Terminer | Finish | Terminer |
+| Suivant | Next | Suivant |
+| Continuer la lecture | Resume playback | Continuer la lecture |
+| Commencer | Start | Commencer |
+| Profil de démarrage | Startup profile | Profil de démarrage |
+| Annuler | Cancel | Annuler |
+| Moteur | Engine | Moteur |
+| Pas encore dit | Not said yet | Pas encore dit |
+| Casque | Headphones | Casque |
+| Enceintes | Speakers | Enceintes |
+| Home cinéma | Home theater | Home cinéma |
+| Étape {} sur {} : {} | Step {} of {}: {} | Étape {} sur {} : {} |
+| HDR : sauté, automatique (HDR et couleurs > HDR) | HDR: skipped, automatic (HDR and color > HDR) | HDR : sauté, automatique (HDR et couleurs > HDR) |
+| HDR : {} (HDR et couleurs > HDR) | HDR: {} (HDR and color > HDR) | HDR : {} (HDR et couleurs > HDR) |
+| Audio : enceintes en rendu fidèle (Audio > Sortie) | Audio: speakers, faithful sound (Audio > Output) | Audio : enceintes en rendu fidèle (Audio > Sortie) |
+| Audio : {} (Audio > Sortie) | Audio: {} (Audio > Output) | Audio : {} (Audio > Sortie) |
+| Langues : sauté (Général > Lecture) | Languages: skipped (General > Playback) | Langues : sauté (Général > Lecture) |
+| Langues : choisies (Général > Lecture) | Languages: chosen (General > Playback) | Langues : choisies (Général > Lecture) |
+| me prévenir | notify me | me prévenir |
+| Mises à jour : {} (Général > Application) | Updates: {} (General > Application) | Mises à jour : {} (Général > Application) |
+| Carte NVIDIA RTX | NVIDIA RTX card | Carte NVIDIA RTX |
+| RTX HDR demande une carte RTX (cœurs Tensor). | RTX HDR needs an RTX card (Tensor cores). | RTX HDR demande une carte RTX (cœurs Tensor). |
+| Moteur TensorRT | TensorRT engine | Moteur TensorRT |
+| Moteur TensorRT (installé à « Terminer ») | TensorRT engine (installed at "Finish") | Moteur TensorRT (installé à « Terminer ») |
+| SDK Maxine VideoFX | Maxine VideoFX SDK | SDK Maxine VideoFX |
+| SDK Maxine VideoFX (installé à « Terminer ») | Maxine VideoFX SDK (installed at "Finish") | SDK Maxine VideoFX (installé à « Terminer ») |
+| Niveau estimé : {} | Estimated level: {} | Niveau estimé : {} |
+| Écran {}p · {:.0f} Hz | Display {}p · {:.0f} Hz | Écran {}p · {:.0f} Hz |
+| Chargement du moteur | Loading the engine | Chargement du moteur |
+| automatiques | automatic | automatiques |
+| jamais | never | jamais |
+
+### Infobulles et notes raccourcies
+
+| Avant (français) | Après (anglais) |
+|---|---|
+| espace disque insuffisant : il faut {} (dont {} à télécharger), il reste {} | not enough disk space: {} needed ({} to download), {} left |
+| non publié (licence NVIDIA) : à construire sur cette machine, voir docs/nvidia-linux.md | not published (NVIDIA licence): build it on this machine, see docs/nvidia-linux.md |
+| à installer depuis NVIDIA NGC (clé d'API d'un compte NVIDIA gratuit) | to install from NVIDIA NGC (API key of a free NVIDIA account) |
+| NVIDIA Maxine non choisi : HDR adaptatif (tous GPU) au lieu de RTX HDR | NVIDIA Maxine not chosen: adaptive HDR instead of RTX HDR |
+| Le lecteur choisit seul la chaîne pour cette machine ; tout se retrouve ensuite dans les paramètres (p). Il s'ajoute aussi à « Ouvrir avec » du système à la fin de l'assistant. | The player picks the settings for this machine; everything is in Settings (p) afterwards. |
+| Vulkan sert tous les GPU ; les moteurs cochés à télécharger s'installent après « Terminer », vérifiés par leur empreinte, et Vulkan prend le relais de celui qui échoue. | Vulkan works on every GPU. Checked engines install after "Finish", verified by hash; Vulkan takes over if one fails. |
+| Vulkan sert tous les GPU ; les moteurs cochés à télécharger s'installent après « {} », vérifiés par leur empreinte, et Vulkan prend le relais de celui qui échoue. | Vulkan works on every GPU. Checked engines install after "{}", verified by hash; Vulkan takes over if one fails. |
+| Auto choisit la chaîne selon votre carte, votre écran et la vidéo. | Auto picks the settings for your card, display and video. |
+| Une fois les moteurs installés, le bouton « Optimiser pour ma machine » (Paramètres > Général > Configuration, environ une minute) règle tout seul ces choix pour votre PC. En attendant, une estimation d'après la carte suffit pour commencer. | Once the engines are installed, "Optimize for this machine" (Settings > General > Setup) tunes this for your PC in about a minute. |
+| Tant que tout n'est pas fait, l'écran reste en HDR adaptatif ; RTX HDR se choisit ensuite dans HDR et couleurs > HDR. | Until everything is done the display uses adaptive HDR; pick RTX HDR later in HDR and color > HDR. |
+| Le format du son se détecte seul. Aucune détection du casque ou des enceintes : dites-le ici. | The sound format is detected. Headphones or speakers are not: tell us here. |
+| Passer : Enceintes, en rendu fidèle. Le choix se change ensuite dans Audio > Sortie. | Skip: Speakers, faithful sound. Change it later in Audio > Output. |
+| Tout se change ensuite dans les paramètres (p). Pour le refaire : ajp --first-run. | Everything can be changed later in Settings (p). To redo this: ajp --first-run. |
+| Les moteurs cochés à télécharger s'installent, puis la lecture reprend au même endroit. | Checked engines install, then playback resumes at the same spot. |
+| Le lecteur a choisi pour ce GPU ; tout se change ensuite dans les paramètres (p). | The player chose for this GPU; change anything later in Settings (p). |
+| Image et fluidité : sauté, préréglage Auto (Général > Configuration) | Picture and smoothness: skipped, Auto preset (General > Setup) |
+| Image et fluidité : {}, priorité {} (Général > Configuration) | Picture and smoothness: {}, priority {} (General > Setup) |
+| HDR : RTX HDR choisi mais pas prêt (HDR et couleurs > HDR) : en attendant, l'écran reste en HDR adaptatif | HDR: RTX HDR chosen but not ready (HDR and color > HDR); meanwhile adaptive HDR is used |
+| Cochez TensorRT à l'écran Moteur : il s'installe à « Terminer ». | Check TensorRT on the Engine screen: it installs at "Finish". |
+| Cochez NVIDIA Maxine à l'écran Moteur (licence NVIDIA), ou posez le SDK dans /usr/local/VideoFX et relancez avec --truehdr-sdk. | Check NVIDIA Maxine on the Engine screen (NVIDIA licence), or put the SDK in /usr/local/VideoFX and relaunch with --truehdr-sdk. |
+| {} est choisi mais ne s'ouvre pas sur ce GPU (journal) : {} le remplace. | {} is chosen but does not open on this GPU (see log): {} replaces it. |
+
+## Étape C2 : messages (lecteur par défaut, mises à jour, benchmark, SPAN Performance, accueil, installation des moteurs)
+
+| Avant (français) | Après (anglais) | Après (français) |
+|---|---|---|
+| registre : HKCU\{} (erreur {}) | registry: HKCU\{} (error {}) | registre : HKCU\{} (erreur {}) |
+| registre : HKCU\{} : {} (erreur {}) | registry: HKCU\{} : {} (error {}) | registre : HKCU\{} : {} (erreur {}) |
+| lecteur par défaut : dossier personnel inconnu | default player: home folder unknown | lecteur par défaut : dossier personnel inconnu |
+| AJP ne figure plus dans « Ouvrir avec ». | AJP is no longer in "Open with". | AJP ne figure plus dans « Ouvrir avec ». |
+| AJP n'était pas inscrit : rien à retirer. | AJP was not registered: nothing to remove. | AJP n'était pas inscrit : rien à retirer. |
+| curl introuvable : impossible de vérifier les mises à jour | curl not found: cannot check for updates | curl introuvable : impossible de vérifier les mises à jour |
+| la signature du manifeste est fausse : mise à jour ignorée | the manifest signature is wrong: update ignored | la signature du manifeste est fausse : mise à jour ignorée |
+| le manifeste est du canal « {} », pas « {} » | the manifest is for channel "{}", not "{}" | le manifeste est du canal « {} », pas « {} » |
+| {} est disponible | {} is available | {} est disponible |
+| Le lecteur est à jour | The player is up to date | Le lecteur est à jour |
+| cette release n'a pas d'archive pour ce système | this release has no archive for this system | cette release n'a pas d'archive pour ce système |
+| nom d'archive illisible dans le manifeste | unreadable archive name in the manifest | nom d'archive illisible dans le manifeste |
+| mis à jour par votre gestionnaire de paquets (Flatpak) | updated by your package manager (Flatpak) | mis à jour par votre gestionnaire de paquets (Flatpak) |
+|  (déjà préparée) |  (already prepared) |  (déjà préparée) |
+|  : préparée, installée au prochain lancement | : prepared, installed at next launch |  : préparée, installée au prochain lancement |
+| tar introuvable | tar not found | tar introuvable |
+| aucune mise à jour préparée | no update prepared | aucune mise à jour préparée |
+| l'archive préparée a disparu | the prepared archive is gone | l'archive préparée a disparu |
+| Mis à jour vers {} | Updated to {} | Mis à jour vers {} |
+| aucune version précédente gardée | no previous version kept | aucune version précédente gardée |
+| Version précédente remise{} | Previous version restored{} | Version précédente remise{} |
+| échec | failed | échec |
+| Étape {} sur {} : {} | Step {} of {}: {} | Étape {} sur {} : {} |
+| le lecteur de l'essai s'est arrêté brutalement ({}) | the test player stopped abruptly ({}) | le lecteur de l'essai s'est arrêté brutalement ({}) |
+| le lecteur de l'essai s'est arrêté ({}) | the test player stopped ({}) | le lecteur de l'essai s'est arrêté ({}) |
+| L'essai {} n'a rien rendu : {} | Test {} produced nothing: {} | L'essai {} n'a rien rendu : {} |
+| agrandissement ×2 depuis {}p | ×2 upscaling from {}p | agrandissement ×2 depuis {}p |
+| image d'origine sans agrandissement | original picture, no upscaling | image d'origine sans agrandissement |
+| interpolation jusqu'à ×{}, {} | interpolation up to ×{}, {} | interpolation jusqu'à ×{}, {} |
+| sans interpolation | no interpolation | sans interpolation |
+| Votre PC tient : {}. | Your PC holds: {}. | Votre PC tient : {}. |
+|  Performance FP8 pour SPAN : prête. |  SPAN Performance FP8: ready. |  Performance FP8 pour SPAN : prête. |
+|  Performance FP8 pour SPAN : non{}{}. |  SPAN Performance FP8: no{}{}. |  Performance FP8 pour SPAN : non{}{}. |
+| bench.toml :  | bench.toml:  | bench.toml :  |
+| bench.toml : écriture impossible | bench.toml: cannot write | bench.toml : écriture impossible |
+| L'essai {} n'a pas pu démarrer : {} | Test {} could not start: {} | L'essai {} n'a pas pu démarrer : {} |
+| des réglages « {} » | of the "{}" settings | des réglages « {} » |
+| de préparation | of preparation | de préparation |
+| Essai {}/4 : {} | Test {}/4: {} | Essai {}/4 : {} |
+| de la variante « {} » | of the "{}" variant | de la variante « {} » |
+| comparaison annulée | comparison cancelled | comparaison annulée |
+| la variante « {} » n'a rien rendu | the "{}" variant produced nothing | la variante « {} » n'a rien rendu |
+| comparaison : une variante n'a rien rendu | comparison: a variant produced nothing | comparaison : une variante n'a rien rendu |
+| ne tient pas | does not hold | ne tient pas |
+| Carte : {}  | Card: {}  | Carte : {}  |
+| Seule « {} » tient.  | Only "{}" holds.  | Seule « {} » tient.  |
+| Au p95, « {} » est plus légère de {:.1f} ms par image.  | At p95, "{}" is lighter by {:.1f} ms per frame.  | Au p95, « {} » est plus légère de {:.1f} ms par image.  |
+| préparation des moteurs et première mesure | preparing engines and first measurement | préparation des moteurs et première mesure |
+| test des réglages « {} » | testing the "{}" settings | test des réglages « {} » |
+| évaluation annulée | evaluation cancelled | évaluation annulée |
+| recherche d'une image plus fine ({}) | searching for a finer picture ({}) | recherche d'une image plus fine ({}) |
+| de recherche ({}) | of search ({}) | de recherche ({}) |
+| écriture de la séquence de test | writing the test sequence | écriture de la séquence de test |
+| Carte : {} (pilote {}) Niveau estimé : {}  | Card: {} (driver {}) Estimated level: {}  | Carte : {} (pilote {}) Niveau estimé : {}  |
+| Niveau gardé : {}  | Level kept: {}  | Niveau gardé : {}  |
+| Exploration : la machine tient le modèle {}.  | Exploration: the machine holds the {} model.  | Exploration : la machine tient le modèle {}.  |
+| un autre moteur | another engine | un autre moteur |
+| cette carte | this card | cette carte |
+| Préparation du mode Performance… {} % | Preparing Performance mode… {} % | Préparation du mode Performance… {} % |
+| Mode Performance impossible, lecture en FP16 : {} | Performance mode unavailable, playing in FP16: {} | Mode Performance impossible, lecture en FP16 : {} |
+| Mode Performance prêt : la lecture le prend maintenant | Performance mode ready: playback uses it now | Mode Performance prêt : la lecture l'utilise maintenant |
+| Ouvrir une vidéo | Open a video | Ouvrir une vidéo |
+| Choisissez la vidéo dans la fenêtre ouverte. | Pick the video in the open window. | Choisissez la vidéo dans la fenêtre ouverte. |
+| ou glissez un fichier sur cette fenêtre. | or drop a file on this window. | ou glissez un fichier sur cette fenêtre. |
+| Paramètres (p) | Settings (p) | Paramètres (p) |
+| q : quitter | q: quit | q : quitter |
+| {} absent : seuls les moteurs livrés sont proposés | {} missing: only bundled engines are offered | {} absent : seuls les moteurs livrés sont proposés |
+| écarté, {} | discarded, {} | écarté, {} |
+| curl introuvable sur ce système | curl not found on this system | curl introuvable sur ce système |
+|  : taille nulle | : zero size |  : taille nulle |
+| téléchargement de {} | downloading {} | téléchargement de {} |
+| {} : {} octets reçus, {} attendus | {}: {} bytes received, {} expected | {} : {} octets reçus, {} attendus |
+| curl ou tar introuvables sur ce système | curl or tar not found on this system | curl ou tar introuvables sur ce système |
+| vérification de la place | checking free space | vérification de la place |
+| inconnue (tous les fichiers) | unknown (all files) | inconnue (tous les fichiers) |
+| téléchargement de l'archive du moteur | downloading the engine archive | téléchargement de l'archive du moteur |
+| téléchargement de {} ({}) | downloading {} ({}) | téléchargement de {} ({}) |
+| vérification de l'archive | verifying the archive | vérification de l'archive |
+| vérification de {} | verifying {} | vérification de {} |
+| extraction de l'archive | extracting the archive | extraction de l'archive |
+| extraction de {} | extracting {} | extraction de {} |
+| paquet {} sans {} | package {} without {} | paquet {} sans {} |
+| fichier {} ({}/{}) | file {} ({}/{}) | fichier {} ({}/{}) |
+| remplacement de la version installée | replacing the installed version | remplacement de la version installée |
+| {} : note du paquet | {}: package note | {} : note du paquet |
+| {} installé | {} installed | {} installé |
+| démarrage | starting | démarrage |
+| téléchargement | download | téléchargement |
+| downloading {} | downloading {} | téléchargement de {} |
+| decompressing {} | decompressing {} | décompression de {} |
+
+### Messages longs raccourcis
+
+| Avant (français) | Après (anglais) |
+|---|---|
+| AJP figure dans « Ouvrir avec ». Pour en faire le lecteur des vidéos : « Faire de ce lecteur le lecteur par défaut » dans Paramètres > Général > Application, ou Paramètres > Applications > Applications par défaut. | AJP is in "Open with". To make it the default: "Make this the default player" in Settings > General > Application, or Settings > Apps > Default apps. |
+| AJP.app déclare déjà les vidéos qu'il ouvre. Pour en faire le lecteur par défaut : clic droit sur une vidéo > Lire les informations > Ouvrir avec : AJP > Tout modifier. | AJP.app already declares the videos it opens. To make it the default: right-click a video > Get Info > Open with: AJP > Change All. |
+| Sous macOS, l'inscription suit AJP.app : la retirer, c'est mettre l'app à la corbeille. | On macOS the registration follows AJP.app: remove it by trashing the app. |
+| Paramètres ouverts sur {} : « Définir par défaut » en haut de la page, ou un type à la fois. | Settings opened on {}: "Set default" at the top of the page, or one type at a time. |
+| AJP est maintenant le lecteur des vidéos (mkv, mp4, webm, avi, mov…). | AJP is now the video player (mkv, mp4, webm, avi, mov…). |
+| xdg-mime introuvable (paquet xdg-utils) : clic droit sur une vidéo > Ouvrir avec > AJP, en cochant « toujours » | xdg-mime not found (xdg-utils package): right-click a video > Open with > AJP and tick "always" |
+| ce paquet n'a pas de clé de signature : les mises à jour ne peuvent pas être vérifiées | this package has no signing key: updates cannot be verified |
+| sur macOS, la nouvelle version se télécharge sur la page des releases | on macOS, download the new version from the releases page |
+| AppImage : la nouvelle version se télécharge sur la page des releases (le fichier se remplace) | AppImage: download the new version from the releases page (replace the file) |
+| installé là où le lecteur ne peut pas s'écrire : mis à jour par votre gestionnaire de paquets | installed where the player cannot write: updated by your package manager |
+| il a dépassé {} s sans finir, sans doute en construisant un moteur de calcul (c'est long la première fois) | it ran over {} s without finishing, probably building an engine (slow the first time) |
+| L'essai {} n'a rien rendu : il s'est terminé sans mesures lisibles{}{} | Test {} produced nothing: it ended without readable measurements{}{} |
+| Construction d'un moteur de calcul : la première fois seulement, sans doute plusieurs minutes sur un portable. | Building a compute engine: first time only, probably several minutes on a laptop. |
+|   {:<24} {:>5.1f} % perdues, retard p95 {:>6.1f} ms, image {:>6.1f} ms (p95 {:>6.1f}), composition {:>5.1f} ms : {}  |   {:<24} {:>5.1f} % lost, p95 delay {:>6.1f} ms, frame {:>6.1f} ms (p95 {:>6.1f}), compositing {:>5.1f} ms: {}  |
+| Si c'est la première fois sur ce PC, la construction des moteurs peut prendre plusieurs minutes. | If this is the first time on this PC, building the engines can take several minutes. |
+| Les réglages « {} » n'ont pas été testés : leurs moteurs sont longs à construire. Relancez l'optimisation pour continuer. | The "{}" settings were not tested: their engines take long to build. Run the optimization again to continue. |
+| La recherche d'une image plus fine est remise à la prochaine optimisation : les moteurs viennent d'être construits. | The search for a finer picture is left to the next optimization: the engines were just built. |
+|   {:<8} {:>5} présentations, {:>5.1f} % perdues, retard p95 {:>6.1f} ms : {}  |   {:<8} {:>5} presentations, {:>5.1f} % lost, p95 delay {:>6.1f} ms: {}  |
+| Exploration : la machine tient une hauteur de travail de {}p.  | Exploration: the machine holds a working height of {}p.  |
+| le moteur TensorRT est installé mais le lecteur utilise {} : choisissez TensorRT dans Paramètres > Export et moteurs > Moteurs | TensorRT is installed but the player uses {}: pick TensorRT in Settings > Export and engines > Engines |
+| moteur TensorRT non installé : installez-le dans Paramètres > Export et moteurs > Moteurs | TensorRT is not installed: install it in Settings > Export and engines > Engines |
+| {} n'est pas une carte NVIDIA RTX 40 (Ada) ou le moteur a été construit sans ces noyaux | {} is not an NVIDIA RTX 40 (Ada) card, or the engine was built without these kernels |
+| Upscale, interpolation et HDR pour les animes : la chaîne suit le profil de démarrage et les paramètres, réglables ici avant la lecture. | Upscaling, interpolation and HDR for anime: set the startup profile and settings here before playback. |
+| Windows 11 24H2 requis (build {} installé) : mettre Windows à jour par Windows Update | Windows 11 24H2 required (build {} installed): update Windows through Windows Update |
+| ROCm absent : installer « migraphx » depuis le dépôt ROCm 7 d'AMD (sudo apt install migraphx) | ROCm missing: install "migraphx" from AMD's ROCm 7 repository (sudo apt install migraphx) |
+| ROCm 7 requis (ROCm 6 installé) : passer au dépôt ROCm 7 d'AMD, puis sudo apt install migraphx | ROCm 7 required (ROCm 6 installed): switch to AMD's ROCm 7 repository, then sudo apt install migraphx |
+| pilote compute Intel absent (sudo apt install intel-opencl-icd libze-intel-gpu1) | Intel compute driver missing (sudo apt install intel-opencl-icd libze-intel-gpu1) |
+| espace disque insuffisant : l'installation demande {} (dont {} à télécharger, {} une fois installé), il reste {} sur {} | not enough disk space: the install needs {} ({} to download, {} once installed), {} left on {} |
+
+## Étape C3 : statistiques à l'écran, export, barre de progression, accueil
+
+| Avant (français) | Après (anglais) | Après (français) |
+|---|---|---|
+| entrée {}x{} · construit en {:.0f} s | input {}x{} · built in {:.0f} s | entrée {}x{} · construit en {:.0f} s |
+| Auto ×{} ({:.0f} i/s) · plafond écran ×{} | Auto ×{} ({:.0f} fps) · display limit ×{} | Auto ×{} ({:.0f} i/s) · plafond écran ×{} |
+|  · prédit ×{} |  · predicted ×{} |  · prédit ×{} |
+|  · scène lourde |  · heavy scene |  · scène lourde |
+|  · écart service  |  · service gap  |  · écart service  |
+| mémoire vidéo {:.0f} / {:.0f} Mio | video memory {:.0f} / {:.0f} MiB | mémoire vidéo {:.0f} / {:.0f} Mio |
+| Vrai noir : coupé. | True black: off. | Vrai noir : coupé. |
+| Vrai noir : la rampe ne monte pas, rien n'est changé. | True black: the ramp does not rise, nothing changed. | Vrai noir : la rampe ne monte pas, rien n'est changé. |
+| audio absent : l'horloge de l'écran mène | audio missing: the display clock leads | audio absent : l'horloge de l'écran mène |
+| image {} (σ {}) · rendu {} · sautées {}{} | frame {} (σ {}) · render {} · skipped {}{} | image {} (σ {}) · rendu {} · sautées {}{} |
+|  · calée sur l'écran {:+.3f} % |  · locked to the display {:+.3f} % |  · calée sur l'écran {:+.3f} % |
+| fluidité {}{} im/s · manquées {}{} · retard p95 {}{} | smoothness {}{} fps · missed {}{} · p95 delay {}{} | fluidité {}{} im/s · manquées {}{} · retard p95 {}{} |
+|  (+ {} coupes et dessins tenus) |  (+ {} cuts and held drawings) |  (+ {} coupes et dessins tenus) |
+| Vidéos | Videos | Vidéos |
+| Tous les fichiers | All files | Tous les fichiers |
+| Dernière optimisation : {} | Last optimization: {} | Dernière optimisation : {} |
+| Préparation de RTX HDR | Preparing RTX HDR | Préparation de RTX HDR |
+| {} ne calcule pas à un instant libre | {} cannot compute at a free instant | {} ne calcule pas à un instant libre |
+| fréquence de l'écran inconnue | display refresh rate unknown | fréquence de l'écran inconnue |
+| Export en cours · Échap pour annuler | Exporting · Esc to cancel | Export en cours · Échap pour annuler |
+| {} images · {:.1f} i/s · écoulé {} · reste ~{} | {} frames · {:.1f} fps · elapsed {} · left ~{} | {} images · {:.1f} i/s · écoulé {} · reste ~{} |
+| {}x{} à {} i/s · {} | {}x{} at {} fps · {} | {}x{} à {} i/s · {} |
+| Vidéo ({}) | Video ({}) | Vidéo ({}) |
+|  fusionné |  fused |  fusionné |
+| sans agrandissement · {} | no upscaling · {} | sans agrandissement · {} |
+| pas de RIFE | no RIFE | pas de RIFE |
+| Léger | Light | Léger |
+| Économe | Economy | Économe |
+
+### Messages longs raccourcis
+
+| Avant (français) | Après (anglais) |
+|---|---|
+| {} {} : {} paires, {} interpolées, {} dessins tenus, {} coupes, {} en retard | {} {}: {} pairs, {} interpolated, {} held drawings, {} cuts, {} late |
+| Vrai noir : sans effet ici (grade coupé, ou sortie HDR sans route). | True black: no effect here (grading off, or HDR output without a path). |
+| Vrai noir : 0 sous {:.4f} nit, pied jusqu'à {:.4f} nit (noir de la source à {:.4f} nit avant). | True black: 0 below {:.4f} nit, toe up to {:.4f} nit (source black was {:.4f} nit). |
+| Ouvrez une vidéo : le lecteur prépare le mode Performance sur ses images. | Open a video: the player prepares Performance mode on its frames. |
+| AJP figure dans « Ouvrir avec ». Pour en faire le lecteur des vidéos : « Faire de ce lecteur le lecteur par défaut » dans Paramètres > Général > Application, ou Paramètres > Applications > Applications par défaut > {}. | AJP is in "Open with". To make it the default: "Make this the default player" in Settings > General > Application, or Settings > Apps > Default apps > {}. |
+| AJP figure dans « Ouvrir avec » ({}). Pour en faire le lecteur des vidéos : « Faire de ce lecteur le lecteur par défaut » dans Paramètres > Général > Application, ou xdg-mime default {}{} | AJP is in "Open with" ({}). To make it the default: "Make this the default player" in Settings > General > Application, or xdg-mime default {}{} |
+
+## Ce qui reste en français
+
+Les journaux développeur, l'aide `--help`, les messages d'erreur internes (refus de chargement de modèle, de graphe, de fichier de réglages) et les
+textes des paquets de moteurs ne sont pas traduits : ils s'adressent aux développeurs et aux rapports de bogue. Tout texte de menu, d'infobulle,
+de notification, d'assistant, de statistique à l'écran et de message de lecteur par défaut ou de mise à jour passe par `tr()`.

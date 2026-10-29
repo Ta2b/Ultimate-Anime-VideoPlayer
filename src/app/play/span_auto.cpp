@@ -4,23 +4,24 @@
 #include <chrono>
 #include <format>
 
+#include "app/play/i18n.h"
+
 namespace ajp::app::play {
 
 std::string span_fp8_unavailable_reason(const SpanFp8Facts& facts) {
   if (facts.capability) return {};
   if (facts.backend_name != "tensorrt") {
     if (facts.tensorrt_present) {
-      return std::format(
-          "le moteur TensorRT est installé mais le lecteur utilise {} : choisissez TensorRT dans Paramètres "
-          "> "
-          "Export et moteurs > Moteurs",
-          facts.backend_name.empty() ? std::string("un autre moteur") : facts.backend_name);
+      return i18n::tr_format(
+          "TensorRT is installed but the player uses {}: pick TensorRT in Settings > Export and engines > "
+          "Engines",
+          facts.backend_name.empty() ? std::string(i18n::tr("another engine")) : facts.backend_name);
     }
-    return "moteur TensorRT non installé : installez-le dans Paramètres > Export et moteurs > Moteurs";
+    return i18n::tr("TensorRT is not installed: install it in Settings > Export and engines > Engines");
   }
-  return std::format(
-      "{} n'est pas une carte NVIDIA RTX 40 (Ada) ou le moteur a été construit sans ces noyaux",
-      facts.gpu_name.empty() ? std::string("cette carte") : facts.gpu_name);
+  return i18n::tr_format(
+      "{} is not an NVIDIA RTX 40 (Ada) card, or the engine was built without these kernels",
+      facts.gpu_name.empty() ? std::string(i18n::tr("this card")) : facts.gpu_name);
 }
 
 SpanJob::~SpanJob() {
@@ -45,12 +46,12 @@ void stop_and_wait(PrepareNote& note) {
 }
 
 std::string span_progress_text(float fraction) {
-  return std::format("Préparation du mode Performance… {} %",
-                     static_cast<int>(std::clamp(fraction, 0.0F, 1.0F) * 100.0F));
+  return i18n::tr_format("Preparing Performance mode… {} %",
+                         static_cast<int>(std::clamp(fraction, 0.0F, 1.0F) * 100.0F));
 }
 
 std::string span_failure_text(std::string_view detail) {
-  return std::format("Mode Performance impossible, lecture en FP16 : {}", detail);
+  return i18n::tr_format("Performance mode unavailable, playing in FP16: {}", detail);
 }
 
 bool should_start_span_auto(PrecisionTier precision, const SpanPrepare& prepare, bool job_running,
@@ -69,7 +70,7 @@ SpanAutoTick tick_span_auto(PrecisionTier precision, const SpanPrepare& prepare,
     if (note.refused) {
       tick.notify = span_failure_text(note.text);
     } else {
-      tick.notify = "Mode Performance prêt : la lecture le prend maintenant";
+      tick.notify = i18n::tr("Performance mode ready: playback uses it now");
       tick.reopen = true;
     }
     return tick;
