@@ -2,10 +2,15 @@
 #pragma once
 
 #include <string>
+#include <string_view>
 
 #include <imgui.h>
 
+#include "app/play/french_text.h"
+
 namespace ajp::app::play::panel {
+
+using play::french_spaces;
 
 inline constexpr ImVec4 kAccent{0.42F, 0.66F, 1.0F, 1.0F};
 inline constexpr ImVec4 kNote{0.66F, 0.68F, 0.74F, 1.0F};
@@ -21,8 +26,9 @@ inline bool& advanced() {
 }
 
 inline void note(const char* text) {
+  const std::string shown = french_spaces(text);
   ImGui::PushStyleColor(ImGuiCol_Text, kNote);
-  ImGui::TextWrapped("%s", text);
+  ImGui::TextWrapped("%s", shown.c_str());
   ImGui::PopStyleColor();
 }
 inline void note(const std::string& text) {
@@ -90,9 +96,10 @@ inline void same_line_if_fits(const char* label) {
 // Une infobulle sur le dernier élément, après un court délai ; elle s'affiche aussi sur un élément grisé.
 inline void tip(const char* text) {
   if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled | ImGuiHoveredFlags_DelayNormal)) {
+    const std::string shown = french_spaces(text);
     ImGui::BeginTooltip();
     ImGui::PushTextWrapPos(ImGui::GetFontSize() * 30.0F);
-    ImGui::TextUnformatted(text);
+    ImGui::TextUnformatted(shown.c_str());
     ImGui::PopTextWrapPos();
     ImGui::EndTooltip();
   }

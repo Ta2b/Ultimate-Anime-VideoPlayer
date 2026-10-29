@@ -7,6 +7,7 @@
 
 #include <catch2/catch_test_macros.hpp>
 
+#include "app/play/french_text.h"
 #include "app/play/settings_panel.h"
 #include "app/play/wizard.h"
 
@@ -62,8 +63,16 @@ TEST_CASE("le résumé de l'assistant renvoie à des pages qui existent", "[sett
     const std::string category = path.substr(0, arrow);
     const std::string name = path.substr(arrow + 3);
     INFO(line);
-    CHECK(std::ranges::any_of(pages, [&](const SettingsPage& page) {
-      return category == page.category && name == page.name;
-    }));
+    CHECK(std::ranges::any_of(
+        pages, [&](const SettingsPage& page) { return category == page.category && name == page.name; }));
   }
+}
+
+TEST_CASE("les notes gardent les guillemets et la ponctuation haute avec leur mot", "[settings][typo]") {
+  using ajp::app::play::french_spaces;
+  CHECK(french_spaces("bouton « Préparer » plus bas : voir") ==
+        "bouton «\xC2\xA0Préparer\xC2\xA0» plus bas\xC2\xA0: voir");
+  CHECK(french_spaces("Quoi ? Oui ! 3 % ; fin") == "Quoi\xC2\xA0? Oui\xC2\xA0! 3\xC2\xA0%\xC2\xA0; fin");
+  CHECK(french_spaces("rien à changer") == "rien à changer");
+  CHECK(french_spaces("") == "");
 }

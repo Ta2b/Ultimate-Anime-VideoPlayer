@@ -269,9 +269,11 @@ void fluidity_tab(PlaySettings& d, const SettingsChoices& choices, bool exportin
           "écran > Synchronisation adaptative), sinon le mouvement vibre à fréquence fixe.");
     }
   }
-  if (choices.source_fps > 0.0 && choices.display_hz > 0.0)
-    note(std::format("Grisé : au-delà de l'écran ({:.0f} Hz pour {:.3f} i/s).", choices.display_hz,
-                     choices.source_fps));
+  if (choices.source_fps > 0.0 && choices.display_hz > 0.0) {
+    std::string fps = std::format("{:.3f}", choices.source_fps);
+    std::ranges::replace(fps, '.', ',');  // la virgule décimale du français : « 23,976 »
+    note(std::format("Grisé : au-delà de l'écran ({:.0f} Hz pour {} i/s).", choices.display_hz, fps));
+  }
   if (exporting && now.num > now.den) {
     note(
         "À l'export, aucune image n'est sautée : chaque image créée coûte une passe, le temps de l'export "
