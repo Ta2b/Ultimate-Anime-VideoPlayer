@@ -343,7 +343,8 @@ bool config_page(PlaySettings& d, const SettingsChoices& choices, BenchNote& ben
   section("Assistant");
   if (ImGui::Button("Relancer l'assistant")) actions.emplace_back(OpenEngineScreen{.wizard = true});
   panel::tip(
-      "Les huit écrans de bienvenue : moteurs, image, HDR, audio, langues, mises à jour. Rien ne change "
+      "Les écrans de bienvenue (ceux sans objet sont sautés) : moteurs, image, HDR, audio, langues, mises à "
+      "jour. Rien ne change "
       "avant « Terminer ».");
   return started;
 }
