@@ -352,7 +352,7 @@ TEST_CASE("GMFSS : changer de cran de précision recharge la chaîne, seulement 
   wanted.gmfss_precision = PrecisionTier::Quality;
   const Change change = change_between(running, wanted, true);
   CHECK(change.cost == ChangeCost::Reopen);
-  CHECK(change.reason.find("Qualité") != std::string::npos);
+  CHECK(change.reason.find("Quality") != std::string::npos);
   CHECK(change.reason.find("FP32") != std::string::npos);
   // Le nouveau cran Performance (FP8), et le sens inverse.
   wanted.gmfss_precision = PrecisionTier::Performance;
@@ -428,7 +428,7 @@ TEST_CASE("TierSupport : Équilibre toujours, les autres selon les graphes", "[a
   CHECK(precision_text(PrecisionTier::Performance) == "FP8");
   CHECK(precision_text(PrecisionTier::Balanced) == "FP16");
   CHECK(precision_text(PrecisionTier::Quality) == "FP32");
-  CHECK(label(PrecisionTier::Balanced) == "Équilibre");
+  CHECK(label(PrecisionTier::Balanced) == "Balance");
 }
 
 }  // namespace

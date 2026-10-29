@@ -166,7 +166,83 @@ Tableau : texte français d'avant → anglais (par défaut) / français d'après
 | {} passe en {} (construit la première fois pour cette taille) | {} switches to {} (built the first time for this size) |
 | GMFSS passe en {} (GMFlow en {}, construit la première fois pour cette taille) | GMFSS switches to {} (GMFlow in {}, built the first time for this size) |
 
+## Étape B2 : Image IA (Agrandissement, Fluidité)
+
+| Avant (français) | Après (anglais) | Après (français) |
+|---|---|---|
+| Source (sans réduction) | Source (no downscale) | Source (sans réduction) |
+| RIFE : le moteur de base, rapide, bon partout. | RIFE: the default engine, fast and good everywhere. | RIFE : le moteur de base, rapide et bon partout. |
+| Agrandissement | Upscaling | Agrandissement |
+| Modèle | Model | Modèle |
+| Précision de SPAN | SPAN precision | Précision de SPAN |
+| Résolution | Resolution | Résolution |
+| Source, sans réduction ({}) | Source, no downscale ({}) | Source, sans réduction ({}) |
+| Résolution de travail | Working resolution | Résolution de travail |
+| Algorithme | Downscaler | Réduction |
+| SSimDownscaler (à venir) | SSimDownscaler (coming soon) | SSimDownscaler (à venir) |
+| Pas de réduction : la source entre telle quelle dans SPAN. | No downscale: the source goes into SPAN as is. | Pas de réduction : la source entre telle quelle dans SPAN. |
+| Désactivée | Off | Désactivée |
+|  (recommandé) |  (recommended) |  (recommandé) |
+| Multiplicateur | Multiplier | Multiplicateur |
+| Maximum (écran) | Maximum (display) | Maximum (écran) |
+| Plafond d'Auto | Auto limit | Plafond d'Auto |
+| Rapide (expérimental) | Fast (experimental) | Rapide (expérimental) |
+| Mode d'Auto | Auto mode | Mode d'Auto |
+| Sans VRR, le mouvement peut vibrer à fréquence fixe. | Without VRR, motion may judder at a fixed refresh rate. | Sans VRR, le mouvement peut vibrer à fréquence fixe. |
+| VRR coupé par le système : le mouvement peut vibrer. | VRR is turned off by the system: motion may judder. | VRR coupé par le système : le mouvement peut vibrer. |
+| Grisé : au-delà de l'écran ({:.0f} Hz pour {} i/s). | Greyed out: above the display ({:.0f} Hz for {} fps). | Grisé : au-delà de l'écran ({:.0f} Hz pour {} i/s). |
+| Moteur de l'interpolation | Interpolation engine | Moteur d'interpolation |
+| Modèle RIFE | RIFE model | Modèle RIFE |
+|  · conseillé pour cette carte |  · suggested for this card |  · conseillé pour cette carte |
+| Garder les poses (DRBA) avec RIFE | Keep poses (DRBA) with RIFE | Garder les poses (DRBA) avec RIFE |
+| RIFE fusionné | Fused RIFE | RIFE fusionné |
+| DistilDRBA fusionné | Fused DistilDRBA | DistilDRBA fusionné |
+| GMFSS fusionné | Fused GMFSS | GMFSS fusionné |
+| Warp et SPAN | Warp and SPAN | Warp et SPAN |
+| Smooth Motion (pilote NVIDIA) | Smooth Motion (NVIDIA driver) | Smooth Motion (pilote NVIDIA) |
+| Doubler les images (pilote NVIDIA) | Double the frames (NVIDIA driver) | Doubler les images (pilote NVIDIA) |
+
+### Infobulles et notes raccourcies
+
+| Avant (français) | Après (anglais) |
+|---|---|
+| GMFSS Fortuna : réseau fait pour l'animation, les images intermédiaires les plus propres, pour plusieurs fois le coût de RIFE. Il prend ses graphes au flot à demi-échelle (_s05), qui valent le flot entier pour moitié moins de calcul. Construit la première fois (plusieurs minutes). Expérimental. | GMFSS Fortuna: built for animation, the cleanest in-between frames at several times RIFE's cost. Built on first use (several minutes). Experimental. |
+| GMFSS Union : GMFSS mêlé à l'image d'un RIFE intégré au réseau, moins de défauts sur les mouvements rapides, pour un peu plus de calcul. Construit la première fois (plusieurs minutes). | GMFSS Union: GMFSS blended with a built-in RIFE, fewer artifacts on fast motion, a bit slower. Built on first use. |
+| DistilDRBA : un RIFE à trois images entraîné à imiter DRBA ; le réseau garde lui-même les poses d'un personnage animé en deux, pour à peu près le coût de RIFE 4.22 lite. Une image de retard. | DistilDRBA: a three-frame RIFE trained to imitate DRBA; it holds poses by itself, at about RIFE 4.22 lite's cost. One frame of delay. |
+| Apple : le flot optique de macOS (VideoToolbox, macOS 15.4 ou plus), sur le Neural Engine et le GPU, sans modèle à télécharger. Sous le backend Core ML seulement ; ailleurs RIFE prend la place. | Apple: macOS optical flow (VideoToolbox, macOS 15.4+), no model to download. Core ML backend only; RIFE is used elsewhere. |
+| Performance : le plus rapide. Balanced : plus fin, plus lent. Sharp1 : contours plus nets. | Performance: fastest. Balanced: finer, slower. Sharp1: crisper edges. |
+| Équilibre : FP16, le réseau tel que livré. Performance : le plus rapide (calcul en FP8 sur les RTX 40 et après), fabriqué sur votre PC par le bouton « Préparer le mode Performance » des réglages avancés ; il n'apparaît dans la liste qu'une fois prêt. Qualité : FP32, si sa variante est installée. Recharge la lecture. | Balanced is FP16; Performance is FP8 on RTX 40 and newer; Quality is FP32. Reloads playback. |
+| Performance (FP8) : fabriqué sur votre PC (bouton « Préparer le mode Performance » plus bas), pour les RTX 40 et après. | Performance (FP8) is built on your PC (see "Prepare Performance mode" below), for RTX 40 and newer. |
+| Taille à laquelle la vidéo est ramenée avant SPAN. SPAN la double : 720p donne une sortie en 1440p. | The size the video is reduced to before SPAN, which doubles it: 720p gives 1440p. |
+| Sortie : {}, le double de la résolution de travail (SPAN ×2). | Output: {}, twice the working resolution (SPAN ×2). |
+| Sans agrandissement, la sortie garde la résolution de travail : {}. | Without upscaling, the output stays at the working resolution: {}. |
+| Area : moyenne exacte. Spline36 : celui d'AnimeJaNai, net. Hermite : net et sans halo, pensé pour l'animation. Catmull-Rom et Mitchell gardent du détail ; Bilinear et Bicubic adoucissent. Changement en direct. | Spline36 is AnimeJaNai's sharp choice; Hermite is sharp without halos. Applies live. |
+| La cadence de sortie la plus haute que le mode Auto vise : le maximum de l'écran par défaut, ou 120 / 60 i/s pour ménager le GPU. Il baisse toujours de lui-même quand une scène est lourde. | The highest frame rate Auto aims for. It still drops by itself on heavy scenes. |
+| Aucun palier : chaque image est calculée à l'instant exact où elle sera vue. | No steps: each frame is computed for the exact moment it is shown. |
+| Sans VRR, la cadence est calée sur le rafraîchissement de l'écran : une image trop tardive laisse la précédente un vsync de plus. | Without VRR, frames follow the display refresh; a late frame repeats the previous one. |
+| Stable : paliers de multiplicateur qui suivent ce que le GPU tient (de ×1 à ×6), avec 15 % de marge ; le palier baisse en moins d'une seconde quand une scène est lourde et remonte dès qu'elle s'allège. Rapide (expérimental) : aucun palier, chaque image est calculée à l'instant exact où elle sera affichée, dès que le GPU est libre, sans dépasser l'écran ni le plafond ; la vitesse de la vidéo reste constante. Si trop d'images sont perdues (3 % sur 3 s), la lecture repasse sur Stable avec un message. Lecture seulement : l'export garde un multiplicateur fixe. | Stable follows what the GPU can hold in steps (×1 to ×6). Fast has no steps and falls back to Stable if too many frames are lost. Playback only. |
+| VRR indisponible : à fréquence fixe, un multiplicateur qui ne tombe pas sur un nombre entier de rafraîchissements (×k de 23,976 sur 165 Hz) fait vibrer le mouvement (judder). Active G-Sync / FreeSync / Adaptive Sync pour l'éviter. | VRR unavailable: turn on G-Sync / FreeSync / Adaptive Sync to avoid judder. |
+| VRR présent mais coupé par le système : active la synchronisation adaptative (KDE : Affichage et écran > Synchronisation adaptative), sinon le mouvement vibre à fréquence fixe. | VRR is off in the system: turn on adaptive sync (KDE: Display > Adaptive sync). |
+| À l'export, aucune image n'est sautée : chaque image créée coûte une passe, le temps de l'export suit. | Export skips no frames: each created frame costs a pass. |
+| Au-delà de ×4, chaque paire demande une passe RIFE par image créée : il faut un écran rapide et un GPU qui suit, sinon des images sont sautées. | Above ×4 each pair needs a RIFE pass per created frame; a fast GPU is needed or frames are skipped. |
+| Aucun modèle d'interpolation trouvé : placez un modèle RIFE ou les graphes GMFSS dans le dossier des modèles. | No interpolation model found: put a RIFE model or the GMFSS graphs in the models folder. |
+| Précision de GMFSS. Performance : la paire en FP8 hors du squelette de GMFlow (15 convolutions sur 37), −15 % sur la paire, 47 dB au pire cas, RTX 40 et après. Équilibre : FP16. Qualité : FP32, un écart à l'original divisé par 4 environ, pour +7 ms avec base et +10 ms avec union. Recharge la lecture. | GMFSS precision. Performance is FP8 on RTX 40 and newer (15% faster); Quality is FP32. Reloads playback. |
+| Cran Performance (FP8) : ajouter {} (release des modèles) dans {}. | Performance (FP8): add {} (from the models release) to {}. |
+| Union mêle à GMFSS l'image d'un RIFE intégré au réseau : moins de défauts sur les mouvements rapides, pour un peu plus de calcul à chaque image intermédiaire. | Union adds a built-in RIFE to GMFSS: fewer artifacts on fast motion, a bit slower. |
+| Modèles GMFSS introuvables dans {} ({} et {}) ; RIFE prend la place. | GMFSS models not found in {} ({} and {}); RIFE is used instead. |
+| Modèle DistilDRBA introuvable dans {} ({}) ; RIFE prend la place. | DistilDRBA model not found in {} ({}); RIFE is used instead. |
+| Sortie 4K (source sans réduction agrandie par SPAN) : ×3 et plus demandent un GPU haut de gamme ; SPAN 1080p → 2160p est la passe la plus lourde. Une résolution de travail de 720p allège tout. | 4K output: ×3 and above need a high-end GPU. A 720p working resolution lightens everything. |
+| Sortie 4K : RIFE estime le mouvement sur une copie en 720p, plus légère. | 4K output: RIFE estimates motion on a lighter 720p copy. |
+| Les coupes de scène et les dessins tenus ne sont pas interpolés. | Scene cuts and held drawings are not interpolated. |
+| Un personnage animé en deux sur un fond qui défile garde son rythme (il tient sa pose puis change d'un coup) pendant que le fond s'interpole, au lieu de se déformer entre deux dessins. Avec RIFE 4.25 ou 4.22 lite, une seule passe par paire. En direct. DistilDRBA le fait de lui-même. | Characters animated on twos keep their rhythm while the background interpolates. Applies live; DistilDRBA does this itself. |
+| Coupe RIFE 4.25 ou 4.22 lite en six petits moteurs TensorRT (les convolutions à basse résolution) reliés par des noyaux CUDA pour tout ce qui travaille en pleine résolution : une passe de RIFE prend un tiers du temps (2,2 ms au lieu de 6,5 ms à 768×1280 sur une RTX 4070 Ti), avec la même image à moins d'un dB près. Sous TensorRT seulement ; le RIFE entier reprend si le modèle ne se coupe pas ou si un moteur échoue. Recharge la lecture ; la première fois, six petits moteurs se construisent pour cette taille. | Splits RIFE into small TensorRT engines: about three times faster. TensorRT only. Reloads playback; built on first use for this size. |
+| Coupe DistilDRBA en quatre petits moteurs TensorRT (les convolutions à basse résolution) reliés par des noyaux CUDA pour tout le reste (réductions d'images, warps, mélange) : une passe de DistilDRBA prend moins de la moitié du temps (0,92 ms au lieu de 2,10 ms à 1088×1920 sur une RTX 4070 Ti), avec la même image à moins d'un dB près. Sous TensorRT seulement, au cran Équilibre ; le DistilDRBA entier reprend si le modèle ne se coupe pas ou si un moteur échoue. Recharge la lecture ; la première fois, quatre petits moteurs se construisent pour cette taille. | Splits DistilDRBA into small TensorRT engines: more than twice as fast. TensorRT only, Balanced precision. Reloads playback; built on first use for this size. |
+| Coupe la paire de GMFSS en deux moteurs TensorRT : les caractéristiques d'une image et le flot. Les caractéristiques d'une image servent à deux paires de suite : elles ne sont calculées qu'une fois, un FeatureNet de moins par paire (docs/gmfss-fusionne.md). Sous TensorRT seulement, au cran Équilibre ; la paire entière reprend si le graphe ne se coupe pas ou si un moteur échoue. Recharge la lecture ; la première fois, deux moteurs se construisent pour cette taille. | Splits the GMFSS pair into two TensorRT engines so each frame's features are computed once. TensorRT only, Balanced precision. Reloads playback. |
+| Après SPAN : SPAN agrandit chaque image source une seule fois, puis RIFE déforme les images agrandies : en ×3, une passe de SPAN au lieu de trois. Avec GMFSS, les images agrandies sont splattées par son flot et corrigées du résidu de sa fusion : le détail de SPAN reste. Avant SPAN, SPAN nettoie aussi chaque image intermédiaire. Auto choisit Après dès que la sortie dépasse 1080p. Recharge la lecture. | After SPAN upscales each source frame once, then warps it: faster. Before SPAN also cleans each in-between frame. Auto picks After above 1080p. Reloads playback. |
+| La couche du pilote NVIDIA (RTX 40 et 50) génère une image entre deux images présentées : RIFE ×3 puis Smooth Motion donnent environ 144 images par seconde. Vaut au prochain lancement. | The NVIDIA driver (RTX 40 and 50) adds a frame between displayed frames. Applies at next launch. |
+| Grisé : activez RIFE à ×2 ou plus, sans quoi la lecture cale. | Greyed out: turn on RIFE at ×2 or more, or playback stalls. |
+
 ## À venir
 
-B2 : Image IA (Agrandissement, Fluidité). B3 : Audio. B4 : Export, Moteurs, Application, Configuration (benchmark). C : assistant, écran des moteurs,
+B3 : Audio. B4 : Export, Moteurs, Application, Configuration (benchmark). C : assistant, écran des moteurs,
 lecteur par défaut, mises à jour, messages d'erreur visibles.
