@@ -12,6 +12,7 @@
 
 #include <imgui.h>
 
+#include "app/play/bundled_hrir.h"
 #include "app/play/panel_style.h"
 #include "app/play/settings_panel.h"
 #include "app/play/text_fit.h"
@@ -314,6 +315,16 @@ bool sound_tab(PlaySettings& d, const SettingsChoices& choices) {
       std::snprintf(field.data(), field.size(), "%s", path->c_str());
       shown = *path;
     }
+    // Les réponses livrées avec le lecteur (data/hrir, collection HeSuVi) : le choix remplit le chemin.
+    const BundledHrir* current = find_bundled_hrir(*path);
+    if (ImGui::BeginCombo(i18n::tr("Bundled response"),
+                          current != nullptr ? i18n::tr(current->label) : i18n::tr("None"))) {
+      for (const BundledHrir& entry : bundled_hrirs()) {
+        if (ImGui::Selectable(i18n::tr(entry.label), &entry == current))
+          *path = "bundled:" + std::string(entry.key);
+      }
+      ImGui::EndCombo();
+    }
     if (ImGui::InputText(i18n::tr("HeSuVi response (.wav)"), field.data(), field.size())) {
       *path = field.data();
       shown = *path;
@@ -327,7 +338,9 @@ bool sound_tab(PlaySettings& d, const SettingsChoices& choices) {
     panel::tip(
         i18n::tr("A WAV impulse response (HeSuVi 14 ch, 7.1 16 ch or 2 ch HRIR) replaces the headphone "
                  "model. Empty: the default. Adds about 11 ms of latency."));
-    note(i18n::tr("No response is bundled: each has its own licence, read the one of the file you pick."));
+    note(
+        i18n::tr("Bundled responses come from the HeSuVi collection (MIT licence, data/hrir). A file you "
+                 "pick has its own licence."));
   }
   if (panel::advanced()) {
     ImGui::Checkbox(i18n::tr("Original (no processing)"), &d.audio_faithful);

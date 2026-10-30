@@ -16,6 +16,17 @@ constexpr std::array kSoundPage{
     Entry{"Stereo tracks (most anime). 5.1 and 7.1 tracks use the surround mix, in Advanced.",
           "Pistes stéréo (la plupart des animes). Les pistes 5.1 et 7.1 passent par le mixage surround, en "
           "Avancé."},
+    Entry{"Bundled response", "Réponse livrée"},
+    Entry{
+        "Bundled responses come from the HeSuVi collection (MIT licence, data/hrir). A file you pick has its "
+        "own licence.",
+        "Les réponses livrées viennent de la collection HeSuVi (licence MIT, data/hrir). Un fichier que vous "
+        "choisissez a sa propre licence."},
+    Entry{"Dolby Atmos", "Dolby Atmos"},
+    Entry{"DTS Headphone:X", "DTS Headphone:X"},
+    Entry{"Windows Sonic", "Windows Sonic"},
+    Entry{"Creative SBX (100 %)", "Creative SBX (100 %)"},
+    Entry{"Creative SBX (33 %)", "Creative SBX (33 %)"},
     Entry{"Anime", "Anime"},
     Entry{"Sound style", "Style de son"},
     Entry{"Style", "Style"},
@@ -91,8 +102,6 @@ constexpr std::array kSoundPage{
     Entry{"Night", "Nuit"},
     Entry{"Night compression", "Compression de nuit"},
     Entry{"No processing: the track's sound as is.", "Aucun traitement : le son de la piste tel quel."},
-    Entry{"No response is bundled: each has its own licence, read the one of the file you pick.",
-          "Aucune réponse n'est livrée : chacune a sa licence, lisez celle du fichier choisi."},
     Entry{"None##hrir", "Aucune##hrir"},
     Entry{"On a fixed-rate display, playback speeds up or slows down by at most 0.125% so each frame fits "
           "whole refreshes: no more doubled frames. Sound follows, inaudibly.",
