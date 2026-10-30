@@ -415,18 +415,31 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
                    p.display->vrr_armed.value_or(false);
   std::string free_note;  // pourquoi le mode Rapide ne tourne pas alors qu'il est choisi (vide : il tourne ou
                           // n'est pas voulu)
+  // La fréquence de l'écran telle que SDL la donne, gardée quand SDL ne la donne plus : un écran éteint puis
+  // rallumé passe un moment sans mode courant (0 Hz), et le plafond de l'auto retombait au rythme de la
+  // source.
+  double known_hz = display_refresh_hz(out.window());
+  std::int64_t known_period_us = display_period_us(out.window());
+  SDL_DisplayID known_display = SDL_GetDisplayForWindow(out.window());
+  double session_hz_seen = known_hz;
+  const auto read_display_facts = [&] {
+    if (const double hz = display_refresh_hz(out.window()); hz > 0.0) {
+      known_hz = hz;
+      known_period_us = display_period_us(out.window());
+    }
+  };
   const auto apply_auto = [&] {
     const bool on = chain.running.rife_auto && chain.rife_loaded && chain.running.rife_factor >= 2;
     // Au fps près (1/24 de multiplicateur) sur un écran VRR armé : la cadence n'y est plus liée au
     // rafraîchissement. À fréquence fixe, des paliers entiers (les autres feraient vibrer).
     const int granularity = vrr_armed ? core::kFineGranularity : 1;
-    const double limit_hz = core::auto_limit_hz(display_refresh_hz(out.window()), chain.running.auto_cap);
+    const double limit_hz = core::auto_limit_hz(known_hz, chain.running.auto_cap);
     // mode Rapide (core/free_grid.h) : écran VRR armé, RIFE, fréquence de l'écran connue ; sinon Auto.
     std::string why;
     if (on && chain.running.auto_free) {
       if (free_instants_limit(chain.running.motion_engine) == 0)
         why = i18n::tr_format("{} cannot compute at a free instant", label(chain.running.motion_engine));
-      else if (limit_hz <= 0.0 || (!vrr_armed && display_period_us(out.window()) <= 0))
+      else if (limit_hz <= 0.0 || (!vrr_armed && known_period_us <= 0))
         why = i18n::tr("display refresh rate unknown");
     }
     const bool free = on && chain.running.auto_free && why.empty();
@@ -442,7 +455,7 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
     // Écart minimal entre deux images : la période de l'écran ou du plafond, à 1 % près (jamais plus vite).
     // Écran à fréquence fixe (sans VRR, ou VRR coupé) : les instants tombent sur les vsyncs, l'écart minimal
     // est la période de l'écran (ou du plafond, s'il est plus lent).
-    const std::int64_t refresh_us = display_period_us(out.window());
+    const std::int64_t refresh_us = known_period_us;
     const bool vsync = free && !vrr_armed;
     chain.live.set_free(free, limit_hz > 0.0 ? std::llround(1e6 / (vsync ? limit_hz : limit_hz * 0.99)) : 0,
                         host_now_us());
@@ -547,7 +560,15 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
         if (span.notify) p.ui.controls().notify(*span.notify, host_now_us());
         if (span.reopen) chain.reopen = chain.running;
       }
-      session.set_display(display_period_us(out.window()), display_refresh_hz(out.window()));
+      // L'écran change (éteint puis rallumé, autre sortie, nouveau mode) : on relit sa fréquence, son VRR et
+      // son état, sans quoi la cadence restait celle de l'écran d'avant.
+      read_display_facts();
+      const SDL_DisplayID display_id = SDL_GetDisplayForWindow(out.window());
+      const bool display_changed =
+          display_id != known_display || (display_id != 0 && known_hz > 0.0 && known_hz != session_hz_seen);
+      known_display = display_id;
+      session_hz_seen = known_hz;
+      session.set_display(known_period_us, known_hz);
       apply_auto();
       // Le mode auto écoute les images manquées à l'écran (sans paire en retard, le GPU peut ne pas suivre)
       // et le chien de garde veille sur le moteur d'interpolation.
@@ -570,17 +591,12 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
       }
       free_missing_seen = shown.missing;
       free_dropped_seen = shown.dropped;
-      if (chain.hdr_refresh_us != 0 && host_now_us() >= chain.hdr_refresh_us) {
-        chain.hdr_refresh_us = 0;
-        if (session.view().paused)
-          session.command(
-              cmd::Seek{.target_us = std::max<std::int64_t>(session.view().position_us, 0), .exact = true});
-      }
       chain.live.auto_tick(host_now_us(), !session.view().paused);
       show_auto();
       // KDE arme le VRR en plein écran seulement : on le relit quand la fenêtre change d'état.
       const bool fullscreen = (SDL_GetWindowFlags(out.window()) & SDL_WINDOW_FULLSCREEN) != 0;
-      if (fullscreen != vrr_fullscreen) {
+      if (fullscreen != vrr_fullscreen || display_changed) {
+        if (display_changed) log->info("écran : changement détecté ({} Hz), relecture du VRR", known_hz);
         vrr_fullscreen = fullscreen;
         if (const auto display = read_display(display_name(out.window()))) {
           p.ui.set_display_vrr(display->vrr.value_or(false), display->vrr_armed.value_or(false), fullscreen);
@@ -594,6 +610,14 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
                     display->vrr_armed.value_or(false) ? "armé" : "non armé");
         }
       }
+    }
+    // RTX HDR ne traite que les images neuves : en pause, la position tenue est relue 120 ms après le dernier
+    // réglage (la vérification est à chaque tour, pas au sondage de l'écran de 500 ms).
+    if (chain.hdr_refresh_us != 0 && host_now_us() >= chain.hdr_refresh_us) {
+      chain.hdr_refresh_us = 0;
+      if (session.view().paused)
+        session.command(
+            cmd::Seek{.target_us = std::max<std::int64_t>(session.view().position_us, 0), .exact = true});
     }
     (*pipeline)->pump();
     while (auto message = try_take((*pipeline)->inbox())) session.handle(std::move(*message));

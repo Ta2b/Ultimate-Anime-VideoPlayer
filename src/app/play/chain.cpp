@@ -238,6 +238,13 @@ void apply_live(Chain& to, const PlaySettings& wanted, std::int64_t now_us) {
     controls.notify(i18n::tr_format("Subtitle size: {} %", std::lround(wanted.subtitle_scale * 100.0F)),
                     now_us);
   }
+  // Grade, finition et RTX HDR agissent sur l'image tenue : sans cette demande, en pause (ou entre deux
+  // images neuves) rien ne la recomposait et le réglage n'apparaissait qu'au mouvement suivant.
+  if (wanted.grade != r.grade || wanted.grade_preset != r.grade_preset ||
+      wanted.grade_values != r.grade_values || wanted.final_scaler != r.final_scaler ||
+      wanted.deband != r.deband || wanted.hdr_native != r.hdr_native || after != before ||
+      wanted.oled_black != r.oled_black || wanted.oled_black_steps != r.oled_black_steps)
+    to.session.request_present();
   r = wanted;
   r.volume = controls.volume();
   to.ui.set_running(r);
