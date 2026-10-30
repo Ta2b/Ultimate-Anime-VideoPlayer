@@ -44,7 +44,7 @@ constexpr std::array kSettingsPages{
     Entry{"Dark scene up to", "Scène sombre jusqu'à"},
     Entry{"Bright scene from", "Scène claire à partir de"},
     Entry{"Deep blacks, bright scene", "Noirs profonds, scène claire"},
-    Entry{"Colors, very bright scene", "Couleurs, scène très claire"},
+    Entry{"Colors, saturated blue scene", "Couleurs, scène bleue saturée (ciel)"},
     Entry{"Record scene statistics (learning)", "Enregistrer les statistiques de scène (apprentissage)"},
     Entry{"Middle gray, bright scene", "Gris moyen, scène claire"},
     Entry{"The sliders above and the middle gray are for dark scenes; the values here apply to bright "

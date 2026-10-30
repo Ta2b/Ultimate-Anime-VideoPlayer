@@ -86,8 +86,8 @@ std::expected<void, Refusal> TensorRtBackend::open_true_hdr(const vendor_hdr::In
   if (cudaMalloc(reinterpret_cast<void**>(&state->luma_histogram), sizeof(unsigned int) * kLumaBins) ==
           cudaSuccess &&
       cudaMemset(state->luma_histogram, 0, sizeof(unsigned int) * kLumaBins) == cudaSuccess &&
-      cudaMalloc(reinterpret_cast<void**>(&state->luma_sum), sizeof(float)) == cudaSuccess &&
-      cudaMemset(state->luma_sum, 0, sizeof(float)) == cudaSuccess &&
+      cudaMalloc(reinterpret_cast<void**>(&state->luma_sum), 3 * sizeof(float)) == cudaSuccess &&
+      cudaMemset(state->luma_sum, 0, 3 * sizeof(float)) == cudaSuccess &&
       cudaHostAlloc(reinterpret_cast<void**>(&state->luma_host), sizeof(float) * kLumaStatsFloats,
                     cudaHostAllocMapped) == cudaSuccess &&
       cudaHostGetDevicePointer(reinterpret_cast<void**>(&state->luma_device), state->luma_host, 0) ==
@@ -188,9 +188,16 @@ std::optional<KernelOps::SceneStats> TensorRtBackend::scene_stats() const {
   float v[kLumaStatsFloats];
   for (int i = 0; i < kLumaStatsFloats; ++i)
     v[i] = std::atomic_ref<float>(true_hdr_->luma_host[i]).load(std::memory_order_relaxed);
-  if (!(v[7] >= 1.0F)) return std::nullopt;  // aucune image mesurée
-  return SceneStats{
-      .mean = v[0], .p05 = v[1], .p50 = v[2], .p95 = v[3], .p995 = v[4], .dark = v[5], .bright = v[6]};
+  if (!(v[9] >= 1.0F)) return std::nullopt;  // aucune image mesurée
+  return SceneStats{.mean = v[0],
+                    .p05 = v[1],
+                    .p50 = v[2],
+                    .p95 = v[3],
+                    .p995 = v[4],
+                    .dark = v[5],
+                    .bright = v[6],
+                    .blue = v[7],
+                    .chroma = v[8]};
 }
 
 std::expected<std::vector<float>, Refusal> TensorRtBackend::true_hdr_ramp(

@@ -380,6 +380,7 @@ TEST_CASE(
   CHECK(on->params.ad_em_base < on->params.em_base);  // gris moyen 50 : 200
   CHECK(on->params.ad_em_pow > on->params.em_pow);
   CHECK(on->params.ad_shadows > 0.6);
+  CHECK(on->params.ad_vibrance == on->params.vibrance);  // la vibrance suit la couleur : fixe pour le shader
   // RTX HDR : l'adaptation est celle du lecteur (la luminance mesurée sur le GPU), pas celle du shader.
   const GradeContext rtx{.route = ajp::core::HdrMode::TrueHdr, .output_pq = true, .peak_nits = 1000.0};
   const auto hdr = decide_grade(s, rtx);

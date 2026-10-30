@@ -330,6 +330,8 @@ class KernelOps {
     float p995 = 0.0F;    // le pic de la scène
     float dark = 0.0F;    // part des points sous 10 % de luminance
     float bright = 0.0F;  // part des points au-dessus de 80 %
+    float blue = 0.0F;    // moyenne de max(0, B - max(R, V)) : ciel, eau, aplats bleus saturés
+    float chroma = 0.0F;  // moyenne de max(R, V, B) - min(R, V, B)
   };
   // Vide sans RTX HDR ou avant la première image. Lisible depuis n'importe quel thread (une image de retard).
   virtual std::optional<SceneStats> scene_stats() const { return std::nullopt; }

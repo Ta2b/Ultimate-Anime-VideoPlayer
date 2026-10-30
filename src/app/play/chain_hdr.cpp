@@ -204,7 +204,7 @@ void apply_oled_care(Chain& to, const PlaySettings& s) {
 
 // Le grade de la chaîne avec ses seuils du vrai noir.
 void set_grade(Chain& to, const PlaySettings& wanted) {
-  const PlaySettings s = with_adaptive(wanted, to.adaptive_t);
+  const PlaySettings s = with_adaptive(wanted, to.adaptive_t, to.adaptive_tv);
   to.screen.set_grade(
       grade_of(s, to.true_hdr_open, to.peak_nits, to.auto_peak, to.display, to.black, to.source_hdr));
 }
@@ -212,12 +212,11 @@ void set_grade(Chain& to, const PlaySettings& wanted) {
 // Vrai noir OLED : recale les seuils sur la rampe de 32 marches mesurée à la sortie (route native :
 // les marches SDR ; RTX HDR : celles que gpu a passées par TrueHDR), grade compris, puis pose le
 // grade avec eux.
-PlaySettings with_adaptive(const PlaySettings& s, double t) {
+PlaySettings with_adaptive(const PlaySettings& s, double t, double tv) {
   const render::GradeSettings& g = s.grade_values;
-  if (!g.adaptive || !(t > 0.0)) return s;
-  t = std::min(t, 1.0);
-  const double vibrance_t = std::clamp((t - 0.8) / 0.2, 0.0, 1.0);
-  const double vibrance_t_smooth = vibrance_t * vibrance_t * (3.0 - 2.0 * vibrance_t);
+  if (!g.adaptive || !(t > 0.0 || tv > 0.0)) return s;
+  t = std::clamp(t, 0.0, 1.0);
+  const double vibrance_t_smooth = std::clamp(tv, 0.0, 1.0);
   PlaySettings out = s;
   render::GradeSettings& o = out.grade_values;
   o.shadows = std::lerp(g.shadows, g.adaptive_shadows, t);
@@ -241,16 +240,17 @@ void adaptive_record(Chain& to, const gpu::KernelOps::SceneStats& stats, std::in
   if (fresh)
     out << "unix_s\tfichier\tposition_s\tmoyenne\tp05\tp50\tp95\tp995\tpart_noir\tpart_"
            "clair\tnoirs\tcouleurs\teclats\t"
-           "aplats\tetendues\tlimiteur\tgris_moyen\tcontraste\tsaturation\tadaptatif\tt\n";
+           "aplats\tetendues\tlimiteur\tgris_moyen\tcontraste\tsaturation\tadaptatif\tt\ttv\n";
   const PlaySettings& s = to.running;
   const render::GradeSettings& g = s.grade_values;
   out << std::time(nullptr) << '\t' << to.file.filename().string() << '\t'
       << static_cast<double>(std::max<std::int64_t>(to.session.view().position_us, 0)) / 1e6 << '\t'
       << stats.mean << '\t' << stats.p05 << '\t' << stats.p50 << '\t' << stats.p95 << '\t' << stats.p995
-      << '\t' << stats.dark << '\t' << stats.bright << '\t' << g.shadows << '\t' << g.vibrance_rtx << '\t'
-      << g.highlights_rtx << '\t' << g.area_rtx << '\t' << g.expand << '\t' << g.guard << '\t'
-      << s.true_hdr_gray << '\t' << s.true_hdr_contrast << '\t' << s.true_hdr_saturation << '\t'
-      << (g.adaptive ? 1 : 0) << '\t' << to.adaptive_t << '\n';
+      << '\t' << stats.dark << '\t' << stats.bright << '\t' << stats.blue << '\t' << stats.chroma << '\t'
+      << g.shadows << '\t' << g.vibrance_rtx << '\t' << g.highlights_rtx << '\t' << g.area_rtx << '\t'
+      << g.expand << '\t' << g.guard << '\t' << s.true_hdr_gray << '\t' << s.true_hdr_contrast << '\t'
+      << s.true_hdr_saturation << '\t' << (g.adaptive ? 1 : 0) << '\t' << to.adaptive_t << '\t'
+      << to.adaptive_tv << '\n';
 }
 
 void adaptive_tick(Chain& to, std::int64_t now_us) {
@@ -259,8 +259,10 @@ void adaptive_tick(Chain& to, std::int64_t now_us) {
   }
   const render::GradeSettings& g = to.running.grade_values;
   if (!g.adaptive || to.kernels == nullptr || !to.true_hdr_open) {
-    if (to.adaptive_t != 0.0) {  // coupé en cours de route : retour aux curseurs
+    if (to.adaptive_t != 0.0 || to.adaptive_tv != 0.0) {  // coupé en cours de route : retour aux curseurs
       to.adaptive_t = 0.0;
+      to.adaptive_tv = 0.0;
+      to.adaptive_blue = 0.0;
       to.adaptive_luma = -1.0;
       set_grade(to, to.running);
       to.live.set_true_hdr(true_hdr_params(to.running, to.auto_peak));
@@ -275,22 +277,34 @@ void adaptive_tick(Chain& to, std::int64_t now_us) {
   const std::optional<float> luma = stats->mean;
   constexpr double kTauUs = 1'200'000.0;
   constexpr double kCut = 0.20;  // un saut de luminance moyenne : coupe de scène, la mesure repart
-  if (to.adaptive_luma < 0.0 || std::abs(static_cast<double>(*luma) - to.adaptive_luma) > kCut)
+  const double follow = 1.0 - std::exp(-static_cast<double>(dt) / kTauUs);
+  if (to.adaptive_luma < 0.0 || std::abs(static_cast<double>(*luma) - to.adaptive_luma) > kCut) {
     to.adaptive_luma = static_cast<double>(*luma);
-  else
-    to.adaptive_luma +=
-        (1.0 - std::exp(-static_cast<double>(dt) / kTauUs)) * (static_cast<double>(*luma) - to.adaptive_luma);
+    to.adaptive_blue = static_cast<double>(stats->blue);
+  } else {
+    to.adaptive_luma += follow * (static_cast<double>(*luma) - to.adaptive_luma);
+    to.adaptive_blue += follow * (static_cast<double>(stats->blue) - to.adaptive_blue);
+  }
   const double lo = g.adaptive_lo / 100.0;
   const double hi = std::max(g.adaptive_hi / 100.0, lo + 0.01);
   const double x = std::clamp((to.adaptive_luma - lo) / (hi - lo), 0.0, 1.0);
   const double t = x * x * (3.0 - 2.0 * x);
-  if (std::abs(t - to.adaptive_t) < 0.02 && !(t == 0.0 && to.adaptive_t != 0.0) &&
-      !(t == 1.0 && to.adaptive_t != 1.0))
-    return;
+  // La vibrance dépend de la couleur, pas de la luminosité : un ciel ou un aplat bleu saturé (« bleu » moyen
+  // élevé) n'en veut presque pas, un désert jaune ou des murs ternes en veulent. Seuils mesurés sur les
+  // scènes de Tatoub (plein jour bleu : vibrance 0 ; désert, donjon, teints : 0,80).
+  constexpr double kBlueLo = 0.05;
+  constexpr double kBlueHi = 0.13;
+  const double xv = std::clamp((to.adaptive_blue - kBlueLo) / (kBlueHi - kBlueLo), 0.0, 1.0);
+  const double tv = xv * xv * (3.0 - 2.0 * xv);
+  const bool same = std::abs(t - to.adaptive_t) < 0.02 && std::abs(tv - to.adaptive_tv) < 0.02 &&
+                    !(t == 0.0 && to.adaptive_t != 0.0) && !(t == 1.0 && to.adaptive_t != 1.0) &&
+                    !(tv == 0.0 && to.adaptive_tv != 0.0) && !(tv == 1.0 && to.adaptive_tv != 1.0);
+  if (same) return;
   const vendor_hdr::TrueHdrParams before =
-      true_hdr_params(with_adaptive(to.running, to.adaptive_t), to.auto_peak);
+      true_hdr_params(with_adaptive(to.running, to.adaptive_t, to.adaptive_tv), to.auto_peak);
   to.adaptive_t = t;
-  const vendor_hdr::TrueHdrParams after = true_hdr_params(with_adaptive(to.running, t), to.auto_peak);
+  to.adaptive_tv = tv;
+  const vendor_hdr::TrueHdrParams after = true_hdr_params(with_adaptive(to.running, t, tv), to.auto_peak);
   if (after.middle_gray != before.middle_gray) {
     to.live.set_true_hdr(after);
     if (to.session.view().paused) to.hdr_refresh_us = now_us + 120'000;

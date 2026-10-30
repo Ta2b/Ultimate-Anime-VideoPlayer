@@ -75,18 +75,34 @@ __global__ void __launch_bounds__(kBlock* kBlock) mean_luma_partial(MeanLumaPara
   const int gx = static_cast<int>(blockIdx.x * blockDim.x + threadIdx.x);
   const int gy = static_cast<int>(blockIdx.y * blockDim.y + threadIdx.y);
   float value = 0.0F;
+  float blue = 0.0F;
+  float chroma = 0.0F;
   if (gx < p.width / 4 && gy < p.height / 4) {
     const std::size_t plane = static_cast<std::size_t>(p.width) * static_cast<std::size_t>(p.height);
     const std::size_t i = static_cast<std::size_t>(gy * 4) * static_cast<std::size_t>(p.width) +
                           static_cast<std::size_t>(gx * 4);
     const auto* rgb = static_cast<const __half*>(p.rgb);
-    value = 0.2126F * __half2float(rgb[i]) + 0.7152F * __half2float(rgb[plane + i]) +
-            0.0722F * __half2float(rgb[2 * plane + i]);
+    const float r = __half2float(rgb[i]);
+    const float g = __half2float(rgb[plane + i]);
+    const float b = __half2float(rgb[2 * plane + i]);
+    value = 0.2126F * r + 0.7152F * g + 0.0722F * b;
     value = value != value ? 0.0F : fminf(fmaxf(value, 0.0F), 1.0F);
+    blue = fmaxf(0.0F, b - fmaxf(r, g));
+    chroma = fmaxf(r, fmaxf(g, b)) - fminf(r, fminf(g, b));
+    blue = blue != blue ? 0.0F : fminf(blue, 1.0F);
+    chroma = chroma != chroma ? 0.0F : fminf(chroma, 1.0F);
     atomicAdd(&bins[min(kLumaBins - 1, static_cast<int>(value * static_cast<float>(kLumaBins)))], 1U);
   }
-  for (int offset = 16; offset > 0; offset >>= 1) value += __shfl_down_sync(0xFFFFFFFFU, value, offset);
-  if (tid % 32 == 0) atomicAdd(p.sum, value);
+  for (int offset = 16; offset > 0; offset >>= 1) {
+    value += __shfl_down_sync(0xFFFFFFFFU, value, offset);
+    blue += __shfl_down_sync(0xFFFFFFFFU, blue, offset);
+    chroma += __shfl_down_sync(0xFFFFFFFFU, chroma, offset);
+  }
+  if (tid % 32 == 0) {
+    atomicAdd(&p.sum[0], value);
+    atomicAdd(&p.sum[1], blue);
+    atomicAdd(&p.sum[2], chroma);
+  }
   __syncthreads();
   if (tid < kLumaBins && bins[tid] != 0U) atomicAdd(&p.histogram[tid], bins[tid]);
 }
@@ -112,16 +128,20 @@ __global__ void mean_luma_finish(MeanLumaParams p) {
       if (centre < 0.10F) dark += static_cast<float>(p.histogram[b]);
       if (centre > 0.80F) bright += static_cast<float>(p.histogram[b]);
     }
-    p.out[0] = *p.sum / count;
+    p.out[0] = p.sum[0] / count;
     p.out[1] = percentile(p.histogram, count, 0.05F);
     p.out[2] = percentile(p.histogram, count, 0.50F);
     p.out[3] = percentile(p.histogram, count, 0.95F);
     p.out[4] = percentile(p.histogram, count, 0.995F);
     p.out[5] = dark / count;
     p.out[6] = bright / count;
-    p.out[7] += 1.0F;  // numéro de mesure : la dernière écriture
+    p.out[7] = p.sum[1] / count;
+    p.out[8] = p.sum[2] / count;
+    p.out[9] += 1.0F;  // numéro de mesure : la dernière écriture
   }
-  *p.sum = 0.0F;
+  p.sum[0] = 0.0F;
+  p.sum[1] = 0.0F;
+  p.sum[2] = 0.0F;
   for (int b = 0; b < kLumaBins; ++b) p.histogram[b] = 0U;
 }
 

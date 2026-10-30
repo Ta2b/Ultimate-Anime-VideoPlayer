@@ -85,7 +85,9 @@ struct Chain {
   // moteur, lissée ici ; adaptive_t en est la position entre « scène sombre » (0) et « scène claire » (1).
   gpu::KernelOps* kernels = nullptr;
   double adaptive_luma = -1.0;  // lissée, 0 à 1 ; -1 : aucune mesure
-  double adaptive_t = 0.0;
+  double adaptive_t = 0.0;      // noirs et gris moyen : suivent la luminosité
+  double adaptive_blue = 0.0;   // « bleu » moyen lissé de la source
+  double adaptive_tv = 0.0;     // vibrance : suit la couleur (bleu saturé), pas la luminosité
   std::int64_t adaptive_at_us = 0;
   std::filesystem::path adaptive_log;  // adaptive-log.tsv (apprentissage)
   std::int64_t adaptive_log_us = 0;
@@ -97,7 +99,7 @@ PlaySettings with_intended_hdr(const Chain& to, PlaySettings settings);
 
 // Les réglages avec, pour le grade adaptatif, noirs, couleurs et gris moyen glissés de la scène sombre (t =
 // 0, les curseurs) vers la scène claire (t = 1). t = 0 ou adaptatif coupé : les réglages tels quels.
-PlaySettings with_adaptive(const PlaySettings& s, double t);
+PlaySettings with_adaptive(const PlaySettings& s, double t, double tv);
 
 // Une fois par tour : lit la luminance moyenne de la source, la lisse (environ 1,2 s, remise à la mesure à
 // chaque coupe de scène) et, si la position change de 2 % ou plus, pose le gris moyen de RTX HDR et le grade.

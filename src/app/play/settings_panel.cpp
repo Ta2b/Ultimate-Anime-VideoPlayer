@@ -180,7 +180,7 @@ void adaptive_section(PlaySettings& d) {
   percent_slider(i18n::tr("Bright scene from"), g.adaptive_hi);
   if (g.adaptive_hi <= g.adaptive_lo) g.adaptive_hi = std::min(g.adaptive_lo + 1.0, kAdaptiveLuma.hi);
   grade_slider(i18n::tr("Deep blacks, bright scene"), g.adaptive_shadows, kShadows);
-  grade_slider(i18n::tr("Colors, very bright scene"), g.adaptive_vibrance, kVibrance);
+  grade_slider(i18n::tr("Colors, saturated blue scene"), g.adaptive_vibrance, kVibrance);
   auto gray = static_cast<float>(g.adaptive_gray);
   if (ImGui::SliderFloat(i18n::tr("Middle gray, bright scene"), &gray, static_cast<float>(kMiddleGray.lo),
                          static_cast<float>(kMiddleGray.hi), "%.0f", ImGuiSliderFlags_AlwaysClamp))

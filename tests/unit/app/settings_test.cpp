@@ -134,7 +134,8 @@ TEST_CASE("Grade : un préréglage nommé donne ses valeurs, gamut P3 reste celu
           "[app][settings]") {
   const PlaySettings defaults;
   CHECK(defaults.grade);
-  CHECK(defaults.grade_preset == render::GradePreset::Custom);  // les réglages de Tatoub, grade adaptatif compris
+  CHECK(defaults.grade_preset ==
+        render::GradePreset::Custom);  // les réglages de Tatoub, grade adaptatif compris
   const auto natural = parse_settings("[grade]\npreset = \"naturel\"\nshadows = 0.7\ngamut_p3 = true\n");
   REQUIRE(natural);
   CHECK(natural->grade_values.shadows == render::GradeSettings{}.shadows);
@@ -747,17 +748,19 @@ TEST_CASE("grade adaptatif : noirs, couleurs et gris moyen glissent de la scène
   s.grade_values.adaptive_shadows = 0.8;
   s.grade_values.adaptive_vibrance = 0.0;
   s.grade_values.adaptive_gray = 30.0;
-  const auto at = [&](double t) { return ajp::app::play::with_adaptive(s, t); };
+  const auto at = [&](double t, double tv = 0.0) { return ajp::app::play::with_adaptive(s, t, tv); };
   CHECK(at(0.0).grade_values.shadows == 0.2);  // scène sombre : les curseurs
   CHECK(at(0.0).true_hdr_gray == 70);
   CHECK(at(1.0).grade_values.shadows == 0.8);  // scène claire : les valeurs adaptatives
   CHECK(at(1.0).true_hdr_gray == 30);
-  CHECK(at(1.0).grade_values.vibrance_rtx == 0.0);
+  CHECK(at(1.0).grade_values.vibrance_rtx == 0.8);  // la vibrance suit la couleur, pas la luminosité
+  CHECK(at(1.0, 1.0).grade_values.vibrance_rtx == 0.0);
   CHECK(at(0.5).grade_values.shadows == 0.5);
   CHECK(at(0.5).true_hdr_gray == 50);
-  CHECK(at(0.5).grade_values.vibrance_rtx == 0.8);  // les couleurs ne s'effacent que sur les derniers 20 %
-  CHECK(at(0.9).grade_values.vibrance_rtx < 0.8);
-  CHECK(at(0.9).grade_values.vibrance_rtx > 0.0);
+  CHECK(at(0.5, 0.5).grade_values.vibrance_rtx == 0.4);
+  CHECK(at(0.0, 1.0).grade_values.vibrance_rtx ==
+        0.0);                                       // ciel bleu saturé, scène pas claire : couleurs coupées
+  CHECK(at(0.0, 1.0).grade_values.shadows == 0.2);  // les noirs restent ceux de la scène sombre
   s.grade_values.adaptive = false;
   CHECK(at(1.0).true_hdr_gray == 70);  // coupé : rien ne bouge
 }
