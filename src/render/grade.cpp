@@ -49,11 +49,67 @@ constexpr std::array kGradeParams = {
 };
 
 constexpr std::array kLookParams = {
-    ParamBinding{"look_mix", &GradeParams::look_mix},   ParamBinding{"look_mix2", &GradeParams::look_mix2},
-    ParamBinding{"look_mix3", &GradeParams::look_mix3}, ParamBinding{"look_white", &GradeParams::look_white},
-    ParamBinding{"look_pq", &GradeParams::look_pq},     ParamBinding{"sdr_out", &GradeParams::sdr_out},
-    ParamBinding{"sdr_gamma", &GradeParams::sdr_gamma}, ParamBinding{"peak", &GradeParams::peak},
+    ParamBinding{"look_mix", &GradeParams::look_mix},
+    ParamBinding{"look_mix2", &GradeParams::look_mix2},
+    ParamBinding{"look_mix3", &GradeParams::look_mix3},
+    ParamBinding{"look_mix4", &GradeParams::look_mix4},
+    ParamBinding{"look_mix5", &GradeParams::look_mix5},
+    ParamBinding{"look_mix6", &GradeParams::look_mix6},
+    ParamBinding{"look_mix7", &GradeParams::look_mix7},
+    ParamBinding{"look_mix8", &GradeParams::look_mix8},
+    ParamBinding{"look_white", &GradeParams::look_white},
+    ParamBinding{"look_pq", &GradeParams::look_pq},
+    ParamBinding{"sdr_out", &GradeParams::sdr_out},
+    ParamBinding{"sdr_gamma", &GradeParams::sdr_gamma},
+    ParamBinding{"peak", &GradeParams::peak},
 };
+
+// Le nom du paramètre ou de la texture du `slot`-ième emplacement (0 : le premier, sans numéro).
+std::string slot_name(std::string_view base, std::size_t slot) {
+  return slot == 0 ? std::string(base) : std::format("{}{}", base, slot + 1);
+}
+
+// Le texte du hook du look : les emplacements (paramètres, textures, condition, chaîne) sont écrits pour
+// kLookSlots LUT à partir des marques //@LOOK_...@ du fichier.
+std::string look_source() {
+  std::string params;
+  std::string binds;
+  std::string when = "//!WHEN look_mix";
+  std::string chain = "vec3 ajl_chain(vec3 c) {\n";
+  for (std::size_t i = 0; i < kLookSlots; ++i) {
+    const std::string mix = slot_name("look_mix", i);
+    const std::string size = slot_name("look_size", i);
+    const std::string tex = slot_name("AJG_LUT", i);
+    if (i > 0)
+      params += std::format(
+          "//!PARAM {}\n//!DESC Intensité de la LUT {} (0 = aucune)\n//!TYPE float\n//!MINIMUM 0.0\n"
+          "//!MAXIMUM 1.0\n0.0\n\n",
+          mix, i + 1);
+    params += std::format(
+        "//!PARAM {}\n//!DESC Points par axe de la LUT {}\n//!TYPE float\n//!MINIMUM 2.0\n"
+        "//!MAXIMUM 65.0\n2.0\n\n",
+        size, i + 1);
+    binds += std::format("//!BIND {}\n", tex);
+    if (i > 0) when += std::format(" {} +", mix);
+    chain += std::format(
+        "    if ({0} > 0.0) {{\n        vec3 pos = (clamp(c, 0.0, 1.0) * ({1} - 1.0) + 0.5) / {1};\n"
+        "        c = mix(c, clamp({2}_tex(pos).rgb, 0.0, 1.0), {0});\n    }}\n",
+        mix, size, tex);
+  }
+  when += " 0 >";
+  chain += "    return c;\n}\n";
+  std::string text(shaders::anime_hdr_look);
+  const auto replace = [&text](std::string_view mark, const std::string& with) {
+    const std::size_t at = text.find(mark);
+    if (at != std::string::npos) text.replace(at, mark.size(), with);
+  };
+  replace("//@LOOK_PARAMS@", params);
+  if (!binds.empty()) binds.pop_back();
+  replace("//@LOOK_BINDS@", binds);
+  replace("//@LOOK_WHEN@", when);
+  replace("//@LOOK_CHAIN@", chain);
+  return text;
+}
 
 constexpr std::array kBlackParams = {
     ParamBinding{"black_lo", &GradeParams::black_lo}, ParamBinding{"black_hi", &GradeParams::black_hi},
@@ -104,14 +160,14 @@ std::expected<ParsedHook, Refusal> parse_look(pl_gpu gpu,
     return neutral;
   }();
   // Le corps d'une texture court jusqu'à la prochaine directive //! : le bloc va donc après le texte du hook.
-  std::string text(shaders::anime_hdr_look);
+  std::string text = look_source();
   text += '\n';
-  constexpr std::array<std::string_view, kLookSlots> kNames{"AJG_LUT", "AJG_LUT2", "AJG_LUT3"};
   for (std::size_t i = 0; i < kLookSlots; ++i)
-    text += lut_texture_block(luts[i] != nullptr ? *luts[i] : kNeutral, kNames[i]);
+    text += lut_texture_block(luts[i] != nullptr ? *luts[i] : kNeutral, slot_name("AJG_LUT", i));
   auto parsed = parse(gpu, text, "anime-hdr-look.hook", kLookParams);
   if (!parsed) return parsed;
-  for (const std::string_view size : {"look_size", "look_size2", "look_size3"}) {
+  for (std::size_t i = 0; i < kLookSlots; ++i) {
+    const std::string size = slot_name("look_size", i);
     if (find_param(*parsed->hook, size) == nullptr) {
       pl_mpv_user_shader_destroy(&parsed->hook);
       return std::unexpected(
@@ -131,7 +187,7 @@ struct Grade::Impl {
   std::array<const pl_hook*, 3> hooks{};
   GradeParams params;
   pl_gpu gpu = nullptr;
-  std::array<int, kLookSlots> look_sizes{2, 2, 2};
+  std::array<int, kLookSlots> look_sizes{};
 
   Impl() = default;
   Impl(const Impl&) = delete;
@@ -188,10 +244,9 @@ void Grade::set_params(const GradeParams& params) {
   for (const ParsedHook* hook : {&impl_->grade, &impl_->look, &impl_->black}) {
     for (const auto& [data, field] : hook->params) data->f = static_cast<float>(params.*field);
   }
-  constexpr std::array<std::string_view, kLookSlots> kSizes{"look_size", "look_size2", "look_size3"};
   for (std::size_t i = 0; i < kLookSlots; ++i)
-    if (pl_var_data* size = find_param(*impl_->look.hook, kSizes[i]))
-      size->f = static_cast<float>(impl_->look_sizes[i]);
+    if (pl_var_data* size = find_param(*impl_->look.hook, slot_name("look_size", i)))
+      size->f = static_cast<float>(impl_->look_sizes[i] > 0 ? impl_->look_sizes[i] : 2);
 }
 
 const GradeParams& Grade::params() const {

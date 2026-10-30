@@ -50,4 +50,18 @@ std::expected<render::CubeLut, Refusal> load_look(const std::string& key,
   return lut;
 }
 
+std::vector<LookLayer> look_slots(const PlaySettings& s) {
+  std::vector<LookLayer> slots{{s.look, s.look_mix}};
+  for (const LookLayer& layer : s.look_layers) slots.push_back(layer);
+  if (slots.size() > render::kLookSlots) slots.resize(render::kLookSlots);
+  return slots;
+}
+
+bool same_look_files(const PlaySettings& a, const PlaySettings& b) {
+  const std::vector<LookLayer> first = look_slots(a);
+  const std::vector<LookLayer> second = look_slots(b);
+  return std::ranges::equal(first, second,
+                            [](const LookLayer& x, const LookLayer& y) { return x.key == y.key; });
+}
+
 }  // namespace ajp::app::play

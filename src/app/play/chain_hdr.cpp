@@ -1,6 +1,7 @@
 // Le HDR de la chaîne : RTX HDR ouvert par le SDK Maxine, le grade de chaque sortie et le vrai
 // noir OLED (chain.h). Les actions de l'utilisateur sont dans chain.cpp.
 #include <algorithm>
+#include <array>
 #include <format>
 #include <optional>
 #include <utility>
@@ -136,12 +137,16 @@ render::GradeChoice grade_of(const PlaySettings& s, bool true_hdr_open, int peak
     if (decision->mode != render::GradeMode::Neutral) {
       render::GradeParams params = decision->params;
       // Une LUT sans nom est sautée (intensité 0) ; une seule LUT d'HDR met toute la chaîne en codes PQ.
-      params.look_mix = s.look.empty() ? 0.0 : s.look_mix;
-      params.look_mix2 = s.look2.empty() ? 0.0 : s.look2_mix;
-      params.look_mix3 = s.look3.empty() ? 0.0 : s.look3_mix;
-      const bool any_pq = (!s.look.empty() && render::look_is_pq(s.look, "")) ||
-                          (!s.look2.empty() && render::look_is_pq(s.look2, "")) ||
-                          (!s.look3.empty() && render::look_is_pq(s.look3, ""));
+      const std::vector<LookLayer> slots = look_slots(s);
+      constexpr std::array<double render::GradeParams::*, render::kLookSlots> kMixes{
+          &render::GradeParams::look_mix,  &render::GradeParams::look_mix2, &render::GradeParams::look_mix3,
+          &render::GradeParams::look_mix4, &render::GradeParams::look_mix5, &render::GradeParams::look_mix6,
+          &render::GradeParams::look_mix7, &render::GradeParams::look_mix8};
+      bool any_pq = false;
+      for (std::size_t i = 0; i < slots.size(); ++i) {
+        params.*kMixes[i] = slots[i].key.empty() ? 0.0 : slots[i].mix;
+        any_pq = any_pq || (!slots[i].key.empty() && render::look_is_pq(slots[i].key, ""));
+      }
       params.look_pq = pq && any_pq ? 1.0 : 0.0;
       (pq ? choice.pq : choice.sdr) = params;
     }
@@ -151,19 +156,19 @@ render::GradeChoice grade_of(const PlaySettings& s, bool true_hdr_open, int peak
 
 std::vector<std::string> apply_looks(PlaceboScreen& screen, const PlaySettings& s,
                                      const std::filesystem::path& luts_dir) {
-  const std::array<const std::string*, render::kLookSlots> keys{&s.look, &s.look2, &s.look3};
+  const std::vector<LookLayer> keys = look_slots(s);
   std::array<std::optional<render::CubeLut>, render::kLookSlots> loaded;
   std::array<const render::CubeLut*, render::kLookSlots> luts{};
   std::vector<std::string> failed;
   for (std::size_t i = 0; i < render::kLookSlots; ++i) {
-    if (keys[i]->empty()) continue;
-    auto lut = load_look(*keys[i], luts_dir);
+    if (i >= keys.size() || keys[i].key.empty()) continue;
+    auto lut = load_look(keys[i].key, luts_dir);
     if (!lut) {
       log_channel("app")->warn("look : {}", lut.error().detail);
-      failed.push_back(*keys[i]);
+      failed.push_back(keys[i].key);
       continue;
     }
-    log_channel("app")->info("look {} : {} ({} points)", i + 1, *keys[i], lut->size);
+    log_channel("app")->info("look {} : {} ({} points)", i + 1, keys[i].key, lut->size);
     loaded[i] = std::move(*lut);
     luts[i] = &*loaded[i];
   }

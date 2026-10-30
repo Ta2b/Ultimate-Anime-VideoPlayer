@@ -9,6 +9,7 @@
 #include "app/play/chapters.h"
 #include "app/play/episodes.h"
 #include "app/play/i18n.h"
+#include "app/play/look_catalog.h"
 #include "audio/devices.h"
 #include "core/clock.h"
 #include "core/log.h"
@@ -173,15 +174,14 @@ void apply_live(Chain& to, const PlaySettings& wanted, std::int64_t now_us) {
       to.peak_nits = after.peak_nits;
     }
   }
-  if (wanted.look != r.look || wanted.look2 != r.look2 || wanted.look3 != r.look3) {
+  if (!same_look_files(wanted, r)) {
     for (const std::string& failed : apply_looks(to.screen, wanted, to.luts_dir))
       controls.notify(i18n::tr_format("Look unreadable: {}", failed), now_us);
   }
   if (wanted.grade != r.grade || wanted.grade_preset != r.grade_preset ||
       wanted.grade_values != r.grade_values || wanted.hdr_native != r.hdr_native || after != before ||
       wanted.oled_black != r.oled_black || wanted.oled_black_steps != r.oled_black_steps ||
-      wanted.look != r.look || wanted.look_mix != r.look_mix || wanted.look2 != r.look2 ||
-      wanted.look2_mix != r.look2_mix || wanted.look3 != r.look3 || wanted.look3_mix != r.look3_mix) {
+      wanted.look != r.look || wanted.look_mix != r.look_mix || wanted.look_layers != r.look_layers) {
     set_grade(to, wanted);
     to.black_dirty = true;
     to.session.set_output(output_text(to.screen, wanted, to.peak_nits));
@@ -250,8 +250,7 @@ void apply_live(Chain& to, const PlaySettings& wanted, std::int64_t now_us) {
       wanted.grade_values != r.grade_values || wanted.final_scaler != r.final_scaler ||
       wanted.deband != r.deband || wanted.hdr_native != r.hdr_native || after != before ||
       wanted.oled_black != r.oled_black || wanted.oled_black_steps != r.oled_black_steps ||
-      wanted.look != r.look || wanted.look_mix != r.look_mix || wanted.look2 != r.look2 ||
-      wanted.look2_mix != r.look2_mix || wanted.look3 != r.look3 || wanted.look3_mix != r.look3_mix)
+      wanted.look != r.look || wanted.look_mix != r.look_mix || wanted.look_layers != r.look_layers)
     to.session.request_present();
   r = wanted;
   r.volume = controls.volume();

@@ -119,7 +119,7 @@ void look_section(PlaySettings& d) {
   if (!d.grade && !d.true_hdr) note(i18n::tr("Without RTX HDR, turn on \"Color grading\" below."));
 }
 
-// Le look : jusqu'à trois LUT 3D .cube enchaînées dans l'ordre, comme des nœuds de Resolve
+// Le look : jusqu'à huit LUT 3D .cube enchaînées dans l'ordre, comme des nœuds de Resolve
 // (render/cube_lut.h) ; ceux du lecteur, puis les fichiers du dossier luts. Chaque intensité va de 0 à 1.
 void look_section(PlaySettings& d, const SettingsChoices& choices) {
   const auto label_of = [&](const std::string& key) -> std::string {
@@ -128,28 +128,31 @@ void look_section(PlaySettings& d, const SettingsChoices& choices) {
       if (look.key == key) return i18n::tr(look.label.data());
     return key;
   };
-  struct Slot {
-    std::string* name;
-    double* mix;
-  };
-  const std::array<Slot, render::kLookSlots> slots{
-      {{&d.look, &d.look_mix}, {&d.look2, &d.look2_mix}, {&d.look3, &d.look3_mix}}};
-  for (std::size_t i = 0; i < slots.size(); ++i) {
-    const int number = static_cast<int>(i) + 1;
+  const std::vector<LookEntry> entries = list_looks(choices.luts_dir);
+  const auto slot = [&](int number, std::string& name, double& mix) {
     ImGui::PushID(number);
-    std::string& name = *slots[i].name;
     if (ImGui::BeginCombo(i18n::tr_format("Look {} (LUT)", number).c_str(), label_of(name).c_str())) {
       if (ImGui::Selectable(i18n::tr("None"), name.empty())) name.clear();
-      for (const LookEntry& entry : list_looks(choices.luts_dir))
+      for (const LookEntry& entry : entries)
         if (ImGui::Selectable(entry.label.c_str(), entry.key == name)) name = entry.key;
       ImGui::EndCombo();
     }
     ImGui::BeginDisabled(name.empty());
-    grade_slider(i18n::tr_format("Look {} intensity", number).c_str(), *slots[i].mix,
-                 core::Range<double>{0.0, 1.0});
+    grade_slider(i18n::tr_format("Look {} intensity", number).c_str(), mix, core::Range<double>{0.0, 1.0});
     ImGui::EndDisabled();
     ImGui::PopID();
-  }
+  };
+  slot(1, d.look, d.look_mix);
+  for (std::size_t i = 0; i < d.look_layers.size(); ++i)
+    slot(static_cast<int>(i) + 2, d.look_layers[i].key, d.look_layers[i].mix);
+  // + ajoute une LUT à la fin de la pile, − retire la dernière.
+  ImGui::BeginDisabled(d.look_layers.size() + 1 >= render::kLookSlots);
+  if (ImGui::Button("+")) d.look_layers.push_back({});
+  ImGui::EndDisabled();
+  ImGui::SameLine();
+  ImGui::BeginDisabled(d.look_layers.empty());
+  if (ImGui::Button("-")) d.look_layers.pop_back();
+  ImGui::EndDisabled();
   note(
       i18n::tr("Looks are LUT files (.cube) placed in the luts folder of the player's data, applied in order "
                "like Resolve nodes; names containing PQ, HDR or 2020 are read as HDR LUTs."));

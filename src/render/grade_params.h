@@ -146,8 +146,13 @@ struct GradeParams {
   // Le look (LUT .cube, anime-hdr-look.hook) : intensité (0 : passe sautée), blanc de référence de la LUT en
   // nits, 1 si la LUT attend du PQ BT.2020 plutôt que du SDR BT.709.
   double look_mix = 0.0;
-  double look_mix2 = 0.0;  // deuxième et troisième LUT, enchaînées après la première
+  double look_mix2 = 0.0;  // les LUT suivantes, enchaînées après la première (kLookSlots en tout)
   double look_mix3 = 0.0;
+  double look_mix4 = 0.0;
+  double look_mix5 = 0.0;
+  double look_mix6 = 0.0;
+  double look_mix7 = 0.0;
+  double look_mix8 = 0.0;
   double look_white = 203.0;
   double look_pq = 0.0;
   friend bool operator==(const GradeParams&, const GradeParams&) = default;
