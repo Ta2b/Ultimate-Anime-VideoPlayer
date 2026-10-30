@@ -220,38 +220,3 @@
 //!MINIMUM 10.0
 //!MAXIMUM 400.0
 80.0
-
-//!PARAM ad_on
-//!DESC 1 = grade adaptatif : noirs et vibrance suivent la luminosite moyenne de la scene (0 = curseurs fixes)
-//!TYPE float
-//!MINIMUM 0.0
-//!MAXIMUM 1.0
-0.0
-
-//!PARAM ad_lo
-//!DESC Grade adaptatif : APL lisse (nits) en dessous duquel la scene est « sombre » (les curseurs)
-//!TYPE float
-//!MINIMUM 1.0
-//!MAXIMUM 2000.0
-12.0
-
-//!PARAM ad_hi
-//!DESC Grade adaptatif : APL lisse (nits) au-dessus duquel la scene est « claire » (valeurs ad_*)
-//!TYPE float
-//!MINIMUM 2.0
-//!MAXIMUM 4000.0
-110.0
-
-//!PARAM ad_shadows
-//!DESC Grade adaptatif : profondeur des noirs d'une scene claire
-//!TYPE float
-//!MINIMUM 0.0
-//!MAXIMUM 0.95
-0.80
-
-//!PARAM ad_vibrance
-//!DESC Grade adaptatif : vibrance d'une scene tres claire
-//!TYPE float
-//!MINIMUM 0.0
-//!MAXIMUM 1.4
-0.0

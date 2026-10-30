@@ -13,6 +13,7 @@
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 
+#include "app/play/chain.h"
 #include "app/play/free_engines.h"
 #include "app/play/live_settings.h"
 
@@ -715,18 +716,46 @@ TEST_CASE("le grade adaptatif se relit à l'identique et survit au changement de
   ajp::app::play::PlaySettings s;
   s.grade_values.adaptive = true;
   s.grade_values.adaptive_lo = 15.0;
-  s.grade_values.adaptive_hi = 130.0;
+  s.grade_values.adaptive_hi = 54.0;
+  s.grade_values.adaptive_gray = 32.0;
   s.grade_values.adaptive_shadows = 0.7;
   s.grade_values.adaptive_vibrance = 0.1;
   const auto back = ajp::app::play::parse_settings(ajp::app::play::format_settings(s));
   REQUIRE(back.has_value());
   CHECK(back->grade_values.adaptive);
   CHECK(back->grade_values.adaptive_lo == 15.0);
-  CHECK(back->grade_values.adaptive_hi == 130.0);
+  CHECK(back->grade_values.adaptive_hi == 54.0);
+  CHECK(back->grade_values.adaptive_gray == 32.0);
   CHECK(back->grade_values.adaptive_shadows == 0.7);
   CHECK(back->grade_values.adaptive_vibrance == 0.1);
   const auto switched = ajp::app::play::with_preset(ajp::render::GradePreset::Naturel, s.grade_values);
   CHECK(switched.adaptive);
-  CHECK(switched.adaptive_hi == 130.0);
+  CHECK(switched.adaptive_hi == 54.0);
+  CHECK(switched.adaptive_gray == 32.0);
   CHECK_FALSE(ajp::app::play::PlaySettings{}.grade_values.adaptive);  // coupé par défaut
+}
+
+TEST_CASE("grade adaptatif : noirs, couleurs et gris moyen glissent de la scène sombre à la scène claire",
+          "[app][settings]") {
+  ajp::app::play::PlaySettings s;
+  s.true_hdr_gray = 70;
+  s.grade_values.shadows = 0.2;
+  s.grade_values.vibrance_rtx = 0.8;
+  s.grade_values.adaptive = true;
+  s.grade_values.adaptive_shadows = 0.8;
+  s.grade_values.adaptive_vibrance = 0.0;
+  s.grade_values.adaptive_gray = 30.0;
+  const auto at = [&](double t) { return ajp::app::play::with_adaptive(s, t); };
+  CHECK(at(0.0).grade_values.shadows == 0.2);  // scène sombre : les curseurs
+  CHECK(at(0.0).true_hdr_gray == 70);
+  CHECK(at(1.0).grade_values.shadows == 0.8);  // scène claire : les valeurs adaptatives
+  CHECK(at(1.0).true_hdr_gray == 30);
+  CHECK(at(1.0).grade_values.vibrance_rtx == 0.0);
+  CHECK(at(0.5).grade_values.shadows == 0.5);
+  CHECK(at(0.5).true_hdr_gray == 50);
+  CHECK(at(0.5).grade_values.vibrance_rtx == 0.8);  // les couleurs ne s'effacent que sur les derniers 20 %
+  CHECK(at(0.9).grade_values.vibrance_rtx < 0.8);
+  CHECK(at(0.9).grade_values.vibrance_rtx > 0.0);
+  s.grade_values.adaptive = false;
+  CHECK(at(1.0).true_hdr_gray == 70);  // coupé : rien ne bouge
 }

@@ -319,6 +319,9 @@ class KernelOps {
   virtual std::expected<void, Refusal> set_true_hdr(const vendor_hdr::TrueHdrParams& /*params*/) {
     return std::unexpected(Refusal{RefusalCode::FormatUnsupported, "set_true_hdr : absent de ce backend"});
   }
+  // Luminance moyenne (0 à 1) de la dernière image passée à RTX HDR, mesurée sur le GPU ; vide sans RTX HDR
+  // ou avant la première image. Lisible depuis n'importe quel thread ; le grade adaptatif la lisse.
+  virtual std::optional<float> scene_luma() const { return std::nullopt; }
   // write_ring avec RTX HDR : rgb SDR (FP16, taille du slot) → RGBA8 tramé → TrueHDR → RGB10A2
   // PQ BT.2020 → slot RGBA16, même protocole de sémaphores que write_ring. prepared dit comment
   // rgb a été converti (vraie matrice, vraie plage) ; le tramage est fait ici.

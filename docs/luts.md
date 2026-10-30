@@ -56,11 +56,13 @@ Modes de ton « vivid » (blanc SDR au pic) et « reference » (BT.2408, 203 nit
 Dans `play.toml`, la première LUT est `grade.look` / `grade.look_mix`, les suivantes `grade.looks` (noms) et `grade.looks_mix` (intensités), dans l'ordre.
 
 ## Grade adaptatif à la luminosité de la scène
-Les curseurs du grade valent pour une **scène sombre** ; le bloc « Adaptatif à la luminosité de la scène » (réglages
-avancés, onglet Couleurs) donne les valeurs d'une **scène claire** (noirs profonds, couleurs) et deux seuils en nits
-(« scène sombre jusqu'à », « scène claire à partir de », 12 et 110 nits par défaut). À chaque image, le grade mélange
-les deux jeux selon l'APL très lissé de la scène (une à deux secondes de vidéo, remis à la moyenne à chaque coupe de
-scène) : `t = smoothstep(bas, haut, APL)`. Les noirs suivent t ; les couleurs ne s'effacent que sur les derniers 20 % de
-la transition (une scène très claire). Choisis d'après les cinq scènes de Re:Zero ép. 18 de Tatoub
-(`~/ajp-reports/parametres-tatoub-2026-10-30/scenes/LISEZMOI.md`). Pas encore adaptatifs : le gris moyen de RTX HDR
-(réglage du pilote, par image : à faire côté CPU), le contraste et l'intensité des LUT.
+Les curseurs **noirs profonds** et **couleurs** du grade et le **gris moyen de RTX HDR** valent pour une **scène sombre**.
+Le bloc « Adaptatif à la luminosité de la scène » (réglages avancés, onglet Couleurs) donne les valeurs d'une **scène
+claire** (noirs, couleurs, gris moyen) et deux seuils en pourcentage de luminance (13 % et 54 % par défaut, mesurés sur
+l'image source). Le moteur TensorRT mesure sur le GPU la luminance moyenne de chaque image avant RTX HDR (un point sur
+seize, une image de retard, sans copie) ; le lecteur la lisse sur environ 1,2 s, la remet à la mesure à chaque coupe de
+scène, et glisse de la scène sombre à la scène claire : `t = smoothstep(bas, haut, luminance)`. Noirs et gris moyen
+suivent t ; les couleurs ne s'effacent que sur les derniers 20 % de la transition. Seuils et valeurs par défaut tirés
+des cinq scènes de Re:Zero ép. 18 de Tatoub (`~/ajp-reports/parametres-tatoub-2026-10-30/scenes/LISEZMOI.md` : Y vidéo
+44 = sombre, 135 = très clair, soit 13 % et 54 % de luminance en RGB complet). Sans RTX HDR (moteur Vulkan, HDR
+adaptatif), aucun effet : la mesure vient du moteur TensorRT. Pas encore adaptatifs : le contraste et l'intensité des LUT.

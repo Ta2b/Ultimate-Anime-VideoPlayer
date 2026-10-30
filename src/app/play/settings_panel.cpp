@@ -189,25 +189,32 @@ void grade_tab(PlaySettings& d, const SettingsChoices& choices) {
     moved |= grade_slider(i18n::tr("Color limiter"), g.guard, kGuard);
     if (moved) d.grade_preset = render::GradePreset::Custom;
     ImGui::Checkbox(i18n::tr("Display P3 gamut"), &g.gamut_p3);
-    // Grade adaptatif : les curseurs ci-dessus sont la scène sombre ; ces valeurs, la scène claire.
+    // Grade adaptatif : les curseurs ci-dessus et le gris moyen de RTX HDR sont la scène sombre ; ces
+    // valeurs, la scène claire, mélangées selon la luminance moyenne lissée de l'image source (moteur
+    // TensorRT).
     section(i18n::tr("Adaptive to scene brightness"));
     ImGui::Checkbox(i18n::tr("Adapt to scene brightness"), &g.adaptive);
     ImGui::BeginDisabled(!g.adaptive);
-    const auto nits_slider = [](const char* label, double& value) {
+    const auto percent_slider = [](const char* label, double& value) {
       auto shown = static_cast<float>(value);
-      if (ImGui::SliderFloat(label, &shown, static_cast<float>(kAdaptiveNits.lo), 400.0F, "%.0f nits",
-                             ImGuiSliderFlags_Logarithmic | ImGuiSliderFlags_AlwaysClamp))
-        value = std::clamp(std::round(static_cast<double>(shown)), kAdaptiveNits.lo, kAdaptiveNits.hi);
+      if (ImGui::SliderFloat(label, &shown, static_cast<float>(kAdaptiveLuma.lo),
+                             static_cast<float>(kAdaptiveLuma.hi), "%.0f %%", ImGuiSliderFlags_AlwaysClamp))
+        value = std::clamp(std::round(static_cast<double>(shown)), kAdaptiveLuma.lo, kAdaptiveLuma.hi);
     };
-    nits_slider(i18n::tr("Dark scene up to"), g.adaptive_lo);
-    nits_slider(i18n::tr("Bright scene from"), g.adaptive_hi);
-    if (g.adaptive_hi <= g.adaptive_lo) g.adaptive_hi = std::min(g.adaptive_lo + 1.0, kAdaptiveNits.hi);
+    percent_slider(i18n::tr("Dark scene up to"), g.adaptive_lo);
+    percent_slider(i18n::tr("Bright scene from"), g.adaptive_hi);
+    if (g.adaptive_hi <= g.adaptive_lo) g.adaptive_hi = std::min(g.adaptive_lo + 1.0, kAdaptiveLuma.hi);
     grade_slider(i18n::tr("Deep blacks, bright scene"), g.adaptive_shadows, kShadows);
     grade_slider(i18n::tr("Colors, very bright scene"), g.adaptive_vibrance, kVibrance);
+    auto gray = static_cast<float>(g.adaptive_gray);
+    if (ImGui::SliderFloat(i18n::tr("Middle gray, bright scene"), &gray, static_cast<float>(kMiddleGray.lo),
+                           static_cast<float>(kMiddleGray.hi), "%.0f", ImGuiSliderFlags_AlwaysClamp))
+      g.adaptive_gray = std::clamp(std::round(static_cast<double>(gray)), kMiddleGray.lo, kMiddleGray.hi);
     ImGui::EndDisabled();
     note(
-        i18n::tr("The sliders above are for dark scenes; the values here apply to bright scenes, blended "
-                 "with the scene's smoothed average brightness."));
+        i18n::tr("The sliders above and the RTX HDR middle gray are for dark scenes; the values here apply "
+                 "to bright scenes, blended with the source's smoothed average brightness. Needs the "
+                 "TensorRT engine with RTX HDR."));
   }
   ImGui::EndDisabled();
   if (d.true_hdr) {

@@ -38,8 +38,9 @@ inline constexpr core::Range<double> kGuard{0.0, 1.0};
 inline constexpr core::Range<double> kBlackSteps{0.5, 8.0};
 inline constexpr core::Range<double> kAreaRtx{0.0, 1.0};
 inline constexpr core::Range<double> kExpand{0.0, 1.0};
-// Seuils du grade adaptatif : APL très lissé de la scène, en nits.
-inline constexpr core::Range<double> kAdaptiveNits{1.0, 2000.0};
+// Seuils du grade adaptatif : luminance moyenne de l'image source (0 à 100 % du blanc), lissée sur une à deux
+// secondes.
+inline constexpr core::Range<double> kAdaptiveLuma{1.0, 99.0};
 // Limiteur OLED : APL lissé (nits) où la modération des éclats commence, puis est complète.
 inline constexpr core::Range<double> kAblNits{20.0, 2000.0};
 // Pic du grade quand l'écran ne le dit pas (DisplayInfo par défaut).
@@ -60,13 +61,16 @@ struct GradeSettings {
   double vibrance_rtx = 0.10;
   double contrast = 100.0;  // TrueHDR et son émulation, comme rtx_contrast
   double saturation = 100.0;
-  // Grade adaptatif : les curseurs sont la scène sombre ; ces valeurs, la scène claire (APL très lissé de la
-  // scène entre adaptive_lo et adaptive_hi, en nits).
+  // Grade adaptatif : les curseurs (noirs, couleurs) et le gris moyen de RTX HDR sont ceux d'une scène sombre
+  // ; ces valeurs, ceux d'une scène claire. On glisse de l'un à l'autre quand la luminance moyenne lissée de
+  // l'image source passe de adaptive_lo à adaptive_hi (% du blanc, mesurée par le moteur TensorRT : sans lui,
+  // aucun effet).
   bool adaptive = false;
-  double adaptive_lo = 12.0;
-  double adaptive_hi = 110.0;
+  double adaptive_lo = 13.0;
+  double adaptive_hi = 54.0;
   double adaptive_shadows = 0.80;
   double adaptive_vibrance = 0.0;
+  double adaptive_gray = 30.0;
   double punch_base = 0.0;   // préréglage : contraste en plus, en sortie du grade (0 : aucun)
   double chroma_base = 0.0;  // préréglage : saturation en plus (0 : aucune)
   double middle_gray = 50.0;
@@ -164,13 +168,6 @@ struct GradeParams {
   double look_mix8 = 0.0;
   double look_white = 203.0;
   double look_pq = 0.0;
-  // Grade adaptatif (anime-hdr-grade, APL très lissé de la scène) : 1 pour l'activer, seuils en nits, valeurs
-  // d'une scène claire (celles d'une scène sombre sont shadows et vibrance).
-  double ad_on = 0.0;
-  double ad_lo = 12.0;
-  double ad_hi = 110.0;
-  double ad_shadows = 0.80;
-  double ad_vibrance = 0.0;
   friend bool operator==(const GradeParams&, const GradeParams&) = default;
 };
 

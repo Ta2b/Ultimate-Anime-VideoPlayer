@@ -1,6 +1,7 @@
 // RTX HDR (TrueHDR, Maxine sous Linux) dans le backend TensorRT de la tranche verticale.
 #include "gpu/cuda/backend/tensorrt_true_hdr.h"
 
+#include <atomic>
 #include <format>
 #include <string>
 #include <utility>
@@ -58,6 +59,8 @@ TensorRtBackend::TrueHdrState::~TrueHdrState() {
   effect.reset();  // l'effet avant ses tampons
   if (rgba8 != nullptr) cudaFree(rgba8);
   if (rgb10 != nullptr) cudaFree(rgb10);
+  if (luma_accum != nullptr) cudaFree(luma_accum);
+  if (luma_host != nullptr) cudaFreeHost(luma_host);
 }
 
 std::expected<void, Refusal> TensorRtBackend::open_true_hdr(const vendor_hdr::InstalledSdk& sdk,
@@ -77,6 +80,23 @@ std::expected<void, Refusal> TensorRtBackend::open_true_hdr(const vendor_hdr::In
                            "cudaMallocPitch");
       !ok)
     return ok;
+  // Luminance moyenne de la source pour le grade adaptatif : un échec ne gêne pas RTX HDR (la mesure reste
+  // absente).
+  if (cudaMalloc(reinterpret_cast<void**>(&state->luma_accum), sizeof(float)) == cudaSuccess &&
+      cudaMemset(state->luma_accum, 0, sizeof(float)) == cudaSuccess &&
+      cudaHostAlloc(reinterpret_cast<void**>(&state->luma_host), sizeof(float), cudaHostAllocMapped) ==
+          cudaSuccess &&
+      cudaHostGetDevicePointer(reinterpret_cast<void**>(&state->luma_device), state->luma_host, 0) ==
+          cudaSuccess) {
+    *state->luma_host = -1.0F;  // pas encore de mesure
+  } else {
+    static_cast<void>(cudaGetLastError());
+    if (state->luma_accum != nullptr) cudaFree(state->luma_accum);
+    if (state->luma_host != nullptr) cudaFreeHost(state->luma_host);
+    state->luma_accum = nullptr;
+    state->luma_host = nullptr;
+    state->luma_device = nullptr;
+  }
   state->lane = lane_;
   state->bridge = std::make_unique<LegacyBridge>(stream_);
   if (auto ok = state->bridge->create(); !ok) return ok;
@@ -123,6 +143,14 @@ std::expected<void, Refusal> TensorRtBackend::write_ring_true_hdr(
   GpuTiming& timing = stage("RTX HDR (tramage, TrueHDR, écriture)");
   timing.begin(stream_);
   if (auto ok = cuda_check(launch_to_rgba8(to8, stream_), "to_rgba8<<<>>>"); !ok) return ok;
+  if (hdr.luma_device != nullptr) {
+    const MeanLumaParams luma{.rgb = address(rgb),
+                              .width = hdr.width,
+                              .height = hdr.height,
+                              .accum = hdr.luma_accum,
+                              .out = hdr.luma_device};
+    if (auto ok = cuda_check(launch_mean_luma(luma, stream_), "mean_luma<<<>>>"); !ok) return ok;
+  }
   const vendor_hdr::TrueHdrInput in{
       .image = {.device = reinterpret_cast<std::uintptr_t>(hdr.rgba8),
                 .pitch = hdr.rgba8_pitch,
@@ -146,6 +174,13 @@ std::expected<void, Refusal> TensorRtBackend::write_ring_true_hdr(
     return ok;
   timing.end(stream_);
   return (*imported)->signal(sync.signal_value, stream_);
+}
+
+std::optional<float> TensorRtBackend::scene_luma() const {
+  if (!true_hdr_ || true_hdr_->luma_host == nullptr) return std::nullopt;
+  const float value = std::atomic_ref<float>(*true_hdr_->luma_host).load(std::memory_order_relaxed);
+  if (!(value >= 0.0F)) return std::nullopt;  // -1 : aucune image mesurée
+  return value;
 }
 
 std::expected<std::vector<float>, Refusal> TensorRtBackend::true_hdr_ramp(

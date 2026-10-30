@@ -67,10 +67,10 @@ vec3 target_luma() {
 
 // Pied des noirs sur le maximum RGB : pente 1 au genou, pente (1 - shadows) au noir.
 // Seuls les pixels vraiment sombres sont touches, meme s'ils sont satures (bleu nuit).
-float shadow_ratio(float m, float depth) {
+float shadow_ratio(float m) {
     if (m >= shadow_knee) return 1.0;
     float u = 1.0 - m / shadow_knee;
-    return 1.0 - depth * u * u;
+    return 1.0 - shadows * u * u;
 }
 
 vec3 to_ictcp(vec3 bt2020_nits) {
@@ -120,7 +120,7 @@ vec3 truehdr_look(vec3 nits) {
     float top = peak;
     float lo = em_lo;
     if (adapt > 0.5) {
-        vec4 scene = AJG_STATS_tex(vec2(0.25, 0.5));
+        vec4 scene = AJG_STATS_tex(vec2(0.5));
         float key = clamp(scene.x / sdr_white, 0.0, 1.0);  // APL lisse, en part du blanc SDR
         float bright = clamp(scene.w, 0.0, 1.0);           // part lissee des grands aplats clairs
         // Scene claire ou grands aplats clairs : moins d'expansion (eblouissement, limiteur OLED).
@@ -163,17 +163,6 @@ float gamut_room(vec3 a, vec3 b) {
 
 vec4 hook() {
     vec4 px = HOOKED_tex(HOOKED_pos);
-    // Grade adaptatif : profondeur des noirs et vibrance glissent du réglage « scène sombre » (les curseurs) vers
-    // le réglage « scène claire » avec l'APL très lissé de la scène ; les couleurs ne s'effacent que tout en
-    // haut de la plage (derniers 20 % de la transition). ad_on = 0 : les curseurs tels quels.
-    float sh_now = shadows;
-    float vb_now = vibrance;
-    if (ad_on > 0.5) {
-        float apl_slow = AJG_STATS_tex(vec2(0.75, 0.5)).x;
-        float t = smoothstep(ad_lo, max(ad_hi, ad_lo + 1.0), apl_slow);
-        sh_now = mix(shadows, ad_shadows, t);
-        vb_now = mix(vibrance, ad_vibrance, smoothstep(0.8, 1.0, t));
-    }
     vec3 lin = ajg_decode(px.rgb);
     // L'isolement se mesure sur l'image d'origine, comme les cartes de zone.
     float y_src = dot(lin, vec3(0.2627, 0.6780, 0.0593));
@@ -193,7 +182,7 @@ vec4 hook() {
     float isolation = smoothstep(0.05, 0.25, local_pq - AJG_AREAT_tex(AJG_AREAT_pos).x);
     // Limiteur OLED : APL lisse de abl_lo a abl_hi (80 a 250 nits : plein ecran d'un QD-OLED en
     // Peak 1000 ; sinon tires de la moyenne d'image de l'EDID).
-    float abl_scale = 1.0 - abl * smoothstep(abl_lo, abl_hi, AJG_STATS_tex(vec2(0.25, 0.5)).x);
+    float abl_scale = 1.0 - abl * smoothstep(abl_lo, abl_hi, AJG_STATS_tex(vec2(0.5)).x);
     vec3 ictcp_in = to_ictcp(lin);
     float skin = skin_mask(ictcp_in);
     // Couleurs etendues : une couleur BT.709 saturee est relue avec les primaires P3, que le
@@ -221,7 +210,7 @@ vec4 hook() {
     }
     float r = 1.0;
     if (m > 1e-4 && y > 1e-4) {
-        r = shadow_ratio(m, sh_now);
+        r = shadow_ratio(m);
         r *= highlight_ratio(y * r, isolation, skin, abl_scale);
         // Garde-fou : une couleur saturee tres lumineuse atteint le pic par un seul canal bien
         // avant sa luminance ; au lieu d'un plateau (degrade perdu, aplat ecrete), son canal le
@@ -242,7 +231,7 @@ vec4 hook() {
         c *= r;
     }
 
-    if (vb_now > 0.0) {
+    if (vibrance > 0.0) {
         // Tons moyens (r = 1, la majorite des pixels) : ICtCp deja calcule.
         vec3 ictcp = abs(r - 1.0) < 1e-5 ? ictcp_in : to_ictcp(from_target(c));
         float chroma = length(ictcp.yz);
@@ -250,7 +239,7 @@ vec4 hook() {
         // ombres protegees pour ne pas colorer le bruit et les traits.
         float weight = smoothstep(0.0, 0.06, chroma) * (1.0 - smoothstep(0.10, 0.40, chroma))
                      * smoothstep(0.12, 0.30, ictcp.x) * (1.0 - skin);
-        ictcp.yz *= 1.0 + vb_now * weight;
+        ictcp.yz *= 1.0 + vibrance * weight;
         vec3 vivid = to_target(LMS_TO_RGB * pq_to_nits(ICTCP_TO_LMS * ictcp));
         // Limite douce : le renforcement ralentit avant le bord du gamut ou le pic.
         float room = gamut_room(c, vivid);

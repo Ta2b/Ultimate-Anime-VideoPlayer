@@ -2,6 +2,7 @@
 // noir OLED (chain.h). Les actions de l'utilisateur sont dans chain.cpp.
 #include <algorithm>
 #include <array>
+#include <cmath>
 #include <format>
 #include <optional>
 #include <utility>
@@ -198,7 +199,8 @@ void apply_oled_care(Chain& to, const PlaySettings& s) {
 }
 
 // Le grade de la chaîne avec ses seuils du vrai noir.
-void set_grade(Chain& to, const PlaySettings& s) {
+void set_grade(Chain& to, const PlaySettings& wanted) {
+  const PlaySettings s = with_adaptive(wanted, to.adaptive_t);
   to.screen.set_grade(
       grade_of(s, to.true_hdr_open, to.peak_nits, to.auto_peak, to.display, to.black, to.source_hdr));
 }
@@ -206,6 +208,63 @@ void set_grade(Chain& to, const PlaySettings& s) {
 // Vrai noir OLED : recale les seuils sur la rampe de 32 marches mesurée à la sortie (route native :
 // les marches SDR ; RTX HDR : celles que gpu a passées par TrueHDR), grade compris, puis pose le
 // grade avec eux.
+PlaySettings with_adaptive(const PlaySettings& s, double t) {
+  const render::GradeSettings& g = s.grade_values;
+  if (!g.adaptive || !(t > 0.0)) return s;
+  t = std::min(t, 1.0);
+  const double vibrance_t = std::clamp((t - 0.8) / 0.2, 0.0, 1.0);
+  const double vibrance_t_smooth = vibrance_t * vibrance_t * (3.0 - 2.0 * vibrance_t);
+  PlaySettings out = s;
+  render::GradeSettings& o = out.grade_values;
+  o.shadows = std::lerp(g.shadows, g.adaptive_shadows, t);
+  o.vibrance = std::lerp(g.vibrance, g.adaptive_vibrance, vibrance_t_smooth);
+  o.vibrance_rtx = std::lerp(g.vibrance_rtx, g.adaptive_vibrance, vibrance_t_smooth);
+  out.true_hdr_gray =
+      static_cast<int>(std::lround(std::lerp(static_cast<double>(s.true_hdr_gray), g.adaptive_gray, t)));
+  return out;
+}
+
+void adaptive_tick(Chain& to, std::int64_t now_us) {
+  const render::GradeSettings& g = to.running.grade_values;
+  if (!g.adaptive || to.kernels == nullptr || !to.true_hdr_open) {
+    if (to.adaptive_t != 0.0) {  // coupé en cours de route : retour aux curseurs
+      to.adaptive_t = 0.0;
+      to.adaptive_luma = -1.0;
+      set_grade(to, to.running);
+      to.live.set_true_hdr(true_hdr_params(to.running, to.auto_peak));
+    }
+    return;
+  }
+  if (now_us - to.adaptive_at_us < 100'000) return;
+  const std::int64_t dt = to.adaptive_at_us == 0 ? 0 : now_us - to.adaptive_at_us;
+  to.adaptive_at_us = now_us;
+  const std::optional<float> luma = to.kernels->scene_luma();
+  if (!luma) return;
+  constexpr double kTauUs = 1'200'000.0;
+  constexpr double kCut = 0.20;  // un saut de luminance moyenne : coupe de scène, la mesure repart
+  if (to.adaptive_luma < 0.0 || std::abs(static_cast<double>(*luma) - to.adaptive_luma) > kCut)
+    to.adaptive_luma = static_cast<double>(*luma);
+  else
+    to.adaptive_luma +=
+        (1.0 - std::exp(-static_cast<double>(dt) / kTauUs)) * (static_cast<double>(*luma) - to.adaptive_luma);
+  const double lo = g.adaptive_lo / 100.0;
+  const double hi = std::max(g.adaptive_hi / 100.0, lo + 0.01);
+  const double x = std::clamp((to.adaptive_luma - lo) / (hi - lo), 0.0, 1.0);
+  const double t = x * x * (3.0 - 2.0 * x);
+  if (std::abs(t - to.adaptive_t) < 0.02 && !(t == 0.0 && to.adaptive_t != 0.0) &&
+      !(t == 1.0 && to.adaptive_t != 1.0))
+    return;
+  const vendor_hdr::TrueHdrParams before =
+      true_hdr_params(with_adaptive(to.running, to.adaptive_t), to.auto_peak);
+  to.adaptive_t = t;
+  const vendor_hdr::TrueHdrParams after = true_hdr_params(with_adaptive(to.running, t), to.auto_peak);
+  if (after.middle_gray != before.middle_gray) {
+    to.live.set_true_hdr(after);
+    if (to.session.view().paused) to.hdr_refresh_us = now_us + 120'000;
+  }
+  set_grade(to, to.running);
+}
+
 void refresh_black(Chain& to) {
   to.black_dirty = false;
   to.black_at_us = host_now_us();

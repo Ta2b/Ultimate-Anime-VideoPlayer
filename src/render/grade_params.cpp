@@ -59,15 +59,6 @@ void apply_punch(const GradeSettings& s, GradeParams& p) {
   p.pivot = 0.4 * grade_limits::kSdrWhiteNits;
 }
 
-// Grade adaptatif : les valeurs d'une scène claire passent par les mêmes courbes de réponse que les curseurs.
-void apply_adaptive(const GradeSettings& s, GradeParams& p) {
-  p.ad_on = s.adaptive ? 1.0 : 0.0;
-  p.ad_lo = s.adaptive_lo;
-  p.ad_hi = s.adaptive_hi;
-  p.ad_shadows = shadows_effect(s.adaptive_shadows);
-  p.ad_vibrance = vibrance_effect(s.adaptive_vibrance);
-}
-
 // Sortie SDR : le blanc de la source est celui de l'écran, aucune marge pour des éclats. Restent les
 // noirs, les couleurs (le curseur de RTX HDR), le garde-fou, le vrai noir, et de l'aspect TrueHDR
 // son contraste et sa saturation autour du gris moyen.
@@ -99,7 +90,6 @@ GradeParams sdr_params(const GradeSettings& s) {
   p.black_lo = s.true_black ? s.black_lo : 0.0;
   p.black_hi = s.true_black ? s.black_hi : 0.0;
   apply_punch(s, p);
-  apply_adaptive(s, p);
   return p;
 }
 
@@ -172,10 +162,11 @@ std::expected<void, Refusal> check_grade_settings(const GradeSettings& s) {
                              check("expand", s.expand, kExpand),
                              check("abl_lo", s.abl_lo, kAblNits),
                              check("abl_hi", s.abl_hi, kAblNits),
-                             check("adaptive_lo", s.adaptive_lo, kAdaptiveNits),
-                             check("adaptive_hi", s.adaptive_hi, kAdaptiveNits),
+                             check("adaptive_lo", s.adaptive_lo, kAdaptiveLuma),
+                             check("adaptive_hi", s.adaptive_hi, kAdaptiveLuma),
                              check("adaptive_shadows", s.adaptive_shadows, kShadows),
-                             check("adaptive_vibrance", s.adaptive_vibrance, kVibrance)}) {
+                             check("adaptive_vibrance", s.adaptive_vibrance, kVibrance),
+                             check("adaptive_gray", s.adaptive_gray, kMiddleGray)}) {
     if (!result) return result;
   }
   if (!(s.abl_hi > s.abl_lo)) {
@@ -274,7 +265,6 @@ std::expected<GradeDecision, Refusal> decide_grade(const GradeSettings& s, const
   p.black_lo = s.true_black ? s.black_lo : 0.0;
   p.black_hi = s.true_black ? s.black_hi : 0.0;
   apply_punch(s, p);
-  apply_adaptive(s, p);
   return decision;
 }
 

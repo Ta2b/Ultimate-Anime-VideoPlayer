@@ -65,7 +65,41 @@ __global__ void __launch_bounds__(kPixelThreads, kPixelBlocksPerSm)
   surf2Dwrite(out, p.surface, x * static_cast<int>(sizeof(ushort4)), y);
 }
 
+// Luminance moyenne : un thread par point d'une grille au pas de 4, somme par warp puis une addition atomique
+// par warp.
+__global__ void __launch_bounds__(kBlock* kBlock) mean_luma_partial(MeanLumaParams p) {
+  const int gx = static_cast<int>(blockIdx.x * blockDim.x + threadIdx.x);
+  const int gy = static_cast<int>(blockIdx.y * blockDim.y + threadIdx.y);
+  float value = 0.0F;
+  if (gx < p.width / 4 && gy < p.height / 4) {
+    const std::size_t plane = static_cast<std::size_t>(p.width) * static_cast<std::size_t>(p.height);
+    const std::size_t i = static_cast<std::size_t>(gy * 4) * static_cast<std::size_t>(p.width) +
+                          static_cast<std::size_t>(gx * 4);
+    const auto* rgb = static_cast<const __half*>(p.rgb);
+    value = 0.2126F * __half2float(rgb[i]) + 0.7152F * __half2float(rgb[plane + i]) +
+            0.0722F * __half2float(rgb[2 * plane + i]);
+    value = value != value ? 0.0F : fminf(fmaxf(value, 0.0F), 1.0F);
+  }
+  for (int offset = 16; offset > 0; offset >>= 1) value += __shfl_down_sync(0xFFFFFFFFU, value, offset);
+  if ((threadIdx.y * blockDim.x + threadIdx.x) % 32 == 0) atomicAdd(p.accum, value);
+}
+
+__global__ void mean_luma_finish(MeanLumaParams p) {
+  const float count = static_cast<float>(p.width / 4) * static_cast<float>(p.height / 4);
+  *p.out = count > 0.0F ? *p.accum / count : 0.0F;
+  *p.accum = 0.0F;
+}
+
 }  // namespace
+
+cudaError_t launch_mean_luma(const MeanLumaParams& params, cudaStream_t stream) {
+  if (params.width < 4 || params.height < 4) return cudaSuccess;
+  const dim3 grid(static_cast<unsigned>((params.width / 4 + kBlock - 1) / kBlock),
+                  static_cast<unsigned>((params.height / 4 + kBlock - 1) / kBlock));
+  mean_luma_partial<<<grid, dim3(kBlock, kBlock), 0, stream>>>(params);
+  mean_luma_finish<<<1, 1, 0, stream>>>(params);
+  return cudaGetLastError();
+}
 
 cudaError_t launch_to_rgba8(const ToRgba8Params& params, cudaStream_t stream) {
   to_rgba8<<<grid_for(params.width, params.height), dim3(kBlock, kBlock), 0, stream>>>(params);

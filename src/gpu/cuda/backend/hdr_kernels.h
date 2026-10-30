@@ -31,4 +31,17 @@ struct Rgb10a2ToSurfaceParams {
 
 cudaError_t launch_rgb10a2_to_surface(const Rgb10a2ToSurfaceParams& params, cudaStream_t stream);
 
+struct MeanLumaParams {
+  const void* rgb = nullptr;  // 1 × 3 × height × width, FP16, valeurs dans [0, 1] (comme ToRgba8Params)
+  int width = 0;
+  int height = 0;
+  float* accum = nullptr;  // un flottant sur le GPU, remis à 0 par la passe finale
+  float* out = nullptr;  // un flottant en mémoire hôte projetée (cudaHostAlloc mapped) : la dernière moyenne
+};
+
+// Luminance moyenne de l'image (0 à 1, pondération BT.709 des canaux tels que reçus), sur un point sur quatre
+// dans chaque direction : deux lancements sur le flux, le second écrit le résultat en mémoire hôte sans
+// copie.
+cudaError_t launch_mean_luma(const MeanLumaParams& params, cudaStream_t stream);
+
 }  // namespace ajp::gpu::cuda
