@@ -1,7 +1,7 @@
-// Chargeur du NVIDIA RTX Video SDK 1.1 (Windows), chemin CUDA : la DLL du SDK s'ouvre par
-// LoadLibraryExW depuis la copie du magasin, TrueHDR seul (sans Super Resolution) sur le flux 0.
-// Le pont aji_rtx.dll du fork n'a plus de source : on appelle le SDK directement (plan,
-// « Reprise du fork »). Prototypes et réserves dans rtx_video_abi.h.
+// Chargeur du NVIDIA RTX Video SDK 1.1 (Windows), chemin CUDA : le pont aji_rtx.dll du dossier
+// importé s'ouvre par LoadLibraryExW depuis la copie du magasin, TrueHDR seul (sans Super
+// Resolution) sur le flux 0. Le pont lie le SDK (NGX) et charge nvngx_truehdr.dll à côté de
+// lui. Prototypes et réserves dans rtx_video_abi.h.
 //
 // Le chargeur se compile partout ; hors Windows, la DLL ne s'ouvre pas et open refuse.
 #pragma once

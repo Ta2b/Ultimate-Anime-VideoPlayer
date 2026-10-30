@@ -57,9 +57,7 @@ std::string refusal_of(const std::expected<std::unique_ptr<TrueHdr>, ajp::Refusa
 struct RtxProbe {
   DynamicLibrary library = DynamicLibrary::open(AJP_FAKE_RTX_PATH).value();
   bool created() const { return (*library.symbol<bool()>("fake_rtx_video_is_created"))(); }
-  rtx_video::CUcontext context() const {
-    return (*library.symbol<rtx_video::CUcontext()>("fake_rtx_video_context"))();
-  }
+  void* context() const { return (*library.symbol<void*()>("fake_rtx_video_context"))(); }
   int evaluations() const { return (*library.symbol<int()>("fake_rtx_video_evaluations"))(); }
   void refuse_create(bool refuse) const {
     (*library.symbol<void(bool)>("fake_rtx_video_refuse_create"))(refuse);
@@ -248,13 +246,13 @@ TEST_CASE("RTX Video : la DLL ne se charge pas hors Windows, refus propre", "[lo
   auto imported = store.import(dir.path() / "rtx");
   REQUIRE(imported);
   CHECK(refusal_of(open_true_hdr(*imported->installed, rtx_config()), RefusalCode::LibraryUnavailable)
-            .starts_with("rtx_video_api.dll ne se charge pas"));
+            .starts_with("aji_rtx.dll ne se charge pas"));
   CHECK(refusal_of(detail::open_rtx_video_at(dir.path() / "absent.dll", rtx_config()),
                    RefusalCode::LibraryUnavailable)
             .starts_with("absent.dll ne se charge pas"));
   CHECK(
       refusal_of(detail::open_rtx_video_at(AJP_FAKE_DEP_PATH, rtx_config()), RefusalCode::LibraryUnavailable)
-          .starts_with("symbole rtx_video_api_cuda_create absent de "));
+          .starts_with("symbole aji_rtx_create absent de "));
 }
 
 TEST_CASE("RTX Video : sans contexte CUDA, refusé avant tout chargement", "[loader]") {

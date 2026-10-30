@@ -18,8 +18,7 @@ constexpr int kUnusedVsrQuality = 2;
 
 class RtxVideoEffect final : public VendorEffect {
  public:
-  RtxVideoEffect(DynamicLibrary library, rtx_video::CudaEvaluateFn* evaluate,
-                 rtx_video::CudaShutdownFn* shutdown)
+  RtxVideoEffect(DynamicLibrary library, rtx_video::EvaluateFn* evaluate, rtx_video::ShutdownFn* shutdown)
       : library_(std::move(library)), evaluate_(evaluate), shutdown_(shutdown) {}
 
   RtxVideoEffect(const RtxVideoEffect&) = delete;
@@ -30,17 +29,17 @@ class RtxVideoEffect final : public VendorEffect {
 
   TrueHdrPixel input_pixel() const override { return TrueHdrPixel::Rgb10A2; }
 
-  // Les réglages accompagnent chaque évaluation ; rien à transmettre ici. ThdrSetting n'a pas
+  // Les réglages accompagnent chaque évaluation ; rien à transmettre ici. Le pont n'a pas
   // de débandage à couper : false est refusé plutôt qu'ignoré.
   Done apply(const TrueHdrParams& params) override {
     if (!params.debanding) {
       return refuse(RefusalCode::FieldOutOfRange,
                     "truehdr.debanding = false : TrueHDR RTX Video ne sait pas couper son débandage");
     }
-    thdr_ = rtx_video::ThdrSetting{.contrast = params.contrast,
-                                   .saturation = params.saturation,
-                                   .middle_gray = params.middle_gray,
-                                   .max_luminance = params.peak_nits};
+    contrast_ = params.contrast;
+    saturation_ = params.saturation;
+    middle_gray_ = params.middle_gray;
+    max_luminance_ = params.peak_nits;
     return {};
   }
 
@@ -51,9 +50,9 @@ class RtxVideoEffect final : public VendorEffect {
         return refuse(RefusalCode::InputMismatch, "RTX Video attend des lignes serrées (pas = 4 × largeur)");
       }
     }
-    const rtx_video::ApiRect rect{.left = 0, .top = 0, .right = in.width, .bottom = in.height};
-    if (!evaluate_(static_cast<rtx_video::CUdeviceptr>(in.device),
-                   static_cast<rtx_video::CUdeviceptr>(out.device), rect, rect, &vsr_, &thdr_)) {
+    if (evaluate_(static_cast<unsigned long long>(in.device), static_cast<unsigned long long>(out.device),
+                  in.width, in.height, in.width, in.height, kUnusedVsrQuality, contrast_, saturation_,
+                  middle_gray_, max_luminance_) != 1) {
       return refuse(RefusalCode::VendorCallFailed, "TrueHDR RTX Video : évaluation refusée par le SDK");
     }
     return {};
@@ -61,10 +60,12 @@ class RtxVideoEffect final : public VendorEffect {
 
  private:
   DynamicLibrary library_;
-  rtx_video::CudaEvaluateFn* evaluate_;
-  rtx_video::CudaShutdownFn* shutdown_;
-  rtx_video::VsrSetting vsr_{.quality_level = kUnusedVsrQuality};
-  rtx_video::ThdrSetting thdr_{};
+  rtx_video::EvaluateFn* evaluate_;
+  rtx_video::ShutdownFn* shutdown_;
+  int contrast_ = 0;
+  int saturation_ = 0;
+  int middle_gray_ = 0;
+  int max_luminance_ = 0;
 };
 
 }  // namespace
@@ -81,17 +82,16 @@ std::expected<std::unique_ptr<TrueHdr>, Refusal> open_rtx_video_at(const fs::pat
   }
   auto opened = DynamicLibrary::open(library);
   if (!opened) return std::unexpected(opened.error());
-  auto create = opened->symbol<rtx_video::CudaCreateFn>(rtx_video::kCreate);
-  auto evaluate = opened->symbol<rtx_video::CudaEvaluateFn>(rtx_video::kEvaluate);
-  auto shutdown = opened->symbol<rtx_video::CudaShutdownFn>(rtx_video::kShutdown);
+  auto create = opened->symbol<rtx_video::CreateFn>(rtx_video::kCreate);
+  auto evaluate = opened->symbol<rtx_video::EvaluateFn>(rtx_video::kEvaluate);
+  auto shutdown = opened->symbol<rtx_video::ShutdownFn>(rtx_video::kShutdown);
   if (!create) return std::unexpected(create.error());
   if (!evaluate) return std::unexpected(evaluate.error());
   if (!shutdown) return std::unexpected(shutdown.error());
 
   // Flux 0 hérité : process() encadre chaque appel d'événements (aji_trt.cpp:2336-2337).
-  auto context =
-      reinterpret_cast<rtx_video::CUcontext>(config.cuda_context);  // NOLINT(performance-no-int-to-ptr)
-  if (!(*create)(&context, nullptr, true, false)) {
+  auto* context = reinterpret_cast<void*>(config.cuda_context);  // NOLINT(performance-no-int-to-ptr)
+  if ((*create)(context, nullptr, 1, 0) != 1) {
     return refuse(RefusalCode::VendorCallFailed,
                   "TrueHDR RTX Video : création refusée (GPU, pilote ou SDK incompatible)");
   }
