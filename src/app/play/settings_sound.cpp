@@ -146,10 +146,12 @@ bool sound_tab(PlaySettings& d, const SettingsChoices& choices) {
         i18n::tr("One choice sets the mix profile and the Anime sound together. Fine control is in Advanced "
                  "settings."));
   }
-  if (panel::advanced() && listen != 2) {
-    // Le profil de virtualisation : un choix nommé ; en avancé, chaque réglage à la main (Personnalisé). Un
-    // appareil qui a son profil propre garde aussi son choix de profil (device_profile) ; sinon c'est le
-    // profil global.
+  if (listen != 2 && panel::advanced()) {
+    // Le profil de virtualisation (mixage 5.1/7.1) : un choix nommé ; chaque réglage à la main
+    // (Personnalisé). Il n'apparaît qu'en avancé : pour une piste stéréo, c'est « Son anime » qui règle le
+    // rendu. Un appareil qui a son profil propre garde aussi son choix de profil (device_profile) ; sinon
+    // c'est le profil global.
+    section(i18n::tr("Surround mix (5.1 and 7.1 tracks)"));
     std::string* profile = &d.audio_profile;
     if (own) {
       auto found =
@@ -201,13 +203,15 @@ bool sound_tab(PlaySettings& d, const SettingsChoices& choices) {
       }
       slider(i18n::tr("Rear level"), t.surround_gain, 0.5F, 1.6F, "%.2f");
       slider(i18n::tr("Bass level (LFE)"), t.lfe_gain, 0.0F, 0.6F, "%.2f");
-      slider(i18n::tr("Speaker distance"), t.distance, 0.0F, 1.0F, "%.2f");
-      slider(i18n::tr("Room (reverb)"), t.room, 0.0F, 1.0F, "%.2f");
-      slider(i18n::tr("Equalizer: bass (dB)"), t.eq_bass_db, -12.0F, 12.0F, "%.1f");
-      slider(i18n::tr("Equalizer: voices (dB)"), t.eq_voice_db, -12.0F, 12.0F, "%.1f");
-      slider(i18n::tr("Equalizer: treble (dB)"), t.eq_treble_db, -12.0F, 12.0F, "%.1f");
-      slider(i18n::tr("Night compression"), t.night, 0.0F, 1.0F, "%.2f");
       if (listen == 0) slider(i18n::tr("Virtual speakers"), t.virtual_speakers, 0.0F, 1.0F, "%.2f");
+      if (ImGui::CollapsingHeader(i18n::tr("Room, equalizer and night mode"))) {
+        slider(i18n::tr("Speaker distance"), t.distance, 0.0F, 1.0F, "%.2f");
+        slider(i18n::tr("Room (reverb)"), t.room, 0.0F, 1.0F, "%.2f");
+        slider(i18n::tr("Equalizer: bass (dB)"), t.eq_bass_db, -12.0F, 12.0F, "%.1f");
+        slider(i18n::tr("Equalizer: voices (dB)"), t.eq_voice_db, -12.0F, 12.0F, "%.1f");
+        slider(i18n::tr("Equalizer: treble (dB)"), t.eq_treble_db, -12.0F, 12.0F, "%.1f");
+        slider(i18n::tr("Night compression"), t.night, 0.0F, 1.0F, "%.2f");
+      }
       if (moved) {
         d.audio_custom = audio::clamped(t);
         *profile = "custom";
@@ -264,7 +268,7 @@ bool sound_tab(PlaySettings& d, const SettingsChoices& choices) {
     panel::tip(i18n::tr("Hold to hear the track without Anime sound. The volume differs a little."));
     const bool applies = active == nullptr || active->channels <= 2;
     if (applies) {
-      note(i18n::tr("Applies to a stereo track on a stereo output only."));
+      note(i18n::tr("Stereo tracks (most anime). 5.1 and 7.1 tracks use the surround mix, in Advanced."));
     } else {
       note(i18n::tr("This device has more than 2 channels: Anime sound needs a stereo output."));
     }
