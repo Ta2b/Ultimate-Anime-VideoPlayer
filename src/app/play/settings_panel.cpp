@@ -188,9 +188,9 @@ void adaptive_section(PlaySettings& d) {
   ImGui::EndDisabled();
   ImGui::Checkbox(i18n::tr("Record scene statistics (learning)"), &d.adaptive_record);
   note(
-      i18n::tr("The sliders above and the RTX HDR middle gray are for dark scenes; the values here apply "
-               "to bright scenes, blended with the source's smoothed average brightness. Needs the "
-               "TensorRT engine with RTX HDR."));
+      i18n::tr("The sliders above and the middle gray are for dark scenes; the values here apply to bright "
+               "scenes, blended with the source's smoothed average brightness. Works with RTX HDR and with "
+               "Adaptive HDR (any GPU)."));
 }
 
 void grade_tab(PlaySettings& d, const SettingsChoices& choices) {

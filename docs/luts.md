@@ -64,5 +64,6 @@ seize, une image de retard, sans copie) ; le lecteur la lisse sur environ 1,2 s,
 scène, et glisse de la scène sombre à la scène claire : `t = smoothstep(bas, haut, luminance)`. Noirs et gris moyen
 suivent t ; les couleurs ne s'effacent que sur les derniers 20 % de la transition. Seuils et valeurs par défaut tirés
 des cinq scènes de Re:Zero ép. 18 de Tatoub (`~/ajp-reports/parametres-tatoub-2026-10-30/scenes/LISEZMOI.md` : Y vidéo
-44 = sombre, 135 = très clair, soit 13 % et 54 % de luminance en RGB complet). Sans RTX HDR (moteur Vulkan, HDR
-adaptatif), aucun effet : la mesure vient du moteur TensorRT. Pas encore adaptatifs : le contraste et l'intensité des LUT.
+44 = sombre, 135 = très clair, soit 13 % et 54 % de luminance en RGB complet). Sans RTX HDR (HDR adaptatif, sortie SDR
+gradée : tous les GPU), le shader du grade fait la même chose avec le code PQ moyen très lissé de l'image qu'il reçoit
+(la source convertie ; seuils convertis en codes PQ, gris moyen = la courbe TrueHDR émulée). Pas encore adaptatifs : le contraste et l'intensité des LUT.

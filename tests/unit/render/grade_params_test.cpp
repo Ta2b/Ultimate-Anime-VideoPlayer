@@ -357,3 +357,37 @@ TEST_CASE("le contraste et la saturation à 200 ou moins restent ceux de RTX HDR
   CHECK(vivid->params.punch == Approx(0.30));
   CHECK(vivid->params.chroma == Approx(1.12));
 }
+
+TEST_CASE(
+    "grade adaptatif (shader) : seuils en codes PQ, courbe émulée de la scène claire, RTX HDR laissé au "
+    "lecteur",
+    "[grade][adaptif]") {
+  using namespace ajp::render;
+  GradeSettings s;
+  s.adaptive = true;
+  s.adaptive_lo = 13.0;
+  s.adaptive_hi = 54.0;
+  s.adaptive_shadows = 0.6;
+  s.adaptive_gray = 30.0;
+  const GradeContext native{.route = ajp::core::HdrMode::Native, .output_pq = true, .peak_nits = 1000.0};
+  const auto on = decide_grade(s, native);
+  REQUIRE(on);
+  CHECK(on->params.ad_on == 1.0);
+  CHECK(on->params.ad_lo < on->params.ad_hi);
+  CHECK(on->params.ad_hi < 0.58);  // le blanc SDR (203 nits) est le code PQ 0,58
+  CHECK(on->params.ad_lo > 0.1);
+  CHECK(on->params.ad_em_base == Approx(120.0));      // 4 x gris moyen 30
+  CHECK(on->params.ad_em_base < on->params.em_base);  // gris moyen 50 : 200
+  CHECK(on->params.ad_em_pow > on->params.em_pow);
+  CHECK(on->params.ad_shadows > 0.6);
+  // RTX HDR : l'adaptation est celle du lecteur (la luminance mesurée sur le GPU), pas celle du shader.
+  const GradeContext rtx{.route = ajp::core::HdrMode::TrueHdr, .output_pq = true, .peak_nits = 1000.0};
+  const auto hdr = decide_grade(s, rtx);
+  REQUIRE(hdr);
+  CHECK(hdr->params.ad_on == 0.0);
+  // Coupé : aucune trace.
+  s.adaptive = false;
+  const auto off = decide_grade(s, native);
+  REQUIRE(off);
+  CHECK(off->params.ad_on == 0.0);
+}

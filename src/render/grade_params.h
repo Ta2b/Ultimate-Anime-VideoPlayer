@@ -168,6 +168,15 @@ struct GradeParams {
   double look_mix8 = 0.0;
   double look_white = 203.0;
   double look_pq = 0.0;
+  // Grade adaptatif des routes émulées (shader, tous GPU) : 1 pour l'activer, seuils en code PQ moyen de la
+  // scène, valeurs d'une scène claire ; celles d'une scène sombre sont shadows, vibrance, em_base et em_pow.
+  double ad_on = 0.0;
+  double ad_lo = 0.2;
+  double ad_hi = 0.45;
+  double ad_shadows = 0.80;
+  double ad_vibrance = 0.0;
+  double ad_em_base = 120.0;
+  double ad_em_pow = 6.0;
   friend bool operator==(const GradeParams&, const GradeParams&) = default;
 };
 
