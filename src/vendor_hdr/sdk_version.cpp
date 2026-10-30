@@ -137,7 +137,8 @@ std::expected<SdkVersion, Refusal> maxine_version(const std::filesystem::path& r
 }
 
 std::expected<SdkVersion, Refusal> rtx_version(const std::filesystem::path& root) {
-  const std::string_view dll = layout(SdkKind::RtxVideo).main_library;
+  // Le pont n'a pas de FileVersion : la version est celle de la fonction NGX du SDK.
+  constexpr std::string_view dll = "nvngx_truehdr.dll";
   if (auto version = pe_file_version(root / dll)) return *version;
   return refuse(RefusalCode::SdkRejected,
                 std::format("version du SDK introuvable : {} n'a pas de FileVersion", dll));

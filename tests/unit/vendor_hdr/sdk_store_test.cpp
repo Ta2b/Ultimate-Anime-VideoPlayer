@@ -399,9 +399,9 @@ TEST_CASE("magasin : RTX Video SDK", "[store]") {
     CHECK(store.import(source).error().detail == "cudart64_12.dll n'est pas une DLL Windows x64");
   }
   SECTION("bibliothèques Linux refusées") {
-    write_file(source / "rtx_video_api.dll", elf_header());
+    write_file(source / "aji_rtx.dll", elf_header());
     write_file(source / "nvngx_truehdr.dll", elf_header());
-    CHECK(store.import(source).error().detail == "rtx_video_api.dll n'est pas une DLL Windows x64");
+    CHECK(store.import(source).error().detail == "aji_rtx.dll n'est pas une DLL Windows x64");
   }
   CHECK(store.status().state != SdkState::Damaged);
 }

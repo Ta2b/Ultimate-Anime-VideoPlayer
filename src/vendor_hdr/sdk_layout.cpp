@@ -68,13 +68,13 @@ constexpr auto kMaxineCopied = [] {
   return entries;
 }();
 
-// Chemin CUDA du RTX Video SDK 1.1 : la DLL d'entrée et la fonction NGX TrueHDR qu'elle
-// charge. Noms à confirmer sur rtx_video_sdk_v1.1.0.zip (voir rtx_video_abi.h).
-constexpr std::string_view kRtxDll = "rtx_video_api.dll";
+// Chemin CUDA du RTX Video SDK 1.1 : le pont aji_rtx.dll (voir rtx_video_abi.h) et la fonction
+// NGX TrueHDR qu'il charge à côté de lui.
+constexpr std::string_view kRtxDll = "aji_rtx.dll";
 constexpr std::array<RequiredFile, 2> kRtxRequired{{
     {.path = kRtxDll,
      .format = BinaryFormat::PeX64,
-     .missing = "la DLL du RTX Video SDK 1.1 manque : choisir le dossier du SDK qui contient ses DLL"},
+     .missing = "aji_rtx.dll manque : choisir le dossier qui contient le pont aji_rtx et les DLL du RTX Video SDK"},
     {.path = "nvngx_truehdr.dll",
      .format = BinaryFormat::PeX64,
      .missing = "nvngx_truehdr.dll manque : choisir le dossier du SDK qui contient ses DLL"},

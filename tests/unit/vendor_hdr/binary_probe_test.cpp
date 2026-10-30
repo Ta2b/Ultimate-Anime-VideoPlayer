@@ -158,5 +158,5 @@ TEST_CASE("version : RTX Video SDK", "[version]") {
   CHECK(read_sdk_version(SdkKind::RtxVideo, dir.path())->text() == "1.1.0.0");
   make_rtx_sdk(dir.path(), std::nullopt);
   CHECK(read_sdk_version(SdkKind::RtxVideo, dir.path()).error().detail ==
-        "version du SDK introuvable : rtx_video_api.dll n'a pas de FileVersion");
+        "version du SDK introuvable : nvngx_truehdr.dll n'a pas de FileVersion");
 }

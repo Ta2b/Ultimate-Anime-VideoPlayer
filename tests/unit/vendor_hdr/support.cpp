@@ -152,8 +152,8 @@ void make_maxine_sdk(const fs::path& root, const MaxineSdkOptions& options) {
 }
 
 void make_rtx_sdk(const fs::path& root, std::optional<SdkVersion> version) {
-  write_file(root / layout(SdkKind::RtxVideo).main_library, pe_dll(version));
-  write_file(root / "nvngx_truehdr.dll", pe_dll(std::nullopt));
+  write_file(root / layout(SdkKind::RtxVideo).main_library, pe_dll(std::nullopt));
+  write_file(root / "nvngx_truehdr.dll", pe_dll(version));
 }
 
 Done RecordingStream::hand_to_legacy() {

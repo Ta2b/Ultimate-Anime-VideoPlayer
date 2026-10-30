@@ -1,4 +1,4 @@
-// Faux RTX Video SDK, chemin CUDA : les trois fonctions de rtx_video_abi.h. L'API du vrai SDK
+// Faux pont aji_rtx, chemin CUDA : les trois fonctions de rtx_video_abi.h. Le vrai pont
 // n'a pas de poignée et garde son état dans la DLL ; le faux l'imite par un état de module,
 // que les tests lisent par fake_rtx_video_*. Les « pointeurs CUDA » sont de la mémoire hôte.
 // Sortie, au format RGB10A2 de l'entrée : chaque composante × réglage / 100 (gris moyen / 50),
@@ -7,16 +7,12 @@
 #include <cstdint>
 #include <cstring>
 
-#include "vendor_hdr/rtx_video_abi.h"
-
-using namespace ajp::vendor_hdr::rtx_video;
-
 namespace {
 
 struct State {
   bool created = false;
   bool refuse_create = false;
-  CUcontext context = nullptr;
+  void* context = nullptr;
   int evaluations = 0;
 };
 
@@ -35,41 +31,39 @@ std::uint32_t scale(std::uint32_t value10, int numerator, int denominator) {
 
 extern "C" {
 
-bool rtx_video_api_cuda_create(CUcontext* context, CUstream stream, bool thdr, bool vsr) {
+int aji_rtx_create(void* context, void* stream, int thdr, int vsr) {
   State& current = state();
   // Une seule instance ; TrueHDR seul, sur le flux 0 hérité.
-  if (current.refuse_create || current.created || context == nullptr || stream != nullptr || !thdr || vsr) {
-    return false;
-  }
+  if (current.refuse_create || current.created || stream != nullptr || thdr != 1 || vsr != 0) return 0;
   current.created = true;
-  current.context = *context;
-  return true;
+  current.context = context;
+  return 1;
 }
 
-bool rtx_video_api_cuda_evaluate(CUdeviceptr input, CUdeviceptr output, ApiRect input_rect,
-                                 ApiRect output_rect, VsrSetting* vsr, ThdrSetting* thdr) {
+int aji_rtx_eval(unsigned long long input, unsigned long long output, int input_width, int input_height,
+                 int output_width, int output_height, int /*vsr_quality*/, int contrast, int saturation,
+                 int middle_gray, int /*max_luminance*/) {
   State& current = state();
-  if (!current.created || thdr == nullptr || vsr == nullptr || input == 0 || output == 0) return false;
-  if (input_rect.left != 0 || input_rect.top != 0 || input_rect.right != output_rect.right ||
-      input_rect.bottom != output_rect.bottom || input_rect.right <= 0 || input_rect.bottom <= 0) {
-    return false;
+  if (!current.created || input == 0 || output == 0) return 0;
+  if (input_width != output_width || input_height != output_height || input_width <= 0 || input_height <= 0) {
+    return 0;
   }
-  const auto count = static_cast<std::size_t>(input_rect.right) * static_cast<std::size_t>(input_rect.bottom);
+  const auto count = static_cast<std::size_t>(input_width) * static_cast<std::size_t>(input_height);
   const auto* source = reinterpret_cast<const unsigned char*>(input);  // NOLINT(performance-no-int-to-ptr)
   auto* target = reinterpret_cast<unsigned char*>(output);             // NOLINT(performance-no-int-to-ptr)
   for (std::size_t i = 0; i < count; ++i) {
     std::uint32_t pixel = 0;
     std::memcpy(&pixel, source + i * 4, sizeof pixel);
-    const std::uint32_t packed = scale(pixel & 0x3FFU, thdr->contrast, 100) |
-                                 (scale((pixel >> 10U) & 0x3FFU, thdr->saturation, 100) << 10U) |
-                                 (scale((pixel >> 20U) & 0x3FFU, thdr->middle_gray, 50) << 20U) | (3U << 30U);
+    const std::uint32_t packed = scale(pixel & 0x3FFU, contrast, 100) |
+                                 (scale((pixel >> 10U) & 0x3FFU, saturation, 100) << 10U) |
+                                 (scale((pixel >> 20U) & 0x3FFU, middle_gray, 50) << 20U) | (3U << 30U);
     std::memcpy(target + i * 4, &packed, sizeof packed);
   }
   ++current.evaluations;
-  return true;
+  return 1;
 }
 
-void rtx_video_api_cuda_shutdown() {
+void aji_rtx_shutdown() {
   State& current = state();
   current.created = false;
   current.context = nullptr;
@@ -79,7 +73,7 @@ void rtx_video_api_cuda_shutdown() {
 bool fake_rtx_video_is_created() {
   return state().created;
 }
-CUcontext fake_rtx_video_context() {
+void* fake_rtx_video_context() {
   return state().context;
 }
 int fake_rtx_video_evaluations() {
