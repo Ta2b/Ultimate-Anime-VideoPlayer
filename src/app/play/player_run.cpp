@@ -488,6 +488,8 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
   int auto_shown = 0;  // centièmes de multiplicateur ; 0 : le mode auto est coupé
   int auto_notified = 0;
   std::int64_t auto_changed_us = 0;
+  std::int64_t auto_floor_since_us = 0;
+  std::int64_t auto_floor_logged_us = 0;
   std::int64_t auto_missing_seen = 0;
   std::int64_t free_dropped_seen = 0;
   std::int64_t free_missing_seen = 0;
@@ -513,6 +515,27 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
       return;
     }
     if (centi <= 0) return;
+    // Figé au plancher alors que l'écran permet plus : on le dit au journal (avec ce qui peut le tenir là),
+    // la régulation tente d'elle-même un cran toutes les 8 s (core::AutoRate::kFloorEscapeUs).
+    {
+      const core::AutoInfo info = chain.live.auto_info(at);
+      if (info.step <= info.granularity && info.ceiling > info.granularity) {
+        if (auto_floor_since_us == 0) auto_floor_since_us = at;
+        if (at - auto_floor_since_us >= 8'000'000 && at - auto_floor_logged_us >= 30'000'000) {
+          auto_floor_logged_us = at;
+          log->warn(
+              "Auto : plafond figé à ×1 depuis {} s (dernier changement : {} ; plafond de l'écran ×{}, écran "
+              "{:.1f} Hz, "
+              "plafond choisi {}, palier prédit ×{}, limite apprise ×{})",
+              (at - auto_floor_since_us) / 1'000'000, core::auto_reason_text(info.reason),
+              auto_factor_text(info.ceiling * 100 / std::max(info.granularity, 1)), known_hz,
+              chain.running.auto_cap, auto_factor_text(info.predicted * 100 / std::max(info.granularity, 1)),
+              auto_factor_text(info.cap * 100 / std::max(info.granularity, 1)));
+        }
+      } else {
+        auto_floor_since_us = 0;
+      }
+    }
     if (centi != auto_notified && at - auto_changed_us >= 3'000'000) {
       if (auto_notified > 0)
         p.ui.controls().notify(i18n::tr_format("Auto ×{} ({:.0f} fps)", auto_factor_text(centi),

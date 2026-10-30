@@ -80,7 +80,8 @@ enum class AutoReason : std::uint8_t {
   Missed,     // images manquées à l'écran
   Predicted,  // le coût mesuré dépasse la période de la source
   Watchdog,   // plus aucune paire
-  Ceiling     // le plafond (écran, réglage) a bougé
+  Ceiling,    // le plafond (écran, réglage) a bougé
+  Rearm       // au plancher depuis longtemps alors que l'écran permet plus : un cran d'essai
 };
 std::string_view auto_reason_text(AutoReason reason);
 
@@ -121,7 +122,11 @@ class AutoRate {
   static constexpr double kMargin = 0.15;                 // marge de la prédiction
   static constexpr double kCapMargin = 0.30;              // marge au-dessus d'un plafond appris vif
   static constexpr std::int64_t kHalfLifeUs = 6'000'000;  // poids, plafond et pénalités s'estompent
-  static constexpr std::int64_t kProbeUs = 2'000'000;     // un palier tenté est « tenu » après ce temps
+  // Au plancher (×1) avec de la marge sous le plafond de l'écran : tous les kFloorEscapeUs, un cran d'essai,
+  // que des images manquées sans rapport avec le palier (trous du contenu) ou un plafond appris ne bloquent
+  // pas.
+  static constexpr std::int64_t kFloorEscapeUs = 8'000'000;
+  static constexpr std::int64_t kProbeUs = 2'000'000;  // un palier tenté est « tenu » après ce temps
   static constexpr int kMaxImages = kAutoMaxStep + 1;
   static constexpr double kDeadBand = 0.06;  // au pas fin : pas de montée sous 6 % d'écart
   // Au pas fin, en régime (écart modeste au palier prédit) un changement toutes les 5 s au plus : le temps de
@@ -155,7 +160,10 @@ class AutoRate {
   // Une paire préparée. Rend le palier à utiliser pour la suivante.
   int pair(const PairOutcome& outcome);
   // Une paire dont le palier n'a rien à dire (coupe de scène, dessin tenu) : le moteur vit.
-  void alive(std::int64_t now_us) { beat_us_ = now_us; }
+  void alive(std::int64_t now_us) {
+    beat_us_ = now_us;
+    mute_ = false;
+  }
   // Une paire terminée sur le GPU : `images` créées (source comprise), `cost_us` de la soumission de sa
   // première image à la fin de sa dernière, plus l'attente de ses mesures.
   void cost(int images, std::int64_t cost_us, std::int64_t now_us);
@@ -207,8 +215,11 @@ class AutoRate {
   AutoReason reason_ = AutoReason::Start;
   std::uint32_t changes_ = 0;
   std::int64_t last_change_us_ = -kMinRiseGapUs;
+  std::int64_t floor_since_us_ =
+      0;  // depuis quand le palier est au plancher sous un plafond plus haut ; 0 : non
   std::int64_t hold_until_us_ = 0;
   std::int64_t beat_us_ = 0;
+  bool mute_ = false;  // le chien de garde a parlé et aucune paire n'est revenue : pas d'essai au plancher
   std::int64_t period_us_ = 0;
   std::int64_t probe_until_us_ = 0;
   bool probing_ = false;
