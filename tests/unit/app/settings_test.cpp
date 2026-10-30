@@ -13,6 +13,7 @@
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 
+#include "app/play/bundled_hrir.h"
 #include "app/play/chain.h"
 #include "app/play/free_engines.h"
 #include "app/play/live_settings.h"
@@ -780,4 +781,19 @@ TEST_CASE("grade adaptatif : une série claire par nature reçoit plus de contra
   CHECK(bright.grade_values.chroma_base > s.grade_values.chroma_base);
   s.true_hdr_contrast = 190;
   CHECK(ajp::app::play::with_adaptive(s, 0.0, 0.0, 1.0).true_hdr_contrast == 200);  // borné à 200
+}
+
+TEST_CASE("réponses de tête livrées : chacune se charge par bundled:<clé>", "[settings][audio][hrir]") {
+  using namespace ajp::app::play;
+  REQUIRE(bundled_hrirs().size() == 5);
+  for (const BundledHrir& entry : bundled_hrirs()) {
+    const auto loaded = load_listening_hrir("bundled:" + std::string(entry.key));
+    INFO(entry.key << ": " << (loaded ? "" : loaded.error().detail));
+    REQUIRE(loaded.has_value());
+    REQUIRE(*loaded != nullptr);
+    CHECK((*loaded)->length() > 0);
+  }
+  CHECK(find_bundled_hrir("bundled:inconnue") == nullptr);
+  CHECK(find_bundled_hrir("/home/x/y.wav") == nullptr);
+  CHECK_FALSE(load_listening_hrir("").value() != nullptr);
 }

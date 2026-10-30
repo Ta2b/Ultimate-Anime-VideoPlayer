@@ -134,3 +134,12 @@ normalisation voulue, et c'est pourquoi le bouton Comparer ne compare pas « à 
   ×4 (mesuré : 0,2 dB) ; un dernier écrêtage dur à ±1 reste en filet de sécurité.
 - Pas de mesure sur le matériel de sortie réel du PC de test : tout ce qui précède est calculé sur signaux de
   synthèse et un extrait réel hors ligne.
+
+## Réponses de tête livrées
+`data/hrir/` contient cinq réponses HeSuVi (Dolby Atmos, DTS Headphone:X, Windows Sonic, Creative SBX 100 % et 33 %),
+reprises de Virtual Surround (Berny23, MIT) qui les tient de la collection HeSuVi (licence MIT, Matt Gore :
+`data/hrir/LICENSE-hesuvi.txt`). Elles sont embarquées dans le lecteur (`app/play/bundled_hrir.h`) et se choisissent
+dans les réglages avancés du casque (« Réponse livrée »), ce qui écrit `hrir_path = "bundled:atmos"`. La sixième du
+dépôt d'origine (OpenAL Soft, 7 canaux) n'est pas reprise : le chargeur lit les fichiers à 2, 14 ou 16 canaux.
+Une source stéréo passe par les réponses des enceintes avant gauche et droite, sans gain caché (le niveau du fichier est
+respecté, comme avec PipeWire, HeSuVi ou JamesDSP).

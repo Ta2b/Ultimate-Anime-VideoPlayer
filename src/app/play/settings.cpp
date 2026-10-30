@@ -7,12 +7,14 @@
 #include <format>
 #include <fstream>
 #include <optional>
+#include <span>
 #include <sstream>
 #include <system_error>
 #include <type_traits>
 #include <utility>
 #include <vector>
 
+#include "app/play/bundled_hrir.h"
 #include "render/cube_lut.h"
 
 namespace ajp::app::play {
@@ -317,6 +319,11 @@ EffectiveListening effective_listening(const PlaySettings& settings, const std::
 
 std::expected<std::shared_ptr<const audio::Hrir>, Refusal> load_listening_hrir(const std::string& path) {
   if (path.empty()) return std::shared_ptr<const audio::Hrir>();
+  if (const BundledHrir* bundled = find_bundled_hrir(path)) {
+    auto parsed = audio::parse_hrir(std::as_bytes(std::span(bundled->bytes.data(), bundled->bytes.size())));
+    if (!parsed) return std::unexpected(std::move(parsed.error()));
+    return std::make_shared<const audio::Hrir>(std::move(*parsed));
+  }
   return audio::load_hrir(std::filesystem::path(path));
 }
 
