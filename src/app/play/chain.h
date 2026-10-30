@@ -84,10 +84,11 @@ struct Chain {
   // Grade adaptatif (render/grade_params.h : adaptive) : la luminance moyenne de la source, mesurée par le
   // moteur, lissée ici ; adaptive_t en est la position entre « scène sombre » (0) et « scène claire » (1).
   gpu::KernelOps* kernels = nullptr;
-  double adaptive_luma = -1.0;  // lissée, 0 à 1 ; -1 : aucune mesure
-  double adaptive_t = 0.0;      // noirs et gris moyen : suivent la luminosité
-  double adaptive_blue = 0.0;   // « bleu » moyen lissé de la source
-  double adaptive_tv = 0.0;     // vibrance : suit la couleur (bleu saturé), pas la luminosité
+  double adaptive_luma = -1.0;   // lissée, 0 à 1 ; -1 : aucune mesure
+  double adaptive_t = 0.0;       // noirs et gris moyen : suivent la luminosité
+  double adaptive_blue = 0.0;    // « bleu » moyen lissé de la source
+  double adaptive_chroma = 0.0;  // chroma moyenne lissée
+  double adaptive_tv = 0.0;      // vibrance : suit la couleur (bleu saturé), pas la luminosité
   std::int64_t adaptive_at_us = 0;
   std::filesystem::path adaptive_log;  // adaptive-log.tsv (apprentissage)
   std::int64_t adaptive_log_us = 0;
