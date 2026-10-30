@@ -11,12 +11,15 @@ constexpr std::array kSoundPage{
           "Empty: the default. Adds about 11 ms of latency.",
           "Une réponse WAV (HeSuVi 14 can., 7.1 16 can. ou HRIR 2 can.) remplace le modèle du casque. Vide : "
           "le modèle d'origine. Ajoute environ 11 ms de latence."},
+    Entry{"Surround mix (5.1 and 7.1 tracks)", "Mixage surround (pistes 5.1 et 7.1)"},
+    Entry{"Room, equalizer and night mode", "Pièce, égaliseur et mode nuit"},
+    Entry{"Stereo tracks (most anime). 5.1 and 7.1 tracks use the surround mix, in Advanced.",
+          "Pistes stéréo (la plupart des animes). Les pistes 5.1 et 7.1 passent par le mixage surround, en "
+          "Avancé."},
     Entry{"Anime", "Anime"},
     Entry{"Anime sound", "Son anime"},
     Entry{"Anime voices", "Voix d'anime"},
     Entry{"Another device uses the global profile.", "Un autre appareil reprend le profil global."},
-    Entry{"Applies to a stereo track on a stereo output only.",
-          "S'applique à une piste stéréo sur une sortie stéréo seulement."},
     Entry{"Audio delay (ms)", "Délai audio (ms)"},
     Entry{"Back to Natural", "Revenir à Naturel"},
     Entry{"Bass boost", "Renfort des graves"},
