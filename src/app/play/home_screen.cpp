@@ -166,6 +166,7 @@ SettingsChoices home_choices(const HomeScreen& h, const HomeState& st, const Pla
   const bool default_player_is_ajp =
       is_default_player({.executable = h.paths.executable, .home = h.paths.home, .data = h.paths.data});
   return SettingsChoices{
+      .luts_dir = h.paths.data / "luts",
       .models = model ? model->available : std::vector<std::string>{},
       .default_model = model ? model->default_name : std::string(),
       .source_width = kHomeSource.width,

@@ -44,6 +44,7 @@ struct ProfilesView {
 
 // Ce que le panneau propose, fixé par le lecteur.
 struct SettingsChoices {
+  std::filesystem::path luts_dir;      // les .cube de l'utilisateur (look_catalog.h)
   std::vector<std::string> models;     // fichiers SPAN du dossier des modèles
   std::string default_model;           // celui qu'un nom vide désigne
   int source_width = 0;                // la vidéo lue (onglet Export)

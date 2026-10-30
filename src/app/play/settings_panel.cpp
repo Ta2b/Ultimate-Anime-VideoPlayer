@@ -13,6 +13,7 @@
 
 #include "app/play/auto_config.h"
 #include "app/play/i18n.h"
+#include "app/play/look_catalog.h"
 #include "app/play/panel_style.h"
 #include "app/play/settings_chain_tabs.h"
 #include "app/play/settings_engines.h"
@@ -20,6 +21,7 @@
 #include "app/play/settings_sound.h"
 #include "app/play/text_fit.h"
 #include "app/play/tracks.h"
+#include "render/looks.h"
 
 namespace ajp::app::play {
 namespace {
@@ -117,6 +119,29 @@ void look_section(PlaySettings& d) {
   if (!d.grade && !d.true_hdr) note(i18n::tr("Without RTX HDR, turn on \"Color grading\" below."));
 }
 
+// Le look : une LUT 3D .cube mélangée après le grade (render/cube_lut.h) ; ceux du lecteur, puis les fichiers
+// du dossier luts. L'intensité va de 0 à 1.
+void look_section(PlaySettings& d, const SettingsChoices& choices) {
+  const auto label_of = [&](const std::string& key) -> std::string {
+    if (key.empty()) return i18n::tr("None");
+    for (const render::BuiltinLook& look : render::builtin_looks())
+      if (look.key == key) return i18n::tr(look.label.data());
+    return key;
+  };
+  if (ImGui::BeginCombo(i18n::tr("Look (LUT)"), label_of(d.look).c_str())) {
+    if (ImGui::Selectable(i18n::tr("None"), d.look.empty())) d.look.clear();
+    for (const LookEntry& entry : list_looks(choices.luts_dir))
+      if (ImGui::Selectable(entry.label.c_str(), entry.key == d.look)) d.look = entry.key;
+    ImGui::EndCombo();
+  }
+  ImGui::BeginDisabled(d.look.empty());
+  grade_slider(i18n::tr("Look intensity"), d.look_mix, core::Range<double>{0.0, 1.0});
+  ImGui::EndDisabled();
+  note(
+      i18n::tr("Looks are LUT files (.cube) placed in the luts folder of the player's data; names containing "
+               "PQ, HDR or 2020 are read as HDR LUTs."));
+}
+
 void grade_tab(PlaySettings& d, const SettingsChoices& choices) {
   // Le grade s'applique sur toutes les routes, le mode SDR compris : il imite le rendu HDR (contraste,
   // couleurs riches, hautes lumières) pour ceux qui n'ont pas d'écran HDR. L'onglet reste actif.
@@ -135,6 +160,7 @@ void grade_tab(PlaySettings& d, const SettingsChoices& choices) {
     ImGui::EndCombo();
   }
   panel::tip(i18n::tr("Vivid pushes highlights, colors and blacks; Natural is the default look. Live."));
+  look_section(d, choices);
   render::GradeSettings& g = d.grade_values;
   using namespace render::grade_limits;
   bool moved = false;

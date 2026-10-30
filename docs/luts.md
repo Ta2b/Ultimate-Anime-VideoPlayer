@@ -1,0 +1,40 @@
+# Looks (LUT 3D .cube)
+
+Le menu **Couleurs** propose un **Look (LUT)** et son **intensité** (0 à 100 %). Le look passe après le grade
+(contraste, éclats, couleurs…) et avant le vrai noir OLED ; il agit sur toutes les routes (RTX HDR, HDR adaptatif,
+SDR, sortie SDR). Intensité à 0 : la passe est sautée, l'image est identique octet pour octet.
+
+## Looks du lecteur (« maison »)
+Produits par le calcul (`src/render/looks.cpp`), sans fichier ni licence tierce : **Éclatant** (`maison:vif`),
+**Ciel froid** (`maison:shinkai`, ombres froides, bleus et cyans saturés), **Pastel chaud** (`maison:pastel`, noirs
+relevés, tons chauds), **Aplats nets** (`maison:aplats`, contraste fort, couleurs d'aplat franches). Chacun est une
+LUT de 33 points.
+
+## Tes propres LUT
+Dépose des fichiers `.cube` dans le dossier `luts` des données du lecteur (Linux : `~/.local/share/ajp/ajp/luts`).
+Ils apparaissent dans le menu (le menu relit le dossier à chaque ouverture de la liste).
+- Format : LUT 3D, `LUT_3D_SIZE` de 17 à 65, `DOMAIN_MIN`/`DOMAIN_MAX` et `LUT_3D_INPUT_RANGE` lus ; les LUT 1D sont
+  refusées ; un fichier illisible est refusé avec une ligne de journal « look : … ».
+- **LUT SDR (par défaut)** : faite pour une image BT.709 en gamma (blanc = 1), comme la plupart des LUT de Resolve.
+  Le lecteur ramène l'image à ce domaine (blanc de référence 203 nits, gamma 2,4), applique la LUT, puis remonte ;
+  les éclats HDR au-dessus du blanc gardent leur niveau et reçoivent la teinte du look.
+- **LUT d'HDR** : si le nom du fichier contient `PQ`, `HDR` ou `2020`, elle est lue comme étalonnée en PQ BT.2020
+  (les codes PQ de l'image entrent directement dans la LUT). Utile pour les LUT « anime HDR » publiées sur
+  YouTube. Sur une sortie SDR, une LUT d'HDR est lue comme une LUT SDR.
+- Une LUT exportée de DaVinci Resolve (Fichier > Exporter la LUT, 33 ou 65 points) convient.
+- Évite les LUT de conversion Log vers Rec.709 : l'anime est déjà en Rec.709, elles écraseraient l'image.
+
+## Origine et licence
+| Look | Origine | Licence |
+|---|---|---|
+| `maison:vif`, `maison:shinkai`, `maison:pastel`, `maison:aplats` | calculés par ce dépôt | ceux du dépôt |
+| Fichiers de l'utilisateur | déposés par lui | les siens |
+
+Aucune LUT de tiers n'est livrée avec le lecteur. Candidats trouvés pour la comparaison (non téléchargés ici, licences
+à relire à la source avant toute redistribution) : packs Q-DDL (annoncés CC BY 4.0, attribution à Q-DDL), packs gratuits
+de FreeVisuals (gratuit pour usage personnel et commercial selon leur page), « HDR grading LUT » de la chaîne YouTube
+« 4K HDR anime channel » (licence non précisée : à télécharger soi-même pour essai, ne pas redistribuer).
+
+## Idées de sdr2hdr (MIT) à réécrire, pas encore faites
+Modes de ton « vivid » (blanc SDR au pic) et « reference » (BT.2408, 203 nits), styles « natural », « cinematic »,
+« night » en préréglages du grade, choix de l'EOTF d'entrée (BT.1886 ou sRGB), dither à la quantification PQ.

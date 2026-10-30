@@ -18,6 +18,7 @@
 #include <libplacebo/renderer.h>
 #include <libplacebo/vulkan.h>
 
+#include "render/cube_lut.h"
 #include "render/grade.h"
 #include "vulkan_validation.h"
 
@@ -468,6 +469,65 @@ TEST_CASE("sortie SDR : le vrai noir OLED met les quasi-noirs à 0", "[render][g
     if (code(x) < 0.015) CHECK(out[x][0] < 1e-3);
     if (code(x) > 0.09) CHECK(std::abs(out[x][0] - code(x)) < 4e-3);
   }
+}
+
+// Le look (LUT 3D) : ni la passe sautée (look_mix = 0), ni une identité ne changent l'image ; une LUT
+// inversée l'inverse ; une LUT d'HDR lit les codes PQ.
+TEST_CASE("look : identité et intensité nulle laissent l'image, une LUT inversée l'inverse",
+          "[render][gpu][lut]") {
+  Gpu gpu;
+  require_device(gpu);
+  REQUIRE(gpu.grade);
+  const std::vector<std::uint16_t> source = sdr_ramp(1.0, 0.8, 0.6);
+  const std::vector<Rgb> base = graded_codes(gpu, source, sdr_neutral());
+  const CubeLut neutral = identity_lut(17);
+  REQUIRE(gpu.grade->set_look(&neutral));
+  GradeParams params = sdr_neutral();
+  params.look_mix = 1.0;
+  params.look_white = 203.0;
+  const std::vector<Rgb> same = graded_codes(gpu, source, params);
+  for (std::size_t x = 8; x < same.size(); ++x)
+    for (std::size_t c = 0; c < 3; ++c) CHECK(std::abs(same[x][c] - base[x][c]) < 6e-3);
+  CubeLut inverted = identity_lut(17);
+  for (float& value : inverted.rgb) value = 1.0F - value;
+  REQUIRE(gpu.grade->set_look(&inverted));
+  const std::vector<Rgb> flipped = graded_codes(gpu, source, params);
+  CHECK(flipped[32][0] > 0.55);   // sombre -> clair
+  CHECK(flipped[240][0] < 0.35);  // clair -> sombre
+  params.look_mix = 0.0;
+  const std::vector<Rgb> skipped = graded_codes(gpu, source, params);
+  for (std::size_t x = 0; x < skipped.size(); ++x)
+    for (std::size_t c = 0; c < 3; ++c) CHECK(skipped[x][c] == base[x][c]);  // octet pour octet
+  REQUIRE(gpu.grade->set_look(nullptr));  // retour à l'identité 2x2x2 sans LUT
+}
+
+TEST_CASE("look : une LUT d'HDR (PQ BT.2020) lit les codes PQ, l'identité ne bouge rien",
+          "[render][gpu][lut]") {
+  Gpu gpu;
+  require_device(gpu);
+  REQUIRE(gpu.grade);
+  const std::vector<std::uint16_t> source = ramp(600.0, 0.7, 0.5);
+  GradeParams neutral;
+  neutral.peak = kPeak;
+  neutral.shadows = 0.0;
+  neutral.area_gain = 1.0;
+  neutral.spec_gain = 1.0;
+  neutral.vibrance = 0.0;
+  neutral.gamut_p3 = 0.0;
+  const std::vector<Rgb> base = graded_codes(gpu, source, neutral);
+  const CubeLut lut = identity_lut(33);
+  REQUIRE(gpu.grade->set_look(&lut));
+  GradeParams params = neutral;
+  params.look_mix = 1.0;
+  params.look_pq = 1.0;
+  const std::vector<Rgb> out = graded_codes(gpu, source, params);
+  for (std::size_t x = 4; x < out.size(); ++x)
+    for (std::size_t c = 0; c < 3; ++c) CHECK(std::abs(out[x][c] - base[x][c]) < 6e-3);
+  // Le chemin SDR-dans-HDR avec une LUT neutre garde l'image à quelques millièmes près en dessous du blanc.
+  params.look_pq = 0.0;
+  const std::vector<Rgb> via_sdr = graded_codes(gpu, source, params);
+  for (std::size_t x = 4; x < via_sdr.size(); ++x)
+    for (std::size_t c = 0; c < 3; ++c) CHECK(std::abs(via_sdr[x][c] - base[x][c]) < 1.5e-2);
 }
 
 }  // namespace ajp::render

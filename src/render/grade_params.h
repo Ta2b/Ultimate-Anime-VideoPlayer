@@ -58,8 +58,8 @@ struct GradeSettings {
   double vibrance_rtx = 0.10;
   double contrast = 100.0;  // TrueHDR et son émulation, comme rtx_contrast
   double saturation = 100.0;
-  double punch_base = 0.0;    // préréglage : contraste en plus, en sortie du grade (0 : aucun)
-  double chroma_base = 0.0;   // préréglage : saturation en plus (0 : aucune)
+  double punch_base = 0.0;   // préréglage : contraste en plus, en sortie du grade (0 : aucun)
+  double chroma_base = 0.0;  // préréglage : saturation en plus (0 : aucune)
   double middle_gray = 50.0;
   double subtitle_white = 200.0;  // nits, blanc des sous-titres en sortie HDR
   bool oled = false;              // dalle OLED : limiteur des scènes claires (abl)
@@ -143,6 +143,11 @@ struct GradeParams {
   double punch = 0.0;
   double chroma = 1.0;
   double pivot = 80.0;
+  // Le look (LUT .cube, anime-hdr-look.hook) : intensité (0 : passe sautée), blanc de référence de la LUT en
+  // nits, 1 si la LUT attend du PQ BT.2020 plutôt que du SDR BT.709.
+  double look_mix = 0.0;
+  double look_white = 203.0;
+  double look_pq = 0.0;
   friend bool operator==(const GradeParams&, const GradeParams&) = default;
 };
 
