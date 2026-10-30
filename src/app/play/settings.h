@@ -131,6 +131,26 @@ inline constexpr int kPriorityCount = 3;
 inline constexpr int kAutoCapMin = 24;
 inline constexpr int kAutoCapMax = 480;
 
+// Les réglages par défaut du grade et du look : la configuration de Tatoub (30/10/2026), réglée à l'œil sur ses
+// épisodes. Les curseurs sont ceux d'une scène sombre ; le grade adaptatif les glisse vers les valeurs d'une scène
+// claire (noirs 0,80, couleurs 0, gris moyen 30) selon la luminosité de la scène. Le gamut P3 reste propre à l'écran.
+inline render::GradeSettings default_grade_values() {
+  render::GradeSettings g;
+  g.highlights_rtx = 1.0;
+  g.area_rtx = 0.10;
+  g.vibrance_rtx = 0.80;
+  g.expand = 1.0;
+  g.shadows = 0.20;
+  g.guard = 0.0;
+  g.adaptive = true;
+  g.adaptive_lo = 13.0;
+  g.adaptive_hi = 54.0;
+  g.adaptive_shadows = 0.80;
+  g.adaptive_vibrance = 0.0;
+  g.adaptive_gray = 30.0;
+  return g;
+}
+
 // Une LUT de la pile du look au-delà de la première : son nom (comme PlaySettings::look) et son intensité de
 // 0 à 1.
 struct LookLayer {
@@ -205,7 +225,7 @@ struct PlaySettings {
   // aucun : SDR) et ses réglages, communs aux deux moteurs (section hdr de play.toml).
   bool true_hdr = false;
   int true_hdr_contrast = 100;
-  int true_hdr_saturation = 100;
+  int true_hdr_saturation = 200;
   int true_hdr_gray = 50;
   int true_hdr_peak = 0;  // 0 : la crête vue par le contenu sur l'écran
   bool true_hdr_debanding = true;
@@ -273,23 +293,29 @@ struct PlaySettings {
   // Grade HDR sur la sortie PQ (render/grade_params.h), sur les deux routes ; en direct. Hors
   // « Personnalisé », grade_values suit le préréglage (gamut_p3 excepté, propre à l'écran).
   bool grade = true;
-  render::GradePreset grade_preset = render::GradePreset::Eclatant;
-  render::GradeSettings grade_values = render::grade_preset(render::GradePreset::Eclatant);
+  render::GradePreset grade_preset = render::GradePreset::Custom;
+  render::GradeSettings grade_values = default_grade_values();
   // Le look : une LUT 3D .cube (render/cube_lut.h) mélangée après le grade. Vide : aucun. « maison:... » : un
   // look du lecteur (render/looks.h) ; sinon le nom d'un fichier du dossier luts des données. Intensité de 0
   // à 1.
-  std::string look;
+  std::string look = "HDR grading base ver.9.0 33 point.cube";
   // Apprentissage du grade adaptatif : une ligne par seconde (statistiques de la scène et réglages courants)
   // dans adaptive-log.tsv, à côté de play.toml, pendant que l'utilisateur règle à l'œil.
   bool adaptive_record = false;
   double look_mix = 1.0;
   // Les LUT suivantes (le menu Couleurs en ajoute avec + et en retire avec −), enchaînées après la première
   // comme des nœuds de Resolve, chacune avec sa propre intensité ; au plus render::kLookSlots - 1.
-  std::vector<LookLayer> look_layers;
+  std::vector<LookLayer> look_layers{{"Black-Enhancement-L.cube", 1.0},
+                                     {"Shadow-Enhancement-L.cube", 1.0},
+                                     {"HDR-contrast-Enhancement-L.cube", 1.0},
+                                     {"HDR-contrast-Enhancement-L.cube", 1.0},
+                                     {"Midtone-gamma-Enhancement-C.cube", 1.0},
+                                     {"boost black maintain chroma.cube", 1.0},
+                                     {"HDR-contrast-Enhancement-L.cube", 1.0}};
   // Vrai noir OLED (dernière passe du grade) : selon l'écran détecté (display_edid.h), forcé ou
   // coupé ; le pied finit `oled_black_steps` pas de code au-dessus du noir de la source.
   OledBlack oled_black = OledBlack::Auto;
-  double oled_black_steps = 2.0;
+  double oled_black_steps = 8.0;
   // Soins OLED, sur un écran détecté OLED (ou un vrai noir forcé) : en pause, la barre s'efface
   // après 20 s sans activité. Cadence fixe : l'image est représentée à chaque période de l'écran,
   // pour un VRR à fréquence constante (sans scintillement des scènes sombres), au prix d'une

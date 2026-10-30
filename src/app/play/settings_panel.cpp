@@ -211,7 +211,7 @@ void grade_tab(PlaySettings& d, const SettingsChoices& choices) {
     ImGui::EndCombo();
   }
   panel::tip(i18n::tr("Vivid pushes highlights, colors and blacks; Natural is the default look. Live."));
-  look_section(d, choices);
+  if (panel::advanced()) look_section(d, choices);  // la pile de LUT : réglages avancés seulement
   render::GradeSettings& g = d.grade_values;
   using namespace render::grade_limits;
   bool moved = false;

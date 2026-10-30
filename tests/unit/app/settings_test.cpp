@@ -134,7 +134,7 @@ TEST_CASE("Grade : un préréglage nommé donne ses valeurs, gamut P3 reste celu
           "[app][settings]") {
   const PlaySettings defaults;
   CHECK(defaults.grade);
-  CHECK(defaults.grade_preset == render::GradePreset::Eclatant);
+  CHECK(defaults.grade_preset == render::GradePreset::Custom);  // les réglages de Tatoub, grade adaptatif compris
   const auto natural = parse_settings("[grade]\npreset = \"naturel\"\nshadows = 0.7\ngamut_p3 = true\n");
   REQUIRE(natural);
   CHECK(natural->grade_values.shadows == render::GradeSettings{}.shadows);
@@ -708,7 +708,9 @@ TEST_CASE("le look (LUT) et son intensité se relisent à l'identique, un nom de
   CHECK(no_mix->look_layers.at(0).mix == 1.0);
   CHECK_FALSE(ajp::app::play::parse_settings("[grade]\nlook = '../x.cube'\n").has_value());
   CHECK_FALSE(ajp::app::play::parse_settings("[grade]\nlook_mix = 1.5\n").has_value());
-  CHECK(ajp::app::play::PlaySettings{}.look.empty());  // aucun look par défaut
+  const ajp::app::play::PlaySettings defaults;  // la pile de LUT de Tatoub par défaut : base + 7 LUT
+  CHECK(defaults.look == "HDR grading base ver.9.0 33 point.cube");
+  CHECK(defaults.look_layers.size() == 7);
 }
 
 TEST_CASE("le grade adaptatif se relit à l'identique et survit au changement de préréglage",
@@ -732,7 +734,7 @@ TEST_CASE("le grade adaptatif se relit à l'identique et survit au changement de
   CHECK(switched.adaptive);
   CHECK(switched.adaptive_hi == 54.0);
   CHECK(switched.adaptive_gray == 32.0);
-  CHECK_FALSE(ajp::app::play::PlaySettings{}.grade_values.adaptive);  // coupé par défaut
+  CHECK(ajp::app::play::PlaySettings{}.grade_values.adaptive);  // adaptatif par défaut
 }
 
 TEST_CASE("grade adaptatif : noirs, couleurs et gris moyen glissent de la scène sombre à la scène claire",

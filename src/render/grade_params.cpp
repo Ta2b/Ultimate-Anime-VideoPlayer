@@ -65,8 +65,11 @@ double pq_code(double nits) {
 // (les valeurs claires reprennent les sombres).
 void apply_adaptive(const GradeSettings& s, double peak, bool sdr_out, GradeParams& p) {
   if (!s.adaptive) return;
-  const auto luma_to_pq = [](double percent) {
-    return pq_code(grade_limits::kSdrWhiteNits * std::pow(percent / 100.0, 2.4));
+  // Le code que l'étage lit : PQ en sortie HDR10 ; en sortie SDR, le code gamma de l'écran (2,2 par défaut), car le
+  // shader y reçoit l'image SDR telle quelle.
+  const auto luma_to_pq = [sdr_out](double percent) {
+    return sdr_out ? std::pow(percent / 100.0, 2.4 / 2.2)
+                   : pq_code(grade_limits::kSdrWhiteNits * std::pow(percent / 100.0, 2.4));
   };
   p.ad_on = 1.0;
   p.ad_lo = luma_to_pq(s.adaptive_lo);
