@@ -11,7 +11,7 @@ relevés, tons chauds), **Aplats nets** (`maison:aplats`, contraste fort, couleu
 LUT de 33 points.
 
 ## Empiler plusieurs LUT (comme les nœuds de Resolve)
-Le menu Couleurs empile les looks : le bouton **+** ajoute un emplacement à la fin (jusqu'à **huit** en tout), le bouton **−** retire le dernier. Les emplacements s'appliquent **dans l'ordre** (1, puis 2, puis 3...) ; chacun a sa
+Le menu Couleurs empile les looks : le bouton **+** ajoute un emplacement à la fin (jusqu'à **quinze** en tout), le bouton **−** retire le dernier. Les emplacements s'appliquent **dans l'ordre** (1, puis 2, puis 3...) ; chacun a sa
 propre intensité de 0 à 100 % (0 : l'emplacement est sauté). Chaque LUT lit le résultat de la précédente. Si l'une
 des LUT est une LUT d'HDR (nom avec PQ, HDR ou 2020), toute la chaîne travaille sur les codes PQ BT.2020, comme une
 timeline HDR de Resolve ; sinon sur l'image SDR BT.709. Ordre habituel avec une LUT « de base » d'expansion SDR vers

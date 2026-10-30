@@ -15,7 +15,7 @@ namespace ajp::render {
 
 inline constexpr int kLutMinSize = 17;
 inline constexpr int kLutMaxSize = 65;
-inline constexpr std::size_t kLookSlots = 8;  // LUT enchaînées au plus dans le menu Couleurs
+inline constexpr std::size_t kLookSlots = 15;  // LUT enchaînées au plus dans le menu Couleurs
 inline constexpr std::size_t kLutMaxBytes = 16U * 1024U * 1024U;  // un .cube de 65³ pèse ~5 Mo
 
 struct CubeLut {

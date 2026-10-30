@@ -573,9 +573,9 @@ TEST_CASE("play.toml garde le Son anime : niveau, réglages personnalisés, nive
   using namespace ajp::app::play;
   PlaySettings s;
   // Défaut : « Anime » actif.
-  CHECK(s.anime_sound == "anime");
-  CHECK(effective_listening(s, "X").anime == ajp::audio::find_anime_level("anime")->tuning);
-  CHECK(parse_settings("version = 1\n")->anime_sound == "anime");
+  CHECK(s.anime_sound == "natural");
+  CHECK(effective_listening(s, "X").anime == ajp::audio::find_anime_level("natural")->tuning);
+  CHECK(parse_settings("version = 1\n")->anime_sound == "natural");
   s.anime_sound = "custom";
   s.anime_custom.voice_db = 3.5F;
   s.anime_custom.target_lufs = -17.0F;
@@ -702,8 +702,9 @@ TEST_CASE("le look (LUT) et son intensité se relisent à l'identique, un nom de
   CHECK_FALSE(ajp::app::play::parse_settings("[grade]\nlooks = ['a/b.cube']\n").has_value());
   CHECK_FALSE(
       ajp::app::play::parse_settings("[grade]\nlooks = ['a.cube']\nlooks_mix = [-0.1]\n").has_value());
-  CHECK_FALSE(
-      ajp::app::play::parse_settings("[grade]\nlooks = ['a','b','c','d','e','f','g','h']\n").has_value());
+  CHECK_FALSE(ajp::app::play::parse_settings(
+                  "[grade]\nlooks = ['a','b','c','d','e','f','g','h','i','j','k','l','m','n','o','p']\n")
+                  .has_value());
   const auto no_mix = ajp::app::play::parse_settings("[grade]\nlooks = ['a.cube']\n");
   REQUIRE(no_mix.has_value());
   CHECK(no_mix->look_layers.at(0).mix == 1.0);

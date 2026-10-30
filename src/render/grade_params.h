@@ -166,6 +166,13 @@ struct GradeParams {
   double look_mix6 = 0.0;
   double look_mix7 = 0.0;
   double look_mix8 = 0.0;
+  double look_mix9 = 0.0;
+  double look_mix10 = 0.0;
+  double look_mix11 = 0.0;
+  double look_mix12 = 0.0;
+  double look_mix13 = 0.0;
+  double look_mix14 = 0.0;
+  double look_mix15 = 0.0;
   double look_white = 203.0;
   double look_pq = 0.0;
   // Grade adaptatif des routes émulées (shader, tous GPU) : 1 pour l'activer, seuils en code PQ moyen de la

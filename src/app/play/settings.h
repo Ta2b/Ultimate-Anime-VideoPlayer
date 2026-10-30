@@ -271,7 +271,7 @@ struct PlaySettings {
   // « Son anime » (audio/anime_sound.h, docs/audio-anime.md), pistes stéréo vers sortie stéréo : le niveau
   // (clé de audio::anime_levels : natural, anime, strong ; ou « custom »), les réglages du niveau
   // « custom », et le niveau propre à un appareil (appareil -> niveau).
-  std::string anime_sound = "anime";
+  std::string anime_sound = "natural";
   audio::AnimeTuning anime_custom = audio::find_anime_level("anime")->tuning;
   std::vector<std::pair<std::string, std::string>> device_anime;
   // Réponses impulsionnelles « HeSuVi » pour le casque (audio/hrir.h) : chemin d'un .wav (vide : aucune, le

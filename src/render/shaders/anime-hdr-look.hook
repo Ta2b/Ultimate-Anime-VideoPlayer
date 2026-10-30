@@ -8,8 +8,8 @@
 //   - ce qui dépasse le blanc (éclats HDR) ne passe pas par la LUT : la couleur est divisée par son maximum quand
 //     celui-ci dépasse 1, passe par la LUT, puis est remultipliée. La teinte du look s'applique, l'éclat reste ;
 //   - l'entrée de la LUT est encodée par le gamma `look_gamma` (2,4 : BT.1886) ;
-//   - jusqu'à huit LUT s'enchaînent dans cet ordre (comme les nœuds de Resolve), chacune mélangée à son entrée par
-//     sa propre intensité (look_mix, look_mix2 ... look_mix8 ; 0 : la LUT est sautée) ; toutes à 0 : passe sautée,
+//   - jusqu'à quinze LUT s'enchaînent dans cet ordre (comme les nœuds de Resolve), chacune mélangée à son entrée par
+//     sa propre intensité (look_mix, look_mix2 ... look_mix15 ; 0 : la LUT est sautée) ; toutes à 0 : passe sautée,
 //     image identique octet pour octet. Une seule LUT d'HDR (look_pq) met toute la chaîne en codes PQ.
 // Le bloc de texture AJG_LUT est ajouté derrière ce texte à l'exécution (cube_lut.h) ; sans LUT, une identité 2x2x2.
 

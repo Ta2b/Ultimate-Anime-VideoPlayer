@@ -327,7 +327,7 @@ TEST_CASE("couleurs étendues : un rouge BT.709 va vers le rouge P3, le gris ne 
     for (std::size_t c = 0; c < 3; ++c) CHECK(std::abs(gray_wide[x][c] - gray_plain[x][c]) < 0.5);
 }
 
-TEST_CASE("look : huit LUT s'enchaînent, la dernière compte comme la première", "[render][gpu][lut]") {
+TEST_CASE("look : quinze LUT s'enchaînent, la dernière compte comme la première", "[render][gpu][lut]") {
   Gpu gpu;
   require_device(gpu);
   REQUIRE(gpu.grade);
@@ -337,15 +337,15 @@ TEST_CASE("look : huit LUT s'enchaînent, la dernière compte comme la première
   for (float& value : inverted.rgb) value = 1.0F - value;
   std::array<const CubeLut*, kLookSlots> luts{};
   luts[3] = &inverted;
-  luts[7] = &inverted;
+  luts[14] = &inverted;
   REQUIRE(gpu.grade->set_looks(luts));
   GradeParams params = sdr_neutral();
   params.look_mix4 = 1.0;
-  params.look_mix8 = 1.0;
+  params.look_mix15 = 1.0;
   const std::vector<Rgb> twice = graded_codes(gpu, source, params);
   for (std::size_t x = 8; x < twice.size(); ++x)
     for (std::size_t c = 0; c < 3; ++c) CHECK(std::abs(twice[x][c] - base[x][c]) < 8e-3);
-  params.look_mix8 = 0.0;
+  params.look_mix15 = 0.0;
   const std::vector<Rgb> once = graded_codes(gpu, source, params);
   CHECK(once[32][0] > 0.55);
 }
