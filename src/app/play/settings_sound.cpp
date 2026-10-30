@@ -88,6 +88,64 @@ bool sound_tab(PlaySettings& d, const SettingsChoices& choices) {
                                        : choice.detail);
   }
   const int listen = listening_index(*key).value_or(1);
+  // Style de son : UN choix qui règle ensemble le profil d'écoute (équilibre, voix, graves, enceintes
+  // virtuelles) et le « son anime » (traitement des pistes stéréo : spatialisation, voix, sonie,
+  // compresseur), les deux listes de réglages ci-dessous (avancé) s'y rattachent. Propre à l'appareil s'il a
+  // son profil propre.
+  if (listen != 2) {
+    struct Style {
+      const char* label;
+      const char* detail;
+      const char* profile;
+      const char* anime;
+    };
+    static const std::array<Style, 6> kStyles{{
+        {"Natural", "The track as mixed, with a light touch.", "natural", "natural"},
+        {"Anime", "Crisper voices, wider stereo, controlled loudness: tireless dialogue.", "anime", "anime"},
+        {"Strong anime", "Anime, pushed further: voices +3 dB, more bass, firmer compression.", "voices",
+         "strong"},
+        {"Cinema", "Large virtual room and strong effects, for action.", "cinema", "natural"},
+        {"Bass boost", "Deep bass and a little more treble, for action and music.", "bass", "natural"},
+        {"Night", "Quiet scenes stay audible, explosions stay down.", "night", "natural"},
+    }};
+    std::string* profile = &d.audio_profile;
+    std::string* level = &d.anime_sound;
+    if (own) {
+      auto found_p =
+          std::ranges::find(d.device_profile, device_name, &std::pair<std::string, std::string>::first);
+      if (found_p == d.device_profile.end())
+        found_p = d.device_profile.insert(found_p, {device_name, d.audio_profile});
+      profile = &found_p->second;
+      auto found_a =
+          std::ranges::find(d.device_anime, device_name, &std::pair<std::string, std::string>::first);
+      if (found_a == d.device_anime.end())
+        found_a = d.device_anime.insert(found_a, {device_name, d.anime_sound});
+      level = &found_a->second;
+    }
+    const Style* current = nullptr;
+    for (const Style& style : kStyles)
+      if (*profile == style.profile && *level == style.anime) current = &style;
+    section(i18n::tr("Sound style"));
+    if (ImGui::BeginCombo(i18n::tr("Style"),
+                          current != nullptr ? i18n::tr(current->label) : i18n::tr("Custom"))) {
+      for (const Style& style : kStyles) {
+        if (ImGui::Selectable(i18n::tr(style.label), &style == current)) {
+          *profile = style.profile;
+          *level = style.anime;
+          if (const audio::MixPreset* preset = audio::find_preset(style.profile))
+            d.audio_custom = preset->tuning;
+          if (const audio::AnimeLevel* anime = audio::find_anime_level(style.anime))
+            if (anime->tuning.enabled) d.anime_custom = anime->tuning;
+        }
+        panel::tip(i18n::tr(style.detail));
+      }
+      ImGui::EndCombo();
+    }
+    if (current != nullptr) panel::tip(i18n::tr(current->detail));
+    note(
+        i18n::tr("One choice sets the mix profile and the Anime sound together. Fine control is in Advanced "
+                 "settings."));
+  }
   if (listen != 2 && panel::advanced()) {
     // Le profil de virtualisation (mixage 5.1/7.1) : un choix nommé ; chaque réglage à la main
     // (Personnalisé). Il n'apparaît qu'en avancé : pour une piste stéréo, c'est « Son anime » qui règle le
@@ -164,7 +222,7 @@ bool sound_tab(PlaySettings& d, const SettingsChoices& choices) {
       }
     }
   }
-  if (listen != 2) {
+  if (panel::advanced() && listen != 2) {
     // « Son anime » (docs/audio-anime.md) : le traitement dédié aux pistes stéréo sur une sortie stéréo.
     // Propre à l'appareil comme le profil de virtualisation.
     section(i18n::tr("Anime sound"));

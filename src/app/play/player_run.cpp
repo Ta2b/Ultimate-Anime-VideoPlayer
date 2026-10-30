@@ -372,7 +372,9 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
                         ? std::optional(wanted_hdr)
                         : std::nullopt,
       .luts_dir = p.paths.engines.parent_path() / "luts",
-      .source_hdr = source_hdr};
+      .source_hdr = source_hdr,
+      .kernels = c.backend ? c.backend->kernels() : nullptr,
+      .adaptive_log = p.paths.engines.parent_path() / "adaptive-log.tsv"};
   apply_oled_care(chain, settings);
 
   std::ofstream stats;
@@ -652,6 +654,7 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
         session.command(
             cmd::Seek{.target_us = std::max<std::int64_t>(session.view().position_us, 0), .exact = true});
     }
+    adaptive_tick(chain, host_now_us());
     (*pipeline)->pump();
     while (auto message = try_take((*pipeline)->inbox())) session.handle(std::move(*message));
     // Vrai noir : la rampe que gpu a passée par TrueHDR, puis les seuils recalés.

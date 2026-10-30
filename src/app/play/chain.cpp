@@ -158,8 +158,10 @@ void apply_live(Chain& to, const PlaySettings& wanted, std::int64_t now_us) {
     to.live.set_reduction(reduction_of(wanted.downscale));
     controls.notify(i18n::tr_format("Downscale: {}", label(wanted.downscale)), now_us);
   }
-  const vendor_hdr::TrueHdrParams before = true_hdr_params(r, to.auto_peak);
-  const vendor_hdr::TrueHdrParams after = true_hdr_params(wanted, to.auto_peak);
+  const vendor_hdr::TrueHdrParams before =
+      true_hdr_params(with_adaptive(r, to.adaptive_t, to.adaptive_tv, to.adaptive_bs), to.auto_peak);
+  const vendor_hdr::TrueHdrParams after =
+      true_hdr_params(with_adaptive(wanted, to.adaptive_t, to.adaptive_tv, to.adaptive_bs), to.auto_peak);
   if (to.true_hdr_open && after != before) {
     log_channel("app")->info(
         "HDR en direct : contraste {} · saturation {} · gris moyen {} · pic {} nits · débandage {}",

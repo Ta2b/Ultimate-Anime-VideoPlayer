@@ -42,6 +42,12 @@ struct TensorRtBackend::TrueHdrState {
   std::uint32_t frames = 0;               // graine du tramage
   Lane lane = Lane::Upscale;              // la voie de l'ouverture : le pont tient sa file
   vendor_hdr::InputPreparation prepared;  // celle de la dernière image, reprise par la rampe
+  // Luminance moyenne de l'image source (mean_luma) : la somme sur le GPU et la dernière moyenne en mémoire
+  // hôte projetée, lue par le thread principal (une image de retard, aucune copie ni attente).
+  unsigned int* luma_histogram = nullptr;  // les compteurs sur le GPU
+  float* luma_sum = nullptr;
+  float* luma_host = nullptr;    // kLumaStatsFloats flottants lus par le thread principal
+  float* luma_device = nullptr;  // l'adresse GPU de luma_host
 
   TrueHdrState() = default;
   TrueHdrState(const TrueHdrState&) = delete;

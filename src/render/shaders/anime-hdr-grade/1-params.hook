@@ -220,3 +220,52 @@
 //!MINIMUM 10.0
 //!MAXIMUM 400.0
 80.0
+
+//!PARAM ad_on
+//!DESC 1 = grade adaptatif des routes emulees : noirs, vibrance et gris moyen suivent la scene (0 = curseurs fixes)
+//!TYPE float
+//!MINIMUM 0.0
+//!MAXIMUM 1.0
+0.0
+
+//!PARAM ad_lo
+//!DESC Grade adaptatif : code PQ moyen lisse en dessous duquel la scene est sombre (les curseurs)
+//!TYPE float
+//!MINIMUM 0.0
+//!MAXIMUM 1.0
+0.2
+
+//!PARAM ad_hi
+//!DESC Grade adaptatif : code PQ moyen lisse au-dessus duquel la scene est claire (valeurs ad_*)
+//!TYPE float
+//!MINIMUM 0.0
+//!MAXIMUM 1.0
+0.45
+
+//!PARAM ad_shadows
+//!DESC Grade adaptatif : profondeur des noirs d'une scene claire
+//!TYPE float
+//!MINIMUM 0.0
+//!MAXIMUM 0.95
+0.80
+
+//!PARAM ad_vibrance
+//!DESC Grade adaptatif : vibrance d'une scene tres claire
+//!TYPE float
+//!MINIMUM 0.0
+//!MAXIMUM 1.4
+0.0
+
+//!PARAM ad_em_base
+//!DESC Grade adaptatif : base de la courbe TrueHDR emulee (4 x gris moyen) d'une scene claire
+//!TYPE float
+//!MINIMUM 10.0
+//!MAXIMUM 400.0
+120.0
+
+//!PARAM ad_em_pow
+//!DESC Grade adaptatif : exposant de la courbe TrueHDR emulee d'une scene claire
+//!TYPE float
+//!MINIMUM 1.0
+//!MAXIMUM 20.0
+6.0

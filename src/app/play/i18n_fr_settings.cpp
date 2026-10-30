@@ -39,6 +39,20 @@ constexpr std::array kSettingsPages{
     Entry{"Look {} (LUT)", "Look {} (LUT)"},
     Entry{"Look {} intensity", "Intensité du look {}"},
     Entry{"Look unreadable: {}", "Look illisible : {}"},
+    Entry{"Adaptive to scene brightness", "Adaptatif à la luminosité de la scène"},
+    Entry{"Adapt to scene brightness", "Suivre la luminosité de la scène"},
+    Entry{"Dark scene up to", "Scène sombre jusqu'à"},
+    Entry{"Bright scene from", "Scène claire à partir de"},
+    Entry{"Deep blacks, bright scene", "Noirs profonds, scène claire"},
+    Entry{"Colors, saturated blue scene", "Couleurs, scène bleue saturée (ciel)"},
+    Entry{"Record scene statistics (learning)", "Enregistrer les statistiques de scène (apprentissage)"},
+    Entry{"Middle gray, bright scene", "Gris moyen, scène claire"},
+    Entry{"The sliders above and the middle gray are for dark scenes; the values here apply to bright "
+          "scenes, blended with the source's smoothed average brightness. Works with RTX HDR and with "
+          "Adaptive HDR (any GPU).",
+          "Les curseurs ci-dessus et le gris moyen valent pour les scènes sombres ; les valeurs d'ici valent "
+          "pour les scènes claires, mélangées selon la luminosité moyenne lissée de la source. Fonctionne "
+          "avec RTX HDR et avec le HDR adaptatif (tous GPU)."},
     Entry{"Cool sky", "Ciel froid"},
     Entry{"Warm pastel", "Pastel chaud"},
     Entry{"Crisp flats", "Aplats nets"},

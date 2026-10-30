@@ -54,3 +54,16 @@ Modes de ton « vivid » (blanc SDR au pic) et « reference » (BT.2408, 203 nit
 « night » en préréglages du grade, choix de l'EOTF d'entrée (BT.1886 ou sRGB), dither à la quantification PQ.
 
 Dans `play.toml`, la première LUT est `grade.look` / `grade.look_mix`, les suivantes `grade.looks` (noms) et `grade.looks_mix` (intensités), dans l'ordre.
+
+## Grade adaptatif à la luminosité de la scène
+Les curseurs **noirs profonds** et **couleurs** du grade et le **gris moyen de RTX HDR** valent pour une **scène sombre**.
+Le bloc « Adaptatif à la luminosité de la scène » (réglages avancés, onglet Couleurs) donne les valeurs d'une **scène
+claire** (noirs, couleurs, gris moyen) et deux seuils en pourcentage de luminance (13 % et 54 % par défaut, mesurés sur
+l'image source). Le moteur TensorRT mesure sur le GPU la luminance moyenne de chaque image avant RTX HDR (un point sur
+seize, une image de retard, sans copie) ; le lecteur la lisse sur environ 1,2 s, la remet à la mesure à chaque coupe de
+scène, et glisse de la scène sombre à la scène claire : `t = smoothstep(bas, haut, luminance)`. Noirs et gris moyen
+suivent t ; les couleurs ne s'effacent que sur les derniers 20 % de la transition. Seuils et valeurs par défaut tirés
+des cinq scènes de Re:Zero ép. 18 de Tatoub (`~/ajp-reports/parametres-tatoub-2026-10-30/scenes/LISEZMOI.md` : Y vidéo
+44 = sombre, 135 = très clair, soit 13 % et 54 % de luminance en RGB complet). Sans RTX HDR (HDR adaptatif, sortie SDR
+gradée : tous les GPU), le shader du grade fait la même chose avec le code PQ moyen très lissé de l'image qu'il reçoit
+(la source convertie ; seuils convertis en codes PQ, gris moyen = la courbe TrueHDR émulée). Pas encore adaptatifs : le contraste et l'intensité des LUT.

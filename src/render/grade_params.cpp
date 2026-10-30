@@ -51,6 +51,42 @@ void apply_truehdr_look(const GradeSettings& s, double peak, GradeParams& p) {
   p.em_sat = 1.0 + 0.19 * saturation;
 }
 
+// Code PQ (SMPTE ST 2084) d'une luminance en nits.
+double pq_code(double nits) {
+  const double y = std::clamp(nits / 10000.0, 0.0, 1.0);
+  const double q = std::pow(y, 0.1593017578125);
+  return std::pow((0.8359375 + 18.8515625 * q) / (1.0 + 18.6875 * q), 78.84375);
+}
+
+// Grade adaptatif des routes sans RTX HDR (HDR adaptatif, sortie SDR gradée : tous les GPU) : le shader
+// glisse noirs, vibrance et courbe TrueHDR émulée (gris moyen) de « scène sombre » (les curseurs) vers «
+// scène claire » selon le code PQ moyen très lissé de la scène. Les seuils (luminance en % de la source,
+// gamma 2,4, blanc de référence 203 nits) sont convertis en codes PQ. Sans émulation, la courbe ne bouge pas
+// (les valeurs claires reprennent les sombres).
+void apply_adaptive(const GradeSettings& s, double peak, bool sdr_out, GradeParams& p) {
+  if (!s.adaptive) return;
+  // Le code que l'étage lit : PQ en sortie HDR10 ; en sortie SDR, le code gamma de l'écran (2,2 par défaut),
+  // car le shader y reçoit l'image SDR telle quelle.
+  const auto luma_to_pq = [sdr_out](double percent) {
+    return sdr_out ? std::pow(percent / 100.0, 2.4 / 2.2)
+                   : pq_code(grade_limits::kSdrWhiteNits * std::pow(percent / 100.0, 2.4));
+  };
+  p.ad_on = 1.0;
+  p.ad_lo = luma_to_pq(s.adaptive_lo);
+  p.ad_hi = luma_to_pq(s.adaptive_hi);
+  p.ad_shadows = shadows_effect(s.adaptive_shadows);
+  // La vibrance suit la couleur (ciel bleu saturé), que le shader ne mesure pas : elle reste celle du curseur
+  // sur ces routes.
+  p.ad_vibrance = p.vibrance;
+  p.ad_em_base = p.em_base;
+  p.ad_em_pow = p.em_pow;
+  if (p.emulate > 0.5) {
+    const double gray = s.adaptive_gray;
+    p.ad_em_base = std::clamp(4.0 * gray, 40.0, sdr_out ? 400.0 : std::min(400.0, 0.5 * peak));
+    p.ad_em_pow = std::clamp(6.0 * std::pow(50.0 / gray, 0.35), 2.0, 16.0);
+  }
+}
+
 // La fin du grade : le contraste et la saturation du préréglage. Sans punch ni chroma de base, identité
 // exacte (les curseurs de contraste et de saturation, 0 à 200, sont ceux de RTX HDR et de son émulation).
 void apply_punch(const GradeSettings& s, GradeParams& p) {
@@ -90,6 +126,7 @@ GradeParams sdr_params(const GradeSettings& s) {
   p.black_lo = s.true_black ? s.black_lo : 0.0;
   p.black_hi = s.true_black ? s.black_hi : 0.0;
   apply_punch(s, p);
+  apply_adaptive(s, p.peak, true, p);
   return p;
 }
 
@@ -145,16 +182,28 @@ std::string_view preset_label(GradePreset preset) {
 
 std::expected<void, Refusal> check_grade_settings(const GradeSettings& s) {
   using namespace grade_limits;
-  for (const auto& result :
-       {check("paper_white", s.paper_white, kPaperWhite), check("shadows", s.shadows, kShadows),
-        check("highlights", s.highlights, kHighlights),
-        check("highlights_rtx", s.highlights_rtx, kHighlights), check("vibrance", s.vibrance, kVibrance),
-        check("vibrance_rtx", s.vibrance_rtx, kVibrance), check("contrast", s.contrast, kContrast),
-        check("saturation", s.saturation, kSaturation), check("middle_gray", s.middle_gray, kMiddleGray),
-        check("subtitle_white", s.subtitle_white, kSubtitleWhite), check("black_lo", s.black_lo, kBlackNits),
-        check("black_hi", s.black_hi, kBlackNits), check("guard", s.guard, kGuard),
-        check("area_rtx", s.area_rtx, kAreaRtx), check("expand", s.expand, kExpand),
-        check("abl_lo", s.abl_lo, kAblNits), check("abl_hi", s.abl_hi, kAblNits)}) {
+  for (const auto& result : {check("paper_white", s.paper_white, kPaperWhite),
+                             check("shadows", s.shadows, kShadows),
+                             check("highlights", s.highlights, kHighlights),
+                             check("highlights_rtx", s.highlights_rtx, kHighlights),
+                             check("vibrance", s.vibrance, kVibrance),
+                             check("vibrance_rtx", s.vibrance_rtx, kVibrance),
+                             check("contrast", s.contrast, kContrast),
+                             check("saturation", s.saturation, kSaturation),
+                             check("middle_gray", s.middle_gray, kMiddleGray),
+                             check("subtitle_white", s.subtitle_white, kSubtitleWhite),
+                             check("black_lo", s.black_lo, kBlackNits),
+                             check("black_hi", s.black_hi, kBlackNits),
+                             check("guard", s.guard, kGuard),
+                             check("area_rtx", s.area_rtx, kAreaRtx),
+                             check("expand", s.expand, kExpand),
+                             check("abl_lo", s.abl_lo, kAblNits),
+                             check("abl_hi", s.abl_hi, kAblNits),
+                             check("adaptive_lo", s.adaptive_lo, kAdaptiveLuma),
+                             check("adaptive_hi", s.adaptive_hi, kAdaptiveLuma),
+                             check("adaptive_shadows", s.adaptive_shadows, kShadows),
+                             check("adaptive_vibrance", s.adaptive_vibrance, kVibrance),
+                             check("adaptive_gray", s.adaptive_gray, kMiddleGray)}) {
     if (!result) return result;
   }
   if (!(s.abl_hi > s.abl_lo)) {
@@ -253,6 +302,9 @@ std::expected<GradeDecision, Refusal> decide_grade(const GradeSettings& s, const
   p.black_lo = s.true_black ? s.black_lo : 0.0;
   p.black_hi = s.true_black ? s.black_hi : 0.0;
   apply_punch(s, p);
+  // RTX HDR : l'adaptation passe par le lecteur (luminance mesurée sur le GPU, gris moyen du pilote) ; les
+  // autres routes par le shader.
+  if (decision.mode != GradeMode::TrueHdr) apply_adaptive(s, peak, false, p);
   return decision;
 }
 

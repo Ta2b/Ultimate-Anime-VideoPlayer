@@ -217,6 +217,12 @@ std::string_view label(OledBlack mode) {
 render::GradeSettings with_preset(render::GradePreset preset, const render::GradeSettings& current) {
   render::GradeSettings out = render::grade_preset(preset, current);
   out.gamut_p3 = current.gamut_p3;
+  out.adaptive = current.adaptive;  // le grade adaptatif suit l'utilisateur, pas le préréglage
+  out.adaptive_lo = current.adaptive_lo;
+  out.adaptive_hi = current.adaptive_hi;
+  out.adaptive_shadows = current.adaptive_shadows;
+  out.adaptive_vibrance = current.adaptive_vibrance;
+  out.adaptive_gray = current.adaptive_gray;
   return out;
 }
 
@@ -521,6 +527,7 @@ PlaySettings live_part(const PlaySettings& running, const PlaySettings& wanted, 
   s.grade_preset = wanted.grade_preset;
   s.grade_values = wanted.grade_values;
   s.look = wanted.look;
+  s.adaptive_record = wanted.adaptive_record;
   s.look_mix = wanted.look_mix;
   s.look_layers = wanted.look_layers;
   s.oled_black = wanted.oled_black;

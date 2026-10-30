@@ -81,11 +81,33 @@ struct Chain {
   std::optional<HdrIntent> hdr_wanted;  // présent seulement pendant un repli HDR
   std::filesystem::path luts_dir;       // les .cube de l'utilisateur (look_catalog.h)
   bool source_hdr = false;              // la vidéo est PQ ou HLG : le grade ne la retouche pas comme du SDR
+  // Grade adaptatif (render/grade_params.h : adaptive) : la luminance moyenne de la source, mesurée par le
+  // moteur, lissée ici ; adaptive_t en est la position entre « scène sombre » (0) et « scène claire » (1).
+  gpu::KernelOps* kernels = nullptr;
+  double adaptive_luma = -1.0;  // lissée, 0 à 1 ; -1 : aucune mesure
+  double adaptive_t = 0.0;      // noirs et gris moyen : suivent la luminosité
+  double adaptive_blue = 0.0;   // « bleu » moyen lissé de la source
+  double adaptive_bs = 0.0;     // série claire par nature : 0 (sombre ou ordinaire) à 1
+  double series_luma = -1.0;    // luminosité moyenne de la série (épisode), lissée
+  double series_us = 0.0;
+  double adaptive_chroma = 0.0;  // chroma moyenne lissée
+  double adaptive_tv = 0.0;      // vibrance : suit la couleur (bleu saturé), pas la luminosité
+  std::int64_t adaptive_at_us = 0;
+  std::filesystem::path adaptive_log;  // adaptive-log.tsv (apprentissage)
+  std::int64_t adaptive_log_us = 0;
 };
 
 // Les réglages avec, pendant un repli HDR, le mode que le profil demande à la place du mode de
 // repli : ce que remember_chain et play.toml retiennent.
 PlaySettings with_intended_hdr(const Chain& to, PlaySettings settings);
+
+// Les réglages avec, pour le grade adaptatif, noirs, couleurs et gris moyen glissés de la scène sombre (t =
+// 0, les curseurs) vers la scène claire (t = 1). t = 0 ou adaptatif coupé : les réglages tels quels.
+PlaySettings with_adaptive(const PlaySettings& s, double t, double tv, double bs = 0.0);
+
+// Une fois par tour : lit la luminance moyenne de la source, la lisse (environ 1,2 s, remise à la mesure à
+// chaque coupe de scène) et, si la position change de 2 % ou plus, pose le gris moyen de RTX HDR et le grade.
+void adaptive_tick(Chain& to, std::int64_t now_us);
 
 // Charge les LUT du look (jusqu'à trois, enchaînées) dans le grade de l'écran. Rend les noms de celles qui
 // manquent ou ne se lisent pas (une ligne de journal chacune) ; elles sont alors sautées.

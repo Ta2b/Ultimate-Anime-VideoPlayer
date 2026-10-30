@@ -31,4 +31,23 @@ struct Rgb10a2ToSurfaceParams {
 
 cudaError_t launch_rgb10a2_to_surface(const Rgb10a2ToSurfaceParams& params, cudaStream_t stream);
 
+inline constexpr int kLumaBins = 64;
+inline constexpr int kLumaStatsFloats =
+    10;  // mean, p05, p50, p95, p995, dark, bright, blue, chroma, numéro de mesure
+
+struct MeanLumaParams {
+  const void* rgb = nullptr;  // 1 × 3 × height × width, FP16, valeurs dans [0, 1] (comme ToRgba8Params)
+  int width = 0;
+  int height = 0;
+  unsigned int* histogram = nullptr;  // kLumaBins compteurs sur le GPU, remis à 0 par la passe finale
+  float* sum = nullptr;  // trois sommes sur le GPU (luminance, bleu, chroma), remises à 0 de même
+  float* out = nullptr;  // kLumaStatsFloats flottants en mémoire hôte projetée : la dernière mesure
+};
+
+// Statistiques de luminance de l'image (0 à 1, pondération BT.709 des canaux tels que reçus), sur un point
+// sur quatre dans chaque direction : histogramme de 64 cases par bloc puis global, moyenne, centiles 5, 50,
+// 95 et 99,5 %, parts sous 10 % et au-dessus de 80 % ; deux lancements sur le flux, le second écrit le
+// résultat en mémoire hôte sans copie (le numéro de mesure en dernier).
+cudaError_t launch_mean_luma(const MeanLumaParams& params, cudaStream_t stream);
+
 }  // namespace ajp::gpu::cuda

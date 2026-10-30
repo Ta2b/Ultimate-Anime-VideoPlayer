@@ -498,7 +498,14 @@ std::expected<PlaySettings, Refusal> settings_from_table(const toml::table& root
     reads.push_back(read(*grade, "grade", "guard", v.guard));
     reads.push_back(read(*grade, "grade", "expand", v.expand));
     reads.push_back(read(*grade, "grade", "gamut_p3", v.gamut_p3));
+    reads.push_back(read(*grade, "grade", "adaptive", v.adaptive));
+    reads.push_back(read(*grade, "grade", "adaptive_lo", v.adaptive_lo));
+    reads.push_back(read(*grade, "grade", "adaptive_hi", v.adaptive_hi));
+    reads.push_back(read(*grade, "grade", "adaptive_shadows", v.adaptive_shadows));
+    reads.push_back(read(*grade, "grade", "adaptive_vibrance", v.adaptive_vibrance));
+    reads.push_back(read(*grade, "grade", "adaptive_gray", v.adaptive_gray));
     reads.push_back(read(*grade, "grade", "look", s.look));
+    reads.push_back(read(*grade, "grade", "adaptive_record", s.adaptive_record));
     reads.push_back(read(*grade, "grade", "look_mix", s.look_mix));
     reads.push_back(read_look_layers(*grade, s.look_layers));
     std::string oled(name(s.oled_black));
@@ -687,7 +694,14 @@ std::string format_settings(const PlaySettings& s) {
                                    {"guard", hundredth(g.guard)},
                                    {"expand", hundredth(g.expand)},
                                    {"gamut_p3", g.gamut_p3},
+                                   {"adaptive", g.adaptive},
+                                   {"adaptive_lo", hundredth(g.adaptive_lo)},
+                                   {"adaptive_hi", hundredth(g.adaptive_hi)},
+                                   {"adaptive_shadows", hundredth(g.adaptive_shadows)},
+                                   {"adaptive_vibrance", hundredth(g.adaptive_vibrance)},
+                                   {"adaptive_gray", hundredth(g.adaptive_gray)},
                                    {"look", s.look},
+                                   {"adaptive_record", s.adaptive_record},
                                    {"look_mix", hundredth(s.look_mix)},
                                    {"oled_black", std::string(name(s.oled_black))},
                                    {"oled_black_steps", hundredth(s.oled_black_steps)}});
