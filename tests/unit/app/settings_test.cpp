@@ -764,3 +764,19 @@ TEST_CASE("grade adaptatif : noirs, couleurs et gris moyen glissent de la scène
   s.grade_values.adaptive = false;
   CHECK(at(1.0).true_hdr_gray == 70);  // coupé : rien ne bouge
 }
+
+TEST_CASE("grade adaptatif : une série claire par nature reçoit plus de contraste et de couleur",
+          "[app][settings]") {
+  ajp::app::play::PlaySettings s;
+  s.true_hdr_contrast = 100;
+  s.grade_values.adaptive = true;
+  const auto ordinary = ajp::app::play::with_adaptive(s, 0.0, 0.0, 0.0);
+  CHECK(ordinary.true_hdr_contrast == 100);
+  CHECK(ordinary.grade_values.punch_base == s.grade_values.punch_base);
+  const auto bright = ajp::app::play::with_adaptive(s, 0.0, 0.0, 1.0);
+  CHECK(bright.true_hdr_contrast == 130);
+  CHECK(bright.grade_values.punch_base > s.grade_values.punch_base);
+  CHECK(bright.grade_values.chroma_base > s.grade_values.chroma_base);
+  s.true_hdr_contrast = 190;
+  CHECK(ajp::app::play::with_adaptive(s, 0.0, 0.0, 1.0).true_hdr_contrast == 200);  // borné à 200
+}

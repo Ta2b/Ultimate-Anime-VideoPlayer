@@ -204,7 +204,7 @@ void apply_oled_care(Chain& to, const PlaySettings& s) {
 
 // Le grade de la chaîne avec ses seuils du vrai noir.
 void set_grade(Chain& to, const PlaySettings& wanted) {
-  const PlaySettings s = with_adaptive(wanted, to.adaptive_t, to.adaptive_tv);
+  const PlaySettings s = with_adaptive(wanted, to.adaptive_t, to.adaptive_tv, to.adaptive_bs);
   to.screen.set_grade(
       grade_of(s, to.true_hdr_open, to.peak_nits, to.auto_peak, to.display, to.black, to.source_hdr));
 }
@@ -212,9 +212,10 @@ void set_grade(Chain& to, const PlaySettings& wanted) {
 // Vrai noir OLED : recale les seuils sur la rampe de 32 marches mesurée à la sortie (route native :
 // les marches SDR ; RTX HDR : celles que gpu a passées par TrueHDR), grade compris, puis pose le
 // grade avec eux.
-PlaySettings with_adaptive(const PlaySettings& s, double t, double tv) {
+PlaySettings with_adaptive(const PlaySettings& s, double t, double tv, double bs) {
   const render::GradeSettings& g = s.grade_values;
-  if (!g.adaptive || !(t > 0.0 || tv > 0.0)) return s;
+  if (!g.adaptive || !(t > 0.0 || tv > 0.0 || bs > 0.0)) return s;
+  bs = std::clamp(bs, 0.0, 1.0);
   t = std::clamp(t, 0.0, 1.0);
   const double vibrance_t_smooth = std::clamp(tv, 0.0, 1.0);
   PlaySettings out = s;
@@ -224,6 +225,11 @@ PlaySettings with_adaptive(const PlaySettings& s, double t, double tv) {
   o.vibrance_rtx = std::lerp(g.vibrance_rtx, g.adaptive_vibrance, vibrance_t_smooth);
   out.true_hdr_gray =
       static_cast<int>(std::lround(std::lerp(static_cast<double>(s.true_hdr_gray), g.adaptive_gray, t)));
+  // Série claire par nature (luminosité moyenne de l'épisode haute) : plus de contraste et de couleur pour
+  // que l'image reste percutante, que ses scènes ordinaires ne soient pas toutes traitées comme « claires ».
+  o.punch_base += 0.25 * bs;
+  o.chroma_base += 0.12 * bs;
+  out.true_hdr_contrast = std::min(out.true_hdr_contrast + static_cast<int>(std::lround(30.0 * bs)), 200);
   return out;
 }
 
@@ -240,7 +246,8 @@ void adaptive_record(Chain& to, const gpu::KernelOps::SceneStats& stats, std::in
   if (fresh)
     out << "unix_s\tfichier\tposition_s\tmoyenne\tp05\tp50\tp95\tp995\tpart_noir\tpart_"
            "clair\tnoirs\tcouleurs\teclats\t"
-           "aplats\tetendues\tlimiteur\tgris_moyen\tcontraste\tsaturation\tadaptatif\tt\ttv\n";
+           "aplats\tetendues\tlimiteur\tgris_moyen\tcontraste\tsaturation\tadaptatif\tt\ttv\tserie\tluma_"
+           "serie\n";
   const PlaySettings& s = to.running;
   const render::GradeSettings& g = s.grade_values;
   out << std::time(nullptr) << '\t' << to.file.filename().string() << '\t'
@@ -250,7 +257,7 @@ void adaptive_record(Chain& to, const gpu::KernelOps::SceneStats& stats, std::in
       << g.shadows << '\t' << g.vibrance_rtx << '\t' << g.highlights_rtx << '\t' << g.area_rtx << '\t'
       << g.expand << '\t' << g.guard << '\t' << s.true_hdr_gray << '\t' << s.true_hdr_contrast << '\t'
       << s.true_hdr_saturation << '\t' << (g.adaptive ? 1 : 0) << '\t' << to.adaptive_t << '\t'
-      << to.adaptive_tv << '\n';
+      << to.adaptive_tv << '\t' << to.adaptive_bs << '\t' << to.series_luma << '\n';
 }
 
 void adaptive_tick(Chain& to, std::int64_t now_us) {
@@ -259,7 +266,8 @@ void adaptive_tick(Chain& to, std::int64_t now_us) {
   }
   const render::GradeSettings& g = to.running.grade_values;
   if (!g.adaptive || to.kernels == nullptr || !to.true_hdr_open) {
-    if (to.adaptive_t != 0.0 || to.adaptive_tv != 0.0) {  // coupé en cours de route : retour aux curseurs
+    if (to.adaptive_t != 0.0 || to.adaptive_tv != 0.0 || to.adaptive_bs != 0.0) {
+      to.adaptive_bs = 0.0;  // coupé en cours de route : retour aux curseurs
       to.adaptive_t = 0.0;
       to.adaptive_tv = 0.0;
       to.adaptive_blue = 0.0;
@@ -288,8 +296,24 @@ void adaptive_tick(Chain& to, std::int64_t now_us) {
     to.adaptive_blue += follow * (static_cast<double>(stats->blue) - to.adaptive_blue);
     to.adaptive_chroma += follow * (static_cast<double>(stats->chroma) - to.adaptive_chroma);
   }
-  const double lo = g.adaptive_lo / 100.0;
-  const double hi = std::max(g.adaptive_hi / 100.0, lo + 0.01);
+  // La luminosité de la SÉRIE : la moyenne de l'épisode, lissée sur une à deux minutes (moyenne cumulée au
+  // début, puis exponentielle), amorcée à celle de Re:Zero (0,30). Une série claire par nature (Slime : plus
+  // de 0,5) ne doit pas voir toutes ses scènes ordinaires traitées comme « claires » : les seuils glissent
+  // avec elle, et la série claire reçoit en plus du contraste et de la couleur (with_adaptive). Une scène
+  // plus claire que sa série reste « claire ».
+  constexpr double kSeriesRef = 0.30;
+  constexpr double kSeriesSeedUs = 20'000'000.0;
+  constexpr double kSeriesTauUs = 90'000'000.0;
+  to.series_us += static_cast<double>(dt);
+  if (to.series_luma < 0.0) to.series_luma = kSeriesRef;
+  to.series_luma +=
+      std::min(static_cast<double>(dt) / (std::min(to.series_us, kSeriesTauUs) + kSeriesSeedUs), 1.0) *
+      (static_cast<double>(*luma) - to.series_luma);
+  const double shift = std::clamp(0.8 * (to.series_luma - kSeriesRef), -0.05, 0.20);
+  const double bs_x = std::clamp((to.series_luma - 0.38) / 0.14, 0.0, 1.0);
+  const double bs = bs_x * bs_x * (3.0 - 2.0 * bs_x);
+  const double lo = g.adaptive_lo / 100.0 + shift;
+  const double hi = std::max(g.adaptive_hi / 100.0 + shift, lo + 0.01);
   const double x = std::clamp((to.adaptive_luma - lo) / (hi - lo), 0.0, 1.0);
   const double t = x * x * (3.0 - 2.0 * x);
   // La vibrance dépend de la couleur, pas de la luminosité : un ciel ou un aplat bleu saturé (« bleu » moyen
@@ -306,13 +330,15 @@ void adaptive_tick(Chain& to, std::int64_t now_us) {
   const double tv = std::max(xv * xv * (3.0 - 2.0 * xv) * gate, xc * xc * (3.0 - 2.0 * xc));
   const bool same = std::abs(t - to.adaptive_t) < 0.02 && std::abs(tv - to.adaptive_tv) < 0.02 &&
                     !(t == 0.0 && to.adaptive_t != 0.0) && !(t == 1.0 && to.adaptive_t != 1.0) &&
-                    !(tv == 0.0 && to.adaptive_tv != 0.0) && !(tv == 1.0 && to.adaptive_tv != 1.0);
+                    !(tv == 0.0 && to.adaptive_tv != 0.0) && !(tv == 1.0 && to.adaptive_tv != 1.0) &&
+                    std::abs(bs - to.adaptive_bs) < 0.02;
   if (same) return;
   const vendor_hdr::TrueHdrParams before =
-      true_hdr_params(with_adaptive(to.running, to.adaptive_t, to.adaptive_tv), to.auto_peak);
+      true_hdr_params(with_adaptive(to.running, to.adaptive_t, to.adaptive_tv, to.adaptive_bs), to.auto_peak);
   to.adaptive_t = t;
   to.adaptive_tv = tv;
-  const vendor_hdr::TrueHdrParams after = true_hdr_params(with_adaptive(to.running, t, tv), to.auto_peak);
+  to.adaptive_bs = bs;
+  const vendor_hdr::TrueHdrParams after = true_hdr_params(with_adaptive(to.running, t, tv, bs), to.auto_peak);
   if (after.middle_gray != before.middle_gray) {
     to.live.set_true_hdr(after);
     if (to.session.view().paused) to.hdr_refresh_us = now_us + 120'000;
