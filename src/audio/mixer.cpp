@@ -510,6 +510,7 @@ PcmBlock Mixer::convolve(const PcmBlock& in) {
     convolver_ = std::make_shared<HrirConvolver>(*hrir_, in.channels, config_.tuning.lfe_gain);
   PcmBlock out{.pts_us = in.pts_us, .channels = 2};
   convolver_->process(in.samples, out.samples);
+  for (float& v : out.samples) v = soft_limit(v);  // le niveau des réponses est respecté : écrêtage doux
   return out;
 }
 

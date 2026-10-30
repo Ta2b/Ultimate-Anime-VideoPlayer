@@ -226,7 +226,7 @@ std::vector<float> resample(std::span<const float> in, int from_rate, int to_rat
   return out;
 }
 
-float normalize(Hrir& hrir) {
+float normalize(Hrir& hrir, float ceiling) {
   float loudest = 0.0F;
   for (const auto& pair : hrir.taps) {
     for (const auto& response : pair) {
@@ -235,8 +235,8 @@ float normalize(Hrir& hrir) {
       loudest = std::max(loudest, sum);
     }
   }
-  if (loudest <= kHrirPeak) return 1.0F;
-  const float gain = kHrirPeak / loudest;
+  if (loudest <= ceiling) return 1.0F;
+  const float gain = ceiling / loudest;
   for (auto& pair : hrir.taps)
     for (auto& response : pair)
       for (float& v : response) v *= gain;
@@ -249,7 +249,7 @@ Hrir prepared(const Hrir& hrir, int sample_rate) {
   for (std::size_t p = 0; p < hrir.taps.size(); ++p)
     for (std::size_t e = 0; e < 2; ++e)
       out.taps[p][e] = resample(hrir.taps[p][e], hrir.sample_rate, sample_rate);
-  normalize(out);
+  normalize(out, kHrirUserCeiling);
   return out;
 }
 
