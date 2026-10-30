@@ -29,4 +29,4 @@ l'étiquette, s'il existe, et en reprend les moteurs dans l'`engines.lock` qu'el
 1. `package-windows.ps1` sort `ajp-engine-tensorrt-windows-x64.tar.gz` avec `ajp_backend_tensorrt.dll` et `trtexec.exe`.
 2. Installer le moteur depuis l'écran des moteurs : licence, téléchargement des fichiers NVIDIA par plage HTTP, SHA-256 vérifiés.
 3. Lire une vidéo ×3 avec SPAN + RIFE : le moteur se construit (trtexec.exe) la première fois, puis la lecture tient.
-4. RTX HDR (Maxine) : automatique sous Windows ; vérifier que le SDK s'importe.
+4. RTX HDR : le lecteur charge le pont `aji_rtx.dll` (pas de `rtx_video_api.dll`, qui n'existe pas dans le SDK). Importer un dossier qui contient `aji_rtx.dll`, `nvngx_truehdr.dll`, `nvngx_vsr.dll` et `cudart64_12.dll` ; vérifier que le SDK s'importe (version lue sur `nvngx_truehdr.dll`) et qu'une image HDR sort. Chargeur non exécuté sur Windows (rc.4).
