@@ -74,7 +74,8 @@ constexpr std::string_view kRtxDll = "aji_rtx.dll";
 constexpr std::array<RequiredFile, 2> kRtxRequired{{
     {.path = kRtxDll,
      .format = BinaryFormat::PeX64,
-     .missing = "aji_rtx.dll manque : choisir le dossier qui contient le pont aji_rtx et les DLL du RTX Video SDK"},
+     .missing =
+         "aji_rtx.dll manque : choisir le dossier qui contient le pont aji_rtx et les DLL du RTX Video SDK"},
     {.path = "nvngx_truehdr.dll",
      .format = BinaryFormat::PeX64,
      .missing = "nvngx_truehdr.dll manque : choisir le dossier du SDK qui contient ses DLL"},
