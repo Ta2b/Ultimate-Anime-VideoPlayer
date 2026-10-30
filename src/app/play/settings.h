@@ -267,6 +267,11 @@ struct PlaySettings {
   bool grade = true;
   render::GradePreset grade_preset = render::GradePreset::Eclatant;
   render::GradeSettings grade_values = render::grade_preset(render::GradePreset::Eclatant);
+  // Le look : une LUT 3D .cube (render/cube_lut.h) mélangée après le grade. Vide : aucun. « maison:... » : un
+  // look du lecteur (render/looks.h) ; sinon le nom d'un fichier du dossier luts des données. Intensité de 0
+  // à 1.
+  std::string look;
+  double look_mix = 1.0;
   // Vrai noir OLED (dernière passe du grade) : selon l'écran détecté (display_edid.h), forcé ou
   // coupé ; le pied finit `oled_black_steps` pas de code au-dessus du noir de la source.
   OledBlack oled_black = OledBlack::Auto;

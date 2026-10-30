@@ -22,6 +22,7 @@
 #include "core/ring.h"
 #include "core/types.h"
 #include "media/hw_api.h"
+#include "render/cube_lut.h"
 #include "render/grade_params.h"
 
 struct SDL_Window;
@@ -92,6 +93,8 @@ class PlaceboScreen final : public Screen {
   // Grade (render/grade.h) posé sur OUTPUT : celui du PQ sur une sortie HDR10, celui du SDR sur une
   // sortie SDR BT.709 (sRGB, gamma 2,2 ou 2,4) ; rien : sans grade.
   void set_grade(const render::GradeChoice& choice);
+  // La LUT du look (render/grade.h : set_look) ; nullptr : aucune. Refus si libplacebo ne lit pas la texture.
+  std::expected<void, Refusal> set_look(const render::CubeLut* lut);
   // Composition finale : filtre qui étire vers la fenêtre, débandage ; sans effet sur l'export.
   void set_finish(FinalScaler scaler, bool deband);
   bool hdr_output() const;  // la dernière présentation était en PQ

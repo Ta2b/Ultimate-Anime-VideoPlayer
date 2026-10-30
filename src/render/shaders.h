@@ -9,6 +9,9 @@ namespace ajp::render::shaders {
 // anime-hdr-grade du lecteur actuel (trois fichiers mis bout à bout) : neuf passes sur OUTPUT, en
 // PQ BT.2020.
 extern const std::string_view anime_hdr_grade;
+// Le look : une LUT 3D .cube (cube_lut.h) mélangée à l'image après le grade, avant le vrai noir. Le bloc
+// //!TEXTURE AJG_LUT s'ajoute derrière ce texte à l'exécution.
+extern const std::string_view anime_hdr_look;
 // Dixième passe, propre à ce dépôt : le vrai noir OLED (pied smoothstep sous black_hi).
 extern const std::string_view anime_hdr_black;
 // Mire d'étalonnage du lecteur actuel : patchs en luminance absolue, encodés en PQ.

@@ -685,3 +685,17 @@ TEST_CASE("un play.toml de la rc.3 (400 %, vibrance 1,2) se relit au maximum d'a
   CHECK(s->grade_values.vibrance == 0.8);
   CHECK(s->grade_values.vibrance_rtx == 0.8);
 }
+
+TEST_CASE("le look (LUT) et son intensité se relisent à l'identique, un nom de chemin est refusé",
+          "[app][settings]") {
+  ajp::app::play::PlaySettings s;
+  s.look = "maison:shinkai";
+  s.look_mix = 0.65;
+  const auto back = ajp::app::play::parse_settings(ajp::app::play::format_settings(s));
+  REQUIRE(back.has_value());
+  CHECK(back->look == "maison:shinkai");
+  CHECK(back->look_mix == 0.65);
+  CHECK_FALSE(ajp::app::play::parse_settings("[grade]\nlook = '../x.cube'\n").has_value());
+  CHECK_FALSE(ajp::app::play::parse_settings("[grade]\nlook_mix = 1.5\n").has_value());
+  CHECK(ajp::app::play::PlaySettings{}.look.empty());  // aucun look par défaut
+}

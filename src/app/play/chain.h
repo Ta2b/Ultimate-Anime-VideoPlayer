@@ -79,12 +79,17 @@ struct Chain {
   // moteur HDR changent à chaud ; vide : l'en-tête reste celui de l'ouverture.
   std::function<std::string(const PlaySettings&)> header_text;
   std::optional<HdrIntent> hdr_wanted;  // présent seulement pendant un repli HDR
+  std::filesystem::path luts_dir;       // les .cube de l'utilisateur (look_catalog.h)
   bool source_hdr = false;              // la vidéo est PQ ou HLG : le grade ne la retouche pas comme du SDR
 };
 
 // Les réglages avec, pendant un repli HDR, le mode que le profil demande à la place du mode de
 // repli : ce que remember_chain et play.toml retiennent.
 PlaySettings with_intended_hdr(const Chain& to, PlaySettings settings);
+
+// Charge le look `key` (vide : aucun) dans le grade de l'écran. Faux, avec une ligne de journal, si le
+// fichier manque, ne se lit pas ou si libplacebo refuse la texture ; le look est alors retiré.
+bool apply_look(PlaceboScreen& screen, const std::string& key, const std::filesystem::path& luts_dir);
 
 // Couleur de la sortie de RTX HDR : PQ BT.2020 au pic donné à TrueHDR.
 ColorInfo pq_color(int peak_nits);

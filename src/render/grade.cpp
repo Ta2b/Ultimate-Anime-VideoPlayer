@@ -2,6 +2,7 @@
 
 #include <array>
 #include <format>
+#include <string>
 #include <string_view>
 #include <utility>
 #include <vector>
@@ -47,6 +48,12 @@ constexpr std::array kGradeParams = {
     ParamBinding{"pivot", &GradeParams::pivot},
 };
 
+constexpr std::array kLookParams = {
+    ParamBinding{"look_mix", &GradeParams::look_mix},   ParamBinding{"look_white", &GradeParams::look_white},
+    ParamBinding{"look_pq", &GradeParams::look_pq},     ParamBinding{"sdr_out", &GradeParams::sdr_out},
+    ParamBinding{"sdr_gamma", &GradeParams::sdr_gamma}, ParamBinding{"peak", &GradeParams::peak},
+};
+
 constexpr std::array kBlackParams = {
     ParamBinding{"black_lo", &GradeParams::black_lo}, ParamBinding{"black_hi", &GradeParams::black_hi},
     ParamBinding{"sdr_out", &GradeParams::sdr_out},   ParamBinding{"sdr_gamma", &GradeParams::sdr_gamma},
@@ -86,14 +93,39 @@ std::expected<ParsedHook, Refusal> parse(pl_gpu gpu, std::string_view text, std:
   return out;
 }
 
+// Le hook du look : le bloc de la texture de la LUT (ou d'une identité 2x2x2), puis le texte embarqué.
+std::expected<ParsedHook, Refusal> parse_look(pl_gpu gpu, const CubeLut* lut) {
+  static const CubeLut kNeutral = [] {
+    CubeLut neutral;
+    neutral.size = 2;
+    neutral.rgb = {0, 0, 0, 1, 0, 0, 0, 1, 0, 1, 1, 0, 0, 0, 1, 1, 0, 1, 0, 1, 1, 1, 1, 1};
+    return neutral;
+  }();
+  // Le corps d'une texture court jusqu'à la prochaine directive //! : le bloc va donc après le texte du hook.
+  std::string text(shaders::anime_hdr_look);
+  text += '\n';
+  text += lut_texture_block(lut != nullptr ? *lut : kNeutral, "AJG_LUT");
+  auto parsed = parse(gpu, text, "anime-hdr-look.hook", kLookParams);
+  if (!parsed) return parsed;
+  if (find_param(*parsed->hook, "look_size") == nullptr) {
+    pl_mpv_user_shader_destroy(&parsed->hook);
+    return std::unexpected(
+        Refusal{RefusalCode::FieldMissing, "//!PARAM look_size absent de anime-hdr-look.hook"});
+  }
+  return parsed;
+}
+
 }  // namespace
 
 struct Grade::Impl {
   ParsedHook grade;
+  ParsedHook look;
   ParsedHook black;
   const pl_hook* calibration = nullptr;
-  std::array<const pl_hook*, 2> hooks{};
+  std::array<const pl_hook*, 3> hooks{};
   GradeParams params;
+  pl_gpu gpu = nullptr;
+  int look_size = 2;
 
   Impl() = default;
   Impl(const Impl&) = delete;
@@ -102,6 +134,7 @@ struct Grade::Impl {
   Impl& operator=(Impl&&) = delete;
   ~Impl() {
     pl_mpv_user_shader_destroy(&grade.hook);
+    pl_mpv_user_shader_destroy(&look.hook);
     pl_mpv_user_shader_destroy(&black.hook);
     pl_mpv_user_shader_destroy(&calibration);
   }
@@ -109,19 +142,34 @@ struct Grade::Impl {
 
 std::expected<Grade, Refusal> Grade::create(pl_gpu gpu) {
   auto impl = std::make_unique<Impl>();
+  impl->gpu = gpu;
   auto grade = parse(gpu, shaders::anime_hdr_grade, "anime-hdr-grade.hook", kGradeParams);
   if (!grade) return std::unexpected(grade.error());
   impl->grade = std::move(*grade);
+  auto look = parse_look(gpu, nullptr);
+  if (!look) return std::unexpected(look.error());
+  impl->look = std::move(*look);
   auto black = parse(gpu, shaders::anime_hdr_black, "anime-hdr-black.hook", kBlackParams);
   if (!black) return std::unexpected(black.error());
   impl->black = std::move(*black);
   auto calibration = parse(gpu, shaders::anime_hdr_calibration, "anime-hdr-calibration.hook", {});
   if (!calibration) return std::unexpected(calibration.error());
   impl->calibration = calibration->hook;
-  impl->hooks = {impl->grade.hook, impl->black.hook};
+  impl->hooks = {impl->grade.hook, impl->look.hook, impl->black.hook};
   Grade out(std::move(impl));
   out.set_params(GradeParams{});
   return out;
+}
+
+std::expected<void, Refusal> Grade::set_look(const CubeLut* lut) {
+  auto look = parse_look(impl_->gpu, lut);
+  if (!look) return std::unexpected(look.error());
+  pl_mpv_user_shader_destroy(&impl_->look.hook);
+  impl_->look = std::move(*look);
+  impl_->look_size = lut != nullptr ? lut->size : 2;
+  impl_->hooks[1] = impl_->look.hook;
+  set_params(impl_->params);
+  return {};
 }
 
 Grade::Grade(std::unique_ptr<Impl> impl) : impl_(std::move(impl)) {}
@@ -131,9 +179,11 @@ Grade::~Grade() = default;
 
 void Grade::set_params(const GradeParams& params) {
   impl_->params = params;
-  for (const ParsedHook* hook : {&impl_->grade, &impl_->black}) {
+  for (const ParsedHook* hook : {&impl_->grade, &impl_->look, &impl_->black}) {
     for (const auto& [data, field] : hook->params) data->f = static_cast<float>(params.*field);
   }
+  if (pl_var_data* size = find_param(*impl_->look.hook, "look_size"))
+    size->f = static_cast<float>(impl_->look_size);
 }
 
 const GradeParams& Grade::params() const {

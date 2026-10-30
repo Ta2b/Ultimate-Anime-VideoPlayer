@@ -7,8 +7,10 @@
 
 #include "app/play/chain.h"
 #include "app/play/i18n.h"
+#include "app/play/look_catalog.h"
 #include "core/clock.h"
 #include "core/log.h"
+#include "render/looks.h"
 #include "vendor_hdr/sdk_store.h"
 
 namespace ajp::app::play {
@@ -131,9 +133,36 @@ render::GradeChoice grade_of(const PlaySettings& s, bool true_hdr_open, int peak
       log_channel("app")->warn("grade : {}", decision.error().detail);
       return {};
     }
-    if (decision->mode != render::GradeMode::Neutral) (pq ? choice.pq : choice.sdr) = decision->params;
+    if (decision->mode != render::GradeMode::Neutral) {
+      render::GradeParams params = decision->params;
+      if (!s.look.empty()) {
+        params.look_mix = s.look_mix;
+        params.look_pq = pq && render::look_is_pq(s.look, "") ? 1.0 : 0.0;
+      }
+      (pq ? choice.pq : choice.sdr) = params;
+    }
   }
   return choice;
+}
+
+bool apply_look(PlaceboScreen& screen, const std::string& key, const std::filesystem::path& luts_dir) {
+  if (key.empty()) {
+    if (auto cleared = screen.set_look(nullptr); !cleared)
+      log_channel("app")->warn("look : {}", cleared.error().detail);
+    return true;
+  }
+  auto lut = load_look(key, luts_dir);
+  if (!lut) {
+    log_channel("app")->warn("look : {}", lut.error().detail);
+    static_cast<void>(screen.set_look(nullptr));
+    return false;
+  }
+  if (auto set = screen.set_look(&*lut); !set) {
+    log_channel("app")->warn("look : {}", set.error().detail);
+    return false;
+  }
+  log_channel("app")->info("look : {} ({} points)", key, lut->size);
+  return true;
 }
 
 std::string output_text(const PlaceboScreen& screen, const PlaySettings& s, int peak_nits) {
