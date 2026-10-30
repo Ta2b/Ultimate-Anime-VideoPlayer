@@ -133,6 +133,9 @@ class Session {
   void set_stats(const StatsSettings& stats);
   void set_steady_cadence(bool on) { config_.steady_cadence = on; }
   void set_display_sync(bool on) { config_.display_sync = on; }  // au tour suivant
+  // Un réglage de rendu (grade, finition, HDR) a changé : l'image tenue est recomposée au tour suivant, même
+  // si rien d'autre n'a bougé (la présentation est à la demande).
+  void request_present() { present_requested_ = true; }
   void set_video_latency(std::int64_t latency_us) { config_.video_latency_us = latency_us; }
   double speed() const { return speed_; }  // vitesse de lecture appliquée (1 : aucun calage)
   const StatsSettings& stats_settings() const { return show_stats_; }
@@ -222,8 +225,9 @@ class Session {
   };
   static SubtitleLook look_of(const subs::SubtitleFrame* frame);
   SubtitleLook shown_subtitles_;
-  OutputSize shown_size_;                         // taille de sortie de la dernière présentation
-  std::int64_t shown_at_us_ = 0;                  // instant hôte de la dernière présentation
+  OutputSize shown_size_;         // taille de sortie de la dernière présentation
+  std::int64_t shown_at_us_ = 0;  // instant hôte de la dernière présentation
+  bool present_requested_ = false;
   bool shown_ui_ = false;                         // la dernière présentation avait une interface
   StatsSettings show_stats_;                      // mesures affichées
   std::vector<std::string> osd_;                  // relu toutes les kOsdPeriodUs

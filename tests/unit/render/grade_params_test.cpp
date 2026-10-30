@@ -19,6 +19,12 @@ GradeContext pq_context(core::HdrMode route, double peak = 1000.0) {
       .route = route, .source_hdr = false, .output_pq = true, .enabled = true, .peak_nits = peak};
 }
 
+// La réponse des curseurs du grade (grade_params.cpp) : puissance 0,7 sur la course, butée poussée par
+// `gain`.
+double resp(double x, double hi, double gain) {
+  return gain * hi * std::pow(x / hi, 0.7);
+}
+
 }  // namespace
 
 TEST_CASE("route native SDR avec émulation TrueHDR : les réglages par défaut du lecteur actuel") {
@@ -30,8 +36,8 @@ TEST_CASE("route native SDR avec émulation TrueHDR : les réglages par défaut 
   CHECK(p.peak == 1000.0);
   CHECK(p.paper == 500.0);  // 0,5 × pic avec l'émulation
   CHECK(p.in_max == 1000.0);
-  CHECK(p.shadow_knee == Approx(0.25 * 203.0));
-  CHECK(p.shadows == 0.15);
+  CHECK(p.shadow_knee == Approx(203.0 * (0.25 + 0.30 * 0.15 / 0.8)));
+  CHECK(p.shadows == Approx(resp(0.15, 0.8, 1.2)));
   CHECK(p.emulate == 1.0);
   CHECK(p.em_base == 200.0);
   CHECK(p.em_pow == Approx(6.0));
@@ -39,8 +45,8 @@ TEST_CASE("route native SDR avec émulation TrueHDR : les réglages par défaut 
   CHECK(p.em_hi == 1.0);
   CHECK(p.em_sat == 1.0);
   CHECK(p.area_gain == 1.0);
-  CHECK(p.spec_gain == Approx(1.3));
-  CHECK(p.vibrance == 0.10);
+  CHECK(p.spec_gain == Approx(1.0 + 1.2 * resp(0.25, 1.0, 1.0) + 1.6 * (resp(0.25, 1.0, 1.0) - 0.25)));
+  CHECK(p.vibrance == Approx(resp(0.10, 0.8, 1.6)));
   CHECK(p.abl == 0.0);
   CHECK(p.gamut_p3 == 0.0);
   CHECK(p.adapt == 1.0);  // le HDR adaptatif : l'émulation suit la scène
@@ -59,9 +65,9 @@ TEST_CASE("route native SDR sans émulation : éclats jusqu'au pic depuis le bla
   CHECK(p.in_max == 203.0);
   CHECK(p.emulate == 0.0);
   CHECK(p.adapt == 0.0);
-  CHECK(p.area_gain == Approx(1.25));
-  CHECK(p.spec_gain == Approx(1.0 + 0.5 * (room - 1.0)));
-  CHECK(p.vibrance == 0.15);
+  CHECK(p.area_gain == Approx(1.0 + 0.8 * resp(0.5, 1.0, 1.0)));
+  CHECK(p.spec_gain == Approx(1.0 + resp(0.5, 1.0, 1.0) * (room - 1.0)));
+  CHECK(p.vibrance == Approx(resp(0.15, 0.8, 1.6)));
 }
 
 TEST_CASE("le blanc papier est plafonné à 0,75 × pic et arrondi") {
@@ -134,8 +140,8 @@ TEST_CASE("sortie SDR : couleurs, noirs et contraste au blanc de l'écran, sans 
     CHECK(p.expand == 0.0);
     CHECK(p.gamut_p3 == 0.0);
     CHECK(p.abl == 0.0);
-    CHECK(p.vibrance == settings.vibrance_rtx);
-    CHECK(p.shadows == settings.shadows);
+    CHECK(p.vibrance == Approx(resp(settings.vibrance_rtx, 0.8, 1.6)));
+    CHECK(p.shadows == Approx(resp(settings.shadows, 0.8, 1.2)));
     CHECK(p.guard == settings.guard);
     CHECK(p.emulate == 1.0);  // l'aspect TrueHDR entier, ramené au blanc SDR
     CHECK(p.em_lo > 1.0);
@@ -284,10 +290,10 @@ TEST_CASE("Éclatant sur TrueHDR : aplats et éclats montent, le garde-fou passe
   REQUIRE(vivid);
   CHECK(natural->params.area_gain == 1.0);
   CHECK(natural->params.guard == 0.0);
-  CHECK(vivid->params.area_gain == Approx(1.4));
-  CHECK(vivid->params.spec_gain == Approx(3.12));
+  CHECK(vivid->params.area_gain == Approx(1.0 + 0.8 * resp(0.5, 1.0, 1.0)));
+  CHECK(vivid->params.spec_gain > natural->params.spec_gain);
   CHECK(vivid->params.guard == 0.8);
-  CHECK(vivid->params.vibrance == 0.6);
+  CHECK(vivid->params.vibrance == Approx(resp(0.6, 0.8, 1.6)));
   GradeSettings bad;
   bad.guard = 1.5;
   CHECK_FALSE(decide_grade(bad, pq_context(core::HdrMode::TrueHdr)));
@@ -327,7 +333,7 @@ TEST_CASE("vrai noir : seuils tirés de la rampe mesurée") {
 
 }  // namespace ajp::render
 
-TEST_CASE("le contraste et la saturation au-delà de 200 passent au grade, l'identité en deçà",
+TEST_CASE("le contraste et la saturation à 200 ou moins restent ceux de RTX HDR : le grade n'ajoute rien",
           "[grade][punch]") {
   using namespace ajp::render;
   GradeSettings s = grade_preset(GradePreset::Naturel);
@@ -341,12 +347,11 @@ TEST_CASE("le contraste et la saturation au-delà de 200 passent au grade, l'ide
   auto old_max = decide_grade(s, context);
   CHECK(old_max->params.punch == 0.0);  // le maximum d'avant : RTX HDR seul
   CHECK(old_max->params.chroma == 1.0);
-  s.contrast = 400.0;
-  s.saturation = 400.0;
-  auto new_max = decide_grade(s, context);
-  REQUIRE(new_max);
-  CHECK(new_max->params.punch == Approx(1.0));
-  CHECK(new_max->params.chroma == Approx(2.2));
+  CHECK_FALSE(check_grade_settings([] {
+    GradeSettings g;
+    g.contrast = 201.0;
+    return g;
+  }()));
   // Éclatant ajoute son propre punch dès le départ.
   auto vivid = decide_grade(grade_preset(GradePreset::Eclatant), context);
   CHECK(vivid->params.punch == Approx(0.30));

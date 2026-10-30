@@ -153,6 +153,23 @@ TEST_CASE("Une image pas encore écrite n'est ni montrée ni rendue : l'écran g
   CHECK(rig.session.stats().dropped == 1);
 }
 
+TEST_CASE("Un réglage de rendu recompose l'image tenue, même si rien d'autre n'a bougé", "[app][session]") {
+  ajp::app::play::FrenchUi french;
+  Rig rig;
+  rig.session.handle(ring_frame(0, 0));
+  rig.tick();
+  rig.run_clock(0);
+  rig.tick();
+  const std::size_t presented = rig.screen.shown.size();
+  rig.tick();
+  CHECK(rig.screen.shown.size() == presented);  // présentation à la demande : rien de neuf
+  rig.session.request_present();
+  rig.tick();
+  CHECK(rig.screen.shown.size() == presented + 1);
+  rig.tick();
+  CHECK(rig.screen.shown.size() == presented + 1);  // une seule fois
+}
+
 TEST_CASE("Retard des images : de la soumission à l'écriture vue par main", "[app][session]") {
   ajp::app::play::FrenchUi french;
   FrameLatency latency;

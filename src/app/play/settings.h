@@ -291,9 +291,8 @@ inline constexpr core::Range<int> kVideoLatencyMs{0, 250};
 inline constexpr core::Range<float> kVolume{0.0F, 1.5F};
 inline constexpr core::Range<float> kSubtitleScale{0.5F, 2.0F};
 inline constexpr std::size_t kLanguagePresets = 2;  // préréglages de langue
-// RTX HDR prend 0 à 200 ; au-delà, le grade ajoute son contraste et sa saturation (render/grade_params.h).
-inline constexpr core::Range<int> kTrueHdrContrast{0, 400};
-inline constexpr core::Range<int> kTrueHdrSaturation{0, 400};
+inline constexpr core::Range<int> kTrueHdrContrast{0, 200};
+inline constexpr core::Range<int> kTrueHdrSaturation{0, 200};
 inline constexpr core::Range<int> kTrueHdrGray{10, 100};
 inline constexpr core::Range<int> kTrueHdrPeak{400, 2000};  // ou 0 : automatique
 }  // namespace limits

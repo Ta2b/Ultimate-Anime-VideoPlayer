@@ -8,6 +8,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
+#include <format>
 #include <string>
 #include <utility>
 
@@ -240,48 +241,81 @@ bool SpanFp8Reference::run(cudaStream_t stream, const void* input, void* output,
                            std::string& error) {
   Impl& n = *impl_;
   if (n.attribute != cudaSuccess) {
-    error = std::string("mémoire partagée des noyaux refusée : ") + cudaGetErrorString(n.attribute);
+    int device = 0;
+    int optin = 0;
+    static_cast<void>(cudaGetDevice(&device));
+    static_cast<void>(cudaDeviceGetAttribute(&optin, cudaDevAttrMaxSharedMemoryPerBlockOptin, device));
+    error = std::format(
+        "mémoire partagée des noyaux refusée : {} (conv de {} o demandés, {} o permis par ce GPU)",
+        cudaGetErrorString(n.attribute), n.c1.smem, optin);
+    static_cast<void>(cudaGetLastError());
     return false;
   }
   // Une erreur non collante laissée par un appel d'avant (une sonde de TensorRT, un attribut refusé par ce
   // pilote) ne doit pas passer pour un échec de ces lancements : on la vide avant le premier.
   static_cast<void>(cudaGetLastError());
+  // Le premier lancement refusé, avec sa forme : « invalid argument » seul ne dit pas lequel des
+  // quatre-vingts lancements ni pourquoi (grille, bloc ou mémoire partagée au-delà de ce que ce GPU accepte).
+  std::string refused;
+  const auto watch = [&](const char* what, dim3 grid, dim3 block, std::size_t smem) {
+    if (!refused.empty()) return;
+    const cudaError_t e = cudaPeekAtLastError();
+    if (e == cudaSuccess) return;
+    refused = std::format("{} refusé ({}) : grille {}x{}x{}, bloc {}x{}x{}, mémoire partagée {} o", what,
+                          cudaGetErrorString(e), grid.x, grid.y, grid.z, block.x, block.y, block.z, smem);
+  };
+  const auto conv = [&](const char* what, const auto& launcher) {
+    launcher.launch(stream);
+    watch(what, launcher.grid, launcher.block, launcher.smem);
+  };
   int* peaks = static_cast<int*>(n.peak_device.get());
   const std::int64_t count = n.npix * kChannels;
   const auto observe = [&](int index, const __half* tensor) {
     if (!track) return;
-    absmax_kernel<<<static_cast<unsigned>(std::min<std::int64_t>((count + 255) / 256, 2048)), 256, 0,
-                    stream>>>(tensor, count, peaks + index);
+    const auto blocks = static_cast<unsigned>(std::min<std::int64_t>((count + 255) / 256, 2048));
+    absmax_kernel<<<blocks, 256, 0, stream>>>(tensor, count, peaks + index);
+    watch("absmax", dim3(blocks), dim3(256), 0);
   };
   const unsigned slice_blocks = static_cast<unsigned>((n.npix * 8 + 255) / 256);
   const auto to_slice = [&](const __half* tensor, int slice) {
     copy_slice_kernel<<<slice_blocks, 256, 0, stream>>>(tensor, n.cat_in, n.npix, slice * kChannels);
+    watch("copy_slice", dim3(slice_blocks), dim3(256), 0);
   };
-  unshuffle_kernel<<<static_cast<unsigned>((n.npix + 255) / 256), 256, 0, stream>>>(
-      static_cast<const __half*>(input), n.unshuffled, n.height, n.width);
-  n.c1.launch(stream);
+  const auto unshuffle_blocks = static_cast<unsigned>((n.npix + 255) / 256);
+  unshuffle_kernel<<<unshuffle_blocks, 256, 0, stream>>>(static_cast<const __half*>(input), n.unshuffled,
+                                                         n.height, n.width);
+  watch("unshuffle", dim3(unshuffle_blocks), dim3(256), 0);
+  conv("conv d'entrée", n.c1);
   observe(0, n.ab[0]);
   to_slice(n.ab[0], 0);
   for (std::size_t b = 0; b < static_cast<std::size_t>(kBlocks); ++b) {
     const int base = 1 + 3 * static_cast<int>(b);
     __half* t = n.ab[(b + 1) % 2];
     const __half* x = n.ab[b % 2];
-    n.la[b].launch(stream);
+    conv("conv a", n.la[b]);
     observe(base, n.r1);
     if (b == static_cast<std::size_t>(kBlocks - 1)) to_slice(n.r1, 3);
-    n.lb[b].launch(stream);
+    conv("conv b", n.lb[b]);
     observe(base + 1, n.r2);
-    n.lc[b].launch(stream);
-    block_end_kernel<<<static_cast<unsigned>((n.npix + 127) / 128), 128, 0, stream>>>(
-        t, x, n.blocks[b].att_w.as<__half>(), n.blocks[b].att_b.as<float>(), n.npix);
+    conv("conv c", n.lc[b]);
+    const auto end_blocks = static_cast<unsigned>((n.npix + 127) / 128);
+    block_end_kernel<<<end_blocks, 128, 0, stream>>>(t, x, n.blocks[b].att_w.as<__half>(),
+                                                     n.blocks[b].att_b.as<float>(), n.npix);
+    watch("fin de bloc", dim3(end_blocks), dim3(128), 0);
     observe(base + 2, t);
     if (b == 0) to_slice(t, 2);
     if (b == static_cast<std::size_t>(kBlocks - 1)) to_slice(t, 1);
   }
-  n.cat.launch(stream);
-  n.pix.launch(stream);
-  depth_to_space_kernel<<<static_cast<unsigned>((n.npix * 12 + 255) / 256), 256, 0, stream>>>(
-      n.pix_out, static_cast<__half*>(output), n.h, n.w);
+  conv("conv de concaténation", n.cat);
+  conv("conv de pixels", n.pix);
+  const auto d2s_blocks = static_cast<unsigned>((n.npix * 12 + 255) / 256);
+  depth_to_space_kernel<<<d2s_blocks, 256, 0, stream>>>(n.pix_out, static_cast<__half*>(output), n.h, n.w);
+  watch("depth_to_space", dim3(d2s_blocks), dim3(256), 0);
+  if (!refused.empty()) {
+    static_cast<void>(cudaGetLastError());
+    error = "référence FP16 : " + refused;
+    return false;
+  }
   cudaError_t result = cudaGetLastError();
   if (result == cudaSuccess) result = cudaStreamSynchronize(stream);
   if (result != cudaSuccess) {
