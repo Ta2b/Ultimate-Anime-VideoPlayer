@@ -9,7 +9,7 @@ animes sont en AAC 2.0. Le module `audio/anime_sound.{h,cpp}` part donc de la pa
 Seulement pour une **piste stéréo sur une sortie stéréo**, en casque ou aux enceintes. Repli propre, sans
 aucune dégradation, dans tous les autres cas : piste mono (même doublée en stéréo par le décodeur), 5.1 et 7.1
 (chemin des profils de mixage), Home cinéma, mode Fidèle, appareil multicanal. Le niveau **Naturel** ne construit
-rien : le son passe **bit à bit** comme avant. Défaut : **Anime**.
+rien : le son passe **bit à bit** comme avant. Défaut : **Naturel** (le niveau Anime se choisit dans Paramètres > Son).
 
 ## Chaîne de traitement
 1. **Spatialisation** (milieu/côtés : M = (G+D)/2, S = (G−D)/2).

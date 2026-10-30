@@ -144,9 +144,14 @@ render::GradeChoice grade_of(const PlaySettings& s, bool true_hdr_open, int peak
       // Une LUT sans nom est sautée (intensité 0) ; une seule LUT d'HDR met toute la chaîne en codes PQ.
       const std::vector<LookLayer> slots = look_slots(s);
       constexpr std::array<double render::GradeParams::*, render::kLookSlots> kMixes{
-          &render::GradeParams::look_mix,  &render::GradeParams::look_mix2, &render::GradeParams::look_mix3,
-          &render::GradeParams::look_mix4, &render::GradeParams::look_mix5, &render::GradeParams::look_mix6,
-          &render::GradeParams::look_mix7, &render::GradeParams::look_mix8};
+          &render::GradeParams::look_mix,   &render::GradeParams::look_mix2,
+          &render::GradeParams::look_mix3,  &render::GradeParams::look_mix4,
+          &render::GradeParams::look_mix5,  &render::GradeParams::look_mix6,
+          &render::GradeParams::look_mix7,  &render::GradeParams::look_mix8,
+          &render::GradeParams::look_mix9,  &render::GradeParams::look_mix10,
+          &render::GradeParams::look_mix11, &render::GradeParams::look_mix12,
+          &render::GradeParams::look_mix13, &render::GradeParams::look_mix14,
+          &render::GradeParams::look_mix15};
       bool any_pq = false;
       for (std::size_t i = 0; i < slots.size(); ++i) {
         params.*kMixes[i] = slots[i].key.empty() ? 0.0 : slots[i].mix;

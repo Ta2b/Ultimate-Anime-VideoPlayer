@@ -119,7 +119,7 @@ void look_section(PlaySettings& d) {
   if (!d.grade && !d.true_hdr) note(i18n::tr("Without RTX HDR, turn on \"Color grading\" below."));
 }
 
-// Le look : jusqu'à huit LUT 3D .cube enchaînées dans l'ordre, comme des nœuds de Resolve
+// Le look : jusqu'à quinze LUT 3D .cube enchaînées dans l'ordre, comme des nœuds de Resolve
 // (render/cube_lut.h) ; ceux du lecteur, puis les fichiers du dossier luts. Chaque intensité va de 0 à 1.
 void look_section(PlaySettings& d, const SettingsChoices& choices) {
   const auto label_of = [&](const std::string& key) -> std::string {
