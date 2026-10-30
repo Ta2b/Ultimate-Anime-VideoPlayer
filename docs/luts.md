@@ -11,7 +11,7 @@ relevés, tons chauds), **Aplats nets** (`maison:aplats`, contraste fort, couleu
 LUT de 33 points.
 
 ## Tes propres LUT
-Dépose des fichiers `.cube` dans le dossier `luts` des données du lecteur (Linux : `~/.local/share/ajp/ajp/luts`).
+Dépose des fichiers `.cube` dans le dossier `luts` des données du lecteur (Linux : `~/.local/share/ajp/ajp/luts`, à côté de `play.toml` ; le lecteur le crée à la première lecture).
 Ils apparaissent dans le menu (le menu relit le dossier à chaque ouverture de la liste).
 - Format : LUT 3D, `LUT_3D_SIZE` de 17 à 65, `DOMAIN_MIN`/`DOMAIN_MAX` et `LUT_3D_INPUT_RANGE` lus ; les LUT 1D sont
   refusées ; un fichier illisible est refusé avec une ligne de journal « look : … ».
