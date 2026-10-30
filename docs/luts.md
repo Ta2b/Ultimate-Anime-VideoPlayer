@@ -54,3 +54,13 @@ Modes de ton « vivid » (blanc SDR au pic) et « reference » (BT.2408, 203 nit
 « night » en préréglages du grade, choix de l'EOTF d'entrée (BT.1886 ou sRGB), dither à la quantification PQ.
 
 Dans `play.toml`, la première LUT est `grade.look` / `grade.look_mix`, les suivantes `grade.looks` (noms) et `grade.looks_mix` (intensités), dans l'ordre.
+
+## Grade adaptatif à la luminosité de la scène
+Les curseurs du grade valent pour une **scène sombre** ; le bloc « Adaptatif à la luminosité de la scène » (réglages
+avancés, onglet Couleurs) donne les valeurs d'une **scène claire** (noirs profonds, couleurs) et deux seuils en nits
+(« scène sombre jusqu'à », « scène claire à partir de », 12 et 110 nits par défaut). À chaque image, le grade mélange
+les deux jeux selon l'APL très lissé de la scène (une à deux secondes de vidéo, remis à la moyenne à chaque coupe de
+scène) : `t = smoothstep(bas, haut, APL)`. Les noirs suivent t ; les couleurs ne s'effacent que sur les derniers 20 % de
+la transition (une scène très claire). Choisis d'après les cinq scènes de Re:Zero ép. 18 de Tatoub
+(`~/ajp-reports/parametres-tatoub-2026-10-30/scenes/LISEZMOI.md`). Pas encore adaptatifs : le gris moyen de RTX HDR
+(réglage du pilote, par image : à faire côté CPU), le contraste et l'intensité des LUT.

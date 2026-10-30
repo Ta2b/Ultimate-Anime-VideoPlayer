@@ -582,4 +582,38 @@ TEST_CASE("look : deux LUT s'enchaînent dans l'ordre, deux inversions se compen
     for (std::size_t c = 0; c < 3; ++c) CHECK(none[x][c] == base[x][c]);
 }
 
+TEST_CASE("grade adaptatif : les noirs se creusent sur une scène claire, pas sur une scène sombre",
+          "[render][gpu][adaptif]") {
+  Gpu gpu;
+  require_device(gpu);
+  REQUIRE(gpu.grade);
+  // Un petit pan sombre (5 nits) dans une image claire (300 nits), puis la même image entièrement sombre.
+  const auto split = [&](double bright_nits) {
+    std::vector<std::uint16_t> pixels(static_cast<std::size_t>(kSide) * kSide * 4);
+    for (int y = 0; y < kSide; ++y)
+      for (int x = 0; x < kSide; ++x) {
+        const double nits = x < 26 ? 5.0 : bright_nits;
+        for (std::size_t c = 0; c < 3; ++c)
+          pixels[(static_cast<std::size_t>(y) * kSide + static_cast<std::size_t>(x)) * 4 + c] =
+              static_cast<std::uint16_t>(std::lround(nits_to_pq(nits) * 65535.0));
+        pixels[(static_cast<std::size_t>(y) * kSide + static_cast<std::size_t>(x)) * 4 + 3] = 65535;
+      }
+    return pixels;
+  };
+  GradeParams params = expanded(0.0);
+  params.shadows = 0.0;  // scène sombre : aucun creusement
+  params.shadow_knee = 50.0;
+  params.ad_on = 1.0;
+  params.ad_lo = 5.0;
+  params.ad_hi = 60.0;
+  params.ad_shadows = 0.9;  // scène claire : noirs creusés
+  const std::vector<Rgb> bright = graded_rgb(gpu, split(300.0), params);
+  const std::vector<Rgb> dark = graded_rgb(gpu, split(8.0), params);
+  params.ad_on = 0.0;
+  const std::vector<Rgb> fixed = graded_rgb(gpu, split(300.0), params);
+  CHECK(bright[8][0] < 2.5);  // 5 nits creusés par la scène claire
+  CHECK(fixed[8][0] > 4.0);   // sans adaptation : intact
+  CHECK(dark[8][0] > 4.0);    // scène sombre : intact
+}
+
 }  // namespace ajp::render

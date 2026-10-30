@@ -189,6 +189,25 @@ void grade_tab(PlaySettings& d, const SettingsChoices& choices) {
     moved |= grade_slider(i18n::tr("Color limiter"), g.guard, kGuard);
     if (moved) d.grade_preset = render::GradePreset::Custom;
     ImGui::Checkbox(i18n::tr("Display P3 gamut"), &g.gamut_p3);
+    // Grade adaptatif : les curseurs ci-dessus sont la scène sombre ; ces valeurs, la scène claire.
+    section(i18n::tr("Adaptive to scene brightness"));
+    ImGui::Checkbox(i18n::tr("Adapt to scene brightness"), &g.adaptive);
+    ImGui::BeginDisabled(!g.adaptive);
+    const auto nits_slider = [](const char* label, double& value) {
+      auto shown = static_cast<float>(value);
+      if (ImGui::SliderFloat(label, &shown, static_cast<float>(kAdaptiveNits.lo), 400.0F, "%.0f nits",
+                             ImGuiSliderFlags_Logarithmic | ImGuiSliderFlags_AlwaysClamp))
+        value = std::clamp(std::round(static_cast<double>(shown)), kAdaptiveNits.lo, kAdaptiveNits.hi);
+    };
+    nits_slider(i18n::tr("Dark scene up to"), g.adaptive_lo);
+    nits_slider(i18n::tr("Bright scene from"), g.adaptive_hi);
+    if (g.adaptive_hi <= g.adaptive_lo) g.adaptive_hi = std::min(g.adaptive_lo + 1.0, kAdaptiveNits.hi);
+    grade_slider(i18n::tr("Deep blacks, bright scene"), g.adaptive_shadows, kShadows);
+    grade_slider(i18n::tr("Colors, very bright scene"), g.adaptive_vibrance, kVibrance);
+    ImGui::EndDisabled();
+    note(
+        i18n::tr("The sliders above are for dark scenes; the values here apply to bright scenes, blended "
+                 "with the scene's smoothed average brightness."));
   }
   ImGui::EndDisabled();
   if (d.true_hdr) {

@@ -82,6 +82,7 @@ vec4 hook() {
 
 //!BUFFER AJG_STATE
 //!VAR float apl
+//!VAR float apl_slow
 //!VAR float prev_pq
 //!VAR float prev_nits
 //!VAR float cut
@@ -141,7 +142,7 @@ vec4 hook() {
 //!BIND AJG_MEAN
 //!BIND AJG_STATE
 //!SAVE AJG_STATS
-//!WIDTH 1
+//!WIDTH 2
 //!HEIGHT 1
 //!COMPUTE 1 1
 //!DESC AnimeJaNai HDR grade - statistiques de scene
@@ -163,6 +164,9 @@ void hook() {
     cut = reset ? 1.0 : 0.0;
     if (!again) {
         apl = reset ? mean_nits : mix(apl, mean_nits, 0.1);
+        // Lissage lent (environ une à deux secondes de vidéo) pour le grade adaptatif ; remis à la moyenne à chaque
+        // changement de plan, comme apl.
+        apl_slow = reset ? mean_nits : mix(apl_slow, mean_nits, 0.02);
         bright = reset ? mean.z : mix(bright, mean.z, 0.1);
     }
     prev_pq = mean_pq;
@@ -172,6 +176,8 @@ void hook() {
     ready = 1.0;
     // x : APL lisse (nits), y : changement de plan, z : moyenne de l'image, w : part claire lissee.
     imageStore(out_image, ivec2(0, 0), vec4(apl, cut, mean_nits, bright));
+    // Deuxième texel : x : APL très lissé (nits), pour le grade adaptatif.
+    imageStore(out_image, ivec2(1, 0), vec4(apl_slow, 0.0, 0.0, 1.0));
 }
 
 //!HOOK OUTPUT

@@ -709,3 +709,24 @@ TEST_CASE("le look (LUT) et son intensité se relisent à l'identique, un nom de
   CHECK_FALSE(ajp::app::play::parse_settings("[grade]\nlook_mix = 1.5\n").has_value());
   CHECK(ajp::app::play::PlaySettings{}.look.empty());  // aucun look par défaut
 }
+
+TEST_CASE("le grade adaptatif se relit à l'identique et survit au changement de préréglage",
+          "[app][settings]") {
+  ajp::app::play::PlaySettings s;
+  s.grade_values.adaptive = true;
+  s.grade_values.adaptive_lo = 15.0;
+  s.grade_values.adaptive_hi = 130.0;
+  s.grade_values.adaptive_shadows = 0.7;
+  s.grade_values.adaptive_vibrance = 0.1;
+  const auto back = ajp::app::play::parse_settings(ajp::app::play::format_settings(s));
+  REQUIRE(back.has_value());
+  CHECK(back->grade_values.adaptive);
+  CHECK(back->grade_values.adaptive_lo == 15.0);
+  CHECK(back->grade_values.adaptive_hi == 130.0);
+  CHECK(back->grade_values.adaptive_shadows == 0.7);
+  CHECK(back->grade_values.adaptive_vibrance == 0.1);
+  const auto switched = ajp::app::play::with_preset(ajp::render::GradePreset::Naturel, s.grade_values);
+  CHECK(switched.adaptive);
+  CHECK(switched.adaptive_hi == 130.0);
+  CHECK_FALSE(ajp::app::play::PlaySettings{}.grade_values.adaptive);  // coupé par défaut
+}

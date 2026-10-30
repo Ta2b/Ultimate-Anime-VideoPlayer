@@ -357,3 +357,27 @@ TEST_CASE("le contraste et la saturation à 200 ou moins restent ceux de RTX HDR
   CHECK(vivid->params.punch == Approx(0.30));
   CHECK(vivid->params.chroma == Approx(1.12));
 }
+
+TEST_CASE("grade adaptatif : les valeurs d'une scène claire passent par les mêmes courbes que les curseurs",
+          "[grade][adaptif]") {
+  using namespace ajp::render;
+  GradeSettings s;
+  const GradeContext context{.route = ajp::core::HdrMode::TrueHdr, .output_pq = true, .peak_nits = 1000.0};
+  const auto off = decide_grade(s, context);
+  REQUIRE(off);
+  CHECK(off->params.ad_on == 0.0);
+  s.adaptive = true;
+  s.adaptive_lo = 20.0;
+  s.adaptive_hi = 150.0;
+  s.adaptive_shadows = 0.6;
+  s.adaptive_vibrance = 0.0;
+  const auto on = decide_grade(s, context);
+  REQUIRE(on);
+  CHECK(on->params.ad_on == 1.0);
+  CHECK(on->params.ad_lo == 20.0);
+  CHECK(on->params.ad_hi == 150.0);
+  CHECK(on->params.ad_shadows > 0.6);  // la courbe de réponse relève le milieu de course
+  CHECK(on->params.ad_vibrance == 0.0);
+  s.adaptive_lo = 0.5;
+  CHECK_FALSE(decide_grade(s, context));  // hors plage
+}
