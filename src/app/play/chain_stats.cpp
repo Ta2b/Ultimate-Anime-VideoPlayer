@@ -37,6 +37,8 @@ std::string_view auto_reason_label(core::AutoReason reason) {
       return i18n::tr("no pair left");
     case core::AutoReason::Ceiling:
       return i18n::tr("display limit");
+    case core::AutoReason::Rearm:
+      return i18n::tr("floor rearmed");
   }
   return {};
 }

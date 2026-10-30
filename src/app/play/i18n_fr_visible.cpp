@@ -92,6 +92,7 @@ constexpr std::array kVisibleTexts{
     Entry{"elapsed {} · expected ~{}", "écoulé {} · prévu ~{}"},
     Entry{"error {} (details in the log)", "erreur {} (détails au journal)"},
     Entry{"extracting the Maxine SDK", "extraction du SDK Maxine"},
+    Entry{"floor rearmed", "réarmement au plancher"},
     Entry{"hardware slowdown", "ralentissement matériel"},
     Entry{"imported", "importé"},
     Entry{"it needs an RTX 40 (Ada) with the TensorRT engine",

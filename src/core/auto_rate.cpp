@@ -18,7 +18,9 @@ int auto_granularity(int wanted) {
 int auto_ceiling(double display_hz, double source_fps, int granularity) {
   granularity = auto_granularity(granularity);
   // Hors de [5, 240] i/s : une cadence fausse (VFR, base de temps) ; l'interpolation reste à ×1.
-  if (display_hz <= 0.0 || source_fps < 5.0 || source_fps > 240.0) return granularity;
+  if (!(display_hz > 0.0) || !(source_fps >= 5.0)  // NaN comme 0 : écran ou cadence inconnus
+      || source_fps < 5.0 || source_fps > 240.0)
+    return granularity;
   int best = granularity;
   for (int step = 2 * granularity; step <= kAutoMaxStep * granularity; ++step) {
     if (source_fps * step / granularity <= display_hz * 1.01) best = step;
@@ -44,6 +46,8 @@ std::string_view auto_reason_text(AutoReason reason) {
       return "plus aucune paire";
     case AutoReason::Ceiling:
       return "plafond de l'écran";
+    case AutoReason::Rearm:
+      return "réarmement au plancher";
   }
   return {};
 }
@@ -242,7 +246,8 @@ int AutoRate::drop_for(int predicted) const {
 
 void AutoRate::descend(AutoReason reason, std::int64_t now_us, int steps) {
   if (step_ <= granularity_) {  // le plancher : rien à descendre, la mesure repart
-    hold_until_us_ = now_us + kHoldUs;
+    // Pas de temps de repos ici : des images manquées qui continuent (trous du contenu) le repousseraient
+    // sans fin et la montée ne reviendrait jamais.
     clean_ = 0;
     late_at_.fill(kNever);
     miss_.fill({kNever, 0});
@@ -303,6 +308,7 @@ void AutoRate::try_rise(std::int64_t now_us) {
 int AutoRate::pair(const PairOutcome& outcome) {
   const std::int64_t now = outcome.now_us;
   beat_us_ = now;
+  mute_ = false;
   if (outcome.period_us > 0) period_us_ = outcome.period_us;
   // Faite au palier d'avant, ou dans le temps de repos d'un changement : elle ne dit rien du palier d'ici.
   if (outcome.made_step != step_ || now < hold_until_us_) return step_;
@@ -350,7 +356,24 @@ int AutoRate::tick(std::int64_t now_us, bool playing) {
   if (now_us - beat_us_ >= kWatchdogUs) {
     beat_us_ = now_us;
     pairs_ = 0;  // plus de montée avant que les paires reviennent
+    mute_ = true;
     descend(AutoReason::Watchdog, now_us);
+  }
+  // Réarmement : au plancher alors que l'écran permet plus, la régulation ne reste pas figée. Les montées
+  // normales veulent des paires propres, aucune image manquée et un plafond appris estompé ; si l'une de ces
+  // conditions ne se lève jamais, un cran d'essai toutes les kFloorEscapeUs. S'il échoue, la descente
+  // habituelle le reprend.
+  if (step_ <= granularity_ && ceiling_ > granularity_ && !mute_) {
+    if (floor_since_us_ == 0) floor_since_us_ = now_us;
+    if (now_us - floor_since_us_ >= kFloorEscapeUs && now_us - last_change_us_ >= kFloorEscapeUs) {
+      step_ = std::min(granularity_ + (fine() ? std::max(2, granularity_ * 8 / 100) : 1), ceiling_);
+      probing_ = true;
+      probe_until_us_ = now_us + kProbeUs;
+      changed(AutoReason::Rearm, now_us);
+      floor_since_us_ = 0;
+    }
+  } else {
+    floor_since_us_ = 0;
   }
   return step_;
 }

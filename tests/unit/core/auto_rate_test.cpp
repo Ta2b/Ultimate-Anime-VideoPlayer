@@ -436,3 +436,58 @@ TEST_CASE("auto : le plafond choisi borne la fréquence de l'écran", "[core][au
   CHECK(auto_ceiling(auto_limit_hz(165.0, 120), 23.976) == 5);  // ≤ 120 i/s : ×5 (119,88)
   CHECK(auto_ceiling(auto_limit_hz(165.0, 0), 23.976) == 6);
 }
+
+TEST_CASE("auto : figé à ×1 par des images manquées qui ne cessent pas, il se réarme tout seul",
+          "[core][auto_rate][plancher]") {
+  AutoRate rate(6);
+  std::int64_t now = 10 * kSecond;
+  rate.settle(now);
+  // Descente au plancher par des manquées, puis des trous de contenu : trois par seconde, sans fin.
+  std::int64_t last_rise = 0;
+  for (int i = 0; i < 400; ++i) {
+    now += kPeriod;
+    rate.pair(PairOutcome{.now_us = now, .made_step = rate.step(), .late = 0, .period_us = kPeriod});
+    if (i % 8 == 0) rate.missed(now, 3);
+    rate.tick(now, true);
+    if (rate.reason() == ajp::core::AutoReason::Rearm) last_rise = now;
+    if (i == 40) CHECK(rate.step() >= 1);
+  }
+  CHECK(last_rise != 0);  // au moins un cran d'essai en une quinzaine de secondes
+}
+
+TEST_CASE("auto : une fréquence d'écran NaN ou nulle laisse ×1, sans figer le contrôleur",
+          "[core][auto_rate][plancher]") {
+  CHECK(auto_ceiling(std::nan(""), 23.976) == 1);
+  CHECK(auto_ceiling(0.0, 23.976) == 1);
+  CHECK(auto_ceiling(144.0, std::nan("")) == 1);
+  AutoRate rate(auto_ceiling(0.0, 23.976));
+  std::int64_t now = 10 * kSecond;
+  for (int i = 0; i < 400; ++i) {
+    now += kPeriod;
+    rate.pair(PairOutcome{.now_us = now, .made_step = rate.step(), .late = 0, .period_us = kPeriod});
+    rate.tick(now, true);
+  }
+  CHECK(rate.step() == 1);  // le plafond est ×1 : rien à tenter
+  rate.set_ceiling(6);      // l'écran revient : la montée reprend sans rien d'autre
+  for (int i = 0; i < 600; ++i) {
+    now += kPeriod;
+    rate.pair(PairOutcome{.now_us = now, .made_step = rate.step(), .late = 0, .period_us = kPeriod});
+    rate.tick(now, true);
+  }
+  CHECK(rate.step() > 1);
+}
+
+TEST_CASE("auto : le moteur muet au plancher ne monte pas d'essai", "[core][auto_rate][plancher]") {
+  AutoRate rate(6);
+  std::int64_t now = 10 * kSecond;
+  for (int i = 0; i < 6; ++i) {
+    now += AutoRate::kWatchdogUs;
+    rate.tick(now, true);
+  }
+  CHECK(rate.step() == 1);
+  for (int i = 0; i < 20; ++i) {
+    now += AutoRate::kWatchdogUs;
+    rate.tick(now, true);
+    CHECK(rate.step() == 1);
+  }
+}
