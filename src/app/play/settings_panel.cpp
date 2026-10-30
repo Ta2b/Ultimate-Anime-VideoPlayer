@@ -161,8 +161,9 @@ void look_section(PlaySettings& d, const SettingsChoices& choices) {
 // Grade adaptatif : les curseurs du grade et le gris moyen de RTX HDR sont la scène sombre ; ces valeurs, la
 // scène claire, mélangées selon la luminance moyenne lissée de l'image source (moteur TensorRT). Hors du bloc
 // désactivé du grade : section() ouvre un encadré, et un BeginDisabled ne peut pas le traverser.
-void adaptive_section(render::GradeSettings& g) {
+void adaptive_section(PlaySettings& d) {
   using namespace render::grade_limits;
+  render::GradeSettings& g = d.grade_values;
   // Grade adaptatif : les curseurs ci-dessus et le gris moyen de RTX HDR sont la scène sombre ; ces
   // valeurs, la scène claire, mélangées selon la luminance moyenne lissée de l'image source (moteur
   // TensorRT).
@@ -185,6 +186,7 @@ void adaptive_section(render::GradeSettings& g) {
                          static_cast<float>(kMiddleGray.hi), "%.0f", ImGuiSliderFlags_AlwaysClamp))
     g.adaptive_gray = std::clamp(std::round(static_cast<double>(gray)), kMiddleGray.lo, kMiddleGray.hi);
   ImGui::EndDisabled();
+  ImGui::Checkbox(i18n::tr("Record scene statistics (learning)"), &d.adaptive_record);
   note(
       i18n::tr("The sliders above and the RTX HDR middle gray are for dark scenes; the values here apply "
                "to bright scenes, blended with the source's smoothed average brightness. Needs the "
@@ -224,7 +226,7 @@ void grade_tab(PlaySettings& d, const SettingsChoices& choices) {
     ImGui::Checkbox(i18n::tr("Display P3 gamut"), &g.gamut_p3);
   }
   ImGui::EndDisabled();
-  if (panel::advanced()) adaptive_section(d.grade_values);
+  if (panel::advanced()) adaptive_section(d);
   if (d.true_hdr) {
     note(i18n::tr("RTX HDR path: TrueHDR, then the grade on the PQ output."));
   } else if (d.hdr_native) {

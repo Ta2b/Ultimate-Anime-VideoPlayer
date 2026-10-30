@@ -45,6 +45,7 @@ constexpr std::array kSettingsPages{
     Entry{"Bright scene from", "Scène claire à partir de"},
     Entry{"Deep blacks, bright scene", "Noirs profonds, scène claire"},
     Entry{"Colors, very bright scene", "Couleurs, scène très claire"},
+    Entry{"Record scene statistics (learning)", "Enregistrer les statistiques de scène (apprentissage)"},
     Entry{"Middle gray, bright scene", "Gris moyen, scène claire"},
     Entry{"The sliders above and the RTX HDR middle gray are for dark scenes; the values here apply to "
           "bright scenes, blended with the source's smoothed average brightness. Needs the TensorRT engine "

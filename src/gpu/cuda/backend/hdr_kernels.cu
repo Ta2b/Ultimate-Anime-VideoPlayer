@@ -65,9 +65,13 @@ __global__ void __launch_bounds__(kPixelThreads, kPixelBlocksPerSm)
   surf2Dwrite(out, p.surface, x * static_cast<int>(sizeof(ushort4)), y);
 }
 
-// Luminance moyenne : un thread par point d'une grille au pas de 4, somme par warp puis une addition atomique
-// par warp.
+// Statistiques de luminance : un thread par point d'une grille au pas de 4 ; histogramme de 64 cases en
+// mémoire partagée par bloc, puis ajouté au global ; somme des luminances par warp.
 __global__ void __launch_bounds__(kBlock* kBlock) mean_luma_partial(MeanLumaParams p) {
+  __shared__ unsigned int bins[kLumaBins];
+  const int tid = static_cast<int>(threadIdx.y * blockDim.x + threadIdx.x);
+  if (tid < kLumaBins) bins[tid] = 0U;
+  __syncthreads();
   const int gx = static_cast<int>(blockIdx.x * blockDim.x + threadIdx.x);
   const int gy = static_cast<int>(blockIdx.y * blockDim.y + threadIdx.y);
   float value = 0.0F;
@@ -79,15 +83,46 @@ __global__ void __launch_bounds__(kBlock* kBlock) mean_luma_partial(MeanLumaPara
     value = 0.2126F * __half2float(rgb[i]) + 0.7152F * __half2float(rgb[plane + i]) +
             0.0722F * __half2float(rgb[2 * plane + i]);
     value = value != value ? 0.0F : fminf(fmaxf(value, 0.0F), 1.0F);
+    atomicAdd(&bins[min(kLumaBins - 1, static_cast<int>(value * static_cast<float>(kLumaBins)))], 1U);
   }
   for (int offset = 16; offset > 0; offset >>= 1) value += __shfl_down_sync(0xFFFFFFFFU, value, offset);
-  if ((threadIdx.y * blockDim.x + threadIdx.x) % 32 == 0) atomicAdd(p.accum, value);
+  if (tid % 32 == 0) atomicAdd(p.sum, value);
+  __syncthreads();
+  if (tid < kLumaBins && bins[tid] != 0U) atomicAdd(&p.histogram[tid], bins[tid]);
+}
+
+// Le centile q (0 à 1) de l'histogramme, au milieu de sa case.
+__device__ float percentile(const unsigned int* histogram, float count, float q) {
+  const float target = q * count;
+  float seen = 0.0F;
+  for (int b = 0; b < kLumaBins; ++b) {
+    seen += static_cast<float>(histogram[b]);
+    if (seen >= target) return (static_cast<float>(b) + 0.5F) / static_cast<float>(kLumaBins);
+  }
+  return 1.0F;
 }
 
 __global__ void mean_luma_finish(MeanLumaParams p) {
   const float count = static_cast<float>(p.width / 4) * static_cast<float>(p.height / 4);
-  *p.out = count > 0.0F ? *p.accum / count : 0.0F;
-  *p.accum = 0.0F;
+  if (count > 0.0F) {
+    float dark = 0.0F;
+    float bright = 0.0F;
+    for (int b = 0; b < kLumaBins; ++b) {
+      const float centre = (static_cast<float>(b) + 0.5F) / static_cast<float>(kLumaBins);
+      if (centre < 0.10F) dark += static_cast<float>(p.histogram[b]);
+      if (centre > 0.80F) bright += static_cast<float>(p.histogram[b]);
+    }
+    p.out[0] = *p.sum / count;
+    p.out[1] = percentile(p.histogram, count, 0.05F);
+    p.out[2] = percentile(p.histogram, count, 0.50F);
+    p.out[3] = percentile(p.histogram, count, 0.95F);
+    p.out[4] = percentile(p.histogram, count, 0.995F);
+    p.out[5] = dark / count;
+    p.out[6] = bright / count;
+    p.out[7] += 1.0F;  // numéro de mesure : la dernière écriture
+  }
+  *p.sum = 0.0F;
+  for (int b = 0; b < kLumaBins; ++b) p.histogram[b] = 0U;
 }
 
 }  // namespace

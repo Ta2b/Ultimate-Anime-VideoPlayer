@@ -87,6 +87,8 @@ struct Chain {
   double adaptive_luma = -1.0;  // lissée, 0 à 1 ; -1 : aucune mesure
   double adaptive_t = 0.0;
   std::int64_t adaptive_at_us = 0;
+  std::filesystem::path adaptive_log;  // adaptive-log.tsv (apprentissage)
+  std::int64_t adaptive_log_us = 0;
 };
 
 // Les réglages avec, pendant un repli HDR, le mode que le profil demande à la place du mode de

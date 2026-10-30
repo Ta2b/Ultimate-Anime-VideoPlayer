@@ -279,6 +279,9 @@ struct PlaySettings {
   // look du lecteur (render/looks.h) ; sinon le nom d'un fichier du dossier luts des données. Intensité de 0
   // à 1.
   std::string look;
+  // Apprentissage du grade adaptatif : une ligne par seconde (statistiques de la scène et réglages courants)
+  // dans adaptive-log.tsv, à côté de play.toml, pendant que l'utilisateur règle à l'œil.
+  bool adaptive_record = false;
   double look_mix = 1.0;
   // Les LUT suivantes (le menu Couleurs en ajoute avec + et en retire avec −), enchaînées après la première
   // comme des nœuds de Resolve, chacune avec sa propre intensité ; au plus render::kLookSlots - 1.
