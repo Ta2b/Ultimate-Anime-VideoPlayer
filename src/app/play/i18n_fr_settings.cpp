@@ -36,16 +36,17 @@ constexpr std::array kSettingsPages{
     Entry{"Color grading", "Étalonnage"},
     Entry{"Color limiter", "Limiteur de couleurs"},
     Entry{"Colors", "Couleurs"},
-    Entry{"Look (LUT)", "Look (LUT)"},
-    Entry{"Look intensity", "Intensité du look"},
+    Entry{"Look {} (LUT)", "Look {} (LUT)"},
+    Entry{"Look {} intensity", "Intensité du look {}"},
     Entry{"Look unreadable: {}", "Look illisible : {}"},
     Entry{"Cool sky", "Ciel froid"},
     Entry{"Warm pastel", "Pastel chaud"},
     Entry{"Crisp flats", "Aplats nets"},
-    Entry{"Looks are LUT files (.cube) placed in the luts folder of the player's data; names containing PQ, "
-          "HDR or 2020 are read as HDR LUTs.",
-          "Les looks sont des fichiers LUT (.cube) placés dans le dossier luts des données du lecteur ; un "
-          "nom contenant PQ, HDR ou 2020 est lu comme une LUT d'HDR."},
+    Entry{"Looks are LUT files (.cube) placed in the luts folder of the player's data, applied in order like "
+          "Resolve nodes; names containing PQ, HDR or 2020 are read as HDR LUTs.",
+          "Les looks sont des fichiers LUT (.cube) placés dans le dossier luts des données du lecteur, "
+          "appliqués dans l'ordre comme les nœuds de Resolve ; un nom contenant PQ, HDR ou 2020 est lu comme "
+          "une LUT d'HDR."},
     Entry{"Contrast", "Contraste"},
     Entry{"Contrast and saturation", "Contraste et saturation"},
     Entry{"Custom", "Personnalisé"},

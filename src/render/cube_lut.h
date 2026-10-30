@@ -15,6 +15,7 @@ namespace ajp::render {
 
 inline constexpr int kLutMinSize = 17;
 inline constexpr int kLutMaxSize = 65;
+inline constexpr std::size_t kLookSlots = 3;                      // LUT enchaînées dans le menu Couleurs
 inline constexpr std::size_t kLutMaxBytes = 16U * 1024U * 1024U;  // un .cube de 65³ pèse ~5 Mo
 
 struct CubeLut {
@@ -30,6 +31,12 @@ std::expected<CubeLut, Refusal> parse_cube(std::string_view text);
 
 // Le texte d'un bloc //!TEXTURE libplacebo (rgba16hf, linéaire, bords tenus) nommé `name`, données comprises.
 std::string lut_texture_block(const CubeLut& lut, std::string_view name);
+
+// Les entrées d'une LUT qui ne servent jamais : certaines LUT d'HDR rendent (0, 0, 0) pour les couleurs hors
+// de leur gamut d'entrée (un tiers du cube pour « HDR grading base »). L'interpolation entre une zone valide
+// et ce noir assombrit les pixels proches du bord ; ces entrées (sortie noire pour une entrée qui ne l'est
+// pas) sont recopiées du voisin valide le plus proche. Rend le nombre d'entrées remplacées.
+std::size_t fill_unreachable(CubeLut& lut);
 
 // La LUT neutre (identité) de `size` points.
 CubeLut identity_lut(int size);

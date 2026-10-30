@@ -1,6 +1,7 @@
 #include "render/cube_lut.h"
 
 #include <algorithm>
+#include <array>
 #include <bit>
 #include <charconv>
 #include <cmath>
@@ -173,6 +174,63 @@ std::uint16_t to_half(float value) {
   std::uint32_t half = (static_cast<std::uint32_t>(exponent) << 10U) | (mantissa >> 13U);
   if (mantissa & 0x1000U) ++half;  // arrondi au plus proche (la retenue peut monter l'exposant : voulu)
   return static_cast<std::uint16_t>(sign | half);
+}
+
+std::size_t fill_unreachable(CubeLut& lut) {
+  const auto n = static_cast<std::size_t>(lut.size);
+  if (n < 2 || lut.rgb.size() != n * n * n * 3) return 0;
+  const auto index = [&](std::size_t r, std::size_t g, std::size_t b) { return (b * n * n + g * n + r); };
+  // Invalide : sortie exactement noire alors que l'entrée n'est pas proche du noir (somme des indices > 3).
+  std::vector<char> valid(n * n * n, 1);
+  std::size_t invalid = 0;
+  for (std::size_t b = 0; b < n; ++b)
+    for (std::size_t g = 0; g < n; ++g)
+      for (std::size_t r = 0; r < n; ++r) {
+        const std::size_t i = index(r, g, b);
+        if (r + g + b > 3 && lut.rgb[3 * i] == 0.0F && lut.rgb[3 * i + 1] == 0.0F &&
+            lut.rgb[3 * i + 2] == 0.0F) {
+          valid[i] = 0;
+          ++invalid;
+        }
+      }
+  const std::size_t total = invalid;
+  while (invalid > 0) {  // une couche de voisins par tour, vers l'intérieur de la zone noire
+    std::vector<std::size_t> fill;
+    std::vector<std::array<float, 3>> values;
+    for (std::size_t b = 0; b < n; ++b)
+      for (std::size_t g = 0; g < n; ++g)
+        for (std::size_t r = 0; r < n; ++r) {
+          if (valid[index(r, g, b)]) continue;
+          std::array<float, 3> sum{0.0F, 0.0F, 0.0F};
+          int count = 0;
+          const std::array<std::array<int, 3>, 6> steps{
+              {{-1, 0, 0}, {1, 0, 0}, {0, -1, 0}, {0, 1, 0}, {0, 0, -1}, {0, 0, 1}}};
+          for (const auto& step : steps) {
+            const auto rr = static_cast<long>(r) + step[0];
+            const auto gg = static_cast<long>(g) + step[1];
+            const auto bb = static_cast<long>(b) + step[2];
+            if (rr < 0 || gg < 0 || bb < 0 || rr >= static_cast<long>(n) || gg >= static_cast<long>(n) ||
+                bb >= static_cast<long>(n))
+              continue;
+            const std::size_t j = index(static_cast<std::size_t>(rr), static_cast<std::size_t>(gg),
+                                        static_cast<std::size_t>(bb));
+            if (!valid[j]) continue;
+            for (std::size_t c = 0; c < 3; ++c) sum[c] += lut.rgb[3 * j + c];
+            ++count;
+          }
+          if (count == 0) continue;
+          fill.push_back(index(r, g, b));
+          values.push_back({sum[0] / static_cast<float>(count), sum[1] / static_cast<float>(count),
+                            sum[2] / static_cast<float>(count)});
+        }
+    if (fill.empty()) break;  // plus aucun voisin valide : le reste est laissé tel quel
+    for (std::size_t k = 0; k < fill.size(); ++k) {
+      for (std::size_t c = 0; c < 3; ++c) lut.rgb[3 * fill[k] + c] = values[k][c];
+      valid[fill[k]] = 1;
+    }
+    invalid -= fill.size();
+  }
+  return total - invalid;
 }
 
 CubeLut identity_lut(int size) {

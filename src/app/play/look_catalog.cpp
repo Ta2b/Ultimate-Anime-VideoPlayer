@@ -6,6 +6,7 @@
 #include <system_error>
 
 #include "app/play/i18n.h"
+#include "core/log.h"
 #include "render/looks.h"
 
 namespace ajp::app::play {
@@ -43,6 +44,9 @@ std::expected<render::CubeLut, Refusal> load_look(const std::string& key,
     lut.error().detail = key + " : " + lut.error().detail;
     return std::unexpected(std::move(lut.error()));
   }
+  // Les entrees noires d'un gamut d'entree sans usage ne doivent pas assombrir le bord de la zone utile.
+  if (const std::size_t filled = render::fill_unreachable(*lut); filled > 0)
+    log_channel("app")->info("look : {} : {} entrees inutilisees remplacees", key, filled);
   return lut;
 }
 

@@ -135,34 +135,43 @@ render::GradeChoice grade_of(const PlaySettings& s, bool true_hdr_open, int peak
     }
     if (decision->mode != render::GradeMode::Neutral) {
       render::GradeParams params = decision->params;
-      if (!s.look.empty()) {
-        params.look_mix = s.look_mix;
-        params.look_pq = pq && render::look_is_pq(s.look, "") ? 1.0 : 0.0;
-      }
+      // Une LUT sans nom est sautée (intensité 0) ; une seule LUT d'HDR met toute la chaîne en codes PQ.
+      params.look_mix = s.look.empty() ? 0.0 : s.look_mix;
+      params.look_mix2 = s.look2.empty() ? 0.0 : s.look2_mix;
+      params.look_mix3 = s.look3.empty() ? 0.0 : s.look3_mix;
+      const bool any_pq = (!s.look.empty() && render::look_is_pq(s.look, "")) ||
+                          (!s.look2.empty() && render::look_is_pq(s.look2, "")) ||
+                          (!s.look3.empty() && render::look_is_pq(s.look3, ""));
+      params.look_pq = pq && any_pq ? 1.0 : 0.0;
       (pq ? choice.pq : choice.sdr) = params;
     }
   }
   return choice;
 }
 
-bool apply_look(PlaceboScreen& screen, const std::string& key, const std::filesystem::path& luts_dir) {
-  if (key.empty()) {
-    if (auto cleared = screen.set_look(nullptr); !cleared)
-      log_channel("app")->warn("look : {}", cleared.error().detail);
-    return true;
+std::vector<std::string> apply_looks(PlaceboScreen& screen, const PlaySettings& s,
+                                     const std::filesystem::path& luts_dir) {
+  const std::array<const std::string*, render::kLookSlots> keys{&s.look, &s.look2, &s.look3};
+  std::array<std::optional<render::CubeLut>, render::kLookSlots> loaded;
+  std::array<const render::CubeLut*, render::kLookSlots> luts{};
+  std::vector<std::string> failed;
+  for (std::size_t i = 0; i < render::kLookSlots; ++i) {
+    if (keys[i]->empty()) continue;
+    auto lut = load_look(*keys[i], luts_dir);
+    if (!lut) {
+      log_channel("app")->warn("look : {}", lut.error().detail);
+      failed.push_back(*keys[i]);
+      continue;
+    }
+    log_channel("app")->info("look {} : {} ({} points)", i + 1, *keys[i], lut->size);
+    loaded[i] = std::move(*lut);
+    luts[i] = &*loaded[i];
   }
-  auto lut = load_look(key, luts_dir);
-  if (!lut) {
-    log_channel("app")->warn("look : {}", lut.error().detail);
-    static_cast<void>(screen.set_look(nullptr));
-    return false;
-  }
-  if (auto set = screen.set_look(&*lut); !set) {
+  if (auto set = screen.set_looks(luts); !set) {
     log_channel("app")->warn("look : {}", set.error().detail);
-    return false;
+    failed.push_back(set.error().detail);
   }
-  log_channel("app")->info("look : {} ({} points)", key, lut->size);
-  return true;
+  return failed;
 }
 
 std::string output_text(const PlaceboScreen& screen, const PlaySettings& s, int peak_nits) {

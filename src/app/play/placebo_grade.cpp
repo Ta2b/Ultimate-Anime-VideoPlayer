@@ -128,9 +128,10 @@ void PlaceboScreen::set_grade(const render::GradeChoice& choice) {
   impl_->select_grade(impl_->target_color);
 }
 
-std::expected<void, Refusal> PlaceboScreen::set_look(const render::CubeLut* lut) {
+std::expected<void, Refusal> PlaceboScreen::set_looks(
+    const std::array<const render::CubeLut*, render::kLookSlots>& luts) {
   if (!impl_->grade) return refuse(RefusalCode::HdrUnavailable, "look : pas de grade sur cette sortie");
-  if (auto set = impl_->grade->set_look(lut); !set) return set;
+  if (auto set = impl_->grade->set_looks(luts); !set) return set;
   impl_->select_grade(impl_->target_color);  // les paramètres du look repartent dans le nouveau hook
   return {};
 }

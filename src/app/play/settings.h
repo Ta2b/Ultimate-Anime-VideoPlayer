@@ -272,6 +272,11 @@ struct PlaySettings {
   // à 1.
   std::string look;
   double look_mix = 1.0;
+  // Deuxième et troisième LUT, enchaînées après la première comme des nœuds de Resolve.
+  std::string look2;
+  double look2_mix = 1.0;
+  std::string look3;
+  double look3_mix = 1.0;
   // Vrai noir OLED (dernière passe du grade) : selon l'écran détecté (display_edid.h), forcé ou
   // coupé ; le pied finit `oled_black_steps` pas de code au-dessus du noir de la source.
   OledBlack oled_black = OledBlack::Auto;

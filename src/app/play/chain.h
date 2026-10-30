@@ -87,9 +87,10 @@ struct Chain {
 // repli : ce que remember_chain et play.toml retiennent.
 PlaySettings with_intended_hdr(const Chain& to, PlaySettings settings);
 
-// Charge le look `key` (vide : aucun) dans le grade de l'écran. Faux, avec une ligne de journal, si le
-// fichier manque, ne se lit pas ou si libplacebo refuse la texture ; le look est alors retiré.
-bool apply_look(PlaceboScreen& screen, const std::string& key, const std::filesystem::path& luts_dir);
+// Charge les LUT du look (jusqu'à trois, enchaînées) dans le grade de l'écran. Rend les noms de celles qui
+// manquent ou ne se lisent pas (une ligne de journal chacune) ; elles sont alors sautées.
+std::vector<std::string> apply_looks(PlaceboScreen& screen, const PlaySettings& s,
+                                     const std::filesystem::path& luts_dir);
 
 // Couleur de la sortie de RTX HDR : PQ BT.2020 au pic donné à TrueHDR.
 ColorInfo pq_color(int peak_nits);
