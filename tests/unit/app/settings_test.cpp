@@ -774,7 +774,7 @@ TEST_CASE("grade adaptatif : une série claire par nature reçoit plus de contra
   CHECK(ordinary.true_hdr_contrast == 100);
   CHECK(ordinary.grade_values.punch_base == s.grade_values.punch_base);
   const auto bright = ajp::app::play::with_adaptive(s, 0.0, 0.0, 1.0);
-  CHECK(bright.true_hdr_contrast == 130);
+  CHECK(bright.true_hdr_contrast == 115);
   CHECK(bright.grade_values.punch_base > s.grade_values.punch_base);
   CHECK(bright.grade_values.chroma_base > s.grade_values.chroma_base);
   s.true_hdr_contrast = 190;

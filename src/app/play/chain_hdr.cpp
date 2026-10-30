@@ -227,9 +227,9 @@ PlaySettings with_adaptive(const PlaySettings& s, double t, double tv, double bs
       static_cast<int>(std::lround(std::lerp(static_cast<double>(s.true_hdr_gray), g.adaptive_gray, t)));
   // Série claire par nature (luminosité moyenne de l'épisode haute) : plus de contraste et de couleur pour
   // que l'image reste percutante, que ses scènes ordinaires ne soient pas toutes traitées comme « claires ».
-  o.punch_base += 0.25 * bs;
-  o.chroma_base += 0.12 * bs;
-  out.true_hdr_contrast = std::min(out.true_hdr_contrast + static_cast<int>(std::lround(30.0 * bs)), 200);
+  o.punch_base += 0.12 * bs;
+  o.chroma_base += 0.06 * bs;
+  out.true_hdr_contrast = std::min(out.true_hdr_contrast + static_cast<int>(std::lround(15.0 * bs)), 200);
   return out;
 }
 
@@ -309,11 +309,14 @@ void adaptive_tick(Chain& to, std::int64_t now_us) {
   to.series_luma +=
       std::min(static_cast<double>(dt) / (std::min(to.series_us, kSeriesTauUs) + kSeriesSeedUs), 1.0) *
       (static_cast<double>(*luma) - to.series_luma);
-  const double shift = std::clamp(0.8 * (to.series_luma - kSeriesRef), -0.05, 0.20);
-  const double bs_x = std::clamp((to.series_luma - 0.38) / 0.14, 0.0, 1.0);
+  // Même rendu que Re:Zero (la référence : 0,30 en moyenne, mesuré sur 155 secondes de son épisode) : les
+  // seuils suivent la série EN PROPORTION, si bien qu'une scène à 1,45 fois la luminosité moyenne de Slime se
+  // règle comme une scène à 1,45 fois celle de Re:Zero.
+  const double ratio = std::clamp(to.series_luma / kSeriesRef, 0.7, 1.8);
+  const double bs_x = std::clamp((to.series_luma - 0.36) / 0.14, 0.0, 1.0);
   const double bs = bs_x * bs_x * (3.0 - 2.0 * bs_x);
-  const double lo = g.adaptive_lo / 100.0 + shift;
-  const double hi = std::max(g.adaptive_hi / 100.0 + shift, lo + 0.01);
+  const double lo = g.adaptive_lo / 100.0 * ratio;
+  const double hi = std::max(std::min(g.adaptive_hi / 100.0 * ratio, 0.95), lo + 0.01);
   const double x = std::clamp((to.adaptive_luma - lo) / (hi - lo), 0.0, 1.0);
   const double t = x * x * (3.0 - 2.0 * x);
   // La vibrance dépend de la couleur, pas de la luminosité : un ciel ou un aplat bleu saturé (« bleu » moyen
