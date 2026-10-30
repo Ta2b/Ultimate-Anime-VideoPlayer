@@ -263,6 +263,7 @@ void adaptive_tick(Chain& to, std::int64_t now_us) {
       to.adaptive_t = 0.0;
       to.adaptive_tv = 0.0;
       to.adaptive_blue = 0.0;
+      to.adaptive_chroma = 0.0;
       to.adaptive_luma = -1.0;
       set_grade(to, to.running);
       to.live.set_true_hdr(true_hdr_params(to.running, to.auto_peak));
@@ -281,9 +282,11 @@ void adaptive_tick(Chain& to, std::int64_t now_us) {
   if (to.adaptive_luma < 0.0 || std::abs(static_cast<double>(*luma) - to.adaptive_luma) > kCut) {
     to.adaptive_luma = static_cast<double>(*luma);
     to.adaptive_blue = static_cast<double>(stats->blue);
+    to.adaptive_chroma = static_cast<double>(stats->chroma);
   } else {
     to.adaptive_luma += follow * (static_cast<double>(*luma) - to.adaptive_luma);
     to.adaptive_blue += follow * (static_cast<double>(stats->blue) - to.adaptive_blue);
+    to.adaptive_chroma += follow * (static_cast<double>(stats->chroma) - to.adaptive_chroma);
   }
   const double lo = g.adaptive_lo / 100.0;
   const double hi = std::max(g.adaptive_hi / 100.0, lo + 0.01);
@@ -295,7 +298,12 @@ void adaptive_tick(Chain& to, std::int64_t now_us) {
   constexpr double kBlueLo = 0.05;
   constexpr double kBlueHi = 0.13;
   const double xv = std::clamp((to.adaptive_blue - kBlueLo) / (kBlueHi - kBlueLo), 0.0, 1.0);
-  const double tv = xv * xv * (3.0 - 2.0 * xv);
+  // Un bleu saturé mais SOMBRE (écran d'interface bleu nuit) n'est pas un ciel : le bleu ne compte qu'avec
+  // une scène à moitié claire. Et un flash très saturé de n'importe quelle teinte (feu, éclair : chroma
+  // moyenne au-dessus de 0,45) n'a pas besoin de vibrance non plus (audit sur trois séries).
+  const double gate = std::clamp(t / 0.5, 0.0, 1.0);
+  const double xc = std::clamp((to.adaptive_chroma - 0.40) / 0.20, 0.0, 1.0);
+  const double tv = std::max(xv * xv * (3.0 - 2.0 * xv) * gate, xc * xc * (3.0 - 2.0 * xc));
   const bool same = std::abs(t - to.adaptive_t) < 0.02 && std::abs(tv - to.adaptive_tv) < 0.02 &&
                     !(t == 0.0 && to.adaptive_t != 0.0) && !(t == 1.0 && to.adaptive_t != 1.0) &&
                     !(tv == 0.0 && to.adaptive_tv != 0.0) && !(tv == 1.0 && to.adaptive_tv != 1.0);
