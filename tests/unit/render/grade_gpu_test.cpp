@@ -350,6 +350,38 @@ TEST_CASE("look : huit LUT s'enchaînent, la dernière compte comme la première
   CHECK(once[32][0] > 0.55);
 }
 
+TEST_CASE(
+    "grade selon la scène : une scène claire prend les noirs des scènes claires, une sombre garde les "
+    "curseurs",
+    "[render][gpu][adaptive]") {
+  Gpu gpu;
+  require_device(gpu);
+  REQUIRE(gpu.grade);
+  const std::vector<std::uint16_t> source = sdr_ramp(1.0, 0.8, 0.6);
+  GradeParams params = sdr_neutral();
+  params.shadows = 0.6;  // noirs creusés par les curseurs (scène sombre)
+  params.shadow_knee = 100.0;
+  const std::vector<Rgb> fixed = graded_codes(gpu, source, params);
+  params.scene_mix = 1.0;
+  params.shadows_b = 0.0;  // la scène claire ne creuse rien
+  params.shadow_knee_b = 100.0;
+  params.scene_lo = 0.01;  // cette rampe est « claire » dès le moindre signal
+  params.scene_hi = 0.02;
+  const std::vector<Rgb> bright = graded_codes(gpu, source, params);
+  double fixed_sum = 0.0;
+  double bright_sum = 0.0;
+  for (std::size_t x = 0; x < fixed.size() / 4; ++x) {  // le quart sombre de la rampe
+    fixed_sum += fixed[x][0];
+    bright_sum += bright[x][0];
+  }
+  CHECK(bright_sum > fixed_sum * 1.05);  // noirs moins creusés
+  params.scene_lo = 0.97;                // seuils au-dessus de tout signal : scène sombre, curseurs seuls
+  params.scene_hi = 0.98;
+  const std::vector<Rgb> dark = graded_codes(gpu, source, params);
+  for (std::size_t x = 0; x < dark.size(); ++x)
+    for (std::size_t c = 0; c < 3; ++c) CHECK(dark[x][c] == fixed[x][c]);
+}
+
 }  // namespace ajp::render
 
 namespace ajp::render {

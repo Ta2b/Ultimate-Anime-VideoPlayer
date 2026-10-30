@@ -220,3 +220,59 @@
 //!MINIMUM 10.0
 //!MAXIMUM 400.0
 80.0
+
+//!PARAM scene_mix
+//!DESC 1 = noirs, vibrance et gris moyen suivent la luminance lisse de la scene
+//!TYPE float
+//!MINIMUM 0.0
+//!MAXIMUM 1.0
+0.0
+
+//!PARAM scene_lo
+//!DESC Luminance moyenne (part du blanc, codes gamma) sous laquelle la scene est sombre
+//!TYPE float
+//!MINIMUM 0.01
+//!MAXIMUM 0.99
+0.13
+
+//!PARAM scene_hi
+//!DESC Luminance moyenne (part du blanc, codes gamma) au-dessus de laquelle la scene est claire
+//!TYPE float
+//!MINIMUM 0.01
+//!MAXIMUM 0.99
+0.54
+
+//!PARAM shadows_b
+//!DESC Profondeur des noirs des scenes claires
+//!TYPE float
+//!MINIMUM 0.0
+//!MAXIMUM 0.95
+0.0
+
+//!PARAM shadow_knee_b
+//!DESC Fin de la zone des ombres des scenes claires (nits)
+//!TYPE float
+//!MINIMUM 1.0
+//!MAXIMUM 200.0
+50.0
+
+//!PARAM vibrance_b
+//!DESC Vibrance des scenes claires
+//!TYPE float
+//!MINIMUM 0.0
+//!MAXIMUM 2.0
+0.0
+
+//!PARAM em_base_b
+//!DESC Base de la courbe TrueHDR des scenes claires (4 x gris moyen)
+//!TYPE float
+//!MINIMUM 1.0
+//!MAXIMUM 400.0
+200.0
+
+//!PARAM em_pow_b
+//!DESC Exposant de la courbe TrueHDR des scenes claires
+//!TYPE float
+//!MINIMUM 1.0
+//!MAXIMUM 16.0
+6.0

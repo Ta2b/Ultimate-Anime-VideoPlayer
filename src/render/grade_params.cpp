@@ -37,6 +37,26 @@ double shadow_knee_for(double shadows, double white) {
   return white * (0.25 + 0.30 * std::min(shadows / 0.8, 1.0));
 }
 
+// Grade selon la scène sans RTX HDR : les valeurs des scènes claires (noirs, vibrance, gris moyen de
+// l'émulation) que le hook mêle aux précédentes. `peak_cap` borne em_base comme apply_truehdr_look ; RTX HDR
+// (`driven_by_player`) est réglé par le lecteur et n'y passe pas.
+void apply_scene_adapt(const GradeSettings& s, double white, double em_cap, bool driven_by_player,
+                       GradeParams& p) {
+  if (!s.adaptive || driven_by_player) return;
+  p.scene_mix = 1.0;
+  p.scene_lo = s.adaptive_lo / 100.0;
+  p.scene_hi = s.adaptive_hi / 100.0;
+  p.shadows_b = shadows_effect(s.adaptive_shadows);
+  p.shadow_knee_b = shadow_knee_for(s.adaptive_shadows, white);
+  p.vibrance_b = vibrance_effect(s.adaptive_vibrance);
+  p.em_base_b = p.em_base;
+  p.em_pow_b = p.em_pow;
+  if (p.emulate > 0.5) {
+    p.em_base_b = std::clamp(4.0 * s.adaptive_gray, 40.0, em_cap);
+    p.em_pow_b = std::clamp(6.0 * std::pow(50.0 / s.adaptive_gray, 0.35), 2.0, 16.0);
+  }
+}
+
 // Émulation TrueHDR (lois ajustées sur le SDK RTX Video, hdr-grade.lua:113-127) : contraste en
 // puissance autour du pivot, saturation sur la chroma, gris moyen m placé vers m nits.
 void apply_truehdr_look(const GradeSettings& s, double peak, GradeParams& p) {
@@ -87,6 +107,7 @@ GradeParams sdr_params(const GradeSettings& s) {
     // médiane d'une scène de nuit passait de 2,9 à 0,46 nit (−84 %, contre −31 % en HDR10).
     p.em_base = std::clamp(4.0 * s.middle_gray, 40.0, 400.0);  // le pivot : 0,2575 × em_base
   }
+  apply_scene_adapt(s, p.peak, 400.0, false, p);
   p.black_lo = s.true_black ? s.black_lo : 0.0;
   p.black_hi = s.true_black ? s.black_hi : 0.0;
   apply_punch(s, p);
@@ -258,6 +279,7 @@ std::expected<GradeDecision, Refusal> decide_grade(const GradeSettings& s, const
     p.spec_gain = std::max(p.area_gain, 1.0 + 1.2 * high + 1.6 * std::max(0.0, high - 0.25));
     p.vibrance = vibrance_effect(s.vibrance_rtx);
   }
+  apply_scene_adapt(s, paper, std::min(400.0, 0.5 * peak), context.route == core::HdrMode::TrueHdr, p);
   // Dans les plages //!PARAM du hook.
   p.area_gain = std::clamp(p.area_gain, 1.0, 4.0);
   p.spec_gain = std::clamp(p.spec_gain, p.area_gain, 20.0);

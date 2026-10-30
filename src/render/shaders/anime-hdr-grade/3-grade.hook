@@ -67,10 +67,17 @@ vec3 target_luma() {
 
 // Pied des noirs sur le maximum RGB : pente 1 au genou, pente (1 - shadows) au noir.
 // Seuls les pixels vraiment sombres sont touches, meme s'ils sont satures (bleu nuit).
+// Valeurs de la scene : celles des curseurs (scene sombre) ou des scenes claires (shadows_b...), mêlees par la
+// luminance lisse ; posees au debut de hook().
+float sc_shadows = 0.0;
+float sc_knee = 50.0;
+float sc_vibrance = 0.0;
+float sc_em_base = 200.0;
+float sc_em_pow = 6.0;
 float shadow_ratio(float m) {
-    if (m >= shadow_knee) return 1.0;
-    float u = 1.0 - m / shadow_knee;
-    return 1.0 - shadows * u * u;
+    if (m >= sc_knee) return 1.0;
+    float u = 1.0 - m / sc_knee;
+    return 1.0 - sc_shadows * u * u;
 }
 
 vec3 to_ictcp(vec3 bt2020_nits) {
@@ -126,7 +133,7 @@ vec3 truehdr_look(vec3 nits) {
         // Scene claire ou grands aplats clairs : moins d'expansion (eblouissement, limiteur OLED).
         // Les eclats isoles gardent leur montee vers le pic (gains d'isolement plus bas).
         float g = mix(1.0, 0.55, smoothstep(0.30, 0.70, key)) * mix(1.0, 0.75, smoothstep(0.05, 0.30, bright));
-        top = max(peak * g, min(peak, 1.5 * em_base));
+        top = max(peak * g, min(peak, 1.5 * sc_em_base));
         // Scene de nuit : la moitie du contraste sous le pivot, les ombres restent lisibles.
         lo = mix(1.0 + 0.5 * (em_lo - 1.0), em_lo, smoothstep(0.04, 0.15, key));
     }
@@ -135,9 +142,9 @@ vec3 truehdr_look(vec3 nits) {
     float idx = clamp(Y + 0.15 * (max(x.r, max(x.g, x.b)) - Y), 0.0, 1.0);
     if (idx < 1e-6) return vec3(0.0);
     float s2 = pow(idx, 2.0 / 2.4);
-    vec3 c = x * (em_base * s2 / idx * exp(log(max(top / em_base, 1.0)) * pow(s2, 0.5 * em_pow)));
+    vec3 c = x * (sc_em_base * s2 / idx * exp(log(max(top / sc_em_base, 1.0)) * pow(s2, 0.5 * sc_em_pow)));
     float Yn = max(dot(c, luma), 1e-6);
-    float P = 0.2575 * em_base;
+    float P = 0.2575 * sc_em_base;
     float Y2;
     if (Yn < P) {
         Y2 = P * pow(Yn / P, lo);
@@ -163,6 +170,22 @@ float gamut_room(vec3 a, vec3 b) {
 
 vec4 hook() {
     vec4 px = HOOKED_tex(HOOKED_pos);
+    sc_shadows = shadows;
+    sc_knee = shadow_knee;
+    sc_vibrance = vibrance;
+    sc_em_base = em_base;
+    sc_em_pow = em_pow;
+    if (scene_mix > 0.5) {
+        // Luminance moyenne lissee, en part du blanc SDR, ramenee en codes gamma (BT.1886).
+        float key = pow(clamp(AJG_STATS_tex(vec2(0.5)).x / sdr_white, 0.0, 1.0), 1.0 / 2.4);
+        float t = smoothstep(scene_lo, max(scene_hi, scene_lo + 0.01), key);
+        sc_shadows = mix(shadows, shadows_b, t);
+        sc_knee = mix(shadow_knee, shadow_knee_b, t);
+        // Les couleurs ne s'effacent que sur le dernier cinquieme de la transition (comme avec RTX HDR).
+        sc_vibrance = mix(vibrance, vibrance_b, smoothstep(0.8, 1.0, t));
+        sc_em_base = mix(em_base, em_base_b, t);
+        sc_em_pow = mix(em_pow, em_pow_b, t);
+    }
     vec3 lin = ajg_decode(px.rgb);
     // L'isolement se mesure sur l'image d'origine, comme les cartes de zone.
     float y_src = dot(lin, vec3(0.2627, 0.6780, 0.0593));
@@ -231,7 +254,7 @@ vec4 hook() {
         c *= r;
     }
 
-    if (vibrance > 0.0) {
+    if (sc_vibrance > 0.0) {
         // Tons moyens (r = 1, la majorite des pixels) : ICtCp deja calcule.
         vec3 ictcp = abs(r - 1.0) < 1e-5 ? ictcp_in : to_ictcp(from_target(c));
         float chroma = length(ictcp.yz);
@@ -239,7 +262,7 @@ vec4 hook() {
         // ombres protegees pour ne pas colorer le bruit et les traits.
         float weight = smoothstep(0.0, 0.06, chroma) * (1.0 - smoothstep(0.10, 0.40, chroma))
                      * smoothstep(0.12, 0.30, ictcp.x) * (1.0 - skin);
-        ictcp.yz *= 1.0 + vibrance * weight;
+        ictcp.yz *= 1.0 + sc_vibrance * weight;
         vec3 vivid = to_target(LMS_TO_RGB * pq_to_nits(ICTCP_TO_LMS * ictcp));
         // Limite douce : le renforcement ralentit avant le bord du gamut ou le pic.
         float room = gamut_room(c, vivid);

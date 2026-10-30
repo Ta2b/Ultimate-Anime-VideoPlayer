@@ -140,6 +140,18 @@ struct GradeParams {
   double emulate = 0.0;
   // HDR adaptatif (route native, tous GPU) : 1, l'aspect TrueHDR émulé suit la scène lissée.
   double adapt = 0.0;
+  // Grade selon la scène sur les routes sans RTX HDR (HDR adaptatif, mode SDR) : noirs, vibrance et gris
+  // moyen (em_base, em_pow) des scènes claires, mêlés aux précédents selon la luminance moyenne lissée de
+  // l'image (en part du blanc, codes gamma comme celle que RTX HDR mesure) entre scene_lo et scene_hi.
+  // scene_mix à 0 : désactivé (RTX HDR : le lecteur règle ces valeurs lui-même).
+  double scene_mix = 0.0;
+  double scene_lo = 0.13;
+  double scene_hi = 0.54;
+  double shadows_b = 0.0;
+  double shadow_knee_b = 50.0;
+  double vibrance_b = 0.0;
+  double em_base_b = 200.0;
+  double em_pow_b = 6.0;
   double sdr_white = 203.0;
   double em_base = 200.0;
   double em_pow = 6.0;
