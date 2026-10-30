@@ -242,6 +242,17 @@ TEST_CASE("gain de sécurité : le pire signal plein-échelle reste sous 0,9", "
   CHECK(at96.length() >= 120);
 }
 
+TEST_CASE("réponses de l'utilisateur : le niveau est respecté comme dans HeSuVi", "[hrir]") {
+  // Une réponse dont la somme des |h| vaut 3 (bien au-dessus de 0,9) garde ses valeurs : pas de gain caché.
+  Hrir strong;
+  strong.sample_rate = 48'000;
+  strong.taps[0][0] = {1.5F, 1.0F, 0.5F};
+  strong.taps[0][1] = {0.2F};
+  const Hrir kept = prepared(strong, 48'000);
+  CHECK(kept.taps[0][0] == strong.taps[0][0]);
+  CHECK(kept.taps[0][1] == strong.taps[0][1]);
+}
+
 TEST_CASE("la convolution d'une impulsion rend la réponse", "[hrir]") {
   const Hrir hrir = simple_hrir(1500, 11);  // trois partitions
   HrirConvolver conv(hrir, 2, 0.0F);

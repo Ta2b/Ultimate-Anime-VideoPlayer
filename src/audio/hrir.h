@@ -30,6 +30,9 @@ inline constexpr int kHrirMaxTaps = 32'768;       // échantillons par réponse
 inline constexpr int kHrirBlock = 512;            // trames par bloc de convolution (latence : un bloc)
 inline constexpr std::size_t kHrirPositions = 8;  // FL FR FC LFE BL BR SL SR (l'ordre du mixeur à 7.1)
 inline constexpr float kHrirPeak = 0.9F;          // plafond après convolution d'un signal plein-échelle
+// Le niveau des réponses de l'utilisateur est respecté comme dans HeSuVi, PipeWire ou JamesDSP (aucun gain) ;
+// seule une réponse démesurée est ramenée ici. Le mixeur écrête doucement la sortie.
+inline constexpr float kHrirUserCeiling = 8.0F;
 
 // Les réponses d'un haut-parleur vers chaque oreille ; vide : ce haut-parleur n'a pas de réponse.
 struct Hrir {
@@ -52,7 +55,7 @@ std::vector<float> resample(std::span<const float> in, int from_rate, int to_rat
 // Le gain de sécurité : le plus fort des filtres est borné à kHrirPeak par la somme de ses valeurs absolues
 // (le pire signal plein-échelle sur un seul haut-parleur ne dépasse alors pas kHrirPeak) ; jamais de gain
 // au-dessus de 1. Rend le gain appliqué.
-float normalize(Hrir& hrir);
+float normalize(Hrir& hrir, float ceiling = kHrirPeak);
 // La réponse au taux de sortie, puis normalisée.
 Hrir prepared(const Hrir& hrir, int sample_rate);
 
