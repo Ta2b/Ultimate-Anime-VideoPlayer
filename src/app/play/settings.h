@@ -131,9 +131,10 @@ inline constexpr int kPriorityCount = 3;
 inline constexpr int kAutoCapMin = 24;
 inline constexpr int kAutoCapMax = 480;
 
-// Les réglages par défaut du grade et du look : la configuration de Tatoub (30/10/2026), réglée à l'œil sur ses
-// épisodes. Les curseurs sont ceux d'une scène sombre ; le grade adaptatif les glisse vers les valeurs d'une scène
-// claire (noirs 0,80, couleurs 0, gris moyen 30) selon la luminosité de la scène. Le gamut P3 reste propre à l'écran.
+// Les réglages par défaut du grade et du look : la configuration de Tatoub (30/10/2026), réglée à l'œil sur
+// ses épisodes. Les curseurs sont ceux d'une scène sombre ; le grade adaptatif les glisse vers les valeurs
+// d'une scène claire (noirs 0,80, couleurs 0, gris moyen 30) selon la luminosité de la scène. Le gamut P3
+// reste propre à l'écran.
 inline render::GradeSettings default_grade_values() {
   render::GradeSettings g;
   g.highlights_rtx = 1.0;
@@ -305,13 +306,11 @@ struct PlaySettings {
   double look_mix = 1.0;
   // Les LUT suivantes (le menu Couleurs en ajoute avec + et en retire avec −), enchaînées après la première
   // comme des nœuds de Resolve, chacune avec sa propre intensité ; au plus render::kLookSlots - 1.
-  std::vector<LookLayer> look_layers{{"Black-Enhancement-L.cube", 1.0},
-                                     {"Shadow-Enhancement-L.cube", 1.0},
-                                     {"HDR-contrast-Enhancement-L.cube", 1.0},
-                                     {"HDR-contrast-Enhancement-L.cube", 1.0},
-                                     {"Midtone-gamma-Enhancement-C.cube", 1.0},
-                                     {"boost black maintain chroma.cube", 1.0},
-                                     {"HDR-contrast-Enhancement-L.cube", 1.0}};
+  std::vector<LookLayer> look_layers{
+      {"Black-Enhancement-L.cube", 1.0},         {"Shadow-Enhancement-L.cube", 1.0},
+      {"HDR-contrast-Enhancement-L.cube", 1.0},  {"HDR-contrast-Enhancement-L.cube", 1.0},
+      {"Midtone-gamma-Enhancement-C.cube", 1.0}, {"boost black maintain chroma.cube", 1.0},
+      {"HDR-contrast-Enhancement-L.cube", 1.0}};
   // Vrai noir OLED (dernière passe du grade) : selon l'écran détecté (display_edid.h), forcé ou
   // coupé ; le pied finit `oled_black_steps` pas de code au-dessus du noir de la source.
   OledBlack oled_black = OledBlack::Auto;
