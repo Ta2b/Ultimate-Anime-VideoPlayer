@@ -3,8 +3,12 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <ctime>
+#include <filesystem>
 #include <format>
+#include <fstream>
 #include <optional>
+#include <system_error>
 #include <utility>
 
 #include "app/play/chain.h"
@@ -224,7 +228,35 @@ PlaySettings with_adaptive(const PlaySettings& s, double t) {
   return out;
 }
 
+// Apprentissage : une ligne par seconde de lecture dans adaptive-log.tsv (statistiques de la scène, réglages
+// courants de l'utilisateur et position t du grade adaptatif), pour ajuster des courbes sur ses réglages
+// faits à la main.
+void adaptive_record(Chain& to, const gpu::KernelOps::SceneStats& stats, std::int64_t now_us) {
+  if (to.adaptive_log.empty() || to.session.view().paused || now_us - to.adaptive_log_us < 1'000'000) return;
+  to.adaptive_log_us = now_us;
+  std::error_code error;
+  const bool fresh = !std::filesystem::exists(to.adaptive_log, error);
+  std::ofstream out(to.adaptive_log, std::ios::app);
+  if (!out) return;
+  if (fresh)
+    out << "unix_s\tfichier\tposition_s\tmoyenne\tp05\tp50\tp95\tp995\tpart_noir\tpart_"
+           "clair\tnoirs\tcouleurs\teclats\t"
+           "aplats\tetendues\tlimiteur\tgris_moyen\tcontraste\tsaturation\tadaptatif\tt\n";
+  const PlaySettings& s = to.running;
+  const render::GradeSettings& g = s.grade_values;
+  out << std::time(nullptr) << '\t' << to.file.filename().string() << '\t'
+      << static_cast<double>(std::max<std::int64_t>(to.session.view().position_us, 0)) / 1e6 << '\t'
+      << stats.mean << '\t' << stats.p05 << '\t' << stats.p50 << '\t' << stats.p95 << '\t' << stats.p995
+      << '\t' << stats.dark << '\t' << stats.bright << '\t' << g.shadows << '\t' << g.vibrance_rtx << '\t'
+      << g.highlights_rtx << '\t' << g.area_rtx << '\t' << g.expand << '\t' << g.guard << '\t'
+      << s.true_hdr_gray << '\t' << s.true_hdr_contrast << '\t' << s.true_hdr_saturation << '\t'
+      << (g.adaptive ? 1 : 0) << '\t' << to.adaptive_t << '\n';
+}
+
 void adaptive_tick(Chain& to, std::int64_t now_us) {
+  if (to.running.adaptive_record && to.kernels != nullptr && to.true_hdr_open) {
+    if (const auto stats = to.kernels->scene_stats()) adaptive_record(to, *stats, now_us);
+  }
   const render::GradeSettings& g = to.running.grade_values;
   if (!g.adaptive || to.kernels == nullptr || !to.true_hdr_open) {
     if (to.adaptive_t != 0.0) {  // coupé en cours de route : retour aux curseurs
@@ -238,8 +270,9 @@ void adaptive_tick(Chain& to, std::int64_t now_us) {
   if (now_us - to.adaptive_at_us < 100'000) return;
   const std::int64_t dt = to.adaptive_at_us == 0 ? 0 : now_us - to.adaptive_at_us;
   to.adaptive_at_us = now_us;
-  const std::optional<float> luma = to.kernels->scene_luma();
-  if (!luma) return;
+  const auto stats = to.kernels->scene_stats();
+  if (!stats) return;
+  const std::optional<float> luma = stats->mean;
   constexpr double kTauUs = 1'200'000.0;
   constexpr double kCut = 0.20;  // un saut de luminance moyenne : coupe de scène, la mesure repart
   if (to.adaptive_luma < 0.0 || std::abs(static_cast<double>(*luma) - to.adaptive_luma) > kCut)

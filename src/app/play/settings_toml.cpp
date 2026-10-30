@@ -505,6 +505,7 @@ std::expected<PlaySettings, Refusal> settings_from_table(const toml::table& root
     reads.push_back(read(*grade, "grade", "adaptive_vibrance", v.adaptive_vibrance));
     reads.push_back(read(*grade, "grade", "adaptive_gray", v.adaptive_gray));
     reads.push_back(read(*grade, "grade", "look", s.look));
+    reads.push_back(read(*grade, "grade", "adaptive_record", s.adaptive_record));
     reads.push_back(read(*grade, "grade", "look_mix", s.look_mix));
     reads.push_back(read_look_layers(*grade, s.look_layers));
     std::string oled(name(s.oled_black));
@@ -700,6 +701,7 @@ std::string format_settings(const PlaySettings& s) {
                                    {"adaptive_vibrance", hundredth(g.adaptive_vibrance)},
                                    {"adaptive_gray", hundredth(g.adaptive_gray)},
                                    {"look", s.look},
+                                   {"adaptive_record", s.adaptive_record},
                                    {"look_mix", hundredth(s.look_mix)},
                                    {"oled_black", std::string(name(s.oled_black))},
                                    {"oled_black_steps", hundredth(s.oled_black_steps)}});
