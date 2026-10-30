@@ -7,6 +7,7 @@
 #include <string>
 #include <vector>
 
+#include "app/play/settings.h"
 #include "core/types.h"
 #include "render/cube_lut.h"
 
@@ -25,5 +26,12 @@ std::vector<LookEntry> list_looks(const std::filesystem::path& luts_dir);
 // pas.
 std::expected<render::CubeLut, Refusal> load_look(const std::string& key,
                                                   const std::filesystem::path& luts_dir);
+
+// Les noms des LUT de la pile dans l'ordre des emplacements (le premier, puis ceux de look_layers, au plus
+// render::kLookSlots) et leur intensité.
+std::vector<LookLayer> look_slots(const PlaySettings& s);
+
+// Vrai si les deux réglages ont la même pile de fichiers (les intensités ne comptent pas).
+bool same_look_files(const PlaySettings& a, const PlaySettings& b);
 
 }  // namespace ajp::app::play

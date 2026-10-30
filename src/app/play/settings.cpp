@@ -13,6 +13,8 @@
 #include <utility>
 #include <vector>
 
+#include "render/cube_lut.h"
+
 namespace ajp::app::play {
 namespace {
 
@@ -381,13 +383,18 @@ std::expected<PlaySettings, Refusal> validate(const PlaySettings& s) {
   if (auto steps = check("grade.oled_black_steps", s.oled_black_steps, render::grade_limits::kBlackSteps);
       !steps)
     return std::unexpected(steps.error());
-  const std::array<std::pair<const char*, double>, 3> mixes{
-      {{"grade.look_mix", s.look_mix}, {"grade.look2_mix", s.look2_mix}, {"grade.look3_mix", s.look3_mix}}};
-  for (const auto& [key, value] : mixes) {
-    if (auto mix = check(key, value, core::Range<double>{0.0, 1.0}); !mix)
+  if (auto mix = check("grade.look_mix", s.look_mix, core::Range<double>{0.0, 1.0}); !mix)
+    return std::unexpected(mix.error());
+  if (s.look_layers.size() + 1 > render::kLookSlots)
+    return refuse(RefusalCode::FieldOutOfRange,
+                  std::format("grade.looks : au plus {} LUT en tout", render::kLookSlots));
+  for (const LookLayer& layer : s.look_layers) {
+    if (auto mix = check("grade.looks_mix", layer.mix, core::Range<double>{0.0, 1.0}); !mix)
       return std::unexpected(mix.error());
   }
-  for (const std::string* name : {&s.look, &s.look2, &s.look3}) {
+  std::vector<const std::string*> names{&s.look};
+  for (const LookLayer& layer : s.look_layers) names.push_back(&layer.key);
+  for (const std::string* name : names) {
     if (name->find('/') != std::string::npos || name->find('\\') != std::string::npos)
       return refuse(RefusalCode::FieldOutOfRange,
                     std::format("grade.look : « {} » n'est pas un nom de fichier", *name));
@@ -515,10 +522,7 @@ PlaySettings live_part(const PlaySettings& running, const PlaySettings& wanted, 
   s.grade_values = wanted.grade_values;
   s.look = wanted.look;
   s.look_mix = wanted.look_mix;
-  s.look2 = wanted.look2;
-  s.look2_mix = wanted.look2_mix;
-  s.look3 = wanted.look3;
-  s.look3_mix = wanted.look3_mix;
+  s.look_layers = wanted.look_layers;
   s.oled_black = wanted.oled_black;
   s.oled_black_steps = wanted.oled_black_steps;
   s.keep_poses = wanted.keep_poses;

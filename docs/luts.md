@@ -11,11 +11,11 @@ relevés, tons chauds), **Aplats nets** (`maison:aplats`, contraste fort, couleu
 LUT de 33 points.
 
 ## Empiler plusieurs LUT (comme les nœuds de Resolve)
-Le menu Couleurs propose **trois emplacements** de look, appliqués **dans l'ordre** (1, puis 2, puis 3) ; chacun a sa
+Le menu Couleurs empile les looks : le bouton **+** ajoute un emplacement à la fin (jusqu'à **huit** en tout), le bouton **−** retire le dernier. Les emplacements s'appliquent **dans l'ordre** (1, puis 2, puis 3...) ; chacun a sa
 propre intensité de 0 à 100 % (0 : l'emplacement est sauté). Chaque LUT lit le résultat de la précédente. Si l'une
-des trois est une LUT d'HDR (nom avec PQ, HDR ou 2020), toute la chaîne travaille sur les codes PQ BT.2020, comme une
+des LUT est une LUT d'HDR (nom avec PQ, HDR ou 2020), toute la chaîne travaille sur les codes PQ BT.2020, comme une
 timeline HDR de Resolve ; sinon sur l'image SDR BT.709. Ordre habituel avec une LUT « de base » d'expansion SDR vers
-HDR : le look créatif d'abord (emplacement 1), la LUT de base en dernier (emplacement 3), ou l'inverse selon ce que
+HDR : le look créatif d'abord (emplacement 1), la LUT de base en dernier (le dernier emplacement), ou l'inverse selon ce que
 la LUT de base attend en entrée ; les deux ordres se comparent en échangeant les emplacements.
 
 ## LUT d'HDR avec une zone noire (« HDR grading base »)
@@ -52,3 +52,5 @@ de FreeVisuals (gratuit pour usage personnel et commercial selon leur page), « 
 ## Idées de sdr2hdr (MIT) à réécrire, pas encore faites
 Modes de ton « vivid » (blanc SDR au pic) et « reference » (BT.2408, 203 nits), styles « natural », « cinematic »,
 « night » en préréglages du grade, choix de l'EOTF d'entrée (BT.1886 ou sRGB), dither à la quantification PQ.
+
+Dans `play.toml`, la première LUT est `grade.look` / `grade.look_mix`, les suivantes `grade.looks` (noms) et `grade.looks_mix` (intensités), dans l'ordre.

@@ -98,6 +98,32 @@ std::expected<void, Refusal> read_legacy_languages(const toml::table& table, std
   return {};
 }
 
+// grade.looks (noms) et grade.looks_mix (intensités) : les LUT de la pile après la première, dans l'ordre.
+// Une intensité manquante vaut 1 ; FieldType si un élément n'est pas du bon type.
+std::expected<void, Refusal> read_look_layers(const toml::table& grade, std::vector<LookLayer>& out) {
+  const toml::node* keys = grade.get("looks");
+  if (keys == nullptr) return {};
+  const toml::array* names = keys->as_array();
+  if (names == nullptr) return refuse(RefusalCode::FieldType, "grade.looks");
+  const toml::node* mixes_node = grade.get("looks_mix");
+  const toml::array* mixes = mixes_node != nullptr ? mixes_node->as_array() : nullptr;
+  if (mixes_node != nullptr && mixes == nullptr) return refuse(RefusalCode::FieldType, "grade.looks_mix");
+  std::vector<LookLayer> layers;
+  for (std::size_t i = 0; i < names->size(); ++i) {
+    const std::optional<std::string> key = names->at(i).value_exact<std::string>();
+    if (!key) return refuse(RefusalCode::FieldType, "grade.looks");
+    LookLayer layer{*key, 1.0};
+    if (mixes != nullptr && i < mixes->size()) {
+      const std::optional<double> mix = mixes->at(i).value<double>();
+      if (!mix) return refuse(RefusalCode::FieldType, "grade.looks_mix");
+      layer.mix = *mix;
+    }
+    layers.push_back(std::move(layer));
+  }
+  out = std::move(layers);
+  return {};
+}
+
 // interpolation.rife : un entier (×3), ou un réel en moitié (×1.5).
 std::expected<void, Refusal> read_factor(const toml::table& table, PlaySettings& s) {
   const toml::node* node = table.get("rife");
@@ -474,10 +500,7 @@ std::expected<PlaySettings, Refusal> settings_from_table(const toml::table& root
     reads.push_back(read(*grade, "grade", "gamut_p3", v.gamut_p3));
     reads.push_back(read(*grade, "grade", "look", s.look));
     reads.push_back(read(*grade, "grade", "look_mix", s.look_mix));
-    reads.push_back(read(*grade, "grade", "look2", s.look2));
-    reads.push_back(read(*grade, "grade", "look2_mix", s.look2_mix));
-    reads.push_back(read(*grade, "grade", "look3", s.look3));
-    reads.push_back(read(*grade, "grade", "look3_mix", s.look3_mix));
+    reads.push_back(read_look_layers(*grade, s.look_layers));
     std::string oled(name(s.oled_black));
     reads.push_back(read(*grade, "grade", "oled_black", oled));
     reads.push_back(read(*grade, "grade", "oled_black_steps", s.oled_black_steps));
@@ -666,12 +689,19 @@ std::string format_settings(const PlaySettings& s) {
                                    {"gamut_p3", g.gamut_p3},
                                    {"look", s.look},
                                    {"look_mix", hundredth(s.look_mix)},
-                                   {"look2", s.look2},
-                                   {"look2_mix", hundredth(s.look2_mix)},
-                                   {"look3", s.look3},
-                                   {"look3_mix", hundredth(s.look3_mix)},
                                    {"oled_black", std::string(name(s.oled_black))},
                                    {"oled_black_steps", hundredth(s.oled_black_steps)}});
+  if (!s.look_layers.empty()) {
+    toml::array names;
+    toml::array mixes;
+    for (const LookLayer& layer : s.look_layers) {
+      names.push_back(layer.key);
+      mixes.push_back(hundredth(layer.mix));
+    }
+    toml::table* grade_table = root.get_as<toml::table>("grade");
+    grade_table->insert("looks", std::move(names));
+    grade_table->insert("looks_mix", std::move(mixes));
+  }
   root.insert("oled", toml::table{{"care", s.oled_care}, {"steady_cadence", s.steady_cadence}});
   root.insert("stats", toml::table{{"all", s.stats.all},
                                    {"chain", s.stats.chain},

@@ -37,6 +37,7 @@
 #include "app/play/host_facts.h"
 #include "app/play/i18n.h"
 #include "app/play/input.h"
+#include "app/play/look_catalog.h"
 #include "app/play/model_choice.h"
 #include "app/play/pipeline.h"
 #include "app/play/placebo_screen.h"
@@ -212,7 +213,7 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
     std::error_code made;
     std::filesystem::create_directories(p.paths.engines.parent_path() / "luts", made);
   }
-  if (!settings.look.empty() || !settings.look2.empty() || !settings.look3.empty())
+  if (std::ranges::any_of(look_slots(settings), [](const LookLayer& l) { return !l.key.empty(); }))
     apply_looks(p.screen, settings, p.paths.engines.parent_path() / "luts");
   p.screen.set_grade(grade_of(settings, settings.true_hdr, peak_nits, auto_peak, {}, {}, source_hdr));
   p.screen.set_finish(settings.final_scaler, settings.deband);
