@@ -49,7 +49,8 @@ constexpr std::array kGradeParams = {
 };
 
 constexpr std::array kLookParams = {
-    ParamBinding{"look_mix", &GradeParams::look_mix},   ParamBinding{"look_white", &GradeParams::look_white},
+    ParamBinding{"look_mix", &GradeParams::look_mix},   ParamBinding{"look_mix2", &GradeParams::look_mix2},
+    ParamBinding{"look_mix3", &GradeParams::look_mix3}, ParamBinding{"look_white", &GradeParams::look_white},
     ParamBinding{"look_pq", &GradeParams::look_pq},     ParamBinding{"sdr_out", &GradeParams::sdr_out},
     ParamBinding{"sdr_gamma", &GradeParams::sdr_gamma}, ParamBinding{"peak", &GradeParams::peak},
 };
@@ -94,7 +95,8 @@ std::expected<ParsedHook, Refusal> parse(pl_gpu gpu, std::string_view text, std:
 }
 
 // Le hook du look : le bloc de la texture de la LUT (ou d'une identité 2x2x2), puis le texte embarqué.
-std::expected<ParsedHook, Refusal> parse_look(pl_gpu gpu, const CubeLut* lut) {
+std::expected<ParsedHook, Refusal> parse_look(pl_gpu gpu,
+                                              const std::array<const CubeLut*, kLookSlots>& luts) {
   static const CubeLut kNeutral = [] {
     CubeLut neutral;
     neutral.size = 2;
@@ -104,13 +106,17 @@ std::expected<ParsedHook, Refusal> parse_look(pl_gpu gpu, const CubeLut* lut) {
   // Le corps d'une texture court jusqu'à la prochaine directive //! : le bloc va donc après le texte du hook.
   std::string text(shaders::anime_hdr_look);
   text += '\n';
-  text += lut_texture_block(lut != nullptr ? *lut : kNeutral, "AJG_LUT");
+  constexpr std::array<std::string_view, kLookSlots> kNames{"AJG_LUT", "AJG_LUT2", "AJG_LUT3"};
+  for (std::size_t i = 0; i < kLookSlots; ++i)
+    text += lut_texture_block(luts[i] != nullptr ? *luts[i] : kNeutral, kNames[i]);
   auto parsed = parse(gpu, text, "anime-hdr-look.hook", kLookParams);
   if (!parsed) return parsed;
-  if (find_param(*parsed->hook, "look_size") == nullptr) {
-    pl_mpv_user_shader_destroy(&parsed->hook);
-    return std::unexpected(
-        Refusal{RefusalCode::FieldMissing, "//!PARAM look_size absent de anime-hdr-look.hook"});
+  for (const std::string_view size : {"look_size", "look_size2", "look_size3"}) {
+    if (find_param(*parsed->hook, size) == nullptr) {
+      pl_mpv_user_shader_destroy(&parsed->hook);
+      return std::unexpected(
+          Refusal{RefusalCode::FieldMissing, std::format("//!PARAM {} absent de anime-hdr-look.hook", size)});
+    }
   }
   return parsed;
 }
@@ -125,7 +131,7 @@ struct Grade::Impl {
   std::array<const pl_hook*, 3> hooks{};
   GradeParams params;
   pl_gpu gpu = nullptr;
-  int look_size = 2;
+  std::array<int, kLookSlots> look_sizes{2, 2, 2};
 
   Impl() = default;
   Impl(const Impl&) = delete;
@@ -146,7 +152,7 @@ std::expected<Grade, Refusal> Grade::create(pl_gpu gpu) {
   auto grade = parse(gpu, shaders::anime_hdr_grade, "anime-hdr-grade.hook", kGradeParams);
   if (!grade) return std::unexpected(grade.error());
   impl->grade = std::move(*grade);
-  auto look = parse_look(gpu, nullptr);
+  auto look = parse_look(gpu, {});
   if (!look) return std::unexpected(look.error());
   impl->look = std::move(*look);
   auto black = parse(gpu, shaders::anime_hdr_black, "anime-hdr-black.hook", kBlackParams);
@@ -161,12 +167,12 @@ std::expected<Grade, Refusal> Grade::create(pl_gpu gpu) {
   return out;
 }
 
-std::expected<void, Refusal> Grade::set_look(const CubeLut* lut) {
-  auto look = parse_look(impl_->gpu, lut);
+std::expected<void, Refusal> Grade::set_looks(const std::array<const CubeLut*, kLookSlots>& luts) {
+  auto look = parse_look(impl_->gpu, luts);
   if (!look) return std::unexpected(look.error());
   pl_mpv_user_shader_destroy(&impl_->look.hook);
   impl_->look = std::move(*look);
-  impl_->look_size = lut != nullptr ? lut->size : 2;
+  for (std::size_t i = 0; i < kLookSlots; ++i) impl_->look_sizes[i] = luts[i] != nullptr ? luts[i]->size : 2;
   impl_->hooks[1] = impl_->look.hook;
   set_params(impl_->params);
   return {};
@@ -182,8 +188,10 @@ void Grade::set_params(const GradeParams& params) {
   for (const ParsedHook* hook : {&impl_->grade, &impl_->look, &impl_->black}) {
     for (const auto& [data, field] : hook->params) data->f = static_cast<float>(params.*field);
   }
-  if (pl_var_data* size = find_param(*impl_->look.hook, "look_size"))
-    size->f = static_cast<float>(impl_->look_size);
+  constexpr std::array<std::string_view, kLookSlots> kSizes{"look_size", "look_size2", "look_size3"};
+  for (std::size_t i = 0; i < kLookSlots; ++i)
+    if (pl_var_data* size = find_param(*impl_->look.hook, kSizes[i]))
+      size->f = static_cast<float>(impl_->look_sizes[i]);
 }
 
 const GradeParams& Grade::params() const {

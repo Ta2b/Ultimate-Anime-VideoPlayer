@@ -119,8 +119,8 @@ void look_section(PlaySettings& d) {
   if (!d.grade && !d.true_hdr) note(i18n::tr("Without RTX HDR, turn on \"Color grading\" below."));
 }
 
-// Le look : une LUT 3D .cube mélangée après le grade (render/cube_lut.h) ; ceux du lecteur, puis les fichiers
-// du dossier luts. L'intensité va de 0 à 1.
+// Le look : jusqu'à trois LUT 3D .cube enchaînées dans l'ordre, comme des nœuds de Resolve
+// (render/cube_lut.h) ; ceux du lecteur, puis les fichiers du dossier luts. Chaque intensité va de 0 à 1.
 void look_section(PlaySettings& d, const SettingsChoices& choices) {
   const auto label_of = [&](const std::string& key) -> std::string {
     if (key.empty()) return i18n::tr("None");
@@ -128,18 +128,31 @@ void look_section(PlaySettings& d, const SettingsChoices& choices) {
       if (look.key == key) return i18n::tr(look.label.data());
     return key;
   };
-  if (ImGui::BeginCombo(i18n::tr("Look (LUT)"), label_of(d.look).c_str())) {
-    if (ImGui::Selectable(i18n::tr("None"), d.look.empty())) d.look.clear();
-    for (const LookEntry& entry : list_looks(choices.luts_dir))
-      if (ImGui::Selectable(entry.label.c_str(), entry.key == d.look)) d.look = entry.key;
-    ImGui::EndCombo();
+  struct Slot {
+    std::string* name;
+    double* mix;
+  };
+  const std::array<Slot, render::kLookSlots> slots{
+      {{&d.look, &d.look_mix}, {&d.look2, &d.look2_mix}, {&d.look3, &d.look3_mix}}};
+  for (std::size_t i = 0; i < slots.size(); ++i) {
+    const int number = static_cast<int>(i) + 1;
+    ImGui::PushID(number);
+    std::string& name = *slots[i].name;
+    if (ImGui::BeginCombo(i18n::tr_format("Look {} (LUT)", number).c_str(), label_of(name).c_str())) {
+      if (ImGui::Selectable(i18n::tr("None"), name.empty())) name.clear();
+      for (const LookEntry& entry : list_looks(choices.luts_dir))
+        if (ImGui::Selectable(entry.label.c_str(), entry.key == name)) name = entry.key;
+      ImGui::EndCombo();
+    }
+    ImGui::BeginDisabled(name.empty());
+    grade_slider(i18n::tr_format("Look {} intensity", number).c_str(), *slots[i].mix,
+                 core::Range<double>{0.0, 1.0});
+    ImGui::EndDisabled();
+    ImGui::PopID();
   }
-  ImGui::BeginDisabled(d.look.empty());
-  grade_slider(i18n::tr("Look intensity"), d.look_mix, core::Range<double>{0.0, 1.0});
-  ImGui::EndDisabled();
   note(
-      i18n::tr("Looks are LUT files (.cube) placed in the luts folder of the player's data; names containing "
-               "PQ, HDR or 2020 are read as HDR LUTs."));
+      i18n::tr("Looks are LUT files (.cube) placed in the luts folder of the player's data, applied in order "
+               "like Resolve nodes; names containing PQ, HDR or 2020 are read as HDR LUTs."));
 }
 
 void grade_tab(PlaySettings& d, const SettingsChoices& choices) {

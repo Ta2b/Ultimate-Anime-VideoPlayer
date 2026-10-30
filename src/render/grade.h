@@ -30,10 +30,10 @@ class Grade {
   void set_params(const GradeParams& params);
   const GradeParams& params() const;
 
-  // Le look : la LUT 3D lue par anime-hdr-look.hook (nullptr : une identité 2x2x2, le look est alors sauté
-  // avec look_mix = 0). Refait le hook du look, donc à n'appeler qu'au changement de LUT ; l'intensité passe
-  // par set_params. Refus si libplacebo ne lit pas la texture.
-  std::expected<void, Refusal> set_look(const CubeLut* lut);
+  // Le look : jusqu'à trois LUT 3D enchaînées, lues par anime-hdr-look.hook (nullptr : une identité 2x2x2, la
+  // LUT est alors sautée avec son intensité à 0). Refait le hook du look, donc à n'appeler qu'au changement
+  // de LUT ; les intensités passent par set_params. Refus si libplacebo ne lit pas la texture.
+  std::expected<void, Refusal> set_looks(const std::array<const CubeLut*, kLookSlots>& luts);
 
   // Dans l'ordre d'exécution : les neuf passes du grade, le look, puis la dixième (vrai noir).
   std::span<const pl_hook* const> hooks() const;

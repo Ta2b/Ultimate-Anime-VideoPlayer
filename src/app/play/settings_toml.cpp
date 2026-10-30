@@ -474,6 +474,10 @@ std::expected<PlaySettings, Refusal> settings_from_table(const toml::table& root
     reads.push_back(read(*grade, "grade", "gamut_p3", v.gamut_p3));
     reads.push_back(read(*grade, "grade", "look", s.look));
     reads.push_back(read(*grade, "grade", "look_mix", s.look_mix));
+    reads.push_back(read(*grade, "grade", "look2", s.look2));
+    reads.push_back(read(*grade, "grade", "look2_mix", s.look2_mix));
+    reads.push_back(read(*grade, "grade", "look3", s.look3));
+    reads.push_back(read(*grade, "grade", "look3_mix", s.look3_mix));
     std::string oled(name(s.oled_black));
     reads.push_back(read(*grade, "grade", "oled_black", oled));
     reads.push_back(read(*grade, "grade", "oled_black_steps", s.oled_black_steps));
@@ -662,6 +666,10 @@ std::string format_settings(const PlaySettings& s) {
                                    {"gamut_p3", g.gamut_p3},
                                    {"look", s.look},
                                    {"look_mix", hundredth(s.look_mix)},
+                                   {"look2", s.look2},
+                                   {"look2_mix", hundredth(s.look2_mix)},
+                                   {"look3", s.look3},
+                                   {"look3_mix", hundredth(s.look3_mix)},
                                    {"oled_black", std::string(name(s.oled_black))},
                                    {"oled_black_steps", hundredth(s.oled_black_steps)}});
   root.insert("oled", toml::table{{"care", s.oled_care}, {"steady_cadence", s.steady_cadence}});

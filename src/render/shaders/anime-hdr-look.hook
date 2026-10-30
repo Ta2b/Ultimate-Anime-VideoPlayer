@@ -8,8 +8,9 @@
 //   - ce qui dépasse le blanc (éclats HDR) ne passe pas par la LUT : la couleur est divisée par son maximum quand
 //     celui-ci dépasse 1, passe par la LUT, puis est remultipliée. La teinte du look s'applique, l'éclat reste ;
 //   - l'entrée de la LUT est encodée par le gamma `look_gamma` (2,4 : BT.1886) ;
-//   - le résultat est mélangé à l'image d'origine, en lumière linéaire, par `look_mix` (0 : passe sautée, image
-//     identique octet pour octet ; 1 : le look entier).
+//   - jusqu'à trois LUT s'enchaînent dans cet ordre (comme les nœuds de Resolve), chacune mélangée à son entrée par
+//     sa propre intensité (look_mix, look_mix2, look_mix3 ; 0 : la LUT est sautée) ; les trois à 0 : passe sautée,
+//     image identique octet pour octet. Une seule LUT d'HDR (look_pq) met toute la chaîne en codes PQ.
 // Le bloc de texture AJG_LUT est ajouté derrière ce texte à l'exécution (cube_lut.h) ; sans LUT, une identité 2x2x2.
 
 //!PARAM look_mix
@@ -19,8 +20,36 @@
 //!MAXIMUM 1.0
 0.0
 
+//!PARAM look_mix2
+//!DESC Intensité de la deuxième LUT (0 = aucune)
+//!TYPE float
+//!MINIMUM 0.0
+//!MAXIMUM 1.0
+0.0
+
+//!PARAM look_mix3
+//!DESC Intensité de la troisième LUT (0 = aucune)
+//!TYPE float
+//!MINIMUM 0.0
+//!MAXIMUM 1.0
+0.0
+
 //!PARAM look_size
-//!DESC Points par axe de la LUT
+//!DESC Points par axe de la première LUT
+//!TYPE float
+//!MINIMUM 2.0
+//!MAXIMUM 65.0
+2.0
+
+//!PARAM look_size2
+//!DESC Points par axe de la deuxième LUT
+//!TYPE float
+//!MINIMUM 2.0
+//!MAXIMUM 65.0
+2.0
+
+//!PARAM look_size3
+//!DESC Points par axe de la troisième LUT
 //!TYPE float
 //!MINIMUM 2.0
 //!MAXIMUM 65.0
@@ -71,7 +100,9 @@
 //!HOOK OUTPUT
 //!BIND HOOKED
 //!BIND AJG_LUT
-//!WHEN look_mix 0 >
+//!BIND AJG_LUT2
+//!BIND AJG_LUT3
+//!WHEN look_mix look_mix2 + look_mix3 + 0 >
 //!DESC AnimeJaNai HDR - look (LUT 3D)
 
 const mat3 AJL_2020_TO_709 = mat3( 1.6604910, -0.1245505, -0.0181508,
@@ -92,12 +123,29 @@ vec3 ajl_encode(vec3 n) {
     return pow((0.8359375 + 18.8515625 * q) / (1.0 + 18.6875 * q), vec3(78.84375));
 }
 
+// Les trois LUT s'enchaînent dans l'ordre, comme des nœuds de Resolve : chacune lit le résultat de la précédente,
+// mélangé à son entrée par sa propre intensité.
+vec3 ajl_chain(vec3 c) {
+    if (look_mix > 0.0) {
+        vec3 pos = (clamp(c, 0.0, 1.0) * (look_size - 1.0) + 0.5) / look_size;
+        c = mix(c, clamp(AJG_LUT_tex(pos).rgb, 0.0, 1.0), look_mix);
+    }
+    if (look_mix2 > 0.0) {
+        vec3 pos = (clamp(c, 0.0, 1.0) * (look_size2 - 1.0) + 0.5) / look_size2;
+        c = mix(c, clamp(AJG_LUT2_tex(pos).rgb, 0.0, 1.0), look_mix2);
+    }
+    if (look_mix3 > 0.0) {
+        vec3 pos = (clamp(c, 0.0, 1.0) * (look_size3 - 1.0) + 0.5) / look_size3;
+        c = mix(c, clamp(AJG_LUT3_tex(pos).rgb, 0.0, 1.0), look_mix3);
+    }
+    return c;
+}
+
 vec4 hook() {
     vec4 px = HOOKED_tex(HOOKED_pos);
     if (look_pq > 0.5 && sdr_out < 0.5) {
         // LUT d'HDR : elle lit directement les codes PQ BT.2020 de l'image et rend des codes PQ.
-        vec3 pos = (clamp(px.rgb, 0.0, 1.0) * (look_size - 1.0) + 0.5) / look_size;
-        px.rgb = mix(px.rgb, clamp(AJG_LUT_tex(pos).rgb, 0.0, 1.0), look_mix);
+        px.rgb = ajl_chain(px.rgb);
         return px;
     }
     vec3 nits = ajl_decode(px.rgb);
@@ -106,10 +154,8 @@ vec4 hook() {
     lin = max(lin, 0.0);
     float over = max(max(lin.r, max(lin.g, lin.b)), 1.0);
     vec3 enc = pow(lin / over, vec3(1.0 / look_gamma));
-    // Centre des texels : (x * (N - 1) + 0.5) / N.
-    vec3 pos = (enc * (look_size - 1.0) + 0.5) / look_size;
-    vec3 graded = pow(max(AJG_LUT_tex(pos).rgb, 0.0), vec3(look_gamma)) * over;
-    vec3 mixed = mix(lin, graded, look_mix) * look_white;
-    px.rgb = ajl_encode(sdr_out > 0.5 ? mixed : AJL_709_TO_2020 * mixed);
+    vec3 graded = pow(max(ajl_chain(enc), 0.0), vec3(look_gamma)) * over;
+    vec3 out_lin = graded * look_white;
+    px.rgb = ajl_encode(sdr_out > 0.5 ? out_lin : AJL_709_TO_2020 * out_lin);
     return px;
 }

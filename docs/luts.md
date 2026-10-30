@@ -10,6 +10,20 @@ Produits par le calcul (`src/render/looks.cpp`), sans fichier ni licence tierce 
 relevés, tons chauds), **Aplats nets** (`maison:aplats`, contraste fort, couleurs d'aplat franches). Chacun est une
 LUT de 33 points.
 
+## Empiler plusieurs LUT (comme les nœuds de Resolve)
+Le menu Couleurs propose **trois emplacements** de look, appliqués **dans l'ordre** (1, puis 2, puis 3) ; chacun a sa
+propre intensité de 0 à 100 % (0 : l'emplacement est sauté). Chaque LUT lit le résultat de la précédente. Si l'une
+des trois est une LUT d'HDR (nom avec PQ, HDR ou 2020), toute la chaîne travaille sur les codes PQ BT.2020, comme une
+timeline HDR de Resolve ; sinon sur l'image SDR BT.709. Ordre habituel avec une LUT « de base » d'expansion SDR vers
+HDR : le look créatif d'abord (emplacement 1), la LUT de base en dernier (emplacement 3), ou l'inverse selon ce que
+la LUT de base attend en entrée ; les deux ordres se comparent en échangeant les emplacements.
+
+## LUT d'HDR avec une zone noire (« HDR grading base »)
+Certaines LUT d'HDR rendent du noir pur pour les couleurs hors de leur gamut d'entrée (un tiers du cube pour la
+« HDR grading base ver.9.0 33 point »). Entre la zone utile et ce noir, l'interpolation assombrirait les pixels du
+bord : au chargement, ces entrées sont recopiées du voisin valide le plus proche (le journal dit combien). Les
+couleurs d'une image d'anime n'atteignent presque jamais cette zone ; la correction ne touche que ses bords.
+
 ## Tes propres LUT
 Dépose des fichiers `.cube` dans le dossier `luts` des données du lecteur (Linux : `~/.local/share/ajp/ajp/luts`, à côté de `play.toml` ; le lecteur le crée à la première lecture).
 Ils apparaissent dans le menu (le menu relit le dossier à chaque ouverture de la liste).

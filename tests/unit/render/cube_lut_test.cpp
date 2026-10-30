@@ -127,3 +127,27 @@ TEST_CASE("une LUT d'HDR se reconnaît à son nom ou à son titre", "[render][lu
 }
 
 }  // namespace ajp::render
+
+namespace ajp::render {
+
+TEST_CASE("les entrées noires d'un gamut d'entrée inutile sont recopiées du voisin valide", "[render][lut]") {
+  CubeLut lut = identity_lut(17);
+  const auto index = [&](std::size_t r, std::size_t g, std::size_t b) {
+    return (b * 17U * 17U + g * 17U + r) * 3U;
+  };
+  // Une zone invalide : sortie noire alors que l'entrée ne l'est pas (coin du cube).
+  for (std::size_t b = 12; b < 17; ++b)
+    for (std::size_t g = 12; g < 17; ++g)
+      for (std::size_t r = 12; r < 17; ++r)
+        lut.rgb[index(r, g, b)] = lut.rgb[index(r, g, b) + 1] = lut.rgb[index(r, g, b) + 2] = 0.0F;
+  const std::size_t filled = fill_unreachable(lut);
+  CHECK(filled == 5U * 5U * 5U);
+  CHECK(lut.rgb[index(16, 16, 16)] > 0.6F);  // recopié de la périphérie valide, plus noir
+  CHECK(lut.rgb[index(14, 14, 14) + 1] > 0.6F);
+  // Le noir réel (l'origine) et une LUT sans zone invalide restent intacts.
+  CubeLut neutral = identity_lut(17);
+  CHECK(fill_unreachable(neutral) == 0);
+  CHECK(neutral.rgb == identity_lut(17).rgb);
+}
+
+}  // namespace ajp::render

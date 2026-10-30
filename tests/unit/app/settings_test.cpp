@@ -691,10 +691,20 @@ TEST_CASE("le look (LUT) et son intensité se relisent à l'identique, un nom de
   ajp::app::play::PlaySettings s;
   s.look = "maison:shinkai";
   s.look_mix = 0.65;
+  s.look2 = "HDR_base.cube";
+  s.look2_mix = 0.4;
+  s.look3 = "maison:pastel";
+  s.look3_mix = 0.25;
   const auto back = ajp::app::play::parse_settings(ajp::app::play::format_settings(s));
   REQUIRE(back.has_value());
   CHECK(back->look == "maison:shinkai");
   CHECK(back->look_mix == 0.65);
+  CHECK(back->look2 == "HDR_base.cube");
+  CHECK(back->look2_mix == 0.4);
+  CHECK(back->look3 == "maison:pastel");
+  CHECK(back->look3_mix == 0.25);
+  CHECK_FALSE(ajp::app::play::parse_settings("[grade]\nlook3 = 'a/b.cube'\n").has_value());
+  CHECK_FALSE(ajp::app::play::parse_settings("[grade]\nlook2_mix = -0.1\n").has_value());
   CHECK_FALSE(ajp::app::play::parse_settings("[grade]\nlook = '../x.cube'\n").has_value());
   CHECK_FALSE(ajp::app::play::parse_settings("[grade]\nlook_mix = 1.5\n").has_value());
   CHECK(ajp::app::play::PlaySettings{}.look.empty());  // aucun look par défaut
