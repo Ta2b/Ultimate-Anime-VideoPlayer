@@ -25,11 +25,9 @@ namespace grade_limits {
 inline constexpr core::Range<double> kPaperWhite{80.0, 400.0};
 inline constexpr core::Range<double> kShadows{0.0, 0.8};
 inline constexpr core::Range<double> kHighlights{0.0, 1.0};
-inline constexpr core::Range<double> kVibrance{0.0, 1.2};
-// Au-delà de 200, le grade ajoute son propre contraste (punch) et sa propre saturation : RTX HDR s'arrête à
-// 200.
-inline constexpr core::Range<double> kContrast{0.0, 400.0};
-inline constexpr core::Range<double> kSaturation{0.0, 400.0};
+inline constexpr core::Range<double> kVibrance{0.0, 0.8};
+inline constexpr core::Range<double> kContrast{0.0, 200.0};
+inline constexpr core::Range<double> kSaturation{0.0, 200.0};
 inline constexpr double kSdkContrastMax = 200.0;
 inline constexpr core::Range<double> kMiddleGray{10.0, 100.0};
 inline constexpr core::Range<double> kSubtitleWhite{80.0, 1000.0};
@@ -58,9 +56,8 @@ struct GradeSettings {
   double highlights_rtx = 0.25;  // TrueHDR, son émulation, HDR natif
   double vibrance = 0.15;
   double vibrance_rtx = 0.10;
-  double contrast =
-      100.0;  // TrueHDR et son émulation (jusqu'à 200), comme rtx_contrast ; au-delà, le punch du grade
-  double saturation = 100.0;  // idem : au-delà de 200, la saturation du grade
+  double contrast = 100.0;  // TrueHDR et son émulation, comme rtx_contrast
+  double saturation = 100.0;
   double punch_base = 0.0;    // préréglage : contraste en plus, en sortie du grade (0 : aucun)
   double chroma_base = 0.0;   // préréglage : saturation en plus (0 : aucune)
   double middle_gray = 50.0;

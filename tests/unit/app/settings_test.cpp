@@ -673,3 +673,15 @@ TEST_CASE("une valeur fautive n'invalide que sa clé", "[settings][lenient]") {
   CHECK(dropped.size() == 2);
   CHECK_FALSE(parse_settings_lenient("[image\nbroken").has_value());  // un TOML illisible reste refusé
 }
+
+TEST_CASE("un play.toml de la rc.3 (400 %, vibrance 1,2) se relit au maximum d'aujourd'hui",
+          "[app][settings]") {
+  const auto s = ajp::app::play::parse_settings(
+      "[hdr]\nengine = 'rtx'\ncontrast = 350\nsaturation = 400\n[grade]\npreset = 'perso'\nvibrance = "
+      "1.1\nvibrance_rtx = 1.2\n");
+  REQUIRE(s.has_value());
+  CHECK(s->true_hdr_contrast == 200);
+  CHECK(s->true_hdr_saturation == 200);
+  CHECK(s->grade_values.vibrance == 0.8);
+  CHECK(s->grade_values.vibrance_rtx == 0.8);
+}

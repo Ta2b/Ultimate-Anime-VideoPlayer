@@ -465,6 +465,9 @@ std::expected<PlaySettings, Refusal> settings_from_table(const toml::table& root
     reads.push_back(read(*grade, "grade", "highlights_rtx", v.highlights_rtx));
     reads.push_back(read(*grade, "grade", "vibrance", v.vibrance));
     reads.push_back(read(*grade, "grade", "vibrance_rtx", v.vibrance_rtx));
+    // La plage de la rc.3 allait à 1,2 ; la course est revenue à 0,8 (l'effet, lui, est plus fort).
+    if (v.vibrance <= 1.2) v.vibrance = std::min(v.vibrance, render::grade_limits::kVibrance.hi);
+    if (v.vibrance_rtx <= 1.2) v.vibrance_rtx = std::min(v.vibrance_rtx, render::grade_limits::kVibrance.hi);
     reads.push_back(read(*grade, "grade", "area_rtx", v.area_rtx));
     reads.push_back(read(*grade, "grade", "guard", v.guard));
     reads.push_back(read(*grade, "grade", "expand", v.expand));
@@ -507,6 +510,12 @@ std::expected<PlaySettings, Refusal> settings_from_table(const toml::table& root
   for (const auto& done : reads) {
     if (!done) return std::unexpected(done.error());
   }
+  // Les rc.3 laissaient aller contraste et saturation à 400 : un play.toml écrit alors se relit au maximum.
+  constexpr int kRc3Max = 400;
+  if (s.true_hdr_contrast <= kRc3Max)
+    s.true_hdr_contrast = std::min(s.true_hdr_contrast, limits::kTrueHdrContrast.hi);
+  if (s.true_hdr_saturation <= kRc3Max)
+    s.true_hdr_saturation = std::min(s.true_hdr_saturation, limits::kTrueHdrSaturation.hi);
   return validate(s);
 }
 

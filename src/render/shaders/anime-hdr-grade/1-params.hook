@@ -56,7 +56,7 @@
 //!DESC Profondeur des noirs (0 = neutre)
 //!TYPE float
 //!MINIMUM 0.0
-//!MAXIMUM 0.8
+//!MAXIMUM 0.95
 0.30
 
 //!PARAM shadow_knee
@@ -84,7 +84,7 @@
 //!DESC Vibrance perceptuelle (0 = neutre)
 //!TYPE float
 //!MINIMUM 0.0
-//!MAXIMUM 0.8
+//!MAXIMUM 1.4
 0.25
 
 //!PARAM abl

@@ -19,6 +19,24 @@ std::expected<void, Refusal> check(std::string_view field, double value, core::R
   return {};
 }
 
+// Réponse des curseurs du grade : la course (0 à `hi`) ne change pas, l'effet si. Une puissance < 1 relève
+// les positions basses et moyennes (le curseur « prend » dès qu'on le touche), `gain` > 1 pousse la butée.
+double response(double x, double hi, double gain, double exponent = 0.7) {
+  if (!(x > 0.0)) return 0.0;
+  return gain * hi * std::pow(std::min(x, hi) / hi, exponent);
+}
+double shadows_effect(double shadows) {
+  return std::min(response(shadows, 0.8, 1.2), 0.95);
+}
+double vibrance_effect(double vibrance) {
+  return response(vibrance, 0.8, 1.6);
+}
+// Le pied des noirs s'élargit avec le curseur : plus de gris moyens-sombres sont creusés, pas seulement
+// l'extrême bas.
+double shadow_knee_for(double shadows, double white) {
+  return white * (0.25 + 0.30 * std::min(shadows / 0.8, 1.0));
+}
+
 // Émulation TrueHDR (lois ajustées sur le SDK RTX Video, hdr-grade.lua:113-127) : contraste en
 // puissance autour du pivot, saturation sur la chroma, gris moyen m placé vers m nits.
 void apply_truehdr_look(const GradeSettings& s, double peak, GradeParams& p) {
@@ -33,11 +51,11 @@ void apply_truehdr_look(const GradeSettings& s, double peak, GradeParams& p) {
   p.em_sat = 1.0 + 0.19 * saturation;
 }
 
-// La fin du grade : le contraste et la saturation que RTX HDR ne donne plus (au-delà de 200 sur les curseurs)
-// plus ceux du préréglage. Au repos (curseurs à 200 ou moins, préréglage sans punch), identité exacte.
+// La fin du grade : le contraste et la saturation du préréglage. Sans punch ni chroma de base, identité
+// exacte (les curseurs de contraste et de saturation, 0 à 200, sont ceux de RTX HDR et de son émulation).
 void apply_punch(const GradeSettings& s, GradeParams& p) {
-  p.punch = s.punch_base + std::max(0.0, s.contrast - grade_limits::kSdkContrastMax) / 200.0;
-  p.chroma = 1.0 + s.chroma_base + 1.2 * std::max(0.0, s.saturation - grade_limits::kSdkContrastMax) / 200.0;
+  p.punch = s.punch_base;
+  p.chroma = 1.0 + s.chroma_base;
   p.pivot = 0.4 * grade_limits::kSdrWhiteNits;
 }
 
@@ -50,11 +68,11 @@ GradeParams sdr_params(const GradeSettings& s) {
   p.peak = grade_limits::kSdrWhiteNits;
   p.paper = p.peak;
   p.in_max = p.peak;
-  p.shadows = s.shadows;
-  p.shadow_knee = 0.25 * p.peak;
+  p.shadows = shadows_effect(s.shadows);
+  p.shadow_knee = shadow_knee_for(s.shadows, p.peak);
   p.area_gain = 1.0;
   p.spec_gain = 1.0;
-  p.vibrance = s.vibrance_rtx;
+  p.vibrance = vibrance_effect(s.vibrance_rtx);
   p.abl = 0.0;
   p.guard = s.guard;
   p.expand = 0.0;
@@ -189,8 +207,8 @@ std::expected<GradeDecision, Refusal> decide_grade(const GradeSettings& s, const
   GradeParams& p = decision.params;
   p.peak = peak;
   p.paper = paper;
-  p.shadows = s.shadows;
-  p.shadow_knee = 0.25 * paper;
+  p.shadows = shadows_effect(s.shadows);
+  p.shadow_knee = shadow_knee_for(s.shadows, paper);
   p.gamut_p3 = s.gamut_p3 ? 1.0 : 0.0;
   // OLED : les éclats sont modérés sur les scènes claires, où le panneau limite sa puissance.
   p.abl = s.oled ? 0.6 : 0.0;
@@ -211,20 +229,22 @@ std::expected<GradeDecision, Refusal> decide_grade(const GradeSettings& s, const
     // blanc seulement +50 % à highlights = 1.
     const double room = peak / paper;
     p.in_max = paper;
-    p.area_gain = std::min(1.0 + 0.5 * s.highlights, room);
-    p.spec_gain = std::max(p.area_gain, 1.0 + s.highlights * (room - 1.0));
-    p.vibrance = s.vibrance;
+    const double h = response(s.highlights, 1.0, 1.0);
+    p.area_gain = std::min(1.0 + 0.8 * h, room);
+    p.spec_gain = std::max(p.area_gain, 1.0 + h * (room - 1.0));
+    p.vibrance = vibrance_effect(s.vibrance);
   } else {
     // TrueHDR, son émulation et le HDR natif atteignent déjà le pic : les aplats restent, les
     // éclats isolés montent, à partir de la moitié du pic.
     p.paper = 0.5 * peak;
     p.in_max = peak;
-    p.area_gain = 1.0 + 0.8 * s.area_rtx;
+    const double area = response(s.area_rtx, 1.0, 1.0);
+    const double high = response(s.highlights_rtx, 1.0, 1.0);
+    p.area_gain = 1.0 + 0.8 * area;
     // 1 + 1,2 h comme le lecteur actuel jusqu'à h = 0,25 (son réglage par défaut), puis plus raide : à h = 1
     // les éclats montent à 3,4 fois leur niveau au lieu de 2,2.
-    p.spec_gain =
-        std::max(p.area_gain, 1.0 + 1.2 * s.highlights_rtx + 1.6 * std::max(0.0, s.highlights_rtx - 0.25));
-    p.vibrance = s.vibrance_rtx;
+    p.spec_gain = std::max(p.area_gain, 1.0 + 1.2 * high + 1.6 * std::max(0.0, high - 0.25));
+    p.vibrance = vibrance_effect(s.vibrance_rtx);
   }
   // Dans les plages //!PARAM du hook.
   p.area_gain = std::clamp(p.area_gain, 1.0, 4.0);

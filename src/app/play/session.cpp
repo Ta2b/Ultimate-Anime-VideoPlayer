@@ -403,7 +403,8 @@ std::expected<std::optional<PresentRecord>, Refusal> Session::tick(std::int64_t 
   const OutputSize size = screen_.size();
   // Présentation à la demande : rien n'a changé, l'écran garde l'image (et en VRR, il suit le
   // rythme des images au lieu de recomposer à chaque vsync, ce qui laisse le GPU aux moteurs).
-  const bool ui_changed = ui.changed || (ui.draw != nullptr) != shown_ui_;
+  const bool requested = std::exchange(present_requested_, false);
+  const bool ui_changed = ui.changed || requested || (ui.draw != nullptr) != shown_ui_;
   std::string why;
   if (fresh) why += 'i';
   if (look != shown_subtitles_) why += 's';

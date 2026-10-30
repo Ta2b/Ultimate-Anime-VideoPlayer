@@ -193,7 +193,7 @@ vec4 hook() {
         float hi = max3(c709);
         if (hi > 1e-4) {
             float sat = 1.0 - clamp(min(c709.r, min(c709.g, c709.b)) / hi, 0.0, 1.0);
-            float w = expand * smoothstep(0.15, 0.60, sat) * (1.0 - skin)
+            float w = expand * smoothstep(0.08, 0.45, sat) * (1.0 - skin)
                     * smoothstep(0.12, 0.30, ictcp_in.x);
             if (w > 0.0) {
                 vec3 wide = P3_TO_BT2020 * max(c709, 0.0);
