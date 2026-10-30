@@ -21,12 +21,49 @@ std::string_view trimmed(std::string_view line) {
   return line;
 }
 
+// Un flottant décimal (signe, chiffres, point, exposant), sans dépendre de la locale ni de
+// std::from_chars à virgule flottante, que libc++ de macOS ne fournit pas.
 bool read_float(std::string_view& text, float& out) {
   while (!text.empty() && (text.front() == ' ' || text.front() == '\t')) text.remove_prefix(1);
-  if (text.empty()) return false;
-  const auto [end, error] = std::from_chars(text.data(), text.data() + text.size(), out);
-  if (error != std::errc{} || !std::isfinite(out)) return false;
-  text.remove_prefix(static_cast<std::size_t>(end - text.data()));
+  std::size_t at = 0;
+  bool negative = false;
+  if (at < text.size() && (text[at] == '+' || text[at] == '-')) negative = text[at++] == '-';
+  double mantissa = 0.0;
+  int digits = 0;
+  while (at < text.size() && text[at] >= '0' && text[at] <= '9') {
+    mantissa = mantissa * 10.0 + (text[at++] - '0');
+    ++digits;
+  }
+  int exponent = 0;
+  if (at < text.size() && text[at] == '.') {
+    ++at;
+    while (at < text.size() && text[at] >= '0' && text[at] <= '9') {
+      mantissa = mantissa * 10.0 + (text[at++] - '0');
+      --exponent;
+      ++digits;
+    }
+  }
+  if (digits == 0) return false;
+  if (at < text.size() && (text[at] == 'e' || text[at] == 'E')) {
+    std::size_t probe = at + 1;
+    bool exponent_negative = false;
+    if (probe < text.size() && (text[probe] == '+' || text[probe] == '-'))
+      exponent_negative = text[probe++] == '-';
+    int value = 0;
+    int exponent_digits = 0;
+    while (probe < text.size() && text[probe] >= '0' && text[probe] <= '9') {
+      value = std::min(value * 10 + (text[probe++] - '0'), 400);
+      ++exponent_digits;
+    }
+    if (exponent_digits == 0) return false;
+    exponent += exponent_negative ? -value : value;
+    at = probe;
+  }
+  if (at < text.size() && text[at] != ' ' && text[at] != '\t') return false;
+  const double result = (negative ? -mantissa : mantissa) * std::pow(10.0, exponent);
+  out = static_cast<float>(result);
+  if (!std::isfinite(out)) return false;
+  text.remove_prefix(at);
   return true;
 }
 
