@@ -207,7 +207,12 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
   session_config.fullscreen_after_us = options.fullscreen_after_us;
   session_config.header = {label_text};
   session_config.tracks = (*pipeline)->describe();
-  if (!settings.look.empty()) apply_look(p.screen, settings.look, p.paths.data / "luts");
+  {
+    // Le dossier des LUT de l'utilisateur existe dès le premier lancement : il n'a qu'à y déposer ses .cube.
+    std::error_code made;
+    std::filesystem::create_directories(p.paths.engines.parent_path() / "luts", made);
+  }
+  if (!settings.look.empty()) apply_look(p.screen, settings.look, p.paths.engines.parent_path() / "luts");
   p.screen.set_grade(grade_of(settings, settings.true_hdr, peak_nits, auto_peak, {}, {}, source_hdr));
   p.screen.set_finish(settings.final_scaler, settings.deband);
   session_config.output = output_text(out, settings, peak_nits);
@@ -268,7 +273,7 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
   p.ui.set_settings(
       settings,
       SettingsChoices{
-          .luts_dir = p.paths.data / "luts",
+          .luts_dir = p.paths.engines.parent_path() / "luts",
           .models = c.model ? c.model->available : std::vector<std::string>{},
           .default_model = c.model ? c.model->default_name : std::string(),
           .source_width = video.width,
@@ -364,7 +369,7 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
       .hdr_wanted = settings.true_hdr != wanted_hdr.true_hdr || settings.hdr_native != wanted_hdr.hdr_native
                         ? std::optional(wanted_hdr)
                         : std::nullopt,
-      .luts_dir = p.paths.data / "luts",
+      .luts_dir = p.paths.engines.parent_path() / "luts",
       .source_hdr = source_hdr};
   apply_oled_care(chain, settings);
 
