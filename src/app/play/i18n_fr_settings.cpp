@@ -102,6 +102,10 @@ constexpr std::array kSettingsPages{
     Entry{"Live, for RTX HDR, Adaptive HDR and SDR output.",
           "En direct, pour RTX HDR, le HDR adaptatif et la sortie SDR."},
     Entry{"Mid gray", "Gris moyen"},
+    Entry{"With Adapt to scene brightness on, this is the middle gray of dark scenes; bright scenes use "
+          "Middle gray, bright scene (Color page).",
+          "Avec « Suivre la luminosité de la scène », c'est le gris moyen des scènes sombres ; les "
+          "scènes claires utilisent « Gris moyen, scène claire » (page Couleurs)."},
     Entry{"Natural", "Naturel"},
     Entry{"Near-blacks become true black (0), up to the threshold. Live.",
           "Les quasi-noirs deviennent un vrai noir (0), jusqu'au seuil. En direct."},

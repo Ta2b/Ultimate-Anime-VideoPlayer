@@ -74,9 +74,13 @@ void hdr_tab(PlaySettings& d, const SettingsChoices& choices) {
       !automatic)
     d.true_hdr_peak = peak;
   ImGui::EndDisabled();
-  if (panel::advanced())
+  if (panel::advanced()) {
     ImGui::SliderInt(i18n::tr("Mid gray"), &d.true_hdr_gray, limits::kTrueHdrGray.lo, limits::kTrueHdrGray.hi,
                      "%d", ImGuiSliderFlags_AlwaysClamp);
+    panel::tip(
+        i18n::tr("With Adapt to scene brightness on, this is the middle gray of dark scenes; bright "
+                 "scenes use Middle gray, bright scene (Color page)."));
+  }
   if (choices.nvidia && panel::advanced()) {
     ImGui::BeginDisabled(!d.true_hdr);
     ImGui::Checkbox(i18n::tr("Debanding (RTX HDR)"), &d.true_hdr_debanding);
