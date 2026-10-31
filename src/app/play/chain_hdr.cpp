@@ -141,6 +141,21 @@ render::GradeChoice grade_of(const PlaySettings& s, bool true_hdr_open, int peak
       log_channel("app")->warn("grade : {}", decision.error().detail);
       return {};
     }
+    if (pq) {
+      // Les valeurs du grade sur la sortie PQ, dites une fois par changement : de quoi comprendre une image
+      // trop claire.
+      static std::string last_said;
+      const std::string said = std::format(
+          "grade PQ : mode {} · pic {:.0f} nits · blanc papier {:.0f} nits · blanc de la source {:.0f} nits "
+          "· "                            // i18n-ok : journal
+          "adaptatif {} · émulation {}",  // i18n-ok : journal
+          static_cast<int>(decision->mode), decision->params.peak, decision->params.paper,
+          decision->source_white_nits, decision->params.ad_on > 0.5, decision->params.emulate > 0.5);
+      if (said != last_said) {
+        last_said = said;
+        log_channel("app")->info("{}", said);
+      }
+    }
     if (decision->mode != render::GradeMode::Neutral) {
       render::GradeParams params = decision->params;
       // Une LUT sans nom est sautée (intensité 0) ; une seule LUT d'HDR met toute la chaîne en codes PQ.
