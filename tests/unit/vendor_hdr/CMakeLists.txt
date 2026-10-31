@@ -3,7 +3,7 @@
 set(fakes fake_maxine fake_rtx_video fake_sdk_dep)
 foreach(fake IN LISTS fakes)
   add_library(ajp_vendor_hdr_${fake} SHARED fakes/${fake}.cpp)
-  set_target_properties(ajp_vendor_hdr_${fake} PROPERTIES NO_SONAME ON)
+  set_target_properties(ajp_vendor_hdr_${fake} PROPERTIES NO_SONAME ON WINDOWS_EXPORT_ALL_SYMBOLS ON)
   target_include_directories(ajp_vendor_hdr_${fake} PRIVATE "${PROJECT_SOURCE_DIR}/src")
   ajp_set_warnings(ajp_vendor_hdr_${fake})
 endforeach()

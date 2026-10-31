@@ -8,6 +8,7 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include "core/profile.h"
+#include "core/engines.h"
 
 namespace ajp::app::play {
 namespace {
@@ -40,7 +41,9 @@ TEST_CASE("Un profil fixe la chaîne, le reste des réglages ne bouge pas", "[ap
   CHECK(quality.rife_factor == 3);
   CHECK(quality.upscale);
   CHECK(quality.model == "2x_AnimeJaNai_HD_V3.1Sharp1_Performance_SPANF3_b5f48_unshuffle_fp16.onnx");
-  CHECK(quality.true_hdr);
+  // RTX HDR n'existe que sous Linux ; ailleurs le profil retombe sur le HDR adaptatif.
+  CHECK(quality.true_hdr == (core::kHostOs == core::Os::Linux));
+  CHECK(quality.hdr_native == (core::kHostOs != core::Os::Linux));
   CHECK(quality.true_hdr_contrast == 150);
   CHECK(quality.subtitle_scale == 1.3F);
   CHECK(notes.empty());
@@ -69,8 +72,11 @@ TEST_CASE("Les réglages en cours se relisent comme un profil", "[app][profiles]
   CHECK(back.downscale == Downscale::CatmullRom);
   CHECK(back.rife_factor == 4);
   CHECK(back.model == usual);
-  CHECK(back.true_hdr);
-  CHECK(profile_summary(profile, k1080p) == "540p Catmull-Rom → RIFE ×4 → SPAN 1080p · RTX HDR");
+  // RTX HDR n'existe que sous Linux : ailleurs le profil retombe sur le HDR adaptatif.
+  const bool rtx = core::kHostOs == core::Os::Linux;
+  CHECK(back.true_hdr == rtx);
+  CHECK(profile_summary(profile, k1080p) ==
+        std::string("540p Catmull-Rom → RIFE ×4 → SPAN 1080p · ") + (rtx ? "RTX HDR" : "HDR adaptatif"));
   // Un autre modèle est nommé dans le résumé.
   s.model = "2x_AnimeJaNai_HD_V3.1Sharp1_Balanced_SPANF3_b8f64_unshuffle_fp16.onnx";
   const core::Profile other{.name = "Net", .hdr = hdr_of(s), .rules = rules_of(s, usual)};

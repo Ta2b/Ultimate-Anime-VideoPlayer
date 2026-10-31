@@ -14,6 +14,12 @@
 #include "core/charconv.h"
 #include "vendor_hdr/dynamic_library.h"
 
+#if defined(_WIN32)
+#define WIN32_LEAN_AND_MEAN
+#define NOMINMAX
+#include <windows.h>
+#endif
+
 namespace ajp::app::play {
 namespace {
 
@@ -133,7 +139,7 @@ bool nvidia_driver_older_than(std::string_view version, int major, int minor, in
   return parts < std::array<int, 3>{major, minor, patch};
 }
 
-#if defined(__linux__)
+#if defined(__linux__) || defined(_WIN32)
 
 namespace {
 
@@ -154,6 +160,7 @@ constexpr int kClockSm = 1;
 constexpr int kClockMem = 2;
 constexpr std::int64_t kRefreshUs = 500'000;
 
+#if defined(__linux__)
 std::string read_text(const std::filesystem::path& path) {
   std::ifstream in(path);
   std::ostringstream text;
@@ -185,11 +192,13 @@ std::filesystem::path find_amd_card(std::uint32_t pci_device) {
   return {};
 }
 
+#endif
+
 }  // namespace
 
 struct GpuTelemetry::Impl {
   std::optional<vendor_hdr::DynamicLibrary> library;
-  std::filesystem::path amd_card;  // sysfs amdgpu, à la place de NVML
+  std::filesystem::path amd_card;  // sysfs amdgpu (Linux), à la place de NVML
   std::filesystem::path amd_hwmon;
   int (*shutdown)() = nullptr;
   Handle device = nullptr;
@@ -218,6 +227,7 @@ GpuTelemetry::GpuTelemetry(std::unique_ptr<Impl> impl) : impl_(std::move(impl)) 
 GpuTelemetry::~GpuTelemetry() = default;
 
 std::unique_ptr<GpuTelemetry> GpuTelemetry::open(const GpuDevice& device) {
+#if defined(__linux__)
   if (device.vendor() == GpuVendor::Amd) {
     const std::filesystem::path card = find_amd_card(device.pci_device);
     if (card.empty()) return nullptr;
@@ -230,12 +240,22 @@ std::unique_ptr<GpuTelemetry> GpuTelemetry::open(const GpuDevice& device) {
     }
     return std::unique_ptr<GpuTelemetry>(new GpuTelemetry(std::move(impl)));
   }
+#endif
   if (device.vendor() != GpuVendor::Nvidia) return nullptr;
-  // Une bibliothèque du pilote s'ouvre par son chemin absolu (dynamic_library.h) : les dossiers
-  // où les distributions la rangent.
+  // Une bibliothèque du pilote s'ouvre par son chemin absolu (dynamic_library.h).
+  std::optional<vendor_hdr::DynamicLibrary> library;
+#if defined(_WIN32)
+  // nvml.dll vient du pilote, dans le dossier système.
+  std::array<wchar_t, MAX_PATH> system{};
+  const UINT length = GetSystemDirectoryW(system.data(), static_cast<UINT>(system.size()));
+  if (length == 0 || length >= system.size()) return nullptr;
+  if (auto opened = vendor_hdr::DynamicLibrary::open(std::filesystem::path(system.data()) / "nvml.dll")) {
+    library.emplace(std::move(*opened));
+  }
+#else
+  // Les dossiers où les distributions la rangent.
   static constexpr std::array<const char*, 6> kFolders{
       "/usr/lib/x86_64-linux-gnu", "/usr/lib64", "/usr/lib", "/usr/lib/nvidia", "/usr/lib/wsl/lib", "/lib64"};
-  std::optional<vendor_hdr::DynamicLibrary> library;
   for (const char* folder : kFolders) {
     const std::filesystem::path path = std::filesystem::path(folder) / "libnvidia-ml.so.1";
     std::error_code error;
@@ -245,6 +265,7 @@ std::unique_ptr<GpuTelemetry> GpuTelemetry::open(const GpuDevice& device) {
       break;
     }
   }
+#endif
   if (!library) return nullptr;
   auto impl = std::make_unique<Impl>(std::move(*library));
   const vendor_hdr::DynamicLibrary& lib = *impl->library;
@@ -278,6 +299,7 @@ std::optional<GpuSample> GpuTelemetry::sample(std::int64_t host_us) {
   Impl& i = *impl_;
   if (i.last && host_us - i.last_us < kRefreshUs) return i.last;
   GpuSample s;
+#if defined(__linux__)
   if (!i.amd_card.empty()) {
     const DpmClocks core = parse_amdgpu_dpm(read_text(i.amd_card / "pp_dpm_sclk"));
     s.sm_mhz = core.current_mhz;
@@ -302,6 +324,7 @@ std::optional<GpuSample> GpuTelemetry::sample(std::int64_t host_us) {
     i.last_us = host_us;
     return s;
   }
+#endif
   i.clock(i.device, kClockSm, &s.sm_mhz);
   if (i.clock != nullptr) i.clock(i.device, kClockMem, &s.mem_mhz);
   if (i.max_clock != nullptr) i.max_clock(i.device, kClockSm, &s.sm_max_mhz);
@@ -331,7 +354,7 @@ std::optional<GpuSample> GpuTelemetry::sample(std::int64_t host_us) {
   return s;
 }
 
-#else
+#else  // ni Linux ni Windows
 
 struct GpuTelemetry::Impl {};
 GpuTelemetry::GpuTelemetry(std::unique_ptr<Impl> impl) : impl_(std::move(impl)) {}

@@ -14,6 +14,7 @@
 #include "app/play/auto_config.h"
 #include "app/play/engine_install.h"
 #include "app/play/engine_switch.h"
+#include "core/engines.h"
 #include "app/play/panel_style.h"
 
 namespace ajp::app::play {
@@ -537,9 +538,11 @@ void draw_wizard_step(FirstRunView& view, Wizard& wizard) {
                  wizard.hdr == HdrChoice::Auto, pick);
       if (pick) wizard.hdr = HdrChoice::Auto;
       pick = false;
-      radio_note("RTX HDR", i18n::tr("NVIDIA RTX cards with the TensorRT engine and the Maxine SDK."),
-                 wizard.hdr == HdrChoice::RtxHdr, pick);
-      if (pick) wizard.hdr = HdrChoice::RtxHdr;
+      if (core::kHostOs == core::Os::Linux) {  // RTX HDR n'existe pas ailleurs
+        radio_note("RTX HDR", i18n::tr("NVIDIA RTX cards with the TensorRT engine and the Maxine SDK."),
+                   wizard.hdr == HdrChoice::RtxHdr, pick);
+        if (pick) wizard.hdr = HdrChoice::RtxHdr;
+      }
       pick = false;
       radio_note(i18n::tr("Adaptive HDR"), i18n::tr("Any GPU: the HDR look is emulated per scene."),
                  wizard.hdr == HdrChoice::Adaptive, pick);

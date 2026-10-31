@@ -21,6 +21,7 @@
 #include "app/play/settings_sound.h"
 #include "app/play/text_fit.h"
 #include "app/play/tracks.h"
+#include "core/engines.h"
 #include "render/looks.h"
 
 namespace ajp::app::play {
@@ -42,7 +43,8 @@ void hdr_tab(PlaySettings& d, const SettingsChoices& choices) {
   const int route = d.true_hdr ? 0 : (d.hdr_native ? 1 : 2);
   if (ImGui::BeginCombo(i18n::tr("HDR method"), i18n::tr(kRoutes[static_cast<std::size_t>(route)]))) {
     for (int i = 0; i < static_cast<int>(kRoutes.size()); ++i) {
-      if (i == 0 && !choices.nvidia) continue;  // TrueHDR ne tourne que sur un GPU NVIDIA
+      if (i == 0 && !(choices.nvidia && core::kHostOs == core::Os::Linux))
+        continue;  // TrueHDR : GPU NVIDIA, sous Linux seulement
       ImGui::BeginDisabled(i == 0 && !choices.true_hdr_available);
       if (ImGui::Selectable(i18n::tr(kRoutes[static_cast<std::size_t>(i)]), i == route)) {
         d.true_hdr = i == 0;
@@ -122,12 +124,6 @@ void look_section(PlaySettings& d) {
 // Le look : jusqu'à quinze LUT 3D .cube enchaînées dans l'ordre, comme des nœuds de Resolve
 // (render/cube_lut.h) ; ceux du lecteur, puis les fichiers du dossier luts. Chaque intensité va de 0 à 1.
 void look_section(PlaySettings& d, const SettingsChoices& choices) {
-  // Sur une sortie SDR, une pile qui contient une LUT d'HDR n'est pas appliquée (chain_hdr.cpp).
-  const auto hdr_lut = [](const std::string& key) { return !key.empty() && render::look_is_pq(key, ""); };
-  bool stack_has_hdr_lut = hdr_lut(d.look);
-  for (const LookLayer& layer : d.look_layers) stack_has_hdr_lut = stack_has_hdr_lut || hdr_lut(layer.key);
-  const bool inactive = !choices.hdr_output && stack_has_hdr_lut;
-  ImGui::BeginDisabled(inactive);
   const auto label_of = [&](const std::string& key) -> std::string {
     if (key.empty()) return i18n::tr("None");
     for (const render::BuiltinLook& look : render::builtin_looks())
@@ -135,6 +131,13 @@ void look_section(PlaySettings& d, const SettingsChoices& choices) {
     return key;
   };
   const std::vector<LookEntry> entries = list_looks(choices.luts_dir);
+  // Sur une sortie SDR, une pile qui contient une LUT d'HDR est coupée en entier (chain_hdr.cpp) : ses
+  // réglages n'agissent pas, ils sont grisés.
+  bool has_hdr_look = render::look_is_pq(d.look, "");
+  for (const LookLayer& layer : d.look_layers)
+    has_hdr_look = has_hdr_look || render::look_is_pq(layer.key, "");
+  const bool stack_off = !choices.hdr_output && has_hdr_look;
+  ImGui::BeginDisabled(stack_off);
   const auto slot = [&](int number, std::string& name, double& mix) {
     ImGui::PushID(number);
     if (ImGui::BeginCombo(i18n::tr_format("Look {} (LUT)", number).c_str(), label_of(name).c_str())) {
@@ -159,17 +162,18 @@ void look_section(PlaySettings& d, const SettingsChoices& choices) {
   ImGui::BeginDisabled(d.look_layers.empty());
   if (ImGui::Button("-")) d.look_layers.pop_back();
   ImGui::EndDisabled();
+  ImGui::EndDisabled();  // stack_off
+  if (stack_off)
+    note(i18n::tr("SDR display: a stack with an HDR LUT is turned off (the LUTs are made for HDR)."));
   note(
       i18n::tr("Looks are LUT files (.cube) placed in the luts folder of the player's data, applied in order "
                "like Resolve nodes; names containing PQ, HDR or 2020 are read as HDR LUTs."));
-  ImGui::EndDisabled();
-  if (inactive) note(i18n::tr("SDR display: a stack with an HDR LUT is not applied."));
 }
 
 // Grade adaptatif : les curseurs du grade et le gris moyen de RTX HDR sont la scène sombre ; ces valeurs, la
 // scène claire, mélangées selon la luminance moyenne lissée de l'image source (moteur TensorRT). Hors du bloc
 // désactivé du grade : section() ouvre un encadré, et un BeginDisabled ne peut pas le traverser.
-void adaptive_section(PlaySettings& d) {
+void adaptive_section(PlaySettings& d, const SettingsChoices& choices) {
   using namespace render::grade_limits;
   render::GradeSettings& g = d.grade_values;
   // Grade adaptatif : les curseurs ci-dessus et le gris moyen de RTX HDR sont la scène sombre ; ces
@@ -188,7 +192,9 @@ void adaptive_section(PlaySettings& d) {
   percent_slider(i18n::tr("Bright scene from"), g.adaptive_hi);
   if (g.adaptive_hi <= g.adaptive_lo) g.adaptive_hi = std::min(g.adaptive_lo + 1.0, kAdaptiveLuma.hi);
   grade_slider(i18n::tr("Deep blacks, bright scene"), g.adaptive_shadows, kShadows);
+  ImGui::BeginDisabled(!choices.hdr_output);  // la vibrance adaptative ne joue pas en sortie SDR
   grade_slider(i18n::tr("Colors, saturated blue scene"), g.adaptive_vibrance, kVibrance);
+  ImGui::EndDisabled();
   auto gray = static_cast<float>(g.adaptive_gray);
   if (ImGui::SliderFloat(i18n::tr("Middle gray, bright scene"), &gray, static_cast<float>(kMiddleGray.lo),
                          static_cast<float>(kMiddleGray.hi), "%.0f", ImGuiSliderFlags_AlwaysClamp))
@@ -245,7 +251,7 @@ void grade_tab(PlaySettings& d, const SettingsChoices& choices) {
                    "and are greyed out."));
   }
   ImGui::EndDisabled();
-  if (panel::advanced()) adaptive_section(d);
+  if (panel::advanced()) adaptive_section(d, choices);
   if (d.true_hdr) {
     note(i18n::tr("RTX HDR path: TrueHDR, then the grade on the PQ output."));
   } else if (d.hdr_native) {

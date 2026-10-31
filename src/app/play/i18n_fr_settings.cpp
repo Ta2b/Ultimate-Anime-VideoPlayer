@@ -143,6 +143,8 @@ constexpr std::array kSettingsPages{
           "Remet le profil actif (Ctrl+1 à Ctrl+9) à zéro ; les autres profils ne bougent pas."},
     Entry{"Run the wizard again", "Relancer l'assistant"},
     Entry{"SDR", "SDR"},
+    Entry{"SDR display: a stack with an HDR LUT is turned off (the LUTs are made for HDR).",
+          "Écran SDR : une pile qui contient une LUT d'HDR est coupée (ces LUT sont faites pour le HDR)."},
     Entry{"SDR display: HDR is unavailable. The Color page's grade imitates the HDR look.",
           "Écran SDR : HDR indisponible. Le grade de la page Couleurs imite le rendu HDR."},
     Entry{"SDR mode: the grade imitates the HDR look in the display's HDR10 container.",
@@ -151,8 +153,6 @@ constexpr std::array kSettingsPages{
           "greyed out.",
           "Écran SDR : Éclats, Aplats lumineux, Couleurs étendues et gamut Display P3 n'ont aucun effet "
           "et sont grisés."},
-    Entry{"SDR display: a stack with an HDR LUT is not applied.",
-          "Écran SDR : une pile qui contient une LUT d'HDR n'est pas appliquée."},
     Entry{"SDR mode: the grade imitates the HDR look without an HDR display. Vivid strengthens it.",
           "Mode SDR : l'étalonnage imite le rendu HDR sans écran HDR. Éclatant l'accentue."},
     Entry{"SPAN reloads (built the first time for this size)",

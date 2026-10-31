@@ -5,6 +5,7 @@
 #include <utility>
 
 #include "core/cadence.h"
+#include "core/engines.h"
 #include "core/log.h"
 #include "core/user_overlay.h"
 
@@ -137,8 +138,11 @@ PlaySettings apply_profile(const core::Profile& profile, const core::SourceInfo&
   settings.work_height = 0;
   settings.rife_factor = 0;
   settings.rife_factor_den = 1;
-  settings.true_hdr = profile.hdr == core::HdrMode::TrueHdr;
-  settings.hdr_native = profile.hdr == core::HdrMode::Native;
+  // RTX HDR (TrueHDR) n'existe que sous Linux : ailleurs, le HDR adaptatif prend sa place.
+  const bool rtx_here = core::kHostOs == core::Os::Linux;
+  settings.true_hdr = profile.hdr == core::HdrMode::TrueHdr && rtx_here;
+  settings.hdr_native =
+      profile.hdr == core::HdrMode::Native || (profile.hdr == core::HdrMode::TrueHdr && !rtx_here);
   const core::Rule* rule = core::match_rule(profile, source);
   if (rule == nullptr) {
     notes.emplace_back("aucune règle pour cette source : image telle quelle");

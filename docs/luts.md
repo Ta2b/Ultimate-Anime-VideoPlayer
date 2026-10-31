@@ -34,7 +34,7 @@ Ils apparaissent dans le menu (le menu relit le dossier à chaque ouverture de l
   les éclats HDR au-dessus du blanc gardent leur niveau et reçoivent la teinte du look.
 - **LUT d'HDR** : si le nom du fichier contient `PQ`, `HDR` ou `2020`, elle est lue comme étalonnée en PQ BT.2020
   (les codes PQ de l'image entrent directement dans la LUT). Utile pour les LUT « anime HDR » publiées sur
-  YouTube. Sur une sortie SDR, une LUT d'HDR est lue comme une LUT SDR.
+  YouTube. Sur une sortie SDR, une pile qui contient une LUT d'HDR est coupée en entier (elle serait lue comme du SDR et donnerait des couleurs fausses).
 - Une LUT exportée de DaVinci Resolve (Fichier > Exporter la LUT, 33 ou 65 points) convient.
 - Évite les LUT de conversion Log vers Rec.709 : l'anime est déjà en Rec.709, elles écraseraient l'image.
 
