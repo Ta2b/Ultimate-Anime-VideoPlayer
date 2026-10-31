@@ -40,7 +40,9 @@ if(AJP_WITH_SPAN_FP8)
     CUDA_ARCHITECTURES 89 POSITION_INDEPENDENT_CODE ON)
   target_compile_options(ajp_backend_span_fp8_kernels PRIVATE
     $<$<COMPILE_LANGUAGE:CUDA>:--expt-relaxed-constexpr -lineinfo -Xcudafe=--diag_suppress=177
-      -Xcudafe=--diag_suppress=550 --ptxas-options=--verbose>)
+      -Xcudafe=--diag_suppress=550 --ptxas-options=--verbose>
+    # CCCL de CUDA 13 exige le préprocesseur conforme de MSVC.
+    $<$<AND:$<COMPILE_LANGUAGE:CUDA>,$<PLATFORM_ID:Windows>>:-Xcompiler=/Zc:preprocessor>)
   set(ajp_span_fp8_net ajp_backend_span_fp8_kernels)
 else()
   add_library(ajp_backend_span_fp8_none STATIC span_fp8_net_none.cpp)

@@ -17,6 +17,7 @@
 #include "app/play/panel_style.h"
 #include "app/play/settings_chain_tabs.h"
 #include "app/play/settings_engines.h"
+#include "core/engines.h"
 #include "app/play/settings_export.h"
 #include "app/play/settings_sound.h"
 #include "app/play/text_fit.h"
@@ -42,7 +43,8 @@ void hdr_tab(PlaySettings& d, const SettingsChoices& choices) {
   const int route = d.true_hdr ? 0 : (d.hdr_native ? 1 : 2);
   if (ImGui::BeginCombo(i18n::tr("HDR method"), i18n::tr(kRoutes[static_cast<std::size_t>(route)]))) {
     for (int i = 0; i < static_cast<int>(kRoutes.size()); ++i) {
-      if (i == 0 && !choices.nvidia) continue;  // TrueHDR ne tourne que sur un GPU NVIDIA
+      if (i == 0 && !(choices.nvidia && core::kHostOs == core::Os::Linux))
+        continue;  // TrueHDR : GPU NVIDIA, sous Linux seulement
       ImGui::BeginDisabled(i == 0 && !choices.true_hdr_available);
       if (ImGui::Selectable(i18n::tr(kRoutes[static_cast<std::size_t>(i)]), i == route)) {
         d.true_hdr = i == 0;

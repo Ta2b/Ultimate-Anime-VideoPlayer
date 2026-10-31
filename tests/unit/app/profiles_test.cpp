@@ -8,6 +8,7 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include "core/profile.h"
+#include "core/engines.h"
 
 namespace ajp::app::play {
 namespace {
@@ -40,7 +41,9 @@ TEST_CASE("Un profil fixe la chaîne, le reste des réglages ne bouge pas", "[ap
   CHECK(quality.rife_factor == 3);
   CHECK(quality.upscale);
   CHECK(quality.model == "2x_AnimeJaNai_HD_V3.1Sharp1_Performance_SPANF3_b5f48_unshuffle_fp16.onnx");
-  CHECK(quality.true_hdr);
+  // RTX HDR n'existe que sous Linux ; ailleurs le profil retombe sur le HDR adaptatif.
+  CHECK(quality.true_hdr == (core::kHostOs == core::Os::Linux));
+  CHECK(quality.hdr_native == (core::kHostOs != core::Os::Linux));
   CHECK(quality.true_hdr_contrast == 150);
   CHECK(quality.subtitle_scale == 1.3F);
   CHECK(notes.empty());
