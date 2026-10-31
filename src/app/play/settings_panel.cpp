@@ -122,6 +122,12 @@ void look_section(PlaySettings& d) {
 // Le look : jusqu'à quinze LUT 3D .cube enchaînées dans l'ordre, comme des nœuds de Resolve
 // (render/cube_lut.h) ; ceux du lecteur, puis les fichiers du dossier luts. Chaque intensité va de 0 à 1.
 void look_section(PlaySettings& d, const SettingsChoices& choices) {
+  // Sur une sortie SDR, une pile qui contient une LUT d'HDR n'est pas appliquée (chain_hdr.cpp).
+  const auto hdr_lut = [](const std::string& key) { return !key.empty() && render::look_is_pq(key, ""); };
+  bool stack_has_hdr_lut = hdr_lut(d.look);
+  for (const LookLayer& layer : d.look_layers) stack_has_hdr_lut = stack_has_hdr_lut || hdr_lut(layer.key);
+  const bool inactive = !choices.hdr_output && stack_has_hdr_lut;
+  ImGui::BeginDisabled(inactive);
   const auto label_of = [&](const std::string& key) -> std::string {
     if (key.empty()) return i18n::tr("None");
     for (const render::BuiltinLook& look : render::builtin_looks())
@@ -156,6 +162,8 @@ void look_section(PlaySettings& d, const SettingsChoices& choices) {
   note(
       i18n::tr("Looks are LUT files (.cube) placed in the luts folder of the player's data, applied in order "
                "like Resolve nodes; names containing PQ, HDR or 2020 are read as HDR LUTs."));
+  ImGui::EndDisabled();
+  if (inactive) note(i18n::tr("SDR display: a stack with an HDR LUT is not applied."));
 }
 
 // Grade adaptatif : les curseurs du grade et le gris moyen de RTX HDR sont la scène sombre ; ces valeurs, la
@@ -216,14 +224,25 @@ void grade_tab(PlaySettings& d, const SettingsChoices& choices) {
   using namespace render::grade_limits;
   bool moved = false;
   if (panel::advanced()) {
+    // Sur une sortie SDR, ni les éclats, ni les zones claires, ni le gamut large n'ont d'effet (sdr_params).
+    ImGui::BeginDisabled(!choices.hdr_output);
     moved |= grade_slider(i18n::tr("Highlights"), g.highlights_rtx, kHighlights);
     moved |= grade_slider(i18n::tr("Bright areas"), g.area_rtx, kAreaRtx);
+    ImGui::EndDisabled();
     moved |= grade_slider(i18n::tr("Colors"), g.vibrance_rtx, kVibrance);
+    ImGui::BeginDisabled(!choices.hdr_output);
     moved |= grade_slider(i18n::tr("Wide colors"), g.expand, kExpand);
+    ImGui::EndDisabled();
     moved |= grade_slider(i18n::tr("Deep blacks"), g.shadows, kShadows);
     moved |= grade_slider(i18n::tr("Color limiter"), g.guard, kGuard);
     if (moved) d.grade_preset = render::GradePreset::Custom;
+    ImGui::BeginDisabled(!choices.hdr_output);
     ImGui::Checkbox(i18n::tr("Display P3 gamut"), &g.gamut_p3);
+    ImGui::EndDisabled();
+    if (!choices.hdr_output)
+      note(
+          i18n::tr("SDR display: Highlights, Bright areas, Wide colors and Display P3 gamut have no effect "
+                   "and are greyed out."));
   }
   ImGui::EndDisabled();
   if (panel::advanced()) adaptive_section(d);
