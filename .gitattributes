@@ -3,3 +3,6 @@
 
 # Le corpus du fuzz : des octets exacts, jamais convertis en CRLF.
 tests/fuzz/corpus/** -text
+
+# Les LUT 3D .cube (data/luts) : des octets exacts, jamais convertis (fins de ligne CRLF de Resolve).
+data/luts/*.cube -text
