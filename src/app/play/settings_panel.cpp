@@ -131,6 +131,12 @@ void look_section(PlaySettings& d, const SettingsChoices& choices) {
     return key;
   };
   const std::vector<LookEntry> entries = list_looks(choices.luts_dir);
+  // Sur une sortie SDR, une pile qui contient une LUT d'HDR est coupée en entier (chain_hdr.cpp) : ses réglages
+  // n'agissent pas, ils sont grisés.
+  bool has_hdr_look = render::look_is_pq(d.look, "");
+  for (const LookLayer& layer : d.look_layers) has_hdr_look = has_hdr_look || render::look_is_pq(layer.key, "");
+  const bool stack_off = !choices.hdr_output && has_hdr_look;
+  ImGui::BeginDisabled(stack_off);
   const auto slot = [&](int number, std::string& name, double& mix) {
     ImGui::PushID(number);
     if (ImGui::BeginCombo(i18n::tr_format("Look {} (LUT)", number).c_str(), label_of(name).c_str())) {
@@ -155,6 +161,8 @@ void look_section(PlaySettings& d, const SettingsChoices& choices) {
   ImGui::BeginDisabled(d.look_layers.empty());
   if (ImGui::Button("-")) d.look_layers.pop_back();
   ImGui::EndDisabled();
+  ImGui::EndDisabled();  // stack_off
+  if (stack_off) note(i18n::tr("SDR display: a stack with an HDR LUT is turned off (the LUTs are made for HDR)."));
   note(
       i18n::tr("Looks are LUT files (.cube) placed in the luts folder of the player's data, applied in order "
                "like Resolve nodes; names containing PQ, HDR or 2020 are read as HDR LUTs."));
@@ -163,7 +171,7 @@ void look_section(PlaySettings& d, const SettingsChoices& choices) {
 // Grade adaptatif : les curseurs du grade et le gris moyen de RTX HDR sont la scène sombre ; ces valeurs, la
 // scène claire, mélangées selon la luminance moyenne lissée de l'image source (moteur TensorRT). Hors du bloc
 // désactivé du grade : section() ouvre un encadré, et un BeginDisabled ne peut pas le traverser.
-void adaptive_section(PlaySettings& d) {
+void adaptive_section(PlaySettings& d, const SettingsChoices& choices) {
   using namespace render::grade_limits;
   render::GradeSettings& g = d.grade_values;
   // Grade adaptatif : les curseurs ci-dessus et le gris moyen de RTX HDR sont la scène sombre ; ces
@@ -182,7 +190,9 @@ void adaptive_section(PlaySettings& d) {
   percent_slider(i18n::tr("Bright scene from"), g.adaptive_hi);
   if (g.adaptive_hi <= g.adaptive_lo) g.adaptive_hi = std::min(g.adaptive_lo + 1.0, kAdaptiveLuma.hi);
   grade_slider(i18n::tr("Deep blacks, bright scene"), g.adaptive_shadows, kShadows);
+  ImGui::BeginDisabled(!choices.hdr_output);  // la vibrance adaptative ne joue pas en sortie SDR
   grade_slider(i18n::tr("Colors, saturated blue scene"), g.adaptive_vibrance, kVibrance);
+  ImGui::EndDisabled();
   auto gray = static_cast<float>(g.adaptive_gray);
   if (ImGui::SliderFloat(i18n::tr("Middle gray, bright scene"), &gray, static_cast<float>(kMiddleGray.lo),
                          static_cast<float>(kMiddleGray.hi), "%.0f", ImGuiSliderFlags_AlwaysClamp))
@@ -218,17 +228,27 @@ void grade_tab(PlaySettings& d, const SettingsChoices& choices) {
   using namespace render::grade_limits;
   bool moved = false;
   if (panel::advanced()) {
+    // Sur une sortie SDR, ni les éclats, ni les aplats lumineux, ni les couleurs étendues, ni le gamut P3 ne
+    // jouent (sdr_params) : ils sont grisés.
+    ImGui::BeginDisabled(!choices.hdr_output);
     moved |= grade_slider(i18n::tr("Highlights"), g.highlights_rtx, kHighlights);
     moved |= grade_slider(i18n::tr("Bright areas"), g.area_rtx, kAreaRtx);
+    ImGui::EndDisabled();
     moved |= grade_slider(i18n::tr("Colors"), g.vibrance_rtx, kVibrance);
+    ImGui::BeginDisabled(!choices.hdr_output);
     moved |= grade_slider(i18n::tr("Wide colors"), g.expand, kExpand);
+    ImGui::EndDisabled();
     moved |= grade_slider(i18n::tr("Deep blacks"), g.shadows, kShadows);
     moved |= grade_slider(i18n::tr("Color limiter"), g.guard, kGuard);
     if (moved) d.grade_preset = render::GradePreset::Custom;
+    ImGui::BeginDisabled(!choices.hdr_output);
     ImGui::Checkbox(i18n::tr("Display P3 gamut"), &g.gamut_p3);
+    ImGui::EndDisabled();
+    if (!choices.hdr_output)
+      note(i18n::tr("SDR display: Highlights, Bright areas, Wide colors and Display P3 gamut only act in HDR."));
   }
   ImGui::EndDisabled();
-  if (panel::advanced()) adaptive_section(d);
+  if (panel::advanced()) adaptive_section(d, choices);
   if (d.true_hdr) {
     note(i18n::tr("RTX HDR path: TrueHDR, then the grade on the PQ output."));
   } else if (d.hdr_native) {
