@@ -5,9 +5,11 @@
 #include <array>
 #include <chrono>
 #include <cmath>
+#include <cstdint>
 #include <filesystem>
 #include <format>
 #include <optional>
+#include <string>
 #include <string_view>
 #include <utility>
 #include <vector>
@@ -50,6 +52,28 @@ void fit_display_scale(spdlog::logger& log, SDL_Window* window, int width, int h
 
 std::unexpected<Refusal> refuse(RefusalCode code, std::string detail) {
   return std::unexpected(Refusal{code, std::move(detail)});
+}
+
+// Les espaces colorimétriques que la surface offre : dit, au journal, si un écran HDR peut recevoir du HDR10
+// (A2B10G10R10 + HDR10_ST2084) ou si le pilote ne propose que du sRGB.
+void log_surface_color_spaces(const pl_vulkan vk, VkSurfaceKHR surface) {
+  const auto formats_of = reinterpret_cast<PFN_vkGetPhysicalDeviceSurfaceFormatsKHR>(
+      vk->get_proc_addr(vk->instance, "vkGetPhysicalDeviceSurfaceFormatsKHR"));
+  if (formats_of == nullptr || surface == VK_NULL_HANDLE) return;
+  std::uint32_t count = 0;
+  if (formats_of(vk->phys_device, surface, &count, nullptr) != VK_SUCCESS || count == 0) return;
+  std::vector<VkSurfaceFormatKHR> formats(count);
+  if (formats_of(vk->phys_device, surface, &count, formats.data()) != VK_SUCCESS) return;
+  std::string text;
+  bool hdr10 = false;
+  for (const VkSurfaceFormatKHR& format : formats) {
+    hdr10 = hdr10 || format.colorSpace == VK_COLOR_SPACE_HDR10_ST2084_EXT;
+    text += std::format(" [format {} espace {}]", static_cast<int>(format.format),
+                        static_cast<int>(format.colorSpace));
+  }
+  log_channel("app")->info("surface Vulkan : {} configurations, HDR10 (ST2084) {}{}",
+                           formats.size(),  // i18n-ok : journal
+                           hdr10 ? "offert" : "absent", text);
 }
 
 void placebo_log(void* priv, pl_log_level level, const char* message) {
@@ -372,6 +396,7 @@ std::expected<std::unique_ptr<PlaceboScreen>, Refusal> PlaceboScreen::open(const
   impl->swapchain = pl_vulkan_create_swapchain(impl->vk, &sw_params);
   if (impl->swapchain == nullptr)
     return refuse(RefusalCode::LibraryUnavailable, "pl_vulkan_create_swapchain a échoué");
+  log_surface_color_spaces(impl->vk, impl->surface);
   if (options.hdr) pl_swapchain_colorspace_hint(impl->swapchain, &pl_color_space_hdr10);
   impl->renderer = pl_renderer_create(impl->log, gpu);
 
