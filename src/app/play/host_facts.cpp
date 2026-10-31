@@ -71,6 +71,27 @@ double windows_sdr_white_nits() {
   return kDefault;
 }
 
+// Windows a-t-il le HDR actif (« Utiliser le HDR ») sur un écran actif ? SDL ne le voit pas toujours avec
+// Vulkan : il rend une marge de 1,00 sur un écran que Windows dit en HDR.
+bool windows_hdr_active() {
+  UINT32 paths = 0;
+  UINT32 modes = 0;
+  if (GetDisplayConfigBufferSizes(QDC_ONLY_ACTIVE_PATHS, &paths, &modes) != ERROR_SUCCESS) return false;
+  std::vector<DISPLAYCONFIG_PATH_INFO> path_info(paths);
+  std::vector<DISPLAYCONFIG_MODE_INFO> mode_info(modes);
+  if (QueryDisplayConfig(QDC_ONLY_ACTIVE_PATHS, &paths, path_info.data(), &modes, mode_info.data(),
+                         nullptr) != ERROR_SUCCESS)
+    return false;
+  for (UINT32 i = 0; i < paths; ++i) {
+    DISPLAYCONFIG_GET_ADVANCED_COLOR_INFO color{};
+    color.header = {DISPLAYCONFIG_DEVICE_INFO_GET_ADVANCED_COLOR_INFO, sizeof(color),
+                    path_info[i].targetInfo.adapterId, path_info[i].targetInfo.id};
+    if (DisplayConfigGetDeviceInfo(&color.header) == ERROR_SUCCESS && color.advancedColorEnabled != 0)
+      return true;
+  }
+  return false;
+}
+
 }  // namespace
 #endif
 
@@ -78,12 +99,17 @@ double windows_sdr_white_nits() {
 // référence du compositeur) × 203 nits ; rien si l'écran n'est pas en HDR (display.md).
 std::optional<double> content_peak_nits(SDL_Window* window) {
   const SDL_PropertiesID props = SDL_GetWindowProperties(window);
-  if (!SDL_GetBooleanProperty(props, SDL_PROP_WINDOW_HDR_ENABLED_BOOLEAN, false)) return std::nullopt;
   const float headroom = SDL_GetFloatProperty(props, SDL_PROP_WINDOW_HDR_HEADROOM_FLOAT, 0.0F);
-  if (!(headroom > 1.0F)) return std::nullopt;
+  const bool sdl_hdr =
+      SDL_GetBooleanProperty(props, SDL_PROP_WINDOW_HDR_ENABLED_BOOLEAN, false) && headroom > 1.0F;
 #if defined(_WIN32)
-  return static_cast<double>(headroom) * windows_sdr_white_nits();
+  if (sdl_hdr) return static_cast<double>(headroom) * windows_sdr_white_nits();
+  // SDL ne voit pas le HDR (activé=false ou marge de 1,00 avec Vulkan) mais Windows le dit actif : la crête
+  // réelle est inconnue, 1000 nits en attendant ; « Pic auto » du panneau HDR la reprend.
+  constexpr double kUnknownPeakNits = 1000.0;
+  return windows_hdr_active() ? std::optional<double>(kUnknownPeakNits) : std::nullopt;
 #else
+  if (!sdl_hdr) return std::nullopt;
   return static_cast<double>(headroom) * 203.0;
 #endif
 }
