@@ -20,6 +20,9 @@ struct LookEntry {
 
 // Les looks du lecteur d'abord, puis les .cube du dossier (triés par nom) ; un dossier absent n'est pas une
 // erreur.
+// Le dossier des LUT livrées avec le lecteur (luts/ à côté de ses modèles), lu après celui de l'utilisateur.
+std::filesystem::path shipped_luts_dir();
+
 std::vector<LookEntry> list_looks(const std::filesystem::path& luts_dir);
 
 // La LUT d'une clé (look du lecteur ou fichier du dossier). Refus nommé si le fichier manque ou ne se lit
