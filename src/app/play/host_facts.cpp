@@ -105,7 +105,15 @@ std::optional<double> content_peak_nits(SDL_Window* window) {
   const bool sdl_hdr =
       SDL_GetBooleanProperty(props, SDL_PROP_WINDOW_HDR_ENABLED_BOOLEAN, false) && headroom > 1.0F;
 #if defined(_WIN32)
-  if (sdl_hdr) return static_cast<double>(headroom) * windows_sdr_white_nits();
+  if (sdl_hdr) {
+    // La marge de SDL dépend du curseur « luminosité du contenu SDR » de Windows (écran à 800 nits, blanc SDR
+    // à 400 : marge 2) : la crête que l'EDID annonce la borne par le bas, sans quoi le gris moyen (plafonné à
+    // la moitié de la crête) n'a plus d'effet.
+    double peak = static_cast<double>(headroom) * windows_sdr_white_nits();
+    if (const auto display = read_display(display_name(window)); display && display->peak_nits)
+      peak = std::max(peak, *display->peak_nits);
+    return peak;
+  }
   // SDL ne voit pas le HDR (activé=false ou marge de 1,00 avec Vulkan) mais Windows le dit actif : la crête
   // est celle que l'EDID de l'écran annonce, sinon 600 nits (un écran HDR10 courant, prudent : trop haut
   // éclaire trop) ; « Pic auto » du panneau HDR la reprend.
