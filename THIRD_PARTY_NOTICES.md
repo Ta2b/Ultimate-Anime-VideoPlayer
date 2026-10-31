@@ -27,6 +27,10 @@ Source de chaque fichier : `tools/release/fetch-models.sh` (SHA-256 vérifiés).
 
 FFmpeg, libplacebo et FriBidi sont des bibliothèques partagées (`lib/`) : vous pouvez les remplacer par une version modifiée de la même interface. Leurs sources sont disponibles aux adresses et versions ci-dessus.
 
+## LUT d'HDR (data/luts)
+
+55 LUT 3D `.cube` (« HDR LUT ver.9.1 ») ajoutées au dépôt à la demande de son propriétaire ; auteur et licence d'origine non indiqués dans l'archive reçue, voir `data/luts/ATTRIBUTION.md`.
+
 ## Moteurs facultatifs téléchargés depuis l'écran de bienvenue
 OpenVINO (Apache-2.0), MIGraphX et ROCm (MIT, d'après AMD), ONNX Runtime (MIT), Windows ML (licence de redistribution de Microsoft jointe au moteur), MoltenVK (Apache-2.0). TensorRT, CUDA, cuDNN et le SDK Video Effects de NVIDIA (RTX HDR) sont sous les licences propriétaires de NVIDIA, que l'utilisateur accepte à l'écran avant le téléchargement.
 
