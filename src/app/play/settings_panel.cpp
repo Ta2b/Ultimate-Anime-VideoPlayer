@@ -37,8 +37,8 @@ constexpr std::array<const char*, 3> kRoutes{"RTX HDR (NVIDIA)", "Adaptive HDR (
                                              "SDR"};  // clés i18n
 
 void hdr_tab(PlaySettings& d, const SettingsChoices& choices) {
-  // Un écran SDR n'a pas de HDR à convertir : les options restent visibles mais grisées.
-  ImGui::BeginDisabled(!choices.hdr_output);
+  // Le choix de la méthode reste libre, même sur un écran SDR ; ce qui règle le HDR de l'écran (pic, gris
+  // moyen) est grisé tant que l'écran n'en reçoit pas.
   section(i18n::tr("Output"));
   const int route = d.true_hdr ? 0 : (d.hdr_native ? 1 : 2);
   if (ImGui::BeginCombo(i18n::tr("HDR method"), i18n::tr(kRoutes[static_cast<std::size_t>(route)]))) {
@@ -60,6 +60,8 @@ void hdr_tab(PlaySettings& d, const SettingsChoices& choices) {
     note(i18n::tr("RTX HDR: the Maxine VideoFX SDK is not installed (see Engines)."));
   if (!choices.hdr_output)
     note(i18n::tr("SDR display: HDR is unavailable. The Color page's grade imitates the HDR look."));
+  panel::end_group();  // l'encadré Sortie se ferme avant la zone grisée
+  ImGui::BeginDisabled(!choices.hdr_output);
   section(choices.nvidia ? i18n::tr("HDR settings") : i18n::tr("Adaptive HDR settings"));
   bool automatic = d.true_hdr_peak == 0;
   if (ImGui::Checkbox(i18n::tr_format("Auto peak ({} nits)", choices.auto_peak).c_str(), &automatic))
