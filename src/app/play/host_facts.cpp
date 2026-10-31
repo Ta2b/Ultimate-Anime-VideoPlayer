@@ -90,11 +90,11 @@ std::optional<double> content_peak_nits(SDL_Window* window) {
 
 std::string describe_hdr(SDL_Window* window) {
   const SDL_PropertiesID props = SDL_GetWindowProperties(window);
-  std::string text = std::format(
-      "HDR de l'écran selon SDL : activé={} marge={:.2f} blanc SDR={:.2f}",  // i18n-ok : journal
-      SDL_GetBooleanProperty(props, SDL_PROP_WINDOW_HDR_ENABLED_BOOLEAN, false),
-      SDL_GetFloatProperty(props, SDL_PROP_WINDOW_HDR_HEADROOM_FLOAT, 0.0F),
-      SDL_GetFloatProperty(props, SDL_PROP_WINDOW_SDR_WHITE_LEVEL_FLOAT, 0.0F));
+  std::string text =
+      std::format("HDR de l'écran selon SDL : activé={} marge={:.2f} blanc SDR={:.2f}",  // i18n-ok : journal
+                  SDL_GetBooleanProperty(props, SDL_PROP_WINDOW_HDR_ENABLED_BOOLEAN, false),
+                  SDL_GetFloatProperty(props, SDL_PROP_WINDOW_HDR_HEADROOM_FLOAT, 0.0F),
+                  SDL_GetFloatProperty(props, SDL_PROP_WINDOW_SDR_WHITE_LEVEL_FLOAT, 0.0F));
 #if defined(_WIN32)
   UINT32 paths = 0;
   UINT32 modes = 0;
