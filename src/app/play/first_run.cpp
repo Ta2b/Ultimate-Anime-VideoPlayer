@@ -14,8 +14,8 @@
 #include "app/play/auto_config.h"
 #include "app/play/engine_install.h"
 #include "app/play/engine_switch.h"
-#include "core/engines.h"
 #include "app/play/panel_style.h"
+#include "core/engines.h"
 
 namespace ajp::app::play {
 namespace {
