@@ -332,6 +332,11 @@ std::expected<std::unique_ptr<PlaceboScreen>, Refusal> PlaceboScreen::open(const
   inst_params.get_proc_addr = get_proc_addr;
   inst_params.extensions = sdl_extensions;
   inst_params.num_extensions = static_cast<int>(count);
+  // Les espaces colorimétriques HDR (HDR10 ST2084) d'une surface : sans cette extension d'instance, la
+  // surface n'offre que du sRGB et la sortie reste en SDR sur un écran HDR. Facultative, comme dans mpv.
+  constexpr std::array<const char*, 1> kInstanceOptional{VK_EXT_SWAPCHAIN_COLOR_SPACE_EXTENSION_NAME};
+  inst_params.opt_extensions = kInstanceOptional.data();
+  inst_params.num_opt_extensions = static_cast<int>(kInstanceOptional.size());
   impl->inst = pl_vk_inst_create(impl->log, &inst_params);
   if (impl->inst == nullptr) return refuse(RefusalCode::LibraryUnavailable, "pl_vk_inst_create a échoué");
   if (!SDL_Vulkan_CreateSurface(impl->window, impl->inst->instance, nullptr, &impl->surface)) {
@@ -388,8 +393,13 @@ std::expected<std::unique_ptr<PlaceboScreen>, Refusal> PlaceboScreen::open(const
           offered +=
               std::format(" {}/{}", static_cast<int>(format.format), static_cast<int>(format.colorSpace));
         }
-        impl->channel->info("surface : {} formats (format/espace){} ; HDR10 ST2084 {}", format_count, offered,
-                            hdr10 ? "offert" : "absent");
+        bool colorspace_extension = false;
+        for (int i = 0; i < impl->inst->num_extensions; ++i)
+          colorspace_extension = colorspace_extension || std::string_view(impl->inst->extensions[i]) ==
+                                                             VK_EXT_SWAPCHAIN_COLOR_SPACE_EXTENSION_NAME;
+        impl->channel->info(
+            "surface : {} formats (format/espace){} ; HDR10 ST2084 {} ; extension d'instance {}",
+            format_count, offered, hdr10 ? "offert" : "absent", colorspace_extension ? "activée" : "absente");
       }
     }
   }
