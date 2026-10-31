@@ -360,9 +360,21 @@ std::expected<std::unique_ptr<PlaceboScreen>, Refusal> PlaceboScreen::open(const
     impl->channel->info("appareil Vulkan non partagé avec FFmpeg : {} ; ses images passeront par l'hôte",
                         share.error().detail);
   }
-  if ((gpu->export_caps.tex & PL_HANDLE_FD) == 0 || (gpu->export_caps.sync & PL_HANDLE_FD) == 0) {
+  // Les poignées que le backend TensorRT importe dans CUDA : descripteurs sous Linux, HANDLE NT sous Windows
+  // (placebo_ring.cpp).
+#if defined(_WIN32)
+  constexpr pl_handle_type kRingHandle = PL_HANDLE_WIN32;
+  constexpr const char* kRingHandleName = "HANDLE Win32";
+#else
+  constexpr pl_handle_type kRingHandle = PL_HANDLE_FD;
+  constexpr const char* kRingHandleName = "fd";
+#endif
+  if ((gpu->export_caps.tex & kRingHandle) == 0 || (gpu->export_caps.sync & kRingHandle) == 0) {
     // Sans export, le backend TensorRT ne peut pas importer le ring ; le backend Vulkan s'en passe.
-    impl->channel->info("l'appareil n'exporte pas ses images ni ses sémaphores (fd) : ring sans poignées");
+    impl->channel->info("l'appareil n'exporte pas ses images ni ses sémaphores ({}) : ring sans poignées",
+                        kRingHandleName);
+  } else {
+    impl->channel->info("ring partagé avec CUDA : images et sémaphores exportés ({})", kRingHandleName);
   }
 
   pl_vulkan_swapchain_params sw_params{};
