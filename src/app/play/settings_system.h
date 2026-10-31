@@ -100,14 +100,7 @@ void language_section(PlaySettings& d);
 void updates_page(PlaySettings& d, const PlayerPlace& place, UpdateNote& note);
 
 // Le lecteur par défaut et « Ouvrir avec » (Général > Application).
-// Avec « Ne plus me le demander » (dismissed) et, quand le lecteur est déjà celui des vidéos, un mot qui le
-// dit.
-void default_player_page(const PlayerPlace& place, SystemNote& last, bool& dismissed, bool already_default);
-
-// La fenêtre de proposition au démarrage (une fois par lancement, tant que AJP n'est pas le lecteur par
-// défaut et que « Ne plus demander » n'est pas coché) : « Définir par défaut », « Plus tard », « Ne plus
-// demander ». Dessinée au centre du cadre ImGui en cours ; rend vrai quand elle se ferme, dismissed dit si «
-// Ne plus demander » est coché.
-bool default_player_prompt(const PlayerPlace& place, SystemNote& last, bool& dismissed, float scale);
+// Quand le lecteur est déjà celui des vidéos, un mot qui le dit. Rien ne le propose au démarrage.
+void default_player_page(const PlayerPlace& place, SystemNote& last, bool already_default);
 
 }  // namespace ajp::app::play
