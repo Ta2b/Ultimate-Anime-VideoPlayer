@@ -63,7 +63,9 @@ vendor_hdr::TrueHdrParams true_hdr_params(const PlaySettings& s, int auto_peak) 
   return vendor_hdr::TrueHdrParams{.contrast = std::min(s.true_hdr_contrast, sdk_max),
                                    .saturation = std::min(s.true_hdr_saturation, sdk_max),
                                    .middle_gray = s.true_hdr_gray,
-                                   .peak_nits = s.true_hdr_peak > 0 ? s.true_hdr_peak : auto_peak,
+                                   .peak_nits = s.true_hdr_peak > 0
+                                                    ? s.true_hdr_peak
+                                                    : std::max(auto_peak, vendor_hdr::limits::kPeakNits.lo),
                                    .debanding = s.true_hdr_debanding};
 }
 

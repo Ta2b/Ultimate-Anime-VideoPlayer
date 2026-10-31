@@ -27,6 +27,9 @@ double display_refresh_hz(SDL_Window* window);
 int display_height(SDL_Window* window);
 // Crête vue par le contenu : la marge HDR de SDL3 × 203 nits ; rien si l'écran n'est pas en HDR.
 std::optional<double> content_peak_nits(SDL_Window* window);
+// La crête « automatique » du grade : celle de l'écran bornée à 200-2000 nits (un écran HDR de 310 nits ne
+// reçoit pas une cible de 400) ; 1000 si inconnue. RTX HDR la remonte à son minimum de 400.
+int auto_peak_nits(std::optional<double> detected);
 // Ce que SDL (et, sous Windows, la configuration d'affichage) dit du HDR de l'écran de la fenêtre, pour le
 // journal : de quoi comprendre pourquoi un écran HDR est vu en SDR.
 std::string describe_hdr(SDL_Window* window);
