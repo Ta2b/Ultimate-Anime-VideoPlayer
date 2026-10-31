@@ -158,6 +158,11 @@ render::GradeChoice grade_of(const PlaySettings& s, bool true_hdr_open, int peak
         any_pq = any_pq || (!slots[i].key.empty() && render::look_is_pq(slots[i].key, ""));
       }
       params.look_pq = pq && any_pq ? 1.0 : 0.0;
+      // Une pile qui contient une LUT d'HDR est faite pour l'HDR : sur une sortie SDR elle n'est pas
+      // appliquée.
+      if (!pq && any_pq) {
+        for (std::size_t i = 0; i < slots.size(); ++i) params.*kMixes[i] = 0.0;
+      }
       (pq ? choice.pq : choice.sdr) = params;
     }
   }
