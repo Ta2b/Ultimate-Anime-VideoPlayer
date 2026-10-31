@@ -229,7 +229,9 @@ std::expected<void, Refusal> play(const PlayOptions& options, const PlayerPaths&
                                    .paths = paths,
                                    .catalog = catalog,
                                    .engines_path = engines_path};
-  if (!engines->first_run_done || options.first_run) {
+  // Une vidéo ouverte directement (double-clic, argument) se lit tout de suite : l'assistant ne
+  // la bloque pas, et il se présentera au prochain lancement depuis l'accueil.
+  if (options.first_run || (!engines->first_run_done && !given)) {
     auto shown = run_engine_screen(engine_screen, *engines, profiles, false, next_key, snapshot);
     if (!shown) return std::unexpected(std::move(shown.error()));
     if (!*shown) return {};
