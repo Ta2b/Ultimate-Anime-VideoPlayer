@@ -125,6 +125,7 @@ struct PlaceboScreen::Impl {
   OutputSize swapchain_size;
   bool fullscreen = false;
   bool hdr_output = false;
+  bool output_logged = false;  // la sortie (PQ ou non) est déjà dite au journal
   std::optional<std::filesystem::path> snapshot;
   int snapshot_count = 1;  // présentations à écrire, numérotées s'il y en a plusieurs
   int snapshot_index = 0;

@@ -373,6 +373,26 @@ std::expected<std::unique_ptr<PlaceboScreen>, Refusal> PlaceboScreen::open(const
   if (impl->swapchain == nullptr)
     return refuse(RefusalCode::LibraryUnavailable, "pl_vulkan_create_swapchain a échoué");
   if (options.hdr) pl_swapchain_colorspace_hint(impl->swapchain, &pl_color_space_hdr10);
+  // Ce que la surface offre : sans « HDR10 ST2084 » ici, la sortie reste en SDR même sur un écran HDR.
+  if (const auto formats_of = reinterpret_cast<PFN_vkGetPhysicalDeviceSurfaceFormatsKHR>(
+          impl->vk->get_proc_addr(impl->vk->instance, "vkGetPhysicalDeviceSurfaceFormatsKHR"));
+      formats_of != nullptr) {
+    std::uint32_t format_count = 0;
+    if (formats_of(impl->vk->phys_device, impl->surface, &format_count, nullptr) == VK_SUCCESS) {
+      std::vector<VkSurfaceFormatKHR> formats(format_count);
+      if (formats_of(impl->vk->phys_device, impl->surface, &format_count, formats.data()) == VK_SUCCESS) {
+        std::string offered;
+        bool hdr10 = false;
+        for (const VkSurfaceFormatKHR& format : formats) {
+          hdr10 = hdr10 || format.colorSpace == VK_COLOR_SPACE_HDR10_ST2084_EXT;
+          offered +=
+              std::format(" {}/{}", static_cast<int>(format.format), static_cast<int>(format.colorSpace));
+        }
+        impl->channel->info("surface : {} formats (format/espace){} ; HDR10 ST2084 {}", format_count, offered,
+                            hdr10 ? "offert" : "absent");
+      }
+    }
+  }
   impl->renderer = pl_renderer_create(impl->log, gpu);
 
   impl->device = GpuDevice{.api = GpuApi::Vulkan, .name = "Vulkan (libplacebo)"};
