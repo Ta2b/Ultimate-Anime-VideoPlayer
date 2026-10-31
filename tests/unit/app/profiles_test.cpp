@@ -72,8 +72,11 @@ TEST_CASE("Les réglages en cours se relisent comme un profil", "[app][profiles]
   CHECK(back.downscale == Downscale::CatmullRom);
   CHECK(back.rife_factor == 4);
   CHECK(back.model == usual);
-  CHECK(back.true_hdr);
-  CHECK(profile_summary(profile, k1080p) == "540p Catmull-Rom → RIFE ×4 → SPAN 1080p · RTX HDR");
+  // RTX HDR n'existe que sous Linux : ailleurs le profil retombe sur le HDR adaptatif.
+  const bool rtx = core::kHostOs == core::Os::Linux;
+  CHECK(back.true_hdr == rtx);
+  CHECK(profile_summary(profile, k1080p) ==
+        std::string("540p Catmull-Rom → RIFE ×4 → SPAN 1080p · ") + (rtx ? "RTX HDR" : "HDR adaptatif"));
   // Un autre modèle est nommé dans le résumé.
   s.model = "2x_AnimeJaNai_HD_V3.1Sharp1_Balanced_SPANF3_b8f64_unshuffle_fp16.onnx";
   const core::Profile other{.name = "Net", .hdr = hdr_of(s), .rules = rules_of(s, usual)};

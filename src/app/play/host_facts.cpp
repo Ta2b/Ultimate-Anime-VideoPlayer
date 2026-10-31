@@ -88,6 +88,35 @@ std::optional<double> content_peak_nits(SDL_Window* window) {
 #endif
 }
 
+std::string describe_hdr(SDL_Window* window) {
+  const SDL_PropertiesID props = SDL_GetWindowProperties(window);
+  std::string text = std::format(
+      "HDR de l'écran selon SDL : activé={} marge={:.2f} blanc SDR={:.2f}",  // i18n-ok : journal
+      SDL_GetBooleanProperty(props, SDL_PROP_WINDOW_HDR_ENABLED_BOOLEAN, false),
+      SDL_GetFloatProperty(props, SDL_PROP_WINDOW_HDR_HEADROOM_FLOAT, 0.0F),
+      SDL_GetFloatProperty(props, SDL_PROP_WINDOW_SDR_WHITE_LEVEL_FLOAT, 0.0F));
+#if defined(_WIN32)
+  UINT32 paths = 0;
+  UINT32 modes = 0;
+  if (GetDisplayConfigBufferSizes(QDC_ONLY_ACTIVE_PATHS, &paths, &modes) == ERROR_SUCCESS) {
+    std::vector<DISPLAYCONFIG_PATH_INFO> path_info(paths);
+    std::vector<DISPLAYCONFIG_MODE_INFO> mode_info(modes);
+    if (QueryDisplayConfig(QDC_ONLY_ACTIVE_PATHS, &paths, path_info.data(), &modes, mode_info.data(),
+                           nullptr) == ERROR_SUCCESS) {
+      for (UINT32 i = 0; i < paths; ++i) {
+        DISPLAYCONFIG_GET_ADVANCED_COLOR_INFO color{};
+        color.header = {DISPLAYCONFIG_DEVICE_INFO_GET_ADVANCED_COLOR_INFO, sizeof(color),
+                        path_info[i].targetInfo.adapterId, path_info[i].targetInfo.id};
+        if (DisplayConfigGetDeviceInfo(&color.header) != ERROR_SUCCESS) continue;
+        text += std::format(" ; Windows écran {} : HDR pris en charge={} activé={}", i,  // i18n-ok : journal
+                            color.advancedColorSupported != 0, color.advancedColorEnabled != 0);
+      }
+    }
+  }
+#endif
+  return text;
+}
+
 bool maxine_available(const PlayOptions& options, const PlayerPaths& paths) {
   const vendor_hdr::SdkStore store(paths.engines.parent_path() / "sdk", vendor_hdr::SdkKind::MaxineVfx);
   if (store.status().installed) return true;

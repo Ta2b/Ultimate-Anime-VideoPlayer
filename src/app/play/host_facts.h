@@ -27,6 +27,9 @@ double display_refresh_hz(SDL_Window* window);
 int display_height(SDL_Window* window);
 // Crête vue par le contenu : la marge HDR de SDL3 × 203 nits ; rien si l'écran n'est pas en HDR.
 std::optional<double> content_peak_nits(SDL_Window* window);
+// Ce que SDL (et, sous Windows, la configuration d'affichage) dit du HDR de l'écran de la fenêtre, pour le
+// journal : de quoi comprendre pourquoi un écran HDR est vu en SDR.
+std::string describe_hdr(SDL_Window* window);
 // Le nom de l'écran de la fenêtre selon SDL, pour choisir son EDID.
 std::string display_name(SDL_Window* window);
 GpuFacts gpu_facts(const PlaceboScreen& screen);

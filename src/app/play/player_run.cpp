@@ -100,6 +100,7 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
 
   settings.stats.all = p.details;  // Tab pendant la préparation
 
+  log->info("{}", describe_hdr(p.screen.window()));
   const int auto_peak = vendor_hdr::peak_from_display(content_peak_nits(p.screen.window()));
   int peak_nits = 0;
   // La sortie est HDR10 : l'écran en reçoit, et --sdr ne l'a pas coupée. Sinon (sortie SDR),
@@ -336,7 +337,8 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
           .engines_dir_default = prepare::utf8_path(p.paths.engines.parent_path() / "backends"),
           .engines_dir_free = format_size(free_bytes(p.catalog.layout.engines)),
           .default_player_is_ajp = default_player_is_ajp,
-          .offer_default_player = !default_player_is_ajp && !settings.default_player_dismissed,
+          // Plus d'invitation au démarrage : « lecteur par défaut » reste dans Réglages > Système, sur tous les OS.
+          .offer_default_player = false,
           .bench_text = bench_text,
           .place = {.executable = p.paths.executable, .home = p.paths.home, .data = p.paths.data},
           .span_prepare = span_prepare,
