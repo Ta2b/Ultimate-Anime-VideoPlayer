@@ -8,6 +8,7 @@
 
 #include <SDL3/SDL_properties.h>
 
+#include "app/play/display_edid.h"
 #include "app/play/i18n.h"
 
 #if defined(_WIN32)
@@ -105,9 +106,13 @@ std::optional<double> content_peak_nits(SDL_Window* window) {
 #if defined(_WIN32)
   if (sdl_hdr) return static_cast<double>(headroom) * windows_sdr_white_nits();
   // SDL ne voit pas le HDR (activé=false ou marge de 1,00 avec Vulkan) mais Windows le dit actif : la crête
-  // réelle est inconnue, 1000 nits en attendant ; « Pic auto » du panneau HDR la reprend.
-  constexpr double kUnknownPeakNits = 1000.0;
-  return windows_hdr_active() ? std::optional<double>(kUnknownPeakNits) : std::nullopt;
+  // est celle que l'EDID de l'écran annonce, sinon 600 nits (un écran HDR10 courant, prudent : trop haut
+  // éclaire trop) ; « Pic auto » du panneau HDR la reprend.
+  constexpr double kUnknownPeakNits = 600.0;
+  if (!windows_hdr_active()) return std::nullopt;
+  if (const auto display = read_display(display_name(window)); display && display->peak_nits)
+    return *display->peak_nits;
+  return kUnknownPeakNits;
 #else
   if (!sdl_hdr) return std::nullopt;
   return static_cast<double>(headroom) * 203.0;
