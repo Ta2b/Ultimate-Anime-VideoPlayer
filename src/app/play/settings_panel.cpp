@@ -17,11 +17,11 @@
 #include "app/play/panel_style.h"
 #include "app/play/settings_chain_tabs.h"
 #include "app/play/settings_engines.h"
-#include "core/engines.h"
 #include "app/play/settings_export.h"
 #include "app/play/settings_sound.h"
 #include "app/play/text_fit.h"
 #include "app/play/tracks.h"
+#include "core/engines.h"
 #include "render/looks.h"
 
 namespace ajp::app::play {
@@ -131,10 +131,11 @@ void look_section(PlaySettings& d, const SettingsChoices& choices) {
     return key;
   };
   const std::vector<LookEntry> entries = list_looks(choices.luts_dir);
-  // Sur une sortie SDR, une pile qui contient une LUT d'HDR est coupée en entier (chain_hdr.cpp) : ses réglages
-  // n'agissent pas, ils sont grisés.
+  // Sur une sortie SDR, une pile qui contient une LUT d'HDR est coupée en entier (chain_hdr.cpp) : ses
+  // réglages n'agissent pas, ils sont grisés.
   bool has_hdr_look = render::look_is_pq(d.look, "");
-  for (const LookLayer& layer : d.look_layers) has_hdr_look = has_hdr_look || render::look_is_pq(layer.key, "");
+  for (const LookLayer& layer : d.look_layers)
+    has_hdr_look = has_hdr_look || render::look_is_pq(layer.key, "");
   const bool stack_off = !choices.hdr_output && has_hdr_look;
   ImGui::BeginDisabled(stack_off);
   const auto slot = [&](int number, std::string& name, double& mix) {
@@ -162,7 +163,8 @@ void look_section(PlaySettings& d, const SettingsChoices& choices) {
   if (ImGui::Button("-")) d.look_layers.pop_back();
   ImGui::EndDisabled();
   ImGui::EndDisabled();  // stack_off
-  if (stack_off) note(i18n::tr("SDR display: a stack with an HDR LUT is turned off (the LUTs are made for HDR)."));
+  if (stack_off)
+    note(i18n::tr("SDR display: a stack with an HDR LUT is turned off (the LUTs are made for HDR)."));
   note(
       i18n::tr("Looks are LUT files (.cube) placed in the luts folder of the player's data, applied in order "
                "like Resolve nodes; names containing PQ, HDR or 2020 are read as HDR LUTs."));
@@ -228,8 +230,7 @@ void grade_tab(PlaySettings& d, const SettingsChoices& choices) {
   using namespace render::grade_limits;
   bool moved = false;
   if (panel::advanced()) {
-    // Sur une sortie SDR, ni les éclats, ni les aplats lumineux, ni les couleurs étendues, ni le gamut P3 ne
-    // jouent (sdr_params) : ils sont grisés.
+    // Sur une sortie SDR, ni les éclats, ni les zones claires, ni le gamut large n'ont d'effet (sdr_params).
     ImGui::BeginDisabled(!choices.hdr_output);
     moved |= grade_slider(i18n::tr("Highlights"), g.highlights_rtx, kHighlights);
     moved |= grade_slider(i18n::tr("Bright areas"), g.area_rtx, kAreaRtx);
@@ -245,7 +246,9 @@ void grade_tab(PlaySettings& d, const SettingsChoices& choices) {
     ImGui::Checkbox(i18n::tr("Display P3 gamut"), &g.gamut_p3);
     ImGui::EndDisabled();
     if (!choices.hdr_output)
-      note(i18n::tr("SDR display: Highlights, Bright areas, Wide colors and Display P3 gamut only act in HDR."));
+      note(
+          i18n::tr("SDR display: Highlights, Bright areas, Wide colors and Display P3 gamut have no effect "
+                   "and are greyed out."));
   }
   ImGui::EndDisabled();
   if (panel::advanced()) adaptive_section(d, choices);
@@ -471,16 +474,6 @@ SettingsPanel::~SettingsPanel() {
 SettingsPanel::Result SettingsPanel::draw(const PlaySettings& running, const SettingsChoices& choices,
                                           float scale, std::vector<Input>& actions) {
   Result result;
-  // Le panneau ouvert passe d'abord : la petite fenêtre masquerait ses réglages et en prendrait la molette.
-  if (!open_ && !prompt_done_ && choices.offer_default_player && !running.default_player_dismissed &&
-      default_player_prompt(choices.place, prompt_note_, prompt_dismissed_, scale)) {
-    prompt_done_ = true;
-    if (prompt_dismissed_) {
-      PlaySettings quiet = running;
-      quiet.default_player_dismissed = true;
-      result.live = quiet;
-    }
-  }
   if (!open_) return result;
   // Réglages changés ailleurs (Tab, volume) : le panneau les reprend, sans perdre ce qui attend.
   if (running != seen_) {
@@ -624,8 +617,7 @@ SettingsPanel::Result SettingsPanel::draw(const PlaySettings& running, const Set
           result.reopen = draft_;
       } else if (name == i18n::tr("Application")) {
         language_section(draft_);
-        default_player_page(choices.place, system_, draft_.default_player_dismissed,
-                            choices.default_player_is_ajp);
+        default_player_page(choices.place, system_, choices.default_player_is_ajp);
         updates_page(draft_, choices.place, updates_);
       } else if (name == "Upscaling") {
         image_tab(draft_, choices);

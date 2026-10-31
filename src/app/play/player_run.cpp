@@ -337,8 +337,6 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
           .engines_dir_default = prepare::utf8_path(p.paths.engines.parent_path() / "backends"),
           .engines_dir_free = format_size(free_bytes(p.catalog.layout.engines)),
           .default_player_is_ajp = default_player_is_ajp,
-          // Plus d'invitation au démarrage : « lecteur par défaut » reste dans Réglages > Système, sur tous les OS.
-          .offer_default_player = false,
           .bench_text = bench_text,
           .place = {.executable = p.paths.executable, .home = p.paths.home, .data = p.paths.data},
           .span_prepare = span_prepare,

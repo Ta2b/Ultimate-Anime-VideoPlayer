@@ -145,12 +145,14 @@ constexpr std::array kSettingsPages{
     Entry{"SDR", "SDR"},
     Entry{"SDR display: a stack with an HDR LUT is turned off (the LUTs are made for HDR).",
           "Écran SDR : une pile qui contient une LUT d'HDR est coupée (ces LUT sont faites pour le HDR)."},
-    Entry{"SDR display: Highlights, Bright areas, Wide colors and Display P3 gamut only act in HDR.",
-          "Écran SDR : Éclats, Aplats lumineux, Couleurs étendues et gamut P3 n'agissent qu'en HDR."},
     Entry{"SDR display: HDR is unavailable. The Color page's grade imitates the HDR look.",
           "Écran SDR : HDR indisponible. Le grade de la page Couleurs imite le rendu HDR."},
     Entry{"SDR mode: the grade imitates the HDR look in the display's HDR10 container.",
           "Mode SDR : l'étalonnage imite le rendu HDR dans le conteneur HDR10 de l'écran."},
+    Entry{"SDR display: Highlights, Bright areas, Wide colors and Display P3 gamut have no effect and are "
+          "greyed out.",
+          "Écran SDR : Éclats, Aplats lumineux, Couleurs étendues et gamut Display P3 n'ont aucun effet "
+          "et sont grisés."},
     Entry{"SDR mode: the grade imitates the HDR look without an HDR display. Vivid strengthens it.",
           "Mode SDR : l'étalonnage imite le rendu HDR sans écran HDR. Éclatant l'accentue."},
     Entry{"SPAN reloads (built the first time for this size)",
