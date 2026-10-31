@@ -180,7 +180,13 @@ std::expected<ScreenTiming, Refusal> PlaceboScreen::show(const ShowRequest& requ
   pl_swapchain_frame swframe{};
   if (!pl_swapchain_start_frame(s.swapchain, &swframe))
     return ScreenTiming{.presented = false};  // fenêtre cachée
-  s.hdr_output = swframe.color_space.transfer == PL_COLOR_TRC_PQ;
+  const bool hdr_now = swframe.color_space.transfer == PL_COLOR_TRC_PQ;
+  if (!s.output_logged || hdr_now != s.hdr_output) {
+    s.output_logged = true;
+    s.channel->info("sortie : transfert {} primaires {} ({})", static_cast<int>(swframe.color_space.transfer),
+                    static_cast<int>(swframe.color_space.primaries), hdr_now ? "PQ, HDR10" : "pas PQ, SDR");
+  }
+  s.hdr_output = hdr_now;
   s.target_color = swframe.color_space;
   s.select_grade(s.target_color);
   pl_frame target{};
