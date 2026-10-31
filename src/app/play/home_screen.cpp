@@ -195,7 +195,7 @@ SettingsChoices home_choices(const HomeScreen& h, const HomeState& st, const Pla
           tensorrt_backend_present(h.paths) && (maxine_available(h.options, h.paths) || running.true_hdr),
       .true_hdr_backend = tensorrt_backend_present(h.paths),
       .hdr_output = !h.options.sdr && content_peak_nits(h.screen.window()).has_value(),
-      .auto_peak = vendor_hdr::peak_from_display(content_peak_nits(h.screen.window())),
+      .auto_peak = auto_peak_nits(content_peak_nits(h.screen.window())),
       .engines = engine_badges(h.paths.engines, {}, WorkSize{}, std::nullopt, kernels::RifeGeometry{}),
       .chosen_engines = chosen_line(st.engines),
       .switchable = installed_switchable(h.catalog, h.paths),

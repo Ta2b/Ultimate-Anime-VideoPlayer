@@ -1,6 +1,7 @@
 #include "app/play/host_facts.h"
 
 #include <algorithm>
+#include <cmath>
 #include <filesystem>
 #include <format>
 #include <system_error>
@@ -117,6 +118,14 @@ std::optional<double> content_peak_nits(SDL_Window* window) {
   if (!sdl_hdr) return std::nullopt;
   return static_cast<double>(headroom) * 203.0;
 #endif
+}
+
+int auto_peak_nits(std::optional<double> detected) {
+  constexpr double kUnknown = 1000.0;
+  constexpr double kLow = 200.0;
+  constexpr double kHigh = 2000.0;
+  if (!detected || !std::isfinite(*detected) || *detected <= 0.0) return static_cast<int>(kUnknown);
+  return static_cast<int>(std::lround(std::clamp(*detected, kLow, kHigh)));
 }
 
 std::string describe_hdr(SDL_Window* window) {
