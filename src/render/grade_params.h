@@ -202,6 +202,12 @@ struct GradeDecision {
   double source_white_nits = grade_limits::kSdrWhiteNits;
 };
 
+// Le gris moyen d'une scène claire, pour le grade adaptatif : le gris moyen du curseur (scène sombre)
+// multiplié par adaptive_gray / 50. Le curseur « Gris moyen » agit ainsi sur toutes les scènes (avant, la
+// valeur absolue d'une scène claire le remplaçait dès que la scène était claire) ; à 50 et 30, comme par
+// défaut : 30.
+double adaptive_bright_gray(double middle_gray, double adaptive_gray);
+
 // Le pic du grade : celui de l'écran s'il est connu (profil, système, --display), 1000 sinon.
 // FieldOutOfRange hors de 100 à 10000 nits.
 std::expected<double, Refusal> grade_peak(const core::DisplayInfo& display);

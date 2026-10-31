@@ -147,6 +147,9 @@ constexpr std::array kSettingsPages{
           "Remet le profil actif (Ctrl+1 à Ctrl+9) à zéro ; les autres profils ne bougent pas."},
     Entry{"Run the wizard again", "Relancer l'assistant"},
     Entry{"SDR", "SDR"},
+    Entry{"Bright scene gray = Middle gray × this value ÷ 50: the Middle gray slider acts on every scene.",
+          "Gris d'une scène claire = Gris moyen × cette valeur ÷ 50 : le curseur Gris moyen agit sur toutes "
+          "les scènes."},
     Entry{"SDR display: a stack with an HDR LUT is turned off (the LUTs are made for HDR).",
           "Écran SDR : une pile qui contient une LUT d'HDR est coupée (ces LUT sont faites pour le HDR)."},
     Entry{"SDR display: HDR is unavailable. The Color page's grade imitates the HDR look.",
