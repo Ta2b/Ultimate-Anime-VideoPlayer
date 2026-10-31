@@ -23,12 +23,10 @@ using panel::kWarn;
 using panel::note;
 using panel::section;
 
-void default_player_page(const PlayerPlace& place, SystemNote& last, bool& dismissed, bool already_default) {
+void default_player_page(const PlayerPlace& place, SystemNote& last, bool already_default) {
   section(i18n::tr("Default player"));
   ImGui::TextWrapped("%s", i18n::tr("Videos (mkv, mp4, webm, avi, mov…) open in AJP from the file manager."));
   if (already_default) note(i18n::tr("AJP is already the default video player."));
-  ImGui::Checkbox(i18n::tr("Don't ask again"), &dismissed);
-  panel::tip(i18n::tr("The player no longer offers to become the default at launch."));
 #ifdef __APPLE__
   static_cast<void>(last);
   note(register_player(place).value_or(std::string()));
@@ -60,71 +58,6 @@ void default_player_page(const PlayerPlace& place, SystemNote& last, bool& dismi
   } else if (!last.text.empty()) {
     note(last.text);
   }
-#endif
-}
-
-bool default_player_prompt(const PlayerPlace& place, SystemNote& last, bool& dismissed, float scale) {
-#ifdef __APPLE__
-  static_cast<void>(place);
-  static_cast<void>(last);
-  static_cast<void>(dismissed);
-  static_cast<void>(scale);
-  return true;  // macOS : l'inscription se fait à l'installation
-#else
-  if (last.pending && last.pending->wait_for(std::chrono::seconds(0)) == std::future_status::ready) {
-    const std::expected<std::string, Refusal> done = last.pending->get();
-    last = done ? SystemNote{.text = *done} : SystemNote{.text = done.error().detail, .refused = true};
-#ifdef _WIN32
-    // Windows ne dit pas si AJP est déjà le lecteur par défaut (is_default_player) : après un « Définir »
-    // réussi, la fenêtre ne revient pas au prochain lancement.
-    if (done) dismissed = true;
-#endif
-  }
-  const ImGuiIO& io = ImGui::GetIO();
-  // Une petite fenêtre qu'on peut déplacer, au milieu de la fenêtre du lecteur au départ, indépendante du
-  // panneau.
-  ImGui::SetNextWindowPos({io.DisplaySize.x * 0.5F, io.DisplaySize.y * 0.5F}, ImGuiCond_Appearing,
-                          {0.5F, 0.5F});
-  ImGui::SetNextWindowSize({std::min(420.0F * scale, io.DisplaySize.x - 40.0F * scale), 0.0F},
-                           ImGuiCond_Always);
-  static bool brought_forward = false;  // au-dessus du panneau des réglages la première fois seulement
-  if (!brought_forward) {
-    ImGui::SetNextWindowFocus();
-    brought_forward = true;
-  }
-  bool closed = false;
-  constexpr ImGuiWindowFlags kFlags = ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoResize |
-                                      ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_AlwaysAutoResize;
-  if (ImGui::Begin(i18n::tr("Default player"), nullptr, kFlags)) {
-    ImGui::TextWrapped("%s",
-                       i18n::tr("Open your videos (mkv, mp4, webm…) directly in AJP from the file manager?"));
-    ImGui::Spacing();
-    const bool busy = last.pending != nullptr;
-    const bool done = !last.text.empty() && !last.refused;
-    ImGui::BeginDisabled(busy || done);
-    if (ImGui::Button(i18n::tr("Set AJP as default player"))) {
-      last.pending = std::make_shared<std::future<std::expected<std::string, Refusal>>>(
-          std::async(std::launch::async, &choose_as_default, place));
-      last.text.clear();
-      last.refused = false;
-    }
-    ImGui::EndDisabled();
-    ImGui::SameLine();
-    if (ImGui::Button(done ? i18n::tr("Close") : i18n::tr("Later"))) closed = true;
-    ImGui::Checkbox(i18n::tr("Don't ask again"), &dismissed);
-    if (busy) {
-      note(i18n::tr("Working…"));
-    } else if (last.refused) {
-      ImGui::PushStyleColor(ImGuiCol_Text, kWarn);
-      ImGui::TextWrapped("%s", last.text.c_str());
-      ImGui::PopStyleColor();
-    } else if (!last.text.empty()) {
-      note(last.text);
-    }
-    note(i18n::tr("You can change this later in General > Application."));
-  }
-  ImGui::End();
-  return closed;
 #endif
 }
 

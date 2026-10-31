@@ -98,7 +98,6 @@ struct SettingsChoices {
   std::string engines_dir_default;      // où s'installent les moteurs par défaut
   std::string engines_dir_free;         // la place libre à l'endroit choisi, « 2,1 Go »
   bool default_player_is_ajp = false;   // AJP est déjà le lecteur des vidéos (xdg-mime, Linux)
-  bool offer_default_player = false;  // proposer de le devenir (fenêtre de démarrage, une fois par lancement)
   std::string bench_text;  // « Dernière évaluation : 2026-10-28, niveau Rapide » ; vide : jamais faite
   PlayerPlace place;       // l'exécutable et le dossier de l'utilisateur (onglet Système)
   // Le mode Performance de SPAN (span_derive.h) : ce que la vidéo ouverte permet, pourquoi il est impossible
@@ -140,11 +139,8 @@ class SettingsPanel {
   bool is_open() const { return open_; }
   // Une tâche tourne dans le panneau (optimisation, préparation) : des images régulières, même en pause.
   bool busy() const { return open_ && (bench_running(bench_) || prepare_.pending != nullptr); }
-  // Il y a quelque chose à dessiner : le panneau ouvert, ou la fenêtre « lecteur par défaut », qui ne dépend
-  // pas de lui.
-  bool wants_draw(const PlaySettings& running, const SettingsChoices& choices) const {
-    return open_ || (!prompt_done_ && choices.offer_default_player && !running.default_player_dismissed);
-  }
+  // Il y a quelque chose à dessiner : le panneau ouvert.
+  bool wants_draw(const PlaySettings&, const SettingsChoices&) const { return open_; }
 
   struct Result {
     std::optional<PlaySettings> live;    // à appliquer tout de suite
@@ -156,9 +152,6 @@ class SettingsPanel {
 
  private:
   bool open_ = false;
-  bool prompt_dismissed_ = false;  // « Ne plus me le demander » coché dans cette fenêtre
-  bool prompt_done_ = false;       // la fenêtre « lecteur par défaut » a déjà été montrée à ce lancement
-  SystemNote prompt_note_;         // sa dernière action
   PlaySettings draft_;  // ce que montre le panneau ; diffère de running pour ce qui attend « Appliquer »
   PlaySettings seen_;   // running au tour précédent
   int page_ = 0;        // la page de l'arbre affichée (settings_panel.cpp : kPages)

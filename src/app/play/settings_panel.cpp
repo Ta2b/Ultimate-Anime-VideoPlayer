@@ -449,16 +449,6 @@ SettingsPanel::~SettingsPanel() {
 SettingsPanel::Result SettingsPanel::draw(const PlaySettings& running, const SettingsChoices& choices,
                                           float scale, std::vector<Input>& actions) {
   Result result;
-  // Le panneau ouvert passe d'abord : la petite fenêtre masquerait ses réglages et en prendrait la molette.
-  if (!open_ && !prompt_done_ && choices.offer_default_player && !running.default_player_dismissed &&
-      default_player_prompt(choices.place, prompt_note_, prompt_dismissed_, scale)) {
-    prompt_done_ = true;
-    if (prompt_dismissed_) {
-      PlaySettings quiet = running;
-      quiet.default_player_dismissed = true;
-      result.live = quiet;
-    }
-  }
   if (!open_) return result;
   // Réglages changés ailleurs (Tab, volume) : le panneau les reprend, sans perdre ce qui attend.
   if (running != seen_) {
@@ -602,8 +592,7 @@ SettingsPanel::Result SettingsPanel::draw(const PlaySettings& running, const Set
           result.reopen = draft_;
       } else if (name == i18n::tr("Application")) {
         language_section(draft_);
-        default_player_page(choices.place, system_, draft_.default_player_dismissed,
-                            choices.default_player_is_ajp);
+        default_player_page(choices.place, system_, choices.default_player_is_ajp);
         updates_page(draft_, choices.place, updates_);
       } else if (name == "Upscaling") {
         image_tab(draft_, choices);

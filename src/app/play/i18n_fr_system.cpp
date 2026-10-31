@@ -49,7 +49,6 @@ constexpr std::array kSystemPages{
     Entry{"Channel and frequency", "Canal et fréquence"},
     Entry{"Check now", "Vérifier maintenant"},
     Entry{"Choose the output file.", "Choisissez le fichier exporté."},
-    Entry{"Close", "Fermer"},
     Entry{"Codec", "Codec"},
     Entry{"Constant frame rate", "Cadence fixe"},
     Entry{"Daily", "Chaque jour"},
@@ -60,7 +59,6 @@ constexpr std::array kSystemPages{
     Entry{"Default: {}. Free here: {}. Applies at next launch; installed engines are not moved.",
           "Par défaut : {}. Libre ici : {}. Vaut au prochain lancement ; les moteurs installés ne sont pas "
           "déplacés."},
-    Entry{"Don't ask again", "Ne plus me le demander"},
     Entry{"Downloaded, verified, installed at next launch.",
           "Téléchargée, vérifiée, installée au prochain lancement."},
     Entry{"Encoding", "Encodage"},
@@ -87,7 +85,6 @@ constexpr std::array kSystemPages{
     Entry{"Installed version: {}", "Version installée : {}"},
     Entry{"Last check: {}", "Dernière vérification : {}"},
     Entry{"Last error: ", "Dernière erreur : "},
-    Entry{"Later", "Plus tard"},
     Entry{"MP4 and MOV keep exact frame times, chapters and compatible audio, but no subtitles or fonts. Use "
           ".mkv to keep everything. Esc cancels.",
           "MP4 et MOV gardent les instants exacts, les chapitres et l'audio compatible, mais ni sous-titres "
@@ -101,8 +98,6 @@ constexpr std::array kSystemPages{
           "Un seul moteur installé : « Installer d'autres moteurs » propose ceux qui conviennent à ce GPU."},
     Entry{"Open a video: the export uses its settings and is named next to it.",
           "Ouvrez une vidéo : l'export reprend ses réglages et se nomme à côté d'elle."},
-    Entry{"Open your videos (mkv, mp4, webm…) directly in AJP from the file manager?",
-          "Ouvrir vos vidéos (mkv, mp4, webm…) directement dans AJP depuis le gestionnaire de fichiers ?"},
     Entry{"Optimization cancelled: nothing changed.", "Optimisation annulée : rien n'a changé."},
     Entry{"Optimize for this machine", "Optimiser pour ma machine"},
     Entry{"Playback output · {}x{}", "Sortie de la lecture · {}x{}"},
@@ -119,13 +114,10 @@ constexpr std::array kSystemPages{
           "grading: the chain's picture as is.",
           "Mêmes moteurs et réglages qu'à la lecture, sans image sautée. Ni RTX HDR, ni HDR adaptatif, ni "
           "étalonnage : l'image de la chaîne telle quelle."},
-    Entry{"Set AJP as default player", "Définir AJP comme lecteur par défaut"},
     Entry{"Source · {}x{}", "Source · {}x{}"},
     Entry{"Suggested name", "Nom proposé"},
     Entry{"The output is an MKV, MP4 or MOV: its name ends in .mkv, .mp4 or .mov.",
           "Le fichier exporté est un MKV, un MP4 ou un MOV : son nom finit par .mkv, .mp4 ou .mov."},
-    Entry{"The player no longer offers to become the default at launch.",
-          "Le lecteur ne propose plus de devenir le lecteur par défaut au lancement."},
     Entry{"The player tries a few seconds of video with its recommended settings, lightest to heaviest, "
           "keeps what your PC holds without stutter and applies it. About a minute (several the first time).",
           "Le lecteur essaie quelques secondes de vidéo avec ses réglages recommandés, du plus léger au plus "
@@ -156,8 +148,6 @@ constexpr std::array kSystemPages{
           "Avec la précision Performance de SPAN, le lecteur prépare ce mode seul pour la vidéo ouverte "
           "(environ une minute, en FP16 entre-temps). Refaites-le à la main ici."},
     Entry{"Working…", "En cours…"},
-    Entry{"You can change this later in General > Application.",
-          "Réglage modifiable plus tard : Général > Application."},
     Entry{"· cached", "· en cache"},
     Entry{"· loaded", "· chargé"},
 };
