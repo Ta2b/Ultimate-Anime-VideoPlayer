@@ -11,6 +11,7 @@
 #include "app/play/i18n.h"
 
 #if defined(_WIN32)
+#include <dxgi1_6.h>
 #include <windows.h>
 #endif
 
@@ -71,6 +72,45 @@ double windows_sdr_white_nits() {
   return kDefault;
 }
 
+// L'écran de la fenêtre selon DXGI : en HDR quand son espace colorimétrique est PQ BT.2020, avec la luminance
+// maximale qu'il annonce (0 si inconnue). SDL, lui, ne voit pas de marge HDR quand « luminosité du contenu
+// SDR » de Windows est proche de la crête de l'écran, alors que Windows est bien en HDR.
+struct DxgiHdr {
+  bool found = false;
+  bool hdr = false;
+  double max_nits = 0.0;
+};
+
+DxgiHdr dxgi_hdr(SDL_Window* window) {
+  DxgiHdr result;
+  auto* hwnd = static_cast<HWND>(
+      SDL_GetPointerProperty(SDL_GetWindowProperties(window), SDL_PROP_WINDOW_WIN32_HWND_POINTER, nullptr));
+  if (hwnd == nullptr) return result;
+  const HMONITOR monitor = MonitorFromWindow(hwnd, MONITOR_DEFAULTTONEAREST);
+  IDXGIFactory1* factory = nullptr;
+  if (FAILED(CreateDXGIFactory1(__uuidof(IDXGIFactory1), reinterpret_cast<void**>(&factory)))) return result;
+  IDXGIAdapter1* adapter = nullptr;
+  for (UINT a = 0; factory->EnumAdapters1(a, &adapter) != DXGI_ERROR_NOT_FOUND; ++a) {
+    IDXGIOutput* output = nullptr;
+    for (UINT o = 0; adapter->EnumOutputs(o, &output) != DXGI_ERROR_NOT_FOUND; ++o) {
+      IDXGIOutput6* output6 = nullptr;
+      if (SUCCEEDED(output->QueryInterface(__uuidof(IDXGIOutput6), reinterpret_cast<void**>(&output6)))) {
+        DXGI_OUTPUT_DESC1 desc{};
+        if (SUCCEEDED(output6->GetDesc1(&desc)) && desc.Monitor == monitor) {
+          result.found = true;
+          result.hdr = desc.ColorSpace == DXGI_COLOR_SPACE_RGB_FULL_G2084_NONE_P2020;
+          result.max_nits = static_cast<double>(desc.MaxLuminance);
+        }
+        output6->Release();
+      }
+      output->Release();
+    }
+    adapter->Release();
+  }
+  factory->Release();
+  return result;
+}
+
 }  // namespace
 #endif
 
@@ -78,12 +118,17 @@ double windows_sdr_white_nits() {
 // référence du compositeur) × 203 nits ; rien si l'écran n'est pas en HDR (display.md).
 std::optional<double> content_peak_nits(SDL_Window* window) {
   const SDL_PropertiesID props = SDL_GetWindowProperties(window);
-  if (!SDL_GetBooleanProperty(props, SDL_PROP_WINDOW_HDR_ENABLED_BOOLEAN, false)) return std::nullopt;
+  const bool sdl_hdr = SDL_GetBooleanProperty(props, SDL_PROP_WINDOW_HDR_ENABLED_BOOLEAN, false);
   const float headroom = SDL_GetFloatProperty(props, SDL_PROP_WINDOW_HDR_HEADROOM_FLOAT, 0.0F);
-  if (!(headroom > 1.0F)) return std::nullopt;
 #if defined(_WIN32)
-  return static_cast<double>(headroom) * windows_sdr_white_nits();
+  if (sdl_hdr && headroom > 1.0F) return static_cast<double>(headroom) * windows_sdr_white_nits();
+  // SDL dit SDR : Windows peut pourtant être en HDR (blanc SDR réglé près de la crête, donc marge de 1). DXGI
+  // tranche.
+  const DxgiHdr dxgi = dxgi_hdr(window);
+  if (!dxgi.hdr) return std::nullopt;
+  return std::max(dxgi.max_nits > 0.0 ? dxgi.max_nits : 1000.0, windows_sdr_white_nits());
 #else
+  if (!sdl_hdr || !(headroom > 1.0F)) return std::nullopt;
   return static_cast<double>(headroom) * 203.0;
 #endif
 }
@@ -96,6 +141,10 @@ std::string describe_hdr(SDL_Window* window) {
                   SDL_GetFloatProperty(props, SDL_PROP_WINDOW_HDR_HEADROOM_FLOAT, 0.0F),
                   SDL_GetFloatProperty(props, SDL_PROP_WINDOW_SDR_WHITE_LEVEL_FLOAT, 0.0F));
 #if defined(_WIN32)
+  const DxgiHdr dxgi = dxgi_hdr(window);
+  constexpr std::string_view kDxgi =
+      " ; DXGI : écran trouvé={} PQ={} luminance max={:.0f}";  // i18n-ok : journal
+  text += std::format(kDxgi, dxgi.found, dxgi.hdr, dxgi.max_nits);
   UINT32 paths = 0;
   UINT32 modes = 0;
   if (GetDisplayConfigBufferSizes(QDC_ONLY_ACTIVE_PATHS, &paths, &modes) == ERROR_SUCCESS) {
