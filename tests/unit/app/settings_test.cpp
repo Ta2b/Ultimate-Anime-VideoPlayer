@@ -754,11 +754,12 @@ TEST_CASE("grade adaptatif : noirs, couleurs et gris moyen glissent de la scène
   CHECK(at(0.0).grade_values.shadows == 0.2);  // scène sombre : les curseurs
   CHECK(at(0.0).true_hdr_gray == 70);
   CHECK(at(1.0).grade_values.shadows == 0.8);  // scène claire : les valeurs adaptatives
-  CHECK(at(1.0).true_hdr_gray == 30);
+  CHECK(at(1.0).true_hdr_gray ==
+        42);  // 70 x 30 / 50 : le gris moyen du curseur agit aussi sur la scène claire
   CHECK(at(1.0).grade_values.vibrance_rtx == 0.8);  // la vibrance suit la couleur, pas la luminosité
   CHECK(at(1.0, 1.0).grade_values.vibrance_rtx == 0.0);
   CHECK(at(0.5).grade_values.shadows == 0.5);
-  CHECK(at(0.5).true_hdr_gray == 50);
+  CHECK(at(0.5).true_hdr_gray == 56);
   CHECK(at(0.5, 0.5).grade_values.vibrance_rtx == 0.4);
   CHECK(at(0.0, 1.0).grade_values.vibrance_rtx ==
         0.0);                                       // ciel bleu saturé, scène pas claire : couleurs coupées

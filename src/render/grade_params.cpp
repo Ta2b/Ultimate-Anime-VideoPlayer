@@ -81,7 +81,7 @@ void apply_adaptive(const GradeSettings& s, double peak, bool sdr_out, GradePara
   p.ad_em_base = p.em_base;
   p.ad_em_pow = p.em_pow;
   if (p.emulate > 0.5) {
-    const double gray = s.adaptive_gray;
+    const double gray = adaptive_bright_gray(s.middle_gray, s.adaptive_gray);
     p.ad_em_base = std::clamp(4.0 * gray, 40.0, sdr_out ? 400.0 : std::min(400.0, 0.5 * peak));
     p.ad_em_pow = std::clamp(6.0 * std::pow(50.0 / gray, 0.35), 2.0, 16.0);
   }
@@ -131,6 +131,13 @@ GradeParams sdr_params(const GradeSettings& s) {
 }
 
 }  // namespace
+
+double adaptive_bright_gray(double middle_gray, double adaptive_gray) {
+  constexpr double kReferenceGray =
+      50.0;  // le gris moyen par défaut : adaptive_gray s'y lit en valeur absolue
+  return std::clamp(middle_gray * adaptive_gray / kReferenceGray, grade_limits::kMiddleGray.lo,
+                    grade_limits::kMiddleGray.hi);
+}
 
 GradeSettings grade_preset(GradePreset preset, GradeSettings custom) {
   switch (preset) {

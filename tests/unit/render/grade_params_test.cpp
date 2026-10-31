@@ -381,6 +381,14 @@ TEST_CASE(
   CHECK(on->params.ad_em_pow > on->params.em_pow);
   CHECK(on->params.ad_shadows > 0.6);
   CHECK(on->params.ad_vibrance == on->params.vibrance);  // la vibrance suit la couleur : fixe pour le shader
+  // Le gris moyen du curseur agit aussi sur la scène claire : 30 / 50 de lui (gris 80 : 48, soit 4 x 48).
+  s.middle_gray = 80.0;
+  const auto wide = decide_grade(s, native);
+  REQUIRE(wide);
+  CHECK(wide->params.ad_em_base == Approx(192.0));
+  CHECK(adaptive_bright_gray(50.0, 30.0) == Approx(30.0));
+  CHECK(adaptive_bright_gray(100.0, 100.0) == Approx(100.0));  // borné à 100
+  s.middle_gray = 50.0;
   // RTX HDR : l'adaptation est celle du lecteur (la luminance mesurée sur le GPU), pas celle du shader.
   const GradeContext rtx{.route = ajp::core::HdrMode::TrueHdr, .output_pq = true, .peak_nits = 1000.0};
   const auto hdr = decide_grade(s, rtx);

@@ -201,6 +201,8 @@ void adaptive_section(PlaySettings& d, const SettingsChoices& choices) {
   if (ImGui::SliderFloat(i18n::tr("Middle gray, bright scene"), &gray, static_cast<float>(kMiddleGray.lo),
                          static_cast<float>(kMiddleGray.hi), "%.0f", ImGuiSliderFlags_AlwaysClamp))
     g.adaptive_gray = std::clamp(std::round(static_cast<double>(gray)), kMiddleGray.lo, kMiddleGray.hi);
+  note(i18n::tr(
+      "Bright scene gray = Middle gray × this value ÷ 50: the Middle gray slider acts on every scene."));
   ImGui::EndDisabled();
   ImGui::Checkbox(i18n::tr("Record scene statistics (learning)"), &d.adaptive_record);
   note(
