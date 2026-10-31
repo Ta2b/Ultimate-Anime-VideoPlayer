@@ -144,6 +144,8 @@ cp "$ROOT/LICENSE" "$ROOT/THIRD_PARTY_NOTICES.md" "$STAGE/"
 # De quel commit vient ce paquet : l'étiquette seule ne le garantit pas.
 printf 'version %s\ncommit %s\n' "$TAG" "$COMMIT" > "$STAGE/BUILD_INFO.txt"
 cp "$ROOT/tools/release/linux/LISEZMOI.txt" "$STAGE/"
+# Les LUT d'HDR (data/luts), lues par le lecteur dans luts/ à côté de lui.
+cp -R "$ROOT/data/luts" "$STAGE/luts"
 # Les modèles SPAN et RIFE, pour lire dès l'extraction (AJP_WITHOUT_MODELS=1 pour s'en passer).
 [ -n "${AJP_WITHOUT_MODELS:-}" ] || "$ROOT/tools/release/fetch-models.sh" "$STAGE/models"
 

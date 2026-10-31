@@ -64,6 +64,9 @@ Copy-Item "$Build/src/gpu/vulkan/backend/*.dll" $Stage -Exclude "ajp_backend_*" 
 Remove-Item "$Stage/vulkan-1.dll" -ErrorAction SilentlyContinue
 if (Test-Path "$Root/LICENSE") { Copy-Item "$Root/LICENSE" $Stage }
 
+# Les LUT d'HDR (data/luts), lues par le lecteur dans luts/ à côté de lui.
+Copy-Item "$Root/data/luts" (Join-Path $Stage "luts") -Recurse
+
 # --- Les moteurs. ---
 $Lock = Join-Path $Stage "engines.lock"
 Set-Content -Path $Lock -Value "version = 1" -Encoding utf8NoBOM
