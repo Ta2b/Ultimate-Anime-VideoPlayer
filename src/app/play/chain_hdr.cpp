@@ -60,11 +60,15 @@ ColorInfo pq_color(int peak_nits) {
 
 vendor_hdr::TrueHdrParams true_hdr_params(const PlaySettings& s, int auto_peak) {
   const int sdk_max = static_cast<int>(render::grade_limits::kSdkContrastMax);
-  return vendor_hdr::TrueHdrParams{.contrast = std::min(s.true_hdr_contrast, sdk_max),
-                                   .saturation = std::min(s.true_hdr_saturation, sdk_max),
-                                   .middle_gray = s.true_hdr_gray,
-                                   .peak_nits = s.true_hdr_peak > 0 ? s.true_hdr_peak : auto_peak,
-                                   .debanding = s.true_hdr_debanding};
+  return vendor_hdr::TrueHdrParams{
+      .contrast = std::min(s.true_hdr_contrast, sdk_max),
+      .saturation = std::min(s.true_hdr_saturation, sdk_max),
+      .middle_gray = s.true_hdr_gray,
+      // TrueHDR (SDK de NVIDIA) n'accepte que 400 à 2000 nits : un écran moins lumineux le borne ici,
+      // le HDR adaptatif, lui, garde le pic réel.
+      .peak_nits = std::clamp(s.true_hdr_peak > 0 ? s.true_hdr_peak : auto_peak,
+                              vendor_hdr::limits::kPeakNits.lo, vendor_hdr::limits::kPeakNits.hi),
+      .debanding = s.true_hdr_debanding};
 }
 
 // RTX HDR : le SDK Maxine importé une fois dans le magasin du lecteur (environ 135 Mo), revérifié

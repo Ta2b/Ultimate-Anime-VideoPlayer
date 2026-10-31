@@ -338,7 +338,8 @@ inline constexpr std::size_t kLanguagePresets = 2;  // préréglages de langue
 inline constexpr core::Range<int> kTrueHdrContrast{0, 200};
 inline constexpr core::Range<int> kTrueHdrSaturation{0, 200};
 inline constexpr core::Range<int> kTrueHdrGray{10, 100};
-inline constexpr core::Range<int> kTrueHdrPeak{400, 2000};  // ou 0 : automatique
+inline constexpr core::Range<int> kTrueHdrPeak{
+    100, 2000};  // ou 0 : automatique ; RTX HDR (Linux) borne à 400 en aval
 }  // namespace limits
 
 // Le facteur d'interpolation des réglages.

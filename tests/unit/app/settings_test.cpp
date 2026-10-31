@@ -166,7 +166,7 @@ TEST_CASE("Hors plage, type faux ou TOML invalide : refus nommé", "[app][settin
   REQUIRE_FALSE(out);
   CHECK(out.error().code == RefusalCode::FieldOutOfRange);
   CHECK(out.error().detail.find("hdr.contrast") != std::string::npos);
-  const auto peak = parse_settings("[rtx_hdr]\npeak = 300\n");
+  const auto peak = parse_settings("[rtx_hdr]\npeak = 99\n");
   REQUIRE_FALSE(peak);
   CHECK(peak.error().detail.find("hdr.peak") != std::string::npos);
   const auto type = parse_settings("[interpolation]\nrife = \"trois\"\n");

@@ -122,7 +122,7 @@ TEST_CASE("ajp play : RTX HDR et ses réglages, refus nommés hors plage", "[app
   CHECK(on->true_hdr_gray == 40);
   CHECK(on->true_hdr_sdk == std::filesystem::path("/opt/vfx"));
   CHECK(parse({"a.mkv", "--truehdr-peak=0"})->true_hdr_peak == 0);
-  CHECK(parse({"a.mkv", "--truehdr-peak=300"}).error().code == RefusalCode::FieldOutOfRange);
+  CHECK(parse({"a.mkv", "--truehdr-peak=99"}).error().code == RefusalCode::FieldOutOfRange);
   CHECK(parse({"a.mkv", "--truehdr-peak=2001"}).error().code == RefusalCode::FieldOutOfRange);
   CHECK(parse({"a.mkv", "--truehdr-gray=5"}).error().code == RefusalCode::FieldOutOfRange);
   CHECK(parse({"a.mkv", "--truehdr-contrast=401"}).error().code == RefusalCode::FieldOutOfRange);
