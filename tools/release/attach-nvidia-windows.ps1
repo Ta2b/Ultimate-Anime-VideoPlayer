@@ -40,10 +40,10 @@ if ($vendor -lt 1) { throw "$lock n'a aucun [[vendor_file]] : sans eux le moteur
 
 # engines-nvidia.lock : les moteurs et fichiers de NVIDIA seulement (TensorRT, et RTX HDR s'il est là).
 $out = Join-Path $Dir "engines-nvidia.lock"
-$blocks = (Get-Content $lock -Raw) -split '(?m)^(?=\[\[(?:engine|vendor_file)\]\]$)' | Where-Object { $_ -match '^\[\[(engine|vendor_file)\]\]' }
+$blocks = (Get-Content $lock -Raw) -split '(?m)^(?=\[\[(?:engine|vendor_file)\]\]\r?$)' | Where-Object { $_ -match '^\[\[(engine|vendor_file)\]\]' }
 $kept = @("version = 1")
 foreach ($block in $blocks) {
-  $id = [regex]::Match($block, '(?m)^id = "(.*)"$').Groups[1].Value
+  $id = [regex]::Match($block, '(?m)^id = "(.*)"\r?$').Groups[1].Value
   if ($id -eq "tensorrt" -or $id -eq "maxine_vfx") { $kept += @("", $block.TrimEnd()) }
 }
 Set-Content -Path $out -Value $kept -Encoding utf8NoBOM
