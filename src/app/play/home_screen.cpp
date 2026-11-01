@@ -381,6 +381,11 @@ std::expected<std::optional<std::filesystem::path>, Refusal> run_home(const Home
                        }
                        refresh();
                      },
+                     [&](const PlayFile& play) {
+                       if (play.file.empty() || chosen) return;
+                       chosen = play.file;
+                       st.start = play;
+                     },
                      [](const auto&) {}},  // pistes, chapitres, export : rien sans vidéo
           input);
     }
@@ -391,14 +396,14 @@ std::expected<std::optional<std::filesystem::path>, Refusal> run_home(const Home
     const ImDrawData* draw = h.ui.home(host_now_us(), view, actions);
     if (std::exchange(view.open_file, false)) FilePick::show(pick, h.screen.window());
     if (std::exchange(view.show_settings, false)) h.ui.open_settings();
-    if (auto shown = h.screen.show(ShowRequest{.ui = draw, .calibration = h.ui.calibration()}); !shown)
+    if (auto shown = h.screen.show(ShowRequest{.ui = draw}); !shown)
       return std::unexpected(std::move(shown.error()));
     (void)SDL_WaitEventTimeout(nullptr, kHomeFrameMs);
   }
   if (dirty) save();
   if (!chosen) return std::nullopt;
   log->info("accueil : {}", prepare::utf8_path(*chosen));
-  h.ui.close_settings();
+  if (!st.start) h.ui.close_settings();  // PlayFile : le panneau reste ouvert (la calibration continue)
   return chosen;
 }
 

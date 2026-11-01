@@ -22,6 +22,7 @@
 #include "app/play/auto_config.h"
 #include "app/play/backend_library.h"
 #include "app/play/build_progress.h"
+#include "app/play/calibration_images.h"
 #include "app/play/chain.h"
 #include "app/play/chain_setup.h"
 #include "app/play/chain_stats.h"
@@ -252,6 +253,9 @@ std::expected<void, Refusal> play(const PlayOptions& options, const PlayerPaths&
   }
   std::shared_ptr<BackendLibrary> library;  // ouverte à la première vidéo, gardée pour les suivantes
   bool replaced = false;  // le fichier vient d'être glissé sur la fenêtre (ou est l'épisode voisin)
+  // PlayFile (la calibration du grade) : l'instant et la pause du fichier suivant, à la place de la reprise.
+  std::optional<std::int64_t> forced_start;
+  bool forced_paused = false;
   const HomeScreen home{.screen = **screen,
                         .ui = **ui,
                         .options = options,
@@ -269,6 +273,10 @@ std::expected<void, Refusal> play(const PlayOptions& options, const PlayerPaths&
       if (!picked) return std::unexpected(std::move(picked.error()));
       if (!*picked) return {};
       file = std::move(**picked);
+      if (state.start) {
+        forced_start = state.start->start_us;
+        forced_paused = state.start->paused;
+      }
     }
     media::TrackInfo video;
     if (given) {
@@ -376,11 +384,15 @@ std::expected<void, Refusal> play(const PlayOptions& options, const PlayerPaths&
     } else {
       log->info("écran : EDID illisible, OLED inconnu");
     }
-    std::int64_t start_us = file_options.start_us;
-    // settings.toml ([playback] resume_position) l'autorise, et --no-resume l'écarte pour une lecture.
-    if (file_options.resume && player.engines.resume_position) {
+    std::int64_t start_us = forced_start.value_or(file_options.start_us);
+    bool start_paused = std::exchange(forced_paused, false);
+    const bool forced = forced_start.has_value();
+    forced_start.reset();
+    // settings.toml ([playback] resume_position) l'autorise, et --no-resume l'écarte pour une lecture ; la
+    // vidéo de la calibration du grade ne se reprend ni ne se retient.
+    if (file_options.resume && player.engines.resume_position && file != calibration_clip()) {
       player.resume_path = settings_path.parent_path() / "resume.tsv";
-      if (start_us == 0) {
+      if (start_us == 0 && !forced) {
         if (const auto at = resume_position(player.resume_path, file)) {
           start_us = *at;
           player.resumed = true;
@@ -389,7 +401,6 @@ std::expected<void, Refusal> play(const PlayOptions& options, const PlayerPaths&
       }
     }
     std::expected<void, Refusal> result;
-    bool start_paused = false;
     std::optional<std::filesystem::path> next_file;
     while (true) {
       auto outcome = run_chain(player, settings, start_us, start_paused);
@@ -428,6 +439,8 @@ std::expected<void, Refusal> play(const PlayOptions& options, const PlayerPaths&
           log->warn("{}", written.error().detail);
         player.unsaved.reset();
         next_file = (*outcome)->next_file;
+        forced_start = (*outcome)->next_start_us;
+        forced_paused = (*outcome)->next_paused;
         break;
       }
       player.unsaved = settings;  // écrits quand la chaîne rouverte est ouverte (run_chain)
@@ -455,8 +468,8 @@ std::expected<void, Refusal> play(const PlayOptions& options, const PlayerPaths&
       problem = std::move(failed);
       file.clear();
     } else if (next_file) {
-      file = std::move(*next_file);
-      replaced = true;
+      file = std::move(*next_file);  // vide (PlayFile) : l'accueil
+      replaced = !file.empty();
     } else if (from_home && !player.quit) {
       file.clear();  // fin de la vidéo : retour à l'accueil
     } else {

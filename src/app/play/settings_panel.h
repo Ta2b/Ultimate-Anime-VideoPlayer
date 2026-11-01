@@ -85,6 +85,8 @@ struct SettingsChoices {
   std::string display_text;                     // l'écran selon son EDID (display_edid.h : describe)
   std::string display_key;  // sa clé pour le grade calibré (display_edid.h : display_key) ; vide : inconnue
   std::filesystem::path source_file;  // le fichier lu : l'export se propose à côté
+  std::int64_t position_us = 0;       // où en est sa lecture (PlayerUi::frame) : la calibration y revient
+  bool paused = false;                // sa lecture est en pause
   std::string black_status;           // seuils du vrai noir en cours
   ProfilesView profiles;
   // Général > Configuration (auto_config.h) : la machine telle que le préréglage Auto la voit.
@@ -145,6 +147,9 @@ class SettingsPanel {
   // L'image d'exemple de la calibration du grade (HDR > « Calibrer le grade adaptatif ») tant que le panneau
   // la montre ; nullptr : aucune.
   const CalibrationShot* calibration() const;
+  // À chaque image, même panneau fermé : la calibration du grade finie ou quittée (panneau fermé, autre page)
+  // rouvre la vidéo d'avant.
+  void settle(std::vector<Input>& actions);
   bool is_open() const { return open_; }
   // Une tâche tourne dans le panneau (optimisation, préparation) : des images régulières, même en pause.
   bool busy() const { return open_ && (bench_running(bench_) || prepare_.pending != nullptr); }

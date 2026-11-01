@@ -6,6 +6,8 @@
 // L'interface (ui.h) rend les mêmes actions.
 #pragma once
 
+#include <cstdint>
+#include <filesystem>
 #include <optional>
 #include <variant>
 
@@ -61,6 +63,13 @@ struct UseEngine {
 };
 // B : bascule A/B du son, traité (casque, enceintes…) contre fidèle (aucun traitement).
 struct ToggleFaithful {};
+// Lire un autre fichier à cet instant, en pause ou non : la calibration du grade ouvre sa vidéo, puis rend la
+// vidéo d'avant (à sa position) ou l'accueil (file vide). Le panneau des paramètres reste ouvert.
+struct PlayFile {
+  std::filesystem::path file;
+  std::int64_t start_us = 0;
+  bool paused = false;
+};
 struct OpenEngineScreen {
   bool wizard = false;  // Général > Configuration > « Relancer l'assistant » : les huit écrans, pas seulement
                         // les moteurs
@@ -73,7 +82,7 @@ struct StartExport {
 using Input = std::variant<Command, ToggleFullscreen, LeaveFullscreen, ToggleMute, VolumeStep, SelectAudio,
                            SelectSubtitles, CycleAudio, CycleSubtitles, StepChapter, StepEpisode, SkipCredits,
                            ToggleSettings, ApplySettings, EditProfile, UseEngine, OpenEngineScreen,
-                           StartExport, ToggleFaithful>;
+                           StartExport, ToggleFaithful, PlayFile>;
 
 // L'action d'un événement SDL, ou rien. Fermer la fenêtre vaut cmd::Quit.
 std::optional<Input> input_of(const SDL_Event& event, const core::KeyMap& keys);

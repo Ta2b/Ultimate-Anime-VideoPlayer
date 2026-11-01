@@ -187,10 +187,15 @@ std::expected<ScreenTiming, Refusal> PlaceboScreen::show(const ShowRequest& requ
   pl_frame target{};
   pl_frame_from_swapchain(&target, &swframe);
 
-  // L'image de la calibration du grade remplace la vidéo, les sous-titres et l'OSD ; l'interface reste
-  // dessus.
+  // La calibration du grade : la vidéo (celle de calibration, dans la même chaîne) à gauche du panneau, sans
+  // sous-titres ni OSD ; l'interface reste dessus.
   const bool calibrating = request.calibration != nullptr;
-  const RingFrame* frame = calibrating ? nullptr : request.frame;
+  if (calibrating) {
+    const CalibrationShot& place = *request.calibration;
+    target.crop = {static_cast<float>(place.x0), static_cast<float>(place.y0), static_cast<float>(place.x1),
+                   static_cast<float>(place.y1)};
+  }
+  const RingFrame* frame = request.frame;
   pl_frame image{};
   if (frame != nullptr) {
     auto tex = s.ring.acquire(gpu, *frame);
@@ -217,10 +222,6 @@ std::expected<ScreenTiming, Refusal> PlaceboScreen::show(const ShowRequest& requ
 
   if (auto drawn = s.compose(frame != nullptr ? &image : nullptr, target); !drawn) {
     return std::unexpected(std::move(drawn.error()));
-  }
-  if (calibrating) {
-    if (auto drawn = s.draw_calibration(*request.calibration, target); !drawn)
-      s.channel->warn("calibration du grade : {}", drawn.error().detail);
   }
   s.draw_ui(request.ui, target);
   if (s.snapshot) {
