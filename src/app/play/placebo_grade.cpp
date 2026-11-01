@@ -163,6 +163,9 @@ std::expected<std::vector<double>, Refusal> PlaceboScreen::grade_ramp(std::span<
   render::GradeParams params = s.grade->params();
   params.black_lo = 0.0;  // le vrai noir se cale sur ce qui sort sans lui
   params.black_hi = 0.0;
+  if (s.last_ramp && s.last_ramp->params == params && s.last_ramp->hdr == s.hdr_output &&
+      std::ranges::equal(s.last_ramp->levels, levels))
+    return s.last_ramp->nits;
   s.ramp_grade->set_params(params);
   // Une bande de 16 px par marche, 128 lignes : assez pour les cartes 1/8 et 1/32 du grade.
   constexpr int kBand = 16;
@@ -231,6 +234,8 @@ std::expected<std::vector<double>, Refusal> PlaceboScreen::grade_ramp(std::span<
     const double code = peak / 65535.0;
     nits.push_back(s.hdr_output ? pq_nits(code) : std::pow(code, params.sdr_gamma) * params.peak);
   }
+  s.last_ramp = Impl::RampMeasure{
+      .params = params, .levels = {levels.begin(), levels.end()}, .hdr = s.hdr_output, .nits = nits};
   return nits;
 }
 

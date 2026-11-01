@@ -157,6 +157,15 @@ struct PlaceboScreen::Impl {
   // détection de pic ni l'état temporel du grade de la lecture.
   pl_renderer ramp_renderer = nullptr;
   std::optional<render::Grade> ramp_grade;
+  // La dernière rampe mesurée : mêmes paramètres, mêmes marches, même sortie, la mesure (un rendu et une
+  // relecture synchrones) n'est pas refaite.
+  struct RampMeasure {
+    render::GradeParams params;
+    std::vector<float> levels;
+    bool hdr = false;
+    std::vector<double> nits;
+  };
+  std::optional<RampMeasure> last_ramp;
   mutable std::uint64_t grade_frame_ns = 0;
   mutable std::vector<std::uint32_t> grade_gpu_us;
 };
