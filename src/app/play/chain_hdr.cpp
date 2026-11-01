@@ -203,8 +203,7 @@ std::vector<std::string> apply_looks(PlaceboScreen& screen, const PlaySettings& 
       continue;
     }
     log_channel("app")->info("look {} : {} ({} points)", i + 1, keys[i].key, lut->size);
-    loaded[i] = std::move(*lut);
-    luts[i] = &*loaded[i];
+    luts[i] = &loaded[i].emplace(std::move(*lut));
   }
   if (auto set = screen.set_looks(luts); !set) {
     log_channel("app")->warn("look : {}", set.error().detail);
@@ -385,16 +384,30 @@ void adaptive_tick(Chain& to, std::int64_t now_us) {
     tv = 0.0;
     bs = 0.0;
   }
-  // RTX HDR ne prend qu'un gris moyen et un contraste entiers, appliqués d'un coup : suivre la scène en
-  // continu les fait bouger par paliers visibles (la luminosité « respire » dans un même plan). Le réglage ne
-  // change donc qu'à une coupe de scène, invisible, ou quand la lumière de la scène a vraiment changé (un
-  // fondu, une explosion qui dure) ; la calibration (scène forcée) s'applique tout de suite.
+  // RTX HDR ne prend qu'un gris moyen et un contraste entiers, appliqués d'un coup : suivre chaque
+  // frémissement de la scène les fait bouger par paliers visibles (la luminosité « respire » dans un même
+  // plan). Le réglage saute donc à une coupe de scène, invisible, et la calibration (scène forcée) s'applique
+  // tout de suite. Sans coupe, une lumière qui change vraiment (un fondu, une explosion qui dure : la cible
+  // s'écarte de plus de kDrift) est suivie en rampe douce, kRate par seconde, soit environ un cran de gris
+  // moyen par dixième de seconde : le fondu est accompagné au lieu de changer d'un coup, en retard.
+  constexpr double kDrift = 0.12;
+  constexpr double kRate = 0.3;
   const bool forced = g.adaptive_force >= 0.0;
-  const bool far = std::abs(t - to.adaptive_t) >= 0.35 || std::abs(tv - to.adaptive_tv) >= 0.35 ||
-                   std::abs(glow - to.adaptive_glow) >= 0.35;
-  const bool may_change = forced || to.adaptive_forced || std::exchange(to.adaptive_cut, false) || far;
+  const bool jump = forced || to.adaptive_forced || std::exchange(to.adaptive_cut, false);
   to.adaptive_forced = forced;
-  if (!may_change) return;
+  if (!jump) {
+    const double gap = std::max(
+        {std::abs(t - to.adaptive_t), std::abs(tv - to.adaptive_tv), std::abs(glow - to.adaptive_glow)});
+    if (gap < kDrift) return;
+    const double step = kRate * static_cast<double>(dt) / 1e6;
+    const auto toward = [step](double now, double target) {
+      return now + std::clamp(target - now, -step, step);
+    };
+    t = toward(to.adaptive_t, t);
+    tv = toward(to.adaptive_tv, tv);
+    glow = toward(to.adaptive_glow, glow);
+    bs = to.adaptive_bs;  // la série ne change qu'aux coupes
+  }
   const bool same = std::abs(t - to.adaptive_t) < 0.02 && std::abs(tv - to.adaptive_tv) < 0.02 &&
                     !(t == 0.0 && to.adaptive_t != 0.0) && !(t == 1.0 && to.adaptive_t != 1.0) &&
                     !(tv == 0.0 && to.adaptive_tv != 0.0) && !(tv == 1.0 && to.adaptive_tv != 1.0) &&
