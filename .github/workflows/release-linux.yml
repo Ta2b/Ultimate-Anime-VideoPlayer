@@ -151,4 +151,10 @@ jobs:
             || gh release create "$AJP_TAG" -R "$AJP_RELEASE_REPO" --prerelease --title "$AJP_TAG" \
               --notes-file "$notes" \
             || gh release view "$AJP_TAG" -R "$AJP_RELEASE_REPO" >/dev/null
+          # Une étiquette sans « - » (v0.7.0) est une vraie release ; une rc reste une préversion. Les notes
+          # reprennent celles du dépôt, même si la release a été créée avant (paquet TensorRT Windows joint).
+          pre=true; [[ "$AJP_TAG" == *-* ]] || pre=false
+          edit=(--prerelease="$pre"); [ "$pre" = true ] || edit+=(--latest)
+          [ "$notes" = /dev/null ] || edit+=(--notes-file "$notes")
+          gh release edit "$AJP_TAG" -R "$AJP_RELEASE_REPO" "${edit[@]}"
           gh release upload "$AJP_TAG" -R "$AJP_RELEASE_REPO" --clobber "${assets[@]}"

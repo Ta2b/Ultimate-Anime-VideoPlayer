@@ -52,6 +52,7 @@ Write-Host "index NVIDIA : $out"
 Write-Host "release      : $repo $Tag"
 if (-not $Publish) { Write-Host "Contrôle seulement. Pour joindre : relancer avec -Publish, puis pousser l'étiquette $Tag."; exit 0 }
 gh release view $Tag -R $repo *> $null
+# Une préversion pour l'instant : la CI de l'étiquette en fait une vraie release (sans « - ») et y met les notes.
 if ($LASTEXITCODE -ne 0) { gh release create $Tag -R $repo --prerelease --title $Tag --notes $Tag }
 gh release upload $Tag -R $repo --clobber $archive $out
 Write-Host "Joint à $repo $Tag. Pousser maintenant l'étiquette : git tag $Tag; git push origin $Tag"
