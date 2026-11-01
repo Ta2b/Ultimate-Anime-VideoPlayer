@@ -59,8 +59,10 @@ struct Wizard {
   HdrChoice hdr = HdrChoice::Auto;
   std::string update_mode = "notify";
   std::string update_channel = "stable";
-  std::string audio_language = "jpn";  // première préférence de langue de l'audio ; vide : selon le fichier
-  std::string subtitle_language = "fre";  // et des sous-titres ; vide : aucun
+  // Première préférence de langue de l'audio (vide : selon le fichier) et des sous-titres (vide : aucun),
+  // celle par défaut d'abord : audio japonais, sous-titres dans la langue du système.
+  std::string audio_language = default_language_presets().front().audio;
+  std::string subtitle_language = default_language_presets().front().subtitles;
   std::vector<RtxCheck>
       rtx_checks;  // relus par « Vérifier de nouveau » (4b) ; vide : pas de guide (Windows, hors NVIDIA)
   int seen = 0;    // le plus loin atteint (rang de WizardStep), pour reprendre en route

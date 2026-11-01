@@ -270,6 +270,9 @@ int main(int argc, char** argv) {
   const ajp::app::play::PlayerPlace place{.executable = base / std::string(kExecutable),
                                           .home = sdl_path(SDL_GetUserFolder(SDL_FOLDER_HOME)),
                                           .data = ajp::app::play::user_data(data)};
+  // La langue du système, avant tout réglage : les langues préférées par défaut la prennent.
+  ajp::app::play::set_system_language(
+      ajp::app::play::pick_menu_language(ajp::app::play::system_locales(place.home)));
   if (options->registration != ajp::app::play::Registration::None) {
     const auto done = options->registration == ajp::app::play::Registration::Register
                           ? ajp::app::play::register_player(place)
