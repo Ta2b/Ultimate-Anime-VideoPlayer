@@ -4,6 +4,8 @@
 #include <array>
 #include <cstdint>
 #include <format>
+#include <memory>
+#include <mutex>
 #include <optional>
 #include <string>
 #include <system_error>
@@ -21,6 +23,7 @@
 #include "app/play/gpu_tier.h"
 #include "app/play/host_facts.h"
 #include "app/play/i18n.h"
+#include "app/play/machine_calibration.h"
 #include "app/play/profiles.h"
 #include "app/play/scripted_input.h"
 #include "app/play/settings.h"
@@ -28,6 +31,8 @@
 #include "core/clock.h"
 #include "core/keys.h"
 #include "core/log.h"
+#include "core/thread.h"
+#include "media/bench_clip.h"
 
 namespace ajp::app::play {
 namespace {
@@ -87,6 +92,76 @@ bool network_added(const core::Settings& before, const core::Settings& after) {
                              [&](core::EngineId id) { return chosen(after, id) && !chosen(before, id); });
 }
 
+// La calibration de la machine de l'assistant (machine_calibration.h) sur son thread : l'utilisateur ne voit
+// qu'une barre de chargement. Rien si la fenêtre se ferme ; une calibration qui échoue garde base (Auto).
+std::optional<PlaySettings> calibrate_on_screen(PlaceboScreen& screen, PlayerUi& ui, const PlayerPaths& paths,
+                                                const std::filesystem::path& data_dir, PlaySettings base) {
+  const auto log = log_channel("app");
+  struct Shared {
+    std::mutex mutex;
+    float fraction = 0.0F;
+    std::optional<std::expected<MachineCalibration, Refusal>> result;
+  };
+  auto shared = std::make_shared<Shared>();
+  std::error_code error;
+  BenchPlan plan{.executable = paths.executable,
+                 .video = data_dir / "bench-clip-v2.mkv",
+                 .work_dir = std::filesystem::temp_directory_path(error) / "ajp-calibration",
+                 .data = data_dir};
+  auto worker = start_thread("calibration", ThreadReport([shared](const Refusal& refusal) {
+                               const std::scoped_lock lock(shared->mutex);
+                               if (!shared->result) shared->result = std::unexpected(refusal);
+                             }),
+                             [shared, plan, base](const std::stop_token& stop, const ThreadReport&) {
+                               std::expected<MachineCalibration, Refusal> done =
+                                   std::unexpected(Refusal{RefusalCode::Cancelled, {}});
+                               std::error_code missing;
+                               if (!std::filesystem::is_regular_file(plan.video, missing)) {
+                                 if (auto written = media::write_bench_clip(plan.video); !written) {
+                                   const std::scoped_lock lock(shared->mutex);
+                                   shared->result = std::unexpected(std::move(written.error()));
+                                   return;
+                                 }
+                               }
+                               done = calibrate_machine(plan, base, stop, [shared](float fraction) {
+                                 const std::scoped_lock lock(shared->mutex);
+                                 shared->fraction = fraction;
+                               });
+                               std::error_code ignored;
+                               std::filesystem::remove_all(plan.work_dir, ignored);
+                               const std::scoped_lock lock(shared->mutex);
+                               shared->result = std::move(done);
+                             });
+  if (!worker) {
+    log->warn("calibration de la machine : {}", worker.error().detail);
+    return base;
+  }
+  while (true) {
+    SDL_Event event;
+    while (SDL_PollEvent(&event)) {
+      if (event.type == SDL_EVENT_QUIT || event.type == SDL_EVENT_WINDOW_CLOSE_REQUESTED) {
+        worker->request_stop();
+        return std::nullopt;
+      }
+    }
+    PrepareView view;
+    {
+      const std::scoped_lock lock(shared->mutex);
+      if (shared->result) break;
+      view = PrepareView{.label = i18n::tr("Calibrating this machine"), .fraction = shared->fraction};
+    }
+    if (auto shown = screen.show(ShowRequest{.ui = ui.preparation(host_now_us(), view)}); !shown)
+      log->warn("calibration de la machine : {}", shown.error().detail);
+    (void)SDL_WaitEventTimeout(nullptr, 100);
+  }
+  const std::scoped_lock lock(shared->mutex);
+  if (!*shared->result) {
+    log->warn("calibration de la machine : {} ; préréglage Auto", shared->result->error().detail);
+    ui.controls().defer(i18n::tr("Machine calibration failed: Auto preset (see log)"));
+    return base;
+  }
+  return candidate_settings((*shared->result)->chosen, std::move(base));
+}
 }  // namespace
 
 std::expected<bool, Refusal> run_engine_screen(const EngineScreen& s, core::Settings& engines,
@@ -110,7 +185,6 @@ std::expected<bool, Refusal> run_engine_screen(const EngineScreen& s, core::Sett
             view.engines,
             [](const EngineRow& row) { return row.offer.id != core::EngineId::Vulkan && row.usable; }),
         .hdr_display = s.screen.hdr_output(),
-        .multichannel_output = false,
         .rtx_guided = core::kHostOs == core::Os::Linux && gpu.tensor_cores};
     view.check_rtx = [&s, gpu](const FirstRunView& now) {
       const auto ticked = [&](core::EngineId id) {
@@ -165,6 +239,7 @@ std::expected<bool, Refusal> run_engine_screen(const EngineScreen& s, core::Sett
   const std::optional<core::EngineId> kept = before.preferred[usage(core::Usage::Upscale)];
   if (revisit && kept && chosen(engines, *kept) && !network_added(before, engines))
     engines = using_engine(std::move(engines), *kept);
+  std::optional<PlaySettings> calibrated_chain;  // la chaîne de la calibration de la machine
   if (wizard_mode) {
     const Wizard& wizard = (*chosen_view)->wizard;
     engines = wizard_settings(wizard, std::move(engines));
@@ -173,8 +248,19 @@ std::expected<bool, Refusal> run_engine_screen(const EngineScreen& s, core::Sett
     PlaySettings chosen_play;
     if (play) chosen_play = std::move(*play);
     chosen_play = wizard_play_settings(wizard, std::move(chosen_play));
+    if (wants_machine_calibration(wizard)) {
+      // Les essais relisent settings.toml (moteurs choisis, assistant vu) : il s'écrit avant eux.
+      if (auto written = core::save_settings(s.engines_path, engines); !written)
+        log->warn("{}", written.error().detail);
+      auto calibrated =
+          calibrate_on_screen(s.screen, s.ui, s.paths, s.engines_path.parent_path(), std::move(chosen_play));
+      if (!calibrated) return false;
+      chosen_play = std::move(*calibrated);
+      calibrated_chain = chosen_play;
+    }
     if (auto written = save_settings(play_path, chosen_play); !written)
       log->warn("{}", written.error().detail);
+    if (wants_grade_calibration(wizard)) s.ui.queue_grade_calibration();
     // « Ouvrir avec » : une fois, sans confirmation (elle ajoute une entrée, ne prend la place de personne).
     if (!engines.open_with_registered) {
       const PlayerPlace place{.executable = s.paths.executable, .home = s.paths.home, .data = s.paths.data};
@@ -196,6 +282,8 @@ std::expected<bool, Refusal> run_engine_screen(const EngineScreen& s, core::Sett
     log->warn("user.toml : {}", edited.error().detail);
   }
   if (!revisit) profiles.active = profiles.data.file.start_profile;
+  // La chaîne calibrée devient celle du profil de démarrage : sans quoi elle prendrait le pas sur play.toml.
+  if (calibrated_chain) remember_chain(profiles, *calibrated_chain);
   log->info("moteurs choisis : {} ; profil de démarrage {}", chosen_line(engines),
             profiles.data.file.start_profile);
   return true;

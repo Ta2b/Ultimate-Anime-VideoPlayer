@@ -67,6 +67,12 @@ std::vector<std::string> variant_child_args(const BenchPlan& plan, const Variant
                                             const std::filesystem::path& data_dir,
                                             const std::filesystem::path& out_file);
 
+// Un essai d'une variante (index : son dossier jetable), sa lecture ; allowance s'ajoute à la durée. Refus :
+// Cancelled sur demande d'arrêt, DecodeFailed si l'essai n'a rien rendu (le détail dit pourquoi).
+std::expected<BenchReading, Refusal> play_variant(const BenchPlan& plan, const Variant& variant, int index,
+                                                  const std::stop_token& stop,
+                                                  std::chrono::seconds allowance);
+
 struct CompareOutcome {
   Variant a;
   Variant b;

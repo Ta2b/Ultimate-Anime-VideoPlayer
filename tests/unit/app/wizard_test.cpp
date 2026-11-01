@@ -8,9 +8,9 @@ using namespace ajp::app::play;
 
 TEST_CASE("l'assistant saute les écrans sans objet", "[wizard]") {
   ajp::app::play::FrenchUi french;
-  CHECK(wizard_steps({.engine_choice = true, .hdr_display = true}).size() == 8);
+  CHECK(wizard_steps({.engine_choice = true, .hdr_display = true}).size() == 8);  // dont Grade
   const auto plain = wizard_steps({.engine_choice = false, .hdr_display = false});
-  REQUIRE(plain.size() == 6);
+  REQUIRE(plain.size() == 5);
   CHECK(plain.front() == WizardStep::Welcome);
   CHECK(plain[1] == WizardStep::Chain);  // ni moteur ni HDR
   CHECK(plain.back() == WizardStep::Summary);
@@ -27,11 +27,11 @@ TEST_CASE("l'assistant avance, recule, passe et reprend en route", "[wizard]") {
   next(wizard);
   CHECK(current(wizard) == WizardStep::Engines);
   next(wizard);
-  skip(wizard);                                 // Image et fluidité passée
-  CHECK(current(wizard) == WizardStep::Audio);  // HDR n'a pas lieu
-  CHECK(progress_text(wizard) == "Étape 4 sur 7 : Audio");
+  skip(wizard);                                     // la calibration de la machine passée
+  CHECK(current(wizard) == WizardStep::Languages);  // ni HDR ni grade : l'écran n'est pas HDR
+  CHECK(progress_text(wizard) == "Étape 4 sur 6 : Langues");
   CHECK(wizard.skipped == std::vector<WizardStep>{WizardStep::Chain});
-  // Fermé après l'écran 5 : on reprend à Langues.
+  // Fermé après l'écran 5 (le grade) : on reprend à Langues.
   CHECK(current(begin_wizard(facts, 5)) == WizardStep::Languages);
   // Tout vu : le résumé.
   CHECK(current(begin_wizard(facts, 8)) == WizardStep::Summary);
@@ -44,10 +44,7 @@ TEST_CASE("Terminer écrit les choix et laisse intact ce qui est sauté", "[wiza
   ajp::app::play::FrenchUi french;
   const WizardFacts facts{.engine_choice = true, .hdr_display = true};
   Wizard wizard = begin_wizard(facts, 0);
-  wizard.preset = Preset::Quality;
-  wizard.priority = Priority::Image;
   wizard.hdr = HdrChoice::Adaptive;
-  wizard.listening = Listening::Headphones;
   wizard.update_mode = "auto";
 
   const ajp::core::Settings written = wizard_settings(wizard, {});
@@ -56,38 +53,37 @@ TEST_CASE("Terminer écrit les choix et laisse intact ce qui est sauté", "[wiza
 
   PlaySettings play;
   play = wizard_play_settings(wizard, play);
-  CHECK(play.listening == "headphones");
   CHECK(play.update_mode == "auto");
-  CHECK(play.preset == Preset::Quality);
-  CHECK(play.priority == Priority::Image);
   CHECK(play.hdr_native);
+  CHECK(wants_machine_calibration(wizard));
+  CHECK(wants_grade_calibration(wizard));
   CHECK_FALSE(play.true_hdr);
 
-  // Écrans passés : Enceintes (rien d'écrit), Me prévenir (défaut), HDR inchangé, préréglage Auto.
-  wizard.skipped = {WizardStep::Audio, WizardStep::Updates, WizardStep::Hdr, WizardStep::Chain};
+  // Écrans passés : Me prévenir (défaut), HDR inchangé, préréglage Auto, pas de calibration.
+  wizard.skipped = {WizardStep::Updates, WizardStep::Hdr, WizardStep::Chain};
   const ajp::core::Settings kept = wizard_settings(wizard, {});
   PlaySettings other;
   other.true_hdr = true;
   other = wizard_play_settings(wizard, other);
   CHECK(other.update_mode == "notify");
-  CHECK(other.listening == "speakers");  // passé : Enceintes en rendu fidèle
   CHECK(other.true_hdr);
   CHECK(other.preset == Preset::Auto);
+  CHECK_FALSE(wants_machine_calibration(wizard));
+  CHECK_FALSE(wants_grade_calibration(wizard));  // HDR passé : pas de grade à calibrer
+  wizard.skipped.clear();
+  wizard.hdr = HdrChoice::Sdr;
+  CHECK_FALSE(wants_grade_calibration(wizard));
 }
 
 TEST_CASE("le résumé dit ce qui est choisi, sauté, et où le changer", "[wizard]") {
   ajp::app::play::FrenchUi french;
   Wizard wizard = begin_wizard({.engine_choice = true, .hdr_display = false}, 0);
   wizard.skipped = {WizardStep::Languages};
-  wizard.listening = Listening::Cinema;
   const auto lines = wizard_summary(wizard);
-  REQUIRE(lines.size() == 4);  // Chain, Audio, Languages, Updates (pas de HDR)
+  REQUIRE(lines.size() == 3);  // Chain, Languages, Updates (ni HDR ni grade)
   CHECK(lines[0].contains("Général > Configuration"));
-  CHECK(lines[1].contains("Home cinéma"));
-  CHECK(lines[2].contains("sauté"));
-  CHECK(lines[3].contains("me prévenir"));
-  CHECK(listening_from_key("headphones") == Listening::Headphones);
-  CHECK(listening_from_key("n'importe quoi") == Listening::Unsaid);
+  CHECK(lines[1].contains("sauté"));
+  CHECK(lines[2].contains("me prévenir"));
 }
 
 TEST_CASE("RTX HDR pas à pas : prêt seulement quand tout est fait, sinon HDR adaptatif en attendant",

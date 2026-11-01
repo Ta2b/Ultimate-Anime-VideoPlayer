@@ -201,34 +201,6 @@ void apply_live(Chain& to, const PlaySettings& wanted, std::int64_t now_us) {
   }
   if (wanted.audio_delay_ms != r.audio_delay_ms)
     to.session.command(cmd::SetAudioDelay{.delay_us = std::int64_t{wanted.audio_delay_ms} * 1000});
-  {
-    // L'écoute (casque, enceintes, home cinéma, fidèle) se change en direct ; l'appareil, lui, rouvre la
-    // vidéo.
-    const auto device = audio::resolve_device(audio::playback_devices(), wanted.audio_device);
-    const std::string name = device ? device->name : std::string();
-    const EffectiveListening now = effective_listening(wanted, name);
-    const EffectiveListening was = effective_listening(r, name);
-    if (now != was) {
-      cmd::SetListening listening{.listen = static_cast<std::uint8_t>(now.listen),
-                                  .faithful = now.faithful,
-                                  .tuned = true,
-                                  .tuning = audio::to_wire(now.tuning),
-                                  .anime_set = true,
-                                  .anime = audio::to_wire(now.anime)};
-      if (now.hrir_path != was.hrir_path) {
-        // Le fichier se lit ici, hors du thread audio ; illisible : on le dit et le modèle paramétrique
-        // reste.
-        listening.hrir_set = true;
-        if (auto loaded = load_listening_hrir(now.hrir_path)) {
-          listening.hrir = std::move(*loaded);
-        } else {
-          log_channel("app")->warn("{}", loaded.error().detail);
-          controls.notify(i18n::tr("Impulse response unreadable: using the default"), now_us);
-        }
-      }
-      to.session.command(std::move(listening));
-    }
-  }
   if (wanted.display_sync != r.display_sync) to.session.set_display_sync(wanted.display_sync);
   if (wanted.video_latency_ms != r.video_latency_ms)
     to.session.set_video_latency(std::int64_t{wanted.video_latency_ms} * 1000);
@@ -381,15 +353,6 @@ void apply(const Input& input, Chain& to, std::int64_t now_us) {
           [&](const VolumeStep& step) {
             session.command(Command{controls.step_volume(step.delta)});
             volume_changed();
-          },
-          [&](const ToggleFaithful&) {
-            PlaySettings wanted = to.running;
-            wanted.audio_faithful = !wanted.audio_faithful;
-            apply_live(to, wanted, now_us);
-            to.running.audio_faithful = wanted.audio_faithful;
-            to.dirty = true;
-            controls.notify(
-                wanted.audio_faithful ? i18n::tr("Sound: original") : i18n::tr("Sound: processed"), now_us);
           },
           [&](const SelectAudio& select) { switch_audio(to, select.track, now_us); },
           [&](const SelectSubtitles& select) { switch_subtitles(to, select.track, now_us); },

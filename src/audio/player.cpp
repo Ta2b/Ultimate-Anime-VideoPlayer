@@ -52,14 +52,7 @@ AudioPlayer::AudioPlayer(std::unique_ptr<AudioOutput> output, const PlayerConfig
       events_(std::move(events)),
       log_(make_logger()),
       clock_(std::make_shared<AudioClock>()),
-      regulator_(config.drift),
-      mixer_(MixConfig{.listen = config.mix.listen,
-                       .tuning = config.mix.tuning,
-                       .anime = config.mix.anime,
-                       .faithful = config.mix.faithful,
-                       .sink_channels = output_->format().channels,
-                       .sample_rate = output_->format().sample_rate,
-                       .hrir = config.mix.hrir}) {}
+      regulator_(config.drift) {}
 
 AudioPlayer::~AudioPlayer() = default;
 
@@ -80,10 +73,11 @@ void AudioPlayer::handle(const AudioTrack& track) {
   pump();
 }
 
-// Le décodeur rend les canaux que le mixeur veut de cette piste (mixer.h : decoder_channels).
+// Le décodeur rend les canaux de l'appareil : libswresample mixe une source 5.1 ou 7.1 vers la stéréo, sans
+// autre traitement.
 void AudioPlayer::open_decoder(const AudioTrack& track) {
   const PcmFormat wanted{.sample_rate = output_->format().sample_rate,
-                         .channels = mixer_.decoder_channels(track.codec.channels)};
+                         .channels = output_->format().channels};
   auto decoder = AudioDecoder::open(track.codec, wanted);
   if (!decoder) {
     decoder_.reset();
@@ -91,15 +85,12 @@ void AudioPlayer::open_decoder(const AudioTrack& track) {
     return;
   }
   decoder_ = std::move(*decoder);
-  mixer_.note_source(track.codec.channels);
-  log_->info("piste « {} » ({} Hz, {} canaux) vers {} Hz, {} canaux, écoute {}{}", track.codec.codec,
-             track.codec.sample_rate, track.codec.channels, wanted.sample_rate, wanted.channels,
-             static_cast<int>(mixer_.config().listen), mixer_.faithful() ? " fidèle" : "");
+  log_->info("piste « {} » ({} Hz, {} canaux) vers {} Hz, {} canaux", track.codec.codec,
+             track.codec.sample_rate, track.codec.channels, wanted.sample_rate, wanted.channels);
 }
 
-// Les blocs décodés passent par le mixeur avant la file de sortie.
 void AudioPlayer::queue(std::vector<PcmBlock>&& blocks) {
-  for (PcmBlock& block : blocks) ready_.push_back(mixer_.process(std::move(block)));
+  for (PcmBlock& block : blocks) ready_.push_back(std::move(block));
 }
 
 void AudioPlayer::handle(const EndOfStream& end) {
@@ -124,31 +115,6 @@ void AudioPlayer::handle(const Command& command) {
     set_delay(delay->delay_us);
   } else if (const auto* volume = std::get_if<cmd::SetVolume>(&command)) {
     if (auto set = output_->set_volume(volume->gain); !set) report(set.error());
-  } else if (const auto* listening = std::get_if<cmd::SetListening>(&command)) {
-    const int before = track_ ? mixer_.decoder_channels(track_->codec.channels) : 0;
-    MixConfig mix = mixer_.config();
-    mix.listen = static_cast<Listen>(std::min<std::uint8_t>(listening->listen, 2));
-    mix.faithful = listening->faithful;
-    if (listening->tuned) mix.tuning = tuning_from_wire(listening->tuning);
-    if (listening->anime_set) mix.anime = anime_from_wire(listening->anime);
-    if (listening->hrir_set) mix.hrir = listening->hrir;  // absent : le modèle paramétrique
-    mixer_ = Mixer(mix);
-    if (track_) mixer_.note_source(track_->codec.channels);
-    log_->info(
-        "écoute {}{} : égaliseur graves {:+.1f} voix {:+.1f} aigus {:+.1f} dB, nuit {:.2f}, pièce {:.2f}",
-        static_cast<int>(mix.listen), mix.faithful ? " fidèle" : "", mix.tuning.eq_bass_db,
-        mix.tuning.eq_voice_db, mix.tuning.eq_treble_db, mix.tuning.night, mix.tuning.room);
-    log_->info("son anime {} : largeur {:.2f}, voix +{:.1f} dB, sonie {} ({:.0f} LUFS), plafond {:.1f} dBTP",
-               mix.anime.enabled ? "actif" : "coupé", mix.anime.width, mix.anime.voice_db,
-               mix.anime.loudness ? "oui" : "non", mix.anime.target_lufs, mix.anime.ceiling_db);
-    // Les canaux voulus du décodeur ont changé : il est rouvert, ce qui était décodé est refait au prochain
-    // paquet.
-    if (track_ && mixer_.decoder_channels(track_->codec.channels) != before) {
-      open_decoder(*track_);
-      ready_.clear();
-      output_->clear();
-      aligning_ = master_ != nullptr;
-    }
   }
   // Les autres commandes ne concernent pas l'audio ; le seek arrive par Flush.
 }
@@ -185,7 +151,6 @@ void AudioPlayer::start_epoch(std::uint32_t epoch) {
   held_.clear();
   ready_.clear();
   if (decoder_) decoder_->flush();
-  mixer_.reset();
   output_->clear();
   trim_before_us_.reset();
   end_pending_ = false;

@@ -25,7 +25,6 @@
 #include "app/play/i18n.h"
 #include "app/play/options.h"
 #include "app/play/precision.h"
-#include "audio/mixer.h"
 #include "core/profile.h"
 #include "core/types.h"
 #include "media/selection.h"
@@ -275,27 +274,8 @@ struct PlaySettings {
   // prépare tout seul (span_auto.h). Lue et réécrite pour ne rien perdre d'un play.toml existant.
   bool span_prepare_background = false;
   int audio_delay_ms = 0;
-  // Audio (audio/mixer.h, docs/audio-spatialisation.md) : l'appareil de sortie (vide : celui du système,
-  // suivi quand il change), « Comment écoutez-vous ? » (headphones, speakers, cinema), le mode Fidèle (aucun
-  // traitement), et les profils propres à un appareil (nom de l'appareil vers écoute).
+  // L'appareil de sortie audio (vide : celui du système, suivi quand il change).
   std::string audio_device;
-  std::string listening = "speakers";
-  bool audio_faithful = false;
-  std::string audio_profile = "natural";  // clé de audio::mix_presets, ou « custom »
-  audio::MixTuning audio_custom;          // les réglages du profil « custom »
-  std::vector<std::pair<std::string, std::string>> device_listening;
-  std::vector<std::pair<std::string, std::string>>
-      device_profile;  // appareil -> profil de virtualisation (clé, ou « custom »)
-  // « Son anime » (audio/anime_sound.h, docs/audio-anime.md), pistes stéréo vers sortie stéréo : le niveau
-  // (clé de audio::anime_levels : natural, anime, strong ; ou « custom »), les réglages du niveau
-  // « custom », et le niveau propre à un appareil (appareil -> niveau).
-  std::string anime_sound = "natural";
-  audio::AnimeTuning anime_custom = audio::find_anime_level("anime")->tuning;
-  std::vector<std::pair<std::string, std::string>> device_anime;
-  // Réponses impulsionnelles « HeSuVi » pour le casque (audio/hrir.h) : chemin d'un .wav (vide : aucune, le
-  // modèle paramétrique), et celui propre à un appareil (appareil -> chemin).
-  std::string hrir_path;
-  std::vector<std::pair<std::string, std::string>> device_hrir;
   // Synchro sur l'écran (SessionConfig::display_sync), en direct ; délai d'affichage de la vidéo
   // en ms, 0 : estimé (SessionConfig::video_latency_us).
   bool display_sync = true;
@@ -395,31 +375,6 @@ void forget_calibrated_grade(PlaySettings& settings, std::string_view display, s
 // inchangés.
 PlaySettings with_calibrated_grade(PlaySettings settings, std::string_view display);
 
-// L'écoute en vigueur pour cet appareil : son profil propre s'il en a un, sinon le global (un appareil
-// inconnu reprend le global sans rien demander). listen : 0 casque, 1 enceintes, 2 home cinéma.
-struct EffectiveListening {
-  int listen = 1;
-  bool faithful = false;
-  audio::MixTuning tuning;   // le profil de virtualisation (preset ou personnalisé)
-  audio::AnimeTuning anime;  // le « Son anime » de l'appareil (enabled faux : Naturel)
-  std::string hrir_path;     // les réponses impulsionnelles du casque ; vide : aucune
-  bool operator==(const EffectiveListening&) const = default;
-};
-// Le mixage voulu : le profil choisi (clé de audio::mix_presets, « custom » : audio_custom), borné ; un
-// profil qui ne va pas à l'écoute en cours (Voix claires au casque) retombe sur « Naturel ».
-audio::MixTuning resolved_tuning(const PlaySettings& settings, int listen);
-// Le mixage d'une clé de profil (ou « custom » : custom_values) pour cette écoute ; Naturel si le profil ne
-// va pas à l'écoute.
-audio::MixTuning tuning_of(std::string_view profile, const audio::MixTuning& custom_values, int listen);
-// Les réglages du « Son anime » d'un niveau (clé de audio::anime_levels, ou « custom » : custom_values) ;
-// Naturel pour une clé inconnue.
-audio::AnimeTuning anime_tuning_of(std::string_view level, const audio::AnimeTuning& custom_values);
-EffectiveListening effective_listening(const PlaySettings& settings, const std::string& device_name);
-// Charge les réponses impulsionnelles d'un chemin (vide : aucune, sans refus). Un fichier illisible est
-// refusé : l'appelant le dit et retombe sur le binaural paramétrique.
-std::expected<std::shared_ptr<const audio::Hrir>, Refusal> load_listening_hrir(const std::string& path);
-// « headphones » → 0, « speakers » → 1, « cinema » → 2 ; rien d'autre.
-std::optional<int> listening_index(std::string_view key);
 // Fichier absent : les réglages par défaut.
 std::expected<PlaySettings, Refusal> load_settings(const std::filesystem::path& path);
 // Écrit à côté puis remplace (FileUnwritable si impossible) : jamais un fichier à moitié écrit.

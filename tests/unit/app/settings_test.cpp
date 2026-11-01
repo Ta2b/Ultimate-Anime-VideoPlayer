@@ -13,7 +13,6 @@
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 
-#include "app/play/bundled_hrir.h"
 #include "app/play/chain.h"
 #include "app/play/free_engines.h"
 #include "app/play/live_settings.h"
@@ -452,28 +451,19 @@ TEST_CASE("repères des listes et résolution en français courant", "[settings]
   CHECK(label(MotionEngine::Gmfss) == "GMFSS Fortuna");
 }
 
-TEST_CASE("audio : appareil, écoute et profils par appareil font l'aller-retour", "[settings]") {
+TEST_CASE("audio : l'appareil fait l'aller-retour, les anciennes clés du son sont ignorées", "[settings]") {
   using namespace ajp::app::play;
   PlaySettings s;
   s.audio_device = "Casque USB";
-  s.listening = "speakers";
-  s.audio_faithful = true;
-  s.device_listening = {{"Casque USB", "headphones"}, {"Barre de son", "cinema"}};
   const auto read = parse_settings(format_settings(s));
   REQUIRE(read);
   CHECK(read->audio_device == "Casque USB");
-  CHECK(read->audio_faithful);
-  auto sorted = [](auto list) {
-    std::ranges::sort(list);
-    return list;
-  };
-  CHECK(sorted(read->device_listening) == sorted(s.device_listening));  // la table TOML trie ses clés
-  // Le profil propre prime, un appareil inconnu reprend le global.
-  CHECK(effective_listening(*read, "Casque USB").listen == 0);
-  CHECK(effective_listening(*read, "Barre de son").listen == 2);
-  CHECK(effective_listening(*read, "Autre").listen == 1);
-  CHECK(effective_listening(*read, "Autre").faithful);
-  CHECK_FALSE(parse_settings("[audio]\nlistening = \"stade\"\n"));
+  // Le traitement du son a été retiré : un play.toml d'avant se relit sans perdre le reste.
+  const auto old = parse_settings(
+      "version = 1\n[audio]\ndevice = \"A\"\nlistening = \"headphones\"\nprofile = \"night\"\n"
+      "anime_sound = \"strong\"\nhrir = \"bundled:atmos\"\n");
+  REQUIRE(old);
+  CHECK(old->audio_device == "A");
   CHECK(change_between(
             PlaySettings{},
             [] {
@@ -483,15 +473,6 @@ TEST_CASE("audio : appareil, écoute et profils par appareil font l'aller-retour
             }(),
             false)
             .cost == ChangeCost::Reopen);
-  CHECK(change_between(
-            PlaySettings{},
-            [] {
-              PlaySettings x;
-              x.listening = "headphones";
-              return x;
-            }(),
-            false)
-            .cost == ChangeCost::Live);
 }
 
 TEST_CASE("Hermite : un filtre de réduction de plus, cubique B = C = 0", "[app][settings]") {
@@ -505,106 +486,6 @@ TEST_CASE("Hermite : un filtre de réduction de plus, cubique B = C = 0", "[app]
   PlaySettings s;
   s.downscale = Downscale::Hermite;
   CHECK(parse_settings(format_settings(s))->downscale == Downscale::Hermite);
-}
-
-TEST_CASE("play.toml garde le profil audio et ses réglages personnalisés", "[settings][audio]") {
-  ajp::app::play::PlaySettings s;
-  s.audio_profile = "custom";
-  s.audio_custom.crossfeed_gain = 0.45F;
-  s.audio_custom.center_lift = 1.7F;
-  const auto read = ajp::app::play::parse_settings(ajp::app::play::format_settings(s));
-  REQUIRE(read);
-  CHECK(read->audio_profile == "custom");
-  CHECK(read->audio_custom.crossfeed_gain == Catch::Approx(0.45F));
-  CHECK(read->audio_custom.center_lift == Catch::Approx(1.7F));
-  CHECK(ajp::app::play::parse_settings("version = 1\n")->audio_profile == "natural");
-  CHECK_FALSE(ajp::app::play::parse_settings("version = 1\n[audio]\nprofile = \"zzz\"\n"));
-  // Un profil qui ne va pas à l'écoute retombe sur Naturel.
-  s.audio_profile = "night";
-  CHECK(ajp::app::play::resolved_tuning(s, 0) == ajp::audio::MixTuning{});
-  CHECK(ajp::app::play::resolved_tuning(s, 1) == ajp::audio::find_preset("night")->tuning);
-}
-
-TEST_CASE("un appareil garde son profil de virtualisation, les autres le global", "[settings][audio]") {
-  ajp::app::play::PlaySettings s;
-  s.listening = "headphones";
-  s.audio_profile = "soft";
-  s.device_listening = {{"Casque BT", "headphones"}};
-  s.device_profile = {{"Casque BT", "room"}};
-  CHECK(ajp::app::play::effective_listening(s, "Casque BT").tuning ==
-        ajp::audio::find_preset("room")->tuning);
-  CHECK(ajp::app::play::effective_listening(s, "Autre").tuning == ajp::audio::find_preset("soft")->tuning);
-  const auto read = ajp::app::play::parse_settings(ajp::app::play::format_settings(s));
-  REQUIRE(read);
-  CHECK(read->device_profile == s.device_profile);
-  CHECK_FALSE(ajp::app::play::parse_settings("version = 1\n[audio.device_profiles]\nX = \"zzz\"\n"));
-  // Les nouveaux réglages (égaliseur, nuit) font l'aller-retour de play.toml.
-  s.audio_profile = "custom";
-  s.audio_custom.eq_voice_db = 4.5F;
-  s.audio_custom.night = 0.6F;
-  s.audio_custom.room = 0.25F;
-  const auto again = ajp::app::play::parse_settings(ajp::app::play::format_settings(s));
-  REQUIRE(again);
-  const auto got = ajp::audio::to_array(again->audio_custom);
-  const auto want = ajp::audio::to_array(s.audio_custom);
-  for (std::size_t i = 0; i < got.size(); ++i) {
-    INFO("champ " << i);
-    CHECK(got[i] == want[i]);
-  }
-}
-
-TEST_CASE("les réponses impulsionnelles : chemin global et propre à un appareil", "[settings][audio]") {
-  ajp::app::play::PlaySettings s;
-  CHECK(s.hrir_path.empty());  // défaut : aucune
-  CHECK(ajp::app::play::effective_listening(s, "X").hrir_path.empty());
-  s.hrir_path = "/home/moi/hesuvi/a.wav";
-  s.device_hrir = {{"Casque BT", "/home/moi/hesuvi/b.wav"}};
-  CHECK(ajp::app::play::effective_listening(s, "Casque BT").hrir_path == "/home/moi/hesuvi/b.wav");
-  CHECK(ajp::app::play::effective_listening(s, "Autre").hrir_path == "/home/moi/hesuvi/a.wav");
-  const auto read = ajp::app::play::parse_settings(ajp::app::play::format_settings(s));
-  REQUIRE(read);
-  CHECK(read->hrir_path == s.hrir_path);
-  CHECK(read->device_hrir == s.device_hrir);
-  CHECK_FALSE(ajp::app::play::parse_settings("version = 1\n[audio.device_hrir]\nX = 3\n"));
-  // Un chemin vide : pas de fichier, pas de refus.
-  CHECK(*ajp::app::play::load_listening_hrir("") == nullptr);
-  CHECK_FALSE(ajp::app::play::load_listening_hrir("/nonexistent/ajp/a.wav"));
-}
-
-TEST_CASE("play.toml garde le Son anime : niveau, réglages personnalisés, niveau par appareil",
-          "[settings][audio][anime]") {
-  using namespace ajp::app::play;
-  PlaySettings s;
-  // Défaut : « Anime » actif.
-  CHECK(s.anime_sound == "natural");
-  CHECK(effective_listening(s, "X").anime == ajp::audio::find_anime_level("natural")->tuning);
-  CHECK(parse_settings("version = 1\n")->anime_sound == "natural");
-  s.anime_sound = "custom";
-  s.anime_custom.voice_db = 3.5F;
-  s.anime_custom.target_lufs = -17.0F;
-  s.anime_custom.loudness = false;
-  s.anime_custom.voice_forward = 0.6F;
-  s.device_anime = {{"Casque BT", "strong"}, {"Enceintes", "natural"}};
-  const auto read = parse_settings(format_settings(s));
-  REQUIRE(read);
-  CHECK(read->anime_sound == "custom");
-  CHECK(read->anime_custom.voice_db == Catch::Approx(3.5F));
-  CHECK(read->anime_custom.target_lufs == Catch::Approx(-17.0F));
-  CHECK_FALSE(read->anime_custom.loudness);
-  CHECK(read->device_anime == s.device_anime);
-  CHECK(effective_listening(s, "Casque BT").anime == ajp::audio::find_anime_level("strong")->tuning);
-  CHECK_FALSE(effective_listening(s, "Enceintes").anime.enabled);
-  CHECK(effective_listening(s, "Autre").anime.voice_db == Catch::Approx(3.5F));
-  // Valeurs refusées en nommant la clé.
-  CHECK_FALSE(parse_settings("version = 1\n[audio.anime]\nlevel = \"zzz\"\n"));
-  CHECK_FALSE(parse_settings("version = 1\n[audio.anime.custom]\nvoice_db = 9.0\n"));
-  CHECK_FALSE(parse_settings("version = 1\n[audio.anime.custom]\ntarget_lufs = -30.0\n"));
-  CHECK_FALSE(parse_settings("version = 1\n[audio.device_anime]\nX = \"zzz\"\n"));
-  // Un changement de niveau est un changement de l'écoute, appliqué en direct.
-  PlaySettings other = PlaySettings{};
-  other.anime_sound = "strong";
-  CHECK_FALSE(effective_listening(other, "X") == effective_listening(PlaySettings{}, "X"));
-  CHECK(live_part(PlaySettings{}, other, false).anime_sound == "strong");
 }
 
 TEST_CASE("play.toml garde le plafond du mode auto et refuse un plafond absurde",
@@ -733,19 +614,4 @@ TEST_CASE("le look (LUT) et son intensité se relisent à l'identique, un nom de
   const ajp::app::play::PlaySettings defaults;  // la pile de LUT de Tatoub par défaut : base + 7 LUT
   CHECK(defaults.look == "HDR grading base ver.9.0 33 point.cube");
   CHECK(defaults.look_layers.size() == 7);
-}
-
-TEST_CASE("réponses de tête livrées : chacune se charge par bundled:<clé>", "[settings][audio][hrir]") {
-  using namespace ajp::app::play;
-  REQUIRE(bundled_hrirs().size() == 5);
-  for (const BundledHrir& entry : bundled_hrirs()) {
-    const auto loaded = load_listening_hrir("bundled:" + std::string(entry.key));
-    INFO(entry.key << ": " << (loaded ? "" : loaded.error().detail));
-    REQUIRE(loaded.has_value());
-    REQUIRE(*loaded != nullptr);
-    CHECK((*loaded)->length() > 0);
-  }
-  CHECK(find_bundled_hrir("bundled:inconnue") == nullptr);
-  CHECK(find_bundled_hrir("/home/x/y.wav") == nullptr);
-  CHECK_FALSE(load_listening_hrir("").value() != nullptr);
 }

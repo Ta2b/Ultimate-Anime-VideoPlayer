@@ -186,6 +186,19 @@ BenchReading worse(const BenchReading& x, const BenchReading& y) {
 
 }  // namespace
 
+std::expected<BenchReading, Refusal> play_variant(const BenchPlan& plan, const Variant& variant, int index,
+                                                  const std::stop_token& stop,
+                                                  std::chrono::seconds allowance) {
+  Trial trial = play_one(plan, std::nullopt, &variant, index, stop, allowance,
+                         i18n::tr_format("of the \"{}\" variant", variant.name));
+  if (trial.cancelled) return refuse(RefusalCode::Cancelled, i18n::tr("evaluation cancelled"));
+  if (!trial.reading)
+    return refuse(
+        RefusalCode::DecodeFailed,
+        trial.why.empty() ? i18n::tr_format("the \"{}\" variant produced nothing", variant.name) : trial.why);
+  return std::move(*trial.reading);
+}
+
 std::expected<CompareOutcome, Refusal> run_compare(const BenchPlan& plan, const Variant& a, const Variant& b,
                                                    const std::stop_token& stop,
                                                    const std::function<void(const std::string&)>& progress) {

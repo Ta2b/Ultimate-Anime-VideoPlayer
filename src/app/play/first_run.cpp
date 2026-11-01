@@ -506,30 +506,17 @@ void draw_wizard_step(FirstRunView& view, Wizard& wizard) {
           i18n::tr("Vulkan works on every GPU. Checked engines install after \"Finish\", verified by hash; "
                    "Vulkan takes over if one fails."));
       break;
-    case WizardStep::Chain: {
-      section(i18n::tr("Picture and smoothness"));
-      if (ImGui::BeginCombo(i18n::tr("Preset"), std::string(label(wizard.preset)).c_str())) {
-        for (int i = 0; i < kPresetCount; ++i) {
-          const auto preset = static_cast<Preset>(i);
-          if (ImGui::Selectable(std::string(label(preset)).c_str(), preset == wizard.preset))
-            wizard.preset = preset;
-        }
-        ImGui::EndCombo();
-      }
-      panel::tip(i18n::tr("Auto picks the settings for your card, display and video."));
-      if (ImGui::BeginCombo(i18n::tr("Priority"), std::string(label(wizard.priority)).c_str())) {
-        for (int i = 0; i < kPriorityCount; ++i) {
-          const auto priority = static_cast<Priority>(i);
-          if (ImGui::Selectable(std::string(label(priority)).c_str(), priority == wizard.priority))
-            wizard.priority = priority;
-        }
-        ImGui::EndCombo();
-      }
+    case WizardStep::Chain:
+      section(i18n::tr("Machine calibration"));
       note(
-          i18n::tr("Once the engines are installed, \"Optimize for this machine\" (Settings > General > "
-                   "Setup) tunes this for your PC in about a minute."));
+          i18n::tr("After \"Finish\", the player tests several settings on a very demanding sequence: "
+                   "picture resolution, SPAN upscaling and RIFE smoothness. It keeps the best combination "
+                   "this machine sustains, SPAN first."));
+      note(
+          i18n::tr("Only a progress bar is shown; it takes a few minutes, longer the first time on a "
+                   "laptop (the engines are built once)."));
+      note(i18n::tr("Skipped: the Auto preset. Redo it later in General > Setup."));
       break;
-    }
     case WizardStep::Hdr: {
       section(i18n::tr("HDR"));
       note(i18n::tr("Your display receives HDR."));
@@ -575,25 +562,16 @@ void draw_wizard_step(FirstRunView& view, Wizard& wizard) {
       }
       break;
     }
-    case WizardStep::Audio: {
-      section(i18n::tr("How do you listen?"));
-      note(i18n::tr("The sound format is detected. Headphones or speakers are not: tell us here."));
-      for (const Listening each : {Listening::Headphones, Listening::Speakers, Listening::Cinema}) {
-        bool pick = false;
-        const bool cinema = each == Listening::Cinema;
-        radio_note(std::string(label(each)).c_str(),
-                   each == Listening::Headphones
-                       ? i18n::tr("Headphones: crossfeed in stereo, binaural in surround.")
-                   : cinema ? (view.facts.multichannel_output
-                                   ? i18n::tr("Multichannel, direct surround.")
-                                   : i18n::tr("Greyed out: the output device only has 2 channels."))
-                            : i18n::tr("Speakers: faithful sound, careful mix."),
-                   wizard.listening == each, pick, !cinema || view.facts.multichannel_output);
-        if (pick) wizard.listening = each;
-      }
-      note(i18n::tr("Skip: Speakers, faithful sound. Change it later in Audio > Output."));
+    case WizardStep::Grade:
+      section(i18n::tr("HDR grade calibration"));
+      note(
+          i18n::tr("Right after the machine calibration, the player shows a few dark scenes, then a few "
+                   "bright scenes: you tune the adaptive grade for this display."));
+      note(
+          i18n::tr("An important step: the HDR picture follows it. Redo it or add other profiles later in "
+                   "HDR and color > HDR."));
+      if (wizard.hdr == HdrChoice::Sdr) note(i18n::tr("SDR chosen: no HDR grade to calibrate."));
       break;
-    }
     case WizardStep::Languages:
       section(i18n::tr("Languages"));
       language_choice(i18n::tr("Audio language"), i18n::tr("From the file"), wizard.audio_language);

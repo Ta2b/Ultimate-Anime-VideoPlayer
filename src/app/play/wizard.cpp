@@ -14,11 +14,11 @@ std::string_view title(WizardStep step) {
     case WizardStep::Engines:
       return i18n::tr("Engine");
     case WizardStep::Chain:
-      return i18n::tr("Picture and smoothness");
+      return i18n::tr("Machine calibration");
     case WizardStep::Hdr:
       return i18n::tr("HDR");
-    case WizardStep::Audio:
-      return i18n::tr("Audio");
+    case WizardStep::Grade:
+      return i18n::tr("HDR grade calibration");
     case WizardStep::Languages:
       return i18n::tr("Languages");
     case WizardStep::Updates:
@@ -34,45 +34,10 @@ std::vector<WizardStep> wizard_steps(const WizardFacts& facts) {
   for (int i = 1; i <= kWizardSteps; ++i) {
     const auto step = static_cast<WizardStep>(i);
     if (step == WizardStep::Engines && !facts.engine_choice) continue;
-    if (step == WizardStep::Hdr && !facts.hdr_display) continue;
+    if ((step == WizardStep::Hdr || step == WizardStep::Grade) && !facts.hdr_display) continue;
     steps.push_back(step);
   }
   return steps;
-}
-
-std::string_view key(Listening listening) {
-  switch (listening) {
-    case Listening::Unsaid:
-      return {};
-    case Listening::Headphones:
-      return "headphones";
-    case Listening::Speakers:
-      return "speakers";
-    case Listening::Cinema:
-      return "cinema";
-  }
-  return {};
-}
-
-std::string_view label(Listening listening) {
-  switch (listening) {
-    case Listening::Unsaid:
-      return i18n::tr("Not said yet");
-    case Listening::Headphones:
-      return i18n::tr("Headphones");
-    case Listening::Speakers:
-      return i18n::tr("Speakers");
-    case Listening::Cinema:
-      return i18n::tr("Home theater");
-  }
-  return {};
-}
-
-Listening listening_from_key(std::string_view text) {
-  for (const Listening each : {Listening::Headphones, Listening::Speakers, Listening::Cinema}) {
-    if (key(each) == text) return each;
-  }
-  return Listening::Unsaid;
 }
 
 std::string_view label(HdrChoice choice) {
@@ -143,9 +108,9 @@ std::vector<std::string> wizard_summary(const Wizard& wizard) {
   std::vector<std::string> out;
   if (has(WizardStep::Chain)) {
     out.push_back(skipped(WizardStep::Chain)
-                      ? i18n::tr("Picture and smoothness: skipped, Auto preset (General > Setup)")
-                      : i18n::tr_format("Picture and smoothness: {}, priority {} (General > Setup)",
-                                        label(wizard.preset), label(wizard.priority)));
+                      ? i18n::tr("Machine calibration: skipped, Auto preset (General > Setup)")
+                      : i18n::tr("Machine calibration: after \"Finish\", the best settings this machine "
+                                 "sustains (General > Setup)"));
   }
   if (has(WizardStep::Hdr)) {
     if (skipped(WizardStep::Hdr)) {
@@ -158,11 +123,11 @@ std::vector<std::string> wizard_summary(const Wizard& wizard) {
       out.push_back(i18n::tr_format("HDR: {} (HDR and color > HDR)", label(wizard.hdr)));
     }
   }
-  if (has(WizardStep::Audio)) {
-    out.push_back(wizard.listening == Listening::Unsaid || skipped(WizardStep::Audio)
-                      ? i18n::tr("Audio: speakers, faithful sound (Audio > Output)")
-                      : i18n::tr_format("Audio: {} (Audio > Output)", label(wizard.listening)));
-  }
+  if (has(WizardStep::Grade))
+    out.push_back(
+        wants_grade_calibration(wizard)
+            ? i18n::tr("HDR grade calibration: right after the machine calibration (HDR and color > HDR)")
+            : i18n::tr("HDR grade calibration: skipped (HDR and color > HDR)"));
   if (has(WizardStep::Languages))
     out.push_back(skipped(WizardStep::Languages) ? i18n::tr("Languages: skipped (General > Playback)")
                                                  : i18n::tr("Languages: chosen (General > Playback)"));
@@ -185,15 +150,8 @@ PlaySettings wizard_play_settings(const Wizard& wizard, PlaySettings settings) {
   const auto skipped = [&](WizardStep step) {
     return std::ranges::find(wizard.skipped, step) != wizard.skipped.end();
   };
-  if (!skipped(WizardStep::Chain)) {
-    settings.preset = wizard.preset;
-    settings.priority = wizard.priority;
-  } else {
-    settings.preset = Preset::Auto;  // le premier lancement choisit Auto
-  }
-  // Passé ou ignoré : Enceintes en rendu fidèle (le défaut).
-  if (wizard.listening != Listening::Unsaid && !skipped(WizardStep::Audio))
-    settings.listening = std::string(key(wizard.listening));
+  // La calibration de la machine pose ensuite le préréglage Personnalisé et sa chaîne ; sautée, Auto.
+  if (skipped(WizardStep::Chain)) settings.preset = Preset::Auto;
   if (!skipped(WizardStep::Updates)) {
     settings.update_mode = wizard.update_mode;
     settings.update_channel = wizard.update_channel;
@@ -224,6 +182,18 @@ PlaySettings wizard_play_settings(const Wizard& wizard, PlaySettings settings) {
     }
   }
   return settings;
+}
+
+bool wants_machine_calibration(const Wizard& wizard) {
+  return std::ranges::find(wizard.steps, WizardStep::Chain) != wizard.steps.end() &&
+         std::ranges::find(wizard.skipped, WizardStep::Chain) == wizard.skipped.end();
+}
+
+bool wants_grade_calibration(const Wizard& wizard) {
+  return std::ranges::find(wizard.steps, WizardStep::Grade) != wizard.steps.end() &&
+         std::ranges::find(wizard.skipped, WizardStep::Grade) == wizard.skipped.end() &&
+         std::ranges::find(wizard.skipped, WizardStep::Hdr) == wizard.skipped.end() &&
+         wizard.hdr != HdrChoice::Sdr;
 }
 
 }  // namespace ajp::app::play

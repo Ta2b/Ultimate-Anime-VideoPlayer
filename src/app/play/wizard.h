@@ -18,9 +18,9 @@ namespace ajp::app::play {
 enum class WizardStep : std::uint8_t {
   Welcome = 1,  // carte, tranche, écran
   Engines,      // moteurs à installer
-  Chain,        // préréglage, priorité, évaluation
+  Chain,        // la calibration de la machine (machine_calibration.h), faite après « Terminer »
   Hdr,          // RTX HDR / HDR adaptatif / SDR
-  Audio,        // appareil, « Comment écoutez-vous ? »
+  Grade,        // la calibration du grade HDR, ouverte après celle de la machine (écran HDR seulement)
   Languages,    // audio et sous-titres préférés
   Updates,      // Me prévenir / Automatique / Jamais
   Summary,      // ce qui a été choisi, Terminer
@@ -34,18 +34,11 @@ struct WizardFacts {
   bool engine_choice = true;     // un moteur autre que Vulkan est possible (sinon pas d'écran Moteur)
   bool hdr_display = false;      // l'écran reçoit du HDR (sinon pas d'écran HDR)
   bool updates_managed = false;  // paquet de distribution, Flatpak : mis à jour ailleurs (écran grisé, gardé)
-  bool multichannel_output = false;  // l'appareil a plus de 2 canaux : Home cinéma possible
-  bool rtx_guided = false;           // Linux et carte NVIDIA RTX : RTX HDR se prépare pas à pas (4b)
+  bool rtx_guided = false;       // Linux et carte NVIDIA RTX : RTX HDR se prépare pas à pas (4b)
 };
 
 // Les écrans de cette machine, dans l'ordre.
 std::vector<WizardStep> wizard_steps(const WizardFacts& facts);
-
-// Le choix d'écoute de l'écran Audio.
-enum class Listening : std::uint8_t { Unsaid, Headphones, Speakers, Cinema };
-std::string_view key(Listening listening);    // « », « headphones », « speakers », « cinema »
-std::string_view label(Listening listening);  // « Casque », « Enceintes », « Home cinéma »
-Listening listening_from_key(std::string_view text);
 
 enum class HdrChoice : std::uint8_t { Auto, RtxHdr, Adaptive, Sdr };
 std::string_view label(HdrChoice choice);
@@ -63,10 +56,7 @@ struct Wizard {
   std::vector<WizardStep> steps;
   std::size_t at = 0;
   std::vector<WizardStep> skipped;
-  Preset preset = Preset::Auto;
-  Priority priority = Priority::Balance;
   HdrChoice hdr = HdrChoice::Auto;
-  Listening listening = Listening::Unsaid;
   std::string update_mode = "notify";
   std::string update_channel = "stable";
   std::string audio_language = "jpn";  // première préférence de langue de l'audio ; vide : selon le fichier
@@ -91,10 +81,14 @@ std::string progress_text(const Wizard& wizard);
 // Le résumé final : une ligne par choix fait ou sauté, avec où le changer.
 std::vector<std::string> wizard_summary(const Wizard& wizard);
 
-// Ce que « Terminer » écrit : l'écoute (Unsaid : Enceintes en rendu fidèle), les mises à jour, le dernier
-// écran vu.
+// Ce que « Terminer » écrit : les mises à jour, le dernier écran vu.
 core::Settings wizard_settings(const Wizard& wizard, core::Settings settings);
-// Les réglages de lecture : préréglage, priorité, HDR choisis. Un écran sauté n'écrase rien.
+// Les réglages de lecture : HDR, langues, mises à jour choisis. Un écran sauté n'écrase rien. La calibration
+// de la machine sautée : le préréglage Auto.
 PlaySettings wizard_play_settings(const Wizard& wizard, PlaySettings settings);
+// « Terminer » lance-t-il la calibration de la machine (écran non sauté) ? Et celle du grade HDR (écran non
+// sauté, et un HDR choisi) ?
+bool wants_machine_calibration(const Wizard& wizard);
+bool wants_grade_calibration(const Wizard& wizard);
 
 }  // namespace ajp::app::play

@@ -144,6 +144,9 @@ class SettingsPanel {
     engine_draft_.reset();
   }
   void close() { open_ = false; }
+  // L'assistant de premier démarrage : à la prochaine ouverture du panneau, la page HDR et la calibration
+  // du grade adaptatif lancée pour un nouveau profil.
+  void queue_grade_calibration() { grade_queued_ = true; }
   // L'image d'exemple de la calibration du grade (HDR > « Calibrer le grade adaptatif ») tant que le panneau
   // la montre ; nullptr : aucune.
   const CalibrationShot* calibration() const;
@@ -181,9 +184,10 @@ class SettingsPanel {
   std::optional<core::EngineId> engine_draft_;  // moteur coché dans l'onglet Moteurs, pas appliqué
   std::unique_ptr<ExportDraft> export_;         // l'onglet Export, gardé d'une ouverture à l'autre
   SystemNote system_;                           // l'onglet Système : sa dernière action
-  UpdateNote updates_;   // Général > Application : la vérification en cours ou son résultat
-  BenchNote bench_;      // « Évaluer ma machine » : l'essai en cours ou son rapport
-  PrepareNote prepare_;  // « Préparer le mode Performance » : la tâche en cours ou son résultat
+  UpdateNote updates_;         // Général > Application : la vérification en cours ou son résultat
+  BenchNote bench_;            // « Évaluer ma machine » : l'essai en cours ou son rapport
+  PrepareNote prepare_;        // « Préparer le mode Performance » : la tâche en cours ou son résultat
+  bool grade_queued_ = false;  // queue_grade_calibration
   std::unique_ptr<GradeWizard> grade_wizard_;  // la calibration du grade adaptatif (settings_calibration.h)
 };
 

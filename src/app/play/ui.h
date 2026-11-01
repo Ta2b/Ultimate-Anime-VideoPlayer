@@ -93,6 +93,8 @@ class PlayerUi {
   void set_black_status(std::string status);  // ligne du vrai noir dans l'onglet Grade
   void toggle_settings();
   void open_settings();
+  // La calibration du grade adaptatif, lancée à la prochaine ouverture des paramètres (l'assistant).
+  void queue_grade_calibration() { panel_.queue_grade_calibration(); }
   // Le nom de la vidéo, en haut de l'image pendant la lecture.
   void set_title(std::string title);
   void close_settings();

@@ -8,10 +8,6 @@
 
 namespace ajp {
 
-namespace audio {
-struct Hrir;  // réponses impulsionnelles de l'utilisateur (audio/hrir.h)
-}
-
 // Le consommateur rend une place : le producteur peut réessayer try_push.
 struct Credit {
   std::uint32_t count = 1;
@@ -75,24 +71,12 @@ struct SetAudioDelay {
 struct SetVolume {
   float gain = 1.0F;  // 0 à 2
 };
-// « Comment écoutez-vous ? » (audio/mixer.h) : 0 casque, 1 enceintes, 2 home cinéma ; faithful : aucun
-// traitement.
-struct SetListening {
-  std::uint8_t listen = 1;
-  bool faithful = false;
-  bool tuned = false;  // tuning porte les réglages fins (audio::MixTuning, dans l'ordre de to_array)
-  std::array<float, 16> tuning{};  // audio::to_array : les 15 réglages fins, le reste à 0
-  bool hrir_set = false;   // hrir remplace les réponses en vigueur (vide : retour au binaural paramétrique)
-  bool anime_set = false;  // anime porte le « Son anime » (audio::AnimeTuning, dans l'ordre de to_wire)
-  std::array<float, 16> anime{};
-  std::shared_ptr<const audio::Hrir> hrir;  // fichier chargé par l'appelant, partagé en lecture seule
-};
 struct Quit {};
 }  // namespace cmd
 
 using Command =
     std::variant<cmd::Play, cmd::Pause, cmd::TogglePause, cmd::Seek, cmd::SeekRelative, cmd::StepFrame,
                  cmd::SelectProfile, cmd::ProcessingOff, cmd::ToggleGrade, cmd::ToggleInterpolation,
-                 cmd::ToggleOsd, cmd::SetAudioDelay, cmd::SetVolume, cmd::SetListening, cmd::Quit>;
+                 cmd::ToggleOsd, cmd::SetAudioDelay, cmd::SetVolume, cmd::Quit>;
 
 }  // namespace ajp

@@ -307,7 +307,11 @@ std::expected<void, Refusal> play(const PlayOptions& options, const PlayerPaths&
         core::SourceInfo{.width = video.width, .height = video.height, .fps = fps_of(video.frame_rate)};
 
     PlaySettings from_profile = *saved;
-    if (const auto& start = profiles.data.file.profiles[static_cast<std::size_t>(profiles.active - 1)]) {
+    // L'essai d'une variante (« ajp compare », la calibration de la machine) joue son play.toml tel quel : le
+    // profil de démarrage referait la chaîne.
+    const bool variant_trial = options.bench_out && !options.bench_level;
+    if (const auto& start = profiles.data.file.profiles[static_cast<std::size_t>(profiles.active - 1)];
+        start && !variant_trial) {
       std::vector<std::string> notes;
       from_profile = apply_profile(*start, profiles.source, *saved, notes);
       for (const std::string& line : notes) log->warn("profil {} : {}", profiles.active, line);
