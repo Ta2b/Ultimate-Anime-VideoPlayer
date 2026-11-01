@@ -11,6 +11,7 @@
 #include <imgui.h>
 
 #include "app/play/calibration_images.h"
+#include "app/play/grade_learning.h"
 #include "app/play/i18n.h"
 #include "app/play/panel_style.h"
 #include "core/messages.h"
@@ -246,6 +247,53 @@ void grade_calibration(PlaySettings& d, const SettingsChoices& choices, GradeWiz
     d.grade_values.adaptive_force = -1.0;
   }
   panel::end_group();
+}
+
+void scene_correction(PlaySettings& d, const SettingsChoices& choices, std::vector<Input>& actions) {
+  using namespace render::grade_limits;
+  const AdaptiveScene& now = choices.adaptive_scene;
+  if (!now.live || !d.grade_values.adaptive || d.grade_values.adaptive_force >= 0.0) return;
+  ImGui::SeparatorText(i18n::tr("This scene"));
+  const double dark = (1.0 - now.glow) * (1.0 - now.t);
+  const double bright = (1.0 - now.glow) * now.t;
+  panel::note(i18n::tr_format(
+      "The scene on screen is {:.0f} % dark, {:.0f} % bright and {:.0f} % glow: a change here "
+      "goes to those scene kinds in that share, and is remembered for learning.",
+      100.0 * dark, 100.0 * bright, 100.0 * now.glow));
+  GradeCurve curve = curve_of(d);
+  const SceneLook look = look_at(curve, now.t, now.glow, now.tv);
+  bool changed = false;
+  double shadows = look.shadows;
+  if (wizard_slider(i18n::tr("Deep blacks, this scene"), shadows, kShadows)) {
+    correct_scene(curve, now.t, now.glow, now.tv, kShadowsFamily, shadows);
+    changed = true;
+  }
+  ImGui::BeginDisabled(!choices.hdr_output);
+  double colors = look.colors;
+  if (wizard_slider(i18n::tr("Colors, this scene"), colors, kVibrance)) {
+    correct_scene(curve, now.t, now.glow, now.tv, kColorsFamily, colors);
+    changed = true;
+  }
+  ImGui::EndDisabled();
+  auto gray = static_cast<float>(std::round(look.gray));
+  if (ImGui::SliderFloat(i18n::tr("Middle gray, this scene"), &gray, static_cast<float>(kMiddleGray.lo),
+                         static_cast<float>(kMiddleGray.hi), "%.0f", ImGuiSliderFlags_AlwaysClamp)) {
+    correct_scene(curve, now.t, now.glow, now.tv, kGrayFamily, std::round(static_cast<double>(gray)));
+    changed = true;
+  }
+  if (changed) set_curve(d, curve);
+  ImGui::BeginDisabled(now.corrections < 2);
+  if (ImGui::Button(i18n::tr("Learn from my corrections"))) actions.emplace_back(LearnGrade{});
+  ImGui::EndDisabled();
+  ImGui::SameLine();
+  ImGui::BeginDisabled(now.corrections + now.approvals == 0);
+  if (ImGui::Button(i18n::tr("Forget my corrections"))) actions.emplace_back(ForgetGradeLearning{});
+  ImGui::EndDisabled();
+  panel::note(i18n::tr_format(
+      "{} corrections and {} approved scenes kept. Learning fits the scene thresholds and the dark, glow, "
+      "bright and blue-sky values to all of them at once, recent ones first; what they do not contradict "
+      "stays as calibrated.",
+      now.corrections, now.approvals));
 }
 
 }  // namespace ajp::app::play

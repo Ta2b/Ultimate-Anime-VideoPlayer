@@ -94,7 +94,8 @@ class PlayerUi {
   }
   void set_running(const PlaySettings& running);
   void set_profiles(ProfilesView profiles);
-  void set_black_status(std::string status);  // ligne du vrai noir dans l'onglet Grade
+  void set_black_status(std::string status);            // ligne du vrai noir dans l'onglet Grade
+  void set_adaptive_scene(const AdaptiveScene& scene);  // « Cette scène » du grade adaptatif
   void toggle_settings();
   void open_settings();
   // La calibration du grade adaptatif, lancée à la prochaine ouverture des paramètres (l'assistant).

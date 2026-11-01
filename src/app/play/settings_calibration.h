@@ -44,5 +44,9 @@ void grade_calibration(PlaySettings& d, const SettingsChoices& choices, GradeWiz
                        float panel_left, std::vector<Input>& actions);
 // À chaque image, panneau ouvert ou non : la calibration finie (ou quittée), la vidéo d'avant se rouvre.
 void settle_calibration(GradeWizard& wizard, std::vector<Input>& actions);
+// Grade adaptatif, « Cette scène » : noirs, couleurs et gris moyen de la scène à l'écran, réglés directement
+// (la correction se répartit sur les bouts de la courbe, grade_learning.h : correct_scene), et
+// l'apprentissage tiré des corrections retenues.
+void scene_correction(PlaySettings& d, const SettingsChoices& choices, std::vector<Input>& actions);
 
 }  // namespace ajp::app::play

@@ -133,6 +133,33 @@ constexpr std::array kCalibration{
           "les pavés gardent leurs joints. Le col violet et la broche dorée restent riches sans briller. "
           "Cheveux devenus d'un blanc plat ou pavés éblouissants : baissez Gris moyen, scène claire. Joues "
           "qui virent au rouge : montez Couleurs réduites, scène claire."},
+    // Grade adaptatif : « Cette scène » et l'apprentissage (grade_learning.h).
+    Entry{"This scene", "Cette scène"},
+    Entry{"The scene on screen is {:.0f} % dark, {:.0f} % bright and {:.0f} % glow: a change here goes to "
+          "those "
+          "scene kinds in that share, and is remembered for learning.",
+          "La scène à l'écran est sombre à {:.0f} %, claire à {:.0f} % et avec éclat à {:.0f} % : un réglage "
+          "ici "
+          "va à ces genres de scène dans cette part, et il est retenu pour l'apprentissage."},
+    Entry{"Deep blacks, this scene", "Noirs profonds, cette scène"},
+    Entry{"Colors, this scene", "Couleurs, cette scène"},
+    Entry{"Middle gray, this scene", "Gris moyen, cette scène"},
+    Entry{"Learn from my corrections", "Apprendre de mes corrections"},
+    Entry{"Forget my corrections", "Oublier mes corrections"},
+    Entry{
+        "{} corrections and {} approved scenes kept. Learning fits the scene thresholds and the dark, glow, "
+        "bright and blue-sky values to all of them at once, recent ones first; what they do not contradict "
+        "stays as calibrated.",
+        "{} corrections et {} scènes approuvées retenues. L'apprentissage ajuste les seuils des scènes et "
+        "les "
+        "valeurs sombre, avec éclat, claire et ciel bleu sur toutes à la fois, les plus récentes d'abord ; "
+        "ce "
+        "qu'elles ne contredisent pas reste tel que calibré."},
+    Entry{"At least two corrections are needed: set a few scenes with \"This scene\" first.",
+          "Il faut au moins deux corrections : réglez d'abord quelques scènes avec « Cette scène »."},
+    Entry{"Grade learned from {} corrections: gap {:.0f} % → {:.0f} %",
+          "Grade appris de {} corrections : écart {:.0f} % → {:.0f} %"},
+    Entry{"Grade corrections forgotten", "Corrections du grade oubliées"},
 };
 
 }  // namespace

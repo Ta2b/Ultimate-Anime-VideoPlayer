@@ -599,6 +599,18 @@ void PlayerUi::set_black_status(std::string status) {
   input_pending_ = true;
 }
 
+void PlayerUi::set_adaptive_scene(const AdaptiveScene& scene) {
+  // Les poids glissent à chaque tour du grade : le panneau ne se redessine pour eux que s'il est ouvert, et
+  // qu'ils ont bougé d'un centième.
+  const AdaptiveScene& was = choices_.adaptive_scene;
+  const bool moved = scene.live != was.live || scene.corrections != was.corrections ||
+                     scene.approvals != was.approvals || std::abs(scene.t - was.t) >= 0.01 ||
+                     std::abs(scene.glow - was.glow) >= 0.01 || std::abs(scene.tv - was.tv) >= 0.01;
+  if (!moved) return;
+  choices_.adaptive_scene = scene;
+  if (panel_.is_open()) input_pending_ = true;
+}
+
 void PlayerUi::set_profiles(ProfilesView profiles) {
   choices_.profiles = std::move(profiles);
   input_pending_ = true;

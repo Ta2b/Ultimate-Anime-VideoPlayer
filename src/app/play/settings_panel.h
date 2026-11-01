@@ -46,6 +46,18 @@ struct ProfilesView {
 };
 
 // Ce que le panneau propose, fixé par le lecteur.
+// La scène à l'écran pour le grade adaptatif (chain_learning.cpp) : ses poids appliqués, pour « Cette scène
+// », et ce que l'apprentissage a retenu.
+struct AdaptiveScene {
+  bool live = false;  // grade adaptatif en marche sous RTX HDR, hors calibration
+  double t = 0.0;     // sombre (0) à claire (1)
+  double glow = 0.0;  // sombre avec éclat
+  double tv = 0.0;    // ciel bleu saturé, flash coloré
+  int corrections = 0;
+  int approvals = 0;
+  friend bool operator==(const AdaptiveScene&, const AdaptiveScene&) = default;
+};
+
 struct SettingsChoices {
   std::filesystem::path luts_dir;      // les .cube de l'utilisateur (look_catalog.h)
   std::vector<std::string> models;     // fichiers SPAN du dossier des modèles
@@ -89,6 +101,7 @@ struct SettingsChoices {
   std::int64_t position_us = 0;       // où en est sa lecture (PlayerUi::frame) : la calibration y revient
   bool paused = false;                // sa lecture est en pause
   std::string black_status;           // seuils du vrai noir en cours
+  AdaptiveScene adaptive_scene;       // grade adaptatif : la scène à l'écran
   ProfilesView profiles;
   // Général > Configuration (auto_config.h) : la machine telle que le préréglage Auto la voit.
   int machine_tier =

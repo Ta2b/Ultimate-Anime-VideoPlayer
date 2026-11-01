@@ -303,6 +303,9 @@ void adaptive_tick(Chain& to, std::int64_t now_us) {
   }
   const render::GradeSettings& g = to.running.grade_values;
   if (!g.adaptive || to.kernels == nullptr || !to.true_hdr_open) {
+    to.ui.set_adaptive_scene({});
+    to.learn.seen.reset();
+    to.learn.pending.reset();
     if (to.adaptive_t != 0.0 || to.adaptive_tv != 0.0 || to.adaptive_bs != 0.0 || to.adaptive_glow != 0.0) {
       to.adaptive_bs = 0.0;  // coupé en cours de route : retour aux curseurs
       to.adaptive_glow = 0.0;
@@ -319,6 +322,7 @@ void adaptive_tick(Chain& to, std::int64_t now_us) {
     return;
   }
   if (now_us - to.adaptive_at_us < 100'000) return;
+  learn_tick(to, now_us);
   const std::int64_t dt = to.adaptive_at_us == 0 ? 0 : now_us - to.adaptive_at_us;
   to.adaptive_at_us = now_us;
   const auto stats = to.kernels->scene_stats();
@@ -347,7 +351,6 @@ void adaptive_tick(Chain& to, std::int64_t now_us) {
   // de 0,5) ne doit pas voir toutes ses scènes ordinaires traitées comme « claires » : les seuils glissent
   // avec elle, et la série claire reçoit en plus du contraste et de la couleur (with_adaptive). Une scène
   // plus claire que sa série reste « claire ».
-  constexpr double kSeriesRef = 0.30;
   constexpr double kSeriesSeedUs = 20'000'000.0;
   constexpr double kSeriesTauUs = 90'000'000.0;
   to.series_us += static_cast<double>(dt);
@@ -358,7 +361,7 @@ void adaptive_tick(Chain& to, std::int64_t now_us) {
   // Même rendu que Re:Zero (la référence : 0,30 en moyenne, mesuré sur 155 secondes de son épisode) : les
   // seuils suivent la série EN PROPORTION, si bien qu'une scène à 1,45 fois la luminosité moyenne de Slime se
   // règle comme une scène à 1,45 fois celle de Re:Zero.
-  const double ratio = std::clamp(to.series_luma / kSeriesRef, 0.7, 1.8);
+  const double ratio = series_ratio(to.series_luma);
   const double bs_x = std::clamp((to.series_luma - 0.36) / 0.14, 0.0, 1.0);
   double bs = bs_x * bs_x * (3.0 - 2.0 * bs_x);
   const double lo = g.adaptive_lo / 100.0 * ratio;
