@@ -221,17 +221,6 @@ void grade_tab(PlaySettings& d, const SettingsChoices& choices) {
   section(i18n::tr("Color grading"));
   ImGui::Checkbox(i18n::tr("Color grading"), &d.grade);
   ImGui::BeginDisabled(!d.grade);
-  if (ImGui::BeginCombo(i18n::tr("Preset"), std::string(grade_label(d.grade_preset)).c_str())) {
-    for (int i = 0; i < render::kGradePresetCount; ++i) {
-      const auto preset = static_cast<render::GradePreset>(i);
-      if (ImGui::Selectable(std::string(grade_label(preset)).c_str(), preset == d.grade_preset)) {
-        d.grade_preset = preset;
-        d.grade_values = with_preset(preset, d.grade_values);
-      }
-    }
-    ImGui::EndCombo();
-  }
-  panel::tip(i18n::tr("Vivid pushes highlights, colors and blacks; Natural is the default look. Live."));
   if (panel::advanced()) look_section(d, choices);  // la pile de LUT : réglages avancés seulement
   render::GradeSettings& g = d.grade_values;
   using namespace render::grade_limits;
@@ -248,7 +237,7 @@ void grade_tab(PlaySettings& d, const SettingsChoices& choices) {
     ImGui::EndDisabled();
     moved |= grade_slider(i18n::tr("Deep blacks"), g.shadows, kShadows);
     moved |= grade_slider(i18n::tr("Color limiter"), g.guard, kGuard);
-    if (moved) d.grade_preset = render::GradePreset::Custom;
+    (void)moved;
     ImGui::BeginDisabled(!choices.hdr_output);
     ImGui::Checkbox(i18n::tr("Display P3 gamut"), &g.gamut_p3);
     ImGui::EndDisabled();
@@ -439,7 +428,17 @@ BenchEvent config_page(PlaySettings& d, const SettingsChoices& choices, BenchNot
 }
 
 // Général > Réinitialiser.
-void reset_page(std::vector<Input>& actions, const ProfilesView& view) {
+void reset_page(PlaySettings& draft, std::vector<Input>& actions, const ProfilesView& view) {
+  section(i18n::tr("All settings"));
+  note(
+      i18n::tr("Puts every setting back to its default value: chain, HDR, grade and colors, sound, playback. "
+               "The engines folder is kept."));
+  if (ImGui::Button(i18n::tr("Reset all settings"))) {
+    PlaySettings fresh;
+    fresh.engines_dir = draft.engines_dir;
+    draft = fresh;
+    actions.emplace_back(EditProfile{.edit = core::edit::ResetProfile{.slot = view.active}});
+  }
   section(i18n::tr("Profile defaults"));
   note(i18n::tr("Resets the active profile (Ctrl+1 to Ctrl+9); other profiles are untouched."));
   if (ImGui::Button(i18n::tr("Reset profile")))
@@ -652,13 +651,39 @@ SettingsPanel::Result SettingsPanel::draw(const PlaySettings& running, const Set
       } else if (name == "Statistics") {
         stats_tab(draft_);
       } else if (name == "Reset") {
-        reset_page(actions, choices.profiles);
+        reset_page(draft_, actions, choices.profiles);
       }
     }
     panel::end_page();
     ImGui::EndChild();
     ImGui::PopStyleVar(2);
     ImGui::Checkbox(i18n::tr("Advanced settings"), &advanced_);
+    // Annuler et rétablir : un état n'est retenu que lorsque plus aucun curseur n'est tenu (un glissement
+    // compte pour un seul changement).
+    if (!ImGui::IsAnyItemActive() && draft_ != stable_) {
+      undo_.push_back(stable_);
+      if (undo_.size() > 100) undo_.erase(undo_.begin());
+      redo_.clear();
+      stable_ = draft_;
+    }
+    ImGui::SameLine();
+    ImGui::BeginDisabled(undo_.empty());
+    if (ImGui::Button(i18n::tr("Undo"))) {
+      redo_.push_back(draft_);
+      draft_ = undo_.back();
+      undo_.pop_back();
+      stable_ = draft_;
+    }
+    ImGui::EndDisabled();
+    ImGui::SameLine();
+    ImGui::BeginDisabled(redo_.empty());
+    if (ImGui::Button(i18n::tr("Redo"))) {
+      undo_.push_back(draft_);
+      draft_ = redo_.back();
+      redo_.pop_back();
+      stable_ = draft_;
+    }
+    ImGui::EndDisabled();
     // Un réglage de la chaîne fait à la main : le préréglage devient Personnalisé (les valeurs restent).
     if (draft_.preset != Preset::Custom && draft_.preset == before.preset &&
         preset_chain_differs(before, draft_))

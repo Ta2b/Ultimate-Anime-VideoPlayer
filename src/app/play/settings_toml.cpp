@@ -522,17 +522,9 @@ std::expected<PlaySettings, Refusal> settings_from_table(const toml::table& root
     if (!oled_known)
       reads.emplace_back(
           refuse(RefusalCode::FieldOutOfRange, std::format("grade.oled_black : « {} »", oled)));
-    bool known = false;
-    for (int i = 0; i < render::kGradePresetCount; ++i) {
-      const auto candidate = static_cast<render::GradePreset>(i);
-      if (render::preset_key(candidate) == preset) {
-        s.grade_preset = candidate;
-        known = true;
-      }
-    }
-    if (!known)
-      reads.emplace_back(refuse(RefusalCode::FieldOutOfRange, std::format("grade.preset : « {} »", preset)));
-    s.grade_values = with_preset(s.grade_preset, v);
+    // L'ancienne clé « preset » est lue et ignorée : plus de préréglages, les valeurs du fichier font foi.
+    s.grade_preset = render::GradePreset::Custom;
+    s.grade_values = v;
   }
   if (const toml::table* stats = section(root, "stats")) {
     reads.push_back(read(*stats, "stats", "all", s.stats.all));
@@ -685,7 +677,6 @@ std::string format_settings(const PlaySettings& s) {
   const auto hundredth = [](double v) { return std::round(v * 100.0) / 100.0; };
   const render::GradeSettings& g = s.grade_values;
   root.insert("grade", toml::table{{"enabled", s.grade},
-                                   {"preset", std::string(render::preset_key(s.grade_preset))},
                                    {"shadows", hundredth(g.shadows)},
                                    {"highlights", hundredth(g.highlights)},
                                    {"highlights_rtx", hundredth(g.highlights_rtx)},
