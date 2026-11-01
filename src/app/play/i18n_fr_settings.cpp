@@ -236,58 +236,8 @@ constexpr std::array kSettingsPages{
     Entry{"whole RIFE instead of fused RIFE", "RIFE entier à la place du RIFE fusionné"},
     Entry{"{} switches to {} (built the first time for this size)",
           "{} passe en {} (construit la première fois pour cette taille)"},
-    // Calibration du pic (settings_calibration.cpp).
-    Entry{"Peak calibration", "Calibration du pic"},
-    Entry{"The display receives no HDR: the calibration needs an HDR output.",
-          "L'écran ne reçoit pas de HDR : la calibration demande une sortie HDR."},
-    Entry{"Measures the real peak of the display with a test pattern, instead of the EDID value, which is "
-          "often wrong.",
-          "Mesure le vrai pic de l'écran avec une mire, au lieu de la valeur de l'EDID, souvent fausse."},
-    Entry{"Calibrate the peak", "Calibrer le pic"},
-    Entry{"Adaptive grade calibration", "Calibration du grade adaptatif"},
-    Entry{"Open a video on an HDR display to calibrate the adaptive grade.",
-          "Ouvrez une vidéo sur un écran HDR pour calibrer le grade adaptatif."},
-    Entry{
-        "Sets the two ends of the adaptive grade on this display: a dark scene, then a bright scene. The "
-        "result is kept for this display and drives the grade.",
-        "Règle les deux bouts du grade adaptatif sur cet écran : une scène sombre, puis une scène claire. Le "
-        "résultat est gardé pour cet écran et pilote le grade."},
-    Entry{"This display has a calibrated adaptive grade.", "Cet écran a un grade adaptatif calibré."},
-    Entry{"Calibrate the adaptive grade", "Calibrer le grade adaptatif"},
-    Entry{"Forget the grade calibration", "Oublier la calibration du grade"},
-    Entry{
-        "1/2 · Dark scene. Go to a dark scene (Re:Zero at night, for example), then set the middle gray, the "
-        "deep blacks and the colors until the picture looks right.",
-        "1/2 · Scène sombre. Allez sur une scène sombre (Re:Zero de nuit, par exemple), puis réglez le gris "
-        "moyen, les noirs profonds et les couleurs jusqu'à ce que l'image soit juste."},
-    Entry{"When in doubt, keep the colors low (0.10 or less).",
-          "Dans le doute, gardez les couleurs basses (0,10 ou moins)."},
-    Entry{
-        "2/2 · Bright scene. Go to a bright, warm scene (Slime at 18:20, for example), then set the middle "
-        "gray, the deep blacks and the colors cut until nothing turns red.",
-        "2/2 · Scène claire. Allez sur une scène claire et chaude (Slime à 18:20, par exemple), puis réglez "
-        "le gris moyen, les noirs profonds et la réduction des couleurs jusqu'à ce que plus rien ne vire au "
-        "rouge."},
     Entry{"The adaptive grade drives these settings: untick it to set them by hand.",
           "Le grade adaptatif pilote ces réglages : décochez-le pour les régler à la main."},
-    Entry{"Calibrated on this display: {} nits (used by Auto peak).",
-          "Calibré sur cet écran : {} nits (repris par le pic automatique)."},
-    Entry{"Forget the calibration", "Oublier la calibration"},
-    Entry{"Raise the slider until the small square disappears into its frame, then stop: that value is the "
-          "real peak of the display.",
-          "Montez le curseur jusqu'à ce que le petit carré disparaisse dans son cadre, puis arrêtez-vous : "
-          "cette valeur est le vrai pic de l'écran."},
-    Entry{"Square (nits)", "Carré (nits)"},
-    Entry{"Large window (50 %)", "Grande fenêtre (50 %)"},
-    Entry{"Many displays dim a large bright area (ABL): the 50 % window shows how much.",
-          "Beaucoup d'écrans baissent une grande zone claire (ABL) : la fenêtre à 50 % montre de combien."},
-    Entry{"Use {} nits as the peak", "Prendre {} nits comme pic"},
-    Entry{"The HDR peak goes from {} to {} nits: {} is used.",
-          "Le pic du HDR va de {} à {} nits : {} est retenu."},
-    Entry{"If the square never disappears, the display tone maps by itself: turn on HGIG, or turn off its "
-          "dynamic tone mapping, then try again.",
-          "Si le carré ne disparaît jamais, l'écran adapte les tons lui-même : activez HGIG, ou coupez son "
-          "adaptation dynamique des tons, puis recommencez."},
 };
 
 }  // namespace

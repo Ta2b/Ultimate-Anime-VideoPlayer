@@ -275,7 +275,9 @@ PlaceboScreen::Impl::~Impl() {
   grade.reset();
   ramp_grade.reset();
   pl_renderer_destroy(&ramp_renderer);
-  pl_dispatch_destroy(&pattern_dispatch);
+  calib_grade.reset();
+  pl_renderer_destroy(&calib_renderer);
+  if (vk != nullptr) pl_tex_destroy(vk->gpu, &calib_tex);
   osd.reset();
   overlays.reset();
   ring.clear(vk != nullptr ? vk->gpu : nullptr);

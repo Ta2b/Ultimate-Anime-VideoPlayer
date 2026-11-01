@@ -102,8 +102,8 @@ struct PlaceboScreen::Impl {
   // L'interface par-dessus la composition ; un refus est écrit au journal une fois, la lecture
   // continue sans elle.
   void draw_ui(const ImDrawData* ui, const pl_frame& target);
-  // La mire de calibration (placebo_pattern.cpp), écrite telle quelle dans la cible PQ.
-  std::expected<void, Refusal> draw_pattern(const HdrPattern& pattern, const pl_frame& target);
+  // L'image de la calibration du grade (placebo_grade.cpp), rendue à sa place avec son grade.
+  std::expected<void, Refusal> draw_calibration(const CalibrationShot& shot, const pl_frame& target);
   std::expected<void, Refusal> save_snapshot(const pl_frame* image, const pl_frame& target, OutputSize out,
                                              const ImDrawData* ui, const std::filesystem::path& path);
   std::shared_ptr<spdlog::logger> channel;
@@ -146,7 +146,11 @@ struct PlaceboScreen::Impl {
   // Mesure de la rampe du vrai noir : un renderer et un grade à part, pour ne toucher ni la
   // détection de pic ni l'état temporel du grade de la lecture.
   pl_renderer ramp_renderer = nullptr;
-  pl_dispatch pattern_dispatch = nullptr;  // la mire de calibration, créé à sa première image
+  // La calibration du grade : un renderer, un grade et la texture de l'image montrée, à part de la lecture.
+  pl_renderer calib_renderer = nullptr;
+  std::optional<render::Grade> calib_grade;
+  pl_tex calib_tex = nullptr;
+  int calib_id = -1;
   std::optional<render::Grade> ramp_grade;
   mutable std::uint64_t grade_frame_ns = 0;
   mutable std::vector<std::uint32_t> grade_gpu_us;

@@ -447,8 +447,7 @@ bool reset_page(PlaySettings& draft, std::vector<Input>& actions, const Profiles
   if (ImGui::Button(i18n::tr("Reset all settings"))) {
     PlaySettings fresh;
     fresh.engines_dir = draft.engines_dir;
-    fresh.display_peaks = draft.display_peaks;  // des mesures de l'écran, pas des réglages
-    fresh.display_grades = draft.display_grades;
+    fresh.display_grades = draft.display_grades;  // la calibration de l'écran, pas un réglage
     draft = fresh;
     actions.emplace_back(EditProfile{.edit = core::edit::ResetProfile{.slot = view.active}});
     reset_all = true;
@@ -487,6 +486,10 @@ void language_choice(const char* label, const char* none_label, std::string& tag
 }
 
 SettingsPanel::SettingsPanel() : export_(std::make_unique<ExportDraft>()) {}
+const CalibrationShot* SettingsPanel::calibration() const {
+  return open_ && grade_wizard_ && grade_wizard_->step > 0 ? &grade_wizard_->shot : nullptr;
+}
+
 SettingsPanel::~SettingsPanel() {
   if (prepare_.stop) prepare_.stop->request_stop();  // la tâche dépend du lecteur qui ouvre ce panneau
   bench_.stop();
@@ -630,8 +633,7 @@ SettingsPanel::Result SettingsPanel::draw(const PlaySettings& running, const Set
     panel::begin_page();
     {
       const std::string_view name = kPages[static_cast<std::size_t>(page_)].name;
-      if (name != "HDR") {  // la mire et la scène forcée ne restent que sur leur page
-        calibration_.reset();
+      if (name != "HDR") {  // la calibration et sa scène forcée ne restent que sur leur page
         if (grade_wizard_) grade_wizard_->step = 0;
         draft_.grade_values.adaptive_force = -1.0;
       }
@@ -655,9 +657,8 @@ SettingsPanel::Result SettingsPanel::draw(const PlaySettings& running, const Set
         fluidity_tab(draft_, choices);
       } else if (name == "HDR") {
         hdr_tab(draft_, choices);
-        if (peak_calibration(draft_, choices, calibration_)) result.reopen = draft_;
         if (!grade_wizard_) grade_wizard_ = std::make_unique<GradeWizard>();
-        grade_calibration(draft_, choices, *grade_wizard_);
+        grade_calibration(draft_, choices, *grade_wizard_, scale, io.DisplaySize.x - pad - width);
         if (advanced_) oled_sections(draft_, choices);
       } else if (name == "Colors") {
         grade_tab(draft_, choices);

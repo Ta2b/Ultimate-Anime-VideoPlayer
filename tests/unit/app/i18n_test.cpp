@@ -128,6 +128,7 @@ TEST_CASE("i18n: aucune chaîne française en dur dans les fichiers traduits", "
                                         "placebo_imgui.cpp",
                                         "placebo_open.cpp",
                                         "placebo_ring.cpp",
+                                        "placebo_grade.cpp",
                                         "placebo_screen.cpp",
                                         "placebo_snapshot.cpp",
                                         "player_engines.cpp",
@@ -145,7 +146,8 @@ TEST_CASE("i18n: aucune chaîne française en dur dans les fichiers traduits", "
                                         "vulkan_share.cpp",
                                         "default_player.cpp",
                                         "player.cpp",
-                                        "maxine_install.cpp"};
+                                        "maxine_install.cpp",
+                                        "system_peak.cpp"};
   const std::string accents = "(?:à|â|ç|é|è|ê|ë|î|ï|ô|û|ù|ü|œ|À|É|È|Ê|«|»)";
   const std::string body = "(?:\\\\.|[^\"\\\\])*";
   const std::regex literal("\"" + body + accents + body + "\"");

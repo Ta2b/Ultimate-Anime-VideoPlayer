@@ -19,6 +19,7 @@
 #include <libplacebo/swapchain.h>
 #include <libplacebo/vulkan.h>
 
+#include "app/play/calibration_shot.h"
 #include "app/play/osd_text.h"
 #include "app/play/placebo_impl.h"
 #include "app/play/placebo_screen.h"
@@ -232,6 +233,57 @@ std::expected<std::vector<double>, Refusal> PlaceboScreen::grade_ramp(std::span<
     nits.push_back(s.hdr_output ? pq_nits(code) : std::pow(code, params.sdr_gamma) * params.peak);
   }
   return nits;
+}
+
+std::expected<void, Refusal> PlaceboScreen::Impl::draw_calibration(const CalibrationShot& shot,
+                                                                   const pl_frame& target) {
+  const pl_gpu gpu = vk->gpu;
+  if (shot.width <= 0 || shot.height <= 0 ||
+      shot.rgba.size() < static_cast<std::size_t>(shot.width) * static_cast<std::size_t>(shot.height) * 4)
+    return refuse(RefusalCode::InputMismatch, "image de calibration incomplète");
+  if (calib_renderer == nullptr) calib_renderer = pl_renderer_create(log, gpu);
+  if (!calib_grade) {
+    auto created = render::Grade::create(gpu);
+    if (!created) return std::unexpected(std::move(created.error()));
+    calib_grade.emplace(std::move(*created));
+  }
+  if (calib_tex == nullptr || calib_id != shot.id) {
+    pl_tex_destroy(gpu, &calib_tex);
+    pl_tex_params tex{};
+    tex.w = shot.width;
+    tex.h = shot.height;
+    tex.format = pl_find_named_fmt(gpu, "rgba16");
+    tex.sampleable = true;
+    tex.initial_data = shot.rgba.data();
+    calib_tex = pl_tex_create(gpu, &tex);
+    if (calib_tex == nullptr)
+      return refuse(RefusalCode::VendorCallFailed, "texture de l'image de calibration");
+    calib_id = shot.id;
+  }
+  pl_frame image{};
+  image.num_planes = 1;
+  image.planes[0].texture = calib_tex;
+  image.planes[0].components = 3;
+  for (int c = 0; c < 3; ++c) image.planes[0].component_mapping[c] = c;
+  image.repr = pl_color_repr_rgb;
+  image.color = pl_color_space{.primaries = PL_COLOR_PRIM_BT_709, .transfer = PL_COLOR_TRC_BT_1886};
+  image.crop = {0, 0, static_cast<float>(shot.width), static_cast<float>(shot.height)};
+  pl_frame place = target;
+  place.overlays = nullptr;
+  place.num_overlays = 0;
+  place.crop = {static_cast<float>(shot.x0), static_cast<float>(shot.y0), static_cast<float>(shot.x1),
+                static_cast<float>(shot.y1)};
+  pl_render_params params = pl_render_default_params;
+  params.border = PL_CLEAR_SKIP;  // autour de l'image, l'écran reste tel quel (noir, interface)
+  if (const std::optional<render::GradeParams> graded = grade_for(shot.grade, target.color)) {
+    if (*graded != calib_grade->params()) calib_grade->set_params(*graded);
+    const std::span<const pl_hook* const> hooks = calib_grade->hooks();
+    params.hooks = hooks.data();
+    params.num_hooks = static_cast<int>(hooks.size());
+  }
+  if (!pl_render_image(calib_renderer, &image, &place, &params))
+    return refuse(RefusalCode::VendorCallFailed, "pl_render_image (calibration)");
+  return {};
 }
 
 }  // namespace ajp::app::play

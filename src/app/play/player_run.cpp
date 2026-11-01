@@ -103,8 +103,7 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
   log->info("{}", describe_hdr(p.screen.window()));
   const std::string screen_key = p.display ? display_key(*p.display) : std::string();
   settings = with_calibrated_grade(std::move(settings), screen_key);
-  const int auto_peak =
-      auto_peak_for(settings, screen_key, auto_peak_nits(content_peak_nits(p.screen.window())));
+  const int auto_peak = auto_peak_nits(content_peak_nits(p.screen.window()));
   int peak_nits = 0;
   // La sortie est HDR10 : l'écran en reçoit, et --sdr ne l'a pas coupée. Sinon (sortie SDR),
   // TrueHDR ferait du HDR que libplacebo ramènerait aussitôt en SDR ; le grade SDR prend sa place.
