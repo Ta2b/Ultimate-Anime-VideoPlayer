@@ -53,7 +53,11 @@ namespace ajp::gpu {
 // 14 : Backend::derive_span_fp8 (dérivation native du paquet « .span8 », docs/span-fp8-cutlass.md).
 // 15 : BackendCaps::gmfss_fused (GMFSS fusionné : la paire en deux moteurs, les caractéristiques d'une image
 // et le flot, avec des tenseurs d'entrée et de sortie décalés dans un tampon ; docs/gmfss-fusionne.md).
-inline constexpr int kBackendAbi = 15;
+// 16 : KernelOps::scene_stats et ses voisines, ajoutées au milieu de la table virtuelle par le grade
+// adaptatif (rc.6) sans changer de version : un module TensorRT d'avant appelait write_ring_true_hdr à leur
+// place et plantait au lancement d'une vidéo en RTX HDR. Toute virtuelle ajoutée ou déplacée dans KernelOps
+// ou Backend demande une nouvelle version.
+inline constexpr int kBackendAbi = 16;
 
 using DeviceUuid = ajp::DeviceUuid;
 
