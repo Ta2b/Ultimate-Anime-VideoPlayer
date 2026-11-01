@@ -95,7 +95,7 @@ std::vector<std::string> system_locales(const std::filesystem::path& home) {
       if (locales[i]->country != nullptr) tag += std::string("_") + locales[i]->country;
       out.push_back(std::move(tag));
     }
-    SDL_free(static_cast<void*>(locales));
+    SDL_free(reinterpret_cast<void*>(locales));  // un seul bloc, pointeurs compris
   }
   return out;
 }

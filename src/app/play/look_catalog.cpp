@@ -39,7 +39,7 @@ void collect_cubes(const std::filesystem::path& dir, std::vector<std::string>& f
 std::vector<LookEntry> list_looks(const std::filesystem::path& luts_dir) {
   std::vector<LookEntry> entries;
   for (const render::BuiltinLook& look : render::builtin_looks())
-    entries.push_back({std::string(look.key), std::string(i18n::tr(look.label.data()))});
+    entries.push_back({std::string(look.key), std::string(i18n::tr_view(look.label))});
   std::vector<std::string> files;
   collect_cubes(luts_dir,
                 files);  // ceux de l'utilisateur d'abord, puis ceux livrés : un nom n'apparaît qu'une fois

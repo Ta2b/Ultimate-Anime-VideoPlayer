@@ -138,7 +138,7 @@ void look_section(PlaySettings& d, const SettingsChoices& choices) {
   const auto label_of = [&](const std::string& key) -> std::string {
     if (key.empty()) return i18n::tr("None");
     for (const render::BuiltinLook& look : render::builtin_looks())
-      if (look.key == key) return i18n::tr(look.label.data());
+      if (look.key == key) return std::string(i18n::tr_view(look.label));
     return key;
   };
   const std::vector<LookEntry> entries = list_looks(choices.luts_dir);
