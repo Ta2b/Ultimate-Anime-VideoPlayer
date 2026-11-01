@@ -88,12 +88,17 @@ constexpr std::array kSettingsPages{
     Entry{"Redo", "Rétablir"},
     Entry{"Colors cut, bright scene", "Couleurs réduites, scène claire"},
     Entry{"Middle gray, bright scene", "Gris moyen, scène claire"},
+    Entry{"Middle gray, glow scene", "Gris moyen, scène avec éclat"},
+    Entry{"Deep blacks, glow scene", "Noirs profonds, scène avec éclat"},
+    Entry{"Colors, glow scene", "Couleurs, scène avec éclat"},
     Entry{"The sliders above and the middle gray are for dark scenes; the values here apply to bright "
-          "scenes, blended with the source's smoothed average brightness. Works with RTX HDR and with "
-          "Adaptive HDR (any GPU).",
+          "scenes, blended with the source's smoothed average brightness. A dark scene with a bright "
+          "glow (magic circle, lamp at night) is judged by its background and takes its own values. "
+          "Works with RTX HDR and with Adaptive HDR (any GPU).",
           "Les curseurs ci-dessus et le gris moyen valent pour les scènes sombres ; les valeurs d'ici valent "
-          "pour les scènes claires, mélangées selon la luminosité moyenne lissée de la source. Fonctionne "
-          "avec RTX HDR et avec le HDR adaptatif (tous GPU)."},
+          "pour les scènes claires, mélangées selon la luminosité moyenne lissée de la source. "
+          "Une scène sombre avec un éclat (cercle magique, lampe dans la nuit) se juge sur son fond et prend "
+          "ses propres valeurs. Fonctionne avec RTX HDR et avec le HDR adaptatif (tous GPU)."},
     Entry{"Cool sky", "Ciel froid"},
     Entry{"Warm pastel", "Pastel chaud"},
     Entry{"Crisp flats", "Aplats nets"},

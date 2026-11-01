@@ -29,25 +29,29 @@ bool wizard_slider(const char* label, double& value, core::Range<double> range) 
   return true;
 }
 
+// L'étape de la calibration en cours (wizard.step de 1 à 3).
+CalibrationStep step_of(const GradeWizard& wizard) {
+  return static_cast<CalibrationStep>(std::clamp(wizard.step, 1, kCalibrationSteps) - 1);
+}
+
 // Le plan d'exemple de l'étape : sa navigation, ce qu'il faut y voir, la place de la vidéo à gauche du
 // panneau (16:9 dans la place libre), et la vidéo de calibration tenue en pause sur ce plan.
 void example_image(const SettingsChoices& choices, GradeWizard& wizard, float scale, float panel_left,
                    std::vector<Input>& actions) {
-  const bool dark = wizard.step == 1;
-  const CalibrationImage image = calibration_image(dark, wizard.image);
-  panel::note(i18n::tr_format("Example {}/{} · {}", wizard.image + 1, kCalibrationPerStep,
-                              i18n::tr_view(image.title)));
-  if (ImGui::Button(i18n::tr("Previous example")))
-    wizard.image = (wizard.image + kCalibrationPerStep - 1) % kCalibrationPerStep;
+  const CalibrationStep step = step_of(wizard);
+  const int count = calibration_count(step);
+  const CalibrationImage image = calibration_image(step, wizard.image);
+  panel::note(i18n::tr_format("Example {}/{} · {}", wizard.image + 1, count, i18n::tr_view(image.title)));
+  if (ImGui::Button(i18n::tr("Previous example"))) wizard.image = (wizard.image + count - 1) % count;
   ImGui::SameLine();
-  if (ImGui::Button(i18n::tr("Next example"))) wizard.image = (wizard.image + 1) % kCalibrationPerStep;
+  if (ImGui::Button(i18n::tr("Next example"))) wizard.image = (wizard.image + 1) % count;
   panel::tip(std::string(i18n::tr_view(image.guidance)));
   const std::filesystem::path clip = calibration_clip();
   wizard.showing = !clip.empty() && choices.source_file == clip;
   if (!wizard.showing) {
     panel::note(i18n::tr("Opening the calibration video…"));
   } else {
-    const CalibrationImage shown = calibration_image(dark, wizard.image);
+    const CalibrationImage shown = calibration_image(step, wizard.image);
     // Chaque étape ne montre que ses plans : la barre de lecture, les chapitres ou les flèches qui mènent
     // ailleurs dans la vidéo y ramènent.
     const std::int64_t begin = shown.id * kCalibrationSegmentUs;
@@ -86,8 +90,9 @@ void calibration_start(PlaySettings& d, const SettingsChoices& choices, GradeWiz
   // Demandée par l'assistant de premier démarrage : un nouveau profil, sans attendre le bouton.
   const bool asked = std::exchange(wizard.autostart, false);
   panel::note(
-      i18n::tr("Sets the two ends of the adaptive grade on this display: a dark scene, then a bright "
-               "scene. The result is kept for this display and drives the grade."));
+      i18n::tr("Sets the adaptive grade on this display in three steps: a dark scene, a dark scene with a "
+               "bright glow, then a bright scene. The result is kept for this display and drives the "
+               "grade."));
   const std::vector<std::string> names = grade_profiles(d, key);
   const PlaySettings::DisplayGrade* active = calibrated_grade(d, key);
   if (!names.empty()) {
@@ -149,7 +154,7 @@ void calibration_start(PlaySettings& d, const SettingsChoices& choices, GradeWiz
   wizard.return_file = already ? std::filesystem::path() : choices.source_file;
   wizard.return_us = already ? 0 : choices.position_us;
   wizard.return_paused = choices.paused;
-  const CalibrationImage first = calibration_image(true, 0);
+  const CalibrationImage first = calibration_image(CalibrationStep::Dark, 0);
   wizard.sought = first.id;
   actions.emplace_back(PlayFile{.file = clip, .start_us = first.at_us, .paused = true});
 }
@@ -182,39 +187,51 @@ void grade_calibration(PlaySettings& d, const SettingsChoices& choices, GradeWiz
     panel::end_group();
     return;
   }
-  const bool dark = wizard.step == 1;
-  g.adaptive_force = dark ? 0.0 : 1.0;
-  if (dark) {
+  const CalibrationStep step = step_of(wizard);
+  const auto gray_slider = [](const char* label, double& value) {
+    auto shown = static_cast<float>(value);
+    if (ImGui::SliderFloat(label, &shown, static_cast<float>(kMiddleGray.lo),
+                           static_cast<float>(kMiddleGray.hi), "%.0f", ImGuiSliderFlags_AlwaysClamp))
+      value = std::clamp(std::round(static_cast<double>(shown)), kMiddleGray.lo, kMiddleGray.hi);
+  };
+  g.adaptive_force = step == CalibrationStep::Dark ? 0.0 : step == CalibrationStep::Bright ? 1.0 : kForceGlow;
+  if (step == CalibrationStep::Dark) {
     panel::note(
-        i18n::tr("1/2 · Dark scene. Set the middle gray, the deep blacks and the colors while looking at "
+        i18n::tr("1/3 · Dark scene. Set the middle gray, the deep blacks and the colors while looking at "
                  "the example on the left, played like your episodes."));
     ImGui::SliderInt(i18n::tr("Mid gray"), &d.true_hdr_gray, limits::kTrueHdrGray.lo, limits::kTrueHdrGray.hi,
                      "%d", ImGuiSliderFlags_AlwaysClamp);
     wizard_slider(i18n::tr("Deep blacks"), g.shadows, kShadows);
     wizard_slider(i18n::tr("Colors"), g.vibrance_rtx, kVibrance);
     panel::tip(i18n::tr("When in doubt, keep the colors low (0.10 or less)."));
+  } else if (step == CalibrationStep::Glow) {
+    panel::note(
+        i18n::tr("2/3 · Dark scene with a glow (magic, a lamp at night). The background stays that of a "
+                 "dark scene; set the middle gray, the deep blacks and the colors so the glow keeps its "
+                 "shape and its halo stays soft."));
+    gray_slider(i18n::tr("Middle gray, glow scene"), g.adaptive_glow_gray);
+    wizard_slider(i18n::tr("Deep blacks, glow scene"), g.adaptive_glow_shadows, kShadows);
+    wizard_slider(i18n::tr("Colors, glow scene"), g.adaptive_glow_vibrance, kVibrance);
   } else {
     panel::note(
-        i18n::tr("2/2 · Bright scene. Set the middle gray, the deep blacks and the colors cut while "
+        i18n::tr("3/3 · Bright scene. Set the middle gray, the deep blacks and the colors cut while "
                  "looking at the example on the left, played like your episodes."));
-    auto gray = static_cast<float>(g.adaptive_gray);
-    if (ImGui::SliderFloat(i18n::tr("Middle gray, bright scene"), &gray, static_cast<float>(kMiddleGray.lo),
-                           static_cast<float>(kMiddleGray.hi), "%.0f", ImGuiSliderFlags_AlwaysClamp))
-      g.adaptive_gray = std::clamp(std::round(static_cast<double>(gray)), kMiddleGray.lo, kMiddleGray.hi);
+    gray_slider(i18n::tr("Middle gray, bright scene"), g.adaptive_gray);
     wizard_slider(i18n::tr("Deep blacks, bright scene"), g.adaptive_shadows, kShadows);
     wizard_slider(i18n::tr("Colors cut, bright scene"), g.adaptive_vibrance_cut, kAdaptiveCut);
   }
   example_image(choices, wizard, scale, panel_left, actions);
-  if (!dark) {
+  const bool last = step == CalibrationStep::Bright;
+  if (step != CalibrationStep::Dark) {
     if (ImGui::Button(i18n::tr("Back"))) {
-      wizard.step = 1;
+      --wizard.step;
       wizard.image = 0;
     }
     ImGui::SameLine();
   }
-  if (ImGui::Button(dark ? i18n::tr("Next") : i18n::tr("Finish"))) {
-    if (dark) {
-      wizard.step = 2;
+  if (ImGui::Button(last ? i18n::tr("Finish") : i18n::tr("Next"))) {
+    if (!last) {
+      ++wizard.step;
       wizard.image = 0;
     } else {
       wizard.step = 0;

@@ -48,17 +48,20 @@ TEST_CASE("pic du système : la sortie de KWin en HDR, sa crête et son blanc", 
   CHECK_FALSE(parse_kwin_output("not json", "DP-1").has_value());
 }
 
-TEST_CASE("calibration du grade : quatre plans d'anime sombres et quatre clairs, guidés et traduits",
+TEST_CASE("calibration du grade : plans d'anime sombres, sombres avec éclat et clairs, guidés et traduits",
           "[calibration]") {
   using namespace ajp::app::play;
   std::set<int> ids;
   std::set<std::int64_t> instants;
-  for (const bool dark : {true, false}) {
-    for (int i = 0; i < kCalibrationPerStep; ++i) {
-      const CalibrationImage image = calibration_image(dark, i);
+  int previous = -1;
+  for (const CalibrationStep step : {CalibrationStep::Dark, CalibrationStep::Glow, CalibrationStep::Bright}) {
+    CHECK(calibration_count(step) >= 2);
+    for (int i = 0; i < calibration_count(step); ++i) {
+      const CalibrationImage image = calibration_image(step, i);
       ids.insert(image.id);
       instants.insert(image.at_us);
-      CHECK((image.id < kCalibrationPerStep) == dark);
+      CHECK(image.id == previous + 1);  // les étapes se suivent dans la vidéo, sans trou
+      previous = image.id;
       // Au milieu de son plan de la vidéo de calibration, loin des coupes.
       CHECK(image.at_us == image.id * kCalibrationSegmentUs + kCalibrationSegmentUs / 2);
       i18n::set_language(i18n::Language::French);
@@ -67,8 +70,10 @@ TEST_CASE("calibration du grade : quatre plans d'anime sombres et quatre clairs,
       i18n::set_language(i18n::Language::English);
     }
   }
-  CHECK(ids.size() == 2 * kCalibrationPerStep);
-  CHECK(instants.size() == 2 * kCalibrationPerStep);
+  // Un index hors de l'étape reste dans l'étape.
+  CHECK(calibration_image(CalibrationStep::Glow, 9).id == calibration_image(CalibrationStep::Glow, 1).id);
+  CHECK(ids.size() == kCalibrationImages);
+  CHECK(instants.size() == kCalibrationImages);
   CHECK(calibration_clip().filename() == "calibration.mkv");
 }
 

@@ -12,10 +12,10 @@ constexpr std::array kCalibration{
     Entry{"The display receives no HDR: the calibration needs an HDR output.",
           "L'écran ne reçoit pas de HDR : la calibration demande une sortie HDR."},
     Entry{
-        "Sets the two ends of the adaptive grade on this display: a dark scene, then a bright scene. The "
-        "result is kept for this display and drives the grade.",
-        "Règle les deux bouts du grade adaptatif sur cet écran : une scène sombre, puis une scène claire. Le "
-        "résultat est gardé pour cet écran et pilote le grade."},
+        "Sets the adaptive grade on this display in three steps: a dark scene, a dark scene with a bright "
+        "glow, then a bright scene. The result is kept for this display and drives the grade.",
+        "Règle le grade adaptatif sur cet écran en trois temps : une scène sombre, une scène sombre avec un "
+        "éclat lumineux, puis une scène claire. Le résultat est gardé pour cet écran et pilote le grade."},
     Entry{"This display has a calibrated adaptive grade.", "Cet écran a un grade adaptatif calibré."},
     Entry{"Grade profile", "Profil de grade"},
     Entry{"Delete this profile", "Supprimer ce profil"},
@@ -25,15 +25,21 @@ constexpr std::array kCalibration{
     Entry{"Profile {}", "Profil {}"},
     Entry{"This display does not give its identity (EDID): the calibration cannot be kept.",
           "Cet écran ne donne pas son identité (EDID) : la calibration ne peut pas être gardée."},
-    Entry{"1/2 · Dark scene. Set the middle gray, the deep blacks and the colors while looking at the "
+    Entry{"1/3 · Dark scene. Set the middle gray, the deep blacks and the colors while looking at the "
           "example on the left, played like your episodes.",
-          "1/2 · Scène sombre. Réglez le gris moyen, les noirs profonds et les couleurs en regardant "
+          "1/3 · Scène sombre. Réglez le gris moyen, les noirs profonds et les couleurs en regardant "
           "l'exemple à gauche, lu comme vos épisodes."},
     Entry{"When in doubt, keep the colors low (0.10 or less).",
           "Dans le doute, gardez les couleurs basses (0,10 ou moins)."},
-    Entry{"2/2 · Bright scene. Set the middle gray, the deep blacks and the colors cut while looking at the "
+    Entry{"2/3 · Dark scene with a glow (magic, a lamp at night). The background stays that of a dark "
+          "scene; set the middle gray, the deep blacks and the colors so the glow keeps its shape and its "
+          "halo stays soft.",
+          "2/3 · Scène sombre avec éclat (magie, lampe dans la nuit). Le fond reste celui d'une scène "
+          "sombre ; réglez le gris moyen, les noirs profonds et les couleurs pour que l'éclat garde sa forme "
+          "et que son halo reste doux."},
+    Entry{"3/3 · Bright scene. Set the middle gray, the deep blacks and the colors cut while looking at the "
           "example on the left, played like your episodes.",
-          "2/2 · Scène claire. Réglez le gris moyen, les noirs profonds et la réduction des couleurs en "
+          "3/3 · Scène claire. Réglez le gris moyen, les noirs profonds et la réduction des couleurs en "
           "regardant l'exemple à gauche, lu comme vos épisodes."},
     Entry{"The calibration video is missing (calibration/calibration.mkv next to the player): reinstall "
           "the player.",
@@ -67,22 +73,27 @@ constexpr std::array kCalibration{
     Entry{"The swirl stays a bright green with lighter edges, and its glow on the steps on the right is a "
           "soft, dark green. Ram's blouse stays white with a slight green tint, her skirt a pale turquoise."
           " The bricks of the wall on the left can still be seen in the dark. Neon or flat green: lower "
-          "Colors. Bricks lost in black: lower Deep blacks.",
+          "Colors, glow scene. Bricks lost in black: lower Deep blacks, glow scene.",
           "Le tourbillon reste d'un vert vif aux bords plus clairs, et sa lueur sur les marches à droite "
           "est d'un vert sombre et doux. Le chemisier de Ram reste blanc à peine teinté de vert, sa jupe "
           "d'un turquoise pâle. Les briques du mur à gauche se devinent encore dans le noir. Vert fluo ou "
-          "plat : baissez Couleurs. Briques perdues dans le noir : baissez Noirs profonds."},
+          "plat : baissez Couleurs, scène avec éclat. Briques perdues dans le noir : baissez Noirs profonds, "
+          "scène "
+          "avec éclat."},
     Entry{"Re:Zero · Rem's glowing horn", "Re:Zero · la corne lumineuse de Rem"},
     Entry{"The horn glows white at its core, with a violet halo that stays around the head. Rem's blue hair"
           " keeps its strands, her collar stays a soft pink, and the cloak she lies on stays a dark reddish"
           " brown with visible folds. The wall behind stays a dark grey blue. Halo spreading as a flat "
-          "magenta, or a glaring pink collar: lower Colors. Folds of the cloak lost in black: lower Deep "
-          "blacks or raise Mid gray.",
+          "magenta, or a glaring pink collar: lower Colors, glow scene. Folds of the cloak lost in black: "
+          "lower Deep blacks, glow scene, or raise Middle gray, glow scene. Glaring white core: lower "
+          "Middle gray, glow scene.",
           "La corne brille de blanc en son cœur, avec un halo violet qui reste autour de la tête. Les "
           "cheveux bleus de Rem gardent leurs mèches, son col reste d'un rose doux, et la cape sur laquelle"
           " elle est couchée reste d'un brun rouge sombre aux plis visibles. Le mur derrière reste d'un "
-          "gris bleu sombre. Halo étalé en magenta plat, ou col d'un rose criard : baissez Couleurs. Plis "
-          "de la cape perdus dans le noir : baissez Noirs profonds ou montez Gris moyen."},
+          "gris bleu sombre. Halo étalé en magenta plat, ou col d'un rose criard : baissez Couleurs, scène "
+          "avec éclat. Plis de la cape perdus dans le noir : baissez Noirs profonds, scène avec éclat, ou "
+          "montez Gris moyen, scène avec éclat. Cœur blanc éblouissant : baissez Gris moyen, scène avec "
+          "éclat."},
     Entry{"Re:Zero · the dragon under the blue sky", "Re:Zero · le dragon sous le ciel bleu"},
     Entry{"The sky stays a deep blue with light, wispy clouds you can tell apart; the white pillar keeps "
           "its grooves and the grey shading on its right side; the dragon's scales and the dark gaps of its"

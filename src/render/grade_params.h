@@ -55,6 +55,14 @@ inline constexpr core::Range<double> kExpand{0.0, 1.0};
 inline constexpr core::Range<double> kAdaptiveLuma{1.0, 99.0};
 // Limiteur OLED : APL lissé (nits) où la modération des éclats commence, puis est complète.
 inline constexpr core::Range<double> kAblNits{20.0, 2000.0};
+// GradeSettings::adaptive_force : les bouts de la courbe que la calibration tient.
+inline constexpr double kForceGlow = 2.0;
+constexpr bool forced_bright(double force) {
+  return force >= 0.5 && force < 1.5;
+}
+constexpr bool forced_glow(double force) {
+  return force >= 1.5;
+}
 // Pic du grade quand l'écran ne le dit pas (DisplayInfo par défaut).
 inline constexpr double kDefaultPeakNits = 1000.0;
 // Entrée de l'émulation TrueHDR : le blanc SDR placé à 203 nits.
@@ -86,8 +94,15 @@ struct GradeSettings {
   // claires et chaudes (rouges, oranges) sursaturent sinon.
   double adaptive_vibrance_cut = 0.0;
   double adaptive_gray = 30.0;
-  // Calibration du grade adaptatif : la scène tenue pour sombre (0) ou claire (1) quoi qu'elle soit, le temps
-  // de régler ce bout-là ; négatif : selon la scène. Jamais écrit dans play.toml.
+  // Scène sombre avec un éclat (cercle magique, corne lumineuse, lampe dans la nuit) : le fond d'une scène
+  // sombre, avec un pic net sur une petite part de l'image. Elle se classe sur son fond, pas sur la moyenne
+  // que l'éclat tire vers le haut, et prend ses propres gris moyen, noirs et couleurs, pour tenir le halo.
+  double adaptive_glow_gray = 40.0;
+  double adaptive_glow_shadows = 0.20;
+  double adaptive_glow_vibrance = 0.05;
+  // Calibration du grade adaptatif : la scène tenue pour sombre (0), claire (1) ou sombre avec éclat
+  // (kForceGlow) quoi qu'elle soit, le temps de régler ce bout-là ; négatif : selon la scène. Jamais écrit
+  // dans play.toml.
   double adaptive_force = -1.0;
   double punch_base = 0.0;   // préréglage : contraste en plus, en sortie du grade (0 : aucun)
   double chroma_base = 0.0;  // préréglage : saturation en plus (0 : aucune)
@@ -202,6 +217,13 @@ struct GradeParams {
   double ad_vibrance = 0.0;
   double ad_em_base = 120.0;
   double ad_em_pow = 6.0;
+  // Scène sombre avec éclat (GradeSettings::adaptive_glow_*) : son poids vient de la mesure de la scène,
+  // ou gl_force (0 à 1) pendant la calibration ; négatif : selon la scène.
+  double gl_force = -1.0;
+  double gl_shadows = 0.20;
+  double gl_vibrance = 0.05;
+  double gl_em_base = 160.0;
+  double gl_em_pow = 6.0;
   friend bool operator==(const GradeParams&, const GradeParams&) = default;
 };
 

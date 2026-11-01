@@ -88,6 +88,7 @@ vec4 hook() {
 //!VAR float cut
 //!VAR float ready
 //!VAR float bright
+//!VAR float glow_slow
 //!VAR int width
 //!VAR int height
 //!VAR float history[32768]
@@ -98,27 +99,29 @@ vec4 hook() {
 //!SAVE AJG_MEAN8
 //!WIDTH 8
 //!HEIGHT 8
-//!COMPONENTS 3
+//!COMPONENTS 4
 //!DESC AnimeJaNai HDR grade - moyenne de scene 8x8
 
 // Moyenne de la carte de zone par 1/64 d'image : PQ et lumiere lineaire (nits / 10000), et la
-// part des zones claires (au-dessus de 70 % du blanc SDR : ciel, murs blancs, neige).
+// part des zones claires (au-dessus de 70 % du blanc SDR : ciel, murs blancs, neige), et la somme du PQ des
+// autres zones (le fond, sans les éclats).
 // 16 x 16 lectures bilineaires reparties sur la zone couverte par chaque texel.
 float stats_linear(float e) {
     float p = pow(clamp(e, 0.0, 1.0), 1.0 / 78.84375);
     return pow(max(p - 0.8359375, 0.0) / max(18.8515625 - 18.6875 * p, 1e-6), 6.27739463);
 }
 vec4 hook() {
-    vec3 acc = vec3(0.0);
+    vec4 acc = vec4(0.0);
     float bright = 0.7 * sdr_white / 10000.0;
     for (int j = 0; j < 16; j++)
     for (int i = 0; i < 16; i++) {
         vec2 o = ((vec2(float(i), float(j)) + 0.5) / 16.0 - 0.5) / 8.0;
         float v = AJG_AREA_tex(AJG_AREA_pos + o).x;
         float lin = stats_linear(v);
-        acc += vec3(v, lin, lin > bright ? 1.0 : 0.0);
+        bool lit = lin > bright;
+        acc += vec4(v, lin, lit ? 1.0 : 0.0, lit ? 0.0 : v);
     }
-    return vec4(acc / 256.0, 1.0);
+    return acc / 256.0;
 }
 
 //!HOOK OUTPUT
@@ -126,15 +129,15 @@ vec4 hook() {
 //!SAVE AJG_MEAN
 //!WIDTH 1
 //!HEIGHT 1
-//!COMPONENTS 3
+//!COMPONENTS 4
 //!DESC AnimeJaNai HDR grade - moyenne de scene
 
 vec4 hook() {
-    vec3 acc = vec3(0.0);
+    vec4 acc = vec4(0.0);
     for (int j = 0; j < 8; j++)
     for (int i = 0; i < 8; i++)
-        acc += AJG_MEAN8_tex((vec2(float(i), float(j)) + 0.5) / 8.0).xyz;
-    return vec4(acc / 64.0, 1.0);
+        acc += AJG_MEAN8_tex((vec2(float(i), float(j)) + 0.5) / 8.0);
+    return acc / 64.0;
 }
 
 //!HOOK OUTPUT
@@ -152,7 +155,7 @@ vec4 hook() {
 // coutait 3 ms par image en D3D11.
 void hook() {
     ivec2 size = ivec2(AJG_AREA_size);
-    vec3 mean = AJG_MEAN_tex(vec2(0.5)).xyz;
+    vec4 mean = AJG_MEAN_tex(vec2(0.5));
     float mean_pq = mean.x;
     float mean_nits = 10000.0 * mean.y;
     // Changement de plan, premiere image ou nouvelle taille : pas d'historique.
@@ -166,7 +169,15 @@ void hook() {
         apl = reset ? mean_nits : mix(apl, mean_nits, 0.1);
         // Code PQ moyen très lissé (une à deux secondes de vidéo), remis à la mesure à chaque changement de plan :
         // la luminosité de la scène pour le grade adaptatif des routes émulées (tous GPU).
-        pq_slow = reset ? mean_pq : mix(pq_slow, mean_pq, 0.02);
+        // Scène sombre avec éclat : un fond sombre (le PQ moyen des zones hors éclats) et une petite part de
+        // zones claires (0,2 à 2 % : un cercle magique, une corne, une lampe ; au-delà de 12 %, une scène
+        // claire). Elle se classe sur son fond : l'éclat ne la fait pas passer pour claire.
+        float bg_pq = mean.w / max(1.0 - mean.z, 1e-3);
+        float glow = smoothstep(0.002, 0.02, mean.z) * (1.0 - smoothstep(0.12, 0.30, mean.z))
+                   * (1.0 - smoothstep(ad_lo, max(ad_hi, ad_lo + 1e-3), bg_pq));
+        float scene_pq = mix(mean_pq, bg_pq, glow);
+        pq_slow = reset ? scene_pq : mix(pq_slow, scene_pq, 0.02);
+        glow_slow = reset ? glow : mix(glow_slow, glow, 0.02);
         bright = reset ? mean.z : mix(bright, mean.z, 0.1);
     }
     prev_pq = mean_pq;
@@ -176,8 +187,9 @@ void hook() {
     ready = 1.0;
     // x : APL lisse (nits), y : changement de plan, z : moyenne de l'image, w : part claire lissee.
     imageStore(out_image, ivec2(0, 0), vec4(apl, cut, mean_nits, bright));
-    // Deuxième texel : x : code PQ moyen très lissé.
-    imageStore(out_image, ivec2(1, 0), vec4(pq_slow, 0.0, 0.0, 1.0));
+    // Deuxième texel : x : code PQ de la scène très lissé (son fond quand elle a un éclat), y : poids de la
+    // scène sombre avec éclat, lissé pareil.
+    imageStore(out_image, ivec2(1, 0), vec4(pq_slow, glow_slow, 0.0, 1.0));
 }
 
 //!HOOK OUTPUT

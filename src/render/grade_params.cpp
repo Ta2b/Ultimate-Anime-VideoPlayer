@@ -74,9 +74,10 @@ void apply_adaptive(const GradeSettings& s, double peak, bool sdr_out, GradePara
   p.ad_lo = luma_to_pq(s.adaptive_lo);
   p.ad_hi = luma_to_pq(s.adaptive_hi);
   if (s.adaptive_force >= 0.0) {  // les seuils hors de [0, 1] : le smoothstep du shader rend 0 ou 1
-    const bool bright = s.adaptive_force >= 0.5;
+    const bool bright = grade_limits::forced_bright(s.adaptive_force);
     p.ad_lo = bright ? -2.0 : 2.0;
     p.ad_hi = bright ? -1.0 : 3.0;
+    p.gl_force = grade_limits::forced_glow(s.adaptive_force) ? 1.0 : 0.0;
   }
   p.ad_shadows = shadows_effect(s.adaptive_shadows);
   // La vibrance suit la couleur (ciel bleu saturé), que le shader ne mesure pas : seule la part retirée
@@ -84,10 +85,19 @@ void apply_adaptive(const GradeSettings& s, double peak, bool sdr_out, GradePara
   p.ad_vibrance = p.vibrance * (1.0 - std::clamp(s.adaptive_vibrance_cut, 0.0, 1.0));
   p.ad_em_base = p.em_base;
   p.ad_em_pow = p.em_pow;
+  // La scène sombre avec éclat : ses noirs et ses couleurs à elle, sa courbe si elle est émulée.
+  p.gl_shadows = shadows_effect(s.adaptive_glow_shadows);
+  p.gl_vibrance = vibrance_effect(s.adaptive_glow_vibrance);
+  p.gl_em_base = p.em_base;
+  p.gl_em_pow = p.em_pow;
   if (p.emulate > 0.5) {
-    const double gray = s.adaptive_gray;
-    p.ad_em_base = std::clamp(4.0 * gray, 40.0, sdr_out ? 400.0 : std::min(400.0, 0.5 * peak));
-    p.ad_em_pow = std::clamp(6.0 * std::pow(50.0 / gray, 0.35), 2.0, 16.0);
+    const double top = sdr_out ? 400.0 : std::min(400.0, 0.5 * peak);
+    const auto base = [top](double gray) { return std::clamp(4.0 * gray, 40.0, top); };
+    const auto power = [](double gray) { return std::clamp(6.0 * std::pow(50.0 / gray, 0.35), 2.0, 16.0); };
+    p.ad_em_base = base(s.adaptive_gray);
+    p.ad_em_pow = power(s.adaptive_gray);
+    p.gl_em_base = base(s.adaptive_glow_gray);
+    p.gl_em_pow = power(s.adaptive_glow_gray);
   }
 }
 
@@ -208,7 +218,10 @@ std::expected<void, Refusal> check_grade_settings(const GradeSettings& s) {
                              check("adaptive_shadows", s.adaptive_shadows, kShadows),
                              check("adaptive_vibrance", s.adaptive_vibrance, kVibrance),
                              check("adaptive_vibrance_cut", s.adaptive_vibrance_cut, kAdaptiveCut),
-                             check("adaptive_gray", s.adaptive_gray, kMiddleGray)}) {
+                             check("adaptive_gray", s.adaptive_gray, kMiddleGray),
+                             check("adaptive_glow_gray", s.adaptive_glow_gray, kMiddleGray),
+                             check("adaptive_glow_shadows", s.adaptive_glow_shadows, kShadows),
+                             check("adaptive_glow_vibrance", s.adaptive_glow_vibrance, kVibrance)}) {
     if (!result) return result;
   }
   if (!(s.abl_hi > s.abl_lo)) {

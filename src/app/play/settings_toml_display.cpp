@@ -40,6 +40,13 @@ std::optional<PlaySettings::DisplayGrade> grade_of(std::string display, const to
   g.gray_bright = *gray_bright;
   g.shadows_bright = *shadows_bright;
   g.colors_cut = *colors_cut;
+  // La scène sombre avec éclat est venue après : un profil plus ancien garde ses valeurs par défaut.
+  const auto gray_glow = t["gray_glow"].value<double>();
+  const auto shadows_glow = t["shadows_glow"].value<double>();
+  const auto colors_glow = t["colors_glow"].value<double>();
+  if (gray_glow && within(*gray_glow, kMiddleGray)) g.gray_glow = *gray_glow;
+  if (shadows_glow && within(*shadows_glow, kShadows)) g.shadows_glow = *shadows_glow;
+  if (colors_glow && within(*colors_glow, kVibrance)) g.colors_glow = *colors_glow;
   return g;
 }
 
@@ -101,7 +108,10 @@ void write_display_tables(const PlaySettings& s, toml::table& hdr) {
                                                 {"colors", r2(g.colors)},
                                                 {"gray_bright", r2(g.gray_bright)},
                                                 {"shadows_bright", r2(g.shadows_bright)},
-                                                {"colors_cut", r2(g.colors_cut)}});
+                                                {"colors_cut", r2(g.colors_cut)},
+                                                {"gray_glow", r2(g.gray_glow)},
+                                                {"shadows_glow", r2(g.shadows_glow)},
+                                                {"colors_glow", r2(g.colors_glow)}});
   }
   if (!grades.empty()) hdr.insert("display_grades", std::move(grades));
 }
