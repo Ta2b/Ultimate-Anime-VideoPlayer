@@ -71,8 +71,8 @@ struct GradeSettings {
   double adaptive_hi = 54.0;
   double adaptive_shadows = 0.80;
   double adaptive_vibrance = 0.0;
-  // Part de la vibrance retirée à mesure que la scène devient claire (0 : aucune, 1 : toute) : les scènes claires
-  // et chaudes (rouges, oranges) sursaturent sinon.
+  // Part de la vibrance retirée à mesure que la scène devient claire (0 : aucune, 1 : toute) : les scènes
+  // claires et chaudes (rouges, oranges) sursaturent sinon.
   double adaptive_vibrance_cut = 0.0;
   double adaptive_gray = 30.0;
   double punch_base = 0.0;   // préréglage : contraste en plus, en sortie du grade (0 : aucun)
