@@ -483,7 +483,7 @@ UiFrame PlayerUi::frame(std::int64_t now_us, const ControlsView& view, std::vect
   const bool tooltip_due = hover_waiting_ && now_us - last_input_us_ < kTooltipWindowUs;
   if (!controls_.needs_frame(now_us, view, input_pending_ || settle_ > 0 || tooltip_due))
     return UiFrame{
-        .draw = draw_, .changed = false, .bottom = bottom_, .top = top_, .pattern = panel_.pattern()};
+        .draw = draw_, .changed = false, .bottom = bottom_, .top = top_, .calibration = panel_.calibration()};
   settle_ = input_pending_ ? kSettleFrames : std::max(settle_ - 1, 0);
   input_pending_ = false;
   home_ = false;
@@ -524,7 +524,8 @@ UiFrame PlayerUi::frame(std::int64_t now_us, const ControlsView& view, std::vect
   const bool bar = controls_.shown(now_us, view.paused);
   bottom_ = bar ? static_cast<int>(std::ceil(controls_height(look_.scale))) : 0;
   top_ = bar ? static_cast<int>(std::ceil(title_height(look_.scale))) : 0;
-  return UiFrame{.draw = draw_, .changed = true, .bottom = bottom_, .top = top_, .pattern = panel_.pattern()};
+  return UiFrame{
+      .draw = draw_, .changed = true, .bottom = bottom_, .top = top_, .calibration = panel_.calibration()};
 }
 
 const ImDrawData* PlayerUi::preparation(std::int64_t now_us, const PrepareView& view) {
@@ -558,7 +559,8 @@ const ImDrawData* PlayerUi::home(std::int64_t now_us, HomeView& view, std::vecto
   input_pending_ = false;
   begin_frame(now_us);
   clicks_.clear();
-  draw_home(view, look_.scale, panel_.is_open());
+  // La calibration du grade montre son image à la place de l'accueil : rien ne la couvre.
+  if (panel_.calibration() == nullptr) draw_home(view, look_.scale, panel_.is_open());
   if (panel_.wants_draw(running_, choices_)) {
     const SettingsPanel::Result result = panel_.draw(running_, choices_, look_.scale, actions);
     if (result.live) actions.emplace_back(ApplySettings{.settings = *result.live});

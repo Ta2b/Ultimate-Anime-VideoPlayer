@@ -30,7 +30,7 @@ struct ImDrawData;
 
 namespace ajp::app::play {
 
-struct HdrPattern;  // hdr_pattern.h
+struct CalibrationShot;  // calibration_shot.h
 
 // La source a livré sa dernière image et son dernier paquet pour cette époque.
 struct StreamEnded {
@@ -118,9 +118,9 @@ struct ShowRequest {
   const ImDrawData* ui = nullptr;                  // interface (barre de lecture, menus), par-dessus tout
   int ui_bottom = 0;  // pixels pris en bas par l'interface : les sous-titres du bas passent au-dessus
   int ui_top = 0;     // pixels pris en haut par l'interface : l'OSD passe dessous
-  // La mire de calibration du HDR (hdr_pattern.h) à la place de l'image, des sous-titres et de l'OSD ;
-  // nullptr : aucune.
-  const HdrPattern* pattern = nullptr;
+  // L'image de la calibration du grade (calibration_shot.h) à la place de la vidéo, des sous-titres et de
+  // l'OSD ; nullptr : aucune.
+  const CalibrationShot* calibration = nullptr;
 };
 
 // L'image de l'interface pour ce tour (ui.h) : changed demande une présentation même sans image
@@ -128,9 +128,9 @@ struct ShowRequest {
 struct UiFrame {
   const ImDrawData* draw = nullptr;  // nullptr : rien à dessiner
   bool changed = false;
-  int bottom = 0;                       // pixels pris en bas de l'écran (barre visible), 0 sinon
-  int top = 0;                          // pixels pris en haut (titre visible), 0 sinon
-  const HdrPattern* pattern = nullptr;  // la mire de calibration ouverte par le panneau ; nullptr : aucune
+  int bottom = 0;                                // pixels pris en bas de l'écran (barre visible), 0 sinon
+  int top = 0;                                   // pixels pris en haut (titre visible), 0 sinon
+  const CalibrationShot* calibration = nullptr;  // l'image de la calibration du grade ; nullptr : aucune
 };
 
 class Screen {

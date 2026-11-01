@@ -13,7 +13,6 @@
 #include <vector>
 
 #include "app/play/default_player.h"
-#include "app/play/hdr_pattern.h"
 #include "app/play/input.h"
 #include "app/play/precision.h"
 #include "app/play/settings.h"
@@ -23,8 +22,9 @@
 
 namespace ajp::app::play {
 
-struct ExportDraft;  // settings_export.h
-struct GradeWizard;  // settings_calibration.h
+struct ExportDraft;      // settings_export.h
+struct GradeWizard;      // settings_calibration.h
+struct CalibrationShot;  // calibration_shot.h
 
 // Un moteur du cache, pour l'onglet Moteurs.
 struct EngineBadge {
@@ -83,7 +83,7 @@ struct SettingsChoices {
   std::optional<core::EngineId> engine_in_use;  // celui de la bibliothèque chargée
   std::string engine_note;                      // le moteur préféré a refusé ce GPU : pourquoi
   std::string display_text;                     // l'écran selon son EDID (display_edid.h : describe)
-  std::string display_key;  // sa clé pour le pic calibré (display_edid.h : display_key) ; vide : inconnue
+  std::string display_key;  // sa clé pour le grade calibré (display_edid.h : display_key) ; vide : inconnue
   std::filesystem::path source_file;  // le fichier lu : l'export se propose à côté
   std::string black_status;           // seuils du vrai noir en cours
   ProfilesView profiles;
@@ -141,13 +141,10 @@ class SettingsPanel {
     redo_.clear();
     engine_draft_.reset();
   }
-  void close() {
-    open_ = false;
-    calibration_.reset();
-  }
-  // La mire de calibration du HDR (HDR > « Calibrer le pic ») tant que le panneau la montre ; nullptr :
-  // aucune.
-  const HdrPattern* pattern() const { return open_ && calibration_ ? &*calibration_ : nullptr; }
+  void close() { open_ = false; }
+  // L'image d'exemple de la calibration du grade (HDR > « Calibrer le grade adaptatif ») tant que le panneau
+  // la montre ; nullptr : aucune.
+  const CalibrationShot* calibration() const;
   bool is_open() const { return open_; }
   // Une tâche tourne dans le panneau (optimisation, préparation) : des images régulières, même en pause.
   bool busy() const { return open_ && (bench_running(bench_) || prepare_.pending != nullptr); }
@@ -182,7 +179,6 @@ class SettingsPanel {
   UpdateNote updates_;   // Général > Application : la vérification en cours ou son résultat
   BenchNote bench_;      // « Évaluer ma machine » : l'essai en cours ou son rapport
   PrepareNote prepare_;  // « Préparer le mode Performance » : la tâche en cours ou son résultat
-  std::optional<HdrPattern> calibration_;      // la mire de calibration du pic, montrée par la page HDR
   std::unique_ptr<GradeWizard> grade_wizard_;  // la calibration du grade adaptatif (settings_calibration.h)
 };
 

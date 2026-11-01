@@ -1,28 +1,23 @@
-// La calibration du pic de l'écran (Paramètres > HDR) : une mire au PQ exact (hdr_pattern.h), un curseur de
-// nits qu'on monte jusqu'à ce que le carré se fonde dans son cadre, et le résultat gardé pour cet écran.
+// La calibration du grade adaptatif (Paramètres > HDR), en deux temps : la scène tenue pour sombre, puis pour
+// claire (GradeSettings::adaptive_force), chacune avec ses curseurs et quatre images d'exemple
+// (calibration_images.h) montrées à gauche du panneau, à la place de la vidéo. « Terminer » garde les deux
+// bouts pour cet écran (with_calibrated_grade les reprend à chaque ouverture).
 #pragma once
 
-#include <optional>
-
-#include "app/play/hdr_pattern.h"
+#include "app/play/calibration_shot.h"
 #include "app/play/settings.h"
 #include "app/play/settings_panel.h"
 
 namespace ajp::app::play {
 
-// calibration : la mire montrée (absente : la calibration est fermée). Le pic retenu va à l'écran
-// (d.display_peaks, sous choices.display_key) et le pic repasse en automatique ; sans clé d'écran, il devient
-// le pic manuel. Vrai : le pic automatique a changé, la chaîne se rouvre pour le reprendre.
-bool peak_calibration(PlaySettings& d, const SettingsChoices& choices,
-                      std::optional<HdrPattern>& calibration);
-
-// La calibration du grade adaptatif, en deux temps sur la vidéo en cours : la scène tenue pour sombre, puis
-// pour claire (GradeSettings::adaptive_force), chacune avec ses curseurs. « Terminer » garde les deux bouts
-// pour cet écran (with_calibrated_grade les reprend à chaque ouverture).
 struct GradeWizard {
-  int step = 0;         // 0 : fermée ; 1 : scène sombre ; 2 : scène claire
-  PlaySettings before;  // les réglages d'avant, que « Annuler » remet
+  int step = 0;          // 0 : fermée ; 1 : scène sombre ; 2 : scène claire
+  int image = 0;         // l'image d'exemple de l'étape (0 à kCalibrationPerStep - 1)
+  PlaySettings before;   // les réglages d'avant, que « Annuler » remet
+  CalibrationShot shot;  // l'image montrée, sa place et son grade (step > 0)
 };
-void grade_calibration(PlaySettings& d, const SettingsChoices& choices, GradeWizard& wizard);
+// panel_left : le bord gauche du panneau des paramètres, en pixels ; l'image se place à sa gauche.
+void grade_calibration(PlaySettings& d, const SettingsChoices& choices, GradeWizard& wizard, float scale,
+                       float panel_left);
 
 }  // namespace ajp::app::play

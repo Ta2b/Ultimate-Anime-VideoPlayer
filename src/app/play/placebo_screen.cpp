@@ -18,7 +18,7 @@
 #include <libplacebo/swapchain.h>
 #include <libplacebo/vulkan.h>
 
-#include "app/play/hdr_pattern.h"
+#include "app/play/calibration_shot.h"
 #include "app/play/osd_text.h"
 #include "app/play/placebo_impl.h"
 #include "core/clock.h"
@@ -187,9 +187,10 @@ std::expected<ScreenTiming, Refusal> PlaceboScreen::show(const ShowRequest& requ
   pl_frame target{};
   pl_frame_from_swapchain(&target, &swframe);
 
-  // La mire de calibration remplace l'image, les sous-titres et l'OSD ; l'interface reste par-dessus.
-  const bool pattern = request.pattern != nullptr && s.hdr_output;
-  const RingFrame* frame = pattern ? nullptr : request.frame;
+  // L'image de la calibration du grade remplace la vidéo, les sous-titres et l'OSD ; l'interface reste
+  // dessus.
+  const bool calibrating = request.calibration != nullptr;
+  const RingFrame* frame = calibrating ? nullptr : request.frame;
   pl_frame image{};
   if (frame != nullptr) {
     auto tex = s.ring.acquire(gpu, *frame);
@@ -208,8 +209,8 @@ std::expected<ScreenTiming, Refusal> PlaceboScreen::show(const ShowRequest& requ
   }
 
   auto overlays = s.overlays->build(
-      pattern ? nullptr : request.subtitles, pattern || request.osd.empty() ? nullptr : &request.osd, *s.osd,
-      out, request.ui != nullptr ? request.ui_bottom : 0, request.ui != nullptr ? request.ui_top : 0);
+      calibrating ? nullptr : request.subtitles, calibrating || request.osd.empty() ? nullptr : &request.osd,
+      *s.osd, out, request.ui != nullptr ? request.ui_bottom : 0, request.ui != nullptr ? request.ui_top : 0);
   if (!overlays) return std::unexpected(std::move(overlays.error()));
   target.overlays = overlays->data();
   target.num_overlays = static_cast<int>(overlays->size());
@@ -217,9 +218,9 @@ std::expected<ScreenTiming, Refusal> PlaceboScreen::show(const ShowRequest& requ
   if (auto drawn = s.compose(frame != nullptr ? &image : nullptr, target); !drawn) {
     return std::unexpected(std::move(drawn.error()));
   }
-  if (pattern) {
-    if (auto drawn = s.draw_pattern(*request.pattern, target); !drawn)
-      return std::unexpected(std::move(drawn.error()));
+  if (calibrating) {
+    if (auto drawn = s.draw_calibration(*request.calibration, target); !drawn)
+      s.channel->warn("calibration du grade : {}", drawn.error().detail);
   }
   s.draw_ui(request.ui, target);
   if (s.snapshot) {

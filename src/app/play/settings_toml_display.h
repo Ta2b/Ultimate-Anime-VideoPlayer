@@ -1,5 +1,6 @@
-// Ce que play.toml garde par écran, sous [hdr] (settings_toml.cpp) : le pic calibré (display_peaks) et le
-// grade adaptatif calibré (display_grades), chacun sous la clé de l'écran (display_edid.h : display_key).
+// Ce que play.toml garde par écran, sous [hdr] (settings_toml.cpp) : le grade adaptatif calibré
+// (display_grades), sous la clé de l'écran (display_edid.h : display_key). Le pic, lui, vient du système
+// (system_peak.h) ou du réglage manuel.
 #pragma once
 
 #include <expected>

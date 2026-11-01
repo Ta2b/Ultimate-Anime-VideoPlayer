@@ -1,0 +1,162 @@
+#include "app/play/system_peak.h"
+
+#include <charconv>
+#include <filesystem>
+#include <fstream>
+#include <iterator>
+#include <string>
+
+#include <SDL3/SDL_filesystem.h>
+
+#include "core/log.h"
+
+#if defined(_WIN32)
+#include <dxgi1_6.h>
+#include <windows.h>
+#endif
+
+namespace ajp::app::play {
+namespace {
+
+// Le nombre qui suit « "key": » dans text ; rien s'il n'y est pas (ou s'il vaut null, 0).
+std::optional<double> number_after(std::string_view text, std::string_view key) {
+  const std::string quoted = std::string("\"") + std::string(key) + "\"";
+  const std::size_t at = text.find(quoted);
+  if (at == std::string_view::npos) return std::nullopt;
+  std::size_t i = text.find(':', at + quoted.size());
+  if (i == std::string_view::npos) return std::nullopt;
+  ++i;
+  while (i < text.size() && (text[i] == ' ' || text[i] == '\t' || text[i] == '\n' || text[i] == '\r')) ++i;
+  double value = 0.0;
+  const auto [end, ec] = std::from_chars(text.data() + i, text.data() + text.size(), value);
+  if (ec != std::errc{} || end == text.data() + i || !(value > 0.0)) return std::nullopt;
+  return value;
+}
+
+// L'objet JSON qui contient la position at : de l'accolade ouvrante à sa fermante (les chaînes comprises).
+std::string_view enclosing_object(std::string_view json, std::size_t at) {
+  int depth = 0;
+  std::size_t open = std::string_view::npos;
+  for (std::size_t i = at; i-- > 0;) {
+    if (json[i] == '}') ++depth;
+    if (json[i] == '{') {
+      if (depth == 0) {
+        open = i;
+        break;
+      }
+      --depth;
+    }
+  }
+  if (open == std::string_view::npos) return {};
+  depth = 0;
+  bool in_string = false;
+  for (std::size_t i = open; i < json.size(); ++i) {
+    const char c = json[i];
+    if (in_string) {
+      if (c == '\\')
+        ++i;
+      else if (c == '"')
+        in_string = false;
+      continue;
+    }
+    if (c == '"') in_string = true;
+    if (c == '{') ++depth;
+    if (c == '}' && --depth == 0) return json.substr(open, i - open + 1);
+  }
+  return {};
+}
+
+// « "highDynamicRange": true » dans l'objet.
+bool hdr_on(std::string_view object) {
+  const std::size_t at = object.find("\"highDynamicRange\"");
+  if (at == std::string_view::npos) return false;
+  const std::size_t colon = object.find(':', at);
+  if (colon == std::string_view::npos) return false;
+  const std::size_t value = object.find_first_not_of(" \t\r\n", colon + 1);
+  return value != std::string_view::npos && object.substr(value).starts_with("true");
+}
+
+}  // namespace
+
+std::optional<KwinOutput> parse_kwin_output(std::string_view json, std::string_view connector) {
+  if (connector.empty()) return std::nullopt;
+  // KWin garde une entrée par écran déjà branché : plusieurs peuvent porter le même connecteur. Celle où le
+  // HDR est actif l'emporte, sinon la première.
+  std::optional<KwinOutput> first;
+  for (std::size_t from = 0;;) {
+    const std::size_t at = json.find("\"connectorName\"", from);
+    if (at == std::string_view::npos) return first;
+    from = at + 1;
+    const std::size_t colon = json.find(':', at);
+    const std::size_t q1 = colon == std::string_view::npos ? colon : json.find('"', colon);
+    const std::size_t q2 = q1 == std::string_view::npos ? q1 : json.find('"', q1 + 1);
+    if (q2 == std::string_view::npos) return first;
+    if (json.substr(q1 + 1, q2 - q1 - 1) != connector) continue;
+    const std::string_view object = enclosing_object(json, at);
+    if (object.empty()) continue;
+    KwinOutput out;
+    out.peak_override = number_after(object, "maxPeakBrightnessOverride");
+    out.reference = number_after(object, "sdrBrightness");
+    if (!out.reference) out.reference = number_after(object, "referenceLuminance");
+    if (hdr_on(object)) return out;
+    if (!first) first = out;
+  }
+}
+
+std::optional<double> system_peak_nits([[maybe_unused]] std::string_view connector,
+                                       [[maybe_unused]] double headroom) {
+#if defined(_WIN32)
+  IDXGIFactory1* factory = nullptr;
+  if (FAILED(CreateDXGIFactory1(__uuidof(IDXGIFactory1), reinterpret_cast<void**>(&factory))))
+    return std::nullopt;
+  std::optional<double> best;
+  IDXGIAdapter1* adapter = nullptr;
+  for (UINT a = 0; factory->EnumAdapters1(a, &adapter) != DXGI_ERROR_NOT_FOUND; ++a) {
+    IDXGIOutput* output = nullptr;
+    for (UINT o = 0; adapter->EnumOutputs(o, &output) != DXGI_ERROR_NOT_FOUND; ++o) {
+      IDXGIOutput6* output6 = nullptr;
+      if (SUCCEEDED(output->QueryInterface(__uuidof(IDXGIOutput6), reinterpret_cast<void**>(&output6)))) {
+        DXGI_OUTPUT_DESC1 desc{};
+        if (SUCCEEDED(output6->GetDesc1(&desc)) &&
+            desc.ColorSpace == DXGI_COLOR_SPACE_RGB_FULL_G2084_NONE_P2020 && desc.MaxLuminance > 0.0F &&
+            (!best || desc.MaxLuminance > *best))
+          best = static_cast<double>(desc.MaxLuminance);
+        output6->Release();
+      }
+      output->Release();
+    }
+    adapter->Release();
+  }
+  factory->Release();
+  if (best) log_channel("app")->info("pic du système (DXGI MaxLuminance) : {:.0f} nits", *best);
+  return best;
+#elif defined(__linux__)
+  std::string_view port = connector;
+  if (port.starts_with("card")) {
+    if (const std::size_t dash = port.find('-'); dash != std::string_view::npos) port.remove_prefix(dash + 1);
+  }
+  const char* home = SDL_GetUserFolder(SDL_FOLDER_HOME);
+  if (home == nullptr || port.empty()) return std::nullopt;
+  std::ifstream in(std::filesystem::path(home) / ".config" / "kwinoutputconfig.json", std::ios::binary);
+  if (!in) return std::nullopt;
+  const std::string json{std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>()};
+  const std::optional<KwinOutput> output = parse_kwin_output(json, port);
+  if (!output) return std::nullopt;
+  if (output->peak_override) {
+    log_channel("app")->info("pic du système (KDE, {}) : {:.0f} nits", std::string(port),
+                             *output->peak_override);
+    return output->peak_override;
+  }
+  if (output->reference && headroom > 1.0) {
+    const double peak = headroom * *output->reference;
+    log_channel("app")->info("pic du système (KDE, {}) : marge {:.2f} × blanc {:.0f} = {:.0f} nits",
+                             std::string(port), headroom, *output->reference, peak);
+    return peak;
+  }
+  return std::nullopt;
+#else
+  return std::nullopt;
+#endif
+}
+
+}  // namespace ajp::app::play

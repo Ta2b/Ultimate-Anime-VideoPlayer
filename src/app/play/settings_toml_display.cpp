@@ -46,16 +46,6 @@ std::optional<PlaySettings::DisplayGrade> grade_of(std::string display, const to
 
 void read_display_tables(const toml::table& hdr, PlaySettings& s,
                          std::vector<std::expected<void, Refusal>>& reads) {
-  if (const toml::table* peaks = hdr.get_as<toml::table>("display_peaks")) {
-    for (const auto& [display, node] : *peaks) {
-      const auto nits = node.value_exact<std::int64_t>();
-      if (!nits || *nits < limits::kTrueHdrPeak.lo || *nits > limits::kTrueHdrPeak.hi) {
-        reads.emplace_back(out_of_range("display_peaks", display.str()));
-        continue;
-      }
-      s.display_peaks.emplace_back(std::string(display.str()), static_cast<int>(*nits));
-    }
-  }
   if (const toml::table* grades = hdr.get_as<toml::table>("display_grades")) {
     for (const auto& [display, node] : *grades) {
       const toml::table* t = node.as_table();
@@ -72,9 +62,6 @@ void read_display_tables(const toml::table& hdr, PlaySettings& s,
 void write_display_tables(const PlaySettings& s, toml::table& hdr) {
   // Au centième : 0.4 et non 0.40000000000000002.
   const auto r2 = [](double v) { return std::round(v * 100.0) / 100.0; };
-  toml::table peaks;
-  for (const auto& [display, nits] : s.display_peaks) peaks.insert_or_assign(display, nits);
-  if (!peaks.empty()) hdr.insert("display_peaks", std::move(peaks));
   toml::table grades;
   for (const auto& g : s.display_grades)
     grades.insert_or_assign(g.display, toml::table{{"gray", g.gray},

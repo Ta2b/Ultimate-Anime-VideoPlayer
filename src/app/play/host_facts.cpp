@@ -11,6 +11,7 @@
 
 #include "app/play/display_edid.h"
 #include "app/play/i18n.h"
+#include "app/play/system_peak.h"
 
 #if defined(_WIN32)
 #include <windows.h>
@@ -106,6 +107,9 @@ std::optional<double> content_peak_nits(SDL_Window* window) {
       SDL_GetBooleanProperty(props, SDL_PROP_WINDOW_HDR_ENABLED_BOOLEAN, false) && headroom > 1.0F;
 #if defined(_WIN32)
   if (sdl_hdr) {
+    // Le pic que Windows a calibré (application « Étalonnage HDR ») : MaxLuminance de la sortie DXGI.
+    if (const auto display = read_display(display_name(window)))
+      if (const auto calibrated = system_peak_nits(display->connector, headroom)) return calibrated;
     // La marge de SDL dépend du curseur « luminosité du contenu SDR » de Windows (écran à 800 nits, blanc SDR
     // à 400 : marge 2) : la crête que l'EDID annonce la borne par le bas, sans quoi le gris moyen (plafonné à
     // la moitié de la crête) n'a plus d'effet.
@@ -124,6 +128,10 @@ std::optional<double> content_peak_nits(SDL_Window* window) {
   return kUnknownPeakNits;
 #else
   if (!sdl_hdr) return std::nullopt;
+  // La marge de SDL est relative au blanc de référence du compositeur (KDE : la « luminosité SDR »), pas à
+  // 203 nits : le pic que le système a calibré se lit chez lui (system_peak.h).
+  if (const auto display = read_display(display_name(window)))
+    if (const auto calibrated = system_peak_nits(display->connector, headroom)) return calibrated;
   return static_cast<double>(headroom) * 203.0;
 #endif
 }
