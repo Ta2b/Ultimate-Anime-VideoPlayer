@@ -31,6 +31,10 @@ FFmpeg, libplacebo et FriBidi sont des bibliothèques partagées (`lib/`) : vous
 
 55 LUT 3D `.cube` (« HDR LUT ver.9.1 ») ajoutées au dépôt à la demande de son propriétaire ; auteur et licence d'origine non indiqués dans l'archive reçue, voir `data/luts/ATTRIBUTION.md`.
 
+## Images d'exemple de la calibration du grade (data/calibration)
+
+Huit images fixes tirées de Re:Zero kara Hajimeru Isekai Seikatsu (saison 4, épisode 18, © Tappei Nagatsuki, KADOKAWA / Re:Zero 4 Partners) et de Tensei Shitara Slime Datta Ken (saison 4, épisode 24, © Fuse, Micro Magazine / Tensura Project), ajoutées à la demande du propriétaire du dépôt pour la seule calibration du grade (Paramètres > HDR). Elles restent la propriété de leurs ayants droit ; liste et instants dans `data/calibration/SOURCES.md`.
+
 ## Moteurs facultatifs téléchargés depuis l'écran de bienvenue
 OpenVINO (Apache-2.0), MIGraphX et ROCm (MIT, d'après AMD), ONNX Runtime (MIT), Windows ML (licence de redistribution de Microsoft jointe au moteur), MoltenVK (Apache-2.0). TensorRT, CUDA, cuDNN et le SDK Video Effects de NVIDIA (RTX HDR) sont sous les licences propriétaires de NVIDIA, que l'utilisateur accepte à l'écran avant le téléchargement.
 

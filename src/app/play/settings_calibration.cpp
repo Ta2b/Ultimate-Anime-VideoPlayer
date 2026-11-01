@@ -51,8 +51,8 @@ void example_image(const PlaySettings& d, const SettingsChoices& choices, GradeW
   const float y0 = std::max(pad, (io.DisplaySize.y - 120.0F * scale - h) * 0.5F);
   CalibrationShot& shot = wizard.shot;
   shot.id = image.id;
-  shot.width = kCalibrationWidth;
-  shot.height = kCalibrationHeight;
+  shot.width = image.width;
+  shot.height = image.height;
   shot.rgba = image.rgba;
   shot.x0 = static_cast<int>(x0);
   shot.y0 = static_cast<int>(y0);
