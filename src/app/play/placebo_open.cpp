@@ -18,6 +18,7 @@
 #include <SDL3/SDL_filesystem.h>
 #include <SDL3/SDL_video.h>
 #include <SDL3/SDL_vulkan.h>
+#include <libplacebo/dispatch.h>
 #include <libplacebo/log.h>
 #include <libplacebo/renderer.h>
 #include <libplacebo/swapchain.h>
@@ -274,6 +275,7 @@ PlaceboScreen::Impl::~Impl() {
   grade.reset();
   ramp_grade.reset();
   pl_renderer_destroy(&ramp_renderer);
+  pl_dispatch_destroy(&pattern_dispatch);
   osd.reset();
   overlays.reset();
   ring.clear(vk != nullptr ? vk->gpu : nullptr);

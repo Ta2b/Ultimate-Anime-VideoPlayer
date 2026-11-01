@@ -426,7 +426,8 @@ std::expected<std::optional<PresentRecord>, Refusal> Session::tick(std::int64_t 
                             .osd = osd_,
                             .ui = ui.draw,
                             .ui_bottom = ui.draw != nullptr ? ui.bottom : 0,
-                            .ui_top = ui.draw != nullptr ? ui.top : 0};
+                            .ui_top = ui.draw != nullptr ? ui.top : 0,
+                            .pattern = ui.pattern};
   auto timing = screen_.show(request);
   if (!timing) return std::unexpected(std::move(timing.error()));
 

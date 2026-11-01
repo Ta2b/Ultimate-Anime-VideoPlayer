@@ -482,7 +482,8 @@ UiFrame PlayerUi::frame(std::int64_t now_us, const ControlsView& view, std::vect
   if (input_pending_) last_input_us_ = now_us;
   const bool tooltip_due = hover_waiting_ && now_us - last_input_us_ < kTooltipWindowUs;
   if (!controls_.needs_frame(now_us, view, input_pending_ || settle_ > 0 || tooltip_due))
-    return UiFrame{.draw = draw_, .changed = false, .bottom = bottom_, .top = top_};
+    return UiFrame{
+        .draw = draw_, .changed = false, .bottom = bottom_, .top = top_, .pattern = panel_.pattern()};
   settle_ = input_pending_ ? kSettleFrames : std::max(settle_ - 1, 0);
   input_pending_ = false;
   home_ = false;
@@ -517,7 +518,7 @@ UiFrame PlayerUi::frame(std::int64_t now_us, const ControlsView& view, std::vect
   const bool bar = controls_.shown(now_us, view.paused);
   bottom_ = bar ? static_cast<int>(std::ceil(controls_height(look_.scale))) : 0;
   top_ = bar ? static_cast<int>(std::ceil(title_height(look_.scale))) : 0;
-  return UiFrame{.draw = draw_, .changed = true, .bottom = bottom_, .top = top_};
+  return UiFrame{.draw = draw_, .changed = true, .bottom = bottom_, .top = top_, .pattern = panel_.pattern()};
 }
 
 const ImDrawData* PlayerUi::preparation(std::int64_t now_us, const PrepareView& view) {

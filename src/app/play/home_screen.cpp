@@ -390,7 +390,7 @@ std::expected<std::optional<std::filesystem::path>, Refusal> run_home(const Home
     const ImDrawData* draw = h.ui.home(host_now_us(), view, actions);
     if (std::exchange(view.open_file, false)) FilePick::show(pick, h.screen.window());
     if (std::exchange(view.show_settings, false)) h.ui.open_settings();
-    if (auto shown = h.screen.show(ShowRequest{.ui = draw}); !shown)
+    if (auto shown = h.screen.show(ShowRequest{.ui = draw, .pattern = h.ui.pattern()}); !shown)
       return std::unexpected(std::move(shown.error()));
     (void)SDL_WaitEventTimeout(nullptr, kHomeFrameMs);
   }
