@@ -227,7 +227,7 @@ struct PlaySettings {
   // aucun : SDR) et ses réglages, communs aux deux moteurs (section hdr de play.toml).
   bool true_hdr = false;
   int true_hdr_contrast = 100;
-  int true_hdr_saturation = 200;
+  int true_hdr_saturation = 100;
   int true_hdr_gray = 50;
   int true_hdr_peak = 0;  // 0 : la crête vue par le contenu sur l'écran
   // Les profils de grade adaptatif calibrés sur un écran (Paramètres > HDR, « Calibrer le grade adaptatif »)
