@@ -428,7 +428,9 @@ BenchEvent config_page(PlaySettings& d, const SettingsChoices& choices, BenchNot
 }
 
 // Général > Réinitialiser.
-void reset_page(PlaySettings& draft, std::vector<Input>& actions, const ProfilesView& view) {
+// Rend vrai quand « Tout réinitialiser » vient d'être pressé : tout s'applique alors tout de suite.
+bool reset_page(PlaySettings& draft, std::vector<Input>& actions, const ProfilesView& view) {
+  bool reset_all = false;
   section(i18n::tr("All settings"));
   note(
       i18n::tr("Puts every setting back to its default value: chain, HDR, grade and colors, sound, playback. "
@@ -438,11 +440,13 @@ void reset_page(PlaySettings& draft, std::vector<Input>& actions, const Profiles
     fresh.engines_dir = draft.engines_dir;
     draft = fresh;
     actions.emplace_back(EditProfile{.edit = core::edit::ResetProfile{.slot = view.active}});
+    reset_all = true;
   }
   section(i18n::tr("Profile defaults"));
   note(i18n::tr("Resets the active profile (Ctrl+1 to Ctrl+9); other profiles are untouched."));
   if (ImGui::Button(i18n::tr("Reset profile")))
     actions.emplace_back(EditProfile{.edit = core::edit::ResetProfile{.slot = view.active}});
+  return reset_all;
 }
 
 }  // namespace
@@ -501,6 +505,7 @@ SettingsPanel::Result SettingsPanel::draw(const PlaySettings& running, const Set
     ImGui::PushItemWidth(-width * 0.42F);
     panel::advanced() = advanced_;
     bool delay_held = false;
+    bool reset_all = false;
     const PlaySettings before = draft_;
     // Sous les deux colonnes : la case « Réglages avancés » (et le bandeau « Appliquer » quand il est là).
     const float footer = (pending_shown_ ? 84.0F * scale : 0.0F) + ImGui::GetFrameHeightWithSpacing() +
@@ -651,7 +656,7 @@ SettingsPanel::Result SettingsPanel::draw(const PlaySettings& running, const Set
       } else if (name == "Statistics") {
         stats_tab(draft_);
       } else if (name == "Reset") {
-        reset_page(draft_, actions, choices.profiles);
+        reset_all = reset_page(draft_, actions, choices.profiles);
       }
     }
     panel::end_page();
@@ -698,6 +703,9 @@ SettingsPanel::Result SettingsPanel::draw(const PlaySettings& running, const Set
     if (live != running) result.live = live;
     const Change pending = change_between(live, draft_, choices.rife_loaded);
     pending_shown_ = pending.cost == ChangeCost::Reopen;
+    // Tout réinitialiser : LUT, curseurs, HDR, interpolation, SPAN… reviennent au premier démarrage sans
+    // attendre « Appliquer ».
+    if (reset_all) result.reopen = draft_;
     if (pending.cost == ChangeCost::Reopen) {
       ImGui::Spacing();
       ImGui::Separator();
