@@ -82,8 +82,9 @@ struct SettingsChoices {
   std::optional<core::EngineId> engine_in_use;  // celui de la bibliothèque chargée
   std::string engine_note;                      // le moteur préféré a refusé ce GPU : pourquoi
   std::string display_text;                     // l'écran selon son EDID (display_edid.h : describe)
-  std::filesystem::path source_file;            // le fichier lu : l'export se propose à côté
-  std::string black_status;                     // seuils du vrai noir en cours
+  std::string display_key;  // sa clé pour le pic calibré (display_edid.h : display_key) ; vide : inconnue
+  std::filesystem::path source_file;  // le fichier lu : l'export se propose à côté
+  std::string black_status;           // seuils du vrai noir en cours
   ProfilesView profiles;
   // Général > Configuration (auto_config.h) : la machine telle que le préréglage Auto la voit.
   int machine_tier =
