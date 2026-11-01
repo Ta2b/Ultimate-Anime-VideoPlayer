@@ -76,8 +76,10 @@ void hdr_tab(PlaySettings& d, const SettingsChoices& choices) {
     d.true_hdr_peak = peak;
   ImGui::EndDisabled();
   if (panel::advanced()) {
+    ImGui::BeginDisabled(d.grade && d.grade_values.adaptive);  // le grade adaptatif le pilote
     ImGui::SliderInt(i18n::tr("Mid gray"), &d.true_hdr_gray, limits::kTrueHdrGray.lo, limits::kTrueHdrGray.hi,
                      "%d", ImGuiSliderFlags_AlwaysClamp);
+    ImGui::EndDisabled();
     panel::tip(
         i18n::tr("With Adapt to scene brightness on, this is the middle gray of dark scenes; bright "
                  "scenes use Middle gray, bright scene (Color page)."));
@@ -227,6 +229,10 @@ void grade_tab(PlaySettings& d, const SettingsChoices& choices) {
   using namespace render::grade_limits;
   bool moved = false;
   if (panel::advanced()) {
+    // Le grade adaptatif a la main sur le grade : ses curseurs se figent tant qu'il est coché.
+    if (g.adaptive)
+      note(i18n::tr("The adaptive grade drives these settings: untick it to set them by hand."));
+    ImGui::BeginDisabled(g.adaptive);
     // Sur une sortie SDR, ni les éclats, ni les zones claires, ni le gamut large n'ont d'effet (sdr_params).
     ImGui::BeginDisabled(!choices.hdr_output);
     moved |= grade_slider(i18n::tr("Highlights"), g.highlights_rtx, kHighlights);
@@ -242,6 +248,7 @@ void grade_tab(PlaySettings& d, const SettingsChoices& choices) {
     ImGui::BeginDisabled(!choices.hdr_output);
     ImGui::Checkbox(i18n::tr("Display P3 gamut"), &g.gamut_p3);
     ImGui::EndDisabled();
+    ImGui::EndDisabled();  // grade adaptatif
     if (!choices.hdr_output)
       note(
           i18n::tr("SDR display: Highlights, Bright areas, Wide colors and Display P3 gamut have no effect "
