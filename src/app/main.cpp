@@ -90,6 +90,8 @@ std::vector<std::filesystem::path> module_dirs(const std::filesystem::path& base
   return dirs;
 }
 
+constexpr int kKeptLogs = 3;  // ajp.log.1 à ajp.log.3
+
 int fail(const ajp::Refusal& refusal) {
   std::fprintf(stderr, "ajp : %s %s\n", std::string(ajp::name(refusal.code)).c_str(), refusal.detail.c_str());
   return 1;
@@ -314,6 +316,16 @@ int main(int argc, char** argv) {
   const std::filesystem::path log_file =
       settings_dir.empty() ? std::filesystem::path() : settings_dir / "ajp.log";
   if (!log_file.empty()) {
+    // Les trois journaux d'avant restent (ajp.log.1 le plus récent) : après un gel ou un arrêt brutal,
+    // la relance n'efface plus celui qui en garde la trace.
+    std::error_code kept;
+    for (int i = kKeptLogs - 1; i >= 0; --i) {
+      std::filesystem::path from = log_file;
+      if (i > 0) from += std::format(".{}", i);
+      std::filesystem::path to = log_file;
+      to += std::format(".{}", i + 1);
+      if (std::filesystem::exists(from, kept)) std::filesystem::rename(from, to, kept);
+    }
     try {
       sinks.push_back(std::make_shared<spdlog::sinks::basic_file_sink_mt>(log_file.string(), true));
     } catch (const std::exception&) {
@@ -324,7 +336,8 @@ int main(int argc, char** argv) {
   ajp::install_log_sinks(std::move(sinks), spdlog::level::info);
   if (logs_to_file) {
     spdlog::flush_every(std::chrono::seconds(1));  // un arrêt brutal perd au plus une seconde
-    ajp::log_channel("app")->info("journal : {}", log_file.string());
+    ajp::log_channel("app")->info("journal : {} · ajp {}", log_file.string(),
+                                  ajp::app::play::installed_version());
   }
   av_log_set_level(AV_LOG_ERROR);  // FFmpeg écrit sur stderr ; ses avertissements de sonde sont du bruit
   if (!SDL_Init(SDL_INIT_VIDEO)) {

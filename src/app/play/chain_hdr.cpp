@@ -389,7 +389,7 @@ void refresh_black(Chain& to) {
   const bool routed = true;
   const bool wanted = black_wanted(s, to.display) && s.grade && routed;
   to.live.set_black_wanted(wanted && to.true_hdr_open);
-  to.black.reset();
+  const std::optional<render::BlackThresholds> before = std::exchange(to.black, std::nullopt);
   if (!wanted) {
     set_grade(to, s);
     to.ui.set_black_status(
@@ -423,6 +423,7 @@ void refresh_black(Chain& to) {
     to.ui.set_black_status(i18n::tr("True black: the ramp does not rise, nothing changed."));
     return;
   }
+  if (before && before->lo == to.black->lo && before->hi == to.black->hi) return;  // rien de neuf à dire
   log_channel("app")->info(
       "vrai noir : noir de la source {:.4f} nit, marches 1 et 2 {:.4f} et {:.4f} nit ; 0 sous {:.4f}, pied "
       "jusqu'à {:.4f} nit",
