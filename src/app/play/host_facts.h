@@ -42,7 +42,8 @@ GpuFacts gpu_facts(const PlaceboScreen& screen);
 // même définition que l'écran de bienvenue, pour le panneau de réglages.
 bool maxine_available(const PlayOptions& options, const PlayerPaths& paths);
 // Un backend TensorRT est installé : seul lui ouvre RTX HDR.
-bool tensorrt_backend_present(const PlayerPaths& paths);
+// Le backend TensorRT est-il là : téléchargé (engines.lock) ou à côté du lecteur ?
+bool tensorrt_backend_present(const EngineCatalog& catalog, const PlayerPaths& paths);
 // Les backends présents ou téléchargeables (catalog), le SDK Maxine importé ou à importer.
 EnginesHere engines_here(const PlayOptions& options, const PlayerPaths& paths, const EngineCatalog& catalog,
                          std::string_view gpu_name);

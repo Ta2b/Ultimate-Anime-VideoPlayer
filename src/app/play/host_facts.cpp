@@ -215,9 +215,12 @@ bool maxine_available(const PlayOptions& options, const PlayerPaths& paths) {
   return std::filesystem::exists(options.true_hdr_sdk, error);
 }
 
-bool tensorrt_backend_present(const PlayerPaths& paths) {
+bool tensorrt_backend_present(const EngineCatalog& catalog, const PlayerPaths& paths) {
+  // Le paquet téléchargé s'installe sous les données, pas à côté du lecteur : les deux se cherchent.
+  std::vector<std::filesystem::path> candidates = installed_backends(catalog);
+  candidates.insert(candidates.end(), paths.backends.begin(), paths.backends.end());
   std::error_code error;
-  return std::ranges::any_of(paths.backends, [&](const std::filesystem::path& backend) {
+  return std::ranges::any_of(candidates, [&](const std::filesystem::path& backend) {
     return backend.filename().string().contains("tensorrt") && std::filesystem::exists(backend, error);
   });
 }

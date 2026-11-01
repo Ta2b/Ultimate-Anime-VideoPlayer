@@ -142,12 +142,13 @@ SettingsChoices home_choices(const HomeScreen& h, const HomeState& st, const Pla
   // Le mode Performance de SPAN (noyaux CUTLASS) : une RTX 40 (Ada, 8.9, portable compris : le nom de la
   // carte le dit, « RTX 4050 Laptop GPU » comme « RTX 4070 Ti ») et le module TensorRT ; le moteur le
   // confirme à l'ouverture d'une vidéo.
-  const SpanFp8Facts fp8_facts{.backend_name = tensorrt_backend_present(h.paths) ? "tensorrt" : "vulkan",
-                               .gpu_name = gpu_facts(h.screen).name,
-                               .tensorrt_present = tensorrt_backend_present(h.paths),
-                               .capability = gpu_facts(h.screen).vendor == GpuVendor::Nvidia &&
-                                             cuda_arch_from_name(gpu_facts(h.screen).name) == "sm89" &&
-                                             tensorrt_backend_present(h.paths)};
+  const SpanFp8Facts fp8_facts{
+      .backend_name = tensorrt_backend_present(h.catalog, h.paths) ? "tensorrt" : "vulkan",
+      .gpu_name = gpu_facts(h.screen).name,
+      .tensorrt_present = tensorrt_backend_present(h.catalog, h.paths),
+      .capability = gpu_facts(h.screen).vendor == GpuVendor::Nvidia &&
+                    cuda_arch_from_name(gpu_facts(h.screen).name) == "sm89" &&
+                    tensorrt_backend_present(h.catalog, h.paths)};
   const std::int64_t period = display_period_us(h.screen.window());
   const std::optional<DisplayFacts> display = read_display(display_name(h.screen.window()));
   // Général > Configuration sans vidéo ouverte : la carte, sa tranche (mesurée ou estimée), l'écran, les
@@ -191,9 +192,9 @@ SettingsChoices home_choices(const HomeScreen& h, const HomeState& st, const Pla
       .default_rife_model = rife ? rife->default_name : std::string(),
       .rife_folder = places.empty() ? std::string() : prepare::utf8_path(places.front()),
       .nvidia = vendor_from_pci(h.screen.device_facts().pci_vendor) == GpuVendor::Nvidia,
-      .true_hdr_available =
-          tensorrt_backend_present(h.paths) && (maxine_available(h.options, h.paths) || running.true_hdr),
-      .true_hdr_backend = tensorrt_backend_present(h.paths),
+      .true_hdr_available = tensorrt_backend_present(h.catalog, h.paths) &&
+                            (maxine_available(h.options, h.paths) || running.true_hdr),
+      .true_hdr_backend = tensorrt_backend_present(h.catalog, h.paths),
       .hdr_output = !h.options.sdr && content_peak_nits(h.screen.window()).has_value(),
       .auto_peak = auto_peak_nits(content_peak_nits(h.screen.window())),
       .engines = engine_badges(h.paths.engines, {}, WorkSize{}, std::nullopt, kernels::RifeGeometry{}),
