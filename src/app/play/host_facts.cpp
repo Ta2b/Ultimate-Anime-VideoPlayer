@@ -38,14 +38,44 @@ double display_refresh_hz(SDL_Window* window) {
   return mode->refresh_rate > 0.0F ? static_cast<double>(mode->refresh_rate) : 0.0;
 }
 
+namespace {
+
+// La définition de l'écran en pixels réels. SDL3 donne le mode en points quand le bureau est mis à
+// l'échelle (un écran 4K à 200 % : 1920 × 1080, densité 2) ; Windows peut aussi le virtualiser : son
+// mode courant (EnumDisplaySettings) a le dernier mot quand il est plus grand.
+OutputSize display_pixels(SDL_Window* window) {
+  OutputSize out{};
+  if (const SDL_DisplayMode* mode = SDL_GetCurrentDisplayMode(SDL_GetDisplayForWindow(window));
+      mode != nullptr && mode->w > 0 && mode->h > 0) {
+    const float density = mode->pixel_density > 0.0F ? mode->pixel_density : 1.0F;
+    out = {static_cast<int>(std::lround(static_cast<float>(mode->w) * density)),
+           static_cast<int>(std::lround(static_cast<float>(mode->h) * density))};
+  }
+#if defined(_WIN32)
+  auto* hwnd = static_cast<HWND>(
+      SDL_GetPointerProperty(SDL_GetWindowProperties(window), SDL_PROP_WINDOW_WIN32_HWND_POINTER, nullptr));
+  if (hwnd != nullptr) {
+    MONITORINFOEXW info{};
+    info.cbSize = sizeof(info);
+    DEVMODEW mode{};
+    mode.dmSize = sizeof(mode);
+    if (GetMonitorInfoW(MonitorFromWindow(hwnd, MONITOR_DEFAULTTONEAREST), &info) != 0 &&
+        EnumDisplaySettingsW(info.szDevice, ENUM_CURRENT_SETTINGS, &mode) != 0 &&
+        static_cast<int>(mode.dmPelsHeight) > out.height)
+      out = {static_cast<int>(mode.dmPelsWidth), static_cast<int>(mode.dmPelsHeight)};
+  }
+#endif
+  return out;
+}
+
+}  // namespace
+
 int display_width(SDL_Window* window) {
-  const SDL_DisplayMode* mode = SDL_GetCurrentDisplayMode(SDL_GetDisplayForWindow(window));
-  return mode != nullptr && mode->w > 0 ? mode->w : 0;
+  return display_pixels(window).width;
 }
 
 int display_height(SDL_Window* window) {
-  const SDL_DisplayMode* mode = SDL_GetCurrentDisplayMode(SDL_GetDisplayForWindow(window));
-  return mode != nullptr && mode->h > 0 ? mode->h : 0;
+  return display_pixels(window).height;
 }
 
 #if defined(_WIN32)
