@@ -133,13 +133,13 @@ inline constexpr int kAutoCapMax = 480;
 
 // Les réglages par défaut du grade et du look : la configuration de Tatoub (30/10/2026), réglée à l'œil sur
 // ses épisodes. Les curseurs sont ceux d'une scène sombre ; le grade adaptatif les glisse vers les valeurs
-// d'une scène claire (noirs 0,80, couleurs 0, gris moyen 30) selon la luminosité de la scène. Le gamut P3
-// reste propre à l'écran.
+// d'une scène claire (noirs 0,80, couleurs 0, gris moyen 15; couleurs de base 0,10) selon la luminosité de la
+// scène. Le gamut P3 reste propre à l'écran.
 inline render::GradeSettings default_grade_values() {
   render::GradeSettings g;
   g.highlights_rtx = 1.0;
   g.area_rtx = 0.10;
-  g.vibrance_rtx = 0.80;
+  g.vibrance_rtx = 0.10;  // dans le doute, peu de couleur : au-delà de 0,10 les scènes chaudes sursaturent
   g.expand = 1.0;
   g.shadows = 0.20;
   g.guard = 0.0;
@@ -149,7 +149,8 @@ inline render::GradeSettings default_grade_values() {
   g.adaptive_shadows = 0.80;
   g.adaptive_vibrance = 0.0;
   g.adaptive_vibrance_cut = 0.40;
-  g.adaptive_gray = 30.0;
+  g.adaptive_gray =
+      15.0;  // réglé sur l'écran de Tatoub (800 nits de pic) : les scènes claires restent sobres
   return g;
 }
 

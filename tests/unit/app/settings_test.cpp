@@ -131,17 +131,18 @@ TEST_CASE("Warp et SPAN : Auto passe après SPAN au-dessus de 1080p ; les fichie
   CHECK_FALSE(parse_settings("[interpolation]\nspan_order = \"milieu\"\n"));
 }
 
-TEST_CASE("Grade : un préréglage nommé donne ses valeurs, gamut P3 reste celui du fichier",
+TEST_CASE("Grade : plus de préréglages, l'ancienne clé est ignorée, gamut P3 reste celui du fichier",
           "[app][settings]") {
   const PlaySettings defaults;
   CHECK(defaults.grade);
-  CHECK(defaults.grade_preset ==
-        render::GradePreset::Custom);  // les réglages de Tatoub, grade adaptatif compris
-  const auto natural = parse_settings("[grade]\npreset = \"naturel\"\nshadows = 0.7\ngamut_p3 = true\n");
-  REQUIRE(natural);
-  CHECK(natural->grade_values.shadows == render::GradeSettings{}.shadows);
-  CHECK(natural->grade_values.gamut_p3);
-  CHECK_FALSE(parse_settings("[grade]\npreset = \"criard\"\n"));
+  CHECK(defaults.grade_preset == render::GradePreset::Custom);
+  CHECK(defaults.grade_values.vibrance_rtx == 0.10);  // dans le doute, peu de couleur
+  CHECK(defaults.grade_values.adaptive_gray == 15.0);
+  const auto old = parse_settings("[grade]\npreset = \"naturel\"\nshadows = 0.7\ngamut_p3 = true\n");
+  REQUIRE(old);
+  CHECK(old->grade_values.shadows == 0.7);  // le préréglage ne réécrit plus les valeurs
+  CHECK(old->grade_values.gamut_p3);
+  CHECK(parse_settings("[grade]\npreset = \"criard\"\n"));
   CHECK_FALSE(parse_settings("[grade]\noled_black = \"peut-etre\"\n"));
   CHECK_FALSE(parse_settings("[grade]\noled_black_steps = 20.0\n"));
   CHECK(defaults.oled_black == OledBlack::Auto);

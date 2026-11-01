@@ -133,6 +133,9 @@ class SettingsPanel {
     open_ = true;
     draft_ = running;
     seen_ = running;
+    stable_ = running;
+    undo_.clear();
+    redo_.clear();
     engine_draft_.reset();
   }
   void close() { open_ = false; }
@@ -154,7 +157,12 @@ class SettingsPanel {
   bool open_ = false;
   PlaySettings draft_;  // ce que montre le panneau ; diffère de running pour ce qui attend « Appliquer »
   PlaySettings seen_;   // running au tour précédent
-  int page_ = 0;        // la page de l'arbre affichée (settings_panel.cpp : kPages)
+  // Annuler / rétablir : stable_ est le dernier état posé (aucun réglage en cours de glissement), undo_ et
+  // redo_ les états de part et d'autre.
+  PlaySettings stable_;
+  std::vector<PlaySettings> undo_;
+  std::vector<PlaySettings> redo_;
+  int page_ = 0;                         // la page de l'arbre affichée (settings_panel.cpp : kPages)
   std::array<bool, 8> category_open_{};  // les catégories ouvertes de l'arbre
   int shown_page_ = -1;         // la page de l'image précédente : sa catégorie s'ouvre quand elle change
   bool advanced_ = false;       // la case « Réglages avancés » : montre la catégorie Avancé

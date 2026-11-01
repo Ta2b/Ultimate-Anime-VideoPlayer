@@ -46,6 +46,14 @@ constexpr std::array kSettingsPages{
     Entry{"Deep blacks, bright scene", "Noirs profonds, scène claire"},
     Entry{"Colors, saturated blue scene", "Couleurs, scène bleue saturée (ciel)"},
     Entry{"Record scene statistics (learning)", "Enregistrer les statistiques de scène (apprentissage)"},
+    Entry{"All settings", "Tous les réglages"},
+    Entry{"Puts every setting back to its default value: chain, HDR, grade and colors, sound, playback. The "
+          "engines folder is kept.",
+          "Remet tous les réglages à leur valeur par défaut : chaîne, HDR, grade et couleurs, son, lecture. "
+          "Le dossier des moteurs est conservé."},
+    Entry{"Reset all settings", "Tout réinitialiser"},
+    Entry{"Undo", "Annuler"},
+    Entry{"Redo", "Rétablir"},
     Entry{"Colors cut, bright scene", "Couleurs réduites, scène claire"},
     Entry{"Middle gray, bright scene", "Gris moyen, scène claire"},
     Entry{"The sliders above and the middle gray are for dark scenes; the values here apply to bright "
