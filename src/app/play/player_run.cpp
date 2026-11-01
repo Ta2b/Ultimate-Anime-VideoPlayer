@@ -169,23 +169,8 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
       .decoder = decoder_options(c.backend_name, p.screen.device(), p.screen.shared_devices()),
       .languages = {.presets = settings.language_presets},
       .audio_device = settings.audio_device,
-      .mix = {},
       .audio_track = p.audio_track,
       .subtitle_track = p.subtitle_track};
-  {
-    // L'écoute de cet appareil : son profil propre, sinon le global (settings.h : effective_listening).
-    const auto device = audio::resolve_device(audio::playback_devices(), settings.audio_device);
-    const EffectiveListening listening = effective_listening(settings, device ? device->name : std::string());
-    config.mix.listen = static_cast<audio::Listen>(listening.listen);
-    config.mix.faithful = listening.faithful;
-    config.mix.tuning = listening.tuning;
-    config.mix.anime = listening.anime;
-    if (auto loaded = load_listening_hrir(listening.hrir_path)) {
-      config.mix.hrir = std::move(*loaded);
-    } else {
-      log->warn("{} ; modèle paramétrique à la place", loaded.error().detail);
-    }
-  }
   PlaceboScreen& out = p.screen;
   auto pipeline = Pipeline::open(
       config, [&](VideoStageInit stage) -> std::expected<std::unique_ptr<VideoStage>, Refusal> {

@@ -14,7 +14,6 @@
 #include <utility>
 #include <vector>
 
-#include "app/play/bundled_hrir.h"
 #include "render/cube_lut.h"
 
 namespace ajp::app::play {
@@ -286,70 +285,6 @@ std::string resolution_text(int height) {
   return std::format("{}p", height);
 }
 
-std::optional<int> listening_index(std::string_view key) {
-  if (key == "headphones") return 0;
-  if (key == "speakers") return 1;
-  if (key == "cinema") return 2;
-  return std::nullopt;
-}
-
-EffectiveListening effective_listening(const PlaySettings& settings, const std::string& device_name) {
-  std::string_view key = settings.listening;
-  for (const auto& [name, own] : settings.device_listening) {
-    if (name == device_name) key = own;
-  }
-  const int listen = listening_index(key).value_or(1);
-  std::string_view profile = settings.audio_profile;
-  for (const auto& [name, own] : settings.device_profile) {
-    if (name == device_name) profile = own;
-  }
-  std::string_view anime = settings.anime_sound;
-  for (const auto& [name, own] : settings.device_anime) {
-    if (name == device_name) anime = own;
-  }
-  std::string_view hrir = settings.hrir_path;
-  for (const auto& [name, own] : settings.device_hrir) {
-    if (name == device_name) hrir = own;
-  }
-  return EffectiveListening{.listen = listen,
-                            .faithful = settings.audio_faithful,
-                            .tuning = tuning_of(profile, settings.audio_custom, listen),
-                            .anime = anime_tuning_of(anime, settings.anime_custom),
-                            .hrir_path = std::string(hrir)};
-}
-
-std::expected<std::shared_ptr<const audio::Hrir>, Refusal> load_listening_hrir(const std::string& path) {
-  if (path.empty()) return std::shared_ptr<const audio::Hrir>();
-  if (const BundledHrir* bundled = find_bundled_hrir(path)) {
-    auto parsed = audio::parse_hrir(std::as_bytes(std::span(bundled->bytes.data(), bundled->bytes.size())));
-    if (!parsed) return std::unexpected(std::move(parsed.error()));
-    return std::make_shared<const audio::Hrir>(std::move(*parsed));
-  }
-  return audio::load_hrir(std::filesystem::path(path));
-}
-
-audio::AnimeTuning anime_tuning_of(std::string_view level, const audio::AnimeTuning& custom_values) {
-  if (level == "custom") {
-    audio::AnimeTuning t = audio::clamped(custom_values);
-    t.enabled = true;
-    return t;
-  }
-  const audio::AnimeLevel* found = audio::find_anime_level(level);
-  return found != nullptr ? found->tuning : audio::AnimeTuning{};
-}
-
-audio::MixTuning resolved_tuning(const PlaySettings& settings, int listen) {
-  return tuning_of(settings.audio_profile, settings.audio_custom, listen);
-}
-
-audio::MixTuning tuning_of(std::string_view profile, const audio::MixTuning& custom_values, int listen) {
-  if (profile == "custom") return audio::clamped(custom_values);
-  const audio::MixPreset* preset = audio::find_preset(profile);
-  if (preset == nullptr || (listen == 0 && !preset->headphones) || (listen == 1 && !preset->speakers))
-    return audio::MixTuning{};
-  return preset->tuning;
-}
-
 std::expected<PlaySettings, Refusal> validate(const PlaySettings& s) {
   if (!valid_factor(factor_of(s))) {
     return refuse(RefusalCode::FieldOutOfRange,
@@ -516,17 +451,6 @@ PlaySettings live_part(const PlaySettings& running, const PlaySettings& wanted, 
   s.update_frequency = wanted.update_frequency;
   s.language = wanted.language;
   s.audio_delay_ms = wanted.audio_delay_ms;
-  s.listening = wanted.listening;
-  s.audio_faithful = wanted.audio_faithful;
-  s.audio_profile = wanted.audio_profile;
-  s.audio_custom = wanted.audio_custom;
-  s.device_listening = wanted.device_listening;
-  s.device_profile = wanted.device_profile;
-  s.anime_sound = wanted.anime_sound;
-  s.anime_custom = wanted.anime_custom;
-  s.device_anime = wanted.device_anime;
-  s.hrir_path = wanted.hrir_path;
-  s.device_hrir = wanted.device_hrir;
   s.display_sync = wanted.display_sync;
   s.video_latency_ms = wanted.video_latency_ms;
   s.volume = wanted.volume;

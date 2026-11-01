@@ -6,6 +6,7 @@
 #include <filesystem>
 #include <string>
 #include <system_error>
+#include <utility>
 
 #include <imgui.h>
 
@@ -82,6 +83,8 @@ void calibration_start(PlaySettings& d, const SettingsChoices& choices, GradeWiz
                        std::vector<Input>& actions) {
   render::GradeSettings& g = d.grade_values;
   const std::string& key = choices.display_key;
+  // Demandée par l'assistant de premier démarrage : un nouveau profil, sans attendre le bouton.
+  const bool asked = std::exchange(wizard.autostart, false);
   panel::note(
       i18n::tr("Sets the two ends of the adaptive grade on this display: a dark scene, then a bright "
                "scene. The result is kept for this display and drives the grade."));
@@ -126,7 +129,7 @@ void calibration_start(PlaySettings& d, const SettingsChoices& choices, GradeWiz
   std::string wanted(wizard.name.data());
   // « active » et « gray » sont des clés de play.toml sous l'écran, pas des noms de profil.
   if (wanted == "active" || wanted == "gray") wanted += " ";
-  const bool fresh = ImGui::Button(i18n::tr("Calibrate a new profile")) && !wanted.empty();
+  const bool fresh = (ImGui::Button(i18n::tr("Calibrate a new profile")) || asked) && !wanted.empty();
   bool again = false;
   if (active != nullptr) {
     ImGui::SameLine();

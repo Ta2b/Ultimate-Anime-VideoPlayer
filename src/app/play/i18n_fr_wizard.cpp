@@ -7,6 +7,42 @@ namespace {
 
 // Assistant et écran des moteurs : (clé anglaise, français).
 constexpr std::array kWizardTexts{
+    Entry{"Calibrating this machine", "Calibration de la machine"},
+    Entry{"Machine calibration failed: Auto preset (see log)",
+          "La calibration de la machine a échoué : préréglage Auto (voir le journal)"},
+    Entry{
+        "After \"Finish\", the player tests several settings on a very demanding sequence: picture "
+        "resolution, SPAN upscaling and RIFE smoothness. It keeps the best combination this machine "
+        "sustains, SPAN first.",
+        "Après « Terminer », le lecteur essaie plusieurs réglages sur une séquence très éprouvante : "
+        "résolution de l'image, agrandissement SPAN et fluidité RIFE. Il garde la meilleure combinaison que "
+        "la machine tient, SPAN en priorité."},
+    Entry{"An important step: the HDR picture follows it. Redo it or add other profiles later in HDR and "
+          "color > HDR.",
+          "Une étape importante : l'image HDR en dépend. Refaites-la ou ajoutez d'autres profils plus tard "
+          "dans HDR et couleurs > HDR."},
+    Entry{"HDR grade calibration", "Calibration du grade HDR"},
+    Entry{"Machine calibration", "Calibration de la machine"},
+    Entry{"Only a progress bar is shown; it takes a few minutes, longer the first time on a laptop (the "
+          "engines are built once).",
+          "Seule une barre de chargement s'affiche ; cela prend quelques minutes, plus la première fois sur "
+          "un portable (les moteurs se construisent une fois)."},
+    Entry{"Right after the machine calibration, the player shows a few dark scenes, then a few bright "
+          "scenes: you tune the adaptive grade for this display.",
+          "Juste après la calibration de la machine, le lecteur montre quelques scènes sombres, puis "
+          "quelques scènes claires : vous réglez le grade adaptatif pour cet écran."},
+    Entry{"SDR chosen: no HDR grade to calibrate.", "SDR choisi : pas de grade HDR à calibrer."},
+    Entry{"Skipped: the Auto preset. Redo it later in General > Setup.",
+          "Passée : le préréglage Auto. Refaites-la plus tard dans Général > Configuration."},
+    Entry{"HDR grade calibration: right after the machine calibration (HDR and color > HDR)",
+          "Calibration du grade HDR : juste après celle de la machine (HDR et couleurs > HDR)"},
+    Entry{"HDR grade calibration: skipped (HDR and color > HDR)",
+          "Calibration du grade HDR : passée (HDR et couleurs > HDR)"},
+    Entry{"Machine calibration: after \"Finish\", the best settings this machine sustains (General > Setup)",
+          "Calibration de la machine : après « Terminer », les meilleurs réglages que la machine tient "
+          "(Général > Configuration)"},
+    Entry{"Machine calibration: skipped, Auto preset (General > Setup)",
+          "Calibration de la machine : passée, préréglage Auto (Général > Configuration)"},
     Entry{" · Tensor cores", " · cœurs Tensor"},
     Entry{" · matrix units (WMMA)", " · unités matricielles (WMMA)"},
     Entry{"Adaptive HDR", "HDR adaptatif"},

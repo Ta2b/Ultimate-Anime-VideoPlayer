@@ -7,6 +7,7 @@
 #include <memory>
 #include <string>
 #include <string_view>
+#include <utility>
 #include <vector>
 
 #include <imgui.h>
@@ -506,6 +507,13 @@ SettingsPanel::Result SettingsPanel::draw(const PlaySettings& running, const Set
                                           float scale, std::vector<Input>& actions) {
   Result result;
   if (!open_) return result;
+  if (std::exchange(grade_queued_, false)) {
+    const auto hdr =
+        std::ranges::find_if(kPages, [](const SettingsPage& p) { return std::string_view(p.name) == "HDR"; });
+    page_ = static_cast<int>(hdr - kPages.begin());
+    if (!grade_wizard_) grade_wizard_ = std::make_unique<GradeWizard>();
+    grade_wizard_->autostart = true;
+  }
   // Réglages changés ailleurs (Tab, volume) : le panneau les reprend, sans perdre ce qui attend.
   if (running != seen_) {
     draft_ = live_part(draft_, running, choices.rife_loaded);
