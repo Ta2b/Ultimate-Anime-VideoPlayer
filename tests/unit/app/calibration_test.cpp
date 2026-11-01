@@ -46,7 +46,7 @@ TEST_CASE("pic du système : la sortie de KWin en HDR, sa crête et son blanc", 
   CHECK_FALSE(parse_kwin_output("not json", "DP-1").has_value());
 }
 
-TEST_CASE("calibration du grade : quatre images sombres et quatre claires, guidées et traduites",
+TEST_CASE("calibration du grade : quatre images d'anime sombres et quatre claires, guidées et traduites",
           "[calibration]") {
   using namespace ajp::app::play;
   std::set<int> ids;
@@ -55,7 +55,10 @@ TEST_CASE("calibration du grade : quatre images sombres et quatre claires, guid�
       const CalibrationImage image = calibration_image(dark, i);
       ids.insert(image.id);
       CHECK((image.id < kCalibrationPerStep) == dark);
-      REQUIRE(image.rgba.size() == static_cast<std::size_t>(kCalibrationWidth) * kCalibrationHeight * 4);
+      CHECK(image.width == 1920);
+      CHECK(image.height == 1080);
+      REQUIRE(image.rgba.size() ==
+              static_cast<std::size_t>(image.width) * static_cast<std::size_t>(image.height) * 4);
       i18n::set_language(i18n::Language::French);
       CHECK(i18n::tr_view(image.title) != image.title);
       CHECK(i18n::tr_view(image.guidance) != image.guidance);
@@ -72,8 +75,10 @@ TEST_CASE("calibration du grade : quatre images sombres et quatre claires, guid�
     for (std::size_t i = 0; i < image.rgba.size(); i += 4) sum += image.rgba[i + 1];
     return sum / (static_cast<double>(image.rgba.size()) / 4.0) / 65535.0;
   };
-  CHECK(mean(calibration_image(true, 0)) < 0.2);
-  CHECK(mean(calibration_image(false, 0)) > 0.5);
+  for (int i = 0; i < kCalibrationPerStep; ++i) {
+    CHECK(mean(calibration_image(true, i)) < 0.35);
+    CHECK(mean(calibration_image(false, i)) > 0.35);
+  }
 }
 
 TEST_CASE("calibration : la clé d'un écran", "[calibration]") {
