@@ -11,6 +11,7 @@
 #include <system_error>
 
 #include "app/play/i18n.h"
+#include "core/charconv.h"
 #include "render/grade_params.h"
 
 namespace ajp::app::play {
@@ -224,7 +225,7 @@ char kind_letter(LearnSample::Kind kind) {
 template <typename T>
 bool number(std::string_view text, T& out) {
   const char* end = text.data() + text.size();
-  const auto [ptr, ec] = std::from_chars(text.data(), end, out);
+  const auto [ptr, ec] = core::from_chars(text.data(), end, out);
   return ec == std::errc{} && ptr == end;
 }
 
