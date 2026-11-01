@@ -208,8 +208,9 @@ struct GradeParams {
   double look_mix15 = 0.0;
   double look_white = 203.0;
   double look_pq = 0.0;
-  // Grade adaptatif des routes émulées (shader, tous GPU) : 1 pour l'activer, seuils en code PQ moyen de la
-  // scène, valeurs d'une scène claire ; celles d'une scène sombre sont shadows, vibrance, em_base et em_pow.
+  // Grade adaptatif des routes émulées (shader, tous GPU) : 1 pour l'activer, seuils en code PQ de la
+  // luminance de la source (gamma 2,4, blanc à 203 nits, sur toutes les sorties), valeurs d'une scène claire
+  // ; celles d'une scène sombre sont shadows, vibrance, em_base et em_pow.
   double ad_on = 0.0;
   double ad_lo = 0.2;
   double ad_hi = 0.45;
@@ -220,6 +221,7 @@ struct GradeParams {
   // Scène sombre avec éclat (GradeSettings::adaptive_glow_*) : son poids vient de la mesure de la scène,
   // ou gl_force (0 à 1) pendant la calibration ; négatif : selon la scène.
   double gl_force = -1.0;
+  double ad_sky_vibrance = 0.0;  // ciel bleu saturé ou flash très coloré (GradeSettings::adaptive_vibrance)
   double gl_shadows = 0.20;
   double gl_vibrance = 0.05;
   double gl_em_base = 160.0;

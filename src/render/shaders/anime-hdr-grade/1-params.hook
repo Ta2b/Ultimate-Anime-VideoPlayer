@@ -270,6 +270,13 @@
 //!MAXIMUM 20.0
 6.0
 
+//!PARAM ad_sky_vibrance
+//!DESC Grade adaptatif : vibrance d'un ciel bleu sature ou d'un flash tres colore
+//!TYPE float
+//!MINIMUM 0.0
+//!MAXIMUM 1.4
+0.0
+
 //!PARAM gl_force
 //!DESC Grade adaptatif : poids de la scene sombre avec eclat tenu par la calibration (negatif = selon la scene)
 //!TYPE float

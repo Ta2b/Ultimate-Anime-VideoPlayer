@@ -42,12 +42,21 @@ struct MeanLumaParams {
   unsigned int* histogram = nullptr;  // kLumaBins compteurs sur le GPU, remis à 0 par la passe finale
   float* sum = nullptr;  // trois sommes sur le GPU (luminance, bleu, chroma), remises à 0 de même
   float* out = nullptr;  // kLumaStatsFloats flottants en mémoire hôte projetée : la dernière mesure
+  // Bandes noires (film en 2,39:1, 4:3 dans du 16:9) : luma_bars_size(width, height) entiers sur le GPU, mis
+  // à 0 à l'ouverture. Les quatre premiers : le rectangle de l'image mesuré (x0, y0, x1, y1 sur la grille
+  // d'un point sur quatre ; x1 = 0 : l'image entière), tiré de l'image précédente ; puis une marque par ligne
+  // et par colonne qui a un point non noir. nullptr : l'image entière.
+  unsigned int* bars = nullptr;
 };
 
+constexpr int luma_bars_size(int width, int height) {
+  return 4 + height / 4 + width / 4;
+}
+
 // Statistiques de luminance de l'image (0 à 1, pondération BT.709 des canaux tels que reçus), sur un point
-// sur quatre dans chaque direction : histogramme de 64 cases par bloc puis global, moyenne, centiles 5, 50,
-// 95 et 99,5 %, parts sous 10 % et au-dessus de 80 % ; deux lancements sur le flux, le second écrit le
-// résultat en mémoire hôte sans copie (le numéro de mesure en dernier).
+// sur quatre dans chaque direction, hors bandes noires : histogramme de 64 cases par bloc puis global,
+// moyenne, centiles 5, 50, 95 et 99,5 %, parts sous 10 % et au-dessus de 80 % ; deux lancements sur le flux,
+// le second écrit le résultat en mémoire hôte sans copie (le numéro de mesure en dernier).
 cudaError_t launch_mean_luma(const MeanLumaParams& params, cudaStream_t stream);
 
 }  // namespace ajp::gpu::cuda

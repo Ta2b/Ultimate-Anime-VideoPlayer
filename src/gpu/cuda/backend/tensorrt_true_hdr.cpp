@@ -61,6 +61,7 @@ TensorRtBackend::TrueHdrState::~TrueHdrState() {
   if (rgb10 != nullptr) cudaFree(rgb10);
   if (luma_histogram != nullptr) cudaFree(luma_histogram);
   if (luma_sum != nullptr) cudaFree(luma_sum);
+  if (luma_bars != nullptr) cudaFree(luma_bars);
   if (luma_host != nullptr) cudaFreeHost(luma_host);
 }
 
@@ -93,6 +94,15 @@ std::expected<void, Refusal> TensorRtBackend::open_true_hdr(const vendor_hdr::In
       cudaHostGetDevicePointer(reinterpret_cast<void**>(&state->luma_device), state->luma_host, 0) ==
           cudaSuccess) {
     for (int i = 0; i < kLumaStatsFloats; ++i) state->luma_host[i] = 0.0F;
+    // Les bandes noires : sans elles (échec), la mesure prend l'image entière.
+    const auto bars =
+        sizeof(unsigned int) * static_cast<std::size_t>(luma_bars_size(config.width, config.height));
+    if (cudaMalloc(reinterpret_cast<void**>(&state->luma_bars), bars) != cudaSuccess ||
+        cudaMemset(state->luma_bars, 0, bars) != cudaSuccess) {
+      static_cast<void>(cudaGetLastError());
+      if (state->luma_bars != nullptr) cudaFree(state->luma_bars);
+      state->luma_bars = nullptr;
+    }
   } else {
     static_cast<void>(cudaGetLastError());
     if (state->luma_histogram != nullptr) cudaFree(state->luma_histogram);
@@ -155,7 +165,8 @@ std::expected<void, Refusal> TensorRtBackend::write_ring_true_hdr(
                               .height = hdr.height,
                               .histogram = hdr.luma_histogram,
                               .sum = hdr.luma_sum,
-                              .out = hdr.luma_device};
+                              .out = hdr.luma_device,
+                              .bars = hdr.luma_bars};
     if (auto ok = cuda_check(launch_mean_luma(luma, stream_), "mean_luma<<<>>>"); !ok) return ok;
   }
   const vendor_hdr::TrueHdrInput in{

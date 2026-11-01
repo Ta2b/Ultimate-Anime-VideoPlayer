@@ -168,15 +168,23 @@ vec4 hook() {
     // avec le code PQ moyen très lissé de la scène ; les couleurs ne s'effacent que sur les derniers 20 % de la
     // transition. ad_on = 0 : t = 0, les paramètres tels quels (mix(a, b, 0) = a).
     // Une scène sombre avec éclat (poids glow) glisse en plus vers ses propres valeurs gl_*.
+    // La position, le poids de l'éclat, la vibrance du ciel bleu et la série claire viennent de la passe des
+    // statistiques (2-analysis.hook), mêmes règles que sous RTX HDR.
     float t_scene = 0.0;
     float glow = 0.0;
+    float sky = 0.0;
+    float series_bright = 0.0;
     if (ad_on > 0.5) {
         vec4 scene = AJG_STATS_tex(vec2(0.75, 0.5));
-        t_scene = smoothstep(ad_lo, max(ad_hi, ad_lo + 1e-3), scene.x);
-        glow = gl_force >= 0.0 ? gl_force : clamp(scene.y, 0.0, 1.0) * (1.0 - t_scene);
+        t_scene = clamp(scene.x, 0.0, 1.0);
+        glow = clamp(scene.y, 0.0, 1.0);
+        sky = clamp(scene.z, 0.0, 1.0);
+        series_bright = clamp(scene.w, 0.0, 1.0);
     }
     float sh_now = mix(mix(shadows, ad_shadows, t_scene), gl_shadows, glow);
-    float vb_now = mix(mix(vibrance, ad_vibrance, t_scene), gl_vibrance, glow);
+    float vb_now = mix(mix(mix(vibrance, ad_vibrance, t_scene), gl_vibrance, glow), ad_sky_vibrance, sky);
+    float punch_now = punch + 0.12 * series_bright;
+    float chroma_now = chroma + 0.06 * series_bright;
     float em_base_now = mix(mix(em_base, ad_em_base, t_scene), gl_em_base, glow);
     float em_pow_now = mix(mix(em_pow, ad_em_pow, t_scene), gl_em_pow, glow);
     vec3 lin = ajg_decode(px.rgb);
@@ -270,14 +278,14 @@ vec4 hook() {
     // Fin du grade : contraste (courbe de puissance en luminance autour du pivot, teinte et rapports de canaux
     // gardes) puis saturation (ecart a la luminance, attenue vers le pic pour que les hautes lumieres restent
     // lumineuses plutot que de virer a la couleur pure). Les deux a identite exacte quand punch = 0 et chroma = 1.
-    if (punch != 0.0 || chroma != 1.0) {
+    if (punch_now != 0.0 || chroma_now != 1.0) {
         float yt = dot(c, target_luma());
         if (yt > 1e-4) {
-            if (punch != 0.0) {
+            if (punch_now != 0.0) {
                 float x = yt / pivot;
                 // Au-dessus du pivot l'exposant monte (hautes lumieres qui claquent), en dessous il monte moins
-                // (noirs plus profonds sans les ecraser) ; punch negatif : l'inverse, une courbe plus douce.
-                float expo = 1.0 + punch * (x >= 1.0 ? 0.55 : 0.40);
+                // (noirs plus profonds sans les ecraser) ; punch_now negatif : l'inverse, une courbe plus douce.
+                float expo = 1.0 + punch_now * (x >= 1.0 ? 0.55 : 0.40);
                 float shaped = pivot * pow(x, expo);
                 // Epaule douce vers le pic : pas d'ecretage dur.
                 float knee = 0.75 * peak;
@@ -289,8 +297,8 @@ vec4 hook() {
                 c *= ratio;
                 yt *= ratio;
             }
-            if (chroma != 1.0) {
-                float k = 1.0 + (chroma - 1.0) * (1.0 - 0.6 * smoothstep(0.35 * peak, peak, yt));
+            if (chroma_now != 1.0) {
+                float k = 1.0 + (chroma_now - 1.0) * (1.0 - 0.6 * smoothstep(0.35 * peak, peak, yt));
                 vec3 grey = vec3(yt);
                 vec3 target = grey + (c - grey) * k;
                 // Le gamut borne le gain : jamais de canal negatif ni au-dessus du pic.
