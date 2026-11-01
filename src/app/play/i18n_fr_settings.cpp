@@ -244,6 +244,8 @@ constexpr std::array kSettingsPages{
           "often wrong.",
           "Mesure le vrai pic de l'écran avec une mire, au lieu de la valeur de l'EDID, souvent fausse."},
     Entry{"Calibrate the peak", "Calibrer le pic"},
+    Entry{"The adaptive grade drives these settings: untick it to set them by hand.",
+          "Le grade adaptatif pilote ces réglages : décochez-le pour les régler à la main."},
     Entry{"Calibrated on this display: {} nits (used by Auto peak).",
           "Calibré sur cet écran : {} nits (repris par le pic automatique)."},
     Entry{"Forget the calibration", "Oublier la calibration"},
