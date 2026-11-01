@@ -1,6 +1,7 @@
 #include "app/play/settings_bench_results.h"
 
 #include <chrono>
+#include <cstdint>
 #include <exception>
 #include <filesystem>
 #include <format>
@@ -11,6 +12,7 @@
 
 #include "app/play/i18n.h"
 #include "app/play/panel_style.h"
+#include "media/bench_clip.h"
 
 namespace ajp::app::play {
 
@@ -51,11 +53,38 @@ void start_bench(const SettingsChoices& choices, const PlaySettings& base, Machi
       }));
 }
 
-std::string outcome_text(const CandidateTrial& trial) {
-  if (trial.lost_percent < 0.0) return i18n::tr("nothing rendered");
-  return i18n::tr_format("{} · {:.1f} / {:.0f} fps · 1 % low {:.1f} · {:.1f} % lost",
-                         trial.holds ? i18n::tr("holds") : i18n::tr("does not hold"), trial.fps,
-                         trial.target_fps, trial.low_fps, trial.lost_percent);
+// La couleur d'une ligne : vert, la machine tient avec de la marge (la recommandée l'est toujours) ; orange,
+// elle tient de justesse ou rate de peu ; rouge, elle ne suit pas.
+enum class Rating : std::uint8_t { Good, Fair, Poor };
+
+Rating rate(const CandidateTrial& trial, bool recommended) {
+  if (trial.lost_percent < 0.0 || trial.target_fps <= 0.0) return Rating::Poor;
+  const double fps = trial.fps / trial.target_fps;
+  const double low = trial.low_fps / trial.target_fps;
+  if (trial.holds) {
+    if (recommended || (fps >= 0.98 && low >= 0.85 && trial.lost_percent <= 0.5)) return Rating::Good;
+    return Rating::Fair;
+  }
+  return trial.lost_percent <= 10.0 && fps >= 0.85 ? Rating::Fair : Rating::Poor;
+}
+
+ImVec4 color_of(Rating rating) {
+  switch (rating) {
+    case Rating::Good:
+      return panel::kGood;
+    case Rating::Fair:
+      return ImVec4{1.0F, 0.62F, 0.25F, 1.0F};
+    case Rating::Poor:
+      break;
+  }
+  return ImVec4{1.0F, 0.38F, 0.38F, 1.0F};
+}
+
+// La réduction avant SPAN : la hauteur de travail, « no » quand l'image garde sa taille (sans SPAN, ou au
+// moins la hauteur de la séquence).
+std::string downscale_text(const ChainCandidate& chain) {
+  if (!chain.span || chain.height <= 0 || chain.height >= media::BenchClipSpec{}.height) return "no";
+  return std::format("{}p", chain.height);
 }
 
 }  // namespace
@@ -92,30 +121,48 @@ bool bench_results_section(PlaySettings& d, const SettingsChoices& choices, Mach
     note(i18n::tr_format("{} · {} · display {}p", r.gpu.empty() ? i18n::tr("Unknown graphics card") : r.gpu,
                          r.date, r.display_height));
     constexpr ImGuiTableFlags kFlags =
-        ImGuiTableFlags_BordersInnerH | ImGuiTableFlags_RowBg | ImGuiTableFlags_SizingStretchProp;
-    if (ImGui::BeginTable("##bench", 3, kFlags)) {
-      ImGui::TableSetupColumn(i18n::tr("Settings"), ImGuiTableColumnFlags_WidthStretch, 3.0F);
-      ImGui::TableSetupColumn(i18n::tr("Result"), ImGuiTableColumnFlags_WidthStretch, 3.0F);
+        ImGuiTableFlags_BordersInnerH | ImGuiTableFlags_SizingStretchProp | ImGuiTableFlags_PadOuterX;
+    if (ImGui::BeginTable("##bench", 6, kFlags)) {
+      ImGui::TableSetupColumn(i18n::tr("Downscale"), ImGuiTableColumnFlags_WidthStretch, 1.2F);
+      ImGui::TableSetupColumn(i18n::tr("Upscale"), ImGuiTableColumnFlags_WidthStretch, 1.0F);
+      ImGui::TableSetupColumn("RIFE", ImGuiTableColumnFlags_WidthStretch, 1.0F);
+      ImGui::TableSetupColumn("FPS", ImGuiTableColumnFlags_WidthStretch, 1.4F);
+      ImGui::TableSetupColumn(i18n::tr("1% low"), ImGuiTableColumnFlags_WidthStretch, 1.0F);
       ImGui::TableSetupColumn("", ImGuiTableColumnFlags_WidthFixed);
       ImGui::TableHeadersRow();
       int row = 0;
       for (const CandidateTrial& trial : r.tried) {
         ImGui::PushID(row++);
+        const bool recommended = trial.chain == r.chosen;
+        const ImVec4 color = color_of(rate(trial, recommended));
         ImGui::TableNextRow();
-        ImGui::TableNextColumn();
-        ImGui::TextUnformatted(describe(trial.chain).c_str());
-        if (trial.chain == r.chosen) panel::badge(i18n::tr("Recommended"), panel::kGood);
-        ImGui::TableNextColumn();
-        ImGui::TextColored(trial.holds ? panel::kGood : panel::kWarn, "%s", outcome_text(trial).c_str());
+        ImGui::TableSetBgColor(ImGuiTableBgTarget_RowBg0,
+                               ImGui::GetColorU32(ImVec4{color.x, color.y, color.z, 0.14F}));
+        const auto cell = [&](const std::string& text) {
+          ImGui::TableNextColumn();
+          ImGui::TextColored(color, "%s", text.c_str());
+        };
+        const bool rendered = trial.lost_percent >= 0.0;
+        cell(downscale_text(trial.chain));
+        cell(trial.chain.span ? "on" : "off");  // les mots demandés, dans les deux langues
+        cell(trial.chain.rife ? "on" : "off");
+        cell(rendered ? std::format("{:.1f} / {:.0f}", trial.fps, trial.target_fps) : std::string("-"));
+        cell(rendered ? std::format("{:.1f}", trial.low_fps) : std::string("-"));
+        if (ImGui::IsItemHovered() && rendered)
+          ImGui::SetTooltip("%s", i18n::tr_format("{:.1f} % lost", trial.lost_percent).c_str());
         ImGui::TableNextColumn();
         if (ImGui::SmallButton(i18n::tr("Apply"))) {
           d = candidate_settings(trial.chain, std::move(d));
           applied = true;
         }
+        if (recommended) panel::badge(i18n::tr("Recommended"), panel::kGood);
         ImGui::PopID();
       }
       ImGui::EndTable();
     }
+    note(
+        i18n::tr("Green: recommended, with margin. Orange: holds just barely, or misses a little. Red: this "
+                 "machine cannot keep up."));
     panel::tip(
         i18n::tr("Interpolation is always RIFE 4.22 lite in Auto Fast mode (experimental). The "
                  "working resolution stops at half the display: SPAN doubles it."));

@@ -20,6 +20,7 @@
 #include "app/play/home_view.h"
 #include "app/play/input.h"
 #include "app/play/links.h"
+#include "app/play/output_choice.h"
 #include "app/play/settings_panel.h"
 #include "core/types.h"
 
@@ -73,6 +74,9 @@ class PlayerUi {
   const ImDrawData* preparation(std::int64_t now_us, const PrepareView& view);
   // L'image de l'écran de bienvenue (first_run.h), recomposée à chaque appel.
   const ImDrawData* welcome(std::int64_t now_us, FirstRunView& view);
+  // L'image du choix HDR ou SDR d'après la calibration de la machine (output_choice.h) ; picked reçoit le
+  // bouton pressé.
+  const ImDrawData* output_choice(std::int64_t now_us, OutputPick& picked);
   // L'image de l'écran d'accueil (home_view.h) et du menu des paramètres s'il est ouvert ;
   // recomposée à chaque appel. Les réglages changés au menu vont dans actions.
   const ImDrawData* home(std::int64_t now_us, HomeView& view, std::vector<Input>& actions);

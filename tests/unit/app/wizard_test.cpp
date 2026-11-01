@@ -8,7 +8,7 @@ using namespace ajp::app::play;
 
 TEST_CASE("l'assistant saute les écrans sans objet", "[wizard]") {
   ajp::app::play::FrenchUi french;
-  CHECK(wizard_steps({.engine_choice = true, .hdr_display = true}).size() == 8);  // dont Grade
+  CHECK(wizard_steps({.engine_choice = true, .hdr_display = true}).size() == 7);  // le grade : après le bench
   const auto plain = wizard_steps({.engine_choice = false, .hdr_display = false});
   REQUIRE(plain.size() == 5);
   CHECK(plain.front() == WizardStep::Welcome);
