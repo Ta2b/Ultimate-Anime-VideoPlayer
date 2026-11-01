@@ -15,8 +15,12 @@
 #include "vendor_hdr/dynamic_library.h"
 
 #if defined(_WIN32)
+#ifndef WIN32_LEAN_AND_MEAN
 #define WIN32_LEAN_AND_MEAN
+#endif
+#ifndef NOMINMAX  // déjà posé par CMakeLists.txt : redéfini, MSVC avertit (C4005)
 #define NOMINMAX
+#endif
 #include <windows.h>
 #endif
 

@@ -255,7 +255,11 @@ std::string update_managed_reason(const UpdatePaths& paths) {
   return i18n::tr("on macOS, download the new version from the releases page");
 #endif
   // L'AppImage (AJP_PACKAGED, posée par son lanceur) est un fichier en lecture seule : on le remplace par le
-  // nouveau. NOLINTNEXTLINE(concurrency-mt-unsafe)
+  // nouveau. MSVC tient getenv pour dangereux (C4996) : seul l'AppImage, sous Linux, pose la variable.
+#if defined(_MSC_VER)
+#pragma warning(suppress : 4996)
+#endif
+  // NOLINTNEXTLINE(concurrency-mt-unsafe)
   const char* packaged = std::getenv("AJP_PACKAGED");  // env: lanceur
   if (packaged != nullptr && std::string_view(packaged) == "appimage")
     return i18n::tr("AppImage: download the new version from the releases page (replace the file)");
