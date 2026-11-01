@@ -321,10 +321,13 @@ void adaptive_tick(Chain& to, std::int64_t now_us) {
     }
     return;
   }
-  if (now_us - to.adaptive_at_us < 100'000) return;
-  learn_tick(to, now_us);
-  const std::int64_t dt = to.adaptive_at_us == 0 ? 0 : now_us - to.adaptive_at_us;
-  to.adaptive_at_us = now_us;
+  // Coupe vue sur les images (RIFE compare chaque paire, en avance sur l'affichage) : pendant 300 ms, la
+  // mesure suit l'image sans lissage, le temps que la statistique de la nouvelle scène arrive.
+  if (const std::uint64_t cuts = to.live.scene_cuts(); cuts != to.adaptive_cuts) {
+    to.adaptive_cuts = cuts;
+    to.adaptive_cut_until_us = now_us + 300'000;
+  }
+  const bool image_cut = now_us < to.adaptive_cut_until_us;
   const auto stats = to.kernels->scene_stats();
   if (!stats) return;
   const std::optional<float> luma = stats->mean;
@@ -333,8 +336,18 @@ void adaptive_tick(Chain& to, std::int64_t now_us) {
   const double scene = std::lerp(static_cast<double>(*luma), static_cast<double>(stats->p50), glow_now);
   constexpr double kTauUs = 1'200'000.0;
   constexpr double kCut = 0.20;  // un saut de luminance moyenne : coupe de scène, la mesure repart
+  // Une coupe (saut de luminance, éclat qui apparaît ou disparaît, coupe vue sur les images) se traite dès
+  // le tour où la mesure la montre, sans attendre le dixième de seconde des tours ordinaires : RTX HDR
+  // change de gris moyen une à trois images plus tôt.
+  const bool cut = to.adaptive_luma < 0.0 || std::abs(scene - to.adaptive_luma) > kCut ||
+                   std::abs(glow_now - to.adaptive_glow_seen) > 0.5 ||
+                   (image_cut && std::abs(scene - to.adaptive_luma) > 0.02);
+  if (now_us - to.adaptive_at_us < 100'000 && !cut) return;
+  learn_tick(to, now_us);
+  const std::int64_t dt = to.adaptive_at_us == 0 ? 0 : now_us - to.adaptive_at_us;
+  to.adaptive_at_us = now_us;
   const double follow = 1.0 - std::exp(-static_cast<double>(dt) / kTauUs);
-  if (to.adaptive_luma < 0.0 || std::abs(scene - to.adaptive_luma) > kCut) {
+  if (cut) {
     to.adaptive_luma = scene;
     to.adaptive_cut = true;
     to.adaptive_blue = static_cast<double>(stats->blue);
