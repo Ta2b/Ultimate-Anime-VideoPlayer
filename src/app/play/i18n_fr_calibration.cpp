@@ -17,8 +17,14 @@ constexpr std::array kCalibration{
         "Règle les deux bouts du grade adaptatif sur cet écran : une scène sombre, puis une scène claire. Le "
         "résultat est gardé pour cet écran et pilote le grade."},
     Entry{"This display has a calibrated adaptive grade.", "Cet écran a un grade adaptatif calibré."},
-    Entry{"Calibrate the adaptive grade", "Calibrer le grade adaptatif"},
-    Entry{"Forget the grade calibration", "Oublier la calibration du grade"},
+    Entry{"Grade profile", "Profil de grade"},
+    Entry{"Delete this profile", "Supprimer ce profil"},
+    Entry{"New profile name", "Nom du nouveau profil"},
+    Entry{"Calibrate a new profile", "Calibrer un nouveau profil"},
+    Entry{"Recalibrate this profile", "Recalibrer ce profil"},
+    Entry{"Profile {}", "Profil {}"},
+    Entry{"This display does not give its identity (EDID): the calibration cannot be kept.",
+          "Cet écran ne donne pas son identité (EDID) : la calibration ne peut pas être gardée."},
     Entry{"1/2 · Dark scene. Set the middle gray, the deep blacks and the colors while looking at the "
           "example on the left, played like your episodes.",
           "1/2 · Scène sombre. Réglez le gris moyen, les noirs profonds et les couleurs en regardant "

@@ -6,8 +6,10 @@
 // ouverture).
 #pragma once
 
+#include <array>
 #include <cstdint>
 #include <filesystem>
+#include <string>
 #include <vector>
 
 #include "app/play/calibration_shot.h"
@@ -18,11 +20,13 @@
 namespace ajp::app::play {
 
 struct GradeWizard {
-  int step = 0;          // 0 : fermée ; 1 : scène sombre ; 2 : scène claire
-  int image = 0;         // le plan d'exemple de l'étape (0 à kCalibrationPerStep - 1)
-  PlaySettings before;   // les réglages d'avant, que « Annuler » remet
-  CalibrationShot shot;  // la place de la vidéo de calibration (step > 0)
-  bool showing = false;  // la vidéo de calibration est celle qui se lit : elle se montre à sa place
+  int step = 0;                 // 0 : fermée ; 1 : scène sombre ; 2 : scène claire
+  int image = 0;                // le plan d'exemple de l'étape (0 à kCalibrationPerStep - 1)
+  PlaySettings before;          // les réglages d'avant, que « Annuler » remet
+  std::string profile;          // le profil de grade que « Terminer » garde (nouveau, ou celui recalibré)
+  std::array<char, 64> name{};  // le nom tapé pour un nouveau profil
+  CalibrationShot shot;         // la place de la vidéo de calibration (step > 0)
+  bool showing = false;         // la vidéo de calibration est celle qui se lit : elle se montre à sa place
   // La vidéo de calibration demandée (PlayFile) et pas encore rendue : à la fin, la vidéo d'avant (vide :
   // l'accueil), à sa position et dans sa pause.
   bool on_clip = false;

@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdio>
 #include <filesystem>
 #include <string>
 #include <system_error>
@@ -75,6 +76,80 @@ void example_image(const SettingsChoices& choices, GradeWizard& wizard, float sc
                                 .y1 = static_cast<int>(y0 + h)};
 }
 
+// La calibration fermée : les profils de grade calibrés de l'écran (choisir celui en service, en supprimer),
+// et le départ d'une calibration, pour un nouveau profil ou pour recalibrer celui en service.
+void calibration_start(PlaySettings& d, const SettingsChoices& choices, GradeWizard& wizard,
+                       std::vector<Input>& actions) {
+  render::GradeSettings& g = d.grade_values;
+  const std::string& key = choices.display_key;
+  panel::note(
+      i18n::tr("Sets the two ends of the adaptive grade on this display: a dark scene, then a bright "
+               "scene. The result is kept for this display and drives the grade."));
+  const std::vector<std::string> names = grade_profiles(d, key);
+  const PlaySettings::DisplayGrade* active = calibrated_grade(d, key);
+  if (!names.empty()) {
+    const std::string shown = active != nullptr ? active->name : std::string(i18n::tr("None"));
+    if (ImGui::BeginCombo(i18n::tr("Grade profile"), shown.c_str())) {
+      for (const std::string& name : names) {
+        if (ImGui::Selectable(name.c_str(), active != nullptr && active->name == name)) {
+          d.grade = true;
+          g.adaptive = true;
+          use_calibrated_grade(d, key, name);
+        }
+      }
+      ImGui::EndCombo();
+    }
+    if (active != nullptr && ImGui::Button(i18n::tr("Delete this profile"))) {
+      const std::string gone = active->name;
+      forget_calibrated_grade(d, key, gone);
+      d = with_calibrated_grade(std::move(d), key);
+      active = calibrated_grade(d, key);
+    }
+  }
+  const std::filesystem::path clip = calibration_clip();
+  std::error_code missing;
+  if (clip.empty() || !std::filesystem::is_regular_file(clip, missing)) {
+    panel::note(
+        i18n::tr("The calibration video is missing (calibration/calibration.mkv next to the player): "
+                 "reinstall the player."));
+    return;
+  }
+  if (key.empty()) {
+    panel::note(i18n::tr("This display does not give its identity (EDID): the calibration cannot be kept."));
+    return;
+  }
+  if (wizard.name[0] == '\0') {
+    const std::string next = next_grade_profile_name(d, key);
+    std::snprintf(wizard.name.data(), wizard.name.size(), "%s", next.c_str());
+  }
+  ImGui::InputText(i18n::tr("New profile name"), wizard.name.data(), wizard.name.size());
+  std::string wanted(wizard.name.data());
+  // « active » et « gray » sont des clés de play.toml sous l'écran, pas des noms de profil.
+  if (wanted == "active" || wanted == "gray") wanted += " ";
+  const bool fresh = ImGui::Button(i18n::tr("Calibrate a new profile")) && !wanted.empty();
+  bool again = false;
+  if (active != nullptr) {
+    ImGui::SameLine();
+    again = ImGui::Button(i18n::tr("Recalibrate this profile"));
+  }
+  if (!fresh && !again) return;
+  wizard.profile = again ? active->name : wanted;
+  wizard.name[0] = '\0';
+  wizard.before = d;
+  d.grade = true;
+  g.adaptive = true;
+  wizard.step = 1;
+  wizard.image = 0;
+  // La vidéo de calibration, en pause sur le premier plan ; à la fin, la vidéo d'avant à sa position.
+  const bool already = choices.source_file == clip;
+  wizard.on_clip = true;
+  wizard.return_file = already ? std::filesystem::path() : choices.source_file;
+  wizard.return_us = already ? 0 : choices.position_us;
+  wizard.return_paused = choices.paused;
+  const CalibrationImage first = calibration_image(true, 0);
+  wizard.sought = first.id;
+  actions.emplace_back(PlayFile{.file = clip, .start_us = first.at_us, .paused = true});
+}
 }  // namespace
 
 void settle_calibration(GradeWizard& wizard, std::vector<Input>& actions) {
@@ -98,40 +173,9 @@ void grade_calibration(PlaySettings& d, const SettingsChoices& choices, GradeWiz
     panel::end_group();
     return;
   }
-  const bool calibrated = calibrated_grade(d, choices.display_key) != nullptr;
   if (wizard.step == 0) {
     g.adaptive_force = -1.0;
-    panel::note(
-        i18n::tr("Sets the two ends of the adaptive grade on this display: a dark scene, then a bright "
-                 "scene. The result is kept for this display and drives the grade."));
-    if (calibrated) panel::note(i18n::tr("This display has a calibrated adaptive grade."));
-    const std::filesystem::path clip = calibration_clip();
-    std::error_code missing;
-    if (clip.empty() || !std::filesystem::is_regular_file(clip, missing)) {
-      panel::note(
-          i18n::tr("The calibration video is missing (calibration/calibration.mkv next to the player): "
-                   "reinstall the player."));
-    } else if (ImGui::Button(i18n::tr("Calibrate the adaptive grade"))) {
-      wizard.before = d;
-      d.grade = true;
-      g.adaptive = true;
-      wizard.step = 1;
-      wizard.image = 0;
-      // La vidéo de calibration, en pause sur le premier plan ; à la fin, la vidéo d'avant à sa position.
-      const bool already = choices.source_file == clip;
-      wizard.on_clip = true;
-      wizard.return_file = already ? std::filesystem::path() : choices.source_file;
-      wizard.return_us = already ? 0 : choices.position_us;
-      wizard.return_paused = choices.paused;
-      const CalibrationImage first = calibration_image(true, 0);
-      wizard.sought = first.id;
-      actions.emplace_back(PlayFile{.file = clip, .start_us = first.at_us, .paused = true});
-    }
-    if (calibrated) {
-      ImGui::SameLine();
-      if (ImGui::Button(i18n::tr("Forget the grade calibration")))
-        forget_calibrated_grade(d, choices.display_key);
-    }
+    calibration_start(d, choices, wizard, actions);
     panel::end_group();
     return;
   }
@@ -172,7 +216,7 @@ void grade_calibration(PlaySettings& d, const SettingsChoices& choices, GradeWiz
     } else {
       wizard.step = 0;
       g.adaptive_force = -1.0;
-      keep_calibrated_grade(d, choices.display_key);
+      keep_calibrated_grade(d, choices.display_key, wizard.profile);
     }
   }
   ImGui::SameLine();
