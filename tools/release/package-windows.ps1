@@ -181,13 +181,14 @@ if ($env:AJP_ENGINES_LOCK) {
     $other = Join-Path $Out "engines-autre.lock"
     Invoke-WebRequest -Uri $env:AJP_ENGINES_LOCK -OutFile $other -UseBasicParsing
   }
-  $have = [regex]::Matches((Get-Content $Lock -Raw), '(?m)^id = "(.*)"$') | ForEach-Object { $_.Groups[1].Value }
-  $blocks = (Get-Content $other -Raw) -split '(?m)^(?=\[\[(?:engine|vendor_file)\]\]$)' | Where-Object { $_ -match '^\[\[(engine|vendor_file)\]\]' }
+  # Fins de ligne CRLF sous Windows : ramenées à LF, sans quoi « $ » ne tombe jamais en fin de ligne.
+  $have = [regex]::Matches(((Get-Content $Lock -Raw) -replace "`r`n", "`n"), '(?m)^id = "(.*)"$') | ForEach-Object { $_.Groups[1].Value }
+  $blocks = ((Get-Content $other -Raw) -replace "`r`n", "`n") -split '(?m)^(?=\[\[(?:engine|vendor_file)\]\]$)' | Where-Object { $_ -match '^\[\[(engine|vendor_file)\]\]' }
   foreach ($block in $blocks) {
     $id = [regex]::Match($block, '(?m)^id = "(.*)"$').Groups[1].Value
     if ($id -and -not ($have -contains $id)) { Add-Content -Path $Lock -Value ("", $block.TrimEnd()) -Encoding utf8NoBOM }
   }
-  Write-Host ("moteurs d'engines.lock : " + (([regex]::Matches((Get-Content $Lock -Raw), '(?m)^id = "(.*)"$') | ForEach-Object { $_.Groups[1].Value } | Sort-Object -Unique) -join " "))
+  Write-Host ("moteurs d'engines.lock : " + (([regex]::Matches(((Get-Content $Lock -Raw) -replace "`r`n", "`n"), '(?m)^id = "(.*)"$') | ForEach-Object { $_.Groups[1].Value } | Sort-Object -Unique) -join " "))
 }
 Copy-Item $Lock (Join-Path $Out "engines.lock") -Force
 
