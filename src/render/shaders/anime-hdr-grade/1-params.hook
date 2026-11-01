@@ -269,3 +269,38 @@
 //!MINIMUM 1.0
 //!MAXIMUM 20.0
 6.0
+
+//!PARAM gl_force
+//!DESC Grade adaptatif : poids de la scene sombre avec eclat tenu par la calibration (negatif = selon la scene)
+//!TYPE float
+//!MINIMUM -1.0
+//!MAXIMUM 1.0
+-1.0
+
+//!PARAM gl_shadows
+//!DESC Grade adaptatif : profondeur des noirs d'une scene sombre avec eclat
+//!TYPE float
+//!MINIMUM 0.0
+//!MAXIMUM 0.95
+0.20
+
+//!PARAM gl_vibrance
+//!DESC Grade adaptatif : vibrance d'une scene sombre avec eclat
+//!TYPE float
+//!MINIMUM 0.0
+//!MAXIMUM 1.4
+0.05
+
+//!PARAM gl_em_base
+//!DESC Grade adaptatif : base de la courbe TrueHDR emulee (4 x gris moyen) d'une scene sombre avec eclat
+//!TYPE float
+//!MINIMUM 10.0
+//!MAXIMUM 400.0
+160.0
+
+//!PARAM gl_em_pow
+//!DESC Grade adaptatif : exposant de la courbe TrueHDR emulee d'une scene sombre avec eclat
+//!TYPE float
+//!MINIMUM 1.0
+//!MAXIMUM 20.0
+6.0

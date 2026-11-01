@@ -211,12 +211,20 @@ void adaptive_section(PlaySettings& d, const SettingsChoices& choices) {
   if (ImGui::SliderFloat(i18n::tr("Middle gray, bright scene"), &gray, static_cast<float>(kMiddleGray.lo),
                          static_cast<float>(kMiddleGray.hi), "%.0f", ImGuiSliderFlags_AlwaysClamp))
     g.adaptive_gray = std::clamp(std::round(static_cast<double>(gray)), kMiddleGray.lo, kMiddleGray.hi);
+  auto glow_gray = static_cast<float>(g.adaptive_glow_gray);
+  if (ImGui::SliderFloat(i18n::tr("Middle gray, glow scene"), &glow_gray, static_cast<float>(kMiddleGray.lo),
+                         static_cast<float>(kMiddleGray.hi), "%.0f", ImGuiSliderFlags_AlwaysClamp))
+    g.adaptive_glow_gray =
+        std::clamp(std::round(static_cast<double>(glow_gray)), kMiddleGray.lo, kMiddleGray.hi);
+  grade_slider(i18n::tr("Deep blacks, glow scene"), g.adaptive_glow_shadows, kShadows);
+  grade_slider(i18n::tr("Colors, glow scene"), g.adaptive_glow_vibrance, kVibrance);
   ImGui::EndDisabled();
   ImGui::Checkbox(i18n::tr("Record scene statistics (learning)"), &d.adaptive_record);
   note(
       i18n::tr("The sliders above and the middle gray are for dark scenes; the values here apply to bright "
-               "scenes, blended with the source's smoothed average brightness. Works with RTX HDR and with "
-               "Adaptive HDR (any GPU)."));
+               "scenes, blended with the source's smoothed average brightness. A dark scene with a bright "
+               "glow (magic circle, lamp at night) is judged by its background and takes its own values. "
+               "Works with RTX HDR and with Adaptive HDR (any GPU)."));
 }
 
 void grade_tab(PlaySettings& d, const SettingsChoices& choices) {

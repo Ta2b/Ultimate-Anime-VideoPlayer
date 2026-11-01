@@ -243,6 +243,9 @@ struct PlaySettings {
     double gray_bright = 30.0;
     double shadows_bright = 0.80;
     double colors_cut = 0.40;
+    double gray_glow = 40.0;  // scène sombre avec éclat (GradeSettings::adaptive_glow_*)
+    double shadows_glow = 0.20;
+    double colors_glow = 0.05;
     friend bool operator==(const DisplayGrade&, const DisplayGrade&) = default;
   };
   std::vector<DisplayGrade> display_grades;

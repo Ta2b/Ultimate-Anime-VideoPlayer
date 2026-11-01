@@ -49,6 +49,22 @@ bool oled_panel(const PlaySettings& s, const std::optional<DisplayFacts>& displa
 
 }  // namespace
 
+double glow_weight(const gpu::KernelOps::SceneStats& stats, const render::GradeSettings& g) {
+  const auto smooth = [](double edge0, double edge1, double v) {
+    const double x = std::clamp((v - edge0) / (edge1 - edge0), 0.0, 1.0);
+    return x * x * (3.0 - 2.0 * x);
+  };
+  const double p50 = static_cast<double>(stats.p50);
+  const double spread = static_cast<double>(stats.p995) - p50;
+  const double bright = static_cast<double>(stats.bright);
+  const double lo = g.adaptive_lo / 100.0;
+  const double hi = std::max(g.adaptive_hi / 100.0, lo + 0.01);
+  // L'éclat : au moins 0,2 % de points au-dessus de 80 %, guère plus de 12 % (au-delà, une scène claire), et
+  // un pic à plus de 0,4 au-dessus du fond.
+  return smooth(0.35, 0.60, spread) * smooth(0.002, 0.02, bright) * (1.0 - smooth(0.12, 0.30, bright)) *
+         (1.0 - smooth(lo, hi, p50));
+}
+
 // Couleur de la sortie de RTX HDR : PQ BT.2020 au pic donné à TrueHDR.
 ColorInfo pq_color(int peak_nits) {
   return ColorInfo{.matrix = ColorMatrix::Rgb,
@@ -217,7 +233,8 @@ void apply_oled_care(Chain& to, const PlaySettings& s) {
 
 // Le grade de la chaîne avec ses seuils du vrai noir.
 void set_grade(Chain& to, const PlaySettings& wanted) {
-  const PlaySettings s = with_adaptive(wanted, to.adaptive_t, to.adaptive_tv, to.adaptive_bs);
+  const PlaySettings s =
+      with_adaptive(wanted, to.adaptive_t, to.adaptive_tv, to.adaptive_bs, to.adaptive_glow);
   to.screen.set_grade(
       grade_of(s, to.true_hdr_open, to.peak_nits, to.auto_peak, to.display, to.black, to.source_hdr));
 }
@@ -225,22 +242,27 @@ void set_grade(Chain& to, const PlaySettings& wanted) {
 // Vrai noir OLED : recale les seuils sur la rampe de 32 marches mesurée à la sortie (route native :
 // les marches SDR ; RTX HDR : celles que gpu a passées par TrueHDR), grade compris, puis pose le
 // grade avec eux.
-PlaySettings with_adaptive(const PlaySettings& s, double t, double tv, double bs) {
+PlaySettings with_adaptive(const PlaySettings& s, double t, double tv, double bs, double glow) {
   const render::GradeSettings& g = s.grade_values;
-  if (!g.adaptive || !(t > 0.0 || tv > 0.0 || bs > 0.0)) return s;
+  if (!g.adaptive || !(t > 0.0 || tv > 0.0 || bs > 0.0 || glow > 0.0)) return s;
   bs = std::clamp(bs, 0.0, 1.0);
   t = std::clamp(t, 0.0, 1.0);
+  glow = std::clamp(glow, 0.0, 1.0);
   const double vibrance_t_smooth = std::clamp(tv, 0.0, 1.0);
   PlaySettings out = s;
   render::GradeSettings& o = out.grade_values;
-  o.shadows = std::lerp(g.shadows, g.adaptive_shadows, t);
+  // La scène sombre avec éclat (glow) glisse en plus vers ses propres noirs, couleurs et gris moyen.
+  o.shadows = std::lerp(std::lerp(g.shadows, g.adaptive_shadows, t), g.adaptive_glow_shadows, glow);
   // Les scènes claires perdent une part de la vibrance (couleurs chaudes sursaturées), puis la scène bleue
   // saturée glisse vers sa propre valeur.
   const double keep = 1.0 - std::clamp(g.adaptive_vibrance_cut, 0.0, 1.0) * t;
-  o.vibrance = std::lerp(g.vibrance * keep, g.adaptive_vibrance, vibrance_t_smooth);
-  o.vibrance_rtx = std::lerp(g.vibrance_rtx * keep, g.adaptive_vibrance, vibrance_t_smooth);
-  out.true_hdr_gray =
-      static_cast<int>(std::lround(std::lerp(static_cast<double>(s.true_hdr_gray), g.adaptive_gray, t)));
+  o.vibrance = std::lerp(std::lerp(g.vibrance * keep, g.adaptive_glow_vibrance, glow), g.adaptive_vibrance,
+                         vibrance_t_smooth);
+  o.vibrance_rtx = std::lerp(std::lerp(g.vibrance_rtx * keep, g.adaptive_glow_vibrance, glow),
+                             g.adaptive_vibrance, vibrance_t_smooth);
+  const double gray = std::lerp(std::lerp(static_cast<double>(s.true_hdr_gray), g.adaptive_gray, t),
+                                g.adaptive_glow_gray, glow);
+  out.true_hdr_gray = static_cast<int>(std::lround(gray));
   // Série claire par nature (luminosité moyenne de l'épisode haute) : plus de contraste et de couleur pour
   // que l'image reste percutante, que ses scènes ordinaires ne soient pas toutes traitées comme « claires ».
   o.punch_base += 0.12 * bs;
@@ -282,8 +304,10 @@ void adaptive_tick(Chain& to, std::int64_t now_us) {
   }
   const render::GradeSettings& g = to.running.grade_values;
   if (!g.adaptive || to.kernels == nullptr || !to.true_hdr_open) {
-    if (to.adaptive_t != 0.0 || to.adaptive_tv != 0.0 || to.adaptive_bs != 0.0) {
+    if (to.adaptive_t != 0.0 || to.adaptive_tv != 0.0 || to.adaptive_bs != 0.0 || to.adaptive_glow != 0.0) {
       to.adaptive_bs = 0.0;  // coupé en cours de route : retour aux curseurs
+      to.adaptive_glow = 0.0;
+      to.adaptive_glow_seen = 0.0;
       to.adaptive_t = 0.0;
       to.adaptive_tv = 0.0;
       to.adaptive_blue = 0.0;
@@ -301,18 +325,23 @@ void adaptive_tick(Chain& to, std::int64_t now_us) {
   const auto stats = to.kernels->scene_stats();
   if (!stats) return;
   const std::optional<float> luma = stats->mean;
+  const double glow_now = glow_weight(*stats, g);
+  // Une scène sombre avec éclat se classe sur son fond (la médiane), pas sur la moyenne que l'éclat relève.
+  const double scene = std::lerp(static_cast<double>(*luma), static_cast<double>(stats->p50), glow_now);
   constexpr double kTauUs = 1'200'000.0;
   constexpr double kCut = 0.20;  // un saut de luminance moyenne : coupe de scène, la mesure repart
   const double follow = 1.0 - std::exp(-static_cast<double>(dt) / kTauUs);
-  if (to.adaptive_luma < 0.0 || std::abs(static_cast<double>(*luma) - to.adaptive_luma) > kCut) {
-    to.adaptive_luma = static_cast<double>(*luma);
+  if (to.adaptive_luma < 0.0 || std::abs(scene - to.adaptive_luma) > kCut) {
+    to.adaptive_luma = scene;
     to.adaptive_cut = true;
     to.adaptive_blue = static_cast<double>(stats->blue);
     to.adaptive_chroma = static_cast<double>(stats->chroma);
+    to.adaptive_glow_seen = glow_now;
   } else {
-    to.adaptive_luma += follow * (static_cast<double>(*luma) - to.adaptive_luma);
+    to.adaptive_luma += follow * (scene - to.adaptive_luma);
     to.adaptive_blue += follow * (static_cast<double>(stats->blue) - to.adaptive_blue);
     to.adaptive_chroma += follow * (static_cast<double>(stats->chroma) - to.adaptive_chroma);
+    to.adaptive_glow_seen += follow * (glow_now - to.adaptive_glow_seen);
   }
   // La luminosité de la SÉRIE : la moyenne de l'épisode, lissée sur une à deux minutes (moyenne cumulée au
   // début, puis exponentielle), amorcée à celle de Re:Zero (0,30). Une série claire par nature (Slime : plus
@@ -349,8 +378,10 @@ void adaptive_tick(Chain& to, std::int64_t now_us) {
   const double gate = std::clamp(t / 0.5, 0.0, 1.0);
   const double xc = std::clamp((to.adaptive_chroma - 0.40) / 0.20, 0.0, 1.0);
   double tv = std::max(xv * xv * (3.0 - 2.0 * xv) * gate, xc * xc * (3.0 - 2.0 * xc));
+  double glow = std::clamp(to.adaptive_glow_seen, 0.0, 1.0) * (1.0 - t);
   if (g.adaptive_force >= 0.0) {  // calibration : un bout de la courbe, sans la couleur ni la série
-    t = g.adaptive_force >= 0.5 ? 1.0 : 0.0;
+    t = render::grade_limits::forced_bright(g.adaptive_force) ? 1.0 : 0.0;
+    glow = render::grade_limits::forced_glow(g.adaptive_force) ? 1.0 : 0.0;
     tv = 0.0;
     bs = 0.0;
   }
@@ -359,21 +390,26 @@ void adaptive_tick(Chain& to, std::int64_t now_us) {
   // change donc qu'à une coupe de scène, invisible, ou quand la lumière de la scène a vraiment changé (un
   // fondu, une explosion qui dure) ; la calibration (scène forcée) s'applique tout de suite.
   const bool forced = g.adaptive_force >= 0.0;
-  const bool far = std::abs(t - to.adaptive_t) >= 0.35 || std::abs(tv - to.adaptive_tv) >= 0.35;
+  const bool far = std::abs(t - to.adaptive_t) >= 0.35 || std::abs(tv - to.adaptive_tv) >= 0.35 ||
+                   std::abs(glow - to.adaptive_glow) >= 0.35;
   const bool may_change = forced || to.adaptive_forced || std::exchange(to.adaptive_cut, false) || far;
   to.adaptive_forced = forced;
   if (!may_change) return;
   const bool same = std::abs(t - to.adaptive_t) < 0.02 && std::abs(tv - to.adaptive_tv) < 0.02 &&
                     !(t == 0.0 && to.adaptive_t != 0.0) && !(t == 1.0 && to.adaptive_t != 1.0) &&
                     !(tv == 0.0 && to.adaptive_tv != 0.0) && !(tv == 1.0 && to.adaptive_tv != 1.0) &&
-                    std::abs(bs - to.adaptive_bs) < 0.02;
+                    std::abs(bs - to.adaptive_bs) < 0.02 && std::abs(glow - to.adaptive_glow) < 0.02 &&
+                    !(glow == 0.0 && to.adaptive_glow != 0.0) && !(glow == 1.0 && to.adaptive_glow != 1.0);
   if (same) return;
-  const vendor_hdr::TrueHdrParams before =
-      true_hdr_params(with_adaptive(to.running, to.adaptive_t, to.adaptive_tv, to.adaptive_bs), to.auto_peak);
+  const vendor_hdr::TrueHdrParams before = true_hdr_params(
+      with_adaptive(to.running, to.adaptive_t, to.adaptive_tv, to.adaptive_bs, to.adaptive_glow),
+      to.auto_peak);
   to.adaptive_t = t;
   to.adaptive_tv = tv;
   to.adaptive_bs = bs;
-  const vendor_hdr::TrueHdrParams after = true_hdr_params(with_adaptive(to.running, t, tv, bs), to.auto_peak);
+  to.adaptive_glow = glow;
+  const vendor_hdr::TrueHdrParams after =
+      true_hdr_params(with_adaptive(to.running, t, tv, bs, glow), to.auto_peak);
   if (after.middle_gray != before.middle_gray) {
     to.live.set_true_hdr(after);
     if (to.session.view().paused) to.hdr_refresh_us = now_us + 120'000;

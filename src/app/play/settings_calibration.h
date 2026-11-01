@@ -1,5 +1,6 @@
-// La calibration du grade adaptatif (Paramètres > HDR), en deux temps : la scène tenue pour sombre, puis pour
-// claire (GradeSettings::adaptive_force), chacune avec ses curseurs et quatre plans d'exemple
+// La calibration du grade adaptatif (Paramètres > HDR), en trois temps : la scène tenue pour sombre, pour
+// sombre avec un éclat, puis pour claire (GradeSettings::adaptive_force), chacune avec ses curseurs et ses
+// plans d'exemple
 // (calibration_images.h). Le lecteur ouvre la vidéo de calibration en pause, dans la même chaîne que les
 // épisodes, et la montre à gauche du panneau ; à la fin il rend la vidéo d'avant, à sa position, ou
 // l'accueil. « Terminer » garde les deux bouts pour cet écran (with_calibrated_grade les reprend à chaque
@@ -20,8 +21,8 @@
 namespace ajp::app::play {
 
 struct GradeWizard {
-  int step = 0;                 // 0 : fermée ; 1 : scène sombre ; 2 : scène claire
-  int image = 0;                // le plan d'exemple de l'étape (0 à kCalibrationPerStep - 1)
+  int step = 0;                 // 0 : fermée ; 1 : scène sombre ; 2 : sombre avec éclat ; 3 : scène claire
+  int image = 0;                // le plan d'exemple de l'étape (0 à calibration_count - 1)
   PlaySettings before;          // les réglages d'avant, que « Annuler » remet
   std::string profile;          // le profil de grade que « Terminer » garde (nouveau, ou celui recalibré)
   std::array<char, 64> name{};  // le nom tapé pour un nouveau profil

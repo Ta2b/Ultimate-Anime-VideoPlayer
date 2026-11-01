@@ -404,6 +404,9 @@ std::expected<PlaySettings, Refusal> settings_from_table(const toml::table& root
     reads.push_back(read(*grade, "grade", "adaptive_vibrance", v.adaptive_vibrance));
     reads.push_back(read(*grade, "grade", "adaptive_vibrance_cut", v.adaptive_vibrance_cut));
     reads.push_back(read(*grade, "grade", "adaptive_gray", v.adaptive_gray));
+    reads.push_back(read(*grade, "grade", "adaptive_glow_gray", v.adaptive_glow_gray));
+    reads.push_back(read(*grade, "grade", "adaptive_glow_shadows", v.adaptive_glow_shadows));
+    reads.push_back(read(*grade, "grade", "adaptive_glow_vibrance", v.adaptive_glow_vibrance));
     reads.push_back(read(*grade, "grade", "look", s.look));
     reads.push_back(read(*grade, "grade", "adaptive_record", s.adaptive_record));
     reads.push_back(read(*grade, "grade", "look_mix", s.look_mix));
@@ -425,10 +428,10 @@ std::expected<PlaySettings, Refusal> settings_from_table(const toml::table& root
     s.grade_preset = render::GradePreset::Custom;
     // Écrits au centième (format_settings) : relus au centième, la réécriture rend les mêmes réglages.
     const auto hundredth = [](double& x) { x = std::round(x * 100.0) / 100.0; };
-    for (double* x :
-         {&v.shadows, &v.highlights, &v.highlights_rtx, &v.vibrance, &v.vibrance_rtx, &v.area_rtx, &v.guard,
-          &v.expand, &v.adaptive_lo, &v.adaptive_hi, &v.adaptive_shadows, &v.adaptive_vibrance,
-          &v.adaptive_vibrance_cut, &v.adaptive_gray, &s.look_mix, &s.oled_black_steps})
+    for (double* x : {&v.shadows, &v.highlights, &v.highlights_rtx, &v.vibrance, &v.vibrance_rtx, &v.area_rtx,
+                      &v.guard, &v.expand, &v.adaptive_lo, &v.adaptive_hi, &v.adaptive_shadows,
+                      &v.adaptive_vibrance, &v.adaptive_vibrance_cut, &v.adaptive_gray, &v.adaptive_glow_gray,
+                      &v.adaptive_glow_shadows, &v.adaptive_glow_vibrance, &s.look_mix, &s.oled_black_steps})
       hundredth(*x);
     for (auto& layer : s.look_layers) hundredth(layer.mix);
     s.grade_values = v;
@@ -545,6 +548,9 @@ std::string format_settings(const PlaySettings& s) {
                                    {"adaptive_vibrance", hundredth(g.adaptive_vibrance)},
                                    {"adaptive_vibrance_cut", hundredth(g.adaptive_vibrance_cut)},
                                    {"adaptive_gray", hundredth(g.adaptive_gray)},
+                                   {"adaptive_glow_gray", hundredth(g.adaptive_glow_gray)},
+                                   {"adaptive_glow_shadows", hundredth(g.adaptive_glow_shadows)},
+                                   {"adaptive_glow_vibrance", hundredth(g.adaptive_glow_vibrance)},
                                    {"look", s.look},
                                    {"adaptive_record", s.adaptive_record},
                                    {"look_mix", hundredth(s.look_mix)},

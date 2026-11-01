@@ -53,6 +53,11 @@ constexpr std::array kGradeParams = {
     ParamBinding{"ad_vibrance", &GradeParams::ad_vibrance},
     ParamBinding{"ad_em_base", &GradeParams::ad_em_base},
     ParamBinding{"ad_em_pow", &GradeParams::ad_em_pow},
+    ParamBinding{"gl_force", &GradeParams::gl_force},
+    ParamBinding{"gl_shadows", &GradeParams::gl_shadows},
+    ParamBinding{"gl_vibrance", &GradeParams::gl_vibrance},
+    ParamBinding{"gl_em_base", &GradeParams::gl_em_base},
+    ParamBinding{"gl_em_pow", &GradeParams::gl_em_pow},
 };
 
 constexpr std::array kLookParams = {

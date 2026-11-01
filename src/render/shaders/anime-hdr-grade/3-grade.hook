@@ -167,12 +167,18 @@ vec4 hook() {
     // vibrance et courbe TrueHDR émulée (gris moyen) glissent du réglage « scène sombre » vers « scène claire »
     // avec le code PQ moyen très lissé de la scène ; les couleurs ne s'effacent que sur les derniers 20 % de la
     // transition. ad_on = 0 : t = 0, les paramètres tels quels (mix(a, b, 0) = a).
+    // Une scène sombre avec éclat (poids glow) glisse en plus vers ses propres valeurs gl_*.
     float t_scene = 0.0;
-    if (ad_on > 0.5) t_scene = smoothstep(ad_lo, max(ad_hi, ad_lo + 1e-3), AJG_STATS_tex(vec2(0.75, 0.5)).x);
-    float sh_now = mix(shadows, ad_shadows, t_scene);
-    float vb_now = mix(vibrance, ad_vibrance, t_scene);
-    float em_base_now = mix(em_base, ad_em_base, t_scene);
-    float em_pow_now = mix(em_pow, ad_em_pow, t_scene);
+    float glow = 0.0;
+    if (ad_on > 0.5) {
+        vec4 scene = AJG_STATS_tex(vec2(0.75, 0.5));
+        t_scene = smoothstep(ad_lo, max(ad_hi, ad_lo + 1e-3), scene.x);
+        glow = gl_force >= 0.0 ? gl_force : clamp(scene.y, 0.0, 1.0) * (1.0 - t_scene);
+    }
+    float sh_now = mix(mix(shadows, ad_shadows, t_scene), gl_shadows, glow);
+    float vb_now = mix(mix(vibrance, ad_vibrance, t_scene), gl_vibrance, glow);
+    float em_base_now = mix(mix(em_base, ad_em_base, t_scene), gl_em_base, glow);
+    float em_pow_now = mix(mix(em_pow, ad_em_pow, t_scene), gl_em_pow, glow);
     vec3 lin = ajg_decode(px.rgb);
     // L'isolement se mesure sur l'image d'origine, comme les cartes de zone.
     float y_src = dot(lin, vec3(0.2627, 0.6780, 0.0593));

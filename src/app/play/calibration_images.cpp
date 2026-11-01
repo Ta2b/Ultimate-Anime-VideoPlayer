@@ -15,9 +15,9 @@ struct Scene {
   std::string_view guidance;
 };
 
-// Les étapes : sombre (gris moyen, noirs profonds, couleurs), puis claire (gris moyen, noirs profonds et
-// réduction des couleurs d'une scène claire).
-const std::array<Scene, 2 * kCalibrationPerStep> kScenes{{
+// Les étapes : sombre (gris moyen, noirs profonds, couleurs), sombre avec éclat (les mêmes, à part), puis
+// claire (gris moyen, noirs profonds et réduction des couleurs d'une scène claire).
+const std::array<Scene, kCalibrationImages> kScenes{{
     {"Re:Zero · the staircase in the dark",
      "The stone blocks of the walls and every step of the staircase stay visible, and the area under "
      "the stairs on the left stays almost black. Ram's black tights stand out from her boots, and the "
@@ -32,13 +32,14 @@ const std::array<Scene, 2 * kCalibrationPerStep> kScenes{{
      "The swirl stays a bright green with lighter edges, and its glow on the steps on the right is a "
      "soft, dark green. Ram's blouse stays white with a slight green tint, her skirt a pale turquoise."
      " The bricks of the wall on the left can still be seen in the dark. Neon or flat green: lower "
-     "Colors. Bricks lost in black: lower Deep blacks."},
+     "Colors, glow scene. Bricks lost in black: lower Deep blacks, glow scene."},
     {"Re:Zero · Rem's glowing horn",
      "The horn glows white at its core, with a violet halo that stays around the head. Rem's blue hair"
      " keeps its strands, her collar stays a soft pink, and the cloak she lies on stays a dark reddish"
      " brown with visible folds. The wall behind stays a dark grey blue. Halo spreading as a flat "
-     "magenta, or a glaring pink collar: lower Colors. Folds of the cloak lost in black: lower Deep "
-     "blacks or raise Mid gray."},
+     "magenta, or a glaring pink collar: lower Colors, glow scene. Folds of the cloak lost in black: "
+     "lower Deep blacks, glow scene, or raise Middle gray, glow scene. Glaring white core: lower "
+     "Middle gray, glow scene."},
     {"Re:Zero · the dragon under the blue sky",
      "The sky stays a deep blue with light, wispy clouds you can tell apart; the white pillar keeps "
      "its grooves and the grey shading on its right side; the dragon's scales and the dark gaps of its"
@@ -63,8 +64,16 @@ const std::array<Scene, 2 * kCalibrationPerStep> kScenes{{
 
 }  // namespace
 
-CalibrationImage calibration_image(bool dark, int index) {
-  const int id = (dark ? 0 : kCalibrationPerStep) + std::clamp(index, 0, kCalibrationPerStep - 1);
+// Le premier plan de chaque étape, et celui d'après la dernière.
+constexpr std::array<int, kCalibrationSteps + 1> kFirst{0, 2, 4, kCalibrationImages};
+
+int calibration_count(CalibrationStep step) {
+  const auto i = static_cast<std::size_t>(step);
+  return kFirst[i + 1] - kFirst[i];
+}
+
+CalibrationImage calibration_image(CalibrationStep step, int index) {
+  const int id = kFirst[static_cast<std::size_t>(step)] + std::clamp(index, 0, calibration_count(step) - 1);
   const Scene& scene = kScenes[static_cast<std::size_t>(id)];
   return {.id = id,
           .title = scene.title,

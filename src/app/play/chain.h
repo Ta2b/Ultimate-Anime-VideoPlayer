@@ -94,8 +94,10 @@ struct Chain {
   bool adaptive_forced = false;  // la calibration tenait une scène forcée au tour précédent
   double series_luma = -1.0;     // luminosité moyenne de la série (épisode), lissée
   double series_us = 0.0;
-  double adaptive_chroma = 0.0;  // chroma moyenne lissée
-  double adaptive_tv = 0.0;      // vibrance : suit la couleur (bleu saturé), pas la luminosité
+  double adaptive_chroma = 0.0;     // chroma moyenne lissée
+  double adaptive_tv = 0.0;         // vibrance : suit la couleur (bleu saturé), pas la luminosité
+  double adaptive_glow = 0.0;       // scène sombre avec éclat : 0 à 1 (GradeSettings::adaptive_glow_*)
+  double adaptive_glow_seen = 0.0;  // sa mesure, lissée comme la luminance
   std::int64_t adaptive_at_us = 0;
   std::filesystem::path adaptive_log;  // adaptive-log.tsv (apprentissage)
   std::int64_t adaptive_log_us = 0;
@@ -107,7 +109,12 @@ PlaySettings with_intended_hdr(const Chain& to, PlaySettings settings);
 
 // Les réglages avec, pour le grade adaptatif, noirs, couleurs et gris moyen glissés de la scène sombre (t =
 // 0, les curseurs) vers la scène claire (t = 1). t = 0 ou adaptatif coupé : les réglages tels quels.
-PlaySettings with_adaptive(const PlaySettings& s, double t, double tv, double bs = 0.0);
+PlaySettings with_adaptive(const PlaySettings& s, double t, double tv, double bs = 0.0, double glow = 0.0);
+
+// Le poids (0 à 1) de la scène sombre avec éclat d'une mesure de RTX HDR : un pic net (p99,5 loin au-dessus
+// de la médiane) sur une petite part de points clairs, et un fond (la médiane) sombre pour les seuils
+// adaptive_lo et adaptive_hi du grade.
+double glow_weight(const gpu::KernelOps::SceneStats& stats, const render::GradeSettings& g);
 
 // Une fois par tour : lit la luminance moyenne de la source, la lisse (environ 1,2 s, remise à la mesure à
 // chaque coupe de scène) et, si la position change de 2 % ou plus, pose le gris moyen de RTX HDR et le grade.

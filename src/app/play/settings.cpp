@@ -225,6 +225,9 @@ render::GradeSettings with_preset(render::GradePreset preset, const render::Grad
   out.adaptive_vibrance = current.adaptive_vibrance;
   out.adaptive_vibrance_cut = current.adaptive_vibrance_cut;
   out.adaptive_gray = current.adaptive_gray;
+  out.adaptive_glow_gray = current.adaptive_glow_gray;
+  out.adaptive_glow_shadows = current.adaptive_glow_shadows;
+  out.adaptive_glow_vibrance = current.adaptive_glow_vibrance;
   return out;
 }
 
@@ -590,7 +593,10 @@ void keep_calibrated_grade(PlaySettings& settings, std::string_view display, std
                                   .colors = g.vibrance_rtx,
                                   .gray_bright = g.adaptive_gray,
                                   .shadows_bright = g.adaptive_shadows,
-                                  .colors_cut = g.adaptive_vibrance_cut};
+                                  .colors_cut = g.adaptive_vibrance_cut,
+                                  .gray_glow = g.adaptive_glow_gray,
+                                  .shadows_glow = g.adaptive_glow_shadows,
+                                  .colors_glow = g.adaptive_glow_vibrance};
   for (auto& grade : settings.display_grades)
     if (grade.display == display) grade.active = false;
   for (auto& grade : settings.display_grades) {
@@ -612,6 +618,9 @@ PlaySettings with_calibrated_grade(PlaySettings settings, std::string_view displ
   g.adaptive_gray = grade->gray_bright;
   g.adaptive_shadows = grade->shadows_bright;
   g.adaptive_vibrance_cut = grade->colors_cut;
+  g.adaptive_glow_gray = grade->gray_glow;
+  g.adaptive_glow_shadows = grade->shadows_glow;
+  g.adaptive_glow_vibrance = grade->colors_glow;
   return settings;
 }
 
