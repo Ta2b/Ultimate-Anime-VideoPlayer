@@ -24,6 +24,13 @@ Le contrôle refuse une archive qui contient un fichier de NVIDIA, un index qui 
 taille) ou sans `[[vendor_file]]`. La CI (`release-windows.yml`) télécharge `engines-nvidia.lock` de la release de
 l'étiquette, s'il existe, et en reprend les moteurs dans l'`engines.lock` qu'elle joint.
 
+## Sans poste Windows : par la CI
+
+`release-windows.yml` lancé à la main avec l'étiquette visée et la case `tensorrt` cochée (le propriétaire du dépôt
+accepte ainsi les licences du kit CUDA et de TensorRT) construit le module sur le runner et joint l'archive et
+`engines-nvidia.lock` à la release, après le même contrôle que `attach-nvidia-windows.ps1`. Le paquet du lecteur de ce
+lancement n'est pas joint. Pousser ensuite l'étiquette : la construction Windows de l'étiquette reprend l'index.
+
 ## À essayer sur le poste Windows (non fait : aucune machine Windows côté développement)
 
 1. `package-windows.ps1` sort `ajp-engine-tensorrt-windows-x64.tar.gz` avec `ajp_backend_tensorrt.dll` et `trtexec.exe`.

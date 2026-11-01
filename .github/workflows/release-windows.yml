@@ -135,6 +135,17 @@ jobs:
           path: |
             ${{ runner.temp }}/package/ajp-*
             ${{ runner.temp }}/package/SHA256SUMS-windows.txt
+      # Avec TensorRT et une étiquette : seule l'archive du moteur (notre module et trtexec.exe) et son index
+      # engines-nvidia.lock se joignent à la release, comme depuis un poste Windows NVIDIA ; le contrôle
+      # d'attach-nvidia-windows.ps1 refuse une archive qui contient un fichier de NVIDIA. La construction de
+      # l'étiquette reprend ensuite engines-nvidia.lock dans son engines.lock.
+      - name: Joindre le paquet TensorRT
+        if: inputs.tensorrt && inputs.tag != ''
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.AJP_RELEASE_TOKEN || github.token }}
+          AJP_RELEASE_REPO: ${{ vars.AJP_RELEASE_REPO || github.repository }}
+        run: pwsh tools/release/attach-nvidia-windows.ps1 "$env:RUNNER_TEMP/package" "${{ inputs.tag }}" -Publish
       - name: Joindre à la release
         # Jamais avec TensorRT : un paquet qui embarque des composants NVIDIA reste un artefact.
         if: (github.event_name == 'push' || inputs.tag != '') && !inputs.tensorrt
