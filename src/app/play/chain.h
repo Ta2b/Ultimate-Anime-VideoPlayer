@@ -13,6 +13,7 @@
 #include <vector>
 
 #include "app/play/display_edid.h"
+#include "app/play/grade_learning.h"
 #include "app/play/input.h"
 #include "app/play/live_settings.h"
 #include "app/play/pipeline.h"
@@ -43,6 +44,19 @@ struct ProfileState {
 struct HdrIntent {
   bool true_hdr = false;
   bool hdr_native = false;
+};
+
+// Apprentissage du grade adaptatif (grade_learning.h) : la courbe vue au tour précédent, la correction en
+// cours (écrite quand les curseurs se sont posés) et le temps passé sans rien changer.
+struct LearnTrack {
+  std::filesystem::path log;  // adaptive-learning.tsv ; vide : aucun apprentissage
+  std::optional<GradeCurve> seen;
+  std::optional<LearnSample> pending;
+  SceneMix pending_mix;  // les poids appliqués à la scène de la correction
+  std::int64_t pending_us = 0;
+  std::int64_t still_us = 0;
+  int corrections = -1;  // -1 : fichier pas encore lu
+  int approvals = 0;
 };
 
 // Ce qui vit le temps d'une ouverture de la chaîne, et ce que les actions y changent.
@@ -101,6 +115,7 @@ struct Chain {
   std::int64_t adaptive_at_us = 0;
   std::filesystem::path adaptive_log;  // adaptive-log.tsv (apprentissage)
   std::int64_t adaptive_log_us = 0;
+  LearnTrack learn;
 };
 
 // Les réglages avec, pendant un repli HDR, le mode que le profil demande à la place du mode de
@@ -119,6 +134,14 @@ double glow_weight(const gpu::KernelOps::SceneStats& stats, const render::GradeS
 // Une fois par tour : lit la luminance moyenne de la source, la lisse (environ 1,2 s, remise à la mesure à
 // chaque coupe de scène) et, si la position change de 2 % ou plus, pose le gris moyen de RTX HDR et le grade.
 void adaptive_tick(Chain& to, std::int64_t now_us);
+
+// Apprentissage, une fois par tour du grade adaptatif : une correction de la courbe posée depuis 3 s
+// s'écrit avec sa scène ; 30 s de lecture sans rien changer s'écrivent en approbation.
+void learn_tick(Chain& to, std::int64_t now_us);
+// « Apprendre de mes corrections » : les réglages ajustés (rien si l'ajustement refuse, l'OSD dit pourquoi).
+std::optional<PlaySettings> learned_settings(Chain& to, std::int64_t now_us);
+// « Oublier mes corrections » : le fichier effacé.
+void forget_learning(Chain& to, std::int64_t now_us);
 
 // Charge les LUT du look (jusqu'à trois, enchaînées) dans le grade de l'écran. Rend les noms de celles qui
 // manquent ou ne se lisent pas (une ligne de journal chacune) ; elles sont alors sautées.

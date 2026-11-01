@@ -423,6 +423,10 @@ void apply(const Input& input, Chain& to, std::int64_t now_us) {
               apply_live(to, apply.settings, now_us);
             }
           },
+          [&](const LearnGrade&) {
+            if (auto learned = learned_settings(to, now_us)) apply_live(to, *learned, now_us);
+          },
+          [&](const ForgetGradeLearning&) { forget_learning(to, now_us); },
           [&](const UseEngine& use) { ask_engines(to, use); },
           [&](const OpenEngineScreen& open) { ask_engines(to, open); },
           [&](const StartExport& start) {

@@ -184,7 +184,7 @@ void look_section(PlaySettings& d, const SettingsChoices& choices) {
 // Grade adaptatif : les curseurs du grade et le gris moyen de RTX HDR sont la scène sombre ; ces valeurs, la
 // scène claire, mélangées selon la luminance moyenne lissée de l'image source (moteur TensorRT). Hors du bloc
 // désactivé du grade : section() ouvre un encadré, et un BeginDisabled ne peut pas le traverser.
-void adaptive_section(PlaySettings& d, const SettingsChoices& choices) {
+void adaptive_section(PlaySettings& d, const SettingsChoices& choices, std::vector<Input>& actions) {
   using namespace render::grade_limits;
   render::GradeSettings& g = d.grade_values;
   // Grade adaptatif : les curseurs ci-dessus et le gris moyen de RTX HDR sont la scène sombre ; ces
@@ -219,6 +219,7 @@ void adaptive_section(PlaySettings& d, const SettingsChoices& choices) {
   grade_slider(i18n::tr("Deep blacks, glow scene"), g.adaptive_glow_shadows, kShadows);
   grade_slider(i18n::tr("Colors, glow scene"), g.adaptive_glow_vibrance, kVibrance);
   ImGui::EndDisabled();
+  scene_correction(d, choices, actions);
   ImGui::Checkbox(i18n::tr("Record scene statistics (learning)"), &d.adaptive_record);
   note(
       i18n::tr("The sliders above and the middle gray are for dark scenes; the values here apply to bright "
@@ -227,7 +228,7 @@ void adaptive_section(PlaySettings& d, const SettingsChoices& choices) {
                "Works with RTX HDR and with Adaptive HDR (any GPU)."));
 }
 
-void grade_tab(PlaySettings& d, const SettingsChoices& choices) {
+void grade_tab(PlaySettings& d, const SettingsChoices& choices, std::vector<Input>& actions) {
   // Le grade s'applique sur toutes les routes, le mode SDR compris : il imite le rendu HDR (contraste,
   // couleurs riches, hautes lumières) pour ceux qui n'ont pas d'écran HDR. L'onglet reste actif.
   look_section(d);
@@ -265,7 +266,7 @@ void grade_tab(PlaySettings& d, const SettingsChoices& choices) {
                    "and are greyed out."));
   }
   ImGui::EndDisabled();
-  if (panel::advanced()) adaptive_section(d, choices);
+  if (panel::advanced()) adaptive_section(d, choices, actions);
   if (d.true_hdr) {
     note(i18n::tr("RTX HDR path: TrueHDR, then the grade on the PQ output."));
   } else if (d.hdr_native) {
@@ -645,7 +646,7 @@ SettingsPanel::Result SettingsPanel::draw(const PlaySettings& running, const Set
         grade_calibration(draft_, choices, *grade_wizard_, scale, io.DisplaySize.x - pad - width, actions);
         if (advanced_) oled_sections(draft_, choices);
       } else if (name == "Colors") {
-        grade_tab(draft_, choices);
+        grade_tab(draft_, choices, actions);
       } else if (name == "Output") {
         delay_held = sound_tab(draft_, choices);
       } else if (name == "Playback") {
