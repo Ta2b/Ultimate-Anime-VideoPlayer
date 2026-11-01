@@ -55,6 +55,9 @@ class StatsSource {
   virtual std::int64_t output_period_us() const { return 0; }
   // La même cadence, exacte (images par seconde) : la synchro sur l'écran s'y cale ; 0 : inconnue.
   virtual double output_fps() const { return 0.0; }
+  // Mode Rapide : aucune cadence visée, la sortie suit ce que la carte produit. L'OSD n'affiche alors que la
+  // cadence mesurée, sans cible (celle-ci n'est que le pas de service arrondi au vsync).
+  virtual bool uncapped() const { return false; }
   // Période d'une image de la source (le pas de l'image par image) ; 0 : inconnue.
   virtual std::int64_t source_period_us() const { return 0; }
   // Images source que gpu a sautées avant leur calcul, déjà passées : la chaîne ne suit pas.

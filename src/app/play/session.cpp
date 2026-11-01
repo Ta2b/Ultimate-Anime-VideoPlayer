@@ -563,7 +563,9 @@ std::vector<std::string> Session::osd_lines() const {
     }
     lines.push_back(i18n::tr_format(
         "smoothness {}{} fps · missed {}{} · p95 delay {}{}", format_fps(stats_.shown_fps),
-        period > 0 ? std::format(" / {}", format_fps(1e6 / static_cast<double>(period))) : std::string(),
+        period > 0 && !(config_.extra != nullptr && config_.extra->uncapped())
+            ? std::format(" / {}", format_fps(1e6 / static_cast<double>(period)))
+            : std::string(),
         stats_.missing,
         stats_.uninterpolated > 0 ? i18n::tr_format(" (+ {} cuts and held drawings)", stats_.uninterpolated)
                                   : std::string(),

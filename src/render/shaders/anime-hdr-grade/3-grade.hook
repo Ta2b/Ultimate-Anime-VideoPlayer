@@ -170,7 +170,7 @@ vec4 hook() {
     float t_scene = 0.0;
     if (ad_on > 0.5) t_scene = smoothstep(ad_lo, max(ad_hi, ad_lo + 1e-3), AJG_STATS_tex(vec2(0.75, 0.5)).x);
     float sh_now = mix(shadows, ad_shadows, t_scene);
-    float vb_now = mix(vibrance, ad_vibrance, smoothstep(0.8, 1.0, t_scene));
+    float vb_now = mix(vibrance, ad_vibrance, t_scene);
     float em_base_now = mix(em_base, ad_em_base, t_scene);
     float em_pow_now = mix(em_pow, ad_em_pow, t_scene);
     vec3 lin = ajg_decode(px.rgb);
@@ -249,7 +249,12 @@ vec4 hook() {
         // ombres protegees pour ne pas colorer le bruit et les traits.
         float weight = smoothstep(0.0, 0.06, chroma) * (1.0 - smoothstep(0.10, 0.40, chroma))
                      * smoothstep(0.12, 0.30, ictcp.x) * (1.0 - skin);
-        ictcp.yz *= 1.0 + vb_now * weight;
+        // Prudence : les rouges, oranges et jaunes (protan dominant) saturent vite, surtout en scène claire ; la
+        // vibrance n'y dépasse pas 0,10. Elle ne monte à sa valeur que sur les teintes froides, ou aucun
+        // problème visible n'est connu.
+        float warm = smoothstep(0.0, 0.01, ictcp.z - 0.5 * max(ictcp.y, 0.0));
+        float vb_px = mix(vb_now, min(vb_now, 0.10), warm);
+        ictcp.yz *= 1.0 + vb_px * weight;
         vec3 vivid = to_target(LMS_TO_RGB * pq_to_nits(ICTCP_TO_LMS * ictcp));
         // Limite douce : le renforcement ralentit avant le bord du gamut ou le pic.
         float room = gamut_room(c, vivid);

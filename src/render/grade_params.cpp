@@ -75,9 +75,9 @@ void apply_adaptive(const GradeSettings& s, double peak, bool sdr_out, GradePara
   p.ad_lo = luma_to_pq(s.adaptive_lo);
   p.ad_hi = luma_to_pq(s.adaptive_hi);
   p.ad_shadows = shadows_effect(s.adaptive_shadows);
-  // La vibrance suit la couleur (ciel bleu saturé), que le shader ne mesure pas : elle reste celle du curseur
-  // sur ces routes.
-  p.ad_vibrance = p.vibrance;
+  // La vibrance suit la couleur (ciel bleu saturé), que le shader ne mesure pas : seule la part retirée
+  // dans les scènes claires l'adapte sur ces routes.
+  p.ad_vibrance = p.vibrance * (1.0 - std::clamp(s.adaptive_vibrance_cut, 0.0, 1.0));
   p.ad_em_base = p.em_base;
   p.ad_em_pow = p.em_pow;
   if (p.emulate > 0.5) {
