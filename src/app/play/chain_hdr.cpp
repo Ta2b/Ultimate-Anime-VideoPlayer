@@ -273,10 +273,20 @@ PlaySettings with_adaptive(const PlaySettings& s, double t, double tv, double bs
 // Apprentissage : une ligne par seconde de lecture dans adaptive-log.tsv (statistiques de la scène, réglages
 // courants de l'utilisateur et position t du grade adaptatif), pour ajuster des courbes sur ses réglages
 // faits à la main.
+constexpr std::uintmax_t kAdaptiveLogMax = 32u << 20u;
+
 void adaptive_record(Chain& to, const gpu::KernelOps::SceneStats& stats, std::int64_t now_us) {
   if (to.adaptive_log.empty() || to.session.view().paused || now_us - to.adaptive_log_us < 1'000'000) return;
   to.adaptive_log_us = now_us;
   std::error_code error;
+  // Une ligne par seconde, active par défaut : au-delà de 32 Mo (une soixantaine d'heures), le journal passe
+  // en .old et repart de zéro, pour ne pas grossir sans fin.
+  if (const std::uintmax_t size = std::filesystem::file_size(to.adaptive_log, error);
+      !error && size > kAdaptiveLogMax) {
+    std::filesystem::path old = to.adaptive_log;
+    old += ".old";
+    std::filesystem::rename(to.adaptive_log, old, error);
+  }
   const bool fresh = !std::filesystem::exists(to.adaptive_log, error);
   std::ofstream out(to.adaptive_log, std::ios::app);
   if (!out) return;
@@ -298,7 +308,8 @@ void adaptive_record(Chain& to, const gpu::KernelOps::SceneStats& stats, std::in
 }
 
 void adaptive_tick(Chain& to, std::int64_t now_us) {
-  if (to.running.adaptive_record && to.kernels != nullptr && to.true_hdr_open) {
+  if (to.running.adaptive_record && to.running.grade_values.adaptive && to.kernels != nullptr &&
+      to.true_hdr_open) {
     if (const auto stats = to.kernels->scene_stats()) adaptive_record(to, *stats, now_us);
   }
   const render::GradeSettings& g = to.running.grade_values;

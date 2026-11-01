@@ -78,6 +78,10 @@ constexpr std::array kSettingsPages{
     Entry{"Deep blacks, bright scene", "Noirs profonds, scène claire"},
     Entry{"Colors, saturated blue scene", "Couleurs, scène bleue saturée (ciel)"},
     Entry{"Record scene statistics (learning)", "Enregistrer les statistiques de scène (apprentissage)"},
+    Entry{"Calibrate a grade profile for this display first: the adaptive grade turns on at the end of the "
+          "calibration.",
+          "Calibrez d'abord un profil de grade pour cet écran : le grade adaptatif s'active à la fin de la "
+          "calibration."},
     Entry{"All settings", "Tous les réglages"},
     Entry{"Puts every setting back to its default value: chain, HDR, grade and colors, sound, playback. The "
           "engines folder is kept.",
