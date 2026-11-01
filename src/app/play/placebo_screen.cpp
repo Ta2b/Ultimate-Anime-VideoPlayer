@@ -192,6 +192,7 @@ std::expected<ScreenTiming, Refusal> PlaceboScreen::show(const ShowRequest& requ
   }
   s.hdr_output = target.color.transfer == PL_COLOR_TRC_PQ;
   s.target_color = target.color;
+  s.take_next_grade(request.frame);
   s.select_grade(s.target_color);
 
   // La calibration du grade : la vidéo (celle de calibration, dans la même chaîne) à gauche du panneau, sans

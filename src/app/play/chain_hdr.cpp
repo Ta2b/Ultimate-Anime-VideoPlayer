@@ -231,11 +231,19 @@ void apply_oled_care(Chain& to, const PlaySettings& s) {
 }
 
 // Le grade de la chaîne avec ses seuils du vrai noir.
-void set_grade(Chain& to, const PlaySettings& wanted) {
+void set_grade(Chain& to, const PlaySettings& wanted, bool from_measured_frame) {
   const PlaySettings s =
       with_adaptive(wanted, to.adaptive_t, to.adaptive_tv, to.adaptive_bs, to.adaptive_glow);
-  to.screen.set_grade(
-      grade_of(s, to.true_hdr_open, to.peak_nits, to.auto_peak, to.display, to.black, to.source_hdr));
+  const render::GradeChoice choice =
+      grade_of(s, to.true_hdr_open, to.peak_nits, to.auto_peak, to.display, to.black, to.source_hdr);
+  // En pause, rien ne se présente de lui-même : le grade passe tout de suite.
+  const RingFrame* newest =
+      from_measured_frame && !to.session.view().paused ? to.session.newest_frame() : nullptr;
+  if (newest != nullptr) {
+    to.screen.set_grade_after(choice, *newest);
+  } else {
+    to.screen.set_grade(choice);
+  }
 }
 
 // Vrai noir OLED : recale les seuils sur la rampe de 32 marches mesurée à la sortie (route native :
@@ -454,7 +462,9 @@ void adaptive_tick(Chain& to, std::int64_t now_us) {
     to.live.set_true_hdr(after);
     if (to.session.view().paused) to.hdr_refresh_us = now_us + 120'000;
   }
-  set_grade(to, to.running);
+  // La scène vient d'être mesurée sur l'image que RTX HDR a traitée en dernier ; les images déjà prêtes
+  // devant elle sont de la scène d'avant : le grade change après elles, avec le gris moyen de RTX HDR.
+  set_grade(to, to.running, true);
 }
 
 void refresh_black(Chain& to) {
