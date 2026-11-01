@@ -224,6 +224,7 @@ render::GradeSettings with_preset(render::GradePreset preset, const render::Grad
   out.adaptive_hi = current.adaptive_hi;
   out.adaptive_shadows = current.adaptive_shadows;
   out.adaptive_vibrance = current.adaptive_vibrance;
+  out.adaptive_vibrance_cut = current.adaptive_vibrance_cut;
   out.adaptive_gray = current.adaptive_gray;
   return out;
 }

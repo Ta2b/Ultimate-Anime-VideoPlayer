@@ -203,6 +203,7 @@ std::expected<void, Refusal> check_grade_settings(const GradeSettings& s) {
                              check("adaptive_hi", s.adaptive_hi, kAdaptiveLuma),
                              check("adaptive_shadows", s.adaptive_shadows, kShadows),
                              check("adaptive_vibrance", s.adaptive_vibrance, kVibrance),
+                             check("adaptive_vibrance_cut", s.adaptive_vibrance_cut, kAdaptiveCut),
                              check("adaptive_gray", s.adaptive_gray, kMiddleGray)}) {
     if (!result) return result;
   }

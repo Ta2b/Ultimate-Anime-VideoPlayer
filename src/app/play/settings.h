@@ -148,6 +148,7 @@ inline render::GradeSettings default_grade_values() {
   g.adaptive_hi = 54.0;
   g.adaptive_shadows = 0.80;
   g.adaptive_vibrance = 0.0;
+  g.adaptive_vibrance_cut = 0.40;
   g.adaptive_gray = 30.0;
   return g;
 }

@@ -201,6 +201,7 @@ void adaptive_section(PlaySettings& d, const SettingsChoices& choices) {
   ImGui::BeginDisabled(!choices.hdr_output);  // la vibrance adaptative ne joue pas en sortie SDR
   grade_slider(i18n::tr("Colors, saturated blue scene"), g.adaptive_vibrance, kVibrance);
   ImGui::EndDisabled();
+  grade_slider(i18n::tr("Colors cut, bright scene"), g.adaptive_vibrance_cut, kAdaptiveCut);
   auto gray = static_cast<float>(g.adaptive_gray);
   if (ImGui::SliderFloat(i18n::tr("Middle gray, bright scene"), &gray, static_cast<float>(kMiddleGray.lo),
                          static_cast<float>(kMiddleGray.hi), "%.0f", ImGuiSliderFlags_AlwaysClamp))

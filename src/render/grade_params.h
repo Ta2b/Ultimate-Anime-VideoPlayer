@@ -26,6 +26,7 @@ inline constexpr core::Range<double> kPaperWhite{80.0, 400.0};
 inline constexpr core::Range<double> kShadows{0.0, 0.8};
 inline constexpr core::Range<double> kHighlights{0.0, 1.0};
 inline constexpr core::Range<double> kVibrance{0.0, 0.8};
+inline constexpr core::Range<double> kAdaptiveCut{0.0, 1.0};
 inline constexpr core::Range<double> kContrast{0.0, 200.0};
 inline constexpr core::Range<double> kSaturation{0.0, 200.0};
 inline constexpr double kSdkContrastMax = 200.0;
@@ -70,6 +71,9 @@ struct GradeSettings {
   double adaptive_hi = 54.0;
   double adaptive_shadows = 0.80;
   double adaptive_vibrance = 0.0;
+  // Part de la vibrance retirée à mesure que la scène devient claire (0 : aucune, 1 : toute) : les scènes claires
+  // et chaudes (rouges, oranges) sursaturent sinon.
+  double adaptive_vibrance_cut = 0.0;
   double adaptive_gray = 30.0;
   double punch_base = 0.0;   // préréglage : contraste en plus, en sortie du grade (0 : aucun)
   double chroma_base = 0.0;  // préréglage : saturation en plus (0 : aucune)
