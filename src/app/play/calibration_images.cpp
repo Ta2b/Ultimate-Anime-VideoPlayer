@@ -6,16 +6,11 @@
 
 #include <SDL3/SDL_filesystem.h>
 
-#include "app/play/calibration_data.h"
-#include "core/log.h"
-#include "media/picture.h"
-
 namespace ajp::app::play {
 
 namespace {
 
 struct Scene {
-  const std::string_view* bytes;
   std::string_view title;
   std::string_view guidance;
 };
