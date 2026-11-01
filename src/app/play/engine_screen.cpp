@@ -154,6 +154,29 @@ std::optional<PlaySettings> calibrate_on_screen(PlaceboScreen& screen, PlayerUi&
   }
   return candidate_settings((*shared->result)->chosen, std::move(base));
 }
+
+// Après la calibration de la machine, sur un écran HDR : HDR (la calibration du grade suit) ou SDR. Rien si
+// la fenêtre se ferme.
+std::optional<OutputPick> ask_output(PlaceboScreen& screen, PlayerUi& ui) {
+  const auto log = log_channel("app");
+  std::vector<Input> actions;
+  while (true) {
+    SDL_Event event;
+    while (SDL_PollEvent(&event)) {
+      if (event.type == SDL_EVENT_QUIT || event.type == SDL_EVENT_WINDOW_CLOSE_REQUESTED) return std::nullopt;
+      (void)ui.handle(event, host_now_us(), actions);
+    }
+    actions.clear();
+    OutputPick picked = OutputPick::None;
+    if (auto shown = screen.show(ShowRequest{.ui = ui.output_choice(host_now_us(), picked)}); !shown)
+      log->warn("choix HDR ou SDR : {}", shown.error().detail);
+    if (picked != OutputPick::None) {
+      log->info("après la calibration : {}", picked == OutputPick::Hdr ? "HDR" : "SDR");
+      return picked;
+    }
+    (void)SDL_WaitEventTimeout(nullptr, kWelcomeFrameMs);
+  }
+}
 }  // namespace
 
 std::expected<bool, Refusal> run_engine_screen(const EngineScreen& s, core::Settings& engines,
@@ -176,7 +199,9 @@ std::expected<bool, Refusal> run_engine_screen(const EngineScreen& s, core::Sett
         .engine_choice = std::ranges::any_of(
             view.engines,
             [](const EngineRow& row) { return row.offer.id != core::EngineId::Vulkan && row.usable; }),
-        .hdr_display = s.screen.hdr_output(),
+        // Avant la première image, la sortie n'est pas encore choisie : l'écran HDR se lit dans le système,
+        // comme à l'accueil.
+        .hdr_display = !s.options.sdr && content_peak_nits(s.screen.window()).has_value(),
         .rtx_guided = core::kHostOs == core::Os::Linux && gpu.tensor_cores};
     view.check_rtx = [&s, gpu](const FirstRunView& now) {
       const auto ticked = [&](core::EngineId id) {
@@ -250,9 +275,18 @@ std::expected<bool, Refusal> run_engine_screen(const EngineScreen& s, core::Sett
       chosen_play = std::move(*calibrated);
       calibrated_chain = chosen_play;
     }
+    if (wants_grade_calibration(wizard)) {
+      const std::optional<OutputPick> picked = ask_output(s.screen, s.ui);
+      if (!picked) return false;
+      if (*picked == OutputPick::Hdr) {
+        s.ui.queue_grade_calibration();
+      } else {
+        chosen_play.true_hdr = false;
+        chosen_play.hdr_native = false;
+      }
+    }
     if (auto written = save_settings(play_path, chosen_play); !written)
       log->warn("{}", written.error().detail);
-    if (wants_grade_calibration(wizard)) s.ui.queue_grade_calibration();
     // « Ouvrir avec » : une fois, sans confirmation (elle ajoute une entrée, ne prend la place de personne).
     if (!engines.open_with_registered) {
       const PlayerPlace place{.executable = s.paths.executable, .home = s.paths.home, .data = s.paths.data};

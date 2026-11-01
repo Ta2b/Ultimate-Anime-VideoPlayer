@@ -27,6 +27,14 @@ constexpr std::array kSettingsPages{
           "Essai des réglages sur une séquence très éprouvante : quelques minutes."},
     Entry{"The bench failed: {}", "Le bench a échoué : {}"},
     Entry{"holds", "tient"},
+    Entry{"Downscale", "Downscale"},
+    Entry{"Upscale", "Upscale"},
+    Entry{"1% low", "1 % low"},
+    Entry{"{:.1f} % lost", "{:.1f} % d'images perdues"},
+    Entry{"Green: recommended, with margin. Orange: holds just barely, or misses a little. Red: this "
+          "machine cannot keep up.",
+          "Vert : recommandé, avec de la marge. Orange : tient de justesse, ou rate de peu. Rouge : la "
+          "machine ne suit pas."},
     Entry{"nothing rendered", "rien rendu"},
     Entry{"{} · {:.1f} / {:.0f} fps · 1 % low {:.1f} · {:.1f} % lost",
           "{} · {:.1f} / {:.0f} i/s · 1 % low {:.1f} · {:.1f} % perdues"},

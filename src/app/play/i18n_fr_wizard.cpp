@@ -34,8 +34,19 @@ constexpr std::array kWizardTexts{
     Entry{"SDR chosen: no HDR grade to calibrate.", "SDR choisi : pas de grade HDR à calibrer."},
     Entry{"Skipped: the Auto preset. Redo it later in General > Setup.",
           "Passée : le préréglage Auto. Refaites-la plus tard dans Général > Configuration."},
-    Entry{"HDR grade calibration: right after the machine calibration (HDR and color > HDR)",
-          "Calibration du grade HDR : juste après celle de la machine (HDR et couleurs > HDR)"},
+    Entry{"HDR grade calibration: right after the machine calibration if you pick HDR (HDR and color > HDR)",
+          "Calibration du grade HDR : juste après celle de la machine si vous choisissez le HDR (HDR et "
+          "couleurs > HDR)"},
+    Entry{"HDR or SDR", "HDR ou SDR"},
+    Entry{"The machine calibration is done", "La calibration de la machine est terminée"},
+    Entry{"This display can receive HDR. In HDR, the player then opens the adaptive grade calibration: a few "
+          "dark scenes, then a few bright ones, to tune the picture for this display. In SDR, there is "
+          "nothing more to set.",
+          "Cet écran peut recevoir du HDR. En HDR, le lecteur ouvre ensuite la calibration du grade "
+          "adaptatif : quelques scènes sombres, puis quelques claires, pour régler l'image sur cet écran. En "
+          "SDR, il n'y a rien de plus à régler."},
+    Entry{"HDR: calibrate the grade", "HDR : calibrer le grade"},
+    Entry{"Change it later in HDR and color > HDR.", "Modifiable plus tard dans HDR et couleurs > HDR."},
     Entry{"HDR grade calibration: skipped (HDR and color > HDR)",
           "Calibration du grade HDR : passée (HDR et couleurs > HDR)"},
     Entry{"Machine calibration: after \"Finish\", the best settings this machine sustains (General > Setup)",

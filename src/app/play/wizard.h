@@ -87,7 +87,7 @@ core::Settings wizard_settings(const Wizard& wizard, core::Settings settings);
 // de la machine sautée : le préréglage Auto.
 PlaySettings wizard_play_settings(const Wizard& wizard, PlaySettings settings);
 // « Terminer » lance-t-il la calibration de la machine (écran non sauté) ? Et celle du grade HDR (écran non
-// sauté, et un HDR choisi) ?
+// passé, et un HDR choisi) ? Elle se propose après celle de la machine : HDR, ou SDR.
 bool wants_machine_calibration(const Wizard& wizard);
 bool wants_grade_calibration(const Wizard& wizard);
 

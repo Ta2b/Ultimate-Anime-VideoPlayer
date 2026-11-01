@@ -553,6 +553,17 @@ const ImDrawData* PlayerUi::welcome(std::int64_t now_us, FirstRunView& view) {
   return ImGui::GetDrawData();
 }
 
+const ImDrawData* PlayerUi::output_choice(std::int64_t now_us, OutputPick& picked) {
+  home_ = false;
+  begin_frame(now_us);
+  clicks_.clear();
+  picked = draw_output_choice(look_.scale);
+  ImGui::Render();
+  draw_ = nullptr;
+  controls_.framed(now_us, ControlsView{}, false);
+  return ImGui::GetDrawData();
+}
+
 const ImDrawData* PlayerUi::home(std::int64_t now_us, HomeView& view, std::vector<Input>& actions) {
   if (cursor_hidden_) {  // retour d'une lecture où la souris s'était effacée
     SDL_ShowCursor();

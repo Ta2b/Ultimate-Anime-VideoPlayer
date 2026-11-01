@@ -34,7 +34,9 @@ std::vector<WizardStep> wizard_steps(const WizardFacts& facts) {
   for (int i = 1; i <= kWizardSteps; ++i) {
     const auto step = static_cast<WizardStep>(i);
     if (step == WizardStep::Engines && !facts.engine_choice) continue;
-    if ((step == WizardStep::Hdr || step == WizardStep::Grade) && !facts.hdr_display) continue;
+    if (step == WizardStep::Hdr && !facts.hdr_display) continue;
+    // La calibration du grade se propose après celle de la machine (HDR ou SDR), plus en écran à part.
+    if (step == WizardStep::Grade) continue;
     steps.push_back(step);
   }
   return steps;
@@ -123,10 +125,11 @@ std::vector<std::string> wizard_summary(const Wizard& wizard) {
       out.push_back(i18n::tr_format("HDR: {} (HDR and color > HDR)", label(wizard.hdr)));
     }
   }
-  if (has(WizardStep::Grade))
+  if (has(WizardStep::Hdr))
     out.push_back(
         wants_grade_calibration(wizard)
-            ? i18n::tr("HDR grade calibration: right after the machine calibration (HDR and color > HDR)")
+            ? i18n::tr("HDR grade calibration: right after the machine calibration if you pick HDR (HDR and "
+                       "color > HDR)")
             : i18n::tr("HDR grade calibration: skipped (HDR and color > HDR)"));
   if (has(WizardStep::Languages))
     out.push_back(skipped(WizardStep::Languages) ? i18n::tr("Languages: skipped (General > Playback)")
@@ -190,8 +193,7 @@ bool wants_machine_calibration(const Wizard& wizard) {
 }
 
 bool wants_grade_calibration(const Wizard& wizard) {
-  return std::ranges::find(wizard.steps, WizardStep::Grade) != wizard.steps.end() &&
-         std::ranges::find(wizard.skipped, WizardStep::Grade) == wizard.skipped.end() &&
+  return std::ranges::find(wizard.steps, WizardStep::Hdr) != wizard.steps.end() &&
          std::ranges::find(wizard.skipped, WizardStep::Hdr) == wizard.skipped.end() &&
          wizard.hdr != HdrChoice::Sdr;
 }
