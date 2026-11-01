@@ -618,4 +618,39 @@ TEST_CASE("grade adaptatif (shader) : les noirs se creusent sur une scène clair
   CHECK(dark[8][0] > 4.0);    // scène sombre : intact
 }
 
+TEST_CASE("grade adaptatif (shader) : les bandes noires d'un film ne font pas passer la scène pour sombre",
+          "[render][gpu][adaptif]") {
+  Gpu gpu;
+  require_device(gpu);
+  REQUIRE(gpu.grade);
+  // Un pan sombre (5 nits) dans une scène à 60 nits ; avec bandes noires, un quart de l'image en haut et en
+  // bas.
+  const auto image = [&](bool bars) {
+    std::vector<std::uint16_t> pixels(static_cast<std::size_t>(kSide) * kSide * 4);
+    for (int y = 0; y < kSide; ++y)
+      for (int x = 0; x < kSide; ++x) {
+        const bool bar = bars && (y < kSide / 4 || y >= 3 * kSide / 4);
+        const double nits = bar ? 0.0 : (x < 26 ? 5.0 : 60.0);
+        const std::size_t at = (static_cast<std::size_t>(y) * kSide + static_cast<std::size_t>(x)) * 4;
+        for (std::size_t c = 0; c < 3; ++c)
+          pixels[at + c] = static_cast<std::uint16_t>(std::lround(nits_to_pq(nits) * 65535.0));
+        pixels[at + 3] = 65535;
+      }
+    return pixels;
+  };
+  GradeParams params = expanded(0.0);
+  params.shadows = 0.0;
+  params.shadow_knee = 50.0;
+  params.ad_on = 1.0;
+  params.ad_lo = nits_to_pq(10.0);
+  params.ad_hi = nits_to_pq(40.0);
+  params.ad_shadows = 0.9;
+  params.ad_em_base = params.em_base;
+  params.ad_em_pow = params.em_pow;
+  const std::vector<Rgb> open = graded_rgb(gpu, image(false), params);
+  const std::vector<Rgb> barred = graded_rgb(gpu, image(true), params);
+  CHECK(open[8][0] < 2.5);                            // scène claire : le pan sombre est creusé
+  CHECK(std::abs(barred[8][0] - open[8][0]) < 0.25);  // les bandes ne changent rien
+}
+
 }  // namespace ajp::render

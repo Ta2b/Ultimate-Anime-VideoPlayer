@@ -46,8 +46,9 @@ struct TensorRtBackend::TrueHdrState {
   // hôte projetée, lue par le thread principal (une image de retard, aucune copie ni attente).
   unsigned int* luma_histogram = nullptr;  // les compteurs sur le GPU
   float* luma_sum = nullptr;
-  float* luma_host = nullptr;    // kLumaStatsFloats flottants lus par le thread principal
-  float* luma_device = nullptr;  // l'adresse GPU de luma_host
+  unsigned int* luma_bars = nullptr;  // bandes noires (MeanLumaParams::bars)
+  float* luma_host = nullptr;         // kLumaStatsFloats flottants lus par le thread principal
+  float* luma_device = nullptr;       // l'adresse GPU de luma_host
 
   TrueHdrState() = default;
   TrueHdrState(const TrueHdrState&) = delete;

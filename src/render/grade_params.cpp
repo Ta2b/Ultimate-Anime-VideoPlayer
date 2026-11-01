@@ -64,11 +64,10 @@ double pq_code(double nits) {
 // (les valeurs claires reprennent les sombres).
 void apply_adaptive(const GradeSettings& s, double peak, bool sdr_out, GradeParams& p) {
   if (!s.adaptive) return;
-  // Le code que l'étage lit : PQ en sortie HDR10 ; en sortie SDR, le code gamma de l'écran (2,2 par défaut),
-  // car le shader y reçoit l'image SDR telle quelle.
-  const auto luma_to_pq = [sdr_out](double percent) {
-    return sdr_out ? std::pow(percent / 100.0, 2.4 / 2.2)
-                   : pq_code(grade_limits::kSdrWhiteNits * std::pow(percent / 100.0, 2.4));
+  // Le code que la passe des statistiques compare : le PQ de la luminance de la source, sur toutes les
+  // sorties (en sortie SDR aussi, la mesure est en PQ).
+  const auto luma_to_pq = [](double percent) {
+    return pq_code(grade_limits::kSdrWhiteNits * std::pow(percent / 100.0, 2.4));
   };
   p.ad_on = 1.0;
   p.ad_lo = luma_to_pq(s.adaptive_lo);
@@ -83,6 +82,7 @@ void apply_adaptive(const GradeSettings& s, double peak, bool sdr_out, GradePara
   // La vibrance suit la couleur (ciel bleu saturé), que le shader ne mesure pas : seule la part retirée
   // dans les scènes claires l'adapte sur ces routes.
   p.ad_vibrance = p.vibrance * (1.0 - std::clamp(s.adaptive_vibrance_cut, 0.0, 1.0));
+  p.ad_sky_vibrance = vibrance_effect(s.adaptive_vibrance);
   p.ad_em_base = p.em_base;
   p.ad_em_pow = p.em_pow;
   // La scène sombre avec éclat : ses noirs et ses couleurs à elle, sa courbe si elle est émulée.

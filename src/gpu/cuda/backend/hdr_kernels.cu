@@ -8,6 +8,8 @@ namespace ajp::gpu::cuda {
 namespace {
 
 constexpr int kBlock = 16;
+// Un point de bande noire : aucun canal au-dessus de 2 % (le noir et le bruit de codage autour).
+constexpr float kBarBlack = 0.02F;
 
 dim3 grid_for(int width, int height) {
   return dim3(static_cast<unsigned>((width + kBlock - 1) / kBlock),
@@ -74,10 +76,12 @@ __global__ void __launch_bounds__(kBlock* kBlock) mean_luma_partial(MeanLumaPara
   __syncthreads();
   const int gx = static_cast<int>(blockIdx.x * blockDim.x + threadIdx.x);
   const int gy = static_cast<int>(blockIdx.y * blockDim.y + threadIdx.y);
+  const int w4 = p.width / 4;
+  const int h4 = p.height / 4;
   float value = 0.0F;
   float blue = 0.0F;
   float chroma = 0.0F;
-  if (gx < p.width / 4 && gy < p.height / 4) {
+  if (gx < w4 && gy < h4) {
     const std::size_t plane = static_cast<std::size_t>(p.width) * static_cast<std::size_t>(p.height);
     const std::size_t i = static_cast<std::size_t>(gy * 4) * static_cast<std::size_t>(p.width) +
                           static_cast<std::size_t>(gx * 4);
@@ -85,13 +89,26 @@ __global__ void __launch_bounds__(kBlock* kBlock) mean_luma_partial(MeanLumaPara
     const float r = __half2float(rgb[i]);
     const float g = __half2float(rgb[plane + i]);
     const float b = __half2float(rgb[2 * plane + i]);
-    value = 0.2126F * r + 0.7152F * g + 0.0722F * b;
-    value = value != value ? 0.0F : fminf(fmaxf(value, 0.0F), 1.0F);
-    blue = fmaxf(0.0F, b - fmaxf(r, g));
-    chroma = fmaxf(r, fmaxf(g, b)) - fminf(r, fminf(g, b));
-    blue = blue != blue ? 0.0F : fminf(blue, 1.0F);
-    chroma = chroma != chroma ? 0.0F : fminf(chroma, 1.0F);
-    atomicAdd(&bins[min(kLumaBins - 1, static_cast<int>(value * static_cast<float>(kLumaBins)))], 1U);
+    bool inside = true;
+    if (p.bars != nullptr) {
+      // Un point non noir marque sa ligne et sa colonne : l'image suivante ne mesure que leur rectangle.
+      if (fmaxf(r, fmaxf(g, b)) > kBarBlack) {
+        p.bars[4 + gy] = 1U;
+        p.bars[4 + h4 + gx] = 1U;
+      }
+      if (p.bars[2] != 0U)
+        inside = gx >= static_cast<int>(p.bars[0]) && gy >= static_cast<int>(p.bars[1]) &&
+                 gx < static_cast<int>(p.bars[2]) && gy < static_cast<int>(p.bars[3]);
+    }
+    if (inside) {
+      value = 0.2126F * r + 0.7152F * g + 0.0722F * b;
+      value = value != value ? 0.0F : fminf(fmaxf(value, 0.0F), 1.0F);
+      blue = fmaxf(0.0F, b - fmaxf(r, g));
+      chroma = fmaxf(r, fmaxf(g, b)) - fminf(r, fminf(g, b));
+      blue = blue != blue ? 0.0F : fminf(blue, 1.0F);
+      chroma = chroma != chroma ? 0.0F : fminf(chroma, 1.0F);
+      atomicAdd(&bins[min(kLumaBins - 1, static_cast<int>(value * static_cast<float>(kLumaBins)))], 1U);
+    }
   }
   for (int offset = 16; offset > 0; offset >>= 1) {
     value += __shfl_down_sync(0xFFFFFFFFU, value, offset);
@@ -118,8 +135,37 @@ __device__ float percentile(const unsigned int* histogram, float count, float q)
   return 1.0F;
 }
 
+// Le rectangle de l'image hors bandes noires, d'après les marques de l'image mesurée, pour la suivante ; les
+// marques sont remises à zéro. Rien de marqué (image noire, fondu) ou moins de la moitié de l'image dans une
+// dimension (un plan sombre, pas des bandes) : l'image entière.
+__device__ void next_bars(unsigned int* bars, int w4, int h4) {
+  unsigned int* rows = bars + 4;
+  unsigned int* cols = rows + h4;
+  int top = 0;
+  while (top < h4 && rows[top] == 0U) ++top;
+  int bottom = h4;
+  while (bottom > top && rows[bottom - 1] == 0U) --bottom;
+  int left = 0;
+  while (left < w4 && cols[left] == 0U) ++left;
+  int right = w4;
+  while (right > left && cols[right - 1] == 0U) --right;
+  const bool bands =
+      2 * (bottom - top) >= h4 && 2 * (right - left) >= w4 && (bottom - top < h4 || right - left < w4);
+  bars[0] = bands ? static_cast<unsigned int>(left) : 0U;
+  bars[1] = bands ? static_cast<unsigned int>(top) : 0U;
+  bars[2] = bands ? static_cast<unsigned int>(right) : 0U;
+  bars[3] = bands ? static_cast<unsigned int>(bottom) : 0U;
+  for (int y = 0; y < h4; ++y) rows[y] = 0U;
+  for (int x = 0; x < w4; ++x) cols[x] = 0U;
+}
+
 __global__ void mean_luma_finish(MeanLumaParams p) {
-  const float count = static_cast<float>(p.width / 4) * static_cast<float>(p.height / 4);
+  const int w4 = p.width / 4;
+  const int h4 = p.height / 4;
+  // Les points mesurés : le rectangle hors bandes de cette image, sinon l'image entière.
+  float count = static_cast<float>(w4) * static_cast<float>(h4);
+  if (p.bars != nullptr && p.bars[2] != 0U)
+    count = static_cast<float>(p.bars[2] - p.bars[0]) * static_cast<float>(p.bars[3] - p.bars[1]);
   if (count > 0.0F) {
     float dark = 0.0F;
     float bright = 0.0F;
@@ -143,6 +189,7 @@ __global__ void mean_luma_finish(MeanLumaParams p) {
   p.sum[1] = 0.0F;
   p.sum[2] = 0.0F;
   for (int b = 0; b < kLumaBins; ++b) p.histogram[b] = 0U;
+  if (p.bars != nullptr) next_bars(p.bars, w4, h4);
 }
 
 }  // namespace

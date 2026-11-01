@@ -3,11 +3,18 @@
 //!SAVE AJG_LOCAL
 //!WIDTH HOOKED.w 8 /
 //!HEIGHT HOOKED.h 8 /
-//!COMPONENTS 1
-//!DESC AnimeJaNai HDR grade - luminance locale 1/8
+//!COMPONENTS 3
+//!DESC AnimeJaNai HDR grade - luminance et couleur locales 1/8
 
-// Moyenne 8x8 de la luminance, stockee en PQ (domaine perceptuel uniforme).
-// 16 lectures bilineaires couvrent exactement le bloc 8x8.
+// Moyenne 8x8 de la luminance, stockee en PQ (domaine perceptuel uniforme), et de la couleur comme la
+// mesure de RTX HDR la prend (le SDR encode, 0 a 1) : y, le « bleu » max(0, B - max(R, V)) des ciels et
+// aplats bleus satures ; z, la chroma max - min. 16 lectures bilineaires couvrent exactement le bloc 8x8.
+vec3 ajg_sdr_rgb(vec3 e) {
+    if (sdr_out > 0.5) return clamp(e, 0.0, 1.0);
+    vec3 p = pow(clamp(e, 0.0, 1.0), vec3(1.0 / 78.84375));
+    vec3 n = pow(max(p - 0.8359375, 0.0) / max(18.8515625 - 18.6875 * p, 1e-6), vec3(6.27739463));
+    return pow(clamp(n * 10000.0 / 203.0, 0.0, 1.0), vec3(1.0 / 2.4));
+}
 float ajg_pq_y(vec3 e) {
     float y;
     if (sdr_out > 0.5) {
@@ -22,13 +29,17 @@ float ajg_pq_y(vec3 e) {
     return pow((0.8359375 + 18.8515625 * q) / (1.0 + 18.6875 * q), 78.84375);
 }
 vec4 hook() {
-    float acc = 0.0;
+    vec3 acc = vec3(0.0);
     for (int j = 0; j < 4; j++)
     for (int i = 0; i < 4; i++) {
         vec2 o = vec2(float(i) * 2.0 - 3.0, float(j) * 2.0 - 3.0) * HOOKED_pt;
-        acc += ajg_pq_y(HOOKED_tex(HOOKED_pos + o).rgb);
+        vec3 e = HOOKED_tex(HOOKED_pos + o).rgb;
+        vec3 c = ajg_sdr_rgb(e);
+        float hi = max(c.r, max(c.g, c.b));
+        float lo = min(c.r, min(c.g, c.b));
+        acc += vec3(ajg_pq_y(e), max(0.0, c.b - max(c.r, c.g)), hi - lo);
     }
-    return vec4(acc / 16.0, 0.0, 0.0, 1.0);
+    return vec4(acc / 16.0, 1.0);
 }
 
 //!HOOK OUTPUT
@@ -89,6 +100,10 @@ vec4 hook() {
 //!VAR float ready
 //!VAR float bright
 //!VAR float glow_slow
+//!VAR float blue_slow
+//!VAR float chroma_slow
+//!VAR float series
+//!VAR float series_n
 //!VAR int width
 //!VAR int height
 //!VAR float history[32768]
@@ -96,6 +111,7 @@ vec4 hook() {
 
 //!HOOK OUTPUT
 //!BIND AJG_AREA
+//!BIND AJG_LOCAL
 //!SAVE AJG_MEAN8
 //!WIDTH 8
 //!HEIGHT 8
@@ -104,7 +120,8 @@ vec4 hook() {
 
 // Moyenne de la carte de zone par 1/64 d'image : PQ et lumiere lineaire (nits / 10000), et la
 // part des zones claires (au-dessus de 70 % du blanc SDR : ciel, murs blancs, neige), et la somme du PQ des
-// autres zones (le fond, sans les éclats).
+// autres zones (le fond, sans les éclats). Les points noirs purs (bandes noires d'un film en 2,39:1 ou
+// d'un 4:3, PQ sous 0,02 dans la carte locale non floutee) ne comptent pas : AJG_COLOR8 en donne la part.
 // 16 x 16 lectures bilineaires reparties sur la zone couverte par chaque texel.
 float stats_linear(float e) {
     float p = pow(clamp(e, 0.0, 1.0), 1.0 / 78.84375);
@@ -116,6 +133,7 @@ vec4 hook() {
     for (int j = 0; j < 16; j++)
     for (int i = 0; i < 16; i++) {
         vec2 o = ((vec2(float(i), float(j)) + 0.5) / 16.0 - 0.5) / 8.0;
+        if (AJG_LOCAL_tex(AJG_LOCAL_pos + o).x < 0.02) continue;
         float v = AJG_AREA_tex(AJG_AREA_pos + o).x;
         float lin = stats_linear(v);
         bool lit = lin > bright;
@@ -125,19 +143,50 @@ vec4 hook() {
 }
 
 //!HOOK OUTPUT
+//!BIND AJG_LOCAL
+//!SAVE AJG_COLOR8
+//!WIDTH 8
+//!HEIGHT 8
+//!COMPONENTS 3
+//!DESC AnimeJaNai HDR grade - couleur de scene 8x8
+
+// Les memes lectures que AJG_MEAN8 : x et y, somme du bleu et de la chroma des points hors bandes noires ;
+// z, leur part (sur 256).
+vec4 hook() {
+    vec3 acc = vec3(0.0);
+    for (int j = 0; j < 16; j++)
+    for (int i = 0; i < 16; i++) {
+        vec2 o = ((vec2(float(i), float(j)) + 0.5) / 16.0 - 0.5) / 8.0;
+        vec3 l = AJG_LOCAL_tex(AJG_LOCAL_pos + o).xyz;
+        if (l.x >= 0.02) acc += vec3(l.y, l.z, 1.0);
+    }
+    return vec4(acc / 256.0, 1.0);
+}
+
+//!HOOK OUTPUT
 //!BIND AJG_MEAN8
+//!BIND AJG_COLOR8
 //!SAVE AJG_MEAN
-//!WIDTH 1
+//!WIDTH 2
 //!HEIGHT 1
 //!COMPONENTS 4
 //!DESC AnimeJaNai HDR grade - moyenne de scene
 
+// Premier texel : les moyennes de AJG_MEAN8 sur les seuls points hors bandes noires ; second texel : x, y,
+// bleu et chroma moyens de meme, z, la part de l'image hors bandes. Une image toute noire : zero.
 vec4 hook() {
     vec4 acc = vec4(0.0);
+    vec3 col = vec3(0.0);
     for (int j = 0; j < 8; j++)
-    for (int i = 0; i < 8; i++)
-        acc += AJG_MEAN8_tex((vec2(float(i), float(j)) + 0.5) / 8.0);
-    return acc / 64.0;
+    for (int i = 0; i < 8; i++) {
+        vec2 at = (vec2(float(i), float(j)) + 0.5) / 8.0;
+        acc += AJG_MEAN8_tex(at);
+        col += AJG_COLOR8_tex(at).xyz;
+    }
+    float share = col.z / 64.0;
+    float n = max(col.z, 1e-6);
+    if (AJG_MEAN8_pos.x < 0.5) return share > 1e-3 ? acc / n : vec4(0.0);
+    return share > 1e-3 ? vec4(col.xy / n, share, 1.0) : vec4(0.0);
 }
 
 //!HOOK OUTPUT
@@ -150,21 +199,36 @@ vec4 hook() {
 //!COMPUTE 1 1
 //!DESC AnimeJaNai HDR grade - statistiques de scene
 
+// La luminance de la source (0 a 1, encodee gamma 2,4, blanc a 203 nits) d'un code PQ : l'echelle des seuils
+// du grade adaptatif et de la mesure de RTX HDR.
+float stats_luma(float e) {
+    float p = pow(clamp(e, 0.0, 1.0), 1.0 / 78.84375);
+    float n = 10000.0 * pow(max(p - 0.8359375, 0.0) / max(18.8515625 - 18.6875 * p, 1e-6), 6.27739463);
+    return pow(clamp(n / 203.0, 0.0, 1.0), 1.0 / 2.4);
+}
+
 // Detection des changements de plan et APL lisse dans le temps. Les moyennes viennent
 // des deux passes precedentes : une reduction en boucle dans cette passe de calcul
-// coutait 3 ms par image en D3D11.
+// coutait 3 ms par image en D3D11. Le grade adaptatif y suit les memes regles que sous RTX HDR
+// (chain_hdr.cpp, adaptive_tick) : luminosite de la serie, ciel bleu sature et flash colore, scene sombre
+// avec eclat.
 void hook() {
     ivec2 size = ivec2(AJG_AREA_size);
-    vec4 mean = AJG_MEAN_tex(vec2(0.5));
+    vec4 mean = AJG_MEAN_tex(vec2(0.25, 0.5));
+    vec4 col = AJG_MEAN_tex(vec2(0.75, 0.5));
     float mean_pq = mean.x;
     float mean_nits = 10000.0 * mean.y;
     // Changement de plan, premiere image ou nouvelle taille : pas d'historique.
-    bool reset = ready < 0.5 || width != size.x || height != size.y
-              || abs(mean_pq - prev_pq) > 0.06;
+    bool fresh = ready < 0.5 || width != size.x || height != size.y;
+    bool reset = fresh || abs(mean_pq - prev_pq) > 0.06;
     // Mêmes moyennes qu'à la passe précédente : la même image représentée (pause, interface, OSD,
     // cadence de l'écran), pas une nouvelle image vidéo. Le lissage n'avance qu'avec la vidéo.
     bool again = !reset && mean_pq == prev_pq && mean_nits == prev_nits;
     cut = reset ? 1.0 : 0.0;
+    if (fresh) {
+        series = 0.30;  // amorcee a la luminosite moyenne de Re:Zero, comme sous RTX HDR
+        series_n = 0.0;
+    }
     if (!again) {
         apl = reset ? mean_nits : mix(apl, mean_nits, 0.1);
         // Code PQ moyen très lissé (une à deux secondes de vidéo), remis à la mesure à chaque changement de plan :
@@ -174,22 +238,50 @@ void hook() {
         // claire). Elle se classe sur son fond : l'éclat ne la fait pas passer pour claire.
         float bg_pq = mean.w / max(1.0 - mean.z, 1e-3);
         float glow = smoothstep(0.002, 0.02, mean.z) * (1.0 - smoothstep(0.12, 0.30, mean.z))
-                   * (1.0 - smoothstep(ad_lo, max(ad_hi, ad_lo + 1e-3), bg_pq));
+                   * (1.0 - smoothstep(stats_luma(ad_lo), max(stats_luma(ad_hi), stats_luma(ad_lo) + 1e-3),
+                                       stats_luma(bg_pq)));
         float scene_pq = mix(mean_pq, bg_pq, glow);
         pq_slow = reset ? scene_pq : mix(pq_slow, scene_pq, 0.02);
         glow_slow = reset ? glow : mix(glow_slow, glow, 0.02);
         bright = reset ? mean.z : mix(bright, mean.z, 0.1);
+        blue_slow = reset ? col.x : mix(blue_slow, col.x, 0.02);
+        chroma_slow = reset ? col.y : mix(chroma_slow, col.y, 0.02);
+        // La luminosite de la SERIE : moyenne cumulee sur les 20 premieres secondes, puis lissee sur une minute
+        // et demie (24 images par seconde).
+        series_n += 1.0;
+        series += min(1.0 / (min(series_n, 2160.0) + 480.0), 1.0) * (stats_luma(mean_pq) - series);
     }
     prev_pq = mean_pq;
     prev_nits = mean_nits;
     width = size.x;
     height = size.y;
     ready = 1.0;
+    // Position du grade adaptatif. Les seuils suivent la serie EN PROPORTION (une serie claire par nature ne
+    // voit pas toutes ses scenes ordinaires traitees comme claires) ; la vibrance suit la couleur : un ciel
+    // bleu sature (dans une scene a moitie claire) ou un flash tres sature n'en veulent pas ; une serie claire
+    // recoit plus de contraste et de couleur. La calibration (gl_force >= 0) tient un bout, sans le reste.
+    float t = 0.0;
+    float glow_w = 0.0;
+    float tv = 0.0;
+    float bs = 0.0;
+    if (gl_force >= 0.0) {
+        t = smoothstep(ad_lo, max(ad_hi, ad_lo + 1e-3), pq_slow);  // seuils hors de [0, 1] : 0 ou 1
+        glow_w = gl_force;
+    } else {
+        float ratio = clamp(series / 0.30, 0.7, 1.8);
+        float lo = stats_luma(ad_lo) * ratio;
+        float hi = max(min(stats_luma(ad_hi) * ratio, 0.95), lo + 0.01);
+        t = smoothstep(lo, hi, stats_luma(pq_slow));
+        glow_w = clamp(glow_slow, 0.0, 1.0) * (1.0 - t);
+        float gate = clamp(t / 0.5, 0.0, 1.0);
+        tv = max(smoothstep(0.05, 0.13, blue_slow) * gate, smoothstep(0.40, 0.60, chroma_slow));
+        bs = smoothstep(0.36, 0.50, series);
+    }
     // x : APL lisse (nits), y : changement de plan, z : moyenne de l'image, w : part claire lissee.
     imageStore(out_image, ivec2(0, 0), vec4(apl, cut, mean_nits, bright));
-    // Deuxième texel : x : code PQ de la scène très lissé (son fond quand elle a un éclat), y : poids de la
-    // scène sombre avec éclat, lissé pareil.
-    imageStore(out_image, ivec2(1, 0), vec4(pq_slow, glow_slow, 0.0, 1.0));
+    // Deuxième texel : x : position du grade adaptatif (0 : scène sombre, 1 : claire), y : poids de la scène
+    // sombre avec éclat, z : vibrance du ciel bleu ou du flash, w : série claire par nature.
+    imageStore(out_image, ivec2(1, 0), vec4(t, glow_w, tv, bs));
 }
 
 //!HOOK OUTPUT
