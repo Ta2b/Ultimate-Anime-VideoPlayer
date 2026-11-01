@@ -16,4 +16,13 @@ namespace ajp::app::play {
 bool peak_calibration(PlaySettings& d, const SettingsChoices& choices,
                       std::optional<HdrPattern>& calibration);
 
+// La calibration du grade adaptatif, en deux temps sur la vidéo en cours : la scène tenue pour sombre, puis
+// pour claire (GradeSettings::adaptive_force), chacune avec ses curseurs. « Terminer » garde les deux bouts
+// pour cet écran (with_calibrated_grade les reprend à chaque ouverture).
+struct GradeWizard {
+  int step = 0;         // 0 : fermée ; 1 : scène sombre ; 2 : scène claire
+  PlaySettings before;  // les réglages d'avant, que « Annuler » remet
+};
+void grade_calibration(PlaySettings& d, const SettingsChoices& choices, GradeWizard& wizard);
+
 }  // namespace ajp::app::play

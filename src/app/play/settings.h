@@ -234,6 +234,20 @@ struct PlaySettings {
   // Le pic mesuré par la calibration (Paramètres > HDR), par écran (display_edid.h : display_key) : il
   // remplace celui de l'EDID dans le pic automatique ([hdr.display_peaks] de play.toml).
   std::vector<std::pair<std::string, int>> display_peaks;
+  // Le grade adaptatif calibré sur un écran (Paramètres > HDR, « Calibrer le grade adaptatif ») : ses deux
+  // bouts, scène sombre et scène claire. Grade adaptatif coché, il remplace ces réglages à l'ouverture
+  // ([hdr.display_grades] de play.toml).
+  struct DisplayGrade {
+    std::string display;  // display_edid.h : display_key
+    int gray = 50;        // gris moyen, scène sombre (true_hdr_gray)
+    double shadows = 0.15;
+    double colors = 0.10;  // vibrance_rtx
+    double gray_bright = 30.0;
+    double shadows_bright = 0.80;
+    double colors_cut = 0.40;
+    friend bool operator==(const DisplayGrade&, const DisplayGrade&) = default;
+  };
+  std::vector<DisplayGrade> display_grades;
   bool true_hdr_debanding = true;
   // HDR adaptatif : le SDR passe en PQ par libplacebo et le grade émule l'aspect TrueHDR en
   // suivant la scène (route native, mêmes contraste, saturation, gris moyen et pic).
@@ -373,6 +387,13 @@ inline int auto_peak_for(const PlaySettings& settings, std::string_view display,
 }
 // Pose (ou remplace) le pic calibré de cet écran ; nits <= 0 l'oublie.
 void set_calibrated_peak(PlaySettings& settings, std::string_view display, int nits);
+// Le grade calibré de cet écran ; nullptr sans calibration.
+const PlaySettings::DisplayGrade* calibrated_grade(const PlaySettings& settings, std::string_view display);
+// Les réglages du grade pris sur les réglages en cours (scène sombre et claire), gardés pour cet écran.
+void keep_calibrated_grade(PlaySettings& settings, std::string_view display);
+void forget_calibrated_grade(PlaySettings& settings, std::string_view display);
+// Grade adaptatif coché et cet écran calibré : ses réglages remplacent ceux du grade ; sinon, inchangés.
+PlaySettings with_calibrated_grade(PlaySettings settings, std::string_view display);
 
 // L'écoute en vigueur pour cet appareil : son profil propre s'il en a un, sinon le global (un appareil
 // inconnu reprend le global sans rien demander). listen : 0 casque, 1 enceintes, 2 home cinéma.

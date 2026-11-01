@@ -510,6 +510,12 @@ UiFrame PlayerUi::frame(std::int64_t now_us, const ControlsView& view, std::vect
     look_.keep_visible = panel_.is_open();  // fermé par sa croix
     drawn = true;
   }
+  // Le panneau fermé en pleine calibration du grade : la scène n'est plus forcée.
+  if (!panel_.is_open() && running_.grade_values.adaptive_force >= 0.0) {
+    PlaySettings released = running_;
+    released.grade_values.adaptive_force = -1.0;
+    actions.emplace_back(ApplySettings{.settings = released});
+  }
   hover_waiting_ = ImGui::IsAnyItemHovered();
   ImGui::Render();
   controls_.framed(now_us, view, drawn);

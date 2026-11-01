@@ -447,7 +447,8 @@ bool reset_page(PlaySettings& draft, std::vector<Input>& actions, const Profiles
   if (ImGui::Button(i18n::tr("Reset all settings"))) {
     PlaySettings fresh;
     fresh.engines_dir = draft.engines_dir;
-    fresh.display_peaks = draft.display_peaks;  // une mesure de l'écran, pas un réglage
+    fresh.display_peaks = draft.display_peaks;  // des mesures de l'écran, pas des réglages
+    fresh.display_grades = draft.display_grades;
     draft = fresh;
     actions.emplace_back(EditProfile{.edit = core::edit::ResetProfile{.slot = view.active}});
     reset_all = true;
@@ -629,7 +630,11 @@ SettingsPanel::Result SettingsPanel::draw(const PlaySettings& running, const Set
     panel::begin_page();
     {
       const std::string_view name = kPages[static_cast<std::size_t>(page_)].name;
-      if (name != "HDR") calibration_.reset();  // la mire ne reste que sur sa page
+      if (name != "HDR") {  // la mire et la scène forcée ne restent que sur leur page
+        calibration_.reset();
+        if (grade_wizard_) grade_wizard_->step = 0;
+        draft_.grade_values.adaptive_force = -1.0;
+      }
       if (name == "Setup") {
         // L'optimisation (ou son annulation) s'applique tout de suite, sans « Appliquer » : c'est ce qu'on a
         // demandé.
@@ -651,6 +656,8 @@ SettingsPanel::Result SettingsPanel::draw(const PlaySettings& running, const Set
       } else if (name == "HDR") {
         hdr_tab(draft_, choices);
         if (peak_calibration(draft_, choices, calibration_)) result.reopen = draft_;
+        if (!grade_wizard_) grade_wizard_ = std::make_unique<GradeWizard>();
+        grade_calibration(draft_, choices, *grade_wizard_);
         if (advanced_) oled_sections(draft_, choices);
       } else if (name == "Colors") {
         grade_tab(draft_, choices);

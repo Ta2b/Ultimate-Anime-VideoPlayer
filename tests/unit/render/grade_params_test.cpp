@@ -392,3 +392,21 @@ TEST_CASE(
   REQUIRE(off);
   CHECK(off->params.ad_on == 0.0);
 }
+
+TEST_CASE("grade adaptatif : la calibration force la scène sombre ou claire dans le shader",
+          "[grade][adaptif]") {
+  using namespace ajp::render;
+  GradeSettings s;
+  s.adaptive = true;
+  const GradeContext native{.route = ajp::core::HdrMode::Native, .output_pq = true, .peak_nits = 1000.0};
+  s.adaptive_force = 1.0;  // claire : tout code PQ moyen (0 à 1) est au-dessus de ad_hi
+  const auto bright = decide_grade(s, native);
+  REQUIRE(bright);
+  CHECK(bright->params.ad_hi < 0.0);
+  CHECK(bright->params.ad_lo < bright->params.ad_hi);
+  s.adaptive_force = 0.0;  // sombre : tout code est sous ad_lo
+  const auto dark = decide_grade(s, native);
+  REQUIRE(dark);
+  CHECK(dark->params.ad_lo > 1.0);
+  CHECK(dark->params.ad_lo < dark->params.ad_hi);
+}

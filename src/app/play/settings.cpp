@@ -621,4 +621,41 @@ void set_calibrated_peak(PlaySettings& settings, std::string_view display, int n
   if (nits > 0) settings.display_peaks.emplace_back(std::string(display), nits);
 }
 
+const PlaySettings::DisplayGrade* calibrated_grade(const PlaySettings& settings, std::string_view display) {
+  if (display.empty()) return nullptr;
+  for (const auto& grade : settings.display_grades)
+    if (grade.display == display) return &grade;
+  return nullptr;
+}
+
+void forget_calibrated_grade(PlaySettings& settings, std::string_view display) {
+  std::erase_if(settings.display_grades, [&](const auto& grade) { return grade.display == display; });
+}
+
+void keep_calibrated_grade(PlaySettings& settings, std::string_view display) {
+  if (display.empty()) return;
+  forget_calibrated_grade(settings, display);
+  const render::GradeSettings& g = settings.grade_values;
+  settings.display_grades.push_back(PlaySettings::DisplayGrade{.display = std::string(display),
+                                                               .gray = settings.true_hdr_gray,
+                                                               .shadows = g.shadows,
+                                                               .colors = g.vibrance_rtx,
+                                                               .gray_bright = g.adaptive_gray,
+                                                               .shadows_bright = g.adaptive_shadows,
+                                                               .colors_cut = g.adaptive_vibrance_cut});
+}
+
+PlaySettings with_calibrated_grade(PlaySettings settings, std::string_view display) {
+  const PlaySettings::DisplayGrade* grade = calibrated_grade(settings, display);
+  if (grade == nullptr || !settings.grade || !settings.grade_values.adaptive) return settings;
+  render::GradeSettings& g = settings.grade_values;
+  settings.true_hdr_gray = grade->gray;
+  g.shadows = grade->shadows;
+  g.vibrance_rtx = grade->colors;
+  g.adaptive_gray = grade->gray_bright;
+  g.adaptive_shadows = grade->shadows_bright;
+  g.adaptive_vibrance_cut = grade->colors_cut;
+  return settings;
+}
+
 }  // namespace ajp::app::play

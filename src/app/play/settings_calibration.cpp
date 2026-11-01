@@ -1,11 +1,13 @@
 #include "app/play/settings_calibration.h"
 
 #include <algorithm>
+#include <cmath>
 
 #include <imgui.h>
 
 #include "app/play/i18n.h"
 #include "app/play/panel_style.h"
+#include "render/grade_params.h"
 
 namespace ajp::app::play {
 
@@ -83,6 +85,95 @@ bool peak_calibration(PlaySettings& d, const SettingsChoices& choices,
   }
   panel::end_group();
   return reopen;
+}
+
+namespace {
+
+bool wizard_slider(const char* label, double& value, core::Range<double> range) {
+  auto shown = static_cast<float>(value);
+  if (!ImGui::SliderFloat(label, &shown, static_cast<float>(range.lo), static_cast<float>(range.hi), "%.2f",
+                          ImGuiSliderFlags_AlwaysClamp))
+    return false;
+  value = std::clamp(std::round(static_cast<double>(shown) * 100.0) / 100.0, range.lo, range.hi);
+  return true;
+}
+
+}  // namespace
+
+void grade_calibration(PlaySettings& d, const SettingsChoices& choices, GradeWizard& wizard) {
+  using namespace render::grade_limits;
+  render::GradeSettings& g = d.grade_values;
+  panel::section(i18n::tr("Adaptive grade calibration"));
+  if (!choices.hdr_output || choices.source_width <= 0) {
+    wizard.step = 0;
+    g.adaptive_force = -1.0;
+    panel::note(i18n::tr("Open a video on an HDR display to calibrate the adaptive grade."));
+    panel::end_group();
+    return;
+  }
+  const bool calibrated = calibrated_grade(d, choices.display_key) != nullptr;
+  if (wizard.step == 0) {
+    g.adaptive_force = -1.0;
+    panel::note(
+        i18n::tr("Sets the two ends of the adaptive grade on this display: a dark scene, then a bright "
+                 "scene. The result is kept for this display and drives the grade."));
+    if (calibrated) panel::note(i18n::tr("This display has a calibrated adaptive grade."));
+    if (ImGui::Button(i18n::tr("Calibrate the adaptive grade"))) {
+      wizard.before = d;
+      d.grade = true;
+      g.adaptive = true;
+      wizard.step = 1;
+    }
+    if (calibrated) {
+      ImGui::SameLine();
+      if (ImGui::Button(i18n::tr("Forget the grade calibration")))
+        forget_calibrated_grade(d, choices.display_key);
+    }
+    panel::end_group();
+    return;
+  }
+  const bool dark = wizard.step == 1;
+  g.adaptive_force = dark ? 0.0 : 1.0;
+  if (dark) {
+    panel::note(
+        i18n::tr("1/2 · Dark scene. Go to a dark scene (Re:Zero at night, for example), then set the "
+                 "middle gray, the deep blacks and the colors until the picture looks right."));
+    ImGui::SliderInt(i18n::tr("Mid gray"), &d.true_hdr_gray, limits::kTrueHdrGray.lo, limits::kTrueHdrGray.hi,
+                     "%d", ImGuiSliderFlags_AlwaysClamp);
+    wizard_slider(i18n::tr("Deep blacks"), g.shadows, kShadows);
+    wizard_slider(i18n::tr("Colors"), g.vibrance_rtx, kVibrance);
+    panel::tip(i18n::tr("When in doubt, keep the colors low (0.10 or less)."));
+  } else {
+    panel::note(
+        i18n::tr("2/2 · Bright scene. Go to a bright, warm scene (Slime at 18:20, for example), then "
+                 "set the middle gray, the deep blacks and the colors cut until nothing turns red."));
+    auto gray = static_cast<float>(g.adaptive_gray);
+    if (ImGui::SliderFloat(i18n::tr("Middle gray, bright scene"), &gray, static_cast<float>(kMiddleGray.lo),
+                           static_cast<float>(kMiddleGray.hi), "%.0f", ImGuiSliderFlags_AlwaysClamp))
+      g.adaptive_gray = std::clamp(std::round(static_cast<double>(gray)), kMiddleGray.lo, kMiddleGray.hi);
+    wizard_slider(i18n::tr("Deep blacks, bright scene"), g.adaptive_shadows, kShadows);
+    wizard_slider(i18n::tr("Colors cut, bright scene"), g.adaptive_vibrance_cut, kAdaptiveCut);
+  }
+  if (!dark) {
+    if (ImGui::Button(i18n::tr("Back"))) wizard.step = 1;
+    ImGui::SameLine();
+  }
+  if (ImGui::Button(dark ? i18n::tr("Next") : i18n::tr("Finish"))) {
+    if (dark) {
+      wizard.step = 2;
+    } else {
+      wizard.step = 0;
+      g.adaptive_force = -1.0;
+      keep_calibrated_grade(d, choices.display_key);
+    }
+  }
+  ImGui::SameLine();
+  if (ImGui::Button(i18n::tr("Cancel"))) {
+    wizard.step = 0;
+    d = wizard.before;
+    d.grade_values.adaptive_force = -1.0;
+  }
+  panel::end_group();
 }
 
 }  // namespace ajp::app::play

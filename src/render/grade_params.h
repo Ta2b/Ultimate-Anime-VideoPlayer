@@ -75,6 +75,9 @@ struct GradeSettings {
   // claires et chaudes (rouges, oranges) sursaturent sinon.
   double adaptive_vibrance_cut = 0.0;
   double adaptive_gray = 30.0;
+  // Calibration du grade adaptatif : la scène tenue pour sombre (0) ou claire (1) quoi qu'elle soit, le temps
+  // de régler ce bout-là ; négatif : selon la scène. Jamais écrit dans play.toml.
+  double adaptive_force = -1.0;
   double punch_base = 0.0;   // préréglage : contraste en plus, en sortie du grade (0 : aucun)
   double chroma_base = 0.0;  // préréglage : saturation en plus (0 : aucune)
   double middle_gray = 50.0;

@@ -15,6 +15,7 @@
 
 #include "app/play/auto_config.h"
 #include "app/play/settings.h"
+#include "app/play/settings_toml_display.h"
 #include "core/log.h"
 #include "core/user_overlay.h"
 
@@ -289,17 +290,7 @@ std::expected<PlaySettings, Refusal> settings_from_table(const toml::table& root
     reads.push_back(read(*hdr, "hdr", "middle_gray", s.true_hdr_gray));
     reads.push_back(read(*hdr, "hdr", "peak", s.true_hdr_peak));
     reads.push_back(read(*hdr, "hdr", "debanding", s.true_hdr_debanding));
-    if (const toml::table* peaks = hdr->get_as<toml::table>("display_peaks")) {
-      for (const auto& [display, node] : *peaks) {
-        const auto nits = node.value_exact<std::int64_t>();
-        if (!nits || *nits < limits::kTrueHdrPeak.lo || *nits > limits::kTrueHdrPeak.hi) {
-          reads.emplace_back(refuse(RefusalCode::FieldOutOfRange,
-                                    std::format("hdr.display_peaks.{}", std::string(display.str()))));
-          continue;
-        }
-        s.display_peaks.emplace_back(std::string(display.str()), static_cast<int>(*nits));
-      }
-    }
+    read_display_tables(*hdr, s, reads);
   } else if (const toml::table* rtx = section(root, "rtx_hdr")) {
     reads.push_back(read(*rtx, "rtx_hdr", "enabled", s.true_hdr));
     reads.push_back(read(*rtx, "rtx_hdr", "contrast", s.true_hdr_contrast));
@@ -597,9 +588,7 @@ std::string format_settings(const PlaySettings& s) {
                     {"middle_gray", s.true_hdr_gray},
                     {"peak", s.true_hdr_peak},
                     {"debanding", s.true_hdr_debanding}};
-    toml::table peaks;
-    for (const auto& [display, nits] : s.display_peaks) peaks.insert_or_assign(display, nits);
-    if (!peaks.empty()) hdr.insert("display_peaks", std::move(peaks));
+    write_display_tables(s, hdr);
     root.insert("hdr", std::move(hdr));
   }
   // Le volume au centième : 0.85 et non 0.8500000238418579.
