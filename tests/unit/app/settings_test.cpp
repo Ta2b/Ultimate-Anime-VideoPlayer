@@ -195,7 +195,7 @@ TEST_CASE("Hors plage, type faux ou TOML invalide : refus nommé", "[app][settin
   const auto written =
       parse_settings("[languages]\naudio_1 = \"jpn\"\nsubtitles_1 = \"fre\"\naudio_2 = \"fre\"\n");
   REQUIRE(written);
-  CHECK(written->language_presets == PlaySettings{}.language_presets);
+  CHECK(written->language_presets == std::vector<ajp::media::LanguagePreset>{{"jpn", "fre"}, {"fre", ""}});
   CHECK(parse_settings("[languages]\naudio_1 = 3\n").error().code == RefusalCode::FieldType);
   CHECK(parse_settings("[languages]\naudio_1 = \"fr/../x\"\n").error().code == RefusalCode::FieldOutOfRange);
   CHECK(parse_settings("[subtitles]\nlanguages = \"fre\"\n").error().code == RefusalCode::FieldType);

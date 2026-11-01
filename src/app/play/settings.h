@@ -25,6 +25,7 @@
 #include "app/play/i18n.h"
 #include "app/play/options.h"
 #include "app/play/precision.h"
+#include "app/play/system_language.h"
 #include "core/profile.h"
 #include "core/types.h"
 #include "media/selection.h"
@@ -291,7 +292,7 @@ struct PlaySettings {
   // Audio et sous-titres voulus ensemble, du préréglage préféré au suivant : le premier dont l'audio
   // et les sous-titres existent dans le fichier est pris (media/selection.h). Audio vide : « selon le
   // fichier » ; sous-titres vides : aucun.
-  std::vector<media::LanguagePreset> language_presets{{"jpn", "fre"}, {"fre", ""}};
+  std::vector<media::LanguagePreset> language_presets = default_language_presets();
   // Grade HDR sur la sortie PQ (render/grade_params.h), sur les deux routes ; en direct. Hors
   // « Personnalisé », grade_values suit le préréglage (gamut_p3 excepté, propre à l'écran).
   bool grade = true;
