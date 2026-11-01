@@ -16,6 +16,7 @@
 #include "app/play/i18n.h"
 #include "app/play/look_catalog.h"
 #include "app/play/panel_style.h"
+#include "app/play/settings_bench_results.h"
 #include "app/play/settings_calibration.h"
 #include "app/play/settings_chain_tabs.h"
 #include "app/play/settings_engines.h"
@@ -378,62 +379,20 @@ void stats_tab(PlaySettings& d) {
   ImGui::EndDisabled();
 }
 
-// Général > Configuration : « Optimiser pour ma machine » d'abord (un bouton, le reste suit), puis le
-// préréglage, la priorité et ce que le lecteur sait de la machine.
-BenchEvent config_page(PlaySettings& d, const SettingsChoices& choices, BenchNote& bench,
-                       std::vector<Input>& actions) {
-  const BenchContext context{.display_height = choices.display_height > 0 ? choices.display_height : 1080,
-                             .display_hz = choices.display_hz > 0.0 ? choices.display_hz : 60.0,
-                             .source_height = choices.source_height > 0 ? choices.source_height : 1080,
-                             .source_fps = choices.source_fps > 0.0 ? choices.source_fps : 23.976,
-                             .span = choices.span_prepare,
-                             .fp8_reason = choices.fp8_reason,
-                             .data_dir = choices.settings_dir};
-  const BenchEvent event = bench_page(choices.place, choices.source_file, context, bench, d);
-  if (event == BenchEvent::Started) actions.emplace_back(Command{cmd::Pause{}});
-
+// Général > Configuration : les résultats du bench de la machine (un bouton Appliquer par chaîne essayée),
+// ce que le lecteur sait de la machine, et l'assistant à refaire.
+bool config_page(PlaySettings& d, const SettingsChoices& choices, MachineNote& bench,
+                 std::vector<Input>& actions) {
+  const bool applied = bench_results_section(d, choices, bench, actions);
   section(i18n::tr("This machine"));
   ImGui::TextWrapped("%s",
                      choices.gpu_name.empty() ? i18n::tr("Unknown graphics card") : choices.gpu_name.c_str());
   if (choices.display_hz > 0.0) note(i18n::tr_format("Display {:.0f} Hz", choices.display_hz));
-  note(choices.bench_text.empty()
-           ? std::string(i18n::tr("Not optimized yet: settings are an estimate from the card."))
-           : choices.bench_text);
-
-  section(i18n::tr("Automatic setup"));
-  if (ImGui::BeginCombo(i18n::tr("Preset"), std::string(label(d.preset)).c_str())) {
-    for (int i = 0; i < kPresetCount; ++i) {
-      const auto preset = static_cast<Preset>(i);
-      if (ImGui::Selectable(std::string(label(preset)).c_str(), preset == d.preset)) {
-        d.preset = preset;
-        // La chaîne du préréglage s'écrit tout de suite (Personnalisé : rien ne bouge).
-        d = apply_preset(
-            d,
-            Machine{.tier = static_cast<Tier>(choices.machine_tier),
-                    .display_height = choices.display_height,
-                    .display_hz = choices.display_hz},
-            core::SourceInfo{
-                .width = choices.source_width, .height = choices.source_height, .fps = choices.source_fps});
-      }
-    }
-    ImGui::EndCombo();
-  }
-  panel::tip(i18n::tr(
-      "Auto picks the settings for your card, display and video. Changing one by hand switches to Custom."));
-  if (ImGui::BeginCombo(i18n::tr("Priority"), std::string(label(d.priority)).c_str())) {
-    for (int i = 0; i < kPriorityCount; ++i) {
-      const auto priority = static_cast<Priority>(i);
-      if (ImGui::Selectable(std::string(label(priority)).c_str(), priority == d.priority))
-        d.priority = priority;
-    }
-    ImGui::EndCombo();
-  }
-  panel::tip(i18n::tr("What Auto favors when the machine cannot do everything."));
 
   section(i18n::tr("Setup wizard"));
   if (ImGui::Button(i18n::tr("Run the wizard again"))) actions.emplace_back(OpenEngineScreen{.wizard = true});
   panel::tip(i18n::tr("Nothing changes until \"Finish\"."));
-  return event;
+  return applied;
 }
 
 // Général > Réinitialiser.
@@ -496,6 +455,10 @@ void SettingsPanel::settle(std::vector<Input>& actions) {
   if (!grade_wizard_) return;
   if (!open_) grade_wizard_->step = 0;
   settle_calibration(*grade_wizard_, actions);
+}
+
+bool SettingsPanel::busy() const {
+  return open_ && (bench_running(bench_) || prepare_.pending != nullptr || (machine_ && machine_->running()));
 }
 
 SettingsPanel::~SettingsPanel() {
@@ -653,11 +616,9 @@ SettingsPanel::Result SettingsPanel::draw(const PlaySettings& running, const Set
         draft_.grade_values.adaptive_force = -1.0;
       }
       if (name == "Setup") {
-        // L'optimisation (ou son annulation) s'applique tout de suite, sans « Appliquer » : c'est ce qu'on a
-        // demandé.
-        const BenchEvent event = config_page(draft_, choices, bench_, actions);
-        if ((event == BenchEvent::Applied || event == BenchEvent::Undone) && draft_ != running)
-          result.reopen = draft_;
+        // Une ligne du bench appliquée l'est tout de suite, sans « Appliquer » : c'est ce qu'on a demandé.
+        if (!machine_) machine_ = std::make_unique<MachineNote>();
+        if (config_page(draft_, choices, *machine_, actions) && draft_ != running) result.reopen = draft_;
       } else if (name == i18n::tr("Application")) {
         language_section(draft_);
         default_player_page(choices.place, system_, choices.default_player_is_ajp);

@@ -38,6 +38,11 @@ double display_refresh_hz(SDL_Window* window) {
   return mode->refresh_rate > 0.0F ? static_cast<double>(mode->refresh_rate) : 0.0;
 }
 
+int display_width(SDL_Window* window) {
+  const SDL_DisplayMode* mode = SDL_GetCurrentDisplayMode(SDL_GetDisplayForWindow(window));
+  return mode != nullptr && mode->w > 0 ? mode->w : 0;
+}
+
 int display_height(SDL_Window* window) {
   const SDL_DisplayMode* mode = SDL_GetCurrentDisplayMode(SDL_GetDisplayForWindow(window));
   return mode != nullptr && mode->h > 0 ? mode->h : 0;

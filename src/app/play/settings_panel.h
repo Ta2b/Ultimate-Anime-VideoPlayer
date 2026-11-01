@@ -24,6 +24,7 @@ namespace ajp::app::play {
 
 struct ExportDraft;      // settings_export.h
 struct GradeWizard;      // settings_calibration.h
+struct MachineNote;      // settings_bench_results.h
 struct CalibrationShot;  // calibration_shot.h
 
 // Un moteur du cache, pour l'onglet Moteurs.
@@ -155,7 +156,7 @@ class SettingsPanel {
   void settle(std::vector<Input>& actions);
   bool is_open() const { return open_; }
   // Une tâche tourne dans le panneau (optimisation, préparation) : des images régulières, même en pause.
-  bool busy() const { return open_ && (bench_running(bench_) || prepare_.pending != nullptr); }
+  bool busy() const;
   // Il y a quelque chose à dessiner : le panneau ouvert.
   bool wants_draw(const PlaySettings&, const SettingsChoices&) const { return open_; }
 
@@ -184,8 +185,9 @@ class SettingsPanel {
   std::optional<core::EngineId> engine_draft_;  // moteur coché dans l'onglet Moteurs, pas appliqué
   std::unique_ptr<ExportDraft> export_;         // l'onglet Export, gardé d'une ouverture à l'autre
   SystemNote system_;                           // l'onglet Système : sa dernière action
-  UpdateNote updates_;         // Général > Application : la vérification en cours ou son résultat
-  BenchNote bench_;            // « Évaluer ma machine » : l'essai en cours ou son rapport
+  UpdateNote updates_;                    // Général > Application : la vérification en cours ou son résultat
+  BenchNote bench_;                       // « Évaluer ma machine » : l'essai en cours ou son rapport
+  std::unique_ptr<MachineNote> machine_;  // Général > Configuration : les résultats du bench
   PrepareNote prepare_;        // « Préparer le mode Performance » : la tâche en cours ou son résultat
   bool grade_queued_ = false;  // queue_grade_calibration
   std::unique_ptr<GradeWizard> grade_wizard_;  // la calibration du grade adaptatif (settings_calibration.h)

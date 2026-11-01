@@ -52,6 +52,8 @@ struct BenchReading {
   BenchRun run;
   std::int64_t interval_median_us = 0;  // temps par image (écart entre deux images neuves), médiane
   std::int64_t interval_p95_us = 0;
+  std::int64_t interval_p99_us = 0;   // les 1 % d'images les plus lentes : le « 1 % low »
+  std::int64_t interval_mean_us = 0;  // moyenne : les images par seconde moyennes
   std::int64_t render_median_us = 0;  // composition et soumission, médiane
   int work_height = 0;                // la hauteur de travail de la chaîne jouée ; 0 : inconnue
   std::string rife_model;  // le modèle RIFE joué (« rife_v4.25.onnx ») ; vide : inconnu ou autre moteur

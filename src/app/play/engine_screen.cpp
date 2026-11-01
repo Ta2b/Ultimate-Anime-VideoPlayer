@@ -32,7 +32,6 @@
 #include "core/keys.h"
 #include "core/log.h"
 #include "core/thread.h"
-#include "media/bench_clip.h"
 
 namespace ajp::app::play {
 namespace {
@@ -107,28 +106,21 @@ std::optional<PlaySettings> calibrate_on_screen(PlaceboScreen& screen, PlayerUi&
   BenchPlan plan{.executable = paths.executable,
                  .video = data_dir / "bench-clip-v2.mkv",
                  .work_dir = std::filesystem::temp_directory_path(error) / "ajp-calibration",
-                 .data = data_dir};
+                 .data = data_dir,
+                 .display_width = display_width(screen.window()),
+                 .display_height = display_height(screen.window()),
+                 .display_hdr = screen.hdr_output()};
+  const int height = plan.display_height;
   auto worker = start_thread("calibration", ThreadReport([shared](const Refusal& refusal) {
                                const std::scoped_lock lock(shared->mutex);
                                if (!shared->result) shared->result = std::unexpected(refusal);
                              }),
-                             [shared, plan, base](const std::stop_token& stop, const ThreadReport&) {
-                               std::expected<MachineCalibration, Refusal> done =
-                                   std::unexpected(Refusal{RefusalCode::Cancelled, {}});
-                               std::error_code missing;
-                               if (!std::filesystem::is_regular_file(plan.video, missing)) {
-                                 if (auto written = media::write_bench_clip(plan.video); !written) {
-                                   const std::scoped_lock lock(shared->mutex);
-                                   shared->result = std::unexpected(std::move(written.error()));
-                                   return;
-                                 }
-                               }
-                               done = calibrate_machine(plan, base, stop, [shared](float fraction) {
-                                 const std::scoped_lock lock(shared->mutex);
-                                 shared->fraction = fraction;
-                               });
-                               std::error_code ignored;
-                               std::filesystem::remove_all(plan.work_dir, ignored);
+                             [shared, plan, base, height](const std::stop_token& stop, const ThreadReport&) {
+                               auto done =
+                                   calibrate_machine(plan, base, height, stop, [shared](float fraction) {
+                                     const std::scoped_lock lock(shared->mutex);
+                                     shared->fraction = fraction;
+                                   });
                                const std::scoped_lock lock(shared->mutex);
                                shared->result = std::move(done);
                              });

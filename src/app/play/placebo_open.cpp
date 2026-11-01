@@ -24,6 +24,7 @@
 #include <libplacebo/swapchain.h>
 #include <libplacebo/vulkan.h>
 
+#include "app/play/host_facts.h"
 #include "app/play/osd_text.h"
 #include "app/play/placebo_impl.h"
 #include "app/play/placebo_screen.h"
@@ -262,6 +263,8 @@ PlaceboScreen::Impl::~Impl() {
     SDL_SyncWindow(window);
   }
   if (vk != nullptr) pl_gpu_finish(vk->gpu);
+  for (pl_tex& tex : offscreen_tex)
+    if (tex != nullptr) pl_tex_destroy(vk->gpu, &tex);
   share.reset();  // avant l'appareil qu'il prête
   if (!grade_gpu_us.empty()) {
     std::ranges::sort(grade_gpu_us);
@@ -311,11 +314,18 @@ std::expected<std::unique_ptr<PlaceboScreen>, Refusal> PlaceboScreen::open(const
   // ne reçoit plus d'appels de rafraîchissement du compositeur : ses présentations tombent à ~20 par seconde,
   // ce qui fausse toute mesure.
   if (options.hidden) flags |= SDL_WINDOW_BORDERLESS | SDL_WINDOW_NOT_FOCUSABLE | SDL_WINDOW_UTILITY;
+  // Hors écran : rien n'est jamais présenté, la fenêtre (qui porte la surface Vulkan) reste cachée.
+  if (options.offscreen) flags = (flags & ~SDL_WINDOW_FULLSCREEN) | SDL_WINDOW_HIDDEN;
   impl->window = SDL_CreateWindow(options.title.c_str(), options.width, options.height, flags);
   if (impl->window == nullptr) {
     return refuse(RefusalCode::LibraryUnavailable, std::format("SDL_CreateWindow : {}", SDL_GetError()));
   }
-  impl->fullscreen = options.fullscreen;
+  impl->fullscreen = options.fullscreen && !options.offscreen;
+  impl->offscreen = options.offscreen;
+  impl->hdr_wanted = options.hdr;
+  impl->offscreen_size = {options.offscreen_width, options.offscreen_height};
+  if (const double hz = display_refresh_hz(impl->window); hz > 1.0)
+    impl->period_us = static_cast<std::int64_t>(1e6 / hz);
   if (!options.fullscreen) fit_display_scale(*impl->channel, impl->window, options.width, options.height);
 
   pl_log_params log_params{};

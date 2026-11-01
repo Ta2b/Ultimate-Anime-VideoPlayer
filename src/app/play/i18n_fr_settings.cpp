@@ -7,6 +7,30 @@ namespace {
 
 // Pages de réglages : (clé anglaise, français).
 constexpr std::array kSettingsPages{
+    Entry{" · RIFE 4.22 lite (auto Fast)", " · RIFE 4.22 lite (auto Rapide)"},
+    Entry{" · no interpolation", " · sans interpolation"},
+    Entry{"SPAN off", "SPAN coupé"},
+    Entry{"Apply", "Appliquer"},
+    Entry{"Bench results", "Résultats du bench"},
+    Entry{"Cancel##calibration", "Annuler##calibration"},
+    Entry{"Interpolation is always RIFE 4.22 lite in Auto Fast mode (experimental). The working resolution "
+          "stops at half the display: SPAN doubles it.",
+          "L'interpolation est toujours RIFE 4.22 lite en mode auto Rapide (expérimental). La résolution de "
+          "travail s'arrête à la moitié de l'écran : SPAN la double."},
+    Entry{"No bench yet: the settings are an estimate from the card.",
+          "Pas encore de bench : les réglages sont estimés d'après la carte."},
+    Entry{"Playback pauses during the bench.", "La lecture se met en pause pendant le bench."},
+    Entry{"Result", "Résultat"},
+    Entry{"Run the bench", "Lancer le bench"},
+    Entry{"Run the bench again", "Refaire le bench"},
+    Entry{"Testing settings on a very demanding sequence: a few minutes.",
+          "Essai des réglages sur une séquence très éprouvante : quelques minutes."},
+    Entry{"The bench failed: {}", "Le bench a échoué : {}"},
+    Entry{"holds", "tient"},
+    Entry{"nothing rendered", "rien rendu"},
+    Entry{"{} · {:.1f} / {:.0f} fps · 1 % low {:.1f} · {:.1f} % lost",
+          "{} · {:.1f} / {:.0f} i/s · 1 % low {:.1f} · {:.1f} % perdues"},
+    Entry{"{} · {} · display {}p", "{} · {} · écran {}p"},
     Entry{" ; playback resumes at the same spot", " ; la lecture reprend au même endroit"},
     Entry{"AI image", "Image IA"},
     Entry{"Adaptive HDR (any GPU)", "HDR adaptatif (tous GPU)"},

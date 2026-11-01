@@ -124,6 +124,18 @@ struct PlaceboScreen::Impl {
   pl_color_space source{};
   double sample_aspect = 1.0;  // SAR de la vidéo, pour la forme de l'image à l'écran
   OutputSize swapchain_size;
+  // Le rendu hors écran des essais du bench (ScreenOptions::offscreen) : deux images en file, la cadence de
+  // l'écran simulée.
+  bool offscreen = false;
+  bool hdr_wanted = true;  // ScreenOptions::hdr : la sortie hors écran en HDR10
+  OutputSize offscreen_size;
+  std::array<pl_tex, 2> offscreen_tex{};
+  std::size_t offscreen_index = 0;
+  std::int64_t period_us = 16'667;
+  std::int64_t next_tick_us = 0;
+  // La cible du rendu hors écran (rend une image libre de la file), puis l'attente de la prochaine période.
+  std::expected<pl_frame, Refusal> offscreen_target();
+  std::int64_t offscreen_present();
   bool fullscreen = false;
   bool hdr_output = false;
   std::optional<std::filesystem::path> snapshot;

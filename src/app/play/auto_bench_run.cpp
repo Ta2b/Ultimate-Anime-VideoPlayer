@@ -40,11 +40,14 @@ bool mentions_build(std::string_view line) {
   return text.contains("construction") || text.contains("construit") || text.contains("engine built");
 }
 
-// Les options de fenêtre d'un essai : masquée quand le bureau le permet, sinon petite et visible, jamais en
-// plein écran (une fenêtre plein écran qui apparaît à chaque essai serait pire que le masquage manqué).
+// Les options de fenêtre d'un essai : silencieux, rendu hors écran à la taille de l'écran de l'utilisateur
+// (--hidden : aucune fenêtre ne se montre, placebo_offscreen.cpp) ; sinon en plein écran.
 void window_args(const BenchPlan& plan, std::vector<std::string>& args) {
   if (plan.silent) {
-    args.emplace_back(hide_is_reliable_here() ? "--hidden" : "--window=320x180");
+    args.emplace_back("--hidden");
+    args.push_back(std::format("--window={}x{}", plan.display_width > 0 ? plan.display_width : 1920,
+                               plan.display_height > 0 ? plan.display_height : 1080));
+    if (!plan.display_hdr) args.emplace_back("--sdr");
     return;
   }
   if (plan.fullscreen) args.emplace_back("--fullscreen");

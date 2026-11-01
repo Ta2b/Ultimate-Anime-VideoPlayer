@@ -25,6 +25,8 @@ std::int64_t display_period_us(SDL_Window* window);
 double display_refresh_hz(SDL_Window* window);
 // La hauteur en pixels du mode de l'écran de la fenêtre ; 0 si inconnue.
 int display_height(SDL_Window* window);
+// Sa largeur, dans les mêmes unités ; 0 : inconnue.
+int display_width(SDL_Window* window);
 // Crête vue par le contenu : la marge HDR de SDL3 × 203 nits ; rien si l'écran n'est pas en HDR.
 std::optional<double> content_peak_nits(SDL_Window* window);
 // La crête « automatique » du grade : celle de l'écran bornée à 200-2000 nits (un écran HDR de 310 nits ne

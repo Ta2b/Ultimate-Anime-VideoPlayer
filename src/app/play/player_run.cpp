@@ -710,6 +710,8 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
                                        .period_us = bench_period_us},
                                .interval_median_us = seen.frame_interval.median(),
                                .interval_p95_us = seen.frame_interval.percentile(95),
+                               .interval_p99_us = seen.frame_interval.percentile(99),
+                               .interval_mean_us = static_cast<std::int64_t>(seen.frame_interval.mean()),
                                .render_median_us = seen.render.median(),
                                .work_height = chain.running.work_height,
                                .rife_model = chain.running.rife_model};
