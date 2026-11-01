@@ -608,4 +608,17 @@ Change change_between(const PlaySettings& running, const PlaySettings& wanted, b
   return Change{.cost = ChangeCost::Live};
 }
 
+int calibrated_peak(const PlaySettings& settings, std::string_view display) {
+  if (display.empty()) return 0;
+  for (const auto& [key, nits] : settings.display_peaks)
+    if (key == display) return nits;
+  return 0;
+}
+
+void set_calibrated_peak(PlaySettings& settings, std::string_view display, int nits) {
+  if (display.empty()) return;
+  std::erase_if(settings.display_peaks, [&](const auto& entry) { return entry.first == display; });
+  if (nits > 0) settings.display_peaks.emplace_back(std::string(display), nits);
+}
+
 }  // namespace ajp::app::play

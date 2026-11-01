@@ -440,6 +440,7 @@ bool reset_page(PlaySettings& draft, std::vector<Input>& actions, const Profiles
   if (ImGui::Button(i18n::tr("Reset all settings"))) {
     PlaySettings fresh;
     fresh.engines_dir = draft.engines_dir;
+    fresh.display_peaks = draft.display_peaks;  // une mesure de l'écran, pas un réglage
     draft = fresh;
     actions.emplace_back(EditProfile{.edit = core::edit::ResetProfile{.slot = view.active}});
     reset_all = true;
@@ -642,7 +643,7 @@ SettingsPanel::Result SettingsPanel::draw(const PlaySettings& running, const Set
         fluidity_tab(draft_, choices);
       } else if (name == "HDR") {
         hdr_tab(draft_, choices);
-        peak_calibration(draft_, choices, calibration_);
+        if (peak_calibration(draft_, choices, calibration_)) result.reopen = draft_;
         if (advanced_) oled_sections(draft_, choices);
       } else if (name == "Colors") {
         grade_tab(draft_, choices);

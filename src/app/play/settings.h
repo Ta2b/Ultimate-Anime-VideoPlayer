@@ -231,6 +231,9 @@ struct PlaySettings {
   int true_hdr_saturation = 200;
   int true_hdr_gray = 50;
   int true_hdr_peak = 0;  // 0 : la crête vue par le contenu sur l'écran
+  // Le pic mesuré par la calibration (Paramètres > HDR), par écran (display_edid.h : display_key) : il
+  // remplace celui de l'EDID dans le pic automatique ([hdr.display_peaks] de play.toml).
+  std::vector<std::pair<std::string, int>> display_peaks;
   bool true_hdr_debanding = true;
   // HDR adaptatif : le SDR passe en PQ par libplacebo et le grade émule l'aspect TrueHDR en
   // suivant la scène (route native, mêmes contraste, saturation, gris moyen et pic).
@@ -361,6 +364,15 @@ std::expected<PlaySettings, Refusal> parse_settings(std::string_view toml_text);
 std::expected<PlaySettings, Refusal> parse_settings_lenient(std::string_view toml_text,
                                                             std::vector<std::string>* dropped = nullptr);
 std::string format_settings(const PlaySettings& settings);
+// Le pic que la calibration a mesuré sur cet écran (display_key), 0 sans calibration.
+int calibrated_peak(const PlaySettings& settings, std::string_view display);
+// Le pic automatique : celui de la calibration de cet écran, sinon detected (EDID, système).
+inline int auto_peak_for(const PlaySettings& settings, std::string_view display, int detected) {
+  const int calibrated = calibrated_peak(settings, display);
+  return calibrated > 0 ? calibrated : detected;
+}
+// Pose (ou remplace) le pic calibré de cet écran ; nits <= 0 l'oublie.
+void set_calibrated_peak(PlaySettings& settings, std::string_view display, int nits);
 
 // L'écoute en vigueur pour cet appareil : son profil propre s'il en a un, sinon le global (un appareil
 // inconnu reprend le global sans rien demander). listen : 0 casque, 1 enceintes, 2 home cinéma.

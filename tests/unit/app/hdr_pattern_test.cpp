@@ -5,6 +5,9 @@
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 
+#include "app/play/display_edid.h"
+#include "app/play/settings.h"
+
 using ajp::app::play::HdrPattern;
 using ajp::app::play::OutputSize;
 using ajp::app::play::pattern_layout;
@@ -43,4 +46,35 @@ TEST_CASE("mire HDR : la fenêtre à 50 % reste dans l'écran", "[hdr_pattern]")
   CHECK(f.x1 <= 1920);
   CHECK(f.y0 >= 0);
   CHECK(f.y1 <= 1080);
+}
+
+TEST_CASE("calibration : le pic mesuré va à son écran et survit à play.toml", "[hdr_pattern]") {
+  using namespace ajp::app::play;
+  PlaySettings s;
+  CHECK(auto_peak_for(s, "CND-8CD7", 617) == 617);  // sans calibration : l'EDID
+  set_calibrated_peak(s, "CND-8CD7", 800);
+  set_calibrated_peak(s, "GSM-5BBF", 1000);
+  set_calibrated_peak(s, "", 900);  // écran inconnu : rien n'est gardé
+  CHECK(auto_peak_for(s, "CND-8CD7", 617) == 800);
+  CHECK(auto_peak_for(s, "AUS-27F1", 617) == 617);  // un autre écran garde son EDID
+  set_calibrated_peak(s, "CND-8CD7", 820);          // une nouvelle mesure remplace l'ancienne
+  CHECK(s.display_peaks.size() == 2);
+  const auto back = parse_settings(format_settings(s));
+  REQUIRE(back.has_value());
+  CHECK(calibrated_peak(*back, "CND-8CD7") == 820);
+  CHECK(calibrated_peak(*back, "GSM-5BBF") == 1000);
+  set_calibrated_peak(s, "CND-8CD7", 0);  // oubliée
+  CHECK(calibrated_peak(s, "CND-8CD7") == 0);
+}
+
+TEST_CASE("calibration : la clé d'un écran", "[hdr_pattern]") {
+  using namespace ajp::app::play;
+  DisplayFacts d;
+  d.manufacturer = "CND";
+  d.product = 0x8CD7;
+  d.name = "MAG 272U E16";
+  CHECK(display_key(d) == "CND-8CD7");
+  d.product = 0;
+  CHECK(display_key(d) == "MAG 272U E16");
+  CHECK(display_key(DisplayFacts{}).empty());
 }

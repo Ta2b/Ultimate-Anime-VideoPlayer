@@ -101,7 +101,9 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
   settings.stats.all = p.details;  // Tab pendant la préparation
 
   log->info("{}", describe_hdr(p.screen.window()));
-  const int auto_peak = auto_peak_nits(content_peak_nits(p.screen.window()));
+  const std::string screen_key = p.display ? display_key(*p.display) : std::string();
+  const int auto_peak =
+      auto_peak_for(settings, screen_key, auto_peak_nits(content_peak_nits(p.screen.window())));
   int peak_nits = 0;
   // La sortie est HDR10 : l'écran en reçoit, et --sdr ne l'a pas coupée. Sinon (sortie SDR),
   // TrueHDR ferait du HDR que libplacebo ramènerait aussitôt en SDR ; le grade SDR prend sa place.
@@ -329,6 +331,7 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
           .engine_in_use = engine_of_library(p.library->path()),
           .engine_note = fallback_note(p.engines, p.library->path()),
           .display_text = p.display ? describe(*p.display) : std::string("EDID illisible : OLED inconnu"),
+          .display_key = screen_key,
           .source_file = p.options.file,
           .machine_tier = static_cast<int>(machine_tier),
           .display_height = display_height(out.window()),
