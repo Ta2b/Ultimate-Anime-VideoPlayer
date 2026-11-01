@@ -8,6 +8,7 @@
 
 #include <SDL3/SDL_filesystem.h>
 
+#include "core/charconv.h"
 #include "core/log.h"
 
 #if defined(_WIN32)
@@ -28,7 +29,7 @@ std::optional<double> number_after(std::string_view text, std::string_view key) 
   ++i;
   while (i < text.size() && (text[i] == ' ' || text[i] == '\t' || text[i] == '\n' || text[i] == '\r')) ++i;
   double value = 0.0;
-  const auto [end, ec] = std::from_chars(text.data() + i, text.data() + text.size(), value);
+  const auto [end, ec] = core::from_chars(text.data() + i, text.data() + text.size(), value);
   if (ec != std::errc{} || end == text.data() + i || !(value > 0.0)) return std::nullopt;
   return value;
 }
