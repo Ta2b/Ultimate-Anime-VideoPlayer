@@ -30,6 +30,17 @@ inline constexpr core::Range<double> kAdaptiveCut{0.0, 1.0};
 inline constexpr core::Range<double> kContrast{0.0, 200.0};
 inline constexpr core::Range<double> kSaturation{0.0, 200.0};
 inline constexpr double kSdkContrastMax = 200.0;
+// Le curseur de saturation (0 à 200 %) est plus fort au-dessus de 100 % : 200 % sur le curseur vaut 400 %
+// (retour de Tatoub). En dessous de 100 %, il ne change pas.
+inline constexpr double kSaturationBoost = 3.0;
+// La saturation réellement appliquée pour une position du curseur (0 à 400).
+constexpr double effective_saturation(double slider) {
+  return slider <= 100.0 ? slider : 100.0 + kSaturationBoost * (slider - 100.0);
+}
+// Le facteur sur la chroma de l'aspect TrueHDR (loi ajustée sur le SDK) pour une saturation appliquée.
+constexpr double truehdr_saturation_factor(double saturation) {
+  return 1.0 + 0.19 * (saturation - 100.0) / 100.0;
+}
 inline constexpr core::Range<double> kMiddleGray{10.0, 100.0};
 inline constexpr core::Range<double> kSubtitleWhite{80.0, 1000.0};
 inline constexpr core::Range<double> kBlackNits{0.0, 50.0};

@@ -175,7 +175,7 @@
 //!DESC Aspect TrueHDR : facteur de saturation
 //!TYPE float
 //!MINIMUM 0.5
-//!MAXIMUM 1.5
+//!MAXIMUM 2.0
 1.0
 
 //!PARAM sdr_out
