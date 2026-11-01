@@ -121,8 +121,8 @@ PlaySettings apply_preset(const PlaySettings& settings, const Machine& machine,
   // Tranche Économe : on ne réduit ni n'agrandit, la chaîne est la source telle quelle.
   out.upscale = *level != Tier::Economy;
   out.work_height = *level == Tier::Economy ? kWorkHeights.back() : work;
-  out.downscale = Downscale::Mitchell;
-  out.model.clear();  // SPAN Sharp (performance), le modèle du lecteur
+  out.downscale = Downscale::Hermite;  // net sur les traits, sans rebond, quatre points comme Mitchell
+  out.model.clear();                   // SPAN Sharp (performance), le modèle du lecteur
   out.span_order = SpanOrder::Auto;
 
   // Interpolation : multiplicateur en Auto ; une source déjà à la cadence de l'écran n'est pas interpolée.

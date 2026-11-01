@@ -46,9 +46,15 @@ void example_image(const SettingsChoices& choices, GradeWizard& wizard, float sc
     panel::note(i18n::tr("Opening the calibration video…"));
   } else {
     const CalibrationImage shown = calibration_image(dark, wizard.image);
-    if (wizard.sought != shown.id) {
+    // Chaque étape ne montre que ses plans : la barre de lecture, les chapitres ou les flèches qui mènent
+    // ailleurs dans la vidéo y ramènent.
+    const std::int64_t begin = shown.id * kCalibrationSegmentUs;
+    const bool outside = choices.position_us < begin || choices.position_us >= begin + kCalibrationSegmentUs;
+    const double now = ImGui::GetTime();
+    if (wizard.sought != shown.id || (outside && now - wizard.sought_at > 0.6)) {
       actions.emplace_back(Command{cmd::Seek{.target_us = shown.at_us, .exact = true}});
       wizard.sought = shown.id;
+      wizard.sought_at = now;
     }
     if (!choices.paused) actions.emplace_back(Command{cmd::Pause{}});  // un plan fixe, pas la suite
   }

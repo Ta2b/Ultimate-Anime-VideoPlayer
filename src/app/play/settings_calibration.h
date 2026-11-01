@@ -29,7 +29,8 @@ struct GradeWizard {
   std::filesystem::path return_file;
   std::int64_t return_us = 0;
   bool return_paused = false;
-  int sought = -1;  // le plan (CalibrationImage::id) déjà cherché dans la vidéo
+  int sought = -1;         // le plan (CalibrationImage::id) déjà cherché dans la vidéo
+  double sought_at = 0.0;  // quand (ImGui::GetTime), pour ne pas relancer la recherche à chaque image
 };
 // panel_left : le bord gauche du panneau des paramètres, en pixels ; la vidéo se place à sa gauche. actions
 // reçoit l'ouverture de la vidéo de calibration, puis la recherche de chaque plan et sa pause.

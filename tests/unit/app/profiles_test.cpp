@@ -37,7 +37,7 @@ TEST_CASE("Un profil fixe la chaîne, le reste des réglages ne bouge pas", "[ap
   const PlaySettings quality = apply_profile(*base->profiles[0], k1080p, mine, notes);
   CHECK(quality.rife_auto);  // v0.6 : l'interpolation d'un profil est en Auto
   CHECK(quality.work_height == 720);
-  CHECK(quality.downscale == Downscale::Area);
+  CHECK(quality.downscale == Downscale::Hermite);
   CHECK(quality.rife_factor == 3);
   CHECK(quality.upscale);
   CHECK(quality.model == "2x_AnimeJaNai_HD_V3.1Sharp1_Performance_SPANF3_b5f48_unshuffle_fp16.onnx");

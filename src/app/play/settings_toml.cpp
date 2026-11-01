@@ -745,16 +745,23 @@ std::expected<PlaySettings, Refusal> parse_settings_lenient(std::string_view tom
     if (settings) return settings;
     const std::string& detail = settings.error().detail;
     const std::size_t dot = detail.find('.');
-    if (dot == std::string::npos || dot == 0) return settings;
-    const std::size_t found = detail.find_first_of(" :", dot);
+    const std::size_t found = dot == std::string::npos ? dot : detail.find_first_of(" :", dot);
     const std::size_t end = found == std::string::npos ? detail.size() : found;
-    if (end <= dot + 1) return settings;
-    const std::string section_name = detail.substr(0, dot);
-    const std::string key_name = detail.substr(dot + 1, end - dot - 1);
-    toml::node* node = root.get(section_name);
-    toml::table* table = node != nullptr ? node->as_table() : nullptr;
-    if (table == nullptr || !table->erase(key_name)) return settings;
-    if (dropped != nullptr) dropped->push_back(detail);
+    toml::table* table = nullptr;
+    std::string key_name;
+    if (dot != std::string::npos && dot > 0 && end > dot + 1) {
+      toml::node* node = root.get(detail.substr(0, dot));
+      table = node != nullptr ? node->as_table() : nullptr;
+      key_name = detail.substr(dot + 1, end - dot - 1);
+    }
+    if (table != nullptr && table->erase(key_name)) {
+      if (dropped != nullptr) dropped->push_back(detail);
+      continue;
+    }
+    // Le refus ne nomme pas une clé du fichier (une règle entre deux valeurs, une liste) : la première clé
+    // dont le retrait le lève est écartée, puis, à défaut, la première section. Une nouvelle version du
+    // lecteur ne remet jamais tout le fichier aux défauts pour une valeur qu'elle n'accepte plus.
+    if (!drop_offending(root, detail, dropped, settings_from_table)) return settings;
   }
   return settings_from_table(root);
 }

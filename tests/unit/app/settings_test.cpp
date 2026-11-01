@@ -156,7 +156,7 @@ TEST_CASE("Une clé absente garde son défaut, une clé inconnue est ignorée", 
   CHECK(s->true_hdr);
   CHECK(s->true_hdr_contrast == 100);
   CHECK(s->rife_factor == kDefaultRifeFactor);
-  CHECK(s->downscale == Downscale::Area);
+  CHECK(s->downscale == Downscale::Hermite);
   const auto empty = parse_settings("");
   REQUIRE(empty);
   CHECK(*empty == PlaySettings{});
@@ -446,7 +446,8 @@ TEST_CASE("repères des listes et résolution en français courant", "[settings]
   CHECK(badge_of(MotionEngine::Gmfss) == Badge::Finest);
   CHECK(badge_of(MotionEngine::GmfssUnion) == Badge::Heaviest);
   CHECK(badge_of(MotionEngine::Rife) == Badge::Recommended);
-  CHECK(badge_of(Downscale::Mitchell) == Badge::Recommended);
+  CHECK(badge_of(Downscale::Hermite) == Badge::Recommended);
+  CHECK_FALSE(badge_of(Downscale::Mitchell));
   CHECK_FALSE(badge_of(Downscale::Area));
   CHECK(label(MotionEngine::Gmfss) == "GMFSS Fortuna");
 }
@@ -676,6 +677,23 @@ TEST_CASE("une valeur fautive n'invalide que sa clé", "[settings][lenient]") {
   CHECK(lenient->video_latency_ms == PlaySettings{}.video_latency_ms);
   CHECK(dropped.size() == 2);
   CHECK_FALSE(parse_settings_lenient("[image\nbroken").has_value());  // un TOML illisible reste refusé
+}
+
+TEST_CASE("un refus qui ne nomme pas sa clé n'efface pas le reste, grade adaptatif compris",
+          "[settings][lenient]") {
+  using namespace ajp::app::play;
+  // « languages.audio » ne nomme pas audio_1 : avant, tout le fichier était mis de côté.
+  const std::string text =
+      "version = 1\n[grade]\nenabled = true\nadaptive = true\nadaptive_gray = 31.0\nadaptive_shadows = "
+      "0.42\n[languages]\naudio_1 = \"pas une langue !\"\n";
+  std::vector<std::string> dropped;
+  const auto lenient = parse_settings_lenient(text, &dropped);
+  if (!lenient) UNSCOPED_INFO(lenient.error().detail);
+  REQUIRE(lenient.has_value());
+  CHECK(lenient->grade_values.adaptive);
+  CHECK(lenient->grade_values.adaptive_gray == 31.0);
+  CHECK(lenient->grade_values.adaptive_shadows == 0.42);
+  CHECK(dropped.size() == 1);
 }
 
 TEST_CASE("un play.toml de la rc.3 (400 %, vibrance 1,2) se relit au maximum d'aujourd'hui",

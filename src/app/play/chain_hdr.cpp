@@ -288,6 +288,7 @@ void adaptive_tick(Chain& to, std::int64_t now_us) {
       to.adaptive_blue = 0.0;
       to.adaptive_chroma = 0.0;
       to.adaptive_luma = -1.0;
+      to.adaptive_cut = true;
       set_grade(to, to.running);
       to.live.set_true_hdr(true_hdr_params(to.running, to.auto_peak));
     }
@@ -304,6 +305,7 @@ void adaptive_tick(Chain& to, std::int64_t now_us) {
   const double follow = 1.0 - std::exp(-static_cast<double>(dt) / kTauUs);
   if (to.adaptive_luma < 0.0 || std::abs(static_cast<double>(*luma) - to.adaptive_luma) > kCut) {
     to.adaptive_luma = static_cast<double>(*luma);
+    to.adaptive_cut = true;
     to.adaptive_blue = static_cast<double>(stats->blue);
     to.adaptive_chroma = static_cast<double>(stats->chroma);
   } else {
@@ -351,6 +353,15 @@ void adaptive_tick(Chain& to, std::int64_t now_us) {
     tv = 0.0;
     bs = 0.0;
   }
+  // RTX HDR ne prend qu'un gris moyen et un contraste entiers, appliqués d'un coup : suivre la scène en
+  // continu les fait bouger par paliers visibles (la luminosité « respire » dans un même plan). Le réglage ne
+  // change donc qu'à une coupe de scène, invisible, ou quand la lumière de la scène a vraiment changé (un
+  // fondu, une explosion qui dure) ; la calibration (scène forcée) s'applique tout de suite.
+  const bool forced = g.adaptive_force >= 0.0;
+  const bool far = std::abs(t - to.adaptive_t) >= 0.35 || std::abs(tv - to.adaptive_tv) >= 0.35;
+  const bool may_change = forced || to.adaptive_forced || std::exchange(to.adaptive_cut, false) || far;
+  to.adaptive_forced = forced;
+  if (!may_change) return;
   const bool same = std::abs(t - to.adaptive_t) < 0.02 && std::abs(tv - to.adaptive_tv) < 0.02 &&
                     !(t == 0.0 && to.adaptive_t != 0.0) && !(t == 1.0 && to.adaptive_t != 1.0) &&
                     !(tv == 0.0 && to.adaptive_tv != 0.0) && !(tv == 1.0 && to.adaptive_tv != 1.0) &&
