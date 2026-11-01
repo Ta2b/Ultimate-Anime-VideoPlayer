@@ -113,7 +113,9 @@ struct Chain {
   double adaptive_glow = 0.0;       // scène sombre avec éclat : 0 à 1 (GradeSettings::adaptive_glow_*)
   double adaptive_glow_seen = 0.0;  // sa mesure, lissée comme la luminance
   std::int64_t adaptive_at_us = 0;
-  std::filesystem::path adaptive_log;  // adaptive-log.tsv (apprentissage)
+  std::uint64_t adaptive_cuts = 0;         // coupes de scène vues par RIFE (LiveSettings::scene_cuts)
+  std::int64_t adaptive_cut_until_us = 0;  // la mesure suit l'image sans lissage jusque-là
+  std::filesystem::path adaptive_log;      // adaptive-log.tsv (apprentissage)
   std::int64_t adaptive_log_us = 0;
   LearnTrack learn;
 };

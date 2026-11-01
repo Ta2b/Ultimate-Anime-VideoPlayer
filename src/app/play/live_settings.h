@@ -296,6 +296,8 @@ class LiveSettings {
   // Images source sautées par gpu avant tout calcul, déjà passées à leur tour (RingStage::passed).
   void count_skipped() { skipped_.fetch_add(1, std::memory_order_relaxed); }
   std::uint64_t skipped() const { return skipped_.load(std::memory_order_relaxed); }
+  // Coupes de scène vues par RIFE sur les images (tant qu'il interpole) : le grade adaptatif s'y recale.
+  std::uint64_t scene_cuts() const { return cuts_.load(std::memory_order_relaxed); }
   // Retard des images de sortie, mesuré par main (Session), lu par gpu.
   FrameLatency& latency() { return latency_; }
   const FrameLatency& latency() const { return latency_; }
