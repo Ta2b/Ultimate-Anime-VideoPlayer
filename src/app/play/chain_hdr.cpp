@@ -60,13 +60,14 @@ ColorInfo pq_color(int peak_nits) {
 
 vendor_hdr::TrueHdrParams true_hdr_params(const PlaySettings& s, int auto_peak) {
   const int sdk_max = static_cast<int>(render::grade_limits::kSdkContrastMax);
-  return vendor_hdr::TrueHdrParams{.contrast = std::min(s.true_hdr_contrast, sdk_max),
-                                   .saturation = std::min(s.true_hdr_saturation, sdk_max),
-                                   .middle_gray = s.true_hdr_gray,
-                                   .peak_nits = s.true_hdr_peak > 0
-                                                    ? s.true_hdr_peak
-                                                    : std::max(auto_peak, vendor_hdr::limits::kPeakNits.lo),
-                                   .debanding = s.true_hdr_debanding};
+  return vendor_hdr::TrueHdrParams{
+      .contrast = std::min(s.true_hdr_contrast, sdk_max),
+      .saturation = std::min(
+          static_cast<int>(render::grade_limits::effective_saturation(s.true_hdr_saturation)), sdk_max),
+      .middle_gray = s.true_hdr_gray,
+      .peak_nits =
+          s.true_hdr_peak > 0 ? s.true_hdr_peak : std::max(auto_peak, vendor_hdr::limits::kPeakNits.lo),
+      .debanding = s.true_hdr_debanding};
 }
 
 // RTX HDR : le SDK Maxine importé une fois dans le magasin du lecteur (environ 135 Mo), revérifié

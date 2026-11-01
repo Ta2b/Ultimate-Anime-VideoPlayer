@@ -41,14 +41,13 @@ double shadow_knee_for(double shadows, double white) {
 // puissance autour du pivot, saturation sur la chroma, gris moyen m placé vers m nits.
 void apply_truehdr_look(const GradeSettings& s, double peak, GradeParams& p) {
   const double contrast = (std::min(s.contrast, grade_limits::kSdkContrastMax) - 100.0) / 100.0;
-  const double saturation = (std::min(s.saturation, grade_limits::kSdkContrastMax) - 100.0) / 100.0;
   const double middle = s.middle_gray;
   p.emulate = 1.0;
   p.em_base = std::clamp(4.0 * middle, 40.0, std::min(400.0, 0.5 * peak));
   p.em_pow = std::clamp(6.0 * std::pow(50.0 / middle, 0.35), 2.0, 16.0);
   p.em_lo = 1.0 + (contrast >= 0.0 ? 0.38 : 0.35) * contrast;
   p.em_hi = 1.0 + (contrast >= 0.0 ? 0.28 : 0.26) * contrast;
-  p.em_sat = 1.0 + 0.19 * saturation;
+  p.em_sat = grade_limits::truehdr_saturation_factor(grade_limits::effective_saturation(s.saturation));
 }
 
 // Code PQ (SMPTE ST 2084) d'une luminance en nits.
@@ -308,6 +307,12 @@ std::expected<GradeDecision, Refusal> decide_grade(const GradeSettings& s, const
   p.black_lo = s.true_black ? s.black_lo : 0.0;
   p.black_hi = s.true_black ? s.black_hi : 0.0;
   apply_punch(s, p);
+  if (decision.mode == GradeMode::TrueHdr) {
+    // RTX HDR ne va pas au-delà de 200 : le reste de la saturation du curseur passe par la fin du grade.
+    const double wanted = grade_limits::effective_saturation(s.saturation);
+    p.chroma *= grade_limits::truehdr_saturation_factor(wanted) /
+                grade_limits::truehdr_saturation_factor(std::min(wanted, grade_limits::kSdkContrastMax));
+  }
   // RTX HDR : l'adaptation passe par le lecteur (luminance mesurée sur le GPU, gris moyen du pilote) ; les
   // autres routes par le shader.
   if (decision.mode != GradeMode::TrueHdr) apply_adaptive(s, peak, false, p);
