@@ -180,7 +180,8 @@ bool chain_differs(const PlaySettings& a, const PlaySettings& b);
 
 // Soins OLED, grade avec les seuils du vrai noir, et recalage de ces seuils sur la rampe mesurée.
 void apply_oled_care(Chain& to, const PlaySettings& s);
-void set_grade(Chain& to, const PlaySettings& s);
+// from_measured_frame : le grade adaptatif, posé à partir de l'image qui suit la dernière reçue du GPU.
+void set_grade(Chain& to, const PlaySettings& s, bool from_measured_frame = false);
 void refresh_black(Chain& to);
 // Une action de l'utilisateur (touche, barre, menu) sur la chaîne.
 void apply(const Input& input, Chain& to, std::int64_t now_us);

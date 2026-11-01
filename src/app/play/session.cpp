@@ -221,6 +221,7 @@ void Session::on_frame(const RingFrame& frame) {
   if (config_.latency != nullptr && frame.submitted_us > 0 && unmeasured_.size() < kMaxRingSlots)
     unmeasured_.push_back(frame);
   queue_.push(frame);
+  newest_ = frame;
   request_subtitles(frame);
 }
 

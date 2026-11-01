@@ -161,6 +161,8 @@ class Session {
   bool quit_asked() const { return quit_; }  // q ou fenêtre fermée, pas la fin du fichier
   bool paused() const { return paused_; }
   std::uint32_t epoch() const { return epoch_; }
+  // La dernière image reçue du GPU pour l'époque en cours (la plus avancée de la file) ; nullptr : aucune.
+  const RingFrame* newest_frame() const { return newest_ && newest_->epoch == epoch_ ? &*newest_ : nullptr; }
   const FrameStats& stats() const { return stats_; }
   const std::vector<std::string>& refusals() const { return refusals_; }
   std::vector<std::string> osd_lines() const;
@@ -207,6 +209,7 @@ class Session {
   std::int64_t audio_stall_grace_us_ = 1'500'000;
 
   FrameQueue queue_;
+  std::optional<RingFrame> newest_;    // newest_frame
   std::optional<RingFrame> current_;   // montrée, slot tenu par main
   std::vector<RingFrame> late_;        // réservé une fois, réutilisé à chaque tour
   std::vector<RingFrame> unwritten_;   // rendues par main avant d'être écrites : parties une fois écrites

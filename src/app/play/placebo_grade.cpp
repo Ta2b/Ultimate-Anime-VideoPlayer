@@ -124,8 +124,31 @@ void PlaceboScreen::set_finish(FinalScaler scaler, bool deband) {
 }
 
 void PlaceboScreen::set_grade(const render::GradeChoice& choice) {
+  impl_->grade_next.reset();
   impl_->grade_choice = choice;
   impl_->select_grade(impl_->target_color);
+}
+
+void PlaceboScreen::set_grade_after(const render::GradeChoice& choice, const RingFrame& after) {
+  if (after.pts_us == kNoPts) {
+    set_grade(choice);
+    return;
+  }
+  Impl& s = *impl_;
+  if (!s.grade_next) s.grade_next_since_us = host_now_us();  // une suite de changements garde son départ
+  s.grade_next = choice;
+  s.grade_next_pts = after.pts_us;
+  s.grade_next_epoch = after.epoch;
+}
+
+void PlaceboScreen::Impl::take_next_grade(const RingFrame* frame) {
+  if (!grade_next) return;
+  constexpr std::int64_t kWaitUs = 250'000;
+  const bool due = frame == nullptr || frame->epoch != grade_next_epoch || frame->pts_us == kNoPts ||
+                   frame->pts_us > grade_next_pts || host_now_us() - grade_next_since_us > kWaitUs;
+  if (!due) return;
+  grade_choice = *grade_next;
+  grade_next.reset();
 }
 
 std::expected<void, Refusal> PlaceboScreen::set_looks(

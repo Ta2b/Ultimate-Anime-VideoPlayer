@@ -141,12 +141,20 @@ struct PlaceboScreen::Impl {
   std::optional<std::filesystem::path> snapshot;
   int snapshot_count = 1;  // présentations à écrire, numérotées s'il y en a plusieurs
   int snapshot_index = 0;
-  std::optional<render::Grade> grade;               // absent si les hooks ne se lisent pas (dit au journal)
-  render::GradeChoice grade_choice;                 // posé par set_grade
+  std::optional<render::Grade> grade;  // absent si les hooks ne se lisent pas (dit au journal)
+  render::GradeChoice grade_choice;    // posé par set_grade
+  // Posé par set_grade_after : le grade qui attend sa première image, et depuis quand.
+  std::optional<render::GradeChoice> grade_next;
+  std::int64_t grade_next_pts = 0;
+  std::uint32_t grade_next_epoch = 0;
+  std::int64_t grade_next_since_us = 0;
   FinalScaler final_scaler = FinalScaler::Default;  // posés par set_finish
   bool deband = false;
   // Ce que le grade porte : rien, le grade PQ (vrai) ou le grade SDR (faux) de grade_choice.
   std::optional<bool> grade_loaded_pq;
+  // set_grade_after : le grade en attente passe dans grade_choice si l'image à présenter vient après la
+  // sienne.
+  void take_next_grade(const RingFrame* frame);
   // Charge dans le grade le choix qui va à cette cible ; graded() dit s'il s'applique à une cible.
   void select_grade(const pl_color_space& target);
   bool graded(const pl_color_space& target) const;
