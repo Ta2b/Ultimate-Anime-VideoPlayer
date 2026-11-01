@@ -1,7 +1,9 @@
 #include <algorithm>
 #include <cstdint>
 #include <set>
+#include <string>
 #include <string_view>
+#include <vector>
 
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
@@ -92,8 +94,8 @@ TEST_CASE("calibration du grade : gardée par écran, reprise à l'ouverture si 
   s.grade_values.adaptive_gray = 18.0;
   s.grade_values.adaptive_shadows = 0.6;
   s.grade_values.adaptive_vibrance_cut = 0.55;
-  keep_calibrated_grade(s, "CND-8CD7");
-  keep_calibrated_grade(s, "");  // écran inconnu : rien
+  keep_calibrated_grade(s, "CND-8CD7", "Soir");
+  keep_calibrated_grade(s, "", "Soir");  // écran inconnu : rien
   REQUIRE(s.display_grades.size() == 1);
   const auto back = parse_settings(format_settings(s));
   REQUIRE(back.has_value());
@@ -110,6 +112,50 @@ TEST_CASE("calibration du grade : gardée par écran, reprise à l'ouverture si 
   CHECK(applied.true_hdr_gray == 42);
   CHECK(applied.grade_values.adaptive_vibrance_cut == Approx(0.55));
   CHECK(with_calibrated_grade(fresh, "GSM-5BBF").true_hdr_gray == 50);  // un autre écran
-  forget_calibrated_grade(fresh, "CND-8CD7");
+  forget_calibrated_grade(fresh, "CND-8CD7", "Soir");
   CHECK(calibrated_grade(fresh, "CND-8CD7") == nullptr);
+}
+
+TEST_CASE("calibration du grade : plusieurs profils par écran, un seul en service, supprimables",
+          "[calibration]") {
+  using namespace ajp::app::play;
+  PlaySettings s;
+  s.grade_values.adaptive = true;
+  s.true_hdr_gray = 40;
+  keep_calibrated_grade(s, "CND-8CD7", "Jour");
+  s.true_hdr_gray = 60;
+  keep_calibrated_grade(s, "CND-8CD7", "Nuit");
+  keep_calibrated_grade(s, "GSM-5BBF", "Jour");
+  CHECK(grade_profiles(s, "CND-8CD7") == std::vector<std::string>{"Jour", "Nuit"});
+  REQUIRE(calibrated_grade(s, "CND-8CD7") != nullptr);
+  CHECK(calibrated_grade(s, "CND-8CD7")->name == "Nuit");  // le dernier calibré est en service
+  REQUIRE(use_calibrated_grade(s, "CND-8CD7", "Jour"));
+  CHECK(s.true_hdr_gray == 40);
+  CHECK_FALSE(use_calibrated_grade(s, "CND-8CD7", "Inconnu"));
+  // Relu à l'identique, profil en service compris.
+  const auto back = parse_settings(format_settings(s));
+  REQUIRE(back.has_value());
+  CHECK(back->display_grades == s.display_grades);
+  // Recalibrer garde le nom et la place.
+  s.true_hdr_gray = 45;
+  keep_calibrated_grade(s, "CND-8CD7", "Jour");
+  CHECK(grade_profiles(s, "CND-8CD7").size() == 2);
+  CHECK(calibrated_grade(s, "CND-8CD7")->gray == 45);
+  // Supprimer celui en service : le suivant le remplace.
+  forget_calibrated_grade(s, "CND-8CD7", "Jour");
+  REQUIRE(calibrated_grade(s, "CND-8CD7") != nullptr);
+  CHECK(calibrated_grade(s, "CND-8CD7")->name == "Nuit");
+  CHECK(next_grade_profile_name(s, "CND-8CD7") == "Profile 2");
+}
+
+TEST_CASE("calibration du grade : le play.toml de la rc.9 (un grade par écran) devient un profil",
+          "[calibration]") {
+  using namespace ajp::app::play;
+  const auto s = parse_settings(
+      "[hdr.display_grades.CND-8CD7]\ngray = 42\nshadows = 0.3\ncolors = 0.08\ngray_bright = 18.0\n"
+      "shadows_bright = 0.6\ncolors_cut = 0.55\n");
+  REQUIRE(s.has_value());
+  REQUIRE(calibrated_grade(*s, "CND-8CD7") != nullptr);
+  CHECK(calibrated_grade(*s, "CND-8CD7")->gray == 42);
+  CHECK(grade_profiles(*s, "CND-8CD7").size() == 1);
 }

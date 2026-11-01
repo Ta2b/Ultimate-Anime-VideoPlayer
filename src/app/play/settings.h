@@ -231,11 +231,13 @@ struct PlaySettings {
   int true_hdr_saturation = 200;
   int true_hdr_gray = 50;
   int true_hdr_peak = 0;  // 0 : la crête vue par le contenu sur l'écran
-  // Le grade adaptatif calibré sur un écran (Paramètres > HDR, « Calibrer le grade adaptatif ») : ses deux
-  // bouts, scène sombre et scène claire. Grade adaptatif coché, il remplace ces réglages à l'ouverture
-  // ([hdr.display_grades] de play.toml).
+  // Les profils de grade adaptatif calibrés sur un écran (Paramètres > HDR, « Calibrer le grade adaptatif »)
+  // : chacun a un nom et ses deux bouts, scène sombre et scène claire. Un seul par écran est en service ;
+  // grade adaptatif coché, il remplace ces réglages à l'ouverture ([hdr.display_grades] de play.toml).
   struct DisplayGrade {
     std::string display;  // display_edid.h : display_key
+    std::string name;     // le nom du profil, unique pour l'écran
+    bool active = false;  // le profil en service sur cet écran
     int gray = 50;        // gris moyen, scène sombre (true_hdr_gray)
     double shadows = 0.15;
     double colors = 0.10;  // vibrance_rtx
@@ -377,10 +379,20 @@ std::expected<PlaySettings, Refusal> parse_settings_lenient(std::string_view tom
 std::string format_settings(const PlaySettings& settings);
 // Le grade calibré de cet écran ; nullptr sans calibration.
 const PlaySettings::DisplayGrade* calibrated_grade(const PlaySettings& settings, std::string_view display);
-// Les réglages du grade pris sur les réglages en cours (scène sombre et claire), gardés pour cet écran.
-void keep_calibrated_grade(PlaySettings& settings, std::string_view display);
-void forget_calibrated_grade(PlaySettings& settings, std::string_view display);
-// Grade adaptatif coché et cet écran calibré : ses réglages remplacent ceux du grade ; sinon, inchangés.
+// Les noms des profils de grade calibrés de cet écran, dans l'ordre de création.
+std::vector<std::string> grade_profiles(const PlaySettings& settings, std::string_view display);
+// Met en service le profil name de cet écran (et applique ses valeurs, grade adaptatif coché) ; faux s'il
+// n'existe pas.
+bool use_calibrated_grade(PlaySettings& settings, std::string_view display, std::string_view name);
+// Un nom libre pour un nouveau profil : « Profile 1 », « Profile 2 »… (traduit).
+std::string next_grade_profile_name(const PlaySettings& settings, std::string_view display);
+// Les réglages du grade pris sur les réglages en cours (scène sombre et claire), gardés pour cet écran sous
+// le profil name (remplacé s'il existe, sinon créé), mis en service.
+void keep_calibrated_grade(PlaySettings& settings, std::string_view display, std::string_view name);
+// Retire le profil name de cet écran ; s'il était en service, le premier qui reste le remplace.
+void forget_calibrated_grade(PlaySettings& settings, std::string_view display, std::string_view name);
+// Grade adaptatif coché et un profil de cet écran en service : ses réglages remplacent ceux du grade ; sinon,
+// inchangés.
 PlaySettings with_calibrated_grade(PlaySettings settings, std::string_view display);
 
 // L'écoute en vigueur pour cet appareil : son profil propre s'il en a un, sinon le global (un appareil

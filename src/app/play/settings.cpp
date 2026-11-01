@@ -503,6 +503,7 @@ PlaySettings live_part(const PlaySettings& running, const PlaySettings& wanted, 
   s.true_hdr_gray = wanted.true_hdr_gray;
   s.true_hdr_peak = wanted.true_hdr_peak;
   s.true_hdr_debanding = wanted.true_hdr_debanding;
+  s.display_grades = wanted.display_grades;  // les profils de grade calibrés : rien à recharger
   s.hdr_native = wanted.hdr_native;
   s.final_scaler = wanted.final_scaler;
   s.deband = wanted.deband;
@@ -611,25 +612,70 @@ Change change_between(const PlaySettings& running, const PlaySettings& wanted, b
 const PlaySettings::DisplayGrade* calibrated_grade(const PlaySettings& settings, std::string_view display) {
   if (display.empty()) return nullptr;
   for (const auto& grade : settings.display_grades)
-    if (grade.display == display) return &grade;
+    if (grade.display == display && grade.active) return &grade;
   return nullptr;
 }
 
-void forget_calibrated_grade(PlaySettings& settings, std::string_view display) {
-  std::erase_if(settings.display_grades, [&](const auto& grade) { return grade.display == display; });
+std::vector<std::string> grade_profiles(const PlaySettings& settings, std::string_view display) {
+  std::vector<std::string> names;
+  for (const auto& grade : settings.display_grades)
+    if (!display.empty() && grade.display == display) names.push_back(grade.name);
+  return names;
 }
 
-void keep_calibrated_grade(PlaySettings& settings, std::string_view display) {
-  if (display.empty()) return;
-  forget_calibrated_grade(settings, display);
+bool use_calibrated_grade(PlaySettings& settings, std::string_view display, std::string_view name) {
+  bool found = false;
+  for (const auto& grade : settings.display_grades) found |= grade.display == display && grade.name == name;
+  if (display.empty() || !found) return false;
+  for (auto& grade : settings.display_grades)
+    if (grade.display == display) grade.active = grade.name == name;
+  settings = with_calibrated_grade(std::move(settings), display);
+  return true;
+}
+
+std::string next_grade_profile_name(const PlaySettings& settings, std::string_view display) {
+  const std::vector<std::string> names = grade_profiles(settings, display);
+  for (int n = static_cast<int>(names.size()) + 1;; ++n) {
+    std::string name = i18n::tr_format("Profile {}", n);
+    if (std::ranges::find(names, name) == names.end()) return name;
+  }
+}
+
+void forget_calibrated_grade(PlaySettings& settings, std::string_view display, std::string_view name) {
+  const auto it = std::ranges::find_if(settings.display_grades,
+                                       [&](const auto& g) { return g.display == display && g.name == name; });
+  if (it == settings.display_grades.end()) return;
+  const bool was_active = it->active;
+  settings.display_grades.erase(it);
+  if (!was_active) return;
+  for (auto& grade : settings.display_grades) {
+    if (grade.display != display) continue;
+    grade.active = true;
+    return;
+  }
+}
+
+void keep_calibrated_grade(PlaySettings& settings, std::string_view display, std::string_view name) {
+  if (display.empty() || name.empty()) return;
   const render::GradeSettings& g = settings.grade_values;
-  settings.display_grades.push_back(PlaySettings::DisplayGrade{.display = std::string(display),
-                                                               .gray = settings.true_hdr_gray,
-                                                               .shadows = g.shadows,
-                                                               .colors = g.vibrance_rtx,
-                                                               .gray_bright = g.adaptive_gray,
-                                                               .shadows_bright = g.adaptive_shadows,
-                                                               .colors_cut = g.adaptive_vibrance_cut});
+  PlaySettings::DisplayGrade kept{.display = std::string(display),
+                                  .name = std::string(name),
+                                  .active = true,
+                                  .gray = settings.true_hdr_gray,
+                                  .shadows = g.shadows,
+                                  .colors = g.vibrance_rtx,
+                                  .gray_bright = g.adaptive_gray,
+                                  .shadows_bright = g.adaptive_shadows,
+                                  .colors_cut = g.adaptive_vibrance_cut};
+  for (auto& grade : settings.display_grades)
+    if (grade.display == display) grade.active = false;
+  for (auto& grade : settings.display_grades) {
+    if (grade.display == display && grade.name == name) {
+      grade = std::move(kept);
+      return;
+    }
+  }
+  settings.display_grades.push_back(std::move(kept));
 }
 
 PlaySettings with_calibrated_grade(PlaySettings settings, std::string_view display) {

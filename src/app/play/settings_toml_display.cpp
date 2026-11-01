@@ -5,6 +5,7 @@
 #include <string>
 #include <utility>
 
+#include "app/play/i18n.h"
 #include "render/grade_params.h"
 
 namespace ajp::app::play {
@@ -46,16 +47,44 @@ std::optional<PlaySettings::DisplayGrade> grade_of(std::string display, const to
 
 void read_display_tables(const toml::table& hdr, PlaySettings& s,
                          std::vector<std::expected<void, Refusal>>& reads) {
-  if (const toml::table* grades = hdr.get_as<toml::table>("display_grades")) {
-    for (const auto& [display, node] : *grades) {
-      const toml::table* t = node.as_table();
-      auto grade = t != nullptr ? grade_of(std::string(display.str()), *t) : std::nullopt;
+  const toml::table* grades = hdr.get_as<toml::table>("display_grades");
+  if (grades == nullptr) return;
+  for (const auto& [display, node] : *grades) {
+    const toml::table* t = node.as_table();
+    if (t == nullptr) {
+      reads.emplace_back(out_of_range("display_grades", display.str()));
+      continue;
+    }
+    // Avant les profils (rc.9) : les valeurs directement sous l'écran, un seul grade calibré.
+    if (t->contains("gray")) {
+      auto grade = grade_of(std::string(display.str()), *t);
       if (!grade) {
         reads.emplace_back(out_of_range("display_grades", display.str()));
         continue;
       }
+      grade->name = i18n::tr_format("Profile {}", 1);
+      grade->active = true;
+      s.display_grades.push_back(std::move(*grade));
+      continue;
+    }
+    const std::string active =
+        t->get_as<std::string>("active") != nullptr ? t->get_as<std::string>("active")->get() : std::string();
+    bool any_active = false;
+    const std::size_t first = s.display_grades.size();
+    for (const auto& [name, profile] : *t) {
+      const toml::table* values = profile.as_table();
+      if (values == nullptr) continue;  // « active »
+      auto grade = grade_of(std::string(display.str()), *values);
+      if (!grade || name.str().empty()) {
+        reads.emplace_back(out_of_range("display_grades", std::format("{}.{}", display.str(), name.str())));
+        continue;
+      }
+      grade->name = std::string(name.str());
+      grade->active = grade->name == active;
+      any_active |= grade->active;
       s.display_grades.push_back(std::move(*grade));
     }
+    if (!any_active && s.display_grades.size() > first) s.display_grades[first].active = true;
   }
 }
 
@@ -63,13 +92,17 @@ void write_display_tables(const PlaySettings& s, toml::table& hdr) {
   // Au centième : 0.4 et non 0.40000000000000002.
   const auto r2 = [](double v) { return std::round(v * 100.0) / 100.0; };
   toml::table grades;
-  for (const auto& g : s.display_grades)
-    grades.insert_or_assign(g.display, toml::table{{"gray", g.gray},
-                                                   {"shadows", r2(g.shadows)},
-                                                   {"colors", r2(g.colors)},
-                                                   {"gray_bright", r2(g.gray_bright)},
-                                                   {"shadows_bright", r2(g.shadows_bright)},
-                                                   {"colors_cut", r2(g.colors_cut)}});
+  for (const auto& g : s.display_grades) {
+    if (!grades.contains(g.display)) grades.insert(g.display, toml::table{});
+    toml::table& screen = *grades.get_as<toml::table>(g.display);
+    if (g.active) screen.insert_or_assign("active", g.name);
+    screen.insert_or_assign(g.name, toml::table{{"gray", g.gray},
+                                                {"shadows", r2(g.shadows)},
+                                                {"colors", r2(g.colors)},
+                                                {"gray_bright", r2(g.gray_bright)},
+                                                {"shadows_bright", r2(g.shadows_bright)},
+                                                {"colors_cut", r2(g.colors_cut)}});
+  }
   if (!grades.empty()) hdr.insert("display_grades", std::move(grades));
 }
 
