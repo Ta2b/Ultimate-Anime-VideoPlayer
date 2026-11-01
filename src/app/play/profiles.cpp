@@ -26,7 +26,7 @@ name = "Qualité 1440p"
 hdr = "truehdr"
 [[profile.rule]]
 steps = [
-  { kind = "downscale", filter = "area", height = 720 },
+  { kind = "downscale", filter = "hermite", height = 720 },
   { kind = "interpolate", model = "rife_v4.25", factor = 3, policy = "quality" },
   { kind = "upscale", model = "@PERF@", factor = 2 },
 ]
@@ -37,7 +37,7 @@ name = "Fluide 1440p ×4"
 hdr = "truehdr"
 [[profile.rule]]
 steps = [
-  { kind = "downscale", filter = "area", height = 720 },
+  { kind = "downscale", filter = "hermite", height = 720 },
   { kind = "interpolate", model = "rife_v4.25", factor = 4, policy = "quality" },
   { kind = "upscale", model = "@PERF@", factor = 2 },
 ]
@@ -67,7 +67,7 @@ name = "1440p SDR"
 hdr = "off"
 [[profile.rule]]
 steps = [
-  { kind = "downscale", filter = "area", height = 720 },
+  { kind = "downscale", filter = "hermite", height = 720 },
   { kind = "interpolate", model = "rife_v4.25", factor = 3, policy = "quality" },
   { kind = "upscale", model = "@PERF@", factor = 2 },
 ]
@@ -78,7 +78,7 @@ name = "Net 1440p (Balanced)"
 hdr = "truehdr"
 [[profile.rule]]
 steps = [
-  { kind = "downscale", filter = "area", height = 720 },
+  { kind = "downscale", filter = "hermite", height = 720 },
   { kind = "interpolate", model = "rife_v4.25", factor = 3, policy = "quality" },
   { kind = "upscale", model = "@BAL@", factor = 2 },
 ]
@@ -89,7 +89,7 @@ name = "Léger 1080p"
 hdr = "truehdr"
 [[profile.rule]]
 steps = [
-  { kind = "downscale", filter = "area", height = 540 },
+  { kind = "downscale", filter = "hermite", height = 540 },
   { kind = "interpolate", model = "rife_v4.25", factor = 2, policy = "quality" },
   { kind = "upscale", model = "@PERF@", factor = 2 },
 ]

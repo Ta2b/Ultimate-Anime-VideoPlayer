@@ -170,7 +170,7 @@ struct PlaySettings {
   bool upscale = true;
   std::string model;  // fichier ONNX de SPAN (nom seul) ; vide : celui du lecteur actuel
   int work_height = 720;
-  Downscale downscale = Downscale::Area;
+  Downscale downscale = Downscale::Hermite;
   int rife_factor = kDefaultRifeFactor;  // 0 : aucune interpolation
   int rife_factor_den = 1;               // 2 : ×rife_factor / 2 (×1,5 : 3 et 2)
   // Mode auto : le multiplicateur ×k (entier, jusqu'à rife_factor) suit ce que le GPU tient

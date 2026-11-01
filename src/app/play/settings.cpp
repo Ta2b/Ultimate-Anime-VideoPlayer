@@ -271,7 +271,7 @@ std::optional<Badge> badge_of(MotionEngine engine) {
 
 std::optional<Badge> badge_of(Downscale filter) {
   switch (filter) {
-    case Downscale::Mitchell:
+    case Downscale::Hermite:
       return Badge::Recommended;
     case Downscale::Bilinear:
       return Badge::Fastest;
