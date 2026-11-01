@@ -233,8 +233,11 @@ PlaySettings with_adaptive(const PlaySettings& s, double t, double tv, double bs
   PlaySettings out = s;
   render::GradeSettings& o = out.grade_values;
   o.shadows = std::lerp(g.shadows, g.adaptive_shadows, t);
-  o.vibrance = std::lerp(g.vibrance, g.adaptive_vibrance, vibrance_t_smooth);
-  o.vibrance_rtx = std::lerp(g.vibrance_rtx, g.adaptive_vibrance, vibrance_t_smooth);
+  // Les scènes claires perdent une part de la vibrance (couleurs chaudes sursaturées), puis la scène bleue
+  // saturée glisse vers sa propre valeur.
+  const double keep = 1.0 - std::clamp(g.adaptive_vibrance_cut, 0.0, 1.0) * t;
+  o.vibrance = std::lerp(g.vibrance * keep, g.adaptive_vibrance, vibrance_t_smooth);
+  o.vibrance_rtx = std::lerp(g.vibrance_rtx * keep, g.adaptive_vibrance, vibrance_t_smooth);
   out.true_hdr_gray =
       static_cast<int>(std::lround(std::lerp(static_cast<double>(s.true_hdr_gray), g.adaptive_gray, t)));
   // Série claire par nature (luminosité moyenne de l'épisode haute) : plus de contraste et de couleur pour

@@ -749,6 +749,7 @@ TEST_CASE("grade adaptatif : noirs, couleurs et gris moyen glissent de la scène
   s.grade_values.adaptive = true;
   s.grade_values.adaptive_shadows = 0.8;
   s.grade_values.adaptive_vibrance = 0.0;
+  s.grade_values.adaptive_vibrance_cut = 0.0;
   s.grade_values.adaptive_gray = 30.0;
   const auto at = [&](double t, double tv = 0.0) { return ajp::app::play::with_adaptive(s, t, tv); };
   CHECK(at(0.0).grade_values.shadows == 0.2);  // scène sombre : les curseurs
@@ -763,6 +764,10 @@ TEST_CASE("grade adaptatif : noirs, couleurs et gris moyen glissent de la scène
   CHECK(at(0.0, 1.0).grade_values.vibrance_rtx ==
         0.0);                                       // ciel bleu saturé, scène pas claire : couleurs coupées
   CHECK(at(0.0, 1.0).grade_values.shadows == 0.2);  // les noirs restent ceux de la scène sombre
+  s.grade_values.adaptive_vibrance_cut = 0.5;       // scènes claires : la moitié de la vibrance en moins
+  CHECK(at(1.0).grade_values.vibrance_rtx == 0.4);
+  CHECK(at(0.5).grade_values.vibrance_rtx == Catch::Approx(0.6));
+  CHECK(at(0.0).grade_values.vibrance_rtx == 0.8);
   s.grade_values.adaptive = false;
   CHECK(at(1.0).true_hdr_gray == 70);  // coupé : rien ne bouge
 }

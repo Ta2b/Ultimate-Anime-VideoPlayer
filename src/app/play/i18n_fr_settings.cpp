@@ -46,6 +46,7 @@ constexpr std::array kSettingsPages{
     Entry{"Deep blacks, bright scene", "Noirs profonds, scène claire"},
     Entry{"Colors, saturated blue scene", "Couleurs, scène bleue saturée (ciel)"},
     Entry{"Record scene statistics (learning)", "Enregistrer les statistiques de scène (apprentissage)"},
+    Entry{"Colors cut, bright scene", "Couleurs réduites, scène claire"},
     Entry{"Middle gray, bright scene", "Gris moyen, scène claire"},
     Entry{"The sliders above and the middle gray are for dark scenes; the values here apply to bright "
           "scenes, blended with the source's smoothed average brightness. Works with RTX HDR and with "
