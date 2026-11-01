@@ -63,7 +63,9 @@ struct Chain {
   std::optional<EngineChange> engines;             // onglet Moteurs : à faire avant de rouvrir
   std::optional<ExportJob> export_job;             // onglet Export : à faire avant de rouvrir
   std::optional<std::filesystem::path> next_file;  // glissé sur la fenêtre, ou l'épisode voisin
-  std::filesystem::path file;                      // la vidéo en cours
+  std::optional<std::int64_t> next_start_us;  // PlayFile : l'instant du fichier suivant (sinon la reprise)
+  bool next_paused = false;                   // PlayFile : le fichier suivant s'ouvre en pause
+  std::filesystem::path file;                 // la vidéo en cours
   const std::optional<DisplayFacts>& display;
   // Vrai noir OLED : la rampe passée par TrueHDR (codes PQ, de gpu), les seuils en cours, et le
   // recalage demandé (au plus 5 fois par seconde).

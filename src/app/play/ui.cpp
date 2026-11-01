@@ -503,6 +503,8 @@ UiFrame PlayerUi::frame(std::int64_t now_us, const ControlsView& view, std::vect
   }
   clicks_.clear();
   bool drawn = draw_controls(controls_, view, look_, now_us, actions);
+  choices_.position_us = view.position_us;
+  choices_.paused = view.paused;
   if (panel_.wants_draw(running_, choices_)) {
     const SettingsPanel::Result result = panel_.draw(running_, choices_, look_.scale, actions);
     if (result.live) actions.emplace_back(ApplySettings{.settings = *result.live});
@@ -510,6 +512,7 @@ UiFrame PlayerUi::frame(std::int64_t now_us, const ControlsView& view, std::vect
     look_.keep_visible = panel_.is_open();  // fermé par sa croix
     drawn = true;
   }
+  panel_.settle(actions);
   // Le panneau fermé en pleine calibration du grade : la scène n'est plus forcée.
   if (!panel_.is_open() && running_.grade_values.adaptive_force >= 0.0) {
     PlaySettings released = running_;
@@ -559,13 +562,13 @@ const ImDrawData* PlayerUi::home(std::int64_t now_us, HomeView& view, std::vecto
   input_pending_ = false;
   begin_frame(now_us);
   clicks_.clear();
-  // La calibration du grade montre son image à la place de l'accueil : rien ne la couvre.
-  if (panel_.calibration() == nullptr) draw_home(view, look_.scale, panel_.is_open());
+  draw_home(view, look_.scale, panel_.is_open());
   if (panel_.wants_draw(running_, choices_)) {
     const SettingsPanel::Result result = panel_.draw(running_, choices_, look_.scale, actions);
     if (result.live) actions.emplace_back(ApplySettings{.settings = *result.live});
     if (result.reopen) actions.emplace_back(ApplySettings{.settings = *result.reopen, .reopen = true});
   }
+  panel_.settle(actions);
   ImGui::Render();
   follow_text_input();
   draw_ = nullptr;  // la barre de lecture se recompose à son premier tour

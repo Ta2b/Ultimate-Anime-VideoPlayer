@@ -20,15 +20,20 @@ constexpr std::array kCalibration{
     Entry{"Calibrate the adaptive grade", "Calibrer le grade adaptatif"},
     Entry{"Forget the grade calibration", "Oublier la calibration du grade"},
     Entry{"1/2 · Dark scene. Set the middle gray, the deep blacks and the colors while looking at the "
-          "examples on the left (or at a dark scene of your video).",
-          "1/2 · Scène sombre. Réglez le gris moyen, les noirs profonds et les couleurs en regardant les "
-          "exemples à gauche (ou une scène sombre de votre vidéo)."},
+          "example on the left, played like your episodes.",
+          "1/2 · Scène sombre. Réglez le gris moyen, les noirs profonds et les couleurs en regardant "
+          "l'exemple à gauche, lu comme vos épisodes."},
     Entry{"When in doubt, keep the colors low (0.10 or less).",
           "Dans le doute, gardez les couleurs basses (0,10 ou moins)."},
     Entry{"2/2 · Bright scene. Set the middle gray, the deep blacks and the colors cut while looking at the "
-          "examples on the left (or at a bright scene of your video).",
+          "example on the left, played like your episodes.",
           "2/2 · Scène claire. Réglez le gris moyen, les noirs profonds et la réduction des couleurs en "
-          "regardant les exemples à gauche (ou une scène claire de votre vidéo)."},
+          "regardant l'exemple à gauche, lu comme vos épisodes."},
+    Entry{"The calibration video is missing (calibration/calibration.mkv next to the player): reinstall "
+          "the player.",
+          "La vidéo de calibration manque (calibration/calibration.mkv à côté du lecteur) : réinstallez le "
+          "lecteur."},
+    Entry{"Opening the calibration video…", "Ouverture de la vidéo de calibration…"},
     Entry{"Example {}/{} · {}", "Exemple {}/{} · {}"},
     Entry{"Previous example", "Exemple précédent"},
     Entry{"Next example", "Exemple suivant"},

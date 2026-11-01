@@ -487,7 +487,14 @@ void language_choice(const char* label, const char* none_label, std::string& tag
 
 SettingsPanel::SettingsPanel() : export_(std::make_unique<ExportDraft>()) {}
 const CalibrationShot* SettingsPanel::calibration() const {
-  return open_ && grade_wizard_ && grade_wizard_->step > 0 ? &grade_wizard_->shot : nullptr;
+  return open_ && grade_wizard_ && grade_wizard_->step > 0 && grade_wizard_->showing ? &grade_wizard_->shot
+                                                                                     : nullptr;
+}
+
+void SettingsPanel::settle(std::vector<Input>& actions) {
+  if (!grade_wizard_) return;
+  if (!open_) grade_wizard_->step = 0;
+  settle_calibration(*grade_wizard_, actions);
 }
 
 SettingsPanel::~SettingsPanel() {
@@ -658,7 +665,7 @@ SettingsPanel::Result SettingsPanel::draw(const PlaySettings& running, const Set
       } else if (name == "HDR") {
         hdr_tab(draft_, choices);
         if (!grade_wizard_) grade_wizard_ = std::make_unique<GradeWizard>();
-        grade_calibration(draft_, choices, *grade_wizard_, scale, io.DisplaySize.x - pad - width);
+        grade_calibration(draft_, choices, *grade_wizard_, scale, io.DisplaySize.x - pad - width, actions);
         if (advanced_) oled_sections(draft_, choices);
       } else if (name == "Colors") {
         grade_tab(draft_, choices);

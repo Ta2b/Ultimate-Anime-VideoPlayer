@@ -410,6 +410,14 @@ void apply(const Input& input, Chain& to, std::int64_t now_us) {
             to.next_file = *neighbour;
             to.reopen = to.running;
           },
+          [&](const PlayFile& play) {
+            log_channel("app")->info("lecture de {}", play.file.empty() ? std::string("l'accueil")
+                                                                        : prepare::utf8_path(play.file));
+            to.next_file = play.file;
+            to.next_start_us = play.start_us;
+            to.next_paused = play.paused;
+            to.reopen = to.running;
+          },
           [&](const SkipCredits&) {
             const ControlsView view = session.view();
             std::int64_t target = 0;

@@ -66,6 +66,9 @@ if (Test-Path "$Root/LICENSE") { Copy-Item "$Root/LICENSE" $Stage }
 
 # Les LUT d'HDR (data/luts), lues par le lecteur dans luts/ à côté de lui.
 Copy-Item "$Root/data/luts" (Join-Path $Stage "luts") -Recurse
+# La vidéo de la calibration du grade (data/calibration), lue dans calibration\ à côté du lecteur.
+New-Item -ItemType Directory -Force -Path (Join-Path $Stage "calibration") | Out-Null
+Copy-Item "$Root/data/calibration/calibration.mkv" (Join-Path $Stage "calibration")
 
 # --- Les moteurs. ---
 $Lock = Join-Path $Stage "engines.lock"

@@ -46,39 +46,28 @@ TEST_CASE("pic du système : la sortie de KWin en HDR, sa crête et son blanc", 
   CHECK_FALSE(parse_kwin_output("not json", "DP-1").has_value());
 }
 
-TEST_CASE("calibration du grade : quatre images d'anime sombres et quatre claires, guidées et traduites",
+TEST_CASE("calibration du grade : quatre plans d'anime sombres et quatre clairs, guidés et traduits",
           "[calibration]") {
   using namespace ajp::app::play;
   std::set<int> ids;
+  std::set<std::int64_t> instants;
   for (const bool dark : {true, false}) {
     for (int i = 0; i < kCalibrationPerStep; ++i) {
       const CalibrationImage image = calibration_image(dark, i);
       ids.insert(image.id);
+      instants.insert(image.at_us);
       CHECK((image.id < kCalibrationPerStep) == dark);
-      CHECK(image.width == 1920);
-      CHECK(image.height == 1080);
-      REQUIRE(image.rgba.size() ==
-              static_cast<std::size_t>(image.width) * static_cast<std::size_t>(image.height) * 4);
+      // Au milieu de son plan de la vidéo de calibration, loin des coupes.
+      CHECK(image.at_us == image.id * kCalibrationSegmentUs + kCalibrationSegmentUs / 2);
       i18n::set_language(i18n::Language::French);
       CHECK(i18n::tr_view(image.title) != image.title);
       CHECK(i18n::tr_view(image.guidance) != image.guidance);
       i18n::set_language(i18n::Language::English);
-      // Une vraie image : des pixels sombres et d'autres moins.
-      const auto [lo, hi] = std::minmax_element(image.rgba.begin(), image.rgba.end());
-      CHECK(*hi - *lo > 10000);
     }
   }
   CHECK(ids.size() == 2 * kCalibrationPerStep);
-  // Une scène sombre reste sombre en moyenne, une claire reste claire.
-  const auto mean = [](const CalibrationImage& image) {
-    double sum = 0.0;
-    for (std::size_t i = 0; i < image.rgba.size(); i += 4) sum += image.rgba[i + 1];
-    return sum / (static_cast<double>(image.rgba.size()) / 4.0) / 65535.0;
-  };
-  for (int i = 0; i < kCalibrationPerStep; ++i) {
-    CHECK(mean(calibration_image(true, i)) < 0.35);
-    CHECK(mean(calibration_image(false, i)) > 0.35);
-  }
+  CHECK(instants.size() == 2 * kCalibrationPerStep);
+  CHECK(calibration_clip().filename() == "calibration.mkv");
 }
 
 TEST_CASE("calibration : la clé d'un écran", "[calibration]") {

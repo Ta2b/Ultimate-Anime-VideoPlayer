@@ -13,6 +13,7 @@
 
 #include "app/play/chain.h"
 #include "app/play/engine_install.h"
+#include "app/play/input.h"
 #include "app/play/options.h"
 #include "app/play/placebo_screen.h"
 #include "app/play/player.h"
@@ -47,6 +48,8 @@ struct HomeState {
   core::Settings& engines;  // settings.toml
   std::size_t& next_key;
   SnapshotPlan& snapshot;
+  std::optional<PlayFile>
+      start;  // la vidéo choisie par PlayFile (la calibration du grade) : instant et pause
 };
 
 // Le fichier d'un SDL_EVENT_DROP_FILE ; rien pour un autre événement, ni pour un dossier ou un fichier
