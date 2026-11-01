@@ -145,6 +145,7 @@ std::expected<void, Refusal> PlaceboScreen::Impl::compose(const pl_frame* image,
 }
 
 OutputSize PlaceboScreen::size() const {
+  if (impl_->offscreen) return impl_->offscreen_size;
   int w = 0;
   int h = 0;
   SDL_GetWindowSizeInPixels(impl_->window, &w, &h);
@@ -172,20 +173,26 @@ std::expected<ScreenTiming, Refusal> PlaceboScreen::show(const ShowRequest& requ
   const pl_gpu gpu = s.vk->gpu;
   const std::int64_t start = host_now_us();
   OutputSize out = size();
-  if (out != s.swapchain_size) {
-    int w = out.width;
-    int h = out.height;
-    if (!pl_swapchain_resize(s.swapchain, &w, &h)) return ScreenTiming{.presented = false};
-    s.swapchain_size = out;
-  }
-  pl_swapchain_frame swframe{};
-  if (!pl_swapchain_start_frame(s.swapchain, &swframe))
-    return ScreenTiming{.presented = false};  // fenêtre cachée
-  s.hdr_output = swframe.color_space.transfer == PL_COLOR_TRC_PQ;
-  s.target_color = swframe.color_space;
-  s.select_grade(s.target_color);
   pl_frame target{};
-  pl_frame_from_swapchain(&target, &swframe);
+  if (s.offscreen) {
+    auto drawn = s.offscreen_target();
+    if (!drawn) return std::unexpected(std::move(drawn.error()));
+    target = *drawn;
+  } else {
+    if (out != s.swapchain_size) {
+      int w = out.width;
+      int h = out.height;
+      if (!pl_swapchain_resize(s.swapchain, &w, &h)) return ScreenTiming{.presented = false};
+      s.swapchain_size = out;
+    }
+    pl_swapchain_frame swframe{};
+    if (!pl_swapchain_start_frame(s.swapchain, &swframe))
+      return ScreenTiming{.presented = false};  // fenêtre cachée
+    pl_frame_from_swapchain(&target, &swframe);
+  }
+  s.hdr_output = target.color.transfer == PL_COLOR_TRC_PQ;
+  s.target_color = target.color;
+  s.select_grade(s.target_color);
 
   // La calibration du grade : la vidéo (celle de calibration, dans la même chaîne) à gauche du panneau, sans
   // sous-titres ni OSD ; l'interface reste dessus.
@@ -238,6 +245,15 @@ std::expected<ScreenTiming, Refusal> PlaceboScreen::show(const ShowRequest& requ
         !saved) {
       s.channel->warn("instantané {} : {}", path.string(), saved.error().detail);
     }
+  }
+  if (s.offscreen) {
+    pl_gpu_flush(gpu);
+    const std::int64_t submitted = host_now_us();
+    const std::int64_t presented = s.offscreen_present();
+    return ScreenTiming{.render_us = submitted - start,
+                        .present_us = presented,
+                        .queue_wait_us = presented - submitted,
+                        .presented = true};
   }
   if (!pl_swapchain_submit_frame(s.swapchain))
     return refuse(RefusalCode::VendorCallFailed, "pl_swapchain_submit_frame");

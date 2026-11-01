@@ -40,9 +40,14 @@ struct ScreenOptions {
   int width = 1280;
   int height = 720;
   bool fullscreen = false;
-  bool hidden = false;  // fenêtre minuscule sans bordure ni focus : l'évaluation de la machine ne montre rien
-                        // (--hidden)
-  bool hdr = true;      // HDR10 (PQ, BT.2020) si l'écran l'offre, SDR sinon
+  bool hidden = false;  // fenêtre minuscule sans bordure ni focus (--window pour l'évaluation sans --hidden)
+  // Les essais du bench (--hidden) : aucune fenêtre visible. Chaque image se rend en entier dans une image
+  // hors écran de offscreen_width × offscreen_height (la taille de l'écran), à la cadence de l'écran, avec
+  // deux images en file comme la swapchain : la même charge du GPU que la lecture, sans rien montrer.
+  bool offscreen = false;
+  int offscreen_width = 1920;
+  int offscreen_height = 1080;
+  bool hdr = true;  // HDR10 (PQ, BT.2020) si l'écran l'offre, SDR sinon
   // Smooth Motion du pilote NVIDIA : sa couche implicite VK_LAYER_NV_present s'active par
   // NVPRESENT_ENABLE_SMOOTH_MOTION=1, posé avant la création de l'instance Vulkan.
   bool smooth_motion = false;

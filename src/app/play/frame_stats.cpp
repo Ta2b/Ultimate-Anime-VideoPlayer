@@ -29,6 +29,13 @@ std::int64_t Window::median() const {
   return percentile(50);
 }
 
+double Window::mean() const {
+  if (count_ == 0) return 0.0;
+  double sum = 0.0;
+  for (std::size_t i = 0; i < count_; ++i) sum += static_cast<double>(values_[i]);
+  return sum / static_cast<double>(count_);
+}
+
 double Window::stddev() const {
   if (count_ < 2) return 0.0;
   double sum = 0.0;

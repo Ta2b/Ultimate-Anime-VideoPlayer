@@ -185,7 +185,8 @@ PlaySettings apply_profile(const core::Profile& profile, const core::SourceInfo&
           break;
         }
         settings.upscale = true;
-        settings.model = step.model + ".onnx";
+        // Un profil écrit sans modèle (l'assistant de la rc.9) : celui du lecteur, pas « .onnx ».
+        settings.model = (step.model.empty() ? std::string(kSpanModelId) : step.model) + ".onnx";
         upscaled = true;
         break;
     }
@@ -206,7 +207,10 @@ std::vector<core::Rule> rules_of(const PlaySettings& s, std::string_view default
                                     .policy = core::Policy::Quality});
   }
   if (s.upscale) {
-    std::string model = s.model.empty() ? std::string(default_model) : s.model;
+    // Sans modèle connu (le profil s'écrit avant toute lecture, par l'assistant) : celui du lecteur.
+    std::string model = !s.model.empty()         ? s.model
+                        : !default_model.empty() ? std::string(default_model)
+                                                 : std::string(kSpanModelId);
     if (model.ends_with(".onnx")) model.resize(model.size() - 5);
     rule.steps.push_back(core::Step{.kind = core::StepKind::Upscale,
                                     .model = std::move(model),

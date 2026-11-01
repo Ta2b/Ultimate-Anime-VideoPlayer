@@ -132,6 +132,8 @@ std::string format_reading(const BenchReading& reading) {
   root.insert("period_us", reading.run.period_us);
   root.insert("interval_median_us", reading.interval_median_us);
   root.insert("interval_p95_us", reading.interval_p95_us);
+  root.insert("interval_p99_us", reading.interval_p99_us);
+  root.insert("interval_mean_us", reading.interval_mean_us);
   root.insert("render_median_us", reading.render_median_us);
   root.insert("work_height", static_cast<std::int64_t>(reading.work_height));
   root.insert("rife_model", reading.rife_model);
@@ -159,6 +161,8 @@ std::expected<BenchReading, Refusal> parse_reading(std::string_view text) {
   reading.run.period_us = root["period_us"].value_or(std::int64_t{0});
   reading.interval_median_us = root["interval_median_us"].value_or(std::int64_t{0});
   reading.interval_p95_us = root["interval_p95_us"].value_or(std::int64_t{0});
+  reading.interval_p99_us = root["interval_p99_us"].value_or(std::int64_t{0});
+  reading.interval_mean_us = root["interval_mean_us"].value_or(std::int64_t{0});
   reading.render_median_us = root["render_median_us"].value_or(std::int64_t{0});
   reading.work_height = static_cast<int>(root["work_height"].value_or(std::int64_t{0}));
   reading.rife_model = root["rife_model"].value_or(std::string());

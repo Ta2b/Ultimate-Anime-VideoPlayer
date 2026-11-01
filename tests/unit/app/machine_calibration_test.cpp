@@ -6,11 +6,11 @@ using namespace ajp::app::play;
 
 namespace {
 
-// Joue la recherche contre une machine qui tient tout ce que holds accepte ; rend les essais faits.
+// Joue la recherche contre une machine qui tient ce que holds accepte ; rend les essais faits.
 template <typename Holds>
-std::vector<CandidateTrial> search(Holds holds) {
+std::vector<CandidateTrial> search(int display_height, Holds holds) {
   std::vector<CandidateTrial> tried;
-  while (const auto chain = next_candidate(tried)) {
+  while (const auto chain = next_candidate(tried, display_height)) {
     REQUIRE(tried.size() < 20);
     tried.push_back({.chain = *chain, .holds = holds(*chain)});
   }
@@ -19,30 +19,39 @@ std::vector<CandidateTrial> search(Holds holds) {
 
 }  // namespace
 
-TEST_CASE("la calibration de la machine part de 720p + SPAN + RIFE et monte tant que ça tient",
-          "[calibration-machine]") {
-  const auto tried = search([](const ChainCandidate& c) { return c.span && c.rife && c.height <= 900; });
-  REQUIRE(tried.size() == 3);  // 720, 900, 1080 (ne tient pas)
-  CHECK(tried[0].chain == ChainCandidate{.span = true, .rife = true, .height = 720});
-  CHECK(best_candidate(tried) == ChainCandidate{.span = true, .rife = true, .height = 900});
-  // Tout tient : 1080p, rien de plus.
-  CHECK(best_candidate(search([](const ChainCandidate&) { return true; })).height == 1080);
+TEST_CASE("les paliers s'arrêtent à la moitié de l'écran", "[calibration-machine]") {
+  CHECK(calibration_heights(1080) == std::vector<int>{540, 480, 360});
+  CHECK(calibration_heights(1440) == std::vector<int>{720, 540, 480, 360});
+  CHECK(calibration_heights(2160) == std::vector<int>{1080, 900, 720, 540, 480, 360});
+  CHECK(calibration_heights(600) == std::vector<int>{360});
 }
 
-TEST_CASE("la calibration descend, puis lâche RIFE avant SPAN, puis tout", "[calibration-machine]") {
-  // 540p avec RIFE tient : 720 non, 540 oui, on s'arrête.
-  auto tried = search([](const ChainCandidate& c) { return c.height <= 540; });
-  CHECK(tried.size() == 2);
+TEST_CASE("la calibration part du plus haut palier permis avec SPAN + RIFE et descend",
+          "[calibration-machine]") {
+  // 1440p, tout tient : 720p + SPAN + RIFE d'emblée, puis RIFE seul pour comparer.
+  auto tried = search(1440, [](const ChainCandidate&) { return true; });
+  REQUIRE(tried.size() == 2);
+  CHECK(tried[0].chain == ChainCandidate{.span = true, .rife = true, .height = 720});
+  CHECK(tried[1].chain == ChainCandidate{.span = false, .rife = true, .height = 0});
+  CHECK(best_candidate(tried) == tried[0].chain);
+  // 1080p : départ à 540p.
+  CHECK(search(1080, [](const ChainCandidate&) { return true; })[0].chain.height == 540);
+  // 1440p, 540p tient : 720, 540, puis RIFE seul.
+  tried = search(1440, [](const ChainCandidate& c) { return c.height <= 540; });
+  CHECK(tried.size() == 3);
   CHECK(best_candidate(tried) == ChainCandidate{.span = true, .rife = true, .height = 540});
-  // Rien avec RIFE : SPAN seul, qui tient à 720p et 900p.
-  tried = search([](const ChainCandidate& c) { return !c.rife && c.height <= 900; });
-  CHECK(best_candidate(tried) == ChainCandidate{.span = true, .rife = false, .height = 900});
-  // Ni SPAN + RIFE ni SPAN : RIFE seul.
-  tried = search([](const ChainCandidate& c) { return !c.span; });
+}
+
+TEST_CASE("la calibration lâche RIFE avant SPAN, puis tout", "[calibration-machine]") {
+  // Rien avec RIFE : SPAN seul, du haut vers le bas.
+  auto tried = search(1440, [](const ChainCandidate& c) { return c.span && !c.rife && c.height <= 540; });
+  CHECK(best_candidate(tried) == ChainCandidate{.span = true, .rife = false, .height = 540});
+  // SPAN nulle part : RIFE seul.
+  tried = search(1080, [](const ChainCandidate& c) { return !c.span; });
   CHECK(best_candidate(tried) == ChainCandidate{.span = false, .rife = true, .height = 0});
-  // Rien ne tient : ni l'un ni l'autre.
-  tried = search([](const ChainCandidate&) { return false; });
-  CHECK(tried.size() == 7);  // 720, 540, 480 pour chaque famille SPAN, puis RIFE seul
+  // Rien ne tient : 3 paliers par famille SPAN sur un écran 1080p, puis RIFE seul ; ni l'un ni l'autre.
+  tried = search(1080, [](const ChainCandidate&) { return false; });
+  CHECK(tried.size() == 7);
   CHECK_FALSE(best_candidate(tried).span);
   CHECK_FALSE(best_candidate(tried).rife);
 }
@@ -65,4 +74,34 @@ TEST_CASE("les réglages d'une chaîne : Personnalisé, Hermite, RIFE 4.22 lite 
   CHECK_FALSE(plain.upscale);
   CHECK_FALSE(plain.rife_auto);
   CHECK(plain.rife_factor == 0);
+}
+
+TEST_CASE("calibration.toml relit les essais et la recommandation", "[calibration-machine]") {
+  MachineCalibration c{.chosen = {.span = true, .rife = true, .height = 540},
+                       .tried = {{.chain = {.span = true, .rife = true, .height = 720},
+                                  .holds = false,
+                                  .lost_percent = 12.5,
+                                  .fps = 33.0,
+                                  .target_fps = 48.0},
+                                 {.chain = {.span = true, .rife = true, .height = 540},
+                                  .holds = true,
+                                  .lost_percent = 0.4,
+                                  .fps = 47.9,
+                                  .low_fps = 41.0,
+                                  .target_fps = 48.0}},
+                       .gpu = "RTX 4070 Ti",
+                       .date = "2026-11-01",
+                       .display_height = 1440};
+  const auto read = parse_calibration(format_calibration(c));
+  REQUIRE(read);
+  CHECK(read->chosen == c.chosen);
+  REQUIRE(read->tried.size() == 2);
+  CHECK(read->tried[1].holds);
+  CHECK(read->tried[0].lost_percent == 12.5);
+  CHECK(read->tried[1].fps == 47.9);
+  CHECK(read->tried[1].low_fps == 41.0);
+  CHECK(read->tried[1].target_fps == 48.0);
+  CHECK(read->gpu == "RTX 4070 Ti");
+  CHECK(read->display_height == 1440);
+  CHECK_FALSE(parse_calibration("version = 1\n"));
 }

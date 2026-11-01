@@ -44,6 +44,11 @@ struct BenchPlan {
   std::chrono::seconds build_allowance{4 * 60};
   std::chrono::seconds explore_allowance{25};  // l'exploration ne construit pas : trop long, elle s'arrête
   BenchProgress* shown = nullptr;              // l'avancement montré à l'utilisateur (étapes, barre)
+  // L'écran de l'utilisateur, que les essais silencieux rendent hors écran (--hidden) : sa taille en pixels
+  // (0 : 1920 × 1080) et s'il reçoit du HDR (sinon --sdr).
+  int display_width = 0;
+  int display_height = 0;
+  bool display_hdr = true;
 };
 
 // La ligne de commande de l'enfant d'un niveau (level absent : « auto », le niveau estimé de la machine).

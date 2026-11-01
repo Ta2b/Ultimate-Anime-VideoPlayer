@@ -23,6 +23,7 @@ class Window {
   std::int64_t median() const;
   std::int64_t percentile(int percent) const;  // 0 à 100
   double stddev() const;
+  double mean() const;
 
  private:
   std::array<std::int64_t, kSize> values_{};

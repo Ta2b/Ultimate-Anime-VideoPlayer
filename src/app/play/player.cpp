@@ -187,6 +187,9 @@ std::expected<void, Refusal> play(const PlayOptions& options, const PlayerPaths&
                                         .height = options.hidden ? 9 : options.window_height,
                                         .fullscreen = options.fullscreen && !options.hidden,
                                         .hidden = options.hidden,
+                                        .offscreen = options.hidden,
+                                        .offscreen_width = options.window_width,
+                                        .offscreen_height = options.window_height,
                                         .hdr = !options.sdr,
                                         .smooth_motion = saved->smooth_motion && saved->rife_factor >= 2,
                                         .allow_software = options.software_gpu});
@@ -236,6 +239,9 @@ std::expected<void, Refusal> play(const PlayOptions& options, const PlayerPaths&
     auto shown = run_engine_screen(engine_screen, *engines, profiles, false, next_key, snapshot);
     if (!shown) return std::unexpected(std::move(shown.error()));
     if (!*shown) return {};
+    // L'assistant vient d'écrire play.toml (HDR, chaîne calibrée, auto Rapide) : l'accueil part de là, sans
+    // quoi il reprendrait les réglages d'avant et les réécrirait par-dessus.
+    if (auto reread = load_settings(settings_path)) saved = std::move(*reread);
   }
   // Un moteur d'une version précédente du lecteur ne s'ouvrirait pas : il se met à jour d'abord.
   auto updated = update_stale_engines(**screen, **ui, catalog, *engines);
