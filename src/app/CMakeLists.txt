@@ -21,9 +21,30 @@ foreach(entry "atmos:Atmos" "dtshx:Dtshx" "sbx100:Sbx100" "sbx33:Sbx33" "sonic:S
     VERBATIM)
   list(APPEND AJP_HRIR_DATA_SOURCES "${hrir_cpp}")
 endforeach()
+# data/calibration/*.jpg : les images d'exemple de la calibration du grade, embarquées octet pour octet
+# (calibration_images.cpp).
+set(AJP_CALIBRATION_DATA_SOURCES)
+foreach(entry "dark_1:Dark1" "dark_2:Dark2" "dark_3:Dark3" "dark_4:Dark4" "bright_1:Bright1" "bright_2:Bright2"
+              "bright_3:Bright3" "bright_4:Bright4")
+  string(REPLACE ":" ";" parts "${entry}")
+  list(GET parts 0 file_name)
+  list(GET parts 1 symbol)
+  set(calibration_cpp "${CMAKE_CURRENT_BINARY_DIR}/calibration_${file_name}_data.cpp")
+  add_custom_command(
+    OUTPUT "${calibration_cpp}"
+    COMMAND "${CMAKE_COMMAND}" "-DOUTPUT=${calibration_cpp}"
+            "-DINPUT=${PROJECT_SOURCE_DIR}/data/calibration/${file_name}.jpg" -DNAME=kCalibration${symbol}
+            -DNAMESPACE=ajp::app::play "-DHEADER=app/play/calibration_data.h"
+            -P "${CMAKE_CURRENT_SOURCE_DIR}/play/embed_text.cmake"
+    DEPENDS "${PROJECT_SOURCE_DIR}/data/calibration/${file_name}.jpg"
+            "${CMAKE_CURRENT_SOURCE_DIR}/play/embed_text.cmake"
+    COMMENT "Embarque data/calibration/${file_name}.jpg"
+    VERBATIM)
+  list(APPEND AJP_CALIBRATION_DATA_SOURCES "${calibration_cpp}")
+endforeach()
 ajp_add_module(app
   SOURCES
-    play/apple_model.cpp play/bundled_hrir.cpp ${AJP_HRIR_DATA_SOURCES} play/auto_bench.cpp play/auto_bench_run.cpp play/bench_steps.cpp play/span_auto.cpp play/auto_config.cpp play/backend_library.cpp play/bridges.cpp play/build_progress.cpp play/chain.cpp play/chain_hdr.cpp play/chain_setup.cpp play/chain_stats.cpp play/look_catalog.cpp play/model_choice.cpp play/chapters.cpp play/controls.cpp play/controls_draw.cpp play/controls_icons.cpp play/default_player.cpp play/derived_model.cpp play/span_derive.cpp play/span_int8.cpp play/display_edid.cpp play/drba_model.cpp play/engine_build.cpp play/episodes.cpp play/engine_downloads.cpp play/engine_install.cpp play/engine_screen.cpp play/engine_switch.cpp play/ed25519.cpp play/engine_tools.cpp play/updater.cpp play/export_job.cpp play/export_run.cpp play/export_sink.cpp play/first_run.cpp play/wizard.cpp play/gpu_tier.cpp "${CMAKE_CURRENT_BINARY_DIR}/gpu_tiers_data.cpp" play/home_screen.cpp play/i18n.cpp play/i18n_fr.cpp play/i18n_fr_settings.cpp play/i18n_fr_calibration.cpp play/i18n_fr_image.cpp play/i18n_fr_sound.cpp play/i18n_fr_system.cpp play/i18n_fr_wizard.cpp play/i18n_fr_messages.cpp play/i18n_fr_stats.cpp play/i18n_fr_visible.cpp play/home_view.cpp play/maxine_install.cpp play/host_facts.cpp play/system_peak.cpp play/calibration_images.cpp
+    play/apple_model.cpp play/bundled_hrir.cpp ${AJP_HRIR_DATA_SOURCES} play/auto_bench.cpp play/auto_bench_run.cpp play/bench_steps.cpp play/span_auto.cpp play/auto_config.cpp play/backend_library.cpp play/bridges.cpp play/build_progress.cpp play/chain.cpp play/chain_hdr.cpp play/chain_setup.cpp play/chain_stats.cpp play/look_catalog.cpp play/model_choice.cpp play/chapters.cpp play/controls.cpp play/controls_draw.cpp play/controls_icons.cpp play/default_player.cpp play/derived_model.cpp play/span_derive.cpp play/span_int8.cpp play/display_edid.cpp play/drba_model.cpp play/engine_build.cpp play/episodes.cpp play/engine_downloads.cpp play/engine_install.cpp play/engine_screen.cpp play/engine_switch.cpp play/ed25519.cpp play/engine_tools.cpp play/updater.cpp play/export_job.cpp play/export_run.cpp play/export_sink.cpp play/first_run.cpp play/wizard.cpp play/gpu_tier.cpp "${CMAKE_CURRENT_BINARY_DIR}/gpu_tiers_data.cpp" play/home_screen.cpp play/i18n.cpp play/i18n_fr.cpp play/i18n_fr_settings.cpp play/i18n_fr_calibration.cpp play/i18n_fr_image.cpp play/i18n_fr_sound.cpp play/i18n_fr_system.cpp play/i18n_fr_wizard.cpp play/i18n_fr_messages.cpp play/i18n_fr_stats.cpp play/i18n_fr_visible.cpp play/home_view.cpp play/maxine_install.cpp play/host_facts.cpp play/system_peak.cpp play/calibration_images.cpp ${AJP_CALIBRATION_DATA_SOURCES}
     play/external_subtitles.cpp play/frame_queue.cpp play/frame_stats.cpp play/gmfss_model.cpp play/gpu_telemetry.cpp play/input.cpp play/motion_model.cpp play/options.cpp play/osd_text.cpp play/pipeline.cpp
     play/placebo_export.cpp play/placebo_export_vulkan.cpp play/placebo_grade.cpp play/placebo_imgui.cpp play/placebo_open.cpp play/placebo_overlays.cpp play/placebo_ring.cpp play/placebo_screen.cpp
     play/placebo_snapshot.cpp play/player.cpp play/player_engines.cpp play/player_run.cpp play/profiles.cpp play/resume.cpp
