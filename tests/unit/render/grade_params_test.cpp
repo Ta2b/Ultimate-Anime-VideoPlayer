@@ -96,6 +96,9 @@ TEST_CASE("émulation : contraste, saturation et gris moyen aux bornes") {
   CHECK(p.em_lo == Approx(1.38));
   CHECK(p.em_hi == Approx(1.28));
   CHECK(p.em_sat == Approx(0.81));
+  settings.saturation = 200.0;  // 400 % appliqués
+  CHECK(decide_grade(settings, pq_context(core::HdrMode::Native, 400.0))->params.em_sat == Approx(1.57));
+  settings.saturation = 0.0;
   settings.contrast = 0.0;
   settings.middle_gray = 100.0;
   const auto low = decide_grade(settings, pq_context(core::HdrMode::Native, 4000.0));
@@ -333,7 +336,7 @@ TEST_CASE("vrai noir : seuils tirés de la rampe mesurée") {
 
 }  // namespace ajp::render
 
-TEST_CASE("le contraste et la saturation à 200 ou moins restent ceux de RTX HDR : le grade n'ajoute rien",
+TEST_CASE("le contraste reste celui de RTX HDR ; la saturation au-delà de ce qu'il donne passe par le grade",
           "[grade][punch]") {
   using namespace ajp::render;
   GradeSettings s = grade_preset(GradePreset::Naturel);
@@ -346,7 +349,10 @@ TEST_CASE("le contraste et la saturation à 200 ou moins restent ceux de RTX HDR
   s.saturation = 200.0;
   auto old_max = decide_grade(s, context);
   CHECK(old_max->params.punch == 0.0);  // le maximum d'avant : RTX HDR seul
-  CHECK(old_max->params.chroma == 1.0);
+  // 200 % sur le curseur vaut 400 % : RTX HDR en donne 200, le grade le reste.
+  CHECK(old_max->params.chroma == Approx(1.57 / 1.19));
+  s.saturation = 120.0;  // 160 % appliqués : RTX HDR seul
+  CHECK(decide_grade(s, context)->params.chroma == 1.0);
   CHECK_FALSE(check_grade_settings([] {
     GradeSettings g;
     g.contrast = 201.0;
