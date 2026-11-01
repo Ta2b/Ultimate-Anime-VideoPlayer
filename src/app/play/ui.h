@@ -97,6 +97,8 @@ class PlayerUi {
   void set_title(std::string title);
   void close_settings();
   bool settings_open() const { return panel_.is_open(); }
+  // La mire de calibration du HDR que le panneau montre (hdr_pattern.h) ; nullptr : aucune.
+  const HdrPattern* pattern() const { return panel_.pattern(); }
   // Rend les textures de l'interface à l'écran avant qu'il ne soit détruit.
   void release(PlaceboScreen& screen);
 

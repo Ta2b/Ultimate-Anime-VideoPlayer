@@ -13,6 +13,7 @@
 #include <vector>
 
 #include "app/play/default_player.h"
+#include "app/play/hdr_pattern.h"
 #include "app/play/input.h"
 #include "app/play/precision.h"
 #include "app/play/settings.h"
@@ -138,7 +139,13 @@ class SettingsPanel {
     redo_.clear();
     engine_draft_.reset();
   }
-  void close() { open_ = false; }
+  void close() {
+    open_ = false;
+    calibration_.reset();
+  }
+  // La mire de calibration du HDR (HDR > « Calibrer le pic ») tant que le panneau la montre ; nullptr :
+  // aucune.
+  const HdrPattern* pattern() const { return open_ && calibration_ ? &*calibration_ : nullptr; }
   bool is_open() const { return open_; }
   // Une tâche tourne dans le panneau (optimisation, préparation) : des images régulières, même en pause.
   bool busy() const { return open_ && (bench_running(bench_) || prepare_.pending != nullptr); }
@@ -173,6 +180,7 @@ class SettingsPanel {
   UpdateNote updates_;   // Général > Application : la vérification en cours ou son résultat
   BenchNote bench_;      // « Évaluer ma machine » : l'essai en cours ou son rapport
   PrepareNote prepare_;  // « Préparer le mode Performance » : la tâche en cours ou son résultat
+  std::optional<HdrPattern> calibration_;  // la mire de calibration du pic, montrée par la page HDR
 };
 
 }  // namespace ajp::app::play

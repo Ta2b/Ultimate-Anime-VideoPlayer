@@ -15,6 +15,7 @@
 #include "app/play/i18n.h"
 #include "app/play/look_catalog.h"
 #include "app/play/panel_style.h"
+#include "app/play/settings_calibration.h"
 #include "app/play/settings_chain_tabs.h"
 #include "app/play/settings_engines.h"
 #include "app/play/settings_export.h"
@@ -620,6 +621,7 @@ SettingsPanel::Result SettingsPanel::draw(const PlaySettings& running, const Set
     panel::begin_page();
     {
       const std::string_view name = kPages[static_cast<std::size_t>(page_)].name;
+      if (name != "HDR") calibration_.reset();  // la mire ne reste que sur sa page
       if (name == "Setup") {
         // L'optimisation (ou son annulation) s'applique tout de suite, sans « Appliquer » : c'est ce qu'on a
         // demandé.
@@ -640,6 +642,7 @@ SettingsPanel::Result SettingsPanel::draw(const PlaySettings& running, const Set
         fluidity_tab(draft_, choices);
       } else if (name == "HDR") {
         hdr_tab(draft_, choices);
+        peak_calibration(draft_, choices, calibration_);
         if (advanced_) oled_sections(draft_, choices);
       } else if (name == "Colors") {
         grade_tab(draft_, choices);

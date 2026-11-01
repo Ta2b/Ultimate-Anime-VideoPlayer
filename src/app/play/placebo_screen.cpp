@@ -18,6 +18,7 @@
 #include <libplacebo/swapchain.h>
 #include <libplacebo/vulkan.h>
 
+#include "app/play/hdr_pattern.h"
 #include "app/play/osd_text.h"
 #include "app/play/placebo_impl.h"
 #include "core/clock.h"
@@ -186,9 +187,12 @@ std::expected<ScreenTiming, Refusal> PlaceboScreen::show(const ShowRequest& requ
   pl_frame target{};
   pl_frame_from_swapchain(&target, &swframe);
 
+  // La mire de calibration remplace l'image, les sous-titres et l'OSD ; l'interface reste par-dessus.
+  const bool pattern = request.pattern != nullptr && s.hdr_output;
+  const RingFrame* frame = pattern ? nullptr : request.frame;
   pl_frame image{};
-  if (request.frame != nullptr) {
-    auto tex = s.ring.acquire(gpu, *request.frame);
+  if (frame != nullptr) {
+    auto tex = s.ring.acquire(gpu, *frame);
     if (!tex) return std::unexpected(std::move(tex.error()));
     image.num_planes = 1;
     image.planes[0].texture = *tex;
@@ -203,15 +207,19 @@ std::expected<ScreenTiming, Refusal> PlaceboScreen::show(const ShowRequest& requ
                           0.0F);
   }
 
-  auto overlays = s.overlays->build(request.subtitles, request.osd.empty() ? nullptr : &request.osd, *s.osd,
-                                    out, request.ui != nullptr ? request.ui_bottom : 0,
-                                    request.ui != nullptr ? request.ui_top : 0);
+  auto overlays = s.overlays->build(
+      pattern ? nullptr : request.subtitles, pattern || request.osd.empty() ? nullptr : &request.osd, *s.osd,
+      out, request.ui != nullptr ? request.ui_bottom : 0, request.ui != nullptr ? request.ui_top : 0);
   if (!overlays) return std::unexpected(std::move(overlays.error()));
   target.overlays = overlays->data();
   target.num_overlays = static_cast<int>(overlays->size());
 
-  if (auto drawn = s.compose(request.frame != nullptr ? &image : nullptr, target); !drawn) {
+  if (auto drawn = s.compose(frame != nullptr ? &image : nullptr, target); !drawn) {
     return std::unexpected(std::move(drawn.error()));
+  }
+  if (pattern) {
+    if (auto drawn = s.draw_pattern(*request.pattern, target); !drawn)
+      return std::unexpected(std::move(drawn.error()));
   }
   s.draw_ui(request.ui, target);
   if (s.snapshot) {
@@ -224,8 +232,7 @@ std::expected<ScreenTiming, Refusal> PlaceboScreen::show(const ShowRequest& requ
                                         dot == std::string::npos ? std::string() : file.substr(dot)));
     }
     if (++s.snapshot_index >= s.snapshot_count) s.snapshot.reset();
-    if (auto saved =
-            s.save_snapshot(request.frame != nullptr ? &image : nullptr, target, out, request.ui, path);
+    if (auto saved = s.save_snapshot(frame != nullptr ? &image : nullptr, target, out, request.ui, path);
         !saved) {
       s.channel->warn("instantané {} : {}", path.string(), saved.error().detail);
     }

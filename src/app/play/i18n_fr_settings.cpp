@@ -236,6 +236,29 @@ constexpr std::array kSettingsPages{
     Entry{"whole RIFE instead of fused RIFE", "RIFE entier à la place du RIFE fusionné"},
     Entry{"{} switches to {} (built the first time for this size)",
           "{} passe en {} (construit la première fois pour cette taille)"},
+    // Calibration du pic (settings_calibration.cpp).
+    Entry{"Peak calibration", "Calibration du pic"},
+    Entry{"The display receives no HDR: the calibration needs an HDR output.",
+          "L'écran ne reçoit pas de HDR : la calibration demande une sortie HDR."},
+    Entry{"Measures the real peak of the display with a test pattern, instead of the EDID value, which is "
+          "often wrong.",
+          "Mesure le vrai pic de l'écran avec une mire, au lieu de la valeur de l'EDID, souvent fausse."},
+    Entry{"Calibrate the peak", "Calibrer le pic"},
+    Entry{"Raise the slider until the small square disappears into its frame, then stop: that value is the "
+          "real peak of the display.",
+          "Montez le curseur jusqu'à ce que le petit carré disparaisse dans son cadre, puis arrêtez-vous : "
+          "cette valeur est le vrai pic de l'écran."},
+    Entry{"Square (nits)", "Carré (nits)"},
+    Entry{"Large window (50 %)", "Grande fenêtre (50 %)"},
+    Entry{"Many displays dim a large bright area (ABL): the 50 % window shows how much.",
+          "Beaucoup d'écrans baissent une grande zone claire (ABL) : la fenêtre à 50 % montre de combien."},
+    Entry{"Use {} nits as the peak", "Prendre {} nits comme pic"},
+    Entry{"The HDR peak goes from {} to {} nits: {} is used.",
+          "Le pic du HDR va de {} à {} nits : {} est retenu."},
+    Entry{"If the square never disappears, the display tone maps by itself: turn on HGIG, or turn off its "
+          "dynamic tone mapping, then try again.",
+          "Si le carré ne disparaît jamais, l'écran adapte les tons lui-même : activez HGIG, ou coupez son "
+          "adaptation dynamique des tons, puis recommencez."},
 };
 
 }  // namespace
