@@ -40,12 +40,15 @@ if ($vendor -lt 1) { throw "$lock n'a aucun [[vendor_file]] : sans eux le moteur
 
 # engines-nvidia.lock : les moteurs et fichiers de NVIDIA seulement (TensorRT, et RTX HDR s'il est là).
 $out = Join-Path $Dir "engines-nvidia.lock"
-$blocks = (Get-Content $lock -Raw) -split '(?m)^(?=\[\[(?:engine|vendor_file)\]\]$)' | Where-Object { $_ -match '^\[\[(engine|vendor_file)\]\]' }
+# Fins de ligne CRLF sous Windows : sans les ramener à LF, « $ » ne tombe jamais sur « ]] » et aucun bloc ne passe.
+$blocks = ((Get-Content $lock -Raw) -replace "`r`n", "`n") -split '(?m)^(?=\[\[(?:engine|vendor_file)\]\]$)' | Where-Object { $_ -match '^\[\[(engine|vendor_file)\]\]' }
 $kept = @("version = 1")
 foreach ($block in $blocks) {
   $id = [regex]::Match($block, '(?m)^id = "(.*)"$').Groups[1].Value
   if ($id -eq "tensorrt" -or $id -eq "maxine_vfx") { $kept += @("", $block.TrimEnd()) }
 }
+if (-not ($kept -match '(?m)^id = "tensorrt"$')) { throw "$out n'a aucun bloc tensorrt : $lock mal lu" }
+if (-not ($kept -match '(?m)^\[\[vendor_file\]\]$')) { throw "$out n'a aucun [[vendor_file]] : $lock mal lu" }
 Set-Content -Path $out -Value $kept -Encoding utf8NoBOM
 Write-Host "archive      : $archive ($size octets, sha256 $sha)"
 Write-Host "index NVIDIA : $out"
