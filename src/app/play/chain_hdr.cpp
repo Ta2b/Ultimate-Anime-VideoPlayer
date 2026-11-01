@@ -275,6 +275,31 @@ void adaptive_record(Chain& to, const gpu::KernelOps::SceneStats& stats, std::in
       << to.adaptive_tv << '\t' << to.adaptive_bs << '\t' << to.series_luma << '\n';
 }
 
+AdaptivePosition adaptive_position(const render::GradeSettings& g, double luma, double series_luma,
+                                   double blue, double chroma) {
+  constexpr double kSeriesRef = 0.30;
+  const double ratio = std::clamp(series_luma / kSeriesRef, 0.7, 1.8);
+  const double bs_x = std::clamp((series_luma - 0.36) / 0.14, 0.0, 1.0);
+  const double bs = bs_x * bs_x * (3.0 - 2.0 * bs_x);
+  const double lo = g.adaptive_lo / 100.0 * ratio;
+  const double hi = std::max(std::min(g.adaptive_hi / 100.0 * ratio, 0.95), lo + 0.01);
+  const double x = std::clamp((luma - lo) / (hi - lo), 0.0, 1.0);
+  const double t = x * x * (3.0 - 2.0 * x);
+  // La vibrance dépend de la couleur, pas de la luminosité : un ciel ou un aplat bleu saturé (« bleu » moyen
+  // élevé) n'en veut presque pas, un désert jaune ou des murs ternes en veulent. Seuils mesurés sur les
+  // scènes de Tatoub (plein jour bleu : vibrance 0 ; désert, donjon, teints : 0,80).
+  constexpr double kBlueLo = 0.05;
+  constexpr double kBlueHi = 0.13;
+  const double xv = std::clamp((blue - kBlueLo) / (kBlueHi - kBlueLo), 0.0, 1.0);
+  // Un bleu saturé mais SOMBRE (écran d'interface bleu nuit) n'est pas un ciel : le bleu ne compte qu'avec
+  // une scène à moitié claire. Et un flash très saturé de n'importe quelle teinte (feu, éclair : chroma
+  // moyenne au-dessus de 0,45) n'a pas besoin de vibrance non plus (audit sur trois séries).
+  const double gate = std::clamp(t / 0.5, 0.0, 1.0);
+  const double xc = std::clamp((chroma - 0.40) / 0.20, 0.0, 1.0);
+  const double tv = std::max(xv * xv * (3.0 - 2.0 * xv) * gate, xc * xc * (3.0 - 2.0 * xc));
+  return {.t = t, .tv = tv, .bs = bs};
+}
+
 void adaptive_tick(Chain& to, std::int64_t now_us) {
   if (to.running.adaptive_record && to.kernels != nullptr && to.true_hdr_open) {
     if (const auto stats = to.kernels->scene_stats()) adaptive_record(to, *stats, now_us);
@@ -327,25 +352,11 @@ void adaptive_tick(Chain& to, std::int64_t now_us) {
   // Même rendu que Re:Zero (la référence : 0,30 en moyenne, mesuré sur 155 secondes de son épisode) : les
   // seuils suivent la série EN PROPORTION, si bien qu'une scène à 1,45 fois la luminosité moyenne de Slime se
   // règle comme une scène à 1,45 fois celle de Re:Zero.
-  const double ratio = std::clamp(to.series_luma / kSeriesRef, 0.7, 1.8);
-  const double bs_x = std::clamp((to.series_luma - 0.36) / 0.14, 0.0, 1.0);
-  const double bs = bs_x * bs_x * (3.0 - 2.0 * bs_x);
-  const double lo = g.adaptive_lo / 100.0 * ratio;
-  const double hi = std::max(std::min(g.adaptive_hi / 100.0 * ratio, 0.95), lo + 0.01);
-  const double x = std::clamp((to.adaptive_luma - lo) / (hi - lo), 0.0, 1.0);
-  const double t = x * x * (3.0 - 2.0 * x);
-  // La vibrance dépend de la couleur, pas de la luminosité : un ciel ou un aplat bleu saturé (« bleu » moyen
-  // élevé) n'en veut presque pas, un désert jaune ou des murs ternes en veulent. Seuils mesurés sur les
-  // scènes de Tatoub (plein jour bleu : vibrance 0 ; désert, donjon, teints : 0,80).
-  constexpr double kBlueLo = 0.05;
-  constexpr double kBlueHi = 0.13;
-  const double xv = std::clamp((to.adaptive_blue - kBlueLo) / (kBlueHi - kBlueLo), 0.0, 1.0);
-  // Un bleu saturé mais SOMBRE (écran d'interface bleu nuit) n'est pas un ciel : le bleu ne compte qu'avec
-  // une scène à moitié claire. Et un flash très saturé de n'importe quelle teinte (feu, éclair : chroma
-  // moyenne au-dessus de 0,45) n'a pas besoin de vibrance non plus (audit sur trois séries).
-  const double gate = std::clamp(t / 0.5, 0.0, 1.0);
-  const double xc = std::clamp((to.adaptive_chroma - 0.40) / 0.20, 0.0, 1.0);
-  const double tv = std::max(xv * xv * (3.0 - 2.0 * xv) * gate, xc * xc * (3.0 - 2.0 * xc));
+  const AdaptivePosition position =
+      adaptive_position(g, to.adaptive_luma, to.series_luma, to.adaptive_blue, to.adaptive_chroma);
+  const double t = position.t;
+  const double tv = position.tv;
+  const double bs = position.bs;
   const bool same = std::abs(t - to.adaptive_t) < 0.02 && std::abs(tv - to.adaptive_tv) < 0.02 &&
                     !(t == 0.0 && to.adaptive_t != 0.0) && !(t == 1.0 && to.adaptive_t != 1.0) &&
                     !(tv == 0.0 && to.adaptive_tv != 0.0) && !(tv == 1.0 && to.adaptive_tv != 1.0) &&

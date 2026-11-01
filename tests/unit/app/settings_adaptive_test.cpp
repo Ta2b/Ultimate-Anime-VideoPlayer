@@ -78,3 +78,34 @@ TEST_CASE("grade adaptatif : une série claire par nature reçoit plus de contra
   s.true_hdr_contrast = 190;
   CHECK(ajp::app::play::with_adaptive(s, 0.0, 0.0, 1.0).true_hdr_contrast == 200);  // borné à 200
 }
+
+TEST_CASE("grade adaptatif : la position t suit la luminance de la scène, rapportée à celle de la série",
+          "[app][settings]") {
+  using ajp::app::play::adaptive_position;
+  const ajp::render::GradeSettings g;  // lo 13 %, hi 54 % : les défauts
+  // Re:Zero (luminosité de série 0,29, mesurée sur 155 s) : noir = 0, scène claire = 1, monotone entre les
+  // deux.
+  CHECK(adaptive_position(g, 0.0, 0.29, 0.0, 0.0).t == 0.0);
+  CHECK(adaptive_position(g, 0.80, 0.29, 0.0, 0.0).t == 1.0);
+  double last = 0.0;
+  for (double luma = 0.0; luma <= 0.9; luma += 0.05) {
+    const double t = adaptive_position(g, luma, 0.29, 0.0, 0.0).t;
+    CHECK(t >= last);
+    last = t;
+  }
+  // La même scène est plus « ordinaire » dans une série plus claire (Slime : 0,43) : t plus bas.
+  CHECK(adaptive_position(g, 0.40, 0.43, 0.0, 0.0).t < adaptive_position(g, 0.40, 0.29, 0.0, 0.0).t);
+}
+
+TEST_CASE("grade adaptatif : série claire, vibrance du bleu et flash saturé", "[app][settings]") {
+  using ajp::app::play::adaptive_position;
+  const ajp::render::GradeSettings g;
+  CHECK(adaptive_position(g, 0.3, 0.29, 0.0, 0.0).bs == 0.0);  // Re:Zero : pas une série claire
+  CHECK(adaptive_position(g, 0.3, 0.43, 0.0, 0.0).bs == Catch::Approx(0.5));  // Slime : à mi-chemin
+  CHECK(adaptive_position(g, 0.3, 0.60, 0.0, 0.0).bs == 1.0);
+  // Un ciel bleu saturé (scène claire) retire la vibrance ; le même bleu en scène sombre ne la retire pas.
+  CHECK(adaptive_position(g, 0.80, 0.29, 0.20, 0.0).tv == 1.0);
+  CHECK(adaptive_position(g, 0.02, 0.29, 0.20, 0.0).tv == 0.0);
+  // Un flash très saturé (chroma moyenne 0,60) n'a pas besoin de vibrance, quelle que soit la luminosité.
+  CHECK(adaptive_position(g, 0.02, 0.29, 0.0, 0.60).tv == 1.0);
+}

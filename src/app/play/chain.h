@@ -105,6 +105,19 @@ PlaySettings with_intended_hdr(const Chain& to, PlaySettings settings);
 // 0, les curseurs) vers la scène claire (t = 1). t = 0 ou adaptatif coupé : les réglages tels quels.
 PlaySettings with_adaptive(const PlaySettings& s, double t, double tv, double bs = 0.0);
 
+// Où se place la scène dans le grade adaptatif : t (noirs, gris moyen, contraste : de la scène sombre à la
+// scène claire), tv (vibrance : le bleu et la chroma moyens de la scène) et bs (série claire par nature).
+// Pure : luma est la luminance moyenne lissée de la scène, series_luma celle de la série, blue et chroma les
+// moyennes lissées de la scène. adaptive_tick s'en sert ; les tests la rejouent sur les statistiques
+// enregistrées.
+struct AdaptivePosition {
+  double t = 0.0;
+  double tv = 0.0;
+  double bs = 0.0;
+};
+AdaptivePosition adaptive_position(const render::GradeSettings& g, double luma, double series_luma,
+                                   double blue, double chroma);
+
 // Une fois par tour : lit la luminance moyenne de la source, la lisse (environ 1,2 s, remise à la mesure à
 // chaque coupe de scène) et, si la position change de 2 % ou plus, pose le gris moyen de RTX HDR et le grade.
 void adaptive_tick(Chain& to, std::int64_t now_us);
