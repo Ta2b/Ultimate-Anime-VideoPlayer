@@ -164,3 +164,23 @@ TEST_CASE("calibration du grade : le play.toml de la rc.9 (un grade par écran) 
   CHECK(calibrated_grade(*s, "CND-8CD7")->gray == 42);
   CHECK(grade_profiles(*s, "CND-8CD7").size() == 1);
 }
+
+TEST_CASE("calibration du grade : sans profil pour l'écran, le grade adaptatif se coupe, sauf en calibration",
+          "[calibration]") {
+  using namespace ajp::app::play;
+  PlaySettings s;
+  CHECK(s.adaptive_record);  // les statistiques de scène s'enregistrent par défaut sous le grade adaptatif
+  s.grade = true;
+  s.grade_values.adaptive = true;
+  CHECK_FALSE(with_calibrated_grade(s, "CND-8CD7").grade_values.adaptive);
+  CHECK_FALSE(with_calibrated_grade(s, "").grade_values.adaptive);
+  // En calibration (scène forcée), le profil n'existe pas encore : le grade adaptatif reste.
+  s.grade_values.adaptive_force = 0.0;
+  CHECK(with_calibrated_grade(s, "CND-8CD7").grade_values.adaptive);
+  s.grade_values.adaptive_force = -1.0;
+  keep_calibrated_grade(s, "CND-8CD7", "Soir");
+  CHECK(with_calibrated_grade(s, "CND-8CD7").grade_values.adaptive);
+  // Le dernier profil supprimé : coupé.
+  forget_calibrated_grade(s, "CND-8CD7", "Soir");
+  CHECK_FALSE(with_calibrated_grade(s, "CND-8CD7").grade_values.adaptive);
+}

@@ -191,7 +191,15 @@ void adaptive_section(PlaySettings& d, const SettingsChoices& choices, std::vect
   // valeurs, la scène claire, mélangées selon la luminance moyenne lissée de l'image source (moteur
   // TensorRT).
   section(i18n::tr("Adaptive to scene brightness"));
+  // Sans profil de calibration pour cet écran, rien à adapter : la calibration l'active (onglet Calibration).
+  const bool calibrated = calibrated_grade(d, choices.display_key) != nullptr;
+  ImGui::BeginDisabled(!calibrated && !g.adaptive);
   ImGui::Checkbox(i18n::tr("Adapt to scene brightness"), &g.adaptive);
+  ImGui::EndDisabled();
+  if (!calibrated && !g.adaptive)
+    note(
+        i18n::tr("Calibrate a grade profile for this display first: the adaptive grade turns on at the "
+                 "end of the calibration."));
   ImGui::BeginDisabled(!g.adaptive);
   const auto percent_slider = [](const char* label, double& value) {
     auto shown = static_cast<float>(value);
@@ -220,7 +228,9 @@ void adaptive_section(PlaySettings& d, const SettingsChoices& choices, std::vect
   grade_slider(i18n::tr("Colors, glow scene"), g.adaptive_glow_vibrance, kVibrance);
   ImGui::EndDisabled();
   scene_correction(d, choices, actions);
+  ImGui::BeginDisabled(!g.adaptive);  // les statistiques ne s'écrivent que sous le grade adaptatif
   ImGui::Checkbox(i18n::tr("Record scene statistics (learning)"), &d.adaptive_record);
+  ImGui::EndDisabled();
   note(
       i18n::tr("The sliders above and the middle gray are for dark scenes; the values here apply to bright "
                "scenes, blended with the source's smoothed average brightness. A dark scene with a bright "

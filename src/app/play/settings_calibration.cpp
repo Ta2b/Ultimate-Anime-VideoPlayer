@@ -155,6 +155,9 @@ void calibration_start(PlaySettings& d, const SettingsChoices& choices, GradeWiz
   wizard.return_file = already ? std::filesystem::path() : choices.source_file;
   wizard.return_us = already ? 0 : choices.position_us;
   wizard.return_paused = choices.paused;
+  // La scène forcée dès maintenant : la vidéo de calibration rouvre la lecture, qui coupe le grade
+  // adaptatif d'un écran sans profil hors calibration (with_calibrated_grade).
+  g.adaptive_force = 0.0;
   const CalibrationImage first = calibration_image(CalibrationStep::Dark, 0);
   wizard.sought = first.id;
   actions.emplace_back(PlayFile{.file = clip, .start_us = first.at_us, .paused = true});

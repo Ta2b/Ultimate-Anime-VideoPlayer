@@ -304,7 +304,7 @@ struct PlaySettings {
   std::string look = "HDR grading base ver.9.0 33 point.cube";
   // Apprentissage du grade adaptatif : une ligne par seconde (statistiques de la scène et réglages courants)
   // dans adaptive-log.tsv, à côté de play.toml, pendant que l'utilisateur règle à l'œil.
-  bool adaptive_record = false;
+  bool adaptive_record = true;
   double look_mix = 1.0;
   // Les LUT suivantes (le menu Couleurs en ajoute avec + et en retire avec −), enchaînées après la première
   // comme des nœuds de Resolve, chacune avec sa propre intensité ; au plus render::kLookSlots - 1.
