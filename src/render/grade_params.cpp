@@ -74,6 +74,11 @@ void apply_adaptive(const GradeSettings& s, double peak, bool sdr_out, GradePara
   p.ad_on = 1.0;
   p.ad_lo = luma_to_pq(s.adaptive_lo);
   p.ad_hi = luma_to_pq(s.adaptive_hi);
+  if (s.adaptive_force >= 0.0) {  // les seuils hors de [0, 1] : le smoothstep du shader rend 0 ou 1
+    const bool bright = s.adaptive_force >= 0.5;
+    p.ad_lo = bright ? -2.0 : 2.0;
+    p.ad_hi = bright ? -1.0 : 3.0;
+  }
   p.ad_shadows = shadows_effect(s.adaptive_shadows);
   // La vibrance suit la couleur (ciel bleu saturé), que le shader ne mesure pas : seule la part retirée
   // dans les scènes claires l'adapte sur ces routes.

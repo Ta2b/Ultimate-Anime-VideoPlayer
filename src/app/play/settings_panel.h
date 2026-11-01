@@ -24,6 +24,7 @@
 namespace ajp::app::play {
 
 struct ExportDraft;  // settings_export.h
+struct GradeWizard;  // settings_calibration.h
 
 // Un moteur du cache, pour l'onglet Moteurs.
 struct EngineBadge {
@@ -181,7 +182,8 @@ class SettingsPanel {
   UpdateNote updates_;   // Général > Application : la vérification en cours ou son résultat
   BenchNote bench_;      // « Évaluer ma machine » : l'essai en cours ou son rapport
   PrepareNote prepare_;  // « Préparer le mode Performance » : la tâche en cours ou son résultat
-  std::optional<HdrPattern> calibration_;  // la mire de calibration du pic, montrée par la page HDR
+  std::optional<HdrPattern> calibration_;      // la mire de calibration du pic, montrée par la page HDR
+  std::unique_ptr<GradeWizard> grade_wizard_;  // la calibration du grade adaptatif (settings_calibration.h)
 };
 
 }  // namespace ajp::app::play

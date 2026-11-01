@@ -78,3 +78,35 @@ TEST_CASE("calibration : la clé d'un écran", "[hdr_pattern]") {
   CHECK(display_key(d) == "MAG 272U E16");
   CHECK(display_key(DisplayFacts{}).empty());
 }
+
+TEST_CASE("calibration du grade : gardée par écran, reprise à l'ouverture si le grade adaptatif est coché",
+          "[hdr_pattern]") {
+  using namespace ajp::app::play;
+  PlaySettings s;
+  s.true_hdr_gray = 42;
+  s.grade_values.shadows = 0.3;
+  s.grade_values.vibrance_rtx = 0.08;
+  s.grade_values.adaptive_gray = 18.0;
+  s.grade_values.adaptive_shadows = 0.6;
+  s.grade_values.adaptive_vibrance_cut = 0.55;
+  keep_calibrated_grade(s, "CND-8CD7");
+  keep_calibrated_grade(s, "");  // écran inconnu : rien
+  REQUIRE(s.display_grades.size() == 1);
+  const auto back = parse_settings(format_settings(s));
+  REQUIRE(back.has_value());
+  REQUIRE(calibrated_grade(*back, "CND-8CD7") != nullptr);
+  CHECK(*calibrated_grade(*back, "CND-8CD7") == s.display_grades.front());
+
+  PlaySettings fresh = *back;
+  fresh.true_hdr_gray = 50;
+  fresh.grade_values.adaptive_vibrance_cut = 0.0;
+  fresh.grade_values.adaptive = false;
+  CHECK(with_calibrated_grade(fresh, "CND-8CD7").true_hdr_gray == 50);  // adaptatif décoché : rien
+  fresh.grade_values.adaptive = true;
+  const PlaySettings applied = with_calibrated_grade(fresh, "CND-8CD7");
+  CHECK(applied.true_hdr_gray == 42);
+  CHECK(applied.grade_values.adaptive_vibrance_cut == Approx(0.55));
+  CHECK(with_calibrated_grade(fresh, "GSM-5BBF").true_hdr_gray == 50);  // un autre écran
+  forget_calibrated_grade(fresh, "CND-8CD7");
+  CHECK(calibrated_grade(fresh, "CND-8CD7") == nullptr);
+}

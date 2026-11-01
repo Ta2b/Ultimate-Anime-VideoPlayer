@@ -329,11 +329,11 @@ void adaptive_tick(Chain& to, std::int64_t now_us) {
   // règle comme une scène à 1,45 fois celle de Re:Zero.
   const double ratio = std::clamp(to.series_luma / kSeriesRef, 0.7, 1.8);
   const double bs_x = std::clamp((to.series_luma - 0.36) / 0.14, 0.0, 1.0);
-  const double bs = bs_x * bs_x * (3.0 - 2.0 * bs_x);
+  double bs = bs_x * bs_x * (3.0 - 2.0 * bs_x);
   const double lo = g.adaptive_lo / 100.0 * ratio;
   const double hi = std::max(std::min(g.adaptive_hi / 100.0 * ratio, 0.95), lo + 0.01);
   const double x = std::clamp((to.adaptive_luma - lo) / (hi - lo), 0.0, 1.0);
-  const double t = x * x * (3.0 - 2.0 * x);
+  double t = x * x * (3.0 - 2.0 * x);
   // La vibrance dépend de la couleur, pas de la luminosité : un ciel ou un aplat bleu saturé (« bleu » moyen
   // élevé) n'en veut presque pas, un désert jaune ou des murs ternes en veulent. Seuils mesurés sur les
   // scènes de Tatoub (plein jour bleu : vibrance 0 ; désert, donjon, teints : 0,80).
@@ -345,7 +345,12 @@ void adaptive_tick(Chain& to, std::int64_t now_us) {
   // moyenne au-dessus de 0,45) n'a pas besoin de vibrance non plus (audit sur trois séries).
   const double gate = std::clamp(t / 0.5, 0.0, 1.0);
   const double xc = std::clamp((to.adaptive_chroma - 0.40) / 0.20, 0.0, 1.0);
-  const double tv = std::max(xv * xv * (3.0 - 2.0 * xv) * gate, xc * xc * (3.0 - 2.0 * xc));
+  double tv = std::max(xv * xv * (3.0 - 2.0 * xv) * gate, xc * xc * (3.0 - 2.0 * xc));
+  if (g.adaptive_force >= 0.0) {  // calibration : un bout de la courbe, sans la couleur ni la série
+    t = g.adaptive_force >= 0.5 ? 1.0 : 0.0;
+    tv = 0.0;
+    bs = 0.0;
+  }
   const bool same = std::abs(t - to.adaptive_t) < 0.02 && std::abs(tv - to.adaptive_tv) < 0.02 &&
                     !(t == 0.0 && to.adaptive_t != 0.0) && !(t == 1.0 && to.adaptive_t != 1.0) &&
                     !(tv == 0.0 && to.adaptive_tv != 0.0) && !(tv == 1.0 && to.adaptive_tv != 1.0) &&
