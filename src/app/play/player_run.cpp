@@ -244,7 +244,7 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
   // Le mode Performance de SPAN : ce que le moteur annonce, et sinon pourquoi (moteur absent ou autre carte).
   const SpanFp8Facts fp8_facts{.backend_name = c.backend_name,
                                .gpu_name = gpu_facts(p.screen).name,
-                               .tensorrt_present = tensorrt_backend_present(p.paths),
+                               .tensorrt_present = tensorrt_backend_present(p.catalog, p.paths),
                                .capability = c.backend && c.backend->capabilities().span_fp8_cutlass};
   const std::string fp8_reason = span_fp8_unavailable_reason(fp8_facts);
   log_channel("app")->info("SPAN Performance (FP8) : {} (moteur {}, capacite CUTLASS {})",

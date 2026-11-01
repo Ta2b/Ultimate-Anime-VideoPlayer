@@ -5,6 +5,7 @@
 #include <cstdint>
 #include <format>
 #include <fstream>
+#include <initializer_list>
 #include <optional>
 #include <sstream>
 #include <string>
@@ -422,6 +423,14 @@ std::expected<PlaySettings, Refusal> settings_from_table(const toml::table& root
           refuse(RefusalCode::FieldOutOfRange, std::format("grade.oled_black : « {} »", oled)));
     // L'ancienne clé « preset » est lue et ignorée : plus de préréglages, les valeurs du fichier font foi.
     s.grade_preset = render::GradePreset::Custom;
+    // Écrits au centième (format_settings) : relus au centième, la réécriture rend les mêmes réglages.
+    const auto hundredth = [](double& x) { x = std::round(x * 100.0) / 100.0; };
+    for (double* x :
+         {&v.shadows, &v.highlights, &v.highlights_rtx, &v.vibrance, &v.vibrance_rtx, &v.area_rtx, &v.guard,
+          &v.expand, &v.adaptive_lo, &v.adaptive_hi, &v.adaptive_shadows, &v.adaptive_vibrance,
+          &v.adaptive_vibrance_cut, &v.adaptive_gray, &s.look_mix, &s.oled_black_steps})
+      hundredth(*x);
+    for (auto& layer : s.look_layers) hundredth(layer.mix);
     s.grade_values = v;
   }
   if (const toml::table* stats = section(root, "stats")) {

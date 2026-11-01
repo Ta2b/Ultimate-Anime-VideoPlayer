@@ -212,7 +212,7 @@ std::expected<bool, Refusal> run_engine_screen(const EngineScreen& s, core::Sett
       out.push_back({.name = i18n::tr("NVIDIA RTX card"),
                      .done = gpu.tensor_cores,
                      .todo = i18n::tr("RTX HDR needs an RTX card (Tensor cores).")});
-      const bool trt_here = tensorrt_backend_present(s.paths);
+      const bool trt_here = tensorrt_backend_present(s.catalog, s.paths);
       out.push_back({.name = trt_here ? i18n::tr("TensorRT engine")
                                       : i18n::tr("TensorRT engine (installed at \"Finish\")"),
                      .done = trt_here || ticked(core::EngineId::TensorRt),
