@@ -1,9 +1,8 @@
 // Les images d'exemple de la calibration du grade adaptatif (Paramètres > HDR > « Calibrer le grade
-// adaptatif ») : deux plans fixes sombres, deux sombres avec un éclat et quatre clairs, tirés de Re:Zero
-// (saison 4, épisode 18) et de Slime (saison 4, épisode 24), livrés en une vidéo
-// (data/calibration/calibration.mkv, SOURCES.md) que le lecteur lit en pause, plan par plan, dans la même
-// chaîne que les épisodes : ce que la calibration montre est ce que la lecture rendra. Chaque plan dit ce
-// qu'il faut voir à l'écran quand les réglages sont justes.
+// adaptatif ») : onze plans fixes tirés d'Akudama Drive, des Enfants du Temps, de Violet Evergarden, de
+// Frieren et de Your Name, livrés en une vidéo (data/calibration/calibration.mkv, SOURCES.md) que le lecteur
+// lit en pause, plan par plan, dans la même chaîne que les épisodes : ce que la calibration montre est ce que
+// la lecture rendra. Chaque plan dit ce qu'il faut voir à l'écran quand les réglages sont justes.
 #pragma once
 
 #include <array>
@@ -13,31 +12,25 @@
 
 namespace ajp::app::play {
 
-inline constexpr int kCalibrationImages = 8;                      // plans de la vidéo, toutes étapes
+inline constexpr int kCalibrationImages = 11;                     // plans de la vidéo
 inline constexpr std::int64_t kCalibrationSegmentUs = 6'000'000;  // chaque plan tient 6 s de la vidéo
 
-// Les étapes de la calibration, dans leur ordre : scène sombre, scène sombre avec éclat, scène claire.
-enum class CalibrationStep : std::uint8_t { Dark, Glow, Bright };
-inline constexpr int kCalibrationSteps = 3;
-
 struct CalibrationImage {
-  int id = 0;                 // 0 et 1 : scènes sombres ; 2 et 3 : sombres avec éclat ; 4 à 7 : claires
+  int id = 0;                 // sa place dans la vidéo
   std::string_view title;     // clé de traduction (i18n.h)
   std::string_view guidance;  // ce qu'il faut voir, clé de traduction
   std::int64_t at_us = 0;     // l'instant montré dans la vidéo, au milieu de son plan
 };
 
-// Le nombre de plans de l'étape, et son plan index (0 à calibration_count(step) - 1).
-int calibration_count(CalibrationStep step);
-CalibrationImage calibration_image(CalibrationStep step, int index);
-// L'ordre de la calibration : d'abord les plans obligatoires, qui tiennent les deux bouts de la courbe et
-// son milieu (l'escalier sombre, le cercle magique, la vallée à contre-jour, Emilia en plein jour) ; puis
-// les plans bonus, qui la précisent (Ram dans l'ombre, la corne de Rem, le ciel bleu, le ciel rose).
-inline constexpr std::array<int, kCalibrationImages> kCalibrationOrder{0, 2, 5, 7, 1, 3, 4, 6};
-inline constexpr int kCalibrationRequired = 4;
+// L'ordre de la calibration : d'abord les plans obligatoires, qui tiennent les deux bouts de la courbe, son
+// milieu, la peau et les éclats d'une scène claire (la cellule et son rai de lumière, Hina dans la pénombre,
+// Hina sous la pluie, la ville sous le soleil, la salle aux lampes) ; puis les plans bonus, qui la précisent
+// (projecteurs dans la brume, forêt, blancs, feu d'artifice, ombre chaude, crépuscule).
+inline constexpr std::array<int, kCalibrationImages> kCalibrationOrder{0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10};
+inline constexpr int kCalibrationRequired = 5;
 
-// Le plan id de la vidéo (0 à kCalibrationImages - 1), toutes étapes confondues : la calibration les montre
-// dans l'ordre, chacun réglé à sa vraie place dans la courbe.
+// Le plan id de la vidéo (0 à kCalibrationImages - 1) : la calibration les montre dans l'ordre, chacun réglé
+// à sa vraie place dans la courbe.
 CalibrationImage calibration_shot(int id);
 
 // La vidéo livrée : calibration/calibration.mkv à côté de SDL_GetBasePath (Contents/Resources dans AJP.app),
