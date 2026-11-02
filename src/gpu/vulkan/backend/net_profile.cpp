@@ -76,6 +76,7 @@ std::vector<ShaderCount> static_count(const ir::Graph& graph, const Program& pro
           if (b.index < program.blobs.size()) row.read_bytes += program.blobs[b.index].size();
           break;
         case BindingKind::Dummy:
+        case BindingKind::Scratch:
           break;
       }
     }

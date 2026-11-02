@@ -20,42 +20,7 @@
 
 layout(local_size_x_id = 31) in;
 
-layout(constant_id = 0) const uint TX = 0;
-layout(constant_id = 1) const uint TY = 0;
-layout(constant_id = 2) const uint TR = 0;
-layout(constant_id = 3) const uint LX = 0;
-layout(constant_id = 4) const uint LY = 0;
-layout(constant_id = 5) const uint LR = 0;
-layout(constant_id = 6) const uint CXP = 16;
-layout(constant_id = 7) const uint CYP = 16;
-layout(constant_id = 8) const uint CRP = 16;
-layout(constant_id = 9) const uint N = 1;
-layout(constant_id = 10) const uint CIN = 1;
-layout(constant_id = 11) const uint HIN = 1;
-layout(constant_id = 12) const uint WIN = 1;
-layout(constant_id = 13) const uint COUT = 1;
-layout(constant_id = 14) const uint HOUT = 1;
-layout(constant_id = 15) const uint WOUT = 1;
-layout(constant_id = 16) const uint KH = 1;
-layout(constant_id = 17) const uint KW = 1;
-layout(constant_id = 18) const uint SH = 1;
-layout(constant_id = 19) const uint SW = 1;
-layout(constant_id = 20) const uint DH = 1;
-layout(constant_id = 21) const uint DW = 1;
-layout(constant_id = 22) const uint PT = 0;
-layout(constant_id = 23) const uint PL = 0;
-layout(constant_id = 24) const uint GROUPS = 1;
-layout(constant_id = 25) const uint ACT = 0;
-layout(constant_id = 26) const float ALPHA = 0.0;
-layout(constant_id = 27) const float LO = 0.0;
-layout(constant_id = 28) const float HI = 0.0;
-layout(constant_id = 29) const uint RESIDUAL = 0;
-layout(constant_id = 30) const uint QUADS = 1;
-layout(constant_id = 32) const uint PIX = 1;  // 31 : la taille du groupe de travail
-layout(constant_id = 33) const uint SPACE = 0;      // DepthToSpace fondu : blocs de SPACE × SPACE
-layout(constant_id = 34) const uint SPACE_CRD = 0;  // 1 : ordre CRD, 0 : DCR
-layout(constant_id = 35) const float IN_Q = 0.0;    // > 0 : x arrondi à la grille E4M3 de cette échelle
-layout(constant_id = 36) const float OUT_Q = 0.0;   // > 0 : résultat arrondi de même, après le biais
+#include "net_conv_consts.glsl"
 
 // L'entrée de la Conv telle que la lit le FP8 (ConvAttrs::in_quant) ; la porte relit x brut.
 float quant_in(float v) {
@@ -80,6 +45,7 @@ layout(std430, binding = 2) readonly buffer Bias { float v[]; } bias;
 layout(std430, binding = 3) readonly buffer Slope { float v[]; } slope;
 AJP_NET_BUFFER(4, res, readonly)
 AJP_NET_BUFFER(5, dst, writeonly)
+layout(std430, binding = 6) writeonly buffer Partial { float v[]; } partial;
 
 void main() {
   const TDesc xd = TDesc(N, CIN, HIN, WIN, LX, CXP);
@@ -89,8 +55,15 @@ void main() {
   const TDesc rd = TDesc(N, COUT, HOUT, WOUT, LR, CRP);
   uint ox0 = gl_GlobalInvocationID.x * PIX;
   uint oy = gl_WorkGroupID.y;
-  uint n = gl_WorkGroupID.z / (GROUPS * BLOCKS);
-  uint gb = gl_WorkGroupID.z % (GROUPS * BLOCKS);
+  // z : (n, groupe, bloc de canaux, tranche de K), la tranche la plus rapide.
+  uint split = gl_WorkGroupID.z % SPLIT;
+  uint zb = gl_WorkGroupID.z / SPLIT;
+  uint n = zb / (GROUPS * BLOCKS);
+  uint gb = zb % (GROUPS * BLOCKS);
+  // Les canaux d'entrée de la tranche, par multiples de 8 (lectures uvec4 du chemin VEC).
+  const uint chunk = ((CING + SPLIT - 1u) / SPLIT + 7u) / 8u * 8u;
+  uint c_lo = min(CING, split * chunk);
+  uint c_hi = min(CING, c_lo + chunk);
   if (ox0 >= WOUT) return;
   uint g = gb / BLOCKS;
   uint first_out = (gb % BLOCKS) * 4u * QUADS;
@@ -120,7 +93,8 @@ void main() {
         for (uint p = 0u; p < PIX; ++p)
           base[p] = inside[p] ? (((n * HIN + uint(iy)) * WIN + uint(ix[p])) * CXP) / 8u : 0u;
         uint full = CING / 8u;
-        for (uint c8 = 0u; c8 < full; ++c8) {
+        uint c8_hi = min(full, c_hi / 8u);
+        for (uint c8 = c_lo / 8u; c8 < c8_hi; ++c8) {
           uvec4 packed[PIX];
           for (uint p = 0u; p < PIX; ++p) packed[p] = inside[p] ? src_v.v[base[p] + c8] : uvec4(0u);
 #ifdef AJP_CONV_PACKED
@@ -154,7 +128,7 @@ void main() {
           for (uint a = 0u; a < PIX * QUADS; ++a) acc[a] += vec4(part[a]);
 #endif
         }
-        for (uint ci = full * 8u; ci < CING; ++ci) {
+        for (uint ci = max(full * 8u, c_lo); ci < c_hi; ++ci) {
           float xv[PIX];
           for (uint p = 0u; p < PIX; ++p)
             xv[p] = inside[p] ? quant_in(AJP_LOAD(src, TX, t_index(xd, n, ci, uint(iy), uint(ix[p])))) : 0.0;
@@ -167,10 +141,10 @@ void main() {
       }
 #endif
 #ifdef AJP_CONV_PACKED
-      for (uint c0 = 0u; c0 < CING; c0 += 16u) {
+      for (uint c0 = c_lo; c0 < c_hi; c0 += 16u) {
         f16vec4 part[PIX * QUADS];
         for (uint a = 0u; a < PIX * QUADS; ++a) part[a] = f16vec4(0.0);
-        uint c1 = min(c0 + 16u, CING);
+        uint c1 = min(c0 + 16u, c_hi);
         for (uint ci = c0; ci < c1; ++ci) {
           float16_t xv[PIX];
           for (uint p = 0u; p < PIX; ++p) {
@@ -185,7 +159,7 @@ void main() {
         for (uint a = 0u; a < PIX * QUADS; ++a) acc[a] += vec4(part[a]);
       }
 #else
-      for (uint ci = 0u; ci < CING; ++ci) {
+      for (uint ci = c_lo; ci < c_hi; ++ci) {
         float xv[PIX];
         for (uint p = 0u; p < PIX; ++p)
           xv[p] = inside[p] ? quant_in(AJP_LOAD(src, TX, t_index(xd, n, g * CING + ci, uint(iy), uint(ix[p])))) : 0.0;
@@ -206,6 +180,11 @@ void main() {
         uint o = first_out + 4u * q + k;
         if (o >= COUTG) continue;
         uint co = g * COUTG + o;
+        if (SPLIT > 1u) {
+          // Somme partielle brute : l'épilogue attend la somme des tranches (net_conv_reduce).
+          partial.v[(((split * N + n) * COUT + co) * HOUT + oy) * WOUT + ox] = acc[p * QUADS + q][k];
+          continue;
+        }
         float v = acc[p * QUADS + q][k] + bias.v[co];
         if (OUT_Q > 0.0) v = round_e4m3(v / OUT_Q) * OUT_Q;
         if (RESIDUAL == 1u) v += AJP_LOAD(res, TR, t_index(rd, n, co, oy, ox));

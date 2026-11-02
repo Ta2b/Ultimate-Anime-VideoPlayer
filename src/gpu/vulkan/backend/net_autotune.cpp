@@ -438,6 +438,12 @@ std::expected<Measured, Refusal> Autotuner::measure_with(const ir::Graph& graph,
   }
   auto dummy = Buffer::create(context_, memory_, 256, MemoryUse::Device);
   if (!dummy) return std::unexpected(dummy.error());
+  std::optional<Buffer> scratch;
+  if (program.scratch_bytes > 0) {
+    auto buffer = Buffer::create(context_, memory_, program.scratch_bytes, MemoryUse::Device);
+    if (!buffer) return std::unexpected(buffer.error());
+    scratch = std::move(*buffer);
+  }
   std::vector<const Pipeline*> pipelines;
   std::uint32_t buffers = 0;
   for (const Dispatch& d : program.dispatches) {
@@ -461,6 +467,7 @@ std::expected<Measured, Refusal> Autotuner::measure_with(const ir::Graph& graph,
   const auto view = [&](const Binding& b) {
     if (b.kind == BindingKind::Tensor) return tensors.at(b.index).view();
     if (b.kind == BindingKind::Blob) return blobs[b.index].view();
+    if (b.kind == BindingKind::Scratch && scratch) return scratch->view();
     return dummy->view();
   };
 

@@ -320,7 +320,7 @@ bool enums_valid(const ArtifactData& a) {
   }
   for (const Dispatch& d : a.dispatches) {
     for (const Binding& b : d.bindings) {
-      if (b.kind > BindingKind::Dummy) return false;
+      if (b.kind > BindingKind::Scratch) return false;
     }
   }
   return true;

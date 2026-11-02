@@ -110,6 +110,11 @@ std::expected<void, Refusal> NetEngine::prepare(PipelineCache& pipelines) {
   const std::vector<std::byte> zeros(alignment, std::byte{0});
   if (auto ok = upload(context_, memory_, *dummy, 0, zeros); !ok) return std::unexpected(ok.error());
   dummy_ = std::move(*dummy);
+  if (program_.scratch_bytes > 0) {
+    auto scratch = Buffer::create(context_, memory_, program_.scratch_bytes, MemoryUse::Device);
+    if (!scratch) return std::unexpected(scratch.error());
+    scratch_ = std::move(*scratch);
+  }
 
   for (const Dispatch& d : program_.dispatches) {
     const std::span<const std::uint32_t> words = spirv::words(d.shader);
@@ -136,6 +141,9 @@ std::expected<BufferView, Refusal> NetEngine::resolve(const Binding& binding,
     case BindingKind::Dummy:
       if (!dummy_) return mismatch("tampon factice absent");
       return dummy_->view();
+    case BindingKind::Scratch:
+      if (!scratch_) return mismatch("tampon de travail absent");
+      return scratch_->view();
     case BindingKind::Blob: {
       if (binding.index >= blob_sizes_.size() || !blobs_)
         return mismatch(std::format("blob {} absent", binding.index));

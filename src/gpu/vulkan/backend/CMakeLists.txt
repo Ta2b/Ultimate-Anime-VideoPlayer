@@ -50,6 +50,7 @@ set(net_shaders
   "${shaders}/net_avg_pool.comp"
   "${shaders}/net_binary.comp"
   "${shaders}/net_conv.comp"
+  "${shaders}/net_conv_reduce.comp"
   "${shaders}/net_conv_transpose.comp"
   "${shaders}/net_copy.comp"
   "${shaders}/net_depth_space.comp"
