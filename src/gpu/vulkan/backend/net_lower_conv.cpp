@@ -46,6 +46,8 @@ constexpr std::string_view kMatrixAcc16 = "coopmat_acc16";  // sommes en float16
 constexpr std::string_view kMatrixFp8 = "coopmat_fp8";      // produits E4M3 × E4M3, sommes en float
 constexpr std::string_view kMatrixFp8Shader = "net_conv_coopmat_fp8_f16";
 constexpr std::string_view kWinograd = "winograd";             // F(2×2, 3×3)
+constexpr std::uint32_t kMaxSplit = 8;                         // tranches de K au plus (V1)
+constexpr std::uint64_t kSplitMaxPixels = 256 * 256;           // découpe de K proposée jusque-là
 constexpr std::string_view kWinogradPacked = "winograd_f16p";  // F(2×2, 3×3) en fp16 empaqueté
 constexpr std::uint32_t kMaxGroups = 65535;
 
@@ -356,6 +358,19 @@ std::expected<std::vector<KernelChoice>, Refusal> candidates(const ir::Graph& gr
       }
     }
   }
+  // Conv : découpe de K (V1, cinquième réglage) pour les petites sorties à beaucoup de canaux d'entrée, où la
+  // grille ne remplit pas l'appareil : chaque tranche d'au moins 8 canaux dans son groupe de travail, puis
+  // une passe qui somme les tranches. En fin de liste : l'autotuner seul la retient.
+  const std::uint64_t out_pixels =
+      static_cast<std::uint64_t>(result[2]) * static_cast<std::uint64_t>(result[3]);
+  const auto cin_g = static_cast<std::uint32_t>(
+      graph.tensors[node.inputs[0]].dims.size() == 4 ? graph.tensors[node.inputs[0]].dims[1] / groups : 0);
+  if (conv && out_pixels <= kSplitMaxPixels) {
+    for (const std::uint32_t split : {2U, 4U, 8U}) {
+      if (split > kMaxSplit || cin_g / split < 8) continue;
+      out.push_back({.variant = std::string(packed ? kPacked : kDirect), .tuning = {quads, 64, 1, 0, split}});
+    }
+  }
   // Conv 3 × 3 : Winograd, 2,25 fois moins de produits, pour les GPU sans unités matricielles
   // (Arc intégré, RDNA2, UHD) ; aux tailles de sous-groupe que l'appareil laisse choisir aussi
   // (Intel : SIMD8, SIMD16 ou SIMD32). Là où la variante coopmat convient, elle l'emporte : pas
@@ -457,14 +472,16 @@ std::expected<void, Refusal> Lowerer::conv(std::size_t index, const KernelChoice
   const bool winograd = choice.variant == kWinograd || choice.variant == kWinogradPacked;
   const bool packed = choice.variant == kPacked || choice.variant == kWinogradPacked;
   if ((!packed && !winograd && choice.variant != kDirect) || choice.tuning.size() < 2 ||
-      choice.tuning.size() > 4) {
+      choice.tuning.size() > 5) {
     return refuse_node(RefusalCode::InputMismatch, n, std::format("variante {} inconnue", choice.variant));
   }
   const std::uint32_t quads = choice.tuning[0];
   const std::uint32_t wg = choice.tuning[1];
-  const std::uint32_t pix = choice.tuning.size() >= 3 ? choice.tuning[2] : 1;  // pixels par invocation
-  const std::uint32_t sg = choice.tuning.size() == 4 ? choice.tuning[3] : 0;   // sous-groupe exigé
-  if (quads < 1 || quads > 8 || wg < 1 || wg > target_.max_workgroup_invocations || pix < 1 || pix > 4) {
+  const std::uint32_t pix = choice.tuning.size() >= 3 ? choice.tuning[2] : 1;    // pixels par invocation
+  const std::uint32_t sg = choice.tuning.size() >= 4 ? choice.tuning[3] : 0;     // sous-groupe exigé
+  const std::uint32_t split = choice.tuning.size() == 5 ? choice.tuning[4] : 1;  // tranches de K (V1)
+  if (quads < 1 || quads > 8 || wg < 1 || wg > target_.max_workgroup_invocations || pix < 1 || pix > 4 ||
+      split < 1 || split > kMaxSplit || (split > 1 && winograd)) {
     return refuse_node(RefusalCode::InputMismatch, n, "réglage hors de ses bornes");
   }
   if (sg != 0 && (sg < target_.subgroup_min || sg > target_.subgroup_max || wg % sg != 0)) {
@@ -523,7 +540,7 @@ std::expected<void, Refusal> Lowerer::conv(std::size_t index, const KernelChoice
   if (!name) return std::unexpected(name.error());
   if (packed) *name = "net_conv_f16p";
   if (winograd) *name = packed ? "net_conv_wino_f16p" : "net_conv_wino_f16";
-  const std::uint32_t z = x->desc.n * groups * blocks;
+  const std::uint32_t z = x->desc.n * groups * blocks * split;
   if (yc.h > kMaxGroups || z > kMaxGroups)
     return refuse_node(RefusalCode::ShapeInvalid, n, "trop de groupes");
 
@@ -543,9 +560,27 @@ std::expected<void, Refusal> Lowerer::conv(std::size_t index, const KernelChoice
                   .index = add_blob(channel_floats(constant_input(graph_, n, ir::kConvB), yc.c))};
   // Winograd : une tuile de 2 × 2 pixels par invocation.
   const std::uint32_t across = winograd ? div_up(yc.w, 2) : div_up(yc.w, pix);
-  emit(index, *name, std::move(constants), {x->binding, w, b, slope, residual, y->binding}, {},
-       {div_up(across, wg), winograd ? div_up(yc.h, 2) : yc.h, z});
+  if (winograd) {
+    emit(index, *name, std::move(constants), {x->binding, w, b, slope, residual, y->binding}, {},
+         {div_up(across, wg), div_up(yc.h, 2), z});
+    program_.dispatches.back().subgroup = sg;
+    return {};
+  }
+  // Découpe de K : les sommes partielles de chaque tranche dans le tampon de travail, puis leur somme et
+  // l'épilogue (net_conv_reduce), une invocation par valeur de sortie.
+  const Binding scratch = split > 1 ? Binding{.kind = BindingKind::Scratch} : Binding{};
+  constants.push_back(split);
+  std::vector<std::uint32_t> reduce_constants = constants;
+  emit(index, *name, std::move(constants), {x->binding, w, b, slope, residual, y->binding, scratch}, {},
+       {div_up(across, wg), yc.h, z});
   program_.dispatches.back().subgroup = sg;
+  if (split == 1) return {};
+  const std::uint64_t outputs = static_cast<std::uint64_t>(x->desc.n) * yc.c * yc.h * yc.w;
+  program_.scratch_bytes = std::max<std::uint64_t>(program_.scratch_bytes, outputs * split * 4);
+  auto reduce = shader("net_conv_reduce", tensors);
+  if (!reduce) return std::unexpected(reduce.error());
+  emit_linear(index, *reduce, std::move(reduce_constants),
+              {x->binding, scratch, b, slope, residual, y->binding}, {}, outputs);
   return {};
 }
 

@@ -128,6 +128,9 @@ TEST_CASE("Réseau : Conv directe, toutes géométries, toutes variantes", "[vk_
        .kernel = {4, 4},
        .attrs = {attr_ints("strides", {2, 2}), attr_string("auto_pad", "SAME_UPPER")}},
       {.cin = 6, .cout = 6, .h = 5, .w = 6, .attrs = {attr_ints("pads", {1, 1, 1, 1})}, .group = 6},
+      // Découpe de K (V1) : 40 canaux d'entrée en 2 ou 4 tranches, puis 2 groupes de 16 en 2 tranches.
+      {.n = 2, .cin = 40, .cout = 12, .h = 6, .w = 7, .attrs = {attr_ints("pads", {1, 1, 1, 1})}},
+      {.cin = 32, .cout = 8, .h = 5, .w = 9, .kernel = {1, 1}, .group = 2},
   };
   for (std::size_t k = 0; k < cases.size(); ++k) {
     INFO("cas " << k);
@@ -136,6 +139,24 @@ TEST_CASE("Réseau : Conv directe, toutes géométries, toutes variantes", "[vk_
     const std::vector<ir::NamedValue> inputs{
         {"x", test_values(ir::DataType::F32, {c.n, c.cin, c.h, c.w}, k)}};
     check_all_variants(rig, graph, inputs, kFp32);
+  }
+}
+
+TEST_CASE("Réseau : Conv découpée sur K, en float16 aussi", "[vk_backend][net][conv][split]") {
+  NetRig rig = make_net_rig();
+  const ConvCase c{.cin = 48, .cout = 16, .h = 6, .w = 10, .attrs = {attr_ints("pads", {1, 1, 1, 1})}};
+  for (const bool half : {false, true}) {
+    if (half && !rig.target.f16_storage) SKIP("pas de stockage 16 bits");
+    const ir::Graph graph = build(conv_model(c, half));
+    std::size_t splits = 0;
+    for (std::size_t k = 0; k < graph.nodes.size(); ++k) {
+      for (const auto& option : require_value(vk::net::candidates(graph, k, rig.target)))
+        if (option.tuning.size() == 5 && option.tuning[4] > 1) ++splits;
+    }
+    CHECK(splits >= 2);  // 2 et 4 tranches (48 canaux : 6 par tranche à 8, écartée)
+    const auto type = half ? ir::DataType::F16 : ir::DataType::F32;
+    const std::vector<ir::NamedValue> inputs{{"x", test_values(type, {c.n, c.cin, c.h, c.w}, 91)}};
+    check_all_variants(rig, graph, inputs, half ? kFp16 : kFp32);
   }
 }
 

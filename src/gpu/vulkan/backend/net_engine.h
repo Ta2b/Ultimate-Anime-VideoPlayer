@@ -135,6 +135,7 @@ class NetEngine {
   std::vector<VkDeviceSize> blob_sizes_;
   std::optional<Buffer> arena_;
   std::optional<Buffer> blobs_;
+  std::optional<Buffer> scratch_;  // Program::scratch_bytes
   std::optional<Buffer> dummy_;
   NetEngineOptions options_;
   bool profiling_ = false;

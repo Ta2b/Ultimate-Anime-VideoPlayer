@@ -19,9 +19,10 @@
 namespace ajp::gpu::vk::net {
 
 // Ce qu'un dispatch lie à un binding : un tenseur du graphe (entrée, sortie ou activation de
-// l'arène), un blob du programme, ou un petit tampon factice pour un binding que le shader
-// n'utilise pas.
-enum class BindingKind : std::uint8_t { Tensor, Blob, Dummy };
+// l'arène), un blob du programme, un petit tampon factice pour un binding que le shader
+// n'utilise pas, ou le tampon de travail du programme (Program::scratch_bytes : les sommes partielles de
+// la découpe de K, V1), partagé par tous ses dispatchs.
+enum class BindingKind : std::uint8_t { Tensor, Blob, Dummy, Scratch };
 
 struct Binding {
   BindingKind kind = BindingKind::Dummy;
@@ -52,6 +53,7 @@ struct Program {
   std::vector<Dispatch> dispatches;
   std::vector<std::vector<std::byte>> blobs;  // poids rangés, biais, constantes lues par les noyaux
   std::vector<ir::Alias> aliases;             // un par tenseur (net_alias.h), ou vide : aucun
+  std::uint64_t scratch_bytes = 0;            // tampon de travail (BindingKind::Scratch) ; 0 : aucun
 };
 
 // Ce que l'appareil permet aux noyaux.

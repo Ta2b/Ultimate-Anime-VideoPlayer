@@ -1,0 +1,41 @@
+#version 450
+// Découpe de K de la Conv directe (V1, net_conv.glsl avec SPLIT > 1) : la somme des SPLIT tranches
+// partielles d'une sortie, puis l'épilogue de la Conv (biais, arrondi FP8, résiduel, activation, porte de
+// SPAN, DepthToSpace fondu), comme net_conv.glsl l'applique sans découpe. Une invocation par valeur de
+// sortie (n, co, oy, ox) de la forme calculée. « _f16 » : tenseurs float16 permis.
+#extension GL_GOOGLE_include_directive : require
+#include "net_tensor.glsl"
+#include "net_activation.glsl"
+
+layout(local_size_x = 256) in;
+
+#include "net_conv_consts.glsl"
+
+AJP_NET_BUFFER(0, src, readonly)
+layout(std430, binding = 1) readonly buffer Partial { float v[]; } partial;
+layout(std430, binding = 2) readonly buffer Bias { float v[]; } bias;
+layout(std430, binding = 3) readonly buffer Slope { float v[]; } slope;
+AJP_NET_BUFFER(4, res, readonly)
+AJP_NET_BUFFER(5, dst, writeonly)
+
+void main() {
+  const uint total = N * COUT * HOUT * WOUT;
+  uint i = linear_invocation();
+  if (i >= total) return;
+  uint ox = i % WOUT;
+  uint oy = (i / WOUT) % HOUT;
+  uint co = (i / (WOUT * HOUT)) % COUT;
+  uint n = i / (WOUT * HOUT * COUT);
+  const TDesc xd = TDesc(N, CIN, HIN, WIN, LX, CXP);
+  const uint sb = SPACE > 1u ? SPACE : 1u;
+  const TDesc yd = TDesc(N, COUT / (sb * sb), HOUT * sb, WOUT * sb, LY, CYP);
+  const TDesc rd = TDesc(N, COUT, HOUT, WOUT, LR, CRP);
+  float v = 0.0;
+  for (uint s = 0u; s < SPLIT; ++s) v += partial.v[(((s * N + n) * COUT + co) * HOUT + oy) * WOUT + ox];
+  v += bias.v[co];
+  if (OUT_Q > 0.0) v = round_e4m3(v / OUT_Q) * OUT_Q;
+  if (RESIDUAL == 1u) v += AJP_LOAD(res, TR, t_index(rd, n, co, oy, ox));
+  v = net_activate(ACT, v, ALPHA, LO, HI, ACT == kActPrelu ? slope.v[co] : 0.0);
+  if (RESIDUAL == 2u) v *= AJP_LOAD(src, TX, t_index(xd, n, co, oy, ox)) + AJP_LOAD(res, TR, t_index(rd, n, co, oy, ox));
+  AJP_STORE(dst, TY, t_index_space(yd, sb, SPACE_CRD == 1u, n, co, oy, ox), v)
+}
