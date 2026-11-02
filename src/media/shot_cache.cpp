@@ -13,7 +13,8 @@
 namespace ajp::media {
 namespace {
 
-constexpr std::array<char, 8> kMagic{'A', 'J', 'P', 'S', 'H', 'O', 'T', '1'};
+// 2 : la lumière du plan (ShotMeta) ; un cache de version 1 se refait.
+constexpr std::array<char, 8> kMagic{'A', 'J', 'P', 'S', 'H', 'O', 'T', '2'};
 constexpr std::size_t kHeadBytes = 1 << 20;
 constexpr std::uint32_t kMaxShots = 200'000;
 constexpr const char* kExtension = ".shots";
@@ -48,6 +49,22 @@ bool take_stats(const std::string& in, std::size_t& at, ShotStats& s) {
   return take(in, at, s.mean) && take(in, at, s.p05) && take(in, at, s.p50) && take(in, at, s.p95) &&
          take(in, at, s.p995) && take(in, at, s.dark) && take(in, at, s.bright) && take(in, at, s.blue) &&
          take(in, at, s.chroma);
+}
+
+void put_meta(std::string& out, const ShotMeta& m) {
+  for (const float v : {m.apl_min_nits, m.apl_mean_nits, m.apl_max_nits, m.max_scl_nits}) put(out, v);
+  for (const float v : m.mean.maxrgb_nits) put(out, v);
+  for (const float v :
+       {m.mean.apl_nits, m.mean.maxrgb_mean_nits, m.mean.bright, m.mean.highlights, m.mean.skin})
+    put(out, v);
+}
+
+bool take_meta(const std::string& in, std::size_t& at, ShotMeta& m) {
+  bool ok = take(in, at, m.apl_min_nits) && take(in, at, m.apl_mean_nits) && take(in, at, m.apl_max_nits) &&
+            take(in, at, m.max_scl_nits);
+  for (float& v : m.mean.maxrgb_nits) ok = ok && take(in, at, v);
+  return ok && take(in, at, m.mean.apl_nits) && take(in, at, m.mean.maxrgb_mean_nits) &&
+         take(in, at, m.mean.bright) && take(in, at, m.mean.highlights) && take(in, at, m.mean.skin);
 }
 
 std::filesystem::path file_of(const std::filesystem::path& dir, const std::string& key) {
@@ -100,6 +117,7 @@ bool save_shot_cache(const std::filesystem::path& dir, const std::string& key, s
     put(out, shot.end_us);
     put_stats(out, shot.first);
     put_stats(out, shot.last);
+    put_meta(out, shot.meta);
     put(out, static_cast<std::uint8_t>((shot.fade ? 1 : 0) | (shot.cut_before ? 2 : 0)));
   }
   std::error_code ec;
@@ -135,7 +153,7 @@ std::optional<CachedShots> load_shot_cache(const std::filesystem::path& dir, con
   for (Shot& shot : shots) {
     std::uint8_t flags = 0;
     if (!take(in, at, shot.start_us) || !take(in, at, shot.end_us) || !take_stats(in, at, shot.first) ||
-        !take_stats(in, at, shot.last) || !take(in, at, flags))
+        !take_stats(in, at, shot.last) || !take_meta(in, at, shot.meta) || !take(in, at, flags))
       return std::nullopt;
     if (shot.end_us <= shot.start_us || shot.start_us < previous_end) return std::nullopt;
     previous_end = shot.end_us;

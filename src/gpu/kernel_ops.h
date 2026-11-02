@@ -316,6 +316,17 @@ class KernelOps {
     std::uint64_t total = 0;
   };
   virtual std::optional<DeviceMemory> device_memory() { return std::nullopt; }
+  // L'analyse d'une image RGB pour le grade (kernels/spec/frame_stats.h), lancée sans attente sur la voie
+  // courante ; frame_stats_take la relit quand le GPU l'a finie, sans jamais l'attendre (nullopt : pas
+  // encore). kPendingReadbacks analyses en vol au plus : un ticket dépassé est périmé (SequenceOrder).
+  virtual std::expected<std::uint64_t, Refusal> frame_stats_start(const Tensor& /*rgb*/,
+                                                                  kernels::FrameTransfer /*transfer*/) {
+    return std::unexpected(Refusal{RefusalCode::FormatUnsupported, "frame_stats : absent de ce backend"});
+  }
+  virtual std::expected<std::optional<kernels::FrameStats>, Refusal> frame_stats_take(
+      std::uint64_t /*ticket*/) {
+    return std::unexpected(Refusal{RefusalCode::FormatUnsupported, "frame_stats : absent de ce backend"});
+  }
   // Statistiques de luminance d'une image (0 à 1, pondération BT.709 des canaux) : moyenne, centiles et parts
   // de noir et de clair. La pré-analyse des plans les mesure (media/shot_cutter.h).
   struct SceneStats {

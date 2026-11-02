@@ -59,6 +59,34 @@ ShotStats average(std::span<const ShotFrame> frames) {
   return stats_of(histogram, mean / n, blue / n, chroma / n);
 }
 
+ShotMeta meta_of(std::span<const ShotFrame> frames) {
+  ShotMeta meta;
+  if (frames.empty()) return meta;
+  meta.apl_min_nits = frames.front().light.apl_nits;
+  ShotLight& m = meta.mean;
+  for (const ShotFrame& f : frames) {
+    const ShotLight& l = f.light;
+    meta.apl_min_nits = std::min(meta.apl_min_nits, l.apl_nits);
+    meta.apl_max_nits = std::max(meta.apl_max_nits, l.apl_nits);
+    meta.max_scl_nits = std::max(meta.max_scl_nits, l.maxrgb_nits.back());
+    for (std::size_t i = 0; i < m.maxrgb_nits.size(); ++i) m.maxrgb_nits.at(i) += l.maxrgb_nits.at(i);
+    m.apl_nits += l.apl_nits;
+    m.maxrgb_mean_nits += l.maxrgb_mean_nits;
+    m.bright += l.bright;
+    m.highlights += l.highlights;
+    m.skin += l.skin;
+  }
+  const auto n = static_cast<float>(frames.size());
+  for (float& v : m.maxrgb_nits) v /= n;
+  m.apl_nits /= n;
+  m.maxrgb_mean_nits /= n;
+  m.bright /= n;
+  m.highlights /= n;
+  m.skin /= n;
+  meta.apl_mean_nits = m.apl_nits;
+  return meta;
+}
+
 float median(std::vector<float> values) {
   if (values.empty()) return 0.0F;
   const auto mid = values.begin() + static_cast<std::ptrdiff_t>(values.size() / 2);
@@ -78,6 +106,23 @@ ShotStats stats_of(const std::array<float, kShotBins>& histogram, float mean, fl
                    .bright = share_beyond(histogram, 0.8F, false),
                    .blue = blue,
                    .chroma = chroma};
+}
+
+ShotFrame shot_frame_of(std::int64_t pts_us, const kernels::FrameStats& stats) {
+  ShotFrame out;
+  out.pts_us = pts_us;
+  out.histogram = stats.luma_hist;
+  out.grid = stats.zones;
+  out.mean = stats.mean;
+  out.blue = stats.blue;
+  out.chroma = stats.chroma;
+  out.light = ShotLight{.maxrgb_nits = stats.maxrgb_nits,
+                        .apl_nits = stats.apl_nits,
+                        .maxrgb_mean_nits = stats.maxrgb_mean_nits,
+                        .bright = stats.bright,
+                        .highlights = stats.highlights,
+                        .skin = stats.skin};
+  return out;
 }
 
 float frame_distance(const ShotFrame& a, const ShotFrame& b) {
@@ -142,6 +187,7 @@ std::optional<Shot> ShotCutter::close_shot(std::int64_t end_us) {
   shot.cut_before = first_shot_ ? starts_at_cut_ : true;
   first_shot_ = false;
   const std::span<const ShotFrame> all(frames_);
+  shot.meta = meta_of(all);
   if (frames_.size() >= 2 * kFadeFrames) {
     const std::size_t edge = std::max(frames_.size() / 6, std::size_t{4});
     const ShotStats first = average(all.first(edge));

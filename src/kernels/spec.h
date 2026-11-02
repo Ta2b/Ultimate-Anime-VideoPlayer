@@ -9,6 +9,7 @@
 #include "kernels/spec/color.h"        // IWYU pragma: export
 #include "kernels/spec/detect.h"       // IWYU pragma: export
 #include "kernels/spec/distil_drba.h"  // IWYU pragma: export
+#include "kernels/spec/frame_stats.h"  // IWYU pragma: export
 #include "kernels/spec/gmfss.h"        // IWYU pragma: export
 #include "kernels/spec/poses.h"        // IWYU pragma: export
 #include "kernels/spec/resample.h"     // IWYU pragma: export

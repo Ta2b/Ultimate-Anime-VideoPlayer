@@ -17,6 +17,7 @@
 #include "gpu/vulkan/compute/recording.h"
 #include "gpu/vulkan/compute/refuse.h"
 #include "gpu/vulkan/compute/weights.h"
+#include "kernels/spec/frame_stats.h"
 #include "kernels/spec/gmfss.h"
 #include "kernels/spec/resample.h"
 #include "kernels/spec/rife.h"
@@ -119,6 +120,9 @@ class KernelRunner {
                      const BufferView& worst, float levels);
   // Plus grand |déplacement| du mouvement dans sa fenêtre, en bits de float dans result[0].
   Done flow_max(Recorder& recorder, const MotionView& motion, const BufferView& result);
+  // L'analyse d'une image RGB pour le grade (kernels/spec/frame_stats.h) : counts reçoit FrameCounts.
+  Done frame_stats(Recorder& recorder, const TensorView& rgb, kernels::FrameTransfer transfer,
+                   const BufferView& counts);
 
   // Fonction de transfert ou conversion de primaires, pixel par pixel (ref transfer).
   Done transfer(Recorder& recorder, TransferOp op, const TensorView& src, const TensorView& dst,

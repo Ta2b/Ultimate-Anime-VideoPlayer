@@ -1,0 +1,229 @@
+#version 450
+// L'analyse d'une image pour le grade (gpu/kernel_ops.h, frame_stats_start) : la grille de points
+// de kernels/spec/frame_stats.h lue dans un tenseur RGB planaire, ses bandes noires, puis les comptes
+// de FrameCounts écrits dans counts (disposition de la structure, en uint32 et float). Un seul groupe
+// de 256 fils : 9 216 points, quelques lectures chacun.
+// Référence : kernels/ref/frame_stats.cpp.
+#extension GL_GOOGLE_include_directive : require
+#include "tensor.glsl"
+#include "ajp_kernels_spec.glsl"
+#include "common.glsl"
+
+layout(local_size_x = 256) in;
+
+layout(std430, binding = 0) readonly buffer Rgb { AJP_TENSOR v[]; } rgb;
+layout(std430, binding = 1) writeonly buffer Counts { uint v[]; } counts;
+
+layout(push_constant) uniform Push {
+  uint width;
+  uint height;
+  uint transfer;  // kernels::FrameTransfer : 0 SDR, 1 PQ, 2 HLG
+} pc;
+
+const uint GW = uint(AJP_FS_GRID_W);
+const uint GH = uint(AJP_FS_GRID_H);
+const uint LUMA_BINS = uint(AJP_FS_LUMA_BINS);
+const uint LINEAR_BINS = uint(AJP_FS_LINEAR_BINS);
+const uint ZONES = uint(AJP_FS_ZONES) * uint(AJP_FS_ZONES);
+// Places dans FrameCounts (kernels/spec/frame_stats.h), en mots de 4 octets.
+const uint AT_LUMA = 0u;
+const uint AT_MAXRGB = AT_LUMA + LUMA_BINS;
+const uint AT_I = AT_MAXRGB + LINEAR_BINS;
+const uint AT_ZONE_SUM = AT_I + LINEAR_BINS;
+const uint AT_ZONE_COUNT = AT_ZONE_SUM + ZONES;
+const uint AT_POINTS = AT_ZONE_COUNT + ZONES;
+const uint AT_SUMS = AT_POINTS + 4u;  // points, bright, highlights, skin
+const uint AT_FRAME = AT_SUMS + 5u;   // luma, blue, chroma, nits, maxrgb
+const uint SUMS = 5u + ZONES;
+
+shared uint column_max[GW];
+shared uint row_max[GH];
+shared uint frame[4];
+shared uint hist_luma[LUMA_BINS];
+shared uint hist_maxrgb[LINEAR_BINS];
+shared uint hist_i[LINEAR_BINS];
+shared uint zone_count[ZONES];
+shared uint tallies[4];
+shared float reduce[256];
+
+float unit(float v) {
+  return v > 0.0 ? min(v, 1.0) : 0.0;  // NaN compris
+}
+
+vec3 encoded(uint gx, uint gy) {
+  uint sx = min((2u * gx + 1u) * pc.width / (2u * GW), pc.width - 1u);
+  uint sy = min((2u * gy + 1u) * pc.height / (2u * GH), pc.height - 1u);
+  uint plane = pc.width * pc.height;
+  uint i = sy * pc.width + sx;
+  return vec3(unit(float(rgb.v[i])), unit(float(rgb.v[plane + i])), unit(float(rgb.v[2u * plane + i])));
+}
+
+float luma_of(vec3 e) {
+  precise float y = 0.2126 * e.r + 0.7152 * e.g + 0.0722 * e.b;
+  return y;
+}
+
+float pq_eotf(float signal) {
+  precise float p = pow(bounded(signal, 0.0, 1.0), 1.0 / AJP_PQ_M2);
+  precise float y = pow(max(p - AJP_PQ_C1, 0.0) / (AJP_PQ_C2 - AJP_PQ_C3 * p), 1.0 / AJP_PQ_M1);
+  return y * AJP_PQ_PEAK_NITS;
+}
+
+float pq_inverse_eotf(float nits) {
+  precise float ym = pow(bounded(nits, 0.0, AJP_PQ_PEAK_NITS) / AJP_PQ_PEAK_NITS, AJP_PQ_M1);
+  precise float e = pow((AJP_PQ_C1 + AJP_PQ_C2 * ym) / (1.0 + AJP_PQ_C3 * ym), AJP_PQ_M2);
+  return e;
+}
+
+float hlg_inverse_oetf(float v) {
+  if (v <= 0.5) {
+    precise float low = v * v / 3.0;
+    return low;
+  }
+  precise float high = (exp((v - AJP_HLG_C) / AJP_HLG_A) + AJP_HLG_B) / 12.0;
+  return high;
+}
+
+// frame_nits (kernels/ref/frame_stats.cpp) : le signal en cd/m², dans les primaires de la source.
+vec3 nits_of(vec3 e) {
+  if (pc.transfer == 1u) return vec3(pq_eotf(e.r), pq_eotf(e.g), pq_eotf(e.b));
+  if (pc.transfer == 2u) {
+    vec3 scene = vec3(hlg_inverse_oetf(e.r), hlg_inverse_oetf(e.g), hlg_inverse_oetf(e.b));
+    precise float ys = AJP_KR_BT2020 * scene.r + (1.0 - AJP_KR_BT2020 - AJP_KB_BT2020) * scene.g +
+                       AJP_KB_BT2020 * scene.b;
+    precise float gain = ys > 0.0 ? AJP_FS_HLG_PEAK_NITS * pow(ys, AJP_HLG_GAMMA_AT_1000 - 1.0) : 0.0;
+    return gain * scene;
+  }
+  return vec3(pow(e.r, AJP_BT1886_GAMMA), pow(e.g, AJP_BT1886_GAMMA), pow(e.b, AJP_BT1886_GAMMA)) *
+         AJP_FS_SDR_WHITE_NITS;
+}
+
+float maxrgb_of(uint gx, uint gy) {
+  vec3 n = nits_of(encoded(gx, gy));
+  return max(max(n.r, n.g), n.b);
+}
+
+float ictcp_i(vec3 n) {
+  precise float l = (1688.0 * n.r + 2146.0 * n.g + 262.0 * n.b) / 4096.0;
+  precise float m = (683.0 * n.r + 2951.0 * n.g + 462.0 * n.b) / 4096.0;
+  precise float i = 0.5 * pq_inverse_eotf(l) + 0.5 * pq_inverse_eotf(m);
+  return i;
+}
+
+uint bin_of(float v, uint bins) {
+  return min(uint(unit(v) * float(bins)), bins - 1u);
+}
+
+bool is_skin(vec3 e) {
+  if (!(e.r > e.g && e.g > e.b && e.r >= AJP_FS_SKIN_MIN_RED)) return false;
+  float span = e.r - e.b;
+  float hue = (e.g - e.b) / span;
+  float sat = span / e.r;
+  return hue >= AJP_FS_SKIN_HUE_LO && hue <= AJP_FS_SKIN_HUE_HI && sat >= AJP_FS_SKIN_SAT_LO &&
+         sat <= AJP_FS_SKIN_SAT_HI;
+}
+
+// La somme des valeurs de tous les fils, rendue à tous.
+float total(float mine) {
+  uint tid = gl_LocalInvocationIndex;
+  reduce[tid] = mine;
+  barrier();
+  for (uint step = 128u; step > 0u; step >>= 1u) {
+    if (tid < step) reduce[tid] += reduce[tid + step];
+    barrier();
+  }
+  float sum = reduce[0];
+  barrier();
+  return sum;
+}
+
+void main() {
+  uint tid = gl_LocalInvocationIndex;
+  for (uint i = tid; i < GW; i += 256u) column_max[i] = 0u;
+  for (uint i = tid; i < GH; i += 256u) row_max[i] = 0u;
+  for (uint i = tid; i < LUMA_BINS; i += 256u) hist_luma[i] = 0u;
+  for (uint i = tid; i < LINEAR_BINS; i += 256u) {
+    hist_maxrgb[i] = 0u;
+    hist_i[i] = 0u;
+  }
+  if (tid < ZONES) zone_count[tid] = 0u;
+  if (tid < 4u) tallies[tid] = 0u;
+  barrier();
+  // Luma de chaque colonne et ligne : un float positif se compare comme ses bits.
+  for (uint p = tid; p < GW * GH; p += 256u) {
+    uint gx = p % GW, gy = p / GW;
+    uint bits = floatBitsToUint(luma_of(encoded(gx, gy)));
+    atomicMax(column_max[gx], bits);
+    atomicMax(row_max[gy], bits);
+  }
+  barrier();
+  if (tid == 0u) {
+    uint x0 = 0u, x1 = GW, y0 = 0u, y1 = GH;
+    while (x0 < GW && uintBitsToFloat(column_max[x0]) < AJP_FS_BAR_LUMA) ++x0;
+    while (x1 > x0 && uintBitsToFloat(column_max[x1 - 1u]) < AJP_FS_BAR_LUMA) --x1;
+    while (y0 < GH && uintBitsToFloat(row_max[y0]) < AJP_FS_BAR_LUMA) ++y0;
+    while (y1 > y0 && uintBitsToFloat(row_max[y1 - 1u]) < AJP_FS_BAR_LUMA) --y1;
+    if (x1 - x0 < GW / 4u || y1 - y0 < GH / 4u) {
+      x0 = 0u, x1 = GW, y0 = 0u, y1 = GH;
+    }
+    frame[0] = x0, frame[1] = x1, frame[2] = y0, frame[3] = y1;
+  }
+  barrier();
+  uint x0 = frame[0], x1 = frame[1], y0 = frame[2], y1 = frame[3];
+  uint fw = x1 - x0, fh = y1 - y0;
+  bool sdr = pc.transfer == 0u;
+  float kr = sdr ? AJP_KR_BT709 : AJP_KR_BT2020;
+  float kb = sdr ? AJP_KB_BT709 : AJP_KB_BT2020;
+  float sums[SUMS];
+  for (uint s = 0u; s < SUMS; ++s) sums[s] = 0.0;
+  for (uint p = tid; p < fw * fh; p += 256u) {
+    uint gx = x0 + p % fw, gy = y0 + p / fw;
+    vec3 e = encoded(gx, gy);
+    float luma = luma_of(e);
+    vec3 n = nits_of(e);
+    float maxrgb = max(max(n.r, n.g), n.b);
+    vec3 n2020 = sdr ? AJP_BT709_TO_BT2020 * n : n;
+    atomicAdd(hist_luma[bin_of(luma, LUMA_BINS)], 1u);
+    float code = pc.transfer == 1u ? max(max(e.r, e.g), e.b) : pq_inverse_eotf(maxrgb);
+    atomicAdd(hist_maxrgb[bin_of(code, LINEAR_BINS)], 1u);
+    atomicAdd(hist_i[bin_of(ictcp_i(n2020), LINEAR_BINS)], 1u);
+    uint zone = ((gy - y0) * uint(AJP_FS_ZONES) / fh) * uint(AJP_FS_ZONES) + (gx - x0) * uint(AJP_FS_ZONES) / fw;
+    atomicAdd(zone_count[zone], 1u);
+    sums[5u + zone] += luma;
+    atomicAdd(tallies[0], 1u);
+    if (maxrgb > AJP_FS_BRIGHT_NITS) {
+      atomicAdd(tallies[1], 1u);
+      float around = 0.0;
+      for (int dy = -1; dy <= 1; ++dy) {
+        for (int dx = -1; dx <= 1; ++dx) {
+          if (dx == 0 && dy == 0) continue;
+          uint nx = uint(clamp(int(gx) + dx, int(x0), int(x1) - 1));
+          uint ny = uint(clamp(int(gy) + dy, int(y0), int(y1) - 1));
+          around += maxrgb_of(nx, ny);
+        }
+      }
+      if (maxrgb >= AJP_FS_ISOLATED_RATIO * (around / 8.0)) atomicAdd(tallies[2], 1u);
+    }
+    if (is_skin(e)) atomicAdd(tallies[3], 1u);
+    sums[0] += luma;
+    sums[1] += max(0.0, e.b - max(e.r, e.g));
+    sums[2] += max(max(e.r, e.g), e.b) - min(min(e.r, e.g), e.b);
+    sums[3] += kr * n.r + (1.0 - kr - kb) * n.g + kb * n.b;
+    sums[4] += maxrgb;
+  }
+  float totals[SUMS];
+  for (uint s = 0u; s < SUMS; ++s) totals[s] = total(sums[s]);
+  barrier();
+  for (uint i = tid; i < LUMA_BINS; i += 256u) counts.v[AT_LUMA + i] = hist_luma[i];
+  for (uint i = tid; i < LINEAR_BINS; i += 256u) {
+    counts.v[AT_MAXRGB + i] = hist_maxrgb[i];
+    counts.v[AT_I + i] = hist_i[i];
+  }
+  if (tid < ZONES) {
+    counts.v[AT_ZONE_SUM + tid] = floatBitsToUint(totals[5u + tid]);
+    counts.v[AT_ZONE_COUNT + tid] = zone_count[tid];
+  }
+  if (tid < 4u) counts.v[AT_POINTS + tid] = tallies[tid];
+  if (tid < 5u) counts.v[AT_SUMS + tid] = floatBitsToUint(totals[tid]);
+  if (tid < 4u) counts.v[AT_FRAME + tid] = frame[tid];
+}

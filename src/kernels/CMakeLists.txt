@@ -1,12 +1,14 @@
 # kernels : spécification des noyaux (spec.h) et référence CPU FP32 (ref/), vérité des ports
-# CUDA, GLSL et Metal. La référence sert aux tests et aux goldens ; seul le demi-flottant de ref/half.h est lié à un binaire
-# livré (gpu_ir, qui l'utilise pour arrondir comme les noyaux).
+# CUDA, GLSL et Metal. La référence sert aux tests et aux goldens ; seuls le demi-flottant de ref/half.h (gpu_ir,
+# qui l'utilise pour arrondir comme les noyaux) et l'analyse d'image de ref/frame_stats.h (la pré-analyse des
+# plans, et les mesures tirées des comptes du noyau) sont liés à un binaire livré.
 # Feuille du graphe : ne dépend de rien.
 ajp_add_module(kernels
   SOURCES
     glsl.cpp
     ref/color.cpp
     ref/detect.cpp
+    ref/frame_stats.cpp
     ref/half.cpp
     ref/resample.cpp
     ref/gmfss.cpp

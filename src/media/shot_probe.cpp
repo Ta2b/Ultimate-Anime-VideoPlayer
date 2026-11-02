@@ -10,6 +10,7 @@
 
 #include "core/thread.h"
 #include "core/thread_role.h"
+#include "kernels/ref/frame_stats.h"
 #include "media/demuxer.h"
 #include "media/log.h"
 #include "media/video_decoder.h"
@@ -18,33 +19,23 @@
 namespace ajp::media {
 namespace {
 
-constexpr int kGridW = 128;
-constexpr int kGridH = 72;
-constexpr float kBarLuma = 0.03F;  // une ligne ou une colonne plus sombre partout : une bande noire
-
 std::unexpected<Refusal> refuse(RefusalCode code, std::string detail) {
   return std::unexpected(Refusal{code, std::move(detail)});
 }
 
-struct Point {
-  float luma = 0.0F;
-  float blue = 0.0F;
-  float chroma = 0.0F;
-};
-
 }  // namespace
 
 std::expected<ShotFrame, Refusal> measure_frame(const DecodedFrame& frame) {
-  if (yuv::is_hdr(frame.color))
-    return refuse(RefusalCode::FormatUnsupported, "vidéo HDR : pas de pré-analyse");
+  namespace fs = kernels::frame_stats;
   const std::optional<yuv::Layout> layout = yuv::layout_of(frame.format);
   if (!layout) return refuse(RefusalCode::FormatUnsupported, "format de pixel non pris par la pré-analyse");
   if (frame.data == nullptr || frame.data->memory() != FrameMemory::Host)
     return refuse(RefusalCode::FormatUnsupported, "image décodée hors de la mémoire hôte");
   if (frame.width < 2 || frame.height < 2) return refuse(RefusalCode::FormatUnsupported, "image trop petite");
   const bool bt601 = frame.color.matrix == ColorMatrix::Bt601;
-  const double kr = bt601 ? 0.299 : 0.2126;
-  const double kb = bt601 ? 0.114 : 0.0722;
+  const bool bt2020 = frame.color.matrix == ColorMatrix::Bt2020Ncl;
+  const double kr = bt601 ? 0.299 : bt2020 ? 0.2627 : 0.2126;
+  const double kb = bt601 ? 0.114 : bt2020 ? 0.0593 : 0.0722;
   const double kg = 1.0 - kr - kb;
   const bool full = frame.color.range == ColorRange::Full;
   const double scale = std::ldexp(1.0, layout->bits - 8);
@@ -62,14 +53,13 @@ std::expected<ShotFrame, Refusal> measure_frame(const DecodedFrame& frame) {
     v_plane = frame.data->host_plane(2);
     v_stride = frame.data->host_stride(2);
   }
-
-  std::vector<Point> points(static_cast<std::size_t>(kGridW) * kGridH);
-  std::array<float, kGridW> column_max{};
-  std::array<float, kGridH> row_max{};
-  for (int gy = 0; gy < kGridH; ++gy) {
-    const int sy = std::min((2 * gy + 1) * frame.height / (2 * kGridH), frame.height - 1);
-    for (int gx = 0; gx < kGridW; ++gx) {
-      const int sx = std::min((2 * gx + 1) * frame.width / (2 * kGridW), frame.width - 1);
+  // Les points de la grille de l'analyse (kernels/spec/frame_stats.h), convertis en R'G'B' : la
+  // référence lit alors chaque point de cette image à sa place.
+  kernels::RgbImage rgb(fs::kGridW, fs::kGridH);
+  for (int gy = 0; gy < fs::kGridH; ++gy) {
+    const int sy = std::min((2 * gy + 1) * frame.height / (2 * fs::kGridH), frame.height - 1);
+    for (int gx = 0; gx < fs::kGridW; ++gx) {
+      const int sx = std::min((2 * gx + 1) * frame.width / (2 * fs::kGridW), frame.width - 1);
       const double yy = (yuv::sample(luma_plane, luma_stride, sx, sy, *layout) - y_off) / y_range;
       double cb = 0.0, cr = 0.0;
       if (layout->semi_planar) {
@@ -84,54 +74,18 @@ std::expected<ShotFrame, Refusal> measure_frame(const DecodedFrame& frame) {
       const double r = std::clamp(yy + 2.0 * (1.0 - kr) * cr, 0.0, 1.0);
       const double b = std::clamp(yy + 2.0 * (1.0 - kb) * cb, 0.0, 1.0);
       const double g = std::clamp((yy - kr * r - kb * b) / kg, 0.0, 1.0);
-      // Pondération BT.709 des canaux encodés (gpu::KernelOps::SceneStats).
-      const auto luma = static_cast<float>(0.2126 * r + 0.7152 * g + 0.0722 * b);
-      const double hi = std::max({r, g, b}), lo = std::min({r, g, b});
-      Point& p = points.at(static_cast<std::size_t>(gy) * kGridW + static_cast<std::size_t>(gx));
-      p = Point{.luma = luma,
-                .blue = static_cast<float>(std::max(0.0, b - std::max(r, g))),
-                .chroma = static_cast<float>(hi - lo)};
-      column_max.at(static_cast<std::size_t>(gx)) =
-          std::max(column_max.at(static_cast<std::size_t>(gx)), luma);
-      row_max.at(static_cast<std::size_t>(gy)) = std::max(row_max.at(static_cast<std::size_t>(gy)), luma);
+      rgb.planes[0].at(gx, gy) = static_cast<float>(r);
+      rgb.planes[1].at(gx, gy) = static_cast<float>(g);
+      rgb.planes[2].at(gx, gy) = static_cast<float>(b);
     }
   }
-  // Bandes noires : les lignes et colonnes sombres partout, depuis chaque bord. Une image toute noire garde
-  // tout (un fondu au noir se mesure).
-  int x0 = 0, x1 = kGridW, y0 = 0, y1 = kGridH;
-  while (x0 < kGridW && column_max.at(static_cast<std::size_t>(x0)) < kBarLuma) ++x0;
-  while (x1 > x0 && column_max.at(static_cast<std::size_t>(x1 - 1)) < kBarLuma) --x1;
-  while (y0 < kGridH && row_max.at(static_cast<std::size_t>(y0)) < kBarLuma) ++y0;
-  while (y1 > y0 && row_max.at(static_cast<std::size_t>(y1 - 1)) < kBarLuma) --y1;
-  if (x1 - x0 < kGridW / 4 || y1 - y0 < kGridH / 4) {
-    x0 = 0, x1 = kGridW, y0 = 0, y1 = kGridH;
-  }
-
-  ShotFrame out;
-  out.pts_us = frame.pts_us;
-  std::array<float, kShotGrid * kShotGrid> grid_count{};
-  double sum = 0.0, blue = 0.0, chroma = 0.0;
-  for (int gy = y0; gy < y1; ++gy) {
-    for (int gx = x0; gx < x1; ++gx) {
-      const Point& p = points.at(static_cast<std::size_t>(gy) * kGridW + static_cast<std::size_t>(gx));
-      const int bin = std::clamp(static_cast<int>(p.luma * static_cast<float>(kShotBins)), 0, kShotBins - 1);
-      out.histogram.at(static_cast<std::size_t>(bin)) += 1.0F;
-      const int cx = (gx - x0) * kShotGrid / (x1 - x0), cy = (gy - y0) * kShotGrid / (y1 - y0);
-      const auto cell = static_cast<std::size_t>(cy * kShotGrid + cx);
-      out.grid.at(cell) += p.luma;
-      grid_count.at(cell) += 1.0F;
-      sum += p.luma;
-      blue += p.blue;
-      chroma += p.chroma;
-    }
-  }
-  const auto n = static_cast<float>((x1 - x0) * (y1 - y0));
-  for (float& part : out.histogram) part /= n;
-  for (std::size_t i = 0; i < out.grid.size(); ++i) out.grid.at(i) /= std::max(grid_count.at(i), 1.0F);
-  out.mean = static_cast<float>(sum) / n;
-  out.blue = static_cast<float>(blue) / n;
-  out.chroma = static_cast<float>(chroma) / n;
-  return out;
+  const kernels::FrameTransfer transfer = frame.color.transfer == Transfer::Pq ? kernels::FrameTransfer::Pq
+                                          : frame.color.transfer == Transfer::Hlg
+                                              ? kernels::FrameTransfer::Hlg
+                                              : kernels::FrameTransfer::Sdr;
+  auto counts = kernels::ref::frame_counts(rgb, transfer);
+  if (!counts) return refuse(RefusalCode::FormatUnsupported, counts.error().detail);
+  return shot_frame_of(frame.pts_us, kernels::ref::frame_stats_of(*counts));
 }
 
 ShotProbe::ShotProbe(std::filesystem::path file, ShotTimeline& timeline, ShotProbeOptions options)

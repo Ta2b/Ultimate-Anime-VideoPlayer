@@ -218,6 +218,34 @@ std::expected<void, Refusal> UpscaleStage::allocate() {
   return {};
 }
 
+void UpscaleStage::analyze_source(const DecodedFrame& frame) {
+  if (!frame_stats_ || !setup_.live) return;
+  gpu::KernelOps& ops = *setup_.backend->kernels();
+  // Les analyses finies passent aux scènes, dans l'ordre ; une analyse refusée coupe l'analyse.
+  while (!stats_pending_.empty()) {
+    auto taken = ops.frame_stats_take(stats_pending_.front().ticket);
+    if (!taken) {
+      stats_pending_.erase(stats_pending_.begin());
+      continue;
+    }
+    if (!*taken) break;
+    setup_.live->scenes().push(stats_pending_.front().pts_us, **taken);
+    stats_pending_.erase(stats_pending_.begin());
+  }
+  if (stats_pending_.size() >= gpu::kPendingReadbacks) stats_pending_.erase(stats_pending_.begin());
+  const kernels::FrameTransfer transfer = frame.color.transfer == Transfer::Pq ? kernels::FrameTransfer::Pq
+                                          : frame.color.transfer == Transfer::Hlg
+                                              ? kernels::FrameTransfer::Hlg
+                                              : kernels::FrameTransfer::Sdr;
+  auto ticket = ops.frame_stats_start(rgb_[current_]->tensor(), transfer);
+  if (!ticket) {
+    frame_stats_ = false;
+    stats_pending_.clear();
+    return;
+  }
+  stats_pending_.push_back({.ticket = *ticket, .pts_us = frame.pts_us});
+}
+
 std::expected<std::uint32_t, Refusal> UpscaleStage::outputs(const DecodedFrame& frame) {
   if (frame.width != setup_.source_width || frame.height != setup_.source_height) {
     return refuse(RefusalCode::ShapeInvalid,
@@ -239,6 +267,7 @@ std::expected<std::uint32_t, Refusal> UpscaleStage::outputs(const DecodedFrame& 
     if (!debanded) return std::unexpected(std::move(debanded.error()));
     debanded_ = *debanded;
   }
+  analyze_source(frame);
   if (small_[current_] && !ingested) {  // l'image de RIFE, réduite par Area
     if (auto ok = ops.ingest(frame, gpu::IngestSpec{}, small_[current_]->tensor()); !ok)
       return std::unexpected(std::move(ok.error()));

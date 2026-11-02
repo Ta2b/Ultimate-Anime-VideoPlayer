@@ -191,6 +191,15 @@ class UpscaleStage final : public RingStage {
   };
   Ahead ahead_;
   bool ahead_scores_ = true;  // faux si le backend n'a pas scores_start
+  // L'analyse des images sources pour le grade (frame_stats_start), relue sans attente vers
+  // LiveSettings::scenes ; faux si le backend ne la sait pas.
+  bool frame_stats_ = true;
+  struct PendingStats {
+    std::uint64_t ticket = 0;
+    std::int64_t pts_us = 0;
+  };
+  std::vector<PendingStats> stats_pending_;
+  void analyze_source(const DecodedFrame& frame);
   bool looks_ahead() const { return interpolates() && !drba(); }
   // Retard mesuré des images de sortie (FrameLatency) ; 0 sans mesure.
   std::int64_t latency_us() const { return setup_.live ? setup_.live->latency().us() : 0; }
