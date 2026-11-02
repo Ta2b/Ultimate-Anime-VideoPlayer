@@ -612,9 +612,9 @@ PlaySettings with_calibrated_grade(PlaySettings settings, std::string_view displ
   const PlaySettings::DisplayGrade* grade = calibrated_grade(settings, display);
   render::GradeSettings& g = settings.grade_values;
   // Le grade adaptatif n'existe qu'avec un profil de calibration de l'écran : sans profil (le dernier vient
-  // d'être supprimé, ou l'écran n'a jamais été calibré), il se coupe. Une calibration en cours (scène
-  // forcée) le garde : son profil n'est écrit qu'à la fin.
-  if (grade == nullptr && g.adaptive_force < 0.0) g.adaptive = false;
+  // d'être supprimé, ou l'écran n'a jamais été calibré), il se coupe. Une calibration en cours le
+  // garde : son profil n'est écrit qu'à la fin.
+  if (grade == nullptr && !render::grade_limits::calibrating(g.adaptive_force)) g.adaptive = false;
   if (grade == nullptr || !settings.grade || !g.adaptive) return settings;
   settings.true_hdr_gray = grade->gray;
   g.shadows = grade->shadows;

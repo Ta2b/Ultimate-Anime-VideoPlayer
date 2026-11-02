@@ -53,6 +53,9 @@ struct AdaptiveScene {
   double t = 0.0;     // sombre (0) à claire (1)
   double glow = 0.0;  // sombre avec éclat
   double tv = 0.0;    // ciel bleu saturé, flash coloré
+  // Ce que l'apprentissage retient de la scène (grade_learning.h : LearnScene), pour la calibration.
+  double x = 0.0;
+  double glow_seen = 0.0;
   int corrections = 0;
   int approvals = 0;
   friend bool operator==(const AdaptiveScene&, const AdaptiveScene&) = default;

@@ -57,6 +57,12 @@ inline constexpr core::Range<double> kAdaptiveLuma{1.0, 99.0};
 inline constexpr core::Range<double> kAblNits{20.0, 2000.0};
 // GradeSettings::adaptive_force : les bouts de la courbe que la calibration tient.
 inline constexpr double kForceGlow = 2.0;
+// La calibration en cours, sans scène forcée : chaque plan à sa vraie place
+// (app/play/settings_calibration.h).
+inline constexpr double kCalibratingLive = -2.0;
+constexpr bool calibrating(double force) {
+  return force >= 0.0 || force < -1.5;
+}
 constexpr bool forced_bright(double force) {
   return force >= 0.5 && force < 1.5;
 }
