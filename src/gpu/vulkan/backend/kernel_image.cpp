@@ -114,7 +114,7 @@ std::expected<YuvPlanes, Refusal> VulkanKernelOps::plane_views_for(VkImage image
 void VulkanKernelOps::release_plane_views() {
   if (plane_views_.empty()) return;
   // Un GPU bloqué garde les vues : elles fuient plutôt que d'être rendues sous une lecture.
-  if (!context_.settle(queue_.last())) {
+  if (!context_.settle(queue_.lasts())) {
     plane_views_.clear();
     return;
   }
@@ -165,13 +165,17 @@ void VulkanKernelOps::copy_image(VkCommandBuffer cb, const Source& src) const {
 
 Done VulkanKernelOps::prepare_image(Recorder& r, const Source& src) const {
   if (!src.access) return {};
-  return r.commands([&](VkCommandBuffer cb) {
-    if (src.planes) {
-      enter_image(cb, src);
-    } else {
-      copy_image(cb, src);
-    }
-  });
+  // Écrit l'image (sa disposition) et, copiée, son tampon d'accueil.
+  const std::array<BufferView, 1> staging{src.view.buffer};
+  return r.commands(
+      [&](VkCommandBuffer cb) {
+        if (src.planes) {
+          enter_image(cb, src);
+        } else {
+          copy_image(cb, src);
+        }
+      },
+      src.planes ? std::span<const BufferView>{} : std::span<const BufferView>(staging), true);
 }
 
 }  // namespace ajp::gpu::vk

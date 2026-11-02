@@ -117,13 +117,27 @@ bool Recorder::depends(std::span<const BufferView> buffers, bool images, std::ui
   return false;
 }
 
+namespace {
+
+void note(std::vector<std::uintptr_t>& list, std::uintptr_t key) {
+  if (std::ranges::find(list, key) == list.end()) list.push_back(key);
+}
+
+std::uintptr_t key_of(VkBuffer buffer) {
+  return reinterpret_cast<std::uintptr_t>(buffer);  // NOLINT(cppcoreguidelines-pro-type-reinterpret-cast)
+}
+
+}  // namespace
+
 void Recorder::touch(std::span<const BufferView> buffers, bool images, std::uint64_t writes) {
   for (std::size_t i = 0; i < buffers.size(); ++i) {
     const BufferView& view = buffers[i];
-    touched_.push_back(
-        {.buffer = view.buffer, .offset = view.offset, .size = view.size, .write = written(writes, i)});
+    const bool write = written(writes, i);
+    touched_.push_back({.buffer = view.buffer, .offset = view.offset, .size = view.size, .write = write});
+    note(write ? recording_->writes_ : recording_->reads_, key_of(view.buffer));
   }
   touched_images_ = touched_images_ || images;
+  if (images) note(recording_->writes_, Recording::kImageAccess);
 }
 
 void Recorder::barrier() {
@@ -243,6 +257,18 @@ Done Recorder::commands(const std::function<void(VkCommandBuffer)>& record) {
   barrier();
   record(recording_->command_buffer_);
   touched_all_ = true;
+  recording_->unknown_access_ = true;
+  return {};
+}
+
+Done Recorder::commands(const std::function<void(VkCommandBuffer)>& record,
+                        std::span<const BufferView> writes, bool images) {
+  if (auto ok = open(); !ok) return ok;
+  barrier();
+  record(recording_->command_buffer_);
+  touched_all_ = true;
+  for (const BufferView& view : writes) note(recording_->writes_, key_of(view.buffer));
+  if (images) note(recording_->writes_, Recording::kImageAccess);
   return {};
 }
 

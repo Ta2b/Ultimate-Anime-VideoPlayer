@@ -92,6 +92,9 @@ struct VulkanDevice {
   std::vector<QueueFamily> families;  // seulement celles où des files ont été créées
   QueueRef graphics;
   QueueRef compute;
+  // Files créées et libres qui suivent compute.index dans sa famille (voies de calcul en plus,
+  // sans verrou) ; 0 quand leur existence n'est pas garantie.
+  std::uint32_t compute_lanes = 0;
   std::optional<QueueRef> video_decode;  // absente : pas de décodage Vulkan partagé
   QueueLock lock_queue = nullptr;        // nullptr : files non partagées, aucun verrou
   QueueLock unlock_queue = nullptr;

@@ -319,3 +319,41 @@ TEST_CASE("KernelOps : mesure d'une paire relue sans attente", "[vk_backend][ker
   (void)ops.previous_scores();
   CHECK(dynamic_cast<vk::VulkanKernelOps&>(ops).retained_frames() == 0);
 }
+
+TEST_CASE("Voies : les dépendances d'une voie à l'autre se déduisent des tampons", "[vk_backend][kernels]") {
+  // Un appareil à une file (lavapipe) : les voies en plus reprennent la file principale, mais
+  // chacune a sa timeline et ses attentes, que la couche de validation vérifie.
+  TempDir dir("voies");
+  auto backend = make_backend(dir.path(), {.alias_lanes = true});
+  REQUIRE(backend->capabilities().lanes == 3);
+  KernelOps& ops = *backend->kernels();
+  const k::RgbImage image = stored(synthetic_rgb(40, 24, 9), TensorType::F32);
+  auto in = rgb_tensor(*backend, 40, 24, TensorType::F32);
+  auto half = rgb_tensor(*backend, 20, 12, TensorType::F32);
+  auto other = rgb_tensor(*backend, 20, 12, TensorType::F32);
+  write_tensor(*backend, in->tensor(), rgb_bytes(image, TensorType::F32));
+  const auto want = k::ref::resize(image, 20, 12, k::Filter::Area);
+  REQUIRE(want);
+  for (int round = 0; round < 3; ++round) {
+    // Écrit sur une voie, lu sur une autre, réécrit sur une troisième pendant qu'on le lit.
+    backend->use_lane(Lane::Upscale);
+    require_ok(ops.fill(half->tensor(), 0.5F));
+    backend->use_lane(Lane::Interpolate);
+    require_ok(ops.resample(in->tensor(), k::Filter::Area, half->tensor()));
+    backend->use_lane(Lane::Measure);
+    const auto scores = ops.scores_now(half->tensor(), half->tensor());
+    REQUIRE(scores);
+    CHECK(scores->identical);
+    backend->use_lane(Lane::Upscale);
+    require_ok(ops.resample(in->tensor(), k::Filter::Area, other->tensor()));
+    backend->use_lane(Lane::Interpolate);
+    const auto fence = backend->signal();
+    REQUIRE(fence);
+    require_ok(backend->wait(*fence));
+  }
+  backend->use_lane(Lane::Upscale);
+  CHECK(max_abs_diff(download(*backend, *half, 20, 12), stored(*want, TensorType::F32)) <=
+        k::tolerance::kRgbF16);
+  CHECK(max_abs_diff(download(*backend, *other, 20, 12), stored(*want, TensorType::F32)) <=
+        k::tolerance::kRgbF16);
+}

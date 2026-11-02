@@ -134,6 +134,10 @@ std::expected<AdoptedDevice, Refusal> adopted_device(const GpuDevice& render) {
       unlock(context, q.family, q.index);
     };
   }
+  // Les voies en plus (V7) : les files libres qui suivent celle du backend, que le créateur de
+  // l'appareil garantit (compute_lanes) ; aucune sinon, une file non créée n'existe pas.
+  for (std::uint32_t lane = 1; lane <= std::min(v.compute_lanes, 2U); ++lane)
+    adopted.lane_queue_indices.push_back(v.compute.index + lane);
   return adopted;
 }
 
@@ -141,8 +145,8 @@ VulkanBackend::VulkanBackend(const BackendInit& init, BackendOptions options)
     : log_(init.log), cache_dir_(init.cache_dir), options_(std::move(options)) {}
 
 VulkanBackend::~VulkanBackend() {
-  kernels_.reset();  // attend la file, rend images et vues
-  if (queue_ && context_) context_->settle(queue_->last());
+  kernels_.reset();                                           // attend la file, rend images et vues
+  if (queue_ && context_) context_->settle(queue_->lasts());  // la dernière soumission de chaque voie
   if (pipelines_ && !pipeline_cache_file_.empty()) {
     const std::vector<std::byte> bytes = pipelines_->serialize();
     // Un cache perdu se refait.
@@ -168,7 +172,8 @@ std::expected<void, Refusal> VulkanBackend::open(const BackendInit& init) {
   } else {
     auto context = VkContext::create({.validation = options_.validation,
                                       .validation_sink = options_.validation_sink,
-                                      .cooperative_matrix = true});
+                                      .cooperative_matrix = true,
+                                      .alias_lanes = options_.alias_lanes});
     if (!context) return std::unexpected(context.error());
     context_ = std::move(*context);
   }
@@ -207,7 +212,8 @@ std::expected<void, Refusal> VulkanBackend::open(const BackendInit& init) {
   const VkExternalSemaphoreHandleTypeFlags exports =
       export_timeline ? VkExternalSemaphoreHandleTypeFlags{VK_EXTERNAL_SEMAPHORE_HANDLE_TYPE_OPAQUE_FD_BIT}
                       : 0U;
-  auto queue = BackendQueue::create(*context_, exports);
+  // Plusieurs voies sans runtime seulement : ses étapes s'ordonnent sur la seule timeline exportée.
+  auto queue = BackendQueue::create(*context_, exports, !runtime_);
   if (!queue) return std::unexpected(queue.error());
   BackendQueue& made = queue_.emplace(std::move(*queue));
   if (export_timeline) import_timeline(made);
@@ -262,7 +268,8 @@ BackendCaps VulkanBackend::capabilities() const {
           // Les noyaux de colle lisent et écrivent des tenseurs FP16.
           .rife_fused = profile_.target.f16_storage,
           .matrix_units = profile_.target.matrix_units,
-          .import_formats = {}};
+          .import_formats = {},
+          .lanes = queue_ ? queue_->lanes() : 1};
 }
 
 DeviceMatch VulkanBackend::match(const DeviceUuid& render_device) const {
@@ -413,9 +420,11 @@ std::expected<void, Refusal> VulkanBackend::enqueue(Engine& engine, std::span<co
 
 std::expected<Fence, Refusal> VulkanBackend::signal() {
   if (!queue_) return refuse_backend(RefusalCode::DeviceUnavailable, "file du backend absente");
+  // Toutes les voies jointes : la barrière suit tout ce qui a été soumis.
+  auto last = queue_->joined();
+  if (!last) return std::unexpected(last.error());
   if (auto ok = queue_->flush(); !ok) return std::unexpected(ok.error());  // attendu ailleurs
-  const TimelinePoint last = queue_->last();
-  return Fence{.handle = handle_value(last.semaphore), .value = last.value};
+  return Fence{.handle = handle_value(last->semaphore), .value = last->value};
 }
 
 std::expected<void, Refusal> VulkanBackend::wait(const Fence& fence) {

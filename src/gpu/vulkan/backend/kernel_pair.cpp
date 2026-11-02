@@ -67,7 +67,7 @@ std::expected<void, Refusal> VulkanKernelOps::rife_pad(const DecodedFrame& frame
   const std::array frames{&frame};
   std::array sources{*src};
   if (auto ok = submit_frames(**rec, sources, frames); !ok) return ok;
-  staging_[*pad].busy_until = queue_.last().value;
+  staging_[*pad].busy_until = queue_.ticket();
   return {};
 }
 
@@ -155,7 +155,7 @@ std::expected<void, Refusal> VulkanKernelOps::measure(const DecodedFrame& a, con
   if (auto ok = submit_frames(**rec, sources, frames); !ok) return ok;
   const kernels::RifeGeometry g = kernels::rife_geometry(a.width, a.height);
   ScoreSlot& s = scores_[*slot];
-  s.value = queue_.last().value;
+  s.value = queue_.ticket();
   s.scores = {.left = a.id, .right = b.id};
   s.area = static_cast<std::uint32_t>(g.padded_width * g.padded_height);
   s.count = KernelRunner::scene_partial_count(w, h);

@@ -1,6 +1,7 @@
 // Création d'un appareil propre : instance, choix de l'appareil (par UUID ou le premier), file
 // compute, et fonctions utiles activées quand l'appareil les a.
 #include <algorithm>
+#include <array>
 #include <cstring>
 #include <format>
 #include <string_view>
@@ -309,11 +310,20 @@ Done VkContext::create_device(const CreateOptions& options) {
   VkPhysicalDeviceFeatures2 features{.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2, .pNext = &v11};
   features.features.shaderInt16 = flag(available.shader_int16);
 
-  const float priority = 1.0F;
+  // Jusqu'à trois files de la famille : la principale et celles des voies (gpu/lanes.h).
+  std::uint32_t family_count = 0;
+  instance_fn_.vkGetPhysicalDeviceQueueFamilyProperties(physical_device_, &family_count, nullptr);
+  std::vector<VkQueueFamilyProperties> families(family_count);
+  instance_fn_.vkGetPhysicalDeviceQueueFamilyProperties(physical_device_, &family_count, families.data());
+  const std::uint32_t queues =
+      queue_family_ < families.size() ? std::clamp(families[queue_family_].queueCount, 1U, 3U) : 1U;
+  for (std::uint32_t index = 1; index < queues; ++index) lane_indices_.push_back(index);
+  if (options.alias_lanes && queues == 1) lane_indices_ = {0, 0};
+  const std::array<float, 3> priorities{1.0F, 1.0F, 1.0F};
   const VkDeviceQueueCreateInfo queue{.sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO,
                                       .queueFamilyIndex = queue_family_,
-                                      .queueCount = 1,
-                                      .pQueuePriorities = &priority};
+                                      .queueCount = queues,
+                                      .pQueuePriorities = priorities.data()};
   const VkDeviceCreateInfo info{.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO,
                                 .pNext = &features,
                                 .queueCreateInfoCount = 1,

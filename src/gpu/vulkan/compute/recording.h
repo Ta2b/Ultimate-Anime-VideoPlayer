@@ -47,6 +47,13 @@ class Recording {
   // Atteint quand la dernière exécution soumise s'achève ; valeur 0 avant la première.
   TimelinePoint last_run() const { return runs_.at(submitted_); }
   const TimelineSemaphore& runs() const { return runs_; }
+  // Ce que l'enregistrement lit et écrit, pour l'ordre entre voies (gpu/lanes.h) : les VkBuffer
+  // liés (un binding readonly ne compte que comme lu), kImageAccess pour toute image. Un accès
+  // inconnu (Recorder::commands sans liste) : unknown_access, tout est à attendre.
+  static constexpr std::uintptr_t kImageAccess = 1;
+  std::span<const std::uintptr_t> reads() const { return reads_; }
+  std::span<const std::uintptr_t> writes() const { return writes_; }
+  bool unknown_access() const { return unknown_access_; }
   // La dernière exécution soumise est finie, ou aucune ne l'a été : constat, sans attente. Une
   // exécution encore dans le lot du contexte (VkContext::enqueue) n'est pas finie.
   bool idle() const;
@@ -76,6 +83,9 @@ class Recording {
   std::uint32_t barriers_ = 0;
   std::uint64_t submitted_ = 0;
   bool finished_ = false;
+  std::vector<std::uintptr_t> reads_;
+  std::vector<std::uintptr_t> writes_;
+  bool unknown_access_ = false;
 };
 
 // Enregistrements sortis d'un cache (éviction, tampon détruit) alors que le GPU exécute peut-être
@@ -148,6 +158,10 @@ class Recorder {
   // une barrière sur tout ce qui précède ; ce qui suit les attend aussi (leurs accès sont
   // inconnus : la commande suivante a sa barrière). Refus InputMismatch : déjà terminé.
   Done commands(const std::function<void(VkCommandBuffer)>& record);
+  // Le même, quand l'appelant sait ce que ses commandes écrivent (writes, et les images si
+  // images) : l'ordre entre voies n'attend alors que ce qui les touche.
+  Done commands(const std::function<void(VkCommandBuffer)>& record, std::span<const BufferView> writes,
+                bool images);
 
   // Barrière finale vers l'hôte et les transferts, puis vkEndCommandBuffer. Le Recorder est
   // ensuite vide. Refus InputMismatch : déjà terminé.
