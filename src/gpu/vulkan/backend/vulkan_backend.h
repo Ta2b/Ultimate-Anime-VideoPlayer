@@ -109,6 +109,11 @@ class VulkanBackend final : public Backend {
   explicit VulkanBackend(const BackendInit& init, BackendOptions options);
   std::expected<void, Refusal> open(const BackendInit& init);
   void log(BackendLogLevel level, std::string_view message) const;
+  // RIFE fusionné (vulkan_rife_fused.cpp) : un manifeste « .rifefused » construit chacun de ses morceaux
+  // en artefact ; la clé de l'artefact les nomme tous.
+  std::expected<Artifact, Refusal> build_rife_fused(const ModelSpec& model, const ShapeSet& shapes,
+                                                    Progress& progress);
+  std::expected<std::unique_ptr<Engine>, Refusal> load_rife_fused(const Artifact& artifact);
   // Le chemin d'un runtime (vulkan_backend_runtime.cpp).
   std::expected<Artifact, Refusal> build_runtime(const ModelSpec& model, const ShapeSet& shapes,
                                                  Progress& progress);

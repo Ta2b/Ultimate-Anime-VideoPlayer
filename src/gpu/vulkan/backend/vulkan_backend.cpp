@@ -11,9 +11,11 @@
 #include "gpu/vulkan/backend/kernel_ops_detail.h"
 #include "gpu/vulkan/backend/net_build.h"
 #include "gpu/vulkan/backend/net_lower.h"
+#include "gpu/vulkan/backend/rife_fused_engine.h"
 #include "gpu/vulkan/backend/shared_tensor.h"
 #include "gpu/vulkan/backend/vulkan_backend_detail.h"
 #include "gpu/vulkan/compute/buffer.h"
+#include "prepare/rife_split.h"
 
 namespace ajp::gpu::vk {
 namespace detail {
@@ -257,6 +259,8 @@ BackendCaps VulkanBackend::capabilities() const {
           .needs_host_sync = false,
           .fp16 = profile_.target.f16_storage,
           .int8 = false,
+          // Les noyaux de colle lisent et écrivent des tenseurs FP16.
+          .rife_fused = profile_.target.f16_storage,
           .matrix_units = profile_.target.matrix_units,
           .import_formats = {}};
 }
@@ -277,6 +281,7 @@ std::expected<Artifact, Refusal> VulkanBackend::build(const ModelSpec& model, co
     return refuse_backend(RefusalCode::CacheIo, "aucun dossier de cache pour les artefacts");
   if (progress.stop.stop_requested()) return refuse_backend(RefusalCode::Cancelled, "construction annulée");
   if (runtime_) return build_runtime(model, shapes, progress);
+  if (prepare::is_rife_fused_manifest(model.onnx_path)) return build_rife_fused(model, shapes, progress);
   auto request = request_of(model, shapes);
   if (!request) return std::unexpected(request.error());
   const std::uint64_t key = net::artifact_key(*request, profile_);
@@ -309,6 +314,7 @@ std::expected<Artifact, Refusal> VulkanBackend::build(const ModelSpec& model, co
 
 std::expected<std::unique_ptr<Engine>, Refusal> VulkanBackend::load(const Artifact& artifact) {
   if (runtime_) return load_runtime(artifact);
+  if (rife_fused_artifact_key_parse(artifact.cache_key)) return load_rife_fused(artifact);
   auto bytes = net::read_file(artifact.path);
   if (!bytes) return std::unexpected(bytes.error());
   auto data = net::deserialize(*bytes);
@@ -362,6 +368,10 @@ std::expected<std::unique_ptr<TensorBuffer>, Refusal> VulkanBackend::alloc_tenso
 std::expected<void, Refusal> VulkanBackend::enqueue(Engine& engine, std::span<const Tensor> inputs,
                                                     std::span<Tensor> outputs) {
   if (runtime_) return enqueue_runtime(engine, inputs, outputs);
+  if (auto* rife = dynamic_cast<RifeFusedEngine*>(&engine)) {
+    if (!queue_) return refuse_backend(RefusalCode::DeviceUnavailable, "file du backend absente");
+    return rife->enqueue(*queue_, inputs, outputs);
+  }
   auto* vulkan = dynamic_cast<VulkanEngine*>(&engine);
   if (vulkan == nullptr) return refuse_backend(RefusalCode::InputMismatch, "moteur d'un autre backend");
   net::NetEngine& net = vulkan->net();
