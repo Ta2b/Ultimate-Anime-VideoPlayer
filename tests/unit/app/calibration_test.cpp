@@ -48,30 +48,27 @@ TEST_CASE("pic du système : la sortie de KWin en HDR, sa crête et son blanc", 
   CHECK_FALSE(parse_kwin_output("not json", "DP-1").has_value());
 }
 
-TEST_CASE("calibration du grade : plans d'anime sombres, sombres avec éclat et clairs, guidés et traduits",
+TEST_CASE("calibration du grade : onze plans d'anime, cinq obligatoires d'abord, guidés et traduits",
           "[calibration]") {
   using namespace ajp::app::play;
   std::set<int> ids;
   std::set<std::int64_t> instants;
-  int previous = -1;
-  for (const CalibrationStep step : {CalibrationStep::Dark, CalibrationStep::Glow, CalibrationStep::Bright}) {
-    CHECK(calibration_count(step) >= 2);
-    for (int i = 0; i < calibration_count(step); ++i) {
-      const CalibrationImage image = calibration_image(step, i);
-      ids.insert(image.id);
-      instants.insert(image.at_us);
-      CHECK(image.id == previous + 1);  // les étapes se suivent dans la vidéo, sans trou
-      previous = image.id;
-      // Au milieu de son plan de la vidéo de calibration, loin des coupes.
-      CHECK(image.at_us == image.id * kCalibrationSegmentUs + kCalibrationSegmentUs / 2);
-      i18n::set_language(i18n::Language::French);
-      CHECK(i18n::tr_view(image.title) != image.title);
-      CHECK(i18n::tr_view(image.guidance) != image.guidance);
-      i18n::set_language(i18n::Language::English);
-    }
+  for (int id = 0; id < kCalibrationImages; ++id) {
+    const CalibrationImage image = calibration_shot(id);
+    CHECK(image.id == id);
+    ids.insert(image.id);
+    instants.insert(image.at_us);
+    // Au milieu de son plan de la vidéo de calibration, loin des coupes.
+    CHECK(image.at_us == image.id * kCalibrationSegmentUs + kCalibrationSegmentUs / 2);
+    i18n::set_language(i18n::Language::French);
+    CHECK(i18n::tr_view(image.title) != image.title);
+    CHECK(i18n::tr_view(image.guidance) != image.guidance);
+    i18n::set_language(i18n::Language::English);
   }
-  // Un index hors de l'étape reste dans l'étape.
-  CHECK(calibration_image(CalibrationStep::Glow, 9).id == calibration_image(CalibrationStep::Glow, 1).id);
+  CHECK(calibration_shot(99).id == kCalibrationImages - 1);  // hors de la vidéo : le dernier plan
+  std::set<int> order(kCalibrationOrder.begin(), kCalibrationOrder.end());
+  CHECK(order.size() == kCalibrationImages);  // chaque plan une fois
+  CHECK(kCalibrationRequired == 5);
   CHECK(ids.size() == kCalibrationImages);
   CHECK(instants.size() == kCalibrationImages);
   CHECK(calibration_clip().filename() == "calibration.mkv");
