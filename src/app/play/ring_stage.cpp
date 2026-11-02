@@ -8,6 +8,7 @@
 
 #include "core/clock.h"
 #include "core/thread.h"
+#include "core/thread_role.h"
 
 namespace ajp::app::play {
 
@@ -29,8 +30,10 @@ void RingStage::stop() {
 
 std::expected<void, Refusal> RingStage::start(std::string_view name) {
   auto thread =
-      start_thread(name, init_.report,
-                   [this](const std::stop_token& stop, const ThreadReport& report) { run(stop, report); });
+      start_thread(name, init_.report, [this](const std::stop_token& stop, const ThreadReport& report) {
+        set_thread_role(ThreadRole::Playback);
+        run(stop, report);
+      });
   if (!thread) return std::unexpected(std::move(thread.error()));
   thread_ = std::move(*thread);
   return {};

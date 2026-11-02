@@ -8,6 +8,7 @@
 
 #include "audio/log.h"
 #include "audio/refuse.h"
+#include "core/thread_role.h"
 
 namespace ajp::audio {
 namespace {
@@ -34,9 +35,11 @@ std::expected<std::unique_ptr<AudioThread>, Refusal> AudioThread::start(std::uni
   // sans qu'aucun thread ne l'ait vu.
   std::unique_ptr<AudioThread> audio(new AudioThread(std::move(output), std::move(options)));
   AudioThread* self = audio.get();
-  auto thread =
-      start_thread("audio", audio->report_,
-                   [self](const std::stop_token& stop, const ThreadReport& /*report*/) { self->run(stop); });
+  auto thread = start_thread("audio", audio->report_,
+                             [self](const std::stop_token& stop, const ThreadReport& /*report*/) {
+                               set_thread_role(ThreadRole::Audio);
+                               self->run(stop);
+                             });
   if (!thread) return std::unexpected(std::move(thread.error()));
   audio->thread_ = std::move(*thread);
   return audio;

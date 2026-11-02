@@ -37,6 +37,7 @@ extern "C" {
 #include "app/play/settings.h"
 #include "app/play/updater.h"
 #include "core/log.h"
+#include "core/thread_role.h"
 #include "core/update_manifest.h"
 #include "prepare/utf8.h"
 
@@ -222,13 +223,14 @@ int run_bench_command(const std::vector<std::string_view>& args) {
 }  // namespace
 
 int main(int argc, char** argv) {
-#if defined(__linux__)
-  // Les trois voies CUDA, le flux de décodage, celui des copies et le pont de Maxine se partagent
-  // 8 files matérielles par défaut : des flux sans lien s'y alignent. 32 en donne une à chacun.
-  // Lue au premier appel CUDA : posée ici, avant toute bibliothèque ; une valeur de l'utilisateur
-  // prime.
+  // Les trois voies CUDA, le flux de décodage, celui des copies et les flux auxiliaires de TensorRT se
+  // partagent 8 files matérielles par défaut : des flux sans lien s'y alignent. 32 en donne une à chacun,
+  // sous Linux comme sous Windows (où le CRT de MSVC reporte la variable dans l'environnement du processus,
+  // que lit nvcuda.dll). Lue au premier appel CUDA : posée ici, avant toute bibliothèque ; une valeur de
+  // l'utilisateur prime.
   SDL_setenv_unsafe("CUDA_DEVICE_MAX_CONNECTIONS", "32", 0);
-#endif
+  // Le thread principal présente les images : il passe devant les travaux de fond (core/thread_role.h).
+  ajp::set_thread_role(ajp::ThreadRole::Playback);
 #ifdef _WIN32
   // Minuteur à 1 ms : les attentes courtes (vidange de l'export, démarrage) ne s'arrondissent pas
   // aux 15,6 ms par défaut de Windows. La cadence de lecture suit, elle, le swapchain.

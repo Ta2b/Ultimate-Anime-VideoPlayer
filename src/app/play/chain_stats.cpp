@@ -13,6 +13,8 @@
 #include "app/play/settings.h"
 #include "app/play/span_int8.h"
 #include "core/clock.h"
+#include "core/log.h"
+#include "core/thread.h"
 
 namespace ajp::app::play {
 namespace {
@@ -162,21 +164,27 @@ std::optional<std::string> ChainStats::read_memory() const {
 
 void ChainStats::start_sampler() const {
   std::call_once(sampler_started_, [this] {
-    sampler_ = std::jthread([this](const std::stop_token& stop) {
-      std::mutex idle;
-      std::condition_variable_any wake;
-      while (!stop.stop_requested()) {
-        auto memory = read_memory();
-        auto gpu = read_gpu();
-        {
-          const std::scoped_lock lock(sampled_mutex_);
-          memory_text_ = std::move(memory);
-          gpu_text_ = std::move(gpu);
-        }
-        std::unique_lock lock(idle);
-        wake.wait_for(lock, stop, std::chrono::milliseconds(500), [] { return false; });
-      }
-    });
+    auto started =
+        start_thread("stats", ThreadReport([](const Refusal& refusal) {
+                       log_channel("app")->warn("relevé du GPU arrêté : {}", refusal.detail);  // i18n-ok
+                     }),
+                     [this](const std::stop_token& stop, const ThreadReport& /*report*/) {
+                       std::mutex idle;
+                       std::condition_variable_any wake;
+                       while (!stop.stop_requested()) {
+                         auto memory = read_memory();
+                         auto gpu = read_gpu();
+                         {
+                           const std::scoped_lock lock(sampled_mutex_);
+                           memory_text_ = std::move(memory);
+                           gpu_text_ = std::move(gpu);
+                         }
+                         std::unique_lock lock(idle);
+                         wake.wait_for(lock, stop, std::chrono::milliseconds(500), [] { return false; });
+                       }
+                     });
+    // Sans thread, les relevés restent vides : l'OSD n'affiche alors ni mémoire ni charge du GPU.
+    if (started) sampler_ = std::move(*started);
   });
 }
 
