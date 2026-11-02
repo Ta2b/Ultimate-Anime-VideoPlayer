@@ -347,6 +347,17 @@ void Grade::set_video_fps(double fps) {
     data->f = static_cast<float>(std::clamp(fps, 1.0, 1000.0));
 }
 
+void Grade::set_kwin_match(std::optional<KwinMatch> match) {
+  const auto put = [this](std::string_view name, double value) {
+    if (pl_var_data* data = find_param(*impl_->black.hook, name)) data->f = static_cast<float>(value);
+  };
+  put("kwin_on", match ? 1.0 : 0.0);
+  if (match) {
+    put("kwin_ref", std::clamp(match->reference, 50.0, 1000.0));
+    put("kwin_peak", std::clamp(match->peak, 100.0, 10000.0));
+  }
+}
+
 const GradeParams& Grade::params() const {
   return impl_->params;
 }

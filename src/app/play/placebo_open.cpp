@@ -376,6 +376,7 @@ std::expected<std::unique_ptr<PlaceboScreen>, Refusal> PlaceboScreen::open(const
   impl->fullscreen = options.fullscreen && !options.offscreen;
   impl->offscreen = options.offscreen;
   impl->hdr_wanted = options.hdr;
+  impl->kde_sdr_nits = options.kde_sdr_nits;
   impl->offscreen_size = {options.offscreen_width, options.offscreen_height};
   if (const double hz = display_refresh_hz(impl->window); hz > 1.0)
     impl->period_us = static_cast<std::int64_t>(1e6 / hz);

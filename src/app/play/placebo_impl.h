@@ -154,7 +154,12 @@ struct PlaceboScreen::Impl {
   std::int64_t grade_next_pts = 0;
   std::uint32_t grade_next_epoch = 0;
   std::int64_t grade_next_since_us = 0;
-  VideoRate video_rate;  // la cadence des images vidéo distinctes, pour les lissages du grade
+  VideoRate video_rate;
+  // --hdr-metadata (ScreenOptions::kde_sdr_nits) : le maximum annoncé à la swapchain (0 : rien d'annoncé).
+  std::optional<double> kde_sdr_nits;
+  double hinted_max_nits = 0.0;
+  // La compression de KWin dans le grade et les métadonnées de la sortie, selon la cible et le grade.
+  void match_kwin();  // la cadence des images vidéo distinctes, pour les lissages du grade
   FinalScaler final_scaler = FinalScaler::Default;  // posés par set_finish
   bool deband = false;
   bool source_debanded = false;  // l'image présentée, débandée avant SPAN (RingFrame::debanded)

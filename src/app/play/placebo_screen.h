@@ -48,6 +48,9 @@ struct ScreenOptions {
   int offscreen_width = 1920;
   int offscreen_height = 1080;
   bool hdr = true;  // HDR10 (PQ, BT.2020) si l'écran l'offre, SDR sinon
+  // --hdr-metadata : la luminosité SDR de KDE (nits). La sortie HDR10 annonce alors son vrai maximum, et le
+  // grade fait lui-même la compression que KWin faisait sans métadonnées (render::Grade::set_kwin_match).
+  std::optional<double> kde_sdr_nits;
   // Smooth Motion du pilote NVIDIA : sa couche implicite VK_LAYER_NV_present s'active par
   // NVPRESENT_ENABLE_SMOOTH_MOTION=1, posé avant la création de l'instance Vulkan.
   bool smooth_motion = false;
