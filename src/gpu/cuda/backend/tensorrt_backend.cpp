@@ -233,6 +233,11 @@ TensorRtBackend::~TensorRtBackend() {
     if (read.host != nullptr) cudaFreeHost(read.host);
     if (read.done != nullptr) cudaEventDestroy(read.done);
   }
+  for (const StatsRead& read : stats_reads_) {
+    if (read.device != nullptr) cudaFree(read.device);
+    if (read.host != nullptr) cudaFreeHost(read.host);
+    if (read.done != nullptr) cudaEventDestroy(read.done);
+  }
   if (splat_sums_ != nullptr) cudaFree(splat_sums_);
   if (ingest_rows_ != nullptr) cudaFree(ingest_rows_);
   if (deband_out_ != nullptr) cudaFree(deband_out_);
