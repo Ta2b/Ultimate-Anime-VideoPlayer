@@ -43,5 +43,11 @@ std::vector<std::uint32_t> copy_push(const Desc4& x, const Desc4& y, const CopyP
 // octets oubliés suffisent à dépasser maxComputeSharedMemorySize et à perdre l'appareil.
 std::uint32_t matrix_shared_bytes(std::uint32_t subgroups, std::uint32_t tm, std::uint32_t kc,
                                   std::uint32_t np);
+// Variante à halo (HALO, B jamais partagée) : deux fenêtres de hpix pixels au lieu des deux
+// tampons de A, même pas de ligne.
+std::uint32_t matrix_halo_shared_bytes(std::uint32_t subgroups, std::uint32_t kc, std::uint32_t hpix);
+// Pixels de la fenêtre d'un groupe à halo : (lignes + halo) × (16 + halo).
+std::uint32_t matrix_halo_pixels(std::uint32_t rows, std::uint32_t kh, std::uint32_t kw, std::uint32_t dh,
+                                 std::uint32_t dw);
 
 }  // namespace ajp::gpu::vk::net::detail
