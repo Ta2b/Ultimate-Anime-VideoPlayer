@@ -12,7 +12,7 @@ ajp_add_module(app
     play/placebo_snapshot.cpp play/player.cpp play/player_engines.cpp play/player_run.cpp play/profiles.cpp play/resume.cpp
     play/ring_stage.cpp play/drba_fused_choice.cpp play/gmfss_fused_choice.cpp play/rife_fused_choice.cpp play/rife_plan.cpp play/scripted_input.cpp play/session.cpp play/settings.cpp play/settings_toml.cpp play/settings_toml_display.cpp play/settings_calibration.cpp play/settings_chain_tabs.cpp play/settings_engines.cpp play/settings_export.cpp play/settings_panel.cpp play/settings_sound.cpp play/settings_system.cpp play/subtitle_queue.cpp play/tracks.cpp play/ui.cpp
     play/upscale_ahead.cpp play/upscale_drba.cpp play/upscale_gmfss.cpp play/upscale_motion.cpp play/upscale_stage.cpp play/vulkan_share.cpp play/wiring.cpp
-  DEPS ajp::core ajp::core_log ajp::media ajp::gpu ajp::gpu_span_fp8 ajp::gpu_span_fp8_onnx ajp::prepare ajp::audio ajp::subs
+  DEPS ajp::core ajp::core_log ajp::core_os ajp::media ajp::gpu ajp::gpu_span_fp8 ajp::gpu_span_fp8_onnx ajp::prepare ajp::audio ajp::subs
        ajp::render ajp::present ajp::export
   PRIVATE_DEPS ajp::dep::ffmpeg ajp::dep::placebo ajp::dep::sdl3 ajp::dep::spdlog ajp::dep::vulkan
                ajp::dep::imgui ajp::dep::toml ${CMAKE_DL_LIBS})

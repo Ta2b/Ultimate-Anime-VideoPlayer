@@ -213,6 +213,11 @@ float stats_luma(float e) {
 // (chain_hdr.cpp, adaptive_tick) : luminosite de la serie, ciel bleu sature et flash colore, scene sombre
 // avec eclat.
 void hook() {
+    // Deux texels de sortie : libplacebo lance deux invocations (un groupe 1 x 1 par texel). L'etat
+    // (AJG_STATE) ne doit avancer qu'une fois par image : la seule invocation 0 fait tout et ecrit les deux
+    // texels. Sans ce garde, la seconde relisait le prev_pq tout juste ecrit, concluait a la meme image et
+    // effacait la coupe que la premiere venait de poser.
+    if (gl_GlobalInvocationID.x != 0u || gl_GlobalInvocationID.y != 0u) return;
     ivec2 size = ivec2(AJG_AREA_size);
     vec4 mean = AJG_MEAN_tex(vec2(0.25, 0.5));
     vec4 col = AJG_MEAN_tex(vec2(0.75, 0.5));

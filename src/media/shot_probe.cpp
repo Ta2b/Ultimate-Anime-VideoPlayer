@@ -7,6 +7,8 @@
 #include <utility>
 #include <vector>
 
+#include "core/thread.h"
+#include "core/thread_role.h"
 #include "media/demuxer.h"
 #include "media/log.h"
 #include "media/video_decoder.h"
@@ -140,7 +142,19 @@ std::unique_ptr<ShotProbe> ShotProbe::start(std::filesystem::path file, ShotTime
   probe->playhead_ = start_us;
   probe->frontier_ = start_us;
   ShotProbe* self = probe.get();
-  probe->thread_ = std::jthread([self, start_us](const std::stop_token& stop) { self->run(stop, start_us); });
+  // Un refus (une exception du corps comprise) arrête l'analyse, jamais le lecteur : la lecture garde alors
+  // la mesure en direct.
+  auto thread = start_thread("plans", ThreadReport([self](const Refusal& refusal) { self->fail(refusal); }),
+                             [self, start_us](const std::stop_token& stop, const ThreadReport& /*report*/) {
+                               // Travail de fond : il ne doit jamais retarder le rendu, le calcul ni l'audio.
+                               // Sous Linux, les threads de FFmpeg créés ensuite héritent de cette priorité.
+                               set_thread_role(ThreadRole::Background);
+                               self->run(stop, start_us);
+                             });
+  if (thread)
+    probe->thread_ = std::move(*thread);
+  else
+    probe->fail(std::move(thread.error()));
   return probe;
 }
 
@@ -195,7 +209,7 @@ void ShotProbe::run(const std::stop_token& stop, std::int64_t start_us) {
   if (auto ok = demuxer->keep_only(keep); !ok) return fail(std::move(ok.error()));
   const int threads = options_.threads > 0
                           ? options_.threads
-                          : std::max(2, static_cast<int>(std::thread::hardware_concurrency()) / 2);
+                          : std::clamp(static_cast<int>(std::thread::hardware_concurrency()) / 2, 2, 4);
   auto decoder =
       VideoDecoder::open(*video, DecoderOptions{.attempts = {HwApi::Software}, .threads = threads});
   if (!decoder) return fail(std::move(decoder.error()));

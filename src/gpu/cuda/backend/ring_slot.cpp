@@ -128,8 +128,17 @@ std::expected<void, Refusal> ImportedSlot::wait(std::uint64_t value, cudaStream_
 std::expected<void, Refusal> ImportedSlot::signal(std::uint64_t value, cudaStream_t stream) const {
   cudaExternalSemaphoreSignalParams params{};
   params.params.fence.value = value;
-  return cuda_check(cudaSignalExternalSemaphoresAsync(&semaphore_, &params, 1, stream),
-                    "cudaSignalExternalSemaphoresAsync");
+  if (auto ok = cuda_check(cudaSignalExternalSemaphoresAsync(&semaphore_, &params, 1, stream),
+                           "cudaSignalExternalSemaphoresAsync");
+      !ok)
+    return ok;
+  // Sous Windows (WDDM), CUDA garde les lancements dans un lot logiciel jusqu'au prochain appel qui force
+  // l'envoi : le signal partirait avec l'image suivante, une image trop tard pour l'écran qui la jette.
+  // L'interrogation du flux pousse le lot vers le GPU sans attendre ; sans effet sous Linux. Sa réponse
+  // (prêt ou pas encore) ne dit rien d'utile ici, seule une vraie erreur compte.
+  const cudaError_t pushed = cudaStreamQuery(stream);
+  if (pushed == cudaErrorNotReady) return {};
+  return cuda_check(pushed, "cudaStreamQuery");
 }
 
 }  // namespace ajp::gpu::cuda
