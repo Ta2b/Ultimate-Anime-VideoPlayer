@@ -81,6 +81,8 @@ constexpr std::array kGradeParams = {
     ParamBinding{"sh_glow", &GradeParams::sh_glow},
     ParamBinding{"sh_sky", &GradeParams::sh_sky},
     ParamBinding{"sh_series", &GradeParams::sh_series},
+    ParamBinding{"fs_apl", &GradeParams::fs_apl},
+    ParamBinding{"fs_bright", &GradeParams::fs_bright},
 };
 
 constexpr std::array kLookParams = {
@@ -283,10 +285,13 @@ void Grade::Impl::compose(const GradeParams& wanted) {
   composed = active;
 }
 
-std::expected<Grade, Refusal> Grade::create(pl_gpu gpu) {
+std::expected<Grade, Refusal> Grade::create(pl_gpu gpu, GradeBody body) {
   auto impl = std::make_unique<Impl>();
   impl->gpu = gpu;
-  auto grade = parse(gpu, shaders::anime_hdr_grade, "anime-hdr-grade.hook", kGradeParams);
+  const bool legacy = body == GradeBody::Legacy;
+  std::string text(shaders::anime_hdr_params);
+  text += legacy ? shaders::anime_hdr_grade : shaders::anime_hdr_fused;
+  auto grade = parse(gpu, text, legacy ? "anime-hdr-grade" : "anime-hdr-fused", kGradeParams);
   if (!grade) return std::unexpected(grade.error());
   impl->grade = std::move(*grade);
   auto look = parse_look(gpu, {});

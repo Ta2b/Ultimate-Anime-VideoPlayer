@@ -142,6 +142,8 @@ std::expected<PlayOptions, Refusal> parse_play_options(std::span<const std::stri
       options.no_vrr = true;
     } else if (arg == "--one-lane") {
       options.one_lane = true;
+    } else if (arg == "--legacy-grade") {
+      options.legacy_grade = true;
     } else if (arg == "--no-resume") {
       options.resume = false;
     } else if (arg == "--register" || arg == "--unregister") {
@@ -406,6 +408,7 @@ std::string play_usage() {
       "                         grade (NITS : la luminosité SDR de KDE, 200 par défaut), à comparer à l'œil\n"
       "  --one-lane             une seule file de calcul : plus lent, mais le profil GPU donne le\n"
       "                         coût propre de chaque moteur\n"
+      "  --legacy-grade         le grade HDR d'avant (neuf passes, scène mesurée par le shader), à comparer\n"
       "  --no-vrr               écran à fréquence fixe même si le VRR est armé (essai du mode Rapide)\n"
       "  --software-gpu         accepte un Vulkan logiciel (lavapipe), pour les essais sans GPU\n"
       "  --mute                 son coupé pour cette lecture\n"

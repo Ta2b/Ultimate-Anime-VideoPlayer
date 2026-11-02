@@ -3,6 +3,7 @@
 #pragma once
 
 #include <array>
+#include <cstdint>
 #include <expected>
 #include <memory>
 #include <optional>
@@ -16,10 +17,14 @@
 
 namespace ajp::render {
 
+// Le corps du grade : en trois passes, la scène donnée par le lecteur (GradeParams::fs_apl, fs_bright,
+// sh_*) ; ou celui d'avant en neuf passes, qui mesure la scène lui-même (--legacy-grade, une version).
+enum class GradeBody : std::uint8_t { Fused, Legacy };
+
 class Grade {
  public:
   // VendorCallFailed : un hook ne se lit pas ; FieldMissing : un //!PARAM attendu manque.
-  static std::expected<Grade, Refusal> create(pl_gpu gpu);
+  static std::expected<Grade, Refusal> create(pl_gpu gpu, GradeBody body = GradeBody::Fused);
 
   Grade(Grade&&) noexcept;
   Grade& operator=(Grade&&) noexcept;
@@ -48,7 +53,8 @@ class Grade {
   // de LUT ; les intensités passent par set_params. Refus si libplacebo ne lit pas la texture.
   std::expected<void, Refusal> set_looks(const std::array<const CubeLut*, kLookSlots>& luts);
 
-  // Dans l'ordre d'exécution : les neuf passes du grade, le look, puis la dixième (vrai noir).
+  // Dans l'ordre d'exécution : les passes du grade (trois, ou neuf pour celui d'avant), le look, puis le vrai
+  // noir.
   std::span<const pl_hook* const> hooks() const;
   // La mire d'étalonnage, qui remplace l'image par des patchs en luminance absolue (PQ).
   const pl_hook* calibration() const;

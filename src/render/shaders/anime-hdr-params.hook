@@ -458,3 +458,17 @@
 //!MINIMUM 1.0
 //!MAXIMUM 1000.0
 24.0
+
+//!PARAM fs_apl
+//!DESC Grade en une passe : luminance moyenne de la scene (nits a l'ecran), donnee par le lecteur ; < 0 inconnue
+//!TYPE float
+//!MINIMUM -1.0
+//!MAXIMUM 10000.0
+-1.0
+
+//!PARAM fs_bright
+//!DESC Grade en une passe : part de la scene au-dessus de 70 % du blanc SDR, donnee par le lecteur
+//!TYPE float
+//!MINIMUM 0.0
+//!MAXIMUM 1.0
+0.0

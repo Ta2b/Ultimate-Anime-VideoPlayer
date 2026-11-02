@@ -1,8 +1,9 @@
 // Les règles du grade adaptatif, en un seul endroit. Le lecteur (app/play/chain_hdr.cpp, adaptive_tick) les
-// applique quand il décide (le plan connu par la pré-analyse) ; le shader des statistiques de
-// scène (anime-hdr-grade/2-analysis.hook) ne les applique qu'en repli, quand ce plan n'est pas là, et
+// applique quand il décide (le plan de la pré-analyse, ou la scène mesurée à l'ingestion) ; le shader des
+// statistiques de l'ancien corps (--legacy-grade,
+// anime-hdr-grade/2-analysis.hook) ne les applique qu'en repli, quand ce plan n'est pas là, et
 // les reçoit d'ici à chaque image (grade.cpp, paramètres ar_*). Les valeurs par défaut écrites dans
-// 1-params.hook sont les mêmes : un test les compare (tests/unit/render/adaptive_rules_test.cpp).
+// anime-hdr-params.hook sont les mêmes : un test les compare (tests/unit/render/adaptive_rules_test.cpp).
 #pragma once
 
 namespace ajp::render::adaptive_rules {

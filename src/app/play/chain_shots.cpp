@@ -116,6 +116,7 @@ ShotScene scene_of(const media::ShotStats& s, std::uint64_t serial, bool fade) {
                              .bright = s.bright,
                              .blue = s.blue,
                              .chroma = s.chroma},
+                   .light = {.apl_nits = s.apl_nits, .lit = s.lit},
                    .serial = serial,
                    .fade = fade};
 }
@@ -135,6 +136,11 @@ std::optional<std::int64_t> next_pts(Chain& to) {
 }
 
 }  // namespace
+
+std::optional<ShotScene> next_live(Chain& to) {
+  const auto pts = next_pts(to);
+  return pts ? live_scene(to, *pts) : std::nullopt;
+}
 
 std::optional<ShotScene> next_shot(Chain& to, std::int64_t now_us) {
   if (to.shots == nullptr || !to.shots->current.timeline || to.shots->current.file != to.file) {
