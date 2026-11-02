@@ -19,9 +19,10 @@ struct KwinOutput {
 // connector : « DP-1 » (le préfixe « card1- » de DRM est ôté). Rien si la sortie n'y est pas.
 std::optional<KwinOutput> parse_kwin_output(std::string_view json, std::string_view connector);
 
-// Le pic calibré par le système pour l'écran de ce connecteur DRM (« card1-DP-1 ») ; headroom : la marge HDR
-// de SDL3. Linux : la crête de KWin, sinon marge × blanc de référence de KWin ; Windows : MaxLuminance de
-// la sortie DXGI en HDR. Rien si le système ne le dit pas.
+// Le pic calibré par le système pour l'écran de ce connecteur DRM (« card1-DP-1 »), en unités du contenu PQ
+// (render/display_model.h) ; headroom : la marge HDR de SDL3. Linux : la crête de KWin, sinon marge × blanc
+// de référence de KWin, ramenées au blanc de 203 du contenu ; Windows : MaxLuminance de la sortie DXGI en
+// HDR. Rien si le système ne le dit pas.
 std::optional<double> system_peak_nits(std::string_view connector, double headroom);
 
 }  // namespace ajp::app::play

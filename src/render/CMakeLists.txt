@@ -2,7 +2,7 @@
 # Dans la tranche verticale : le grade HDR (hooks mpv embarqués, decide_grade), que l'écran de
 # app/play pose sur OUTPUT.
 ajp_add_module(render
-  SOURCES cube_lut.cpp looks.cpp grade.cpp grade_params.cpp "${CMAKE_CURRENT_BINARY_DIR}/render_shaders.cpp"
+  SOURCES cube_lut.cpp display_model.cpp looks.cpp grade.cpp grade_params.cpp "${CMAKE_CURRENT_BINARY_DIR}/render_shaders.cpp"
   DEPS ajp::core ajp::subs ajp::dep::placebo)
 
 # Les hooks mpv du grade sont embarqués dans la bibliothèque, octet pour octet. Le grade : ses paramètres
