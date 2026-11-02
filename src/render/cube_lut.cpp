@@ -275,4 +275,63 @@ std::string lut_texture_block(const CubeLut& lut, std::string_view name) {
   return out;
 }
 
+namespace {
+
+// La lecture trilinéaire de la texture : le point c (dans [0, 1]³) tombe à c × (size − 1) dans la grille.
+std::array<float, 3> sample(const CubeLut& lut, const std::array<float, 3>& c) {
+  const int n = lut.size;
+  std::array<int, 3> lo{};
+  std::array<float, 3> t{};
+  for (std::size_t k = 0; k < 3; ++k) {
+    const float x = std::clamp(c[k], 0.0F, 1.0F) * static_cast<float>(n - 1);
+    lo[k] = std::min(static_cast<int>(x), n - 2);
+    t[k] = x - static_cast<float>(lo[k]);
+  }
+  const auto un = [](int v) { return static_cast<std::size_t>(v); };
+  const auto at = [&](int r, int g, int b, std::size_t ch) {
+    return lut.rgb[((((un(b) * un(n)) + un(g)) * un(n) + un(r)) * 3) + ch];
+  };
+  std::array<float, 3> out{};
+  for (int corner = 0; corner < 8; ++corner) {
+    const int dr = corner & 1;
+    const int dg = (corner >> 1) & 1;
+    const int db = (corner >> 2) & 1;
+    const float w =
+        (dr != 0 ? t[0] : 1.0F - t[0]) * (dg != 0 ? t[1] : 1.0F - t[1]) * (db != 0 ? t[2] : 1.0F - t[2]);
+    for (std::size_t ch = 0; ch < 3; ++ch) out[ch] += w * at(lo[0] + dr, lo[1] + dg, lo[2] + db, ch);
+  }
+  return out;
+}
+
+}  // namespace
+
+CubeLut compose_luts(std::span<const CubeLut* const> luts, std::span<const double> mixes, int size) {
+  CubeLut out;
+  out.size = size;
+  out.title = "pile composée";
+  const auto points = static_cast<std::size_t>(size);
+  out.rgb.resize(points * points * points * 3);
+  const float step = 1.0F / static_cast<float>(size - 1);
+  std::size_t i = 0;
+  for (int b = 0; b < size; ++b) {
+    for (int g = 0; g < size; ++g) {
+      for (int r = 0; r < size; ++r) {
+        std::array<float, 3> c{static_cast<float>(r) * step, static_cast<float>(g) * step,
+                               static_cast<float>(b) * step};
+        for (std::size_t slot = 0; slot < luts.size() && slot < mixes.size(); ++slot) {
+          if (luts[slot] == nullptr || luts[slot]->size < 2 || mixes[slot] <= 0.0) continue;
+          const auto mix = static_cast<float>(std::min(mixes[slot], 1.0));
+          const std::array<float, 3> looked = sample(*luts[slot], c);
+          for (std::size_t ch = 0; ch < 3; ++ch) {
+            const float in = std::clamp(c[ch], 0.0F, 1.0F);
+            c[ch] = in + ((std::clamp(looked[ch], 0.0F, 1.0F) - in) * mix);
+          }
+        }
+        for (const float v : c) out.rgb[i++] = std::clamp(v, 0.0F, 1.0F);
+      }
+    }
+  }
+  return out;
+}
+
 }  // namespace ajp::render

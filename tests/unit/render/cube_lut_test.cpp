@@ -1,5 +1,7 @@
 #include "render/cube_lut.h"
 
+#include <algorithm>
+#include <array>
 #include <cmath>
 #include <format>
 #include <string>
@@ -150,4 +152,68 @@ TEST_CASE("les entrées noires d'un gamut d'entrée inutile sont recopiées du v
   CHECK(neutral.rgb == identity_lut(17).rgb);
 }
 
+}  // namespace ajp::render
+
+namespace ajp::render {
+namespace {
+
+// Une LUT de `size` points d'une fonction couleur f.
+template <typename F>
+CubeLut lut_of(int size, F f) {
+  CubeLut lut;
+  lut.size = size;
+  const float step = 1.0F / static_cast<float>(size - 1);
+  for (int b = 0; b < size; ++b)
+    for (int g = 0; g < size; ++g)
+      for (int r = 0; r < size; ++r) {
+        const std::array<float, 3> c =
+            f(static_cast<float>(r) * step, static_cast<float>(g) * step, static_cast<float>(b) * step);
+        lut.rgb.insert(lut.rgb.end(), c.begin(), c.end());
+      }
+  return lut;
+}
+
+float at(const CubeLut& lut, int r, int g, int b, int ch) {
+  const auto un = [](int v) { return static_cast<std::size_t>(v); };
+  return lut.rgb[((((un(b) * un(lut.size)) + un(g)) * un(lut.size) + un(r)) * 3) + un(ch)];
+}
+
+TEST_CASE("compose_luts : une LUT de 33 points se refait à 65 sans écart, mélange compris", "[render][lut]") {
+  const CubeLut warm = lut_of(33, [](float r, float g, float b) {
+    return std::array<float, 3>{std::sqrt(r), g * g, (b * 0.5F) + 0.25F};
+  });
+  const std::array<const CubeLut*, 2> luts{&warm, nullptr};
+  const std::array<double, 2> mixes{0.5, 1.0};
+  const CubeLut stack = compose_luts(luts, mixes);
+  REQUIRE(stack.size == 65);
+  // Les points pairs de la grille de 65 sont ceux de la grille de 33.
+  for (const int i : {0, 7, 19, 32}) {
+    CHECK(at(stack, 2 * i, 2 * i, 2 * i, 0) ==
+          Catch::Approx((at(warm, i, i, i, 0) + (static_cast<float>(i) / 32.0F)) * 0.5F).margin(1e-5));
+  }
+  // Un point impair : le milieu de deux points de la grosse grille, comme la lecture trilinéaire.
+  CHECK(at(stack, 3, 0, 0, 0) ==
+        Catch::Approx(((at(warm, 1, 0, 0, 0) + at(warm, 2, 0, 0, 0)) * 0.25F) + (3.0F / 64.0F * 0.5F))
+            .margin(1e-5));
+}
+
+TEST_CASE("compose_luts : deux LUT s'enchaînent dans l'ordre, une intensité nulle est sautée",
+          "[render][lut]") {
+  const CubeLut half = lut_of(
+      17, [](float r, float g, float b) { return std::array<float, 3>{r * 0.5F, g * 0.5F, b * 0.5F}; });
+  const CubeLut lift = lut_of(
+      17, [](float r, float g, float b) { return std::array<float, 3>{std::min(r + 0.25F, 1.0F), g, b}; });
+  const std::array<const CubeLut*, 3> luts{&half, &lift, &half};
+  const CubeLut stack = compose_luts(luts, std::array<double, 3>{1.0, 1.0, 0.0});
+  // Blanc : divisé par deux, puis relevé de 0,25 en rouge ; la troisième LUT, à 0, ne joue pas.
+  CHECK(at(stack, 64, 64, 64, 0) == Catch::Approx(0.75F));
+  CHECK(at(stack, 64, 64, 64, 1) == Catch::Approx(0.5F));
+  // L'ordre compte : relever puis diviser donnerait 0,5 au lieu de 0,25 sur un rouge nul.
+  CHECK(at(stack, 0, 0, 0, 0) == Catch::Approx(0.25F));
+  const CubeLut none = compose_luts(luts, std::array<double, 3>{0.0, 0.0, 0.0});
+  CHECK(at(none, 32, 16, 48, 0) == Catch::Approx(0.5F));
+  CHECK(at(none, 32, 16, 48, 2) == Catch::Approx(0.75F));
+}
+
+}  // namespace
 }  // namespace ajp::render

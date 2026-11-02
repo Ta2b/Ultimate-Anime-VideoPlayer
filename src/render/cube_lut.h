@@ -5,6 +5,7 @@
 
 #include <cstdint>
 #include <expected>
+#include <span>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -28,6 +29,14 @@ struct CubeLut {
 // Refus nommé : fichier trop gros, LUT 1D (LUT_1D_SIZE), taille hors de 17 à 65, nombre de lignes qui ne
 // vaut pas size³, valeur illisible ou non finie, DOMAIN_MIN/MAX incohérent.
 std::expected<CubeLut, Refusal> parse_cube(std::string_view text);
+
+// Une pile de LUT réduite à une seule : en chaque point d'une grille size³, la couleur traverse les LUT dans
+// l'ordre comme dans le hook du look (entrée bornée à [0, 1], lecture trilinéaire, mélange à son intensité
+// `mixes[i]`, une LUT absente ou d'intensité 0 sautée). Une pile d'une LUT de 17 ou 33 points se refait à
+// 65 points sans écart : la grille fine tombe sur la grosse. Le hook lit ensuite une texture au lieu de
+// quinze.
+CubeLut compose_luts(std::span<const CubeLut* const> luts, std::span<const double> mixes,
+                     int size = kLutMaxSize);
 
 // Le texte d'un bloc //!TEXTURE libplacebo (rgba16hf, linéaire, bords tenus) nommé `name`, données comprises.
 std::string lut_texture_block(const CubeLut& lut, std::string_view name);
