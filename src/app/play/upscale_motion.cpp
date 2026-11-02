@@ -4,7 +4,9 @@
 // chaque instant. Quand la paire précédente bougeait fort, la passe au milieu est sautée : RIFE
 // tourne d'emblée à chaque instant (×3 : deux passes au lieu de trois), et le mouvement maximal du
 // premier instant, mis à l'échelle du milieu et relu sans attente à la paire suivante, dit si elle
-// reprend la passe au milieu.
+// reprend la passe au milieu. De même, le mouvement maximal du milieu se relit à la paire suivante
+// (NL3) : la paire en cours se décide sur la mesure de la précédente, sans que l'hôte attende le GPU.
+// Seule la première paire d'un plan (ou après un saut) attend sa propre mesure.
 #include <algorithm>
 #include <array>
 #include <utility>
@@ -45,6 +47,7 @@ gpu::Motion UpscaleStage::mid_motion(std::uint32_t index) const {
 
 void UpscaleStage::forget_motion() {
   strong_motion_ = false;
+  motion_measured_ = false;
   motion_.known = false;  // une mesure encore en vol ne vaut plus
 }
 
@@ -53,6 +56,7 @@ std::expected<void, Refusal> UpscaleStage::settle_motion() {
   const std::uint64_t ticket = std::exchange(motion_.ticket, 0);
   auto biggest = setup_.backend->kernels()->flow_max_take(ticket);
   if (!biggest) return std::unexpected(std::move(biggest.error()));
+  motion_measured_ = motion_.known;
   if (motion_.known)
     strong_motion_ = *biggest * motion_.scale >= kernels::single_run_motion(setup_.rife_height);
   return {};
@@ -98,11 +102,16 @@ std::expected<void, Refusal> UpscaleStage::interpolate_by_motion(std::uint32_t o
       if (auto ok = run_motion(0.5F, middle.flow, middle.mask); !ok) return ok;
       if (poses_) {
         single_run_ = true;
+        motion_measured_ = false;  // aucune mesure : la paire d'après attend la sienne
       } else if (intermediates_ > 1) {
         // Warp après SPAN : SPAN de b enfilé entre la mesure et sa relecture, qui ne l'attend pas.
         auto ticket = ops.flow_max_start(middle);
         std::expected<float, Refusal> biggest;
-        if (ticket) {
+        if (ticket && motion_measured_) {
+          // La paire précédente, calme, a décidé : celle-ci n'a qu'une passe ; sa mesure décide la suivante.
+          motion_ = PendingMotion{.ticket = *ticket, .scale = 1.0F, .known = true};
+          biggest = 0.0F;
+        } else if (ticket) {
           if (warps_spanned()) {
             if (auto ok = span_current(); !ok) return ok;
           }
@@ -112,6 +121,7 @@ std::expected<void, Refusal> UpscaleStage::interpolate_by_motion(std::uint32_t o
           biggest = ops.flow_max_now(middle);
         }
         if (!biggest) return std::unexpected(std::move(biggest.error()));
+        motion_measured_ = flow_max_async_;
         single_run_ = *biggest < kernels::single_run_motion(setup_.rife_height);
         strong_motion_ = !single_run_;
         if (single_run_) {
