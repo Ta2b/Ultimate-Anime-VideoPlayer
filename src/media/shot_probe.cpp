@@ -207,7 +207,11 @@ void ShotProbe::run(const std::stop_token& stop, std::int64_t start_us) {
   std::int64_t last_duration = 0;
   const auto restart = [&](std::int64_t at_us) -> bool {
     if (auto shot = cutter.finish(last_pts + last_duration)) timeline_.add(*shot);
-    if (!demuxer->seek(std::max<std::int64_t>(at_us, 0), track, SeekTarget::PreviousKeyframe)) return false;
+    // La fin d'un plan (dernière image plus sa durée) peut dépasser d'une image la durée du conteneur, que le
+    // démuxeur refuse : le saut se borne à cette durée.
+    const std::int64_t duration = demuxer->duration_us();
+    const std::int64_t target = duration > 0 ? std::min(at_us, duration) : at_us;
+    if (!demuxer->seek(std::max<std::int64_t>(target, 0), track, SeekTarget::PreviousKeyframe)) return false;
     decoder->flush();
     cutter = ShotCutter(at_us <= 0);
     finished_.store(false, std::memory_order_release);

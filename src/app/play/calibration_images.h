@@ -1,8 +1,10 @@
 // Les images d'exemple de la calibration du grade adaptatif (Paramètres > HDR > « Calibrer le grade
-// adaptatif ») : onze plans fixes tirés d'Akudama Drive, des Enfants du Temps, de Violet Evergarden, de
-// Frieren et de Your Name, livrés en une vidéo (data/calibration/calibration.mkv, SOURCES.md) que le lecteur
-// lit en pause, plan par plan, dans la même chaîne que les épisodes : ce que la calibration montre est ce que
-// la lecture rendra. Chaque plan dit ce qu'il faut voir à l'écran quand les réglages sont justes.
+// adaptatif ») : dix-huit plans fixes tirés d'Akudama Drive, des Enfants du Temps, de Violet Evergarden, de
+// Frieren, de Your Name, de Re:Zero, de Slime et de
+// Black Clover, livrés en une vidéo (data/calibration/calibration.mkv,
+// SOURCES.md) que le lecteur lit en pause, plan par plan, dans la même chaîne que les épisodes : ce que la
+// calibration montre est ce que la lecture rendra. Chaque plan dit ce qu'il faut voir à l'écran quand les
+// réglages sont justes.
 #pragma once
 
 #include <array>
@@ -12,7 +14,7 @@
 
 namespace ajp::app::play {
 
-inline constexpr int kCalibrationImages = 11;                     // plans de la vidéo
+inline constexpr int kCalibrationImages = 18;                     // plans de la vidéo
 inline constexpr std::int64_t kCalibrationSegmentUs = 6'000'000;  // chaque plan tient 6 s de la vidéo
 
 struct CalibrationImage {
@@ -25,8 +27,11 @@ struct CalibrationImage {
 // L'ordre de la calibration : d'abord les plans obligatoires, qui tiennent les deux bouts de la courbe, son
 // milieu, la peau et les éclats d'une scène claire (la cellule et son rai de lumière, Hina dans la pénombre,
 // Hina sous la pluie, la ville sous le soleil, la salle aux lampes) ; puis les plans bonus, qui la précisent
-// (projecteurs dans la brume, forêt, blancs, feu d'artifice, ombre chaude, crépuscule).
-inline constexpr std::array<int, kCalibrationImages> kCalibrationOrder{0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10};
+// (projecteurs dans la brume, forêt, blancs, feu d'artifice, ombre chaude, crépuscule, bleus profonds du
+// dragon, escalier sombre, corne lumineuse, ciel rose, vallée dans la lumière, mur de
+// feu, chaîne de lumière).
+inline constexpr std::array<int, kCalibrationImages> kCalibrationOrder{0, 1,  2,  3,  4,  5,  6,  7,  8,
+                                                                       9, 10, 11, 12, 13, 14, 15, 16, 17};
 inline constexpr int kCalibrationRequired = 5;
 
 // Le plan id de la vidéo (0 à kCalibrationImages - 1) : la calibration les montre dans l'ordre, chacun réglé

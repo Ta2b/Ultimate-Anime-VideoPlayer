@@ -302,10 +302,13 @@ vec4 hook() {
         float weight = smoothstep(0.0, 0.06, chroma) * (1.0 - smoothstep(0.10, 0.40, chroma))
                      * smoothstep(0.12, 0.30, ictcp.x) * (1.0 - skin) * (1.0 - tame);
         // Prudence : les rouges, oranges et jaunes (protan dominant) saturent vite, surtout en scène claire ; la
-        // vibrance n'y dépasse pas 0,10. Elle ne monte à sa valeur que sur les teintes froides, ou aucun
-        // problème visible n'est connu.
+        // vibrance n'y dépasse pas 0,10. Les bleus et les verts gardent tout le curseur tant qu'ils sont ternes
+        // (ciel pâle, feuillage) ; déjà vifs (chroma au-dessus de ~0,07) ou lumineux (halo, lueur : au-dessus de
+        // ~100 nits), ils sont plafonnés comme les tons chauds : poussé plus loin, un halo bleu ou vert lisse fait ressortir les
+        // paliers de la source en bandes (la corne de Rem dans Re:Zero).
         float warm = smoothstep(0.0, 0.01, ictcp.z - 0.5 * max(ictcp.y, 0.0));
-        float vb_px = mix(vb_now, min(vb_now, 0.10), warm);
+        float vivid_cool = max(smoothstep(0.04, 0.10, chroma), smoothstep(0.46, 0.54, ictcp.x));
+        float vb_px = mix(vb_now, min(vb_now, 0.10), max(warm, vivid_cool));
         ictcp.yz *= 1.0 + vb_px * weight;
         vec3 vivid = to_target(LMS_TO_RGB * pq_to_nits(ICTCP_TO_LMS * ictcp));
         // Limite douce : le renforcement ralentit avant le bord du gamut ou le pic.

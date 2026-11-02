@@ -102,4 +102,48 @@ TEST_CASE(
   CHECK(std::abs(grey_with[1] - grey_alone[1]) < 0.02 * grey_alone[1]);
 }
 
+TEST_CASE("couleurs : un bleu terne se ravive, un bleu déjà vif ou lumineux n'est presque plus poussé",
+          "[render][gpu]") {
+  Gpu gpu;
+  require_device(gpu);
+  REQUIRE(gpu.grade);
+  // Une image uniforme d'une couleur sRGB, en BT.2020 au blanc SDR de 203 nits.
+  const auto image = [](double r8, double g8, double b8) {
+    const auto lin = [](double v) {
+      const double c = v / 255.0;
+      return c <= 0.04045 ? c / 12.92 : std::pow((c + 0.055) / 1.055, 2.4);
+    };
+    const double r = lin(r8), g = lin(g8), b = lin(b8);
+    const std::array<double, 3> bt2020{0.6274 * r + 0.3293 * g + 0.0433 * b,
+                                       0.0691 * r + 0.9195 * g + 0.0114 * b,
+                                       0.0164 * r + 0.0880 * g + 0.8956 * b};
+    std::vector<std::uint16_t> pixels(static_cast<std::size_t>(kSide) * kSide * 4);
+    for (std::size_t i = 0; i < pixels.size(); i += 4) {
+      for (std::size_t c = 0; c < 3; ++c)
+        pixels[i + c] = static_cast<std::uint16_t>(std::lround(nits_to_pq(203.0 * bt2020.at(c)) * 65535.0));
+      pixels[i + 3] = 65535;
+    }
+    return pixels;
+  };
+  GradeParams off = expanded(0.0);
+  GradeParams on = off;
+  on.vibrance = 1.2;  // le curseur des couleurs poussé fort
+  const auto gain = [&](double r8, double g8, double b8) {
+    const auto source = image(r8, g8, b8);
+    return saturation(graded_rgb(gpu, source, on)[kSide / 2]) -
+           saturation(graded_rgb(gpu, source, off)[kSide / 2]);
+  };
+  const double dull_blue = gain(110, 140, 170);   // ciel pâle, couvert
+  const double dull_green = gain(120, 150, 110);  // feuillage terne
+  const double vivid_blue = gain(30, 140, 255);   // halo bleu vif, lumineux
+  const double vivid_green = gain(40, 230, 150);  // lueur verte
+  INFO("terne " << dull_blue << " " << dull_green << " ; vif " << vivid_blue << " " << vivid_green);
+  CHECK(dull_blue > 0.04);
+  CHECK(dull_green > 0.04);
+  CHECK(vivid_blue < 0.04);
+  CHECK(vivid_green < 0.04);
+  CHECK(vivid_blue < dull_blue / 3.0);
+  CHECK(vivid_green < dull_green / 3.0);
+}
+
 }  // namespace ajp::render
