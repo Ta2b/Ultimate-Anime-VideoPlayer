@@ -125,10 +125,11 @@ std::expected<std::unique_ptr<VideoStage>, Refusal> UpscaleStage::start(VideoSta
                   std::format("étage gpu : RIFE en {}x{} hors du travail {}x{}", setup.rife_width,
                               setup.rife_height, setup.work_width, setup.work_height));
   }
-  if ((setup.rife != nullptr || setup.gmfss_pair != nullptr || setup.distil_drba != nullptr) &&
+  if ((setup.rife != nullptr || setup.gmfss_pair != nullptr ||
+       (setup.distil_drba != nullptr && !setup.drba_motion)) &&
       (setup.rife_width != setup.work_width || setup.rife_height != setup.work_height)) {
     return refuse(RefusalCode::ShapeInvalid,
-                  "étage gpu : RIFE image, GMFSS et DistilDRBA à la taille de travail seulement");
+                  "étage gpu : RIFE image, GMFSS et DistilDRBA image à la taille de travail seulement");
   }
   if (setup.slots.empty() || setup.slots.size() > kMaxRingSlots) {
     return refuse(RefusalCode::FieldOutOfRange, std::format("étage gpu : 1 à {} slots", kMaxRingSlots));
@@ -268,7 +269,7 @@ std::expected<std::uint32_t, Refusal> UpscaleStage::outputs(const DecodedFrame& 
     debanded_ = *debanded;
   }
   analyze_source(frame);
-  if (small_[current_] && !ingested) {  // l'image de RIFE, réduite par Area
+  if (small_[current_] && !ingested && !std::exchange(drba_.small_taken, false)) {  // réduite par Area
     if (auto ok = ops.ingest(frame, gpu::IngestSpec{}, small_[current_]->tensor()); !ok)
       return std::unexpected(std::move(ok.error()));
   }
@@ -489,12 +490,13 @@ bool UpscaleStage::passed(const DecodedFrame& frame, const DecodedFrame& next) {
   if (!now.valid || now.epoch != frame.epoch || now.rate <= 0.0) return false;
   // L'image d'après sera passée quand celle-ci serait prête : celle-ci ne paraîtrait jamais.
   if (next.pts_us > ready_media_us(now, host_now_us(), 0, latency_us())) return false;
-  // La suite repart de l'image d'après, comme au début d'une époque : ni paire, ni grille de
-  // cadence, ni fenêtre de DistilDRBA ne passent par-dessus l'image sautée.
+  // La suite repart de l'image d'après, comme au début d'une époque : ni paire ni grille de cadence ne
+  // passent par-dessus l'image sautée. DistilDRBA la garde comme image d'avant (keep_skipped).
   previous_.reset();
   cadence_.reset();
   free_grid_.reset();
   drba_.continuous = false;
+  keep_skipped(frame);
   ++skipped_;
   if (setup_.live) setup_.live->count_skipped();
   return true;

@@ -31,8 +31,9 @@ std::unexpected<Refusal> refuse(RefusalCode code, std::string detail) {
 
 std::expected<void, Refusal> UpscaleStage::allocate_drba() {
   gpu::Backend& backend = *setup_.backend;
-  const kernels::RifeGeometry g =
-      kernels::rife_geometry(setup_.work_width, setup_.work_height, setup_.drba_align);
+  // Variante mouvement : le mouvement s'estime à la taille de RIFE (D4 : 720p pour un travail plus grand),
+  // sur des copies réduites des quatre images, et le warp déforme les images de travail.
+  const kernels::RifeGeometry g = drba_geometry();
   const auto alloc = [&](std::unique_ptr<gpu::TensorBuffer>& into, int channels, int width,
                          int height) -> std::expected<void, Refusal> {
     auto tensor =
@@ -43,6 +44,11 @@ std::expected<void, Refusal> UpscaleStage::allocate_drba() {
   };
   for (auto* frame : {&drba_.before, &drba_.after}) {
     if (auto ok = alloc(*frame, 3, setup_.work_width, setup_.work_height); !ok) return ok;
+  }
+  if (small_[0]) {
+    for (auto* frame : {&drba_.small_before, &drba_.small_after}) {
+      if (auto ok = alloc(*frame, 3, setup_.rife_width, setup_.rife_height); !ok) return ok;
+    }
   }
   for (auto* input : {&drba_.pair01, &drba_.pair12}) {
     if (auto ok = alloc(*input, kernels::kDistilDrbaInputPlanes, g.padded_width, g.padded_height); !ok)
@@ -63,13 +69,26 @@ std::expected<void, Refusal> UpscaleStage::drba_arrive(const DecodedFrame& frame
                                                        const gpu::IngestSpec& spec) {
   // rgb_[current_] tient l'image d'avant a : elle passe dans before, qui rend son tampon.
   std::swap(drba_.before, rgb_[current_]);
+  if (small_[current_]) std::swap(drba_.small_before, small_[current_]);
+  drba_.small_taken = false;
   drba_.filled01 = {};
   drba_.filled12 = {};
   drba_.before_ok = drba_.continuous && previous_ && previous_->epoch == frame.epoch;
   drba_.continuous = false;
+  if (drba_.bridge_ticket) {
+    // L'image d'avant est l'image sautée : gardée si rien ne la coupe de l'image de reprise.
+    auto bridged = setup_.backend->kernels()->scores_take(*std::exchange(drba_.bridge_ticket, std::nullopt));
+    if (!bridged) return std::unexpected(std::move(bridged.error()));
+    drba_.before_ok =
+        previous_ && previous_->epoch == frame.epoch && !kernels::is_scene_cut(bridged->scene_score);
+  }
   // b est déjà ingérée si elle est arrivée derrière l'image précédente.
   if (drba_.after_id == frame.id && drba_.after_epoch == frame.epoch) {
     std::swap(rgb_[current_], drba_.after);
+    if (small_[current_]) {
+      std::swap(small_[current_], drba_.small_after);
+      drba_.small_taken = true;
+    }
     drba_.after_id.reset();
     return {};
   }
@@ -104,15 +123,27 @@ std::expected<gpu::PairScores, Refusal> UpscaleStage::drba_scores(const DecodedF
   return setup_.backend->kernels()->scores_now(rgb_[current_ ^ 1U]->tensor(), rgb_[current_]->tensor());
 }
 
+kernels::RifeGeometry UpscaleStage::drba_geometry() const {
+  return kernels::rife_geometry(setup_.rife_width, setup_.rife_height, setup_.drba_align);
+}
+
 std::expected<void, Refusal> UpscaleStage::drba_next(const DecodedFrame& frame, const gpu::IngestSpec& spec,
                                                      bool measure) {
   drba_.after_ok = false;
   drba_.after_held = false;
   drba_.after_ticket.reset();
+  gpu::KernelOps& ops = *setup_.backend->kernels();
+  if (std::exchange(drba_.bridge, false)) {
+    // Reprise après une image sautée : elle (rgb_ de l'autre côté) contre celle-ci, relue à la suivante.
+    if (auto ticket = ops.scores_start(rgb_[current_ ^ 1U]->tensor(), rgb_[current_]->tensor()))
+      drba_.bridge_ticket = *ticket;
+  }
   const DecodedFrame* after = next();
   if (after == nullptr) return {};
-  gpu::KernelOps& ops = *setup_.backend->kernels();
   if (auto ok = ops.ingest(*after, spec, drba_.after->tensor()); !ok) return ok;
+  if (drba_.small_after) {
+    if (auto ok = ops.ingest(*after, gpu::IngestSpec{}, drba_.small_after->tensor()); !ok) return ok;
+  }
   drba_.after_id = after->id;
   drba_.after_epoch = after->epoch;
   if (!measure) return {};
@@ -132,15 +163,35 @@ std::expected<void, Refusal> UpscaleStage::drba_next(const DecodedFrame& frame, 
   return {};
 }
 
+void UpscaleStage::keep_skipped(const DecodedFrame& frame) {
+  drba_.bridge = false;
+  drba_.bridge_ticket.reset();
+  if (!drba() || drba_.after_id != frame.id || drba_.after_epoch != frame.epoch) return;
+  // Sa mesure contre l'image d'avant ne sert plus : relue (le GPU l'a finie) pour ne pas la laisser en vol.
+  if (drba_.after_ticket)
+    (void)setup_.backend->kernels()->scores_take(*std::exchange(drba_.after_ticket, std::nullopt));
+  drba_.after_scores.reset();
+  drba_.after_id.reset();
+  // L'image sautée prend la place de la dernière calculée, qui ne sert plus : à la reprise, elle passe
+  // dans before comme l'image d'avant la paire.
+  std::swap(rgb_[current_], drba_.after);
+  if (small_[current_]) std::swap(small_[current_], drba_.small_after);
+  drba_.bridge = true;
+}
+
 std::expected<void, Refusal> UpscaleStage::run_drba(const kernels::DrbaCall& call,
                                                     std::span<gpu::Tensor> results) {
   gpu::KernelOps& ops = *setup_.backend->kernels();
-  const gpu::Tensor& a = rgb_[current_ ^ 1U]->tensor();
-  const gpu::Tensor& b = rgb_[current_]->tensor();
+  // Les copies réduites quand le mouvement s'estime plus petit que le travail (variante mouvement).
+  const bool small = small_[0] != nullptr;
+  const gpu::Tensor& a = rife_source(current_ ^ 1U);
+  const gpu::Tensor& b = rife_source(current_);
+  const gpu::Tensor& before = small ? drba_.small_before->tensor() : drba_.before->tensor();
+  const gpu::Tensor& after = small ? drba_.small_after->tensor() : drba_.after->tensor();
   const bool whole = call.on_b ? drba_.after_ok : drba_.before_ok;
-  const gpu::Tensor& img0 = call.on_b ? a : (whole ? drba_.before->tensor() : a);
+  const gpu::Tensor& img0 = call.on_b ? a : (whole ? before : a);
   const gpu::Tensor& img1 = call.on_b ? b : a;
-  const gpu::Tensor& img2 = call.on_b ? (whole ? drba_.after->tensor() : b) : b;
+  const gpu::Tensor& img2 = call.on_b ? (whole ? after : b) : b;
   const auto fill = [&](gpu::TensorBuffer& input, DrbaBuffers::Filled& filled, const gpu::Tensor& first,
                         const gpu::Tensor& second) -> std::expected<void, Refusal> {
     if (drba_.time_only && filled.first == &first && filled.second == &second) {
@@ -213,13 +264,13 @@ std::expected<void, Refusal> UpscaleStage::interpolate_drba_motion(std::uint32_t
   }
   // Le warp final du graphe lit l'image du centre (flot 0-1, poids du masque) et celle du côté choisi
   // (flot 2-3) : a puis b avant ½, b puis a à partir de ½. Le mouvement est celui de l'instant, tel quel.
-  const kernels::RifeGeometry g =
-      kernels::rife_geometry(setup_.work_width, setup_.work_height, setup_.drba_align);
+  // Estimé à la taille de RIFE dans ses plans remplis : le warp met le mouvement à l'échelle du travail.
+  const kernels::RifeGeometry g = drba_geometry();
   const gpu::Motion motion{
       .flow = drba_.flow->tensor(),
       .mask = drba_.mask->tensor(),
       .area =
-          kernels::Window{.x = g.left, .y = g.top, .width = setup_.work_width, .height = setup_.work_height}};
+          kernels::Window{.x = g.left, .y = g.top, .width = setup_.rife_width, .height = setup_.rife_height}};
   return call.on_b ? blend(b, a, motion, 0.5F, out) : blend(a, b, motion, 0.5F, out);
 }
 

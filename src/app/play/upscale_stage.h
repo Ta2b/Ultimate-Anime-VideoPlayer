@@ -39,6 +39,7 @@
 #include "gpu/kernel_ops.h"
 #include "kernels/spec/distil_drba.h"
 #include "kernels/spec/gmfss.h"
+#include "kernels/spec/rife.h"
 #include "kernels/spec/warp.h"
 
 namespace ajp::app::play {
@@ -160,6 +161,10 @@ class UpscaleStage final : public RingStage {
   // output + 1 sur outputs_ dans middle().
   std::expected<void, Refusal> allocate_drba();
   std::expected<void, Refusal> drba_arrive(const DecodedFrame& frame, const gpu::IngestSpec& spec);
+  // L'image sautée, gardée comme image d'avant (D3).
+  void keep_skipped(const DecodedFrame& frame);
+  // Où DistilDRBA estime : la taille de RIFE.
+  kernels::RifeGeometry drba_geometry() const;
   std::expected<gpu::PairScores, Refusal> drba_scores(const DecodedFrame& frame);
   std::expected<void, Refusal> drba_next(const DecodedFrame& frame, const gpu::IngestSpec& spec,
                                          bool measure);
@@ -412,6 +417,16 @@ class UpscaleStage final : public RingStage {
     std::optional<std::uint64_t> after_ticket;
     SourceId ticket_left;
     SourceId ticket_right;
+    // Image sautée en retard (passed) : déjà ingérée comme after, elle reste l'image d'avant de la
+    // paire qui suit la reprise (D3). bridge : à mesurer contre l'image de reprise ; bridge_ticket : cette
+    // mesure, relue à l'arrivée de l'image d'après.
+    bool bridge = false;
+    // Variante mouvement estimée plus petite (D4) : before et after réduits, comme small_ pour a et b ;
+    // small_taken : la réduite de b vient de small_after, sans nouvelle ingestion.
+    std::unique_ptr<gpu::TensorBuffer> small_before;
+    std::unique_ptr<gpu::TensorBuffer> small_after;
+    bool small_taken = false;
+    std::optional<std::uint64_t> bridge_ticket;
     std::uint64_t runs = 0;
     std::uint64_t edges = 0;  // passes sans l'image d'un côté (début, coupe, fin)
     std::uint64_t held = 0;   // instants rendus sans passe : le côté de la paire est un dessin tenu

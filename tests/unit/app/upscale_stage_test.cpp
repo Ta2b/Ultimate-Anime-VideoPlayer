@@ -647,6 +647,41 @@ TEST_CASE("Étage gpu : DistilDRBA mouvement, un SPAN par source et le warp apr�
   CHECK(rig.backend.count("warp_blend") + rig.backend.count("warp_blend_ring") == 2);
 }
 
+TEST_CASE("Étage gpu : DistilDRBA mouvement estimé plus petit que le travail, sur des copies réduites",
+          "[app][stage]") {
+  Rig rig;
+  UpscaleSetup s = rig.setup(true);
+  s.rife = nullptr;
+  s.distil_drba = &rig.drba_motion;
+  s.drba_motion = true;
+  s.warp_after_span = true;
+  s.rife_width = kWidth / 2;
+  s.rife_height = kHeight / 2;
+  rig.start(std::move(s));
+  rig.feed(1, 4);
+  REQUIRE(rig.collect(5));
+  rig.stage.reset();
+
+  CHECK(shape_of(rig.sink.frames()) == std::vector<std::string>{"1", "1-2", "2", "2-3", "3"});
+  CHECK(rig.backend.count("engine drba_motion") == 2);
+  // Chaque source deux fois : au travail et réduite ; la réduite de l'image d'après resservant comme b.
+  for (const char* entry : {"ingest 1", "ingest 2", "ingest 3", "ingest 4"})
+    CHECK(rig.backend.count(entry) == 2);
+  CHECK(rig.backend.count("warp_blend") + rig.backend.count("warp_blend_ring") == 2);
+}
+
+TEST_CASE("Étage gpu : DistilDRBA image refusé plus petit que le travail", "[app][stage]") {
+  Rig rig;
+  UpscaleSetup s = rig.setup(true);
+  s.rife = nullptr;
+  s.distil_drba = &rig.drba;
+  s.rife_width = kWidth / 2;
+  s.rife_height = kHeight / 2;
+  auto started = UpscaleStage::start(rig.init(), std::move(s));
+  REQUIRE_FALSE(started);
+  CHECK(started.error().code == RefusalCode::ShapeInvalid);
+}
+
 TEST_CASE("Étage gpu : refus de démarrage nommés", "[app][stage]") {
   Rig rig;
   const auto refused = [&](UpscaleSetup s) {
