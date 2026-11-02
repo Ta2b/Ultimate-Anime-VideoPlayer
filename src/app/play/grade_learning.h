@@ -16,12 +16,13 @@
 #include <vector>
 
 #include "app/play/settings.h"
+#include "render/adaptive_rules.h"
 
 namespace ajp::app::play {
 
 // La luminosité de référence d'une série (Re:Zero, 0,30) : les seuils du grade adaptatif suivent la série en
 // proportion (chain_hdr.cpp : adaptive_tick).
-inline constexpr double kSeriesRef = 0.30;
+inline constexpr double kSeriesRef = render::adaptive_rules::kSeriesRef;
 double series_ratio(double series_luma);
 
 // Les bouts de la courbe du grade adaptatif et ses seuils (% du blanc).

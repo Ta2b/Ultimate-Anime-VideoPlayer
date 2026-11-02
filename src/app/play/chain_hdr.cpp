@@ -18,6 +18,7 @@
 #include "app/play/look_catalog.h"
 #include "core/clock.h"
 #include "core/log.h"
+#include "render/adaptive_rules.h"
 #include "render/looks.h"
 #include "vendor_hdr/sdk_store.h"
 
@@ -63,8 +64,9 @@ double glow_weight(const gpu::KernelOps::SceneStats& stats, const render::GradeS
   const double hi = std::max(g.adaptive_hi / 100.0, lo + 0.01);
   // L'éclat : au moins 0,2 % de points au-dessus de 80 %, guère plus de 12 % (au-delà, une scène claire), et
   // un pic à plus de 0,4 au-dessus du fond.
-  return smooth(0.35, 0.60, spread) * smooth(0.002, 0.02, bright) * (1.0 - smooth(0.12, 0.30, bright)) *
-         (1.0 - smooth(lo, hi, p50));
+  namespace rules = render::adaptive_rules;
+  return smooth(0.35, 0.60, spread) * smooth(rules::kGlowShareLo, rules::kGlowShareHi, bright) *
+         (1.0 - smooth(rules::kGlowSceneLo, rules::kGlowSceneHi, bright)) * (1.0 - smooth(lo, hi, p50));
 }
 
 // Couleur de la sortie de RTX HDR : PQ BT.2020 au pic donné à TrueHDR.
@@ -381,23 +383,26 @@ void adaptive_tick(Chain& to, std::int64_t now_us) {
   // seuils suivent la série EN PROPORTION, si bien qu'une scène à 1,45 fois la luminosité moyenne de Slime se
   // règle comme une scène à 1,45 fois celle de Re:Zero.
   const double ratio = series_ratio(to.series_luma);
-  const double bs_x = std::clamp((to.series_luma - 0.36) / 0.14, 0.0, 1.0);
+  namespace rules = render::adaptive_rules;
+  const double bs_x = std::clamp(
+      (to.series_luma - rules::kBrightSeriesLo) / (rules::kBrightSeriesHi - rules::kBrightSeriesLo), 0.0,
+      1.0);
   double bs = bs_x * bs_x * (3.0 - 2.0 * bs_x);
   const double lo = g.adaptive_lo / 100.0 * ratio;
-  const double hi = std::max(std::min(g.adaptive_hi / 100.0 * ratio, 0.95), lo + 0.01);
+  const double hi = std::max(std::min(g.adaptive_hi / 100.0 * ratio, rules::kBrightCap), lo + 0.01);
   const double x = std::clamp((to.adaptive_luma - lo) / (hi - lo), 0.0, 1.0);
   double t = x * x * (3.0 - 2.0 * x);
   // La vibrance dépend de la couleur, pas de la luminosité : un ciel ou un aplat bleu saturé (« bleu » moyen
   // élevé) n'en veut presque pas, un désert jaune ou des murs ternes en veulent. Seuils mesurés sur les
   // scènes de Tatoub (plein jour bleu : vibrance 0 ; désert, donjon, teints : 0,80).
-  constexpr double kBlueLo = 0.05;
-  constexpr double kBlueHi = 0.13;
-  const double xv = std::clamp((to.adaptive_blue - kBlueLo) / (kBlueHi - kBlueLo), 0.0, 1.0);
+  const double xv =
+      std::clamp((to.adaptive_blue - rules::kBlueLo) / (rules::kBlueHi - rules::kBlueLo), 0.0, 1.0);
   // Un bleu saturé mais SOMBRE (écran d'interface bleu nuit) n'est pas un ciel : le bleu ne compte qu'avec
   // une scène à moitié claire. Et un flash très saturé de n'importe quelle teinte (feu, éclair : chroma
   // moyenne au-dessus de 0,45) n'a pas besoin de vibrance non plus (audit sur trois séries).
-  const double gate = std::clamp(t / 0.5, 0.0, 1.0);
-  const double xc = std::clamp((to.adaptive_chroma - 0.40) / 0.20, 0.0, 1.0);
+  const double gate = std::clamp(t / rules::kBlueGate, 0.0, 1.0);
+  const double xc =
+      std::clamp((to.adaptive_chroma - rules::kChromaLo) / (rules::kChromaHi - rules::kChromaLo), 0.0, 1.0);
   double tv = std::max(xv * xv * (3.0 - 2.0 * xv) * gate, xc * xc * (3.0 - 2.0 * xc));
   double glow = std::clamp(to.adaptive_glow_seen, 0.0, 1.0) * (1.0 - t);
   if (g.adaptive_force >= 0.0) {  // calibration : un bout de la courbe, sans la couleur ni la série

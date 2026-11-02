@@ -17,6 +17,7 @@
 #include "core/profile.h"
 #include "core/resolve.h"
 #include "core/types.h"
+#include "render/adaptive_rules.h"
 
 namespace ajp::render {
 
@@ -241,6 +242,22 @@ struct GradeParams {
   // Scène sombre avec éclat (GradeSettings::adaptive_glow_*) : son poids vient de la mesure de la scène,
   // ou gl_force (0 à 1) pendant la calibration ; négatif : selon la scène.
   double gl_force = -1.0;
+  // Les règles du grade adaptatif (adaptive_rules.h), passées au shader pour son repli : jamais réglées.
+  double ar_series_ref = adaptive_rules::kSeriesRef;
+  double ar_ratio_min = adaptive_rules::kRatioMin;
+  double ar_ratio_max = adaptive_rules::kRatioMax;
+  double ar_bright_cap = adaptive_rules::kBrightCap;
+  double ar_blue_lo = adaptive_rules::kBlueLo;
+  double ar_blue_hi = adaptive_rules::kBlueHi;
+  double ar_blue_gate = adaptive_rules::kBlueGate;
+  double ar_chroma_lo = adaptive_rules::kChromaLo;
+  double ar_chroma_hi = adaptive_rules::kChromaHi;
+  double ar_series_lo = adaptive_rules::kBrightSeriesLo;
+  double ar_series_hi = adaptive_rules::kBrightSeriesHi;
+  double ar_glow_lo = adaptive_rules::kGlowShareLo;
+  double ar_glow_hi = adaptive_rules::kGlowShareHi;
+  double ar_scene_lo = adaptive_rules::kGlowSceneLo;
+  double ar_scene_hi = adaptive_rules::kGlowSceneHi;
   double ad_sky_vibrance = 0.0;  // ciel bleu saturé ou flash très coloré (GradeSettings::adaptive_vibrance)
   double gl_shadows = 0.20;
   double gl_vibrance = 0.05;
