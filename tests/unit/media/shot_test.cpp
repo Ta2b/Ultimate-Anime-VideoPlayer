@@ -127,7 +127,7 @@ TEST_CASE("plans : la chronologie rend le plan d'un instant, et interpole un fon
   CHECK(timeline.at(600'000)->start_us == 0);
 }
 
-TEST_CASE("plans : la vidéo de calibration se découpe en ses onze plans de 6 s", "[media][shots]") {
+TEST_CASE("plans : la vidéo de calibration se découpe en ses dix-huit plans de 6 s", "[media][shots]") {
   const std::filesystem::path clip = std::filesystem::path(AJP_DATA_DIR) / "calibration" / "calibration.mkv";
   REQUIRE(std::filesystem::exists(clip));
   ShotTimeline timeline;
@@ -136,8 +136,8 @@ TEST_CASE("plans : la vidéo de calibration se découpe en ses onze plans de 6 s
     std::this_thread::sleep_for(std::chrono::milliseconds(100));
   REQUIRE(probe->finished());
   REQUIRE_FALSE(probe->failure());
-  REQUIRE(timeline.size() == 11);
-  for (int i = 0; i < 11; ++i) {
+  REQUIRE(timeline.size() == 18);
+  for (int i = 0; i < 18; ++i) {
     const auto shot = timeline.at(static_cast<std::int64_t>(i) * 6'000'000 + 3'000'000);
     REQUIRE(shot);
     // Une coupe à 6 s près d'une image (24 im/s).
@@ -151,7 +151,7 @@ TEST_CASE("plans : la vidéo de calibration se découpe en ses onze plans de 6 s
 TEST_CASE("plans : l'analyse partie d'un saut revient combler le début", "[media][shots]") {
   const std::filesystem::path clip = std::filesystem::path(AJP_DATA_DIR) / "calibration" / "calibration.mkv";
   ShotTimeline timeline;
-  const auto probe = ShotProbe::start(clip, timeline, 30'000'000, ShotProbeOptions{.lead_us = 60'000'000});
+  const auto probe = ShotProbe::start(clip, timeline, 30'000'000, ShotProbeOptions{.lead_us = 120'000'000});
   for (int i = 0; i < 600 && !probe->finished(); ++i)
     std::this_thread::sleep_for(std::chrono::milliseconds(100));
   REQUIRE(probe->finished());

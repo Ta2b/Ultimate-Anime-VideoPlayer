@@ -16,7 +16,7 @@ struct Scene {
 };
 
 // Les plans de la vidéo, dans leur ordre : d'abord les cinq obligatoires (nuit avec un éclat, pénombre avec
-// un visage, jour avec un visage, ciel et soleil, scène claire et ses lampes), puis les six bonus.
+// un visage, jour avec un visage, ciel et soleil, scène claire et ses lampes), puis les treize bonus.
 const std::array<Scene, kCalibrationImages> kScenes{{
     {"Akudama Drive · the cell and its shaft of light",
      "The shaft of light through the door stays bright with a soft pink glow; the bars and the "
@@ -68,6 +68,39 @@ const std::array<Scene, kCalibrationImages> kScenes{{
      " gold and pink relief; Taki's face stays warm without turning orange, and his dark jacket "
      "keeps its folds. Clouds burnt into white: lower Middle gray. Orange skin or red sky: lower"
      " Colors. Jacket lost in black: lower Deep blacks."},
+    {"Re:Zero · the blue dragon up close",
+     "The dragon's scales stay a deep, even blue with visible shading, its yellow eye glows "
+     "without blooming, and its white teeth stay sharp. Blue banding or a neon, flat blue: "
+     "lower Colors. Scales lost in black: lower Deep blacks. Teeth glaring white: lower Middle "
+     "gray."},
+    {"Re:Zero · Ram on the dark stairs",
+     "The stone stairs and the walls stay readable in a dark green grey, Ram's pink hair and "
+     "her dress keep their color, and the old man at the back stays visible. Stairs lost in "
+     "black: lower Deep blacks. Whole scene too dark: raise Middle gray. Greyish, foggy stone: "
+     "raise Deep blacks."},
+    {"Re:Zero · Rem and her glowing horn",
+     "The horn glows pink and white with a soft halo, Rem's blue hair stays smooth without "
+     "bands or blotches, and her face stays pale. Bands or blotches in the blue hair or around "
+     "the halo: lower Colors. Halo spreading into a white flare: lower Middle gray. Hood lost "
+     "in black: lower Deep blacks."},
+    {"Slime · the pink sky",
+     "The pink and violet sky keeps its soft clouds and light rays, the two faces stay "
+     "natural, and the dark jacket keeps its folds. Neon pink or violet sky: lower Colors. "
+     "Clouds burnt into white: lower Middle gray. Jacket lost in black: lower Deep blacks."},
+    {"Slime · the valley in the light",
+     "The river stays a bright silver ribbon without burning, the grass a warm green and the "
+     "tree a deep, readable green. Glaring white river: lower Middle gray. Neon green grass: "
+     "lower Colors. Tree lost in black: lower Deep blacks."},
+    {"Black Clover · the wall of fire",
+     "The wall of fire stays a deep orange with visible flames and windows, the blue lightning "
+     "on the left stays a thin, sharp line, and the stone floor stays readable in the dark. "
+     "Fire burning into yellow or white: lower Middle gray. Neon blue lightning or flat "
+     "orange: lower Colors. Floor lost in black: lower Deep blacks."},
+    {"Black Clover · the chain of light",
+     "The chain and the magic circle glow a pale blue without bands, the red glove stays a "
+     "vivid red, and the ruins behind stay a dark, readable blue green. Bands around the chain "
+     "or a neon blue glow: lower Colors. Chain spreading into a white flare: lower Middle "
+     "gray. Ruins lost in black: lower Deep blacks."},
 }};
 
 }  // namespace

@@ -48,7 +48,7 @@ TEST_CASE("pic du système : la sortie de KWin en HDR, sa crête et son blanc", 
   CHECK_FALSE(parse_kwin_output("not json", "DP-1").has_value());
 }
 
-TEST_CASE("calibration du grade : onze plans d'anime, cinq obligatoires d'abord, guidés et traduits",
+TEST_CASE("calibration du grade : dix-huit plans d'anime, cinq obligatoires d'abord, guidés et traduits",
           "[calibration]") {
   using namespace ajp::app::play;
   std::set<int> ids;

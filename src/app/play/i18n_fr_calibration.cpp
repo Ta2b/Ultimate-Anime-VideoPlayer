@@ -26,11 +26,12 @@ constexpr std::array kCalibration{
           "lecteur."},
     Entry{
         "Sets the adaptive grade on this display from five required anime shots (night, half-light, "
-        "daylight, sky, bright lamps) and six bonus ones: on each one, set the deep blacks, the colors and "
+        "daylight, sky, bright lamps) and thirteen bonus ones: on each one, set the deep blacks, the colors "
+        "and "
         "the middle gray for that scene. The grade then fits its curve to all of them at once, each scene "
         "at its own brightness. The result is kept for this display.",
         "Règle le grade adaptatif sur cet écran à partir de cinq plans d'anime obligatoires (nuit, pénombre, "
-        "plein jour, ciel, lampes en scène claire) et de six plans bonus : sur chacun, réglez les noirs "
+        "plein jour, ciel, lampes en scène claire) et de treize plans bonus : sur chacun, réglez les noirs "
         "profonds, "
         "les couleurs et le gris moyen de cette scène. Le grade ajuste ensuite sa courbe sur tous à la fois, "
         "chaque scène à sa propre luminosité. Le résultat est gardé pour cet écran."},
@@ -142,6 +143,67 @@ constexpr std::array kCalibration{
           "relief doré et rose ; le visage de Taki reste chaud sans virer à l'orange, et sa veste "
           "sombre garde ses plis. Nuages brûlés en blanc : baissez Gris moyen. Peau orangée ou ciel "
           "rouge : baissez Couleurs. Veste perdue dans le noir : baissez Noirs profonds."},
+    Entry{"Re:Zero · the blue dragon up close", "Re:Zero · le dragon bleu en gros plan"},
+    Entry{"The dragon's scales stay a deep, even blue with visible shading, its yellow eye glows "
+          "without blooming, and its white teeth stay sharp. Blue banding or a neon, flat blue: "
+          "lower Colors. Scales lost in black: lower Deep blacks. Teeth glaring white: lower Middle "
+          "gray.",
+          "Les écailles du dragon restent d'un bleu profond et régulier, avec leur modelé, son œil "
+          "jaune brille sans baver et ses dents blanches restent nettes. Bandes dans le bleu ou "
+          "bleu fluo et plat : baissez Couleurs. Écailles perdues dans le noir : baissez Noirs "
+          "profonds. Dents d'un blanc éblouissant : baissez Gris moyen."},
+    Entry{"Re:Zero · Ram on the dark stairs", "Re:Zero · Ram dans l'escalier sombre"},
+    Entry{"The stone stairs and the walls stay readable in a dark green grey, Ram's pink hair and "
+          "her dress keep their color, and the old man at the back stays visible. Stairs lost in "
+          "black: lower Deep blacks. Whole scene too dark: raise Middle gray. Greyish, foggy stone: "
+          "raise Deep blacks.",
+          "L'escalier de pierre et les murs restent lisibles dans un gris vert sombre, les cheveux "
+          "roses de Ram et sa robe gardent leur couleur, et le vieil homme au fond reste visible. "
+          "Escalier perdu dans le noir : baissez Noirs profonds. Scène entière trop sombre : montez "
+          "Gris moyen. Pierre grisâtre, voilée : montez Noirs profonds."},
+    Entry{"Re:Zero · Rem and her glowing horn", "Re:Zero · Rem et sa corne lumineuse"},
+    Entry{"The horn glows pink and white with a soft halo, Rem's blue hair stays smooth without "
+          "bands or blotches, and her face stays pale. Bands or blotches in the blue hair or around "
+          "the halo: lower Colors. Halo spreading into a white flare: lower Middle gray. Hood lost "
+          "in black: lower Deep blacks.",
+          "La corne brille de rose et de blanc avec un halo doux, les cheveux bleus de Rem restent "
+          "lisses, sans bandes ni taches, et son visage reste pâle. Bandes ou taches dans le bleu "
+          "des cheveux ou autour du halo : baissez Couleurs. Halo qui s'étale en éclat blanc : "
+          "baissez Gris moyen. Capuche perdue dans le noir : baissez Noirs profonds."},
+    Entry{"Slime · the pink sky", "Slime · le ciel rose"},
+    Entry{"The pink and violet sky keeps its soft clouds and light rays, the two faces stay "
+          "natural, and the dark jacket keeps its folds. Neon pink or violet sky: lower Colors. "
+          "Clouds burnt into white: lower Middle gray. Jacket lost in black: lower Deep blacks.",
+          "Le ciel rose et violet garde ses nuages doux et ses rayons, les deux visages restent "
+          "naturels et la veste sombre garde ses plis. Ciel rose ou violet fluo : baissez Couleurs. "
+          "Nuages brûlés en blanc : baissez Gris moyen. Veste perdue dans le noir : baissez Noirs "
+          "profonds."},
+    Entry{"Slime · the valley in the light", "Slime · la vallée dans la lumière"},
+    Entry{"The river stays a bright silver ribbon without burning, the grass a warm green and the "
+          "tree a deep, readable green. Glaring white river: lower Middle gray. Neon green grass: "
+          "lower Colors. Tree lost in black: lower Deep blacks.",
+          "La rivière reste un ruban argenté et lumineux sans brûler, l'herbe d'un vert chaud et "
+          "l'arbre d'un vert profond et lisible. Rivière d'un blanc éblouissant : baissez Gris "
+          "moyen. Herbe vert fluo : baissez Couleurs. Arbre perdu dans le noir : baissez Noirs "
+          "profonds."},
+    Entry{"Black Clover · the wall of fire", "Black Clover · le mur de feu"},
+    Entry{"The wall of fire stays a deep orange with visible flames and windows, the blue lightning "
+          "on the left stays a thin, sharp line, and the stone floor stays readable in the dark. "
+          "Fire burning into yellow or white: lower Middle gray. Neon blue lightning or flat "
+          "orange: lower Colors. Floor lost in black: lower Deep blacks.",
+          "Le mur de feu reste d'un orange profond, flammes et fenêtres visibles, l'éclair bleu à "
+          "gauche reste un trait fin et net, et le sol de pierre reste lisible dans le noir. Feu "
+          "qui brûle en jaune ou en blanc : baissez Gris moyen. Éclair bleu fluo ou orange plat : "
+          "baissez Couleurs. Sol perdu dans le noir : baissez Noirs profonds."},
+    Entry{"Black Clover · the chain of light", "Black Clover · la chaîne de lumière"},
+    Entry{"The chain and the magic circle glow a pale blue without bands, the red glove stays a "
+          "vivid red, and the ruins behind stay a dark, readable blue green. Bands around the chain "
+          "or a neon blue glow: lower Colors. Chain spreading into a white flare: lower Middle "
+          "gray. Ruins lost in black: lower Deep blacks.",
+          "La chaîne et le cercle magique brillent d'un bleu pâle sans bandes, le gant rouge reste "
+          "d'un rouge vif et les ruines derrière restent d'un bleu vert sombre et lisible. Bandes "
+          "autour de la chaîne ou lueur bleu fluo : baissez Couleurs. Chaîne qui s'étale en éclat "
+          "blanc : baissez Gris moyen. Ruines perdues dans le noir : baissez Noirs profonds."},
     // Grade adaptatif : « Cette scène » et l'apprentissage (grade_learning.h).
     Entry{"This scene", "Cette scène"},
     Entry{"The scene on screen is {:.0f} % dark, {:.0f} % bright and {:.0f} % glow: a change here goes to "

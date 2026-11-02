@@ -89,7 +89,9 @@ void calibration_start(PlaySettings& d, const SettingsChoices& choices, GradeWiz
   const bool asked = std::exchange(wizard.autostart, false);
   panel::note(i18n::tr(
       "Sets the adaptive grade on this display from five required anime shots (night, half-light, "
-      "daylight, sky, bright lamps) and six bonus ones: on each one, set the deep blacks, the colors and the "
+      "daylight, sky, bright lamps) and thirteen bonus ones: on each one, set the deep blacks, the colors "
+      "and "
+      "the "
       "middle gray for "
       "that scene. The grade then fits its curve to all of them at once, each scene at its own brightness. "
       "The result is kept for this display."));
