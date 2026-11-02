@@ -1,11 +1,9 @@
 #include "app/play/chain_shots.h"
 
 #include <algorithm>
-#include <limits>
 #include <utility>
 
 #include "app/play/chain.h"
-#include "app/play/episodes.h"
 #include "core/log.h"
 #include "media/shot_cache.h"
 
@@ -80,7 +78,6 @@ void open_shots(ShotWork& work, const std::filesystem::path& file, const PlaySet
                 std::int64_t start_us) {
   if (!settings.grade || !settings.grade_values.adaptive || file.empty()) {
     work.current.probe.reset();
-    work.next.probe.reset();
     return;
   }
   const std::int64_t from = std::max<std::int64_t>(start_us, 0);
@@ -94,14 +91,7 @@ void open_shots(ShotWork& work, const std::filesystem::path& file, const PlaySet
     return;
   }
   work.current.retire();  // l'analyse de l'autre fichier s'arrête, sa part faite va au cache
-  work.next_tried = false;
-  if (work.next.file == file && work.next.timeline) {
-    work.current = std::exchange(work.next, ShotJob{});  // l'épisode analysé d'avance
-    if (work.current.probe && !work.current.complete) work.current.probe->seek(from);
-  } else {
-    work.next = ShotJob{};
-    work.current = cached_job(work, file);
-  }
+  work.current = cached_job(work, file);
   if (work.current.complete) {
     const auto log = log_channel("app");
     log->info("plans de {} lus du cache : {} plans", file.filename().string(), work.current.timeline->size());
@@ -112,20 +102,6 @@ void open_shots(ShotWork& work, const std::filesystem::path& file, const PlaySet
 
 void tend_shots(ShotWork& work) {
   keep_if_done(work, work.current);
-  keep_if_done(work, work.next);
-  if (work.next.probe && work.next.complete) work.next.probe.reset();
-  // La vidéo lue est connue : l'épisode suivant s'analyse en entier, sur deux threads, pour s'ouvrir prêt.
-  if (!work.current.complete || work.next_tried || work.current.file.empty()) return;
-  work.next_tried = true;
-  const auto next = sibling_episode(work.current.file, 1);
-  if (!next) return;
-  work.next = cached_job(work, *next);
-  if (work.next.complete || work.next.key.empty()) return;
-  work.next.probe = media::ShotProbe::start(
-      *next, *work.next.timeline, 0,
-      media::ShotProbeOptions{.threads = 2, .lead_us = std::numeric_limits<std::int64_t>::max() / 2});
-  const auto log = log_channel("app");
-  log->info("pré-analyse de l'épisode suivant : {}", next->filename().string());
 }
 
 std::optional<ShotScene> next_shot(Chain& to, std::int64_t now_us) {
