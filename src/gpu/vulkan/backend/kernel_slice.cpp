@@ -186,7 +186,9 @@ std::expected<void, Refusal> VulkanKernelOps::soft_splat_all(std::span<const Spl
     // Les enregistrements faits sur l'ancien tampon ne servent plus (sa poignée est dans leur clé),
     // mais une exécution en cours peut encore l'écrire.
     if (splat_sums_) {
-      if (auto ok = context_.wait_on_host(queue_.last()); !ok) return std::unexpected(ok.error());
+      // Toutes les voies : l'exécution qui l'écrit peut être sur une autre que la courante.
+      if (!context_.settle(queue_.lasts()))
+        return refuse(RefusalCode::VulkanCallFailed, "soft_splat : GPU bloqué");
       splat_sums_.reset();
     }
     auto made = Buffer::create(context_, memory_, bytes, MemoryUse::Device);
@@ -293,7 +295,7 @@ std::expected<std::uint64_t, Refusal> VulkanKernelOps::scores_start(const Tensor
       kernels::rife_geometry(static_cast<int>(va->width), static_cast<int>(va->height));
   pair_tickets_ = ticket;
   slot.ticket = ticket;
-  slot.value = queue_.last().value;
+  slot.value = queue_.ticket();
   slot.blocks = blocks;
   slot.area = static_cast<double>(g.padded_width) * static_cast<double>(g.padded_height);
   return ticket;
@@ -344,7 +346,7 @@ std::expected<std::uint64_t, Refusal> VulkanKernelOps::flow_max_start(const Moti
   if (auto ok = queue_.flush(); !ok) return std::unexpected(ok.error());  // comme scores_start
   flow_tickets_ = ticket;
   slot.ticket = ticket;
-  slot.value = queue_.last().value;
+  slot.value = queue_.ticket();
   slot.points =
       static_cast<std::uint64_t>(motion.area.width) * static_cast<std::uint64_t>(motion.area.height);
   return ticket;

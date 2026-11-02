@@ -50,6 +50,9 @@ struct CreateOptions {
   // VK_KHR_cooperative_matrix et le modèle mémoire Vulkan, activés si l'appareil les a tous
   // deux ; caps().enabled.cooperative_matrix dit s'ils le sont.
   bool cooperative_matrix = false;
+  // Tests : sur un appareil à une file, les voies en plus reprennent la file principale (même
+  // ordre d'exécution, mais toute la logique des voies est exercée).
+  bool alias_lanes = false;
 };
 
 // Un appareil existant. Les champs reprennent ceux de pl_vulkan.
@@ -61,6 +64,9 @@ struct AdoptedDevice {
   std::uint32_t api_version = 0;  // VkApplicationInfo.apiVersion de l'instance
   std::uint32_t queue_family = 0;
   std::uint32_t queue_index = 0;
+  // Autres files de la même famille, à nous seuls (aucun verrou) : les voies de calcul en plus
+  // (VkContext::queue_lanes, gpu/lanes.h). Vide : une seule voie.
+  std::vector<std::uint32_t> lane_queue_indices;
   const VkPhysicalDeviceFeatures2* features = nullptr;  // la chaîne passée à vkCreateDevice
   std::vector<std::string> extensions;                  // extensions activées sur le VkDevice
   // Accès exclusif à la file partagée (pl_vulkan.lock_queue et unlock_queue) ; vides quand la
@@ -102,6 +108,9 @@ class VkContext {
   VkPhysicalDevice physical_device() const { return physical_device_; }
   VkDevice device() const { return device_; }
   VkQueue queue() const { return queue_; }
+  // Files sur lesquelles soumettre : 1 + les files des voies en plus (lane_queue_indices, ou celles
+  // créées avec l'appareil). La voie 0 est queue().
+  std::size_t queue_lanes() const { return lane_queues_.size() + 1; }
   std::uint32_t queue_family() const { return queue_family_; }
   std::uint32_t queue_index() const { return queue_index_; }
   // La file est-elle partagée avec un autre module (l'affichage de libplacebo), sous son verrou ?
@@ -133,6 +142,14 @@ class VkContext {
   // décodée, signal de l'hôte) ouvre un groupe : les enregistrements d'avant ne l'attendent pas.
   Done enqueue(Recording& recording, std::span<const TimelinePoint> waits = {},
                std::span<const TimelinePoint> signals = {});
+  // Le même sur la file de la voie lane (< queue_lanes()). Les lots de voies différentes ne
+  // s'ordonnent que par leurs sémaphores ; dans une voie, comme sur une file unique.
+  Done enqueue(Recording& recording, std::span<const TimelinePoint> waits,
+               std::span<const TimelinePoint> signals, std::size_t lane);
+  // Une soumission sans commande sur la voie lane : elle attend waits et signale signals (la
+  // jointure des voies, Backend::signal).
+  Done enqueue_join(std::span<const TimelinePoint> waits, std::span<const TimelinePoint> signals,
+                    std::size_t lane);
   Done flush();
   // Appelé au début de flush() quand le lot n'est pas vide, sur le fil du contexte : attendre ce
   // que l'hôte écrit encore pour ce lot sur un autre fil (envois d'images), avant que
@@ -159,6 +176,13 @@ class VkContext {
   // l'appelant laisse fuir sa ressource plutôt que de la rendre à un GPU qui la lit encore.
   static constexpr std::chrono::seconds kSettleTimeout{3};
   bool settle(std::optional<TimelinePoint> point = std::nullopt);
+  // Le même pour plusieurs points (la dernière soumission de chaque voie) : tous atteints.
+  bool settle(std::span<const TimelinePoint> points);
+  // Un sémaphore détruit (TimelineSemaphore) : la dernière soumission qui le signalait est oubliée.
+  void forget(VkSemaphore semaphore) const {
+    for (TimelinePoint& point : last_submitted_)
+      if (point.semaphore == semaphore) point = {};
+  }
   bool stalled() const { return stalled_; }
 
  private:
@@ -166,11 +190,12 @@ class VkContext {
   Done create_instance(const CreateOptions& options);
   Done create_device(const CreateOptions& options);
   Done finish_setup();  // file, outils internes, journal
-  Done queue_submit(std::span<const VkSubmitInfo> infos);
+  Done queue_submit(std::span<const VkSubmitInfo> infos, std::size_t lane = 0);
 
   // Une soumission du lot, ses tableaux réutilisés d'un lot à l'autre.
   struct Batched {
-    Recording* recording = nullptr;
+    Recording* recording = nullptr;  // nul : une jointure, sans commande (enqueue_join)
+    std::size_t lane = 0;
     std::vector<VkSemaphore> wait_semaphores;
     std::vector<std::uint64_t> wait_values;
     std::size_t own_waits = 0;  // les premières attentes : l'exécution précédente du même enregistrement
@@ -179,6 +204,8 @@ class VkContext {
   };
   // Un VkSubmitInfo du lot : des soumissions qui se suivent, leurs attentes et signaux fondus.
   struct Group {
+    std::size_t lane = 0;
+    std::size_t entry = 0;  // première entrée du lot
     std::size_t first = 0;  // dans batch_buffers_
     std::size_t count = 0;
     std::vector<VkSemaphore> wait_semaphores;
@@ -200,6 +227,8 @@ class VkContext {
   VkQueue queue_ = VK_NULL_HANDLE;
   std::uint32_t queue_family_ = 0;
   std::uint32_t queue_index_ = 0;
+  std::vector<std::uint32_t> lane_indices_;  // files des voies en plus
+  std::vector<VkQueue> lane_queues_;
   bool owns_instance_ = false;
   bool owns_device_ = false;
   // Couche de validation demandée : son rappel, détruit avant l'instance.
@@ -223,8 +252,10 @@ class VkContext {
   std::vector<VkTimelineSemaphoreSubmitInfo> batch_timelines_;
   std::vector<VkSubmitInfo> batch_infos_;
   std::vector<VkCommandBuffer> batch_buffers_;
-  TimelinePoint last_submitted_;  // le premier signal de la dernière soumission
-  bool stalled_ = false;          // une fin de vie a attendu en vain : plus aucune n'attend
+  // Par voie : le premier signal de la dernière soumission.
+  // mutable : un sémaphore détruit s'en retire (forget), settle ne l'attend plus.
+  mutable std::vector<TimelinePoint> last_submitted_ = std::vector<TimelinePoint>(1);
+  bool stalled_ = false;  // une fin de vie a attendu en vain : plus aucune n'attend
   mutable DestroyedLog destroyed_;
   std::shared_ptr<spdlog::logger> log_;
 };

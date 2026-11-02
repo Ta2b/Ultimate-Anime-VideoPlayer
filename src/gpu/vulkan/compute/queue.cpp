@@ -42,32 +42,47 @@ class OnceBuffer {
 
 }  // namespace
 
-Done VkContext::queue_submit(std::span<const VkSubmitInfo> infos) {
-  if (lock_queue_) lock_queue_();
-  const VkResult result = device_fn_.vkQueueSubmit(queue_, static_cast<std::uint32_t>(infos.size()),
-                                                   infos.data(), VK_NULL_HANDLE);
-  if (unlock_queue_) unlock_queue_();
+Done VkContext::queue_submit(std::span<const VkSubmitInfo> infos, std::size_t lane) {
+  // Les files des voies en plus ne sont qu'à nous : seule la principale passe par le verrou.
+  const bool main = lane == 0;
+  if (main && lock_queue_) lock_queue_();
+  const VkResult result =
+      device_fn_.vkQueueSubmit(main ? queue_ : lane_queues_[lane - 1],
+                               static_cast<std::uint32_t>(infos.size()), infos.data(), VK_NULL_HANDLE);
+  if (main && unlock_queue_) unlock_queue_();
   ++queue_submits_;
   submit_infos_ += infos.size();
   if (result == VK_SUCCESS && !infos.empty() && infos.back().signalSemaphoreCount > 0) {
     const VkSubmitInfo& info = infos.back();
     const auto* timeline = static_cast<const VkTimelineSemaphoreSubmitInfo*>(info.pNext);
-    last_submitted_ = {.semaphore = info.pSignalSemaphores[0], .value = timeline->pSignalSemaphoreValues[0]};
+    last_submitted_[lane] = {.semaphore = info.pSignalSemaphores[0],
+                             .value = timeline->pSignalSemaphoreValues[0]};
   }
   return check(result, "vkQueueSubmit");
 }
 
 bool VkContext::settle(std::optional<TimelinePoint> point) {
+  // Sans point : la dernière soumission de chaque voie.
+  return point ? settle(std::span(&*point, 1)) : settle(std::span<const TimelinePoint>(last_submitted_));
+}
+
+bool VkContext::settle(std::span<const TimelinePoint> points) {
   // Le lot part d'abord, même sous un GPU bloqué : il ne garde pas un enregistrement détruit, et un
   // travail encore en attente lirait la ressource après sa fin de vie.
   if (auto flushed = flush(); !flushed) log().error("fin de vie : {}", flushed.error().detail);
   if (stalled_) return false;
-  const TimelinePoint target = point.value_or(last_submitted_);
-  if (target.semaphore == VK_NULL_HANDLE || target.value == 0) return true;
+  std::vector<VkSemaphore> semaphores;
+  std::vector<std::uint64_t> values;
+  for (const TimelinePoint& target : points) {
+    if (target.semaphore == VK_NULL_HANDLE || target.value == 0) continue;
+    semaphores.push_back(target.semaphore);
+    values.push_back(target.value);
+  }
+  if (semaphores.empty()) return true;
   const VkSemaphoreWaitInfo wait{.sType = VK_STRUCTURE_TYPE_SEMAPHORE_WAIT_INFO,
-                                 .semaphoreCount = 1,
-                                 .pSemaphores = &target.semaphore,
-                                 .pValues = &target.value};
+                                 .semaphoreCount = static_cast<std::uint32_t>(semaphores.size()),
+                                 .pSemaphores = semaphores.data(),
+                                 .pValues = values.data()};
   const auto timeout = std::chrono::duration_cast<std::chrono::nanoseconds>(kSettleTimeout);
   const VkResult result =
       device_fn_.vkWaitSemaphores(device_, &wait, static_cast<std::uint64_t>(timeout.count()));
@@ -75,7 +90,7 @@ bool VkContext::settle(std::optional<TimelinePoint> point) {
   stalled_ = true;
   log().error(
       "fin de vie : le GPU n'a pas atteint la valeur {} en {} s ({}) ; ses ressources restent en place",
-      target.value, kSettleTimeout.count(), result == VK_TIMEOUT ? "délai dépassé" : "appareil perdu");
+      values.back(), kSettleTimeout.count(), result == VK_TIMEOUT ? "délai dépassé" : "appareil perdu");
   return false;
 }
 
@@ -87,6 +102,45 @@ Done VkContext::submit(Recording& recording, std::span<const TimelinePoint> wait
 
 Done VkContext::enqueue(Recording& recording, std::span<const TimelinePoint> waits,
                         std::span<const TimelinePoint> signals) {
+  return enqueue(recording, waits, signals, 0);
+}
+
+Done VkContext::enqueue_join(std::span<const TimelinePoint> waits, std::span<const TimelinePoint> signals,
+                             std::size_t lane) {
+  if (lane >= queue_lanes()) return refuse(RefusalCode::InputMismatch, "voie sans file");
+  for (const TimelinePoint& point : waits) {
+    if (point.semaphore == VK_NULL_HANDLE)
+      return refuse(RefusalCode::InputMismatch, "attente sur un sémaphore nul");
+  }
+  if (signals.empty() || signals.front().semaphore == VK_NULL_HANDLE)
+    return refuse(RefusalCode::InputMismatch, "jointure sans signal");
+  if (batched_ == kMaxBatch) {
+    if (auto ok = flush(); !ok) return ok;
+  }
+  if (batched_ == batch_.size()) batch_.emplace_back();
+  Batched& entry = batch_[batched_];
+  entry.recording = nullptr;
+  entry.lane = lane;
+  entry.own_waits = 0;
+  entry.wait_semaphores.clear();
+  entry.wait_values.clear();
+  for (const TimelinePoint& point : waits) {
+    entry.wait_semaphores.push_back(point.semaphore);
+    entry.wait_values.push_back(point.value);
+  }
+  entry.signal_semaphores.clear();
+  entry.signal_values.clear();
+  for (const TimelinePoint& point : signals) {
+    entry.signal_semaphores.push_back(point.semaphore);
+    entry.signal_values.push_back(point.value);
+  }
+  ++batched_;
+  return {};
+}
+
+Done VkContext::enqueue(Recording& recording, std::span<const TimelinePoint> waits,
+                        std::span<const TimelinePoint> signals, std::size_t lane) {
+  if (lane >= queue_lanes()) return refuse(RefusalCode::InputMismatch, "voie sans file");
   if (&recording.context_ != this) {
     return refuse(RefusalCode::InputMismatch, "enregistrement d'un autre contexte Vulkan");
   }
@@ -105,6 +159,7 @@ Done VkContext::enqueue(Recording& recording, std::span<const TimelinePoint> wai
   if (batched_ == batch_.size()) batch_.emplace_back();
   Batched& entry = batch_[batched_];
   entry.recording = &recording;
+  entry.lane = lane;
   entry.wait_semaphores.clear();
   entry.wait_values.clear();
   // L'exécution précédente du même enregistrement, attendue côté GPU (dans le même lot au
@@ -158,6 +213,8 @@ void add_point(std::vector<VkSemaphore>& semaphores, std::vector<std::uint64_t>&
 }  // namespace
 
 bool VkContext::joins(const Group& group, const Batched& entry) {
+  // Une autre voie, une jointure (sans commande), ou un groupe de jointure : un groupe à part.
+  if (group.lane != entry.lane || entry.recording == nullptr || group.count == 0) return false;
   // Une attente que le groupe ne satisfait pas lui-même (sémaphore d'ailleurs, ou valeur au-delà
   // de ce qu'il signale) ouvrirait un groupe où les enregistrements d'avant l'attendraient aussi.
   // L'exécution précédente du même enregistrement, signalée par une soumission passée, se fond.
@@ -169,6 +226,8 @@ bool VkContext::joins(const Group& group, const Batched& entry) {
 }
 
 void VkContext::merge(Group& group, const Batched& entry) {
+  // Le compte des command buffers : une jointure n'en a pas.
+  const std::size_t buffers = entry.recording != nullptr ? 1 : 0;
   for (std::size_t i = 0; i < entry.wait_semaphores.size(); ++i) {
     // Signalée par le groupe : l'ordre de soumission et la barrière finale de chaque
     // enregistrement ordonnent déjà celui-ci après ; attendre bloquerait, le signal venant à la fin.
@@ -179,7 +238,7 @@ void VkContext::merge(Group& group, const Batched& entry) {
   for (std::size_t i = 0; i < entry.signal_semaphores.size(); ++i)
     add_point(group.signal_semaphores, group.signal_values, entry.signal_semaphores[i],
               entry.signal_values[i]);
-  ++group.count;
+  group.count += buffers;
 }
 
 Done VkContext::flush() {
@@ -189,13 +248,16 @@ Done VkContext::flush() {
   }
   batch_buffers_.resize(batched_);
   std::size_t groups = 0;
+  std::size_t buffers = 0;
   for (std::size_t k = 0; k < batched_; ++k) {
     const Batched& entry = batch_[k];
-    batch_buffers_[k] = entry.recording->command_buffer_;
+    if (entry.recording != nullptr) batch_buffers_[buffers] = entry.recording->command_buffer_;
     if (groups == 0 || !joins(batch_groups_[groups - 1], entry)) {
       if (groups == batch_groups_.size()) batch_groups_.emplace_back();
       Group& group = batch_groups_[groups++];
-      group.first = k;
+      group.lane = entry.lane;
+      group.entry = k;
+      group.first = buffers;
       group.count = 0;
       group.wait_semaphores.clear();
       group.wait_values.clear();
@@ -203,6 +265,7 @@ Done VkContext::flush() {
       group.signal_values.clear();
     }
     merge(batch_groups_[groups - 1], entry);
+    if (entry.recording != nullptr) ++buffers;
   }
   batch_timelines_.resize(groups);
   batch_infos_.resize(groups);
@@ -221,16 +284,27 @@ Done VkContext::flush() {
                        .pWaitSemaphores = group.wait_semaphores.data(),
                        .pWaitDstStageMask = group.stages.data(),
                        .commandBufferCount = static_cast<std::uint32_t>(group.count),
-                       .pCommandBuffers = &batch_buffers_[group.first],
+                       .pCommandBuffers = group.count > 0 ? &batch_buffers_[group.first] : nullptr,
                        .signalSemaphoreCount = static_cast<std::uint32_t>(group.signal_semaphores.size()),
                        .pSignalSemaphores = group.signal_semaphores.data()};
   }
   const std::size_t count = batched_;
   batched_ = 0;
-  auto ok = queue_submit(std::span(batch_infos_).first(groups));
-  if (!ok) {
-    // Rien n'est parti : les enregistrements n'attendront pas des exécutions jamais soumises.
-    for (std::size_t k = 0; k < count; ++k) --batch_[k].recording->submitted_;
+  // Un vkQueueSubmit par suite de groupes de la même voie, dans l'ordre du lot : un signal part
+  // toujours avant l'attente d'une autre voie sur lui.
+  Done ok;
+  for (std::size_t g = 0; g < groups && ok;) {
+    std::size_t end = g + 1;
+    while (end < groups && batch_groups_[end].lane == batch_groups_[g].lane) ++end;
+    ok = queue_submit(std::span(batch_infos_).subspan(g, end - g), batch_groups_[g].lane);
+    if (!ok) {
+      // Rien n'est parti depuis ce groupe : ses enregistrements et les suivants n'attendront pas
+      // des exécutions jamais soumises.
+      for (std::size_t k = batch_groups_[g].entry; k < count; ++k) {
+        if (batch_[k].recording != nullptr) --batch_[k].recording->submitted_;
+      }
+    }
+    g = end;
   }
   return ok;
 }
@@ -269,11 +343,26 @@ Done VkContext::run_once(const std::function<void(VkCommandBuffer)>& record) {
   if (auto ok = check(device_fn_.vkEndCommandBuffer(once.buffer), "vkEndCommandBuffer"); !ok) return ok;
 
   const std::uint64_t value = ++once_count_;
-  const VkTimelineSemaphoreSubmitInfo timeline{.sType = VK_STRUCTURE_TYPE_TIMELINE_SEMAPHORE_SUBMIT_INFO,
-                                               .signalSemaphoreValueCount = 1,
-                                               .pSignalSemaphoreValues = &value};
+  // Après tout ce que les autres voies ont soumis, comme sur une file unique.
+  std::vector<VkSemaphore> waits;
+  std::vector<std::uint64_t> wait_values;
+  for (std::size_t lane = 1; lane < last_submitted_.size(); ++lane) {
+    if (last_submitted_[lane].semaphore == VK_NULL_HANDLE) continue;
+    waits.push_back(last_submitted_[lane].semaphore);
+    wait_values.push_back(last_submitted_[lane].value);
+  }
+  const std::vector<VkPipelineStageFlags> stages(waits.size(), VK_PIPELINE_STAGE_ALL_COMMANDS_BIT);
+  const VkTimelineSemaphoreSubmitInfo timeline{
+      .sType = VK_STRUCTURE_TYPE_TIMELINE_SEMAPHORE_SUBMIT_INFO,
+      .waitSemaphoreValueCount = static_cast<std::uint32_t>(wait_values.size()),
+      .pWaitSemaphoreValues = wait_values.data(),
+      .signalSemaphoreValueCount = 1,
+      .pSignalSemaphoreValues = &value};
   const VkSubmitInfo info{.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO,
                           .pNext = &timeline,
+                          .waitSemaphoreCount = static_cast<std::uint32_t>(waits.size()),
+                          .pWaitSemaphores = waits.data(),
+                          .pWaitDstStageMask = stages.data(),
                           .commandBufferCount = 1,
                           .pCommandBuffers = &once.buffer,
                           .signalSemaphoreCount = 1,

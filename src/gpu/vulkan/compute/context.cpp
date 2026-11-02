@@ -2,6 +2,7 @@
 // La création d'un appareil propre est dans context_create.cpp, la soumission dans queue.cpp.
 #include "gpu/vulkan/compute/context.h"
 
+#include <algorithm>
 #include <format>
 #include <utility>
 #include <vector>
@@ -63,6 +64,7 @@ std::expected<std::unique_ptr<VkContext>, Refusal> VkContext::adopt(AdoptedDevic
   ctx->device_ = adopted.device;
   ctx->queue_family_ = adopted.queue_family;
   ctx->queue_index_ = adopted.queue_index;
+  ctx->lane_indices_ = std::move(adopted.lane_queue_indices);
   ctx->lock_queue_ = std::move(adopted.lock_queue);
   ctx->unlock_queue_ = std::move(adopted.unlock_queue);
 
@@ -89,6 +91,11 @@ std::expected<std::unique_ptr<VkContext>, Refusal> VkContext::adopt(AdoptedDevic
       !ok) {
     return std::unexpected(ok.error());
   }
+  // Une file de voie absente ou égale à la principale : sans elle, une voie de moins.
+  std::erase_if(ctx->lane_indices_, [&](std::uint32_t index) {
+    return index == ctx->queue_index_ ||
+           !check_queue(ctx->instance_fn_, ctx->physical_device_, ctx->queue_family_, index);
+  });
   if (auto ok = ctx->finish_setup(); !ok) return std::unexpected(ok.error());
   ctx->log().info("appareil adopté : {}", describe(ctx->caps_));
   return ctx;
@@ -97,6 +104,12 @@ std::expected<std::unique_ptr<VkContext>, Refusal> VkContext::adopt(AdoptedDevic
 Done VkContext::finish_setup() {
   log_ = make_logger();
   device_fn_.vkGetDeviceQueue(device_, queue_family_, queue_index_, &queue_);
+  for (const std::uint32_t index : lane_indices_) {
+    VkQueue lane = VK_NULL_HANDLE;
+    device_fn_.vkGetDeviceQueue(device_, queue_family_, index, &lane);
+    if (lane != VK_NULL_HANDLE) lane_queues_.push_back(lane);
+  }
+  last_submitted_.assign(queue_lanes(), TimelinePoint{});
   const VkCommandPoolCreateInfo pool{.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO,
                                      .flags = VK_COMMAND_POOL_CREATE_TRANSIENT_BIT,
                                      .queueFamilyIndex = queue_family_};

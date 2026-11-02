@@ -191,6 +191,15 @@ VulkanDevice vulkan_description(pl_vulkan vk) {
                  .enabled_features = vk->features,
                  .graphics = {.family = static_cast<std::uint32_t>(vk->queue_graphics.index), .index = 0},
                  .compute = engines.queue};
+  // Les files qui suivent celle du backend, créées par libplacebo (toute la famille) et qu'il
+  // n'emploie pas : des voies de calcul en plus (au plus deux), seulement hors d'une file partagée.
+  const std::array<pl_vulkan_queue, 2> created{vk->queue_compute, vk->queue_graphics};
+  for (const pl_vulkan_queue& queue : created) {
+    if (engines.shared || queue.index != d.compute.family) continue;
+    const std::uint32_t count = queue.count;
+    d.compute_lanes = count > d.compute.index + 1 ? std::min(count - d.compute.index - 1, 2U) : 0;
+    break;
+  }
   if (engines.shared) {
     d.lock_queue = lock_placebo_queue;
     d.unlock_queue = unlock_placebo_queue;

@@ -50,6 +50,7 @@ struct BackendOptions {
   // rendu) : ses messages vont au journal et à validation_sink (tests : chaque erreur en échec).
   bool validation = false;
   std::function<void(bool error, std::string_view message)> validation_sink;
+  bool alias_lanes = false;  // tests : CreateOptions::alias_lanes
 };
 
 // Un réseau chargé : son moteur et les noms de ses entrées et sorties.
@@ -97,6 +98,10 @@ class VulkanBackend final : public Backend {
                                        std::span<Tensor> outputs) override;
   std::expected<Fence, Refusal> signal() override;
   std::expected<void, Refusal> wait(const Fence& fence) override;
+  // Voies sur plusieurs files quand l'appareil en a (queue.h, V7).
+  void use_lane(Lane lane) override {
+    if (queue_) queue_->use_lane(lane);
+  }
 
   VkContext& context() { return *context_; }
   MemoryAllocator& memory() { return *memory_; }

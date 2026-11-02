@@ -111,7 +111,7 @@ std::expected<void, Refusal> VulkanKernelOps::write_ring(const Tensor& rgb, cons
       sync.wait_value > 0 ? std::span<const TimelinePoint>(wait) : std::span<const TimelinePoint>();
   if (auto ok = submit(**rec, waits, signal); !ok) return ok;
   for (RingView& v : ring_views_) {
-    if (v.view == *view) v.last_write = queue_.last().value;
+    if (v.view == *view) v.last_write = queue_.ticket();
   }
   return {};
 }

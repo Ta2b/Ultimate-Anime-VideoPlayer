@@ -52,8 +52,10 @@ TimelineSemaphore::~TimelineSemaphore() {
 
 void TimelineSemaphore::destroy() {
   // Un GPU bloqué (VkContext::settle) lit peut-être encore ce sémaphore : il reste en place.
-  if (semaphore_ != VK_NULL_HANDLE && !(context_ != nullptr && context_->stalled()))
+  if (semaphore_ != VK_NULL_HANDLE && !(context_ != nullptr && context_->stalled())) {
+    if (context_ != nullptr) context_->forget(semaphore_);
     fn_->vkDestroySemaphore(device_, semaphore_, nullptr);
+  }
   semaphore_ = VK_NULL_HANDLE;
 }
 

@@ -377,7 +377,7 @@ std::expected<void, Refusal> VulkanKernelOps::submit_frames(Recording& recording
   auto ok = queue_.submit(recording, waits_, signals_);
   guard.release_all(after, ok.has_value());
   if (!ok) return ok;
-  const std::uint64_t value = queue_.last().value;
+  const std::uint64_t value = queue_.ticket();
   for (std::size_t k = 0; k < sources.size(); ++k) {
     retained_.push_back({.frame = frames[k]->data, .until = value});
     if (sources[k].staging == SIZE_MAX) continue;  // lue en place
