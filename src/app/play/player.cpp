@@ -189,6 +189,7 @@ std::expected<void, Refusal> play(const PlayOptions& options, const PlayerPaths&
                                         .offscreen_width = options.window_width,
                                         .offscreen_height = options.window_height,
                                         .hdr = !options.sdr,
+                                        .kde_sdr_nits = options.kde_sdr_nits,
                                         .smooth_motion = saved->smooth_motion && saved->rife_factor >= 2,
                                         .allow_software = options.software_gpu,
                                         .shader_cache = paths.data / "shaders.cache"});

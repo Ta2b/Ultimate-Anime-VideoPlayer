@@ -167,6 +167,27 @@ void PlaceboScreen::Impl::select_grade(const pl_color_space& target) {
   grade_loaded_pq = target.transfer == PL_COLOR_TRC_PQ;
 }
 
+void PlaceboScreen::Impl::match_kwin() {
+  if (!kde_sdr_nits || !grade || swapchain == nullptr) return;
+  const bool on = hdr_output && grade_loaded_pq == true;
+  const double peak = grade->params().peak;
+  grade->set_kwin_match(on ? std::optional(render::Grade::KwinMatch{.reference = *kde_sdr_nits, .peak = peak})
+                           : std::nullopt);
+  // KWin écrête à son pic ce qui dépasse le maximum annoncé, ramené à son blanc : peak × 203 / référence.
+  const double max_nits = on ? peak * 203.0 / *kde_sdr_nits : 0.0;
+  if (max_nits == hinted_max_nits) return;
+  hinted_max_nits = max_nits;
+  pl_color_space space = pl_color_space_hdr10;
+  if (on) {
+    space.hdr.max_luma = static_cast<float>(max_nits);
+    space.hdr.min_luma = 0.0001F;
+    space.hdr.max_cll = static_cast<float>(max_nits);
+  }
+  pl_swapchain_colorspace_hint(swapchain, &space);
+  channel->info("--hdr-metadata : maximum annoncé {:.0f} nits (pic {:.0f}, luminosité SDR de KDE {:.0f})",
+                max_nits, peak, *kde_sdr_nits);
+}
+
 bool PlaceboScreen::Impl::graded(const pl_color_space& target) const {
   const bool pq = target.transfer == PL_COLOR_TRC_PQ;
   return grade && grade_loaded_pq == pq && (pq || sdr_gamma(target).has_value());

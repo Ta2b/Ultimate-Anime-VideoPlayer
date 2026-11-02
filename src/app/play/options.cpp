@@ -127,6 +127,17 @@ std::expected<PlayOptions, Refusal> parse_play_options(std::span<const std::stri
       options.software_gpu = true;
     } else if (arg == "--sdr") {
       options.sdr = true;
+    } else if (arg == "--hdr-metadata" || arg.starts_with("--hdr-metadata=")) {
+      options.kde_sdr_nits = kDefaultKdeSdrNits;
+      if (arg.size() > std::string_view("--hdr-metadata").size()) {
+        const std::string_view text = arg.substr(std::string_view("--hdr-metadata=").size());
+        const auto nits = number<int>(text);
+        if (!nits || *nits < 50 || *nits > 1000)
+          return refuse(
+              RefusalCode::FieldOutOfRange,
+              std::format("--hdr-metadata : « {} » n'est pas une luminosité SDR de 50 à 1000 nits", text));
+        options.kde_sdr_nits = static_cast<double>(*nits);
+      }
     } else if (arg == "--no-vrr") {
       options.no_vrr = true;
     } else if (arg == "--one-lane") {
@@ -391,6 +402,8 @@ std::string play_usage() {
       "  --snapshot-frames=N    N présentations de suite (FICHIER-001.ppm…), pour le scintillement\n"
       "  --rife-image           RIFE image à chaque instant (sans la variante mouvement)\n"
       "  --sdr                  sortie SDR même sur un écran HDR (essais du grade SDR)\n"
+      "  --hdr-metadata[=NITS]  sortie HDR10 avec ses métadonnées, la compression de KWin faite par le\n"
+      "                         grade (NITS : la luminosité SDR de KDE, 200 par défaut), à comparer à l'œil\n"
       "  --one-lane             une seule file de calcul : plus lent, mais le profil GPU donne le\n"
       "                         coût propre de chaque moteur\n"
       "  --no-vrr               écran à fréquence fixe même si le VRR est armé (essai du mode Rapide)\n"

@@ -5,6 +5,7 @@
 #include <array>
 #include <expected>
 #include <memory>
+#include <optional>
 #include <span>
 
 #include <libplacebo/shaders/custom.h>
@@ -33,6 +34,14 @@ class Grade {
   // grade, réglés pour une image à 24 i/s, gardent ainsi leur durée en secondes. Hors de GradeParams : la
   // cadence n'est pas un réglage et change sans recharger le grade.
   void set_video_fps(double fps);
+  // --hdr-metadata : la compression que KWin faisait sans métadonnées, faite par le grade (dernière passe),
+  // pour la luminosité SDR de KDE `reference` et le pic `peak` de l'écran ; nullopt : passe sautée.
+  struct KwinMatch {
+    double reference = 200.0;
+    double peak = 1000.0;
+    friend bool operator==(const KwinMatch&, const KwinMatch&) = default;
+  };
+  void set_kwin_match(std::optional<KwinMatch> match);
 
   // Le look : jusqu'à trois LUT 3D enchaînées, lues par anime-hdr-look.hook (nullptr : une identité 2x2x2, la
   // LUT est alors sautée avec son intensité à 0). Refait le hook du look, donc à n'appeler qu'au changement

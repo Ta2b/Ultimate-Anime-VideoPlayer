@@ -68,6 +68,8 @@ std::string factor_text(Factor factor);
 // défaut : default_player.h) ou retire son inscription, puis quitte, sans fichier.
 enum class Registration : std::uint8_t { None, Register, Unregister };
 
+inline constexpr double kDefaultKdeSdrNits = 200.0;  // la luminosité SDR de KDE par défaut
+
 struct PlayOptions {
   std::filesystem::path file;                  // vide : l'écran d'accueil choisit la vidéo
   std::optional<std::filesystem::path> model;  // --model : absent, celui du lecteur actuel
@@ -107,6 +109,10 @@ struct PlayOptions {
   bool software_gpu = false;
   // --sdr : sortie SDR même sur un écran HDR (la swapchain ne demande pas HDR10), pour les essais.
   bool sdr = false;
+  // --hdr-metadata[=NITS] : la sortie HDR10 porte ses métadonnées (son vrai maximum), et le grade fait la
+  // compression que KWin faisait sans elles ; NITS, la luminosité SDR de KDE (kDefaultKdeSdrNits sans
+  // valeur). Pour comparer à l'œil avec la sortie d'aujourd'hui, sans métadonnées.
+  std::optional<double> kde_sdr_nits;
   // --one-lane : une seule file de calcul (UpscaleSetup::one_lane), pour profiler le coût propre
   // de chaque moteur.
   bool one_lane = false;
