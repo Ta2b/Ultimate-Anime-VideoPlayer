@@ -92,8 +92,9 @@ struct Player {
   // La préparation automatique du mode Performance de SPAN (span_auto.h) : elle survit aux réouvertures de la
   // chaîne et s'arrête avec le lecteur.
   SpanJob span_job;
-  // La pré-analyse des plans du fichier lu (chain_shots.h) : elle survit aux réouvertures de la chaîne.
-  ShotWork shots;
+  // La pré-analyse des plans (chain_shots.h) : celle du lecteur, qui survit aux réouvertures de la chaîne
+  // et aux vidéos suivantes.
+  ShotWork* shots = nullptr;
 };
 
 // Les messages des backends, sur le canal « backend » du journal.

@@ -258,6 +258,8 @@ std::expected<void, Refusal> play(const PlayOptions& options, const PlayerPaths&
     problem += problem.empty() ? note : " · " + note;
   }
   std::shared_ptr<BackendLibrary> library;  // ouverte à la première vidéo, gardée pour les suivantes
+  // La pré-analyse des plans (chain_shots.h) : le cache, et l'épisode suivant analysé pendant la vidéo lue.
+  ShotWork shots{.cache_dir = paths.data / "plans"};
   bool replaced = false;  // le fichier vient d'être glissé sur la fenêtre (ou est l'épisode voisin)
   // PlayFile (la calibration du grade) : l'instant et la pause du fichier suivant, à la place de la reprise.
   std::optional<std::int64_t> forced_start;
@@ -378,6 +380,7 @@ std::expected<void, Refusal> play(const PlayOptions& options, const PlayerPaths&
                   .profiles = std::move(profiles),
                   .engines = std::move(*engines),
                   .display = read_display(display_name((*screen)->window()))};
+    player.shots = &shots;
     {
       // « Me prévenir » : une version plus récente vue par la dernière vérification, annoncée une fois par
       // lancement.

@@ -222,6 +222,8 @@ void ShotProbe::run(const std::stop_token& stop, std::int64_t start_us) {
 
   const auto started = std::chrono::steady_clock::now();
   std::int64_t frames = 0;
+  std::int64_t filled_from = -1;
+  std::int64_t skipped_to = -1;
   bool ended = false;
   while (!stop.stop_requested()) {
     if (const std::int64_t to = seek_to_.exchange(-1, std::memory_order_relaxed); to >= 0) {
@@ -242,7 +244,9 @@ void ShotProbe::run(const std::stop_token& stop, std::int64_t start_us) {
     }
     // Une zone déjà analysée devant (après un retour en arrière) : sautée.
     if (const std::int64_t known = timeline_.analyzed_until(last_pts + 1);
-        frames > 0 && known - last_pts > options_.skip_known_us) {
+        frames > 0 && known - last_pts > options_.skip_known_us && known > skipped_to) {
+      // Le saut retombe sur l'image clé d'avant : sans ce garde, il se répéterait.
+      skipped_to = known;
       if (!restart(known)) return fail(Refusal{RefusalCode::SeekFailed, "saut de la pré-analyse"});
       continue;
     }
@@ -262,6 +266,13 @@ void ShotProbe::run(const std::stop_token& stop, std::int64_t start_us) {
     }
     if (decoder->drained()) {
       if (auto shot = cutter.finish(last_pts + last_duration)) timeline_.add(*shot);
+      // Un départ en cours de vidéo (une reprise, un saut) : le début reste à analyser, pour que la vidéo
+      // soit connue entière (le cache, media/shot_cache.h). Chaque trou n'est repris qu'une fois.
+      if (const std::int64_t gap = timeline_.first_gap_us(); gap < timeline_.end_us() && gap > filled_from) {
+        filled_from = gap;
+        if (!restart(gap)) return fail(Refusal{RefusalCode::SeekFailed, "saut de la pré-analyse"});
+        continue;
+      }
       const double seconds =
           std::chrono::duration<double>(std::chrono::steady_clock::now() - started).count();
       log->info("pré-analyse des plans finie : {} images en {:.1f} s, {} plans", frames, seconds,

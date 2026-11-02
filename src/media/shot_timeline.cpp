@@ -28,8 +28,22 @@ ShotStats blend(const ShotStats& a, const ShotStats& b, float t) {
 
 }  // namespace
 
-void ShotTimeline::add(const Shot& shot) {
+void ShotTimeline::add(const Shot& found) {
+  constexpr std::int64_t kEdgeUs = 250'000;
   const std::scoped_lock lock(mutex_);
+  // Un plan qui déborde de quelques images sur un voisin déjà trouvé (l'analyse arrêtée à l'entrée d'une
+  // zone connue) s'arrête à lui au lieu de le remplacer.
+  Shot shot = found;
+  for (const Shot& s : shots_) {
+    if (!overlaps(s, shot) || (s.start_us >= shot.start_us && s.end_us <= shot.end_us)) continue;
+    if (std::min(s.end_us, shot.end_us) - std::max(s.start_us, shot.start_us) >= kEdgeUs) continue;
+    if (s.start_us > shot.start_us) {
+      shot.end_us = s.start_us;
+    } else {
+      shot.start_us = s.end_us;
+    }
+  }
+  if (shot.end_us <= shot.start_us) return;
   // Un plan coupé par un départ en cours de vidéo ne remplace pas un plan entier déjà trouvé ; un plan
   // entier remplace ceux qu'il recouvre (la même zone, analysée à nouveau après un saut).
   const bool covered = std::ranges::any_of(shots_, [&](const Shot& s) { return overlaps(s, shot); });
@@ -97,9 +111,30 @@ std::int64_t ShotTimeline::analyzed_until(std::int64_t pts_us) const {
   return until;
 }
 
+std::int64_t ShotTimeline::first_gap_us() const {
+  constexpr std::int64_t kSlackUs = 100'000;
+  const std::scoped_lock lock(mutex_);
+  std::int64_t until = 0;
+  for (const Shot& s : shots_) {
+    if (s.start_us > until + kSlackUs) break;
+    until = std::max(until, s.end_us);
+  }
+  return until;
+}
+
+std::int64_t ShotTimeline::end_us() const {
+  const std::scoped_lock lock(mutex_);
+  return shots_.empty() ? 0 : shots_.back().end_us;
+}
+
 std::size_t ShotTimeline::size() const {
   const std::scoped_lock lock(mutex_);
   return shots_.size();
+}
+
+std::vector<Shot> ShotTimeline::shots() const {
+  const std::scoped_lock lock(mutex_);
+  return shots_;
 }
 
 void ShotTimeline::clear() {

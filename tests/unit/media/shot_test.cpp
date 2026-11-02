@@ -6,12 +6,14 @@
 #include <cstddef>
 #include <filesystem>
 #include <memory>
+#include <string>
 #include <thread>
 #include <vector>
 
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 
+#include "media/shot_cache.h"
 #include "media/shot_cutter.h"
 #include "media/shot_probe.h"
 #include "media/shot_timeline.h"
@@ -146,7 +148,7 @@ TEST_CASE("plans : la vidéo de calibration se découpe en ses huit plans de 6 s
   CHECK(timeline.at(3'000'000)->stats.mean < timeline.at(27'000'000)->stats.mean);
 }
 
-TEST_CASE("plans : l'analyse repart d'un saut et n'attend pas plus que son avance", "[media][shots]") {
+TEST_CASE("plans : l'analyse partie d'un saut revient combler le début", "[media][shots]") {
   const std::filesystem::path clip = std::filesystem::path(AJP_DATA_DIR) / "calibration" / "calibration.mkv";
   ShotTimeline timeline;
   const auto probe = ShotProbe::start(clip, timeline, 30'000'000, ShotProbeOptions{.lead_us = 60'000'000});
@@ -154,7 +156,42 @@ TEST_CASE("plans : l'analyse repart d'un saut et n'attend pas plus que son avanc
     std::this_thread::sleep_for(std::chrono::milliseconds(100));
   REQUIRE(probe->finished());
   REQUIRE_FALSE(probe->failure());
-  CHECK_FALSE(timeline.at(10'000'000));  // avant le départ : rien
   REQUIRE(timeline.at(40'000'000));
   CHECK(timeline.at(40'000'000)->start_us == Approx(36'000'000).margin(42'000));
+  // Le début, sauté au départ, est analysé une fois la fin atteinte : la vidéo est connue entière.
+  REQUIRE(timeline.at(10'000'000));
+  CHECK(timeline.at(10'000'000)->start_us == Approx(6'000'000).margin(42'000));
+  CHECK(timeline.first_gap_us() == timeline.end_us());
+}
+
+TEST_CASE("plans : le cache rend les plans gardés, et rien pour une autre vidéo", "[media][shots]") {
+  const std::filesystem::path dir = std::filesystem::temp_directory_path() / "ajp-shot-cache-test";
+  std::filesystem::remove_all(dir);
+  const std::filesystem::path clip = std::filesystem::path(AJP_DATA_DIR) / "calibration" / "calibration.mkv";
+  const std::string key = shot_cache_key(clip);
+  REQUIRE(key.size() == 16);
+  CHECK(key == shot_cache_key(clip));
+  std::vector<Shot> shots(2);
+  shots.at(0) = Shot{.start_us = 0, .end_us = 1'000'000};
+  shots.at(0).first.p995 = 0.9F;
+  shots.at(1) = Shot{.start_us = 1'000'000, .end_us = 3'000'000, .fade = true};
+  shots.at(1).last.mean = 0.4F;
+  REQUIRE(save_shot_cache(dir, key, shots, true));
+  const auto loaded = load_shot_cache(dir, key);
+  REQUIRE(loaded);
+  CHECK(loaded->complete);
+  REQUIRE(loaded->shots.size() == 2);
+  CHECK(loaded->shots.at(0).first.p995 == 0.9F);
+  CHECK(loaded->shots.at(1).fade);
+  CHECK(loaded->shots.at(1).last.mean == 0.4F);
+  CHECK(loaded->shots.at(1).end_us == 3'000'000);
+  // Une analyse arrêtée en route se garde aussi, marquée incomplète.
+  REQUIRE(save_shot_cache(dir, key, shots, false));
+  CHECK_FALSE(load_shot_cache(dir, key)->complete);
+  CHECK_FALSE(load_shot_cache(dir, "0123456789abcdef"));
+  // Au-delà de la limite, les plus anciens partent.
+  REQUIRE(save_shot_cache(dir, "aaaaaaaaaaaaaaaa", shots, true, 1));
+  CHECK_FALSE(load_shot_cache(dir, key));
+  CHECK(load_shot_cache(dir, "aaaaaaaaaaaaaaaa"));
+  std::filesystem::remove_all(dir);
 }
