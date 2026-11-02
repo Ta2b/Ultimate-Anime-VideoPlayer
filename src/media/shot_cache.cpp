@@ -54,14 +54,16 @@ std::filesystem::path file_of(const std::filesystem::path& dir, const std::strin
   return dir / (key + kExtension);
 }
 
-// Les fichiers du cache au-delà de keep, les plus anciens d'abord.
-void trim(const std::filesystem::path& dir, std::size_t keep) {
+// Les fichiers du cache au-delà de keep, les plus anciens d'abord ; celui qui vient d'être écrit reste
+// toujours (deux fichiers écrits dans le même tic d'horloge, sous Windows, auraient sinon la même date).
+void trim(const std::filesystem::path& dir, std::size_t keep, const std::filesystem::path& written) {
   std::error_code ec;
   std::vector<std::pair<std::filesystem::file_time_type, std::filesystem::path>> files;
   for (const auto& entry : std::filesystem::directory_iterator(dir, ec)) {
-    if (entry.path().extension() != kExtension) continue;
+    if (entry.path().extension() != kExtension || entry.path() == written) continue;
     files.emplace_back(entry.last_write_time(ec), entry.path());
   }
+  if (keep > 0) --keep;  // la place du fichier écrit
   if (files.size() <= keep) return;
   std::ranges::sort(files);
   for (std::size_t i = 0; i + keep < files.size(); ++i) std::filesystem::remove(files.at(i).second, ec);
@@ -114,7 +116,7 @@ bool save_shot_cache(const std::filesystem::path& dir, const std::string& key, s
     std::filesystem::remove(temporary, ec);
     return false;
   }
-  trim(dir, keep);
+  trim(dir, keep, file);
   return true;
 }
 
