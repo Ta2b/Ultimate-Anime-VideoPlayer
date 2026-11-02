@@ -105,6 +105,45 @@ TEST_CASE("Backend TensorRT : ingestion NV12 BT.709 contre la référence", "[ba
   CHECK(worst < 2e-3);  // FP16 sur [0, 1] : un demi-pas à 1 vaut 2^-11 ≈ 4,9e-4
 }
 
+TEST_CASE("Backend TensorRT : ingestion avec débandage fusionné, tampons agrandis en cours de route",
+          "[backend_tensorrt][cuda]") {
+  if (!has_cuda()) SKIP("pas de GPU NVIDIA");
+  Loaded loaded;
+  REQUIRE(loaded.backend != nullptr);
+  gpu::KernelOps& ops = *loaded.backend->kernels();
+  REQUIRE(ops.debands_on_ingest());
+  // Deux tailles, la seconde plus grande : l'ancien tampon part en retrait sans arrêter l'appareil.
+  for (const int w : {64, 160}) {
+    const int h = w / 2;
+    kernels::YuvImage image(kernels::Format::Nv12, w, h, 16, 128, 128);
+    for (int y = 0; y < h; ++y) {
+      for (int x = 0; x < w; ++x)  // dégradé lent en paliers de 8 bits
+        image.y.data[image.y.index(x, y)] = static_cast<std::uint16_t>(100 + x / 8);
+    }
+    DecodedFrame frame = frame_of(std::make_shared<CudaNv12>(image), w, h);
+    frame.color =
+        ColorInfo{.matrix = ColorMatrix::Bt709, .range = ColorRange::Limited, .siting = ChromaSiting::Left};
+    auto plain = loaded.backend->alloc_tensor(gpu::TensorType::F16, {.dims = {1, 3, h, w}});
+    auto banded = loaded.backend->alloc_tensor(gpu::TensorType::F16, {.dims = {1, 3, h, w}});
+    REQUIRE(plain);
+    REQUIRE(banded);
+    REQUIRE(ops.ingest(frame, {}, (*plain)->tensor()));
+    REQUIRE(ops.ingest(frame, gpu::IngestSpec{.deband = true}, (*banded)->tensor()));
+    const auto want = download((*plain)->tensor());
+    const auto got = download((*banded)->tensor());
+    // Le débandage ne bouge un code que dans son seuil (3/1000) et change bien l'image.
+    double worst = 0.0;
+    double changed = 0.0;
+    for (std::size_t i = 0; i < want.size(); ++i) {
+      const double delta = std::fabs(static_cast<double>(want[i]) - static_cast<double>(got[i]));
+      worst = std::max(worst, delta);
+      changed = std::max(changed, delta);
+    }
+    CHECK(worst <= 3.0 / 1000.0 + 1e-3);
+    CHECK(changed > 0.0);
+  }
+}
+
 TEST_CASE("Backend TensorRT : ingestion des images du décodage logiciel, comme celles de NVDEC",
           "[backend_tensorrt][cuda][host]") {
   if (!has_cuda()) SKIP("pas de GPU NVIDIA");

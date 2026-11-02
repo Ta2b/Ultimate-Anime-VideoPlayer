@@ -235,9 +235,7 @@ std::expected<std::uint32_t, Refusal> UpscaleStage::outputs(const DecodedFrame& 
     if (auto ok = drba_arrive(frame, spec); !ok) return std::unexpected(std::move(ok.error()));
     debanded_ = false;
   } else if (!ingested) {
-    if (auto ok = ops.ingest(frame, spec, rgb_[current_]->tensor()); !ok)
-      return std::unexpected(std::move(ok.error()));
-    auto debanded = deband_source(rgb_[current_]->tensor());
+    auto debanded = ingest_source(frame, spec, rgb_[current_]->tensor());
     if (!debanded) return std::unexpected(std::move(debanded.error()));
     debanded_ = *debanded;
   }

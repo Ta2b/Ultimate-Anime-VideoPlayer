@@ -6,7 +6,12 @@
 #include <bit>
 #include <cuda.h>
 #include <format>
+#include <string>
 #include <utility>
+
+#ifdef _WIN32
+#include <windows.h>
+#endif
 
 #include "gpu/cuda/backend/cuda_status.h"
 #include "gpu/cuda/backend/drba_fused_engine.h"
@@ -19,6 +24,22 @@
 #include "prepare/rife_split.h"
 
 namespace ajp::gpu::cuda {
+namespace {
+#ifdef _WIN32
+// Ordonnancement GPU matériel (HAGS) : HwSchMode 2 dans le registre. Sans lui, WDDM garde les lancements
+// dans un lot logiciel que seule une interrogation du flux pousse (push_launches).
+std::string hags_state() {
+  DWORD mode = 0;
+  DWORD size = sizeof(mode);
+  const LSTATUS status =
+      RegGetValueW(HKEY_LOCAL_MACHINE, L"SYSTEM\\CurrentControlSet\\Control\\GraphicsDrivers", L"HwSchMode",
+                   RRF_RT_REG_DWORD, nullptr, &mode, &size);
+  if (status != ERROR_SUCCESS) return "ordonnancement GPU matériel (HAGS) : état illisible";
+  return mode == 2 ? "ordonnancement GPU matériel (HAGS) : actif"
+                   : "ordonnancement GPU matériel (HAGS) : inactif, envoi WDDM forcé à chaque étape";
+}
+#endif
+}  // namespace
 
 // Journal de TensorRT vers BackendInit::log.
 class TrtLog final : public nvinfer1::ILogger {
@@ -176,6 +197,9 @@ std::expected<std::unique_ptr<TensorRtBackend>, Refusal> TensorRtBackend::create
                std::format("TensorRT {} sur {} (sm {}.{}), {} voie{} de calcul", getInferLibVersion(),
                            backend->properties_.name, backend->properties_.major, backend->properties_.minor,
                            backend->lanes_, backend->lanes_ > 1 ? "s" : ""));
+#ifdef _WIN32
+  backend->log(BackendLogLevel::Info, hags_state());
+#endif
   return backend;
 }
 
@@ -212,6 +236,10 @@ TensorRtBackend::~TensorRtBackend() {
   if (splat_sums_ != nullptr) cudaFree(splat_sums_);
   if (ingest_rows_ != nullptr) cudaFree(ingest_rows_);
   if (deband_out_ != nullptr) cudaFree(deband_out_);
+  for (RetiredBuffer& buffer : retired_buffers_) {
+    for (cudaEvent_t event : buffer.done) cudaEventDestroy(event);
+    cudaFree(buffer.device);
+  }
   uploads_.reset();  // attend ses envois et les ingestions qui les lisent
   release_yuv_tables();
   runtime_.reset();
@@ -333,6 +361,7 @@ std::expected<std::unique_ptr<TensorBuffer>, Refusal> TensorRtBackend::alloc_ten
 }
 
 GpuTiming& TensorRtBackend::stage(std::string_view name) {
+  push_launches();
   auto found = stages_.find(name);
   if (found == stages_.end())
     found = stages_.emplace(std::string(name), std::make_unique<GpuTiming>(std::string(name), nullptr)).first;
@@ -397,6 +426,19 @@ std::expected<void, Refusal> TensorRtBackend::wait(const Fence& fence) {
     if (auto ok = cuda_check(cudaStreamWaitEvent(stream, event, 0), "cudaStreamWaitEvent"); !ok) return ok;
   }
   return {};
+}
+
+}  // namespace ajp::gpu::cuda
+
+namespace ajp::gpu::cuda {
+
+void TensorRtBackend::push_launches() {
+#ifdef _WIN32
+  // WDDM garde les lancements dans un lot logiciel jusqu'au prochain appel qui force l'envoi : chaque
+  // passage d'une étape à la suivante pousse le lot, pas seulement la fin de l'image. L'état « pas
+  // prêt » est la réponse normale ; une vraie erreur reparaîtra au prochain appel CUDA.
+  if (stream_ != nullptr) static_cast<void>(cudaStreamQuery(stream_));
+#endif
 }
 
 }  // namespace ajp::gpu::cuda
