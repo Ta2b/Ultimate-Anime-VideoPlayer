@@ -1,5 +1,5 @@
 // Réglages que main change pendant la lecture et que le thread gpu lit à chaque image (facteur
-// RIFE, filtre de réduction, réglages de RTX HDR), et les compteurs de RIFE que main lit pour les
+// RIFE, filtre de réduction), et les compteurs de RIFE que main lit pour les
 // statistiques. Tout est atomique ou sous un verrou court : ni main ni gpu n'attendent l'autre
 // plus que la copie d'un réglage.
 #pragma once
@@ -19,7 +19,6 @@
 #include "core/free_rate.h"
 #include "core/vsync_phase.h"
 #include "gpu/kernel_ops.h"
-#include "vendor_hdr/true_hdr.h"
 
 namespace ajp::app::play {
 
@@ -55,14 +54,8 @@ inline gpu::Reduction reduction_of(Downscale filter) {
   return {};
 }
 
-// Les 32 marches quasi noires de la source (8 bits limité : la marche k vaut k/219 de la plage),
-// en codes RGBA8 pleine plage tels que TrueHDR les reçoit, et en niveaux 0 à 1.
-inline std::array<std::uint8_t, render::kBlackRampSteps> black_ramp_codes() {
-  std::array<std::uint8_t, render::kBlackRampSteps> codes{};
-  for (std::size_t k = 0; k < codes.size(); ++k)
-    codes[k] = static_cast<std::uint8_t>((static_cast<int>(k) * 255 + 109) / 219);
-  return codes;
-}
+// Les 32 marches quasi noires de la source (8 bits limité : la marche k vaut k/219 de la plage), en niveaux
+// 0 à 1.
 inline std::array<float, render::kBlackRampSteps> black_ramp_levels() {
   std::array<float, render::kBlackRampSteps> levels{};
   for (std::size_t k = 0; k < levels.size(); ++k) levels[k] = static_cast<float>(k) / 219.0F;
@@ -264,29 +257,6 @@ class LiveSettings {
     return reduction_;
   }
 
-  // Réglages de RTX HDR à appliquer à l'image suivante ; gpu les prend une fois.
-  void set_true_hdr(const vendor_hdr::TrueHdrParams& params) {
-    const std::scoped_lock lock(mutex_);
-    true_hdr_ = params;
-  }
-  std::optional<vendor_hdr::TrueHdrParams> take_true_hdr() {
-    const std::scoped_lock lock(mutex_);
-    return std::exchange(true_hdr_, std::nullopt);
-  }
-
-  // Vrai noir OLED sur la route TrueHDR : main dit s'il le faut ; gpu repasse alors la rampe de 32
-  // marches par TrueHDR après de nouveaux réglages et dépose les codes PQ obtenus.
-  void set_black_wanted(bool wanted) { black_wanted_.store(wanted); }
-  bool black_wanted() const { return black_wanted_.load(); }
-  void set_black_ramp(std::vector<float> pq) {
-    const std::scoped_lock lock(mutex_);
-    black_ramp_ = std::move(pq);
-  }
-  std::optional<std::vector<float>> take_black_ramp() {
-    const std::scoped_lock lock(mutex_);
-    return std::exchange(black_ramp_, std::nullopt);
-  }
-
   // Compteurs de RIFE, écrits par gpu.
   void count_pair() { pairs_.fetch_add(1, std::memory_order_relaxed); }
   void count_interpolated() { interpolated_.fetch_add(1, std::memory_order_relaxed); }
@@ -319,9 +289,6 @@ class LiveSettings {
   std::atomic<bool> deband_source_{false};
   mutable std::mutex mutex_;
   gpu::Reduction reduction_;
-  std::optional<vendor_hdr::TrueHdrParams> true_hdr_;
-  std::atomic<bool> black_wanted_{false};
-  std::optional<std::vector<float>> black_ramp_;
   std::atomic<std::uint64_t> pairs_{0};
   std::atomic<std::uint64_t> interpolated_{0};
   std::atomic<std::uint64_t> cuts_{0};

@@ -5,8 +5,7 @@
 // l'onglet Moteurs pendant la lecture.
 //
 // SPAN et RIFE passent par TensorRT sur une carte NVIDIA qui l'a choisi, sinon par le backend
-// Vulkan ; RTX HDR passe par Maxine, remplacé sans elle par le HDR natif. Ce qui change se dit au
-// journal.
+// Vulkan. Ce qui change se dit au journal.
 #pragma once
 
 #include <array>
@@ -78,13 +77,10 @@ struct EngineDownload {
 struct EnginesHere {
   // Le système dont l'écran propose les moteurs : celui de l'hôte, ou celui qu'un test vérifie.
   core::Os os = core::kHostOs;
-  bool tensorrt = false;       // backend ajp_backend_tensorrt trouvé
-  bool migraphx = false;       // ajp_backend_migraphx
-  bool openvino = false;       // ajp_backend_openvino
-  bool coreml = false;         // ajp_backend_coreml (Mac : le moteur Metal de l'écran)
-  bool maxine = false;         // SDK Maxine importé, ou importable depuis --truehdr-sdk
-  std::string maxine_status;   // « importé », « à importer depuis /usr/local/VideoFX »…
-  std::string maxine_license;  // non vide : installable depuis NGC (maxine_install.h), sa licence
+  bool tensorrt = false;  // backend ajp_backend_tensorrt trouvé
+  bool migraphx = false;  // ajp_backend_migraphx
+  bool openvino = false;  // ajp_backend_openvino
+  bool coreml = false;    // ajp_backend_coreml (Mac : le moteur Metal de l'écran)
   std::vector<EngineDownload> downloads;
 };
 
@@ -96,8 +92,6 @@ struct EngineRow {
   bool download = false;  // à télécharger si coché
   std::string license;    // licence à accepter (download seulement)
   bool license_accepted = false;
-  bool needs_key = false;       // téléchargement par la clé d'API NGC de l'utilisateur (Maxine)
-  std::array<char, 128> key{};  // saisie, jamais écrite sur disque
 };
 
 struct FirstRunView {
@@ -110,9 +104,6 @@ struct FirstRunView {
   // L'assistant du premier lancement (wizard.h) ; vide au rouvrir depuis l'onglet Moteurs (revisit).
   Wizard wizard;
   WizardFacts facts;
-  // 4b : relit les points de RTX HDR (moteur, SDK) d'après l'état du poste et les cases cochées ; posé par
-  // l'écran.
-  std::function<std::vector<RtxCheck>(const FirstRunView&)> check_rtx;
   std::string tier_line;     // « Niveau estimé : Rapide »
   std::string display_line;  // « Écran 3840×2160 · 165 Hz »
 };
@@ -137,11 +128,11 @@ bool chosen(const core::Settings& settings, core::EngineId id);
 std::vector<std::filesystem::path> backends_within(std::span<const std::filesystem::path> candidates,
                                                    const core::Settings& engines);
 
-// La chaîne que les moteurs choisis permettent : sans TensorRT ni Vulkan, ni SPAN ni RIFE ; sans
-// Maxine, le HDR natif au lieu de RTX HDR. notes dit ce qui a changé.
+// La chaîne que les moteurs choisis permettent : sans TensorRT ni Vulkan, ni SPAN ni RIFE. notes dit ce
+// qui a changé.
 PlaySettings within_engines(PlaySettings settings, const core::Settings& engines,
                             std::vector<std::string>& notes);
-// « Vulkan, TensorRT, NVIDIA Maxine », pour l'onglet Moteurs.
+// « Vulkan, TensorRT », pour l'onglet Moteurs.
 std::string chosen_line(const core::Settings& engines);
 
 std::string_view engine_label(core::EngineId id);

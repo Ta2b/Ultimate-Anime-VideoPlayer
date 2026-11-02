@@ -54,8 +54,8 @@ void open_shots(ShotWork& work, const std::filesystem::path& file, const PlaySet
 // Le cache : à appeler à chaque tour, ne fait rien la plupart du temps.
 void tend_shots(ShotWork& work);
 
-// Le plan de l'image qui suit la dernière préparée, s'il est analysé : ses valeurs sur l'échelle de RTX HDR
-// et son numéro (il change à chaque coupe). Cale aussi l'analyse sur la lecture (avance, sauts).
+// Le plan de l'image qui suit la dernière préparée, s'il est analysé : ses valeurs sur l'échelle de
+// SceneStats et son numéro (il change à chaque coupe). Cale aussi l'analyse sur la lecture (avance, sauts).
 struct ShotScene {
   gpu::KernelOps::SceneStats stats;
   std::uint64_t serial = 0;

@@ -24,14 +24,9 @@ int even(double value) {
   return 2 * static_cast<int>(std::lround(value / 2.0));
 }
 
-std::expected<HdrRoute, Refusal> resolve_hdr(HdrMode mode, const Capabilities& caps,
-                                             const DisplayInfo& display) {
+std::expected<HdrRoute, Refusal> resolve_hdr(HdrMode mode, const DisplayInfo& display) {
   if (mode == HdrMode::Off) return HdrRoute{};
   if (!display.hdr) return refuse(RefusalCode::HdrUnavailable, "l'écran n'est pas en HDR");
-  // Le texte du premier bloqueur, tel que vendor_hdr l'a donné à app.
-  if (mode == HdrMode::TrueHdr && !caps.true_hdr_available()) {
-    return refuse(RefusalCode::HdrUnavailable, caps.true_hdr_blocker);
-  }
   return HdrRoute{.kind = mode};
 }
 
@@ -145,7 +140,7 @@ std::expected<Plan, Refusal> resolve(const Profile& profile, const Capabilities&
     }
   }
 
-  auto hdr = resolve_hdr(profile.hdr, caps, display);
+  auto hdr = resolve_hdr(profile.hdr, display);
   if (!hdr) return std::unexpected(hdr.error());
   plan.hdr = *hdr;
 

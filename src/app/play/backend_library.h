@@ -10,9 +10,9 @@
 #include <optional>
 #include <span>
 
+#include "core/dynamic_library.h"
 #include "core/types.h"
 #include "gpu/backend.h"
-#include "vendor_hdr/dynamic_library.h"
 
 namespace ajp::app::play {
 
@@ -48,7 +48,7 @@ class BackendLibrary {
 
  private:
   BackendLibrary() = default;
-  std::optional<vendor_hdr::DynamicLibrary> handle_;
+  std::optional<DynamicLibrary> handle_;
   std::filesystem::path path_;
   gpu::BackendCreateFn create_ = nullptr;
   gpu::BackendDestroyFn destroy_ = nullptr;

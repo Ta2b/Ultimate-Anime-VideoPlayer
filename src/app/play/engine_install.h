@@ -29,7 +29,6 @@ struct EngineCatalog {
   core::InstallLayout layout;
   std::vector<core::EnginePackage> packages;   // ceux de cet OS
   std::vector<core::VendorFile> vendor_files;  // fichiers tirés des archives de NVIDIA, de cet OS
-  std::optional<core::NgcSdkSource> maxine;    // SDK de RTX HDR sous Linux (maxine_install.h)
   std::string problem;                         // index absent ou illisible, pour le journal
 };
 
@@ -119,7 +118,7 @@ std::expected<void, Refusal> fetch_vendor_file(const core::VendorFile& file,
                                                const InstallProgress& progress);
 
 // Télécharge (en reprenant un .part), vérifie et extrait le paquet ; rend la bibliothèque du
-// backend (le dossier extrait pour RTX HDR, qui n'a pas de module). Refus : LibraryUnavailable (curl ou tar
+// backend. Refus : LibraryUnavailable (curl ou tar
 // absents), DecodeFailed (transfert), HashMismatch, FileUnwritable, Cancelled.
 std::expected<std::filesystem::path, Refusal> install_package(const EngineCatalog& catalog,
                                                               const core::EnginePackage& package,

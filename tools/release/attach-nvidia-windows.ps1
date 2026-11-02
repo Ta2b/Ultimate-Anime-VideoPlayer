@@ -45,7 +45,7 @@ $blocks = ((Get-Content $lock -Raw) -replace "`r`n", "`n") -split '(?m)^(?=\[\[(
 $kept = @("version = 1")
 foreach ($block in $blocks) {
   $id = [regex]::Match($block, '(?m)^id = "(.*)"$').Groups[1].Value
-  if ($id -eq "tensorrt" -or $id -eq "maxine_vfx") { $kept += @("", $block.TrimEnd()) }
+  if ($id -eq "tensorrt") { $kept += @("", $block.TrimEnd()) }
 }
 if (-not ($kept -match '(?m)^id = "tensorrt"$')) { throw "$out n'a aucun bloc tensorrt : $lock mal lu" }
 if (-not ($kept -match '(?m)^\[\[vendor_file\]\]$')) { throw "$out n'a aucun [[vendor_file]] : $lock mal lu" }

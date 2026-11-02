@@ -36,7 +36,7 @@ FFmpeg, libplacebo et FriBidi sont des bibliothèques partagées (`lib/`) : vous
 Huit images fixes tirées de Re:Zero kara Hajimeru Isekai Seikatsu (saison 4, épisode 18, © Tappei Nagatsuki, KADOKAWA / Re:Zero 4 Partners) et de Tensei Shitara Slime Datta Ken (saison 4, épisode 24, © Fuse, Micro Magazine / Tensura Project), ajoutées à la demande du propriétaire du dépôt pour la seule calibration du grade (Paramètres > HDR). Elles restent la propriété de leurs ayants droit ; liste et instants dans `data/calibration/SOURCES.md`.
 
 ## Moteurs facultatifs téléchargés depuis l'écran de bienvenue
-OpenVINO (Apache-2.0), MIGraphX et ROCm (MIT, d'après AMD), ONNX Runtime (MIT), Windows ML (licence de redistribution de Microsoft jointe au moteur), MoltenVK (Apache-2.0). TensorRT, CUDA, cuDNN et le SDK Video Effects de NVIDIA (RTX HDR) sont sous les licences propriétaires de NVIDIA, que l'utilisateur accepte à l'écran avant le téléchargement.
+OpenVINO (Apache-2.0), MIGraphX et ROCm (MIT, d'après AMD), ONNX Runtime (MIT), Windows ML (licence de redistribution de Microsoft jointe au moteur), MoltenVK (Apache-2.0). TensorRT, CUDA et cuDNN sont sous les licences propriétaires de NVIDIA, que l'utilisateur accepte à l'écran avant le téléchargement.
 
 ## État de ce relevé
 Licences des modèles et configuration de FFmpeg : vérifiées dans les dépôts amont et dans les scripts de construction. Les autres lignes sont celles annoncées par leurs projets, à relire au prochain relevé complet avec les fichiers de licence installés par vcpkg (`share/<port>/copyright`).

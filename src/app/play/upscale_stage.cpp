@@ -128,8 +128,6 @@ std::expected<std::unique_ptr<VideoStage>, Refusal> UpscaleStage::start(VideoSta
     return refuse(RefusalCode::ShapeInvalid,
                   "étage gpu : RIFE image, GMFSS et DistilDRBA à la taille de travail seulement");
   }
-  if (setup.yuv_slots && setup.true_hdr)
-    return refuse(RefusalCode::FieldOutOfRange, "étage gpu : export en YUV sans RTX HDR seulement");
   if (setup.slots.empty() || setup.slots.size() > kMaxRingSlots) {
     return refuse(RefusalCode::FieldOutOfRange, std::format("étage gpu : 1 à {} slots", kMaxRingSlots));
   }
@@ -156,7 +154,7 @@ std::expected<void, Refusal> UpscaleStage::allocate() {
     return refuse(RefusalCode::FormatUnsupported,
                   std::format("étage gpu : le backend {} n'écrit pas en YUV pour l'encodeur", caps.name));
   }
-  ring_direct_ = caps.ring_targets && !setup_.true_hdr && !setup_.yuv_slots &&
+  ring_direct_ = caps.ring_targets && !setup_.yuv_slots &&
                  (warps_spanned() || (by_motion() && setup_.engine == nullptr));
   if (ring_direct_)
     log_channel("gpu")->info("images intermédiaires écrites directement dans le slot du ring");
@@ -224,10 +222,6 @@ std::expected<std::uint32_t, Refusal> UpscaleStage::outputs(const DecodedFrame& 
                   std::format("image {}x{} : la source est en {}x{}", frame.width, frame.height,
                               setup_.source_width, setup_.source_height));
   }
-  if (setup_.true_hdr && (frame.color.transfer == Transfer::Pq || frame.color.transfer == Transfer::Hlg)) {
-    return refuse(RefusalCode::HdrUnavailable, "RTX HDR : la source est déjà HDR");
-  }
-  prepared_ = vendor_hdr::InputPreparation{.matrix = frame.color.matrix, .range = frame.color.range};
   gpu::KernelOps& ops = *setup_.backend->kernels();
   use_lane(gpu::Lane::Measure);  // ingestion, mesures de la paire, suivante en avance
   current_ ^= 1U;
@@ -586,30 +580,7 @@ std::expected<void, Refusal> UpscaleStage::write_slot(const gpu::Tensor& image, 
                                                       const gpu::RingWrite& sync) {
   gpu::KernelOps& ops = *setup_.backend->kernels();
   if (setup_.yuv_slots) return ops.write_yuv(image, setup_.yuv_slots->target(slot, sync.signal_value));
-  if (setup_.true_hdr && setup_.live) {
-    if (const auto params = setup_.live->take_true_hdr()) {
-      if (auto set = ops.set_true_hdr(*params); !set) {
-        log_channel("gpu")->warn("RTX HDR : réglages refusés ({})", set.error().detail);
-      } else {
-        black_ramp_pending_ = true;
-      }
-    }
-    // Vrai noir : la rampe repasse par TrueHDR après un changement, au plus 4 fois par seconde
-    // (un curseur qu'on fait glisser n'en lance pas une à chaque image).
-    const std::int64_t now = host_now_us();
-    if (black_ramp_pending_ && setup_.live->black_wanted() && now - black_ramp_at_us_ >= kBlackRampGapUs) {
-      black_ramp_pending_ = false;
-      black_ramp_at_us_ = now;
-      const auto codes = black_ramp_codes();
-      if (auto ramp = ops.true_hdr_ramp(codes)) {
-        setup_.live->set_black_ramp(std::move(*ramp));
-      } else {
-        log_channel("gpu")->warn("vrai noir : rampe TrueHDR ({})", ramp.error().detail);
-      }
-    }
-  }
-  return setup_.true_hdr ? ops.write_ring_true_hdr(image, prepared_, setup_.slots[slot], sync)
-                         : ops.write_ring(image, setup_.slots[slot], sync);
+  return ops.write_ring(image, setup_.slots[slot], sync);
 }
 
 }  // namespace ajp::app::play

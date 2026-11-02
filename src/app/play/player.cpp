@@ -59,8 +59,6 @@
 #include "media/selection.h"
 #include "prepare/sha256.h"
 #include "prepare/utf8.h"
-#include "vendor_hdr/sdk_store.h"
-#include "vendor_hdr/true_hdr.h"
 
 namespace ajp::app::play {
 namespace {

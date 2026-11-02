@@ -98,12 +98,6 @@ void engine_row(EngineRow& row) {
     ImGui::SameLine();
     ImGui::TextLinkOpenURL(i18n::tr("Read the licence"), row.license.c_str());
   }
-  if (row.download && row.chosen && row.needs_key) {
-    ImGui::SetNextItemWidth(ImGui::GetFontSize() * 22.0F);
-    ImGui::InputText(i18n::tr("NGC API key"), row.key.data(), row.key.size(), ImGuiInputTextFlags_Password);
-    ImGui::SameLine();
-    ImGui::TextLinkOpenURL(i18n::tr("Get a key"), "https://org.ngc.nvidia.com/setup/api-keys");
-  }
   ImGui::Unindent(ImGui::GetFrameHeightWithSpacing());
   ImGui::Spacing();
   ImGui::PopID();
@@ -172,8 +166,6 @@ void prefer_chosen(core::Settings& settings) {
   const auto usage = [](core::Usage u) { return static_cast<std::size_t>(u); };
   settings.preferred[usage(core::Usage::Upscale)] = networks;
   settings.preferred[usage(core::Usage::Interpolate)] = networks;
-  settings.preferred[usage(core::Usage::TrueHdr)] =
-      chosen(settings, core::EngineId::MaxineVfx) ? std::optional(core::EngineId::MaxineVfx) : std::nullopt;
 }
 
 }  // namespace
@@ -330,29 +322,6 @@ FirstRunView first_run_view(const GpuFacts& gpu, const EnginesHere& here, Profil
         row.usable = here.coreml;
         row.status = here.coreml ? i18n::tr("bundled with the player") : i18n::tr("not in this package");
         break;
-      case core::EngineId::MaxineVfx: {
-        row.usable = here.maxine || !here.maxine_license.empty();
-        row.status = here.maxine_status;
-        const auto package =
-            std::ranges::find(here.downloads, core::EngineId::MaxineVfx, &EngineDownload::id);
-        if (!here.maxine && package != here.downloads.end()) {
-          // Notre paquet fermé : les seules bibliothèques de TrueHDR, sous la licence NVIDIA, à
-          // accepter à l'écran ; ni clé ni compte NVIDIA.
-          row.usable = true;
-          row.download = true;
-          row.license = package->license;
-          row.status = i18n::tr_format("to download ({} MB), closed NVIDIA-licensed package",
-                                       (package->bytes + (1U << 20) - 1) >> 20);
-        } else if (!here.maxine && !here.maxine_license.empty()) {
-          // Le SDK ne se redistribue pas : le lecteur le télécharge depuis NGC avec la clé de
-          // l'utilisateur, une fois sa licence acceptée.
-          row.download = true;
-          row.needs_key = true;
-          row.license = here.maxine_license;
-          row.status = i18n::tr("to install from NVIDIA NGC (API key of a free NVIDIA account)");
-        }
-        break;
-      }
       default:
         row.status = i18n::tr("cannot be installed in this version yet");
         break;
@@ -373,8 +342,7 @@ core::Settings settings_after(const FirstRunView& view, core::Settings settings)
     // Un moteur à télécharger compte comme installé une fois coché (install_chosen le télécharge,
     // without_engine le retire s'il échoue) ; avec sa licence acceptée seulement.
     const bool taken = row.usable && (row.chosen || row.offer.id == core::EngineId::Vulkan) &&
-                       (!row.download || row.license.empty() || row.license_accepted) &&
-                       (!row.needs_key || row.key.front() != '\0');
+                       (!row.download || row.license.empty() || row.license_accepted);
     if (row.usable && (!row.download || taken)) settings.installed_engines.push_back(row.offer.id);
     if (taken) settings.chosen_engines.push_back(row.offer.id);
   }
@@ -401,11 +369,6 @@ PlaySettings within_engines(PlaySettings settings, const core::Settings& engines
     settings.rife_factor_den = 1;
     notes.emplace_back(i18n::tr("neither TensorRT nor Vulkan chosen: no SPAN or RIFE"));
   }
-  if (!chosen(engines, core::EngineId::MaxineVfx) && settings.true_hdr) {
-    settings.true_hdr = false;
-    settings.hdr_native = true;
-    notes.emplace_back(i18n::tr("NVIDIA Maxine not chosen: adaptive HDR instead of RTX HDR"));
-  }
   return settings;
 }
 
@@ -422,10 +385,6 @@ std::string_view engine_label(core::EngineId id) {
       return "Vulkan";
     case core::EngineId::TensorRt:
       return "TensorRT";
-    case core::EngineId::RtxVideoSdk:
-      return "RTX Video SDK";
-    case core::EngineId::MaxineVfx:
-      return "NVIDIA Maxine (RTX HDR)";
     case core::EngineId::MiGraphX:
       return core::kHostOs == core::Os::Windows ? "MIGraphX (Windows ML)" : "MIGraphX (ROCm)";
     case core::EngineId::OpenVino:
@@ -466,8 +425,6 @@ std::string_view reason_label(core::Reason reason) {
       return i18n::tr("Always available");
     case core::Reason::FastestForThisGpu:
       return i18n::tr("Fastest for this GPU");
-    case core::Reason::RtxHdrForThisGpu:
-      return i18n::tr("RTX HDR on this GPU");
     case core::Reason::CompareWithVulkan:
       return i18n::tr("Compare with Vulkan");
     case core::Reason::NoMatchingGpu:
@@ -525,41 +482,12 @@ void draw_wizard_step(FirstRunView& view, Wizard& wizard) {
                  wizard.hdr == HdrChoice::Auto, pick);
       if (pick) wizard.hdr = HdrChoice::Auto;
       pick = false;
-      if (core::kHostOs == core::Os::Linux) {  // RTX HDR n'existe pas ailleurs
-        radio_note("RTX HDR", i18n::tr("NVIDIA RTX cards with the TensorRT engine and the Maxine SDK."),
-                   wizard.hdr == HdrChoice::RtxHdr, pick);
-        if (pick) wizard.hdr = HdrChoice::RtxHdr;
-      }
-      pick = false;
       radio_note(i18n::tr("Adaptive HDR"), i18n::tr("Any GPU: the HDR look is emulated per scene."),
                  wizard.hdr == HdrChoice::Adaptive, pick);
       if (pick) wizard.hdr = HdrChoice::Adaptive;
       pick = false;
       radio_note("SDR", i18n::tr("No HDR conversion."), wizard.hdr == HdrChoice::Sdr, pick);
       if (pick) wizard.hdr = HdrChoice::Sdr;
-      if (view.facts.rtx_guided && wizard.hdr == HdrChoice::RtxHdr && view.check_rtx) {
-        // 4b : RTX HDR pas à pas.
-        if (wizard.rtx_checks.empty()) wizard.rtx_checks = view.check_rtx(view);
-        section(i18n::tr("RTX HDR, step by step"));
-        for (const RtxCheck& check : wizard.rtx_checks) {
-          ImGui::TextColored(
-              check.done ? ImVec4{0.45F, 0.82F, 0.52F, 1.0F} : ImVec4{1.0F, 0.78F, 0.42F, 1.0F}, "%s",
-              check.done ? "fait" : i18n::tr("to do"));
-          ImGui::SameLine();
-          ImGui::TextUnformatted(check.name.c_str());
-          if (!check.done) note(check.todo);
-        }
-        if (ImGui::Button(i18n::tr("Check again"))) wizard.rtx_checks = view.check_rtx(view);
-        ImGui::SameLine();
-        if (ImGui::Button(i18n::tr("Give up: adaptive HDR"))) {
-          wizard.hdr = HdrChoice::Adaptive;
-          wizard.rtx_checks.clear();
-        }
-        if (!rtx_ready(wizard.rtx_checks))
-          note(
-              i18n::tr("Until everything is done the display uses adaptive HDR; pick RTX HDR later in HDR "
-                       "and color > HDR."));
-      }
       break;
     }
     case WizardStep::Grade:

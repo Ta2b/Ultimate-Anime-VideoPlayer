@@ -28,7 +28,8 @@ enum class DownscaleFilter : std::uint8_t {
   CatmullRom,
   Hermite
 };
-enum class HdrMode : std::uint8_t { Off, Native, TrueHdr };
+// « truehdr » des anciens profils (RTX HDR, retiré) se lit comme Native.
+enum class HdrMode : std::uint8_t { Off, Native };
 
 using ModelId = std::string;
 

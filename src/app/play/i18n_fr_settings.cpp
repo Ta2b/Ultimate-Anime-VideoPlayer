@@ -97,12 +97,11 @@ constexpr std::array kSettingsPages{
     Entry{"Colors, glow scene", "Couleurs, scène avec éclat"},
     Entry{"The sliders above and the middle gray are for dark scenes; the values here apply to bright "
           "scenes, blended with the source's smoothed average brightness. A dark scene with a bright "
-          "glow (magic circle, lamp at night) is judged by its background and takes its own values. "
-          "Works with RTX HDR and with Adaptive HDR (any GPU).",
+          "glow (magic circle, lamp at night) is judged by its background and takes its own values.",
           "Les curseurs ci-dessus et le gris moyen valent pour les scènes sombres ; les valeurs d'ici valent "
           "pour les scènes claires, mélangées selon la luminosité moyenne lissée de la source. "
           "Une scène sombre avec un éclat (cercle magique, lampe dans la nuit) se juge sur son fond et prend "
-          "ses propres valeurs. Fonctionne avec RTX HDR et avec le HDR adaptatif (tous GPU)."},
+          "ses propres valeurs."},
     Entry{"Cool sky", "Ciel froid"},
     Entry{"Warm pastel", "Pastel chaud"},
     Entry{"Crisp flats", "Aplats nets"},
@@ -115,7 +114,6 @@ constexpr std::array kSettingsPages{
     Entry{"Contrast and saturation", "Contraste et saturation"},
     Entry{"Custom", "Personnalisé"},
     Entry{"Debanding", "Débandage"},
-    Entry{"Debanding (RTX HDR)", "Débandage (RTX HDR)"},
     Entry{"Deep blacks", "Noirs profonds"},
     Entry{"Defaults", "Valeurs par défaut"},
     Entry{"Discard changes", "Abandonner les changements"},
@@ -145,12 +143,10 @@ constexpr std::array kSettingsPages{
     Entry{"HDR and color", "HDR et couleurs"},
     Entry{"HDR method", "Méthode HDR"},
     Entry{"HDR output", "Sortie HDR"},
-    Entry{"HDR settings", "Réglages HDR"},
     Entry{"Hide the bar when paused (burn-in)", "Masquer la barre en pause (marquage)"},
     Entry{"Highlights", "Éclats"},
     Entry{"Interpolation", "Interpolation"},
-    Entry{"Live, for RTX HDR, Adaptive HDR and SDR output.",
-          "En direct, pour RTX HDR, le HDR adaptatif et la sortie SDR."},
+    Entry{"Live, for Adaptive HDR and SDR output.", "En direct, pour le HDR adaptatif et la sortie SDR."},
     Entry{"Mid gray", "Gris moyen"},
     Entry{"With Adapt to scene brightness on, this is the middle gray of dark scenes; bright scenes use "
           "Middle gray, bright scene (Color page).",
@@ -179,15 +175,6 @@ constexpr std::array kSettingsPages{
     Entry{"Priority", "Priorité"},
     Entry{"Profile defaults", "Profil d'origine"},
     Entry{"Quality", "Qualité"},
-    Entry{"RTX HDR (NVIDIA)", "RTX HDR (NVIDIA)"},
-    Entry{"RTX HDR needs the TensorRT engine; Adaptive HDR is used instead.",
-          "RTX HDR demande le moteur TensorRT ; le HDR adaptatif le remplace."},
-    Entry{"RTX HDR path: TrueHDR, then the grade on the PQ output.",
-          "Voie RTX HDR : TrueHDR, puis l'étalonnage sur la sortie PQ."},
-    Entry{"RTX HDR turns off", "RTX HDR s'éteint"},
-    Entry{"RTX HDR turns on", "RTX HDR s'allume"},
-    Entry{"RTX HDR: the Maxine VideoFX SDK is not installed (see Engines).",
-          "RTX HDR : le SDK Maxine VideoFX n'est pas installé (voir Moteurs)."},
     Entry{"Recommended", "Recommandé"},
     Entry{"Reset", "Réinitialiser"},
     Entry{"Reset contrast and saturation", "Contraste et saturation par défaut"},
@@ -253,8 +240,7 @@ constexpr std::array kSettingsPages{
     Entry{"What Auto favors when the machine cannot do everything.",
           "Ce que l'automatique privilégie quand la machine ne tient pas tout."},
     Entry{"Wide colors", "Couleurs étendues"},
-    Entry{"Without RTX HDR, turn on \"Color grading\" below.",
-          "Sans RTX HDR, activez « Étalonnage » ci-dessous."},
+    Entry{"Turn on \"Color grading\" below.", "Activez « Étalonnage » ci-dessous."},
     Entry{"fused DistilDRBA (four engines, built the first time for this size)",
           "DistilDRBA fusionné (quatre moteurs, construits la première fois pour cette taille)"},
     Entry{"fused GMFSS (two engines, built the first time for this size)",

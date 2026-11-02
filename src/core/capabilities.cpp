@@ -129,20 +129,10 @@ std::vector<CapabilityRow> panel_rows(std::span<const CapabilityFacts> facts) {
   return rows;
 }
 
-Capabilities to_resolve_capabilities(std::span<const CapabilityFacts> facts,
-                                     std::string_view true_hdr_environment) {
+Capabilities to_resolve_capabilities(std::span<const CapabilityFacts> facts) {
   Capabilities caps;
-  bool true_hdr_installed = false;
   for (const CapabilityFacts& one : facts) {
-    if (!usable(one)) continue;
-    if (one.id.kind == CapabilityKind::Model) caps.models.push_back(one.id.name);
-    if (one.id.kind == CapabilityKind::Route && one.id.name == kRouteTrueHdr) true_hdr_installed = true;
-  }
-  // L'ordre de vendor_hdr place le système, le GPU et le moteur avant le SDK : sa cause l'emporte.
-  if (!true_hdr_environment.empty()) {
-    caps.true_hdr_blocker = std::string(true_hdr_environment);
-  } else {
-    caps.true_hdr_blocker = true_hdr_installed ? std::string() : std::string(kTrueHdrNotInstalled);
+    if (usable(one) && one.id.kind == CapabilityKind::Model) caps.models.push_back(one.id.name);
   }
   return caps;
 }
@@ -158,7 +148,6 @@ std::vector<CapabilityId> unqualified_in(const Plan& plan, std::span<const Capab
   }
   for (const InterpLevel& level : plan.levels) use(CapabilityKind::Model, level.model);
   if (plan.hdr.kind == HdrMode::Native) use(CapabilityKind::Route, kRouteHdrNative);
-  if (plan.hdr.kind == HdrMode::TrueHdr) use(CapabilityKind::Route, kRouteTrueHdr);
 
   std::erase_if(used, [&](const CapabilityId& id) {
     const CapabilityFacts* one = find_facts(facts, id);

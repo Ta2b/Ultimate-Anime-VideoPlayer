@@ -17,8 +17,6 @@
 #include <windows.h>
 #endif
 
-#include "vendor_hdr/sdk_store.h"
-
 namespace ajp::app::play {
 
 // Période de rafraîchissement de l'écran de la fenêtre, d'après SDL ; 0 si inconnue (la session
@@ -208,13 +206,6 @@ std::string describe_hdr(SDL_Window* window) {
   return text;
 }
 
-bool maxine_available(const PlayOptions& options, const PlayerPaths& paths) {
-  const vendor_hdr::SdkStore store(paths.engines.parent_path() / "sdk", vendor_hdr::SdkKind::MaxineVfx);
-  if (store.status().installed) return true;
-  std::error_code error;
-  return std::filesystem::exists(options.true_hdr_sdk, error);
-}
-
 bool tensorrt_backend_present(const EngineCatalog& catalog, const PlayerPaths& paths) {
   // Le paquet téléchargé s'installe sous les données, pas à côté du lecteur : les deux se cherchent.
   std::vector<std::filesystem::path> candidates = installed_backends(catalog);
@@ -225,10 +216,9 @@ bool tensorrt_backend_present(const EngineCatalog& catalog, const PlayerPaths& p
   });
 }
 
-// Ce qui est sur ce poste pour l'écran de bienvenue : les backends TensorRT, MIGraphX et OpenVINO,
-// le SDK Maxine importé ou à importer.
-EnginesHere engines_here(const PlayOptions& options, const PlayerPaths& paths, const EngineCatalog& catalog,
-                         std::string_view gpu_name) {
+// Ce qui est sur ce poste pour l'écran de bienvenue : les backends TensorRT, MIGraphX et OpenVINO.
+EnginesHere engines_here(const PlayOptions& /*options*/, const PlayerPaths& paths,
+                         const EngineCatalog& catalog, std::string_view gpu_name) {
   EnginesHere here;
   // L'architecture du GPU ne se lit (nvidia-smi) que s'il y a des fichiers tiers à choisir.
   const std::string arch =
@@ -254,17 +244,6 @@ EnginesHere engines_here(const PlayOptions& options, const PlayerPaths& paths, c
     here.openvino |= file.contains("openvino");
     here.coreml |= file.contains("coreml");
   }
-  vendor_hdr::SdkStore store(paths.engines.parent_path() / "sdk", vendor_hdr::SdkKind::MaxineVfx);
-  if (store.status().installed) {
-    here.maxine = true;
-    here.maxine_status = i18n::tr("imported");
-  } else if (std::filesystem::exists(options.true_hdr_sdk, error)) {
-    here.maxine = true;
-    here.maxine_status = i18n::tr_format("to import from {} (once)", options.true_hdr_sdk.string());
-  } else {
-    here.maxine_status = i18n::tr_format("SDK missing ({})", options.true_hdr_sdk.string());
-  }
-  if (!here.maxine && catalog.maxine) here.maxine_license = catalog.maxine->license;
   return here;
 }
 

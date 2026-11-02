@@ -14,7 +14,7 @@ std::unexpected<Refusal> refuse(RefusalCode code, std::string detail) {
 
 // Le point d'entrée name, ou nullptr. F est un pointeur de fonction (gpu/backend.h).
 template <class F>
-F symbol(const vendor_hdr::DynamicLibrary& library, const char* name) {
+F symbol(const DynamicLibrary& library, const char* name) {
   auto found = library.symbol<std::remove_pointer_t<F>>(name);
   return found ? *found : nullptr;
 }
@@ -32,14 +32,14 @@ std::expected<std::shared_ptr<BackendLibrary>, Refusal> BackendLibrary::open(
     }
     std::shared_ptr<BackendLibrary> library(new BackendLibrary());
     // dlopen sous Linux et macOS, LoadLibraryExW sous Windows (dépendances cherchées à côté).
-    auto opened = vendor_hdr::DynamicLibrary::open(std::filesystem::absolute(path, error));
+    auto opened = DynamicLibrary::open(std::filesystem::absolute(path, error));
     if (!opened) {
       tried += std::format("\n  {}", opened.error().detail);
       continue;
     }
     library->handle_.emplace(std::move(*opened));
     library->path_ = path;
-    const vendor_hdr::DynamicLibrary& handle = *library->handle_;
+    const DynamicLibrary& handle = *library->handle_;
     const auto abi = symbol<gpu::BackendAbiFn>(handle, "ajp_backend_abi");
     const auto layout = symbol<gpu::BackendLayoutFn>(handle, "ajp_backend_layout");
     library->create_ = symbol<gpu::BackendCreateFn>(handle, "ajp_backend_create");

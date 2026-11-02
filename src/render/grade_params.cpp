@@ -57,7 +57,7 @@ double pq_code(double nits) {
   return std::pow((0.8359375 + 18.8515625 * q) / (1.0 + 18.6875 * q), 78.84375);
 }
 
-// Grade adaptatif des routes sans RTX HDR (HDR adaptatif, sortie SDR gradée : tous les GPU) : le shader
+// Grade adaptatif (HDR adaptatif, sortie SDR gradée : tous les GPU) : le shader
 // glisse noirs, vibrance et courbe TrueHDR émulée (gris moyen) de « scène sombre » (les curseurs) vers «
 // scène claire » selon le code PQ moyen très lissé de la scène. Les seuils (luminance en % de la source,
 // gamma 2,4, blanc de référence 203 nits) sont convertis en codes PQ. Sans émulation, la courbe ne bouge pas
@@ -108,7 +108,7 @@ void apply_adaptive(const GradeSettings& s, double peak, bool sdr_out, GradePara
 }
 
 // La fin du grade : le contraste et la saturation du préréglage. Sans punch ni chroma de base, identité
-// exacte (les curseurs de contraste et de saturation, 0 à 200, sont ceux de RTX HDR et de son émulation).
+// exacte (les curseurs de contraste et de saturation, 0 à 200, sont ceux de l'aspect TrueHDR émulé).
 void apply_punch(const GradeSettings& s, GradeParams& p) {
   p.punch = s.punch_base;
   p.chroma = 1.0 + s.chroma_base;
@@ -116,7 +116,7 @@ void apply_punch(const GradeSettings& s, GradeParams& p) {
 }
 
 // Sortie SDR : le blanc de la source est celui de l'écran, aucune marge pour des éclats. Restent les
-// noirs, les couleurs (le curseur de RTX HDR), le garde-fou, le vrai noir, et de l'aspect TrueHDR
+// noirs, les couleurs, le garde-fou, le vrai noir, et de l'aspect TrueHDR
 // son contraste et sa saturation autour du gris moyen.
 GradeParams sdr_params(const GradeSettings& s) {
   GradeParams p;
@@ -272,8 +272,6 @@ std::expected<GradeDecision, Refusal> decide_grade(const GradeSettings& s, const
     decision.mode = s.grade_native_hdr ? GradeMode::NativeHdr : GradeMode::Neutral;
   } else if (native_sdr || plain_sdr) {
     decision.mode = GradeMode::Native;
-  } else if (context.route == core::HdrMode::TrueHdr) {
-    decision.mode = GradeMode::TrueHdr;
   }
   if (decision.mode == GradeMode::Neutral) return decision;
 
@@ -307,7 +305,7 @@ std::expected<GradeDecision, Refusal> decide_grade(const GradeSettings& s, const
     p.spec_gain = std::max(p.area_gain, 1.0 + h * (room - 1.0));
     p.vibrance = vibrance_effect(s.vibrance);
   } else {
-    // TrueHDR, son émulation et le HDR natif atteignent déjà le pic : les aplats restent, les
+    // L'aspect TrueHDR émulé et le HDR natif atteignent déjà le pic : les aplats restent, les
     // éclats isolés montent, à partir de la moitié du pic.
     p.paper = 0.5 * peak;
     p.in_max = peak;
@@ -326,15 +324,7 @@ std::expected<GradeDecision, Refusal> decide_grade(const GradeSettings& s, const
   p.black_lo = s.true_black ? s.black_lo : 0.0;
   p.black_hi = s.true_black ? s.black_hi : 0.0;
   apply_punch(s, p);
-  if (decision.mode == GradeMode::TrueHdr) {
-    // RTX HDR ne va pas au-delà de 200 : le reste de la saturation du curseur passe par la fin du grade.
-    const double wanted = grade_limits::effective_saturation(s.saturation);
-    p.chroma *= grade_limits::truehdr_saturation_factor(wanted) /
-                grade_limits::truehdr_saturation_factor(std::min(wanted, grade_limits::kSdkContrastMax));
-  }
-  // RTX HDR : l'adaptation passe par le lecteur (luminance mesurée sur le GPU, gris moyen du pilote) ; les
-  // autres routes par le shader.
-  if (decision.mode != GradeMode::TrueHdr) apply_adaptive(s, peak, false, p);
+  apply_adaptive(s, peak, false, p);
   return decision;
 }
 

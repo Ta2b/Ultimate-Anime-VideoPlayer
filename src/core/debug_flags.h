@@ -24,17 +24,16 @@ namespace ajp::core {
 enum class LogLevel : std::uint8_t { Trace, Debug, Info, Warn, Error, Off };
 
 struct DebugFlags {
-  LogLevel log_level = LogLevel::Info;    // --log-level=debug
-  bool vulkan_validation = false;         // --vulkan-validation : couches de validation Vulkan
-  bool no_cuda_graphs = false;            // --no-cuda-graphs : chaque paire lancée sans graphe
-  bool trace_pairs = false;               // --trace-pairs : temps et attentes de chaque paire au journal
-  bool no_exact_reuse = false;            // --no-exact-reuse : recalcule chaque paire, sans cache
-  bool dump_plan = false;                 // --dump-plan : écrit chaque Plan résolu au journal
-  bool profile_dispatches = false;        // --profile-dispatches : temps GPU par shader des réseaux Vulkan
-  std::optional<EngineId> force_engine;   // --engine=tensorrt : ignore le moteur préféré
-  std::optional<RingFormat> ring_format;  // --ring-format=yuv444p16 : qualifie le repli du ring
-  std::optional<DisplayInfo> display;     // --display=2560x1440@165[:hdr] : remplace l'écran détecté
-  std::int64_t max_frames = 0;            // --max-frames=N : s'arrête après N images ; 0 sans limite
+  LogLevel log_level = LogLevel::Info;   // --log-level=debug
+  bool vulkan_validation = false;        // --vulkan-validation : couches de validation Vulkan
+  bool no_cuda_graphs = false;           // --no-cuda-graphs : chaque paire lancée sans graphe
+  bool trace_pairs = false;              // --trace-pairs : temps et attentes de chaque paire au journal
+  bool no_exact_reuse = false;           // --no-exact-reuse : recalcule chaque paire, sans cache
+  bool dump_plan = false;                // --dump-plan : écrit chaque Plan résolu au journal
+  bool profile_dispatches = false;       // --profile-dispatches : temps GPU par shader des réseaux Vulkan
+  std::optional<EngineId> force_engine;  // --engine=tensorrt : ignore le moteur préféré
+  std::optional<DisplayInfo> display;    // --display=2560x1440@165[:hdr] : remplace l'écran détecté
+  std::int64_t max_frames = 0;           // --max-frames=N : s'arrête après N images ; 0 sans limite
 };
 
 struct CommandLine {

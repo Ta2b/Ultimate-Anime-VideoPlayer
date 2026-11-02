@@ -201,30 +201,7 @@ std::expected<bool, Refusal> run_engine_screen(const EngineScreen& s, core::Sett
             [](const EngineRow& row) { return row.offer.id != core::EngineId::Vulkan && row.usable; }),
         // Avant la première image, la sortie n'est pas encore choisie : l'écran HDR se lit dans le système,
         // comme à l'accueil.
-        .hdr_display = !s.options.sdr && content_peak_nits(s.screen.window()).has_value(),
-        .rtx_guided = core::kHostOs == core::Os::Linux && gpu.tensor_cores};
-    view.check_rtx = [&s, gpu](const FirstRunView& now) {
-      const auto ticked = [&](core::EngineId id) {
-        return std::ranges::any_of(now.engines,
-                                   [&](const EngineRow& row) { return row.offer.id == id && row.chosen; });
-      };
-      std::vector<RtxCheck> out;
-      out.push_back({.name = i18n::tr("NVIDIA RTX card"),
-                     .done = gpu.tensor_cores,
-                     .todo = i18n::tr("RTX HDR needs an RTX card (Tensor cores).")});
-      const bool trt_here = tensorrt_backend_present(s.catalog, s.paths);
-      out.push_back({.name = trt_here ? i18n::tr("TensorRT engine")
-                                      : i18n::tr("TensorRT engine (installed at \"Finish\")"),
-                     .done = trt_here || ticked(core::EngineId::TensorRt),
-                     .todo = i18n::tr("Check TensorRT on the Engine screen: it installs at \"Finish\".")});
-      const bool maxine_here = maxine_available(s.options, s.paths);
-      out.push_back({.name = maxine_here ? i18n::tr("Maxine VideoFX SDK")
-                                         : i18n::tr("Maxine VideoFX SDK (installed at \"Finish\")"),
-                     .done = maxine_here || ticked(core::EngineId::MaxineVfx),
-                     .todo = i18n::tr("Check NVIDIA Maxine on the Engine screen (NVIDIA licence), or put the "
-                                      "SDK in /usr/local/VideoFX and relaunch with --truehdr-sdk.")});
-      return out;
-    };
+        .hdr_display = !s.options.sdr && content_peak_nits(s.screen.window()).has_value()};
     view.wizard =
         begin_wizard(view.facts, s.options.first_run || s.restart_wizard ? 0 : engines.first_run_step);
     view.tier_line = i18n::tr_format("Estimated level: {}", tier_label(estimate.tier));
@@ -247,8 +224,7 @@ std::expected<bool, Refusal> run_engine_screen(const EngineScreen& s, core::Sett
   if ((*chosen_view)->cancelled) return true;
   const core::Settings before = engines;
   engines = settings_after(**chosen_view, engines);
-  auto downloaded = install_chosen(s.screen, s.ui, s.catalog, **chosen_view, engines,
-                                   s.paths.engines.parent_path() / "sdk");
+  auto downloaded = install_chosen(s.screen, s.ui, s.catalog, **chosen_view, engines);
   if (!downloaded) return std::unexpected(std::move(downloaded.error()));
   if (!*downloaded) return false;
   // Le moteur des réseaux choisi à l'onglet Moteurs reste, sauf si un moteur vient d'arriver : le
@@ -281,7 +257,6 @@ std::expected<bool, Refusal> run_engine_screen(const EngineScreen& s, core::Sett
       if (*picked == OutputPick::Hdr) {
         s.ui.queue_grade_calibration();
       } else {
-        chosen_play.true_hdr = false;
         chosen_play.hdr_native = false;
       }
     }

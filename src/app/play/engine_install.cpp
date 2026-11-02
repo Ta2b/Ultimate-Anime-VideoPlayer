@@ -106,13 +106,6 @@ EngineCatalog load_catalog(const std::filesystem::path& index, const std::filesy
   };
   for (const Refusal& skipped : parsed->skipped)
     add_problem(i18n::tr_format("discarded, {}", skipped.detail));
-  if (catalog.layout.os == core::Os::Linux) {
-    if (auto maxine = core::parse_maxine_source(text)) {
-      catalog.maxine = std::move(*maxine);
-    } else {
-      add_problem(maxine.error().detail);
-    }
-  }
   return catalog;
 }
 
@@ -508,10 +501,8 @@ std::expected<std::filesystem::path, Refusal> install_steps(const EngineCatalog&
   }
   // L'archive du moteur n'est plus utile une fois extraite : sa place revient avant les gros téléchargements.
   std::filesystem::remove(part, error);
-  // RTX HDR n'a pas de module : son paquet s'importe ensuite dans le magasin des SDK.
-  const bool module = package.engine != core::EngineId::MaxineVfx;
   const std::filesystem::path library = staging / core::backend_library(catalog.layout, package).filename();
-  if (module && !std::filesystem::is_regular_file(library, error)) {
+  if (!std::filesystem::is_regular_file(library, error)) {
     std::filesystem::remove_all(staging, error);
     return refuse(RefusalCode::HashMismatch,
                   i18n::tr_format("package {} without {}", name, library.filename().string()));
@@ -573,7 +564,7 @@ std::expected<std::filesystem::path, Refusal> install_steps(const EngineCatalog&
   if (replaced) std::filesystem::remove_all(aside, error);
   error.clear();
   report(1.0F, i18n::tr_format("{} installed", name));
-  return module ? core::backend_library(catalog.layout, package) : target;
+  return core::backend_library(catalog.layout, package);
 }
 
 }  // namespace

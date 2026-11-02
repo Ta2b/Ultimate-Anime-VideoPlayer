@@ -18,12 +18,9 @@
 
 #include <catch2/catch_test_macros.hpp>
 
-#include "../vendor_hdr/support.h"
 #include "app/play/engine_tools.h"
-#include "app/play/maxine_install.h"
 #include "core/model_index.h"
 #include "french_ui.h"
-#include "vendor_hdr/sdk_store.h"
 
 using namespace ajp;
 using namespace ajp::app::play;
@@ -356,54 +353,6 @@ TEST_CASE("Installation : une archive inaccessible est un refus de transfert", "
   package.url = "file://" + (f.root / "absent.bin").generic_string();
   require_refused(install_package(f.catalog, package, f.progress()), RefusalCode::DecodeFailed);
   CHECK_FALSE(installed(f.catalog, package));
-}
-
-TEST_CASE("Installation : le paquet RTX HDR s'importe dans le magasin des SDK", "[app][install]") {
-  ajp::app::play::FrenchUi french;
-  Fixture f("maxine");
-  const fs::path source = f.root / "VideoFX";
-  vendor_hdr::test::make_maxine_sdk(source);
-  const core::EnginePackage package =
-      f.package_of(core::EngineId::MaxineVfx, pack(source, f.root / "maxine.tar.gz"));
-  const fs::path sdk_dir = f.root / "sdks";
-  const auto result = install_maxine_package(f.catalog, package, sdk_dir, f.progress());
-  require_done(result);
-  const vendor_hdr::SdkStatus status = vendor_hdr::SdkStore(sdk_dir, vendor_hdr::SdkKind::MaxineVfx).status();
-  CHECK(status.state == vendor_hdr::SdkState::Ready);
-  REQUIRE(status.installed);
-  CHECK(status.installed->version().text() == "1.3.0.0");
-  // La copie du magasin suffit : le dossier extrait est effacé, et le paquet n'est pas « installé »
-  // comme un backend (il n'a pas de module).
-  CHECK_FALSE(fs::exists(core::engine_dir(f.catalog.layout, package)));
-  CHECK_FALSE(installed(f.catalog, package));
-  CHECK(f.fractions.back() == 1.0F);
-  CHECK(f.stages.back() == "RTX HDR installé");
-}
-
-TEST_CASE("Installation : un paquet RTX HDR incomplet est refusé par le magasin", "[app][install]") {
-  ajp::app::play::FrenchUi french;
-  Fixture f("maxine-incomplet");
-  const fs::path source = f.root / "VideoFX";
-  vendor_hdr::test::make_maxine_sdk(source, {.feature = false});
-  const core::EnginePackage package =
-      f.package_of(core::EngineId::MaxineVfx, pack(source, f.root / "maxine.tar.gz"));
-  const fs::path sdk_dir = f.root / "sdks";
-  require_refused(install_maxine_package(f.catalog, package, sdk_dir, f.progress()),
-                  RefusalCode::SdkRejected);
-  CHECK(vendor_hdr::SdkStore(sdk_dir, vendor_hdr::SdkKind::MaxineVfx).status().state ==
-        vendor_hdr::SdkState::NotInstalled);
-  CHECK_FALSE(fs::exists(core::engine_dir(f.catalog.layout, package)));
-}
-
-TEST_CASE("Installation : la clé NGC vide ou mal collée est refusée avant tout transfert", "[app][install]") {
-  ajp::app::play::FrenchUi french;
-  Fixture f("ngc");
-  const core::NgcSdkSource source{};
-  for (const std::string key : {"", "clé avec espace", "clé\navec retour"}) {
-    const auto result = install_maxine(f.catalog, source, key, f.root / "sdks", f.progress());
-    require_refused(result, RefusalCode::FieldOutOfRange);
-  }
-  CHECK(f.stages.empty());
 }
 
 // Les index de tools/release/nvidia-vendor contre pypi.nvidia.com (réseau, ~0,8 Go pour une carte

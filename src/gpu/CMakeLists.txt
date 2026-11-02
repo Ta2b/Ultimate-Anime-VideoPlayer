@@ -9,7 +9,7 @@ if(AJP_WITH_CUDA)
   add_subdirectory(cuda)
 endif()
 
-ajp_add_module(gpu DEPS ajp::core ajp::kernels ajp::vendor_hdr)
+ajp_add_module(gpu DEPS ajp::core ajp::kernels)
 
 # Socle de calcul Vulkan (vk_compute), sous vulkan/compute.
 add_subdirectory(vulkan)

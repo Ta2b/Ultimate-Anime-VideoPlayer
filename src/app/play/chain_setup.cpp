@@ -110,7 +110,6 @@ UpscaleSetup ChainEngines::upscale(const PlaySettings& settings, std::shared_ptr
                       .distil_drba = drba.get(),
                       .drba_align = drba_align,
                       .rife_factor = factor_of(settings),
-                      .true_hdr = settings.true_hdr,
                       .one_lane = one_lane,
                       .live = std::move(live),
                       .clock = clock,
@@ -177,8 +176,6 @@ std::expected<std::optional<ChainEngines>, Refusal> prepare_chain_once(Player& p
   log->info("GPU : {}", gpu_line(gpu));
   if (p.screen.device().vendor() == GpuVendor::Nvidia) {
     const std::string& driver = p.screen.device().driver_version;
-    if (settings.true_hdr && nvidia_driver_older_than(driver, kRtxHdrDriverMajor))
-      log->warn("pilote NVIDIA {} : RTX HDR demande {} ou plus récent", driver, kRtxHdrDriverMajor);
     if (settings.smooth_motion && nvidia_driver_older_than(driver, 580, 82, 7))
       log->warn("pilote NVIDIA {} : Smooth Motion demande 580.82.07 ou plus récent", driver);
   }

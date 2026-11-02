@@ -12,7 +12,6 @@
 #include "gpu/cuda/backend/drba_fused_engine.h"
 #include "gpu/cuda/backend/rife_fused_engine.h"
 #include "gpu/cuda/backend/span_fp8_engine.h"
-#include "gpu/cuda/backend/tensorrt_true_hdr.h"
 #include "gpu/cuda/backend/trt_engine.h"
 #include "prepare/builder.h"
 #include "prepare/drba_split.h"
@@ -200,7 +199,6 @@ TensorRtBackend::~TensorRtBackend() {
   span_timing_.reset();
   chain_timing_.reset();
   if (retired_done_ != nullptr) cudaEventDestroy(retired_done_);
-  true_hdr_.reset();  // avant le flux : l'effet et ses tampons appartiennent au contexte du backend
   for (const PairRead& read : pair_reads_) {
     if (read.device != nullptr) cudaFree(read.device);
     if (read.host != nullptr) cudaFreeHost(read.host);

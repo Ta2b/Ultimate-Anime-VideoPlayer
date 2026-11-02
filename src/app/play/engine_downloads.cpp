@@ -16,7 +16,6 @@
 #include "app/play/backend_library.h"
 #include "app/play/controls_draw.h"
 #include "app/play/i18n.h"
-#include "app/play/maxine_install.h"
 #include "core/clock.h"
 #include "core/log.h"
 #include "core/thread.h"
@@ -84,24 +83,12 @@ std::optional<std::expected<void, Refusal>> run_install(PlaceboScreen& screen, P
 }  // namespace
 
 std::expected<bool, Refusal> install_chosen(PlaceboScreen& screen, PlayerUi& ui, const EngineCatalog& catalog,
-                                            const FirstRunView& view, core::Settings& engines,
-                                            const std::filesystem::path& sdk_dir) {
+                                            const FirstRunView& view, core::Settings& engines) {
   const auto log = log_channel("app");
   for (const EngineRow& row : view.engines) {
     if (!row.download || !chosen(engines, row.offer.id)) continue;
     Job job;
-    if (row.needs_key && catalog.maxine) {
-      // La clé quitte la vue pour le seul thread d'installation.
-      job = [&catalog, source = *catalog.maxine, key = std::string(row.key.data()),
-             sdk_dir](const InstallProgress& progress) {
-        return install_maxine(catalog, source, key, sdk_dir, progress);
-      };
-    } else if (const core::EnginePackage* package = package_for(catalog, row.offer.id);
-               package != nullptr && row.offer.id == core::EngineId::MaxineVfx) {
-      job = [&catalog, package = *package, sdk_dir](const InstallProgress& progress) {
-        return install_maxine_package(catalog, package, sdk_dir, progress);
-      };
-    } else if (package != nullptr) {
+    if (const core::EnginePackage* package = package_for(catalog, row.offer.id); package != nullptr) {
       job = [&catalog, package = *package](const InstallProgress& progress) -> std::expected<void, Refusal> {
         auto library = install_package(catalog, package, progress);
         if (!library) return std::unexpected(library.error());
@@ -118,10 +105,8 @@ std::expected<bool, Refusal> install_chosen(PlaceboScreen& screen, PlayerUi& ui,
       continue;
     }
     log->warn("{} not installed: {}", engine_label(row.offer.id), outcome->error().detail);
-    ui.controls().defer(i18n::tr_format("{} not installed: {}", engine_label(row.offer.id),
-                                        row.offer.id == core::EngineId::MaxineVfx
-                                            ? i18n::tr("adaptive HDR instead")
-                                            : i18n::tr("Vulkan instead")));
+    ui.controls().defer(
+        i18n::tr_format("{} not installed: {}", engine_label(row.offer.id), i18n::tr("Vulkan instead")));
     engines = without_engine(std::move(engines), row.offer.id);
   }
   return true;
@@ -132,9 +117,7 @@ std::expected<bool, Refusal> update_stale_engines(PlaceboScreen& screen, PlayerU
                                                   const core::Settings& engines) {
   const auto log = log_channel("app");
   for (const core::EnginePackage& package : catalog.packages) {
-    if (package.engine == core::EngineId::MaxineVfx || !chosen(engines, package.engine) ||
-        !installed(catalog, package))
-      continue;
+    if (!chosen(engines, package.engine) || !installed(catalog, package)) continue;
     const std::filesystem::path library = core::backend_library(catalog.layout, package);
     if (auto opened = BackendLibrary::open(std::span(&library, 1));
         opened || opened.error().code != RefusalCode::AbiMismatch)

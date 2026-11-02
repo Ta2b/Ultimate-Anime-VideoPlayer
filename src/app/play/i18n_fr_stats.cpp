@@ -29,7 +29,6 @@ constexpr std::array kStatsTexts{
     Entry{"Light", "Léger"},
     Entry{"Open a video: the player prepares Performance mode on its frames.",
           "Ouvrez une vidéo : le lecteur prépare le mode Performance sur ses images."},
-    Entry{"Preparing RTX HDR", "Préparation de RTX HDR"},
     Entry{"True black: 0 below {:.4f} nit, toe up to {:.4f} nit (source black was {:.4f} nit).",
           "Vrai noir : 0 sous {:.4f} nit, pied jusqu'à {:.4f} nit (noir de la source à {:.4f} nit avant)."},
     Entry{"True black: no effect here (grading off, or HDR output without a path).",

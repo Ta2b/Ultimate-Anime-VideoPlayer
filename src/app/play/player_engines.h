@@ -100,7 +100,7 @@ struct Player {
 // Les messages des backends, sur le canal « backend » du journal.
 gpu::BackendLog backend_log();
 
-// Une image de la superposition avant une étape bloquante (chargement d'un moteur, RTX HDR) : la
+// Une image de la superposition avant une étape bloquante (chargement d'un moteur) : la
 // fenêtre dit ce qu'elle attend au lieu de rester noire.
 void show_loading(PlaceboScreen& screen, PlayerUi& ui, std::string label);
 

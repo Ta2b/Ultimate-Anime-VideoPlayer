@@ -30,7 +30,7 @@ int display_width(SDL_Window* window);
 // Crête vue par le contenu : la marge HDR de SDL3 × 203 nits ; rien si l'écran n'est pas en HDR.
 std::optional<double> content_peak_nits(SDL_Window* window);
 // La crête « automatique » du grade : celle de l'écran bornée à 200-2000 nits (un écran HDR de 310 nits ne
-// reçoit pas une cible de 400) ; 1000 si inconnue. RTX HDR la remonte à son minimum de 400.
+// reçoit pas une cible de 400) ; 1000 si inconnue.
 int auto_peak_nits(std::optional<double> detected);
 // Ce que SDL (et, sous Windows, la configuration d'affichage) dit du HDR de l'écran de la fenêtre, pour le
 // journal : de quoi comprendre pourquoi un écran HDR est vu en SDR.
@@ -38,13 +38,9 @@ std::string describe_hdr(SDL_Window* window);
 // Le nom de l'écran de la fenêtre selon SDL, pour choisir son EDID.
 std::string display_name(SDL_Window* window);
 GpuFacts gpu_facts(const PlaceboScreen& screen);
-// Le SDK Maxine est utilisable : importé dans le magasin du lecteur, ou présent à importer. La
-// même définition que l'écran de bienvenue, pour le panneau de réglages.
-bool maxine_available(const PlayOptions& options, const PlayerPaths& paths);
-// Un backend TensorRT est installé : seul lui ouvre RTX HDR.
 // Le backend TensorRT est-il là : téléchargé (engines.lock) ou à côté du lecteur ?
 bool tensorrt_backend_present(const EngineCatalog& catalog, const PlayerPaths& paths);
-// Les backends présents ou téléchargeables (catalog), le SDK Maxine importé ou à importer.
+// Les backends présents ou téléchargeables (catalog).
 EnginesHere engines_here(const PlayOptions& options, const PlayerPaths& paths, const EngineCatalog& catalog,
                          std::string_view gpu_name);
 

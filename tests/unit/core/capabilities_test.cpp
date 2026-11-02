@@ -13,7 +13,7 @@ namespace {
 
 const CapabilityId kHd{.kind = CapabilityKind::Model, .name = "2x_AnimeJaNai_HD_V3_Compact"};
 const CapabilityId kRife{.kind = CapabilityKind::Model, .name = "rife-4.26"};
-const CapabilityId kTrueHdr{.kind = CapabilityKind::Route, .name = std::string(kRouteTrueHdr)};
+const CapabilityId kNative{.kind = CapabilityKind::Route, .name = std::string(kRouteHdrNative)};
 
 const Fingerprint kNow{.driver = "580.12", .artifact_sha256 = std::string(64, 'c'), .plan_hash = 0x1234};
 
@@ -59,8 +59,8 @@ TEST_CASE("Capacités : compilée, livrée, installée, qualifiée", "[capabilit
   facts.receipt = make_receipt(kHd, kNow, {});
   CHECK(state_of(facts) == CapabilityState::Qualified);
 
-  // Un SDK importé est installé sans avoir été livré par l'index.
-  CHECK(state_of(CapabilityFacts{.id = kTrueHdr, .compiled = true, .installed = true}) ==
+  // Une route est installée sans avoir été livrée par l'index.
+  CHECK(state_of(CapabilityFacts{.id = kNative, .compiled = true, .installed = true}) ==
         CapabilityState::Installed);
 }
 
@@ -76,11 +76,7 @@ TEST_CASE("Capacités : sans le code qui l'exécute, des fichiers installés ne 
   CHECK_FALSE(rows[0].usable);
   CHECK(rows[0].receipt_hash.empty());
   CHECK(rows[1].usable);
-  CHECK(to_resolve_capabilities(facts, "").models == std::vector<ModelId>{kRife.name});
-
-  CapabilityFacts route = installed(kTrueHdr);
-  route.compiled = false;
-  CHECK(to_resolve_capabilities(std::vector{route}, "").true_hdr_blocker == kTrueHdrNotInstalled);
+  CHECK(to_resolve_capabilities(facts).models == std::vector<ModelId>{kRife.name});
 }
 
 TEST_CASE("Capacités : un reçu périmé ou étranger ne qualifie pas", "[capabilities]") {
@@ -105,7 +101,7 @@ TEST_CASE("Panneau : modèles puis routes, reçu affiché seulement si qualifié
   CapabilityFacts stale = qualified(kRife);
   stale.current.artifact_sha256 = std::string(64, 'd');
   const std::vector<CapabilityFacts> facts{
-      qualified(kTrueHdr), qualified(kHd), stale,
+      qualified(kNative), qualified(kHd), stale,
       CapabilityFacts{.id = {.name = "4x_absent"}, .compiled = true, .delivered = true}};
   const std::vector<CapabilityRow> rows = panel_rows(facts);
   REQUIRE(rows.size() == 4);
@@ -119,19 +115,17 @@ TEST_CASE("Panneau : modèles puis routes, reçu affiché seulement si qualifié
   CHECK(rows[1].receipt_hash.empty());
   CHECK(rows[2].state == CapabilityState::Delivered);
   CHECK_FALSE(rows[2].usable);
-  CHECK(rows[3].id == kTrueHdr);
+  CHECK(rows[3].id == kNative);
 }
 
 TEST_CASE("Capacités : resolve() charge une capacité installée, qualifiée ou non", "[capabilities]") {
   const std::vector<CapabilityFacts> facts{
-      installed(kHd), qualified(kRife), installed(kTrueHdr),
+      installed(kHd), qualified(kRife), installed(kNative),
       CapabilityFacts{.id = {.name = "4x_absent"}, .compiled = true, .delivered = true}};
-  const Capabilities caps = to_resolve_capabilities(facts, "");
+  const Capabilities caps = to_resolve_capabilities(facts);
   CHECK(caps.models == std::vector<ModelId>{kHd.name, kRife.name});
-  CHECK(caps.true_hdr_available());
-  CHECK_FALSE(to_resolve_capabilities(std::vector{qualified(kHd)}, "").true_hdr_available());
 
-  Profile profile{.hdr = HdrMode::TrueHdr};
+  Profile profile{.hdr = HdrMode::Native};
   profile.rules.push_back(Rule{.max_pixels = limits::kPixels.hi,
                                .max_fps = limits::kFps.hi,
                                .steps = {Step{.kind = StepKind::Upscale, .model = kHd.name, .factor = {2, 1}},
@@ -142,23 +136,13 @@ TEST_CASE("Capacités : resolve() charge une capacité installée, qualifiée ou
   auto plan = resolve(profile, caps, SourceInfo{.width = 1280, .height = 720, .fps = 23.976},
                       DisplayInfo{.width = 2560, .height = 1440, .refresh_hz = 144.0, .hdr = true});
   REQUIRE(plan);
-  CHECK(unqualified_in(*plan, facts) == std::vector{kHd, kTrueHdr});
-}
-
-TEST_CASE("Capacités : la cause de vendor_hdr l'emporte sur la route non installée", "[capabilities]") {
-  const std::string_view not_nvidia = "le GPU de rendu n'est pas un GPU NVIDIA";
-  CHECK(to_resolve_capabilities(std::vector{installed(kTrueHdr)}, not_nvidia).true_hdr_blocker == not_nvidia);
-  CHECK(to_resolve_capabilities(std::vector{installed(kHd)}, not_nvidia).true_hdr_blocker == not_nvidia);
-  CHECK(to_resolve_capabilities(std::vector{installed(kHd)}, "").true_hdr_blocker == kTrueHdrNotInstalled);
-  CHECK(to_resolve_capabilities(std::vector{installed(kTrueHdr)}, "").true_hdr_blocker.empty());
-  // Sans avis de vendor_hdr, la valeur par défaut refuse TrueHDR.
-  CHECK_FALSE(Capabilities{}.true_hdr_available());
+  CHECK(unqualified_in(*plan, facts) == std::vector{kHd, kNative});
 }
 
 TEST_CASE("receipts.toml : écrire puis relire ; un reçu altéré est refusé", "[capabilities]") {
   const std::vector<Receipt> receipts{
       make_receipt(kHd, kNow, BenchResult{.pair_us = 35'400, .host_waits = 0}),
-      make_receipt(kTrueHdr, Fingerprint{.driver = "580.12", .plan_hash = 0xFFFFFFFFFFFFFFFF},
+      make_receipt(kNative, Fingerprint{.driver = "580.12", .plan_hash = 0xFFFFFFFFFFFFFFFF},
                    {.host_waits = 3})};
   const std::string text = format_receipts(receipts);
   auto reread = parse_receipts(text);

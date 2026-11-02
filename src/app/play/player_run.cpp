@@ -61,8 +61,6 @@
 #include "media/selection.h"
 #include "prepare/sha256.h"
 #include "prepare/utf8.h"
-#include "vendor_hdr/sdk_store.h"
-#include "vendor_hdr/true_hdr.h"
 
 namespace ajp::app::play {
 namespace {
@@ -84,7 +82,7 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
   settings = within_engines(settings, p.engines, unavailable);
   for (const std::string& line : unavailable) log->warn("{}", line);
   // Le mode HDR demandé, avant tout repli de l'environnement : c'est lui que les profils gardent.
-  const HdrIntent wanted_hdr{.true_hdr = settings.true_hdr, .hdr_native = settings.hdr_native};
+  const HdrIntent wanted_hdr{.hdr_native = settings.hdr_native};
   const PlayOptions options = options_for(p.options, settings);
   const media::TrackInfo& video = p.video;
   // La pré-analyse des plans part avant la préparation des moteurs : elle a de l'avance quand l'image vient.
@@ -108,61 +106,25 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
   if (!settings.grade_values.adaptive && p.shots != nullptr)
     open_shots(*p.shots, p.options.file, settings, start_us);
   const int auto_peak = auto_peak_nits(content_peak_nits(p.screen.window()));
-  int peak_nits = 0;
-  // La sortie est HDR10 : l'écran en reçoit, et --sdr ne l'a pas coupée. Sinon (sortie SDR),
-  // TrueHDR ferait du HDR que libplacebo ramènerait aussitôt en SDR ; le grade SDR prend sa place.
+  // La sortie est HDR10 : l'écran en reçoit, et --sdr ne l'a pas coupée. Un écran SDR n'a pas de HDR à
+  // offrir (le panneau le grise) : l'image reste en SDR, et le grade (contraste, saturation, préréglage) s'y
+  // applique.
   const bool hdr_out = !p.options.sdr && content_peak_nits(p.screen.window()).has_value();
-  // Un écran SDR n'a pas de HDR à offrir : ni RTX HDR ni HDR adaptatif (le panneau les grise) ; l'image reste
-  // en SDR, et le grade (contraste, saturation, préréglage) s'y applique.
-  if (!hdr_out && (settings.true_hdr || settings.hdr_native)) {
-    log->info("sortie SDR : ni RTX HDR ni HDR adaptatif, image SDR gradée");
-    settings.true_hdr = false;
+  if (!hdr_out && settings.hdr_native) {
+    log->info("sortie SDR : pas de HDR adaptatif, image SDR gradée");
     settings.hdr_native = false;
   }
   // La couleur de la source telle que le flux l'étiquette : l'écran convertit depuis elle (gamut, courbe,
-  // HDR10 ou HLG), RTX HDR s'ouvre pour elle.
+  // HDR10 ou HLG).
   const std::optional<ColorInfo> source_color = media::track_color(video);
   const ColorInfo source = source_color.value_or(ColorInfo{});
   const bool source_hdr = source.transfer == Transfer::Pq || source.transfer == Transfer::Hlg;
-  if (settings.true_hdr && source_hdr) {
-    log->info("RTX HDR : la source est déjà HDR, TrueHDR n'est pas ouvert");
-    p.ui.controls().notify(i18n::tr("Source is already HDR: RTX HDR not needed"), host_now_us());
-    settings.true_hdr = false;
-  }
-  // TrueHDR s'ouvre par le moteur TensorRT (open_true_hdr n'existe que là) : sous Vulkan, la route
-  // native prend sa place sans essayer, et le panneau ne propose plus RTX HDR (true_hdr_available).
-  if (settings.true_hdr && c.backend_name != "tensorrt") {
-    log->info("RTX HDR : le moteur {} ne l'ouvre pas (TensorRT requis) ; HDR adaptatif à la place",
-              c.backend_name);
-    p.ui.controls().notify(i18n::tr("RTX HDR needs TensorRT: using adaptive HDR"), host_now_us());
-    settings.true_hdr = false;
-    settings.hdr_native = true;
-  }
-  bool rtx_hdr_failed = false;  // TrueHDR a refusé de s'ouvrir : le panneau ne le propose plus
-  if (settings.true_hdr) {
-    show_loading(p.screen, p.ui, i18n::tr("Preparing RTX HDR"));
-    auto opened = open_rtx_hdr(p.options.true_hdr_sdk, p.paths, settings, auto_peak, p.screen,
-                               *c.backend->kernels(), work.width * factor, work.height * factor, source);
-    if (opened) {
-      peak_nits = *opened;
-    } else {
-      // Le plan : TrueHDR qui échoue laisse la place à la route native, et l'écran le dit.
-      log->warn("{} ; HDR adaptatif à la place", opened.error().detail);
-      p.ui.controls().notify(i18n::tr("RTX HDR unavailable: using adaptive HDR"), host_now_us());
-      settings.true_hdr = false;
-      settings.hdr_native = true;
-      rtx_hdr_failed = true;
-      p.screen.set_source_color(source);
-    }
-  } else {
-    p.screen.set_source_color(source);
-  }
+  p.screen.set_source_color(source);
 
-  const std::string label_text = std::format(
-      "{}{}{}", c.motion_label(settings),
-      // Le moteur HDR vraiment pris : TrueHDR ouvert, ou le HDR adaptatif sur une sortie HDR10.
-      settings.true_hdr ? "RTX HDR · " : (settings.hdr_native && hdr_out ? "HDR adaptatif · " : ""),
-      c.span_label());
+  const std::string label_text =
+      std::format("{}{}{}", c.motion_label(settings),
+                  // Le HDR adaptatif, s'il tourne vraiment sur une sortie HDR10.
+                  settings.hdr_native && hdr_out ? "HDR adaptatif · " : "", c.span_label());
   log->info("{} : {}", options.file.string(), label_text);
   auto live = std::make_shared<LiveSettings>();
   live->set_rife_factor(rife_loaded ? factor_of(settings) : Factor{});
@@ -207,9 +169,9 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
   }
   if (std::ranges::any_of(look_slots(settings), [](const LookLayer& l) { return !l.key.empty(); }))
     apply_looks(p.screen, settings, p.paths.engines.parent_path() / "luts");
-  p.screen.set_grade(grade_of(settings, settings.true_hdr, peak_nits, auto_peak, {}, {}, source_hdr));
+  p.screen.set_grade(grade_of(settings, auto_peak, {}, {}, source_hdr));
   p.screen.set_finish(settings.final_scaler, settings.deband);
-  session_config.output = output_text(out, settings, peak_nits);
+  session_config.output = output_text(out, settings);
   session_config.display_period_us = display_period_us(out.window());
   const std::int64_t bench_period_us = session_config.display_period_us;
   session_config.display_hz = display_refresh_hz(out.window());
@@ -304,9 +266,6 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
           .default_rife_model = c.rife_choice ? c.rife_choice->default_name : std::string(),
           .rife_folder = c.gmfss_places.front().string(),
           .nvidia = vendor_from_pci(p.screen.device_facts().pci_vendor) == GpuVendor::Nvidia,
-          .true_hdr_available = c.backend_name == "tensorrt" && !rtx_hdr_failed &&
-                                (maxine_available(p.options, p.paths) || settings.true_hdr),
-          .true_hdr_backend = c.backend_name == "tensorrt",
           .hdr_output = p.screen.hdr_output(),
           .auto_peak = auto_peak,
           .engines = engine_badges(p.paths.engines,
@@ -348,21 +307,15 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
       .running = settings,
       .profiles = p.profiles,
       .rife_loaded = rife_loaded,
-      .true_hdr_open = settings.true_hdr,
       .auto_peak = auto_peak,
-      .peak_nits = peak_nits,
       .file = p.options.file,
       .display = p.display,
       .header_text =
           [&c, hdr_out](const PlaySettings& s) {
-            return std::format(
-                "{}{}{}", c.motion_label(s),
-                s.true_hdr ? "RTX HDR · " : (s.hdr_native && hdr_out ? "HDR adaptatif · " : ""),
-                c.span_label());
+            return std::format("{}{}{}", c.motion_label(s), s.hdr_native && hdr_out ? "HDR adaptatif · " : "",
+                               c.span_label());
           },
-      .hdr_wanted = settings.true_hdr != wanted_hdr.true_hdr || settings.hdr_native != wanted_hdr.hdr_native
-                        ? std::optional(wanted_hdr)
-                        : std::nullopt,
+      .hdr_wanted = settings.hdr_native != wanted_hdr.hdr_native ? std::optional(wanted_hdr) : std::nullopt,
       .luts_dir = p.paths.engines.parent_path() / "luts",
       .source_hdr = source_hdr,
       .kernels = c.backend ? c.backend->kernels() : nullptr,
@@ -640,22 +593,9 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
         }
       }
     }
-    // RTX HDR ne traite que les images neuves : en pause, la position tenue est relue 120 ms après le dernier
-    // réglage (la vérification est à chaque tour, pas au sondage de l'écran de 500 ms).
-    if (chain.hdr_refresh_us != 0 && host_now_us() >= chain.hdr_refresh_us) {
-      chain.hdr_refresh_us = 0;
-      if (session.view().paused)
-        session.command(
-            cmd::Seek{.target_us = std::max<std::int64_t>(session.view().position_us, 0), .exact = true});
-    }
     adaptive_tick(chain, host_now_us());
     (*pipeline)->pump();
     while (auto message = try_take((*pipeline)->inbox())) session.handle(std::move(*message));
-    // Vrai noir : la rampe que gpu a passée par TrueHDR, puis les seuils recalés.
-    if (auto ramp = chain.live.take_black_ramp()) {
-      chain.truehdr_ramp = std::move(*ramp);
-      chain.black_dirty = true;
-    }
     if (chain.black_dirty && host_now_us() - chain.black_at_us >= kBlackRefreshUs) refresh_black(chain);
     UiFrame ui_frame = p.ui.frame(host_now_us(), session.view(), actions);
     ui_frame.changed |= snapshot_now;

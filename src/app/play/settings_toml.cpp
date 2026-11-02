@@ -275,14 +275,13 @@ std::expected<PlaySettings, Refusal> settings_from_table(const toml::table& root
       reads.emplace_back(
           refuse(RefusalCode::FieldOutOfRange, std::format("interpolation.engine : « {} »", engine)));
   }
-  // Le mode HDR de l'application : son moteur (RTX HDR sur NVIDIA, HDR adaptatif partout, ou SDR)
-  // et les réglages qu'ils partagent. Les fichiers d'avant (section rtx_hdr) se lisent encore.
+  // Le mode HDR de l'application : HDR adaptatif ou SDR, et ses réglages. « rtx » (RTX HDR, retiré) se lit
+  // comme le HDR adaptatif ; les fichiers d'avant (section rtx_hdr) se lisent encore.
   if (const toml::table* hdr = section(root, "hdr")) {
     std::string engine(hdr_engine_key(s));
     reads.push_back(read(*hdr, "hdr", "engine", engine));
     if (engine == "rtx" || engine == "adaptive" || engine == "sdr") {
-      s.true_hdr = engine == "rtx";
-      s.hdr_native = engine == "adaptive";
+      s.hdr_native = engine != "sdr";
     } else {
       reads.emplace_back(refuse(RefusalCode::FieldOutOfRange, std::format("hdr.engine : « {} »", engine)));
     }
@@ -290,16 +289,16 @@ std::expected<PlaySettings, Refusal> settings_from_table(const toml::table& root
     reads.push_back(read(*hdr, "hdr", "saturation", s.true_hdr_saturation));
     reads.push_back(read(*hdr, "hdr", "middle_gray", s.true_hdr_gray));
     reads.push_back(read(*hdr, "hdr", "peak", s.true_hdr_peak));
-    reads.push_back(read(*hdr, "hdr", "debanding", s.true_hdr_debanding));
     read_display_tables(*hdr, s, reads);
   } else if (const toml::table* rtx = section(root, "rtx_hdr")) {
-    reads.push_back(read(*rtx, "rtx_hdr", "enabled", s.true_hdr));
+    bool rtx_enabled = false;
+    reads.push_back(read(*rtx, "rtx_hdr", "enabled", rtx_enabled));
     reads.push_back(read(*rtx, "rtx_hdr", "contrast", s.true_hdr_contrast));
     reads.push_back(read(*rtx, "rtx_hdr", "saturation", s.true_hdr_saturation));
     reads.push_back(read(*rtx, "rtx_hdr", "middle_gray", s.true_hdr_gray));
     reads.push_back(read(*rtx, "rtx_hdr", "peak", s.true_hdr_peak));
-    reads.push_back(read(*rtx, "rtx_hdr", "debanding", s.true_hdr_debanding));
     reads.push_back(read(*rtx, "rtx_hdr", "native", s.hdr_native));
+    s.hdr_native = s.hdr_native || rtx_enabled;
   }
   if (const toml::table* audio = section(root, "audio")) {
     reads.push_back(read(*audio, "audio", "delay_ms", s.audio_delay_ms));
@@ -494,8 +493,7 @@ std::string format_settings(const PlaySettings& s) {
                     {"contrast", s.true_hdr_contrast},
                     {"saturation", s.true_hdr_saturation},
                     {"middle_gray", s.true_hdr_gray},
-                    {"peak", s.true_hdr_peak},
-                    {"debanding", s.true_hdr_debanding}};
+                    {"peak", s.true_hdr_peak}};
     write_display_tables(s, hdr);
     root.insert("hdr", std::move(hdr));
   }

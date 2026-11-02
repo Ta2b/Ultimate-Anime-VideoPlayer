@@ -110,10 +110,10 @@ constexpr std::array kSystemPages{
     Entry{"Roll back to the previous version", "Revenir à la version précédente"},
     Entry{"SPAN Performance mode (FP8)", "Mode Performance de SPAN (FP8)"},
     Entry{"SPAN Performance mode (FP8) preparation", "préparation du mode Performance de SPAN (FP8)"},
-    Entry{"Same engines and settings as playback, with no skipped frame. No RTX HDR, adaptive HDR or "
-          "grading: the chain's picture as is.",
-          "Mêmes moteurs et réglages qu'à la lecture, sans image sautée. Ni RTX HDR, ni HDR adaptatif, ni "
-          "étalonnage : l'image de la chaîne telle quelle."},
+    Entry{"Same engines and settings as playback, with no skipped frame. No adaptive HDR or grading: the "
+          "chain's picture as is.",
+          "Mêmes moteurs et réglages qu'à la lecture, sans image sautée. Ni HDR adaptatif, ni étalonnage : "
+          "l'image de la chaîne telle quelle."},
     Entry{"Source · {}x{}", "Source · {}x{}"},
     Entry{"Suggested name", "Nom proposé"},
     Entry{"The output is an MKV, MP4 or MOV: its name ends in .mkv, .mp4 or .mov.",

@@ -34,7 +34,7 @@ TEST_CASE("Personnalisé ne touche à rien", "[auto_config]") {
 
 TEST_CASE("Auto suit la tranche de la machine", "[auto_config]") {
   const PlaySettings ultra = applied(Preset::Auto, Tier::Ultra, 2160, 165.0);
-  CHECK(ultra.motion_engine == MotionEngine::GmfssUnion);
+  CHECK(ultra.motion_engine == MotionEngine::DistilDrba);  // GMFSS Union reste au choix manuel
   CHECK(ultra.upscale);
   CHECK(ultra.rife_auto);
   const PlaySettings fast = applied(Preset::Auto, Tier::Fast, 1440, 144.0);
@@ -64,10 +64,7 @@ TEST_CASE("la priorité décale d'un cran", "[auto_config]") {
   const int balance = applied(Preset::Auto, Tier::Normal, 1440, 144.0).rife_factor;
   CHECK(applied(Preset::Auto, Tier::Normal, 1440, 144.0, k1080p24, Priority::Fluidity).rife_factor >=
         balance);
-  CHECK(applied(Preset::Auto, Tier::Ultra, 2160, 165.0, k1080p24, Priority::Image).gmfss_precision ==
-        PrecisionTier::Quality);
-  // GMFSS est le seul réseau dont le FP8 passe les gardes (−15 % sur la paire, PSNR 47 dB au pire cas) : par
-  // défaut, sans graphe ou sans moteur FP8 la lecture reste en FP16. SPAN et RIFE ne le choisissent jamais.
+  // Auto ne choisit jamais FP8 ni GMFSS : la précision reste Équilibre.
   CHECK(applied(Preset::Auto, Tier::Ultra, 2160, 165.0).gmfss_precision == PrecisionTier::Balanced);
   CHECK(applied(Preset::Auto, Tier::Normal, 1440, 144.0).span_precision == PrecisionTier::Balanced);
 }
@@ -99,13 +96,13 @@ TEST_CASE("un préréglage fixe la tranche quelle que soit la machine", "[auto_c
 TEST_CASE("l'application est idempotente et ne touche pas au reste", "[auto_config]") {
   PlaySettings base = with(Preset::Auto);
   base.volume = 0.3F;
-  base.true_hdr = true;
+  base.true_hdr_contrast = 150;
   base.language_presets = {{"jpn", "eng"}};
   const Machine machine{Tier::Fast, 1440, 144.0};
   const PlaySettings once = apply_preset(base, machine, k1080p24);
   CHECK(apply_preset(once, machine, k1080p24) == once);
   CHECK(once.volume == 0.3F);
-  CHECK(once.true_hdr);
+  CHECK(once.true_hdr_contrast == 150);
   CHECK(once.language_presets == base.language_presets);
 }
 

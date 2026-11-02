@@ -57,16 +57,15 @@ TEST_CASE("Terminer écrit les choix et laisse intact ce qui est sauté", "[wiza
   CHECK(play.hdr_native);
   CHECK(wants_machine_calibration(wizard));
   CHECK(wants_grade_calibration(wizard));
-  CHECK_FALSE(play.true_hdr);
 
   // Écrans passés : Me prévenir (défaut), HDR inchangé, préréglage Auto, pas de calibration.
   wizard.skipped = {WizardStep::Updates, WizardStep::Hdr, WizardStep::Chain};
   const ajp::core::Settings kept = wizard_settings(wizard, {});
   PlaySettings other;
-  other.true_hdr = true;
+  other.hdr_native = false;
   other = wizard_play_settings(wizard, other);
   CHECK(other.update_mode == "notify");
-  CHECK(other.true_hdr);
+  CHECK_FALSE(other.hdr_native);
   CHECK(other.preset == Preset::Auto);
   CHECK_FALSE(wants_machine_calibration(wizard));
   CHECK_FALSE(wants_grade_calibration(wizard));  // HDR passé : pas de grade à calibrer
@@ -84,24 +83,4 @@ TEST_CASE("le résumé dit ce qui est choisi, sauté, et où le changer", "[wiza
   CHECK(lines[0].contains("Général > Configuration"));
   CHECK(lines[1].contains("sauté"));
   CHECK(lines[2].contains("me prévenir"));
-}
-
-TEST_CASE("RTX HDR pas à pas : prêt seulement quand tout est fait, sinon HDR adaptatif en attendant",
-          "[wizard]") {
-  ajp::app::play::FrenchUi french;
-  Wizard wizard = begin_wizard({.engine_choice = true, .hdr_display = true, .rtx_guided = true}, 0);
-  wizard.hdr = HdrChoice::RtxHdr;
-  wizard.rtx_checks = {{.name = "Moteur TensorRT", .done = true},
-                       {.name = "SDK Maxine", .done = false, .todo = "À importer"}};
-  CHECK_FALSE(rtx_ready(wizard.rtx_checks));
-  PlaySettings waiting = wizard_play_settings(wizard, {});
-  CHECK_FALSE(waiting.true_hdr);
-  CHECK(waiting.hdr_native);
-  CHECK(wizard_summary(wizard)[1].contains("pas prêt"));
-  wizard.rtx_checks[1].done = true;
-  CHECK(rtx_ready(wizard.rtx_checks));
-  PlaySettings ready = wizard_play_settings(wizard, {});
-  CHECK(ready.true_hdr);
-  CHECK_FALSE(ready.hdr_native);
-  CHECK_FALSE(rtx_ready({}));
 }

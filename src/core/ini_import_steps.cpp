@@ -221,7 +221,7 @@ StageResult hdr_stage(const Keys& stage, Importer& im, std::vector<HdrMode>& hdr
     return stage.bad(RefusalCode::FieldOutOfRange, "kind",
                      "un seul mode HDR par profil, toutes règles comprises");
   }
-  hdr.push_back(method == "mpv" ? HdrMode::Native : HdrMode::TrueHdr);
+  hdr.push_back(HdrMode::Native);  // nvidia-truehdr aussi : RTX HDR est retiré, le HDR adaptatif le remplace
   im.note(stage.line_of("kind"),
           "l'étape HDR devient le mode HDR du profil ; son réglage d'aspect se refait dans le grade");
   stage.consume("");

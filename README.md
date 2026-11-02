@@ -1,11 +1,11 @@
 # Ultimate Anime VideoPlayer
 
 Lecteur vidéo écrit en C++ pour l'anime : agrandissement AnimeJaNai (SPAN),
-interpolation (RIFE et au-delà), grade HDR adaptatif et RTX HDR, en temps réel.
+interpolation (RIFE et au-delà) et grade HDR adaptatif, en temps réel.
 L'export rejoue exactement le même traitement, sans horloge.
 
 Le lecteur s'installe léger : il embarque notre moteur Vulkan, qui tourne sur
-tout GPU récent. TensorRT, MIGraphX, OpenVINO, DirectML et les SDK RTX HDR sont
+tout GPU récent. TensorRT, MIGraphX, OpenVINO et DirectML sont
 facultatifs et se choisissent au premier lancement, avec une présélection
 adaptée à la machine.
 
@@ -51,10 +51,7 @@ Une version Linux tient en un seul lecteur pour tous les GPU : `tools/release/pa
 produit `ajp-linux-x64.tar.gz` (lecteur, Vulkan, `engines.lock`) et un paquet par moteur construit
 (TensorRT, MIGraphX, OpenVINO). Au premier lancement, l'écran de bienvenue propose ceux qui
 conviennent au GPU ; les cochés se téléchargent depuis la release, vérifiés par leur SHA-256
-(la licence de TensorRT s'accepte à l'écran). RTX HDR sous Linux s'installe de la même façon,
-sans clé ni compte NVIDIA : un paquet fermé à part, sous la licence de NVIDIA, ne contient que ce
-que TrueHDR charge du SDK Maxine ; le lecteur l'importe dans son magasin de SDK. À défaut de ce
-paquet, il télécharge le SDK depuis NVIDIA NGC avec la clé d'API de l'utilisateur.
+(la licence de TensorRT s'accepte à l'écran).
 
 Sous Windows, le même lecteur universel se construit par vcpkg (`windows-release`) ;
 `tools/release/package-windows.ps1` produit `ajp-windows-x64.zip` et, si TensorRT est installé

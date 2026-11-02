@@ -19,7 +19,7 @@ enum class WizardStep : std::uint8_t {
   Welcome = 1,  // carte, tranche, écran
   Engines,      // moteurs à installer
   Chain,        // la calibration de la machine (machine_calibration.h), faite après « Terminer »
-  Hdr,          // RTX HDR / HDR adaptatif / SDR
+  Hdr,          // HDR adaptatif / SDR
   Grade,        // la calibration du grade HDR, ouverte après celle de la machine (écran HDR seulement)
   Languages,    // audio et sous-titres préférés
   Updates,      // Me prévenir / Automatique / Jamais
@@ -34,23 +34,15 @@ struct WizardFacts {
   bool engine_choice = true;     // un moteur autre que Vulkan est possible (sinon pas d'écran Moteur)
   bool hdr_display = false;      // l'écran reçoit du HDR (sinon pas d'écran HDR)
   bool updates_managed = false;  // paquet de distribution, Flatpak : mis à jour ailleurs (écran grisé, gardé)
-  bool rtx_guided = false;       // Linux et carte NVIDIA RTX : RTX HDR se prépare pas à pas (4b)
 };
 
 // Les écrans de cette machine, dans l'ordre.
 std::vector<WizardStep> wizard_steps(const WizardFacts& facts);
 
-enum class HdrChoice : std::uint8_t { Auto, RtxHdr, Adaptive, Sdr };
+enum class HdrChoice : std::uint8_t { Auto, Adaptive, Sdr };
 std::string_view label(HdrChoice choice);
 
 // L'état de l'assistant : l'écran courant, ce qui est choisi, ce qui est sauté.
-// L'écran 4b (RTX HDR pas à pas, Linux et NVIDIA) : un point à vérifier et, s'il manque, le geste à faire.
-struct RtxCheck {
-  std::string name;
-  bool done = false;
-  std::string todo;
-};
-bool rtx_ready(const std::vector<RtxCheck>& checks);  // tous faits (et au moins un point)
 
 struct Wizard {
   std::vector<WizardStep> steps;
@@ -63,9 +55,7 @@ struct Wizard {
   // celle par défaut d'abord : audio japonais, sous-titres dans la langue du système.
   std::string audio_language = default_language_presets().front().audio;
   std::string subtitle_language = default_language_presets().front().subtitles;
-  std::vector<RtxCheck>
-      rtx_checks;  // relus par « Vérifier de nouveau » (4b) ; vide : pas de guide (Windows, hors NVIDIA)
-  int seen = 0;    // le plus loin atteint (rang de WizardStep), pour reprendre en route
+  int seen = 0;  // le plus loin atteint (rang de WizardStep), pour reprendre en route
 };
 
 // Reprend à l'écran noté dans first_run_step (le suivant du dernier vu), sans dépasser le résumé.

@@ -49,7 +49,7 @@ struct ProfilesView {
 // La scène à l'écran pour le grade adaptatif (chain_learning.cpp) : ses poids appliqués, pour « Cette scène
 // », et ce que l'apprentissage a retenu.
 struct AdaptiveScene {
-  bool live = false;  // grade adaptatif en marche sous RTX HDR, hors calibration
+  bool live = false;  // grade adaptatif en marche, hors calibration
   double t = 0.0;     // sombre (0) à claire (1)
   double glow = 0.0;  // sombre avec éclat
   double tv = 0.0;    // ciel bleu saturé, flash coloré
@@ -88,14 +88,12 @@ struct SettingsChoices {
   std::vector<std::string> rife_models;  // fichiers RIFE du dossier du modèle par défaut
   std::string default_rife_model;        // celui qu'un nom vide désigne
   std::string rife_folder;               // le dossier des modèles RIFE (et des graphes de GMFSS)
-  bool nvidia = false;                   // GPU NVIDIA : RTX HDR et Smooth Motion ne sont offerts qu'à lui
-  bool true_hdr_available = false;       // SDK Maxine présent et moteur TensorRT en service
-  bool true_hdr_backend = true;          // le moteur TensorRT, seul à ouvrir TrueHDR, est celui du lecteur
+  bool nvidia = false;                   // GPU NVIDIA : Smooth Motion n'est offert qu'à lui
   bool hdr_output = true;                // l'écran reçoit du PQ (sinon ni HDR natif ni grade)
-  int auto_peak = 0;                     // pic automatique de RTX HDR, en nits
+  int auto_peak = 0;                     // pic automatique de l'écran, en nits
   std::vector<EngineBadge> engines;
-  std::string chosen_engines;              // « Vulkan, TensorRT, NVIDIA Maxine (RTX HDR) » (settings.toml)
-  std::vector<core::EngineId> switchable;  // moteurs de SPAN et RIFE installés (engine_switch.h)
+  std::string chosen_engines;                   // « Vulkan, TensorRT » (settings.toml)
+  std::vector<core::EngineId> switchable;       // moteurs de SPAN et RIFE installés (engine_switch.h)
   std::optional<core::EngineId> engine_in_use;  // celui de la bibliothèque chargée
   std::string engine_note;                      // le moteur préféré a refusé ce GPU : pourquoi
   std::string display_text;                     // l'écran selon son EDID (display_edid.h : describe)

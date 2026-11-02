@@ -1,6 +1,6 @@
 // Le journal de la scène pour l'apprentissage (adaptive-log.tsv, à côté de play.toml) : une ligne par seconde
-// de lecture avec le grade adaptatif, sur toutes les routes (la mesure en direct de RTX HDR, ou le plan
-// analysé, chain_shots.h), pour ajuster des courbes sur les réglages faits à la main. Le fichier reste ouvert
+// de lecture avec le grade adaptatif, sur toutes les routes (le plan analysé,
+// chain_shots.h), pour ajuster des courbes sur les réglages faits à la main. Le fichier reste ouvert
 // le temps de la chaîne ; chaque ligne dit depuis combien de temps l'utilisateur n'a rien touché, pour
 // séparer les gestes de l'accord tacite.
 #pragma once

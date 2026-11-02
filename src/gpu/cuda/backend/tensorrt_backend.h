@@ -103,15 +103,6 @@ class TensorRtBackend final : public Backend, public KernelOps {
                                              const Tensor& low_b, const Tensor& fusion,
                                              const kernels::Window& window, float t,
                                              const Tensor& out) override;
-  // RTX HDR (tensorrt_true_hdr.cpp).
-  std::expected<void, Refusal> open_true_hdr(const vendor_hdr::InstalledSdk& sdk,
-                                             const vendor_hdr::TrueHdrConfig& config) override;
-  std::expected<void, Refusal> write_ring_true_hdr(const Tensor& rgb,
-                                                   const vendor_hdr::InputPreparation& prepared,
-                                                   const RingSlotDesc& slot, const RingWrite& sync) override;
-  std::expected<void, Refusal> set_true_hdr(const vendor_hdr::TrueHdrParams& params) override;
-  std::optional<SceneStats> scene_stats() const override;
-  std::expected<std::vector<float>, Refusal> true_hdr_ramp(std::span<const std::uint8_t> levels) override;
   std::optional<DeviceMemory> device_memory() override;
   std::expected<float, Refusal> flow_max_now(const Motion& motion) override;
   std::expected<std::uint64_t, Refusal> flow_max_start(const Motion& motion) override;
@@ -197,7 +188,7 @@ class TensorRtBackend final : public Backend, public KernelOps {
                                                   std::span<Tensor> outputs);
   // Les réglages de trtexec de cet appareil (build, build_rife_fused, build_drba_fused).
   prepare::TrtexecConfig trtexec_config() const;
-  // La voie lane le temps d'une portée : RTX HDR reste sur la file de son ouverture.
+  // La voie lane le temps d'une portée.
   class LaneScope {
    public:
     LaneScope(TensorRtBackend& backend, Lane lane) : backend_(backend), previous_(backend.lane_) {
@@ -287,7 +278,7 @@ class TensorRtBackend final : public Backend, public KernelOps {
   std::array<cudaEvent_t, kFences> fences_{};
   std::uint64_t fence_count_ = 0;
   std::unique_ptr<GpuTiming> span_timing_;  // le moteur seul
-  // Profil GPU par étape (ingestion, mesures, RIFE, chaque moteur, RTX HDR, écriture), résumé au
+  // Profil GPU par étape (ingestion, mesures, RIFE, chaque moteur, écriture), résumé au
   // journal à la destruction du backend.
   std::map<std::string, std::unique_ptr<GpuTiming>, std::less<>> stages_;
   GpuTiming& stage(std::string_view name);
@@ -361,9 +352,6 @@ class TensorRtBackend final : public Backend, public KernelOps {
   static constexpr std::size_t kTextures = 256;
   float pair_levels_ = 219.0F;  // pas de luma 8 bits de la source ingérée : 219 limitée, 255 pleine
   std::map<TextureKey, cudaTextureObject_t> textures_;
-  // RTX HDR : l'effet, son pont de flux, et ses deux tampons linéaires (RGBA8 tramé, RGB10A2).
-  struct TrueHdrState;
-  std::unique_ptr<TrueHdrState> true_hdr_;
 };
 
 }  // namespace ajp::gpu::cuda

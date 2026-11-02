@@ -38,7 +38,7 @@
 
 namespace ajp {
 
-// Rgba16Unorm par défaut ; Yuv444p16 est le repli qualifié (--ring-format).
+// Rgba16Unorm partout ; Yuv444p16 reste réservé au contrat des slots, sans chemin qui l'écrive.
 enum class RingFormat : std::uint8_t { Rgba16Unorm, Yuv444p16 };
 
 // Disposition d'un slot quand il passe de main à gpu ou de gpu à main : VK_IMAGE_LAYOUT_GENERAL.

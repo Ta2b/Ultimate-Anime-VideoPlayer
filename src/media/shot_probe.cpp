@@ -83,7 +83,7 @@ std::expected<ShotFrame, Refusal> measure_frame(const DecodedFrame& frame) {
       const double r = std::clamp(yy + 2.0 * (1.0 - kr) * cr, 0.0, 1.0);
       const double b = std::clamp(yy + 2.0 * (1.0 - kb) * cb, 0.0, 1.0);
       const double g = std::clamp((yy - kr * r - kb * b) / kg, 0.0, 1.0);
-      // Même pondération que la mesure de RTX HDR (BT.709 des canaux encodés).
+      // Pondération BT.709 des canaux encodés (gpu::KernelOps::SceneStats).
       const auto luma = static_cast<float>(0.2126 * r + 0.7152 * g + 0.0722 * b);
       const double hi = std::max({r, g, b}), lo = std::min({r, g, b});
       Point& p = points.at(static_cast<std::size_t>(gy) * kGridW + static_cast<std::size_t>(gx));

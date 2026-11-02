@@ -36,9 +36,9 @@ void write(const fs::path& path, const std::string& text) {
 Settings full() {
   Settings settings;
   settings.first_run_done = true;
-  settings.chosen_engines = {EngineId::Vulkan, EngineId::TensorRt, EngineId::RtxVideoSdk};
-  settings.installed_engines = {EngineId::Vulkan, EngineId::TensorRt, EngineId::RtxVideoSdk};
-  settings.preferred = {EngineId::TensorRt, EngineId::Vulkan, EngineId::RtxVideoSdk};
+  settings.chosen_engines = {EngineId::Vulkan, EngineId::TensorRt, EngineId::OpenVino};
+  settings.installed_engines = {EngineId::Vulkan, EngineId::TensorRt, EngineId::OpenVino};
+  settings.preferred = {EngineId::TensorRt, EngineId::Vulkan};
   settings.audio_languages = {"ja", "en"};
   settings.subtitle_languages = {"fr", "pt-BR", "en"};
   settings.resume_position = false;
@@ -68,9 +68,21 @@ TEST_CASE("Réglages : sans settings.toml, les défauts du premier lancement", "
   CHECK_FALSE(settings->first_run_done);
   CHECK(settings->installed_engines == std::vector{EngineId::Vulkan});
   CHECK(settings->preferred[static_cast<std::size_t>(Usage::Upscale)] == EngineId::Vulkan);
-  CHECK_FALSE(settings->preferred[static_cast<std::size_t>(Usage::TrueHdr)]);
   CHECK(validate_settings(Settings{}));
-  CHECK(usage_name(Usage::TrueHdr) == "truehdr");
+  CHECK(usage_name(Usage::Interpolate) == "interpolate");
+}
+
+TEST_CASE("Réglages : les SDK de RTX HDR d'un ancien settings.toml sont oubliés", "[settings]") {
+  auto settings = parse_settings(
+      "version = 1\n[engines]\nchosen = [\"vulkan\", \"tensorrt\", \"maxine_vfx\"]\n"
+      "installed = [\"vulkan\", \"tensorrt\", \"rtx_video_sdk\", \"maxine_vfx\"]\n"
+      "preferred = { upscale = \"tensorrt\", interpolate = \"tensorrt\", truehdr = \"maxine_vfx\" }\n");
+  REQUIRE(settings);
+  CHECK(settings->chosen_engines == std::vector{EngineId::Vulkan, EngineId::TensorRt});
+  CHECK(settings->installed_engines == std::vector{EngineId::Vulkan, EngineId::TensorRt});
+  auto text = format_settings(*settings, "version = 1\n[engines.preferred]\ntruehdr = \"maxine_vfx\"\n");
+  REQUIRE(text);
+  CHECK(text->find("truehdr") == std::string::npos);
 }
 
 TEST_CASE("Réglages : écrire puis relire rend les mêmes valeurs", "[settings]") {
@@ -122,10 +134,7 @@ TEST_CASE("Réglages : une valeur hors plage ou incohérente est refusée", "[se
     CHECK(without_vulkan.error().detail.find("vulkan") != std::string::npos);
   }
   settings = full();
-  settings.preferred[static_cast<std::size_t>(Usage::TrueHdr)] = EngineId::TensorRt;
-  CHECK(invalid(settings) == RefusalCode::FieldOutOfRange);
-  settings = full();
-  settings.preferred[static_cast<std::size_t>(Usage::Upscale)] = EngineId::RtxVideoSdk;
+  settings.preferred[static_cast<std::size_t>(Usage::Upscale)] = EngineId::MiGraphX;
   CHECK(invalid(settings) == RefusalCode::FieldOutOfRange);
   settings = full();
   settings.audio_languages = {"ja", "ja"};

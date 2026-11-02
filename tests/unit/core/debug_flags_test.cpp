@@ -35,10 +35,9 @@ TEST_CASE("DebugFlags : sans option, les valeurs par défaut", "[debug_flags]") 
 }
 
 TEST_CASE("DebugFlags : chaque option remplit son champ", "[debug_flags]") {
-  auto line =
-      parse({"--log-level=trace", "--vulkan-validation", "--no-cuda-graphs", "--trace-pairs",
-             "--no-exact-reuse", "--dump-plan", "--profile-dispatches", "--engine=tensorrt",
-             "--ring-format=yuv444p16", "--display=2560x1440@59.94:hdr", "--max-frames=240", "episode.mkv"});
+  auto line = parse({"--log-level=trace", "--vulkan-validation", "--no-cuda-graphs", "--trace-pairs",
+                     "--no-exact-reuse", "--dump-plan", "--profile-dispatches", "--engine=tensorrt",
+                     "--display=2560x1440@59.94:hdr", "--max-frames=240", "episode.mkv"});
   REQUIRE(line);
   const DebugFlags& flags = line->debug;
   CHECK(flags.log_level == LogLevel::Trace);
@@ -49,7 +48,6 @@ TEST_CASE("DebugFlags : chaque option remplit son champ", "[debug_flags]") {
   CHECK(flags.dump_plan);
   CHECK(flags.profile_dispatches);
   CHECK(flags.force_engine == EngineId::TensorRt);
-  CHECK(flags.ring_format == RingFormat::Yuv444p16);
   REQUIRE(flags.display);
   CHECK(flags.display->width == 2560);
   CHECK(flags.display->height == 1440);
@@ -92,7 +90,7 @@ TEST_CASE("DebugFlags : une option inconnue ou une valeur fausse est refusée", 
   // Les SDK TrueHDR ne sont pas des moteurs d'inférence.
   CHECK(refusal_of({"--engine=rtx_video_sdk"}) == RefusalCode::FieldOutOfRange);
   CHECK(refusal_of({"--engine=maxine_vfx"}) == RefusalCode::FieldOutOfRange);
-  CHECK(refusal_of({"--ring-format=nv12"}) == RefusalCode::FieldOutOfRange);
+  CHECK(refusal_of({"--ring-format=yuv444p16"}) == RefusalCode::OptionUnknown);
   CHECK(refusal_of({"--display=1920x1080"}) == RefusalCode::FieldOutOfRange);
   CHECK(refusal_of({"--display=0x1080@60"}) == RefusalCode::FieldOutOfRange);
   CHECK(refusal_of({"--display=1920x1080@0"}) == RefusalCode::FieldOutOfRange);
@@ -109,9 +107,9 @@ TEST_CASE("DebugFlags : argv saute le nom du programme ; l'aide liste chaque opt
   CHECK(line->inputs == std::vector<std::string>{"film.mkv"});
 
   const std::string help = command_line_help();
-  for (const char* option : {"--log-level=", "--vulkan-validation", "--no-cuda-graphs", "--trace-pairs",
-                             "--no-exact-reuse", "--dump-plan", "--profile-dispatches",
-                             "--engine=", "--ring-format=", "--display=", "--max-frames=", "--help"}) {
+  for (const char* option :
+       {"--log-level=", "--vulkan-validation", "--no-cuda-graphs", "--trace-pairs", "--no-exact-reuse",
+        "--dump-plan", "--profile-dispatches", "--engine=", "--display=", "--max-frames=", "--help"}) {
     INFO(option);
     CHECK(help.find(option) != std::string::npos);
   }

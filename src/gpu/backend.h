@@ -57,7 +57,9 @@ namespace ajp::gpu {
 // adaptatif (rc.6) sans changer de version : un module TensorRT d'avant appelait write_ring_true_hdr à leur
 // place et plantait au lancement d'une vidéo en RTX HDR. Toute virtuelle ajoutée ou déplacée dans KernelOps
 // ou Backend demande une nouvelle version.
-inline constexpr int kBackendAbi = 16;
+// 17 : KernelOps::deband (débandage dans la chaîne CUDA) ; RTX HDR retiré (open_true_hdr, set_true_hdr,
+// scene_stats, write_ring_true_hdr, true_hdr_ramp).
+inline constexpr int kBackendAbi = 17;
 
 using DeviceUuid = ajp::DeviceUuid;
 

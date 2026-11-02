@@ -1,4 +1,4 @@
-// Une ouverture de la chaîne (player_run.cpp) : moteurs, RTX HDR, threads, session et boucle de
+// Une ouverture de la chaîne (player_run.cpp) : moteurs, HDR, threads, session et boucle de
 // main, jusqu'à la fin du fichier, q, ou un réglage qui demande de la rouvrir. Interne à
 // player.cpp, qui enchaîne les ouvertures.
 #pragma once
@@ -30,7 +30,7 @@ struct Reopen {
   bool next_paused = false;                        // l'ouvrir en pause (PlayFile)
 };
 
-// Une ouverture de la chaîne : moteurs, RTX HDR, threads, session et boucle de main, jusqu'à la
+// Une ouverture de la chaîne : moteurs, HDR, threads, session et boucle de main, jusqu'à la
 // fin du fichier, q, ou un réglage qui demande de la rouvrir. start_paused : la lecture rouverte
 // attend l'utilisateur sur sa première image.
 std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings settings,

@@ -104,23 +104,23 @@ TEST_CASE("ajp play : RIFE ×3 par défaut, --rife et --rife-model", "[app][opti
   CHECK(factor_text({.num = 3, .den = 2}) == "×1,5");
   CHECK(factor_text({.num = 3, .den = 1}) == "×3");
   CHECK(default_rife_candidates("/home/x").front() ==
-        std::filesystem::path("/home/x/.local/share/AnimeJaNai-HDR-linux/animejanai/rife/rife_v4.25.onnx"));
+        std::filesystem::path(
+            "/home/x/.local/share/AnimeJaNai-HDR-linux/animejanai/rife/rife_v4.22_lite.onnx"));
 }
 
-TEST_CASE("ajp play : RTX HDR et ses réglages, refus nommés hors plage", "[app][options]") {
+TEST_CASE("ajp play : les réglages du HDR adaptatif, refus nommés hors plage", "[app][options]") {
   const auto off = parse({"a.mkv"});
-  CHECK_FALSE(off->true_hdr);
   CHECK(off->true_hdr_peak == 0);  // la crête de l'écran
-  CHECK(off->true_hdr_sdk == std::filesystem::path("/usr/local/VideoFX"));
-  const auto on = parse({"a.mkv", "--truehdr", "--truehdr-peak=766", "--truehdr-contrast=150",
-                         "--truehdr-saturation=120", "--truehdr-gray=40", "--truehdr-sdk=/opt/vfx"});
+  const auto on = parse({"a.mkv", "--truehdr-peak=766", "--truehdr-contrast=150", "--truehdr-saturation=120",
+                         "--truehdr-gray=40"});
   REQUIRE(on);
-  CHECK(on->true_hdr);
   CHECK(on->true_hdr_peak == 766);
   CHECK(on->true_hdr_contrast == 150);
   CHECK(on->true_hdr_saturation == 120);
   CHECK(on->true_hdr_gray == 40);
-  CHECK(on->true_hdr_sdk == std::filesystem::path("/opt/vfx"));
+  // RTX HDR est retiré : ses options ne sont plus connues.
+  CHECK_FALSE(parse({"a.mkv", "--truehdr"}));
+  CHECK_FALSE(parse({"a.mkv", "--truehdr-sdk=/opt/vfx"}));
   CHECK(parse({"a.mkv", "--truehdr-peak=0"})->true_hdr_peak == 0);
   CHECK(parse({"a.mkv", "--truehdr-peak=300"}).error().code == RefusalCode::FieldOutOfRange);
   CHECK(parse({"a.mkv", "--truehdr-peak=2001"}).error().code == RefusalCode::FieldOutOfRange);
@@ -151,7 +151,7 @@ TEST_CASE("Modèle : --model doit exister, sinon le premier candidat présent", 
   REQUIRE(bundled.size() == 3);
   CHECK(bundled.back() == std::filesystem::path("/opt/ajp/models/onnx") / kDefaultModelFile);
   CHECK(default_rife_candidates("/home/x", "/opt/ajp/models").back() ==
-        std::filesystem::path("/opt/ajp/models/rife/rife_v4.25.onnx"));
+        std::filesystem::path("/opt/ajp/models/rife/rife_v4.22_lite.onnx"));
   std::filesystem::remove_all(dir);
 }
 

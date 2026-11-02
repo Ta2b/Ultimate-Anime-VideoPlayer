@@ -37,12 +37,6 @@ TEST_CASE("Moteurs : RTX 4070 Ti sous Windows", "[engines]") {
   CHECK(has(*trt, Badge::Recommended));
   CHECK(has(*trt, Badge::NvidiaOnly));
 
-  const EngineOffer* rtx_hdr = find(offers, EngineId::RtxVideoSdk);
-  REQUIRE(rtx_hdr);
-  CHECK(rtx_hdr->delivery == Delivery::Import);
-  CHECK(rtx_hdr->preselected);
-
-  CHECK_FALSE(find(offers, EngineId::MaxineVfx));
   CHECK_FALSE(find(offers, EngineId::Metal));
   CHECK_FALSE(find(offers, EngineId::MiGraphX)->relevant);
   CHECK_FALSE(find(offers, EngineId::DirectMl));
@@ -55,8 +49,6 @@ TEST_CASE("Moteurs : AMD récent sous Linux", "[engines]") {
   auto offers = recommend_engines(system);
   CHECK(find(offers, EngineId::MiGraphX)->preselected);
   CHECK(has(*find(offers, EngineId::MiGraphX), Badge::AmdOnly));
-  CHECK(find(offers, EngineId::MaxineVfx));
-  CHECK_FALSE(find(offers, EngineId::MaxineVfx)->preselected);
   CHECK_FALSE(find(offers, EngineId::DirectMl));
   CHECK(has(*find(offers, EngineId::Vulkan), Badge::Compatibility));
 }

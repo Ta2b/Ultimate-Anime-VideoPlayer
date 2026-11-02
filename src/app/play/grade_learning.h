@@ -32,11 +32,11 @@ struct GradeCurve {
   double shadows = 0.15;  // scène sombre (les curseurs du grade)
   double shadows_bright = 0.80;
   double shadows_glow = 0.20;
-  double colors = 0.10;  // vibrance de RTX HDR
+  double colors = 0.10;  // vibrance de l'aspect TrueHDR émulé
   double colors_cut = 0.0;
   double colors_glow = 0.05;
   double colors_sky = 0.0;  // ciel bleu saturé, flash très coloré
-  double gray = 50.0;       // gris moyen de RTX HDR
+  double gray = 50.0;       // gris moyen de l'aspect TrueHDR émulé
   double gray_bright = 30.0;
   double gray_glow = 40.0;
   friend bool operator==(const GradeCurve&, const GradeCurve&) = default;

@@ -5,8 +5,8 @@
 //                      [--start=S] [--seconds=S] [--fullscreen-after=S] [--stats=FICHIER]
 //                      [--snapshot=FICHIER.ppm] [--snapshot-at=S] [--keys=S:touche,…]
 //                      [--work-height=N] [--rife=N] [--rife-model=FICHIER.onnx]
-//                      [--truehdr] [--truehdr-sdk=DOSSIER] [--truehdr-peak=NITS]
-//                      [--truehdr-contrast=N] [--truehdr-saturation=N] [--truehdr-gray=N]
+//                      [--truehdr-peak=NITS] [--truehdr-contrast=N] [--truehdr-saturation=N]
+//                      [--truehdr-gray=N]
 //                      [--first-run] [--mute] [--data-dir=DOSSIER] [--bench-level=auto|0..4]
 //                      [--bench-out=FICHIER]
 //   ajp bench <fichier> [--seconds=S] [--report=FICHIER] [--windowed]
@@ -37,7 +37,7 @@ inline constexpr std::string_view kDefaultModelFile =
 // Facteur des modèles SPAN d'AnimeJaNai HD : 2 (sortie 2H × 2W).
 inline constexpr int kSpanFactor = 2;
 // RIFE par défaut : RIFE 4.25, lu en place comme SPAN.
-inline constexpr std::string_view kDefaultRifeFile = "rife_v4.25.onnx";
+inline constexpr std::string_view kDefaultRifeFile = "rife_v4.22_lite.onnx";
 // Interpolation par défaut : ×3. Sur la RTX 4070 Ti, une paire qui bouge coûte 2 RIFE à 720p et
 // 3 SPAN, environ 31 ms sur 41,7 : 8 images sautées sur 25 s d'ouverture, contre 304 à ×4
 // (19 octobre, ~/ajp-reports/vertical-slice.md). ×4 attend les optimisations de la parité.
@@ -95,12 +95,10 @@ struct PlayOptions {
   int rife_factor = kDefaultRifeFactor;
   int rife_factor_den = 1;                          // 2 pour un facteur en moitié : ×rife_factor / 2
   std::optional<std::filesystem::path> rife_model;  // --rife-model : absent, celui du lecteur actuel
-  // --truehdr : RTX HDR (Maxine TrueHDR) sur la sortie de SPAN ; l'écran reçoit du PQ BT.2020.
-  bool true_hdr = false;
-  std::filesystem::path true_hdr_sdk = "/usr/local/VideoFX";  // --truehdr-sdk : importé une fois
-  int true_hdr_contrast = 100;                                // --truehdr-contrast=0..200
-  int true_hdr_saturation = 100;                              // --truehdr-saturation=0..200
-  int true_hdr_gray = 50;                                     // --truehdr-gray=10..100 (gris moyen)
+  // L'aspect TrueHDR émulé du HDR adaptatif (et du grade SDR).
+  int true_hdr_contrast = 100;    // --truehdr-contrast=0..200
+  int true_hdr_saturation = 100;  // --truehdr-saturation=0..200
+  int true_hdr_gray = 50;         // --truehdr-gray=10..100 (gris moyen)
   int true_hdr_peak = 0;  // --truehdr-peak=400..2000 nits ; 0 : la crête vue par le contenu sur l'écran
   bool help = false;      // --help
   // --rife-image : RIFE sort l'image à chaque instant (sans la variante mouvement), pour comparer.
@@ -131,7 +129,7 @@ struct PlayOptions {
   std::optional<int> bench_level;
   std::optional<std::filesystem::path> bench_out;
   Registration registration = Registration::None;
-  // Options données sur la ligne de commande (« --rife », « --truehdr »…) : elles remplacent les
+  // Options données sur la ligne de commande (« --rife », « --truehdr-peak »…) : elles remplacent les
   // réglages de play.toml pour cette lecture.
   std::vector<std::string> given;
   bool was_given(std::string_view name) const;

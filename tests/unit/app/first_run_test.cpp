@@ -20,7 +20,7 @@ const GpuFacts kRtx{.name = "NVIDIA GeForce RTX 4070 Ti",
                     .vram_bytes = 12 * kGiB,
                     .tensor_cores = true};
 // Les moteurs proposés dépendent du système : ces cas sont ceux de Linux, sur tout hôte.
-const EnginesHere kHere{.os = core::Os::Linux, .tensorrt = true, .maxine = true, .maxine_status = "importé"};
+const EnginesHere kHere{.os = core::Os::Linux, .tensorrt = true};
 
 const EngineRow* row_of(const FirstRunView& view, core::EngineId id) {
   const auto found = std::ranges::find(view.engines, id, [](const EngineRow& row) { return row.offer.id; });
@@ -44,29 +44,26 @@ TEST_CASE("Resizable BAR : actif si le tas visible approche la VRAM, inactif à 
   CHECK(rebar_text(gpu).empty());
 }
 
-TEST_CASE("Une RTX de 12 Go : TensorRT et Maxine cochés, profil 1", "[app][first_run]") {
+TEST_CASE("Une RTX de 12 Go : TensorRT coché, profil 1", "[app][first_run]") {
   ajp::app::play::FrenchUi french;
   CHECK(gpu_line(kRtx) == "NVIDIA GeForce RTX 4070 Ti · 12 Go · cœurs Tensor");
   CHECK(start_profile_for(kRtx) == 1);
   const FirstRunView view = first_run_view(kRtx, kHere, ProfilesView{});
   const EngineRow* vulkan = row_of(view, core::EngineId::Vulkan);
   const EngineRow* tensorrt = row_of(view, core::EngineId::TensorRt);
-  const EngineRow* maxine = row_of(view, core::EngineId::MaxineVfx);
   const EngineRow* amd = row_of(view, core::EngineId::MiGraphX);
   REQUIRE(vulkan != nullptr);
   REQUIRE(tensorrt != nullptr);
-  REQUIRE(maxine != nullptr);
   REQUIRE(amd != nullptr);
   CHECK(vulkan->chosen);
   CHECK(tensorrt->chosen);
   CHECK(std::ranges::contains(tensorrt->offer.badges, core::Badge::Recommended));
-  CHECK(maxine->chosen);
   CHECK_FALSE(amd->chosen);
   CHECK_FALSE(amd->usable);
   CHECK(row_of(view, core::EngineId::DirectMl) == nullptr);  // Windows seulement
 }
 
-TEST_CASE("Sous Windows, RTX HDR passe par le RTX Video SDK, sans offre DirectML", "[app][first_run]") {
+TEST_CASE("Sous Windows, TensorRT coché, sans offre DirectML", "[app][first_run]") {
   ajp::app::play::FrenchUi french;
   EnginesHere here = kHere;
   here.os = core::Os::Windows;
@@ -75,8 +72,6 @@ TEST_CASE("Sous Windows, RTX HDR passe par le RTX Video SDK, sans offre DirectML
   REQUIRE(tensorrt != nullptr);
   CHECK(tensorrt->chosen);
   CHECK(row_of(view, core::EngineId::DirectMl) == nullptr);
-  CHECK(row_of(view, core::EngineId::RtxVideoSdk) != nullptr);
-  CHECK(row_of(view, core::EngineId::MaxineVfx) == nullptr);  // Linux seulement
 }
 
 TEST_CASE("Sur Mac, Core ML est livré et coché, sans moteur NVIDIA ni AMD", "[app][first_run]") {
@@ -89,7 +84,6 @@ TEST_CASE("Sur Mac, Core ML est livré et coché, sans moteur NVIDIA ni AMD", "[
   CHECK(coreml->usable);
   CHECK(coreml->chosen);
   CHECK(row_of(view, core::EngineId::TensorRt) == nullptr);
-  CHECK(row_of(view, core::EngineId::MaxineVfx) == nullptr);
   CHECK(row_of(view, core::EngineId::MiGraphX) == nullptr);
 
   // Un paquet sans le backend Core ML ne le coche pas.
@@ -199,17 +193,15 @@ TEST_CASE("Commencer écrit des moteurs valides pour settings.toml", "[app][firs
   CHECK(core::validate_settings(all).has_value());
   CHECK(std::ranges::contains(all.chosen_engines, core::EngineId::TensorRt));
   CHECK(all.preferred[static_cast<std::size_t>(core::Usage::Upscale)] == core::EngineId::TensorRt);
-  CHECK(all.preferred[static_cast<std::size_t>(core::Usage::TrueHdr)] == core::EngineId::MaxineVfx);
-  CHECK(chosen_line(all) == "Vulkan, TensorRT, NVIDIA Maxine (RTX HDR)");
+  CHECK(chosen_line(all) == "Vulkan, TensorRT");
 
-  // Décocher TensorRT et Maxine : Vulkan seul, toujours valide.
+  // Décocher TensorRT : Vulkan seul, toujours valide.
   for (EngineRow& row : view.engines) {
     if (row.offer.id != core::EngineId::Vulkan) row.chosen = false;
   }
   const core::Settings vulkan = settings_after(view, core::Settings{});
   CHECK(core::validate_settings(vulkan).has_value());
   CHECK(vulkan.chosen_engines == std::vector{core::EngineId::Vulkan});
-  CHECK_FALSE(vulkan.preferred[static_cast<std::size_t>(core::Usage::TrueHdr)].has_value());
 
   // --first-run ensuite : l'écran repart du choix enregistré, pas de la présélection.
   const FirstRunView again = first_run_view(kRtx, kHere, ProfilesView{}, vulkan);
@@ -218,12 +210,12 @@ TEST_CASE("Commencer écrit des moteurs valides pour settings.toml", "[app][firs
   CHECK_FALSE(tensorrt->chosen);
 }
 
-TEST_CASE("Sans moteur d'inférence ni Maxine, la chaîne garde l'image source et le dit", "[app][first_run]") {
+TEST_CASE("Sans moteur d'inférence, la chaîne garde l'image source et le dit", "[app][first_run]") {
   ajp::app::play::FrenchUi french;
   PlaySettings s;
   s.upscale = true;
   s.rife_factor = 3;
-  s.true_hdr = true;
+  s.hdr_native = true;
   core::Settings vulkan;
   vulkan.first_run_done = true;
   core::Settings none = vulkan;
@@ -232,9 +224,8 @@ TEST_CASE("Sans moteur d'inférence ni Maxine, la chaîne garde l'image source e
   const PlaySettings plain = within_engines(s, none, notes);
   CHECK_FALSE(plain.upscale);
   CHECK(plain.rife_factor == 0);
-  CHECK_FALSE(plain.true_hdr);
   CHECK(plain.hdr_native);
-  CHECK(notes.size() == 2);
+  CHECK(notes.size() == 1);
 
   // Vulkan seul (AMD, Intel) : SPAN et RIFE passent par le backend Vulkan.
   notes.clear();
@@ -243,15 +234,14 @@ TEST_CASE("Sans moteur d'inférence ni Maxine, la chaîne garde l'image source e
   const PlaySettings on_vulkan = within_engines(s, vulkan_only, notes);
   CHECK(on_vulkan.upscale);
   CHECK(on_vulkan.rife_factor == 3);
-  CHECK_FALSE(on_vulkan.true_hdr);
-  CHECK(notes.size() == 1);
+  CHECK(notes.empty());
 
   notes.clear();
   const core::Settings all = settings_after(first_run_view(kRtx, kHere, ProfilesView{}), core::Settings{});
   const PlaySettings kept = within_engines(s, all, notes);
   CHECK(kept.upscale);
   CHECK(kept.rife_factor == 3);
-  CHECK(kept.true_hdr);
+  CHECK(kept.hdr_native);
   CHECK(notes.empty());
 }
 
@@ -317,30 +307,4 @@ TEST_CASE("Moteur à télécharger : licence acceptée avant tout choix", "[app]
   const core::Settings failed = without_engine(accepted, core::EngineId::TensorRt);
   CHECK_FALSE(chosen(failed, core::EngineId::TensorRt));
   CHECK(failed.preferred[static_cast<std::size_t>(core::Usage::Upscale)] == core::EngineId::Vulkan);
-}
-
-TEST_CASE("RTX HDR par notre paquet fermé : licence NVIDIA, ni clé ni NGC", "[app][first_run]") {
-  ajp::app::play::FrenchUi french;
-  EnginesHere here{.os = core::Os::Linux,
-                   .tensorrt = true,
-                   .maxine_status = "SDK absent (/usr/local/VideoFX)",
-                   .maxine_license = "https://example.org/ngc"};
-  here.downloads.push_back(EngineDownload{
-      .id = core::EngineId::MaxineVfx, .bytes = 70ULL << 20, .license = "https://example.org/nvidia-sla"});
-  FirstRunView view = first_run_view(kRtx, here, ProfilesView{});
-  EngineRow* maxine = nullptr;
-  for (EngineRow& row : view.engines) {
-    if (row.offer.id == core::EngineId::MaxineVfx) maxine = &row;
-  }
-  REQUIRE(maxine != nullptr);
-  CHECK(maxine->usable);
-  CHECK(maxine->download);
-  CHECK_FALSE(maxine->needs_key);  // le paquet passe avant NGC
-  CHECK(maxine->license == "https://example.org/nvidia-sla");
-  CHECK(maxine->status == "à télécharger (70 Mo), paquet fermé sous licence NVIDIA");
-  CHECK_FALSE(maxine->chosen);
-
-  maxine->chosen = true;
-  maxine->license_accepted = true;
-  CHECK(chosen(settings_after(view, {}), core::EngineId::MaxineVfx));
 }

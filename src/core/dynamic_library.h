@@ -10,14 +10,20 @@
 #include <type_traits>
 #include <utility>
 
-#include "vendor_hdr/path_text.h"
-#include "vendor_hdr/refusal.h"
+#include "core/types.h"
 
-namespace ajp::vendor_hdr {
+namespace ajp {
+
+// Chemin en texte UTF-8 pour les messages : path::string() lève sous Windows sur un caractère hors de la
+// page de code ANSI.
+inline std::string library_path_text(const std::filesystem::path& path) {
+  const std::u8string text = path.generic_u8string();
+  return {text.begin(), text.end()};
+}
 
 enum class SymbolScope : std::uint8_t {
   Local,   // RTLD_LOCAL : symboles réservés aux bibliothèques qui en dépendent
-  Global,  // RTLD_GLOBAL : visibles des bibliothèques ouvertes ensuite (fonctions Maxine)
+  Global,  // RTLD_GLOBAL : visibles des bibliothèques ouvertes ensuite
 };
 
 class DynamicLibrary {
@@ -39,8 +45,9 @@ class DynamicLibrary {
   std::expected<Fn*, Refusal> symbol(const char* name) const {
     void* address = raw_symbol(name);
     if (address == nullptr) {
-      return refuse(RefusalCode::LibraryUnavailable,
-                    std::format("symbole {} absent de {}", name, utf8(path_.filename())));
+      return std::unexpected(
+          Refusal{RefusalCode::LibraryUnavailable,
+                  std::format("symbole {} absent de {}", name, library_path_text(path_.filename()))});
     }
     // void* vers pointeur de fonction : admis sous condition par C++, garanti par POSIX
     // (dlsym) et par Windows (GetProcAddress).
@@ -57,4 +64,4 @@ class DynamicLibrary {
   std::filesystem::path path_;
 };
 
-}  // namespace ajp::vendor_hdr
+}  // namespace ajp
