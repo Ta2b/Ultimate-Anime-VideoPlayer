@@ -65,7 +65,7 @@ function(_ajp_spirv_command source name defines out_dir out_inc)
   add_custom_command(
     OUTPUT "${inc}"
     BYPRODUCTS "${spv}"
-    COMMAND "${AJP_GLSLC}" --target-env=${AJP_SPIRV_TARGET_ENV} -Werror
+    COMMAND "${AJP_GLSLC}" --target-env=${AJP_SPIRV_TARGET_ENV} -Werror -O
             -I "${AJP_KERNELS_GLSL_DIR}" -I "${source_dir}" ${define_flags}
             -MD -MF "${dep}" -MT "${inc}" -o "${spv}" "${source}"
     ${validate}
