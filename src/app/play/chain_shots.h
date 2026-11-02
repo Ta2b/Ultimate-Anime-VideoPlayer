@@ -1,7 +1,7 @@
 // La pré-analyse des plans dans la lecture (media/shot_probe.h) : lancée à l'ouverture d'une vidéo avec le
 // grade adaptatif, elle survit aux réouvertures de la chaîne et aux vidéos suivantes ; le grade adaptatif
 // (chain_hdr.cpp, adaptive_tick) y lit le plan de l'image qui vient. Une vidéo analysée entière va au cache
-// (media/shot_cache.h) ; l'épisode suivant du dossier s'analyse ensuite, pour être prêt à son ouverture.
+// (media/shot_cache.h), seule la vidéo lue s'analyse.
 #pragma once
 
 #include <cstdint>
@@ -39,21 +39,19 @@ struct ShotJob {
   void retire() noexcept;
 };
 
-// Ce qui vit d'une vidéo à l'autre (le lecteur) : la vidéo lue, l'épisode suivant analysé d'avance.
+// Ce qui vit d'une vidéo à l'autre (le lecteur) : le cache et la vidéo lue.
 struct ShotWork {
   std::filesystem::path cache_dir;  // vide : pas de cache
   ShotJob current;
-  ShotJob next;
-  bool next_tried = false;  // l'épisode suivant de la vidéo lue a été cherché
 };
 
-// À l'ouverture d'une chaîne : reprend la vidéo du cache, ou l'analyse en cours de l'épisode suivant, ou
-// lance l'analyse ; la garde pour le même fichier ; rien sans grade adaptatif (l'analyse en cours
+// À l'ouverture d'une chaîne : reprend la vidéo du cache, ou lance l'analyse (depuis la part gardée) ; la
+// garde pour le même fichier ; rien sans grade adaptatif (l'analyse en cours
 // s'arrête).
 void open_shots(ShotWork& work, const std::filesystem::path& file, const PlaySettings& settings,
                 std::int64_t start_us);
 
-// Le cache et l'épisode suivant : à appeler à chaque tour, ne fait rien la plupart du temps.
+// Le cache : à appeler à chaque tour, ne fait rien la plupart du temps.
 void tend_shots(ShotWork& work);
 
 // Le plan de l'image qui suit la dernière préparée, s'il est analysé : ses valeurs sur l'échelle de RTX HDR

@@ -258,7 +258,7 @@ std::expected<void, Refusal> play(const PlayOptions& options, const PlayerPaths&
     problem += problem.empty() ? note : " · " + note;
   }
   std::shared_ptr<BackendLibrary> library;  // ouverte à la première vidéo, gardée pour les suivantes
-  // La pré-analyse des plans (chain_shots.h) : le cache, et l'épisode suivant analysé pendant la vidéo lue.
+  // La pré-analyse des plans (chain_shots.h) et son cache : seule la vidéo lue s'analyse.
   ShotWork shots{.cache_dir = paths.data / "plans"};
   bool replaced = false;  // le fichier vient d'être glissé sur la fenêtre (ou est l'épisode voisin)
   // PlayFile (la calibration du grade) : l'instant et la pause du fichier suivant, à la place de la reprise.
