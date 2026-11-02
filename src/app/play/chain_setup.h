@@ -92,6 +92,7 @@ struct ChainEngines {
   std::unique_ptr<gpu::Engine> rife_motion;
   bool rife_fused = false;   // rife ou rife_motion est RIFE fusionné (six moteurs et noyaux de colle)
   bool drba_fused = false;   // drba est DistilDRBA fusionné (quatre moteurs et noyaux de colle)
+  bool drba_motion = false;  // drba rend flot et masque (variante mouvement, warp après SPAN)
   bool gmfss_fused = false;  // gmfss.pair est le flot seul, gmfss.features les caractéristiques d'une image
   bool apple = false;
 

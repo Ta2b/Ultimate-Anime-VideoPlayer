@@ -6,6 +6,7 @@
 #include <vector>
 
 #include "app/play/derived_model.h"
+#include "prepare/drba_split.h"
 #include "prepare/onnx_dims.h"
 
 namespace ajp::app::play {
@@ -24,6 +25,11 @@ std::optional<DrbaModel> find_distil_drba(std::span<const std::filesystem::path>
 
 bool drba_half_flow(int work_height) {
   return work_height >= 1440;
+}
+
+std::expected<std::filesystem::path, Refusal> drba_motion_model(const std::filesystem::path& model,
+                                                                const std::filesystem::path& dir) {
+  return derived_model(model, "mouvement", dir, prepare::with_drba_motion_outputs);
 }
 
 std::expected<std::filesystem::path, Refusal> static_distil_drba(const std::filesystem::path& model,

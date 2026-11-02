@@ -37,6 +37,7 @@
 #include "core/ring.h"
 #include "gpu/backend.h"
 #include "gpu/kernel_ops.h"
+#include "kernels/spec/distil_drba.h"
 #include "kernels/spec/gmfss.h"
 #include "kernels/spec/warp.h"
 
@@ -70,7 +71,11 @@ struct UpscaleSetup {
   int gmfss_align = 64;  // multiple des plans remplis de GMFSS : 128 pour le flot à l'échelle 0,5
   // DistilDRBA à la place de RIFE, aux plans remplis de rife_geometry(travail).
   gpu::Engine* distil_drba = nullptr;
-  int drba_align = 64;                     // multiple des plans remplis de DistilDRBA : 128 au demi-flot
+  int drba_align = 64;  // multiple des plans remplis de DistilDRBA : 128 au demi-flot
+  // distil_drba rend le flot (1 × 4) et le masque (1 × 1) du warp final au lieu de l'image (variante
+  // « mouvement », drba_model.h, ou le fusionné à deux sorties) : le warp et le mélange se font ici, après
+  // SPAN quand warp_after_span (un SPAN par source au lieu d'un par image créée).
+  bool drba_motion = false;
   Factor rife_factor{.num = 1, .den = 1};  // ×num/den quand l'interpolation tourne (au plus ×8)
   // --one-lane : tout sur la voie Upscale, sans recouvrement. Plus lent, mais le temps GPU de
   // chaque moteur redevient son coût propre au lieu d'inclure celui des autres voies.
@@ -146,6 +151,7 @@ class UpscaleStage final : public RingStage {
   bool gmfss() const { return setup_.gmfss_pair != nullptr; }
   bool gmfss_fused() const { return setup_.gmfss_features != nullptr; }
   bool drba() const { return setup_.distil_drba != nullptr; }
+  bool drba_motion() const { return drba() && setup_.drba_motion; }
   bool wants_next() const override { return drba(); }
   // DistilDRBA (upscale_drba.cpp) : ses tenseurs ; l'arrivée de l'image b à la place de son
   // ingestion (rgb_[current_] reçoit b, l'image d'avant la paire passe dans drba_.before) ; les
@@ -159,6 +165,15 @@ class UpscaleStage final : public RingStage {
                                          bool measure);
   std::expected<void, Refusal> settle_after_scores();
   std::expected<void, Refusal> interpolate_drba(std::uint32_t output);
+  // Variante mouvement : la passe rend flot et masque, puis le warp de a et b (agrandies si spanned, de
+  // travail sinon) dans out.
+  std::expected<void, Refusal> interpolate_drba_motion(std::uint32_t output, bool spanned, const Target& out);
+  // Les entrées de la passe pour cet appel (rife_input, ou rife_time quand les images y sont), puis la passe.
+  std::expected<void, Refusal> run_drba(const kernels::DrbaCall& call, std::span<gpu::Tensor> results);
+  // Copie d'une image de la taille de out (côté tenu) : l'écriture du ring, ou une copie de tenseur.
+  std::expected<void, Refusal> copy_out(const gpu::Tensor& image, const Target& out);
+  // L'instant se rend sans passe : le côté de la paire qu'il regarde est un dessin tenu.
+  bool drba_side_held(const kernels::DrbaCall& call) const;
   // Mesures en avance (upscale_ahead.cpp) : quand l'image suivante attend déjà derrière celle-ci,
   // elle est ingérée et mesurée contre elle avant le travail de la paire en cours. À son arrivée,
   // l'image n'attend alors que cette mesure, finie depuis longtemps, et non toute la file du GPU :
@@ -225,7 +240,7 @@ class UpscaleStage final : public RingStage {
   }
   // Warp après SPAN : les images sources sont agrandies à l'ingestion, dans spanned_.
   bool warps_spanned() const {
-    return setup_.warp_after_span && (by_motion() || gmfss()) && setup_.engine != nullptr;
+    return setup_.warp_after_span && (by_motion() || gmfss() || drba_motion()) && setup_.engine != nullptr;
   }
   // SPAN de l'image en cours dans son tampon de spanned_, une fois (aucune passe sur un dessin tenu :
   // celui de la précédente).
@@ -362,6 +377,8 @@ class UpscaleStage final : public RingStage {
     std::unique_ptr<gpu::TensorBuffer> after;
     std::unique_ptr<gpu::TensorBuffer> pair01;  // 1 × 7 × ph × pw
     std::unique_ptr<gpu::TensorBuffer> pair12;
+    std::unique_ptr<gpu::TensorBuffer> flow;  // variante mouvement : 1 × 4 × ph × pw
+    std::unique_ptr<gpu::TensorBuffer> mask;  // 1 × 1 × ph × pw
     // Les deux images dont pair01 et pair12 tiennent les plans d'images : une autre sortie de la
     // même paire sur les mêmes images ne réécrit que l'instant (rife_time).
     struct Filled {

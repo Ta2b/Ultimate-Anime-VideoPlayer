@@ -32,6 +32,11 @@ std::optional<DrbaModel> find_distil_drba(std::span<const std::filesystem::path>
 // Le flot à l'échelle 0,5 pour cette hauteur de travail : à partir de 1440p (la 4K).
 bool drba_half_flow(int work_height);
 
+// La variante « mouvement » de model (prepare::with_drba_motion_outputs) : flot et masque au lieu de l'image,
+// pour le warp après SPAN. Dérivée (si elle manque) dans dir. Refus : ceux de la dérivation.
+std::expected<std::filesystem::path, Refusal> drba_motion_model(const std::filesystem::path& model,
+                                                                const std::filesystem::path& dir);
+
 // Le graphe aux dimensions « H » et « W » fixées pour ces plans remplis, dérivé (s'il manque) dans
 // dir. Refus : ceux de prepare::with_fixed_dims et de derived_model.
 std::expected<std::filesystem::path, Refusal> static_distil_drba(const std::filesystem::path& model,

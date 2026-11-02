@@ -57,6 +57,15 @@ DrbaExpectedWiring drba_expected_wiring(int tail);
 // inconnue).
 std::expected<DrbaSplit, Refusal> analyze_drba(std::span<const std::byte> model);
 
+// DistilDRBA « mouvement » : le même graphe, qui sort le flot pleine résolution (1 × 4, « /Mul_59 ») et le
+// masque après sigmoïde (1 × 1, « /Sigmoid ») au lieu de l'image mélangée. Le warp final du graphe lit
+// l'image du centre (flot 0-1, poids du masque) et celle du côté choisi (flot 2-3), qui sont toujours a et b
+// de la paire : le warp et le mélange de kernels/spec/warp.h les refont, sur les images agrandies. Refus :
+// ModelUnreadable, FieldMissing (tenseurs absents : un autre export).
+inline constexpr std::string_view kDrbaFlowTensor = "/Mul_59_output_0";
+inline constexpr std::string_view kDrbaMaskTensor = "/Sigmoid_output_0";
+std::expected<std::vector<std::byte>, Refusal> with_drba_motion_outputs(std::span<const std::byte> model);
+
 // Un des morceaux, un modèle ONNX à forme d'entrée fixe.
 struct DrbaPiece {
   std::string name;  // « encode », « bloc0 »…
