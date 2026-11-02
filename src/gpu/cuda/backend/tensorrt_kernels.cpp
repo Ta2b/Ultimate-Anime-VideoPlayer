@@ -158,8 +158,12 @@ std::expected<void, Refusal> TensorRtBackend::ingest(const DecodedFrame& frame, 
   if (auto ok = bind(); !ok) return ok;
   const std::size_t rows = ingest_rows_bytes(params);
   if (rows > ingest_rows_size_) {
-    // cudaFree attend la fin de tout ce que l'appareil exécute, l'ingestion précédente comprise.
-    if (ingest_rows_ != nullptr) cudaFree(ingest_rows_);
+    // Toutes les voies peuvent encore lire l'ancien tampon : on attend l'appareil explicitement, sans
+    // compter sur la synchronisation implicite de cudaFree (absente avec un allocateur ordonné par flux).
+    if (ingest_rows_ != nullptr) {
+      if (auto ok = cuda_check(cudaDeviceSynchronize(), "cudaDeviceSynchronize"); !ok) return ok;
+      cudaFree(ingest_rows_);
+    }
     ingest_rows_ = nullptr;
     ingest_rows_size_ = 0;
     if (auto ok = cuda_check(cudaMalloc(reinterpret_cast<void**>(&ingest_rows_), rows), "cudaMalloc"); !ok)
@@ -202,8 +206,11 @@ std::expected<void, Refusal> TensorRtBackend::deband(const Tensor& rgb) {
   const std::size_t bytes =
       std::size_t{3} * static_cast<std::size_t>(width) * static_cast<std::size_t>(height) * 2U;
   if (bytes > deband_out_size_) {
-    // cudaFree attend la fin de tout ce que l'appareil exécute, le débandage précédent compris.
-    if (deband_out_ != nullptr) cudaFree(deband_out_);
+    // Comme pour l'ingestion : attente explicite de l'appareil avant de libérer l'ancien tampon.
+    if (deband_out_ != nullptr) {
+      if (auto ok = cuda_check(cudaDeviceSynchronize(), "cudaDeviceSynchronize"); !ok) return ok;
+      cudaFree(deband_out_);
+    }
     deband_out_ = nullptr;
     deband_out_size_ = 0;
     if (auto ok = cuda_check(cudaMalloc(&deband_out_, bytes), "cudaMalloc"); !ok) return ok;

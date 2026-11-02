@@ -41,6 +41,9 @@ namespace {
 
 // La progression est redessinée 4 fois par seconde : la présentation (FIFO) ne freine pas l'export.
 constexpr std::int64_t kProgressEveryUs = 250'000;
+// Une écriture YUV jamais signalée au bout de ce temps : le contexte CUDA est perdu (le rappel hôte du
+// flux ne viendra plus), l'export s'arrête au lieu d'attendre à jamais.
+constexpr std::int64_t kYuvSignalTimeoutUs = 10'000'000;
 
 template <class... F>
 struct Overloaded : F... {
@@ -205,6 +208,7 @@ ExportOutcome run_export(Player& p, const ExportJob& job) {
 
   std::deque<RingFrame> waiting;          // reçues du thread gpu, pas encore converties
   std::optional<exporter::Picture> held;  // puits : prise au slot, refusée par la file pleine
+  std::int64_t head_since = 0;            // puits : depuis quand la première image attend son signal
   bool ended = false;                     // StreamEnded vu
   std::optional<Refusal> failure;
   std::optional<ExportEnd> interrupted;
@@ -253,7 +257,15 @@ ExportOutcome run_export(Player& p, const ExportJob& job) {
     // Puits : chaque image finie part à l'écriture dans l'ordre, son slot repart avec une image neuve.
     while (sink) {
       if (!held) {
-        if (waiting.empty() || !sink->ready(waiting.front())) break;
+        if (waiting.empty()) break;
+        if (!sink->ready(waiting.front())) {
+          const std::int64_t now = host_now_us();
+          if (head_since == 0) head_since = now;
+          if (now - head_since >= kYuvSignalTimeoutUs)
+            failure = Refusal{RefusalCode::EncodeFailed, "export : écriture YUV jamais signalée par le GPU"};
+          break;
+        }
+        head_since = 0;
         const RingFrame frame = waiting.front();
         auto taken = sink->take(frame.slot);
         if (!taken) {
@@ -270,6 +282,7 @@ ExportOutcome run_export(Player& p, const ExportJob& job) {
       if (!(*writer)->try_push(std::move(*held))) break;  // refusée : l'image reste à held
       held.reset();
     }
+    if (failure) break;
     while (frames && !waiting.empty() && frames->has_room()) {
       const RingFrame frame = waiting.front();
       waiting.pop_front();

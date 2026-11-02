@@ -154,12 +154,19 @@ std::expected<std::unique_ptr<Pipeline>, Refusal> PipelineCache::build(const Pip
       .requiredSubgroupSize = desc.subgroup_size};
   const VkComputePipelineCreateInfo info{
       .sType = VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO,
-      .stage = {.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
-                .pNext = desc.subgroup_size != 0 ? &required : nullptr,
-                .stage = VK_SHADER_STAGE_COMPUTE_BIT,
-                .module = module,
-                .pName = "main",
-                .pSpecializationInfo = entries.empty() ? nullptr : &specialization},
+      .stage =
+          {.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
+           .pNext = desc.subgroup_size != 0 ? &required : nullptr,
+           // Les shaders à sous-groupe exigé supposent des sous-groupes pleins (groupe multiple de
+           // la taille, vérifié par le choix des noyaux) : on l'exige du pilote au lieu de l'espérer.
+           .flags =
+               desc.subgroup_size != 0
+                   ? VkPipelineShaderStageCreateFlags{VK_PIPELINE_SHADER_STAGE_CREATE_REQUIRE_FULL_SUBGROUPS_BIT}
+                   : VkPipelineShaderStageCreateFlags{0},
+           .stage = VK_SHADER_STAGE_COMPUTE_BIT,
+           .module = module,
+           .pName = "main",
+           .pSpecializationInfo = entries.empty() ? nullptr : &specialization},
       .layout = pipeline->layout_};
   if (auto ok = check(fn.vkCreateComputePipelines(device, cache_, 1, &info, nullptr, &pipeline->pipeline_),
                       std::format("vkCreateComputePipelines({})", desc.shader));
@@ -195,8 +202,9 @@ std::expected<const Pipeline*, Refusal> PipelineCache::get(const PipelineDesc& d
   }
   if (const DeviceCaps& caps = context_.caps();
       desc.subgroup_size != 0 &&
-      (!caps.enabled.subgroup_size_control || desc.subgroup_size < caps.min_subgroup_size ||
-       desc.subgroup_size > caps.max_subgroup_size || !std::has_single_bit(desc.subgroup_size))) {
+      (!caps.enabled.subgroup_size_control || !caps.enabled.compute_full_subgroups ||
+       desc.subgroup_size < caps.min_subgroup_size || desc.subgroup_size > caps.max_subgroup_size ||
+       !std::has_single_bit(desc.subgroup_size))) {
     return refuse(RefusalCode::FeatureUnavailable,
                   std::format("{} : sous-groupes de {} exigés, l'appareil en permet {} à {}", desc.shader,
                               desc.subgroup_size, caps.min_subgroup_size, caps.max_subgroup_size));

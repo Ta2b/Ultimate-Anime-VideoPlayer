@@ -442,7 +442,7 @@ TEST_CASE("Import INI : lignes, commentaires, BOM et clés inconnues", "[ini_imp
 }
 
 TEST_CASE("Import INI : depuis un fichier", "[ini_import]") {
-  const fs::path dir = fs::current_path() / "test-tmp" / "ini-file";
+  const fs::path dir = fs::temp_directory_path() / "ajp-test-tmp" / "ini-file";
   fs::remove_all(dir);
   fs::create_directories(dir);
   {

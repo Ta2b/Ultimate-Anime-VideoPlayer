@@ -38,9 +38,10 @@ class GpuTiming {
   Report report_;
   std::array<cudaEvent_t, kPairs> start_{};
   std::array<cudaEvent_t, kPairs> stop_{};
-  std::size_t begun_ = 0;  // paires commencées
-  std::size_t ended_ = 0;  // paires finies (second événement enregistré)
-  std::size_t read_ = 0;   // paires relues
+  cudaStream_t open_stream_ = nullptr;  // la file du début de la paire ouverte
+  std::size_t begun_ = 0;               // paires commencées
+  std::size_t ended_ = 0;               // paires finies (second événement enregistré)
+  std::size_t read_ = 0;                // paires relues
   std::vector<float> samples_;
   std::vector<float> all_;  // toutes les mesures, pour summary() (kMaxAll au plus)
   static constexpr std::size_t kMaxAll = 1 << 18;

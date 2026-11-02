@@ -5,6 +5,8 @@
 // à un autre tenseur de même forme décrit la même mémoire : l'objet reste juste.
 #include <cstdint>
 #include <format>
+#include <utility>
+#include <vector>
 
 #include "gpu/cuda/backend/tensorrt_backend.h"
 
@@ -51,7 +53,44 @@ cudaTextureObject_t TensorRtBackend::texture(const Tensor& tensor) {
 
 void TensorRtBackend::trim_textures() {
   // Avant les objets d'un lancement, jamais pendant : ceux déjà pris pour ses paramètres restent.
-  if (textures_.size() >= kTextures) destroy_textures();
+  reap_textures(false);
+  if (textures_.size() < kTextures) return;
+  // Un noyau en vol peut encore lire un objet : chaque voie pose un événement, les objets attendent
+  // derrière lui au lieu de vider toutes les files au milieu de la lecture.
+  RetiredTextures batch;
+  for (const auto& [key, object] : textures_) {
+    if (object != 0) batch.objects.push_back(object);
+  }
+  textures_.clear();
+  for (cudaStream_t lane : streams_) {
+    if (lane == nullptr) continue;
+    cudaEvent_t event = nullptr;
+    if (cudaEventCreateWithFlags(&event, cudaEventDisableTiming) != cudaSuccess ||
+        cudaEventRecord(event, lane) != cudaSuccess) {
+      cudaGetLastError();  // repli : cette voie se vide, comme avant
+      if (event != nullptr) cudaEventDestroy(event);
+      cudaStreamSynchronize(lane);
+      continue;
+    }
+    batch.events.push_back(event);
+  }
+  retired_textures_.push_back(std::move(batch));
+}
+
+void TensorRtBackend::reap_textures(bool wait) {
+  std::erase_if(retired_textures_, [wait](RetiredTextures& batch) {
+    for (cudaEvent_t event : batch.events) {
+      if (wait) {
+        cudaEventSynchronize(event);
+      } else if (cudaEventQuery(event) != cudaSuccess) {
+        cudaGetLastError();  // cudaErrorNotReady ne doit pas remonter au lancement suivant
+        return false;
+      }
+    }
+    for (cudaEvent_t event : batch.events) cudaEventDestroy(event);
+    for (cudaTextureObject_t object : batch.objects) cudaDestroyTextureObject(object);
+    return true;
+  });
 }
 
 void TensorRtBackend::destroy_textures() {
@@ -59,6 +98,7 @@ void TensorRtBackend::destroy_textures() {
   for (cudaStream_t lane : streams_) {
     if (lane != nullptr) cudaStreamSynchronize(lane);
   }
+  reap_textures(true);
   for (const auto& [key, object] : textures_) {
     if (object != 0) cudaDestroyTextureObject(object);
   }
