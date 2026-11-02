@@ -227,10 +227,10 @@ void fluidity_tab(PlaySettings& d, const SettingsChoices& choices, bool exportin
     // sont calés sur les vsyncs de l'écran (comme un jeu en vsync). Dans les deux cas la lecture repasse sur
     // Stable si trop d'images sont perdues.
     const bool vrr_armed = choices.display_vrr && choices.display_vrr_armed;
-    const char* const shown = d.auto_free ? i18n::tr("Fast (experimental)") : i18n::tr("Stable");
+    const char* const shown = d.auto_free ? i18n::tr("Fast") : i18n::tr("Stable");
     if (ImGui::BeginCombo(i18n::tr("Auto mode"), shown)) {
       if (ImGui::Selectable(i18n::tr("Stable"), !d.auto_free)) d.auto_free = false;
-      if (ImGui::Selectable(i18n::tr("Fast (experimental)"), d.auto_free)) d.auto_free = true;
+      if (ImGui::Selectable(i18n::tr("Fast"), d.auto_free)) d.auto_free = true;
       if (vrr_armed) {
         panel::tip(i18n::tr("No steps: each frame is computed for the exact moment it is shown."));
       } else {

@@ -13,10 +13,10 @@ constexpr std::array kSettingsPages{
     Entry{"Apply", "Appliquer"},
     Entry{"Bench results", "Résultats du bench"},
     Entry{"Cancel##calibration", "Annuler##calibration"},
-    Entry{"Interpolation is always RIFE 4.22 lite in Auto Fast mode (experimental). The working resolution "
-          "stops at half the display: SPAN doubles it.",
-          "L'interpolation est toujours RIFE 4.22 lite en mode auto Rapide (expérimental). La résolution de "
-          "travail s'arrête à la moitié de l'écran : SPAN la double."},
+    Entry{"Interpolation is always RIFE 4.22 lite in Auto Fast mode. The working resolution stops at half the "
+          "display: SPAN doubles it.",
+          "L'interpolation est toujours RIFE 4.22 lite en mode auto Rapide. La résolution de travail s'arrête à "
+          "la moitié de l'écran : SPAN la double."},
     Entry{"No bench yet: the settings are an estimate from the card.",
           "Pas encore de bench : les réglages sont estimés d'après la carte."},
     Entry{"Playback pauses during the bench.", "La lecture se met en pause pendant le bench."},
@@ -53,7 +53,7 @@ constexpr std::array kSettingsPages{
           "Appliqué en direct. Le HDR adaptatif suit la scène : moins d'expansion sur les scènes claires."},
     Entry{"Apply (reopens the video)", "Appliquer (rouvre la vidéo)"},
     Entry{"Audio language", "Langue audio"},
-    Entry{"Auto (after SPAN above 1080p)", "Auto (après SPAN au-dessus de 1080p)"},
+    Entry{"Auto (after SPAN above 1080p or from ×3)", "Auto (après SPAN au-dessus de 1080p ou dès ×3)"},
     Entry{"Auto (from the display)", "Auto (selon l'écran)"},
     Entry{"Auto peak ({} nits)", "Pic automatique ({} nits)"},
     Entry{

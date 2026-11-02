@@ -120,6 +120,10 @@ TEST_CASE("Warp et SPAN : Auto passe après SPAN au-dessus de 1080p ; les fichie
   CHECK(warp_after_span(SpanOrder::Auto, 2160));
   CHECK_FALSE(warp_after_span(SpanOrder::Before, 2160));
   CHECK(warp_after_span(SpanOrder::After, 720));
+  // D5 : dès ×3, le warp passe après SPAN quelle que soit la sortie ; jamais en Avant.
+  CHECK(warp_after_span(SpanOrder::Auto, 1080, 3));
+  CHECK_FALSE(warp_after_span(SpanOrder::Auto, 1080, 2));
+  CHECK_FALSE(warp_after_span(SpanOrder::Before, 1080, 6));
   for (const auto order : {SpanOrder::Auto, SpanOrder::Before, SpanOrder::After}) {
     PlaySettings s;
     s.span_order = order;
@@ -506,22 +510,23 @@ TEST_CASE("play.toml garde le plafond du mode auto et refuse un plafond absurde"
   CHECK(live_part(running, wanted, true).auto_cap == 60);
 }
 
-TEST_CASE("play.toml garde le mode d'Auto (stable par défaut) et refuse une valeur inconnue",
+TEST_CASE("play.toml garde le mode d'Auto (Rapide par défaut) et refuse une valeur inconnue",
           "[settings][auto][libre]") {
   using namespace ajp::app::play;
   PlaySettings s;
-  CHECK_FALSE(s.auto_free);  // le défaut reste Stable
-  CHECK_FALSE(parse_settings("version = 1\n")->auto_free);
-  s.auto_free = true;
+  CHECK(s.auto_free);  // C6 : Rapide est l'Auto ; Stable reste au choix
+  CHECK(parse_settings("version = 1\n")->auto_free);
+  CHECK_FALSE(parse_settings("version = 1\n[interpolation]\nauto_mode = \"recommande\"\n")->auto_free);
   const std::string text = format_settings(s);
   CHECK(text.find("auto_mode") != std::string::npos);
   const auto read = parse_settings(text);
   REQUIRE(read);
   CHECK(read->auto_free);
-  CHECK_FALSE(parse_settings(format_settings(PlaySettings{}))->auto_free);
+  CHECK(parse_settings(format_settings(PlaySettings{}))->auto_free);
   CHECK_FALSE(parse_settings("version = 1\n[interpolation]\nauto_mode = \"fou\"\n").has_value());
   // Le mode se change en direct, sans rouvrir la lecture.
   PlaySettings running;
+  running.auto_free = false;
   PlaySettings wanted;
   wanted.auto_free = true;
   CHECK(live_part(running, wanted, true).auto_free);

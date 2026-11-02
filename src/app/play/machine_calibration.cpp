@@ -90,7 +90,7 @@ PlaySettings candidate_settings(const ChainCandidate& chain, PlaySettings base) 
   base.motion_engine = MotionEngine::Rife;
   base.rife_model = std::string(kCalibrationRife);
   base.rife_auto = chain.rife;
-  base.auto_free = chain.rife;  // le mode auto Rapide (expérimental), le seul que la calibration essaie
+  base.auto_free = chain.rife;  // le mode auto Rapide, le seul que la calibration essaie
   base.rife_factor = chain.rife ? 2 : 0;
   base.rife_factor_den = 1;
   return base;

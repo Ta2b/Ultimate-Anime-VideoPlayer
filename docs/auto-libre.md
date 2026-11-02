@@ -1,6 +1,6 @@
 # Mode Rapide d'Auto (anciennement « Auto libre », expérimental)
 
-Noms affichés : « Stable » (le mode par défaut, anciennement « Auto (recommandé) ») et « Rapide (expérimental) » (anciennement « Auto libre »). Seuls les noms ont changé : la clé play.toml `interpolation.auto_mode` garde ses valeurs `"recommande"` (Stable) et `"libre"` (Rapide).
+Noms affichés : « Rapide » (le mode par défaut depuis C6, anciennement « Auto libre » puis « Rapide (expérimental) ») et « Stable » (anciennement « Auto (recommandé) », gardé au choix ; Rapide s'y replie sans message quand l'écran ou le moteur ne le permettent pas). Seuls les noms ont changé : la clé play.toml `interpolation.auto_mode` garde ses valeurs `"recommande"` (Stable) et `"libre"` (Rapide).
 
 Mode d'Auto supplémentaire, `interpolation.auto_mode = "libre"` dans play.toml (défaut `"recommande"`, la loi
 de `core/auto_rate.*` ne change pas). Cahier des charges de Tatoub : « pas de cadence ou palier à proprement

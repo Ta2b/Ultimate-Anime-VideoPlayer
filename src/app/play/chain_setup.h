@@ -69,6 +69,7 @@ struct ChainEngines {
   std::optional<ModelChoice> model;   // SPAN ; rien : sans agrandissement
   std::optional<SpanInt8> span_int8;  // sa variante INT8, construite à sa place (span_int8.h)
   int factor = 1;                     // kSpanFactor avec SPAN
+  int top_factor = 1;                 // le plus haut facteur d'interpolation que la lecture peut prendre
   WorkSize work;                      // entrée des moteurs pour la vidéo de la lecture
   std::string reduce;                 // « 1920x1080 → Area 1280x720 », ou « 1920x1080 »
   // RIFE cherché même sans interpolation : le menu peut l'allumer.
@@ -117,6 +118,11 @@ struct ChainEngines {
 
 // Le backend de p.library, puis les moteurs que settings demandent pour p.video. Rien : la fenêtre
 // fermée pendant une préparation. Refus : modèle introuvable, backend ou moteur refusés.
+// Le plus haut facteur d'interpolation que la lecture peut prendre : celui choisi à la main, ou en Auto le
+// palier entier le plus haut que l'écran affiche (core/auto_ceiling), jusqu'à rife_factor ; 1 sans
+// interpolation ou écran inconnu en Auto. Décide le warp après SPAN dès ×3 (D5).
+int top_factor(const PlaySettings& settings, double display_hz, double source_fps);
+
 std::expected<std::optional<ChainEngines>, Refusal> prepare_chain(Player& p, const PlaySettings& settings);
 
 }  // namespace ajp::app::play

@@ -14,6 +14,7 @@
 #include "app/play/i18n.h"
 #include "app/play/motion_model.h"
 #include "app/play/rife_fused_choice.h"
+#include "core/auto_rate.h"
 #include "core/clock.h"
 #include "core/log.h"
 
@@ -97,35 +98,44 @@ UpscaleSetup ChainEngines::upscale(const PlaySettings& settings, std::shared_ptr
                                    const MasterClock* clock, int width, int height,
                                    std::vector<RingSlotDesc> slots) const {
   const WorkSize sized = work_size(width, height, settings.work_height);
-  return UpscaleSetup{.backend = backend.get(),
-                      .engine = engine.get(),
-                      .rife = rife.get(),
-                      .rife_motion = rife_motion.get(),
-                      .rife_planes = rife_planes,
-                      .rife_align = rife_align,
-                      .gmfss_pair = gmfss.pair.get(),
-                      .gmfss_fusion = gmfss.fusion.get(),
-                      .gmfss_features = gmfss.features.get(),
-                      .gmfss_align = gmfss.align,
-                      .distil_drba = drba.get(),
-                      .drba_align = drba_align,
-                      .drba_motion = drba_motion,
-                      .rife_factor = factor_of(settings),
-                      .one_lane = one_lane,
-                      .live = std::move(live),
-                      .clock = clock,
-                      .source_width = width,
-                      .source_height = height,
-                      .work_width = sized.width,
-                      .work_height = sized.height,
-                      .rife_width = rife_motion   ? rife_size.width
-                                    : drba_motion ? drba_size.width
-                                                  : 0,
-                      .rife_height = rife_motion   ? rife_size.height
-                                     : drba_motion ? drba_size.height
-                                                   : 0,
-                      .warp_after_span = warp_after_span(settings.span_order, sized.height * kSpanFactor),
-                      .slots = std::move(slots)};
+  return UpscaleSetup{
+      .backend = backend.get(),
+      .engine = engine.get(),
+      .rife = rife.get(),
+      .rife_motion = rife_motion.get(),
+      .rife_planes = rife_planes,
+      .rife_align = rife_align,
+      .gmfss_pair = gmfss.pair.get(),
+      .gmfss_fusion = gmfss.fusion.get(),
+      .gmfss_features = gmfss.features.get(),
+      .gmfss_align = gmfss.align,
+      .distil_drba = drba.get(),
+      .drba_align = drba_align,
+      .drba_motion = drba_motion,
+      .rife_factor = factor_of(settings),
+      .one_lane = one_lane,
+      .live = std::move(live),
+      .clock = clock,
+      .source_width = width,
+      .source_height = height,
+      .work_width = sized.width,
+      .work_height = sized.height,
+      .rife_width = rife_motion   ? rife_size.width
+                    : drba_motion ? drba_size.width
+                                  : 0,
+      .rife_height = rife_motion   ? rife_size.height
+                     : drba_motion ? drba_size.height
+                                   : 0,
+      .warp_after_span = warp_after_span(settings.span_order, sized.height * kSpanFactor, top_factor),
+      .slots = std::move(slots)};
+}
+
+int top_factor(const PlaySettings& settings, double display_hz, double source_fps) {
+  if (settings.rife_factor < 2) return 1;
+  if (!settings.rife_auto) return settings.rife_factor / std::max(settings.rife_factor_den, 1);
+  // Auto : jusqu'à rife_factor, et pas au-delà de ce que l'écran (ou le plafond choisi) affiche.
+  const int ceiling = core::auto_ceiling(core::auto_limit_hz(display_hz, settings.auto_cap), source_fps);
+  return std::clamp(ceiling, 1, settings.rife_factor);
 }
 
 namespace {
@@ -164,6 +174,7 @@ std::expected<std::optional<ChainEngines>, Refusal> prepare_chain_once(Player& p
     c.model = std::move(*chosen);
   }
   c.factor = c.model ? kSpanFactor : 1;
+  c.top_factor = top_factor(settings, display_refresh_hz(p.screen.window()), fps_of(p.video.frame_rate));
   c.work = work_size(video.width, video.height, settings.work_height);
   const bool reduced = c.work != WorkSize{video.width, video.height};
   c.reduce = reduced ? std::format("{}x{} → {} {}x{}", video.width, video.height, label(settings.downscale),
@@ -313,7 +324,8 @@ std::expected<std::optional<ChainEngines>, Refusal> prepare_chain_once(Player& p
     const bool try_fused = fused.declined.empty();
     // Warp après SPAN (sortie haute) : la variante mouvement, un SPAN par source au lieu d'un par image
     // créée.
-    bool motion = settings.upscale && warp_after_span(settings.span_order, c.work.height * kSpanFactor);
+    bool motion =
+        settings.upscale && warp_after_span(settings.span_order, c.work.height * kSpanFactor, c.top_factor);
     // D4 : la variante mouvement estime à la taille de RIFE mouvement (720p pour un travail plus grand),
     // comme RIFE ; sans variante mouvement, l'image se refait à la taille de travail.
     const bool smaller = motion && c.rife_size.height < c.work.height;
