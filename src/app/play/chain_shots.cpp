@@ -106,10 +106,17 @@ void tend_shots(ShotWork& work) {
 
 std::optional<ShotScene> next_shot(Chain& to, std::int64_t now_us) {
   if (to.shots == nullptr || !to.shots->current.timeline) return std::nullopt;
+  ShotJob& job = to.shots->current;
+  if (job.file != to.file) return std::nullopt;  // la chronologie d'une autre vidéo
   tend_shots(*to.shots);
-  const media::ShotTimeline& timeline = *to.shots->current.timeline;
+  const media::ShotTimeline& timeline = *job.timeline;
   const ControlsView view = to.session.view();
-  media::ShotProbe* probe = to.shots->current.probe.get();
+  // Le grade adaptatif s'est allumé après l'ouverture (écran sans profil, où with_calibrated_grade le coupe,
+  // puis la calibration ou le panneau le rallume) : l'analyse arrêtée à l'ouverture reprend ici, sinon seul
+  // ce qu'elle avait vu en partant serait connu.
+  if (!job.probe && !job.complete && view.position_us != kNoPts)
+    job.probe = media::ShotProbe::start(job.file, *job.timeline, std::max<std::int64_t>(view.position_us, 0));
+  media::ShotProbe* probe = job.probe.get();
   if (probe != nullptr && view.position_us != kNoPts) {
     probe->set_playhead(view.position_us);
     const std::int64_t frontier = probe->frontier_us();
