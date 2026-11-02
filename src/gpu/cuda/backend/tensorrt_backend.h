@@ -93,6 +93,7 @@ class TensorRtBackend final : public Backend, public KernelOps {
   // GMFSS Fortuna (tensorrt_gmfss.cpp) : entrée du graphe « paire » et softmax splatting.
   std::expected<void, Refusal> gmfss_frames(const Tensor& a, const Tensor& b, const Tensor& frames) override;
   std::expected<void, Refusal> fill(const Tensor& tensor, float value) override;
+  std::expected<void, Refusal> deband(const Tensor& rgb) override;  // tensorrt_kernels.cpp
   std::expected<void, Refusal> soft_splat(const Tensor& source, const Tensor& motion, float s,
                                           const Tensor& out) override;
   std::expected<void, Refusal> soft_splat_all(std::span<const KernelOps::SplatJob> jobs) override;
@@ -327,6 +328,9 @@ class TensorRtBackend final : public Backend, public KernelOps {
   // Lignes filtrées de l'ingestion à filtre étiré (slice_kernels.h, IngestParams::rows).
   float* ingest_rows_ = nullptr;
   std::size_t ingest_rows_size_ = 0;
+  // Image débandée avant sa copie sur la source (deband), à la taille de la plus grande vue.
+  void* deband_out_ = nullptr;
+  std::size_t deband_out_size_ = 0;
   // Envois des images du décodage logiciel (host_upload.h), créés à la première.
   std::unique_ptr<HostUploads> uploads_;
   // write_yuv : les tables de la réduction de chroma pour une taille et un siting, en mémoire

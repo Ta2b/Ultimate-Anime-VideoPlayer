@@ -90,6 +90,8 @@ struct RingFrame {
   // La paire qui finit sur cette image est restée sans images intermédiaires, à dessein (coupe
   // de scène, dessin tenu) : l'écart de pts qui la précède n'est pas un manque.
   bool uninterpolated = false;
+  // Les sources de l'image ont été débandées avant SPAN (KernelOps::deband) : l'écran ne débande plus.
+  bool debanded = false;
   std::uint32_t epoch = 0;        // d'une époque passée : main ne la présente pas, mais rend le slot
   std::uint64_t ready_value = 0;  // valeur du sémaphore du slot à attendre avant lecture
   // Instant hôte (host_now_us) où gpu a soumis l'écriture du slot ; 0 : inconnu. main en tire le

@@ -155,6 +155,7 @@ struct PlaceboScreen::Impl {
   std::int64_t grade_next_since_us = 0;
   FinalScaler final_scaler = FinalScaler::Default;  // posés par set_finish
   bool deband = false;
+  bool source_debanded = false;  // l'image présentée, débandée avant SPAN (RingFrame::debanded)
   // Ce que le grade porte : rien, le grade PQ (vrai) ou le grade SDR (faux) de grade_choice.
   std::optional<bool> grade_loaded_pq;
   // set_grade_after : le grade en attente passe dans grade_choice si l'image à présenter vient après la

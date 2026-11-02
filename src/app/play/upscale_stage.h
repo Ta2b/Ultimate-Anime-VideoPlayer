@@ -177,6 +177,7 @@ class UpscaleStage final : public RingStage {
     gpu::Reduction reduce;
     std::uint64_t ticket = 0;  // mesures (left, id) lancées ; 0 : aucune
     SourceId left;
+    bool debanded = false;  // l'image ingérée en avance, débandée
   };
   Ahead ahead_;
   bool ahead_scores_ = true;  // faux si le backend n'a pas scores_start
@@ -280,6 +281,16 @@ class UpscaleStage final : public RingStage {
   std::uint32_t outputs_ = 1;
   std::uint32_t intermediates_ = 0;  // celles qui sont interpolées
   bool uninterpolated_ = false;      // la paire courante, laissée sans interpolation à dessein
+  // Débandage avant SPAN (KernelOps::deband) : voulu quand le grade tourne, avec SPAN, hors RTX HDR et
+  // DistilDRBA ; deband_op_ tombe si le backend ne l'a pas, et l'écran garde alors le sien.
+  bool deband_op_ = true;
+  bool debanded_ = false;  // l'image en cours a été débandée
+  bool wants_deband() const {
+    return deband_op_ && setup_.engine != nullptr && !setup_.true_hdr && !drba() && setup_.live &&
+           setup_.live->deband_source();
+  }
+  // Débande l'image ingérée dans rgb si wants_deband() ; vrai si elle l'est.
+  std::expected<bool, Refusal> deband_source(const gpu::Tensor& rgb);
   std::optional<core::CadenceAccumulator> cadence_;
   core::FreeGrid free_grid_;  // mode Rapide : la grille des instants à la place de cadence_
   core::FreeInputs free_inputs(std::uint32_t epoch) const;

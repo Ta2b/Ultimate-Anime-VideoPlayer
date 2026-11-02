@@ -237,9 +237,13 @@ std::expected<std::uint32_t, Refusal> UpscaleStage::outputs(const DecodedFrame& 
   const bool ingested = looks_ahead() && take_ahead(frame, spec);  // déjà, derrière la précédente
   if (drba()) {
     if (auto ok = drba_arrive(frame, spec); !ok) return std::unexpected(std::move(ok.error()));
+    debanded_ = false;
   } else if (!ingested) {
     if (auto ok = ops.ingest(frame, spec, rgb_[current_]->tensor()); !ok)
       return std::unexpected(std::move(ok.error()));
+    auto debanded = deband_source(rgb_[current_]->tensor());
+    if (!debanded) return std::unexpected(std::move(debanded.error()));
+    debanded_ = *debanded;
   }
   if (small_[current_] && !ingested) {  // l'image de RIFE, réduite par Area
     if (auto ok = ops.ingest(frame, gpu::IngestSpec{}, small_[current_]->tensor()); !ok)
@@ -494,12 +498,16 @@ std::expected<RingStage::Output, Refusal> UpscaleStage::produce(const DecodedFra
     if (!ok) return std::unexpected(std::move(ok.error()));
     output_has_source_ = setup_.engine != nullptr;
     previous_ = Previous{.pts_us = frame.pts_us, .id = frame.id, .epoch = frame.epoch};
-    return Output{
-        .pts_us = frame.pts_us, .left = frame.id, .right = frame.id, .uninterpolated = uninterpolated_};
+    return Output{.pts_us = frame.pts_us,
+                  .left = frame.id,
+                  .right = frame.id,
+                  .uninterpolated = uninterpolated_,
+                  .debanded = debanded_};
   }
   // Image intermédiaire, entre la précédente et celle-ci (rife_runs demande la précédente).
   if (!previous_) return refuse(RefusalCode::SequenceOrder, "RIFE : pas d'image précédente");
-  const Output made{.pts_us = instant.pts_us, .left = previous_->id, .right = frame.id};
+  const Output made{
+      .pts_us = instant.pts_us, .left = previous_->id, .right = frame.id, .debanded = debanded_};
   gmfss_.a = GmfssFrameKey{.id = previous_->id,
                            .epoch = previous_->epoch};  // GMFSS fusionné : les images de la paire
   gmfss_.b = GmfssFrameKey{.id = frame.id, .epoch = frame.epoch};

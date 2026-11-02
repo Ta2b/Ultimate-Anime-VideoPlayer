@@ -6,6 +6,7 @@
 #include <span>
 
 #include "gpu/cuda/backend/cuda_status.h"
+#include "gpu/cuda/backend/deband_kernels.h"
 #include "gpu/cuda/backend/host_upload.h"
 #include "gpu/cuda/backend/slice_kernels.h"
 #include "gpu/cuda/backend/tensorrt_backend.h"
@@ -190,6 +191,37 @@ std::expected<void, Refusal> TensorRtBackend::ingest(const DecodedFrame& frame, 
   // Une image hôte est déjà copiée : elle repart au décodeur sans attendre le GPU.
   if (host) return uploads_->consumed(stream_);
   return hold(frame);
+}
+
+std::expected<void, Refusal> TensorRtBackend::deband(const Tensor& rgb) {
+  const int width = static_cast<int>(rgb.shape.dims[3]);
+  const int height = static_cast<int>(rgb.shape.dims[2]);
+  if (width < 1 || height < 1 || !rgb_tensor(rgb, width, height))
+    return refuse(RefusalCode::ShapeInvalid, "débandage : tenseur FP16 1×3×h×w attendu");
+  if (auto ok = bind(); !ok) return ok;
+  const std::size_t bytes =
+      std::size_t{3} * static_cast<std::size_t>(width) * static_cast<std::size_t>(height) * 2U;
+  if (bytes > deband_out_size_) {
+    // cudaFree attend la fin de tout ce que l'appareil exécute, le débandage précédent compris.
+    if (deband_out_ != nullptr) cudaFree(deband_out_);
+    deband_out_ = nullptr;
+    deband_out_size_ = 0;
+    if (auto ok = cuda_check(cudaMalloc(&deband_out_, bytes), "cudaMalloc"); !ok) return ok;
+    deband_out_size_ = bytes;
+  }
+  const auto scratch = reinterpret_cast<std::uintptr_t>(&deband_out_);
+  if (auto ok = order({rgb.handle, scratch}, {rgb.handle, scratch}); !ok) return ok;
+  GpuTiming& timing = stage("débandage");
+  timing.begin(stream_);
+  const DebandParams params{.in = address(rgb), .out = deband_out_, .width = width, .height = height};
+  if (auto ok = cuda_check(launch_deband(params, stream_), "deband<<<>>>"); !ok) return ok;
+  if (auto ok =
+          cuda_check(cudaMemcpyAsync(address(rgb), deband_out_, bytes, cudaMemcpyDeviceToDevice, stream_),
+                     "cudaMemcpyAsync");
+      !ok)
+    return ok;
+  timing.end(stream_);
+  return {};
 }
 
 std::optional<KernelOps::DeviceMemory> TensorRtBackend::device_memory() {
