@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <array>
 #include <format>
+#include <optional>
 #include <string>
 #include <string_view>
 #include <utility>
@@ -228,7 +229,15 @@ struct Grade::Impl {
   std::array<const pl_hook*, 3> hooks{};
   GradeParams params;
   pl_gpu gpu = nullptr;
-  std::array<int, kLookSlots> look_sizes{};
+  // Les LUT du look (copies : celles de set_looks ne vivent que le temps de l'appel), et l'intensité de
+  // chacune pour laquelle la pile a été composée en une LUT (composed) ; rien de composé : jamais.
+  std::array<std::optional<CubeLut>, kLookSlots> sources;
+  std::optional<std::array<double, kLookSlots>> composed_for;
+  bool composed = false;  // la texture du look est la pile composée (sinon une identité)
+
+  // La pile composée pour les intensités de `wanted`, refaite si elles changent ; le hook du look est
+  // alors reconstruit, et ses paramètres sont à réécrire.
+  void compose(const GradeParams& wanted);
 
   Impl() = default;
   Impl(const Impl&) = delete;
@@ -242,6 +251,37 @@ struct Grade::Impl {
     pl_mpv_user_shader_destroy(&calibration);
   }
 };
+
+constexpr std::array<double GradeParams::*, kLookSlots> kLookMixes{
+    &GradeParams::look_mix,   &GradeParams::look_mix2,  &GradeParams::look_mix3,  &GradeParams::look_mix4,
+    &GradeParams::look_mix5,  &GradeParams::look_mix6,  &GradeParams::look_mix7,  &GradeParams::look_mix8,
+    &GradeParams::look_mix9,  &GradeParams::look_mix10, &GradeParams::look_mix11, &GradeParams::look_mix12,
+    &GradeParams::look_mix13, &GradeParams::look_mix14, &GradeParams::look_mix15};
+
+void Grade::Impl::compose(const GradeParams& wanted) {
+  std::array<double, kLookSlots> mixes{};
+  std::array<const CubeLut*, kLookSlots> luts{};
+  bool active = false;
+  for (std::size_t i = 0; i < kLookSlots; ++i) {
+    luts[i] = sources[i] ? &*sources[i] : nullptr;
+    mixes[i] = luts[i] != nullptr ? wanted.*kLookMixes[i] : 0.0;
+    active = active || mixes[i] > 0.0;
+  }
+  if (composed_for == mixes) return;
+  composed_for = mixes;
+  const CubeLut stack = active ? compose_luts(luts, mixes) : CubeLut{};
+  std::array<const CubeLut*, kLookSlots> slots{};
+  if (active) slots[0] = &stack;
+  auto rebuilt = parse_look(gpu, slots);
+  if (!rebuilt) {  // la même texture se lisait déjà à set_looks : improbable ; l'image passe alors sans look
+    composed = false;
+    return;
+  }
+  pl_mpv_user_shader_destroy(&look.hook);
+  look = std::move(*rebuilt);
+  hooks[1] = look.hook;
+  composed = active;
+}
 
 std::expected<Grade, Refusal> Grade::create(pl_gpu gpu) {
   auto impl = std::make_unique<Impl>();
@@ -265,12 +305,17 @@ std::expected<Grade, Refusal> Grade::create(pl_gpu gpu) {
 }
 
 std::expected<void, Refusal> Grade::set_looks(const std::array<const CubeLut*, kLookSlots>& luts) {
+  // Chaque LUT doit se lire seule (le refus nomme la fautive) ; le hook, lui, ne lit que la pile composée.
   auto look = parse_look(impl_->gpu, luts);
   if (!look) return std::unexpected(look.error());
-  pl_mpv_user_shader_destroy(&impl_->look.hook);
-  impl_->look = std::move(*look);
-  for (std::size_t i = 0; i < kLookSlots; ++i) impl_->look_sizes[i] = luts[i] != nullptr ? luts[i]->size : 2;
-  impl_->hooks[1] = impl_->look.hook;
+  pl_mpv_user_shader_destroy(&look->hook);
+  for (std::size_t i = 0; i < kLookSlots; ++i) {
+    if (luts[i] != nullptr)
+      impl_->sources[i] = *luts[i];
+    else
+      impl_->sources[i].reset();
+  }
+  impl_->composed_for.reset();
   set_params(impl_->params);
   return {};
 }
@@ -282,12 +327,19 @@ Grade::~Grade() = default;
 
 void Grade::set_params(const GradeParams& params) {
   impl_->params = params;
+  impl_->compose(params);
   for (const ParsedHook* hook : {&impl_->grade, &impl_->look, &impl_->black}) {
     for (const auto& [data, field] : hook->params) data->f = static_cast<float>(params.*field);
   }
-  for (std::size_t i = 0; i < kLookSlots; ++i)
+  // Le hook ne lit que la pile composée, en premier emplacement, à pleine intensité (les intensités y sont
+  // déjà) ; les autres emplacements restent à 0, sautés.
+  for (std::size_t i = 0; i < kLookSlots; ++i) {
+    const bool stack = i == 0 && impl_->composed;
     if (pl_var_data* size = find_param(*impl_->look.hook, slot_name("look_size", i)))
-      size->f = static_cast<float>(impl_->look_sizes[i] > 0 ? impl_->look_sizes[i] : 2);
+      size->f = static_cast<float>(stack ? kLutMaxSize : 2);
+    if (pl_var_data* mix = find_param(*impl_->look.hook, slot_name("look_mix", i)))
+      mix->f = stack ? 1.0F : 0.0F;
+  }
 }
 
 void Grade::set_video_fps(double fps) {
