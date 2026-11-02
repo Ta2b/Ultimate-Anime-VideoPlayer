@@ -19,6 +19,7 @@
 #include "core/clock.h"
 #include "core/log.h"
 #include "render/adaptive_rules.h"
+#include "render/display_model.h"
 #include "render/looks.h"
 
 namespace ajp::app::play {
@@ -73,8 +74,14 @@ render::GradeChoice grade_of(const PlaySettings& s, int auto_peak, const std::op
   // Dalle OLED : détectée, ou affirmée par un vrai noir forcé. Son limiteur suit la moyenne
   // d'image que l'écran annonce, quand il l'annonce.
   g.oled = oled_panel(s, display);
-  if (display && display->frame_average_nits) {
-    if (const auto abl = render::abl_range(*display->frame_average_nits)) {
+  // La moyenne d'image que l'écran annonce, sinon celle du modèle d'une dalle OLED (H1 : L_max plein écran
+  // de la courbe QD-OLED, ramenée au pic visé).
+  std::optional<double> average = display ? display->frame_average_nits : std::nullopt;
+  if (!average && g.oled)
+    average = render::DisplayModel{.panel_peak_nits = static_cast<double>(peak), .oled = true}
+                  .frame_average_content_nits();
+  if (average) {
+    if (const auto abl = render::abl_range(*average)) {
       g.abl_lo = abl->lo;
       g.abl_hi = abl->hi;
     }

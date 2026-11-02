@@ -10,6 +10,7 @@
 
 #include "core/charconv.h"
 #include "core/log.h"
+#include "render/display_model.h"
 
 #if defined(_WIN32)
 #include <dxgi1_6.h>
@@ -143,16 +144,23 @@ std::optional<double> system_peak_nits([[maybe_unused]] std::string_view connect
   const std::string json{std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>()};
   const std::optional<KwinOutput> output = parse_kwin_output(json, port);
   if (!output) return std::nullopt;
+  // H1 : KWin affiche le contenu × blanc de référence / 203 (render/display_model.h) ; le pic se vise en
+  // unités du contenu.
+  const double reference = output->reference.value_or(render::kContentReferenceNits);
   if (output->peak_override) {
-    log_channel("app")->info("pic du système (KDE, {}) : {:.0f} nits", std::string(port),
-                             *output->peak_override);
-    return output->peak_override;
+    const render::DisplayModel model{.panel_peak_nits = *output->peak_override, .reference_nits = reference};
+    log_channel("app")->info(
+        "pic du système (KDE, {}) : {:.0f} nits affichés, blanc {:.0f} : {:.0f} nits du contenu",
+        std::string(port), *output->peak_override, reference, model.content_peak_nits());
+    return model.content_peak_nits();
   }
   if (output->reference && headroom > 1.0) {
-    const double peak = headroom * *output->reference;
-    log_channel("app")->info("pic du système (KDE, {}) : marge {:.2f} × blanc {:.0f} = {:.0f} nits",
-                             std::string(port), headroom, *output->reference, peak);
-    return peak;
+    const render::DisplayModel model{.panel_peak_nits = headroom * reference, .reference_nits = reference};
+    log_channel("app")->info(
+        "pic du système (KDE, {}) : marge {:.2f} × blanc {:.0f} = {:.0f} nits affichés, {:.0f} nits du "
+        "contenu",
+        std::string(port), headroom, reference, model.panel_peak_nits, model.content_peak_nits());
+    return model.content_peak_nits();
   }
   return std::nullopt;
 #else
