@@ -46,7 +46,6 @@ constexpr std::array kImageTabs{
     Entry{"Downscaler", "Réduction"},
     Entry{"Export skips no frames: each created frame costs a pass.",
           "L'export ne saute aucune image : chaque image créée coûte une passe."},
-    Entry{"Fast (experimental)", "Rapide (expérimental)"},
     Entry{"Fused DistilDRBA", "DistilDRBA fusionné"},
     Entry{"Fused GMFSS", "GMFSS fusionné"},
     Entry{"Fused RIFE", "RIFE fusionné"},

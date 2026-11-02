@@ -164,8 +164,8 @@ bool bench_results_section(PlaySettings& d, const SettingsChoices& choices, Mach
         i18n::tr("Green: recommended, with margin. Orange: holds just barely, or misses a little. Red: this "
                  "machine cannot keep up."));
     panel::tip(
-        i18n::tr("Interpolation is always RIFE 4.22 lite in Auto Fast mode (experimental). The "
-                 "working resolution stops at half the display: SPAN doubles it."));
+        i18n::tr("Interpolation is always RIFE 4.22 lite in Auto Fast mode. The working resolution stops at "
+                 "half the display: SPAN doubles it."));
   }
   if (ImGui::Button(bench.result ? i18n::tr("Run the bench again") : i18n::tr("Run the bench"))) {
     start_bench(choices, d, bench);

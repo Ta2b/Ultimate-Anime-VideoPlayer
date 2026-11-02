@@ -438,10 +438,8 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
     const bool free = on && chain.running.auto_free && why.empty();
     if (why != free_note) {
       free_note = why;
-      if (!why.empty()) {
-        log->warn("Mode Rapide indisponible ({}) : retour au mode Stable", why);
-        p.ui.controls().notify(i18n::tr_format("Fast mode unavailable: {}", why), host_now_us());
-      }
+      // Rapide est le défaut : là où il ne tient pas, Stable le remplace sans message à l'écran.
+      if (!why.empty()) log->info("Mode Rapide indisponible ({}) : mode Stable", why);
     }
     chain.live.set_auto(on && !free, core::auto_ceiling(limit_hz, fps_of(video.frame_rate), granularity),
                         granularity);

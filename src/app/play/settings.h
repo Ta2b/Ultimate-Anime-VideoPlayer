@@ -90,15 +90,19 @@ std::string resolution_text(int height);
 // et nettoie les défauts du warp. Après : SPAN agrandit chaque image source une fois, le warp
 // déforme les images agrandies à la taille de sortie. Auto : après dès que la sortie dépasse
 // kWarpAfterSpanAbove lignes, où SPAN coûte le plus (1080p → 4K : environ 8 ms par passe sur une
-// RTX 4070 Ti, contre 0,4 ms pour le warp).
+// RTX 4070 Ti, contre 0,4 ms pour le warp), ou dès que le facteur peut atteindre ×3 (D5 : deux images créées
+// par paire, deux passes de SPAN de plus contre deux warps).
 enum class SpanOrder : std::uint8_t { Auto, Before, After };
 inline constexpr int kSpanOrderCount = 3;
 inline constexpr int kWarpAfterSpanAbove = 1080;
 std::string_view name(SpanOrder order);   // « auto », la clé de play.toml
-std::string_view label(SpanOrder order);  // « Auto (après SPAN au-dessus de 1080p) », pour le menu
-// Le warp passe-t-il après SPAN pour une sortie de output_height lignes ?
-constexpr bool warp_after_span(SpanOrder order, int output_height) {
-  return order == SpanOrder::After || (order == SpanOrder::Auto && output_height > kWarpAfterSpanAbove);
+std::string_view label(SpanOrder order);  // « Auto (après SPAN au-dessus de 1080p ou dès ×3) », pour le menu
+inline constexpr int kWarpAfterSpanFactor = 3;
+// Le warp passe-t-il après SPAN pour une sortie de output_height lignes, au facteur le plus haut que la
+// lecture peut prendre (max_factor, arrondi au-dessous ; 0 : inconnu) ?
+constexpr bool warp_after_span(SpanOrder order, int output_height, int max_factor = 0) {
+  return order == SpanOrder::After || (order == SpanOrder::Auto && (output_height > kWarpAfterSpanAbove ||
+                                                                    max_factor >= kWarpAfterSpanFactor));
 }
 
 enum class OledBlack : std::uint8_t { Auto, On, Off };
@@ -179,10 +183,11 @@ struct PlaySettings {
   bool rife_auto = true;
   // Plafond de la cadence de sortie du mode auto, en i/s (60, 120…) ; 0 : celle de l'écran, le maximum.
   int auto_cap = 0;
-  // Mode d'Auto : « recommande » (le défaut : paliers, core/auto_rate.h) ou « libre » (expérimental, écran
-  // VRR armé seulement : aucun palier, chaque image est calculée à l'instant exact où elle sera vue,
-  // core/free_grid.h). En direct ; replie sur « recommande » si l'écran ne le permet pas.
-  bool auto_free = false;
+  // Mode d'Auto : « libre » (Rapide, le défaut depuis C6 : aucun palier, chaque image est calculée à
+  // l'instant exact où elle sera vue, core/free_grid.h) ou « recommande » (Stable : paliers, core/auto_rate.h).
+  // En direct ; Rapide se replie sans bruit sur Stable quand l'écran ou le moteur ne le permettent pas, et
+  // quand il perd trop d'images.
+  bool auto_free = true;
   MotionEngine motion_engine = MotionEngine::Rife;
   std::string rife_model;  // fichier ONNX de RIFE (nom seul) ; vide : le défaut de la carte
   // Garder les poses (DRBA, kernels/spec/poses.h) : un personnage animé en deux garde son rythme
