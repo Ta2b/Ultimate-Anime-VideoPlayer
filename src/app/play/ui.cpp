@@ -605,7 +605,8 @@ void PlayerUi::set_adaptive_scene(const AdaptiveScene& scene) {
   const AdaptiveScene& was = choices_.adaptive_scene;
   const bool moved = scene.live != was.live || scene.corrections != was.corrections ||
                      scene.approvals != was.approvals || std::abs(scene.t - was.t) >= 0.01 ||
-                     std::abs(scene.glow - was.glow) >= 0.01 || std::abs(scene.tv - was.tv) >= 0.01;
+                     std::abs(scene.glow - was.glow) >= 0.01 || std::abs(scene.tv - was.tv) >= 0.01 ||
+                     std::abs(scene.x - was.x) >= 0.005;
   if (!moved) return;
   choices_.adaptive_scene = scene;
   if (panel_.is_open()) input_pending_ = true;

@@ -29,6 +29,9 @@ struct CalibrationImage {
 // Le nombre de plans de l'étape, et son plan index (0 à calibration_count(step) - 1).
 int calibration_count(CalibrationStep step);
 CalibrationImage calibration_image(CalibrationStep step, int index);
+// Le plan id de la vidéo (0 à kCalibrationImages - 1), toutes étapes confondues : la calibration les montre
+// dans l'ordre, chacun réglé à sa vraie place dans la courbe.
+CalibrationImage calibration_shot(int id);
 
 // La vidéo livrée : calibration/calibration.mkv à côté de SDL_GetBasePath (Contents/Resources dans AJP.app),
 // comme luts/.

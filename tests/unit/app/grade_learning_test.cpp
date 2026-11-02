@@ -5,6 +5,7 @@
 
 #include <cmath>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include <catch2/catch_approx.hpp>
@@ -170,4 +171,35 @@ TEST_CASE("apprentissage : adaptive-learning.tsv se relit tel qu'il s'écrit", "
   const SceneMix m = scene_mix(back[0].scene, 10.0, 50.0);
   CHECK(m.t == 0.0);
   CHECK(m.glow == 1.0);
+}
+
+TEST_CASE("calibration : les huit plans, chacun à sa place, ajustent la courbe sur tous à la fois",
+          "[app][grade][learning][calibration]") {
+  // Les huit plans de la vidéo de calibration : deux sombres de luminosités différentes, deux avec éclat,
+  // quatre clairs. L'utilisateur règle chacun à l'œil ; la courbe qu'il voulait sans le savoir en ressort.
+  GradeCurve wanted = calibrated();
+  wanted.lo = 18.0;
+  wanted.shadows = 0.25;
+  wanted.gray = 44.0;
+  wanted.gray_bright = 26.0;
+  wanted.shadows_glow = 0.10;
+  std::vector<LearnSample> shots;
+  for (const auto& [x, glow] :
+       {std::pair{0.06, 0.0}, std::pair{0.16, 0.0}, std::pair{0.08, 0.9}, std::pair{0.10, 0.8},
+        std::pair{0.45, 0.0}, std::pair{0.55, 0.0}, std::pair{0.62, 0.0}, std::pair{0.70, 0.0}}) {
+    LearnSample s = correction(wanted, x, glow);
+    s.kind = LearnSample::Kind::Calibration;
+    shots.push_back(s);
+  }
+  const auto report = learn_grade(shots, calibrated(), kNow);
+  REQUIRE(report.has_value());
+  CHECK(report->corrections == 8);
+  CHECK(report->error_after < report->error_before / 2.0);
+  // Les deux plans sombres ne reçoivent pas les mêmes valeurs : chacun garde celle de sa luminosité.
+  const GradeCurve& c = report->curve;
+  const SceneMix dim = scene_mix(LearnScene{.x = 0.06}, c.lo, c.hi);
+  const SceneMix dusk = scene_mix(LearnScene{.x = 0.16}, c.lo, c.hi);
+  CHECK(dusk.t > dim.t);
+  CHECK(c.gray == Approx(wanted.gray).margin(3.0));
+  CHECK(c.gray_bright == Approx(wanted.gray_bright).margin(3.0));
 }

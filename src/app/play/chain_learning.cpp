@@ -3,6 +3,7 @@
 #include <ctime>
 #include <system_error>
 
+#include "app/play/calibration_images.h"
 #include "app/play/chain.h"
 #include "app/play/i18n.h"
 #include "core/log.h"
@@ -40,22 +41,30 @@ void learn_tick(Chain& to, std::int64_t now_us) {
   if (l.corrections < 0) count_samples(l);
   const double force = to.running.grade_values.adaptive_force;
   const SceneMix mix{.t = to.adaptive_t, .glow = to.adaptive_glow, .tv = to.adaptive_tv};
+  const LearnScene scene{.x = to.adaptive_luma / series_ratio(to.series_luma),
+                         .glow_seen = to.adaptive_glow_seen,
+                         .tv = to.adaptive_tv,
+                         .force = force};
   to.ui.set_adaptive_scene(AdaptiveScene{.live = force < 0.0,
                                          .t = mix.t,
                                          .glow = mix.glow,
                                          .tv = mix.tv,
+                                         .x = scene.x,
+                                         .glow_seen = scene.glow_seen,
                                          .corrections = l.corrections,
                                          .approvals = l.approvals});
+  // La vidéo de calibration : ses réglages vont à la calibration (settings_calibration.cpp), pas au journal.
+  if (to.file == calibration_clip()) {
+    l.seen.reset();
+    l.pending.reset();
+    return;
+  }
   const GradeCurve curve = curve_of(to.running);
   if (!l.seen) {
     l.seen = curve;
     l.still_us = now_us;
     return;
   }
-  const LearnScene scene{.x = to.adaptive_luma / series_ratio(to.series_luma),
-                         .glow_seen = to.adaptive_glow_seen,
-                         .tv = to.adaptive_tv,
-                         .force = force};
   if (const std::uint8_t touched = touched_families(*l.seen, curve); touched != 0) {
     l.seen = curve;
     l.still_us = now_us;
