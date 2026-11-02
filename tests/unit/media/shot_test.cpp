@@ -14,6 +14,8 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include "clips.h"
+#include "kernels/ref/frame_stats.h"
+#include "media/live_scenes.h"
 #include "media/shot_cache.h"
 #include "media/shot_cutter.h"
 #include "media/shot_probe.h"
@@ -176,6 +178,9 @@ TEST_CASE("plans : le cache rend les plans gardés, et rien pour une autre vidé
   shots.at(0).first.p995 = 0.9F;
   shots.at(1) = Shot{.start_us = 1'000'000, .end_us = 3'000'000, .fade = true};
   shots.at(1).last.mean = 0.4F;
+  shots.at(1).meta.max_scl_nits = 812.5F;
+  shots.at(1).meta.mean.skin = 0.25F;
+  shots.at(1).meta.mean.maxrgb_nits.back() = 640.0F;
   REQUIRE(save_shot_cache(dir, key, shots, true));
   const auto loaded = load_shot_cache(dir, key);
   REQUIRE(loaded);
@@ -184,6 +189,7 @@ TEST_CASE("plans : le cache rend les plans gardés, et rien pour une autre vidé
   CHECK(loaded->shots.at(0).first.p995 == 0.9F);
   CHECK(loaded->shots.at(1).fade);
   CHECK(loaded->shots.at(1).last.mean == 0.4F);
+  CHECK(loaded->shots.at(1).meta == shots.at(1).meta);
   CHECK(loaded->shots.at(1).end_us == 3'000'000);
   // Une analyse arrêtée en route se garde aussi, marquée incomplète.
   REQUIRE(save_shot_cache(dir, key, shots, false));
@@ -194,4 +200,30 @@ TEST_CASE("plans : le cache rend les plans gardés, et rien pour une autre vidé
   CHECK_FALSE(load_shot_cache(dir, key));
   CHECK(load_shot_cache(dir, "aaaaaaaaaaaaaaaa"));
   std::filesystem::remove_all(dir);
+}
+
+TEST_CASE("plans : scènes vues à l'ingestion, coupes et sauts", "[media][shots]") {
+  const auto gray = [](float v) {
+    const auto counts =
+        ajp::kernels::ref::frame_counts(ajp::kernels::RgbImage(64, 36, v), ajp::kernels::FrameTransfer::Sdr);
+    REQUIRE(counts);
+    return ajp::kernels::ref::frame_stats_of(*counts);
+  };
+  LiveScenes live;
+  CHECK_FALSE(live.at(0));
+  for (int i = 0; i < 5; ++i) live.push(i * kFrame, gray(0.2F));
+  const auto dark = live.at(4 * kFrame + 1000);
+  REQUIRE(dark);
+  CHECK(dark->stats.mean == Approx(0.2F));
+  CHECK(dark->light.apl_nits == Approx(std::pow(0.2F, 2.4F) * 203.0F).epsilon(1e-4));
+  for (int i = 5; i < 8; ++i) live.push(i * kFrame, gray(0.8F));
+  const auto bright = live.at(7 * kFrame);
+  REQUIRE(bright);
+  CHECK(bright->serial != dark->serial);  // une coupe
+  CHECK(bright->stats.mean == Approx(0.8F));
+  CHECK(live.at(2 * kFrame)->serial == dark->serial);  // l'image d'avant la coupe garde sa scène
+  CHECK_FALSE(live.at(7 * kFrame + 600'000));          // trop loin de la dernière analysée
+  live.push(kFrame, gray(0.8F));                       // un saut en arrière : tout repart
+  CHECK_FALSE(live.at(0));
+  CHECK(live.at(kFrame)->serial != bright->serial);
 }

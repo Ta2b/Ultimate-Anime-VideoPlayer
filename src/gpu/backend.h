@@ -60,7 +60,9 @@ namespace ajp::gpu {
 // 17 : KernelOps::deband (débandage dans la chaîne CUDA) ; RTX HDR retiré (open_true_hdr, set_true_hdr,
 // scene_stats, write_ring_true_hdr, true_hdr_ramp).
 // 18 : DistilDRBA fusionné à deux sorties (flot et masque, variante mouvement du warp après SPAN).
-inline constexpr int kBackendAbi = 18;
+// 19 : KernelOps::frame_stats_start et frame_stats_take (analyse v2 pour le grade,
+// kernels/spec/frame_stats.h).
+inline constexpr int kBackendAbi = 19;
 
 using DeviceUuid = ajp::DeviceUuid;
 

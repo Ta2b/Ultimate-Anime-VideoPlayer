@@ -207,6 +207,25 @@ void add_detect(Table& t) {
     t.unsigned_integer(std::format("HELD_SCALE_{}", glsl_name(f)), held_scale(f));
 }
 
+void add_frame_stats(Table& t) {
+  namespace fs = frame_stats;
+  t.integer("FS_GRID_W", fs::kGridW, "Analyse d'une image (spec/frame_stats.h)");
+  t.integer("FS_GRID_H", fs::kGridH);
+  t.integer("FS_LUMA_BINS", fs::kLumaBins);
+  t.integer("FS_LINEAR_BINS", fs::kLinearBins);
+  t.integer("FS_ZONES", fs::kZones);
+  t.real("FS_BAR_LUMA", fs::kBarLuma);
+  t.real("FS_SDR_WHITE_NITS", fs::kSdrWhiteNits);
+  t.real("FS_HLG_PEAK_NITS", fs::kHlgPeakNits);
+  t.real("FS_BRIGHT_NITS", fs::kBrightNits);
+  t.real("FS_ISOLATED_RATIO", fs::kIsolatedRatio);
+  t.real("FS_SKIN_MIN_RED", fs::kSkinMinRed);
+  t.real("FS_SKIN_HUE_LO", fs::kSkinHueLo);
+  t.real("FS_SKIN_HUE_HI", fs::kSkinHueHi);
+  t.real("FS_SKIN_SAT_LO", fs::kSkinSatLo);
+  t.real("FS_SKIN_SAT_HI", fs::kSkinSatHi);
+}
+
 std::string_view type_name(GlslType type) {
   switch (type) {
     case GlslType::Float:
@@ -259,6 +278,7 @@ std::vector<GlslConstant> glsl_constants() {
   add_rife_warp(t);
   add_transfer(t);
   add_detect(t);
+  add_frame_stats(t);
   return t.take();
 }
 

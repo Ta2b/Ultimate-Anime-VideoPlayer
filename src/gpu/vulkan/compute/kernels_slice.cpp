@@ -296,4 +296,17 @@ Done KernelRunner::flow_max(Recorder& recorder, const MotionView& motion, const 
                       groups_for(static_cast<std::uint32_t>(area.height)), 1});
 }
 
+Done KernelRunner::frame_stats(Recorder& recorder, const TensorView& rgb, kernels::FrameTransfer transfer,
+                               const BufferView& counts) {
+  if (auto ok = check_tensor(rgb, 3, context_->caps().enabled, "analyse : image"); !ok) return ok;
+  if (rgb.width < 2 || rgb.height < 2)
+    return refuse(RefusalCode::ShapeInvalid, "analyse : image trop petite");
+  if (counts.size < sizeof(kernels::FrameCounts))
+    return refuse(RefusalCode::InputMismatch, std::format("analyse : {} o pour les comptes", counts.size));
+  const detail::FrameStatsPush push{rgb.width, rgb.height, static_cast<std::uint32_t>(transfer)};
+  const std::array buffers{rgb.buffer, counts};
+  return detail::run(*pipelines_, recorder, "frame_stats", rgb.precision, {}, buffers, {}, bytes_of(push),
+                     {1, 1, 1});
+}
+
 }  // namespace ajp::gpu::vk

@@ -3,11 +3,14 @@
 // le RGB, mesures de la paire, plus grand déplacement, warp à poses gardées.
 #include <algorithm>
 #include <array>
+#include <chrono>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <memory>
+#include <optional>
 #include <span>
+#include <thread>
 #include <vector>
 
 #include <catch2/catch_test_macros.hpp>
@@ -15,6 +18,7 @@
 #include "backend_rig.h"
 #include "gpu/vulkan/backend/kernel_ops.h"
 #include "gpu/vulkan/backend/reduce_weights.h"
+#include "kernels/ref/frame_stats.h"
 #include "kernels/ref/resample.h"
 #include "kernels/ref/rife.h"
 #include "kernels/ref/warp.h"
@@ -443,5 +447,72 @@ TEST_CASE("KernelOps : warp à poses gardées, contre kernels/ref", "[vk_backend
         ops.warp_blend_poses(ta->tensor(), tb->tensor(), now.gpu(), &shifted, 0.25F, out->tensor());
     REQUIRE_FALSE(refused);
     CHECK(refused.error().code == RefusalCode::ShapeInvalid);
+  }
+}
+
+TEST_CASE("KernelOps : analyse d'une image pour le grade, contre kernels/ref", "[vk_backend][kernels]") {
+  TempDir dir("frame_stats");
+  auto backend = make_backend(dir.path());
+  KernelOps& ops = *backend->kernels();
+  constexpr int w = 200, h = 120;
+  k::RgbImage image = synthetic_rgb(w, h, 17);
+  // Des bandes noires de 12 lignes et un teint, pour que chaque compte serve.
+  for (int y = 0; y < h; ++y) {
+    for (int x = 0; x < w; ++x) {
+      const bool bar = y < 12 || y >= h - 12;
+      const bool skin = !bar && x < 60 && y < 50;
+      for (int c = 0; c < 3; ++c) {
+        float& v = image.planes[static_cast<std::size_t>(c)].at(x, y);
+        if (bar) v = 0.0F;
+        if (skin) v = std::array{0.85F, 0.66F, 0.5F}[static_cast<std::size_t>(c)];
+      }
+    }
+  }
+  for (const TensorType type : {TensorType::F32, TensorType::F16}) {
+    if (type == TensorType::F16 && !backend->profile().target.f16_storage) continue;
+    const k::RgbImage kept = stored(image, type);
+    auto t = rgb_tensor(*backend, w, h, type);
+    write_tensor(*backend, t->tensor(), rgb_bytes(kept, type));
+    for (const k::FrameTransfer transfer :
+         {k::FrameTransfer::Sdr, k::FrameTransfer::Pq, k::FrameTransfer::Hlg}) {
+      const auto counts = k::ref::frame_counts(kept, transfer);
+      REQUIRE(counts);
+      const k::FrameStats want = k::ref::frame_stats_of(*counts);
+      const auto ticket = ops.frame_stats_start(t->tensor(), transfer);
+      REQUIRE(ticket);
+      std::optional<k::FrameStats> got;
+      for (int tries = 0; tries < 2000 && !got; ++tries) {
+        auto taken = ops.frame_stats_take(*ticket);
+        REQUIRE(taken);
+        got = *taken;
+        if (!got) std::this_thread::sleep_for(std::chrono::milliseconds(1));
+      }
+      REQUIRE(got);
+      CHECK_FALSE(ops.frame_stats_take(*ticket));  // relu une fois
+      CHECK(got->top == want.top);
+      CHECK(got->bottom == want.bottom);
+      CHECK(got->left == want.left);
+      // Un point peut changer de case sur un arrondi de pow : les parts restent à quelques points près.
+      const float point = 1.0F / (k::frame_stats::kGridW * k::frame_stats::kGridH);
+      CHECK(std::abs(got->skin - want.skin) <= 2.0F * point);
+      CHECK(std::abs(got->bright - want.bright) <= 4.0F * point);
+      CHECK(std::abs(got->highlights - want.highlights) <= 4.0F * point);
+      CHECK(std::abs(got->mean - want.mean) <= 1e-4F);
+      CHECK(std::abs(got->chroma - want.chroma) <= 1e-4F);
+      CHECK(std::abs(got->apl_nits - want.apl_nits) <= 1e-3F * std::max(want.apl_nits, 1.0F));
+      CHECK(std::abs(got->maxrgb_mean_nits - want.maxrgb_mean_nits) <=
+            1e-3F * std::max(want.maxrgb_mean_nits, 1.0F));
+      float maxrgb = 0.0F, ictcp = 0.0F, luma = 0.0F;
+      for (std::size_t i = 0; i < want.maxrgb_hist.size(); ++i) {
+        maxrgb += std::abs(got->maxrgb_hist[i] - want.maxrgb_hist[i]);
+        ictcp += std::abs(got->i_hist[i] - want.i_hist[i]);
+      }
+      for (std::size_t i = 0; i < want.luma_hist.size(); ++i)
+        luma += std::abs(got->luma_hist[i] - want.luma_hist[i]);
+      INFO("transfert " << static_cast<int>(transfer) << ", type " << static_cast<int>(type));
+      CHECK(maxrgb <= 8.0F * point);
+      CHECK(ictcp <= 8.0F * point);
+      CHECK(luma <= 8.0F * point);
+    }
   }
 }

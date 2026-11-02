@@ -40,6 +40,7 @@ set(glsl "${PROJECT_SOURCE_DIR}/src/kernels/glsl")
 # Les tenseurs des réseaux en float16 : variante « _f16 » des shaders qui en lisent ou écrivent.
 set(tensor_shaders
   "${glsl}/flow_max.comp"
+  "${glsl}/frame_stats.comp"
   "${glsl}/gmfss_compose.comp"
   "${glsl}/gmfss_normalize.comp"
   "${glsl}/gmfss_splat.comp"

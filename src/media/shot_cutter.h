@@ -11,10 +11,23 @@
 #include <optional>
 #include <vector>
 
+#include "kernels/spec/frame_stats.h"
+
 namespace ajp::media {
 
 inline constexpr int kShotBins = 64;
 inline constexpr int kShotGrid = 4;  // grille kShotGrid × kShotGrid de luminances moyennes
+
+// La lumière d'une image en cd/m² (kernels/spec/frame_stats.h, échelle linéaire).
+struct ShotLight {
+  std::array<float, kernels::frame_stats::kPercentiles.size()> maxrgb_nits{};  // centiles de maxRGB
+  float apl_nits = 0.0F;
+  float maxrgb_mean_nits = 0.0F;
+  float bright = 0.0F;      // part de surface claire
+  float highlights = 0.0F;  // part de hautes lumières isolées
+  float skin = 0.0F;        // part de peau
+  friend bool operator==(const ShotLight&, const ShotLight&) = default;
+};
 
 // Les mesures d'une image.
 struct ShotFrame {
@@ -24,6 +37,7 @@ struct ShotFrame {
   float mean = 0.0F;
   float blue = 0.0F;    // moyenne de max(0, B - max(R, V))
   float chroma = 0.0F;  // moyenne de max(R, V, B) - min(R, V, B)
+  ShotLight light;
 };
 
 // Les valeurs d'un plan, sur l'échelle de SceneStats.
@@ -42,6 +56,17 @@ struct ShotStats {
 // Les centiles et les parts d'un histogramme de kShotBins cases.
 ShotStats stats_of(const std::array<float, kShotBins>& histogram, float mean, float blue, float chroma);
 
+// La lumière d'un plan (ShotMeta de l'audit) : APL minimale, moyenne et maximale, maxSCL (le plus grand
+// centile 99,9 de maxRGB de ses images), et les moyennes des mesures de ses images.
+struct ShotMeta {
+  float apl_min_nits = 0.0F;
+  float apl_mean_nits = 0.0F;
+  float apl_max_nits = 0.0F;
+  float max_scl_nits = 0.0F;
+  ShotLight mean;
+  friend bool operator==(const ShotMeta&, const ShotMeta&) = default;
+};
+
 // Un plan : de start_us (première image) à end_us (première image du plan suivant, ou fin de la vidéo).
 // Un plan qui change vraiment de lumière (un fondu) garde ses valeurs du début et de la fin : le grade les
 // suit image par image ; les autres, une seule valeur (first == last).
@@ -54,7 +79,11 @@ struct Shot {
   // Vrai si le plan commence à une vraie coupe ; faux pour le premier plan analysé après un départ en
   // cours de vidéo (le début du fichier, ou un saut).
   bool cut_before = true;
+  ShotMeta meta;
 };
+
+// Les mesures d'une image à pts_us, tirées de l'analyse (kernels/spec/frame_stats.h).
+ShotFrame shot_frame_of(std::int64_t pts_us, const kernels::FrameStats& stats);
 
 // Différence entre deux images, de 0 (identiques) à 1 : histogramme et grille.
 float frame_distance(const ShotFrame& a, const ShotFrame& b);

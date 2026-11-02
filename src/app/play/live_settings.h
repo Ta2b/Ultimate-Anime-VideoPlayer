@@ -19,6 +19,7 @@
 #include "core/free_rate.h"
 #include "core/vsync_phase.h"
 #include "gpu/kernel_ops.h"
+#include "media/live_scenes.h"
 
 namespace ajp::app::play {
 
@@ -283,7 +284,13 @@ class LiveSettings {
                       .late = late_.load(std::memory_order_relaxed)};
   }
 
+  // Les scènes d'après l'analyse des images à l'ingestion (analyse v2) : gpu les écrit, main les lit
+  // tant que la pré-analyse des plans ne connaît pas l'image.
+  media::LiveScenes& scenes() { return scenes_; }
+  const media::LiveScenes& scenes() const { return scenes_; }
+
  private:
+  media::LiveScenes scenes_;
   std::atomic<std::uint32_t> rife_factor_{1};  // ×0/1
   std::atomic<bool> keep_poses_{false};
   std::atomic<bool> deband_source_{false};

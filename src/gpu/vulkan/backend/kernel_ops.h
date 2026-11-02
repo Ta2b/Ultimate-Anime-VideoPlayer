@@ -100,6 +100,9 @@ class VulkanKernelOps final : public KernelOps {
   std::expected<PairScores, Refusal> scores_now(const Tensor& a, const Tensor& b) override;
   std::expected<std::uint64_t, Refusal> scores_start(const Tensor& a, const Tensor& b) override;
   std::expected<PairScores, Refusal> scores_take(std::uint64_t ticket) override;
+  std::expected<std::uint64_t, Refusal> frame_stats_start(const Tensor& rgb,
+                                                          kernels::FrameTransfer transfer) override;
+  std::expected<std::optional<kernels::FrameStats>, Refusal> frame_stats_take(std::uint64_t ticket) override;
   std::expected<float, Refusal> flow_max_now(const Motion& motion) override;
   std::expected<std::uint64_t, Refusal> flow_max_start(const Motion& motion) override;
   std::expected<float, Refusal> flow_max_take(std::uint64_t ticket) override;
@@ -320,6 +323,13 @@ class VulkanKernelOps final : public KernelOps {
   };
   std::array<PairRead, kPendingReadbacks> pair_reads_;
   std::array<FlowRead, kPendingReadbacks> flow_reads_;
+  struct StatsRead {
+    std::optional<Buffer> counts;
+    std::uint64_t ticket = 0;
+    std::uint64_t value = 0;
+  };
+  std::array<StatsRead, kPendingReadbacks> stats_reads_;
+  std::uint64_t stats_tickets_ = 0;
   std::uint64_t pair_tickets_ = 0;  // derniers tickets lancés, par sorte
   std::uint64_t flow_tickets_ = 0;
   // Le tampon d'un emplacement, agrandi au besoin une fois finie l'exécution qui l'écrit encore.

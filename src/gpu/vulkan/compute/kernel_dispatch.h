@@ -149,6 +149,12 @@ struct FlowMaxPush {
   std::uint32_t area_height;
 };
 
+struct FrameStatsPush {
+  std::uint32_t width;
+  std::uint32_t height;
+  std::uint32_t transfer;  // kernels::FrameTransfer
+};
+
 struct SplatPush {
   std::uint32_t width;
   std::uint32_t height;

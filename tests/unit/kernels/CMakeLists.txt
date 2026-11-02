@@ -14,6 +14,7 @@ ajp_add_unit_tests(kernels
     rife_test.cpp
     tolerance_test.cpp
     transfer_test.cpp
+    frame_stats_test.cpp
     warp_test.cpp)
 
 # Les tests évaluent les formules constexpr de spec.h avec les arrondis de la référence :

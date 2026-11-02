@@ -23,9 +23,9 @@
 
 namespace ajp::media {
 
-// Les mesures d'une image décodée en mémoire hôte (Nv12, Yuv420p, P010, Yuv420p10 ; BT.601 ou BT.709) :
-// une grille de 128 × 72 points, hors bandes noires. Refus FormatUnsupported pour une image HDR, d'un autre
-// format ou hors de la mémoire hôte.
+// Les mesures d'une image décodée en mémoire hôte (Nv12, Yuv420p, P010, Yuv420p10 ; BT.601, BT.709 ou
+// BT.2020 ; SDR, PQ ou HLG) : la grille de kernels/spec/frame_stats.h, hors bandes noires, mesurée par
+// kernels/ref/frame_stats.h. Refus FormatUnsupported pour un autre format ou hors de la mémoire hôte.
 std::expected<ShotFrame, Refusal> measure_frame(const DecodedFrame& frame);
 
 struct ShotProbeOptions {

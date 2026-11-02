@@ -104,10 +104,44 @@ void tend_shots(ShotWork& work) {
   keep_if_done(work, work.current);
 }
 
+namespace {
+
+ShotScene scene_of(const media::ShotStats& s, std::uint64_t serial, bool fade) {
+  return ShotScene{.stats = {.mean = s.mean,
+                             .p05 = s.p05,
+                             .p50 = s.p50,
+                             .p95 = s.p95,
+                             .p995 = s.p995,
+                             .dark = s.dark,
+                             .bright = s.bright,
+                             .blue = s.blue,
+                             .chroma = s.chroma},
+                   .serial = serial,
+                   .fade = fade};
+}
+
+// Sans plan analysé : la scène que l'analyse à l'ingestion a vue pour cette image (media/live_scenes.h).
+// Ses numéros ne croisent jamais ceux des plans.
+std::optional<ShotScene> live_scene(const Chain& to, std::int64_t pts_us) {
+  const auto live = to.live.scenes().at(pts_us);
+  if (!live) return std::nullopt;
+  return scene_of(live->stats, (std::uint64_t{1} << 62U) | live->serial, false);
+}
+
+std::optional<std::int64_t> next_pts(Chain& to) {
+  const RingFrame* newest = to.session.newest_frame();
+  if (newest == nullptr || newest->pts_us == kNoPts) return std::nullopt;
+  return newest->pts_us + to.shots_step_us;
+}
+
+}  // namespace
+
 std::optional<ShotScene> next_shot(Chain& to, std::int64_t now_us) {
-  if (to.shots == nullptr || !to.shots->current.timeline) return std::nullopt;
+  if (to.shots == nullptr || !to.shots->current.timeline || to.shots->current.file != to.file) {
+    const auto pts = next_pts(to);
+    return pts ? live_scene(to, *pts) : std::nullopt;
+  }
   ShotJob& job = to.shots->current;
-  if (job.file != to.file) return std::nullopt;  // la chronologie d'une autre vidéo
   tend_shots(*to.shots);
   const media::ShotTimeline& timeline = *job.timeline;
   const ControlsView view = to.session.view();
@@ -138,19 +172,8 @@ std::optional<ShotScene> next_shot(Chain& to, std::int64_t now_us) {
     to.shots_newest_pts = newest->pts_us;
   }
   const auto shot = timeline.at(newest->pts_us + to.shots_step_us);
-  if (!shot) return std::nullopt;
-  const media::ShotStats& s = shot->stats;
-  return ShotScene{.stats = {.mean = s.mean,
-                             .p05 = s.p05,
-                             .p50 = s.p50,
-                             .p95 = s.p95,
-                             .p995 = s.p995,
-                             .dark = s.dark,
-                             .bright = s.bright,
-                             .blue = s.blue,
-                             .chroma = s.chroma},
-                   .serial = shot->serial,
-                   .fade = shot->fade};
+  if (!shot) return live_scene(to, newest->pts_us + to.shots_step_us);
+  return scene_of(shot->stats, shot->serial, shot->fade);
 }
 
 std::optional<double> shots_series_luma(const Chain& to) {
