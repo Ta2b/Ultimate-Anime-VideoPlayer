@@ -588,6 +588,23 @@ TEST_CASE("Étage gpu : DistilDRBA attend l'image suivante, la dernière n'est p
   CHECK(rig.credits.load() == 3);
 }
 
+TEST_CASE("Étage gpu : DistilDRBA rend b sans passe quand (b, après) est un dessin tenu", "[app][stage]") {
+  Rig rig;
+  rig.backend.score(SourceId{4}, SourceId{5}, 0.0, 10);  // dessin tenu
+  UpscaleSetup s = rig.setup(true);
+  s.rife = nullptr;
+  s.distil_drba = &rig.drba;
+  rig.start(std::move(s));
+  rig.feed(1, 6);
+  REQUIRE(rig.collect(8));
+  rig.stage.reset();
+
+  CHECK(shape_of(rig.sink.frames()) ==
+        std::vector<std::string>{"1", "1-2", "2", "2-3", "3", "3-4", "4", "5"});
+  // 3-4 à ½ est centrée sur 4, dont la paire suivante (4, 5) est tenue : l'image 4 telle quelle.
+  CHECK(rig.backend.count("engine drba") == 2);
+}
+
 TEST_CASE("Étage gpu : refus de démarrage nommés", "[app][stage]") {
   Rig rig;
   const auto refused = [&](UpscaleSetup s) {

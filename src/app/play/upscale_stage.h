@@ -373,6 +373,7 @@ class UpscaleStage final : public RingStage {
     bool time_only = true;  // faux si le backend refuse rife_time
     bool before_ok = false;
     bool after_ok = false;
+    bool after_held = false;  // (b, after) est un dessin tenu : les instants après ½ sont b
     bool continuous = false;  // la paire en cours suit la précédente sans coupe, mesures prises
     std::optional<SourceId> after_id;
     std::uint32_t after_epoch = 0;
@@ -384,6 +385,7 @@ class UpscaleStage final : public RingStage {
     SourceId ticket_right;
     std::uint64_t runs = 0;
     std::uint64_t edges = 0;  // passes sans l'image d'un côté (début, coupe, fin)
+    std::uint64_t held = 0;   // instants rendus sans passe : le côté de la paire est un dessin tenu
   };
   DrbaBuffers drba_;
   // Garder les poses (kernels/spec/poses.h) : ce qu'a bougé la paire précédente, et la paire en

@@ -50,8 +50,10 @@ UpscaleStage::~UpscaleStage() {
   if (spans_reused_ > 0)
     log_channel("gpu")->info("SPAN : {} passes évitées sur des dessins tenus", spans_reused_);
   if (drba()) {
-    log_channel("gpu")->info("DistilDRBA : {} passes, dont {} sans l'image d'un côté (début, coupe)",
-                             drba_.runs, drba_.edges);
+    log_channel("gpu")->info(
+        "DistilDRBA : {} passes, dont {} sans l'image d'un côté (début, coupe) ; {} instants sans passe "
+        "(côté tenu)",
+        drba_.runs, drba_.edges, drba_.held);
   }
   if (late_pairs_ > 0) {
     log_channel("gpu")->info("RIFE : {} paires en retard sur l'horloge, {} instants sautés pour la rattraper",
