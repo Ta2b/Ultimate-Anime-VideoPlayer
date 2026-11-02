@@ -26,11 +26,18 @@ void GpuTiming::begin(cudaStream_t stream) {
   collect();
   if (begun_ != ended_ || begun_ - read_ >= kPairs) return;  // paire ouverte, ou toutes en vol : on saute
   cudaEventRecord(start_[begun_ % kPairs], stream);
+  open_stream_ = stream;
   ++begun_;
 }
 
 void GpuTiming::end(cudaStream_t stream) {
   if (ended_ == begun_) return;
+  if (stream != open_stream_) {
+    // Fin sur une autre file que le début (autre voie, sans dépendance garantie) : la paire ne
+    // mesurerait rien de juste, elle est abandonnée.
+    --begun_;
+    return;
+  }
   cudaEventRecord(stop_[ended_ % kPairs], stream);
   ++ended_;
 }

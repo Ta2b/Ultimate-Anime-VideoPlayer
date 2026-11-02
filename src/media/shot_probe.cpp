@@ -4,6 +4,7 @@
 #include <array>
 #include <chrono>
 #include <cmath>
+#include <stop_token>
 #include <utility>
 #include <vector>
 
@@ -197,6 +198,8 @@ void ShotProbe::run(const std::stop_token& stop, std::int64_t start_us) {
   auto log = make_logger();
   auto demuxer = Demuxer::open(file_);
   if (!demuxer) return fail(std::move(demuxer.error()));
+  // L'arrêt (fermeture du fichier) interrompt aussi une lecture bloquée du démuxeur, sur un partage lent.
+  const std::stop_callback interrupt(stop, [&demuxer] { demuxer->interrupt(); });
   const TrackInfo* video = nullptr;
   for (const TrackInfo& track : demuxer->tracks())
     if (track.kind == TrackKind::Video && !track.attached_picture) {
@@ -207,9 +210,14 @@ void ShotProbe::run(const std::stop_token& stop, std::int64_t start_us) {
   const int track = video->index;
   const std::array<int, 1> keep{track};
   if (auto ok = demuxer->keep_only(keep); !ok) return fail(std::move(ok.error()));
-  const int threads = options_.threads > 0
-                          ? options_.threads
-                          : std::clamp(static_cast<int>(std::thread::hardware_concurrency()) / 2, 2, 4);
+#ifdef _WIN32
+  // Sous Windows, les threads de FFmpeg n'héritent pas de la priorité basse de celui-ci : le décodage reste
+  // sur ce thread, en arrière-plan, plutôt que de disputer les cœurs au rendu et à l'audio.
+  const int auto_threads = 1;
+#else
+  const int auto_threads = std::clamp(static_cast<int>(std::thread::hardware_concurrency()) / 2, 2, 4);
+#endif
+  const int threads = options_.threads > 0 ? options_.threads : auto_threads;
   auto decoder =
       VideoDecoder::open(*video, DecoderOptions{.attempts = {HwApi::Software}, .threads = threads});
   if (!decoder) return fail(std::move(decoder.error()));

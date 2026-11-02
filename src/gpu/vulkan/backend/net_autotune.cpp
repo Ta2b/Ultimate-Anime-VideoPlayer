@@ -286,6 +286,7 @@ std::expected<KernelChoice, Refusal> Autotuner::choose(const ir::Graph& graph, s
   std::vector<Probe> probes;
   std::optional<Refusal> last_error;
   std::optional<std::vector<float>> reference;
+  bool direct_reference = false;  // la référence vient du noyau direct, pas d'une variante seule
   const TunerOptions probe{.warmup = 1, .passes = 1, .repeats = 1};
   for (const KernelChoice& c : order) {
     if (stop.stop_requested()) return std::unexpected(Refusal{RefusalCode::Cancelled, "autotuner arrêté"});
@@ -296,6 +297,7 @@ std::expected<KernelChoice, Refusal> Autotuner::choose(const ir::Graph& graph, s
     }
     if (!reference) {
       reference = std::move(m->output);
+      direct_reference = c.variant == "direct";
     } else if (!agrees(m->output, *reference)) {
       ++rejected_;
       last_error =
@@ -307,6 +309,15 @@ std::expected<KernelChoice, Refusal> Autotuner::choose(const ir::Graph& graph, s
   }
   if (probes.empty()) {
     return std::unexpected(last_error.value_or(Refusal{RefusalCode::InputMismatch, "aucun candidat mesuré"}));
+  }
+  // Noyau direct en échec : une variante seule n'est vérifiée par rien. Il en faut deux qui concordent.
+  if (!direct_reference && probes.size() < 2) {
+    ++rejected_;
+    return std::unexpected(
+        Refusal{RefusalCode::InputMismatch,
+                std::format("noyau direct en échec ({}), aucune seconde variante pour vérifier {} {}",
+                            last_error ? last_error->detail : std::string("?"), probes.front().choice.variant,
+                            tuning_text(probes.front().choice))});
   }
   if (probes.size() == 1) {  // un seul candidat concordant : rien à départager
     ++measured_;

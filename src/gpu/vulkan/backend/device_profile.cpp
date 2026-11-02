@@ -99,6 +99,7 @@ DeviceProfile profile_device(const VkContext& context) {
   profile.matrix_allowed = matrix_units_allowed(profile.family, profile.driver);
   profile.matrix_unlisted = !profile.matrix_allowed && matrix_units_unlisted(profile.family, profile.driver);
   const bool offered = profile.matrix_hardware && (profile.matrix_allowed || profile.matrix_unlisted);
+  const bool sized = f.subgroup_size_control && f.compute_full_subgroups;
   profile.target = net::Target{.f16_storage = f.storage_buffer_16bit,
                                .f16_math = f.storage_buffer_16bit && f.shader_float16,
                                .matrix_units = offered,
@@ -106,8 +107,9 @@ DeviceProfile profile_device(const VkContext& context) {
                                .matrix_f16_acc = offered && tiles.f16_sums,
                                .matrix_f8 = offered && tiles.f8_e4m3 && f.float8_matrix,
                                .subgroup_size = caps.subgroup_size,
-                               .subgroup_min = f.subgroup_size_control ? caps.min_subgroup_size : 0,
-                               .subgroup_max = f.subgroup_size_control ? caps.max_subgroup_size : 0,
+                               // Taille exigée seulement avec des sous-groupes pleins garantis.
+                               .subgroup_min = sized ? caps.min_subgroup_size : 0,
+                               .subgroup_max = sized ? caps.max_subgroup_size : 0,
                                .max_push_constants = caps.max_push_constants,
                                .max_shared_memory = caps.max_shared_memory,
                                .max_workgroup_invocations = caps.max_workgroup_invocations,

@@ -426,6 +426,9 @@ std::expected<std::optional<PresentRecord>, Refusal> Session::tick(std::int64_t 
   auto timing = screen_.show(request);
   if (!timing) return std::unexpected(std::move(timing.error()));
 
+  // Présentation refusée (fenêtre cachée, swapchain à refaire) : l'image n'est pas à l'écran, elle se
+  // représente au tour suivant au lieu d'être tenue pour affichée.
+  if (!timing->presented) present_requested_ = true;
   shown_once_ = true;
   shown_at_us_ = timing->presented ? timing->present_us : host_now;
   shown_ui_ = ui.draw != nullptr;

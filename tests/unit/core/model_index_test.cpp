@@ -15,7 +15,7 @@ namespace {
 
 // Dossier de travail propre, sous le dossier de build où CTest lance les tests.
 fs::path scratch(const std::string& name) {
-  const fs::path dir = fs::current_path() / "test-tmp" / name;
+  const fs::path dir = fs::temp_directory_path() / "ajp-test-tmp" / name;
   fs::remove_all(dir);
   fs::create_directories(dir);
   return dir;
