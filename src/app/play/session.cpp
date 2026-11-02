@@ -459,6 +459,25 @@ std::expected<std::optional<PresentRecord>, Refusal> Session::tick(std::int64_t 
   return record;
 }
 
+std::int64_t Session::idle_wait_us(std::int64_t host_now) {
+  constexpr std::int64_t kPollUs = 1'000;
+  constexpr std::int64_t kIdleUs = 4'000;
+  if (prerolling_) return kPollUs;
+  const RingFrame* head = queue_.first_of(epoch_);
+  if (head == nullptr) return kIdleUs;
+  if (!screen_.ready(*head)) return kPollUs;
+  const ClockSnapshot now = clock_.snapshot();
+  if (!now.valid || now.epoch != epoch_ || now.rate <= 0.0 || head->pts_us == kNoPts) return kPollUs;
+  const std::int64_t period = display_period();
+  const std::int64_t lead_us = display_delay_us(period) + period / 2;
+  const auto media_wait = static_cast<double>(head->pts_us - lead_us - now.media_at(host_now));
+  std::int64_t wait = std::llround(media_wait / now.rate) - kCadenceSlackUs;
+  // Cadence fixe : l'image se représente à chaque période de l'écran.
+  if (config_.steady_cadence && config_.display_period_us > 0 && shown_once_)
+    wait = std::min(wait, shown_at_us_ + config_.display_period_us - kCadenceSlackUs - host_now);
+  return std::clamp(wait, kPollUs, kIdleUs);
+}
+
 std::int64_t Session::pacing_period_us() const {
   // Un écran plus lent que la sortie saute des images par construction : sa période compte.
   const std::int64_t nominal = config_.extra != nullptr ? config_.extra->output_period_us() : 0;

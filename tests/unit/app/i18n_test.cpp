@@ -120,6 +120,7 @@ TEST_CASE("i18n: aucune chaîne française en dur dans les fichiers traduits", "
                                         "gmfss_model.cpp",
                                         "gpu_tier.cpp",
                                         "home_screen.cpp",
+                                        "latest_writer.cpp",
                                         "main.cpp",
                                         "model_choice.cpp",
                                         "motion_model.cpp",
