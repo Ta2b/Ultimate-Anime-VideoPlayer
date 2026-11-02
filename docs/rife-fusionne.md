@@ -18,6 +18,11 @@ Prototype et banc : `tools/bench/fp8/rife_fusion/` de la branche `worktree-agent
   manifeste `.rifefused`, sous des noms qui portent la version de la dérivation, la taille et l'empreinte du modèle.
 - Le backend construit les six moteurs (trtexec, cache et timing cache habituels) et charge un `RifeFusedEngine`
   (`BackendCaps::rife_fused`, ABI 12) qui enfile moteurs et noyaux sur le flux du backend, dans un seul graphe CUDA.
+- Sur le backend Vulkan (appareil à stockage 16 bits, sans runtime de fabricant), les six morceaux deviennent des
+  artefacts `.ajpvk` et `gpu/vulkan/backend/rife_fused_engine.h` les relie par les mêmes noyaux portés en GLSL
+  (`kernels/glsl/rife_fused_*.comp`), enregistrés une fois puis rejoués. Tests : noyaux contre la référence CPU
+  (`tests/unit/vk_backend/rife_fused_test.cpp`), et en test caché `[.rife_fused]` la chaîne contre le RIFE entier
+  (4.22 lite en 128×64 sur lavapipe : 74,6 dB).
   Les tampons intermédiaires (≈ 120 Mo à 768×1280) suivent les activations dans la zone partagée de la voie.
 - Deux sorties : l'image (RIFE image) ou le flot et le masque (variante mouvement, le chemin par défaut du lecteur).
 - Repli sur le RIFE entier : réglage éteint, autre backend, cran de précision hors Équilibre, entrée v2 (7 plans),

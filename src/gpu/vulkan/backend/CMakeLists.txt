@@ -34,11 +34,13 @@ ajp_add_module(vk_backend
     net_weights.cpp
     queue.cpp
     reduce_weights.cpp
+    rife_fused_engine.cpp
     shared_tensor.cpp
     vulkan_backend.cpp
     vulkan_backend_runtime.cpp
+    vulkan_rife_fused.cpp
   DEPS ajp::vk_compute ajp::gpu_ir ajp::core_types
-  PRIVATE_DEPS ajp::kernels ajp::dep::spdlog)
+  PRIVATE_DEPS ajp::kernels ajp::prepare ajp::dep::spdlog)
 
 set(shaders "${PROJECT_SOURCE_DIR}/src/gpu/vulkan/shaders")
 # Une variante « _f16 » (tenseurs float16 permis) de chaque shader de réseau.
@@ -94,7 +96,7 @@ ajp_add_spirv(ajp_vk_backend
 
 # La bibliothèque chargée à l'exécution lie ces bibliothèques statiques : code indépendant de
 # la position.
-set_target_properties(ajp_vk_backend ajp_vk_compute ajp_gpu_ir ajp_kernels ajp_core_log
+set_target_properties(ajp_vk_backend ajp_vk_compute ajp_gpu_ir ajp_kernels ajp_core_log ajp_core
   PROPERTIES POSITION_INDEPENDENT_CODE ON)
 
 # La bibliothèque chargée à l'exécution : ajp_backend_vulkan.so (ajp_backend_<nom>, sans

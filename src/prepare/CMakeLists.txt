@@ -13,3 +13,6 @@ ajp_add_module(prepare
     receipt_fields.cpp sha256.cpp trtexec_command.cpp trtexec_progress.cpp utf8.cpp
   DEPS ajp::core ajp::gpu ajp::kernels
   PRIVATE_DEPS ajp::core_log ajp::dep::toml)
+
+# Lié aussi dans les bibliothèques chargées à l'exécution (ajp_backend_vulkan : RIFE fusionné).
+set_target_properties(ajp_prepare PROPERTIES POSITION_INDEPENDENT_CODE ON)

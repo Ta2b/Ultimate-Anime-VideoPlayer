@@ -28,13 +28,15 @@ ajp_add_unit_tests(vk_backend
     net_profile_test.cpp
     net_rig.cpp
     net_runtime_test.cpp
+    rife_fused_chain_test.cpp
+    rife_fused_test.cpp
     runtime_queue_test.cpp
     shared_tensor_test.cpp
     slice_ops_test.cpp
     test_models.cpp
     vendor_runtime_test.cpp
   # core : le SHA-256 du vrai modèle des références (core/model_index.h).
-  DEPS ajp::gpu_ir ajp::kernels ajp::core ${CMAKE_DL_LIBS}
+  DEPS ajp::gpu_ir ajp::kernels ajp::core ajp::prepare ${CMAKE_DL_LIBS}
   MAIN ajp_test_vulkan)
 
 # Sorties de référence par modèle (vendor_runtime_test.cpp) : enregistrées sous le dossier du
@@ -43,7 +45,11 @@ ajp_add_unit_tests(vk_backend
 # lu en place ; absent, seuls les modèles synthétiques servent.
 set(AJP_SPAN_MODEL "$ENV{HOME}/.local/share/AnimeJaNai-HDR-linux/animejanai/onnx/2x_AnimeJaNai_HD_V3.1Sharp1_Performance_SPANF3_b5f48_unshuffle_fp16.onnx"
     CACHE FILEPATH "Modèle SPAN ×2 d'AnimeJaNai pour les tests des runtimes")
+# Le dossier des RIFE du lecteur (rife_v4.22_lite.onnx, rife_v4.25.onnx), lus en place par le test caché
+# [.rife_fused] : la chaîne fusionnée contre le RIFE entier, tous deux sur le backend Vulkan.
+set(AJP_RIFE_MODEL_DIR "$ENV{HOME}/ajp/models/rife" CACHE PATH "Dossier des RIFE ONNX du lecteur (test caché [.rife_fused])")
 target_compile_definitions(ajp_vk_backend_tests PRIVATE
+  AJP_RIFE_MODEL_DIR="${AJP_RIFE_MODEL_DIR}"
   AJP_TEST_BACKEND="$<TARGET_FILE:ajp_backend_vulkan>"
   AJP_TEST_FAKE_BACKEND="$<TARGET_FILE:ajp_vk_backend_fake>"
   AJP_TEST_REFERENCE_DIR="${CMAKE_CURRENT_BINARY_DIR}/reference"

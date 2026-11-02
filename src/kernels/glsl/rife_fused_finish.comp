@@ -1,0 +1,72 @@
+#version 450
+// RIFE fusionné, la fin : flot du dernier bloc ajouté au flot accumulé ; puis l'image (warp des deux images,
+// masque sigmoïde, mélange), ou, variante mouvement (MOTION = 1), le flot final et le masque. Voir
+// rife_fused.glsl.
+#extension GL_GOOGLE_include_directive : require
+#include "tensor.glsl"
+#include "rife_fused.glsl"
+
+layout(local_size_x = 16, local_size_y = 16) in;
+
+layout(constant_id = 0) const uint MOTION = 0;
+
+layout(std430, binding = 0) readonly buffer Input { AJP_TENSOR v[]; } input_planes;
+layout(std430, binding = 1) readonly buffer XLast { AJP_TENSOR v[]; } x_last;  // canaux 24-27 : flot accumulé
+layout(std430, binding = 2) readonly buffer YLast { AJP_TENSOR v[]; } y_last;  // 52 canaux à h/2 × w/2
+layout(std430, binding = 3) writeonly buffer Image { AJP_TENSOR v[]; } image;  // 3 plans (ou le flot)
+layout(std430, binding = 4) writeonly buffer Mask { AJP_TENSOR v[]; } mask;    // 1 plan (variante mouvement)
+
+layout(push_constant) uniform Push {
+  uint height;
+  uint width;
+  uint y_height;
+  uint y_width;
+} pc;
+
+float read_z(uint c, uint zy, uint zx) {
+  uint channel = 4u * c + 2u * (zy & 1u) + (zx & 1u);
+  return float(y_last.v[(channel * pc.y_height + (zy >> 1u)) * pc.y_width + (zx >> 1u)]);
+}
+
+float plane_tap(uint p, FusedTap t) {
+  uint base = p * pc.height * pc.width;
+  return mix4(float(input_planes.v[base + t.y0 * pc.width + t.x0]),
+              float(input_planes.v[base + t.y0 * pc.width + t.x1]),
+              float(input_planes.v[base + t.y1 * pc.width + t.x0]),
+              float(input_planes.v[base + t.y1 * pc.width + t.x1]), t.wx, t.wy);
+}
+
+void main() {
+  uint x = gl_GlobalInvocationID.x;
+  uint y = gl_GlobalInvocationID.y;
+  if (x >= pc.width || y >= pc.height) return;
+  uint plane = pc.height * pc.width;
+  uint i = y * pc.width + x;
+  float fl[4];
+  for (uint k = 0u; k < 4u; ++k) {
+    precise float sum = float(x_last.v[(24u + k) * plane + i]) + read_z(k, y, x);
+    fl[k] = rounded(sum);
+  }
+  float sig = rounded(1.0 / (1.0 + exp(-read_z(4u, y, x))));
+  if (MOTION == 1u) {
+    for (uint k = 0u; k < 4u; ++k) image.v[k * plane + i] = AJP_TENSOR(fl[k]);
+    mask.v[i] = AJP_TENSOR(sig);
+    return;
+  }
+  float gx0 = float(input_planes.v[7u * plane + i]);
+  float gy0 = float(input_planes.v[8u * plane + i]);
+  float sx = float(input_planes.v[9u * plane + i]);
+  float sy = float(input_planes.v[10u * plane + i]);
+  float warped[6];
+  for (uint n = 0u; n < 2u; ++n) {
+    precise float gx = gx0 + fl[2u * n] * sx;
+    precise float gy = gy0 + fl[2u * n + 1u] * sy;
+    FusedTap tap = grid_tap(gx, gy, pc.width, pc.height);
+    for (uint ch = 0u; ch < 3u; ++ch) warped[3u * n + ch] = rounded(plane_tap(3u * n + ch, tap));
+  }
+  float rest = rounded(1.0 - sig);
+  for (uint ch = 0u; ch < 3u; ++ch) {
+    precise float v = rounded(warped[ch] * sig) + rounded(warped[3u + ch] * rest);
+    image.v[ch * plane + i] = AJP_TENSOR(v);
+  }
+}

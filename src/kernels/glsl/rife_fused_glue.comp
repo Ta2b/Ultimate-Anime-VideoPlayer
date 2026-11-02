@@ -1,0 +1,150 @@
+#version 450
+// RIFE fusionné, entrée X_k d'un bloc k ≥ 1 (28 canaux) : flot accumulé des blocs 0 à k-1 (DepthToSpace et
+// Resize ×d lus à la volée), warp des images et de leurs encodages, instant, masque et attributs du bloc
+// k-1, puis le Resize d'entrée du bloc (moyenne 2 × 2, ou rien à d = 1). Le flot et le warp ne s'évaluent
+// que sur les pixels que cette moyenne lit. Voir rife_fused.glsl.
+#extension GL_GOOGLE_include_directive : require
+#include "tensor.glsl"
+#include "rife_fused.glsl"
+
+layout(local_size_x = 16, local_size_y = 8) in;
+
+layout(std430, binding = 0) readonly buffer Input { AJP_TENSOR v[]; } input_planes;
+layout(std430, binding = 1) readonly buffer Encode { AJP_TENSOR v[]; } encode;
+layout(std430, binding = 2) writeonly buffer X { AJP_TENSOR v[]; } x;
+// Les sorties Y des blocs 0 à 3 (52 canaux) ; une source absente est liée à Y_0, jamais lue.
+layout(std430, binding = 3) readonly buffer Y0 { AJP_TENSOR v[]; } y0;
+layout(std430, binding = 4) readonly buffer Y1 { AJP_TENSOR v[]; } y1;
+layout(std430, binding = 5) readonly buffer Y2 { AJP_TENSOR v[]; } y2;
+layout(std430, binding = 6) readonly buffer Y3 { AJP_TENSOR v[]; } y3;
+
+layout(push_constant) uniform Push {
+  uint height;
+  uint width;
+  uint reduce;
+  uint out_height;
+  uint out_width;
+  uint flows;    // sources 0 à flows-1 : 1 à 4
+  uvec4 yh;      // hauteur de chaque Y
+  uvec4 yw;      // largeur
+  uvec4 scale;   // facteur du Resize de sortie de chaque bloc
+} pc;
+
+// DepthToSpace (CRD, 2) : Z[c][Y][X] = Y[4c + 2 (Y & 1) + (X & 1)][Y >> 1][X >> 1].
+float read_z(uint s, uint c, uint zy, uint zx) {
+  uint channel = 4u * c + 2u * (zy & 1u) + (zx & 1u);
+  uint i = (channel * pc.yh[s] + (zy >> 1u)) * pc.yw[s] + (zx >> 1u);
+  if (s == 0u) return float(y0.v[i]);
+  if (s == 1u) return float(y1.v[i]);
+  if (s == 2u) return float(y2.v[i]);
+  return float(y3.v[i]);
+}
+
+// Resize bilinéaire demi-pixel ×scale de Z (canal c) au pixel pleine résolution (px, py), arrondi FP16.
+struct Enlarge {
+  uint y0;
+  uint x0;
+  uint y1;
+  uint x1;
+  float wy;
+  float wx;
+};
+
+Enlarge enlarge_at(uint s, uint px, uint py) {
+  uint zh = 2u * pc.yh[s];
+  uint zw = 2u * pc.yw[s];
+  float inv = 1.0 / float(pc.scale[s]);
+  precise float sy = (float(py) + 0.5) * inv - 0.5;
+  precise float sx = (float(px) + 0.5) * inv - 0.5;
+  sy = min(max(sy, 0.0), float(zh - 1u));
+  sx = min(max(sx, 0.0), float(zw - 1u));
+  Enlarge e;
+  e.y0 = uint(sy);
+  e.x0 = uint(sx);
+  e.y1 = min(e.y0 + 1u, zh - 1u);
+  e.x1 = min(e.x0 + 1u, zw - 1u);
+  e.wy = sy - float(e.y0);
+  e.wx = sx - float(e.x0);
+  return e;
+}
+
+float enlarged(uint s, Enlarge e, uint c) {
+  return rounded(mix4(read_z(s, c, e.y0, e.x0), read_z(s, c, e.y0, e.x1), read_z(s, c, e.y1, e.x0),
+                      read_z(s, c, e.y1, e.x1), e.wx, e.wy));
+}
+
+float plane_tap(uint p, bool from_encode, FusedTap t) {
+  uint plane = pc.height * pc.width;
+  uint base = p * plane;
+  if (from_encode) {
+    return mix4(float(encode.v[base + t.y0 * pc.width + t.x0]), float(encode.v[base + t.y0 * pc.width + t.x1]),
+                float(encode.v[base + t.y1 * pc.width + t.x0]), float(encode.v[base + t.y1 * pc.width + t.x1]),
+                t.wx, t.wy);
+  }
+  return mix4(float(input_planes.v[base + t.y0 * pc.width + t.x0]),
+              float(input_planes.v[base + t.y0 * pc.width + t.x1]),
+              float(input_planes.v[base + t.y1 * pc.width + t.x0]),
+              float(input_planes.v[base + t.y1 * pc.width + t.x1]), t.wx, t.wy);
+}
+
+void main() {
+  uint ox = gl_GlobalInvocationID.x;
+  uint oy = gl_GlobalInvocationID.y;
+  if (ox >= pc.out_width || oy >= pc.out_height) return;
+  uint plane = pc.height * pc.width;
+  uint taps = pc.reduce > 1u ? 2u : 1u;
+  uint base = pc.reduce > 1u ? pc.reduce / 2u - 1u : 0u;
+  float flow_scale = 1.0 / float(pc.reduce);
+  float acc[28];
+  for (uint c = 0u; c < 28u; ++c) acc[c] = 0.0;
+
+  for (uint ty = 0u; ty < taps; ++ty) {
+    for (uint tx = 0u; tx < taps; ++tx) {
+      uint px = pc.reduce * ox + base + tx;
+      uint py = pc.reduce * oy + base + ty;
+      uint i = py * pc.width + px;
+      // Flot accumulé : sommes FP16 de chaque bloc, multiplié par l'échelle de son Resize.
+      float fl[4];
+      {
+        Enlarge e = enlarge_at(0u, px, py);
+        for (uint k = 0u; k < 4u; ++k) fl[k] = enlarged(0u, e, k) * float(pc.scale[0]);
+      }
+      for (uint s = 1u; s < 4u; ++s) {
+        if (s >= pc.flows) break;
+        Enlarge e = enlarge_at(s, px, py);
+        for (uint k = 0u; k < 4u; ++k) {
+          precise float sum = fl[k] + enlarged(s, e, k) * float(pc.scale[s]);
+          fl[k] = rounded(sum);
+        }
+      }
+      // Warp des deux images (7 canaux chacune : 3 de l'image, 4 de l'encodage).
+      float gx0 = float(input_planes.v[7u * plane + i]);
+      float gy0 = float(input_planes.v[8u * plane + i]);
+      float sx = float(input_planes.v[9u * plane + i]);
+      float sy = float(input_planes.v[10u * plane + i]);
+      for (uint n = 0u; n < 2u; ++n) {
+        precise float gx = gx0 + fl[2u * n] * sx;
+        precise float gy = gy0 + fl[2u * n + 1u] * sy;
+        FusedTap tap = grid_tap(gx, gy, pc.width, pc.height);
+        for (uint ch = 0u; ch < 7u; ++ch) {
+          bool enc = ch >= 3u;
+          uint p = enc ? 4u * n + ch - 3u : 3u * n + ch;
+          uint dst = enc ? 6u + 4u * n + ch - 3u : 3u * n + ch;
+          acc[dst] += rounded(plane_tap(p, enc, tap));
+        }
+      }
+      acc[14] += float(input_planes.v[6u * plane + i]);
+      // Masque et attributs du dernier bloc calculé.
+      {
+        uint last = pc.flows - 1u;
+        Enlarge e = enlarge_at(last, px, py);
+        for (uint k = 0u; k < 9u; ++k) acc[15u + k] += enlarged(last, e, 4u + k);
+      }
+      for (uint k = 0u; k < 4u; ++k) acc[24u + k] += rounded(fl[k] * flow_scale);
+    }
+  }
+  float norm = 1.0 / float(taps * taps);
+  uint out_plane = pc.out_height * pc.out_width;
+  uint o = oy * pc.out_width + ox;
+  for (uint c = 0u; c < 28u; ++c) x.v[c * out_plane + o] = AJP_TENSOR(acc[c] * norm);
+}

@@ -1,0 +1,41 @@
+#version 450
+// RIFE fusionné, entrée du bloc 0 : 15 canaux, moyenne 2 × 2 (centrée dans chaque carré de d × d) des images
+// A et B, de leurs encodages et de l'instant. Voir rife_fused.glsl.
+#extension GL_GOOGLE_include_directive : require
+#include "tensor.glsl"
+#include "rife_fused.glsl"
+
+layout(local_size_x = 16, local_size_y = 16) in;
+
+layout(std430, binding = 0) readonly buffer Input { AJP_TENSOR v[]; } input_planes;  // 11 plans
+layout(std430, binding = 1) readonly buffer Encode { AJP_TENSOR v[]; } encode;       // 8 plans
+layout(std430, binding = 2) writeonly buffer X { AJP_TENSOR v[]; } x;                // 15 plans réduits
+
+layout(push_constant) uniform Push {
+  uint height;
+  uint width;
+  uint reduce;
+  uint out_height;
+  uint out_width;
+} pc;
+
+float source(uint c, uint i) {
+  uint plane = pc.height * pc.width;
+  if (c < 6u) return float(input_planes.v[c * plane + i]);
+  if (c < 14u) return float(encode.v[(c - 6u) * plane + i]);
+  return float(input_planes.v[6u * plane + i]);
+}
+
+void main() {
+  uint ox = gl_GlobalInvocationID.x;
+  uint oy = gl_GlobalInvocationID.y;
+  if (ox >= pc.out_width || oy >= pc.out_height) return;
+  uint base = pc.reduce / 2u - 1u;
+  uint i00 = (pc.reduce * oy + base) * pc.width + pc.reduce * ox + base;
+  uint out_plane = pc.out_height * pc.out_width;
+  for (uint c = 0u; c < 15u; ++c) {
+    precise float v =
+        (source(c, i00) + source(c, i00 + 1u) + source(c, i00 + pc.width) + source(c, i00 + pc.width + 1u)) * 0.25;
+    x.v[c * out_plane + oy * pc.out_width + ox] = AJP_TENSOR(v);
+  }
+}
