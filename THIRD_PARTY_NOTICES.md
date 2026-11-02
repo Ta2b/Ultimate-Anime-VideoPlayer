@@ -25,11 +25,18 @@ Source de chaque fichier : `tools/release/fetch-models.sh` (SHA-256 vérifiés).
 | NVIDIA CUTLASS | **BSD-3-Clause**, © 2017-2026 NVIDIA CORPORATION & AFFILIATES | 4.8.1, en-têtes seulement, copiés dans `third_party/cutlass/` avec leur `LICENSE.txt` (les 259 fichiers que les noyaux du SPAN FP8 incluent, `docs/span-fp8-cutlass.md`) ; compilés dans le backend TensorRT. https://github.com/NVIDIA/cutlass |
 | FreeType (FTL), HarfBuzz, FriBidi (LGPL-2.1), Fontconfig, lcms2 | licences de leurs projets | via libplacebo et libass |
 
+## Code repris
+
+| Composant | Licence | Où |
+|---|---|---|
+| TweetNaCl (D. J. Bernstein, W. Janssen, T. Lange, P. Schwabe, S. Smetsers, B. van Gastel) | **domaine public** | Arithmétique de la vérification Ed25519 des mises à jour, réécrite en C++ (`src/app/play/ed25519.cpp`) ; le SHA-512 vient de libavutil (FFmpeg). https://tweetnacl.cr.yp.to |
+| Mesures de luminance d'une dalle QD-OLED 27" 4K (RTINGS, PG27UCDM) | faits mesurés, cités | Courbe du limiteur du modèle d'écran (`src/render/display_model.cpp`). https://www.rtings.com |
+
 FFmpeg, libplacebo et FriBidi sont des bibliothèques partagées (`lib/`) : vous pouvez les remplacer par une version modifiée de la même interface. Leurs sources sont disponibles aux adresses et versions ci-dessus.
 
 ## LUT d'HDR (data/luts)
 
-55 LUT 3D `.cube` (« HDR LUT ver.9.1 ») ajoutées au dépôt à la demande de son propriétaire ; auteur et licence d'origine non indiqués dans l'archive reçue, voir `data/luts/ATTRIBUTION.md`.
+55 LUT 3D `.cube` (« HDR LUT ver.9.1 », générées par DaVinci Resolve) ajoutées au dépôt à la demande de son propriétaire, qui répond de leur redistribution ; auteur et licence d'origine non indiqués dans l'archive reçue (ni readme ni licence), voir `data/luts/ATTRIBUTION.md`. À compléter dès qu'ils sont connus, ou à retirer si l'auteur s'y oppose.
 
 ## Images d'exemple de la calibration du grade (data/calibration)
 

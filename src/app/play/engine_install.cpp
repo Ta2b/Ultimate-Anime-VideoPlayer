@@ -19,6 +19,8 @@
 #include <windows.h>
 #endif
 
+#include <SDL3/SDL_loadso.h>
+
 #include "app/play/engine_tools.h"
 #include "core/inflate.h"
 #include "core/log.h"
@@ -36,6 +38,25 @@ bool any_exists(std::initializer_list<std::string_view> paths) {
     if (std::filesystem::exists(std::filesystem::path(p), error)) return true;
   }
   return false;
+}
+
+// AL6 : la version majeure du runtime HIP installé, lue par la bibliothèque elle-même (hipRuntimeGetVersion,
+// HIP_VERSION = majeure × 10⁷ + mineure × 10⁵ + correctif) : un nom de fichier ne dit rien d'un ROCm plus
+// récent que celui contre lequel le module est construit. Rien si aucune ne se charge.
+std::optional<int> hip_runtime_major() {
+  for (const char* path :
+       {"/opt/rocm/lib/libamdhip64.so", "/opt/rocm/lib/libamdhip64.so.7", "libamdhip64.so"}) {
+    SDL_SharedObject* lib = SDL_LoadObject(path);
+    if (lib == nullptr) continue;
+    using GetVersion = int (*)(int*);
+    const auto get = reinterpret_cast<GetVersion>(SDL_LoadFunction(lib, "hipRuntimeGetVersion"));
+    int version = 0;
+    std::optional<int> major;
+    if (get != nullptr && get(&version) == 0 && version > 0) major = version / 10000000;
+    SDL_UnloadObject(lib);
+    if (major) return major;
+  }
+  return std::nullopt;
 }
 
 // MIGraphX de Windows ML demande Windows 11 24H2 (build 26100) ; le pilote AMD, Windows ML le
@@ -152,11 +173,16 @@ std::optional<std::string> missing_prerequisite(core::EngineId engine) {
       if (!any_exists({"/opt/rocm/lib/libmigraphx_c.so.3", "/opt/rocm/lib/libmigraphx_c.so"}))
         return i18n::tr(
             "ROCm missing: install \"migraphx\" from AMD's ROCm 7 repository (sudo apt install migraphx)");
-      if (!any_exists({"/opt/rocm/lib/libamdhip64.so.7"}))
-        return i18n::tr(
-            "ROCm 7 required (ROCm 6 installed): switch to AMD's ROCm 7 repository, then sudo apt install "
-            "migraphx");
-      return std::nullopt;
+      // ROCm 7 ou plus récent (10.x depuis octobre 2026) : la version que dit le runtime ; à défaut, le
+      // fichier du runtime de ROCm 7.
+      if (const std::optional<int> major = hip_runtime_major()) {
+        if (*major >= 7) return std::nullopt;
+      } else if (any_exists({"/opt/rocm/lib/libamdhip64.so.7"})) {
+        return std::nullopt;
+      }
+      return i18n::tr(
+          "ROCm 7 required (ROCm 6 installed): switch to AMD's ROCm 7 repository, then sudo apt install "
+          "migraphx");
     case core::EngineId::OpenVino:
       if (any_exists({"/usr/lib/x86_64-linux-gnu/libze_intel_gpu.so.1",
                       "/usr/lib/x86_64-linux-gnu/intel-opencl/libigdrcl.so",
