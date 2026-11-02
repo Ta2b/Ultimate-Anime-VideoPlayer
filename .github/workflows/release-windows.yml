@@ -174,7 +174,8 @@ jobs:
           }
           # Une étiquette sans « - » (v0.7.0) est une vraie release ; une rc reste une préversion. Les notes
           # reprennent celles du dépôt, même si la release a été créée avant (paquet TensorRT Windows joint).
-          $edit = if ($env:TAG -like "*-*") { @("--prerelease=true") } else { @("--prerelease=false", "--latest") }
+          # @(…) autour du if : un tableau d'un seul élément serait déroulé en chaîne, puis éclaté lettre par lettre.
+          $edit = @(if ($env:TAG -like "*-*") { "--prerelease=true" } else { "--prerelease=false"; "--latest" })
           $notes = "tools/release/notes/$env:TAG.md"
           if (Test-Path $notes) { $edit += @("--notes-file", $notes) }
           gh release edit $env:TAG -R $env:AJP_RELEASE_REPO @edit
