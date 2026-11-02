@@ -309,8 +309,9 @@ TEST_CASE("Réseau : épilogue en registres de la variante coopmat, proposé et 
       std::ranges::find(program.dispatches, static_cast<std::uint32_t>(conv), &vk::net::Dispatch::node);
   REQUIRE(d != program.dispatches.end());
   CHECK(d->shader == "net_conv_coopmat_f16");
-  CHECK(d->constants[d->constants.size() - 2] == 1U);  // DIRECT_EPI
-  CHECK(d->constants.back() == 0U);                    // HALO
+  CHECK(d->constants[d->constants.size() - 3] == 1U);  // DIRECT_EPI
+  CHECK(d->constants[d->constants.size() - 2] == 0U);  // HALO
+  CHECK(d->constants.back() == 0U);                    // NTG
   REQUIRE(d->bindings[2].kind == vk::net::BindingKind::Blob);
   const auto& bias = program.blobs[d->bindings[2].index];
   REQUIRE(bias.size() == (16 * 16 * sizeof(float)) + (256 * 2));
@@ -359,7 +360,7 @@ TEST_CASE("Réseau : tuiles à halo de la variante coopmat, proposées et abaiss
   const auto d =
       std::ranges::find(program.dispatches, static_cast<std::uint32_t>(conv), &vk::net::Dispatch::node);
   REQUIRE(d != program.dispatches.end());
-  CHECK(d->constants.back() == 1U);
+  CHECK(d->constants[d->constants.size() - 2] == 1U);  // HALO
   const std::uint32_t rows = halo->tuning[0] * halo->tuning[1];
   CHECK(d->groups[0] == 2U);  // 17 colonnes
   CHECK(d->groups[1] == (13 + rows - 1) / rows);
@@ -370,4 +371,43 @@ TEST_CASE("Réseau : tuiles à halo de la variante coopmat, proposées et abaiss
   CHECK(vk::net::detail::matrix_halo_pixels(8, 3, 3, 1, 1) == 10U * 18U);
   CHECK(vk::net::detail::matrix_halo_shared_bytes(4, 16, 180) == (2U * 180 * 2 * 16) + (4U * 256 * 4) + 32U);
   CHECK(vk::net::detail::matrix_halo_shared_bytes(4, 32, 180) == (2U * 180 * 5 * 16) + (4U * 256 * 4) + 32U);
+}
+
+// V1, canaux découpés sur la grille : une Conv de 64 canaux (4 tuiles) est proposée à 2 tuiles
+// par groupe, avec des tuiles de pixels plus hautes ; abaissée, la grille en z double.
+TEST_CASE("Réseau : canaux découpés sur la grille de la variante coopmat", "[vk_backend][net][conv]") {
+  NetRig rig = make_net_rig();
+  const ir::Graph graph = build(chain_model(true, 16, 64));
+  vk::net::Target target = rig.target;
+  target.matrix_units = true;
+  target.matrix_first = true;
+  target.matrix_f16_acc = false;
+  if (target.subgroup_size == 0) target.subgroup_size = 32;
+  std::size_t conv = 0;
+  std::vector<vk::net::KernelChoice> options;
+  for (std::size_t k = 0, seen = 0; k < graph.nodes.size(); ++k) {
+    if (graph.nodes[k].op == ir::OpKind::Conv && ++seen == 2) {
+      conv = k;
+      options = require_value(vk::net::candidates(graph, k, target));
+      break;
+    }
+  }
+  const auto split = std::ranges::find_if(options, [](const vk::net::KernelChoice& c) {
+    return c.variant == "coopmat" && c.tuning.size() == 6 && c.tuning[5] == 2 && c.tuning[0] == 8;
+  });
+  REQUIRE(split != options.end());
+  CHECK(options.front().tuning.size() < 4);
+  std::vector<vk::net::KernelChoice> choices = require_value(vk::net::default_choices(graph, target));
+  choices[conv] = *split;
+  const vk::net::Program program = require_value(vk::net::lower(graph, choices, target));
+  const auto d =
+      std::ranges::find(program.dispatches, static_cast<std::uint32_t>(conv), &vk::net::Dispatch::node);
+  REQUIRE(d != program.dispatches.end());
+  CHECK(d->constants.back() == 2U);
+  CHECK(d->groups[2] == 2U);
+  // 3 tuiles par groupe ne divisent pas 4 ; 8 × 4 dépasse 16 fragments : refusés.
+  choices[conv].tuning[5] = 3;
+  CHECK_FALSE(vk::net::lower(graph, choices, target).has_value());
+  choices[conv].tuning[5] = 4;
+  CHECK_FALSE(vk::net::lower(graph, choices, target).has_value());
 }
