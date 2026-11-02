@@ -174,7 +174,13 @@ vec4 hook() {
     float glow = 0.0;
     float sky = 0.0;
     float series_bright = 0.0;
-    if (ad_on > 0.5) {
+    // La calibration (gl_force >= 0) tient la scène ici même, sans passer par la passe des statistiques : un
+    // seuil sous la plage (ad_lo < 0,5 : -2, ou 0 si le paramètre est borné) tient la scène claire, au-dessus
+    // (2, ou 1) la sombre ; gl_force donne le poids de l'éclat.
+    if (ad_on > 0.5 && gl_force >= 0.0) {
+        t_scene = ad_lo < 0.5 ? 1.0 : 0.0;
+        glow = clamp(gl_force, 0.0, 1.0);
+    } else if (ad_on > 0.5) {
         vec4 scene = AJG_STATS_tex(vec2(0.75, 0.5));
         t_scene = clamp(scene.x, 0.0, 1.0);
         glow = clamp(scene.y, 0.0, 1.0);

@@ -653,4 +653,49 @@ TEST_CASE("grade adaptatif (shader) : les bandes noires d'un film ne font pas pa
   CHECK(std::abs(barred[8][0] - open[8][0]) < 0.25);  // les bandes ne changent rien
 }
 
+TEST_CASE(
+    "grade adaptatif (shader) : la calibration tient la scène claire ou l'éclat, quelle que soit l'image",
+    "[render][gpu][adaptif]") {
+  Gpu gpu;
+  require_device(gpu);
+  REQUIRE(gpu.grade);
+  // Une image sombre (5 et 8 nits) : sans la calibration, la scène serait sombre et les noirs intacts.
+  std::vector<std::uint16_t> pixels(static_cast<std::size_t>(kSide) * kSide * 4);
+  for (int y = 0; y < kSide; ++y)
+    for (int x = 0; x < kSide; ++x) {
+      const double nits = x < 26 ? 5.0 : 8.0;
+      const std::size_t at = (static_cast<std::size_t>(y) * kSide + static_cast<std::size_t>(x)) * 4;
+      for (std::size_t c = 0; c < 3; ++c)
+        pixels[at + c] = static_cast<std::uint16_t>(std::lround(nits_to_pq(nits) * 65535.0));
+      pixels[at + 3] = 65535;
+    }
+  GradeParams params = expanded(0.0);
+  params.shadows = 0.0;
+  params.shadow_knee = 50.0;
+  params.ad_on = 1.0;
+  params.ad_shadows = 0.9;  // scène claire
+  params.gl_shadows = 0.0;  // scène sombre avec éclat
+  params.ad_em_base = params.em_base;
+  params.ad_em_pow = params.em_pow;
+  params.gl_em_base = params.em_base;
+  params.gl_em_pow = params.em_pow;
+  // Étape « scène claire » : les seuils sous la plage (grade_params.cpp, apply_adaptive).
+  params.ad_lo = -2.0;
+  params.ad_hi = -1.0;
+  params.gl_force = 0.0;
+  const std::vector<Rgb> bright = graded_rgb(gpu, pixels, params);
+  // Étape « éclat » : ses noirs à elle, creusés à leur tour.
+  params.ad_lo = 2.0;
+  params.ad_hi = 3.0;
+  params.gl_force = 1.0;
+  params.gl_shadows = 0.9;
+  const std::vector<Rgb> glow = graded_rgb(gpu, pixels, params);
+  // Étape « scène sombre » : les curseurs de base, intacts.
+  params.gl_force = 0.0;
+  const std::vector<Rgb> dark = graded_rgb(gpu, pixels, params);
+  CHECK(bright[8][0] < 2.5);
+  CHECK(glow[8][0] < 2.5);
+  CHECK(dark[8][0] > 4.0);
+}
+
 }  // namespace ajp::render
