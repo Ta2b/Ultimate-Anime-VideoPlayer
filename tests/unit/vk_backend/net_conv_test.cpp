@@ -309,7 +309,8 @@ TEST_CASE("Réseau : épilogue en registres de la variante coopmat, proposé et 
       std::ranges::find(program.dispatches, static_cast<std::uint32_t>(conv), &vk::net::Dispatch::node);
   REQUIRE(d != program.dispatches.end());
   CHECK(d->shader == "net_conv_coopmat_f16");
-  CHECK(d->constants.back() == 1U);
+  CHECK(d->constants[d->constants.size() - 2] == 1U);  // DIRECT_EPI
+  CHECK(d->constants.back() == 0U);                    // HALO
   REQUIRE(d->bindings[2].kind == vk::net::BindingKind::Blob);
   const auto& bias = program.blobs[d->bindings[2].index];
   REQUIRE(bias.size() == (16 * 16 * sizeof(float)) + (256 * 2));
@@ -321,4 +322,52 @@ TEST_CASE("Réseau : épilogue en registres de la variante coopmat, proposé et 
   std::memcpy(&zero, bias.data() + 1024 + 2, 2);
   CHECK(one == 0x3C00);
   CHECK(zero == 0);
+}
+
+// V5, tuiles 2D avec halo : proposées pour une Conv 3 × 3 de pas 1, B jamais partagée ; abaissées,
+// une grille (colonnes de 16, lignes du groupe, images) et la mémoire partagée de deux fenêtres.
+TEST_CASE("Réseau : tuiles à halo de la variante coopmat, proposées et abaissées",
+          "[vk_backend][net][conv]") {
+  NetRig rig = make_net_rig();
+  const ir::Graph graph = build(chain_model(true, 16, 16));
+  vk::net::Target target = rig.target;
+  target.matrix_units = true;
+  target.matrix_first = true;
+  target.matrix_f16_acc = false;
+  target.max_shared_memory = std::max<std::uint32_t>(target.max_shared_memory, 32768);
+  if (target.subgroup_size == 0) target.subgroup_size = 32;
+  std::size_t conv = 0;
+  std::vector<vk::net::KernelChoice> options;
+  for (std::size_t k = 0, seen = 0; k < graph.nodes.size(); ++k) {
+    if (graph.nodes[k].op == ir::OpKind::Conv && ++seen == 2) {
+      conv = k;
+      options = require_value(vk::net::candidates(graph, k, target));
+      break;
+    }
+  }
+  const auto halo = std::ranges::find_if(options, [](const vk::net::KernelChoice& c) {
+    return c.variant == "coopmat" && c.tuning.size() == 5 && c.tuning[4] == 1;
+  });
+  REQUIRE(halo != options.end());
+  CHECK(halo->tuning[2] == 0U);
+  CHECK(std::ranges::none_of(options, [](const vk::net::KernelChoice& c) {
+    return c.tuning.size() == 5 && c.tuning[4] == 1 && c.tuning[2] == 1;
+  }));
+  std::vector<vk::net::KernelChoice> choices = require_value(vk::net::default_choices(graph, target));
+  choices[conv] = *halo;
+  const vk::net::Program program = require_value(vk::net::lower(graph, choices, target));
+  const auto d =
+      std::ranges::find(program.dispatches, static_cast<std::uint32_t>(conv), &vk::net::Dispatch::node);
+  REQUIRE(d != program.dispatches.end());
+  CHECK(d->constants.back() == 1U);
+  const std::uint32_t rows = halo->tuning[0] * halo->tuning[1];
+  CHECK(d->groups[0] == 2U);  // 17 colonnes
+  CHECK(d->groups[1] == (13 + rows - 1) / rows);
+  // Une B partagée avec le halo est refusée.
+  choices[conv].tuning[2] = 1;
+  CHECK_FALSE(vk::net::lower(graph, choices, target).has_value());
+  // Deux fenêtres de (lignes + 2) × 18 pixels, la tuile de l'épilogue et un uvec4 de B par tampon.
+  CHECK(vk::net::detail::matrix_halo_pixels(8, 3, 3, 1, 1) == 10U * 18U);
+  CHECK(vk::net::detail::matrix_halo_shared_bytes(4, 16, 180) == (2U * 180 * 2 * 16) + (4U * 256 * 4) + 32U);
+  CHECK(vk::net::detail::matrix_halo_shared_bytes(4, 32, 180) == (2U * 180 * 5 * 16) + (4U * 256 * 4) + 32U);
 }

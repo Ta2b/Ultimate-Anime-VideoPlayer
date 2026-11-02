@@ -26,6 +26,17 @@ std::uint32_t detail::matrix_shared_bytes(std::uint32_t subgroups, std::uint32_t
   return (2 * subgroups * tm * 16 * row * 16) + (subgroups * 256 * 4) + (2 * b_quads * 16);
 }
 
+std::uint32_t detail::matrix_halo_shared_bytes(std::uint32_t subgroups, std::uint32_t kc,
+                                               std::uint32_t hpix) {
+  const std::uint32_t row = (kc / 8) + ((kc / 32) + 1) / 2;
+  return (2 * hpix * row * 16) + (subgroups * 256 * 4) + (2 * 16);
+}
+
+std::uint32_t detail::matrix_halo_pixels(std::uint32_t rows, std::uint32_t kh, std::uint32_t kw,
+                                         std::uint32_t dh, std::uint32_t dw) {
+  return (rows + ((kh - 1) * dh)) * (16 + ((kw - 1) * dw));
+}
+
 namespace {
 
 constexpr std::string_view kDirect = "direct";
@@ -76,6 +87,15 @@ std::uint32_t matrix_step_channels(std::uint32_t cinp, std::uint32_t subgroups, 
                                    std::uint32_t np, std::uint32_t max_shared) {
   for (const std::uint32_t kc : {64U, 32U}) {
     if (cinp % kc == 0 && detail::matrix_shared_bytes(subgroups, tm, kc, np) <= max_shared) return kc;
+  }
+  return 16;
+}
+
+// Variante à halo : le plus grand de 64, 32, 16 qui divise cinp et dont les deux fenêtres tiennent.
+std::uint32_t matrix_halo_step_channels(std::uint32_t cinp, std::uint32_t subgroups, std::uint32_t hpix,
+                                        std::uint32_t max_shared) {
+  for (const std::uint32_t kc : {64U, 32U}) {
+    if (cinp % kc == 0 && detail::matrix_halo_shared_bytes(subgroups, kc, hpix) <= max_shared) return kc;
   }
   return 16;
 }
@@ -245,6 +265,28 @@ std::expected<std::vector<KernelChoice>, Refusal> candidates(const ir::Graph& gr
           matrix.push_back({.variant = std::string(kMatrixAcc16), .tuning = {tm, subgroups}});
       }
     }
+    // Tuiles 2D avec halo (cinquième réglage à 1) : Conv de pas 1 à plusieurs prises, B lue dans le
+    // tampon ; en fin de liste, comme l'épilogue en registres, que l'autotuner seul retient.
+    const auto win = conv_window(graph, node);
+    if (win && win->sh == 1 && win->sw == 1 && win->kh * win->kw > 1) {
+      const auto height = static_cast<std::uint32_t>(result[2]);
+      const auto wide = static_cast<std::uint32_t>(result[3]);
+      const std::size_t count = matrix.size();
+      for (std::size_t i = 0; i < count; ++i) {
+        if (matrix[i].tuning.size() > 2) continue;  // B partagée
+        const std::uint32_t tm = matrix[i].tuning[0];
+        const std::uint32_t subgroups = matrix[i].tuning[1];
+        const std::uint32_t hpix =
+            detail::matrix_halo_pixels(subgroups * tm, win->kh, win->kw, win->dh, win->dw);
+        if (div_up(wide, 16) > target.max_workgroup_count_x || div_up(height, subgroups * tm) > kMaxGroups ||
+            detail::matrix_halo_shared_bytes(subgroups, 16, hpix) > target.max_shared_memory) {
+          continue;
+        }
+        KernelChoice c = matrix[i];
+        c.tuning = {tm, subgroups, 0, 0, 1};
+        matrix.push_back(std::move(c));
+      }
+    }
     // Épilogue en registres (quatrième réglage à 1, sommes en float) : en fin de liste, l'autotuner seul
     // les retient ; sans lui, la première variante reste celle par la mémoire partagée.
     if (direct_epilogue_eligible(graph, node)) {
@@ -252,7 +294,7 @@ std::expected<std::vector<KernelChoice>, Refusal> candidates(const ir::Graph& gr
       for (std::size_t i = 0; i < count; ++i) {
         if (matrix[i].variant != kMatrix) continue;  // sommes en float seulement
         KernelChoice c = matrix[i];
-        c.tuning.resize(4, 0);
+        c.tuning.resize(std::max<std::size_t>(c.tuning.size(), 4), 0);
         c.tuning[3] = 1;
         matrix.push_back(std::move(c));
       }
@@ -493,7 +535,7 @@ std::expected<void, Refusal> Lowerer::conv_matrix(std::size_t index, const Kerne
   const bool acc16 = choice.variant == kMatrixAcc16;
   const bool fp8 = choice.variant == kMatrixFp8;
   if ((!acc16 && !fp8 && choice.variant != kMatrix) || choice.tuning.size() < 2 ||
-      choice.tuning.size() > (fp8 ? 3U : 4U))
+      choice.tuning.size() > (fp8 ? 3U : 5U))
     return refuse_node(RefusalCode::InputMismatch, n, "réglage coopmat incomplet");
   if (acc16 && !target_.matrix_f16_acc) {
     return refuse_node(RefusalCode::FeatureUnavailable, n, "tuiles à sommes float16 absentes du pilote");
@@ -505,9 +547,12 @@ std::expected<void, Refusal> Lowerer::conv_matrix(std::size_t index, const Kerne
   const std::uint32_t tm = choice.tuning[0];
   const std::uint32_t subgroups = choice.tuning[1];
   const std::uint32_t shared_b = choice.tuning.size() >= 3 ? choice.tuning[2] : 0;  // B en mémoire partagée
-  const std::uint32_t direct = choice.tuning.size() == 4 ? choice.tuning[3] : 0;    // épilogue en registres
+  const std::uint32_t direct = choice.tuning.size() >= 4 ? choice.tuning[3] : 0;    // épilogue en registres
   if (direct > 1 || (direct == 1 && (acc16 || !direct_epilogue_eligible(graph_, n))))
     return refuse_node(RefusalCode::InputMismatch, n, "épilogue en registres impossible pour ce nœud");
+  const std::uint32_t halo = choice.tuning.size() == 5 ? choice.tuning[4] : 0;  // tuiles 2D avec halo
+  if (halo > 1 || (halo == 1 && shared_b != 0))
+    return refuse_node(RefusalCode::InputMismatch, n, "tuiles à halo hors de leurs bornes");
   const std::uint32_t sgs = matrix_subgroup(target_);
   const std::uint32_t wg = subgroups * sgs;
   const auto* attrs = std::get_if<ir::ConvAttrs>(&n.attrs);
@@ -524,6 +569,13 @@ std::expected<void, Refusal> Lowerer::conv_matrix(std::size_t index, const Kerne
   }
   auto win = conv_window(graph_, n);
   if (!win) return std::unexpected(win.error());
+  const std::uint32_t rows = subgroups * tm;
+  const std::uint32_t hpix = detail::matrix_halo_pixels(rows, win->kh, win->kw, win->dh, win->dw);
+  if (halo == 1 && (win->sh != 1 || win->sw != 1 || div_up(yc.w, 16) > target_.max_workgroup_count_x ||
+                    div_up(yc.h, rows) > kMaxGroups ||
+                    detail::matrix_halo_shared_bytes(subgroups, 16, hpix) > target_.max_shared_memory)) {
+    return refuse_node(RefusalCode::InputMismatch, n, "tuiles à halo hors de leurs bornes");
+  }
 
   ConvConstants e{.act = static_cast<std::uint32_t>(attrs->epilogue.act),
                   .alpha = attrs->epilogue.alpha,
@@ -557,10 +609,15 @@ std::expected<void, Refusal> Lowerer::conv_matrix(std::size_t index, const Kerne
   constants.push_back(tm);
   constants.push_back(wg);
   constants.push_back(sgs);
-  constants.push_back(matrix_step_channels(x->desc.cp, subgroups, tm, np_shared, target_.max_shared_memory));
+  constants.push_back(
+      halo == 1 ? matrix_halo_step_channels(x->desc.cp, subgroups, hpix, target_.max_shared_memory)
+                : matrix_step_channels(x->desc.cp, subgroups, tm, np_shared, target_.max_shared_memory));
   for (const std::uint32_t c : space_constants(attrs->epilogue)) constants.push_back(c);
   constants.push_back(shared_b);
-  if (!fp8) constants.push_back(direct);
+  if (!fp8) {
+    constants.push_back(direct);
+    constants.push_back(halo);
+  }
   const ir::Tensor* weights = constant_input(graph_, n, ir::kConvW);
   Binding w;
   Binding b;
@@ -585,7 +642,8 @@ std::expected<void, Refusal> Lowerer::conv_matrix(std::size_t index, const Kerne
   emit(index,
        fp8 ? std::string(kMatrixFp8Shader) : (acc16 ? "net_conv_coopmat_acc16" : "net_conv_coopmat_f16"),
        std::move(constants), {x->binding, w, b, slope, residual, y->binding}, {},
-       {div_up(pixels, bm), 1, x->desc.n});
+       halo == 1 ? std::array<std::uint32_t, 3>{div_up(yc.w, 16), div_up(yc.h, rows), x->desc.n}
+                 : std::array<std::uint32_t, 3>{div_up(pixels, bm), 1, x->desc.n});
   if (sgs != target_.subgroup_size) program_.dispatches.back().subgroup = sgs;
   return {};
 }

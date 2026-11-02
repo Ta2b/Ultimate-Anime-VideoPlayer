@@ -75,6 +75,12 @@ layout(constant_id = 36) const uint SHARED_B = 0;   // 1 : B de l'étape en mém
 // COUT multiple de 16. Le biais est alors rangé en 16 lignes identiques de NP floats, suivies
 // de l'identité 16 × 16 en float16.
 layout(constant_id = 37) const uint DIRECT_EPI = 0;
+// 1 : tuiles 2D avec halo (V5, au choix de l'autotuner, pas 1 et SHARED_B = 0 exigés). Un groupe
+// couvre SUBGROUPS × TM lignes de 16 pixels ; pour chaque paquet de KC canaux, la fenêtre de ces
+// lignes et de leur halo ((KH − 1) × DH lignes, (KW − 1) × DW colonnes) est copiée une fois en
+// mémoire partagée, puis les KH × KW prises y lisent leurs tuiles A décalées, au lieu d'une
+// copie par prise.
+layout(constant_id = 38) const uint HALO = 0;
 
 const uint NT = (COUT + 15u) / 16u;
 const uint NP = NT * 16u;
@@ -82,9 +88,13 @@ const uint SUBGROUPS = gl_WorkGroupSize.x / SGS;
 const uint BM = SUBGROUPS * TM * 16u;
 const uint QA = KC / 8u;                        // uvec4 de canaux par pixel et par étape
 const uint AS = QA + (QA / 4u + 1u) / 2u;      // pas d'une ligne de A, en uvec4 (+1 dès KC = 32)
-const uint ABUF = BM * AS;                      // un tampon de A
+const uint ROWS = SUBGROUPS * TM;               // HALO : lignes de 16 pixels d'un groupe
+const uint HWID = 16u + (KW - 1u) * DW;         // HALO : largeur de la fenêtre
+const uint HPIX = (ROWS + (KH - 1u) * DH) * HWID;  // HALO : pixels de la fenêtre
+const uint ABUF = (HALO == 1u ? HPIX : BM) * AS;  // un tampon de A
 const uint CSTEPS = CXP / KC;
-const uint STEPS = KH * KW * CSTEPS;
+const uint TAPS = KH * KW;
+const uint STEPS = TAPS * CSTEPS;
 const uint QB = KC * NP / 8u;                   // uvec4 de B par étape
 const uint BBUF = SHARED_B == 1u ? QB : 1u;     // un tampon de B
 
@@ -144,6 +154,24 @@ void stage_a(uint buf, uint n, uint first_pixel, uint s) {
   }
 }
 
+// HALO : la fenêtre du paquet de canaux chunk dans le tampon buf, pour les lignes row0… du
+// groupe et les colonnes x0… (pas 1).
+void stage_halo(uint buf, uint n, uint row0, uint x0, uint chunk) {
+  uint c0 = chunk * KC;
+  for (uint i = gl_LocalInvocationIndex; i < HPIX * QA; i += gl_WorkGroupSize.x) {
+    uint hp = i / QA;
+    uint c = c0 + (i % QA) * 8u;
+    int iy = int(row0 + hp / HWID) - int(PT);
+    int ix = int(x0 + hp % HWID) - int(PL);
+    uvec4 v = uvec4(0u);
+    if (c < CIN && iy >= 0 && iy < int(HIN) && ix >= 0 && ix < int(WIN)) {
+      v = src4.v[(((n * HIN + uint(iy)) * WIN + uint(ix)) * CXP + c) / 8u];
+      if (c + 8u > CIN) v = keep_halves(v, CIN - c);
+    }
+    tile_a[buf * ABUF + hp * AS + i % QA] = v;
+  }
+}
+
 // B de l'étape s dans le tampon buf : ses KC lignes de NP poids se suivent dans le tampon des
 // poids, copiées d'un bloc.
 void stage_b(uint buf, uint s) {
@@ -161,6 +189,9 @@ void main() {
   uint n = gl_WorkGroupID.z;
   uint first_pixel = gl_WorkGroupID.x * BM;
   uint sg = gl_SubgroupID;
+  // HALO : le groupe (x, y) couvre les colonnes x0… x0 + 15 des lignes row0… row0 + ROWS − 1.
+  uint x0 = gl_WorkGroupID.x * 16u;
+  uint row0 = gl_WorkGroupID.y * ROWS;
 
   coopmat<ACC_T, gl_ScopeSubgroup, 16, 16, gl_MatrixUseAccumulator> acc[TM * NT];
   for (uint i = 0u; i < TM * NT; ++i) {
@@ -173,10 +204,36 @@ void main() {
       coopMatLoad(acc[i], bias.v, (i % NT) * 16u, NP, gl_CooperativeMatrixLayoutRowMajor);
   }
 #endif
-  stage_a(0u, n, first_pixel, 0u);
+  if (HALO == 1u) {
+    stage_halo(0u, n, row0, x0, 0u);
+    barrier();
+    for (uint chunk = 0u; chunk < CSTEPS; ++chunk) {
+      uint buf = chunk & 1u;
+      if (chunk + 1u < CSTEPS) stage_halo(buf ^ 1u, n, row0, x0, chunk + 1u);
+      for (uint tap = 0u; tap < TAPS; ++tap) {
+        uint ky = tap / KW;
+        uint kx = tap % KW;
+        uint k0 = tap * CXP + chunk * KC;
+        for (uint c16 = 0u; c16 < KC; c16 += 16u) {
+          coopmat<float16_t, gl_ScopeSubgroup, 16, 16, gl_MatrixUseA> a[TM];
+          for (uint t = 0u; t < TM; ++t) {
+            uint hp = (sg * TM + t + ky * DH) * HWID + kx * DW;
+            coopMatLoad(a[t], tile_a, buf * ABUF + hp * AS + c16 / 8u, AS, gl_CooperativeMatrixLayoutRowMajor);
+          }
+          for (uint j = 0u; j < NT; ++j) {
+            coopmat<float16_t, gl_ScopeSubgroup, 16, 16, gl_MatrixUseB> b;
+            coopMatLoad(b, weights.w, (k0 + c16) * NP + j * 16u, NP, gl_CooperativeMatrixLayoutRowMajor);
+            for (uint t = 0u; t < TM; ++t) acc[t * NT + j] = coopMatMulAdd(a[t], b, acc[t * NT + j]);
+          }
+        }
+      }
+      barrier();
+    }
+  }
+  if (HALO == 0u) stage_a(0u, n, first_pixel, 0u);
   if (SHARED_B == 1u) stage_b(0u, 0u);
-  barrier();
-  for (uint s = 0u; s < STEPS; ++s) {
+  if (HALO == 0u) barrier();
+  for (uint s = 0u; s < (HALO == 1u ? 0u : STEPS); ++s) {
     uint buf = s & 1u;
     // L'autre tampon a été lu à l'étape s − 1, avant la barrière qui l'a close.
     if (s + 1u < STEPS) {
@@ -204,9 +261,13 @@ void main() {
     barrier();
   }
   for (uint t = 0u; t < TM; ++t) {
-    const uint p0 = first_pixel + (sg * TM + t) * 16u;
+    // Les pixels de la tuile : count pixels consécutifs dès p0 (une ligne de 16 avec HALO).
+    const uint oy_h = row0 + sg * TM + t;
+    const uint p0 = HALO == 1u ? oy_h * WOUT + x0 : first_pixel + (sg * TM + t) * 16u;
+    const uint count = HALO == 1u ? (oy_h < HOUT && x0 < WOUT ? min(16u, WOUT - x0) : 0u)
+                                  : (p0 < HOUT * WOUT ? min(16u, HOUT * WOUT - p0) : 0u);
 #ifndef AJP_COOPMAT_ACC16
-    if (DIRECT_EPI == 1u && p0 + 16u <= HOUT * WOUT) {
+    if (DIRECT_EPI == 1u && count == 16u) {
       for (uint j = 0u; j < NT; ++j) {
         coopmat<float, gl_ScopeSubgroup, 16, 16, gl_MatrixUseAccumulator> v = acc[t * NT + j];
         if (RESIDUAL == 1u) {
@@ -241,9 +302,9 @@ void main() {
       subgroupMemoryBarrierShared();
       subgroupBarrier();
       for (uint e = gl_SubgroupInvocationID; e < 256u; e += gl_SubgroupSize) {
-        uint p = first_pixel + (sg * TM + t) * 16u + e / 16u;
+        uint p = p0 + e / 16u;
         uint co = j * 16u + e % 16u;
-        if (p < HOUT * WOUT && co < COUT) {
+        if (e / 16u < count && co < COUT) {
           uint oy = p / WOUT;
           uint ox = p % WOUT;
           float v = tile_c[sg * 256u + e] + (DIRECT_EPI == 1u ? 0.0 : bias.v[co]);  // biais déjà sommé
