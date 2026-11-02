@@ -2,6 +2,8 @@
 
 #include <algorithm>
 #include <array>
+#include <atomic>
+#include <cstdint>
 #include <filesystem>
 #include <format>
 #include <fstream>
@@ -37,6 +39,7 @@
 #include "app/play/host_facts.h"
 #include "app/play/i18n.h"
 #include "app/play/input.h"
+#include "app/play/latest_writer.h"
 #include "app/play/look_catalog.h"
 #include "app/play/model_choice.h"
 #include "app/play/pipeline.h"
@@ -65,13 +68,38 @@
 namespace ajp::app::play {
 namespace {
 
-constexpr std::uint32_t kRingSlots = 4;
-static_assert(kRingSlots <= kMaxKeptSubtitles, "les sous-titres gardés doivent couvrir tout le ring");
+// Profondeur du ring : 4 images, 6 de ×3 à ×4, 8 au-delà. Aux forts facteurs, un sursaut du GPU (une coupe,
+// un mouvement fort) se rattrape sur plus d'images avant de se voir à l'écran (66 Mo par image 4K).
+constexpr std::uint32_t ring_slots(Factor factor) {
+  const int num = factor.num;
+  const int den = std::max(factor.den, 1);
+  return num >= 5 * den ? 8U : num >= 3 * den ? 6U : 4U;
+}
+static_assert(ring_slots({.num = 8, .den = 1}) <= kMaxRingSlots);
 
 // Seuils du vrai noir recalés au plus 5 fois par seconde pendant qu'on règle.
 constexpr std::int64_t kBlackRefreshUs = 200'000;
 // En pause, l'attente d'un événement SDL au plus : le seuil de réactivité aux messages des threads.
 constexpr std::int32_t kPausedWaitMs = 10;
+
+// Le réveil de la boucle d'affichage par un message des autres threads : un événement SDL à elle, poussé une
+// fois par attente (pending), qui fait rendre SDL_WaitEventTimeout.
+struct LoopWake {
+  std::atomic<bool> pending{false};
+  std::uint32_t event = 0;  // 0 : SDL n'a plus d'événement à donner, l'attente va à son terme
+  static void push(void* context) {
+    auto* self = static_cast<LoopWake*>(context);
+    if (self->event == 0 || self->pending.exchange(true, std::memory_order_relaxed)) return;
+    SDL_Event wake{};
+    wake.type = self->event;
+    (void)SDL_PushEvent(&wake);
+  }
+};
+
+std::uint32_t loop_wake_event() {
+  static const std::uint32_t registered = SDL_RegisterEvents(1);
+  return registered;
+}
 
 }  // namespace
 
@@ -138,12 +166,14 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
       .audio_track = p.audio_track,
       .subtitle_track = p.subtitle_track};
   PlaceboScreen& out = p.screen;
+  LoopWake wake{.event = loop_wake_event()};  // vit plus longtemps que la chaîne, qui l'appelle
   auto pipeline = Pipeline::open(
       config, [&](VideoStageInit stage) -> std::expected<std::unique_ptr<VideoStage>, Refusal> {
         const int width = stage.track->width;
         const int height = stage.track->height;
         const WorkSize sized = work_size(width, height, settings.work_height);
-        auto slots = out.create_ring(sized.width * factor, sized.height * factor, kRingSlots,
+        auto slots = out.create_ring(sized.width * factor, sized.height * factor,
+                                     ring_slots(rife_loaded ? factor_of(settings) : Factor{}),
                                      c.backend_name == "tensorrt");
         if (!slots) return std::unexpected(std::move(slots.error()));
         const MasterClock* clock = stage.clock;
@@ -151,6 +181,7 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
                                    c.upscale(settings, live, clock, width, height, std::move(*slots)));
       });
   if (!pipeline) return std::unexpected(std::move(pipeline.error()));
+  (*pipeline)->inbox().set_waker(&LoopWake::push, &wake);
 
   const std::unique_ptr<GpuTelemetry> telemetry = GpuTelemetry::open(p.screen.device());
   const ChainStats chain_stats(*live, *c.backend->kernels(), rife_loaded, std::string(c.motion_name()),
@@ -350,6 +381,9 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
     p.ui.controls().notify(p.notice, host_now_us());
     p.notice.clear();
   }
+  // play.toml, la position et la mémoire du mode Auto s'écrivent sur le thread d'écriture : jamais d'attente
+  // du disque entre deux images.
+  LatestWriter writer;
   // La position retenue toutes les kResumeEveryUs, et à la fin : un arrêt brutal en perd peu.
   std::int64_t kept_us = kNoPts;
   const auto remember = [&] {
@@ -357,9 +391,9 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
     const ControlsView view = session.view();
     if (view.position_us == kNoPts || view.position_us == kept_us) return;
     kept_us = view.position_us;
-    if (auto kept = remember_position(p.resume_path, p.options.file, view.position_us, view.duration_us);
-        !kept)
-      log->warn("{}", kept.error().detail);
+    writer.post("resume",
+                [store = p.resume_path, file = p.options.file, at = view.position_us,
+                 duration = view.duration_us] { return remember_position(store, file, at, duration); });
   };
   std::int64_t remembered_at = host_now_us();
   // Son : le volume de la barre et le délai des réglages valent dès la première image.
@@ -503,8 +537,9 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
       auto_notified = centi;
     }
     if (centi != auto_stored && at - auto_changed_us >= 6'000'000 && !auto_memory_path.empty()) {
-      if (auto kept = core::store_auto_step(auto_memory_path, auto_memory_key, centi); !kept)
-        log->warn("{}", kept.error().detail);
+      writer.post("auto_memory", [store = auto_memory_path, key = auto_memory_key, centi] {
+        return core::store_auto_step(store, key, centi);
+      });
       auto_stored = centi;  // même en cas d'échec : pas de réécriture à chaque tour
     }
   };
@@ -603,11 +638,11 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
     actions.clear();
     // play.toml réécrit au plus une fois par seconde pendant qu'on règle.
     if (chain.dirty && host_now_us() - saved_at >= 1'000'000) {
-      if (auto saved = save_settings(
-              p.settings_path,
-              settings_to_save(with_intended_hdr(chain, chain.running), p.from_file, p.started, p.options));
-          !saved)
-        log->warn("{}", saved.error().detail);
+      writer.post("play.toml",
+                  [path = p.settings_path, saved = settings_to_save(with_intended_hdr(chain, chain.running),
+                                                                    p.from_file, p.started, p.options)] {
+                    return save_settings(path, saved);
+                  });
       chain.dirty = false;
       saved_at = host_now_us();
     }
@@ -623,24 +658,25 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
     if (*record && (*record)->fresh) chain.live.vsync_note((*record)->host_us);
     if (*record && stats.is_open()) write_record(stats, **record);
     // Rien de présenté (rien n'a changé, ou fenêtre cachée) : la FIFO n'impose pas le rythme. En
-    // lecture, la boucle reprend dans 1 ms pour ne pas manquer l'image suivante ; en pause, elle
-    // attend une touche ou la souris, au plus kPausedWaitMs : les messages des autres threads
-    // (image d'un seek, avancée d'un export) ne réveillent pas SDL.
+    // lecture, la boucle dort jusqu'à l'échéance de l'image suivante (Session::idle_wait_us) ; en pause,
+    // au plus kPausedWaitMs. Un message des autres threads (une image, un seek) la réveille.
     if (!*record) {
-      if (session.view().paused) {
-        (void)SDL_WaitEventTimeout(nullptr, kPausedWaitMs);
-      } else {
-        SDL_Delay(1);
-      }
+      // Une image reçue par la boîte, ou une touche, réveille l'attente avant son terme.
+      const std::int64_t wait_us =
+          session.view().paused ? std::int64_t{kPausedWaitMs} * 1000 : session.idle_wait_us(host_now_us());
+      (void)SDL_WaitEventTimeout(nullptr, static_cast<Sint32>(std::max<std::int64_t>(wait_us / 1000, 1)));
+      wake.pending.store(false, std::memory_order_relaxed);
     }
   }
   if (chain.dirty) {
-    if (auto saved = save_settings(p.settings_path, settings_to_save(with_intended_hdr(chain, chain.running),
-                                                                     p.from_file, p.started, p.options));
-        !saved)
-      log->warn("{}", saved.error().detail);
+    writer.post("play.toml",
+                [path = p.settings_path, saved = settings_to_save(with_intended_hdr(chain, chain.running),
+                                                                  p.from_file, p.started, p.options)] {
+                  return save_settings(path, saved);
+                });
   }
   remember();
+  writer.flush();  // la vidéo suivante, ou le prochain lancement, relit ces fichiers
   p.quit = session.quit_asked();
   log_summary(session);
   if (p.options.bench_out) {

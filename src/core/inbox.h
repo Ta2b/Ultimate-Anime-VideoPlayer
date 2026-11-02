@@ -34,14 +34,28 @@ class Inbox {
   template <class M>
   bool try_push(M&& message) {
     constexpr std::size_t kind = index_of<std::remove_cvref_t<M>>();
+    Waker waker = nullptr;
+    void* context = nullptr;
     {
       std::scoped_lock lock(mutex_);
       if (counts_[kind] >= bounds_[kind]) return false;
       ++counts_[kind];
       queue_.emplace_back(std::in_place_index<kind>, std::forward<M>(message));
+      waker = waker_;
+      context = waker_context_;
     }
     ready_.notify_one();
+    if (waker != nullptr) waker(context);
     return true;
+  }
+
+  // Appelé après chaque message reçu, depuis le thread du producteur : réveille un propriétaire qui
+  // n'attend pas dans wait() (la boucle d'affichage attend les événements de la fenêtre). nullptr : aucun.
+  using Waker = void (*)(void* context);
+  void set_waker(Waker waker, void* context) {
+    std::scoped_lock lock(mutex_);
+    waker_ = waker;
+    waker_context_ = context;
   }
 
   // Attend le prochain message, dans l'ordre d'arrivée tous types confondus.
@@ -89,6 +103,8 @@ class Inbox {
   std::deque<Message> queue_;
   Bounds bounds_;
   Bounds counts_{};
+  Waker waker_ = nullptr;
+  void* waker_context_ = nullptr;
 };
 
 }  // namespace ajp

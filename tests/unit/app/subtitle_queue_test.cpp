@@ -3,6 +3,7 @@
 #include "app/play/subtitle_queue.h"
 
 #include <cstdint>
+#include <memory>
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -12,8 +13,12 @@
 namespace ajp::app::play {
 namespace {
 
-subs::SubtitleFrame response(std::int64_t pts_us) {
-  return subs::SubtitleFrame{.pts_us = pts_us};
+// Une réponse aux sous-titres propres à son pts (un atlas de génération pts) ; same : ceux de la génération
+// donnée.
+subs::SubtitleFrame response(std::int64_t pts_us, std::int64_t generation = -1) {
+  auto atlas = std::make_shared<subs::SubtitleAtlas>();
+  atlas->generation = static_cast<std::uint64_t>(generation >= 0 ? generation : pts_us);
+  return subs::SubtitleFrame{.pts_us = pts_us, .atlas = std::move(atlas), .rects = {subs::SubtitleRect{}}};
 }
 
 }  // namespace
@@ -71,6 +76,27 @@ TEST_CASE("Sous-titres : les réponses gardées couvrent le ring et l'image à l
   // kMaxAtlasesInFlight − 1 atlas avec les demandes en vol.
   STATIC_CHECK(kMaxKeptSubtitles >= 4);
   STATIC_CHECK(kMaxKeptSubtitles + kMaxSubtitleRequests < subs::kMaxAtlasesInFlight);
+}
+
+TEST_CASE("Sous-titres : les réponses identiques se fondent, le ring peut être plus profond",
+          "[app][subtitles]") {
+  SubtitleQueue queue(kMaxKeptSubtitles);
+  // Huit images du ring sous le même sous-titre, puis un changement : deux réponses gardées.
+  for (int i = 0; i < 8; ++i) queue.push(response(i * 41'000, 7), 0);
+  queue.push(response(8 * 41'000, 9), 0);
+  CHECK(queue.size() == 2);
+  for (int i = 0; i < 8; ++i) {
+    REQUIRE(queue.for_pts(i * 41'000) != nullptr);
+    CHECK(queue.for_pts(i * 41'000)->atlas->generation == 7);
+  }
+  CHECK(queue.for_pts(8 * 41'000)->atlas->generation == 9);
+  // Une réponse en retard, identique à celle d'après, la remplace : elle couvre plus tôt.
+  SubtitleQueue late(kMaxKeptSubtitles);
+  late.push(response(83'000, 5), kNoPts);
+  late.push(response(41'000, 5), kNoPts);
+  CHECK(late.size() == 1);
+  REQUIRE(late.for_pts(41'000) != nullptr);
+  CHECK(late.for_pts(41'000)->pts_us == 41'000);
 }
 
 }  // namespace ajp::app::play

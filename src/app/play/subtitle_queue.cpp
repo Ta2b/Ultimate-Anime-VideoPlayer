@@ -6,12 +6,31 @@
 #include "core/frame.h"
 
 namespace ajp::app::play {
+namespace {
+
+bool same_look(const subs::SubtitleFrame& a, const subs::SubtitleFrame& b) {
+  const bool drawn_a = a.atlas && !a.rects.empty();
+  const bool drawn_b = b.atlas && !b.rects.empty();
+  if (drawn_a != drawn_b) return false;
+  if (!drawn_a) return true;  // rien à dessiner, des deux côtés
+  return a.atlas->generation == b.atlas->generation && a.width == b.width && a.height == b.height &&
+         a.rects == b.rects;
+}
+
+}  // namespace
 
 void SubtitleQueue::push(subs::SubtitleFrame&& frame, std::int64_t shown_pts) {
   // subs répond dans l'ordre des demandes ; une réponse en retard se range quand même à sa place.
-  const auto at =
-      std::upper_bound(frames_.begin(), frames_.end(), frame.pts_us,
-                       [](std::int64_t pts, const subs::SubtitleFrame& f) { return pts < f.pts_us; });
+  auto at = std::upper_bound(frames_.begin(), frames_.end(), frame.pts_us,
+                             [](std::int64_t pts, const subs::SubtitleFrame& f) { return pts < f.pts_us; });
+  // Les mêmes sous-titres que la réponse d'avant : elle sert déjà ce pts (la dernière de pts <= pts). Une
+  // réponse d'après identique devient inutile, celle-ci la couvre. Les réponses gardées comptent ainsi les
+  // changements de sous-titres, pas les images du ring.
+  if (at != frames_.begin() && same_look(*(at - 1), frame)) {
+    if (shown_pts != kNoPts) forget_before(shown_pts);
+    return;
+  }
+  if (at != frames_.end() && same_look(*at, frame)) at = frames_.erase(at);
   frames_.insert(at, std::move(frame));
   if (shown_pts != kNoPts) forget_before(shown_pts);
   while (frames_.size() > capacity_) frames_.pop_back();

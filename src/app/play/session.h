@@ -35,9 +35,9 @@
 namespace ajp::app::play {
 
 // Demandes de sous-titres en vol au plus, et réponses gardées : ensemble, render ne tient jamais
-// plus de kMaxAtlasesInFlight − 1 atlas (contrat de subs/subtitle_frame.h). Les réponses gardées
-// couvrent tout le ring, l'image à l'écran et celles en avance (voir SubtitleQueue) : le ring du
-// lecteur n'a pas plus de kMaxKeptSubtitles slots.
+// plus de kMaxAtlasesInFlight − 1 atlas (contrat de subs/subtitle_frame.h). Les réponses gardées sont
+// les changements de sous-titres de l'image à l'écran et de celles en avance (SubtitleQueue fond les
+// réponses identiques) : le ring peut être plus profond qu'elles.
 inline constexpr std::size_t kMaxSubtitleRequests = 3;
 inline constexpr std::size_t kMaxKeptSubtitles = subs::kMaxAtlasesInFlight - kMaxSubtitleRequests - 1;
 
@@ -156,6 +156,10 @@ class Session {
   bool finished() const { return finished_; }
   // Le délai entre la présentation d'une image et son affichage, tel que choisi pour la sélection des images.
   std::int64_t visible_delay_us() const { return display_delay_us(display_period()); }
+  // Après un tour sans présentation, combien la boucle peut dormir : jusqu'à l'échéance de la prochaine
+  // image si elle est écrite (une demi-milliseconde avant), 1 ms si son écriture GPU se termine, 4 ms sans
+  // image (son arrivée réveille la boucle).
+  std::int64_t idle_wait_us(std::int64_t host_now);
   // La fenêtre a changé d'écran : nouvelle période et nouvelle fréquence, la synchro les suit.
   void set_display(std::int64_t period_us, double hz);
   bool quit_asked() const { return quit_; }  // q ou fenêtre fermée, pas la fin du fichier

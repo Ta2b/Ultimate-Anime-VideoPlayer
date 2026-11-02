@@ -3,6 +3,7 @@
 #include "app/play/session.h"
 
 #include <algorithm>
+#include <memory>
 #include <optional>
 #include <string>
 #include <vector>
@@ -365,8 +366,14 @@ TEST_CASE("Sous-titres : une demande par image, l'image du même pts est dessin�
   CHECK(rig.stages.requests[1].target.width == 1920);
   CHECK(rig.stages.requests[1].target.video_height == 1080);
 
-  rig.session.handle(subs::SubtitleFrame{.pts_us = 0});
-  rig.session.handle(subs::SubtitleFrame{.pts_us = 41'000});
+  // Des sous-titres différents d'une image à l'autre : deux réponses identiques n'en font qu'une.
+  const auto drawn = [](std::int64_t pts_us) {
+    auto atlas = std::make_shared<subs::SubtitleAtlas>();
+    atlas->generation = static_cast<std::uint64_t>(pts_us);
+    return subs::SubtitleFrame{.pts_us = pts_us, .atlas = std::move(atlas), .rects = {subs::SubtitleRect{}}};
+  };
+  rig.session.handle(drawn(0));
+  rig.session.handle(drawn(41'000));
   rig.tick();
   CHECK(rig.screen.shown.back().subtitles_pts == 0);
   rig.run_clock(41'000);
