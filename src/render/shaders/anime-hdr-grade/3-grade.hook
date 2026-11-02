@@ -87,6 +87,17 @@ float skin_mask(vec3 ictcp) {
          * smoothstep(0.008, 0.018, chroma) * (1.0 - smoothstep(0.095, 0.13, chroma));
 }
 
+// Peau : une surface eclairee, jamais un eclat. La courbe HDR emmenait la peau claire d'anime
+// (sRGB 255, 232, 214) vers 550 nits sur un ecran de 1000 : delavee, presque blanche. Au-dessus de
+// k (15 % du pic, 100 a 200 nits), sa luminance ne monte plus qu'en racine : 290 nits pour cette
+// peau claire, 190 pour une peau moyenne ; les ombres de la peau ne bougent pas. Sortie SDR exclue.
+float skin_ratio(float y, float skin) {
+    if (sdr_out > 0.5 || skin <= 0.0) return 1.0;
+    float k = clamp(0.15 * peak, 100.0, 200.0);
+    if (y <= k) return 1.0;
+    return mix(1.0, sqrt(k / y), skin);
+}
+
 // Courbe des eclats sur la luminance Y (nits), monotone pour un isolement donne.
 // Y plutot que max RGB : un vert ou un jaune sature n'est pas pris pour du blanc.
 float highlight_ratio(float y, float isolation, float skin, float abl_scale) {
@@ -248,6 +259,7 @@ vec4 hook() {
     if (m > 1e-4 && y > 1e-4) {
         r = shadow_ratio(m, sh_now);
         r *= highlight_ratio(y * r, isolation, skin, abl_scale);
+        r *= skin_ratio(y * r, skin);
         // Garde-fou : une couleur saturee tres lumineuse atteint le pic par un seul canal bien
         // avant sa luminance ; au lieu d'un plateau (degrade perdu, aplat ecrete), son canal le
         // plus fort suit une epaule douce depuis 70 % du pic. Le blanc et les gris (canaux

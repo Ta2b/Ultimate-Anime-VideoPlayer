@@ -730,4 +730,39 @@ TEST_CASE("grade adaptatif (shader) : la position du plan analysé remplace la m
   CHECK(analyzed[8][0] < 2.5);  // le plan analysé : scène claire, noirs creusés
 }
 
+TEST_CASE("peau : la courbe HDR ne la pousse pas vers les éclats", "[render][gpu]") {
+  Gpu gpu;
+  require_device(gpu);
+  REQUIRE(gpu.grade);
+  // Une image uniforme d'une couleur sRGB, en BT.2020 au blanc SDR de 203 nits.
+  const auto image = [](double r8, double g8, double b8) {
+    const auto lin = [](double v) {
+      const double c = v / 255.0;
+      return c <= 0.04045 ? c / 12.92 : std::pow((c + 0.055) / 1.055, 2.4);
+    };
+    const double r = lin(r8), g = lin(g8), b = lin(b8);
+    const std::array<double, 3> bt2020{0.6274 * r + 0.3293 * g + 0.0433 * b,
+                                       0.0691 * r + 0.9195 * g + 0.0114 * b,
+                                       0.0164 * r + 0.0880 * g + 0.8956 * b};
+    std::vector<std::uint16_t> pixels(static_cast<std::size_t>(kSide) * kSide * 4);
+    for (std::size_t i = 0; i < pixels.size(); i += 4) {
+      for (std::size_t c = 0; c < 3; ++c)
+        pixels[i + c] = static_cast<std::uint16_t>(std::lround(nits_to_pq(203.0 * bt2020.at(c)) * 65535.0));
+      pixels[i + 3] = 65535;
+    }
+    return pixels;
+  };
+  const auto luminance = [](const Rgb& px) { return 0.2627 * px[0] + 0.6780 * px[1] + 0.0593 * px[2]; };
+  const Rgb pale = graded_rgb(gpu, image(255, 232, 214), native_look(0.0))[kSide / 2];
+  const Rgb mid = graded_rgb(gpu, image(240, 195, 165), native_look(0.0))[kSide / 2];
+  const Rgb grey = graded_rgb(gpu, image(236, 236, 236), native_look(0.0))[kSide / 2];
+  CHECK(luminance(pale) < 330.0);  // sans la règle : environ 550 nits
+  CHECK(luminance(pale) > 220.0);
+  CHECK(luminance(mid) < luminance(pale));  // l'ordre des tons reste
+  CHECK(luminance(grey) > 450.0);           // un gris clair, lui, monte toujours
+  // La teinte de la peau reste la sienne : rouge au-dessus du vert, vert au-dessus du bleu.
+  CHECK(pale[0] > pale[1]);
+  CHECK(pale[1] > pale[2]);
+}
+
 }  // namespace ajp::render
