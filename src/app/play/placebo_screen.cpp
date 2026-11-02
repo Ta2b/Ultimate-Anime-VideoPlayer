@@ -119,10 +119,22 @@ std::expected<void, Refusal> PlaceboScreen::Impl::compose(const pl_frame* image,
       params.upscaler = &pl_filter_ewa_lanczossharp;
       break;
   }
-  if (deband) params.deband_params = &pl_deband_default_params;
   // Le grade chargé est celui du PQ ou du SDR : sur une autre cible (instantané SDR d'une sortie
   // HDR10), il est sauté.
   const bool graded_now = grade.has_value() && graded(target.color);
+  // Le grade étire la source (plus de nits, plus de couleur) : les paliers d'un dégradé 8 bits, invisibles en
+  // SDR, ressortent en bandes dans un halo ou un ciel. Il est donc toujours précédé d'un débandage, sans
+  // grain ajouté (l'anime reste propre) ; le débandage demandé à la main garde le réglage complet de
+  // libplacebo.
+  static const pl_deband_params kGradeDeband = [] {
+    pl_deband_params p = pl_deband_default_params;
+    p.grain = 0.0F;
+    return p;
+  }();
+  if (deband)
+    params.deband_params = &pl_deband_default_params;
+  else if (graded_now)
+    params.deband_params = &kGradeDeband;
   if (graded_now) {
     const std::span<const pl_hook* const> hooks = grade->hooks();
     params.hooks = hooks.data();
