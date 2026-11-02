@@ -7,7 +7,7 @@
 // Une image intermédiaire : deux rife_input en 7 plans, (img0, img1) et (img1, img2) à l'instant
 // u de drba_call, une passe du graphe, puis rife_crop. Sans l'image d'un côté (début d'époque,
 // coupe, fin du flux), le côté manquant répète l'image du centre comme la tête et la fin
-// d'infer.py.
+// d'infer.py. Un côté tenu (dessin identique) rend l'image de ce côté sans passe du réseau.
 #include <array>
 #include <span>
 #include <string>
@@ -16,6 +16,7 @@
 #include "app/play/upscale_stage.h"
 #include "kernels/spec/detect.h"
 #include "kernels/spec/distil_drba.h"
+#include "kernels/spec/resample.h"
 #include "kernels/spec/rife.h"
 
 namespace ajp::app::play {
@@ -83,6 +84,7 @@ std::expected<void, Refusal> UpscaleStage::settle_after_scores() {
   scores->right = drba_.ticket_right;
   drba_.after_scores = *scores;
   drba_.after_ok = !kernels::is_scene_cut(scores->scene_score);
+  drba_.after_held = drba_.after_ok && kernels::is_held(scores->worst_block);
   return {};
 }
 
@@ -100,6 +102,7 @@ std::expected<gpu::PairScores, Refusal> UpscaleStage::drba_scores(const DecodedF
 std::expected<void, Refusal> UpscaleStage::drba_next(const DecodedFrame& frame, const gpu::IngestSpec& spec,
                                                      bool measure) {
   drba_.after_ok = false;
+  drba_.after_held = false;
   drba_.after_ticket.reset();
   const DecodedFrame* after = next();
   if (after == nullptr) return {};
@@ -120,6 +123,7 @@ std::expected<void, Refusal> UpscaleStage::drba_next(const DecodedFrame& frame, 
   scores->right = after->id;
   drba_.after_scores = *scores;
   drba_.after_ok = !kernels::is_scene_cut(scores->scene_score);
+  drba_.after_held = drba_.after_ok && kernels::is_held(scores->worst_block);
   return {};
 }
 
@@ -131,6 +135,13 @@ std::expected<void, Refusal> UpscaleStage::interpolate_drba(std::uint32_t output
   }
   const gpu::Tensor& a = rgb_[current_ ^ 1U]->tensor();
   const gpu::Tensor& b = rgb_[current_]->tensor();
+  // Côté tenu : (avant, a) sans mouvement, DistilDRBA garde a jusqu'à ½ ; (b, après) sans mouvement, il
+  // rend b dès ½. C'est ce que la passe calculerait : l'image se copie, sans passe (anime en deux, en trois).
+  const bool side_held = call.on_b ? drba_.after_held : drba_.before_ok && before_ == PairMotion::Still;
+  if (side_held) {
+    ++drba_.held;
+    return ops.resample(call.on_b ? b : a, kernels::Filter::Area, middle());
+  }
   const bool whole = call.on_b ? drba_.after_ok : drba_.before_ok;
   const gpu::Tensor& img0 = call.on_b ? a : (whole ? drba_.before->tensor() : a);
   const gpu::Tensor& img1 = call.on_b ? b : a;
