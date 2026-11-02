@@ -80,6 +80,10 @@ struct ClipSpec {
   // celui de `codec` : luma uniforme par image comme Mpeg4, qp constant. Vide :
   // l'encodeur natif de `codec`.
   std::string encoder;
+  // Plans fixes (FFV1) : shot_frames > 0, le plan n / shot_frames, un dégradé doux autour de sa luma
+  // shot_lumas[plan] et d'une chroma propre ; coupe franche d'un plan au suivant.
+  int shot_frames = 0;
+  std::vector<int> shot_lumas;
 };
 
 // Écrit le clip (fichier temporaire puis renommage) et rend son chemin.

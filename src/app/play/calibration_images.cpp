@@ -3,8 +3,12 @@
 #include <algorithm>
 #include <array>
 #include <cstddef>
+#include <filesystem>
+#include <system_error>
+#include <vector>
 
 #include <SDL3/SDL_filesystem.h>
+#include <SDL3/SDL_stdinc.h>
 
 namespace ajp::app::play {
 
@@ -115,9 +119,23 @@ CalibrationImage calibration_shot(int id) {
 }
 
 std::filesystem::path calibration_clip() {
-  const char* base = SDL_GetBasePath();
-  return base == nullptr ? std::filesystem::path()
-                         : std::filesystem::path(base) / "calibration" / "calibration.mkv";
+  // Les dossiers, cherchés une fois (le panneau demande la vidéo à chaque image) : les données de
+  // l'utilisateur d'abord, puis à côté du lecteur. La vidéo n'est plus livrée : chacun y dépose la sienne.
+  static const std::vector<std::filesystem::path> places = [] {
+    std::vector<std::filesystem::path> found;
+    if (char* pref = SDL_GetPrefPath("ajp", "ajp"); pref != nullptr) {
+      found.push_back(std::filesystem::path(pref) / "calibration" / "calibration.mkv");
+      SDL_free(pref);
+    }
+    if (const char* base = SDL_GetBasePath(); base != nullptr)
+      found.push_back(std::filesystem::path(base) / "calibration" / "calibration.mkv");
+    return found;
+  }();
+  for (const std::filesystem::path& place : places) {
+    std::error_code error;
+    if (std::filesystem::is_regular_file(place, error)) return place;
+  }
+  return places.empty() ? std::filesystem::path() : places.front();
 }
 
 }  // namespace ajp::app::play
