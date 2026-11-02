@@ -205,8 +205,30 @@ TEST_CASE("Étage gpu : RIFE mouvement, une passe au milieu tant que le mouvemen
         std::vector<std::string>{"1", "1-2", "1-2", "2", "2-3", "2-3", "3", "3-4", "3-4", "4"});
   CHECK(rig.backend.count("engine rife_motion") == 3);  // une par paire, au milieu
   CHECK(rig.backend.count("flow_max_start") == 3);
-  CHECK(rig.backend.count("flow_max_take") == 3);
+  // La première paire attend sa mesure ; les suivantes se décident sur celle de la précédente, relue à
+  // leur début, sans attente (NL3).
+  CHECK(rig.backend.count("flow_max_take") == 2);
+  CHECK(rig.backend.pending_flow_tickets() == 1);
   CHECK(rig.backend.count("warp_blend") == 6);
+}
+
+TEST_CASE("Étage gpu : RIFE mouvement, le mouvement qui se lève compte à la paire d'après, sans attente",
+          "[app][stage]") {
+  Rig rig;
+  UpscaleSetup s = rig.setup(true, Factor{.num = 3, .den = 1});
+  s.rife = nullptr;
+  s.rife_motion = &rig.motion;
+  rig.start(std::move(s));
+  rig.feed(1, 3);  // (1,2) et (2,3) calmes
+  REQUIRE(rig.collect(7));
+  rig.backend.motion_max(40.0F);
+  rig.feed(4, 5);
+  REQUIRE(rig.collect(7 + 6));
+  rig.stage.reset();
+  // (3,4) se décide sur la mesure de (2,3) : une passe ; la sienne, forte, fait passer (4,5) à chaque
+  // instant sans milieu (deux passes).
+  CHECK(rig.backend.count("engine rife_motion") == 1 + 1 + 1 + 2);
+  CHECK(rig.backend.count("flow_max_now") == 0);
 }
 
 TEST_CASE("Étage gpu : mesures, SPAN et RIFE chacun sur sa voie, SPAN avant le warp aussi", "[app][stage]") {

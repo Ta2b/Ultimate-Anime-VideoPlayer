@@ -436,8 +436,12 @@ class UpscaleStage final : public RingStage {
     bool known = false;        // faux après une coupe ou un saut : relue, mais ignorée
   };
   PendingMotion motion_;
+  // La paire en cours se décide sur la mesure de la précédente (NL3 : aucune attente de l'hôte) ; faux au
+  // début d'un plan, après une coupe ou un saut : la mesure du milieu est alors attendue, comme avant.
+  bool motion_measured_ = false;
   void forget_motion();
-  // La mesure en vol relue (sans attente : une paire est passée), strong_motion_ mis à jour.
+  // La mesure en vol relue (sans attente : une paire est passée), strong_motion_ et motion_measured_ mis à
+  // jour.
   std::expected<void, Refusal> settle_motion();
   std::uint64_t single_pairs_ = 0;
   std::uint64_t multi_pairs_ = 0;
