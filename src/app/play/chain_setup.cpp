@@ -118,8 +118,12 @@ UpscaleSetup ChainEngines::upscale(const PlaySettings& settings, std::shared_ptr
                       .source_height = height,
                       .work_width = sized.width,
                       .work_height = sized.height,
-                      .rife_width = rife_motion ? rife_size.width : 0,
-                      .rife_height = rife_motion ? rife_size.height : 0,
+                      .rife_width = rife_motion   ? rife_size.width
+                                    : drba_motion ? drba_size.width
+                                                  : 0,
+                      .rife_height = rife_motion   ? rife_size.height
+                                     : drba_motion ? drba_size.height
+                                                   : 0,
                       .warp_after_span = warp_after_span(settings.span_order, sized.height * kSpanFactor),
                       .slots = std::move(slots)};
 }
@@ -310,10 +314,23 @@ std::expected<std::optional<ChainEngines>, Refusal> prepare_chain_once(Player& p
     // Warp après SPAN (sortie haute) : la variante mouvement, un SPAN par source au lieu d'un par image
     // créée.
     bool motion = settings.upscale && warp_after_span(settings.span_order, c.work.height * kSpanFactor);
-    auto loaded =
-        prepare_distil_drba(p, init, *c.backend, c.gmfss_places, c.work.width, c.work.height, c.drba_align,
-                            settings.motion_precision, try_fused ? &fused : nullptr, &motion);
+    // D4 : la variante mouvement estime à la taille de RIFE mouvement (720p pour un travail plus grand),
+    // comme RIFE ; sans variante mouvement, l'image se refait à la taille de travail.
+    const bool smaller = motion && c.rife_size.height < c.work.height;
+    const WorkSize at = smaller ? c.rife_size : c.work;
+    auto loaded = prepare_distil_drba(p, init, *c.backend, c.gmfss_places, at.width, at.height, c.drba_align,
+                                      settings.motion_precision, try_fused ? &fused : nullptr, &motion);
+    if (smaller && loaded && *loaded && !motion) {
+      fused = DrbaFusedUse{.declined = fused.declined};
+      loaded =
+          prepare_distil_drba(p, init, *c.backend, c.gmfss_places, c.work.width, c.work.height, c.drba_align,
+                              settings.motion_precision, try_fused ? &fused : nullptr, &motion);
+    }
     c.drba_motion = loaded && *loaded && motion;
+    c.drba_size = c.drba_motion ? at : c.work;
+    if (c.drba_motion && smaller)
+      log->info("DistilDRBA mouvement : estimé en {}x{}, warp en {}x{}", at.width, at.height, c.work.width,
+                c.work.height);
     if (loaded && *loaded) {
       c.drba_fused = fused.used;
       if (fused.used)
