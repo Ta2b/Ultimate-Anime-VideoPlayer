@@ -4,6 +4,7 @@
 // bout en bout. FP32 : 1e-4 relatif. FP16 : chaque tenseur intermédiaire est arrondi à 2^-11
 // près par le GPU et pas par l'interpréteur, d'où kFp16 (net_rig.h).
 #include <algorithm>
+#include <cstring>
 #include <string>
 #include <vector>
 
@@ -270,4 +271,54 @@ TEST_CASE("Réseau : mémoire partagée de la variante coopmat comme le noyau la
     }
   }
   CHECK(vk::net::detail::matrix_shared_bytes(8, 2, 32, 0) > 48U * 1024U);
+}
+
+// V4, épilogue en registres : proposé à l'autotuner (quatrième réglage à 1) pour une Conv à
+// sortie float16 en Nhwc16, jamais en tête ; abaissé, il range le biais en 16 lignes suivies de
+// l'identité. Sa justesse sur un vrai GPU à matrices coopératives : check_all_variants plus haut.
+TEST_CASE("Réseau : épilogue en registres de la variante coopmat, proposé et rangé",
+          "[vk_backend][net][conv]") {
+  NetRig rig = make_net_rig();
+  const ir::Graph graph = build(chain_model(true, 16, 16));
+  vk::net::Target target = rig.target;
+  target.matrix_units = true;
+  target.matrix_first = true;
+  target.matrix_f16_acc = false;
+  if (target.subgroup_size == 0) target.subgroup_size = 32;
+  // La deuxième Conv : entrée et résiduel en Nhwc16 (la première lit l'entrée du graphe).
+  std::size_t conv = 0;
+  std::vector<vk::net::KernelChoice> options;
+  for (std::size_t k = 0, seen = 0; k < graph.nodes.size(); ++k) {
+    if (graph.nodes[k].op == ir::OpKind::Conv && ++seen == 2) {
+      conv = k;
+      options = require_value(vk::net::candidates(graph, k, target));
+      break;
+    }
+  }
+  REQUIRE_FALSE(options.empty());
+  CHECK(options.front().variant == "coopmat");
+  CHECK(options.front().tuning.size() < 4);
+  const auto direct = std::ranges::find_if(options, [](const vk::net::KernelChoice& c) {
+    return c.variant == "coopmat" && c.tuning.size() == 4 && c.tuning[3] == 1;
+  });
+  REQUIRE(direct != options.end());
+  std::vector<vk::net::KernelChoice> choices = require_value(vk::net::default_choices(graph, target));
+  choices[conv] = *direct;
+  const vk::net::Program program = require_value(vk::net::lower(graph, choices, target));
+  const auto d =
+      std::ranges::find(program.dispatches, static_cast<std::uint32_t>(conv), &vk::net::Dispatch::node);
+  REQUIRE(d != program.dispatches.end());
+  CHECK(d->shader == "net_conv_coopmat_f16");
+  CHECK(d->constants.back() == 1U);
+  REQUIRE(d->bindings[2].kind == vk::net::BindingKind::Blob);
+  const auto& bias = program.blobs[d->bindings[2].index];
+  REQUIRE(bias.size() == (16 * 16 * sizeof(float)) + (256 * 2));
+  // Ligne 15 égale à la ligne 0, puis l'identité float16.
+  CHECK(std::equal(bias.begin(), bias.begin() + 64, bias.begin() + (15 * 64)));
+  std::uint16_t one = 0;
+  std::uint16_t zero = 1;
+  std::memcpy(&one, bias.data() + 1024 + (17 * 2), 2);
+  std::memcpy(&zero, bias.data() + 1024 + 2, 2);
+  CHECK(one == 0x3C00);
+  CHECK(zero == 0);
 }

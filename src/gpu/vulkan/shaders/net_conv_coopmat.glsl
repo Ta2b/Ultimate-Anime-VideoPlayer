@@ -11,8 +11,12 @@
 // tampon (SHARED_B, au choix de l'autotuner). Produits en float16, sommes en float. L'épilogue
 // (biais, résiduel, activation, porte de SPAN quand RESIDUAL = 2) passe tuile par tuile par la
 // mémoire partagée, puis écrit la sortie dans sa disposition et son type, à sa place après le
-// DepthToSpace fondu quand SPACE > 1. Entrée float16 en Nhwc16 exigée (l'hôte ne propose
-// cette variante qu'alors). Référence : gpu/ir/op_window.cpp (eval_conv).
+// DepthToSpace fondu quand SPACE > 1. Avec DIRECT_EPI (sommes en float seulement), une tuile
+// pleine reste en registres : les sommes partent du biais, le résiduel s'y ajoute par un produit
+// avec l'identité (rangée après le biais), l'activation se fait élément par élément et la tuile
+// float16 s'écrit d'un coopMatStore ; la dernière tuile, incomplète, reprend le chemin par la
+// mémoire partagée. Entrée float16 en Nhwc16 exigée (l'hôte ne propose cette variante qu'alors).
+// Référence : gpu/ir/op_window.cpp (eval_conv).
 #extension GL_KHR_cooperative_matrix : require
 #extension GL_KHR_memory_scope_semantics : require
 #extension GL_KHR_shader_subgroup_basic : require
@@ -66,6 +70,11 @@ layout(constant_id = 33) const uint KC = 16;
 layout(constant_id = 34) const uint SPACE = 0;      // DepthToSpace fondu : blocs de SPACE × SPACE
 layout(constant_id = 35) const uint SPACE_CRD = 0;  // 1 : ordre CRD, 0 : DCR
 layout(constant_id = 36) const uint SHARED_B = 0;   // 1 : B de l'étape en mémoire partagée, comme A
+// 1 : épilogue en registres (au choix de l'autotuner) ; l'hôte ne le propose que pour une sortie
+// float16 en Nhwc16 sans DepthToSpace ni porte, un résiduel float16 en Nhwc16, pas de PRelu, et
+// COUT multiple de 16. Le biais est alors rangé en 16 lignes identiques de NP floats, suivies
+// de l'identité 16 × 16 en float16.
+layout(constant_id = 37) const uint DIRECT_EPI = 0;
 
 const uint NT = (COUT + 15u) / 16u;
 const uint NP = NT * 16u;
@@ -83,6 +92,7 @@ layout(std430, binding = 0) readonly buffer Source { uvec4 v[]; } src4;
 layout(std430, binding = 1) readonly buffer Weights { float16_t w[]; } weights;
 layout(std430, binding = 1) readonly buffer WeightsV { uvec4 v[]; } weights4;
 layout(std430, binding = 2) readonly buffer Bias { float v[]; } bias;
+layout(std430, binding = 2) readonly buffer BiasH { float16_t v[]; } bias_h;  // identité de DIRECT_EPI
 layout(std430, binding = 3) readonly buffer Slope { float v[]; } slope;
 AJP_NET_BUFFER(4, res, readonly)
 AJP_NET_BUFFER(5, dst, writeonly)
@@ -156,6 +166,13 @@ void main() {
   for (uint i = 0u; i < TM * NT; ++i) {
     acc[i] = coopmat<ACC_T, gl_ScopeSubgroup, 16, 16, gl_MatrixUseAccumulator>(0.0);
   }
+#ifndef AJP_COOPMAT_ACC16
+  if (DIRECT_EPI == 1u) {
+    // Les sommes partent du biais (16 lignes identiques), ajouté ainsi sans addition de matrices.
+    for (uint i = 0u; i < TM * NT; ++i)
+      coopMatLoad(acc[i], bias.v, (i % NT) * 16u, NP, gl_CooperativeMatrixLayoutRowMajor);
+  }
+#endif
   stage_a(0u, n, first_pixel, 0u);
   if (SHARED_B == 1u) stage_b(0u, 0u);
   barrier();
@@ -187,6 +204,32 @@ void main() {
     barrier();
   }
   for (uint t = 0u; t < TM; ++t) {
+    const uint p0 = first_pixel + (sg * TM + t) * 16u;
+#ifndef AJP_COOPMAT_ACC16
+    if (DIRECT_EPI == 1u && p0 + 16u <= HOUT * WOUT) {
+      for (uint j = 0u; j < NT; ++j) {
+        coopmat<float, gl_ScopeSubgroup, 16, 16, gl_MatrixUseAccumulator> v = acc[t * NT + j];
+        if (RESIDUAL == 1u) {
+          // v + r sans l'addition de matrices (que le spirv-opt de 2023 ne sait pas optimiser) :
+          // la tuile du résiduel, en A, multipliée par l'identité.
+          coopmat<float16_t, gl_ScopeSubgroup, 16, 16, gl_MatrixUseA> r;
+          coopMatLoad(r, res_h.v, (n * HOUT * WOUT + p0) * CRP + j * 16u, CRP,
+                      gl_CooperativeMatrixLayoutRowMajor);
+          coopmat<float16_t, gl_ScopeSubgroup, 16, 16, gl_MatrixUseB> id;
+          coopMatLoad(id, bias_h.v, 32u * NP, 16u, gl_CooperativeMatrixLayoutRowMajor);
+          v = coopMatMulAdd(r, id, v);
+        }
+        if (ACT != kActNone) {
+          for (int e = 0; e < v.length(); ++e) v[e] = net_activate(ACT, v[e], ALPHA, LO, HI, 0.0);
+        }
+        coopmat<float16_t, gl_ScopeSubgroup, 16, 16, gl_MatrixUseAccumulator> vh =
+            coopmat<float16_t, gl_ScopeSubgroup, 16, 16, gl_MatrixUseAccumulator>(v);
+        coopMatStore(vh, dst_h.v, (n * HOUT * WOUT + p0) * CYP + j * 16u, CYP,
+                     gl_CooperativeMatrixLayoutRowMajor);
+      }
+      continue;
+    }
+#endif
     for (uint j = 0u; j < NT; ++j) {
 #ifdef AJP_COOPMAT_ACC16
       coopmat<float, gl_ScopeSubgroup, 16, 16, gl_MatrixUseAccumulator> sum =
@@ -203,7 +246,7 @@ void main() {
         if (p < HOUT * WOUT && co < COUT) {
           uint oy = p / WOUT;
           uint ox = p % WOUT;
-          float v = tile_c[sg * 256u + e] + bias.v[co];
+          float v = tile_c[sg * 256u + e] + (DIRECT_EPI == 1u ? 0.0 : bias.v[co]);  // biais déjà sommé
           if (RESIDUAL == 1u) v += AJP_LOAD(res, TR, t_index(rd, n, co, oy, ox));
           v = net_activate(ACT, v, ALPHA, LO, HI, ACT == kActPrelu ? slope.v[co] : 0.0);
           if (RESIDUAL == 2u) v *= source_at(n, co, oy, ox) + AJP_LOAD(res, TR, t_index(rd, n, co, oy, ox));
