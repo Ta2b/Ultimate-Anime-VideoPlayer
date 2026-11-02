@@ -109,16 +109,15 @@ TEST_CASE("émulation : contraste, saturation et gris moyen aux bornes") {
   CHECK(low->params.em_hi == Approx(0.74));
 }
 
-TEST_CASE("route TrueHDR : les éclats montent à partir de la moitié du pic") {
+TEST_CASE("aspect TrueHDR émulé : les éclats montent à partir de la moitié du pic") {
   GradeSettings settings;
   settings.highlights_rtx = 1.0;
-  const auto decision = decide_grade(settings, pq_context(core::HdrMode::TrueHdr, 800.0));
+  const auto decision = decide_grade(settings, pq_context(core::HdrMode::Native, 800.0));
   REQUIRE(decision);
-  CHECK(decision->mode == GradeMode::TrueHdr);
+  CHECK(decision->mode == GradeMode::Native);
   CHECK(decision->params.paper == 400.0);
   CHECK(decision->params.in_max == 800.0);
-  CHECK(decision->params.emulate == 0.0);
-  CHECK(decision->params.adapt == 0.0);  // RTX HDR : TrueHDR seul, le grade ne module rien
+  CHECK(decision->params.adapt == 1.0);
   CHECK(decision->params.spec_gain == Approx(3.4));
 }
 
@@ -128,7 +127,7 @@ TEST_CASE("sortie SDR : couleurs, noirs et contraste au blanc de l'écran, sans 
   settings.true_black = true;
   settings.black_lo = 0.1;
   settings.black_hi = 0.5;
-  for (const core::HdrMode route : {core::HdrMode::Off, core::HdrMode::Native, core::HdrMode::TrueHdr}) {
+  for (const core::HdrMode route : {core::HdrMode::Off, core::HdrMode::Native}) {
     auto context = pq_context(route);
     context.output_pq = false;
     const auto decision = decide_grade(settings, context);
@@ -234,8 +233,8 @@ TEST_CASE("OLED : la plage du limiteur suit la moyenne d'image de l'écran") {
 }
 
 TEST_CASE("couleurs étendues : passées au hook, nulles par défaut, poussées par Éclatant") {
-  const auto natural = decide_grade(GradeSettings{}, pq_context(core::HdrMode::TrueHdr));
-  const auto vivid = decide_grade(grade_preset(GradePreset::Eclatant), pq_context(core::HdrMode::TrueHdr));
+  const auto natural = decide_grade(GradeSettings{}, pq_context(core::HdrMode::Native));
+  const auto vivid = decide_grade(grade_preset(GradePreset::Eclatant), pq_context(core::HdrMode::Native));
   REQUIRE(natural);
   REQUIRE(vivid);
   CHECK(natural->params.expand == 0.0);
@@ -286,9 +285,9 @@ TEST_CASE("préréglages : Naturel est le grade du lecteur actuel, Éclatant pou
   CHECK(preset_key(GradePreset::Eclatant) == "eclatant");
 }
 
-TEST_CASE("Éclatant sur TrueHDR : aplats et éclats montent, le garde-fou passe au hook") {
-  const auto natural = decide_grade(GradeSettings{}, pq_context(core::HdrMode::TrueHdr));
-  const auto vivid = decide_grade(grade_preset(GradePreset::Eclatant), pq_context(core::HdrMode::TrueHdr));
+TEST_CASE("Éclatant sur l'aspect TrueHDR : aplats et éclats montent, le garde-fou passe au hook") {
+  const auto natural = decide_grade(GradeSettings{}, pq_context(core::HdrMode::Native));
+  const auto vivid = decide_grade(grade_preset(GradePreset::Eclatant), pq_context(core::HdrMode::Native));
   REQUIRE(natural);
   REQUIRE(vivid);
   CHECK(natural->params.area_gain == 1.0);
@@ -299,7 +298,7 @@ TEST_CASE("Éclatant sur TrueHDR : aplats et éclats montent, le garde-fou passe
   CHECK(vivid->params.vibrance == Approx(resp(0.6, 0.8, 1.6)));
   GradeSettings bad;
   bad.guard = 1.5;
-  CHECK_FALSE(decide_grade(bad, pq_context(core::HdrMode::TrueHdr)));
+  CHECK_FALSE(decide_grade(bad, pq_context(core::HdrMode::Native)));
 }
 
 TEST_CASE("un curseur float poussé à sa borne garde le grade") {
@@ -309,7 +308,7 @@ TEST_CASE("un curseur float poussé à sa borne garde le grade") {
   settings.vibrance_rtx = static_cast<double>(0.8F);
   settings.shadows = static_cast<double>(0.8F);
   CHECK(check_grade_settings(settings));
-  CHECK(decide_grade(settings, pq_context(core::HdrMode::TrueHdr)));
+  CHECK(decide_grade(settings, pq_context(core::HdrMode::Native)));
   settings.shadows = 0.81;
   CHECK_FALSE(check_grade_settings(settings));
 }
@@ -336,23 +335,19 @@ TEST_CASE("vrai noir : seuils tirés de la rampe mesurée") {
 
 }  // namespace ajp::render
 
-TEST_CASE("le contraste reste celui de RTX HDR ; la saturation au-delà de ce qu'il donne passe par le grade",
-          "[grade][punch]") {
+TEST_CASE("contraste et saturation au maximum : borne du curseur, punch d'Éclatant", "[grade][punch]") {
   using namespace ajp::render;
   GradeSettings s = grade_preset(GradePreset::Naturel);
-  const GradeContext context{.route = ajp::core::HdrMode::TrueHdr, .output_pq = true, .peak_nits = 1000.0};
+  const GradeContext context{.route = ajp::core::HdrMode::Native, .output_pq = true, .peak_nits = 1000.0};
   auto at_rest = decide_grade(s, context);
   REQUIRE(at_rest);
   CHECK(at_rest->params.punch == 0.0);
   CHECK(at_rest->params.chroma == 1.0);
   s.contrast = 200.0;
   s.saturation = 200.0;
-  auto old_max = decide_grade(s, context);
-  CHECK(old_max->params.punch == 0.0);  // le maximum d'avant : RTX HDR seul
-  // 200 % sur le curseur vaut 400 % : RTX HDR en donne 200, le grade le reste.
-  CHECK(old_max->params.chroma == Approx(1.57 / 1.19));
-  s.saturation = 120.0;  // 160 % appliqués : RTX HDR seul
-  CHECK(decide_grade(s, context)->params.chroma == 1.0);
+  auto at_max = decide_grade(s, context);
+  REQUIRE(at_max);
+  CHECK(at_max->params.punch == 0.0);  // le contraste passe par l'aspect émulé, pas par le punch
   CHECK_FALSE(check_grade_settings([] {
     GradeSettings g;
     g.contrast = 201.0;
@@ -364,10 +359,8 @@ TEST_CASE("le contraste reste celui de RTX HDR ; la saturation au-delà de ce qu
   CHECK(vivid->params.chroma == Approx(1.12));
 }
 
-TEST_CASE(
-    "grade adaptatif (shader) : seuils en codes PQ, courbe émulée de la scène claire, RTX HDR laissé au "
-    "lecteur",
-    "[grade][adaptif]") {
+TEST_CASE("grade adaptatif (shader) : seuils en codes PQ, courbe émulée de la scène claire",
+          "[grade][adaptif]") {
   using namespace ajp::render;
   GradeSettings s;
   s.adaptive = true;
@@ -387,11 +380,6 @@ TEST_CASE(
   CHECK(on->params.ad_em_pow > on->params.em_pow);
   CHECK(on->params.ad_shadows > 0.6);
   CHECK(on->params.ad_vibrance == Approx(on->params.vibrance * (1.0 - s.adaptive_vibrance_cut)));
-  // RTX HDR : l'adaptation est celle du lecteur (la luminance mesurée sur le GPU), pas celle du shader.
-  const GradeContext rtx{.route = ajp::core::HdrMode::TrueHdr, .output_pq = true, .peak_nits = 1000.0};
-  const auto hdr = decide_grade(s, rtx);
-  REQUIRE(hdr);
-  CHECK(hdr->params.ad_on == 0.0);
   // Coupé : aucune trace.
   s.adaptive = false;
   const auto off = decide_grade(s, native);

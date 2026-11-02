@@ -26,12 +26,11 @@ TEST_CASE("play.toml relit à l'identique ce qu'il a écrit", "[app][settings]")
   s.work_height = 540;
   s.downscale = Downscale::CatmullRom;
   s.rife_factor = 4;
-  s.true_hdr = true;
+  s.hdr_native = true;
   s.true_hdr_contrast = 120;
   s.true_hdr_saturation = 90;
   s.true_hdr_gray = 40;
   s.true_hdr_peak = 800;
-  s.true_hdr_debanding = false;
   s.audio_delay_ms = -120;
   s.display_sync = false;
   s.video_latency_ms = 40;
@@ -80,8 +79,8 @@ TEST_CASE("play.toml relit à l'identique ce qu'il a écrit", "[app][settings]")
   CHECK(offered(MotionEngine::Rife));
 }
 
-TEST_CASE("Mode HDR : moteur RTX HDR, HDR adaptatif ou SDR, et les fichiers d'avant", "[app][settings]") {
-  for (const std::string_view engine : {"rtx", "adaptive", "sdr"}) {
+TEST_CASE("Mode HDR : HDR adaptatif ou SDR, et les fichiers d'avant", "[app][settings]") {
+  for (const std::string_view engine : {"adaptive", "sdr"}) {
     const auto s = parse_settings(std::format("[hdr]\nengine = \"{}\"\ncontrast = 150\n", engine));
     REQUIRE(s);
     CHECK(hdr_engine_key(*s) == engine);
@@ -90,10 +89,14 @@ TEST_CASE("Mode HDR : moteur RTX HDR, HDR adaptatif ou SDR, et les fichiers d'av
   }
   CHECK(format_settings(PlaySettings{}).find("[rtx_hdr]") == std::string::npos);
   CHECK_FALSE(parse_settings("[hdr]\nengine = \"maxine\"\n"));
+  // RTX HDR, retiré : « rtx » se lit comme le HDR adaptatif.
+  const auto old_engine = parse_settings("[hdr]\nengine = \"rtx\"\ndebanding = false\n");
+  REQUIRE(old_engine);
+  CHECK(hdr_engine_key(*old_engine) == "adaptive");
   // Un play.toml d'avant : section rtx_hdr, enabled et native.
   const auto rtx = parse_settings("[rtx_hdr]\nenabled = true\ncontrast = 200\nmiddle_gray = 51\n");
   REQUIRE(rtx);
-  CHECK(hdr_engine_key(*rtx) == "rtx");
+  CHECK(hdr_engine_key(*rtx) == "adaptive");
   CHECK(rtx->true_hdr_contrast == 200);
   CHECK(rtx->true_hdr_gray == 51);
   const auto native = parse_settings("[rtx_hdr]\nenabled = false\nnative = true\n");
@@ -152,7 +155,7 @@ TEST_CASE("Grade : plus de préréglages, l'ancienne clé est ignorée, gamut P3
 TEST_CASE("Une clé absente garde son défaut, une clé inconnue est ignorée", "[app][settings]") {
   const auto s = parse_settings("[rtx_hdr]\nenabled = true\nfutur = 3\n[autre]\nx = 1\n");
   REQUIRE(s);
-  CHECK(s->true_hdr);
+  CHECK(s->hdr_native);
   CHECK(s->true_hdr_contrast == 100);
   CHECK(s->rife_factor == kDefaultRifeFactor);
   CHECK(s->downscale == Downscale::Hermite);
@@ -207,14 +210,12 @@ TEST_CASE("Hors plage, type faux ou TOML invalide : refus nommé", "[app][settin
 TEST_CASE("Les options données remplacent play.toml pour cette lecture", "[app][settings]") {
   PlaySettings saved;
   saved.rife_factor = 2;
-  saved.true_hdr = false;
   saved.work_height = 540;
-  const std::array<std::string_view, 4> args{"film.mkv", "--rife=4", "--truehdr", "--truehdr-peak=900"};
+  const std::array<std::string_view, 3> args{"film.mkv", "--rife=4", "--truehdr-peak=900"};
   const auto options = parse_play_options(args);
   REQUIRE(options);
   const PlaySettings s = settings_for(saved, *options);
   CHECK(s.rife_factor == 4);
-  CHECK(s.true_hdr);
   CHECK(s.true_hdr_peak == 900);
   CHECK(s.work_height == 540);  // non donnée : celle de play.toml
   const PlayOptions applied = options_for(*options, s);
@@ -257,9 +258,6 @@ TEST_CASE("Ce qu'un changement demande : direct ou réouverture, dit avant d'app
   const Change reopen = change_between(running, height, true);
   CHECK(reopen.cost == ChangeCost::Reopen);
   CHECK(reopen.reason.find("SPAN") != std::string::npos);
-  PlaySettings hdr = running;
-  hdr.true_hdr = true;
-  CHECK(change_between(running, hdr, true).reason.find("RTX HDR") != std::string::npos);
   PlaySettings off;
   off.rife_factor = 0;
   PlaySettings on = off;
@@ -306,14 +304,12 @@ TEST_CASE("La part directe d'un changement laisse ce qui demande une réouvertur
   const PlaySettings running;
   PlaySettings wanted = running;
   wanted.work_height = 1080;  // réouverture
-  wanted.true_hdr = true;     // réouverture
   wanted.true_hdr_contrast = 150;
   wanted.downscale = Downscale::CatmullRom;
   wanted.stats.frames = true;
   wanted.rife_factor = 2;
   const PlaySettings live = live_part(running, wanted, true);
   CHECK(live.work_height == running.work_height);
-  CHECK_FALSE(live.true_hdr);
   CHECK(live.true_hdr_contrast == 150);
   CHECK(live.downscale == Downscale::CatmullRom);
   CHECK(live.stats.frames);

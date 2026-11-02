@@ -42,8 +42,6 @@ struct SystemInfo {
 enum class EngineId : std::uint8_t {
   Vulkan,
   TensorRt,
-  RtxVideoSdk,  // RTX HDR (TrueHDR) sous Windows
-  MaxineVfx,    // TrueHDR sous Linux
   MiGraphX,
   OpenVino,
   DirectMl,
@@ -71,7 +69,6 @@ enum class Badge : std::uint8_t {
 enum class Reason : std::uint8_t {
   AlwaysIncluded,
   FastestForThisGpu,
-  RtxHdrForThisGpu,
   CompareWithVulkan,  // DirectML, MIGraphX de Windows ML : à l'essai, utile si Vulkan mesure moins bien
   NoMatchingGpu,
 };

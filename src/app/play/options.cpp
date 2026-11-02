@@ -116,9 +116,6 @@ std::expected<PlayOptions, Refusal> parse_play_options(std::span<const std::stri
       options.fullscreen = true;
     } else if (arg == "--hidden") {
       options.hidden = true;
-    } else if (arg == "--truehdr") {
-      options.true_hdr = true;
-      options.given.emplace_back(arg);
     } else if (arg == "--mute") {
       options.mute = true;
       options.given.emplace_back(arg);
@@ -157,7 +154,6 @@ std::expected<PlayOptions, Refusal> parse_play_options(std::span<const std::stri
                                           "--work-height",
                                           "--rife-model",
                                           "--rife",
-                                          "--truehdr-sdk",
                                           "--truehdr-peak",
                                           "--truehdr-contrast",
                                           "--truehdr-saturation",
@@ -197,8 +193,6 @@ std::expected<PlayOptions, Refusal> parse_play_options(std::span<const std::stri
           options.snapshot_frames = *frames;
         } else if (name == "--snapshot") {
           options.snapshot = std::filesystem::path(text);
-        } else if (name == "--truehdr-sdk") {
-          options.true_hdr_sdk = std::filesystem::path(text);
         } else if (name.starts_with("--truehdr-")) {
           const auto setting = number<int>(text);
           // Les bornes de play.toml (limits::), le pic à 0 pour « celui de l'écran ».
@@ -412,8 +406,7 @@ std::string play_usage() {
       "  --work-height=N        réduit la source à N lignes avant SPAN (défaut 720 ; 0 jamais)\n"
       "  --rife=N               interpolation ×N avant SPAN (1.5, 2 à 10 ; défaut {} ; 0 aucune)\n"
       "  --rife-model=FICHIER   modèle RIFE (défaut : {})\n"
-      "  --truehdr              RTX HDR (Maxine TrueHDR), SDK importé une fois depuis --truehdr-sdk\n"
-      "  --truehdr-peak=NITS    pic de TrueHDR (défaut : celui de l'écran, sinon 1000)\n"
+      "  --truehdr-peak=NITS    pic du HDR adaptatif (défaut : celui de l'écran, sinon 1000)\n"
       "  --truehdr-contrast=N, --truehdr-saturation=N (0 à 200, 100), --truehdr-gray=N (10 à 100, 50)\n"
       "ajp --register           inscrit le lecteur auprès du système (« Ouvrir avec », lecteur par\n"
       "                         défaut) ; --unregister retire cette inscription\n"

@@ -76,7 +76,7 @@ constexpr std::array<std::pair<std::string_view, DownscaleFilter>, 7> kFilters{{
     {"hermite", DownscaleFilter::Hermite},
 }};
 constexpr std::array<std::pair<std::string_view, HdrMode>, 3> kHdrModes{
-    {{"off", HdrMode::Off}, {"native", HdrMode::Native}, {"truehdr", HdrMode::TrueHdr}}};
+    {{"off", HdrMode::Off}, {"native", HdrMode::Native}, {"truehdr", HdrMode::Native}}};  // RTX HDR retiré
 
 // « 2 » ou « "5/2" ».
 std::expected<Ratio, Refusal> parse_ratio(const toml::node& node, const std::string& where) {

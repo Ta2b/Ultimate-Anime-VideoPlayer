@@ -31,7 +31,6 @@ std::string rate_text(media::Rational rate) {
 
 PlaySettings export_chain(const PlaySettings& s) {
   PlaySettings out = s;
-  out.true_hdr = false;
   out.hdr_native = false;
   out.grade = false;
   out.smooth_motion = false;

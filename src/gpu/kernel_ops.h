@@ -27,8 +27,6 @@
 #include "core/types.h"
 #include "gpu/tensor.h"
 #include "kernels/spec.h"
-#include "vendor_hdr/sdk_store.h"
-#include "vendor_hdr/true_hdr.h"
 
 namespace ajp::gpu {
 
@@ -189,12 +187,6 @@ class KernelOps {
   virtual std::expected<PairScores, Refusal> scores_take(std::uint64_t /*ticket*/) {
     return std::unexpected(Refusal{RefusalCode::FormatUnsupported, "scores_take : absent de ce backend"});
   }
-  // RTX HDR (TrueHDR) : ouvre l'effet du SDK importé, sur le flux de ce backend, pour des images
-  // de config.width × config.height (la sortie de SPAN). Une seule instance ; rouvrir remplace.
-  virtual std::expected<void, Refusal> open_true_hdr(const vendor_hdr::InstalledSdk& /*sdk*/,
-                                                     const vendor_hdr::TrueHdrConfig& /*config*/) {
-    return std::unexpected(Refusal{RefusalCode::FormatUnsupported, "open_true_hdr : absent de ce backend"});
-  }
   // Plus grand |déplacement| du mouvement dans sa fenêtre, en pixels de la fenêtre, rendu tout de
   // suite au prix d'une attente hôte (ref::flow_max) : décide si une passe RIFE sert toute la paire.
   virtual std::expected<float, Refusal> flow_max_now(const Motion& /*motion*/) {
@@ -320,14 +312,8 @@ class KernelOps {
     std::uint64_t total = 0;
   };
   virtual std::optional<DeviceMemory> device_memory() { return std::nullopt; }
-  // Nouveaux réglages de l'effet ouvert par open_true_hdr, appliqués à l'image suivante (le
-  // débandage recharge le modèle). Appelé depuis le thread qui écrit le ring.
-  virtual std::expected<void, Refusal> set_true_hdr(const vendor_hdr::TrueHdrParams& /*params*/) {
-    return std::unexpected(Refusal{RefusalCode::FormatUnsupported, "set_true_hdr : absent de ce backend"});
-  }
-  // Statistiques de luminance (0 à 1, pondération BT.709 des canaux de l'image source) de la dernière image
-  // passée à RTX HDR, mesurées sur le GPU sur un point sur seize : moyenne, centiles et parts de noir et de
-  // clair.
+  // Statistiques de luminance d'une image (0 à 1, pondération BT.709 des canaux) : moyenne, centiles et parts
+  // de noir et de clair. La pré-analyse des plans les mesure (media/shot_cutter.h).
   struct SceneStats {
     float mean = 0.0F;
     float p05 = 0.0F;
@@ -339,24 +325,6 @@ class KernelOps {
     float blue = 0.0F;    // moyenne de max(0, B - max(R, V)) : ciel, eau, aplats bleus saturés
     float chroma = 0.0F;  // moyenne de max(R, V, B) - min(R, V, B)
   };
-  // Vide sans RTX HDR ou avant la première image. Lisible depuis n'importe quel thread (une image de retard).
-  virtual std::optional<SceneStats> scene_stats() const { return std::nullopt; }
-  // write_ring avec RTX HDR : rgb SDR (FP16, taille du slot) → RGBA8 tramé → TrueHDR → RGB10A2
-  // PQ BT.2020 → slot RGBA16, même protocole de sémaphores que write_ring. prepared dit comment
-  // rgb a été converti (vraie matrice, vraie plage) ; le tramage est fait ici.
-  virtual std::expected<void, Refusal> write_ring_true_hdr(const Tensor& /*rgb*/,
-                                                           const vendor_hdr::InputPreparation& /*prepared*/,
-                                                           const RingSlotDesc& /*slot*/,
-                                                           const RingWrite& /*sync*/) {
-    return std::unexpected(
-        Refusal{RefusalCode::FormatUnsupported, "write_ring_true_hdr : absent de ce backend"});
-  }
-  // RTX HDR ouvert : ces gris RGBA8 (une bande verticale chacun) passent par TrueHDR avec ses
-  // réglages en cours ; rend leur sortie PQ (0 à 1, canal R). Cale le vrai noir OLED sur la
-  // rampe de 32 marches quasi noires. Attente hôte ; même thread que write_ring_true_hdr.
-  virtual std::expected<std::vector<float>, Refusal> true_hdr_ramp(std::span<const std::uint8_t> /*levels*/) {
-    return std::unexpected(Refusal{RefusalCode::FormatUnsupported, "true_hdr_ramp : absent de ce backend"});
-  }
 };
 
 }  // namespace ajp::gpu

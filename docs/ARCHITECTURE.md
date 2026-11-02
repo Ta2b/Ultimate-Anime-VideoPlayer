@@ -8,7 +8,7 @@ Un seul cœur possède le profil, la politique et l'ordonnancement. Il résout u
 Un dossier de `src/` = un module = une cible CMake `ajp::<nom>`, déclarée par
 `ajp_add_module` avec ses dépendances. Le graphe est acyclique : `app` dépend de
 tout, rien ne dépend de `app`. `kernels` est une feuille ; `media`, `subs`,
-`audio`, `vendor_hdr`, `present`, `gpu_ir` et `gpu_span_fp8` ne dépendent publiquement que de
+`audio`, `present`, `gpu_ir` et `gpu_span_fp8` ne dépendent publiquement que de
 `core_types`.
 
 | Module | Responsabilité | Thread |
@@ -21,7 +21,6 @@ tout, rien ne dépend de `app`. `kernels` est une feuille ; `media`, `subs`,
 | `gpu_ir` | Représentation interne des réseaux ONNX, commune aux moteurs Vulkan et Metal | gpu, preparer |
 | `gpu_span_fp8` | Paquet de poids du SPAN entier en FP8 (noyaux CUTLASS du backend TensorRT, `docs/span-fp8-cutlass.md`) | gpu, preparer |
 | `prepare` | Construction des moteurs, reçus de qualification | preparer |
-| `vendor_hdr` | Interface `TrueHdr` : RTX Video SDK, Maxine VFX ; ordre des bloqueurs | appelé par gpu |
 | `audio` | Décodage audio, sortie SDL3, horloge | audio |
 | `subs` | Rendu libass en atlas bornés | subs |
 | `render` | Composition libplacebo, grade, sous-titres, OSD | main |
@@ -44,10 +43,9 @@ kernels ─── (feuille)
 media ───── core_types · privé : FFmpeg, Vulkan, core_log
 subs ────── core_types · privé : libass, core_log
 audio ───── core_types · privé : FFmpeg, SDL3, core_log
-vendor_hdr ─ core_types · privé : toml++, core_log, dl
 gpu_ir ──── core_types · privé : kernels, core_log
 gpu_span_fp8 core_types
-gpu ─────── core, kernels, vendor_hdr
+gpu ─────── core, kernels
 prepare ─── core, gpu · privé : toml++, core_log
 render ──── core, subs
 present ─── core_types
@@ -55,8 +53,7 @@ export ──── core_types · privé : FFmpeg, Vulkan, core_log
 app ─────── tout, dont core_log
 ```
 
-`core` ne dépend pas de `vendor_hdr` : `app` lui passe le texte du premier
-bloqueur TrueHDR (voir plus bas). `gpu_ir` lit les demi-flottants de
+`gpu_ir` lit les demi-flottants de
 `kernels/ref/half.h`, la seule implémentation du dépôt.
 
 ## Contrats entre modules
@@ -238,13 +235,6 @@ scRGB), et la provenance de chaque champ (défaut, profil, système, `--display`
 Quand l'écran est connu, `resolve()` passe la règle choisie par `pace_rule()` :
 une interpolation unique prend le facteur calé sur les vsyncs, et le `Plan` porte
 sa `CadenceChoice`, comprise dans son hachage.
-
-### TrueHDR dans `resolve()`
-
-`Capabilities::true_hdr_blocker` porte la phrase du premier bloqueur, vide quand
-TrueHDR peut être tenté. `app` la tire de `vendor_hdr::first_blocker_reason()` et
-la passe à `to_resolve_capabilities()` ; la valeur par défaut refuse, tant que
-personne n'a vérifié. Un profil TrueHDR bloqué est refusé avec ce texte, tel quel.
 
 ## Threads
 

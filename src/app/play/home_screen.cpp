@@ -46,7 +46,6 @@
 #include "core/keys.h"
 #include "core/log.h"
 #include "prepare/utf8.h"
-#include "vendor_hdr/true_hdr.h"
 
 namespace ajp::app::play {
 namespace {
@@ -192,9 +191,6 @@ SettingsChoices home_choices(const HomeScreen& h, const HomeState& st, const Pla
       .default_rife_model = rife ? rife->default_name : std::string(),
       .rife_folder = places.empty() ? std::string() : prepare::utf8_path(places.front()),
       .nvidia = vendor_from_pci(h.screen.device_facts().pci_vendor) == GpuVendor::Nvidia,
-      .true_hdr_available = tensorrt_backend_present(h.catalog, h.paths) &&
-                            (maxine_available(h.options, h.paths) || running.true_hdr),
-      .true_hdr_backend = tensorrt_backend_present(h.catalog, h.paths),
       .hdr_output = !h.options.sdr && content_peak_nits(h.screen.window()).has_value(),
       .auto_peak = auto_peak_nits(content_peak_nits(h.screen.window())),
       .engines = engine_badges(h.paths.engines, {}, WorkSize{}, std::nullopt, kernels::RifeGeometry{}),

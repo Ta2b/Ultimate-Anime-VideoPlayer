@@ -134,10 +134,6 @@ TEST_CASE("resolve : un modèle absent ou une route HDR impossible sont refusés
 
   DisplayInfo hdr_display = kSdrDisplay;
   hdr_display.hdr = true;
-  auto no_sdk = resolve(with_steps({upscale(2)}, HdrMode::TrueHdr), kCaps, k1080p24, hdr_display);
-  REQUIRE_FALSE(no_sdk);
-  CHECK(no_sdk.error().code == RefusalCode::HdrUnavailable);
-
   auto native = resolve(with_steps({upscale(2)}, HdrMode::Native), kCaps, k1080p24, hdr_display);
   REQUIRE(native);
   CHECK(native->hdr.kind == HdrMode::Native);
@@ -232,27 +228,4 @@ TEST_CASE("resolve : un écran hors bornes est refusé", "[resolve][pacing]") {
   CHECK(code_of(dim) == RefusalCode::FieldOutOfRange);
   dim.sdr_white_nits = 240.0;
   CHECK(resolve(profile, kCaps, k1080p24, dim));
-}
-
-TEST_CASE("resolve : TrueHDR bloqué rend le texte du premier bloqueur", "[resolve]") {
-  DisplayInfo hdr_display = kSdrDisplay;
-  hdr_display.hdr = true;
-  const Profile profile = with_steps({upscale(2)}, HdrMode::TrueHdr);
-
-  auto unchecked = resolve(profile, kCaps, k1080p24, hdr_display);
-  REQUIRE_FALSE(unchecked);
-  CHECK(unchecked.error().code == RefusalCode::HdrUnavailable);
-  CHECK(unchecked.error().detail == kTrueHdrUnchecked);
-
-  Capabilities blocked = kCaps;
-  blocked.true_hdr_blocker = "le GPU de rendu n'est pas un GPU NVIDIA";
-  auto refused = resolve(profile, blocked, k1080p24, hdr_display);
-  REQUIRE_FALSE(refused);
-  CHECK(refused.error().detail == blocked.true_hdr_blocker);
-
-  Capabilities ready = kCaps;
-  ready.true_hdr_blocker.clear();
-  auto plan = resolve(profile, ready, k1080p24, hdr_display);
-  REQUIRE(plan);
-  CHECK(plan->hdr.kind == HdrMode::TrueHdr);
 }

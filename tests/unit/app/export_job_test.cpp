@@ -33,16 +33,14 @@ struct TempDir {
 
 }  // namespace
 
-TEST_CASE("Export : la chaîne sans RTX HDR, HDR adaptatif, grade ni Smooth Motion", "[app][export]") {
+TEST_CASE("Export : la chaîne sans HDR adaptatif, grade ni Smooth Motion", "[app][export]") {
   ajp::app::play::FrenchUi french;
   PlaySettings s;
-  s.true_hdr = true;
   s.hdr_native = true;
   s.grade = true;
   s.smooth_motion = true;
   s.rife_factor = 4;
   const PlaySettings out = export_chain(s);
-  CHECK_FALSE(out.true_hdr);
   CHECK_FALSE(out.hdr_native);
   CHECK_FALSE(out.grade);
   CHECK_FALSE(out.smooth_motion);
@@ -122,7 +120,7 @@ TEST_CASE("Export : « export » de --keys lance l'export de la chaîne en cours
   PlaySettings running;
   running.rife_factor = 2;
   running.rife_factor_den = 1;
-  running.true_hdr = true;
+  running.hdr_native = true;
   media::TrackInfo video;
   video.width = 1920;
   video.height = 1080;

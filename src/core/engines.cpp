@@ -15,17 +15,6 @@ EngineOffer vendor_engine(EngineId id, Badge only, bool fits) {
   return offer;
 }
 
-EngineOffer hdr_sdk(EngineId id, Badge os_badge, bool fits) {
-  EngineOffer offer{.id = id,
-                    .delivery = Delivery::Import,
-                    .badges = {Badge::NvidiaOnly, os_badge},
-                    .reason = fits ? Reason::RtxHdrForThisGpu : Reason::NoMatchingGpu,
-                    .relevant = fits,
-                    .preselected = fits};
-  if (fits) offer.badges.insert(offer.badges.begin(), Badge::Recommended);
-  return offer;
-}
-
 }  // namespace
 
 std::vector<EngineOffer> recommend_engines(const SystemInfo& system) {
@@ -51,11 +40,6 @@ std::vector<EngineOffer> recommend_engines(const SystemInfo& system) {
                                  .preselected = true});
   } else {
     offers.push_back(vendor_engine(EngineId::TensorRt, Badge::NvidiaOnly, rtx));
-    if (system.os == Os::Windows) {
-      offers.push_back(hdr_sdk(EngineId::RtxVideoSdk, Badge::WindowsOnly, rtx));
-    } else {
-      offers.push_back(hdr_sdk(EngineId::MaxineVfx, Badge::LinuxOnly, rtx));
-    }
     if (system.os == Os::Windows) {
       // MIGraphX de Windows ML (sans ROCm), à l'essai sur les AMD RDNA 3 et après : proposé, jamais
       // coché d'office, à comparer avec Vulkan.

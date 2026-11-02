@@ -197,7 +197,7 @@ TEST_CASE("Index des moteurs : seuls les moteurs téléchargés y figurent", "[m
     CHECK(index_refusal(std::format("version = 1\n[[engine]]\nid = \"{}\"\n{}", id, package)) ==
           RefusalCode::FieldOutOfRange);
   }
-  for (const char* id : {"tensorrt", "migraphx", "openvino", "directml", "rtx_video_sdk", "maxine_vfx"}) {
+  for (const char* id : {"tensorrt", "migraphx", "openvino", "directml"}) {
     INFO(id);
     CHECK(parse_engine_index(std::format("version = 1\n[[engine]]\nid = \"{}\"\n{}", id, package)));
   }
@@ -205,8 +205,8 @@ TEST_CASE("Index des moteurs : seuls les moteurs téléchargés y figurent", "[m
 
 TEST_CASE("Index des moteurs : celui de la release Linux, tel que package-linux.sh l'écrit",
           "[model_index]") {
-  // engines.lock de linux-v0.1.0-preview.2 (adresses raccourcies) : son entrée RTX HDR faisait
-  // refuser tout l'index, TensorRT compris.
+  // engines.lock de linux-v0.1.0-preview.2 (adresses raccourcies) : son entrée RTX HDR (retiré depuis) est
+  // écartée seule, TensorRT reste.
   const std::string lock =
       "version = 1\n\n"
       "[[engine]]\nid = \"migraphx\"\nplatform = \"linux\"\n"
@@ -232,17 +232,15 @@ TEST_CASE("Index des moteurs : celui de la release Linux, tel que package-linux.
       "version = \"1.3.0.0\"\n"
       "license = \"https://www.nvidia.com/en-us/agreements/enterprise-software/"
       "nvidia-software-license-agreement/\"\n";
-  auto strict = parse_engine_index(lock);
-  REQUIRE(strict);
-  CHECK(strict->size() == 4);
+  CHECK_FALSE(parse_engine_index(lock));
   auto index = read_engine_index(lock);
   REQUIRE(index);
-  CHECK(index->skipped.empty());
+  CHECK(index->skipped.size() == 1);
+  CHECK(index->packages.size() == 3);
   const EnginePackage* trt = find_package(index->packages, EngineId::TensorRt, Os::Linux);
   REQUIRE(trt != nullptr);
   CHECK(trt->size == 1215541550U);
   CHECK(trt->license.starts_with("https://docs.nvidia.com/"));
-  CHECK(find_package(index->packages, EngineId::MaxineVfx, Os::Linux) != nullptr);
 }
 
 TEST_CASE("Index des moteurs : une entrée inconnue est écartée seule à la lecture", "[model_index]") {
@@ -300,8 +298,8 @@ TEST_CASE("Fichiers tiers d'un moteur : lus avec leur architecture, choisis pour
 }
 
 TEST_CASE("Noms des moteurs et des OS : stables et réciproques", "[model_index]") {
-  for (const EngineId id : {EngineId::Vulkan, EngineId::TensorRt, EngineId::RtxVideoSdk, EngineId::MaxineVfx,
-                            EngineId::MiGraphX, EngineId::OpenVino, EngineId::DirectMl, EngineId::Metal}) {
+  for (const EngineId id : {EngineId::Vulkan, EngineId::TensorRt, EngineId::MiGraphX, EngineId::OpenVino,
+                            EngineId::DirectMl, EngineId::Metal}) {
     CHECK(parse_engine(engine_name(id)) == id);
   }
   CHECK(engine_name(EngineId::TensorRt) == "tensorrt");
@@ -321,27 +319,4 @@ TEST_CASE("Installation : chemins sous le dossier de données passé par app", "
   CHECK(backend_library(install_layout(Os::Linux, data), trt).filename() == "ajp_backend_tensorrt.so");
   CHECK(backend_library(install_layout(Os::MacOs, data), trt).filename() == "ajp_backend_tensorrt.so");
   CHECK(download_path(windows, kSha) == data / "downloads" / (kSha + ".part"));
-}
-
-TEST_CASE("[maxine_vfx] : la ressource NGC du SDK de RTX HDR", "[model_index]") {
-  const std::string table =
-      "version = 1\n[maxine_vfx]\norg = \"nvidia\"\nteam = \"maxine\"\nresource = \"vfx_sdk_core\"\n"
-      "version = \"1.3.0.0_linux\"\nfile = \"VFXSDK_linux_1.3.0.0.tgz\"\nfeature = \"nvvfxtruehdr\"\n"
-      "license = \"https://example.org/eula\"\n";
-  auto source = parse_maxine_source(table);
-  REQUIRE(source);
-  REQUIRE(source->has_value());
-  CHECK((*source)->file == "VFXSDK_linux_1.3.0.0.tgz");
-  CHECK((*source)->feature == "nvvfxtruehdr");
-
-  auto none = parse_maxine_source("version = 1\n");
-  REQUIRE(none);
-  CHECK_FALSE(none->has_value());
-
-  std::string bad = table;
-  bad.replace(bad.find("vfx_sdk_core"), 12, "../etc");
-  CHECK_FALSE(parse_maxine_source(bad));
-  std::string http = table;
-  http.replace(http.find("https://"), 8, "http://");
-  CHECK_FALSE(parse_maxine_source(http));
 }

@@ -99,7 +99,7 @@ struct GradeSettings {
   double vibrance_rtx = 0.10;
   double contrast = 100.0;  // TrueHDR et son émulation, comme rtx_contrast
   double saturation = 100.0;
-  // Grade adaptatif : les curseurs (noirs, couleurs) et le gris moyen de RTX HDR sont ceux d'une scène sombre
+  // Grade adaptatif : les curseurs (noirs, couleurs) et le gris moyen sont ceux d'une scène sombre
   // ; ces valeurs, ceux d'une scène claire. On glisse de l'un à l'autre quand la luminance moyenne lissée de
   // l'image source passe de adaptive_lo à adaptive_hi (% du blanc, mesurée par le moteur TensorRT : sans lui,
   // aucun effet).
@@ -162,7 +162,6 @@ std::expected<void, Refusal> check_grade_settings(const GradeSettings& settings)
 enum class GradeMode : std::uint8_t {
   Neutral,    // pas de grade : sortie non PQ, grade coupé, route Off ou source HDR non gradée
   Native,     // SDR converti par libplacebo en PQ (route native), avec ou sans émulation TrueHDR
-  TrueHdr,    // SDR passé par TrueHDR : l'image arrive déjà en PQ au pic de l'écran
   NativeHdr,  // source déjà HDR, gradée parce que grade_native_hdr le demande
   Sdr,        // sortie SDR : couleurs, noirs, contraste et saturation, sans marge au-dessus du blanc
 };

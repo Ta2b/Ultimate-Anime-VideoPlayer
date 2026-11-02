@@ -3,9 +3,9 @@
 // remplace pour cette lecture seulement.
 //
 // Chaque réglage a sa plage ; une valeur hors plage est refusée en la nommant, jamais corrigée.
-// Un changement s'applique en direct (réglages de RTX HDR, facteur RIFE, réduction, son,
+// Un changement s'applique en direct (réglages du HDR, facteur RIFE, réduction, son,
 // statistiques) ou demande de rouvrir la chaîne à la même position (modèle, hauteur de travail,
-// RTX HDR allumé ou éteint, RIFE sans moteur chargé) : le menu le dit avant d'appliquer.
+// RIFE sans moteur chargé) : le menu le dit avant d'appliquer.
 //
 // Provisoire : les profils (core/profile.h, user.toml) remplacent ce fichier quand la coquille
 // de l'application est fusionnée ; les clés gardent les mêmes noms et plages.
@@ -113,7 +113,7 @@ struct StatsSettings {
   bool frames = false;    // temps par image, σ, composition, images sautées
   bool rife = false;      // paires interpolées, dessins tenus, coupes
   bool tracks = false;    // pistes vidéo, audio, sous-titres
-  bool output = false;    // sortie HDR10 ou SDR, pic de RTX HDR
+  bool output = false;    // sortie HDR10 ou SDR
   bool position = false;  // position à la milliseconde
   bool memory = false;    // mémoire vidéo
   bool any() const { return all || chain || frames || rife || tracks || output || position || memory; }
@@ -224,9 +224,8 @@ struct PlaySettings {
   // images présentées, au-dessus de RIFE (×3 puis ×2 : 72 → 144 images par seconde). Posé au
   // lancement, avant l'instance Vulkan : vaut au prochain lancement.
   bool smooth_motion = false;
-  // Le mode HDR : son moteur (true_hdr : RTX HDR, NVIDIA ; hdr_native : HDR adaptatif, tous GPU ;
-  // aucun : SDR) et ses réglages, communs aux deux moteurs (section hdr de play.toml).
-  bool true_hdr = false;
+  // Les réglages du mode HDR (section hdr de play.toml) : ceux de l'aspect TrueHDR émulé, que la sortie SDR
+  // gradée reprend aussi.
   int true_hdr_contrast = 100;
   int true_hdr_saturation = 100;
   int true_hdr_gray = 50;
@@ -250,7 +249,6 @@ struct PlaySettings {
     friend bool operator==(const DisplayGrade&, const DisplayGrade&) = default;
   };
   std::vector<DisplayGrade> display_grades;
-  bool true_hdr_debanding = true;
   // HDR adaptatif : le SDR passe en PQ par libplacebo et le grade émule l'aspect TrueHDR en
   // suivant la scène (route native, mêmes contraste, saturation, gris moyen et pic).
   bool hdr_native = false;
@@ -327,8 +325,8 @@ struct PlaySettings {
   friend bool operator==(const PlaySettings&, const PlaySettings&) = default;
 };
 
-// Le moteur du mode HDR, clé hdr.engine de play.toml : « rtx » (RTX HDR, NVIDIA), « adaptive »
-// (HDR adaptatif, tous GPU) ou « sdr ».
+// Le mode HDR, clé hdr.engine de play.toml : « adaptive » (HDR adaptatif) ou « sdr » ; l'ancien « rtx »
+// se lit comme « adaptive ».
 std::string_view hdr_engine_key(const PlaySettings& s);
 
 namespace limits {
@@ -391,7 +389,7 @@ PlaySettings settings_for(const PlaySettings& saved, const PlayOptions& options)
 // gardent la valeur du fichier. Une option d'essai n'y entre jamais.
 PlaySettings settings_to_save(const PlaySettings& running, const PlaySettings& from_file,
                               const PlaySettings& started, const PlayOptions& options);
-// Les options de lecture qui en découlent (modèle, hauteur, RIFE, RTX HDR).
+// Les options de lecture qui en découlent (modèle, hauteur, RIFE, HDR).
 PlayOptions options_for(const PlayOptions& options, const PlaySettings& settings);
 
 // Ce qu'un changement de réglages demande.

@@ -72,11 +72,10 @@ struct UpscaleSetup {
   gpu::Engine* distil_drba = nullptr;
   int drba_align = 64;                     // multiple des plans remplis de DistilDRBA : 128 au demi-flot
   Factor rife_factor{.num = 1, .den = 1};  // ×num/den quand l'interpolation tourne (au plus ×8)
-  bool true_hdr = false;  // RTX HDR à l'écriture du ring (backend déjà ouvert pour la sortie)
   // --one-lane : tout sur la voie Upscale, sans recouvrement. Plus lent, mais le temps GPU de
   // chaque moteur redevient son coût propre au lieu d'inclure celui des autres voies.
   bool one_lane = false;
-  // Réglages changés en cours de lecture (facteur RIFE, réduction, RTX HDR) et compteurs de RIFE ;
+  // Réglages changés en cours de lecture (facteur RIFE, réduction, débandage) et compteurs de RIFE ;
   // nullptr : rife_factor et Area pour toute la lecture.
   std::shared_ptr<LiveSettings> live;
   // Horloge maître : les instants intermédiaires qui seront passés avant d'être prêts sont sautés,
@@ -100,7 +99,7 @@ struct UpscaleSetup {
   bool warp_after_span = false;
   std::vector<RingSlotDesc> slots;  // ring de render, à la taille de sortie de SPAN
   // Export par puits CUDA : les images de l'encodeur derrière les slots (sans image ni sémaphore
-  // dans slots), écrites par write_yuv ; ni écriture directe du ring, ni RTX HDR. nullptr : le ring.
+  // dans slots), écrites par write_yuv ; ni écriture directe du ring. nullptr : le ring.
   std::shared_ptr<const YuvSlots> yuv_slots;
 };
 
@@ -112,10 +111,6 @@ class UpscaleStage final : public RingStage {
   ~UpscaleStage() override;
 
  private:
-  // Vrai noir : rampe TrueHDR au plus toutes les 250 ms.
-  static constexpr std::int64_t kBlackRampGapUs = 250'000;
-  bool black_ramp_pending_ = true;  // la première image la fait, si le vrai noir est voulu
-  std::int64_t black_ramp_at_us_ = 0;
   UpscaleStage(VideoStageInit init, UpscaleSetup setup);
   std::expected<void, Refusal> allocate();
   std::expected<std::uint32_t, Refusal> outputs(const DecodedFrame& frame) override;
@@ -138,8 +133,8 @@ class UpscaleStage final : public RingStage {
                                            const gpu::Motion& motion, const gpu::Motion* previous, float t,
                                            const Target& out) const;
   // Le warp et la composition écrivent l'image intermédiaire directement dans le slot
-  // (BackendCaps::ring_targets, étude 1) : après SPAN, ou sans SPAN par la variante mouvement ; pas
-  // avec RTX HDR, qui lit un tenseur. middle_outs_ et middles_ ne sont alors pas alloués.
+  // (BackendCaps::ring_targets, étude 1) : après SPAN, ou sans SPAN par la variante mouvement.
+  // middle_outs_ et middles_ ne sont alors pas alloués.
   bool ring_direct_ = false;
   // RIFE image à l'instant t, recadrée dans middle().
   std::expected<void, Refusal> interpolate_image(float t);
@@ -247,7 +242,7 @@ class UpscaleStage final : public RingStage {
   std::uint64_t spans_reused_ = 0;
   // SPAN (s'il est là) puis l'écriture dans le slot.
   std::expected<void, Refusal> finish(const gpu::Tensor& rgb, std::uint32_t slot, const gpu::RingWrite& sync);
-  // L'écriture d'une image à la taille du ring (RTX HDR s'il est demandé, sa rampe de vrai noir).
+  // L'écriture d'une image à la taille du ring.
   std::expected<void, Refusal> write_slot(const gpu::Tensor& image, std::uint32_t slot,
                                           const gpu::RingWrite& sync);
 
@@ -281,13 +276,12 @@ class UpscaleStage final : public RingStage {
   std::uint32_t outputs_ = 1;
   std::uint32_t intermediates_ = 0;  // celles qui sont interpolées
   bool uninterpolated_ = false;      // la paire courante, laissée sans interpolation à dessein
-  // Débandage avant SPAN (KernelOps::deband) : voulu quand le grade tourne, avec SPAN, hors RTX HDR et
-  // DistilDRBA ; deband_op_ tombe si le backend ne l'a pas, et l'écran garde alors le sien.
+  // Débandage avant SPAN (KernelOps::deband) : voulu quand le grade tourne, avec SPAN, hors DistilDRBA ;
+  // deband_op_ tombe si le backend ne l'a pas, et l'écran garde alors le sien.
   bool deband_op_ = true;
   bool debanded_ = false;  // l'image en cours a été débandée
   bool wants_deband() const {
-    return deband_op_ && setup_.engine != nullptr && !setup_.true_hdr && !drba() && setup_.live &&
-           setup_.live->deband_source();
+    return deband_op_ && setup_.engine != nullptr && !drba() && setup_.live && setup_.live->deband_source();
   }
   // Débande l'image ingérée dans rgb si wants_deband() ; vrai si elle l'est.
   std::expected<bool, Refusal> deband_source(const gpu::Tensor& rgb);
@@ -298,7 +292,6 @@ class UpscaleStage final : public RingStage {
     return gmfss() ? MotionEngine::Gmfss : drba() ? MotionEngine::DistilDrba : MotionEngine::Rife;
   }
   Factor cadence_factor_;
-  vendor_hdr::InputPreparation prepared_;  // couleur de l'image en cours, pour RTX HDR
   // Tampons passés d'une voie à l'autre (entrée de RIFE, image intermédiaire) : deux quand le
   // backend a plusieurs voies, l'un s'écrit pendant que l'autre est encore lu ; un sinon.
   std::uint32_t copies_ = 1;

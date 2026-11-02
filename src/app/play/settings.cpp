@@ -108,7 +108,7 @@ std::string rife_label(const std::string& file) {
 }
 
 std::string_view hdr_engine_key(const PlaySettings& s) {
-  return s.true_hdr ? "rtx" : (s.hdr_native ? "adaptive" : "sdr");
+  return s.hdr_native ? "adaptive" : "sdr";
 }
 
 std::string_view name(MotionEngine engine) {
@@ -368,7 +368,6 @@ PlaySettings settings_for(const PlaySettings& saved, const PlayOptions& options)
     s.rife_factor_den = options.rife_factor_den;
     s.rife_auto = false;  // un multiplicateur donné à la main coupe le mode auto, comme dans le menu
   }
-  if (options.was_given("--truehdr")) s.true_hdr = true;
   if (options.was_given("--truehdr-contrast")) s.true_hdr_contrast = options.true_hdr_contrast;
   if (options.was_given("--truehdr-saturation")) s.true_hdr_saturation = options.true_hdr_saturation;
   if (options.was_given("--truehdr-gray")) s.true_hdr_gray = options.true_hdr_gray;
@@ -388,7 +387,6 @@ PlaySettings settings_to_save(const PlaySettings& running, const PlaySettings& f
   keep("--work-height", &PlaySettings::work_height);
   keep("--rife", &PlaySettings::rife_factor);
   keep("--rife", &PlaySettings::rife_factor_den);
-  keep("--truehdr", &PlaySettings::true_hdr);
   keep("--truehdr-contrast", &PlaySettings::true_hdr_contrast);
   keep("--truehdr-saturation", &PlaySettings::true_hdr_saturation);
   keep("--truehdr-gray", &PlaySettings::true_hdr_gray);
@@ -405,7 +403,6 @@ PlayOptions options_for(const PlayOptions& options, const PlaySettings& s) {
   out.work_height = s.work_height;
   out.rife_factor = s.rife_factor;
   out.rife_factor_den = s.rife_factor_den;
-  out.true_hdr = s.true_hdr;
   out.true_hdr_contrast = s.true_hdr_contrast;
   out.true_hdr_saturation = s.true_hdr_saturation;
   out.true_hdr_gray = s.true_hdr_gray;
@@ -440,7 +437,6 @@ PlaySettings live_part(const PlaySettings& running, const PlaySettings& wanted, 
   s.true_hdr_saturation = wanted.true_hdr_saturation;
   s.true_hdr_gray = wanted.true_hdr_gray;
   s.true_hdr_peak = wanted.true_hdr_peak;
-  s.true_hdr_debanding = wanted.true_hdr_debanding;
   s.display_grades = wanted.display_grades;  // les profils de grade calibrés : rien à recharger
   s.hdr_native = wanted.hdr_native;
   s.final_scaler = wanted.final_scaler;
@@ -482,8 +478,6 @@ Change change_between(const PlaySettings& running, const PlaySettings& wanted, b
       running.work_height != wanted.work_height)
     reopen.emplace_back(i18n::tr("SPAN reloads (built the first time for this size)"));
   if (running.audio_device != wanted.audio_device) reopen.emplace_back(i18n::tr("the output device changes"));
-  if (running.true_hdr != wanted.true_hdr)
-    reopen.emplace_back(wanted.true_hdr ? i18n::tr("RTX HDR turns on") : i18n::tr("RTX HDR turns off"));
   if (wanted.rife_factor >= 2 && running.rife_factor < 2 && !rife_loaded)
     reopen.emplace_back(i18n::tr("the interpolation engine loads (built the first time for this size)"));
   if (wanted.rife_factor >= 2 && running.motion_engine != wanted.motion_engine)

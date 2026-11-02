@@ -54,7 +54,7 @@ inline double auto_limit_hz(double display_hz, int cap) {
 
 // Images manquées à l'écran sur une fenêtre (missing) pour shown images neuves : le GPU ne suit pas
 // même quand aucune paire n'est « en retard » (mesuré sur 4070 Ti : DistilDRBA ×6 a 707 manquées pour
-// 1 retard, le coût par image créée vient de SPAN et de RTX HDR). Au moins 6 manquées et plus de 1,2 %
+// 1 retard, le coût par image créée vient de SPAN). Au moins 6 manquées et plus de 1,2 %
 // des images attendues. Garde-fou lent ; la descente rapide passe par AutoRate::missed.
 inline bool auto_overloaded(std::int64_t missing, std::int64_t shown) {
   return missing >= 6 && missing * 1000 > (missing + shown) * 12;

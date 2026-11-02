@@ -49,7 +49,7 @@ vendor="$(grep -c '^\[\[vendor_file\]\]' "$lock" || true)"
 out="$dir/engines-nvidia.lock"
 awk '
   BEGIN { print "version = 1" }
-  function flush() { if (block != "" && (id == "tensorrt" || id == "maxine_vfx")) printf "\n%s", block; block = ""; id = "" }
+  function flush() { if (block != "" && id == "tensorrt") printf "\n%s", block; block = ""; id = "" }
   /^\[\[(engine|vendor_file)\]\]$/ { flush(); block = $0 "\n"; inside = 1; next }
   /^\[/ { flush(); inside = 0; next }
   inside && /^id = / { id = $3; gsub(/"/, "", id) }

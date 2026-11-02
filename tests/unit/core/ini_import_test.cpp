@@ -157,7 +157,7 @@ TEST_CASE("Import INI : étapes ordonnées du format 4, miroirs ignorés", "[ini
   CHECK(result.source_version == 4);
   REQUIRE(result.profile.profiles[0]);
   const Profile& profile = *result.profile.profiles[0];
-  CHECK(profile.hdr == HdrMode::TrueHdr);
+  CHECK(profile.hdr == HdrMode::Native);  // nvidia-truehdr : RTX HDR, retiré
   REQUIRE(profile.rules.size() == 1);
   const Rule& rule = profile.rules[0];
   CHECK(rule.max_pixels == limits::kPixels.hi);

@@ -1,5 +1,5 @@
-// Le HDR de la chaîne : RTX HDR ouvert par le SDK Maxine, le grade de chaque sortie et le vrai
-// noir OLED (chain.h). Les actions de l'utilisateur sont dans chain.cpp.
+// Le HDR de la chaîne : le grade de chaque sortie et le vrai noir OLED (chain.h). Les actions de
+// l'utilisateur sont dans chain.cpp.
 #include <algorithm>
 #include <array>
 #include <cmath>
@@ -20,18 +20,12 @@
 #include "core/log.h"
 #include "render/adaptive_rules.h"
 #include "render/looks.h"
-#include "vendor_hdr/sdk_store.h"
 
 namespace ajp::app::play {
 namespace {
 
-std::unexpected<Refusal> refuse(RefusalCode code, std::string detail) {
-  return std::unexpected(Refusal{code, std::move(detail)});
-}
-
-// Le grade HDR de la chaîne : route TrueHDR si RTX HDR est ouvert, native si le HDR adaptatif est choisi
-// (le SDR converti en PQ par libplacebo, aspect TrueHDR émulé avec les réglages de RTX HDR), aucun
-// en SDR. Pic : celui de RTX HDR, ou celui de l'écran (1000 nits s'il ne le dit pas).
+// Le grade HDR de la chaîne : route native si le HDR adaptatif est choisi (le SDR converti en PQ par
+// libplacebo, aspect TrueHDR émulé), aucun en SDR. Pic : celui de l'écran (1000 nits s'il ne le dit pas).
 // Le vrai noir OLED est voulu : forcé, ou « auto » sur un écran détecté OLED.
 bool black_wanted(const PlaySettings& s, const std::optional<DisplayFacts>& display) {
   switch (s.oled_black) {
@@ -69,67 +63,9 @@ double glow_weight(const gpu::KernelOps::SceneStats& stats, const render::GradeS
          (1.0 - smooth(rules::kGlowSceneLo, rules::kGlowSceneHi, bright)) * (1.0 - smooth(lo, hi, p50));
 }
 
-// Couleur de la sortie de RTX HDR : PQ BT.2020 au pic donné à TrueHDR.
-ColorInfo pq_color(int peak_nits) {
-  return ColorInfo{.matrix = ColorMatrix::Rgb,
-                   .range = ColorRange::Full,
-                   .transfer = Transfer::Pq,
-                   .primaries = Primaries::Bt2020,
-                   .hdr = HdrMetadata{.max_luminance = static_cast<float>(peak_nits)}};
-}
-
-vendor_hdr::TrueHdrParams true_hdr_params(const PlaySettings& s, int auto_peak) {
-  const int sdk_max = static_cast<int>(render::grade_limits::kSdkContrastMax);
-  return vendor_hdr::TrueHdrParams{
-      .contrast = std::min(s.true_hdr_contrast, sdk_max),
-      .saturation = std::min(
-          static_cast<int>(render::grade_limits::effective_saturation(s.true_hdr_saturation)), sdk_max),
-      .middle_gray = s.true_hdr_gray,
-      .peak_nits =
-          s.true_hdr_peak > 0 ? s.true_hdr_peak : std::max(auto_peak, vendor_hdr::limits::kPeakNits.lo),
-      .debanding = s.true_hdr_debanding};
-}
-
-// RTX HDR : le SDK Maxine importé une fois dans le magasin du lecteur (environ 135 Mo), revérifié
-// à chaque lancement, puis l'effet ouvert pour la sortie de SPAN ; l'écran reçoit alors du PQ
-// BT.2020 au pic donné à TrueHDR, que rend la fonction.
-std::expected<int, Refusal> open_rtx_hdr(const std::filesystem::path& sdk_source, const PlayerPaths& paths,
-                                         const PlaySettings& settings, int auto_peak, PlaceboScreen& screen,
-                                         gpu::KernelOps& kernels, int width, int height,
-                                         const ColorInfo& source) {
-  const auto log = log_channel("app");
-  vendor_hdr::SdkStore store(paths.engines.parent_path() / "sdk", vendor_hdr::SdkKind::MaxineVfx);
-  vendor_hdr::SdkStatus sdk = store.status();
-  if (!sdk.installed) {
-    log->info("RTX HDR : import du SDK Maxine depuis {} (environ 135 Mo, une seule fois)",
-              sdk_source.string());
-    auto imported = store.import(sdk_source);
-    if (!imported) return std::unexpected(std::move(imported.error()));
-    sdk = *imported;
-  }
-  if (!sdk.installed) return refuse(RefusalCode::HdrUnavailable, i18n::tr_format("RTX HDR: {}", sdk.reason));
-  auto params = vendor_hdr::validate(true_hdr_params(settings, auto_peak));
-  if (!params) return std::unexpected(std::move(params.error()));
-  if (auto ok = kernels.open_true_hdr(
-          *sdk.installed,
-          vendor_hdr::TrueHdrConfig{.width = width, .height = height, .source = source, .params = *params});
-      !ok) {
-    return std::unexpected(std::move(ok.error()));
-  }
-  screen.set_source_color(pq_color(params->peak_nits));
-  log->info("RTX HDR : Maxine {} · pic {} nits · contraste {} · saturation {} · gris moyen {} · débandage {}",
-            sdk.installed->version().text(), params->peak_nits, params->contrast, params->saturation,
-            params->middle_gray, params->debanding ? "oui" : "non");
-  return params->peak_nits;
-}
-
-render::GradeChoice grade_of(const PlaySettings& s, bool true_hdr_open, int peak_nits, int auto_peak,
-                             const std::optional<DisplayFacts>& display,
+render::GradeChoice grade_of(const PlaySettings& s, int auto_peak, const std::optional<DisplayFacts>& display,
                              const std::optional<render::BlackThresholds>& black, bool source_hdr) {
-  const int peak = true_hdr_open && peak_nits > 0 ? peak_nits
-                   : s.true_hdr_peak > 0          ? s.true_hdr_peak
-                   : auto_peak > 0                ? auto_peak
-                                                  : 1000;
+  const int peak = s.true_hdr_peak > 0 ? s.true_hdr_peak : auto_peak > 0 ? auto_peak : 1000;
   render::GradeSettings g = s.grade_values;
   g.contrast = s.true_hdr_contrast;
   g.saturation = s.true_hdr_saturation;
@@ -148,9 +84,7 @@ render::GradeChoice grade_of(const PlaySettings& s, bool true_hdr_open, int peak
     g.black_lo = black->lo;
     g.black_hi = black->hi;
   }
-  const core::HdrMode route = true_hdr_open  ? core::HdrMode::TrueHdr
-                              : s.hdr_native ? core::HdrMode::Native
-                                             : core::HdrMode::Off;
+  const core::HdrMode route = s.hdr_native ? core::HdrMode::Native : core::HdrMode::Off;
   render::GradeChoice choice;
   for (const bool pq : {true, false}) {
     auto decision = render::decide_grade(g, render::GradeContext{.route = route,
@@ -216,11 +150,9 @@ std::vector<std::string> apply_looks(PlaceboScreen& screen, const PlaySettings& 
   return failed;
 }
 
-std::string output_text(const PlaceboScreen& screen, const PlaySettings& s, int peak_nits) {
+std::string output_text(const PlaceboScreen& screen, const PlaySettings& s) {
   std::string text = screen.output_description();
-  if (peak_nits > 0) {
-    text += i18n::tr_format(" · RTX HDR, peak {} nits", peak_nits);
-  } else if (s.hdr_native && screen.hdr_output()) {
+  if (s.hdr_native && screen.hdr_output()) {
     text += i18n::tr(" · adaptive HDR");
   }
   if (s.grade) text += i18n::tr_format(" · grade {}", grade_label(s.grade_preset));
@@ -237,16 +169,15 @@ void apply_oled_care(Chain& to, const PlaySettings& s) {
 // Le grade de la chaîne avec ses seuils du vrai noir.
 void set_grade(Chain& to, const PlaySettings& wanted, bool from_measured_frame) {
   PlaySettings s = wanted;
-  if (!to.true_hdr_open && to.adaptive_shot != 0 && s.grade_values.adaptive) {
+  if (to.adaptive_shot != 0 && s.grade_values.adaptive) {
     // Le shader du grade reçoit la position du plan analysé à la place de la sienne (render/grade_params.h).
     s.grade_values.adaptive_shot = render::AdaptiveShot{
         .t = to.adaptive_t, .tv = to.adaptive_tv, .glow = to.adaptive_glow, .series = to.adaptive_bs};
   } else {
     s = with_adaptive(wanted, to.adaptive_t, to.adaptive_tv, to.adaptive_bs, to.adaptive_glow);
   }
-  const render::GradeChoice choice =
-      grade_of(s, to.true_hdr_open, to.peak_nits, to.auto_peak, to.display, to.black, to.source_hdr);
-  to.live.set_deband_source(wanted.grade && !to.true_hdr_open);
+  const render::GradeChoice choice = grade_of(s, to.auto_peak, to.display, to.black, to.source_hdr);
+  to.live.set_deband_source(wanted.grade);
   // En pause, rien ne se présente de lui-même : le grade passe tout de suite.
   const RingFrame* newest =
       from_measured_frame && !to.session.view().paused ? to.session.newest_frame() : nullptr;
@@ -257,9 +188,6 @@ void set_grade(Chain& to, const PlaySettings& wanted, bool from_measured_frame) 
   }
 }
 
-// Vrai noir OLED : recale les seuils sur la rampe de 32 marches mesurée à la sortie (route native :
-// les marches SDR ; RTX HDR : celles que gpu a passées par TrueHDR), grade compris, puis pose le
-// grade avec eux.
 PlaySettings with_adaptive(const PlaySettings& s, double t, double tv, double bs, double glow) {
   const render::GradeSettings& g = s.grade_values;
   if (!g.adaptive || !(t > 0.0 || tv > 0.0 || bs > 0.0 || glow > 0.0)) return s;
@@ -291,12 +219,11 @@ PlaySettings with_adaptive(const PlaySettings& s, double t, double tv, double bs
 
 void adaptive_tick(Chain& to, std::int64_t now_us) {
   const render::GradeSettings& g = to.running.grade_values;
-  // RTX HDR mesure chaque image ; les autres routes passent par le shader, sauf quand la pré-analyse des
-  // plans (chain_shots.h) connaît le plan de l'image qui vient : le lecteur décide alors pour toutes.
-  const bool rtx = to.kernels != nullptr && to.true_hdr_open;
+  // Le shader suit la scène lui-même, sauf quand la pré-analyse des plans (chain_shots.h) connaît le plan de
+  // l'image qui vient : le lecteur décide alors.
   std::optional<ShotScene> shot;
   if (g.adaptive && g.adaptive_force < 0.0) shot = next_shot(to, now_us);
-  if (!g.adaptive || (!rtx && !shot)) {
+  if (!g.adaptive || !shot) {
     to.ui.set_adaptive_scene({});
     to.learn.seen.reset();
     to.learn.pending.reset();
@@ -313,56 +240,29 @@ void adaptive_tick(Chain& to, std::int64_t now_us) {
       to.adaptive_luma = -1.0;
       to.adaptive_cut = true;
       set_grade(to, to.running);
-      if (to.true_hdr_open) to.live.set_true_hdr(true_hdr_params(to.running, to.auto_peak));
     }
     return;
   }
-  // Coupe vue sur les images (RIFE compare chaque paire, en avance sur l'affichage) : pendant 300 ms, la
-  // mesure suit l'image sans lissage, le temps que la statistique de la nouvelle scène arrive.
-  if (const std::uint64_t cuts = to.live.scene_cuts(); cuts != to.adaptive_cuts) {
-    to.adaptive_cuts = cuts;
-    to.adaptive_cut_until_us = now_us + 300'000;
-  }
-  const bool image_cut = now_us < to.adaptive_cut_until_us;
-  // Le plan analysé d'abord ; sans lui (pas encore analysé, saut), la mesure en direct de RTX HDR.
-  const std::optional<gpu::KernelOps::SceneStats> stats =
-      shot ? std::optional(shot->stats) : to.kernels->scene_stats();
-  if (!stats) return;
-  // Le journal de la scène, sur toutes les routes : la mesure de RTX HDR ou le plan analysé.
+  const gpu::KernelOps::SceneStats* stats = &shot->stats;
   if (to.running.adaptive_record) adaptive_record(to, *stats, now_us);
   const std::optional<float> luma = stats->mean;
   const double glow_now = glow_weight(*stats, g);
   // Une scène sombre avec éclat se classe sur son fond (la médiane), pas sur la moyenne que l'éclat relève.
   const double scene = std::lerp(static_cast<double>(*luma), static_cast<double>(stats->p50), glow_now);
-  constexpr double kTauUs = 1'200'000.0;
-  constexpr double kCut = 0.20;  // un saut de luminance moyenne : coupe de scène, la mesure repart
-  // Une coupe (saut de luminance, éclat qui apparaît ou disparaît, coupe vue sur les images) se traite dès
-  // le tour où la mesure la montre, sans attendre le dixième de seconde des tours ordinaires : RTX HDR
-  // change de gris moyen une à trois images plus tôt.
-  // Avec le plan analysé, la coupe est connue à l'image près : un autre plan.
-  const bool new_shot = shot && shot->serial != to.adaptive_shot;
-  to.adaptive_shot = shot ? shot->serial : 0;
-  const bool cut = new_shot || to.adaptive_luma < 0.0 ||
-                   (!shot && (std::abs(scene - to.adaptive_luma) > kCut ||
-                              std::abs(glow_now - to.adaptive_glow_seen) > 0.5 ||
-                              (image_cut && std::abs(scene - to.adaptive_luma) > 0.02)));
-  if (now_us - to.adaptive_at_us < 100'000 && !cut) return;
+  // Le plan analysé est connu à l'image près : un nouveau plan se traite dès le tour où il arrive, sans
+  // attendre le dixième de seconde des tours ordinaires. Ses valeurs (un fondu : celles de l'image) ne se
+  // lissent pas.
+  const bool new_shot = shot->serial != to.adaptive_shot;
+  to.adaptive_shot = shot->serial;
+  if (now_us - to.adaptive_at_us < 100'000 && !new_shot) return;
   learn_tick(to, now_us);
   const std::int64_t dt = to.adaptive_at_us == 0 ? 0 : now_us - to.adaptive_at_us;
   to.adaptive_at_us = now_us;
-  const double follow = 1.0 - std::exp(-static_cast<double>(dt) / kTauUs);
-  if (cut || shot) {  // un plan analysé a ses valeurs (un fondu, celles de l'image) : rien à lisser
-    to.adaptive_luma = scene;
-    to.adaptive_cut = true;
-    to.adaptive_blue = static_cast<double>(stats->blue);
-    to.adaptive_chroma = static_cast<double>(stats->chroma);
-    to.adaptive_glow_seen = glow_now;
-  } else {
-    to.adaptive_luma += follow * (scene - to.adaptive_luma);
-    to.adaptive_blue += follow * (static_cast<double>(stats->blue) - to.adaptive_blue);
-    to.adaptive_chroma += follow * (static_cast<double>(stats->chroma) - to.adaptive_chroma);
-    to.adaptive_glow_seen += follow * (glow_now - to.adaptive_glow_seen);
-  }
+  to.adaptive_luma = scene;
+  to.adaptive_cut = true;
+  to.adaptive_blue = static_cast<double>(stats->blue);
+  to.adaptive_chroma = static_cast<double>(stats->chroma);
+  to.adaptive_glow_seen = glow_now;
   // La luminosité de la SÉRIE : la moyenne de l'épisode, lissée sur une à deux minutes (moyenne cumulée au
   // début, puis exponentielle), amorcée à celle de Re:Zero (0,30). Une série claire par nature (Slime : plus
   // de 0,5) ne doit pas voir toutes ses scènes ordinaires traitées comme « claires » : les seuils glissent
@@ -412,53 +312,20 @@ void adaptive_tick(Chain& to, std::int64_t now_us) {
     tv = 0.0;
     bs = 0.0;
   }
-  // RTX HDR ne prend qu'un gris moyen et un contraste entiers, appliqués d'un coup : suivre chaque
-  // frémissement de la scène les fait bouger par paliers visibles (la luminosité « respire » dans un même
-  // plan). Le réglage saute donc à une coupe de scène, invisible, et la calibration (scène forcée) s'applique
-  // tout de suite. Sans coupe, une lumière qui change vraiment (un fondu, une explosion qui dure : la cible
-  // s'écarte de plus de kDrift) est suivie en rampe douce, kRate par seconde, soit environ un cran de gris
-  // moyen par dixième de seconde : le fondu est accompagné au lieu de changer d'un coup, en retard.
-  constexpr double kDrift = 0.12;
-  constexpr double kRate = 0.3;
-  const bool forced = g.adaptive_force >= 0.0;
-  // Un plan analysé s'applique tel quel : ses valeurs ne changent qu'à la coupe, ou image par image dans
-  // un fondu.
-  const bool jump = forced || to.adaptive_forced || shot.has_value() || std::exchange(to.adaptive_cut, false);
-  to.adaptive_forced = forced;
-  if (!jump) {
-    const double gap = std::max(
-        {std::abs(t - to.adaptive_t), std::abs(tv - to.adaptive_tv), std::abs(glow - to.adaptive_glow)});
-    if (gap < kDrift) return;
-    const double step = kRate * static_cast<double>(dt) / 1e6;
-    const auto toward = [step](double now, double target) {
-      return now + std::clamp(target - now, -step, step);
-    };
-    t = toward(to.adaptive_t, t);
-    tv = toward(to.adaptive_tv, tv);
-    glow = toward(to.adaptive_glow, glow);
-    bs = to.adaptive_bs;  // la série ne change qu'aux coupes
-  }
+  to.adaptive_forced = g.adaptive_force >= 0.0;
+  to.adaptive_cut = false;
   const bool same = std::abs(t - to.adaptive_t) < 0.02 && std::abs(tv - to.adaptive_tv) < 0.02 &&
                     !(t == 0.0 && to.adaptive_t != 0.0) && !(t == 1.0 && to.adaptive_t != 1.0) &&
                     !(tv == 0.0 && to.adaptive_tv != 0.0) && !(tv == 1.0 && to.adaptive_tv != 1.0) &&
                     std::abs(bs - to.adaptive_bs) < 0.02 && std::abs(glow - to.adaptive_glow) < 0.02 &&
                     !(glow == 0.0 && to.adaptive_glow != 0.0) && !(glow == 1.0 && to.adaptive_glow != 1.0);
   if (same) return;
-  const vendor_hdr::TrueHdrParams before = true_hdr_params(
-      with_adaptive(to.running, to.adaptive_t, to.adaptive_tv, to.adaptive_bs, to.adaptive_glow),
-      to.auto_peak);
   to.adaptive_t = t;
   to.adaptive_tv = tv;
   to.adaptive_bs = bs;
   to.adaptive_glow = glow;
-  const vendor_hdr::TrueHdrParams after =
-      true_hdr_params(with_adaptive(to.running, t, tv, bs, glow), to.auto_peak);
-  if (rtx && after.middle_gray != before.middle_gray) {
-    to.live.set_true_hdr(after);
-    if (to.session.view().paused) to.hdr_refresh_us = now_us + 120'000;
-  }
-  // La scène vient d'être mesurée sur l'image que RTX HDR a traitée en dernier ; les images déjà prêtes
-  // devant elle sont de la scène d'avant : le grade change après elles, avec le gris moyen de RTX HDR.
+  // Le plan vient de la pré-analyse, en avance : les images déjà prêtes devant lui sont du plan d'avant, le
+  // grade change après elles.
   set_grade(to, to.running, true);
 }
 
@@ -466,10 +333,8 @@ void refresh_black(Chain& to) {
   to.black_dirty = false;
   to.black_at_us = host_now_us();
   const PlaySettings& s = to.running;
-  // Le grade s'applique sur toutes les routes : RTX HDR, HDR adaptatif et mode SDR (en SDR comme en PQ).
-  const bool routed = true;
-  const bool wanted = black_wanted(s, to.display) && s.grade && routed;
-  to.live.set_black_wanted(wanted && to.true_hdr_open);
+  // Le grade s'applique sur toutes les routes : HDR adaptatif et mode SDR (en SDR comme en PQ).
+  const bool wanted = black_wanted(s, to.display) && s.grade;
   const std::optional<render::BlackThresholds> before = std::exchange(to.black, std::nullopt);
   if (!wanted) {
     set_grade(to, s);
@@ -479,18 +344,9 @@ void refresh_black(Chain& to) {
             : i18n::tr("True black: off."));
     return;
   }
-  std::vector<float> levels;
-  if (to.true_hdr_open) {
-    if (to.truehdr_ramp.empty()) {
-      set_grade(to, s);
-      to.ui.set_black_status(i18n::tr("True black: measuring the TrueHDR ramp…"));
-      return;
-    }
-    levels = to.truehdr_ramp;
-  } else {
-    const auto sdr = black_ramp_levels();
-    levels.assign(sdr.begin(), sdr.end());
-  }
+  // Recale les seuils sur la rampe de 32 marches SDR mesurée à la sortie, grade compris.
+  const auto sdr = black_ramp_levels();
+  const std::vector<float> levels(sdr.begin(), sdr.end());
   set_grade(to, s);  // sans seuils : la rampe se mesure sans le vrai noir
   auto nits = to.screen.grade_ramp(levels);
   if (!nits) {

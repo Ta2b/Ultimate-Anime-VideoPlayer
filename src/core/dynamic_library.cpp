@@ -1,4 +1,4 @@
-#include "vendor_hdr/dynamic_library.h"
+#include "core/dynamic_library.h"
 
 #ifdef _WIN32
 #include <windows.h>
@@ -6,7 +6,18 @@
 #include <dlfcn.h>
 #endif
 
-namespace ajp::vendor_hdr {
+namespace ajp {
+namespace {
+
+std::unexpected<Refusal> refuse(RefusalCode code, std::string detail) {
+  return std::unexpected(Refusal{code, std::move(detail)});
+}
+
+std::string utf8(const std::filesystem::path& path) {
+  return library_path_text(path);
+}
+
+}  // namespace
 
 std::expected<DynamicLibrary, Refusal> DynamicLibrary::open(const std::filesystem::path& path,
                                                             SymbolScope scope) {
@@ -75,4 +86,4 @@ void DynamicLibrary::close() {
   handle_ = nullptr;
 }
 
-}  // namespace ajp::vendor_hdr
+}  // namespace ajp

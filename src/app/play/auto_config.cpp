@@ -153,14 +153,9 @@ PlaySettings apply_preset(const PlaySettings& settings, const Machine& machine,
         out.rife_model = machine.explored_rife_model;  // le modèle plus fin tient aussi
       break;
     case Tier::Fast:
-      out.motion_engine = MotionEngine::DistilDrba;
-      break;
     case Tier::Ultra:
-      out.motion_engine = MotionEngine::GmfssUnion;
-      // GMFSS reste en FP16 (Équilibre) : son FP8 dégrade l'image dans les gros mouvements ; Qualité (FP32) à
-      // la priorité Image.
-      out.gmfss_precision =
-          settings.priority == Priority::Image ? PrecisionTier::Quality : PrecisionTier::Balanced;
+      // GMFSS Union sort du mode Auto (lourd, artefacts dans les gros mouvements) : il reste au choix manuel.
+      out.motion_engine = MotionEngine::DistilDrba;
       break;
   }
   return out;

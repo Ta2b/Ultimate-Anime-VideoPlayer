@@ -59,7 +59,7 @@ TEST_CASE("la calibration lâche RIFE avant SPAN, puis tout", "[calibration-mach
 TEST_CASE("les réglages d'une chaîne : Personnalisé, Hermite, RIFE 4.22 lite en auto Rapide",
           "[calibration-machine]") {
   PlaySettings base;
-  base.true_hdr = true;
+  base.true_hdr_contrast = 150;
   const PlaySettings s = candidate_settings({.span = true, .rife = true, .height = 540}, base);
   CHECK(s.preset == Preset::Custom);
   CHECK(s.upscale);
@@ -69,7 +69,7 @@ TEST_CASE("les réglages d'une chaîne : Personnalisé, Hermite, RIFE 4.22 lite 
   CHECK(s.rife_auto);
   CHECK(s.auto_free);
   CHECK(s.rife_factor == 2);
-  CHECK(s.true_hdr);  // le reste des réglages de l'utilisateur
+  CHECK(s.true_hdr_contrast == 150);  // le reste des réglages de l'utilisateur
   const PlaySettings plain = candidate_settings({.span = false, .rife = false, .height = 0}, base);
   CHECK_FALSE(plain.upscale);
   CHECK_FALSE(plain.rife_auto);

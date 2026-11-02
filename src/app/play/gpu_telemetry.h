@@ -64,9 +64,6 @@ unsigned parse_pcie_generation(std::string_view text);
 // lit pas (pilote Mesa, texte libre) : on ne s'alarme pas sans la connaître.
 bool nvidia_driver_older_than(std::string_view version, int major, int minor = 0, int patch = 0);
 
-// Les versions minimales annoncées par la release : RTX HDR (Maxine) 550, Smooth Motion 580.82.07.
-inline constexpr int kRtxHdrDriverMajor = 550;
-
 class GpuTelemetry {
  public:
   // Rien si la carte n'est ni NVIDIA (NVML présent, UUID connu) ni AMD sous Linux (sysfs amdgpu).

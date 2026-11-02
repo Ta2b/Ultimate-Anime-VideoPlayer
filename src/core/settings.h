@@ -33,9 +33,9 @@
 
 namespace ajp::core {
 
-// Ce pour quoi un moteur est préféré. TrueHdr n'accepte que les SDK RTX Video et Maxine.
-enum class Usage : std::uint8_t { Upscale, Interpolate, TrueHdr };
-inline constexpr std::size_t kUsageCount = 3;
+// Ce pour quoi un moteur est préféré. L'ancien usage « truehdr » (RTX HDR, retiré) est ignoré à la lecture.
+enum class Usage : std::uint8_t { Upscale, Interpolate };
+inline constexpr std::size_t kUsageCount = 2;
 
 inline constexpr int kSettingsVersion = 1;
 
@@ -51,8 +51,7 @@ struct Settings {
       false;  // l'inscription « Ouvrir avec » a été faite une fois : pas de réinscription
   std::vector<EngineId> chosen_engines{EngineId::Vulkan};     // cochés dans l'écran « Moteurs »
   std::vector<EngineId> installed_engines{EngineId::Vulkan};  // présents et vérifiés
-  std::array<std::optional<EngineId>, kUsageCount> preferred{EngineId::Vulkan, EngineId::Vulkan,
-                                                             std::nullopt};
+  std::array<std::optional<EngineId>, kUsageCount> preferred{EngineId::Vulkan, EngineId::Vulkan};
   std::vector<std::string> audio_languages;  // étiquettes BCP 47, par priorité : « ja », « pt-BR »
   std::vector<std::string> subtitle_languages;
   bool resume_position = true;  // reprendre une vidéo là où elle s'est arrêtée
@@ -60,7 +59,7 @@ struct Settings {
   friend bool operator==(const Settings&, const Settings&) = default;
 };
 
-std::string_view usage_name(Usage usage);  // « upscale », « interpolate », « truehdr »
+std::string_view usage_name(Usage usage);  // « upscale », « interpolate »
 
 // Plages et cohérence : sans doublon, Vulkan toujours choisi et installé, moteur
 // préféré installé et propre à son usage.

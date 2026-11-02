@@ -80,7 +80,7 @@ struct SessionConfig {
   float subtitle_scale = 1.0F;                    // taille des sous-titres (subs::RenderTarget::font_scale)
   std::vector<std::string> header;                // la chaîne : modèles, tailles, moteur
   std::vector<std::string> tracks;                // pistes vidéo, audio et sous-titres
-  std::string output;                             // sortie de l'écran (HDR10, pic de RTX HDR)
+  std::string output;                             // sortie de l'écran (HDR10 ou SDR)
   std::int64_t display_period_us = 0;             // période de rafraîchissement de l'écran ; 0 : mesurée
   double display_hz = 0.0;                        // le même rafraîchissement, exact ; 0 : inconnu
   // Synchro sur l'écran : sur un écran fixe, la lecture accélère ou ralentit d'au plus 0,125 %
@@ -142,7 +142,7 @@ class Session {
   void set_video_latency(std::int64_t latency_us) { config_.video_latency_us = latency_us; }
   double speed() const { return speed_; }  // vitesse de lecture appliquée (1 : aucun calage)
   const StatsSettings& stats_settings() const { return show_stats_; }
-  // Les pistes et la sortie ont changé (piste choisie, pic de RTX HDR) : relues au tour suivant.
+  // Les pistes et la sortie ont changé (piste choisie, HDR) : relues au tour suivant.
   void set_tracks(std::vector<std::string> tracks);
   void set_output(std::string output);
   void set_header(std::vector<std::string> header);

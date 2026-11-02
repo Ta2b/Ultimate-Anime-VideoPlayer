@@ -127,7 +127,7 @@ std::optional<ShotScene> next_shot(Chain& to, std::int64_t now_us) {
       probe->seek(view.position_us);
     }
   }
-  // L'image qui suit la dernière préparée : celle que RTX HDR traite au prochain tour, et que le grade
+  // L'image qui suit la dernière préparée : celle que le GPU traite au prochain tour, et que le grade
   // de l'écran recevra après la dernière (set_grade_after). Son instant : la dernière plus l'écart entre
   // les deux dernières (la cadence de sortie, interpolation comprise).
   const RingFrame* newest = to.session.newest_frame();

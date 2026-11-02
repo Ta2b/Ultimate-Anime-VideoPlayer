@@ -8,10 +8,12 @@ ajp_add_module(core_log
   SOURCES log.cpp
   DEPS ajp::dep::spdlog)
 
-# core_os : la place des threads face à la lecture (thread_role.h), MMCSS sous Windows.
+# core_os : la place des threads face à la lecture (thread_role.h), MMCSS sous Windows ; bibliothèques
+# ouvertes à l'exécution (dynamic_library.h).
 ajp_add_module(core_os
-  SOURCES thread_role.cpp
-  PRIVATE_DEPS $<$<PLATFORM_ID:Windows>:avrt>)
+  SOURCES dynamic_library.cpp thread_role.cpp
+  DEPS ajp::core_types
+  PRIVATE_DEPS $<$<PLATFORM_ID:Windows>:avrt> ${CMAKE_DL_LIBS})
 
 # core : profil TOML v5, resolve(), Plan, choix des moteurs.
 # Seul propriétaire de la politique ; les autres modules exécutent le Plan.

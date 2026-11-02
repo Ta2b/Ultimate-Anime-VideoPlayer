@@ -42,10 +42,9 @@ struct ProfileState {
   std::string default_model;  // le modèle SPAN par défaut, pour un réglage « modèle par défaut »
 };
 
-// Le mode HDR que le profil demande, quand un repli de l'environnement (sortie SDR, échec de RTX
-// HDR) en fait tourner un autre : le repli n'est jamais mémorisé à la place de la préférence.
+// Le mode HDR que le profil demande, quand un repli de l'environnement (sortie SDR) en fait tourner un
+// autre : le repli n'est jamais mémorisé à la place de la préférence.
 struct HdrIntent {
-  bool true_hdr = false;
   bool hdr_native = false;
 };
 
@@ -72,9 +71,7 @@ struct Chain {
   PlaySettings& running;  // réglages en cours, gardés dans play.toml
   ProfileState& profiles;
   bool rife_loaded = false;
-  bool true_hdr_open = false;
-  int auto_peak = 0;                               // pic automatique de RTX HDR
-  int peak_nits = 0;                               // pic donné à RTX HDR, 0 sans lui
+  int auto_peak = 0;                               // pic automatique de l'écran, en nits
   bool dirty = false;                              // play.toml à réécrire
   std::optional<PlaySettings> reopen;              // demandé par le menu des paramètres
   std::optional<EngineChange> engines;             // onglet Moteurs : à faire avant de rouvrir
@@ -84,16 +81,10 @@ struct Chain {
   bool next_paused = false;                   // PlayFile : le fichier suivant s'ouvre en pause
   std::filesystem::path file;                 // la vidéo en cours
   const std::optional<DisplayFacts>& display;
-  // Vrai noir OLED : la rampe passée par TrueHDR (codes PQ, de gpu), les seuils en cours, et le
-  // recalage demandé (au plus 5 fois par seconde).
-  std::vector<float> truehdr_ramp;
+  // Vrai noir OLED : les seuils en cours, et le recalage demandé (au plus 5 fois par seconde).
   std::optional<render::BlackThresholds> black;
   bool black_dirty = true;
   std::int64_t black_at_us = 0;
-  // Image en pause : RTX HDR (contraste, saturation, gris moyen, pic) ne repasse que sur une nouvelle image ;
-  // la réouverture exacte de la position tenue la lui donne, un peu après le dernier changement (0 : rien à
-  // faire).
-  std::int64_t hdr_refresh_us = 0;
   // L'en-tête « chaîne » de l'OSD pour ces réglages, recalculé quand le facteur, la réduction ou le
   // moteur HDR changent à chaud ; vide : l'en-tête reste celui de l'ouverture.
   std::function<std::string(const PlaySettings&)> header_text;
@@ -137,13 +128,13 @@ PlaySettings with_intended_hdr(const Chain& to, PlaySettings settings);
 // 0, les curseurs) vers la scène claire (t = 1). t = 0 ou adaptatif coupé : les réglages tels quels.
 PlaySettings with_adaptive(const PlaySettings& s, double t, double tv, double bs = 0.0, double glow = 0.0);
 
-// Le poids (0 à 1) de la scène sombre avec éclat d'une mesure de RTX HDR : un pic net (p99,5 loin au-dessus
+// Le poids (0 à 1) de la scène sombre avec éclat d'une mesure de plan : un pic net (p99,5 loin au-dessus
 // de la médiane) sur une petite part de points clairs, et un fond (la médiane) sombre pour les seuils
 // adaptive_lo et adaptive_hi du grade.
 double glow_weight(const gpu::KernelOps::SceneStats& stats, const render::GradeSettings& g);
 
-// Une fois par tour : lit la luminance moyenne de la source, la lisse (environ 1,2 s, remise à la mesure à
-// chaque coupe de scène) et, si la position change de 2 % ou plus, pose le gris moyen de RTX HDR et le grade.
+// Une fois par tour : lit le plan analysé de l'image qui vient (chain_shots.h) et, si la position du grade
+// adaptatif change de 2 % ou plus, pose le grade. Sans plan analysé, le shader suit la scène lui-même.
 void adaptive_tick(Chain& to, std::int64_t now_us);
 
 // Apprentissage, une fois par tour du grade adaptatif : une correction de la courbe posée depuis 3 s
@@ -159,26 +150,14 @@ void forget_learning(Chain& to, std::int64_t now_us);
 std::vector<std::string> apply_looks(PlaceboScreen& screen, const PlaySettings& s,
                                      const std::filesystem::path& luts_dir);
 
-// Couleur de la sortie de RTX HDR : PQ BT.2020 au pic donné à TrueHDR.
-ColorInfo pq_color(int peak_nits);
-// Les paramètres de TrueHDR tirés des réglages ; le pic de l'écran si aucun n'est fixé.
-vendor_hdr::TrueHdrParams true_hdr_params(const PlaySettings& s, int auto_peak);
-// RTX HDR : le SDK Maxine importé une fois dans le magasin du lecteur (environ 135 Mo), revérifié
-// à chaque lancement, puis l'effet ouvert pour la sortie de SPAN ; l'écran reçoit alors du PQ
-// BT.2020 au pic donné à TrueHDR, que rend la fonction.
-std::expected<int, Refusal> open_rtx_hdr(const std::filesystem::path& sdk_source, const PlayerPaths& paths,
-                                         const PlaySettings& settings, int auto_peak, PlaceboScreen& screen,
-                                         gpu::KernelOps& kernels, int width, int height,
-                                         const ColorInfo& source);
-
-// Le grade de la chaîne pour chaque sortie : en PQ, route TrueHDR si RTX HDR est ouvert, native si le
-// HDR natif est choisi, aucun sinon ; en SDR, sur toutes les routes. Rien là où il est neutre.
-render::GradeChoice grade_of(const PlaySettings& s, bool true_hdr_open, int peak_nits, int auto_peak,
+// Le grade de la chaîne pour chaque sortie : en PQ, route native si le HDR natif est choisi, aucun sinon ;
+// en SDR, sur toutes les routes. Rien là où il est neutre.
+render::GradeChoice grade_of(const PlaySettings& s, int auto_peak,
                              const std::optional<DisplayFacts>& display = {},
                              const std::optional<render::BlackThresholds>& black = {},
                              bool source_hdr = false);
 // La sortie de l'écran, pour l'OSD et le journal.
-std::string output_text(const PlaceboScreen& screen, const PlaySettings& s, int peak_nits);
+std::string output_text(const PlaceboScreen& screen, const PlaySettings& s);
 double fps_of(const media::Rational& rate);
 
 ProfilesView view_of(const ProfileState& state);

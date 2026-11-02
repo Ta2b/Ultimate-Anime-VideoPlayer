@@ -14,10 +14,11 @@ namespace {
 
 using fields::refuse;
 
-constexpr std::array<std::string_view, kUsageCount> kUsageNames{"upscale", "interpolate", "truehdr"};
+constexpr std::array<std::string_view, kUsageCount> kUsageNames{"upscale", "interpolate"};
 
-bool is_hdr_sdk(EngineId engine) {
-  return engine == EngineId::RtxVideoSdk || engine == EngineId::MaxineVfx;
+// Les SDK de RTX HDR, retiré : un ancien settings.toml les nomme encore, ils sont oubliés à la lecture.
+bool retired_engine(std::string_view name) {
+  return name == "rtx_video_sdk" || name == "maxine_vfx";
 }
 
 // Étiquette BCP 47 simplifiée : langue de 2 ou 3 lettres minuscules, puis sous-étiquettes alphanumériques.
@@ -84,6 +85,7 @@ std::expected<std::vector<EngineId>, Refusal> engines(const toml::table& table, 
   if (!names) return std::unexpected(names.error());
   std::vector<EngineId> ids;
   for (std::size_t i = 0; i < names->size(); ++i) {
+    if (retired_engine((*names)[i])) continue;
     auto id = engine((*names)[i], std::format("engines.{}[{}]", key, i));
     if (!id) return std::unexpected(id.error());
     ids.push_back(*id);
@@ -185,9 +187,6 @@ std::expected<void, Refusal> validate_settings(const Settings& settings) {
     if (!std::ranges::contains(settings.installed_engines, *id)) {
       return refuse(RefusalCode::FieldOutOfRange, where + " : moteur non installé");
     }
-    if (is_hdr_sdk(*id) != (static_cast<Usage>(i) == Usage::TrueHdr)) {
-      return refuse(RefusalCode::FieldOutOfRange, where + " : moteur d'un autre usage");
-    }
   }
   if (auto r = check_languages(settings.audio_languages, "languages.audio"); !r) return r;
   if (auto r = check_languages(settings.subtitle_languages, "languages.subtitles"); !r) return r;
@@ -231,6 +230,7 @@ std::expected<std::string, Refusal> format_settings(const Settings& settings,
   engines_table.insert_or_assign("chosen", names_of(settings.chosen_engines));
   engines_table.insert_or_assign("installed", names_of(settings.installed_engines));
   toml::table& preferred = fields::child(engines_table, "preferred");
+  preferred.erase("truehdr");  // RTX HDR, retiré
   for (std::size_t i = 0; i < kUsageCount; ++i) {
     if (const std::optional<EngineId>& engine = settings.preferred[i]) {
       preferred.insert_or_assign(kUsageNames[i], std::string(engine_name(*engine)));

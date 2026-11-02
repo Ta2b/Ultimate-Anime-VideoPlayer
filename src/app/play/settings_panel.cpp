@@ -34,38 +34,26 @@ using panel::kWarn;
 using panel::note;
 using panel::section;
 
-// Le moteur du mode HDR : RTX HDR (TrueHDR, NVIDIA), HDR adaptatif (tous GPU : libplacebo, puis
-// l'aspect TrueHDR émulé qui suit la scène), ou SDR.
-constexpr std::array<const char*, 3> kRoutes{"RTX HDR (NVIDIA)", "Adaptive HDR (any GPU)",
-                                             "SDR"};  // clés i18n
+// Le mode HDR : HDR adaptatif (libplacebo, puis l'aspect TrueHDR émulé qui suit la scène), ou SDR.
+constexpr std::array<const char*, 2> kRoutes{"Adaptive HDR (any GPU)", "SDR"};  // clés i18n
 
 void hdr_tab(PlaySettings& d, const SettingsChoices& choices) {
   // Le choix de la méthode reste libre, même sur un écran SDR ; ce qui règle le HDR de l'écran (pic, gris
   // moyen) est grisé tant que l'écran n'en reçoit pas.
   section(i18n::tr("Output"));
-  const int route = d.true_hdr ? 0 : (d.hdr_native ? 1 : 2);
+  const int route = d.hdr_native ? 0 : 1;
   if (ImGui::BeginCombo(i18n::tr("HDR method"), i18n::tr(kRoutes[static_cast<std::size_t>(route)]))) {
     for (int i = 0; i < static_cast<int>(kRoutes.size()); ++i) {
-      if (i == 0 && !(choices.nvidia && core::kHostOs == core::Os::Linux))
-        continue;  // TrueHDR : GPU NVIDIA, sous Linux seulement
-      ImGui::BeginDisabled(i == 0 && !choices.true_hdr_available);
-      if (ImGui::Selectable(i18n::tr(kRoutes[static_cast<std::size_t>(i)]), i == route)) {
-        d.true_hdr = i == 0;
-        d.hdr_native = i == 1;
-      }
-      ImGui::EndDisabled();
+      if (ImGui::Selectable(i18n::tr(kRoutes[static_cast<std::size_t>(i)]), i == route))
+        d.hdr_native = i == 0;
     }
     ImGui::EndCombo();
   }
-  if (choices.nvidia && !choices.true_hdr_backend)
-    note(i18n::tr("RTX HDR needs the TensorRT engine; Adaptive HDR is used instead."));
-  else if (choices.nvidia && !choices.true_hdr_available)
-    note(i18n::tr("RTX HDR: the Maxine VideoFX SDK is not installed (see Engines)."));
   if (!choices.hdr_output)
     note(i18n::tr("SDR display: HDR is unavailable. The Color page's grade imitates the HDR look."));
   panel::end_group();  // l'encadré Sortie se ferme avant la zone grisée
   ImGui::BeginDisabled(!choices.hdr_output);
-  section(choices.nvidia ? i18n::tr("HDR settings") : i18n::tr("Adaptive HDR settings"));
+  section(i18n::tr("Adaptive HDR settings"));
   bool automatic = d.true_hdr_peak == 0;
   if (ImGui::Checkbox(i18n::tr_format("Auto peak ({} nits)", choices.auto_peak).c_str(), &automatic))
     d.true_hdr_peak =
@@ -86,16 +74,10 @@ void hdr_tab(PlaySettings& d, const SettingsChoices& choices) {
         i18n::tr("With Adapt to scene brightness on, this is the middle gray of dark scenes; bright "
                  "scenes use Middle gray, bright scene (Color page)."));
   }
-  if (choices.nvidia && panel::advanced()) {
-    ImGui::BeginDisabled(!d.true_hdr);
-    ImGui::Checkbox(i18n::tr("Debanding (RTX HDR)"), &d.true_hdr_debanding);
-    ImGui::EndDisabled();
-  }
   if (panel::advanced() && ImGui::Button(i18n::tr("Defaults"))) {
     const PlaySettings defaults;
     d.true_hdr_peak = defaults.true_hdr_peak;
     d.true_hdr_gray = defaults.true_hdr_gray;
-    d.true_hdr_debanding = defaults.true_hdr_debanding;
   }
   note(i18n::tr("Applied live. Adaptive HDR follows the scene: less expansion on bright scenes."));
   panel::end_group();  // le dernier encadré s'ouvre dans la zone grisée : il se ferme avant d'en sortir
@@ -128,8 +110,8 @@ void look_section(PlaySettings& d) {
     d.true_hdr_contrast = defaults.true_hdr_contrast;
     d.true_hdr_saturation = defaults.true_hdr_saturation;
   }
-  note(i18n::tr("Live, for RTX HDR, Adaptive HDR and SDR output."));
-  if (!d.grade && !d.true_hdr) note(i18n::tr("Without RTX HDR, turn on \"Color grading\" below."));
+  note(i18n::tr("Live, for Adaptive HDR and SDR output."));
+  if (!d.grade) note(i18n::tr("Turn on \"Color grading\" below."));
 }
 
 // Le look : jusqu'à quinze LUT 3D .cube enchaînées dans l'ordre, comme des nœuds de Resolve
@@ -181,13 +163,13 @@ void look_section(PlaySettings& d, const SettingsChoices& choices) {
                "like Resolve nodes; names containing PQ, HDR or 2020 are read as HDR LUTs."));
 }
 
-// Grade adaptatif : les curseurs du grade et le gris moyen de RTX HDR sont la scène sombre ; ces valeurs, la
+// Grade adaptatif : les curseurs du grade et le gris moyen sont la scène sombre ; ces valeurs, la
 // scène claire, mélangées selon la luminance moyenne lissée de l'image source (moteur TensorRT). Hors du bloc
 // désactivé du grade : section() ouvre un encadré, et un BeginDisabled ne peut pas le traverser.
 void adaptive_section(PlaySettings& d, const SettingsChoices& choices, std::vector<Input>& actions) {
   using namespace render::grade_limits;
   render::GradeSettings& g = d.grade_values;
-  // Grade adaptatif : les curseurs ci-dessus et le gris moyen de RTX HDR sont la scène sombre ; ces
+  // Grade adaptatif : les curseurs ci-dessus et le gris moyen sont la scène sombre ; ces
   // valeurs, la scène claire, mélangées selon la luminance moyenne lissée de l'image source (moteur
   // TensorRT).
   section(i18n::tr("Adaptive to scene brightness"));
@@ -234,8 +216,7 @@ void adaptive_section(PlaySettings& d, const SettingsChoices& choices, std::vect
   note(
       i18n::tr("The sliders above and the middle gray are for dark scenes; the values here apply to bright "
                "scenes, blended with the source's smoothed average brightness. A dark scene with a bright "
-               "glow (magic circle, lamp at night) is judged by its background and takes its own values. "
-               "Works with RTX HDR and with Adaptive HDR (any GPU)."));
+               "glow (magic circle, lamp at night) is judged by its background and takes its own values."));
 }
 
 void grade_tab(PlaySettings& d, const SettingsChoices& choices, std::vector<Input>& actions) {
@@ -277,9 +258,7 @@ void grade_tab(PlaySettings& d, const SettingsChoices& choices, std::vector<Inpu
   }
   ImGui::EndDisabled();
   if (panel::advanced()) adaptive_section(d, choices, actions);
-  if (d.true_hdr) {
-    note(i18n::tr("RTX HDR path: TrueHDR, then the grade on the PQ output."));
-  } else if (d.hdr_native) {
+  if (d.hdr_native) {
     note(i18n::tr("Adaptive HDR path: libplacebo in PQ with a scene-based TrueHDR look, then the grade."));
   } else {
     note(

@@ -124,23 +124,6 @@ struct EngineIndex {
 };
 std::expected<EngineIndex, Refusal> read_engine_index(std::string_view toml_text);
 
-// [maxine_vfx] : le SDK Video Effects de NVIDIA (TrueHDR sous Linux), qui ne se redistribue pas
-// et se télécharge depuis NGC avec la clé de l'utilisateur, sa licence acceptée à l'écran.
-//   org, team, resource, version, file : la ressource du cœur du SDK (une archive .tgz) ;
-//   feature : la fonction installée par son install_feature.sh ; license : https.
-struct NgcSdkSource {
-  std::string org;
-  std::string team;
-  std::string resource;
-  std::string version;
-  std::string file;
-  std::string feature;
-  std::string license;
-  friend bool operator==(const NgcSdkSource&, const NgcSdkSource&) = default;
-};
-// Rien si l'index n'a pas de table [maxine_vfx].
-std::expected<std::optional<NgcSdkSource>, Refusal> parse_maxine_source(std::string_view toml_text);
-
 // Les fichiers d'un moteur pour une plateforme : ceux sans architecture, et ceux de `arch` (vide :
 // toutes les architectures, quand le GPU n'a pas pu se lire).
 std::vector<VendorFile> vendor_files_for(std::span<const VendorFile> files, EngineId engine, Os platform,

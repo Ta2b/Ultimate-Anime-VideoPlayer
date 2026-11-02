@@ -66,7 +66,6 @@ void adaptive_record(Chain& to, const gpu::KernelOps::SceneStats& stats, std::in
   }
   const PlaySettings& s = to.running;
   const render::GradeSettings& g = s.grade_values;
-  const bool rtx = to.kernels != nullptr && to.true_hdr_open;
   const std::int64_t quiet_us =
       to.learn.still_us > 0 ? std::max<std::int64_t>(now_us - to.learn.still_us, 0) : -1;
   *log.out << std::time(nullptr) << '\t' << to.file.filename().string() << '\t'
@@ -76,9 +75,8 @@ void adaptive_record(Chain& to, const gpu::KernelOps::SceneStats& stats, std::in
            << g.shadows << '\t' << g.vibrance_rtx << '\t' << g.highlights_rtx << '\t' << g.area_rtx << '\t'
            << g.expand << '\t' << g.guard << '\t' << s.true_hdr_gray << '\t' << s.true_hdr_contrast << '\t'
            << s.true_hdr_saturation << '\t' << (g.adaptive ? 1 : 0) << '\t' << to.adaptive_t << '\t'
-           << to.adaptive_tv << '\t' << to.adaptive_bs << '\t' << to.series_luma << '\t'
-           << (rtx ? "rtx" : "plan") << '\t' << (quiet_us < 0 ? -1.0 : static_cast<double>(quiet_us) / 1e6)
-           << '\n';
+           << to.adaptive_tv << '\t' << to.adaptive_bs << '\t' << to.series_luma << '\t' << "plan" << '\t'
+           << (quiet_us < 0 ? -1.0 : static_cast<double>(quiet_us) / 1e6) << '\n';
 }
 
 }  // namespace ajp::app::play

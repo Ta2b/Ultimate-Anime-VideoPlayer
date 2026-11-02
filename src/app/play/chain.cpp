@@ -14,13 +14,9 @@
 #include "core/clock.h"
 #include "core/log.h"
 #include "prepare/utf8.h"
-#include "vendor_hdr/sdk_store.h"
 
 namespace ajp::app::play {
 namespace {
-
-constexpr std::int64_t kHdrRefreshDelayUs =
-    120'000;  // après le dernier changement d'un réglage de RTX HDR, en pause
 
 template <class... F>
 struct Overloaded : F... {
@@ -68,13 +64,11 @@ void remember_chain(ProfileState& state, const PlaySettings& s) {
 
 bool chain_differs(const PlaySettings& a, const PlaySettings& b) {
   return a.upscale != b.upscale || a.model != b.model || a.work_height != b.work_height ||
-         a.downscale != b.downscale || factor_of(a) != factor_of(b) || a.true_hdr != b.true_hdr ||
-         a.hdr_native != b.hdr_native;
+         a.downscale != b.downscale || factor_of(a) != factor_of(b) || a.hdr_native != b.hdr_native;
 }
 
 PlaySettings with_intended_hdr(const Chain& to, PlaySettings settings) {
   if (to.hdr_wanted) {
-    settings.true_hdr = to.hdr_wanted->true_hdr;
     settings.hdr_native = to.hdr_wanted->hdr_native;
   }
   return settings;
@@ -121,7 +115,7 @@ void switch_subtitles(Chain& to, std::optional<int> track, std::int64_t now_us) 
       now_us);
 }
 
-// Réglages en direct du menu des paramètres : RIFE, réduction, RTX HDR, son, statistiques.
+// Réglages en direct du menu des paramètres : RIFE, réduction, HDR, son, statistiques.
 void apply_live(Chain& to, const PlaySettings& wanted, std::int64_t now_us) {
   PlaySettings& r = to.running;
   Controls& controls = to.ui.controls();
@@ -158,35 +152,22 @@ void apply_live(Chain& to, const PlaySettings& wanted, std::int64_t now_us) {
     to.live.set_reduction(reduction_of(wanted.downscale));
     controls.notify(i18n::tr_format("Downscale: {}", label(wanted.downscale)), now_us);
   }
-  const vendor_hdr::TrueHdrParams before = true_hdr_params(
-      with_adaptive(r, to.adaptive_t, to.adaptive_tv, to.adaptive_bs, to.adaptive_glow), to.auto_peak);
-  const vendor_hdr::TrueHdrParams after = true_hdr_params(
-      with_adaptive(wanted, to.adaptive_t, to.adaptive_tv, to.adaptive_bs, to.adaptive_glow), to.auto_peak);
-  if (to.true_hdr_open && after != before) {
-    log_channel("app")->info(
-        "HDR en direct : contraste {} · saturation {} · gris moyen {} · pic {} nits · débandage {}",
-        after.contrast, after.saturation, after.middle_gray, after.peak_nits,
-        after.debanding ? "oui" : "non");
-    to.live.set_true_hdr(after);
-    // RTX HDR ne traite que les images neuves : en pause, la position tenue est relue après le dernier
-    // changement (le curseur qu'on fait glisser n'en lance qu'une).
-    if (to.session.view().paused) to.hdr_refresh_us = now_us + kHdrRefreshDelayUs;
-    if (after.peak_nits != before.peak_nits) {
-      to.screen.set_source_color(pq_color(after.peak_nits));
-      to.peak_nits = after.peak_nits;
-    }
-  }
+  // L'aspect TrueHDR émulé : contraste, saturation, gris moyen et pic.
+  const bool look_changed = wanted.true_hdr_contrast != r.true_hdr_contrast ||
+                            wanted.true_hdr_saturation != r.true_hdr_saturation ||
+                            wanted.true_hdr_gray != r.true_hdr_gray ||
+                            wanted.true_hdr_peak != r.true_hdr_peak;
   if (!same_look_files(wanted, r)) {
     for (const std::string& failed : apply_looks(to.screen, wanted, to.luts_dir))
       controls.notify(i18n::tr_format("Look unreadable: {}", failed), now_us);
   }
   if (wanted.grade != r.grade || wanted.grade_preset != r.grade_preset ||
-      wanted.grade_values != r.grade_values || wanted.hdr_native != r.hdr_native || after != before ||
+      wanted.grade_values != r.grade_values || wanted.hdr_native != r.hdr_native || look_changed ||
       wanted.oled_black != r.oled_black || wanted.oled_black_steps != r.oled_black_steps ||
       wanted.look != r.look || wanted.look_mix != r.look_mix || wanted.look_layers != r.look_layers) {
     set_grade(to, wanted);
     to.black_dirty = true;
-    to.session.set_output(output_text(to.screen, wanted, to.peak_nits));
+    to.session.set_output(output_text(to.screen, wanted));
     if (wanted.grade_preset != r.grade_preset || wanted.grade != r.grade) {
       controls.notify(wanted.grade ? i18n::tr_format("Grade: {}", grade_label(wanted.grade_preset))
                                    : std::string(i18n::tr("Grade off")),
@@ -218,11 +199,11 @@ void apply_live(Chain& to, const PlaySettings& wanted, std::int64_t now_us) {
     controls.notify(i18n::tr_format("Subtitle size: {} %", std::lround(wanted.subtitle_scale * 100.0F)),
                     now_us);
   }
-  // Grade, finition et RTX HDR agissent sur l'image tenue : sans cette demande, en pause (ou entre deux
+  // Grade et finition agissent sur l'image tenue : sans cette demande, en pause (ou entre deux
   // images neuves) rien ne la recomposait et le réglage n'apparaissait qu'au mouvement suivant.
   if (wanted.grade != r.grade || wanted.grade_preset != r.grade_preset ||
       wanted.grade_values != r.grade_values || wanted.final_scaler != r.final_scaler ||
-      wanted.deband != r.deband || wanted.hdr_native != r.hdr_native || after != before ||
+      wanted.deband != r.deband || wanted.hdr_native != r.hdr_native || look_changed ||
       wanted.oled_black != r.oled_black || wanted.oled_black_steps != r.oled_black_steps ||
       wanted.look != r.look || wanted.look_mix != r.look_mix || wanted.look_layers != r.look_layers)
     to.session.request_present();
@@ -408,9 +389,7 @@ void apply(const Input& input, Chain& to, std::int64_t now_us) {
             // Changer la chaîne au menu modifie le profil actif. Un repli HDR en cours n'est pas
             // retenu : sauf si l'utilisateur a lui-même changé le mode HDR, le profil garde le mode
             // demandé (with_intended_hdr).
-            if (apply.settings.true_hdr != to.running.true_hdr ||
-                apply.settings.hdr_native != to.running.hdr_native)
-              to.hdr_wanted.reset();
+            if (apply.settings.hdr_native != to.running.hdr_native) to.hdr_wanted.reset();
             const PlaySettings intended = with_intended_hdr(to, apply.settings);
             if (chain_differs(with_intended_hdr(to, to.running), intended)) {
               remember_chain(to.profiles, intended);

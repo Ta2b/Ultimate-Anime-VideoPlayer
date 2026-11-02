@@ -43,7 +43,6 @@ TEST_CASE("Changer de moteur le choisit, l'installe et le préfère pour SPAN et
   const core::Settings tensorrt = using_engine(settings, core::EngineId::TensorRt);
   CHECK(tensorrt.preferred[usage(core::Usage::Upscale)] == core::EngineId::TensorRt);
   CHECK(tensorrt.preferred[usage(core::Usage::Interpolate)] == core::EngineId::TensorRt);
-  CHECK(tensorrt.preferred[usage(core::Usage::TrueHdr)] == settings.preferred[usage(core::Usage::TrueHdr)]);
   CHECK(core::validate_settings(tensorrt).has_value());
 
   // Revenir à Vulkan ne retire pas TensorRT : il reste proposé à l'onglet.

@@ -23,7 +23,7 @@ start_profile = 1
 [[profile]]
 slot = 1
 name = "Qualité 1440p"
-hdr = "truehdr"
+hdr = "native"
 [[profile.rule]]
 steps = [
   { kind = "downscale", filter = "hermite", height = 720 },
@@ -34,7 +34,7 @@ steps = [
 [[profile]]
 slot = 2
 name = "Fluide 1440p ×4"
-hdr = "truehdr"
+hdr = "native"
 [[profile.rule]]
 steps = [
   { kind = "downscale", filter = "hermite", height = 720 },
@@ -45,7 +45,7 @@ steps = [
 [[profile]]
 slot = 3
 name = "4K"
-hdr = "truehdr"
+hdr = "native"
 [[profile.rule]]
 steps = [
   { kind = "interpolate", model = "rife_v4.25", factor = 2, policy = "quality" },
@@ -55,7 +55,7 @@ steps = [
 [[profile]]
 slot = 4
 name = "4K sans interpolation"
-hdr = "truehdr"
+hdr = "native"
 [[profile.rule]]
 steps = [
   { kind = "upscale", model = "@PERF@", factor = 2 },
@@ -75,7 +75,7 @@ steps = [
 [[profile]]
 slot = 6
 name = "Net 1440p (Balanced)"
-hdr = "truehdr"
+hdr = "native"
 [[profile.rule]]
 steps = [
   { kind = "downscale", filter = "hermite", height = 720 },
@@ -86,7 +86,7 @@ steps = [
 [[profile]]
 slot = 7
 name = "Léger 1080p"
-hdr = "truehdr"
+hdr = "native"
 [[profile.rule]]
 steps = [
   { kind = "downscale", filter = "hermite", height = 540 },
@@ -97,7 +97,7 @@ steps = [
 [[profile]]
 slot = 8
 name = "RIFE seul"
-hdr = "truehdr"
+hdr = "native"
 [[profile.rule]]
 steps = [
   { kind = "interpolate", model = "rife_v4.25", factor = 3, policy = "quality" },
@@ -138,11 +138,7 @@ PlaySettings apply_profile(const core::Profile& profile, const core::SourceInfo&
   settings.work_height = 0;
   settings.rife_factor = 0;
   settings.rife_factor_den = 1;
-  // RTX HDR (TrueHDR) n'existe que sous Linux : ailleurs, le HDR adaptatif prend sa place.
-  const bool rtx_here = core::kHostOs == core::Os::Linux;
-  settings.true_hdr = profile.hdr == core::HdrMode::TrueHdr && rtx_here;
-  settings.hdr_native =
-      profile.hdr == core::HdrMode::Native || (profile.hdr == core::HdrMode::TrueHdr && !rtx_here);
+  settings.hdr_native = profile.hdr == core::HdrMode::Native;
   const core::Rule* rule = core::match_rule(profile, source);
   if (rule == nullptr) {
     notes.emplace_back("aucune règle pour cette source : image telle quelle");
@@ -220,7 +216,6 @@ std::vector<core::Rule> rules_of(const PlaySettings& s, std::string_view default
 }
 
 core::HdrMode hdr_of(const PlaySettings& s) {
-  if (s.true_hdr) return core::HdrMode::TrueHdr;
   return s.hdr_native ? core::HdrMode::Native : core::HdrMode::Off;
 }
 
@@ -239,7 +234,6 @@ std::string profile_summary(const core::Profile& profile, const core::SourceInfo
     add(usual ? std::format("SPAN {}p", height) : std::format("SPAN {}p ({})", height, model_label(s.model)));
   }
   if (text.empty()) text = "source telle quelle";
-  if (s.true_hdr) text += " · RTX HDR";
   if (s.hdr_native) text += s.grade ? " · HDR adaptatif" : " · HDR sans grade (expansion simple)";
   return text;
 }

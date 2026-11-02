@@ -12,7 +12,7 @@
 
 #include "app/play/i18n.h"
 #include "core/charconv.h"
-#include "vendor_hdr/dynamic_library.h"
+#include "core/dynamic_library.h"
 
 #if defined(_WIN32)
 #ifndef WIN32_LEAN_AND_MEAN
@@ -201,7 +201,7 @@ std::filesystem::path find_amd_card(std::uint32_t pci_device) {
 }  // namespace
 
 struct GpuTelemetry::Impl {
-  std::optional<vendor_hdr::DynamicLibrary> library;
+  std::optional<DynamicLibrary> library;
   std::filesystem::path amd_card;  // sysfs amdgpu (Linux), à la place de NVML
   std::filesystem::path amd_hwmon;
   int (*shutdown)() = nullptr;
@@ -221,7 +221,7 @@ struct GpuTelemetry::Impl {
   std::int64_t last_us = 0;
 
   Impl() = default;
-  explicit Impl(vendor_hdr::DynamicLibrary lib) : library(std::move(lib)) {}
+  explicit Impl(DynamicLibrary lib) : library(std::move(lib)) {}
   ~Impl() {
     if (shutdown != nullptr) shutdown();
   }
@@ -247,13 +247,13 @@ std::unique_ptr<GpuTelemetry> GpuTelemetry::open(const GpuDevice& device) {
 #endif
   if (device.vendor() != GpuVendor::Nvidia) return nullptr;
   // Une bibliothèque du pilote s'ouvre par son chemin absolu (dynamic_library.h).
-  std::optional<vendor_hdr::DynamicLibrary> library;
+  std::optional<DynamicLibrary> library;
 #if defined(_WIN32)
   // nvml.dll vient du pilote, dans le dossier système.
   std::array<wchar_t, MAX_PATH> system{};
   const UINT length = GetSystemDirectoryW(system.data(), static_cast<UINT>(system.size()));
   if (length == 0 || length >= system.size()) return nullptr;
-  if (auto opened = vendor_hdr::DynamicLibrary::open(std::filesystem::path(system.data()) / "nvml.dll")) {
+  if (auto opened = DynamicLibrary::open(std::filesystem::path(system.data()) / "nvml.dll")) {
     library.emplace(std::move(*opened));
   }
 #else
@@ -264,7 +264,7 @@ std::unique_ptr<GpuTelemetry> GpuTelemetry::open(const GpuDevice& device) {
     const std::filesystem::path path = std::filesystem::path(folder) / "libnvidia-ml.so.1";
     std::error_code error;
     if (!std::filesystem::exists(path, error)) continue;
-    if (auto opened = vendor_hdr::DynamicLibrary::open(path)) {
+    if (auto opened = DynamicLibrary::open(path)) {
       library.emplace(std::move(*opened));
       break;
     }
@@ -272,7 +272,7 @@ std::unique_ptr<GpuTelemetry> GpuTelemetry::open(const GpuDevice& device) {
 #endif
   if (!library) return nullptr;
   auto impl = std::make_unique<Impl>(std::move(*library));
-  const vendor_hdr::DynamicLibrary& lib = *impl->library;
+  const DynamicLibrary& lib = *impl->library;
   const auto init = lib.symbol<int()>("nvmlInit_v2");
   const auto shutdown = lib.symbol<int()>("nvmlShutdown");
   const auto by_uuid = lib.symbol<int(const char*, Handle*)>("nvmlDeviceGetHandleByUUID");

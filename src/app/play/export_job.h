@@ -27,7 +27,7 @@ struct ExportJob {
   friend bool operator==(const ExportJob&, const ExportJob&) = default;
 };
 
-// La chaîne d'un export : celle des réglages sans RTX HDR, HDR adaptatif ni grade, sans Smooth Motion
+// La chaîne d'un export : celle des réglages sans HDR adaptatif ni grade, sans Smooth Motion
 // (une couche de l'écran) : l'image de la chaîne telle quelle, comme la lecture la donne en SDR.
 PlaySettings export_chain(const PlaySettings& s);
 

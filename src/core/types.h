@@ -67,7 +67,7 @@ enum class RefusalCode : std::uint8_t {
   ModelUnreadable,         // ONNX absent, tronqué ou malformé
   ModelMismatch,           // hachage, précision ou forme différents de ModelSpec
   ReceiptInvalid,          // reçu de qualification illisible, incomplet ou au hachage faux
-  // vendor_hdr : SDK TrueHDR, chargement dynamique, contrat d'entrée
+  // Bibliothèques externes : chargement dynamique, appels, contrat d'entrée
   SdkRejected,         // SDK importé refusé : fichier absent ou vide, architecture, version, ABI
   LibraryUnavailable,  // bibliothèque ou symbole introuvable au chargement
   VendorCallFailed,    // un appel d'un SDK constructeur a renvoyé une erreur

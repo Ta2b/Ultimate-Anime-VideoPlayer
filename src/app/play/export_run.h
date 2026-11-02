@@ -3,7 +3,7 @@
 // chaque image est faite, au moins aussi fine qu'en direct. Chaque image du ring est rendue à la taille
 // de l'export et convertie en YUV par libplacebo (placebo_export.h), puis encodée par l'encodeur
 // matériel du GPU et écrite en MKV avec l'audio, les sous-titres, les polices et les chapitres de la
-// source (export/export_writer.h). Ni RTX HDR, ni HDR adaptatif, ni grade.
+// source (export/export_writer.h). Ni HDR adaptatif, ni grade.
 //
 // La lecture est fermée pendant l'export (la mémoire vidéo va aux moteurs) et la fenêtre montre la
 // progression. Échap ou q annulent (le fichier partiel est supprimé) ; fermer la fenêtre quitte.

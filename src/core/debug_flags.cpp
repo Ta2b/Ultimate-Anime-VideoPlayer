@@ -43,8 +43,6 @@ constexpr std::array<std::pair<std::string_view, LogLevel>, 6> kLogLevels{{
     {"error", LogLevel::Error},
     {"off", LogLevel::Off},
 }};
-constexpr std::array<std::pair<std::string_view, RingFormat>, 2> kRingFormats{
-    {{"rgba16", RingFormat::Rgba16Unorm}, {"yuv444p16", RingFormat::Yuv444p16}}};
 
 // « 2560x1440@165 » ou « 2560x1440@165:hdr ».
 std::optional<DisplayInfo> parse_display(std::string_view text) {
@@ -89,7 +87,7 @@ struct FlagSpec {
   Apply apply;
 };
 
-constexpr std::array<FlagSpec, 11> kFlags{{
+constexpr std::array<FlagSpec, 10> kFlags{{
     {"log-level", "trace|debug|info|warn|error|off", "niveau du journal (info)",
      [](DebugFlags& f, std::string_view v) -> Result {
        const auto level = find_value(v, kLogLevels);
@@ -129,19 +127,11 @@ constexpr std::array<FlagSpec, 11> kFlags{{
      }},
     {"engine", "NOM", "impose ce moteur : vulkan, tensorrt, migraphx, openvino, directml, metal",
      [](DebugFlags& f, std::string_view v) -> Result {
-       // Les SDK RTX Video et Maxine font TrueHDR, pas l'inférence : ils ne s'imposent pas ici.
        const auto engine = parse_engine(v);
-       if (!engine || *engine == EngineId::RtxVideoSdk || *engine == EngineId::MaxineVfx) {
+       if (!engine) {
          return bad_value("engine", v);
        }
        f.force_engine = engine;
-       return {};
-     }},
-    {"ring-format", "rgba16|yuv444p16", "impose le format du ring de sortie",
-     [](DebugFlags& f, std::string_view v) -> Result {
-       const auto format = find_value(v, kRingFormats);
-       if (!format) return bad_value("ring-format", v);
-       f.ring_format = format;
        return {};
      }},
     {"display", "LxH@Hz[:hdr]", "remplace l'écran détecté",

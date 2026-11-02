@@ -1,6 +1,6 @@
 // Les règles du grade adaptatif, en un seul endroit. Le lecteur (app/play/chain_hdr.cpp, adaptive_tick) les
-// applique quand il décide (RTX HDR, ou le plan connu par la pré-analyse) ; le shader des statistiques de
-// scène (anime-hdr-grade/2-analysis.hook) ne les applique qu'en repli, quand ni l'un ni l'autre n'est là, et
+// applique quand il décide (le plan connu par la pré-analyse) ; le shader des statistiques de
+// scène (anime-hdr-grade/2-analysis.hook) ne les applique qu'en repli, quand ce plan n'est pas là, et
 // les reçoit d'ici à chaque image (grade.cpp, paramètres ar_*). Les valeurs par défaut écrites dans
 // 1-params.hook sont les mêmes : un test les compare (tests/unit/render/adaptive_rules_test.cpp).
 #pragma once
