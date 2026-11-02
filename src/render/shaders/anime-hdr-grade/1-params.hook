@@ -451,3 +451,10 @@
 //!MINIMUM 0.0
 //!MAXIMUM 1.0
 0.0
+
+//!PARAM video_fps
+//!DESC Images video distinctes par seconde a l'ecran (source x interpolation) : les lissages sont en secondes
+//!TYPE float
+//!MINIMUM 1.0
+//!MAXIMUM 1000.0
+24.0

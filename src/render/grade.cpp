@@ -1,5 +1,6 @@
 #include "render/grade.h"
 
+#include <algorithm>
 #include <array>
 #include <format>
 #include <string>
@@ -287,6 +288,11 @@ void Grade::set_params(const GradeParams& params) {
   for (std::size_t i = 0; i < kLookSlots; ++i)
     if (pl_var_data* size = find_param(*impl_->look.hook, slot_name("look_size", i)))
       size->f = static_cast<float>(impl_->look_sizes[i] > 0 ? impl_->look_sizes[i] : 2);
+}
+
+void Grade::set_video_fps(double fps) {
+  if (pl_var_data* data = find_param(*impl_->grade.hook, "video_fps"))
+    data->f = static_cast<float>(std::clamp(fps, 1.0, 1000.0));
 }
 
 const GradeParams& Grade::params() const {
