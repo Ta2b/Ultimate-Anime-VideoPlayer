@@ -2,6 +2,7 @@
 // Transpose de grille replié dans GridSample ; mêmes sorties de l'interpréteur.
 #include <cstdint>
 #include <string>
+#include <variant>
 #include <vector>
 
 #include <catch2/catch_test_macros.hpp>
@@ -30,10 +31,10 @@ ModelBuilder transpose_model(std::int64_t cout, std::int64_t k, std::int64_t s, 
   return m;
 }
 
-PassStats check(const ModelBuilder& model, std::int64_t max_channels, Graph& after) {
+PassStats check(const ModelBuilder& model, std::int64_t max_channels, Graph& after, bool phases = false) {
   const Graph before = build(model);
   after = before;
-  auto stats = optimize(after, {.transpose_conv_channels = max_channels});
+  auto stats = optimize(after, {.transpose_conv_channels = max_channels, .transpose_phases = phases});
   if (!stats) FAIL("refus " << ajp::name(stats.error().code) << " : " << stats.error().detail);
   const std::vector<NamedValue> inputs{{.name = "x", .value = random_floats({1, 8, 5, 6}, 43)}};
   const std::vector<NamedValue> expected = execute(before, inputs);
@@ -81,6 +82,25 @@ TEST_CASE("ConvTranspose 2 × 2 de pas 2 : Conv 1 × 1", "[gpu_ir][passes]") {
   const PassStats stats = check(transpose_model(4, 2, 2, 0, ""), 256, after);
   CHECK(stats.transposes == 1);
   CHECK(std::get<ConvAttrs>(after.nodes[0].attrs).kernel == Pair{1, 1});
+}
+
+// V3 : une Conv 2 × 2 par phase au lieu de la Conv 3 × 3 aux prises nulles (4 sur 9 utiles).
+TEST_CASE("ConvTranspose 4 × 4 de pas 2 : une Conv sans zéros par phase", "[gpu_ir][passes]") {
+  for (const std::string mode : {"", "DCR", "CRD"}) {
+    INFO("pixel_shuffle " << mode);
+    Graph after;
+    const PassStats stats = check(transpose_model(8, 4, 2, 1, mode), 256, after, true);
+    CHECK(stats.transposes == 1);
+    CHECK(count_ops(after, OpKind::Conv) == 4);
+    CHECK(count_ops(after, OpKind::Concat) == 1);
+    for (const Node& node : after.nodes) {
+      if (node.op == OpKind::Conv) CHECK(std::get<ConvAttrs>(node.attrs).kernel == Pair{2, 2});
+    }
+  }
+  // Noyau 2 × 2 de pas 2 : une prise par phase, autant que la Conv 1 × 1 unique ; elle est gardée.
+  Graph after;
+  CHECK(check(transpose_model(8, 2, 2, 0, ""), 256, after, true).transposes == 1);
+  CHECK(count_ops(after, OpKind::Conv) == 1);
 }
 
 TEST_CASE("ConvTranspose gardée : trop de canaux, ou passe éteinte", "[gpu_ir][passes]") {

@@ -134,7 +134,7 @@ std::expected<PassStats, Refusal> optimize(Graph& graph, const OptimizeOptions& 
   stats.pixel_shuffles = fuse_pixel_shuffles(graph);
   stats.grid_transposes = fold_grid_transposes(graph);
   if (options.transpose_conv_channels > 0)
-    stats.transposes = transposes_as_convs(graph, options.transpose_conv_channels);
+    stats.transposes = transposes_as_convs(graph, options.transpose_conv_channels, options.transpose_phases);
   stats.bias = fuse_conv_bias(graph);
   stats.quants = fuse_fp8_quant(graph);
   stats.residuals = fuse_residuals(graph);

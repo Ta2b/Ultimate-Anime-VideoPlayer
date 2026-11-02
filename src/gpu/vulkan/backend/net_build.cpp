@@ -64,7 +64,8 @@ std::expected<ir::Graph, Refusal> prepare_graph(const BuildRequest& request, con
   if (auto ok = ir::infer_shapes(*graph, shapes); !ok) return std::unexpected(ok.error());
   // Les ConvTranspose deviennent des Conv là où celles-ci passent par les matrices coopératives
   // (au plus 16 tuiles de 16 canaux, net_lower_conv.cpp).
-  const ir::OptimizeOptions options{.transpose_conv_channels = target.matrix_units ? 256 : 0};
+  const ir::OptimizeOptions options{.transpose_conv_channels = target.matrix_units ? 256 : 0,
+                                    .transpose_phases = target.matrix_units};
   if (auto ok = ir::optimize(*graph, options); !ok) return std::unexpected(ok.error());
   const bool has_f16 =
       std::ranges::any_of(graph->tensors, [](const ir::Tensor& t) { return t.type == ir::DataType::F16; });

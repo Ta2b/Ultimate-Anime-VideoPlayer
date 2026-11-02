@@ -411,3 +411,27 @@ TEST_CASE("Réseau : canaux découpés sur la grille de la variante coopmat", "[
   choices[conv].tuning[5] = 4;
   CHECK_FALSE(vk::net::lower(graph, choices, target).has_value());
 }
+
+// V3 sur le GPU : la ConvTranspose 4 × 4 de pas 2 réécrite en une Conv 2 × 2 par phase,
+// Concat et DepthToSpace (comme sur un appareil à matrices coopératives), contre l'interpréteur.
+TEST_CASE("Réseau : ConvTranspose en une Conv sans zéros par phase", "[vk_backend][net][conv]") {
+  NetRig rig = make_net_rig();
+  for (const std::int64_t cout : {4, 16}) {
+    INFO("cout " << cout);
+    ModelBuilder m;
+    m.input("x", {1, 16, 5, 6});
+    add_weight(m, "w", {16, cout, 4, 4}, false, 61);
+    add_weight(m, "b", {cout}, false, 62);
+    m.node("ConvTranspose", {"x", "w", "b"}, {"t"},
+           {attr_ints("strides", {2, 2}), attr_ints("pads", {1, 1, 1, 1})});
+    m.node("Relu", {"t"}, {"y"}).output("y");
+    ir::Graph graph = require_value(ir::load_onnx(m.bytes()));
+    require_ok(ir::infer_shapes(graph));
+    const auto stats =
+        require_value(ir::optimize(graph, {.transpose_conv_channels = 256, .transpose_phases = true}));
+    CHECK(stats.transposes == 1);
+    CHECK(std::ranges::count(graph.nodes, ir::OpKind::Conv, &ir::Node::op) == 4);
+    const std::vector<ir::NamedValue> inputs{{"x", test_values(ir::DataType::F32, {1, 16, 5, 6}, 63)}};
+    check_all_variants(rig, graph, inputs, kFp32);
+  }
+}
