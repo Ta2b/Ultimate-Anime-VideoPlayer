@@ -284,6 +284,111 @@
 //!MAXIMUM 1.0
 -1.0
 
+//!PARAM ar_series_ref
+//!DESC Regle du grade adaptatif (render/adaptive_rules.h), repli du shader
+//!TYPE float
+//!MINIMUM 0.0
+//!MAXIMUM 2.0
+0.30
+
+//!PARAM ar_ratio_min
+//!DESC Regle du grade adaptatif (render/adaptive_rules.h), repli du shader
+//!TYPE float
+//!MINIMUM 0.0
+//!MAXIMUM 2.0
+0.7
+
+//!PARAM ar_ratio_max
+//!DESC Regle du grade adaptatif (render/adaptive_rules.h), repli du shader
+//!TYPE float
+//!MINIMUM 0.0
+//!MAXIMUM 2.0
+1.8
+
+//!PARAM ar_bright_cap
+//!DESC Regle du grade adaptatif (render/adaptive_rules.h), repli du shader
+//!TYPE float
+//!MINIMUM 0.0
+//!MAXIMUM 2.0
+0.95
+
+//!PARAM ar_blue_lo
+//!DESC Regle du grade adaptatif (render/adaptive_rules.h), repli du shader
+//!TYPE float
+//!MINIMUM 0.0
+//!MAXIMUM 2.0
+0.05
+
+//!PARAM ar_blue_hi
+//!DESC Regle du grade adaptatif (render/adaptive_rules.h), repli du shader
+//!TYPE float
+//!MINIMUM 0.0
+//!MAXIMUM 2.0
+0.13
+
+//!PARAM ar_blue_gate
+//!DESC Regle du grade adaptatif (render/adaptive_rules.h), repli du shader
+//!TYPE float
+//!MINIMUM 0.0
+//!MAXIMUM 2.0
+0.5
+
+//!PARAM ar_chroma_lo
+//!DESC Regle du grade adaptatif (render/adaptive_rules.h), repli du shader
+//!TYPE float
+//!MINIMUM 0.0
+//!MAXIMUM 2.0
+0.40
+
+//!PARAM ar_chroma_hi
+//!DESC Regle du grade adaptatif (render/adaptive_rules.h), repli du shader
+//!TYPE float
+//!MINIMUM 0.0
+//!MAXIMUM 2.0
+0.60
+
+//!PARAM ar_series_lo
+//!DESC Regle du grade adaptatif (render/adaptive_rules.h), repli du shader
+//!TYPE float
+//!MINIMUM 0.0
+//!MAXIMUM 2.0
+0.36
+
+//!PARAM ar_series_hi
+//!DESC Regle du grade adaptatif (render/adaptive_rules.h), repli du shader
+//!TYPE float
+//!MINIMUM 0.0
+//!MAXIMUM 2.0
+0.50
+
+//!PARAM ar_glow_lo
+//!DESC Regle du grade adaptatif (render/adaptive_rules.h), repli du shader
+//!TYPE float
+//!MINIMUM 0.0
+//!MAXIMUM 2.0
+0.002
+
+//!PARAM ar_glow_hi
+//!DESC Regle du grade adaptatif (render/adaptive_rules.h), repli du shader
+//!TYPE float
+//!MINIMUM 0.0
+//!MAXIMUM 2.0
+0.02
+
+//!PARAM ar_scene_lo
+//!DESC Regle du grade adaptatif (render/adaptive_rules.h), repli du shader
+//!TYPE float
+//!MINIMUM 0.0
+//!MAXIMUM 2.0
+0.12
+
+//!PARAM ar_scene_hi
+//!DESC Regle du grade adaptatif (render/adaptive_rules.h), repli du shader
+//!TYPE float
+//!MINIMUM 0.0
+//!MAXIMUM 2.0
+0.30
+
 //!PARAM gl_shadows
 //!DESC Grade adaptatif : profondeur des noirs d'une scene sombre avec eclat
 //!TYPE float

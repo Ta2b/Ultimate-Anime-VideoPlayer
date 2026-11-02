@@ -233,7 +233,8 @@ bool number(std::string_view text, T& out) {
 
 double series_ratio(double series_luma) {
   if (series_luma < 0.0) return 1.0;
-  return std::clamp(series_luma / kSeriesRef, 0.7, 1.8);
+  return std::clamp(series_luma / kSeriesRef, render::adaptive_rules::kRatioMin,
+                    render::adaptive_rules::kRatioMax);
 }
 
 GradeCurve curve_of(const PlaySettings& s) {

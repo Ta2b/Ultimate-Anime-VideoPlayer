@@ -231,7 +231,7 @@ void hook() {
     bool again = !reset && mean_pq == prev_pq && mean_nits == prev_nits;
     cut = reset ? 1.0 : 0.0;
     if (fresh) {
-        series = 0.30;  // amorcee a la luminosite moyenne de Re:Zero, comme sous RTX HDR
+        series = ar_series_ref;  // amorcee a la luminosite moyenne de Re:Zero, comme sous RTX HDR
         series_n = 0.0;
     }
     if (!again) {
@@ -242,7 +242,7 @@ void hook() {
         // zones claires (0,2 à 2 % : un cercle magique, une corne, une lampe ; au-delà de 12 %, une scène
         // claire). Elle se classe sur son fond : l'éclat ne la fait pas passer pour claire.
         float bg_pq = mean.w / max(1.0 - mean.z, 1e-3);
-        float glow = smoothstep(0.002, 0.02, mean.z) * (1.0 - smoothstep(0.12, 0.30, mean.z))
+        float glow = smoothstep(ar_glow_lo, ar_glow_hi, mean.z) * (1.0 - smoothstep(ar_scene_lo, ar_scene_hi, mean.z))
                    * (1.0 - smoothstep(stats_luma(ad_lo), max(stats_luma(ad_hi), stats_luma(ad_lo) + 1e-3),
                                        stats_luma(bg_pq)));
         float scene_pq = mix(mean_pq, bg_pq, glow);
@@ -273,14 +273,14 @@ void hook() {
         t = smoothstep(ad_lo, max(ad_hi, ad_lo + 1e-3), pq_slow);  // seuils hors de [0, 1] : 0 ou 1
         glow_w = gl_force;
     } else {
-        float ratio = clamp(series / 0.30, 0.7, 1.8);
+        float ratio = clamp(series / ar_series_ref, ar_ratio_min, ar_ratio_max);
         float lo = stats_luma(ad_lo) * ratio;
-        float hi = max(min(stats_luma(ad_hi) * ratio, 0.95), lo + 0.01);
+        float hi = max(min(stats_luma(ad_hi) * ratio, ar_bright_cap), lo + 0.01);
         t = smoothstep(lo, hi, stats_luma(pq_slow));
         glow_w = clamp(glow_slow, 0.0, 1.0) * (1.0 - t);
-        float gate = clamp(t / 0.5, 0.0, 1.0);
-        tv = max(smoothstep(0.05, 0.13, blue_slow) * gate, smoothstep(0.40, 0.60, chroma_slow));
-        bs = smoothstep(0.36, 0.50, series);
+        float gate = clamp(t / ar_blue_gate, 0.0, 1.0);
+        tv = max(smoothstep(ar_blue_lo, ar_blue_hi, blue_slow) * gate, smoothstep(ar_chroma_lo, ar_chroma_hi, chroma_slow));
+        bs = smoothstep(ar_series_lo, ar_series_hi, series);
     }
     // x : APL lisse (nits), y : changement de plan, z : moyenne de l'image, w : part claire lissee.
     imageStore(out_image, ivec2(0, 0), vec4(apl, cut, mean_nits, bright));

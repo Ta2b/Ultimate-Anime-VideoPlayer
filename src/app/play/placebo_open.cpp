@@ -287,7 +287,8 @@ void PlaceboScreen::Impl::save_shader_cache() {
     pl_cache_save(impl.shader_cache, bytes.data(), bytes.size());
     std::error_code error;
     std::filesystem::create_directories(impl.shader_cache_file.parent_path(), error);
-    // Un nom propre à cette fermeture : plusieurs lecteurs (les essais du bench) peuvent fermer en même temps.
+    // Un nom propre à cette fermeture : plusieurs lecteurs (les essais du bench) peuvent fermer en même
+    // temps.
     std::filesystem::path part = impl.shader_cache_file;
     part += std::format(".{}.part", std::chrono::steady_clock::now().time_since_epoch().count());
     bool written = false;
