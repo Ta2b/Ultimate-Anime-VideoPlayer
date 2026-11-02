@@ -12,6 +12,7 @@
 #include <utility>
 
 #include "app/play/chain.h"
+#include "app/play/chain_shots.h"
 #include "app/play/i18n.h"
 #include "app/play/look_catalog.h"
 #include "core/clock.h"
@@ -232,8 +233,14 @@ void apply_oled_care(Chain& to, const PlaySettings& s) {
 
 // Le grade de la chaîne avec ses seuils du vrai noir.
 void set_grade(Chain& to, const PlaySettings& wanted, bool from_measured_frame) {
-  const PlaySettings s =
-      with_adaptive(wanted, to.adaptive_t, to.adaptive_tv, to.adaptive_bs, to.adaptive_glow);
+  PlaySettings s = wanted;
+  if (!to.true_hdr_open && to.adaptive_shot != 0 && s.grade_values.adaptive) {
+    // Le shader du grade reçoit la position du plan analysé à la place de la sienne (render/grade_params.h).
+    s.grade_values.adaptive_shot = render::AdaptiveShot{
+        .t = to.adaptive_t, .tv = to.adaptive_tv, .glow = to.adaptive_glow, .series = to.adaptive_bs};
+  } else {
+    s = with_adaptive(wanted, to.adaptive_t, to.adaptive_tv, to.adaptive_bs, to.adaptive_glow);
+  }
   const render::GradeChoice choice =
       grade_of(s, to.true_hdr_open, to.peak_nits, to.auto_peak, to.display, to.black, to.source_hdr);
   // En pause, rien ne se présente de lui-même : le grade passe tout de suite.
@@ -321,11 +328,18 @@ void adaptive_tick(Chain& to, std::int64_t now_us) {
     if (const auto stats = to.kernels->scene_stats()) adaptive_record(to, *stats, now_us);
   }
   const render::GradeSettings& g = to.running.grade_values;
-  if (!g.adaptive || to.kernels == nullptr || !to.true_hdr_open) {
+  // RTX HDR mesure chaque image ; les autres routes passent par le shader, sauf quand la pré-analyse des
+  // plans (chain_shots.h) connaît le plan de l'image qui vient : le lecteur décide alors pour toutes.
+  const bool rtx = to.kernels != nullptr && to.true_hdr_open;
+  std::optional<ShotScene> shot;
+  if (g.adaptive && g.adaptive_force < 0.0) shot = next_shot(to, now_us);
+  if (!g.adaptive || (!rtx && !shot)) {
     to.ui.set_adaptive_scene({});
     to.learn.seen.reset();
     to.learn.pending.reset();
-    if (to.adaptive_t != 0.0 || to.adaptive_tv != 0.0 || to.adaptive_bs != 0.0 || to.adaptive_glow != 0.0) {
+    const bool had_shot = std::exchange(to.adaptive_shot, 0) != 0;
+    if (had_shot || to.adaptive_t != 0.0 || to.adaptive_tv != 0.0 || to.adaptive_bs != 0.0 ||
+        to.adaptive_glow != 0.0) {
       to.adaptive_bs = 0.0;  // coupé en cours de route : retour aux curseurs
       to.adaptive_glow = 0.0;
       to.adaptive_glow_seen = 0.0;
@@ -336,7 +350,7 @@ void adaptive_tick(Chain& to, std::int64_t now_us) {
       to.adaptive_luma = -1.0;
       to.adaptive_cut = true;
       set_grade(to, to.running);
-      to.live.set_true_hdr(true_hdr_params(to.running, to.auto_peak));
+      if (to.true_hdr_open) to.live.set_true_hdr(true_hdr_params(to.running, to.auto_peak));
     }
     return;
   }
@@ -347,7 +361,9 @@ void adaptive_tick(Chain& to, std::int64_t now_us) {
     to.adaptive_cut_until_us = now_us + 300'000;
   }
   const bool image_cut = now_us < to.adaptive_cut_until_us;
-  const auto stats = to.kernels->scene_stats();
+  // Le plan analysé d'abord ; sans lui (pas encore analysé, saut), la mesure en direct de RTX HDR.
+  const std::optional<gpu::KernelOps::SceneStats> stats =
+      shot ? std::optional(shot->stats) : to.kernels->scene_stats();
   if (!stats) return;
   const std::optional<float> luma = stats->mean;
   const double glow_now = glow_weight(*stats, g);
@@ -358,15 +374,19 @@ void adaptive_tick(Chain& to, std::int64_t now_us) {
   // Une coupe (saut de luminance, éclat qui apparaît ou disparaît, coupe vue sur les images) se traite dès
   // le tour où la mesure la montre, sans attendre le dixième de seconde des tours ordinaires : RTX HDR
   // change de gris moyen une à trois images plus tôt.
-  const bool cut = to.adaptive_luma < 0.0 || std::abs(scene - to.adaptive_luma) > kCut ||
-                   std::abs(glow_now - to.adaptive_glow_seen) > 0.5 ||
-                   (image_cut && std::abs(scene - to.adaptive_luma) > 0.02);
+  // Avec le plan analysé, la coupe est connue à l'image près : un autre plan.
+  const bool new_shot = shot && shot->serial != to.adaptive_shot;
+  to.adaptive_shot = shot ? shot->serial : 0;
+  const bool cut = new_shot || to.adaptive_luma < 0.0 ||
+                   (!shot && (std::abs(scene - to.adaptive_luma) > kCut ||
+                              std::abs(glow_now - to.adaptive_glow_seen) > 0.5 ||
+                              (image_cut && std::abs(scene - to.adaptive_luma) > 0.02)));
   if (now_us - to.adaptive_at_us < 100'000 && !cut) return;
   learn_tick(to, now_us);
   const std::int64_t dt = to.adaptive_at_us == 0 ? 0 : now_us - to.adaptive_at_us;
   to.adaptive_at_us = now_us;
   const double follow = 1.0 - std::exp(-static_cast<double>(dt) / kTauUs);
-  if (cut) {
+  if (cut || shot) {  // un plan analysé a ses valeurs (un fondu, celles de l'image) : rien à lisser
     to.adaptive_luma = scene;
     to.adaptive_cut = true;
     to.adaptive_blue = static_cast<double>(stats->blue);
@@ -387,9 +407,14 @@ void adaptive_tick(Chain& to, std::int64_t now_us) {
   constexpr double kSeriesTauUs = 90'000'000.0;
   to.series_us += static_cast<double>(dt);
   if (to.series_luma < 0.0) to.series_luma = kSeriesRef;
-  to.series_luma +=
-      std::min(static_cast<double>(dt) / (std::min(to.series_us, kSeriesTauUs) + kSeriesSeedUs), 1.0) *
-      (static_cast<double>(*luma) - to.series_luma);
+  // La moyenne des plans analysés, dès qu'elle couvre assez de la vidéo ; sinon, celle de la lecture.
+  if (const std::optional<double> analyzed = shots_series_luma(to)) {
+    to.series_luma = *analyzed;
+  } else {
+    to.series_luma +=
+        std::min(static_cast<double>(dt) / (std::min(to.series_us, kSeriesTauUs) + kSeriesSeedUs), 1.0) *
+        (static_cast<double>(*luma) - to.series_luma);
+  }
   // Même rendu que Re:Zero (la référence : 0,30 en moyenne, mesuré sur 155 secondes de son épisode) : les
   // seuils suivent la série EN PROPORTION, si bien qu'une scène à 1,45 fois la luminosité moyenne de Slime se
   // règle comme une scène à 1,45 fois celle de Re:Zero.
@@ -428,7 +453,9 @@ void adaptive_tick(Chain& to, std::int64_t now_us) {
   constexpr double kDrift = 0.12;
   constexpr double kRate = 0.3;
   const bool forced = g.adaptive_force >= 0.0;
-  const bool jump = forced || to.adaptive_forced || std::exchange(to.adaptive_cut, false);
+  // Un plan analysé s'applique tel quel : ses valeurs ne changent qu'à la coupe, ou image par image dans
+  // un fondu.
+  const bool jump = forced || to.adaptive_forced || shot.has_value() || std::exchange(to.adaptive_cut, false);
   to.adaptive_forced = forced;
   if (!jump) {
     const double gap = std::max(
@@ -458,7 +485,7 @@ void adaptive_tick(Chain& to, std::int64_t now_us) {
   to.adaptive_glow = glow;
   const vendor_hdr::TrueHdrParams after =
       true_hdr_params(with_adaptive(to.running, t, tv, bs, glow), to.auto_peak);
-  if (after.middle_gray != before.middle_gray) {
+  if (rtx && after.middle_gray != before.middle_gray) {
     to.live.set_true_hdr(after);
     if (to.session.view().paused) to.hdr_refresh_us = now_us + 120'000;
   }

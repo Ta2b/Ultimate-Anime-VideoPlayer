@@ -69,6 +69,17 @@ inline constexpr double kDefaultPeakNits = 1000.0;
 inline constexpr double kSdrWhiteNits = 203.0;
 }  // namespace grade_limits
 
+// La position du grade adaptatif décidée par le lecteur pour le plan affiché (pré-analyse des plans,
+// app/play/chain_shots.h), à la place de celle que le shader mesure : t de la scène sombre (0) à la claire
+// (1), tv la vibrance du ciel bleu ou du flash, glow la scène sombre avec éclat, series la série claire.
+struct AdaptiveShot {
+  double t = 0.0;
+  double tv = 0.0;
+  double glow = 0.0;
+  double series = 0.0;
+  friend bool operator==(const AdaptiveShot&, const AdaptiveShot&) = default;
+};
+
 struct GradeSettings {
   bool grade = true;              // grade activé par le profil
   bool grade_native_hdr = false;  // grade aussi une source déjà HDR
@@ -104,6 +115,9 @@ struct GradeSettings {
   // (kForceGlow) quoi qu'elle soit, le temps de régler ce bout-là ; négatif : selon la scène. Jamais écrit
   // dans play.toml.
   double adaptive_force = -1.0;
+  // Routes du shader : la position du plan analysé ; vide, le shader suit sa propre mesure. Jamais écrit
+  // dans play.toml.
+  std::optional<AdaptiveShot> adaptive_shot;
   double punch_base = 0.0;   // préréglage : contraste en plus, en sortie du grade (0 : aucun)
   double chroma_base = 0.0;  // préréglage : saturation en plus (0 : aucune)
   double middle_gray = 50.0;
@@ -226,6 +240,13 @@ struct GradeParams {
   double gl_vibrance = 0.05;
   double gl_em_base = 160.0;
   double gl_em_pow = 6.0;
+  // La position du plan analysé (GradeSettings::adaptive_shot) : sh_on = 1, le shader prend sh_t, sh_glow,
+  // sh_sky et sh_series au lieu de sa propre mesure.
+  double sh_on = 0.0;
+  double sh_t = 0.0;
+  double sh_glow = 0.0;
+  double sh_sky = 0.0;
+  double sh_series = 0.0;
   friend bool operator==(const GradeParams&, const GradeParams&) = default;
 };
 

@@ -416,3 +416,26 @@ TEST_CASE("grade adaptatif : la calibration force la scène sombre ou claire dan
   CHECK(dark->params.ad_lo > 1.0);
   CHECK(dark->params.ad_lo < dark->params.ad_hi);
 }
+
+TEST_CASE("grade adaptatif : le plan analysé passe sa position au shader, la calibration reste prioritaire",
+          "[grade][adaptif]") {
+  using namespace ajp::render;
+  GradeSettings s;
+  s.adaptive = true;
+  const GradeContext native{.route = ajp::core::HdrMode::Native, .output_pq = true, .peak_nits = 1000.0};
+  const auto live = decide_grade(s, native);
+  REQUIRE(live);
+  CHECK(live->params.sh_on == 0.0);
+  s.adaptive_shot = AdaptiveShot{.t = 0.75, .tv = 0.2, .glow = 0.1, .series = 1.5};
+  const auto shot = decide_grade(s, native);
+  REQUIRE(shot);
+  CHECK(shot->params.sh_on == 1.0);
+  CHECK(shot->params.sh_t == 0.75);
+  CHECK(shot->params.sh_sky == 0.2);
+  CHECK(shot->params.sh_glow == 0.1);
+  CHECK(shot->params.sh_series == 1.0);  // borné à [0, 1]
+  s.adaptive_force = 1.0;
+  const auto forced = decide_grade(s, native);
+  REQUIRE(forced);
+  CHECK(forced->params.sh_on == 0.0);
+}
