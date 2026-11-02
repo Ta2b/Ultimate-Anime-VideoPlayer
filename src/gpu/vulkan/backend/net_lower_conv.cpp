@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <array>
 #include <bit>
+#include <cstring>
 #include <format>
 #include <optional>
 #include <variant>
@@ -129,6 +130,38 @@ bool matrix_eligible(const ir::Graph& graph, const ir::Node& node, const Target&
          constant_input(graph, node, ir::kConvW) != nullptr;
 }
 
+// L'épilogue en registres de la variante coopmat (DIRECT_EPI) convient-il ? Sortie float16 en
+// Nhwc16 sans DepthToSpace fondu ni porte, résiduel float16 en Nhwc16, pas de PRelu (pente par
+// canal), canaux de sortie multiples de 16 (pas de bourrage écrit).
+bool direct_epilogue_eligible(const ir::Graph& graph, const ir::Node& node) {
+  const auto* attrs = std::get_if<ir::ConvAttrs>(&node.attrs);
+  if (attrs == nullptr || attrs->epilogue.gate || attrs->epilogue.space > 1 ||
+      attrs->epilogue.act == ir::Activation::PRelu) {
+    return false;
+  }
+  const ir::Tensor& y = graph.tensors[node.outputs[0]];
+  if (y.type != ir::DataType::F16 || y.layout != ir::Layout::Nhwc16 || y.dims.size() != 4 ||
+      y.dims[1] % 16 != 0)
+    return false;
+  if (attrs->epilogue.residual) {
+    const ir::Tensor& r = graph.tensors[node.inputs[ir::kConvResidual]];
+    if (r.type != ir::DataType::F16 || r.layout != ir::Layout::Nhwc16) return false;
+  }
+  return true;
+}
+
+// Biais de l'épilogue en registres : 16 lignes identiques de np floats (chargées en tuile), puis
+// l'identité 16 × 16 en float16, qui ajoute le résiduel par un produit.
+std::vector<std::byte> replicated_bias(const std::vector<std::byte>& row, std::uint32_t np) {
+  const std::size_t line = static_cast<std::size_t>(np) * sizeof(float);
+  std::vector<std::byte> out((16 * line) + (256 * sizeof(std::uint16_t)));
+  for (std::size_t r = 0; r < 16; ++r)
+    std::memcpy(out.data() + (r * line), row.data(), std::min(row.size(), line));
+  constexpr std::uint16_t kOne = 0x3C00;  // 1.0 en float16
+  for (std::size_t i = 0; i < 16; ++i) std::memcpy(out.data() + (16 * line) + ((i * 17) * 2), &kOne, 2);
+  return out;
+}
+
 // La variante coopmat FP8 (net_conv_coopmat_fp8.glsl) convient-elle à ce nœud ? Les conditions de la
 // variante float16, plus : tuiles E4M3 annoncées par le pilote, shader compilé (glslang assez
 // récent), entrée arrondie par la Conv (in_quant) et poids rangés sur une grille E4M3.
@@ -210,6 +243,18 @@ std::expected<std::vector<KernelChoice>, Refusal> candidates(const ir::Graph& gr
           matrix.push_back({.variant = std::string(kMatrix), .tuning = {tm, subgroups, 1}});
         if (target.matrix_f16_acc)
           matrix.push_back({.variant = std::string(kMatrixAcc16), .tuning = {tm, subgroups}});
+      }
+    }
+    // Épilogue en registres (quatrième réglage à 1, sommes en float) : en fin de liste, l'autotuner seul
+    // les retient ; sans lui, la première variante reste celle par la mémoire partagée.
+    if (direct_epilogue_eligible(graph, node)) {
+      const std::size_t count = matrix.size();
+      for (std::size_t i = 0; i < count; ++i) {
+        if (matrix[i].variant != kMatrix) continue;  // sommes en float seulement
+        KernelChoice c = matrix[i];
+        c.tuning.resize(4, 0);
+        c.tuning[3] = 1;
+        matrix.push_back(std::move(c));
       }
     }
   }
@@ -447,8 +492,8 @@ std::expected<void, Refusal> Lowerer::conv_matrix(std::size_t index, const Kerne
   const ir::Node& n = graph_.nodes[index];
   const bool acc16 = choice.variant == kMatrixAcc16;
   const bool fp8 = choice.variant == kMatrixFp8;
-  if ((!acc16 && !fp8 && choice.variant != kMatrix) ||
-      (choice.tuning.size() != 2 && choice.tuning.size() != 3))
+  if ((!acc16 && !fp8 && choice.variant != kMatrix) || choice.tuning.size() < 2 ||
+      choice.tuning.size() > (fp8 ? 3U : 4U))
     return refuse_node(RefusalCode::InputMismatch, n, "réglage coopmat incomplet");
   if (acc16 && !target_.matrix_f16_acc) {
     return refuse_node(RefusalCode::FeatureUnavailable, n, "tuiles à sommes float16 absentes du pilote");
@@ -459,7 +504,10 @@ std::expected<void, Refusal> Lowerer::conv_matrix(std::size_t index, const Kerne
   }
   const std::uint32_t tm = choice.tuning[0];
   const std::uint32_t subgroups = choice.tuning[1];
-  const std::uint32_t shared_b = choice.tuning.size() == 3 ? choice.tuning[2] : 0;  // B en mémoire partagée
+  const std::uint32_t shared_b = choice.tuning.size() >= 3 ? choice.tuning[2] : 0;  // B en mémoire partagée
+  const std::uint32_t direct = choice.tuning.size() == 4 ? choice.tuning[3] : 0;    // épilogue en registres
+  if (direct > 1 || (direct == 1 && (acc16 || !direct_epilogue_eligible(graph_, n))))
+    return refuse_node(RefusalCode::InputMismatch, n, "épilogue en registres impossible pour ce nœud");
   const std::uint32_t sgs = matrix_subgroup(target_);
   const std::uint32_t wg = subgroups * sgs;
   const auto* attrs = std::get_if<ir::ConvAttrs>(&n.attrs);
@@ -512,6 +560,7 @@ std::expected<void, Refusal> Lowerer::conv_matrix(std::size_t index, const Kerne
   constants.push_back(matrix_step_channels(x->desc.cp, subgroups, tm, np_shared, target_.max_shared_memory));
   for (const std::uint32_t c : space_constants(attrs->epilogue)) constants.push_back(c);
   constants.push_back(shared_b);
+  if (!fp8) constants.push_back(direct);
   const ir::Tensor* weights = constant_input(graph_, n, ir::kConvW);
   Binding w;
   Binding b;
@@ -528,8 +577,9 @@ std::expected<void, Refusal> Lowerer::conv_matrix(std::size_t index, const Kerne
                                                attrs->in_quant, tiles * 16))};
   } else {
     w = {.kind = BindingKind::Blob, .index = add_blob(matrix_weights(*weights, x->desc.cp, tiles * 16))};
-    b = {.kind = BindingKind::Blob,
-         .index = add_blob(channel_floats(constant_input(graph_, n, ir::kConvB), yc.c))};
+    auto bias = channel_floats(constant_input(graph_, n, ir::kConvB), yc.c);
+    if (direct == 1) bias = replicated_bias(bias, tiles * 16);
+    b = {.kind = BindingKind::Blob, .index = add_blob(std::move(bias))};
   }
   if (x->desc.n > kMaxGroups) return refuse_node(RefusalCode::ShapeInvalid, n, "trop d'images");
   emit(index,
