@@ -296,6 +296,12 @@ class KernelOps {
   virtual std::expected<void, Refusal> write_yuv(const Tensor& /*rgb*/, const YuvTarget& /*target*/) {
     return std::unexpected(Refusal{RefusalCode::FormatUnsupported, "write_yuv : absent de ce backend"});
   }
+  // Débande sur place l'image RGB FP16 1 × 3 × h × w d'une source, à sa taille, avant SPAN : le débandage
+  // sans grain que l'écran posait sinon avant le grade, sur l'image agrandie. FormatUnsupported : l'écran
+  // garde le sien.
+  virtual std::expected<void, Refusal> deband(const Tensor& /*rgb*/) {
+    return std::unexpected(Refusal{RefusalCode::FormatUnsupported, "deband : absent de ce backend"});
+  }
   // Chaque élément du tenseur prend value : l'instant t du graphe « fusion » de GMFSS Union.
   virtual std::expected<void, Refusal> fill(const Tensor& /*tensor*/, float /*value*/) {
     return std::unexpected(Refusal{RefusalCode::FormatUnsupported, "fill : absent de ce backend"});

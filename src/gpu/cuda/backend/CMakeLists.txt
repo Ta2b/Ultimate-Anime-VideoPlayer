@@ -1,7 +1,7 @@
 # ajp_backend_tensorrt.so : le backend TensorRT (gpu/backend.h), chargé à l'exécution.
 # Il emporte prepare (constructeur trtexec) et sa propre copie de spdlog ; ses symboles
 # restent cachés, sauf les trois points d'entrée.
-add_library(ajp_backend_tensorrt_kernels STATIC drba_fused_kernels.cu export_kernels.cu gmfss_kernels.cu hdr_kernels.cu
+add_library(ajp_backend_tensorrt_kernels STATIC deband_kernels.cu drba_fused_kernels.cu export_kernels.cu gmfss_kernels.cu hdr_kernels.cu
   rife_fused_kernels.cu rife_kernels.cu slice_kernels.cu warp_kernels.cu)
 target_include_directories(ajp_backend_tensorrt_kernels PRIVATE "${PROJECT_SOURCE_DIR}/src")
 target_link_libraries(ajp_backend_tensorrt_kernels PRIVATE ajp::dep::cudart)

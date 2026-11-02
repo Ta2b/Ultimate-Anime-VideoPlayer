@@ -36,8 +36,18 @@ bool UpscaleStage::take_ahead(const DecodedFrame& frame, const gpu::IngestSpec& 
   }
   // L'ancien tampon de rgb_[current_] (l'image d'avant la précédente) recevra la suivante.
   std::swap(rgb_[current_], ahead_.rgb);
+  debanded_ = ahead_.debanded;
   if (ahead_.small) std::swap(small_[current_], ahead_.small);
   return true;
+}
+
+std::expected<bool, Refusal> UpscaleStage::deband_source(const gpu::Tensor& rgb) {
+  if (!wants_deband()) return false;
+  auto ok = setup_.backend->kernels()->deband(rgb);
+  if (ok) return true;
+  if (ok.error().code != RefusalCode::FormatUnsupported) return std::unexpected(std::move(ok.error()));
+  deband_op_ = false;  // l'écran débande à la place
+  return false;
 }
 
 std::expected<gpu::PairScores, Refusal> UpscaleStage::pair_scores() {
@@ -56,6 +66,9 @@ std::expected<void, Refusal> UpscaleStage::look_ahead(const DecodedFrame& frame,
     return {};
   gpu::KernelOps& ops = *setup_.backend->kernels();
   if (auto ok = ops.ingest(*after, spec, ahead_.rgb->tensor()); !ok) return ok;
+  auto debanded = deband_source(ahead_.rgb->tensor());
+  if (!debanded) return std::unexpected(std::move(debanded.error()));
+  ahead_.debanded = *debanded;
   if (ahead_.small) {
     if (auto ok = ops.ingest(*after, gpu::IngestSpec{}, ahead_.small->tensor()); !ok) return ok;
   }

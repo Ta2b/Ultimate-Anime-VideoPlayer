@@ -246,6 +246,7 @@ void set_grade(Chain& to, const PlaySettings& wanted, bool from_measured_frame) 
   }
   const render::GradeChoice choice =
       grade_of(s, to.true_hdr_open, to.peak_nits, to.auto_peak, to.display, to.black, to.source_hdr);
+  to.live.set_deband_source(wanted.grade && !to.true_hdr_open);
   // En pause, rien ne se présente de lui-même : le grade passe tout de suite.
   const RingFrame* newest =
       from_measured_frame && !to.session.view().paused ? to.session.newest_frame() : nullptr;
