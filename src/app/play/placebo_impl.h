@@ -11,6 +11,7 @@
 #include <span>
 #include <vector>
 
+#include <libplacebo/cache.h>
 #include <libplacebo/dispatch.h>
 #include <libplacebo/log.h>
 #include <libplacebo/renderer.h>
@@ -98,6 +99,8 @@ class Overlays {
 
 struct PlaceboScreen::Impl {
   ~Impl();
+  void open_shader_cache(const std::filesystem::path& file);
+  void save_shader_cache();
   std::expected<void, Refusal> compose(const pl_frame* image, const pl_frame& target) const;
   // L'interface par-dessus la composition ; un refus est écrit au journal une fois, la lecture
   // continue sans elle.
@@ -113,6 +116,8 @@ struct PlaceboScreen::Impl {
   std::unique_ptr<VulkanShare> share;  // vk prêté à FFmpeg ; détruit avant lui
   pl_swapchain swapchain = nullptr;
   pl_renderer renderer = nullptr;
+  pl_cache shader_cache = nullptr;  // ScreenOptions::shader_cache (placebo_open.cpp)
+  std::filesystem::path shader_cache_file;
   GpuDevice device;
   PlaceboRing ring;
   std::unique_ptr<Overlays> overlays;

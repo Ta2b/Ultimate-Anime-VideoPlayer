@@ -8,9 +8,12 @@
 #include <cstdint>
 #include <filesystem>
 #include <format>
+#include <fstream>
+#include <iterator>
 #include <optional>
 #include <string>
 #include <string_view>
+#include <system_error>
 #include <utility>
 #include <vector>
 
@@ -18,6 +21,7 @@
 #include <SDL3/SDL_filesystem.h>
 #include <SDL3/SDL_video.h>
 #include <SDL3/SDL_vulkan.h>
+#include <libplacebo/cache.h>
 #include <libplacebo/dispatch.h>
 #include <libplacebo/log.h>
 #include <libplacebo/renderer.h>
@@ -249,7 +253,54 @@ constexpr std::array<const char*, 15> kOptionalExtensions{
     VK_KHR_VIDEO_ENCODE_AV1_EXTENSION_NAME,   VK_KHR_VIDEO_MAINTENANCE_1_EXTENSION_NAME,
     VK_KHR_VIDEO_MAINTENANCE_2_EXTENSION_NAME};
 
+// Le cache des shaders de libplacebo : au plus 64 Mo, relu d'un fichier à l'ouverture. Un fichier abîmé ou
+// d'une autre version de libplacebo est simplement ignoré (pl_cache_load le refuse) et sera réécrit.
 }  // namespace
+
+void PlaceboScreen::Impl::open_shader_cache(const std::filesystem::path& file) {
+  Impl& impl = *this;
+  if (file.empty()) return;
+  pl_cache_params params = pl_cache_default_params;
+  params.log = impl.log;
+  params.max_total_size = 64u << 20u;
+  impl.shader_cache = pl_cache_create(&params);
+  if (impl.shader_cache == nullptr) return;
+  impl.shader_cache_file = file;
+  if (std::ifstream in(file, std::ios::binary); in) {
+    const std::vector<char> bytes((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+    const int loaded =
+        pl_cache_load(impl.shader_cache, reinterpret_cast<const std::uint8_t*>(bytes.data()), bytes.size());
+    impl.channel->info("cache des shaders : {} objets relus", std::max(loaded, 0));
+  }
+  pl_gpu_set_cache(impl.vk->gpu, impl.shader_cache);
+}
+
+// Gardé à la fermeture, écrit à côté puis renommé : une fermeture brutale ne laisse jamais un fichier à
+// moitié écrit.
+void PlaceboScreen::Impl::save_shader_cache() {
+  Impl& impl = *this;
+  if (impl.shader_cache == nullptr) return;
+  if (impl.vk != nullptr) pl_gpu_set_cache(impl.vk->gpu, nullptr);
+  const std::size_t size = pl_cache_save(impl.shader_cache, nullptr, 0);
+  if (size > 0) {
+    std::vector<std::uint8_t> bytes(size);
+    pl_cache_save(impl.shader_cache, bytes.data(), bytes.size());
+    std::error_code error;
+    std::filesystem::create_directories(impl.shader_cache_file.parent_path(), error);
+    // Un nom propre à cette fermeture : plusieurs lecteurs (les essais du bench) peuvent fermer en même temps.
+    std::filesystem::path part = impl.shader_cache_file;
+    part += std::format(".{}.part", std::chrono::steady_clock::now().time_since_epoch().count());
+    bool written = false;
+    {
+      std::ofstream out(part, std::ios::binary | std::ios::trunc);
+      out.write(reinterpret_cast<const char*>(bytes.data()), static_cast<std::streamsize>(bytes.size()));
+      written = static_cast<bool>(out.flush());
+    }
+    if (written) std::filesystem::rename(part, impl.shader_cache_file, error);
+    if (!written || error) std::filesystem::remove(part, error);
+  }
+  pl_cache_destroy(&impl.shader_cache);
+}
 
 PlaceboScreen::Impl::~Impl() {
   // La fermeture : la fenêtre est d'abord cachée et le compositeur attendu (SDL_SyncWindow), avant le
@@ -282,6 +333,7 @@ PlaceboScreen::Impl::~Impl() {
   overlays.reset();
   ring.clear(vk != nullptr ? vk->gpu : nullptr);
   pl_renderer_destroy(&renderer);
+  save_shader_cache();
   pl_swapchain_destroy(&swapchain);
   pl_vulkan_destroy(&vk);
   if (surface != VK_NULL_HANDLE) SDL_Vulkan_DestroySurface(inst->instance, surface, nullptr);
@@ -409,6 +461,7 @@ std::expected<std::unique_ptr<PlaceboScreen>, Refusal> PlaceboScreen::open(const
     return refuse(RefusalCode::LibraryUnavailable, "pl_vulkan_create_swapchain a échoué");
   log_surface_color_spaces(impl->vk, impl->surface);
   if (options.hdr) pl_swapchain_colorspace_hint(impl->swapchain, &pl_color_space_hdr10);
+  impl->open_shader_cache(options.shader_cache);
   impl->renderer = pl_renderer_create(impl->log, gpu);
 
   impl->device = GpuDevice{.api = GpuApi::Vulkan, .name = "Vulkan (libplacebo)"};

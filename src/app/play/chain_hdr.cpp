@@ -12,6 +12,7 @@
 #include <utility>
 
 #include "app/play/chain.h"
+#include "app/play/chain_adaptive_log.h"
 #include "app/play/chain_shots.h"
 #include "app/play/i18n.h"
 #include "app/play/look_catalog.h"
@@ -285,48 +286,7 @@ PlaySettings with_adaptive(const PlaySettings& s, double t, double tv, double bs
   return out;
 }
 
-// Apprentissage : une ligne par seconde de lecture dans adaptive-log.tsv (statistiques de la scène, réglages
-// courants de l'utilisateur et position t du grade adaptatif), pour ajuster des courbes sur ses réglages
-// faits à la main.
-constexpr std::uintmax_t kAdaptiveLogMax = 32u << 20u;
-
-void adaptive_record(Chain& to, const gpu::KernelOps::SceneStats& stats, std::int64_t now_us) {
-  if (to.adaptive_log.empty() || to.session.view().paused || now_us - to.adaptive_log_us < 1'000'000) return;
-  to.adaptive_log_us = now_us;
-  std::error_code error;
-  // Une ligne par seconde, active par défaut : au-delà de 32 Mo (une soixantaine d'heures), le journal passe
-  // en .old et repart de zéro, pour ne pas grossir sans fin.
-  if (const std::uintmax_t size = std::filesystem::file_size(to.adaptive_log, error);
-      !error && size > kAdaptiveLogMax) {
-    std::filesystem::path old = to.adaptive_log;
-    old += ".old";
-    std::filesystem::rename(to.adaptive_log, old, error);
-  }
-  const bool fresh = !std::filesystem::exists(to.adaptive_log, error);
-  std::ofstream out(to.adaptive_log, std::ios::app);
-  if (!out) return;
-  if (fresh)
-    out << "unix_s\tfichier\tposition_s\tmoyenne\tp05\tp50\tp95\tp995\tpart_noir\tpart_"
-           "clair\tnoirs\tcouleurs\teclats\t"
-           "aplats\tetendues\tlimiteur\tgris_moyen\tcontraste\tsaturation\tadaptatif\tt\ttv\tserie\tluma_"
-           "serie\n";
-  const PlaySettings& s = to.running;
-  const render::GradeSettings& g = s.grade_values;
-  out << std::time(nullptr) << '\t' << to.file.filename().string() << '\t'
-      << static_cast<double>(std::max<std::int64_t>(to.session.view().position_us, 0)) / 1e6 << '\t'
-      << stats.mean << '\t' << stats.p05 << '\t' << stats.p50 << '\t' << stats.p95 << '\t' << stats.p995
-      << '\t' << stats.dark << '\t' << stats.bright << '\t' << stats.blue << '\t' << stats.chroma << '\t'
-      << g.shadows << '\t' << g.vibrance_rtx << '\t' << g.highlights_rtx << '\t' << g.area_rtx << '\t'
-      << g.expand << '\t' << g.guard << '\t' << s.true_hdr_gray << '\t' << s.true_hdr_contrast << '\t'
-      << s.true_hdr_saturation << '\t' << (g.adaptive ? 1 : 0) << '\t' << to.adaptive_t << '\t'
-      << to.adaptive_tv << '\t' << to.adaptive_bs << '\t' << to.series_luma << '\n';
-}
-
 void adaptive_tick(Chain& to, std::int64_t now_us) {
-  if (to.running.adaptive_record && to.running.grade_values.adaptive && to.kernels != nullptr &&
-      to.true_hdr_open) {
-    if (const auto stats = to.kernels->scene_stats()) adaptive_record(to, *stats, now_us);
-  }
   const render::GradeSettings& g = to.running.grade_values;
   // RTX HDR mesure chaque image ; les autres routes passent par le shader, sauf quand la pré-analyse des
   // plans (chain_shots.h) connaît le plan de l'image qui vient : le lecteur décide alors pour toutes.
@@ -365,6 +325,8 @@ void adaptive_tick(Chain& to, std::int64_t now_us) {
   const std::optional<gpu::KernelOps::SceneStats> stats =
       shot ? std::optional(shot->stats) : to.kernels->scene_stats();
   if (!stats) return;
+  // Le journal de la scène, sur toutes les routes : la mesure de RTX HDR ou le plan analysé.
+  if (to.running.adaptive_record) adaptive_record(to, *stats, now_us);
   const std::optional<float> luma = stats->mean;
   const double glow_now = glow_weight(*stats, g);
   // Une scène sombre avec éclat se classe sur son fond (la médiane), pas sur la moyenne que l'éclat relève.

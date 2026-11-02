@@ -12,6 +12,7 @@
 #include <string>
 #include <vector>
 
+#include "app/play/chain_adaptive_log.h"
 #include "app/play/display_edid.h"
 #include "app/play/grade_learning.h"
 #include "app/play/input.h"
@@ -117,8 +118,7 @@ struct Chain {
   std::int64_t adaptive_at_us = 0;
   std::uint64_t adaptive_cuts = 0;         // coupes de scène vues par RIFE (LiveSettings::scene_cuts)
   std::int64_t adaptive_cut_until_us = 0;  // la mesure suit l'image sans lissage jusque-là
-  std::filesystem::path adaptive_log;      // adaptive-log.tsv (apprentissage)
-  std::int64_t adaptive_log_us = 0;
+  AdaptiveLog adaptive_log;                // adaptive-log.tsv (chain_adaptive_log.h)
   LearnTrack learn;
   // Pré-analyse des plans (chain_shots.h) : le grade adaptatif lit le plan de l'image qui vient au lieu
   // de la mesure en direct, dès qu'il est analysé. Nul : aucune.
