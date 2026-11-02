@@ -107,6 +107,10 @@ class TensorRtBackend final : public Backend, public KernelOps {
   std::expected<float, Refusal> flow_max_now(const Motion& motion) override;
   std::expected<std::uint64_t, Refusal> flow_max_start(const Motion& motion) override;
   std::expected<float, Refusal> flow_max_take(std::uint64_t ticket) override;
+  // L'analyse d'une image pour le grade (tensorrt_stats.cpp), relue sans attente.
+  std::expected<std::uint64_t, Refusal> frame_stats_start(const Tensor& rgb,
+                                                          kernels::FrameTransfer transfer) override;
+  std::expected<std::optional<kernels::FrameStats>, Refusal> frame_stats_take(std::uint64_t ticket) override;
   std::expected<void, Refusal> warp_blend_poses(const Tensor& a, const Tensor& b, const Motion& motion,
                                                 const Motion* previous, float t, const Tensor& out) override;
   // Les mêmes, directement dans le slot (BackendCaps::ring_targets).
@@ -322,10 +326,18 @@ class TensorRtBackend final : public Backend, public KernelOps {
     std::uint64_t ticket = 0;
     std::uint64_t points = 0;  // points comptés
   };
+  struct StatsRead {
+    void* device = nullptr;  // kernels::FrameCounts
+    void* host = nullptr;
+    cudaEvent_t done = nullptr;
+    std::uint64_t ticket = 0;
+  };
   std::array<PairRead, kPendingReadbacks> pair_reads_{};
   std::array<FlowRead, kPendingReadbacks> flow_reads_{};
+  std::array<StatsRead, kPendingReadbacks> stats_reads_{};
   std::uint64_t pair_tickets_ = 0;  // derniers tickets lancés, par sorte
   std::uint64_t flow_tickets_ = 0;
+  std::uint64_t stats_tickets_ = 0;
   // Sommes FP32 du softmax splatting, partagées par tous les splats (le flux les ordonne).
   float* splat_sums_ = nullptr;
   std::size_t splat_bytes_ = 0;
