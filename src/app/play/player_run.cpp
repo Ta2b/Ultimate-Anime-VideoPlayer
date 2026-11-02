@@ -366,7 +366,7 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
       .luts_dir = p.paths.engines.parent_path() / "luts",
       .source_hdr = source_hdr,
       .kernels = c.backend ? c.backend->kernels() : nullptr,
-      .adaptive_log = p.paths.engines.parent_path() / "adaptive-log.tsv",
+      .adaptive_log = {.path = p.paths.engines.parent_path() / "adaptive-log.tsv"},
       .learn = LearnTrack{.log = p.paths.engines.parent_path() / "adaptive-learning.tsv"},
       .shots = p.shots};
   apply_oled_care(chain, settings);
