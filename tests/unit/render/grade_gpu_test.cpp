@@ -444,6 +444,46 @@ TEST_CASE("grade adaptatif (shader) : la position du plan analysé remplace la m
   CHECK(analyzed[8][0] < 2.5);  // le plan analysé : scène claire, noirs creusés
 }
 
+TEST_CASE("visages : la peau change moins que le décor d'un plan sombre à un plan clair",
+          "[render][gpu][adaptif]") {
+  Gpu gpu;
+  require_device(gpu);
+  REQUIRE(gpu.grade);
+  // À gauche une peau claire d'anime (sRGB 240, 200, 170 à 100 nits, en BT.2020), à droite un gris de même
+  // luminance (62,7 nits).
+  const std::array<double, 3> skin{75.43, 59.59, 42.51};
+  const double grey = 62.74;
+  std::vector<std::uint16_t> pixels(static_cast<std::size_t>(kSide) * kSide * 4);
+  for (int y = 0; y < kSide; ++y)
+    for (int x = 0; x < kSide; ++x) {
+      const std::size_t at = (static_cast<std::size_t>(y) * kSide + static_cast<std::size_t>(x)) * 4;
+      for (std::size_t c = 0; c < 3; ++c) {
+        const double nits = x < kSide / 2 ? skin[c] : grey;
+        pixels[at + c] = static_cast<std::uint16_t>(std::lround(nits_to_pq(nits) * 65535.0));
+      }
+      pixels[at + 3] = 65535;
+    }
+  GradeParams params = expanded(0.0);
+  params.emulate = 1.0;
+  params.ad_on = 1.0;
+  params.sh_on = 1.0;
+  params.em_base = 240.0;     // scène sombre : tons moyens hauts
+  params.ad_em_base = 100.0;  // scène claire : tons moyens bas
+  params.ad_em_pow = params.em_pow;
+  params.sh_t = 0.0;
+  const std::vector<Rgb> dark = graded_rgb(gpu, pixels, params);
+  params.sh_t = 1.0;
+  const std::vector<Rgb> bright = graded_rgb(gpu, pixels, params);
+  const auto luma = [](const Rgb& c) { return 0.2627 * c[0] + 0.6780 * c[1] + 0.0593 * c[2]; };
+  const double skin_change = std::abs(std::log(luma(bright[kSide / 4]) / luma(dark[kSide / 4])));
+  const double grey_change = std::abs(std::log(luma(bright[3 * kSide / 4]) / luma(dark[3 * kSide / 4])));
+  INFO("peau : " << luma(dark[kSide / 4]) << " → " << luma(bright[kSide / 4])
+                 << " nits ; gris : " << luma(dark[3 * kSide / 4]) << " → " << luma(bright[3 * kSide / 4]));
+  CHECK(grey_change > 0.2);                // le décor suit le plan
+  CHECK(skin_change < 0.6 * grey_change);  // la peau, beaucoup moins
+  CHECK(skin_change > 0.2 * grey_change);  // sans être figée
+}
+
 }  // namespace ajp::render
 
 namespace ajp::render {
