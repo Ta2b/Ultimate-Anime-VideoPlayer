@@ -72,7 +72,11 @@ int fold_float_casts(Graph& graph);
 // s² × cout canaux (au plus max_channels) suivie d'un DepthToSpace, où se fond un DepthToSpace
 // lecteur unique de la sortie. Pour un moteur dont seules les Conv passent par les matrices
 // coopératives (OptimizeOptions). Renvoie le nombre de ConvTranspose réécrites.
-int transposes_as_convs(Graph& graph, std::int64_t max_channels);
+// phases (V3) : quand les prises nulles des phases dépassent 40 % de la Conv unique (noyau 4 × 4
+// de pas 2 : 4 prises utiles sur 9 par phase), s² Conv sans zéros, une par phase, de cout canaux
+// chacune (au plus max_channels), concaténées dans l'ordre DCR puis un DepthToSpace de bloc s ; le
+// DepthToSpace lecteur unique de la sortie reste alors à sa place.
+int transposes_as_convs(Graph& graph, std::int64_t max_channels, bool phases = false);
 
 struct PassStats {
   int folded = 0;
@@ -92,6 +96,7 @@ struct PassStats {
 
 struct OptimizeOptions {
   std::int64_t transpose_conv_channels = 0;  // > 0 : transposes_as_convs, avant les fusions
+  bool transpose_phases = false;             // et une Conv sans zéros par phase quand c'est rentable
 };
 
 // Toutes les passes, dans l'ordre. Exige des formes connues (infer_shapes).
