@@ -1,5 +1,5 @@
 // Les règles du grade adaptatif sont les mêmes des deux côtés : les valeurs par défaut des paramètres ar_*
-// du hook (1-params.hook) valent les constantes de render/adaptive_rules.h, et GradeParams les porte.
+// du hook (anime-hdr-params.hook) valent les constantes de render/adaptive_rules.h, et GradeParams les porte.
 #include "render/adaptive_rules.h"
 
 #include <string>
@@ -50,7 +50,7 @@ TEST_CASE("règles adaptatives : le shader et le lecteur partagent les mêmes se
   };
   for (const auto& [name, values] : cases) {
     INFO(name);
-    CHECK(param_default(ajp::render::shaders::anime_hdr_grade, name) == Approx(values.first));
+    CHECK(param_default(ajp::render::shaders::anime_hdr_params, name) == Approx(values.first));
     CHECK(values.second == values.first);
   }
 }

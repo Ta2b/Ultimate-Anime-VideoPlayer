@@ -33,9 +33,9 @@ void LiveScenes::push(std::int64_t pts_us, const kernels::FrameStats& stats) {
   mix(light_.bright, frame.light.bright);
   mix(light_.highlights, frame.light.highlights);
   mix(light_.skin, frame.light.skin);
-  kept_.push_back(
-      {.pts_us = pts_us,
-       .scene = {.stats = stats_of(histogram_, mean_, blue_, chroma_), .light = light_, .serial = serial_}});
+  ShotStats scene = stats_of(histogram_, mean_, blue_, chroma_);
+  scene.apl_nits = light_.apl_nits;
+  kept_.push_back({.pts_us = pts_us, .scene = {.stats = scene, .light = light_, .serial = serial_}});
   while (kept_.size() > kLiveKept) kept_.pop_front();
 }
 

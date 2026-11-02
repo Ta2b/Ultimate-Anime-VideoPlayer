@@ -20,6 +20,9 @@ constexpr std::size_t kRecent = 24;
 constexpr float kFadeDelta = 0.08F;
 constexpr std::size_t kFadeFrames = 12;
 
+// 70 % du blanc en lumière, en luma gamma 2,4 : le seuil des grands aplats clairs du grade.
+const float kLitLuma = std::pow(0.7F, 1.0F / 2.4F);
+
 float percentile(const std::array<float, kShotBins>& histogram, float share) {
   float seen = 0.0F;
   for (int i = 0; i < kShotBins; ++i) {
@@ -47,16 +50,19 @@ float share_beyond(const std::array<float, kShotBins>& histogram, float at, bool
 
 ShotStats average(std::span<const ShotFrame> frames) {
   std::array<float, kShotBins> histogram{};
-  float mean = 0.0F, blue = 0.0F, chroma = 0.0F;
+  float mean = 0.0F, blue = 0.0F, chroma = 0.0F, apl = 0.0F;
   for (const ShotFrame& f : frames) {
     for (std::size_t i = 0; i < histogram.size(); ++i) histogram.at(i) += f.histogram.at(i);
+    apl += f.light.apl_nits;
     mean += f.mean;
     blue += f.blue;
     chroma += f.chroma;
   }
   const auto n = static_cast<float>(std::max<std::size_t>(frames.size(), 1));
   for (float& part : histogram) part /= n;
-  return stats_of(histogram, mean / n, blue / n, chroma / n);
+  ShotStats stats = stats_of(histogram, mean / n, blue / n, chroma / n);
+  stats.apl_nits = apl / n;
+  return stats;
 }
 
 ShotMeta meta_of(std::span<const ShotFrame> frames) {
@@ -105,7 +111,8 @@ ShotStats stats_of(const std::array<float, kShotBins>& histogram, float mean, fl
                    .dark = share_beyond(histogram, 0.1F, true),
                    .bright = share_beyond(histogram, 0.8F, false),
                    .blue = blue,
-                   .chroma = chroma};
+                   .chroma = chroma,
+                   .lit = share_beyond(histogram, kLitLuma, false)};
 }
 
 ShotFrame shot_frame_of(std::int64_t pts_us, const kernels::FrameStats& stats) {

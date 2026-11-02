@@ -55,6 +55,7 @@ struct ScreenOptions {
   // NVPRESENT_ENABLE_SMOOTH_MOTION=1, posé avant la création de l'instance Vulkan.
   bool smooth_motion = false;
   bool allow_software = false;  // appareil Vulkan logiciel (lavapipe) accepté : essais sans GPU
+  bool legacy_grade = false;    // --legacy-grade : le grade d'avant (render::GradeBody::Legacy)
   // Le cache des shaders et pipelines de libplacebo (le grade, ses passes, les LUT) : relu à l'ouverture,
   // gardé à la fermeture. Sans lui, tout se recompile à chaque lancement. Vide : pas de cache.
   std::filesystem::path shader_cache;

@@ -115,6 +115,10 @@ struct Chain {
   // de la mesure en direct, dès qu'il est analysé. Nul : aucune.
   ShotWork* shots = nullptr;
   std::uint64_t adaptive_shot = 0;  // le plan dont le grade tient les valeurs ; 0 : la mesure en direct
+  // La lumière de la scène que le grade en trois passes reçoit (render::SceneLight) ; gardée telle quelle
+  // tant qu'aucune analyse ne dit mieux (un saut ne la perd pas). scene_light_at_us : son dernier envoi.
+  std::optional<render::SceneLight> scene_light;
+  std::int64_t scene_light_at_us = 0;
   std::int64_t shots_seek_us = 0;
   std::int64_t shots_newest_pts = kNoPts;
   std::int64_t shots_step_us = 41'667;

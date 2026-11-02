@@ -62,6 +62,13 @@ double pq_code(double nits) {
 // scène claire » selon le code PQ moyen très lissé de la scène. Les seuils (luminance en % de la source,
 // gamma 2,4, blanc de référence 203 nits) sont convertis en codes PQ. Sans émulation, la courbe ne bouge pas
 // (les valeurs claires reprennent les sombres).
+// La scène du lecteur, à l'échelle de l'image du grade : le blanc SDR y vaut sdr_white.
+void apply_scene_light(const GradeSettings& s, GradeParams& p) {
+  if (!s.scene_light) return;
+  p.fs_apl = std::max(s.scene_light->apl_nits, 0.0) * p.sdr_white / grade_limits::kSdrWhiteNits;
+  p.fs_bright = std::clamp(s.scene_light->lit, 0.0, 1.0);
+}
+
 void apply_adaptive(const GradeSettings& s, double peak, bool sdr_out, GradeParams& p) {
   if (!s.adaptive) return;
   // Le code que la passe des statistiques compare : le PQ de la luminance de la source, sur toutes les
@@ -147,6 +154,7 @@ GradeParams sdr_params(const GradeSettings& s) {
   p.black_hi = s.true_black ? s.black_hi : 0.0;
   apply_punch(s, p);
   apply_adaptive(s, p.peak, true, p);
+  apply_scene_light(s, p);
   return p;
 }
 
@@ -325,6 +333,7 @@ std::expected<GradeDecision, Refusal> decide_grade(const GradeSettings& s, const
   p.black_hi = s.true_black ? s.black_hi : 0.0;
   apply_punch(s, p);
   apply_adaptive(s, peak, false, p);
+  apply_scene_light(s, p);
   return decision;
 }
 

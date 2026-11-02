@@ -169,12 +169,13 @@ void apply_oled_care(Chain& to, const PlaySettings& s) {
 // Le grade de la chaîne avec ses seuils du vrai noir.
 void set_grade(Chain& to, const PlaySettings& wanted, bool from_measured_frame) {
   PlaySettings s = wanted;
+  s.grade_values.scene_light = to.scene_light;
   if (to.adaptive_shot != 0 && s.grade_values.adaptive) {
     // Le shader du grade reçoit la position du plan analysé à la place de la sienne (render/grade_params.h).
     s.grade_values.adaptive_shot = render::AdaptiveShot{
         .t = to.adaptive_t, .tv = to.adaptive_tv, .glow = to.adaptive_glow, .series = to.adaptive_bs};
   } else {
-    s = with_adaptive(wanted, to.adaptive_t, to.adaptive_tv, to.adaptive_bs, to.adaptive_glow);
+    s = with_adaptive(s, to.adaptive_t, to.adaptive_tv, to.adaptive_bs, to.adaptive_glow);
   }
   const render::GradeChoice choice = grade_of(s, to.auto_peak, to.display, to.black, to.source_hdr);
   to.live.set_deband_source(wanted.grade);
@@ -217,12 +218,33 @@ PlaySettings with_adaptive(const PlaySettings& s, double t, double tv, double bs
   return out;
 }
 
+namespace {
+
+// La lumière de la scène pour le grade en trois passes : envoyée quand elle change vraiment (3 % de
+// luminance moyenne, 2 points de part claire), au plus tous les dixièmes de seconde, sauf à une coupe.
+void light_tick(Chain& to, const std::optional<ShotScene>& scene, std::int64_t now_us, bool cut) {
+  if (!scene || !to.running.grade) return;
+  const render::SceneLight& light = scene->light;
+  if (to.scene_light) {
+    const render::SceneLight& was = *to.scene_light;
+    const bool moved = std::abs(light.apl_nits - was.apl_nits) > std::max(0.03 * was.apl_nits, 0.25) ||
+                       std::abs(light.lit - was.lit) > 0.02;
+    if (!moved || (!cut && now_us - to.scene_light_at_us < 100'000)) return;
+  }
+  to.scene_light = light;
+  to.scene_light_at_us = now_us;
+  set_grade(to, to.running, true);
+}
+
+}  // namespace
+
 void adaptive_tick(Chain& to, std::int64_t now_us) {
   const render::GradeSettings& g = to.running.grade_values;
-  // Le shader suit la scène lui-même, sauf quand la pré-analyse des plans (chain_shots.h) connaît le plan de
-  // l'image qui vient : le lecteur décide alors.
+  // Le lecteur décide de la scène : le plan de la pré-analyse (chain_shots.h) s'il est connu, sinon la scène
+  // vue à l'ingestion ; le grade d'avant (--legacy-grade) la mesure lui-même faute des deux.
   std::optional<ShotScene> shot;
   if (g.adaptive && g.adaptive_force < 0.0) shot = next_shot(to, now_us);
+  light_tick(to, shot ? shot : next_live(to), now_us, shot && shot->serial != to.adaptive_shot);
   if (!g.adaptive || !shot) {
     to.ui.set_adaptive_scene({});
     to.learn.seen.reset();

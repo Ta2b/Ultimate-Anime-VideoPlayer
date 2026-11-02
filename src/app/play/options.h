@@ -116,6 +116,9 @@ struct PlayOptions {
   // --one-lane : une seule file de calcul (UpscaleSetup::one_lane), pour profiler le coût propre
   // de chaque moteur.
   bool one_lane = false;
+  // --legacy-grade : le grade d'avant en neuf passes, qui mesure la scène lui-même (render::GradeBody),
+  // gardé une version pour comparer.
+  bool legacy_grade = false;
   // --no-vrr : traite l'écran comme à fréquence fixe même si le VRR est armé (essai du mode Rapide sur les
   // vsyncs).
   bool no_vrr = false;

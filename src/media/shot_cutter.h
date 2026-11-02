@@ -51,9 +51,11 @@ struct ShotStats {
   float bright = 0.0F;  // part au-dessus de 80 %
   float blue = 0.0F;
   float chroma = 0.0F;
+  float lit = 0.0F;       // part au-dessus de 70 % du blanc en lumière (gamma 2,4) : les grands aplats clairs
+  float apl_nits = 0.0F;  // luminance moyenne, en cd/m² au blanc SDR de 203 (kernels/spec/frame_stats.h)
 };
 
-// Les centiles et les parts d'un histogramme de kShotBins cases.
+// Les centiles et les parts d'un histogramme de kShotBins cases (apl_nits laissé à 0).
 ShotStats stats_of(const std::array<float, kShotBins>& histogram, float mean, float blue, float chroma);
 
 // La lumière d'un plan (ShotMeta de l'audit) : APL minimale, moyenne et maximale, maxSCL (le plus grand

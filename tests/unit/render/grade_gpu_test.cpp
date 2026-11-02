@@ -14,6 +14,7 @@
 #include <vector>
 
 #include <catch2/catch_test_macros.hpp>
+#include <catch2/generators/catch_generators.hpp>
 #include <libplacebo/log.h>
 #include <libplacebo/renderer.h>
 #include <libplacebo/vulkan.h>
@@ -105,11 +106,18 @@ TEST_CASE("look : quinze LUT s'enchaînent, la dernière compte comme la premiè
 }
 
 TEST_CASE("HDR adaptatif : la nuit garde ses ombres, une scène claire s'étend moins", "[render][gpu]") {
-  Gpu gpu;
+  // L'ancien corps mesure la scène lui-même ; le corps fusionné la reçoit du lecteur (fs_apl, fs_bright).
+  const GradeBody body = GENERATE(GradeBody::Fused, GradeBody::Legacy);
+  Gpu gpu(body);
   require_device(gpu);
   REQUIRE(gpu.grade);
   const auto center = [&](double nits, double adapt) {
-    return graded(gpu, uniform(nits), native_look(adapt))[kSide / 2];
+    GradeParams params = native_look(adapt);
+    if (body == GradeBody::Fused) {
+      params.fs_apl = nits;
+      params.fs_bright = nits > 100.0 ? 1.0 : 0.0;
+    }
+    return graded(gpu, uniform(nits), params)[kSide / 2];
   };
   // Nuit (3 nits, 1,5 % du blanc SDR) : moitié du contraste sous le pivot, plus clair qu'en fixe.
   const double night_fixed = center(3.0, 0.0);
@@ -298,7 +306,7 @@ TEST_CASE("look : deux LUT s'enchaînent dans l'ordre, deux inversions se compen
 
 TEST_CASE("grade adaptatif (shader) : les noirs se creusent sur une scène claire, pas sur une scène sombre",
           "[render][gpu][adaptif]") {
-  Gpu gpu;
+  Gpu gpu(GradeBody::Legacy);  // la mesure de la scène dans le shader n'existe que dans l'ancien corps
   require_device(gpu);
   REQUIRE(gpu.grade);
   // Un petit pan sombre (5 nits) dans une image claire (300 nits), puis la même image entièrement sombre.
@@ -334,7 +342,7 @@ TEST_CASE("grade adaptatif (shader) : les noirs se creusent sur une scène clair
 
 TEST_CASE("grade adaptatif (shader) : les bandes noires d'un film ne font pas passer la scène pour sombre",
           "[render][gpu][adaptif]") {
-  Gpu gpu;
+  Gpu gpu(GradeBody::Legacy);  // la mesure de la scène dans le shader n'existe que dans l'ancien corps
   require_device(gpu);
   REQUIRE(gpu.grade);
   // Un pan sombre (5 nits) dans une scène à 60 nits ; avec bandes noires, un quart de l'image en haut et en

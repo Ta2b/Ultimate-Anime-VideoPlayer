@@ -42,13 +42,15 @@ bool take(const std::string& in, std::size_t& at, T& value) {
 }
 
 void put_stats(std::string& out, const ShotStats& s) {
-  for (const float v : {s.mean, s.p05, s.p50, s.p95, s.p995, s.dark, s.bright, s.blue, s.chroma}) put(out, v);
+  for (const float v :
+       {s.mean, s.p05, s.p50, s.p95, s.p995, s.dark, s.bright, s.blue, s.chroma, s.lit, s.apl_nits})
+    put(out, v);
 }
 
 bool take_stats(const std::string& in, std::size_t& at, ShotStats& s) {
   return take(in, at, s.mean) && take(in, at, s.p05) && take(in, at, s.p50) && take(in, at, s.p95) &&
          take(in, at, s.p995) && take(in, at, s.dark) && take(in, at, s.bright) && take(in, at, s.blue) &&
-         take(in, at, s.chroma);
+         take(in, at, s.chroma) && take(in, at, s.lit) && take(in, at, s.apl_nits);
 }
 
 void put_meta(std::string& out, const ShotMeta& m) {

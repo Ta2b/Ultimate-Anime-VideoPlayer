@@ -87,6 +87,15 @@ struct AdaptiveShot {
   friend bool operator==(const AdaptiveShot&, const AdaptiveShot&) = default;
 };
 
+// La lumière de la scène que le lecteur connaît (analyse à l'ingestion, pré-analyse des plans) : sa
+// luminance moyenne au blanc SDR de 203 cd/m² et sa part de grands aplats clairs. Le grade en trois passes
+// en tire son limiteur OLED et le haut de sa courbe (GradeParams::fs_apl, fs_bright).
+struct SceneLight {
+  double apl_nits = 0.0;
+  double lit = 0.0;
+  friend bool operator==(const SceneLight&, const SceneLight&) = default;
+};
+
 struct GradeSettings {
   bool grade = true;              // grade activé par le profil
   bool grade_native_hdr = false;  // grade aussi une source déjà HDR
@@ -125,6 +134,8 @@ struct GradeSettings {
   // Routes du shader : la position du plan analysé ; vide, le shader suit sa propre mesure. Jamais écrit
   // dans play.toml.
   std::optional<AdaptiveShot> adaptive_shot;
+  // La lumière de la scène de l'image qui vient ; vide, inconnue. Jamais écrite dans play.toml.
+  std::optional<SceneLight> scene_light;
   double punch_base = 0.0;   // préréglage : contraste en plus, en sortie du grade (0 : aucun)
   double chroma_base = 0.0;  // préréglage : saturation en plus (0 : aucune)
   double middle_gray = 50.0;
@@ -269,6 +280,10 @@ struct GradeParams {
   double sh_glow = 0.0;
   double sh_sky = 0.0;
   double sh_series = 0.0;
+  // Le grade en trois passes (GradeBody::Fused) : la luminance moyenne de la scène à l'écran (nits ; < 0,
+  // inconnue) et sa part claire, données par le lecteur. Le grade d'avant les mesure lui-même.
+  double fs_apl = -1.0;
+  double fs_bright = 0.0;
   friend bool operator==(const GradeParams&, const GradeParams&) = default;
 };
 

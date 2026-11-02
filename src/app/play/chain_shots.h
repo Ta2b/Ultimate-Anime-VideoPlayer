@@ -58,10 +58,13 @@ void tend_shots(ShotWork& work);
 // SceneStats et son numéro (il change à chaque coupe). Cale aussi l'analyse sur la lecture (avance, sauts).
 struct ShotScene {
   gpu::KernelOps::SceneStats stats;
+  render::SceneLight light;  // pour le grade en trois passes (render/grade_params.h)
   std::uint64_t serial = 0;
   bool fade = false;
 };
 std::optional<ShotScene> next_shot(Chain& to, std::int64_t now_us);
+// La scène de cette même image vue à l'ingestion seule (media/live_scenes.h), sans la pré-analyse.
+std::optional<ShotScene> next_live(Chain& to);
 
 // La luminance moyenne de la vidéo selon les plans analysés, une fois assez couverte (une minute, ou toute
 // la vidéo) ; vide sinon.

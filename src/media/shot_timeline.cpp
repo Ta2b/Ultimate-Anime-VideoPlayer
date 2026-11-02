@@ -23,7 +23,9 @@ ShotStats blend(const ShotStats& a, const ShotStats& b, float t) {
                    .dark = lerp(a.dark, b.dark, t),
                    .bright = lerp(a.bright, b.bright, t),
                    .blue = lerp(a.blue, b.blue, t),
-                   .chroma = lerp(a.chroma, b.chroma, t)};
+                   .chroma = lerp(a.chroma, b.chroma, t),
+                   .lit = lerp(a.lit, b.lit, t),
+                   .apl_nits = lerp(a.apl_nits, b.apl_nits, t)};
 }
 
 }  // namespace

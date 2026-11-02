@@ -117,7 +117,8 @@ struct PlaceboScreen::Impl {
   std::unique_ptr<VulkanShare> share;  // vk prêté à FFmpeg ; détruit avant lui
   pl_swapchain swapchain = nullptr;
   pl_renderer renderer = nullptr;
-  pl_cache shader_cache = nullptr;  // ScreenOptions::shader_cache (placebo_open.cpp)
+  pl_cache shader_cache = nullptr;                          // ScreenOptions::shader_cache (placebo_open.cpp)
+  render::GradeBody grade_body = render::GradeBody::Fused;  // ScreenOptions::legacy_grade
   std::filesystem::path shader_cache_file;
   GpuDevice device;
   PlaceboRing ring;
