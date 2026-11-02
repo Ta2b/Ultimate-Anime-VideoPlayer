@@ -129,7 +129,8 @@ class Recorder {
 
   // Un dispatch, après une barrière sur tout ce qui le précède dans l'enregistrement si une
   // commande depuis la dernière barrière a touché l'un de ses tampons (une plage qui recouvre
-  // l'une des siennes : chaque vue liée compte comme lue et écrite) ou une image (order
+  // l'une des siennes, l'une des deux écrite : un binding readonly du shader ne compte que comme lu) ou
+  // une image (order
   // AfterPrevious) ; sans barrière, à côté du précédent (BesidePrevious). images : les vues de
   // stockage du pipeline, puis ses vues échantillonnées. Refus :
   // InputMismatch (nombre de tampons, d'images ou d'octets de push différent du pipeline ; vue
@@ -159,11 +160,14 @@ class Recorder {
     VkBuffer buffer = VK_NULL_HANDLE;
     VkDeviceSize offset = 0;
     VkDeviceSize size = 0;
+    bool write = true;
   };
   Done open() const;
-  // Une commande depuis la dernière barrière a touché l'une de ces vues, ou une image si images.
-  bool depends(std::span<const BufferView> buffers, bool images) const;
-  void touch(std::span<const BufferView> buffers, bool images);
+  // Une commande depuis la dernière barrière a écrit l'une de ces vues, ou l'a touchée si celle-ci est
+  // écrite (writes : bit i pour la vue i ; tout écrit par défaut), ou une image si images.
+  bool depends(std::span<const BufferView> buffers, bool images,
+               std::uint64_t writes = ~std::uint64_t{0}) const;
+  void touch(std::span<const BufferView> buffers, bool images, std::uint64_t writes = ~std::uint64_t{0});
   // Barrière mémoire sur tout ce qui précède, s'il reste quelque chose de touché.
   void barrier();
   Done check_view(const BufferView& view, std::string_view what) const;

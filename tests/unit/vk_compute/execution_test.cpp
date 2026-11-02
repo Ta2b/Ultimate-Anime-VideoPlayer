@@ -7,7 +7,9 @@
 
 #include <catch2/catch_test_macros.hpp>
 
+#include "ajp_vk_compute_spirv.h"
 #include "gpu/vulkan/compute/descriptors.h"
+#include "gpu/vulkan/compute/spirv_access.h"
 #include "gpu/vulkan/compute/sync.h"
 #include "rig.h"
 
@@ -128,6 +130,25 @@ TEST_CASE("exécution : une barrière entre commandes dépendantes seulement", "
     return r.fill(middle.view.buffer, 0);
   });
   CHECK(fills->barriers() == 1);
+  // Deux lectures du même tampon (binding readonly du shader) ne se gênent pas ; écrire ce qu'un dispatch
+  // précédent a seulement lu demande la barrière.
+  const std::unique_ptr<Recording> reads = record(rig, [&](Recorder& r) -> Done {
+    if (auto ok = rig.kernels().transfer(r, TransferOp::PqInverseEotf, src.view, middle.view); !ok) return ok;
+    if (auto ok = rig.kernels().transfer(r, TransferOp::PqInverseEotf, src.view, aside.view); !ok) return ok;
+    return rig.kernels().transfer(r, TransferOp::PqEotf, src2.view, src.view);
+  });
+  CHECK(reads->dispatches() == 3);
+  CHECK(reads->barriers() == 1);
+  run(rig, *reads);
+  CHECK(max_abs_diff(download_rgb(rig, middle), download_rgb(rig, aside)) == 0.0F);
+}
+
+TEST_CASE("exécution : les bindings readonly lus dans le SPIR-V", "[vk_compute][execution]") {
+  // transfer : source readonly (0), destination writeonly (1).
+  CHECK(spirv_readonly_bindings(spirv::words("transfer")) == 0b01U);
+  // rife_fused_glue : entrée, encodage et Y_0 à Y_3 lus (0, 1, 3 à 6), X écrit (2).
+  CHECK(spirv_readonly_bindings(spirv::words("rife_fused_glue_f16")) == 0b1111011U);
+  CHECK(spirv_readonly_bindings({}) == 0U);
 }
 
 TEST_CASE("exécution : les enregistrements d'un lot partagent un VkSubmitInfo", "[vk_compute][execution]") {

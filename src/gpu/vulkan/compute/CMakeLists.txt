@@ -27,6 +27,7 @@ ajp_add_module(vk_compute
     queue.cpp
     recording.cpp
     refuse.cpp
+    spirv_access.cpp
     sync.cpp
     weights.cpp
   DEPS ajp::core_types ajp::kernels ajp::dep::vulkan

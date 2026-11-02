@@ -55,6 +55,8 @@ class Pipeline {
   std::uint32_t images() const { return images_; }
   std::uint32_t sampled() const { return sampled_; }
   std::uint32_t push_bytes() const { return push_bytes_; }
+  // Le tampon du binding i n'est que lu par le shader (spirv_access.h).
+  bool reads_only(std::uint32_t i) const { return i < 64 && ((readonly_ >> i) & 1U) != 0; }
 
  private:
   friend class PipelineCache;
@@ -66,6 +68,7 @@ class Pipeline {
   std::uint32_t images_ = 0;
   std::uint32_t sampled_ = 0;
   std::uint32_t push_bytes_ = 0;
+  std::uint64_t readonly_ = 0;
   VkDescriptorSetLayout set_layout_ = VK_NULL_HANDLE;
   VkPipelineLayout layout_ = VK_NULL_HANDLE;
   VkPipeline pipeline_ = VK_NULL_HANDLE;
@@ -109,6 +112,7 @@ class PipelineCache {
   VkPipelineCache cache_ = VK_NULL_HANDLE;
   VkSampler sampler_ = VK_NULL_HANDLE;
   std::map<std::string, VkShaderModule, std::less<>> modules_;
+  std::map<std::string, std::uint64_t, std::less<>> readonly_;  // par module, spirv_readonly_bindings
   std::map<Key, std::unique_ptr<Pipeline>> pipelines_;
 };
 

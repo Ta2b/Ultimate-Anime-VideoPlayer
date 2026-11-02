@@ -7,6 +7,7 @@
 
 #include "ajp_vk_compute_spirv.h"
 #include "gpu/vulkan/compute/refuse.h"
+#include "gpu/vulkan/compute/spirv_access.h"
 
 namespace ajp::gpu::vk {
 
@@ -87,6 +88,7 @@ std::expected<VkShaderModule, Refusal> PipelineCache::module(std::string_view sh
     return std::unexpected(ok.error());
   }
   modules_.emplace(std::string(shader), module);
+  readonly_.emplace(std::string(shader), spirv_readonly_bindings(words));
   return module;
 }
 
@@ -100,6 +102,8 @@ std::expected<std::unique_ptr<Pipeline>, Refusal> PipelineCache::build(const Pip
   pipeline->images_ = desc.images;
   pipeline->sampled_ = desc.sampled;
   pipeline->push_bytes_ = desc.push_bytes;
+  if (const auto found = readonly_.find(desc.shader); found != readonly_.end())
+    pipeline->readonly_ = found->second;
 
   VkSampler immutable = VK_NULL_HANDLE;
   if (desc.sampled > 0) {
