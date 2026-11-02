@@ -25,7 +25,7 @@ struct ShotAt {
 
 class ShotTimeline {
  public:
-  void add(const Shot& shot);
+  void add(const Shot& found);
   // Le plan qui contient pts_us, s'il est déjà analysé.
   std::optional<ShotAt> at(std::int64_t pts_us) const;
   // La luminance moyenne de la vidéo, pondérée par la durée des plans analysés ; vide sans plan.
@@ -34,7 +34,14 @@ class ShotTimeline {
   std::int64_t covered_us() const;
   // L'instant jusqu'où l'analyse va sans trou depuis pts_us (pts_us lui-même si rien n'y est).
   std::int64_t analyzed_until(std::int64_t pts_us) const;
+  // Le premier trou depuis le début de la vidéo (les plans se suivent à 0,1 s près) ; la fin du dernier plan
+  // s'il n'y en a pas, 0 sans plan.
+  std::int64_t first_gap_us() const;
+  // La fin du dernier plan, 0 sans plan.
+  std::int64_t end_us() const;
   std::size_t size() const;
+  // Tous les plans, dans l'ordre (le cache, media/shot_cache.h).
+  std::vector<Shot> shots() const;
   void clear();
 
  private:
