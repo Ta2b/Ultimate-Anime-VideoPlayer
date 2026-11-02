@@ -235,7 +235,12 @@ void hook() {
         series_n = 0.0;
     }
     if (!again) {
-        apl = reset ? mean_nits : mix(apl, mean_nits, 0.1);
+        // Les poids ci-dessous sont ceux d'une image a 24 i/s ; a video_fps images par seconde (RIFE a 165 Hz),
+        // chaque image en porte la part de son temps : les lissages gardent leur duree en secondes.
+        float per24 = 24.0 / max(video_fps, 1.0);
+        float fast = 1.0 - pow(0.9, per24);
+        float slow = 1.0 - pow(0.98, per24);
+        apl = reset ? mean_nits : mix(apl, mean_nits, fast);
         // Code PQ moyen très lissé (une à deux secondes de vidéo), remis à la mesure à chaque changement de plan :
         // la luminosité de la scène pour le grade adaptatif des routes émulées (tous GPU).
         // Scène sombre avec éclat : un fond sombre (le PQ moyen des zones hors éclats) et une petite part de
@@ -246,15 +251,16 @@ void hook() {
                    * (1.0 - smoothstep(stats_luma(ad_lo), max(stats_luma(ad_hi), stats_luma(ad_lo) + 1e-3),
                                        stats_luma(bg_pq)));
         float scene_pq = mix(mean_pq, bg_pq, glow);
-        pq_slow = reset ? scene_pq : mix(pq_slow, scene_pq, 0.02);
-        glow_slow = reset ? glow : mix(glow_slow, glow, 0.02);
-        bright = reset ? mean.z : mix(bright, mean.z, 0.1);
-        blue_slow = reset ? col.x : mix(blue_slow, col.x, 0.02);
-        chroma_slow = reset ? col.y : mix(chroma_slow, col.y, 0.02);
+        pq_slow = reset ? scene_pq : mix(pq_slow, scene_pq, slow);
+        glow_slow = reset ? glow : mix(glow_slow, glow, slow);
+        bright = reset ? mean.z : mix(bright, mean.z, fast);
+        blue_slow = reset ? col.x : mix(blue_slow, col.x, slow);
+        chroma_slow = reset ? col.y : mix(chroma_slow, col.y, slow);
         // La luminosite de la SERIE : moyenne cumulee sur les 20 premieres secondes, puis lissee sur une minute
         // et demie (24 images par seconde).
-        series_n += 1.0;
-        series += min(1.0 / (min(series_n, 2160.0) + 480.0), 1.0) * (stats_luma(mean_pq) - series);
+        series_n += per24;
+        float series_w = min(1.0 / (min(series_n, 2160.0) + 480.0), 1.0);
+        series += (1.0 - pow(1.0 - series_w, per24)) * (stats_luma(mean_pq) - series);
     }
     prev_pq = mean_pq;
     prev_nits = mean_nits;
@@ -306,9 +312,10 @@ void hook() {
     float value = texelFetch(AJG_AREA_raw, p, 0).x;
     int idx = p.y * size.x + p.x;
     if (idx < 32768) {
-        // ~0,1 s de constante de temps a 48 i/s ; aucune trainee apres une coupure.
+        // ~0,1 s de constante de temps (0,3 par image a 48 i/s), quelle que soit la cadence ; aucune trainee
+        // apres une coupure.
         if (texelFetch(AJG_STATS_raw, ivec2(0, 0), 0).y < 0.5)
-            value = mix(history[idx], value, 0.3);
+            value = mix(history[idx], value, 1.0 - pow(0.7, 48.0 / max(video_fps, 1.0)));
         history[idx] = value;
     }
     imageStore(out_image, p, vec4(value, 0.0, 0.0, 1.0));

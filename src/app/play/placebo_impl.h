@@ -23,6 +23,7 @@
 #include "app/play/osd_text.h"
 #include "app/play/placebo_imgui.h"
 #include "app/play/placebo_screen.h"
+#include "app/play/video_rate.h"
 #include "app/play/vulkan_share.h"
 #include "core/gpu_device.h"
 #include "core/ring.h"
@@ -153,6 +154,7 @@ struct PlaceboScreen::Impl {
   std::int64_t grade_next_pts = 0;
   std::uint32_t grade_next_epoch = 0;
   std::int64_t grade_next_since_us = 0;
+  VideoRate video_rate;  // la cadence des images vidéo distinctes, pour les lissages du grade
   FinalScaler final_scaler = FinalScaler::Default;  // posés par set_finish
   bool deband = false;
   bool source_debanded = false;  // l'image présentée, débandée avant SPAN (RingFrame::debanded)

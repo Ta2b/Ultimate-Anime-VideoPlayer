@@ -29,6 +29,10 @@ class Grade {
   // Écrit chaque valeur dans le //!PARAM du même nom ; pris en compte au prochain rendu.
   void set_params(const GradeParams& params);
   const GradeParams& params() const;
+  // Les images vidéo distinctes par seconde à l'écran (//!PARAM video_fps, 24 par défaut) : les lissages du
+  // grade, réglés pour une image à 24 i/s, gardent ainsi leur durée en secondes. Hors de GradeParams : la
+  // cadence n'est pas un réglage et change sans recharger le grade.
+  void set_video_fps(double fps);
 
   // Le look : jusqu'à trois LUT 3D enchaînées, lues par anime-hdr-look.hook (nullptr : une identité 2x2x2, la
   // LUT est alors sautée avec son intensité à 0). Refait le hook du look, donc à n'appeler qu'au changement
