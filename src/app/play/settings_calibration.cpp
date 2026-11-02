@@ -34,9 +34,16 @@ bool wizard_slider(const char* label, double& value, core::Range<double> range) 
 // Le plan montré : sa navigation, ce qu'il faut y voir, et la vidéo de calibration tenue en pause sur lui.
 void shot_view(const SettingsChoices& choices, GradeWizard& wizard, float scale, float panel_left,
                std::vector<Input>& actions) {
-  const CalibrationImage image = calibration_shot(wizard.image);
-  panel::note(
-      i18n::tr_format("Shot {}/{} · {}", wizard.image + 1, kCalibrationImages, i18n::tr_view(image.title)));
+  const CalibrationImage image =
+      calibration_shot(kCalibrationOrder.at(static_cast<std::size_t>(wizard.image)));
+  const bool bonus = wizard.image >= kCalibrationRequired;
+  if (!bonus) {
+    panel::note(i18n::tr_format("Shot {}/{} · {}", wizard.image + 1, kCalibrationRequired,
+                                i18n::tr_view(image.title)));
+  } else {
+    panel::note(i18n::tr_format("Bonus shot {}/{} · {}", wizard.image - kCalibrationRequired + 1,
+                                kCalibrationImages - kCalibrationRequired, i18n::tr_view(image.title)));
+  }
   panel::tip(std::string(i18n::tr_view(image.guidance)));
   const std::filesystem::path clip = calibration_clip();
   wizard.showing = !clip.empty() && choices.source_file == clip;
@@ -81,10 +88,10 @@ void calibration_start(PlaySettings& d, const SettingsChoices& choices, GradeWiz
   // Demandée par l'assistant de premier démarrage : un nouveau profil, sans attendre le bouton.
   const bool asked = std::exchange(wizard.autostart, false);
   panel::note(i18n::tr(
-      "Sets the adaptive grade on this display from eight anime shots, dark, with a glow and bright: "
-      "on each one, set the deep blacks, the colors and the middle gray for that scene. The grade "
-      "then fits its curve to all of them at once, each scene at its own brightness. The result is "
-      "kept for this display."));
+      "Sets the adaptive grade on this display from four required anime shots (dark, glow, backlight, "
+      "daylight) and four bonus ones: on each one, set the deep blacks, the colors and the middle gray for "
+      "that scene. The grade then fits its curve to all of them at once, each scene at its own brightness. "
+      "The result is kept for this display."));
   const std::vector<std::string> names = grade_profiles(d, key);
   const PlaySettings::DisplayGrade* active = calibrated_grade(d, key);
   if (!names.empty()) {
@@ -193,7 +200,8 @@ void grade_calibration(PlaySettings& d, const SettingsChoices& choices, GradeWiz
       "own brightness; Finish fits the grade to all of them."));
   shot_view(choices, wizard, scale, panel_left, actions);
   const AdaptiveScene& scene = choices.adaptive_scene;
-  const CalibrationImage image = calibration_shot(wizard.image);
+  const CalibrationImage image =
+      calibration_shot(kCalibrationOrder.at(static_cast<std::size_t>(wizard.image)));
   // La scène du plan se mesure une fois le plan affiché (la pré-analyse des plans, chain_shots.h).
   const bool settled = wizard.showing && scene.live && wizard.sought == image.id &&
                        ImGui::GetTime() - wizard.sought_at > 0.8 &&
@@ -236,13 +244,23 @@ void grade_calibration(PlaySettings& d, const SettingsChoices& choices, GradeWiz
   ImGui::EndDisabled();
   ImGui::SameLine();
   ImGui::BeginDisabled(wizard.image == last);
-  if (ImGui::Button(i18n::tr("Next shot"))) ++wizard.image;
+  // Après le dernier plan obligatoire, la suite est facultative : les plans bonus précisent la courbe.
+  if (ImGui::Button(wizard.image == kCalibrationRequired - 1 ? i18n::tr("Go further: bonus shots")
+                                                             : i18n::tr("Next shot")))
+    ++wizard.image;
   ImGui::EndDisabled();
   std::vector<LearnSample> kept;
-  for (const auto& sample : wizard.samples)
-    if (sample) kept.push_back(*sample);
-  panel::note(i18n::tr_format("{} of {} shots set.", kept.size(), kCalibrationImages));
-  ImGui::BeginDisabled(kept.size() < 2);
+  int required = 0;
+  for (int i = 0; i < kCalibrationImages; ++i) {
+    const auto& sample =
+        wizard.samples.at(static_cast<std::size_t>(kCalibrationOrder.at(static_cast<std::size_t>(i))));
+    if (!sample) continue;
+    kept.push_back(*sample);
+    if (i < kCalibrationRequired) ++required;
+  }
+  panel::note(i18n::tr_format("{} of {} required shots set, {} bonus.", required, kCalibrationRequired,
+                              static_cast<int>(kept.size()) - required));
+  ImGui::BeginDisabled(required < kCalibrationRequired);
   const bool finish = ImGui::Button(i18n::tr("Finish"));
   ImGui::EndDisabled();
   if (finish) {

@@ -6,6 +6,7 @@
 // qu'il faut voir à l'écran quand les réglages sont justes.
 #pragma once
 
+#include <array>
 #include <cstdint>
 #include <filesystem>
 #include <string_view>
@@ -29,6 +30,12 @@ struct CalibrationImage {
 // Le nombre de plans de l'étape, et son plan index (0 à calibration_count(step) - 1).
 int calibration_count(CalibrationStep step);
 CalibrationImage calibration_image(CalibrationStep step, int index);
+// L'ordre de la calibration : d'abord les plans obligatoires, qui tiennent les deux bouts de la courbe et
+// son milieu (l'escalier sombre, le cercle magique, la vallée à contre-jour, Emilia en plein jour) ; puis
+// les plans bonus, qui la précisent (Ram dans l'ombre, la corne de Rem, le ciel bleu, le ciel rose).
+inline constexpr std::array<int, kCalibrationImages> kCalibrationOrder{0, 2, 5, 7, 1, 3, 4, 6};
+inline constexpr int kCalibrationRequired = 4;
+
 // Le plan id de la vidéo (0 à kCalibrationImages - 1), toutes étapes confondues : la calibration les montre
 // dans l'ordre, chacun réglé à sa vraie place dans la courbe.
 CalibrationImage calibration_shot(int id);
