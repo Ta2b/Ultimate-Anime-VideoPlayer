@@ -11,8 +11,10 @@ adaptée à la machine.
 
 ## État
 
-Jalon M1 en cours : squelette, cœur (`core`) et tests. Voir
-[`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) pour les modules et leurs règles.
+Version 0.7 (candidates `v0.7.0-rc.*`) : lecture, agrandissement SPAN, interpolation RIFE, DistilDRBA et
+GMFSS, grade HDR adaptatif et export, sous Linux, Windows et macOS, sur le moteur Vulkan du lecteur ou sur
+TensorRT, MIGraphX, OpenVINO, Windows ML et Core ML. Voir [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) pour
+les modules et leurs règles, et [`docs/adr/`](docs/adr/README.md) pour les décisions qui les façonnent.
 
 ## Construire
 
