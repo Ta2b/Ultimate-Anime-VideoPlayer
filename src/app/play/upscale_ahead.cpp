@@ -41,6 +41,14 @@ bool UpscaleStage::take_ahead(const DecodedFrame& frame, const gpu::IngestSpec& 
   return true;
 }
 
+std::expected<bool, Refusal> UpscaleStage::ingest_source(const DecodedFrame& frame, gpu::IngestSpec spec,
+                                                         const gpu::Tensor& rgb) {
+  gpu::KernelOps& ops = *setup_.backend->kernels();
+  spec.deband = wants_deband() && ops.debands_on_ingest();
+  if (auto ok = ops.ingest(frame, spec, rgb); !ok) return std::unexpected(std::move(ok.error()));
+  return spec.deband ? std::expected<bool, Refusal>{true} : deband_source(rgb);
+}
+
 std::expected<bool, Refusal> UpscaleStage::deband_source(const gpu::Tensor& rgb) {
   if (!wants_deband()) return false;
   auto ok = setup_.backend->kernels()->deband(rgb);
@@ -65,8 +73,7 @@ std::expected<void, Refusal> UpscaleStage::look_ahead(const DecodedFrame& frame,
   if (after == nullptr || after->width != setup_.source_width || after->height != setup_.source_height)
     return {};
   gpu::KernelOps& ops = *setup_.backend->kernels();
-  if (auto ok = ops.ingest(*after, spec, ahead_.rgb->tensor()); !ok) return ok;
-  auto debanded = deband_source(ahead_.rgb->tensor());
+  auto debanded = ingest_source(*after, spec, ahead_.rgb->tensor());
   if (!debanded) return std::unexpected(std::move(debanded.error()));
   ahead_.debanded = *debanded;
   if (ahead_.small) {

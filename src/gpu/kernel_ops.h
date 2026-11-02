@@ -49,6 +49,8 @@ struct IngestSpec {
   kernels::Filter chroma = kernels::kChainChromaFilter;
   bool rife_conversion = false;
   Reduction reduce;  // tenseur plus petit que l'image (extension de la tranche verticale)
+  // Débande à l'ingestion, sans copie : seulement si debands_on_ingest(), sinon ignoré.
+  bool deband = false;
 };
 
 // Mouvement estimé au milieu d'une paire, sorti du moteur RIFE (kernels/spec/warp.h).
@@ -294,6 +296,8 @@ class KernelOps {
   virtual std::expected<void, Refusal> deband(const Tensor& /*rgb*/) {
     return std::unexpected(Refusal{RefusalCode::FormatUnsupported, "deband : absent de ce backend"});
   }
+  // Vrai si ingest() débande elle-même quand IngestSpec::deband est posé (même résultat que deband()).
+  virtual bool debands_on_ingest() const { return false; }
   // Chaque élément du tenseur prend value : l'instant t du graphe « fusion » de GMFSS Union.
   virtual std::expected<void, Refusal> fill(const Tensor& /*tensor*/, float /*value*/) {
     return std::unexpected(Refusal{RefusalCode::FormatUnsupported, "fill : absent de ce backend"});

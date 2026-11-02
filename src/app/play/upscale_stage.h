@@ -300,6 +300,9 @@ class UpscaleStage final : public RingStage {
   }
   // Débande l'image ingérée dans rgb si wants_deband() ; vrai si elle l'est.
   std::expected<bool, Refusal> deband_source(const gpu::Tensor& rgb);
+  // ingest() de la source dans rgb puis son débandage (fusionné si le backend sait) ; vrai si débandée.
+  std::expected<bool, Refusal> ingest_source(const DecodedFrame& frame, gpu::IngestSpec spec,
+                                             const gpu::Tensor& rgb);
   std::optional<core::CadenceAccumulator> cadence_;
   core::FreeGrid free_grid_;  // mode Rapide : la grille des instants à la place de cadence_
   core::FreeInputs free_inputs(std::uint32_t epoch) const;

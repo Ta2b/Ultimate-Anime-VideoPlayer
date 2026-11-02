@@ -44,19 +44,34 @@ std::expected<std::unique_ptr<ImportedSlot>, Refusal> ImportedSlot::import(const
 
   cudaExternalMemoryHandleDesc memory{};
   memory.size = slot.memory_size;
+  // Les images du ring viennent de libplacebo, qui les alloue dédiées : CUDA veut le drapeau, sans quoi
+  // l'import peut réussir mais lire une mémoire mal mappée ; sans dédiée, on retente sans le drapeau.
+  memory.flags = cudaExternalMemoryDedicated;
 #ifdef _WIN32
   memory.type = cudaExternalMemoryHandleTypeOpaqueWin32;
   memory.handle.win32.handle = reinterpret_cast<void*>(slot.memory.value);
-  if (const cudaError_t error = cudaImportExternalMemory(&imported->memory_, &memory); error != cudaSuccess)
-    return std::unexpected(cuda_refusal(error, "cudaImportExternalMemory"));
+  cudaError_t memory_error = cudaImportExternalMemory(&imported->memory_, &memory);
+  if (memory_error != cudaSuccess) {
+    static_cast<void>(cudaGetLastError());
+    memory.flags = 0;
+    memory_error = cudaImportExternalMemory(&imported->memory_, &memory);
+  }
+  if (memory_error != cudaSuccess)
+    return std::unexpected(cuda_refusal(memory_error, "cudaImportExternalMemory"));
 #else
   memory.type = cudaExternalMemoryHandleTypeOpaqueFd;
   memory.handle.fd = duplicate(slot.memory);
   if (memory.handle.fd < 0)
     return refuse(RefusalCode::IoFailed, std::format("slot {} : dup de la mémoire", slot.index));
-  if (const cudaError_t error = cudaImportExternalMemory(&imported->memory_, &memory); error != cudaSuccess) {
+  cudaError_t memory_error = cudaImportExternalMemory(&imported->memory_, &memory);
+  if (memory_error != cudaSuccess) {
+    static_cast<void>(cudaGetLastError());
+    memory.flags = 0;
+    memory_error = cudaImportExternalMemory(&imported->memory_, &memory);
+  }
+  if (memory_error != cudaSuccess) {
     close(memory.handle.fd);  // pris par CUDA seulement en cas de succès
-    return std::unexpected(cuda_refusal(error, "cudaImportExternalMemory"));
+    return std::unexpected(cuda_refusal(memory_error, "cudaImportExternalMemory"));
   }
 #endif
 
