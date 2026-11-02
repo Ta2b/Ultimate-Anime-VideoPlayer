@@ -180,6 +180,12 @@ vec4 hook() {
     if (ad_on > 0.5 && gl_force >= 0.0) {
         t_scene = ad_lo < 0.5 ? 1.0 : 0.0;
         glow = clamp(gl_force, 0.0, 1.0);
+    } else if (ad_on > 0.5 && sh_on > 0.5) {
+        // Le plan analysé par le lecteur (pré-analyse des plans) : sa position, connue à l'image de la coupe.
+        t_scene = sh_t;
+        glow = sh_glow;
+        sky = sh_sky;
+        series_bright = sh_series;
     } else if (ad_on > 0.5) {
         vec4 scene = AJG_STATS_tex(vec2(0.75, 0.5));
         t_scene = clamp(scene.x, 0.0, 1.0);

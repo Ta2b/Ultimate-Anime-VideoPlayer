@@ -311,3 +311,38 @@
 //!MINIMUM 1.0
 //!MAXIMUM 20.0
 6.0
+
+//!PARAM sh_on
+//!DESC Grade adaptatif : 1 = position du plan analyse par le lecteur (sh_*), 0 = mesure du shader
+//!TYPE float
+//!MINIMUM 0.0
+//!MAXIMUM 1.0
+0.0
+
+//!PARAM sh_t
+//!DESC Grade adaptatif : position du plan analyse, de la scene sombre (0) a la claire (1)
+//!TYPE float
+//!MINIMUM 0.0
+//!MAXIMUM 1.0
+0.0
+
+//!PARAM sh_glow
+//!DESC Grade adaptatif : poids de la scene sombre avec eclat du plan analyse
+//!TYPE float
+//!MINIMUM 0.0
+//!MAXIMUM 1.0
+0.0
+
+//!PARAM sh_sky
+//!DESC Grade adaptatif : vibrance du ciel bleu ou du flash du plan analyse
+//!TYPE float
+//!MINIMUM 0.0
+//!MAXIMUM 1.0
+0.0
+
+//!PARAM sh_series
+//!DESC Grade adaptatif : serie claire par nature, selon les plans analyses
+//!TYPE float
+//!MINIMUM 0.0
+//!MAXIMUM 1.0
+0.0

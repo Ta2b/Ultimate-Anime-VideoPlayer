@@ -698,4 +698,36 @@ TEST_CASE(
   CHECK(dark[8][0] > 4.0);
 }
 
+TEST_CASE("grade adaptatif (shader) : la position du plan analysé remplace la mesure du shader",
+          "[render][gpu][adaptif]") {
+  Gpu gpu;
+  require_device(gpu);
+  REQUIRE(gpu.grade);
+  // Une image sombre : la mesure du shader la dit sombre, le plan analysé la dit claire.
+  std::vector<std::uint16_t> pixels(static_cast<std::size_t>(kSide) * kSide * 4);
+  for (int y = 0; y < kSide; ++y)
+    for (int x = 0; x < kSide; ++x) {
+      const double nits = x < 26 ? 5.0 : 8.0;
+      const std::size_t at = (static_cast<std::size_t>(y) * kSide + static_cast<std::size_t>(x)) * 4;
+      for (std::size_t c = 0; c < 3; ++c)
+        pixels[at + c] = static_cast<std::uint16_t>(std::lround(nits_to_pq(nits) * 65535.0));
+      pixels[at + 3] = 65535;
+    }
+  GradeParams params = expanded(0.0);
+  params.shadows = 0.0;
+  params.shadow_knee = 50.0;
+  params.ad_on = 1.0;
+  params.ad_lo = nits_to_pq(10.0);
+  params.ad_hi = nits_to_pq(60.0);
+  params.ad_shadows = 0.9;
+  params.ad_em_base = params.em_base;
+  params.ad_em_pow = params.em_pow;
+  const std::vector<Rgb> measured = graded_rgb(gpu, pixels, params);
+  params.sh_on = 1.0;
+  params.sh_t = 1.0;
+  const std::vector<Rgb> analyzed = graded_rgb(gpu, pixels, params);
+  CHECK(measured[8][0] > 4.0);  // la mesure : scène sombre, noirs intacts
+  CHECK(analyzed[8][0] < 2.5);  // le plan analysé : scène claire, noirs creusés
+}
+
 }  // namespace ajp::render

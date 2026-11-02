@@ -30,6 +30,8 @@
 
 namespace ajp::app::play {
 
+struct ShotWork;  // chain_shots.h
+
 // Les profils de la lecture : user.toml, le profil actif, la source pour choisir leur règle.
 struct ProfileState {
   std::filesystem::path user_path;
@@ -118,6 +120,13 @@ struct Chain {
   std::filesystem::path adaptive_log;      // adaptive-log.tsv (apprentissage)
   std::int64_t adaptive_log_us = 0;
   LearnTrack learn;
+  // Pré-analyse des plans (chain_shots.h) : le grade adaptatif lit le plan de l'image qui vient au lieu
+  // de la mesure en direct, dès qu'il est analysé. Nul : aucune.
+  ShotWork* shots = nullptr;
+  std::uint64_t adaptive_shot = 0;  // le plan dont le grade tient les valeurs ; 0 : la mesure en direct
+  std::int64_t shots_seek_us = 0;
+  std::int64_t shots_newest_pts = kNoPts;
+  std::int64_t shots_step_us = 41'667;
 };
 
 // Les réglages avec, pendant un repli HDR, le mode que le profil demande à la place du mode de

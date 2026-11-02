@@ -87,6 +87,8 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
   const HdrIntent wanted_hdr{.true_hdr = settings.true_hdr, .hdr_native = settings.hdr_native};
   const PlayOptions options = options_for(p.options, settings);
   const media::TrackInfo& video = p.video;
+  // La pré-analyse des plans part avant la préparation des moteurs : elle a de l'avance quand l'image vient.
+  open_shots(p.shots, p.options.file, settings, start_us);
   auto prepared = prepare_chain(p, settings);
   if (!prepared) return std::unexpected(std::move(prepared.error()));
   if (!*prepared) {  // q ou la fenêtre fermée pendant la préparation des moteurs
@@ -103,6 +105,7 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
   log->info("{}", describe_hdr(p.screen.window()));
   const std::string screen_key = p.display ? display_key(*p.display) : std::string();
   settings = with_calibrated_grade(std::move(settings), screen_key);
+  if (!settings.grade_values.adaptive) open_shots(p.shots, p.options.file, settings, start_us);
   const int auto_peak = auto_peak_nits(content_peak_nits(p.screen.window()));
   int peak_nits = 0;
   // La sortie est HDR10 : l'écran en reçoit, et --sdr ne l'a pas coupée. Sinon (sortie SDR),
@@ -363,7 +366,8 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
       .source_hdr = source_hdr,
       .kernels = c.backend ? c.backend->kernels() : nullptr,
       .adaptive_log = p.paths.engines.parent_path() / "adaptive-log.tsv",
-      .learn = LearnTrack{.log = p.paths.engines.parent_path() / "adaptive-learning.tsv"}};
+      .learn = LearnTrack{.log = p.paths.engines.parent_path() / "adaptive-learning.tsv"},
+      .shots = &p.shots};
   apply_oled_care(chain, settings);
 
   std::ofstream stats;

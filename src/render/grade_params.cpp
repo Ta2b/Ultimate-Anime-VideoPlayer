@@ -77,6 +77,12 @@ void apply_adaptive(const GradeSettings& s, double peak, bool sdr_out, GradePara
     p.ad_lo = bright ? -2.0 : 2.0;
     p.ad_hi = bright ? -1.0 : 3.0;
     p.gl_force = grade_limits::forced_glow(s.adaptive_force) ? 1.0 : 0.0;
+  } else if (s.adaptive_shot) {
+    p.sh_on = 1.0;
+    p.sh_t = std::clamp(s.adaptive_shot->t, 0.0, 1.0);
+    p.sh_glow = std::clamp(s.adaptive_shot->glow, 0.0, 1.0);
+    p.sh_sky = std::clamp(s.adaptive_shot->tv, 0.0, 1.0);
+    p.sh_series = std::clamp(s.adaptive_shot->series, 0.0, 1.0);
   }
   p.ad_shadows = shadows_effect(s.adaptive_shadows);
   // La vibrance suit la couleur (ciel bleu saturé), que le shader ne mesure pas : seule la part retirée

@@ -15,6 +15,7 @@
 #include "app/play/backend_library.h"
 #include "app/play/build_progress.h"
 #include "app/play/chain.h"
+#include "app/play/chain_shots.h"
 #include "app/play/display_edid.h"
 #include "app/play/drba_model.h"
 #include "app/play/engine_install.h"
@@ -91,6 +92,8 @@ struct Player {
   // La préparation automatique du mode Performance de SPAN (span_auto.h) : elle survit aux réouvertures de la
   // chaîne et s'arrête avec le lecteur.
   SpanJob span_job;
+  // La pré-analyse des plans du fichier lu (chain_shots.h) : elle survit aux réouvertures de la chaîne.
+  ShotWork shots;
 };
 
 // Les messages des backends, sur le canal « backend » du journal.
