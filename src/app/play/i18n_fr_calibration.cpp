@@ -24,14 +24,15 @@ constexpr std::array kCalibration{
           "the player.",
           "La vidéo de calibration manque (calibration/calibration.mkv à côté du lecteur) : réinstallez le "
           "lecteur."},
-    Entry{"Sets the adaptive grade on this display from eight anime shots, dark, with a glow and bright: on "
-          "each one, set the deep blacks, the colors and the middle gray for that scene. The grade then fits "
-          "its curve to all of them at once, each scene at its own brightness. The result is kept for this "
-          "display.",
-          "Règle le grade adaptatif sur cet écran à partir de huit plans d'anime, sombres, avec éclat et "
-          "clairs : sur chacun, réglez les noirs profonds, les couleurs et le gris moyen de cette scène. Le "
-          "grade ajuste ensuite sa courbe sur tous à la fois, chaque scène à sa propre luminosité. Le "
-          "résultat est gardé pour cet écran."},
+    Entry{
+        "Sets the adaptive grade on this display from four required anime shots (dark, glow, backlight, "
+        "daylight) and four bonus ones: on each one, set the deep blacks, the colors and the middle gray "
+        "for that scene. The grade then fits its curve to all of them at once, each scene at its own "
+        "brightness. The result is kept for this display.",
+        "Règle le grade adaptatif sur cet écran à partir de quatre plans d'anime obligatoires (sombre, avec "
+        "éclat, contre-jour, plein jour) et de quatre plans bonus : sur chacun, réglez les noirs profonds, "
+        "les couleurs et le gris moyen de cette scène. Le grade ajuste ensuite sa courbe sur tous à la fois, "
+        "chaque scène à sa propre luminosité. Le résultat est gardé pour cet écran."},
     Entry{
         "Set each shot so it looks right, as it will be played in your episodes. Each one counts at its own "
         "brightness; Finish fits the grade to all of them.",
@@ -41,7 +42,9 @@ constexpr std::array kCalibration{
     Entry{"Previous shot", "Plan précédent"},
     Entry{"Next shot", "Plan suivant"},
     Entry{"Measuring the shot…", "Mesure du plan…"},
-    Entry{"{} of {} shots set.", "{} plans réglés sur {}."},
+    Entry{"{} of {} required shots set, {} bonus.", "{} plans obligatoires réglés sur {}, {} bonus."},
+    Entry{"Bonus shot {}/{} · {}", "Plan bonus {}/{} · {}"},
+    Entry{"Go further: bonus shots", "Aller plus loin : plans bonus"},
     Entry{"Opening the calibration video…", "Ouverture de la vidéo de calibration…"},
     // Les images d'exemple : leur titre, puis ce qu'il faut y voir.
     Entry{"Re:Zero · the staircase in the dark", "Re:Zero · l'escalier dans le noir"},
