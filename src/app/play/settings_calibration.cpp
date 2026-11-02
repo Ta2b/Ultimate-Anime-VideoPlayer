@@ -199,6 +199,10 @@ void grade_calibration(PlaySettings& d, const SettingsChoices& choices, GradeWiz
       value = std::clamp(std::round(static_cast<double>(shown)), kMiddleGray.lo, kMiddleGray.hi);
   };
   g.adaptive_force = step == CalibrationStep::Dark ? 0.0 : step == CalibrationStep::Bright ? 1.0 : kForceGlow;
+  // La vidéo de calibration rouvre la lecture avec les réglages d'avant la calibration : sur un écran sans
+  // profil, le grade adaptatif y est coupé (with_calibrated_grade), et le panneau reprend ces réglages. Sans
+  // lui, les curseurs des scènes claires et des éclats seraient sans effet : il reste allumé à chaque étape.
+  g.adaptive = true;
   if (step == CalibrationStep::Dark) {
     panel::note(
         i18n::tr("1/3 · Dark scene. Set the middle gray, the deep blacks and the colors while looking at "
