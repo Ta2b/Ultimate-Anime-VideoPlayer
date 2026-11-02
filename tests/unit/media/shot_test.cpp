@@ -13,6 +13,7 @@
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 
+#include "clips.h"
 #include "media/shot_cache.h"
 #include "media/shot_cutter.h"
 #include "media/shot_probe.h"
@@ -127,9 +128,8 @@ TEST_CASE("plans : la chronologie rend le plan d'un instant, et interpole un fon
   CHECK(timeline.at(600'000)->start_us == 0);
 }
 
-TEST_CASE("plans : la vidéo de calibration se découpe en ses dix-huit plans de 6 s", "[media][shots]") {
-  const std::filesystem::path clip = std::filesystem::path(AJP_DATA_DIR) / "calibration" / "calibration.mkv";
-  REQUIRE(std::filesystem::exists(clip));
+TEST_CASE("plans : dix-huit plans fixes de 6 s se découpent en dix-huit plans", "[media][shots]") {
+  const std::filesystem::path clip = test::require_clip(test::shots_clip());
   ShotTimeline timeline;
   const auto probe = ShotProbe::start(clip, timeline, 0);
   for (int i = 0; i < 600 && !probe->finished(); ++i)
@@ -149,7 +149,7 @@ TEST_CASE("plans : la vidéo de calibration se découpe en ses dix-huit plans de
 }
 
 TEST_CASE("plans : l'analyse partie d'un saut revient combler le début", "[media][shots]") {
-  const std::filesystem::path clip = std::filesystem::path(AJP_DATA_DIR) / "calibration" / "calibration.mkv";
+  const std::filesystem::path clip = test::require_clip(test::shots_clip());
   ShotTimeline timeline;
   const auto probe = ShotProbe::start(clip, timeline, 30'000'000, ShotProbeOptions{.lead_us = 120'000'000});
   for (int i = 0; i < 600 && !probe->finished(); ++i)
@@ -167,7 +167,7 @@ TEST_CASE("plans : l'analyse partie d'un saut revient combler le début", "[medi
 TEST_CASE("plans : le cache rend les plans gardés, et rien pour une autre vidéo", "[media][shots]") {
   const std::filesystem::path dir = std::filesystem::temp_directory_path() / "ajp-shot-cache-test";
   std::filesystem::remove_all(dir);
-  const std::filesystem::path clip = std::filesystem::path(AJP_DATA_DIR) / "calibration" / "calibration.mkv";
+  const std::filesystem::path clip = test::require_clip(test::shots_clip());
   const std::string key = shot_cache_key(clip);
   REQUIRE(key.size() == 16);
   CHECK(key == shot_cache_key(clip));

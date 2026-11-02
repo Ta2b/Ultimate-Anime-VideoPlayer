@@ -141,6 +141,17 @@ std::expected<AVCodecContext*, std::string> open_encoder(const ClipSpec& spec, b
   return enc;
 }
 
+// Un plan fixe : dégradé de ±12 autour de sa luma, chroma propre au plan (8 bits).
+int shot_value(const ClipSpec& spec, int plane, int x, int y, int n) {
+  const auto at = static_cast<std::size_t>(n / spec.shot_frames) % spec.shot_lumas.size();
+  const int shot = static_cast<int>(at);
+  if (plane == 0) {
+    const int ramp = (x + y) * 24 / std::max(1, spec.width + spec.height) - 12;
+    return std::clamp(spec.shot_lumas[at] + ramp, 16, 235);
+  }
+  return plane == 1 ? 128 + ((shot * 37) % 61) - 30 : 128 + ((shot * 53) % 67) - 33;
+}
+
 void fill_frame(AVFrame& frame, const ClipSpec& spec, int n) {
   const AVPixFmtDescriptor* desc = av_pix_fmt_desc_get(spec.pixel_format);
   const int bits = desc->comp[0].depth;
@@ -150,7 +161,9 @@ void fill_frame(AVFrame& frame, const ClipSpec& spec, int n) {
     for (int y = 0; y < h; ++y) {
       std::uint8_t* row = frame.data[plane] + static_cast<std::ptrdiff_t>(y) * frame.linesize[plane];
       for (int x = 0; x < w; ++x) {
-        const int value = is_flat(spec) ? (plane == 0 ? flat_luma(n) : 128) : pattern(plane, x, y, n, bits);
+        const int value = spec.shot_frames > 0 ? shot_value(spec, plane, x, y, n)
+                          : is_flat(spec)      ? (plane == 0 ? flat_luma(n) : 128)
+                                               : pattern(plane, x, y, n, bits);
         if (bits > 8) {
           row[2 * x] = static_cast<std::uint8_t>(value & 0xFF);
           row[2 * x + 1] = static_cast<std::uint8_t>(value >> 8);

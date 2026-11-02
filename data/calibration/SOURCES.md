@@ -2,8 +2,11 @@
 
 Dix-huit plans fixes, réunis dans calibration.mkv pour la calibration du grade adaptatif (Paramètres > HDR).
 Le lecteur l'ouvre en pause, plan par plan, dans la même chaîne que les épisodes (src/app/play/calibration_images.cpp) :
-ce que la calibration montre est ce que la lecture rendra. Livrée dans calibration/ à côté du lecteur
-(tools/release/package-*.sh, package-windows.ps1).
+ce que la calibration montre est ce que la lecture rendra.
+
+**Ni dans le dépôt ni dans les paquets :** ce sont des images d'œuvres sous droits. Chacun refait la vidéo depuis ses
+propres fichiers (la table ci-dessous dit quels plans prendre) et la dépose dans `calibration/` de ses données
+(Linux : `~/.local/share/ajp/ajp/calibration/calibration.mkv`), ou dans `calibration/` à côté du lecteur.
 
 Chaque plan tient 6 s (dix-huit plans, 108 s, un chapitre par plan) : 1920x1080, 24 images par seconde, H.264 4:2:0
 (crf 8, tune stillimage), BT.709 plage limitée comme un épisode, une image clé au début de chaque plan. Les

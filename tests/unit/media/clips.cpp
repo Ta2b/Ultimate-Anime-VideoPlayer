@@ -77,6 +77,24 @@ ClipSpec late_video_clip() {
   };
 }
 
+ClipSpec shots_clip() {
+  return ClipSpec{
+      .name = "shots.mkv",
+      .codec = VideoCodec::Ffv1,
+      .width = 320,
+      .height = 180,
+      .frames = 18 * 144,
+      .frame_rate = {24, 1},
+      .gop = 144,
+      .color = {.primaries = AVCOL_PRI_BT709,
+                .transfer = AVCOL_TRC_BT709,
+                .matrix = AVCOL_SPC_BT709,
+                .range = AVCOL_RANGE_MPEG},
+      .shot_frames = 144,
+      .shot_lumas = {30, 70, 110, 150, 205, 85, 45, 190, 125, 60, 165, 35, 100, 215, 140, 55, 180, 95},
+  };
+}
+
 ClipSpec gpu_clip(const std::string& encoder) {
   return ClipSpec{
       .name = encoder + ".mkv",

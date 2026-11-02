@@ -30,6 +30,11 @@ ClipSpec late_video_clip();
 // multiple des macroblocs, l'image décodée est recadrée.
 ClipSpec gpu_clip(const std::string& encoder);
 
+// Dix-huit plans fixes de 6 s à 24 im/s (FFV1 320x180, BT.709 limitée), une image clé par plan : le
+// premier sombre, le cinquième clair. Remplace, pour les tests, la vidéo de calibration qui n'est plus
+// livrée.
+ClipSpec shots_clip();
+
 // Écrit le clip et échoue le test s'il n'a pas pu l'être.
 std::filesystem::path require_clip(const ClipSpec& spec);
 // Comme require_clip, mais SKIP avec la raison si l'encodeur ne s'ouvre pas ici
