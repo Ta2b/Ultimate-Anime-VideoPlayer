@@ -153,10 +153,12 @@ struct DrbaFusedUse {
 // premier de dirs qui l'a, fixé à la taille remplie de RIFE, construit puis chargé. Rien si
 // l'utilisateur ferme la fenêtre. Refus : FieldMissing (graphe absent), et ceux de la dérivation
 // et du backend. align : le multiple des plans remplis du graphe trouvé (64, ou 128 au demi-flot).
+// motion : demandé, la variante « mouvement » (flot et masque, warp après SPAN) : le fusionné la sait, le
+// graphe entier la dérive (drba_motion_model) ; en sortie, vrai si le moteur rendu la sert.
 std::expected<std::optional<std::unique_ptr<gpu::Engine>>, Refusal> prepare_distil_drba(
     Player& p, const gpu::BackendInit& init, gpu::Backend& backend,
     std::span<const std::filesystem::path> dirs, int work_width, int work_height, int& align,
-    PrecisionTier tier = PrecisionTier::Balanced, DrbaFusedUse* fused = nullptr);
+    PrecisionTier tier = PrecisionTier::Balanced, DrbaFusedUse* fused = nullptr, bool* motion = nullptr);
 
 // L'interpolation d'Apple pour des images de travail work_width × work_height, chargée comme RIFE
 // image (plans v2, remplis au multiple de 64) : son modèle (apple_model.h), essayé à la

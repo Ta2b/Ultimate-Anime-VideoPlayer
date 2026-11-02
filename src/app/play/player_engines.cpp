@@ -335,7 +335,7 @@ std::expected<std::optional<GmfssEngines>, Refusal> prepare_gmfss(Player& p, con
 std::expected<std::optional<std::unique_ptr<gpu::Engine>>, Refusal> prepare_distil_drba(
     Player& p, const gpu::BackendInit& init, gpu::Backend& backend,
     std::span<const std::filesystem::path> dirs, int work_width, int work_height, int& align,
-    PrecisionTier tier, DrbaFusedUse* fused) {
+    PrecisionTier tier, DrbaFusedUse* fused, bool* motion) {
   std::optional<DrbaModel> found = find_distil_drba(dirs, drba_half_flow(work_height));
   if (found && tier != PrecisionTier::Balanced) {
     if (tier == PrecisionTier::Performance && !backend.capabilities().fp8) {
@@ -387,8 +387,21 @@ std::expected<std::optional<std::unique_ptr<gpu::Engine>>, Refusal> prepare_dist
       }
     }
   }
-  auto fixed = static_distil_drba(found->path, g.padded_width, g.padded_height,
-                                  p.paths.engines.parent_path() / "modeles");
+  // Le graphe entier en variante mouvement : ses sorties changées, puis sa taille fixée ; un refus garde
+  // l'image.
+  std::filesystem::path source = found->path;
+  if (motion != nullptr && *motion) {
+    auto derived = drba_motion_model(found->path, p.paths.engines.parent_path() / "modeles");
+    if (derived) {
+      source = *derived;
+    } else {
+      *motion = false;
+      log_channel("app")->warn("DistilDRBA mouvement indisponible ({}) : l'image du graphe",
+                               derived.error().detail);
+    }
+  }
+  auto fixed =
+      static_distil_drba(source, g.padded_width, g.padded_height, p.paths.engines.parent_path() / "modeles");
   if (!fixed) return std::unexpected(std::move(fixed.error()));
   return prepare_engine(p, init, backend, *fixed, shape, label, gpu::Lane::Interpolate);
 }

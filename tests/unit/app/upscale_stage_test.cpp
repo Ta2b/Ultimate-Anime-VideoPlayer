@@ -37,6 +37,7 @@ struct Rig : test::StageRig {
   test::FakeEngine span{"span", {"input"}, {"output"}};
   test::FakeEngine rife{"rife", {"input"}, {"output"}};
   test::FakeEngine drba{"drba", {"pair01", "pair12"}, {"output"}};
+  test::FakeEngine drba_motion{"drba_motion", {"pair01", "pair12"}, {"flow", "mask"}};
   test::FakeEngine motion{"rife_motion", {"input"}, {"flow", "mask"}};
   std::shared_ptr<LiveSettings> live = std::make_shared<LiveSettings>();
 
@@ -603,6 +604,25 @@ TEST_CASE("Étage gpu : DistilDRBA rend b sans passe quand (b, après) est un de
         std::vector<std::string>{"1", "1-2", "2", "2-3", "3", "3-4", "4", "5"});
   // 3-4 à ½ est centrée sur 4, dont la paire suivante (4, 5) est tenue : l'image 4 telle quelle.
   CHECK(rig.backend.count("engine drba") == 2);
+}
+
+TEST_CASE("Étage gpu : DistilDRBA mouvement, un SPAN par source et le warp après", "[app][stage]") {
+  Rig rig;
+  UpscaleSetup s = rig.setup(true);
+  s.rife = nullptr;
+  s.distil_drba = &rig.drba_motion;
+  s.drba_motion = true;
+  s.warp_after_span = true;
+  rig.start(std::move(s));
+  rig.feed(1, 4);
+  REQUIRE(rig.collect(5));
+  rig.stage.reset();
+
+  CHECK(shape_of(rig.sink.frames()) == std::vector<std::string>{"1", "1-2", "2", "2-3", "3"});
+  CHECK(rig.backend.count("engine drba_motion") == 2);
+  // SPAN sur les trois sources montrées seulement : les images créées sont warpées depuis elles.
+  CHECK(rig.backend.count("engine span") == 3);
+  CHECK(rig.backend.count("warp_blend") + rig.backend.count("warp_blend_ring") == 2);
 }
 
 TEST_CASE("Étage gpu : refus de démarrage nommés", "[app][stage]") {

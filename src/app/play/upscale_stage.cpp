@@ -513,7 +513,9 @@ std::expected<RingStage::Output, Refusal> UpscaleStage::produce(const DecodedFra
   if (warps_spanned()) {
     const Target out = ring_direct_ ? Target{.ring = &ring} : Target{.tensor = &middle_out()};
     if (auto ok = gmfss() ? interpolate_gmfss_spanned(output, spanned(current_ ^ 1U), spanned(current_), out)
-                          : interpolate_by_motion(output, spanned(current_ ^ 1U), spanned(current_), out);
+                  : drba_motion()
+                      ? interpolate_drba_motion(output, true, out)
+                      : interpolate_by_motion(output, spanned(current_ ^ 1U), spanned(current_), out);
         !ok) {
       return std::unexpected(std::move(ok.error()));
     }
@@ -534,10 +536,11 @@ std::expected<RingStage::Output, Refusal> UpscaleStage::produce(const DecodedFra
     return made;
   }
   if (by_motion() || gmfss() || drba()) {
-    auto ok = gmfss()  ? interpolate_gmfss(output)
-              : drba() ? interpolate_drba(output)
-                       : interpolate_by_motion(output, rgb_[current_ ^ 1U]->tensor(), now,
-                                               Target{.tensor = &middle()});
+    auto ok = gmfss()         ? interpolate_gmfss(output)
+              : drba_motion() ? interpolate_drba_motion(output, false, Target{.tensor = &middle()})
+              : drba()        ? interpolate_drba(output)
+                              : interpolate_by_motion(output, rgb_[current_ ^ 1U]->tensor(), now,
+                                                      Target{.tensor = &middle()});
     if (!ok) return std::unexpected(std::move(ok.error()));
   } else if (auto ok = interpolate_image(instant.t); !ok) {
     return std::unexpected(std::move(ok.error()));

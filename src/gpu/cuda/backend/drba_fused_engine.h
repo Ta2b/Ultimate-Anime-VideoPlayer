@@ -61,7 +61,8 @@ class DrbaFusedEngine final : public Engine {
   Shape input_shape() const { return {.dims = {1, kernels::kDrbaFusedInputPlanes, height_, width_}}; }
 
   // Enfile la chaîne sur stream (arena : la zone de la voie de stream). Les mêmes adresses une troisième fois
-  // : le lancement passe par un graphe CUDA capturé à la deuxième.
+  // : le lancement passe par un graphe CUDA capturé à la deuxième. Une sortie : l'image ; deux : le flot et
+  // le masque du warp final (variante mouvement, le warp après SPAN).
   std::expected<void, Refusal> enqueue(cudaStream_t stream, const std::shared_ptr<SharedActivations>& arena,
                                        std::span<const Tensor> inputs, std::span<const Tensor> outputs);
 
@@ -71,8 +72,9 @@ class DrbaFusedEngine final : public Engine {
  private:
   DrbaFusedEngine() = default;
   // La chaîne, lancée ou capturée selon l'appelant.
+  // outputs : l'image (1 × 3), ou le flot (1 × 4) et le masque (1 × 1) de la variante mouvement.
   std::expected<void, Refusal> run(cudaStream_t stream, const std::shared_ptr<SharedActivations>& arena,
-                                   std::span<const Tensor> inputs, const Tensor& output);
+                                   std::span<const Tensor> inputs, std::span<const Tensor> outputs);
   std::expected<void, Refusal> use_zone(const std::shared_ptr<SharedActivations>& zone);
   void drop_graphs();
 
@@ -91,7 +93,7 @@ class DrbaFusedEngine final : public Engine {
   static constexpr std::size_t kMaxGraphs = 8;
   static constexpr int kCaptureAttempts = 3;
   struct Graph {
-    std::array<std::uintptr_t, 3> addresses{};  // pair01, pair12, sortie
+    std::array<std::uintptr_t, 4> addresses{};  // pair01, pair12, sortie (ou flot), masque (ou 0)
     std::uintptr_t zone = 0;
     std::uint64_t generation = 0;
     cudaGraphExec_t exec = nullptr;

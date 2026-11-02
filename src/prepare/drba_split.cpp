@@ -17,6 +17,7 @@
 #include <utility>
 
 #include "prepare/model_source.h"
+#include "prepare/onnx_outputs.h"
 #include "prepare/onnx_scan.h"
 #include "prepare/onnx_split.h"
 #include "prepare/sha256.h"
@@ -254,6 +255,17 @@ DrbaExpectedWiring drba_expected_wiring(int tail) {
   node("/Mul_77", "Mul", {cast16("/GridSample_9"), out0("/Sub_46")});
   node("/Add_22", "Add", {out0("/Mul_68"), out0("/Mul_77")});
   return wiring;
+}
+
+std::expected<std::vector<std::byte>, Refusal> with_drba_motion_outputs(std::span<const std::byte> model) {
+  auto summary = scan_onnx(model);
+  if (!summary) return std::unexpected(std::move(summary.error()));
+  // Les sorties ont le type des calculs du graphe, celui de ses entrées : FP16 pour l'export converti.
+  const std::int32_t type =
+      summary->inputs.empty() ? static_cast<std::int32_t>(OnnxType::Float16) : summary->inputs[0].elem_type;
+  const std::vector<OnnxOutput> outputs{{.name = std::string(kDrbaFlowTensor), .elem_type = type},
+                                        {.name = std::string(kDrbaMaskTensor), .elem_type = type}};
+  return with_outputs(model, outputs);
 }
 
 std::expected<DrbaSplit, Refusal> analyze_drba(std::span<const std::byte> model) {

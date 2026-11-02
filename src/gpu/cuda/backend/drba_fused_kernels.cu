@@ -280,6 +280,14 @@ __global__ void __launch_bounds__(256) finish_kernel(DrbaFinishParams p) {
 #pragma unroll
   for (int k = 0; k < 4; ++k) flow[k] = rounded(r[k] * static_cast<float>(p.upscale));
   const float sigmoid = rounded(1.0F / (1.0F + expf(-r[4])));
+  if (p.flow != nullptr) {
+    // Variante mouvement : flot et masque, le warp et le mélange se font après SPAN (kernels/spec/warp.h).
+    auto* flow_out = static_cast<__half*>(p.flow);
+#pragma unroll
+    for (int k = 0; k < 4; ++k) flow_out[k * plane + o] = __float2half_rn(flow[k]);
+    static_cast<__half*>(p.mask)[o] = __float2half_rn(sigmoid);
+    return;
+  }
   const float complement = rounded(1.0F - sigmoid);
   float warped[2][3];
 #pragma unroll

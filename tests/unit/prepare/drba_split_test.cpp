@@ -238,6 +238,20 @@ TEST_CASE("Un graphe à la structure de DistilDRBA se reconnaît et se coupe", "
   }
 }
 
+TEST_CASE("DistilDRBA « mouvement » sort le flot et le masque du warp final", "[prepare][onnx][drba_fused]") {
+  const Bytes original = fake_drba({});
+  const auto derived = with_drba_motion_outputs(original);
+  REQUIRE(derived);
+  CHECK(*derived != original);
+  // Les nœuds restent : la structure se reconnaît encore, et refaire la dérivation ne change plus rien.
+  CHECK(analyze_drba(*derived));
+  const auto again = with_drba_motion_outputs(*derived);
+  REQUIRE(again);
+  CHECK(*again == *derived);
+  const Bytes broken{std::byte{0x3a}, std::byte{0xff}};
+  CHECK_FALSE(with_drba_motion_outputs(broken));
+}
+
 TEST_CASE("Un graphe qui s'écarte de DistilDRBA n'est pas coupé", "[prepare][onnx][drba_fused]") {
   Edit grid;
   grid.align_corners = 0;

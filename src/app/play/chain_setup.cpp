@@ -109,6 +109,7 @@ UpscaleSetup ChainEngines::upscale(const PlaySettings& settings, std::shared_ptr
                       .gmfss_align = gmfss.align,
                       .distil_drba = drba.get(),
                       .drba_align = drba_align,
+                      .drba_motion = drba_motion,
                       .rife_factor = factor_of(settings),
                       .one_lane = one_lane,
                       .live = std::move(live),
@@ -306,8 +307,13 @@ std::expected<std::optional<ChainEngines>, Refusal> prepare_chain_once(Player& p
     if (settings.drba_fused && !fused.declined.empty())
       log->info("DistilDRBA fusionné non utilisé : {}", fused.declined);
     const bool try_fused = fused.declined.empty();
-    auto loaded = prepare_distil_drba(p, init, *c.backend, c.gmfss_places, c.work.width, c.work.height,
-                                      c.drba_align, settings.motion_precision, try_fused ? &fused : nullptr);
+    // Warp après SPAN (sortie haute) : la variante mouvement, un SPAN par source au lieu d'un par image
+    // créée.
+    bool motion = settings.upscale && warp_after_span(settings.span_order, c.work.height * kSpanFactor);
+    auto loaded =
+        prepare_distil_drba(p, init, *c.backend, c.gmfss_places, c.work.width, c.work.height, c.drba_align,
+                            settings.motion_precision, try_fused ? &fused : nullptr, &motion);
+    c.drba_motion = loaded && *loaded && motion;
     if (loaded && *loaded) {
       c.drba_fused = fused.used;
       if (fused.used)

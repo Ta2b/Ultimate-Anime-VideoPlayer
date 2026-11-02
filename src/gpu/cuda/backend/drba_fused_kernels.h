@@ -65,7 +65,9 @@ struct DrbaFinishParams {
   const void* y = nullptr;  // sortie du bloc 2 : 52 canaux à (height / 2t) × (width / 2t)
   const void* pair01 = nullptr;
   const void* pair12 = nullptr;
-  void* out = nullptr;  // 3 plans
+  void* out = nullptr;   // 3 plans ; nullptr : variante mouvement (flow et mask)
+  void* flow = nullptr;  // variante mouvement : 4 plans, le flot pleine résolution du warp final
+  void* mask = nullptr;  // 1 plan : le masque après sigmoïde, poids de l'image du centre
   DrbaGridStep grid_x;
   DrbaGridStep grid_y;
 };

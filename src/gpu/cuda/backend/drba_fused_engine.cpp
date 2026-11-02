@@ -199,7 +199,8 @@ std::expected<void, Refusal> DrbaFusedEngine::use_zone(const std::shared_ptr<Sha
 
 std::expected<void, Refusal> DrbaFusedEngine::run(cudaStream_t stream,
                                                   const std::shared_ptr<SharedActivations>& arena,
-                                                  std::span<const Tensor> inputs, const Tensor& output) {
+                                                  std::span<const Tensor> inputs,
+                                                  std::span<const Tensor> outputs) {
   const int h = height_;
   const int w = width_;
   const int t = plan_.tail;
@@ -264,17 +265,20 @@ std::expected<void, Refusal> DrbaFusedEngine::run(cudaStream_t stream,
   }
   const auto last = static_cast<std::size_t>(kernels::kDrbaFusedBlocks - 1);
   return cuda_check(
-      launch_drba_finish(
-          {.height = h,
-           .width = w,
-           .upscale = t,
-           .y = at_ptr(layout_.y[last]),
-           .pair01 = pair01,
-           .pair12 = pair12,
-           .out = const_cast<void*>(address_of(output)),  // NOLINT(cppcoreguidelines-pro-type-const-cast)
-           .grid_x = drba_grid_step(w),
-           .grid_y = drba_grid_step(h)},
-          stream),
+      launch_drba_finish({.height = h,
+                          .width = w,
+                          .upscale = t,
+                          .y = at_ptr(layout_.y[last]),
+                          .pair01 = pair01,
+                          .pair12 = pair12,
+                          // NOLINTBEGIN(cppcoreguidelines-pro-type-const-cast)
+                          .out = outputs.size() == 1 ? const_cast<void*>(address_of(outputs[0])) : nullptr,
+                          .flow = outputs.size() == 2 ? const_cast<void*>(address_of(outputs[0])) : nullptr,
+                          .mask = outputs.size() == 2 ? const_cast<void*>(address_of(outputs[1])) : nullptr,
+                          // NOLINTEND(cppcoreguidelines-pro-type-const-cast)
+                          .grid_x = drba_grid_step(w),
+                          .grid_y = drba_grid_step(h)},
+                         stream),
       "drba_finish<<<>>>");
 }
 
@@ -282,7 +286,7 @@ std::expected<void, Refusal> DrbaFusedEngine::enqueue(cudaStream_t stream,
                                                       const std::shared_ptr<SharedActivations>& arena,
                                                       std::span<const Tensor> inputs,
                                                       std::span<const Tensor> outputs) {
-  if (inputs.size() != 2 || outputs.size() != 1)
+  if (inputs.size() != 2 || (outputs.size() != 1 && outputs.size() != 2))
     return refuse(RefusalCode::ShapeInvalid,
                   "DistilDRBA fusionné : nombre d'entrées ou de sorties différent du moteur");
   const int h = height_;
@@ -293,9 +297,14 @@ std::expected<void, Refusal> DrbaFusedEngine::enqueue(cudaStream_t stream,
   if (!matches(inputs[0], input_shape()) || !matches(inputs[1], input_shape()))
     return refuse(RefusalCode::ShapeInvalid,
                   "DistilDRBA fusionné : entrée de forme ou de type différents du moteur");
-  if (!matches(outputs[0], Shape{.dims = {1, 3, h, w}}))
+  const bool motion = outputs.size() == 2;
+  if (!motion && !matches(outputs[0], Shape{.dims = {1, 3, h, w}}))
     return refuse(RefusalCode::ShapeInvalid,
                   "DistilDRBA fusionné : sortie de forme ou de type différents du moteur");
+  if (motion && (!matches(outputs[0], Shape{.dims = {1, 4, h, w}}) ||
+                 !matches(outputs[1], Shape{.dims = {1, 1, h, w}})))
+    return refuse(RefusalCode::ShapeInvalid,
+                  "DistilDRBA fusionné : flot 1×4 et masque 1×1 à la taille du moteur attendus");
   // Lancé sur une autre voie que celle du chargement, ou la zone a grandi : tampons repris à leur place,
   // graphes jetés.
   const auto needed = static_cast<std::int64_t>(scratch_offset_ + layout_.bytes);
@@ -303,17 +312,17 @@ std::expected<void, Refusal> DrbaFusedEngine::enqueue(cudaStream_t stream,
       (!graphs_.empty() && graphs_.front().generation != arena->generation())) {
     if (auto ok = use_zone(arena); !ok) return ok;
   }
-  if (graphs_off_) return run(stream, arena, inputs, outputs[0]);
+  if (graphs_off_) return run(stream, arena, inputs, outputs);
 
-  const std::array<std::uintptr_t, 3> addresses{inputs[0].handle + inputs[0].offset,
-                                                inputs[1].handle + inputs[1].offset,
-                                                outputs[0].handle + outputs[0].offset};
+  const std::array<std::uintptr_t, 4> addresses{
+      inputs[0].handle + inputs[0].offset, inputs[1].handle + inputs[1].offset,
+      outputs[0].handle + outputs[0].offset, motion ? outputs[1].handle + outputs[1].offset : 0};
   auto found = std::ranges::find_if(graphs_, [&](const Graph& g) {
     return g.addresses == addresses && g.zone == reinterpret_cast<std::uintptr_t>(arena->data()) &&
            g.generation == arena->generation();
   });
   if (found == graphs_.end()) {
-    if (graphs_.size() >= kMaxGraphs) return run(stream, arena, inputs, outputs[0]);
+    if (graphs_.size() >= kMaxGraphs) return run(stream, arena, inputs, outputs);
     graphs_.push_back(Graph{.addresses = addresses,
                             .zone = reinterpret_cast<std::uintptr_t>(arena->data()),
                             .generation = arena->generation()});
@@ -327,13 +336,13 @@ std::expected<void, Refusal> DrbaFusedEngine::enqueue(cudaStream_t stream,
   }
   if (!graph.warmed) {  // le premier lancement fait ses allocations hors capture
     graph.warmed = true;
-    return run(stream, arena, inputs, outputs[0]);
+    return run(stream, arena, inputs, outputs);
   }
   cudaGraph_t captured = nullptr;
   std::expected<void, Refusal> queued;
   cudaError_t error = cudaStreamBeginCapture(stream, cudaStreamCaptureModeThreadLocal);
   if (error == cudaSuccess) {
-    queued = run(stream, arena, inputs, outputs[0]);
+    queued = run(stream, arena, inputs, outputs);
     error = cudaStreamEndCapture(stream, &captured);  // termine aussi une capture invalidée
   }
   if (error == cudaSuccess && queued && captured != nullptr)
@@ -353,7 +362,7 @@ std::expected<void, Refusal> DrbaFusedEngine::enqueue(cudaStream_t stream,
                             : error != cudaSuccess ? cudaGetErrorString(error)
                                                    : "graphe vide");
     }
-    return run(stream, arena, inputs, outputs[0]);
+    return run(stream, arena, inputs, outputs);
   }
   if (cudaGraphLaunch(graph.exec, stream) != cudaSuccess)
     return refuse(RefusalCode::VendorCallFailed, "DistilDRBA fusionné : cudaGraphLaunch a échoué");

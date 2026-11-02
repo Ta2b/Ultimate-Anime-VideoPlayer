@@ -9,6 +9,7 @@
 // coupe, fin du flux), le côté manquant répète l'image du centre comme la tête et la fin
 // d'infer.py. Un côté tenu (dessin identique) rend l'image de ce côté sans passe du réseau.
 #include <array>
+#include <cstdint>
 #include <span>
 #include <string>
 #include <utility>
@@ -50,6 +51,10 @@ std::expected<void, Refusal> UpscaleStage::allocate_drba() {
   const std::span<const std::string> names = setup_.distil_drba->input_names();
   if (names.size() != 2 || names[0] != "pair01" || names[1] != "pair12") {
     return refuse(RefusalCode::InputMismatch, "DistilDRBA : entrées « pair01 » et « pair12 » attendues");
+  }
+  if (setup_.drba_motion) {
+    if (auto ok = alloc(drba_.flow, 4, g.padded_width, g.padded_height); !ok) return ok;
+    return alloc(drba_.mask, 1, g.padded_width, g.padded_height);
   }
   return alloc(rife_out_, 3, g.padded_width, g.padded_height);
 }
@@ -127,21 +132,11 @@ std::expected<void, Refusal> UpscaleStage::drba_next(const DecodedFrame& frame, 
   return {};
 }
 
-std::expected<void, Refusal> UpscaleStage::interpolate_drba(std::uint32_t output) {
+std::expected<void, Refusal> UpscaleStage::run_drba(const kernels::DrbaCall& call,
+                                                    std::span<gpu::Tensor> results) {
   gpu::KernelOps& ops = *setup_.backend->kernels();
-  const kernels::DrbaCall call = kernels::drba_call(instants_[output].t);
-  if (call.on_b) {
-    if (auto ok = settle_after_scores(); !ok) return ok;
-  }
   const gpu::Tensor& a = rgb_[current_ ^ 1U]->tensor();
   const gpu::Tensor& b = rgb_[current_]->tensor();
-  // Côté tenu : (avant, a) sans mouvement, DistilDRBA garde a jusqu'à ½ ; (b, après) sans mouvement, il
-  // rend b dès ½. C'est ce que la passe calculerait : l'image se copie, sans passe (anime en deux, en trois).
-  const bool side_held = call.on_b ? drba_.after_held : drba_.before_ok && before_ == PairMotion::Still;
-  if (side_held) {
-    ++drba_.held;
-    return ops.resample(call.on_b ? b : a, kernels::Filter::Area, middle());
-  }
   const bool whole = call.on_b ? drba_.after_ok : drba_.before_ok;
   const gpu::Tensor& img0 = call.on_b ? a : (whole ? drba_.before->tensor() : a);
   const gpu::Tensor& img1 = call.on_b ? b : a;
@@ -160,11 +155,72 @@ std::expected<void, Refusal> UpscaleStage::interpolate_drba(std::uint32_t output
   if (auto ok = fill(*drba_.pair01, drba_.filled01, img0, img1); !ok) return ok;
   if (auto ok = fill(*drba_.pair12, drba_.filled12, img1, img2); !ok) return ok;
   const std::array inputs{drba_.pair01->tensor(), drba_.pair12->tensor()};
-  std::array results{rife_out_->tensor()};
   if (auto ok = setup_.backend->enqueue(*setup_.distil_drba, inputs, results); !ok) return ok;
   ++drba_.runs;
   if (!whole) ++drba_.edges;
+  return {};
+}
+
+// Côté tenu : (avant, a) sans mouvement, DistilDRBA garde a jusqu'à ½ ; (b, après) sans mouvement, il rend b
+// dès ½. C'est ce que la passe calculerait : l'image se copie, sans passe (anime en deux, en trois).
+bool UpscaleStage::drba_side_held(const kernels::DrbaCall& call) const {
+  return call.on_b ? drba_.after_held : drba_.before_ok && before_ == PairMotion::Still;
+}
+
+std::expected<void, Refusal> UpscaleStage::interpolate_drba(std::uint32_t output) {
+  gpu::KernelOps& ops = *setup_.backend->kernels();
+  const kernels::DrbaCall call = kernels::drba_call(instants_[output].t);
+  if (call.on_b) {
+    if (auto ok = settle_after_scores(); !ok) return ok;
+  }
+  if (drba_side_held(call)) {
+    ++drba_.held;
+    return ops.resample(rgb_[call.on_b ? current_ : current_ ^ 1U]->tensor(), kernels::Filter::Area,
+                        middle());
+  }
+  std::array results{rife_out_->tensor()};
+  if (auto ok = run_drba(call, results); !ok) return ok;
   return ops.rife_crop(rife_out_->tensor(), middle());
+}
+
+std::expected<void, Refusal> UpscaleStage::copy_out(const gpu::Tensor& image, const Target& out) {
+  gpu::KernelOps& ops = *setup_.backend->kernels();
+  if (out.ring != nullptr) return ops.write_ring(image, *out.ring->slot, out.ring->sync);
+  return ops.resample(image, kernels::Filter::Area, *out.tensor);
+}
+
+std::expected<void, Refusal> UpscaleStage::interpolate_drba_motion(std::uint32_t output, bool spanned_images,
+                                                                   const Target& out) {
+  const kernels::DrbaCall call = kernels::drba_call(instants_[output].t);
+  if (call.on_b) {
+    if (auto ok = settle_after_scores(); !ok) return ok;
+  }
+  const bool held = drba_side_held(call);
+  if (!held) {
+    std::array results{drba_.flow->tensor(), drba_.mask->tensor()};
+    if (auto ok = run_drba(call, results); !ok) return ok;
+  }
+  // SPAN de b après la passe : elle ne l'attend pas sur le GPU. Les images se lisent ensuite (span_current
+  // choisit le tampon de b).
+  if (spanned_images) {
+    if (auto ok = span_current(); !ok) return ok;
+  }
+  const gpu::Tensor& a = spanned_images ? spanned(current_ ^ 1U) : rgb_[current_ ^ 1U]->tensor();
+  const gpu::Tensor& b = spanned_images ? spanned(current_) : rgb_[current_]->tensor();
+  if (held) {
+    ++drba_.held;
+    return copy_out(call.on_b ? b : a, out);
+  }
+  // Le warp final du graphe lit l'image du centre (flot 0-1, poids du masque) et celle du côté choisi
+  // (flot 2-3) : a puis b avant ½, b puis a à partir de ½. Le mouvement est celui de l'instant, tel quel.
+  const kernels::RifeGeometry g =
+      kernels::rife_geometry(setup_.work_width, setup_.work_height, setup_.drba_align);
+  const gpu::Motion motion{
+      .flow = drba_.flow->tensor(),
+      .mask = drba_.mask->tensor(),
+      .area =
+          kernels::Window{.x = g.left, .y = g.top, .width = setup_.work_width, .height = setup_.work_height}};
+  return call.on_b ? blend(b, a, motion, 0.5F, out) : blend(a, b, motion, 0.5F, out);
 }
 
 }  // namespace ajp::app::play
