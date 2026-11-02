@@ -99,20 +99,30 @@ Done Recorder::open() const {
   return {};
 }
 
-bool Recorder::depends(std::span<const BufferView> buffers, bool images) const {
+static bool written(std::uint64_t writes, std::size_t i) {
+  return i >= 64 || ((writes >> i) & 1U) != 0;
+}
+
+bool Recorder::depends(std::span<const BufferView> buffers, bool images, std::uint64_t writes) const {
   if (touched_all_ || (images && touched_images_)) return true;
-  for (const BufferView& view : buffers) {
+  for (std::size_t i = 0; i < buffers.size(); ++i) {
+    const BufferView& view = buffers[i];
+    const bool write = written(writes, i);
     for (const Touched& t : touched_) {
-      if (t.buffer == view.buffer && t.offset < view.offset + view.size && view.offset < t.offset + t.size)
+      if ((write || t.write) && t.buffer == view.buffer && t.offset < view.offset + view.size &&
+          view.offset < t.offset + t.size)
         return true;
     }
   }
   return false;
 }
 
-void Recorder::touch(std::span<const BufferView> buffers, bool images) {
-  for (const BufferView& view : buffers)
-    touched_.push_back({.buffer = view.buffer, .offset = view.offset, .size = view.size});
+void Recorder::touch(std::span<const BufferView> buffers, bool images, std::uint64_t writes) {
+  for (std::size_t i = 0; i < buffers.size(); ++i) {
+    const BufferView& view = buffers[i];
+    touched_.push_back(
+        {.buffer = view.buffer, .offset = view.offset, .size = view.size, .write = written(writes, i)});
+  }
   touched_images_ = touched_images_ || images;
 }
 
@@ -195,7 +205,11 @@ Done Recorder::dispatch(const Pipeline& pipeline, std::span<const BufferView> bu
   auto set = recording_->arena_.bind(pipeline, buffers, images);
   if (!set) return std::unexpected(set.error());
 
-  if (order == DispatchOrder::AfterPrevious && depends(buffers, !images.empty())) barrier();
+  std::uint64_t writes = ~std::uint64_t{0};
+  for (std::uint32_t i = 0; i < buffers.size() && i < 64; ++i) {
+    if (pipeline.reads_only(i)) writes &= ~(std::uint64_t{1} << i);
+  }
+  if (order == DispatchOrder::AfterPrevious && depends(buffers, !images.empty(), writes)) barrier();
   const DeviceFunctions& fn = context_->fn();
   const VkCommandBuffer cb = recording_->command_buffer_;
   fn.vkCmdBindPipeline(cb, VK_PIPELINE_BIND_POINT_COMPUTE, pipeline.handle());
@@ -206,7 +220,7 @@ Done Recorder::dispatch(const Pipeline& pipeline, std::span<const BufferView> bu
   }
   fn.vkCmdDispatch(cb, groups[0], groups[1], groups[2]);
   ++recording_->dispatches_;
-  touch(buffers, !images.empty());
+  touch(buffers, !images.empty(), writes);
   return {};
 }
 
