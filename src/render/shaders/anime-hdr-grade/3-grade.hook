@@ -226,12 +226,26 @@ vec4 hook() {
     float y = dot(c, target_luma());
     float y_pq = nits_to_pq(vec3(max(y_src, 0.0))).x;
     float local_pq = max(AJG_LOCAL_tex(AJG_LOCAL_pos).x, y_pq - 0.08);
-    float isolation = smoothstep(0.05, 0.25, local_pq - AJG_AREAT_tex(AJG_AREAT_pos).x);
+    float area_pq = AJG_AREAT_tex(AJG_AREAT_pos).x;
+    float isolation = smoothstep(0.05, 0.25, local_pq - area_pq);
     // Limiteur OLED : APL lisse de abl_lo a abl_hi (80 a 250 nits : plein ecran d'un QD-OLED en
     // Peak 1000 ; sinon tires de la moyenne d'image de l'EDID).
     float abl_scale = 1.0 - abl * smoothstep(abl_lo, abl_hi, AJG_STATS_tex(vec2(0.25, 0.5)).x);
     vec3 ictcp_in = to_ictcp(lin);
     float skin = skin_mask(ictcp_in);
+    // Lumiere coloree sur un fond clair (neon, ecran, lampe teintee dans une scene de jour) : traitee selon
+    // son voisinage, pas selon la scene. Sur un fond sombre, elle garde tout son eclat et ses renforts de
+    // couleur ; sur un fond clair (zone de ~2,5 % de l'image au-dessus de ~60 nits), une couleur saturee et
+    // lumineuse ne recoit plus de renfort de couleur (couleurs etendues, vibrance, saturation de fin) et
+    // rejoint le pic par une epaule douce au lieu d'un plateau ecrete. Chaque pixel a son propre voisinage :
+    // plusieurs sources sur la meme image se reglent chacune.
+    float tame = 0.0;
+    if (m > 1e-4 && sdr_out < 0.5) {
+        float sat_px = 1.0 - clamp(min(c.r, min(c.g, c.b)) / m, 0.0, 1.0);
+        tame = smoothstep(0.45, 0.85, sat_px) * smoothstep(0.12 * peak, 0.30 * peak, m)
+             * smoothstep(0.46, 0.55, area_pq) * (1.0 - skin);
+        isolation *= 1.0 - tame;
+    }
     // Couleurs etendues : une couleur BT.709 saturee est relue avec les primaires P3, que le
     // QD-OLED affiche ; le blanc et les gris (meme point blanc D65) ne bougent pas, la peau et les
     // ombres sont epargnees, et la limite douce garde la couleur dans [0, pic].
@@ -240,7 +254,7 @@ vec4 hook() {
         float hi = max3(c709);
         if (hi > 1e-4) {
             float sat = 1.0 - clamp(min(c709.r, min(c709.g, c709.b)) / hi, 0.0, 1.0);
-            float w = expand * smoothstep(0.08, 0.45, sat) * (1.0 - skin)
+            float w = expand * smoothstep(0.08, 0.45, sat) * (1.0 - skin) * (1.0 - tame)
                     * smoothstep(0.12, 0.30, ictcp_in.x);
             if (w > 0.0) {
                 vec3 wide = P3_TO_BT2020 * max(c709, 0.0);
@@ -264,10 +278,10 @@ vec4 hook() {
         // avant sa luminance ; au lieu d'un plateau (degrade perdu, aplat ecrete), son canal le
         // plus fort suit une epaule douce depuis 70 % du pic. Le blanc et les gris (canaux
         // egaux) ne sont pas touches : leurs eclats suivent deja l'epaule de highlight_ratio.
-        if (guard > 0.0) {
+        if (guard > 0.0 || tame > 0.0) {
             float sat = 1.0 - min(c.r, min(c.g, c.b)) / m;
-            float w = guard * smoothstep(0.25, 0.75, sat);
-            float knee = 0.7 * peak;
+            float w = max(guard * smoothstep(0.25, 0.75, sat), tame);
+            float knee = mix(0.7, 0.5, tame) * peak;
             float mo = m * r;
             if (w > 0.0 && mo > knee) {
                 float z = (mo - knee) / (peak - knee);
@@ -286,7 +300,7 @@ vec4 hook() {
         // Couleurs moyennes renforcees ; peau exclue, primaires (~0,3) menagees ;
         // ombres protegees pour ne pas colorer le bruit et les traits.
         float weight = smoothstep(0.0, 0.06, chroma) * (1.0 - smoothstep(0.10, 0.40, chroma))
-                     * smoothstep(0.12, 0.30, ictcp.x) * (1.0 - skin);
+                     * smoothstep(0.12, 0.30, ictcp.x) * (1.0 - skin) * (1.0 - tame);
         // Prudence : les rouges, oranges et jaunes (protan dominant) saturent vite, surtout en scène claire ; la
         // vibrance n'y dépasse pas 0,10. Elle ne monte à sa valeur que sur les teintes froides, ou aucun
         // problème visible n'est connu.
@@ -322,7 +336,8 @@ vec4 hook() {
                 yt *= ratio;
             }
             if (chroma_now != 1.0) {
-                float k = 1.0 + (chroma_now - 1.0) * (1.0 - 0.6 * smoothstep(0.35 * peak, peak, yt));
+                float k = 1.0 + (chroma_now - 1.0) * (1.0 - 0.6 * smoothstep(0.35 * peak, peak, yt))
+                              * (1.0 - tame * step(1.0, chroma_now));
                 vec3 grey = vec3(yt);
                 vec3 target = grey + (c - grey) * k;
                 // Le gamut borne le gain : jamais de canal negatif ni au-dessus du pic.

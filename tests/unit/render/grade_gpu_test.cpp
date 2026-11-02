@@ -283,11 +283,13 @@ TEST_CASE("garde-fou : un orange saturé garde son dégradé au lieu d'un platea
   const std::vector<std::uint16_t> orange = ramp(900.0, 0.6, 0.03);
   const std::vector<double> hard = graded(gpu, orange, strong(0.0));
   const std::vector<double> soft = graded(gpu, orange, strong(1.0));
-  // Sans garde-fou : le haut de la rampe est écrêté au pic (canal R à 1000 nits).
   const auto at_peak = [](const std::vector<double>& v) {
     return std::ranges::count_if(v, [](double n) { return n > 0.995 * kPeak; });
   };
-  CHECK(at_peak(hard) > kSide / 8);
+  // Sans garde-fou, le haut de la rampe était écrêté au pic (canal R à 1000 nits) ; une couleur saturée sur
+  // un fond clair (la rampe entière l'est) suit désormais d'elle-même l'épaule douce du traitement local.
+  CHECK(at_peak(hard) == 0);
+  for (std::size_t x = kSide / 2; x < hard.size(); ++x) CHECK(hard[x] >= hard[x - 1] * 0.994);
   // Avec : sous le pic, et toujours croissant (le dégradé reste).
   CHECK(at_peak(soft) == 0);
   // Croissant au pas près des textures intermédiaires de libplacebo (demi-flottants : ~0,4 % en PQ).
@@ -763,6 +765,59 @@ TEST_CASE("peau : la courbe HDR ne la pousse pas vers les éclats", "[render][gp
   // La teinte de la peau reste la sienne : rouge au-dessus du vert, vert au-dessus du bleu.
   CHECK(pale[0] > pale[1]);
   CHECK(pale[1] > pale[2]);
+}
+
+TEST_CASE(
+    "lumière colorée : sur un fond clair, plus de renfort de couleur ; sur un fond sombre, tout son éclat",
+    "[render][gpu]") {
+  Gpu gpu;
+  require_device(gpu);
+  REQUIRE(gpu.grade);
+  // Un néon magenta au blanc SDR (carré de 16 px au centre) sur un fond gris uniforme.
+  const auto neon_on = [](double background) {
+    std::vector<std::uint16_t> pixels(static_cast<std::size_t>(kSide) * kSide * 4);
+    for (int y = 0; y < kSide; ++y) {
+      for (int x = 0; x < kSide; ++x) {
+        const bool neon = std::abs(x - kSide / 2) < 8 && std::abs(y - kSide / 2) < 8;
+        const std::array<double, 3> nits = neon ? std::array<double, 3>{203.0, 8.0, 180.0}
+                                                : std::array<double, 3>{background, background, background};
+        const std::size_t at = (static_cast<std::size_t>(y) * kSide + static_cast<std::size_t>(x)) * 4;
+        for (std::size_t c = 0; c < 3; ++c)
+          pixels[at + c] = static_cast<std::uint16_t>(std::lround(nits_to_pq(nits.at(c)) * 65535.0));
+        pixels[at + 3] = 65535;
+      }
+    }
+    return pixels;
+  };
+  // Notre HDR adaptatif avec des renforts de couleur francs (vibrance, couleurs étendues, saturation de
+  // fin), puis le même sans aucun renfort.
+  GradeParams vivid = native_look(0.0);
+  vivid.vibrance = 0.6;
+  vivid.expand = 0.7;
+  vivid.chroma = 1.15;
+  const GradeParams plain = native_look(0.0);
+  const auto centre = [&](double background, const GradeParams& p) {
+    return graded_rgb(gpu, neon_on(background), p)[kSide / 2];
+  };
+  const Rgb dark_vivid = centre(2.0, vivid);
+  const Rgb dark_plain = centre(2.0, plain);
+  const Rgb bright_vivid = centre(150.0, vivid);
+  const Rgb bright_plain = centre(150.0, plain);
+  INFO("sombre " << dark_vivid[0] << " " << saturation(dark_vivid) << " / " << saturation(dark_plain)
+                 << " ; clair " << bright_vivid[0] << " / " << bright_plain[0] << " "
+                 << saturation(bright_vivid) << " / " << saturation(bright_plain));
+  // Sur un fond sombre : les renforts jouent, le néon est plus saturé qu'à nu.
+  CHECK(saturation(dark_vivid) > saturation(dark_plain) + 0.01);
+  // Sur un fond clair : plus de renfort, le néon reste tel que la courbe le rend.
+  CHECK(std::abs(saturation(bright_vivid) - saturation(bright_plain)) < 0.01);
+  CHECK(std::abs(bright_vivid[0] - bright_plain[0]) < 0.05 * bright_plain[0]);
+  // Il reste lumineux et magenta.
+  CHECK(bright_plain[0] > 200.0);
+  CHECK(bright_plain[2] > 4.0 * bright_plain[1]);
+  // Le fond gris clair, lui, est rendu comme sans néon.
+  const Rgb grey_with = graded_rgb(gpu, neon_on(150.0), vivid)[4];
+  const Rgb grey_alone = graded_rgb(gpu, uniform(150.0), vivid)[4];
+  CHECK(std::abs(grey_with[1] - grey_alone[1]) < 0.02 * grey_alone[1]);
 }
 
 }  // namespace ajp::render
