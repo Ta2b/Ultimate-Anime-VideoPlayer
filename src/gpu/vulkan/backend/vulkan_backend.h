@@ -24,6 +24,7 @@
 #include "gpu/backend.h"
 #include "gpu/vulkan/backend/device_profile.h"
 #include "gpu/vulkan/backend/kernel_ops.h"
+#include "gpu/vulkan/backend/net_artifact.h"
 #include "gpu/vulkan/backend/net_autotune.h"
 #include "gpu/vulkan/backend/net_engine.h"
 #include "gpu/vulkan/backend/net_runtime.h"
@@ -116,6 +117,9 @@ class VulkanBackend final : public Backend {
   void log(BackendLogLevel level, std::string_view message) const;
   // RIFE fusionné (vulkan_rife_fused.cpp) : un manifeste « .rifefused » construit chacun de ses morceaux
   // en artefact ; la clé de l'artefact les nomme tous.
+  // V9 : le réseau construit avec l'autotuner rejoué contre ses noyaux de référence (net_gate.h) ; les
+  // choix repliés si sa sortie s'en éloigne trop.
+  void gate(const ModelSpec& model, net::ArtifactData& data);
   std::expected<Artifact, Refusal> build_rife_fused(const ModelSpec& model, const ShapeSet& shapes,
                                                     Progress& progress);
   std::expected<std::unique_ptr<Engine>, Refusal> load_rife_fused(const Artifact& artifact);

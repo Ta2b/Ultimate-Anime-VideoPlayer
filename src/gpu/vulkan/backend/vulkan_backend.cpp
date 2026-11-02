@@ -10,6 +10,7 @@
 #include "gpu/ir/graph.h"
 #include "gpu/vulkan/backend/kernel_ops_detail.h"
 #include "gpu/vulkan/backend/net_build.h"
+#include "gpu/vulkan/backend/net_gate.h"
 #include "gpu/vulkan/backend/net_lower.h"
 #include "gpu/vulkan/backend/rife_fused_engine.h"
 #include "gpu/vulkan/backend/shared_tensor.h"
@@ -306,6 +307,7 @@ std::expected<Artifact, Refusal> VulkanBackend::build(const ModelSpec& model, co
   auto data =
       net::build_network(*request, profile_, tuner ? &*tuner : nullptr, progress.report, progress.stop);
   if (!data) return std::unexpected(data.error());
+  if (tuner) gate(model, *data);
   if (auto ok = net::write_file(artifact.path, net::serialize(*data)); !ok)
     return std::unexpected(ok.error());
   log(BackendLogLevel::Info,
@@ -317,6 +319,33 @@ std::expected<Artifact, Refusal> VulkanBackend::build(const ModelSpec& model, co
                                       tuner->reverified(), name(profile_.family), profile_.driver_build)
                         : ""));
   return artifact;
+}
+
+void VulkanBackend::gate(const ModelSpec& model, net::ArtifactData& data) {
+  auto gated = net::gate_network(*context_, *memory_, *pipelines_, data.graph, data.choices, profile_.target);
+  if (!gated) {
+    // La porte n'a pas pu jouer le réseau (mémoire, pilote) : les choix de chaque couche, vérifiés un à un,
+    // restent.
+    log(BackendLogLevel::Warn,
+        std::format("{} : porte de bout en bout non jouée ({})", model.id, gated.error().detail));
+    return;
+  }
+  if (gated->fallback.empty()) {
+    log(BackendLogLevel::Info,
+        std::format("{} : porte de bout en bout passée (écart {:.4f})", model.id, gated->drift));
+    return;
+  }
+  auto program = net::lower(data.graph, gated->choices, profile_.target);
+  if (!program) {
+    log(BackendLogLevel::Warn,
+        std::format("{} : repli de la porte refusé ({})", model.id, program.error().detail));
+    return;
+  }
+  log(BackendLogLevel::Warn,
+      std::format("{} : sortie du réseau trop loin de la référence, {}", model.id, gated->fallback));
+  data.choices = std::move(gated->choices);
+  data.dispatches = std::move(program->dispatches);
+  data.shaders = net::shader_hashes(data.dispatches);
 }
 
 std::expected<std::unique_ptr<Engine>, Refusal> VulkanBackend::load(const Artifact& artifact) {
