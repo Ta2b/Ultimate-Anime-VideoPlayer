@@ -311,7 +311,12 @@ std::expected<std::shared_ptr<BackendLibrary>, Refusal> open_backend(const Engin
                                                                      const gpu::BackendInit& probe) {
   const std::vector<std::filesystem::path> candidates =
       preferred_first(backend_candidates(catalog, paths), engines);
-  return BackendLibrary::choose(backends_within(candidates, engines), probe);
+  auto library = BackendLibrary::choose(backends_within(candidates, engines), probe);
+  // Un moteur préféré qui refuse l'appareil laisse sa place sans bruit : sa raison va au journal.
+  if (library && !(*library)->passed_over().empty())
+    log_channel("app")->warn("moteurs : refus avant {} :{}", (*library)->path().string(),
+                             (*library)->passed_over());
+  return library;
 }
 
 std::expected<bool, Refusal> handle_engine_change(Player& p, const EngineChange& request) {

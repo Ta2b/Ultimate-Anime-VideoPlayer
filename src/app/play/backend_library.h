@@ -9,6 +9,7 @@
 #include <memory>
 #include <optional>
 #include <span>
+#include <string>
 
 #include "core/dynamic_library.h"
 #include "core/types.h"
@@ -27,6 +28,8 @@ class BackendLibrary {
   BackendLibrary& operator=(const BackendLibrary&) = delete;
 
   const std::filesystem::path& path() const { return path_; }
+  // Les candidats écartés avant celui-ci par choose, avec leur raison (une ligne chacun), vide sinon.
+  const std::string& passed_over() const { return passed_over_; }
 
   struct Destroy {
     gpu::BackendDestroyFn destroy = nullptr;
@@ -50,6 +53,7 @@ class BackendLibrary {
   BackendLibrary() = default;
   std::optional<DynamicLibrary> handle_;
   std::filesystem::path path_;
+  std::string passed_over_;
   gpu::BackendCreateFn create_ = nullptr;
   gpu::BackendDestroyFn destroy_ = nullptr;
 };
