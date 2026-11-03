@@ -109,7 +109,8 @@ struct ScreenTiming {
   // Temps passé à attendre une place dans la file de l'écran : au-delà d'une fraction de
   // période, la file est pleine et l'image paraîtra après celles qui y sont déjà.
   std::int64_t queue_wait_us = 0;
-  bool presented = true;  // false : fenêtre cachée ou réduite, rien de présenté
+  std::int64_t display_gpu_us = 0;  // temps GPU des passes d'affichage (libplacebo, avec son retard)
+  bool presented = true;            // false : fenêtre cachée ou réduite, rien de présenté
 };
 
 struct ShowRequest {

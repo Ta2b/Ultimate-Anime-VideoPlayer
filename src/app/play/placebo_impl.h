@@ -189,6 +189,7 @@ struct PlaceboScreen::Impl {
   };
   std::optional<RampMeasure> last_ramp;
   mutable std::uint64_t grade_frame_ns = 0;
+  mutable std::uint64_t display_frame_ns = 0;  // toutes les passes de l'affichage, de la dernière composition
   mutable std::vector<std::uint32_t> grade_gpu_us;
 };
 
