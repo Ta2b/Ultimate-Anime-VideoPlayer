@@ -126,7 +126,9 @@ Performance de RIFE le lecteur couperait de plus RIFE fusionné (1,3 ms contre 4
   aux crans de précision choisis »).
 - **Par défaut** : `gmfss_precision` vaut Performance (réglage par défaut et préréglage Auto de la tranche Ultra hors priorité
   Image). Les `play.toml` déjà écrits gardent leur choix ; un ancien `gmfss_quality = false` reste Équilibre. `span_precision`
-  et `motion_precision` (RIFE, DistilDRBA) restent Équilibre, et l'automatique ne les passe jamais en FP8.
+  vaut Performance dans les préréglages depuis l'étape 3.6 (ADR 0007), mais ce cran n'y prend que le paquet CUTLASS à reçu v2
+  ou l'INT8 qui passent leur porte, jamais le FP8 par Q/DQ (`span-fp8-cutlass.md`). `motion_precision` (RIFE, DistilDRBA)
+  reste Équilibre, et l'automatique ne le passe jamais en FP8.
   Conséquence : GMFSS fusionné (`gmfss_fused`, éteint par défaut, `gmfss-fusionne.md`) ne se découpe qu'au cran Équilibre ;
   pour l'essayer il faut passer GMFSS en Équilibre (le journal dit « cran de précision hors Équilibre » sinon).
 - **Réglages avancés > Fluidité** : le sélecteur de précision de RIFE et de DistilDRBA propose Performance quand le graphe

@@ -9,3 +9,4 @@ sa page, avec le numéro de celle qui la remplace.
 | [0002](0002-span-une-fois-par-source.md) | SPAN une fois par image source, le warp après SPAN | Acceptée (#268, #286, #287) |
 | [0003](0003-un-seul-mode-auto.md) | Un seul mode Auto : Rapide par défaut, Stable au choix | Acceptée (#287) |
 | [0004](0004-grade-scene-donnee-par-le-lecteur.md) | Le grade en trois passes, la scène mesurée par le lecteur | Acceptée (#283, #284) |
+| [0007](0007-span-basse-precision-par-defaut.md) | SPAN basse précision par défaut, derrière une porte durcie et un reçu v2 | Acceptée (#365 à #376), mesures RTX à faire |
