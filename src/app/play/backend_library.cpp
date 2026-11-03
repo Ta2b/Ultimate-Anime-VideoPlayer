@@ -75,6 +75,7 @@ std::expected<std::shared_ptr<BackendLibrary>, Refusal> BackendLibrary::choose(
       tried += std::format("\n  {} : {} ({})", path.string(), probe.error().detail, name(probe.error().code));
       continue;
     }
+    (*library)->passed_over_ = std::move(tried);
     return library;
   }
   return refuse(RefusalCode::LibraryUnavailable, std::format("aucun backend pour cet appareil :{}", tried));
