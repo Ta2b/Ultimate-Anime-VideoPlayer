@@ -195,6 +195,59 @@ bool PlaceboScreen::ready(const RingFrame& frame) const {
   return impl_->ring.ready(frame);
 }
 
+std::expected<bool, Refusal> PlaceboScreen::Impl::compose_kept(const pl_frame* image, const pl_frame& target,
+                                                               const ComposeKey& key,
+                                                               std::span<const pl_overlay> subtitles) {
+  const pl_gpu gpu = vk->gpu;
+  if (target.num_planes != 1 || target.planes[0].texture == nullptr) return false;
+  const pl_tex out = target.planes[0].texture;
+  const pl_fmt format = out->params.format;
+  constexpr auto kNeeded = static_cast<pl_fmt_caps>(PL_FMT_CAP_RENDERABLE | PL_FMT_CAP_BLITTABLE);
+  if (!out->params.blit_dst || (format->caps & kNeeded) != kNeeded) {
+    composed_key.reset();
+    return false;
+  }
+  const bool same_tex = composed != nullptr && composed->params.w == out->params.w &&
+                        composed->params.h == out->params.h && composed->params.format == format;
+  if (!same_tex || !reusable(composed_key, key)) {
+    composed_key.reset();
+    pl_tex_params params{};
+    params.w = out->params.w;
+    params.h = out->params.h;
+    params.format = format;
+    params.renderable = true;
+    params.blit_src = true;
+    if (!pl_tex_recreate(gpu, &composed, &params)) return false;  // la composition directe reste
+    pl_frame into = target;
+    into.planes[0].texture = composed;
+    into.overlays = subtitles.data();
+    into.num_overlays = static_cast<int>(subtitles.size());
+    if (auto drawn = compose(image, into); !drawn) return std::unexpected(std::move(drawn.error()));
+    composed_key = key;
+    ++recompositions;
+  } else {
+    // Rien de recomposé : les passes de cette présentation ne sont que la copie et l'OSD.
+    display_frame_ns = 0;
+    ++reuses;
+  }
+  pl_tex_blit_params blit{};
+  blit.src = composed;
+  blit.dst = out;
+  pl_tex_blit(gpu, &blit);
+  return true;
+}
+
+std::expected<void, Refusal> PlaceboScreen::Impl::draw_overlays(const pl_frame& target,
+                                                                std::span<const pl_overlay> layers) const {
+  if (layers.empty()) return {};
+  pl_frame on = target;
+  on.overlays = layers.data();
+  on.num_overlays = static_cast<int>(layers.size());
+  if (!pl_render_image(renderer, nullptr, &on, &pl_render_default_params))
+    return std::unexpected(Refusal{RefusalCode::VendorCallFailed, "pl_render_image (OSD) a échoué"});
+  return {};
+}
+
 std::expected<ScreenTiming, Refusal> PlaceboScreen::show(const ShowRequest& request) {
   Impl& s = *impl_;
   const pl_gpu gpu = s.vk->gpu;
@@ -263,8 +316,35 @@ std::expected<ScreenTiming, Refusal> PlaceboScreen::show(const ShowRequest& requ
   target.overlays = overlays->all.data();
   target.num_overlays = static_cast<int>(overlays->all.size());
 
-  if (auto drawn = s.compose(frame != nullptr ? &image : nullptr, target); !drawn) {
-    return std::unexpected(std::move(drawn.error()));
+  // La composition gardée : seulement si d'autres présentations de la même image suivent, sans calibration
+  // (son cadre change avec le panneau).
+  bool kept = false;
+  if (request.redraws_expected && !calibrating) {
+    const ComposeState state{.crop = {target.crop.x0, target.crop.y0, target.crop.x1, target.crop.y1},
+                             .grade_serial = s.grade_serial,
+                             .final_scaler = s.final_scaler,
+                             .deband = s.deband,
+                             .sar = s.sample_aspect,
+                             .transfer = static_cast<int>(target.color.transfer),
+                             .primaries = static_cast<int>(target.color.primaries),
+                             .max_luma = target.color.hdr.max_luma,
+                             .calibrating = false};
+    const ComposeKey key = compose_key(frame, request.subtitles, out.width, out.height,
+                                       request.ui != nullptr ? request.ui_bottom : 0, state);
+    auto done = s.compose_kept(frame != nullptr ? &image : nullptr, target, key, overlays->subtitles);
+    if (!done) return std::unexpected(std::move(done.error()));
+    kept = *done;
+    if (kept) {
+      if (auto drawn = s.draw_overlays(target, overlays->osd); !drawn)
+        return std::unexpected(std::move(drawn.error()));
+    }
+  } else {
+    s.composed_key.reset();
+  }
+  if (!kept) {
+    if (auto drawn = s.compose(frame != nullptr ? &image : nullptr, target); !drawn) {
+      return std::unexpected(std::move(drawn.error()));
+    }
   }
   s.draw_ui(request.ui, target);
   if (s.snapshot) {

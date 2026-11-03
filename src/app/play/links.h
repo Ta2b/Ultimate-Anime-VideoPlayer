@@ -123,6 +123,10 @@ struct ShowRequest {
   // L'image de la calibration du grade (calibration_shot.h) à la place de la vidéo, des sous-titres et de
   // l'OSD ; nullptr : aucune.
   const CalibrationShot* calibration = nullptr;
+  // D'autres présentations de la même image suivront (cadence fixe, plancher du VRR, interface ou OSD
+  // visibles) : l'écran garde l'image composée et la recopie tant qu'elle n'a pas changé
+  // (app/play/compose_key.h) ; faux, il compose directement dans la cible.
+  bool redraws_expected = false;
 };
 
 // L'image de l'interface pour ce tour (ui.h) : changed demande une présentation même sans image
