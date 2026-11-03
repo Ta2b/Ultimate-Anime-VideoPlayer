@@ -123,6 +123,11 @@ class VulkanBackend final : public Backend {
   std::expected<Artifact, Refusal> build_rife_fused(const ModelSpec& model, const ShapeSet& shapes,
                                                     Progress& progress);
   std::expected<std::unique_ptr<Engine>, Refusal> load_rife_fused(const Artifact& artifact);
+  // DistilDRBA fusionné (vulkan_drba_fused.cpp) : un manifeste « .drbafused » construit ses quatre morceaux ;
+  // load les relie par les noyaux de colle (drba_fused_engine.h).
+  std::expected<Artifact, Refusal> build_drba_fused(const ModelSpec& model, const ShapeSet& shapes,
+                                                    Progress& progress);
+  std::expected<std::unique_ptr<Engine>, Refusal> load_drba_fused(const Artifact& artifact);
   // Le chemin d'un runtime (vulkan_backend_runtime.cpp).
   std::expected<Artifact, Refusal> build_runtime(const ModelSpec& model, const ShapeSet& shapes,
                                                  Progress& progress);

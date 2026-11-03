@@ -39,6 +39,10 @@ target_compile_definitions(ajp_vk_compute PUBLIC VK_NO_PROTOTYPES)
 set(glsl "${PROJECT_SOURCE_DIR}/src/kernels/glsl")
 # Les tenseurs des réseaux en float16 : variante « _f16 » des shaders qui en lisent ou écrivent.
 set(tensor_shaders
+  "${glsl}/drba_fused_finish.comp"
+  "${glsl}/drba_fused_glue.comp"
+  "${glsl}/drba_fused_post.comp"
+  "${glsl}/drba_fused_pre.comp"
   "${glsl}/flow_max.comp"
   "${glsl}/frame_stats.comp"
   "${glsl}/gmfss_compose.comp"

@@ -1,0 +1,70 @@
+#version 450
+// DistilDRBA fusionné, colle : l'entrée X_k (k = 1, 2) depuis la sortie du bloc k-1 agrandie ×2
+// (DepthToSpace puis Resize) : flot (canaux 105-108), masque et attributs (96-104), warps des images et
+// des encodages (57-94). Les plans 0-56 et 95 de X_k, écrits par pre et post, sont lus ici. Voir
+// drba_fused.glsl.
+#extension GL_GOOGLE_include_directive : require
+#include "tensor.glsl"
+#include "rife_fused.glsl"
+
+layout(local_size_x = 16, local_size_y = 16) in;
+
+layout(std430, binding = 0) readonly buffer Y { AJP_TENSOR v[]; } y;            // 52 canaux à h/4 × w/4
+layout(std430, binding = 1) readonly buffer Pair01 { AJP_TENSOR v[]; } pair01;  // plan 6 : tau / 2
+layout(std430, binding = 2) buffer X { AJP_TENSOR v[]; } x;                     // 109 canaux à h × w
+
+#define DRBA_Y(i) y.v[i]
+#include "drba_fused.glsl"
+
+layout(push_constant) uniform Push {
+  uint height;  // résolution de X_k
+  uint width;
+  uint full_height;
+  uint full_width;
+  float step32_x;
+  float step16_x;
+  float step32_y;
+  float step16_y;
+} pc;
+
+float lerp_z(uint c, DrbaEnlarge e, uint zh, uint zw) {
+  float a = DRBA_READ_Z(c, e.y0, e.x0, zh, zw);
+  float b = DRBA_READ_Z(c, e.y0, e.x1, zh, zw);
+  float d = DRBA_READ_Z(c, e.y1, e.x0, zh, zw);
+  float f = DRBA_READ_Z(c, e.y1, e.x1, zh, zw);
+  return rounded(mix4(a, b, d, f, e.wx, e.wy));
+}
+
+float x_tap(uint p, FusedTap t) {
+  uint base = p * pc.height * pc.width;
+  return mix4(float(x.v[base + t.y0 * pc.width + t.x0]), float(x.v[base + t.y0 * pc.width + t.x1]),
+              float(x.v[base + t.y1 * pc.width + t.x0]), float(x.v[base + t.y1 * pc.width + t.x1]), t.wx,
+              t.wy);
+}
+
+void main() {
+  uint ox = gl_GlobalInvocationID.x;
+  uint oy = gl_GlobalInvocationID.y;
+  if (ox >= pc.width || oy >= pc.height) return;
+  uint plane = pc.height * pc.width;
+  uint o = oy * pc.width + ox;
+  uint zh = pc.height / 2u;
+  uint zw = pc.width / 2u;
+  bool before = drba_before(float(pair01.v[6u * pc.full_height * pc.full_width]));
+  DrbaEnlarge e = drba_enlarge(ox, oy, 2u, zh, zw);
+  float flow[4];
+  for (uint k = 0u; k < 4u; ++k) {
+    flow[k] = rounded(lerp_z(k, e, zh, zw) * 2.0);
+    x.v[(105u + k) * plane + o] = AJP_TENSOR(flow[k]);
+  }
+  for (uint k = 0u; k < 9u; ++k) x.v[(96u + k) * plane + o] = AJP_TENSOR(lerp_z(4u + k, e, zh, zw));
+  // Warps : n = 0 image 1 et f1 avec le flot 0-1 ; n = 1 image et f du côté choisi avec le flot 2-3.
+  for (uint n = 0u; n < 2u; ++n) {
+    FusedTap t = grid_tap(drba_grid(ox, flow[2u * n], pc.step32_x, pc.step16_x),
+                          drba_grid(oy, flow[2u * n + 1u], pc.step32_y, pc.step16_y), pc.width, pc.height);
+    uint img = n == 0u ? 3u : (before ? 0u : 6u);
+    uint enc = n == 0u ? 25u : (before ? 9u : 41u);
+    for (uint k = 0u; k < 3u; ++k) x.v[(57u + 3u * n + k) * plane + o] = AJP_TENSOR(x_tap(img + k, t));
+    for (uint k = 0u; k < 16u; ++k) x.v[(63u + 16u * n + k) * plane + o] = AJP_TENSOR(x_tap(enc + k, t));
+  }
+}

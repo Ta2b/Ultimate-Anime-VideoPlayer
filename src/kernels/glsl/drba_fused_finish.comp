@@ -1,0 +1,83 @@
+#version 450
+// DistilDRBA fusionné, fin : sortie du bloc 2 agrandie ×t, flot, sigmoïde du masque ; puis les warps pleine
+// résolution et le mélange (l'image), ou, variante mouvement (MOTION = 1), le flot et le masque du warp final.
+// Voir drba_fused.glsl.
+#extension GL_GOOGLE_include_directive : require
+#include "tensor.glsl"
+#include "rife_fused.glsl"
+
+layout(local_size_x = 16, local_size_y = 16) in;
+
+layout(constant_id = 0) const uint MOTION = 0;
+
+layout(std430, binding = 0) readonly buffer Y { AJP_TENSOR v[]; } y;  // 52 canaux à h/2t × w/2t
+layout(std430, binding = 1) readonly buffer Pair01 { AJP_TENSOR v[]; } pair01;
+layout(std430, binding = 2) readonly buffer Pair12 { AJP_TENSOR v[]; } pair12;
+layout(std430, binding = 3) writeonly buffer Out { AJP_TENSOR v[]; } image;  // 3 plans (ou le flot, 4)
+layout(std430, binding = 4) writeonly buffer Mask { AJP_TENSOR v[]; } mask;  // 1 plan (variante mouvement)
+
+#define DRBA_Y(i) y.v[i]
+#include "drba_fused.glsl"
+
+layout(push_constant) uniform Push {
+  uint height;
+  uint width;
+  uint upscale;  // t
+  float step32_x;
+  float step16_x;
+  float step32_y;
+  float step16_y;
+} pc;
+
+float source_tap(uint which, uint p, FusedTap t) {
+  uint base = p * pc.height * pc.width;
+  uint i00 = base + t.y0 * pc.width + t.x0;
+  uint i01 = base + t.y0 * pc.width + t.x1;
+  uint i10 = base + t.y1 * pc.width + t.x0;
+  uint i11 = base + t.y1 * pc.width + t.x1;
+  if (which == 0u)
+    return mix4(float(pair01.v[i00]), float(pair01.v[i01]), float(pair01.v[i10]), float(pair01.v[i11]), t.wx, t.wy);
+  return mix4(float(pair12.v[i00]), float(pair12.v[i01]), float(pair12.v[i10]), float(pair12.v[i11]), t.wx, t.wy);
+}
+
+void main() {
+  uint x = gl_GlobalInvocationID.x;
+  uint yy = gl_GlobalInvocationID.y;
+  if (x >= pc.width || yy >= pc.height) return;
+  uint plane = pc.height * pc.width;
+  uint o = yy * pc.width + x;
+  bool before = drba_before(float(pair01.v[6u * plane]));
+  uint zh = pc.height / pc.upscale;
+  uint zw = pc.width / pc.upscale;
+  DrbaEnlarge e = drba_enlarge(x, yy, pc.upscale, zh, zw);
+  float r[5];
+  for (uint k = 0u; k < 5u; ++k) {
+    float a = DRBA_READ_Z(k, e.y0, e.x0, zh, zw);
+    float b = DRBA_READ_Z(k, e.y0, e.x1, zh, zw);
+    float d = DRBA_READ_Z(k, e.y1, e.x0, zh, zw);
+    float f = DRBA_READ_Z(k, e.y1, e.x1, zh, zw);
+    r[k] = rounded(mix4(a, b, d, f, e.wx, e.wy));
+  }
+  float flow[4];
+  for (uint k = 0u; k < 4u; ++k) flow[k] = rounded(r[k] * float(pc.upscale));
+  float sig = rounded(1.0 / (1.0 + exp(-r[4])));
+  if (MOTION == 1u) {
+    for (uint k = 0u; k < 4u; ++k) image.v[k * plane + o] = AJP_TENSOR(flow[k]);
+    mask.v[o] = AJP_TENSOR(sig);
+    return;
+  }
+  float rest = rounded(1.0 - sig);
+  float warped[6];
+  for (uint n = 0u; n < 2u; ++n) {
+    FusedTap t = grid_tap(drba_grid(x, flow[2u * n], pc.step32_x, pc.step16_x),
+                          drba_grid(yy, flow[2u * n + 1u], pc.step32_y, pc.step16_y), pc.width, pc.height);
+    // n = 0 : l'image 1 (pair01[3..5]) ; n = 1 : l'image du côté choisi (pair01[0..2] ou pair12[3..5]).
+    uint which = n == 0u ? 0u : (before ? 0u : 1u);
+    uint first = n == 0u ? 3u : (before ? 0u : 3u);
+    for (uint k = 0u; k < 3u; ++k) warped[3u * n + k] = rounded(source_tap(which, first + k, t));
+  }
+  for (uint k = 0u; k < 3u; ++k) {
+    precise float v = rounded(warped[k] * sig) + rounded(warped[3u + k] * rest);
+    image.v[k * plane + o] = AJP_TENSOR(v);
+  }
+}

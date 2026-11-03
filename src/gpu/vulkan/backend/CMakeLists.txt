@@ -7,6 +7,7 @@ include(AjpSpirv)
 ajp_add_module(vk_backend
   SOURCES
     deferred_steps.cpp
+    drba_fused_engine.cpp
     device_profile.cpp
     family.cpp
     host_tensor.cpp
@@ -40,6 +41,7 @@ ajp_add_module(vk_backend
     shared_tensor.cpp
     vulkan_backend.cpp
     vulkan_backend_runtime.cpp
+    vulkan_drba_fused.cpp
     vulkan_rife_fused.cpp
   DEPS ajp::vk_compute ajp::gpu_ir ajp::core_types
   PRIVATE_DEPS ajp::kernels ajp::prepare ajp::dep::spdlog)

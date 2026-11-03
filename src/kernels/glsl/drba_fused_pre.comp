@@ -1,0 +1,76 @@
+#version 450
+// DistilDRBA fusionné, pre : les neuf plans d'images de X_2, X_1 et X_0, chacun la moyenne 2 × 2 (Resize
+// d'échelle 1/s, demi-pixel) des trois images, puis les plans du temps (u × 2, un pixel sur s). Un fil par
+// élément écrit. Voir drba_fused.glsl.
+#extension GL_GOOGLE_include_directive : require
+#include "tensor.glsl"
+
+layout(local_size_x = 256) in;
+
+layout(std430, binding = 0) readonly buffer Pair01 { AJP_TENSOR v[]; } pair01;  // 7 plans
+layout(std430, binding = 1) readonly buffer Pair12 { AJP_TENSOR v[]; } pair12;
+layout(std430, binding = 2) writeonly buffer X0 { AJP_TENSOR v[]; } x0;
+layout(std430, binding = 3) writeonly buffer X1 { AJP_TENSOR v[]; } x1;
+layout(std430, binding = 4) writeonly buffer X2 { AJP_TENSOR v[]; } x2;
+
+layout(push_constant) uniform Push {
+  uint height;
+  uint width;
+  uint reduce0;
+  uint reduce1;
+  uint reduce2;
+  uint groups_x;  // groupes de la dimension x du dispatch
+} pc;
+
+// Plan c (0..8) des trois images : img0 = pair01[0..2], img1 = pair01[3..5], img2 = pair12[3..5].
+float image(uint c, uint i) {
+  uint plane = pc.height * pc.width;
+  uint k = c % 3u;
+  if (c < 3u) return float(pair01.v[k * plane + i]);
+  if (c < 6u) return float(pair01.v[(3u + k) * plane + i]);
+  return float(pair12.v[(3u + k) * plane + i]);
+}
+
+void store(uint section, uint index, float v) {
+  if (section == 0u) x2.v[index] = AJP_TENSOR(v);
+  else if (section == 1u) x1.v[index] = AJP_TENSOR(v);
+  else x0.v[index] = AJP_TENSOR(v);
+}
+
+void main() {
+  uint j = gl_GlobalInvocationID.y * pc.groups_x * 256u + gl_GlobalInvocationID.x;
+  uint reduce[3] = uint[3](pc.reduce2, pc.reduce1, pc.reduce0);  // sections X_2, X_1, X_0
+  uint times[3] = uint[3](95u, 95u, 57u);
+  for (uint k = 0u; k < 3u; ++k) {
+    uint s = reduce[k];
+    uint ow = pc.width / s;
+    uint plane = (pc.height / s) * ow;
+    if (j < 9u * plane) {
+      uint c = j / plane;
+      uint r = j % plane;
+      uint oy = r / ow;
+      uint ox = r % ow;
+      uint base = s / 2u - 1u;
+      uint i00 = (s * oy + base) * pc.width + s * ox + base;
+      precise float v = (image(c, i00) + image(c, i00 + 1u) + image(c, i00 + pc.width) +
+                         image(c, i00 + pc.width + 1u)) * 0.25;
+      store(k, c * plane + r, v);
+      return;
+    }
+    j -= 9u * plane;
+  }
+  uint full = pc.height * pc.width;
+  for (uint k = 0u; k < 3u; ++k) {
+    uint s = reduce[k];
+    uint ow = pc.width / s;
+    uint plane = (pc.height / s) * ow;
+    if (j < plane) {
+      uint oy = j / ow;
+      uint ox = j % ow;
+      float v = 2.0 * float(pair01.v[6u * full + s * oy * pc.width + s * ox]);
+      store(k, times[k] * plane + j, v);
+      return;
+    }
+    j -= plane;
+  }
+}
