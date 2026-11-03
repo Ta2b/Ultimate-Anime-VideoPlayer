@@ -1,11 +1,15 @@
 // Export par puits CUDA du backend TensorRT (KernelOps::write_yuv, export_kernels.h) : la sortie
 // de la chaîne écrite en NV12 ou P010 dans l'image du pool de NVENC, sur la voie courante, puis
 // l'image dite finie par un rappel hôte du flux.
+#include <algorithm>
 #include <atomic>
 #include <cstddef>
 #include <cstdint>
+#include <cstring>
+#include <cuda.h>
 #include <format>
 #include <new>
+#include <span>
 #include <string>
 
 #include "gpu/cuda/backend/cuda_status.h"
@@ -178,11 +182,85 @@ std::expected<void, Refusal> TensorRtBackend::write_yuv(const Tensor& rgb, const
   timing.begin(stream_);
   if (auto ok = cuda_check(launch_write_yuv(params, stream_), "write_yuv<<<>>>"); !ok) return ok;
   timing.end(stream_);
+  // Le signal écrit par le GPU derrière les noyaux (barrière mémoire comprise) : ni rappel hôte ni fil du
+  // pilote à réveiller, et un contexte perdu ne laisse pas un rappel en suspens.
+  if (const std::uintptr_t device = mapped_fence(target.done); device != 0) {
+    const CUresult r =
+        cuStreamWriteValue64(stream_, static_cast<CUdeviceptr>(device),
+                             static_cast<cuuint64_t>(target.done_value), CU_STREAM_WRITE_VALUE_DEFAULT);
+    if (r == CUDA_SUCCESS) return {};
+    // Refusé : le rappel hôte, comme sans bloc enregistré.
+  }
   auto* signal = new (std::nothrow) DoneSignal{.done = target.done, .value = target.done_value};
   if (signal == nullptr) return refuse(RefusalCode::GpuMemoryExhausted, "write_yuv : signal : mémoire");
   if (auto ok = cuda_check(cudaLaunchHostFunc(stream_, signal_done, signal), "cudaLaunchHostFunc"); !ok) {
     delete signal;  // NOLINT(cppcoreguidelines-owning-memory) : le rappel ne viendra pas
     return ok;
+  }
+  return {};
+}
+
+std::uintptr_t TensorRtBackend::mapped_fence(const void* done) const {
+  const auto* at = static_cast<const std::byte*>(done);
+  for (const MappedFences& block : mapped_fences_) {
+    if (at >= block.host && at + sizeof(std::uint64_t) <= block.host + block.bytes)
+      return block.device + static_cast<std::uintptr_t>(at - block.host);
+  }
+  return 0;
+}
+
+bool TensorRtBackend::map_fences(std::span<std::byte> block) {
+  if (block.empty() || !bind()) return false;
+  if (mapped_fence(block.data()) != 0) return true;
+  if (cudaHostRegister(block.data(), block.size(), cudaHostRegisterMapped | cudaHostRegisterPortable) !=
+      cudaSuccess) {
+    static_cast<void>(clear_error());
+    return false;
+  }
+  void* device = nullptr;
+  const auto give_up = [&] {
+    static_cast<void>(clear_error());
+    cudaHostUnregister(block.data());
+    return false;
+  };
+  if (cudaHostGetDevicePointer(&device, block.data(), 0) != cudaSuccess) return give_up();
+  // Un essai : réécrire la valeur déjà là. Un appareil ou un pilote sans opérations mémoire de flux 64 bits
+  // le refuse, le backend garde alors le rappel hôte.
+  std::uint64_t current = 0;
+  std::memcpy(&current, block.data(), sizeof(current));
+  if (cuStreamWriteValue64(stream_, static_cast<CUdeviceptr>(reinterpret_cast<std::uintptr_t>(device)),
+                           current, CU_STREAM_WRITE_VALUE_DEFAULT) != CUDA_SUCCESS ||
+      cudaStreamSynchronize(stream_) != cudaSuccess) {
+    return give_up();
+  }
+  mapped_fences_.push_back(
+      {.host = block.data(), .bytes = block.size(), .device = reinterpret_cast<std::uintptr_t>(device)});
+  return true;
+}
+
+void TensorRtBackend::unmap_fences(std::span<std::byte> block) {
+  const auto it =
+      std::ranges::find_if(mapped_fences_, [&](const MappedFences& m) { return m.host == block.data(); });
+  if (it == mapped_fences_.end()) return;
+  if (bind()) {
+    // Les écritures de signaux encore en vol visent ce bloc : attendues sur chaque voie.
+    for (cudaStream_t stream : streams_) {
+      if (stream != nullptr) cudaStreamSynchronize(stream);
+    }
+  }
+  cudaHostUnregister(it->host);
+  static_cast<void>(clear_error());
+  mapped_fences_.erase(it);
+}
+
+std::expected<void, Refusal> TensorRtBackend::health() {
+  if (auto ok = bind(); !ok) return ok;
+  for (cudaStream_t stream : streams_) {
+    if (stream == nullptr) continue;
+    const cudaError_t state = cudaStreamQuery(stream);
+    if (state == cudaSuccess || state == cudaErrorNotReady) continue;
+    if (sticky(state)) return std::unexpected(cuda_refusal(state, "état de l'appareil (cudaStreamQuery)"));
+    static_cast<void>(clear_error());  // une erreur d'appel passée, pas un contexte perdu
   }
   return {};
 }

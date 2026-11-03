@@ -7,6 +7,7 @@
 #pragma once
 
 #include <array>
+#include <chrono>
 #include <condition_variable>
 #include <cstddef>
 #include <deque>
@@ -63,6 +64,16 @@ class Inbox {
   std::optional<Message> wait(std::stop_token stop) {
     std::unique_lock lock(mutex_);
     if (!ready_.wait(lock, std::move(stop), [this] { return !queue_.empty(); })) return std::nullopt;
+    return pop();
+  }
+
+  // Comme wait, au plus timeout : std::nullopt aussi quand il passe sans message (stop.stop_requested()
+  // les distingue). Pour un thread qui surveille autre chose pendant qu'il attend (RingStage, étape 11.5).
+  template <class Rep, class Period>
+  std::optional<Message> wait_for(std::stop_token stop, std::chrono::duration<Rep, Period> timeout) {
+    std::unique_lock lock(mutex_);
+    if (!ready_.wait_for(lock, std::move(stop), timeout, [this] { return !queue_.empty(); }))
+      return std::nullopt;
     return pop();
   }
 

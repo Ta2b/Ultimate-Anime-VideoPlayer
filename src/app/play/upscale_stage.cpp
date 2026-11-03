@@ -37,6 +37,7 @@ UpscaleStage::UpscaleStage(VideoStageInit init, UpscaleSetup setup)
 
 UpscaleStage::~UpscaleStage() {
   stop();
+  if (fences_mapped_) setup_.backend->kernels()->unmap_fences(setup_.yuv_slots->fence_block());
   if (setup_.rife_motion != nullptr) {
     log_channel("gpu")->info(
         "RIFE mouvement : {} passes ; {} paires à une passe, {} à plusieurs (dont {} sans passe au milieu)",
@@ -162,7 +163,12 @@ std::expected<void, Refusal> UpscaleStage::allocate() {
                  (warps_spanned() || (by_motion() && setup_.engine == nullptr));
   if (ring_direct_)
     log_channel("gpu")->info("images intermédiaires écrites directement dans le slot du ring");
-  if (setup_.yuv_slots) log_channel("gpu")->info("images écrites en YUV dans celles de l'encodeur");
+  if (setup_.yuv_slots) {
+    log_channel("gpu")->info("images écrites en YUV dans celles de l'encodeur");
+    const std::span<std::byte> block = setup_.yuv_slots->fence_block();
+    fences_mapped_ = !block.empty() && backend.kernels()->map_fences(block);
+    if (fences_mapped_) log_channel("gpu")->info("signaux de l'export écrits par le GPU, sans rappel hôte");
+  }
   const int w = setup_.work_width;
   const int h = setup_.work_height;
   const auto alloc = [&](std::unique_ptr<gpu::TensorBuffer>& into, const gpu::Shape& shape) {

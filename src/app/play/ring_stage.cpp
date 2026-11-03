@@ -1,6 +1,7 @@
 #include "app/play/ring_stage.h"
 
 #include <algorithm>
+#include <chrono>
 #include <format>
 #include <type_traits>
 #include <utility>
@@ -48,7 +49,23 @@ bool RingStage::try_push(DecodedFrame&& frame) {
 }
 
 void RingStage::run(const std::stop_token& stop, const ThreadReport& report) {
-  while (auto message = inbox_.wait(stop)) {
+  while (true) {
+    // En attente d'un slot : réveillé toutes les kHealthAfterUs pour demander à la sous-classe si l'appareil
+    // répond encore ; sinon, attente simple.
+    auto message = slot_wait_since_us_ == 0
+                       ? inbox_.wait(stop)
+                       : inbox_.wait_for(stop, std::chrono::microseconds(kHealthAfterUs));
+    if (!message) {
+      if (stop.stop_requested()) return;
+      if (slot_wait_since_us_ != 0 && !failed_ && host_now_us() - slot_wait_since_us_ >= kHealthAfterUs) {
+        if (auto healthy = health(); !healthy) {
+          fail(report, healthy.error());
+          slot_wait_since_us_ = 0;
+          emit(report);  // l'étage en échec jette ce qui attend
+        }
+      }
+      continue;
+    }
     bool quit = false;
     const auto take = [&](StageInbox::Message& taken) {
       std::visit(
@@ -138,7 +155,11 @@ void RingStage::emit(const ThreadReport& report) {
       }
       std::uint32_t slot = 0;
       while (slot < free_.size() && !free_[slot]) ++slot;
-      if (slot == free_.size()) return;  // attend un SlotFree
+      if (slot == free_.size()) {  // attend un SlotFree
+        if (slot_wait_since_us_ == 0) slot_wait_since_us_ = host_now_us();
+        return;
+      }
+      slot_wait_since_us_ = 0;
       const std::uint64_t ready = released_[slot] + 1;
       const std::int64_t submitted = host_now_us();
       auto produced = produce(frame, front_done_, slot, released_[slot], ready);
@@ -174,6 +195,7 @@ void RingStage::emit(const ThreadReport& report) {
     --in_flight_;
     init_.credit();
   }
+  slot_wait_since_us_ = 0;  // plus rien n'attend de slot
 }
 
 }  // namespace ajp::app::play

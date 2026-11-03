@@ -62,7 +62,9 @@ namespace ajp::gpu {
 // 18 : DistilDRBA fusionné à deux sorties (flot et masque, variante mouvement du warp après SPAN).
 // 19 : KernelOps::frame_stats_start et frame_stats_take (analyse v2 pour le grade,
 // kernels/spec/frame_stats.h).
-inline constexpr int kBackendAbi = 19;
+// 20 : KernelOps::health, map_fences et unmap_fences (étape 11.5 : signal d'export écrit par le GPU,
+// contexte perdu vu sans attendre le délai).
+inline constexpr int kBackendAbi = 20;
 
 using DeviceUuid = ajp::DeviceUuid;
 

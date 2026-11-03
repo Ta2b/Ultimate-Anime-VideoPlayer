@@ -1,10 +1,14 @@
 // Export par puits CUDA du backend TensorRT : write_yuv contre ref::rgb_to_yuv, aux formats, tramages
 // et sitings de l'export, sur une image dont la taille n'est pas un multiple des blocs.
 #include <algorithm>
+#include <array>
 #include <atomic>
 #include <chrono>
+#include <cstddef>
 #include <cstdint>
 #include <cstdlib>
+#include <memory>
+#include <span>
 #include <thread>
 #include <vector>
 
@@ -176,6 +180,45 @@ TEST_CASE("Backend TensorRT : write_yuv refuse une cible hors contrat", "[backen
   CHECK(ops.write_yuv((*rgb)->tensor(), narrow).error().code == RefusalCode::ShapeInvalid);
   REQUIRE(ops.write_yuv((*rgb)->tensor(), good));
   CHECK(wait_done(done, 1));
+}
+
+TEST_CASE("Backend TensorRT : signaux de l'export écrits par le GPU dans une page enregistrée",
+          "[backend_tensorrt][cuda][export]") {
+  // Étape 11.5 : cuStreamWriteValue64 au lieu du rappel hôte ; un signal hors du bloc garde le rappel.
+  if (!has_cuda()) SKIP("pas de GPU NVIDIA");
+  Loaded loaded;
+  REQUIRE(loaded.backend != nullptr);
+  gpu::KernelOps& ops = *loaded.backend->kernels();
+  CHECK(ops.health());
+  auto rgb = loaded.backend->alloc_tensor(gpu::TensorType::F16, {.dims = {1, 3, 8, 8}});
+  REQUIRE(rgb);
+  const DevicePlanes planes(8, 8, 2);
+  struct alignas(4096) Page {
+    std::array<std::atomic<std::uint64_t>, 512> done{};
+  };
+  auto page = std::make_unique<Page>();
+  const std::span<std::byte> block{reinterpret_cast<std::byte*>(page.get()), sizeof(Page)};
+  const bool mapped = ops.map_fences(block);
+  if (!mapped) WARN("map_fences refusé : rappels hôtes (opérations mémoire de flux absentes)");
+  std::atomic<std::uint64_t> outside{0};
+  for (std::atomic<std::uint64_t>* done : {&page->done[3], &outside}) {
+    for (const std::uint64_t value : {std::uint64_t{3}, std::uint64_t{9}}) {
+      const gpu::YuvTarget target{.luma = reinterpret_cast<std::uintptr_t>(planes.luma),
+                                  .chroma = reinterpret_cast<std::uintptr_t>(planes.chroma),
+                                  .luma_pitch = planes.luma_pitch,
+                                  .chroma_pitch = planes.chroma_pitch,
+                                  .width = 8,
+                                  .height = 8,
+                                  .done = done,
+                                  .done_value = value};
+      REQUIRE(ops.write_yuv((*rgb)->tensor(), target));
+      CHECK(wait_done(*done, value));
+    }
+  }
+  CHECK(page->done[2].load() == 0);
+  CHECK(page->done[4].load() == 0);
+  ops.unmap_fences(block);
+  CHECK(ops.health());
 }
 
 }  // namespace ajp::test

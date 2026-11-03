@@ -69,6 +69,8 @@ class ProbeStage final : public RingStage {
   void wait_for_next(bool on) { waits_.store(on); }
   void same_output(int output) { same_.store(output); }
   int skipped() const { return skipped_.load(); }
+  void lose_device(bool on) { lost_.store(on); }
+  int health_checks() const { return health_checks_.load(); }
   // Pour chaque image passée par outputs(), dans l'ordre : vrai si next() la suivait.
   std::vector<bool> saw_next() const {
     const std::scoped_lock lock(mutex_);
@@ -81,6 +83,11 @@ class ProbeStage final : public RingStage {
     return same_.load() == static_cast<int>(output) ? Fate::Same : Fate::Write;
   }
   void skip(const DecodedFrame& /*frame*/, std::uint32_t /*output*/) override { ++skipped_; }
+  std::expected<void, Refusal> health() override {
+    ++health_checks_;
+    if (lost_.load()) return std::unexpected(Refusal{RefusalCode::DeviceLost, "contexte perdu (sonde)"});
+    return {};
+  }
   std::expected<std::uint32_t, Refusal> outputs(const DecodedFrame& /*frame*/) override {
     const std::scoped_lock lock(mutex_);
     saw_next_.push_back(next() != nullptr);
@@ -106,6 +113,8 @@ class ProbeStage final : public RingStage {
   std::atomic<int> same_{-1};
   std::atomic<int> skipped_{0};
   std::atomic<bool> waits_{false};
+  std::atomic<bool> lost_{false};
+  std::atomic<int> health_checks_{0};
   std::vector<bool> saw_next_;
 };
 
@@ -210,6 +219,28 @@ TEST_CASE("Ring : une sortie Same ne prend ni slot ni RingFrame, la suivante por
   REQUIRE(kept.size() == 2);
   CHECK_FALSE(kept[0].uninterpolated);
   CHECK(kept[1].uninterpolated);
+}
+
+TEST_CASE(
+    "Ring : une image qui attend un slot fait vérifier l'appareil, un contexte perdu vu en 0,3 s (11.5)",
+    "[app][ring][stage]") {
+  Bench bench;
+  ProbeStage stage(bench.init(), 1, /*held=*/0, /*outputs=*/1);
+  REQUIRE(stage.frames().try_push(frame(1)));
+  REQUIRE(wait_for([&] { return bench.ring.size() == 1; }));
+  CHECK(stage.health_checks() == 0);  // rien n'attend : pas de vérification
+  // L'image 2 attend le seul slot, qui ne revient pas : l'étage interroge l'appareil.
+  REQUIRE(stage.frames().try_push(frame(2)));
+  REQUIRE(wait_for([&] { return stage.health_checks() >= 2; }));
+  CHECK(bench.reported().empty());
+  stage.lose_device(true);
+  const auto lost_at = std::chrono::steady_clock::now();
+  REQUIRE(wait_for([&] { return !bench.reported().empty(); }));
+  CHECK(std::chrono::steady_clock::now() - lost_at <= 300ms);
+  const std::vector<Refusal> refusals = bench.reported();
+  CHECK(refusals.front().code == RefusalCode::ThreadFailed);
+  CHECK(refusals.front().detail.find("contexte perdu (sonde)") != std::string::npos);
+  CHECK(bench.ring.size() == 1);
 }
 
 }  // namespace ajp::app::play

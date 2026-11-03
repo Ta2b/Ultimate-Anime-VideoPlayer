@@ -41,9 +41,10 @@ namespace {
 
 // La progression est redessinée 4 fois par seconde : la présentation (FIFO) ne freine pas l'export.
 constexpr std::int64_t kProgressEveryUs = 250'000;
-// Une écriture YUV jamais signalée au bout de ce temps : le contexte CUDA est perdu (le rappel hôte du
-// flux ne viendra plus), l'export s'arrête au lieu d'attendre à jamais.
-constexpr std::int64_t kYuvSignalTimeoutUs = 10'000'000;
+// Une écriture YUV jamais signalée au bout de ce temps : le contexte CUDA est perdu (le signal ne viendra
+// plus), l'export s'arrête au lieu d'attendre à jamais. Dernier recours (étape 11.5) : l'étage gpu voit un
+// contexte perdu en 0,2 à 0,3 s (KernelOps::health), ce délai couvre ce qu'il ne verrait pas.
+constexpr std::int64_t kYuvSignalTimeoutUs = 2'000'000;
 
 template <class... F>
 struct Overloaded : F... {
