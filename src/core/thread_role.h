@@ -5,7 +5,8 @@
 // son rôle au début de son corps ; le système en fait ce qu'il sait faire :
 //   - Windows : MMCSS (« Playback », « Audio ») pour la lecture, priorité basse pour le fond ;
 //   - Linux : nice 10 pour le fond (hérité par les threads qu'il crée ensuite, ceux de FFmpeg compris) ;
-//     la lecture garde la priorité normale (la relever demande des droits) ;
+//     la lecture est relevée par un crochet que l'application installe (SDL_SetCurrentThreadPriority, qui
+//     passe par rtkit quand le système l'a) ;
 //   - macOS : classes de qualité de service (interactive, utilitaire).
 // Jamais d'échec : un système qui refuse laisse le thread tel qu'il est.
 #pragma once
@@ -17,6 +18,13 @@ enum class ThreadRole {
   Audio,       // sortie audio
   Background,  // analyse, téléchargement : ne doit jamais retarder la lecture
 };
+
+// Relève la priorité du thread appelant ; rend vrai si le système l'a accordée. Le cœur ne dépend pas de SDL
+// : l'application installe ce crochet après SDL_Init. Sans crochet, la lecture garde la priorité normale.
+using PriorityRaiser = bool (*)() noexcept;
+// Installe le crochet et relève aussitôt le thread appelant (le principal, dont le rôle était posé plus tôt).
+// Rend vrai si le système l'a accordée.
+bool set_thread_priority_raiser(PriorityRaiser raiser) noexcept;
 
 // Applique le rôle au thread appelant, pour toute sa vie.
 void set_thread_role(ThreadRole role) noexcept;

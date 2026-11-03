@@ -1,5 +1,7 @@
 #include "core/thread_role.h"
 
+#include <atomic>
+
 #if defined(_WIN32)
 // windows.h avant avrt.h, qui en dépend.
 // clang-format off
@@ -16,6 +18,24 @@
 #endif
 
 namespace ajp {
+
+namespace {
+std::atomic<PriorityRaiser> g_raiser{nullptr};
+
+bool raise_if_set() noexcept {
+  const PriorityRaiser raiser = g_raiser.load(std::memory_order_acquire);
+  return raiser != nullptr && raiser();
+}
+}  // namespace
+
+bool set_thread_priority_raiser(PriorityRaiser raiser) noexcept {
+  g_raiser.store(raiser, std::memory_order_release);
+#if defined(__linux__)
+  return raise_if_set();
+#else
+  return false;  // Windows (MMCSS) et macOS (QoS) n'en ont pas besoin
+#endif
+}
 
 void set_thread_role(ThreadRole role) noexcept {
 #if defined(_WIN32)
@@ -44,7 +64,11 @@ void set_thread_role(ThreadRole role) noexcept {
   }
 #elif defined(__linux__)
   // Sous Linux, la priorité nice est propre à chaque thread (PRIO_PROCESS avec l'identifiant du thread).
-  if (role == ThreadRole::Background) setpriority(PRIO_PROCESS, static_cast<id_t>(syscall(SYS_gettid)), 10);
+  if (role == ThreadRole::Background) {
+    setpriority(PRIO_PROCESS, static_cast<id_t>(syscall(SYS_gettid)), 10);
+  } else {
+    raise_if_set();
+  }
 #else
   static_cast<void>(role);
 #endif
