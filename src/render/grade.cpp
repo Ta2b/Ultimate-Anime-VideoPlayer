@@ -156,6 +156,15 @@ std::string look_source() {
   return text;
 }
 
+// Le corps fusionné avec ses fonctions (anime-hdr-funcs.glsl) à la place de la marque //@AJG_FUNCS@.
+std::string with_funcs(std::string_view body) {
+  std::string text(body);
+  constexpr std::string_view kMark = "//@AJG_FUNCS@";
+  if (const std::size_t at = text.find(kMark); at != std::string::npos)
+    text.replace(at, kMark.size(), shaders::anime_hdr_funcs);
+  return text;
+}
+
 constexpr std::array kBlackParams = {
     ParamBinding{"black_lo", &GradeParams::black_lo}, ParamBinding{"black_hi", &GradeParams::black_hi},
     ParamBinding{"sdr_out", &GradeParams::sdr_out},   ParamBinding{"sdr_gamma", &GradeParams::sdr_gamma},
@@ -297,7 +306,7 @@ std::expected<Grade, Refusal> Grade::create(pl_gpu gpu, GradeBody body, bool ski
     text += fused.substr(0, fused.rfind("//!HOOK OUTPUT"));
     text += shaders::anime_hdr_anime;
   } else {
-    text += legacy ? shaders::anime_hdr_grade : shaders::anime_hdr_fused;
+    text += legacy ? shaders::anime_hdr_grade : with_funcs(shaders::anime_hdr_fused);
   }
   if (!skin_mask) {
     // Le masque peau (damier sur le grain d'une peau pâle, mesuré à l'écran) est coupé sauf --skin-mask.
