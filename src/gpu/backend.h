@@ -67,7 +67,9 @@ namespace ajp::gpu {
 // 21 : Backend::enqueue_ring (étape 3.4b : le SPAN FP8 écrit l'emplacement de l'anneau depuis son épilogue).
 // 22 : SpanFp8Derivation::scores_acc16 et kernels_ms_acc16 (étape 3.5a).
 // 23 : SpanFp8Request::hard, SpanFp8ImageScore au 99,9e centile, SpanFp8Derivation::hard_scores (étape 3.7a).
-inline constexpr int kBackendAbi = 23;
+// 24 : BackendCaps::gpu_arch et span_fp8_kernels, SpanFp8Request::validate_only, SpanFp8Derivation::gpu_arch
+// et kernels_version (étape 3.7b).
+inline constexpr int kBackendAbi = 24;
 
 using DeviceUuid = ajp::DeviceUuid;
 
@@ -102,6 +104,10 @@ struct BackendCaps {
   // Le SPAN entier en FP8 par noyaux CUTLASS (paquet « .span8 » à la place de l'ONNX) : sm 8.9 seulement,
   // dans un backend construit avec CUTLASS.
   bool span_fp8_cutlass = false;
+  // L'architecture de l'appareil (« sm_89 ») et la version des noyaux du SPAN FP8
+  // (SpanFp8Net::kKernelsVersion) : un reçu v2 n'est pris que sur les mêmes (étape 3.7b).
+  std::string gpu_arch;
+  int span_fp8_kernels = 0;
   // RIFE coupé en six moteurs TensorRT et noyaux de colle (manifeste « .rifefused » à la place de l'ONNX,
   // kernels/spec/rife_fused.h).
   bool rife_fused = false;
@@ -166,6 +172,9 @@ struct SpanFp8Request {
   std::vector<SpanStill> calibration;  // les maxima des tenseurs se relèvent sur elles
   std::vector<SpanStill> validation;   // mises de côté : jugent la sortie FP8 contre la référence FP16
   std::vector<SpanStill> hard;         // cas durs (gpu/span_fp8/hard_cases.h) : jugés aussi, sans calibrer
+  // Validation seule (étape 3.7b : une taille nouvelle) : les échelles et le drapeau acc16 du paquet tels
+  // quels, sans calibration (calibration peut être vide), une seule variante jugée.
+  bool validate_only = false;
 };
 
 struct SpanFp8ImageScore {
@@ -187,7 +196,9 @@ struct SpanFp8Derivation {
   // Les cas durs de la requête, pour chaque variante (étape 3.7a).
   std::vector<SpanFp8ImageScore> hard_scores;
   std::vector<SpanFp8ImageScore> hard_scores_acc16;
-  std::string reference;  // d'où vient la sortie de référence, « cutlass-fp16 »
+  std::string gpu_arch;     // « sm_89 » (étape 3.7b)
+  int kernels_version = 0;  // SpanFp8Net::kKernelsVersion
+  std::string reference;    // d'où vient la sortie de référence, « cutlass-fp16 »
 };
 
 // Moteur chargé et prêt à recevoir enqueue(). Possédé par un Program. Son code vit dans la

@@ -3,7 +3,9 @@
 #include <algorithm>
 #include <format>
 #include <fstream>
+#include <iterator>
 #include <system_error>
+#include <vector>
 
 #include "app/play/i18n.h"
 #include "app/play/span_int8.h"
@@ -153,6 +155,36 @@ std::string gpu_stage_text(const std::string& stage) {
 
 }  // namespace
 
+namespace {
+
+std::string verdict_text(const gpu::span_fp8::Verdict& verdict) {
+  std::string text = i18n::tr_format("mean PSNR {} dB, worst {} dB, worst SSIM {}", db(verdict.psnr_mean_db),
+                                     db(verdict.psnr_worst_db), ratio(verdict.ssim_worst));
+  text += i18n::tr_format(", 99.9th percentile error {}/255 (dark {}/255), hard frames worst {} dB",
+                          db(255.0 * verdict.error_p999_worst), db(255.0 * verdict.dark_error_p999_worst),
+                          db(verdict.hard_psnr_worst_db));
+  return text;
+}
+
+std::vector<gpu::span_fp8::ImageScore> scores_of(const std::vector<gpu::SpanFp8ImageScore>& from) {
+  std::vector<gpu::span_fp8::ImageScore> out;
+  for (const gpu::SpanFp8ImageScore& score : from)
+    out.push_back({.psnr_db = score.psnr_db,
+                   .ssim = score.ssim,
+                   .error_p999 = score.error_p999,
+                   .dark_error_p999 = score.dark_error_p999});
+  return out;
+}
+
+void add_hard_cases(gpu::SpanFp8Request& request) {
+  for (gpu::span_fp8::HardCase& hard :
+       gpu::span_fp8::hard_cases(request.validation.front().width, request.validation.front().height))
+    request.hard.push_back(
+        gpu::SpanStill{.width = hard.width, .height = hard.height, .rgb = std::move(hard.rgb)});
+}
+
+}  // namespace
+
 std::expected<SpanDeriveReport, Refusal> derive_span_fp8(const SpanDerivePlan& plan,
                                                          const SpanStillsSource& stills,
                                                          const SpanDeriver& deriver,
@@ -185,11 +217,7 @@ std::expected<SpanDeriveReport, Refusal> derive_span_fp8(const SpanDerivePlan& p
   }
   for (const std::size_t i : split.validation) request.validation.push_back(still_of((*taken)[i]));
   taken->clear();
-  // Étape 3.7a : les cas durs, à la taille des images de validation.
-  for (gpu::span_fp8::HardCase& hard :
-       gpu::span_fp8::hard_cases(request.validation.front().width, request.validation.front().height))
-    request.hard.push_back(
-        gpu::SpanStill{.width = hard.width, .height = hard.height, .rgb = std::move(hard.rgb)});
+  add_hard_cases(request);  // étape 3.7a : les cas durs, à la taille des images de validation
 
   progress.set(0.3F, i18n::tr("calibration"));
   gpu::Progress backend_progress{.report =
@@ -207,15 +235,6 @@ std::expected<SpanDeriveReport, Refusal> derive_span_fp8(const SpanDerivePlan& p
   const int width = request.validation.front().width;
   const int height = request.validation.front().height;
   report.size = std::format("{}x{}", width, height);
-  const auto scores_of = [](const std::vector<gpu::SpanFp8ImageScore>& from) {
-    std::vector<gpu::span_fp8::ImageScore> out;
-    for (const gpu::SpanFp8ImageScore& score : from)
-      out.push_back({.psnr_db = score.psnr_db,
-                     .ssim = score.ssim,
-                     .error_p999 = score.error_p999,
-                     .dark_error_p999 = score.dark_error_p999});
-    return out;
-  };
   report.verdict = gpu::span_fp8::judge_hardened(scores_of(derived->scores), scores_of(derived->hard_scores));
   report.passed = report.verdict.passed;
   // Étape 3.5a : la variante à accumulateur f16 hors blocs, si elle passe la porte et perd au plus 0,3 dB de
@@ -259,6 +278,12 @@ std::expected<SpanDeriveReport, Refusal> derive_span_fp8(const SpanDerivePlan& p
   receipt.verdict = report.verdict;
   receipt.reference = derived->reference;
   receipt.derived_by = "ajp (natif)";
+  receipt.gpu_arch = derived->gpu_arch;
+  receipt.kernels_version = derived->kernels_version;
+  receipt.blocks = static_cast<int>(package.blocks.size());
+  receipt.channels = package.real_channels;
+  receipt.acc16 = acc16;
+  (report.passed ? receipt.validated_sizes : receipt.refused_sizes).push_back(report.size);
   progress.set(0.97F, i18n::tr("writing"));
   if (stop.stop_requested()) return refuse(RefusalCode::Cancelled, i18n::tr("preparation interrupted"));
   const std::string text =
@@ -269,13 +294,7 @@ std::expected<SpanDeriveReport, Refusal> derive_span_fp8(const SpanDerivePlan& p
     return std::unexpected(std::move(ok.error()));
   if (!report.passed) report.package.clear();
 
-  std::string scores_text =
-      i18n::tr_format("mean PSNR {} dB, worst {} dB, worst SSIM {}", db(report.verdict.psnr_mean_db),
-                      db(report.verdict.psnr_worst_db), ratio(report.verdict.ssim_worst));
-  scores_text += i18n::tr_format(", 99.9th percentile error {}/255 (dark {}/255), hard frames worst {} dB",
-                                 db(255.0 * report.verdict.error_p999_worst),
-                                 db(255.0 * report.verdict.dark_error_p999_worst),
-                                 db(report.verdict.hard_psnr_worst_db));
+  const std::string scores_text = verdict_text(report.verdict);
   if (report.passed) {
     report.text = i18n::tr_format(
         "Performance mode ready: {} ({} calibration frames, {} validation frames at {}, kernels {} ms). It "
@@ -292,10 +311,87 @@ std::expected<SpanDeriveReport, Refusal> derive_span_fp8(const SpanDerivePlan& p
   return report;
 }
 
+std::expected<SpanDeriveReport, Refusal> validate_span_size(const SpanDerivePlan& plan,
+                                                            const SpanStillsSource& stills,
+                                                            const SpanDeriver& deriver,
+                                                            SpanDeriveProgress& progress,
+                                                            const std::stop_token& stop) {
+  progress.set(0.0F, i18n::tr("reading the model"));
+  auto source_sha = prepare::sha256_file(plan.model);
+  if (!source_sha) return std::unexpected(std::move(source_sha.error()));
+  SpanDeriveReport report;
+  report.package = span_variant_path(SpanVariantKind::Fp8Cutlass, plan.model, plan.models_dir, *source_sha);
+  report.receipt = report.package;
+  report.receipt.replace_extension(".toml");
+  auto sizes = read_receipt_sizes(report.receipt);
+  if (!sizes) return std::unexpected(std::move(sizes.error()));
+  std::vector<std::byte> bytes;
+  {
+    std::ifstream in(report.package, std::ios::binary);
+    if (!in) return refuse(RefusalCode::FileUnreadable, prepare::utf8_path(report.package.filename()));
+    const std::string content((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+    const auto* first = reinterpret_cast<const std::byte*>(content.data());
+    bytes.assign(first, first + content.size());
+  }
+
+  progress.set(0.02F, i18n::tr("video frames"));
+  auto taken =
+      stills(stop, [&](float fraction) { progress.set(0.02F + 0.28F * fraction, i18n::tr("video frames")); });
+  if (!taken) return std::unexpected(std::move(taken.error()));
+  const StillsSplit split = split_stills(taken->size());
+  if (split.validation.empty())
+    return refuse(RefusalCode::DecodeFailed, i18n::tr("too few usable frames in the video"));
+  gpu::SpanFp8Request request;
+  request.package = bytes;
+  request.validate_only = true;
+  for (const std::size_t i : split.validation) {
+    media::Still& still = (*taken)[i];
+    request.validation.push_back(
+        gpu::SpanStill{.width = still.width, .height = still.height, .rgb = std::move(still.rgb)});
+  }
+  taken->clear();
+  add_hard_cases(request);
+
+  progress.set(0.3F, i18n::tr("validation"));
+  gpu::Progress backend_progress{.report =
+                                     [&](float fraction, const std::string& stage) {
+                                       progress.set(0.3F + 0.65F * fraction, gpu_stage_text(stage));
+                                     },
+                                 .stop = stop};
+  auto derived = deriver(request, backend_progress);
+  if (!derived) return std::unexpected(std::move(derived.error()));
+  report.derivation = *derived;
+  report.validation_images = static_cast<int>(request.validation.size());
+  report.size = std::format("{}x{}", request.validation.front().width, request.validation.front().height);
+  report.verdict = gpu::span_fp8::judge_hardened(scores_of(derived->scores), scores_of(derived->hard_scores));
+  report.passed = report.verdict.passed;
+  const auto drop = [&](std::vector<std::string>& from) { std::erase(from, report.size); };
+  drop(sizes->validated);
+  drop(sizes->refused);
+  (report.passed ? sizes->validated : sizes->refused).push_back(report.size);
+  const std::string text = gpu::span_fp8::with_sizes(sizes->text, sizes->validated, sizes->refused);
+  progress.set(0.97F, i18n::tr("writing"));
+  if (stop.stop_requested()) return refuse(RefusalCode::Cancelled, i18n::tr("preparation interrupted"));
+  // Le paquet garde ses octets : il vaut toujours aux autres tailles de son reçu.
+  if (auto ok = commit_derivation(report.package, report.receipt, bytes, text, true); !ok)
+    return std::unexpected(std::move(ok.error()));
+  const std::string scores_text = verdict_text(report.verdict);
+  report.text = report.passed
+                    ? i18n::tr_format("Performance mode validated at {}: {}.", report.size, scores_text)
+                    : i18n::tr_format(
+                          "Performance mode rejected at {}: {}. Playback stays on TensorRT FP16 at this "
+                          "size.",
+                          report.size, scores_text);
+  if (!report.passed) report.package.clear();
+  progress.set(1.0F, i18n::tr("done"));
+  return report;
+}
+
 SpanPrepare make_span_prepare(const std::shared_ptr<BackendLibrary>& library, const gpu::BackendInit& init,
                               bool supported, const std::filesystem::path& model,
                               const std::filesystem::path& models_dir, const std::filesystem::path& video,
-                              const std::string& unavailable, const media::StillReduce& reduce) {
+                              const std::string& unavailable, const media::StillReduce& reduce,
+                              const SpanFp8Context& context) {
   SpanPrepare prepare;
   if (!supported) {
     prepare.note =
@@ -309,10 +405,15 @@ SpanPrepare make_span_prepare(const std::shared_ptr<BackendLibrary>& library, co
     prepare.note = i18n::tr("No SPAN model in use: nothing to prepare.");
     return prepare;
   }
-  if (const SpanInt8Lookup found = find_span_variant(SpanVariantKind::Fp8Cutlass, model, models_dir);
-      found.variant) {
+  const SpanInt8Lookup found = find_span_variant(SpanVariantKind::Fp8Cutlass, model, models_dir,
+                                                 context.width > 0 ? &context : nullptr);
+  const bool validate = !found.unvalidated_size.empty();
+  if (found.variant) {
     prepare.ready = true;
     prepare.note = i18n::tr("Ready: ") + found.note;
+  } else if (validate) {
+    prepare.note = i18n::tr_format(
+        "Not validated at {} yet: a validation pass (about ten seconds) is offered.", found.unvalidated_size);
   } else if (!found.note.empty()) {
     prepare.refused = true;
     prepare.note = i18n::tr("Rejected: ") + found.note;
@@ -324,7 +425,7 @@ SpanPrepare make_span_prepare(const std::shared_ptr<BackendLibrary>& library, co
     return prepare;
   }
   prepare.offered = true;
-  prepare.run = [library, init, model, models_dir, video, reduce](
+  prepare.run = [library, init, model, models_dir, video, reduce, validate](
                     SpanDeriveProgress& progress,
                     const std::stop_token& stop) -> std::expected<std::string, Refusal> {
     const SpanDerivePlan plan{.model = model, .models_dir = models_dir};
@@ -338,7 +439,8 @@ SpanPrepare make_span_prepare(const std::shared_ptr<BackendLibrary>& library, co
         return std::expected<gpu::SpanFp8Derivation, Refusal>(std::unexpected(std::move(backend.error())));
       return (*backend)->derive_span_fp8(request, backend_progress);
     };
-    auto report = derive_span_fp8(plan, stills, deriver, progress, stop);
+    auto report = validate ? validate_span_size(plan, stills, deriver, progress, stop)
+                           : derive_span_fp8(plan, stills, deriver, progress, stop);
     if (!report) return std::unexpected(std::move(report.error()));
     if (!report->passed) return refuse(RefusalCode::ReceiptInvalid, report->text);
     return report->text;

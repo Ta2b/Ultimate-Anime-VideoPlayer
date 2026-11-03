@@ -24,12 +24,15 @@
 #pragma once
 
 #include <cstdint>
+#include <expected>
 #include <filesystem>
 #include <optional>
 #include <string>
 #include <string_view>
+#include <vector>
 
 #include "app/play/precision.h"
+#include "core/types.h"
 
 namespace ajp::app::play {
 
@@ -49,16 +52,38 @@ struct SpanInt8 {  // une variante quantifiée ou recalculée du SPAN, quel que 
   double psnr_mean_db = 0.0;
   double psnr_worst_db = 0.0;
   double ssim_worst = 0.0;
+  bool receipt_v2 = false;  // FP8 CUTLASS : reçu ajp-span-fp8c-v2 (seul à servir l'Auto, étape 3.7b)
 };
 
 struct SpanInt8Lookup {
   std::optional<SpanInt8> variant;
   std::string note;  // pour le journal : la variante prise, ou pourquoi pas ; vide sans reçu
+  // FP8 CUTLASS avec contexte : reçu v2 de cet appareil et de ces noyaux, mais pas encore jugé à cette taille
+  // (« 1280x720 ») ; une validation seule la tranche (span_derive.h, validate_span_size).
+  std::string unvalidated_size;
+};
+
+// Les listes de tailles d'un reçu v2 et son texte (validation seule, étape 3.7b). Refus FileUnreadable.
+struct ReceiptSizes {
+  std::string text;
+  std::vector<std::string> validated;
+  std::vector<std::string> refused;
+};
+std::expected<ReceiptSizes, Refusal> read_receipt_sizes(const std::filesystem::path& receipt);
+
+// Ce que la chaîne sait du SPAN FP8 CUTLASS au chargement (étape 3.7b) : BackendCaps::gpu_arch et
+// span_fp8_kernels, et la taille de travail. Un reçu v2 d'une autre architecture ou d'autres noyaux est
+// refusé ; une taille qu'il n'a pas jugée rend unvalidated_size au lieu de la variante.
+struct SpanFp8Context {
+  std::string gpu_arch;
+  int kernels_version = 0;
+  int width = 0;
+  int height = 0;
 };
 
 // La variante de span dans dir, si son reçu la laisse passer.
 SpanInt8Lookup find_span_variant(SpanVariantKind kind, const std::filesystem::path& span,
-                                 const std::filesystem::path& dir);
+                                 const std::filesystem::path& dir, const SpanFp8Context* fp8 = nullptr);
 inline SpanInt8Lookup find_span_int8(const std::filesystem::path& span, const std::filesystem::path& dir) {
   return find_span_variant(SpanVariantKind::Int8, span, dir);
 }

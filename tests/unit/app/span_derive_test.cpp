@@ -127,6 +127,8 @@ struct FakeBackend {
         derivation.kernels_ms_acc16 = 8.9;
       }
       derivation.reference = "cutlass-fp16";
+      derivation.gpu_arch = "sm_89";
+      derivation.kernels_version = 1;
       return std::expected<gpu::SpanFp8Derivation, Refusal>(derivation);
     };
   }
@@ -206,7 +208,8 @@ TEST_CASE("une dérivation qui passe écrit le paquet et son reçu, que le lecte
   std::ifstream in(folder.receipt());
   std::ostringstream receipt;
   receipt << in.rdbuf();
-  CHECK(receipt.str().find("format = \"ajp-span-fp8c-v1\"") != std::string::npos);
+  CHECK(receipt.str().find("format = \"ajp-span-fp8c-v2\"") != std::string::npos);
+  CHECK(receipt.str().find("validated_sizes = [\"128x4\"]") != std::string::npos);
   CHECK(receipt.str().find("reference = \"cutlass-fp16\"") != std::string::npos);
   CHECK(receipt.str().find("validation_size = \"128x4\"") != std::string::npos);
 }
@@ -252,6 +255,83 @@ TEST_CASE("la porte durcie refuse au 99,9e centile ou sur un cas dur (3.7a)", "[
   CHECK(report->passed == passes);
   CHECK(report->verdict.hard_images == 3);
   CHECK(report->text.find("99,9e centile") != std::string::npos);
+}
+
+TEST_CASE("un paquet d'une RTX 40 n'est pas pris sur une autre architecture ni d'autres noyaux (3.7b)",
+          "[app][int8][fp8c]") {
+  ajp::app::play::FrenchUi french;
+  const Folder folder;
+  const FakeBackend backend;
+  SpanDeriveProgress progress;
+  REQUIRE(
+      derive_span_fp8(folder.plan(), source_of(twelve()), backend.deriver(), progress, std::stop_token{}));
+  const SpanFp8Context here{.gpu_arch = "sm_89", .kernels_version = 1, .width = 128, .height = 4};
+  const SpanInt8Lookup found =
+      find_span_variant(SpanVariantKind::Fp8Cutlass, folder.model, folder.models(), &here);
+  INFO(found.note);
+  REQUIRE(found.variant);
+  CHECK(found.variant->receipt_v2);
+
+  SpanFp8Context blackwell = here;
+  blackwell.gpu_arch = "sm_120";
+  const SpanInt8Lookup other =
+      find_span_variant(SpanVariantKind::Fp8Cutlass, folder.model, folder.models(), &blackwell);
+  CHECK_FALSE(other.variant);
+  CHECK(other.note.find("dérivé sur sm_89, ce GPU est sm_120") != std::string::npos);
+  SpanFp8Context newer = here;
+  newer.kernels_version = 2;
+  CHECK_FALSE(find_span_variant(SpanVariantKind::Fp8Cutlass, folder.model, folder.models(), &newer).variant);
+
+  SpanFp8Context bigger = here;
+  bigger.width = 256;
+  bigger.height = 8;
+  const SpanInt8Lookup pending =
+      find_span_variant(SpanVariantKind::Fp8Cutlass, folder.model, folder.models(), &bigger);
+  CHECK_FALSE(pending.variant);
+  CHECK(pending.unvalidated_size == "256x8");
+  // Sans contexte (outil, test), le reçu se lit comme avant.
+  CHECK(find_span_variant(SpanVariantKind::Fp8Cutlass, folder.model, folder.models()).variant);
+}
+
+TEST_CASE("une taille se valide seule, sans recalibrer, et se note au reçu (3.7b)", "[app][span_derive]") {
+  ajp::app::play::FrenchUi french;
+  const Folder folder;
+  FakeBackend backend;
+  SpanDeriveProgress progress;
+  REQUIRE(
+      derive_span_fp8(folder.plan(), source_of(twelve()), backend.deriver(), progress, std::stop_token{}));
+  const auto package_before = prepare::sha256_file(folder.package()).value();
+
+  const auto passed =
+      validate_span_size(folder.plan(), source_of(twelve()), backend.deriver(), progress, std::stop_token{});
+  INFO((passed ? passed->text : passed.error().detail));
+  REQUIRE(passed);
+  CHECK(passed->passed);
+  CHECK(backend.seen.validate_only);
+  CHECK(backend.seen.calibration.empty());
+  CHECK(gpu::span_fp8::parse(backend.seen.package));  // le paquet écrit, tel quel
+  CHECK(prepare::sha256_file(folder.package()).value() == package_before);
+  auto sizes = read_receipt_sizes(folder.receipt());
+  REQUIRE(sizes);
+  CHECK(sizes->validated == std::vector<std::string>{"128x4"});  // pas de doublon
+  CHECK(sizes->refused.empty());
+
+  backend.psnr = 36.0;  // la même taille, refusée cette fois
+  const auto rejected =
+      validate_span_size(folder.plan(), source_of(twelve()), backend.deriver(), progress, std::stop_token{});
+  REQUIRE(rejected);
+  CHECK_FALSE(rejected->passed);
+  CHECK(rejected->text.find("refusé en 128x4") != std::string::npos);
+  sizes = read_receipt_sizes(folder.receipt());
+  REQUIRE(sizes);
+  CHECK(sizes->validated.empty());
+  CHECK(sizes->refused == std::vector<std::string>{"128x4"});
+  CHECK(fs::exists(folder.package()));  // il vaut encore ailleurs
+  const SpanFp8Context here{.gpu_arch = "sm_89", .kernels_version = 1, .width = 128, .height = 4};
+  const SpanInt8Lookup found =
+      find_span_variant(SpanVariantKind::Fp8Cutlass, folder.model, folder.models(), &here);
+  CHECK_FALSE(found.variant);
+  CHECK(found.note.find("refusé en 128x4") != std::string::npos);
 }
 
 TEST_CASE("des garde-fous manqués écrivent le reçu refusé et retirent le paquet d'avant",

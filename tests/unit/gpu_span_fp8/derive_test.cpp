@@ -117,7 +117,7 @@ TEST_CASE("le reçu a les clés et la mise en forme de l'outil Python", "[span_f
       Verdict{.psnr_mean_db = 52.04087, .psnr_worst_db = 49.2715, .ssim_worst = 0.99673, .passed = true};
   receipt.reference = "cutlass-fp16";
   const std::string text = receipt_text(receipt, "essai");
-  CHECK(text.starts_with("# essai\nformat = \"ajp-span-fp8c-v1\"\nsource = \"2x_AnimeJaNai.onnx\"\n"));
+  CHECK(text.starts_with("# essai\nformat = \"ajp-span-fp8c-v2\"\nsource = \"2x_AnimeJaNai.onnx\"\n"));
   CHECK(text.find("quantizer = \"ajp \\\"natif\\\"\"\n") != std::string::npos);
   CHECK(text.find("precision = \"fp8\"\n") != std::string::npos);
   CHECK(text.find("kernels_ms = 9.2360\n") != std::string::npos);
@@ -126,6 +126,33 @@ TEST_CASE("le reçu a les clés et la mise en forme de l'outil Python", "[span_f
   CHECK(text.find("passed = true\n") != std::string::npos);
   CHECK(text.find("reference = \"cutlass-fp16\"\n") != std::string::npos);
   CHECK(text.find("derived_by") == std::string::npos);  // vide : omis
+}
+
+TEST_CASE("le reçu v2 lie le paquet à l'appareil, aux noyaux et aux tailles jugées (3.7b)",
+          "[span_fp8][derive]") {
+  Receipt receipt;
+  receipt.gpu_arch = "sm_89";
+  receipt.kernels_version = 1;
+  receipt.blocks = 5;
+  receipt.channels = 48;
+  receipt.acc16 = true;
+  receipt.verdict.error_p999_worst = 3.0 / 255.0;
+  receipt.verdict.hard_images = 9;
+  receipt.validated_sizes = {"1280x720"};
+  const std::string text = receipt_text(receipt, "essai");
+  CHECK(text.find("gpu_arch = \"sm_89\"\n") != std::string::npos);
+  CHECK(text.find("kernels_version = 1\n") != std::string::npos);
+  CHECK(text.find("blocks = 5\nchannels = 48\naccumulator = \"f16\"\n") != std::string::npos);
+  CHECK(text.find("error_p999_worst = 0.011765\n") != std::string::npos);
+  CHECK(text.find("hard_images = 9\n") != std::string::npos);
+  CHECK(text.ends_with("validated_sizes = [\"1280x720\"]\nrefused_sizes = []\n"));
+
+  const std::string more = with_sizes(text, {"1280x720", "1920x1080"}, {"960x540"});
+  CHECK(more.starts_with("# essai\n"));
+  CHECK(more.ends_with("validated_sizes = [\"1280x720\", \"1920x1080\"]\nrefused_sizes = [\"960x540\"]\n"));
+  CHECK(more.find("validated_sizes = [\"1280x720\"]\n") == std::string::npos);  // l'ancienne ligne remplacée
+  CHECK(size_key(1280, 720) == "1280x720");
+  CHECK(size_key(3840, 2160) == "1920x1088");  // la découpe que la préparation ferait
 }
 
 TEST_CASE("les images de dérivation se ramènent à une taille que les noyaux prennent", "[span_fp8][derive]") {

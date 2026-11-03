@@ -31,6 +31,7 @@
 #include <vector>
 
 #include "app/play/backend_library.h"
+#include "app/play/span_int8.h"
 #include "core/profile.h"
 #include "core/types.h"
 #include "gpu/backend.h"
@@ -106,6 +107,16 @@ std::expected<SpanDeriveReport, Refusal> derive_span_fp8(const SpanDerivePlan& p
                                                          SpanDeriveProgress& progress,
                                                          const std::stop_token& stop);
 
+// Validation seule à une taille nouvelle (étape 3.7b) : le paquet déjà dérivé, ses échelles telles quelles,
+// jugé par la porte durcie sur les images de validation de cette vidéo (à la taille de travail) et les cas
+// durs ; la taille rejoint validated_sizes ou refused_sizes du reçu, le paquet ne change pas. Refus :
+// paquet ou reçu absents ou illisibles, vidéo sans corpus, backend qui refuse, Cancelled, écriture.
+std::expected<SpanDeriveReport, Refusal> validate_span_size(const SpanDerivePlan& plan,
+                                                            const SpanStillsSource& stills,
+                                                            const SpanDeriver& deriver,
+                                                            SpanDeriveProgress& progress,
+                                                            const std::stop_token& stop);
+
 // Écrit le paquet et le reçu à côté l'un de l'autre, par fichiers temporaires renommés ensuite. passed : les
 // deux ; sinon le reçu seul, et un paquet d'avant est retiré. Refus IoFailed, sans fichier laissé à moitié
 // écrit.
@@ -138,7 +149,8 @@ struct SpanPrepare {
 SpanPrepare make_span_prepare(const std::shared_ptr<BackendLibrary>& library, const gpu::BackendInit& init,
                               bool supported, const std::filesystem::path& model,
                               const std::filesystem::path& models_dir, const std::filesystem::path& video,
-                              const std::string& unavailable = {}, const media::StillReduce& reduce = {});
+                              const std::string& unavailable = {}, const media::StillReduce& reduce = {},
+                              const SpanFp8Context& context = {});
 
 // La réduction des images de la préparation : la taille de travail et le filtre du menu « Réduction », comme
 // le noyau d'ingestion les applique (live_settings.h, reduction_of).

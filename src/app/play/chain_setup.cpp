@@ -267,8 +267,13 @@ std::expected<std::optional<ChainEngines>, Refusal> prepare_chain_once(Player& p
     };
     using Prepared = decltype(prepare_span());
     std::optional<Prepared> loaded;
+    const SpanFp8Context fp8_context{.gpu_arch = caps.gpu_arch,
+                                     .kernels_version = caps.span_fp8_kernels,
+                                     .width = c.work.width,
+                                     .height = c.work.height};
     for (const SpanVariantKind kind : wanted) {
-      SpanInt8Lookup found = find_span_variant(kind, c.model->path, variants);
+      SpanInt8Lookup found = find_span_variant(kind, c.model->path, variants,
+                                               kind == SpanVariantKind::Fp8Cutlass ? &fp8_context : nullptr);
       if (!found.note.empty()) log->info("SPAN {} : {}", variant_text(kind), found.note);
       if (!found.variant) continue;
       c.span_int8 = std::move(found.variant);
