@@ -100,6 +100,8 @@ class RifeFusedEngine final : public Engine {
   std::vector<Graph> graphs_;
   bool graphs_off_ = false;
   int capture_failures_ = 0;
+  int launch_failures_ = 0;
+  static constexpr int kMaxLaunchFailures = 3;
   std::string notice_;
 };
 
