@@ -38,12 +38,13 @@ TEST_CASE("Encodeur : le constructeur d'un identifiant PCI", "[export]") {
 
 TEST_CASE("Encodeur : celui du GPU du rendu d'abord", "[export]") {
   CHECK(names(encoder_candidates(Codec::Hevc, Quality::VeryHigh, GpuVendor::Nvidia)).front() == "hevc_nvenc");
-  CHECK(names(encoder_candidates(Codec::Hevc, Quality::VeryHigh, GpuVendor::Amd)).front() == "hevc_amf");
+  CHECK(names(encoder_candidates(Codec::Hevc, Quality::VeryHigh, GpuVendor::Amd)).front() == "hevc_vulkan");
   CHECK(names(encoder_candidates(Codec::Hevc, Quality::VeryHigh, GpuVendor::Intel)).front() == "hevc_qsv");
   CHECK(names(encoder_candidates(Codec::Hevc, Quality::VeryHigh, GpuVendor::Apple)).front() ==
         "hevc_videotoolbox");
   CHECK(names(encoder_candidates(Codec::Av1, Quality::High, GpuVendor::Nvidia)).front() == "av1_nvenc");
-  CHECK(names(encoder_candidates(Codec::H264, Quality::High, GpuVendor::Amd)).front() == "h264_amf");
+  CHECK(names(encoder_candidates(Codec::H264, Quality::High, GpuVendor::Amd)).front() == "h264_vulkan");
+  CHECK(names(encoder_candidates(Codec::Hevc, Quality::High, GpuVendor::Amd))[1] == "hevc_amf");
 }
 
 TEST_CASE("Encodeur : NVENC lit la mémoire CUDA, VA-API et Vulkan Video chargent leurs surfaces",

@@ -144,8 +144,11 @@ std::vector<Family> order_for(GpuVendor vendor) {
   switch (vendor) {
     case GpuVendor::Nvidia:
       return {Nvenc, Vaapi, MediaFoundation, Vulkan, Qsv, Amf, VideoToolbox};
+    // AMD : Vulkan Video d'abord (AL5, AW5) ; sur l'appareil du rendu il lit ses images sans passer par
+    // l'hôte (export_writer.cpp), là où AMF, VA-API et Media Foundation demandent une relecture 4K par
+    // image. Un pilote sans encodage Vulkan le refuse à l'ouverture : AMF prend la suite.
     case GpuVendor::Amd:
-      return {Amf, Vaapi, MediaFoundation, Vulkan, Nvenc, Qsv, VideoToolbox};
+      return {Vulkan, Amf, Vaapi, MediaFoundation, Nvenc, Qsv, VideoToolbox};
     case GpuVendor::Intel:
       return {Qsv, Vaapi, MediaFoundation, Vulkan, Nvenc, Amf, VideoToolbox};
     case GpuVendor::Apple:
