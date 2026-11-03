@@ -34,11 +34,12 @@ TEST_CASE("Personnalisé ne touche à rien", "[auto_config]") {
 
 TEST_CASE("Auto suit la tranche de la machine", "[auto_config]") {
   const PlaySettings ultra = applied(Preset::Auto, Tier::Ultra, 2160, 165.0);
-  CHECK(ultra.motion_engine == MotionEngine::DistilDrba);  // GMFSS Union reste au choix manuel
+  CHECK(ultra.motion_engine == MotionEngine::Rife);  // DistilDRBA attend sa porte ; GMFSS Union est manuel
   CHECK(ultra.upscale);
   CHECK(ultra.rife_auto);
   const PlaySettings fast = applied(Preset::Auto, Tier::Fast, 1440, 144.0);
-  CHECK(fast.motion_engine == MotionEngine::DistilDrba);
+  CHECK(fast.motion_engine == MotionEngine::Rife);
+  CHECK(fast.rife_model == "rife_v4.22_lite.onnx");
   CHECK(fast.work_height == 720);
   const PlaySettings normal = applied(Preset::Auto, Tier::Normal, 1440, 144.0);
   CHECK(normal.motion_engine == MotionEngine::Rife);
@@ -172,4 +173,10 @@ TEST_CASE("auto : ce que l'exploration a trouvé relève la chaîne du niveau, s
   // Un préréglage choisi à la main n'est pas touché par l'exploration.
   settings.preset = Preset::Normal;
   CHECK(apply_preset(settings, machine, source).work_height == plain.work_height);
+}
+
+TEST_CASE("DistilDRBA attend sa porte de qualité", "[auto_config]") {
+  static_assert(!kDistilDrbaInAuto);
+  for (const Tier tier : {Tier::Light, Tier::Normal, Tier::Fast, Tier::Ultra})
+    CHECK(applied(Preset::Auto, tier, 1440, 144.0).motion_engine == MotionEngine::Rife);
 }
