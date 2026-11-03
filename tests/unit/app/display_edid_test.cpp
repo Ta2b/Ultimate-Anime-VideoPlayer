@@ -66,6 +66,7 @@ std::vector<std::uint8_t> oled_edid() {
 TEST_CASE("EDID du QD-OLED de Tatoub : modèle connu, OLED", "[app][display]") {
   ajp::app::play::FrenchUi french;
   const DisplayFacts d = parse_edid(kQdOledEdid);
+  CHECK(d.vrr_min_hz == 100);  // descripteur 0xFD : 100 à 165 Hz
   CHECK(d.name == "MAG 272U E16");
   CHECK(d.manufacturer == "CND");
   CHECK(d.product == 0x8CD7);

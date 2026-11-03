@@ -62,6 +62,7 @@
 #include "core/clock.h"
 #include "core/log.h"
 #include "core/settings.h"
+#include "core/vrr_floor.h"
 #include "media/demuxer.h"
 #include "media/selection.h"
 #include "prepare/sha256.h"
@@ -481,6 +482,12 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
   // Le palier du mode auto : un message à l'écran et une ligne de journal à chaque changement.
   bool vrr_fullscreen = false;
   VrrWatch vrr_watch(vrr_armed);
+  // VRR armé : l'image tenue se représente à intervalles égaux au-dessus du plancher de l'écran (EDID 0xFD).
+  const auto apply_floor = [&] {
+    const int min_hz = p.display ? p.display->vrr_min_hz.value_or(0) : 0;
+    session.set_vrr_floor(vrr_armed ? core::vrr_floor_us(min_hz) : 0);
+  };
+  apply_floor();
   if (p.display)
     log->info("VRR : {} · {}", p.display->vrr.value_or(false) ? "capable" : "non capable",
               p.display->vrr_armed.value_or(false) ? "armé" : "non armé");
@@ -624,6 +631,7 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
                                (SDL_GetWindowFlags(out.window()) & SDL_WINDOW_FULLSCREEN) != 0);
           if (armed != vrr_armed) {
             vrr_armed = armed;
+            apply_floor();
             apply_auto();
           }
         }
@@ -639,6 +647,7 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
               !p.options.no_vrr && display->vrr.value_or(false) && display->vrr_armed.value_or(false);
           if (armed != vrr_armed) {
             vrr_armed = armed;
+            apply_floor();
             apply_auto();  // les demi-paliers suivent le VRR
           }
           log->info("VRR : {} · {}", display->vrr.value_or(false) ? "capable" : "non capable",

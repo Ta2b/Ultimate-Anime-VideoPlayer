@@ -9,6 +9,7 @@
 #include "app/play/i18n.h"
 #include "core/frame.h"
 #include "core/pacing.h"
+#include "core/vrr_floor.h"
 
 namespace ajp::app::play {
 namespace {
@@ -437,8 +438,11 @@ std::expected<std::optional<PresentRecord>, Refusal> Session::tick(std::int64_t 
   const bool cadence = config_.steady_cadence && config_.display_period_us > 0 && shown_once_ &&
                        host_now - shown_at_us_ >= config_.display_period_us - kCadenceSlackUs;
   if (cadence && why.empty()) why += 'c';
+  const std::int64_t floor_step = floor_step_us_now(host_now);
+  const bool floor_due = floor_step > 0 && host_now - shown_at_us_ >= floor_step - kCadenceSlackUs;
+  if (floor_due && why.empty()) why += 'f';
   if (shown_once_ && !fresh && !osd_changed && !ui_changed && look == shown_subtitles_ &&
-      size == shown_size_ && !cadence) {
+      size == shown_size_ && !cadence && !floor_due) {
     check_end(host_now);
     return std::optional<PresentRecord>{};
   }
@@ -489,6 +493,22 @@ std::expected<std::optional<PresentRecord>, Refusal> Session::tick(std::int64_t 
   return record;
 }
 
+std::int64_t Session::floor_step_us_now(std::int64_t host_now) const {
+  if (config_.vrr_floor_us <= 0 || !shown_once_ || !current_ || prerolling_) return 0;
+  const ClockSnapshot now = clock_.snapshot();
+  if (!now.valid || now.epoch != epoch_ || now.rate <= 0.0) return 0;
+  // La tenue attendue : le temps déjà passé, plus ce qui reste avant l'image suivante (inconnu : le
+  // plancher).
+  std::int64_t hold = host_now - shown_at_us_ + config_.vrr_floor_us;
+  if (const RingFrame* head = queue_.first_of(epoch_); head != nullptr && head->pts_us != kNoPts) {
+    const std::int64_t period = display_period();
+    const std::int64_t lead_us = display_delay_us(period) + period / 2;
+    const auto media_wait = static_cast<double>(head->pts_us - lead_us - now.media_at(host_now));
+    hold = host_now - shown_at_us_ + std::max<std::int64_t>(std::llround(media_wait / now.rate), 0);
+  }
+  return core::floor_step_us(hold, config_.vrr_floor_us);
+}
+
 std::int64_t Session::idle_wait_us(std::int64_t host_now) {
   constexpr std::int64_t kPollUs = 1'000;
   constexpr std::int64_t kIdleUs = 4'000;
@@ -505,6 +525,8 @@ std::int64_t Session::idle_wait_us(std::int64_t host_now) {
   // Cadence fixe : l'image se représente à chaque période de l'écran.
   if (config_.steady_cadence && config_.display_period_us > 0 && shown_once_)
     wait = std::min(wait, shown_at_us_ + config_.display_period_us - kCadenceSlackUs - host_now);
+  if (const std::int64_t step = floor_step_us_now(host_now); step > 0)
+    wait = std::min(wait, shown_at_us_ + step - kCadenceSlackUs - host_now);
   return std::clamp(wait, kPollUs, kIdleUs);
 }
 
