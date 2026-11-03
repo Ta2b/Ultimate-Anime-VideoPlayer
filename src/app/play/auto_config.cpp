@@ -48,6 +48,14 @@ constexpr std::array<int, kTierCount> kWorkCap{720, 540, 720, 720, 1080};
 // Le plus grand multiplicateur ×k du mode auto.
 constexpr std::array<int, kTierCount> kFactorCap{0, 2, 3, 4, 4};
 
+// RIFE 4.22 lite, ou le modèle plus fin que la machine a exploré quand il tient aussi.
+void use_rife_lite(PlaySettings& out, const PlaySettings& settings, const Machine& machine) {
+  out.motion_engine = MotionEngine::Rife;
+  out.rife_model = "rife_v4.22_lite.onnx";
+  if (settings.preset == Preset::Auto && !machine.explored_rife_model.empty())
+    out.rife_model = machine.explored_rife_model;
+}
+
 }  // namespace
 
 std::string_view key(Preset preset) {
@@ -147,15 +155,17 @@ PlaySettings apply_preset(const PlaySettings& settings, const Machine& machine,
       break;
     case Tier::Light:
     case Tier::Normal:
-      out.motion_engine = MotionEngine::Rife;
-      out.rife_model = "rife_v4.22_lite.onnx";
-      if (settings.preset == Preset::Auto && !machine.explored_rife_model.empty())
-        out.rife_model = machine.explored_rife_model;  // le modèle plus fin tient aussi
+      use_rife_lite(out, settings, machine);
       break;
     case Tier::Fast:
     case Tier::Ultra:
       // GMFSS Union sort du mode Auto (lourd, artefacts dans les gros mouvements) : il reste au choix manuel.
-      out.motion_engine = MotionEngine::DistilDrba;
+      // DistilDRBA y rentre quand sa porte de qualité est passée (kDistilDrbaInAuto).
+      if (kDistilDrbaInAuto) {
+        out.motion_engine = MotionEngine::DistilDrba;
+      } else {
+        use_rife_lite(out, settings, machine);
+      }
       break;
   }
   return out;

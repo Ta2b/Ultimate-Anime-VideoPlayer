@@ -16,6 +16,11 @@
 
 namespace ajp::app::play {
 
+// DistilDRBA dans l'Auto (tranches Rapide et Ultra) : faux tant que sa porte de qualité n'est pas passée
+// (docs/adr/0003) ; ces tranches prennent alors RIFE 4.22 lite, comme les deux du dessous. Le choix manuel
+// de DistilDRBA reste ouvert.
+inline constexpr bool kDistilDrbaInAuto = false;
+
 std::string_view key(
     Preset preset);  // « auto », « economy », « fast », « normal », « quality », « ultra », « custom »
 std::string_view label(Preset preset);  // « Auto », « Économe », « Rapide », « Normal », « Qualité », « Ultra
