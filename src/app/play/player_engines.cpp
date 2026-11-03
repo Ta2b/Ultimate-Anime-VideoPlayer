@@ -1,5 +1,6 @@
 #include "app/play/player_engines.h"
 
+#include <algorithm>
 #include <format>
 #include <string_view>
 #include <utility>

@@ -2,6 +2,7 @@
 // contre ses noyaux de référence. Des variantes justes passent la porte ; les mêmes choix n'ont aucun écart.
 #include "gpu/vulkan/backend/net_gate.h"
 
+#include <algorithm>
 #include <cstddef>
 #include <vector>
 
