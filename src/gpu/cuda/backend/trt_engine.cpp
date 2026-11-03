@@ -235,10 +235,36 @@ std::expected<void, Refusal> TrtEngine::place(const std::shared_ptr<SharedActiva
   return {};
 }
 
+std::expected<void, Refusal> TrtEngine::match_aux_priority(cudaStream_t stream) {
+  if (aux_streams_.empty()) return {};
+  int priority = 0;
+  if (cudaStreamGetPriority(stream, &priority) != cudaSuccess) {
+    if (const cudaError_t lost = clear_error(); lost != cudaSuccess)
+      return std::unexpected(cuda_refusal(lost, "cudaStreamGetPriority"));
+    return {};  // priorité inconnue : les files gardent la leur
+  }
+  if (priority == aux_priority_) return {};
+  // Une file détruite pendant un travail en vol attend sa fin (cudaStreamDestroy) : sans risque ici.
+  for (cudaStream_t& aux : aux_streams_) {
+    cudaStream_t fresh = nullptr;
+    if (cudaStreamCreateWithPriority(&fresh, cudaStreamNonBlocking, priority) != cudaSuccess) {
+      if (const cudaError_t lost = clear_error(); lost != cudaSuccess)
+        return std::unexpected(cuda_refusal(lost, "cudaStreamCreateWithPriority (file auxiliaire)"));
+      return {};  // gardée telle quelle
+    }
+    cudaStreamDestroy(aux);
+    aux = fresh;
+  }
+  aux_priority_ = priority;
+  drop_graphs();  // les graphes capturés nommaient les anciennes files
+  return {};
+}
+
 std::expected<void, Refusal> TrtEngine::enqueue_plain(cudaStream_t stream,
                                                       const std::shared_ptr<SharedActivations>& arena,
                                                       std::span<const Tensor> inputs,
                                                       std::span<const Tensor> outputs) {
+  if (auto ok = match_aux_priority(stream); !ok) return ok;
   if (auto ok = place(arena, inputs, outputs); !ok) return ok;
   if (!context_->enqueueV3(stream))
     return refuse(RefusalCode::VendorCallFailed, "IExecutionContext::enqueueV3 a échoué");
@@ -249,6 +275,7 @@ std::expected<void, Refusal> TrtEngine::enqueue(cudaStream_t stream,
                                                 const std::shared_ptr<SharedActivations>& arena,
                                                 std::span<const Tensor> inputs,
                                                 std::span<const Tensor> outputs) {
+  if (auto ok = match_aux_priority(stream); !ok) return ok;
   if (auto ok = place(arena, inputs, outputs); !ok) return ok;
   if (book_.off()) return launch(stream, {});
   std::vector<std::uintptr_t> addresses;
