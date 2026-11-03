@@ -4,8 +4,10 @@
 #include <NvInferVersion.h>
 #include <algorithm>
 #include <bit>
+#include <cstdint>
 #include <cuda.h>
 #include <format>
+#include <memory>
 #include <string>
 #include <utility>
 
@@ -103,13 +105,19 @@ DeviceUuid uuid_of(const cudaDeviceProp& properties) {
   return uuid;
 }
 
-// Tenseur alloué par cudaMalloc, libéré à sa destruction.
+// Tenseur alloué dans le pool de l'appareil, rendu à sa destruction : en file derrière toutes les voies
+// tant que le backend vit (sans synchroniser l'appareil), par cudaFree ensuite.
 class CudaTensorBuffer final : public TensorBuffer {
  public:
-  CudaTensorBuffer(int device, void* memory, Tensor tensor)
-      : device_(device), memory_(memory), tensor_(tensor) {}
+  CudaTensorBuffer(int device, void* memory, Tensor tensor,
+                   std::weak_ptr<TensorRtBackend::TensorReleaser> releaser)
+      : device_(device), memory_(memory), tensor_(tensor), releaser_(std::move(releaser)) {}
   ~CudaTensorBuffer() override {
     cudaSetDevice(device_);
+    if (const auto owner = releaser_.lock(); owner && owner->backend != nullptr) {
+      owner->backend->free_after_lanes(memory_);
+      return;
+    }
     cudaFree(memory_);
   }
   CudaTensorBuffer(const CudaTensorBuffer&) = delete;
@@ -120,6 +128,7 @@ class CudaTensorBuffer final : public TensorBuffer {
   int device_;
   void* memory_;
   Tensor tensor_;
+  std::weak_ptr<TensorRtBackend::TensorReleaser> releaser_;
 };
 
 std::size_t element_size(TensorType type) {
@@ -204,6 +213,7 @@ std::expected<std::unique_ptr<TensorRtBackend>, Refusal> TensorRtBackend::create
 }
 
 TensorRtBackend::~TensorRtBackend() {
+  releaser_->backend = nullptr;  // un tenseur détruit après le backend se libère par cudaFree
   if (stream_ == nullptr) return;
   cudaSetDevice(device_);
   destroy_textures();
@@ -360,9 +370,47 @@ std::expected<std::unique_ptr<TensorBuffer>, Refusal> TensorRtBackend::alloc_ten
   }
   if (auto ok = bind(); !ok) return std::unexpected(ok.error());
   void* memory = nullptr;
-  if (auto ok = cuda_check(cudaMalloc(&memory, bytes), "cudaMalloc"); !ok) return std::unexpected(ok.error());
+  // Dans le pool, sur la file courante, puis cette file attendue : le tenseur est aussitôt valable pour
+  // toutes les voies. Une allocation se fait à la préparation, rarement pendant la lecture.
+  if (auto ok = cuda_check(cudaMallocAsync(&memory, bytes, stream_), "cudaMallocAsync"); !ok)
+    return std::unexpected(ok.error());
+  if (auto ok = cuda_check(cudaStreamSynchronize(stream_), "cudaStreamSynchronize"); !ok) {
+    cudaFree(memory);
+    return std::unexpected(ok.error());
+  }
   const Tensor tensor{.type = type, .shape = shape, .handle = reinterpret_cast<std::uintptr_t>(memory)};
-  return std::make_unique<CudaTensorBuffer>(device_, memory, tensor);
+  return std::make_unique<CudaTensorBuffer>(device_, memory, tensor, releaser_);
+}
+
+void TensorRtBackend::free_after_lanes(void* memory) {
+  if (memory == nullptr) return;
+  cudaStream_t free_on = stream_;
+  bool ordered = free_on != nullptr;
+  for (cudaStream_t lane : streams_) {
+    if (!ordered) break;
+    if (lane == nullptr || lane == free_on) continue;
+    cudaEvent_t mark = nullptr;
+    ordered = cudaEventCreateWithFlags(&mark, cudaEventDisableTiming) == cudaSuccess &&
+              cudaEventRecord(mark, lane) == cudaSuccess &&
+              cudaStreamWaitEvent(free_on, mark, 0) == cudaSuccess;
+    if (mark != nullptr) cudaEventDestroy(mark);  // détruit une fois atteint, l'attente reste posée
+  }
+  if (ordered && cudaFreeAsync(memory, free_on) == cudaSuccess) return;
+  static_cast<void>(clear_error());
+  cudaFree(memory);  // repli : la libération synchrone d'avant
+}
+
+void TensorRtBackend::tune_pool() {
+  cudaMemPool_t pool = nullptr;
+  if (cudaDeviceGetDefaultMemPool(&pool, device_) != cudaSuccess) {
+    static_cast<void>(clear_error());
+    return;
+  }
+  std::uint64_t keep = UINT64_MAX;
+  int internal = 0;
+  if (cudaMemPoolSetAttribute(pool, cudaMemPoolAttrReleaseThreshold, &keep) != cudaSuccess ||
+      cudaMemPoolSetAttribute(pool, cudaMemPoolReuseAllowInternalDependencies, &internal) != cudaSuccess)
+    static_cast<void>(clear_error());
 }
 
 GpuTiming& TensorRtBackend::stage(std::string_view name) {

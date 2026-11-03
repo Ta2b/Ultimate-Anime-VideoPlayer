@@ -48,6 +48,7 @@ std::expected<void, Refusal> TensorRtBackend::create_lanes() {
   }
   lane_ = Lane::Upscale;
   stream_ = streams_[lane_index(lane_)];
+  tune_pool();
   return {};
 }
 

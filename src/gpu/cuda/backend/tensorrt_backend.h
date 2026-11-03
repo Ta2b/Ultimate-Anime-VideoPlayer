@@ -273,6 +273,21 @@ class TensorRtBackend final : public Backend, public KernelOps {
   std::filesystem::path trtexec_;
   BackendLog log_;
   cudaStream_t stream_ = nullptr;  // la file de la voie courante, l'une de streams_
+ public:
+  // Ce que garde un tenseur alloué ici pour se libérer sans synchroniser l'appareil (étape 11.4) : tant que
+  // le backend vit, la libération passe par free_after_lanes ; après, par cudaFree.
+  struct TensorReleaser {
+    TensorRtBackend* backend = nullptr;
+  };
+  // cudaFreeAsync sur la file courante, après un événement de chaque autre voie : la mémoire revient au
+  // pool quand toutes les voies ont dépassé ce point, sans cudaFree (qui synchronise l'appareil).
+  void free_after_lanes(void* memory);
+
+ private:
+  std::shared_ptr<TensorReleaser> releaser_ = std::make_shared<TensorReleaser>(TensorReleaser{this});
+  // Pool par défaut réglé une fois : rien n'est rendu au système entre deux images, et pas de
+  // réutilisation par dépendances internes (le flux d'une voie ne dépend jamais d'une autre par le pool).
+  void tune_pool();
   std::array<cudaStream_t, kLanes> streams_{};
   std::array<std::array<cudaEvent_t, kLaneMarks>, kLanes> lane_events_{};
   std::array<std::uint64_t, kLanes> unrecorded_{};  // rang dont l'événement reste à poser ; 0 : aucun
