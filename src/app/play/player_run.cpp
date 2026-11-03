@@ -54,6 +54,7 @@
 #include "app/play/span_int8.h"
 #include "app/play/ui.h"
 #include "app/play/upscale_stage.h"
+#include "app/play/vrr_watch.h"
 #include "audio/devices.h"
 #include "core/auto_memory.h"
 #include "core/auto_rate.h"
@@ -476,6 +477,7 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
   int auto_stored = 0;
   // Le palier du mode auto : un message à l'écran et une ligne de journal à chaque changement.
   bool vrr_fullscreen = false;
+  VrrWatch vrr_watch(vrr_armed);
   if (p.display)
     log->info("VRR : {} · {}", p.display->vrr.value_or(false) ? "capable" : "non capable",
               p.display->vrr_armed.value_or(false) ? "armé" : "non armé");
@@ -610,6 +612,19 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
       free_dropped_seen = shown.dropped;
       chain.live.auto_tick(host_now_us(), !session.view().paused);
       show_auto();
+      // KDE arme et désarme le VRR selon la fenêtre active : relu à chaque tour (un seul ioctl).
+      if (p.display && !p.display->connector.empty()) {
+        if (const auto now = vrr_watch.observe(vrr_armed_now(p.display->connector))) {
+          const bool armed = !p.options.no_vrr && p.display->vrr.value_or(false) && *now;
+          log->info("VRR : {}", *now ? "armé" : "non armé");
+          p.ui.set_display_vrr(p.display->vrr.value_or(false), *now,
+                               (SDL_GetWindowFlags(out.window()) & SDL_WINDOW_FULLSCREEN) != 0);
+          if (armed != vrr_armed) {
+            vrr_armed = armed;
+            apply_auto();
+          }
+        }
+      }
       // KDE arme le VRR en plein écran seulement : on le relit quand la fenêtre change d'état.
       const bool fullscreen = (SDL_GetWindowFlags(out.window()) & SDL_WINDOW_FULLSCREEN) != 0;
       if (fullscreen != vrr_fullscreen || display_changed) {

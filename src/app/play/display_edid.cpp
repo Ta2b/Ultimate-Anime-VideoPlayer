@@ -368,4 +368,13 @@ std::optional<DisplayFacts> read_display(std::string_view wanted) {
   return found.front();
 }
 
+std::optional<bool> vrr_armed_now([[maybe_unused]] std::string_view connector) {
+#if defined(__linux__)
+  if (connector.empty()) return std::nullopt;
+  return drm_vrr_armed(std::filesystem::path("/sys/class/drm") / std::string(connector));
+#else
+  return std::nullopt;
+#endif
+}
+
 }  // namespace ajp::app::play
