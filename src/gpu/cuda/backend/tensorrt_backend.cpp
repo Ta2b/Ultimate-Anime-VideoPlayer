@@ -251,10 +251,6 @@ TensorRtBackend::~TensorRtBackend() {
   if (splat_sums_ != nullptr) cudaFree(splat_sums_);
   if (ingest_rows_ != nullptr) cudaFree(ingest_rows_);
   if (deband_out_ != nullptr) cudaFree(deband_out_);
-  for (RetiredBuffer& buffer : retired_buffers_) {
-    for (cudaEvent_t event : buffer.done) cudaEventDestroy(event);
-    cudaFree(buffer.device);
-  }
   uploads_.reset();  // attend ses envois et les ingestions qui les lisent
   release_yuv_tables();
   for (const MappedFences& block : mapped_fences_) cudaHostUnregister(block.host);  // pas rendus par l'étage

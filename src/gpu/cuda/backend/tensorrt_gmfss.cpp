@@ -158,11 +158,13 @@ std::expected<void, Refusal> TensorRtBackend::splat(std::span<const KernelOps::S
   }
   if (auto ok = bind(); !ok) return ok;
   if (total > splat_bytes_) {
-    // cudaFree attend la fin de tout ce que l'appareil exécute : les splats en cours compris.
-    if (splat_sums_ != nullptr) cudaFree(splat_sums_);
+    // Les splats en cours peuvent encore lire l'ancien tampon : rendu derrière toutes les voies (11.4).
+    if (splat_sums_ != nullptr) free_after_lanes(splat_sums_);
     splat_sums_ = nullptr;
     splat_bytes_ = 0;
-    if (auto ok = cuda_check(cudaMalloc(reinterpret_cast<void**>(&splat_sums_), total), "cudaMalloc"); !ok)
+    if (auto ok = cuda_check(cudaMallocAsync(reinterpret_cast<void**>(&splat_sums_), total, stream_),
+                             "cudaMallocAsync");
+        !ok)
       return ok;
     splat_bytes_ = total;
   }

@@ -230,9 +230,6 @@ class TensorRtBackend final : public Backend, public KernelOps {
   void release_retired();
   void push_launches();  // WDDM : envoie le lot de lancements (Windows seulement)
   std::expected<void, Refusal> reserve_deband(std::size_t bytes);
-  // Met un tampon d'appareil de côté : libéré quand chaque voie a passé ce qu'elle avait enfilé,
-  // sans attendre l'appareil entier en cours de lecture.
-  std::expected<void, Refusal> retire_buffer(void* buffer);
   // warp_blend et warp_blend_poses : le même noyau, l'instant réglé ou non.
   struct Poses {
     bool keep = false;
@@ -321,11 +318,6 @@ class TensorRtBackend final : public Backend, public KernelOps {
   // Imports d'une génération remplacée, relâchés quand retired_done_ est passé côté GPU.
   std::vector<std::unique_ptr<ImportedSlot>> retired_;
   cudaEvent_t retired_done_ = nullptr;
-  struct RetiredBuffer {
-    void* device = nullptr;
-    std::vector<cudaEvent_t> done;  // un événement par voie
-  };
-  std::vector<RetiredBuffer> retired_buffers_;
   // Mesures relues par l'hôte (scores_start, flow_max_start) : côté GPU, puis copiées dans une
   // mémoire hôte épinglée ; kPendingReadbacks emplacements à tour de rôle, chacun avec l'événement
   // qui suit sa copie, seul attendu par la relecture.
