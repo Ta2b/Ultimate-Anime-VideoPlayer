@@ -25,7 +25,7 @@ class Grade {
  public:
   // VendorCallFailed : un hook ne se lit pas ; FieldMissing : un //!PARAM attendu manque.
   static std::expected<Grade, Refusal> create(pl_gpu gpu, GradeBody body = GradeBody::Fused,
-                                              bool no_skin_mask = false);
+                                              bool skin_mask = true);
 
   Grade(Grade&&) noexcept;
   Grade& operator=(Grade&&) noexcept;

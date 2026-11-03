@@ -124,7 +124,7 @@ struct PlayOptions {
   bool legacy_grade = false;
   // --grade-deband : le grade fait précéder la source d'un débandage (placebo_screen.cpp) ; coupé par défaut.
   bool grade_deband = false;
-  bool no_skin_mask = false;  // --no-skin-mask : essai, le masque peau du grade rend toujours 0
+  bool skin_mask = false;  // --skin-mask : le grade distingue la peau (coupé par défaut)
   // --no-vrr : traite l'écran comme à fréquence fixe même si le VRR est armé (essai du mode Rapide sur les
   // vsyncs).
   bool no_vrr = false;

@@ -57,7 +57,7 @@ struct ScreenOptions {
   bool allow_software = false;  // appareil Vulkan logiciel (lavapipe) accepté : essais sans GPU
   bool legacy_grade = false;    // --legacy-grade : le grade d'avant (render::GradeBody::Legacy)
   bool grade_deband = false;    // --grade-deband : débandage devant le grade (coupé par défaut)
-  bool no_skin_mask = false;    // --no-skin-mask : le masque peau du grade rend 0 (essai)
+  bool skin_mask = false;       // --skin-mask : le masque peau du grade rend 0 (essai)
   // Le cache des shaders et pipelines de libplacebo (le grade, ses passes, les LUT) : relu à l'ouverture,
   // gardé à la fermeture. Sans lui, tout se recompile à chaque lancement. Vide : pas de cache.
   std::filesystem::path shader_cache;
