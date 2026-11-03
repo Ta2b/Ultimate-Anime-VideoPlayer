@@ -184,9 +184,9 @@ struct PlaySettings {
   // Plafond de la cadence de sortie du mode auto, en i/s (60, 120…) ; 0 : celle de l'écran, le maximum.
   int auto_cap = 0;
   // Mode d'Auto : « libre » (Rapide, le défaut depuis C6 : aucun palier, chaque image est calculée à
-  // l'instant exact où elle sera vue, core/free_grid.h) ou « recommande » (Stable : paliers, core/auto_rate.h).
-  // En direct ; Rapide se replie sans bruit sur Stable quand l'écran ou le moteur ne le permettent pas, et
-  // quand il perd trop d'images.
+  // l'instant exact où elle sera vue, core/free_grid.h) ou « recommande » (Stable : paliers,
+  // core/auto_rate.h). En direct ; Rapide se replie sans bruit sur Stable quand l'écran ou le moteur ne le
+  // permettent pas, et quand il perd trop d'images.
   bool auto_free = true;
   MotionEngine motion_engine = MotionEngine::Rife;
   std::string rife_model;  // fichier ONNX de RIFE (nom seul) ; vide : le défaut de la carte
