@@ -134,10 +134,13 @@ std::expected<void, Refusal> PlaceboScreen::Impl::compose(const pl_frame* image,
   }();
   // Le grain de libplacebo (4 codes) serait étiré par le grade, surtout dans les ombres et sur les peaux :
   // sous le grade, même le débandage demandé à la main part sans grain.
-  if (deband)
-    params.deband_params = graded_now ? &kGradeDeband : &pl_deband_default_params;
-  else if (graded_now && !source_debanded && grade_deband)
-    params.deband_params = &kGradeDeband;
+  // Mesuré : même sans grain, ce débandage fabrique du bruit dans les aplats sombres que le grade étire ;
+  // sous le grade il n'est donc posé (réglage manuel compris) que par --grade-deband.
+  if (graded_now) {
+    if (grade_deband && (deband || !source_debanded)) params.deband_params = &kGradeDeband;
+  } else if (deband) {
+    params.deband_params = &pl_deband_default_params;
+  }
   if (graded_now) {
     const std::span<const pl_hook* const> hooks = grade->hooks();
     params.hooks = hooks.data();
