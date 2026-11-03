@@ -88,8 +88,19 @@ class GraphBook {
     }
   }
 
-  // Un rejeu ou un lancement qui échoue : compté (l'appelant refuse l'image).
-  void launch_failed() { ++counters_.launch_failures; }
+  // Un rejeu ou un lancement qui échoue sans erreur collante : compté ; le graphe de cet emplacement est
+  // oublié (l'appelant le détruit et lance en direct), il se recapture au passage suivant. Après
+  // kMaxLaunchFailures échecs, les graphes se coupent avec une notice.
+  static constexpr int kMaxLaunchFailures = 3;
+  void launch_failed(std::size_t index) {
+    ++counters_.launch_failures;
+    if (index < entries_.size()) entries_[index].ready = false;
+    if (static_cast<int>(counters_.launch_failures) >= kMaxLaunchFailures && !off_) {
+      off_ = true;
+      notice_ = std::format("graphes CUDA coupés : rejeu refusé {} fois, lancements directs",
+                            counters_.launch_failures);
+    }
+  }
 
   bool off() const { return off_; }
   const GraphCounters& counters() const { return counters_; }

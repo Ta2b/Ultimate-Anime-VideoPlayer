@@ -36,4 +36,25 @@ TEST_CASE("Graphes : trois captures refusées coupent les graphes", "[gpu][graph
   CHECK(book.take_notice().find("refusée") != std::string::npos);
 }
 
+TEST_CASE("Graphes : un rejeu refusé repasse en direct, puis se recapture", "[gpu][graphs]") {
+  GraphBook<int> book(4, 3);
+  static_cast<void>(book.next(1));  // chaud
+  const auto capture = book.next(1);
+  REQUIRE(capture.step == GraphStep::Capture);
+  book.captured(true);
+  const auto replay = book.next(1);
+  REQUIRE(replay.step == GraphStep::Replay);
+  book.launch_failed(replay.index);
+  CHECK(book.counters().launch_failures == 1);
+  CHECK_FALSE(book.off());
+  CHECK(book.next(1).step == GraphStep::Capture);  // recapturé
+  book.captured(true);
+  CHECK(book.next(1).step == GraphStep::Replay);
+  book.launch_failed(0);
+  book.launch_failed(0);
+  CHECK(book.off());  // trois échecs : graphes coupés
+  CHECK(book.next(1).step == GraphStep::Direct);
+  CHECK(book.take_notice().find("rejeu refusé") != std::string::npos);
+}
+
 }  // namespace ajp::gpu

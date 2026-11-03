@@ -8,6 +8,8 @@
 #include <memory>
 #include <system_error>
 
+#include "gpu/cuda/backend/cuda_status.h"
+
 namespace ajp::gpu::cuda {
 namespace {
 
@@ -140,8 +142,10 @@ std::expected<std::unique_ptr<TrtEngine>, Refusal> TrtEngine::load(
   }
   for (int i = 0; i < engine->engine_->getNbAuxStreams(); ++i) {
     cudaStream_t aux = nullptr;
-    if (cudaStreamCreateWithFlags(&aux, cudaStreamNonBlocking) != cudaSuccess) {
-      static_cast<void>(cudaGetLastError());
+    if (const cudaError_t made = cudaStreamCreateWithFlags(&aux, cudaStreamNonBlocking);
+        made != cudaSuccess) {
+      if (const cudaError_t lost = clear_error(); lost != cudaSuccess)
+        return std::unexpected(cuda_refusal(lost, "cudaStreamCreateWithFlags (file auxiliaire)"));
       return refuse(RefusalCode::VendorCallFailed, "cudaStreamCreateWithFlags (file auxiliaire)");
     }
     engine->aux_streams_.push_back(aux);
@@ -265,13 +269,20 @@ std::expected<void, Refusal> TrtEngine::launch(cudaStream_t stream,
     return direct();  // Warm : le premier lancement fait ses allocations hors capture
   if (execs_.size() <= pick.index) execs_.resize(pick.index + 1, nullptr);
   cudaGraphExec_t& exec = execs_[pick.index];
-  if (pick.step == GraphStep::Replay) {
-    if (cudaGraphLaunch(exec, stream) != cudaSuccess) {
-      book_.launch_failed();
-      return refuse(RefusalCode::VendorCallFailed, "cudaGraphLaunch a échoué");
-    }
-    return {};
-  }
+  // Un rejeu refusé sans erreur collante : graphe détruit, lancement direct, recapture au passage suivant
+  // (GraphBook::launch_failed) ; une erreur collante : contexte perdu.
+  const auto replay = [&]() -> std::expected<void, Refusal> {
+    const cudaError_t launched = cudaGraphLaunch(exec, stream);
+    if (launched == cudaSuccess) return {};
+    if (sticky(launched)) return std::unexpected(cuda_refusal(launched, "cudaGraphLaunch"));
+    cudaGraphExecDestroy(exec);
+    exec = nullptr;
+    book_.launch_failed(pick.index);
+    if (const cudaError_t lost = clear_error(); lost != cudaSuccess)
+      return std::unexpected(cuda_refusal(lost, "cudaGraphLaunch"));
+    return direct();
+  };
+  if (pick.step == GraphStep::Replay) return replay();
   cudaGraph_t captured = nullptr;
   bool queued = false;
   cudaError_t error = cudaStreamBeginCapture(stream, cudaStreamCaptureModeThreadLocal);
@@ -286,18 +297,15 @@ std::expected<void, Refusal> TrtEngine::launch(cudaStream_t stream,
     // travail et l'erreur est effacée. Le lancement suivant réessaie ; après kCaptureAttempts refus, le
     // registre coupe les graphes et le backend le dit dans le journal.
     exec = nullptr;
-    static_cast<void>(cudaGetLastError());
+    if (const cudaError_t lost = clear_error(); lost != cudaSuccess)
+      return std::unexpected(cuda_refusal(lost, "capture du graphe"));
     book_.captured(false, !queued                ? "enqueueV3 a échoué pendant la capture"
                           : error != cudaSuccess ? cudaGetErrorString(error)
                                                  : "graphe vide");
     return direct();
   }
   book_.captured(true);
-  if (cudaGraphLaunch(exec, stream) != cudaSuccess) {
-    book_.launch_failed();
-    return refuse(RefusalCode::VendorCallFailed, "cudaGraphLaunch a échoué");
-  }
-  return {};
+  return replay();
 }
 
 }  // namespace ajp::gpu::cuda

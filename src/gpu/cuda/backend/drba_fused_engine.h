@@ -112,6 +112,8 @@ class DrbaFusedEngine final : public Engine {
   std::vector<Graph> graphs_;
   bool graphs_off_ = false;
   int capture_failures_ = 0;
+  int launch_failures_ = 0;
+  static constexpr int kMaxLaunchFailures = 3;
   std::string notice_;
   // Ce que le dernier appel mené jusqu'au bout a laissé dans la zone : images réduites et encodages de ces
   // paires (D6). Repris seulement si la zone est la même et qu'aucun autre moteur n'y a écrit depuis.

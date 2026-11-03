@@ -331,11 +331,24 @@ std::expected<void, Refusal> RifeFusedEngine::enqueue(cudaStream_t stream,
     found = graphs_.end() - 1;
   }
   Graph& graph = *found;
-  if (graph.exec != nullptr) {
-    if (cudaGraphLaunch(graph.exec, stream) != cudaSuccess)
-      return refuse(RefusalCode::VendorCallFailed, "RIFE fusionné : cudaGraphLaunch a échoué");
-    return {};
-  }
+  // Un rejeu refusé sans erreur collante : graphe détruit, lancement direct, recapture au passage suivant ;
+  // après kMaxLaunchFailures refus, graphes coupés. Une erreur collante : contexte perdu.
+  const auto replay = [&]() -> std::expected<void, Refusal> {
+    const cudaError_t launched = cudaGraphLaunch(graph.exec, stream);
+    if (launched == cudaSuccess) return {};
+    if (sticky(launched)) return std::unexpected(cuda_refusal(launched, "RIFE fusionné : cudaGraphLaunch"));
+    cudaGraphExecDestroy(graph.exec);
+    graph.exec = nullptr;
+    if (++launch_failures_ >= kMaxLaunchFailures && !graphs_off_) {
+      graphs_off_ = true;
+      notice_ =
+          std::format("graphes CUDA coupés : rejeu refusé {} fois, lancements directs", launch_failures_);
+    }
+    if (const cudaError_t lost = clear_error(); lost != cudaSuccess)
+      return std::unexpected(cuda_refusal(lost, "RIFE fusionné : cudaGraphLaunch"));
+    return run(stream, arena, inputs[0], outputs);
+  };
+  if (graph.exec != nullptr) return replay();
   if (!graph.warmed) {  // le premier lancement fait ses allocations hors capture
     graph.warmed = true;
     return run(stream, arena, inputs[0], outputs);
@@ -354,7 +367,8 @@ std::expected<void, Refusal> RifeFusedEngine::enqueue(cudaStream_t stream,
     // Capture refusée : rien n'a tourné (la capture enregistre sans exécuter), le lancement direct fait le
     // travail.
     graph.exec = nullptr;
-    static_cast<void>(cudaGetLastError());
+    if (const cudaError_t lost = clear_error(); lost != cudaSuccess)
+      return std::unexpected(cuda_refusal(lost, "RIFE fusionné : capture du graphe"));
     ++capture_failures_;
     if (capture_failures_ >= kCaptureAttempts) {
       graphs_off_ = true;
@@ -366,9 +380,7 @@ std::expected<void, Refusal> RifeFusedEngine::enqueue(cudaStream_t stream,
     }
     return run(stream, arena, inputs[0], outputs);
   }
-  if (cudaGraphLaunch(graph.exec, stream) != cudaSuccess)
-    return refuse(RefusalCode::VendorCallFailed, "RIFE fusionné : cudaGraphLaunch a échoué");
-  return {};
+  return replay();
 }
 
 }  // namespace ajp::gpu::cuda
