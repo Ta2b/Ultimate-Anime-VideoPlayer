@@ -284,6 +284,8 @@ struct GradeParams {
   // inconnue) et sa part claire, données par le lecteur. Le grade d'avant les mesure lui-même.
   double fs_apl = -1.0;
   double fs_bright = 0.0;
+  // Méthode « HDR anime » (GradeBody::Anime) : relèvement fixe des surfaces, le même dans tous les plans.
+  double an_lift = 1.15;
   friend bool operator==(const GradeParams&, const GradeParams&) = default;
 };
 

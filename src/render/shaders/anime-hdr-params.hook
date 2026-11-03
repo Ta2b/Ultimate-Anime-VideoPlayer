@@ -452,6 +452,13 @@
 //!MAXIMUM 1.0
 0.0
 
+//!PARAM an_lift
+//!DESC HDR anime : releve fixe des surfaces (le meme dans tous les plans)
+//!TYPE float
+//!MINIMUM 0.5
+//!MAXIMUM 3.0
+1.15
+
 //!PARAM video_fps
 //!DESC Images video distinctes par seconde a l'ecran (source x interpolation) : les lissages sont en secondes
 //!TYPE float

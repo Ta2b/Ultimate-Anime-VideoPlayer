@@ -10,11 +10,13 @@ ajp_add_module(render
 # trois passes dont la scène vient du lecteur (anime-hdr-fused), ou celui d'avant en neuf passes
 # (anime-hdr-grade : analyse dans le shader), gardé une version derrière --legacy-grade.
 file(GLOB render_hook_parts CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/shaders/anime-hdr-grade/*.hook"
-     "${CMAKE_CURRENT_SOURCE_DIR}/shaders/anime-hdr-fused/*.hook")
+     "${CMAKE_CURRENT_SOURCE_DIR}/shaders/anime-hdr-fused/*.hook"
+     "${CMAKE_CURRENT_SOURCE_DIR}/shaders/anime-hdr-anime/*.hook")
 set(render_hooks
   "${CMAKE_CURRENT_SOURCE_DIR}/shaders/anime-hdr-params.hook"
   "${CMAKE_CURRENT_SOURCE_DIR}/shaders/anime-hdr-grade"
   "${CMAKE_CURRENT_SOURCE_DIR}/shaders/anime-hdr-fused"
+  "${CMAKE_CURRENT_SOURCE_DIR}/shaders/anime-hdr-anime"
   "${CMAKE_CURRENT_SOURCE_DIR}/shaders/anime-hdr-look.hook"
   "${CMAKE_CURRENT_SOURCE_DIR}/shaders/anime-hdr-black.hook"
   "${CMAKE_CURRENT_SOURCE_DIR}/shaders/anime-hdr-calibration.hook")

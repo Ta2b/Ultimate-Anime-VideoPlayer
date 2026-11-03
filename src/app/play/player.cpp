@@ -192,6 +192,7 @@ std::expected<void, Refusal> play(const PlayOptions& options, const PlayerPaths&
                                         .kde_sdr_nits = options.kde_sdr_nits,
                                         .smooth_motion = saved->smooth_motion && saved->rife_factor >= 2,
                                         .allow_software = options.software_gpu,
+                                        .hdr_anime = options.hdr_anime,
                                         .legacy_grade = options.legacy_grade,
                                         .grade_deband = options.grade_deband,
                                         .skin_mask = options.skin_mask,

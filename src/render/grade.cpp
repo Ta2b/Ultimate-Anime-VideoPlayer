@@ -83,6 +83,7 @@ constexpr std::array kGradeParams = {
     ParamBinding{"sh_series", &GradeParams::sh_series},
     ParamBinding{"fs_apl", &GradeParams::fs_apl},
     ParamBinding{"fs_bright", &GradeParams::fs_bright},
+    ParamBinding{"an_lift", &GradeParams::an_lift},
 };
 
 constexpr std::array kLookParams = {
@@ -290,14 +291,24 @@ std::expected<Grade, Refusal> Grade::create(pl_gpu gpu, GradeBody body, bool ski
   impl->gpu = gpu;
   const bool legacy = body == GradeBody::Legacy;
   std::string text(shaders::anime_hdr_params);
-  text += legacy ? shaders::anime_hdr_grade : shaders::anime_hdr_fused;
+  if (body == GradeBody::Anime) {
+    // Les deux premières passes (carte locale, zone) du grade en trois passes, puis la passe « anime ».
+    const std::string_view fused = shaders::anime_hdr_fused;
+    text += fused.substr(0, fused.rfind("//!HOOK OUTPUT"));
+    text += shaders::anime_hdr_anime;
+  } else {
+    text += legacy ? shaders::anime_hdr_grade : shaders::anime_hdr_fused;
+  }
   if (!skin_mask) {
     // Le masque peau (damier sur le grain d'une peau pâle, mesuré à l'écran) est coupé sauf --skin-mask.
     constexpr std::string_view kHead = "float skin_area(vec2 pos) {";
     if (const auto at = text.find(kHead); at != std::string::npos)
       text.insert(at + kHead.size(), "\n    return 0.0;\n}\nfloat skin_area_off(vec2 pos) {");
   }
-  auto grade = parse(gpu, text, legacy ? "anime-hdr-grade" : "anime-hdr-fused", kGradeParams);
+  auto grade =
+      parse(gpu, text,
+            legacy ? "anime-hdr-grade" : (body == GradeBody::Anime ? "anime-hdr-anime" : "anime-hdr-fused"),
+            kGradeParams);
   if (!grade) return std::unexpected(grade.error());
   impl->grade = std::move(*grade);
   auto look = parse_look(gpu, {});

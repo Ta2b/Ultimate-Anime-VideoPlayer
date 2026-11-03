@@ -19,7 +19,9 @@ namespace ajp::render {
 
 // Le corps du grade : en trois passes, la scène donnée par le lecteur (GradeParams::fs_apl, fs_bright,
 // sh_*) ; ou celui d'avant en neuf passes, qui mesure la scène lui-même (--legacy-grade, une version).
-enum class GradeBody : std::uint8_t { Fused, Legacy };
+// Ou la méthode « HDR anime » (--hdr-anime) : surfaces ancrées, seuls les émetteurs montent, appliquée par un
+// gain lisse (anime-hdr-anime) ; elle réutilise les deux premières passes du grade en trois passes.
+enum class GradeBody : std::uint8_t { Fused, Legacy, Anime };
 
 class Grade {
  public:
