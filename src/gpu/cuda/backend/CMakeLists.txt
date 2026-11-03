@@ -33,11 +33,11 @@ if(AJP_WITH_SPAN_FP8)
   # SYSTEM : les avertissements de CUTLASS ne sont pas les nôtres.
   target_include_directories(ajp_backend_span_fp8_kernels SYSTEM PRIVATE "${AJP_CUTLASS_INCLUDE}")
   target_link_libraries(ajp_backend_span_fp8_kernels PRIVATE ajp::gpu_span_fp8 ajp::dep::cudart)
-  # sm 89 seulement : les mma FP8 n'existent pas avant, et la liste AJP_CUDA_ARCHITECTURES n'y change rien. Le
-  # PTX (89 = code réel et virtuel) garde le module chargeable sur une carte plus récente, où supported_device
-  # refuse de lancer les noyaux.
+  # sm 89 (Ada) et sm 120 (Blackwell grand public, étape 10.2) : les mma FP8 m16n8k32 n'existent pas avant 89,
+  # et la liste AJP_CUDA_ARCHITECTURES n'y change rien. Le PTX de 120 (code réel et virtuel) garde le module
+  # chargeable sur une carte plus récente, où supported_device refuse de lancer les noyaux. CUDA 12.8 au moins.
   set_target_properties(ajp_backend_span_fp8_kernels PROPERTIES
-    CUDA_ARCHITECTURES 89 POSITION_INDEPENDENT_CODE ON)
+    CUDA_ARCHITECTURES "89-real;120" POSITION_INDEPENDENT_CODE ON)
   target_compile_options(ajp_backend_span_fp8_kernels PRIVATE
     $<$<COMPILE_LANGUAGE:CUDA>:--expt-relaxed-constexpr -lineinfo -Xcudafe=--diag_suppress=177
       -Xcudafe=--diag_suppress=550 --ptxas-options=--verbose>

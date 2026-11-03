@@ -223,7 +223,9 @@ SpanFp8Net::SpanFp8Net(std::unique_ptr<Impl> impl) : impl_(std::move(impl)) {}
 SpanFp8Net::~SpanFp8Net() = default;
 
 bool SpanFp8Net::supported_device(int major, int minor) {
-  return major == 8 && minor == 9;
+  // Ada (sm 8.9) et Blackwell grand public (sm 12.0, RTX 50, étape 10.2) : la même boucle CUTLASS (garde
+  // >= 890) ; le reçu v2 porte l'architecture, un paquet d'Ada ne sert pas sur Blackwell sans revalidation.
+  return (major == 8 && minor == 9) || (major == 12 && minor == 0);
 }
 
 std::int64_t SpanFp8Net::workspace_bytes() const {
