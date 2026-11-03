@@ -69,8 +69,8 @@ std::expected<std::unique_ptr<Engine>, Refusal> VulkanBackend::load_drba_fused(c
     auto* piece = dynamic_cast<VulkanEngine*>(loaded->get());
     if (piece == nullptr)
       return refuse(RefusalCode::GraphInvalid, "DistilDRBA fusionné : morceau d'un autre moteur");
-    static_cast<void>(loaded->release());
     pieces.emplace_back(piece);
+    [[maybe_unused]] auto* released = loaded->release();  // le morceau appartient désormais à pieces
   }
   auto engine = DrbaFusedEngine::create(*context_, *memory_, *pipelines_, *key, std::move(pieces));
   if (!engine) return std::unexpected(std::move(engine.error()));

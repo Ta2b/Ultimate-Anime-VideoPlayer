@@ -393,11 +393,12 @@ void Session::follow_subtitles(std::int64_t host_now) {
   if (!now.valid) return;
   const std::int64_t media = now.media_at(host_now);
   int asked = 0;
-  while (media - *subtitle_pts_ >= period && subtitle_requests_ < kMaxSubtitleRequests && asked < 4) {
+  while (subtitle_pts_.has_value() && media - subtitle_pts_.value() >= period &&
+         subtitle_requests_ < kMaxSubtitleRequests && asked < 4) {
     RingFrame next = *current_;
-    next.pts_us = *subtitle_pts_ + period;
+    next.pts_us = subtitle_pts_.value() + period;
     request_subtitles(next);
-    if (!subtitle_pts_ || *subtitle_pts_ != next.pts_us) break;  // refusée : on réessaie au tour suivant
+    if (subtitle_pts_ != next.pts_us) break;  // refusée : on réessaie au tour suivant
     held_subtitle_pts_ = std::max(current_->pts_us, std::min(media, next.pts_us));
     ++asked;
   }

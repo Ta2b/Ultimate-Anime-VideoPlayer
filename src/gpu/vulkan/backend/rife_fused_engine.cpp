@@ -156,8 +156,9 @@ std::expected<std::unique_ptr<RifeFusedEngine>, Refusal> RifeFusedEngine::create
 RifeFusedEngine::~RifeFusedEngine() = default;
 
 BufferView RifeFusedEngine::scratch(std::size_t offset, std::int64_t elements) const {
-  return {
-      .buffer = scratch_->handle(), .offset = offset, .size = static_cast<VkDeviceSize>(elements) * kHalf};
+  return {.buffer = scratch_.value().handle(),
+          .offset = offset,
+          .size = static_cast<VkDeviceSize>(elements) * kHalf};
 }
 
 Done record_rife_fused_entry(PipelineCache& pipelines, Recorder& recorder, const kernels::RifeFusedPlan& plan,
@@ -234,6 +235,7 @@ std::expected<std::unique_ptr<Recording>, Refusal> RifeFusedEngine::record_glue(
   if (!recorder) return std::unexpected(std::move(recorder.error()));
   const std::int64_t plane = std::int64_t{height_} * width_;
   std::vector<BufferView> y;
+  y.reserve(static_cast<std::size_t>(k));
   for (int s = 0; s < k; ++s)
     y.push_back(scratch(layout_.y[static_cast<std::size_t>(s)],
                         kernels::rife_fused_y(plan_, s, height_, width_).elements()));

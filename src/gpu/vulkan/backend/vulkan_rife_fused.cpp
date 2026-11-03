@@ -72,8 +72,8 @@ std::expected<std::unique_ptr<Engine>, Refusal> VulkanBackend::load_rife_fused(c
     auto* piece = dynamic_cast<VulkanEngine*>(loaded->get());
     if (piece == nullptr)
       return refuse(RefusalCode::GraphInvalid, "RIFE fusionné : morceau d'un autre moteur");
-    static_cast<void>(loaded->release());
     pieces.emplace_back(piece);
+    [[maybe_unused]] auto* released = loaded->release();  // le morceau appartient désormais à pieces
   }
   auto engine = RifeFusedEngine::create(*context_, *memory_, *pipelines_, *key, std::move(pieces));
   if (!engine) return std::unexpected(std::move(engine.error()));
