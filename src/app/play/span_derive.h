@@ -71,6 +71,9 @@ struct SpanDerivePlan {
   std::filesystem::path model;       // le SPAN ONNX choisi
   std::filesystem::path models_dir;  // « modeles » : où le paquet et son reçu s'écrivent
   std::string quantizer = "ajp (dérivation native, CUTLASS E4M3, maximum)";
+  // Étape 3.6 : la VRAM libre doit valoir ce multiple du besoin (SpanFp8Request::min_free_ratio) ; 0 : pas
+  // de contrôle. La préparation lancée par un préréglage met kAutoMinFreeRatio.
+  double min_free_ratio = 0.0;
   // Les poids du modèle rangés pour le paquet ; vide : lus dans l'ONNX (gpu/span_fp8/onnx_weights.h). Les
   // essais y mettent des poids de leur façon.
   std::function<std::expected<gpu::span_fp8::Package, Refusal>()> load_weights;
@@ -150,7 +153,10 @@ SpanPrepare make_span_prepare(const std::shared_ptr<BackendLibrary>& library, co
                               bool supported, const std::filesystem::path& model,
                               const std::filesystem::path& models_dir, const std::filesystem::path& video,
                               const std::string& unavailable = {}, const media::StillReduce& reduce = {},
-                              const SpanFp8Context& context = {});
+                              const SpanFp8Context& context = {}, bool automatic = false);
+
+// La marge de VRAM d'une préparation lancée par un préréglage (étape 3.6).
+inline constexpr double kAutoMinFreeRatio = 1.5;
 
 // La réduction des images de la préparation : la taille de travail et le filtre du menu « Réduction », comme
 // le noyau d'ingestion les applique (live_settings.h, reduction_of).

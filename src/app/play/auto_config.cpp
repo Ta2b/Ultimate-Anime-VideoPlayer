@@ -145,7 +145,10 @@ PlaySettings apply_preset(const PlaySettings& settings, const Machine& machine,
   out.rife_factor_den = 1;
   out.keep_poses = true;  // mesuré A/B (4070 Ti, ×3) : tient mieux, qualité équivalente
   out.gmfss_precision = PrecisionTier::Balanced;
-  out.span_precision = PrecisionTier::Balanced;
+  // Étape 3.6 : SPAN au cran Performance, la plus basse précision qui passe la porte. Sans paquet jugé (reçu
+  // v2 de cet appareil, de ces noyaux et de cette taille), la chaîne prend l'INT8 s'il passe, sinon le FP16
+  // d'origine ; le paquet se prépare en silence et sert à l'ouverture suivante (span_auto.h).
+  out.span_precision = PrecisionTier::Performance;
   out.motion_precision = PrecisionTier::Balanced;
   out.rife_model.clear();
   switch (*level) {

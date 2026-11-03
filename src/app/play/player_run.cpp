@@ -258,7 +258,8 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
                 SpanFp8Context{.gpu_arch = c.backend ? c.backend->capabilities().gpu_arch : std::string(),
                                .kernels_version = c.backend ? c.backend->capabilities().span_fp8_kernels : 0,
                                .width = work.width,
-                               .height = work.height})
+                               .height = work.height},
+                settings.preset != Preset::Custom)
           : SpanPrepare{};
   const std::optional<DrbaModel> drba_file = find_distil_drba(c.gmfss_places);
   p.ui.set_tracks((*pipeline)->tracks());
@@ -593,7 +594,8 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
       if (!p.options.file.empty() && c.model) {
         const SpanAutoTick span =
             tick_span_auto(chain.running.span_precision, span_prepare, p.span_job,
-                           prepare::utf8_path(c.model->path) + "|" + prepare::utf8_path(p.options.file));
+                           prepare::utf8_path(c.model->path) + "|" + prepare::utf8_path(p.options.file),
+                           chain.running.preset != Preset::Custom);
         if (span.notify) p.ui.controls().notify(*span.notify, host_now_us());
         if (span.reopen) chain.reopen = chain.running;
       }

@@ -65,9 +65,10 @@ TEST_CASE("la priorité décale d'un cran", "[auto_config]") {
   const int balance = applied(Preset::Auto, Tier::Normal, 1440, 144.0).rife_factor;
   CHECK(applied(Preset::Auto, Tier::Normal, 1440, 144.0, k1080p24, Priority::Fluidity).rife_factor >=
         balance);
-  // Auto ne choisit jamais FP8 ni GMFSS : la précision reste Équilibre.
+  // GMFSS reste à Équilibre ; SPAN prend le cran Performance (étape 3.6 : la porte décide de la variante).
   CHECK(applied(Preset::Auto, Tier::Ultra, 2160, 165.0).gmfss_precision == PrecisionTier::Balanced);
-  CHECK(applied(Preset::Auto, Tier::Normal, 1440, 144.0).span_precision == PrecisionTier::Balanced);
+  CHECK(applied(Preset::Auto, Tier::Normal, 1440, 144.0).span_precision == PrecisionTier::Performance);
+  CHECK(applied(Preset::Fast, Tier::Normal, 1440, 144.0).span_precision == PrecisionTier::Performance);
 }
 
 TEST_CASE("le multiplicateur suit l'écran, une source rapide n'est pas interpolée", "[auto_config]") {

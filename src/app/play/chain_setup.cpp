@@ -247,12 +247,11 @@ std::expected<std::optional<ChainEngines>, Refusal> prepare_chain_once(Player& p
     const std::filesystem::path variants = p.paths.engines.parent_path() / "modeles";
     const gpu::BackendCaps caps = c.backend->capabilities();
     const PrecisionTier tier = settings.span_precision;
-    std::vector<SpanVariantKind> wanted;
-    if (tier == PrecisionTier::Performance && caps.span_fp8_cutlass)
-      wanted.push_back(SpanVariantKind::Fp8Cutlass);
-    if (tier == PrecisionTier::Performance && caps.fp8) wanted.push_back(SpanVariantKind::Fp8);
-    if (tier != PrecisionTier::Quality && caps.int8) wanted.push_back(SpanVariantKind::Int8);
-    if (tier == PrecisionTier::Quality) wanted.push_back(SpanVariantKind::Fp32);
+    // Un cran posé par un préréglage (Auto et les autres, auto_config.h) est strict : ni FP8 par Q/DQ, ni
+    // reçu v1 du FP8 CUTLASS (étape 3.6).
+    const bool strict = settings.preset != Preset::Custom;
+    const std::vector<SpanVariantKind> wanted = span_variant_order(
+        tier, SpanVariantCaps{.cutlass = caps.span_fp8_cutlass, .fp8 = caps.fp8, .int8 = caps.int8}, strict);
     if (tier == PrecisionTier::Performance && !caps.fp8)
       log->info("SPAN Performance (FP8) : ce moteur ne le calcule pas, variante INT8 ou FP16");
     const auto prepare_span = [&] {
@@ -276,6 +275,10 @@ std::expected<std::optional<ChainEngines>, Refusal> prepare_chain_once(Player& p
                                                kind == SpanVariantKind::Fp8Cutlass ? &fp8_context : nullptr);
       if (!found.note.empty()) log->info("SPAN {} : {}", variant_text(kind), found.note);
       if (!found.variant) continue;
+      if (strict && kind == SpanVariantKind::Fp8Cutlass && !found.variant->receipt_v2) {
+        log->info("SPAN FP8 CUTLASS : reçu v1, pas pris par un préréglage (préparer de nouveau)");
+        continue;
+      }
       c.span_int8 = std::move(found.variant);
       loaded = prepare_span();
       if (*loaded) break;
