@@ -290,6 +290,7 @@ std::expected<void, Refusal> RifeFusedEngine::enqueue(cudaStream_t stream,
                                                       const std::shared_ptr<SharedActivations>& arena,
                                                       std::span<const Tensor> inputs,
                                                       std::span<const Tensor> outputs) {
+  if (arena) arena->set_last_user(this);
   if (inputs.size() != 1 || outputs.size() != outputs_.size())
     return refuse(RefusalCode::ShapeInvalid,
                   "RIFE fusionné : nombre d'entrées ou de sorties différent du moteur");

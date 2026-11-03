@@ -33,6 +33,7 @@ struct DrbaPreParams {
   void* x0 = nullptr;
   void* x1 = nullptr;
   void* x2 = nullptr;
+  bool times_only = false;  // les plans du temps seuls (D6 : mêmes images, autre instant)
 };
 
 // Les encodages réduits de X_1 (canaux 9-56, moyenne des pixels 2o, 2o+1) et de X_0 (4o+1, 4o+2) depuis la

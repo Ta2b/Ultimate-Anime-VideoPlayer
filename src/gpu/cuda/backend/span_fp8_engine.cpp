@@ -170,6 +170,7 @@ std::expected<void, Refusal> SpanFp8Engine::enqueue(cudaStream_t stream,
                                                     const std::shared_ptr<SharedActivations>& arena,
                                                     std::span<const Tensor> inputs,
                                                     std::span<const Tensor> outputs) {
+  if (arena) arena->set_last_user(this);
   if (inputs.size() != 1 || outputs.size() != 1)
     return refuse(RefusalCode::ShapeInvalid, "SPAN FP8 : une entrée et une sortie attendues");
   const Tensor& in = inputs[0];

@@ -184,6 +184,10 @@ class Engine {
   virtual ~Engine() = default;
   virtual std::span<const std::string> input_names() const = 0;
   virtual std::span<const std::string> output_names() const = 0;
+  // L'appel suivant reprend les mêmes tenseurs d'entrée que le précédent, dont seuls les plans du temps ont
+  // changé (rife_time) : un moteur qui garde le travail des images de l'appel précédent le saute (D6, une
+  // fenêtre préparée une fois, un appel par instant). Sans effet sur les autres.
+  virtual void next_times_only() {}
 };
 
 // Image d'un autre module (surface NVDEC copiée, VkImage du ring) à importer sans copie.

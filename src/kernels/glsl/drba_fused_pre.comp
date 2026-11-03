@@ -1,7 +1,8 @@
 #version 450
 // DistilDRBA fusionné, pre : les neuf plans d'images de X_2, X_1 et X_0, chacun la moyenne 2 × 2 (Resize
 // d'échelle 1/s, demi-pixel) des trois images, puis les plans du temps (u × 2, un pixel sur s). Un fil par
-// élément écrit. Voir drba_fused.glsl.
+// élément écrit. times_only : les plans du temps seuls (D6, mêmes images, autre instant). Voir
+// drba_fused.glsl.
 #extension GL_GOOGLE_include_directive : require
 #include "tensor.glsl"
 
@@ -20,6 +21,7 @@ layout(push_constant) uniform Push {
   uint reduce1;
   uint reduce2;
   uint groups_x;  // groupes de la dimension x du dispatch
+  uint times_only;
 } pc;
 
 // Plan c (0..8) des trois images : img0 = pair01[0..2], img1 = pair01[3..5], img2 = pair12[3..5].
@@ -41,7 +43,7 @@ void main() {
   uint j = gl_GlobalInvocationID.y * pc.groups_x * 256u + gl_GlobalInvocationID.x;
   uint reduce[3] = uint[3](pc.reduce2, pc.reduce1, pc.reduce0);  // sections X_2, X_1, X_0
   uint times[3] = uint[3](95u, 95u, 57u);
-  for (uint k = 0u; k < 3u; ++k) {
+  for (uint k = 0u; k < 3u && pc.times_only == 0u; ++k) {
     uint s = reduce[k];
     uint ow = pc.width / s;
     uint plane = (pc.height / s) * ow;

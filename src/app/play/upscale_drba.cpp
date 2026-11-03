@@ -192,19 +192,25 @@ std::expected<void, Refusal> UpscaleStage::run_drba(const kernels::DrbaCall& cal
   const gpu::Tensor& img0 = call.on_b ? a : (whole ? before : a);
   const gpu::Tensor& img1 = call.on_b ? b : a;
   const gpu::Tensor& img2 = call.on_b ? (whole ? after : b) : b;
+  // Rend vrai quand seul le plan du temps a été réécrit.
   const auto fill = [&](gpu::TensorBuffer& input, DrbaBuffers::Filled& filled, const gpu::Tensor& first,
-                        const gpu::Tensor& second) -> std::expected<void, Refusal> {
+                        const gpu::Tensor& second) -> std::expected<bool, Refusal> {
     if (drba_.time_only && filled.first == &first && filled.second == &second) {
-      if (ops.rife_time(input.tensor(), call.u)) return {};
+      if (ops.rife_time(input.tensor(), call.u)) return true;
       drba_.time_only = false;
     }
     filled = {};
-    if (auto ok = ops.rife_input(first, second, call.u, input.tensor()); !ok) return ok;
+    if (auto ok = ops.rife_input(first, second, call.u, input.tensor()); !ok)
+      return std::unexpected(ok.error());
     filled = {.first = &first, .second = &second};
-    return {};
+    return false;
   };
-  if (auto ok = fill(*drba_.pair01, drba_.filled01, img0, img1); !ok) return ok;
-  if (auto ok = fill(*drba_.pair12, drba_.filled12, img1, img2); !ok) return ok;
+  auto times01 = fill(*drba_.pair01, drba_.filled01, img0, img1);
+  if (!times01) return std::unexpected(std::move(times01.error()));
+  auto times12 = fill(*drba_.pair12, drba_.filled12, img1, img2);
+  if (!times12) return std::unexpected(std::move(times12.error()));
+  // D6 : les mêmes images, un autre instant : le moteur fusionné garde leurs réductions et leurs encodages.
+  if (*times01 && *times12) setup_.distil_drba->next_times_only();
   const std::array inputs{drba_.pair01->tensor(), drba_.pair12->tensor()};
   if (auto ok = setup_.backend->enqueue(*setup_.distil_drba, inputs, results); !ok) return ok;
   ++drba_.runs;

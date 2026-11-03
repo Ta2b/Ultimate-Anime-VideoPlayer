@@ -10,6 +10,7 @@
 #include <fstream>
 #include <memory>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include <catch2/catch_test_macros.hpp>
@@ -118,11 +119,23 @@ TEST_CASE("DistilDRBA fusionné : la chaîne Vulkan contre le DistilDRBA entier"
     return planes_from(read_tensor(*backend, out->tensor(), static_cast<std::size_t>(planes * h * w * 2)), w,
                        h, planes, TensorType::F16);
   };
-  for (const float tau : {0.5F, 1.25F}) {
+  // D6 : les mêmes images à un autre instant, annoncé par next_times_only : l'encodeur et post sautés.
+  const auto times_only = [&](float tau) {
+    write_tensor(*backend, in01->tensor(), planes_bytes(pair_of(img0, img1, h, w, tau), TensorType::F16));
+    write_tensor(*backend, in12->tensor(), planes_bytes(pair_of(img1, img2, h, w, tau), TensorType::F16));
+    auto out = rgb_tensor(*backend, w, h, TensorType::F16, 3);
+    std::array all{out->tensor()};
+    (*fused)->next_times_only();
+    REQUIRE(backend->enqueue(**fused, inputs, all));
+    return planes_from(read_tensor(*backend, out->tensor(), static_cast<std::size_t>(3 * h * w * 2)), w, h, 3,
+                       TensorType::F16);
+  };
+  for (const auto& [tau, reuse] :
+       {std::pair{0.5F, false}, std::pair{1.25F, false}, std::pair{0.75F, true}, std::pair{0.25F, true}}) {
     write_tensor(*backend, in01->tensor(), planes_bytes(pair_of(img0, img1, h, w, tau), TensorType::F16));
     write_tensor(*backend, in12->tensor(), planes_bytes(pair_of(img1, img2, h, w, tau), TensorType::F16));
     const auto want = run(**whole, 3);
-    const auto got = run(**fused, 3);
+    const auto got = reuse ? times_only(tau) : run(**fused, 3);
     double square = 0.0;
     double worst = 0.0;
     std::size_t count = 0;
@@ -136,7 +149,8 @@ TEST_CASE("DistilDRBA fusionné : la chaîne Vulkan contre le DistilDRBA entier"
     }
     const double mse = square / static_cast<double>(count);
     const double psnr = mse == 0.0 ? 200.0 : 10.0 * std::log10(1.0 / mse);
-    WARN("tau " << tau << " : PSNR " << psnr << " dB contre le DistilDRBA entier, écart maximal " << worst);
+    WARN("tau " << tau << (reuse ? " (temps seul)" : "") << " : PSNR " << psnr
+                << " dB contre le DistilDRBA entier, écart maximal " << worst);
     CHECK(psnr >= 50.0);
   }
   // La variante mouvement : le flot du warp final, dans les bornes d'un mouvement de quelques pixels.
