@@ -479,3 +479,38 @@
 //!MINIMUM 0.0
 //!MAXIMUM 1.0
 0.0
+
+//!PARAM black_lo
+//!DESC Seuil du vrai noir (nits) : en dessous, le pixel vaut 0
+//!TYPE float
+//!MINIMUM 0.0
+//!MAXIMUM 50.0
+0.0
+
+//!PARAM black_hi
+//!DESC Fin du pied (nits) : au-dessus, l'image est inchangée
+//!TYPE float
+//!MINIMUM 0.0
+//!MAXIMUM 50.0
+0.0
+
+//!PARAM kwin_on
+//!DESC 1 = l'image porte ses métadonnées HDR (--hdr-metadata) : la compression de KWin est faite ici
+//!TYPE float
+//!MINIMUM 0.0
+//!MAXIMUM 1.0
+0.0
+
+//!PARAM kwin_ref
+//!DESC Luminosité SDR de KDE (nits) : le blanc de référence de l'écran, où KWin pose le blanc PQ de 203 nits
+//!TYPE float
+//!MINIMUM 50.0
+//!MAXIMUM 1000.0
+200.0
+
+//!PARAM kwin_peak
+//!DESC Pic de l'écran pour KWin (nits)
+//!TYPE float
+//!MINIMUM 100.0
+//!MAXIMUM 10000.0
+1000.0

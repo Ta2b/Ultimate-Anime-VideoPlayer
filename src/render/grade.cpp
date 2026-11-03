@@ -22,6 +22,8 @@ struct ParamBinding {
 
 constexpr std::array kGradeParams = {
     ParamBinding{"peak", &GradeParams::peak},
+    ParamBinding{"black_lo", &GradeParams::black_lo},
+    ParamBinding{"black_hi", &GradeParams::black_hi},
     ParamBinding{"paper", &GradeParams::paper},
     ParamBinding{"in_max", &GradeParams::in_max},
     ParamBinding{"shadows", &GradeParams::shadows},
@@ -183,15 +185,42 @@ FusedLook fused_look(std::string_view grade_text) {
 
 // Le corps fusionné avec ses fonctions (anime-hdr-funcs.glsl) à la place de la marque //@AJG_FUNCS@ ; `look`
 // : le look lu dans la même passe, après l'encodage (GradeBody::Fused), sinon sa passe à part.
+// Le texte de anime-hdr-black.hook entre `from` et la marque `end` : les fonctions du vrai noir ou de KWin.
+std::string black_funcs(std::string_view from, std::string_view end) {
+  const std::string_view text = shaders::anime_hdr_black;
+  const std::size_t at = text.find(from);
+  return std::string(text.substr(at, text.find(end) - at));
+}
+
 std::string with_funcs(std::string_view body, const FusedLook* look) {
   std::string text(body);
+  const bool fused = look != nullptr;
+  // GradeBody::FusedSplit : ni le max local du vrai noir dans le grade, ni rien de ce qu'il lit.
+  if (!fused) {
+    constexpr std::string_view kBegin = "//@AJG_LOCALMAX_BEGIN@";
+    constexpr std::string_view kEnd = "//@AJG_LOCALMAX_END@";
+    const std::size_t from = text.find(kBegin);
+    const std::size_t to = text.find(kEnd);
+    if (from != std::string::npos && to != std::string::npos) text.erase(from, to + kEnd.size() - from);
+  }
   const auto replace = [&text](std::string_view mark, std::string_view with) {
-    if (const std::size_t at = text.find(mark); at != std::string::npos) text.replace(at, mark.size(), with);
+    for (std::size_t at = text.find(mark); at != std::string::npos; at = text.find(mark, at + with.size()))
+      text.replace(at, mark.size(), with);
   };
   replace("//@AJG_FUNCS@", shaders::anime_hdr_funcs);
-  replace("//@AJG_LOOK_BINDS@", look != nullptr ? "//!BIND AJG_LUT" : "");
-  replace("//@AJG_LOOK_FUNCS@", look != nullptr ? look->funcs : std::string());
-  replace("//@AJG_LOOK@", look != nullptr ? "if (look_mix > 0.0) px.rgb = ajl_look(px.rgb);" : "");
+  replace("//@AJG_LOOK_BINDS@", fused ? "//!BIND AJG_LUT" : "");
+  replace("//@AJG_LOOK_FUNCS@", fused ? look->funcs : std::string());
+  // La passe du grade lit aussi le max local du vrai noir.
+  replace("//@AJG_GRADE_BINDS@", fused ? "//!BIND AJG_LUT\n//!BIND AJG_LOCALMAX" : "");
+  replace("//@AJG_BLACK_FUNCS@", fused ? black_funcs("float ajb_pq_to_nits", "//@BLACK_END@") +
+                                             black_funcs("const mat3 AJK_TO_LMS", "//@KWIN_END@")
+                                       : std::string());
+  replace("//@AJG_LOOK@", fused ? "if (look_mix > 0.0) px.rgb = ajl_look(px.rgb);" : "");
+  replace("//@AJG_LOOK_E@", fused ? "if (look_mix > 0.0) e = ajl_look(e);" : "");
+  replace("//@AJG_BLACK@", fused ? "if (black_hi > black_lo) px.rgb = ajb_black(px.rgb, "
+                                   "AJG_LOCALMAX_tex(AJG_LOCALMAX_pos).x);\n    if (kwin_on > 0.5) px.rgb = "
+                                   "ajk_kwin(px.rgb);"
+                                 : "");
   return text;
 }
 
@@ -298,6 +327,8 @@ struct Grade::Impl {
   GradeBody body = GradeBody::Fused;
   std::string grade_text;  // Fused : le texte du grade sans la texture du look, pour le refaire avec la pile
   float video_fps = 24.0F;
+  std::optional<Grade::KwinMatch> kwin;  // set_kwin_match, réécrit dans un hook refait
+  void put_kwin();
   std::size_t hook_count = 3;
   ParsedHook grade;
   ParsedHook look;
@@ -360,6 +391,7 @@ void Grade::Impl::compose(const GradeParams& wanted) {
     grade = std::move(*rebuilt);
     hooks[0] = grade.hook;
     if (pl_var_data* data = find_param(*grade.hook, "video_fps")) data->f = video_fps;
+    put_kwin();
     composed = active;
     return;
   }
@@ -383,7 +415,7 @@ std::expected<Grade, Refusal> Grade::create(pl_gpu gpu, GradeBody body, bool ski
   if (body == GradeBody::Anime) {
     // Les deux premières passes (carte locale, zone) du grade en trois passes, puis la passe « anime ».
     const std::string_view fused = shaders::anime_hdr_fused;
-    text += fused.substr(0, fused.rfind("//!HOOK OUTPUT"));
+    text += fused.substr(0, fused.find("//@AJG_LOCALMAX_BEGIN@"));
     text += shaders::anime_hdr_anime;
   } else if (legacy) {
     text += shaders::anime_hdr_grade;
@@ -418,10 +450,11 @@ std::expected<Grade, Refusal> Grade::create(pl_gpu gpu, GradeBody body, bool ski
   auto calibration = parse(gpu, shaders::anime_hdr_calibration, "anime-hdr-calibration.hook", {});
   if (!calibration) return std::unexpected(calibration.error());
   impl->calibration = calibration->hook;
-  // Fused : le look est dans la passe du grade, sa passe à part n'est plus posée.
+  // Fused : le look, le vrai noir et KWin sont dans la passe du grade, leurs passes à part ne sont plus
+  // posées.
   if (body == GradeBody::Fused) {
-    impl->hooks = {impl->grade.hook, impl->black.hook, nullptr};
-    impl->hook_count = 2;
+    impl->hooks = {impl->grade.hook, nullptr, nullptr};
+    impl->hook_count = 1;
   } else {
     impl->hooks = {impl->grade.hook, impl->look.hook, impl->black.hook};
   }
@@ -474,13 +507,19 @@ void Grade::set_video_fps(double fps) {
 }
 
 void Grade::set_kwin_match(std::optional<KwinMatch> match) {
+  impl_->kwin = match;
+  impl_->put_kwin();
+}
+
+void Grade::Impl::put_kwin() {
   const auto put = [this](std::string_view name, double value) {
-    if (pl_var_data* data = find_param(*impl_->black.hook, name)) data->f = static_cast<float>(value);
+    for (const pl_hook* hook : {black.hook, grade.hook})
+      if (pl_var_data* data = find_param(*hook, name)) data->f = static_cast<float>(value);
   };
-  put("kwin_on", match ? 1.0 : 0.0);
-  if (match) {
-    put("kwin_ref", std::clamp(match->reference, 50.0, 1000.0));
-    put("kwin_peak", std::clamp(match->peak, 100.0, 10000.0));
+  put("kwin_on", kwin ? 1.0 : 0.0);
+  if (kwin) {
+    put("kwin_ref", std::clamp(kwin->reference, 50.0, 1000.0));
+    put("kwin_peak", std::clamp(kwin->peak, 100.0, 10000.0));
   }
 }
 
