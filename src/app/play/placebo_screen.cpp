@@ -125,14 +125,17 @@ std::expected<void, Refusal> PlaceboScreen::Impl::compose(const pl_frame* image,
   // Le grade étire la source (plus de nits, plus de couleur) : les paliers d'un dégradé 8 bits, invisibles en
   // SDR, ressortent en bandes dans un halo ou un ciel. Il est donc toujours précédé d'un débandage, sans
   // grain ajouté (l'anime reste propre) ; le débandage demandé à la main garde le réglage complet de
-  // libplacebo. Une source déjà débandée avant SPAN (RingFrame::debanded) ne l'est pas une seconde fois.
+  // libplacebo hors grade. Une source déjà débandée avant SPAN (RingFrame::debanded) ne l'est pas une seconde
+  // fois.
   static const pl_deband_params kGradeDeband = [] {
     pl_deband_params p = pl_deband_default_params;
     p.grain = 0.0F;
     return p;
   }();
+  // Le grain de libplacebo (4 codes) serait étiré par le grade, surtout dans les ombres et sur les peaux :
+  // sous le grade, même le débandage demandé à la main part sans grain.
   if (deband)
-    params.deband_params = &pl_deband_default_params;
+    params.deband_params = graded_now ? &kGradeDeband : &pl_deband_default_params;
   else if (graded_now && !source_debanded)
     params.deband_params = &kGradeDeband;
   if (graded_now) {
