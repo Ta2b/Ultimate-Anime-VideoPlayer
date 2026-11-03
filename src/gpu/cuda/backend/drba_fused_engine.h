@@ -66,6 +66,9 @@ class DrbaFusedEngine final : public Engine {
   std::expected<void, Refusal> enqueue(cudaStream_t stream, const std::shared_ptr<SharedActivations>& arena,
                                        std::span<const Tensor> inputs, std::span<const Tensor> outputs);
 
+  // D6 : le prochain enqueue reprend les mêmes paires, seul le temps a changé.
+  void next_times_only() override { times_only_next_ = true; }
+
   // Le mot du moteur pour le journal du backend (graphes coupés), une fois ; vide sinon.
   std::string take_notice();
 
@@ -73,8 +76,14 @@ class DrbaFusedEngine final : public Engine {
   DrbaFusedEngine() = default;
   // La chaîne, lancée ou capturée selon l'appelant.
   // outputs : l'image (1 × 3), ou le flot (1 × 4) et le masque (1 × 1) de la variante mouvement.
+  // times_only : pre n'écrit que les plans du temps, l'encodeur et post sont sautés (D6).
   std::expected<void, Refusal> run(cudaStream_t stream, const std::shared_ptr<SharedActivations>& arena,
-                                   std::span<const Tensor> inputs, std::span<const Tensor> outputs);
+                                   std::span<const Tensor> inputs, std::span<const Tensor> outputs,
+                                   bool times_only);
+  std::expected<void, Refusal> enqueue_chain(cudaStream_t stream,
+                                             const std::shared_ptr<SharedActivations>& arena,
+                                             std::span<const Tensor> inputs, std::span<const Tensor> outputs,
+                                             bool times_only);
   std::expected<void, Refusal> use_zone(const std::shared_ptr<SharedActivations>& zone);
   void drop_graphs();
 
@@ -90,12 +99,13 @@ class DrbaFusedEngine final : public Engine {
   std::vector<std::string> outputs_{"out"};
   std::shared_ptr<SharedActivations> zone_;
 
-  static constexpr std::size_t kMaxGraphs = 8;
+  static constexpr std::size_t kMaxGraphs = 16;  // deux par jeu d'adresses : complet et temps seul (D6)
   static constexpr int kCaptureAttempts = 3;
   struct Graph {
     std::array<std::uintptr_t, 4> addresses{};  // pair01, pair12, sortie (ou flot), masque (ou 0)
     std::uintptr_t zone = 0;
     std::uint64_t generation = 0;
+    bool times_only = false;
     cudaGraphExec_t exec = nullptr;
     bool warmed = false;
   };
@@ -103,6 +113,16 @@ class DrbaFusedEngine final : public Engine {
   bool graphs_off_ = false;
   int capture_failures_ = 0;
   std::string notice_;
+  // Ce que le dernier appel mené jusqu'au bout a laissé dans la zone : images réduites et encodages de ces
+  // paires (D6). Repris seulement si la zone est la même et qu'aucun autre moteur n'y a écrit depuis.
+  struct Kept {
+    std::uintptr_t pair01 = 0;
+    std::uintptr_t pair12 = 0;
+    const void* zone = nullptr;
+    std::uint64_t generation = 0;
+  };
+  std::optional<Kept> kept_;
+  bool times_only_next_ = false;
 };
 
 }  // namespace ajp::gpu::cuda

@@ -368,6 +368,33 @@ void compare_engines(const std::string& file, int h, int w) {
               << worst);
     CHECK(score >= 50.0);
   }
+  // D6 : les mêmes images à un autre instant, annoncé par next_times_only : pre n'écrit que le temps,
+  // l'encodeur et post sont sautés. Le moteur entier d'abord (il écrit la zone : le suivant repart de zéro),
+  // puis un appel complet à tau 0,5 et trois appels « temps seul » (à froid, capture, rejeu).
+  for (const float tau : {0.75F, 0.25F}) {
+    const auto [a, b] = pairs_of(images, h, w, tau);
+    upload(inputs[0], a);
+    upload(inputs[1], b);
+    const auto want = run(**reference);
+    const auto [a0, b0] = pairs_of(images, h, w, 0.5F);
+    upload(inputs[0], a0);
+    upload(inputs[1], b0);
+    auto buffer = loaded.backend->alloc_tensor(gpu::TensorType::F16, rgb);
+    REQUIRE(buffer);
+    std::vector<gpu::Tensor> outs{(*buffer)->tensor()};
+    REQUIRE(loaded.backend->enqueue(**fused, inputs, outs));
+    upload(inputs[0], a);
+    upload(inputs[1], b);
+    for (int i = 0; i < 3; ++i) {
+      (*fused)->next_times_only();
+      REQUIRE(loaded.backend->enqueue(**fused, inputs, outs));
+    }
+    const auto got = download(outs[0]);
+    double worst = 0.0;
+    const double score = psnr_of(got, want, worst);
+    WARN(file << " tau " << tau << " (temps seul) : PSNR " << score << " dB contre TensorRT entier");
+    CHECK(score >= 50.0);
+  }
 }
 
 }  // namespace

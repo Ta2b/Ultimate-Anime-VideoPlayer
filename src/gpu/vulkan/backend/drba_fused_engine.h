@@ -56,12 +56,16 @@ class DrbaFusedEngine final : public Engine {
 
   std::span<const std::string> input_names() const override { return inputs_; }
   std::span<const std::string> output_names() const override { return outputs_; }
+  void next_times_only() override { times_only_next_ = true; }
   int height() const { return height_; }
   int width() const { return width_; }
 
   // Soumet la chaîne sur queue : pre, encodeur, post, bloc 0, colle, bloc 1, colle, bloc 2, fin. Une sortie
   // : l'image ; deux : le flot et le masque. Les enregistrements de la colle sont faits au premier passage
-  // de ces tenseurs, puis rejoués. Refus : InputMismatch, ceux des enregistrements et de la file.
+  // de ces tenseurs, puis rejoués. Après next_times_only() sur les mêmes entrées, pre n'écrit que les plans
+  // du temps et l'encodeur et post sont sautés : les images réduites et leurs encodages de l'appel précédent
+  // sont toujours dans les tampons intermédiaires, que rien d'autre n'écrit. Refus : InputMismatch, ceux des
+  // enregistrements et de la file.
   std::expected<void, Refusal> enqueue(BackendQueue& queue, std::span<const Tensor> inputs,
                                        std::span<const Tensor> outputs);
 
@@ -72,6 +76,7 @@ class DrbaFusedEngine final : public Engine {
   struct Glue {
     std::array<BufferView, 4> io{};  // pair01, pair12, sortie (ou flot), masque
     std::vector<std::unique_ptr<Recording>> steps;
+    std::unique_ptr<Recording> times;  // pre, plans du temps seuls
   };
   std::expected<Glue*, Refusal> glue_for(std::span<const BufferView, 4> io, bool motion);
   BufferView scratch(std::size_t offset, std::int64_t elements) const;
@@ -90,6 +95,8 @@ class DrbaFusedEngine final : public Engine {
   static constexpr std::size_t kMaxGlues = 16;
   std::vector<std::unique_ptr<Glue>> glues_;
   RetiredRecordings retired_;
+  bool times_only_next_ = false;
+  std::optional<std::array<BufferView, 2>> last_inputs_;  // ceux de l'appel précédent, mené jusqu'au bout
 };
 
 }  // namespace ajp::gpu::vk

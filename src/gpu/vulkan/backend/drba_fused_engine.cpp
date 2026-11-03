@@ -24,7 +24,7 @@ constexpr std::uint32_t kMaxGroups = 65535;
 
 // Les poussées des noyaux, dans l'ordre de leurs blocs GLSL.
 struct PrePush {
-  std::uint32_t height, width, reduce0, reduce1, reduce2, groups_x;
+  std::uint32_t height, width, reduce0, reduce1, reduce2, groups_x, times_only;
 };
 struct PostPush {
   std::uint32_t enc_height, enc_width, groups_x;
@@ -200,27 +200,32 @@ std::expected<DrbaFusedEngine::Glue*, Refusal> DrbaFusedEngine::glue_for(std::sp
     glue->steps.push_back(std::move(*done));
     return {};
   };
-  // pre
-  if (auto ok = record([&](Recorder& r) -> Done {
-        std::uint64_t elements = 0;
-        for (int k = 0; k < kDrbaFusedBlocks; ++k) {
-          const int s = kernels::drba_fused_reduce(plan_, k);
-          elements +=
-              std::uint64_t{10} * static_cast<std::uint64_t>(h / s) * static_cast<std::uint64_t>(w / s);
-        }
-        PrePush push{u32(h),
-                     u32(w),
-                     u32(kernels::drba_fused_reduce(plan_, 0)),
-                     u32(kernels::drba_fused_reduce(plan_, 1)),
-                     u32(kernels::drba_fused_reduce(plan_, 2)),
-                     0};
-        const auto groups = linear_groups(elements, push.groups_x);
-        const std::array buffers{io[0], io[1], x_view(0), x_view(1), x_view(2)};
-        return detail::run(pipelines_, r, "drba_fused_pre", Precision::F16, {}, buffers, {},
-                           detail::bytes_of(push), groups);
-      });
-      !ok)
-    return std::unexpected(ok.error());
+  // pre : neuf plans d'images et un plan du temps par entrée de bloc ; times_only, le plan du temps seul.
+  const auto pre = [&](bool times_only) {
+    return [&, times_only](Recorder& r) -> Done {
+      std::uint64_t elements = 0;
+      for (int k = 0; k < kDrbaFusedBlocks; ++k) {
+        const int s = kernels::drba_fused_reduce(plan_, k);
+        elements += std::uint64_t{times_only ? 1U : 10U} * static_cast<std::uint64_t>(h / s) *
+                    static_cast<std::uint64_t>(w / s);
+      }
+      PrePush push{u32(h),
+                   u32(w),
+                   u32(kernels::drba_fused_reduce(plan_, 0)),
+                   u32(kernels::drba_fused_reduce(plan_, 1)),
+                   u32(kernels::drba_fused_reduce(plan_, 2)),
+                   0,
+                   times_only ? 1U : 0U};
+      const auto groups = linear_groups(elements, push.groups_x);
+      const std::array buffers{io[0], io[1], x_view(0), x_view(1), x_view(2)};
+      return detail::run(pipelines_, r, "drba_fused_pre", Precision::F16, {}, buffers, {},
+                         detail::bytes_of(push), groups);
+    };
+  };
+  if (auto ok = record(pre(false)); !ok) return std::unexpected(ok.error());
+  if (auto ok = record(pre(true)); !ok) return std::unexpected(ok.error());
+  glue->times = std::move(glue->steps.back());
+  glue->steps.pop_back();
   // post
   if (auto ok = record([&](Recorder& r) -> Done {
         const std::uint64_t enc = static_cast<std::uint64_t>(h / t) * static_cast<std::uint64_t>(w / t);
@@ -263,6 +268,7 @@ std::expected<DrbaFusedEngine::Glue*, Refusal> DrbaFusedEngine::glue_for(std::sp
     return std::unexpected(ok.error());
   if (glues_.size() >= kMaxGlues) {
     for (auto& step : glues_.front()->steps) retired_.retire(std::move(step));
+    retired_.retire(std::move(glues_.front()->times));
     glues_.erase(glues_.begin());
   }
   glues_.push_back(std::move(glue));
@@ -296,6 +302,13 @@ std::expected<void, Refusal> DrbaFusedEngine::enqueue(BackendQueue& queue, std::
     if (!views[i]) return std::unexpected(views[i].error());
     io[i] = *views[i];
   }
+  const auto same = [](const BufferView& a, const BufferView& b) {
+    return a.buffer == b.buffer && a.offset == b.offset && a.size == b.size;
+  };
+  // D6 : mêmes entrées que l'appel précédent, mené jusqu'au bout, et l'appelant dit que seul le temps change.
+  const bool times_only = std::exchange(times_only_next_, false) && last_inputs_ &&
+                          same((*last_inputs_)[0], io[0]) && same((*last_inputs_)[1], io[1]);
+  last_inputs_.reset();
   auto glue = glue_for(io, motion);
   if (!glue) return std::unexpected(glue.error());
   const auto& steps = (*glue)->steps;
@@ -317,9 +330,13 @@ std::expected<void, Refusal> DrbaFusedEngine::enqueue(BackendQueue& queue, std::
       .buffer = x2.buffer,
       .offset = x2.offset + static_cast<VkDeviceSize>(kDrbaFusedImagePlanes * enc_plane) * kHalf,
       .size = static_cast<VkDeviceSize>(3 * kDrbaFusedEncodeChannels * enc_plane) * kHalf};
-  if (auto ok = queue.submit(*steps[0]); !ok) return ok;  // pre
-  if (auto ok = run_net(*pieces_[0], images, encoded); !ok) return ok;
-  if (auto ok = queue.submit(*steps[1]); !ok) return ok;  // post
+  if (times_only) {
+    if (auto ok = queue.submit(*(*glue)->times); !ok) return ok;  // pre, plans du temps seuls
+  } else {
+    if (auto ok = queue.submit(*steps[0]); !ok) return ok;  // pre
+    if (auto ok = run_net(*pieces_[0], images, encoded); !ok) return ok;
+    if (auto ok = queue.submit(*steps[1]); !ok) return ok;  // post
+  }
   for (int k = 0; k < kDrbaFusedBlocks; ++k) {
     const auto i = static_cast<std::size_t>(k);
     if (k > 0) {
@@ -332,7 +349,9 @@ std::expected<void, Refusal> DrbaFusedEngine::enqueue(BackendQueue& queue, std::
       return ok;
     }
   }
-  return queue.submit(*steps.back());
+  if (auto ok = queue.submit(*steps.back()); !ok) return ok;
+  last_inputs_ = std::array{io[0], io[1]};
+  return {};
 }
 
 }  // namespace ajp::gpu::vk

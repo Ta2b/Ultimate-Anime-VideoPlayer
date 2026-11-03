@@ -144,6 +144,7 @@ __global__ void __launch_bounds__(256) pre_kernel(DrbaPreParams p) {
   std::size_t j = i;
 #pragma unroll
   for (int k = 0; k < 3; ++k) {
+    if (p.times_only) break;
     if (j < sections[k].images) {
       const Section& sec = sections[k];
       const int c = static_cast<int>(j / sec.plane);
@@ -326,7 +327,7 @@ cudaError_t launch_drba_pre(const DrbaPreParams& params, cudaStream_t stream) {
   for (const int s : {params.reduce0, params.reduce1, params.reduce2}) {
     const std::size_t plane =
         static_cast<std::size_t>(params.height / s) * static_cast<std::size_t>(params.width / s);
-    elements += 10U * plane;
+    elements += (params.times_only ? 1U : 10U) * plane;
   }
   pre_kernel<<<blocks_for(elements), 256, 0, stream>>>(params);
   return cudaGetLastError();

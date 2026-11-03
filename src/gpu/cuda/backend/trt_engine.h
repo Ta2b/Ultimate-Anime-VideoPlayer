@@ -47,11 +47,16 @@ class SharedActivations {
   void* data() const { return data_; }
   std::int64_t bytes() const { return bytes_; }
   std::uint64_t generation() const { return generation_; }
+  // Le dernier moteur qui a posé du travail sur la zone (chaque moteur se nomme à son enqueue) : un moteur
+  // qui y garde des tampons d'un appel au suivant (DistilDRBA fusionné, D6) sait si un autre y a écrit.
+  const void* last_user() const { return last_user_; }
+  void set_last_user(const void* user) { last_user_ = user; }
 
  private:
   void* data_ = nullptr;
   std::int64_t bytes_ = 0;
   std::uint64_t generation_ = 0;
+  const void* last_user_ = nullptr;
 };
 
 class TrtEngine final : public Engine {

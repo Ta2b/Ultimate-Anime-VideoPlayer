@@ -188,6 +188,7 @@ std::expected<std::unique_ptr<TrtEngine>, Refusal> TrtEngine::load(
 std::expected<void, Refusal> TrtEngine::place(const std::shared_ptr<SharedActivations>& arena,
                                               std::span<const Tensor> inputs,
                                               std::span<const Tensor> outputs) {
+  if (arena) arena->set_last_user(this);
   if (inputs.size() != inputs_.size() || outputs.size() != outputs_.size()) {
     return refuse(RefusalCode::ShapeInvalid, "nombre d'entrées ou de sorties différent du moteur");
   }
