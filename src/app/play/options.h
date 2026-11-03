@@ -122,6 +122,9 @@ struct PlayOptions {
   // --legacy-grade : le grade d'avant en neuf passes, qui mesure la scène lui-même (render::GradeBody),
   // gardé une version pour comparer.
   bool legacy_grade = false;
+  // --hdr-anime : la méthode « HDR anime » (render::GradeBody::Anime), essai ; le grade actuel reste le
+  // défaut.
+  bool hdr_anime = false;
   // --grade-deband : le grade fait précéder la source d'un débandage (placebo_screen.cpp) ; coupé par défaut.
   bool grade_deband = false;
   bool skin_mask = false;  // --skin-mask : le grade distingue la peau (coupé par défaut)

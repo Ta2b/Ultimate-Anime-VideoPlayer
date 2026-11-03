@@ -13,6 +13,8 @@ extern const std::string_view anime_hdr_params;
 extern const std::string_view anime_hdr_grade;
 // Le grade en trois passes (carte locale, zone floutée et lissée, grade) : la scène vient du lecteur.
 extern const std::string_view anime_hdr_fused;
+// La passe « HDR anime » (--hdr-anime) : se lit derrière les deux premières passes de anime_hdr_fused.
+extern const std::string_view anime_hdr_anime;
 // Le look : une LUT 3D .cube (cube_lut.h) mélangée à l'image après le grade, avant le vrai noir. Le bloc
 // //!TEXTURE AJG_LUT s'ajoute derrière ce texte à l'exécution.
 extern const std::string_view anime_hdr_look;
