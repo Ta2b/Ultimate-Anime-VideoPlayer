@@ -116,6 +116,9 @@ struct PlayOptions {
   // --one-lane : une seule file de calcul (UpscaleSetup::one_lane), pour profiler le coût propre
   // de chaque moteur.
   bool one_lane = false;
+  // --skip-held : en lecture, un instant identique à l'image affichée n'est ni calculé ni écrit (étapes 4.3
+  // à 4.5). Éteint par défaut jusqu'à sa validation sur l'écran.
+  bool skip_held = false;
   // --legacy-grade : le grade d'avant en neuf passes, qui mesure la scène lui-même (render::GradeBody),
   // gardé une version pour comparer.
   bool legacy_grade = false;

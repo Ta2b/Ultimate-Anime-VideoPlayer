@@ -101,7 +101,7 @@ UpscaleSetup ChainEngines::upscale(const PlaySettings& settings, std::shared_ptr
   return UpscaleSetup{
       .backend = backend.get(),
       .engine = engine.get(),
-      .skip_held = clock != nullptr,
+      .skip_held = skip_held && clock != nullptr,
       .rife = rife.get(),
       .rife_motion = rife_motion.get(),
       .rife_planes = rife_planes,
@@ -179,6 +179,7 @@ std::expected<std::optional<ChainEngines>, Refusal> prepare_chain_once(Player& p
   const media::TrackInfo& video = p.video;
   ChainEngines c;
   c.one_lane = p.options.one_lane;
+  c.skip_held = p.options.skip_held;
   if (settings.upscale) {
     auto chosen = choose_model(p.options, p.paths.home, settings, p.paths.models);
     if (!chosen) return std::unexpected(std::move(chosen.error()));

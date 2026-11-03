@@ -85,6 +85,7 @@ struct ChainEngines {
   kernels::RifeGeometry image_geometry;  // de work
   int rife_align = kernels::kRifeAlign;
   int rife_planes = kernels::kRifeInputChannels;
+  bool skip_held = false;               // --skip-held (UpscaleSetup::skip_held)
   bool one_lane = false;                // --one-lane (UpscaleSetup::one_lane)
   std::unique_ptr<gpu::Engine> engine;  // SPAN
   GmfssEngines gmfss;
