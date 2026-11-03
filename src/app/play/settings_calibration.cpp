@@ -120,10 +120,8 @@ void calibration_start(PlaySettings& d, const SettingsChoices& choices, GradeWiz
   std::error_code missing;
   if (clip.empty() || !std::filesystem::is_regular_file(clip, missing)) {
     panel::note(
-        i18n::tr("The calibration video is not shipped with the player: put your calibration.mkv "
-                 "in this folder."));
-    const std::u8string folder = clip.parent_path().u8string();
-    panel::note(std::string(folder.begin(), folder.end()));
+        i18n::tr("The calibration video is missing (calibration/calibration.mkv next to the player): "
+                 "reinstall the player."));
     return;
   }
   if (key.empty()) {

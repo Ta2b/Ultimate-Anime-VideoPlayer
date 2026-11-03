@@ -144,8 +144,9 @@ printf 'version %s\ncommit %s\n' "$TAG" "$COMMIT" > "$STAGE/BUILD_INFO.txt"
 cp "$ROOT/tools/release/linux/LISEZMOI.txt" "$STAGE/"
 # Les LUT d'HDR (data/luts), lues par le lecteur dans luts/ à côté de lui.
 cp -R "$ROOT/data/luts" "$STAGE/luts"
-# La vidéo de la calibration du grade n'est pas livrée (plans d'œuvres sous droits, data/calibration/SOURCES.md) :
-# l'utilisateur dépose la sienne dans calibration/ de ses données.
+# La vidéo de la calibration du grade (data/calibration), lue dans calibration/ à côté du lecteur.
+mkdir -p "$STAGE/calibration"
+cp "$ROOT/data/calibration/calibration.mkv" "$STAGE/calibration/"
 # Les modèles SPAN et RIFE, pour lire dès l'extraction (AJP_WITHOUT_MODELS=1 pour s'en passer).
 [ -n "${AJP_WITHOUT_MODELS:-}" ] || "$ROOT/tools/release/fetch-models.sh" "$STAGE/models"
 

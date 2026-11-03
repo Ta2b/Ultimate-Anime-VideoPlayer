@@ -20,9 +20,10 @@ constexpr std::array kCalibration{
     Entry{"Profile {}", "Profil {}"},
     Entry{"This display does not give its identity (EDID): the calibration cannot be kept.",
           "Cet écran ne donne pas son identité (EDID) : la calibration ne peut pas être gardée."},
-    Entry{"The calibration video is not shipped with the player: put your calibration.mkv in this folder.",
-          "La vidéo de calibration n'est pas livrée avec le lecteur : déposez votre calibration.mkv dans ce "
-          "dossier."},
+    Entry{"The calibration video is missing (calibration/calibration.mkv next to the player): reinstall "
+          "the player.",
+          "La vidéo de calibration manque (calibration/calibration.mkv à côté du lecteur) : réinstallez le "
+          "lecteur."},
     Entry{
         "Sets the adaptive grade on this display from five required anime shots (night, half-light, "
         "daylight, sky, bright lamps) and thirteen bonus ones: on each one, set the deep blacks, the colors "
