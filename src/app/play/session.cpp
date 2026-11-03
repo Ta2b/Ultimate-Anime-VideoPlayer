@@ -444,10 +444,13 @@ std::expected<std::optional<PresentRecord>, Refusal> Session::tick(std::int64_t 
     const std::int64_t previous = stats_.last_new_present_us;
     stats_.presented(timing->render_us, timing->present_us, fresh);
     if (fresh && current_) pace(*current_, host_now + display_delay_us(period));
-    record = PresentRecord{.host_us = timing->present_us,
+    record = PresentRecord{.seq = ++presented_seq_,
+                           .host_us = timing->present_us,
                            .pts_us = current_ ? current_->pts_us : kNoPts,
                            .fresh = fresh,
+                           .acquire_us = timing->acquire_us,
                            .render_us = timing->render_us,
+                           .queue_wait_us = timing->queue_wait_us,
                            .interval_us = fresh && previous != 0 ? timing->present_us - previous : 0,
                            .dropped = stats_.dropped,
                            .why = std::move(why),

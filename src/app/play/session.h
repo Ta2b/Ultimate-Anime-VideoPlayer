@@ -104,18 +104,22 @@ struct SessionConfig {
 
 // Une ligne par présentation, pour --stats.
 struct PresentRecord {
+  std::int64_t seq = 0;  // rang de la présentation réussie, à partir de 1
   std::int64_t host_us = 0;
   std::int64_t pts_us = 0;
   bool fresh = false;
-  std::int64_t render_us = 0;
-  std::int64_t interval_us = 0;  // depuis l'image neuve précédente ; 0 pour un redessin
-  std::int64_t dropped = 0;      // total des images sautées
+  std::int64_t acquire_us = 0;     // attente d'une image de la swapchain
+  std::int64_t render_us = 0;      // composition soumise, l'acquisition exclue
+  std::int64_t queue_wait_us = 0;  // attente d'une place dans la file de l'écran
+  std::int64_t interval_us = 0;    // depuis l'image neuve précédente ; 0 pour un redessin
+  std::int64_t dropped = 0;        // total des images sautées
   // Ce qui a demandé la présentation : « i » image neuve, « s » sous-titres, « o » OSD, « u »
   // interface, « t » taille de sortie ; plusieurs lettres si plusieurs ont changé.
   std::string why;
   std::int64_t missing = 0;         // total des images manquées (FrameStats::missing)
   std::int64_t lag_us = 0;          // retard de l'image neuve sur l'horloge ; 0 pour un redessin
   std::int64_t uninterpolated = 0;  // total des instants sans image à dessein (FrameStats)
+  std::int64_t display_gpu_us = 0;  // temps GPU de l'affichage (0.3 : 0 tant qu'il n'est pas relevé)
 };
 
 class Session {
@@ -258,7 +262,8 @@ class Session {
   std::int64_t display_delay_us(std::int64_t period) const;
 
   double speed_ = 1.0;
-  double queue_fill_ = 0.0;  // part récente des présentations qui ont attendu une place en file
+  double queue_fill_ = 0.0;         // part récente des présentations qui ont attendu une place en file
+  std::int64_t presented_seq_ = 0;  // présentations réussies (PresentRecord::seq)
 };
 
 }  // namespace ajp::app::play
