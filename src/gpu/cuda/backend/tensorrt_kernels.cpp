@@ -161,12 +161,12 @@ std::expected<void, Refusal> TensorRtBackend::ingest(const DecodedFrame& frame, 
   if (rows > ingest_rows_size_) {
     // Toutes les voies peuvent encore lire l'ancien tampon : il part en retrait, libéré quand elles
     // l'ont quitté, sans arrêter l'appareil en cours de lecture.
-    if (ingest_rows_ != nullptr) {
-      if (auto ok = retire_buffer(ingest_rows_); !ok) return ok;
-    }
+    if (ingest_rows_ != nullptr) free_after_lanes(ingest_rows_);
     ingest_rows_ = nullptr;
     ingest_rows_size_ = 0;
-    if (auto ok = cuda_check(cudaMalloc(reinterpret_cast<void**>(&ingest_rows_), rows), "cudaMalloc"); !ok)
+    if (auto ok = cuda_check(cudaMallocAsync(reinterpret_cast<void**>(&ingest_rows_), rows, stream_),
+                             "cudaMallocAsync");
+        !ok)
       return ok;
     ingest_rows_size_ = rows;
   }
@@ -218,12 +218,10 @@ std::expected<void, Refusal> TensorRtBackend::ingest(const DecodedFrame& frame, 
 std::expected<void, Refusal> TensorRtBackend::reserve_deband(std::size_t bytes) {
   if (bytes <= deband_out_size_) return {};
   // L'ancien tampon part en retrait, comme celui de l'ingestion.
-  if (deband_out_ != nullptr) {
-    if (auto ok = retire_buffer(deband_out_); !ok) return ok;
-  }
+  if (deband_out_ != nullptr) free_after_lanes(deband_out_);
   deband_out_ = nullptr;
   deband_out_size_ = 0;
-  if (auto ok = cuda_check(cudaMalloc(&deband_out_, bytes), "cudaMalloc"); !ok) return ok;
+  if (auto ok = cuda_check(cudaMallocAsync(&deband_out_, bytes, stream_), "cudaMallocAsync"); !ok) return ok;
   deband_out_size_ = bytes;
   return {};
 }
@@ -238,34 +236,6 @@ std::optional<KernelOps::DeviceMemory> TensorRtBackend::device_memory() {
 
 void TensorRtBackend::release_retired() {
   if (!retired_.empty() && cudaEventQuery(retired_done_) == cudaSuccess) retired_.clear();
-  std::erase_if(retired_buffers_, [](RetiredBuffer& buffer) {
-    for (cudaEvent_t event : buffer.done) {
-      if (cudaEventQuery(event) != cudaSuccess) return false;
-    }
-    for (cudaEvent_t event : buffer.done) cudaEventDestroy(event);
-    cudaFree(buffer.device);
-    return true;
-  });
-}
-
-std::expected<void, Refusal> TensorRtBackend::retire_buffer(void* buffer) {
-  RetiredBuffer retired{.device = buffer};
-  for (int lane = 0; lane < lanes_; ++lane) {
-    cudaEvent_t event = nullptr;
-    if (auto ok = cuda_check(cudaEventCreateWithFlags(&event, cudaEventDisableTiming), "cudaEventCreate");
-        !ok) {
-      for (cudaEvent_t made : retired.done) cudaEventDestroy(made);
-      return ok;
-    }
-    retired.done.push_back(event);
-    const cudaStream_t stream = lanes_ > 1 ? streams_[static_cast<std::size_t>(lane)] : stream_;
-    if (auto ok = cuda_check(cudaEventRecord(event, stream), "cudaEventRecord"); !ok) {
-      for (cudaEvent_t made : retired.done) cudaEventDestroy(made);
-      return ok;
-    }
-  }
-  retired_buffers_.push_back(std::move(retired));
-  return {};
 }
 
 std::expected<ImportedSlot*, Refusal> TensorRtBackend::slot(const RingSlotDesc& desc) {
