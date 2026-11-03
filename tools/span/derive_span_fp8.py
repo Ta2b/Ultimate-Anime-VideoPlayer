@@ -4,13 +4,13 @@
 
 Le lecteur prend ce paquet au cran « Performance » de SPAN, sur une RTX 40 (sm 8.9), à la place du SPAN en
 TensorRT, quand son reçu passe les garde-fous (src/app/play/span_int8.h) ; sinon, ou si quoi que ce soit ne va
-pas (autre GPU, taille non prise, erreur CUDA), il reste sur TensorRT FP16. Seul le SPAN à 8 blocs de 64 canaux
-(« b8f64 », par exemple 2x_AnimeJaNai_HD_V3.1_Balanced_SPANF3_b8f64_unshuffle_fp16.onnx) est pris ; le modèle
-« Performance » b5f48 (48 canaux, 5 blocs) est refusé ici, avant tout calcul.
+pas (autre GPU, taille non prise, erreur CUDA), il reste sur TensorRT FP16. Le SPAN « b8f64 » (8 blocs de 64
+canaux) et le « Performance » b5f48 (5 blocs de 48 canaux, rangé en 64 canaux remplis de zéros, étape 3.2c)
+sont pris.
 
   1. Lecture et contrôle du graphe : noms et formes des poids, dégroupage 2x2.
-  2. Calibration : le maximum de |valeur| des 25 tenseurs que les noyaux quantifient en E4M3 (sortie de conv_1 ;
-     relu1, relu2 et sortie de chacun des 8 blocs) sur des découpes d'images d'anime, avec ONNX Runtime CPU en
+  2. Calibration : le maximum de |valeur| des 1 + 3·blocs tenseurs que les noyaux quantifient en E4M3 (sortie de
+     conv_1 ; relu1, relu2 et sortie de chaque bloc) sur des découpes d'images d'anime, avec ONNX Runtime CPU en
      FP32. Échelle = maximum / 448 (le plus grand E4M3 fini).
   3. Écriture du paquet « .span8 » (src/gpu/span_fp8/package.h) : poids FP16 du modèle, biais f32, échelles.
   4. Qualité : pour des images de validation, la sortie du lecteur (ajp_span_fp8_run, les noyaux eux-mêmes, sous
@@ -55,17 +55,21 @@ sys.modules["quantize_span"] = q
 _spec.loader.exec_module(q)
 
 MAGIC = b"AJPSPAN8"
-VERSION = 1
-BLOCKS, CHANNELS = 8, 64
+VERSION = 2  # blocs et canaux réels dans l'en-tête (src/gpu/span_fp8/package.h)
+MAX_BLOCKS, CHANNELS = 8, 64  # les noyaux : 64 canaux rangés, 2 à 8 blocs
 FORMAT = "ajp-span-fp8c-v1"
 E4M3_MAX = 448.0
 # Seuils du reçu : ceux de l'INT8 (span_int8.cpp), pas ceux du FP8 par Q/DQ.
 MIN_PSNR_MEAN_DB, MIN_PSNR_WORST_DB, MIN_SSIM_WORST = 42.0, 38.0, 0.985
 
-# Les tenseurs que les noyaux quantifient : conv_1, puis (relu1, relu2, sortie) de chaque bloc.
-CALIBRATED = ["/conv_1/conv_1.1/eval_conv/Conv_output_0"]
-for _k in range(1, BLOCKS + 1):
-    CALIBRATED += [f"/block_{_k}/act1/Relu_output_0", f"/block_{_k}/act1_1/Relu_output_0", f"/block_{_k}/Mul_output_0"]
+def calibrated(blocks: int) -> list[str]:
+    """Les tenseurs que les noyaux quantifient : conv_1, puis (relu1, relu2, sortie) de chaque bloc."""
+    names = ["/conv_1/conv_1.1/eval_conv/Conv_output_0"]
+    for k in range(1, blocks + 1):
+        names += [f"/block_{k}/act1/Relu_output_0", f"/block_{k}/act1_1/Relu_output_0", f"/block_{k}/Mul_output_0"]
+    return names
+
+
 UNSHUFFLED = "/conv_1/conv_1.0/Reshape_1_output_0"
 
 
@@ -73,46 +77,65 @@ def fail(message: str) -> None:
     sys.exit(f"derive_span_fp8 : {message}")
 
 
-def weights_of(model: onnx.ModelProto) -> dict[str, np.ndarray]:
-    """Les poids du SPAN b8f64, contrôlés : formes, nombre de blocs, présence de chaque nœud calibré."""
+def weights_of(model: onnx.ModelProto) -> tuple[dict[str, np.ndarray], int, int]:
+    """Les poids du SPAN (b8f64 ou b5f48), contrôlés : formes, nombre de blocs, présence de chaque nœud calibré.
+    Rend (poids, blocs, canaux)."""
     init = {i.name: numpy_helper.to_array(i) for i in model.graph.initializer}
     first = init.get("conv_1.1.eval_conv.weight")
     if first is None:
         fail("pas un SPAN AnimeJaNai « unshuffle » (conv_1.1.eval_conv.weight absent)")
-    if first.shape != (CHANNELS, 12, 3, 3):
-        fail(f"conv_1 de forme {first.shape} : seul le SPAN à {CHANNELS} canaux est pris "
-             f"(le modèle b5f48 à 48 canaux reste sur TensorRT FP16)")
+    c = first.shape[0]
+    if c not in (48, CHANNELS) or first.shape != (c, 12, 3, 3):
+        fail(f"conv_1 de forme {first.shape} : seuls les SPAN à 48 ou {CHANNELS} canaux sont pris")
     blocks = sorted({int(m.group(1)) for n in init for m in [re.match(r"block_(\d+)\.", n)] if m})
-    if blocks != list(range(1, BLOCKS + 1)):
-        fail(f"{len(blocks)} blocs trouvés, {BLOCKS} attendus")
-    expected = {"conv_cat.weight": (CHANNELS, 4 * CHANNELS, 1, 1), "to_pixel.eval_conv.weight": (48, CHANNELS, 3, 3)}
-    for k in range(1, BLOCKS + 1):
+    count = len(blocks)
+    if count < 2 or count > MAX_BLOCKS or blocks != list(range(1, count + 1)):
+        fail(f"{count} blocs trouvés, 2 à {MAX_BLOCKS} numérotés depuis 1 attendus")
+    expected = {"conv_cat.weight": (c, 4 * c, 1, 1), "to_pixel.eval_conv.weight": (48, c, 3, 3)}
+    for k in range(1, count + 1):
         for n in ("c1_r", "c2_r", "c3_r"):
-            expected[f"block_{k}.{n}.eval_conv.weight"] = (CHANNELS, CHANNELS, 3, 3)
-        expected[f"block_{k}.att_conv.weight"] = (CHANNELS, CHANNELS, 1, 1)
+            expected[f"block_{k}.{n}.eval_conv.weight"] = (c, c, 3, 3)
+        expected[f"block_{k}.att_conv.weight"] = (c, c, 1, 1)
     for name, shape in expected.items():
         if name not in init or init[name].shape != shape:
             fail(f"{name} : {'absent' if name not in init else init[name].shape}, {shape} attendu")
     produced = {o for n in model.graph.node for o in n.output}
-    for name in CALIBRATED + [UNSHUFFLED]:
+    for name in calibrated(count) + [UNSHUFFLED]:
         if name not in produced:
             fail(f"tenseur {name} absent du graphe : ce SPAN n'a pas la forme que les noyaux supposent")
-    return init
+    return init, count, c
 
 
-def krsc(w: np.ndarray, pad_to: int | None = None) -> np.ndarray:
-    """(sortie, entrée, ligne, colonne) -> (sortie, ligne, colonne, entrée), FP16, entrées complétées de zéros."""
+def krsc(w: np.ndarray, pad_to: int | None = None, out_to: int | None = None) -> np.ndarray:
+    """(sortie, entrée, ligne, colonne) -> (sortie, ligne, colonne, entrée), FP16, entrées et sorties complétées de
+    zéros (un modèle à 48 canaux rangé en 64)."""
     out = np.ascontiguousarray(w.transpose(0, 2, 3, 1))
     if pad_to is not None and out.shape[3] < pad_to:
         out = np.pad(out, [(0, 0), (0, 0), (0, 0), (0, pad_to - out.shape[3])])
+    if out_to is not None and out.shape[0] < out_to:
+        out = np.pad(out, [(0, out_to - out.shape[0]), (0, 0), (0, 0), (0, 0)])
     return np.ascontiguousarray(out.astype("<f2"))
+
+
+def flat(w: np.ndarray, groups: int = 1) -> np.ndarray:
+    """Une 1x1 (sortie, entrée, 1, 1) -> (64, 64·groups), FP16 ; groupe s de C entrées rangé en s·64 (le Concat)."""
+    o, i = w.shape[0], w.shape[1]
+    real = i // groups
+    out = np.zeros((CHANNELS, CHANNELS * groups), np.float32)
+    for g in range(groups):
+        out[:o, g * CHANNELS:g * CHANNELS + real] = w.reshape(o, i)[:, g * real:(g + 1) * real]
+    return np.ascontiguousarray(out.astype("<f2"))
+
+
+def bias64(b: np.ndarray, to: int = CHANNELS) -> np.ndarray:
+    return np.pad(b, (0, max(0, to - b.shape[0])))
 
 
 def f32(a: np.ndarray) -> bytes:
     return np.ascontiguousarray(a.astype("<f4")).tobytes()
 
 
-def build_package(init: dict[str, np.ndarray], scales: np.ndarray) -> bytes:
+def build_package(init: dict[str, np.ndarray], scales: np.ndarray, blocks: int, channels: int) -> bytes:
     """Le fichier .span8 : voir src/gpu/span_fp8/package.h (l'ordre des sections est celui de parse)."""
     body = bytearray(f32(scales))
 
@@ -120,26 +143,26 @@ def build_package(init: dict[str, np.ndarray], scales: np.ndarray) -> bytes:
         body.extend(weight.tobytes())
         body.extend(f32(bias))
 
-    conv(krsc(init["conv_1.1.eval_conv.weight"], 16), init["conv_1.1.eval_conv.bias"])
-    for k in range(1, BLOCKS + 1):
+    conv(krsc(init["conv_1.1.eval_conv.weight"], 16, CHANNELS), bias64(init["conv_1.1.eval_conv.bias"]))
+    for k in range(1, blocks + 1):
         for n in ("c1_r", "c2_r", "c3_r"):
-            conv(krsc(init[f"block_{k}.{n}.eval_conv.weight"]), init[f"block_{k}.{n}.eval_conv.bias"])
-        conv(init[f"block_{k}.att_conv.weight"].reshape(CHANNELS, CHANNELS).astype("<f2"), init[f"block_{k}.att_conv.bias"])
-    conv(init["conv_cat.weight"].reshape(CHANNELS, 4 * CHANNELS).astype("<f2"), init["conv_cat.bias"])
-    conv(krsc(init["to_pixel.eval_conv.weight"]), init["to_pixel.eval_conv.bias"])
-    header = MAGIC + struct.pack("<IIIIQII", VERSION, BLOCKS, CHANNELS, 0, len(body), zlib.crc32(bytes(body)), 0)
+            conv(krsc(init[f"block_{k}.{n}.eval_conv.weight"], CHANNELS, CHANNELS),
+                 bias64(init[f"block_{k}.{n}.eval_conv.bias"]))
+        conv(flat(init[f"block_{k}.att_conv.weight"]), bias64(init[f"block_{k}.att_conv.bias"]))
+    conv(flat(init["conv_cat.weight"], 4), bias64(init["conv_cat.bias"]))
+    conv(krsc(init["to_pixel.eval_conv.weight"], CHANNELS), init["to_pixel.eval_conv.bias"])
+    header = MAGIC + struct.pack("<IIIIQII", VERSION, blocks, CHANNELS, channels, len(body), zlib.crc32(bytes(body)), 0)
     assert len(header) == 40
     return header + bytes(body)
 
 
 def fit(image: np.ndarray, width: int, height: int) -> np.ndarray:
-    """Découpe centrée d'au plus width x height, ramenée à une taille que les noyaux prennent :
-    hauteur multiple de 4, largeur multiple de 128 ((h/2)*(w/2) multiple de 128, tout est pair)."""
+    """Découpe centrée d'au plus width x height, ramenée à une taille que les noyaux prennent : paire (étape 3.1)."""
     image = q.centre(image, width, height)
     _, h, w = image.shape
-    h, w = h // 4 * 4, w // 128 * 128
+    h, w = h // 2 * 2, w // 2 * 2
     if h == 0 or w == 0:
-        fail("image de validation trop petite pour les noyaux (128 colonnes au moins)")
+        fail("image de validation trop petite pour les noyaux")
     return image[:, :h, :w]
 
 
@@ -203,7 +226,8 @@ def main() -> int:
     model = onnx.load(str(source))
     if len(model.graph.input) != 1 or len(model.graph.output) != 1:
         fail("un SPAN a une entrée et une sortie")
-    init = weights_of(model)
+    init, blocks, channels = weights_of(model)
+    names = calibrated(blocks)
     input_name = model.graph.input[0].name
     print(f"{source.name} : {len(calibration)} images de calibration, {len(validation)} de validation")
 
@@ -212,16 +236,16 @@ def main() -> int:
 
     ref32 = q.to_float32(onnx.load(str(source)))
     calib_model = q.to_float32(onnx.load(str(source)))
-    for name in CALIBRATED + [UNSHUFFLED]:
+    for name in names + [UNSHUFFLED]:
         calib_model.graph.output.append(onnx.helper.make_tensor_value_info(name, q.F32, None))
     options = ort.SessionOptions()
     options.log_severity_level = 3
     sess_calib = ort.InferenceSession(calib_model.SerializeToString(), options, providers=["CPUExecutionProvider"])
     sess_ref = ort.InferenceSession(ref32.SerializeToString(), options, providers=["CPUExecutionProvider"])
     data = q.crops(calibration, args.calib_size, args.calib_crops, seed=int(source_sha[:8], 16))
-    peaks = np.zeros(len(CALIBRATED), np.float64)
+    peaks = np.zeros(len(names), np.float64)
     for i, crop in enumerate(data):
-        res = sess_calib.run(CALIBRATED + [UNSHUFFLED], {input_name: crop[None].astype(np.float32)})
+        res = sess_calib.run(names + [UNSHUFFLED], {input_name: crop[None].astype(np.float32)})
         if i == 0:  # le dégroupage que les noyaux supposent (canal = c*4 + a*2 + b) est celui du modèle
             n = args.calib_size
             mine = crop.reshape(3, n // 2, 2, n // 2, 2).transpose(0, 2, 4, 1, 3).reshape(12, n // 2, n // 2)
@@ -235,7 +259,7 @@ def main() -> int:
     scales = (peaks / E4M3_MAX).astype(np.float32)
     print(f"calibration : {args.calib_crops} découpes de {args.calib_size}², maxima {peaks.min():.2f} à {peaks.max():.2f}")
 
-    package = build_package(init, scales)
+    package = build_package(init, scales, blocks, channels)
     with tempfile.TemporaryDirectory(prefix="ajp-span8-") as work_dir:
         work = Path(work_dir)
         candidate_path = work / "candidate.span8"

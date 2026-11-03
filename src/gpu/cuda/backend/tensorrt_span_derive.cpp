@@ -100,9 +100,6 @@ std::expected<SpanFp8Derivation, Refusal> TensorRtBackend::derive_span_fp8(const
         return refuse(RefusalCode::ShapeInvalid, "dérivation du SPAN FP8 : images de tailles différentes");
   auto parsed = span_fp8::parse(request.package);
   if (!parsed) return std::unexpected(std::move(parsed.error()));
-  if (parsed->blocks.size() != static_cast<std::size_t>(SpanFp8Weights::kBlocks))
-    return refuse(RefusalCode::FormatUnsupported,
-                  "dérivation du SPAN FP8 : les noyaux ne prennent que 8 blocs");
   if (auto ok = bind(); !ok) return std::unexpected(std::move(ok.error()));
 
   const auto report = [&](float fraction, const char* stage) {

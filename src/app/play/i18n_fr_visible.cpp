@@ -63,9 +63,6 @@ constexpr std::array kVisibleTexts{
     Entry{"Preparing engine {}", "Préparation du moteur {}"},
     Entry{"Ready: ", "Prêt : "},
     Entry{"Rejected: ", "Refusé : "},
-    Entry{"This SPAN model (b5f48, 48 channels) is not supported by the FP8 kernels: pick a Balanced model.",
-          "Ce modèle SPAN (b5f48, 48 canaux) n'est pas pris par les noyaux FP8 : choisissez un modèle "
-          "Balanced."},
     Entry{"Updating {}", "Mise à jour de {}"},
     Entry{"Vulkan instead", "Vulkan à la place"},
     Entry{"a file could not be read or written", "un fichier n'a pas pu être lu ou écrit"},

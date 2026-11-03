@@ -78,6 +78,7 @@ SpanFp8Weights span_fp8_view(const span_fp8::Package& package) {
     return SpanFp8ConvView{.weights = conv.weights.data(), .bias = conv.bias.data()};
   };
   SpanFp8Weights weights;
+  weights.blocks = static_cast<int>(package.blocks.size());
   weights.scales = package.scales.data();
   weights.first = view(package.first);
   for (std::size_t b = 0; b < package.blocks.size(); ++b) {
@@ -136,10 +137,6 @@ std::expected<std::unique_ptr<SpanFp8Engine>, Refusal> SpanFp8Engine::load(
   auto parsed = span_fp8::parse(*bytes);
   if (!parsed) return std::unexpected(std::move(parsed.error()));
   bytes->clear();
-  if (parsed->blocks.size() != static_cast<std::size_t>(SpanFp8Weights::kBlocks))
-    return refuse(RefusalCode::FormatUnsupported,
-                  std::format("SPAN FP8 : paquet à {} blocs, les noyaux n'en prennent que {} (étape 3.2c)",
-                              parsed->blocks.size(), SpanFp8Weights::kBlocks));
   if (const std::string why = span_fp8::size_refusal(height, width); !why.empty())
     return refuse(RefusalCode::FormatUnsupported, "SPAN FP8 : " + why);
   SpanFp8Status status = SpanFp8Status::Ok;

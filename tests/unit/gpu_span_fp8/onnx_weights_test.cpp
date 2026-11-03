@@ -264,8 +264,14 @@ TEST_CASE("les poids lus ici sont ceux du paquet de derive_span_fp8.py", "[.span
   auto mine = package_from_onnx_file(model_path);
   REQUIRE(mine);
   mine->scales = parsed->scales;  // la calibration est ce qui diffère ; les poids doivent être les mêmes
-  const std::vector<std::byte> rewritten = serialize(*mine);
+  std::vector<std::byte> rewritten = serialize(*mine);
   REQUIRE(rewritten.size() == theirs.size());
+  // Un paquet Python de version 1 : l'en-tête C++ (version 2) ne diffère que par la version et les canaux
+  // réels.
+  if (theirs[8] == std::byte{1}) {
+    rewritten[8] = std::byte{1};
+    for (std::size_t i = 20; i < 24; ++i) rewritten[i] = std::byte{0};
+  }
   CHECK(std::memcmp(rewritten.data(), theirs.data(), theirs.size()) == 0);  // en-tête, CRC et charge compris
 }
 
