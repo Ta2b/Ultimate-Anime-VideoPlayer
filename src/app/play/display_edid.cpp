@@ -153,6 +153,15 @@ DisplayFacts parse_edid(std::span<const std::uint8_t> edid) {
   out.name = monitor_name(edid.first(kBlock));
   out.manufacturer = pnp_id(edid[8], edid[9]);
   out.product = static_cast<std::uint16_t>(edid[10] | (edid[11] << 8U));
+  // Quatre descripteurs de 18 octets dans le bloc de base, de l'octet 54 : 00 00 00 FD est la plage de
+  // fréquences.
+  for (std::size_t at = 54; at + 18 <= kBlock; at += 18) {
+    if (edid[at] == 0 && edid[at + 1] == 0 && edid[at + 2] == 0 && edid[at + 3] == 0xFD) {
+      // Octet 4, bits 0-1 : 3 = le minimum vertical se lit +255.
+      const int offset = (edid[at + 4] & 0x03U) == 0x03U ? 255 : 0;
+      if (edid[at + 5] != 0) out.vrr_min_hz = edid[at + 5] + offset;
+    }
+  }
   for (std::size_t at = kBlock; at + kBlock <= edid.size(); at += kBlock) {
     const std::span<const std::uint8_t> block = edid.subspan(at, kBlock);
     if (block[0] == kCtaTag) read_cta(block, out);

@@ -39,6 +39,8 @@ struct DisplayFacts {
   // VRR armé maintenant par le compositeur (VRR_ENABLED du CRTC sous Linux). Rien : inconnu ou, sous
   // Windows, identique à vrr.
   std::optional<bool> vrr_armed;
+  // Fréquence verticale minimale du descripteur de plage 0xFD de l'EDID (Hz) : le plancher du VRR.
+  std::optional<int> vrr_min_hz;
   OledSource source = OledSource::Unknown;
 };
 

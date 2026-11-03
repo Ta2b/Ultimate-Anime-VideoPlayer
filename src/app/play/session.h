@@ -95,7 +95,9 @@ struct SessionConfig {
   // que le VRR reste à une fréquence constante (une fréquence qui varie fait scintiller les scènes
   // sombres d'un OLED). Sans effet si la période est inconnue.
   bool steady_cadence = false;
-  StatsSettings stats;                 // mesures affichées (Tab bascule toutes)
+  std::int64_t vrr_floor_us =
+      0;                // VRR armé : plancher de l'écran (core/vrr_floor.h) ; 0 : pas de représentation
+  StatsSettings stats;  // mesures affichées (Tab bascule toutes)
   const StatsSource* extra = nullptr;  // vit plus longtemps que la session
   // Le retard des images, de leur soumission par gpu à leur écriture vue par main : la session le
   // mesure, gpu le lit. Vit plus longtemps que la session ; rien : pas de mesure.
@@ -139,6 +141,7 @@ class Session {
   // Mesures affichées, relues au tour suivant.
   void set_stats(const StatsSettings& stats);
   void set_steady_cadence(bool on) { config_.steady_cadence = on; }
+  void set_vrr_floor(std::int64_t floor_us) { config_.vrr_floor_us = floor_us; }
   void set_display_sync(bool on) { config_.display_sync = on; }  // au tour suivant
   // Un réglage de rendu (grade, finition, HDR) a changé : l'image tenue est recomposée au tour suivant, même
   // si rien d'autre n'a bougé (la présentation est à la demande).
@@ -234,6 +237,9 @@ class Session {
   std::optional<std::int64_t>
       held_subtitle_pts_;  // le pts à lire pendant une tenue ; vide : celui de l'image
   void follow_subtitles(std::int64_t host_now);
+  // L'image tenue se représente à intervalles égaux sous le plancher du VRR : l'intervalle voulu, 0 si
+  // inactif.
+  std::int64_t floor_step_us_now(std::int64_t host_now) const;
 
   bool fresh_ = false;       // ce tour montre une image neuve
   bool shown_once_ = false;  // une présentation a eu lieu : la suivante seulement si ça change

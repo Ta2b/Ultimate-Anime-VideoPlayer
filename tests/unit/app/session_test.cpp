@@ -433,6 +433,25 @@ TEST_CASE("Sous-titres : une image tenue 3 s, les demandes suivent la grille des
   }
 }
 
+TEST_CASE("VRR : une image tenue est représentée sous le plancher de l'écran, pas sans plancher",
+          "[app][session]") {
+  ajp::app::play::FrenchUi french;
+  const auto presented = [](std::int64_t floor_us) {
+    Rig rig(SessionConfig{.vrr_floor_us = floor_us});
+    rig.session.handle(ring_frame(0, 0));
+    rig.session.handle(ring_frame(1, 83'000));
+    rig.run_clock(0);
+    rig.tick();
+    while (rig.screen.now_us < 55'000) {
+      rig.screen.now_us += 1'000;
+      rig.tick();
+    }
+    return rig.screen.shown.size();
+  };
+  CHECK(presented(0) == 1);
+  CHECK(presented(18'939) >= 2);  // le faux écran avance de 16,7 ms par présentation
+}
+
 TEST_CASE("Présentation à la demande : rien ne change, rien n'est recomposé", "[app][session]") {
   ajp::app::play::FrenchUi french;
   Rig rig;
