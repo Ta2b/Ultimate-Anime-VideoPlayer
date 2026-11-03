@@ -77,12 +77,18 @@ class Overlays {
   Overlays(const Overlays&) = delete;
   Overlays& operator=(const Overlays&) = delete;
 
+  // Les calques d'une présentation : tous, puis les sous-titres (dans l'image composée gardée) et l'OSD
+  // (posé à chaque présentation) à part.
+  struct Built {
+    std::span<const pl_overlay> all;
+    std::span<const pl_overlay> subtitles;
+    std::span<const pl_overlay> osd;
+  };
   // ui_bottom, ui_top : pixels pris en bas et en haut par l'interface ; les sous-titres du bas
   // montent au-dessus, l'OSD descend dessous.
-  std::expected<std::span<const pl_overlay>, Refusal> build(const subs::SubtitleFrame* subtitles,
-                                                            const std::span<const std::string>* osd,
-                                                            OsdText& text, OutputSize out, int ui_bottom,
-                                                            int ui_top);
+  std::expected<Built, Refusal> build(const subs::SubtitleFrame* subtitles,
+                                      const std::span<const std::string>* osd, OsdText& text, OutputSize out,
+                                      int ui_bottom, int ui_top);
 
  private:
   struct Layer {
@@ -169,6 +175,10 @@ struct PlaceboScreen::Impl {
   FinalScaler final_scaler = FinalScaler::Default;  // posés par set_finish
   bool deband = false;
   bool source_debanded = false;  // l'image présentée, débandée avant SPAN (RingFrame::debanded)
+  // Augmenté à chaque changement de ce que le grade applique (app/play/compose_key.h) : paramètres, looks,
+  // KWin, couleur de la source, nouvelle scène.
+  std::uint64_t grade_serial = 0;
+  std::optional<render::Grade::KwinMatch> kwin_applied;
   // Ce que le grade porte : rien, le grade PQ (vrai) ou le grade SDR (faux) de grade_choice.
   std::optional<bool> grade_loaded_pq;
   // set_grade_after : le grade en attente passe dans grade_choice si l'image à présenter vient après la

@@ -77,6 +77,7 @@ bool PlaceboScreen::hdr_output() const {
 
 void PlaceboScreen::new_scene() {
   if (impl_->renderer != nullptr) pl_renderer_flush_cache(impl_->renderer);
+  ++impl_->grade_serial;
 }
 
 void PlaceboScreen::flush() {
@@ -259,8 +260,8 @@ std::expected<ScreenTiming, Refusal> PlaceboScreen::show(const ShowRequest& requ
       calibrating ? nullptr : request.subtitles, calibrating || request.osd.empty() ? nullptr : &request.osd,
       *s.osd, out, request.ui != nullptr ? request.ui_bottom : 0, request.ui != nullptr ? request.ui_top : 0);
   if (!overlays) return std::unexpected(std::move(overlays.error()));
-  target.overlays = overlays->data();
-  target.num_overlays = static_cast<int>(overlays->size());
+  target.overlays = overlays->all.data();
+  target.num_overlays = static_cast<int>(overlays->all.size());
 
   if (auto drawn = s.compose(frame != nullptr ? &image : nullptr, target); !drawn) {
     return std::unexpected(std::move(drawn.error()));
