@@ -7,7 +7,7 @@
 
 namespace ajp::app::play {
 
-TEST_CASE("--stats : l'en-tête nomme chaque colonne écrite, dans l'ordre", "[app][stats]") {
+TEST_CASE("Option --stats : l'en-tête nomme chaque colonne écrite, dans l'ordre", "[app][stats]") {
   const PresentRecord record{.seq = 7, .host_us = 1000, .why = "i", .display_gpu_us = 42};
   const std::string header = stats_header();
   const std::string line = stats_line(record);
