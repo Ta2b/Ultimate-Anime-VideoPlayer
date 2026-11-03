@@ -10,3 +10,4 @@ sa page, avec le numéro de celle qui la remplace.
 | [0003](0003-un-seul-mode-auto.md) | Un seul mode Auto : Rapide par défaut, Stable au choix | Acceptée (#287) |
 | [0004](0004-grade-scene-donnee-par-le-lecteur.md) | Le grade en trois passes, la scène mesurée par le lecteur | Acceptée (#283, #284) |
 | [0007](0007-span-basse-precision-par-defaut.md) | SPAN basse précision par défaut, derrière une porte durcie et un reçu v2 | Acceptée (#365 à #376), mesures RTX à faire |
+| [0008](0008-anneau-rgb10a2.md) | Anneau RGB10A2 derrière un interrupteur ; TensorRT n'écrit pas dans l'anneau | Acceptée (#378 à #383), défaut à mesurer |

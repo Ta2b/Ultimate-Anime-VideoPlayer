@@ -317,6 +317,34 @@ Rien de ce chantier n'a été compilé avec CUDA : construire d'abord avec `AJP_
 - **11.8, seulement si la trace le justifie** : la composition attend sa tranche de temps plus de
   0,5 ms au p95.
 
+## Plan NVIDIA, chantier 3 : SPAN basse précision (novembre, écrit dans le cloud sans compilateur CUDA)
+
+- **3.0, banc de départ** : le protocole de `docs/reports/span-lowp-base.md`, ABAB × 3 sous verrou.
+- **Tests cachés** : `ajp_backend_tensorrt_tests "[.span_derive]"` (dérivation, porte durcie, et un paquet aux
+  échelles divisées par 4 qui échoue) ; `ajp_span_fp8_kernel_tests` (épilogue de `to_pixel` au bit près).
+- **3.6, Auto** : une première lecture prépare le paquet en silence (journal « SPAN Performance (prereglage) ») ;
+  la seconde dit « SPAN FP8 (noyaux CUTLASS) chargé ». SPAN −30 % et J par image −25 % à 24 i/s.
+- **Seuils de la porte** : relever les centiles du b8f64 accepté et ramener `kMaxErrorP999`,
+  `kMaxDarkErrorP999`, `kMinHardPsnrWorstDb` à 1,25 × ces valeurs.
+- **À décider après mesure** : 3.4c (dégroupage fondu, si ≥ 4 % du SPAN FP8 en 1080p), 3.5b (accumulation f16
+  dans les blocs, gardée si ≥ −10 %).
+
+## Plan NVIDIA, chantier 5 : passes en trop et anneau RGB10A2 (novembre, sans compilateur CUDA)
+
+- **5.1** : `nsys stats -r cuda_gpu_kern_sum` d'une lecture TensorRT FP16, la part de `write_rgba16` notée
+  (décision dans l'ADR 0008).
+- **5.2, RIFE fusionné** : `ajp_backend_tensorrt_tests "[.rife_fused]"` (dont l'instant 0,3 posé par
+  `rife_time`) ; −1 ms GPU/s.
+- **5.3, Hermite tuilé** : `ajp_backend_tensorrt_tests "[.bench]"` avant et après (Hermite ≤ 0,6 ×) ; le test
+  des réductions passe.
+- **5.4, débandage** : le test « ingestion avec débandage fusionné » passe ; passe d'ingestion débandée
+  ≤ 0,7 × l'ancienne.
+- **5.5, anneau RGB10A2** : `ajp_app_tests "[.ring_interop]"` (un code près) ; puis sur les plans sombres de
+  `data/calibration/calibration.mkv`, `ajp play … --snapshot=A.ppm --snapshot-at=S` sans et avec
+  `--ring-rgb10a2` (`B.ppm`), et `tools/ring/banding.py --compare A.ppm B.ppm` ≤ 1,10. VRAM de l'anneau −50 %
+  (`--stats`), export P010 ≥ 50 dB contre RGBA16. Si tout passe, RGB10A2 devient le défaut sous TensorRT
+  (ADR 0008).
+
 ## Linux sur RX 6500M (RDNA2 Navi 24, 4 Go)
 
 Backend Vulkan seul (pas de matrices coopératives, ROCm ne sert pas Navi 24 : MIGraphX n'est plus
