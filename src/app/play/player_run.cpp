@@ -254,7 +254,11 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
                 gpu::BackendInit{
                     .render = &p.screen.device(), .cache_dir = p.paths.engines, .log = backend_log()},
                 fp8_facts.capability, c.model->path, p.paths.engines.parent_path() / "modeles",
-                p.options.file, fp8_reason, span_still_reduce(work.width, work.height, settings.downscale))
+                p.options.file, fp8_reason, span_still_reduce(work.width, work.height, settings.downscale),
+                SpanFp8Context{.gpu_arch = c.backend ? c.backend->capabilities().gpu_arch : std::string(),
+                               .kernels_version = c.backend ? c.backend->capabilities().span_fp8_kernels : 0,
+                               .width = work.width,
+                               .height = work.height})
           : SpanPrepare{};
   const std::optional<DrbaModel> drba_file = find_distil_drba(c.gmfss_places);
   p.ui.set_tracks((*pipeline)->tracks());

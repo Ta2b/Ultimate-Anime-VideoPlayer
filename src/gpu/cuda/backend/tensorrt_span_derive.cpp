@@ -88,11 +88,11 @@ std::expected<SpanFp8Derivation, Refusal> TensorRtBackend::derive_span_fp8(const
         std::format("SPAN FP8 (CUTLASS) : {} (sm {}.{}) n'est pas pris, ou backend construit sans CUTLASS",
                     properties_.name, properties_.major, properties_.minor));
   }
-  if (request.calibration.empty() || request.validation.empty())
+  if ((request.calibration.empty() && !request.validate_only) || request.validation.empty())
     return refuse(RefusalCode::ShapeInvalid,
                   "dérivation du SPAN FP8 : images de calibration et de validation attendues");
-  const int width = request.calibration.front().width;
-  const int height = request.calibration.front().height;
+  const int width = request.validation.front().width;
+  const int height = request.validation.front().height;
   if (const std::string why = span_fp8::size_refusal(height, width); !why.empty())
     return refuse(RefusalCode::FormatUnsupported, "dérivation du SPAN FP8 : " + why);
   const std::size_t plane = static_cast<std::size_t>(height) * static_cast<std::size_t>(width);
@@ -147,6 +147,7 @@ std::expected<SpanFp8Derivation, Refusal> TensorRtBackend::derive_span_fp8(const
       static_cast<float>(request.calibration.size() + request.validation.size() + request.hard.size());
   float done = 0.0F;
   for (const SpanStill& still : request.calibration) {
+    if (request.validate_only) break;  // validation seule : les échelles du paquet
     if (cancelled()) return stopped();
     if (auto ok = upload(still); !ok) return std::unexpected(std::move(ok.error()));
     if (!reference->run(scratch.stream, scratch.input, scratch.output_ref, true, why))
@@ -155,17 +156,23 @@ std::expected<SpanFp8Derivation, Refusal> TensorRtBackend::derive_span_fp8(const
     report(0.05F + 0.55F * done / total, "calibration");
   }
   SpanFp8Derivation result;
-  float peaks[SpanFp8Reference::kPeaks];
-  if (!reference->peaks(peaks, why))
-    return refuse(RefusalCode::VendorCallFailed, "dérivation du SPAN FP8 : " + why);
-  std::ranges::copy(peaks, result.peaks.begin());
-  auto scales = span_fp8::scales_from_peaks(result.peaks, parsed->blocks.size());
-  if (!scales) return std::unexpected(std::move(scales.error()));
-  result.scales = *scales;
+  result.gpu_arch = std::format("sm_{}{}", properties_.major, properties_.minor);
+  result.kernels_version = SpanFp8Net::kKernelsVersion;
+  if (request.validate_only) {
+    result.scales = parsed->scales;
+  } else {
+    float peaks[SpanFp8Reference::kPeaks];
+    if (!reference->peaks(peaks, why))
+      return refuse(RefusalCode::VendorCallFailed, "dérivation du SPAN FP8 : " + why);
+    std::ranges::copy(peaks, result.peaks.begin());
+    auto scales = span_fp8::scales_from_peaks(result.peaks, parsed->blocks.size());
+    if (!scales) return std::unexpected(std::move(scales.error()));
+    result.scales = *scales;
+  }
 
   // --- 2. le réseau FP8 à ces échelles
   weights.scales = result.scales.data();
-  weights.acc16 = false;
+  weights.acc16 = request.validate_only && parsed->acc16;  // validation seule : la variante du paquet
   const std::unique_ptr<SpanFp8Net> net = SpanFp8Net::create(weights, height, width, status, why);
   if (!net)
     return refuse(status == SpanFp8Status::OutOfMemory ? RefusalCode::GpuMemoryExhausted
@@ -173,7 +180,8 @@ std::expected<SpanFp8Derivation, Refusal> TensorRtBackend::derive_span_fp8(const
                   "dérivation du SPAN FP8 : envoi des poids : " + why);
   weights.acc16 = true;
   // Variante f16 : un refus ici ne fait pas échouer la dérivation, elle n'est simplement pas proposée.
-  const std::unique_ptr<SpanFp8Net> net16 = SpanFp8Net::create(weights, height, width, status, why);
+  const std::unique_ptr<SpanFp8Net> net16 =
+      request.validate_only ? nullptr : SpanFp8Net::create(weights, height, width, status, why);
   if (auto e = cudaMalloc(&scratch.workspace, static_cast<std::size_t>(net->workspace_bytes()));
       e != cudaSuccess)
     return cuda_refusal(e, "cudaMalloc");

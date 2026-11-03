@@ -1,5 +1,6 @@
 #include "app/play/span_int8.h"
 
+#include <cstdint>
 #include <format>
 #include <fstream>
 #include <sstream>
@@ -8,6 +9,7 @@
 #include <utility>
 
 #include "app/play/i18n.h"
+#include "gpu/span_fp8/derive.h"
 #include "prepare/sha256.h"
 #include "prepare/utf8.h"
 
@@ -93,7 +95,7 @@ std::string_view variant_text(SpanVariantKind kind) {
 }
 
 SpanInt8Lookup find_span_variant(SpanVariantKind kind, const std::filesystem::path& span,
-                                 const std::filesystem::path& dir) {
+                                 const std::filesystem::path& dir, const SpanFp8Context* fp8) {
   const KindFacts limits = facts(kind);
   auto sha = prepare::sha256_file_known(span);
   if (!sha) return refused(sha.error().detail);
@@ -110,15 +112,17 @@ SpanInt8Lookup find_span_variant(SpanVariantKind kind, const std::filesystem::pa
   toml::parse_result parsed = toml::parse(text.str());
   if (!parsed) return refused(i18n::tr_format("{} unreadable: {}", where, parsed.error().description()));
   const toml::table& receipt = parsed.table();
-  if (receipt["format"].value_or(std::string_view()) != limits.receipt_format)
-    return refused(i18n::tr_format("{}: unknown format", where));
+  const std::string_view format = receipt["format"].value_or(std::string_view());
+  const bool v2 = kind == SpanVariantKind::Fp8Cutlass && format == gpu::span_fp8::kReceiptFormat;
+  if (format != limits.receipt_format && !v2) return refused(i18n::tr_format("{}: unknown format", where));
   if (receipt["source_sha256"].value_or(std::string_view()) != *sha)
     return refused(i18n::tr_format("{}: receipt from another model", where));
   const SpanInt8 variant{.kind = kind,
                          .onnx = onnx,
                          .psnr_mean_db = receipt["psnr_mean_db"].value_or(0.0),
                          .psnr_worst_db = receipt["psnr_worst_db"].value_or(0.0),
-                         .ssim_worst = receipt["ssim_worst"].value_or(0.0)};
+                         .ssim_worst = receipt["ssim_worst"].value_or(0.0),
+                         .receipt_v2 = v2};
   const std::string scores = std::format("PSNR moyen {:.1f} dB, pire {:.1f} dB, pire SSIM {:.4f}",
                                          variant.psnr_mean_db, variant.psnr_worst_db, variant.ssim_worst);
   if (!receipt["passed"].value_or(false) || variant.psnr_mean_db < limits.min_psnr_mean ||
@@ -131,8 +135,55 @@ SpanInt8Lookup find_span_variant(SpanVariantKind kind, const std::filesystem::pa
   if (!model_sha) return refused(model_sha.error().detail);
   if (receipt["model_sha256"].value_or(std::string_view()) != *model_sha)
     return refused(i18n::tr_format("{}: changed since its receipt", prepare::utf8_path(onnx.filename())));
+  if (v2 && fp8 != nullptr) {
+    // Étape 3.7b : le paquet ne vaut que pour l'appareil, les noyaux et les tailles où la porte l'a jugé.
+    const std::string_view arch = receipt["gpu_arch"].value_or(std::string_view());
+    if (arch != fp8->gpu_arch)
+      return refused(
+          i18n::tr_format("{}: derived on {}, this GPU is {}: prepare it again", where, arch, fp8->gpu_arch));
+    const auto kernels = receipt["kernels_version"].value_or(std::int64_t{0});
+    if (kernels != fp8->kernels_version)
+      return refused(i18n::tr_format("{}: kernels version {}, this engine has {}: prepare it again", where,
+                                     kernels, fp8->kernels_version));
+    const std::string size = gpu::span_fp8::size_key(fp8->width, fp8->height);
+    const auto listed = [&](std::string_view key) {
+      if (const toml::array* sizes = receipt[key].as_array())
+        for (const toml::node& entry : *sizes)
+          if (entry.value_or(std::string_view()) == size) return true;
+      return false;
+    };
+    if (listed("refused_sizes")) return refused(i18n::tr_format("{}: rejected at {}", where, size));
+    if (!listed("validated_sizes")) {
+      SpanInt8Lookup pending = refused(i18n::tr_format("{}: not validated at {} yet", where, size));
+      pending.unvalidated_size = size;
+      return pending;
+    }
+  }
   return SpanInt8Lookup{.variant = variant,
                         .note = std::format("{} ({})", prepare::utf8_path(onnx.filename()), scores)};
+}
+
+std::expected<ReceiptSizes, Refusal> read_receipt_sizes(const std::filesystem::path& receipt_path) {
+  std::ifstream in(receipt_path, std::ios::binary);
+  if (!in)
+    return std::unexpected(
+        Refusal{RefusalCode::FileUnreadable, std::format("{} illisible", prepare::utf8_path(receipt_path))});
+  std::ostringstream text;
+  text << in.rdbuf();
+  ReceiptSizes out{.text = text.str(), .validated = {}, .refused = {}};
+  toml::parse_result parsed = toml::parse(out.text);
+  if (!parsed)
+    return std::unexpected(Refusal{
+        RefusalCode::FileUnreadable,
+        std::format("{} illisible : {}", prepare::utf8_path(receipt_path), parsed.error().description())});
+  const auto take = [&](std::string_view key, std::vector<std::string>& into) {
+    if (const toml::array* sizes = parsed.table()[key].as_array())
+      for (const toml::node& entry : *sizes)
+        if (const auto value = entry.value<std::string>()) into.push_back(*value);
+  };
+  take("validated_sizes", out.validated);
+  take("refused_sizes", out.refused);
+  return out;
 }
 
 std::optional<std::string> span_int8_source(const std::string& file, SpanVariantKind* kind) {

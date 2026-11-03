@@ -79,6 +79,17 @@ TEST_CASE("SPAN FP8 CUTLASS : le paquet d'un reçu qui passe les seuils de l'INT
   CHECK(variant_text(SpanVariantKind::Fp8Cutlass) == "FP8 CUTLASS");
 }
 
+TEST_CASE("SPAN FP8 CUTLASS : un reçu v1 se lit encore, sans valoir reçu v2 (3.7b)", "[app][int8][fp8c]") {
+  ajp::app::play::FrenchUi french;
+  const Folder f;
+  f.receipt(52.0, 49.3, 0.9967);
+  const SpanFp8Context here{.gpu_arch = "sm_89", .kernels_version = 1, .width = 1280, .height = 720};
+  const SpanInt8Lookup found = find_span_variant(SpanVariantKind::Fp8Cutlass, f.span, f.dir(), &here);
+  REQUIRE(found.variant);
+  CHECK_FALSE(found.variant->receipt_v2);  // l'Auto ne le prend pas
+  CHECK(found.unvalidated_size.empty());
+}
+
 TEST_CASE("SPAN FP8 CUTLASS : un score que le FP8 par Q/DQ accepterait ne suffit pas", "[app][int8][fp8c]") {
   ajp::app::play::FrenchUi french;
   const Folder f;

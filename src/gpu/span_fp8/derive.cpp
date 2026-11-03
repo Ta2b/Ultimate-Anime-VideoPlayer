@@ -93,7 +93,49 @@ std::string receipt_text(const Receipt& r, std::string_view comment) {
   out += std::format("passed = {}\n", r.verdict.passed ? "true" : "false");
   if (!r.reference.empty()) text("reference", r.reference);
   if (!r.derived_by.empty()) text("derived_by", r.derived_by);
+  text("gpu_arch", r.gpu_arch);
+  whole("kernels_version", r.kernels_version);
+  whole("blocks", r.blocks);
+  whole("channels", r.channels);
+  text("accumulator", r.acc16 ? "f16" : "f32");
+  out += std::format("error_p999_worst = {:.6f}\n", r.verdict.error_p999_worst);
+  out += std::format("dark_error_p999_worst = {:.6f}\n", r.verdict.dark_error_p999_worst);
+  real("hard_psnr_worst_db", r.verdict.hard_psnr_worst_db);
+  whole("hard_images", r.verdict.hard_images);
+  out += sizes_line("validated_sizes", r.validated_sizes) + "\n";
+  out += sizes_line("refused_sizes", r.refused_sizes) + "\n";
   return out;
+}
+
+std::string sizes_line(std::string_view key, const std::vector<std::string>& sizes) {
+  std::string out = std::format("{} = [", key);
+  for (std::size_t i = 0; i < sizes.size(); ++i)
+    out += std::format("{}{}", i == 0 ? "" : ", ", quoted(sizes[i]));
+  return out + "]";
+}
+
+std::string with_sizes(std::string_view receipt, const std::vector<std::string>& validated,
+                       const std::vector<std::string>& refused) {
+  std::string out;
+  std::size_t at = 0;
+  while (at < receipt.size()) {
+    std::size_t end = receipt.find('\n', at);
+    if (end == std::string_view::npos) end = receipt.size();
+    const std::string_view line = receipt.substr(at, end - at);
+    if (!line.starts_with("validated_sizes =") && !line.starts_with("refused_sizes =")) {
+      out += line;
+      out += '\n';
+    }
+    at = end + 1;
+  }
+  out += sizes_line("validated_sizes", validated) + "\n";
+  out += sizes_line("refused_sizes", refused) + "\n";
+  return out;
+}
+
+std::string size_key(int width, int height) {
+  const Crop crop = kernel_crop(width, height);
+  return std::format("{}x{}", crop.width, crop.height);
 }
 
 Crop kernel_crop(int width, int height, int max_width, int max_height) {

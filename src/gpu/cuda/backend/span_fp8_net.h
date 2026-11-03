@@ -51,6 +51,9 @@ class SpanFp8Net {
   // Vrai pour sm 8.9 (Ada) seulement : les noyaux emploient les mma FP8 de cette architecture et ne sont
   // compilés que pour elle.
   static bool supported_device(int major, int minor);
+  // La version des noyaux, écrite au reçu (étape 3.7b) : à augmenter à chaque changement de ce qu'ils
+  // calculent (un paquet validé avec d'autres noyaux se revalide). 1 : état après les étapes 3.1 à 3.5.
+  static constexpr int kKernelsVersion = 1;
 
   // Envoie les poids sur l'appareil courant (FP8 pour les blocs) et prépare les lancements. height et width
   // sont déjà jugés par span_fp8::size_refusal. Nul si l'envoi échoue ; status et error disent pourquoi.

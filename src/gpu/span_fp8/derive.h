@@ -17,7 +17,8 @@ namespace ajp::gpu::span_fp8 {
 inline constexpr float kE4m3Max = 448.0F;  // le plus grand E4M3 fini
 
 // Format du reçu et seuils : ceux de l'INT8 (app/play/span_int8.cpp), pas ceux, lâches, du FP8 par Q/DQ.
-inline constexpr const char* kReceiptFormat = "ajp-span-fp8c-v1";
+inline constexpr const char* kReceiptFormat = "ajp-span-fp8c-v2";    // étape 3.7b
+inline constexpr const char* kReceiptFormatV1 = "ajp-span-fp8c-v1";  // tools/span/derive_span_fp8.py
 inline constexpr double kMinPsnrMeanDb = 42.0;
 inline constexpr double kMinPsnrWorstDb = 38.0;
 inline constexpr double kMinSsimWorst = 0.985;
@@ -91,9 +92,25 @@ struct Receipt {
   // Seulement pour la dérivation native.
   std::string reference;   // d'où vient la sortie de référence (« cutlass-fp16 »)
   std::string derived_by;  // « ajp (natif) »
+  // Version 2 (étape 3.7b) : ce qui lie le paquet à l'appareil, aux noyaux et aux tailles jugées.
+  std::string gpu_arch;  // « sm_89 »
+  int kernels_version = 0;
+  int blocks = 0;
+  int channels = 0;  // réels : 48 ou 64
+  bool acc16 = false;
+  std::vector<std::string> validated_sizes;  // « 1280x720 » : tailles où la porte a passé
+  std::vector<std::string> refused_sizes;    // et où elle a échoué (rien n'est refait à cette taille)
 };
 
 std::string receipt_text(const Receipt& receipt, std::string_view comment);
+
+// La ligne TOML d'une liste de tailles : « validated_sizes = ["1280x720", "1920x1080"] ».
+std::string sizes_line(std::string_view key, const std::vector<std::string>& sizes);
+// Le texte d'un reçu v2 dont les lignes validated_sizes et refused_sizes sont remplacées (validation seule).
+std::string with_sizes(std::string_view receipt, const std::vector<std::string>& validated,
+                       const std::vector<std::string>& refused);
+// « 1280x720 » : la taille de la découpe que la préparation ferait à width × height (kernel_crop).
+std::string size_key(int width, int height);
 
 // Les tailles d'image que la dérivation prend : au plus width × height, ramenées à ce que les noyaux
 // acceptent (hauteur et largeur paires, étape 3.1). {0, 0} si rien n'en reste.

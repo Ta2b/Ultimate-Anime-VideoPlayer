@@ -284,6 +284,8 @@ BackendCaps TensorRtBackend::capabilities() const {
       .int8 = true,  // graphes Q/DQ (SPAN INT8, span_int8.h) : Turing et après
       .fp8 = properties_.major > 8 || (properties_.major == 8 && properties_.minor >= 9),  // Ada et après
       .span_fp8_cutlass = SpanFp8Net::supported_device(properties_.major, properties_.minor),
+      .gpu_arch = std::format("sm_{}{}", properties_.major, properties_.minor),
+      .span_fp8_kernels = SpanFp8Net::kKernelsVersion,
       .rife_fused = true,
       .drba_fused = true,
       .gmfss_fused = true,
