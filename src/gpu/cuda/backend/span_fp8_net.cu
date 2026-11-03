@@ -86,21 +86,27 @@ struct SpanFp8Net::Impl {
   void* workspace = nullptr;
   cudaError_t attribute = cudaSuccess;
 
+  // Les tampons à un multiple de 128 lignes (la tuile M) : la dernière tuile reste dans son tampon même si
+  // une garde manquait (étape 3.1).
+  std::int64_t tiled() const { return (npix + 127) / 128 * 128; }
+
   std::int64_t workspace_bytes() const {
     // concaténation FP16 de 256 canaux + quatre tampons FP8 de 64 canaux ; dégroupage, sortie de conv_cat et
     // de to_pixel recouvrent des tampons FP8 alors inactifs.
-    return 2 * kAlign + align_up(npix * 512) + align_up(npix * 256);
+    const std::int64_t rows = tiled();
+    return 2 * kAlign + align_up(rows * 512) + align_up(rows * 256);
   }
 
   void bind(void* base) {
     workspace = base;
     auto* bytes = static_cast<std::uint8_t*>(base);
-    const std::int64_t cat_bytes = align_up(npix * 512);
+    const std::int64_t rows = tiled();
+    const std::int64_t cat_bytes = align_up(rows * 512);
     __half* cat_in = reinterpret_cast<__half*>(bytes);
     std::uint8_t* region = bytes + cat_bytes;
-    std::uint8_t* x[2] = {region, region + npix * 64};
-    std::uint8_t* r1 = region + npix * 128;
-    std::uint8_t* r2 = region + npix * 192;
+    std::uint8_t* x[2] = {region, region + rows * 64};
+    std::uint8_t* r1 = region + rows * 128;
+    std::uint8_t* r2 = region + rows * 192;
     __half* unshuffled = reinterpret_cast<__half*>(r1);
     __half* cat_out = reinterpret_cast<__half*>(r1);
     __half* pix_out = reinterpret_cast<__half*>(x[0]);

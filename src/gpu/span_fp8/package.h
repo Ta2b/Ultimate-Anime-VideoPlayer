@@ -54,8 +54,8 @@ struct Package {
   Conv pixel;   // to_pixel : 3×3, 64 → 48
 };
 
-// Les noyaux traitent des lignes de 128 pixels de caractéristiques (demi-résolution) sans garde de bord, et
-// le dégroupage prend des blocs 2×2 : hauteur et largeur paires, (h/2)·(w/2) multiple de 128.
+// Le dégroupage prend des blocs 2×2 : hauteur et largeur paires. La dernière tuile de 128 lignes des noyaux
+// garde ses lignes au-delà de M (étape 3.1) : plus de multiple de 128.
 bool size_supported(int height, int width);
 // Pourquoi une taille n'est pas prise ; vide si elle l'est.
 std::string size_refusal(int height, int width);

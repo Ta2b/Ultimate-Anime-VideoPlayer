@@ -32,6 +32,7 @@ struct KP {
   __half* out16 = nullptr;      // sortie FP16 (déjà décalée à la tranche de canaux) ou nullptr
   int ld16 = 0;                 // pas de ligne de out16, en éléments
   int ncols = 64;               // colonnes de sortie utiles (64 ou 48)
+  long rows = 0;                // lignes de la convolution (M = H·W) : la dernière tuile garde les siennes
 };
 
 __device__ __forceinline__ float tanh_approx(float x) {
@@ -112,6 +113,9 @@ __global__ void __launch_bounds__(Base::kThreadCount) net_kernel(typename Base::
 #pragma unroll
   for (int m = 0; m < kMI; ++m) {
     const long r0 = row_base + m * 16 + g, r1 = r0 + 8;
+    // Étape 3.1 : une ligne au-delà de M n'est ni lue (saut) ni écrite. Les mma_f16 du mode 1 tournent quand
+    // même : ils sont collectifs au warp.
+    const bool in0 = r0 < tp.rows, in1 = r1 < tp.rows;
     float v[8][4];
 #pragma unroll
     for (int n = 0; n < 8; ++n) {
@@ -132,15 +136,15 @@ __global__ void __launch_bounds__(Base::kThreadCount) net_kernel(typename Base::
           v[n][2] = fmaxf(v[n][2], 0.f);
           v[n][3] = fmaxf(v[n][3], 0.f);
         }
-        store_pair(tp, r0, n * 8 + 2 * t, v[n][0], v[n][1]);
-        store_pair(tp, r1, n * 8 + 2 * t, v[n][2], v[n][3]);
+        if (in0) store_pair(tp, r0, n * 8 + 2 * t, v[n][0], v[n][1]);
+        if (in1) store_pair(tp, r1, n * 8 + 2 * t, v[n][2], v[n][3]);
       }
     } else {
       uint16_t sk[8][2];
 #pragma unroll
       for (int n = 0; n < 8; ++n) {
-        sk[n][0] = *reinterpret_cast<const uint16_t*>(tp.skip + r0 * 64 + n * 8 + 2 * t);
-        sk[n][1] = *reinterpret_cast<const uint16_t*>(tp.skip + r1 * 64 + n * 8 + 2 * t);
+        sk[n][0] = in0 ? *reinterpret_cast<const uint16_t*>(tp.skip + r0 * 64 + n * 8 + 2 * t) : uint16_t{0};
+        sk[n][1] = in1 ? *reinterpret_cast<const uint16_t*>(tp.skip + r1 * 64 + n * 8 + 2 * t) : uint16_t{0};
       }
       uint32_t A[4][4];
 #pragma unroll
@@ -168,7 +172,7 @@ __global__ void __launch_bounds__(Base::kThreadCount) net_kernel(typename Base::
           float s0 = v[nt][2 * h] + skf.x * tp.skip_scale, s1 = v[nt][2 * h + 1] + skf.y * tp.skip_scale;
           float o0 = s0 * tanh_approx(d[2 * h] + bb1.x);
           float o1 = s1 * tanh_approx(d[2 * h + 1] + bb1.y);
-          store_pair(tp, h ? r1 : r0, nt * 8 + 2 * t, o0, o1);
+          if (h ? in1 : in0) store_pair(tp, h ? r1 : r0, nt * 8 + 2 * t, o0, o1);
         }
       }
     }
@@ -215,6 +219,7 @@ struct Launcher {
     params = typename Base::Params(args, nullptr);
     kp = k;
     kp.ncols = Kout;
+    kp.rows = long(H) * W;
     grid = typename Base::ThreadblockSwizzle().get_grid_shape(params.grid_tiled_shape);
     block = dim3(Base::kThreadCount);
     smem = ((sizeof(typename Base::Mma::SharedStorage) + 15) / 16) * 16 + 64 * 72 * 2;

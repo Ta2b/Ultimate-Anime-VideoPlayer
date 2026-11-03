@@ -101,10 +101,8 @@ std::string size_refusal(int height, int width) {
     return std::format("taille {}x{} hors de 1 à {}", width, height, kMaxSide);
   if (height % 2 != 0 || width % 2 != 0)
     return std::format("taille {}x{} : hauteur et largeur paires attendues (dégroupage 2x2)", width, height);
-  const long long features = static_cast<long long>(height / 2) * (width / 2);
-  if (features % 128 != 0)
-    return std::format("taille {}x{} : {} pixels de caractéristiques, un multiple de 128 est attendu", width,
-                       height, features);
+  // Toute taille paire (étape 3.1) : la dernière tuile de 128 lignes déborde de M, l'épilogue garde ses
+  // lignes (row < rows) et les itérateurs CUTLASS masquent déjà leurs lectures.
   return {};
 }
 

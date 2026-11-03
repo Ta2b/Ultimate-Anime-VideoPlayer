@@ -82,8 +82,9 @@ TEST_CASE("les images de dérivation se ramènent à une taille que les noyaux p
   CHECK(kernel_crop(3840, 2160).width == 1920);  // une découpe, pas une réduction
   CHECK(kernel_crop(3840, 2160).height == 1088);
   CHECK(kernel_crop(1280, 720).width == 1280);
-  CHECK(kernel_crop(1000, 1000).width == 896);  // multiple de 128
-  const Crop small = kernel_crop(100, 600);
+  CHECK(kernel_crop(1000, 1000).width == 1000);  // toute largeur paire (étape 3.1)
+  CHECK(kernel_crop(999, 1000).width == 998);
+  const Crop small = kernel_crop(1, 600);  // moins de deux colonnes : rien
   CHECK(small.width == 0);
   CHECK(small.height == 0);
   for (const auto& [w, h] : {std::pair{1920, 1080}, {1280, 720}, {3840, 2160}, {1000, 1000}, {2560, 1440}}) {

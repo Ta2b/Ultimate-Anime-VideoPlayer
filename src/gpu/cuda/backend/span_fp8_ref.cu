@@ -121,9 +121,10 @@ struct SpanFp8Reference::Impl {
 
   void bind() {
     auto* bytes = static_cast<std::uint8_t*>(workspace.get());
-    const std::int64_t plane = align_up(npix * kChannels * 2);
+    const std::int64_t rows = (npix + 127) / 128 * 128;  // la tuile M (étape 3.1)
+    const std::int64_t plane = align_up(rows * kChannels * 2);
     cat_in = reinterpret_cast<__half*>(bytes);
-    std::uint8_t* region = bytes + align_up(npix * kConcat * 2);
+    std::uint8_t* region = bytes + align_up(rows * kConcat * 2);
     ab[0] = reinterpret_cast<__half*>(region);
     ab[1] = reinterpret_cast<__half*>(region + plane);
     r1 = reinterpret_cast<__half*>(region + 2 * plane);
@@ -227,7 +228,8 @@ std::unique_ptr<SpanFp8Reference> SpanFp8Reference::create(const SpanFp8Weights&
   }
   // La concaténation de 256 canaux FP16, quatre tenseurs de 64 canaux ; dégroupage, sortie de conv_cat et de
   // to_pixel recouvrent des tampons alors inactifs.
-  const std::int64_t bytes = align_up(impl->npix * kConcat * 2) + 4 * align_up(impl->npix * kChannels * 2);
+  const std::int64_t rows = (impl->npix + 127) / 128 * 128;  // comme bind
+  const std::int64_t bytes = align_up(rows * kConcat * 2) + 4 * align_up(rows * kChannels * 2);
   if (!sent(impl->workspace.reserve(static_cast<std::size_t>(bytes)), "zone de travail") ||
       !sent(impl->peak_device.reserve(sizeof(int) * kPeaks), "maxima") ||
       !sent(cudaMemset(impl->peak_device.get(), 0, sizeof(int) * kPeaks), "maxima"))

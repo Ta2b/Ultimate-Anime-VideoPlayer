@@ -143,7 +143,7 @@ par TensorRT. Chacune refusée passe à la suivante.
 | GPU autre que sm 8.9 (Turing, Ampere, Blackwell sm 12.0) | `BackendCaps::span_fp8_cutlass` faux ; le lecteur n'essaie pas la variante | variante suivante |
 | Backend construit sans CUTLASS (hors Linux, `third_party/cutlass` absent, `AJP_WITH_SPAN_FP8=OFF`, pas de CUDA) | `span_fp8_net_none.cpp` : capacité fausse | variante suivante |
 | Reçu absent, refusé, d'un autre modèle, paquet modifié | `find_span_variant` | variante suivante |
-| Taille que les noyaux ne prennent pas : hauteur ou largeur impaire, `(H/2)(W/2)` non multiple de 128 (540p = 960×540 par exemple), forme libre | `build` refuse (`FormatUnsupported`) | variante suivante (vérifié en lecture : 960×540) |
+| Taille que les noyaux ne prennent pas : hauteur ou largeur impaire, forme libre (depuis l'étape 3.1, 960×540 et toute taille paire sont prises) | `build` refuse (`FormatUnsupported`) | variante suivante |
 | Canaux ≠ 64 ou ≠ 8 blocs (b5f48) | `derive_span_fp8.py` n'écrit rien ; `parse` refuse un autre en-tête | pas de variante |
 | Paquet illisible, tronqué, CRC faux | `build` | variante suivante |
 | Mémoire insuffisante, noyau qui ne tourne pas (CUDA), sortie non finie | `load` : poids envoyés, zone réservée, une image de zéros passée par les noyaux | variante suivante |
@@ -186,7 +186,7 @@ SSIM 0,997 ; réseau FP8 9,35 ms contre 17,3 ms pour TensorRT FP16 (−46 %). Le
   89` de la bibliothèque des noyaux) ; un portage demande de mesurer les mêmes `mma` E4M3 et les tuiles, sur
   une carte que je n'ai pas. Le repli est automatique.
 - **Tailles dynamiques** : le moteur est à une taille fixe, comme les moteurs TensorRT du lecteur (un changement
-  de taille de travail recharge la chaîne). Les noyaux n'ont pas de garde de bord : multiple de 128 exigé.
+  de taille de travail recharge la chaîne). Depuis l'étape 3.1, l'épilogue garde les lignes au-delà de M : toute taille paire (à valider sur la RTX : memcheck à 0 en 960×540).
 - **Modèle Performance b5f48 (48 canaux, 5 blocs)** : refusé, reste sur TensorRT FP16. Le prototype et ces
   noyaux supposent 64 canaux.
 - **Windows** : le module n'est pas construit (`AJP_WITH_SPAN_FP8` vaut OFF hors Linux), CUTLASS n'y a pas été
