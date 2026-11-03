@@ -25,6 +25,8 @@
 #include <string_view>
 #include <utility>
 
+#include "core/cost_model.h"
+
 namespace ajp::core {
 
 inline constexpr int kAutoMaxStep =
@@ -128,6 +130,7 @@ class AutoRate {
   static constexpr std::int64_t kFloorEscapeUs = 8'000'000;
   static constexpr std::int64_t kProbeUs = 2'000'000;  // un palier tenté est « tenu » après ce temps
   static constexpr int kMaxImages = kAutoMaxStep + 1;
+  static_assert(kMaxImages == CostModel::kMaxImages);
   static constexpr double kDeadBand = 0.06;  // au pas fin : pas de montée sous 6 % d'écart
   // Au pas fin, en régime (écart modeste au palier prédit) un changement toutes les 5 s au plus : le temps de
   // trame d'un écran VRR OLED reste constant entre deux changements. Loin sous le palier prédit (scène
@@ -181,27 +184,11 @@ class AutoRate {
   int predicted_step(std::int64_t now_us) const;
 
  private:
-  struct ImageCost {
-    double ewma_us = 0.0;
-    double weight = 0.0;
-    std::int64_t at_us = 0;
-    std::array<float, 16> ring{};
-    std::size_t filled = 0;
-    std::size_t next = 0;
-  };
-  struct Line {
-    double a = 0.0;
-    double b = 0.0;
-  };
-
   void descend(AutoReason reason, std::int64_t now_us, int steps = 1);
   int drop_for(int predicted) const;  // de combien descendre
   bool fine() const { return granularity_ >= kFineGranularity; }
   void changed(AutoReason reason, std::int64_t now_us);
   void try_rise(std::int64_t now_us);
-  double weight_of(const ImageCost& c, std::int64_t now_us) const;
-  std::optional<Line> fit(std::int64_t now_us) const;
-  double spike(std::int64_t now_us) const;
   double model_us(int step, std::int64_t now_us) const;  // < 0 : pas de modèle
   double penalty(int step, std::int64_t now_us) const;
   double cap_strength(std::int64_t now_us) const;
@@ -236,7 +223,7 @@ class AutoRate {
     std::int64_t at_us = 0;
   };
   std::array<Fail, kAutoMaxStep * kFineGranularity + 2> fails_{};
-  std::array<ImageCost, kMaxImages + 1> costs_{};
+  CostModel model_;
 };
 
 }  // namespace ajp::core
