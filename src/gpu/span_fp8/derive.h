@@ -69,7 +69,7 @@ struct Receipt {
 std::string receipt_text(const Receipt& receipt, std::string_view comment);
 
 // Les tailles d'image que la dérivation prend : au plus width × height, ramenées à ce que les noyaux
-// acceptent (hauteur multiple de 4, largeur multiple de 128). {0, 0} si rien n'en reste.
+// acceptent (hauteur et largeur paires, étape 3.1). {0, 0} si rien n'en reste.
 struct Crop {
   int width = 0;
   int height = 0;

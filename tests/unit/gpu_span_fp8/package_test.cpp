@@ -87,13 +87,17 @@ TEST_CASE("les tailles que les noyaux prennent", "[span_fp8]") {
   CHECK(size_supported(720, 1280));
   CHECK(size_supported(2160, 3840));
   CHECK(size_refusal(1088, 1920).empty());
-  CHECK_FALSE(size_supported(540, 960));  // 129 600 pixels de caractéristiques, pas un multiple de 128
+  // Étape 3.1 : plus de multiple de 128 pixels de caractéristiques (129 600 en 960×540).
+  CHECK(size_supported(540, 960));
+  CHECK(size_supported(900, 1600));
+  CHECK(size_supported(480, 854));
+  CHECK_FALSE(size_supported(541, 960));
   CHECK_FALSE(size_supported(1087, 1920));
   CHECK_FALSE(size_supported(1088, 1919));
   CHECK_FALSE(size_supported(0, 1920));
   CHECK_FALSE(size_supported(-2, 1920));
   CHECK_FALSE(size_supported(1088, 40000));
-  CHECK(size_refusal(540, 960).find("128") != std::string::npos);
+  CHECK(size_refusal(541, 960).find("paires") != std::string::npos);
 }
 
 }  // namespace ajp::gpu::span_fp8

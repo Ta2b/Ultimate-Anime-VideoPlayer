@@ -93,8 +93,9 @@ std::string receipt_text(const Receipt& r, std::string_view comment) {
 }
 
 Crop kernel_crop(int width, int height, int max_width, int max_height) {
-  const int h = std::min(height, max_height) / 4 * 4;
-  const int w = std::min(width, max_width) / 128 * 128;
+  // Paires (dégroupage 2×2) : les noyaux prennent toute taille paire (étape 3.1).
+  const int h = std::min(height, max_height) / 2 * 2;
+  const int w = std::min(width, max_width) / 2 * 2;
   if (h <= 0 || w <= 0) return {};
   return Crop{.width = w, .height = h};
 }
