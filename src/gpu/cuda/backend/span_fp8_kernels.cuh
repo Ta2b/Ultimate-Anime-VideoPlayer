@@ -27,7 +27,10 @@ namespace ajp::gpu::cuda::span_fp8_kernels {
 struct KP {
   const uint8_t* skip = nullptr;  // saut x, NHWC E4M3 (mode 1)
   float skip_scale = 0.f;
-  float alpha = 1.f;            // accumulateur -> unités réelles
+  float alpha = 1.f;  // accumulateur -> unités réelles
+  // Étape 10.3 : non nul, une échelle par colonne de sortie (activation × canal des poids FP8), à la place
+  // de alpha ; lu par paires (float2), comme le biais.
+  const float* alpha_col = nullptr;
   const float* bias = nullptr;  // biais de la conv 3x3 (unités réelles)
   const __half* w1 = nullptr;   // poids 1x1 [sortie][entrée], FP16, 64x64 (mode 1)
   const float* b1 = nullptr;    // biais de la 1x1 (mode 1)
@@ -130,10 +133,13 @@ __global__ void __launch_bounds__(Base::kThreadCount) net_kernel(typename Base::
     for (int n = 0; n < 8; ++n) {
       float2 bb = n < nt_used ? __ldg(reinterpret_cast<const float2*>(tp.bias + n * 8 + 2 * t))
                               : make_float2(0.f, 0.f);
-      v[n][0] = float(a[(m + n * kMI) * 4 + 0]) * tp.alpha + bb.x;
-      v[n][1] = float(a[(m + n * kMI) * 4 + 1]) * tp.alpha + bb.y;
-      v[n][2] = float(a[(m + n * kMI) * 4 + 2]) * tp.alpha + bb.x;
-      v[n][3] = float(a[(m + n * kMI) * 4 + 3]) * tp.alpha + bb.y;
+      const float2 aa = tp.alpha_col != nullptr && n < nt_used
+                            ? __ldg(reinterpret_cast<const float2*>(tp.alpha_col + n * 8 + 2 * t))
+                            : make_float2(tp.alpha, tp.alpha);
+      v[n][0] = float(a[(m + n * kMI) * 4 + 0]) * aa.x + bb.x;
+      v[n][1] = float(a[(m + n * kMI) * 4 + 1]) * aa.y + bb.y;
+      v[n][2] = float(a[(m + n * kMI) * 4 + 2]) * aa.x + bb.x;
+      v[n][3] = float(a[(m + n * kMI) * 4 + 3]) * aa.y + bb.y;
     }
     if constexpr (Mode == 0) {
 #pragma unroll

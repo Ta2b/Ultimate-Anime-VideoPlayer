@@ -117,7 +117,11 @@ charge :  échelles f32 × 25      [0] sortie de conv_1 ; bloc b (0..7) : [1+3b]
 ```
 
 Les poids sont ceux du modèle, en FP16 : le paquet ne contient rien que le modèle n'ait déjà. Les convolutions de
-bloc passent en E4M3 au chargement, à l'échelle de leur tenseur (maximum / 448), arrondi au plus proche, saturé.
+bloc passent en E4M3 au chargement, à l'échelle de leur canal de sortie (maximum du canal / 448, étape 10.3 ;
+l'échelle du tenseur entier avant elle), arrondi au plus proche, saturé. L'épilogue multiplie chaque colonne de
+l'accumulateur par l'échelle de l'activation × celle de son canal (`KP::alpha_col`). Comme E4M3 est un format
+flottant, le gain ne vient que des canaux faibles qu'une échelle commune poussait sous le plus petit normal
+(2^−6) ; `kKernelsVersion` passe à 2, les reçus v2 d'avant se revalident (validation seule).
 Les échelles d'activation sont « maximum observé / 448 » sur le corpus de calibration (le percentile 99,99 donne
 1,1 dB de moins sur le prototype : maximum retenu). Un paquet tronqué, un bit changé, une version inconnue, une
 échelle nulle ou un poids infini sont refusés.
