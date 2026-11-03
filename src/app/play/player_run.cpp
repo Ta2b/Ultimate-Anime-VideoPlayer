@@ -248,13 +248,14 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
                            fp8_reason.empty() ? "disponible" : fp8_reason, c.backend_name,
                            fp8_facts.capability);
   const SpanPrepare span_prepare =
-      c.model ? make_span_prepare(
-                    p.library,
-                    gpu::BackendInit{
-                        .render = &p.screen.device(), .cache_dir = p.paths.engines, .log = backend_log()},
-                    fp8_facts.capability, c.model->path, p.paths.engines.parent_path() / "modeles",
-                    p.options.file, fp8_reason)
-              : SpanPrepare{};
+      c.model
+          ? make_span_prepare(
+                p.library,
+                gpu::BackendInit{
+                    .render = &p.screen.device(), .cache_dir = p.paths.engines, .log = backend_log()},
+                fp8_facts.capability, c.model->path, p.paths.engines.parent_path() / "modeles",
+                p.options.file, fp8_reason, span_still_reduce(work.width, work.height, settings.downscale))
+          : SpanPrepare{};
   const std::optional<DrbaModel> drba_file = find_distil_drba(c.gmfss_places);
   p.ui.set_tracks((*pipeline)->tracks());
   p.ui.set_settings(

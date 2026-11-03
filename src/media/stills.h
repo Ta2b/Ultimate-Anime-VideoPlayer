@@ -28,6 +28,18 @@ struct Still {
   double spread = 0.0;  // écart type de la luminance, de 0 à 1
 };
 
+// La réduction d'une image à la taille de travail de la chaîne (étape 3.7a) : le filtre du menu « Réduction
+// », en CPU. Area : moyenne exacte sur l'empreinte ; Triangle : bilinéaire élargi ; Cubic : B et C de
+// Mitchell-Netravali ; Spline36 : celui d'AnimeJaNai. Taille nulle : pas de réduction.
+enum class StillFilter : std::uint8_t { Area, Spline36, Triangle, Cubic };
+struct StillReduce {
+  int width = 0;
+  int height = 0;
+  StillFilter filter = StillFilter::Area;
+  float b = 0.0F;
+  float c = 0.0F;
+};
+
 struct StillsSpec {
   int count = 12;       // images gardées
   int candidates = 24;  // instants essayés, de 8 % à 92 % de la durée
@@ -40,7 +52,14 @@ struct StillsSpec {
   int align_height = 2;
   double min_mean = 0.06;    // plus sombre : une image noire, écartée
   double min_spread = 0.03;  // moins contrastée : un aplat, écarté
+  // Étape 3.7a : l'image entière ramenée d'abord à la taille de travail (si elle est plus grande), puis
+  // découpée ; la calibration voit ce que SPAN voit en lecture.
+  StillReduce reduce;
 };
+
+// Une image ramenée à to.width × to.height par to.filter, séparable (lignes puis colonnes), bords répétés ;
+// mean et spread repris de l'entrée. Taille nulle ou égale : l'image telle quelle.
+Still reduce_still(const Still& in, const StillReduce& to);
 
 // Le RGB 8 bits de la découpe centrale d'une image décodée en mémoire hôte (Nv12, Yuv420p, P010, Yuv420p10 ;
 // matrice BT.601 ou BT.709, plage limitée ou pleine ; chroma répétée au plus proche). Refus FormatUnsupported

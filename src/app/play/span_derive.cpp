@@ -295,7 +295,7 @@ std::expected<SpanDeriveReport, Refusal> derive_span_fp8(const SpanDerivePlan& p
 SpanPrepare make_span_prepare(const std::shared_ptr<BackendLibrary>& library, const gpu::BackendInit& init,
                               bool supported, const std::filesystem::path& model,
                               const std::filesystem::path& models_dir, const std::filesystem::path& video,
-                              const std::string& unavailable) {
+                              const std::string& unavailable, const media::StillReduce& reduce) {
   SpanPrepare prepare;
   if (!supported) {
     prepare.note =
@@ -324,13 +324,13 @@ SpanPrepare make_span_prepare(const std::shared_ptr<BackendLibrary>& library, co
     return prepare;
   }
   prepare.offered = true;
-  prepare.run = [library, init, model, models_dir, video](
+  prepare.run = [library, init, model, models_dir, video, reduce](
                     SpanDeriveProgress& progress,
                     const std::stop_token& stop) -> std::expected<std::string, Refusal> {
     const SpanDerivePlan plan{.model = model, .models_dir = models_dir};
     const SpanStillsSource stills = [&](const std::stop_token& token,
                                         const std::function<void(float)>& report) {
-      return media::extract_stills(video, media::StillsSpec{}, token, report);
+      return media::extract_stills(video, media::StillsSpec{.reduce = reduce}, token, report);
     };
     const SpanDeriver deriver = [&](const gpu::SpanFp8Request& request, gpu::Progress& backend_progress) {
       auto backend = BackendLibrary::create(library, init);
@@ -344,6 +344,51 @@ SpanPrepare make_span_prepare(const std::shared_ptr<BackendLibrary>& library, co
     return report->text;
   };
   return prepare;
+}
+
+media::StillReduce span_still_reduce(int work_width, int work_height, core::DownscaleFilter filter) {
+  using core::DownscaleFilter;
+  media::StillReduce out{.width = work_width, .height = work_height};
+  switch (filter) {
+    case DownscaleFilter::Area:
+      out.filter = media::StillFilter::Area;
+      break;
+    case DownscaleFilter::Spline36:
+      out.filter = media::StillFilter::Spline36;
+      break;
+    case DownscaleFilter::Bilinear:
+      out.filter = media::StillFilter::Triangle;
+      break;
+    case DownscaleFilter::Bicubic:
+      out = {.width = work_width,
+             .height = work_height,
+             .filter = media::StillFilter::Cubic,
+             .b = 1.0F,
+             .c = 0.0F};
+      break;
+    case DownscaleFilter::Mitchell:
+      out = {.width = work_width,
+             .height = work_height,
+             .filter = media::StillFilter::Cubic,
+             .b = 1.0F / 3.0F,
+             .c = 1.0F / 3.0F};
+      break;
+    case DownscaleFilter::CatmullRom:
+      out = {.width = work_width,
+             .height = work_height,
+             .filter = media::StillFilter::Cubic,
+             .b = 0.0F,
+             .c = 0.5F};
+      break;
+    case DownscaleFilter::Hermite:
+      out = {.width = work_width,
+             .height = work_height,
+             .filter = media::StillFilter::Cubic,
+             .b = 0.0F,
+             .c = 0.0F};
+      break;
+  }
+  return out;
 }
 
 }  // namespace ajp::app::play
