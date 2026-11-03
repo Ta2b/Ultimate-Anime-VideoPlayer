@@ -6,6 +6,7 @@
 // OpenVINO et Core ML quand ce build les a et que leur matériel est là ; sans lui, le cas le dit
 // et se saute. C'est la seule vérification numérique de ces runtimes, qui ne tournent que sur
 // leur GPU.
+#include <algorithm>
 #include <cstddef>
 #include <cstdint>
 #include <cstring>

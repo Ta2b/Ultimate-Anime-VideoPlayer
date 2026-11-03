@@ -1,5 +1,6 @@
 // Réarrangements de pixels, Resize et GridSample : valeurs calculées à la main,
 // ou définition ONNX déroulée ici (Reshape, Transpose, Reshape).
+#include <algorithm>
 #include <cmath>
 #include <cstdint>
 #include <limits>
