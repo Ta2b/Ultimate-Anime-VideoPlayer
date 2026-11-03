@@ -31,6 +31,7 @@
 #include <vector>
 
 #include "app/play/backend_library.h"
+#include "core/profile.h"
 #include "core/types.h"
 #include "gpu/backend.h"
 #include "gpu/span_fp8/derive.h"
@@ -132,9 +133,15 @@ struct SpanPrepare {
 // le fichier ouvert (vide : l'écran d'accueil, rien à préparer). unavailable : pourquoi le moteur ne le
 // calcule pas (span_auto.h : span_fp8_unavailable_reason), pour la phrase qui l'explique quand supported est
 // faux.
+// reduce : la taille de travail de la chaîne et son filtre de réduction (span_still_reduce) ; les images de
+// calibration et de validation y sont ramenées (étape 3.7a). Vide : la découpe à la taille de la source.
 SpanPrepare make_span_prepare(const std::shared_ptr<BackendLibrary>& library, const gpu::BackendInit& init,
                               bool supported, const std::filesystem::path& model,
                               const std::filesystem::path& models_dir, const std::filesystem::path& video,
-                              const std::string& unavailable = {});
+                              const std::string& unavailable = {}, const media::StillReduce& reduce = {});
+
+// La réduction des images de la préparation : la taille de travail et le filtre du menu « Réduction », comme
+// le noyau d'ingestion les applique (live_settings.h, reduction_of).
+media::StillReduce span_still_reduce(int work_width, int work_height, core::DownscaleFilter filter);
 
 }  // namespace ajp::app::play

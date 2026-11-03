@@ -118,6 +118,46 @@ TEST_CASE("la découpe est centrée et alignée sur ce que les noyaux prennent",
   CHECK(small.error().code == RefusalCode::FormatUnsupported);
 }
 
+TEST_CASE("réduite à la taille de travail avant la découpe (3.7a)", "[media][stills]") {
+  StillsSpec spec = narrow();
+  spec.align_width = 2;
+  spec.align_height = 2;
+  spec.reduce = StillReduce{.width = 128, .height = 4, .filter = StillFilter::Area};
+  const auto reduced = still_from_frame(yuv420p(ColorInfo{}), spec);
+  REQUIRE(reduced);
+  CHECK(reduced->width == 128);
+  CHECK(reduced->height == 4);
+  CHECK(at(*reduced, 0, 10, 1) == 255);  // la zone blanche, à moitié de largeur : 0 à 42
+  CHECK(at(*reduced, 0, 64, 1) == 0);    // la noire : 43 à 84
+  CHECK(at(*reduced, 0, 120, 1) > 200);  // la rouge
+  // Une image déjà à la taille de travail n'est pas touchée.
+  spec.reduce = StillReduce{.width = 256, .height = 8, .filter = StillFilter::Area};
+  const auto same = still_from_frame(yuv420p(ColorInfo{}), spec);
+  REQUIRE(same);
+  CHECK(same->width == 256);
+}
+
+TEST_CASE("reduce_still : Area fait la moyenne exacte, les autres filtres gardent un aplat",
+          "[media][stills]") {
+  Still in;
+  in.width = 4;
+  in.height = 2;
+  in.rgb = {0,  100, 200, 255, 0,  100, 200, 255,  // R : deux lignes identiques
+            10, 10,  10,  10,  10, 10,  10,  10,   // G : un aplat
+            0,  0,   0,   0,   0,  0,   0,   0};
+  const Still area = reduce_still(in, {.width = 2, .height = 1, .filter = StillFilter::Area});
+  REQUIRE(area.rgb.size() == 6);
+  CHECK(area.rgb[0] == 50);   // (0 + 100) / 2
+  CHECK(area.rgb[1] == 228);  // (200 + 255) / 2 = 227,5 arrondi
+  for (const StillFilter filter : {StillFilter::Spline36, StillFilter::Triangle, StillFilter::Cubic}) {
+    const Still out =
+        reduce_still(in, {.width = 2, .height = 1, .filter = filter, .b = 1.0F / 3.0F, .c = 1.0F / 3.0F});
+    CHECK(out.rgb[2] == 10);  // un aplat reste un aplat
+    CHECK(out.rgb[3] == 10);
+  }
+  CHECK(reduce_still(in, {}).rgb == in.rgb);
+}
+
 TEST_CASE("une vidéo HDR ou d'un format non pris est refusée avec une raison", "[media][stills]") {
   ColorInfo pq;
   pq.transfer = Transfer::Pq;

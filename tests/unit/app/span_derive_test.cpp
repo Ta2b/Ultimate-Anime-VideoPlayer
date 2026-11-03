@@ -134,6 +134,20 @@ struct FakeBackend {
 
 }  // namespace
 
+TEST_CASE("la préparation réduit ses images comme le noyau d'ingestion (3.7a)", "[app][span_derive]") {
+  const media::StillReduce hermite = span_still_reduce(1280, 720, core::DownscaleFilter::Hermite);
+  CHECK(hermite.width == 1280);
+  CHECK(hermite.height == 720);
+  CHECK(hermite.filter == media::StillFilter::Cubic);
+  CHECK(hermite.b == 0.0F);
+  CHECK(hermite.c == 0.0F);
+  CHECK(span_still_reduce(1280, 720, core::DownscaleFilter::Area).filter == media::StillFilter::Area);
+  CHECK(span_still_reduce(1280, 720, core::DownscaleFilter::Bilinear).filter == media::StillFilter::Triangle);
+  const media::StillReduce mitchell = span_still_reduce(960, 540, core::DownscaleFilter::Mitchell);
+  CHECK(mitchell.b == 1.0F / 3.0F);
+  CHECK(mitchell.c == 1.0F / 3.0F);
+}
+
 TEST_CASE("douze images : huit calibrent, quatre sont mises de côté", "[app][span_derive]") {
   ajp::app::play::FrenchUi french;
   const StillsSplit twelve_split = split_stills(12);
