@@ -54,6 +54,10 @@ TEST_CASE("ajp play : fichier et options", "[app][options]") {
   const auto sdr = parse({"épisode.mkv", "--sdr"});
   REQUIRE(sdr);
   CHECK(sdr->sdr);
+  CHECK_FALSE(options->ring_rgb10a2);
+  const auto ten = parse({"épisode.mkv", "--ring-rgb10a2"});
+  REQUIRE(ten);
+  CHECK(ten->ring_rgb10a2);
   CHECK_FALSE(options->kde_sdr_nits);
   const auto metadata = parse({"épisode.mkv", "--hdr-metadata"});
   REQUIRE(metadata);

@@ -170,9 +170,15 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
         const int width = stage.track->width;
         const int height = stage.track->height;
         const WorkSize sized = work_size(width, height, settings.work_height);
+        // Étape 5.5a : anneau RGB10A2 derrière --ring-rgb10a2, tant que la porte de banding n'est pas
+        // mesurée.
+        const RingFormat ring_format =
+            p.options.ring_rgb10a2 && c.backend && c.backend->capabilities().ring_rgb10a2
+                ? RingFormat::Rgb10a2Unorm
+                : RingFormat::Rgba16Unorm;
         auto slots = out.create_ring(sized.width * factor, sized.height * factor,
                                      ring_depth(settings, rife_loaded ? factor_of(settings) : Factor{}),
-                                     c.backend_name == "tensorrt");
+                                     c.backend_name == "tensorrt", ring_format);
         if (!slots) return std::unexpected(std::move(slots.error()));
         const MasterClock* clock = stage.clock;
         return UpscaleStage::start(std::move(stage),

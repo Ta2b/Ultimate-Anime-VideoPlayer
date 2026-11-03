@@ -66,8 +66,9 @@ std::string PlaceboScreen::output_description() const {
 
 std::expected<std::vector<RingSlotDesc>, Refusal> PlaceboScreen::create_ring(int width, int height,
                                                                              std::uint32_t count,
-                                                                             bool external) {
-  return impl_->ring.create(impl_->vk->gpu, width, height, count, external);
+                                                                             bool external,
+                                                                             RingFormat format) {
+  return impl_->ring.create(impl_->vk->gpu, width, height, count, external, format);
 }
 
 bool PlaceboScreen::hdr_output() const {

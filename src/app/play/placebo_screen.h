@@ -97,10 +97,12 @@ class PlaceboScreen final : public Screen {
   // Ce que l'écran présente : sa sortie (sRGB ou PQ) et son type, pour l'OSD.
   std::string output_description() const;
 
-  // Crée le ring : count slots RGBA16 de width × height, exportés (mémoire et sémaphore
-  // timeline) et cédés à CUDA en disposition GENERAL, prêts pour la première écriture.
+  // Crée le ring : count slots RGBA16 (ou RGB10A2, si format le demande et que l'appareil le prend) de
+  // width × height, exportés (mémoire et sémaphore timeline) et cédés à CUDA en disposition GENERAL,
+  // prêts pour la première écriture.
   std::expected<std::vector<RingSlotDesc>, Refusal> create_ring(int width, int height, std::uint32_t count,
-                                                                bool external = true);
+                                                                bool external = true,
+                                                                RingFormat format = RingFormat::Rgba16Unorm);
   // Couleur des images du ring : celle de la source (l'agrandissement ne la change pas).
   void set_source_color(const ColorInfo& color);
   // Forme du pixel de la vidéo (SAR, largeur / hauteur) : l'image s'affiche étirée de ce rapport.

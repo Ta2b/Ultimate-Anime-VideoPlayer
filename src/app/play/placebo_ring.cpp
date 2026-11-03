@@ -72,11 +72,20 @@ std::uint32_t PlaceboRing::family() const {
 }
 
 std::expected<std::vector<RingSlotDesc>, Refusal> PlaceboRing::create(pl_gpu gpu, int width, int height,
-                                                                      std::uint32_t count, bool external) {
+                                                                      std::uint32_t count, bool external,
+                                                                      RingFormat wanted) {
   clear(gpu);
   external_ = external;
   ++generation_;
-  const pl_fmt format = pl_find_named_fmt(gpu, "rgba16");
+  // RGB10A2 (étape 5.5a) : inscriptible et échantillonnable, sinon RGBA16 ; le format Vulkan est contrôlé
+  // sur le premier emplacement (l'ordre des bits doit être celui de store_ring).
+  constexpr auto kRingCaps = static_cast<pl_fmt_caps>(PL_FMT_CAP_STORABLE | PL_FMT_CAP_SAMPLEABLE);
+  if (wanted == RingFormat::Rgb10a2Unorm) {
+    const pl_fmt ten = pl_find_named_fmt(gpu, "rgb10a2");
+    if (ten == nullptr || (ten->caps & kRingCaps) != kRingCaps) wanted = RingFormat::Rgba16Unorm;
+  }
+  const bool ten_bits = wanted == RingFormat::Rgb10a2Unorm;
+  const pl_fmt format = pl_find_named_fmt(gpu, ten_bits ? "rgb10a2" : "rgba16");
   if (format == nullptr || (format->caps & PL_FMT_CAP_STORABLE) == 0) {
     return refuse(RefusalCode::FormatUnsupported, "rgba16 n'est pas inscriptible sur cet appareil");
   }
@@ -141,12 +150,19 @@ std::expected<std::vector<RingSlotDesc>, Refusal> PlaceboRing::create(pl_gpu gpu
     VkFormat vk_format{};
     VkImageUsageFlags usage{};
     const VkImage image = pl_vulkan_unwrap(gpu, slot.tex, &vk_format, &usage);
+    if (ten_bits && vk_format != VK_FORMAT_A2B10G10R10_UNORM_PACK32) {
+      // Un autre ordre des bits que celui de store_ring : tout est refait en RGBA16.
+      pl_gpu_finish(gpu);
+      pl_vulkan_sem_destroy(gpu, &handover);
+      clear(gpu);
+      return create(gpu, width, height, count, external, RingFormat::Rgba16Unorm);
+    }
     descs.push_back(RingSlotDesc{
         .index = i,
         .generation = generation_,
         .width = width,
         .height = height,
-        .format = RingFormat::Rgba16Unorm,
+        .format = wanted,
         .image = reinterpret_cast<std::uint64_t>(image),
         .memory = {.kind = kind, .value = exported ? raw_handle(slot.tex->shared_mem.handle) : 0},
         .memory_size = slot.tex->shared_mem.size,

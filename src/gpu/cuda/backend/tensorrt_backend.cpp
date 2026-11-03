@@ -293,6 +293,7 @@ BackendCaps TensorRtBackend::capabilities() const {
       .import_formats = {PixelFormat::Nv12, PixelFormat::P010, PixelFormat::P016},
       .lanes = lanes_,
       .ring_targets = true,
+      .ring_rgb10a2 = true,
       .yuv_targets = true};
 }
 
