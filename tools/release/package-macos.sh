@@ -32,7 +32,9 @@ cp "$AJP_DEPS_PREFIX/onnxruntime/LICENSE" "$APP/Contents/Resources/licenses/onnx
 cp "$ROOT/LICENSE" "$ROOT/THIRD_PARTY_NOTICES.md" "$APP/Contents/Resources/licenses/"
 # Les LUT d'HDR (data/luts), lues dans luts/ à côté de SDL_GetBasePath, Contents/Resources ici.
 cp -R "$ROOT/data/luts" "$APP/Contents/Resources/luts"
-# La vidéo de la calibration du grade n'est pas livrée (plans d'œuvres sous droits, data/calibration/SOURCES.md).
+# La vidéo de la calibration du grade (data/calibration), dans calibration/ à côté de SDL_GetBasePath.
+mkdir -p "$APP/Contents/Resources/calibration"
+cp "$ROOT/data/calibration/calibration.mkv" "$APP/Contents/Resources/calibration/"
 # Les modèles, comme sous Linux et Windows : le lecteur les cherche dans models/ à côté de
 # SDL_GetBasePath, Contents/Resources dans un paquet .app (sauf AJP_WITHOUT_MODELS).
 if [ -z "${AJP_WITHOUT_MODELS:-}" ]; then

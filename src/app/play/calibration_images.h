@@ -1,10 +1,10 @@
 // Les images d'exemple de la calibration du grade adaptatif (Paramètres > HDR > « Calibrer le grade
 // adaptatif ») : dix-huit plans fixes tirés d'Akudama Drive, des Enfants du Temps, de Violet Evergarden, de
 // Frieren, de Your Name, de Re:Zero, de Slime et de
-// Black Clover, réunis en une vidéo (calibration.mkv, décrite par data/calibration/SOURCES.md ; tirée
-// d'œuvres sous droits, elle n'est ni dans le dépôt ni dans les paquets) que le lecteur lit en pause, plan
-// par plan, dans la même chaîne que les épisodes : ce que la calibration montre est ce que la lecture rendra.
-// Chaque plan dit ce qu'il faut voir à l'écran quand les réglages sont justes.
+// Black Clover, livrés en une vidéo (data/calibration/calibration.mkv,
+// SOURCES.md) que le lecteur lit en pause, plan par plan, dans la même chaîne que les épisodes : ce que la
+// calibration montre est ce que la lecture rendra. Chaque plan dit ce qu'il faut voir à l'écran quand les
+// réglages sont justes.
 #pragma once
 
 #include <array>
@@ -38,8 +38,8 @@ inline constexpr int kCalibrationRequired = 5;
 // à sa vraie place dans la courbe.
 CalibrationImage calibration_shot(int id);
 
-// La vidéo : calibration/calibration.mkv dans les données de l'utilisateur (SDL_GetPrefPath), sinon à côté de
-// SDL_GetBasePath ; le premier de ces chemins quand elle n'est nulle part.
+// La vidéo livrée : calibration/calibration.mkv à côté de SDL_GetBasePath (Contents/Resources dans AJP.app),
+// comme luts/.
 std::filesystem::path calibration_clip();
 
 }  // namespace ajp::app::play
