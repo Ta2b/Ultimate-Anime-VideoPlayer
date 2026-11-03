@@ -355,6 +355,16 @@ Rien de ce chantier n'a été compilé avec CUDA : construire d'abord avec `AJP_
   (`--stats`), export P010 ≥ 50 dB contre RGBA16. Si tout passe, RGB10A2 devient le défaut sous TensorRT
   (ADR 0008).
 
+## Plan NVIDIA, chantier 2a : passes du grade fondues (novembre, vérifié sur lavapipe)
+
+- **2.4, mesure** : en 4K HDR10 sur une RTX, trois lectures de 2 minutes du même extrait avec
+  `--legacy-grade=split` (A : look, vrai noir et KWin dans leurs passes) puis trois par défaut (B), un look et le
+  vrai noir posés. Noter la médiane de la ligne « profil GPU · grade HDR » du journal de fermeture : B doit gagner
+  au moins 0,6 ms.
+- **2.4, image** : au même instant, `--snapshot=A.pq.ppm --snapshot-at=S` (A) et `B.pq.ppm` (B), puis
+  `python3 tools/grade/de_itp.py A.pq.ppm B.pq.ppm --max-p95 0.2 --heatmap carte.ppm` : code retour 0 attendu
+  (p95 ≤ 0,2). Sur lavapipe, l'écart vient de l'arrondi en demi-flottants que la chaîne A fait entre ses passes.
+
 ## Plan NVIDIA, chantier 2b : composition gardée (novembre, écrit dans le cloud)
 
 - **2.6** : en pause avec la barre de lecture visible, puis avec la cadence fixe à 165 Hz sur une source 24 i/s
