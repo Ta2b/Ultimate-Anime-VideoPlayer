@@ -123,10 +123,10 @@ std::expected<void, Refusal> PlaceboScreen::Impl::compose(const pl_frame* image,
   // HDR10), il est sauté.
   const bool graded_now = grade.has_value() && graded(target.color);
   // Le grade étire la source (plus de nits, plus de couleur) : les paliers d'un dégradé 8 bits, invisibles en
-  // SDR, ressortent en bandes dans un halo ou un ciel. Il est donc toujours précédé d'un débandage, sans
-  // grain ajouté (l'anime reste propre) ; le débandage demandé à la main garde le réglage complet de
-  // libplacebo hors grade. Une source déjà débandée avant SPAN (RingFrame::debanded) ne l'est pas une seconde
-  // fois.
+  // SDR, ressortent en bandes dans un halo ou un ciel, mais le débandage de libplacebo (échantillonnage
+  // aléatoire) fabriquait du bruit dans les aplats sombres que le grade étire (mesuré : écart-type 16x16 de
+  // 1,0 contre 0,0). Il n'est donc plus posé d'office (--grade-deband le rétablit) ; le débandage demandé à
+  // la main reste, sans grain sous le grade, et une source déjà débandée avant SPAN n'est pas retouchée.
   static const pl_deband_params kGradeDeband = [] {
     pl_deband_params p = pl_deband_default_params;
     p.grain = 0.0F;
@@ -136,7 +136,7 @@ std::expected<void, Refusal> PlaceboScreen::Impl::compose(const pl_frame* image,
   // sous le grade, même le débandage demandé à la main part sans grain.
   if (deband)
     params.deband_params = graded_now ? &kGradeDeband : &pl_deband_default_params;
-  else if (graded_now && !source_debanded && !no_grade_deband)
+  else if (graded_now && !source_debanded && grade_deband)
     params.deband_params = &kGradeDeband;
   if (graded_now) {
     const std::span<const pl_hook* const> hooks = grade->hooks();

@@ -510,7 +510,7 @@ std::expected<std::unique_ptr<PlaceboScreen>, Refusal> PlaceboScreen::open(const
   impl->osd = std::move(*osd);
   impl->overlays = std::make_unique<Overlays>(gpu);
   impl->ui = std::make_unique<ImGuiLayer>(gpu, impl->log);
-  impl->no_grade_deband = options.no_grade_deband;
+  impl->grade_deband = options.grade_deband;
   impl->grade_body = options.legacy_grade ? render::GradeBody::Legacy : render::GradeBody::Fused;
   if (auto grade = render::Grade::create(gpu, impl->grade_body)) {
     impl->grade.emplace(std::move(*grade));
