@@ -412,7 +412,16 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
       known_period_us = display_period_us(out.window());
     }
   };
+  // Repli du Rapide : pour la séance seulement, play.toml garde le choix ; un choix explicite le remet à
+  // faux.
+  bool free_fallback = false;
+  bool free_chosen = chain.running.auto_free;
   const auto apply_auto = [&] {
+    if (chain.running.auto_free != free_chosen) {
+      free_chosen = chain.running.auto_free;
+      free_fallback = false;
+    }
+    const bool free_wanted = free_requested(chain.running, free_fallback);
     const bool on = chain.running.rife_auto && chain.rife_loaded && chain.running.rife_factor >= 2;
     // Au fps près (1/24 de multiplicateur) sur un écran VRR armé : la cadence n'y est plus liée au
     // rafraîchissement. À fréquence fixe, des paliers entiers (les autres feraient vibrer).
@@ -420,13 +429,13 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
     const double limit_hz = core::auto_limit_hz(known_hz, chain.running.auto_cap);
     // mode Rapide (core/free_grid.h) : écran VRR armé, RIFE, fréquence de l'écran connue ; sinon Auto.
     std::string why;
-    if (on && chain.running.auto_free) {
+    if (on && free_wanted) {
       if (free_instants_limit(chain.running.motion_engine) == 0)
         why = i18n::tr_format("{} cannot compute at a free instant", label(chain.running.motion_engine));
       else if (limit_hz <= 0.0 || (!vrr_armed && known_period_us <= 0))
         why = i18n::tr("display refresh rate unknown");
     }
-    const bool free = on && chain.running.auto_free && why.empty();
+    const bool free = on && free_wanted && why.empty();
     if (why != free_note) {
       free_note = why;
       // Rapide est le défaut : là où il ne tient pas, Stable le remplace sans message à l'écran.
@@ -589,8 +598,7 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
         if (chain.live.free_should_fall_back(host_now_us())) {
           log->warn("Mode Rapide : trop d'images perdues ({}) : retour au mode Stable",
                     free_status_text(chain.live.free_info(host_now_us())));
-          chain.running.auto_free = false;
-          p.ui.set_running(chain.running);
+          free_fallback = true;
           p.ui.controls().notify(i18n::tr("Fast mode: too many frames lost, back to Stable"), host_now_us());
           apply_auto();
         }

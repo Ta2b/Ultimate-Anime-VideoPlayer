@@ -122,6 +122,10 @@ struct ChainEngines {
 // palier entier le plus haut que l'écran affiche (core/auto_ceiling), jusqu'à rife_factor ; 1 sans
 // interpolation ou écran inconnu en Auto. Décide le warp après SPAN dès ×3 (D5).
 int top_factor(const PlaySettings& settings, double display_hz, double source_fps);
+// Le Rapide est demandé : choisi dans les réglages et pas replié pour cette séance.
+constexpr bool free_requested(const PlaySettings& settings, bool fallback) {
+  return settings.auto_free && !fallback;
+}
 // Emplacements du ring : 4 images, 6 de ×3 à ×4, 8 au-delà, et toujours 8 en Rapide (le facteur suit
 // l'écran).
 std::uint32_t ring_depth(const PlaySettings& settings, Factor factor);
