@@ -14,6 +14,7 @@ file(GLOB render_hook_parts CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/shade
      "${CMAKE_CURRENT_SOURCE_DIR}/shaders/anime-hdr-anime/*.hook")
 set(render_hooks
   "${CMAKE_CURRENT_SOURCE_DIR}/shaders/anime-hdr-params.hook"
+  "${CMAKE_CURRENT_SOURCE_DIR}/shaders/anime-hdr-funcs.glsl"
   "${CMAKE_CURRENT_SOURCE_DIR}/shaders/anime-hdr-grade"
   "${CMAKE_CURRENT_SOURCE_DIR}/shaders/anime-hdr-fused"
   "${CMAKE_CURRENT_SOURCE_DIR}/shaders/anime-hdr-anime"

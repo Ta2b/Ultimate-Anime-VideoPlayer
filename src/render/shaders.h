@@ -8,6 +8,9 @@ namespace ajp::render::shaders {
 
 // Les //!PARAM du grade, communs à ses deux corps (chacun se lit derrière eux).
 extern const std::string_view anime_hdr_params;
+// Les fonctions du grade fusionné et ajg_grade (le grade d'un pixel), mises dans 3-grade.hook à la place de
+// //@AJG_FUNCS@ : un seul texte pour la passe du grade et les passes qui le reprennent.
+extern const std::string_view anime_hdr_funcs;
 // Le grade d'avant (analyse et grade, mis bout à bout) : neuf passes sur OUTPUT, en PQ BT.2020, la scène
 // mesurée par le shader. Gardé une version (--legacy-grade).
 extern const std::string_view anime_hdr_grade;

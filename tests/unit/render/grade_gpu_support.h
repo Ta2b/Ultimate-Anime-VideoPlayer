@@ -159,9 +159,9 @@ inline std::vector<std::uint16_t> sdr_ramp(double top, double green, double blue
 
 using Rgb = std::array<double, 3>;
 
-// La rampe passée par le grade : les codes de R, G et B le long de la ligne du milieu.
-inline std::vector<Rgb> graded_codes(Gpu& gpu, const std::vector<std::uint16_t>& source,
-                                     const GradeParams& params) {
+// L'image entière passée par le grade : ses codes 16 bits RGBA.
+inline std::vector<std::uint16_t> graded_image(Gpu& gpu, const std::vector<std::uint16_t>& source,
+                                               const GradeParams& params) {
   const bool sdr = params.sdr_out > 0.5;
   const pl_gpu g = gpu.vk->gpu;
   pl_tex_params tex_params{};
@@ -196,6 +196,13 @@ inline std::vector<Rgb> graded_codes(Gpu& gpu, const std::vector<std::uint16_t>&
   REQUIRE(pl_tex_download(g, &download));
   pl_tex_destroy(g, &in);
   pl_tex_destroy(g, &out);
+  return pixels;
+}
+
+// La rampe passée par le grade : les codes de R, G et B le long de la ligne du milieu.
+inline std::vector<Rgb> graded_codes(Gpu& gpu, const std::vector<std::uint16_t>& source,
+                                     const GradeParams& params) {
+  const std::vector<std::uint16_t> pixels = graded_image(gpu, source, params);
   std::vector<Rgb> line(kSide);
   const std::size_t row = static_cast<std::size_t>(kSide / 2) * kSide;
   for (std::size_t x = 0; x < line.size(); ++x)
