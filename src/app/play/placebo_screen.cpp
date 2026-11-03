@@ -23,6 +23,7 @@
 #include "app/play/placebo_impl.h"
 #include "core/clock.h"
 #include "core/log.h"
+#include "core/trace.h"
 
 namespace ajp::app::play {
 namespace {
@@ -108,6 +109,7 @@ void PlaceboScreen::Impl::draw_ui(const ImDrawData* data, const pl_frame& target
 
 std::expected<void, Refusal> PlaceboScreen::Impl::compose(const pl_frame* image,
                                                           const pl_frame& target) const {
+  AJP_TRACE("composition");
   pl_render_params params = pl_render_default_params;
   switch (final_scaler) {
     case FinalScaler::Default:

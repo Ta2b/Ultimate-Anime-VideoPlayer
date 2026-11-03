@@ -12,6 +12,7 @@
 #include "core/auto_rate.h"
 #include "core/clock.h"
 #include "core/log.h"
+#include "core/trace.h"
 #include "kernels/spec/detect.h"
 #include "kernels/spec/rife.h"
 #include "kernels/spec/warp.h"
@@ -248,6 +249,7 @@ void UpscaleStage::analyze_source(const DecodedFrame& frame) {
 }
 
 std::expected<std::uint32_t, Refusal> UpscaleStage::outputs(const DecodedFrame& frame) {
+  AJP_TRACE("upscale.outputs");
   if (frame.width != setup_.source_width || frame.height != setup_.source_height) {
     return refuse(RefusalCode::ShapeInvalid,
                   std::format("image {}x{} : la source est en {}x{}", frame.width, frame.height,
@@ -568,6 +570,7 @@ std::expected<RingStage::Output, Refusal> UpscaleStage::produce(const DecodedFra
                                                                 std::uint32_t output, std::uint32_t slot,
                                                                 std::uint64_t wait_value,
                                                                 std::uint64_t signal_value) {
+  AJP_TRACE("upscale.produce");
   const gpu::RingWrite sync{.wait_value = wait_value, .signal_value = signal_value};
   const gpu::Tensor& now = rgb_[current_]->tensor();
   const Instant& instant = instants_[std::min<std::size_t>(output, instants_.size() - 1)];
