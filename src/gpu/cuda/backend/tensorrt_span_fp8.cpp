@@ -77,6 +77,8 @@ std::expected<void, Refusal> TensorRtBackend::enqueue_span_fp8(SpanFp8Engine& en
   timing.end(stream_);
   span_timing_->end(stream_);
   chain_timing_->end(stream_);
+  if (std::string notice = engine.take_notice(); !notice.empty())
+    log(BackendLogLevel::Warn, std::format("SPAN FP8 {}×{} : {}", shape.dims[3], shape.dims[2], notice));
   return queued;
 }
 

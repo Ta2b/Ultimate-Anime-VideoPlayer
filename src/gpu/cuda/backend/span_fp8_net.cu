@@ -274,6 +274,10 @@ std::unique_ptr<SpanFp8Net> SpanFp8Net::create(const SpanFp8Weights& weights, in
 }
 
 bool SpanFp8Net::launch(cudaStream_t stream, const void* input, void* output, std::string& error) {
+  return launch_body(stream, input, error) && launch_tail(stream, output, error);
+}
+
+bool SpanFp8Net::launch_body(cudaStream_t stream, const void* input, std::string& error) {
   Impl& n = *impl_;
   if (n.workspace == nullptr) {
     error = "zone de travail absente";
@@ -294,6 +298,20 @@ bool SpanFp8Net::launch(cudaStream_t stream, const void* input, void* output, st
     n.lc[b].launch(stream);
   }
   n.cat.launch(stream);
+  const cudaError_t result = cudaGetLastError();
+  if (result != cudaSuccess) {
+    error = std::string("lancement des noyaux : ") + cudaGetErrorString(result);
+    return false;
+  }
+  return true;
+}
+
+bool SpanFp8Net::launch_tail(cudaStream_t stream, void* output, std::string& error) {
+  Impl& n = *impl_;
+  if (n.workspace == nullptr) {
+    error = "zone de travail absente";
+    return false;
+  }
   n.pix.launch(stream);
   depth_to_space_kernel<<<static_cast<int>((n.npix * 12 + 255) / 256), 256, 0, stream>>>(
       n.pix_out_ptr, static_cast<__half*>(output), n.h, n.w);

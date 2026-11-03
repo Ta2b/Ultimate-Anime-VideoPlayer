@@ -12,6 +12,7 @@
 #include <array>
 #include <cmath>
 #include <cstdint>
+#include <cstring>
 #include <filesystem>
 #include <fstream>
 #include <string>
@@ -173,6 +174,39 @@ TEST_CASE("Backend TensorRT : un paquet SPAN FP8 inutilisable est refusé par so
     CHECK(built.error().code == RefusalCode::FormatUnsupported);
     CHECK_FALSE(built.error().detail.empty());
   }
+}
+
+TEST_CASE("Backend TensorRT : le SPAN FP8 rejoué par graphe rend la même image que le lancement direct",
+          "[backend_tensorrt][cuda][span_fp8]") {
+  // Étape 3.3 : premier lancement direct, deuxième capturé puis rejoué, troisième rejoué ; octet pour octet.
+  if (!has_cuda()) SKIP("pas de GPU NVIDIA");
+  Loaded loaded;
+  REQUIRE(loaded.backend != nullptr);
+  if (!loaded.backend->capabilities().span_fp8_cutlass) SKIP("appareil sans les noyaux FP8 CUTLASS (sm 8.9)");
+  Scratch scratch;
+  const fs::path package = scratch.root / "synthetique.span8";
+  write_bytes(package, gpu::span_fp8::serialize(gpu::span_fp8::synthetic()));
+  constexpr int h = 96, w = 160;
+  gpu::Progress progress;
+  auto artifact = loaded.backend->build(spec_of(package), fixed(h, w), progress);
+  REQUIRE(artifact);
+  auto fp8 = loaded.backend->load(*artifact);
+  REQUIRE(fp8);
+  auto input = loaded.backend->alloc_tensor(gpu::TensorType::F16, {.dims = {1, 3, h, w}});
+  REQUIRE(input);
+  upload((*input)->tensor(), drawing(h, w));
+  const std::array inputs{(*input)->tensor()};
+  std::vector<std::vector<float>> outputs;
+  for (int pass = 0; pass < 3; ++pass) {
+    auto out = loaded.backend->alloc_tensor(gpu::TensorType::F16, {.dims = {1, 3, 2 * h, 2 * w}});
+    REQUIRE(out);
+    std::array targets{(*out)->tensor()};
+    REQUIRE(loaded.backend->enqueue(**fp8, inputs, targets));
+    outputs.push_back(download((*out)->tensor()));
+  }
+  REQUIRE(outputs[0].size() == outputs[1].size());
+  CHECK(std::memcmp(outputs[0].data(), outputs[1].data(), outputs[0].size() * sizeof(float)) == 0);
+  CHECK(std::memcmp(outputs[0].data(), outputs[2].data(), outputs[0].size() * sizeof(float)) == 0);
 }
 
 TEST_CASE("Backend TensorRT : le SPAN FP8 CUTLASS contre le SPAN FP16 de TensorRT",

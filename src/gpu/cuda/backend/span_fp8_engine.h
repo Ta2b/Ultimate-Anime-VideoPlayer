@@ -1,8 +1,10 @@
 // Le SPAN entier en FP8 (noyaux CUTLASS, span_fp8_net.h) vu comme gpu::Engine : le backend TensorRT le charge
 // à la place d'un moteur TensorRT quand la variante du modèle est un paquet « .span8 »
-// (docs/span-fp8-cutlass.md). Les noyaux tournent sur le flux du backend, sans capture de graphe propre (rien
-// d'alloué à l'exécution : la capture d'un appelant les prend telle quelle) ; leurs tampons intermédiaires
-// vivent dans la zone d'activation de la voie (SharedActivations), comme ceux d'un moteur TensorRT.
+// (docs/span-fp8-cutlass.md). Les noyaux tournent sur le flux du backend ; leurs tampons intermédiaires
+// vivent dans la zone d'activation de la voie (SharedActivations), comme ceux d'un moteur TensorRT. Étape 3.3
+// : le corps du réseau est capturé en graphe CUDA par adresse d'entrée (kMaxGraphs au plus), la queue
+// (to_pixel et DepthToSpace) lancée en direct avec l'adresse de sortie : un cudaGraphLaunch et deux
+// lancements par image.
 #pragma once
 
 #include <cstdint>
@@ -19,6 +21,7 @@
 #include "gpu/backend.h"
 #include "gpu/cuda/backend/span_fp8_net.h"
 #include "gpu/cuda/backend/trt_engine.h"
+#include "gpu/graph_book.h"
 #include "gpu/span_fp8/package.h"
 
 namespace ajp::gpu::cuda {
@@ -57,9 +60,21 @@ class SpanFp8Engine final : public Engine {
   std::expected<void, Refusal> enqueue(cudaStream_t stream, const std::shared_ptr<SharedActivations>& arena,
                                        std::span<const Tensor> inputs, std::span<const Tensor> outputs);
 
+  // Le mot du moteur pour le journal (graphes coupés, plus de place), une fois ; vide sinon.
+  std::string take_notice() { return book_.take_notice(); }
+  const GraphCounters& graph_counters() const { return book_.counters(); }
+
  private:
   SpanFp8Engine() = default;
   std::expected<void, Refusal> use_zone(const std::shared_ptr<SharedActivations>& zone);
+  // Le corps sur stream : rejoué, capturé ou lancé en direct selon le registre.
+  std::expected<void, Refusal> body(cudaStream_t stream, const void* source);
+  void drop_graphs();
+
+  static constexpr std::size_t kMaxGraphs = 4;
+  static constexpr int kCaptureAttempts = 3;
+  GraphBook<std::uintptr_t> book_{kMaxGraphs, kCaptureAttempts};
+  std::vector<cudaGraphExec_t> execs_;  // rangés par l'indice du registre
 
   std::unique_ptr<SpanFp8Net> net_;
   std::vector<std::string> inputs_{"input"};
