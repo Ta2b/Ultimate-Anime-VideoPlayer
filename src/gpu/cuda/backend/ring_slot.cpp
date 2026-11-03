@@ -42,52 +42,48 @@ std::expected<std::unique_ptr<ImportedSlot>, Refusal> ImportedSlot::import(const
   }
   std::unique_ptr<ImportedSlot> imported(new ImportedSlot(slot));
 
-  cudaExternalMemoryHandleDesc memory{};
-  memory.size = slot.memory_size;
   // Les images du ring viennent de libplacebo, qui les alloue dédiées : CUDA veut le drapeau, sans quoi
-  // l'import peut réussir mais lire une mémoire mal mappée ; sans dédiée, on retente sans le drapeau.
-  memory.flags = cudaExternalMemoryDedicated;
+  // l'import peut réussir mais lire une mémoire mal mappée. Une allocation qui ne l'est pas vraiment (ou
+  // dont l'image ne commence pas au début) passe l'import avec le drapeau et échoue au mappage : on
+  // retente alors l'import entier sans le drapeau.
+  const auto import_and_map = [&](bool dedicated) -> std::expected<void, Refusal> {
+    cudaExternalMemoryHandleDesc memory{};
+    memory.size = slot.memory_size;
+    memory.flags = dedicated ? cudaExternalMemoryDedicated : 0;
 #ifdef _WIN32
-  memory.type = cudaExternalMemoryHandleTypeOpaqueWin32;
-  memory.handle.win32.handle = reinterpret_cast<void*>(slot.memory.value);
-  cudaError_t memory_error = cudaImportExternalMemory(&imported->memory_, &memory);
-  if (memory_error != cudaSuccess) {
-    static_cast<void>(cudaGetLastError());
-    memory.flags = 0;
-    memory_error = cudaImportExternalMemory(&imported->memory_, &memory);
-  }
-  if (memory_error != cudaSuccess)
-    return std::unexpected(cuda_refusal(memory_error, "cudaImportExternalMemory"));
+    memory.type = cudaExternalMemoryHandleTypeOpaqueWin32;
+    memory.handle.win32.handle = reinterpret_cast<void*>(slot.memory.value);
+    if (const cudaError_t error = cudaImportExternalMemory(&imported->memory_, &memory); error != cudaSuccess)
+      return std::unexpected(cuda_refusal(error, "cudaImportExternalMemory"));
 #else
-  memory.type = cudaExternalMemoryHandleTypeOpaqueFd;
-  memory.handle.fd = duplicate(slot.memory);
-  if (memory.handle.fd < 0)
-    return refuse(RefusalCode::IoFailed, std::format("slot {} : dup de la mémoire", slot.index));
-  cudaError_t memory_error = cudaImportExternalMemory(&imported->memory_, &memory);
-  if (memory_error != cudaSuccess) {
-    static_cast<void>(cudaGetLastError());
-    memory.flags = 0;
-    memory_error = cudaImportExternalMemory(&imported->memory_, &memory);
-  }
-  if (memory_error != cudaSuccess) {
-    close(memory.handle.fd);  // pris par CUDA seulement en cas de succès
-    return std::unexpected(cuda_refusal(memory_error, "cudaImportExternalMemory"));
-  }
+    memory.type = cudaExternalMemoryHandleTypeOpaqueFd;
+    memory.handle.fd = duplicate(slot.memory);
+    if (memory.handle.fd < 0)
+      return refuse(RefusalCode::IoFailed, std::format("slot {} : dup de la mémoire", slot.index));
+    if (const cudaError_t error = cudaImportExternalMemory(&imported->memory_, &memory);
+        error != cudaSuccess) {
+      close(memory.handle.fd);  // pris par CUDA seulement en cas de succès
+      return std::unexpected(cuda_refusal(error, "cudaImportExternalMemory"));
+    }
 #endif
-
-  cudaExternalMemoryMipmappedArrayDesc array{};
-  array.offset = slot.memory_offset;
-  array.formatDesc = cudaCreateChannelDesc(16, 16, 16, 16, cudaChannelFormatKindUnsigned);
-  array.extent = cudaExtent{.width = static_cast<std::size_t>(slot.width),
-                            .height = static_cast<std::size_t>(slot.height),
-                            .depth = 0};
-  array.flags = cudaArraySurfaceLoadStore;
-  array.numLevels = 1;
-  if (auto ok = cuda_check(
-          cudaExternalMemoryGetMappedMipmappedArray(&imported->mipmaps_, imported->memory_, &array),
-          "cudaExternalMemoryGetMappedMipmappedArray");
-      !ok) {
-    return std::unexpected(ok.error());
+    cudaExternalMemoryMipmappedArrayDesc array{};
+    array.offset = slot.memory_offset;
+    array.formatDesc = cudaCreateChannelDesc(16, 16, 16, 16, cudaChannelFormatKindUnsigned);
+    array.extent = cudaExtent{.width = static_cast<std::size_t>(slot.width),
+                              .height = static_cast<std::size_t>(slot.height),
+                              .depth = 0};
+    array.flags = cudaArraySurfaceLoadStore;
+    array.numLevels = 1;
+    return cuda_check(
+        cudaExternalMemoryGetMappedMipmappedArray(&imported->mipmaps_, imported->memory_, &array),
+        "cudaExternalMemoryGetMappedMipmappedArray");
+  };
+  if (auto ok = import_and_map(true); !ok) {
+    static_cast<void>(cudaGetLastError());
+    if (imported->memory_ != nullptr) cudaDestroyExternalMemory(imported->memory_);
+    imported->memory_ = nullptr;
+    imported->mipmaps_ = nullptr;
+    if (auto retry = import_and_map(false); !retry) return std::unexpected(retry.error());
   }
   cudaArray_t level = nullptr;
   if (auto ok =
