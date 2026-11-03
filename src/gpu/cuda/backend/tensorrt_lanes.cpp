@@ -73,7 +73,23 @@ void TensorRtBackend::use_lane(Lane lane) {
 
 const std::shared_ptr<SharedActivations>& TensorRtBackend::arena() {
   const std::size_t zone = lanes_ > 1 && lane_ != Lane::Upscale ? 1 : 0;
-  if (!arenas_[zone]) arenas_[zone] = std::make_shared<SharedActivations>();
+  if (!arenas_[zone]) {
+    arenas_[zone] = std::make_shared<SharedActivations>();
+    // Le pool du backend : la zone vit moins longtemps que lui (les moteurs la tiennent, le backend les
+    // détruit avant ses files).
+    arenas_[zone]->set_pool(
+        [this](std::size_t bytes) -> void* {
+          void* memory = nullptr;
+          if (cudaMallocAsync(&memory, bytes, stream_) != cudaSuccess ||
+              cudaStreamSynchronize(stream_) != cudaSuccess) {
+            if (memory != nullptr) cudaFree(memory);
+            static_cast<void>(clear_error());
+            return nullptr;
+          }
+          return memory;
+        },
+        [this](void* memory) { free_after_lanes(memory); });
+  }
   return arenas_[zone];
 }
 

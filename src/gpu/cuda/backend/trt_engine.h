@@ -10,6 +10,7 @@
 #include <cuda_runtime_api.h>
 #include <expected>
 #include <filesystem>
+#include <functional>
 #include <memory>
 #include <span>
 #include <string>
@@ -52,9 +53,19 @@ class SharedActivations {
   // qui y garde des tampons d'un appel au suivant (DistilDRBA fusionné, D6) sait si un autre y a écrit.
   const void* last_user() const { return last_user_; }
   void set_last_user(const void* user) { last_user_ = user; }
+  // Allocation et libération par le backend (étape 11.4) : dans le pool, et l'ancienne zone rendue derrière
+  // toutes les voies au lieu d'un cudaDeviceSynchronize. Sans elles : cudaMalloc, et cudaFree après
+  // synchronisation de l'appareil.
+  void set_pool(std::function<void*(std::size_t)> alloc, std::function<void(void*)> release) {
+    alloc_ = std::move(alloc);
+    release_ = std::move(release);
+  }
 
  private:
+  void* allocate(std::size_t bytes);
   void* data_ = nullptr;
+  std::function<void*(std::size_t)> alloc_;
+  std::function<void(void*)> release_;
   std::int64_t bytes_ = 0;
   std::uint64_t generation_ = 0;
   const void* last_user_ = nullptr;

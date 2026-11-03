@@ -380,7 +380,7 @@ class TensorRtBackend final : public Backend, public KernelOps {
   };
   YuvTables yuv_;
   std::expected<void, Refusal> yuv_tables(int width, int height, kernels::Siting siting);
-  void release_yuv_tables();
+  void release_yuv_tables(bool behind_lanes = false);  // true en lecture : derrière les voies (11.4)
   // Objets texture par adresse et forme (texture()) ; au-delà de kTextures, tous détruits et
   // recréés à la demande (changements de taille répétés).
   struct TextureKey {

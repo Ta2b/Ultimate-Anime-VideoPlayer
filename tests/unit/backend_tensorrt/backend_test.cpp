@@ -11,6 +11,7 @@
 #include <cuda_runtime_api.h>
 #include <filesystem>
 #include <memory>
+#include <thread>
 #include <type_traits>
 #include <vector>
 
@@ -399,3 +400,31 @@ TEST_CASE("Backend TensorRT : coût des réductions 1080p vers 720p", "[.bench][
 }
 
 }  // namespace
+
+namespace {
+void hold_stream(void* opaque) {
+  std::this_thread::sleep_for(std::chrono::milliseconds(*static_cast<int*>(opaque)));
+}
+}  // namespace
+
+TEST_CASE(
+    "Backend TensorRT : détruire un tenseur pendant 50 ms de travail en vol rend la main en moins de 2 ms",
+    "[backend_tensorrt][cuda]") {
+  // Étape 11.4 : la libération passe derrière les voies du backend (événements, cudaFreeAsync) au lieu d'un
+  // cudaFree qui attend l'appareil entier, ici une file tierce tenue 50 ms.
+  if (!has_cuda()) SKIP("pas de GPU NVIDIA");
+  Loaded loaded;
+  REQUIRE(loaded.backend != nullptr);
+  auto tensor = loaded.backend->alloc_tensor(gpu::TensorType::F16, {.dims = {1, 3, 256, 256}});
+  REQUIRE(tensor);
+  cudaStream_t other = nullptr;
+  REQUIRE(cudaStreamCreateWithFlags(&other, cudaStreamNonBlocking) == cudaSuccess);
+  int hold_ms = 50;
+  REQUIRE(cudaLaunchHostFunc(other, hold_stream, &hold_ms) == cudaSuccess);
+  const auto start = std::chrono::steady_clock::now();
+  tensor->reset();
+  const auto took = std::chrono::steady_clock::now() - start;
+  CHECK(took < std::chrono::milliseconds(2));
+  CHECK(cudaStreamSynchronize(other) == cudaSuccess);
+  cudaStreamDestroy(other);
+}
