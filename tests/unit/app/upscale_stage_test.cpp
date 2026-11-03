@@ -172,6 +172,25 @@ TEST_CASE("Étage gpu : RIFE ×2, une image intermédiaire par paire ; coupe et 
   CHECK(rig.reported().empty());
 }
 
+TEST_CASE("Étage gpu : en lecture, la source d'un dessin tenu n'est ni écrite ni présentée", "[app][stage]") {
+  Rig rig;
+  rig.backend.score(SourceId{5}, SourceId{6}, 0.0, 10);  // dessin tenu
+  UpscaleSetup s = rig.setup(true);
+  s.skip_held = true;
+  rig.start(std::move(s));
+  rig.feed(1, 6);
+  REQUIRE(rig.collect(9));
+  rig.feed(7, 7);
+  REQUIRE(rig.collect(11));
+  rig.stage.reset();
+  const std::vector<RingFrame> frames = rig.sink.frames();
+  CHECK(shape_of(frames) ==
+        std::vector<std::string>{"1", "1-2", "2", "2-3", "3", "3-4", "4", "4-5", "5", "6-7", "7"});
+  CHECK(frames[9].uninterpolated);  // la source 6 manque exprès : l'écart n'est pas une perte
+  CHECK(rig.backend.count("engine span") == 6 + 4 + 1);  // 7 sources moins la tenue, + 5 intermédiaires - 1
+  CHECK(rig.reported().empty());
+}
+
 TEST_CASE("Étage gpu : RIFE ×3, deux instants par paire, l'entrée remplie une fois puis l'instant seul",
           "[app][stage]") {
   Rig rig;
@@ -226,16 +245,16 @@ TEST_CASE(
   s.skip_held = skip_held;
   rig.start(std::move(s));
   rig.feed(1, 4);
-  REQUIRE(rig.collect(skip_held ? 5 : 6));
+  REQUIRE(rig.collect(skip_held ? 4 : 6));
   rig.stage.reset();
   const std::vector<RingFrame> frames = rig.sink.frames();
   if (skip_held) {
     // La paire (2, 3) suit le dessin tenu : b à 1/2, une seule écriture ; la source 3 n'est pas réécrite,
     // l'écart est marqué sur la suivante.
-    CHECK(shape_of(frames) == std::vector<std::string>{"1", "2", "3", "3-4", "4"});
-    CHECK(frames[2].pts_us == 100'000);
-    CHECK_FALSE(frames[2].uninterpolated);
-    CHECK(frames[3].uninterpolated);  // la source 3, déjà à l'écran, manque : l'écart n'est pas une perte
+    CHECK(shape_of(frames) == std::vector<std::string>{"1", "3", "3-4", "4"});
+    CHECK(frames[1].pts_us == 100'000);
+    CHECK(frames[1].uninterpolated);  // la source 2 (tenue) manque exprès
+    CHECK(frames[2].uninterpolated);  // la source 3, déjà à l'écran, manque : l'écart n'est pas une perte
     CHECK(rig.backend.count("engine rife_motion") == 1);
     CHECK(rig.backend.count("warp_blend") + rig.backend.count("warp_blend_poses") == 1);
   } else {
