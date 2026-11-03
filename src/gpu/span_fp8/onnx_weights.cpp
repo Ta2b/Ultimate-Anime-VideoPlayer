@@ -1,6 +1,7 @@
 #include "gpu/span_fp8/onnx_weights.h"
 
 #include <algorithm>
+#include <array>
 #include <cstring>
 #include <format>
 #include <fstream>
@@ -163,6 +164,37 @@ std::expected<Package, Refusal> package_from_onnx(const ir::onnx::Model& model) 
       transpose != nullptr && transpose->op_type == "Transpose" ? attribute(*transpose, "perm") : nullptr;
   if (perm == nullptr || perm->ints != std::vector<std::int64_t>{0, 1, 3, 5, 2, 4})
     return refuse("dégroupage : ce SPAN n'a pas l'ordre des canaux supposé par les noyaux");
+  // L'ordre des quatre entrées du Concat de conv_cat (étape 3.2a) : les noyaux écrivent la tranche 0 depuis
+  // conv_1, la 1 depuis la sortie du dernier bloc, la 2 depuis celle du bloc 1 et la 3 depuis le premier Relu
+  // du dernier bloc. Une entrée lue à travers des Identity.
+  const auto through_identity = [&](std::string name) {
+    for (int hops = 0; hops < 8; ++hops) {
+      const auto it = producer.find(name);
+      if (it == producer.end() || it->second->op_type != "Identity" || it->second->inputs.empty()) break;
+      name = it->second->inputs[0];
+    }
+    return name;
+  };
+  const auto cat_conv = std::ranges::find_if(graph.nodes, [](const ir::onnx::Node& node) {
+    return node.op_type == "Conv" && std::ranges::find(node.inputs, "conv_cat.weight") != node.inputs.end();
+  });
+  if (cat_conv == graph.nodes.end() || cat_conv->inputs.empty())
+    return refuse("conv_cat : la convolution qui lit conv_cat.weight est absente du graphe");
+  const std::string cat_input = through_identity(cat_conv->inputs[0]);
+  const ir::onnx::Node* concat = producer.contains(cat_input) ? producer[cat_input] : nullptr;
+  if (concat == nullptr || concat->op_type != "Concat" || concat->inputs.size() != 4)
+    return refuse("conv_cat : son entrée n'est pas un Concat de quatre tenseurs");
+  const std::array<std::string, 4> expected_order{
+      "/conv_1/conv_1.1/eval_conv/Conv_output_0", std::format("/block_{}/Mul_output_0", kBlocks),
+      "/block_1/Mul_output_0", std::format("/block_{}/act1/Relu_output_0", kBlocks)};
+  for (std::size_t i = 0; i < expected_order.size(); ++i) {
+    const std::string got = through_identity(concat->inputs[i]);
+    if (got != expected_order[i])
+      return refuse(
+          std::format("Concat de conv_cat : entrée {} « {} », « {} » attendue (ordre des tranches des "
+                      "noyaux)",
+                      i, got, expected_order[i]));
+  }
   const auto depth_to_space = std::ranges::find(graph.nodes, "DepthToSpace", &ir::onnx::Node::op_type);
   if (depth_to_space == graph.nodes.end()) return refuse("DepthToSpace absent du graphe");
   const ir::onnx::Attribute* block_size = attribute(*depth_to_space, "blocksize");

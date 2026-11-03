@@ -3,9 +3,11 @@
 #include "gpu/span_fp8/onnx_weights.h"
 
 #include <cstring>
+#include <filesystem>
 #include <format>
 #include <fstream>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include <catch2/catch_test_macros.hpp>
@@ -52,6 +54,13 @@ Model synthetic_model(int channels = kChannels) {
     g.nodes.push_back(node("Relu", {"x"}, std::format("/block_{}/act1_1/Relu_output_0", k)));
     g.nodes.push_back(node("Mul", {"x"}, std::format("/block_{}/Mul_output_0", k)));
   }
+  g.nodes.push_back(
+      node("Concat",
+           {"/conv_1/conv_1.1/eval_conv/Conv_output_0", std::format("/block_{}/Mul_output_0", kBlocks),
+            "/block_1/Mul_output_0", std::format("/block_{}/act1/Relu_output_0", kBlocks)},
+           "/Concat_output_0"));
+  g.nodes.push_back(
+      node("Conv", {"/Concat_output_0", "conv_cat.weight", "conv_cat.bias"}, "/conv_cat/Conv_output_0"));
   g.initializers.push_back(tensor("conv_cat.weight", {64, 256, 1, 1}));
   g.initializers.push_back(tensor("conv_cat.bias", {64}));
   g.initializers.push_back(tensor("to_pixel.eval_conv.weight", {48, 64, 3, 3}));
@@ -144,6 +153,54 @@ TEST_CASE("un graphe dont le dégroupage ou le DepthToSpace diffèrent est refus
   const auto absent = package_from_onnx(missing);
   REQUIRE_FALSE(absent);
   CHECK(absent.error().detail.find("/block_5/act1_1/Relu_output_0") != std::string::npos);
+}
+
+TEST_CASE("le Concat de conv_cat doit avoir l'ordre des tranches des noyaux (3.2a)", "[span_fp8][onnx]") {
+  Model swapped = synthetic_model();
+  for (Node& n : swapped.graph.nodes)
+    if (n.op_type == "Concat") std::swap(n.inputs[1], n.inputs[2]);
+  const auto refused = package_from_onnx(swapped);
+  REQUIRE_FALSE(refused);
+  CHECK(refused.error().detail.find("Concat de conv_cat") != std::string::npos);
+
+  // Une entrée lue à travers un Identity reste la même.
+  Model identity = synthetic_model();
+  for (Node& n : identity.graph.nodes)
+    if (n.op_type == "Concat") n.inputs[2] = "/block_1/Identity_output_0";
+  identity.graph.nodes.push_back(node("Identity", {"/block_1/Mul_output_0"}, "/block_1/Identity_output_0"));
+  CHECK(package_from_onnx(identity));
+
+  Model no_concat = synthetic_model();
+  std::erase_if(no_concat.graph.nodes, [](const Node& n) { return n.op_type == "Concat"; });
+  CHECK_FALSE(package_from_onnx(no_concat));
+}
+
+TEST_CASE("structure du SPAN b5f48, lue sur son ONNX", "[.span_b5f48][span_fp8][onnx]") {
+  // Étape 3.2a : ce que le b5f48 change (canaux, blocs, att_conv, entrées du Concat), imprimé pour le plan.
+  const std::string path = AJP_SPAN_B5F48_MODEL;
+  if (path.empty() || !std::filesystem::exists(path))
+    SKIP("-DAJP_SPAN_B5F48_MODEL=… (SPAN b5f48 d'AnimeJaNai)");
+  const std::vector<std::byte> bytes = read_file(path.c_str());
+  const auto model = ir::onnx::read_onnx(bytes);
+  REQUIRE(model);
+  for (const Tensor& t : model->graph.initializers) {
+    std::string dims;
+    for (const std::int64_t d : t.dims) dims += std::format("{} ", d);
+    if (t.name.find("block_") == std::string::npos || t.name.find("block_1.") != std::string::npos)
+      WARN(t.name << " : " << dims);
+  }
+  int blocks = 0;
+  for (const Tensor& t : model->graph.initializers)
+    if (t.name.ends_with(".att_conv.weight")) ++blocks;
+  WARN("att_conv : " << blocks << " blocs");
+  for (const Node& n : model->graph.nodes) {
+    if (n.op_type != "Concat") continue;
+    std::string inputs;
+    for (const std::string& in : n.inputs) inputs += in + "  ";
+    WARN("Concat " << n.outputs[0] << " <- " << inputs);
+  }
+  const auto package = package_from_onnx(*model);
+  WARN("package_from_onnx : " << (package ? std::string("pris") : package.error().detail));
 }
 
 TEST_CASE("les poids lus ici sont ceux du paquet de derive_span_fp8.py", "[.span_compat][span_fp8][onnx]") {
