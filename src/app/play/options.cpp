@@ -154,6 +154,8 @@ std::expected<PlayOptions, Refusal> parse_play_options(std::span<const std::stri
       options.hdr_anime = true;
     } else if (arg == "--legacy-grade") {
       options.legacy_grade = true;
+    } else if (arg == "--legacy-grade=split") {
+      options.split_look = true;
     } else if (arg == "--no-resume") {
       options.resume = false;
     } else if (arg == "--register" || arg == "--unregister") {
@@ -425,6 +427,7 @@ std::string play_usage() {
       "  --skin-mask      le grade distingue la peau (coupé : il faisait un damier)\n"
       "  --grade-deband      débandage devant le grade (sinon aucun : il fabriquait du bruit)\n"
       "  --legacy-grade         le grade HDR d'avant (neuf passes, scène mesurée par le shader), à comparer\n"
+      "  --legacy-grade=split   le grade actuel, le look dans sa passe à part (comparaison A/B)\n"
       "  --no-vrr               écran à fréquence fixe même si le VRR est armé (essai du mode Rapide)\n"
       "  --software-gpu         accepte un Vulkan logiciel (lavapipe), pour les essais sans GPU\n"
       "  --mute                 son coupé pour cette lecture\n"

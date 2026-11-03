@@ -194,6 +194,7 @@ std::expected<void, Refusal> play(const PlayOptions& options, const PlayerPaths&
                                         .allow_software = options.software_gpu,
                                         .hdr_anime = options.hdr_anime,
                                         .legacy_grade = options.legacy_grade,
+                                        .split_look = options.split_look,
                                         .grade_deband = options.grade_deband,
                                         .skin_mask = options.skin_mask,
                                         .shader_cache = paths.data / "shaders.cache"});

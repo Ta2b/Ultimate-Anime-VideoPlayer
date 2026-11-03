@@ -90,14 +90,13 @@ vec3 ajl_encode(vec3 n) {
 
 //@LOOK_CHAIN@
 
-vec4 hook() {
-    vec4 px = HOOKED_tex(HOOKED_pos);
+// Le look d'un pixel encodé (PQ BT.2020, ou SDR) : aussi lu dans la passe du grade fusionné (grade.cpp).
+vec3 ajl_look(vec3 e) {
     if (look_pq > 0.5 && sdr_out < 0.5) {
         // LUT d'HDR : elle lit directement les codes PQ BT.2020 de l'image et rend des codes PQ.
-        px.rgb = ajl_chain(px.rgb);
-        return px;
+        return ajl_chain(e);
     }
-    vec3 nits = ajl_decode(px.rgb);
+    vec3 nits = ajl_decode(e);
     // Linéaire BT.709, blanc de référence = 1 (la sortie SDR est déjà en BT.709).
     vec3 lin = (sdr_out > 0.5 ? nits : AJL_2020_TO_709 * nits) / look_white;
     lin = max(lin, 0.0);
@@ -105,6 +104,12 @@ vec4 hook() {
     vec3 enc = pow(lin / over, vec3(1.0 / look_gamma));
     vec3 graded = pow(max(ajl_chain(enc), 0.0), vec3(look_gamma)) * over;
     vec3 out_lin = graded * look_white;
-    px.rgb = ajl_encode(sdr_out > 0.5 ? out_lin : AJL_709_TO_2020 * out_lin);
+    return ajl_encode(sdr_out > 0.5 ? out_lin : AJL_709_TO_2020 * out_lin);
+}
+//@LOOK_END@
+
+vec4 hook() {
+    vec4 px = HOOKED_tex(HOOKED_pos);
+    px.rgb = ajl_look(px.rgb);
     return px;
 }
