@@ -68,15 +68,6 @@
 namespace ajp::app::play {
 namespace {
 
-// Profondeur du ring : 4 images, 6 de ×3 à ×4, 8 au-delà. Aux forts facteurs, un sursaut du GPU (une coupe,
-// un mouvement fort) se rattrape sur plus d'images avant de se voir à l'écran (66 Mo par image 4K).
-constexpr std::uint32_t ring_slots(Factor factor) {
-  const int num = factor.num;
-  const int den = std::max(factor.den, 1);
-  return num >= 5 * den ? 8U : num >= 3 * den ? 6U : 4U;
-}
-static_assert(ring_slots({.num = 8, .den = 1}) <= kMaxRingSlots);
-
 // Seuils du vrai noir recalés au plus 5 fois par seconde pendant qu'on règle.
 constexpr std::int64_t kBlackRefreshUs = 200'000;
 // En pause, l'attente d'un événement SDL au plus : le seuil de réactivité aux messages des threads.
@@ -173,7 +164,7 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
         const int height = stage.track->height;
         const WorkSize sized = work_size(width, height, settings.work_height);
         auto slots = out.create_ring(sized.width * factor, sized.height * factor,
-                                     ring_slots(rife_loaded ? factor_of(settings) : Factor{}),
+                                     ring_depth(settings, rife_loaded ? factor_of(settings) : Factor{}),
                                      c.backend_name == "tensorrt");
         if (!slots) return std::unexpected(std::move(slots.error()));
         const MasterClock* clock = stage.clock;

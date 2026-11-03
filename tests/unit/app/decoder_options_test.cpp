@@ -53,6 +53,7 @@ TEST_CASE("Facteur le plus haut de la lecture : à la main, ou en Auto ce que l'
   PlaySettings s;
   s.rife_factor = 4;
   s.rife_auto = true;
+  s.auto_free = false;                       // Stable ; Rapide suit l'écran (chain_setup_test.cpp)
   CHECK(top_factor(s, 60.0, 23.976) == 2);   // 60 Hz : ×2 au plus
   CHECK(top_factor(s, 144.0, 23.976) == 4);  // 144 Hz : ×6 possible, borné par rife_factor
   CHECK(top_factor(s, 0.0, 23.976) == 1);    // écran inconnu : Auto reste à ×1

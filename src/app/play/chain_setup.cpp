@@ -135,7 +135,17 @@ int top_factor(const PlaySettings& settings, double display_hz, double source_fp
   if (!settings.rife_auto) return settings.rife_factor / std::max(settings.rife_factor_den, 1);
   // Auto : jusqu'à rife_factor, et pas au-delà de ce que l'écran (ou le plafond choisi) affiche.
   const int ceiling = core::auto_ceiling(core::auto_limit_hz(display_hz, settings.auto_cap), source_fps);
+  // Rapide : le warp et l'anneau suivent l'écran, pas le facteur demandé (6 à 165 Hz sur 23,976 i/s).
+  if (settings.auto_free) return std::max(ceiling, 1);
   return std::clamp(ceiling, 1, settings.rife_factor);
+}
+
+static_assert(kMaxRingSlots >= 8);
+
+std::uint32_t ring_depth(const PlaySettings& settings, Factor factor) {
+  if (settings.auto_free && settings.rife_auto) return 8U;
+  const int den = std::max(factor.den, 1);
+  return factor.num >= 5 * den ? 8U : factor.num >= 3 * den ? 6U : 4U;
 }
 
 namespace {
