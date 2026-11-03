@@ -404,6 +404,35 @@ TEST_CASE("Sous-titres : chaque vsync de l'image montrée a ses sous-titres, rin
   CHECK(rig.session.stats().subtitle_gaps == 0);
 }
 
+namespace {
+struct PeriodSource final : StatsSource {
+  std::optional<std::string> rife() const override { return std::nullopt; }
+  std::optional<std::string> memory() const override { return std::nullopt; }
+  std::int64_t source_period_us() const override { return 41'708; }
+};
+}  // namespace
+
+TEST_CASE("Sous-titres : une image tenue 3 s, les demandes suivent la grille des sources", "[app][session]") {
+  ajp::app::play::FrenchUi french;
+  PeriodSource source;
+  Rig rig(SessionConfig{.subtitles = true, .video_width = 1920, .video_height = 1080, .extra = &source});
+  rig.session.handle(ring_frame(0, 0));
+  rig.run_clock(0);
+  rig.tick();
+  std::size_t answered = 0;
+  while (rig.screen.now_us < 3'000'000) {
+    rig.screen.now_us += 16'667;  // un vsync sans présentation : rien ne change à l'écran
+    rig.tick();
+    for (; answered < rig.stages.requests.size(); ++answered)
+      rig.session.handle(subs::SubtitleFrame{.pts_us = rig.stages.requests[answered].pts_us});
+  }
+  REQUIRE(rig.stages.requests.size() >= 70);
+  for (std::size_t i = 1; i < rig.stages.requests.size(); ++i) {
+    INFO("demande " << i);
+    CHECK(rig.stages.requests[i].pts_us - rig.stages.requests[i - 1].pts_us == 41'708);
+  }
+}
+
 TEST_CASE("Présentation à la demande : rien ne change, rien n'est recomposé", "[app][session]") {
   ajp::app::play::FrenchUi french;
   Rig rig;

@@ -205,6 +205,8 @@ void Session::seek_to(std::int64_t target_us, bool exact) {
   subtitles_.clear();
   subtitle_requests_ = 0;
   subtitle_waiting_.reset();
+  subtitle_pts_.reset();
+  held_subtitle_pts_.reset();
   prerolling_ = true;
   preroll_since_us_.reset();
   stream_ended_ = false;
@@ -251,6 +253,7 @@ void Session::request_subtitles(const RingFrame& frame) {
     subtitle_waiting_ = frame;
     return;
   }
+  subtitle_pts_ = frame.pts_us;
   const OutputSize size = screen_.size();
   const subs::RenderRequest request{.pts_us = frame.pts_us,
                                     .epoch = frame.epoch,
@@ -377,6 +380,27 @@ const subs::SubtitleFrame* Session::subtitles_for(std::int64_t pts_us) {
   return frame;
 }
 
+// Une image tenue plus d'une période source : les demandes de sous-titres continuent sur la grille des
+// sources, et la lecture suit l'horloge (jamais au-delà de la dernière demande).
+void Session::follow_subtitles(std::int64_t host_now) {
+  if (fresh_) held_subtitle_pts_.reset();
+  if (!config_.subtitles || !current_ || !subtitle_pts_ || config_.extra == nullptr) return;
+  const std::int64_t period = config_.extra->source_period_us();
+  if (period <= 0) return;
+  const ClockSnapshot now = clock_.snapshot();
+  if (!now.valid) return;
+  const std::int64_t media = now.media_at(host_now);
+  int asked = 0;
+  while (media - *subtitle_pts_ >= period && subtitle_requests_ < kMaxSubtitleRequests && asked < 4) {
+    RingFrame next = *current_;
+    next.pts_us = *subtitle_pts_ + period;
+    request_subtitles(next);
+    if (!subtitle_pts_ || *subtitle_pts_ != next.pts_us) break;  // refusée : on réessaie au tour suivant
+    held_subtitle_pts_ = std::max(current_->pts_us, std::min(media, next.pts_us));
+    ++asked;
+  }
+}
+
 std::expected<std::optional<PresentRecord>, Refusal> Session::tick(std::int64_t host_now, const UiFrame& ui) {
   fresh_ = false;
   last_tick_us_ = host_now;
@@ -385,6 +409,7 @@ std::expected<std::optional<PresentRecord>, Refusal> Session::tick(std::int64_t 
   retire_written();
   follow_display();
   choose(host_now);
+  follow_subtitles(host_now);
   const bool fresh = fresh_;
   bool osd_changed = false;
   if (!osd_at_us_ || host_now - *osd_at_us_ >= kOsdPeriodUs) {
@@ -393,7 +418,8 @@ std::expected<std::optional<PresentRecord>, Refusal> Session::tick(std::int64_t 
     osd_ = std::move(lines);
     osd_at_us_ = host_now;
   }
-  const subs::SubtitleFrame* subtitles = current_ ? subtitles_for(current_->pts_us) : nullptr;
+  const subs::SubtitleFrame* subtitles =
+      current_ ? subtitles_for(held_subtitle_pts_.value_or(current_->pts_us)) : nullptr;
   SubtitleLook look = look_of(subtitles);
   const OutputSize size = screen_.size();
   // Présentation à la demande : rien n'a changé, l'écran garde l'image (et en VRR, il suit le

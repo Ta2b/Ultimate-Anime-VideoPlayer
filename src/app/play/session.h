@@ -227,6 +227,13 @@ class Session {
   // La plus récente image dont la demande a dû attendre une réponse : la seule qui compte, les
   // précédentes auraient donné des sous-titres déjà périmés.
   std::optional<RingFrame> subtitle_waiting_;
+  // Sous-titres d'une image tenue : sans image neuve, un plan fixe les figerait. Le pts de la dernière
+  // demande avance sur la grille des sources tant que l'horloge dépasse l'image montrée de plus d'une
+  // période.
+  std::optional<std::int64_t> subtitle_pts_;
+  std::optional<std::int64_t>
+      held_subtitle_pts_;  // le pts à lire pendant une tenue ; vide : celui de l'image
+  void follow_subtitles(std::int64_t host_now);
 
   bool fresh_ = false;       // ce tour montre une image neuve
   bool shown_once_ = false;  // une présentation a eu lieu : la suivante seulement si ça change
