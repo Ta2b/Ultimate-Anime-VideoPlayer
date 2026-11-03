@@ -30,6 +30,9 @@ class BackendLibrary {
   const std::filesystem::path& path() const { return path_; }
   // Les candidats écartés avant celui-ci par choose, avec leur raison (une ligne chacun), vide sinon.
   const std::string& passed_over() const { return passed_over_; }
+  // Le fichier a changé depuis l'ouverture (moteur réinstallé ou mis à jour) : il faut la rouvrir, une fois
+  // celle-ci relâchée, pour charger le nouveau.
+  bool replaced_on_disk() const;
 
   struct Destroy {
     gpu::BackendDestroyFn destroy = nullptr;
@@ -54,6 +57,7 @@ class BackendLibrary {
   std::optional<DynamicLibrary> handle_;
   std::filesystem::path path_;
   std::string passed_over_;
+  std::filesystem::file_time_type stamp_{};
   gpu::BackendCreateFn create_ = nullptr;
   gpu::BackendDestroyFn destroy_ = nullptr;
 };

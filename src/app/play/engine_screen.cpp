@@ -342,6 +342,13 @@ std::expected<bool, Refusal> handle_engine_change(Player& p, const EngineChange&
   show_loading(p.screen, p.ui, i18n::tr("Loading the engine"));
   const gpu::BackendInit probe{
       .render = &p.screen.device(), .cache_dir = p.paths.engines, .log = backend_log()};
+  // Le module en service remplacé par l'écran des moteurs (mise à jour) : le nouveau ne se chargerait pas
+  // dans ce processus, le lecteur se relance.
+  if (p.library->replaced_on_disk() && p.paths.relaunch != nullptr) {
+    log->info("moteur mis à jour : le lecteur se relance");
+    *p.paths.relaunch = true;
+    return false;
+  }
   auto library = open_backend(p.catalog, p.paths, p.engines, probe);
   if (!library) {
     log->warn("moteurs : {} ; {} reste en service", library.error().detail, p.library->path().string());

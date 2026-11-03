@@ -113,8 +113,8 @@ std::expected<bool, Refusal> install_chosen(PlaceboScreen& screen, PlayerUi& ui,
 }
 
 std::expected<bool, Refusal> update_stale_engines(PlaceboScreen& screen, PlayerUi& ui,
-                                                  const EngineCatalog& catalog,
-                                                  const core::Settings& engines) {
+                                                  const EngineCatalog& catalog, const core::Settings& engines,
+                                                  bool& updated) {
   const auto log = log_channel("app");
   for (const core::EnginePackage& package : catalog.packages) {
     if (!chosen(engines, package.engine) || !installed(catalog, package)) continue;
@@ -154,6 +154,7 @@ std::expected<bool, Refusal> update_stale_engines(PlaceboScreen& screen, PlayerU
     if (!outcome) return false;
     if (*outcome) {
       log->info("{} mis à jour", label);
+      updated = true;
     } else {
       log->warn("{} non mis à jour : {}", label, outcome->error().detail);
       ui.controls().defer(i18n::tr_format("{} not updated: Vulkan instead", label));
