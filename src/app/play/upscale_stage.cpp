@@ -341,7 +341,9 @@ std::expected<std::uint32_t, Refusal> UpscaleStage::outputs(const DecodedFrame& 
                                 : 0};
   if (!facts.same_epoch) forget_motion();  // début ou saut : le mouvement d'avant ne dit plus rien
   std::int64_t lead_us = 0;                // attente des mesures de la paire, avant sa soumission
-  if (facts.factor > 1 && facts.same_epoch) {
+  // DistilDRBA mesure aussi une paire « source seule » (facteur 1) : sans cela, la paire suivante n'aurait
+  // pas les mesures du côté d'avant.
+  if ((facts.factor > 1 || drba()) && facts.same_epoch) {
     const auto asked = std::chrono::steady_clock::now();
     auto scores = drba() ? drba_scores(frame) : pair_scores();
     // Les dernières attentes seulement : le journal de fin les résume, la mémoire reste bornée.
@@ -356,8 +358,10 @@ std::expected<std::uint32_t, Refusal> UpscaleStage::outputs(const DecodedFrame& 
     lead_us = waited;
     if (!scores) return std::unexpected(std::move(scores.error()));
     facts.scores = *scores;
-    ++pairs_;
-    if (setup_.live) setup_.live->count_pair();
+    if (facts.factor > 1) {  // les compteurs ne bougent que pour une paire qui interpole
+      ++pairs_;
+      if (setup_.live) setup_.live->count_pair();
+    }
     if (kernels::is_scene_cut(scores->scene_score)) {
       forget_motion();
       ++cuts_;
@@ -445,7 +449,7 @@ std::expected<std::uint32_t, Refusal> UpscaleStage::outputs(const DecodedFrame& 
   if (drba()) {
     // Mesurée et sans coupe, la paire laisse a comme image d'avant à la paire suivante.
     drba_.continuous = facts.scores.has_value() && !kernels::is_scene_cut(facts.scores->scene_score);
-    if (auto ok = drba_next(frame, spec, facts.factor > 1); !ok)
+    if (auto ok = drba_next(frame, spec, facts.same_epoch); !ok)
       return std::unexpected(std::move(ok.error()));
   }
   spanned_now_ = false;  // SPAN de cette image : à sa première utilisation (span_current)
