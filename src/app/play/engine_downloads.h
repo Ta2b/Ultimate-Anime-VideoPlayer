@@ -22,9 +22,11 @@ std::expected<bool, Refusal> install_chosen(PlaceboScreen& screen, PlayerUi& ui,
 // Les moteurs choisis et installés dont le module parle une autre interface que ce lecteur
 // (gpu::kBackendAbi : installés par une version précédente) se réinstallent depuis le paquet de
 // cette version, sous la licence déjà acceptée pour eux. Une licence changée attend l'onglet Moteurs ;
-// un échec laisse Vulkan prendre le relais, comme au premier lancement. false : fenêtre fermée.
+// un échec laisse Vulkan prendre le relais, comme au premier lancement. false : fenêtre fermée. updated
+// passe à vrai quand un module a été remplacé : l'ancien reste chargé dans ce processus (libnvinfer ne se
+// décharge pas) et masquerait le nouveau, le lecteur doit se relancer.
 std::expected<bool, Refusal> update_stale_engines(PlaceboScreen& screen, PlayerUi& ui,
-                                                  const EngineCatalog& catalog,
-                                                  const core::Settings& engines);
+                                                  const EngineCatalog& catalog, const core::Settings& engines,
+                                                  bool& updated);
 
 }  // namespace ajp::app::play

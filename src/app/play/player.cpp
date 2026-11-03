@@ -245,9 +245,21 @@ std::expected<void, Refusal> play(const PlayOptions& options, const PlayerPaths&
     if (auto reread = load_settings(settings_path)) saved = std::move(*reread);
   }
   // Un moteur d'une version précédente du lecteur ne s'ouvrirait pas : il se met à jour d'abord.
-  auto updated = update_stale_engines(**screen, **ui, catalog, *engines);
+  // Une seule relance par mise à jour : si le module reste périmé après elle, on ne boucle pas.
+  const std::filesystem::path relaunch_marker = paths.data / "engines-relaunched";
+  std::error_code marker_error;
+  const bool relaunched = std::filesystem::remove(relaunch_marker, marker_error);
+  bool engines_updated = false;
+  auto updated = update_stale_engines(**screen, **ui, catalog, *engines, engines_updated);
   if (!updated) return std::unexpected(std::move(updated.error()));
   if (!*updated) return {};
+  if (engines_updated && !relaunched && paths.relaunch != nullptr) {
+    // Le module remplacé ne se charge pas sous le même nom dans ce processus : le lecteur repart, et le
+    // moteur choisi s'ouvre au lancement suivant sans autre geste.
+    if (std::ofstream(relaunch_marker) << "1\n") log->info("moteurs mis à jour : le lecteur se relance");
+    *paths.relaunch = true;
+    return {};
+  }
 
   // Lancé sans fichier, l'accueil choisit la vidéo, et il revient à la fin de chacune. Une vidéo
   // glissée sur la fenêtre pendant la lecture prend la place de celle en cours.
@@ -258,7 +270,8 @@ std::expected<void, Refusal> play(const PlayOptions& options, const PlayerPaths&
     if (note.empty()) continue;
     problem += problem.empty() ? note : " · " + note;
   }
-  std::shared_ptr<BackendLibrary> library;  // ouverte à la première vidéo, gardée pour les suivantes
+  std::shared_ptr<BackendLibrary> library;       // ouverte à la première vidéo, gardée pour les suivantes
+  std::optional<core::EngineId> library_wanted;  // le moteur préféré quand elle a été ouverte
   // La pré-analyse des plans (chain_shots.h) et son cache : seule la vidéo lue s'analyse.
   ShotWork shots{.cache_dir = paths.data / "plans"};
   bool replaced = false;  // le fichier vient d'être glissé sur la fenêtre (ou est l'épisode voisin)
@@ -356,6 +369,18 @@ std::expected<void, Refusal> play(const PlayOptions& options, const PlayerPaths&
     PlaySettings settings = settings_for(from_profile, file_options);
     if (auto valid = validate(settings); !valid) return std::unexpected(std::move(valid.error()));
     static_cast<void>((*ui)->controls().set_volume(settings.volume));
+    // Le module chargé a été remplacé sur le disque (moteur mis à jour depuis l'écran des moteurs) : il ne se
+    // recharge pas sous le même nom dans ce processus, le lecteur se relance sur cette vidéo.
+    if (library && library->replaced_on_disk() && paths.relaunch != nullptr) {
+      log->info("moteur mis à jour : le lecteur se relance");
+      *paths.relaunch = true;
+      return {};
+    }
+    // Un autre moteur choisi depuis (accueil, Paramètres) : la bibliothèque se rouvre sur lui, sinon le choix
+    // serait enregistré sans être appliqué.
+    const std::optional<core::EngineId> wanted =
+        engines->preferred[static_cast<std::size_t>(core::Usage::Upscale)];
+    if (library && wanted != library_wanted) library.reset();
     if (!library) {
       show_loading(**screen, **ui, "Chargement");
       const gpu::BackendInit probe{
@@ -363,6 +388,7 @@ std::expected<void, Refusal> play(const PlayOptions& options, const PlayerPaths&
       auto opened = open_backend(catalog, paths, *engines, probe);
       if (!opened) return std::unexpected(std::move(opened.error()));
       library = std::move(*opened);
+      library_wanted = wanted;
     }
 
     Player player{.options = file_options,
@@ -370,7 +396,7 @@ std::expected<void, Refusal> play(const PlayOptions& options, const PlayerPaths&
                   .catalog = catalog,
                   .screen = **screen,
                   .ui = **ui,
-                  .library = library,
+                  .library = std::move(library),
                   .video = video,
                   .settings_path = settings_path,
                   .from_file = *saved,
@@ -478,6 +504,10 @@ std::expected<void, Refusal> play(const PlayOptions& options, const PlayerPaths&
     next_key = player.next_key;
     profiles = std::move(player.profiles);
     *engines = std::move(player.engines);
+    // Un changement de moteur pendant la lecture a déjà rouvert la bibliothèque sur le préféré.
+    if (library && engine_of_library(library->path()) ==
+                       engines->preferred[static_cast<std::size_t>(core::Usage::Upscale)])
+      library_wanted = engines->preferred[static_cast<std::size_t>(core::Usage::Upscale)];
     if (!failed.empty()) {
       problem = std::move(failed);
       file.clear();

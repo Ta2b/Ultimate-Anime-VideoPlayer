@@ -39,6 +39,7 @@ std::expected<std::shared_ptr<BackendLibrary>, Refusal> BackendLibrary::open(
     }
     library->handle_.emplace(std::move(*opened));
     library->path_ = path;
+    library->stamp_ = std::filesystem::last_write_time(path, error);
     const DynamicLibrary& handle = *library->handle_;
     const auto abi = symbol<gpu::BackendAbiFn>(handle, "ajp_backend_abi");
     const auto layout = symbol<gpu::BackendLayoutFn>(handle, "ajp_backend_layout");
@@ -57,6 +58,12 @@ std::expected<std::shared_ptr<BackendLibrary>, Refusal> BackendLibrary::open(
 }
 
 BackendLibrary::~BackendLibrary() = default;
+
+bool BackendLibrary::replaced_on_disk() const {
+  std::error_code error;
+  const auto now = std::filesystem::last_write_time(path_, error);
+  return !error && now != stamp_;
+}
 
 void BackendLibrary::Destroy::operator()(gpu::Backend* backend) const {
   if (backend != nullptr) destroy(backend);
