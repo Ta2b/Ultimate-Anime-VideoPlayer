@@ -212,6 +212,39 @@ TEST_CASE("Étage gpu : RIFE mouvement, une passe au milieu tant que le mouvemen
   CHECK(rig.backend.count("warp_blend") == 6);
 }
 
+TEST_CASE(
+    "Étage gpu : RIFE mouvement avec poses, après un dessin tenu, b paraît au milieu sans passe ni warp",
+    "[app][stage]") {
+  const bool skip_held = GENERATE(true, false);
+  INFO((skip_held ? "lecture" : "export"));
+  Rig rig;
+  rig.backend.score(SourceId{1}, SourceId{2}, 0.0, 10);  // dessin tenu
+  rig.live->set_keep_poses(true);
+  UpscaleSetup s = rig.setup(true);
+  s.rife = nullptr;
+  s.rife_motion = &rig.motion;
+  s.skip_held = skip_held;
+  rig.start(std::move(s));
+  rig.feed(1, 4);
+  REQUIRE(rig.collect(skip_held ? 5 : 6));
+  rig.stage.reset();
+  const std::vector<RingFrame> frames = rig.sink.frames();
+  if (skip_held) {
+    // La paire (2, 3) suit le dessin tenu : b à 1/2, une seule écriture ; la source 3 n'est pas réécrite,
+    // l'écart est marqué sur la suivante.
+    CHECK(shape_of(frames) == std::vector<std::string>{"1", "2", "3", "3-4", "4"});
+    CHECK(frames[2].pts_us == 100'000);
+    CHECK_FALSE(frames[2].uninterpolated);
+    CHECK(frames[3].uninterpolated);  // la source 3, déjà à l'écran, manque : l'écart n'est pas une perte
+    CHECK(rig.backend.count("engine rife_motion") == 1);
+    CHECK(rig.backend.count("warp_blend") + rig.backend.count("warp_blend_poses") == 1);
+  } else {
+    CHECK(shape_of(frames) == std::vector<std::string>{"1", "2", "2-3", "3", "3-4", "4"});
+    CHECK(rig.backend.count("engine rife_motion") == 2);
+  }
+  CHECK(rig.reported().empty());
+}
+
 TEST_CASE("Étage gpu : RIFE mouvement, le mouvement qui se lève compte à la paire d'après, sans attente",
           "[app][stage]") {
   Rig rig;

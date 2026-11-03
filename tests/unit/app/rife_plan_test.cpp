@@ -49,4 +49,14 @@ TEST_CASE("RIFE : b sort seul sur coupe, dessin tenu, trou, nouvelle époque ou 
   CHECK_FALSE(rife_runs(moving(kMaxRifeFactor + 1)));
 }
 
+TEST_CASE("RIFE : poses_copy, a tient jusqu'à 1/2 puis b paraît, seulement après un dessin tenu",
+          "[app][rife]") {
+  CHECK(poses_copy(true, true, 0.25F) == PoseCopy::Before);
+  CHECK(poses_copy(true, true, 0.49F) == PoseCopy::Before);
+  CHECK(poses_copy(true, true, 0.5F) == PoseCopy::After);
+  CHECK(poses_copy(true, true, 1.0F) == PoseCopy::After);
+  CHECK(poses_copy(false, true, 0.25F) == PoseCopy::None);
+  CHECK(poses_copy(true, false, 0.75F) == PoseCopy::None);
+}
+
 }  // namespace ajp::app::play

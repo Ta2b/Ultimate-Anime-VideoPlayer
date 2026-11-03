@@ -101,6 +101,7 @@ UpscaleSetup ChainEngines::upscale(const PlaySettings& settings, std::shared_ptr
   return UpscaleSetup{
       .backend = backend.get(),
       .engine = engine.get(),
+      .skip_held = clock != nullptr,
       .rife = rife.get(),
       .rife_motion = rife_motion.get(),
       .rife_planes = rife_planes,
