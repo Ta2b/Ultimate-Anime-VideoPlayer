@@ -10,7 +10,7 @@
 //   qui monte vite (une scène lourde) et descend lentement (elle ne s'emballe pas sur un coup de chance).
 // - Contre-pression : une image sautée ou manquée à l'écran élargit l'écart tout de suite (× 1,12 par
 //   image perdue, au plus × 2) ; elle ne se relâche qu'après 1 s sans perte, puis lentement (3 s).
-// - Repli : 3 % d'images perdues ou plus sur 3 s (et au moins 6) rendent la main au mode Auto.
+// - Repli : 5 % d'images perdues ou plus sur 5 s (et au moins 10) rendent la main au mode Auto.
 #pragma once
 
 #include <array>

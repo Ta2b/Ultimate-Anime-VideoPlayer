@@ -2,7 +2,7 @@
 
 Noms affichés : « Rapide » (le mode par défaut depuis C6, anciennement « Auto libre » puis « Rapide (expérimental) ») et « Stable » (anciennement « Auto (recommandé) », gardé au choix ; Rapide s'y replie sans message quand l'écran ou le moteur ne le permettent pas). Seuls les noms ont changé : la clé play.toml `interpolation.auto_mode` garde ses valeurs `"recommande"` (Stable) et `"libre"` (Rapide).
 
-Mode d'Auto supplémentaire, `interpolation.auto_mode = "libre"` dans play.toml (défaut `"recommande"`, la loi
+Mode d'Auto « Rapide », `interpolation.auto_mode = "libre"` dans play.toml (c'est le défaut ; `"recommande"` donne Stable, la loi
 de `core/auto_rate.*` ne change pas). Cahier des charges de Tatoub : « pas de cadence ou palier à proprement
 parler, juste un interpolateur qui envoie le plus d'images qu'il peut, et nous on ajuste la vitesse du flux
 pour que la vidéo garde une vitesse constante, exactement comme sur les jeux vidéo ».
@@ -97,7 +97,7 @@ changent pas. Seul Apple (flux optique du système, instants imposés) reste en 
 
 ## 2. Intégration
 
-- `interpolation.auto_mode` : `"recommande"` (défaut) ou `"libre"` ; toute autre valeur est refusée
+- `interpolation.auto_mode` : `"libre"` (défaut, Rapide) ou `"recommande"` (Stable) ; toute autre valeur est refusée
   (`FieldOutOfRange`). En direct (`live_part`).
 - Liste « Mode d'Auto » sous le Multiplicateur (visible en mode Auto) ; « Rapide (expérimental) » grisé
   avec infobulle sans écran VRR armé.

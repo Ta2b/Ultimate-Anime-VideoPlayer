@@ -31,8 +31,6 @@ cmake --build --preset linux-prefix-cuda-machine
 change rien aux noyaux GPU : il accélère les threads source et préparation. Pour une autre carte,
 changer `AJP_CUDA_ARCHITECTURES` (`89-real` pour la 4070 Ti).
 
-RTX HDR (Maxine) s'importe depuis le SDK installé : `--truehdr-sdk /usr/local/VideoFX`.
-
 ## Ce que le lecteur fait seul sur une carte NVIDIA
 
 | Réglage | Effet | Désactivation |
@@ -166,12 +164,12 @@ fichiers de NVIDIA tirés pour de bon (~0,74 Go pour une carte sm89).
 | Profil au premier lancement | 1 (1440p, RIFE ×3) |
 | Facteur RIFE | ×3 ; ×4 en scènes calmes |
 | Hauteur de travail | 720p |
-| HDR | Maxine, puis comparaison à la route native + grade Éclatant |
+| HDR | route native + grade Éclatant (Maxine retiré) |
 | Vrai noir | Auto |
 | Cadence fixe | à activer si l'OLED scintille en VRR |
 | Smooth Motion | désactivé |
 | BIOS | Above 4G Decoding et Resizable BAR actifs |
-| Pendant la lecture | fermer le navigateur qui décode en NVDEC ; mode « performances maximales » |
+| Pendant la lecture | fermer le navigateur qui décode en NVDEC ; mesures reproductibles : voir tools/bench/banc.sh |
 
 ## Mesures à faire (audit, §Mesures)
 
