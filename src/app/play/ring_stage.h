@@ -83,6 +83,13 @@ class RingStage : public VideoStage, public FrameSink {
   const DecodedFrame* next() const {
     return pending_.size() > 1 && pending_[1].epoch == pending_[0].epoch ? &pending_[1] : nullptr;
   }
+  // Le destin d'une sortie : Write l'écrit dans un slot, Same la laisse telle que l'écran la montre déjà
+  // (aucun slot, aucun RingFrame) ; la sortie suivante qui s'écrit porte alors uninterpolated, car l'écart
+  // qui la précède n'est pas un manque.
+  enum class Fate : std::uint8_t { Write, Same };
+  virtual Fate fate(const DecodedFrame& /*frame*/, std::uint32_t /*output*/) { return Fate::Write; }
+  // Appelée à la place de produce pour une sortie Same : la sous-classe tient ses comptes à jour.
+  virtual void skip(const DecodedFrame& /*frame*/, std::uint32_t /*output*/) {}
   // Écrit la sortie output (0 ≤ output < outputs(frame)) dans le slot : attendre wait_value côté
   // GPU, signaler signal_value (impaire).
   virtual std::expected<Output, Refusal> produce(const DecodedFrame& frame, std::uint32_t output,
@@ -103,7 +110,8 @@ class RingStage : public VideoStage, public FrameSink {
   // Possédé par le thread gpu.
   std::deque<DecodedFrame> pending_;
   std::uint32_t front_outputs_ = 0;      // sorties de l'image en tête ; 0 : pas encore décidé
-  std::uint32_t front_done_ = 0;         // sorties déjà écrites
+  std::uint32_t front_done_ = 0;         // sorties déjà écrites ou laissées telles (Same)
+  bool gap_ = false;                     // une sortie Same précède : la prochaine écrite porte uninterpolated
   std::vector<std::uint64_t> released_;  // dernière valeur rendue par slot (0 au premier tour)
   std::vector<bool> free_;
   std::uint32_t epoch_ = 0;

@@ -33,6 +33,10 @@ class KeptRing final : public RingSink {
     const std::scoped_lock lock(mutex_);
     return frames_.size();
   }
+  std::vector<RingFrame> all() const {
+    const std::scoped_lock lock(mutex_);
+    return frames_;
+  }
 
  private:
   mutable std::mutex mutex_;
@@ -63,6 +67,8 @@ class ProbeStage final : public RingStage {
   }
   bool holding() const { return holding_.load(); }
   void wait_for_next(bool on) { waits_.store(on); }
+  void same_output(int output) { same_.store(output); }
+  int skipped() const { return skipped_.load(); }
   // Pour chaque image passée par outputs(), dans l'ordre : vrai si next() la suivait.
   std::vector<bool> saw_next() const {
     const std::scoped_lock lock(mutex_);
@@ -71,6 +77,10 @@ class ProbeStage final : public RingStage {
 
  private:
   bool wants_next() const override { return waits_.load(); }
+  Fate fate(const DecodedFrame& /*frame*/, std::uint32_t output) override {
+    return same_.load() == static_cast<int>(output) ? Fate::Same : Fate::Write;
+  }
+  void skip(const DecodedFrame& /*frame*/, std::uint32_t /*output*/) override { ++skipped_; }
   std::expected<std::uint32_t, Refusal> outputs(const DecodedFrame& /*frame*/) override {
     const std::scoped_lock lock(mutex_);
     saw_next_.push_back(next() != nullptr);
@@ -93,6 +103,8 @@ class ProbeStage final : public RingStage {
   std::uint32_t held_;
   std::uint32_t outputs_;
   std::atomic<bool> holding_{false};
+  std::atomic<int> same_{-1};
+  std::atomic<int> skipped_{0};
   std::atomic<bool> waits_{false};
   std::vector<bool> saw_next_;
 };
@@ -183,6 +195,21 @@ TEST_CASE("Ring : dix sorties pour une image, toutes produites (×10)", "[app][r
   REQUIRE(stage.frames().try_push(frame(1)));
   REQUIRE(wait_for([&] { return bench.ring.size() == RingStage::kMaxOutputs; }));
   CHECK(bench.reported().empty());
+}
+
+TEST_CASE("Ring : une sortie Same ne prend ni slot ni RingFrame, la suivante porte l'écart voulu",
+          "[app][ring]") {
+  Bench bench;
+  ProbeStage stage(bench.init(), 8, /*held=*/0, /*outputs=*/3);
+  stage.same_output(1);
+  REQUIRE(stage.frames().try_push(frame(1)));
+  REQUIRE(wait_for([&] { return bench.ring.size() == 2; }));
+  CHECK(stage.skipped() == 1);
+  CHECK(bench.reported().empty());
+  const std::vector<RingFrame> kept = bench.ring.all();
+  REQUIRE(kept.size() == 2);
+  CHECK_FALSE(kept[0].uninterpolated);
+  CHECK(kept[1].uninterpolated);
 }
 
 }  // namespace ajp::app::play

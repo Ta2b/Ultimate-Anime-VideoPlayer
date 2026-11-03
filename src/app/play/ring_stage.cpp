@@ -126,6 +126,12 @@ void RingStage::emit(const ThreadReport& report) {
       front_done_ = 0;
     }
     while (front_done_ < front_outputs_) {
+      if (fate(frame, front_done_) == Fate::Same) {
+        skip(frame, front_done_);
+        ++front_done_;
+        gap_ = true;
+        continue;
+      }
       std::uint32_t slot = 0;
       while (slot < free_.size() && !free_[slot]) ++slot;
       if (slot == free_.size()) return;  // attend un SlotFree
@@ -142,11 +148,12 @@ void RingStage::emit(const ThreadReport& report) {
                            .left = produced->left,
                            .right = produced->right,
                            .repeated = produced->repeated,
-                           .uninterpolated = produced->uninterpolated,
+                           .uninterpolated = produced->uninterpolated || gap_,
                            .debanded = produced->debanded,
                            .epoch = frame.epoch,
                            .ready_value = ready,
                            .submitted_us = submitted};
+      gap_ = false;
       free_[slot] = false;
       released_[slot] = ready;  // le slot est écrit : sa prochaine attente part de ready + 1
       ++front_done_;
