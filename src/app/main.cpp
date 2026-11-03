@@ -353,6 +353,7 @@ int main(int argc, char** argv) {
   // démarrer.
   if (!SDL_InitSubSystem(SDL_INIT_AUDIO))
     ajp::log_channel("app")->warn("audio indisponible, lecture sans son : {}", SDL_GetError());
+  bool engines_updated = false;  // un moteur vient d'être mis à jour : le lecteur se relance (play())
   ajp::app::play::PlayerPaths paths{
       .home = place.home,
       .data = place.data,
@@ -361,6 +362,7 @@ int main(int argc, char** argv) {
       .settings = settings_dir,
       .engine_index = base / "engines.lock",
       .models = base / "models",
+      .relaunch = &engines_updated,
   };
   // TensorRT d'abord (cartes NVIDIA), MIGraphX (AMD), OpenVINO (Intel) et Core ML (Apple), qui
   // refusent les autres fabricants, puis Vulkan (le recours partout) ; chacun à côté de l'exécutable, puis
@@ -394,6 +396,7 @@ int main(int argc, char** argv) {
   std::filesystem::create_directories(paths.engines, error);
   const auto played = ajp::app::play::play(*options, paths);
   SDL_Quit();
+  if (played && engines_updated) return relaunch(place.executable, argc, argv);
   if (played) return 0;
   // Par le journal, qui l'écrit aussi sur stderr : le refus reste dans ajp.log.
   ajp::log_channel("app")->error("{} {}", ajp::name(played.error().code), played.error().detail);

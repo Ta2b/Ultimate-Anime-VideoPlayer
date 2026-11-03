@@ -245,9 +245,21 @@ std::expected<void, Refusal> play(const PlayOptions& options, const PlayerPaths&
     if (auto reread = load_settings(settings_path)) saved = std::move(*reread);
   }
   // Un moteur d'une version précédente du lecteur ne s'ouvrirait pas : il se met à jour d'abord.
-  auto updated = update_stale_engines(**screen, **ui, catalog, *engines);
+  // Une seule relance par mise à jour : si le module reste périmé après elle, on ne boucle pas.
+  const std::filesystem::path relaunch_marker = paths.data / "engines-relaunched";
+  std::error_code marker_error;
+  const bool relaunched = std::filesystem::remove(relaunch_marker, marker_error);
+  bool engines_updated = false;
+  auto updated = update_stale_engines(**screen, **ui, catalog, *engines, engines_updated);
   if (!updated) return std::unexpected(std::move(updated.error()));
   if (!*updated) return {};
+  if (engines_updated && !relaunched && paths.relaunch != nullptr) {
+    // Le module remplacé ne se charge pas sous le même nom dans ce processus : le lecteur repart, et le
+    // moteur choisi s'ouvre au lancement suivant sans autre geste.
+    if (std::ofstream(relaunch_marker) << "1\n") log->info("moteurs mis à jour : le lecteur se relance");
+    *paths.relaunch = true;
+    return {};
+  }
 
   // Lancé sans fichier, l'accueil choisit la vidéo, et il revient à la fin de chacune. Une vidéo
   // glissée sur la fenêtre pendant la lecture prend la place de celle en cours.
