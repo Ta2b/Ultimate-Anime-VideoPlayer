@@ -18,6 +18,7 @@
 
 #include "core/types.h"
 #include "gpu/backend.h"
+#include "gpu/graph_book.h"
 
 namespace nvinfer1 {
 class IRuntime;
@@ -101,7 +102,9 @@ class TrtEngine final : public Engine {
 
   // Le mot du moteur pour le journal du backend (graphes CUDA coupés après kCaptureAttempts
   // captures refusées), une fois ; vide sinon.
-  std::string take_notice() { return std::exchange(notice_, std::string()); }
+  std::string take_notice() { return book_.take_notice(); }
+  // Les compteurs des graphes (chantier 0.4).
+  const GraphCounters& graph_counters() const { return book_.counters(); }
 
  private:
   TrtEngine() = default;
@@ -116,29 +119,23 @@ class TrtEngine final : public Engine {
   // Une capture refusée est réessayée au lancement suivant : un appel CUDA d'un autre fil au
   // mauvais moment peut l'invalider (les noyaux NVENC sur le flux par défaut le faisaient avant
   // aux_streams_) ; graphs_off_ après kCaptureAttempts refus, et les lancements restent directs.
-  static constexpr std::size_t kMaxGraphs = 8;
+  static constexpr std::size_t kMaxGraphs = 16;  // SPAN voit 8 jeux d'adresses avec DistilDRBA
   static constexpr int kCaptureAttempts = 3;
-  struct Graph {
-    std::vector<std::uintptr_t> addresses;
-    cudaGraphExec_t exec = nullptr;
-    bool warmed = false;
-  };
-  std::vector<Graph> graphs_;
+  GraphBook<std::vector<std::uintptr_t>> book_{kMaxGraphs, kCaptureAttempts};
+  std::vector<cudaGraphExec_t> execs_;  // les graphes, rangés par l'indice du registre
   // Files auxiliaires du moteur, non bloquantes, créées ici et données au contexte : celles que
   // TensorRT crée seul sont bloquantes, et un lancement sur le flux par défaut d'un autre fil (les
   // noyaux de l'encodeur NVENC) dépend alors d'elles ; pendant une capture, ce lancement l'invalide
   // (CUDA 906 chez lui, 901 ici).
   std::vector<cudaStream_t> aux_streams_;
-  bool graphs_off_ = false;
-  int capture_failures_ = 0;
-  std::string notice_;
   std::shared_ptr<SharedActivations> shared_;
   std::uint64_t shared_generation_ = 0;  // zone posée sur le contexte ; 0 : aucune
   void drop_graphs();
   // La zone commune posée, les adresses des tenseurs et les files auxiliaires donnés au contexte.
   std::expected<void, Refusal> place(const std::shared_ptr<SharedActivations>& arena,
                                      std::span<const Tensor> inputs, std::span<const Tensor> outputs);
-  std::expected<void, Refusal> launch(cudaStream_t stream, Graph* graph);
+  std::expected<void, Refusal> launch(cudaStream_t stream,
+                                      const GraphBook<std::vector<std::uintptr_t>>::Pick& pick);
 };
 
 }  // namespace ajp::gpu::cuda
