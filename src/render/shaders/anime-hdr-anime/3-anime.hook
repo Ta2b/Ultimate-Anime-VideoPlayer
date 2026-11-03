@@ -43,6 +43,9 @@ float shadow_ratio(float m, float depth) {
 vec4 hook() {
     vec4 px = HOOKED_tex(HOOKED_pos);
     if (sdr_out > 0.5) return px;
+    // Le niveau du blanc de la source : le blanc SDR (203) pour l'aspect adaptatif (adapt), sinon le blanc papier
+    // (decide_grade pose paper = 0,5 x pic dans l'aspect adaptatif : ce n'est alors pas le blanc de la source).
+    float white = adapt > 0.5 ? sdr_white : paper;
     vec3 lin = pq_to_nits(px.rgb);
     float y = max(dot(lin, LUMA), 1e-4);
     float y_pq = pq_of(y);
@@ -55,16 +58,16 @@ vec4 hook() {
     // Carte des emetteurs : plus clair que le voisinage, et proche du blanc SDR (porte sur le niveau du bloc :
     // un aplat sombre plus clair que son entourage n'est pas une lumiere).
     float iso = smoothstep(0.05, 0.25, local_pq - area_pq);
-    float gate = smoothstep(pq_of(0.55 * sdr_white), pq_of(0.95 * sdr_white), local_pq);
+    float gate = smoothstep(pq_of(0.55 * white), pq_of(0.95 * white), local_pq);
     // Etincelle de 1 a 4 px : le pixel domine nettement son bloc (bien au-dela du grain).
-    float spark = smoothstep(0.08, 0.20, y_pq - local_pq) * smoothstep(pq_of(0.6 * sdr_white), pq_of(sdr_white), y);
+    float spark = smoothstep(0.08, 0.20, y_pq - local_pq) * smoothstep(pq_of(0.6 * white), pq_of(white), y);
     float emitter = max(iso * gate, spark);
 
     // Marge des eclats : le pic en scene sombre, la moitie en scene tres claire (limiteur de l'OLED).
-    float key = clamp((fs_apl >= 0.0 ? fs_apl : 0.15 * sdr_white) / sdr_white, 0.0, 1.0);
+    float key = clamp((fs_apl >= 0.0 ? fs_apl : 0.15 * white) / sdr_white, 0.0, 1.0);
     float p_hl = peak * mix(1.0, 0.5, smoothstep(0.30, 0.70, key));
     float lvl = max(base, y * spark);
-    float emit_out = lvl * (1.0 + smoothstep(0.5 * paper, paper, lvl) * (spec_gain - 1.0));
+    float emit_out = lvl * (1.0 + smoothstep(0.5 * white, white, lvl) * (spec_gain - 1.0));
     emit_out = shoulder(emit_out, 0.65 * p_hl, p_hl);
     float gain = mix(an_lift, max(emit_out / lvl, an_lift), emitter);
 
